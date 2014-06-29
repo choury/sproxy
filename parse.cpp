@@ -12,10 +12,6 @@ int checkblock(const char *host){
     return 1;
 }
 
-void prepareheader(char *header,const char *host,int port){
-    
-}
-
 void parse(char* header)
 {
     map<string, string> hmap;
