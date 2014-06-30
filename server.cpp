@@ -28,7 +28,8 @@ int main(int argc, char** argv)
     }
 
     if (SSL_CTX_load_verify_locations(ctx,
-                                      "/home/choury/keys/sub.class1.server.ca.pem", "/home/choury/keys/sub.class1.server.ca.crt") != 1)
+                                      "/home/choury/keys/sub.class1.server.ca.pem", 
+                                      "/home/choury/keys/sub.class1.server.ca.crt") != 1)
         ERR_print_errors_fp(stderr);
 
     if (SSL_CTX_set_default_verify_paths(ctx) != 1)
@@ -119,16 +120,16 @@ int main(int argc, char** argv)
                     SSL* ssl = SSL_new(ctx);
                     /* 将连接用户的socket 加入到SSL */
                     SSL_set_fd(ssl, clsk);
-                    
+
                     Guest* guest = new Guest_s(clsk, efd, ssl);
 
                     guestlist.push_back(guest);
                     event.data.ptr = guest;
                     event.events = EPOLLIN;
                     epoll_ctl(efd, EPOLL_CTL_ADD, clsk, &event);
-                    
+
                     /* 建立SSL 连接*/
-                    int ret=SSL_accept(ssl);
+                    int ret = SSL_accept(ssl);
                     if (ret != 1) {
                         switch (SSL_get_error(ssl, ret)) {
                         case SSL_ERROR_WANT_READ:
@@ -147,7 +148,7 @@ int main(int argc, char** argv)
                         continue;
                     }
                     guest->connected();
-                    
+
                 } else {
                     perror("unknown error");
                     return 7;

@@ -8,6 +8,7 @@
 
 using namespace std;
 
+
 int checkblock(const char *host){
     return 1;
 }
@@ -24,8 +25,6 @@ void parse(char* header)
         hmap[string(p,sp-p)]=string(sp+1);
     }
     
-    hmap.erase("DNT");
-    
     int p=0;
     for(auto i:hmap){
         int len;
@@ -33,6 +32,5 @@ void parse(char* header)
         p+=len;
     }
     sprintf(header+p,CRLF);
-    
-    cout<<header;
+
 }

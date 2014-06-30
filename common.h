@@ -9,7 +9,8 @@
 
 #define SPORT 443
 #define CPORT 3333
-#define Min(x,y) ((x)<(y)?(x):(y))
+
+
 
 /* guest   ---   (client) --- host(proxy) 
  * guest_s ---   (server) --- host */

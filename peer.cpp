@@ -9,6 +9,8 @@
 #include "common.h"
 #include "parse.h"
 
+#define Min(x,y) ((x)<(y)?(x):(y))
+
 
 Peer::Peer()
 {
@@ -649,7 +651,7 @@ void Guest_s::handleEvent(uint32_t events)
     }
 }
 
-Proxy::Proxy(int efd, Guest* guest) throw(int): Host(efd, guest, SPORT, "vps.choury.com"), ssl(NULL), ctx(NULL)
+Proxy::Proxy(int efd, Guest* guest) throw(int): Host(efd, guest, SPORT, SHOST), ssl(NULL), ctx(NULL)
 {
 }
 
