@@ -180,7 +180,11 @@ void Guest::handleEvent(uint32_t events)
                         host = Host::gethost(host, hostname, port, efd, this);
                         status = connect_s;
 
-                    } else {
+                    } else if(strcasecmp(method, "LOADBLOCK") == 0){
+                        loadblocksite();
+                        Write(LOADEDTIP,strlen(LOADEDTIP));
+                        status=start_s;
+                    }else{
                         fprintf(stderr, "unknown method:%s\n", method);
                         clean();
                     }
