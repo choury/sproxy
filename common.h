@@ -12,6 +12,7 @@
 
 
 
+
 /* guest   ---   (client) --- host(proxy) 
  * guest_s ---   (server) --- host */
 
@@ -25,6 +26,7 @@ protected:
     enum Status status;
     char wbuff[1024 * 1024];
     int  write_len;
+    bool fulled;
 public:
     Peer();
     Peer(int fd,int efd);
@@ -49,6 +51,7 @@ public:
     virtual void handleEvent(uint32_t events);
     virtual void clean();
     virtual void disconnect();
+    virtual void bufcleaned();
     static Host *gethost(Host *exist,const char *host,int port,int efd,Guest *guest)throw(int);
 };
 

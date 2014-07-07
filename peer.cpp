@@ -16,7 +16,7 @@ Peer::Peer()
 {
 }
 
-Peer::Peer(int fd, int efd): fd(fd), efd(efd), status(start_s), write_len(0)
+Peer::Peer(int fd, int efd): fd(fd), efd(efd), status(start_s), write_len(0), fulled(false)
 {
 };
 
@@ -72,6 +72,8 @@ int Peer::Write()
 
 size_t Peer::bufleft()
 {
+    if (sizeof(wbuff) == write_len)
+        fulled = true;
     return sizeof(wbuff) - write_len;
 }
 
@@ -99,6 +101,8 @@ bool Guest::candelete()
 void Guest::handleEvent(uint32_t events)
 {
     struct epoll_event event;
+    event.data.ptr = this;
+
     int ret;
     if (events & EPOLLIN) {
         char buff[1024 * 1024];
@@ -248,9 +252,13 @@ void Guest::handleEvent(uint32_t events)
                 return;
             }
             if (write_len == 0) {
-                event.data.ptr = this;
                 event.events = EPOLLIN;
                 epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+                if (fulled) {
+                    if (host)
+                        host->bufcleaned();
+                    fulled = false;
+                }
             }
         }
     }
@@ -311,6 +319,7 @@ Host::Host(int efd, Guest* guest, int port, const char* host) throw(int): port(p
 void Host::handleEvent(uint32_t events)
 {
     struct epoll_event event;
+    event.data.ptr = this;
     if (guest == NULL) {
         delete this;
         return;
@@ -320,6 +329,8 @@ void Host::handleEvent(uint32_t events)
         int bufleft = guest->bufleft();
         if (bufleft == 0) {
             fprintf(stderr, "The guest's write buff is full\n");
+            event.events = EPOLLOUT;
+            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
             return;
         }
         char buff[1024 * 1024];
@@ -360,7 +371,6 @@ void Host::handleEvent(uint32_t events)
             }
 
             if (write_len == 0) {
-                event.data.ptr = this;
                 event.events = EPOLLIN;
                 epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
             }
@@ -378,6 +388,13 @@ void Host::handleEvent(uint32_t events)
 void Host::disconnect()
 {
     guest = NULL;
+}
+
+void Host::bufcleaned(){
+    struct epoll_event event;
+    event.data.ptr=this;
+    event.events=EPOLLIN | EPOLLOUT;
+    epoll_ctl(efd,EPOLL_CTL_MOD,fd,&event);
 }
 
 void Host::clean()
@@ -666,6 +683,11 @@ void Guest_s::handleEvent(uint32_t events)
             if (write_len == 0) {
                 event.events = EPOLLIN;
                 epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+                if (fulled) {
+                    if (host)
+                        host->bufcleaned();
+                    fulled = false;
+                }
             }
         }
     }
@@ -772,6 +794,8 @@ void Proxy::handleEvent(uint32_t events)
         case connect_s:
             if (bufleft == 0) {
                 fprintf(stderr, "The guest's write buff is full\n");
+                event.events = EPOLLOUT;
+                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
                 return;
             }
             char buff[1024 * 1024];
