@@ -1,6 +1,5 @@
-#include <stdio.h>
 #include <unistd.h>
-#include <errno.h>
+#include <cerrno>
 #include <signal.h>
 #include <fcntl.h>
 #include <sys/epoll.h>

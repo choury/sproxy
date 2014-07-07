@@ -16,7 +16,7 @@ Peer::Peer()
 {
 }
 
-Peer::Peer(int fd, int efd): fd(fd), efd(efd), status(start_s),write_len(0)
+Peer::Peer(int fd, int efd): fd(fd), efd(efd), status(start_s), write_len(0)
 {
 };
 
@@ -50,12 +50,19 @@ int Peer::Write(const char* buff, size_t size)
 int Peer::Write()
 {
     int ret = write(fd, wbuff, write_len);
-    if (ret <= 0) {
+    if (ret < 0) {
         return ret;
     }
 
+    if (ret == 0) {
+        if (errno == 0)
+            return 0;
+        else
+            return -1;
+    }
+
     if (ret != write_len) {
-        memcpy(wbuff, wbuff + ret, write_len - ret);
+        memmove(wbuff, wbuff + ret, write_len - ret);
         write_len -= ret;
     } else {
         write_len = 0;
@@ -180,11 +187,11 @@ void Guest::handleEvent(uint32_t events)
                         host = Host::gethost(host, hostname, port, efd, this);
                         status = connect_s;
 
-                    } else if(strcasecmp(method, "LOADBLOCK") == 0){
+                    } else if (strcasecmp(method, "LOADBLOCK") == 0) {
                         loadblocksite();
-                        Write(LOADEDTIP,strlen(LOADEDTIP));
-                        status=start_s;
-                    }else{
+                        Write(LOADEDTIP, strlen(LOADEDTIP));
+                        status = start_s;
+                    } else {
                         fprintf(stderr, "unknown method:%s\n", method);
                         clean();
                     }
@@ -222,10 +229,11 @@ void Guest::handleEvent(uint32_t events)
     }
     if (events & EPOLLOUT) {
         int ret;
-        switch(status){
+        switch (status) {
         case close_s:
             ret = Write();
-            if (ret <= 0) {
+            if (ret < 0) {
+                perror("guest write");
                 clean();
                 write_len = 0;
                 return;
@@ -233,7 +241,8 @@ void Guest::handleEvent(uint32_t events)
             break;
         default:
             ret = Write();
-            if (ret <= 0) {
+            if (ret < 0) {
+                perror("guest write");
                 clean();
                 write_len = 0;
                 return;
@@ -343,7 +352,8 @@ void Host::handleEvent(uint32_t events)
         case connect_s:
             if (write_len) {
                 int ret = Write();
-                if (ret <= 0) {
+                if (ret < 0) {
+                    perror("host write");
                     guest->cleanhost();
                     return;
                 }
@@ -411,7 +421,7 @@ int Guest_s::Write()
     }
 
     if (ret != write_len) {
-        memcpy(wbuff, wbuff + ret, write_len - ret);
+        memmove(wbuff, wbuff + ret, write_len - ret);
         write_len -= ret;
     } else {
         write_len = 0;
@@ -440,7 +450,7 @@ Guest_s::~Guest_s()
 void Guest_s::handleEvent(uint32_t events)
 {
     struct epoll_event event;
-    event.data.ptr=this;
+    event.data.ptr = this;
     int ret;
     if (events & EPOLLIN) {
         char buff[1024 * 1024];
@@ -475,10 +485,12 @@ void Guest_s::handleEvent(uint32_t events)
             ret = Read(rbuff + read_len, 4096 - read_len);
             if (ret <= 0) {
                 int error = SSL_get_error(ssl, ret);
-                if (error == SSL_ERROR_WANT_READ ) {
+                if (error == SSL_ERROR_WANT_READ) {
                     break;
                 }
-                ERR_print_errors_fp(stderr);
+                if (error != SSL_ERROR_ZERO_RETURN) {
+                    fprintf(stderr, "guest_s read:%s\n", ERR_error_string(error, NULL));
+                }
                 clean();
                 break;
             }
@@ -562,10 +574,12 @@ void Guest_s::handleEvent(uint32_t events)
             ret = Read(buff, Min(host->bufleft(), expectlen));
             if (ret <= 0 || host == NULL) {
                 int error = SSL_get_error(ssl, ret);
-                if (error == SSL_ERROR_WANT_READ ) {
+                if (error == SSL_ERROR_WANT_READ) {
                     break;
                 }
-                ERR_print_errors_fp(stderr);
+                if (error != SSL_ERROR_ZERO_RETURN) {
+                    fprintf(stderr, "guest_s read:%s\n", ERR_error_string(error, NULL));
+                }
                 clean();
                 break;
             }
@@ -581,10 +595,12 @@ void Guest_s::handleEvent(uint32_t events)
             ret = Read(buff, host->bufleft());
             if (ret <= 0 || host == NULL) {
                 int error = SSL_get_error(ssl, ret);
-                if (error == SSL_ERROR_WANT_READ ) {
+                if (error == SSL_ERROR_WANT_READ) {
                     break;
                 }
-                ERR_print_errors_fp(stderr);
+                if (error != SSL_ERROR_ZERO_RETURN) {
+                    fprintf(stderr, "guest_s read:%s\n", ERR_error_string(error, NULL));
+                }
                 clean();
                 break;
             }
@@ -622,10 +638,12 @@ void Guest_s::handleEvent(uint32_t events)
             ret = Write();
             if (ret <= 0) {
                 int error = SSL_get_error(ssl, ret);
-                if (error == SSL_ERROR_WANT_WRITE ) {
+                if (error == SSL_ERROR_WANT_WRITE) {
                     break;
                 }
-                ERR_print_errors_fp(stderr);
+                if (error != SSL_ERROR_ZERO_RETURN) {
+                    fprintf(stderr, "guest_s write:%s\n", ERR_error_string(error, NULL));
+                }
                 clean();
                 write_len = 0;
                 return;
@@ -635,10 +653,12 @@ void Guest_s::handleEvent(uint32_t events)
             ret = Write();
             if (ret <= 0) {
                 int error = SSL_get_error(ssl, ret);
-                if (error == SSL_ERROR_WANT_WRITE ) {
+                if (error == SSL_ERROR_WANT_WRITE) {
                     break;
                 }
-                ERR_print_errors_fp(stderr);
+                if (error != SSL_ERROR_ZERO_RETURN) {
+                    fprintf(stderr, "guest_s write:%s\n", ERR_error_string(error, NULL));
+                }
                 clean();
                 write_len = 0;
                 break;
@@ -680,7 +700,7 @@ int Proxy::Write()
     }
 
     if (ret != write_len) {
-        memcpy(wbuff, wbuff + ret, write_len - ret);
+        memmove(wbuff, wbuff + ret, write_len - ret);
         write_len -= ret;
     } else {
         write_len = 0;
@@ -758,10 +778,12 @@ void Proxy::handleEvent(uint32_t events)
             ret = Read(buff, bufleft);
             if (ret <= 0) {
                 int error = SSL_get_error(ssl, ret);
-                if (error == SSL_ERROR_WANT_READ ) {
+                if (error == SSL_ERROR_WANT_READ) {
                     break;
                 }
-                ERR_print_errors_fp(stderr);
+                if (error != SSL_ERROR_ZERO_RETURN) {
+                    fprintf(stderr, "proxy read:%s\n", ERR_error_string(error, NULL));
+                }
                 guest->cleanhost();
                 return;
             }
@@ -822,10 +844,12 @@ void Proxy::handleEvent(uint32_t events)
             ret = Write();
             if (ret <= 0) {
                 int error = SSL_get_error(ssl, ret);
-                if (error == SSL_ERROR_WANT_WRITE ) {
+                if (error == SSL_ERROR_WANT_WRITE) {
                     break;
                 }
-                ERR_print_errors_fp(stderr);
+                if (error != SSL_ERROR_ZERO_RETURN) {
+                    fprintf(stderr, "proxy write:%s\n", ERR_error_string(error, NULL));
+                }
                 guest->cleanhost();
                 return;
             }
