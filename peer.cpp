@@ -329,8 +329,7 @@ void Host::handleEvent(uint32_t events)
         int bufleft = guest->bufleft();
         if (bufleft == 0) {
             fprintf(stderr, "The guest's write buff is full\n");
-            event.events = EPOLLOUT;
-            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
             return;
         }
         char buff[1024 * 1024];
@@ -394,7 +393,7 @@ void Host::bufcleaned(){
     struct epoll_event event;
     event.data.ptr=this;
     event.events=EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd,EPOLL_CTL_MOD,fd,&event);
+    epoll_ctl(efd,EPOLL_CTL_ADD,fd,&event);
 }
 
 void Host::clean()
@@ -794,8 +793,7 @@ void Proxy::handleEvent(uint32_t events)
         case connect_s:
             if (bufleft == 0) {
                 fprintf(stderr, "The guest's write buff is full\n");
-                event.events = EPOLLOUT;
-                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+                epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
                 return;
             }
             char buff[1024 * 1024];
