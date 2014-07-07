@@ -254,11 +254,11 @@ void Guest::handleEvent(uint32_t events)
             if (write_len == 0) {
                 event.events = EPOLLIN;
                 epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-                if (fulled) {
-                    if (host)
-                        host->bufcleaned();
-                    fulled = false;
-                }
+            }
+            if (fulled) {
+                if (host)
+                    host->bufcanwrite();
+                fulled = false;
             }
         }
     }
@@ -389,11 +389,12 @@ void Host::disconnect()
     guest = NULL;
 }
 
-void Host::bufcleaned(){
+void Host::bufcanwrite()
+{
     struct epoll_event event;
-    event.data.ptr=this;
-    event.events=EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd,EPOLL_CTL_ADD,fd,&event);
+    event.data.ptr = this;
+    event.events = EPOLLIN | EPOLLOUT;
+    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
 }
 
 void Host::clean()
@@ -682,11 +683,11 @@ void Guest_s::handleEvent(uint32_t events)
             if (write_len == 0) {
                 event.events = EPOLLIN;
                 epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-                if (fulled) {
-                    if (host)
-                        host->bufcleaned();
-                    fulled = false;
-                }
+            }
+            if (fulled) {
+                if (host)
+                    host->bufcanwrite();
+                fulled = false;
             }
         }
     }

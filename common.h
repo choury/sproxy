@@ -10,7 +10,7 @@
 #define SPORT 443
 #define CPORT 3333
 
-#define SHOST "vps.choury.com"
+
 
 
 /* guest   ---   (client) --- host(proxy) 
@@ -51,7 +51,7 @@ public:
     virtual void handleEvent(uint32_t events);
     virtual void clean();
     virtual void disconnect();
-    virtual void bufcleaned();
+    virtual void bufcanwrite();
     static Host *gethost(Host *exist,const char *host,int port,int efd,Guest *guest)throw(int);
 };
 
