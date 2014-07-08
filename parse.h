@@ -5,11 +5,12 @@
 extern "C" {
 #endif
 
-#define LOADEDTIP "HTTP/1.0 200 Block list Loaded" CRLF CRLF
+#define LOADBSUC  "HTTP/1.0 200 Block list Loaded" CRLF CRLF
+#define LOADBFAIL "HTTP/1.0 404 Block list not found" CRLF CRLF
     
 int checkblock(const char *host);
 void parse(char* header);
-void loadblocksite();
+int loadblocksite();
     
 #ifdef  __cplusplus
 }

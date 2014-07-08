@@ -13,7 +13,7 @@ using namespace std;
 static int loadedsite = 0;
 static unordered_set<string> blocklist;
 
-void loadblocksite()
+int loadblocksite()
 {
     loadedsite = 1;
     blocklist.clear();
@@ -22,14 +22,15 @@ void loadblocksite()
         while (!blockfile.eof()) {
             string site;
             blockfile >> site;
-            blocklist.insert(site);
-        }
-        for (auto i : blocklist) {
-            cout << i << endl;
+            if(!site.empty()){
+                blocklist.insert(site);
+            }
         }
         blockfile.close();
+        return blocklist.size();
     } else {
         cerr << "There is no blocked.list!" << endl;
+        return -1;
     }
 }
 

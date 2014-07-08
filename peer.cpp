@@ -127,8 +127,8 @@ void Guest::handleEvent(uint32_t events)
                 headerend += strlen(CRLF CRLF);
 
                 char method[20];
-                char url[URLLIMIT];
-                sscanf(rbuff, "%s%s", method, url);
+                char url[URLLIMIT]={0};
+                sscanf(rbuff, "%s%*[ ]%[^\r\n ]", method, url);
 
                 char path[URLLIMIT];
                 char hostname[DOMAINLIMIT];
@@ -192,8 +192,11 @@ void Guest::handleEvent(uint32_t events)
                         status = connect_s;
 
                     } else if (strcasecmp(method, "LOADBLOCK") == 0) {
-                        loadblocksite();
-                        Write(LOADEDTIP, strlen(LOADEDTIP));
+                        if(loadblocksite()>0){
+                            Write(LOADBSUC, strlen(LOADBSUC));
+                        }else{
+                            Write(LOADBFAIL,strlen(LOADBFAIL));
+                        }
                         status = start_s;
                     } else {
                         fprintf(stderr, "unknown method:%s\n", method);
@@ -485,8 +488,8 @@ void Guest_s::handleEvent(uint32_t events)
                     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
                     break;
                 default:
+                    fprintf(stderr, "ssl_accept error!\n");
                     clean();
-                    ERR_print_errors_fp(stderr);
                     break;
                 }
                 break;
@@ -520,8 +523,8 @@ void Guest_s::handleEvent(uint32_t events)
                 headerend += strlen(CRLF CRLF);
 
                 char method[20];
-                char url[URLLIMIT];
-                sscanf(rbuff, "%s%s", method, url);
+                cchar url[URLLIMIT]={0};
+                sscanf(rbuff, "%s%*[ ]%[^\r\n ]", method, url);
 
                 char path[URLLIMIT];
                 char hostname[DOMAINLIMIT];
