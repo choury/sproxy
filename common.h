@@ -1,7 +1,6 @@
 #ifndef __CONF_H__
 #define __CONF_H__
 
-#include <pthread.h>
 #include <openssl/ssl.h>
 #include <sys/epoll.h>
 

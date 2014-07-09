@@ -5,6 +5,8 @@
 #include <iostream>
 #include <unordered_set>
 
+#include <arpa/inet.h>
+
 #include "parse.h"
 #include "net.h"
 
@@ -49,6 +51,13 @@ int checkblock(const char* host)
     if (!loadedsite) {
         loadblocksite();
     }
+    
+    //如果blocklist里面有*.*.*.* 那么ip地址直接代理
+    if(inet_addr(host)!=INADDR_NONE && 
+        blocklist.find("*.*.*.*") != blocklist.end()){
+        return 1;
+    }
+    
     const char *subhost = host;
     while (subhost) {
         if(subhost[0] == '.'){
