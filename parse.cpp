@@ -35,6 +35,15 @@ int loadblocksite()
 }
 
 
+void addbsite(const char* host){
+    blocklist.insert(host);
+    ofstream blockfile("blocked.list");
+    for(auto i:blocklist){
+        blockfile<<i<<endl;
+    }
+}
+
+
 int checkblock(const char* host)
 {
     if (!loadedsite) {

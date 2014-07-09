@@ -155,7 +155,7 @@ void Guest::handleEvent(uint32_t events)
                         size_t headerlen = headerend - rbuff;
                         if (headerlen != read_len) {       //除了头部还读取到了其他内容
                             read_len -= headerlen;
-                            memcpy(rbuff, headerend, read_len);
+                            memmove(rbuff, headerend, read_len);
                         } else {
                             read_len = 0;
                         }
@@ -197,6 +197,10 @@ void Guest::handleEvent(uint32_t events)
                         }else{
                             Write(LOADBFAIL,strlen(LOADBFAIL));
                         }
+                        status = start_s;
+                    }else if(strcasecmp(method, "ADDBLOCK") == 0) {
+                        addbsite(url);
+                        Write(ADDBTIP, strlen(ADDBTIP));
                         status = start_s;
                     } else {
                         fprintf(stderr, "unknown method:%s\n", method);
@@ -523,7 +527,7 @@ void Guest_s::handleEvent(uint32_t events)
                 headerend += strlen(CRLF CRLF);
 
                 char method[20];
-                cchar url[URLLIMIT]={0};
+                char url[URLLIMIT]={0};
                 sscanf(rbuff, "%s%*[ ]%[^\r\n ]", method, url);
 
                 char path[URLLIMIT];
@@ -548,7 +552,7 @@ void Guest_s::handleEvent(uint32_t events)
                 size_t headerlen = headerend - rbuff;
                 if (headerlen != read_len) {       //除了头部还读取到了其他内容
                     read_len -= headerlen;
-                    memcpy(rbuff, headerend, read_len);
+                    memmove(rbuff, headerend, read_len);
                 } else {
                     read_len = 0;
                 }
