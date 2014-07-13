@@ -1,6 +1,7 @@
 #include <pthread.h>
 
 #include <unistd.h>
+#include <arpa/inet.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <openssl/ssl.h>
@@ -127,7 +128,7 @@ void Guest::handleEvent(uint32_t events)
                 headerend += strlen(CRLF CRLF);
 
                 char method[20];
-                char url[URLLIMIT]={0};
+                char url[URLLIMIT] = {0};
                 sscanf(rbuff, "%s%*[ ]%[^\r\n ]", method, url);
 
                 char path[URLLIMIT];
@@ -192,13 +193,13 @@ void Guest::handleEvent(uint32_t events)
                         status = connect_s;
 
                     } else if (strcasecmp(method, "LOADBLOCK") == 0) {
-                        if(loadblocksite()>0){
+                        if (loadblocksite() > 0) {
                             Write(LOADBSUC, strlen(LOADBSUC));
-                        }else{
-                            Write(LOADBFAIL,strlen(LOADBFAIL));
+                        } else {
+                            Write(LOADBFAIL, strlen(LOADBFAIL));
                         }
                         status = start_s;
-                    }else if(strcasecmp(method, "ADDBLOCK") == 0) {
+                    } else if (strcasecmp(method, "ADDBLOCK") == 0) {
                         addbsite(url);
                         Write(ADDBTIP, strlen(ADDBTIP));
                         status = start_s;
@@ -527,12 +528,14 @@ void Guest_s::handleEvent(uint32_t events)
                 headerend += strlen(CRLF CRLF);
 
                 char method[20];
-                char url[URLLIMIT]={0};
+                char url[URLLIMIT] = {0};
                 sscanf(rbuff, "%s%*[ ]%[^\r\n ]", method, url);
 
                 char path[URLLIMIT];
                 char hostname[DOMAINLIMIT];
                 int port;
+
+                
 
                 if (url[0] == '/') {
                     strcpy(path, url);
@@ -556,8 +559,17 @@ void Guest_s::handleEvent(uint32_t events)
                 } else {
                     read_len = 0;
                 }
+                
+                struct sockaddr_in sa;
+                socklen_t len = sizeof(sa);
+                if (getpeername(fd, (struct sockaddr*)&sa, &len)) {
+                    perror("getpeername");
+                    clean();
+                    break;
+                }
 
-                fprintf(stdout, "%s %s\n", method, url);
+                fprintf(stdout, "(%s:%d):%s %s\n", inet_ntoa(sa.sin_addr), ntohs(sa.sin_port), method, url);
+                
                 try {
                     if (strcasecmp(method, "GET") == 0 || strcasecmp(method, "HEAD") == 0) {
                         host = host->gethost(host, hostname, port, efd, this);
