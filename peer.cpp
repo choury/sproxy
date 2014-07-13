@@ -560,15 +560,17 @@ void Guest_s::handleEvent(uint32_t events)
                     read_len = 0;
                 }
                 
-                struct sockaddr_in sa;
+                struct sockaddr_in6 sa;
                 socklen_t len = sizeof(sa);
                 if (getpeername(fd, (struct sockaddr*)&sa, &len)) {
                     perror("getpeername");
                     clean();
                     break;
                 }
-
-                fprintf(stdout, "(%s:%d):%s %s\n", inet_ntoa(sa.sin_addr), ntohs(sa.sin_port), method, url);
+                char ipAddr[100];
+                fprintf(stdout, "(%s:%d):%s %s\n", 
+                        inet_ntop(AF_INET6, &sa.sin6_addr, ipAddr, sizeof(ipAddr)), 
+                        ntohs(sa.sin6_port), method, url);
                 
                 try {
                     if (strcasecmp(method, "GET") == 0 || strcasecmp(method, "HEAD") == 0) {
