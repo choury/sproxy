@@ -93,3 +93,9 @@ void parse(char* header)
     sprintf(header + p, CRLF);
 
 }
+
+int parse302(const char* location, char* buff){
+    sprintf(buff,H302FORMAT,location);
+    return strlen(buff);
+}
+

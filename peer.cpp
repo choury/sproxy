@@ -538,9 +538,10 @@ void Guest_s::handleEvent(uint32_t events)
                 
 
                 if (url[0] == '/') {
-                    strcpy(path, url);
-                    strcpy(hostname, "localhost");
-                    port = 8080;
+//                    strcpy(path, url);
+//                    strcpy(hostname, "localhost");
+//                    port = 8080;
+                    break;
                 } else if (spliturl(url, hostname, path, &port)) {
                     fprintf(stderr, "wrong url format\n");
                     clean();
