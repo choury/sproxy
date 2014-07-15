@@ -271,7 +271,11 @@ void Guest::handleEvent(uint32_t events)
         }
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
-        fprintf(stderr, "guest error\n");
+        int       error = 0;
+        socklen_t errlen = sizeof(error);
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
+            fprintf(stderr, "guest error:%s\n", strerror(error));
+        }
         clean();
     }
 }
@@ -535,7 +539,7 @@ void Guest_s::handleEvent(uint32_t events)
                 char hostname[DOMAINLIMIT];
                 int port;
 
-                
+
 
                 if (url[0] == '/') {
 //                    strcpy(path, url);
@@ -560,7 +564,7 @@ void Guest_s::handleEvent(uint32_t events)
                 } else {
                     read_len = 0;
                 }
-                
+
                 struct sockaddr_in6 sa;
                 socklen_t len = sizeof(sa);
                 if (getpeername(fd, (struct sockaddr*)&sa, &len)) {
@@ -569,10 +573,10 @@ void Guest_s::handleEvent(uint32_t events)
                     break;
                 }
                 char ipAddr[100];
-                fprintf(stdout, "(%s:%d):%s %s\n", 
-                        inet_ntop(AF_INET6, &sa.sin6_addr, ipAddr, sizeof(ipAddr)), 
+                fprintf(stdout, "(%s:%d):%s %s\n",
+                        inet_ntop(AF_INET6, &sa.sin6_addr, ipAddr, sizeof(ipAddr)),
                         ntohs(sa.sin6_port), method, url);
-                
+
                 try {
                     if (strcasecmp(method, "GET") == 0 || strcasecmp(method, "HEAD") == 0) {
                         host = host->gethost(host, hostname, port, efd, this);
@@ -714,7 +718,11 @@ void Guest_s::handleEvent(uint32_t events)
         }
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
-        fprintf(stderr, "guest_s error\n");
+        int       error = 0;
+        socklen_t errlen = sizeof(error);
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
+            fprintf(stderr, "guest_s error:%s\n", strerror(error));
+        }
         clean();
     }
 }
