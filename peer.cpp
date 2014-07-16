@@ -293,6 +293,7 @@ void Guest::handleEvent(uint32_t events)
                     ipAddr, ntohs(sa.sin6_port),strerror(error));
         }
         clean();
+        write_len=0;
     }
 }
 
@@ -771,6 +772,7 @@ void Guest_s::handleEvent(uint32_t events)
                     ipAddr, ntohs(sa.sin6_port),strerror(error));
         }
         clean();
+        write_len=0;
     }
 }
 
@@ -880,8 +882,9 @@ void Proxy::handleEvent(uint32_t events)
                 int error = SSL_get_error(ssl, ret);
                 if (error == SSL_ERROR_WANT_READ) {
                     break;
-                }
-                if (error != SSL_ERROR_ZERO_RETURN) {
+                }else if(error == SSL_ERROR_SYSCALL) {
+                    fprintf(stderr, "proxy read:%s\n",strerror(errno));
+                }else if (error != SSL_ERROR_ZERO_RETURN) {
                     fprintf(stderr, "proxy read:%s\n", ERR_error_string(error, NULL));
                 }
                 guest->cleanhost();
@@ -946,8 +949,9 @@ void Proxy::handleEvent(uint32_t events)
                 int error = SSL_get_error(ssl, ret);
                 if (error == SSL_ERROR_WANT_WRITE) {
                     break;
-                }
-                if (error != SSL_ERROR_ZERO_RETURN) {
+                }else if(error == SSL_ERROR_SYSCALL) {
+                    fprintf(stderr, "proxy write:%s\n",strerror(errno));
+                }else if (error != SSL_ERROR_ZERO_RETURN) {
                     fprintf(stderr, "proxy write:%s\n", ERR_error_string(error, NULL));
                 }
                 guest->cleanhost();
