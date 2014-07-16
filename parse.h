@@ -2,6 +2,7 @@
 #define __PARSE_H__
 
 #include "net.h"
+#include <stddef.h>
 
 #ifdef  __cplusplus
 extern "C" {
@@ -17,7 +18,7 @@ void addpsite(const char *host);
 int loadproxysite();
 
 int parse(char* header);
-int parse302(const char *location,char* buff);
+size_t parse302(const char *location,char* buff);
 
 #ifdef  __cplusplus
 }

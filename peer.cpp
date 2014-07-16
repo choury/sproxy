@@ -598,7 +598,10 @@ void Guest_s::handleEvent(uint32_t events)
                         method, path, headerend - headerbegin, headerbegin);
 
                 if(url[0]=='/'){
-                    parse(strstr(buff,CRLF)+sizeof(CRLF));
+                    if(parse(strstr(buff,CRLF)+sizeof(CRLF))){
+                        char headerbuff[200];
+                        Guest::Write(headerbuff,parse302("/fuckgfw",headerbuff));
+                    }
                 }
                 size_t headerlen = headerend - rbuff;
                 if (headerlen != read_len) {       //除了头部还读取到了其他内容

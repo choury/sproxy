@@ -95,11 +95,16 @@ int parse(char* header)
     }
     sprintf(header + p, CRLF);
     cout<<header;
-    return p+sizeof(CRLF);
+    
+    if(hmap.find("ccept") != hmap.end()){
+        return 1;
+    }else {
+        return 0;
+    }
 
 }
 
-int parse302(const char* location, char* buff){
+size_t parse302(const char* location, char* buff){
     sprintf(buff,H302FORMAT,location);
     return strlen(buff);
 }
