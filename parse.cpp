@@ -8,18 +8,19 @@
 #include <arpa/inet.h>
 
 #include "parse.h"
-#include "net.h"
+
+#define H302FORMAT "HTTP/1.1 302 Found" CRLF "Location: %s" CRLF CRLF
 
 using namespace std;
 
 static int loadedsite = 0;
 static unordered_set<string> blocklist;
 
-int loadblocksite()
+int loadproxysite()
 {
     loadedsite = 1;
     blocklist.clear();
-    ifstream blockfile("blocked.list");
+    ifstream blockfile("proxy.list");
     if (blockfile.good()) {
         while (!blockfile.eof()) {
             string site;
@@ -37,7 +38,7 @@ int loadblocksite()
 }
 
 
-void addbsite(const char* host){
+void addpsite(const char* host){
     blocklist.insert(host);
     ofstream blockfile("blocked.list");
     for(auto i:blocklist){
@@ -46,10 +47,10 @@ void addbsite(const char* host){
 }
 
 
-int checkblock(const char* host)
+int checkproxy(const char* host)
 {
     if (!loadedsite) {
-        loadblocksite();
+        loadproxysite();
     }
     
     //如果blocklist里面有*.*.*.* 那么ip地址直接代理
@@ -72,7 +73,7 @@ int checkblock(const char* host)
     return 0;
 }
 
-void parse(char* header)
+int parse(char* header)
 {
     map<string, string> hmap;
     strcpy(header, header);
@@ -91,6 +92,7 @@ void parse(char* header)
         p += len;
     }
     sprintf(header + p, CRLF);
+    return p+sizeof(CRLF);
 
 }
 

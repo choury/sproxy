@@ -104,13 +104,25 @@ void Guest::handleEvent(uint32_t events)
     struct epoll_event event;
     event.data.ptr = this;
 
+    struct sockaddr_in6 sa;
+    socklen_t len = sizeof(sa);
+    char ipAddr[100];
+    if (getpeername(fd, (struct sockaddr*)&sa, &len)) {
+        perror("getpeername");
+        clean();
+        return;
+    } else {
+        inet_ntop(AF_INET6, &sa.sin6_addr, ipAddr, sizeof(ipAddr));
+    }
+
     int ret;
     if (events & EPOLLIN) {
         char buff[1024 * 1024];
         switch (status) {
         case start_s:
             if (read_len == 4096) {
-                fprintf(stderr, "too large header\n");
+                fprintf(stderr, "([%s]:%d): too large header\n",
+                        ipAddr, ntohs(sa.sin6_port));
                 clean();
                 break;
             }
@@ -131,23 +143,29 @@ void Guest::handleEvent(uint32_t events)
                 char url[URLLIMIT] = {0};
                 sscanf(rbuff, "%s%*[ ]%[^\r\n ]", method, url);
 
+
                 char path[URLLIMIT];
                 char hostname[DOMAINLIMIT];
                 int port;
+
                 if (spliturl(url, hostname, path, &port)) {
                     fprintf(stderr, "wrong url format\n");
                     clean();
                     break;
                 }
                 try {
-                    if (checkblock(hostname)) {
-                        fprintf(stdout, "proxy:%s %s\n", method, url);
+                    if (checkproxy(hostname)) {
+                        fprintf(stdout, "([%s]:%d):PROXY %s %s\n",
+                                ipAddr, ntohs(sa.sin6_port), method, url);
                         host = Proxy::getproxy(host, efd, this);
                         host->Write(rbuff, read_len);
                         read_len = 0;
                         status = proxy_s;
                         break;
                     } else {
+                        fprintf(stdout, "([%s]:%d):%s %s\n",
+                                ipAddr, ntohs(sa.sin6_port), method, url);
+
                         char* headerbegin = strstr(rbuff, CRLF) + strlen(CRLF);
 
                         sprintf(buff, "%s %s HTTP/1.1" CRLF "%.*s",
@@ -162,12 +180,10 @@ void Guest::handleEvent(uint32_t events)
                         }
                     }
 
-                    fprintf(stdout, "%s %s\n", method, url);
-
                     if (strcasecmp(method, "GET") == 0 || strcasecmp(method, "HEAD") == 0) {
+
                         host = Host::gethost(host, hostname, port, efd, this);
                         host->Write(buff, strlen(buff));
-
                         status = start_s;
                     } else if (strcasecmp(method, "POST") == 0) {
                         char* lenpoint;
@@ -192,15 +208,15 @@ void Guest::handleEvent(uint32_t events)
                         host = Host::gethost(host, hostname, port, efd, this);
                         status = connect_s;
 
-                    } else if (strcasecmp(method, "LOADBLOCK") == 0) {
-                        if (loadblocksite() > 0) {
+                    } else if (strcasecmp(method, "LOADPLIST") == 0) {
+                        if (loadproxysite() > 0) {
                             Write(LOADBSUC, strlen(LOADBSUC));
                         } else {
-                            Write(LOADBFAIL, strlen(LOADBFAIL));
+                            Write(H404, strlen(H404));
                         }
                         status = start_s;
-                    } else if (strcasecmp(method, "ADDBLOCK") == 0) {
-                        addbsite(url);
+                    } else if (strcasecmp(method, "ADDPSITE") == 0) {
+                        addpsite(url);
                         Write(ADDBTIP, strlen(ADDBTIP));
                         status = start_s;
                     } else {
@@ -480,6 +496,19 @@ void Guest_s::handleEvent(uint32_t events)
 {
     struct epoll_event event;
     event.data.ptr = this;
+
+    struct sockaddr_in6 sa;
+    char ipAddr[100];
+    socklen_t len = sizeof(sa);
+    if (getpeername(fd, (struct sockaddr*)&sa, &len)) {
+        perror("getpeername");
+        clean();
+        return;
+    } else {
+        inet_ntop(AF_INET6, &sa.sin6_addr, ipAddr, sizeof(ipAddr));
+    }
+
+
     int ret;
     if (events & EPOLLIN) {
         char buff[1024 * 1024];
@@ -487,7 +516,8 @@ void Guest_s::handleEvent(uint32_t events)
         case accept_s:
             ret = SSL_accept(ssl);
             if (ret != 1) {
-                switch (SSL_get_error(ssl, ret)) {
+                int error = SSL_get_error(ssl, ret);
+                switch (error) {
                 case SSL_ERROR_WANT_READ:
                     event.events = EPOLLIN;
                     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
@@ -496,8 +526,14 @@ void Guest_s::handleEvent(uint32_t events)
                     event.events = EPOLLOUT;
                     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
                     break;
+                case SSL_ERROR_SYSCALL:
+                    fprintf(stderr, "([%s]:%d): ssl_accept error:%s\n",
+                            ipAddr, ntohs(sa.sin6_port), strerror(errno));
+                    clean();
+                    break;
                 default:
-                    fprintf(stderr, "ssl_accept error!\n");
+                    fprintf(stderr, "([%s]:%d):ssl_accept error:%s\n",
+                            ipAddr, ntohs(sa.sin6_port), ERR_error_string(error, NULL));
                     clean();
                     break;
                 }
@@ -507,7 +543,7 @@ void Guest_s::handleEvent(uint32_t events)
             break;
         case start_s:
             if (read_len == 4096) {
-                fprintf(stderr, "too large header\n");
+                fprintf(stderr, "([%s]:%d): too large header\n", ipAddr, ntohs(sa.sin6_port));
                 clean();
                 break;
             }
@@ -516,9 +552,12 @@ void Guest_s::handleEvent(uint32_t events)
                 int error = SSL_get_error(ssl, ret);
                 if (error == SSL_ERROR_WANT_READ) {
                     break;
-                }
-                if (error != SSL_ERROR_ZERO_RETURN) {
-                    fprintf(stderr, "guest_s read:%s\n", ERR_error_string(error, NULL));
+                } else if (error == SSL_ERROR_SYSCALL) {
+                    fprintf(stderr, "([%s]:%d): guest_s read:%s\n",
+                            ipAddr, ntohs(sa.sin6_port), strerror(errno));
+                } else if (error != SSL_ERROR_ZERO_RETURN) {
+                    fprintf(stderr, "([%s]:%d): guest_s read:%s\n",
+                            ipAddr, ntohs(sa.sin6_port), ERR_error_string(error, NULL));
                 }
                 clean();
                 break;
@@ -535,25 +574,26 @@ void Guest_s::handleEvent(uint32_t events)
                 char url[URLLIMIT] = {0};
                 sscanf(rbuff, "%s%*[ ]%[^\r\n ]", method, url);
 
+                fprintf(stdout, "([%s]:%d):%s %s\n",
+                        ipAddr, ntohs(sa.sin6_port), method, url);
+
                 char path[URLLIMIT];
                 char hostname[DOMAINLIMIT];
                 int port;
 
-
-
-                if (url[0] == '/') {
-//                    strcpy(path, url);
-//                    strcpy(hostname, "localhost");
-//                    port = 8080;
+/*                if (url[0] == '/') {
+                    strcpy(path, url);
+                    strcpy(hostname, "localhost");
+                    port = 8080;
                     break;
-                } else if (spliturl(url, hostname, path, &port)) {
+                } else */
+                if (spliturl(url, hostname, path, &port)) {
                     fprintf(stderr, "wrong url format\n");
                     clean();
                     break;
                 }
-
+                
                 char* headerbegin = strstr(rbuff, CRLF) + strlen(CRLF);
-
                 sprintf(buff, "%s %s HTTP/1.1" CRLF "%.*s",
                         method, path, headerend - headerbegin, headerbegin);
 
@@ -565,17 +605,6 @@ void Guest_s::handleEvent(uint32_t events)
                     read_len = 0;
                 }
 
-                struct sockaddr_in6 sa;
-                socklen_t len = sizeof(sa);
-                if (getpeername(fd, (struct sockaddr*)&sa, &len)) {
-                    perror("getpeername");
-                    clean();
-                    break;
-                }
-                char ipAddr[100];
-                fprintf(stdout, "(%s:%d):%s %s\n",
-                        inet_ntop(AF_INET6, &sa.sin6_addr, ipAddr, sizeof(ipAddr)),
-                        ntohs(sa.sin6_port), method, url);
 
                 try {
                     if (strcasecmp(method, "GET") == 0 || strcasecmp(method, "HEAD") == 0) {
@@ -619,9 +648,12 @@ void Guest_s::handleEvent(uint32_t events)
                 int error = SSL_get_error(ssl, ret);
                 if (error == SSL_ERROR_WANT_READ) {
                     break;
-                }
-                if (error != SSL_ERROR_ZERO_RETURN) {
-                    fprintf(stderr, "guest_s read:%s\n", ERR_error_string(error, NULL));
+                } else if (error == SSL_ERROR_SYSCALL) {
+                    fprintf(stderr, "([%s]:%d): guest_s read:%s\n",
+                            ipAddr, ntohs(sa.sin6_port), strerror(errno));
+                } else if (error != SSL_ERROR_ZERO_RETURN) {
+                    fprintf(stderr, "([%s]:%d): guest_s read:%s\n",
+                            ipAddr, ntohs(sa.sin6_port), ERR_error_string(error, NULL));
                 }
                 clean();
                 break;
@@ -640,9 +672,12 @@ void Guest_s::handleEvent(uint32_t events)
                 int error = SSL_get_error(ssl, ret);
                 if (error == SSL_ERROR_WANT_READ) {
                     break;
-                }
-                if (error != SSL_ERROR_ZERO_RETURN) {
-                    fprintf(stderr, "guest_s read:%s\n", ERR_error_string(error, NULL));
+                } else if (error == SSL_ERROR_SYSCALL) {
+                    fprintf(stderr, "([%s]:%d): guest_s read:%s\n",
+                            ipAddr, ntohs(sa.sin6_port), strerror(errno));
+                } else if (error != SSL_ERROR_ZERO_RETURN) {
+                    fprintf(stderr, "([%s]:%d): guest_s read:%s\n",
+                            ipAddr, ntohs(sa.sin6_port), ERR_error_string(error, NULL));
                 }
                 clean();
                 break;
@@ -659,7 +694,8 @@ void Guest_s::handleEvent(uint32_t events)
         case accept_s:
             ret = SSL_accept(ssl);
             if (ret != 1) {
-                switch (SSL_get_error(ssl, ret)) {
+                int error = SSL_get_error(ssl, ret);
+                switch (error) {
                 case SSL_ERROR_WANT_READ:
                     event.events = EPOLLIN;
                     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
@@ -668,9 +704,15 @@ void Guest_s::handleEvent(uint32_t events)
                     event.events = EPOLLOUT;
                     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
                     break;
-                default:
+                case SSL_ERROR_SYSCALL:
+                    fprintf(stderr, "([%s]:%d): ssl_accept error:%s\n",
+                            ipAddr, ntohs(sa.sin6_port), strerror(errno));
                     clean();
-                    ERR_print_errors_fp(stderr);
+                    break;
+                default:
+                    fprintf(stderr, "([%s]:%d):ssl_accept error:%s\n",
+                            ipAddr, ntohs(sa.sin6_port), ERR_error_string(error, NULL));
+                    clean();
                     break;
                 }
                 break;
@@ -683,11 +725,13 @@ void Guest_s::handleEvent(uint32_t events)
                 int error = SSL_get_error(ssl, ret);
                 if (error == SSL_ERROR_WANT_WRITE) {
                     break;
+                } else if (error == SSL_ERROR_SYSCALL) {
+                    fprintf(stderr, "([%s]:%d): guest_s write:%s\n",
+                            ipAddr, ntohs(sa.sin6_port), strerror(errno));
+                } else if (error != SSL_ERROR_ZERO_RETURN) {
+                    fprintf(stderr, "([%s]:%d): guest_s write:%s\n",
+                            ipAddr, ntohs(sa.sin6_port), ERR_error_string(error, NULL));
                 }
-                if (error != SSL_ERROR_ZERO_RETURN) {
-                    fprintf(stderr, "guest_s write:%s\n", ERR_error_string(error, NULL));
-                }
-                clean();
                 write_len = 0;
                 return;
             }
@@ -698,9 +742,12 @@ void Guest_s::handleEvent(uint32_t events)
                 int error = SSL_get_error(ssl, ret);
                 if (error == SSL_ERROR_WANT_WRITE) {
                     break;
-                }
-                if (error != SSL_ERROR_ZERO_RETURN) {
-                    fprintf(stderr, "guest_s write:%s\n", ERR_error_string(error, NULL));
+                } else if (error == SSL_ERROR_SYSCALL) {
+                    fprintf(stderr, "([%s]:%d): guest_s write:%s\n",
+                            ipAddr, ntohs(sa.sin6_port), strerror(errno));
+                } else if (error != SSL_ERROR_ZERO_RETURN) {
+                    fprintf(stderr, "([%s]:%d): guest_s write:%s\n",
+                            ipAddr, ntohs(sa.sin6_port), ERR_error_string(error, NULL));
                 }
                 clean();
                 write_len = 0;
@@ -721,7 +768,8 @@ void Guest_s::handleEvent(uint32_t events)
         int       error = 0;
         socklen_t errlen = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            fprintf(stderr, "guest_s error:%s\n", strerror(error));
+            fprintf(stderr, "([%s]:%d): guest_s error:%s\n",
+                    ipAddr, ntohs(sa.sin6_port),strerror(error));
         }
         clean();
     }
