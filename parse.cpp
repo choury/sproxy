@@ -79,7 +79,6 @@ int checkproxy(const char* host)
 int parse(char* header)
 {
     map<string, string> hmap;
-    strcpy(header, header);
     for (char* str = header; ; str = NULL) {
         char* p = strtok(str, CRLF);
         if (p == NULL)
@@ -97,11 +96,7 @@ int parse(char* header)
     sprintf(header + p, CRLF);
     cout<<header;
     
-    if(hmap.find("ccept") != hmap.end()){
-        return 1;
-    }else {
-        return 0;
-    }
+    return strlen(header);
 
 }
 

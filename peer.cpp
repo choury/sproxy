@@ -290,10 +290,10 @@ void Guest::handleEvent(uint32_t events)
         socklen_t errlen = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             fprintf(stderr, "([%s]:%d): guest error:%s\n",
-                    ipAddr, ntohs(sa.sin6_port),strerror(error));
+                    ipAddr, ntohs(sa.sin6_port), strerror(error));
         }
         clean();
-        write_len=0;
+        write_len = 0;
     }
 }
 
@@ -587,22 +587,17 @@ void Guest_s::handleEvent(uint32_t events)
                     clean();
                     break;
                 }
-                
+
                 char* headerbegin = strstr(rbuff, CRLF) + strlen(CRLF);
                 sprintf(buff, "%s %s HTTP/1.1" CRLF "%.*s",
                         method, path, headerend - headerbegin, headerbegin);
 
-                if(url[0]=='/'){
-                    char headerbuff[200];
-                    if(parse(strstr(buff,CRLF)+sizeof(CRLF))){
-                        Guest::Write(headerbuff,parse302("/fuckgfw",headerbuff));
-                        break;
-                    }else{
-                        const char *welcome="Welcome";
-                        Guest::Write(headerbuff,parse200(strlen(welcome),headerbuff));
-                        Guest::Write(welcome,strlen(welcome));
-                        break;
-                    }
+                if (url[0] == '/') {
+                    parse(strstr(buff,CRLF)+strlen(CRLF));
+                    const char* welcome = "Welcome";
+                    Guest::Write(buff, parse200(strlen(welcome), buff));
+                    Guest::Write(welcome, strlen(welcome));
+                    break;
                 }
                 size_t headerlen = headerend - rbuff;
                 if (headerlen != read_len) {       //除了头部还读取到了其他内容
@@ -776,10 +771,10 @@ void Guest_s::handleEvent(uint32_t events)
         socklen_t errlen = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             fprintf(stderr, "([%s]:%d): guest_s error:%s\n",
-                    ipAddr, ntohs(sa.sin6_port),strerror(error));
+                    ipAddr, ntohs(sa.sin6_port), strerror(error));
         }
         clean();
-        write_len=0;
+        write_len = 0;
     }
 }
 
@@ -889,9 +884,9 @@ void Proxy::handleEvent(uint32_t events)
                 int error = SSL_get_error(ssl, ret);
                 if (error == SSL_ERROR_WANT_READ) {
                     break;
-                }else if(error == SSL_ERROR_SYSCALL) {
-                    fprintf(stderr, "proxy read:%s\n",strerror(errno));
-                }else if (error != SSL_ERROR_ZERO_RETURN) {
+                } else if (error == SSL_ERROR_SYSCALL) {
+                    fprintf(stderr, "proxy read:%s\n", strerror(errno));
+                } else if (error != SSL_ERROR_ZERO_RETURN) {
                     fprintf(stderr, "proxy read:%s\n", ERR_error_string(error, NULL));
                 }
                 guest->cleanhost();
@@ -956,9 +951,9 @@ void Proxy::handleEvent(uint32_t events)
                 int error = SSL_get_error(ssl, ret);
                 if (error == SSL_ERROR_WANT_WRITE) {
                     break;
-                }else if(error == SSL_ERROR_SYSCALL) {
-                    fprintf(stderr, "proxy write:%s\n",strerror(errno));
-                }else if (error != SSL_ERROR_ZERO_RETURN) {
+                } else if (error == SSL_ERROR_SYSCALL) {
+                    fprintf(stderr, "proxy write:%s\n", strerror(errno));
+                } else if (error != SSL_ERROR_ZERO_RETURN) {
                     fprintf(stderr, "proxy write:%s\n", ERR_error_string(error, NULL));
                 }
                 guest->cleanhost();
