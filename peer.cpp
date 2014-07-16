@@ -597,6 +597,9 @@ void Guest_s::handleEvent(uint32_t events)
                 sprintf(buff, "%s %s HTTP/1.1" CRLF "%.*s",
                         method, path, headerend - headerbegin, headerbegin);
 
+                if(url[0]=='/'){
+                    parse(strstr(buff,CRLF)+sizeof(CRLF));
+                }
                 size_t headerlen = headerend - rbuff;
                 if (headerlen != read_len) {       //除了头部还读取到了其他内容
                     read_len -= headerlen;

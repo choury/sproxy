@@ -94,6 +94,7 @@ int parse(char* header)
         p += len;
     }
     sprintf(header + p, CRLF);
+    cout<<header;
     return p+sizeof(CRLF);
 
 }
