@@ -9,7 +9,7 @@
 #define SPORT 443
 #define CPORT 3333
 
-#define SHOST "p.choury.com"
+
 
 
 /* guest   ---   (client) --- host(proxy) 

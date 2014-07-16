@@ -11,38 +11,40 @@
 
 #define H302FORMAT "HTTP/1.1 302 Found" CRLF "Location: %s" CRLF CRLF
 
+#define PROXYFILE "proxy.list"
+
 using namespace std;
 
 static int loadedsite = 0;
-static unordered_set<string> blocklist;
+static unordered_set<string> proxylist;
 
 int loadproxysite()
 {
     loadedsite = 1;
-    blocklist.clear();
-    ifstream blockfile("proxy.list");
-    if (blockfile.good()) {
-        while (!blockfile.eof()) {
+    proxylist.clear();
+    ifstream proxyfile(PROXYFILE);
+    if (proxyfile.good()) {
+        while (!proxyfile.eof()) {
             string site;
-            blockfile >> site;
+            proxyfile >> site;
             if(!site.empty()){
-                blocklist.insert(site);
+                proxylist.insert(site);
             }
         }
-        blockfile.close();
-        return blocklist.size();
+        proxyfile.close();
+        return proxylist.size();
     } else {
-        cerr << "There is no blocked.list!" << endl;
+        cerr << "There is no "<<PROXYFILE<<"!" << endl;
         return -1;
     }
 }
 
 
 void addpsite(const char* host){
-    blocklist.insert(host);
-    ofstream blockfile("blocked.list");
-    for(auto i:blocklist){
-        blockfile<<i<<endl;
+    proxylist.insert(host);
+    ofstream proxyfile(PROXYFILE);
+    for(auto i:proxylist){
+        proxyfile<<i<<endl;
     }
 }
 
@@ -53,9 +55,9 @@ int checkproxy(const char* host)
         loadproxysite();
     }
     
-    //如果blocklist里面有*.*.*.* 那么ip地址直接代理
+    //如果proxylist里面有*.*.*.* 那么ip地址直接代理
     if(inet_addr(host)!=INADDR_NONE && 
-        blocklist.find("*.*.*.*") != blocklist.end()){
+        proxylist.find("*.*.*.*") != proxylist.end()){
         return 1;
     }
     
@@ -64,7 +66,7 @@ int checkproxy(const char* host)
         if(subhost[0] == '.'){
             subhost++;
         }
-        if (blocklist.find(subhost) != blocklist.end()) {
+        if (proxylist.find(subhost) != proxylist.end()) {
             return 1;
         }
         subhost = strpbrk(subhost, ".");

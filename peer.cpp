@@ -110,7 +110,6 @@ void Guest::handleEvent(uint32_t events)
     if (getpeername(fd, (struct sockaddr*)&sa, &len)) {
         perror("getpeername");
         clean();
-        return;
     } else {
         inet_ntop(AF_INET6, &sa.sin6_addr, ipAddr, sizeof(ipAddr));
     }
@@ -290,7 +289,8 @@ void Guest::handleEvent(uint32_t events)
         int       error = 0;
         socklen_t errlen = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            fprintf(stderr, "guest error:%s\n", strerror(error));
+            fprintf(stderr, "([%s]:%d): guest error:%s\n",
+                    ipAddr, ntohs(sa.sin6_port),strerror(error));
         }
         clean();
     }
@@ -503,7 +503,6 @@ void Guest_s::handleEvent(uint32_t events)
     if (getpeername(fd, (struct sockaddr*)&sa, &len)) {
         perror("getpeername");
         clean();
-        return;
     } else {
         inet_ntop(AF_INET6, &sa.sin6_addr, ipAddr, sizeof(ipAddr));
     }
