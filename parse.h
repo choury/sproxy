@@ -19,6 +19,7 @@ int loadproxysite();
 
 int parse(char* header);
 size_t parse302(const char *location,char* buff);
+size_t parse200(int length,char *buff);
 
 #ifdef  __cplusplus
 }

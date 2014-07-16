@@ -581,12 +581,7 @@ void Guest_s::handleEvent(uint32_t events)
                 char hostname[DOMAINLIMIT];
                 int port;
 
-/*                if (url[0] == '/') {
-                    strcpy(path, url);
-                    strcpy(hostname, "localhost");
-                    port = 8080;
-                    break;
-                } else */
+
                 if (spliturl(url, hostname, path, &port)) {
                     fprintf(stderr, "wrong url format\n");
                     clean();
@@ -598,9 +593,15 @@ void Guest_s::handleEvent(uint32_t events)
                         method, path, headerend - headerbegin, headerbegin);
 
                 if(url[0]=='/'){
+                    char headerbuff[200];
                     if(parse(strstr(buff,CRLF)+sizeof(CRLF))){
-                        char headerbuff[200];
                         Guest::Write(headerbuff,parse302("/fuckgfw",headerbuff));
+                        break;
+                    }else{
+                        const char *welcome="Welcome";
+                        Guest::Write(headerbuff,parse200(strlen(welcome),headerbuff));
+                        Guest::Write(welcome,strlen(welcome));
+                        break;
                     }
                 }
                 size_t headerlen = headerend - rbuff;

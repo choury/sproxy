@@ -9,7 +9,8 @@
 
 #include "parse.h"
 
-#define H302FORMAT "HTTP/1.1 302 Found" CRLF "Location: %s" CRLF CRLF
+#define H302FORMAT "HTTP/1.1 302 Found" CRLF "Location: %s" CRLF "Content-Length: 0" CRLF CRLF
+#define H200FORMAT "HTTP/1.1 200 OK" CRLF "Content-Length: %d" CRLF CRLF
 
 #define PROXYFILE "proxy.list"
 
@@ -109,3 +110,7 @@ size_t parse302(const char* location, char* buff){
     return strlen(buff);
 }
 
+size_t parse200(int length,char *buff){
+    sprintf(buff,H200FORMAT,length);
+    return strlen(buff);
+}
