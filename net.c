@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <netdb.h>
 #include <fcntl.h>
+#include <arpa/inet.h>
 
 #include "net.h"
 
@@ -71,7 +72,7 @@ int spliturl(const char* url, char* host, char* path , int* port)
 
 
 
-int ConnectTo(const char* host, int port){
+int ConnectTo(const char* host, int port,char *targetip){
     struct addrinfo hints, *res = NULL;
 
     memset(&hints, 0, sizeof(hints));
@@ -85,7 +86,11 @@ int ConnectTo(const char* host, int port){
        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
         return -1;
     }
-
+    
+    if(targetip){
+        inet_ntop(res->ai_family, &res->ai_addr, targetip, INET6_ADDRSTRLEN);
+    }
+    
     int fd;
     if ((fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
         perror("socket error");

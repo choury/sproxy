@@ -3,6 +3,7 @@
 
 #include <openssl/ssl.h>
 #include <sys/epoll.h>
+#include <netinet/in.h>
 
 #include "net.h"
 
@@ -20,14 +21,14 @@ enum Status {accept_s,start_s, post_s , connect_s, close_s ,wait_s,proxy_s};
 
 class Peer{
 protected:
-    int fd;
-    int efd;
-    enum Status status;
+    int  fd;
+    int  efd;
+    enum Status status=start_s;
     char wbuff[1024 * 1024];
-    int  write_len;
-    bool fulled;
+    int  write_len=0;
+    bool fulled=false;
 public:
-    Peer();
+    Peer();  //do nothing
     Peer(int fd,int efd);
     virtual void handleEvent(uint32_t events)=0;
     virtual void clean()=0;
@@ -41,8 +42,9 @@ public:
 class Guest;
 
 class Host:public Peer{
-    int port;
-    char host[DOMAINLIMIT];
+    char targetip[INET6_ADDRSTRLEN];
+    int targetport;
+    char hostname[DOMAINLIMIT];
 protected:
     Guest* guest;
 public:
@@ -56,10 +58,13 @@ public:
 
 class Guest:public Peer{
 protected:
-    Host *host;
+    char sourceip[INET6_ADDRSTRLEN];
+    int  sourceport;
+    
+    Host *host=NULL;
     char rbuff[4096];
-    uint32_t  read_len;
-    uint32_t expectlen;
+    uint32_t  read_len=0;
+    uint32_t expectlen=0;
 public:
     Guest(int fd,int efd);
     virtual void handleEvent(uint32_t events);

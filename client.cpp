@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <sys/epoll.h>
 #include <arpa/inet.h>
+#include <linux/netfilter_ipv4.h>
 
 #include <list>
 
@@ -12,36 +13,41 @@
 
 using std::list;
 
-list <Guest *> guestlist;
+list <Guest*> guestlist;
 
 
-int main(int argc, char** argv)
-{
+int main(int argc, char** argv) {
     int svsk, clsk;
     SSL_library_init();    //SSL初库始化
     SSL_load_error_strings();  //载入所有错误信息
-    
+
     if ((svsk = socket(AF_INET6, SOCK_STREAM, 0)) < 0) {
         perror("socket error");
         return 1;
     }
 
     int flag = 1;
+
     if (setsockopt(svsk, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
         perror("setsockopt");
         return 2;
     }
 
     struct sockaddr_in6 myaddr;
+
     bzero(&myaddr, sizeof(myaddr));
+
     myaddr.sin6_family = AF_INET6;
+
     myaddr.sin6_port = htons(CPORT);
+
     myaddr.sin6_addr = in6addr_any;
 
     if (bind(svsk, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
         perror("bind error");
         return 2;
     }
+
     if (listen(svsk, 10000) < 0) {
         perror("listen error");
         return 3;
@@ -55,32 +61,69 @@ int main(int argc, char** argv)
     event.events = EPOLLIN;
     epoll_ctl(efd, EPOLL_CTL_ADD, svsk, &event);
     struct epoll_event events[20];
+
     while (1) {
         int i, c;
+
         if ((c = epoll_wait(efd, events, 20, -1)) < 0) {
             if (errno != EINTR) {
                 perror("epoll wait");
                 return 4;
             }
+
             continue;
         }
+
         for (i = 0; i < c; ++i) {
             if (events[i].data.ptr == NULL) {
                 if (events[i].events & EPOLLIN) {
                     socklen_t temp = sizeof(myaddr);
+
                     if ((clsk = accept(svsk, (struct sockaddr*)&myaddr, &temp)) < 0) {
                         perror("accept error");
                         continue;
                     }
+
                     int flags = fcntl(clsk, F_GETFL, 0);
+
                     if (flags < 0) {
                         perror("fcntl error");
                         close(clsk);
                         continue;
                     }
+
                     fcntl(clsk, F_SETFL, flags | O_NONBLOCK);
-                    Guest* guest = new Guest(clsk,efd);
+
+
                     
+                    struct sockaddr_in  Dst;
+                    socklen_t sin_size=sizeof(Dst);
+                    
+                    struct sockaddr_in6 Dst6;
+                    socklen_t sin6_size = sizeof(Dst6);
+                    char ipaddr[INET6_ADDRSTRLEN];
+
+                    int socktype;
+                    if ((getsockopt(clsk, SOL_IP, SO_ORIGINAL_DST, &Dst, &sin_size) || (socktype=AF_INET,0))&&
+                        (getsockopt(clsk, SOL_IPV6, SO_ORIGINAL_DST, &Dst6, &sin6_size) || (socktype=AF_INET6,0))) {
+                        perror("getsockopt error");
+                        close(clsk);
+                        continue;
+                    }
+                    switch(socktype){
+                    case AF_INET:
+                        fprintf(stdout,"orginalDst:%s:%d\n",
+                                inet_ntop(socktype, &Dst.sin_addr, ipaddr, INET6_ADDRSTRLEN),ntohs(Dst.sin_port));
+                        break;
+                    case AF_INET6:
+                        fprintf(stdout,"orginalDst:[%s]:%d\n",
+                                inet_ntop(socktype, &Dst6.sin6_addr, ipaddr, INET6_ADDRSTRLEN),ntohs(Dst6.sin6_port));
+                        break;
+                    }
+                    
+
+
+                    Guest* guest = new Guest(clsk, efd);
                     guestlist.push_back(guest);
 
                     event.data.ptr = guest;
@@ -91,23 +134,22 @@ int main(int argc, char** argv)
                     return 5;
                 }
             } else {
-                Peer * peer = (Peer*)events[i].data.ptr;
-                peer->handleEvent(events[i].events); 
+                Peer* peer = (Peer*)events[i].data.ptr;
+                peer->handleEvent(events[i].events);
             }
         }
-        for(auto i=guestlist.begin();i!=guestlist.end();){
-            if((*i)->candelete()){
+
+        for (auto i = guestlist.begin(); i != guestlist.end();) {
+            if ((*i)->candelete()) {
                 delete *i;
                 guestlist.erase(i++);
-            }else{
+            } else {
                 ++i;
             }
         }
     }
+
     close(svsk);
     return 0;
 }
-
-
-
 
