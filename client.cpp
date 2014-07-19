@@ -4,7 +4,7 @@
 #include <fcntl.h>
 #include <sys/epoll.h>
 #include <arpa/inet.h>
-#include <linux/netfilter_ipv4.h>
+
 
 #include <list>
 
@@ -93,35 +93,7 @@ int main(int argc, char** argv) {
                     }
 
                     fcntl(clsk, F_SETFL, flags | O_NONBLOCK);
-
-
                     
-                    struct sockaddr_in  Dst;
-                    socklen_t sin_size=sizeof(Dst);
-                    
-                    struct sockaddr_in6 Dst6;
-                    socklen_t sin6_size = sizeof(Dst6);
-                    char ipaddr[INET6_ADDRSTRLEN];
-
-                    int socktype;
-                    if ((getsockopt(clsk, SOL_IP, SO_ORIGINAL_DST, &Dst, &sin_size) || (socktype=AF_INET,0))&&
-                        (getsockopt(clsk, SOL_IPV6, SO_ORIGINAL_DST, &Dst6, &sin6_size) || (socktype=AF_INET6,0))) {
-                        perror("getsockopt error");
-                        close(clsk);
-                        continue;
-                    }
-                    switch(socktype){
-                    case AF_INET:
-                        fprintf(stdout,"orginalDst:%s:%d\n",
-                                inet_ntop(socktype, &Dst.sin_addr, ipaddr, INET6_ADDRSTRLEN),ntohs(Dst.sin_port));
-                        break;
-                    case AF_INET6:
-                        fprintf(stdout,"orginalDst:[%s]:%d\n",
-                                inet_ntop(socktype, &Dst6.sin6_addr, ipaddr, INET6_ADDRSTRLEN),ntohs(Dst6.sin6_port));
-                        break;
-                    }
-                    
-
 
                     Guest* guest = new Guest(clsk, efd);
                     guestlist.push_back(guest);

@@ -60,6 +60,8 @@ class Guest:public Peer{
 protected:
     char sourceip[INET6_ADDRSTRLEN];
     int  sourceport;
+    char destip[INET6_ADDRSTRLEN];
+    int  destport;
     
     Host *host=NULL;
     char rbuff[4096];

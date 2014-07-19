@@ -37,12 +37,12 @@ int main(int argc, char** argv)
 
 
     //加载证书和私钥
-    if (SSL_CTX_use_certificate_file(ctx, "/home/choury/keys/vps.crt", SSL_FILETYPE_PEM) != 1) {
+    if (SSL_CTX_use_certificate_file(ctx, "/home/choury/keys/www.crt", SSL_FILETYPE_PEM) != 1) {
         ERR_print_errors_fp(stderr);
         return 1;
     }
 
-    if (SSL_CTX_use_PrivateKey_file(ctx, "/home/choury/keys/vps.key", SSL_FILETYPE_PEM) != 1) {
+    if (SSL_CTX_use_PrivateKey_file(ctx, "/home/choury/keys/www.key", SSL_FILETYPE_PEM) != 1) {
         ERR_print_errors_fp(stderr);
         return 1;
     }
