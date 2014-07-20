@@ -137,7 +137,6 @@ void Guest::handleEvent(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
 
-
     int ret;
 
     if (events & EPOLLIN) {
@@ -165,90 +164,76 @@ void Guest::handleEvent(uint32_t events) {
                 headerend += strlen(CRLF CRLF);
                 size_t headerlen = headerend - rbuff;
 
-                auto header = parse(rbuff);
-
-                if (headerlen != read_len) {       //除了头部还读取到了其他内容
-                    read_len -= headerlen;
-                    memmove(rbuff, headerend, read_len);
-                } else {
-                    read_len = 0;
-                }
-
-                int port;
-
-                if (destport == CPORT) {
-                    char path[URLLIMIT];
-                    char hostname[DOMAINLIMIT];
-
-                    if (spliturl(header["url"].c_str(), hostname, path, &port)) {
-                        fprintf(stderr, "wrong url format\n");
-                        clean();
-                        break;
-                    }
-
-                    header["hostname"] = hostname;
-                    header["path"] = path;
-
-                    if (checkproxy(hostname)) {
-                        header["pmethod"] = header["method"];
-                        header["method"] = "PROXY";
-                    }
-
-                } else if(destport == HTTPPORT) {
-                    header["hostname"] = header["Host"];
-                    header["path"] = header["url"];
-                    header["url"] = "http://" + header["hostname"] + header["path"];
-                    header["pmethod"] = header["method"];
-                    header["method"] = "PROXY";
-                    port = destport;
-                } else {
-
-                }
-
-                fprintf(stdout, "([%s]:%d):%s %s %s\n",
-                        sourceip, sourceport,
-                        header["method"].c_str(), header["pmethod"].c_str(), header["url"].c_str());
-
-
-                int writelen = gheaderstring(header, buff);
-
                 try {
+                    Http http(rbuff);
 
-                    if ( header["method"] == "GET" ||  header["method"] == "HEAD") {
+                    if (headerlen != read_len) {       //除了头部还读取到了其他内容
+                        read_len -= headerlen;
+                        memmove(rbuff, headerend, read_len);
+                    } else {
+                        read_len = 0;
+                    }
 
-                        host = Host::gethost(host, header["hostname"].c_str(), port, efd, this);
+
+                    if (destport == CPORT) {
+                        if(http.checkproxy()) {
+                            http.willproxy = true;
+                        }
+
+                    } else if(destport == HTTPPORT) {
+                        strcpy(http.hostname, http.getval("Host").c_str());
+                        strcpy(http.path, http.url);
+                        sprintf(http.url, "http://%s%s", http.hostname , http.url);
+
+                        http.port = HTTPPORT;
+                        http.willproxy = true;
+
+                    } else {
+
+                    }
+
+                    fprintf(stdout, "([%s]:%d): %s %s\n",
+                            sourceip, sourceport,
+                            http.method, http.url);
+
+
+                    int writelen = http.getstring(buff);
+
+                    if(http.willproxy) {
+                        host = Proxy::getproxy(host, efd, this);
+                        host->Write(buff, writelen);
+                        host->Write(rbuff, read_len);
+                        read_len = 0;
+                        status = proxy_s;
+                    } else if ( http.ismethod("GET") ||  http.ismethod("HEAD") ) {
+
+                        host = Host::gethost(host, http.hostname, http.port, efd, this);
                         host->Write(buff, writelen);
                         status = start_s;
-                    } else if (header["method"] == "POST") {
+                    } else if (http.ismethod("POST") ) {
                         char* lenpoint;
 
                         if ((lenpoint = strstr(buff, "Content-Length:")) == NULL) {
-                            fprintf(stderr, "unsported post version\n");
+                            fprintf(stderr, "([%s]:%d): unsported post version\n",
+                                    sourceip, sourceport);
                             clean();
                             break;
                         }
 
                         sscanf(lenpoint + 15, "%u", &expectlen);
                         expectlen -= read_len;
-                        
+
+                        host = host->gethost(host, http.hostname, http.port, efd, this);
                         host->Write(buff, writelen);
-                        host = host->gethost(host, header["hostname"].c_str(), port, efd, this);
                         host->Write(rbuff, read_len);
                         read_len = 0;
                         status = post_s;
 
-                    } else if (header["method"] == "CONNECT") {
-                        host = Host::gethost(host, header["hostname"].c_str(), port, efd, this);
+                    } else if (http.ismethod("CONNECT")) {
+                        host = Host::gethost(host, http.hostname, http.port, efd, this);
                         status = connect_s;
 
-                    } else if(header["method"] == "PROXY") {
-                        host = Proxy::getproxy(host, efd, this);
-                        host->Write(buff, writelen);
-                        host->Write(rbuff, read_len);
-                        read_len = 0;
-                        status = proxy_s;
-
-                    } else if (header["method"] == "LOADPLIST") {
+                    } else if (http.ismethod("LOADPLIST")) {
                         if (loadproxysite() > 0) {
                             Write(LOADBSUC, strlen(LOADBSUC));
                         } else {
@@ -256,12 +241,13 @@ void Guest::handleEvent(uint32_t events) {
                         }
 
                         status = start_s;
-                    } else if (header["method"] == "ADDPSITE") {
-                        addpsite(header["url"]);
+                    } else if (http.ismethod("ADDPSITE")) {
+                        addpsite(http.url);
                         Write(ADDBTIP, strlen(ADDBTIP));
                         status = start_s;
                     } else {
-                        fprintf(stderr, "unknown method:%s\n", header["method"].c_str());
+                        fprintf(stderr, "([%s]:%d): unknown method:%s\n",
+                                sourceip, sourceport, http.method);
                         clean();
                     }
                 } catch (...) {
@@ -344,6 +330,7 @@ void Guest::handleEvent(uint32_t events) {
             }
         }
     }
+
 
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
@@ -641,57 +628,42 @@ void Guest_s::handleEvent(uint32_t events) {
             if (char* headerend = strnstr(rbuff, CRLF CRLF, read_len)) {
                 headerend += strlen(CRLF CRLF);
 
-                headerend += strlen(CRLF CRLF);
                 size_t headerlen = headerend - rbuff;
 
-                auto header = parse(rbuff);
-
-                if (headerlen != read_len) {       //除了头部还读取到了其他内容
-                    read_len -= headerlen;
-                    memmove(rbuff, headerend, read_len);
-                } else {
-                    read_len = 0;
-                }
-
-                int port;
-                char path[URLLIMIT];
-                char hostname[DOMAINLIMIT];
-
-                if (spliturl(header["url"].c_str(), hostname, path, &port)) {
-                    fprintf(stderr, "([%s]:%d): wrong url format\n",sourceip,sourceport);
-                    clean();
-                    break;
-                }
-
-                header["hostname"] = hostname;
-                header["path"] = path;
-
-                fprintf(stdout, "([%s]:%d): %s %s\n",
-                        sourceip, sourceport,
-                        header["method"].c_str(), header["url"].c_str());
-
-
-                int writelen = gheaderstring(header, buff);
-
-
-                if (header["url"].c_str()[0] == '/') {
-                    printf("%s", buff);
-                    const char* welcome = "Welcome\n";
-                    Guest::Write(buff, parse200(strlen(welcome), buff));
-                    Guest::Write(welcome, strlen(welcome));
-                    break;
-                }
-
                 try {
-                    if (header["method"] ==  "GET" || header["method"] == "HEAD"){
-                        host = host->gethost(host, hostname, port, efd, this);
+                    Http http (rbuff);
+
+                    if (headerlen != read_len) {       //除了头部还读取到了其他内容
+                        read_len -= headerlen;
+                        memmove(rbuff, headerend, read_len);
+                    } else {
+                        read_len = 0;
+                    }
+
+                    fprintf(stdout, "([%s]:%d): %s %s\n",
+                            sourceip, sourceport,
+                            http.method, http.url);
+
+
+                    int writelen = http.getstring(buff);
+
+                    if (http.url[0] == '/') {
+                        printf("%s", buff);
+                        const char* welcome = "Welcome\n";
+                        Guest::Write(buff, parse200(strlen(welcome), buff));
+                        Guest::Write(welcome, strlen(welcome));
+                        break;
+                    }
+
+
+                    if (http.ismethod("GET" ) || http.ismethod("HEAD") ) {
+                        host = host->gethost(host, http.hostname, http.port, efd, this);
                         host->Write(buff, writelen);
                         status = start_s;
-                    } else if (header["method"] ==  "POST"){
+                    } else if (http.ismethod("POST") ) {
                         char* lenpoint;
-
                         if ((lenpoint = strstr(buff, "Content-Length:")) == NULL) {
-                            fprintf(stderr, "([%s]:%d): unsported post version\n",sourceip,sourceport);
+                            fprintf(stderr, "([%s]:%d): unsported post version\n", sourceip, sourceport);
                             clean();
                             break;
                         }
@@ -700,18 +672,18 @@ void Guest_s::handleEvent(uint32_t events) {
                         expectlen -= read_len;
 
                         host->Write(buff, writelen);
-                        host = host->gethost(host, hostname, port, efd, this);
+                        host = host->gethost(host, http.hostname, http.port, efd, this);
                         host->Write(rbuff, read_len);
                         read_len = 0;
                         status = post_s;
 
-                    } else if (header["method"] ==  "CONNECT") {
-                        host = host->gethost(host, hostname, port, efd, this);
+                    } else if (http.ismethod("CONNECT")) {
+                        host = host->gethost(host, http.hostname, http.port, efd, this);
                         status = connect_s;
 
                     } else {
                         fprintf(stderr, "([%s]:%d): unknown method:%s\n",
-                                sourceip,sourceport, header["method"].c_str());
+                                sourceip, sourceport, http.method);
                         clean();
                     }
                 } catch (...) {

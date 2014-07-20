@@ -60,18 +60,18 @@ void addpsite(const string& host) {
 }
 
 
-int checkproxy(const char* host) {
+bool Http::checkproxy() {
     if (!loadedsite) {
         loadproxysite();
     }
 
     //如果proxylist里面有*.*.*.* 那么ip地址直接代理
-    if(inet_addr(host) != INADDR_NONE &&
+    if(inet_addr(hostname) != INADDR_NONE &&
        proxylist.find("*.*.*.*") != proxylist.end()) {
-        return 1;
+        return true;
     }
 
-    const char* subhost = host;
+    const char* subhost = hostname;
 
     while (subhost) {
         if(subhost[0] == '.') {
@@ -79,13 +79,13 @@ int checkproxy(const char* host) {
         }
 
         if (proxylist.find(subhost) != proxylist.end()) {
-            return 1;
+            return true;
         }
 
         subhost = strpbrk(subhost, ".");
     }
 
-    return 0;
+    return false;
 }
 
 char* toUpper(char* s) {
@@ -98,64 +98,6 @@ char* toUpper(char* s) {
 
     return s;
 }
-
-
-map<string, string> parse(char* header) {
-
-    *(strstr(header, CRLF CRLF) + strlen(CRLF)) = 0;
-
-    map<string, string> hmap;
-    char method[20];
-    char url[URLLIMIT] = {0};
-    sscanf(header, "%s%*[ ]%[^\r\n ]", method, url);
-
-    hmap["method"] = toUpper(method);
-    hmap["url"] = url;
-
-    for (char* str = strstr(header, CRLF) + strlen(CRLF); ; str = NULL) {
-        char* p = strtok(str, CRLF);
-
-        if (p == NULL)
-            break;
-
-        char* sp = strpbrk(p, ":");
-        hmap[string(p, sp - p)] = ltrim(string(sp + 1));
-    }
-
-    return hmap;
-}
-
-int gheaderstring(map< string, string >& header, char* buff) {
-    int p;
-    if(!header["pmethod"].empty()) {
-        sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
-                header["pmethod"].c_str(), header["url"].c_str(), &p);
-    } else {
-        sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
-                header["method"].c_str(), header["path"].c_str(), &p);
-    }
-
-    for (auto i : header) {
-        int len;
-        sprintf(buff + p, "%s:%s" CRLF "%n", i.first.c_str(), i.second.c_str(), &len);
-        p += len;
-    }
-
-    sprintf(buff + p, CRLF);
-    return p + strlen(CRLF);
-}
-
-
-size_t parse302(const char* location, char* buff) {
-    sprintf(buff, H302FORMAT, location);
-    return strlen(buff);
-}
-
-size_t parse200(int length, char* buff) {
-    sprintf(buff, H200FORMAT, length);
-    return strlen(buff);
-}
-
 
 
 int spliturl(const char* url, char* hostname, char* path , int* port) {
@@ -219,3 +161,70 @@ int spliturl(const char* url, char* hostname, char* path , int* port) {
 
     return 0;
 }
+
+
+Http::Http(char* header)throw (int){
+    *(strstr(header, CRLF CRLF) + strlen(CRLF)) = 0;
+    memset(url,0,sizeof(url));
+    sscanf(header, "%s%*[ ]%[^\r\n ]", method, url);
+    toUpper(method);
+
+    if(spliturl(url,hostname,path,&port)){
+        fprintf(stderr,"wrong url format:%s\n",url);
+        throw 0;
+    }
+
+    for (char* str = strstr(header, CRLF) + strlen(CRLF); ; str = NULL) {
+        char* p = strtok(str, CRLF);
+
+        if (p == NULL)
+            break;
+
+        char* sp = strpbrk(p, ":");
+        this->header[string(p, sp - p)] = ltrim(string(sp + 1));
+    }
+
+}
+
+int Http::getstring( char* buff) {
+    int p;
+    if(willproxy) {
+        sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
+                method,url, &p);
+    } else {
+        sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
+                method, path, &p);
+    }
+
+    for (auto i : header) {
+        int len;
+        sprintf(buff + p, "%s:%s" CRLF "%n", i.first.c_str(), i.second.c_str(), &len);
+        p += len;
+    }
+
+    sprintf(buff + p, CRLF);
+    return p + strlen(CRLF);
+}
+
+string Http::getval(const char* key) {
+    return header[key];
+}
+
+
+bool Http::ismethod(const char* method) {
+    return strcmp(this->method,method)==0;
+}
+
+
+size_t parse302(const char* location, char* buff) {
+    sprintf(buff, H302FORMAT, location);
+    return strlen(buff);
+}
+
+size_t parse200(int length, char* buff) {
+    sprintf(buff, H200FORMAT, length);
+    return strlen(buff);
+}
+
+
+
