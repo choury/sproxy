@@ -205,18 +205,14 @@ void Guest::handleEvent(uint32_t events) {
 
                 }
 
+                fprintf(stdout, "([%s]:%d):%s %s %s\n",
+                        sourceip, sourceport,
+                        header["method"].c_str(), header["pmethod"].c_str(), header["url"].c_str());
+
+
+                int writelen = gheaderstring(header, buff);
 
                 try {
-
-
-                    fprintf(stdout, "([%s]:%d):%s %s %s\n",
-                            sourceip, sourceport,
-                            header["method"].c_str(), header["pmethod"].c_str(), header["url"].c_str());
-
-
-                    int writelen = gheaderstring(header, buff);
-
-
 
                     if ( header["method"] == "GET" ||  header["method"] == "HEAD") {
 
@@ -234,12 +230,11 @@ void Guest::handleEvent(uint32_t events) {
 
                         sscanf(lenpoint + 15, "%u", &expectlen);
                         expectlen -= read_len;
-                        memcpy(buff + writelen, rbuff, read_len);
-                        writelen +=  read_len;
-                        read_len = 0;
-                        host = Host::gethost(host, header["hostname"].c_str(), port, efd, this);
+                        
                         host->Write(buff, writelen);
-
+                        host = host->gethost(host, header["hostname"].c_str(), port, efd, this);
+                        host->Write(rbuff, read_len);
+                        read_len = 0;
                         status = post_s;
 
                     } else if (header["method"] == "CONNECT") {
@@ -643,42 +638,13 @@ void Guest_s::handleEvent(uint32_t events) {
             read_len += ret;
 
 
-            char* headerend;
-
-            if ((headerend = strnstr(rbuff, CRLF CRLF, read_len))) {
+            if (char* headerend = strnstr(rbuff, CRLF CRLF, read_len)) {
                 headerend += strlen(CRLF CRLF);
 
-                char method[20];
-                char url[URLLIMIT] = {0};
-                sscanf(rbuff, "%s%*[ ]%[^\r\n ]", method, url);
-
-                fprintf(stdout, "([%s]:%d):%s %s\n",
-                        sourceip, sourceport, method, url);
-
-                char path[URLLIMIT];
-                char hostname[DOMAINLIMIT];
-                int port;
-
-
-                if (spliturl(url, hostname, path, &port)) {
-                    fprintf(stderr, "wrong url format\n");
-                    clean();
-                    break;
-                }
-
-                char* headerbegin = strstr(rbuff, CRLF) + strlen(CRLF);
-                sprintf(buff, "%s %s HTTP/1.1" CRLF "%.*s",
-                        method, path, headerend - headerbegin, headerbegin);
-
-                if (url[0] == '/') {
-                    printf("%s", buff);
-                    const char* welcome = "Welcome\n";
-                    Guest::Write(buff, parse200(strlen(welcome), buff));
-                    Guest::Write(welcome, strlen(welcome));
-                    break;
-                }
-
+                headerend += strlen(CRLF CRLF);
                 size_t headerlen = headerend - rbuff;
+
+                auto header = parse(rbuff);
 
                 if (headerlen != read_len) {       //除了头部还读取到了其他内容
                     read_len -= headerlen;
@@ -687,17 +653,45 @@ void Guest_s::handleEvent(uint32_t events) {
                     read_len = 0;
                 }
 
+                int port;
+                char path[URLLIMIT];
+                char hostname[DOMAINLIMIT];
+
+                if (spliturl(header["url"].c_str(), hostname, path, &port)) {
+                    fprintf(stderr, "([%s]:%d): wrong url format\n",sourceip,sourceport);
+                    clean();
+                    break;
+                }
+
+                header["hostname"] = hostname;
+                header["path"] = path;
+
+                fprintf(stdout, "([%s]:%d): %s %s\n",
+                        sourceip, sourceport,
+                        header["method"].c_str(), header["url"].c_str());
+
+
+                int writelen = gheaderstring(header, buff);
+
+
+                if (header["url"].c_str()[0] == '/') {
+                    printf("%s", buff);
+                    const char* welcome = "Welcome\n";
+                    Guest::Write(buff, parse200(strlen(welcome), buff));
+                    Guest::Write(welcome, strlen(welcome));
+                    break;
+                }
 
                 try {
-                    if (strcasecmp(method, "GET") == 0 || strcasecmp(method, "HEAD") == 0) {
+                    if (header["method"] ==  "GET" || header["method"] == "HEAD"){
                         host = host->gethost(host, hostname, port, efd, this);
-                        host->Write(buff, strlen(buff));
+                        host->Write(buff, writelen);
                         status = start_s;
-                    } else if (strcasecmp(method, "POST") == 0) {
+                    } else if (header["method"] ==  "POST"){
                         char* lenpoint;
 
                         if ((lenpoint = strstr(buff, "Content-Length:")) == NULL) {
-                            fprintf(stderr, "unsported post version\n");
+                            fprintf(stderr, "([%s]:%d): unsported post version\n",sourceip,sourceport);
                             clean();
                             break;
                         }
@@ -705,20 +699,19 @@ void Guest_s::handleEvent(uint32_t events) {
                         sscanf(lenpoint + 15, "%u", &expectlen);
                         expectlen -= read_len;
 
-                        int writelen = strlen(buff);
-                        memcpy(buff + writelen, rbuff, read_len);
-                        writelen +=  read_len;
-                        read_len = 0;
-                        host = host->gethost(host, hostname, port, efd, this);
                         host->Write(buff, writelen);
+                        host = host->gethost(host, hostname, port, efd, this);
+                        host->Write(rbuff, read_len);
+                        read_len = 0;
                         status = post_s;
 
-                    } else if (strcasecmp(method, "CONNECT") == 0) {
+                    } else if (header["method"] ==  "CONNECT") {
                         host = host->gethost(host, hostname, port, efd, this);
                         status = connect_s;
 
                     } else {
-                        fprintf(stderr, "unknown method:%s\n", method);
+                        fprintf(stderr, "([%s]:%d): unknown method:%s\n",
+                                sourceip,sourceport, header["method"].c_str());
                         clean();
                     }
                 } catch (...) {

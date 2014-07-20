@@ -16,8 +16,9 @@ int checkproxy(const char *host);
 void addpsite(const std::string & host);
 int loadproxysite();
 
-
-std::map<std::string, std::string> parse(char* header);
+using std::string;
+using std::map;
+map<string, string> parse(char* header);
 size_t parse302(const char *location,char* buff);
 size_t parse200(int length,char *buff);
 int gheaderstring(std::map<std::string,std::string> &,char *);

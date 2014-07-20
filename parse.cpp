@@ -127,7 +127,7 @@ map<string, string> parse(char* header) {
 
 int gheaderstring(map< string, string >& header, char* buff) {
     int p;
-    if(header.find("pmethod") != header.end() && !header["pmethod"].empty()) {
+    if(!header["pmethod"].empty()) {
         sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
                 header["pmethod"].c_str(), header["url"].c_str(), &p);
     } else {
