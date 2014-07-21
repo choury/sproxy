@@ -173,21 +173,22 @@ void Guest::handleEvent(uint32_t events) {
                     } else {
                         read_len = 0;
                     }
-
-
+                    bool shouldproxy=false;
                     if (destport == CPORT) {
                         if(http.checkproxy()) {
-                            http.willproxy = true;
+                            host = Proxy::getproxy(host, efd, this);
+                            host->Write(buff, http.getstring(buff,true));
+                            host->Write(rbuff, read_len);
+                            read_len = 0;
+                            status = proxy_s;
+                            break;
                         }
-
                     } else if(destport == HTTPPORT) {
                         strcpy(http.hostname, http.getval("Host").c_str());
                         strcpy(http.path, http.url);
-                        sprintf(http.url, "http://%s%s", http.hostname , http.url);
-
+                        sprintf(http.url, "http://%s%s", http.hostname , http.path);
                         http.port = HTTPPORT;
-                        http.willproxy = true;
-
+                        shouldproxy=true;
                     } else {
 
                     }
@@ -197,22 +198,19 @@ void Guest::handleEvent(uint32_t events) {
                             http.method, http.url);
 
 
-                    int writelen = http.getstring(buff);
 
-                    if(http.willproxy) {
-                        host = Proxy::getproxy(host, efd, this);
-                        host->Write(buff, writelen);
-                        host->Write(rbuff, read_len);
-                        read_len = 0;
-                        status = proxy_s;
-                    } else if ( http.ismethod("GET") ||  http.ismethod("HEAD") ) {
 
-                        host = Host::gethost(host, http.hostname, http.port, efd, this);
-                        host->Write(buff, writelen);
+                    if ( http.ismethod("GET") ||  http.ismethod("HEAD") ) {
+                        if(shouldproxy){
+                            host=Proxy::getproxy(host,efd,this);
+                        }else{
+                            host = Host::gethost(host, http.hostname, http.port, efd, this);
+                        }
+                        host->Write(buff, http.getstring(buff,shouldproxy));
                         status = start_s;
                     } else if (http.ismethod("POST") ) {
+                        int writelen=http.getstring(buff,shouldproxy);
                         char* lenpoint;
-
                         if ((lenpoint = strstr(buff, "Content-Length:")) == NULL) {
                             fprintf(stderr, "([%s]:%d): unsported post version\n",
                                     sourceip, sourceport);
@@ -223,14 +221,22 @@ void Guest::handleEvent(uint32_t events) {
                         sscanf(lenpoint + 15, "%u", &expectlen);
                         expectlen -= read_len;
 
-                        host = host->gethost(host, http.hostname, http.port, efd, this);
+                        if(shouldproxy){
+                            host=Proxy::getproxy(host,efd,this);
+                        }else{
+                            host = Host::gethost(host, http.hostname, http.port, efd, this);
+                        }
                         host->Write(buff, writelen);
                         host->Write(rbuff, read_len);
                         read_len = 0;
                         status = post_s;
 
                     } else if (http.ismethod("CONNECT")) {
-                        host = Host::gethost(host, http.hostname, http.port, efd, this);
+                        if(shouldproxy){
+                            host=Proxy::getproxy(host,efd,this);
+                        }else{
+                            host = Host::gethost(host, http.hostname, http.port, efd, this);
+                        }
                         status = connect_s;
 
                     } else if (http.ismethod("LOADPLIST")) {
@@ -553,7 +559,6 @@ void Guest_s::handleEvent(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
 
-
     int ret;
 
     if (events & EPOLLIN) {
@@ -644,9 +649,6 @@ void Guest_s::handleEvent(uint32_t events) {
                             sourceip, sourceport,
                             http.method, http.url);
 
-
-                    int writelen = http.getstring(buff);
-
                     if (http.url[0] == '/') {
                         printf("%s", buff);
                         const char* welcome = "Welcome\n";
@@ -658,9 +660,11 @@ void Guest_s::handleEvent(uint32_t events) {
 
                     if (http.ismethod("GET" ) || http.ismethod("HEAD") ) {
                         host = host->gethost(host, http.hostname, http.port, efd, this);
-                        host->Write(buff, writelen);
+                        host->Write(buff, http.getstring(buff,false));
                         status = start_s;
                     } else if (http.ismethod("POST") ) {
+                        int writelen=http.getstring(buff,false);
+                        
                         char* lenpoint;
                         if ((lenpoint = strstr(buff, "Content-Length:")) == NULL) {
                             fprintf(stderr, "([%s]:%d): unsported post version\n", sourceip, sourceport);
@@ -671,8 +675,8 @@ void Guest_s::handleEvent(uint32_t events) {
                         sscanf(lenpoint + 15, "%u", &expectlen);
                         expectlen -= read_len;
 
-                        host->Write(buff, writelen);
                         host = host->gethost(host, http.hostname, http.port, efd, this);
+                        host->Write(buff, writelen);
                         host->Write(rbuff, read_len);
                         read_len = 0;
                         status = post_s;

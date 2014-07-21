@@ -28,10 +28,9 @@ public:
     char url[URLLIMIT];
     char hostname[DOMAINLIMIT];
     char path[URLLIMIT];
-    bool willproxy=false;
     int port;
     Http(char *header)throw (int);
-    int getstring(char *);
+    int getstring(char *,bool);
     bool ismethod(const char *);
     bool checkproxy();
     string getval(const char *key);

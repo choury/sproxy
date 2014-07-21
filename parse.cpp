@@ -165,6 +165,7 @@ int spliturl(const char* url, char* hostname, char* path , int* port) {
 
 Http::Http(char* header)throw (int){
     *(strstr(header, CRLF CRLF) + strlen(CRLF)) = 0;
+    memset(path,0,sizeof(path));
     memset(url,0,sizeof(url));
     sscanf(header, "%s%*[ ]%[^\r\n ]", method, url);
     toUpper(method);
@@ -186,9 +187,9 @@ Http::Http(char* header)throw (int){
 
 }
 
-int Http::getstring( char* buff) {
+int Http::getstring( char* buff,bool shouldproxy) {
     int p;
-    if(willproxy) {
+    if(shouldproxy) {
         sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
                 method,url, &p);
     } else {
