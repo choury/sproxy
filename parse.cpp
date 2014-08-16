@@ -16,6 +16,7 @@
 using namespace std;
 
 static int loadedsite = 0;
+static int GLOBALPROXY = 0;
 static unordered_set<string> proxylist;
 
 
@@ -59,10 +60,20 @@ void addpsite(const string& host) {
     }
 }
 
+int globalproxy(){
+    GLOBALPROXY= !GLOBALPROXY;
+    return GLOBALPROXY;
+}
 
 bool Http::checkproxy() {
     if (!loadedsite) {
         loadproxysite();
+    }
+    if(strcmp(method,"GET") && strcmp(method,"HEAD")&& strcmp(method,"POST") && strcmp(method,"CONNECT")){
+        return false;
+    }
+    if(GLOBALPROXY){
+        return true;
     }
 
     //如果proxylist里面有*.*.*.* 那么ip地址直接代理

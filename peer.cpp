@@ -105,6 +105,7 @@ Guest::Guest(int fd, int efd): Peer(fd, efd) {
         (getsockopt(fd, SOL_IPV6, SO_ORIGINAL_DST, &Dst6, &sin6_size) || (socktype = AF_INET6, 0))) {
         perror("getsockopt error");
         strcpy(destip, "Unkown IP");
+        destport = CPORT;
     } else {
         switch(socktype) {
         case AF_INET:
@@ -118,6 +119,7 @@ Guest::Guest(int fd, int efd): Peer(fd, efd) {
             break;
         }
     }
+    
 }
 
 
@@ -181,6 +183,9 @@ void Guest::handleEvent(uint32_t events) {
                             host->Write(rbuff, read_len);
                             read_len = 0;
                             status = proxy_s;
+                            fprintf(stdout, "([%s]:%d): PROXY %s %s\n",
+                            sourceip, sourceport,
+                            http.method, http.url);
                             break;
                         }
                     } else if(destport == HTTPPORT) {
@@ -190,14 +195,14 @@ void Guest::handleEvent(uint32_t events) {
                         http.port = HTTPPORT;
                         shouldproxy=true;
                     } else {
-
+                        fprintf(stderr,"Unkown Port\n");
+                        clean();
+                        return;
                     }
 
                     fprintf(stdout, "([%s]:%d): %s %s\n",
                             sourceip, sourceport,
                             http.method, http.url);
-
-
 
 
                     if ( http.ismethod("GET") ||  http.ismethod("HEAD") ) {
@@ -250,6 +255,13 @@ void Guest::handleEvent(uint32_t events) {
                     } else if (http.ismethod("ADDPSITE")) {
                         addpsite(http.url);
                         Write(ADDBTIP, strlen(ADDBTIP));
+                        status = start_s;
+                    } else if(http.ismethod("GLOBALPROXY")){
+                        if(globalproxy()){
+                            Write(EGLOBLETIP, strlen(EGLOBLETIP));
+                        }else{
+                            Write(DGLOBLETIP, strlen(DGLOBLETIP));
+                        }
                         status = start_s;
                     } else {
                         fprintf(stderr, "([%s]:%d): unknown method:%s\n",
@@ -649,6 +661,8 @@ void Guest_s::handleEvent(uint32_t events) {
                             sourceip, sourceport,
                             http.method, http.url);
 
+                    int writelen=http.getstring(buff,false);
+                    
                     if (http.url[0] == '/') {
                         printf("%s", buff);
                         const char* welcome = "Welcome\n";
@@ -660,10 +674,9 @@ void Guest_s::handleEvent(uint32_t events) {
 
                     if (http.ismethod("GET" ) || http.ismethod("HEAD") ) {
                         host = host->gethost(host, http.hostname, http.port, efd, this);
-                        host->Write(buff, http.getstring(buff,false));
+                        host->Write(buff, writelen);
                         status = start_s;
                     } else if (http.ismethod("POST") ) {
-                        int writelen=http.getstring(buff,false);
                         
                         char* lenpoint;
                         if ((lenpoint = strstr(buff, "Content-Length:")) == NULL) {
