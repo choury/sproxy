@@ -405,11 +405,13 @@ void connectHost(Host * host) {
     fcntl(hostfd,F_SETFL,flags | O_NONBLOCK);
 
     host->fd = hostfd;
-
+    
     struct epoll_event event;
     event.data.ptr = host;
     event.events = EPOLLIN | EPOLLOUT;
     epoll_ctl(host->efd, EPOLL_CTL_ADD, host->fd, &event);
+    
+    host->guest->connected();
 }
 
 
