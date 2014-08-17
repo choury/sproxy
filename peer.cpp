@@ -1,6 +1,7 @@
 #include <pthread.h>
 
 #include <unistd.h>
+#include <fcntl.h>
 #include <arpa/inet.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
@@ -10,9 +11,9 @@
 
 #include "common.h"
 #include "parse.h"
+#include "threadpool.h"
 
 #define Min(x,y) ((x)<(y)?(x):(y))
-
 
 
 Peer::Peer() {
@@ -26,7 +27,9 @@ Peer::Peer(int fd, int efd): fd(fd), efd(efd) {
 
 
 Peer::~Peer() {
-    close(fd);
+    if(fd) {
+        close(fd);
+    }
 }
 
 int Peer::Read(char* buff, size_t size) {
@@ -102,7 +105,7 @@ Guest::Guest(int fd, int efd): Peer(fd, efd) {
     int socktype;
 
     if ((getsockopt(fd, SOL_IP, SO_ORIGINAL_DST, &Dst, &sin_size) || (socktype = AF_INET, 0)) &&
-        (getsockopt(fd, SOL_IPV6, SO_ORIGINAL_DST, &Dst6, &sin6_size) || (socktype = AF_INET6, 0))) {
+            (getsockopt(fd, SOL_IPV6, SO_ORIGINAL_DST, &Dst6, &sin6_size) || (socktype = AF_INET6, 0))) {
         perror("getsockopt error");
         strcpy(destip, "Unkown IP");
         destport = CPORT;
@@ -119,7 +122,7 @@ Guest::Guest(int fd, int efd): Peer(fd, efd) {
             break;
         }
     }
-    
+
 }
 
 
@@ -166,111 +169,103 @@ void Guest::handleEvent(uint32_t events) {
                 headerend += strlen(CRLF CRLF);
                 size_t headerlen = headerend - rbuff;
 
-                try {
-                    Http http(rbuff);
+                Http http(rbuff);
 
-                    if (headerlen != read_len) {       //除了头部还读取到了其他内容
-                        read_len -= headerlen;
-                        memmove(rbuff, headerend, read_len);
-                    } else {
-                        read_len = 0;
-                    }
-                    bool shouldproxy=false;
-                    if (destport == CPORT) {
-                        if(http.checkproxy()) {
-                            host = Proxy::getproxy(host, efd, this);
-                            host->Write(buff, http.getstring(buff,true));
-                            host->Write(rbuff, read_len);
-                            read_len = 0;
-                            status = proxy_s;
-                            fprintf(stdout, "([%s]:%d): PROXY %s %s\n",
-                            sourceip, sourceport,
-                            http.method, http.url);
-                            break;
-                        }
-                    } else if(destport == HTTPPORT) {
-                        strcpy(http.hostname, http.getval("Host").c_str());
-                        strcpy(http.path, http.url);
-                        sprintf(http.url, "http://%s%s", http.hostname , http.path);
-                        http.port = HTTPPORT;
-                        shouldproxy=true;
-                    } else {
-                        fprintf(stderr,"Unkown Port\n");
-                        clean();
-                        return;
-                    }
-
-                    fprintf(stdout, "([%s]:%d): %s %s\n",
-                            sourceip, sourceport,
-                            http.method, http.url);
-
-
-                    if ( http.ismethod("GET") ||  http.ismethod("HEAD") ) {
-                        if(shouldproxy){
-                            host=Proxy::getproxy(host,efd,this);
-                        }else{
-                            host = Host::gethost(host, http.hostname, http.port, efd, this);
-                        }
-                        host->Write(buff, http.getstring(buff,shouldproxy));
-                        status = start_s;
-                    } else if (http.ismethod("POST") ) {
-                        int writelen=http.getstring(buff,shouldproxy);
-                        char* lenpoint;
-                        if ((lenpoint = strstr(buff, "Content-Length:")) == NULL) {
-                            fprintf(stderr, "([%s]:%d): unsported post version\n",
-                                    sourceip, sourceport);
-                            clean();
-                            break;
-                        }
-
-                        sscanf(lenpoint + 15, "%u", &expectlen);
-                        expectlen -= read_len;
-
-                        if(shouldproxy){
-                            host=Proxy::getproxy(host,efd,this);
-                        }else{
-                            host = Host::gethost(host, http.hostname, http.port, efd, this);
-                        }
-                        host->Write(buff, writelen);
+                if (headerlen != read_len) {       //除了头部还读取到了其他内容
+                    read_len -= headerlen;
+                    memmove(rbuff, headerend, read_len);
+                } else {
+                    read_len = 0;
+                }
+                bool shouldproxy=false;
+                if (destport == CPORT) {
+                    if(http.checkproxy()) {
+                        host = Proxy::getproxy(host, efd, this);
+                        host->Write(buff, http.getstring(buff,true));
                         host->Write(rbuff, read_len);
                         read_len = 0;
-                        status = post_s;
-
-                    } else if (http.ismethod("CONNECT")) {
-                        if(shouldproxy){
-                            host=Proxy::getproxy(host,efd,this);
-                        }else{
-                            host = Host::gethost(host, http.hostname, http.port, efd, this);
-                        }
-                        status = connect_s;
-
-                    } else if (http.ismethod("LOADPLIST")) {
-                        if (loadproxysite() > 0) {
-                            Write(LOADBSUC, strlen(LOADBSUC));
-                        } else {
-                            Write(H404, strlen(H404));
-                        }
-
-                        status = start_s;
-                    } else if (http.ismethod("ADDPSITE")) {
-                        addpsite(http.url);
-                        Write(ADDBTIP, strlen(ADDBTIP));
-                        status = start_s;
-                    } else if(http.ismethod("GLOBALPROXY")){
-                        if(globalproxy()){
-                            Write(EGLOBLETIP, strlen(EGLOBLETIP));
-                        }else{
-                            Write(DGLOBLETIP, strlen(DGLOBLETIP));
-                        }
-                        status = start_s;
-                    } else {
-                        fprintf(stderr, "([%s]:%d): unknown method:%s\n",
-                                sourceip, sourceport, http.method);
-                        clean();
+                        status = proxy_s;
+                        fprintf(stdout, "([%s]:%d): PROXY %s %s\n",
+                                sourceip, sourceport,
+                                http.method, http.url);
+                        break;
                     }
-                } catch (...) {
+                } else if(destport == HTTPPORT) {
+                    strcpy(http.hostname, http.getval("Host").c_str());
+                    strcpy(http.path, http.url);
+                    sprintf(http.url, "http://%s%s", http.hostname , http.path);
+                    http.port = HTTPPORT;
+                    shouldproxy=true;
+                } else {
+                    fprintf(stderr,"Unkown Port\n");
                     clean();
+                    return;
                 }
+
+                fprintf(stdout, "([%s]:%d): %s %s\n",
+                        sourceip, sourceport,
+                        http.method, http.url);
+
+
+                if ( http.ismethod("GET") ||  http.ismethod("HEAD") ) {
+                    if(shouldproxy) {
+                        host=Proxy::getproxy(host,efd,this);
+                    } else {
+                        host = Host::gethost(host, http.hostname, http.port, efd, this);
+                    }
+                    host->Write(buff, http.getstring(buff,shouldproxy));
+                    status = start_s;
+                } else if (http.ismethod("POST") ) {
+                    int writelen=http.getstring(buff,shouldproxy);
+                    char* lenpoint;
+                    if ((lenpoint = strstr(buff, "Content-Length:")) == NULL) {
+                        fprintf(stderr, "([%s]:%d): unsported post version\n",
+                                sourceip, sourceport);
+                        clean();
+                        break;
+                    }
+
+                    sscanf(lenpoint + 15, "%u", &expectlen);
+                    expectlen -= read_len;
+
+                    if(shouldproxy) {
+                        host=Proxy::getproxy(host,efd,this);
+                    } else {
+                        host = Host::gethost(host, http.hostname, http.port, efd, this);
+                    }
+                    host->Write(buff, writelen);
+                    host->Write(rbuff, read_len);
+                    read_len = 0;
+                    status = post_s;
+
+                } else if (http.ismethod("CONNECT")) {
+                    if(shouldproxy) {
+                        host=Proxy::getproxy(host,efd,this);
+                    } else {
+                        host = Host::gethost(host, http.hostname, http.port, efd, this);
+                    }
+                    status = connect_s;
+
+                } else if (http.ismethod("LOADPLIST")) {
+                    if (loadproxysite() > 0) {
+                        Write(LOADBSUC, strlen(LOADBSUC));
+                    } else {
+                        Write(H404, strlen(H404));
+                    }
+
+                    status = start_s;
+                } else if (http.ismethod("ADDPSITE")) {
+                    addpsite(http.url);
+                    Write(ADDBTIP, strlen(ADDBTIP));
+                    status = start_s;
+                } else if(http.ismethod("GLOBALPROXY")) {
+                    if(globalproxy()) {
+                        Write(EGLOBLETIP, strlen(EGLOBLETIP));
+                    } else {
+                        Write(DGLOBLETIP, strlen(DGLOBLETIP));
+                    }
+                }
+
             }
 
             break;
@@ -368,7 +363,7 @@ void Guest::clean() {
     status = close_s;
 
     if (host) {
-        host->disconnect();
+        host->disattach();
     }
 
     host = NULL;
@@ -391,7 +386,52 @@ void Guest::cleanhost() {
 }
 
 
-Host::Host(int efd, Guest* guest, int port, const char* hostname) throw(int): targetport(port), guest(guest) {
+void connectHost(Host * host) {
+    int hostfd = ConnectTo(host->hostname, host->targetport);
+
+    if (hostfd < 0) {
+        fprintf(stderr, "connect to %s error\n", host->hostname);
+        host->guest->cleanhost();
+        return;
+    }
+
+
+    int flags = fcntl(hostfd, F_GETFL, 0);
+    if (flags < 0) {
+        perror("fcntl error");
+        host->guest->cleanhost();
+        return ;
+    }
+    fcntl(hostfd,F_SETFL,flags | O_NONBLOCK);
+
+    host->fd = hostfd;
+
+    struct epoll_event event;
+    event.data.ptr = host;
+    event.events = EPOLLIN | EPOLLOUT;
+    epoll_ctl(host->efd, EPOLL_CTL_ADD, host->fd, &event);
+}
+
+
+Host::Host(int efd, Guest* guest ,const char *hostname,int port): guest(guest) {
+
+    this->efd = efd;
+    this->fd=0;
+
+    strcpy(this->hostname, hostname);
+    this->targetport=port;
+
+    addtask((taskfunc)connectHost,this,0);
+
+    write_len = 0;
+}
+
+#if 0
+
+void Host::connect(const char *hostname ,int port) {
+
+
+
 
     int hostfd = ConnectTo(hostname, port, targetip);
 
@@ -401,11 +441,6 @@ Host::Host(int efd, Guest* guest, int port, const char* hostname) throw(int): ta
     }
 
     fd = hostfd;
-    this->efd = efd;
-    this->status = start_s;
-
-    strcpy(this->hostname, hostname);
-    write_len = 0;
 
     struct epoll_event event;
     event.data.ptr = this;
@@ -413,6 +448,7 @@ Host::Host(int efd, Guest* guest, int port, const char* hostname) throw(int): ta
     epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
 }
 
+#endif
 
 void Host::handleEvent(uint32_t events) {
     struct epoll_event event;
@@ -445,45 +481,21 @@ void Host::handleEvent(uint32_t events) {
     }
 
     if (events & EPOLLOUT) {
-        int error = 0;
-        socklen_t len = sizeof(int);
+        if (write_len) {
+            int ret = Write();
 
-        switch (status) {
-        case start_s:
-            if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-                perror("getsokopt");
+            if (ret < 0) {
+                perror("host write");
                 guest->cleanhost();
                 return;
             }
-
-            if (error != 0) {
-                fprintf(stderr, "connect to %s:%s\n", hostname, strerror(error));
-                guest->cleanhost();
-                return;
-            }
-
-            guest->connected();
-            status = connect_s;
-
-        case connect_s:
-            if (write_len) {
-                int ret = Write();
-
-                if (ret < 0) {
-                    perror("host write");
-                    guest->cleanhost();
-                    return;
-                }
-            }
-
-            if (write_len == 0) {
-                event.events = EPOLLIN;
-                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-            }
-
-        default:
-            break;
         }
+
+        if (write_len == 0) {
+            event.events = EPOLLIN;
+            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        }
+
 
     }
 
@@ -493,7 +505,7 @@ void Host::handleEvent(uint32_t events) {
 }
 
 
-void Host::disconnect() {
+void Host::disattach() {
     guest = NULL;
 }
 
@@ -509,15 +521,15 @@ void Host::clean() {
 }
 
 
-Host* Host::gethost(Host* exist, const char* host, int port, int efd, Guest* guest) throw(int) {
+Host* Host::gethost(Host* exist, const char* hostname, int port, int efd, Guest* guest) {
     if (exist == NULL) {
-        Host* newhost = new Host(efd, guest, port, host);
+        Host* newhost = new Host(efd, guest,hostname,port);
         return newhost;
-    } else if (exist->targetport == port && strcasecmp(exist->hostname, host) == 0) {
+    } else if (exist->targetport == port && strcasecmp(exist->hostname, hostname) == 0) {
         return exist;
     } else {
-        Host* newhost = new Host(exist->efd, exist->guest, port, host);
-        exist->disconnect();
+        Host* newhost = new Host(exist->efd, exist->guest,hostname,port);
+        exist->disattach();
         return newhost;
     }
 }
@@ -647,65 +659,62 @@ void Guest_s::handleEvent(uint32_t events) {
 
                 size_t headerlen = headerend - rbuff;
 
-                try {
-                    Http http (rbuff);
+                Http http (rbuff);
 
-                    if (headerlen != read_len) {       //除了头部还读取到了其他内容
-                        read_len -= headerlen;
-                        memmove(rbuff, headerend, read_len);
-                    } else {
-                        read_len = 0;
-                    }
+                if (headerlen != read_len) {       //除了头部还读取到了其他内容
+                    read_len -= headerlen;
+                    memmove(rbuff, headerend, read_len);
+                } else {
+                    read_len = 0;
+                }
 
-                    fprintf(stdout, "([%s]:%d): %s %s\n",
-                            sourceip, sourceport,
-                            http.method, http.url);
+                fprintf(stdout, "([%s]:%d): %s %s\n",
+                        sourceip, sourceport,
+                        http.method, http.url);
 
-                    int writelen=http.getstring(buff,false);
-                    
-                    if (http.url[0] == '/') {
-                        printf("%s", buff);
-                        const char* welcome = "Welcome\n";
-                        Guest::Write(buff, parse200(strlen(welcome), buff));
-                        Guest::Write(welcome, strlen(welcome));
+                int writelen=http.getstring(buff,false);
+
+                if (http.url[0] == '/') {
+                    printf("%s", buff);
+                    const char* welcome = "Welcome\n";
+                    Guest::Write(buff, parse200(strlen(welcome), buff));
+                    Guest::Write(welcome, strlen(welcome));
+                    break;
+                }
+
+
+                if (http.ismethod("GET" ) || http.ismethod("HEAD") ) {
+                    host = host->gethost(host, http.hostname, http.port, efd, this);
+                    host->Write(buff, writelen);
+                    status = start_s;
+                } else if (http.ismethod("POST") ) {
+
+                    char* lenpoint;
+                    if ((lenpoint = strstr(buff, "Content-Length:")) == NULL) {
+                        fprintf(stderr, "([%s]:%d): unsported post version\n", sourceip, sourceport);
+                        clean();
                         break;
                     }
 
+                    sscanf(lenpoint + 15, "%u", &expectlen);
+                    expectlen -= read_len;
 
-                    if (http.ismethod("GET" ) || http.ismethod("HEAD") ) {
-                        host = host->gethost(host, http.hostname, http.port, efd, this);
-                        host->Write(buff, writelen);
-                        status = start_s;
-                    } else if (http.ismethod("POST") ) {
-                        
-                        char* lenpoint;
-                        if ((lenpoint = strstr(buff, "Content-Length:")) == NULL) {
-                            fprintf(stderr, "([%s]:%d): unsported post version\n", sourceip, sourceport);
-                            clean();
-                            break;
-                        }
+                    host = host->gethost(host, http.hostname, http.port, efd, this);
+                    host->Write(buff, writelen);
+                    host->Write(rbuff, read_len);
+                    read_len = 0;
+                    status = post_s;
 
-                        sscanf(lenpoint + 15, "%u", &expectlen);
-                        expectlen -= read_len;
+                } else if (http.ismethod("CONNECT")) {
+                    host = host->gethost(host, http.hostname, http.port, efd, this);
+                    status = connect_s;
 
-                        host = host->gethost(host, http.hostname, http.port, efd, this);
-                        host->Write(buff, writelen);
-                        host->Write(rbuff, read_len);
-                        read_len = 0;
-                        status = post_s;
-
-                    } else if (http.ismethod("CONNECT")) {
-                        host = host->gethost(host, http.hostname, http.port, efd, this);
-                        status = connect_s;
-
-                    } else {
-                        fprintf(stderr, "([%s]:%d): unknown method:%s\n",
-                                sourceip, sourceport, http.method);
-                        clean();
-                    }
-                } catch (...) {
+                } else {
+                    fprintf(stderr, "([%s]:%d): unknown method:%s\n",
+                            sourceip, sourceport, http.method);
                     clean();
                 }
+
             }
 
             break;
@@ -878,17 +887,17 @@ void Guest_s::handleEvent(uint32_t events) {
     }
 }
 
-Proxy::Proxy(int efd, Guest* guest) throw(int): Host(efd, guest, SPORT, SHOST), ssl(NULL), ctx(NULL) {
-}
+Proxy::Proxy(int efd,Guest *guest):Host(efd,guest,SHOST,SPORT) {}
 
-Host* Proxy::getproxy(Host* exist, int efd, Guest* guest)throw(int) {
+
+Host* Proxy::getproxy(Host* exist, int efd, Guest* guest) {
     if (exist == NULL) {
         return new Proxy(efd, guest);
     } else if (dynamic_cast<Proxy*>(exist)) {
         return exist;
     } else {
         Proxy* newproxy = new Proxy(efd, guest);
-        exist->disconnect();
+        exist->disattach();
         return newproxy;
     }
 }
@@ -1015,23 +1024,9 @@ void Proxy::handleEvent(uint32_t events) {
 
     if (events & EPOLLOUT) {
         int ret;
-        int error = 0;
-        socklen_t len = sizeof(int);
 
         switch (status) {
         case start_s:
-            if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-                perror("getsokopt");
-                guest->cleanhost();
-                return;
-            }
-
-            if (error != 0) {
-                fprintf(stderr, "connect to proxy:%s\n", strerror(error));
-                guest->cleanhost();
-                return;
-            }
-
             ctx = SSL_CTX_new(SSLv23_client_method());
 
             if (ctx == NULL) {

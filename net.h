@@ -18,7 +18,7 @@ extern "C" {
 #endif
 
 int spliturl(const char* url, char* host, char* path , int* port);
-int ConnectTo(const char* host, int port,char *targetip);
+int ConnectTo(const char* host, int port);
     
 #ifdef  __cplusplus
 }

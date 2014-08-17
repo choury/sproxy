@@ -9,6 +9,7 @@
 #include <openssl/err.h>
 
 #include "common.h"
+#include "threadpool.h"
 
 using std::list;
 
@@ -88,9 +89,10 @@ int main(int argc, char** argv)
     event.data.ptr = NULL;
     event.events = EPOLLIN;
     epoll_ctl(efd, EPOLL_CTL_ADD, svsk, &event);
+    creatpool(THREADS);
     while (1) {
         int i, c;
-        if ((c = epoll_wait(efd, events, 20, -1)) < 0) {
+        if ((c = epoll_wait(efd, events, 20, 1000)) < 0) {
             if (errno != EINTR) {
                 perror("epoll wait");
                 return 6;

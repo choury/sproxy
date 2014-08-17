@@ -10,6 +10,8 @@
 #define SPORT 443
 #define CPORT 3333
 
+#define THREADS 3
+
 
 
 
@@ -42,18 +44,19 @@ public:
 class Guest;
 
 class Host:public Peer{
-    char targetip[INET6_ADDRSTRLEN];
-    int targetport;
     char hostname[DOMAINLIMIT];
+    int targetport;
 protected:
     Guest* guest;
 public:
-    Host(int efd,Guest *guest,int port,const char *host) throw(int);
+    Host(int efd,Guest *guest,const char *hostname,int port);
     virtual void handleEvent(uint32_t events);
     virtual void clean();
-    virtual void disconnect();
+    virtual void disattach();
     virtual void bufcanwrite();
-    static Host *gethost(Host *exist,const char *host,int port,int efd,Guest *guest)throw(int);
+    static Host *gethost(Host *exist,const char *host,int port,int efd,Guest *guest);
+    
+    friend void connectHost(Host * host);
 };
 
 class Guest:public Peer{
@@ -89,16 +92,16 @@ public:
 };
 
 class Proxy : public Host{
-    SSL *ssl;
-    SSL_CTX *ctx;
+    SSL *ssl=NULL;
+    SSL_CTX *ctx=NULL;
 public:
-    Proxy(int efd,Guest *guest) throw(int);
+    Proxy(int efd,Guest *guest);
     virtual ~Proxy();
     virtual void handleEvent(uint32_t events);
     virtual int Read(char *buff,size_t size);
     virtual int Write();
     virtual void connected();
-    static Host *getproxy(Host *exist,int efd,Guest *guest)throw(int);
+    static Host *getproxy(Host *exist,int efd,Guest *guest);
 };
 
 

@@ -6,13 +6,14 @@
 #include <netdb.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
+#include "threadpool.h"
 
 #include "net.h"
 
 
 
 
-int ConnectTo(const char* host, int port,char *targetip){
+int ConnectTo(const char* host, int port){
     struct addrinfo hints, *res = NULL;
 
     memset(&hints, 0, sizeof(hints));
@@ -27,33 +28,28 @@ int ConnectTo(const char* host, int port,char *targetip){
         return -1;
     }
     
-    if(targetip){
-        inet_ntop(res->ai_family, &res->ai_addr, targetip, INET6_ADDRSTRLEN);
+    int fd;
+    struct addrinfo *curinfo=res;
+    while(curinfo){
+        if ((fd = socket(curinfo->ai_family, curinfo->ai_socktype, curinfo->ai_protocol)) < 0) {
+            perror("socket error");
+            freeaddrinfo(res);
+            return -1;
+        }
+        
+        if (connect(fd, curinfo->ai_addr, curinfo->ai_addrlen) == -1) {
+            perror("connecting error");
+            close(fd);
+        }else{
+            break;
+        }
+        curinfo=curinfo->ai_next;
     }
     
-    int fd;
-    if ((fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0) {
-        perror("socket error");
-        freeaddrinfo(res);
-        return -1;
-    }
-
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags < 0) {
-        perror("fcntl error");
-        freeaddrinfo(res);
-        close(fd);
-        return -1;
-    }
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
-    if (connect(fd, res->ai_addr, res->ai_addrlen) == -1 && errno != EINPROGRESS) {
-        perror("connecting error");
-        freeaddrinfo(res);
-        close(fd);
-        return -1;
-    }
-
     freeaddrinfo(res);
-    return fd;
+    if(curinfo == NULL){
+        return -1;
+    }else{
+        return fd;
+    }
 }
