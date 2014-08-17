@@ -15,6 +15,7 @@
 
 
 
+
 /* guest   ---   (client) --- host(proxy) 
  * guest_s ---   (server) --- host */
 
@@ -74,7 +75,6 @@ public:
     Guest(int fd,int efd);
     virtual void handleEvent(uint32_t events);
     virtual void clean();
-    virtual void cleanhost();
     virtual void connected();
     virtual bool candelete();
 };

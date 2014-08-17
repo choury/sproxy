@@ -376,14 +376,6 @@ void Guest::clean() {
     }
 }
 
-void Guest::cleanhost() {
-    if (host) {
-        delete host;
-        host = NULL;
-    }
-
-    clean();
-}
 
 
 void connectHost(Host * host) {
@@ -391,7 +383,7 @@ void connectHost(Host * host) {
 
     if (hostfd < 0) {
         fprintf(stderr, "connect to %s error\n", host->hostname);
-        host->guest->cleanhost();
+        host->clean();
         return;
     }
 
@@ -399,19 +391,21 @@ void connectHost(Host * host) {
     int flags = fcntl(hostfd, F_GETFL, 0);
     if (flags < 0) {
         perror("fcntl error");
-        host->guest->cleanhost();
+        host->clean();
         return ;
     }
     fcntl(hostfd,F_SETFL,flags | O_NONBLOCK);
 
-    host->fd = hostfd;
-    
-    struct epoll_event event;
-    event.data.ptr = host;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(host->efd, EPOLL_CTL_ADD, host->fd, &event);
-    
-    host->guest->connected();
+    if(host->guest){
+        host->fd = hostfd;
+        host->guest->connected();
+        struct epoll_event event;
+        event.data.ptr = host;
+        event.events = EPOLLIN | EPOLLOUT;
+        epoll_ctl(host->efd, EPOLL_CTL_ADD, host->fd, &event);
+    }else{
+        host->clean();
+    }
 }
 
 
@@ -457,7 +451,7 @@ void Host::handleEvent(uint32_t events) {
     event.data.ptr = this;
 
     if (guest == NULL) {
-        delete this;
+        clean();
         return;
     }
 
@@ -474,7 +468,7 @@ void Host::handleEvent(uint32_t events) {
         int ret = Read(buff, bufleft);
 
         if (ret <= 0) {
-            guest->cleanhost();
+            guest->clean();
             return;
         }
 
@@ -488,7 +482,7 @@ void Host::handleEvent(uint32_t events) {
 
             if (ret < 0) {
                 perror("host write");
-                guest->cleanhost();
+                guest->clean();
                 return;
             }
         }
@@ -502,7 +496,7 @@ void Host::handleEvent(uint32_t events) {
     }
 
     if (events & EPOLLERR || events & EPOLLHUP) {
-        guest->cleanhost();
+        guest->clean();
     }
 }
 
@@ -519,7 +513,8 @@ void Host::bufcanwrite() {
 }
 
 void Host::clean() {
-
+    disattach();
+    delete this;
 }
 
 
@@ -935,7 +930,7 @@ void Proxy::connected() {
         int ret = Write();
 
         if (ret <= 0) {
-            guest->cleanhost();
+            guest->clean();
             return;
         }
     }
@@ -954,7 +949,7 @@ void Proxy::handleEvent(uint32_t events) {
     event.data.ptr = this;
 
     if (guest == NULL) {
-        delete this;
+        clean();
         return;
     }
 
@@ -978,7 +973,7 @@ void Proxy::handleEvent(uint32_t events) {
 
                 default:
                     ERR_print_errors_fp(stderr);
-                    guest->cleanhost();
+                    guest->clean();
                     return;
                 }
 
@@ -1011,7 +1006,7 @@ void Proxy::handleEvent(uint32_t events) {
                     fprintf(stderr, "proxy read:%s\n", ERR_error_string(error, NULL));
                 }
 
-                guest->cleanhost();
+                guest->clean();
                 return;
             }
 
@@ -1033,7 +1028,7 @@ void Proxy::handleEvent(uint32_t events) {
 
             if (ctx == NULL) {
                 ERR_print_errors_fp(stderr);
-                guest->cleanhost();
+                guest->clean();
                 return;
             }
 
@@ -1055,7 +1050,7 @@ void Proxy::handleEvent(uint32_t events) {
 
                 default:
                     ERR_print_errors_fp(stderr);
-                    guest->cleanhost();
+                    guest->clean();
                     return;
                 }
 
@@ -1081,7 +1076,7 @@ void Proxy::handleEvent(uint32_t events) {
                     fprintf(stderr, "proxy write:%s\n", ERR_error_string(error, NULL));
                 }
 
-                guest->cleanhost();
+                guest->clean();
                 return;
             }
 
@@ -1100,7 +1095,7 @@ void Proxy::handleEvent(uint32_t events) {
     }
 
     if (events & EPOLLERR || events & EPOLLHUP) {
-        guest->cleanhost();
+        guest->clean();
     }
 }
 
