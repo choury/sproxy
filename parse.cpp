@@ -196,6 +196,8 @@ Http::Http(char* header)throw (int){
         this->header[string(p, sp - p)] = ltrim(string(sp + 1));
     }
 
+    this->header.erase("Proxy-Connection");
+
 }
 
 int Http::getstring( char* buff,bool shouldproxy) {
@@ -210,7 +212,7 @@ int Http::getstring( char* buff,bool shouldproxy) {
 
     for (auto i : header) {
         int len;
-        sprintf(buff + p, "%s:%s" CRLF "%n", i.first.c_str(), i.second.c_str(), &len);
+        sprintf(buff + p, "%s: %s" CRLF "%n", i.first.c_str(), i.second.c_str(), &len);
         p += len;
     }
 

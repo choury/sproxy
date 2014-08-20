@@ -10,7 +10,7 @@
 #define SPORT 443
 #define CPORT 3333
 
-#define THREADS 3
+#define THREADS 10
 
 
 
