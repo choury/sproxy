@@ -1,5 +1,3 @@
-#include <pthread.h>
-
 #include <unistd.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
@@ -382,6 +380,9 @@ void Guest::clean() {
 }
 
 
+void Guest::setHosttoNull(){
+    host=NULL;
+}
 
 void connectHost(Host * host) {
     int hostfd = ConnectTo(host->hostname, host->targetport);
@@ -400,8 +401,10 @@ void connectHost(Host * host) {
         return ;
     }
     fcntl(hostfd,F_SETFL,flags | O_NONBLOCK);
-
+    
+    pthread_mutex_lock(&host->lock);
     if(host->guest) {
+        
         host->fd = hostfd;
         host->guest->connected();
         struct epoll_event event;
@@ -411,6 +414,7 @@ void connectHost(Host * host) {
     } else {
         host->clean();
     }
+    pthread_mutex_unlock(&host->lock);
 }
 
 
@@ -421,13 +425,22 @@ Host::Host(int efd, Guest* guest ,const char *hostname,int port): guest(guest) {
 
     strcpy(this->hostname, hostname);
     this->targetport=port;
+    
+    pthread_mutexattr_t mutexattr;
+    pthread_mutexattr_init(&mutexattr);
+    pthread_mutexattr_settype(&mutexattr,
+        PTHREAD_MUTEX_RECURSIVE_NP);
+    pthread_mutex_init(&lock, &mutexattr);
+    pthread_mutexattr_destroy(&mutexattr);
 
     addtask((taskfunc)connectHost,this,0);
 
     write_len = 0;
 }
 
-
+Host::~Host(){
+    pthread_mutex_destroy(&lock);
+}
 
 void Host::handleEvent(uint32_t events) {
     struct epoll_event event;
@@ -485,7 +498,12 @@ void Host::handleEvent(uint32_t events) {
 
 
 void Host::disattach() {
-    guest = NULL;
+    pthread_mutex_lock(&lock);
+    if(guest){
+        guest->setHosttoNull();
+        guest = NULL;
+    }
+    pthread_mutex_unlock(&lock);
 }
 
 void Host::bufcanwrite() {
