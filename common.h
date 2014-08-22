@@ -5,6 +5,7 @@
 #include <sys/epoll.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <list>
 
 #include "net.h"
 
@@ -12,7 +13,6 @@
 #define CPORT 3333
 
 #define THREADS 10
-
 
 
 
@@ -37,6 +37,7 @@ public:
     Peer();  //do nothing
     Peer(int fd,int efd);
     virtual void handleEvent(uint32_t events)=0;
+    virtual bool candelete()=0;
     virtual int Read(char *buff,size_t size);
     virtual int Write(const char *buff,size_t size);
     virtual size_t bufleft();
@@ -55,6 +56,7 @@ protected:
 public:
     Host(int efd,Guest *guest,const char *hostname,int port);
     ~Host();
+    virtual bool candelete()override;
     virtual void handleEvent(uint32_t events)override;
     virtual void disattach();
     virtual void bufcanwrite();
@@ -107,7 +109,12 @@ public:
     static Host *getproxy(Host *exist,int efd,Guest *guest);
 };
 
+class Peerlist:public std::list<Peer *>{
+public:
+    void purge();
+};
 
+extern Peerlist peerlist;
 
 #ifdef  __cplusplus
 extern "C" {

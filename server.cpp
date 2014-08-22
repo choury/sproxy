@@ -4,16 +4,11 @@
 #include <signal.h>
 #include <sys/epoll.h>
 #include <arpa/inet.h>
-#include <list>
-
 #include <openssl/err.h>
 
 #include "common.h"
 #include "threadpool.h"
 
-using std::list;
-
-list <Guest*> guestlist;
 
 
 int main(int argc, char** argv)
@@ -125,7 +120,6 @@ int main(int argc, char** argv)
 
                     Guest* guest = new Guest_s(clsk, efd, ssl);
 
-                    guestlist.push_back(guest);
                     event.data.ptr = guest;
                     event.events = EPOLLIN;
                     epoll_ctl(efd, EPOLL_CTL_ADD, clsk, &event);
@@ -160,14 +154,7 @@ int main(int argc, char** argv)
                 peer->handleEvent(events[i].events);
             }
         }
-        for (auto i = guestlist.begin(); i != guestlist.end();) {
-            if ((*i)->candelete()) {
-                delete *i;
-                guestlist.erase(i++);
-            } else {
-                ++i;
-            }
-        }
+        peerlist.purge();
     }
     SSL_CTX_free(ctx);
     close(svsk);

@@ -6,15 +6,9 @@
 #include <arpa/inet.h>
 
 
-#include <list>
-
 #include "common.h"
 #include "threadpool.h"
 
-
-using std::list;
-
-list <Guest*> guestlist;
 
 
 int main(int argc, char** argv) {
@@ -98,7 +92,6 @@ int main(int argc, char** argv) {
                     
 
                     Guest* guest = new Guest(clsk, efd);
-                    guestlist.push_back(guest);
 
                     event.data.ptr = guest;
                     event.events = EPOLLIN;
@@ -112,15 +105,7 @@ int main(int argc, char** argv) {
                 peer->handleEvent(events[i].events);
             }
         }
-
-        for (auto i = guestlist.begin(); i != guestlist.end();) {
-            if ((*i)->candelete()) {
-                delete *i;
-                guestlist.erase(i++);
-            } else {
-                ++i;
-            }
-        }
+        peerlist.purge();
     }
 
     close(svsk);

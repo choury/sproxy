@@ -13,6 +13,7 @@
 
 #define Min(x,y) ((x)<(y)?(x):(y))
 
+Peerlist peerlist;
 
 Peer::Peer() {
 
@@ -93,11 +94,8 @@ Guest::Guest(int fd, int efd): Peer(fd, efd) {
     }
 
     struct sockaddr_in  Dst;
-
     socklen_t sin_size = sizeof(Dst);
-
     struct sockaddr_in6 Dst6;
-
     socklen_t sin6_size = sizeof(Dst6);
 
     int socktype;
@@ -120,6 +118,7 @@ Guest::Guest(int fd, int efd): Peer(fd, efd) {
             break;
         }
     }
+    peerlist.push_back(this);
 
 }
 
@@ -360,6 +359,7 @@ void Guest::handleEvent(uint32_t events) {
         clean();
         write_len = 0;
     }
+    
 }
 
 void Guest::clean() {
@@ -380,16 +380,20 @@ void Guest::clean() {
 }
 
 
-void Guest::setHosttoNull(){
+void Guest::setHosttoNull() {
     host=NULL;
 }
 
 void connectHost(Host * host) {
     int hostfd = ConnectTo(host->hostname, host->targetport);
 
+    pthread_mutex_lock(&host->lock);
+    host->status=start_s;
+    
     if (hostfd < 0) {
         fprintf(stderr, "connect to %s error\n", host->hostname);
         host->clean();
+        pthread_mutex_unlock(&host->lock);
         return;
     }
 
@@ -398,13 +402,13 @@ void connectHost(Host * host) {
     if (flags < 0) {
         perror("fcntl error");
         host->clean();
+        pthread_mutex_unlock(&host->lock);
         return ;
     }
     fcntl(hostfd,F_SETFL,flags | O_NONBLOCK);
-    
-    pthread_mutex_lock(&host->lock);
+
     if(host->guest) {
-        
+
         host->fd = hostfd;
         host->guest->connected();
         struct epoll_event event;
@@ -422,23 +426,25 @@ Host::Host(int efd, Guest* guest ,const char *hostname,int port): guest(guest) {
 
     this->efd = efd;
     this->fd=0;
+    this->status=wait_s;
+    write_len = 0;
 
     strcpy(this->hostname, hostname);
     this->targetport=port;
-    
+
+
     pthread_mutexattr_t mutexattr;
     pthread_mutexattr_init(&mutexattr);
     pthread_mutexattr_settype(&mutexattr,
-        PTHREAD_MUTEX_RECURSIVE_NP);
+                              PTHREAD_MUTEX_RECURSIVE_NP);
     pthread_mutex_init(&lock, &mutexattr);
     pthread_mutexattr_destroy(&mutexattr);
 
     addtask((taskfunc)connectHost,this,0);
-
-    write_len = 0;
+    peerlist.push_back(this);
 }
 
-Host::~Host(){
+Host::~Host() {
     pthread_mutex_destroy(&lock);
 }
 
@@ -494,12 +500,13 @@ void Host::handleEvent(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
         guest->clean();
     }
+
 }
 
 
 void Host::disattach() {
     pthread_mutex_lock(&lock);
-    if(guest){
+    if(guest) {
         guest->setHosttoNull();
         guest = NULL;
     }
@@ -514,10 +521,18 @@ void Host::bufcanwrite() {
 }
 
 void Host::clean() {
+    pthread_mutex_lock(&lock);
     disattach();
-    delete this;
+    if(status != wait_s) {
+        status = close_s;
+    }
+    pthread_mutex_unlock(&lock);
 }
 
+
+bool Host::candelete(){
+    return status==close_s;
+}
 
 Host* Host::gethost(Host* exist, const char* hostname, int port, int efd, Guest* guest) {
     if (exist == NULL) {
@@ -887,6 +902,7 @@ void Guest_s::handleEvent(uint32_t events) {
         clean();
         write_len = 0;
     }
+    
 }
 
 Proxy::Proxy(int efd,Guest *guest):Host(efd,guest,SHOST,SPORT) {}
@@ -1117,3 +1133,14 @@ Proxy::~Proxy() {
     }
 }
 
+
+void Peerlist::purge() {
+    for (auto i = begin(); i != end();) {
+        if ((*i)->candelete()) {
+            delete *i;
+            i=erase(i);
+        } else {
+            ++i;
+        }
+    }
+}
