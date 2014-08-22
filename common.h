@@ -21,7 +21,7 @@
  * guest_s ---   (server) --- host */
 
 
-enum Status {accept_s,start_s, post_s , connect_s, close_s ,wait_s,proxy_s};
+enum Status {preconnect_s,accept_s,start_s, post_s , connect_s,wantclose_s, close_s ,wait_s,proxy_s};
 
 class Peer{
 protected:
@@ -52,13 +52,12 @@ class Host:public Peer{
     pthread_mutex_t lock;
 protected:
     Guest* guest;
-    virtual void clean() override;
 public:
     Host(int efd,Guest *guest,const char *hostname,int port);
     ~Host();
     virtual bool candelete()override;
     virtual void handleEvent(uint32_t events)override;
-    virtual void disattach();
+    virtual void clean() override;
     virtual void bufcanwrite();
     static Host *gethost(Host *exist,const char *host,int port,int efd,Guest *guest);
     friend void connectHost(Host * host);
@@ -78,7 +77,7 @@ protected:
 public:
     Guest(int fd,int efd);
     virtual void clean() override;
-    virtual void setHosttoNull();
+    virtual void SetHosttoNull();
     virtual void handleEvent(uint32_t events) override;
     virtual void connected();
     virtual bool candelete();

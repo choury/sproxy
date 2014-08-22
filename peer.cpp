@@ -359,14 +359,14 @@ void Guest::handleEvent(uint32_t events) {
         clean();
         write_len = 0;
     }
-    
+
 }
 
 void Guest::clean() {
     status = close_s;
 
     if (host) {
-        host->disattach();
+        host->clean();
     }
 
     host = NULL;
@@ -380,7 +380,7 @@ void Guest::clean() {
 }
 
 
-void Guest::setHosttoNull() {
+void Guest::SetHosttoNull() {
     host=NULL;
 }
 
@@ -388,34 +388,36 @@ void connectHost(Host * host) {
     int hostfd = ConnectTo(host->hostname, host->targetport);
 
     pthread_mutex_lock(&host->lock);
-    host->status=start_s;
-    
-    if (hostfd < 0) {
-        fprintf(stderr, "connect to %s error\n", host->hostname);
-        host->clean();
-        pthread_mutex_unlock(&host->lock);
-        return;
-    }
+    if(host->status == preconnect_s) {
+        host->status=start_s;
+
+        if (hostfd < 0) {
+            fprintf(stderr, "connect to %s error\n", host->hostname);
+            host->clean();
+            pthread_mutex_unlock(&host->lock);
+            return;
+        }
 
 
-    int flags = fcntl(hostfd, F_GETFL, 0);
-    if (flags < 0) {
-        perror("fcntl error");
-        host->clean();
-        pthread_mutex_unlock(&host->lock);
-        return ;
-    }
-    fcntl(hostfd,F_SETFL,flags | O_NONBLOCK);
+        int flags = fcntl(hostfd, F_GETFL, 0);
+        if (flags < 0) {
+            perror("fcntl error");
+            host->clean();
+            pthread_mutex_unlock(&host->lock);
+            return ;
+        }
+        fcntl(hostfd,F_SETFL,flags | O_NONBLOCK);
 
-    if(host->guest) {
 
         host->fd = hostfd;
         host->guest->connected();
+        
         struct epoll_event event;
         event.data.ptr = host;
         event.events = EPOLLIN | EPOLLOUT;
         epoll_ctl(host->efd, EPOLL_CTL_ADD, host->fd, &event);
     } else {
+        host->status=start_s;
         host->clean();
     }
     pthread_mutex_unlock(&host->lock);
@@ -426,7 +428,7 @@ Host::Host(int efd, Guest* guest ,const char *hostname,int port): guest(guest) {
 
     this->efd = efd;
     this->fd=0;
-    this->status=wait_s;
+    this->status=preconnect_s;
     write_len = 0;
 
     strcpy(this->hostname, hostname);
@@ -452,12 +454,10 @@ void Host::handleEvent(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
 
-    if (guest == NULL) {
-        clean();
+    if(status == wantclose_s || status == close_s)
         return;
-    }
-
-    if (events & EPOLLIN) {
+    
+    if (events & EPOLLIN ) {
         int bufleft = guest->bufleft();
 
         if (bufleft == 0) {
@@ -504,15 +504,6 @@ void Host::handleEvent(uint32_t events) {
 }
 
 
-void Host::disattach() {
-    pthread_mutex_lock(&lock);
-    if(guest) {
-        guest->setHosttoNull();
-        guest = NULL;
-    }
-    pthread_mutex_unlock(&lock);
-}
-
 void Host::bufcanwrite() {
     struct epoll_event event;
     event.data.ptr = this;
@@ -522,15 +513,21 @@ void Host::bufcanwrite() {
 
 void Host::clean() {
     pthread_mutex_lock(&lock);
-    disattach();
-    if(status != wait_s) {
-        status = close_s;
+    if(guest) {
+        guest->SetHosttoNull();
+        guest = NULL;
     }
+    if(status != preconnect_s) {
+        status = close_s;
+    } else {
+        status = wantclose_s;
+    }
+    epoll_ctl(efd,EPOLL_CTL_DEL,fd,NULL);
     pthread_mutex_unlock(&lock);
 }
 
 
-bool Host::candelete(){
+bool Host::candelete() {
     return status==close_s;
 }
 
@@ -542,7 +539,7 @@ Host* Host::gethost(Host* exist, const char* hostname, int port, int efd, Guest*
         return exist;
     } else {
         Host* newhost = new Host(exist->efd, exist->guest,hostname,port);
-        exist->disattach();
+        exist->clean();
         return newhost;
     }
 }
@@ -902,7 +899,7 @@ void Guest_s::handleEvent(uint32_t events) {
         clean();
         write_len = 0;
     }
-    
+
 }
 
 Proxy::Proxy(int efd,Guest *guest):Host(efd,guest,SHOST,SPORT) {}
@@ -915,7 +912,7 @@ Host* Proxy::getproxy(Host* exist, int efd, Guest* guest) {
         return exist;
     } else {
         Proxy* newproxy = new Proxy(efd, guest);
-        exist->disattach();
+        exist->clean();
         return newproxy;
     }
 }
@@ -969,11 +966,9 @@ void Proxy::handleEvent(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
 
-    if (guest == NULL) {
-        clean();
+    if(status == wantclose_s || status == close_s)
         return;
-    }
-
+    
     if (events & EPOLLIN) {
         int ret;
         int bufleft = guest->bufleft();
