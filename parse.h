@@ -9,6 +9,7 @@
 
 #define LOADBSUC   "HTTP/1.0 200 Proxy list Loaded" CRLF CRLF
 #define ADDBTIP    "HTTP/1.0 200 Proxy site Added" CRLF CRLF
+#define DELBTIP    "HTTP/1.0 200 Proxy site Deleted" CRLF CRLF
 #define EGLOBLETIP  "HTTP/1.0 200 Global proxy enabled now" CRLF CRLF
 #define DGLOBLETIP  "HTTP/1.0 200 Global proxy disabled" CRLF CRLF
 
@@ -17,6 +18,7 @@
 
 
 void addpsite(const std::string & host);
+int delpsite(const std::string &host);
 int loadproxysite();
 int globalproxy();
 

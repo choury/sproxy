@@ -22,7 +22,7 @@ static unordered_set<string> proxylist;
 
 // trim from start
 static inline string& ltrim(std::string && s) {
-    s.erase(s.begin(), find_if(s.begin(), s.end(), std::not1(std::ptr_fun<int, int>(std::isspace))));
+    s.erase(0,s.find_first_not_of(" "));
     return s;
 }
 
@@ -58,6 +58,21 @@ void addpsite(const string& host) {
     for(auto i : proxylist) {
         proxyfile << i << endl;
     }
+    proxyfile.close();
+}
+
+int delpsite(const string& host) {
+    if(proxylist.find(host)==proxylist.end()){
+        return 0;
+    }
+    proxylist.erase(host);
+    ofstream proxyfile(PROXYFILE);
+
+    for(auto i : proxylist) {
+        proxyfile << i << endl;
+    }
+    proxyfile.close();
+    return 1;
 }
 
 int globalproxy(){

@@ -265,12 +265,20 @@ void Guest::handleEvent(uint32_t events) {
                         addpsite(http.url);
                         Write(ADDBTIP, strlen(ADDBTIP));
                         status = start_s;
-                    } else if(http.ismethod("GLOBALPROXY")) {
+                    } else if(http.ismethod("DELPSITE")){
+                        if(delpsite(http.url)){
+                            Write(DELBTIP,strlen(DELBTIP));
+                        }else{
+                            Write(H404,strlen(H404));
+                        }
+                        status = start_s;
+                    }else if(http.ismethod("GLOBALPROXY")) {
                         if(globalproxy()) {
                             Write(EGLOBLETIP, strlen(EGLOBLETIP));
                         } else {
                             Write(DGLOBLETIP, strlen(DGLOBLETIP));
                         }
+                        status = start_s;
                     } else {
                         fprintf(stderr, "([%s]:%d): unsported method:%s\n",
                                 sourceip, sourceport,http.method);
