@@ -53,7 +53,7 @@ void Peer::peercanwrite() {
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
 }
 
 
@@ -290,8 +290,7 @@ void Guest::handleEvent(uint32_t events) {
             if(len==0) {
                 fprintf(stderr, "([%s]:%d): The host's write buff is full\n",
                         sourceip, sourceport);
-                event.events = EPOLLOUT;
-                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+                epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
                 break;
             }
             ret = Read(buff , Min(len, expectlen));
@@ -316,8 +315,7 @@ void Guest::handleEvent(uint32_t events) {
             if(len==0) {
                 fprintf(stderr, "([%s]:%d): The host's write buff is full\n",
                         sourceip, sourceport);
-                event.events = EPOLLOUT;
-                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+                epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
                 break;
             }
 
@@ -497,8 +495,7 @@ void Host::handleEvent(uint32_t events) {
 
         if (bufleft == 0) {
             fprintf(stderr, "The guest's write buff is full\n");
-            event.events=EPOLLOUT;
-            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
             return;
         }
 
@@ -773,8 +770,7 @@ void Guest_s::handleEvent(uint32_t events) {
             if(len==0) {
                 fprintf(stderr, "([%s]:%d): The host's write buff is full\n",
                         sourceip, sourceport);
-                event.events = EPOLLOUT;
-                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+                epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
                 break;
             }
             ret = Read(buff, Min(len, expectlen));
@@ -810,8 +806,7 @@ void Guest_s::handleEvent(uint32_t events) {
             if(len==0) {
                 fprintf(stderr, "([%s]:%d): The host's write buff is full\n",
                         sourceip, sourceport);
-                event.events = EPOLLOUT;
-                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+                epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
                 break;
             }
 
@@ -1062,8 +1057,7 @@ void Proxy::handleEvent(uint32_t events) {
         case connect_s:
             if (bufleft == 0) {
                 fprintf(stderr, "The guest's write buff is full\n");
-                event.events=EPOLLOUT;
-                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+                epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
             }
 
             char buff[1024 * 1024];
