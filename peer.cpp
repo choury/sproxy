@@ -49,6 +49,14 @@ int Peer::Write(const char* buff, size_t size) {
     return len;
 }
 
+void Peer::peercanwrite() {
+    struct epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLIN | EPOLLOUT;
+    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+}
+
+
 int Peer::Write() {
     int ret = write(fd, wbuff, write_len);
 
@@ -140,6 +148,7 @@ void Guest::handleEvent(uint32_t events) {
     event.data.ptr = this;
 
     int ret;
+    unsigned int len;
 
     if (events & EPOLLIN) {
         char buff[1024 * 1024];
@@ -262,6 +271,10 @@ void Guest::handleEvent(uint32_t events) {
                         } else {
                             Write(DGLOBLETIP, strlen(DGLOBLETIP));
                         }
+                    } else {
+                        fprintf(stderr, "([%s]:%d): unsported method:%s\n",
+                                sourceip, sourceport,http.method);
+                        clean();
                     }
                 } catch(...) {
                     clean();
@@ -273,9 +286,17 @@ void Guest::handleEvent(uint32_t events) {
             break;
 
         case post_s:
-            ret = Read(buff , Min(host->bufleft(), expectlen));
+            len=host->bufleft();
+            if(len==0) {
+                fprintf(stderr, "([%s]:%d): The host's write buff is full\n",
+                        sourceip, sourceport);
+                event.events = EPOLLOUT;
+                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+                break;
+            }
+            ret = Read(buff , Min(len, expectlen));
 
-            if (ret <= 0 || host == NULL) {
+            if (ret <= 0 ) {
                 clean();
                 break;
             }
@@ -291,9 +312,18 @@ void Guest::handleEvent(uint32_t events) {
 
         case connect_s:
         case proxy_s:
-            ret = Read(buff, host->bufleft());
+            len=host->bufleft();
+            if(len==0) {
+                fprintf(stderr, "([%s]:%d): The host's write buff is full\n",
+                        sourceip, sourceport);
+                event.events = EPOLLOUT;
+                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+                break;
+            }
 
-            if (ret <= 0 || host == NULL) {
+            ret = Read(buff, len);
+
+            if (ret <= 0) {
                 clean();
                 break;
             }
@@ -308,9 +338,12 @@ void Guest::handleEvent(uint32_t events) {
 
     if (events & EPOLLOUT) {
         int ret;
-
         switch (status) {
         case close_s:
+            if(write_len == 0) {
+                return;
+            }
+
             ret = Write();
 
             if (ret < 0) {
@@ -323,25 +356,26 @@ void Guest::handleEvent(uint32_t events) {
             break;
 
         default:
-            ret = Write();
+            if(write_len) {
+                ret = Write();
+                if (ret <= 0) {
+                    perror("guest write");
+                    clean();
+                    write_len = 0;
+                    return;
+                }
 
-            if (ret < 0) {
-                perror("guest write");
-                clean();
-                write_len = 0;
-                return;
+                if (fulled) {
+                    if (host)
+                        host->peercanwrite();
+
+                    fulled = false;
+                }
             }
 
             if (write_len == 0) {
                 event.events = EPOLLIN;
                 epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-            }
-
-            if (fulled) {
-                if (host)
-                    host->bufcanwrite();
-
-                fulled = false;
             }
         }
     }
@@ -384,6 +418,7 @@ void Guest::SetHosttoNull() {
     host=NULL;
 }
 
+
 void connectHost(Host * host) {
     int hostfd = ConnectTo(host->hostname, host->targetport);
 
@@ -411,7 +446,7 @@ void connectHost(Host * host) {
 
         host->fd = hostfd;
         host->guest->connected();
-        
+
         struct epoll_event event;
         event.data.ptr = host;
         event.events = EPOLLIN | EPOLLOUT;
@@ -456,13 +491,14 @@ void Host::handleEvent(uint32_t events) {
 
     if(status == wantclose_s || status == close_s)
         return;
-    
+
     if (events & EPOLLIN ) {
         int bufleft = guest->bufleft();
 
         if (bufleft == 0) {
             fprintf(stderr, "The guest's write buff is full\n");
-            epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+            event.events=EPOLLOUT;
+            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
             return;
         }
 
@@ -481,19 +517,23 @@ void Host::handleEvent(uint32_t events) {
     if (events & EPOLLOUT) {
         if (write_len) {
             int ret = Write();
-
-            if (ret < 0) {
+            if (ret <= 0) {
                 perror("host write");
                 guest->clean();
                 return;
             }
+
+            if (fulled) {
+                guest->peercanwrite();
+                fulled = false;
+            }
+
         }
 
         if (write_len == 0) {
             event.events = EPOLLIN;
             epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
         }
-
 
     }
 
@@ -504,12 +544,6 @@ void Host::handleEvent(uint32_t events) {
 }
 
 
-void Host::bufcanwrite() {
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-}
 
 void Host::clean() {
     pthread_mutex_lock(&lock);
@@ -594,6 +628,7 @@ void Guest_s::handleEvent(uint32_t events) {
     event.data.ptr = this;
 
     int ret;
+    unsigned int len;
 
     if (events & EPOLLIN) {
         char buff[1024 * 1024];
@@ -734,9 +769,17 @@ void Guest_s::handleEvent(uint32_t events) {
             break;
 
         case post_s:
-            ret = Read(buff, Min(host->bufleft(), expectlen));
+            len=host->bufleft();
+            if(len==0) {
+                fprintf(stderr, "([%s]:%d): The host's write buff is full\n",
+                        sourceip, sourceport);
+                event.events = EPOLLOUT;
+                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+                break;
+            }
+            ret = Read(buff, Min(len, expectlen));
 
-            if (ret <= 0 || host == NULL) {
+            if (ret <= 0 ) {
                 int error = SSL_get_error(ssl, ret);
 
                 if (error == SSL_ERROR_WANT_READ) {
@@ -763,9 +806,18 @@ void Guest_s::handleEvent(uint32_t events) {
             break;
 
         case connect_s:
-            ret = Read(buff, host->bufleft());
+            len=host->bufleft();
+            if(len==0) {
+                fprintf(stderr, "([%s]:%d): The host's write buff is full\n",
+                        sourceip, sourceport);
+                event.events = EPOLLOUT;
+                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+                break;
+            }
 
-            if (ret <= 0 || host == NULL) {
+            ret = Read(buff, len);
+
+            if (ret <= 0 ) {
                 int error = SSL_get_error(ssl, ret);
 
                 if (error == SSL_ERROR_WANT_READ) {
@@ -831,6 +883,9 @@ void Guest_s::handleEvent(uint32_t events) {
             break;
 
         case close_s:
+            if(write_len == 0) {
+                return;
+            }
             ret = Write();
 
             if (ret <= 0) {
@@ -853,24 +908,33 @@ void Guest_s::handleEvent(uint32_t events) {
             break;
 
         default:
-            ret = Write();
+            if(write_len) {
+                ret = Write();
 
-            if (ret <= 0) {
-                int error = SSL_get_error(ssl, ret);
+                if (ret <= 0) {
+                    int error = SSL_get_error(ssl, ret);
 
-                if (error == SSL_ERROR_WANT_WRITE) {
+                    if (error == SSL_ERROR_WANT_WRITE) {
+                        break;
+                    } else if (error == SSL_ERROR_SYSCALL) {
+                        fprintf(stderr, "([%s]:%d): guest_s write:%s\n",
+                                sourceip, sourceport, strerror(errno));
+                    } else if (error != SSL_ERROR_ZERO_RETURN) {
+                        fprintf(stderr, "([%s]:%d): guest_s write:%s\n",
+                                sourceip, sourceport, ERR_error_string(error, NULL));
+                    }
+
+                    clean();
+                    write_len = 0;
                     break;
-                } else if (error == SSL_ERROR_SYSCALL) {
-                    fprintf(stderr, "([%s]:%d): guest_s write:%s\n",
-                            sourceip, sourceport, strerror(errno));
-                } else if (error != SSL_ERROR_ZERO_RETURN) {
-                    fprintf(stderr, "([%s]:%d): guest_s write:%s\n",
-                            sourceip, sourceport, ERR_error_string(error, NULL));
                 }
 
-                clean();
-                write_len = 0;
-                break;
+                if (fulled) {
+                    if (host)
+                        host->peercanwrite();
+
+                    fulled = false;
+                }
             }
 
             if (write_len == 0) {
@@ -878,12 +942,6 @@ void Guest_s::handleEvent(uint32_t events) {
                 epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
             }
 
-            if (fulled) {
-                if (host)
-                    host->bufcanwrite();
-
-                fulled = false;
-            }
         }
     }
 
@@ -968,7 +1026,7 @@ void Proxy::handleEvent(uint32_t events) {
 
     if(status == wantclose_s || status == close_s)
         return;
-    
+
     if (events & EPOLLIN) {
         int ret;
         int bufleft = guest->bufleft();
@@ -1004,8 +1062,8 @@ void Proxy::handleEvent(uint32_t events) {
         case connect_s:
             if (bufleft == 0) {
                 fprintf(stderr, "The guest's write buff is full\n");
-                epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
-                return;
+                event.events=EPOLLOUT;
+                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
             }
 
             char buff[1024 * 1024];
@@ -1079,23 +1137,29 @@ void Proxy::handleEvent(uint32_t events) {
             break;
 
         case connect_s:
-            ret = Write();
+            if(write_len) {
+                ret = Write();
 
-            if (ret <= 0) {
-                int error = SSL_get_error(ssl, ret);
+                if (ret <= 0) {
+                    int error = SSL_get_error(ssl, ret);
 
-                if (error == SSL_ERROR_WANT_WRITE) {
-                    break;
-                } else if (error == SSL_ERROR_SYSCALL) {
-                    fprintf(stderr, "proxy write:%s\n", strerror(errno));
-                } else if (error != SSL_ERROR_ZERO_RETURN) {
-                    fprintf(stderr, "proxy write:%s\n", ERR_error_string(error, NULL));
+                    if (error == SSL_ERROR_WANT_WRITE) {
+                        break;
+                    } else if (error == SSL_ERROR_SYSCALL) {
+                        fprintf(stderr, "proxy write:%s\n", strerror(errno));
+                    } else if (error != SSL_ERROR_ZERO_RETURN) {
+                        fprintf(stderr, "proxy write:%s\n", ERR_error_string(error, NULL));
+                    }
+
+                    guest->clean();
+                    return;
                 }
 
-                guest->clean();
-                return;
+                if (fulled) {
+                    guest->peercanwrite();
+                    fulled = false;
+                }
             }
-
             if (write_len == 0) {
                 event.data.ptr = this;
                 event.events = EPOLLIN;

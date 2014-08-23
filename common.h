@@ -38,6 +38,7 @@ public:
     Peer(int fd,int efd);
     virtual void handleEvent(uint32_t events)=0;
     virtual bool candelete()=0;
+    virtual void peercanwrite();
     virtual int Read(char *buff,size_t size);
     virtual int Write(const char *buff,size_t size);
     virtual size_t bufleft();
@@ -58,7 +59,6 @@ public:
     virtual bool candelete()override;
     virtual void handleEvent(uint32_t events)override;
     virtual void clean() override;
-    virtual void bufcanwrite();
     static Host *gethost(Host *exist,const char *host,int port,int efd,Guest *guest);
     friend void connectHost(Host * host);
 };
