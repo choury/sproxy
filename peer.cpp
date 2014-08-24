@@ -14,6 +14,33 @@
 #define Min(x,y) ((x)<(y)?(x):(y))
 
 Peerlist peerlist;
+pthread_mutex_t lock;
+
+
+//这里初始化所有全局变量
+Peerlist::Peerlist():list(){
+    pthread_mutexattr_t mutexattr;
+    pthread_mutexattr_init(&mutexattr);
+    pthread_mutexattr_settype(&mutexattr,
+                              PTHREAD_MUTEX_RECURSIVE_NP);
+    pthread_mutex_init(&lock, &mutexattr);
+    pthread_mutexattr_destroy(&mutexattr);
+    
+}
+
+
+void Peerlist::purge() {
+    for (auto i = begin(); i != end();) {
+        if ((*i)->candelete()) {
+            delete *i;
+            i=erase(i);
+        } else {
+            ++i;
+        }
+    }
+}
+
+
 
 Peer::Peer() {
 
@@ -265,14 +292,14 @@ void Guest::handleEvent(uint32_t events) {
                         addpsite(http.url);
                         Write(ADDBTIP, strlen(ADDBTIP));
                         status = start_s;
-                    } else if(http.ismethod("DELPSITE")){
-                        if(delpsite(http.url)){
+                    } else if(http.ismethod("DELPSITE")) {
+                        if(delpsite(http.url)) {
                             Write(DELBTIP,strlen(DELBTIP));
-                        }else{
+                        } else {
                             Write(H404,strlen(H404));
                         }
                         status = start_s;
-                    }else if(http.ismethod("GLOBALPROXY")) {
+                    } else if(http.ismethod("GLOBALPROXY")) {
                         if(globalproxy()) {
                             Write(EGLOBLETIP, strlen(EGLOBLETIP));
                         } else {
@@ -404,13 +431,14 @@ void Guest::handleEvent(uint32_t events) {
 
 void Guest::clean() {
     status = close_s;
-
-    if (host) {
+    pthread_mutex_lock(&lock);
+    if(host){
+        host->guest=NULL;
         host->clean();
     }
-
-    host = NULL;
-
+    host=NULL;
+    pthread_mutex_unlock(&lock);
+    
     if (write_len) {
         struct epoll_event event;
         event.data.ptr = this;
@@ -420,22 +448,17 @@ void Guest::clean() {
 }
 
 
-void Guest::SetHosttoNull() {
-    host=NULL;
-}
-
-
 void connectHost(Host * host) {
     int hostfd = ConnectTo(host->hostname, host->targetport);
 
-    pthread_mutex_lock(&host->lock);
+    pthread_mutex_lock(&lock);
     if(host->status == preconnect_s) {
         host->status=start_s;
 
         if (hostfd < 0) {
             fprintf(stderr, "connect to %s error\n", host->hostname);
             host->clean();
-            pthread_mutex_unlock(&host->lock);
+            pthread_mutex_unlock(&lock);
             return;
         }
 
@@ -444,7 +467,7 @@ void connectHost(Host * host) {
         if (flags < 0) {
             perror("fcntl error");
             host->clean();
-            pthread_mutex_unlock(&host->lock);
+            pthread_mutex_unlock(&lock);
             return ;
         }
         fcntl(hostfd,F_SETFL,flags | O_NONBLOCK);
@@ -461,7 +484,7 @@ void connectHost(Host * host) {
         host->status=start_s;
         host->clean();
     }
-    pthread_mutex_unlock(&host->lock);
+    pthread_mutex_unlock(&lock);
 }
 
 
@@ -476,20 +499,12 @@ Host::Host(int efd, Guest* guest ,const char *hostname,int port): guest(guest) {
     this->targetport=port;
 
 
-    pthread_mutexattr_t mutexattr;
-    pthread_mutexattr_init(&mutexattr);
-    pthread_mutexattr_settype(&mutexattr,
-                              PTHREAD_MUTEX_RECURSIVE_NP);
-    pthread_mutex_init(&lock, &mutexattr);
-    pthread_mutexattr_destroy(&mutexattr);
+    
 
     addtask((taskfunc)connectHost,this,0);
     peerlist.push_back(this);
 }
 
-Host::~Host() {
-    pthread_mutex_destroy(&lock);
-}
 
 void Host::handleEvent(uint32_t events) {
     struct epoll_event event;
@@ -552,10 +567,13 @@ void Host::handleEvent(uint32_t events) {
 
 void Host::clean() {
     pthread_mutex_lock(&lock);
-    if(guest) {
-        guest->SetHosttoNull();
-        guest = NULL;
+    
+    if(guest){
+        guest->host=NULL;
+        guest->clean();
     }
+    guest=NULL;
+    
     if(status != preconnect_s) {
         status = close_s;
     } else {
@@ -1195,13 +1213,3 @@ Proxy::~Proxy() {
 }
 
 
-void Peerlist::purge() {
-    for (auto i = begin(); i != end();) {
-        if ((*i)->candelete()) {
-            delete *i;
-            i=erase(i);
-        } else {
-            ++i;
-        }
-    }
-}

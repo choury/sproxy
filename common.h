@@ -16,7 +16,6 @@
 
 
 
-
 /* guest   ---   (client) --- host(proxy) 
  * guest_s ---   (server) --- host */
 
@@ -50,12 +49,10 @@ class Guest;
 class Host:public Peer{
     char hostname[DOMAINLIMIT];
     int targetport;
-    pthread_mutex_t lock;
 protected:
-    Guest* guest;
 public:
+    Guest* guest;
     Host(int efd,Guest *guest,const char *hostname,int port);
-    ~Host();
     virtual bool candelete()override;
     virtual void handleEvent(uint32_t events)override;
     virtual void clean() override;
@@ -69,15 +66,13 @@ protected:
     int  sourceport;
     char destip[INET6_ADDRSTRLEN];
     int  destport;
-    
-    Host *host=NULL;
     char rbuff[4096];
     uint32_t  read_len=0;
     uint32_t expectlen=0;
 public:
+    Host *host=NULL;
     Guest(int fd,int efd);
     virtual void clean() override;
-    virtual void SetHosttoNull();
     virtual void handleEvent(uint32_t events) override;
     virtual void connected();
     virtual bool candelete();
@@ -110,10 +105,12 @@ public:
 
 class Peerlist:public std::list<Peer *>{
 public:
+    Peerlist();
     void purge();
 };
 
 extern Peerlist peerlist;
+
 
 #ifdef  __cplusplus
 extern "C" {
