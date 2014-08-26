@@ -36,7 +36,8 @@ int ConnectTo(const char* host, int port){
             freeaddrinfo(res);
             return -1;
         }
-        
+        struct timeval timeo = {30, 0};
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeo, sizeof(timeo));
         if (connect(fd, curinfo->ai_addr, curinfo->ai_addrlen) == -1) {
             perror("connecting error");
             close(fd);
