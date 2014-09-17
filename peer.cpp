@@ -30,6 +30,7 @@ Peerlist::Peerlist():list(){
 
 
 void Peerlist::purge() {
+    pthread_mutex_lock(&lock);
     for (auto i = begin(); i != end();) {
         if ((*i)->candelete()) {
             delete *i;
@@ -38,6 +39,7 @@ void Peerlist::purge() {
             ++i;
         }
     }
+    pthread_mutex_unlock(&lock);
 }
 
 

@@ -208,6 +208,9 @@ Http::Http(char* header)throw (int){
             break;
 
         char* sp = strpbrk(p, ":");
+        if(sp==NULL){
+            throw 0;
+        }
         this->header[string(p, sp - p)] = ltrim(string(sp + 1));
     }
 
