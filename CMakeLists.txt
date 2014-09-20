@@ -1,7 +1,7 @@
 project(sproxy)
 
-add_executable(sproxy_client peer.cpp lib.c parse.cpp threadpool.cpp client.cpp net.c)
-add_executable(sproxy_server peer.cpp lib.c parse.cpp threadpool.cpp server.cpp net.c)
+add_executable(sproxy_client peer.cpp guest.cpp host.cpp proxy.cpp lib.c parse.cpp threadpool.cpp client.cpp net.c)
+add_executable(sproxy_server host.cpp guest.cpp proxy.cpp peer.cpp guest_s.cpp lib.c parse.cpp threadpool.cpp server.cpp net.c)
 
 set(CMAKE_C_FLAGS "-Wall -g")
 set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -g")

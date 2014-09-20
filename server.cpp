@@ -4,9 +4,11 @@
 #include <signal.h>
 #include <sys/epoll.h>
 #include <arpa/inet.h>
+#include <openssl/ssl.h>
 #include <openssl/err.h>
 
-#include "common.h"
+//#include "common.h"
+#include "guest_s.h"
 #include "threadpool.h"
 
 

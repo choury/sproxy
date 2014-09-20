@@ -132,7 +132,9 @@ int spliturl(const char* url, char* hostname, char* path , int* port) {
     int urllen = strlen(url);
     int copylen;
     bzero(hostname, DOMAINLIMIT);
-    bzero(path, urllen);
+    if(path){
+        bzero(path, urllen);
+    }
 
     if (strncasecmp(url, "https://", 8) == 0) {
         url += 8;
@@ -142,22 +144,24 @@ int spliturl(const char* url, char* hostname, char* path , int* port) {
         url += 7;
         urllen -= 7;
         *port = HTTPPORT;
-    } else if (!strstr(url, "://")) {
-        *port = HTTPPORT;
-    } else {
+    } else if (strstr(url, "://") != 0) {
         return -1;
     }
 
     if ((addrsplit = strpbrk(url, "/"))) {
         copylen = url + urllen - addrsplit < (URLLIMIT - 1) ? url + urllen - addrsplit : (URLLIMIT - 1);
-        memcpy(path, addrsplit, copylen);
+        if(path){
+            memcpy(path, addrsplit, copylen);
+        }
         copylen = addrsplit - url < (DOMAINLIMIT - 1) ? addrsplit - url : (DOMAINLIMIT - 1);
         strncpy(tmpaddr, url, copylen);
         tmpaddr[copylen] = 0;
     } else {
         copylen = urllen < (DOMAINLIMIT - 1) ? urllen : (DOMAINLIMIT - 1);
         strncpy(tmpaddr, url, copylen);
-        strcpy(path, "/");
+        if(path){
+            strcpy(path, "/");
+        }
         tmpaddr[copylen] = 0;
     }
 
@@ -195,6 +199,7 @@ Http::Http(char* header)throw (int){
     memset(url,0,sizeof(url));
     sscanf(header, "%s%*[ ]%[^\r\n ]", method, url);
     toUpper(method);
+    port=80;
 
     if(spliturl(url,hostname,path,&port)){
         fprintf(stderr,"wrong url format:%s\n",url);
@@ -209,6 +214,7 @@ Http::Http(char* header)throw (int){
 
         char* sp = strpbrk(p, ":");
         if(sp==NULL){
+            fprintf(stderr,"wrong header format:%s\n",p);
             throw 0;
         }
         this->header[string(p, sp - p)] = ltrim(string(sp + 1));

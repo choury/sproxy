@@ -4,14 +4,21 @@
 #include <fcntl.h>
 #include <sys/epoll.h>
 #include <arpa/inet.h>
+#include <openssl/ssl.h>
 
 
 #include "common.h"
+#include "guest.h"
+#include "parse.h"
 #include "threadpool.h"
 
 
-
 int main(int argc, char** argv) {
+    if(argc != 2){
+        fprintf(stderr,"Usage: %s Server[:port]\n",basename(argv[0]));
+        return -1;
+    }
+    spliturl(argv[1],SHOST,nullptr,&SPORT);
     int svsk, clsk;
     SSL_library_init();    //SSL初库始化
     SSL_load_error_strings();  //载入所有错误信息
