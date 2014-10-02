@@ -14,8 +14,9 @@ JUST FOR TEST
 #include <string.h>
 #include <resolv.h>
 
+#include "dns.h"
+
 #define BUF_SIZE 1024
-#define SRV_PORT 53
 
 #define HTON(x) (x=nton(x))
 #define HTONS(x) (x=ntons(x))
@@ -27,7 +28,8 @@ JUST FOR TEST
 typedef unsigned short U16;
 typedef unsigned int   U32;
 
-const char srv_ip[] = "114.114.114.114";
+
+std::vector<int> dns_srv;
 
 typedef struct _DNS_HDR {
     U16 id;                 //查询序列号
@@ -85,7 +87,7 @@ unsigned char * getdomain(unsigned char *buf,unsigned char *p) {
 }
 
 
-unsigned char *getrr(unsigned char *buf,unsigned char *p,int num){
+unsigned char *getrr(unsigned char *buf,unsigned char *p,int num) {
     int i;
     for(i=0; i<num; ++i) {
         p=getdomain(buf,p);
@@ -97,16 +99,16 @@ unsigned char *getrr(unsigned char *buf,unsigned char *p,int num){
         p+=sizeof(DNS_RR);
         printf(" ==> ");
         switch(dnsrr->type) {
-        char ipaddr[INET6_ADDRSTRLEN];
+            char ipaddr[INET6_ADDRSTRLEN];
         case 1:
-            printf("%s",inet_ntop(PF_INET,p,ipaddr,sizeof(ipaddr)),dnsrr->TTL);
+            printf("%s",inet_ntop(PF_INET,p,ipaddr,sizeof(ipaddr)));
             break;
         case 2:
         case 5:
             getdomain(buf,p);
             break;
         case 28:
-            printf("%s",inet_ntop(PF_INET6,p,ipaddr,sizeof(ipaddr)),dnsrr->TTL);
+            printf("%s",inet_ntop(PF_INET6,p,ipaddr,sizeof(ipaddr)));
             break;
         }
         p+=dnsrr->rdlength;
@@ -115,40 +117,59 @@ unsigned char *getrr(unsigned char *buf,unsigned char *p,int num){
     return p;
 }
 
-
-int main ( int argc, char** argv ) {
-    int      clifd,len = 0;
-    unsigned int i;
-    struct   sockaddr_in  servaddr;
-    unsigned char  buf[BUF_SIZE];
-    unsigned char  *p;
-    DNS_HDR  *dnshdr = ( DNS_HDR * ) buf;
-    _res.options |=RES_USE_INET6;
-    if(res_init()<0){
+int dns_init() {
+    if(res_init()<0) {
         perror ( "res_init" );
         return -1;
     }
-    for(int i=0;i<_res.nscount;++i){
-        char ipaddr[100];
-        printf("DNS server:%s\n",inet_ntop(_res.nsaddr_list[i].sin_family,&_res.nsaddr_list[i].sin_addr,ipaddr,sizeof(ipaddr)));
+    for(int i=0; i<dns_srv.size(); ++i) {
+        close(dns_srv[i]);
     }
-    for(int i=0;i<MAXNS;++i){
-        char ipaddr[100];
-        if(_res._u._ext.nsmap[i]&4){
-            printf("DNS server:%s\n",inet_ntop(_res._u._ext.nsaddrs[i]->sin6_family,&_res._u._ext.nsaddrs[i]->sin6_addr,ipaddr,sizeof(ipaddr)));
+    dns_srv.clear();
+    for(int i=0; i<_res.nscount; ++i) {
+        int fd;
+        if ( ( fd  =  socket (_res.nsaddr_list[i].sin_family, SOCK_DGRAM, 0 ) )  <   0 ) {
+            perror ( "create socket error" );
+            continue;
+        }
+        if (connect(fd,(sockaddr *)&_res.nsaddr_list[i],sizeof(_res.nsaddr_list[i])) == -1) {
+            perror("connecting error");
+            close(fd);
+            continue;
+        }
+        dns_srv.push_back(fd);
+    }
+    for(int i=0; i<MAXNS; ++i) {
+        if(_res._u._ext.nsmap[i]&4) {
+            int fd;
+            if ( ( fd  =  socket (_res._u._ext.nsaddrs[i]->sin6_family, SOCK_DGRAM, 0 ) )  <   0 ) {
+                perror ( "create socket error" );
+                continue;
+            }
+            if (connect(fd,(sockaddr *)_res._u._ext.nsaddrs[i],sizeof(*_res._u._ext.nsaddrs[i])) == -1) {
+                perror("connecting error");
+                close(fd);
+                continue;
+            }
+            dns_srv.push_back(fd);
         }
     }
-    if ( ( clifd  =  socket ( AF_INET, SOCK_DGRAM, 0 ) )  <   0 ) {
-        perror ( "create socket error" );
+    return dns_srv.size();
+}
+
+
+int main ( int argc, char** argv ) {
+    int      len = 0;
+    unsigned int i;
+    unsigned char  buf[BUF_SIZE];
+    unsigned char  *p;
+    DNS_HDR  *dnshdr = ( DNS_HDR * ) buf;
+
+    if(dns_init()<=0) {
+        fprintf(stderr,"Init Dns error\n");
         return -1;
     }
-
-    memset(&servaddr,0,sizeof(servaddr));
-    servaddr.sin_family = AF_INET;
-    inet_pton(servaddr.sin_family,srv_ip,(void*)&(servaddr.sin_addr));
-    servaddr.sin_port = htons ( SRV_PORT );
-
-
+    
     memset ( buf, 0, BUF_SIZE );
     dnshdr->id = htons(1);
     dnshdr->flag = htons(RD);
@@ -175,12 +196,16 @@ int main ( int argc, char** argv ) {
     dnsqer->type = htons(1);
 
 
-    len = sendto ( clifd, buf, sizeof ( DNS_HDR ) + sizeof ( DNS_QER ) + strlen ( argv[1] ) + 2, 0, ( struct sockaddr * ) &servaddr, sizeof ( servaddr ) );
-    i = sizeof ( struct sockaddr_in );
-    len = recvfrom ( clifd, buf, BUF_SIZE, 0, ( struct sockaddr * ) &servaddr, &i );
+    len =sizeof ( DNS_HDR ) + sizeof ( DNS_QER ) + strlen ( argv[1] ) + 2;
+    if(write(dns_srv[0], buf, sizeof ( DNS_HDR ) + sizeof ( DNS_QER ) + strlen ( argv[1] ) + 2)!=len){
+        perror("write");
+        return -1;
+    }
+
+    len = read( dns_srv[0], buf,BUF_SIZE);
 
     if ( len < 0 ) {
-        printf ( "recv error\n" );
+        perror("read");
         return -1;
     }
 
@@ -201,10 +226,8 @@ int main ( int argc, char** argv ) {
         p+=sizeof(DNS_QER);
     }
     p=getrr(buf,p,dnshdr->numa);
-    p=getrr(buf,p,dnshdr->numa1);
-    p=getrr(buf,p,dnshdr->numa2);
- 
-    
-    close ( clifd );
+//    p=getrr(buf,p,dnshdr->numa1);
+//    p=getrr(buf,p,dnshdr->numa2);
+
     return 0;
 }

@@ -27,7 +27,7 @@ int ConnectTo(const char* host, int port){
        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
         return -1;
     }
-    
+
     int fd;
     struct addrinfo *curinfo=res;
     while(curinfo){
