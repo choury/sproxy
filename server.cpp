@@ -81,14 +81,14 @@ int main(int argc, char** argv)
     signal(SIGPIPE, SIG_IGN);
     fprintf(stderr, "Accepting connections ...\n");
     struct epoll_event event;
-    struct epoll_event events[20];
     int efd = epoll_create(10000);
     event.data.ptr = NULL;
     event.events = EPOLLIN;
     epoll_ctl(efd, EPOLL_CTL_ADD, svsk, &event);
     creatpool(THREADS);
     while (1) {
-        int i, c;
+        int c;
+        struct epoll_event events[20];
         if ((c = epoll_wait(efd, events, 20, 1000)) < 0) {
             if (errno != EINTR) {
                 perror("epoll wait");
@@ -96,7 +96,7 @@ int main(int argc, char** argv)
             }
             continue;
         }
-        for (i = 0; i < c; ++i) {
+        for (int i = 0; i < c; ++i) {
             if (events[i].data.ptr == NULL) {
                 if (events[i].events & EPOLLIN) {
                     socklen_t temp = sizeof(myaddr);
@@ -152,8 +152,8 @@ int main(int argc, char** argv)
                     return 7;
                 }
             } else {
-                Peer* peer = (Peer*)events[i].data.ptr;
-                peer->handleEvent(events[i].events);
+                Con* con = (Con*)events[i].data.ptr;
+                con->handleEvent(events[i].events);
             }
         }
         peerlist.purge();

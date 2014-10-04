@@ -2,6 +2,7 @@
 #define __PEER_H__
 
 #include <stdint.h>
+#include "con.h"
 
 #include "common.h"
 
@@ -11,7 +12,7 @@
 
 enum Status {preconnect_s,accept_s,start_s, post_s , connect_s,wantclose_s, close_s ,wait_s,proxy_s};
 
-class Peer{
+class Peer:public Con{
 protected:
     int  fd;
     int  efd;
@@ -24,7 +25,6 @@ protected:
 public:
     Peer();  //do nothing
     Peer(int fd,int efd);
-    virtual void handleEvent(uint32_t events)=0;
     virtual bool candelete()=0;
     virtual void peercanwrite();
     virtual int Read(char *buff,size_t size);

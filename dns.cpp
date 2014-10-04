@@ -5,14 +5,15 @@ JUST FOR TEST
 
 
 #include <stdio.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <time.h>
+#include <unistd.h>
+#include <arpa/inet.h>
 #include <resolv.h>
+#include <sys/epoll.h>
+#include <unordered_map>
 
 #include "dns.h"
 
@@ -25,15 +26,18 @@ JUST FOR TEST
 #define NTOH(x) (x=ntoh(x))
 #define NTOHS(x) (x=ntohs(x))
 
-typedef unsigned short U16;
-typedef unsigned int   U32;
+typedef unsigned short uint16;
+typedef unsigned int   uint32;
 
 
-std::vector<int> dns_srv;
+static unsigned int id_cur=0;
+
+std::vector<Dns_srv> srvs;
+
 
 typedef struct _DNS_HDR {
-    U16 id;                 //查询序列号
-    U16 flag;
+    uint16 id;                 //查询序列号
+    uint16 flag;
 #define  QR 0x8000          //查询/应答 0/1
 #define  OPCODE_STD 0       //0:标准查询
 #define  OPCODE_STR 0x0800  //1:反向查询
@@ -50,27 +54,39 @@ typedef struct _DNS_HDR {
     //4 没有实现(Not Implemented) - 域名服务器不支持查询类型。
     //5 拒绝(Refused) - 服务器由于设置的策略拒绝给出应答。比如，服务器不希望对某些请求者给出应答，或者服务器不希望进行某些操作（比如区域传送zone transfer）。
     //6-15 保留值，暂时未使用。
-    U16 numq;               //问题个数
-    U16 numa;               //应答资源个数
-    U16 numa1;              //授权记录数
-    U16 numa2;              //额外资源记录数
+    uint16 numq;               //问题个数
+    uint16 numa;               //应答资源个数
+    uint16 numa1;              //授权记录数
+    uint16 numa2;              //额外资源记录数
 } __attribute__ ((packed)) DNS_HDR;
 typedef struct _DNS_QER {
-    U16 type;               //类型A，值是1，表示获取目标主机的IP地址。
+    uint16 type;               //类型A，值是1，表示获取目标主机的IP地址。
     //类型CNAME，值是5，表示获得目标主机的别名。
     //类型PTR，值是12，表示反向查询。
-    //0xFF 表示查询全部
-    U16 classes;            //通常为1，表示获取因特网地址（IP地址）
+    //类型aaaa，值是28，表示查询IPV6地址
+    uint16 classes;            //通常为1，表示获取因特网地址（IP地址）
 } __attribute__ ((packed)) DNS_QER;
 
 
 typedef struct _DNS_RR {
-    U16 type;
-    U16 classes;
-    U32 TTL;                //缓存时间
-    U16 rdlength;           //rdata 长度
+    uint16 type;
+    uint16 classes;
+    uint32 TTL;                //缓存时间
+    uint16 rdlength;           //rdata 长度
 } __attribute__ ((packed)) DNS_RR;
 
+typedef struct _DNS_STATE{
+    unsigned int id;
+    time_t reqtime;
+    CBfunc func;
+    void *param;
+    enum {querya,queryaaaa}status;
+    char host[DOMAINLIMIT];
+    std::vector<sockaddr_un> addr;
+}DNS_STATE;
+
+std::unordered_map<int,DNS_STATE *> rcd_index_id;
+std::unordered_map<std::string,Dns_rcd> rcd_index_host;
 
 unsigned char * getdomain(unsigned char *buf,unsigned char *p) {
     while(*p) {
@@ -79,7 +95,7 @@ unsigned char * getdomain(unsigned char *buf,unsigned char *p) {
             getdomain(buf,q);
             return p+2;
         } else {
-            printf("%.*s.",*p,p+1);
+//            printf("%.*s.",*p,p+1);
             p+=*p+1;
         }
     }
@@ -87,7 +103,7 @@ unsigned char * getdomain(unsigned char *buf,unsigned char *p) {
 }
 
 
-unsigned char *getrr(unsigned char *buf,unsigned char *p,int num) {
+unsigned char *getrr(unsigned char *buf,unsigned char *p,int num,std::vector<sockaddr_un>& addr) {
     int i;
     for(i=0; i<num; ++i) {
         p=getdomain(buf,p);
@@ -97,89 +113,207 @@ unsigned char *getrr(unsigned char *buf,unsigned char *p,int num) {
         NTOHS(dnsrr->TTL);
         NTOHS(dnsrr->rdlength);
         p+=sizeof(DNS_RR);
-        printf(" ==> ");
+//        printf(" ==> ");
         switch(dnsrr->type) {
-            char ipaddr[INET6_ADDRSTRLEN];
+//            char ipaddr[INET6_ADDRSTRLEN];
+            sockaddr_un ip;
         case 1:
-            printf("%s",inet_ntop(PF_INET,p,ipaddr,sizeof(ipaddr)));
+            ip.addr_in.sin_family=PF_INET;
+            memcpy(&ip.addr_in.sin_addr,p,sizeof(in_addr));
+            addr.push_back(ip);
+//            printf("%s",inet_ntop(PF_INET,p,ipaddr,sizeof(ipaddr)));
             break;
         case 2:
         case 5:
             getdomain(buf,p);
             break;
         case 28:
-            printf("%s",inet_ntop(PF_INET6,p,ipaddr,sizeof(ipaddr)));
+            ip.addr_in6.sin6_family=PF_INET6;
+            memcpy(&ip.addr_in6.sin6_addr,p,sizeof(in6_addr));
+            addr.push_back(ip);
+//            printf("%s",inet_ntop(PF_INET6,p,ipaddr,sizeof(ipaddr)));
             break;
         }
         p+=dnsrr->rdlength;
-        printf("\n");
+//        printf("\n");
     }
     return p;
 }
 
-int dns_init() {
+int dnsinit(int efd) {
     if(res_init()<0) {
         perror ( "res_init" );
         return -1;
     }
-    for(int i=0; i<dns_srv.size(); ++i) {
-        close(dns_srv[i]);
+    struct epoll_event event;
+    event.events=EPOLLIN ;
+
+    for(size_t i=0; i<srvs.size(); ++i) {
+        close(srvs[i].fd);
     }
-    dns_srv.clear();
+    srvs.clear();
     for(int i=0; i<_res.nscount; ++i) {
-        int fd;
-        if ( ( fd  =  socket (_res.nsaddr_list[i].sin_family, SOCK_DGRAM, 0 ) )  <   0 ) {
+        Dns_srv srv;
+        if ( ( srv.fd  =  socket (_res.nsaddr_list[i].sin_family, SOCK_DGRAM, 0 ) )  <   0 ) {
             perror ( "create socket error" );
             continue;
         }
-        if (connect(fd,(sockaddr *)&_res.nsaddr_list[i],sizeof(_res.nsaddr_list[i])) == -1) {
+        if (connect(srv.fd,(sockaddr *)&_res.nsaddr_list[i],sizeof(_res.nsaddr_list[i])) == -1) {
             perror("connecting error");
-            close(fd);
+            close(srv.fd);
             continue;
         }
-        dns_srv.push_back(fd);
+        srvs.push_back(srv);
+        event.data.ptr=&srvs.back();
+        epoll_ctl(efd, EPOLL_CTL_ADD,srv.fd,&event);
     }
     for(int i=0; i<MAXNS; ++i) {
         if(_res._u._ext.nsmap[i]&4) {
-            int fd;
-            if ( ( fd  =  socket (_res._u._ext.nsaddrs[i]->sin6_family, SOCK_DGRAM, 0 ) )  <   0 ) {
+            Dns_srv srv;
+            if ( ( srv.fd  =  socket (_res._u._ext.nsaddrs[i]->sin6_family, SOCK_DGRAM, 0 ) )  <   0 ) {
                 perror ( "create socket error" );
                 continue;
             }
-            if (connect(fd,(sockaddr *)_res._u._ext.nsaddrs[i],sizeof(*_res._u._ext.nsaddrs[i])) == -1) {
+            if (connect(srv.fd,(sockaddr *)_res._u._ext.nsaddrs[i],sizeof(*_res._u._ext.nsaddrs[i])) == -1) {
                 perror("connecting error");
-                close(fd);
+                close(srv.fd);
                 continue;
             }
-            dns_srv.push_back(fd);
+            srvs.push_back(srv);
+            event.data.ptr=&srvs.back();
+            epoll_ctl(efd, EPOLL_CTL_ADD,srv.fd,&event);
         }
     }
-    return dns_srv.size();
+    return srvs.size();
+}
+
+void query(const char *host ,CBfunc func,void *param) {
+    unsigned char buf[BUF_SIZE];
+    if(inet_pton(PF_INET,host,buf)==1){
+        sockaddr_un addr;
+        addr.addr_in.sin_family=PF_INET;
+        memcpy(&addr.addr_in.sin_addr,buf,sizeof(in_addr));
+        func(param,Dns_rcd(addr));
+        return;
+    }
+    
+    if(inet_pton(PF_INET6,host,buf)==1){
+        sockaddr_un addr;
+        addr.addr_in6.sin6_family=PF_INET6;
+        memcpy(&addr.addr_in6.sin6_addr,buf,sizeof(in6_addr));
+        func(param,Dns_rcd(addr));
+        return;
+    }
+    
+    if(rcd_index_host.find(host) != rcd_index_host.end()){
+        func(param,rcd_index_host[host]);
+        return;
+    }
+
+    DNS_STATE *dnsst = new DNS_STATE;
+    dnsst->id=id_cur++;
+    dnsst->func=func;
+    dnsst->param=param;
+    dnsst->status=DNS_STATE::querya;
+    strcpy(dnsst->host,host);
+    
+    for(size_t i=0;i<srvs.size();++i){
+        dnsst->id=srvs[i].query(host,1);
+        if(dnsst->id != 0){
+            dnsst->reqtime=time(nullptr);
+            rcd_index_id[dnsst->id]=dnsst;
+            return;
+        }
+    }
+    delete dnsst;
+    func(param,Dns_rcd(DNS_ERR));
+    return;
 }
 
 
-int main ( int argc, char** argv ) {
-    int      len = 0;
-    unsigned int i;
+
+
+void Dns_srv::handleEvent(uint32_t events) {
+    unsigned char buf[BUF_SIZE];
+    if (events & EPOLLIN) {
+        int len = read( fd, buf,BUF_SIZE);
+
+        if ( len < 0 ) {
+            perror("read");
+            return;
+        }
+        DNS_HDR *dnshdr=(DNS_HDR *)buf;
+        NTOHS(dnshdr->id);
+        NTOHS(dnshdr->flag);
+        NTOHS(dnshdr->numq);
+        NTOHS(dnshdr->numa);
+        NTOHS(dnshdr->numa1);
+        NTOHS(dnshdr->numa2);
+        
+        if(rcd_index_id.find(dnshdr->id) == rcd_index_id.end()){
+            fprintf(stderr,"Get a unkown id:%d\n",dnshdr->id);
+            return;
+        }
+        DNS_STATE *dnsst=rcd_index_id[dnshdr->id];
+        rcd_index_id.erase(dnsst->id);
+        
+        if ( (dnshdr->flag & QR) == 0 || (dnshdr->flag & RCODE_MASK) != 0) {
+            printf ( "ack error\n" );
+            dnsst->func(dnsst->param,Dns_rcd(DNS_ERR));
+            delete dnsst;
+            return;
+        }
+        
+        unsigned char *p = buf+sizeof(DNS_HDR);
+        for(int i=0; i<dnshdr->numq; ++i) {
+            p=getdomain(buf,p);
+            p+=sizeof(DNS_QER);
+        }
+        getrr(buf,p,dnshdr->numa,dnsst->addr);
+        
+        if(dnsst->status==DNS_STATE::querya){
+            dnsst->status=DNS_STATE::queryaaaa;
+            for(size_t i=0;i<srvs.size();++i){
+                dnsst->id=srvs[i].query(dnsst->host,28);
+                if(dnsst->id != 0){
+                    dnsst->reqtime=time(nullptr);
+                    rcd_index_id[dnsst->id]=dnsst;
+                    break;
+                }
+            }
+        }else{
+            dnsst->func(dnsst->param,Dns_rcd(dnsst->addr));
+            delete dnsst;
+        }
+    }
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        int       error = 0;
+        socklen_t errlen = sizeof(error);
+
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
+            printf("Dns:%s\n",strerror(error));
+//            fprintf(stderr, "([%s]:%d): guest error:%s\n",
+//                    sourceip, sourceport, strerror(error));
+        }
+    }
+}
+
+
+int Dns_srv::query(const char *host, int type){
     unsigned char  buf[BUF_SIZE];
     unsigned char  *p;
-    DNS_HDR  *dnshdr = ( DNS_HDR * ) buf;
-
-    if(dns_init()<=0) {
-        fprintf(stderr,"Init Dns error\n");
-        return -1;
-    }
-    
+    DNS_HDR  *dnshdr = ( DNS_HDR * )buf;
+    unsigned int id=id_cur++;
     memset ( buf, 0, BUF_SIZE );
-    dnshdr->id = htons(1);
+    dnshdr->id = htons(id);
     dnshdr->flag = htons(RD);
-    dnshdr->numq = htons ( 1 );
+    dnshdr->numq = htons (1);
 
     p = buf + sizeof ( DNS_HDR ) + 1;
-    strcpy ( (char *)p, argv[1] );
+    strcpy ( (char *)p, host);
 
-    i = 0;
-    while ( p < ( buf + sizeof ( DNS_HDR ) + 1 + strlen ( argv[1] ) ) ) {
+    int i = 0;
+    while ( p < ( buf + sizeof ( DNS_HDR ) + 1 + strlen ( host ) ) ) {
         if ( *p == '.' ) {
             * ( p - i - 1 ) = i;
             i = 0;
@@ -191,43 +325,60 @@ int main ( int argc, char** argv ) {
     * ( p - i - 1 ) = i;
 
     DNS_QER  *dnsqer = ( DNS_QER * ) ( buf + sizeof ( DNS_HDR ) );
-    dnsqer = ( DNS_QER * ) ( buf + sizeof ( DNS_HDR ) + 2 + strlen ( argv[1] ) );
+    dnsqer = ( DNS_QER * ) ( buf + sizeof ( DNS_HDR ) + 2 + strlen ( host ) );
     dnsqer->classes = htons(1);
-    dnsqer->type = htons(1);
+    dnsqer->type = htons(type);
 
 
-    len =sizeof ( DNS_HDR ) + sizeof ( DNS_QER ) + strlen ( argv[1] ) + 2;
-    if(write(dns_srv[0], buf, sizeof ( DNS_HDR ) + sizeof ( DNS_QER ) + strlen ( argv[1] ) + 2)!=len){
+    int len =sizeof ( DNS_HDR ) + sizeof ( DNS_QER ) + strlen ( host ) + 2;
+    if(write(srvs[0].fd, buf, len)!=len) {
         perror("write");
+        return 0;
+    }
+    return id;
+}
+
+
+void cbhello(void *,Dns_rcd rcd){
+    if(rcd.result!=0){
+        fprintf(stderr,"Dns error\n");
+        return;
+    }
+    for(size_t i=0;i<rcd.addr.size();++i){
+        switch(rcd.addr[i].addr.sa_family){
+            char ipaddr[INET6_ADDRSTRLEN];
+        case PF_INET:
+            fprintf(stderr,"%s\n",inet_ntop(PF_INET,&rcd.addr[i].addr_in.sin_addr,ipaddr,sizeof(ipaddr)));
+            break;
+        case PF_INET6:
+            fprintf(stderr,"%s\n",inet_ntop(PF_INET6,&rcd.addr[i].addr_in6.sin6_addr,ipaddr,sizeof(ipaddr)));
+            break;
+        }
+    }
+}
+
+int main ( int argc, char** argv ) {
+    int efd = epoll_create(10000);
+    if(dnsinit(efd)<=0) {
+        fprintf(stderr,"Dns Init failed\n");
         return -1;
     }
 
-    len = read( dns_srv[0], buf,BUF_SIZE);
-
-    if ( len < 0 ) {
-        perror("read");
-        return -1;
+    query(argv[1],cbhello,nullptr);
+    while (1) {
+        int c;
+        epoll_event events[20];
+        if ((c = epoll_wait(efd, events, 20, 0)) < 0) {
+            if (errno != EINTR) {
+                perror("epoll wait");
+                return 4;
+            }
+            continue;
+        }
+        for (int i = 0; i < c; ++i) {
+            Con *srv=(Con *)events[i].data.ptr;
+            srv->handleEvent(events[i].events);
+        }
     }
-
-    NTOHS(dnshdr->id);
-    NTOHS(dnshdr->flag);
-    NTOHS(dnshdr->numq);
-    NTOHS(dnshdr->numa);
-    NTOHS(dnshdr->numa1);
-    NTOHS(dnshdr->numa2);
-    if ( dnshdr->id != 1 || (dnshdr->flag & QR) == 0 || (dnshdr->flag & RCODE_MASK) != 0 ) {
-        printf ( "ack error\n" );
-        return -1;
-    }
-    p = buf+sizeof(DNS_HDR);
-    for(i=0; i<dnshdr->numq; ++i) {
-        p=getdomain(buf,p);
-        printf(" recodes:\n");
-        p+=sizeof(DNS_QER);
-    }
-    p=getrr(buf,p,dnshdr->numa);
-//    p=getrr(buf,p,dnshdr->numa1);
-//    p=getrr(buf,p,dnshdr->numa2);
-
     return 0;
 }
