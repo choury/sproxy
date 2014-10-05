@@ -175,14 +175,14 @@ void Guest_s::handleEvent(uint32_t events) {
                         sscanf(lenpoint + 15, "%u", &expectlen);
                         expectlen -= read_len;
 
-                        host = host->gethost(host, http.hostname, http.port, efd, this);
+                        host = Host::gethost(host, http.hostname, http.port, efd, this);
                         host->Write(buff, writelen);
                         host->Write(rbuff, read_len);
                         read_len = 0;
                         status = post_s;
 
                     } else if (http.ismethod("CONNECT")) {
-                        host = host->gethost(host, http.hostname, http.port, efd, this);
+                        host = Host::gethost(host, http.hostname, http.port, efd, this);
                         status = connect_s;
 
                     } else {

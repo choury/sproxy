@@ -1,9 +1,3 @@
-/*
-JUST FOR TEST
-
-*/
-
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +8,8 @@ JUST FOR TEST
 #include <resolv.h>
 #include <sys/epoll.h>
 #include <unordered_map>
+#include <string>
+
 
 #include "dns.h"
 #include "net.h"
@@ -33,7 +29,7 @@ typedef unsigned int   uint32;
 
 static unsigned int id_cur=0;
 
-std::vector<Dns_srv> srvs;
+std::vector<Dns_srv *> srvs;
 
 
 typedef struct _DNS_HDR {
@@ -150,39 +146,43 @@ int dnsinit(int efd) {
     event.events=EPOLLIN ;
 
     for(size_t i=0; i<srvs.size(); ++i) {
-        close(srvs[i].fd);
+        close(srvs[i]->fd);
+        delete srvs[i];
     }
     srvs.clear();
     for(int i=0; i<_res.nscount; ++i) {
-        Dns_srv srv;
-        if ( ( srv.fd  =  socket (_res.nsaddr_list[i].sin_family, SOCK_DGRAM, 0 ) )  <   0 ) {
+        Dns_srv *srv= new Dns_srv;
+        if ( ( srv->fd  =  socket (_res.nsaddr_list[i].sin_family, SOCK_DGRAM, 0 ) )  <   0 ) {
             perror ( "[DNS] create socket error" );
             continue;
         }
-        if (connect(srv.fd,(sockaddr *)&_res.nsaddr_list[i],sizeof(_res.nsaddr_list[i])) == -1) {
+        if (connect(srv->fd,(sockaddr *)&_res.nsaddr_list[i],sizeof(_res.nsaddr_list[i])) == -1) {
             perror("[DNS] connecting error");
-            close(srv.fd);
+            close(srv->fd);
+            delete srv;
             continue;
         }
         srvs.push_back(srv);
-        event.data.ptr=&srvs.back();
-        epoll_ctl(efd, EPOLL_CTL_ADD,srv.fd,&event);
+        event.data.ptr=srv;
+        epoll_ctl(efd, EPOLL_CTL_ADD,srv->fd,&event);
     }
     for(int i=0; i<MAXNS; ++i) {
         if(_res._u._ext.nsmap[i]&4) {
-            Dns_srv srv;
-            if ( ( srv.fd  =  socket (_res._u._ext.nsaddrs[i]->sin6_family, SOCK_DGRAM, 0 ) )  <   0 ) {
+            Dns_srv *srv=new Dns_srv;
+            if ( ( srv->fd  =  socket (_res._u._ext.nsaddrs[i]->sin6_family, SOCK_DGRAM, 0 ) )  <   0 ) {
                 perror ( "[DNS] create socket error" );
+                delete srv;
                 continue;
             }
-            if (connect(srv.fd,(sockaddr *)_res._u._ext.nsaddrs[i],sizeof(*_res._u._ext.nsaddrs[i])) == -1) {
+            if (connect(srv->fd,(sockaddr *)_res._u._ext.nsaddrs[i],sizeof(*_res._u._ext.nsaddrs[i])) == -1) {
                 perror("[DNS] connecting error");
-                close(srv.fd);
+                close(srv->fd);
+                delete srv;
                 continue;
             }
             srvs.push_back(srv);
-            event.data.ptr=&srvs.back();
-            epoll_ctl(efd, EPOLL_CTL_ADD,srv.fd,&event);
+            event.data.ptr=srv;
+            epoll_ctl(efd, EPOLL_CTL_ADD,srv->fd,&event);
         }
     }
     return srvs.size();
@@ -219,7 +219,7 @@ void query(const char *host ,DNSCBfunc func,void *param) {
     strcpy(dnsst->host,host);
     
     for(size_t i=0;i<srvs.size();++i){
-        dnsst->id=srvs[i].query(host,1);
+        dnsst->id=srvs[i]->query(host,1);
         if(dnsst->id != 0){
             dnsst->reqtime=time(nullptr);
             rcd_index_id[dnsst->id]=dnsst;
@@ -277,7 +277,7 @@ void Dns_srv::handleEvent(uint32_t events) {
         if(dnsst->status==DNS_STATE::querya){
             dnsst->status=DNS_STATE::queryaaaa;
             for(size_t i=0;i<srvs.size();++i){
-                dnsst->id=srvs[i].query(dnsst->host,28);
+                dnsst->id=srvs[i]->query(dnsst->host,28);
                 if(dnsst->id != 0){
                     dnsst->reqtime=time(nullptr);
                     rcd_index_id[dnsst->id]=dnsst;
@@ -337,7 +337,7 @@ int Dns_srv::query(const char *host, int type){
 
 
     int len =sizeof ( DNS_HDR ) + sizeof ( DNS_QER ) + strlen ( host ) + 2;
-    if(write(srvs[0].fd, buf, len)!=len) {
+    if(write(fd, buf, len)!=len) {
         perror("[DNS] write");
         return 0;
     }

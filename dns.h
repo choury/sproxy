@@ -4,6 +4,7 @@
 
 #include <netdb.h>
 #include <vector>
+#include <unistd.h>
 #include "con.h"
 
 
@@ -12,6 +13,7 @@ public:
     int fd;
     virtual void handleEvent(uint32_t events) override;
     int query(const char *,int type);
+    virtual ~Dns_srv(){};
 };
 
 
