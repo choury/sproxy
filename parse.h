@@ -32,7 +32,7 @@ public:
     char url[URLLIMIT];
     char hostname[DOMAINLIMIT];
     char path[URLLIMIT];
-    int port;
+    uint16_t port;
     Http(char *header)throw (int);
     int getstring(char *,bool);
     bool ismethod(const char *);

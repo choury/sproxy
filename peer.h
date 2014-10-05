@@ -22,9 +22,9 @@ protected:
     bool fulled=false;
     virtual void clean()=0;
     virtual int Write();
-public:
     Peer();  //do nothing
     Peer(int fd,int efd);
+public:
     virtual bool candelete()=0;
     virtual void peercanwrite();
     virtual int Read(char *buff,size_t size);
@@ -34,6 +34,6 @@ public:
 };
 
 
-void connectHost(Host * host);
+//void connectHost(Host * host);
 
 #endif

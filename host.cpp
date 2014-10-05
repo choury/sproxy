@@ -31,6 +31,11 @@ void Host::handleEvent(uint32_t events) {
 
     if( status == close_s)
         return;
+    
+    if( guest == NULL){
+        clean();
+        return;
+    }
 
     if (events & EPOLLIN ) {
         int bufleft = guest->bufleft();
@@ -99,7 +104,7 @@ void Host::handleEvent(uint32_t events) {
 }
 
 
-void Host::connect(Host* host, const Dns_rcd& rcd){
+void Host::connect(Host* host, const Dns_rcd&& rcd){
     if(rcd.result!=0){
         fprintf(stderr,"Dns query failed\n");
         host->clean();
@@ -126,7 +131,7 @@ void Host::connect(Host* host, const Dns_rcd& rcd){
 void Host::clean() {
     if(guest){
         guest->host=NULL;
-        guest->clean();
+//        guest->clean();
     }
     guest=NULL;
 

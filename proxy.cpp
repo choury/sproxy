@@ -52,7 +52,7 @@ void Proxy::connected() {
         int ret = Write();
 
         if (ret <= 0) {
-            guest->clean();
+            clean();
             return;
         }
     }
@@ -72,7 +72,11 @@ void Proxy::handleEvent(uint32_t events) {
 
     if( status == close_s)
         return;
-
+    
+    if( guest == NULL){
+        clean();
+        return;
+    }
     if (events & EPOLLIN) {
         int ret;
         int bufleft = guest->bufleft();
@@ -93,7 +97,7 @@ void Proxy::handleEvent(uint32_t events) {
 
                 default:
                     ERR_print_errors_fp(stderr);
-                    guest->clean();
+                    clean();
                     return;
                 }
 
@@ -125,7 +129,7 @@ void Proxy::handleEvent(uint32_t events) {
                     fprintf(stderr, "proxy read:%s\n", ERR_error_string(error, NULL));
                 }
 
-                guest->clean();
+                clean();
                 return;
             }
 
@@ -158,7 +162,7 @@ void Proxy::handleEvent(uint32_t events) {
 
             if (ctx == NULL) {
                 ERR_print_errors_fp(stderr);
-                guest->clean();
+                clean();
                 return;
             }
 
@@ -180,7 +184,7 @@ void Proxy::handleEvent(uint32_t events) {
 
                 default:
                     ERR_print_errors_fp(stderr);
-                    guest->clean();
+                    clean();
                     return;
                 }
 
@@ -207,7 +211,7 @@ void Proxy::handleEvent(uint32_t events) {
                         fprintf(stderr, "proxy write:%s\n", ERR_error_string(error, NULL));
                     }
 
-                    guest->clean();
+                    clean();
                     return;
                 }
 
@@ -231,7 +235,7 @@ void Proxy::handleEvent(uint32_t events) {
     }
 
     if (events & EPOLLERR || events & EPOLLHUP) {
-        guest->clean();
+        clean();
     }
 }
 

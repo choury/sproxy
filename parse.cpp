@@ -126,7 +126,7 @@ char* toUpper(char* s) {
 }
 
 
-int spliturl(const char* url, char* hostname, char* path , int* port) {
+int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
     const char* addrsplit;
     char tmpaddr[DOMAINLIMIT];
     int urllen = strlen(url);
@@ -173,7 +173,7 @@ int spliturl(const char* url, char* hostname, char* path , int* port) {
         strncpy(hostname, tmpaddr + 1, addrsplit - tmpaddr - 1);
 
         if (addrsplit[1] == ':') {
-            if(sscanf(addrsplit + 2, "%d", port) != 1)
+            if(sscanf(addrsplit + 2, "%hd", port) != 1)
                 return -1;
         } else if (addrsplit[1] != 0) {
             return -1;
@@ -182,7 +182,7 @@ int spliturl(const char* url, char* hostname, char* path , int* port) {
         if ((addrsplit = strpbrk(tmpaddr, ":"))) {
             strncpy(hostname, url, addrsplit - tmpaddr);
 
-            if(sscanf(addrsplit + 1, "%d", port) != 1)
+            if(sscanf(addrsplit + 1, "%hd", port) != 1)
                 return -1;
         } else {
             strcpy(hostname, tmpaddr);

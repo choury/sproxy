@@ -15,7 +15,7 @@
 #include "common.h"
 
 char SHOST[DOMAINLIMIT];
-int SPORT=443;
+uint16_t SPORT=443;
 
 
 Peerlist peerlist;

@@ -19,7 +19,7 @@ public:
     virtual void handleEvent(uint32_t events)override;
     virtual void clean() override;
     static Host *gethost(Host *exist,const char *host,uint16_t port,int efd,Guest *guest);
-    static void connect(Host * host,const Dns_rcd&);
+    static void connect(Host * host,const Dns_rcd&&);
 };
 
 #endif

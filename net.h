@@ -17,7 +17,7 @@
 extern "C" {
 #endif
 
-int spliturl(const char* url, char* host, char* path , int* port);
+int spliturl(const char* url, char* host, char* path , uint16_t* port);
 //int ConnectTo(const char* host, int port);
 
 int Connect(struct sockaddr*);

@@ -6,7 +6,7 @@
 #include <list>
 
 
-extern int SPORT;
+extern uint16_t SPORT;
 #define CPORT 3333
 
 

@@ -29,6 +29,7 @@ int Connect(struct sockaddr* addr) {
     if (connect(fd, addr, sizeof(struct sockaddr_in6)) == -1 && errno != EINPROGRESS) {
         perror("connecting error");
         close(fd);
+        return -1;
     }
     
     return fd;

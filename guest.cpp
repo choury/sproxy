@@ -59,11 +59,6 @@ void Guest::connected() {
     }
 }
 
-bool Guest::candelete() {
-    return status == close_s && write_len == 0;
-}
-
-
 
 void Guest::handleEvent(uint32_t events) {
     struct epoll_event event;
@@ -74,7 +69,10 @@ void Guest::handleEvent(uint32_t events) {
 
     if (events & EPOLLIN) {
         char buff[1024 * 1024];
-
+        if(status != start_s && host == NULL){
+            clean();
+            return;
+        }
         switch (status) {
         case start_s:
             if (read_len == 4096) {
@@ -329,7 +327,7 @@ void Guest::clean() {
     status = close_s;
     if(host) {
         host->guest=NULL;
-        host->clean();
+//        host->clean();
     }
     host=NULL;
 
@@ -339,4 +337,8 @@ void Guest::clean() {
         event.events = EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     }
+}
+
+bool Guest::candelete() {
+    return status == close_s && write_len == 0;
 }

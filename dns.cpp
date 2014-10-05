@@ -154,6 +154,7 @@ int dnsinit(int efd) {
         Dns_srv *srv= new Dns_srv;
         if ( ( srv->fd  =  socket (_res.nsaddr_list[i].sin_family, SOCK_DGRAM, 0 ) )  <   0 ) {
             perror ( "[DNS] create socket error" );
+            delete srv;
             continue;
         }
         if (connect(srv->fd,(sockaddr *)&_res.nsaddr_list[i],sizeof(_res.nsaddr_list[i])) == -1) {
@@ -239,8 +240,8 @@ void Dns_srv::handleEvent(uint32_t events) {
     if (events & EPOLLIN) {
         int len = read( fd, buf,BUF_SIZE);
 
-        if ( len < 0 ) {
-            perror("read");
+        if ( len <= 0 ) {
+            perror("[DNS] read");
             return;
         }
         DNS_HDR *dnshdr=(DNS_HDR *)buf;
