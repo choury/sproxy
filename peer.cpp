@@ -19,24 +19,16 @@ int SPORT=443;
 
 
 Peerlist peerlist;
-pthread_mutex_t lock;
 
 
 
 //这里初始化所有全局变量
 Peerlist::Peerlist():list(){
-    pthread_mutexattr_t mutexattr;
-    pthread_mutexattr_init(&mutexattr);
-    pthread_mutexattr_settype(&mutexattr,
-                              PTHREAD_MUTEX_RECURSIVE_NP);
-    pthread_mutex_init(&lock, &mutexattr);
-    pthread_mutexattr_destroy(&mutexattr);
     
 }
 
 
 void Peerlist::purge() {
-    pthread_mutex_lock(&lock);
     for (auto i = begin(); i != end();) {
         if ((*i)->candelete()) {
             delete *i;
@@ -45,7 +37,6 @@ void Peerlist::purge() {
             ++i;
         }
     }
-    pthread_mutex_unlock(&lock);
 }
 
 

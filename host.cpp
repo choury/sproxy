@@ -29,7 +29,7 @@ void Host::handleEvent(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
 
-    if(status == wantclose_s || status == close_s)
+    if( status == close_s)
         return;
 
     if (events & EPOLLIN ) {
@@ -45,7 +45,7 @@ void Host::handleEvent(uint32_t events) {
         int ret = Read(buff, bufleft);
 
         if (ret <= 0) {
-            guest->clean();
+            clean();
             return;
         }
 
@@ -93,7 +93,7 @@ void Host::handleEvent(uint32_t events) {
     }
 
     if (events & EPOLLERR || events & EPOLLHUP) {
-        guest->clean();
+        clean();
     }
 
 }
@@ -111,6 +111,7 @@ void Host::connect(Host* host, const Dns_rcd& rcd){
         host->fd=Connect(&host->addr[0].addr);
         if(host->fd <0 ){
             fprintf(stderr,"connect to %s failed\n",host->hostname);
+            host->fd=0;
             host->clean();
         }else{
             epoll_event event;
@@ -123,8 +124,6 @@ void Host::connect(Host* host, const Dns_rcd& rcd){
 
 
 void Host::clean() {
-    pthread_mutex_lock(&lock);
-    
     if(guest){
         guest->host=NULL;
         guest->clean();
@@ -133,7 +132,6 @@ void Host::clean() {
 
     status = close_s;
     epoll_ctl(efd,EPOLL_CTL_DEL,fd,NULL);
-    pthread_mutex_unlock(&lock);
 }
 
 

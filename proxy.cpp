@@ -70,7 +70,7 @@ void Proxy::handleEvent(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
 
-    if(status == wantclose_s || status == close_s)
+    if( status == close_s)
         return;
 
     if (events & EPOLLIN) {

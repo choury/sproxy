@@ -6,7 +6,6 @@
 #include <netdb.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
-#include "threadpool.h"
 
 #include "net.h"
 
