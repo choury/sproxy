@@ -9,8 +9,7 @@
 
 //#include "common.h"
 #include "guest_s.h"
-#include "threadpool.h"
-
+#include "dns.h"
 
 
 int main(int argc, char** argv)
@@ -26,8 +25,8 @@ int main(int argc, char** argv)
     }
 
     if (SSL_CTX_load_verify_locations(ctx,
-                                      "/home/choury/keys/sub.class1.server.ca.pem", 
-                                      "/home/choury/keys/sub.class1.server.ca.crt") != 1)
+                                      "/home/choury/keys/ca.pem", 
+                                      "/home/choury/keys/ca.crt") != 1)
         ERR_print_errors_fp(stderr);
 
     if (SSL_CTX_set_default_verify_paths(ctx) != 1)
@@ -35,12 +34,12 @@ int main(int argc, char** argv)
 
 
     //加载证书和私钥
-    if (SSL_CTX_use_certificate_file(ctx, "/home/choury/keys/www.crt", SSL_FILETYPE_PEM) != 1) {
+    if (SSL_CTX_use_certificate_file(ctx, "/home/choury/keys/ssl.crt", SSL_FILETYPE_PEM) != 1) {
         ERR_print_errors_fp(stderr);
         return 1;
     }
 
-    if (SSL_CTX_use_PrivateKey_file(ctx, "/home/choury/keys/www.key", SSL_FILETYPE_PEM) != 1) {
+    if (SSL_CTX_use_PrivateKey_file(ctx, "/home/choury/keys/ssl.key", SSL_FILETYPE_PEM) != 1) {
         ERR_print_errors_fp(stderr);
         return 1;
     }
@@ -85,7 +84,12 @@ int main(int argc, char** argv)
     event.data.ptr = NULL;
     event.events = EPOLLIN;
     epoll_ctl(efd, EPOLL_CTL_ADD, svsk, &event);
-    creatpool(THREADS);
+
+    if(dnsinit(efd)<=0) {
+        fprintf(stderr,"Dns Init failed\n");
+        return -1;
+    }
+    
     while (1) {
         int c;
         struct epoll_event events[20];

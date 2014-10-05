@@ -1,11 +1,10 @@
 #ifndef __DNS_H__
 #define __DNS_H__
 
-#include <bits/socket.h>
+
+#include <netdb.h>
 #include <vector>
-#include "net.h"
 #include "con.h"
-#include "time.h"
 
 
 class Dns_srv:public Con{
@@ -33,9 +32,11 @@ public:
     Dns_rcd(const sockaddr_un &addr):result(0){this->addr.push_back(addr);};
 };
 
-typedef void (*CBfunc)(void *,Dns_rcd );
+
+typedef void (*DNSCBfunc)(void *,const Dns_rcd& );
 
 int dnsinit(int efd);
-void query(const char *host ,CBfunc func,void *param);
+void query(const char *host ,DNSCBfunc func,void *param);
+
 
 #endif

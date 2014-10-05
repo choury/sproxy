@@ -324,16 +324,17 @@ void Guest::handleEvent(uint32_t events) {
 
 }
 
+
 void Guest::clean() {
     status = close_s;
     pthread_mutex_lock(&lock);
-    if(host){
+    if(host) {
         host->guest=NULL;
         host->clean();
     }
     host=NULL;
     pthread_mutex_unlock(&lock);
-    
+
     if (write_len) {
         struct epoll_event event;
         event.data.ptr = this;

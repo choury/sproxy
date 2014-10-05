@@ -123,7 +123,7 @@ size_t Peer::bufleft() {
     return sizeof(wbuff) - write_len;
 }
 
-
+/*
 void connectHost(Host * host) {
     int hostfd = ConnectTo(host->hostname, host->targetport);
 
@@ -162,7 +162,4 @@ void connectHost(Host * host) {
     }
     pthread_mutex_unlock(&lock);
 }
-
-
-
-
+*/

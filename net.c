@@ -12,6 +12,30 @@
 
 
 
+int Connect(struct sockaddr* addr) {
+    int fd;
+    if ((fd = socket(addr->sa_family,SOCK_STREAM , 0)) < 0) {
+        perror("socket error");
+        return -1;
+    }
+    
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) {
+        perror("fcntl error");
+        close(fd);
+        return -1;
+    }
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+    if (connect(fd, addr, sizeof(struct sockaddr_in6)) == -1 && errno != EINPROGRESS) {
+        perror("connecting error");
+        close(fd);
+    }
+    
+    return fd;
+}
+
+
 
 int ConnectTo(const char* host, int port){
     struct addrinfo hints, *res = NULL;
@@ -46,7 +70,7 @@ int ConnectTo(const char* host, int port){
         }
         curinfo=curinfo->ai_next;
     }
-    
+
     freeaddrinfo(res);
     if(curinfo == NULL){
         return -1;

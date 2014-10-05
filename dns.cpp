@@ -16,6 +16,7 @@ JUST FOR TEST
 #include <unordered_map>
 
 #include "dns.h"
+#include "net.h"
 
 #define BUF_SIZE 1024
 
@@ -78,7 +79,7 @@ typedef struct _DNS_RR {
 typedef struct _DNS_STATE{
     unsigned int id;
     time_t reqtime;
-    CBfunc func;
+    DNSCBfunc func;
     void *param;
     enum {querya,queryaaaa}status;
     char host[DOMAINLIMIT];
@@ -142,7 +143,7 @@ unsigned char *getrr(unsigned char *buf,unsigned char *p,int num,std::vector<soc
 
 int dnsinit(int efd) {
     if(res_init()<0) {
-        perror ( "res_init" );
+        perror ("[DNS] res_init" );
         return -1;
     }
     struct epoll_event event;
@@ -155,11 +156,11 @@ int dnsinit(int efd) {
     for(int i=0; i<_res.nscount; ++i) {
         Dns_srv srv;
         if ( ( srv.fd  =  socket (_res.nsaddr_list[i].sin_family, SOCK_DGRAM, 0 ) )  <   0 ) {
-            perror ( "create socket error" );
+            perror ( "[DNS] create socket error" );
             continue;
         }
         if (connect(srv.fd,(sockaddr *)&_res.nsaddr_list[i],sizeof(_res.nsaddr_list[i])) == -1) {
-            perror("connecting error");
+            perror("[DNS] connecting error");
             close(srv.fd);
             continue;
         }
@@ -171,11 +172,11 @@ int dnsinit(int efd) {
         if(_res._u._ext.nsmap[i]&4) {
             Dns_srv srv;
             if ( ( srv.fd  =  socket (_res._u._ext.nsaddrs[i]->sin6_family, SOCK_DGRAM, 0 ) )  <   0 ) {
-                perror ( "create socket error" );
+                perror ( "[DNS] create socket error" );
                 continue;
             }
             if (connect(srv.fd,(sockaddr *)_res._u._ext.nsaddrs[i],sizeof(*_res._u._ext.nsaddrs[i])) == -1) {
-                perror("connecting error");
+                perror("[DNS] connecting error");
                 close(srv.fd);
                 continue;
             }
@@ -187,7 +188,7 @@ int dnsinit(int efd) {
     return srvs.size();
 }
 
-void query(const char *host ,CBfunc func,void *param) {
+void query(const char *host ,DNSCBfunc func,void *param) {
     unsigned char buf[BUF_SIZE];
     if(inet_pton(PF_INET,host,buf)==1){
         sockaddr_un addr;
@@ -251,25 +252,27 @@ void Dns_srv::handleEvent(uint32_t events) {
         NTOHS(dnshdr->numa2);
         
         if(rcd_index_id.find(dnshdr->id) == rcd_index_id.end()){
-            fprintf(stderr,"Get a unkown id:%d\n",dnshdr->id);
+            fprintf(stderr,"[DNS] Get a unkown id:%d\n",dnshdr->id);
             return;
         }
         DNS_STATE *dnsst=rcd_index_id[dnshdr->id];
         rcd_index_id.erase(dnsst->id);
         
         if ( (dnshdr->flag & QR) == 0 || (dnshdr->flag & RCODE_MASK) != 0) {
-            printf ( "ack error\n" );
-            dnsst->func(dnsst->param,Dns_rcd(DNS_ERR));
-            delete dnsst;
-            return;
+            fprintf (stderr, "[DNS] ack error:%u\n", dnshdr->flag & RCODE_MASK);
+            if(dnsst->status==DNS_STATE::querya){
+                dnsst->func(dnsst->param,Dns_rcd(DNS_ERR));
+                delete dnsst;
+                return;
+            }
+        }else{
+            unsigned char *p = buf+sizeof(DNS_HDR);
+            for(int i=0; i<dnshdr->numq; ++i) {
+                p=getdomain(buf,p);
+                p+=sizeof(DNS_QER);
+            }
+            getrr(buf,p,dnshdr->numa,dnsst->addr);
         }
-        
-        unsigned char *p = buf+sizeof(DNS_HDR);
-        for(int i=0; i<dnshdr->numq; ++i) {
-            p=getdomain(buf,p);
-            p+=sizeof(DNS_QER);
-        }
-        getrr(buf,p,dnshdr->numa,dnsst->addr);
         
         if(dnsst->status==DNS_STATE::querya){
             dnsst->status=DNS_STATE::queryaaaa;
@@ -278,20 +281,23 @@ void Dns_srv::handleEvent(uint32_t events) {
                 if(dnsst->id != 0){
                     dnsst->reqtime=time(nullptr);
                     rcd_index_id[dnsst->id]=dnsst;
-                    break;
+                    return;
                 }
             }
-        }else{
-            dnsst->func(dnsst->param,Dns_rcd(dnsst->addr));
-            delete dnsst;
         }
+        if(dnsst->addr.size()){
+            dnsst->func(dnsst->param,Dns_rcd(dnsst->addr));
+        }else{
+            dnsst->func(dnsst->param,Dns_rcd(DNS_ERR));
+        }
+        delete dnsst;
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            printf("Dns:%s\n",strerror(error));
+            printf("[DNS] : %s\n",strerror(error));
 //            fprintf(stderr, "([%s]:%d): guest error:%s\n",
 //                    sourceip, sourceport, strerror(error));
         }
@@ -332,53 +338,9 @@ int Dns_srv::query(const char *host, int type){
 
     int len =sizeof ( DNS_HDR ) + sizeof ( DNS_QER ) + strlen ( host ) + 2;
     if(write(srvs[0].fd, buf, len)!=len) {
-        perror("write");
+        perror("[DNS] write");
         return 0;
     }
     return id;
 }
 
-
-void cbhello(void *,Dns_rcd rcd){
-    if(rcd.result!=0){
-        fprintf(stderr,"Dns error\n");
-        return;
-    }
-    for(size_t i=0;i<rcd.addr.size();++i){
-        switch(rcd.addr[i].addr.sa_family){
-            char ipaddr[INET6_ADDRSTRLEN];
-        case PF_INET:
-            fprintf(stderr,"%s\n",inet_ntop(PF_INET,&rcd.addr[i].addr_in.sin_addr,ipaddr,sizeof(ipaddr)));
-            break;
-        case PF_INET6:
-            fprintf(stderr,"%s\n",inet_ntop(PF_INET6,&rcd.addr[i].addr_in6.sin6_addr,ipaddr,sizeof(ipaddr)));
-            break;
-        }
-    }
-}
-
-int main ( int argc, char** argv ) {
-    int efd = epoll_create(10000);
-    if(dnsinit(efd)<=0) {
-        fprintf(stderr,"Dns Init failed\n");
-        return -1;
-    }
-
-    query(argv[1],cbhello,nullptr);
-    while (1) {
-        int c;
-        epoll_event events[20];
-        if ((c = epoll_wait(efd, events, 20, 0)) < 0) {
-            if (errno != EINTR) {
-                perror("epoll wait");
-                return 4;
-            }
-            continue;
-        }
-        for (int i = 0; i < c; ++i) {
-            Con *srv=(Con *)events[i].data.ptr;
-            srv->handleEvent(events[i].events);
-        }
-    }
-    return 0;
-}

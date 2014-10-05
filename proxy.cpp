@@ -139,10 +139,21 @@ void Proxy::handleEvent(uint32_t events) {
     }
 
     if (events & EPOLLOUT) {
-        int ret;
-
+        int ret,error;
+        socklen_t len=sizeof(error);
         switch (status) {
         case start_s:
+            if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
+                perror("proxy getsokopt");
+                clean();
+                return;
+            }
+
+            if (error != 0) {
+                fprintf(stderr, "connect to proxy:%s\n", strerror(error));
+                clean();
+                return;
+            }
             ctx = SSL_CTX_new(SSLv23_client_method());
 
             if (ctx == NULL) {

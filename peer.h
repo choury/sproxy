@@ -10,7 +10,7 @@
  * guest_s ---   (server) --- host */
 
 
-enum Status {preconnect_s,accept_s,start_s, post_s , connect_s,wantclose_s, close_s ,wait_s,proxy_s};
+enum Status {accept_s,start_s, post_s , connect_s,wantclose_s, close_s ,wait_s,proxy_s};
 
 class Peer:public Con{
 protected:

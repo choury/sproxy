@@ -10,7 +10,7 @@
 #include "common.h"
 #include "guest.h"
 #include "parse.h"
-#include "threadpool.h"
+#include "dns.h"
 
 
 int main(int argc, char** argv) {
@@ -63,7 +63,11 @@ int main(int argc, char** argv) {
     event.events = EPOLLIN;
     epoll_ctl(efd, EPOLL_CTL_ADD, svsk, &event);
     
-    creatpool(THREADS);
+    
+    if(dnsinit(efd)<=0) {
+        fprintf(stderr,"Dns Init failed\n");
+        return -1;
+    }
     while (1) {
         int c;
         struct epoll_event events[20];

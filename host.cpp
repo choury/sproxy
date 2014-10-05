@@ -4,24 +4,23 @@
 
 #include "host.h"
 #include "guest.h"
-#include "threadpool.h"
+#include "dns.h"
 
 
 
-Host::Host(int efd, Guest* guest ,const char *hostname,int port): guest(guest) {
+Host::Host(int efd, Guest* guest ,const char *hostname,uint16_t port): guest(guest) {
 
     this->efd = efd;
     this->fd=0;
-    this->status=preconnect_s;
     write_len = 0;
 
     strcpy(this->hostname, hostname);
     this->targetport=port;
 
 
-    
+    query(hostname,(DNSCBfunc)Host::connect,this);
 
-    addtask((taskfunc)connectHost,this,0);
+//    addtask((taskfunc)connectHost,this,0);
     peerlist.push_back(this);
 }
 
@@ -55,6 +54,22 @@ void Host::handleEvent(uint32_t events) {
     }
 
     if (events & EPOLLOUT) {
+        if(status==start_s){
+            int error;
+            socklen_t len=sizeof(error);
+            if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
+                perror("getsokopt");
+                clean();
+                return;
+            }
+            if (error != 0) {
+                fprintf(stderr, "connect to %s: %s\n",hostname, strerror(error));
+                clean();
+                return;
+            }
+            status=connect_s;
+            guest->connected();
+        }
         if (write_len) {
             int ret = Write();
             if (ret <= 0) {
@@ -84,6 +99,28 @@ void Host::handleEvent(uint32_t events) {
 }
 
 
+void Host::connect(Host* host, const Dns_rcd& rcd){
+    if(rcd.result!=0){
+        fprintf(stderr,"Dns query failed\n");
+        host->clean();
+    }else{
+        host->addr=rcd.addr;
+        for(size_t i=0;i<host->addr.size();++i){
+            host->addr[i].addr_in6.sin6_port=htons(host->targetport);
+        }
+        host->fd=Connect(&host->addr[0].addr);
+        if(host->fd <0 ){
+            fprintf(stderr,"connect to %s failed\n",host->hostname);
+            host->clean();
+        }else{
+            epoll_event event;
+            event.data.ptr=host;
+            event.events=EPOLLOUT;
+            epoll_ctl(host->efd,EPOLL_CTL_ADD,host->fd,&event);
+        }
+    }
+}
+
 
 void Host::clean() {
     pthread_mutex_lock(&lock);
@@ -93,12 +130,8 @@ void Host::clean() {
         guest->clean();
     }
     guest=NULL;
-    
-    if(status != preconnect_s) {
-        status = close_s;
-    } else {
-        status = wantclose_s;
-    }
+
+    status = close_s;
     epoll_ctl(efd,EPOLL_CTL_DEL,fd,NULL);
     pthread_mutex_unlock(&lock);
 }
@@ -108,7 +141,7 @@ bool Host::candelete() {
     return status==close_s;
 }
 
-Host* Host::gethost(Host* exist, const char* hostname, int port, int efd, Guest* guest) {
+Host* Host::gethost(Host* exist, const char* hostname, uint16_t port, int efd, Guest* guest) {
     if (exist == NULL) {
         Host* newhost = new Host(efd, guest,hostname,port);
         return newhost;

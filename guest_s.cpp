@@ -160,7 +160,7 @@ void Guest_s::handleEvent(uint32_t events) {
 
 
                     if (http.ismethod("GET" ) || http.ismethod("HEAD") ) {
-                        host = host->gethost(host, http.hostname, http.port, efd, this);
+                        host = Host::gethost(host, http.hostname, http.port, efd, this);
                         host->Write(buff, writelen);
                         status = start_s;
                     } else if (http.ismethod("POST") ) {
