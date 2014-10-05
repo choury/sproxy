@@ -63,7 +63,7 @@ void Guest_s::handleEvent(uint32_t events) {
     if (events & EPOLLIN) {
         char buff[1024 * 1024];
         
-        if((status != accept_s || status != start_s)  && host == NULL){
+        if(status != accept_s && status != start_s && host == NULL){
             clean();
             return;
         }
