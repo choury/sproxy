@@ -18,7 +18,10 @@ Host::Host(int efd, Guest* guest ,const char *hostname,uint16_t port): guest(gue
     this->targetport=port;
 
 
-    query(hostname,(DNSCBfunc)Host::connect,this);
+    if(query(hostname,(DNSCBfunc)Host::connect,this)<0){
+        fprintf(stderr,"DNS qerry falied\n");
+        throw 0;
+    }
 
 //    addtask((taskfunc)connectHost,this,0);
     peerlist.push_back(this);

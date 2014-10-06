@@ -189,14 +189,14 @@ int dnsinit(int efd) {
     return srvs.size();
 }
 
-void query(const char *host ,DNSCBfunc func,void *param) {
+int query(const char *host ,DNSCBfunc func,void *param) {
     unsigned char buf[BUF_SIZE];
     if(inet_pton(PF_INET,host,buf)==1){
         sockaddr_un addr;
         addr.addr_in.sin_family=PF_INET;
         memcpy(&addr.addr_in.sin_addr,buf,sizeof(in_addr));
         func(param,Dns_rcd(addr));
-        return;
+        return 0;
     }
     
     if(inet_pton(PF_INET6,host,buf)==1){
@@ -204,12 +204,12 @@ void query(const char *host ,DNSCBfunc func,void *param) {
         addr.addr_in6.sin6_family=PF_INET6;
         memcpy(&addr.addr_in6.sin6_addr,buf,sizeof(in6_addr));
         func(param,Dns_rcd(addr));
-        return;
+        return 0;
     }
     
     if(rcd_index_host.find(host) != rcd_index_host.end()){
         func(param,rcd_index_host[host]);
-        return;
+        return 0;
     }
 
     DNS_STATE *dnsst = new DNS_STATE;
@@ -224,12 +224,11 @@ void query(const char *host ,DNSCBfunc func,void *param) {
         if(dnsst->id != 0){
             dnsst->reqtime=time(nullptr);
             rcd_index_id[dnsst->id]=dnsst;
-            return;
+            return 0;
         }
     }
     delete dnsst;
-    func(param,Dns_rcd(DNS_ERR));
-    return;
+    return -1;
 }
 
 
