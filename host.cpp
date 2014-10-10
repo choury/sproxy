@@ -82,7 +82,7 @@ void Host::handleEvent(uint32_t events) {
             int ret = Write();
             if (ret <= 0) {
                 perror("host write");
-                guest->clean();
+                clean();
                 return;
             }
 
@@ -134,7 +134,7 @@ void Host::connect(Host* host, const Dns_rcd&& rcd){
 void Host::clean() {
     if(guest){
         guest->host=NULL;
-//        guest->clean();
+        guest->clean();
     }
     guest=NULL;
 
@@ -149,8 +149,7 @@ bool Host::candelete() {
 
 Host* Host::gethost(Host* exist, const char* hostname, uint16_t port, int efd, Guest* guest) {
     if (exist == NULL) {
-        Host* newhost = new Host(efd, guest,hostname,port);
-        return newhost;
+        return new Host(efd, guest,hostname,port);
     } else if (exist->targetport == port && strcasecmp(exist->hostname, hostname) == 0) {
         return exist;
     } else {

@@ -327,7 +327,6 @@ void Guest::clean() {
     status = close_s;
     if(host) {
         host->guest=NULL;
-//        host->clean();
     }
     host=NULL;
 

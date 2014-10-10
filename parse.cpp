@@ -205,7 +205,8 @@ Http::Http(char* header)throw (int){
         fprintf(stderr,"wrong url format:%s\n",url);
         throw 0;
     }
-
+    
+    
     for (char* str = strstr(header, CRLF) + strlen(CRLF); ; str = NULL) {
         char* p = strtok(str, CRLF);
 
