@@ -17,30 +17,6 @@
 char SHOST[DOMAINLIMIT];
 uint16_t SPORT=443;
 
-
-Peerlist peerlist;
-
-
-
-//这里初始化所有全局变量
-Peerlist::Peerlist():list(){
-    
-}
-
-
-void Peerlist::purge() {
-    for (auto i = begin(); i != end();) {
-        if ((*i)->candelete()) {
-            delete *i;
-            i=erase(i);
-        } else {
-            ++i;
-        }
-    }
-}
-
-
-
 Peer::Peer() {
 
 }

@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
     while (1) {
         int c;
         struct epoll_event events[20];
-        if ((c = epoll_wait(efd, events, 20, 1000)) < 0) {
+        if ((c = epoll_wait(efd, events, 20, -1)) < 0) {
             if (errno != EINTR) {
                 perror("epoll wait");
                 return 4;
@@ -115,7 +115,6 @@ int main(int argc, char** argv) {
                 con->handleEvent(events[i].events);
             }
         }
-        peerlist.purge();
     }
 
     close(svsk);

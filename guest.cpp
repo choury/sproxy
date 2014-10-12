@@ -32,7 +32,8 @@ Guest::Guest(int fd, int efd): Peer(fd, efd) {
 
     if ((getsockopt(fd, SOL_IP, SO_ORIGINAL_DST, &Dst, &sin_size) || (socktype = AF_INET, 0)) &&
             (getsockopt(fd, SOL_IPV6, SO_ORIGINAL_DST, &Dst6, &sin6_size) || (socktype = AF_INET6, 0))) {
-        perror("getsockopt error");
+        fprintf(stderr, "([%s]:%d): getsockopt error:%s\n",
+                            sourceip, sourceport, strerror(errno));
         strcpy(destip, "Unkown IP");
         destport = CPORT;
     } else {
@@ -48,7 +49,6 @@ Guest::Guest(int fd, int efd): Peer(fd, efd) {
             break;
         }
     }
-    peerlist.push_back(this);
 
 }
 
@@ -69,7 +69,7 @@ void Guest::handleEvent(uint32_t events) {
 
     if (events & EPOLLIN) {
         char buff[1024 * 1024];
-        if(status != start_s && host == NULL){
+        if(status != start_s && host == NULL) {
             clean();
             return;
         }
@@ -79,14 +79,14 @@ void Guest::handleEvent(uint32_t events) {
                 fprintf(stderr, "([%s]:%d): too large header\n",
                         sourceip, sourceport);
                 clean();
-                break;
+                return;
             }
 
             ret = Read(rbuff + read_len, 4096 - read_len);
 
             if (ret <= 0) {
                 clean();
-                break;
+                return;
             }
 
             read_len += ret;
@@ -136,7 +136,7 @@ void Guest::handleEvent(uint32_t events) {
 
                     if ( http.ismethod("GET") ||  http.ismethod("HEAD") ) {
                         if(shouldproxy) {
-                            host=Proxy::getproxy(host,efd,this);
+                            host = Proxy::getproxy(host,efd,this);
                         } else {
                             host = Host::gethost(host, http.hostname, http.port, efd, this);
                         }
@@ -149,7 +149,7 @@ void Guest::handleEvent(uint32_t events) {
                             fprintf(stderr, "([%s]:%d): unsported post version\n",
                                     sourceip, sourceport);
                             clean();
-                            break;
+                            return;
                         }
 
                         sscanf(lenpoint + 15, "%u", &expectlen);
@@ -225,7 +225,7 @@ void Guest::handleEvent(uint32_t events) {
 
             if (ret <= 0 ) {
                 clean();
-                break;
+                return;
             }
 
             expectlen -= ret;
@@ -251,7 +251,7 @@ void Guest::handleEvent(uint32_t events) {
 
             if (ret <= 0) {
                 clean();
-                break;
+                return;
             }
 
             host->Write(buff, ret);
@@ -267,14 +267,15 @@ void Guest::handleEvent(uint32_t events) {
         switch (status) {
         case close_s:
             if(write_len == 0) {
+                delete this;
                 return;
             }
 
             ret = Write();
 
             if (ret < 0) {
-                perror("guest write");
-                clean();
+                fprintf(stderr, "([%s]:%d): guest write:%s\n",
+                            sourceip, sourceport, strerror(errno));
                 write_len = 0;
                 return;
             }
@@ -285,9 +286,10 @@ void Guest::handleEvent(uint32_t events) {
             if(write_len) {
                 ret = Write();
                 if (ret <= 0) {
-                    perror("guest write");
-                    clean();
+                    fprintf(stderr, "([%s]:%d): guest write error:%s\n",
+                            sourceip, sourceport, strerror(errno));
                     write_len = 0;
+                    clean();
                     return;
                 }
 
@@ -306,7 +308,6 @@ void Guest::handleEvent(uint32_t events) {
         }
     }
 
-
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
@@ -316,8 +317,8 @@ void Guest::handleEvent(uint32_t events) {
                     sourceip, sourceport, strerror(error));
         }
 
-        clean();
         write_len = 0;
+        clean();
     }
 
 }
@@ -330,14 +331,8 @@ void Guest::clean() {
     }
     host=NULL;
 
-    if (write_len) {
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    }
-}
-
-bool Guest::candelete() {
-    return status == close_s && write_len == 0;
+    struct epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLOUT;
+    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 }

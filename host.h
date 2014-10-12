@@ -15,7 +15,6 @@ protected:
 public:
     Guest* guest;
     Host(int efd,Guest *guest,const char *hostname,uint16_t port);
-    virtual bool candelete()override;
     virtual void handleEvent(uint32_t events)override;
     virtual void clean() override;
     static Host *gethost(Host *exist,const char *host,uint16_t port,int efd,Guest *guest);

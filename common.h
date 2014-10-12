@@ -22,7 +22,7 @@ class Guest;
 class Host;
 
 
-
+/*
 class Peerlist:public std::list<Peer *>{
 public:
     Peerlist();
@@ -31,7 +31,7 @@ public:
 
 extern Peerlist peerlist;
 extern pthread_mutex_t lock;
-
+*/
 
 
 #ifdef  __cplusplus

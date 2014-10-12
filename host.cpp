@@ -23,8 +23,6 @@ Host::Host(int efd, Guest* guest ,const char *hostname,uint16_t port): guest(gue
         throw 0;
     }
 
-//    addtask((taskfunc)connectHost,this,0);
-    peerlist.push_back(this);
 }
 
 
@@ -140,12 +138,9 @@ void Host::clean() {
 
     status = close_s;
     epoll_ctl(efd,EPOLL_CTL_DEL,fd,NULL);
+    delete this;
 }
 
-
-bool Host::candelete() {
-    return status==close_s;
-}
 
 Host* Host::gethost(Host* exist, const char* hostname, uint16_t port, int efd, Guest* guest) {
     if (exist == NULL) {

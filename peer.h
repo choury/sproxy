@@ -25,7 +25,6 @@ protected:
     Peer();  //do nothing
     Peer(int fd,int efd);
 public:
-    virtual bool candelete()=0;
     virtual void peercanwrite();
     virtual int Read(char *buff,size_t size);
     virtual int Write(const char *buff,size_t size);

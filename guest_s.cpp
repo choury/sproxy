@@ -90,13 +90,13 @@ void Guest_s::handleEvent(uint32_t events) {
                     fprintf(stderr, "([%s]:%d): ssl_accept error:%s\n",
                             sourceip, sourceport, strerror(errno));
                     clean();
-                    break;
+                    return;
 
                 default:
                     fprintf(stderr, "([%s]:%d):ssl_accept error:%s\n",
                             sourceip, sourceport, ERR_error_string(error, NULL));
                     clean();
-                    break;
+                    return;
                 }
 
                 break;
@@ -109,7 +109,7 @@ void Guest_s::handleEvent(uint32_t events) {
             if (read_len == 4096) {
                 fprintf(stderr, "([%s]:%d): too large header\n", sourceip, sourceport);
                 clean();
-                break;
+                return;
             }
 
             ret = Read(rbuff + read_len, 4096 - read_len);
@@ -128,7 +128,7 @@ void Guest_s::handleEvent(uint32_t events) {
                 }
 
                 clean();
-                break;
+                return;
             }
 
             read_len += ret;
@@ -174,7 +174,7 @@ void Guest_s::handleEvent(uint32_t events) {
                         if ((lenpoint = strstr(buff, "Content-Length:")) == NULL) {
                             fprintf(stderr, "([%s]:%d): unsported post version\n", sourceip, sourceport);
                             clean();
-                            break;
+                            return;
                         }
 
                         sscanf(lenpoint + 15, "%u", &expectlen);
@@ -194,6 +194,7 @@ void Guest_s::handleEvent(uint32_t events) {
                         fprintf(stderr, "([%s]:%d): unknown method:%s\n",
                                 sourceip, sourceport, http.method);
                         clean();
+                        return;
                     }
                 } catch(...) {
                     clean();
@@ -227,7 +228,7 @@ void Guest_s::handleEvent(uint32_t events) {
                 }
 
                 clean();
-                break;
+                return;
             }
 
             expectlen -= ret;
@@ -264,7 +265,7 @@ void Guest_s::handleEvent(uint32_t events) {
                 }
 
                 clean();
-                break;
+                return;
             }
 
             host->Write(buff, ret);
@@ -300,13 +301,13 @@ void Guest_s::handleEvent(uint32_t events) {
                     fprintf(stderr, "([%s]:%d): ssl_accept error:%s\n",
                             sourceip, sourceport, strerror(errno));
                     clean();
-                    break;
+                    return;
 
                 default:
                     fprintf(stderr, "([%s]:%d):ssl_accept error:%s\n",
                             sourceip, sourceport, ERR_error_string(error, NULL));
                     clean();
-                    break;
+                    return;
                 }
 
                 break;
@@ -317,6 +318,7 @@ void Guest_s::handleEvent(uint32_t events) {
 
         case close_s:
             if(write_len == 0) {
+                delete this;
                 return;
             }
             ret = Write();
@@ -357,9 +359,9 @@ void Guest_s::handleEvent(uint32_t events) {
                                 sourceip, sourceport, ERR_error_string(error, NULL));
                     }
 
-                    clean();
                     write_len = 0;
-                    break;
+                    clean();
+                    return;
                 }
 
                 if (fulled) {
@@ -387,8 +389,8 @@ void Guest_s::handleEvent(uint32_t events) {
                     sourceip, sourceport, strerror(error));
         }
 
-        clean();
         write_len = 0;
+        clean();
     }
 
 }

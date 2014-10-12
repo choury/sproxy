@@ -23,7 +23,6 @@ public:
     virtual void clean() override;
     virtual void handleEvent(uint32_t events) override;
     virtual void connected();
-    virtual bool candelete();
 };
 
 
