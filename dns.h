@@ -5,6 +5,8 @@
 #include <netdb.h>
 #include <vector>
 #include <unistd.h>
+#include <netinet/in.h>
+
 #include "con.h"
 
 #define _RESOLV_FILE_ "/etc/resolv.conf"

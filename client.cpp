@@ -2,6 +2,7 @@
 #include <cerrno>
 #include <signal.h>
 #include <fcntl.h>
+#include <libgen.h>
 #include <sys/epoll.h>
 #include <arpa/inet.h>
 #include <openssl/ssl.h>

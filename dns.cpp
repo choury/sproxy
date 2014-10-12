@@ -5,7 +5,6 @@
 #include <time.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-//#include <resolv.h>
 #include <sys/epoll.h>
 #include <unordered_map>
 #include <string>
@@ -152,9 +151,8 @@ int dnsinit(int efd) {
         LOGE("[DNS] open resolv file:%s failed:%s\n",_RESOLV_FILE_,strerror(errno) );
         return -1;
     }
-    char *line=NULL;
-    size_t len=0;
-    while(getline(&line,&len,res_file)!=-1){
+    char line[100];
+    while(fscanf(res_file,"%99[^\n]\n",line)!= EOF){
         char command[11],ipaddr[INET6_ADDRSTRLEN];
         sscanf(line,"%10s %45s",command,ipaddr);
         if(strcmp(command,"nameserver")==0){
@@ -200,7 +198,6 @@ int dnsinit(int efd) {
             }
         }
     }
-    free(line);
     fclose(res_file);
     return srvs.size();
 }

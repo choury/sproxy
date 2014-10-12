@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <string.h>
-
+#include <errno.h>
 #include <arpa/inet.h>
 #include <sys/epoll.h>
+#include <limits.h>
 #include <linux/netfilter_ipv4.h>
 
 #include "guest.h"
