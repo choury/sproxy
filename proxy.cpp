@@ -72,8 +72,8 @@ void Proxy::handleEvent(uint32_t events) {
 
     if( status == close_s)
         return;
-    
-    if( guest == NULL){
+
+    if( guest == NULL) {
         clean();
         return;
     }
@@ -111,7 +111,7 @@ void Proxy::handleEvent(uint32_t events) {
 
         case connect_s:
             if (bufleft == 0) {
-                fprintf(stderr, "The guest's write buff is full\n");
+                LOGE( "The guest's write buff is full\n");
                 epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
             }
 
@@ -124,9 +124,9 @@ void Proxy::handleEvent(uint32_t events) {
                 if (error == SSL_ERROR_WANT_READ) {
                     break;
                 } else if (error == SSL_ERROR_SYSCALL) {
-                    fprintf(stderr, "proxy read:%s\n", strerror(errno));
+                    LOGE( "proxy read:%s\n", strerror(errno));
                 } else if (error != SSL_ERROR_ZERO_RETURN) {
-                    fprintf(stderr, "proxy read:%s\n", ERR_error_string(error, NULL));
+                    LOGE( "proxy read:%s\n", ERR_error_string(error, NULL));
                 }
 
                 clean();
@@ -154,7 +154,7 @@ void Proxy::handleEvent(uint32_t events) {
             }
 
             if (error != 0) {
-                fprintf(stderr, "connect to proxy:%s\n", strerror(error));
+                LOGE( "connect to proxy:%s\n", strerror(error));
                 clean();
                 return;
             }
@@ -206,9 +206,9 @@ void Proxy::handleEvent(uint32_t events) {
                     if (error == SSL_ERROR_WANT_WRITE) {
                         break;
                     } else if (error == SSL_ERROR_SYSCALL) {
-                        fprintf(stderr, "proxy write:%s\n", strerror(errno));
+                        LOGE( "proxy write:%s\n", strerror(errno));
                     } else if (error != SSL_ERROR_ZERO_RETURN) {
-                        fprintf(stderr, "proxy write:%s\n", ERR_error_string(error, NULL));
+                        LOGE( "proxy write:%s\n", ERR_error_string(error, NULL));
                     }
 
                     clean();

@@ -99,7 +99,7 @@ void connectHost(Host * host) {
         host->status=start_s;
 
         if (hostfd < 0) {
-            fprintf(stderr, "connect to %s error\n", host->hostname);
+            LOGE( "connect to %s error\n", host->hostname);
             host->clean();
             pthread_mutex_unlock(&lock);
             return;

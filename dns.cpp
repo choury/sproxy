@@ -10,9 +10,10 @@
 #include <unordered_map>
 #include <string>
 
-
+#include "common.h"
 #include "dns.h"
 #include "net.h"
+
 
 #define BUF_SIZE 1024
 
@@ -252,14 +253,14 @@ void Dns_srv::handleEvent(uint32_t events) {
         NTOHS(dnshdr->numa2);
         
         if(rcd_index_id.find(dnshdr->id) == rcd_index_id.end()){
-            fprintf(stderr,"[DNS] Get a unkown id:%d\n",dnshdr->id);
+            LOGE("[DNS] Get a unkown id:%d\n",dnshdr->id);
             return;
         }
         DNS_STATE *dnsst=rcd_index_id[dnshdr->id];
         rcd_index_id.erase(dnsst->id);
         
         if ( (dnshdr->flag & QR) == 0 || (dnshdr->flag & RCODE_MASK) != 0) {
-            fprintf (stderr, "[DNS] ack error:%u\n", dnshdr->flag & RCODE_MASK);
+            LOGE("[DNS] ack error:%u\n", dnshdr->flag & RCODE_MASK);
             if(dnsst->status==DNS_STATE::querya){
                 dnsst->func(dnsst->param,Dns_rcd(DNS_ERR));
                 delete dnsst;
@@ -297,9 +298,7 @@ void Dns_srv::handleEvent(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            printf("[DNS] : %s\n",strerror(error));
-//            fprintf(stderr, "([%s]:%d): guest error:%s\n",
-//                    sourceip, sourceport, strerror(error));
+            LOGE("[DNS] : %s\n",strerror(error));
         }
     }
 }

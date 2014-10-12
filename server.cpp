@@ -78,7 +78,7 @@ int main(int argc, char** argv)
     }
 
     signal(SIGPIPE, SIG_IGN);
-    fprintf(stderr, "Accepting connections ...\n");
+    LOGE( "Accepting connections ...\n");
     struct epoll_event event;
     int efd = epoll_create(10000);
     event.data.ptr = NULL;
@@ -86,7 +86,7 @@ int main(int argc, char** argv)
     epoll_ctl(efd, EPOLL_CTL_ADD, svsk, &event);
 
     if(dnsinit(efd)<=0) {
-        fprintf(stderr,"Dns Init failed\n");
+        LOGE("Dns Init failed\n");
         return -1;
     }
     

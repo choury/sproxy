@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <arpa/inet.h>
 
+#include "common.h"
 #include "net.h"
 
 
@@ -14,20 +15,20 @@
 int Connect(struct sockaddr* addr) {
     int fd;
     if ((fd = socket(addr->sa_family,SOCK_STREAM , 0)) < 0) {
-        perror("socket error");
+        LOGE("socket error:%s\n",strerror(errno));
         return -1;
     }
     
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0) {
-        perror("fcntl error");
+        LOGE("fcntl error:%s\n",strerror(errno));
         close(fd);
         return -1;
     }
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
     if (connect(fd, addr, sizeof(struct sockaddr_in6)) == -1 && errno != EINPROGRESS) {
-        perror("connecting error");
+        LOGE("connecting error:%s\n",strerror(errno));
         close(fd);
         return -1;
     }
@@ -48,7 +49,7 @@ int ConnectTo(const char* host, int port){
     sprintf(buff, "%d", port);
     int s;
     if ((s=getaddrinfo(host, buff, &hints, &res))) {
-       fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
+       LOGE( "getaddrinfo: %s\n", gai_strerror(s));
         return -1;
     }
 
@@ -56,14 +57,14 @@ int ConnectTo(const char* host, int port){
     struct addrinfo *curinfo=res;
     while(curinfo){
         if ((fd = socket(curinfo->ai_family, curinfo->ai_socktype, curinfo->ai_protocol)) < 0) {
-            perror("socket error");
+            LOGE("socket error:%s\n",strerror(errno));
             freeaddrinfo(res);
             return -1;
         }
         struct timeval timeo = {30, 0};
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeo, sizeof(timeo));
         if (connect(fd, curinfo->ai_addr, curinfo->ai_addrlen) == -1) {
-            perror("connecting error");
+            LOGE("connecting error:%s\n",strerror(errno));
             close(fd);
         }else{
             break;

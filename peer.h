@@ -32,6 +32,8 @@ public:
     virtual ~Peer();
 };
 
+class Guest;
+class Host;
 
 //void connectHost(Host * host);
 

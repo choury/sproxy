@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 
 #include "parse.h"
+#include "common.h"
 
 #define H302FORMAT "HTTP/1.1 302 Found" CRLF "Location: %s" CRLF "Content-Length: 0" CRLF CRLF
 #define H200FORMAT "HTTP/1.1 200 OK" CRLF "Content-Length: %d" CRLF CRLF
@@ -202,7 +203,7 @@ Http::Http(char* header)throw (int){
     port=80;
 
     if(spliturl(url,hostname,path,&port)){
-        fprintf(stderr,"wrong url format:%s\n",url);
+        LOGE("wrong url format:%s\n",url);
         throw 0;
     }
     
@@ -215,7 +216,7 @@ Http::Http(char* header)throw (int){
 
         char* sp = strpbrk(p, ":");
         if(sp==NULL){
-            fprintf(stderr,"wrong header format:%s\n",p);
+            LOGE("wrong header format:%s\n",p);
             throw 0;
         }
         this->header[string(p, sp - p)] = ltrim(string(sp + 1));

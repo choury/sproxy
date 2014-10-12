@@ -1,37 +1,20 @@
 #ifndef __CONF_H__
 #define __CONF_H__
 
-
-#include <pthread.h>
-#include <list>
-
-
 extern uint16_t SPORT;
 #define CPORT 3333
 
 
 extern char SHOST[];
 
-#define THREADS 10
-
+#include <stdio.h>
 
 #define Min(x,y) ((x)<(y)?(x):(y))
-
-class Peer;
-class Guest;
-class Host;
+#define  LOG(...)  fprintf(stdout,__VA_ARGS__)
+#define  LOGE(...)   fprintf(stderr,__VA_ARGS__)
 
 
-/*
-class Peerlist:public std::list<Peer *>{
-public:
-    Peerlist();
-    void purge();
-};
 
-extern Peerlist peerlist;
-extern pthread_mutex_t lock;
-*/
 
 
 #ifdef  __cplusplus

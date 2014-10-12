@@ -32,7 +32,7 @@ Guest::Guest(int fd, int efd): Peer(fd, efd) {
 
     if ((getsockopt(fd, SOL_IP, SO_ORIGINAL_DST, &Dst, &sin_size) || (socktype = AF_INET, 0)) &&
             (getsockopt(fd, SOL_IPV6, SO_ORIGINAL_DST, &Dst6, &sin6_size) || (socktype = AF_INET6, 0))) {
-        fprintf(stderr, "([%s]:%d): getsockopt error:%s\n",
+        LOGE( "([%s]:%d): getsockopt error:%s\n",
                             sourceip, sourceport, strerror(errno));
         strcpy(destip, "Unkown IP");
         destport = CPORT;
@@ -76,7 +76,7 @@ void Guest::handleEvent(uint32_t events) {
         switch (status) {
         case start_s:
             if (read_len == 4096) {
-                fprintf(stderr, "([%s]:%d): too large header\n",
+                LOGE( "([%s]:%d): too large header\n",
                         sourceip, sourceport);
                 clean();
                 return;
@@ -112,7 +112,7 @@ void Guest::handleEvent(uint32_t events) {
                             host->Write(rbuff, read_len);
                             read_len = 0;
                             status = proxy_s;
-                            fprintf(stdout, "([%s]:%d): PROXY %s %s\n",
+                            LOG( "([%s]:%d): PROXY %s %s\n",
                                     sourceip, sourceport,
                                     http.method, http.url);
                             break;
@@ -124,12 +124,12 @@ void Guest::handleEvent(uint32_t events) {
                         http.port = HTTPPORT;
                         shouldproxy=true;
                     } else {
-                        fprintf(stderr,"Unkown Port\n");
+                        LOGE("Unkown Port\n");
                         clean();
                         return;
                     }
 
-                    fprintf(stdout, "([%s]:%d): %s %s\n",
+                    LOG( "([%s]:%d): %s %s\n",
                             sourceip, sourceport,
                             http.method, http.url);
 
@@ -146,7 +146,7 @@ void Guest::handleEvent(uint32_t events) {
                         int writelen=http.getstring(buff,shouldproxy);
                         char* lenpoint;
                         if ((lenpoint = strstr(buff, "Content-Length:")) == NULL) {
-                            fprintf(stderr, "([%s]:%d): unsported post version\n",
+                            LOGE( "([%s]:%d): unsported post version\n",
                                     sourceip, sourceport);
                             clean();
                             return;
@@ -200,7 +200,7 @@ void Guest::handleEvent(uint32_t events) {
                         }
                         status = start_s;
                     } else {
-                        fprintf(stderr, "([%s]:%d): unsported method:%s\n",
+                        LOGE( "([%s]:%d): unsported method:%s\n",
                                 sourceip, sourceport,http.method);
                         clean();
                     }
@@ -216,7 +216,7 @@ void Guest::handleEvent(uint32_t events) {
         case post_s:
             len=host->bufleft();
             if(len==0) {
-                fprintf(stderr, "([%s]:%d): The host's write buff is full\n",
+                LOGE( "([%s]:%d): The host's write buff is full\n",
                         sourceip, sourceport);
                 epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
                 break;
@@ -241,7 +241,7 @@ void Guest::handleEvent(uint32_t events) {
         case proxy_s:
             len=host->bufleft();
             if(len==0) {
-                fprintf(stderr, "([%s]:%d): The host's write buff is full\n",
+                LOGE( "([%s]:%d): The host's write buff is full\n",
                         sourceip, sourceport);
                 epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
                 break;
@@ -274,7 +274,7 @@ void Guest::handleEvent(uint32_t events) {
             ret = Write();
 
             if (ret < 0) {
-                fprintf(stderr, "([%s]:%d): guest write:%s\n",
+                LOGE( "([%s]:%d): guest write:%s\n",
                             sourceip, sourceport, strerror(errno));
                 write_len = 0;
                 return;
@@ -286,7 +286,7 @@ void Guest::handleEvent(uint32_t events) {
             if(write_len) {
                 ret = Write();
                 if (ret <= 0) {
-                    fprintf(stderr, "([%s]:%d): guest write error:%s\n",
+                    LOGE( "([%s]:%d): guest write error:%s\n",
                             sourceip, sourceport, strerror(errno));
                     write_len = 0;
                     clean();
@@ -313,7 +313,7 @@ void Guest::handleEvent(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            fprintf(stderr, "([%s]:%d): guest error:%s\n",
+            LOGE( "([%s]:%d): guest error:%s\n",
                     sourceip, sourceport, strerror(error));
         }
 

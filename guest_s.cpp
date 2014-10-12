@@ -87,13 +87,13 @@ void Guest_s::handleEvent(uint32_t events) {
                     break;
 
                 case SSL_ERROR_SYSCALL:
-                    fprintf(stderr, "([%s]:%d): ssl_accept error:%s\n",
+                    LOGE( "([%s]:%d): ssl_accept error:%s\n",
                             sourceip, sourceport, strerror(errno));
                     clean();
                     return;
 
                 default:
-                    fprintf(stderr, "([%s]:%d):ssl_accept error:%s\n",
+                    LOGE( "([%s]:%d):ssl_accept error:%s\n",
                             sourceip, sourceport, ERR_error_string(error, NULL));
                     clean();
                     return;
@@ -107,7 +107,7 @@ void Guest_s::handleEvent(uint32_t events) {
 
         case start_s:
             if (read_len == 4096) {
-                fprintf(stderr, "([%s]:%d): too large header\n", sourceip, sourceport);
+                LOGE( "([%s]:%d): too large header\n", sourceip, sourceport);
                 clean();
                 return;
             }
@@ -120,10 +120,10 @@ void Guest_s::handleEvent(uint32_t events) {
                 if (error == SSL_ERROR_WANT_READ) {
                     break;
                 } else if (error == SSL_ERROR_SYSCALL) {
-                    fprintf(stderr, "([%s]:%d): guest_s read:%s\n",
+                    LOGE( "([%s]:%d): guest_s read:%s\n",
                             sourceip, sourceport, strerror(errno));
                 } else if (error != SSL_ERROR_ZERO_RETURN) {
-                    fprintf(stderr, "([%s]:%d): guest_s read:%s\n",
+                    LOGE( "([%s]:%d): guest_s read:%s\n",
                             sourceip, sourceport, ERR_error_string(error, NULL));
                 }
 
@@ -149,7 +149,7 @@ void Guest_s::handleEvent(uint32_t events) {
                         read_len = 0;
                     }
 
-                    fprintf(stdout, "([%s]:%d): %s %s\n",
+                    LOG("([%s]:%d): %s %s\n",
                             sourceip, sourceport,
                             http.method, http.url);
 
@@ -172,7 +172,7 @@ void Guest_s::handleEvent(uint32_t events) {
 
                         char* lenpoint;
                         if ((lenpoint = strstr(buff, "Content-Length:")) == NULL) {
-                            fprintf(stderr, "([%s]:%d): unsported post version\n", sourceip, sourceport);
+                            LOGE( "([%s]:%d): unsported post version\n", sourceip, sourceport);
                             clean();
                             return;
                         }
@@ -191,7 +191,7 @@ void Guest_s::handleEvent(uint32_t events) {
                         status = connect_s;
 
                     } else {
-                        fprintf(stderr, "([%s]:%d): unknown method:%s\n",
+                        LOGE( "([%s]:%d): unknown method:%s\n",
                                 sourceip, sourceport, http.method);
                         clean();
                         return;
@@ -207,7 +207,7 @@ void Guest_s::handleEvent(uint32_t events) {
         case post_s:
             len=host->bufleft();
             if(len==0) {
-                fprintf(stderr, "([%s]:%d): The host's write buff is full\n",
+                LOGE( "([%s]:%d): The host's write buff is full\n",
                         sourceip, sourceport);
                 epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
                 break;
@@ -220,10 +220,10 @@ void Guest_s::handleEvent(uint32_t events) {
                 if (error == SSL_ERROR_WANT_READ) {
                     break;
                 } else if (error == SSL_ERROR_SYSCALL) {
-                    fprintf(stderr, "([%s]:%d): guest_s read:%s\n",
+                    LOGE( "([%s]:%d): guest_s read:%s\n",
                             sourceip, sourceport, strerror(errno));
                 } else if (error != SSL_ERROR_ZERO_RETURN) {
-                    fprintf(stderr, "([%s]:%d): guest_s read:%s\n",
+                    LOGE( "([%s]:%d): guest_s read:%s\n",
                             sourceip, sourceport, ERR_error_string(error, NULL));
                 }
 
@@ -243,7 +243,7 @@ void Guest_s::handleEvent(uint32_t events) {
         case connect_s:
             len=host->bufleft();
             if(len==0) {
-                fprintf(stderr, "([%s]:%d): The host's write buff is full\n",
+                LOGE( "([%s]:%d): The host's write buff is full\n",
                         sourceip, sourceport);
                 epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
                 break;
@@ -257,10 +257,10 @@ void Guest_s::handleEvent(uint32_t events) {
                 if (error == SSL_ERROR_WANT_READ) {
                     break;
                 } else if (error == SSL_ERROR_SYSCALL) {
-                    fprintf(stderr, "([%s]:%d): guest_s read:%s\n",
+                    LOGE( "([%s]:%d): guest_s read:%s\n",
                             sourceip, sourceport, strerror(errno));
                 } else if (error != SSL_ERROR_ZERO_RETURN) {
-                    fprintf(stderr, "([%s]:%d): guest_s read:%s\n",
+                    LOGE( "([%s]:%d): guest_s read:%s\n",
                             sourceip, sourceport, ERR_error_string(error, NULL));
                 }
 
@@ -298,13 +298,13 @@ void Guest_s::handleEvent(uint32_t events) {
                     break;
 
                 case SSL_ERROR_SYSCALL:
-                    fprintf(stderr, "([%s]:%d): ssl_accept error:%s\n",
+                    LOGE( "([%s]:%d): ssl_accept error:%s\n",
                             sourceip, sourceport, strerror(errno));
                     clean();
                     return;
 
                 default:
-                    fprintf(stderr, "([%s]:%d):ssl_accept error:%s\n",
+                    LOGE( "([%s]:%d):ssl_accept error:%s\n",
                             sourceip, sourceport, ERR_error_string(error, NULL));
                     clean();
                     return;
@@ -329,10 +329,10 @@ void Guest_s::handleEvent(uint32_t events) {
                 if (error == SSL_ERROR_WANT_WRITE) {
                     break;
                 } else if (error == SSL_ERROR_SYSCALL) {
-                    fprintf(stderr, "([%s]:%d): guest_s write:%s\n",
+                    LOGE( "([%s]:%d): guest_s write:%s\n",
                             sourceip, sourceport, strerror(errno));
                 } else if (error != SSL_ERROR_ZERO_RETURN) {
-                    fprintf(stderr, "([%s]:%d): guest_s write:%s\n",
+                    LOGE( "([%s]:%d): guest_s write:%s\n",
                             sourceip, sourceport, ERR_error_string(error, NULL));
                 }
 
@@ -352,10 +352,10 @@ void Guest_s::handleEvent(uint32_t events) {
                     if (error == SSL_ERROR_WANT_WRITE) {
                         break;
                     } else if (error == SSL_ERROR_SYSCALL) {
-                        fprintf(stderr, "([%s]:%d): guest_s write:%s\n",
+                        LOGE( "([%s]:%d): guest_s write:%s\n",
                                 sourceip, sourceport, strerror(errno));
                     } else if (error != SSL_ERROR_ZERO_RETURN) {
-                        fprintf(stderr, "([%s]:%d): guest_s write:%s\n",
+                        LOGE( "([%s]:%d): guest_s write:%s\n",
                                 sourceip, sourceport, ERR_error_string(error, NULL));
                     }
 
@@ -385,7 +385,7 @@ void Guest_s::handleEvent(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            fprintf(stderr, "([%s]:%d): guest_s error:%s\n",
+            LOGE( "([%s]:%d): guest_s error:%s\n",
                     sourceip, sourceport, strerror(error));
         }
 

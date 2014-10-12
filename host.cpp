@@ -19,7 +19,7 @@ Host::Host(int efd, Guest* guest ,const char *hostname,uint16_t port): guest(gue
 
 
     if(query(hostname,(DNSCBfunc)Host::connect,this)<0){
-        fprintf(stderr,"DNS qerry falied\n");
+        LOGE("DNS qerry falied\n");
         throw 0;
     }
 
@@ -42,7 +42,7 @@ void Host::handleEvent(uint32_t events) {
         int bufleft = guest->bufleft();
 
         if (bufleft == 0) {
-            fprintf(stderr, "The guest's write buff is full\n");
+            LOGE( "The guest's write buff is full\n");
             epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
             return;
         }
@@ -69,7 +69,7 @@ void Host::handleEvent(uint32_t events) {
                 return;
             }
             if (error != 0) {
-                fprintf(stderr, "connect to %s: %s\n",hostname, strerror(error));
+                LOGE( "connect to %s: %s\n",hostname, strerror(error));
                 clean();
                 return;
             }
@@ -107,7 +107,7 @@ void Host::handleEvent(uint32_t events) {
 
 void Host::connect(Host* host, const Dns_rcd&& rcd){
     if(rcd.result!=0){
-        fprintf(stderr,"Dns query failed\n");
+        LOGE("Dns query failed\n");
         host->clean();
     }else{
         host->addr=rcd.addr;
@@ -116,7 +116,7 @@ void Host::connect(Host* host, const Dns_rcd&& rcd){
         }
         host->fd=Connect(&host->addr[0].addr);
         if(host->fd <0 ){
-            fprintf(stderr,"connect to %s failed\n",host->hostname);
+            LOGE("connect to %s failed\n",host->hostname);
             host->fd=0;
             host->clean();
         }else{

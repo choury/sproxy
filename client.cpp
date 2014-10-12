@@ -15,7 +15,7 @@
 
 int main(int argc, char** argv) {
     if(argc != 2){
-        fprintf(stderr,"Usage: %s Server[:port]\n",basename(argv[0]));
+        LOGE("Usage: %s Server[:port]\n",basename(argv[0]));
         return -1;
     }
     spliturl(argv[1],SHOST,nullptr,&SPORT);
@@ -56,7 +56,7 @@ int main(int argc, char** argv) {
     }
 
     signal(SIGPIPE, SIG_IGN);
-    fprintf(stderr, "Accepting connections ...\n");
+    LOG("Accepting connections ...\n");
     int efd = epoll_create(10000);
     struct epoll_event event;
     event.data.ptr = NULL;
@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
     
     
     if(dnsinit(efd)<=0) {
-        fprintf(stderr,"Dns Init failed\n");
+        LOGE("Dns Init failed\n");
         return -1;
     }
     while (1) {
@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
         struct epoll_event events[20];
         if ((c = epoll_wait(efd, events, 20, -1)) < 0) {
             if (errno != EINTR) {
-                perror("epoll wait");
+                LOGE("epoll wait:%s\n",strerror(errno));
                 return 4;
             }
 
@@ -86,14 +86,14 @@ int main(int argc, char** argv) {
                     socklen_t temp = sizeof(myaddr);
 
                     if ((clsk = accept(svsk, (struct sockaddr*)&myaddr, &temp)) < 0) {
-                        perror("accept error");
+                        LOGE("accept error:%s\n",strerror(errno));
                         continue;
                     }
 
                     int flags = fcntl(clsk, F_GETFL, 0);
 
                     if (flags < 0) {
-                        perror("fcntl error");
+                        LOGE("fcntl error:%s\n",strerror(errno));
                         close(clsk);
                         continue;
                     }
@@ -107,7 +107,7 @@ int main(int argc, char** argv) {
                     event.events = EPOLLIN;
                     epoll_ctl(efd, EPOLL_CTL_ADD, clsk, &event);
                 } else {
-                    perror("unknown error");
+                    LOGE("unknown error\n");
                     return 5;
                 }
             } else {
