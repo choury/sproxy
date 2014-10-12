@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include "con.h"
 
+#define _RESOLV_FILE_ "/etc/resolv.conf"
+#define DNSPORT 53
 
 class Dns_srv:public Con{
 public:

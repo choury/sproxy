@@ -5,7 +5,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <resolv.h>
+//#include <resolv.h>
 #include <sys/epoll.h>
 #include <unordered_map>
 #include <string>
@@ -139,54 +139,69 @@ unsigned char *getrr(unsigned char *buf,unsigned char *p,int num,std::vector<soc
 }
 
 int dnsinit(int efd) {
-    if(res_init()<0) {
-        perror ("[DNS] res_init" );
-        return -1;
-    }
     struct epoll_event event;
     event.events=EPOLLIN ;
-
     for(size_t i=0; i<srvs.size(); ++i) {
         close(srvs[i]->fd);
         delete srvs[i];
     }
     srvs.clear();
-    for(int i=0; i<_res.nscount; ++i) {
-        Dns_srv *srv= new Dns_srv;
-        if ( ( srv->fd  =  socket (_res.nsaddr_list[i].sin_family, SOCK_DGRAM, 0 ) )  <   0 ) {
-            perror ( "[DNS] create socket error" );
-            delete srv;
-            continue;
-        }
-        if (connect(srv->fd,(sockaddr *)&_res.nsaddr_list[i],sizeof(_res.nsaddr_list[i])) == -1) {
-            perror("[DNS] connecting error");
-            close(srv->fd);
-            delete srv;
-            continue;
-        }
-        srvs.push_back(srv);
-        event.data.ptr=srv;
-        epoll_ctl(efd, EPOLL_CTL_ADD,srv->fd,&event);
+    
+    FILE *res_file=fopen(_RESOLV_FILE_,"r");
+    if(res_file==NULL) {
+        LOGE("[DNS] open resolv file:%s failed:%s\n",_RESOLV_FILE_,strerror(errno) );
+        return -1;
     }
-    for(int i=0; i<MAXNS; ++i) {
-        if(_res._u._ext.nsmap[i]&4) {
-            Dns_srv *srv=new Dns_srv;
-            if ( ( srv->fd  =  socket (_res._u._ext.nsaddrs[i]->sin6_family, SOCK_DGRAM, 0 ) )  <   0 ) {
-                perror ( "[DNS] create socket error" );
-                delete srv;
-                continue;
+    char *line=NULL;
+    size_t len=0;
+    while(getline(&line,&len,res_file)!=-1){
+        char command[11],ipaddr[INET6_ADDRSTRLEN];
+        sscanf(line,"%10s %45s",command,ipaddr);
+        if(strcmp(command,"nameserver")==0){
+            sockaddr_un addr;
+            if(inet_pton(PF_INET,ipaddr,&addr.addr_in.sin_addr)==1){
+                addr.addr_in.sin_family=PF_INET;
+                addr.addr_in.sin_port=htons(DNSPORT);
+                Dns_srv *srv= new Dns_srv;
+                if ( ( srv->fd  =  socket (PF_INET, SOCK_DGRAM, 0 ) )  <   0 ) {
+                    LOGE( "[DNS] create socket error:%s\n",strerror(errno) );
+                    delete srv;
+                    continue;
+                }
+                if (connect(srv->fd,&addr.addr,sizeof(sockaddr_in)) == -1) {
+                    LOGE("[DNS] connecting %s error:%s\n",ipaddr,strerror(errno));
+                    close(srv->fd);
+                    delete srv;
+                    continue;
+                }
+                srvs.push_back(srv);
+                event.data.ptr=srv;
+                epoll_ctl(efd, EPOLL_CTL_ADD,srv->fd,&event);
+            }else if(inet_pton(PF_INET6,ipaddr,&addr.addr_in6.sin6_addr)==1){
+                addr.addr_in6.sin6_family=PF_INET6;
+                addr.addr_in6.sin6_port=htons(DNSPORT);
+                Dns_srv *srv=new Dns_srv;
+                if ( ( srv->fd  =  socket (PF_INET6, SOCK_DGRAM, 0 ) )  <   0 ) {
+                    LOGE ( "[DNS] create socket error:%s",strerror(errno) );
+                    delete srv;
+                    continue;
+                }
+                if (connect(srv->fd,&addr.addr,sizeof(sockaddr_in6)) == -1) {
+                    LOGE("[DNS] connecting  %s error:%s\n",ipaddr,strerror(errno));
+                    close(srv->fd);
+                    delete srv;
+                    continue;
+                }
+                srvs.push_back(srv);
+                event.data.ptr=srv;
+                epoll_ctl(efd, EPOLL_CTL_ADD,srv->fd,&event);
+            }else{
+                LOGE("[DNS] %s is not a valid ip address\n",ipaddr);
             }
-            if (connect(srv->fd,(sockaddr *)_res._u._ext.nsaddrs[i],sizeof(*_res._u._ext.nsaddrs[i])) == -1) {
-                perror("[DNS] connecting error");
-                close(srv->fd);
-                delete srv;
-                continue;
-            }
-            srvs.push_back(srv);
-            event.data.ptr=srv;
-            epoll_ctl(efd, EPOLL_CTL_ADD,srv->fd,&event);
         }
     }
+    free(line);
+    fclose(res_file);
     return srvs.size();
 }
 
