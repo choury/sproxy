@@ -13,26 +13,33 @@
 #include "parse.h"
 #include "dns.h"
 
+#ifdef _ANDROID_
+int Java_com_choury_sproxy_Client_main(JNIEnv *env, jobject ,jstring s){
+    const char* srvaddr = (env)->GetStringUTFChars(s, 0 );
+    
+#else
 
 int main(int argc, char** argv) {
     if(argc != 2){
         LOGE("Usage: %s Server[:port]\n",basename(argv[0]));
         return -1;
     }
-    spliturl(argv[1],SHOST,nullptr,&SPORT);
+    const char *srvaddr=argv[1];
+#endif
+    spliturl(srvaddr,SHOST,nullptr,&SPORT);
     int svsk, clsk;
     SSL_library_init();    //SSL初库始化
     SSL_load_error_strings();  //载入所有错误信息
 
     if ((svsk = socket(AF_INET6, SOCK_STREAM, 0)) < 0) {
-        perror("socket error");
+        LOGE("socket error:%s\n",strerror(errno));
         return 1;
     }
 
     int flag = 1;
 
     if (setsockopt(svsk, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
-        perror("setsockopt");
+        LOGE("setsockopt:%s\n",strerror(errno));
         return 2;
     }
 
@@ -47,12 +54,12 @@ int main(int argc, char** argv) {
     myaddr.sin6_addr = in6addr_any;
 
     if (bind(svsk, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
-        perror("bind error");
+        LOGE("bind error:%s\n",strerror(errno));
         return 2;
     }
 
     if (listen(svsk, 10000) < 0) {
-        perror("listen error");
+        LOGE("listen error:%s\n",strerror(errno));
         return 3;
     }
 

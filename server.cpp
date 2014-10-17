@@ -18,7 +18,7 @@ int main(int argc, char** argv)
 
     SSL_library_init();    //SSL初库始化
     SSL_load_error_strings();  //载入所有错误信息
-    SSL_CTX* ctx = SSL_CTX_new(SSLv23_server_method());
+    SSL_CTX* ctx = SSL_CTX_new(TLSv1_2_server_method());  //去除支持SSL3
     if (ctx == NULL) {
         ERR_print_errors_fp(stderr);
         return 1;

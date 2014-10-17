@@ -158,7 +158,7 @@ void Proxy::handleEvent(uint32_t events) {
                 clean();
                 return;
             }
-            ctx = SSL_CTX_new(SSLv23_client_method());
+            ctx = SSL_CTX_new(TLSv1_2_client_method());
 
             if (ctx == NULL) {
                 ERR_print_errors_fp(stderr);
