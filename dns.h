@@ -11,6 +11,7 @@
 
 #define _RESOLV_FILE_ "/etc/resolv.conf"
 #define DNSPORT 53
+#define DNSTIMEOUT 60               //dns 超时时间(s)
 
 class Dns_srv:public Con{
 public:
@@ -30,6 +31,7 @@ union sockaddr_un{
 class Dns_rcd{
 public:
     int result;
+#define DNS_SUCCEED     0
 #define DNS_ERR         1
 #define DNS_NOTFUND     2
     std::vector<sockaddr_un> addr;

@@ -225,6 +225,20 @@ int query(const char *host ,DNSCBfunc func,void *param) {
         return 0;
     }
 
+    if(id_cur%101==0){
+        for(auto i=rcd_index_id.begin();i!=rcd_index_id.end();){
+            if(time(nullptr)-i->second->reqtime>=DNSTIMEOUT){            //超时失败
+                LOGE("[DNS] %s: time out\n",i->second->host);
+                i->second->func(i->second->param,Dns_rcd(DNS_ERR));
+                delete i->second;
+                rcd_index_id.erase(i++);
+            }else{
+                i++;
+            }
+        }
+    }
+    
+    
     DNS_STATE *dnsst = new DNS_STATE;
     dnsst->id=id_cur++;
     dnsst->func=func;

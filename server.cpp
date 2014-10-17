@@ -143,8 +143,10 @@ int main(int argc, char** argv)
                             epoll_ctl(efd, EPOLL_CTL_MOD, clsk, &event);
                             break;
                         default:
-                            guest->clean();
                             ERR_print_errors_fp(stderr);
+                            guest->clean();
+                            event.events = EPOLLOUT;
+                            epoll_ctl(efd, EPOLL_CTL_MOD, clsk, &event);
                             break;
                         }
                         continue;
@@ -165,7 +167,4 @@ int main(int argc, char** argv)
     close(svsk);
     return 0;
 }
-
-
-
 
