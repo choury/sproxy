@@ -158,14 +158,14 @@ void Proxy::handleEvent(uint32_t events) {
                 clean();
                 return;
             }
-            ctx = SSL_CTX_new(TLSv1_2_client_method());
+            ctx = SSL_CTX_new(SSLv23_client_method());
 
             if (ctx == NULL) {
                 ERR_print_errors_fp(stderr);
                 clean();
                 return;
             }
-
+            SSL_CTX_set_options(ctx,SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3); //去除支持SSLv2 SSLv3
             ssl = SSL_new(ctx);
             SSL_set_fd(ssl, fd);
 
