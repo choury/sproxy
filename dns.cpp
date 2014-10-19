@@ -85,6 +85,20 @@ typedef struct _DNS_STATE{
 std::unordered_map<int,DNS_STATE *> rcd_index_id;
 std::unordered_map<std::string,Dns_rcd> rcd_index_host;
 
+Dns_rcd::Dns_rcd(int result):result(result),gettime(time(NULL)){
+    
+}
+
+Dns_rcd::Dns_rcd(const std::vector<sockaddr_un>& addr):result(0),gettime(time(NULL)),addr(addr){
+    
+}
+
+
+Dns_rcd::Dns_rcd(const sockaddr_un &addr):result(0),gettime(time(NULL)){
+    this->addr.push_back(addr);
+    
+};
+
 unsigned char * getdomain(unsigned char *buf,unsigned char *p) {
     while(*p) {
         if(*p>63) {
@@ -238,6 +252,15 @@ int query(const char *host ,DNSCBfunc func,void *param) {
         }
     }
     
+    if(id_cur%503==0){
+        for(auto i=rcd_index_host.begin();i!=rcd_index_host.end();){
+            if(time(nullptr)-i->second.gettime>=DNSTTL){            //超时失败
+                rcd_index_host.erase(i++);
+            }else{
+                i++;
+            }
+        }
+    }
     
     DNS_STATE *dnsst = new DNS_STATE;
     dnsst->id=id_cur++;
@@ -313,6 +336,7 @@ void Dns_srv::handleEvent(uint32_t events) {
             }
         }
         if(dnsst->addr.size()){
+            rcd_index_host[dnsst->host]=Dns_rcd(dnsst->addr);
             dnsst->func(dnsst->param,Dns_rcd(dnsst->addr));
         }else{
             dnsst->func(dnsst->param,Dns_rcd(DNS_ERR));

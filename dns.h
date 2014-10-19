@@ -5,6 +5,7 @@
 #include <netdb.h>
 #include <vector>
 #include <unistd.h>
+#include <time.h>
 #include <netinet/in.h>
 
 #include "con.h"
@@ -12,6 +13,7 @@
 #define _RESOLV_FILE_ "/etc/resolv.conf"
 #define DNSPORT 53
 #define DNSTIMEOUT 60               //dns 超时时间(s)
+#define DNSTTL     8640             //dns 缓存时间(s)
 
 class Dns_srv:public Con{
 public:
@@ -31,13 +33,14 @@ union sockaddr_un{
 class Dns_rcd{
 public:
     int result;
+    time_t gettime;
 #define DNS_SUCCEED     0
 #define DNS_ERR         1
 #define DNS_NOTFUND     2
     std::vector<sockaddr_un> addr;
-    Dns_rcd(int result=0):result(result){};
-    Dns_rcd(const std::vector<sockaddr_un>& addr):result(0),addr(addr){};
-    Dns_rcd(const sockaddr_un &addr):result(0){this->addr.push_back(addr);};
+    Dns_rcd(int result=0);
+    Dns_rcd(const std::vector<sockaddr_un>& addr);
+    Dns_rcd(const sockaddr_un &addr);
 };
 
 
