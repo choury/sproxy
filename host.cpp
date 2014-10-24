@@ -1,5 +1,6 @@
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
 #include <sys/epoll.h>
 
 #include "host.h"
@@ -18,7 +19,7 @@ Host::Host(int efd, Guest* guest ,const char *hostname,uint16_t port): guest(gue
     this->targetport=port;
 
 
-    if(query(hostname,(DNSCBfunc)Host::connect,this)<0){
+    if(query(hostname,(DNSCBfunc)Host::connect,this)<0) {
         LOGE("DNS qerry falied\n");
         throw 0;
     }
@@ -32,8 +33,8 @@ void Host::handleEvent(uint32_t events) {
 
     if( status == close_s)
         return;
-    
-    if( guest == NULL){
+
+    if( guest == NULL) {
         clean();
         return;
     }
@@ -51,6 +52,7 @@ void Host::handleEvent(uint32_t events) {
         int ret = Read(buff, bufleft);
 
         if (ret <= 0) {
+            LOGE("host read: %s\n",strerror(errno));
             clean();
             return;
         }
@@ -60,17 +62,19 @@ void Host::handleEvent(uint32_t events) {
     }
 
     if (events & EPOLLOUT) {
-        if(status==start_s){
+        if(status==start_s) {
             int error;
             socklen_t len=sizeof(error);
             if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-                perror("getsokopt");
+                LOGE("getsokopt error: %s\n",strerror(error));
                 clean();
                 return;
             }
             if (error != 0) {
                 LOGE( "connect to %s: %s\n",hostname, strerror(error));
-                clean();
+                if(reconnect()<0) {
+                    clean();
+                }
                 return;
             }
             status=connect_s;
@@ -79,7 +83,7 @@ void Host::handleEvent(uint32_t events) {
         if (write_len) {
             int ret = Write();
             if (ret <= 0) {
-                perror("host write");
+                LOGE("host write: %s\n",strerror(errno));
                 clean();
                 return;
             }
@@ -99,27 +103,27 @@ void Host::handleEvent(uint32_t events) {
     }
 
     if (events & EPOLLERR || events & EPOLLHUP) {
+        LOGE("host unkown error: %s\n",strerror(errno));
         clean();
     }
 
 }
 
 
-void Host::connect(Host* host, const Dns_rcd&& rcd){
-    if(rcd.result!=0){
+void Host::connect(Host* host, const Dns_rcd&& rcd) {
+    if(rcd.result!=0) {
         LOGE("Dns query failed\n");
         host->clean();
-    }else{
+    } else {
         host->addr=rcd.addr;
-        for(size_t i=0;i<host->addr.size();++i){
+        for(size_t i=0; i<host->addr.size(); ++i) {
             host->addr[i].addr_in6.sin6_port=htons(host->targetport);
         }
-        host->fd=Connect(&host->addr[0].addr);
-        if(host->fd <0 ){
+        host->fd=Connect(&host->addr[host->testedaddr++].addr);
+        if(host->fd <0 ) {
             LOGE("connect to %s failed\n",host->hostname);
-            host->fd=0;
             host->clean();
-        }else{
+        } else {
             epoll_event event;
             event.data.ptr=host;
             event.events=EPOLLOUT;
@@ -128,9 +132,23 @@ void Host::connect(Host* host, const Dns_rcd&& rcd){
     }
 }
 
+int Host::reconnect() {
+    if(testedaddr>= addr.size()) {
+        return -1;
+    } else {
+        close(fd);
+        fd=Connect(&addr[testedaddr++].addr);
+        if(fd <0 ) {
+            LOGE("connect to %s failed\n",hostname);
+            return reconnect();
+        }
+    }
+    return 0;
+}
+
 
 void Host::clean() {
-    if(guest){
+    if(guest) {
         guest->host=NULL;
         guest->clean();
     }

@@ -28,7 +28,7 @@ Peer::Peer(int fd, int efd): fd(fd), efd(efd) {
 
 
 Peer::~Peer() {
-    if(fd) {
+    if(fd>0) {
         close(fd);
     }
 }

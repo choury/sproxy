@@ -155,7 +155,9 @@ void Proxy::handleEvent(uint32_t events) {
 
             if (error != 0) {
                 LOGE( "connect to proxy:%s\n", strerror(error));
-                clean();
+                if(reconnect()<0) {
+                    clean();
+                }
                 return;
             }
             ctx = SSL_CTX_new(SSLv23_client_method());
@@ -235,6 +237,7 @@ void Proxy::handleEvent(uint32_t events) {
     }
 
     if (events & EPOLLERR || events & EPOLLHUP) {
+        LOGE("proxy unkown error: %s\n",strerror(errno));
         clean();
     }
 }
