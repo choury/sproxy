@@ -25,7 +25,7 @@ int main(int argc, char** argv)
     }
     SSL_CTX_set_options(ctx,SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3); //去除支持SSLv2 SSLv3
 
-    if (SSL_CTX_load_verify_locations(ctx,"/home/choury/keys/ca.pem",NULL") != 1)
+    if (SSL_CTX_load_verify_locations(ctx,"/home/choury/keys/ca.pem",NULL) != 1)
         ERR_print_errors_fp(stderr);
 
     if (SSL_CTX_set_default_verify_paths(ctx) != 1)
