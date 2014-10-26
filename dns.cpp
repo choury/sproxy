@@ -7,7 +7,6 @@
 #include <arpa/inet.h>
 #include <sys/epoll.h>
 #include <unordered_map>
-#include <pthread.h>
 #include <string>
 
 #include "common.h"
