@@ -19,7 +19,7 @@ Host::Host(int efd, Guest* guest ,const char *hostname,uint16_t port): guest(gue
     this->targetport=port;
 
 
-    if(query(hostname,(DNSCBfunc)Host::connect,this)<0) {
+    if(query(hostname,(DNSCBfunc)Host::Dnscallback,this)<0) {
         LOGE("DNS qerry falied\n");
         throw 0;
     }
@@ -72,7 +72,7 @@ void Host::handleEvent(uint32_t events) {
             }
             if (error != 0) {
                 LOGE( "connect to %s: %s\n",hostname, strerror(error));
-                if(reconnect()<0) {
+                if(connect()<0) {
                     clean();
                 }
                 return;
@@ -110,7 +110,7 @@ void Host::handleEvent(uint32_t events) {
 }
 
 
-void Host::connect(Host* host, const Dns_rcd&& rcd) {
+void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
     if(rcd.result!=0) {
         LOGE("Dns query failed\n");
         host->clean();
@@ -119,8 +119,7 @@ void Host::connect(Host* host, const Dns_rcd&& rcd) {
         for(size_t i=0; i<host->addr.size(); ++i) {
             host->addr[i].addr_in6.sin6_port=htons(host->targetport);
         }
-        host->fd=Connect(&host->addr[host->testedaddr++].addr);
-        if(host->fd <0 ) {
+        if(host->connect()<0){
             LOGE("connect to %s failed\n",host->hostname);
             host->clean();
         } else {
@@ -132,15 +131,17 @@ void Host::connect(Host* host, const Dns_rcd&& rcd) {
     }
 }
 
-int Host::reconnect() {
+int Host::connect() {
     if(testedaddr>= addr.size()) {
         return -1;
     } else {
-        close(fd);
+        if(fd>0){
+            close(fd);
+        }
         fd=Connect(&addr[testedaddr++].addr);
         if(fd <0 ) {
             LOGE("connect to %s failed\n",hostname);
-            return reconnect();
+            return connect();
         }
     }
     return 0;

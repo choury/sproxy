@@ -155,7 +155,7 @@ void Proxy::handleEvent(uint32_t events) {
 
             if (error != 0) {
                 LOGE( "connect to proxy:%s\n", strerror(error));
-                if(reconnect()<0) {
+                if(connect()<0) {
                     clean();
                 }
                 return;
