@@ -313,11 +313,6 @@ void Dns_srv::handleEvent(uint32_t events) {
         NTOHS(dnshdr->numa1);
         NTOHS(dnshdr->numa2);
 
-        if ( (dnshdr->flag & QR) == 0 || (dnshdr->flag & RCODE_MASK) != 0) {
-            LOGE("[DNS] ack error:%u\n", dnshdr->flag & RCODE_MASK);
-            return;
-        }
-
         if(dnshdr->id & 1) {
             if(rcd_index_id.find(dnshdr->id) == rcd_index_id.end()) {
                 LOGE("[DNS] Get a unkown id:%d\n",dnshdr->id);
@@ -330,19 +325,24 @@ void Dns_srv::handleEvent(uint32_t events) {
             }
             dnshdr->id--;
         }
+        
         DNS_STATE *dnsst=rcd_index_id[dnshdr->id];
-        if(dnsst->getnum) {
-            rcd_index_id.erase(dnsst->id);
-        }
-        unsigned char *p = buf+sizeof(DNS_HDR);
-        for(int i=0; i<dnshdr->numq; ++i) {
-            p=getdomain(buf,p);
+        if ( (dnshdr->flag & QR) == 0 || (dnshdr->flag & RCODE_MASK) != 0) {
+            LOGE("[DNS] ack error:%u\n", dnshdr->flag & RCODE_MASK);
+        }else{
+            if(dnsst->getnum) {
+                rcd_index_id.erase(dnsst->id);
+            }
+            unsigned char *p = buf+sizeof(DNS_HDR);
+            for(int i=0; i<dnshdr->numq; ++i) {
+                p=getdomain(buf,p);
 #ifdef _DEGUB_DNS_
-            printf(" :\n");
+                printf(" :\n");
 #endif
-            p+=sizeof(DNS_QER);
+                p+=sizeof(DNS_QER);
+            }
+            getrr(buf,p,dnshdr->numa,dnsst->addr);
         }
-        getrr(buf,p,dnshdr->numa,dnsst->addr);
         if(dnsst->getnum) {
             if(dnsst->addr.size()) {
                 rcd_index_host[dnsst->host]=Dns_rcd(dnsst->addr);
