@@ -52,7 +52,7 @@ void Host::handleEvent(uint32_t events) {
         int ret = Read(buff, bufleft);
 
         if (ret <= 0) {
-            LOGE("host read: %s\n",strerror(errno));
+            LOG("host read: %s\n",strerror(errno));
             clean();
             return;
         }
@@ -83,7 +83,7 @@ void Host::handleEvent(uint32_t events) {
         if (write_len) {
             int ret = Write();
             if (ret <= 0) {
-                LOGE("host write: %s\n",strerror(errno));
+                LOG("host write: %s\n",strerror(errno));
                 clean();
                 return;
             }

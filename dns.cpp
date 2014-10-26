@@ -253,6 +253,14 @@ int query(const char *host ,DNSCBfunc func,void *param) {
 
     if(rcd_index_host.find(host) != rcd_index_host.end()) {
         func(param,rcd_index_host[host]);
+
+        for(auto i=rcd_index_host.begin(); i!=rcd_index_host.end();) {
+            if(time(nullptr)-i->second.gettime>=DNSTTL) {           //超时失效
+                rcd_index_host.erase(i++);
+            } else {
+                i++;
+            }
+        }
         return 0;
     }
 
@@ -266,16 +274,6 @@ int query(const char *host ,DNSCBfunc func,void *param) {
             i++;
         }
     }
-
-
-    for(auto i=rcd_index_host.begin(); i!=rcd_index_host.end();) {
-        if(time(nullptr)-i->second.gettime>=DNSTTL) {           //超时失败
-            rcd_index_host.erase(i++);
-        } else {
-            i++;
-        }
-    }
-
 
     DNS_STATE *dnsst = new DNS_STATE;
     dnsst->func=func;
