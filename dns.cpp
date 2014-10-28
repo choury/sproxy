@@ -330,9 +330,6 @@ void Dns_srv::handleEvent(uint32_t events) {
         if ( (dnshdr->flag & QR) == 0 || (dnshdr->flag & RCODE_MASK) != 0) {
             LOGE("[DNS] ack error:%u\n", dnshdr->flag & RCODE_MASK);
         }else{
-            if(dnsst->getnum) {
-                rcd_index_id.erase(dnsst->id);
-            }
             unsigned char *p = buf+sizeof(DNS_HDR);
             for(int i=0; i<dnshdr->numq; ++i) {
                 p=getdomain(buf,p);
@@ -344,6 +341,7 @@ void Dns_srv::handleEvent(uint32_t events) {
             getrr(buf,p,dnshdr->numa,dnsst->addr);
         }
         if(dnsst->getnum) {
+            rcd_index_id.erase(dnsst->id);
             if(dnsst->addr.size()) {
                 rcd_index_host[dnsst->host]=Dns_rcd(dnsst->addr);
                 dnsst->func(dnsst->param,Dns_rcd(dnsst->addr));
