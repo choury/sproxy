@@ -36,8 +36,19 @@ int Guest_s::Write() {
     return ret;
 }
 
-void Guest_s::connected() {
-    Guest::connected();
+void Guest_s::shakedhand() {
+    const unsigned char *data;
+    unsigned int len;
+    SSL_get0_next_proto_negotiated(ssl,&data,&len);
+    if(data) {
+        if(strncasecmp((const char*)data,"spdy/3.1",len)==0) {
+            protocol=spdy3_1;
+        } else {
+            LOGE( "([%s]:%d): unknown protocol:%.*s\n",sourceip, sourceport,len,data);
+            clean();
+            return;
+        }
+    }
 
     if (status == accept_s) {
         status = start_s;
@@ -62,12 +73,41 @@ void Guest_s::handleEvent(uint32_t events) {
 
     if (events & EPOLLIN) {
         char buff[1024 * 1024];
-        
-        if(status != accept_s && status != start_s && host == NULL){
-            clean();
-            return;
+
+        if(status != accept_s) {
+            len=sizecanread();
+            if(len<0) {
+                LOGE("([%s]:%d):connecting to host lost\n",sourceip, sourceport);
+                clean();
+                return;
+            } else if(len == 0) {
+                LOGE( "([%s]:%d): The buff is full\n",sourceip, sourceport);
+                epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+                return;
+            }
+            ret=Read(buff, len);
+            if (ret <= 0) {
+                int error = SSL_get_error(ssl, ret);
+                switch(error){
+                case SSL_ERROR_WANT_READ:
+                    return;
+                case SSL_ERROR_ZERO_RETURN:
+                    break;
+                case SSL_ERROR_SYSCALL:
+                    LOGE( "([%s]:%d): guest_s read:%s\n",
+                          sourceip, sourceport, strerror(errno));
+                    break;
+                default:
+                    LOGE( "([%s]:%d): guest_s read:%s\n",
+                          sourceip, sourceport, ERR_error_string(error, NULL));
+                    break;
+                }
+
+                clean();
+                return;
+            }
         }
-        
+
         switch (status) {
         case accept_s:
             ret = SSL_accept(ssl);
@@ -88,13 +128,13 @@ void Guest_s::handleEvent(uint32_t events) {
 
                 case SSL_ERROR_SYSCALL:
                     LOGE( "([%s]:%d): ssl_accept error:%s\n",
-                            sourceip, sourceport, strerror(errno));
+                          sourceip, sourceport, strerror(errno));
                     clean();
                     return;
 
                 default:
                     LOGE( "([%s]:%d):ssl_accept error:%s\n",
-                            sourceip, sourceport, ERR_error_string(error, NULL));
+                          sourceip, sourceport, ERR_error_string(error, NULL));
                     clean();
                     return;
                 }
@@ -102,43 +142,16 @@ void Guest_s::handleEvent(uint32_t events) {
                 break;
             }
 
-            connected();
+            shakedhand();
             break;
 
         case start_s:
-            if (read_len == 4096) {
-                LOGE( "([%s]:%d): too large header\n", sourceip, sourceport);
-                clean();
-                return;
-            }
-
-            ret = Read(rbuff + read_len, 4096 - read_len);
-
-            if (ret <= 0) {
-                int error = SSL_get_error(ssl, ret);
-
-                if (error == SSL_ERROR_WANT_READ) {
-                    break;
-                } else if (error == SSL_ERROR_SYSCALL) {
-                    LOGE( "([%s]:%d): guest_s read:%s\n",
-                            sourceip, sourceport, strerror(errno));
-                } else if (error != SSL_ERROR_ZERO_RETURN) {
-                    LOGE( "([%s]:%d): guest_s read:%s\n",
-                            sourceip, sourceport, ERR_error_string(error, NULL));
-                }
-
-                clean();
-                return;
-            }
-
+            memcpy(rbuff+write_len,buff,ret);
             read_len += ret;
-
 
             if (char* headerend = strnstr(rbuff, CRLF CRLF, read_len)) {
                 headerend += strlen(CRLF CRLF);
-
                 size_t headerlen = headerend - rbuff;
-
                 try {
                     Http http (rbuff);
 
@@ -150,8 +163,8 @@ void Guest_s::handleEvent(uint32_t events) {
                     }
 
                     LOG("([%s]:%d): %s %s\n",
-                            sourceip, sourceport,
-                            http.method, http.url);
+                        sourceip, sourceport,
+                        http.method, http.url);
 
                     int writelen=http.getstring(buff,false);
 
@@ -192,7 +205,7 @@ void Guest_s::handleEvent(uint32_t events) {
 
                     } else {
                         LOGE( "([%s]:%d): unknown method:%s\n",
-                                sourceip, sourceport, http.method);
+                              sourceip, sourceport, http.method);
                         clean();
                         return;
                     }
@@ -205,32 +218,6 @@ void Guest_s::handleEvent(uint32_t events) {
             break;
 
         case post_s:
-            len=host->bufleft();
-            if(len==0) {
-                LOGE( "([%s]:%d): The host's write buff is full\n",
-                        sourceip, sourceport);
-                epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
-                break;
-            }
-            ret = Read(buff, Min(len, expectlen));
-
-            if (ret <= 0 ) {
-                int error = SSL_get_error(ssl, ret);
-
-                if (error == SSL_ERROR_WANT_READ) {
-                    break;
-                } else if (error == SSL_ERROR_SYSCALL) {
-                    LOGE( "([%s]:%d): guest_s read:%s\n",
-                            sourceip, sourceport, strerror(errno));
-                } else if (error != SSL_ERROR_ZERO_RETURN) {
-                    LOGE( "([%s]:%d): guest_s read:%s\n",
-                            sourceip, sourceport, ERR_error_string(error, NULL));
-                }
-
-                clean();
-                return;
-            }
-
             expectlen -= ret;
             host->Write(buff, ret);
 
@@ -241,33 +228,6 @@ void Guest_s::handleEvent(uint32_t events) {
             break;
 
         case connect_s:
-            len=host->bufleft();
-            if(len==0) {
-                LOGE( "([%s]:%d): The host's write buff is full\n",
-                        sourceip, sourceport);
-                epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
-                break;
-            }
-
-            ret = Read(buff, len);
-
-            if (ret <= 0 ) {
-                int error = SSL_get_error(ssl, ret);
-
-                if (error == SSL_ERROR_WANT_READ) {
-                    break;
-                } else if (error == SSL_ERROR_SYSCALL) {
-                    LOGE( "([%s]:%d): guest_s read:%s\n",
-                            sourceip, sourceport, strerror(errno));
-                } else if (error != SSL_ERROR_ZERO_RETURN) {
-                    LOGE( "([%s]:%d): guest_s read:%s\n",
-                            sourceip, sourceport, ERR_error_string(error, NULL));
-                }
-
-                clean();
-                return;
-            }
-
             host->Write(buff, ret);
             break;
 
@@ -299,13 +259,13 @@ void Guest_s::handleEvent(uint32_t events) {
 
                 case SSL_ERROR_SYSCALL:
                     LOGE( "([%s]:%d): ssl_accept error:%s\n",
-                            sourceip, sourceport, strerror(errno));
+                          sourceip, sourceport, strerror(errno));
                     clean();
                     return;
 
                 default:
                     LOGE( "([%s]:%d):ssl_accept error:%s\n",
-                            sourceip, sourceport, ERR_error_string(error, NULL));
+                          sourceip, sourceport, ERR_error_string(error, NULL));
                     clean();
                     return;
                 }
@@ -313,7 +273,7 @@ void Guest_s::handleEvent(uint32_t events) {
                 break;
             }
 
-            connected();
+            shakedhand();
             break;
 
         case close_s:
@@ -330,10 +290,10 @@ void Guest_s::handleEvent(uint32_t events) {
                     break;
                 } else if (error == SSL_ERROR_SYSCALL) {
                     LOGE( "([%s]:%d): guest_s write:%s\n",
-                            sourceip, sourceport, strerror(errno));
+                          sourceip, sourceport, strerror(errno));
                 } else if (error != SSL_ERROR_ZERO_RETURN) {
                     LOGE( "([%s]:%d): guest_s write:%s\n",
-                            sourceip, sourceport, ERR_error_string(error, NULL));
+                          sourceip, sourceport, ERR_error_string(error, NULL));
                 }
 
                 write_len = 0;
@@ -353,10 +313,10 @@ void Guest_s::handleEvent(uint32_t events) {
                         break;
                     } else if (error == SSL_ERROR_SYSCALL) {
                         LOGE( "([%s]:%d): guest_s write:%s\n",
-                                sourceip, sourceport, strerror(errno));
+                              sourceip, sourceport, strerror(errno));
                     } else if (error != SSL_ERROR_ZERO_RETURN) {
                         LOGE( "([%s]:%d): guest_s write:%s\n",
-                                sourceip, sourceport, ERR_error_string(error, NULL));
+                              sourceip, sourceport, ERR_error_string(error, NULL));
                     }
 
                     write_len = 0;
@@ -364,12 +324,8 @@ void Guest_s::handleEvent(uint32_t events) {
                     return;
                 }
 
-                if (fulled) {
-                    if (host)
-                        host->peercanwrite();
-
-                    fulled = false;
-                }
+                if (host)
+                    host->writedcb();
             }
 
             if (write_len == 0) {
@@ -386,7 +342,7 @@ void Guest_s::handleEvent(uint32_t events) {
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE( "([%s]:%d): guest_s error:%s\n",
-                    sourceip, sourceport, strerror(error));
+                  sourceip, sourceport, strerror(error));
         }
 
         write_len = 0;

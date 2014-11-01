@@ -25,8 +25,6 @@ extern char SHOST[];
 #endif
 
 
-
-
 #ifdef  __cplusplus
 extern "C" {
 #endif

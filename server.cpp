@@ -7,9 +7,23 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-//#include "common.h"
+
 #include "guest_s.h"
 #include "dns.h"
+
+#define NEXT_PROTO_STRING \
+  "\x08spdy/3.1" \
+  "\x08http/1.1" 
+  
+
+int ssl_set_npn_callback(SSL* s,
+                         const unsigned char** data,
+                         unsigned int* len,
+                         void* arg) {
+  *data = (const unsigned char*)NEXT_PROTO_STRING;
+  *len = strlen(NEXT_PROTO_STRING);
+  return SSL_TLSEXT_ERR_OK;
+}
 
 
 int main(int argc, char** argv)
@@ -18,7 +32,7 @@ int main(int argc, char** argv)
 
     SSL_library_init();    //SSL初库始化
     SSL_load_error_strings();  //载入所有错误信息
-    SSL_CTX* ctx = SSL_CTX_new(SSLv23_server_method());  
+    SSL_CTX* ctx = SSL_CTX_new(SSLv23_server_method());
     if (ctx == NULL) {
         ERR_print_errors_fp(stderr);
         return 1;
@@ -49,7 +63,9 @@ int main(int argc, char** argv)
     }
 
     SSL_CTX_set_verify_depth(ctx, 10);
-
+    
+    SSL_CTX_set_next_protos_advertised_cb(ctx,ssl_set_npn_callback,NULL);
+    
     if ((svsk = socket(AF_INET6, SOCK_STREAM, 0)) < 0) {
         perror("socket error");
         return 2;
@@ -88,7 +104,7 @@ int main(int argc, char** argv)
         LOGE("Dns Init failed\n");
         return -1;
     }
-    
+
     while (1) {
         int c;
         struct epoll_event events[20];
@@ -123,7 +139,7 @@ int main(int argc, char** argv)
                     /* 将连接用户的socket 加入到SSL */
                     SSL_set_fd(ssl, clsk);
 
-                    Guest* guest = new Guest_s(clsk, efd, ssl);
+                    Guest_s* guest = new Guest_s(clsk, efd, ssl);
 
                     event.data.ptr = guest;
                     event.events = EPOLLIN;
@@ -150,7 +166,7 @@ int main(int argc, char** argv)
                         }
                         continue;
                     }
-                    guest->connected();
+                    guest->shakedhand();
 
                 } else {
                     perror("unknown error");

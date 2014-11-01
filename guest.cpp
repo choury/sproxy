@@ -54,9 +54,19 @@ Guest::Guest(int fd, int efd): Peer(fd, efd) {
 }
 
 
-void Guest::connected() {
+void Guest::connectedcb() {
     if (status == connect_s) {
         Write(connecttip, strlen(connecttip));
+    }
+}
+
+ssize_t Guest::sizecanread(){
+    if(status == start_s){
+        return sizeof(rbuff)-read_len;
+    }else if(host){
+        return host->bufleft();
+    }else{
+        return -1;
     }
 }
 
@@ -70,32 +80,35 @@ void Guest::handleEvent(uint32_t events) {
 
     if (events & EPOLLIN) {
         char buff[1024 * 1024];
-        if(status != start_s && host == NULL) {
+        len=sizecanread();
+        if(len<0){
+            LOGE("([%s]:%d):connecting to host lost\n",sourceip, sourceport);
+            clean();
+            return;
+        }else if(len == 0){
+            LOGE( "([%s]:%d): The buff is full\n",sourceip, sourceport);
+            epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+            return;
+        }
+        ret=Read(buff, len);
+        if(ret==0){
+            clean();
+            return;
+        }else if(ret<0){
+            LOGE("([%s]:%d):guest read error:%s\n",
+                 sourceip, sourceport,strerror(errno));
             clean();
             return;
         }
+
         switch (status) {
         case start_s:
-            if (read_len == 4096) {
-                LOGE( "([%s]:%d): too large header\n",
-                        sourceip, sourceport);
-                clean();
-                return;
-            }
-
-            ret = Read(rbuff + read_len, 4096 - read_len);
-
-            if (ret <= 0) {
-                clean();
-                return;
-            }
-
+            memcpy(rbuff+read_len,buff,ret);
             read_len += ret;
 
             if (char* headerend = strnstr(rbuff, CRLF CRLF, read_len)) {
                 headerend += strlen(CRLF CRLF);
                 size_t headerlen = headerend - rbuff;
-
                 try {
                     Http http(rbuff);
 
@@ -147,8 +160,7 @@ void Guest::handleEvent(uint32_t events) {
                         int writelen=http.getstring(buff,shouldproxy);
                         char* lenpoint;
                         if ((lenpoint = strstr(buff, "Content-Length:")) == NULL) {
-                            LOGE( "([%s]:%d): unsported post version\n",
-                                    sourceip, sourceport);
+                            LOGE( "([%s]:%d): unsported post version\n",sourceip, sourceport);
                             clean();
                             return;
                         }
@@ -215,46 +227,15 @@ void Guest::handleEvent(uint32_t events) {
             break;
 
         case post_s:
-            len=host->bufleft();
-            if(len==0) {
-                LOGE( "([%s]:%d): The host's write buff is full\n",
-                        sourceip, sourceport);
-                epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
-                break;
-            }
-            ret = Read(buff , Min(len, expectlen));
-
-            if (ret <= 0 ) {
-                clean();
-                return;
-            }
-
             expectlen -= ret;
             host->Write(buff, ret);
-
             if (expectlen == 0) {
                 status = start_s;
             }
-
             break;
 
         case connect_s:
         case proxy_s:
-            len=host->bufleft();
-            if(len==0) {
-                LOGE( "([%s]:%d): The host's write buff is full\n",
-                        sourceip, sourceport);
-                epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
-                break;
-            }
-
-            ret = Read(buff, len);
-
-            if (ret <= 0) {
-                clean();
-                return;
-            }
-
             host->Write(buff, ret);
             break;
 
@@ -294,12 +275,8 @@ void Guest::handleEvent(uint32_t events) {
                     return;
                 }
 
-                if (fulled) {
-                    if (host)
-                        host->peercanwrite();
-
-                    fulled = false;
-                }
+                if (host)
+                    host->writedcb();
             }
 
             if (write_len == 0) {

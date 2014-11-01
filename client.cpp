@@ -19,6 +19,8 @@ int Java_com_choury_sproxy_Client_main(JNIEnv *env, jobject ,jstring s){
     
 #else
 
+
+    
 int main(int argc, char** argv) {
     if(argc != 2){
         LOGE("Usage: %s Server[:port]\n",basename(argv[0]));

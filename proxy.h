@@ -5,9 +5,7 @@
 
 #include "host.h"
 
-
-
-
+#include "dns.h"
 
 class Proxy : public Host{
     SSL *ssl=nullptr;

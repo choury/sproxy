@@ -51,7 +51,7 @@ int Peer::Write(const char* buff, size_t size) {
     return len;
 }
 
-void Peer::peercanwrite() {
+void Peer::writedcb() {
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
@@ -84,49 +84,6 @@ int Peer::Write() {
 }
 
 size_t Peer::bufleft() {
-    if (sizeof(wbuff) == write_len)
-        fulled = true;
-
     return sizeof(wbuff) - write_len;
 }
 
-/*
-void connectHost(Host * host) {
-    int hostfd = ConnectTo(host->hostname, host->targetport);
-
-    pthread_mutex_lock(&lock);
-    if(host->status == preconnect_s) {
-        host->status=start_s;
-
-        if (hostfd < 0) {
-            LOGE( "connect to %s error\n", host->hostname);
-            host->clean();
-            pthread_mutex_unlock(&lock);
-            return;
-        }
-
-
-        int flags = fcntl(hostfd, F_GETFL, 0);
-        if (flags < 0) {
-            perror("fcntl error");
-            host->clean();
-            pthread_mutex_unlock(&lock);
-            return ;
-        }
-        fcntl(hostfd,F_SETFL,flags | O_NONBLOCK);
-
-
-        host->fd = hostfd;
-        host->guest->connected();
-
-        struct epoll_event event;
-        event.data.ptr = host;
-        event.events = EPOLLIN | EPOLLOUT;
-        epoll_ctl(host->efd, EPOLL_CTL_ADD, host->fd, &event);
-    } else {
-        host->status=start_s;
-        host->clean();
-    }
-    pthread_mutex_unlock(&lock);
-}
-*/

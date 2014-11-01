@@ -66,6 +66,20 @@ void Proxy::connected() {
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 }
 
+
+
+int select_next_proto_cb(SSL* ssl,
+                         unsigned char **out, unsigned char *outlen,
+                         const unsigned char *in, unsigned int inlen,
+                         void *arg)
+{
+    (void)ssl;
+    *out=(unsigned char*)"spdy/3.1";
+    *outlen=strlen((char*)*out);
+
+    return SSL_TLSEXT_ERR_OK;
+}
+
 void Proxy::handleEvent(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
@@ -120,13 +134,17 @@ void Proxy::handleEvent(uint32_t events) {
 
             if (ret <= 0) {
                 int error = SSL_get_error(ssl, ret);
-
-                if (error == SSL_ERROR_WANT_READ) {
+                switch(error) {
+                case SSL_ERROR_WANT_READ:
+                    return;
+                case SSL_ERROR_ZERO_RETURN:
                     break;
-                } else if (error == SSL_ERROR_SYSCALL) {
-                    LOGE( "proxy read:%s\n", strerror(errno));
-                } else if (error != SSL_ERROR_ZERO_RETURN) {
-                    LOGE( "proxy read:%s\n", ERR_error_string(error, NULL));
+                case SSL_ERROR_SYSCALL:
+                    LOGE( "proxy read error:%s\n", strerror(errno));
+                    break;
+                default:
+                    LOGE( "proxy read error:%s\n", ERR_error_string(error, NULL));
+                    break;
                 }
 
                 clean();
@@ -168,6 +186,8 @@ void Proxy::handleEvent(uint32_t events) {
                 return;
             }
             SSL_CTX_set_options(ctx,SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3); //去除支持SSLv2 SSLv3
+            SSL_CTX_set_next_proto_select_cb(ctx,select_next_proto_cb,NULL);
+
             ssl = SSL_new(ctx);
             SSL_set_fd(ssl, fd);
 
@@ -204,23 +224,24 @@ void Proxy::handleEvent(uint32_t events) {
 
                 if (ret <= 0) {
                     int error = SSL_get_error(ssl, ret);
-
-                    if (error == SSL_ERROR_WANT_WRITE) {
+                    switch(error) {
+                    case SSL_ERROR_WANT_READ:
+                        return;
+                    case SSL_ERROR_ZERO_RETURN:
                         break;
-                    } else if (error == SSL_ERROR_SYSCALL) {
-                        LOGE( "proxy write:%s\n", strerror(errno));
-                    } else if (error != SSL_ERROR_ZERO_RETURN) {
-                        LOGE( "proxy write:%s\n", ERR_error_string(error, NULL));
+                    case SSL_ERROR_SYSCALL:
+                        LOGE( "proxy write error:%s\n", strerror(errno));
+                        break;
+                    default:
+                        LOGE( "proxy write error:%s\n", ERR_error_string(error, NULL));
+                        break;
                     }
 
                     clean();
                     return;
                 }
 
-                if (fulled) {
-                    guest->peercanwrite();
-                    fulled = false;
-                }
+                guest->writedcb();
             }
             if (write_len == 0) {
                 event.data.ptr = this;

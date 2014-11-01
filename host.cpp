@@ -51,8 +51,11 @@ void Host::handleEvent(uint32_t events) {
         char buff[1024 * 1024];
         int ret = Read(buff, bufleft);
 
-        if (ret <= 0) {
-            LOG("host read: %s\n",strerror(errno));
+        if (ret < 0) {
+            LOGE("host read error: %s\n",strerror(errno));
+            clean();
+            return;
+        }else if(ret == 0){
             clean();
             return;
         }
@@ -78,20 +81,20 @@ void Host::handleEvent(uint32_t events) {
                 return;
             }
             status=connect_s;
-            guest->connected();
+            guest->connectedcb();
         }
         if (write_len) {
             int ret = Write();
-            if (ret <= 0) {
-                LOG("host write: %s\n",strerror(errno));
+            if (ret < 0) {
+                LOG("host write error: %s\n",strerror(errno));
+                clean();
+                return;
+            }else if(ret == 0){
                 clean();
                 return;
             }
 
-            if (fulled) {
-                guest->peercanwrite();
-                fulled = false;
-            }
+            guest->writedcb();
 
         }
 

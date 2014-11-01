@@ -2,6 +2,7 @@
 #define __PEER_H__
 
 #include <stdint.h>
+
 #include "con.h"
 
 #include "common.h"
@@ -19,13 +20,12 @@ protected:
     enum Status status=start_s;
     char wbuff[1024 * 1024];
     int  write_len=0;
-    bool fulled=false;
     virtual void clean()=0;
     virtual int Write();
     Peer();  //do nothing
     Peer(int fd,int efd);
 public:
-    virtual void peercanwrite();
+    virtual void writedcb();
     virtual int Read(char *buff,size_t size);
     virtual int Write(const char *buff,size_t size);
     virtual size_t bufleft();

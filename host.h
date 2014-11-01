@@ -5,6 +5,9 @@
 #include "net.h"
 #include "dns.h"
 
+
+
+
 class Guest;
 
 class Host:public Peer{

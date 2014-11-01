@@ -20,9 +20,10 @@ protected:
 public:
     Host *host=nullptr;
     Guest(int fd,int efd);
+    virtual ssize_t sizecanread();
     virtual void clean() override;
     virtual void handleEvent(uint32_t events) override;
-    virtual void connected();
+    virtual void connectedcb();
 };
 
 
