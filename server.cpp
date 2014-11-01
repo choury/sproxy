@@ -141,28 +141,11 @@ int main(int argc, char** argv)
 
                     Guest_s* guest = new Guest_s(clsk, efd, ssl);
 
-                    event.data.ptr = guest;
-                    event.events = EPOLLIN;
-                    epoll_ctl(efd, EPOLL_CTL_ADD, clsk, &event);
-
                     /* 建立SSL 连接*/
                     int ret = SSL_accept(ssl);
                     if (ret != 1) {
-                        switch (SSL_get_error(ssl, ret)) {
-                        case SSL_ERROR_WANT_READ:
-                            event.events = EPOLLIN;
-                            epoll_ctl(efd, EPOLL_CTL_MOD, clsk, &event);
-                            break;
-                        case SSL_ERROR_WANT_WRITE:
-                            event.events = EPOLLOUT;
-                            epoll_ctl(efd, EPOLL_CTL_MOD, clsk, &event);
-                            break;
-                        default:
-                            ERR_print_errors_fp(stderr);
+                        if(guest->showerrinfo(ret,"ssl accept error")){
                             guest->clean();
-                            event.events = EPOLLOUT;
-                            epoll_ctl(efd, EPOLL_CTL_MOD, clsk, &event);
-                            break;
                         }
                         continue;
                     }
@@ -174,7 +157,7 @@ int main(int argc, char** argv)
                 }
             } else {
                 Con* con = (Con*)events[i].data.ptr;
-                con->handleEvent(events[i].events);
+                (con->*con->handleEvent)(events[i].events);
             }
         }
     }

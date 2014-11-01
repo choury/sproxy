@@ -109,20 +109,15 @@ int main(int argc, char** argv) {
                     }
 
                     fcntl(clsk, F_SETFL, flags | O_NONBLOCK);
+                    new Guest(clsk, efd);
                     
-
-                    Guest* guest = new Guest(clsk, efd);
-
-                    event.data.ptr = guest;
-                    event.events = EPOLLIN;
-                    epoll_ctl(efd, EPOLL_CTL_ADD, clsk, &event);
                 } else {
                     LOGE("unknown error\n");
                     return 5;
                 }
             } else {
                 Con* con = (Con*)events[i].data.ptr;
-                con->handleEvent(events[i].events);
+                (con->*con->handleEvent)(events[i].events);
             }
         }
     }

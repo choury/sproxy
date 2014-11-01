@@ -11,12 +11,14 @@ class Proxy : public Host{
     SSL *ssl=nullptr;
     SSL_CTX *ctx=nullptr;
     virtual int Write()override;
+    virtual void shakedhand();
+    virtual int showerrinfo(int ret,const char *)override;
+    virtual void waitconnectHE(uint32_t events)override;
+    virtual void shakehandHE(uint32_t events);
+    virtual int Read(char *buff,size_t size)override;
 public:
     Proxy(int efd,Guest *guest);
     virtual ~Proxy();
-    virtual void handleEvent(uint32_t events)override;
-    virtual int Read(char *buff,size_t size)override;
-    virtual void connected();
     static Host *getproxy(Host *exist,int efd,Guest *guest);
 };
 

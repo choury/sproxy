@@ -2,13 +2,13 @@
 #define __DNS_H__
 
 
-#include <netdb.h>
 #include <vector>
 #include <unistd.h>
 #include <time.h>
 #include <netinet/in.h>
 
 #include "con.h"
+#include "net.h"
 
 #define _RESOLV_FILE_ "/etc/resolv.conf"
 #define DNSPORT 53
@@ -16,19 +16,15 @@
 #define DNSTTL     8640             //dns 缓存时间(s)
 
 class Dns_srv:public Con{
-public:
+protected:
     int fd;
-    virtual void handleEvent(uint32_t events) override;
+public:
+    Dns_srv(int fd);
+    virtual void DnshandleEvent(uint32_t events);
     int query(const char *,int type);
-    virtual ~Dns_srv(){};
+    virtual ~Dns_srv();
 };
 
-
-union sockaddr_un{
-    sockaddr addr;
-    sockaddr_in addr_in;
-    sockaddr_in6 addr_in6;
-};
 
 class Dns_rcd{
 public:

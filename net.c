@@ -3,7 +3,6 @@
 #include <string.h>
 
 #include <unistd.h>
-#include <netdb.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
 

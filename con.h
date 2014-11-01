@@ -3,7 +3,8 @@
 
 class Con{
 public:
-    virtual void handleEvent(uint32_t events)=0;
+    void (Con::*handleEvent)(uint32_t events);
+    virtual ~Con(){};
 };
 
 

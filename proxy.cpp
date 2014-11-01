@@ -43,27 +43,38 @@ int Proxy::Read(char* buff, size_t size) {
 }
 
 
-void Proxy::connected() {
+int Proxy::showerrinfo(int ret, const char* s){
     epoll_event event;
     event.data.ptr = this;
-    status = connect_s;
-
-    if (write_len) {
-        int ret = Write();
-
-        if (ret <= 0) {
-            clean();
-            return;
-        }
-    }
-
-    if (write_len == 0) {
+    int error = SSL_get_error(ssl, ret);
+    switch(error) {
+    case SSL_ERROR_WANT_READ:
         event.events = EPOLLIN;
-    } else {
-        event.events = EPOLLIN | EPOLLOUT;
+        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        return 0;
+    case SSL_ERROR_WANT_WRITE:
+        event.events = EPOLLOUT;
+        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        return 0;
+    case SSL_ERROR_ZERO_RETURN:
+        break;
+    case SSL_ERROR_SYSCALL:
+        LOGE("%s:%s\n",s, strerror(errno));
+        break;
+    default:
+        LOGE("%s:%s\n",s, ERR_error_string(error, NULL));
     }
+    return 1;
+}
 
+
+void Proxy::shakedhand() {
+    epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLIN |EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    
+    handleEvent=(void (Con::*)(uint32_t))&Host::defaultHE;
 }
 
 
@@ -80,181 +91,61 @@ int select_next_proto_cb(SSL* ssl,
     return SSL_TLSEXT_ERR_OK;
 }
 
-void Proxy::handleEvent(uint32_t events) {
-    struct epoll_event event;
-    event.data.ptr = this;
 
-    if( status == close_s)
-        return;
-
+void Proxy::waitconnectHE(uint32_t events) {
     if( guest == NULL) {
         clean();
         return;
     }
-    if (events & EPOLLIN) {
-        int ret;
-        int bufleft = guest->bufleft();
-
-        switch (status) {
-        case wait_s:
-            ret = SSL_connect(ssl);
-
-            if (ret != 1) {
-                switch (SSL_get_error(ssl, ret)) {
-                case SSL_ERROR_WANT_READ:
-                    event.events = EPOLLIN;
-                    break;
-
-                case SSL_ERROR_WANT_WRITE:
-                    event.events = EPOLLOUT;
-                    break;
-
-                default:
-                    ERR_print_errors_fp(stderr);
-                    clean();
-                    return;
-                }
-
-                status = wait_s;
-                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-                break;
-            }
-
-            connected();
-            break;
-
-        case connect_s:
-            if (bufleft == 0) {
-                LOGE( "The guest's write buff is full\n");
-                epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
-            }
-
-            char buff[1024 * 1024];
-            ret = Read(buff, bufleft);
-
-            if (ret <= 0) {
-                int error = SSL_get_error(ssl, ret);
-                switch(error) {
-                case SSL_ERROR_WANT_READ:
-                    return;
-                case SSL_ERROR_ZERO_RETURN:
-                    break;
-                case SSL_ERROR_SYSCALL:
-                    LOGE( "proxy read error:%s\n", strerror(errno));
-                    break;
-                default:
-                    LOGE( "proxy read error:%s\n", ERR_error_string(error, NULL));
-                    break;
-                }
-
-                clean();
-                return;
-            }
-
-            guest->Write(buff, ret);
-            break;
-
-        default:
-            break;
-        }
-
-    }
-
     if (events & EPOLLOUT) {
-        int ret,error;
+        int error;
         socklen_t len=sizeof(error);
-        switch (status) {
-        case start_s:
-            if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-                perror("proxy getsokopt");
-                clean();
-                return;
-            }
-
-            if (error != 0) {
-                LOGE( "connect to proxy:%s\n", strerror(error));
-                if(connect()<0) {
-                    clean();
-                }
-                return;
-            }
-            ctx = SSL_CTX_new(SSLv23_client_method());
-
-            if (ctx == NULL) {
-                ERR_print_errors_fp(stderr);
-                clean();
-                return;
-            }
-            SSL_CTX_set_options(ctx,SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3); //去除支持SSLv2 SSLv3
-            SSL_CTX_set_next_proto_select_cb(ctx,select_next_proto_cb,NULL);
-
-            ssl = SSL_new(ctx);
-            SSL_set_fd(ssl, fd);
-
-        case wait_s:
-            ret = SSL_connect(ssl);
-
-            if (ret != 1) {
-                switch (SSL_get_error(ssl, ret)) {
-                case SSL_ERROR_WANT_READ:
-                    event.events = EPOLLIN;
-                    break;
-
-                case SSL_ERROR_WANT_WRITE:
-                    event.events = EPOLLOUT | EPOLLIN;
-                    break;
-
-                default:
-                    ERR_print_errors_fp(stderr);
-                    clean();
-                    return;
-                }
-
-                status = wait_s;
-                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-                break;
-            }
-
-            connected();
-            break;
-
-        case connect_s:
-            if(write_len) {
-                ret = Write();
-
-                if (ret <= 0) {
-                    int error = SSL_get_error(ssl, ret);
-                    switch(error) {
-                    case SSL_ERROR_WANT_READ:
-                        return;
-                    case SSL_ERROR_ZERO_RETURN:
-                        break;
-                    case SSL_ERROR_SYSCALL:
-                        LOGE( "proxy write error:%s\n", strerror(errno));
-                        break;
-                    default:
-                        LOGE( "proxy write error:%s\n", ERR_error_string(error, NULL));
-                        break;
-                    }
-
-                    clean();
-                    return;
-                }
-
-                guest->writedcb();
-            }
-            if (write_len == 0) {
-                event.data.ptr = this;
-                event.events = EPOLLIN;
-                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-            }
-
-            break;
-
-        default:
-            break;
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
+            perror("proxy getsokopt");
+            clean();
+            return;
         }
 
+        if (error != 0) {
+            LOGE( "connect to proxy:%s\n", strerror(error));
+            if(connect()<0) {
+                clean();
+            }
+            return;
+        }
+        ctx = SSL_CTX_new(SSLv23_client_method());
+
+        if (ctx == NULL) {
+            ERR_print_errors_fp(stderr);
+            clean();
+            return;
+        }
+        SSL_CTX_set_options(ctx,SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3); //去除支持SSLv2 SSLv3
+        SSL_CTX_set_next_proto_select_cb(ctx,select_next_proto_cb,NULL);
+
+        ssl = SSL_new(ctx);
+        SSL_set_fd(ssl, fd);
+        
+        struct epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLIN | EPOLLOUT;
+        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        
+        handleEvent=(void (Con::*)(uint32_t))&Proxy::shakehandHE;
+    }
+}
+
+
+void Proxy::shakehandHE(uint32_t events) {
+    if ((events & EPOLLIN) || (events & EPOLLOUT)) {
+        int ret = SSL_connect(ssl);
+        if (ret != 1) {
+            if(showerrinfo(ret,"ssl connect error")){
+                clean();
+            }
+        }else{
+            shakedhand();
+        }
     }
 
     if (events & EPOLLERR || events & EPOLLHUP) {

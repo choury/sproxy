@@ -17,13 +17,18 @@ protected:
     char rbuff[4096];
     uint32_t  read_len=0;
     uint32_t expectlen=0;
+    virtual int showerrinfo(int ret,const char * )override;
+    virtual void connected();
+    virtual ssize_t sizecanread();
+    virtual void defaultHE(uint32_t events);
+    virtual void closeHE(uint32_t events);
+    virtual void postHE(uint32_t events);
 public:
     Host *host=nullptr;
     Guest(int fd,int efd);
-    virtual ssize_t sizecanread();
+    void (Guest::*connectedcb)()=NULL;
+    virtual void getheaderHE(uint32_t events);
     virtual void clean() override;
-    virtual void handleEvent(uint32_t events) override;
-    virtual void connectedcb();
 };
 
 

@@ -34,7 +34,7 @@ Guest::Guest(int fd, int efd): Peer(fd, efd) {
     if ((getsockopt(fd, SOL_IP, SO_ORIGINAL_DST, &Dst, &sin_size) || (socktype = AF_INET, 0)) &&
             (getsockopt(fd, SOL_IPV6, SO_ORIGINAL_DST, &Dst6, &sin6_size) || (socktype = AF_INET6, 0))) {
         LOGE( "([%s]:%d): getsockopt error:%s\n",
-                            sourceip, sourceport, strerror(errno));
+              sourceip, sourceport, strerror(errno));
         strcpy(destip, "Unkown IP");
         destport = CPORT;
     } else {
@@ -50,68 +50,63 @@ Guest::Guest(int fd, int efd): Peer(fd, efd) {
             break;
         }
     }
-
+    struct epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLIN;
+    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+    handleEvent=(void (Con::*)(uint32_t))&Guest::getheaderHE;
 }
 
 
-void Guest::connectedcb() {
-    if (status == connect_s) {
-        Write(connecttip, strlen(connecttip));
-    }
+void Guest::connected() {
+    Write(connecttip, strlen(connecttip));
 }
 
-ssize_t Guest::sizecanread(){
-    if(status == start_s){
-        return sizeof(rbuff)-read_len;
-    }else if(host){
+ssize_t Guest::sizecanread() {
+    if(host) {
         return host->bufleft();
-    }else{
+    } else {
         return -1;
     }
 }
 
+int Guest::showerrinfo(int ret,const char *s) {
+    if(ret<0) {
+        LOGE("([%s]:%d):%s:%s\n",
+             sourceip, sourceport,s,strerror(errno));
+    }
+    return 1;
+}
 
-void Guest::handleEvent(uint32_t events) {
-    struct epoll_event event;
-    event.data.ptr = this;
 
-    int ret;
-    unsigned int len;
-
+void Guest::getheaderHE(uint32_t events) {
     if (events & EPOLLIN) {
-        char buff[1024 * 1024];
-        len=sizecanread();
-        if(len<0){
+        int len=sizeof(rbuff)-read_len;
+        if(len<0) {
             LOGE("([%s]:%d):connecting to host lost\n",sourceip, sourceport);
             clean();
             return;
-        }else if(len == 0){
-            LOGE( "([%s]:%d): The buff is full\n",sourceip, sourceport);
+        } else if(len == 0) {
+            LOGE( "([%s]:%d): The header is too long\n",sourceip, sourceport);
             epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
             return;
         }
-        ret=Read(buff, len);
-        if(ret==0){
-            clean();
-            return;
-        }else if(ret<0){
-            LOGE("([%s]:%d):guest read error:%s\n",
-                 sourceip, sourceport,strerror(errno));
-            clean();
-            return;
-        }
+        int ret=Read(rbuff+read_len, len);
+        if(ret<=0 ) {
+            if(showerrinfo(ret,"guest read error")) {
+                clean();
+                return;
+            }
+        } else {
 
-        switch (status) {
-        case start_s:
-            memcpy(rbuff+read_len,buff,ret);
             read_len += ret;
 
             if (char* headerend = strnstr(rbuff, CRLF CRLF, read_len)) {
                 headerend += strlen(CRLF CRLF);
                 size_t headerlen = headerend - rbuff;
+                char buff[4096];
                 try {
                     Http http(rbuff);
-
                     if (headerlen != read_len) {       //除了头部还读取到了其他内容
                         read_len -= headerlen;
                         memmove(rbuff, headerend, read_len);
@@ -125,11 +120,11 @@ void Guest::handleEvent(uint32_t events) {
                             host->Write(buff, http.getstring(buff,true));
                             host->Write(rbuff, read_len);
                             read_len = 0;
-                            status = proxy_s;
                             LOG( "([%s]:%d): PROXY %s %s\n",
-                                    sourceip, sourceport,
-                                    http.method, http.url);
-                            break;
+                                 sourceip, sourceport,
+                                 http.method, http.url);
+                            handleEvent=(void (Con::*)(uint32_t))&Guest::defaultHE;
+                            return;
                         }
                     } else if(destport == HTTPPORT) {
                         strcpy(http.hostname, http.getval("Host").c_str());
@@ -144,9 +139,8 @@ void Guest::handleEvent(uint32_t events) {
                     }
 
                     LOG( "([%s]:%d): %s %s\n",
-                            sourceip, sourceport,
-                            http.method, http.url);
-
+                         sourceip, sourceport,
+                         http.method, http.url);
 
                     if ( http.ismethod("GET") ||  http.ismethod("HEAD") ) {
                         if(shouldproxy) {
@@ -155,7 +149,6 @@ void Guest::handleEvent(uint32_t events) {
                             host = Host::gethost(host, http.hostname, http.port, efd, this);
                         }
                         host->Write(buff, http.getstring(buff,shouldproxy));
-                        status = start_s;
                     } else if (http.ismethod("POST") ) {
                         int writelen=http.getstring(buff,shouldproxy);
                         char* lenpoint;
@@ -176,45 +169,39 @@ void Guest::handleEvent(uint32_t events) {
                         host->Write(buff, writelen);
                         host->Write(rbuff, read_len);
                         read_len = 0;
-                        status = post_s;
-
+                        handleEvent=(void (Con::*)(uint32_t))&Guest::postHE;
                     } else if (http.ismethod("CONNECT")) {
                         if(shouldproxy) {
                             host=Proxy::getproxy(host,efd,this);
                         } else {
                             host = Host::gethost(host, http.hostname, http.port, efd, this);
                         }
-                        status = connect_s;
-
+                        handleEvent=(void (Con::*)(uint32_t))&Guest::defaultHE;
+                        connectedcb=&Guest::connected;
                     } else if (http.ismethod("LOADPLIST")) {
                         if (loadproxysite() > 0) {
                             Write(LOADBSUC, strlen(LOADBSUC));
                         } else {
                             Write(H404, strlen(H404));
                         }
-
-                        status = start_s;
                     } else if (http.ismethod("ADDPSITE")) {
                         addpsite(http.url);
                         Write(ADDBTIP, strlen(ADDBTIP));
-                        status = start_s;
                     } else if(http.ismethod("DELPSITE")) {
                         if(delpsite(http.url)) {
                             Write(DELBTIP,strlen(DELBTIP));
                         } else {
                             Write(H404,strlen(H404));
                         }
-                        status = start_s;
                     } else if(http.ismethod("GLOBALPROXY")) {
                         if(globalproxy()) {
                             Write(EGLOBLETIP, strlen(EGLOBLETIP));
                         } else {
                             Write(DGLOBLETIP, strlen(DGLOBLETIP));
                         }
-                        status = start_s;
                     } else {
                         LOGE( "([%s]:%d): unsported method:%s\n",
-                                sourceip, sourceport,http.method);
+                              sourceip, sourceport,http.method);
                         clean();
                     }
                 } catch(...) {
@@ -223,66 +210,100 @@ void Guest::handleEvent(uint32_t events) {
                 }
 
             }
+        }
+    }
+    defaultHE(events&(~EPOLLIN));
+}
 
-            break;
 
-        case post_s:
+void Guest::postHE(uint32_t events) {
+    if (events & EPOLLIN) {
+        char buff[1024 * 1024];
+        int len=sizecanread();
+        if(len<0) {
+            LOGE("([%s]:%d):connecting to host lost\n",sourceip, sourceport);
+            clean();
+            return;
+        } else if(len == 0) {
+            LOGE( "([%s]:%d): The buff is full\n",sourceip, sourceport);
+            epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+            return;
+        }
+        int ret=Read(buff, len);
+        if(ret<=0 ) {
+            if(showerrinfo(ret,"guest read error")) {
+                clean();
+                return;
+            }
+        } else {
             expectlen -= ret;
             host->Write(buff, ret);
             if (expectlen == 0) {
-                status = start_s;
+                handleEvent=(void (Con::*)(uint32_t))&Guest::getheaderHE;
             }
-            break;
-
-        case connect_s:
-        case proxy_s:
-            host->Write(buff, ret);
-            break;
-
-        default:
-            break;
         }
     }
+    defaultHE(events&(~EPOLLIN));
+}
 
+
+void Guest::closeHE(uint32_t events) {
     if (events & EPOLLOUT) {
-        int ret;
-        switch (status) {
-        case close_s:
-            if(write_len == 0) {
-                delete this;
+        if(write_len == 0) {
+            delete this;
+            return;
+        }
+
+        int ret = Write();
+
+        if (ret <= 0 && showerrinfo(ret,"guest write error")) {
+            delete this;
+            return;
+        }
+    }
+}
+
+
+void Guest::defaultHE(uint32_t events) {
+    struct epoll_event event;
+    event.data.ptr = this;
+    if (events & EPOLLIN) {
+        char buff[1024 * 1024];
+        int len=sizecanread();
+        if(len<0) {
+            LOGE("([%s]:%d):connecting to host lost\n",sourceip, sourceport);
+            clean();
+            return;
+        } else if(len == 0) {
+            LOGE( "([%s]:%d): The buff is full\n",sourceip, sourceport);
+            epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+            return;
+        }
+        int ret=Read(buff, len);
+        if(ret <= 0 ) {
+            if(showerrinfo(ret,"guest read error")) {
+                clean();
                 return;
             }
-
-            ret = Write();
-
-            if (ret < 0) {
-                LOGE( "([%s]:%d): guest write:%s\n",
-                            sourceip, sourceport, strerror(errno));
-                write_len = 0;
-                return;
-            }
-
-            break;
-
-        default:
-            if(write_len) {
-                ret = Write();
-                if (ret <= 0) {
-                    LOGE( "([%s]:%d): guest write error:%s\n",
-                            sourceip, sourceport, strerror(errno));
-                    write_len = 0;
+        } else {
+            host->Write(buff, ret);
+        }
+    }
+    if (events & EPOLLOUT) {
+        if(write_len) {
+            int ret = Write();
+            if (ret <= 0 ) {
+                if( showerrinfo(ret,"guest write error")) {
                     clean();
                     return;
                 }
+            } else if (host)
+                host->writedcb();
+        }
 
-                if (host)
-                    host->writedcb();
-            }
-
-            if (write_len == 0) {
-                event.events = EPOLLIN;
-                epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-            }
+        if(write_len==0) {
+            event.events = EPOLLIN;
+            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
         }
     }
 
@@ -292,18 +313,14 @@ void Guest::handleEvent(uint32_t events) {
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE( "([%s]:%d): guest error:%s\n",
-                    sourceip, sourceport, strerror(error));
+                  sourceip, sourceport, strerror(error));
         }
-
-        write_len = 0;
         clean();
     }
-
 }
 
 
 void Guest::clean() {
-    status = close_s;
     if(host) {
         host->guest=NULL;
     }
@@ -313,4 +330,6 @@ void Guest::clean() {
     event.data.ptr = this;
     event.events = EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+
+    handleEvent=(void (Con::*)(uint32_t))&Guest::closeHE;
 }

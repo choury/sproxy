@@ -17,18 +17,18 @@ class Peer:public Con{
 protected:
     int  fd;
     int  efd;
-    enum Status status=start_s;
     char wbuff[1024 * 1024];
     int  write_len=0;
     virtual void clean()=0;
     virtual int Write();
+    virtual int Read(char *buff,size_t size);
     Peer();  //do nothing
     Peer(int fd,int efd);
 public:
     virtual void writedcb();
-    virtual int Read(char *buff,size_t size);
     virtual int Write(const char *buff,size_t size);
     virtual size_t bufleft();
+    virtual int showerrinfo(int ret,const char * )=0;
     virtual ~Peer();
 };
 

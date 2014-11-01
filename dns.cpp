@@ -172,7 +172,6 @@ int dnsinit(int efd) {
     struct epoll_event event;
     event.events=EPOLLIN ;
     for(size_t i=0; i<srvs.size(); ++i) {
-        close(srvs[i]->fd);
         delete srvs[i];
     }
     srvs.clear();
@@ -191,39 +190,37 @@ int dnsinit(int efd) {
             if(inet_pton(PF_INET,ipaddr,&addr.addr_in.sin_addr)==1) {
                 addr.addr_in.sin_family=PF_INET;
                 addr.addr_in.sin_port=htons(DNSPORT);
-                Dns_srv *srv= new Dns_srv;
-                if ( ( srv->fd  =  socket (PF_INET, SOCK_DGRAM, 0 ) )  <   0 ) {
+                int fd;
+                if ( ( fd  =  socket (PF_INET, SOCK_DGRAM, 0 ) )  <   0 ) {
                     LOGE( "[DNS] create socket error:%s\n",strerror(errno) );
-                    delete srv;
                     continue;
                 }
-                if (connect(srv->fd,&addr.addr,sizeof(sockaddr_in)) == -1) {
+                if (connect(fd,&addr.addr,sizeof(sockaddr_in)) == -1) {
                     LOGE("[DNS] connecting %s error:%s\n",ipaddr,strerror(errno));
-                    close(srv->fd);
-                    delete srv;
+                    close(fd);
                     continue;
                 }
+                Dns_srv *srv= new Dns_srv(fd);
                 srvs.push_back(srv);
                 event.data.ptr=srv;
-                epoll_ctl(efd, EPOLL_CTL_ADD,srv->fd,&event);
+                epoll_ctl(efd, EPOLL_CTL_ADD,fd,&event);
             } else if(inet_pton(PF_INET6,ipaddr,&addr.addr_in6.sin6_addr)==1) {
                 addr.addr_in6.sin6_family=PF_INET6;
                 addr.addr_in6.sin6_port=htons(DNSPORT);
-                Dns_srv *srv=new Dns_srv;
-                if ( ( srv->fd  =  socket (PF_INET6, SOCK_DGRAM, 0 ) )  <   0 ) {
+                int fd;
+                if ( ( fd  =  socket (PF_INET6, SOCK_DGRAM, 0 ) )  <   0 ) {
                     LOGE ( "[DNS] create socket error:%s",strerror(errno) );
-                    delete srv;
                     continue;
                 }
-                if (connect(srv->fd,&addr.addr,sizeof(sockaddr_in6)) == -1) {
+                if (connect(fd,&addr.addr,sizeof(sockaddr_in6)) == -1) {
                     LOGE("[DNS] connecting  %s error:%s\n",ipaddr,strerror(errno));
-                    close(srv->fd);
-                    delete srv;
+                    close(fd);
                     continue;
                 }
+                Dns_srv *srv=new Dns_srv(fd);
                 srvs.push_back(srv);
                 event.data.ptr=srv;
-                epoll_ctl(efd, EPOLL_CTL_ADD,srv->fd,&event);
+                epoll_ctl(efd, EPOLL_CTL_ADD,fd,&event);
             } else {
                 LOGE("[DNS] %s is not a valid ip address\n",ipaddr);
             }
@@ -294,9 +291,16 @@ int query(const char *host ,DNSCBfunc func,void *param) {
 }
 
 
+Dns_srv::Dns_srv(int fd):fd(fd){
+    handleEvent=(void (Con::*)(uint32_t))&Dns_srv::DnshandleEvent;
+}
+
+Dns_srv::~Dns_srv(){
+    close(fd);
+}
 
 
-void Dns_srv::handleEvent(uint32_t events) {
+void Dns_srv::DnshandleEvent(uint32_t events) {
     unsigned char buf[BUF_SIZE];
     if (events & EPOLLIN) {
         int len = read( fd, buf,BUF_SIZE);
