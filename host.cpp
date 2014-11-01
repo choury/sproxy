@@ -107,11 +107,10 @@ void Host::defaultHE(uint32_t events) {
             if (ret <= 0){
                 if(showerrinfo(ret,"host write error")) {
                     clean();
-                    return;
                 }
-            }else{
-                guest->writedcb();
+                return;
             }
+            guest->writedcb();
 
         }
 

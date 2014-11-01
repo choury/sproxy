@@ -87,7 +87,6 @@ int select_next_proto_cb(SSL* ssl,
     (void)ssl;
     *out=(unsigned char*)"spdy/3.1";
     *outlen=strlen((char*)*out);
-
     return SSL_TLSEXT_ERR_OK;
 }
 

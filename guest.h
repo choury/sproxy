@@ -19,7 +19,6 @@ protected:
     uint32_t expectlen=0;
     virtual int showerrinfo(int ret,const char * )override;
     virtual void connected();
-    virtual ssize_t sizecanread();
     virtual void defaultHE(uint32_t events);
     virtual void closeHE(uint32_t events);
     virtual void postHE(uint32_t events);
