@@ -194,7 +194,7 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
 }
 
 
-Http::Http(char* header)throw (int){
+Http::Http(char* header,protocol proto)throw (int){
     *(strstr(header, CRLF CRLF) + strlen(CRLF)) = 0;
     memset(path,0,sizeof(path));
     memset(url,0,sizeof(url));

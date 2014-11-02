@@ -14,7 +14,7 @@ protected:
     uint16_t  sourceport;
     char destip[INET6_ADDRSTRLEN];
     uint16_t  destport;
-    char rbuff[4096];
+    char rbuff[8192];
     uint32_t  read_len=0;
     uint32_t expectlen=0;
     virtual int showerrinfo(int ret,const char * )override;

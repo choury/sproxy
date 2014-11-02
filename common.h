@@ -11,6 +11,8 @@ extern char SHOST[];
 
 #define Min(x,y) ((x)<(y)?(x):(y))
 
+
+
 #ifdef _ANDROID_
 
 #include <jni.h>
@@ -28,6 +30,13 @@ extern char SHOST[];
 #ifdef  __cplusplus
 extern "C" {
 #endif
+
+#define HTONL(x) (x=htonl(x))
+#define HTONS(x) (x=htons(x))
+
+
+#define NTOHL(x) (x=ntohl(x))
+#define NTOHS(x) (x=ntohs(x))
 
 char* strnstr(const char* s1, const char* s2, size_t len);
 

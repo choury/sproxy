@@ -74,11 +74,7 @@ int Guest::showerrinfo(int ret,const char *s) {
 void Guest::getheaderHE(uint32_t events) {
     if (events & EPOLLIN) {
         int len=sizeof(rbuff)-read_len;
-        if(len<0) {
-            LOGE("([%s]:%d):connecting to host lost\n",sourceip, sourceport);
-            clean();
-            return;
-        } else if(len == 0) {
+        if(len == 0) {
             LOGE( "([%s]:%d): The header is too long\n",sourceip, sourceport);
             epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
             return;
@@ -98,7 +94,7 @@ void Guest::getheaderHE(uint32_t events) {
             size_t headerlen = headerend - rbuff;
             char buff[4096];
             try {
-                Http http(rbuff);
+                Http http(rbuff,HTTP);
                 if (headerlen != read_len) {       //除了头部还读取到了其他内容
                     read_len -= headerlen;
                     memmove(rbuff, headerend, read_len);

@@ -19,24 +19,13 @@
 #define BUF_SIZE 1024
 
 
-#define HTON(x) (x=nton(x))
-#define HTONS(x) (x=ntons(x))
-
-
-#define NTOH(x) (x=ntoh(x))
-#define NTOHS(x) (x=ntohs(x))
-
-typedef unsigned short uint16;
-typedef unsigned int   uint32;
-
-
 static unsigned int id_cur=1;
 
 std::vector<Dns_srv *> srvs;
 
 
 typedef struct _DNS_HDR {
-    uint16 id;                 //查询序列号
+    uint16_t id;            //查询序列号
 
 #define  QR 0x8000          //查询/应答 0/1
 #define  OPCODE_STD 0       //0:标准查询
@@ -55,28 +44,28 @@ typedef struct _DNS_HDR {
 //5 拒绝(Refused) - 服务器由于设置的策略拒绝给出应答。比如，服务器不希望对某些请求者给出应答，或者服务器不希望进行某些操作（比如区域传送zone transfer）。
 //6-15 保留值，暂时未使用。
 #define  RCODE_MASK 0x000F  //应答码
-    uint16 flag;
+    uint16_t flag;
 
-    uint16 numq;               //问题个数
-    uint16 numa;               //应答资源个数
-    uint16 numa1;              //授权记录数
-    uint16 numa2;              //额外资源记录数
+    uint16_t numq;               //问题个数
+    uint16_t numa;               //应答资源个数
+    uint16_t numa1;              //授权记录数
+    uint16_t numa2;              //额外资源记录数
 } __attribute__ ((packed)) DNS_HDR;
 typedef struct _DNS_QER {
 //类型A，值是1，表示获取目标主机的IP地址。
 //类型CNAME，值是5，表示获得目标主机的别名。
 //类型PTR，值是12，表示反向查询。
 //类型aaaa，值是28，表示查询IPV6地址
-    uint16 type;
-    uint16 classes;            //通常为1，表示获取因特网地址（IP地址）
+    uint16_t type;
+    uint16_t classes;            //通常为1，表示获取因特网地址（IP地址）
 } __attribute__ ((packed)) DNS_QER;
 
 
 typedef struct _DNS_RR {
-    uint16 type;
-    uint16 classes;
-    uint32 TTL;                //缓存时间
-    uint16 rdlength;           //rdata 长度
+    uint16_t type;
+    uint16_t classes;
+    uint32_t TTL;                //缓存时间
+    uint16_t rdlength;           //rdata 长度
 } __attribute__ ((packed)) DNS_RR;
 
 typedef struct _DNS_STATE {
@@ -84,7 +73,7 @@ typedef struct _DNS_STATE {
     time_t reqtime;
     DNSCBfunc func;
     void *param;
-    uint32 getnum;
+    uint32_t getnum;
     char host[DOMAINLIMIT];
     std::vector<sockaddr_un> addr;
 } DNS_STATE;

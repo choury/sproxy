@@ -13,7 +13,9 @@ class Guest_s:public Guest {
     enum{http1_1,spdy2,spdy3_1} protocol=http1_1;
     virtual int Write()override;
     virtual void shakehandHE(uint32_t events);
-    virtual int Read(char *buff,size_t size)override;
+    virtual void spdyHE(uint32_t events);
+    virtual void spdysynHE(uint32_t events);
+    virtual int Read(void *buff,size_t size)override;
 public:
     Guest_s(int fd,int efd,SSL *ssl);
     virtual void shakedhand();

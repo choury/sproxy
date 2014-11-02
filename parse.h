@@ -25,6 +25,9 @@ int globalproxy();
 using std::string;
 using std::map;
 
+
+enum protocol{HTTP,SPDY};
+
 class Http{
     map<string,string> header;
 public:
@@ -33,7 +36,7 @@ public:
     char hostname[DOMAINLIMIT];
     char path[URLLIMIT];
     uint16_t port;
-    Http(char *header)throw (int);
+    Http(char *header,protocol proto)throw (int);
     int getstring(char *,bool);
     bool ismethod(const char *);
     bool checkproxy();

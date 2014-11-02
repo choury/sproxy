@@ -38,7 +38,7 @@ int Proxy::Write() {
     return ret;
 }
 
-int Proxy::Read(char* buff, size_t size) {
+int Proxy::Read(void* buff, size_t size) {
     return SSL_read(ssl, buff, size);
 }
 

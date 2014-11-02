@@ -21,12 +21,12 @@ protected:
     int  write_len=0;
     virtual void clean()=0;
     virtual int Write();
-    virtual int Read(char *buff,size_t size);
+    virtual int Read(void *buff,size_t size);
     Peer();  //do nothing
     Peer(int fd,int efd);
 public:
     virtual void writedcb();
-    virtual int Write(const char *buff,size_t size);
+    virtual int Write(const void *buff,size_t size);
     virtual size_t bufleft();
     virtual int showerrinfo(int ret,const char * )=0;
     virtual ~Peer();

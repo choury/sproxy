@@ -33,12 +33,12 @@ Peer::~Peer() {
     }
 }
 
-int Peer::Read(char* buff, size_t size) {
+int Peer::Read(void* buff, size_t size) {
     return read(fd, buff, size);
 }
 
 
-int Peer::Write(const char* buff, size_t size) {
+int Peer::Write(const void* buff, size_t size) {
 
     int len = Min(size, bufleft());
     memcpy(wbuff + write_len, buff, len);

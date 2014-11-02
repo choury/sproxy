@@ -15,7 +15,7 @@ class Proxy : public Host{
     virtual int showerrinfo(int ret,const char *)override;
     virtual void waitconnectHE(uint32_t events)override;
     virtual void shakehandHE(uint32_t events);
-    virtual int Read(char *buff,size_t size)override;
+    virtual int Read(void *buff,size_t size)override;
 public:
     Proxy(int efd,Guest *guest);
     virtual ~Proxy();

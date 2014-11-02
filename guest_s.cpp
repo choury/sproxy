@@ -6,7 +6,7 @@
 #include "guest_s.h"
 #include "host.h"
 #include "parse.h"
-
+#include "spdy.h"
 
 
 Guest_s::Guest_s(int fd, int efd, SSL* ssl): Guest(fd, efd), ssl(ssl) {
@@ -14,7 +14,7 @@ Guest_s::Guest_s(int fd, int efd, SSL* ssl): Guest(fd, efd), ssl(ssl) {
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    
+
     handleEvent=(void (Con::*)(uint32_t))&Guest_s::shakehandHE;
 }
 
@@ -23,7 +23,7 @@ Guest_s::~Guest_s() {
     SSL_free(ssl);
 }
 
-int Guest_s::Read(char* buff, size_t size) {
+int Guest_s::Read(void* buff, size_t size) {
     return SSL_read(ssl, buff, size);
 }
 
@@ -49,21 +49,21 @@ void Guest_s::shakedhand() {
     const unsigned char *data;
     unsigned int len;
     SSL_get0_next_proto_negotiated(ssl,&data,&len);
+    epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLIN;
+    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    handleEvent=(void (Con::*)(uint32_t))&Guest::getheaderHE;
+
     if(data) {
         if(strncasecmp((const char*)data,"spdy/3.1",len)==0) {
-            protocol=spdy3_1;
+            handleEvent=(void (Con::*)(uint32_t))&Guest_s::spdyHE;
         } else {
             LOGE( "([%s]:%d): unknown protocol:%.*s\n",sourceip, sourceport,len,data);
             clean();
             return;
         }
     }
-    epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    
-    handleEvent=(void (Con::*)(uint32_t))&Guest::getheaderHE;
 }
 
 int Guest_s::showerrinfo(int ret, const char* s) {
@@ -98,10 +98,10 @@ void Guest_s::shakehandHE(uint32_t events) {
     if ((events & EPOLLIN)|| (events & EPOLLOUT)) {
         int ret = SSL_accept(ssl);
         if (ret != 1) {
-            if(showerrinfo(ret,"ssl accept error")){
+            if(showerrinfo(ret,"ssl accept error")) {
                 clean();
             }
-        }else{
+        } else {
             shakedhand();
         }
     }
@@ -116,5 +116,65 @@ void Guest_s::shakehandHE(uint32_t events) {
         }
         clean();
     }
+}
+
+
+void Guest_s::spdyHE(uint32_t events) {
+    if(events & EPOLLIN) {
+        int len=sizeof(rbuff)-read_len;
+        if(len == 0) {
+            LOGE( "([%s]:%d): The header is too long\n",sourceip, sourceport);
+            epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+            return;
+        }
+        int ret=Read(rbuff+read_len, len);
+        if(ret<=0 ) {
+            if(showerrinfo(ret,"spdy read error")) {
+                clean();
+            }
+            return;
+        }
+
+        read_len+=ret;
+        if(read_len >= sizeof(spdy_head)) {
+            spdy_head head;
+            memcpy(&head,rbuff,sizeof(head));
+            memmove(rbuff,rbuff+sizeof(head),read_len-sizeof(head));
+            read_len-=sizeof(head);
+            if(head.c==1) {
+                spdy_cframe_head *chead=(spdy_cframe_head *)&head;
+                NTOHS(chead->version);
+                NTOHS(chead->type);
+                expectlen=get24(chead->length)-read_len;
+                switch(chead->type) {
+                case 1:
+                    handleEvent=(void (Con::*)(uint32_t))&Guest_s::spdysynHE;
+                    break;
+                default:
+                    break;
+                }
+            } else {
+                spdy_dframe_head *dhead=(spdy_dframe_head *)&head;
+                NTOHL(dhead->id);
+                char *buff=new char[get24(dhead->length)];
+                Read(buff,get24(dhead->length));
+                spdy_cframe_head rsthead;
+                memset(&rsthead,0,sizeof(rsthead));
+                rsthead.c=1;
+                rsthead.version=htons(3);
+                rsthead.type=htons(3);
+//            rsthead.length=htonl(8);
+                Peer::Write(&rsthead,sizeof(rsthead));
+
+                rst_frame rstframe;
+                memset(&rstframe,0,sizeof(rstframe));
+                rstframe.code=htonl(INVALID_STREAM);
+                rstframe.id=htonl(dhead->id);
+                Peer::Write(&rstframe,sizeof(rstframe));
+
+            }
+        }
+    }
+    Guest::defaultHE(events&(~EPOLLIN));
 }
 
