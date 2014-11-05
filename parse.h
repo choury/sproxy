@@ -37,7 +37,7 @@ public:
     char path[URLLIMIT];
     uint16_t port;
     Http(char *header,protocol proto)throw (int);
-    int getstring(char *,bool);
+    int getstring(char *,bool shouldproxy=false);
     bool ismethod(const char *);
     bool checkproxy();
     string getval(const char *key);

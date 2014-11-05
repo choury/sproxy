@@ -15,6 +15,7 @@ class Guest_s:public Guest {
     virtual void shakehandHE(uint32_t events);
     virtual void spdyHE(uint32_t events);
     virtual void spdysynHE(uint32_t events);
+    virtual void spdyctrlframedefultHE(uint32_t events);
     virtual int Read(void *buff,size_t size)override;
 public:
     Guest_s(int fd,int efd,SSL *ssl);

@@ -1,9 +1,7 @@
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <time.h>
-#include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/epoll.h>
 #include <unordered_map>
@@ -11,7 +9,6 @@
 
 #include "common.h"
 #include "dns.h"
-#include "net.h"
 
 
 //#define _DEGUB_DNS_

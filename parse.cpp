@@ -63,7 +63,7 @@ void addpsite(const string& host) {
 }
 
 int delpsite(const string& host) {
-    if(proxylist.find(host)==proxylist.end()){
+    if(proxylist.find(host)==proxylist.end()) {
         return 0;
     }
     proxylist.erase(host);
@@ -76,7 +76,7 @@ int delpsite(const string& host) {
     return 1;
 }
 
-int globalproxy(){
+int globalproxy() {
     GLOBALPROXY= !GLOBALPROXY;
     return GLOBALPROXY;
 }
@@ -85,16 +85,16 @@ bool Http::checkproxy() {
     if (!loadedsite) {
         loadproxysite();
     }
-    if(strcmp(method,"GET") && strcmp(method,"HEAD")&& strcmp(method,"POST") && strcmp(method,"CONNECT")){
+    if(strcmp(method,"GET") && strcmp(method,"HEAD")&& strcmp(method,"POST") && strcmp(method,"CONNECT")) {
         return false;
     }
-    if(GLOBALPROXY){
+    if(GLOBALPROXY) {
         return true;
     }
 
     //如果proxylist里面有*.*.*.* 那么ip地址直接代理
     if(inet_addr(hostname) != INADDR_NONE &&
-       proxylist.find("*.*.*.*") != proxylist.end()) {
+            proxylist.find("*.*.*.*") != proxylist.end()) {
         return true;
     }
 
@@ -133,7 +133,7 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
     int urllen = strlen(url);
     int copylen;
     bzero(hostname, DOMAINLIMIT);
-    if(path){
+    if(path) {
         bzero(path, urllen);
     }
 
@@ -151,7 +151,7 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
 
     if ((addrsplit = strpbrk(url, "/"))) {
         copylen = url + urllen - addrsplit < (URLLIMIT - 1) ? url + urllen - addrsplit : (URLLIMIT - 1);
-        if(path){
+        if(path) {
             memcpy(path, addrsplit, copylen);
         }
         copylen = addrsplit - url < (DOMAINLIMIT - 1) ? addrsplit - url : (DOMAINLIMIT - 1);
@@ -160,7 +160,7 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
     } else {
         copylen = urllen < (DOMAINLIMIT - 1) ? urllen : (DOMAINLIMIT - 1);
         strncpy(tmpaddr, url, copylen);
-        if(path){
+        if(path) {
             strcpy(path, "/");
         }
         tmpaddr[copylen] = 0;
@@ -194,35 +194,66 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
 }
 
 
-Http::Http(char* header,protocol proto)throw (int){
-    *(strstr(header, CRLF CRLF) + strlen(CRLF)) = 0;
-    memset(path,0,sizeof(path));
-    memset(url,0,sizeof(url));
-    sscanf(header, "%s%*[ ]%[^\r\n ]", method, url);
-    toUpper(method);
-    port=80;
+Http::Http(char* header,protocol proto)throw (int) {
+    switch(proto) {
+    case HTTP:
+        *(strstr(header, CRLF CRLF) + strlen(CRLF)) = 0;
+        memset(path,0,sizeof(path));
+        memset(url,0,sizeof(url));
+        sscanf(header, "%s%*[ ]%[^\r\n ]", method, url);
+        toUpper(method);
+        port=80;
 
-    if(spliturl(url,hostname,path,&port)){
-        LOGE("wrong url format:%s\n",url);
-        throw 0;
-    }
-    
-    
-    for (char* str = strstr(header, CRLF) + strlen(CRLF); ; str = NULL) {
-        char* p = strtok(str, CRLF);
-
-        if (p == NULL)
-            break;
-
-        char* sp = strpbrk(p, ":");
-        if(sp==NULL){
-            LOGE("wrong header format:%s\n",p);
+        if(spliturl(url,hostname,path,&port)) {
+            LOGE("wrong url format:%s\n",url);
             throw 0;
         }
-        this->header[string(p, sp - p)] = ltrim(string(sp + 1));
-    }
 
-    this->header.erase("Proxy-Connection");
+
+        for (char* str = strstr(header, CRLF) + strlen(CRLF); ; str = NULL) {
+            char* p = strtok(str, CRLF);
+
+            if (p == NULL)
+                break;
+
+            char* sp = strpbrk(p, ":");
+            if(sp==NULL) {
+                LOGE("wrong header format:%s\n",p);
+                throw 0;
+            }
+            this->header[string(p, sp - p)] = ltrim(string(sp + 1));
+        }
+
+        this->header.erase("Proxy-Connection");
+        break;
+    case SPDY:
+        uint32_t *p=(uint32_t *)header;
+        uint32_t c=ntohl(*p++);
+        for(size_t i=0;i<c;++i){
+            uint32_t hlen=ntohl(*p++);
+            char *hp=(char *)p;
+            p=(uint32_t*)(hp+hlen);
+            uint32_t vlen=ntohl(*p++);
+            char *vp=(char *)p;
+            p=(uint32_t *)((char *)p+vlen);
+            this->header[string(hp,hlen)] = string(vp,vlen);
+        }
+        sprintf(url,"%s://%s%s",
+                this->header[":schema"].c_str(),
+                this->header[":host"].c_str(),
+                this->header[":path"].c_str());
+        spliturl(url,hostname,path,&port);
+        strcpy(method,this->header[":method"].c_str());
+        this->header["Host"]=this->header[":host"];
+        for(auto i=this->header.begin();i!=this->header.end();){
+            if(i->first[0]==':'){
+                this->header.erase(i++);
+            }else{
+                i++;
+            }
+        }
+        break;
+    }
 
 }
 

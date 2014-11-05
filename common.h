@@ -1,13 +1,15 @@
 #ifndef __CONF_H__
 #define __CONF_H__
 
+#include <stdio.h>
+#include <stddef.h>
+#include <stdint.h>
+
 extern uint16_t SPORT;
 #define CPORT 3333
 
 
 extern char SHOST[];
-
-#include <stdio.h>
 
 #define Min(x,y) ((x)<(y)?(x):(y))
 

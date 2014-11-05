@@ -189,31 +189,31 @@ const unsigned char SPDY_dictionary_txt[] = {
 };
 
 
-#define CHECK_ERR(err, msg) { \
-    if (err != Z_OK) { \
-        fprintf(stderr,"%s error: %d\n",msg, err); \
-        exit(1); \
-    } \
-}
 
 /* ===========================================================================
  * 测试：deflate()：使用预设的字典
  */
-void spdy_deflate(void *buffin,size_t inlen,void *buffout,size_t outlen) {
+int spdy_deflate(void *buffin,size_t inlen,void *buffout,size_t outlen) {
     z_stream c_stream; /* 压缩流 */
     int err;
 
     c_stream.zalloc = Z_NULL;
     c_stream.zfree = Z_NULL;
-    c_stream.opaque = (voidpf)0;
+    c_stream.opaque = Z_NULL;
 
     err = deflateInit(&c_stream, Z_BEST_COMPRESSION);
-    CHECK_ERR(err, "deflateInit");
+    if(err != Z_OK) {
+        LOGE("deflateInit error:%d\n",err);
+        return -1;
+    }
 
     /* 设置压缩流要使用的字典 */
     err = deflateSetDictionary(&c_stream,
                                (const Bytef*)SPDY_dictionary_txt, (int)sizeof(SPDY_dictionary_txt));
-    CHECK_ERR(err, "deflateSetDictionary");
+    if(err != Z_OK) {
+        LOGE("deflateSetDictionary error:%d\n",err);
+        return -1;
+    }
 
 //    dictId = c_stream.adler;  /* 得到字典的Alder32校验值 */
     c_stream.next_out = buffout;
@@ -225,11 +225,15 @@ void spdy_deflate(void *buffin,size_t inlen,void *buffout,size_t outlen) {
     /* 直接进行压缩 */
     err = deflate(&c_stream, Z_FINISH);
     if (err != Z_STREAM_END) {
-        fprintf(stderr, "deflate should report Z_STREAM_END\n");
-        exit(1);
+        LOGE("deflate should report Z_STREAM_END\n");
+        return -1;
     }
     err = deflateEnd(&c_stream);
-    CHECK_ERR(err, "deflateEnd");
+    if(err != Z_OK) {
+        LOGE("deflateEnd error:%d\n",err);
+        return -1;
+    }
+    return 0;
 }
 
 /* ===========================================================================

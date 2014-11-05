@@ -123,6 +123,37 @@ typedef struct{
     uint8_t slot;
 }__attribute__ ((packed)) syn_frame;
 
+/*
++------------------------------------+
+|1|    version    |         2        |
++------------------------------------+
+|  Flags (8)  |  Length (24 bits)    |
++------------------------------------+
+|X|           Stream-ID (31bits)     |
++------------------------------------+
+| Number of Name/Value pairs (int32) |   <+
++------------------------------------+    |
+|     Length of name (int32)         |    | This section is the "Name/Value
++------------------------------------+    | Header Block", and is compressed.
+|           Name (string)            |    |
++------------------------------------+    |
+|     Length of value  (int32)       |    |
++------------------------------------+    |
+|          Value   (string)          |    |
++------------------------------------+    |
+|           (repeats)                |   <+
+*/
+
+
+typedef struct{
+#if defined (LITTLE_ENDIAN_BITFIELD)
+    uint32_t id:31;
+    uint32_t :1;
+#elif defined (BIG_ENDIAN_BITFIELD)
+    uint32_t :1;
+    uint32_t id:31;
+#endif
+}__attribute__ ((packed)) syn_reply_frame;
 
 /*
 +----------------------------------+
@@ -163,7 +194,7 @@ extern "C"{
 #endif
 
 
-void spdy_deflate(void *buffin,size_t inlen,void *buffout,size_t outlen);
+int spdy_deflate(void *buffin,size_t inlen,void *buffout,size_t outlen);
 int spdy_inflate(void *buffin,size_t inlen,void *buffout,size_t outlen);
 
 #ifdef __cplusplus
