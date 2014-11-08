@@ -9,8 +9,6 @@
 #include "parse.h"
 #include "common.h"
 
-#define H302FORMAT "HTTP/1.1 302 Found" CRLF "Location: %s" CRLF "Content-Length: 0" CRLF CRLF
-#define H200FORMAT "HTTP/1.1 200 OK" CRLF "Content-Length: %d" CRLF CRLF
 
 #define PROXYFILE "proxy.list"
 
@@ -81,7 +79,7 @@ int globalproxy() {
     return GLOBALPROXY;
 }
 
-bool Http::checkproxy() {
+bool HttpReqHeader::checkproxy() {
     if (!loadedsite) {
         loadproxysite();
     }
@@ -194,7 +192,7 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
 }
 
 
-Http::Http(char* header,protocol proto)throw (int) {
+HttpReqHeader::HttpReqHeader(char* header,protocol proto)throw (int) {
     switch(proto) {
     case HTTP:
         *(strstr(header, CRLF CRLF) + strlen(CRLF)) = 0;
@@ -229,14 +227,14 @@ Http::Http(char* header,protocol proto)throw (int) {
     case SPDY:
         uint32_t *p=(uint32_t *)header;
         uint32_t c=ntohl(*p++);
-        for(size_t i=0;i<c;++i){
-            uint32_t hlen=ntohl(*p++);
-            char *hp=(char *)p;
-            p=(uint32_t*)(hp+hlen);
+        for(size_t i=0; i<c; ++i) {
+            uint32_t nlen=ntohl(*p++);
+            char *np=(char *)p;
+            p=(uint32_t*)(np+nlen);
             uint32_t vlen=ntohl(*p++);
             char *vp=(char *)p;
             p=(uint32_t *)((char *)p+vlen);
-            this->header[string(hp,hlen)] = string(vp,vlen);
+            this->header[string(np,nlen)] = string(vp,vlen);
         }
         sprintf(url,"%s://%s%s",
                 this->header[":scheme"].c_str(),
@@ -245,10 +243,10 @@ Http::Http(char* header,protocol proto)throw (int) {
         spliturl(url,hostname,path,&port);
         strcpy(method,this->header[":method"].c_str());
         this->header["Host"]=this->header[":host"];
-        for(auto i=this->header.begin();i!=this->header.end();){
-            if(i->first[0]==':'){
+        for(auto i=this->header.begin(); i!=this->header.end();) {
+            if(i->first[0]==':') {
                 this->header.erase(i++);
-            }else{
+            } else {
                 i++;
             }
         }
@@ -257,7 +255,7 @@ Http::Http(char* header,protocol proto)throw (int) {
 
 }
 
-int Http::getstring( char* buff,bool shouldproxy) {
+int HttpReqHeader::getstring( char* buff,bool shouldproxy) {
     int p;
     if(shouldproxy) {
         sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
@@ -277,25 +275,70 @@ int Http::getstring( char* buff,bool shouldproxy) {
     return p + strlen(CRLF);
 }
 
-string Http::getval(const char* key) {
+string HttpReqHeader::getval(const char* key) {
     return header[key];
 }
 
 
-bool Http::ismethod(const char* method) {
+bool HttpReqHeader::ismethod(const char* method) {
     return strcmp(this->method,method)==0;
 }
 
 
-size_t parse302(const char* location, char* buff) {
-    sprintf(buff, H302FORMAT, location);
-    return strlen(buff);
-}
-
-size_t parse200(int length, char* buff) {
-    sprintf(buff, H200FORMAT, length);
-    return strlen(buff);
+HttpResHeader::HttpResHeader(const char* status) {
+    strcpy(this->status,status);
 }
 
 
+void HttpResHeader::add(const char* header, const char* value) {
+    this->header[header]=value;
+}
 
+int HttpResHeader::getstring(char* buff, protocol proto) {
+    switch(proto) {
+    case HTTP:
+        int p;
+        sprintf(buff, "%s HTTP/1.1" CRLF "%n",status, &p);
+        for (auto i : header) {
+            int len;
+            sprintf(buff + p, "%s: %s" CRLF "%n", i.first.c_str(), i.second.c_str(), &len);
+            p += len;
+        }
+
+        sprintf(buff + p, CRLF);
+        return p + strlen(CRLF);
+    case SPDY:
+        uint32_t *q=(uint32_t *)buff;
+        *q++=htonl(header.size()+2);
+        //for ":version" => "HTTP/1.1"
+        int nlen=8;
+        *q++=htonl(nlen);
+        memcpy(q,":version",nlen);
+        q=(uint32_t *)(((char *)q)+nlen);
+        int vlen=strlen("HTTP/1.1");
+        *q++=htonl(vlen);
+        memcpy(q,"HTTP/1.1",vlen);
+        q=(uint32_t *)(((char *)q)+vlen);
+        //for ":status" => "200 OK" etc
+        nlen=7;
+        *q++=htonl(nlen);
+        memcpy(q,":status",nlen);
+        q=(uint32_t *)(((char *)q)+nlen);
+        vlen=strlen(status);
+        *q++=htonl(vlen);
+        memcpy(q,status,vlen);
+        q=(uint32_t *)(((char *)q)+vlen);
+        for (auto i : header) {
+            nlen=i.first.length();
+            *q++=htonl(nlen);
+            memcpy(q,i.first.data(),nlen);
+            q=(uint32_t *)(((char *)q)+nlen);
+            vlen=i.second.length();
+            *q++=htonl(vlen);
+            memcpy(q,i.second.data(),vlen);
+            q=(uint32_t *)(((char *)q)+vlen);
+        }
+        return (char *)q-buff;
+    }
+    return 0;
+}

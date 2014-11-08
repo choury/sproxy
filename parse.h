@@ -13,7 +13,10 @@
 #define EGLOBLETIP  "HTTP/1.0 200 Global proxy enabled now" CRLF CRLF
 #define DGLOBLETIP  "HTTP/1.0 200 Global proxy disabled" CRLF CRLF
 
-#define H404       "HTTP/1.0 404 Not Found" CRLF CRLF
+
+#define H302    "302 Found"
+#define H200    "200 OK"
+#define H404    "404 Not Found"
 
 
 
@@ -28,7 +31,7 @@ using std::map;
 
 enum protocol{HTTP,SPDY};
 
-class Http{
+class HttpReqHeader{
     map<string,string> header;
 public:
     char method[20];
@@ -36,18 +39,22 @@ public:
     char hostname[DOMAINLIMIT];
     char path[URLLIMIT];
     uint16_t port;
-    Http(char *header,protocol proto)throw (int);
+    HttpReqHeader(char *header,protocol proto)throw (int);
     int getstring(char *,bool shouldproxy=false);
     bool ismethod(const char *);
     bool checkproxy();
     string getval(const char *key);
 };
 
-
-size_t parse302(const char *location,char* buff);
-size_t parse200(int length,char *buff);
-
-
+class HttpResHeader{
+    map<string,string> header;
+public:
+    char status[100];
+    HttpResHeader(const char* status);
+    void add(const char *header,const char *value);
+    void del(const char *header);
+    int getstring(char *,protocol proto);
+};
 
 
 #endif

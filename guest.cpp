@@ -94,7 +94,7 @@ void Guest::getheaderHE(uint32_t events) {
             size_t headerlen = headerend - rbuff;
             char buff[HEALLENLIMIT];
             try {
-                Http http(rbuff,HTTP);
+                HttpReqHeader http(rbuff,HTTP);
                 if (headerlen != read_len) {       //除了头部还读取到了其他内容
                     read_len -= headerlen;
                     memmove(rbuff, headerend, read_len);
@@ -232,23 +232,6 @@ void Guest::postHE(uint32_t events) {
 
     }
     defaultHE(events&(~EPOLLIN));
-}
-
-
-void Guest::closeHE(uint32_t events) {
-    if (events & EPOLLOUT) {
-        if(write_len == 0) {
-            delete this;
-            return;
-        }
-
-        int ret = Write();
-
-        if (ret <= 0 && showerrinfo(ret,"guest write error")) {
-            delete this;
-            return;
-        }
-    }
 }
 
 

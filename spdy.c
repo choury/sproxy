@@ -192,7 +192,7 @@ const unsigned char SPDY_dictionary_txt[] = {
 /* ===========================================================================
  * 测试：deflate()：使用预设的字典
  */
-int spdy_deflate(void *buffin,size_t inlen,void *buffout,size_t outlen) {
+int spdy_deflate(void *buffin,size_t inlen,void *buffout,size_t *outlen) {
     z_stream c_stream; /* 压缩流 */
     int err;
 
@@ -216,7 +216,7 @@ int spdy_deflate(void *buffin,size_t inlen,void *buffout,size_t outlen) {
 
 //    dictId = c_stream.adler;  /* 得到字典的Alder32校验值 */
     c_stream.next_out = buffout;
-    c_stream.avail_out = (uInt)outlen;
+    c_stream.avail_out = (uInt)*outlen;
 
     c_stream.next_in = (Bytef*)buffin; /* 输入要压缩的字符串 */
     c_stream.avail_in = (uInt)inlen;
@@ -232,13 +232,14 @@ int spdy_deflate(void *buffin,size_t inlen,void *buffout,size_t outlen) {
         LOGE("deflateEnd error:%d\n",err);
         return -1;
     }
+    *outlen = c_stream.total_out;
     return 0;
 }
 
 /* ===========================================================================
  * 测试inflate()：使用预设的字典
  */
-int spdy_inflate(void *buffin,size_t inlen,void *buffout,size_t outlen) {
+int spdy_inflate(void *buffin,size_t inlen,void *buffout,size_t *outlen) {
     int err;
     z_stream d_stream; /* 解压流 */
 
@@ -256,7 +257,7 @@ int spdy_inflate(void *buffin,size_t inlen,void *buffout,size_t outlen) {
     }
 
     d_stream.next_out = buffout;
-    d_stream.avail_out = (uInt)outlen;
+    d_stream.avail_out = (uInt)*outlen;
 
     for (;;) {  /* 解压 */
         err = inflate(&d_stream, Z_NO_FLUSH);
@@ -280,6 +281,7 @@ int spdy_inflate(void *buffin,size_t inlen,void *buffout,size_t outlen) {
         LOGE("inflateEnd error:%d\n",err);
         return -1;
     }
+    *outlen = d_stream.total_out;
     return 0;
 }
 

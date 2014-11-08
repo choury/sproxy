@@ -20,7 +20,6 @@ protected:
     virtual int showerrinfo(int ret,const char * )override;
     virtual void connected();
     virtual void defaultHE(uint32_t events);
-    virtual void closeHE(uint32_t events);
     virtual void postHE(uint32_t events);
 public:
     Host *host=nullptr;

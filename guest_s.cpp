@@ -205,11 +205,31 @@ void Guest_s::spdysynHE(uint32_t events) {
         syn_frame *sframe=(syn_frame*)rbuff;
         NTOHL(sframe->id);
         char headbuff[8192];
-        spdy_inflate(rbuff+sizeof(syn_frame),expectlen-sizeof(syn_frame),headbuff,sizeof(headbuff));
-        Http http(headbuff,SPDY);
+        size_t buflen=sizeof(headbuff);
+        spdy_inflate(rbuff+sizeof(syn_frame),expectlen-sizeof(syn_frame),headbuff,&buflen);
+        HttpReqHeader httpreq(headbuff,SPDY);
+        HttpResHeader httpres(H302);
+        httpres.add("Location","http://www.baidu.com");
+        buflen=bufleft()-sizeof(spdy_head)-sizeof(syn_reply_frame);
+        spdy_deflate(headbuff,httpres.getstring(headbuff,SPDY),
+                     wbuff+sizeof(spdy_head)+sizeof(syn_reply_frame),&buflen);
+        spdy_cframe_head chead;
+        memset(&chead,0,sizeof(chead));
+        chead.c=1;
+        chead.version=htons(3);
+        chead.type=htons(SYN_REPLY_TYPE);
+        set24(chead.length,sizeof(syn_reply_frame)+buflen);
+        memcpy(wbuff+write_len,&chead,sizeof(chead));
         
-        printf("%.*s",http.getstring(headbuff),headbuff);
+        syn_reply_frame srframe;
+        memset(&srframe,0,sizeof(srframe));
+        srframe.id=htonl(1);
+        memcpy(wbuff+write_len+sizeof(spdy_cframe_head),&srframe,sizeof(srframe));
+        
+        write_len += sizeof(chead)+sizeof(srframe)+buflen;
+        Peer::Write("",0);
     }
+    Guest::defaultHE(events&(~EPOLLIN));
 }
 
 

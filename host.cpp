@@ -174,7 +174,14 @@ void Host::clean() {
         guest->clean();
     }
     guest=NULL;
-    delete this;
+    
+    
+    struct epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLOUT;
+    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+
+    handleEvent=(void (Con::*)(uint32_t))&Host::closeHE;
 }
 
 

@@ -23,7 +23,14 @@
 +----------------------------------+
 */
 
-
+#define SYN_TYPE            1
+#define SYN_REPLY_TYPE      2
+#define RST_TYPE            3
+#define SETTINGS_TYPE       4
+#define PING_TYPE           6
+#define GOAWAY_TYPE         7
+#define HEADERS_TYPE        8
+#define WINDOW_UPDATE_TYPE  9
 typedef struct{
 #if defined (LITTLE_ENDIAN_BITFIELD)
     uint16_t version:15;
@@ -224,8 +231,8 @@ extern "C"{
 #endif
 
 
-int spdy_deflate(void *buffin,size_t inlen,void *buffout,size_t outlen);
-int spdy_inflate(void *buffin,size_t inlen,void *buffout,size_t outlen);
+int spdy_deflate(void *buffin,size_t inlen,void *buffout,size_t* outlen);
+int spdy_inflate(void *buffin,size_t inlen,void *buffout,size_t* outlen);
 
 #ifdef __cplusplus
 }

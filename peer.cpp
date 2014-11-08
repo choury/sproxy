@@ -87,3 +87,19 @@ size_t Peer::bufleft() {
     return sizeof(wbuff) - write_len;
 }
 
+
+void Peer::closeHE(uint32_t events){
+    if (events & EPOLLOUT) {
+        if(write_len == 0) {
+            delete this;
+            return;
+        }
+
+        int ret = Write();
+
+        if (ret <= 0 && showerrinfo(ret,"write error while closing")) {
+            delete this;
+            return;
+        }
+    }
+}
