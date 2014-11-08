@@ -207,8 +207,8 @@ void Guest_s::spdysynHE(uint32_t events) {
         char headbuff[8192];
         spdy_inflate(rbuff+sizeof(syn_frame),expectlen-sizeof(syn_frame),headbuff,sizeof(headbuff));
         Http http(headbuff,SPDY);
-        printf("%.*s",http.getstring(headbuff),headbuff);
         
+        printf("%.*s",http.getstring(headbuff),headbuff);
     }
 }
 

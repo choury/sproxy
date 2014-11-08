@@ -239,7 +239,7 @@ Http::Http(char* header,protocol proto)throw (int) {
             this->header[string(hp,hlen)] = string(vp,vlen);
         }
         sprintf(url,"%s://%s%s",
-                this->header[":schema"].c_str(),
+                this->header[":scheme"].c_str(),
                 this->header[":host"].c_str(),
                 this->header[":path"].c_str());
         spliturl(url,hostname,path,&port);

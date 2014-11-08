@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <arpa/inet.h>
+
 
 extern uint16_t SPORT;
 #define CPORT 3333
@@ -13,7 +15,7 @@ extern char SHOST[];
 
 #define Min(x,y) ((x)<(y)?(x):(y))
 
-
+#define HEALLENLIMIT   8192
 
 #ifdef _ANDROID_
 

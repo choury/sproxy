@@ -92,7 +92,7 @@ void Guest::getheaderHE(uint32_t events) {
         if (char* headerend = strnstr(rbuff, CRLF CRLF, read_len)) {
             headerend += strlen(CRLF CRLF);
             size_t headerlen = headerend - rbuff;
-            char buff[4096];
+            char buff[HEALLENLIMIT];
             try {
                 Http http(rbuff,HTTP);
                 if (headerlen != read_len) {       //除了头部还读取到了其他内容

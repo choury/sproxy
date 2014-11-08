@@ -31,14 +31,24 @@ typedef struct{
     uint16_t type;
     uint8_t flag;
     uint8_t length[3];
-    #define get24(x) ((x)[0]<<16|(x)[1]<<8|(x)[2])
+#define get24(x) ((x)[0]<<16|(x)[1]<<8|(x)[2])
+#define set24(x,y) do{\
+    (x)[0]=(y)>>16;\
+    (x)[1]=(y)>>8;\
+    (x)[2]=(y);\
+}while(0)
 #elif defined (BIG_ENDIAN_BITFIELD)
     uint16_t c:1;
     uint16_t version:15;
     uint16_t type;
     uint8_t flag;
     uint8_t length[3];
-    #define get24(x) (x)
+#define get24(x) ((x)[2]<<16|(x)[1]<<8|(x)[0])
+#define set24(x,y) do{\
+    (x)[2]=(y)>>16;\
+    (x)[1]=(y)>>8;\
+    (x)[0]=(y);\
+}while(0)
 #endif
     
 }__attribute__ ((packed)) spdy_cframe_head;
@@ -62,6 +72,10 @@ typedef struct{
     uint32_t c:1;
     uint32_t id:31;
 #endif
+//marks this frame as the last frame to be transmitted on this stream and puts the sender in the half-closed state.
+#define  FLAG_FIN 0x01
+//a stream created with this flag puts the recipient in the half-closed state.
+#define  FLAG_UNIDIRECTIONAL 0x02  
     uint8_t flag;
     uint8_t length[3];
 }__attribute__ ((packed)) spdy_dframe_head;
@@ -175,17 +189,33 @@ typedef struct{
     uint32_t :1;
     uint32_t id:31;
 #endif
-
-#define PROTOCOL_ERROR          1 //This is a generic error, and should only be used if a more specific error is not available.
-#define INVALID_STREAM          2 //This is returned when a frame is received for a stream which is not active.
-#define REFUSED_STREAM          3 //Indicates that the stream was refused before any processing has been done on the stream.
-#define UNSUPPORTED_VERSION     4 //Indicates that the recipient of a stream does not support the SPDY version requested.
-#define CANCEL                  5 //Used by the creator of a stream to indicate that the stream is no longer needed.
-#define INTERNAL_ERROR          6 //This is a generic error which can be used when the implementation has internally failed, not due to anything in the protocol.
-#define FLOW_CONTROL_ERROR      7 //The endpoint detected that its peer violated the flow control protocol.
-#define STREAM_IN_USE           8 //The endpoint received a SYN_REPLY for a stream already open.
-#define STREAM_ALREADY_CLOSED   9 //The endpoint received a data or SYN_REPLY frame for a stream which is half closed.
-#define FRAME_TOO_LARGE         11 //The endpoint received a frame which this implementation could not support. If FRAME_TOO_LARGE is sent for a SYN_STREAM, HEADERS, or SYN_REPLY frame without fully processing the compressed portion of those frames, then the compression state will be out-of-sync with the other endpoint. In this case, senders of FRAME_TOO_LARGE MUST close the session.
+//This is a generic error, and should only be used if a more specific error is not available.
+#define PROTOCOL_ERROR          1 
+//This is returned when a frame is received for a stream which is not active.
+#define INVALID_STREAM          2
+//Indicates that the stream was refused before any processing has been done on the stream.
+#define REFUSED_STREAM          3
+//Indicates that the recipient of a stream does not support the SPDY version requested.
+#define UNSUPPORTED_VERSION     4
+//Used by the creator of a stream to indicate that the stream is no longer needed.
+#define CANCEL                  5
+/*This is a generic error which can be used when the implementation has internally failed, 
+ * not due to anything in the protocol.
+ */
+#define INTERNAL_ERROR          6
+//The endpoint detected that its peer violated the flow control protocol.
+#define FLOW_CONTROL_ERROR      7
+//The endpoint received a SYN_REPLY for a stream already open.
+#define STREAM_IN_USE           8
+//The endpoint received a data or SYN_REPLY frame for a stream which is half closed.
+#define STREAM_ALREADY_CLOSED   9
+/*The endpoint received a frame which this implementation could not support. 
+ * If FRAME_TOO_LARGE is sent for a SYN_STREAM, HEADERS,
+ * or SYN_REPLY frame without fully processing the compressed portion of those frames, 
+ * then the compression state will be out-of-sync with the other endpoint. 
+ * In this case, senders of FRAME_TOO_LARGE MUST close the session.
+ */
+#define FRAME_TOO_LARGE         11
     uint32_t code;
 }__attribute__ ((packed)) rst_frame;
 

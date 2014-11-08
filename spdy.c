@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <zlib.h>
@@ -283,3 +282,4 @@ int spdy_inflate(void *buffin,size_t inlen,void *buffout,size_t outlen) {
     }
     return 0;
 }
+

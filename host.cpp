@@ -19,11 +19,12 @@ Host::Host(int efd, Guest* guest ,const char *hostname,uint16_t port): guest(gue
     this->targetport=port;
 
 
+    handleEvent=(void (Con::*)(uint32_t))&Host::waitconnectHE;
+    
     if(query(hostname,(DNSCBfunc)Host::Dnscallback,this)<0) {
         LOGE("DNS qerry falied\n");
         throw 0;
     }
-    handleEvent=(void (Con::*)(uint32_t))&Host::waitconnectHE;
 }
 
 
@@ -184,7 +185,7 @@ Host* Host::gethost(Host* exist, const char* hostname, uint16_t port, int efd, G
         return exist;
     } else {
         Host* newhost = new Host(exist->efd, exist->guest,hostname,port);
-        exist->clean();
+        delete exist;
         return newhost;
     }
 }
