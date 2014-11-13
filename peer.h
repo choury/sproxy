@@ -24,7 +24,6 @@ protected:
     virtual int Write();
     virtual int Read(void *buff,size_t size);
     virtual void clean()=0;
-    virtual void closeHE(uint32_t events);
 public:
     virtual void writedcb();
     virtual int Write(const void *buff,size_t size);

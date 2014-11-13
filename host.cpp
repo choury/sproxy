@@ -130,6 +130,12 @@ void Host::defaultHE(uint32_t events) {
 }
 
 
+void Host::closeHE(uint32_t events){
+    delete this;
+}
+
+
+
 void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
     if(rcd.result!=0) {
         LOGE("Dns query failed\n");

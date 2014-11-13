@@ -310,23 +310,25 @@ int HttpResHeader::getstring(char* buff, protocol proto) {
     case SPDY:
         uint32_t *q=(uint32_t *)buff;
         *q++=htonl(header.size()+2);
-        //for ":version" => "HTTP/1.1"
-        int nlen=8;
-        *q++=htonl(nlen);
-        memcpy(q,":version",nlen);
-        q=(uint32_t *)(((char *)q)+nlen);
-        int vlen=strlen("HTTP/1.1");
-        *q++=htonl(vlen);
-        memcpy(q,"HTTP/1.1",vlen);
-        q=(uint32_t *)(((char *)q)+vlen);
+        
         //for ":status" => "200 OK" etc
-        nlen=7;
+        int nlen=7;
         *q++=htonl(nlen);
         memcpy(q,":status",nlen);
         q=(uint32_t *)(((char *)q)+nlen);
-        vlen=strlen(status);
+        int vlen=strlen(status);
         *q++=htonl(vlen);
         memcpy(q,status,vlen);
+        q=(uint32_t *)(((char *)q)+vlen);
+        
+        //for ":version" => "HTTP/1.1"
+        nlen=8;
+        *q++=htonl(nlen);
+        memcpy(q,":version",nlen);
+        q=(uint32_t *)(((char *)q)+nlen);
+        vlen=strlen("HTTP/1.1");
+        *q++=htonl(vlen);
+        memcpy(q,"HTTP/1.1",vlen);
         q=(uint32_t *)(((char *)q)+vlen);
         for (auto i : header) {
             nlen=i.first.length();

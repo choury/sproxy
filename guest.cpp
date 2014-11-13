@@ -57,6 +57,10 @@ Guest::Guest(int fd, int efd): Peer(fd, efd) {
     handleEvent=(void (Con::*)(uint32_t))&Guest::getheaderHE;
 }
 
+Guest::Guest(){
+
+}
+
 
 void Guest::connected() {
     Write(connecttip, strlen(connecttip));
@@ -288,6 +292,22 @@ void Guest::defaultHE(uint32_t events) {
                   sourceip, sourceport, strerror(error));
         }
         clean();
+    }
+}
+
+void Guest::closeHE(uint32_t events){
+    if (events & EPOLLOUT) {
+        if(write_len == 0) {
+            delete this;
+            return;
+        }
+
+        int ret = Write();
+
+        if (ret <= 0 && showerrinfo(ret,"write error while closing")) {
+            delete this;
+            return;
+        }
     }
 }
 

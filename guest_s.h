@@ -11,14 +11,13 @@
 class Guest_s:public Guest {
     SSL *ssl;
     enum{http1_1,spdy2,spdy3_1} protocol=http1_1;
+protected:
     virtual int Write()override;
     virtual void shakehandHE(uint32_t events);
-    virtual void spdyHE(uint32_t events);
-    virtual void spdysynHE(uint32_t events);
-    virtual void spdyctrlframedefultHE(uint32_t events);
     virtual int Read(void *buff,size_t size)override;
 public:
     Guest_s(int fd,int efd,SSL *ssl);
+    Guest_s(Guest_s* copy);
     virtual void shakedhand();
     virtual int showerrinfo(int ret,const char *s)override;
     virtual ~Guest_s();

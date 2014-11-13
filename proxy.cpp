@@ -16,7 +16,7 @@ Host* Proxy::getproxy(Host* exist, int efd, Guest* guest) {
         return exist;
     } else {
         Proxy* newproxy = new Proxy(efd, guest);
-        exist->clean();
+        delete exist;
         return newproxy;
     }
 }
@@ -74,7 +74,7 @@ void Proxy::shakedhand() {
     event.events = EPOLLIN |EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     
-    handleEvent=(void (Con::*)(uint32_t))&Host::defaultHE;
+    handleEvent=(void (Con::*)(uint32_t))&Proxy::defaultHE;
 }
 
 

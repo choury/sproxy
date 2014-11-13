@@ -5,8 +5,9 @@
 #include "net.h"
 #include "guest_s.h"
 #include "host.h"
-#include "parse.h"
 #include "spdy.h"
+#include "parse.h"
+#include "spdy_zlib.h"
 
 
 Guest_s::Guest_s(int fd, int efd, SSL* ssl): Guest(fd, efd), ssl(ssl) {
@@ -18,9 +19,24 @@ Guest_s::Guest_s(int fd, int efd, SSL* ssl): Guest(fd, efd), ssl(ssl) {
     handleEvent=(void (Con::*)(uint32_t))&Guest_s::shakehandHE;
 }
 
+Guest_s::Guest_s(Guest_s* copy){
+    *this=*copy;
+    copy->fd=0;
+    copy->ssl=NULL;
+    delete copy;
+    
+    struct epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLIN | EPOLLOUT;
+    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+}
+
+
 Guest_s::~Guest_s() {
-    SSL_shutdown(ssl);
-    SSL_free(ssl);
+    if (ssl) {
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+    }
 }
 
 int Guest_s::Read(void* buff, size_t size) {
@@ -45,6 +61,8 @@ int Guest_s::Write() {
     return ret;
 }
 
+
+
 void Guest_s::shakedhand() {
     const unsigned char *data;
     unsigned int len;
@@ -53,11 +71,12 @@ void Guest_s::shakedhand() {
     event.data.ptr = this;
     event.events = EPOLLIN;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    handleEvent=(void (Con::*)(uint32_t))&Guest::getheaderHE;
+    handleEvent=(void (Con::*)(uint32_t))&Guest_s::getheaderHE;
 
     if(data) {
         if(strncasecmp((const char*)data,"spdy/3.1",len)==0) {
-            handleEvent=(void (Con::*)(uint32_t))&Guest_s::spdyHE;
+            new Spdy(this);
+            return;
         } else {
             LOGE( "([%s]:%d): unknown protocol:%.*s\n",sourceip, sourceport,len,data);
             clean();
@@ -117,151 +136,4 @@ void Guest_s::shakehandHE(uint32_t events) {
         clean();
     }
 }
-
-
-void Guest_s::spdyHE(uint32_t events) {
-    if(events & EPOLLIN) {
-        int len=sizeof(rbuff)-read_len;
-        if(len == 0) {
-            LOGE( "([%s]:%d): The header is too long\n",sourceip, sourceport);
-            epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
-            return;
-        }
-        int ret=Read(rbuff+read_len, len);
-        if(ret<=0 ) {
-            if(showerrinfo(ret,"spdy read error")) {
-                clean();
-            }
-            return;
-        }
-
-        read_len+=ret;
-    }
-    if(read_len >= sizeof(spdy_head)) {
-        spdy_head head;
-        memcpy(&head,rbuff,sizeof(head));
-        memmove(rbuff,rbuff+sizeof(head),read_len-sizeof(head));
-        read_len-=sizeof(head);
-        if(head.c==1) {
-            spdy_cframe_head *chead=(spdy_cframe_head *)&head;
-            NTOHS(chead->version);
-            NTOHS(chead->type);
-            expectlen=get24(chead->length);
-            switch(chead->type) {
-            case 1:
-                handleEvent=(void (Con::*)(uint32_t))&Guest_s::spdysynHE;
-                break;
-            default:
-                printf("get a spdy ctrl frame:%d\n",chead->type);
-                handleEvent=(void (Con::*)(uint32_t))&Guest_s::spdyctrlframedefultHE;
-                break;
-            }
-            if(read_len) {
-                (this ->*handleEvent) (events&(~EPOLLIN));
-            }
-        } else {
-            spdy_dframe_head *dhead=(spdy_dframe_head *)&head;
-            NTOHL(dhead->id);
-            char *buff=new char[get24(dhead->length)];
-            Read(buff,get24(dhead->length));
-            spdy_cframe_head rsthead;
-            memset(&rsthead,0,sizeof(rsthead));
-            rsthead.c=1;
-            rsthead.version=htons(3);
-            rsthead.type=htons(3);
-//            rsthead.length=htonl(8);
-            Peer::Write(&rsthead,sizeof(rsthead));
-
-            rst_frame rstframe;
-            memset(&rstframe,0,sizeof(rstframe));
-            rstframe.code=htonl(INVALID_STREAM);
-            rstframe.id=htonl(dhead->id);
-            Peer::Write(&rstframe,sizeof(rstframe));
-
-        }
-    }
-    Guest::defaultHE(events&(~EPOLLIN));
-}
-
-void Guest_s::spdysynHE(uint32_t events) {
-    if(events & EPOLLIN) {
-        int len=sizeof(rbuff)-read_len;
-        if(len == 0) {
-            LOGE( "([%s]:%d): The header is too long\n",sourceip, sourceport);
-            epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
-            return;
-        }
-        int ret=Read(rbuff+read_len, len);
-        if(ret<=0 ) {
-            if(showerrinfo(ret,"spdy syn read error")) {
-                clean();
-            }
-            return;
-        }
-
-        read_len+=ret;
-    }
-    if(read_len >= expectlen) {
-        syn_frame *sframe=(syn_frame*)rbuff;
-        NTOHL(sframe->id);
-        char headbuff[8192];
-        size_t buflen=sizeof(headbuff);
-        spdy_inflate(rbuff+sizeof(syn_frame),expectlen-sizeof(syn_frame),headbuff,&buflen);
-        HttpReqHeader httpreq(headbuff,SPDY);
-        HttpResHeader httpres(H302);
-        httpres.add("Location","http://www.baidu.com");
-        buflen=bufleft()-sizeof(spdy_head)-sizeof(syn_reply_frame);
-        spdy_deflate(headbuff,httpres.getstring(headbuff,SPDY),
-                     wbuff+sizeof(spdy_head)+sizeof(syn_reply_frame),&buflen);
-        spdy_cframe_head chead;
-        memset(&chead,0,sizeof(chead));
-        chead.c=1;
-        chead.version=htons(3);
-        chead.type=htons(SYN_REPLY_TYPE);
-        set24(chead.length,sizeof(syn_reply_frame)+buflen);
-        memcpy(wbuff+write_len,&chead,sizeof(chead));
-        
-        syn_reply_frame srframe;
-        memset(&srframe,0,sizeof(srframe));
-        srframe.id=htonl(1);
-        memcpy(wbuff+write_len+sizeof(spdy_cframe_head),&srframe,sizeof(srframe));
-        
-        write_len += sizeof(chead)+sizeof(srframe)+buflen;
-        Peer::Write("",0);
-    }
-    Guest::defaultHE(events&(~EPOLLIN));
-}
-
-
-
-void Guest_s::spdyctrlframedefultHE(uint32_t events) {
-    if(events & EPOLLIN) {
-        int len=sizeof(rbuff)-read_len;
-        if(len == 0) {
-            LOGE( "([%s]:%d): The header is too long\n",sourceip, sourceport);
-            epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
-            return;
-        }
-        int ret=Read(rbuff+read_len, len);
-        if(ret<=0 ) {
-            if(showerrinfo(ret,"spdy syn read error")) {
-                clean();
-            }
-            return;
-        }
-
-        read_len+=ret;
-    }
-
-    if(read_len >= expectlen) {
-        memmove(rbuff,rbuff+expectlen,expectlen);
-        read_len-=expectlen;
-        expectlen=0;
-        handleEvent=(void (Con::*)(uint32_t))&Guest_s::spdyHE;
-        if(read_len) {
-            (this ->*handleEvent) (events&(~EPOLLIN));
-        }
-    }
-}
-
 

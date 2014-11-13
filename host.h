@@ -18,13 +18,14 @@ class Host:public Peer{
 protected:
     virtual int showerrinfo(int ret,const char *s)override;
     virtual void waitconnectHE(uint32_t events);
+    virtual void defaultHE(uint32_t events);
+    virtual void closeHE(uint32_t events);
     static void Dnscallback(Host * host,const Dns_rcd&&);
     virtual int connect();
 public:
     Guest* guest;
     Host(int efd,Guest *guest,const char *hostname,uint16_t port);
     virtual void clean() override;
-    virtual void defaultHE(uint32_t events);
     static Host *gethost(Host *exist,const char *host,uint16_t port,int efd,Guest *guest);
 };
 
