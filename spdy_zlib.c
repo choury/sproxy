@@ -191,19 +191,12 @@ const unsigned char SPDY_dictionary_txt[] = {
 };
 
 
+int spdy_deflate_init(z_stream *stream){
+    stream->zalloc = Z_NULL;
+    stream->zfree = Z_NULL;
+    stream->opaque = Z_NULL;
 
-/* ===========================================================================
- * 测试：deflate()：使用预设的字典
- */
-ssize_t spdy_deflate(void *buffin,size_t inlen,void *buffout,size_t outlen) {
-    z_stream c_stream; /* 压缩流 */
-    int err;
-
-    c_stream.zalloc = Z_NULL;
-    c_stream.zfree = Z_NULL;
-    c_stream.opaque = Z_NULL;
-
-    err = deflateInit2(&c_stream, Z_NO_COMPRESSION,
+    int err = deflateInit2(stream, Z_NO_COMPRESSION ,
                           Z_DEFLATED, WINDOW_BITS, MEM_LEVEL,
                           Z_DEFAULT_STRATEGY);
     if(err != Z_OK) {
@@ -212,62 +205,73 @@ ssize_t spdy_deflate(void *buffin,size_t inlen,void *buffout,size_t outlen) {
     }
 
     /* 设置压缩流要使用的字典 */
-    err = deflateSetDictionary(&c_stream,
+    err = deflateSetDictionary(stream,
                                (const Bytef*)SPDY_dictionary_txt, (int)sizeof(SPDY_dictionary_txt));
     if(err != Z_OK) {
         LOGE("deflateSetDictionary error:%d\n",err);
         return -1;
     }
+    //    dictId = c_stream.adler;  /* 得到字典的Alder32校验值 */
+    return 0;
+}
 
-//    dictId = c_stream.adler;  /* 得到字典的Alder32校验值 */
-    c_stream.next_out = buffout;
-    c_stream.avail_out = outlen;
 
-    c_stream.next_in = (Bytef*)buffin; /* 输入要压缩的字符串 */
-    c_stream.avail_in = (uInt)inlen;
+/* ===========================================================================
+ * 测试：deflate()：使用预设的字典
+ */
+ssize_t spdy_deflate(z_stream *c_stream,void *buffin,size_t inlen,void *buffout,size_t outlen) {
+    
+    c_stream->next_out = buffout;
+    c_stream->avail_out = outlen;
+
+    c_stream->next_in = (Bytef*)buffin; /* 输入要压缩的字符串 */
+    c_stream->avail_in = (uInt)inlen;
 
     /* 直接进行压缩 */
-    err = deflate(&c_stream, Z_SYNC_FLUSH);
+    int err = deflate(c_stream, Z_SYNC_FLUSH);
     if (err != Z_OK) {
         LOGE("deflate error:%d\n",err);
         return -1;
     }
-    int ret = c_stream.total_out;
-    deflateEnd(&c_stream);
+    int ret = c_stream->total_out;
     return ret;
+}
+
+int spdy_deflate_end(z_stream *stream){
+    return deflateEnd(stream);
+}
+
+int spdy_inflate_init(z_stream *stream){
+    stream->zalloc = Z_NULL;
+    stream->zfree = Z_NULL;
+    stream->opaque = Z_NULL;
+    
+
+    int err = inflateInit(stream);
+    if(err != Z_OK) {
+        LOGE("inflateInit error:%d\n",err);
+        return -1;
+    }
+    return 0;
 }
 
 /* ===========================================================================
  * 测试inflate()：使用预设的字典
  */
-ssize_t spdy_inflate(void *buffin,size_t inlen,void *buffout,size_t outlen) {
-    int err;
-    z_stream d_stream; /* 解压流 */
-
-    d_stream.zalloc = Z_NULL;
-    d_stream.zfree = Z_NULL;
-    d_stream.opaque = Z_NULL;
-
-    d_stream.next_in  = buffin;
-    d_stream.avail_in = (uInt)inlen;
-
-    err = inflateInit(&d_stream);
-    if(err != Z_OK) {
-        LOGE("inflateInit error:%d\n",err);
-        return -1;
-    }
-
-    d_stream.next_out = buffout;
-    d_stream.avail_out = outlen;
+ssize_t spdy_inflate(z_stream *d_stream,void *buffin,size_t inlen,void *buffout,size_t outlen) {    
+    d_stream->next_in  = buffin;
+    d_stream->avail_in = (uInt)inlen;
+    d_stream->next_out = buffout;
+    d_stream->avail_out = outlen;
 
     for (;;) {  /* 解压 */
-        err = inflate(&d_stream, Z_FINISH);
-        if (err == Z_STREAM_END || d_stream.avail_in == 0) {
+        int err = inflate(d_stream, Z_SYNC_FLUSH);
+        if (err == Z_STREAM_END || d_stream->avail_in == 0) {
             break;
         }
         if (err == Z_NEED_DICT) {  /* 如果需要字典 */
             /* 设置解压需要的字典 */
-            err = inflateSetDictionary(&d_stream,
+            err = inflateSetDictionary(d_stream,
                                        (const Bytef*)SPDY_dictionary_txt,
                                        (int)sizeof(SPDY_dictionary_txt));
         }
@@ -277,8 +281,12 @@ ssize_t spdy_inflate(void *buffin,size_t inlen,void *buffout,size_t outlen) {
         }
     }
 
-    int ret = d_stream.total_out;
-    inflateEnd(&d_stream);
+    int ret = d_stream->total_out;
+ //   inflateEnd(d_stream);
     return ret;
 }
 
+
+int spdy_inflate_end(z_stream *stream){
+    return inflateEnd(stream);
+}

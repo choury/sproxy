@@ -5,7 +5,8 @@
 #include "zlib.h"
 
 class Spdy:public Guest_s{
-    z_stream zstream;
+    z_stream destream;
+    z_stream instream;
     virtual void defaultHE(uint32_t events);
     virtual void synHE(uint32_t events);
     virtual void synreplyHE(uint32_t events);
@@ -13,6 +14,7 @@ class Spdy:public Guest_s{
     virtual void ctrlframedefultHE(uint32_t events);
 public:
     Spdy(Guest_s *);
+    virtual ~Spdy();
 };
 
 #endif

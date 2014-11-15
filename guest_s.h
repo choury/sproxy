@@ -10,7 +10,6 @@
 
 class Guest_s:public Guest {
     SSL *ssl;
-    enum{http1_1,spdy2,spdy3_1} protocol=http1_1;
 protected:
     virtual int Write()override;
     virtual void shakehandHE(uint32_t events);

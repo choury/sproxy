@@ -6,8 +6,14 @@
 
 Spdy::Spdy(Guest_s* copy):Guest_s(copy){
     handleEvent=(void (Con::*)(uint32_t))&Spdy::defaultHE;
+    spdy_deflate_init(&destream);
+    spdy_inflate_init(&instream);
 }
 
+Spdy::~Spdy(){
+    spdy_deflate_end(&destream);
+    spdy_inflate_end(&instream);
+}
 
 
 void Spdy::defaultHE(uint32_t events) {
@@ -101,7 +107,7 @@ void Spdy::synHE(uint32_t events) {
         NTOHL(sframe->id);
         char headbuff[8192];
         size_t buflen=sizeof(headbuff);
-        spdy_inflate(rbuff+sizeof(syn_frame),expectlen-sizeof(syn_frame),headbuff,buflen);
+        spdy_inflate(&instream,rbuff+sizeof(syn_frame),expectlen-sizeof(syn_frame),headbuff,buflen);
         
         read_len-=expectlen;
         memmove(rbuff,rbuff+expectlen,read_len);
@@ -109,30 +115,25 @@ void Spdy::synHE(uint32_t events) {
         
         HttpReqHeader httpreq(headbuff,SPDY);
         HttpResHeader httpres(H302);
-        httpres.add("Location","http://www.baidu.com");
-        httpres.add("Content-Length","0");
-        buflen=bufleft()-sizeof(spdy_head)-sizeof(syn_reply_frame);
-        buflen=spdy_deflate(headbuff,httpres.getstring(headbuff,SPDY),
-                     wbuff+write_len+sizeof(spdy_head)+sizeof(syn_reply_frame),buflen);
-        spdy_cframe_head chead;
-        chead.magic=CTRL_MAGIC;
-        chead.flag = FLAG_FIN;
-        chead.type=htons(SYN_REPLY_TYPE);
-        set24(chead.length,sizeof(syn_reply_frame)+buflen);
-        memcpy(wbuff+write_len,&chead,sizeof(chead));
-        write_len+=sizeof(chead);
+        httpres.add("location","http://www.baidu.com");
+        httpres.add("content-length","0");
+        spdy_cframe_head *chead=(spdy_cframe_head *)(wbuff+write_len);
+        chead->magic=CTRL_MAGIC;
+        chead->type=htons(SYN_REPLY_TYPE);
+        chead->flag = FLAG_FIN;
+        write_len+=sizeof(*chead);
         
-        syn_reply_frame srframe;
-        srframe.id=htonl(sframe->id);
-        memcpy(wbuff+write_len,&srframe,sizeof(srframe));
-    
-        write_len += sizeof(srframe)+buflen;
+        syn_reply_frame *srframe=(syn_reply_frame *)(wbuff+write_len);
+        srframe->id=htonl(sframe->id);
+        write_len += sizeof(*srframe);
+        buflen=bufleft();
+        buflen=spdy_deflate(&destream,headbuff,httpres.getstring(headbuff,SPDY),wbuff+write_len,buflen);
+        write_len+=buflen;
+        set24(chead->length,sizeof(syn_reply_frame)+buflen);
+        
         Peer::Write("",0);
         handleEvent=(void (Con::*)(uint32_t))&Spdy::defaultHE;
         
-//        memcpy(rbuff,wbuff,write_len);
-//        read_len=write_len;
-//        spdyHE(events&(~EPOLLIN));
     }
     Guest::defaultHE(events&(~EPOLLIN));
 }
@@ -160,7 +161,7 @@ void Spdy::synreplyHE(uint32_t events) {
         NTOHL(rframe->id);
         char headbuff[8192];
         size_t buflen=sizeof(headbuff);
-        spdy_inflate(rbuff+sizeof(syn_reply_frame),expectlen-sizeof(syn_reply_frame),headbuff,buflen);
+        spdy_inflate(&instream,rbuff+sizeof(syn_reply_frame),expectlen-sizeof(syn_reply_frame),headbuff,buflen);
         
         memmove(rbuff,rbuff+expectlen,read_len-expectlen);
         read_len-=expectlen;
