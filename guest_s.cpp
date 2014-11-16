@@ -1,16 +1,13 @@
 #include <errno.h>
-#include <sys/epoll.h>
 #include <openssl/err.h>
 
 #include "net.h"
 #include "guest_s.h"
 #include "host.h"
-#include "spdy.h"
 #include "parse.h"
-#include "spdy_zlib.h"
+#include "guest_spdy.h"
 
-
-Guest_s::Guest_s(int fd, int efd, SSL* ssl): Guest(fd, efd), ssl(ssl) {
+Guest_s::Guest_s(int fd, SSL* ssl): Guest(fd), ssl(ssl) {
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
@@ -64,18 +61,18 @@ int Guest_s::Write() {
 
 
 void Guest_s::shakedhand() {
-    const unsigned char *data;
-    unsigned int len;
-    SSL_get0_next_proto_negotiated(ssl,&data,&len);
     epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     handleEvent=(void (Con::*)(uint32_t))&Guest_s::getheaderHE;
-
+    
+    const unsigned char *data;
+    unsigned int len;
+    SSL_get0_next_proto_negotiated(ssl,&data,&len);
     if(data) {
         if(strncasecmp((const char*)data,"spdy/3.1",len)==0) {
-            new Spdy(this);
+            new Guest_spdy(this);
             return;
         } else {
             LOGE( "([%s]:%d): unknown protocol:%.*s\n",sourceip, sourceport,len,data);

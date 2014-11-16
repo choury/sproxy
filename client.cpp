@@ -3,15 +3,18 @@
 #include <signal.h>
 #include <fcntl.h>
 #include <libgen.h>
-#include <sys/epoll.h>
 #include <arpa/inet.h>
 #include <openssl/ssl.h>
 
 
 #include "common.h"
 #include "guest.h"
+#include "proxy_spdy.h"
 #include "parse.h"
 #include "dns.h"
+
+
+int efd;
 
 #ifdef _ANDROID_
 int Java_com_choury_sproxy_Client_main(JNIEnv *env, jobject ,jstring s){
@@ -67,14 +70,13 @@ int main(int argc, char** argv) {
 
     signal(SIGPIPE, SIG_IGN);
     LOG("Accepting connections ...\n");
-    int efd = epoll_create(10000);
+    efd = epoll_create(10000);
     struct epoll_event event;
     event.data.ptr = NULL;
     event.events = EPOLLIN;
     epoll_ctl(efd, EPOLL_CTL_ADD, svsk, &event);
     
-    
-    if(dnsinit(efd)<=0) {
+    if(dnsinit()<=0) {
         LOGE("Dns Init failed\n");
         return -1;
     }
@@ -109,7 +111,7 @@ int main(int argc, char** argv) {
                     }
 
                     fcntl(clsk, F_SETFL, flags | O_NONBLOCK);
-                    new Guest(clsk, efd);
+                    new Guest(clsk);
                     
                 } else {
                     LOGE("unknown error\n");

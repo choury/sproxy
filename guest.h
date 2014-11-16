@@ -24,9 +24,8 @@ protected:
     virtual void postHE(uint32_t events);
     virtual void closeHE(uint32_t events);
 public:
-    Host *host=nullptr;
     Guest();
-    Guest(int fd,int efd);
+    Guest(int fd);
     void (Guest::*connectedcb)()=NULL;
     virtual void clean() override;
 };

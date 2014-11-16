@@ -24,6 +24,9 @@ void addpsite(const std::string & host);
 int delpsite(const std::string &host);
 int loadproxysite();
 int globalproxy();
+char* toLower(char* s);
+char* toUpper(char* s);
+
 
 using std::string;
 using std::map;
@@ -39,7 +42,7 @@ public:
     char hostname[DOMAINLIMIT];
     char path[URLLIMIT];
     uint16_t port;
-    HttpReqHeader(char *header,protocol proto)throw (int);
+    HttpReqHeader(char *header)throw (int);
     int getstring(char *,bool shouldproxy=false);
     bool ismethod(const char *);
     bool checkproxy();

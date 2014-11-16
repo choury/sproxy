@@ -23,10 +23,10 @@ protected:
     static void Dnscallback(Host * host,const Dns_rcd&&);
     virtual int connect();
 public:
-    Guest* guest;
-    Host(int efd,Guest *guest,const char *hostname,uint16_t port);
+    Host();
+    Host(Guest *guest,const char *hostname,uint16_t port);
     virtual void clean() override;
-    static Host *gethost(Host *exist,const char *host,uint16_t port,int efd,Guest *guest);
+    static Host *gethost(const char *host,uint16_t port,int efd,Guest *guest);
 };
 
 #endif

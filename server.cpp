@@ -2,7 +2,6 @@
 #include <cerrno>
 #include <fcntl.h>
 #include <signal.h>
-#include <sys/epoll.h>
 #include <arpa/inet.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -12,9 +11,11 @@
 #include "dns.h"
 
 #define NEXT_PROTO_STRING \
-  "\x08spdy/3.1" \
-  "\x08http/1.1" 
+  "\x08""spdy/3.1" \
+  "\x08""http/1.1" \
+  "\x08""choury/1"
   
+int efd;
 
 int ssl_set_npn_callback(SSL* s,
                          const unsigned char** data,
@@ -95,12 +96,12 @@ int main(int argc, char** argv)
     signal(SIGPIPE, SIG_IGN);
     LOGE( "Accepting connections ...\n");
     struct epoll_event event;
-    int efd = epoll_create(10000);
+    efd = epoll_create(10000);
     event.data.ptr = NULL;
     event.events = EPOLLIN;
     epoll_ctl(efd, EPOLL_CTL_ADD, svsk, &event);
 
-    if(dnsinit(efd)<=0) {
+    if(dnsinit()<=0) {
         LOGE("Dns Init failed\n");
         return -1;
     }
@@ -139,7 +140,7 @@ int main(int argc, char** argv)
                     /* 将连接用户的socket 加入到SSL */
                     SSL_set_fd(ssl, clsk);
 
-                    Guest_s* guest = new Guest_s(clsk, efd, ssl);
+                    Guest_s* guest = new Guest_s(clsk, ssl);
 
                     /* 建立SSL 连接*/
                     int ret = SSL_accept(ssl);

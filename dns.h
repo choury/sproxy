@@ -42,7 +42,7 @@ public:
 
 typedef void (*DNSCBfunc)(void *,const Dns_rcd& );
 
-int dnsinit(int efd);
+int dnsinit();
 int query(const char *host ,DNSCBfunc func,void *param);
 
 

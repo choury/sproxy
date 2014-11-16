@@ -124,6 +124,17 @@ char* toUpper(char* s) {
     return s;
 }
 
+char* toLower(char* s) {
+    char* p=s;
+
+    while(*p) {
+        *p=tolower(*p);
+        p++;
+    }
+
+    return s;
+}
+
 
 int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
     const char* addrsplit;
@@ -192,9 +203,8 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
 }
 
 
-HttpReqHeader::HttpReqHeader(char* header,protocol proto)throw (int) {
-    switch(proto) {
-    case HTTP:
+HttpReqHeader::HttpReqHeader(char* header)throw (int) {
+    if(header[0]){   //第一个字节不为0，说明是一个HTTP/1.x头部
         *(strstr(header, CRLF CRLF) + strlen(CRLF)) = 0;
         memset(path,0,sizeof(path));
         memset(url,0,sizeof(url));
@@ -223,8 +233,8 @@ HttpReqHeader::HttpReqHeader(char* header,protocol proto)throw (int) {
         }
 
         this->header.erase("Proxy-Connection");
-        break;
-    case SPDY:
+        this->header.erase("Host");
+    }else{
         uint32_t *p=(uint32_t *)header;
         uint32_t c=ntohl(*p++);
         for(size_t i=0; i<c; ++i) {
@@ -242,7 +252,6 @@ HttpReqHeader::HttpReqHeader(char* header,protocol proto)throw (int) {
                 this->header[":path"].c_str());
         spliturl(url,hostname,path,&port);
         strcpy(method,this->header[":method"].c_str());
-        this->header["Host"]=this->header[":host"];
         for(auto i=this->header.begin(); i!=this->header.end();) {
             if(i->first[0]==':') {
                 this->header.erase(i++);
@@ -250,7 +259,6 @@ HttpReqHeader::HttpReqHeader(char* header,protocol proto)throw (int) {
                 i++;
             }
         }
-        break;
     }
 
 }
@@ -264,7 +272,9 @@ int HttpReqHeader::getstring( char* buff,bool shouldproxy) {
         sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
                 method, path, &p);
     }
-
+    int len;
+    sprintf(buff+p,"Host: %s" CRLF "%n",hostname,&len);
+    p+=len;
     for (auto i : header) {
         int len;
         sprintf(buff + p, "%s: %s" CRLF "%n", i.first.c_str(), i.second.c_str(), &len);

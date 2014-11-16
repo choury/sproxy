@@ -4,12 +4,13 @@
 #include <openssl/ssl.h>
 
 #include "host.h"
-
 #include "dns.h"
+
 
 class Proxy : public Host{
     SSL *ssl=nullptr;
     SSL_CTX *ctx=nullptr;
+protected:
     virtual int Write()override;
     virtual void shakedhand();
     virtual int showerrinfo(int ret,const char *)override;
@@ -17,9 +18,10 @@ class Proxy : public Host{
     virtual void shakehandHE(uint32_t events);
     virtual int Read(void *buff,size_t size)override;
 public:
-    Proxy(int efd,Guest *guest);
+    Proxy(Proxy *copy);
+    Proxy(Guest *guest);
     virtual ~Proxy();
-    static Host *getproxy(Host *exist,int efd,Guest *guest);
+    static Host *getproxy(Guest *guest);
 };
 
 

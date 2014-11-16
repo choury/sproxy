@@ -6,7 +6,6 @@
 #include <stdint.h>
 #include <arpa/inet.h>
 
-
 extern uint16_t SPORT;
 #define CPORT 3333
 

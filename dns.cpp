@@ -3,7 +3,6 @@
 #include <errno.h>
 #include <time.h>
 #include <arpa/inet.h>
-#include <sys/epoll.h>
 #include <unordered_map>
 #include <string>
 
@@ -154,7 +153,7 @@ unsigned char *getrr(unsigned char *buf,unsigned char *p,int num,std::vector<soc
     return p;
 }
 
-int dnsinit(int efd) {
+int dnsinit() {
     struct epoll_event event;
     event.events=EPOLLIN ;
     for(size_t i=0; i<srvs.size(); ++i) {
@@ -234,7 +233,7 @@ int query(const char *host ,DNSCBfunc func,void *param) {
         return 0;
     }
 
-    if(rcd_index_host.find(host) != rcd_index_host.end()) {
+    if(rcd_index_host.count(host)) {
         func(param,rcd_index_host[host]);
 
         for(auto i=rcd_index_host.begin(); i!=rcd_index_host.end();) {
@@ -304,12 +303,12 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
         NTOHS(dnshdr->numa2);
 
         if(dnshdr->id & 1) {
-            if(rcd_index_id.find(dnshdr->id) == rcd_index_id.end()) {
+            if(rcd_index_id.count(dnshdr->id)==0) {
                 LOGE("[DNS] Get a unkown id:%d\n",dnshdr->id);
                 return;
             }
         } else {
-            if(rcd_index_id.find(dnshdr->id-1) == rcd_index_id.end()) {
+            if(rcd_index_id.count(dnshdr->id-1)==0) {
                 LOGE("[DNS] Get a unkown id:%d\n",dnshdr->id);
                 return;
             }

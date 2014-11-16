@@ -5,9 +5,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include <sys/epoll.h>
-
-
 
 #include "peer.h"
 #include "host.h"
@@ -17,11 +14,35 @@
 char SHOST[DOMAINLIMIT];
 uint16_t SPORT=443;
 
+Bindex bindex;
+
+void Bindex::add(void* key1, void* key2){
+    map[key1]=key2;
+    map[key2]=key1;
+}
+
+
+void Bindex::del(void* key1,void *key2){
+    map.erase(key1);
+    map.erase(key2);
+}
+
+
+void* Bindex::query(void* key){
+    if(key && map.count(key)){
+        return map[key];
+    }else{
+        return nullptr;
+    }
+}
+
+
+
 Peer::Peer() {
 
 }
 
-Peer::Peer(int fd, int efd): fd(fd), efd(efd) {
+Peer::Peer(int fd): fd(fd) {
 
 };
 
@@ -38,7 +59,7 @@ int Peer::Read(void* buff, size_t size) {
 }
 
 
-int Peer::Write(const void* buff, size_t size) {
+int Peer::Write(void *,const void* buff, size_t size) {
 
     int len = Min(size, bufleft());
     memcpy(wbuff + write_len, buff, len);

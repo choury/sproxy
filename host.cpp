@@ -1,17 +1,22 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
-#include <sys/epoll.h>
 
 #include "host.h"
 #include "guest.h"
+#include "parse.h"
 #include "dns.h"
+#include "proxy.h"
 
 
 
-Host::Host(int efd, Guest* guest ,const char *hostname,uint16_t port): guest(guest) {
+Host::Host(){
 
-    this->efd = efd;
+}
+
+
+Host::Host(Guest* guest ,const char *hostname,uint16_t port) {
+    bindex.add(guest,this);
     this->fd=0;
     write_len = 0;
 
@@ -20,7 +25,7 @@ Host::Host(int efd, Guest* guest ,const char *hostname,uint16_t port): guest(gue
 
 
     handleEvent=(void (Con::*)(uint32_t))&Host::waitconnectHE;
-    
+
     if(query(hostname,(DNSCBfunc)Host::Dnscallback,this)<0) {
         LOGE("DNS qerry falied\n");
         throw 0;
@@ -37,6 +42,7 @@ int Host::showerrinfo(int ret, const char* s) {
 
 
 void Host::waitconnectHE(uint32_t events) {
+    Guest *guest=(Guest *)bindex.query(this);
     if( guest == NULL) {
         clean();
         return;
@@ -59,12 +65,12 @@ void Host::waitconnectHE(uint32_t events) {
         if(guest->connectedcb) {
             (guest->*guest->connectedcb)();
         }
-        
+
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLIN | EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    
+
         handleEvent=(void (Con::*)(uint32_t))&Host::defaultHE;
     }
 }
@@ -73,7 +79,7 @@ void Host::waitconnectHE(uint32_t events) {
 void Host::defaultHE(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
-
+    Guest *guest=(Guest *)bindex.query(this);
     if( guest == NULL) {
         clean();
         return;
@@ -91,13 +97,13 @@ void Host::defaultHE(uint32_t events) {
         char buff[1024 * 1024];
         int ret = Read(buff, bufleft);
 
-        if (ret <= 0 ){
+        if (ret <= 0 ) {
             if(showerrinfo(ret,"host read error")) {
                 clean();
                 return;
             }
-        }else{
-            guest->Write(buff, ret);
+        } else {
+            guest->Write(this,buff, ret);
         }
 
     }
@@ -105,7 +111,7 @@ void Host::defaultHE(uint32_t events) {
     if (events & EPOLLOUT) {
         if (write_len) {
             int ret = Write();
-            if (ret <= 0){
+            if (ret <= 0) {
                 if(showerrinfo(ret,"host write error")) {
                     clean();
                 }
@@ -130,7 +136,7 @@ void Host::defaultHE(uint32_t events) {
 }
 
 
-void Host::closeHE(uint32_t events){
+void Host::closeHE(uint32_t events) {
     delete this;
 }
 
@@ -152,7 +158,7 @@ void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
             epoll_event event;
             event.data.ptr=host;
             event.events=EPOLLOUT;
-            epoll_ctl(host->efd,EPOLL_CTL_ADD,host->fd,&event);
+            epoll_ctl(efd,EPOLL_CTL_ADD,host->fd,&event);
         }
     }
 }
@@ -175,13 +181,12 @@ int Host::connect() {
 
 
 void Host::clean() {
+    Guest *guest =(Guest *)bindex.query(this);
     if(guest) {
-        guest->host=NULL;
         guest->clean();
     }
-    guest=NULL;
-    
-    
+    bindex.del(this,guest);
+
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLOUT;
@@ -191,14 +196,16 @@ void Host::clean() {
 }
 
 
-Host* Host::gethost(Host* exist, const char* hostname, uint16_t port, int efd, Guest* guest) {
+Host* Host::gethost( const char* hostname, uint16_t port, int efd, Guest* guest) {
+    Host *exist=(Host *)bindex.query(guest);
     if (exist == NULL) {
-        return new Host(efd, guest,hostname,port);
+        return new Host(guest,hostname,port);
     } else if (exist->targetport == port && strcasecmp(exist->hostname, hostname) == 0) {
         return exist;
     } else {
-        Host* newhost = new Host(exist->efd, exist->guest,hostname,port);
+        Host* newhost = new Host(guest,hostname,port);
         delete exist;
         return newhost;
     }
 }
+
