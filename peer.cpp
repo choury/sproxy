@@ -59,7 +59,7 @@ int Peer::Read(void* buff, size_t size) {
 }
 
 
-int Peer::Write(void *,const void* buff, size_t size) {
+int Peer::Write(Peer *,const void* buff, size_t size) {
 
     int len = Min(size, bufleft());
     memcpy(wbuff + write_len, buff, len);

@@ -2,6 +2,7 @@
 #define __HOST_H__
 
 #include "peer.h"
+#include "parse.h"
 #include "net.h"
 #include "dns.h"
 
@@ -24,9 +25,9 @@ protected:
     virtual int connect();
 public:
     Host();
-    Host(Guest *guest,const char *hostname,uint16_t port);
-    virtual void clean() override;
-    static Host *gethost(const char *host,uint16_t port,int efd,Guest *guest);
+    Host(Guest *guest,const char* hostname,uint16_t port);
+    virtual void clean(Peer *) override;
+    static Host *gethost(HttpReqHeader *http,Guest* guest);
 };
 
 #endif

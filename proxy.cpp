@@ -8,7 +8,7 @@
 
 
 
-Proxy::Proxy(Proxy* copy){
+Proxy::Proxy(Proxy* copy) {
     *this=*copy;
     bindex.del(copy,bindex.query(copy));
     bindex.add(this,bindex.query(copy));
@@ -17,7 +17,7 @@ Proxy::Proxy(Proxy* copy){
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    
+
     copy->ctx=nullptr;
     copy->ssl=nullptr;
     copy->fd=0;
@@ -29,17 +29,20 @@ Proxy::Proxy(Proxy* copy){
 Proxy::Proxy(Guest *guest):Host(guest,SHOST,SPORT) {}
 
 
-Host* Proxy::getproxy(Guest* guest) {
+Host* Proxy::getproxy(Guest* guest,HttpReqHeader* http) {
     Host *exist=(Host *)bindex.query(guest);
-    if (exist == NULL) {
-        return new Proxy(guest);
-    } else if (dynamic_cast<Proxy*>(exist)) {
+    char buff[HEALLENLIMIT];
+    if (dynamic_cast<Proxy*>(exist)) {
+        exist->Write(guest,buff, http->getstring(buff));
         return exist;
-    } else {
-        Proxy* newproxy = new Proxy(guest);
-        delete exist;
-        return newproxy;
     }
+    if (exist != NULL) {
+        exist->clean(guest);
+    }
+
+    Proxy* newproxy = new Proxy(guest);
+    newproxy->Host::Write(guest,buff, http->getstring(buff));
+    return newproxy;
 }
 
 
@@ -96,17 +99,13 @@ void Proxy::shakedhand() {
     event.events = EPOLLIN |EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     handleEvent=(void (Con::*)(uint32_t))&Proxy::defaultHE;
-    
+
     const unsigned char *data;
     unsigned int len;
     SSL_get0_next_proto_negotiated(ssl,&data,&len);
     if(data) {
         if(strncasecmp((const char*)data,"spdy/3.1",len)==0) {
             proxy_spdy=new Proxy_spdy(this);
-            return;
-        } else {
-            LOGE( "unknown protocol select:%.*s\n",len,data);
-            clean();
             return;
         }
     }
@@ -147,14 +146,14 @@ void Proxy::waitconnectHE(uint32_t events) {
         socklen_t len=sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
             perror("proxy getsokopt");
-            clean();
+            clean(this);
             return;
         }
 
         if (error != 0) {
             LOGE( "connect to proxy:%s\n", strerror(error));
             if(connect()<0) {
-                clean();
+                clean(this);
             }
             return;
         }
@@ -162,7 +161,7 @@ void Proxy::waitconnectHE(uint32_t events) {
 
         if (ctx == NULL) {
             ERR_print_errors_fp(stderr);
-            clean();
+            clean(this);
             return;
         }
         SSL_CTX_set_options(ctx,SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3); //去除支持SSLv2 SSLv3
@@ -186,7 +185,7 @@ void Proxy::shakehandHE(uint32_t events) {
         int ret = SSL_connect(ssl);
         if (ret != 1) {
             if(showerrinfo(ret,"ssl connect error")) {
-                clean();
+                clean(this);
             }
         } else {
             shakedhand();
@@ -196,7 +195,7 @@ void Proxy::shakehandHE(uint32_t events) {
 
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("proxy unkown error: %s\n",strerror(errno));
-        clean();
+        clean(this);
     }
 }
 

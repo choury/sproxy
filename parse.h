@@ -26,7 +26,7 @@ int loadproxysite();
 int globalproxy();
 char* toLower(char* s);
 char* toUpper(char* s);
-
+bool checkproxy(const char *hostname);
 
 using std::string;
 using std::map;
@@ -43,9 +43,8 @@ public:
     char path[URLLIMIT];
     uint16_t port;
     HttpReqHeader(char *header)throw (int);
-    int getstring(char *,bool shouldproxy=false);
+    int getstring(char *);
     bool ismethod(const char *);
-    bool checkproxy();
     string getval(const char *key);
 };
 

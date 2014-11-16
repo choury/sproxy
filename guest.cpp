@@ -85,7 +85,7 @@ void Guest::getheaderHE(uint32_t events) {
         int ret=Read(rbuff+read_len, len);
         if(ret<=0 ) {
             if(showerrinfo(ret,"guest read error")) {
-                clean();
+                clean(this);
             }
             return;
         }
@@ -105,44 +105,34 @@ void Guest::getheaderHE(uint32_t events) {
                     read_len = 0;
                 }
 
-                if(http.checkproxy()) {
-                    Host *host = Proxy::getproxy(this);
-                    host->Write(this,buff, http.getstring(buff,true));
-                    host->Write(this,rbuff, read_len);
-                    read_len = 0;
+                if(checkproxy(http.hostname)){
                     LOG( "([%s]:%d): PROXY %s %s\n",
                          sourceip, sourceport,
                          http.method, http.url);
-                    handleEvent=(void (Con::*)(uint32_t))&Guest::defaultHE;
-                    return;
+                }else{
+                    LOG( "([%s]:%d): %s %s\n",
+                        sourceip, sourceport,
+                        http.method, http.url);
                 }
 
-
-                LOG( "([%s]:%d): %s %s\n",
-                     sourceip, sourceport,
-                     http.method, http.url);
-
                 if ( http.ismethod("GET") ||  http.ismethod("HEAD") ) {
-                    Host *host = Host::gethost(http.hostname, http.port, efd, this);
-                    host->Write(this,buff, http.getstring(buff,false));
+                    Host::gethost(&http,this);
                 } else if (http.ismethod("POST") ) {
-                    int writelen=http.getstring(buff,false);
+                    http.getstring(buff);
                     char* lenpoint;
                     if ((lenpoint = strstr(buff, "Content-Length:")) == NULL) {
                         LOGE( "([%s]:%d): unsported post version\n",sourceip, sourceport);
-                        clean();
+                        clean(this);
                         return;
                     }
 
                     sscanf(lenpoint + 15, "%u", &expectlen);
                     expectlen -= read_len;
-                    Host *host = Host::gethost(http.hostname, http.port, efd, this);
-                    host->Write(this,buff, writelen);
-                    host->Write(this,rbuff, read_len);
+                    Host::gethost(&http,this)->Write(this,rbuff, read_len);
                     read_len = 0;
                     handleEvent=(void (Con::*)(uint32_t))&Guest::postHE;
                 } else if (http.ismethod("CONNECT")) {
-                    Host::gethost(http.hostname, http.port, efd, this);
+                    Host::gethost(&http,this);
                     handleEvent=(void (Con::*)(uint32_t))&Guest::defaultHE;
                     connectedcb=&Guest::connected;
                 } else if (http.ismethod("LOADPLIST")) {
@@ -169,10 +159,10 @@ void Guest::getheaderHE(uint32_t events) {
                 } else {
                     LOGE( "([%s]:%d): unsported method:%s\n",
                           sourceip, sourceport,http.method);
-                    clean();
+                    clean(this);
                 }
             } catch(...) {
-                clean();
+                clean(this);
                 return;
             }
 
@@ -188,7 +178,7 @@ void Guest::postHE(uint32_t events) {
         Host *host=(Host *)bindex.query(this);
         if(host == NULL) {
             LOGE("([%s]:%d): connecting to host lost\n",sourceip, sourceport);
-            clean();
+            clean(this);
             return;
         }
         int len=host->bufleft();
@@ -200,7 +190,7 @@ void Guest::postHE(uint32_t events) {
         int ret=Read(buff, len);
         if(ret<=0 ) {
             if(showerrinfo(ret,"guest read error")) {
-                clean();
+                clean(this);
             }
             return;
         }
@@ -224,7 +214,7 @@ void Guest::defaultHE(uint32_t events) {
         char buff[1024 * 1024];
         if(host == NULL) {
             LOGE("([%s]:%d): connecting to host lost\n",sourceip, sourceport);
-            clean();
+            clean(this);
             return;
         }
         int len=host->bufleft();
@@ -236,7 +226,7 @@ void Guest::defaultHE(uint32_t events) {
         int ret=Read(buff, len);
         if(ret <= 0 ) {
             if(showerrinfo(ret,"guest read error")) {
-                clean();
+                clean(this);
             }
             return;
         }
@@ -247,7 +237,7 @@ void Guest::defaultHE(uint32_t events) {
             int ret = Write();
             if (ret <= 0 ) {
                 if( showerrinfo(ret,"guest write error")) {
-                    clean();
+                    clean(this);
                 }
                 return;
             }
@@ -269,7 +259,7 @@ void Guest::defaultHE(uint32_t events) {
             LOGE( "([%s]:%d): guest error:%s\n",
                   sourceip, sourceport, strerror(error));
         }
-        clean();
+        clean(this);
     }
 }
 
@@ -290,7 +280,7 @@ void Guest::closeHE(uint32_t events) {
 }
 
 
-void Guest::clean() {
+void Guest::clean(Peer *) {
     bindex.del(this,bindex.query(this));
 
     struct epoll_event event;

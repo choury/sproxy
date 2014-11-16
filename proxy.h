@@ -21,10 +21,8 @@ public:
     Proxy(Proxy *copy);
     Proxy(Guest *guest);
     virtual ~Proxy();
-    static Host *getproxy(Guest *guest);
+    static Host *getproxy(Guest *guest,HttpReqHeader*);
 };
-
-
 
 
 #endif

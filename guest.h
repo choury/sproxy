@@ -27,7 +27,7 @@ public:
     Guest();
     Guest(int fd);
     void (Guest::*connectedcb)()=NULL;
-    virtual void clean() override;
+    virtual void clean(Peer *) override;
 };
 
 

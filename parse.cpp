@@ -79,13 +79,11 @@ int globalproxy() {
     return GLOBALPROXY;
 }
 
-bool HttpReqHeader::checkproxy() {
+bool checkproxy(const char *hostname) {
     if (!loadedsite) {
         loadproxysite();
     }
-    if(strcmp(method,"GET") && strcmp(method,"HEAD")&& strcmp(method,"POST") && strcmp(method,"CONNECT")) {
-        return false;
-    }
+
     if(GLOBALPROXY) {
         return true;
     }
@@ -263,12 +261,15 @@ HttpReqHeader::HttpReqHeader(char* header)throw (int) {
 
 }
 
-int HttpReqHeader::getstring( char* buff,bool shouldproxy) {
+int HttpReqHeader::getstring( char* buff) {
     int p;
-    if(shouldproxy) {
+    if(checkproxy(hostname)) {
         sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
                 method,url, &p);
     } else {
+        if(strcmp(method,"CONNECT")==0){
+            return 0;
+        }
         sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
                 method, path, &p);
     }

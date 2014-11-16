@@ -76,7 +76,7 @@ void Guest_s::shakedhand() {
             return;
         } else {
             LOGE( "([%s]:%d): unknown protocol:%.*s\n",sourceip, sourceport,len,data);
-            clean();
+            clean(this);
             return;
         }
     }
@@ -115,7 +115,7 @@ void Guest_s::shakehandHE(uint32_t events) {
         int ret = SSL_accept(ssl);
         if (ret != 1) {
             if(showerrinfo(ret,"ssl accept error")) {
-                clean();
+                clean(this);
             }
         } else {
             shakedhand();
@@ -130,7 +130,7 @@ void Guest_s::shakehandHE(uint32_t events) {
             LOGE( "([%s]:%d): guest_s error:%s\n",
                   sourceip, sourceport, strerror(error));
         }
-        clean();
+        clean(this);
     }
 }
 

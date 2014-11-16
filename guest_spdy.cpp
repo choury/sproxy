@@ -37,7 +37,7 @@ void Guest_spdy::defaultHE(uint32_t events) {
         int ret=Read(rbuff+read_len, len);
         if(ret<=0 ) {
             if(showerrinfo(ret,"spdy read error")) {
-                clean();
+                clean(this);
             }
             return;
         }
@@ -108,7 +108,7 @@ void Guest_spdy::synHE(uint32_t events) {
         int ret=Read(rbuff+read_len, len);
         if(ret<=0 ) {
             if(showerrinfo(ret,"spdy syn read error")) {
-                clean();
+                clean(this);
             }
             return;
         }
@@ -161,7 +161,7 @@ void Guest_spdy::synreplyHE(uint32_t events) {
         int ret=Read(rbuff+read_len, len);
         if(ret<=0 ) {
             if(showerrinfo(ret,"spdy syn read error")) {
-                clean();
+                clean(this);
             }
             return;
         }
@@ -196,7 +196,7 @@ void Guest_spdy::rstHE(uint32_t events){
         int ret=Read(rbuff+read_len, len);
         if(ret<=0 ) {
             if(showerrinfo(ret,"spdy syn read error")) {
-                clean();
+                clean(this);
             }
             return;
         }
@@ -225,7 +225,7 @@ void Guest_spdy::goawayHE(uint32_t events){
         int ret=Read(rbuff+read_len, len);
         if(ret<=0 ) {
             if(showerrinfo(ret,"spdy syn read error")) {
-                clean();
+                clean(this);
             }
             return;
         }
@@ -255,7 +255,7 @@ void Guest_spdy::ctrlframedefultHE(uint32_t events) {
         int ret=Read(rbuff+read_len, len);
         if(ret<=0 ) {
             if(showerrinfo(ret,"spdy syn read error")) {
-                clean();
+                clean(this);
             }
             return;
         }

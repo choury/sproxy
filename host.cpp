@@ -10,12 +10,11 @@
 
 
 
-Host::Host(){
+Host::Host() {
 
 }
 
-
-Host::Host(Guest* guest ,const char *hostname,uint16_t port) {
+Host::Host(Guest* guest ,const char* hostname,uint16_t port) {
     bindex.add(guest,this);
     this->fd=0;
     write_len = 0;
@@ -44,7 +43,7 @@ int Host::showerrinfo(int ret, const char* s) {
 void Host::waitconnectHE(uint32_t events) {
     Guest *guest=(Guest *)bindex.query(this);
     if( guest == NULL) {
-        clean();
+        clean(this);
         return;
     }
     if (events & EPOLLOUT) {
@@ -52,13 +51,13 @@ void Host::waitconnectHE(uint32_t events) {
         socklen_t len=sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
             LOGE("getsokopt error: %s\n",strerror(error));
-            clean();
+            clean(this);
             return;
         }
         if (error != 0) {
             LOGE( "connect to %s: %s\n",hostname, strerror(error));
             if(connect()<0) {
-                clean();
+                clean(this);
             }
             return;
         }
@@ -81,7 +80,7 @@ void Host::defaultHE(uint32_t events) {
     event.data.ptr = this;
     Guest *guest=(Guest *)bindex.query(this);
     if( guest == NULL) {
-        clean();
+        clean(this);
         return;
     }
 
@@ -99,7 +98,7 @@ void Host::defaultHE(uint32_t events) {
 
         if (ret <= 0 ) {
             if(showerrinfo(ret,"host read error")) {
-                clean();
+                clean(this);
                 return;
             }
         } else {
@@ -113,7 +112,7 @@ void Host::defaultHE(uint32_t events) {
             int ret = Write();
             if (ret <= 0) {
                 if(showerrinfo(ret,"host write error")) {
-                    clean();
+                    clean(this);
                 }
                 return;
             }
@@ -130,7 +129,7 @@ void Host::defaultHE(uint32_t events) {
 
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("host unkown error: %s\n",strerror(errno));
-        clean();
+        clean(this);
     }
 
 }
@@ -145,7 +144,7 @@ void Host::closeHE(uint32_t events) {
 void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
     if(rcd.result!=0) {
         LOGE("Dns query failed\n");
-        host->clean();
+        host->clean(host);
     } else {
         host->addr=rcd.addr;
         for(size_t i=0; i<host->addr.size(); ++i) {
@@ -153,7 +152,7 @@ void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
         }
         if(host->connect()<0) {
             LOGE("connect to %s failed\n",host->hostname);
-            host->clean();
+            host->clean(host);
         } else {
             epoll_event event;
             event.data.ptr=host;
@@ -180,10 +179,10 @@ int Host::connect() {
 }
 
 
-void Host::clean() {
+void Host::clean(Peer *who) {
     Guest *guest =(Guest *)bindex.query(this);
-    if(guest) {
-        guest->clean();
+    if(guest && who != guest) {
+        guest->clean(this);
     }
     bindex.del(this,guest);
 
@@ -196,15 +195,21 @@ void Host::clean() {
 }
 
 
-Host* Host::gethost( const char* hostname, uint16_t port, int efd, Guest* guest) {
-    Host *exist=(Host *)bindex.query(guest);
-    if (exist == NULL) {
-        return new Host(guest,hostname,port);
-    } else if (exist->targetport == port && strcasecmp(exist->hostname, hostname) == 0) {
-        return exist;
+Host* Host::gethost(HttpReqHeader* http,Guest* guest) {
+    if(checkproxy(http->hostname)) {
+        return Proxy::getproxy(guest,http);
     } else {
-        Host* newhost = new Host(guest,hostname,port);
-        delete exist;
+        Host* exist=(Host *)bindex.query(guest);
+        char buff[HEALLENLIMIT];
+        if (exist && exist->targetport == http->port && strcasecmp(exist->hostname, http->hostname) == 0) {
+            exist->Write(guest,buff, http->getstring(buff));
+            return exist;
+        }
+        if (exist != NULL) {
+            exist->clean(guest);
+        }
+        Host *newhost = new Host(guest,http->hostname,http->port);
+        newhost->Write(guest,buff, http->getstring(buff));
         return newhost;
     }
 }

@@ -30,10 +30,10 @@ protected:
     Peer(int fd);
     virtual int Write();
     virtual int Read(void *buff,size_t size);
-    virtual void clean()=0;
+    virtual void clean(Peer *who)=0;
 public:
     virtual void writedcb();
-    virtual int Write(void* who,const void *buff,size_t size);
+    virtual int Write(Peer* who,const void *buff,size_t size);
     virtual size_t bufleft();
     virtual int showerrinfo(int ret,const char * )=0;
     virtual ~Peer();
