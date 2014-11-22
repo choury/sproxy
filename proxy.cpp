@@ -26,44 +26,47 @@ Proxy::Proxy(Proxy* copy) {
 
 
 
-Proxy::Proxy(Guest *guest):Host(guest,SHOST,SPORT) {}
+Proxy::Proxy(HttpReqHeader *Req,Guest *guest):Host(Req,guest,SHOST,SPORT) {}
 
 
-Host* Proxy::getproxy(Guest* guest,HttpReqHeader* http) {
+Host* Proxy::getproxy(HttpReqHeader* Req,Guest* guest) {
+    if(proxy_spdy) {
+        return Proxy_spdy::getproxy_spdy(guest,Req);
+    }
     Host *exist=(Host *)bindex.query(guest);
-    char buff[HEALLENLIMIT];
     if (dynamic_cast<Proxy*>(exist)) {
-        exist->Write(guest,buff, http->getstring(buff));
+        char buff[HEALLENLIMIT];
+        exist->Write(guest,buff, Req->getstring(buff,HTTP));
+        guest->connected(Req->method);
         return exist;
     }
     if (exist != NULL) {
         exist->clean(guest);
     }
 
-    Proxy* newproxy = new Proxy(guest);
-    newproxy->Host::Write(guest,buff, http->getstring(buff));
+    Proxy* newproxy = new Proxy(Req,guest);
     return newproxy;
 }
 
 
-int Proxy::Write() {
-    int ret = SSL_write(ssl, wbuff, write_len);
+ssize_t Proxy::Write() {
+    ssize_t ret = SSL_write(ssl, wbuff, writelen);
 
     if (ret <= 0) {
         return ret;
     }
 
-    if (ret != write_len) {
-        memmove(wbuff, wbuff + ret, write_len - ret);
-        write_len -= ret;
+    if ((size_t)ret != writelen) {
+        memmove(wbuff, wbuff + ret, writelen - ret);
+        writelen -= ret;
     } else {
-        write_len = 0;
+        writelen = 0;
     }
 
     return ret;
 }
 
-int Proxy::Read(void* buff, size_t size) {
+ssize_t Proxy::Read(void* buff, size_t size) {
     return SSL_read(ssl, buff, size);
 }
 
@@ -91,26 +94,6 @@ int Proxy::showerrinfo(int ret, const char* s) {
     }
     return 1;
 }
-
-
-void Proxy::shakedhand() {
-    epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN |EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    handleEvent=(void (Con::*)(uint32_t))&Proxy::defaultHE;
-
-    const unsigned char *data;
-    unsigned int len;
-    SSL_get0_next_proto_negotiated(ssl,&data,&len);
-    if(data) {
-        if(strncasecmp((const char*)data,"spdy/3.1",len)==0) {
-            proxy_spdy=new Proxy_spdy(this);
-            return;
-        }
-    }
-}
-
 
 
 static int select_next_proto_cb(SSL* ssl,
@@ -141,6 +124,11 @@ static int select_next_proto_cb(SSL* ssl,
 
 
 void Proxy::waitconnectHE(uint32_t events) {
+    Guest *guest=(Guest *)bindex.query(this);
+    if( guest == NULL) {
+        clean(this);
+        return;
+    }
     if (events & EPOLLOUT) {
         int error;
         socklen_t len=sizeof(error);
@@ -177,22 +165,46 @@ void Proxy::waitconnectHE(uint32_t events) {
 
         handleEvent=(void (Con::*)(uint32_t))&Proxy::shakehandHE;
     }
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        LOGE("host unkown error: %s\n",strerror(errno));
+        clean(this);
+    }
 }
 
 
 void Proxy::shakehandHE(uint32_t events) {
+    Guest *guest=(Guest *)bindex.query(this);
+    if( guest == NULL) {
+        clean(this);
+        return;
+    }
     if ((events & EPOLLIN) || (events & EPOLLOUT)) {
         int ret = SSL_connect(ssl);
         if (ret != 1) {
             if(showerrinfo(ret,"ssl connect error")) {
                 clean(this);
             }
-        } else {
-            shakedhand();
             return;
         }
-    }
+        
+        writelen= Req->getstring(wbuff,HTTP);
+        
+        epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLIN |EPOLLOUT;
+        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        handleEvent=(void (Con::*)(uint32_t))&Proxy::defaultHE;
 
+        const unsigned char *data;
+        unsigned int len;
+        SSL_get0_next_proto_negotiated(ssl,&data,&len);
+        if(data && strncasecmp((const char*)data,"spdy/3.1",len)==0) {
+            proxy_spdy=new Proxy_spdy(this);
+        }
+        
+        guest->connected("PROXY");
+        return;
+    }
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("proxy unkown error: %s\n",strerror(errno));
         clean(this);

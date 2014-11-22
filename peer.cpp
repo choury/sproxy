@@ -54,16 +54,16 @@ Peer::~Peer() {
     }
 }
 
-int Peer::Read(void* buff, size_t size) {
+ssize_t Peer::Read(void* buff, size_t size) {
     return read(fd, buff, size);
 }
 
 
-int Peer::Write(Peer *,const void* buff, size_t size) {
+ssize_t Peer::Write(Peer *,const void* buff, size_t size) {
 
     int len = Min(size, bufleft());
-    memcpy(wbuff + write_len, buff, len);
-    write_len += len;
+    memcpy(wbuff + writelen, buff, len);
+    writelen += len;
 
     struct epoll_event event;
     event.data.ptr = this;
@@ -80,8 +80,8 @@ void Peer::writedcb() {
 }
 
 
-int Peer::Write() {
-    int ret = write(fd, wbuff, write_len);
+ssize_t Peer::Write() {
+    ssize_t ret = write(fd, wbuff, writelen);
 
     if (ret < 0) {
         return ret;
@@ -94,17 +94,17 @@ int Peer::Write() {
             return -1;
     }
 
-    if (ret != write_len) {
-        memmove(wbuff, wbuff + ret, write_len - ret);
-        write_len -= ret;
+    if ((size_t)ret != writelen) {
+        memmove(wbuff, wbuff + ret, writelen - ret);
+        writelen -= ret;
     } else {
-        write_len = 0;
+        writelen = 0;
     }
 
     return ret;
 }
 
 size_t Peer::bufleft() {
-    return sizeof(wbuff) - write_len;
+    return sizeof(wbuff) - writelen;
 }
 

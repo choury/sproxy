@@ -11,9 +11,9 @@
 class Guest_s:public Guest {
     SSL *ssl;
 protected:
-    virtual int Write()override;
+    virtual ssize_t Read(void *buff,size_t size)override;
+    virtual ssize_t Write()override;
     virtual void shakehandHE(uint32_t events);
-    virtual int Read(void *buff,size_t size)override;
 public:
     Guest_s(int fd,SSL *ssl);
     Guest_s(Guest_s* copy);

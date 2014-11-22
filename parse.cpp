@@ -133,6 +133,11 @@ char* toLower(char* s) {
     return s;
 }
 
+string toLower(const string &s) {
+    string str=s;
+    std::transform(str.begin(), str.end(), str.begin(), ::tolower);
+    return str;
+}
 
 int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
     const char* addrsplit;
@@ -202,7 +207,7 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
 
 
 HttpReqHeader::HttpReqHeader(char* header)throw (int) {
-    if(header[0]){   //第一个字节不为0，说明是一个HTTP/1.x头部
+    if(header[0]) {  //第一个字节不为0，说明是一个HTTP/1.x头部
         *(strstr(header, CRLF CRLF) + strlen(CRLF)) = 0;
         memset(path,0,sizeof(path));
         memset(url,0,sizeof(url));
@@ -232,7 +237,7 @@ HttpReqHeader::HttpReqHeader(char* header)throw (int) {
 
         this->header.erase("Proxy-Connection");
         this->header.erase("Host");
-    }else{
+    } else {
         uint32_t *p=(uint32_t *)header;
         uint32_t c=ntohl(*p++);
         for(size_t i=0; i<c; ++i) {
@@ -261,33 +266,66 @@ HttpReqHeader::HttpReqHeader(char* header)throw (int) {
 
 }
 
-int HttpReqHeader::getstring( char* buff) {
-    int p;
-    if(checkproxy(hostname)) {
-        sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
-                method,url, &p);
-    } else {
-        if(strcmp(method,"CONNECT")==0){
-            return 0;
-        }
-        sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
-                method, path, &p);
+char *addnv(void *buff,const char *name,size_t nlen,const char *val,size_t vlen) {
+    uint32_t *p=(uint32_t *)buff;
+    *p++=htonl(nlen);
+    char *q=(char *)p;
+    while(nlen--){
+        *q++=tolower(*name++);
     }
-    int len;
-    sprintf(buff+p,"Host: %s" CRLF "%n",hostname,&len);
-    p+=len;
-    for (auto i : header) {
-        int len;
-        sprintf(buff + p, "%s: %s" CRLF "%n", i.first.c_str(), i.second.c_str(), &len);
-        p += len;
+    p=(uint32_t *)q;
+    *p++=htonl(vlen);
+    q=(char *)p;
+    while(vlen--){
+        *q++=tolower(*val++);
     }
-
-    sprintf(buff + p, CRLF);
-    return p + strlen(CRLF);
+    return q;
 }
 
-string HttpReqHeader::getval(const char* key) {
-    return header[key];
+int HttpReqHeader::getstring(char* buff,protocol prot) {
+    if(prot == HTTP){
+        int p;
+        if(checkproxy(hostname)) {
+            sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
+                    method,url, &p);
+        } else {
+            if(strcmp(method,"CONNECT")==0) {
+                return 0;
+            }
+            sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
+                    method, path, &p);
+        }
+        int len;
+        sprintf(buff+p,"Host: %s" CRLF "%n",hostname,&len);
+        p+=len;
+        for (auto i : header) {
+            int len;
+            sprintf(buff + p, "%s: %s" CRLF "%n", i.first.c_str(), i.second.c_str(), &len);
+            p += len;
+        }
+
+        sprintf(buff + p, CRLF);
+        return p + strlen(CRLF);
+    }else{
+        char *p=buff;
+        p=addnv(p,":method",7,method,strlen(method));
+        p=addnv(p,":path",5,path,strlen(path));
+        p=addnv(p,":version",8,"HTTP/1.1",8);
+        p=addnv(p,":host",5,hostname,strlen(hostname));
+        p=addnv(p,":scheme",7,"http",4);
+        for(auto i:header){
+            p=addnv(p,i.first.data(),i.first.length(),i.second.data(),i.second.length());
+        }
+        return p-buff;
+    }
+}
+
+const char* HttpReqHeader::getval(const char* key) {
+    if(header.count(key)) {
+        return header[key].c_str();
+    } else {
+        return nullptr;
+    }
 }
 
 
@@ -296,13 +334,62 @@ bool HttpReqHeader::ismethod(const char* method) {
 }
 
 
-HttpResHeader::HttpResHeader(const char* status) {
-    strcpy(this->status,status);
+HttpResHeader::HttpResHeader(char* header) {
+    if(header[0]) {  //第一个字节不为0，说明是一个HTTP/1.x头部
+        *(strstr(header, CRLF CRLF) + strlen(CRLF)) = 0;
+        memset(version,0,sizeof(version));
+        memset(status,0,sizeof(status));
+        sscanf(header, "%s%*[ ]%[^\r\n]", version, status);
+
+        for (char* str = strstr(header, CRLF) + strlen(CRLF); ; str = NULL) {
+            char* p = strtok(str, CRLF);
+
+            if (p == NULL)
+                break;
+
+            char* sp = strpbrk(p, ":");
+            if(sp==NULL) {
+                LOGE("wrong header format:%s\n",p);
+                throw 0;
+            }
+            this->header[string(p, sp - p)] = ltrim(string(sp + 1));
+        }
+    } else {
+        uint32_t *p=(uint32_t *)header;
+        uint32_t c=ntohl(*p++);
+        for(size_t i=0; i<c; ++i) {
+            uint32_t nlen=ntohl(*p++);
+            char *np=(char *)p;
+            p=(uint32_t*)(np+nlen);
+            uint32_t vlen=ntohl(*p++);
+            char *vp=(char *)p;
+            p=(uint32_t *)((char *)p+vlen);
+            this->header[string(np,nlen)] = string(vp,vlen);
+        }
+
+        strcpy(version,this->header[":version"].c_str());
+        strcpy(status,this->header[":status"].c_str());
+        for(auto i=this->header.begin(); i!=this->header.end();) {
+            if(i->first[0]==':') {
+                this->header.erase(i++);
+            } else {
+                i++;
+            }
+        }
+    }
 }
 
 
 void HttpResHeader::add(const char* header, const char* value) {
     this->header[header]=value;
+}
+
+const char* HttpResHeader::getval(const char* key) {
+    if(header.count(key)) {
+        return header[key].c_str();
+    } else {
+        return nullptr;
+    }
 }
 
 int HttpResHeader::getstring(char* buff, protocol proto) {
@@ -321,7 +408,7 @@ int HttpResHeader::getstring(char* buff, protocol proto) {
     case SPDY:
         uint32_t *q=(uint32_t *)buff;
         *q++=htonl(header.size()+2);
-        
+
         //for ":status" => "200 OK" etc
         int nlen=7;
         *q++=htonl(nlen);
@@ -331,7 +418,7 @@ int HttpResHeader::getstring(char* buff, protocol proto) {
         *q++=htonl(vlen);
         memcpy(q,status,vlen);
         q=(uint32_t *)(((char *)q)+vlen);
-        
+
         //for ":version" => "HTTP/1.1"
         nlen=8;
         *q++=htonl(nlen);
@@ -344,7 +431,7 @@ int HttpResHeader::getstring(char* buff, protocol proto) {
         for (auto i : header) {
             nlen=i.first.length();
             *q++=htonl(nlen);
-            memcpy(q,i.first.data(),nlen);
+            memcpy(q,toLower(i.first).data(),nlen);
             q=(uint32_t *)(((char *)q)+nlen);
             vlen=i.second.length();
             *q++=htonl(vlen);

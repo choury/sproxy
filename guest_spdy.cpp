@@ -1,22 +1,23 @@
 #include "guest_spdy.h"
+#include "host.h"
 #include "parse.h"
 #include "spdy_type.h"
 #include "spdy_zlib.h"
 
-Guest_spdy::Guest_spdy(Guest_s* copy):Guest_s(copy){
+Guest_spdy::Guest_spdy(Guest_s* copy):Guest_s(copy) {
     handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::defaultHE;
     spdy_deflate_init(&destream);
     spdy_inflate_init(&instream);
 }
 
-Guest_spdy::~Guest_spdy(){
+Guest_spdy::~Guest_spdy() {
     spdy_deflate_end(&destream);
     spdy_inflate_end(&instream);
 }
 
 
 
-int Guest_spdy::Write(const void* buf, size_t len,uint32_t id,uint8_t flag){
+ssize_t Guest_spdy::Write(const void* buf, size_t len,uint32_t id,uint8_t flag) {
     spdy_dframe_head dhead;
     dhead.id=htonl(id);
     dhead.flag=flag;
@@ -25,16 +26,147 @@ int Guest_spdy::Write(const void* buf, size_t len,uint32_t id,uint8_t flag){
     return Guest::Write(this,buf,len);
 }
 
+void Guest_spdy::clean(Peer* who) {
+    if(who==this) {
+        for(auto i:host2id) {
+            bindex.del(this,i.first);
+        }
+
+        struct epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLOUT;
+        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+
+        handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::closeHE;
+    } else {
+        bindex.del(this,who);
+        if(host2id.count(who)) {
+            Hostinfo *hostinfo=&host2id[who];
+
+            spdy_cframe_head chead;
+            memset(&chead,0,sizeof(chead));
+            chead.magic=CTRL_MAGIC;
+            chead.type=htons(RST_TYPE);
+            set24(chead.length,sizeof(rst_frame));
+            Peer::Write(this,&chead,sizeof(chead));
+
+            rst_frame rframe;
+            memset(&rframe,0,sizeof(rframe));
+            rframe.code=0;
+            rframe.id=htonl(hostinfo->id);
+            Peer::Write(this,&rframe,sizeof(rframe));
+
+            host2id.erase(who);
+        }
+    }
+}
+
+ssize_t Guest_spdy::Write(Peer* who, const void* buff, size_t size) {
+    if(host2id.count(who)) {
+        Hostinfo *hostinfo=&host2id[who];
+        return (this->*hostinfo->Write)(hostinfo,buff,size);
+    } else {
+        who->clean(this);
+    }
+    return 0;
+}
+
+ssize_t Guest_spdy::HeaderWrite(Hostinfo* hostinfo, const void* buff, size_t size) {
+//TODO 这里要做边界检查
+    memcpy(hostinfo->buff+readlen,buff,size);
+    hostinfo->readlen+=size;
+    if (char* headerend = strnstr(hostinfo->buff, CRLF CRLF,hostinfo->readlen)) {
+        headerend += strlen(CRLF CRLF);
+        size_t headerlen = headerend - hostinfo->buff;
+        HttpResHeader http(hostinfo->buff);
+        if(http.getval("Transfer-Encoding")!= nullptr){
+            hostinfo->Write=&Guest_spdy::ChunkLWrite;
+        }else if(http.getval("Content-Length")!=nullptr){
+            sscanf(http.getval("Content-Length"),"%u",&hostinfo->expectlen);
+            hostinfo->Write=&Guest_spdy::FixLenWrite;
+        }else{
+            
+        }
+        spdy_cframe_head *chead=(spdy_cframe_head *)(wbuff+writelen);
+        chead->magic=CTRL_MAGIC;
+        chead->type=htons(SYN_REPLY_TYPE);
+        chead->flag = 0;
+        writelen+=sizeof(*chead);
+
+        syn_reply_frame *srframe=(syn_reply_frame *)(wbuff+writelen);
+        srframe->id=htonl(hostinfo->id);
+        writelen += sizeof(*srframe);
+
+        uint32_t buflen=bufleft();
+        char headbuff[8192];
+        buflen=spdy_deflate(&destream,headbuff,http.getstring(headbuff,SPDY),wbuff+writelen,buflen);
+        writelen+=buflen;
+        set24(chead->length,sizeof(syn_reply_frame)+buflen);
+        Peer::Write(nullptr,"",0);
+        if(headerlen != hostinfo->readlen){
+            size_t leftlen = hostinfo->readlen-headerlen;
+            hostinfo->readlen=0;
+            (this->*hostinfo->Write)(hostinfo,(char *)buff+size-leftlen,leftlen);
+        }else{
+            hostinfo->readlen=0;
+        }
+    }
+}
+
+ssize_t Guest_spdy::ChunkLWrite(Hostinfo* hostinfo, const void* buff, size_t size){
+    if (char* headerend = strnstr((const char*)buff, CRLF,size)){
+        headerend += strlen(CRLF);
+        size=(char *)buff+size-headerend;
+        sscanf((const char*)buff,"%x",&hostinfo->expectlen);
+        if(hostinfo->expectlen==0){
+            ssize_t ret=Write("",0,hostinfo->id,FLAG_FIN);
+            hostinfo->Write=&Guest_spdy::HeaderWrite;
+        }else{
+            hostinfo->Write=&Guest_spdy::ChunkBWrite;
+            if(size){
+                ChunkBWrite(hostinfo,headerend,size);
+            }
+        }
+    }
+}
+
+
+ssize_t Guest_spdy::ChunkBWrite(Hostinfo* hostinfo, const void* buff, size_t size)
+{
+    size_t len=Min(hostinfo->expectlen,size);
+    len=Write(buff,len,hostinfo->id,0);
+    hostinfo->expectlen-=len;
+    if(hostinfo->expectlen == 0){
+        hostinfo->Write=&Guest_spdy::ChunkLWrite;
+        if(size != len){
+            ChunkLWrite(hostinfo,(char *)buff+len+2,size-len-2);
+        }
+    }
+}
+
+
+
+ssize_t Guest_spdy::FixLenWrite(Hostinfo* hostinfo, const void* buff, size_t size){
+    hostinfo->expectlen-=size;
+    if(hostinfo->expectlen){
+        return Write(buff,size,hostinfo->id,0);
+    }else{
+        ssize_t ret=Write(buff,size,hostinfo->id,FLAG_FIN);
+        hostinfo->Write=&Guest_spdy::HeaderWrite;
+        return ret;
+    }
+}
+
 
 void Guest_spdy::defaultHE(uint32_t events) {
     if(events & EPOLLIN) {
-        int len=sizeof(rbuff)-read_len;
+        int len=sizeof(rbuff)-readlen;
         if(len == 0) {
             LOGE( "([%s]:%d): The header is too long\n",sourceip, sourceport);
             epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
             return;
         }
-        int ret=Read(rbuff+read_len, len);
+        int ret=Read(rbuff+readlen, len);
         if(ret<=0 ) {
             if(showerrinfo(ret,"spdy read error")) {
                 clean(this);
@@ -42,13 +174,13 @@ void Guest_spdy::defaultHE(uint32_t events) {
             return;
         }
 
-        read_len+=ret;
+        readlen+=ret;
     }
-    if(read_len >= sizeof(spdy_head)) {
+    if(readlen >= sizeof(spdy_head)) {
         spdy_head head;
         memcpy(&head,rbuff,sizeof(head));
-        memmove(rbuff,rbuff+sizeof(head),read_len-sizeof(head));
-        read_len-=sizeof(head);
+        memmove(rbuff,rbuff+sizeof(head),readlen-sizeof(head));
+        readlen-=sizeof(head);
         if(head.c==1) {
             spdy_cframe_head *chead=(spdy_cframe_head *)&head;
             NTOHS(chead->type);
@@ -71,7 +203,7 @@ void Guest_spdy::defaultHE(uint32_t events) {
                 handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::ctrlframedefultHE;
                 break;
             }
-            if(read_len) {
+            if(readlen) {
                 (this ->*handleEvent) (events&(~EPOLLIN));
             }
         } else {
@@ -99,13 +231,13 @@ void Guest_spdy::defaultHE(uint32_t events) {
 
 void Guest_spdy::synHE(uint32_t events) {
     if(events & EPOLLIN) {
-        int len=sizeof(rbuff)-read_len;
+        int len=sizeof(rbuff)-readlen;
         if(len == 0) {
             LOGE( "([%s]:%d): The header is too long\n",sourceip, sourceport);
             epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
             return;
         }
-        int ret=Read(rbuff+read_len, len);
+        int ret=Read(rbuff+readlen, len);
         if(ret<=0 ) {
             if(showerrinfo(ret,"spdy syn read error")) {
                 clean(this);
@@ -113,52 +245,83 @@ void Guest_spdy::synHE(uint32_t events) {
             return;
         }
 
-        read_len+=ret;
+        readlen+=ret;
     }
-    if(read_len >= expectlen) {
+    if(readlen >= expectlen) {
         syn_frame *sframe=(syn_frame*)rbuff;
         NTOHL(sframe->id);
         char headbuff[8192];
         size_t buflen=sizeof(headbuff);
         spdy_inflate(&instream,rbuff+sizeof(syn_frame),expectlen-sizeof(syn_frame),headbuff,buflen);
-        
-        read_len-=expectlen;
-        memmove(rbuff,rbuff+expectlen,read_len);
-        
-        
-        HttpReqHeader httpreq(headbuff);
-        HttpResHeader httpres(H200);
-        httpres.add("content-type","text/plain");
-        spdy_cframe_head *chead=(spdy_cframe_head *)(wbuff+write_len);
-        chead->magic=CTRL_MAGIC;
-        chead->type=htons(SYN_REPLY_TYPE);
-        chead->flag = 0;
-        write_len+=sizeof(*chead);
-        
-        syn_reply_frame *srframe=(syn_reply_frame *)(wbuff+write_len);
-        srframe->id=htonl(sframe->id);
-        write_len += sizeof(*srframe);
-        buflen=bufleft();
-        buflen=spdy_deflate(&destream,headbuff,httpres.getstring(headbuff,SPDY),wbuff+write_len,buflen);
-        write_len+=buflen;
-        set24(chead->length,sizeof(syn_reply_frame)+buflen);
-        
-        Write("welcome",7,sframe->id,FLAG_FIN);
-        handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::defaultHE;
-        
+
+        readlen-=expectlen;
+        memmove(rbuff,rbuff+expectlen,readlen);
+
+        HttpReqHeader http(headbuff);
+        http.port=80;
+        LOG( "([%s]:%d): %s %s\n",
+             sourceip, sourceport,
+             http.method, http.url);
+
+        if ( http.ismethod("GET") ||  http.ismethod("HEAD") ) {
+            host2id[Host::gethost(&http,this)]=sframe->id;
+            handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::defaultHE;
+        } else if (http.ismethod("POST") ) {
+            const char* lenpoint=http.getval("Content-Length");
+            if (lenpoint == NULL) {
+                LOGE( "([%s]:%d): unsported post version\n",sourceip, sourceport);
+                clean(this);
+                return;
+            }
+
+            sscanf(lenpoint, "%u", &expectlen);
+            expectlen -= readlen;
+            Host *host=Host::gethost(&http,this);
+            host2id[host]=sframe->id;
+            host->Write(this,rbuff, readlen);
+            readlen = 0;
+            handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::postHE;
+        } else if (http.ismethod("CONNECT")) {
+            host2id[Host::gethost(&http,this)]=sframe->id;
+            handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::defaultHE;
+        } else {
+            LOGE( "([%s]:%d): unsported method:%s\n",
+                  sourceip, sourceport,http.method);
+            clean(this);
+        }
+        /*
+                HttpResHeader httpres("200 Fuck");
+                httpres.add("content-type","text/plain");
+                spdy_cframe_head *chead=(spdy_cframe_head *)(wbuff+write_len);
+                chead->magic=CTRL_MAGIC;
+                chead->type=htons(SYN_REPLY_TYPE);
+                chead->flag = 0;
+                write_len+=sizeof(*chead);
+
+                syn_reply_frame *srframe=(syn_reply_frame *)(wbuff+write_len);
+                srframe->id=htonl(sframe->id);
+                write_len += sizeof(*srframe);
+                buflen=bufleft();
+                buflen=spdy_deflate(&destream,headbuff,httpres.getstring(headbuff,SPDY),wbuff+write_len,buflen);
+                write_len+=buflen;
+                set24(chead->length,sizeof(syn_reply_frame)+buflen);
+
+                Write("welcome",7,sframe->id,FLAG_FIN);
+                handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::defaultHE;
+        */
     }
     Guest::defaultHE(events&(~EPOLLIN));
 }
 
 void Guest_spdy::synreplyHE(uint32_t events) {
     if(events & EPOLLIN) {
-        int len=sizeof(rbuff)-read_len;
+        int len=sizeof(rbuff)-readlen;
         if(len == 0) {
             LOGE( "([%s]:%d): The header is too long\n",sourceip, sourceport);
             epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
             return;
         }
-        int ret=Read(rbuff+read_len, len);
+        int ret=Read(rbuff+readlen, len);
         if(ret<=0 ) {
             if(showerrinfo(ret,"spdy syn read error")) {
                 clean(this);
@@ -166,63 +329,63 @@ void Guest_spdy::synreplyHE(uint32_t events) {
             return;
         }
 
-        read_len+=ret;
+        readlen+=ret;
     }
-    if(read_len >= expectlen) {
+    if(readlen >= expectlen) {
         syn_reply_frame *rframe=(syn_reply_frame *)rbuff;
         NTOHL(rframe->id);
         char headbuff[8192];
         size_t buflen=sizeof(headbuff);
         spdy_inflate(&instream,rbuff+sizeof(syn_reply_frame),expectlen-sizeof(syn_reply_frame),headbuff,buflen);
-        
-        memmove(rbuff,rbuff+expectlen,read_len-expectlen);
-        read_len-=expectlen;
+
+        memmove(rbuff,rbuff+expectlen,readlen-expectlen);
+        readlen-=expectlen;
         expectlen=0;
-        
+
         while(1);
     }
     Guest::defaultHE(events&(~EPOLLIN));
 }
 
 
-void Guest_spdy::rstHE(uint32_t events){
+void Guest_spdy::rstHE(uint32_t events) {
     if(events & EPOLLIN) {
-        int len=sizeof(rbuff)-read_len;
+        int len=sizeof(rbuff)-readlen;
         if(len == 0) {
             LOGE( "([%s]:%d): The header is too long\n",sourceip, sourceport);
             epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
             return;
         }
-        int ret=Read(rbuff+read_len, len);
+        int ret=Read(rbuff+readlen, len);
         if(ret<=0 ) {
             if(showerrinfo(ret,"spdy syn read error")) {
                 clean(this);
             }
             return;
         }
-        read_len+=ret;
+        readlen+=ret;
     }
-    if(read_len >= expectlen) {
-        read_len-=expectlen;
+    if(readlen >= expectlen) {
+        readlen-=expectlen;
         rst_frame *rframe=(rst_frame*)rbuff;
         NTOHL(rframe->id);
         NTOHL(rframe->code);
         fprintf(stderr,"get reset frame %d:%d\n",rframe->id,rframe->code);
         handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::defaultHE;
-        
+
     }
     Guest::defaultHE(events&(~EPOLLIN));
 }
 
-void Guest_spdy::goawayHE(uint32_t events){
+void Guest_spdy::goawayHE(uint32_t events) {
     if(events & EPOLLIN) {
-        int len=sizeof(rbuff)-read_len;
+        int len=sizeof(rbuff)-readlen;
         if(len == 0) {
             LOGE( "([%s]:%d): The header is too long\n",sourceip, sourceport);
             epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
             return;
         }
-        int ret=Read(rbuff+read_len, len);
+        int ret=Read(rbuff+readlen, len);
         if(ret<=0 ) {
             if(showerrinfo(ret,"spdy syn read error")) {
                 clean(this);
@@ -230,29 +393,29 @@ void Guest_spdy::goawayHE(uint32_t events){
             return;
         }
 
-        read_len+=ret;
+        readlen+=ret;
     }
 
-    if(read_len >= expectlen) {
+    if(readlen >= expectlen) {
         goaway_frame *gframe=(goaway_frame *)rbuff;
         NTOHL(gframe->id);
         NTOHL(gframe->code);
         LOG("([%s]:%d): The peer goaway %u:%u\n",sourceip, sourceport,
             gframe->id,gframe->code);
-        delete this;
+        clean(this);
     }
 }
 
 
 void Guest_spdy::ctrlframedefultHE(uint32_t events) {
     if(events & EPOLLIN) {
-        int len=sizeof(rbuff)-read_len;
+        int len=sizeof(rbuff)-readlen;
         if(len == 0) {
             LOGE( "([%s]:%d): The header is too long\n",sourceip, sourceport);
             epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
             return;
         }
-        int ret=Read(rbuff+read_len, len);
+        int ret=Read(rbuff+readlen, len);
         if(ret<=0 ) {
             if(showerrinfo(ret,"spdy syn read error")) {
                 clean(this);
@@ -260,15 +423,15 @@ void Guest_spdy::ctrlframedefultHE(uint32_t events) {
             return;
         }
 
-        read_len+=ret;
+        readlen+=ret;
     }
 
-    if(read_len >= expectlen) {
+    if(readlen >= expectlen) {
         memmove(rbuff,rbuff+expectlen,expectlen);
-        read_len-=expectlen;
+        readlen-=expectlen;
         expectlen=0;
         handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::defaultHE;
-        if(read_len) {
+        if(readlen) {
             (this ->*handleEvent) (events&(~EPOLLIN));
         }
     }

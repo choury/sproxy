@@ -18,6 +18,9 @@ Guest_s::Guest_s(int fd, SSL* ssl): Guest(fd), ssl(ssl) {
 
 Guest_s::Guest_s(Guest_s* copy){
     *this=*copy;
+    bindex.del(copy,bindex.query(copy));
+    bindex.add(this,bindex.query(copy));
+    
     copy->fd=0;
     copy->ssl=NULL;
     delete copy;
@@ -36,23 +39,23 @@ Guest_s::~Guest_s() {
     }
 }
 
-int Guest_s::Read(void* buff, size_t size) {
+ssize_t Guest_s::Read(void* buff, size_t size) {
     return SSL_read(ssl, buff, size);
 }
 
 
-int Guest_s::Write() {
-    int ret = SSL_write(ssl, wbuff, write_len);
+ssize_t Guest_s::Write() {
+    ssize_t ret = SSL_write(ssl, wbuff, writelen);
 
     if (ret <= 0) {
         return ret;
     }
 
-    if (ret != write_len) {
-        memmove(wbuff, wbuff + ret, write_len - ret);
-        write_len -= ret;
+    if ((size_t)ret != writelen) {
+        memmove(wbuff, wbuff + ret, writelen - ret);
+        writelen -= ret;
     } else {
-        write_len = 0;
+        writelen = 0;
     }
 
     return ret;

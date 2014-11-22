@@ -24,16 +24,18 @@ extern Bindex bindex;
 class Peer:public Con{
 protected:
     int  fd;
+    size_t  writelen=0;
+    size_t  readlen=0;
     char wbuff[1024 * 1024];
-    int  write_len=0;
+    char rbuff[HEALLENLIMIT];
     Peer();  //do nothing
     Peer(int fd);
-    virtual int Write();
-    virtual int Read(void *buff,size_t size);
-    virtual void clean(Peer *who)=0;
+    virtual ssize_t Read(void *buff,size_t size);
+    virtual ssize_t Write();
 public:
+    virtual void clean(Peer *who)=0;
+    virtual ssize_t Write(Peer* who,const void *buff,size_t size);
     virtual void writedcb();
-    virtual int Write(Peer* who,const void *buff,size_t size);
     virtual size_t bufleft();
     virtual int showerrinfo(int ret,const char * )=0;
     virtual ~Peer();

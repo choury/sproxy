@@ -7,9 +7,9 @@
 #include <string>
 #include <map>
 
-#define LOADBSUC   "HTTP/1.0 200 Proxy list Loaded" CRLF CRLF
 #define ADDBTIP    "HTTP/1.0 200 Proxy site Added" CRLF CRLF
 #define DELBTIP    "HTTP/1.0 200 Proxy site Deleted" CRLF CRLF
+#define DELFTIP    "HTTP/1.0 404 The site is not found" CRLF CRLF
 #define EGLOBLETIP  "HTTP/1.0 200 Global proxy enabled now" CRLF CRLF
 #define DGLOBLETIP  "HTTP/1.0 200 Global proxy disabled" CRLF CRLF
 
@@ -43,18 +43,20 @@ public:
     char path[URLLIMIT];
     uint16_t port;
     HttpReqHeader(char *header)throw (int);
-    int getstring(char *);
+    int getstring(char* buff, protocol prot);
     bool ismethod(const char *);
-    string getval(const char *key);
+    const char* getval(const char *key);
 };
 
 class HttpResHeader{
     map<string,string> header;
 public:
+    char version[20];
     char status[100];
-    HttpResHeader(const char* status);
+    HttpResHeader(char* status);
     void add(const char *header,const char *value);
     void del(const char *header);
+    const char* getval(const char *key);
     int getstring(char *,protocol proto);
 };
 

@@ -14,20 +14,27 @@ Host::Host() {
 
 }
 
-Host::Host(Guest* guest ,const char* hostname,uint16_t port) {
+
+Host::Host(HttpReqHeader *Req,Guest* guest,const char* hostname,uint16_t port) {
     bindex.add(guest,this);
     this->fd=0;
-    write_len = 0;
-
-    strcpy(this->hostname, hostname);
-    this->targetport=port;
-
-
+    writelen = 0;
+    
+    this->Req=Req;
+    strcpy(this->hostname,hostname);
+    this->port=port;
     handleEvent=(void (Con::*)(uint32_t))&Host::waitconnectHE;
 
     if(query(hostname,(DNSCBfunc)Host::Dnscallback,this)<0) {
         LOGE("DNS qerry falied\n");
         throw 0;
+    }
+}
+
+
+Host::~Host(){
+    if(Req){
+        delete Req;
     }
 }
 
@@ -55,22 +62,25 @@ void Host::waitconnectHE(uint32_t events) {
             return;
         }
         if (error != 0) {
-            LOGE( "connect to %s: %s\n",hostname, strerror(error));
+            LOGE( "connect to %s: %s\n",Req->hostname, strerror(error));
             if(connect()<0) {
                 clean(this);
             }
             return;
         }
-        if(guest->connectedcb) {
-            (guest->*guest->connectedcb)();
-        }
-
+        writelen= Req->getstring(wbuff,HTTP);
+        
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLIN | EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-
         handleEvent=(void (Con::*)(uint32_t))&Host::defaultHE;
+        
+        guest->connected(Req->method);
+    }
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        LOGE("host unkown error: %s\n",strerror(errno));
+        clean(this);
     }
 }
 
@@ -108,7 +118,7 @@ void Host::defaultHE(uint32_t events) {
     }
 
     if (events & EPOLLOUT) {
-        if (write_len) {
+        if (writelen) {
             int ret = Write();
             if (ret <= 0) {
                 if(showerrinfo(ret,"host write error")) {
@@ -120,7 +130,7 @@ void Host::defaultHE(uint32_t events) {
 
         }
 
-        if (write_len == 0) {
+        if (writelen == 0) {
             event.events = EPOLLIN;
             epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
         }
@@ -148,7 +158,7 @@ void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
     } else {
         host->addr=rcd.addr;
         for(size_t i=0; i<host->addr.size(); ++i) {
-            host->addr[i].addr_in6.sin6_port=htons(host->targetport);
+            host->addr[i].addr_in6.sin6_port=htons(host->port);
         }
         if(host->connect()<0) {
             LOGE("connect to %s failed\n",host->hostname);
@@ -171,7 +181,7 @@ int Host::connect() {
         }
         fd=Connect(&addr[testedaddr++].addr);
         if(fd <0 ) {
-            LOGE("connect to %s failed\n",hostname);
+            LOGE("connect to %s failed\n",Req->hostname);
             return connect();
         }
     }
@@ -181,7 +191,7 @@ int Host::connect() {
 
 void Host::clean(Peer *who) {
     Guest *guest =(Guest *)bindex.query(this);
-    if(guest && who != guest) {
+    if(guest) {
         guest->clean(this);
     }
     bindex.del(this,guest);
@@ -195,22 +205,22 @@ void Host::clean(Peer *who) {
 }
 
 
-Host* Host::gethost(HttpReqHeader* http,Guest* guest) {
-    if(checkproxy(http->hostname)) {
-        return Proxy::getproxy(guest,http);
-    } else {
-        Host* exist=(Host *)bindex.query(guest);
-        char buff[HEALLENLIMIT];
-        if (exist && exist->targetport == http->port && strcasecmp(exist->hostname, http->hostname) == 0) {
-            exist->Write(guest,buff, http->getstring(buff));
-            return exist;
-        }
-        if (exist != NULL) {
-            exist->clean(guest);
-        }
-        Host *newhost = new Host(guest,http->hostname,http->port);
-        newhost->Write(guest,buff, http->getstring(buff));
-        return newhost;
+Host* Host::gethost(HttpReqHeader* Req,Guest* guest) {
+    if(checkproxy(Req->hostname)) {
+        return Proxy::getproxy(Req,guest);
     }
+    Host* exist=(Host *)bindex.query(guest);
+    if (exist && exist->port == Req->port && strcasecmp(exist->hostname, Req->hostname) == 0) {
+        char buff[HEALLENLIMIT];
+        exist->Write(guest,buff, Req->getstring(buff,HTTP));
+        guest->connected(Req->method);
+        return exist;
+    }
+    if (exist != NULL) {
+        exist->clean(guest);
+    }
+    
+    Host *newhost = new Host(Req,guest,Req->hostname,Req->port);
+    return newhost;
 }
 
