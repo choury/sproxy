@@ -19,8 +19,8 @@ Host::Host(HttpReqHeader *Req,Guest* guest,const char* hostname,uint16_t port) {
     bindex.add(guest,this);
     this->fd=0;
     writelen = 0;
-    
-    this->Req=Req;
+
+    this->req=Req;
     strcpy(this->hostname,hostname);
     this->port=port;
     handleEvent=(void (Con::*)(uint32_t))&Host::waitconnectHE;
@@ -32,9 +32,9 @@ Host::Host(HttpReqHeader *Req,Guest* guest,const char* hostname,uint16_t port) {
 }
 
 
-Host::~Host(){
-    if(Req){
-        delete Req;
+Host::~Host() {
+    if(req) {
+        delete req;
     }
 }
 
@@ -62,21 +62,21 @@ void Host::waitconnectHE(uint32_t events) {
             return;
         }
         if (error != 0) {
-            LOGE( "connect to %s: %s\n",Req->hostname, strerror(error));
+            LOGE( "connect to %s: %s\n",req->hostname, strerror(error));
             if(connect()<0) {
                 clean(this);
             }
             return;
         }
-        writelen= Req->getstring(wbuff,HTTP);
-        
+
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLIN | EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+
+        writelen= req->getstring(wbuff,HTTP);
+        guest->connected(req->method);
         handleEvent=(void (Con::*)(uint32_t))&Host::defaultHE;
-        
-        guest->connected(Req->method);
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("host unkown error: %s\n",strerror(errno));
@@ -181,11 +181,24 @@ int Host::connect() {
         }
         fd=Connect(&addr[testedaddr++].addr);
         if(fd <0 ) {
-            LOGE("connect to %s failed\n",Req->hostname);
+            LOGE("connect to %s failed\n",req->hostname);
             return connect();
         }
     }
     return 0;
+}
+
+void Host::Request(HttpReqHeader* req,Guest *guest) {
+    writelen+=req->getstring(wbuff+writelen,HTTP);
+    struct epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLIN | EPOLLOUT;
+    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+
+    if(this->req) {
+        delete this->req;
+    }
+    this->req=req;
 }
 
 
@@ -205,22 +218,21 @@ void Host::clean(Peer *who) {
 }
 
 
-Host* Host::gethost(HttpReqHeader* Req,Guest* guest) {
-    if(checkproxy(Req->hostname)) {
-        return Proxy::getproxy(Req,guest);
+Host* Host::gethost(HttpReqHeader* req,Guest* guest) {
+    if(checkproxy(req->hostname)) {
+        return Proxy::getproxy(req,guest);
     }
     Host* exist=(Host *)bindex.query(guest);
-    if (exist && exist->port == Req->port && strcasecmp(exist->hostname, Req->hostname) == 0) {
-        char buff[HEALLENLIMIT];
-        exist->Write(guest,buff, Req->getstring(buff,HTTP));
-        guest->connected(Req->method);
+    if (exist && exist->port == req->port && strcasecmp(exist->hostname, req->hostname) == 0) {
+        exist->Request(req,guest);
+        guest->connected(req->method);
         return exist;
     }
     if (exist != NULL) {
         exist->clean(guest);
     }
-    
-    Host *newhost = new Host(Req,guest,Req->hostname,Req->port);
+
+    Host *newhost = new Host(req,guest,req->hostname,req->port);
     return newhost;
 }
 

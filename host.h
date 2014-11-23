@@ -14,7 +14,7 @@ class Host:public Peer{
     size_t testedaddr=0;
     std::vector<sockaddr_un> addr;
 protected:
-    HttpReqHeader *Req;
+    HttpReqHeader *req=nullptr;
     virtual int showerrinfo(int ret,const char *s)override;
     virtual void waitconnectHE(uint32_t events);
     virtual void defaultHE(uint32_t events);
@@ -26,7 +26,8 @@ public:
     Host(HttpReqHeader *req, Guest *guest,const char* hostname,uint16_t port);
     virtual ~Host();
     virtual void clean(Peer *) override;
-    static Host *gethost(HttpReqHeader *Req,Guest* guest);
+    virtual void Request(HttpReqHeader* req,Guest *guest);
+    static Host *gethost(HttpReqHeader *req,Guest* guest);
 };
 
 #endif

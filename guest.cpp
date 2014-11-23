@@ -76,10 +76,14 @@ void Guest::connected(const char *method) {
         readlen = 0;
     }
     
+    if(expectlen){
+        handleEvent=(void (Con::*)(uint32_t))&Guest::postHE;
+    }
+    
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
 }
 
 int Guest::showerrinfo(int ret,const char *s) {
@@ -96,7 +100,7 @@ void Guest::getheaderHE(uint32_t events) {
         int len=sizeof(rbuff)-readlen;
         if(len == 0) {
             LOGE( "([%s]:%d): The header is too long\n",sourceip, sourceport);
-            epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+            clean(this);
             return;
         }
         int ret=Read(rbuff+readlen, len);
@@ -143,8 +147,8 @@ void Guest::getheaderHE(uint32_t events) {
                         return;
                     }
                     sscanf(lenpoint, "%u", &expectlen);
+                    expectlen-=readlen;
                     Host::gethost(Req,this);
-                    handleEvent=(void (Con::*)(uint32_t))&Guest::postHE;
                     epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
                 } else if (Req->ismethod("CONNECT")) {
                     Host::gethost(Req,this);

@@ -18,9 +18,9 @@ protected:
     virtual void shakehandHE(uint32_t events);
 public:
     Proxy(Proxy *copy);
-    Proxy(HttpReqHeader *Req,Guest *guest);
+    Proxy(HttpReqHeader *req,Guest *guest);
     virtual ~Proxy();
-    static Host *getproxy(HttpReqHeader* Req,Guest *guest);
+    static Host *getproxy(HttpReqHeader* req,Guest *guest);
 };
 
 

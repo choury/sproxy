@@ -257,17 +257,17 @@ void Guest_spdy::synHE(uint32_t events) {
         readlen-=expectlen;
         memmove(rbuff,rbuff+expectlen,readlen);
 
-        HttpReqHeader http(headbuff);
-        http.port=80;
+        HttpReqHeader *Req=new HttpReqHeader(headbuff);
+        Req->port=80;
         LOG( "([%s]:%d): %s %s\n",
              sourceip, sourceport,
-             http.method, http.url);
+             Req->method, Req->url);
 
-        if ( http.ismethod("GET") ||  http.ismethod("HEAD") ) {
-            host2id[Host::gethost(&http,this)]=sframe->id;
+        if ( Req->ismethod("GET") ||  Req->ismethod("HEAD") ) {
+            host2id[Host::gethost(Req,this)]=sframe->id;
             handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::defaultHE;
-        } else if (http.ismethod("POST") ) {
-            const char* lenpoint=http.getval("Content-Length");
+        } else if (Req->ismethod("POST") ) {
+            const char* lenpoint=Req->getval("Content-Length");
             if (lenpoint == NULL) {
                 LOGE( "([%s]:%d): unsported post version\n",sourceip, sourceport);
                 clean(this);
@@ -276,17 +276,15 @@ void Guest_spdy::synHE(uint32_t events) {
 
             sscanf(lenpoint, "%u", &expectlen);
             expectlen -= readlen;
-            Host *host=Host::gethost(&http,this);
+            Host *host=Host::gethost(Req,this);
             host2id[host]=sframe->id;
-            host->Write(this,rbuff, readlen);
-            readlen = 0;
             handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::postHE;
-        } else if (http.ismethod("CONNECT")) {
-            host2id[Host::gethost(&http,this)]=sframe->id;
+        } else if (Req->ismethod("CONNECT")) {
+            host2id[Host::gethost(Req,this)]=sframe->id;
             handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::defaultHE;
         } else {
             LOGE( "([%s]:%d): unsported method:%s\n",
-                  sourceip, sourceport,http.method);
+                  sourceip, sourceport,Req->method);
             clean(this);
         }
         /*
@@ -323,7 +321,7 @@ void Guest_spdy::synreplyHE(uint32_t events) {
         }
         int ret=Read(rbuff+readlen, len);
         if(ret<=0 ) {
-            if(showerrinfo(ret,"spdy syn read error")) {
+            if(showerrinfo(ret,"spdy syn reply read error")) {
                 clean(this);
             }
             return;
