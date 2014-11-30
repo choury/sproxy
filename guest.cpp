@@ -113,7 +113,7 @@ void Guest::getheaderHE(uint32_t events) {
 
         readlen += ret;
 
-        if (char* headerend = strnstr(rbuff, CRLF CRLF, readlen)) {
+        if (uchar* headerend = (uchar *)strnstr((char *)rbuff, CRLF CRLF, readlen)) {
             headerend += strlen(CRLF CRLF);
             size_t headerlen = headerend - rbuff;
             try {
@@ -137,9 +137,10 @@ void Guest::getheaderHE(uint32_t events) {
 
     
                 if ( Req->ismethod("GET") ||  Req->ismethod("HEAD") ) {
-                    Host::gethost(Req,this);
                     epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+                    Host::gethost(Req,this);
                 } else if (Req->ismethod("POST") ) {
+                    epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
                     const char* lenpoint=Req->getval("Content-Length");
                     if (lenpoint == NULL) {
                         LOGE( "([%s]:%d): unsported post version\n",sourceip, sourceport);
@@ -149,11 +150,10 @@ void Guest::getheaderHE(uint32_t events) {
                     sscanf(lenpoint, "%u", &expectlen);
                     expectlen-=readlen;
                     Host::gethost(Req,this);
-                    epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
                 } else if (Req->ismethod("CONNECT")) {
+                    epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
                     Host::gethost(Req,this);
                     handleEvent=(void (Con::*)(uint32_t))&Guest::defaultHE;
-                    epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
                 }else if (Req->ismethod("ADDPSITE")) {
                     addpsite(Req->url);
                     Write(this,ADDBTIP, strlen(ADDBTIP));
@@ -298,13 +298,17 @@ void Guest::closeHE(uint32_t events) {
 
 
 void Guest::clean(Peer *) {
-    bindex.del(this,bindex.query(this));
+    Host *host =(Host *)bindex.query(this);
+    if(host) {
+        host->clean(this);
+    }
+    bindex.del(this,host);
 
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLOUT;
+    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-
     handleEvent=(void (Con::*)(uint32_t))&Guest::closeHE;
 }
 

@@ -42,8 +42,8 @@ public:
     char hostname[DOMAINLIMIT];
     char path[URLLIMIT];
     uint16_t port;
-    HttpReqHeader(char *header)throw (int);
-    int getstring(char* buff, protocol prot);
+    HttpReqHeader(uchar* header)throw (int);
+    int getstring(void* buff, protocol prot);
     bool ismethod(const char *);
     const char* getval(const char *key);
 };

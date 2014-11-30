@@ -2,7 +2,7 @@
 #define __SPDY_TYPE_H__
 
 #include <stdint.h>
-
+#include <stddef.h>
 #include <endian.h>
 
 #define SPDY_VERSION 3
@@ -90,7 +90,9 @@ typedef struct{
     uint8_t c:1;
     uint8_t :7;
 #endif
-    uint8_t unused[7];
+    uint8_t unused[3];
+    uint8_t flag;
+    uint8_t length[3];
 }__attribute__ ((packed)) spdy_head;
 
 /*

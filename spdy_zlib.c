@@ -233,7 +233,7 @@ ssize_t spdy_deflate(z_stream *c_stream,void *buffin,size_t inlen,void *buffout,
         LOGE("deflate error:%d\n",err);
         return -1;
     }
-    int ret = c_stream->total_out;
+    int ret = outlen-c_stream->avail_out;
     return ret;
 }
 

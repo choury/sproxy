@@ -212,6 +212,7 @@ void Host::clean(Peer *who) {
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLOUT;
+    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 
     handleEvent=(void (Con::*)(uint32_t))&Host::closeHE;
@@ -219,9 +220,11 @@ void Host::clean(Peer *who) {
 
 
 Host* Host::gethost(HttpReqHeader* req,Guest* guest) {
+#ifdef CLIENT
     if(checkproxy(req->hostname)) {
         return Proxy::getproxy(req,guest);
     }
+#endif
     Host* exist=(Host *)bindex.query(guest);
     if (exist && exist->port == req->port && strcasecmp(exist->hostname, req->hostname) == 0) {
         exist->Request(req,guest);

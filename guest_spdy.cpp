@@ -250,7 +250,7 @@ void Guest_spdy::synHE(uint32_t events) {
     if(readlen >= expectlen) {
         syn_frame *sframe=(syn_frame*)rbuff;
         NTOHL(sframe->id);
-        char headbuff[8192];
+        uchar headbuff[8192];
         size_t buflen=sizeof(headbuff);
         spdy_inflate(&instream,rbuff+sizeof(syn_frame),expectlen-sizeof(syn_frame),headbuff,buflen);
 

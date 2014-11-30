@@ -26,8 +26,8 @@ protected:
     int  fd;
     size_t  writelen=0;
     size_t  readlen=0;
-    char wbuff[1024 * 1024];
-    char rbuff[HEALLENLIMIT];
+    uchar wbuff[1024 * 1024];
+    uchar rbuff[HEADLENLIMIT];
     Peer();  //do nothing
     Peer(int fd);
     virtual ssize_t Read(void *buff,size_t size);

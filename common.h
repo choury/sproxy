@@ -14,7 +14,7 @@ extern char SHOST[];
 
 #define Min(x,y) ((x)<(y)?(x):(y))
 
-#define HEALLENLIMIT   8192
+#define HEADLENLIMIT   8192
 
 #ifdef _ANDROID_
 
@@ -41,6 +41,7 @@ extern "C" {
 #define NTOHL(x) (x=ntohl(x))
 #define NTOHS(x) (x=ntohs(x))
 
+typedef unsigned char uchar;
 char* strnstr(const char* s1, const char* s2, size_t len);
 
     

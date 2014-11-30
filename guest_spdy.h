@@ -1,5 +1,5 @@
-#ifndef __SPDY_H__
-#define __SPDY_H__
+#ifndef __GUEST_SPDY_H__
+#define __GUEST_SPDY_H__
 
 #include "guest_s.h"
 #include "zlib.h"
@@ -33,7 +33,7 @@ public:
 class Hostinfo{
 public:
     uint32_t id;
-    char buff[HEALLENLIMIT];
+    char buff[HEADLENLIMIT];
     uint32_t readlen=0;
     uint32_t expectlen=0;
     ssize_t (Guest_spdy::*Write)(Hostinfo* who,const void *buff,size_t size)=&Guest_spdy::HeaderWrite;

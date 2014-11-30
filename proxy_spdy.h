@@ -10,10 +10,14 @@ class Proxy_spdy:public Proxy,public Spdy{
     uint32_t curid=1;
     z_stream instream;
     z_stream destream;
-    std::map<void *,uint32_t> guest2id;
-    std::map<uint32_t,void *> id2guest;
+    std::map<Peer *,uint32_t> guest2id;
+    std::map<uint32_t,Peer *> id2guest;
 protected:
+    void ErrProc(uint32_t errcode);
     virtual void defaultHE(uint32_t events)override;
+    virtual void FrameProc(syn_reply_frame*);
+    virtual void FrameProc(goaway_frame *);;
+    virtual void FrameProc(void *,size_t);
 public:
     Proxy_spdy(Proxy* copy,Guest *guest);
     virtual void clean(Peer *)override;

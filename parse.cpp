@@ -6,8 +6,9 @@
 
 #include <arpa/inet.h>
 
-#include "parse.h"
 #include "common.h"
+#include "parse.h"
+
 
 
 #define PROXYFILE "proxy.list"
@@ -206,12 +207,13 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
 }
 
 
-HttpReqHeader::HttpReqHeader(char* header)throw (int) {
+HttpReqHeader::HttpReqHeader(uchar* header)throw (int) {
     if(header[0]) {  //第一个字节不为0，说明是一个HTTP/1.x头部
-        *(strstr(header, CRLF CRLF) + strlen(CRLF)) = 0;
+        char *httpheader=(char *)header;
+        *(strstr(httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
         memset(path,0,sizeof(path));
         memset(url,0,sizeof(url));
-        sscanf(header, "%s%*[ ]%[^\r\n ]", method, url);
+        sscanf(httpheader, "%s%*[ ]%[^\r\n ]", method, url);
         toUpper(method);
         port=80;
 
@@ -221,7 +223,7 @@ HttpReqHeader::HttpReqHeader(char* header)throw (int) {
         }
 
 
-        for (char* str = strstr(header, CRLF) + strlen(CRLF); ; str = NULL) {
+        for (char* str = strstr(httpheader, CRLF) + strlen(CRLF); ; str = NULL) {
             char* p = strtok(str, CRLF);
 
             if (p == NULL)
@@ -282,7 +284,8 @@ char *addnv(void *buff,const char *name,size_t nlen,const char *val,size_t vlen)
     return q;
 }
 
-int HttpReqHeader::getstring(char* buff,protocol prot) {
+int HttpReqHeader::getstring(void* outbuff, protocol prot) {
+    char *buff=(char *)outbuff;
     if(prot == HTTP){
         int p;
         if(checkproxy(hostname)) {
@@ -308,6 +311,8 @@ int HttpReqHeader::getstring(char* buff,protocol prot) {
         return p + strlen(CRLF);
     }else{
         char *p=buff;
+        *(uint32_t *)p=htonl(header.size()+5);
+        p += 4;
         p=addnv(p,":method",7,method,strlen(method));
         p=addnv(p,":path",5,path,strlen(path));
         p=addnv(p,":version",8,"HTTP/1.1",8);
@@ -360,6 +365,7 @@ HttpResHeader::HttpResHeader(char* header) {
         for(size_t i=0; i<c; ++i) {
             uint32_t nlen=ntohl(*p++);
             char *np=(char *)p;
+            *np=toupper(*np);
             p=(uint32_t*)(np+nlen);
             uint32_t vlen=ntohl(*p++);
             char *vp=(char *)p;
@@ -384,6 +390,11 @@ void HttpResHeader::add(const char* header, const char* value) {
     this->header[header]=value;
 }
 
+void HttpResHeader::del(const char* header){
+    this->header.erase(header);
+}
+
+
 const char* HttpResHeader::getval(const char* key) {
     if(header.count(key)) {
         return header[key].c_str();
@@ -393,10 +404,9 @@ const char* HttpResHeader::getval(const char* key) {
 }
 
 int HttpResHeader::getstring(char* buff, protocol proto) {
-    switch(proto) {
-    case HTTP:
+    if(proto== HTTP){
         int p;
-        sprintf(buff, "%s HTTP/1.1" CRLF "%n",status, &p);
+        sprintf(buff, "HTTP/1.1 %s" CRLF "%n",status, &p);
         for (auto i : header) {
             int len;
             sprintf(buff + p, "%s: %s" CRLF "%n", i.first.c_str(), i.second.c_str(), &len);
@@ -405,40 +415,16 @@ int HttpResHeader::getstring(char* buff, protocol proto) {
 
         sprintf(buff + p, CRLF);
         return p + strlen(CRLF);
-    case SPDY:
-        uint32_t *q=(uint32_t *)buff;
-        *q++=htonl(header.size()+2);
+    }else{
+        char *p=buff;
+        *(uint32_t *)p=htonl(header.size()+2);
+        p += 4;
+        p=addnv(p,":status",7,status,strlen(status));
+        p=addnv(p,":version",8,"HTTP/1.1",8);
 
-        //for ":status" => "200 OK" etc
-        int nlen=7;
-        *q++=htonl(nlen);
-        memcpy(q,":status",nlen);
-        q=(uint32_t *)(((char *)q)+nlen);
-        int vlen=strlen(status);
-        *q++=htonl(vlen);
-        memcpy(q,status,vlen);
-        q=(uint32_t *)(((char *)q)+vlen);
-
-        //for ":version" => "HTTP/1.1"
-        nlen=8;
-        *q++=htonl(nlen);
-        memcpy(q,":version",nlen);
-        q=(uint32_t *)(((char *)q)+nlen);
-        vlen=strlen("HTTP/1.1");
-        *q++=htonl(vlen);
-        memcpy(q,"HTTP/1.1",vlen);
-        q=(uint32_t *)(((char *)q)+vlen);
         for (auto i : header) {
-            nlen=i.first.length();
-            *q++=htonl(nlen);
-            memcpy(q,toLower(i.first).data(),nlen);
-            q=(uint32_t *)(((char *)q)+nlen);
-            vlen=i.second.length();
-            *q++=htonl(vlen);
-            memcpy(q,i.second.data(),vlen);
-            q=(uint32_t *)(((char *)q)+vlen);
+            p=addnv(p,i.first.data(),i.first.length(),i.second.data(),i.second.length());
         }
-        return (char *)q-buff;
+        return p-buff;
     }
-    return 0;
 }
