@@ -23,7 +23,6 @@ protected:
 public:
     Guest();
     Guest(int fd);
-    virtual void clean(Peer *) override;
     virtual void connected(const char *method);
 };
 

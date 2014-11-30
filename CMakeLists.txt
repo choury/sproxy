@@ -16,6 +16,6 @@ spdy.cpp proxy_spdy.cpp spdy_zlib.c
 peer.cpp guest.cpp host.cpp proxy.cpp 
 lib.c parse.cpp client.cpp net.c dns.cpp)
 
-SET_TARGET_PROPERTIES(sproxy_client PROPERTIES COMPILE_FLAGS "-DCLIENAT")
+target_compile_definitions(sproxy_client PUBLIC CLIENT)
 
 install(TARGETS sproxy_client RUNTIME DESTINATION bin)

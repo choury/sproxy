@@ -25,7 +25,6 @@ public:
     Host();
     Host(HttpReqHeader *req, Guest *guest,const char* hostname,uint16_t port);
     virtual ~Host();
-    virtual void clean(Peer *) override;
     virtual void Request(HttpReqHeader* req,Guest *guest);
     static Host *gethost(HttpReqHeader *req,Guest* guest);
 };

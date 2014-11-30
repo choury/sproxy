@@ -202,23 +202,6 @@ void Host::Request(HttpReqHeader* req,Guest *guest) {
 }
 
 
-void Host::clean(Peer *who) {
-    Guest *guest =(Guest *)bindex.query(this);
-    if(guest) {
-        guest->clean(this);
-    }
-    bindex.del(this,guest);
-
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-
-    handleEvent=(void (Con::*)(uint32_t))&Host::closeHE;
-}
-
-
 Host* Host::gethost(HttpReqHeader* req,Guest* guest) {
 #ifdef CLIENT
     if(checkproxy(req->hostname)) {

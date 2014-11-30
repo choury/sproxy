@@ -83,7 +83,9 @@ void Guest::connected(const char *method) {
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+    if(epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT){
+        epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+    }
 }
 
 int Guest::showerrinfo(int ret,const char *s) {
@@ -295,21 +297,4 @@ void Guest::closeHE(uint32_t events) {
         }
     }
 }
-
-
-void Guest::clean(Peer *) {
-    Host *host =(Host *)bindex.query(this);
-    if(host) {
-        host->clean(this);
-    }
-    bindex.del(this,host);
-
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    handleEvent=(void (Con::*)(uint32_t))&Guest::closeHE;
-}
-
 

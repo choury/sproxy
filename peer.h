@@ -32,8 +32,9 @@ protected:
     Peer(int fd);
     virtual ssize_t Read(void *buff,size_t size);
     virtual ssize_t Write();
+    virtual void closeHE(uint32_t events)=0;
 public:
-    virtual void clean(Peer *who)=0;
+    virtual void clean(Peer *who);
     virtual ssize_t Write(Peer* who,const void *buff,size_t size);
     virtual void writedcb();
     virtual size_t bufleft();

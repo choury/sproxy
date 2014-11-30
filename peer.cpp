@@ -76,7 +76,9 @@ void Peer::writedcb() {
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+    if(epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT){
+        epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+    }
 }
 
 
@@ -106,5 +108,25 @@ ssize_t Peer::Write() {
 
 size_t Peer::bufleft() {
     return sizeof(wbuff) - writelen;
+}
+
+void Peer::clean(Peer* who){
+    Peer *peer =(Peer *)bindex.query(this);
+    bindex.del(this,peer);
+    if(peer) {
+        peer->clean(this);
+    }
+    
+    if(fd!=0){
+        struct epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLOUT;
+        if(epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT){
+            epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+        }
+        handleEvent=(void (Con::*)(uint32_t))&Peer::closeHE;
+    }else{
+        delete this;
+    }
 }
 
