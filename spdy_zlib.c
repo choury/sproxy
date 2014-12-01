@@ -196,7 +196,7 @@ int spdy_deflate_init(z_stream *stream){
     stream->zfree = Z_NULL;
     stream->opaque = Z_NULL;
 
-    int err = deflateInit2(stream, Z_NO_COMPRESSION ,
+    int err = deflateInit2(stream, Z_DEFAULT_COMPRESSION ,
                           Z_DEFLATED, WINDOW_BITS, MEM_LEVEL,
                           Z_DEFAULT_STRATEGY);
     if(err != Z_OK) {

@@ -126,6 +126,9 @@ void Spdy::SynreplyProc(void *buff,size_t buflen,void (Spdy::*ErrProc)(uint32_t)
         FrameProc((syn_reply_frame *)spdy_buff);
         Proc = &Spdy::HeaderProc;
         spdy_getlen=0;
+        if(spdy_flag & FLAG_FIN){
+            FrameProc(buff,0);
+        }
         if(buflen){
             (this ->*Proc) (buff,buflen,ErrProc);
         }
@@ -192,6 +195,7 @@ void Spdy::DataProc(void *buff,size_t buflen,void (Spdy::*ErrProc)(uint32_t)){
             FrameProc(buff,0);
         }
         Proc=&Spdy::HeaderProc;
+        spdy_getlen=0;
         if(buflen){
             HeaderProc(buff,buflen,ErrProc);
         }
@@ -207,6 +211,7 @@ void Spdy::DefaultProc(void *buff,size_t buflen,void (Spdy::*ErrProc)(uint32_t))
         buflen-=spdy_expectlen;
         memmove(buff,(char *)buff+spdy_expectlen,buflen);
         Proc=&Spdy::HeaderProc;
+        spdy_getlen=0;
         if(buflen){
             HeaderProc(buff,buflen,ErrProc);
         }

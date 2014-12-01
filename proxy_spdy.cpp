@@ -100,14 +100,14 @@ void Proxy_spdy::defaultHE(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
     if (events & EPOLLIN ) {
-        readlen = Read(rbuff, sizeof(rbuff));
-        if (readlen <= 0) {
-            if(showerrinfo(readlen,"proxy_spdy write error")) {
+        ssize_t ret = Read(rbuff, sizeof(rbuff));
+        if (ret <= 0) {
+            if(showerrinfo(ret,"proxy_spdy write error")) {
                 clean(this);
             }
             return;
         }
-        (this->*Proc)(rbuff,readlen,(void (Spdy::*)(uint32_t))&Proxy_spdy::ErrProc);
+        (this->*Proc)(rbuff,ret,(void (Spdy::*)(uint32_t))&Proxy_spdy::ErrProc);
     }
     if (events & EPOLLOUT) {
         if (writelen) {
@@ -143,7 +143,6 @@ void Proxy_spdy::FrameProc(syn_reply_frame* sframe){
     char buff[HEADLENLIMIT];
     spdy_inflate(&instream,p,spdy_getlen-sizeof(*sframe),buff,sizeof(buff));
     HttpResHeader res(buff);
-    res.del("Content-Length");
     res.add("Transfer-Encoding","chunked");
     guest->Write(this,buff,res.getstring(buff,HTTP));
 }

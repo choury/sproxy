@@ -279,7 +279,7 @@ char *addnv(void *buff,const char *name,size_t nlen,const char *val,size_t vlen)
     *p++=htonl(vlen);
     q=(char *)p;
     while(vlen--){
-        *q++=tolower(*val++);
+        *q++=*val++;
     }
     return q;
 }
@@ -314,10 +314,14 @@ int HttpReqHeader::getstring(void* outbuff, protocol prot) {
         *(uint32_t *)p=htonl(header.size()+5);
         p += 4;
         p=addnv(p,":method",7,method,strlen(method));
-        p=addnv(p,":path",5,path,strlen(path));
         p=addnv(p,":version",8,"HTTP/1.1",8);
         p=addnv(p,":host",5,hostname,strlen(hostname));
-        p=addnv(p,":scheme",7,"http",4);
+        if(strcmp(method,"CONNECT")==0){
+            p=addnv(p,":path",5,url,strlen(url));
+        }else{
+            p=addnv(p,":path",5,path,strlen(path));
+            p=addnv(p,":scheme",7,"http",4);
+        }
         for(auto i:header){
             p=addnv(p,i.first.data(),i.first.length(),i.second.data(),i.second.length());
         }
