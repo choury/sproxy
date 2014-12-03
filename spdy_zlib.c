@@ -221,11 +221,12 @@ int spdy_deflate_init(z_stream *stream){
  */
 ssize_t spdy_deflate(z_stream *c_stream,void *buffin,size_t inlen,void *buffout,size_t outlen) {
     
+    c_stream->next_in = buffin; /* 输入要压缩的字符串 */
+    c_stream->avail_in = inlen;
+    c_stream->total_in = 0;
     c_stream->next_out = buffout;
-    c_stream->avail_out = outlen;
-
-    c_stream->next_in = (Bytef*)buffin; /* 输入要压缩的字符串 */
-    c_stream->avail_in = (uInt)inlen;
+    c_stream->avail_out = outlen==0 ? 0xffffffff:outlen;
+    c_stream->total_out =0;
 
     /* 直接进行压缩 */
     int err = deflate(c_stream, Z_SYNC_FLUSH);
@@ -233,7 +234,7 @@ ssize_t spdy_deflate(z_stream *c_stream,void *buffin,size_t inlen,void *buffout,
         LOGE("deflate error:%d\n",err);
         return -1;
     }
-    int ret = outlen-c_stream->avail_out;
+    int ret = c_stream->total_out;
     return ret;
 }
 
@@ -260,10 +261,12 @@ int spdy_inflate_init(z_stream *stream){
  */
 ssize_t spdy_inflate(z_stream *d_stream,void *buffin,size_t inlen,void *buffout,size_t outlen) {    
     d_stream->next_in  = buffin;
-    d_stream->avail_in = (uInt)inlen;
+    d_stream->avail_in = inlen;
+    d_stream->total_in = 0;
     d_stream->next_out = buffout;
-    d_stream->avail_out = outlen;
-
+    d_stream->avail_out = outlen==0 ? 0xffffffff:outlen;
+    d_stream->total_out = 0;
+    
     for (;;) {  /* 解压 */
         int err = inflate(d_stream, Z_SYNC_FLUSH);
         if (err == Z_STREAM_END || d_stream->avail_in == 0) {
@@ -282,7 +285,6 @@ ssize_t spdy_inflate(z_stream *d_stream,void *buffin,size_t inlen,void *buffout,
     }
 
     int ret = d_stream->total_out;
- //   inflateEnd(d_stream);
     return ret;
 }
 

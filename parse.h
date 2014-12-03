@@ -1,11 +1,13 @@
 #ifndef __PARSE_H__
 #define __PARSE_H__
 
-#include "net.h"
 #include <stddef.h>
-
 #include <string>
 #include <map>
+#include "net.h"
+#include "spdy_type.h"
+#include "spdy_zlib.h"
+
 
 #define ADDBTIP    "HTTP/1.0 200 Proxy site Added" CRLF CRLF
 #define DELBTIP    "HTTP/1.0 200 Proxy site Deleted" CRLF CRLF
@@ -43,9 +45,10 @@ public:
     char path[URLLIMIT];
     uint16_t port;
     HttpReqHeader(uchar* header)throw (int);
-    int getstring(void* buff, protocol prot);
-    bool ismethod(const char *);
+    bool ismethod(const char* method);
     const char* getval(const char *key);
+    int getstring(void* outbuff);
+    int getframe(void* buff, z_stream* destream, size_t id);
 };
 
 class HttpResHeader{
@@ -54,10 +57,12 @@ public:
     char version[20];
     char status[100];
     HttpResHeader(char* status);
+    HttpResHeader(syn_reply_frame *sframe,z_stream* instream);
     void add(const char *header,const char *value);
     void del(const char *header);
     const char* getval(const char *key);
-    int getstring(char *,protocol proto);
+    int getstring(void *,protocol proto);
+    int getframe(void* buff, z_stream* destream, size_t id);
 };
 
 

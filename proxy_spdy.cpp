@@ -7,8 +7,6 @@ Proxy_spdy *proxy_spdy= nullptr;
 
 Proxy_spdy::Proxy_spdy(Proxy *copy,Guest *guest):Proxy(copy) {
     bindex.add(this,guest);
-    spdy_inflate_init(&instream);
-    spdy_deflate_init(&destream);
     
     HttpReqHeader *req=this->req;
     this->req=nullptr;
@@ -47,29 +45,13 @@ void Proxy_spdy::clean(Peer *who)
 
 void Proxy_spdy::Request(HttpReqHeader* req,Guest* guest)
 {
-    char buff[HEADLENLIMIT];
-    spdy_cframe_head *chead=(spdy_cframe_head *)(wbuff+writelen);
-    memset(chead,0,sizeof(*chead));
-    writelen+=sizeof(*chead);
-    chead->magic = CTRL_MAGIC;
-    chead->type=htons(SYN_TYPE);
-    if(strcmp(req->method,"POST")) {
-        chead->flag = FLAG_FIN;
-    }
+    writelen+=req->getframe(wbuff+writelen,&destream,curid);
     
+    struct epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLIN | EPOLLOUT;
+    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     
-    syn_frame *sframe=(syn_frame *)(wbuff+writelen);
-    writelen+=sizeof(*sframe);
-    memset(sframe,0,sizeof(*sframe));
-    sframe->id=htonl(curid);
-    sframe->priority=3;
-    
-    int len=req->getstring(buff,SPDY);
-    len=spdy_deflate(&destream,buff,len,wbuff+writelen,bufleft());
-    writelen+=len;
-    set24(chead->length,sizeof(syn_frame)+len);
-    
-    Peer::Write(guest,"",0);
     guest2id[guest]=curid;
     id2guest[curid]=guest;
     curid+=2;
@@ -133,31 +115,32 @@ void Proxy_spdy::defaultHE(uint32_t events) {
     }
 }
 
-void Proxy_spdy::FrameProc(syn_reply_frame* sframe){
+void Proxy_spdy::CFrameProc(syn_reply_frame* sframe){
     NTOHL(sframe->id);
     if(id2guest.count(sframe->id)==0){
         return;
     }
     Guest *guest=(Guest *)id2guest[sframe->id];
-    char *p=(char *)(sframe+1);
-    char buff[HEADLENLIMIT];
-    spdy_inflate(&instream,p,spdy_getlen-sizeof(*sframe),buff,sizeof(buff));
-    HttpResHeader res(buff);
+    
+    
+    HttpResHeader res(sframe,&instream);
     res.add("Transfer-Encoding","chunked");
+
+    char buff[HEADLENLIMIT];
     guest->Write(this,buff,res.getstring(buff,HTTP));
 }
 
-void Proxy_spdy::FrameProc(goaway_frame*){
+void Proxy_spdy::CFrameProc(goaway_frame*){
     clean(this);
 }
 
 
 
-void Proxy_spdy::FrameProc(void* buff, size_t buflen){
-    if(id2guest.count(stream_id)==0){
+void Proxy_spdy::DFrameProc(void* buff, size_t buflen,uint32_t id){
+    if(id2guest.count(id)==0){
         return;
     }
-    Guest *guest=(Guest *)id2guest[stream_id];
+    Guest *guest=(Guest *)id2guest[id];
     char chunkbuf[20];
     int chunklen;
     sprintf(chunkbuf,"%lx" CRLF "%n",buflen,&chunklen);

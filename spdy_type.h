@@ -122,6 +122,7 @@ typedef struct{
 */
 
 typedef struct{
+    spdy_cframe_head head;
     uint32_t id;
     uint32_t atid;
 #if defined (LITTLE_ENDIAN_BITFIELD)
@@ -157,6 +158,7 @@ typedef struct{
 
 
 typedef struct{
+    spdy_cframe_head head;
     uint32_t id;
 }__attribute__ ((packed)) syn_reply_frame;
 
@@ -174,6 +176,7 @@ typedef struct{
 
 
 typedef struct{
+    spdy_cframe_head head;
     uint32_t id;
     uint32_t code;
 }__attribute__ ((packed)) goaway_frame;
@@ -196,6 +199,7 @@ typedef struct{
 
 
 typedef struct{
+    spdy_cframe_head head;
     uint32_t id;
 //This is a generic error, and should only be used if a more specific error is not available.
 #define PROTOCOL_ERROR          1 

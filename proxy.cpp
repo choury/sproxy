@@ -201,7 +201,7 @@ void Proxy::shakehandHE(uint32_t events) {
             return;
         }
         
-        writelen= req->getstring(wbuff,HTTP);
+        writelen= req->getstring(wbuff);
         guest->connected("PROXY");
         return;
     }

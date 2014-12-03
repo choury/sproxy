@@ -74,7 +74,7 @@ void Host::waitconnectHE(uint32_t events) {
         event.events = EPOLLIN | EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 
-        writelen= req->getstring(wbuff,HTTP);
+        writelen= req->getstring(wbuff);
         guest->connected(req->method);
         handleEvent=(void (Con::*)(uint32_t))&Host::defaultHE;
     }
@@ -189,7 +189,7 @@ int Host::connect() {
 }
 
 void Host::Request(HttpReqHeader* req,Guest *guest) {
-    writelen+=req->getstring(wbuff+writelen,HTTP);
+    writelen+=req->getstring(wbuff+writelen);
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;

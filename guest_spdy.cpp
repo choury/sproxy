@@ -6,13 +6,11 @@
 
 Guest_spdy::Guest_spdy(Guest_s* copy):Guest_s(copy) {
     handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::defaultHE;
-    spdy_deflate_init(&destream);
-    spdy_inflate_init(&instream);
+    
 }
 
 Guest_spdy::~Guest_spdy() {
-    spdy_deflate_end(&destream);
-    spdy_inflate_end(&instream);
+    
 }
 
 
@@ -262,7 +260,7 @@ void Guest_spdy::synHE(uint32_t events) {
         LOG( "([%s]:%d): %s %s\n",
              sourceip, sourceport,
              Req->method, Req->url);
-
+/*
         if ( Req->ismethod("GET") ||  Req->ismethod("HEAD") ) {
             host2id[Host::gethost(Req,this)]=sframe->id;
             handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::defaultHE;
@@ -287,7 +285,6 @@ void Guest_spdy::synHE(uint32_t events) {
                   sourceip, sourceport,Req->method);
             clean(this);
         }
-        /*
                 HttpResHeader httpres("200 Fuck");
                 httpres.add("content-type","text/plain");
                 spdy_cframe_head *chead=(spdy_cframe_head *)(wbuff+write_len);

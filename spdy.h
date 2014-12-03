@@ -3,11 +3,14 @@
 
 #include "common.h"
 #include "spdy_type.h"
+#include "spdy_zlib.h"
+#include "parse.h"
 
 class Spdy{
     char spdy_buff[HEADLENLIMIT];
-    size_t spdy_expectlen=sizeof(spdy_head);
-    enum{whead}state;
+    size_t spdy_expectlen;
+    size_t spdy_getlen=0;
+    uint32_t stream_id;
     ssize_t Spdy_read(void *buff,size_t buflen,size_t expectlen);
     void HeaderProc(void *buff,size_t buflen,void (Spdy::*ErrProc)(uint32_t));
     void SynProc(void *buff,size_t buflen,void (Spdy::*ErrProc)(uint32_t));
@@ -17,15 +20,19 @@ class Spdy{
     void DataProc(void *buff,size_t buflen,void (Spdy::*ErrProc)(uint32_t));
     void DefaultProc(void *buff,size_t buflen,void (Spdy::*ErrProc)(uint32_t));
 protected:
-    size_t spdy_getlen=0;
-    uint32_t stream_id;
-    uchar spdy_flag;
-    virtual void FrameProc(syn_frame *);
-    virtual void FrameProc(syn_reply_frame *);
-    virtual void FrameProc(rst_frame *);
-    virtual void FrameProc(goaway_frame *);
-    virtual void FrameProc(void *,size_t);
+    uint32_t curid=1;
+    z_stream instream;
+    z_stream destream;
+    virtual void CFrameProc(syn_frame *);
+    virtual void CFrameProc(syn_reply_frame *);
+    virtual void CFrameProc(rst_frame *);
+    virtual void CFrameProc(goaway_frame *);
+    virtual void DFrameProc(void* buff, size_t buflen, uint32_t id);
     void (Spdy::*Proc)(void *,size_t,void (Spdy::*)(uint32_t))=&Spdy::HeaderProc;
+
+public:
+    Spdy();
+    ~Spdy();
 };
 
 
