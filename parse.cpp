@@ -208,64 +208,68 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
 
 
 HttpReqHeader::HttpReqHeader(uchar* header)throw (int) {
-    if(header[0]) {  //第一个字节不为0，说明是一个HTTP/1.x头部
-        char *httpheader=(char *)header;
-        *(strstr(httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
-        memset(path,0,sizeof(path));
-        memset(url,0,sizeof(url));
-        sscanf(httpheader, "%s%*[ ]%[^\r\n ]", method, url);
-        toUpper(method);
-        port=80;
+    char *httpheader=(char *)header;
+    *(strstr(httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
+    memset(path,0,sizeof(path));
+    memset(url,0,sizeof(url));
+    sscanf(httpheader, "%s%*[ ]%[^\r\n ]", method, url);
+    toUpper(method);
+    port=80;
 
-        if(spliturl(url,hostname,path,&port)) {
-            LOGE("wrong url format:%s\n",url);
-            throw 0;
-        }
-
-        for (char* str = strstr(httpheader, CRLF) + strlen(CRLF); ; str = NULL) {
-            char* p = strtok(str, CRLF);
-
-            if (p == NULL)
-                break;
-
-            char* sp = strpbrk(p, ":");
-            if(sp==NULL) {
-                LOGE("wrong header format:%s\n",p);
-                throw 0;
-            }
-            this->header[string(p, sp - p)] = ltrim(string(sp + 1));
-        }
-
-        this->header.erase("Proxy-Connection");
-        this->header.erase("Host");
-    } else {
-        uint32_t *p=(uint32_t *)header;
-        uint32_t c=ntohl(*p++);
-        for(size_t i=0; i<c; ++i) {
-            uint32_t nlen=ntohl(*p++);
-            char *np=(char *)p;
-            p=(uint32_t*)(np+nlen);
-            uint32_t vlen=ntohl(*p++);
-            char *vp=(char *)p;
-            p=(uint32_t *)((char *)p+vlen);
-            this->header[string(np,nlen)] = string(vp,vlen);
-        }
-        sprintf(url,"%s://%s%s",
-                this->header[":scheme"].c_str(),
-                this->header[":host"].c_str(),
-                this->header[":path"].c_str());
-        spliturl(url,hostname,path,&port);
-        strcpy(method,this->header[":method"].c_str());
-        for(auto i=this->header.begin(); i!=this->header.end();) {
-            if(i->first[0]==':') {
-                this->header.erase(i++);
-            } else {
-                i++;
-            }
-        }
+    if(spliturl(url,hostname,path,&port)) {
+        LOGE("wrong url format:%s\n",url);
+        throw 0;
     }
 
+    for (char* str = strstr(httpheader, CRLF) + strlen(CRLF); ; str = NULL) {
+        char* p = strtok(str, CRLF);
+
+        if (p == NULL)
+            break;
+
+        char* sp = strpbrk(p, ":");
+        if(sp==NULL) {
+            LOGE("wrong header format:%s\n",p);
+            throw 0;
+        }
+        this->header[string(p, sp - p)] = ltrim(string(sp + 1));
+    }
+
+    this->header.erase("Proxy-Connection");
+    this->header.erase("Host");
 }
+
+HttpReqHeader::HttpReqHeader(syn_frame* sframe, z_stream* instream) {
+    size_t len=get24(sframe->head.length);
+    char tmpbuff[HEADLENLIMIT];
+    spdy_inflate(instream,sframe+1,len-sizeof(syn_frame)+sizeof(spdy_head),tmpbuff,sizeof(tmpbuff));
+
+    uint32_t *p=(uint32_t *)tmpbuff;
+    uint32_t c=ntohl(*p++);
+    for(size_t i=0; i<c; ++i) {
+        uint32_t nlen=ntohl(*p++);
+        char *np=(char *)p;
+        p=(uint32_t*)(np+nlen);
+        uint32_t vlen=ntohl(*p++);
+        char *vp=(char *)p;
+        p=(uint32_t *)((char *)p+vlen);
+        this->header[string(np,nlen)] = string(vp,vlen);
+    }
+    sprintf(url,"%s://%s%s",
+            this->header[":scheme"].c_str(),
+            this->header[":host"].c_str(),
+            this->header[":path"].c_str());
+    spliturl(url,hostname,path,&port);
+    strcpy(method,this->header[":method"].c_str());
+    for(auto i=this->header.begin(); i!=this->header.end();) {
+        if(i->first[0]==':') {
+            this->header.erase(i++);
+        } else {
+            i++;
+        }
+    }
+}
+
 
 bool HttpReqHeader::ismethod(const char* method) {
     return strcmp(this->method,method)==0;
@@ -362,49 +366,25 @@ int HttpReqHeader::getframe(void* buff, z_stream* destream, size_t id) {
 
 
 HttpResHeader::HttpResHeader(char* header) {
-    if(header[0]) {  //第一个字节不为0，说明是一个HTTP/1.x头部
-        *(strstr(header, CRLF CRLF) + strlen(CRLF)) = 0;
-        memset(version,0,sizeof(version));
-        memset(status,0,sizeof(status));
-        sscanf(header, "%s%*[ ]%[^\r\n]", version, status);
+    *(strstr(header, CRLF CRLF) + strlen(CRLF)) = 0;
+    memset(version,0,sizeof(version));
+    memset(status,0,sizeof(status));
+    sscanf(header, "%s%*[ ]%[^\r\n]", version, status);
 
-        for (char* str = strstr(header, CRLF) + strlen(CRLF); ; str = NULL) {
-            char* p = strtok(str, CRLF);
+    for (char* str = strstr(header, CRLF) + strlen(CRLF); ; str = NULL) {
+        char* p = strtok(str, CRLF);
 
-            if (p == NULL)
-                break;
+        if (p == NULL)
+            break;
 
-            char* sp = strpbrk(p, ":");
-            if(sp==NULL) {
-                LOGE("wrong header format:%s\n",p);
-                throw 0;
-            }
-            this->header[string(p, sp - p)] = ltrim(string(sp + 1));
+        char* sp = strpbrk(p, ":");
+        if(sp==NULL) {
+            LOGE("wrong header format:%s\n",p);
+            throw 0;
         }
-    } else {
-        uint32_t *p=(uint32_t *)header;
-        uint32_t c=ntohl(*p++);
-        for(size_t i=0; i<c; ++i) {
-            uint32_t nlen=ntohl(*p++);
-            char *np=(char *)p;
-            *np=toupper(*np);
-            p=(uint32_t*)(np+nlen);
-            uint32_t vlen=ntohl(*p++);
-            char *vp=(char *)p;
-            p=(uint32_t *)((char *)p+vlen);
-            this->header[string(np,nlen)] = string(vp,vlen);
-        }
-
-        strcpy(version,this->header[":version"].c_str());
-        strcpy(status,this->header[":status"].c_str());
-        for(auto i=this->header.begin(); i!=this->header.end();) {
-            if(i->first[0]==':') {
-                this->header.erase(i++);
-            } else {
-                i++;
-            }
-        }
+        this->header[string(p, sp - p)] = ltrim(string(sp + 1));
     }
+
 }
 
 HttpResHeader::HttpResHeader(syn_reply_frame* sframe, z_stream* instream) {
@@ -455,33 +435,42 @@ const char* HttpResHeader::getval(const char* key) {
     }
 }
 
-int HttpResHeader::getstring(void* buff, protocol proto) {
-    if(proto== HTTP) {
-        int p;
-        sprintf((char *)buff, "HTTP/1.1 %s" CRLF "%n",status, &p);
-        for (auto i : header) {
-            int len;
-            sprintf((char *)buff + p, "%s: %s" CRLF "%n", i.first.c_str(), i.second.c_str(), &len);
-            p += len;
-        }
-
-        sprintf((char *)buff + p, CRLF);
-        return p + strlen(CRLF);
-    } else {
-        char *p=(char *)buff;
-        *(uint32_t *)p=htonl(header.size()+2);
-        p += 4;
-        p=addnv(p,":status",7,status,strlen(status));
-        p=addnv(p,":version",8,"HTTP/1.1",8);
-
-        for (auto i : header) {
-            p=addnv(p,i.first.data(),i.first.length(),i.second.data(),i.second.length());
-        }
-        return p-(char *)buff;
+int HttpResHeader::getstring(void* buff) {
+    int p;
+    sprintf((char *)buff, "HTTP/1.1 %s" CRLF "%n",status, &p);
+    for (auto i : header) {
+        int len;
+        sprintf((char *)buff + p, "%s: %s" CRLF "%n", i.first.c_str(), i.second.c_str(), &len);
+        p += len;
     }
+
+    sprintf((char *)buff + p, CRLF);
+    return p + strlen(CRLF);
+
 }
 
 
 int HttpResHeader::getframe(void* buff, z_stream* destream, size_t id) {
+    syn_reply_frame *srframe=(syn_reply_frame *)buff;
+    memset(srframe,0,sizeof(*srframe));
+    srframe->head.magic=CTRL_MAGIC;
+    srframe->head.type=htons(SYN_REPLY_TYPE);
+    srframe->id=htonl(id);
 
+    char headbuff[HEADLENLIMIT];
+
+    char *p=headbuff;
+    *(uint32_t *)p=htonl(header.size()+2);
+    p += 4;
+    p=addnv(p,":status",7,status,strlen(status));
+    p=addnv(p,":version",8,"HTTP/1.1",8);
+
+    for (auto i : header) {
+        p=addnv(p,i.first.data(),i.first.length(),i.second.data(),i.second.length());
+    }
+    int len=p-(char *)headbuff;
+    len=sizeof(syn_reply_frame)-sizeof(spdy_head)+
+        spdy_deflate(destream,headbuff,len,srframe+1,0);
+    set24(srframe->head.length,len);
+    return len+sizeof(spdy_head);
 }

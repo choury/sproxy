@@ -13,9 +13,7 @@
 #define BIG_ENDIAN_BITFIELD
 #endif
 
-#if defined (LITTLE_ENDIAN_BITFIELD)
-#define CTRL_MAGIC 0x0380
-#define DATA_MAGIC 0x0300
+
 #define get24(x) ((x)[0]<<16|(x)[1]<<8|(x)[2])
 #define set24(x,y) do{\
     (x)[0]=((y)>>16)&0xff;\
@@ -23,15 +21,16 @@
     (x)[2]=(y)&0xff;\
 }while(0)
 
+
+#if defined (LITTLE_ENDIAN_BITFIELD)
+#define CTRL_MAGIC 0x0380
+#define DATA_MAGIC 0x0300
+
+
 #elif defined (BIG_ENDIAN_BITFIELD)
 #define CTRL_MAGIC 0x8003
 #define DATA_MAGIC 0x0003
-#define get24(x) ((x)[2]<<16|(x)[1]<<8|(x)[0])
-#define set24(x,y) do{\
-    (x)[2]=(y)>>16;\
-    (x)[1]=(y)>>8;\
-    (x)[0]=(y);\
-}while(0)
+
 #endif
 
 

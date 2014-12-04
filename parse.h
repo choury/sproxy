@@ -45,6 +45,7 @@ public:
     char path[URLLIMIT];
     uint16_t port;
     HttpReqHeader(uchar* header)throw (int);
+    HttpReqHeader(syn_frame* sframe,z_stream* instream);
     bool ismethod(const char* method);
     const char* getval(const char *key);
     int getstring(void* outbuff);
@@ -61,7 +62,7 @@ public:
     void add(const char *header,const char *value);
     void del(const char *header);
     const char* getval(const char *key);
-    int getstring(void *,protocol proto);
+    int getstring(void* buff);
     int getframe(void* buff, z_stream* destream, size_t id);
 };
 

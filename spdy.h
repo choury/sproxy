@@ -11,24 +11,24 @@ class Spdy{
     size_t spdy_expectlen;
     size_t spdy_getlen=0;
     uint32_t stream_id;
-    ssize_t Spdy_read(void *buff,size_t buflen,size_t expectlen);
-    void HeaderProc(void *buff,size_t buflen,void (Spdy::*ErrProc)(uint32_t));
-    void SynProc(void *buff,size_t buflen,void (Spdy::*ErrProc)(uint32_t));
-    void SynreplyProc(void *buff,size_t buflen,void (Spdy::*ErrProc)(uint32_t));
-    void RstProc(void *buff,size_t buflen,void (Spdy::*ErrProc)(uint32_t));
-    void GoawayProc(void *buff,size_t buflen,void (Spdy::*ErrProc)(uint32_t));
-    void DataProc(void *buff,size_t buflen,void (Spdy::*ErrProc)(uint32_t));
-    void DefaultProc(void *buff,size_t buflen,void (Spdy::*ErrProc)(uint32_t));
+    void HeaderProc();
+    void SynProc();
+    void SynreplyProc();
+    void RstProc();
+    void GoawayProc();
+    void DataProc();
+    void DefaultProc();
 protected:
-    uint32_t curid=1;
     z_stream instream;
     z_stream destream;
+    virtual ssize_t Read(void* buff,size_t len)=0;
+    virtual void ErrProc(int errcode)=0;
     virtual void CFrameProc(syn_frame *);
     virtual void CFrameProc(syn_reply_frame *);
     virtual void CFrameProc(rst_frame *);
     virtual void CFrameProc(goaway_frame *);
-    virtual void DFrameProc(void* buff, size_t buflen, uint32_t id);
-    void (Spdy::*Proc)(void *,size_t,void (Spdy::*)(uint32_t))=&Spdy::HeaderProc;
+    virtual ssize_t DFrameProc(uint32_t,size_t size);
+    void (Spdy::*Proc)()=&Spdy::HeaderProc;
 
 public:
     Spdy();

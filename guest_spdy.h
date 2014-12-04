@@ -2,24 +2,18 @@
 #define __GUEST_SPDY_H__
 
 #include "guest_s.h"
-#include "zlib.h"
+#include "spdy.h"
 
 class Hostinfo;
 
-class Guest_spdy:public Guest_s{
-    z_stream destream;
-    z_stream instream;
+class Guest_spdy:public Guest_s,public Spdy{
     std::map<void *,Hostinfo> host2id;
     std::map<uint32_t,void *> id2host;
     virtual ssize_t Write(Peer* who,const void *buff,size_t size)override;
     virtual ssize_t Write(const void* buf, size_t len,uint32_t id,uint8_t flag);
+    void ErrProc(uint32_t errcode);
 protected:
     virtual void defaultHE(uint32_t events);
-    virtual void synHE(uint32_t events);
-    virtual void synreplyHE(uint32_t events);
-    virtual void goawayHE(uint32_t events);
-    virtual void rstHE(uint32_t events);
-    virtual void ctrlframedefultHE(uint32_t events);
 public:
     Guest_spdy(Guest_s *);
     virtual ~Guest_spdy();
@@ -28,6 +22,9 @@ public:
     virtual ssize_t ChunkLWrite(Hostinfo* hostinfo,const void *buff,size_t size);
     virtual ssize_t ChunkBWrite(Hostinfo* hostinfo,const void *buff,size_t size);
     virtual ssize_t FixLenWrite(Hostinfo* hostinfo,const void *buff,size_t size);
+    virtual void CFrameProc(syn_frame *)override;
+    virtual void CFrameProc(rst_frame *)override;
+    virtual void CFrameProc(goaway_frame *)override;
 };
 
 class Hostinfo{
