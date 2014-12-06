@@ -69,8 +69,13 @@ ssize_t Guest_spdy::Write(Peer* who, const void* buff, size_t size) {
     return 0;
 }
 
+ssize_t Guest_spdy::Read(void* buff, size_t size){
+    return Guest_s::Read(buff, size);
+}
+
+
 ssize_t Guest_spdy::HeaderWrite(Hostinfo* hostinfo, const void* buff, size_t size) {
-//TODO 这里要做边界检查
+/*
     memcpy(hostinfo->buff+readlen,buff,size);
     hostinfo->readlen+=size;
     if (char* headerend = strnstr(hostinfo->buff, CRLF CRLF,hostinfo->readlen)) {
@@ -101,7 +106,7 @@ ssize_t Guest_spdy::HeaderWrite(Hostinfo* hostinfo, const void* buff, size_t siz
         } else {
             hostinfo->readlen=0;
         }
-    }
+    }*/
 }
 
 ssize_t Guest_spdy::ChunkLWrite(Hostinfo* hostinfo, const void* buff, size_t size) {
@@ -149,8 +154,17 @@ ssize_t Guest_spdy::FixLenWrite(Hostinfo* hostinfo, const void* buff, size_t siz
 }
 
 
-void Guest_spdy::ErrProc(uint32_t errcode) {
-    LOGE("Get a Err:%u\n",errcode);
+void Guest_spdy::ErrProc(int errcode,uint32_t id) {
+    if(errcode<=0 && showerrinfo(errcode,"guest_spdy read error")){
+        clean(this);
+        return;
+    }
+    if(errcode>0){
+        LOGE("([%s]:%d): guest_spdy get a error code:%d,and id:%u\n",
+             sourceip,sourceport,errcode,id);
+        clean(this);
+        return;
+    }
 }
 
 
@@ -163,7 +177,7 @@ void Guest_spdy::defaultHE(uint32_t events) {
     }
     if (events & EPOLLOUT) {
         if(writelen) {
-            int ret = Peer::Write();
+            int ret = Guest_s::Write();
             if (ret <= 0 ) {
                 if( showerrinfo(ret,"guest_spdy write error")) {
                     clean(this);

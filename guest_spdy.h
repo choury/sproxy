@@ -11,7 +11,8 @@ class Guest_spdy:public Guest_s,public Spdy{
     std::map<uint32_t,void *> id2host;
     virtual ssize_t Write(Peer* who,const void *buff,size_t size)override;
     virtual ssize_t Write(const void* buf, size_t len,uint32_t id,uint8_t flag);
-    void ErrProc(uint32_t errcode);
+    virtual ssize_t Read(void *buff,size_t size)override;
+    virtual void ErrProc(int errcode,uint32_t id)override;
 protected:
     virtual void defaultHE(uint32_t events);
 public:

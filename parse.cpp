@@ -62,7 +62,7 @@ void addpsite(const string& host) {
 }
 
 int delpsite(const string& host) {
-    if(proxylist.find(host)==proxylist.end()) {
+    if(proxylist.count(host)==0) {
         return 0;
     }
     proxylist.erase(host);
@@ -85,13 +85,12 @@ bool checkproxy(const char *hostname) {
         loadproxysite();
     }
 
-    if(GLOBALPROXY) {
+    if(GLOBALPROXY || proxylist.count("*")) {
         return true;
     }
 
     //如果proxylist里面有*.*.*.* 那么ip地址直接代理
-    if(inet_addr(hostname) != INADDR_NONE &&
-            proxylist.find("*.*.*.*") != proxylist.end()) {
+    if(inet_addr(hostname) != INADDR_NONE && proxylist.count("*.*.*.*")) {
         return true;
     }
 
@@ -102,7 +101,7 @@ bool checkproxy(const char *hostname) {
             subhost++;
         }
 
-        if (proxylist.find(subhost) != proxylist.end()) {
+        if (proxylist.count(subhost)) {
             return true;
         }
 
@@ -207,7 +206,7 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
 }
 
 
-HttpReqHeader::HttpReqHeader(uchar* header)throw (int) {
+HttpReqHeader::HttpReqHeader(void* header)throw (int) {
     char *httpheader=(char *)header;
     *(strstr(httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
     memset(path,0,sizeof(path));
@@ -365,13 +364,13 @@ int HttpReqHeader::getframe(void* buff, z_stream* destream, size_t id) {
 
 
 
-HttpResHeader::HttpResHeader(char* header) {
-    *(strstr(header, CRLF CRLF) + strlen(CRLF)) = 0;
+HttpResHeader::HttpResHeader(void* header) {
+    *(strstr((char *)header, CRLF CRLF) + strlen(CRLF)) = 0;
     memset(version,0,sizeof(version));
     memset(status,0,sizeof(status));
-    sscanf(header, "%s%*[ ]%[^\r\n]", version, status);
+    sscanf((char *)header, "%s%*[ ]%[^\r\n]", version, status);
 
-    for (char* str = strstr(header, CRLF) + strlen(CRLF); ; str = NULL) {
+    for (char* str = strstr((char *)header, CRLF) + strlen(CRLF); ; str = NULL) {
         char* p = strtok(str, CRLF);
 
         if (p == NULL)

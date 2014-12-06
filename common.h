@@ -14,7 +14,9 @@ extern char SHOST[];
 
 #define Min(x,y) ((x)<(y)?(x):(y))
 
-#define HEADLENLIMIT   8192
+#define DOMAINLIMIT   256
+#define HEADLENLIMIT  8192
+#define URLLIMIT      4096
 
 #ifdef _ANDROID_
 
@@ -23,8 +25,9 @@ extern char SHOST[];
 #define  LOG_TAG    "sproxy_client"   //定义logcat中tag标签
 #define  LOG(...)  __android_log_print(ANDROID_LOG_INFO,LOG_TAG,__VA_ARGS__)
 #define  LOGE(...)   __android_log_print(ANDROID_LOG_ERROR,LOG_TAG,__VA_ARGS__)
-#else
 
+
+#else
 #define  LOG(...)  fprintf(stdout,__VA_ARGS__)
 #define  LOGE(...)   fprintf(stderr,__VA_ARGS__)
 #endif

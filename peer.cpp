@@ -16,22 +16,22 @@ uint16_t SPORT=443;
 
 Bindex bindex;
 
-void Bindex::add(void* key1, void* key2){
+void Bindex::add(void* key1, void* key2) {
     map[key1]=key2;
     map[key2]=key1;
 }
 
 
-void Bindex::del(void* key1,void *key2){
+void Bindex::del(void* key1,void *key2) {
     map.erase(key1);
     map.erase(key2);
 }
 
 
-void* Bindex::query(void* key){
-    if(key && map.count(key)){
+void* Bindex::query(void* key) {
+    if(key && map.count(key)) {
         return map[key];
-    }else{
+    } else {
         return nullptr;
     }
 }
@@ -76,7 +76,7 @@ void Peer::writedcb() {
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
-    if(epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT){
+    if(epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
         epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
     }
 }
@@ -110,22 +110,22 @@ size_t Peer::bufleft() {
     return sizeof(wbuff) - writelen;
 }
 
-void Peer::clean(Peer* who){
+void Peer::clean(Peer* who) {
     Peer *peer =(Peer *)bindex.query(this);
     bindex.del(this,peer);
     if(peer) {
         peer->clean(this);
     }
-    
-    if(fd!=0){
+
+    if(fd!=0) {
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLOUT;
-        if(epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT){
+        if(epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
             epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
         }
         handleEvent=(void (Con::*)(uint32_t))&Peer::closeHE;
-    }else{
+    } else {
         delete this;
     }
 }

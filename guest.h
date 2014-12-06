@@ -10,6 +10,8 @@
 
 class Guest:public Peer{
 protected:
+    char rbuff[HEADLENLIMIT];
+    size_t readlen=0;
     char sourceip[INET6_ADDRSTRLEN];
     uint16_t  sourceport;
     char destip[INET6_ADDRSTRLEN];

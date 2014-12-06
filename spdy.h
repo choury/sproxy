@@ -22,7 +22,7 @@ protected:
     z_stream instream;
     z_stream destream;
     virtual ssize_t Read(void* buff,size_t len)=0;
-    virtual void ErrProc(int errcode)=0;
+    virtual void ErrProc(int errcode,uint32_t id)=0;
     virtual void CFrameProc(syn_frame *);
     virtual void CFrameProc(syn_reply_frame *);
     virtual void CFrameProc(rst_frame *);

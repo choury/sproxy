@@ -115,7 +115,7 @@ void Guest::getheaderHE(uint32_t events) {
 
         readlen += ret;
 
-        if (uchar* headerend = (uchar *)strnstr((char *)rbuff, CRLF CRLF, readlen)) {
+        if (char* headerend = strnstr((char *)rbuff, CRLF CRLF, readlen)) {
             headerend += strlen(CRLF CRLF);
             size_t headerlen = headerend - rbuff;
             try {

@@ -39,8 +39,11 @@ void Proxy_spdy::clean(Peer *who)
     if(guest2id.count(who)) {
         uint32_t id=guest2id[who];
         rst_frame rframe;
-        rframe.id=id;
-        rframe.code=0;
+        memset(&rframe,0,sizeof(rframe));
+        rframe.head.magic=CTRL_MAGIC;
+        rframe.head.type=htons(RST_TYPE);
+        set24(rframe.head.length,8);
+        rframe.id=htonl(id);
         Peer::Write(nullptr,&rframe,sizeof(rframe));
         
         guest2id.erase(who);
@@ -66,8 +69,13 @@ void Proxy_spdy::Request(HttpReqHeader* req,Guest* guest)
     this->req=req;
 }
 
-void Proxy_spdy::ErrProc(int errcode){
+void Proxy_spdy::ErrProc(int errcode,uint32_t id){
     if(errcode<=0 && showerrinfo(errcode,"proxy_spdy read error")){
+        clean(this);
+        return;
+    }
+    if(errcode>0){
+        LOGE("proxy_spdy get a error code:%d,and id:%u\n",errcode,id);
         clean(this);
         return;
     }
@@ -117,17 +125,17 @@ void Proxy_spdy::defaultHE(uint32_t events) {
 }
 
 void Proxy_spdy::CFrameProc(syn_reply_frame* sframe){
+    HttpResHeader res(sframe,&instream);
+    res.add("Transfer-Encoding","chunked");
+    
+    
     NTOHL(sframe->id);
     if(id2guest.count(sframe->id)==0){
         return;
     }
     Guest *guest=(Guest *)id2guest[sframe->id];
-    
-    
-    HttpResHeader res(sframe,&instream);
-    res.add("Transfer-Encoding","chunked");
-
-    guest->Write(this,rbuff,res.getstring(rbuff));
+    char buff[HEADLENLIMIT];
+    guest->Write(this,buff,res.getstring(buff));
 }
 
 void Proxy_spdy::CFrameProc(goaway_frame*){
@@ -141,13 +149,13 @@ ssize_t Proxy_spdy::DFrameProc(uint32_t id,size_t size){
         return -1;
     }
     Guest *guest=(Guest *)id2guest[id];
-    
-    size_t len=size>sizeof(rbuff)?sizeof(rbuff):size;
+    char buff[HEADLENLIMIT];
+    size_t len=size>sizeof(buff)?sizeof(buff):size;
     ssize_t readlen=size;
     if(readlen){
-        readlen=Read(rbuff,sizeof(rbuff)?size:sizeof(rbuff));
+        readlen=Read(buff,len);
         if(readlen <= 0){
-            ErrProc(readlen);
+            ErrProc(readlen,id);
             return 0;
         }
     }
@@ -155,8 +163,13 @@ ssize_t Proxy_spdy::DFrameProc(uint32_t id,size_t size){
     int chunklen;
     sprintf(chunkbuf,"%lx" CRLF "%n",readlen,&chunklen);
     guest->Write(this,chunkbuf,chunklen);
-    guest->Write(this,rbuff,readlen);
+    guest->Write(this,buff,readlen);
     guest->Write(this,CRLF,strlen(CRLF));
+    if(size==0){
+        id2guest.erase(id);
+        guest2id.erase(guest);
+        guest->clean(this);
+    }
     return readlen;
 }
 

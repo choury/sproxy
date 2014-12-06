@@ -11,7 +11,7 @@ class Proxy_spdy:public Proxy,public Spdy{
     std::map<Peer *,uint32_t> guest2id;
     std::map<uint32_t,Peer *> id2guest;
 protected:
-    virtual void ErrProc(int errcode)override;
+    virtual void ErrProc(int errcode,uint32_t id)override;
     virtual ssize_t Read(void *buff,size_t size)override;
     virtual void defaultHE(uint32_t events)override;
     virtual void CFrameProc(syn_reply_frame*)override;

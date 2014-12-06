@@ -10,8 +10,7 @@
 
 #define  connecttip   "HTTP/1.0 200 Connection established" CRLF CRLF
 
-#define DOMAINLIMIT   256
-#define URLLIMIT      2048
+
 
 #ifdef  __cplusplus
 extern "C" {

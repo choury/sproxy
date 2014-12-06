@@ -16,30 +16,30 @@ Spdy::~Spdy() {
 
 
 void Spdy::CFrameProc(syn_frame*) {
-    LOGE("Get a syn frame\n");
+    LOG("Get a syn frame\n");
 }
 
 void Spdy::CFrameProc(syn_reply_frame*) {
-    LOGE("Get a syn reply frame\n");
+    LOG("Get a syn reply frame\n");
 }
 
 void Spdy::CFrameProc(rst_frame*) {
-    LOGE("Get a rst frame\n");
+    LOG("Get a rst frame\n");
 }
 
 
 void Spdy::CFrameProc(goaway_frame*) {
-    LOGE("Get a goaway frame\n");
+    LOG("Get a goaway frame\n");
 }
 
-ssize_t Spdy::DFrameProc(uint32_t,size_t size) {
-    LOGE("Get a dataframe\n");
+ssize_t Spdy::DFrameProc(uint32_t id,size_t size) {
+    LOG("Get a dataframe\n");
     if(size == 0){
         return 0;
     }
     ssize_t readlen = Read(spdy_buff,size>sizeof(spdy_buff)?sizeof(spdy_buff):size);
     if(readlen <= 0){
-        ErrProc(readlen);
+        ErrProc(readlen,id);
     }
     return readlen;
 }
@@ -48,7 +48,7 @@ ssize_t Spdy::DFrameProc(uint32_t,size_t size) {
 void Spdy::HeaderProc() {
     ssize_t readlen=Read(spdy_buff+spdy_getlen,sizeof(spdy_head));
     if(readlen<=0) {
-        ErrProc(readlen);
+        ErrProc(readlen,stream_id);
         return;
     }else{
         spdy_getlen+=readlen;
@@ -58,6 +58,10 @@ void Spdy::HeaderProc() {
         spdy_expectlen=get24(shead->length);
         if(shead->c==1) {
             spdy_cframe_head *chead=(spdy_cframe_head *)shead;
+            if(chead->magic != CTRL_MAGIC){
+                ErrProc(PROTOCOL_ERROR,stream_id);
+                return;
+            }
             NTOHS(chead->type);
             switch(chead->type) {
             case SYN_TYPE:
@@ -80,122 +84,133 @@ void Spdy::HeaderProc() {
         } else {
             spdy_dframe_head *dhead=(spdy_dframe_head *)shead;
             stream_id=ntohl(dhead->id);
-            if(spdy_expectlen) {
-                Proc=&Spdy::DataProc;
-            } else if(dhead->flag & FLAG_FIN) {
-                DataProc();
-            }
+            Proc=&Spdy::DataProc;
         }
     }
+    (this->*Proc)();
 }
 
 
 void Spdy::SynProc() {
-    if(spdy_expectlen+spdy_getlen >= sizeof(spdy_buff)) {
-        ErrProc(FRAME_TOO_LARGE);
+    size_t len=sizeof(spdy_buff)-spdy_getlen > spdy_expectlen ? spdy_expectlen:sizeof(spdy_buff)-spdy_getlen;
+    if(len==0){
+        syn_frame *sframe=(syn_frame*)spdy_buff;
+        stream_id=ntohl(sframe->id);
+        ErrProc(FRAME_TOO_LARGE,stream_id);
         Proc=&Spdy::DefaultProc;
-        return;
+    }else{
+        ssize_t readlen=Read(spdy_buff+spdy_getlen,len);
+        if(readlen <= 0) {
+            ErrProc(readlen,stream_id);
+            return;
+        } else {
+            spdy_expectlen -= readlen;
+            spdy_getlen    += readlen;
+        }
+        if(spdy_expectlen == 0) {
+            syn_frame *sframe=(syn_frame*)spdy_buff;
+            stream_id=ntohl(sframe->id);
+            CFrameProc(sframe);
+            Proc = &Spdy::HeaderProc;
+            spdy_getlen=0;
+        }
     }
-    ssize_t readlen=Read(spdy_buff+spdy_getlen,spdy_expectlen);
-    if(readlen <= 0) {
-        ErrProc(readlen);
-        return;
-    } else {
-        spdy_expectlen -= readlen;
-    }
-    if(spdy_expectlen == 0) {
-        CFrameProc((syn_frame *)spdy_buff);
-        Proc = &Spdy::HeaderProc;
-        spdy_getlen=0;
-    }
+    (this->*Proc)();
 }
 
 void Spdy::SynreplyProc() {
-    if(spdy_expectlen+spdy_getlen >= sizeof(spdy_buff)) {
-        ErrProc(FRAME_TOO_LARGE);
+    size_t len=sizeof(spdy_buff)-spdy_getlen > spdy_expectlen ? spdy_expectlen:sizeof(spdy_buff)-spdy_getlen;
+    if(len==0){
+        syn_reply_frame *srframe=(syn_reply_frame *)spdy_buff;
+        stream_id=ntohl(srframe->id);
+        ErrProc(FRAME_TOO_LARGE,stream_id);
         Proc=&Spdy::DefaultProc;
         return;
-    }
-    ssize_t readlen=Read(spdy_buff+spdy_getlen,spdy_expectlen);
-    if(readlen <= 0) {
-        ErrProc(readlen);
-        return;
-    } else {
-        spdy_expectlen -= readlen;
-    }
-    if(spdy_expectlen == 0) {
-        uchar spdy_flag = ((spdy_head *)spdy_buff)->flag;
-        CFrameProc((syn_reply_frame *)spdy_buff);
-        Proc = &Spdy::HeaderProc;
-        spdy_getlen=0;
+    }else{
+        ssize_t readlen=Read(spdy_buff+spdy_getlen,len);
+        if(readlen <= 0) {
+            ErrProc(readlen,stream_id);
+            return;
+        } else {
+            spdy_expectlen -= readlen;
+            spdy_getlen    += readlen;
+        }
+        if(spdy_expectlen == 0) {
+            syn_reply_frame *srframe=(syn_reply_frame *)spdy_buff;
+            uchar spdy_flag = srframe->head.flag;
+            stream_id=htonl(srframe->id);
+            CFrameProc(srframe);
+            Proc = &Spdy::HeaderProc;
+            spdy_getlen=0;
 
-        if(spdy_flag & FLAG_FIN) {
-            DFrameProc(((syn_reply_frame *)spdy_buff)->id,0);
+            if(spdy_flag & FLAG_FIN) {
+                DFrameProc(stream_id,0);
+            }
         }
     }
+    (this->*Proc)();
 }
 
 
 void Spdy::RstProc() {
-    if(spdy_expectlen+spdy_getlen >= sizeof(spdy_buff)) {
-        ErrProc(FRAME_TOO_LARGE);
-        Proc=&Spdy::DefaultProc;
-        return;
-    }
     ssize_t readlen=Read(spdy_buff+spdy_getlen,spdy_expectlen);
     if(readlen <= 0) {
-        ErrProc(readlen);
+        ErrProc(readlen,stream_id);
         return;
     } else {
         spdy_expectlen -= readlen;
+        spdy_getlen    += readlen;
     }
     if(spdy_expectlen == 0) {
         CFrameProc((rst_frame *)spdy_buff);
         Proc = &Spdy::HeaderProc;
         spdy_getlen=0;
     }
+    (this->*Proc)();
 }
 
 
 
 void Spdy::GoawayProc() {
-    if(spdy_expectlen+spdy_getlen >= sizeof(spdy_buff)) {
-        ErrProc(FRAME_TOO_LARGE);
-        Proc=&Spdy::DefaultProc;
-        return;
-    }
     ssize_t readlen=Read(spdy_buff+spdy_getlen,spdy_expectlen);
     if(readlen <= 0) {
-        ErrProc(readlen);
+        ErrProc(readlen,stream_id);
         return;
     } else {
         spdy_expectlen -= readlen;
+        spdy_getlen    += readlen;
     }
     if(spdy_expectlen == 0) {
         CFrameProc((goaway_frame *)spdy_buff);
         Proc = &Spdy::HeaderProc;
         spdy_getlen=0;
     }
+    (this->*Proc)();
 }
 
 
 void Spdy::DataProc() {
     uchar spdy_flag = ((spdy_head *)spdy_buff)->flag;
-    ssize_t readlen=DFrameProc(stream_id,spdy_expectlen);
-    if(spdy_expectlen && (spdy_flag & FLAG_FIN)) {
+    if(spdy_expectlen){
+        ssize_t readlen=DFrameProc(stream_id,spdy_expectlen);
+        if(readlen<0){
+            Proc=&Spdy::DefaultProc;
+            return;
+        }
+        if(readlen>0){
+            spdy_expectlen-=readlen;
+        }
+    }else if(spdy_flag & FLAG_FIN) {
         DFrameProc(stream_id,0);
     }
-    if(readlen<0){
-        Proc=&Spdy::DefaultProc;
-        return;
-    }
-    if(readlen>0){
-        spdy_expectlen-=readlen;
-    }
     if(spdy_expectlen==0) {
+        if(spdy_flag & FLAG_FIN) {
+            DFrameProc(stream_id,0);
+        }
         Proc=&Spdy::HeaderProc;
         spdy_getlen=0;
     }
+    (this->*Proc)();
 }
 
 
@@ -204,7 +219,7 @@ void Spdy::DefaultProc() {
     size_t len=spdy_expectlen > sizeof(spdy_buff)?sizeof(spdy_buff):spdy_expectlen;
     ssize_t readlen=Read(spdy_buff,len);
     if(readlen <= 0) {
-        ErrProc(readlen);
+        ErrProc(readlen,stream_id);
         return;
     } else {
         spdy_expectlen -= readlen;
@@ -214,5 +229,6 @@ void Spdy::DefaultProc() {
         Proc=&Spdy::HeaderProc;
         spdy_getlen=0;
     }
+    (this->*Proc)();
 }
 
