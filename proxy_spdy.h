@@ -8,7 +8,7 @@
 
 class Proxy_spdy:public Proxy,public Spdy{
     uint32_t curid=1;
-    std::map<Peer *,uint32_t> guest2id;
+    std::map<void *,uint32_t> guest2id;
     std::map<uint32_t,Peer *> id2guest;
 protected:
     virtual void ErrProc(int errcode,uint32_t id)override;
@@ -20,8 +20,8 @@ protected:
 public:
     Proxy_spdy(Proxy* copy,Guest *guest);
     virtual void clean(Peer *)override;
-    virtual void Request(HttpReqHeader* req, Guest* guest)override;
-    static Host *getproxy_spdy(HttpReqHeader *,Guest* guest);
+    virtual void Request(HttpReqHeader &req, Guest* guest)override;
+    static Host *getproxy_spdy(HttpReqHeader &req,Guest* guest);
 };
 
  

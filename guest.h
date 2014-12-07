@@ -3,29 +3,28 @@
 
 #include <netinet/in.h>
 
-
 #include "peer.h"
 #include "common.h"
+#include "http.h"
 
 
-class Guest:public Peer{
+class Guest:public Peer,public Http{
 protected:
-    char rbuff[HEADLENLIMIT];
-    size_t readlen=0;
     char sourceip[INET6_ADDRSTRLEN];
     uint16_t  sourceport;
     char destip[INET6_ADDRSTRLEN];
     uint16_t  destport;
-    uint32_t expectlen=0;
     virtual int showerrinfo(int ret,const char * )override;
-    virtual void getheaderHE(uint32_t events);
+    virtual ssize_t Read(void *buff,size_t len)override;
+    virtual ssize_t DataProc(const void *buff,size_t size)override;
     virtual void defaultHE(uint32_t events);
-    virtual void postHE(uint32_t events);
     virtual void closeHE(uint32_t events);
+    virtual void ReqProc(HttpReqHeader &req)override;
+    virtual void ErrProc(int errcode)override;
 public:
     Guest();
     Guest(int fd);
-    virtual void connected(const char *method);
+    virtual void connected(void* who);
 };
 
 

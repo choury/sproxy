@@ -113,7 +113,7 @@ size_t Peer::bufleft() {
 void Peer::clean(Peer* who) {
     Peer *peer =(Peer *)bindex.query(this);
     bindex.del(this,peer);
-    if(peer) {
+    if(who==this && peer) {
         peer->clean(this);
     }
 

@@ -12,7 +12,7 @@ extern uint16_t SPORT;
 
 extern char SHOST[];
 
-#define Min(x,y) ((x)<(y)?(x):(y))
+#define Min(x,y) ((uint64_t)(x)<(uint64_t)(y)?(x):(y))
 
 #define DOMAINLIMIT   256
 #define HEADLENLIMIT  8192

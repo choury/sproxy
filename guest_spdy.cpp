@@ -1,8 +1,6 @@
 #include "guest_spdy.h"
-#include "host.h"
 #include "parse.h"
 #include "spdy_type.h"
-#include "spdy_zlib.h"
 
 Guest_spdy::Guest_spdy(Guest_s* copy):Guest_s(copy) {
     handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::defaultHE;
@@ -14,152 +12,95 @@ Guest_spdy::~Guest_spdy() {
 }
 
 
-
-ssize_t Guest_spdy::Write(const void* buf, size_t len,uint32_t id,uint8_t flag) {
-    spdy_dframe_head dhead;
-    dhead.id=htonl(id);
-    dhead.flag=flag;
-    set24(dhead.length,len);
-    Guest::Write(this,&dhead,sizeof(dhead));
-    return Guest::Write(this,buf,len);
-}
-
 void Guest_spdy::clean(Peer* who) {
     if(who==this) {
         for(auto i:host2id) {
             bindex.del(this,i.first);
+            delete i.second;
         }
+        host2id.clear();
+        id2host.clear();
 
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-
         handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::closeHE;
-    } else {
-        bindex.del(this,who);
-        if(host2id.count(who)) {
-            Hostinfo *hostinfo=&host2id[who];
+        return;
+    }
 
-            spdy_cframe_head chead;
-            memset(&chead,0,sizeof(chead));
-            chead.magic=CTRL_MAGIC;
-            chead.type=htons(RST_TYPE);
-            set24(chead.length,sizeof(rst_frame));
-            Peer::Write(this,&chead,sizeof(chead));
-
+    bindex.del(this,who);
+    if(host2id.count(who)) {
+        Hostinfo *hostinfo=host2id[who];
+        if(id2host.count(hostinfo->id)) {
             rst_frame rframe;
             memset(&rframe,0,sizeof(rframe));
+            rframe.head.magic=CTRL_MAGIC;
+            rframe.head.type=htons(RST_TYPE);
+            set24(rframe.head.length,8);
             rframe.code=0;
             rframe.id=htonl(hostinfo->id);
             Peer::Write(this,&rframe,sizeof(rframe));
 
-            host2id.erase(who);
+            id2host.erase(hostinfo->id);
         }
+        host2id.erase(who);
+        delete hostinfo;
     }
 }
 
+void Guest_spdy::clean(Hostinfo* hostinfo) {
+    id2host.erase(hostinfo->id);
+}
+
+
+void Guest_spdy::connected(void* who) {
+    Host *host=(Host*)who;
+    if(host->req.ismethod("CONNECT")) {
+        if(host2id.count(host)) {
+            char tmp[200];
+            strcpy(tmp,connecttip);
+            HttpResHeader res(tmp);
+            writelen+=res.getframe(wbuff+writelen,&destream,host2id[host]->id);
+        }
+    }
+
+    struct epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLIN | EPOLLOUT;
+    if(epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
+        epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+    }
+}
+
+
+
 ssize_t Guest_spdy::Write(Peer* who, const void* buff, size_t size) {
+    if(who == this) {
+        return Guest::Write(this,buff,size);
+    }
     if(host2id.count(who)) {
-        Hostinfo *hostinfo=&host2id[who];
-        return (this->*hostinfo->Write)(hostinfo,buff,size);
+        Hostinfo *hostinfo=host2id[who];
+        ssize_t len=hostinfo->Write(buff,size);
+        (hostinfo->*Http_Proc)();
+        return len;
     } else {
         who->clean(this);
     }
     return 0;
 }
 
-ssize_t Guest_spdy::Read(void* buff, size_t size){
+ssize_t Guest_spdy::Read(void* buff, size_t size) {
     return Guest_s::Read(buff, size);
 }
 
 
-ssize_t Guest_spdy::HeaderWrite(Hostinfo* hostinfo, const void* buff, size_t size) {
-/*
-    memcpy(hostinfo->buff+readlen,buff,size);
-    hostinfo->readlen+=size;
-    if (char* headerend = strnstr(hostinfo->buff, CRLF CRLF,hostinfo->readlen)) {
-        headerend += strlen(CRLF CRLF);
-        size_t headerlen = headerend - hostinfo->buff;
-        HttpResHeader res(hostinfo->buff);
-        if(res.getval("Transfer-Encoding")!= nullptr) {
-            hostinfo->Write=&Guest_spdy::ChunkLWrite;
-        } else if(res.getval("Content-Length")!=nullptr) {
-            sscanf(res.getval("Content-Length"),"%u",&hostinfo->expectlen);
-            hostinfo->Write=&Guest_spdy::FixLenWrite;
-        } else {
-
-        }
-
-        writelen+=res.getframe(wbuff+writelen,&destream,hostinfo->id);
-        
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN | EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-        
-        
-        if(headerlen != hostinfo->readlen) {
-            size_t leftlen = hostinfo->readlen-headerlen;
-            hostinfo->readlen=0;
-            (this->*hostinfo->Write)(hostinfo,(char *)buff+size-leftlen,leftlen);
-        } else {
-            hostinfo->readlen=0;
-        }
-    }*/
-}
-
-ssize_t Guest_spdy::ChunkLWrite(Hostinfo* hostinfo, const void* buff, size_t size) {
-    if (char* headerend = strnstr((const char*)buff, CRLF,size)) {
-        headerend += strlen(CRLF);
-        size=(char *)buff+size-headerend;
-        sscanf((const char*)buff,"%x",&hostinfo->expectlen);
-        if(hostinfo->expectlen==0) {
-            ssize_t ret=Write("",0,hostinfo->id,FLAG_FIN);
-            hostinfo->Write=&Guest_spdy::HeaderWrite;
-        } else {
-            hostinfo->Write=&Guest_spdy::ChunkBWrite;
-            if(size) {
-                ChunkBWrite(hostinfo,headerend,size);
-            }
-        }
-    }
-}
-
-
-ssize_t Guest_spdy::ChunkBWrite(Hostinfo* hostinfo, const void* buff, size_t size)
-{
-    size_t len=Min(hostinfo->expectlen,size);
-    len=Write(buff,len,hostinfo->id,0);
-    hostinfo->expectlen-=len;
-    if(hostinfo->expectlen == 0) {
-        hostinfo->Write=&Guest_spdy::ChunkLWrite;
-        if(size != len) {
-            ChunkLWrite(hostinfo,(char *)buff+len+2,size-len-2);
-        }
-    }
-}
-
-
-
-ssize_t Guest_spdy::FixLenWrite(Hostinfo* hostinfo, const void* buff, size_t size) {
-    hostinfo->expectlen-=size;
-    if(hostinfo->expectlen) {
-        return Write(buff,size,hostinfo->id,0);
-    } else {
-        ssize_t ret=Write(buff,size,hostinfo->id,FLAG_FIN);
-        hostinfo->Write=&Guest_spdy::HeaderWrite;
-        return ret;
-    }
-}
-
-
 void Guest_spdy::ErrProc(int errcode,uint32_t id) {
-    if(errcode<=0 && showerrinfo(errcode,"guest_spdy read error")){
+    if(errcode<=0 && showerrinfo(errcode,"guest_spdy read error")) {
         clean(this);
         return;
     }
-    if(errcode>0){
+    if(errcode>0) {
         LOGE("([%s]:%d): guest_spdy get a error code:%d,and id:%u\n",
              sourceip,sourceport,errcode,id);
         clean(this);
@@ -173,7 +114,7 @@ void Guest_spdy::defaultHE(uint32_t events) {
     event.data.ptr = this;
 
     if (events & EPOLLIN ) {
-        (this->*Proc)();
+        (this->*Spdy_Proc)();
     }
     if (events & EPOLLOUT) {
         if(writelen) {
@@ -204,58 +145,38 @@ void Guest_spdy::defaultHE(uint32_t events) {
     }
 }
 
+void Guest_spdy::Response(HttpResHeader& res, uint32_t id) {
+    writelen+=res.getframe(wbuff+writelen,&destream,id);
+
+    struct epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLIN | EPOLLOUT;
+    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+}
+
+
 void Guest_spdy::CFrameProc(syn_frame* sframe) {
     NTOHL(sframe->id);
-    HttpReqHeader *req=new HttpReqHeader(sframe,&instream);
-    req->port=80;
-    
-    LOG( "([%s]:%d): %s %s\n",
-         sourceip, sourceport,
-         req->method, req->url);
+    HttpReqHeader req(sframe,&instream);
 
-    if ( req->ismethod("GET") ||  req->ismethod("HEAD") ) {
-        host2id[Host::gethost(req,this)]=sframe->id;
-        handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::defaultHE;
-    } else if (req->ismethod("POST") ) {
-        const char* lenpoint=req->getval("Content-Length");
-        if (lenpoint == NULL) {
-            LOGE( "([%s]:%d): unsported post version\n",sourceip, sourceport);
-            clean(this);
-            return;
-        }
 
-        sscanf(lenpoint, "%u", &expectlen);
-        expectlen -= readlen;
+    LOG( "([%s]:%d)[%u]: %s %s\n",sourceip, sourceport,sframe->id,req.method,req.url);
+
+    if ( req.ismethod("GET") ||  req.ismethod("POST") || req.ismethod("CONNECT") ) {
         Host *host=Host::gethost(req,this);
-        host2id[host]=sframe->id;
-        handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::postHE;
-    } else if (req->ismethod("CONNECT")) {
-        host2id[Host::gethost(req,this)]=sframe->id;
-        handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::defaultHE;
+        host2id[host]=new Hostinfo(sframe->id,this,host);
+        id2host[sframe->id]=host;
     } else {
-        LOGE( "([%s]:%d): unsported method:%s\n",
-              sourceip, sourceport,req->method);
-        clean(this);
+        LOGE( "([%s]:%d): unsported method:%s\n",sourceip, sourceport,req.method);
+        rst_frame rframe;
+        memset(&rframe,0,sizeof(rframe));
+        rframe.head.magic=CTRL_MAGIC;
+        rframe.head.type=htons(RST_TYPE);
+        set24(rframe.head.length,8);
+        rframe.code=htonl(PROTOCOL_ERROR);
+        rframe.id=htonl(sframe->id);
+        Peer::Write(this,&rframe,sizeof(rframe));
     }
-    /*               HttpResHeader httpres("200 Fuck");
-                   httpres.add("content-type","text/plain");
-                   spdy_cframe_head *chead=(spdy_cframe_head *)(wbuff+write_len);
-                   chead->magic=CTRL_MAGIC;
-                   chead->type=htons(SYN_REPLY_TYPE);
-                   chead->flag = 0;
-                   write_len+=sizeof(*chead);
-
-                   syn_reply_frame *srframe=(syn_reply_frame *)(wbuff+write_len);
-                   srframe->id=htonl(sframe->id);
-                   write_len += sizeof(*srframe);
-                   buflen=bufleft();
-                   buflen=spdy_deflate(&destream,headbuff,httpres.getstring(headbuff,SPDY),wbuff+write_len,buflen);
-                   write_len+=buflen;
-                   set24(chead->length,sizeof(syn_reply_frame)+buflen);
-
-                   Write("welcome",7,sframe->id,FLAG_FIN);
-                   handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::defaultHE;
-           */
 }
 
 
@@ -263,7 +184,15 @@ void Guest_spdy::CFrameProc(syn_frame* sframe) {
 void Guest_spdy::CFrameProc(rst_frame* rframe) {
     NTOHL(rframe->id);
     NTOHL(rframe->code);
-    fprintf(stderr,"get reset frame %d:%d\n",rframe->id,rframe->code);
+    if(id2host.count(rframe->id)){
+        Host *host=id2host[rframe->id];
+        bindex.del(host,this);
+        host->clean(this);
+        delete host2id[host];
+        host2id.erase(host);
+        id2host.erase(rframe->id);
+
+    }
 }
 
 
@@ -276,5 +205,78 @@ void Guest_spdy::CFrameProc(goaway_frame* gframe) {
 }
 
 
+ssize_t Guest_spdy::DFrameProc(uint32_t id, size_t size) {
+    if(id2host.count(id)) {
+        Host *host=id2host[id];
+        char buff[HEADLENLIMIT];
+        size_t len=Min(size,sizeof(buff));
+        len=Read(buff,len);
+        if(len <= 0) {
+            ErrProc(len,id);
+            return 0;
+        }
+        return host->Write(this,buff,size);
+    }
+    return -1;
+}
 
+
+Hostinfo::Hostinfo() {
+
+}
+
+
+Hostinfo::Hostinfo(uint32_t id,Guest_spdy *guest,Host *host):id(id),guest(guest),host(host) {
+
+}
+
+
+Hostinfo::~Hostinfo() {
+
+}
+
+
+
+ssize_t Hostinfo::Write(const void* buff, size_t size) {
+    size_t len=Min(size,sizeof(wbuff)-writelen);
+    memcpy(wbuff+writelen,buff,len);
+    writelen += len;
+    return len;
+}
+
+
+
+ssize_t Hostinfo::Read(void* buff, size_t size) {
+    size_t len=Min(size,writelen);
+    memcpy(buff,wbuff,len);
+    memmove(wbuff,wbuff+len,writelen-len);
+    writelen -= len;
+    return len;
+}
+
+
+void Hostinfo::ErrProc(int errcode) {
+    return;
+}
+
+void Hostinfo::ResProc(HttpResHeader& res) {
+    guest->Response(res,id);
+}
+
+
+ssize_t Hostinfo::DataProc(const void* buff, size_t size) {
+    spdy_dframe_head dhead;
+    memset(&dhead,0,sizeof(dhead));
+    dhead.id=htonl(id);
+    set24(dhead.length,size);
+    if(size) {
+        guest->Write(guest,&dhead,sizeof(dhead));
+        return guest->Write(guest,buff,size);
+    } else {
+        dhead.flag=FLAG_FIN;
+        guest->clean(this);
+        guest->Write(guest,&dhead,sizeof(dhead));
+        return 0;
+    }
+}
 

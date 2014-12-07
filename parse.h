@@ -44,7 +44,8 @@ public:
     char hostname[DOMAINLIMIT];
     char path[URLLIMIT];
     uint16_t port;
-    HttpReqHeader(void* header)throw (int);
+    HttpReqHeader();
+    HttpReqHeader(void* header);
     HttpReqHeader(syn_frame* sframe,z_stream* instream);
     bool ismethod(const char* method);
     const char* getval(const char *key);
@@ -57,6 +58,7 @@ class HttpResHeader{
 public:
     char version[20];
     char status[100];
+    HttpResHeader();
     HttpResHeader(void* header);
     HttpResHeader(syn_reply_frame *sframe,z_stream* instream);
     void add(const char *header,const char *value);

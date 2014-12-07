@@ -8,10 +8,8 @@ Proxy_spdy *proxy_spdy= nullptr;
 Proxy_spdy::Proxy_spdy(Proxy *copy,Guest *guest):Proxy(copy) {
     bindex.add(this,guest);
     
-    HttpReqHeader *req=this->req;
-    this->req=nullptr;
     Request(req,guest);
-    guest->connected("PROXY");
+    guest->connected(this);
 }
 
 ssize_t Proxy_spdy::Read(void* buff, size_t size){
@@ -51,9 +49,9 @@ void Proxy_spdy::clean(Peer *who)
     }
 }
 
-void Proxy_spdy::Request(HttpReqHeader* req,Guest* guest)
+void Proxy_spdy::Request(HttpReqHeader &req,Guest* guest)
 {
-    writelen+=req->getframe(wbuff+writelen,&destream,curid);
+    writelen+=req.getframe(wbuff+writelen,&destream,curid);
     
     struct epoll_event event;
     event.data.ptr = this;
@@ -63,42 +61,26 @@ void Proxy_spdy::Request(HttpReqHeader* req,Guest* guest)
     guest2id[guest]=curid;
     id2guest[curid]=guest;
     curid+=2;
-    if(this->req){
-        delete this->req;
-    }
     this->req=req;
 }
 
-void Proxy_spdy::ErrProc(int errcode,uint32_t id){
-    if(errcode<=0 && showerrinfo(errcode,"proxy_spdy read error")){
-        clean(this);
-        return;
-    }
-    if(errcode>0){
-        LOGE("proxy_spdy get a error code:%d,and id:%u\n",errcode,id);
-        clean(this);
-        return;
-    }
-}
 
-
-Host* Proxy_spdy::getproxy_spdy(HttpReqHeader* req,Guest* guest) {
+Host* Proxy_spdy::getproxy_spdy(HttpReqHeader &req,Guest* guest) {
     Host *exist=(Host *)bindex.query(guest);
     if(exist && exist != proxy_spdy) {
         exist->clean(guest);
     }
     proxy_spdy->Request(req,guest);
-    guest->connected("PROXY");
+    guest->connected(proxy_spdy);
     bindex.add(proxy_spdy,guest);
     return proxy_spdy;
 }
-
 
 void Proxy_spdy::defaultHE(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
     if (events & EPOLLIN ) {
-        (this->*Proc)();
+        (this->*Spdy_Proc)();
     }
     if (events & EPOLLOUT) {
         if (writelen) {
@@ -123,6 +105,20 @@ void Proxy_spdy::defaultHE(uint32_t events) {
         clean(this);
     }
 }
+
+
+void Proxy_spdy::ErrProc(int errcode,uint32_t id){
+    if(errcode<=0 && showerrinfo(errcode,"proxy_spdy read error")){
+        clean(this);
+        return;
+    }
+    if(errcode>0){
+        LOGE("proxy_spdy get a error code:%d,and id:%u\n",errcode,id);
+        clean(this);
+        return;
+    }
+}
+
 
 void Proxy_spdy::CFrameProc(syn_reply_frame* sframe){
     HttpResHeader res(sframe,&instream);
@@ -150,7 +146,7 @@ ssize_t Proxy_spdy::DFrameProc(uint32_t id,size_t size){
     }
     Guest *guest=(Guest *)id2guest[id];
     char buff[HEADLENLIMIT];
-    size_t len=size>sizeof(buff)?sizeof(buff):size;
+    size_t len=Min(size,sizeof(buff));
     ssize_t readlen=size;
     if(readlen){
         readlen=Read(buff,len);

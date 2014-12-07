@@ -28,7 +28,7 @@ protected:
     virtual void CFrameProc(rst_frame *);
     virtual void CFrameProc(goaway_frame *);
     virtual ssize_t DFrameProc(uint32_t,size_t size);
-    void (Spdy::*Proc)()=&Spdy::HeaderProc;
+    void (Spdy::*Spdy_Proc)()=&Spdy::HeaderProc;
 
 public:
     Spdy();

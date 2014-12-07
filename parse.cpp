@@ -206,7 +206,13 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
 }
 
 
-HttpReqHeader::HttpReqHeader(void* header)throw (int) {
+HttpReqHeader::HttpReqHeader(){
+
+}
+
+
+
+HttpReqHeader::HttpReqHeader(void* header){
     char *httpheader=(char *)header;
     *(strstr(httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
     memset(path,0,sizeof(path));
@@ -252,17 +258,20 @@ HttpReqHeader::HttpReqHeader(syn_frame* sframe, z_stream* instream) {
         uint32_t vlen=ntohl(*p++);
         char *vp=(char *)p;
         p=(uint32_t *)((char *)p+vlen);
-        this->header[string(np,nlen)] = string(vp,vlen);
+        header[string(np,nlen)] = string(vp,vlen);
     }
-    sprintf(url,"%s://%s%s",
-            this->header[":scheme"].c_str(),
-            this->header[":host"].c_str(),
-            this->header[":path"].c_str());
+    strcpy(method,header[":method"].c_str());
+    
+    if(ismethod("CONNECT")){
+        strcpy(url,header[":path"].c_str());
+    }else{
+        sprintf(url,"%s://%s%s",header[":scheme"].c_str(),
+                header[":host"].c_str(),header[":path"].c_str());
+    }
     spliturl(url,hostname,path,&port);
-    strcpy(method,this->header[":method"].c_str());
-    for(auto i=this->header.begin(); i!=this->header.end();) {
+    for(auto i=header.begin(); i!=header.end();) {
         if(i->first[0]==':') {
-            this->header.erase(i++);
+            header.erase(i++);
         } else {
             i++;
         }

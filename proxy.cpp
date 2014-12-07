@@ -20,32 +20,31 @@ Proxy::Proxy(Proxy* copy) {
 
     copy->ctx=nullptr;
     copy->ssl=nullptr;
-    copy->req=nullptr;
     copy->fd=0;
     delete copy;
 }
 
 
 
-Proxy::Proxy(HttpReqHeader *req,Guest *guest):Host(req,guest,SHOST,SPORT) {}
+Proxy::Proxy(HttpReqHeader &req,Guest *guest):Host(req,guest,SHOST,SPORT) {}
 
 
-Host* Proxy::getproxy(HttpReqHeader* req,Guest* guest) {
+Host* Proxy::getproxy(HttpReqHeader &req,Guest* guest) {
     if(proxy_spdy) {
         return Proxy_spdy::getproxy_spdy(req,guest);
     }
     Host *exist=(Host *)bindex.query(guest);
     if (dynamic_cast<Proxy*>(exist)) {
         exist->Request(req,guest);
-        guest->connected("PROXY");
+        guest->connected(exist);
         return exist;
     }
     if (exist != NULL) {
         exist->clean(guest);
     }
 
-    Proxy* newproxy = new Proxy(req,guest);
-    return newproxy;
+    return new Proxy(req,guest);
+
 }
 
 
@@ -201,8 +200,8 @@ void Proxy::shakehandHE(uint32_t events) {
             return;
         }
         
-        writelen= req->getstring(wbuff);
-        guest->connected("PROXY");
+        writelen= req.getstring(wbuff);
+        guest->connected(this);
         return;
     }
     if (events & EPOLLERR || events & EPOLLHUP) {

@@ -68,7 +68,7 @@ void Guest_s::shakedhand() {
     event.data.ptr = this;
     event.events = EPOLLIN;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    handleEvent=(void (Con::*)(uint32_t))&Guest_s::getheaderHE;
+    handleEvent=(void (Con::*)(uint32_t))&Guest_s::defaultHE;
     
     const unsigned char *data;
     unsigned int len;
@@ -86,6 +86,8 @@ void Guest_s::shakedhand() {
 }
 
 int Guest_s::showerrinfo(int ret, const char* s) {
+    if(ret == 0)
+        return 1;
     epoll_event event;
     event.data.ptr = this;
     int error = SSL_get_error(ssl, ret);

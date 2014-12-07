@@ -15,12 +15,12 @@ Host::Host() {
 }
 
 
-Host::Host(HttpReqHeader *Req,Guest* guest,const char* hostname,uint16_t port) {
+Host::Host(HttpReqHeader &req,Guest* guest,const char* hostname,uint16_t port) {
     bindex.add(guest,this);
     this->fd=0;
     writelen = 0;
 
-    this->req=Req;
+    this->req=req;
     strcpy(this->hostname,hostname);
     this->port=port;
     handleEvent=(void (Con::*)(uint32_t))&Host::waitconnectHE;
@@ -33,15 +33,16 @@ Host::Host(HttpReqHeader *Req,Guest* guest,const char* hostname,uint16_t port) {
 
 
 Host::~Host() {
-    if(req) {
-        delete req;
-    }
 }
 
 
 int Host::showerrinfo(int ret, const char* s) {
-    if (ret < 0) {
-        LOGE("%s: %s\n",s,strerror(errno));
+    if(ret < 0) {
+        if(errno != EAGAIN){
+            LOGE("%s: %s\n",s,strerror(errno));
+        }else{
+            return 0;
+        }
     }
     return 1;
 }
@@ -62,7 +63,7 @@ void Host::waitconnectHE(uint32_t events) {
             return;
         }
         if (error != 0) {
-            LOGE( "connect to %s: %s\n",req->hostname, strerror(error));
+            LOGE( "connect to %s: %s\n",req.hostname, strerror(error));
             if(connect()<0) {
                 clean(this);
             }
@@ -74,8 +75,8 @@ void Host::waitconnectHE(uint32_t events) {
         event.events = EPOLLIN | EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 
-        writelen= req->getstring(wbuff);
-        guest->connected(req->method);
+        writelen= req.getstring(wbuff);
+        guest->connected(this);
         handleEvent=(void (Con::*)(uint32_t))&Host::defaultHE;
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
@@ -181,44 +182,40 @@ int Host::connect() {
         }
         fd=Connect(&addr[testedaddr++].addr);
         if(fd <0 ) {
-            LOGE("connect to %s failed\n",req->hostname);
+            LOGE("connect to %s failed\n",req.hostname);
             return connect();
         }
     }
     return 0;
 }
 
-void Host::Request(HttpReqHeader* req,Guest *guest) {
-    writelen+=req->getstring(wbuff+writelen);
+void Host::Request(HttpReqHeader &req,Guest *guest) {
+    writelen+=req.getstring(wbuff+writelen);
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 
-    if(this->req) {
-        delete this->req;
-    }
     this->req=req;
 }
 
 
-Host* Host::gethost(HttpReqHeader* req,Guest* guest) {
+Host* Host::gethost(HttpReqHeader &req,Guest* guest) {
 #ifdef CLIENT
-    if(checkproxy(req->hostname)) {
+    if(checkproxy(req.hostname)) {
         return Proxy::getproxy(req,guest);
     }
 #endif
     Host* exist=(Host *)bindex.query(guest);
-    if (exist && exist->port == req->port && strcasecmp(exist->hostname, req->hostname) == 0) {
+    if (exist && exist->port == req.port && strcasecmp(exist->hostname, req.hostname) == 0) {
         exist->Request(req,guest);
-        guest->connected(req->method);
+        guest->connected(exist);
         return exist;
     }
     if (exist != NULL) {
         exist->clean(guest);
     }
 
-    Host *newhost = new Host(req,guest,req->hostname,req->port);
-    return newhost;
+    return new Host(req,guest,req.hostname,req.port);
 }
 
