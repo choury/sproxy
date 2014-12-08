@@ -13,10 +13,6 @@ void Http::ResProc(HttpResHeader& res) {
 
 
 void Http::HeaderProc() {
-    if(http_getlen == sizeof(http_buff)) {
-        ErrProc(HEAD_TOO_LAGER);
-        return;
-    }
     if (char* headerend = strnstr(http_buff, CRLF CRLF,http_getlen)) {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - http_buff;
@@ -56,6 +52,10 @@ void Http::HeaderProc() {
         }
 
     } else {
+        if(http_getlen == sizeof(http_buff)) {
+            ErrProc(HEAD_TOO_LAGER);
+            return;
+        }
         ssize_t readlen=Read(http_buff+http_getlen,sizeof(http_buff)-http_getlen);
         if(readlen <= 0) {
             ErrProc(readlen);
@@ -67,12 +67,7 @@ void Http::HeaderProc() {
     (this->*Http_Proc)();
 }
 
-void Http::ChunkLProc() {
-    if(http_getlen == sizeof(http_buff)) {
-        ErrProc(HEAD_TOO_LAGER);
-        return;
-    }
-    
+void Http::ChunkLProc() {    
     if(char* headerend = strnstr(http_buff,CRLF,http_getlen)) {
         headerend += strlen(CRLF);
         size_t headerlen = headerend - http_buff;
@@ -84,6 +79,10 @@ void Http::ChunkLProc() {
         http_getlen-=headerlen;
 
     } else {
+        if(http_getlen == sizeof(http_buff)) {
+            ErrProc(HEAD_TOO_LAGER);
+            return;
+        }
         ssize_t readlen=Read(http_buff+http_getlen,sizeof(http_buff)-http_getlen);
         if(readlen <= 0) {
             ErrProc(readlen);
@@ -98,7 +97,7 @@ void Http::ChunkLProc() {
 void Http::ChunkBProc()
 {
     if(http_getlen == 0) {
-        ssize_t readlen=Read(http_buff+http_getlen,sizeof(http_buff));
+        ssize_t readlen=Read(http_buff,sizeof(http_buff));
         if(readlen<=0) {
             ErrProc(readlen);
             return;

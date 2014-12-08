@@ -82,7 +82,7 @@ ssize_t Guest_spdy::Write(Peer* who, const void* buff, size_t size) {
     if(host2id.count(who)) {
         Hostinfo *hostinfo=host2id[who];
         ssize_t len=hostinfo->Write(buff,size);
-        (hostinfo->*Http_Proc)();
+        (hostinfo->*hostinfo->Http_Proc)();
         return len;
     } else {
         who->clean(this);

@@ -22,6 +22,7 @@ protected:
     virtual void ReqProc(HttpReqHeader &req);
     virtual void ResProc(HttpResHeader &res);
     virtual ssize_t DataProc(const void *buff,size_t size)=0;
+public:
     void (Http::*Http_Proc)()=&Http::HeaderProc;
 };
 

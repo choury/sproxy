@@ -32,7 +32,6 @@ class Hostinfo:public Http{
     size_t writelen=0;
     ssize_t Read(void *buff,size_t size)override;
     virtual void ResProc(HttpResHeader &res);
-    virtual ssize_t DataProc(const void *buff,size_t size)override;
     virtual void ErrProc(int errcode)override;
 public:
     uint32_t id;
@@ -41,6 +40,7 @@ public:
     Hostinfo();
     Hostinfo(uint32_t id,Guest_spdy *guest,Host *host);
     virtual ~Hostinfo();
+    virtual ssize_t DataProc(const void *buff,size_t size)override;
     ssize_t Write(const void *buff,size_t size);
 };
 
