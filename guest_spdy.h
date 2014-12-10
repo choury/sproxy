@@ -36,7 +36,7 @@ class Hostinfo:public Http{
 public:
     uint32_t id;
     Guest_spdy *guest;
-    Host *host;
+    Host *host=nullptr;
     Hostinfo();
     Hostinfo(uint32_t id,Guest_spdy *guest,Host *host);
     virtual ~Hostinfo();

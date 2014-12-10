@@ -158,7 +158,7 @@ void Guest_spdy::Response(HttpResHeader& res, uint32_t id) {
 void Guest_spdy::CFrameProc(syn_frame* sframe) {
     NTOHL(sframe->id);
     HttpReqHeader req(sframe,&instream);
-
+//    req.port=80;
 
     LOG( "([%s]:%d)[%u]: %s %s\n",sourceip, sourceport,sframe->id,req.method,req.url);
 
@@ -187,7 +187,6 @@ void Guest_spdy::CFrameProc(rst_frame* rframe) {
     if(id2host.count(rframe->id)){
         Host *host=id2host[rframe->id];
         bindex.del(host,this);
-        host->clean(this);
         delete host2id[host];
         host2id.erase(host);
         id2host.erase(rframe->id);
@@ -260,6 +259,9 @@ void Hostinfo::ErrProc(int errcode) {
 }
 
 void Hostinfo::ResProc(HttpResHeader& res) {
+    res.del("Connection");
+    res.del("Keep-Alive");
+    res.del("Transfer-Encoding");
     guest->Response(res,id);
 }
 
@@ -274,8 +276,11 @@ ssize_t Hostinfo::DataProc(const void* buff, size_t size) {
         return guest->Write(guest,buff,size);
     } else {
         dhead.flag=FLAG_FIN;
-        guest->clean(this);
         guest->Write(guest,&dhead,sizeof(dhead));
+        guest->clean(this);
+        if(host)
+            host->clean(guest);
+        host=nullptr;
         return 0;
     }
 }
