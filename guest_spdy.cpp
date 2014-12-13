@@ -164,6 +164,7 @@ void Guest_spdy::CFrameProc(syn_frame* sframe) {
 
     if ( req.ismethod("GET") ||  req.ismethod("POST") || req.ismethod("CONNECT") ) {
         Host *host=Host::gethost(req,this);
+        bindex.del(this);
         host2id[host]=new Hostinfo(sframe->id,this,host);
         id2host[sframe->id]=host;
     } else {

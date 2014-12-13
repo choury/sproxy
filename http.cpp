@@ -3,6 +3,13 @@
 #include "net.h"
 #include "parse.h"
 
+
+Http::Http(){
+    http_getlen=0;
+    memset(http_buff,0,sizeof(http_buff));
+}
+
+
 void Http::ReqProc(HttpReqHeader& req) {
     LOG("Get a http request\n");
 }
@@ -147,7 +154,7 @@ void Http::FixLenProc() {
     }
     if(http_expectlen==0) {
         DataProc(http_buff,0);
-        Http_Proc=&Http::HeaderProc;
+        return;
     }
     (this->*Http_Proc)();
 }

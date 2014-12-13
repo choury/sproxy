@@ -12,7 +12,7 @@
 #include "common.h"
 
 char SHOST[DOMAINLIMIT];
-uint16_t SPORT=443;
+uint16_t SPORT=1443;
 
 Bindex bindex;
 
@@ -27,6 +27,9 @@ void Bindex::del(void* key1,void *key2) {
     map.erase(key2);
 }
 
+void Bindex::del(void* key){
+    map.erase(key);
+}
 
 void* Bindex::query(void* key) {
     if(key && map.count(key)) {

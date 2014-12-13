@@ -16,6 +16,7 @@ class Bindex{
 public:
     void add(void *key1,void *key2);
     void del(void *key1,void *key2);
+    void del(void *key);
     void *query(void *key);
 };
 
