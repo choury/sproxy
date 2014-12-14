@@ -9,7 +9,7 @@ Proxy_spdy::Proxy_spdy(Proxy *copy,Guest *guest):Proxy(copy) {
     bindex.add(this,guest);
     
     Request(req,guest);
-    guest->connected(this);
+    guest->connected();
 }
 
 ssize_t Proxy_spdy::Read(void* buff, size_t size){
@@ -71,7 +71,7 @@ Host* Proxy_spdy::getproxy_spdy(HttpReqHeader &req,Guest* guest) {
         exist->clean(guest);
     }
     proxy_spdy->Request(req,guest);
-    guest->connected(proxy_spdy);
+    guest->connected();
     bindex.add(proxy_spdy,guest);
     return proxy_spdy;
 }

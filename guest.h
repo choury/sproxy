@@ -24,7 +24,7 @@ protected:
 public:
     Guest();
     Guest(int fd);
-    virtual void connected(void* who);
+    virtual void connected();
 };
 
 

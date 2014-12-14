@@ -75,8 +75,12 @@ void Host::waitconnectHE(uint32_t events) {
         event.events = EPOLLIN | EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 
-        writelen= req.getstring(wbuff);
-        guest->connected(this);
+        if(req.ismethod("CONNECT")){
+            guest->Write(this,connecttip,strlen(connecttip));
+        }else{
+            writelen= req.getstring(wbuff);
+        }
+        guest->connected();
         handleEvent=(void (Con::*)(uint32_t))&Host::defaultHE;
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
@@ -190,7 +194,11 @@ int Host::connect() {
 }
 
 void Host::Request(HttpReqHeader &req,Guest *guest) {
-    writelen+=req.getstring(wbuff+writelen);
+    if(req.ismethod("CONNECT")){
+        guest->Write(this,connecttip,strlen(connecttip));
+    }else{
+        writelen+=req.getstring(wbuff+writelen);
+    }
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
@@ -209,7 +217,7 @@ Host* Host::gethost(HttpReqHeader &req,Guest* guest) {
     Host* exist=(Host *)bindex.query(guest);
     if (exist && exist->port == req.port && strcasecmp(exist->hostname, req.hostname) == 0) {
         exist->Request(req,guest);
-        guest->connected(exist);
+        guest->connected();
         return exist;
     }
     if (exist != NULL) {

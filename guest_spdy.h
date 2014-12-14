@@ -17,7 +17,6 @@ public:
     Guest_spdy(Guest_s *);
     virtual ~Guest_spdy();
     virtual void Response(HttpResHeader &res,uint32_t id);
-    virtual void connected(void *who)override;
     virtual ssize_t Write(Peer* who,const void *buff,size_t size)override;
     virtual void clean(Peer *)override;
     void clean(Hostinfo *hostinfo);
@@ -37,7 +36,6 @@ public:
     uint32_t id;
     Guest_spdy *guest;
     Host *host=nullptr;
-    Hostinfo();
     Hostinfo(uint32_t id,Guest_spdy *guest,Host *host);
     virtual ~Hostinfo();
     virtual ssize_t DataProc(const void *buff,size_t size)override;

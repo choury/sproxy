@@ -36,7 +36,7 @@ Host* Proxy::getproxy(HttpReqHeader &req,Guest* guest) {
     Host *exist=(Host *)bindex.query(guest);
     if (dynamic_cast<Proxy*>(exist)) {
         exist->Request(req,guest);
-        guest->connected(exist);
+        guest->connected();
         return exist;
     }
     if (exist != NULL) {
@@ -45,6 +45,17 @@ Host* Proxy::getproxy(HttpReqHeader &req,Guest* guest) {
 
     return new Proxy(req,guest);
 
+}
+
+
+void Proxy::Request(HttpReqHeader &req,Guest *guest) {
+    writelen+=req.getstring(wbuff+writelen);
+    struct epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLIN | EPOLLOUT;
+    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+
+    this->req=req;
 }
 
 
@@ -201,7 +212,7 @@ void Proxy::shakehandHE(uint32_t events) {
         }
         
         writelen= req.getstring(wbuff);
-        guest->connected(this);
+        guest->connected();
         return;
     }
     if (events & EPOLLERR || events & EPOLLHUP) {

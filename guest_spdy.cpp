@@ -54,27 +54,6 @@ void Guest_spdy::clean(Hostinfo* hostinfo) {
 }
 
 
-void Guest_spdy::connected(void* who) {
-    Host *host=(Host*)who;
-    if(host->req.ismethod("CONNECT")) {
-        if(host2id.count(host)) {
-            char tmp[200];
-            strcpy(tmp,connecttip);
-            HttpResHeader res(tmp);
-            writelen+=res.getframe(wbuff+writelen,&destream,host2id[host]->id);
-        }
-    }
-
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    if(epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
-        epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-    }
-}
-
-
-
 ssize_t Guest_spdy::Write(Peer* who, const void* buff, size_t size) {
     if(who == this) {
         return Guest::Write(this,buff,size);
@@ -221,13 +200,8 @@ ssize_t Guest_spdy::DFrameProc(uint32_t id, size_t size) {
 }
 
 
-Hostinfo::Hostinfo() {
-
-}
-
 
 Hostinfo::Hostinfo(uint32_t id,Guest_spdy *guest,Host *host):id(id),guest(guest),host(host) {
-
 }
 
 

@@ -61,14 +61,8 @@ Guest::Guest() {
 }
 
 
-void Guest::connected(void  *who) {
-    Host *host=(Host *)who;
-    if(host->req.ismethod("CONNECT") && !checkproxy(host->req.hostname)) {
-        Write(this,connecttip, strlen(connecttip));
-    }
-    
+void Guest::connected() {
     (this->*Http_Proc)();
-    
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;

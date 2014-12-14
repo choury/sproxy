@@ -12,7 +12,7 @@
 #include "common.h"
 
 char SHOST[DOMAINLIMIT];
-uint16_t SPORT=1443;
+uint16_t SPORT=443;
 
 Bindex bindex;
 

@@ -5,8 +5,6 @@
 
 
 Http::Http(){
-    http_getlen=0;
-    memset(http_buff,0,sizeof(http_buff));
 }
 
 
@@ -23,7 +21,7 @@ void Http::HeaderProc() {
     if (char* headerend = strnstr(http_buff, CRLF CRLF,http_getlen)) {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - http_buff;
-        if(memcmp(http_buff,"HTTP/1.1",8)==0) {
+        if(memcmp(http_buff,"HTTP",4)==0) {
             HttpResHeader res(http_buff);
             if(res.getval("Transfer-Encoding")!= nullptr) {
                 Http_Proc=&Http::ChunkLProc;
