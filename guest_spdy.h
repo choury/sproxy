@@ -16,6 +16,7 @@ class Guest_spdy:public Guest_s,public Spdy{
 public:
     Guest_spdy(Guest_s *);
     virtual ~Guest_spdy();
+    virtual size_t bufleft();
     virtual void Response(HttpResHeader &res,uint32_t id);
     virtual ssize_t Write(Peer* who,const void *buff,size_t size)override;
     virtual void clean(Peer *)override;

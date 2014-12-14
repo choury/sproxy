@@ -12,6 +12,14 @@ Guest_spdy::~Guest_spdy() {
 }
 
 
+size_t Guest_spdy::bufleft(){
+    size_t realleft= Peer::bufleft();
+    if(realleft <= HEADLENLIMIT)
+        return 0;
+    return realleft-HEADLENLIMIT;
+}
+
+
 void Guest_spdy::clean(Peer* who) {
     if(who==this) {
         for(auto i:host2id) {
@@ -96,6 +104,11 @@ void Guest_spdy::defaultHE(uint32_t events) {
         (this->*Spdy_Proc)();
     }
     if (events & EPOLLOUT) {
+        if(bufleft() == 0){
+            for(auto i:id2host){
+                i.second->writedcb();
+            }
+        }
         if(writelen) {
             int ret = Guest_s::Write();
             if (ret <= 0 ) {
@@ -105,7 +118,7 @@ void Guest_spdy::defaultHE(uint32_t events) {
                 return;
             }
         }
-
+        
         if(writelen==0) {
             event.events = EPOLLIN;
             epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
