@@ -22,6 +22,7 @@ public:
     virtual void clean(Peer *)override;
     void clean(Hostinfo *hostinfo);
     virtual void CFrameProc(syn_frame *)override;
+    virtual void CFrameProc(ping_frame *)override;
     virtual void CFrameProc(rst_frame *)override;
     virtual void CFrameProc(goaway_frame *)override;
     virtual ssize_t DFrameProc(uint32_t,size_t size)override;

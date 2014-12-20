@@ -32,7 +32,9 @@ void Guest_spdy::clean(Peer* who) {
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        if(epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
+            epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+        }
         handleEvent=(void (Con::*)(uint32_t))&Guest_spdy::closeHE;
         return;
     }
@@ -149,26 +151,31 @@ void Guest_spdy::Response(HttpResHeader& res, uint32_t id) {
 
 void Guest_spdy::CFrameProc(syn_frame* sframe) {
     NTOHL(sframe->id);
-    HttpReqHeader req(sframe,&instream);
-//    req.port=80;
+    try{
+        HttpReqHeader req(sframe,&instream);
+//      req.port=80;
 
-    LOG( "([%s]:%d)[%u]: %s %s\n",sourceip, sourceport,sframe->id,req.method,req.url);
+        LOG( "([%s]:%d)[%u]: %s %s\n",sourceip, sourceport,sframe->id,req.method,req.url);
 
-    if ( req.ismethod("GET") ||  req.ismethod("POST") || req.ismethod("CONNECT") ) {
-        Host *host=Host::gethost(req,this);
-        bindex.del(this);
-        host2id[host]=new Hostinfo(sframe->id,this,host);
-        id2host[sframe->id]=host;
-    } else {
-        LOGE( "([%s]:%d): unsported method:%s\n",sourceip, sourceport,req.method);
-        rst_frame rframe;
-        memset(&rframe,0,sizeof(rframe));
-        rframe.head.magic=CTRL_MAGIC;
-        rframe.head.type=htons(RST_TYPE);
-        set24(rframe.head.length,8);
-        rframe.code=htonl(PROTOCOL_ERROR);
-        rframe.id=htonl(sframe->id);
-        Peer::Write(this,&rframe,sizeof(rframe));
+        if ( req.ismethod("GET") ||  req.ismethod("POST") || req.ismethod("CONNECT") ) {
+            bindex.del(this);
+            Host *host=Host::gethost(req,this);
+            host2id[host]=new Hostinfo(sframe->id,this,host);
+            id2host[sframe->id]=host;
+        } else {
+            LOGE( "([%s]:%d): unsported method:%s\n",sourceip, sourceport,req.method);
+            rst_frame rframe;
+            memset(&rframe,0,sizeof(rframe));
+            rframe.head.magic=CTRL_MAGIC;
+            rframe.head.type=htons(RST_TYPE);
+            set24(rframe.head.length,8);
+            rframe.code=htonl(PROTOCOL_ERROR);
+            rframe.id=htonl(sframe->id);
+            Peer::Write(this,&rframe,sizeof(rframe));
+        }
+    }catch(...){
+        clean(this);
+        return;
     }
 }
 
@@ -185,6 +192,11 @@ void Guest_spdy::CFrameProc(rst_frame* rframe) {
         id2host.erase(rframe->id);
 
     }
+}
+
+
+void Guest_spdy::CFrameProc(ping_frame* pframe){
+    Write(this,pframe,sizeof(ping_frame));
 }
 
 

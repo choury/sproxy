@@ -42,7 +42,7 @@ void Proxy_spdy::clean(Peer *who)
         rframe.head.type=htons(RST_TYPE);
         set24(rframe.head.length,8);
         rframe.id=htonl(id);
-        Peer::Write(nullptr,&rframe,sizeof(rframe));
+        Peer::Write(this,&rframe,sizeof(rframe));
         
         guest2id.erase(who);
         id2guest.erase(id);
@@ -133,6 +133,12 @@ void Proxy_spdy::CFrameProc(syn_reply_frame* sframe){
     char buff[HEADLENLIMIT];
     guest->Write(this,buff,res.getstring(buff));
 }
+
+void Proxy_spdy::CFrameProc(ping_frame* pframe){
+    Peer::Write(this,pframe,sizeof(ping_frame));
+}
+
+
 
 void Proxy_spdy::CFrameProc(goaway_frame*){
     clean(this);

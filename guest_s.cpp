@@ -18,9 +18,7 @@ Guest_s::Guest_s(int fd, SSL* ssl): Guest(fd), ssl(ssl) {
 
 Guest_s::Guest_s(Guest_s* copy){
     *this=*copy;
-    bindex.del(copy,bindex.query(copy));
-    bindex.add(this,bindex.query(copy));
-    
+
     copy->fd=0;
     copy->ssl=NULL;
     delete copy;
@@ -76,10 +74,6 @@ void Guest_s::shakedhand() {
     if(data) {
         if(strncasecmp((const char*)data,"spdy/3.1",len)==0) {
             new Guest_spdy(this);
-            return;
-        } else {
-            LOGE( "([%s]:%d): unknown protocol:%.*s\n",sourceip, sourceport,len,data);
-            clean(this);
             return;
         }
     }

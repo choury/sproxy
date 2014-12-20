@@ -23,6 +23,11 @@ void Spdy::CFrameProc(syn_reply_frame*) {
     LOG("Get a syn reply frame\n");
 }
 
+void Spdy::CFrameProc(ping_frame*){
+    LOG("Get a ping frame\n");
+}
+
+
 void Spdy::CFrameProc(rst_frame*) {
     LOG("Get a rst frame\n");
 }
@@ -69,6 +74,9 @@ void Spdy::HeaderProc() {
                 break;
             case SYN_REPLY_TYPE:
                 Spdy_Proc=&Spdy::SynreplyProc;
+                break;
+            case PING_TYPE:
+                Spdy_Proc=&Spdy::PingProc;
                 break;
             case RST_TYPE:
                 Spdy_Proc=&Spdy::RstProc;
@@ -147,6 +155,24 @@ void Spdy::SynreplyProc() {
                 DFrameProc(stream_id,0);
             }
         }
+    }
+    (this->*Spdy_Proc)();
+}
+
+
+void Spdy::PingProc(){
+    ssize_t readlen=Read(spdy_buff+spdy_getlen,spdy_expectlen);
+    if(readlen <= 0) {
+        ErrProc(readlen,stream_id);
+        return;
+    } else {
+        spdy_expectlen -= readlen;
+        spdy_getlen    += readlen;
+    }
+    if(spdy_expectlen == 0) {
+        CFrameProc((ping_frame *)spdy_buff);
+        Spdy_Proc = &Spdy::HeaderProc;
+        spdy_getlen=0;
     }
     (this->*Spdy_Proc)();
 }

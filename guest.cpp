@@ -186,18 +186,16 @@ void Guest::defaultHE(uint32_t events) {
 }
 
 void Guest::closeHE(uint32_t events) {
-    if (events & EPOLLOUT) {
-        if(writelen == 0) {
-            delete this;
-            return;
-        }
+    if(writelen == 0) {
+        delete this;
+        return;
+    }
 
-        int ret = Write();
+    int ret = Write();
 
-        if (ret <= 0 && showerrinfo(ret,"write error while closing")) {
-            delete this;
-            return;
-        }
+    if (ret <= 0 && showerrinfo(ret,"write error while closing")) {
+        delete this;
+        return;
     }
 }
 

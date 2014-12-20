@@ -247,17 +247,21 @@ HttpReqHeader::HttpReqHeader(void* header){
 HttpReqHeader::HttpReqHeader(syn_frame* sframe, z_stream* instream) {
     size_t len=get24(sframe->head.length);
     char tmpbuff[HEADLENLIMIT];
-    spdy_inflate(instream,sframe+1,len-sizeof(syn_frame)+sizeof(spdy_head),tmpbuff,sizeof(tmpbuff));
-
+    if(spdy_inflate(instream,sframe+1,len-sizeof(syn_frame)+sizeof(spdy_head),tmpbuff,sizeof(tmpbuff))<0)
+        throw 0;
     uint32_t *p=(uint32_t *)tmpbuff;
     uint32_t c=ntohl(*p++);
     for(size_t i=0; i<c; ++i) {
         uint32_t nlen=ntohl(*p++);
         char *np=(char *)p;
         p=(uint32_t*)(np+nlen);
+        if((char *)p-tmpbuff>=HEADLENLIMIT)
+            throw 0;
         uint32_t vlen=ntohl(*p++);
         char *vp=(char *)p;
         p=(uint32_t *)((char *)p+vlen);
+        if((char *)p-tmpbuff>=HEADLENLIMIT)
+            throw 0;
         header[string(np,nlen)] = string(vp,vlen);
     }
     strcpy(method,header[":method"].c_str());

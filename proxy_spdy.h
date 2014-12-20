@@ -15,6 +15,7 @@ protected:
     virtual ssize_t Read(void *buff,size_t size)override;
     virtual void defaultHE(uint32_t events)override;
     virtual void CFrameProc(syn_reply_frame*)override;
+    virtual void CFrameProc(ping_frame *)override;
     virtual void CFrameProc(goaway_frame *)override;
     virtual ssize_t DFrameProc(uint32_t id,size_t size)override;
 public:

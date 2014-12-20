@@ -14,6 +14,7 @@ class Spdy{
     void HeaderProc();
     void SynProc();
     void SynreplyProc();
+    void PingProc();
     void RstProc();
     void GoawayProc();
     void DataProc();
@@ -25,6 +26,7 @@ protected:
     virtual void ErrProc(int errcode,uint32_t id)=0;
     virtual void CFrameProc(syn_frame *);
     virtual void CFrameProc(syn_reply_frame *);
+    virtual void CFrameProc(ping_frame *);
     virtual void CFrameProc(rst_frame *);
     virtual void CFrameProc(goaway_frame *);
     virtual ssize_t DFrameProc(uint32_t,size_t size);
