@@ -126,6 +126,9 @@ void Guest::ReqProc(HttpReqHeader& req) {
     if ( req.ismethod("GET") ||  req.ismethod("POST") || req.ismethod("CONNECT")) {
         epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
         Host::gethost(req,this);
+    } else if (req.ismethod("ADDPSITE")) {
+        addpsite(req.url);
+        Write(this,ADDBTIP, strlen(ADDBTIP));
     } else if(req.ismethod("DELPSITE")) {
         if(delpsite(req.url)) {
             Write(this,DELBTIP,strlen(DELBTIP));

@@ -63,7 +63,7 @@ void Host::waitconnectHE(uint32_t events) {
             return;
         }
         if (error != 0) {
-            LOGE( "connect to %s: %s\n",req.hostname, strerror(error));
+            LOGE( "connect to %s: %s\n",this->hostname, strerror(error));
             if(connect()<0) {
                 clean(this);
             }
@@ -186,7 +186,7 @@ int Host::connect() {
         }
         fd=Connect(&addr[testedaddr++].addr);
         if(fd <0 ) {
-            LOGE("connect to %s failed\n",req.hostname);
+            LOGE("connect to %s failed\n",this->hostname);
             return connect();
         }
     }
