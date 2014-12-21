@@ -70,7 +70,6 @@ void Host::waitconnectHE(uint32_t events) {
             return;
         }
 
-        Lift(hostname,addrs[testedaddr-1]);
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLIN | EPOLLOUT;
@@ -186,6 +185,9 @@ int Host::connect() {
     } else {
         if(fd>0) {
             close(fd);
+        }
+        if(testedaddr != 0){
+            RcdDown(hostname,addrs[testedaddr-1]);
         }
         fd=Connect(&addrs[testedaddr++].addr);
         if(fd <0 ) {

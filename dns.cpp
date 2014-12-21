@@ -91,19 +91,19 @@ Dns_rcd::Dns_rcd(const sockaddr_un &addr):result(0),gettime(time(NULL)) {
 
 };
 
-void Dns_rcd::Lift(const sockaddr_un& addr){
+void Dns_rcd::Down(const sockaddr_un& addr){
     for(std::vector<sockaddr_un>::const_iterator i=addrs.begin();i!=addrs.end();++i){
         switch(addr.addr.sa_family){
         case AF_INET:
             if(memcmp(&addr.addr_in,&i->addr_in,sizeof(sockaddr_in))==0){
                 addrs.erase(i);
-                addrs.insert(addrs.begin(),addr);
+                addrs.push_back(addr);
             }
             return;
         case AF_INET6:
             if(memcmp(&addr.addr_in6,&i->addr_in6,sizeof(sockaddr_in6))==0){
                 addrs.erase(i);
-                addrs.insert(addrs.begin(),addr);
+                addrs.push_back(addr);
             }
             return;
         }
@@ -296,9 +296,9 @@ int query(const char *host ,DNSCBfunc func,void *param) {
 }
 
 
-void Lift(const char *hostname,const sockaddr_un &addr){
+void RcdDown(const char *hostname,const sockaddr_un &addr){
     if(rcd_index_host.count(hostname)){
-        return rcd_index_host[hostname].Lift(addr);
+        return rcd_index_host[hostname].Down(addr);
     }
 }
 

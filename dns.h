@@ -37,7 +37,7 @@ public:
     Dns_rcd(int result=0);
     Dns_rcd(const std::vector<sockaddr_un>& addr);
     Dns_rcd(const sockaddr_un &addr);
-    void Lift(const sockaddr_un &addr);
+    void Down(const sockaddr_un &addr);
 };
 
 
@@ -45,6 +45,6 @@ typedef void (*DNSCBfunc)(void *,const Dns_rcd& );
 
 int dnsinit();
 int query(const char *host ,DNSCBfunc func,void *param);
-void Lift(const char *hostname,const sockaddr_un &addr);
+void RcdDown(const char *hostname,const sockaddr_un &addr);
 
 #endif
