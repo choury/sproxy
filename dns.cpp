@@ -92,7 +92,7 @@ Dns_rcd::Dns_rcd(const sockaddr_un &addr):result(0),gettime(time(NULL)) {
 };
 
 void Dns_rcd::Down(const sockaddr_un& addr){
-    for(std::vector<sockaddr_un>::const_iterator i=addrs.begin();i!=addrs.end();++i){
+    for(std::vector<sockaddr_un>::iterator i=addrs.begin();i!=addrs.end();++i){
         switch(addr.addr.sa_family){
         case AF_INET:
             if(memcmp(&addr.addr_in,&i->addr_in,sizeof(sockaddr_in))==0){
