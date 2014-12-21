@@ -176,8 +176,10 @@ void Proxy::waitconnectHE(uint32_t events) {
         handleEvent=(void (Con::*)(uint32_t))&Proxy::shakehandHE;
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("host unkown error: %s\n",strerror(errno));
-        clean(this);
+        LOGE("connect to proxy: %s\n", strerror(errno));
+        if(connect()<0) {
+            clean(this);
+        }
     }
 }
 

@@ -81,15 +81,35 @@ Dns_rcd::Dns_rcd(int result):result(result),gettime(time(NULL)) {
 
 }
 
-Dns_rcd::Dns_rcd(const std::vector<sockaddr_un>& addr):result(0),gettime(time(NULL)),addr(addr) {
+Dns_rcd::Dns_rcd(const std::vector<sockaddr_un>& addr):result(0),gettime(time(NULL)),addrs(addr) {
 
 }
 
 
 Dns_rcd::Dns_rcd(const sockaddr_un &addr):result(0),gettime(time(NULL)) {
-    this->addr.push_back(addr);
+    this->addrs.push_back(addr);
 
 };
+
+void Dns_rcd::Lift(const sockaddr_un& addr){
+    for(std::vector<sockaddr_un>::const_iterator i=addrs.begin();i!=addrs.end();++i){
+        switch(addr.addr.sa_family){
+        case AF_INET:
+            if(memcmp(&addr.addr_in,&i->addr_in,sizeof(sockaddr_in))==0){
+                addrs.erase(i);
+                addrs.insert(addrs.begin(),addr);
+            }
+            return;
+        case AF_INET6:
+            if(memcmp(&addr.addr_in6,&i->addr_in6,sizeof(sockaddr_in6))==0){
+                addrs.erase(i);
+                addrs.insert(addrs.begin(),addr);
+            }
+            return;
+        }
+    }
+}
+
 
 unsigned char * getdomain(unsigned char *buf,unsigned char *p) {
     while(*p) {
@@ -276,6 +296,12 @@ int query(const char *host ,DNSCBfunc func,void *param) {
 }
 
 
+void Lift(const char *hostname,const sockaddr_un &addr){
+    if(rcd_index_host.count(hostname)){
+        return rcd_index_host[hostname].Lift(addr);
+    }
+}
+
 Dns_srv::Dns_srv(int fd):fd(fd){
     handleEvent=(void (Con::*)(uint32_t))&Dns_srv::DnshandleEvent;
 }
@@ -351,6 +377,7 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
         }
     }
 }
+
 
 
 int Dns_srv::query(const char *host, int type) {

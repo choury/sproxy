@@ -12,7 +12,7 @@ class Host:public Peer{
     char hostname[DOMAINLIMIT];
     uint16_t port;
     size_t testedaddr=0;
-    std::vector<sockaddr_un> addr;
+    std::vector<sockaddr_un> addrs;
 protected:
     virtual int showerrinfo(int ret,const char *s)override;
     virtual void waitconnectHE(uint32_t events);

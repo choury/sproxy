@@ -33,10 +33,11 @@ public:
 #define DNS_SUCCEED     0
 #define DNS_ERR         1
 #define DNS_NOTFUND     2
-    std::vector<sockaddr_un> addr;
+    std::vector<sockaddr_un> addrs;
     Dns_rcd(int result=0);
     Dns_rcd(const std::vector<sockaddr_un>& addr);
     Dns_rcd(const sockaddr_un &addr);
+    void Lift(const sockaddr_un &addr);
 };
 
 
@@ -44,6 +45,6 @@ typedef void (*DNSCBfunc)(void *,const Dns_rcd& );
 
 int dnsinit();
 int query(const char *host ,DNSCBfunc func,void *param);
-
+void Lift(const char *hostname,const sockaddr_un &addr);
 
 #endif

@@ -63,13 +63,14 @@ void Host::waitconnectHE(uint32_t events) {
             return;
         }
         if (error != 0) {
-            LOGE( "connect to %s: %s\n",this->hostname, strerror(error));
+            LOGE("connect to %s: %s\n",this->hostname, strerror(error));
             if(connect()<0) {
                 clean(this);
             }
             return;
         }
 
+        Lift(hostname,addrs[testedaddr-1]);
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLIN | EPOLLOUT;
@@ -84,8 +85,10 @@ void Host::waitconnectHE(uint32_t events) {
         handleEvent=(void (Con::*)(uint32_t))&Host::defaultHE;
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("host unkown error: %s\n",strerror(errno));
-        clean(this);
+        LOGE("connect to %s: %s\n",this->hostname, strerror(errno));
+        if(connect()<0) {
+            clean(this);
+        }
     }
 }
 
@@ -161,9 +164,9 @@ void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
         LOGE("Dns query failed\n");
         host->clean(host);
     } else {
-        host->addr=rcd.addr;
-        for(size_t i=0; i<host->addr.size(); ++i) {
-            host->addr[i].addr_in6.sin6_port=htons(host->port);
+        host->addrs=rcd.addrs;
+        for(size_t i=0; i<host->addrs.size(); ++i) {
+            host->addrs[i].addr_in6.sin6_port=htons(host->port);
         }
         if(host->connect()<0) {
             LOGE("connect to %s failed\n",host->hostname);
@@ -178,13 +181,13 @@ void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
 }
 
 int Host::connect() {
-    if(testedaddr>= addr.size()) {
+    if(testedaddr>= addrs.size()) {
         return -1;
     } else {
         if(fd>0) {
             close(fd);
         }
-        fd=Connect(&addr[testedaddr++].addr);
+        fd=Connect(&addrs[testedaddr++].addr);
         if(fd <0 ) {
             LOGE("connect to %s failed\n",this->hostname);
             return connect();
