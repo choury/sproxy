@@ -101,7 +101,6 @@ ssize_t Guest::DataProc(const void *buff,size_t size) {
         epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
         return 0;
     }
-
     return host->Write(this,buff, Min(size,len));
 }
 
