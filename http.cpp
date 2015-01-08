@@ -4,7 +4,18 @@
 #include "parse.h"
 
 
-Http::Http(){
+Http::Http(Initstate state){
+    switch(state){
+    case HTTPHEAD:
+        Http_Proc=&Http::HeaderProc;
+        break;
+    case CHUNKLEN:
+        Http_Proc=&Http::ChunkLProc;
+        break;
+    case ALWAYS:
+        Http_Proc=&Http::AlwaysProc;
+        break;
+    }
 }
 
 

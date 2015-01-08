@@ -74,7 +74,7 @@ void Guest::connected() {
 int Guest::showerrinfo(int ret,const char *s) {
     if(ret < 0) {
         if(errno != EAGAIN) {
-            LOGE("([%s]:%d):%s:%s\n",
+            LOGE("([%s]:%d): %s:%s\n",
                  sourceip, sourceport,s,strerror(errno));
         } else {
             return 0;
@@ -82,71 +82,6 @@ int Guest::showerrinfo(int ret,const char *s) {
     }
     return 1;
 }
-
-ssize_t Guest::Read(void* buff, size_t len) {
-    return Peer::Read(buff, len);
-}
-
-
-ssize_t Guest::DataProc(const void *buff,size_t size) {
-    Host *host=(Host *)bindex.query(this);
-    if(host == NULL) {
-        LOGE("([%s]:%d): connecting to host lost\n",sourceip, sourceport);
-        clean(this);
-        return 0;
-    }
-    int len=host->bufleft();
-    if(len == 0) {
-        LOGE( "([%s]:%d): The host's buff is full\n",sourceip, sourceport);
-        epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
-        return 0;
-    }
-    return host->Write(this,buff, Min(size,len));
-}
-
-void Guest::ErrProc(int errcode) {
-    if(showerrinfo(errcode,"Guest read")) {
-        clean(this);
-    }
-}
-
-
-void Guest::ReqProc(HttpReqHeader& req) {
-    if(checkproxy(req.hostname)) {
-        LOG( "([%s]:%d): PROXY %s %s\n",
-             sourceip, sourceport,
-             req.method, req.url);
-    } else {
-        LOG( "([%s]:%d): %s %s\n",
-             sourceip, sourceport,
-             req.method, req.url);
-    }
-
-    if ( req.ismethod("GET") ||  req.ismethod("POST") || req.ismethod("CONNECT")) {
-        epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
-        Host::gethost(req,this);
-    } else if (req.ismethod("ADDPSITE")) {
-        addpsite(req.url);
-        Write(this,ADDBTIP, strlen(ADDBTIP));
-    } else if(req.ismethod("DELPSITE")) {
-        if(delpsite(req.url)) {
-            Write(this,DELBTIP,strlen(DELBTIP));
-        } else {
-            Write(this,DELFTIP,strlen(DELFTIP));
-        }
-    } else if(req.ismethod("GLOBALPROXY")) {
-        if(globalproxy()) {
-            Write(this,EGLOBLETIP, strlen(EGLOBLETIP));
-        } else {
-            Write(this,DGLOBLETIP, strlen(DGLOBLETIP));
-        }
-    } else {
-        LOGE( "([%s]:%d): unsported method:%s\n",
-              sourceip, sourceport,req.method);
-        clean(this);
-    }
-}
-
 
 void Guest::defaultHE(uint32_t events) {
     struct epoll_event event;
@@ -201,3 +136,56 @@ void Guest::closeHE(uint32_t events) {
     }
 }
 
+
+void Guest::ReqProc(HttpReqHeader& req) {
+    if(checkproxy(req.hostname)) {
+        LOG( "([%s]:%d): PROXY %s %s\n",
+             sourceip, sourceport,
+             req.method, req.url);
+    } else {
+        LOG( "([%s]:%d): %s %s\n",
+             sourceip, sourceport,
+             req.method, req.url);
+    }
+
+    if ( req.ismethod("GET") ||  req.ismethod("POST") || req.ismethod("CONNECT")) {
+        epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+        Host::gethost(req,this);
+    } else if (req.ismethod("ADDPSITE")) {
+        addpsite(req.url);
+        Write(this,ADDBTIP, strlen(ADDBTIP));
+    } else if(req.ismethod("DELPSITE")) {
+        if(delpsite(req.url)) {
+            Write(this,DELBTIP,strlen(DELBTIP));
+        } else {
+            Write(this,DELFTIP,strlen(DELFTIP));
+        }
+    } else if(req.ismethod("GLOBALPROXY")) {
+        if(globalproxy()) {
+            Write(this,EGLOBLETIP, strlen(EGLOBLETIP));
+        } else {
+            Write(this,DGLOBLETIP, strlen(DGLOBLETIP));
+        }
+    } else {
+        LOGE( "([%s]:%d): unsported method:%s\n",
+              sourceip, sourceport,req.method);
+        clean(this);
+    }
+}
+
+
+ssize_t Guest::DataProc(const void *buff,size_t size) {
+    Host *host=(Host *)bindex.query(this);
+    if(host == NULL) {
+        LOGE("([%s]:%d): connecting to host lost\n",sourceip, sourceport);
+        clean(this);
+        return -1;
+    }
+    int len=host->bufleft();
+    if(len == 0) {
+        LOGE( "([%s]:%d): The host's buff is full\n",sourceip, sourceport);
+        epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+        return -1;
+    }
+    return host->Write(this,buff, Min(size,len));
+}

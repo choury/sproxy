@@ -40,12 +40,7 @@ void* Bindex::query(void* key) {
 }
 
 
-
-Peer::Peer() {
-
-}
-
-Peer::Peer(int fd): fd(fd) {
+Peer::Peer(int fd,Http::Initstate state):Http(state),fd(fd){
 
 };
 
@@ -112,6 +107,13 @@ ssize_t Peer::Write() {
 size_t Peer::bufleft() {
     return sizeof(wbuff) - writelen;
 }
+
+void Peer::ErrProc(int errcode){
+    if(showerrinfo(errcode,"Peer read")) {
+        clean(this);
+    }
+}
+
 
 void Peer::clean(Peer* who) {
     Peer *peer =(Peer *)bindex.query(this);

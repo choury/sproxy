@@ -48,17 +48,6 @@ Host* Proxy::getproxy(HttpReqHeader &req,Guest* guest) {
 }
 
 
-void Proxy::Request(HttpReqHeader &req,Guest *guest) {
-    writelen+=req.getstring(wbuff+writelen);
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-
-    this->req=req;
-}
-
-
 ssize_t Proxy::Write() {
     ssize_t ret = SSL_write(ssl, wbuff, writelen);
 

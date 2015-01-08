@@ -10,12 +10,12 @@
 
 
 
-Host::Host() {
+Host::Host():Peer(0,ALWAYS){
 
 }
 
 
-Host::Host(HttpReqHeader &req,Guest* guest,const char* hostname,uint16_t port) {
+Host::Host(HttpReqHeader &req,Guest* guest,const char* hostname,uint16_t port):Peer(0,ALWAYS){
     bindex.add(guest,this);
     this->fd=0;
     writelen = 0;
@@ -24,7 +24,7 @@ Host::Host(HttpReqHeader &req,Guest* guest,const char* hostname,uint16_t port) {
     strcpy(this->hostname,hostname);
     this->port=port;
     handleEvent=(void (Con::*)(uint32_t))&Host::waitconnectHE;
-
+    
     if(query(hostname,(DNSCBfunc)Host::Dnscallback,this)<0) {
         LOGE("DNS qerry falied\n");
         throw 0;
@@ -38,9 +38,9 @@ Host::~Host() {
 
 int Host::showerrinfo(int ret, const char* s) {
     if(ret < 0) {
-        if(errno != EAGAIN){
+        if(errno != EAGAIN) {
             LOGE("%s: %s\n",s,strerror(errno));
-        }else{
+        } else {
             return 0;
         }
     }
@@ -75,9 +75,9 @@ void Host::waitconnectHE(uint32_t events) {
         event.events = EPOLLIN | EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 
-        if(req.ismethod("CONNECT")){
+        if(req.ismethod("CONNECT")) {
             guest->Write(this,connecttip,strlen(connecttip));
-        }else{
+        } else {
             writelen= req.getstring(wbuff);
         }
         guest->connected();
@@ -91,7 +91,6 @@ void Host::waitconnectHE(uint32_t events) {
     }
 }
 
-
 void Host::defaultHE(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
@@ -102,26 +101,7 @@ void Host::defaultHE(uint32_t events) {
     }
 
     if (events & EPOLLIN ) {
-        int bufleft = guest->bufleft();
-
-        if (bufleft == 0) {
-            LOGE( "The guest's write buff is full\n");
-            epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
-            return;
-        }
-
-        char buff[1024 * 1024];
-        int ret = Read(buff, bufleft);
-
-        if (ret <= 0 ) {
-            if(showerrinfo(ret,"host read error")) {
-                clean(this);
-                return;
-            }
-        } else {
-            guest->Write(this,buff, ret);
-        }
-
+        (this->*Http_Proc)();
     }
 
     if (events & EPOLLOUT) {
@@ -186,7 +166,7 @@ int Host::connect() {
         if(fd>0) {
             close(fd);
         }
-        if(testedaddr != 0){
+        if(testedaddr != 0) {
             RcdDown(hostname,addrs[testedaddr-1]);
         }
         fd=Connect(&addrs[testedaddr++].addr);
@@ -199,11 +179,7 @@ int Host::connect() {
 }
 
 void Host::Request(HttpReqHeader &req,Guest *guest) {
-    if(req.ismethod("CONNECT")){
-        guest->Write(this,connecttip,strlen(connecttip));
-    }else{
-        writelen+=req.getstring(wbuff+writelen);
-    }
+    writelen+=req.getstring(wbuff+writelen);
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
@@ -232,3 +208,21 @@ Host* Host::gethost(HttpReqHeader &req,Guest* guest) {
     return new Host(req,guest,req.hostname,req.port);
 }
 
+
+ssize_t Host::DataProc(const void* buff, size_t size) {
+    Guest *guest=(Guest *)bindex.query(this);
+    if( guest == NULL) {
+        clean(this);
+        return -1;
+    }
+
+    int len = guest->bufleft();
+
+    if (len == 0) {
+        LOGE( "The guest's write buff is full\n");
+        epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+        return -1;
+    }
+
+    return guest->Write(this,buff, Min(size,len));
+}

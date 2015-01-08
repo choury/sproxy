@@ -11,7 +11,6 @@
 #include "dns.h"
 
 #define NEXT_PROTO_STRING \
-    "\x08""spdy/3.1" \
     "\x08""http/1.1" \
     "\x08""choury/1"
   

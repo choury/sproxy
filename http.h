@@ -7,6 +7,7 @@
 #define HEAD_TOO_LAGER 1
 #define HTTP_ERROR     2
 
+
 class Http{
     char http_buff[HEADLENLIMIT];
     size_t http_getlen=0;
@@ -23,7 +24,8 @@ protected:
     virtual void ResProc(HttpResHeader &res);
     virtual ssize_t DataProc(const void *buff,size_t size)=0;
 public:
-    Http();
+    enum Initstate{HTTPHEAD,CHUNKLEN,ALWAYS};
+    Http(Initstate state=HTTPHEAD);
     void (Http::*Http_Proc)()=&Http::HeaderProc;
 };
 

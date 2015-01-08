@@ -16,7 +16,6 @@ protected:
     virtual int showerrinfo(int ret,const char *)override;
     virtual void waitconnectHE(uint32_t events)override;
     virtual void shakehandHE(uint32_t events);
-    virtual void Request(HttpReqHeader &req,Guest *guest);
 public:
     Proxy(Proxy *copy);
     Proxy(HttpReqHeader &req,Guest *guest);

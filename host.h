@@ -3,8 +3,6 @@
 
 #include "peer.h"
 #include "guest.h"
-#include "parse.h"
-#include "net.h"
 #include "dns.h"
 
 
@@ -20,6 +18,7 @@ protected:
     virtual void closeHE(uint32_t events);
     static void Dnscallback(Host * host,const Dns_rcd&&);
     virtual int connect();
+    virtual ssize_t DataProc(const void *buff,size_t size)override;
 public:
     Host();
     Host(HttpReqHeader &req, Guest *guest,const char* hostname,uint16_t port);

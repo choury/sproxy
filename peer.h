@@ -5,6 +5,7 @@
 #include <map>
 
 #include "con.h"
+#include "http.h"
 #include "common.h"
 
 /* guest   ---   (client) --- host(proxy) 
@@ -22,14 +23,14 @@ public:
 
 extern Bindex bindex;
 
-class Peer:public Con{
+class Peer:public Con,public Http{
 protected:
-    int  fd;
+    int fd;
     size_t  writelen=0;
     uchar wbuff[1024 * 1024];
-    Peer();  //do nothing
-    Peer(int fd);
-    virtual ssize_t Read(void *buff,size_t size);
+    Peer(int fd=0,Http::Initstate state=HTTPHEAD);
+    virtual ssize_t Read(void *buff,size_t size)override;
+    virtual void ErrProc(int errcode)override;
     virtual ssize_t Write();
     virtual void closeHE(uint32_t events)=0;
 public:
