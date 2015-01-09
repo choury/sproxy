@@ -12,16 +12,7 @@
  * guest_s ---   (server) --- host */
 
 
-class Bindex{
-    std::map<void *,void *> map;
-public:
-    void add(void *key1,void *key2);
-    void del(void *key1,void *key2);
-    void del(void *key);
-    void *query(void *key);
-};
 
-extern Bindex bindex;
 
 class Peer:public Con,public Http{
 protected:
@@ -41,6 +32,17 @@ public:
     virtual int showerrinfo(int ret,const char * )=0;
     virtual ~Peer();
 };
+
+class Bindex{
+    std::map<Peer *,Peer *> map;
+public:
+    void add(Peer *key1,Peer *key2);
+    void del(Peer *key1,Peer *key2);
+    void del(Peer *key);
+    Peer *query(Peer *key);
+};
+
+extern Bindex bindex;
 
 
 #endif

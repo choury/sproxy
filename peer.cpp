@@ -16,22 +16,22 @@ uint16_t SPORT=443;
 
 Bindex bindex;
 
-void Bindex::add(void* key1, void* key2) {
+void Bindex::add(Peer* key1, Peer* key2) {
     map[key1]=key2;
     map[key2]=key1;
 }
 
 
-void Bindex::del(void* key1,void *key2) {
+void Bindex::del(Peer* key1,Peer *key2) {
     map.erase(key1);
     map.erase(key2);
 }
 
-void Bindex::del(void* key){
+void Bindex::del(Peer* key){
     map.erase(key);
 }
 
-void* Bindex::query(void* key) {
+Peer* Bindex::query(Peer* key) {
     if(key && map.count(key)) {
         return map[key];
     } else {
