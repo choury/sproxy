@@ -42,10 +42,6 @@ void Http::HeaderProc() {
             } else {
                 Http_Proc=&Http::AlwaysProc;
             }
-            if(headerlen != http_getlen) {
-                memmove(http_buff,http_buff+headerlen,http_getlen-headerlen);
-            }
-            http_getlen-=headerlen;
             ResProc(res);
         } else {
             HttpReqHeader req(http_buff);
@@ -59,13 +55,12 @@ void Http::HeaderProc() {
             } else if(req.ismethod("CONNECT")) {
                 Http_Proc=&Http::AlwaysProc;
             }
-            if(headerlen != http_getlen) {
-                memmove(http_buff,http_buff+headerlen,http_getlen-headerlen);
-            }
-            http_getlen-=headerlen;
             ReqProc(req);
-            return;
         }
+        if(headerlen != http_getlen) {
+            memmove(http_buff,http_buff+headerlen,http_getlen-headerlen);
+        }
+        http_getlen-=headerlen;
 
     } else {
         if(http_getlen == sizeof(http_buff)) {
@@ -132,9 +127,7 @@ void Http::ChunkBProc()
                 ErrProc(readlen);
                 return;
             }
-            if(readlen>0) {
-                http_getlen    += readlen;
-            }
+            http_getlen = readlen;
         }
         ssize_t len=DataProc(http_buff,Min(http_getlen,http_expectlen));
         if(len<0) {
@@ -152,7 +145,6 @@ void Http::FixLenProc() {
     if(http_expectlen==0) {
         DataProc(http_buff,0);
         Http_Proc=&Http::HeaderProc;
-        return;
     }else{
         if(http_getlen == 0){
             ssize_t readlen=Read(http_buff,sizeof(http_buff));
@@ -160,9 +152,7 @@ void Http::FixLenProc() {
                 ErrProc(readlen);
                 return;
             }
-            if(readlen>0) {
-                http_getlen    += readlen;
-            }
+            http_getlen = readlen;
         }
         
         ssize_t len=DataProc(http_buff,Min(http_getlen,http_expectlen));
@@ -179,14 +169,12 @@ void Http::FixLenProc() {
 
 void Http::AlwaysProc() {
     if(http_getlen == 0) {
-        ssize_t readlen=Read(http_buff+http_getlen,sizeof(http_buff));
+        ssize_t readlen=Read(http_buff,sizeof(http_buff));
         if(readlen<=0) {
             ErrProc(readlen);
             return;
         }
-        if(readlen>0) {
-            http_getlen    += readlen;
-        }
+        http_getlen = readlen;
     }
     ssize_t len=DataProc(http_buff,http_getlen);
     if(len<=0) {

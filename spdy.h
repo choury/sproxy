@@ -8,6 +8,7 @@
 
 class Spdy{
     char spdy_buff[HEADLENLIMIT];
+    uchar  spdy_flag;
     size_t spdy_expectlen;
     size_t spdy_getlen=0;
     uint32_t stream_id;
@@ -18,7 +19,7 @@ class Spdy{
     void RstProc();
     void GoawayProc();
     void DataProc();
-    void DefaultProc();
+    void DropProc();
 protected:
     z_stream instream;
     z_stream destream;
@@ -29,7 +30,7 @@ protected:
     virtual void CFrameProc(ping_frame *);
     virtual void CFrameProc(rst_frame *);
     virtual void CFrameProc(goaway_frame *);
-    virtual ssize_t DFrameProc(uint32_t,size_t size);
+    virtual ssize_t DFrameProc(void *buff,size_t size,uint32_t id);
     void (Spdy::*Spdy_Proc)()=&Spdy::HeaderProc;
 
 public:

@@ -9,7 +9,6 @@
 #include "peer.h"
 #include "host.h"
 #include "guest.h"
-#include "common.h"
 
 char SHOST[DOMAINLIMIT];
 uint16_t SPORT=443;
@@ -27,7 +26,7 @@ void Bindex::del(Peer* key1,Peer *key2) {
     map.erase(key2);
 }
 
-void Bindex::del(Peer* key){
+void Bindex::del(Peer* key) {
     map.erase(key);
 }
 
@@ -40,8 +39,7 @@ Peer* Bindex::query(Peer* key) {
 }
 
 
-Peer::Peer(int fd,Http::Initstate state):Http(state),fd(fd){
-
+Peer::Peer(int fd,Http::Initstate state):Http(state),fd(fd) {
 };
 
 
@@ -71,11 +69,14 @@ ssize_t Peer::Write(Peer *,const void* buff, size_t size) {
 }
 
 void Peer::writedcb() {
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    if(epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
-        epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+    if(fd>0){
+        struct epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLIN | EPOLLOUT;
+        if(epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
+            epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+        }
+        (this->*this->Http_Proc)();
     }
 }
 
@@ -105,10 +106,10 @@ ssize_t Peer::Write() {
 }
 
 size_t Peer::bufleft() {
-    return sizeof(wbuff) - writelen;
+    return sizeof(wbuff)-writelen<100?0:sizeof(wbuff)-writelen;
 }
 
-void Peer::ErrProc(int errcode){
+void Peer::ErrProc(int errcode) {
     if(showerrinfo(errcode,"Peer read")) {
         clean(this);
     }
@@ -116,13 +117,13 @@ void Peer::ErrProc(int errcode){
 
 
 void Peer::clean(Peer* who) {
-    Peer *peer =(Peer *)bindex.query(this);
+    Peer *peer =bindex.query(this);
     bindex.del(this,peer);
     if(who==this && peer) {
         peer->clean(this);
     }
 
-    if(fd!=0) {
+    if(fd>0) {
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLOUT;
@@ -130,8 +131,7 @@ void Peer::clean(Peer* who) {
             epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
         }
         handleEvent=(void (Con::*)(uint32_t))&Peer::closeHE;
-    } else {
+    } else if(who == this) {
         delete this;
     }
 }
-

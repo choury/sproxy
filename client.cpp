@@ -9,7 +9,6 @@
 
 #include "common.h"
 #include "guest.h"
-#include "proxy_spdy.h"
 #include "parse.h"
 #include "dns.h"
 
@@ -49,13 +48,9 @@ int main(int argc, char** argv) {
     }
 
     struct sockaddr_in6 myaddr;
-
     bzero(&myaddr, sizeof(myaddr));
-
     myaddr.sin6_family = AF_INET6;
-
     myaddr.sin6_port = htons(CPORT);
-
     myaddr.sin6_addr = in6addr_any;
 
     if (bind(svsk, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {

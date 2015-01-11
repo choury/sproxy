@@ -11,7 +11,7 @@ lib.c parse.cpp server.cpp net.c dns.cpp)
 
 
 add_executable(sproxy_client http.cpp 
-spdy.cpp proxy_spdy.cpp spdy_zlib.c
+spdy.cpp spdy_zlib.c
 peer.cpp guest.cpp host.cpp proxy.cpp 
 lib.c parse.cpp client.cpp net.c dns.cpp)
 

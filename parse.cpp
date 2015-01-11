@@ -81,6 +81,7 @@ int globalproxy() {
 }
 
 bool checkproxy(const char *hostname) {
+#ifdef CLIENT
     if (!loadedsite) {
         loadproxysite();
     }
@@ -107,7 +108,7 @@ bool checkproxy(const char *hostname) {
 
         subhost = strpbrk(subhost, ".");
     }
-
+#endif
     return false;
 }
 

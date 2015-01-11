@@ -46,8 +46,8 @@ extern "C" {
 
 typedef unsigned char uchar;
 char* strnstr(const char* s1, const char* s2, size_t len);
+void dump_trace();
 
-    
 #ifdef  __cplusplus
 }
 #endif

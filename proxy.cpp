@@ -3,7 +3,6 @@
 #include <set>
 
 #include "proxy.h"
-#include "proxy_spdy.h"
 #include "guest.h"
 
 
@@ -30,9 +29,6 @@ Proxy::Proxy(HttpReqHeader &req,Guest *guest):Host(req,guest,SHOST,SPORT) {}
 
 
 Host* Proxy::getproxy(HttpReqHeader &req,Guest* guest) {
-    if(proxy_spdy) {
-        return Proxy_spdy::getproxy_spdy(req,guest);
-    }
     Host *exist=(Host *)bindex.query(guest);
     if (dynamic_cast<Proxy*>(exist)) {
         exist->Request(req,guest);
@@ -198,7 +194,6 @@ void Proxy::shakehandHE(uint32_t events) {
         unsigned int len;
         SSL_get0_next_proto_negotiated(ssl,&data,&len);
         if(data && strncasecmp((const char*)data,"spdy/3.1",len)==0) {
-            proxy_spdy=new Proxy_spdy(this,guest);
             return;
         }
         

@@ -11,8 +11,8 @@
 #include "dns.h"
 
 #define NEXT_PROTO_STRING \
-    "\x08""http/1.1" \
-    "\x08""choury/1"
+    "\x8""http/1.1" \
+    "\x8""choury/1"
   
 int efd;
 

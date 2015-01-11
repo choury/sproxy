@@ -9,22 +9,33 @@
 #include "proxy.h"
 
 
-
-Host::Host():Peer(0,ALWAYS){
+Host::Host():Peer(0,ALWAYS) {
 
 }
 
-
-Host::Host(HttpReqHeader &req,Guest* guest,const char* hostname,uint16_t port):Peer(0,ALWAYS){
+Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state): Peer(0, state) {
     bindex.add(guest,this);
-    this->fd=0;
+    writelen = 0;
+
+    this->req=req;
+    strcpy(hostname,req.hostname);
+    port=req.port;
+    if(query(hostname,(DNSCBfunc)Host::Dnscallback,this)<0) {
+        LOGE("DNS qerry falied\n");
+        throw 0;
+    }
+}
+
+
+Host::Host(HttpReqHeader &req,Guest* guest,const char* hostname,uint16_t port):Peer(0,ALWAYS) {
+    bindex.add(guest,this);
     writelen = 0;
 
     this->req=req;
     strcpy(this->hostname,hostname);
     this->port=port;
     handleEvent=(void (Con::*)(uint32_t))&Host::waitconnectHE;
-    
+
     if(query(hostname,(DNSCBfunc)Host::Dnscallback,this)<0) {
         LOGE("DNS qerry falied\n");
         throw 0;
@@ -49,7 +60,7 @@ int Host::showerrinfo(int ret, const char* s) {
 
 
 void Host::waitconnectHE(uint32_t events) {
-    Guest *guest=(Guest *)bindex.query(this);
+    Guest *guest=dynamic_cast<Guest *>(bindex.query(this));
     if( guest == NULL) {
         clean(this);
         return;
@@ -94,34 +105,28 @@ void Host::waitconnectHE(uint32_t events) {
 void Host::defaultHE(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
-    Guest *guest=(Guest *)bindex.query(this);
+    Guest *guest=dynamic_cast<Guest *>(bindex.query(this));
     if( guest == NULL) {
         clean(this);
         return;
     }
 
-    if (events & EPOLLIN ) {
-        (this->*Http_Proc)();
+    (this->*Http_Proc)();
+    if (writelen) {
+        int ret = Write();
+        if (ret <= 0) {
+            if(showerrinfo(ret,"host write error")) {
+                clean(this);
+            }
+            return;
+        }
+        guest->writedcb();
+
     }
 
-    if (events & EPOLLOUT) {
-        if (writelen) {
-            int ret = Write();
-            if (ret <= 0) {
-                if(showerrinfo(ret,"host write error")) {
-                    clean(this);
-                }
-                return;
-            }
-            guest->writedcb();
-
-        }
-
-        if (writelen == 0) {
-            event.events = EPOLLIN;
-            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-        }
-
+    if (writelen == 0) {
+        event.events = EPOLLIN;
+        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     }
 
     if (events & EPOLLERR || events & EPOLLHUP) {
@@ -155,6 +160,7 @@ void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
             event.data.ptr=host;
             event.events=EPOLLOUT;
             epoll_ctl(efd,EPOLL_CTL_ADD,host->fd,&event);
+            host->handleEvent=(void (Con::*)(uint32_t))&Host::waitconnectHE;
         }
     }
 }
@@ -195,7 +201,7 @@ Host* Host::gethost(HttpReqHeader &req,Guest* guest) {
         return Proxy::getproxy(req,guest);
     }
 #endif
-    Host* exist=(Host *)bindex.query(guest);
+    Host* exist=dynamic_cast<Host *>(bindex.query(guest));
     if (exist && exist->port == req.port && strcasecmp(exist->hostname, req.hostname) == 0) {
         exist->Request(req,guest);
         guest->connected();
@@ -205,12 +211,12 @@ Host* Host::gethost(HttpReqHeader &req,Guest* guest) {
         exist->clean(guest);
     }
 
-    return new Host(req,guest,req.hostname,req.port);
+    return new Host(req,guest);
 }
 
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
-    Guest *guest=(Guest *)bindex.query(this);
+    Guest *guest=dynamic_cast<Guest *>(bindex.query(this));
     if( guest == NULL) {
         clean(this);
         return -1;
@@ -226,3 +232,4 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 
     return guest->Write(this,buff, Min(size,len));
 }
+

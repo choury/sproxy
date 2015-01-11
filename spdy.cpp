@@ -23,7 +23,7 @@ void Spdy::CFrameProc(syn_reply_frame*) {
     LOG("Get a syn reply frame\n");
 }
 
-void Spdy::CFrameProc(ping_frame*){
+void Spdy::CFrameProc(ping_frame*) {
     LOG("Get a ping frame\n");
 }
 
@@ -37,38 +37,25 @@ void Spdy::CFrameProc(goaway_frame*) {
     LOG("Get a goaway frame\n");
 }
 
-ssize_t Spdy::DFrameProc(uint32_t id,size_t size) {
+ssize_t Spdy::DFrameProc(void *buff,size_t size,uint32_t id) {
     LOG("Get a dataframe\n");
-    if(size == 0){
-        return 0;
-    }
-    ssize_t readlen = Read(spdy_buff,size>sizeof(spdy_buff)?sizeof(spdy_buff):size);
-    if(readlen <= 0){
-        ErrProc(readlen,id);
-    }
-    return readlen;
+    return size;
 }
 
 
 void Spdy::HeaderProc() {
-    ssize_t readlen=Read(spdy_buff+spdy_getlen,sizeof(spdy_head));
-    if(readlen<=0) {
-        ErrProc(readlen,stream_id);
-        return;
-    }else{
-        spdy_getlen+=readlen;
-    }
-    if(spdy_getlen == sizeof(spdy_head)) {
+    if(spdy_getlen >= sizeof(spdy_head)) {
         spdy_head *shead=(spdy_head *)spdy_buff;
+        spdy_flag = shead->flag;
         spdy_expectlen=get24(shead->length);
         if(shead->c==1) {
+            spdy_expectlen += sizeof(spdy_head);
             spdy_cframe_head *chead=(spdy_cframe_head *)shead;
-            if(chead->magic != CTRL_MAGIC){
+            if(chead->magic != CTRL_MAGIC) {
                 ErrProc(PROTOCOL_ERROR,stream_id);
                 return;
             }
-            NTOHS(chead->type);
-            switch(chead->type) {
+            switch(ntohs(chead->type)) {
             case SYN_TYPE:
                 Spdy_Proc=&Spdy::SynProc;
                 break;
@@ -85,14 +72,27 @@ void Spdy::HeaderProc() {
                 Spdy_Proc=&Spdy::GoawayProc;
                 break;
             default:
-                printf("get a spdy ctrl frame:%d\n",chead->type);
-                Spdy_Proc=&Spdy::DefaultProc;
+                printf("get a spdy ctrl frame:%d\n",ntohs(chead->type));
+                Spdy_Proc=&Spdy::DropProc;
                 break;
             }
         } else {
             spdy_dframe_head *dhead=(spdy_dframe_head *)shead;
             stream_id=ntohl(dhead->id);
             Spdy_Proc=&Spdy::DataProc;
+
+            if(sizeof(spdy_head) != spdy_getlen) {
+                memmove(spdy_buff,spdy_buff+sizeof(spdy_head),spdy_getlen-sizeof(spdy_head));
+            }
+            spdy_getlen -= sizeof(spdy_head);
+        }
+    } else {
+        ssize_t readlen=Read(spdy_buff+spdy_getlen,sizeof(spdy_buff)-spdy_getlen);
+        if(readlen <= 0) {
+            ErrProc(readlen,stream_id);
+            return;
+        } else {
+            spdy_getlen += readlen;
         }
     }
     (this->*Spdy_Proc)();
@@ -100,59 +100,62 @@ void Spdy::HeaderProc() {
 
 
 void Spdy::SynProc() {
-    size_t len=Min(sizeof(spdy_buff)-spdy_getlen,spdy_expectlen);
-    if(len==0){
+    if(spdy_getlen >= spdy_expectlen) {
         syn_frame *sframe=(syn_frame*)spdy_buff;
         stream_id=ntohl(sframe->id);
-        ErrProc(FRAME_TOO_LARGE,stream_id);
-        Spdy_Proc=&Spdy::DefaultProc;
-    }else{
-        ssize_t readlen=Read(spdy_buff+spdy_getlen,len);
-        if(readlen <= 0) {
-            ErrProc(readlen,stream_id);
-            return;
-        } else {
-            spdy_expectlen -= readlen;
-            spdy_getlen    += readlen;
+        CFrameProc(sframe);
+        Spdy_Proc = &Spdy::HeaderProc;
+        if(spdy_expectlen != spdy_getlen) {
+            memmove(spdy_buff,spdy_buff+spdy_expectlen,spdy_getlen-spdy_expectlen);
         }
-        if(spdy_expectlen == 0) {
+        spdy_getlen -= spdy_expectlen;
+    } else {
+        if(sizeof(spdy_buff) == spdy_getlen) {
             syn_frame *sframe=(syn_frame*)spdy_buff;
             stream_id=ntohl(sframe->id);
-            CFrameProc(sframe);
-            Spdy_Proc = &Spdy::HeaderProc;
-            spdy_getlen=0;
+            ErrProc(FRAME_TOO_LARGE,stream_id);
+            Spdy_Proc=&Spdy::DropProc;
+        } else {
+            ssize_t readlen=Read(spdy_buff+spdy_getlen,sizeof(spdy_buff)-spdy_getlen);
+            if(readlen <= 0) {
+                ErrProc(readlen,stream_id);
+                return;
+            } else {
+                spdy_getlen += readlen;
+            }
         }
     }
     (this->*Spdy_Proc)();
 }
 
 void Spdy::SynreplyProc() {
-    size_t len=Min(sizeof(spdy_buff)-spdy_getlen,spdy_expectlen);
-    if(len==0){
-        syn_reply_frame *srframe=(syn_reply_frame *)spdy_buff;
-        stream_id=ntohl(srframe->id);
-        ErrProc(FRAME_TOO_LARGE,stream_id);
-        Spdy_Proc=&Spdy::DefaultProc;
-        return;
-    }else{
-        ssize_t readlen=Read(spdy_buff+spdy_getlen,len);
-        if(readlen <= 0) {
-            ErrProc(readlen,stream_id);
-            return;
-        } else {
-            spdy_expectlen -= readlen;
-            spdy_getlen    += readlen;
+    if(spdy_getlen >= spdy_expectlen) {
+        syn_reply_frame *sframe=(syn_reply_frame*)spdy_buff;
+        stream_id=ntohl(sframe->id);
+        CFrameProc(sframe);
+        Spdy_Proc = &Spdy::HeaderProc;
+        if(spdy_expectlen != spdy_getlen) {
+            memmove(spdy_buff,spdy_buff+spdy_expectlen,spdy_getlen-spdy_expectlen);
         }
-        if(spdy_expectlen == 0) {
+        spdy_getlen -= spdy_expectlen;
+    } else {
+        if(sizeof(spdy_buff) == spdy_getlen) {
             syn_reply_frame *srframe=(syn_reply_frame *)spdy_buff;
-            uchar spdy_flag = srframe->head.flag;
             stream_id=htonl(srframe->id);
             CFrameProc(srframe);
             Spdy_Proc = &Spdy::HeaderProc;
             spdy_getlen=0;
 
             if(spdy_flag & FLAG_FIN) {
-                DFrameProc(stream_id,0);
+                DFrameProc(spdy_buff,0,stream_id);
+            }
+        } else {
+            ssize_t readlen=Read(spdy_buff+spdy_getlen,sizeof(spdy_buff)-spdy_getlen);
+            if(readlen <= 0) {
+                ErrProc(readlen,stream_id);
+                return;
+            } else {
+                spdy_getlen += readlen;
             }
         }
     }
@@ -160,37 +163,47 @@ void Spdy::SynreplyProc() {
 }
 
 
-void Spdy::PingProc(){
-    ssize_t readlen=Read(spdy_buff+spdy_getlen,spdy_expectlen);
-    if(readlen <= 0) {
-        ErrProc(readlen,stream_id);
-        return;
-    } else {
-        spdy_expectlen -= readlen;
-        spdy_getlen    += readlen;
-    }
-    if(spdy_expectlen == 0) {
-        CFrameProc((ping_frame *)spdy_buff);
+void Spdy::PingProc() {
+    if(spdy_getlen >= spdy_expectlen) {
+        ping_frame *pframe=(ping_frame*)spdy_buff;
+        stream_id=ntohl(pframe->id);
+        CFrameProc(pframe);
         Spdy_Proc = &Spdy::HeaderProc;
-        spdy_getlen=0;
+        if(spdy_expectlen != spdy_getlen) {
+            memmove(spdy_buff,spdy_buff+spdy_expectlen,spdy_getlen-spdy_expectlen);
+        }
+        spdy_getlen -= spdy_expectlen;
+    } else {
+        ssize_t readlen=Read(spdy_buff+spdy_getlen,sizeof(spdy_buff)-spdy_getlen);
+        if(readlen <= 0) {
+            ErrProc(readlen,stream_id);
+            return;
+        } else {
+            spdy_getlen += readlen;
+        }
     }
     (this->*Spdy_Proc)();
 }
 
 
 void Spdy::RstProc() {
-    ssize_t readlen=Read(spdy_buff+spdy_getlen,spdy_expectlen);
-    if(readlen <= 0) {
-        ErrProc(readlen,stream_id);
-        return;
-    } else {
-        spdy_expectlen -= readlen;
-        spdy_getlen    += readlen;
-    }
-    if(spdy_expectlen == 0) {
-        CFrameProc((rst_frame *)spdy_buff);
+    if(spdy_getlen >= spdy_expectlen) {
+        rst_frame *rframe=(rst_frame*)spdy_buff;
+        stream_id=ntohl(rframe->id);
+        CFrameProc(rframe);
         Spdy_Proc = &Spdy::HeaderProc;
-        spdy_getlen=0;
+        if(spdy_expectlen != spdy_getlen) {
+            memmove(spdy_buff,spdy_buff+spdy_expectlen,spdy_getlen-spdy_expectlen);
+        }
+        spdy_getlen -= spdy_expectlen;
+    } else {
+        ssize_t readlen=Read(spdy_buff+spdy_getlen,sizeof(spdy_buff)-spdy_getlen);
+        if(readlen <= 0) {
+            ErrProc(readlen,stream_id);
+            return;
+        } else {
+            spdy_getlen += readlen;
+        }
     }
     (this->*Spdy_Proc)();
 }
@@ -198,62 +211,71 @@ void Spdy::RstProc() {
 
 
 void Spdy::GoawayProc() {
-    ssize_t readlen=Read(spdy_buff+spdy_getlen,spdy_expectlen);
-    if(readlen <= 0) {
-        ErrProc(readlen,stream_id);
-        return;
-    } else {
-        spdy_expectlen -= readlen;
-        spdy_getlen    += readlen;
-    }
-    if(spdy_expectlen == 0) {
+    if(spdy_getlen >= spdy_expectlen) {
         CFrameProc((goaway_frame *)spdy_buff);
         Spdy_Proc = &Spdy::HeaderProc;
-        spdy_getlen=0;
+        if(spdy_expectlen != spdy_getlen) {
+            memmove(spdy_buff,spdy_buff+spdy_expectlen,spdy_getlen-spdy_expectlen);
+        }
+        spdy_getlen -= spdy_expectlen;
+    } else {
+        ssize_t readlen=Read(spdy_buff+spdy_getlen,sizeof(spdy_buff)-spdy_getlen);
+        if(readlen <= 0) {
+            ErrProc(readlen,stream_id);
+            return;
+        } else {
+            spdy_getlen += readlen;
+        }
     }
     (this->*Spdy_Proc)();
 }
 
 
 void Spdy::DataProc() {
-    uchar spdy_flag = ((spdy_head *)spdy_buff)->flag;
-    if(spdy_expectlen){
-        ssize_t readlen=DFrameProc(stream_id,spdy_expectlen);
-        if(readlen<0){
-            Spdy_Proc=&Spdy::DefaultProc;
-            return;
+    ssize_t readlen=Read(spdy_buff+spdy_getlen,sizeof(spdy_buff)-spdy_getlen);
+    if(readlen<=0) {
+        ErrProc(readlen,stream_id);
+        return;
+    }
+    spdy_getlen += readlen;
+    if(spdy_expectlen) {
+        ssize_t writelen=DFrameProc(spdy_buff,Min(spdy_getlen,spdy_expectlen),stream_id);
+        if(writelen<0) {
+            Spdy_Proc=&Spdy::DropProc;
         }
-        if(readlen>0){
-            spdy_expectlen-=readlen;
+        if(writelen>0) {
+            memmove(spdy_buff,spdy_buff+writelen,spdy_getlen-writelen);
+            spdy_expectlen -= writelen;
+            spdy_getlen    -= writelen;
         }
-    }else if(spdy_flag & FLAG_FIN) {
-        DFrameProc(stream_id,0);
+    } else if(spdy_flag & FLAG_FIN) {
+        DFrameProc(spdy_buff,0,stream_id);
     }
     if(spdy_expectlen==0) {
         if(spdy_flag & FLAG_FIN) {
-            DFrameProc(stream_id,0);
+            DFrameProc(spdy_buff,0,stream_id);
         }
         Spdy_Proc=&Spdy::HeaderProc;
-        spdy_getlen=0;
     }
     (this->*Spdy_Proc)();
 }
 
 
 
-void Spdy::DefaultProc() {
-    size_t len=Min(sizeof(spdy_buff),spdy_expectlen);
-    ssize_t readlen=Read(spdy_buff,len);
-    if(readlen <= 0) {
-        ErrProc(readlen,stream_id);
-        return;
-    } else {
-        spdy_expectlen -= readlen;
-    }
-
-    if(spdy_expectlen == 0) {
+void Spdy::DropProc() {
+    if(spdy_getlen >= spdy_expectlen) {
         Spdy_Proc=&Spdy::HeaderProc;
-        spdy_getlen=0;
+        memmove(spdy_buff,spdy_buff+spdy_expectlen,spdy_getlen-spdy_expectlen);
+        spdy_getlen = spdy_getlen-spdy_expectlen;
+        spdy_expectlen = 0;
+    }else{
+        spdy_expectlen -= spdy_getlen;
+        ssize_t readlen=Read(spdy_buff,sizeof(spdy_buff));
+        if(readlen <= 0) {
+            ErrProc(readlen,stream_id);
+            return;
+        }
+        spdy_getlen -= readlen;
     }
     (this->*Spdy_Proc)();
 }
