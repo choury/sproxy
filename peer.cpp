@@ -60,11 +60,13 @@ ssize_t Peer::Write(Peer *,const void* buff, size_t size) {
     int len = Min(size, bufleft());
     memcpy(wbuff + writelen, buff, len);
     writelen += len;
-
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    
+    if(fd>0){
+        struct epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLIN | EPOLLOUT;
+        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    }
     return len;
 }
 
@@ -76,7 +78,6 @@ void Peer::writedcb() {
         if(epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
             epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
         }
-        (this->*this->Http_Proc)();
     }
 }
 

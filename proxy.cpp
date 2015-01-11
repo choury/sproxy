@@ -7,24 +7,6 @@
 
 
 
-Proxy::Proxy(Proxy* copy) {
-    *this=*copy;
-    bindex.del(copy,bindex.query(copy));
-    bindex.add(this,bindex.query(copy));
-
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-
-    copy->ctx=nullptr;
-    copy->ssl=nullptr;
-    copy->fd=0;
-    delete copy;
-}
-
-
-
 Proxy::Proxy(HttpReqHeader &req,Guest *guest):Host(req,guest,SHOST,SPORT) {}
 
 
@@ -32,7 +14,6 @@ Host* Proxy::getproxy(HttpReqHeader &req,Guest* guest) {
     Host *exist=(Host *)bindex.query(guest);
     if (dynamic_cast<Proxy*>(exist)) {
         exist->Request(req,guest);
-        guest->connected();
         return exist;
     }
     if (exist != NULL) {
@@ -102,11 +83,6 @@ static int select_next_proto_cb(SSL* ssl,
         uint8_t len=*in++;
         proset.insert(std::string((const char*)in,len));
         in+=len;
-    }
-    if( proset.count("spdy/3.1")) {
-        *out=(unsigned char*)"spdy/3.1";
-        *outlen=strlen((char*)*out);
-        return SSL_TLSEXT_ERR_OK;
     }
     if(proset.count("http/1.1")) {
         *out=(unsigned char*)"http/1.1";
@@ -194,11 +170,7 @@ void Proxy::shakehandHE(uint32_t events) {
         unsigned int len;
         SSL_get0_next_proto_negotiated(ssl,&data,&len);
         if(data && strncasecmp((const char*)data,"spdy/3.1",len)==0) {
-            return;
         }
-        
-        writelen= req.getstring(wbuff);
-        guest->connected();
         return;
     }
     if (events & EPOLLERR || events & EPOLLHUP) {

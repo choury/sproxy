@@ -9,14 +9,9 @@
 #include "proxy.h"
 
 
-Host::Host():Peer(0,ALWAYS) {
-
-}
-
 Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state): Peer(0, state) {
     bindex.add(guest,this);
-    writelen = 0;
-
+    writelen= req.getstring(wbuff);
     this->req=req;
     strcpy(hostname,req.hostname);
     port=req.port;
@@ -29,21 +24,15 @@ Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state): Peer(0, sta
 
 Host::Host(HttpReqHeader &req,Guest* guest,const char* hostname,uint16_t port):Peer(0,ALWAYS) {
     bindex.add(guest,this);
-    writelen = 0;
-
+    writelen= req.getstring(wbuff);
     this->req=req;
     strcpy(this->hostname,hostname);
     this->port=port;
-    handleEvent=(void (Con::*)(uint32_t))&Host::waitconnectHE;
 
     if(query(hostname,(DNSCBfunc)Host::Dnscallback,this)<0) {
         LOGE("DNS qerry falied\n");
         throw 0;
     }
-}
-
-
-Host::~Host() {
 }
 
 
@@ -88,10 +77,7 @@ void Host::waitconnectHE(uint32_t events) {
 
         if(req.ismethod("CONNECT")) {
             guest->Write(this,connecttip,strlen(connecttip));
-        } else {
-            writelen= req.getstring(wbuff);
         }
-        guest->connected();
         handleEvent=(void (Con::*)(uint32_t))&Host::defaultHE;
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
@@ -204,7 +190,6 @@ Host* Host::gethost(HttpReqHeader &req,Guest* guest) {
     Host* exist=dynamic_cast<Host *>(bindex.query(guest));
     if (exist && exist->port == req.port && strcasecmp(exist->hostname, req.hostname) == 0) {
         exist->Request(req,guest);
-        guest->connected();
         return exist;
     }
     if (exist != NULL) {

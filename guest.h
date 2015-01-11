@@ -20,7 +20,6 @@ protected:
 public:
     Guest();
     Guest(int fd);
-    virtual void connected();
 };
 
 

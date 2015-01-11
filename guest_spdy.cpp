@@ -117,11 +117,6 @@ void Guest_spdy::defaultHE(uint32_t events) {
 }
 
 
-void Guest_spdy::writedcb() {
-    (this->*this->Spdy_Proc)();
-}
-
-
 void Guest_spdy::Response(HttpResHeader& res, uint32_t id) {
     writelen+=res.getframe(wbuff+writelen,&destream,id);
 

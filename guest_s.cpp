@@ -87,6 +87,7 @@ int Guest_s::showerrinfo(int ret, const char* s) {
     int error = SSL_get_error(ssl, ret);
     switch(error) {
     case SSL_ERROR_WANT_READ:
+        return 0;
     case SSL_ERROR_WANT_WRITE:
         event.events = EPOLLIN|EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);

@@ -31,8 +31,6 @@ public:
     virtual ~Guest_spdy();
     virtual size_t bufleft()override;
     virtual void clean(Peer *who)override;
-    virtual void connected()override{};
-    virtual void writedcb()override;
     virtual void Response(HttpResHeader &res,uint32_t id);
 };
 

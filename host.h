@@ -12,19 +12,17 @@ class Host:public Peer{
 protected:
     char hostname[DOMAINLIMIT];
     uint16_t port;
+    HttpReqHeader req;
     virtual int showerrinfo(int ret,const char *s)override;
+    virtual int connect();
     virtual void waitconnectHE(uint32_t events);
     virtual void defaultHE(uint32_t events);
     virtual void closeHE(uint32_t events);
-    static void Dnscallback(Host * host,const Dns_rcd&&);
-    virtual int connect();
     virtual ssize_t DataProc(const void *buff,size_t size)override;
+    static void Dnscallback(Host * host,const Dns_rcd&&);
 public:
-    Host();
     Host(HttpReqHeader &req, Guest *guest,Http::Initstate state=ALWAYS);
     Host(HttpReqHeader &req, Guest *guest,const char* hostname,uint16_t port);
-    HttpReqHeader req;
-    virtual ~Host();
     virtual void Request(HttpReqHeader &req,Guest *guest);
     static Host *gethost(HttpReqHeader &req,Guest* guest);
 };

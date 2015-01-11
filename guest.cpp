@@ -61,16 +61,6 @@ Guest::Guest() {
 }
 
 
-void Guest::connected() {
-    (this->*Http_Proc)();
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    if(epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
-        epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-    }
-}
-
 int Guest::showerrinfo(int ret,const char *s) {
     if(ret < 0) {
         if(errno != EAGAIN) {
@@ -145,7 +135,6 @@ void Guest::ReqProc(HttpReqHeader& req) {
     }
 
     if ( req.ismethod("GET") ||  req.ismethod("POST") || req.ismethod("CONNECT")) {
-        epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
         Host::gethost(req,this);
     } else if (req.ismethod("ADDPSITE")) {
         addpsite(req.url);
