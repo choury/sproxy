@@ -213,8 +213,9 @@ HttpReqHeader::HttpReqHeader(){
 
 
 
-HttpReqHeader::HttpReqHeader(void* header){
-    char *httpheader=(char *)header;
+HttpReqHeader::HttpReqHeader(const char* header){
+    char httpheader[HEADLENLIMIT];
+    strcpy(httpheader,header);
     *(strstr(httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
     memset(path,0,sizeof(path));
     memset(url,0,sizeof(url));
@@ -245,7 +246,7 @@ HttpReqHeader::HttpReqHeader(void* header){
     this->header.erase("Host");
 }
 
-HttpReqHeader::HttpReqHeader(syn_frame* sframe, z_stream* instream) {
+HttpReqHeader::HttpReqHeader(const syn_frame* sframe, z_stream* instream) {
     size_t len=get24(sframe->head.length);
     char tmpbuff[HEADLENLIMIT];
     if(spdy_inflate(instream,sframe+1,len-sizeof(syn_frame)+sizeof(spdy_head),tmpbuff,sizeof(tmpbuff))<0)
@@ -378,13 +379,15 @@ int HttpReqHeader::getframe(void* buff, z_stream* destream, size_t id) {
 
 
 
-HttpResHeader::HttpResHeader(void* header) {
-    *(strstr((char *)header, CRLF CRLF) + strlen(CRLF)) = 0;
+HttpResHeader::HttpResHeader(const char* header) {
+    char httpheader[HEADLENLIMIT];
+    strcpy(httpheader,header);
+    *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
     memset(version,0,sizeof(version));
     memset(status,0,sizeof(status));
-    sscanf((char *)header, "%s%*[ ]%[^\r\n]", version, status);
+    sscanf((char *)httpheader, "%s%*[ ]%[^\r\n]", version, status);
 
-    for (char* str = strstr((char *)header, CRLF) + strlen(CRLF); ; str = NULL) {
+    for (char* str = strstr((char *)httpheader, CRLF) + strlen(CRLF); ; str = NULL) {
         char* p = strtok(str, CRLF);
 
         if (p == NULL)
@@ -400,7 +403,7 @@ HttpResHeader::HttpResHeader(void* header) {
 
 }
 
-HttpResHeader::HttpResHeader(syn_reply_frame* sframe, z_stream* instream) {
+HttpResHeader::HttpResHeader(const syn_reply_frame* sframe, z_stream* instream) {
     int len=get24(sframe->head.length);
     char buff[HEADLENLIMIT];
     spdy_inflate(instream,sframe+1,len-(sizeof(*sframe)-sizeof(spdy_head)),buff,sizeof(buff));

@@ -131,3 +131,16 @@ void Guest_s::shakehandHE(uint32_t events) {
     }
 }
 
+
+void Guest_s::ReqProc(HttpReqHeader& req){
+    LOG( "([%s]:%d): %s %s\n",sourceip, sourceport,req.method, req.url);
+    if(req.url[0]=='/'){
+        HttpResHeader res("HTTP/1.0 200 OK" CRLF CRLF);
+        res.add("Content-Length","7");
+        writelen = res.getstring(wbuff);
+        Peer::Write(this,"Welcome",7);
+    }else{
+        Host::gethost(req,this);
+    }
+}
+

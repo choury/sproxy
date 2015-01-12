@@ -219,9 +219,9 @@ int spdy_deflate_init(z_stream *stream){
 /* ===========================================================================
  * 测试：deflate()：使用预设的字典
  */
-ssize_t spdy_deflate(z_stream *c_stream,void *buffin,size_t inlen,void *buffout,size_t outlen) {
+ssize_t spdy_deflate(z_stream *c_stream,const void *buffin,size_t inlen,void *buffout,size_t outlen) {
     
-    c_stream->next_in = buffin; /* 输入要压缩的字符串 */
+    c_stream->next_in = (Bytef *)buffin; /* 输入要压缩的字符串 */
     c_stream->avail_in = inlen;
     c_stream->total_in = 0;
     c_stream->next_out = buffout;
@@ -259,8 +259,8 @@ int spdy_inflate_init(z_stream *stream){
 /* ===========================================================================
  * 测试inflate()：使用预设的字典
  */
-ssize_t spdy_inflate(z_stream *d_stream,void *buffin,size_t inlen,void *buffout,size_t outlen) {    
-    d_stream->next_in  = buffin;
+ssize_t spdy_inflate(z_stream *d_stream,const void *buffin,size_t inlen,void *buffout,size_t outlen) {    
+    d_stream->next_in  = (Bytef *)buffin;
     d_stream->avail_in = inlen;
     d_stream->total_in = 0;
     d_stream->next_out = buffout;

@@ -217,9 +217,7 @@ void Host_spdy::waitconnectHE(uint32_t events) {
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 
         if(req.ismethod("CONNECT")) {
-            char tmp[100];
-            strcpy(tmp,connecttip);
-            HttpResHeader res(tmp);
+            HttpResHeader res(connecttip);
             guest->Response(res,id);
         }
         handleEvent=(void (Con::*)(uint32_t))&Host_spdy::defaultHE;

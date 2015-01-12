@@ -45,8 +45,8 @@ public:
     char path[URLLIMIT];
     uint16_t port;
     HttpReqHeader();
-    HttpReqHeader(void* header);
-    HttpReqHeader(syn_frame* sframe,z_stream* instream);
+    HttpReqHeader(const char* header);
+    HttpReqHeader(const syn_frame* sframe,z_stream* instream);
     bool ismethod(const char* method);
     const char* getval(const char *key);
     int getstring(void* outbuff);
@@ -59,8 +59,8 @@ public:
     char version[20];
     char status[100];
     HttpResHeader();
-    HttpResHeader(void* header);
-    HttpResHeader(syn_reply_frame *sframe,z_stream* instream);
+    HttpResHeader(const char* header);
+    HttpResHeader(const syn_reply_frame *sframe,z_stream* instream);
     void add(const char *header,const char *value);
     void del(const char *header);
     const char* getval(const char *key);

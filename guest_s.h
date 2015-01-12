@@ -14,6 +14,7 @@ protected:
     virtual ssize_t Read(void *buff,size_t size)override;
     virtual ssize_t Write()override;
     virtual void shakehandHE(uint32_t events);
+    virtual void ReqProc(HttpReqHeader &req)override;
 public:
     Guest_s(int fd,SSL *ssl);
     Guest_s(Guest_s* copy);

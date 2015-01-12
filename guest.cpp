@@ -151,6 +151,8 @@ void Guest::ReqProc(HttpReqHeader& req) {
         } else {
             Write(this,DGLOBLETIP, strlen(DGLOBLETIP));
         }
+    } else if(req.ismethod("SWITCH")){
+        spliturl(req.url,SHOST,nullptr,&SPORT);
     } else {
         LOGE( "([%s]:%d): unsported method:%s\n",
               sourceip, sourceport,req.method);

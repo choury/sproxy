@@ -13,8 +13,8 @@ int spdy_deflate_init(z_stream *stream);
 int spdy_inflate_init(z_stream *stream);
 int spdy_deflate_end(z_stream *stream);
 int spdy_inflate_end(z_stream *stream);
-ssize_t spdy_deflate(z_stream *c_stream,void *buffin,size_t inlen,void *buffout,size_t outlen);
-ssize_t spdy_inflate(z_stream *d_stream,void *buffin,size_t inlen,void *buffout,size_t outlen);
+ssize_t spdy_deflate(z_stream *c_stream,const void *buffin,size_t inlen,void *buffout,size_t outlen);
+ssize_t spdy_inflate(z_stream *d_stream,const void *buffin,size_t inlen,void *buffout,size_t outlen);
 
 #ifdef __cplusplus
 }
