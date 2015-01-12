@@ -9,19 +9,6 @@
 #include "spdy_zlib.h"
 
 
-#define ADDBTIP    "HTTP/1.0 200 Proxy site Added" CRLF CRLF
-#define DELBTIP    "HTTP/1.0 200 Proxy site Deleted" CRLF CRLF
-#define DELFTIP    "HTTP/1.0 404 The site is not found" CRLF CRLF
-#define EGLOBLETIP  "HTTP/1.0 200 Global proxy enabled now" CRLF CRLF
-#define DGLOBLETIP  "HTTP/1.0 200 Global proxy disabled" CRLF CRLF
-
-
-#define H302    "302 Found"
-#define H200    "200 OK"
-#define H404    "404 Not Found"
-
-
-
 void addpsite(const std::string & host);
 int delpsite(const std::string &host);
 int loadproxysite();

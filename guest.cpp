@@ -10,6 +10,13 @@
 #include "parse.h"
 
 
+#define ADDBTIP    "HTTP/1.0 200 Proxy site Added" CRLF CRLF
+#define DELBTIP    "HTTP/1.0 200 Proxy site Deleted" CRLF CRLF
+#define DELFTIP    "HTTP/1.0 404 The site is not found" CRLF CRLF
+#define EGLOBLETIP  "HTTP/1.0 200 Global proxy enabled now" CRLF CRLF
+#define DGLOBLETIP  "HTTP/1.0 200 Global proxy disabled" CRLF CRLF
+#define SWITCHTIP   "HTTP/1.0 200 Switched proxy server" CRLF CRLF
+
 
 Guest::Guest(int fd): Peer(fd) {
     struct sockaddr_in6 sa;
@@ -152,7 +159,9 @@ void Guest::ReqProc(HttpReqHeader& req) {
             Write(this,DGLOBLETIP, strlen(DGLOBLETIP));
         }
     } else if(req.ismethod("SWITCH")){
+        SPORT=443;
         spliturl(req.url,SHOST,nullptr,&SPORT);
+        Write(this,SWITCHTIP, strlen(SWITCHTIP));
     } else {
         LOGE( "([%s]:%d): unsported method:%s\n",
               sourceip, sourceport,req.method);
