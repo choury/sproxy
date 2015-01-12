@@ -16,6 +16,7 @@
 #define EGLOBLETIP  "HTTP/1.0 200 Global proxy enabled now" CRLF CRLF
 #define DGLOBLETIP  "HTTP/1.0 200 Global proxy disabled" CRLF CRLF
 #define SWITCHTIP   "HTTP/1.0 200 Switched proxy server" CRLF CRLF
+#define AUTHORTIP   "HTTP/1.1 407 Proxy Authorization Required\r\nProxy-Authenticate: Basic" CRLF CRLF
 
 
 Guest::Guest(int fd): Peer(fd) {
@@ -142,7 +143,15 @@ void Guest::ReqProc(HttpReqHeader& req) {
     }
 
     if ( req.ismethod("GET") ||  req.ismethod("POST") || req.ismethod("CONNECT")) {
-        Host::gethost(req,this);
+        if(authorized ==false && req.get("Proxy-Authorization")==nullptr){
+            Write(this,AUTHORTIP,strlen(AUTHORTIP));
+            LOG( "([%s]:%d): Authorization failed\n", sourceip, sourceport);
+            return;
+        }else{
+            authorized=true;
+            req.del("Proxy-Authorization");
+            Host::gethost(req,this);
+        }
     } else if (req.ismethod("ADDPSITE")) {
         addpsite(req.url);
         Write(this,ADDBTIP, strlen(ADDBTIP));

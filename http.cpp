@@ -34,10 +34,10 @@ void Http::HeaderProc() {
         size_t headerlen = headerend - http_buff;
         if(memcmp(http_buff,"HTTP",4)==0) {
             HttpResHeader res(http_buff);
-            if(res.getval("Transfer-Encoding")!= nullptr) {
+            if(res.get("Transfer-Encoding")!= nullptr) {
                 Http_Proc=&Http::ChunkLProc;
-            } else if(res.getval("Content-Length")!=nullptr) {
-                sscanf(res.getval("Content-Length"),"%lu",&http_expectlen);
+            } else if(res.get("Content-Length")!=nullptr) {
+                sscanf(res.get("Content-Length"),"%lu",&http_expectlen);
                 Http_Proc=&Http::FixLenProc;
             } else {
                 Http_Proc=&Http::AlwaysProc;
@@ -46,8 +46,8 @@ void Http::HeaderProc() {
         } else {
             HttpReqHeader req(http_buff);
             if(req.ismethod("POST")) {
-                if(req.getval("Content-Length")!=nullptr) {
-                    sscanf(req.getval("Content-Length"),"%lu",&http_expectlen);
+                if(req.get("Content-Length")!=nullptr) {
+                    sscanf(req.get("Content-Length"),"%lu",&http_expectlen);
                     Http_Proc=&Http::FixLenProc;
                 } else {
                     Http_Proc=&Http::ChunkLProc;

@@ -306,9 +306,17 @@ char *addnv(void *buff,const char *name,size_t nlen,const char *val,size_t vlen)
 }
 
 
-const char* HttpReqHeader::getval(const char* key) {
-    if(header.count(key)) {
-        return header[key].c_str();
+void HttpReqHeader::add(const char* header, const char* value) {
+    this->header[header]=value;
+}
+
+void HttpReqHeader::del(const char* header) {
+    this->header.erase(header);
+}
+
+const char* HttpReqHeader::get(const char* header) {
+    if(this->header.count(header)) {
+        return this->header[header].c_str();
     } else {
         return nullptr;
     }
@@ -443,9 +451,9 @@ void HttpResHeader::del(const char* header) {
 }
 
 
-const char* HttpResHeader::getval(const char* key) {
-    if(header.count(key)) {
-        return header[key].c_str();
+const char* HttpResHeader::get(const char* header) {
+    if(this->header.count(header)) {
+        return this->header[header].c_str();
     } else {
         return nullptr;
     }

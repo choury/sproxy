@@ -12,6 +12,7 @@ protected:
     uint16_t  sourceport;
     char destip[INET6_ADDRSTRLEN];
     uint16_t  destport;
+    bool authorized=false;
     virtual int showerrinfo(int ret,const char * )override;
     virtual void defaultHE(uint32_t events);
     virtual void closeHE(uint32_t events);
