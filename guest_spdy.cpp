@@ -83,26 +83,29 @@ void Guest_spdy::ErrProc(int errcode,uint32_t id) {
 void Guest_spdy::defaultHE(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
-
-    (this->*Spdy_Proc)();
-    if(writelen) {
-        int ret = Guest_s::Write();
-        if (ret <= 0 ) {
-            if( showerrinfo(ret,"guest_spdy write error")) {
-                clean(this);
-            }
-            return;
-        }
-        for(auto i:id2host) {
-            i.second->writedcb();
-        }
+    if (events & EPOLLIN) {
+        (this->*Spdy_Proc)();
     }
     
-    if (writelen == 0) {
-        event.events = EPOLLIN;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    if (events & EPOLLOUT){
+        if(writelen) {
+            int ret = Guest_s::Write();
+            if (ret <= 0 ) {
+                if( showerrinfo(ret,"guest_spdy write error")) {
+                    clean(this);
+                }
+                return;
+            }
+            for(auto i:id2host) {
+                i.second->writedcb();
+            }
+        }
+        
+        if (writelen == 0) {
+            event.events = EPOLLIN;
+            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        }
     }
-
 
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;

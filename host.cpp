@@ -96,18 +96,23 @@ void Host::defaultHE(uint32_t events) {
         clean(this);
         return;
     }
-
-    (this->*Http_Proc)();
-    if (writelen) {
-        int ret = Write();
-        if (ret <= 0) {
-            if(showerrinfo(ret,"host write error")) {
-                clean(this);
+    
+    if (events & EPOLLIN){
+        (this->*Http_Proc)();
+    }
+    
+    if (events & EPOLLOUT){
+        if (writelen) {
+            int ret = Write();
+            if (ret <= 0) {
+                if(showerrinfo(ret,"host write error")) {
+                    clean(this);
+                }
+                return;
             }
-            return;
-        }
-        guest->writedcb();
+            guest->writedcb();
 
+        }
     }
 
     if (writelen == 0) {

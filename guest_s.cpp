@@ -139,6 +139,7 @@ void Guest_s::ReqProc(HttpReqHeader& req){
         res.add("Content-Length","7");
         writelen = res.getstring(wbuff);
         Peer::Write(this,"Welcome",7);
+        clean(this);
     }else{
         Host::gethost(req,this);
     }

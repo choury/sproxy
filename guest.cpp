@@ -86,24 +86,28 @@ void Guest::defaultHE(uint32_t events) {
     event.data.ptr = this;
 
     Host *host=dynamic_cast<Host *>(bindex.query(this));
-    (this->*Http_Proc)();
-    if(writelen) {
-        int ret = Write();
-        if (ret <= 0 ) {
-            if( showerrinfo(ret,"guest write error")) {
-                clean(this);
-            }
-            return;
-        }
-        if (host)
-            host->writedcb();
-    }
-
-    if(writelen==0) {
-        event.events = EPOLLIN;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    if (events & EPOLLIN) {
+        (this->*Http_Proc)();
     }
     
+    if (events & EPOLLOUT) {
+        if(writelen) {
+            int ret = Write();
+            if (ret <= 0 ) {
+                if( showerrinfo(ret,"guest write error")) {
+                    clean(this);
+                }
+                return;
+            }
+            if (host)
+                host->writedcb();
+        }
+
+        if(writelen==0) {
+            event.events = EPOLLIN;
+            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        }
+    }
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
