@@ -17,7 +17,7 @@ protected:
     virtual int connect();
     virtual void waitconnectHE(uint32_t events);
     virtual void defaultHE(uint32_t events);
-    virtual void closeHE(uint32_t events);
+    virtual void closeHE(uint32_t events)override;
     virtual ssize_t DataProc(const void *buff,size_t size)override;
     static void Dnscallback(Host * host,const Dns_rcd&&);
 public:

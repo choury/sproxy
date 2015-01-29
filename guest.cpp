@@ -85,7 +85,7 @@ void Guest::defaultHE(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
 
-    Host *host=dynamic_cast<Host *>(bindex.query(this));
+    Peer *peer=bindex.query(this);
     if (events & EPOLLIN) {
         (this->*Http_Proc)();
     }
@@ -99,8 +99,8 @@ void Guest::defaultHE(uint32_t events) {
                 }
                 return;
             }
-            if (host)
-                host->writedcb();
+            if (peer)
+                peer->writedcb();
         }
 
         if(writelen==0) {

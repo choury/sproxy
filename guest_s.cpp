@@ -6,6 +6,7 @@
 #include "host.h"
 #include "parse.h"
 #include "guest_spdy.h"
+#include "file.h"
 
 Guest_s::Guest_s(int fd, SSL* ssl): Guest(fd), ssl(ssl) {
     struct epoll_event event;
@@ -135,11 +136,7 @@ void Guest_s::shakehandHE(uint32_t events) {
 void Guest_s::ReqProc(HttpReqHeader& req){
     LOG( "([%s]:%d): %s %s\n",sourceip, sourceport,req.method, req.url);
     if(req.url[0]=='/'){
-        HttpResHeader res("HTTP/1.0 200 OK" CRLF CRLF);
-        res.add("Content-Length","7");
-        writelen = res.getstring(wbuff);
-        Peer::Write(this,"Welcome",7);
-        clean(this);
+        File::getfile(req,this);
     }else{
         Host::gethost(req,this);
     }
