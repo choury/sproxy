@@ -6,12 +6,11 @@
 #include "host.h"
 
 class Host_spdy:public Host{
-    virtual void waitconnectHE(uint32_t events)override;
     virtual void ResProc(HttpResHeader& res)override;
     virtual ssize_t DataProc(const void *buff,size_t size)override;
 public:
-    uint32_t id;
-    Host_spdy(uint32_t id, HttpReqHeader& req, Guest* guest);
+    uint32_t id();
+    Host_spdy(HttpReqHeader& req, Guest* guest);
 };
 
 class Guest_spdy:public Guest_s,public Spdy{
@@ -31,7 +30,7 @@ public:
     virtual ~Guest_spdy();
     virtual size_t bufleft()override;
     virtual void clean(Peer *who)override;
-    virtual void Response(HttpResHeader &res,uint32_t id);
+    virtual void Response(HttpResHeader& res)override;
 };
 
 

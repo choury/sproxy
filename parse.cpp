@@ -247,6 +247,7 @@ HttpReqHeader::HttpReqHeader(const char* header){
 }
 
 HttpReqHeader::HttpReqHeader(const syn_frame* sframe, z_stream* instream) {
+    id=ntohl(sframe->id);
     size_t len=get24(sframe->head.length);
     char tmpbuff[HEADLENLIMIT];
     if(spdy_inflate(instream,sframe+1,len-sizeof(syn_frame)+sizeof(spdy_head),tmpbuff,sizeof(tmpbuff))<0)
@@ -349,7 +350,7 @@ int HttpReqHeader::getstring(void* outbuff) {
 }
 
 
-int HttpReqHeader::getframe(void* buff, z_stream* destream, size_t id) {
+int HttpReqHeader::getframe(void* buff, z_stream* destream) {
     syn_frame* sframe=(syn_frame *)buff;
     memset(sframe,0,sizeof(*sframe));
     sframe->head.magic = CTRL_MAGIC;
@@ -411,7 +412,9 @@ HttpResHeader::HttpResHeader(const char* header) {
 
 }
 
+
 HttpResHeader::HttpResHeader(const syn_reply_frame* sframe, z_stream* instream) {
+    id=ntohl(sframe->id);
     int len=get24(sframe->head.length);
     char buff[HEADLENLIMIT];
     spdy_inflate(instream,sframe+1,len-(sizeof(*sframe)-sizeof(spdy_head)),buff,sizeof(buff));
@@ -474,7 +477,7 @@ int HttpResHeader::getstring(void* buff) {
 }
 
 
-int HttpResHeader::getframe(void* buff, z_stream* destream, size_t id) {
+int HttpResHeader::getframe(void* buff, z_stream* destream) {
     syn_reply_frame *srframe=(syn_reply_frame *)buff;
     memset(srframe,0,sizeof(*srframe));
     srframe->head.magic=CTRL_MAGIC;

@@ -39,9 +39,9 @@ void Guest_spdy::clean(Peer* who) {
     }
 
     Host_spdy *host = dynamic_cast<Host_spdy *>(who);
-    if(id2host.count(host->id)) {
-        Reset(host->id,0);
-        id2host.erase(host->id);
+    if(id2host.count(host->id())) {
+        Reset(host->id(),0);
+        id2host.erase(host->id());
 
     }
 }
@@ -120,9 +120,9 @@ void Guest_spdy::defaultHE(uint32_t events) {
 }
 
 
-void Guest_spdy::Response(HttpResHeader& res, uint32_t id) {
-    writelen+=res.getframe(wbuff+writelen,&destream,id);
-
+void Guest_spdy::Response(HttpResHeader& res) {
+    writelen+=res.getframe(wbuff+writelen,&destream);
+    
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
@@ -131,16 +131,15 @@ void Guest_spdy::Response(HttpResHeader& res, uint32_t id) {
 
 
 void Guest_spdy::CFrameProc(syn_frame* sframe) {
-    NTOHL(sframe->id);
     try {
         HttpReqHeader req(sframe,&instream);
-//        req.port=80;
+        NTOHL(sframe->id);
 
         LOG( "([%s]:%d)[%u]: %s %s\n",sourceip, sourceport,sframe->id,req.method,req.url);
 
         if ( req.ismethod("GET") ||  req.ismethod("POST") || req.ismethod("CONNECT") ) {
             bindex.del(this);
-            id2host[sframe->id]=new Host_spdy(sframe->id,req,this);
+            id2host[sframe->id]=new Host_spdy(req,this);
         } else {
             LOGE( "([%s]:%d): unsported method:%s\n",sourceip, sourceport,req.method);
             Reset(sframe->id,PROTOCOL_ERROR);
@@ -161,6 +160,11 @@ void Guest_spdy::CFrameProc(rst_frame* rframe) {
         host->clean(this);
         id2host.erase(rframe->id);
     }
+}
+
+
+uint32_t Host_spdy::id(){
+    return req.id;
 }
 
 
@@ -186,51 +190,9 @@ ssize_t Guest_spdy::DFrameProc(void* buff, size_t size, uint32_t id) {
     return -1;
 }
 
-Host_spdy::Host_spdy(uint32_t id, HttpReqHeader& req, Guest* guest):
-    Host(req, guest,req.ismethod("CONNECT")?ALWAYS:HTTPHEAD),id(id) {
+Host_spdy::Host_spdy(HttpReqHeader& req, Guest* guest):
+    Host(req, guest,req.ismethod("CONNECT")?ALWAYS:HTTPHEAD){
     writelen= req.getstring(wbuff);
-}
-
-
-void Host_spdy::waitconnectHE(uint32_t events) {
-    Guest_spdy *guest=dynamic_cast<Guest_spdy *>(bindex.query(this));
-    if( guest == NULL) {
-        clean(this);
-        return;
-    }
-    if (events & EPOLLOUT) {
-        int error;
-        socklen_t len=sizeof(error);
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-            LOGE("getsokopt error: %s\n",strerror(error));
-            clean(this);
-            return;
-        }
-        if (error != 0) {
-            LOGE("connect to %s: %s\n",this->hostname, strerror(error));
-            if(connect()<0) {
-                clean(this);
-            }
-            return;
-        }
-
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN | EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-
-        if(req.ismethod("CONNECT")) {
-            HttpResHeader res(connecttip);
-            guest->Response(res,id);
-        }
-        handleEvent=(void (Con::*)(uint32_t))&Host_spdy::defaultHE;
-    }
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("connect to %s: %s\n",this->hostname, strerror(errno));
-        if(connect()<0) {
-            clean(this);
-        }
-    }
 }
 
 
@@ -240,11 +202,11 @@ void Host_spdy::ResProc(HttpResHeader& res) {
         clean(this);
         return;
     }
-
+    res.id=req.id;
     res.del("Connection");
     res.del("Keep-Alive");
     res.del("Transfer-Encoding");
-    guest->Response(res,id);
+    guest->Response(res);
 }
 
 
@@ -263,7 +225,7 @@ ssize_t Host_spdy::DataProc(const void* buff, size_t size) {
 
     spdy_dframe_head dhead;
     memset(&dhead,0,sizeof(dhead));
-    dhead.id=htonl(id);
+    dhead.id=htonl(req.id);
     set24(dhead.length,size);
     if(size) {
         guest->Write(this,&dhead,sizeof(dhead));

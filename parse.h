@@ -26,6 +26,7 @@ enum protocol{HTTP,SPDY};
 class HttpReqHeader{
     map<string,string> header;
 public:
+    uint32_t id;  //仅由spdy协议使用
     char method[20];
     char url[URLLIMIT];
     char hostname[DOMAINLIMIT];
@@ -39,12 +40,13 @@ public:
     const char* get(const char *header);
     void add(const char *header,const char *value);
     int getstring(void* outbuff);
-    int getframe(void* buff, z_stream* destream, size_t id);
+    int getframe(void* buff, z_stream* destream);
 };
 
 class HttpResHeader{
     map<string,string> header;
 public:
+    uint32_t id;  //仅由spdy协议使用
     char version[20];
     char status[100];
     HttpResHeader();
@@ -54,7 +56,7 @@ public:
     const char* get(const char *header);
     void add(const char *header,const char *value);
     int getstring(void* buff);
-    int getframe(void* buff, z_stream* destream, size_t id);
+    int getframe(void* buff, z_stream* destream);
 };
 
 

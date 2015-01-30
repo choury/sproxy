@@ -182,6 +182,15 @@ void Guest::ReqProc(HttpReqHeader& req) {
     }
 }
 
+void Guest::Response(HttpResHeader& res){
+    writelen+=res.getstring(wbuff+writelen);
+    struct epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLIN | EPOLLOUT;
+    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+}
+
+
 
 ssize_t Guest::DataProc(const void *buff,size_t size) {
     Host *host=dynamic_cast<Host *>(bindex.query(this));

@@ -12,24 +12,34 @@
 
 File::File(HttpReqHeader &req,Guest* guest):req(req){
     fd=eventfd(1,O_NONBLOCK);
-    char fullpath[URLLIMIT];
-    sprintf(fullpath,".%s",req.path);
-    ffd=open(fullpath,O_RDONLY);
-    if(ffd < 0){
-        LOGE("open file failed: %s\n",strerror(errno));
+    char pathname[URLLIMIT];
+    sprintf(pathname,".%s",req.path);
+repeat:
+    struct stat st;
+    if(stat(pathname, &st)){
+        LOGE("get file info failed: %s\n",strerror(errno));
         HttpResHeader res(H404);
         res.add("Content-Length","0");
         guest->Write(this,wbuff,res.getstring(wbuff));
         clean(this);
         return;
     }
-    bindex.add(guest,this);
-    HttpResHeader res(H200);
-    struct stat st;
-    fstat(ffd,&st);
-    sprintf((char *)wbuff,"%lu",st.st_size);
-    res.add("Content-Length",(char *)wbuff);
-    guest->Write(this,wbuff,res.getstring(wbuff));
+    if (S_ISREG(st.st_mode)) {
+        ffd=open(pathname,O_RDONLY);
+        if(ffd < 0){
+            LOGE("open file failed: %s\n",strerror(errno));
+            clean(this);
+            return;
+        }
+        bindex.add(guest,this);
+        HttpResHeader res(H200);
+        sprintf((char *)wbuff,"%lu",st.st_size);
+        res.add("Content-Length",(char *)wbuff);
+        guest->Write(this,wbuff,res.getstring(wbuff));
+    }else if(S_ISDIR(st.st_mode)){
+        strcat(pathname,"/index.html");
+        goto repeat;
+    }
     handleEvent=(void (Con::*)(uint32_t))&File::defaultHE;
     struct epoll_event event;
     event.data.ptr = this;

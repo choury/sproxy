@@ -21,6 +21,7 @@ protected:
 public:
     Guest();
     Guest(int fd);
+    virtual void Response(HttpResHeader& res);
 };
 
 

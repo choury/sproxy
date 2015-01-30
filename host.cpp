@@ -76,7 +76,9 @@ void Host::waitconnectHE(uint32_t events) {
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 
         if(req.ismethod("CONNECT")) {
-            guest->Write(this,connecttip,strlen(connecttip));
+            HttpResHeader res(connecttip);
+            res.id=req.id;
+            guest->Response(res);
         }
         handleEvent=(void (Con::*)(uint32_t))&Host::defaultHE;
     }
