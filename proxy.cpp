@@ -152,7 +152,7 @@ void Proxy::shakehandHE(uint32_t events) {
         return;
     }
     if ((events & EPOLLIN) || (events & EPOLLOUT)) {
-        int ret = SSL_do_handshake(ssl);
+        int ret = SSL_connect(ssl);
         if (ret != 1) {
             if(showerrinfo(ret,"ssl connect error")) {
                 clean(this);
