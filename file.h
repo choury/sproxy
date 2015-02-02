@@ -6,7 +6,7 @@
 #include "parse.h"
 
 class File:public Peer{
-    int ffd;
+    int ffd=0;
     HttpReqHeader req;
     virtual void defaultHE(uint32_t events);
     virtual void closeHE(uint32_t events);

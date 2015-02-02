@@ -14,8 +14,8 @@ File::File(HttpReqHeader &req,Guest* guest):req(req){
     fd=eventfd(1,O_NONBLOCK);
     char pathname[URLLIMIT];
     sprintf(pathname,".%s",req.path);
-repeat:
     struct stat st;
+repeat:
     if(stat(pathname, &st)){
         LOGE("get file info failed: %s\n",strerror(errno));
         HttpResHeader res(H404);
