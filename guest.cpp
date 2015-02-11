@@ -10,12 +10,16 @@
 #include "parse.h"
 
 
-#define ADDBTIP    "HTTP/1.0 200 Proxy site Added" CRLF CRLF
-#define DELBTIP    "HTTP/1.0 200 Proxy site Deleted" CRLF CRLF
+#define ADDPTIP    "HTTP/1.0 200 Proxy site Added" CRLF CRLF
+#define ADDBTIP    "HTTP/1.0 200 Block site Added" CRLF CRLF
+#define DELPTIP    "HTTP/1.0 200 Proxy site Deleted" CRLF CRLF
+#define DELBTIP    "HTTP/1.0 200 Block site Deleted" CRLF CRLF
 #define DELFTIP    "HTTP/1.0 404 The site is not found" CRLF CRLF
 #define EGLOBLETIP  "HTTP/1.0 200 Global proxy enabled now" CRLF CRLF
 #define DGLOBLETIP  "HTTP/1.0 200 Global proxy disabled" CRLF CRLF
 #define SWITCHTIP   "HTTP/1.0 200 Switched proxy server" CRLF CRLF
+
+#define BLOCKEDTIP  "HTTP/1.1 403 Forbidden" CRLF CRLF
 #define AUTHORTIP   "HTTP/1.1 407 Proxy Authorization Required\r\nProxy-Authenticate: Basic" CRLF CRLF
 
 
@@ -147,20 +151,27 @@ void Guest::ReqProc(HttpReqHeader& req) {
     }
 
     if ( req.ismethod("GET") ||  req.ismethod("POST") || req.ismethod("CONNECT")) {
-        if(authorized ==false && req.get("Proxy-Authorization")==nullptr){
-            Write(this,AUTHORTIP,strlen(AUTHORTIP));
-            LOG( "([%s]:%d): Authorization failed\n", sourceip, sourceport);
-            return;
+        if(checkblock(req.hostname)){
+            LOG( "([%s]:%d): site: %s blocked\n",
+             sourceip, sourceport,req.hostname);
+            Write(this,BLOCKEDTIP, strlen(BLOCKEDTIP));
         }else{
-            authorized=true;
-            req.del("Proxy-Authorization");
             Host::gethost(req,this);
         }
     } else if (req.ismethod("ADDPSITE")) {
         addpsite(req.url);
-        Write(this,ADDBTIP, strlen(ADDBTIP));
+        Write(this,ADDPTIP, strlen(ADDPTIP));
     } else if(req.ismethod("DELPSITE")) {
         if(delpsite(req.url)) {
+            Write(this,DELPTIP,strlen(DELPTIP));
+        } else {
+            Write(this,DELFTIP,strlen(DELFTIP));
+        }
+    } else if(req.ismethod("ADDBSITE")){
+        addbsite(req.url);
+        Write(this,ADDBTIP, strlen(ADDBTIP));
+    } else if(req.ismethod("ADDBSITE")){
+        if(delbsite(req.url)) {
             Write(this,DELBTIP,strlen(DELBTIP));
         } else {
             Write(this,DELFTIP,strlen(DELFTIP));

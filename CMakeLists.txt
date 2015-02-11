@@ -15,9 +15,10 @@ spdy.cpp spdy_zlib.c
 peer.cpp guest.cpp host.cpp proxy.cpp 
 lib.c parse.cpp client.cpp net.c dns.cpp)
 
+
 #target_compile_definitions(sproxy_client PUBLIC CLIENT)
-SET_TARGET_PROPERTIES(sproxy_client PROPERTIES COMPILE_FLAGS "-DCLIENT")
-TARGET_LINK_LIBRARIES(sproxy_client ssl crypto z)
-TARGET_LINK_LIBRARIES(sproxy_server ssl crypto z)
+set_target_properties(sproxy_client PROPERTIES COMPILE_FLAGS "-DCLIENT")
+target_link_libraries(sproxy_client ssl crypto z)
+target_link_libraries(sproxy_server ssl crypto z)
 
 install(TARGETS sproxy_client RUNTIME DESTINATION bin)

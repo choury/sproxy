@@ -12,13 +12,14 @@
 
 
 #define PROXYFILE "proxy.list"
+#define BLOCKFILE "block.list"
 
 using namespace std;
 
-static int loadedsite = 0;
+static int loadedsites = 0;
 static int GLOBALPROXY = 0;
 static unordered_set<string> proxylist;
-
+static unordered_set<string> blocklist;
 
 // trim from start
 static inline string& ltrim(std::string && s) {
@@ -27,8 +28,8 @@ static inline string& ltrim(std::string && s) {
 }
 
 
-int loadproxysite() {
-    loadedsite = 1;
+void loadsites() {
+    loadedsites = 1;
     proxylist.clear();
     ifstream proxyfile(PROXYFILE);
 
@@ -43,10 +44,24 @@ int loadproxysite() {
         }
 
         proxyfile.close();
-        return proxylist.size();
     } else {
         cerr << "There is no " << PROXYFILE << "!" << endl;
-        return -1;
+    }
+    
+    ifstream blockfile(BLOCKFILE);
+    if (blockfile.good()) {
+        while (!blockfile.eof()) {
+            string site;
+            blockfile >> site;
+
+            if(!site.empty()) {
+                blocklist.insert(site);
+            }
+        }
+
+        blockfile.close();
+    } else {
+        cerr << "There is no " << PROXYFILE << "!" << endl;
     }
 }
 
@@ -59,6 +74,16 @@ void addpsite(const string& host) {
         proxyfile << i << endl;
     }
     proxyfile.close();
+}
+
+void addbsite(const string& host){
+    blocklist.insert(host);
+    ofstream blockfile(BLOCKFILE);
+    
+    for(auto i : proxylist) {
+        blockfile << i << endl;
+    }
+    blockfile.close();
 }
 
 int delpsite(const string& host) {
@@ -75,6 +100,20 @@ int delpsite(const string& host) {
     return 1;
 }
 
+int delbsite(const string& host) {
+    if(blocklist.count(host)==0) {
+        return 0;
+    }
+    blocklist.erase(host);
+    ofstream blockfile(PROXYFILE);
+
+    for(auto i : proxylist) {
+        blockfile << i << endl;
+    }
+    blockfile.close();
+    return 1;
+}
+
 int globalproxy() {
     GLOBALPROXY= !GLOBALPROXY;
     return GLOBALPROXY;
@@ -82,8 +121,8 @@ int globalproxy() {
 
 bool checkproxy(const char *hostname) {
 #ifdef CLIENT
-    if (!loadedsite) {
-        loadproxysite();
+    if (!loadedsites) {
+        loadsites();
     }
 
     if(GLOBALPROXY || proxylist.count("*")) {
@@ -103,6 +142,35 @@ bool checkproxy(const char *hostname) {
         }
 
         if (proxylist.count(subhost)) {
+            return true;
+        }
+
+        subhost = strpbrk(subhost, ".");
+    }
+#endif
+    return false;
+}
+
+
+bool checkblock(const char *hostname) {
+#ifdef CLIENT
+    if (!loadedsites) {
+        loadsites();
+    }
+
+    //如果list文件里面有*.*.*.* 那么匹配ip地址
+    if(inet_addr(hostname) != INADDR_NONE && proxylist.count("*.*.*.*")) {
+        return true;
+    }
+
+    const char* subhost = hostname;
+
+    while (subhost) {
+        if(subhost[0] == '.') {
+            subhost++;
+        }
+
+        if (blocklist.count(subhost)) {
             return true;
         }
 

@@ -9,13 +9,16 @@
 #include "spdy_zlib.h"
 
 
-void addpsite(const std::string & host);
-int delpsite(const std::string &host);
+void addpsite(const std::string& host);
+void addbsite(const std::string& host);
+int delpsite(const std::string& host);
+int delbsite(const std::string& host);
 int loadproxysite();
 int globalproxy();
 char* toLower(char* s);
 char* toUpper(char* s);
 bool checkproxy(const char *hostname);
+bool checkblock(const char *hostname);
 
 using std::string;
 using std::map;
