@@ -80,7 +80,7 @@ void addbsite(const string& host){
     blocklist.insert(host);
     ofstream blockfile(BLOCKFILE);
     
-    for(auto i : proxylist) {
+    for(auto i : blocklist) {
         blockfile << i << endl;
     }
     blockfile.close();
@@ -107,7 +107,7 @@ int delbsite(const string& host) {
     blocklist.erase(host);
     ofstream blockfile(BLOCKFILE);
 
-    for(auto i : proxylist) {
+    for(auto i : blocklist) {
         blockfile << i << endl;
     }
     blockfile.close();
@@ -159,7 +159,7 @@ bool checkblock(const char *hostname) {
     }
 
     //如果list文件里面有*.*.*.* 那么匹配ip地址
-    if(inet_addr(hostname) != INADDR_NONE && proxylist.count("*.*.*.*")) {
+    if(inet_addr(hostname) != INADDR_NONE && blocklist.count("*.*.*.*")) {
         return true;
     }
 

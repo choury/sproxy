@@ -19,8 +19,12 @@
 #define DGLOBLETIP  "HTTP/1.0 200 Global proxy disabled" CRLF CRLF
 #define SWITCHTIP   "HTTP/1.0 200 Switched proxy server" CRLF CRLF
 
-#define BLOCKEDTIP  "HTTP/1.1 403 Forbidden" CRLF CRLF
-#define AUTHORTIP   "HTTP/1.1 407 Proxy Authorization Required\r\nProxy-Authenticate: Basic" CRLF CRLF
+#define BLOCKEDTIP  "HTTP/1.1 403 Forbidden" CRLF \
+                    "Content-Length: 0" CRLF CRLF
+                    
+#define AUTHORTIP   "HTTP/1.1 407 Proxy Authorization Required" CRLF \
+                    "Proxy-Authenticate: Basic" CRLF \
+                    "Content-Length: 0" CRLF CRLF
 
 
 Guest::Guest(int fd): Peer(fd) {
