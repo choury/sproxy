@@ -61,7 +61,7 @@ void loadsites() {
 
         blockfile.close();
     } else {
-        cerr << "There is no " << PROXYFILE << "!" << endl;
+        cerr << "There is no " << BLOCKFILE << "!" << endl;
     }
 }
 
@@ -105,7 +105,7 @@ int delbsite(const string& host) {
         return 0;
     }
     blocklist.erase(host);
-    ofstream blockfile(PROXYFILE);
+    ofstream blockfile(BLOCKFILE);
 
     for(auto i : proxylist) {
         blockfile << i << endl;
