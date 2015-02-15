@@ -81,8 +81,6 @@ void Guest_s::shakedhand() {
 }
 
 int Guest_s::showerrinfo(int ret, const char* s) {
-    if(ret == 0)
-        return 1;
     epoll_event event;
     event.data.ptr = this;
     int error = SSL_get_error(ssl, ret);

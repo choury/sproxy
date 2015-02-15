@@ -174,7 +174,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
     } else if(req.ismethod("ADDBSITE")){
         addbsite(req.url);
         Write(this,ADDBTIP, strlen(ADDBTIP));
-    } else if(req.ismethod("ADDBSITE")){
+    } else if(req.ismethod("DELBSITE")){
         if(delbsite(req.url)) {
             Write(this,DELBTIP,strlen(DELBTIP));
         } else {

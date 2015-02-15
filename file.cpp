@@ -6,7 +6,9 @@
 #include "common.h"
 #include "file.h"
 
-#define H404 "HTTP/1.1 404 Not Found" CRLF CRLF
+#define H404 "HTTP/1.1 404 Not Found" CRLF\
+             "Content-Length: 0" CRLF CRLF
+             
 #define H200 "HTTP/1.1 200 OK" CRLF CRLF
 
 
@@ -19,9 +21,7 @@ repeat:
     if(stat(pathname, &st)){
         LOGE("get file info failed: %s\n",strerror(errno));
         HttpResHeader res(H404);
-        res.add("Content-Length","0");
-        guest->Write(this,wbuff,res.getstring(wbuff));
-        clean(this);
+        guest->Write(this,H404,strlen(H404));
         return;
     }
     if (S_ISREG(st.st_mode)) {
