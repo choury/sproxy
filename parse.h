@@ -14,8 +14,7 @@ void addbsite(const std::string& host);
 int delpsite(const std::string& host);
 int delbsite(const std::string& host);
 int globalproxy();
-char* toLower(char* s);
-char* toUpper(char* s);
+char *extname(const char *path,char *ext);
 bool checkproxy(const char *hostname);
 bool checkblock(const char *hostname);
 

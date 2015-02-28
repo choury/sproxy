@@ -32,30 +32,35 @@ void Http::HeaderProc() {
     if (char* headerend = strnstr(http_buff, CRLF CRLF,http_getlen)) {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - http_buff;
-        if(memcmp(http_buff,"HTTP",4)==0) {
-            HttpResHeader res(http_buff);
-            if(res.get("Transfer-Encoding")!= nullptr) {
-                Http_Proc=&Http::ChunkLProc;
-            } else if(res.get("Content-Length")!=nullptr) {
-                sscanf(res.get("Content-Length"),"%lu",&http_expectlen);
-                Http_Proc=&Http::FixLenProc;
-            } else {
-                Http_Proc=&Http::AlwaysProc;
-            }
-            ResProc(res);
-        } else {
-            HttpReqHeader req(http_buff);
-            if(req.ismethod("POST")) {
-                if(req.get("Content-Length")!=nullptr) {
-                    sscanf(req.get("Content-Length"),"%lu",&http_expectlen);
+        try{
+            if(memcmp(http_buff,"HTTP",4)==0) {
+                HttpResHeader res(http_buff);
+                if(res.get("Transfer-Encoding")!= nullptr) {
+                    Http_Proc=&Http::ChunkLProc;
+                } else if(res.get("Content-Length")!=nullptr) {
+                    sscanf(res.get("Content-Length"),"%lu",&http_expectlen);
                     Http_Proc=&Http::FixLenProc;
                 } else {
-                    Http_Proc=&Http::ChunkLProc;
+                    Http_Proc=&Http::AlwaysProc;
                 }
-            } else if(req.ismethod("CONNECT")) {
-                Http_Proc=&Http::AlwaysProc;
+                ResProc(res);
+            } else {
+                HttpReqHeader req(http_buff);
+                if(req.ismethod("POST")) {
+                    if(req.get("Content-Length")!=nullptr) {
+                        sscanf(req.get("Content-Length"),"%lu",&http_expectlen);
+                        Http_Proc=&Http::FixLenProc;
+                    } else {
+                        Http_Proc=&Http::ChunkLProc;
+                    }
+                } else if(req.ismethod("CONNECT")) {
+                    Http_Proc=&Http::AlwaysProc;
+                }
+                ReqProc(req);
             }
-            ReqProc(req);
+        }catch(...){
+            ErrProc(0);
+            return;
         }
         if(headerlen != http_getlen) {
             memmove(http_buff,http_buff+headerlen,http_getlen-headerlen);

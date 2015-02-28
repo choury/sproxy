@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include "common.h"
 #include "file.h"
+#include "cgi.h"
 
 #define H404 "HTTP/1.1 404 Not Found" CRLF\
              "Content-Length: 0" CRLF CRLF

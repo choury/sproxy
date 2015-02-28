@@ -7,6 +7,7 @@
 #include "parse.h"
 #include "guest_spdy.h"
 #include "file.h"
+#include "cgi.h"
 
 Guest_s::Guest_s(int fd, SSL* ssl): Guest(fd), ssl(ssl) {
     struct epoll_event event;

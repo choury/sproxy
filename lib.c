@@ -1,5 +1,4 @@
 #include <string.h>
-#include <execinfo.h>
 #include <stdlib.h>
 #include "common.h"
     
@@ -25,6 +24,8 @@ char* strnstr(const char* s1, const char* s2, size_t len)
     return NULL;
 }
 
+#ifdef __USE_GNU
+#include <execinfo.h>
 void dump_trace() {
     void *stack_trace[100] = {0};
     char **stack_strings = NULL;
@@ -53,3 +54,4 @@ void dump_trace() {
 
     return;
 }
+#endif

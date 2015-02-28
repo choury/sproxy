@@ -18,7 +18,7 @@ class Peer:public Con,public Http{
 protected:
     int fd;
     size_t  writelen=0;
-    uchar wbuff[1024 * 1024];
+    uchar wbuff[1024 * 100];
     Peer(int fd=0,Http::Initstate state=HTTPHEAD);
     virtual ssize_t Read(void *buff,size_t size)override;
     virtual void ErrProc(int errcode)override;

@@ -45,7 +45,7 @@ void loadsites() {
 
         proxyfile.close();
     } else {
-        cerr << "There is no " << PROXYFILE << "!" << endl;
+        LOGE("There is no %s !\n",PROXYFILE);
     }
     
     ifstream blockfile(BLOCKFILE);
@@ -61,7 +61,7 @@ void loadsites() {
 
         blockfile.close();
     } else {
-        cerr << "There is no " << BLOCKFILE << "!" << endl;
+        LOGE("There is no %s !\n",BLOCKFILE);
     }
 }
 
@@ -272,6 +272,24 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
     }
 
     return 0;
+}
+
+
+char *extname(const char *path,char *ext){
+    static char innelbuff[URLLIMIT];
+    if(ext==nullptr)
+        ext=innelbuff;
+    int i=strlen(path)-1;
+    for(;i>=0;i--){
+        if(path[i]=='.' || path[i]=='/')
+            break;
+    }
+    if(i<0 || path[i] == '/'){
+        ext[0]=0;
+    }else{
+        strcpy(ext,path+i);
+    }
+    return ext;
 }
 
 

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <syslog.h>
 #include <arpa/inet.h>
 
 extern uint16_t SPORT;
@@ -25,13 +26,13 @@ extern char SHOST[];
 #define  LOG_TAG    "sproxy_client"   //定义logcat中tag标签
 #define  LOG(...)  __android_log_print(ANDROID_LOG_INFO,LOG_TAG,__VA_ARGS__)
 #define  LOGE(...)   __android_log_print(ANDROID_LOG_ERROR,LOG_TAG,__VA_ARGS__)
-
+#define  LOGOUT(...) LOGE(__VA_ARGS__)
 
 #else
-#define  LOG(...)  fprintf(stdout,__VA_ARGS__)
-#define  LOGE(...)   fprintf(stderr,__VA_ARGS__)
+#define  LOG(...)  syslog(LOG_INFO,__VA_ARGS__)
+#define  LOGE(...)   syslog(LOG_ERR,__VA_ARGS__)
+#define  LOGOUT(...) fprintf(stderr,__VA_ARGS__)
 #endif
-
 
 #ifdef  __cplusplus
 extern "C" {
