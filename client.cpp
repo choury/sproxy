@@ -64,7 +64,6 @@ int main(int argc, char** argv) {
     }
 
     signal(SIGPIPE, SIG_IGN);
-    LOGOUT("Accepting connections ...\n");
     efd = epoll_create(10000);
     struct epoll_event event;
     event.data.ptr = NULL;
@@ -75,7 +74,10 @@ int main(int argc, char** argv) {
         LOGOUT("Dns Init failed\n");
         return -1;
     }
-    daemon(0,0);
+    LOGOUT("Accepting connections ...\n");
+    if(daemon(1,0)<0){
+        LOGOUT("start daemon error:%s\n",strerror(errno));
+    }
     while (1) {
         int c;
         struct epoll_event events[20];

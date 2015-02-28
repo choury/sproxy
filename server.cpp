@@ -67,13 +67,13 @@ int main(int argc, char** argv)
     SSL_CTX_set_next_protos_advertised_cb(ctx,ssl_set_npn_callback,NULL);
     
     if ((svsk = socket(AF_INET6, SOCK_STREAM, 0)) < 0) {
-        perror("socket error");
+        LOGOUT("socket error:%s\n",strerror(errno));
         return 2;
     }
 
     int flag = 1;
     if (setsockopt(svsk, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
-        perror("setsockopt");
+        LOGOUT("setsockopt:%s\n",strerror(errno));
         return 3;
     }
 
@@ -84,16 +84,15 @@ int main(int argc, char** argv)
     myaddr.sin6_addr = in6addr_any;
 
     if (bind(svsk, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
-        perror("bind error");
+        LOGOUT("bind error:%s\n",strerror(errno));
         return 4;
     }
     if (listen(svsk, 10000) < 0) {
-        perror("listen error");
+        LOGOUT("listen error:%s\n",strerror(errno));
         return 5;
     }
 
     signal(SIGPIPE, SIG_IGN);
-    LOGOUT( "Accepting connections ...\n");
     struct epoll_event event;
     efd = epoll_create(10000);
     event.data.ptr = NULL;
@@ -104,7 +103,10 @@ int main(int argc, char** argv)
         LOGOUT("Dns Init failed\n");
         return -1;
     }
-    daemon(0,0);
+    LOGOUT("Accepting connections ...\n");
+    if(daemon(0,0)<0){
+        LOGOUT("start daemon error:%s\n",strerror(errno));
+    }
     while (1) {
         int c;
         struct epoll_event events[20];
