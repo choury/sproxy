@@ -6,23 +6,22 @@
 #include "peer.h"
 
 
-class Guest:public Peer{
+class Guest:public Peer {
 protected:
     char sourceip[INET6_ADDRSTRLEN];
     uint16_t  sourceport;
     char destip[INET6_ADDRSTRLEN];
     uint16_t  destport;
-    bool authorized=false;
-    virtual int showerrinfo(int ret,const char * )override;
+    bool authorized = false;
+    int showerrinfo(int ret, const char *)override;
     virtual void defaultHE(uint32_t events);
-    virtual void closeHE(uint32_t events);
-    virtual void ReqProc(HttpReqHeader &req)override;
-    virtual ssize_t DataProc(const void *buff,size_t size)override;
+    void closeHE(uint32_t events)override;
+    void ReqProc(HttpReqHeader &req)override;
+    ssize_t DataProc(const void *buff, size_t size)override;
 public:
     Guest();
-    Guest(int fd);
+    explicit Guest(int fd);
     virtual void Response(HttpResHeader& res);
 };
-
 
 #endif

@@ -21,7 +21,7 @@
 
 #define BLOCKEDTIP  "HTTP/1.1 403 Forbidden" CRLF \
                     "Content-Length: 0" CRLF CRLF
-                    
+
 #define AUTHORTIP   "HTTP/1.1 407 Proxy Authorization Required" CRLF \
                     "Proxy-Authenticate: Basic" CRLF \
                     "Content-Length: 0" CRLF CRLF
@@ -33,7 +33,7 @@ Guest::Guest(int fd): Peer(fd) {
 
     if (getpeername(fd, (struct sockaddr*)&sa, &len)) {
         perror("getpeername");
-        strcpy(sourceip, "Unknown IP");
+        snprintf(sourceip, sizeof(sourceip), "%s", "Unknown IP");
     } else {
         inet_ntop(AF_INET6, &sa.sin6_addr, sourceip, sizeof(sourceip));
         sourceport = ntohs(sa.sin6_port);
@@ -46,14 +46,17 @@ Guest::Guest(int fd): Peer(fd) {
 
     int socktype;
 
-    if ((getsockopt(fd, SOL_IP, SO_ORIGINAL_DST, &Dst, &sin_size) || (socktype = AF_INET, 0)) &&
-            (getsockopt(fd, SOL_IPV6, SO_ORIGINAL_DST, &Dst6, &sin6_size) || (socktype = AF_INET6, 0))) {
-        LOGE( "([%s]:%d): getsockopt error:%s\n",
+    if ((getsockopt(fd, SOL_IP, SO_ORIGINAL_DST, &Dst, &sin_size)
+            || (socktype = AF_INET, 0))
+         && (getsockopt(fd, SOL_IPV6, SO_ORIGINAL_DST, &Dst6, &sin6_size)
+            || (socktype = AF_INET6, 0)))
+    {
+        LOGE("([%s]:%d): getsockopt error:%s\n",
               sourceip, sourceport, strerror(errno));
-        strcpy(destip, "Unkown IP");
+        snprintf(destip, sizeof(destip), "%s", "Unkown IP");
         destport = CPORT;
     } else {
-        switch(socktype) {
+        switch (socktype) {
         case AF_INET:
             inet_ntop(socktype, &Dst.sin_addr, destip, INET6_ADDRSTRLEN);
             destport = ntohs(Dst.sin_port);
@@ -69,19 +72,18 @@ Guest::Guest(int fd): Peer(fd) {
     event.data.ptr = this;
     event.events = EPOLLIN;
     epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-    handleEvent=(void (Con::*)(uint32_t))&Guest::defaultHE;
+    handleEvent = (void (Con::*)(uint32_t))&Guest::defaultHE;
 }
 
 Guest::Guest() {
-
 }
 
 
-int Guest::showerrinfo(int ret,const char *s) {
-    if(ret < 0) {
-        if(errno != EAGAIN) {
+int Guest::showerrinfo(int ret, const char *s) {
+    if (ret < 0) {
+        if (errno != EAGAIN) {
             LOGE("([%s]:%d): %s:%s\n",
-                 sourceip, sourceport,s,strerror(errno));
+                 sourceip, sourceport, s, strerror(errno));
         } else {
             return 0;
         }
@@ -93,16 +95,16 @@ void Guest::defaultHE(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
 
-    Peer *peer=bindex.query(this);
+    Peer *peer = bindex.query(this);
     if (events & EPOLLIN) {
         (this->*Http_Proc)();
     }
-    
+
     if (events & EPOLLOUT) {
-        if(writelen) {
+        if (writelen) {
             int ret = Write();
-            if (ret <= 0 ) {
-                if( showerrinfo(ret,"guest write error")) {
+            if (ret <= 0) {
+                if (showerrinfo(ret, "guest write error")) {
                     clean(this);
                 }
                 return;
@@ -111,7 +113,7 @@ void Guest::defaultHE(uint32_t events) {
                 peer->writedcb();
         }
 
-        if(writelen==0) {
+        if (writelen == 0) {
             event.events = EPOLLIN;
             epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
         }
@@ -121,7 +123,7 @@ void Guest::defaultHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE( "([%s]:%d): guest error:%s\n",
+            LOGE("([%s]:%d): guest error:%s\n",
                   sourceip, sourceport, strerror(error));
         }
         clean(this);
@@ -129,14 +131,14 @@ void Guest::defaultHE(uint32_t events) {
 }
 
 void Guest::closeHE(uint32_t events) {
-    if(writelen == 0) {
+    if (writelen == 0) {
         delete this;
         return;
     }
 
     int ret = Write();
 
-    if (ret <= 0 && showerrinfo(ret,"write error while closing")) {
+    if (ret <= 0 && showerrinfo(ret, "write error while closing")) {
         delete this;
         return;
     }
@@ -144,60 +146,60 @@ void Guest::closeHE(uint32_t events) {
 
 
 void Guest::ReqProc(HttpReqHeader& req) {
-    if(checkproxy(req.hostname)) {
-        LOG( "([%s]:%d): PROXY %s %s\n",
+    if (checkproxy(req.hostname)) {
+        LOG("([%s]:%d): PROXY %s %s\n",
              sourceip, sourceport,
              req.method, req.url);
     } else {
-        LOG( "([%s]:%d): %s %s\n",
+        LOG("([%s]:%d): %s %s\n",
              sourceip, sourceport,
              req.method, req.url);
     }
 
-    if ( req.ismethod("GET") ||  req.ismethod("POST") || req.ismethod("CONNECT")) {
-        if(checkblock(req.hostname)){
-            LOG( "([%s]:%d): site: %s blocked\n",
-             sourceip, sourceport,req.hostname);
-            Write(this,BLOCKEDTIP, strlen(BLOCKEDTIP));
-        }else{
-            Host::gethost(req,this);
+    if (req.ismethod("GET") || req.ismethod("POST") || req.ismethod("CONNECT")) {
+        if (checkblock(req.hostname)) {
+            LOG("([%s]:%d): site: %s blocked\n",
+                 sourceip, sourceport, req.hostname);
+            Write(this, BLOCKEDTIP, strlen(BLOCKEDTIP));
+        } else {
+            Host::gethost(req, this);
         }
     } else if (req.ismethod("ADDPSITE")) {
         addpsite(req.url);
-        Write(this,ADDPTIP, strlen(ADDPTIP));
-    } else if(req.ismethod("DELPSITE")) {
-        if(delpsite(req.url)) {
-            Write(this,DELPTIP,strlen(DELPTIP));
+        Write(this, ADDPTIP, strlen(ADDPTIP));
+    } else if (req.ismethod("DELPSITE")) {
+        if (delpsite(req.url)) {
+            Write(this, DELPTIP, strlen(DELPTIP));
         } else {
-            Write(this,DELFTIP,strlen(DELFTIP));
+            Write(this, DELFTIP, strlen(DELFTIP));
         }
-    } else if(req.ismethod("ADDBSITE")){
+    } else if (req.ismethod("ADDBSITE")) {
         addbsite(req.url);
-        Write(this,ADDBTIP, strlen(ADDBTIP));
-    } else if(req.ismethod("DELBSITE")){
-        if(delbsite(req.url)) {
-            Write(this,DELBTIP,strlen(DELBTIP));
+        Write(this, ADDBTIP, strlen(ADDBTIP));
+    } else if (req.ismethod("DELBSITE")) {
+        if (delbsite(req.url)) {
+            Write(this, DELBTIP, strlen(DELBTIP));
         } else {
-            Write(this,DELFTIP,strlen(DELFTIP));
+            Write(this, DELFTIP, strlen(DELFTIP));
         }
-    } else if(req.ismethod("GLOBALPROXY")) {
-        if(globalproxy()) {
-            Write(this,EGLOBLETIP, strlen(EGLOBLETIP));
+    } else if (req.ismethod("GLOBALPROXY")) {
+        if (globalproxy()) {
+            Write(this, EGLOBLETIP, strlen(EGLOBLETIP));
         } else {
-            Write(this,DGLOBLETIP, strlen(DGLOBLETIP));
+            Write(this, DGLOBLETIP, strlen(DGLOBLETIP));
         }
-    } else if(req.ismethod("SWITCH")){
-        SPORT=443;
-        spliturl(req.url,SHOST,nullptr,&SPORT);
-        Write(this,SWITCHTIP, strlen(SWITCHTIP));
+    } else if (req.ismethod("SWITCH")) {
+        SPORT = 443;
+        spliturl(req.url, SHOST, nullptr, &SPORT);
+        Write(this, SWITCHTIP, strlen(SWITCHTIP));
     } else {
-        LOGE( "([%s]:%d): unsported method:%s\n",
-              sourceip, sourceport,req.method);
+        LOGE("([%s]:%d): unsported method:%s\n",
+              sourceip, sourceport, req.method);
         clean(this);
     }
 }
 
-void Guest::Response(HttpResHeader& res){
+void Guest::Response(HttpResHeader& res) {
     writelen+=res.getstring(wbuff+writelen);
     struct epoll_event event;
     event.data.ptr = this;
@@ -207,18 +209,18 @@ void Guest::Response(HttpResHeader& res){
 
 
 
-ssize_t Guest::DataProc(const void *buff,size_t size) {
-    Host *host=dynamic_cast<Host *>(bindex.query(this));
-    if(host == NULL) {
-        LOGE("([%s]:%d): connecting to host lost\n",sourceip, sourceport);
+ssize_t Guest::DataProc(const void *buff, size_t size) {
+    Host *host = dynamic_cast<Host *>(bindex.query(this));
+    if (host == NULL) {
+        LOGE("([%s]:%d): connecting to host lost\n", sourceip, sourceport);
         clean(this);
         return -1;
     }
-    int len=host->bufleft();
-    if(len == 0) {
-        LOGE( "([%s]:%d): The host's buff is full\n",sourceip, sourceport);
+    int len = host->bufleft();
+    if (len == 0) {
+        LOGE("([%s]:%d): The host's buff is full\n", sourceip, sourceport);
         epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
         return -1;
     }
-    return host->Write(this,buff, Min(size,len));
+    return host->Write(this, buff, Min(size, len));
 }

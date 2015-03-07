@@ -7,21 +7,20 @@
 
 
 
-Proxy::Proxy(HttpReqHeader &req,Guest *guest):Host(req,guest,SHOST,SPORT) {}
+Proxy::Proxy(HttpReqHeader &req, Guest *guest):Host(req, guest, SHOST, SPORT) {}
 
 
-Host* Proxy::getproxy(HttpReqHeader &req,Guest* guest) {
-    Host *exist=(Host *)bindex.query(guest);
+Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
+    Host *exist = (Host *)bindex.query(guest);
     if (dynamic_cast<Proxy*>(exist)) {
-        exist->Request(req,guest);
+        exist->Request(req, guest);
         return exist;
     }
     if (exist != NULL) {
         exist->clean(guest);
     }
 
-    return new Proxy(req,guest);
-
+    return new Proxy(req, guest);
 }
 
 
@@ -51,7 +50,7 @@ int Proxy::showerrinfo(int ret, const char* s) {
     epoll_event event;
     event.data.ptr = this;
     int error = SSL_get_error(ssl, ret);
-    switch(error) {
+    switch (error) {
     case SSL_ERROR_WANT_READ:
         event.events = EPOLLIN;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
@@ -63,10 +62,10 @@ int Proxy::showerrinfo(int ret, const char* s) {
     case SSL_ERROR_ZERO_RETURN:
         break;
     case SSL_ERROR_SYSCALL:
-        LOGE("%s:%s\n",s, strerror(errno));
+        LOGE("%s:%s\n", s, strerror(errno));
         break;
     default:
-        LOGE("%s:%s\n",s, ERR_error_string(error, NULL));
+        LOGE("%s:%s\n", s, ERR_error_string(error, NULL));
     }
     return 1;
 }
@@ -79,14 +78,14 @@ static int select_next_proto_cb(SSL* ssl,
 {
     (void)ssl;
     std::set<std::string> proset;
-    while(*in) {
-        uint8_t len=*in++;
-        proset.insert(std::string((const char*)in,len));
-        in+=len;
+    while (*in) {
+        uint8_t len = *in++;
+        proset.insert(std::string((const char*)in, len));
+        in+= len;
     }
-    if(proset.count("http/1.1")) {
-        *out=(unsigned char*)"http/1.1";
-        *outlen=strlen((char*)*out);
+    if (proset.count("http/1.1")) {
+        *out = (unsigned char*)"http/1.1";
+        *outlen = strlen((char*)*out);
         return SSL_TLSEXT_ERR_OK;
     }
     LOGE("Can't select a protocol\n");
@@ -95,14 +94,14 @@ static int select_next_proto_cb(SSL* ssl,
 
 
 void Proxy::waitconnectHE(uint32_t events) {
-    Guest *guest=(Guest *)bindex.query(this);
-    if( guest == NULL) {
+    Guest *guest = (Guest *)bindex.query(this);
+    if (guest == NULL) {
         clean(this);
         return;
     }
     if (events & EPOLLOUT) {
         int error;
-        socklen_t len=sizeof(error);
+        socklen_t len = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
             perror("proxy getsokopt");
             clean(this);
@@ -110,8 +109,8 @@ void Proxy::waitconnectHE(uint32_t events) {
         }
 
         if (error != 0) {
-            LOGE( "connect to proxy:%s\n", strerror(error));
-            if(connect()<0) {
+            LOGE("connect to proxy:%s\n", strerror(error));
+            if (connect() < 0) {
                 clean(this);
             }
             return;
@@ -123,8 +122,8 @@ void Proxy::waitconnectHE(uint32_t events) {
             clean(this);
             return;
         }
-        SSL_CTX_set_options(ctx,SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3); //去除支持SSLv2 SSLv3
-        SSL_CTX_set_next_proto_select_cb(ctx,select_next_proto_cb,this);
+        SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);  // 去除支持SSLv2 SSLv3
+        SSL_CTX_set_next_proto_select_cb(ctx, select_next_proto_cb, this);
 
         ssl = SSL_new(ctx);
         SSL_set_fd(ssl, fd);
@@ -134,11 +133,11 @@ void Proxy::waitconnectHE(uint32_t events) {
         event.events = EPOLLIN | EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 
-        handleEvent=(void (Con::*)(uint32_t))&Proxy::shakehandHE;
+        handleEvent = (void (Con::*)(uint32_t))&Proxy::shakehandHE;
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("connect to proxy: %s\n", strerror(errno));
-        if(connect()<0) {
+        if (connect() < 0) {
             clean(this);
         }
     }
@@ -146,35 +145,35 @@ void Proxy::waitconnectHE(uint32_t events) {
 
 
 void Proxy::shakehandHE(uint32_t events) {
-    Guest *guest=(Guest *)bindex.query(this);
-    if( guest == NULL) {
+    Guest *guest = (Guest *)bindex.query(this);
+    if (guest == NULL) {
         clean(this);
         return;
     }
     if ((events & EPOLLIN) || (events & EPOLLOUT)) {
         int ret = SSL_connect(ssl);
         if (ret != 1) {
-            if(showerrinfo(ret,"ssl connect error")) {
+            if (showerrinfo(ret, "ssl connect error")) {
                 clean(this);
             }
             return;
         }
-        
+
         epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLIN |EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-        handleEvent=(void (Con::*)(uint32_t))&Proxy::defaultHE;
+        handleEvent = (void (Con::*)(uint32_t))&Proxy::defaultHE;
 
         const unsigned char *data;
         unsigned int len;
-        SSL_get0_next_proto_negotiated(ssl,&data,&len);
-        if(data && strncasecmp((const char*)data,"spdy/3.1",len)==0) {
+        SSL_get0_next_proto_negotiated(ssl, &data, &len);
+        if (data && strncasecmp((const char*)data, "spdy/3.1", len) == 0) {
         }
         return;
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("proxy unkown error: %s\n",strerror(errno));
+        LOGE("proxy unkown error: %s\n", strerror(errno));
         clean(this);
     }
 }

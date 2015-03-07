@@ -23,14 +23,11 @@ union sockaddr_un{
 };
 
 int spliturl(const char* url, char* host, char* path , uint16_t* port);
-//int ConnectTo(const char* host, int port);
 
 int Connect(struct sockaddr*);
-    
+
 #ifdef  __cplusplus
 }
 #endif
-
-
 
 #endif

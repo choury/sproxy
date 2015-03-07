@@ -9,39 +9,39 @@
 
 #define H404 "HTTP/1.1 404 Not Found" CRLF\
              "Content-Length: 0" CRLF CRLF
-             
+
 #define H200 "HTTP/1.1 200 OK" CRLF CRLF
 
 
-File::File(HttpReqHeader &req,Guest* guest):req(req){
-    fd=eventfd(1,O_NONBLOCK);
+File::File(HttpReqHeader &req, Guest* guest):req(req) {
+    fd = eventfd(1, O_NONBLOCK);
     char pathname[URLLIMIT];
-    sprintf(pathname,".%s",req.path);
+    snprintf(pathname, sizeof(pathname), ".%s", req.path);
     struct stat st;
 repeat:
-    if(stat(pathname, &st)){
-        LOGE("get file info failed: %s\n",strerror(errno));
+    if (stat(pathname, &st)) {
+        LOGE("get file info failed: %s\n", strerror(errno));
         HttpResHeader res(H404);
-        guest->Write(this,H404,strlen(H404));
+        guest->Write(this, H404, strlen(H404));
         return;
     }
     if (S_ISREG(st.st_mode)) {
-        ffd=open(pathname,O_RDONLY);
-        if(ffd < 0){
-            LOGE("open file failed: %s\n",strerror(errno));
+        ffd = open(pathname, O_RDONLY);
+        if (ffd < 0) {
+            LOGE("open file failed: %s\n", strerror(errno));
             clean(this);
             return;
         }
-        bindex.add(guest,this);
+        bindex.add(guest, this);
         HttpResHeader res(H200);
-        sprintf((char *)wbuff,"%lu",st.st_size);
-        res.add("Content-Length",(char *)wbuff);
-        guest->Write(this,wbuff,res.getstring(wbuff));
-    }else if(S_ISDIR(st.st_mode)){
-        strcat(pathname,"/index.html");
+        snprintf((char *)wbuff, sizeof(wbuff), "%lu", st.st_size);
+        res.add("Content-Length", (char *)wbuff);
+        guest->Write(this, wbuff, res.getstring(wbuff));
+    } else if (S_ISDIR(st.st_mode)) {
+        strcat(pathname, "/index.html");
         goto repeat;
     }
-    handleEvent=(void (Con::*)(uint32_t))&File::defaultHE;
+    handleEvent = (void (Con::*)(uint32_t))&File::defaultHE;
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN;
@@ -49,67 +49,66 @@ repeat:
 }
 
 
-File* File::getfile(HttpReqHeader &req, Guest* guest){
-    File* exist=dynamic_cast<File *>(bindex.query(guest));
+File* File::getfile(HttpReqHeader &req, Guest* guest) {
+    File* exist = dynamic_cast<File *>(bindex.query(guest));
     if (exist != NULL) {
         exist->clean(guest);
     }
-    return new File(req,guest);
+    return new File(req, guest);
 }
 
 
 int File::showerrinfo(int ret, const char* s) {
-    if(ret < 0 && errno != EAGAIN) {
-        LOGE("%s: %s\n",s,strerror(errno));
+    if (ret < 0 && errno != EAGAIN) {
+        LOGE("%s: %s\n", s, strerror(errno));
         return 1;
     }
     return 0;
 }
 
-void File::defaultHE(uint32_t events){
+void File::defaultHE(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
-    Guest *guest=dynamic_cast<Guest *>(bindex.query(this));
-    if( guest == NULL) {
+    Guest *guest = dynamic_cast<Guest *>(bindex.query(this));
+    if (guest == NULL) {
         clean(this);
         return;
     }
-    if (events & EPOLLIN){
+    if (events & EPOLLIN) {
         int len = guest->bufleft();
         if (len == 0) {
-            LOGE( "The guest's write buff is full\n");
+            LOGE("The guest's write buff is full\n");
             epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
             return;
         }
-        len=read(ffd,wbuff,len);
-        if (len<=0){
-            if(showerrinfo(len,"file read error")){
+        len = read(ffd, wbuff, len);
+        if (len <= 0) {
+            if (showerrinfo(len, "file read error")) {
                 clean(this);
             }
             return;
         }
-        guest->Write(this,wbuff, len);
+        guest->Write(this, wbuff, len);
     }
-    if (events & EPOLLOUT){
+    if (events & EPOLLOUT) {
         event.events = EPOLLIN;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("file unkown error: %s\n",strerror(errno));
+        LOGE("file unkown error: %s\n", strerror(errno));
         clean(this);
     }
 }
 
 
-void File::closeHE(uint32_t events)
-{
-    if(ffd > 0){
+void File::closeHE(uint32_t events) {
+    if (ffd > 0) {
         close(ffd);
     }
     delete this;
 }
 
-ssize_t File::DataProc(const void* buff, size_t size){
+ssize_t File::DataProc(const void* buff, size_t size) {
     return 0;
 }
 
