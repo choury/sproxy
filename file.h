@@ -7,10 +7,10 @@
 
 class File:public Peer{
     int ffd = 0;
+protected:
     HttpReqHeader req;
     virtual void defaultHE(uint32_t events);
     void closeHE(uint32_t events)override;
-    ssize_t DataProc(const void *buff, size_t size)override;
 public:
     File(HttpReqHeader &req, Guest* guest);
     static File *getfile(HttpReqHeader &req, Guest *guest);

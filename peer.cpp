@@ -39,13 +39,14 @@ Peer* Bindex::query(Peer* key) {
 }
 
 
-Peer::Peer(int fd, Http::Initstate state):Http(state), fd(fd) {
+Peer::Peer(int fd):fd(fd) {
 }
 
 
 
 Peer::~Peer() {
     if (fd > 0) {
+        epoll_ctl(efd,EPOLL_CTL_DEL,fd,nullptr);
         close(fd);
     }
 }
@@ -109,12 +110,13 @@ size_t Peer::bufleft() {
     return sizeof(wbuff)-writelen < 100?0:sizeof(wbuff)-writelen;
 }
 
+/*
 void Peer::ErrProc(int errcode) {
     if (showerrinfo(errcode, "Peer read")) {
         clean(this);
     }
 }
-
+*/
 
 void Peer::clean(Peer* who) {
     Peer *peer = bindex.query(this);

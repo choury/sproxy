@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <syslog.h>
 #include <arpa/inet.h>
+#include <sys/epoll.h>
 
 extern uint16_t SPORT;
 #define CPORT 3333

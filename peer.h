@@ -14,14 +14,13 @@
 
 
 
-class Peer:public Con, public Http{
+class Peer:public Con{
 protected:
     int fd;
     size_t  writelen = 0;
     uchar wbuff[1024 * 1024];
-    explicit Peer(int fd = 0, Http::Initstate state = HTTPHEAD);
-    ssize_t Read(void *buff, size_t size)override;
-    void ErrProc(int errcode)override;
+    explicit Peer(int fd = 0);
+    virtual ssize_t Read(void *buff, size_t size);
     virtual ssize_t Write();
     virtual void closeHE(uint32_t events) = 0;
 public:

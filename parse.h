@@ -5,18 +5,10 @@
 #include <string>
 #include <map>
 #include "net.h"
+#include "common.h"
 #include "spdy_type.h"
 #include "spdy_zlib.h"
 
-
-void addpsite(const std::string& host);
-void addbsite(const std::string& host);
-int delpsite(const std::string& host);
-int delbsite(const std::string& host);
-int globalproxy();
-char *extname(const char *path, char *ext);
-bool checkproxy(const char *hostname);
-bool checkblock(const char *hostname);
 
 using std::string;
 using std::map;
@@ -59,5 +51,26 @@ public:
     int getstring(void* buff);
     int getframe(void* buff, z_stream* destream);
 };
+
+
+#ifdef  __cplusplus
+extern "C" {
+#endif
+    
+typedef int (cgifunc)(const HttpReqHeader *req, int fd);
+cgifunc cgimain;
+
+void addpsite(const char * host);
+void addbsite(const char * host);
+int delpsite(const char * host);
+int delbsite(const char * host);
+int globalproxy();
+char *extname(const char *path, char *ext);
+bool checkproxy(const char *hostname);
+bool checkblock(const char *hostname);
+
+#ifdef  __cplusplus
+}
+#endif
 
 #endif

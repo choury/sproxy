@@ -70,7 +70,7 @@ void loadsites() {
 }
 
 
-void addpsite(const string& host) {
+void addpsite(const char * host) {
     proxylist.insert(host);
     ofstream proxyfile(PROXYFILE);
 
@@ -80,7 +80,7 @@ void addpsite(const string& host) {
     proxyfile.close();
 }
 
-void addbsite(const string& host) {
+void addbsite(const char * host) {
     blocklist.insert(host);
     ofstream blockfile(BLOCKFILE);
 
@@ -90,7 +90,7 @@ void addbsite(const string& host) {
     blockfile.close();
 }
 
-int delpsite(const string& host) {
+int delpsite(const char * host) {
     if (proxylist.count(host) == 0) {
         return 0;
     }
@@ -104,7 +104,7 @@ int delpsite(const string& host) {
     return 1;
 }
 
-int delbsite(const string& host) {
+int delbsite(const char * host) {
     if (blocklist.count(host) == 0) {
         return 0;
     }

@@ -85,6 +85,7 @@ int Guest_s::showerrinfo(int ret, const char* s) {
     epoll_event event;
     event.data.ptr = this;
     int error = SSL_get_error(ssl, ret);
+    ERR_clear_error();
     switch (error) {
     case SSL_ERROR_WANT_READ:
         return 0;
@@ -135,7 +136,11 @@ void Guest_s::shakehandHE(uint32_t events) {
 void Guest_s::ReqProc(HttpReqHeader& req) {
     LOG("([%s]:%d): %s %s\n", sourceip, sourceport, req.method, req.url);
     if (req.url[0] == '/') {
-        File::getfile(req, this);
+        if (strcmp(extname(req.path, NULL),".so") == 0) {
+            Cgi::getcgi(req, this);
+        } else {
+            File::getfile(req,this);
+        }
     } else {
         Host::gethost(req, this);
     }

@@ -7,26 +7,21 @@
 #include "file.h"
 #include "cgi.h"
 
-#define H404 "HTTP/1.1 404 Not Found" CRLF\
-             "Content-Length: 0" CRLF CRLF
-
-#define H200 "HTTP/1.1 200 OK" CRLF CRLF
-
 
 File::File(HttpReqHeader &req, Guest* guest):req(req) {
     fd = eventfd(1, O_NONBLOCK);
-    char pathname[URLLIMIT];
-    snprintf(pathname, sizeof(pathname), ".%s", req.path);
+    char filename[URLLIMIT];
+    snprintf(filename, sizeof(filename), ".%s", req.path);
     struct stat st;
 repeat:
-    if (stat(pathname, &st)) {
+    if (stat(filename, &st)) {
         LOGE("get file info failed: %s\n", strerror(errno));
         HttpResHeader res(H404);
         guest->Write(this, H404, strlen(H404));
-        return;
+        throw 0;
     }
     if (S_ISREG(st.st_mode)) {
-        ffd = open(pathname, O_RDONLY);
+        ffd = open(filename, O_RDONLY);
         if (ffd < 0) {
             LOGE("open file failed: %s\n", strerror(errno));
             clean(this);
@@ -38,7 +33,7 @@ repeat:
         res.add("Content-Length", (char *)wbuff);
         guest->Write(this, wbuff, res.getstring(wbuff));
     } else if (S_ISDIR(st.st_mode)) {
-        strcat(pathname, "/index.html");
+        strcat(filename, "/index.html");
         goto repeat;
     }
     handleEvent = (void (Con::*)(uint32_t))&File::defaultHE;
@@ -106,9 +101,5 @@ void File::closeHE(uint32_t events) {
         close(ffd);
     }
     delete this;
-}
-
-ssize_t File::DataProc(const void* buff, size_t size) {
-    return 0;
 }
 

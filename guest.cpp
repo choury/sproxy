@@ -19,13 +19,6 @@
 #define DGLOBLETIP  "HTTP/1.0 200 Global proxy disabled" CRLF CRLF
 #define SWITCHTIP   "HTTP/1.0 200 Switched proxy server" CRLF CRLF
 
-#define BLOCKEDTIP  "HTTP/1.1 403 Forbidden" CRLF \
-                    "Content-Length: 0" CRLF CRLF
-
-#define AUTHORTIP   "HTTP/1.1 407 Proxy Authorization Required" CRLF \
-                    "Proxy-Authenticate: Basic" CRLF \
-                    "Content-Length: 0" CRLF CRLF
-
 
 Guest::Guest(int fd): Peer(fd) {
     struct sockaddr_in6 sa;
@@ -145,6 +138,16 @@ void Guest::closeHE(uint32_t events) {
 }
 
 
+ssize_t Guest::Read(void* buff, size_t len){
+    return Peer::Read(buff, len);
+}
+
+void Guest::ErrProc(int errcode) {
+    if (showerrinfo(errcode, "Host read")) {
+        clean(this);
+    }
+}
+
 void Guest::ReqProc(HttpReqHeader& req) {
     if (checkproxy(req.hostname)) {
         LOG("([%s]:%d): PROXY %s %s\n",
@@ -160,7 +163,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
         if (checkblock(req.hostname)) {
             LOG("([%s]:%d): site: %s blocked\n",
                  sourceip, sourceport, req.hostname);
-            Write(this, BLOCKEDTIP, strlen(BLOCKEDTIP));
+            Write(this, H403, strlen(H403));
         } else {
             Host::gethost(req, this);
         }

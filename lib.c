@@ -24,6 +24,20 @@ char* strnstr(const char* s1, const char* s2, size_t len)
     return NULL;
 }
 
+int epoll_my_ctl(int epfd, int op, int fd,struct epoll_event *event){
+    if(op == EPOLL_CTL_MOD){
+        LOGE("epoll mod %d: %p\n",fd,event->data.ptr);
+    }
+    if(op == EPOLL_CTL_ADD) {
+        LOGE("epoll add %d: %p\n",fd,event->data.ptr);
+    }
+    if(op == EPOLL_CTL_DEL) {
+        LOGE("epoll del %d\n",fd);
+    }
+    return epoll_ctl(epfd,op,fd,event);
+}
+
+
 #ifdef __USE_GNU
 #include <execinfo.h>
 void dump_trace() {
@@ -54,4 +68,5 @@ void dump_trace() {
 
     return;
 }
+
 #endif

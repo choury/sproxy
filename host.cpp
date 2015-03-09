@@ -9,7 +9,7 @@
 #include "proxy.h"
 
 
-Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0, state) {
+Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0), Http(state) {
     bindex.add(guest, this);
     writelen = req.getstring(wbuff);
     this->req = req;
@@ -22,7 +22,7 @@ Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0, stat
 }
 
 
-Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0, ALWAYS) {
+Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0), Http(ALWAYS) {
     bindex.add(guest, this);
     writelen = req.getstring(wbuff);
     this->req = req;
@@ -207,6 +207,16 @@ Host* Host::gethost(HttpReqHeader &req, Guest* guest) {
     return new Host(req, guest);
 }
 
+
+ssize_t Host::Read(void* buff, size_t len){
+    return Peer::Read(buff, len);
+}
+
+void Host::ErrProc(int errcode) {
+    if (showerrinfo(errcode, "Host read")) {
+        clean(this);
+    }
+}
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
     Guest *guest = dynamic_cast<Guest *>(bindex.query(this));
