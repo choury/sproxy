@@ -10,8 +10,7 @@ lib.c parse.cpp server.cpp net.c dns.cpp)
 
 
 
-add_executable(sproxy_client http.cpp 
-spdy.cpp spdy_zlib.c
+add_executable(sproxy_client spdy_zlib.c http.cpp 
 peer.cpp guest.cpp host.cpp proxy.cpp 
 lib.c parse.cpp client.cpp net.c dns.cpp)
 
@@ -19,6 +18,6 @@ lib.c parse.cpp client.cpp net.c dns.cpp)
 #target_compile_definitions(sproxy_client PUBLIC CLIENT)
 set_target_properties(sproxy_client PROPERTIES COMPILE_FLAGS "-DCLIENT")
 target_link_libraries(sproxy_client ssl crypto z)
-target_link_libraries(sproxy_server ssl crypto z)
+target_link_libraries(sproxy_server ssl crypto z dl)
 
 install(TARGETS sproxy_client RUNTIME DESTINATION bin)

@@ -1,5 +1,4 @@
 #include <unistd.h>
-#include <cerrno>
 #include <fcntl.h>
 #include <signal.h>
 #include <arpa/inet.h>
@@ -13,7 +12,7 @@
 #define NEXT_PROTO_STRING \
     "\x8""http/1.1" \
     "\x8""choury/1"
-  
+
 int efd;
 
 int ssl_set_npn_callback(SSL* s,
@@ -26,20 +25,19 @@ int ssl_set_npn_callback(SSL* s,
 }
 
 
-int main(int argc, char** argv)
-{
+int main(int argc, char** argv) {
     int svsk, clsk;
 
-    SSL_library_init();    //SSL初库始化
-    SSL_load_error_strings();  //载入所有错误信息
+    SSL_library_init();    // SSL初库始化
+    SSL_load_error_strings();  // 载入所有错误信息
     SSL_CTX* ctx = SSL_CTX_new(SSLv23_server_method());
     if (ctx == NULL) {
         ERR_print_errors_fp(stderr);
         return 1;
     }
-    SSL_CTX_set_options(ctx,SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3); //去除支持SSLv2 SSLv3
+    SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);  // 去除支持SSLv2 SSLv3
 
-    if (SSL_CTX_load_verify_locations(ctx,"/home/choury/keys/ca.pem",NULL) != 1)
+    if (SSL_CTX_load_verify_locations(ctx, "/home/choury/keys/ca.pem", NULL) != 1)
         ERR_print_errors_fp(stderr);
 
     if (SSL_CTX_set_default_verify_paths(ctx) != 1)
@@ -63,17 +61,16 @@ int main(int argc, char** argv)
     }
 
     SSL_CTX_set_verify_depth(ctx, 10);
-    
-    SSL_CTX_set_next_protos_advertised_cb(ctx,ssl_set_npn_callback,NULL);
-    
+    SSL_CTX_set_next_protos_advertised_cb(ctx, ssl_set_npn_callback, NULL);
+
     if ((svsk = socket(AF_INET6, SOCK_STREAM, 0)) < 0) {
-        perror("socket error");
+        LOGOUT("socket error:%s\n", strerror(errno));
         return 2;
     }
 
     int flag = 1;
     if (setsockopt(svsk, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
-        perror("setsockopt");
+        LOGOUT("setsockopt:%s\n", strerror(errno));
         return 3;
     }
 
@@ -84,27 +81,30 @@ int main(int argc, char** argv)
     myaddr.sin6_addr = in6addr_any;
 
     if (bind(svsk, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
-        perror("bind error");
+        LOGOUT("bind error:%s\n", strerror(errno));
         return 4;
     }
     if (listen(svsk, 10000) < 0) {
-        perror("listen error");
+        LOGOUT("listen error:%s\n", strerror(errno));
         return 5;
     }
 
     signal(SIGPIPE, SIG_IGN);
-    LOGOUT( "Accepting connections ...\n");
+    signal(SIGCHLD, SIG_IGN);
     struct epoll_event event;
     efd = epoll_create(10000);
     event.data.ptr = NULL;
     event.events = EPOLLIN;
     epoll_ctl(efd, EPOLL_CTL_ADD, svsk, &event);
 
-    if(dnsinit()<=0) {
+    if (dnsinit() <= 0) {
         LOGOUT("Dns Init failed\n");
         return -1;
     }
-    daemon(0,0);
+    LOGOUT("Accepting connections ...\n");
+    if (daemon(1, 0) < 0) {
+        LOGOUT("start daemon error:%s\n", strerror(errno));
+    }
     while (1) {
         int c;
         struct epoll_event events[20];
@@ -144,7 +144,7 @@ int main(int argc, char** argv)
                     /* 建立SSL 连接*/
                     int ret = SSL_accept(ssl);
                     if (ret != 1) {
-                        if(guest->showerrinfo(ret,"ssl accept error")){
+                        if (guest->showerrinfo(ret, "ssl accept error")) {
                             guest->clean(guest);
                         }
                         continue;

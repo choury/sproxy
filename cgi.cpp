@@ -1,23 +1,44 @@
 #include <string.h>
 #include <errno.h>
+#include <dlfcn.h>
+#include <sys/stat.h>
 
 #include "cgi.h"
-
+#include "common.h"
 
 Cgi::Cgi(HttpReqHeader& req, Guest* guest):req(req)
 {
+    char filename[URLLIMIT];
+    snprintf(filename, sizeof(filename), ".%s", req.path);
+    struct stat st;
+    if (stat(filename, &st)) {
+        LOGE("get file info failed: %s\n", strerror(errno));
+        HttpResHeader res(H404);
+        guest->Write(this, H404, strlen(H404));
+        throw 0;
+    }
+    
     int fds[2];
-    pid_t pid;
-    socketpair(AF_UNIX, SOCK_STREAM, 0, fds);  // 创建管道
-    if ((pid = fork()) == 0) { // 子进程
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds)) {  // 创建管道
+        LOGE("socketpair failed: %s\n", strerror(errno));
+        guest->Write(this, H500, strlen(H500));
+        throw 0;
+    }
+    if (fork() == 0) { // 子进程
         close(fds[0]);   // 关闭管道的父进程端
-        dup2(fds[1], STDOUT_FILENO); // 复制管道的子进程端到标准输出
-        dup2(fds[1], STDIN_FILENO);  // 复制管道的子进程端到标准输入
-        close(fds[1]);   // 关闭已复制的读管道
-        /* 使用exec执行命令 */
-        execl("./a.out","hello","test",NULL);
-        LOGE("execl failed: %s\n",strerror(errno));
-        exit(1);
+        void *handle = dlopen(filename,RTLD_NOW);
+        if(handle == nullptr) {
+            LOGE("dlopen failed: %s\n", strerror(errno));
+            write(fds[1], H500, strlen(H500));
+            exit(1);
+        }
+        cgifunc *func=(cgifunc *)dlsym(handle,"cgimain");
+        if(func == nullptr) {
+            LOGE("dlsym failed: %s\n", strerror(errno));
+            write(fds[1], H500, strlen(H500));
+            exit(1);
+        }
+        exit(func(&req, fds[1]));
     } else {    // 父进程
         close(fds[1]);   // 关闭管道的子进程端
         /* 现在可在fd[0]中读写数据 */
@@ -73,14 +94,9 @@ void Cgi::defaultHE(uint32_t events)
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("file unkown error: %s\n",strerror(errno));
+        LOGE("cgi unkown error: %s\n",strerror(errno));
         clean(this);
     }
-}
-
-
-ssize_t Cgi::DataProc(const void* buff, size_t size){
-    return 0;
 }
 
 

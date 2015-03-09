@@ -15,16 +15,16 @@ Guest_s::Guest_s(int fd, SSL* ssl): Guest(fd), ssl(ssl) {
     event.events = EPOLLIN | EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 
-    handleEvent=(void (Con::*)(uint32_t))&Guest_s::shakehandHE;
+    handleEvent = (void (Con::*)(uint32_t))&Guest_s::shakehandHE;
 }
 
-Guest_s::Guest_s(Guest_s* copy){
-    *this=*copy;
+Guest_s::Guest_s(Guest_s* copy) {
+    *this = *copy;
 
-    copy->fd=0;
-    copy->ssl=NULL;
+    copy->fd = 0;
+    copy->ssl = NULL;
     delete copy;
-    
+
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
@@ -68,13 +68,13 @@ void Guest_s::shakedhand() {
     event.data.ptr = this;
     event.events = EPOLLIN;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    handleEvent=(void (Con::*)(uint32_t))&Guest_s::defaultHE;
-    
+    handleEvent = (void (Con::*)(uint32_t))&Guest_s::defaultHE;
+
     const unsigned char *data;
     unsigned int len;
-    SSL_get0_next_proto_negotiated(ssl,&data,&len);
-    if(data) {
-        if(strncasecmp((const char*)data,"spdy/3.1",len)==0) {
+    SSL_get0_next_proto_negotiated(ssl, &data, &len);
+    if (data) {
+        if (strncasecmp((const char*)data, "spdy/3.1", len) == 0) {
             new Guest_spdy(this);
             return;
         }
@@ -85,7 +85,8 @@ int Guest_s::showerrinfo(int ret, const char* s) {
     epoll_event event;
     event.data.ptr = this;
     int error = SSL_get_error(ssl, ret);
-    switch(error) {
+    ERR_clear_error();
+    switch (error) {
     case SSL_ERROR_WANT_READ:
         return 0;
     case SSL_ERROR_WANT_WRITE:
@@ -95,12 +96,12 @@ int Guest_s::showerrinfo(int ret, const char* s) {
     case SSL_ERROR_ZERO_RETURN:
         break;
     case SSL_ERROR_SYSCALL:
-        LOGE( "([%s]:%d): %s:%s\n",
-              sourceip, sourceport,s, strerror(errno));
+        LOGE("([%s]:%d): %s:%s\n",
+              sourceip, sourceport, s, strerror(errno));
         break;
     default:
-        LOGE( "([%s]:%d): %s:%s\n",
-              sourceip, sourceport,s, ERR_error_string(error, NULL));
+        LOGE("([%s]:%d): %s:%s\n",
+              sourceip, sourceport, s, ERR_error_string(error, NULL));
     }
     return 1;
 }
@@ -111,7 +112,7 @@ void Guest_s::shakehandHE(uint32_t events) {
     if ((events & EPOLLIN)|| (events & EPOLLOUT)) {
         int ret = SSL_do_handshake(ssl);
         if (ret != 1) {
-            if(showerrinfo(ret,"ssl accept error")) {
+            if (showerrinfo(ret, "ssl accept error")) {
                 clean(this);
             }
         } else {
@@ -124,7 +125,7 @@ void Guest_s::shakehandHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE( "([%s]:%d): guest_s error:%s\n",
+            LOGE("([%s]:%d): guest_s error:%s\n",
                   sourceip, sourceport, strerror(error));
         }
         clean(this);
@@ -132,12 +133,16 @@ void Guest_s::shakehandHE(uint32_t events) {
 }
 
 
-void Guest_s::ReqProc(HttpReqHeader& req){
-    LOG( "([%s]:%d): %s %s\n",sourceip, sourceport,req.method, req.url);
-    if(req.url[0]=='/'){
-        File::getfile(req,this);
-    }else{
-        Host::gethost(req,this);
+void Guest_s::ReqProc(HttpReqHeader& req) {
+    LOG("([%s]:%d): %s %s\n", sourceip, sourceport, req.method, req.url);
+    if (req.url[0] == '/') {
+        if (strcmp(extname(req.path, NULL),".so") == 0) {
+            Cgi::getcgi(req, this);
+        } else {
+            File::getfile(req,this);
+        }
+    } else {
+        Host::gethost(req, this);
     }
 }
 

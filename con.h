@@ -5,10 +5,10 @@
 
 extern int efd;
 
-class Con{
+class Con {
 public:
     void (Con::*handleEvent)(uint32_t events);
-    virtual ~Con(){};
+    virtual ~Con() {}
 };
 
 

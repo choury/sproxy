@@ -8,8 +8,7 @@
 class Cgi:public Peer{
     HttpReqHeader req;
     virtual void defaultHE(uint32_t events);
-    virtual void closeHE(uint32_t events);
-    virtual ssize_t DataProc(const void *buff,size_t size)override;
+    virtual void closeHE(uint32_t events)override;
 public:
     Cgi(HttpReqHeader &req,Guest* guest);
     static Cgi *getcgi(HttpReqHeader &req,Guest *guest);

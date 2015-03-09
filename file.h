@@ -6,15 +6,15 @@
 #include "parse.h"
 
 class File:public Peer{
-    int ffd=0;
+    int ffd = 0;
+protected:
     HttpReqHeader req;
     virtual void defaultHE(uint32_t events);
-    virtual void closeHE(uint32_t events);
-    virtual ssize_t DataProc(const void *buff,size_t size)override;
+    void closeHE(uint32_t events)override;
 public:
-    File(HttpReqHeader &req,Guest* guest);
-    static File *getfile(HttpReqHeader &req,Guest *guest);
-    virtual int showerrinfo(int ret,const char *s)override;
+    File(HttpReqHeader &req, Guest* guest);
+    static File *getfile(HttpReqHeader &req, Guest *guest);
+    int showerrinfo(int ret, const char *s)override;
 };
 
 #endif

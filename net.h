@@ -10,6 +10,16 @@
 
 #define  connecttip   "HTTP/1.0 200 Connection established" CRLF CRLF
 
+#define H200    "HTTP/1.1 200 OK" CRLF CRLF
+
+#define H403    "HTTP/1.1 403 Forbidden" CRLF \
+                "Content-Length: 0" CRLF CRLF
+
+#define H404    "HTTP/1.1 404 Not Found" CRLF\
+                "Content-Length: 0" CRLF CRLF
+
+#define H500    "HTTP/1.1 500 Internal Server Error" CRLF\
+                "Content-Length: 0" CRLF CRLF
 
 
 #ifdef  __cplusplus
@@ -23,14 +33,11 @@ union sockaddr_un{
 };
 
 int spliturl(const char* url, char* host, char* path , uint16_t* port);
-//int ConnectTo(const char* host, int port);
 
 int Connect(struct sockaddr*);
-    
+
 #ifdef  __cplusplus
 }
 #endif
-
-
 
 #endif
