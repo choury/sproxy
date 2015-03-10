@@ -9,7 +9,7 @@
 #include "proxy.h"
 
 
-Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0), Http(state) {
+Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0), Http(state), req(req) {
     bindex.add(guest, this);
     writelen = req.getstring(wbuff);
     this->req = req;
@@ -22,7 +22,7 @@ Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0), Htt
 }
 
 
-Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0), Http(ALWAYS) {
+Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0), Http(ALWAYS), req(req) {
     bindex.add(guest, this);
     writelen = req.getstring(wbuff);
     this->req = req;

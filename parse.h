@@ -17,47 +17,57 @@ using std::map;
 enum protocol{HTTP, SPDY};
 
 class HttpReqHeader{
-    map<string, string> header;
+    map<string, string> headers;
 public:
+    map<string, string> params;
     uint32_t id;  // 仅由spdy协议使用
     char method[20];
     char url[URLLIMIT];
     char hostname[DOMAINLIMIT];
     char path[URLLIMIT];
+    char filename[URLLIMIT];
+    char extname[20];
     uint16_t port;
-    HttpReqHeader();
     explicit HttpReqHeader(const char* header);
     HttpReqHeader(const syn_frame* sframe, z_stream* instream);
+    int parse();
+    
     bool ismethod(const char* method);
+    void add(const char *header, const char *value);
     void del(const char *header);
     const char* get(const char *header);
-    void add(const char *header, const char *value);
+    
     int getstring(void* outbuff);
     int getframe(void* buff, z_stream* destream);
 };
 
 class HttpResHeader{
-    map<string, string> header;
+    int fd;       // 由cgi使用
+    map<string, string> headers;
 public:
     uint32_t id;  // 仅由spdy协议使用
     char version[20];
     char status[100];
-    HttpResHeader();
-    explicit HttpResHeader(const char* header);
+    explicit HttpResHeader(const char* header, int fd=0);
     HttpResHeader(const syn_reply_frame *sframe, z_stream* instream);
+    
+    void add(const char *header, const char *value);
     void del(const char *header);
     const char* get(const char *header);
-    void add(const char *header, const char *value);
+
     int getstring(void* buff);
     int getframe(void* buff, z_stream* destream);
+    
+    int sendheader();                          // 由cgi使用
+    int write(const void *buff, size_t size);  // 由cgi使用
 };
 
 
 #ifdef  __cplusplus
 extern "C" {
 #endif
-    
-typedef int (cgifunc)(const HttpReqHeader *req, int fd);
+
+typedef int (cgifunc)(const HttpReqHeader *req, HttpResHeader *res);
 cgifunc cgimain;
 
 void addpsite(const char * host);
@@ -65,7 +75,6 @@ void addbsite(const char * host);
 int delpsite(const char * host);
 int delbsite(const char * host);
 int globalproxy();
-char *extname(const char *path, char *ext);
 bool checkproxy(const char *hostname);
 bool checkblock(const char *hostname);
 

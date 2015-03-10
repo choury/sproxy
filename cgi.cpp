@@ -1,6 +1,7 @@
 #include <string.h>
 #include <errno.h>
 #include <dlfcn.h>
+#include <signal.h>
 #include <sys/stat.h>
 
 #include "cgi.h"
@@ -8,10 +9,8 @@
 
 Cgi::Cgi(HttpReqHeader& req, Guest* guest):req(req)
 {
-    char filename[URLLIMIT];
-    snprintf(filename, sizeof(filename), ".%s", req.path);
     struct stat st;
-    if (stat(filename, &st)) {
+    if (stat(req.filename, &st)) {
         LOGE("get file info failed: %s\n", strerror(errno));
         HttpResHeader res(H404);
         guest->Write(this, H404, strlen(H404));
@@ -25,20 +24,25 @@ Cgi::Cgi(HttpReqHeader& req, Guest* guest):req(req)
         throw 0;
     }
     if (fork() == 0) { // 子进程
+        signal(SIGPIPE, SIG_DFL);
         close(fds[0]);   // 关闭管道的父进程端
-        void *handle = dlopen(filename,RTLD_NOW);
+        void *handle = dlopen(req.filename,RTLD_NOW);
         if(handle == nullptr) {
-            LOGE("dlopen failed: %s\n", strerror(errno));
+            LOGE("dlopen failed: %s\n", dlerror());
             write(fds[1], H500, strlen(H500));
             exit(1);
         }
         cgifunc *func=(cgifunc *)dlsym(handle,"cgimain");
         if(func == nullptr) {
-            LOGE("dlsym failed: %s\n", strerror(errno));
+            LOGE("dlsym failed: %s\n", dlerror());
             write(fds[1], H500, strlen(H500));
             exit(1);
         }
-        exit(func(&req, fds[1]));
+        HttpResHeader res(H200,fds[1]);
+        res.add("Transfer-Encoding","chunked");
+        int ret=func(&req, &res);
+        write(fds[1], CHUNCKEND, strlen(CHUNCKEND));
+        exit(ret);
     } else {    // 父进程
         close(fds[1]);   // 关闭管道的子进程端
         /* 现在可在fd[0]中读写数据 */
@@ -80,14 +84,15 @@ void Cgi::defaultHE(uint32_t events)
             epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
             return;
         }
+
         len=read(fd,wbuff,len);
         if (len<=0){
-            if(showerrinfo(len,"file read error")){
+            if(showerrinfo(len,"cgi read error")){
                 clean(this);
             }
             return;
         }
-        guest->Write(this,wbuff, len);
+        guest->Write(this, wbuff, len);
     }
     if (events & EPOLLOUT){
         event.events = EPOLLIN;

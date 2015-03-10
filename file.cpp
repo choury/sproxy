@@ -11,7 +11,7 @@
 File::File(HttpReqHeader &req, Guest* guest):req(req) {
     fd = eventfd(1, O_NONBLOCK);
     char filename[URLLIMIT];
-    snprintf(filename, sizeof(filename), ".%s", req.path);
+    snprintf(filename, sizeof(filename), "%s", req.filename);
     struct stat st;
 repeat:
     if (stat(filename, &st)) {

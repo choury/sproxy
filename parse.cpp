@@ -221,7 +221,10 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
     if (path) {
         bzero(path, urllen);
     }
-
+    if (url[0] == '/') {
+        strcpy(path, url);
+        return 0;
+    }
     if (strncasecmp(url, "https://", 8) == 0) {
         url += 8;
         urllen -= 8;
@@ -279,29 +282,6 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
 }
 
 
-char *extname(const char *path, char *ext) {
-    static char innelbuff[URLLIMIT];
-    if (ext == nullptr)
-        ext = innelbuff;
-    int i = strlen(path)-1;
-    for (; i >= 0; i--) {
-        if (path[i] == '.' || path[i] == '/')
-            break;
-    }
-    if (i < 0 || path[i] == '/') {
-        ext[0] = 0;
-    } else {
-        strcpy(ext, path+i);
-    }
-    return ext;
-}
-
-
-HttpReqHeader::HttpReqHeader() {
-}
-
-
-
 HttpReqHeader::HttpReqHeader(const char* header) {
     char httpheader[HEADLENLIMIT];
     snprintf(httpheader, sizeof(httpheader), "%s", header);
@@ -328,11 +308,14 @@ HttpReqHeader::HttpReqHeader(const char* header) {
             LOGE("wrong header format:%s\n", p);
             throw 0;
         }
-        this->header[string(p, sp - p)] = ltrim(string(sp + 1));
+        this->headers[string(p, sp - p)] = ltrim(string(sp + 1));
     }
-
-    this->header.erase("Proxy-Connection");
-    this->header.erase("Host");
+    
+    if (headers.count("Host")) {
+       strcpy(hostname,headers["Host"].c_str()); 
+    }
+    this->headers.erase("Proxy-Connection");
+    this->headers.erase("Host");
 }
 
 HttpReqHeader::HttpReqHeader(const syn_frame* sframe, z_stream* instream) {
@@ -355,24 +338,62 @@ HttpReqHeader::HttpReqHeader(const syn_frame* sframe, z_stream* instream) {
         p = (uint32_t *)((char *)p+vlen);
         if ((char *)p-tmpbuff >= HEADLENLIMIT)
             throw 0;
-        header[string(np, nlen)] = string(vp, vlen);
+        headers[string(np, nlen)] = string(vp, vlen);
     }
-    snprintf(method, sizeof(method), "%s", header[":method"].c_str());
+    snprintf(method, sizeof(method), "%s", headers[":method"].c_str());
 
     if (ismethod("CONNECT")) {
-        snprintf(url, sizeof(url), "%s", header[":path"].c_str());
+        snprintf(url, sizeof(url), "%s", headers[":path"].c_str());
     } else {
-        snprintf(url, sizeof(url), "%s://%s%s", header[":scheme"].c_str(),
-                header[":host"].c_str(), header[":path"].c_str());
+        snprintf(url, sizeof(url), "%s://%s%s", headers[":scheme"].c_str(),
+                headers[":host"].c_str(), headers[":path"].c_str());
     }
     spliturl(url, hostname, path, &port);
-    for (auto i = header.begin(); i!= header.end();) {
+    for (auto i = headers.begin(); i!= headers.end();) {
         if (i->first[0] == ':') {
-            header.erase(i++);
+            headers.erase(i++);
         } else {
             i++;
         }
     }
+}
+
+int HttpReqHeader::parse() {
+    char *p=path;
+    while (*p && *++p != '?');
+    memset(filename, 0, sizeof(filename));
+    filename[0]='.';
+    memcpy(filename+1,path,p-path);
+    char *q=p-1;
+    while (q != path) {
+        if (*q == '.' || *q == '/')
+            break;
+        q--;
+    }
+    memset(extname, 0, sizeof(extname));
+    if (*q != '/') {
+        if (p-q >= 20)
+            return -1;
+        memcpy(extname, q, p-q);
+    }
+    if(*p++){
+        char paramsbuff[URLLIMIT];
+        snprintf(paramsbuff, sizeof(paramsbuff), "%s", p);
+        for (p = paramsbuff; ; p = NULL) {
+            q = strtok(p, "&");
+
+            if (q == NULL)
+                break;
+
+            char* sp = strpbrk(q, "=");
+            if (sp) {
+                params[string(q, sp - q)] = sp + 1;
+            } else {
+                params[q] = "";
+            }
+        }
+    }
+    return 0;
 }
 
 
@@ -398,16 +419,16 @@ char *addnv(void *buff, const char *name, size_t nlen, const char *val, size_t v
 
 
 void HttpReqHeader::add(const char* header, const char* value) {
-    this->header[header] = value;
+    this->headers[header] = value;
 }
 
 void HttpReqHeader::del(const char* header) {
-    this->header.erase(header);
+    this->headers.erase(header);
 }
 
 const char* HttpReqHeader::get(const char* header) {
-    if (this->header.count(header)) {
-        return this->header[header].c_str();
+    if (this->headers.count(header)) {
+        return this->headers[header].c_str();
     } else {
         return nullptr;
     }
@@ -429,7 +450,7 @@ int HttpReqHeader::getstring(void* outbuff) {
     int len;
     sprintf(buff+p, "Host: %s" CRLF "%n", hostname, &len);
     p+= len;
-    for (auto i : header) {
+    for (auto i : headers) {
         int len;
         sprintf(buff + p, "%s: %s" CRLF "%n",
                 i.first.c_str(), i.second.c_str(), &len);
@@ -456,7 +477,7 @@ int HttpReqHeader::getframe(void* buff, z_stream* destream) {
 
 
     char *p = tmpbuff;
-    *(uint32_t *)p = htonl(header.size()+5);
+    *(uint32_t *)p = htonl(headers.size()+5);
     p += 4;
     p = addnv(p, ":method", 7, method, strlen(method));
     p = addnv(p, ":version", 8, "HTTP/1.1", 8);
@@ -467,7 +488,7 @@ int HttpReqHeader::getframe(void* buff, z_stream* destream) {
         p = addnv(p, ":path", 5, path, strlen(path));
         p = addnv(p, ":scheme", 7, "http", 4);
     }
-    for (auto i:header) {
+    for (auto i:headers) {
         p = addnv(p, i.first.data(), i.first.length(),
                   i.second.data(), i.second.length());
     }
@@ -480,7 +501,7 @@ int HttpReqHeader::getframe(void* buff, z_stream* destream) {
 
 
 
-HttpResHeader::HttpResHeader(const char* header) {
+HttpResHeader::HttpResHeader(const char* header, int fd):fd(fd) {
     char httpheader[HEADLENLIMIT];
     snprintf(httpheader, sizeof(httpheader), "%s", header);
     *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
@@ -499,7 +520,7 @@ HttpResHeader::HttpResHeader(const char* header) {
             LOGE("wrong header format:%s\n", p);
             throw 0;
         }
-        this->header[string(p, sp - p)] = ltrim(string(sp + 1));
+        this->headers[string(p, sp - p)] = ltrim(string(sp + 1));
     }
 }
 
@@ -521,14 +542,14 @@ HttpResHeader::HttpResHeader(const syn_reply_frame* sframe, z_stream* instream) 
         uint32_t vlen = ntohl(*p++);
         char *vp = (char *)p;
         p = (uint32_t *)((char *)p+vlen);
-        this->header[string(np, nlen)] = string(vp, vlen);
+        this->headers[string(np, nlen)] = string(vp, vlen);
     }
 
-    snprintf(version, sizeof(version), "%s", this->header[":version"].c_str());
-    snprintf(status, sizeof(status), "%s", this->header[":status"].c_str());
-    for (auto i = this->header.begin(); i!= this->header.end();) {
+    snprintf(version, sizeof(version), "%s", this->headers[":version"].c_str());
+    snprintf(status, sizeof(status), "%s", this->headers[":status"].c_str());
+    for (auto i = this->headers.begin(); i!= this->headers.end();) {
         if (i->first[0] == ':') {
-            this->header.erase(i++);
+            this->headers.erase(i++);
         } else {
             i++;
         }
@@ -538,17 +559,17 @@ HttpResHeader::HttpResHeader(const syn_reply_frame* sframe, z_stream* instream) 
 
 
 void HttpResHeader::add(const char* header, const char* value) {
-    this->header[header] = value;
+    this->headers[header] = value;
 }
 
 void HttpResHeader::del(const char* header) {
-    this->header.erase(header);
+    this->headers.erase(header);
 }
 
 
 const char* HttpResHeader::get(const char* header) {
-    if (this->header.count(header)) {
-        return this->header[header].c_str();
+    if (this->headers.count(header)) {
+        return this->headers[header].c_str();
     } else {
         return nullptr;
     }
@@ -557,7 +578,7 @@ const char* HttpResHeader::get(const char* header) {
 int HttpResHeader::getstring(void* buff) {
     int p;
     sprintf((char *)buff, "HTTP/1.1 %s" CRLF "%n", status, &p);
-    for (auto i : header) {
+    for (auto i : headers) {
         int len;
         sprintf((char *)buff + p, "%s: %s" CRLF "%n",
                 i.first.c_str(), i.second.c_str(), &len);
@@ -579,12 +600,12 @@ int HttpResHeader::getframe(void* buff, z_stream* destream) {
     char headbuff[HEADLENLIMIT];
 
     char *p = headbuff;
-    *(uint32_t *)p = htonl(header.size()+2);
+    *(uint32_t *)p = htonl(headers.size()+2);
     p += 4;
     p = addnv(p, ":status", 7, status, strlen(status));
     p = addnv(p, ":version", 8, "HTTP/1.1", 8);
 
-    for (auto i : header) {
+    for (auto i : headers) {
         p = addnv(p, i.first.data(), i.first.length(),
                   i.second.data(), i.second.length());
     }
@@ -593,4 +614,21 @@ int HttpResHeader::getframe(void* buff, z_stream* destream) {
         spdy_deflate(destream, headbuff, len, srframe+1, 0);
     set24(srframe->head.length, len);
     return len+sizeof(spdy_head);
+}
+
+
+int HttpResHeader::sendheader() {
+    char buff[HEADLENLIMIT];
+    return ::write(fd, buff, getstring(buff));
+}
+
+
+int HttpResHeader::write(const void* buff, size_t size) {
+    char chunkbuf[100];
+    int chunklen;
+    snprintf(chunkbuf, sizeof(chunkbuf), "%X" CRLF "%n", (uint32_t)size, &chunklen);
+    ::write(fd, chunkbuf, chunklen);
+    size = ::write(fd, buff, size);
+    ::write(fd, CRLF, strlen(CRLF));
+    return size;
 }
