@@ -311,9 +311,6 @@ HttpReqHeader::HttpReqHeader(const char* header) {
         this->headers[string(p, sp - p)] = ltrim(string(sp + 1));
     }
     
-    if (headers.count("Host")) {
-       strcpy(hostname,headers["Host"].c_str()); 
-    }
     this->headers.erase("Proxy-Connection");
     this->headers.erase("Host");
 }
