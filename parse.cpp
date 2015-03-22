@@ -356,13 +356,17 @@ HttpReqHeader::HttpReqHeader(const syn_frame* sframe, z_stream* instream) {
 }
 
 int HttpReqHeader::parse() {
-    char *p=path;
+    char paramsbuff[URLLIMIT];
+    if(URLDecode(path,paramsbuff) == 0){
+        return -1;
+    }
+    char *p=paramsbuff;
     while (*p && *++p != '?');
     memset(filename, 0, sizeof(filename));
     filename[0]='.';
-    memcpy(filename+1,path,p-path);
+    memcpy(filename+1,paramsbuff,p-paramsbuff);
     char *q=p-1;
-    while (q != path) {
+    while (q != paramsbuff) {
         if (*q == '.' || *q == '/')
             break;
         q--;
@@ -374,9 +378,7 @@ int HttpReqHeader::parse() {
         memcpy(extname, q, p-q);
     }
     if(*p++){
-        char paramsbuff[URLLIMIT];
-        snprintf(paramsbuff, sizeof(paramsbuff), "%s", p);
-        for (p = paramsbuff; ; p = NULL) {
+        for (; ; p = NULL) {
             q = strtok(p, "&");
 
             if (q == NULL)
@@ -623,7 +625,7 @@ int HttpResHeader::sendheader() {
 int HttpResHeader::write(const void* buff, size_t size) {
     char chunkbuf[100];
     int chunklen;
-    snprintf(chunkbuf, sizeof(chunkbuf), "%X" CRLF "%n", (uint32_t)size, &chunklen);
+    snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF "%n", (uint32_t)size, &chunklen);
     ::write(fd, chunkbuf, chunklen);
     size = ::write(fd, buff, size);
     ::write(fd, CRLF, strlen(CRLF));

@@ -48,6 +48,8 @@ extern "C" {
 
 typedef unsigned char uchar;
 char* strnstr(const char* s1, const char* s2, size_t len);
+int URLEncode(const char* src, char *des);
+int URLDecode(const char* src, char *des);
 void dump_trace();
 
 #ifdef  __cplusplus

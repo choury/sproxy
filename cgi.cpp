@@ -41,7 +41,7 @@ Cgi::Cgi(HttpReqHeader& req, Guest* guest):req(req)
         HttpResHeader res(H200,fds[1]);
         res.add("Transfer-Encoding","chunked");
         int ret=func(&req, &res);
-        res.write(CHUNCKEND, strlen(CHUNCKEND));
+        write(fds[1],CHUNCKEND, strlen(CHUNCKEND));
         exit(ret);
     } else {    // 父进程
         close(fds[1]);   // 关闭管道的子进程端

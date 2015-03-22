@@ -37,6 +37,88 @@ int epoll_my_ctl(int epfd, int op, int fd,struct epoll_event *event){
     return epoll_ctl(epfd,op,fd,event);
 }
 
+int hex2num(char c)
+{
+    if (c>='0' && c<='9') return c - '0';
+    if (c>='a' && c<='z') return c - 'a' + 10;
+    if (c>='A' && c<='Z') return c - 'A' + 10;
+
+    LOGE("hex2num: unexpected char: %c", c);
+    return '0';
+}
+
+
+int URLEncode(const char* src, char *des)
+{
+    int j = 0;//for result index
+    char ch;
+    int strSize=strlen(src);
+
+    if ((src==NULL) || (des==NULL) || (strSize==0) ) {
+        return 0;
+    }
+    int i;
+    for (i=0; i<strSize; ++i) {
+        ch = src[i];
+        if (((ch>='A') && (ch<'Z')) ||
+            ((ch>='a') && (ch<'z')) ||
+            ((ch>='0') && (ch<'9'))) {
+            des[j++] = ch;
+        } else if (ch == ' ') {
+            des[j++] = '+';
+        } else if (ch == '.' || ch == '-' || ch == '_' || ch == '*') {
+            des[j++] = ch;
+        } else {
+            sprintf(des+j, "%%%02X", (unsigned char)ch);
+            j += 3;
+        }
+    }
+
+    des[j] = '\0';
+    return 1;
+}
+
+
+
+int URLDecode(const char* src, char *des)
+{
+    char ch,ch1,ch2;
+    int i;
+    int j = 0;//record result index
+
+    int strSize = strlen(src);
+
+    if ((src==NULL) || (des==NULL) || (strSize<=0) ) {
+        return 0;
+    }
+
+    for ( i=0; i<strSize; ++i) {
+        ch = src[i];
+        switch (ch) {
+        case '+':
+            des[j++] = ' ';
+            break;
+        case '%':
+            if (i+2<strSize) {
+                ch1 = hex2num(src[i+1]);//高4位
+                ch2 = hex2num(src[i+2]);//低4位
+                if ((ch1!='0') && (ch2!='0'))
+                    des[j++] = (char)((ch1<<4) | ch2);
+                i += 2;
+                break;
+            } else {
+                break;
+            }
+        default:
+            des[j++] = ch;
+            break;
+        }
+    }
+    des[j] = 0;
+    return 1;
+}
+
+
 
 #ifdef __USE_GNU
 #include <execinfo.h>
