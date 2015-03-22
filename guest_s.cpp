@@ -136,7 +136,11 @@ void Guest_s::shakehandHE(uint32_t events) {
 void Guest_s::ReqProc(HttpReqHeader& req) {
     LOG("([%s]:%d): %s %s\n", sourceip, sourceport, req.method, req.url);
     if (req.url[0] == '/') {
-        if (strcmp(extname(req.path, NULL),".so") == 0) {
+        if(req.parse()){
+            LOG("([%s]:%d): parse url failed\n", sourceip, sourceport);
+            throw 0;
+        }
+        if (strcmp(req.extname,".so") == 0) {
             Cgi::getcgi(req, this);
         } else {
             File::getfile(req,this);

@@ -102,9 +102,11 @@ int main(int argc, char** argv) {
         return -1;
     }
     LOGOUT("Accepting connections ...\n");
+    
     if (daemon(1, 0) < 0) {
         LOGOUT("start daemon error:%s\n", strerror(errno));
     }
+    
     while (1) {
         int c;
         struct epoll_event events[20];

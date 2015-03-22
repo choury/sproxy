@@ -1,4 +1,5 @@
 project(sproxy)
+cmake_minimum_required(VERSION 2.8)
 
 set(CMAKE_C_FLAGS "-Wall -ggdb")
 set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -ggdb")
@@ -21,3 +22,7 @@ target_link_libraries(sproxy_client ssl crypto z)
 target_link_libraries(sproxy_server ssl crypto z dl)
 
 install(TARGETS sproxy_client RUNTIME DESTINATION bin)
+
+
+add_library(demo SHARED cgidemo.cpp)
+set_target_properties(demo PROPERTIES OUTPUT_NAME "demo") 
