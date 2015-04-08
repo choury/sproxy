@@ -21,7 +21,7 @@ static unsigned int id_cur = 1;
 std::vector<Dns_srv *> srvs;
 
 
-typedef struct _DNS_HDR {
+typedef struct DNS_HDR {
     uint16_t id;            // 查询序列号
 
 #define  QR 0x8000          // 查询/应答 0/1

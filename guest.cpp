@@ -19,7 +19,11 @@
 #define DGLOBLETIP  "HTTP/1.0 200 Global proxy disabled" CRLF CRLF
 #define SWITCHTIP   "HTTP/1.0 200 Switched proxy server" CRLF CRLF
 
+#define BLOCKTIP    "HTTP/1.1 403 Forbidden" CRLF \
+                    "Content-Length:71" CRLF CRLF \
+                    "This site is blocked, please contact administrator for more information"
 
+                    
 Guest::Guest(int fd): Peer(fd) {
     struct sockaddr_in6 sa;
     socklen_t len = sizeof(sa);
@@ -163,7 +167,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
         if (checkblock(req.hostname)) {
             LOG("([%s]:%d): site: %s blocked\n",
                  sourceip, sourceport, req.hostname);
-            Write(this, H403, strlen(H403));
+            Write(this, BLOCKTIP, strlen(BLOCKTIP));
         } else {
             Host::gethost(req, this);
         }

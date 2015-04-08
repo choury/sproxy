@@ -126,10 +126,13 @@ void Peer::ErrProc(int errcode) {
 }
 */
 
-void Peer::clean(Peer* who) {
+void Peer::clean(Peer* who, const char *tip) {
     Peer *peer = bindex.query(this);
     bindex.del(this, peer);
     if (who == this && peer) {
+        if(tip){
+            peer->Write(this, tip, strlen(tip));
+        }
         peer->clean(this);
     }
 

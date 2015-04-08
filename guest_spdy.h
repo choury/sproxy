@@ -29,7 +29,7 @@ public:
     Guest_spdy(Guest_s *);
     virtual ~Guest_spdy();
     virtual size_t bufleft()override;
-    virtual void clean(Peer *who)override;
+    virtual void clean(Peer *who, const char *tip=nullptr)override;
     virtual void Response(HttpResHeader& res)override;
 };
 

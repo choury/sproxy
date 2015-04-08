@@ -6,6 +6,12 @@
 #include "guest.h"
 
 
+#define PROXYERRTIP     "HTTP/1.0 504 Gateway Timeout" CRLF CRLF\
+                        "Connect to the proxy failed, you can try angin, or switch to another proxy"
+                        
+#define SSLERRTIP       "HTTP/1.0 502 Bad Gateway" CRLF CRLF\
+                        "Ssl shakehand error, you can try angin, or switch to another proxy"
+
 
 Proxy::Proxy(HttpReqHeader &req, Guest *guest):Host(req, guest, SHOST, SPORT) {}
 
@@ -103,15 +109,15 @@ void Proxy::waitconnectHE(uint32_t events) {
         int error;
         socklen_t len = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-            perror("proxy getsokopt");
-            clean(this);
+            LOGE("proxy getsokopt error: %s\n", strerror(errno));
+            clean(this, PROXYERRTIP);
             return;
         }
 
         if (error != 0) {
             LOGE("connect to proxy:%s\n", strerror(error));
             if (connect() < 0) {
-                clean(this);
+                clean(this, PROXYERRTIP);
             }
             return;
         }
@@ -119,7 +125,7 @@ void Proxy::waitconnectHE(uint32_t events) {
 
         if (ctx == NULL) {
             ERR_print_errors_fp(stderr);
-            clean(this);
+            clean(this, PROXYERRTIP);
             return;
         }
         SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);  // 去除支持SSLv2 SSLv3
@@ -138,7 +144,7 @@ void Proxy::waitconnectHE(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("connect to proxy: %s\n", strerror(errno));
         if (connect() < 0) {
-            clean(this);
+            clean(this, PROXYERRTIP);
         }
     }
 }
@@ -154,7 +160,7 @@ void Proxy::shakehandHE(uint32_t events) {
         int ret = SSL_connect(ssl);
         if (ret != 1) {
             if (showerrinfo(ret, "ssl connect error")) {
-                clean(this);
+                clean(this, SSLERRTIP);
             }
             return;
         }
@@ -174,7 +180,7 @@ void Proxy::shakehandHE(uint32_t events) {
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("proxy unkown error: %s\n", strerror(errno));
-        clean(this);
+        clean(this, SSLERRTIP);
     }
 }
 

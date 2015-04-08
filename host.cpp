@@ -9,6 +9,12 @@
 #include "proxy.h"
 
 
+#define DNSERRTIP   "HTTP/1.0 502 Bad Gateway" CRLF CRLF\
+                    "Dns Query failed, you can try angin"
+                    
+#define CONERRTIP   "HTTP/1.0 504 Gateway Timeout" CRLF CRLF\
+                    "Connect to the site failed, you can try angin"
+
 Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0), Http(state), req(req) {
     bindex.add(guest, this);
     writelen = req.getstring(wbuff);
@@ -40,7 +46,7 @@ void Host::tick() {
     if(handleEvent == (void (Con::*)(uint32_t))&Host::waitconnectHE) {
         LOGE("connect to \"%s\" time out\n",hostname);
         if (connect() < 0) {
-            clean(this);
+            clean(this, CONERRTIP);
         }
     }
 }
@@ -69,13 +75,13 @@ void Host::waitconnectHE(uint32_t events) {
         socklen_t len = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
             LOGE("getsokopt error: %s\n", strerror(error));
-            clean(this);
+            clean(this, CONERRTIP);
             return;
         }
         if (error != 0) {
             LOGE("connect to %s: %s\n", this->hostname, strerror(error));
             if (connect() < 0) {
-                clean(this);
+                clean(this, CONERRTIP);
             }
             return;
         }
@@ -95,7 +101,7 @@ void Host::waitconnectHE(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("connect to %s: %s\n", this->hostname, strerror(errno));
         if (connect() < 0) {
-            clean(this);
+            clean(this, CONERRTIP);
         }
     }
 }
@@ -118,7 +124,7 @@ void Host::defaultHE(uint32_t events) {
             int ret = Write();
             if (ret <= 0) {
                 if (showerrinfo(ret, "host write error")) {
-                    clean(this);
+                    clean(this, MISCERRTIP);
                 }
                 return;
             }
@@ -133,7 +139,7 @@ void Host::defaultHE(uint32_t events) {
 
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("host unkown error: %s\n", strerror(errno));
-        clean(this);
+        clean(this, MISCERRTIP);
     }
 }
 
@@ -147,7 +153,7 @@ void Host::closeHE(uint32_t events) {
 void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
     if (rcd.result != 0) {
         LOGE("Dns query failed\n");
-        host->clean(host);
+        host->clean(host, DNSERRTIP);
     } else {
         host->addrs = rcd.addrs;
         for (size_t i = 0; i < host->addrs.size(); ++i) {
@@ -155,7 +161,7 @@ void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
         }
         if (host->connect() < 0) {
             LOGE("connect to %s failed\n", host->hostname);
-            host->clean(host);
+            host->clean(host, CONERRTIP);
         }
     }
 }
@@ -223,7 +229,7 @@ ssize_t Host::Read(void* buff, size_t len){
 
 void Host::ErrProc(int errcode) {
     if (showerrinfo(errcode, "Host read")) {
-        clean(this);
+        clean(this, MISCERRTIP);
     }
 }
 

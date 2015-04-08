@@ -24,7 +24,7 @@ protected:
     virtual ssize_t Write();
     virtual void closeHE(uint32_t events) = 0;
 public:
-    virtual void clean(Peer *who);
+    virtual void clean(Peer *who,const char *tip=nullptr);
     virtual void tick();
     virtual ssize_t Write(Peer* who, const void *buff, size_t size);
     virtual void writedcb();

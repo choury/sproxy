@@ -19,7 +19,7 @@ size_t Guest_spdy::bufleft() {
     return realleft-HEADLENLIMIT;
 }
 
-void Guest_spdy::clean(Peer* who) {
+void Guest_spdy::clean(Peer* who, const char *) {
     bindex.del(this,who);
 
     if(who==this) {
