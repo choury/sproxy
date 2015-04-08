@@ -1,5 +1,5 @@
-#ifndef __CGI_H__
-#define __CGI_H__
+#ifndef CGI_H__
+#define CGI_H__
 
 #include "peer.h"
 #include "guest.h"

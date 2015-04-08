@@ -1,5 +1,5 @@
-#ifndef __PROXY_H__
-#define __PROXY_H__
+#ifndef PROXY_H__
+#define PROXY_H__
 
 #include <openssl/ssl.h>
 

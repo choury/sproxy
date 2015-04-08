@@ -1,5 +1,5 @@
-#ifndef __FILE_H__
-#define __FILE_H__
+#ifndef FILE_H__
+#define FILE_H__
 
 #include "peer.h"
 #include "guest.h"

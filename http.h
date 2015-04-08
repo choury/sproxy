@@ -1,5 +1,5 @@
-#ifndef __HTTP_H__
-#define __HTTP_H__
+#ifndef HTTP_H__
+#define HTTP_H__
 
 #include "common.h"
 #include "parse.h"

@@ -1,5 +1,5 @@
-#ifndef __CON_H__
-#define __CON_H__
+#ifndef CON_H__
+#define CON_H__
 
 #include <sys/epoll.h>
 

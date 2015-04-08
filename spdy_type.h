@@ -1,5 +1,5 @@
-#ifndef __SPDY_TYPE_H__
-#define __SPDY_TYPE_H__
+#ifndef SPDY_TYPE_H__
+#define SPDY_TYPE_H__
 
 #include <stdint.h>
 #include <stddef.h>

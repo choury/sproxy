@@ -1,5 +1,5 @@
-#ifndef __GUEST_H__
-#define __GUEST_H__
+#ifndef GUEST_H__
+#define GUEST_H__
 
 #include <netinet/in.h>
 

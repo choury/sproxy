@@ -1,5 +1,5 @@
-#ifndef __GUEST_SPDY_H__
-#define __GUEST_SPDY_H__
+#ifndef GUEST_SPDY_H__
+#define GUEST_SPDY_H__
 
 #include "guest_s.h"
 #include "spdy.h"

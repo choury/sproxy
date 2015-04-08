@@ -1,5 +1,5 @@
-#ifndef __GUEST_S_H__
-#define __GUEST_S_H__
+#ifndef GUEST_S_H__
+#define GUEST_S_H__
 
 #include <openssl/ssl.h>
 

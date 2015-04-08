@@ -187,10 +187,10 @@ int dnsinit() {
     }
     srvs.clear();
 
-    FILE *res_file = fopen(_RESOLV_FILE_, "r");
+    FILE *res_file = fopen(RESOLV_FILE, "r");
     if (res_file == NULL) {
         LOGE("[DNS] open resolv file:%s failed:%s\n",
-             _RESOLV_FILE_, strerror(errno) );
+             RESOLV_FILE, strerror(errno) );
         return -1;
     }
     char line[100];

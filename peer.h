@@ -1,5 +1,5 @@
-#ifndef __PEER_H__
-#define __PEER_H__
+#ifndef PEER_H__
+#define PEER_H__
 
 #include <stdint.h>
 #include <map>

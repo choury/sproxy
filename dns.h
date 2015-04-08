@@ -1,5 +1,5 @@
-#ifndef __DNS_H__
-#define __DNS_H__
+#ifndef DNS_H__
+#define DNS_H__
 
 #include <unistd.h>
 #include <time.h>
@@ -9,7 +9,7 @@
 #include "con.h"
 #include "net.h"
 
-#define _RESOLV_FILE_ "/etc/resolv.conf"
+#define RESOLV_FILE "/etc/resolv.conf"
 #define DNSPORT 53
 #define DNSTIMEOUT 5                // dns 超时时间(s)
 #define DNSTTL     8640             // dns 缓存时间(s)

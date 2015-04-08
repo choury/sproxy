@@ -1,5 +1,5 @@
-#ifndef __HOST_H__
-#define __HOST_H__
+#ifndef HOST_H__
+#define HOST_H__
 
 #include<vector>
 

@@ -1,5 +1,5 @@
-#ifndef __NET__H__
-#define __NET__H__
+#ifndef NET__H__
+#define NET__H__
 
 #include <netdb.h>
 

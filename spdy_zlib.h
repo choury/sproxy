@@ -1,5 +1,5 @@
-#ifndef __SPDY_ZLIB_H__
-#define __SPDY_ZLIB_H__
+#ifndef SPDY_ZLIB_H__
+#define SPDY_ZLIB_H__
 
 #include <zlib.h>
 #include <stddef.h>
