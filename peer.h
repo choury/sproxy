@@ -25,6 +25,7 @@ protected:
     virtual void closeHE(uint32_t events) = 0;
 public:
     virtual void clean(Peer *who);
+    virtual void tick();
     virtual ssize_t Write(Peer* who, const void *buff, size_t size);
     virtual void writedcb();
     virtual size_t bufleft();
@@ -39,6 +40,7 @@ public:
     void del(Peer *key1, Peer *key2);
     void del(Peer *key);
     Peer *query(Peer *key);
+    void tick();
 };
 
 extern Bindex bindex;

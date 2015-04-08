@@ -80,7 +80,7 @@ int main(int argc, char** argv) {
     while (1) {
         int c;
         struct epoll_event events[20];
-        if ((c = epoll_wait(efd, events, 20, -1)) < 0) {
+        if ((c = epoll_wait(efd, events, 20, 5000)) < 0) {
             if (errno != EINTR) {
                 LOGE("epoll wait:%s\n", strerror(errno));
                 return 4;
@@ -118,6 +118,10 @@ int main(int argc, char** argv) {
                 Con* con = (Con*)events[i].data.ptr;
                 (con->*con->handleEvent)(events[i].events);
             }
+        }
+        
+        if(c == 0) {
+            bindex.tick();
         }
     }
 

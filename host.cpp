@@ -36,6 +36,16 @@ Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port
 }
 
 
+void Host::tick() {
+    if(handleEvent == (void (Con::*)(uint32_t))&Host::waitconnectHE) {
+        LOGE("connect to \"%s\" time out\n",hostname);
+        if (connect() < 0) {
+            clean(this);
+        }
+    }
+}
+
+
 int Host::showerrinfo(int ret, const char* s) {
     if (ret < 0) {
         if (errno != EAGAIN) {
@@ -146,12 +156,6 @@ void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
         if (host->connect() < 0) {
             LOGE("connect to %s failed\n", host->hostname);
             host->clean(host);
-        } else {
-            epoll_event event;
-            event.data.ptr = host;
-            event.events = EPOLLOUT;
-            epoll_ctl(efd, EPOLL_CTL_ADD, host->fd, &event);
-            host->handleEvent = (void (Con::*)(uint32_t))&Host::waitconnectHE;
         }
     }
 }
@@ -171,6 +175,11 @@ int Host::connect() {
             LOGE("connect to %s failed\n", this->hostname);
             return connect();
         }
+        epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLOUT;
+        epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+        handleEvent = (void (Con::*)(uint32_t))&Host::waitconnectHE;
     }
     return 0;
 }

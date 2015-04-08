@@ -14,7 +14,11 @@ using std::string;
 using std::map;
 
 
-enum protocol{HTTP, SPDY};
+struct Cookie{
+    string value;
+    int    maxage;
+    string path;
+};
 
 class HttpReqHeader{
     map<string, string> headers;
@@ -44,6 +48,7 @@ public:
 class HttpResHeader{
     int fd;       // 由cgi使用
     map<string, string> headers;
+    map<string, Cookie> Cookies;
 public:
     uint32_t id;  // 仅由spdy协议使用
     char version[20];

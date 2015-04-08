@@ -38,6 +38,14 @@ Peer* Bindex::query(Peer* key) {
     }
 }
 
+void Bindex::tick(){
+    for(auto i:map){
+        i.first->tick();
+        i.second->tick();
+    }
+}
+
+
 
 Peer::Peer(int fd):fd(fd) {
 }
@@ -137,3 +145,8 @@ void Peer::clean(Peer* who) {
         delete this;
     }
 }
+
+void Peer::tick(){
+
+}
+

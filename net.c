@@ -25,7 +25,7 @@ int Connect(struct sockaddr* addr) {
         return -1;
     }
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
+    
     if (connect(fd, addr, sizeof(struct sockaddr_in6)) == -1 && errno != EINPROGRESS) {
         LOGE("connecting error:%s\n",strerror(errno));
         close(fd);

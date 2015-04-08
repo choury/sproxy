@@ -11,7 +11,7 @@
 
 #define _RESOLV_FILE_ "/etc/resolv.conf"
 #define DNSPORT 53
-#define DNSTIMEOUT 3                // dns 超时时间(s)
+#define DNSTIMEOUT 5                // dns 超时时间(s)
 #define DNSTTL     8640             // dns 缓存时间(s)
 
 class Dns_srv:public Con{
