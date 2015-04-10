@@ -7,6 +7,7 @@
 
 class File:public Peer{
     int ffd = 0;
+    size_t leftsize;
 protected:
     HttpReqHeader req;
     virtual void defaultHE(uint32_t events);
