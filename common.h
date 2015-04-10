@@ -20,8 +20,6 @@ extern char SHOST[];
 #define HEADLENLIMIT  8192
 #define URLLIMIT      4096
 
-#define MISCERRTIP  "HTTP/1.0 500 Internal Server Error" CRLF CRLF\
-                    "The proxy server met a Internal error"
 
 #ifdef _ANDROID_
 

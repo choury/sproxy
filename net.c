@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
 
 #include "common.h"
 #include "net.h"
@@ -25,6 +26,16 @@ int Connect(struct sockaddr* addr) {
         return -1;
     }
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    
+    //以下设置为keealive配置，非必须，所以不检查返回值
+    int keepAlive = 1; // 开启keepalive属性
+    setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void *)&keepAlive, sizeof(keepAlive));
+    int idle = 60; //一分种没有交互就进行探测
+    setsockopt(fd, SOL_TCP, TCP_KEEPIDLE, &idle, sizeof(idle));
+    int intvl = 10; //每10秒探测一次
+    setsockopt(fd, SOL_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl));
+    int cnt = 3; //探测3次无响应就关闭连接
+    setsockopt(fd, SOL_TCP, TCP_KEEPCNT, &cnt, sizeof(cnt));
     
     if (connect(fd, addr, sizeof(struct sockaddr_in6)) == -1 && errno != EINPROGRESS) {
         LOGE("connecting error:%s\n",strerror(errno));

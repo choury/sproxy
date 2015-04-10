@@ -88,7 +88,7 @@ void Cgi::defaultHE(uint32_t events)
         len=read(fd,wbuff,len);
         if (len<=0){
             if(showerrinfo(len,"cgi read error")){
-                clean(this, MISCERRTIP);
+                clean(this);
             }
             return;
         }
@@ -100,7 +100,7 @@ void Cgi::defaultHE(uint32_t events)
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("cgi unkown error: %s\n",strerror(errno));
-        clean(this, MISCERRTIP);
+        clean(this);
     }
 }
 

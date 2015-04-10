@@ -124,7 +124,7 @@ void Host::defaultHE(uint32_t events) {
             int ret = Write();
             if (ret <= 0) {
                 if (showerrinfo(ret, "host write error")) {
-                    clean(this, MISCERRTIP);
+                    clean(this);
                 }
                 return;
             }
@@ -139,7 +139,7 @@ void Host::defaultHE(uint32_t events) {
 
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("host unkown error: %s\n", strerror(errno));
-        clean(this, MISCERRTIP);
+        clean(this);
     }
 }
 
@@ -229,7 +229,7 @@ ssize_t Host::Read(void* buff, size_t len){
 
 void Host::ErrProc(int errcode) {
     if (showerrinfo(errcode, "Host read")) {
-        clean(this, MISCERRTIP);
+        clean(this);
     }
 }
 
