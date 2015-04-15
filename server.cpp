@@ -163,7 +163,7 @@ int main(int argc, char** argv) {
             }
         }
         if(c == 0) {
-            bindex.tick();
+            dnstick();
         }
     }
     SSL_CTX_free(ctx);

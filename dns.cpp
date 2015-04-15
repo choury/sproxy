@@ -264,26 +264,7 @@ int query(const char *host , DNSCBfunc func, void *param) {
 
     if (rcd_index_host.count(host)) {
         func(param, rcd_index_host[host]);
-
-        for (auto i = rcd_index_host.begin(); i!= rcd_index_host.end();) {
-            if (time(nullptr)-i->second.gettime>= DNSTTL) {           // 超时失效
-                rcd_index_host.erase(i++);
-            } else {
-                i++;
-            }
-        }
         return 0;
-    }
-
-    for (auto i = rcd_index_id.begin(); i!= rcd_index_id.end();) {
-        if (time(nullptr)-i->second->reqtime>= DNSTIMEOUT) {           // 超时失败
-            LOGE("[DNS] %s: time out\n", i->second->host);
-            i->second->func(i->second->param, Dns_rcd(DNS_ERR));
-            delete i->second;
-            rcd_index_id.erase(i++);
-        } else {
-            i++;
-        }
     }
 
     DNS_STATE *dnsst = new DNS_STATE;
@@ -303,6 +284,28 @@ int query(const char *host , DNSCBfunc func, void *param) {
     delete dnsst;
     return -1;
 }
+
+void dnstick() {
+    for (auto i = rcd_index_host.begin(); i!= rcd_index_host.end();) {
+        if (time(nullptr)-i->second.gettime>= DNSTTL) {           // 超时失效
+            rcd_index_host.erase(i++);
+        } else {
+            i++;
+        }
+    }
+
+    for (auto i = rcd_index_id.begin(); i!= rcd_index_id.end();) {
+        if (time(nullptr)-i->second->reqtime>= DNSTIMEOUT) {           // 超时失败
+            LOGE("[DNS] %s: time out\n", i->second->host);
+            i->second->func(i->second->param, Dns_rcd(DNS_ERR));
+            delete i->second;
+            rcd_index_id.erase(i++);
+        } else {
+            i++;
+        }
+    }
+}
+
 
 
 void RcdDown(const char *hostname, const sockaddr_un &addr) {

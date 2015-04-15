@@ -42,16 +42,6 @@ Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port
 }
 
 
-void Host::tick() {
-    if(handleEvent == (void (Con::*)(uint32_t))&Host::waitconnectHE) {
-        LOGE("connect to \"%s\" time out\n",hostname);
-        if (connect() < 0) {
-            clean(this, CONERRTIP);
-        }
-    }
-}
-
-
 int Host::showerrinfo(int ret, const char* s) {
     if (ret < 0) {
         if (errno != EAGAIN) {

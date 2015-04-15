@@ -121,7 +121,7 @@ int main(int argc, char** argv) {
         }
         
         if(c == 0) {
-            bindex.tick();
+            dnstick();
         }
     }
 
