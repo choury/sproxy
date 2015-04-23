@@ -296,11 +296,12 @@ void dnstick() {
 
     for (auto i = rcd_index_id.begin(); i!= rcd_index_id.end();) {
         auto tmp=i++;
-        if (time(nullptr)-tmp->second->reqtime>= DNSTIMEOUT) {           // 超时重试
-            LOGE("[DNS] %s: time out, retry...\n", tmp->second->host);
+        auto oldstate = tmp->second;
+        if (time(nullptr)-oldstate->reqtime>= DNSTIMEOUT) {           // 超时重试
+            LOGE("[DNS] %s: time out, retry...\n", oldstate->host);
             rcd_index_id.erase(tmp);
-            query(tmp->second->host, tmp->second->func, tmp->second->param);
-            delete tmp->second;
+            query(oldstate->host, oldstate->func, oldstate->param);
+            delete oldstate;
         }
     }
 }
