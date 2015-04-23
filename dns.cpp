@@ -295,13 +295,12 @@ void dnstick() {
     }
 
     for (auto i = rcd_index_id.begin(); i!= rcd_index_id.end();) {
-        if (time(nullptr)-i->second->reqtime>= DNSTIMEOUT) {           // 超时失败
-            LOGE("[DNS] %s: time out\n", i->second->host);
-            i->second->func(i->second->param, Dns_rcd(DNS_ERR));
-            delete i->second;
-            rcd_index_id.erase(i++);
-        } else {
-            i++;
+        auto tmp=i++;
+        if (time(nullptr)-tmp->second->reqtime>= DNSTIMEOUT) {           // 超时重试
+            LOGE("[DNS] %s: time out, retry...\n", tmp->second->host);
+            rcd_index_id.erase(tmp);
+            query(tmp->second->host, tmp->second->func, tmp->second->param);
+            delete tmp->second;
         }
     }
 }
