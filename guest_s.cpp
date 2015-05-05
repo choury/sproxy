@@ -5,7 +5,6 @@
 #include "guest_s.h"
 #include "host.h"
 #include "parse.h"
-#include "guest_spdy.h"
 #include "file.h"
 #include "cgi.h"
 
@@ -75,7 +74,6 @@ void Guest_s::shakedhand() {
     SSL_get0_next_proto_negotiated(ssl, &data, &len);
     if (data) {
         if (strncasecmp((const char*)data, "spdy/3.1", len) == 0) {
-            new Guest_spdy(this);
             return;
         }
     }
@@ -113,7 +111,7 @@ void Guest_s::shakehandHE(uint32_t events) {
         int ret = SSL_do_handshake(ssl);
         if (ret != 1) {
             if (showerrinfo(ret, "ssl accept error")) {
-                clean(this);
+                clean();
             }
         } else {
             shakedhand();
@@ -128,7 +126,7 @@ void Guest_s::shakehandHE(uint32_t events) {
             LOGE("([%s]:%d): guest_s error:%s\n",
                   sourceip, sourceport, strerror(error));
         }
-        clean(this);
+        clean();
     }
 }
 

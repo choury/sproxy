@@ -2,6 +2,7 @@
 #define HOST_H__
 
 #include<vector>
+#include<map>
 
 #include "peer.h"
 #include "guest.h"
@@ -18,6 +19,7 @@ protected:
     
     int showerrinfo(int ret, const char *s)override;
     virtual int connect();
+    virtual void destory(const char *tip);
     virtual void waitconnectHE(uint32_t events);
     virtual void defaultHE(uint32_t events);
     void closeHE(uint32_t events)override;
@@ -32,6 +34,7 @@ public:
     Host(HttpReqHeader &req, Guest *guest, const char* hostname, uint16_t port);
     virtual void Request(HttpReqHeader &req, Guest *guest);
     static Host *gethost(HttpReqHeader &req, Guest* guest);
+    friend void ConnectSet::tick();
 };
 
 #endif

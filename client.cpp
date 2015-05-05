@@ -122,6 +122,7 @@ int main(int argc, char** argv) {
         
         if(c == 0) {
             dnstick();
+            connectset.tick();
         }
     }
 

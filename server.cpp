@@ -147,7 +147,7 @@ int main(int argc, char** argv) {
                     int ret = SSL_accept(ssl);
                     if (ret != 1) {
                         if (guest->showerrinfo(ret, "ssl accept error")) {
-                            guest->clean(guest);
+                            guest->clean();
                         }
                         continue;
                     }
@@ -164,6 +164,7 @@ int main(int argc, char** argv) {
         }
         if(c == 0) {
             dnstick();
+            connectset.tick();
         }
     }
     SSL_CTX_free(ctx);

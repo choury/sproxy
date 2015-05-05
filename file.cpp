@@ -177,7 +177,7 @@ repeat:
             res.add("Content-Range", (char *)wbuff);
             guest->Write(this, wbuff, res.getstring(wbuff));
         }
-        bindex.add(guest, this);
+        connect(guest, this);
     } else if (S_ISDIR(st.st_mode)) {
         strcat(filename, "/index.html");
         goto repeat;
@@ -191,9 +191,9 @@ repeat:
 
 
 File* File::getfile(HttpReqHeader &req, Guest* guest) {
-    File* exist = dynamic_cast<File *>(bindex.query(guest));
+    File* exist = dynamic_cast<File *>(queryconnect(guest));
     if (exist != NULL) {
-        exist->clean(guest);
+        exist->clean();
     }
     return new File(req, guest);
 }
@@ -210,14 +210,14 @@ int File::showerrinfo(int ret, const char* s) {
 void File::defaultHE(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
-    Guest *guest = dynamic_cast<Guest *>(bindex.query(this));
+    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
-        clean(this);
+        clean();
         return;
     }
     if (events & EPOLLIN) {
         if (leftsize == 0) {
-            clean(this);
+            clean();
             return;
         }
         int len = guest->bufleft()<leftsize ? guest->bufleft() : leftsize;
@@ -229,7 +229,7 @@ void File::defaultHE(uint32_t events) {
         len = read(ffd, wbuff, len);
         if (len <= 0) {
             if (showerrinfo(len, "file read error")) {
-                clean(this);
+                clean();
             }
             return;
         }
@@ -242,7 +242,7 @@ void File::defaultHE(uint32_t events) {
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("file unkown error: %s\n", strerror(errno));
-        clean(this);
+        clean();
     }
 }
 

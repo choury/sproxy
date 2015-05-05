@@ -16,7 +16,7 @@
                     "Connect to the site failed, you can try angin"
 
 Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0), Http(state), req(req) {
-    bindex.add(guest, this);
+    ::connect(guest, this);
     writelen = req.getstring(wbuff);
     this->req = req;
     snprintf(hostname, sizeof(hostname), "%s", req.hostname);
@@ -29,7 +29,7 @@ Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0), Htt
 
 
 Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0), Http(ALWAYS), req(req) {
-    bindex.add(guest, this);
+    ::connect(guest, this);
     writelen = req.getstring(wbuff);
     this->req = req;
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
@@ -55,9 +55,10 @@ int Host::showerrinfo(int ret, const char* s) {
 
 
 void Host::waitconnectHE(uint32_t events) {
-    Guest *guest = dynamic_cast<Guest *>(bindex.query(this));
-    if (guest == NULL) {
-        clean(this);
+    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
+    connectset.del(this);
+    if (guest == nullptr) {
+        Peer::clean();
         return;
     }
     if (events & EPOLLOUT) {
@@ -65,17 +66,13 @@ void Host::waitconnectHE(uint32_t events) {
         socklen_t len = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
             LOGE("getsokopt error: %s\n", strerror(error));
-            clean(this, CONERRTIP);
-            return;
+            goto reconnect;
         }
         if (error != 0) {
             LOGE("connect to %s: %s\n", this->hostname, strerror(error));
-            if (connect() < 0) {
-                clean(this, CONERRTIP);
-            }
-            return;
+            goto reconnect;
         }
-
+        
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLIN | EPOLLOUT;
@@ -90,18 +87,21 @@ void Host::waitconnectHE(uint32_t events) {
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("connect to %s: %s\n", this->hostname, strerror(errno));
-        if (connect() < 0) {
-            clean(this, CONERRTIP);
-        }
+        goto reconnect;
+    }
+    return;
+reconnect:
+    if (connect() < 0) {
+        destory(CONERRTIP);
     }
 }
 
 void Host::defaultHE(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
-    Guest *guest = dynamic_cast<Guest *>(bindex.query(this));
+    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
-        clean(this);
+        clean();
         return;
     }
 
@@ -114,7 +114,7 @@ void Host::defaultHE(uint32_t events) {
             int ret = Write();
             if (ret <= 0) {
                 if (showerrinfo(ret, "host write error")) {
-                    clean(this);
+                    clean();
                 }
                 return;
             }
@@ -129,7 +129,7 @@ void Host::defaultHE(uint32_t events) {
 
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("host unkown error: %s\n", strerror(errno));
-        clean(this);
+        clean();
     }
 }
 
@@ -143,7 +143,7 @@ void Host::closeHE(uint32_t events) {
 void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
     if (rcd.result != 0) {
         LOGE("Dns query failed\n");
-        host->clean(host, DNSERRTIP);
+        host->destory(DNSERRTIP);
     } else {
         host->addrs = rcd.addrs;
         for (size_t i = 0; i < host->addrs.size(); ++i) {
@@ -151,7 +151,7 @@ void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
         }
         if (host->connect() < 0) {
             LOGE("connect to %s failed\n", host->hostname);
-            host->clean(host, CONERRTIP);
+            host->destory(CONERRTIP);
         }
     }
 }
@@ -176,9 +176,23 @@ int Host::connect() {
         event.events = EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
         handleEvent = (void (Con::*)(uint32_t))&Host::waitconnectHE;
+        connectset.add(this);
+        return 0;
     }
-    return 0;
 }
+
+
+void Host::destory(const char* tip) {
+    Peer *guest = queryconnect(this);
+    if(guest){
+        disconnect(this);
+        if(tip)
+            guest->Write(this,tip,strlen(tip));
+    }
+    connectset.del(this);
+    delete this;
+}
+
 
 void Host::Request(HttpReqHeader &req, Guest *guest) {
     writelen+= req.getstring(wbuff+writelen);
@@ -197,7 +211,7 @@ Host* Host::gethost(HttpReqHeader &req, Guest* guest) {
         return Proxy::getproxy(req, guest);
     }
 #endif
-    Host* exist = dynamic_cast<Host *>(bindex.query(guest));
+    Host* exist = dynamic_cast<Host *>(queryconnect(guest));
     if (exist && exist->port == req.port
         && strcasecmp(exist->hostname, req.hostname) == 0)
     {
@@ -206,7 +220,7 @@ Host* Host::gethost(HttpReqHeader &req, Guest* guest) {
     }
 
     if (exist != NULL) {
-        exist->clean(guest);
+        exist->clean();
     }
 
     return new Host(req, guest);
@@ -219,14 +233,14 @@ ssize_t Host::Read(void* buff, size_t len){
 
 void Host::ErrProc(int errcode) {
     if (showerrinfo(errcode, "Host read")) {
-        clean(this);
+        clean();
     }
 }
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
-    Guest *guest = dynamic_cast<Guest *>(bindex.query(this));
+    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
-        clean(this);
+        clean();
         return -1;
     }
 
@@ -239,5 +253,29 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     }
 
     return guest->Write(this, buff, Min(size, len));
+}
+
+
+ConnectSet connectset;
+
+void ConnectSet::add(Peer* key) {
+    map[key]=time(NULL);
+}
+
+void ConnectSet::del(Peer* key) {
+    map.erase(key);
+}
+
+void ConnectSet::tick() {
+    for(auto i = map.begin();i != map.end();){
+        Host *host = dynamic_cast<Host *>(i->first);
+        if(host && time(NULL) - i->second >= 30 && host->connect() < 0){
+            map.erase(i++);
+            LOGE("connect to %s failed\n", host->hostname);
+            host->destory(CONERRTIP);
+        }else{
+            i++;
+        }
+    }
 }
 

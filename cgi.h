@@ -13,6 +13,7 @@ public:
     Cgi(HttpReqHeader &req,Guest* guest);
     static Cgi *getcgi(HttpReqHeader &req,Guest *guest);
     virtual int showerrinfo(int ret,const char *s)override;
+    
 };
 
 #endif

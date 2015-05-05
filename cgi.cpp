@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <dlfcn.h>
 #include <signal.h>
+#include <unistd.h>
 #include <sys/stat.h>
 
 #include "cgi.h"
@@ -47,7 +48,7 @@ Cgi::Cgi(HttpReqHeader& req, Guest* guest):req(req)
         close(fds[1]);   // 关闭管道的子进程端
         /* 现在可在fd[0]中读写数据 */
         fd=fds[0];
-        bindex.add(guest,this);
+        connect(guest,this);
         handleEvent=(void (Con::*)(uint32_t))&Cgi::defaultHE;
         struct epoll_event event;
         event.data.ptr = this;
@@ -72,9 +73,9 @@ void Cgi::defaultHE(uint32_t events)
 {
     struct epoll_event event;
     event.data.ptr = this;
-    Guest *guest=dynamic_cast<Guest *>(bindex.query(this));
+    Guest *guest=dynamic_cast<Guest *>(queryconnect(this));
     if( guest == NULL) {
-        clean(this);
+        clean();
         return;
     }
     if (events & EPOLLIN){
@@ -88,7 +89,7 @@ void Cgi::defaultHE(uint32_t events)
         len=read(fd,wbuff,len);
         if (len<=0){
             if(showerrinfo(len,"cgi read error")){
-                clean(this);
+                clean();
             }
             return;
         }
@@ -100,7 +101,7 @@ void Cgi::defaultHE(uint32_t events)
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("cgi unkown error: %s\n",strerror(errno));
-        clean(this);
+        clean();
     }
 }
 
@@ -111,9 +112,9 @@ void Cgi::closeHE(uint32_t events){
 
 
 Cgi* Cgi::getcgi(HttpReqHeader& req, Guest* guest){
-    Cgi* exist=dynamic_cast<Cgi *>(bindex.query(guest));
+    Cgi* exist=dynamic_cast<Cgi *>(queryconnect(guest));
     if (exist != NULL) {
-        exist->clean(guest);
+        exist->clean();
     }
     return new Cgi(req,guest);
 }

@@ -92,7 +92,7 @@ void Guest::defaultHE(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
 
-    Peer *peer = bindex.query(this);
+    Peer *peer = queryconnect(this);
     if (events & EPOLLIN) {
         (this->*Http_Proc)();
     }
@@ -102,7 +102,7 @@ void Guest::defaultHE(uint32_t events) {
             int ret = Write();
             if (ret <= 0) {
                 if (showerrinfo(ret, "guest write error")) {
-                    clean(this);
+                    clean();
                 }
                 return;
             }
@@ -123,7 +123,7 @@ void Guest::defaultHE(uint32_t events) {
             LOGE("([%s]:%d): guest error:%s\n",
                   sourceip, sourceport, strerror(error));
         }
-        clean(this);
+        clean();
     }
 }
 
@@ -148,7 +148,7 @@ ssize_t Guest::Read(void* buff, size_t len){
 
 void Guest::ErrProc(int errcode) {
     if (showerrinfo(errcode, "Host read")) {
-        clean(this);
+        clean();
     }
 }
 
@@ -202,7 +202,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
     } else {
         LOGE("([%s]:%d): unsported method:%s\n",
               sourceip, sourceport, req.method);
-        clean(this);
+        clean();
     }
 }
 
@@ -217,10 +217,10 @@ void Guest::Response(HttpResHeader& res) {
 
 
 ssize_t Guest::DataProc(const void *buff, size_t size) {
-    Host *host = dynamic_cast<Host *>(bindex.query(this));
+    Host *host = dynamic_cast<Host *>(queryconnect(this));
     if (host == NULL) {
         LOGE("([%s]:%d): connecting to host lost\n", sourceip, sourceport);
-        clean(this);
+        clean();
         return -1;
     }
     int len = host->bufleft();

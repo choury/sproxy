@@ -1,4 +1,5 @@
 #include <string.h>
+#include <unistd.h>
 #include <arpa/inet.h>
 
 #include <string>
@@ -315,6 +316,7 @@ HttpReqHeader::HttpReqHeader(const char* header) {
     this->headers.erase("Host");
 }
 
+#if 0
 HttpReqHeader::HttpReqHeader(const syn_frame* sframe, z_stream* instream) {
     id = ntohl(sframe->id);
     size_t len = get24(sframe->head.length);
@@ -354,6 +356,8 @@ HttpReqHeader::HttpReqHeader(const syn_frame* sframe, z_stream* instream) {
         }
     }
 }
+
+#endif
 
 int HttpReqHeader::parse() {
     char paramsbuff[URLLIMIT];
@@ -461,6 +465,8 @@ int HttpReqHeader::getstring(void* outbuff) {
 }
 
 
+#if 0
+
 int HttpReqHeader::getframe(void* buff, z_stream* destream) {
     syn_frame* sframe = (syn_frame *)buff;
     memset(sframe, 0, sizeof(*sframe));
@@ -498,7 +504,7 @@ int HttpReqHeader::getframe(void* buff, z_stream* destream) {
     return len+sizeof(spdy_head);
 }
 
-
+#endif
 
 HttpResHeader::HttpResHeader(const char* header, int fd):fd(fd) {
     char httpheader[HEADLENLIMIT];
@@ -523,7 +529,7 @@ HttpResHeader::HttpResHeader(const char* header, int fd):fd(fd) {
     }
 }
 
-
+#if 0
 HttpResHeader::HttpResHeader(const syn_reply_frame* sframe, z_stream* instream) {
     id = ntohl(sframe->id);
     int len = get24(sframe->head.length);
@@ -555,7 +561,7 @@ HttpResHeader::HttpResHeader(const syn_reply_frame* sframe, z_stream* instream) 
     }
 }
 
-
+#endif
 
 void HttpResHeader::add(const char* header, const char* value) {
     this->headers[header] = value;
@@ -588,7 +594,7 @@ int HttpResHeader::getstring(void* buff) {
     return p + strlen(CRLF);
 }
 
-
+#if 0
 int HttpResHeader::getframe(void* buff, z_stream* destream) {
     syn_reply_frame *srframe = (syn_reply_frame *)buff;
     memset(srframe, 0, sizeof(*srframe));
@@ -614,7 +620,7 @@ int HttpResHeader::getframe(void* buff, z_stream* destream) {
     set24(srframe->head.length, len);
     return len+sizeof(spdy_head);
 }
-
+#endif
 
 int HttpResHeader::sendheader() {
     char buff[HEADLENLIMIT];
