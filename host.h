@@ -1,9 +1,6 @@
 #ifndef HOST_H__
 #define HOST_H__
 
-#include<vector>
-#include<map>
-
 #include "peer.h"
 #include "guest.h"
 #include "dns.h"

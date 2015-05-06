@@ -1,17 +1,6 @@
-#include <set>
 #include <boost/bimap.hpp>  
 
-#include <stdio.h>
-#include <errno.h>
-#include <string.h>
-
-#include <unistd.h>
-#include <fcntl.h>
-
-
 #include "peer.h"
-#include "host.h"
-#include "guest.h"
 
 char SHOST[DOMAINLIMIT];
 uint16_t SPORT = 443;

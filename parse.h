@@ -1,10 +1,8 @@
 #ifndef PARSE_H__
 #define PARSE_H__
 
-#include <stddef.h>
 #include <string>
 #include <map>
-#include "net.h"
 #include "common.h"
 
 

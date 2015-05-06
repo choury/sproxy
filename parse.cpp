@@ -1,17 +1,13 @@
 #include <string.h>
 #include <unistd.h>
-#include <arpa/inet.h>
 
-#include <string>
 #include <fstream>
 #include <iostream>
 #include <algorithm>
 #include <unordered_set>
 
-
-#include "common.h"
 #include "parse.h"
-
+#include "net.h"
 
 
 #define PROXYFILE "proxy.list"

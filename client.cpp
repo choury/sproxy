@@ -1,14 +1,9 @@
-#include <unistd.h>
 #include <signal.h>
 #include <fcntl.h>
-#include <libgen.h>
 #include <arpa/inet.h>
 #include <openssl/ssl.h>
 
-
-#include "common.h"
 #include "guest.h"
-#include "parse.h"
 #include "dns.h"
 
 

@@ -1,9 +1,7 @@
 #include <openssl/err.h>
-#include <string>
 #include <set>
 
 #include "proxy.h"
-#include "guest.h"
 
 
 #define PROXYERRTIP     "HTTP/1.0 504 Gateway Timeout" CRLF CRLF\

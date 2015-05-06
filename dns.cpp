@@ -1,10 +1,5 @@
-#include <stdlib.h>
 #include <string.h>
-#include <errno.h>
-#include <time.h>
-#include <arpa/inet.h>
 #include <unordered_map>
-#include <string>
 
 #include "common.h"
 #include "dns.h"

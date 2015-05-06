@@ -2,10 +2,8 @@
 #define PEER_H__
 
 #include <stdint.h>
-#include <map>
 
 #include "con.h"
-#include "http.h"
 #include "common.h"
 
 /* guest   ---   (client) --- host(proxy) 
@@ -37,6 +35,7 @@ public:
 void connect(Peer *p1, Peer *p2);
 Peer *queryconnect(Peer *key);
 
+#include <map>
 
 class ConnectSet{
     std::map<Peer *,time_t> map;

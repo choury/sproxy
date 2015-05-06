@@ -1,8 +1,6 @@
 #ifndef CON_H__
 #define CON_H__
 
-#include <sys/epoll.h>
-
 extern int efd;
 
 class Con {

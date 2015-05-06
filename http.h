@@ -1,7 +1,6 @@
 #ifndef HTTP_H__
 #define HTTP_H__
 
-#include "common.h"
 #include "parse.h"
 
 #define HEAD_TOO_LAGER 1

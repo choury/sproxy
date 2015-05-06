@@ -4,8 +4,6 @@
 #include <openssl/ssl.h>
 
 #include "guest.h"
-#include "net.h"
-
 
 
 class Guest_s:public Guest {

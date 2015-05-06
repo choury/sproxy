@@ -1,10 +1,7 @@
-#include <errno.h>
 #include <openssl/err.h>
 
-#include "net.h"
 #include "guest_s.h"
 #include "host.h"
-#include "parse.h"
 #include "file.h"
 #include "cgi.h"
 

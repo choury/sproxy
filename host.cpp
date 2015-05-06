@@ -1,11 +1,4 @@
-#include <string.h>
-#include <stdio.h>
-#include <errno.h>
-
 #include "host.h"
-#include "guest.h"
-#include "parse.h"
-#include "dns.h"
 #include "proxy.h"
 
 

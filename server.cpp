@@ -1,8 +1,6 @@
-#include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <arpa/inet.h>
-#include <openssl/ssl.h>
 #include <openssl/err.h>
 
 

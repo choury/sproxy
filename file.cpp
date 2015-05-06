@@ -5,9 +5,9 @@
 #include <string.h>
 #include <sys/eventfd.h>
 #include <sys/stat.h>
-#include "common.h"
+
 #include "file.h"
-#include "cgi.h"
+#include "net.h"
 
 using std::vector;
 using std::pair;

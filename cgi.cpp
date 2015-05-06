@@ -1,12 +1,11 @@
 #include <string.h>
-#include <errno.h>
 #include <dlfcn.h>
 #include <signal.h>
 #include <unistd.h>
 #include <sys/stat.h>
 
 #include "cgi.h"
-#include "common.h"
+#include "net.h"
 
 Cgi::Cgi(HttpReqHeader& req, Guest* guest):req(req)
 {

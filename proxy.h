@@ -4,7 +4,6 @@
 #include <openssl/ssl.h>
 
 #include "host.h"
-#include "dns.h"
 
 
 class Proxy : public Host{

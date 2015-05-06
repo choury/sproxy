@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 
 #include "peer.h"
+#include "http.h"
 
 
 class Guest:public Peer, public Http{

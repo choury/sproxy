@@ -1,8 +1,6 @@
 #include <string.h>
 #include "http.h"
 #include "net.h"
-#include "parse.h"
-
 
 Http::Http(Initstate state) {
     switch (state) {
