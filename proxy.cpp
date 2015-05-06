@@ -100,11 +100,23 @@ static int select_next_proto_cb(SSL* ssl,
 
 
 void Proxy::waitconnectHE(uint32_t events) {
+    connectset.del(this);
     Guest *guest = (Guest *)queryconnect(this);
     if (guest == nullptr) {
         clean();
         return;
     }
+    
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        int       error = 0;
+        socklen_t errlen = sizeof(error);
+
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
+            LOGE("connect to proxy error: %s\n", strerror(error));
+        }
+        goto reconnect;
+    }
+    
     if (events & EPOLLOUT) {
         int error;
         socklen_t len = sizeof(error);
@@ -135,10 +147,6 @@ void Proxy::waitconnectHE(uint32_t events) {
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 
         handleEvent = (void (Con::*)(uint32_t))&Proxy::shakehandHE;
-    }
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("connect to proxy: %s\n", strerror(errno));
-        goto reconnect;
     }
     return;
 reconnect:

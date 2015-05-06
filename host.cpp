@@ -55,12 +55,23 @@ int Host::showerrinfo(int ret, const char* s) {
 
 
 void Host::waitconnectHE(uint32_t events) {
-    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     connectset.del(this);
+    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == nullptr) {
-        Peer::clean();
+        clean();
         return;
     }
+    
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        int       error = 0;
+        socklen_t errlen = sizeof(error);
+
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
+            LOGE("connect to host error: %s\n", strerror(error));
+        }
+        goto reconnect;
+    }
+    
     if (events & EPOLLOUT) {
         int error;
         socklen_t len = sizeof(error);
@@ -85,10 +96,6 @@ void Host::waitconnectHE(uint32_t events) {
         }
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
     }
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("connect to %s: %s\n", this->hostname, strerror(errno));
-        goto reconnect;
-    }
     return;
 reconnect:
     if (connect() < 0) {
@@ -97,8 +104,17 @@ reconnect:
 }
 
 void Host::defaultHE(uint32_t events) {
-    struct epoll_event event;
-    event.data.ptr = this;
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        int       error = 0;
+        socklen_t errlen = sizeof(error);
+
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
+            LOGE("host error: %s\n", strerror(error));
+        }
+        clean();
+        return;
+    }
+    
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
         clean();
@@ -123,18 +139,16 @@ void Host::defaultHE(uint32_t events) {
     }
 
     if (writelen == 0) {
+        struct epoll_event event;
+        event.data.ptr = this;
         event.events = EPOLLIN;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    }
-
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("host unkown error: %s\n", strerror(errno));
-        clean();
     }
 }
 
 
 void Host::closeHE(uint32_t events) {
+    connectset.del(this);
     delete this;
 }
 
@@ -268,10 +282,10 @@ void ConnectSet::del(Peer* key) {
 
 void ConnectSet::tick() {
     for(auto i = map.begin();i != map.end();){
-        Host *host = dynamic_cast<Host *>(i->first);
+        Host *host = (Host *)(i->first);
         if(host && time(NULL) - i->second >= 30 && host->connect() < 0){
             map.erase(i++);
-            LOGE("connect to %s failed\n", host->hostname);
+            LOGE("connect to %s time out.", host->hostname);
             host->destory(CONERRTIP);
         }else{
             i++;

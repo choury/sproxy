@@ -48,8 +48,8 @@ Guest::Guest(int fd): Peer(fd) {
          && (getsockopt(fd, SOL_IPV6, SO_ORIGINAL_DST, &Dst6, &sin6_size)
             || (socktype = AF_INET6, 0)))
     {
-        LOGE("([%s]:%d): getsockopt error:%s\n",
-              sourceip, sourceport, strerror(errno));
+/*        LOGE("([%s]:%d): getsockopt error:%s\n",
+              sourceip, sourceport, strerror(errno));*/
         snprintf(destip, sizeof(destip), "%s", "Unkown IP");
         destport = CPORT;
     } else {
@@ -89,9 +89,19 @@ int Guest::showerrinfo(int ret, const char *s) {
 }
 
 void Guest::defaultHE(uint32_t events) {
-    struct epoll_event event;
-    event.data.ptr = this;
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        int       error = 0;
+        socklen_t errlen = sizeof(error);
 
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
+            LOGE("([%s]:%d): guest error:%s\n",
+                  sourceip, sourceport, strerror(error));
+        }
+        clean();
+        return;
+    }
+    
+    
     Peer *peer = queryconnect(this);
     if (events & EPOLLIN) {
         (this->*Http_Proc)();
@@ -111,19 +121,11 @@ void Guest::defaultHE(uint32_t events) {
         }
 
         if (writelen == 0) {
+            struct epoll_event event;
+            event.data.ptr = this;
             event.events = EPOLLIN;
             epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
         }
-    }
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        int       error = 0;
-        socklen_t errlen = sizeof(error);
-
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("([%s]:%d): guest error:%s\n",
-                  sourceip, sourceport, strerror(error));
-        }
-        clean();
     }
 }
 

@@ -3,7 +3,6 @@
 
 #include <stdint.h>
 #include <map>
-#include <set>
 
 #include "con.h"
 #include "http.h"

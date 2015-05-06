@@ -297,7 +297,12 @@ void dnstick() {
     for (auto i = rcd_index_id.begin(); i!= rcd_index_id.end();) {
         auto tmp=i++;
         auto oldstate = tmp->second;
-        if (time(nullptr)-oldstate->reqtime>= DNSTIMEOUT) {           // 超时重试
+        if (oldstate->addr.size()) {
+            rcd_index_host[oldstate->host] = Dns_rcd(oldstate->addr);
+            oldstate->func(oldstate->param, Dns_rcd(oldstate->addr));
+            rcd_index_id.erase(tmp);
+            delete oldstate;
+        } else if (time(nullptr)-oldstate->reqtime>= DNSTIMEOUT) {           // 超时重试
             LOGE("[DNS] %s: time out, retry...\n", oldstate->host);
             rcd_index_id.erase(tmp);
             query(oldstate->host, oldstate->func, oldstate->param);
@@ -340,7 +345,6 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
         NTOHS(dnshdr->numa1);
         NTOHS(dnshdr->numa2);
 
-#ifndef IGNOREIPV6
         if (dnshdr->id & 1) {
             if (rcd_index_id.count(dnshdr->id) == 0) {
                 LOGE("[DNS] Get a unkown id:%d\n", dnshdr->id);
@@ -354,14 +358,7 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
             dnshdr->id--;
         }
         DNS_STATE *dnsst = rcd_index_id[dnshdr->id];
-#else
-        if (rcd_index_id.count(dnshdr->id) == 0) {
-            LOGE("[DNS] Get a unkown id:%d\n", dnshdr->id);
-            return;
-        }
-        DNS_STATE *dnsst = rcd_index_id[dnshdr->id];
-        dnsst->getnum = 1;
-#endif
+
         if ((dnshdr->flag & QR) == 0 || (dnshdr->flag & RCODE_MASK) != 0) {
             LOGE("[DNS] ack error:%u\n", dnshdr->flag & RCODE_MASK);
         } else {
@@ -375,7 +372,9 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
             }
             getrr(buf, p, dnshdr->numa, dnsst->addr);
         }
+#ifndef IGNOREIPV6
         if (dnsst->getnum) {
+#endif
             rcd_index_id.erase(dnsst->id);
             if (dnsst->addr.size()) {
                 rcd_index_host[dnsst->host] = Dns_rcd(dnsst->addr);
@@ -384,9 +383,11 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
                 dnsst->func(dnsst->param, Dns_rcd(DNS_ERR));
             }
             delete dnsst;
+#ifndef IGNOREIPV6
         } else {
             dnsst->getnum = 1;
         }
+#endif
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
@@ -407,7 +408,7 @@ int Dns_srv::query(const char *host, int type) {
     memset(buf, 0, BUF_SIZE);
 
     DNS_HDR  *dnshdr = (DNS_HDR *)buf;
-    dnshdr->id = htons(id_cur++);
+    dnshdr->id = htons(id_cur);
     dnshdr->flag = htons(RD);
     dnshdr->numq = htons(1);
 
@@ -437,13 +438,14 @@ int Dns_srv::query(const char *host, int type) {
     }
 
 #ifndef IGNOREIPV6
-    dnshdr->id = htons(id_cur++);
+    dnshdr->id = htons(id_cur+1);
     dnsqer->type = htons(28);
     if (write(fd, buf, len)!= len) {
         perror("[DNS] write");
         return 0;
     }
 #endif
+    id_cur += 2;
     return reqid;
 }
 
