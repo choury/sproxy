@@ -1,6 +1,6 @@
 #include <boost/bimap.hpp>  
 
-#include <stdlib.h>
+#include <string.h>
 
 #include "peer.h"
 
