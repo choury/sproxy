@@ -1,5 +1,7 @@
 #include <boost/bimap.hpp>  
 
+#include <stdlib.h>
+
 #include "peer.h"
 
 char SHOST[DOMAINLIMIT];
@@ -120,29 +122,6 @@ void Peer::disconnect(Peer* who) {
             who->disconnected(this);
         }
     }
-/*
-    Peer *peer = queryconnect(this);
-    bindex.left.erase(this);
-    bindex.right.erase(this);
-    if (who == this && peer) {
-        if(tip){
-            peer->Write(this, tip, strlen(tip));
-        }
-        peer->disconnect(this);
-    }
-
-
-    if (fd > 0) {
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLOUT;
-        if (epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
-            epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-        }
-        handleEvent = (void (Con::*)(uint32_t))&Peer::closeHE;
-    } else if (who == this) {
-        delete this;
-    } */
 }
 
 void Peer::disconnected(Peer* who) {
@@ -152,11 +131,13 @@ void Peer::disconnected(Peer* who) {
 
 void Peer::clean() {
     disconnect(nullptr);
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLOUT;
-    if (epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
-        epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+    if(fd > 0) {
+        struct epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLOUT;
+        if (epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
+            epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+        }
+        handleEvent = (void (Con::*)(uint32_t))&Peer::closeHE;
     }
-    handleEvent = (void (Con::*)(uint32_t))&Peer::closeHE;
 }
