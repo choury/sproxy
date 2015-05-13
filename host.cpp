@@ -129,13 +129,12 @@ void Host::defaultHE(uint32_t events) {
             }
             guest->writedcb();
         }
-    }
-
-    if (writelen == 0) {
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        if (writelen == 0) {
+            struct epoll_event event;
+            event.data.ptr = this;
+            event.events = EPOLLIN;
+            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        }
     }
 }
 
