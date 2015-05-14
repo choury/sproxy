@@ -9,7 +9,6 @@
                     "Connect to the site failed, you can try angin"
 
 Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0), Http(state), req(req) {
-    ::connect(guest, this);
     writelen = req.getstring(wbuff);
     this->req = req;
     snprintf(hostname, sizeof(hostname), "%s", req.hostname);
@@ -18,11 +17,12 @@ Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0), Htt
         LOGE("DNS qerry falied\n");
         throw 0;
     }
+    
+    ::connect(guest, this);
 }
 
 
 Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0), Http(ALWAYS), req(req) {
-    ::connect(guest, this);
     writelen = req.getstring(wbuff);
     this->req = req;
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
@@ -32,6 +32,8 @@ Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port
         LOGE("DNS qerry falied\n");
         throw 0;
     }
+    
+    ::connect(guest, this);
 }
 
 
@@ -191,9 +193,9 @@ int Host::connect() {
 void Host::destory(const char* tip) {
     Peer *guest = queryconnect(this);
     if(guest){
-        disconnect(this);
         if(tip)
             guest->Write(this,tip,strlen(tip));
+        disconnect(this);
     }
     connectset.del(this);
     delete this;

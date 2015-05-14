@@ -1,6 +1,9 @@
 project(sproxy)
 cmake_minimum_required(VERSION 2.8)
 
+find_package(Boost)
+find_package(OpenSSL)
+
 set(CMAKE_C_FLAGS "-Wall -ggdb")
 set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -ggdb")
 
@@ -17,8 +20,8 @@ lib.c parse.cpp client.cpp net.c dns.cpp)
 
 #target_compile_definitions(sproxy_client PUBLIC CLIENT)
 set_target_properties(sproxy_client PROPERTIES COMPILE_FLAGS "-DCLIENT")
-target_link_libraries(sproxy_client ssl crypto z)
-target_link_libraries(sproxy_server ssl crypto z dl)
+target_link_libraries(sproxy_client ssl crypto)
+target_link_libraries(sproxy_server ssl crypto dl)
 
 install(TARGETS sproxy_client RUNTIME DESTINATION bin)
 
