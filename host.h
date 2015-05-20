@@ -19,11 +19,11 @@ protected:
     virtual void destory(const char *tip);
     virtual void waitconnectHE(uint32_t events);
     virtual void defaultHE(uint32_t events);
-    void closeHE(uint32_t events)override;
+    virtual void closeHE(uint32_t events)override;
     
-    ssize_t Read(void* buff, size_t len)override;
-    void ErrProc(int errcode)override;
-    ssize_t DataProc(const void *buff, size_t size)override;
+    virtual ssize_t Read(void* buff, size_t len)override;
+    virtual void ErrProc(int errcode)override;
+    virtual ssize_t DataProc(const void *buff, size_t size)override;
     
     static void Dnscallback(Host * host, const Dns_rcd&&);
 public:

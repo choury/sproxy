@@ -5,7 +5,7 @@ extern int efd;
 
 class Con {
 public:
-    void (Con::*handleEvent)(uint32_t events);
+    void (Con::*handleEvent)(uint32_t events)=nullptr;
     virtual ~Con() {}
 };
 

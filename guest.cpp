@@ -96,8 +96,6 @@ void Guest::defaultHE(uint32_t events) {
         return;
     }
     
-    
-    Peer *peer = queryconnect(this);
     if (events & EPOLLIN) {
         (this->*Http_Proc)();
     }
@@ -111,7 +109,7 @@ void Guest::defaultHE(uint32_t events) {
                 }
                 return;
             }
-            if (peer)
+            if (Peer *peer = queryconnect(this))
                 peer->writedcb();
         }
 
@@ -210,8 +208,6 @@ void Guest::Response(HttpResHeader& res) {
     event.events = EPOLLIN | EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 }
-
-
 
 ssize_t Guest::DataProc(const void *buff, size_t size) {
     Host *host = dynamic_cast<Host *>(queryconnect(this));
