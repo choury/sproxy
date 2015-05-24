@@ -23,7 +23,7 @@ protected:
     virtual void disconnect(Peer *who);
     virtual void closeHE(uint32_t events) = 0;
 public:
-    virtual void clean();
+    virtual void clean(Peer *who);
     virtual void disconnected(Peer *who);
     virtual ssize_t Write(Peer* who, const void *buff, size_t size);
     virtual void writedcb();

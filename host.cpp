@@ -53,7 +53,7 @@ void Host::waitconnectHE(uint32_t events) {
     connectset.del(this);
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == nullptr) {
-        clean();
+        clean(this);
         return;
     }
     
@@ -106,13 +106,13 @@ void Host::defaultHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("host error: %s\n", strerror(error));
         }
-        clean();
+        clean(this);
         return;
     }
     
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
-        clean();
+        clean(this);
         return;
     }
 
@@ -125,7 +125,7 @@ void Host::defaultHE(uint32_t events) {
             int ret = Write();
             if (ret <= 0) {
                 if (showerrinfo(ret, "host write error")) {
-                    clean();
+                    clean(this);
                 }
                 return;
             }
@@ -227,10 +227,9 @@ Host* Host::gethost(HttpReqHeader &req, Guest* guest) {
         return exist;
     }
 
-    if (exist != NULL) {
-        exist->clean();
+    if (exist) { 
+        exist->clean(nullptr);
     }
-
     return new Host(req, guest);
 }
 
@@ -241,14 +240,14 @@ ssize_t Host::Read(void* buff, size_t len){
 
 void Host::ErrProc(int errcode) {
     if (showerrinfo(errcode, "Host read")) {
-        clean();
+        clean(this);
     }
 }
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
-        clean();
+        clean(this);
         return -1;
     }
 

@@ -192,8 +192,8 @@ repeat:
 
 File* File::getfile(HttpReqHeader &req, Guest* guest) {
     File* exist = dynamic_cast<File *>(queryconnect(guest));
-    if (exist != NULL) {
-        exist->clean();
+    if (exist) {
+        exist->clean(nullptr);
     }
     return new File(req, guest);
 }
@@ -212,12 +212,12 @@ void File::defaultHE(uint32_t events) {
     event.data.ptr = this;
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
-        clean();
+        clean(this);
         return;
     }
     if (events & EPOLLIN) {
         if (leftsize == 0) {
-            clean();
+            clean(this);
             return;
         }
         int len = guest->bufleft()<leftsize ? guest->bufleft() : leftsize;
@@ -229,7 +229,7 @@ void File::defaultHE(uint32_t events) {
         len = read(ffd, wbuff, len);
         if (len <= 0) {
             if (showerrinfo(len, "file read error")) {
-                clean();
+                clean(this);
             }
             return;
         }
@@ -242,7 +242,7 @@ void File::defaultHE(uint32_t events) {
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("file unkown error: %s\n", strerror(errno));
-        clean();
+        clean(this);
     }
 }
 

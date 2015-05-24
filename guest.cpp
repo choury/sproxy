@@ -92,7 +92,7 @@ void Guest::defaultHE(uint32_t events) {
             LOGE("([%s]:%d): guest error:%s\n",
                   sourceip, sourceport, strerror(error));
         }
-        clean();
+        clean(this);
         return;
     }
     
@@ -105,7 +105,7 @@ void Guest::defaultHE(uint32_t events) {
             int ret = Write();
             if (ret <= 0) {
                 if (showerrinfo(ret, "guest write error")) {
-                    clean();
+                    clean(this);
                 }
                 return;
             }
@@ -143,7 +143,7 @@ ssize_t Guest::Read(void* buff, size_t len){
 
 void Guest::ErrProc(int errcode) {
     if (showerrinfo(errcode, "Host read")) {
-        clean();
+        clean(this);
     }
 }
 
@@ -197,7 +197,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
     } else {
         LOGE("([%s]:%d): unsported method:%s\n",
               sourceip, sourceport, req.method);
-        clean();
+        clean(this);
     }
 }
 
@@ -213,7 +213,7 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
     Host *host = dynamic_cast<Host *>(queryconnect(this));
     if (host == NULL) {
         LOGE("([%s]:%d): connecting to host lost\n", sourceip, sourceport);
-        clean();
+        clean(this);
         return -1;
     }
     int len = host->bufleft();

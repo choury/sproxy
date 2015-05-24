@@ -108,7 +108,7 @@ void Guest_s::shakehandHE(uint32_t events) {
         int ret = SSL_do_handshake(ssl);
         if (ret != 1) {
             if (showerrinfo(ret, "ssl accept error")) {
-                clean();
+                clean(this);
             }
         } else {
             shakedhand();
@@ -123,7 +123,7 @@ void Guest_s::shakehandHE(uint32_t events) {
             LOGE("([%s]:%d): guest_s error:%s\n",
                   sourceip, sourceport, strerror(error));
         }
-        clean();
+        clean(this);
     }
 }
 

@@ -74,7 +74,7 @@ void Cgi::defaultHE(uint32_t events)
     event.data.ptr = this;
     Guest *guest=dynamic_cast<Guest *>(queryconnect(this));
     if( guest == NULL) {
-        clean();
+        clean(this);
         return;
     }
     if (events & EPOLLIN){
@@ -88,7 +88,7 @@ void Cgi::defaultHE(uint32_t events)
         len=read(fd,wbuff,len);
         if (len<=0){
             if(showerrinfo(len,"cgi read error")){
-                clean();
+                clean(this);
             }
             return;
         }
@@ -100,7 +100,7 @@ void Cgi::defaultHE(uint32_t events)
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("cgi unkown error: %s\n",strerror(errno));
-        clean();
+        clean(this);
     }
 }
 
@@ -112,8 +112,8 @@ void Cgi::closeHE(uint32_t events){
 
 Cgi* Cgi::getcgi(HttpReqHeader& req, Guest* guest){
     Cgi* exist=dynamic_cast<Cgi *>(queryconnect(guest));
-    if (exist != NULL) {
-        exist->clean();
+    if (exist) {
+        exist->clean(nullptr);
     }
     return new Cgi(req,guest);
 }

@@ -26,7 +26,6 @@ protected:
 public:
     Guest();
     explicit Guest(int fd);
-    virtual void disconnected(Peer *who)override{};
     virtual void Response(HttpResHeader& res);
 };
 

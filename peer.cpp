@@ -105,32 +105,33 @@ Peer* queryconnect(Peer* key) {
     return nullptr;
 }
 
-
+/*这里who为this，或者是NULL时都会disconnect所有连接的peer
+ * 区别是who 为NULL时不会调用disconnect */
 void Peer::disconnect(Peer* who) {
+    Peer *found = nullptr;
     if(bindex.left.count(this)){
-        if(who == this || who == nullptr || who == bindex.left.find(this)->second){
-            who = bindex.left.find(this)->second;
+        found = bindex.left.find(this)->second;
+        if(who == this || who == nullptr || who == found){
             bindex.left.erase(this);
-            who->disconnected(this);
-            
         }
     }
     if(bindex.right.count(this)){
-        if(who == this || who == nullptr || who == bindex.right.find(this)->second){
-            who = bindex.right.find(this)->second;
+        found = bindex.right.find(this)->second;
+        if(who == this || who == nullptr || who == found){
             bindex.right.erase(this);
-            who->disconnected(this);
         }
     }
+    if(who && found)
+        found->disconnected(this);
 }
 
 void Peer::disconnected(Peer* who) {
-    return clean();
+    return clean(who);
 }
 
 
-void Peer::clean() {
-    disconnect(nullptr);
+void Peer::clean(Peer* who) {
+    disconnect(who);
     if(fd > 0) {
         struct epoll_event event;
         event.data.ptr = this;

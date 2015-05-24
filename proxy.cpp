@@ -20,8 +20,8 @@ Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
         exist->Request(req, guest);
         return exist;
     }
-    if (exist != NULL) {
-        exist->Peer::clean();
+    if (exist) {
+        exist->clean(nullptr);
     }
 
     return new Proxy(req, guest);
@@ -101,7 +101,7 @@ void Proxy::waitconnectHE(uint32_t events) {
     connectset.del(this);
     Guest *guest = (Guest *)queryconnect(this);
     if (guest == nullptr) {
-        clean();
+        clean(this);
         return;
     }
     
@@ -157,7 +157,7 @@ reconnect:
 void Proxy::shakehandHE(uint32_t events) {
     Guest *guest = (Guest *)queryconnect(this);
     if (guest == nullptr) {
-        clean();
+        clean(this);
         return;
     }
     if ((events & EPOLLIN) || (events & EPOLLOUT)) {
