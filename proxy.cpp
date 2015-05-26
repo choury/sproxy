@@ -1,14 +1,14 @@
-#include <openssl/err.h>
-#include <set>
-
 #include "proxy.h"
 
+#include <set>
+
+#include <openssl/err.h>
 
 #define PROXYERRTIP     "HTTP/1.0 504 Gateway Timeout" CRLF CRLF\
-                        "Connect to the proxy failed, you can try angin, or switch to another proxy"
+                        "Connect to the proxy failed, you can try again, or switch to another proxy"
                         
 #define SSLERRTIP       "HTTP/1.0 502 Bad Gateway" CRLF CRLF\
-                        "Ssl shakehand error, you can try angin, or switch to another proxy"
+                        "Ssl shakehand error, you can try again, or switch to another proxy"
 
 
 Proxy::Proxy(HttpReqHeader &req, Guest *guest):Host(req, guest, SHOST, SPORT) {}

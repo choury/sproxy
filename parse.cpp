@@ -1,14 +1,13 @@
-#include <string.h>
-#include <unistd.h>
+#include "parse.h"
+#include "net.h"
 
 #include <fstream>
 #include <iostream>
 #include <algorithm>
 #include <unordered_set>
 
-#include "parse.h"
-#include "net.h"
-
+#include <string.h>
+#include <unistd.h>
 
 #define PROXYFILE "proxy.list"
 #define BLOCKFILE "block.list"

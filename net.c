@@ -1,13 +1,12 @@
+#include "net.h"
+#include "common.h"
+
 #include <errno.h>
 #include <string.h>
 
 #include <unistd.h>
 #include <fcntl.h>
 #include <netinet/tcp.h>
-
-#include "common.h"
-#include "net.h"
-
 
 
 int Connect(struct sockaddr* addr) {

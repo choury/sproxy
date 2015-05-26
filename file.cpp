@@ -1,3 +1,6 @@
+#include "file.h"
+#include "net.h"
+
 #include <vector>
 
 #include <fcntl.h>
@@ -6,8 +9,6 @@
 #include <sys/eventfd.h>
 #include <sys/stat.h>
 
-#include "file.h"
-#include "net.h"
 
 using std::vector;
 using std::pair;

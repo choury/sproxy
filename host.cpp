@@ -3,10 +3,10 @@
 
 
 #define DNSERRTIP   "HTTP/1.0 502 Bad Gateway" CRLF CRLF\
-                    "Dns Query failed, you can try angin"
+                    "Dns Query failed, you can try again"
                     
 #define CONERRTIP   "HTTP/1.0 504 Gateway Timeout" CRLF CRLF\
-                    "Connect to the site failed, you can try angin"
+                    "Connect to the site failed, you can try again"
 
 Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0), Http(state), req(req) {
     writelen = req.getstring(wbuff);

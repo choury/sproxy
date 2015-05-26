@@ -1,10 +1,10 @@
 #ifndef PARSE_H__
 #define PARSE_H__
 
-#include <string>
-#include <map>
 #include "common.h"
 
+#include <string>
+#include <map>
 
 using std::string;
 using std::map;

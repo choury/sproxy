@@ -1,11 +1,10 @@
 #ifndef GUEST_H__
 #define GUEST_H__
 
-#include <netinet/in.h>
-
 #include "peer.h"
 #include "http.h"
 
+#include <netinet/in.h>
 
 class Guest:public Peer, public Http{
 protected:

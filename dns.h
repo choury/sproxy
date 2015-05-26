@@ -1,13 +1,14 @@
 #ifndef DNS_H__
 #define DNS_H__
 
+#include "con.h"
+#include "net.h"
+
+#include <vector>
+
 #include <unistd.h>
 #include <time.h>
 #include <netinet/in.h>
-#include <vector>
-
-#include "con.h"
-#include "net.h"
 
 #define RESOLV_FILE "/etc/resolv.conf"
 #define DNSPORT 53

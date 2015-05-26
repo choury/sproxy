@@ -1,10 +1,9 @@
 #ifndef PROXY_H__
 #define PROXY_H__
 
-#include <openssl/ssl.h>
-
 #include "host.h"
 
+#include <openssl/ssl.h>
 
 class Proxy : public Host{
     SSL *ssl = nullptr;

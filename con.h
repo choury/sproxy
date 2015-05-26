@@ -1,6 +1,8 @@
 #ifndef CON_H__
 #define CON_H__
 
+#include <stdint.h>
+
 extern int efd;
 
 class Con {

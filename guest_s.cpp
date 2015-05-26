@@ -1,9 +1,9 @@
-#include <openssl/err.h>
-
 #include "guest_s.h"
 #include "host.h"
 #include "file.h"
 #include "cgi.h"
+
+#include <openssl/err.h>
 
 Guest_s::Guest_s(int fd, SSL* ssl): Guest(fd), ssl(ssl) {
     struct epoll_event event;

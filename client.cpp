@@ -1,11 +1,10 @@
+#include "guest.h"
+#include "dns.h"
+
 #include <signal.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <openssl/ssl.h>
-
-#include "guest.h"
-#include "dns.h"
-
 
 int efd;
 

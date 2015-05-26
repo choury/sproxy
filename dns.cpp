@@ -1,8 +1,10 @@
-#include <string.h>
-#include <unordered_map>
-
-#include "common.h"
 #include "dns.h"
+#include "common.h"
+
+#include <unordered_map>
+#include <string>
+
+#include <string.h>
 
 
 //#define _DEGUB_DNS_

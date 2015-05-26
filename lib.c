@@ -1,6 +1,7 @@
+#include "common.h"
+
 #include <string.h>
 #include <stdlib.h>
-#include "common.h"
     
 /**
  * strnstr - Find the first substring in a length-limited string

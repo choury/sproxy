@@ -1,8 +1,8 @@
+#include "peer.h"
+
 #include <boost/bimap.hpp>  
 
 #include <string.h>
-
-#include "peer.h"
 
 char SHOST[DOMAINLIMIT];
 uint16_t SPORT = 443;

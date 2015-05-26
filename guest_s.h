@@ -1,10 +1,9 @@
 #ifndef GUEST_S_H__
 #define GUEST_S_H__
 
-#include <openssl/ssl.h>
-
 #include "guest.h"
 
+#include <openssl/ssl.h>
 
 class Guest_s:public Guest {
     SSL *ssl;

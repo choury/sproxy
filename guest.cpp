@@ -1,9 +1,9 @@
+#include "guest.h"
+#include "host.h"
+
 #include <string.h>
 #include <arpa/inet.h>
 #include <linux/netfilter_ipv4.h>
-
-#include "guest.h"
-#include "host.h"
 
 #define ADDPTIP    "HTTP/1.0 200 Proxy site Added" CRLF CRLF
 #define ADDBTIP    "HTTP/1.0 200 Block site Added" CRLF CRLF

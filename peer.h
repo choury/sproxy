@@ -1,8 +1,6 @@
 #ifndef PEER_H__
 #define PEER_H__
 
-#include <stdint.h>
-
 #include "con.h"
 #include "common.h"
 
