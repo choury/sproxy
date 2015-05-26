@@ -35,7 +35,11 @@ extern char SHOST[];
 
 #else
 #define  LOG(...)  syslog(LOG_INFO, __VA_ARGS__)
-#define  LOGE(...)   syslog(LOG_ERR, __VA_ARGS__)
+#define  LOGE(...)   do{\
+                        char tmp[1024]; \
+                        sprintf(tmp, __VA_ARGS__); \
+                        syslog(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
+                     }while(0);
 #define  LOGOUT(...) fprintf(stderr, __VA_ARGS__)
 #endif
 

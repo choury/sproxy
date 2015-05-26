@@ -1,13 +1,9 @@
-#include <errno.h>
-#include <openssl/err.h>
-
-#include "net.h"
 #include "guest_s.h"
 #include "host.h"
-#include "parse.h"
-#include "guest_spdy.h"
 #include "file.h"
 #include "cgi.h"
+
+#include <openssl/err.h>
 
 Guest_s::Guest_s(int fd, SSL* ssl): Guest(fd), ssl(ssl) {
     struct epoll_event event;
@@ -75,7 +71,6 @@ void Guest_s::shakedhand() {
     SSL_get0_next_proto_negotiated(ssl, &data, &len);
     if (data) {
         if (strncasecmp((const char*)data, "spdy/3.1", len) == 0) {
-            new Guest_spdy(this);
             return;
         }
     }

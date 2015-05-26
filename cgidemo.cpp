@@ -1,9 +1,9 @@
+#include "parse.h"
+
 #include <string>
 #include <map>
 
 #include <string.h>
-
-#include "parse.h"
 
 
 using std::map;

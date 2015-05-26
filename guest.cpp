@@ -1,14 +1,9 @@
-#include <stdio.h>
-#include <string.h>
-#include <errno.h>
-#include <arpa/inet.h>
-#include <limits.h>
-#include <linux/netfilter_ipv4.h>
-
 #include "guest.h"
-#include "proxy.h"
-#include "parse.h"
+#include "host.h"
 
+#include <string.h>
+#include <arpa/inet.h>
+#include <linux/netfilter_ipv4.h>
 
 #define ADDPTIP    "HTTP/1.0 200 Proxy site Added" CRLF CRLF
 #define ADDBTIP    "HTTP/1.0 200 Block site Added" CRLF CRLF
@@ -48,8 +43,8 @@ Guest::Guest(int fd): Peer(fd) {
          && (getsockopt(fd, SOL_IPV6, SO_ORIGINAL_DST, &Dst6, &sin6_size)
             || (socktype = AF_INET6, 0)))
     {
-        LOGE("([%s]:%d): getsockopt error:%s\n",
-              sourceip, sourceport, strerror(errno));
+/*        LOGE("([%s]:%d): getsockopt error:%s\n",
+              sourceip, sourceport, strerror(errno));*/
         snprintf(destip, sizeof(destip), "%s", "Unkown IP");
         destport = CPORT;
     } else {
@@ -89,10 +84,18 @@ int Guest::showerrinfo(int ret, const char *s) {
 }
 
 void Guest::defaultHE(uint32_t events) {
-    struct epoll_event event;
-    event.data.ptr = this;
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        int       error = 0;
+        socklen_t errlen = sizeof(error);
 
-    Peer *peer = bindex.query(this);
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
+            LOGE("([%s]:%d): guest error:%s\n",
+                  sourceip, sourceport, strerror(error));
+        }
+        clean(this);
+        return;
+    }
+    
     if (events & EPOLLIN) {
         (this->*Http_Proc)();
     }
@@ -106,24 +109,16 @@ void Guest::defaultHE(uint32_t events) {
                 }
                 return;
             }
-            if (peer)
+            if (Peer *peer = queryconnect(this))
                 peer->writedcb();
         }
 
         if (writelen == 0) {
+            struct epoll_event event;
+            event.data.ptr = this;
             event.events = EPOLLIN;
             epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
         }
-    }
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        int       error = 0;
-        socklen_t errlen = sizeof(error);
-
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("([%s]:%d): guest error:%s\n",
-                  sourceip, sourceport, strerror(error));
-        }
-        clean(this);
     }
 }
 
@@ -214,10 +209,8 @@ void Guest::Response(HttpResHeader& res) {
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 }
 
-
-
 ssize_t Guest::DataProc(const void *buff, size_t size) {
-    Host *host = dynamic_cast<Host *>(bindex.query(this));
+    Host *host = dynamic_cast<Host *>(queryconnect(this));
     if (host == NULL) {
         LOGE("([%s]:%d): connecting to host lost\n", sourceip, sourceport);
         clean(this);

@@ -1,3 +1,6 @@
+#include "file.h"
+#include "net.h"
+
 #include <vector>
 
 #include <fcntl.h>
@@ -5,9 +8,7 @@
 #include <string.h>
 #include <sys/eventfd.h>
 #include <sys/stat.h>
-#include "common.h"
-#include "file.h"
-#include "cgi.h"
+
 
 using std::vector;
 using std::pair;
@@ -177,7 +178,7 @@ repeat:
             res.add("Content-Range", (char *)wbuff);
             guest->Write(this, wbuff, res.getstring(wbuff));
         }
-        bindex.add(guest, this);
+        connect(guest, this);
     } else if (S_ISDIR(st.st_mode)) {
         strcat(filename, "/index.html");
         goto repeat;
@@ -191,9 +192,9 @@ repeat:
 
 
 File* File::getfile(HttpReqHeader &req, Guest* guest) {
-    File* exist = dynamic_cast<File *>(bindex.query(guest));
-    if (exist != NULL) {
-        exist->clean(guest);
+    File* exist = dynamic_cast<File *>(queryconnect(guest));
+    if (exist) {
+        exist->clean(nullptr);
     }
     return new File(req, guest);
 }
@@ -210,7 +211,7 @@ int File::showerrinfo(int ret, const char* s) {
 void File::defaultHE(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
-    Guest *guest = dynamic_cast<Guest *>(bindex.query(this));
+    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
         clean(this);
         return;

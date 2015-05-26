@@ -1,29 +1,27 @@
-#include <openssl/err.h>
-#include <string>
+#include "proxy.h"
+
 #include <set>
 
-#include "proxy.h"
-#include "guest.h"
-
+#include <openssl/err.h>
 
 #define PROXYERRTIP     "HTTP/1.0 504 Gateway Timeout" CRLF CRLF\
-                        "Connect to the proxy failed, you can try angin, or switch to another proxy"
+                        "Connect to the proxy failed, you can try again, or switch to another proxy"
                         
 #define SSLERRTIP       "HTTP/1.0 502 Bad Gateway" CRLF CRLF\
-                        "Ssl shakehand error, you can try angin, or switch to another proxy"
+                        "Ssl shakehand error, you can try again, or switch to another proxy"
 
 
 Proxy::Proxy(HttpReqHeader &req, Guest *guest):Host(req, guest, SHOST, SPORT) {}
 
 
 Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
-    Host *exist = (Host *)bindex.query(guest);
+    Host *exist = (Host *)queryconnect(guest);
     if (dynamic_cast<Proxy*>(exist)) {
         exist->Request(req, guest);
         return exist;
     }
-    if (exist != NULL) {
-        exist->clean(guest);
+    if (exist) {
+        exist->clean(nullptr);
     }
 
     return new Proxy(req, guest);
@@ -100,33 +98,40 @@ static int select_next_proto_cb(SSL* ssl,
 
 
 void Proxy::waitconnectHE(uint32_t events) {
-    Guest *guest = (Guest *)bindex.query(this);
-    if (guest == NULL) {
+    connectset.del(this);
+    Guest *guest = (Guest *)queryconnect(this);
+    if (guest == nullptr) {
         clean(this);
         return;
     }
+    
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        int       error = 0;
+        socklen_t errlen = sizeof(error);
+
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
+            LOGE("connect to proxy error: %s\n", strerror(error));
+        }
+        goto reconnect;
+    }
+    
     if (events & EPOLLOUT) {
         int error;
         socklen_t len = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
             LOGE("proxy getsokopt error: %s\n", strerror(errno));
-            clean(this, PROXYERRTIP);
-            return;
+            goto reconnect;
         }
 
         if (error != 0) {
             LOGE("connect to proxy:%s\n", strerror(error));
-            if (connect() < 0) {
-                clean(this, PROXYERRTIP);
-            }
-            return;
+            goto reconnect;
         }
         ctx = SSL_CTX_new(SSLv23_client_method());
 
         if (ctx == NULL) {
             ERR_print_errors_fp(stderr);
-            clean(this, PROXYERRTIP);
-            return;
+            goto reconnect;
         }
         SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);  // 去除支持SSLv2 SSLv3
         SSL_CTX_set_next_proto_select_cb(ctx, select_next_proto_cb, this);
@@ -141,18 +146,17 @@ void Proxy::waitconnectHE(uint32_t events) {
 
         handleEvent = (void (Con::*)(uint32_t))&Proxy::shakehandHE;
     }
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("connect to proxy: %s\n", strerror(errno));
-        if (connect() < 0) {
-            clean(this, PROXYERRTIP);
-        }
+    return;
+reconnect:
+    if (connect() < 0) {
+        destory(PROXYERRTIP);
     }
 }
 
 
 void Proxy::shakehandHE(uint32_t events) {
-    Guest *guest = (Guest *)bindex.query(this);
-    if (guest == NULL) {
+    Guest *guest = (Guest *)queryconnect(this);
+    if (guest == nullptr) {
         clean(this);
         return;
     }
@@ -160,7 +164,7 @@ void Proxy::shakehandHE(uint32_t events) {
         int ret = SSL_connect(ssl);
         if (ret != 1) {
             if (showerrinfo(ret, "ssl connect error")) {
-                clean(this, SSLERRTIP);
+                destory(SSLERRTIP);
             }
             return;
         }
@@ -180,7 +184,7 @@ void Proxy::shakehandHE(uint32_t events) {
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("proxy unkown error: %s\n", strerror(errno));
-        clean(this, SSLERRTIP);
+        destory(SSLERRTIP);
     }
 }
 

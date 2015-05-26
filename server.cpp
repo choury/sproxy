@@ -1,8 +1,6 @@
-#include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <arpa/inet.h>
-#include <openssl/ssl.h>
 #include <openssl/err.h>
 
 
@@ -164,6 +162,7 @@ int main(int argc, char** argv) {
         }
         if(c == 0) {
             dnstick();
+            connectset.tick();
         }
     }
     SSL_CTX_free(ctx);

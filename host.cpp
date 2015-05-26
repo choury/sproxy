@@ -1,22 +1,14 @@
-#include <string.h>
-#include <stdio.h>
-#include <errno.h>
-
 #include "host.h"
-#include "guest.h"
-#include "parse.h"
-#include "dns.h"
 #include "proxy.h"
 
 
 #define DNSERRTIP   "HTTP/1.0 502 Bad Gateway" CRLF CRLF\
-                    "Dns Query failed, you can try angin"
+                    "Dns Query failed, you can try again"
                     
 #define CONERRTIP   "HTTP/1.0 504 Gateway Timeout" CRLF CRLF\
-                    "Connect to the site failed, you can try angin"
+                    "Connect to the site failed, you can try again"
 
 Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0), Http(state), req(req) {
-    bindex.add(guest, this);
     writelen = req.getstring(wbuff);
     this->req = req;
     snprintf(hostname, sizeof(hostname), "%s", req.hostname);
@@ -25,11 +17,12 @@ Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0), Htt
         LOGE("DNS qerry falied\n");
         throw 0;
     }
+    
+    ::connect(guest, this);
 }
 
 
 Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0), Http(ALWAYS), req(req) {
-    bindex.add(guest, this);
     writelen = req.getstring(wbuff);
     this->req = req;
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
@@ -39,6 +32,8 @@ Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port
         LOGE("DNS qerry falied\n");
         throw 0;
     }
+    
+    ::connect(guest, this);
 }
 
 
@@ -55,27 +50,35 @@ int Host::showerrinfo(int ret, const char* s) {
 
 
 void Host::waitconnectHE(uint32_t events) {
-    Guest *guest = dynamic_cast<Guest *>(bindex.query(this));
-    if (guest == NULL) {
+    connectset.del(this);
+    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
+    if (guest == nullptr) {
         clean(this);
         return;
     }
+    
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        int       error = 0;
+        socklen_t errlen = sizeof(error);
+
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
+            LOGE("connect to host error: %s\n", strerror(error));
+        }
+        goto reconnect;
+    }
+    
     if (events & EPOLLOUT) {
         int error;
         socklen_t len = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
             LOGE("getsokopt error: %s\n", strerror(error));
-            clean(this, CONERRTIP);
-            return;
+            goto reconnect;
         }
         if (error != 0) {
             LOGE("connect to %s: %s\n", this->hostname, strerror(error));
-            if (connect() < 0) {
-                clean(this, CONERRTIP);
-            }
-            return;
+            goto reconnect;
         }
-
+        
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLIN | EPOLLOUT;
@@ -88,18 +91,26 @@ void Host::waitconnectHE(uint32_t events) {
         }
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
     }
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("connect to %s: %s\n", this->hostname, strerror(errno));
-        if (connect() < 0) {
-            clean(this, CONERRTIP);
-        }
+    return;
+reconnect:
+    if (connect() < 0) {
+        destory(CONERRTIP);
     }
 }
 
 void Host::defaultHE(uint32_t events) {
-    struct epoll_event event;
-    event.data.ptr = this;
-    Guest *guest = dynamic_cast<Guest *>(bindex.query(this));
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        int       error = 0;
+        socklen_t errlen = sizeof(error);
+
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
+            LOGE("host error: %s\n", strerror(error));
+        }
+        clean(this);
+        return;
+    }
+    
+    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
         clean(this);
         return;
@@ -120,21 +131,18 @@ void Host::defaultHE(uint32_t events) {
             }
             guest->writedcb();
         }
-    }
-
-    if (writelen == 0) {
-        event.events = EPOLLIN;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    }
-
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("host unkown error: %s\n", strerror(errno));
-        clean(this);
+        if (writelen == 0) {
+            struct epoll_event event;
+            event.data.ptr = this;
+            event.events = EPOLLIN;
+            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        }
     }
 }
 
 
 void Host::closeHE(uint32_t events) {
+    connectset.del(this);
     delete this;
 }
 
@@ -143,7 +151,7 @@ void Host::closeHE(uint32_t events) {
 void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
     if (rcd.result != 0) {
         LOGE("Dns query failed\n");
-        host->clean(host, DNSERRTIP);
+        host->destory(DNSERRTIP);
     } else {
         host->addrs = rcd.addrs;
         for (size_t i = 0; i < host->addrs.size(); ++i) {
@@ -151,7 +159,7 @@ void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
         }
         if (host->connect() < 0) {
             LOGE("connect to %s failed\n", host->hostname);
-            host->clean(host, CONERRTIP);
+            host->destory(CONERRTIP);
         }
     }
 }
@@ -176,9 +184,23 @@ int Host::connect() {
         event.events = EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
         handleEvent = (void (Con::*)(uint32_t))&Host::waitconnectHE;
+        connectset.add(this);
+        return 0;
     }
-    return 0;
 }
+
+
+void Host::destory(const char* tip) {
+    Peer *guest = queryconnect(this);
+    if(guest){
+        if(tip)
+            guest->Write(this,tip,strlen(tip));
+        disconnect(this);
+    }
+    connectset.del(this);
+    delete this;
+}
+
 
 void Host::Request(HttpReqHeader &req, Guest *guest) {
     writelen+= req.getstring(wbuff+writelen);
@@ -197,7 +219,7 @@ Host* Host::gethost(HttpReqHeader &req, Guest* guest) {
         return Proxy::getproxy(req, guest);
     }
 #endif
-    Host* exist = dynamic_cast<Host *>(bindex.query(guest));
+    Host* exist = dynamic_cast<Host *>(queryconnect(guest));
     if (exist && exist->port == req.port
         && strcasecmp(exist->hostname, req.hostname) == 0)
     {
@@ -205,10 +227,9 @@ Host* Host::gethost(HttpReqHeader &req, Guest* guest) {
         return exist;
     }
 
-    if (exist != NULL) {
-        exist->clean(guest);
+    if (exist) { 
+        exist->clean(nullptr);
     }
-
     return new Host(req, guest);
 }
 
@@ -224,7 +245,7 @@ void Host::ErrProc(int errcode) {
 }
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
-    Guest *guest = dynamic_cast<Guest *>(bindex.query(this));
+    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
         clean(this);
         return -1;
@@ -239,5 +260,29 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     }
 
     return guest->Write(this, buff, Min(size, len));
+}
+
+
+ConnectSet connectset;
+
+void ConnectSet::add(Peer* key) {
+    map[key]=time(NULL);
+}
+
+void ConnectSet::del(Peer* key) {
+    map.erase(key);
+}
+
+void ConnectSet::tick() {
+    for(auto i = map.begin();i != map.end();){
+        Host *host = (Host *)(i->first);
+        if(host && time(NULL) - i->second >= 30 && host->connect() < 0){
+            map.erase(i++);
+            LOGE("connect to %s time out.", host->hostname);
+            host->destory(CONERRTIP);
+        }else{
+            i++;
+        }
+    }
 }
 

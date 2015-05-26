@@ -1,16 +1,10 @@
-#include <unistd.h>
-#include <signal.h>
-#include <fcntl.h>
-#include <libgen.h>
-#include <arpa/inet.h>
-#include <openssl/ssl.h>
-
-
-#include "common.h"
 #include "guest.h"
-#include "parse.h"
 #include "dns.h"
 
+#include <signal.h>
+#include <fcntl.h>
+#include <arpa/inet.h>
+#include <openssl/ssl.h>
 
 int efd;
 
@@ -122,6 +116,7 @@ int main(int argc, char** argv) {
         
         if(c == 0) {
             dnstick();
+            connectset.tick();
         }
     }
 

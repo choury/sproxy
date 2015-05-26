@@ -1,44 +1,13 @@
-#include <stdio.h>
-#include <errno.h>
-#include <string.h>
-
-#include <unistd.h>
-#include <fcntl.h>
-
-
 #include "peer.h"
-#include "host.h"
-#include "guest.h"
+
+#include <boost/bimap.hpp>  
+
+#include <string.h>
 
 char SHOST[DOMAINLIMIT];
 uint16_t SPORT = 443;
 
-Bindex bindex;
-
-void Bindex::add(Peer* key1, Peer* key2) {
-    map[key1] = key2;
-    map[key2] = key1;
-}
-
-
-void Bindex::del(Peer* key1, Peer *key2) {
-    map.erase(key1);
-    map.erase(key2);
-}
-
-void Bindex::del(Peer* key) {
-    map.erase(key);
-}
-
-Peer* Bindex::query(Peer* key) {
-    if (key && map.count(key)) {
-        return map[key];
-    } else {
-        return nullptr;
-    }
-}
-
-
+boost::bimap<Peer *,Peer *> bindex;
 
 
 Peer::Peer(int fd):fd(fd) {
@@ -120,17 +89,50 @@ void Peer::ErrProc(int errcode) {
 }
 */
 
-void Peer::clean(Peer* who, const char *tip) {
-    Peer *peer = bindex.query(this);
-    bindex.del(this, peer);
-    if (who == this && peer) {
-        if(tip){
-            peer->Write(this, tip, strlen(tip));
-        }
-        peer->clean(this);
-    }
+void connect(Peer* p1, Peer* p2) {
+    bindex.insert(boost::bimap<Peer *,Peer *>::value_type(p1,p2));
+}
 
-    if (fd > 0) {
+
+
+Peer* queryconnect(Peer* key) {
+    if (bindex.left.count(key)){
+        return bindex.left.find(key)->second;
+    }
+    if (bindex.right.count(key)) {
+        return bindex.right.find(key)->second; 
+    }
+    return nullptr;
+}
+
+/*这里who为this，或者是NULL时都会disconnect所有连接的peer
+ * 区别是who 为NULL时不会调用disconnect */
+void Peer::disconnect(Peer* who) {
+    Peer *found = nullptr;
+    if(bindex.left.count(this)){
+        found = bindex.left.find(this)->second;
+        if(who == this || who == nullptr || who == found){
+            bindex.left.erase(this);
+        }
+    }
+    if(bindex.right.count(this)){
+        found = bindex.right.find(this)->second;
+        if(who == this || who == nullptr || who == found){
+            bindex.right.erase(this);
+        }
+    }
+    if(who && found)
+        found->disconnected(this);
+}
+
+void Peer::disconnected(Peer* who) {
+    return clean(who);
+}
+
+
+void Peer::clean(Peer* who) {
+    disconnect(who);
+    if(fd > 0) {
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLOUT;
@@ -138,8 +140,5 @@ void Peer::clean(Peer* who, const char *tip) {
             epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
         }
         handleEvent = (void (Con::*)(uint32_t))&Peer::closeHE;
-    } else if (who == this) {
-        delete this;
     }
 }
-
