@@ -16,6 +16,7 @@ Peer::Peer(int fd):fd(fd) {
 
 
 Peer::~Peer() {
+    disconnect(this);
     if (fd > 0) {
         epoll_ctl(efd,EPOLL_CTL_DEL,fd,nullptr);
         close(fd);

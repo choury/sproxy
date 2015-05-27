@@ -43,7 +43,7 @@ public:
 typedef void (*DNSCBfunc)(void *, const Dns_rcd& );
 
 int dnsinit();
-int query(const char *host, DNSCBfunc func, void *param);
+int query(const char *host, DNSCBfunc func, void *param, int times = 0);
 void RcdDown(const char *hostname, const sockaddr_un &addr);
 void dnstick();
 

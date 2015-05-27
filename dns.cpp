@@ -67,6 +67,7 @@ typedef struct _DNS_RR {
 typedef struct _DNS_STATE {
     unsigned int id;
     time_t reqtime;
+    int times;
     DNSCBfunc func;
     void *param;
     uint32_t getnum;
@@ -241,7 +242,7 @@ int dnsinit() {
     return srvs.size();
 }
 
-int query(const char *host , DNSCBfunc func, void *param) {
+int query(const char *host , DNSCBfunc func, void *param, int times) {
     unsigned char buf[BUF_SIZE];
     if (inet_pton(PF_INET, host, buf) == 1) {
         sockaddr_un addr;
@@ -268,6 +269,7 @@ int query(const char *host , DNSCBfunc func, void *param) {
     dnsst->func = func;
     dnsst->param = param;
     dnsst->getnum = 0;
+    dnsst->times = times;
     snprintf(dnsst->host, sizeof(dnsst->host), "%s", host);
 
     for (size_t i = 0; i < srvs.size(); ++i) {
@@ -300,9 +302,13 @@ void dnstick() {
             rcd_index_id.erase(tmp);
             delete oldstate;
         } else if (time(nullptr)-oldstate->reqtime>= DNSTIMEOUT) {           // 超时重试
-            LOGE("[DNS] %s: time out, retry...\n", oldstate->host);
-            rcd_index_id.erase(tmp);
-            query(oldstate->host, oldstate->func, oldstate->param);
+            if(oldstate->times < 10) {
+                LOGE("[DNS] %s: time out, retry...\n", oldstate->host);
+                rcd_index_id.erase(tmp);
+                query(oldstate->host, oldstate->func, oldstate->param, ++oldstate->times);
+            } else {
+                oldstate->func(oldstate->param, Dns_rcd(DNS_ERR));
+            }
             delete oldstate;
         }
     }

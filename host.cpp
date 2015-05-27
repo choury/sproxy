@@ -9,31 +9,31 @@
                     "Connect to the site failed, you can try again"
 
 Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0), Http(state), req(req) {
+    ::connect(guest, this);
     writelen = req.getstring(wbuff);
     this->req = req;
     snprintf(hostname, sizeof(hostname), "%s", req.hostname);
     port = req.port;
     if (query(hostname, (DNSCBfunc)Host::Dnscallback, this) < 0) {
-        LOGE("DNS qerry falied\n");
+        guest->Write(this,DNSERRTIP,strlen(DNSERRTIP));
+        LOGE("DNS qerry falied: %s\n", hostname);
         throw 0;
     }
-    
-    ::connect(guest, this);
 }
 
 
 Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0), Http(ALWAYS), req(req) {
+    ::connect(guest, this);
     writelen = req.getstring(wbuff);
     this->req = req;
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
     this->port = port;
 
     if (query(hostname, (DNSCBfunc)Host::Dnscallback, this) < 0) {
-        LOGE("DNS qerry falied\n");
+        guest->Write(this,DNSERRTIP,strlen(DNSERRTIP));
+        LOGE("DNS qerry falied: %s\n", hostname);
         throw 0;
     }
-    
-    ::connect(guest, this);
 }
 
 
@@ -150,7 +150,7 @@ void Host::closeHE(uint32_t events) {
 
 void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
     if (rcd.result != 0) {
-        LOGE("Dns query failed\n");
+        LOGE("Dns query failed: %s\n", host->hostname);
         host->destory(DNSERRTIP);
     } else {
         host->addrs = rcd.addrs;

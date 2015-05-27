@@ -304,11 +304,25 @@ HttpReqHeader::HttpReqHeader(const char* header) {
             LOGE("wrong header format:%s\n", p);
             throw 0;
         }
-        this->headers[string(p, sp - p)] = ltrim(string(sp + 1));
+        headers[string(p, sp - p)] = ltrim(string(sp + 1));
     }
     
-    this->headers.erase("Proxy-Connection");
-    this->headers.erase("Host");
+    
+    if (!headers.count("Host") && hostname[0]) {
+        char buff[DOMAINLIMIT];
+        snprintf(buff, sizeof(buff), "%s:%d", hostname, port);
+        headers["Host"]=buff;
+    }
+    
+    if (!hostname[0] && headers.count("Host")) {
+        if(spliturl(headers["Host"].c_str(), hostname, nullptr, &port))
+        {
+            LOGE("wrong host format:%s\n", headers["Host"].c_str());
+            throw 0;
+        }
+    }
+    
+    headers.erase("Proxy-Connection");
 }
 
 #if 0
@@ -445,9 +459,6 @@ int HttpReqHeader::getstring(void* outbuff) {
         sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
                 method, path, &p);
     }
-    int len;
-    sprintf(buff+p, "Host: %s" CRLF "%n", hostname, &len);
-    p+= len;
     for (auto i : headers) {
         int len;
         sprintf(buff + p, "%s: %s" CRLF "%n",
@@ -520,7 +531,7 @@ HttpResHeader::HttpResHeader(const char* header, int fd):fd(fd) {
             LOGE("wrong header format:%s\n", p);
             throw 0;
         }
-        this->headers[string(p, sp - p)] = ltrim(string(sp + 1));
+        headers[string(p, sp - p)] = ltrim(string(sp + 1));
     }
 }
 
