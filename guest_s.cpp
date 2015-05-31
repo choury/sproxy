@@ -5,7 +5,7 @@
 
 #include <openssl/err.h>
 
-Guest_s::Guest_s(int fd, SSL* ssl): Guest(fd), ssl(ssl) {
+Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL* ssl): Guest(fd, myaddr), ssl(ssl) {
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;

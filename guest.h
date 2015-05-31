@@ -24,7 +24,7 @@ protected:
     virtual ssize_t DataProc(const void *buff, size_t size)override;
 public:
     Guest();
-    explicit Guest(int fd);
+    explicit Guest(int fd, struct sockaddr_in6 *myaddr);
     virtual void Response(HttpResHeader& res);
 };
 

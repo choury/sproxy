@@ -14,11 +14,7 @@ Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0), Htt
     this->req = req;
     snprintf(hostname, sizeof(hostname), "%s", req.hostname);
     port = req.port;
-    if (query(hostname, (DNSCBfunc)Host::Dnscallback, this) < 0) {
-        guest->Write(this,DNSERRTIP,strlen(DNSERRTIP));
-        LOGE("DNS qerry falied: %s\n", hostname);
-        throw 0;
-    }
+    query(hostname, (DNSCBfunc)Host::Dnscallback, this);
 }
 
 
@@ -29,11 +25,7 @@ Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
     this->port = port;
 
-    if (query(hostname, (DNSCBfunc)Host::Dnscallback, this) < 0) {
-        guest->Write(this,DNSERRTIP,strlen(DNSERRTIP));
-        LOGE("DNS qerry falied: %s\n", hostname);
-        throw 0;
-    }
+    query(hostname, (DNSCBfunc)Host::Dnscallback, this);
 }
 
 
@@ -145,8 +137,6 @@ void Host::closeHE(uint32_t events) {
     connectset.del(this);
     delete this;
 }
-
-
 
 void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
     if (rcd.result != 0) {

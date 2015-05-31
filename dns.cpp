@@ -7,7 +7,7 @@
 #include <string.h>
 
 
-//#define _DEGUB_DNS_
+//#define DEGUB_DNS
 //#define IGNOREIPV6
 #define BUF_SIZE 1024
 
@@ -67,10 +67,14 @@ typedef struct _DNS_RR {
 typedef struct _DNS_STATE {
     unsigned int id;
     time_t reqtime;
-    int times;
+    uint16_t times;
+#define QARECORD     0x1
+#define QAAAARECORD  0x2
+#define GARECORD     0x10
+#define GAAAARECORD  0x20
+    uint16_t flags;
     DNSCBfunc func;
     void *param;
-    uint32_t getnum;
     char host[DOMAINLIMIT];
     std::vector<sockaddr_un> addr;
 } DNS_STATE;
@@ -117,7 +121,7 @@ unsigned char * getdomain(unsigned char *buf, unsigned char *p) {
             getdomain(buf, q);
             return p+2;
         } else {
-#ifdef _DEGUB_DNS_
+#if defined(DEBUG) && defined(DEGUB_DNS)
             printf("%.*s.", *p, p+1);
 #endif
             p+= *p+1;
@@ -142,7 +146,7 @@ unsigned char *getrr(
         NTOHS(dnsrr->TTL);
         NTOHS(dnsrr->rdlength);
         p+= sizeof(DNS_RR);
-#ifdef _DEGUB_DNS_
+#if defined(DEBUG) && defined(DEGUB_DNS)
         printf(" ==> ");
         char ipaddr[INET6_ADDRSTRLEN];
 #endif
@@ -152,7 +156,7 @@ unsigned char *getrr(
             ip.addr_in.sin_family = PF_INET;
             memcpy(&ip.addr_in.sin_addr, p, sizeof(in_addr));
             addr.push_back(ip);
-#ifdef _DEGUB_DNS_
+#if defined(DEBUG) && defined(DEGUB_DNS)
             printf("%s", inet_ntop(PF_INET, p, ipaddr, sizeof(ipaddr)));
 #endif
             break;
@@ -164,13 +168,13 @@ unsigned char *getrr(
             ip.addr_in6.sin6_family = PF_INET6;
             memcpy(&ip.addr_in6.sin6_addr, p, sizeof(in6_addr));
             addr.push_back(ip);
-#ifdef _DEGUB_DNS_
+#if defined(DEBUG) && defined(DEGUB_DNS)
             printf("%s", inet_ntop(PF_INET6, p, ipaddr, sizeof(ipaddr)));
 #endif
             break;
         }
         p+= dnsrr->rdlength;
-#ifdef _DEGUB_DNS_
+#if defined(DEBUG) && defined(DEGUB_DNS)
         printf("\n");
 #endif
     }
@@ -242,46 +246,53 @@ int dnsinit() {
     return srvs.size();
 }
 
-int query(const char *host , DNSCBfunc func, void *param, int times) {
+void query(const char *host , DNSCBfunc func, void *param, uint16_t times) {
     unsigned char buf[BUF_SIZE];
     if (inet_pton(PF_INET, host, buf) == 1) {
         sockaddr_un addr;
         addr.addr_in.sin_family = PF_INET;
         memcpy(&addr.addr_in.sin_addr, buf, sizeof(in_addr));
-        func(param, Dns_rcd(addr));
-        return 0;
+        return func(param, Dns_rcd(addr));
     }
 
     if (inet_pton(PF_INET6, host, buf) == 1) {
         sockaddr_un addr;
         addr.addr_in6.sin6_family = PF_INET6;
         memcpy(&addr.addr_in6.sin6_addr, buf, sizeof(in6_addr));
-        func(param, Dns_rcd(addr));
-        return 0;
+        return func(param, Dns_rcd(addr));
     }
 
     if (rcd_index_host.count(host)) {
-        func(param, rcd_index_host[host]);
-        return 0;
+        return func(param, rcd_index_host[host]);
     }
 
     DNS_STATE *dnsst = new DNS_STATE;
     dnsst->func = func;
     dnsst->param = param;
-    dnsst->getnum = 0;
     dnsst->times = times;
+#ifndef IGNOREIPV6
+    dnsst->flags = 0;
+#else
+    dnsst->flags = QAAAARECORD | GAAAARECORD;
+#endif
+    dnsst->id = id_cur;
     snprintf(dnsst->host, sizeof(dnsst->host), "%s", host);
 
+
     for (size_t i = 0; i < srvs.size(); ++i) {
-        dnsst->id = srvs[i]->query(host, 1);
-        if (dnsst->id != 0) {
-            dnsst->reqtime = time(nullptr);
-            rcd_index_id[dnsst->id] = dnsst;
-            return 0;
+        if (!(dnsst->flags & QARECORD) && srvs[i]->query(host, 1, dnsst->id)) {
+            dnsst->flags |= QARECORD;
+        }
+        if (!(dnsst->flags & QAAAARECORD) && srvs[i]->query(host, 28, dnsst->id+1)) {
+            dnsst->flags |= QAAAARECORD;
+        }
+        if((dnsst->flags & QARECORD) &&(dnsst->flags & QAAAARECORD)) {
+            break;
         }
     }
-    delete dnsst;
-    return -1;
+    dnsst->reqtime = time(nullptr);
+    rcd_index_id[dnsst->id] = dnsst;
+    id_cur += 2;
 }
 
 void dnstick() {
@@ -297,7 +308,6 @@ void dnstick() {
         auto tmp=i++;
         auto oldstate = tmp->second;
         if (oldstate->addr.size()) {
-            rcd_index_host[oldstate->host] = Dns_rcd(oldstate->addr);
             oldstate->func(oldstate->param, Dns_rcd(oldstate->addr));
             rcd_index_id.erase(tmp);
             delete oldstate;
@@ -347,20 +357,24 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
         NTOHS(dnshdr->numa);
         NTOHS(dnshdr->numa1);
         NTOHS(dnshdr->numa2);
-
+    
+        uint32_t flags=0;
         if (dnshdr->id & 1) {
             if (rcd_index_id.count(dnshdr->id) == 0) {
                 LOGE("[DNS] Get a unkown id:%d\n", dnshdr->id);
                 return;
             }
+            flags |= GARECORD;
         } else {
             if (rcd_index_id.count(dnshdr->id-1) == 0) {
                 LOGE("[DNS] Get a unkown id:%d\n", dnshdr->id);
                 return;
             }
             dnshdr->id--;
+            flags |= GAAAARECORD;
         }
         DNS_STATE *dnsst = rcd_index_id[dnshdr->id];
+        dnsst->flags |= flags;
 
         if ((dnshdr->flag & QR) == 0 || (dnshdr->flag & RCODE_MASK) != 0) {
             LOGE("[DNS] ack error:%u\n", dnshdr->flag & RCODE_MASK);
@@ -368,16 +382,14 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
             unsigned char *p = buf+sizeof(DNS_HDR);
             for (int i = 0; i < dnshdr->numq; ++i) {
                 p = getdomain(buf, p);
-#ifdef _DEGUB_DNS_
+#if defined(DEBUG) && defined(DEGUB_DNS)
                 printf(" :\n");
 #endif
                 p+= sizeof(DNS_QER);
             }
             getrr(buf, p, dnshdr->numa, dnsst->addr);
         }
-#ifndef IGNOREIPV6
-        if (dnsst->getnum) {
-#endif
+        if ((dnsst->flags & GARECORD) &&(dnsst->flags & GAAAARECORD)) {
             rcd_index_id.erase(dnsst->id);
             if (dnsst->addr.size()) {
                 rcd_index_host[dnsst->host] = Dns_rcd(dnsst->addr);
@@ -386,11 +398,7 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
                 dnsst->func(dnsst->param, Dns_rcd(DNS_ERR));
             }
             delete dnsst;
-#ifndef IGNOREIPV6
-        } else {
-            dnsst->getnum = 1;
         }
-#endif
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
@@ -404,14 +412,13 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
 
 
 
-int Dns_srv::query(const char *host, int type) {
+int Dns_srv::query(const char *host, int type, uint32_t id) {
     unsigned char  buf[BUF_SIZE];
     unsigned char  *p;
-    int reqid = id_cur;
     memset(buf, 0, BUF_SIZE);
 
     DNS_HDR  *dnshdr = (DNS_HDR *)buf;
-    dnshdr->id = htons(id_cur);
+    dnshdr->id = htons(id);
     dnshdr->flag = htons(RD);
     dnshdr->numq = htons(1);
 
@@ -432,23 +439,13 @@ int Dns_srv::query(const char *host, int type) {
 
     DNS_QER  *dnsqer = (DNS_QER *)(buf+sizeof(DNS_HDR)+2+strlen(host));
     dnsqer->classes = htons(1);
-    dnsqer->type = htons(1);
+    dnsqer->type = htons(type);
 
     int len = sizeof(DNS_HDR)+sizeof(DNS_QER)+strlen(host)+2;
     if (write(fd, buf, len)!= len) {
         perror("[DNS] write");
         return 0;
     }
-
-#ifndef IGNOREIPV6
-    dnshdr->id = htons(id_cur+1);
-    dnsqer->type = htons(28);
-    if (write(fd, buf, len)!= len) {
-        perror("[DNS] write");
-        return 0;
-    }
-#endif
-    id_cur += 2;
-    return reqid;
+    return id;
 }
 

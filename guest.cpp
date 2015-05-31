@@ -19,17 +19,9 @@
                     "This site is blocked, please contact administrator for more information"
 
                     
-Guest::Guest(int fd): Peer(fd) {
-    struct sockaddr_in6 sa;
-    socklen_t len = sizeof(sa);
-
-    if (getpeername(fd, (struct sockaddr*)&sa, &len)) {
-        perror("getpeername");
-        snprintf(sourceip, sizeof(sourceip), "%s", "Unknown IP");
-    } else {
-        inet_ntop(AF_INET6, &sa.sin6_addr, sourceip, sizeof(sourceip));
-        sourceport = ntohs(sa.sin6_port);
-    }
+Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Peer(fd) {
+    inet_ntop(AF_INET6, &myaddr->sin6_addr, sourceip, sizeof(sourceip));
+    sourceport = ntohs(myaddr->sin6_port);
 
     struct sockaddr_in  Dst;
     socklen_t sin_size = sizeof(Dst);
@@ -158,7 +150,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
              req.method, req.url);
     }
 
-    if (req.ismethod("GET") || req.ismethod("POST") || req.ismethod("CONNECT")) {
+    if (req.ismethod("GET") || req.ismethod("POST") || req.ismethod("CONNECT") || req.ismethod("HEAD")) {
         if (checkblock(req.hostname)) {
             LOG("([%s]:%d): site: %s blocked\n",
                  sourceip, sourceport, req.hostname);

@@ -9,6 +9,39 @@
 #include <netinet/tcp.h>
 
 
+int Listen(short port) {
+    int svsk;
+    if ((svsk = socket(AF_INET6, SOCK_STREAM, 0)) < 0) {
+        LOGOUT("socket error:%s\n", strerror(errno));
+        return -1;
+    }
+
+    int flag = 1;
+
+    if (setsockopt(svsk, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
+        LOGOUT("setsockopt:%s\n", strerror(errno));
+        return -2;
+    }
+
+    struct sockaddr_in6 myaddr;
+    bzero(&myaddr, sizeof(myaddr));
+    myaddr.sin6_family = AF_INET6;
+    myaddr.sin6_port = htons(port);
+    myaddr.sin6_addr = in6addr_any;
+
+    if (bind(svsk, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
+        LOGOUT("bind error:%s\n", strerror(errno));
+        return -3;
+    }
+
+    if (listen(svsk, 10000) < 0) {
+        LOGOUT("listen error:%s\n", strerror(errno));
+        return -4;
+    }
+    return svsk;
+}
+
+
 int Connect(struct sockaddr* addr) {
     int fd;
     if ((fd = socket(addr->sa_family,SOCK_STREAM , 0)) < 0) {

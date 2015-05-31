@@ -13,7 +13,7 @@ protected:
     virtual void shakehandHE(uint32_t events);
     virtual void ReqProc(HttpReqHeader &req)override;
 public:
-    Guest_s(int fd, SSL *ssl);
+    Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL *ssl);
     explicit Guest_s(Guest_s* copy);
     virtual void shakedhand();
     virtual int showerrinfo(int ret, const char *s)override;

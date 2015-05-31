@@ -24,8 +24,6 @@ int ssl_set_npn_callback(SSL* s,
 
 
 int main(int argc, char** argv) {
-    int svsk, clsk;
-
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
     SSL_CTX* ctx = SSL_CTX_new(SSLv23_server_method());
@@ -61,30 +59,9 @@ int main(int argc, char** argv) {
     SSL_CTX_set_verify_depth(ctx, 10);
     SSL_CTX_set_next_protos_advertised_cb(ctx, ssl_set_npn_callback, NULL);
 
-    if ((svsk = socket(AF_INET6, SOCK_STREAM, 0)) < 0) {
-        LOGOUT("socket error:%s\n", strerror(errno));
-        return 2;
-    }
-
-    int flag = 1;
-    if (setsockopt(svsk, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
-        LOGOUT("setsockopt:%s\n", strerror(errno));
-        return 3;
-    }
-
-    struct sockaddr_in6 myaddr;
-    bzero(&myaddr, sizeof(myaddr));
-    myaddr.sin6_family = AF_INET6;
-    myaddr.sin6_port = htons(SPORT);
-    myaddr.sin6_addr = in6addr_any;
-
-    if (bind(svsk, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
-        LOGOUT("bind error:%s\n", strerror(errno));
-        return 4;
-    }
-    if (listen(svsk, 10000) < 0) {
-        LOGOUT("listen error:%s\n", strerror(errno));
-        return 5;
+    int svsk;
+    if ((svsk = Listen(SPORT)) < 0) {
+        return -1;
     }
 
     signal(SIGPIPE, SIG_IGN);
@@ -100,11 +77,11 @@ int main(int argc, char** argv) {
         return -1;
     }
     LOGOUT("Accepting connections ...\n");
-    
+#ifndef DEBUG
     if (daemon(1, 0) < 0) {
         LOGOUT("start daemon error:%s\n", strerror(errno));
     }
-    
+#endif
     while (1) {
         int c;
         struct epoll_event events[20];
@@ -118,6 +95,8 @@ int main(int argc, char** argv) {
         for (int i = 0; i < c; ++i) {
             if (events[i].data.ptr == NULL) {
                 if (events[i].events & EPOLLIN) {
+                    int clsk;
+                    struct sockaddr_in6 myaddr;
                     socklen_t temp = sizeof(myaddr);
                     if ((clsk = accept(svsk, (struct sockaddr*)&myaddr, &temp)) < 0) {
                         perror("accept error");
@@ -139,7 +118,7 @@ int main(int argc, char** argv) {
                     /* 将连接用户的socket 加入到SSL */
                     SSL_set_fd(ssl, clsk);
 
-                    Guest_s* guest = new Guest_s(clsk, ssl);
+                    Guest_s* guest = new Guest_s(clsk, &myaddr, ssl);
 
                     /* 建立SSL 连接*/
                     int ret = SSL_accept(ssl);

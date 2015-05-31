@@ -8,9 +8,10 @@
 #include <arpa/inet.h>
 #include <sys/epoll.h>
 
+//#define DEBUG
+
 extern uint16_t SPORT;
 #define CPORT 3333
-
 
 extern char SHOST[];
 
@@ -34,13 +35,22 @@ extern char SHOST[];
 #define  LOGOUT(...) LOGE(__VA_ARGS__)
 
 #else
+#define  LOGOUT(...) fprintf(stderr, __VA_ARGS__)
+#ifndef DEBUG
 #define  LOG(...)  syslog(LOG_INFO, __VA_ARGS__)
 #define  LOGE(...)   do{\
                         char tmp[1024]; \
                         sprintf(tmp, __VA_ARGS__); \
                         syslog(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
                      }while(0);
-#define  LOGOUT(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define  LOG(...)  fprintf(stdout, __VA_ARGS__)
+#define  LOGE(...)   do{\
+                        char tmp[1024]; \
+                        sprintf(tmp, __VA_ARGS__); \
+                        fprintf(stderr, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
+                     }while(0);
+#endif
 #endif
 
 #ifdef  __cplusplus
