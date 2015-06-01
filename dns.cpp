@@ -307,20 +307,18 @@ void dnstick() {
     for (auto i = rcd_index_id.begin(); i!= rcd_index_id.end();) {
         auto tmp=i++;
         auto oldstate = tmp->second;
+        rcd_index_id.erase(tmp);
         if (oldstate->addr.size()) {
             oldstate->func(oldstate->param, Dns_rcd(oldstate->addr));
-            rcd_index_id.erase(tmp);
-            delete oldstate;
         } else if (time(nullptr)-oldstate->reqtime>= DNSTIMEOUT) {           // 超时重试
             if(oldstate->times < 10) {
                 LOGE("[DNS] %s: time out, retry...\n", oldstate->host);
-                rcd_index_id.erase(tmp);
                 query(oldstate->host, oldstate->func, oldstate->param, ++oldstate->times);
             } else {
                 oldstate->func(oldstate->param, Dns_rcd(DNS_ERR));
             }
-            delete oldstate;
         }
+        delete oldstate;
     }
 }
 
