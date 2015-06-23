@@ -25,7 +25,7 @@ protected:
 public:
     Guest();
     explicit Guest(int fd, struct sockaddr_in6 *myaddr);
-    virtual void Response(HttpResHeader& res);
+    virtual void Response(Peer *who, HttpResHeader& res);
 };
 
 #endif

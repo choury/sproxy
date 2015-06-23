@@ -17,15 +17,15 @@ class Http{
     void FixLenProc();
     void AlwaysProc();
 protected:
+    bool ignore_body = false;
     virtual ssize_t Read(void* buff, size_t len) = 0;
     virtual void ErrProc(int errcode) = 0;
     virtual void ReqProc(HttpReqHeader &req);
     virtual void ResProc(HttpResHeader &res);
     virtual ssize_t DataProc(const void *buff, size_t size) = 0;
 public:
-    enum Initstate{HTTPHEAD, CHUNKLEN, ALWAYS};
-    explicit Http(Initstate state = HTTPHEAD);
-    void (Http::*Http_Proc)()=&Http::HeaderProc;
+    explicit Http(bool transparent = false);
+    void (Http::*Http_Proc)();
 };
 
 #endif

@@ -3,17 +3,11 @@
 
 #include <string.h>
 
-Http::Http(Initstate state) {
-    switch (state) {
-    case HTTPHEAD:
-        Http_Proc = &Http::HeaderProc;
-        break;
-    case CHUNKLEN:
-        Http_Proc = &Http::ChunkLProc;
-        break;
-    case ALWAYS:
+Http::Http(bool transparent) {
+    if(transparent) {
         Http_Proc = &Http::AlwaysProc;
-        break;
+    } else {
+        Http_Proc = &Http::HeaderProc;
     }
 }
 
@@ -34,7 +28,9 @@ void Http::HeaderProc() {
         try {
             if (memcmp(http_buff, "HTTP", 4) == 0) {
                 HttpResHeader res(http_buff);
-                if (res.get("Transfer-Encoding")!= nullptr) {
+                if (ignore_body) {
+                    ignore_body = false;
+                }else if (res.get("Transfer-Encoding")!= nullptr) {
                     Http_Proc = &Http::ChunkLProc;
                 } else if (res.get("Content-Length")!= nullptr) {
                     sscanf(res.get("Content-Length"), "%lu", &http_expectlen);
@@ -43,6 +39,9 @@ void Http::HeaderProc() {
                     Http_Proc = &Http::AlwaysProc;
                 }
                 ResProc(res);
+                if (ignore_body) {
+                    DataProc(http_buff, 0);
+                }
             } else {
                 HttpReqHeader req(http_buff);
                 if (req.ismethod("POST")) {
@@ -62,6 +61,7 @@ void Http::HeaderProc() {
             return;
         }
         if (headerlen != http_getlen) {
+            //TODO 待优化为环形buff
             memmove(http_buff, http_buff+headerlen, http_getlen-headerlen);
         }
         http_getlen-= headerlen;

@@ -17,7 +17,7 @@ Proxy::Proxy(HttpReqHeader &req, Guest *guest):Host(req, guest, SHOST, SPORT) {}
 Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
     Host *exist = (Host *)queryconnect(guest);
     if (dynamic_cast<Proxy*>(exist)) {
-        exist->Request(req, guest);
+        exist->Request(req, true);
         return exist;
     }
     if (exist) {
@@ -75,10 +75,9 @@ int Proxy::showerrinfo(int ret, const char* s) {
 }
 
 
-static int select_next_proto_cb(SSL* ssl,
-                                unsigned char **out, unsigned char *outlen,
-                                const unsigned char *in, unsigned int inlen,
-                                void *arg)
+static int select_alpn_cb(SSL* ssl,
+                           const unsigned char **out, unsigned char *outlen,
+                           const unsigned char *in, unsigned int inlen, void *arg)
 {
     (void)ssl;
     std::set<std::string> proset;
@@ -95,6 +94,10 @@ static int select_next_proto_cb(SSL* ssl,
     LOGE("Can't select a protocol\n");
     return SSL_TLSEXT_ERR_ALERT_FATAL;
 }
+
+#define NEXT_PROTO_STRING \
+    "\x8""http/1.1" \
+    "\x2""h2"
 
 
 void Proxy::waitconnectHE(uint32_t events) {
@@ -134,7 +137,7 @@ void Proxy::waitconnectHE(uint32_t events) {
             goto reconnect;
         }
         SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);  // 去除支持SSLv2 SSLv3
-        SSL_CTX_set_next_proto_select_cb(ctx, select_next_proto_cb, this);
+        SSL_CTX_set_alpn_select_cb(ctx, select_alpn_cb, this);
 
         ssl = SSL_new(ctx);
         SSL_set_fd(ssl, fd);

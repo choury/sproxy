@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 #include <sys/epoll.h>
 
-//#define DEBUG
+#define DEBUG
 
 extern uint16_t SPORT;
 #define CPORT 3333
@@ -63,6 +63,9 @@ extern "C" {
 
 #define NTOHL(x) (x = ntohl(x))
 #define NTOHS(x) (x = ntohs(x))
+
+#define likely(x)   __builtin_expect(!!(x), 1)  
+#define unlikely(x) __builtin_expect(!!(x), 0)    
 
 typedef unsigned char uchar;
 char* strnstr(const char* s1, const char* s2, size_t len);

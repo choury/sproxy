@@ -14,6 +14,7 @@
 
 
 static unsigned int id_cur = 1;
+static bool dns_inited = false;
 
 std::vector<Dns_srv *> srvs;
 
@@ -114,7 +115,7 @@ void Dns_rcd::Down(const sockaddr_un& addr) {
 }
 
 
-unsigned char * getdomain(unsigned char *buf, unsigned char *p) {
+static unsigned char * getdomain(unsigned char *buf, unsigned char *p) {
     while (*p) {
         if (*p > 63) {
             unsigned char *q = buf+((*p & 0x3f) <<8) + *(p+1);
@@ -131,7 +132,7 @@ unsigned char * getdomain(unsigned char *buf, unsigned char *p) {
 }
 
 
-unsigned char *getrr(
+static unsigned char *getrr(
     unsigned char *buf,
     unsigned char *p,
     int num,
@@ -181,7 +182,7 @@ unsigned char *getrr(
     return p;
 }
 
-int dnsinit() {
+static int dnsinit() {
     struct epoll_event event;
     event.events = EPOLLIN;
     for (size_t i = 0; i < srvs.size(); ++i) {
@@ -193,7 +194,7 @@ int dnsinit() {
     if (res_file == NULL) {
         LOGE("[DNS] open resolv file:%s failed:%s\n",
              RESOLV_FILE, strerror(errno) );
-        return -1;
+        return 0;
     }
     char line[100];
     while (fscanf(res_file, "%99[^\n]\n", line)!= EOF) {
@@ -247,6 +248,8 @@ int dnsinit() {
 }
 
 void query(const char *host , DNSCBfunc func, void *param, uint16_t times) {
+    if(!dns_inited)
+        dns_inited = dnsinit();
     unsigned char buf[BUF_SIZE];
     if (inet_pton(PF_INET, host, buf) == 1) {
         sockaddr_un addr;

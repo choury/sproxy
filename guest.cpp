@@ -193,7 +193,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
     }
 }
 
-void Guest::Response(HttpResHeader& res) {
+void Guest::Response(Peer* who, HttpResHeader& res) {
     writelen+=res.getstring(wbuff+writelen);
     struct epoll_event event;
     event.data.ptr = this;

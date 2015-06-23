@@ -1,14 +1,15 @@
 #include "peer.h"
+#include "guest.h"
 
-#include <boost/bimap.hpp>  
+#include <boost/bimap.hpp>
+#include <boost/bimap/multiset_of.hpp>
 
 #include <string.h>
 
 char SHOST[DOMAINLIMIT];
-uint16_t SPORT = 443;
+uint16_t SPORT = 3334;
 
-boost::bimap<Peer *,Peer *> bindex;
-
+boost::bimap<boost::bimaps::multiset_of<Guest *>,Peer *> bindex;
 
 Peer::Peer(int fd):fd(fd) {
 }
@@ -28,7 +29,7 @@ ssize_t Peer::Read(void* buff, size_t size) {
 }
 
 
-ssize_t Peer::Write(Peer *, const void* buff, size_t size) {
+ssize_t Peer::Write(Peer*, const void* buff, size_t size) {
     int len = Min(size, bufleft());
     memcpy(wbuff + writelen, buff, len);
     writelen += len;
@@ -90,40 +91,51 @@ void Peer::ErrProc(int errcode) {
 }
 */
 
-void connect(Peer* p1, Peer* p2) {
-    bindex.insert(boost::bimap<Peer *,Peer *>::value_type(p1,p2));
+void connect(Guest* p1, Peer* p2) {
+    bindex.insert(decltype(bindex)::value_type(p1,p2));
 }
 
 
 
 Peer* queryconnect(Peer* key) {
-    if (bindex.left.count(key)){
-        return bindex.left.find(key)->second;
+    Guest *guest = dynamic_cast<Guest *>(key);
+    if (guest){
+        if (bindex.left.count(guest)){
+            return bindex.left.find(guest)->second;
+        }
+        return nullptr;
+    }else{
+        if (bindex.right.count(key)) {
+            return bindex.right.find(key)->second; 
+        }
+        return nullptr;
     }
-    if (bindex.right.count(key)) {
-        return bindex.right.find(key)->second; 
-    }
-    return nullptr;
 }
 
 /*这里who为this，或者是NULL时都会disconnect所有连接的peer
  * 区别是who 为NULL时不会调用disconnect */
 void Peer::disconnect(Peer* who) {
-    Peer *found = nullptr;
-    if(bindex.left.count(this)){
-        found = bindex.left.find(this)->second;
-        if(who == this || who == nullptr || who == found){
-            bindex.left.erase(this);
+    Guest *this_is_guest= dynamic_cast<Guest *>(this);
+    if(this_is_guest){
+        auto range = bindex.left.equal_range(this_is_guest);
+        for(auto i=range.first;i!=range.second;++i){
+            Peer *found = i->second;
+            if(who == this || who == nullptr || who == found) {
+                bindex.left.erase(i);
+            }
+            if(who) {
+                found->disconnected(this);
+            }
         }
+        return;
     }
+    
     if(bindex.right.count(this)){
-        found = bindex.right.find(this)->second;
-        if(who == this || who == nullptr || who == found){
-            bindex.right.erase(this);
-        }
+        Guest *guest = bindex.right.find(this)->second;
+        bindex.right.erase(this);
+        if(who)
+            guest->disconnected(this);
     }
-    if(who && found)
-        found->disconnected(this);
 }
 
 void Peer::disconnected(Peer* who) {

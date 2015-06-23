@@ -8,20 +8,18 @@
 #define CONERRTIP   "HTTP/1.0 504 Gateway Timeout" CRLF CRLF\
                     "Connect to the site failed, you can try again"
 
-Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0), Http(state), req(req) {
+Host::Host(HttpReqHeader& req, Guest* guest, bool transparent):Peer(0), Http(transparent), req(req) {
     ::connect(guest, this);
-    writelen = req.getstring(wbuff);
-    this->req = req;
+    Request(req, false);
     snprintf(hostname, sizeof(hostname), "%s", req.hostname);
     port = req.port;
     query(hostname, (DNSCBfunc)Host::Dnscallback, this);
 }
 
 
-Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0), Http(ALWAYS), req(req) {
+Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0), Http(true), req(req) {
     ::connect(guest, this);
-    writelen = req.getstring(wbuff);
-    this->req = req;
+    Request(req, false);
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
     this->port = port;
 
@@ -79,7 +77,7 @@ void Host::waitconnectHE(uint32_t events) {
         if (req.ismethod("CONNECT")) {
             HttpResHeader res(connecttip);
             res.id = req.id;
-            guest->Response(res);
+            guest->Response(this, res);
         }
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
     }
@@ -192,13 +190,17 @@ void Host::destory(const char* tip) {
 }
 
 
-void Host::Request(HttpReqHeader &req, Guest *guest) {
+void Host::Request(HttpReqHeader& req, bool direct_send) {
     writelen+= req.getstring(wbuff+writelen);
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-
+    if(direct_send){
+        struct epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLIN | EPOLLOUT;
+        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    }
+    if(req.ismethod("HEAD")){
+        ignore_body = true;
+    }
     this->req = req;
 }
 
@@ -213,7 +215,7 @@ Host* Host::gethost(HttpReqHeader &req, Guest* guest) {
     if (exist && exist->port == req.port
         && strcasecmp(exist->hostname, req.hostname) == 0)
     {
-        exist->Request(req, guest);
+        exist->Request(req, true);
         return exist;
     }
 

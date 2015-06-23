@@ -2,13 +2,13 @@
 #define PARSE_H__
 
 #include "common.h"
+#include "hpack.h"
 
 #include <string>
 #include <map>
+#include <list>
 
 using std::string;
-using std::map;
-
 
 struct Cookie{
     string value;
@@ -16,11 +16,12 @@ struct Cookie{
     string path;
 };
 
+
 class HttpReqHeader{
-    map<string, string> headers;
+    std::list<std::pair<string, string>> headers;
 public:
-    map<string, string> params;
-    uint32_t id;  // 仅由spdy协议使用
+    std::map<string, string> params;
+    uint32_t id = 0;  // 仅由http2协议使用
     char method[20];
     char url[URLLIMIT];
     char hostname[DOMAINLIMIT];
@@ -29,6 +30,7 @@ public:
     char extname[20];
     uint16_t port;
     explicit HttpReqHeader(const char* header);
+    explicit HttpReqHeader(std::list<std::pair<string, string>>&& headers);
     int parse();
     
     bool ismethod(const char* method);
@@ -37,12 +39,13 @@ public:
     const char* get(const char *header);
     
     int getstring(void* outbuff);
+    int getframe(void* outbuff, Index_table *index_table);
 };
 
 class HttpResHeader{
     int fd;       // 由cgi使用
-    map<string, string> headers;
-    map<string, Cookie> Cookies;
+    std::list<std::pair<string, string>> headers;
+    std::map<string, Cookie> Cookies;
 public:
     uint32_t id;  // 仅由spdy协议使用
     char version[20];
@@ -54,6 +57,7 @@ public:
     const char* get(const char *header);
 
     int getstring(void* buff);
+    int getframe(void* outbuff, Index_table *index_table);
     
     int sendheader();                          // 由cgi使用
     int write(const void *buff, size_t size);  // 由cgi使用

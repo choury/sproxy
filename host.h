@@ -24,12 +24,11 @@ protected:
     virtual ssize_t Read(void* buff, size_t len)override;
     virtual void ErrProc(int errcode)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
-    
     static void Dnscallback(Host * host, const Dns_rcd&&);
 public:
-    Host(HttpReqHeader &req, Guest *guest, Http::Initstate state = ALWAYS);
+    Host(HttpReqHeader &req, Guest *guest, bool transparent = true);
     Host(HttpReqHeader &req, Guest *guest, const char* hostname, uint16_t port);
-    virtual void Request(HttpReqHeader &req, Guest *guest);
+    virtual void Request(HttpReqHeader &req, bool direct_send);
     static Host *gethost(HttpReqHeader &req, Guest* guest);
     friend void ConnectSet::tick();
 };

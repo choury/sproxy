@@ -23,9 +23,17 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef TLS_H
-#define TLS_H
+#ifndef TLS_H__
+#define TLS_H__
 
+#ifdef  __cplusplus
+extern "C" {
+#endif
+    
 int parse_tls_header(const char *data, size_t data_len, char **hostname);
+
+#ifdef  __cplusplus
+}
+#endif
 
 #endif

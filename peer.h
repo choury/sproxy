@@ -4,11 +4,11 @@
 #include "con.h"
 #include "common.h"
 
-/* guest   ---   (client) --- host(proxy) 
- * guest_s ---   (server) --- host */
+/* guest   ---   (client) --- host(proxy)
+ * guest_s ---   (server) --- host/file/cgi */
 
 
-
+class Guest;
 
 class Peer:public Con{
 protected:
@@ -30,7 +30,7 @@ public:
     virtual ~Peer();
 };
 
-void connect(Peer *p1, Peer *p2);
+void connect(Guest *p1, Peer *p2);
 Peer *queryconnect(Peer *key);
 
 #include <map>

@@ -14,14 +14,7 @@ using std::vector;
 using std::pair;
 
 
-class Range{
-    void add(ssize_t begin,ssize_t end);
-public:
-    vector<pair<ssize_t,ssize_t>> ranges;
-    Range(const char *range);
-    size_t size();
-    bool calcu(size_t size);
-};
+
 
 Range::Range(const char *range){
     if(range == nullptr) {
@@ -133,57 +126,12 @@ bool Range::calcu(size_t size) {
 }
 
 
-File::File(HttpReqHeader &req, Guest* guest):req(req) {
+File::File(HttpReqHeader &req, Guest* guest):req(req), range(req.get("Range")) {
+    connect(guest, this);
     fd = eventfd(1, O_NONBLOCK);
-    char filename[URLLIMIT];
     snprintf(filename, sizeof(filename), "%s", req.filename);
-    struct stat st;
-repeat:
-    if (stat(filename, &st)) {
-        LOGE("get file info failed: %s\n", strerror(errno));
-        guest->Write(this, H404, strlen(H404));
-        throw 0;
-    }
-    if (S_ISREG(st.st_mode)) {
-        ffd = open(filename, O_RDONLY);
-        if (ffd < 0) {
-            LOGE("open file failed: %s\n", strerror(errno));
-            guest->Write(this, MISCERRTIP, strlen(MISCERRTIP));
-            throw 0;
-        }
-        Range range(req.get("Range"));
-        if(range.size() == 0){
-            HttpResHeader res(H200);
-            leftsize = st.st_size;
-            snprintf((char *)wbuff, sizeof(wbuff), "%lu", leftsize);
-            res.add("Content-Length", (char *)wbuff);
-            guest->Write(this, wbuff, res.getstring(wbuff));
-        } else if (range.size() == 1 && range.calcu(st.st_size)){
-            if(lseek(ffd,range.ranges[0].first,SEEK_SET)<0){
-                LOGE("lseek file failed: %s\n", strerror(errno));
-                guest->Write(this, MISCERRTIP, strlen(MISCERRTIP));
-                throw 0;
-            }
-            HttpResHeader res(H206);
-            leftsize = range.ranges[0].second - range.ranges[0].first+1;
-            snprintf((char *)wbuff, sizeof(wbuff), "bytes %lu-%lu/%lu", 
-                     range.ranges[0].first, range.ranges[0].second, st.st_size);
-            res.add("Content-Range",(char *)wbuff);
-            snprintf((char *)wbuff, sizeof(wbuff), "%lu", leftsize);
-            res.add("Content-Length", (char *)wbuff);
-            guest->Write(this, wbuff, res.getstring(wbuff));
-        } else {
-            HttpResHeader res(H416);
-            snprintf((char *)wbuff, sizeof(wbuff), "bytes */%lu", st.st_size);
-            res.add("Content-Range", (char *)wbuff);
-            guest->Write(this, wbuff, res.getstring(wbuff));
-        }
-        connect(guest, this);
-    } else if (S_ISDIR(st.st_mode)) {
-        strcat(filename, "/index.html");
-        goto repeat;
-    }
-    handleEvent = (void (Con::*)(uint32_t))&File::defaultHE;
+
+    handleEvent = (void (Con::*)(uint32_t))&File::openHE;
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN;
@@ -208,6 +156,71 @@ int File::showerrinfo(int ret, const char* s) {
     return 0;
 }
 
+void File::openHE(uint32_t events) {
+    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
+    if (guest == NULL) {
+        goto err;
+    }
+    
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        LOGE("file unkown error: %s\n", strerror(errno));
+        goto err;
+    }
+    
+    struct stat st;
+    if (stat(filename, &st)) {
+        LOGE("get file info failed: %s\n", strerror(errno));
+        HttpResHeader res(H404);
+        guest->Response(this, res);
+        guest->Write(this, wbuff, 0);
+        goto err;
+    }
+    if (S_ISREG(st.st_mode)) {
+        ffd = open(filename, O_RDONLY);
+        if (ffd < 0) {
+            LOGE("open file failed: %s\n", strerror(errno));
+            guest->Write(this, MISCERRTIP, strlen(MISCERRTIP));
+            goto err;
+        }
+        Range range(req.get("Range"));
+        if(range.size() == 0){
+            HttpResHeader res(H200);
+            leftsize = st.st_size;
+            snprintf((char *)wbuff, sizeof(wbuff), "%lu", leftsize);
+            res.add("Content-Length", (char *)wbuff);
+            guest->Response(this, res);
+        } else if (range.size() == 1 && range.calcu(st.st_size)){
+            if(lseek(ffd,range.ranges[0].first,SEEK_SET)<0){
+                LOGE("lseek file failed: %s\n", strerror(errno));
+                guest->Write(this, MISCERRTIP, strlen(MISCERRTIP));
+                throw 0;
+            }
+            HttpResHeader res(H206);
+            leftsize = range.ranges[0].second - range.ranges[0].first+1;
+            snprintf((char *)wbuff, sizeof(wbuff), "bytes %lu-%lu/%lu", 
+                     range.ranges[0].first, range.ranges[0].second, st.st_size);
+            res.add("Content-Range",(char *)wbuff);
+            snprintf((char *)wbuff, sizeof(wbuff), "%lu", leftsize);
+            res.add("Content-Length", (char *)wbuff);
+            guest->Response(this, res);
+        } else {
+            HttpResHeader res(H416);
+            snprintf((char *)wbuff, sizeof(wbuff), "bytes */%lu", st.st_size);
+            res.add("Content-Range", (char *)wbuff);
+            guest->Response(this, res);
+        }
+    } else if (S_ISDIR(st.st_mode)) {
+        strcat(filename, "/index.html");
+        openHE(events);
+    }
+    handleEvent = (void (Con::*)(uint32_t))&File::defaultHE;
+    return;
+err:
+    clean(this);
+    return;
+}
+
+
 void File::defaultHE(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
@@ -216,8 +229,16 @@ void File::defaultHE(uint32_t events) {
         clean(this);
         return;
     }
+    
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        LOGE("file unkown error: %s\n", strerror(errno));
+        clean(this);
+        return;
+    }
+    
     if (events & EPOLLIN) {
         if (leftsize == 0) {
+            guest->Write(this, wbuff, 0);
             clean(this);
             return;
         }
@@ -241,10 +262,7 @@ void File::defaultHE(uint32_t events) {
         event.events = EPOLLIN;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     }
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("file unkown error: %s\n", strerror(errno));
-        clean(this);
-    }
+    
 }
 
 

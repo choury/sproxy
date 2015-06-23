@@ -9,9 +9,9 @@
 #include <netinet/tcp.h>
 
 
-int Listen(short port) {
+int Listen(int type, short port) {
     int svsk;
-    if ((svsk = socket(AF_INET6, SOCK_STREAM, 0)) < 0) {
+    if ((svsk = socket(AF_INET6, type, 0)) < 0) {
         LOGOUT("socket error:%s\n", strerror(errno));
         return -1;
     }

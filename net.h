@@ -39,7 +39,7 @@ union sockaddr_un{
 
 int spliturl(const char* url, char* host, char* path , uint16_t* port);
 
-int Listen(short port);
+int Listen(int type, short int port);
 int Connect(struct sockaddr*);
 
 #ifdef  __cplusplus
