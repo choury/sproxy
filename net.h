@@ -30,6 +30,8 @@
 #ifdef  __cplusplus
 extern "C" {
 #endif
+    
+extern const char *DEFAULT_CIPHER_LIST;
 
 union sockaddr_un{
     struct sockaddr addr;

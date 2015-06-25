@@ -188,7 +188,9 @@ void Guest_s::ErrProc(int errcode) {
 void Guest_s::ReqProc(HttpReqHeader& req) {
     if(req.id){
         LOG("([%s]:%d):[%d] %s %s\n", sourceip, sourceport, req.id, req.method, req.url);
-        if(strcmp(req.hostname, getenv("HOSTNAME"))){
+        char hostname[HOST_NAME_MAX];
+        gethostname(hostname, sizeof(hostname));
+        if(req.hostname[0] && strcmp(req.hostname, hostname)){
             idmap.insert(decltype(idmap)::value_type(new Host2(req, this), req.id));
         }else {
             if(req.parse()){

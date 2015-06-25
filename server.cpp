@@ -45,6 +45,17 @@ int main(int argc, char** argv) {
     }
     SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);  // 去除支持SSLv2 SSLv3
     SSL_CTX_set_options(ctx, SSL_OP_NO_COMPRESSION);
+    SSL_CTX_set_options(ctx, SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
+    SSL_CTX_set_options(ctx, SSL_OP_SINGLE_ECDH_USE);
+    SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET);
+    SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
+    SSL_CTX_set_cipher_list(ctx, DEFAULT_CIPHER_LIST);
+    SSL_CTX_set_mode(ctx, SSL_MODE_AUTO_RETRY);
+    SSL_CTX_set_mode(ctx, SSL_MODE_RELEASE_BUFFERS);
+
+    EC_KEY* ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
+    SSL_CTX_set_tmp_ecdh(ctx, ecdh);
+    EC_KEY_free(ecdh);
 
     if (SSL_CTX_load_verify_locations(ctx, "/home/choury/keys/ca.pem", NULL) != 1)
         ERR_print_errors_fp(stderr);

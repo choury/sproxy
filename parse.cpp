@@ -330,13 +330,19 @@ HttpReqHeader::HttpReqHeader(const char* header) {
 HttpReqHeader::HttpReqHeader(std::list< std::pair< string, string > >&& headers):headers(headers) {
     snprintf(method, sizeof(method), "%s", get(":method"));
 
-    if (ismethod("CONNECT")) {
-        snprintf(url, sizeof(url), "%s", get(":path"));
+    if (get(":authority")){
+        if (ismethod("CONNECT")) {
+            snprintf(url, sizeof(url), "%s", get(":authority"));
+        } else {
+            snprintf(url, sizeof(url), "%s://%s%s", get(":scheme"),
+                        get(":authority"), get(":path"));
+        }
+        spliturl(url, hostname, path, &port);
     } else {
-        snprintf(url, sizeof(url), "%s://%s%s", get(":scheme"),
-                get(":authority"), get(":path"));
+        snprintf(path, sizeof(path), get(":path"));
+        snprintf(url, sizeof(url), path);
+        hostname[0] = 0;
     }
-    spliturl(url, hostname, path, &port);
     for (auto i = this->headers.begin(); i!= this->headers.end();) {
         if (i->first[0] == ':') {
             this->headers.erase(i++);

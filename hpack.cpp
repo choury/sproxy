@@ -647,15 +647,16 @@ static std::string hfm_decode(const char *s, int len) {
     for(int i = 0; i < len; ++i){
         uint8_t c = s[i];
         for(int j = 8; j; --j) {
-            if(unlikely(curnode->len)) {
-                result += (char)curnode->info;
-                curnode = &root;
-            }
             if(c & 0x80)
                 curnode = curnode->right;
             else
                 curnode = curnode->left;
             c <<= 1;
+            
+            if(unlikely(curnode->len)) {
+                result += (char)curnode->info;
+                curnode = &root;
+            }
         }
     }
     return result;
