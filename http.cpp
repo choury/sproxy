@@ -28,9 +28,7 @@ void Http::HeaderProc() {
         try {
             if (memcmp(http_buff, "HTTP", 4) == 0) {
                 HttpResHeader res(http_buff);
-                if (ignore_body) {
-                    ignore_body = false;
-                }else if (res.get("Transfer-Encoding")!= nullptr) {
+                if (res.get("Transfer-Encoding")!= nullptr) {
                     Http_Proc = &Http::ChunkLProc;
                 } else if (res.get("Content-Length")!= nullptr) {
                     sscanf(res.get("Content-Length"), "%lu", &http_expectlen);
@@ -40,7 +38,9 @@ void Http::HeaderProc() {
                 }
                 ResProc(res);
                 if (ignore_body) {
+                    Http_Proc = &Http::HeaderProc;
                     DataProc(http_buff, 0);
+                    ignore_body = false;
                 }
             } else {
                 HttpReqHeader req(http_buff);

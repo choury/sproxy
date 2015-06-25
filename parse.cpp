@@ -218,7 +218,7 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
     if (path) {
         bzero(path, urllen);
     }
-    if (url[0] == '/') {
+    if (url[0] == '/' && path) {
         strcpy(path, url);
         return 0;
     }
@@ -232,6 +232,8 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
         *port = HTTPPORT;
     } else if (strstr(url, "://") != 0) {
         return -1;
+    } else {
+        *port = HTTPPORT;
     }
 
     if ((addrsplit = strpbrk(url, "/"))) {
@@ -309,12 +311,6 @@ HttpReqHeader::HttpReqHeader(const char* header) {
     }
     
     
-    if (!get("Host") && hostname[0]) {
-        char buff[DOMAINLIMIT];
-        snprintf(buff, sizeof(buff), "%s:%d", hostname, port);
-        headers.push_back(std::make_pair("Host", buff));
-    }
-    
     if (!hostname[0] && get("Host")) {
         if(spliturl(get("Host"), hostname, nullptr, &port))
         {
@@ -329,7 +325,8 @@ HttpReqHeader::HttpReqHeader(const char* header) {
 
 HttpReqHeader::HttpReqHeader(std::list< std::pair< string, string > >&& headers):headers(headers) {
     snprintf(method, sizeof(method), "%s", get(":method"));
-
+    snprintf(path, sizeof(path), get(":path"));
+    
     if (get(":authority")){
         if (ismethod("CONNECT")) {
             snprintf(url, sizeof(url), "%s", get(":authority"));
@@ -337,9 +334,8 @@ HttpReqHeader::HttpReqHeader(std::list< std::pair< string, string > >&& headers)
             snprintf(url, sizeof(url), "%s://%s%s", get(":scheme"),
                         get(":authority"), get(":path"));
         }
-        spliturl(url, hostname, path, &port);
+        spliturl(get(":authority"), hostname, nullptr, &port);
     } else {
-        snprintf(path, sizeof(path), get(":path"));
         snprintf(url, sizeof(url), path);
         hostname[0] = 0;
     }
@@ -446,9 +442,22 @@ int HttpReqHeader::getstring(void* outbuff) {
         if (strcmp(method, "CONNECT") == 0) {
             return 0;
         }
-        sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
-                method, path, &p);
+        if (get("Host") == nullptr && hostname[0] == 0) {
+            sprintf(buff, "%s %s HTTP/1.0" CRLF "%n",
+                        method, path, &p);
+            
+        }else{
+            sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
+                    method, path, &p);
+        }
     }
+    
+    if(get("Host") == nullptr && hostname[0]){
+        char buff[DOMAINLIMIT];
+        snprintf(buff, sizeof(buff), "%s:%d", hostname, port);
+        headers.push_back(std::make_pair("Host", buff));
+    }
+
     for (auto i : headers) {
         int len;
         sprintf(buff + p, "%s: %s" CRLF "%n",

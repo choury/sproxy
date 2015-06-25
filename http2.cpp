@@ -40,28 +40,33 @@ void Http2::DefaultProc() {
     }
     //TODO 待优化，改为循环
     if (http2_expectlen && http2_getlen >= http2_expectlen) {
+        try {
         switch(header->type) {
-        case DATA_TYPE:
-            break;
-        case HEADERS_TYPE:
-            HeadersProc(header);
-            break;
-        case PRIORITY_TYPE:
-            break;
-        case SETTINGS_TYPE:
-            SettingsProc(header);
-            break;
-        case PING_TYPE:
-            PingProc(header);
-            break;
-        case RST_STREAM_TYPE:
-            RstProc(header);
-            break;
-        case GOAWAY_TYPE:
-            GoawayProc(header);
-            break;
-        default:
-            LOGE("unkown http2 frame:%d\n", header->type);
+            case DATA_TYPE:
+                break;
+            case HEADERS_TYPE:
+                HeadersProc(header);
+                break;
+            case PRIORITY_TYPE:
+                break;
+            case SETTINGS_TYPE:
+                SettingsProc(header);
+                break;
+            case PING_TYPE:
+                PingProc(header);
+                break;
+            case RST_STREAM_TYPE:
+                RstProc(header);
+                break;
+            case GOAWAY_TYPE:
+                GoawayProc(header);
+                break;
+            default:
+                LOGE("unkown http2 frame:%d\n", header->type);
+            }
+        }catch(...){
+            ErrProc(0);
+            return;
         }
 
         memmove(http2_buff, http2_buff + http2_expectlen, http2_getlen - http2_expectlen);
