@@ -232,10 +232,8 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
         *port = HTTPPORT;
     } else if (strstr(url, "://") != 0) {
         return -1;
-    } else {
-        *port = HTTPPORT;
     }
-
+    
     if ((addrsplit = strpbrk(url, "/"))) {
         copylen = Min(url+urllen-addrsplit, (URLLIMIT-1));
         if (path) {
@@ -326,6 +324,7 @@ HttpReqHeader::HttpReqHeader(const char* header) {
 HttpReqHeader::HttpReqHeader(std::list< std::pair< string, string > >&& headers):headers(headers) {
     snprintf(method, sizeof(method), "%s", get(":method"));
     snprintf(path, sizeof(path), get(":path"));
+    port = 80;
     
     if (get(":authority")){
         if (ismethod("CONNECT")) {

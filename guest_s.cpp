@@ -186,10 +186,12 @@ void Guest_s::ErrProc(int errcode) {
 
 
 void Guest_s::ReqProc(HttpReqHeader& req) {
+    char hostname[HOST_NAME_MAX];
+    gethostname(hostname, sizeof(hostname));
+    
     if(req.id){
         LOG("([%s]:%d):[%d] %s %s\n", sourceip, sourceport, req.id, req.method, req.url);
-        char hostname[HOST_NAME_MAX];
-        gethostname(hostname, sizeof(hostname));
+        
         if(req.hostname[0] && strcmp(req.hostname, hostname)){
             idmap.insert(decltype(idmap)::value_type(new Host2(req, this), req.id));
         }else {
@@ -202,7 +204,7 @@ void Guest_s::ReqProc(HttpReqHeader& req) {
         return;
     } else {
         LOG("([%s]:%d): %s %s\n", sourceip, sourceport, req.method, req.url);
-        if (req.url[0] == '/') {
+        if (req.url[0] == '/' && (hostname[0] )) {
             if(req.parse()){
                 LOG("([%s]:%d): parse url failed\n", sourceip, sourceport);
                 throw 0;

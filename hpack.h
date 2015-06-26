@@ -22,10 +22,10 @@ class Index_table{
     uint getid(const std::string& name, const std::string& value);
     uint getid(const std::string& name);
     const Index *getvalue(uint id);
-    void set_dynamic_table_size_limit(size_t size);
 public:
     Index_table(size_t dynamic_table_size_limit = 4096);
     ~Index_table();
+    void set_dynamic_table_size_limit(size_t size);
     std::list<std::pair<std::string, std::string>> hpack_decode(const char *s, int len);
     int hpack_encode(char *buf, const std::list<std::pair<std::string, std::string>> headers);
     int hpack_encode(char *buf, const char *name, const char *value);

@@ -11,6 +11,12 @@
 #define H2_PREFACE "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 #define FRAMELENLIMIT 16393
 
+#define get16(a)  (((uchar*)(a))[0]<<8 | ((uchar*)(a))[1])
+#define set16(a, x) do {\
+                        ((uchar*)(a))[0] = (x)>>8;\
+                        ((uchar*)(a))[1] = (x);\
+                    }while(0);
+
 #define get24(a) (((uchar*)(a))[0]<<16 | ((uchar*)(a))[1]<<8 | ((uchar*)(a))[2])
 #define set24(a, x) do {\
                         ((uchar*)(a))[0] = (x)>>16;\
@@ -48,6 +54,17 @@ struct Http2_header {
     uint8_t id[4];
 }__attribute__((packed));
 
+
+struct SettingFrame{
+#define SETTINGS_HEADER_TABLE_SIZE      1
+#define SETTINGS_ENABLE_PUSH            2
+#define SETTINGS_MAX_CONCURRENT_STREAMS 3
+#define SETTINGS_INITIAL_WINDOW_SIZE    4
+#define SETTINGS_MAX_FRAME_SIZE         5
+#define SETTINGS_MAX_HEADER_LIST_SIZE   6
+    uint8_t identifier[2];
+    uint8_t value[4];
+}__attribute__((packed));
 
 class Http2{
     char http2_buff[FRAMELENLIMIT];

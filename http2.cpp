@@ -107,7 +107,19 @@ void Http2::HeadersProc(Http2_header* header) {
 
 
 void Http2::SettingsProc(Http2_header* header) {
+    SettingFrame *sf = (SettingFrame *)(header + 1);
     if((header->flags & ACK_F) == 0) {
+        while((char *)sf-(char *)(header+1) < get24(header->length)){
+            switch(get16(sf->identifier)){
+            case SETTINGS_HEADER_TABLE_SIZE:
+                index_table.set_dynamic_table_size_limit(get32(sf->value));
+                break;
+            default:
+                LOG("Get a unkown setting(%d): %d\n", get16(sf->identifier), get32(sf->value));
+                break;
+            }
+            sf++;
+        }
         set24(header->length, 0);
         header->flags |= ACK_F;
         Write(header,sizeof(*header));
