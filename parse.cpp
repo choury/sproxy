@@ -323,7 +323,7 @@ HttpReqHeader::HttpReqHeader(const char* header) {
 
 HttpReqHeader::HttpReqHeader(std::list< std::pair< string, string > >&& headers):headers(headers) {
     snprintf(method, sizeof(method), "%s", get(":method"));
-    snprintf(path, sizeof(path), get(":path"));
+    snprintf(path, sizeof(path), "%s", get(":path"));
     port = 80;
     
     if (get(":authority")){
@@ -335,7 +335,7 @@ HttpReqHeader::HttpReqHeader(std::list< std::pair< string, string > >&& headers)
         }
         spliturl(get(":authority"), hostname, nullptr, &port);
     } else {
-        snprintf(url, sizeof(url), path);
+        snprintf(url, sizeof(url), "%s", path);
         hostname[0] = 0;
     }
     for (auto i = this->headers.begin(); i!= this->headers.end();) {
@@ -516,7 +516,7 @@ HttpResHeader::HttpResHeader(const char* header, int fd):fd(fd) {
     *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
     memset(version, 0, sizeof(version));
     memset(status, 0, sizeof(status));
-    sscanf((char *)httpheader, "%s%*[ ]%s", version, status);
+    sscanf((char *)httpheader, "%s%*[ ]%[^\r\n]", version, status);
 
     for (char* str = strstr((char *)httpheader, CRLF)+strlen(CRLF); ; str = NULL) {
         char* p = strtok(str, CRLF);
@@ -611,12 +611,13 @@ int HttpResHeader::getframe(void* outbuff, Index_table* index_table) {
     set32(header->id, id);
 
     char *p = (char *)(header + 1);
-    p += index_table->hpack_encode(p, ":status", status);
+    char status_h2[100];
+    sscanf(status,"%s",status_h2);
+    p += index_table->hpack_encode(p, ":status", status_h2);
     p += index_table->hpack_encode(p, headers);
     
     set24(header->length, p-(char *)(header + 1));
     
-//    index_table->hpack_decode((char *)(header+1), get24(header->length));
     return p - (char *)outbuff;
 }
 

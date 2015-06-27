@@ -1,12 +1,15 @@
 #include "host.h"
 #include "proxy.h"
 
+#include <map>
 
 #define DNSERRTIP   "HTTP/1.0 502 Bad Gateway" CRLF CRLF\
                     "Dns Query failed, you can try again"
                     
 #define CONERRTIP   "HTTP/1.0 504 Gateway Timeout" CRLF CRLF\
                     "Connect to the site failed, you can try again"
+                    
+std::map<Host*,time_t> connectmap;
 
 Host::Host(HttpReqHeader& req, Guest* guest, bool transparent):Peer(0), Http(transparent), req(req) {
     ::connect(guest, this);
@@ -40,7 +43,7 @@ int Host::showerrinfo(int ret, const char* s) {
 
 
 void Host::waitconnectHE(uint32_t events) {
-    connectset.del(this);
+    connectmap.erase(this);
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == nullptr) {
         clean(this);
@@ -132,7 +135,7 @@ void Host::defaultHE(uint32_t events) {
 
 
 void Host::closeHE(uint32_t events) {
-    connectset.del(this);
+    connectmap.erase(this);
     delete this;
 }
 
@@ -172,7 +175,7 @@ int Host::connect() {
         event.events = EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
         handleEvent = (void (Con::*)(uint32_t))&Host::waitconnectHE;
-        connectset.add(this);
+        connectmap[this]=time(NULL);
         return 0;
     }
 }
@@ -185,7 +188,7 @@ void Host::destory(const char* tip) {
             guest->Write(this,tip,strlen(tip));
         disconnect(this);
     }
-    connectset.del(this);
+    connectmap.erase(this);
     delete this;
 }
 
@@ -274,22 +277,11 @@ int Host::showstatus(char* buff) {
 }
 
 
-
-ConnectSet connectset;
-
-void ConnectSet::add(Host* key) {
-    map[key]=time(NULL);
-}
-
-void ConnectSet::del(Host* key) {
-    map.erase(key);
-}
-
-void ConnectSet::tick() {
-    for(auto i = map.begin();i != map.end();){
+void hosttick() {
+    for(auto i = connectmap.begin();i != connectmap.end();){
         Host *host = (Host *)(i->first);
         if(host && time(NULL) - i->second >= 30 && host->connect() < 0){
-            map.erase(i++);
+            connectmap.erase(i++);
             LOGE("connect to %s time out.", host->hostname);
             host->destory(CONERRTIP);
         }else{

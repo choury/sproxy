@@ -1,5 +1,5 @@
 #include "guest.h"
-#include "dns.h"
+#include "net.h"
 
 #include <signal.h>
 #include <fcntl.h>
@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
         
         if(c < 5) {
             dnstick();
-            connectset.tick();
+            hosttick();
         }
     }
 

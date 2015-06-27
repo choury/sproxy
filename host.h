@@ -31,7 +31,7 @@ public:
     virtual void Request(HttpReqHeader &req, bool direct_send);
     static Host *gethost(HttpReqHeader &req, Guest* guest);
     virtual int showstatus(char *buff);
-    friend void ConnectSet::tick();
+    friend void hosttick();
 };
 
 #endif

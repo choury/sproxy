@@ -35,16 +35,4 @@ public:
 void connect(Guest *p1, Peer *p2);
 Peer *queryconnect(Peer *key);
 
-#include <map>
-
-class ConnectSet{
-    std::map<Host*,time_t> map;
-public:
-    void add(Host *key);
-    void del(Host *key);
-    void tick();
-};
-
-extern ConnectSet connectset;
-
 #endif

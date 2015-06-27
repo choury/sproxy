@@ -111,7 +111,7 @@ bool Range::calcu(size_t size) {
             if (ranges[i].second == 0) {
                 return false;
             }
-            ranges[i].first  = size-ranges[i].second < 0 ? 0 : size-ranges[i].second;
+            ranges[i].first  = (int)size-ranges[i].second < 0 ? 0 : size-ranges[i].second;
             ranges[i].second = size-1;
         }
         if (ranges[i].second < 0) {

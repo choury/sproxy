@@ -1,7 +1,5 @@
 #include "proxy.h"
 
-#include <set>
-
 #include <openssl/err.h>
 
 #define PROXYERRTIP     "HTTP/1.0 504 Gateway Timeout" CRLF CRLF\
@@ -10,6 +8,7 @@
 #define SSLERRTIP       "HTTP/1.0 502 Bad Gateway" CRLF CRLF\
                         "Ssl shakehand error, you can try again, or switch to another proxy"
 
+extern std::map<Host*,time_t> connectmap;
 
 Proxy::Proxy(HttpReqHeader &req, Guest *guest):Host(req, guest, SHOST, SPORT) {}
 
@@ -101,7 +100,7 @@ static int select_alpn_cb(SSL* ssl,
 
 
 void Proxy::waitconnectHE(uint32_t events) {
-    connectset.del(this);
+    connectmap.erase(this);
     Guest *guest = (Guest *)queryconnect(this);
     if (guest == nullptr) {
         clean(this);

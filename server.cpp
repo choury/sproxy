@@ -1,12 +1,12 @@
+#include "guest_s.h"
+#include "net.h"
+
+#include <set>
+
 #include <fcntl.h>
 #include <signal.h>
 #include <arpa/inet.h>
 #include <openssl/err.h>
-
-#include <set>
-
-#include "guest_s.h"
-#include "dns.h"
 
 int efd;
 
@@ -158,7 +158,7 @@ int main(int argc, char** argv) {
         }
         if(c < 5) {
             dnstick();
-            connectset.tick();
+            hosttick();
         }
     }
     SSL_CTX_free(ctx);
