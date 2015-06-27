@@ -254,14 +254,34 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     return guest->Write(this, buff, Min(size, len));
 }
 
+int Host::showstatus(char* buff) {
+    int wlen,len;
+    sprintf(buff, "%s %n", req.url, &wlen);
+    const char *status;
+    if(handleEvent ==  nullptr)
+        status = "Waiting dns";
+    else if(handleEvent == (void (Con::*)(uint32_t))&Host::waitconnectHE)
+        status = "connecting...";
+    else if(handleEvent == (void (Con::*)(uint32_t))&Host::defaultHE)
+        status = "transfer data";
+    else if(handleEvent == (void (Con::*)(uint32_t))&Host::closeHE)
+        status = "Waiting close";
+    else
+        status = "unkown status";
+    
+    sprintf(buff+wlen, "##%s\r\n%n", status, &len);
+    return wlen + len;
+}
+
+
 
 ConnectSet connectset;
 
-void ConnectSet::add(Peer* key) {
+void ConnectSet::add(Host* key) {
     map[key]=time(NULL);
 }
 
-void ConnectSet::del(Peer* key) {
+void ConnectSet::del(Host* key) {
     map.erase(key);
 }
 

@@ -203,3 +203,25 @@ Proxy::~Proxy() {
         SSL_CTX_free(ctx);
     }
 }
+
+int Proxy::showstatus(char* buff){
+    int wlen,len;
+    sprintf(buff, "%s ##(proxy)%n", req.url, &wlen);
+    const char *status;
+    if(handleEvent ==  nullptr)
+        status = "Waiting dns";
+    else if(handleEvent == (void (Con::*)(uint32_t))&Proxy::waitconnectHE)
+        status = "connecting...";
+    else if(handleEvent == (void (Con::*)(uint32_t))&Proxy::shakehandHE)
+        status = "ssl shankhand";
+    else if(handleEvent == (void (Con::*)(uint32_t))&Proxy::defaultHE)
+        status = "transfer data";
+    else if(handleEvent == (void (Con::*)(uint32_t))&Proxy::closeHE)
+        status = "Waiting close";
+    else
+        status = "unkown status";
+    
+    sprintf(buff+wlen, " %s\r\n%n", status, &len);
+    return wlen + len;
+}
+

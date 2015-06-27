@@ -310,19 +310,41 @@ void dnstick() {
     for (auto i = rcd_index_id.begin(); i!= rcd_index_id.end();) {
         auto tmp=i++;
         auto oldstate = tmp->second;
-        rcd_index_id.erase(tmp);
-        if (oldstate->addr.size()) {
-            oldstate->func(oldstate->param, Dns_rcd(oldstate->addr));
-        } else if (time(nullptr)-oldstate->reqtime>= DNSTIMEOUT) {           // 超时重试
-            if(oldstate->times < 10) {
-                LOGE("[DNS] %s: time out, retry...\n", oldstate->host);
-                query(oldstate->host, oldstate->func, oldstate->param, ++oldstate->times);
-            } else {
-                oldstate->func(oldstate->param, Dns_rcd(DNS_ERR));
+        if (time(nullptr)-oldstate->reqtime>= DNSTIMEOUT){
+            rcd_index_id.erase(tmp);
+            if (oldstate->addr.size()) {
+                oldstate->func(oldstate->param, Dns_rcd(oldstate->addr));
+            } else  {           // 超时重试
+                if(oldstate->times < 5) {
+                    LOGE("[DNS] %s: time out, retry...\n", oldstate->host);
+                    query(oldstate->host, oldstate->func, oldstate->param, ++oldstate->times);
+                } else {
+                    oldstate->func(oldstate->param, Dns_rcd(DNS_ERR));
+                }
             }
+            delete oldstate;
         }
-        delete oldstate;
     }
+}
+
+
+int dnsstatus(char* buff) {
+    int wlen,len;
+    sprintf(buff, "\r\ndns cache:\r\n%n", &wlen);
+    for (auto i = rcd_index_host.begin(); i!= rcd_index_host.end();i++) {
+        sprintf(buff+wlen, "[%s]:%u\r\n%n", i->first.c_str(),
+                (uint)(DNSTTL -(time(nullptr)-i->second.gettime)), &len);
+        wlen += len;
+        
+    }
+    sprintf(buff+wlen, "\r\ndns request:\r\n%n", &len);
+    wlen += len;
+    for (auto i = rcd_index_id.begin(); i!= rcd_index_id.end();i++) {
+        sprintf(buff+wlen, "[%s]:%d(%u)\r\n%n", i->second->host,
+                (uint)(time(nullptr)-i->second->reqtime), i->second->times, &len);
+        wlen += len;
+    }
+    return wlen;
 }
 
 

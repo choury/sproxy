@@ -156,7 +156,7 @@ int main(int argc, char** argv) {
                 (con->*con->handleEvent)(events[i].events);
             }
         }
-        if(c == 0) {
+        if(c < 5) {
             dnstick();
             connectset.tick();
         }

@@ -90,7 +90,7 @@ int main(int argc, char** argv) {
             }
         }
         
-        if(c == 0) {
+        if(c < 5) {
             dnstick();
             connectset.tick();
         }

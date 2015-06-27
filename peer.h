@@ -9,12 +9,13 @@
 
 
 class Guest;
+class Host;
 
 class Peer:public Con{
 protected:
     int fd;
     size_t  writelen = 0;
-    uchar wbuff[1024 * 1024];
+    char wbuff[1024 * 1024];
     explicit Peer(int fd = 0);
     virtual ssize_t Read(void *buff, size_t size);
     virtual ssize_t Write();
@@ -27,6 +28,7 @@ public:
     virtual void writedcb();
     virtual size_t bufleft();
     virtual int showerrinfo(int ret, const char *) = 0;
+    virtual int showstatus(char *buff) {return 0;};
     virtual ~Peer();
 };
 
@@ -36,10 +38,10 @@ Peer *queryconnect(Peer *key);
 #include <map>
 
 class ConnectSet{
-    std::map<Peer *,time_t> map;
+    std::map<Host*,time_t> map;
 public:
-    void add(Peer *key);
-    void del(Peer *key);
+    void add(Host *key);
+    void del(Host *key);
     void tick();
 };
 

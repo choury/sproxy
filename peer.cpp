@@ -17,7 +17,7 @@ Peer::Peer(int fd):fd(fd) {
 
 
 Peer::~Peer() {
-    disconnect(this);
+//    disconnect(this);
     if (fd > 0) {
         epoll_ctl(efd,EPOLL_CTL_DEL,fd,nullptr);
         close(fd);
@@ -118,10 +118,12 @@ void Peer::disconnect(Peer* who) {
     Guest *this_is_guest= dynamic_cast<Guest *>(this);
     if(this_is_guest){
         auto range = bindex.left.equal_range(this_is_guest);
-        for(auto i=range.first;i!=range.second;++i){
+        for(auto i=range.first;i!=range.second;){
             Peer *found = i->second;
             if(who == this || who == nullptr || who == found) {
-                bindex.left.erase(i);
+                bindex.left.erase(i++);
+            }else{
+                i++;
             }
             if(who) {
                 found->disconnected(this);

@@ -10,9 +10,6 @@ class Guest:public Peer, public Http{
 protected:
     char sourceip[INET6_ADDRSTRLEN];
     uint16_t  sourceport;
-    
-    char destip[INET6_ADDRSTRLEN];
-    uint16_t  destport;
 
     virtual int showerrinfo(int ret, const char *)override;
     virtual void defaultHE(uint32_t events);
@@ -23,9 +20,10 @@ protected:
     virtual void ReqProc(HttpReqHeader &req)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
 public:
-    Guest();
     explicit Guest(int fd, struct sockaddr_in6 *myaddr);
+    virtual ~Guest();
     virtual void Response(Peer *who, HttpResHeader& res);
+    virtual int showstatus(char *buff);
 };
 
 #endif

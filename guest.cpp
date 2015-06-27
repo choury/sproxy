@@ -1,6 +1,7 @@
 #include "guest.h"
 #include "host.h"
 
+#include <set>
 #include <string.h>
 #include <arpa/inet.h>
 #include <linux/netfilter_ipv4.h>
@@ -18,50 +19,31 @@
                     "Content-Length:71" CRLF CRLF \
                     "This site is blocked, please contact administrator for more information"
 
+std::set<Guest *> guest_set;
+
+
+int showstatus(char *buff){
+    int wlen;
+    sprintf(buff, "Guest:\r\n%n", &wlen);
+    for(auto i:guest_set){
+        wlen += i->showstatus(buff+wlen);
+    }
+    wlen += dnsstatus(buff+wlen);
+    return wlen;
+}
                     
 Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Peer(fd) {
+    guest_set.insert(this);
     inet_ntop(AF_INET6, &myaddr->sin6_addr, sourceip, sizeof(sourceip));
     sourceport = ntohs(myaddr->sin6_port);
 
-    struct sockaddr_in  Dst;
-    socklen_t sin_size = sizeof(Dst);
-    struct sockaddr_in6 Dst6;
-    socklen_t sin6_size = sizeof(Dst6);
 
-    int socktype;
-
-    if ((getsockopt(fd, SOL_IP, SO_ORIGINAL_DST, &Dst, &sin_size)
-            || (socktype = AF_INET, 0))
-         && (getsockopt(fd, SOL_IPV6, SO_ORIGINAL_DST, &Dst6, &sin6_size)
-            || (socktype = AF_INET6, 0)))
-    {
-/*        LOGE("([%s]:%d): getsockopt error:%s\n",
-              sourceip, sourceport, strerror(errno));*/
-        snprintf(destip, sizeof(destip), "%s", "Unkown IP");
-        destport = CPORT;
-    } else {
-        switch (socktype) {
-        case AF_INET:
-            inet_ntop(socktype, &Dst.sin_addr, destip, INET6_ADDRSTRLEN);
-            destport = ntohs(Dst.sin_port);
-            break;
-
-        case AF_INET6:
-            inet_ntop(socktype, &Dst6.sin6_addr, destip, INET6_ADDRSTRLEN);
-            destport = ntohs(Dst6.sin6_port);
-            break;
-        }
-    }
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN;
     epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
     handleEvent = (void (Con::*)(uint32_t))&Guest::defaultHE;
 }
-
-Guest::Guest() {
-}
-
 
 int Guest::showerrinfo(int ret, const char *s) {
     if (ret < 0) {
@@ -186,6 +168,12 @@ void Guest::ReqProc(HttpReqHeader& req) {
         SPORT = 443;
         spliturl(req.url, SHOST, nullptr, &SPORT);
         Write(this, SWITCHTIP, strlen(SWITCHTIP));
+    } else if (req.ismethod("SHOW")){
+        writelen += ::showstatus(wbuff+writelen);
+        struct epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLIN | EPOLLOUT;
+        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     } else {
         LOGE("([%s]:%d): unsported method:%s\n",
               sourceip, sourceport, req.method);
@@ -216,3 +204,32 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
     }
     return host->Write(this, buff, Min(size, len));
 }
+
+Guest::~Guest(){
+    guest_set.erase(this);
+}
+
+int Guest::showstatus(char* buff){
+    int wlen,len;
+    sprintf(buff, "Guest([%s]:%d): %n", sourceip, sourceport, &wlen);
+    Peer *peer = queryconnect(this);
+    if(peer){
+        len = peer->showstatus(buff+wlen);
+    } else {
+        sprintf(buff+wlen, "null %n", &len);
+        wlen += len;
+        const char *status;
+        if(handleEvent ==  nullptr)
+            status = "creating object";
+        else if(handleEvent == (void (Con::*)(uint32_t))&Guest::defaultHE)
+            status = "transfer data";
+        else if(handleEvent == (void (Con::*)(uint32_t))&Guest::closeHE)
+            status = "Waiting close";
+        else
+            status = "unkown status";
+        sprintf(buff+wlen, "##%s\r\n%n", status, &len);
+    
+    }
+    return wlen+len;
+}
+

@@ -238,6 +238,13 @@ void Guest_s::GoawayProc(Http2_header* header) {
 
 
 ssize_t Guest_s::DataProc(Http2_header* header) {
+    Peer *host = nullptr;
+    if(idmap.right.count(get32(header->id))){
+        host = idmap.right.find(get32(header->id))->second;
+    }
+    if(host) {
+        return host->Write(this, header+1, get24(header->length));
+    }
     return get24(header->length);
 }
 
