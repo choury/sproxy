@@ -211,7 +211,7 @@ Guest::~Guest(){
 
 int Guest::showstatus(char* buff){
     int wlen,len;
-    sprintf(buff, "Guest([%s]:%d): %n", sourceip, sourceport, &wlen);
+    sprintf(buff, "([%s]:%d): %n", sourceip, sourceport, &wlen);
     Peer *peer = queryconnect(this);
     if(peer){
         len = peer->showstatus(buff+wlen);

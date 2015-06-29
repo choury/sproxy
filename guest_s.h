@@ -21,7 +21,7 @@ protected:
     virtual void ReqProc(HttpReqHeader &req)override;
     virtual void RstProc(Http2_header *header)override;
     virtual void GoawayProc(Http2_header *header)override;
-    virtual ssize_t DataProc(Http2_header *header)override;
+    virtual ssize_t DataProc2(Http2_header *header)override;
 public:
     Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL *ssl);
     virtual void shakedhand();

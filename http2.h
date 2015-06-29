@@ -84,7 +84,7 @@ protected:
     virtual void ResProc(HttpResHeader &res);
     virtual void RstProc(Http2_header *header);
     virtual void GoawayProc(Http2_header *header);
-    virtual ssize_t DataProc(Http2_header *header)=0;
+    virtual ssize_t DataProc2(Http2_header *header)=0;
 public:
     void (Http2::*Http2_Proc)()=&Http2::InitProc;
     Http2();

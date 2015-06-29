@@ -23,7 +23,7 @@ public:
     explicit Guest(int fd, struct sockaddr_in6 *myaddr);
     virtual ~Guest();
     virtual void Response(Peer *who, HttpResHeader& res);
-    virtual int showstatus(char *buff);
+    virtual int showstatus(char *buff)override;
 };
 
 #endif

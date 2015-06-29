@@ -30,7 +30,7 @@ public:
     Host(HttpReqHeader &req, Guest *guest, const char* hostname, uint16_t port);
     virtual void Request(HttpReqHeader &req, bool direct_send);
     static Host *gethost(HttpReqHeader &req, Guest* guest);
-    virtual int showstatus(char *buff);
+    virtual int showstatus(char *buff)override;
     friend void hosttick();
 };
 
