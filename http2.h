@@ -66,29 +66,61 @@ struct SettingFrame{
     uint8_t value[4];
 }__attribute__((packed));
 
-class Http2{
+
+#define ERR_NO_ERROR            0
+#define ERR_PROTOCOL_ERROR      1
+#define ERR_INTERNAL_ERROR      2
+#define ERR_FLOW_CONTROL_ERROR  3
+#define ERR_SETTINGS_TIMEOUT    4
+#define ERR_STREAM_CLOSED       5
+#define ERR_FRAME_SIZE_ERROR    6
+#define ERR_REFUSED_STREAM      7
+#define ERR_CANCEL              8
+#define ERR_COMPRESSION_ERROR   9
+#define ERR_CONNECT_ERROR       10
+#define ERR_ENHANCE_YOUR_CALM   11
+#define ERR_INADEQUATE_SECURITY 12
+#define ERR_HTTP_1_1_REQUIRED   13
+
+class Http2Base{
+protected:
     char http2_buff[FRAMELENLIMIT];
     size_t http2_getlen = 0;
-    size_t http2_expectlen = strlen(H2_PREFACE);
-    void InitProc();
+    size_t http2_expectlen = 0;
+    Index_table request_table;
+    Index_table response_table;
     void DefaultProc();
-    void HeadersProc(Http2_header *header);
-    void SettingsProc(Http2_header *header);
-    void PingProc(Http2_header *header);
-protected:
-    Index_table index_table;
+    void Reset(uint32_t id, uint32_t code);
+    virtual void InitProc()=0;
+    virtual void HeadersProc(Http2_header *header) = 0;
     virtual ssize_t Read(void* buff, size_t len) = 0;
-    virtual ssize_t Write(const void* buff, size_t len) = 0;
+    virtual ssize_t Write2(const void* buff, size_t len) = 0;
+    virtual void SettingsProc(Http2_header *header);
+    virtual void PingProc(Http2_header *header);
     virtual void ErrProc(int errcode) = 0;
-    virtual void ReqProc(HttpReqHeader &req);
-    virtual void ResProc(HttpResHeader &res);
     virtual void RstProc(Http2_header *header);
     virtual void GoawayProc(Http2_header *header);
-    virtual ssize_t DataProc2(Http2_header *header)=0;
-public:
-    void (Http2::*Http2_Proc)()=&Http2::InitProc;
-    Http2();
+    virtual void DataProc2(Http2_header *header)=0;
+    void (Http2Base::*Http2_Proc)()=&Http2Base::InitProc;
 };
 
+class Http2Res:public Http2Base {
+protected:
+    virtual void InitProc()override;
+    virtual void HeadersProc(Http2_header *header)override;
+    virtual void ReqProc(HttpReqHeader &req) = 0;
+public:
+    Http2Res();
+};
+
+
+class Http2Req:public Http2Base {
+protected:
+    virtual void InitProc()override;
+    virtual void HeadersProc(Http2_header *header)override;
+    virtual void ResProc(HttpResHeader &res) = 0;
+public:
+    void init();
+};
 
 #endif

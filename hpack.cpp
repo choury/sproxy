@@ -753,9 +753,6 @@ Index_table::Index_table(size_t dynamic_table_size_limit):dynamic_table_size_lim
 void Index_table::add_dynamic_table(const std::string &name, const std::string &value){
     Index *index=new Index{name, value, dynamic_table.size() + evicted_count};
     size_t entry_size = index->name.size() + index->value.size() + 32;
-    if(dynamic_table_size + entry_size > dynamic_table_size_limit) {
-        evict_dynamic_table(dynamic_table_size + entry_size - dynamic_table_size_limit); 
-    }
     dynamic_table[index->id]=index;
     dynamic_map.insert(decltype(dynamic_map)::value_type(name+char(0)+value, index));
     dynamic_table_size += entry_size;
@@ -787,7 +784,7 @@ const Index *Index_table::getvalue(uint id) {
         index.id=id;
         return &index;
     }else{
-        size_t key = id - static_table_count + evicted_count -1;
+        size_t key = dynamic_table.size() - (id - static_table_count) + evicted_count;
         if(dynamic_table.count(key))
             return dynamic_table[key];
         else
@@ -798,20 +795,17 @@ const Index *Index_table::getvalue(uint id) {
 void Index_table::set_dynamic_table_size_limit(size_t size){
     dynamic_table_size_limit = size;
     if(dynamic_table_size > size) {
-        evict_dynamic_table(dynamic_table.size()-size);
+        evict_dynamic_table();
     }
 }
 
-void Index_table::evict_dynamic_table(size_t size){
-    if(dynamic_table.size()==0)
-        return;
-    size_t evicted_size = 0;
-    while(evicted_size < size){
+void Index_table::evict_dynamic_table(){
+    while(dynamic_table_size > dynamic_table_size_limit && dynamic_table.size()){
         Index *index = dynamic_table[evicted_count];
         dynamic_table.erase(evicted_count);
         dynamic_map.right.erase(index);
         evicted_count++;
-        evicted_size += index->name.size() + index->value.size() + 32;
+        dynamic_table_size -= index->name.size() + index->value.size() + 32;
         delete index;
     }
 }
@@ -864,6 +858,7 @@ std::list< std::pair< std::string, std::string > > Index_table::hpack_decode(con
             headers.push_back(std::make_pair(name, value));
         }
     }
+    evict_dynamic_table();
     return headers;
 }
 
@@ -872,10 +867,14 @@ int Index_table::hpack_encode(char *buf, const std::list< std::pair< std::string
     for(auto i:headers) {
         buf += hpack_encode(buf, i.first.c_str(), i.second.c_str());
     }
+    evict_dynamic_table();
     return buf - buf_begin;
 }
 
 int Index_table::hpack_encode(char* buf, const char* Name, const char* value) {
+    if(!hpack_inited)
+        init_hpack();
+    
     char *buf_begin = buf;
     std::string name;
     while(*Name) {

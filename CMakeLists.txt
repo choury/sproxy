@@ -13,8 +13,8 @@ lib.c parse.cpp server.cpp net.c dns.cpp)
 
 
 
-add_executable(sproxy_client http.cpp http2.cpp
-hpack.cpp peer.cpp guest.cpp host.cpp proxy.cpp 
+add_executable(sproxy_client http.cpp http2.cpp 
+hpack.cpp peer.cpp guest.cpp host.cpp proxy.cpp proxy2.cpp
 lib.c parse.cpp client.cpp net.c dns.cpp)
 
 

@@ -22,6 +22,7 @@ class HttpReqHeader{
 public:
     std::map<string, string> params;
     uint32_t id = 0;  // 仅由http2协议使用
+    uint8_t flags = 0;
     char method[20];
     char url[URLLIMIT];
     char hostname[DOMAINLIMIT];
@@ -29,7 +30,7 @@ public:
     char filename[URLLIMIT];
     char extname[20];
     uint16_t port;
-    explicit HttpReqHeader(const char* header);
+    explicit HttpReqHeader(const char* header = nullptr);
     explicit HttpReqHeader(std::list<std::pair<string, string>>&& headers);
     int parse();
     
@@ -47,10 +48,11 @@ class HttpResHeader{
     std::list<std::pair<string, string>> headers;
     std::map<string, Cookie> Cookies;
 public:
-    uint32_t id;  // 仅由spdy协议使用
-    char version[20];
+    uint32_t id = 0;  // 仅由http2协议使用
+    uint8_t flags = 0;
     char status[100];
     explicit HttpResHeader(const char* header, int fd=0);
+    explicit HttpResHeader(std::list<std::pair<string, string>>&& headers);
     
     void add(const char *header, const char *value);
     void del(const char *header);
@@ -60,7 +62,7 @@ public:
     int getframe(void* outbuff, Index_table *index_table);
     
     int sendheader();                          // 由cgi使用
-    int write(const void *buff, size_t size);  // 由cgi使用
+    int write(const void *outbuff, size_t size);  // 由cgi使用
 };
 
 

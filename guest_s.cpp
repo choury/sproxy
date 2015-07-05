@@ -26,7 +26,7 @@ ssize_t Guest_s::Read(void* buff, size_t size) {
     return SSL_read(ssl, buff, size);
 }
 
-ssize_t Guest_s::Write(const void* buff, size_t size) {
+ssize_t Guest_s::Write2(const void* buff, size_t size) {
     return Peer::Write(this, buff, size);
 }
 
@@ -38,12 +38,13 @@ ssize_t Guest_s::Write(Peer* who, const void* buff, size_t size) {
         if(idmap.left.count(who)){
             set32(header.id, idmap.left.find(who)->second);
         }else{
-            who->clean(this);
+            who->clean(this, PEER_LOST_ERR);
             return -1;
         }
         set24(header.length, size);
         if(size == 0) {
             header.flags = END_STREAM_F;
+            idmap.left.erase(who);
         }
         header.type = 0;
         Peer::Write(who, &header, sizeof(header));
@@ -100,7 +101,7 @@ void Guest_s::defaultHE_h2(uint32_t events)
             LOGE("([%s]:%d): guest_s error:%s\n",
                   sourceip, sourceport, strerror(error));
         }
-        clean(this);
+        clean(this, INTERNAL_ERR);
         return;
     }
     
@@ -113,7 +114,7 @@ void Guest_s::defaultHE_h2(uint32_t events)
             int ret = Write();
             if (ret <= 0) {
                 if (showerrinfo(ret, "guest_s write error")) {
-                    clean(this);
+                    clean(this, WRITE_ERR);
                 }
                 return;
             }
@@ -130,26 +131,30 @@ void Guest_s::defaultHE_h2(uint32_t events)
 
 
 int Guest_s::showerrinfo(int ret, const char* s) {
-    epoll_event event;
-    event.data.ptr = this;
-    int error = SSL_get_error(ssl, ret);
-    ERR_clear_error();
-    switch (error) {
-    case SSL_ERROR_WANT_READ:
-        return 0;
-    case SSL_ERROR_WANT_WRITE:
-        event.events = EPOLLIN|EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-        return 0;
-    case SSL_ERROR_ZERO_RETURN:
-        break;
-    case SSL_ERROR_SYSCALL:
-        LOGE("([%s]:%d): %s:%s\n",
-              sourceip, sourceport, s, strerror(errno));
-        break;
-    default:
-        LOGE("([%s]:%d): %s:%s\n",
-              sourceip, sourceport, s, ERR_error_string(error, NULL));
+    if(ret<=0) {
+        epoll_event event;
+        event.data.ptr = this;
+        int error = SSL_get_error(ssl, ret);
+        ERR_clear_error();
+        switch (error) {
+        case SSL_ERROR_WANT_READ:
+            return 0;
+        case SSL_ERROR_WANT_WRITE:
+            event.events = EPOLLIN|EPOLLOUT;
+            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            return 0;
+        case SSL_ERROR_ZERO_RETURN:
+            break;
+        case SSL_ERROR_SYSCALL:
+            LOGE("([%s]:%d): %s:%s\n",
+                sourceip, sourceport, s, strerror(errno));
+            break;
+        default:
+            LOGE("([%s]:%d): %s:%s\n",
+                sourceip, sourceport, s, ERR_error_string(error, NULL));
+        }
+    }else{
+         LOGE("([%s]:%d): %s:%d\n", sourceip, sourceport, s, ret);
     }
     return 1;
 }
@@ -161,7 +166,7 @@ void Guest_s::shakehandHE(uint32_t events) {
         int ret = SSL_do_handshake(ssl);
         if (ret != 1) {
             if (showerrinfo(ret, "ssl accept error")) {
-                clean(this);
+                clean(this, SSL_SHAKEHAND_ERR);
             }
         } else {
             shakedhand();
@@ -176,12 +181,23 @@ void Guest_s::shakehandHE(uint32_t events) {
             LOGE("([%s]:%d): guest_s error:%s\n",
                   sourceip, sourceport, strerror(error));
         }
-        clean(this);
+        clean(this, INTERNAL_ERR);
     }
 }
 
 void Guest_s::ErrProc(int errcode) {
     Guest::ErrProc(errcode);
+}
+
+void Guest_s::RstProc(Http2_header* header) {
+    uint32_t id = get32(header->id);
+    uint32_t code = get32(header+1);    
+    if(idmap.right.count(id)){
+        if(code)
+            LOGE("([%s]:%d): reset stream [%d]: %d\n", sourceip, sourceport, id, code);
+        idmap.right.find(id)->second->clean(this, code);
+        idmap.right.erase(id);
+    }
 }
 
 
@@ -220,32 +236,20 @@ void Guest_s::ReqProc(HttpReqHeader& req) {
     }
 }
 
-void Guest_s::RstProc(Http2_header* header) {
-    uint id = get32(header->id);
-    uint error_code = get32(header+1);
-    LOGE("([%s]:%d): reset stream [%d]: %d\n", sourceip, sourceport, id, error_code);
-    
-    if(idmap.right.count(id)){
-        idmap.right.find(id)->second->clean(this);
-        idmap.right.erase(id);
-    }
-}
-
 
 void Guest_s::GoawayProc(Http2_header* header) {
-    clean(this);
+    uint32_t *id = (uint32_t *)(header+1);
+    clean(this, get32(id+1));
 }
 
 
-ssize_t Guest_s::DataProc2(Http2_header* header) {
-    Peer *host = nullptr;
+void Guest_s::DataProc2(Http2_header* header) {
     if(idmap.right.count(get32(header->id))){
-        host = idmap.right.find(get32(header->id))->second;
+        Peer *host = idmap.right.find(get32(header->id))->second;
+        host->Write(this, header+1, get24(header->length));
+    }else{
+        Reset(get32(header->id), ERR_STREAM_CLOSED);
     }
-    if(host) {
-        return host->Write(this, header+1, get24(header->length));
-    }
-    return get24(header->length);
 }
 
 
@@ -254,12 +258,12 @@ void Guest_s::Response(Peer *who, HttpResHeader& res){
         if(idmap.left.count(who)){
             res.id = idmap.left.find(who)->second;
         }else{
-            who->clean(this);
+            who->clean(this, PEER_LOST_ERR);
             return;
         }
         res.del("Transfer-Encoding");
         res.del("Connection");
-        writelen+=res.getframe(wbuff+writelen, &index_table);
+        writelen+=res.getframe(wbuff+writelen, &request_table);
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLIN | EPOLLOUT;
@@ -269,15 +273,16 @@ void Guest_s::Response(Peer *who, HttpResHeader& res){
     }
 }
 
-void Guest_s::clean(Peer* who) {
+void Guest_s::clean(Peer* who, uint32_t errcode) {
     if(handleEvent == &Guest_s::defaultHE_h2) {
         if(who == this) {
-            Peer::clean(who);
-        }else{
+            Peer::clean(who, errcode);
+        }else if(idmap.left.count(who)){
+            Reset(idmap.left.find(who)->second, errcode>30?ERR_INTERNAL_ERROR:errcode);
             idmap.left.erase(who);
         }
     }else {
-        Peer::clean(who);
+        Peer::clean(who, errcode);
     }
 }
 

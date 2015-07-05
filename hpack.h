@@ -17,7 +17,7 @@ class Index_table{
     size_t evicted_count = 1;
     std::map<size_t, Index *> dynamic_table;
     boost::bimap<boost::bimaps::multiset_of<std::string>, Index*> dynamic_map;
-    void evict_dynamic_table(size_t size);
+    void evict_dynamic_table();
     void add_dynamic_table(const std::string &name, const std::string &value);
     uint getid(const std::string& name, const std::string& value);
     uint getid(const std::string& name);

@@ -6,7 +6,7 @@
 #include "dns.h"
 
 
-class Host:public Peer, public Http{
+class Host:public Peer, public HttpReq{
     size_t testedaddr = 0;
     std::vector<sockaddr_un> addrs;
 protected:
@@ -26,9 +26,10 @@ protected:
     virtual ssize_t DataProc(const void *buff, size_t size)override;
     static void Dnscallback(Host * host, const Dns_rcd&&);
 public:
+    Host(int fd):Peer(fd){}
     Host(HttpReqHeader &req, Guest *guest, bool transparent = true);
     Host(HttpReqHeader &req, Guest *guest, const char* hostname, uint16_t port);
-    virtual void Request(HttpReqHeader &req, bool direct_send);
+    virtual void Request(Guest* guest, HttpReqHeader &req, bool direct_send);
     static Host *gethost(HttpReqHeader &req, Guest* guest);
     virtual int showstatus(char *buff)override;
     friend void hosttick();

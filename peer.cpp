@@ -9,7 +9,7 @@
 char SHOST[DOMAINLIMIT];
 uint16_t SPORT = 3334;
 
-boost::bimap<boost::bimaps::multiset_of<Guest *>,Peer *> bindex;
+boost::bimap<boost::bimaps::multiset_of<Guest *>,boost::bimaps::multiset_of<Peer *>> bindex;
 
 Peer::Peer(int fd):fd(fd) {
 }
@@ -92,6 +92,10 @@ void Peer::ErrProc(int errcode) {
 */
 
 void connect(Guest* p1, Peer* p2) {
+    auto range = bindex.left.equal_range(p1);
+    for(auto i=range.first;i!=range.second;i++)
+        if(p2 == i->second)
+            return;
     bindex.insert(decltype(bindex)::value_type(p1,p2));
 }
 
@@ -114,7 +118,7 @@ Peer* queryconnect(Peer* key) {
 
 /*这里who为this，或者是NULL时都会disconnect所有连接的peer
  * 区别是who 为NULL时不会调用disconnect */
-void Peer::disconnect(Peer* who) {
+void Peer::disconnect(Peer* who, uint32_t errcode) {
     Guest *this_is_guest= dynamic_cast<Guest *>(this);
     if(this_is_guest){
         auto range = bindex.left.equal_range(this_is_guest);
@@ -126,27 +130,33 @@ void Peer::disconnect(Peer* who) {
                 i++;
             }
             if(who) {
-                found->disconnected(this);
+                found->disconnected(this, errcode);
             }
         }
         return;
     }
     
-    if(bindex.right.count(this)){
-        Guest *guest = bindex.right.find(this)->second;
-        bindex.right.erase(this);
-        if(who)
-            guest->disconnected(this);
+    auto range = bindex.right.equal_range(this);
+    for(auto i=range.first;i!=range.second;){
+        Guest *found = i->second;
+        if(who == this || who == nullptr || who == found) {
+            bindex.right.erase(i++);
+        }else{
+            i++;
+        }
+        if(who) {
+            found->disconnected(this, errcode);
+        }
     }
 }
 
-void Peer::disconnected(Peer* who) {
-    return clean(who);
+void Peer::disconnected(Peer* who, uint32_t errcode) {
+    return clean(who, errcode);
 }
 
 
-void Peer::clean(Peer* who) {
-    disconnect(who);
+void Peer::clean(Peer* who, uint32_t errcode) {
+    disconnect(who, errcode);
     if(fd > 0) {
         struct epoll_event event;
         event.data.ptr = this;

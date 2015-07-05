@@ -11,18 +11,18 @@
                     
 std::map<Host*,time_t> connectmap;
 
-Host::Host(HttpReqHeader& req, Guest* guest, bool transparent):Peer(0), Http(transparent), req(req) {
+Host::Host(HttpReqHeader& req, Guest* guest, bool transparent):Peer(0), HttpReq(transparent), req(req) {
     ::connect(guest, this);
-    Request(req, false);
+    Request(guest, req, false);
     snprintf(hostname, sizeof(hostname), "%s", req.hostname);
     port = req.port;
     query(hostname, (DNSCBfunc)Host::Dnscallback, this);
 }
 
 
-Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0), Http(true), req(req) {
+Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0), HttpReq(true), req(req) {
     ::connect(guest, this);
-    Request(req, false);
+    Request(guest, req, false);
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
     this->port = port;
 
@@ -37,6 +37,8 @@ int Host::showerrinfo(int ret, const char* s) {
         } else {
             return 0;
         }
+    }else if(ret){
+        LOGE("%s:%d\n",s, ret);
     }
     return 1;
 }
@@ -46,7 +48,7 @@ void Host::waitconnectHE(uint32_t events) {
     connectmap.erase(this);
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == nullptr) {
-        clean(this);
+        clean(this, PEER_LOST_ERR);
         return;
     }
     
@@ -79,7 +81,6 @@ void Host::waitconnectHE(uint32_t events) {
 
         if (req.ismethod("CONNECT")) {
             HttpResHeader res(connecttip);
-            res.id = req.id;
             guest->Response(this, res);
         }
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
@@ -99,13 +100,13 @@ void Host::defaultHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("host error: %s\n", strerror(error));
         }
-        clean(this);
+        clean(this, INTERNAL_ERR);
         return;
     }
     
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
-        clean(this);
+        clean(this, PEER_LOST_ERR);
         return;
     }
 
@@ -118,7 +119,7 @@ void Host::defaultHE(uint32_t events) {
             int ret = Write();
             if (ret <= 0) {
                 if (showerrinfo(ret, "host write error")) {
-                    clean(this);
+                    clean(this, WRITE_ERR);
                 }
                 return;
             }
@@ -186,14 +187,14 @@ void Host::destory(const char* tip) {
     if(guest){
         if(tip)
             guest->Write(this,tip,strlen(tip));
-        disconnect(this);
+        disconnect(this, CONNECT_ERR);
     }
     connectmap.erase(this);
     delete this;
 }
 
 
-void Host::Request(HttpReqHeader& req, bool direct_send) {
+void Host::Request(Guest* guest, HttpReqHeader& req, bool direct_send) {
     writelen+= req.getstring(wbuff+writelen);
     if(direct_send){
         struct epoll_event event;
@@ -201,8 +202,11 @@ void Host::Request(HttpReqHeader& req, bool direct_send) {
         event.events = EPOLLIN | EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     }
+    guest->flag = 0;
     if(req.ismethod("HEAD")){
         ignore_body = true;
+    }else if(req.ismethod("CONNECT")){
+        guest->flag = ISCONNECT_F;
     }
     this->req = req;
 }
@@ -218,12 +222,12 @@ Host* Host::gethost(HttpReqHeader &req, Guest* guest) {
     if (exist && exist->port == req.port
         && strcasecmp(exist->hostname, req.hostname) == 0)
     {
-        exist->Request(req, true);
+        exist->Request(guest, req, true);
         return exist;
     }
 
     if (exist) { 
-        exist->clean(nullptr);
+        exist->clean(nullptr, NOERROR);
     }
     return new Host(req, guest);
 }
@@ -234,15 +238,15 @@ ssize_t Host::Read(void* buff, size_t len){
 }
 
 void Host::ErrProc(int errcode) {
-    if (showerrinfo(errcode, "Host read")) {
-        clean(this);
+    if (showerrinfo(errcode, "Host-http error")) {
+        clean(this, errcode);
     }
 }
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
-        clean(this);
+        clean(this, PEER_LOST_ERR);
         return -1;
     }
 
@@ -282,7 +286,7 @@ void hosttick() {
         Host *host = (Host *)(i->first);
         if(host && time(NULL) - i->second >= 30 && host->connect() < 0){
             connectmap.erase(i++);
-            LOGE("connect to %s time out.", host->hostname);
+            LOGE("connect to %s time out.\n", host->hostname);
             host->destory(CONERRTIP);
         }else{
             i++;

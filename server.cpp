@@ -141,7 +141,7 @@ int main(int argc, char** argv) {
                     int ret = SSL_accept(ssl);
                     if (ret != 1) {
                         if (guest->showerrinfo(ret, "ssl accept error")) {
-                            guest->clean(guest);
+                            guest->clean(guest, SSL_SHAKEHAND_ERR);
                         }
                         continue;
                     }

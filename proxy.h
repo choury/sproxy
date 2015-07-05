@@ -15,6 +15,7 @@ protected:
     virtual void waitconnectHE(uint32_t events)override;
     virtual void shakehandHE(uint32_t events);
 public:
+    Proxy(int fd, SSL* ssl, SSL_CTX* ctx):Host(fd), ssl(ssl), ctx(ctx){}
     Proxy(HttpReqHeader &req, Guest *guest);
     virtual ~Proxy();
     static Host *getproxy(HttpReqHeader &req, Guest *guest);

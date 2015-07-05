@@ -9,7 +9,6 @@
 
 
 class Guest;
-class Host;
 
 class Peer:public Con{
 protected:
@@ -19,11 +18,11 @@ protected:
     explicit Peer(int fd = 0);
     virtual ssize_t Read(void *buff, size_t size);
     virtual ssize_t Write();
-    virtual void disconnect(Peer *who);
+    virtual void disconnect(Peer *who, uint32_t errcode);
     virtual void closeHE(uint32_t events) = 0;
 public:
-    virtual void clean(Peer *who);
-    virtual void disconnected(Peer *who);
+    virtual void clean(Peer *who, uint32_t errcode);
+    virtual void disconnected(Peer *who, uint32_t errcode);
     virtual ssize_t Write(Peer* who, const void *buff, size_t size);
     virtual void writedcb();
     virtual size_t bufleft();

@@ -6,7 +6,7 @@
 
 #include <netinet/in.h>
 
-class Guest:public Peer, public Http{
+class Guest:public Peer, public HttpRes{
 protected:
     char sourceip[INET6_ADDRSTRLEN];
     uint16_t  sourceport;
@@ -20,6 +20,10 @@ protected:
     virtual void ReqProc(HttpReqHeader &req)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
 public:
+#define ISCONNECT_F     1
+#define ISCHUNKED_F     2
+#define ISCLOSED_F      4
+    char flag;
     explicit Guest(int fd, struct sockaddr_in6 *myaddr);
     virtual ~Guest();
     virtual void Response(Peer *who, HttpResHeader& res);

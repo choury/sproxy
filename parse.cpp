@@ -280,6 +280,9 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
 
 
 HttpReqHeader::HttpReqHeader(const char* header) {
+    if(!header)
+        return;
+    
     char httpheader[HEADLENLIMIT];
     snprintf(httpheader, sizeof(httpheader), "%s", header);
     *(strstr(httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
@@ -393,23 +396,6 @@ bool HttpReqHeader::ismethod(const char* method) {
     return strcmp(this->method, method) == 0;
 }
 
-char *addnv(void *buff, const char *name, size_t nlen, const char *val, size_t vlen) {
-    uint32_t *p = (uint32_t *)buff;
-    *p++= htonl(nlen);
-    char *q = (char *)p;
-    while (nlen--) {
-        *q++= tolower(*name++);
-    }
-    p = (uint32_t *)q;
-    *p++= htonl(vlen);
-    q = (char *)p;
-    while (vlen--) {
-        *q++= *val++;
-    }
-    return q;
-}
-
-
 void HttpReqHeader::add(const char* header, const char* value) {
     headers.push_back(std::make_pair(header, value));
 }
@@ -469,54 +455,41 @@ int HttpReqHeader::getstring(void* outbuff) {
 }
 
 
-#if 0
-
-int HttpReqHeader::getframe(void* buff, z_stream* destream) {
-    syn_frame* sframe = (syn_frame *)buff;
-    memset(sframe, 0, sizeof(*sframe));
-    sframe->head.magic = CTRL_MAGIC;
-    sframe->head.type = htons(SYN_TYPE);
-    if (strcmp(method, "POST")) {
-        sframe->head.flag = FLAG_FIN;
+int HttpReqHeader::getframe(void* outbuff, Index_table *index_table) {
+    Http2_header *header = (Http2_header *)outbuff;
+    memset(header, 0, sizeof(*header));
+    header->type = HEADERS_TYPE;
+    header->flags = END_HEADERS_F;
+    if(!ismethod("POST") && !ismethod("CONNECT")){
+        header->flags |= END_STREAM_F;
     }
+    set32(header->id, id);
 
-    sframe->id = htonl(id);
-    sframe->priority = 3;
-    char tmpbuff[HEADLENLIMIT];
-
-
-    char *p = tmpbuff;
-    *(uint32_t *)p = htonl(headers.size()+5);
-    p += 4;
-    p = addnv(p, ":method", 7, method, strlen(method));
-    p = addnv(p, ":version", 8, "HTTP/1.1", 8);
-    p = addnv(p, ":host", 5, hostname, strlen(hostname));
-    if (strcmp(method, "CONNECT") == 0) {
-        p = addnv(p, ":path", 5, url, strlen(url));
-    } else {
-        p = addnv(p, ":path", 5, path, strlen(path));
-        p = addnv(p, ":scheme", 7, "http", 4);
+    char *p = (char *)(header + 1);
+    p += index_table->hpack_encode(p, ":method", method);
+    del("host");
+    char authority[URLLIMIT];
+    snprintf(authority, sizeof(authority), "%s:%d", hostname, port);
+    p += index_table->hpack_encode(p, ":authority" ,authority);
+    
+    if(!ismethod("CONNECT")){
+        p += index_table->hpack_encode(p, ":scheme", "http");
+        p += index_table->hpack_encode(p, ":path", path);
     }
-    for (auto i:headers) {
-        p = addnv(p, i.first.data(), i.first.length(),
-                  i.second.data(), i.second.length());
-    }
-    int len = p-tmpbuff;
-    len = sizeof(syn_frame)-sizeof(spdy_head)+
-        spdy_deflate(destream, tmpbuff, len, sframe+1, 0);
-    set24(sframe->head.length, len);
-    return len+sizeof(spdy_head);
+    p += index_table->hpack_encode(p, headers);
+    
+    set24(header->length, p-(char *)(header + 1));
+    
+    return p - (char *)outbuff;
 }
 
-#endif
 
 HttpResHeader::HttpResHeader(const char* header, int fd):fd(fd) {
     char httpheader[HEADLENLIMIT];
     snprintf(httpheader, sizeof(httpheader), "%s", header);
     *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
-    memset(version, 0, sizeof(version));
     memset(status, 0, sizeof(status));
-    sscanf((char *)httpheader, "%s%*[ ]%[^\r\n]", version, status);
+    sscanf((char *)httpheader, "%*s%*[ ]%[^\r\n]", status);
 
     for (char* str = strstr((char *)httpheader, CRLF)+strlen(CRLF); ; str = NULL) {
         char* p = strtok(str, CRLF);
@@ -533,29 +506,9 @@ HttpResHeader::HttpResHeader(const char* header, int fd):fd(fd) {
     }
 }
 
-#if 0
-HttpResHeader::HttpResHeader(const syn_reply_frame* sframe, z_stream* instream) {
-    id = ntohl(sframe->id);
-    int len = get24(sframe->head.length);
-    char buff[HEADLENLIMIT];
-    spdy_inflate(instream, sframe+1, len-(sizeof(*sframe)-sizeof(spdy_head)),
-                 buff, sizeof(buff));
 
-    uint32_t *p = (uint32_t *)buff;
-    uint32_t c = ntohl(*p++);
-    for (size_t i = 0; i < c; ++i) {
-        uint32_t nlen = ntohl(*p++);
-        char *np = (char *)p;
-        *np = toupper(*np);
-        p = (uint32_t*)(np+nlen);
-        uint32_t vlen = ntohl(*p++);
-        char *vp = (char *)p;
-        p = (uint32_t *)((char *)p+vlen);
-        this->headers[string(np, nlen)] = string(vp, vlen);
-    }
-
-    snprintf(version, sizeof(version), "%s", this->headers[":version"].c_str());
-    snprintf(status, sizeof(status), "%s", this->headers[":status"].c_str());
+HttpResHeader::HttpResHeader(std::list<std::pair<string, string>>&& headers):headers(headers) {
+    snprintf(status, sizeof(status), "%s", get(":status"));
     for (auto i = this->headers.begin(); i!= this->headers.end();) {
         if (i->first[0] == ':') {
             this->headers.erase(i++);
@@ -565,7 +518,7 @@ HttpResHeader::HttpResHeader(const syn_reply_frame* sframe, z_stream* instream) 
     }
 }
 
-#endif
+
 void HttpResHeader::add(const char* header, const char* value) {
     headers.push_back(std::make_pair(header, value));
 }

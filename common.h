@@ -65,7 +65,17 @@ extern "C" {
 #define NTOHS(x) (x = ntohs(x))
 
 #define likely(x)   __builtin_expect(!!(x), 1)  
-#define unlikely(x) __builtin_expect(!!(x), 0)    
+#define unlikely(x) __builtin_expect(!!(x), 0)
+
+#define NOERROR             0
+#define CONNECT_ERR         31
+#define SSL_SHAKEHAND_ERR   32
+#define HEAD_TOO_LONG_ERR   33
+#define HTTP_PROTOCOL_ERR   34
+#define READ_ERR            34
+#define WRITE_ERR           36
+#define INTERNAL_ERR        37
+#define PEER_LOST_ERR       38
 
 typedef unsigned char uchar;
 char* strnstr(const char* s1, const char* s2, size_t len);

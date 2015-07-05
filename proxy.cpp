@@ -1,4 +1,5 @@
 #include "proxy.h"
+#include "proxy2.h"
 
 #include <openssl/err.h>
 
@@ -14,13 +15,17 @@ Proxy::Proxy(HttpReqHeader &req, Guest *guest):Host(req, guest, SHOST, SPORT) {}
 
 
 Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
+    if (proxy2) {
+        proxy2->Request(guest, req, true);
+        return proxy2;
+    }
     Host *exist = (Host *)queryconnect(guest);
     if (dynamic_cast<Proxy*>(exist)) {
-        exist->Request(req, true);
+        exist->Request(guest, req, true);
         return exist;
     }
     if (exist) {
-        exist->clean(nullptr);
+        exist->clean(nullptr, NOERROR);
     }
 
     return new Proxy(req, guest);
@@ -50,60 +55,45 @@ ssize_t Proxy::Read(void* buff, size_t size) {
 
 
 int Proxy::showerrinfo(int ret, const char* s) {
-    epoll_event event;
-    event.data.ptr = this;
-    int error = SSL_get_error(ssl, ret);
-    switch (error) {
-    case SSL_ERROR_WANT_READ:
-        event.events = EPOLLIN;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-        return 0;
-    case SSL_ERROR_WANT_WRITE:
-        event.events = EPOLLIN|EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-        return 0;
-    case SSL_ERROR_ZERO_RETURN:
-        break;
-    case SSL_ERROR_SYSCALL:
-        LOGE("%s:%s\n", s, strerror(errno));
-        break;
-    default:
-        LOGE("%s:%s\n", s, ERR_error_string(error, NULL));
+    if(ret <= 0){
+        epoll_event event;
+        event.data.ptr = this;
+        int error = SSL_get_error(ssl, ret);
+        ERR_clear_error();
+        switch (error) {
+        case SSL_ERROR_WANT_READ:
+            event.events = EPOLLIN;
+            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            return 0;
+        case SSL_ERROR_WANT_WRITE:
+            event.events = EPOLLIN|EPOLLOUT;
+            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            return 0;
+        case SSL_ERROR_ZERO_RETURN:
+            break;
+        case SSL_ERROR_SYSCALL:
+            LOGE("%s:%s\n", s, strerror(errno));
+            break;
+        default:
+            LOGE("%s:%s\n", s, ERR_error_string(error, NULL));
+        }
+    } else {
+        LOGE("%s:%d\n", s, ret);
     }
     return 1;
 }
 
 
-static int select_alpn_cb(SSL* ssl,
-                           const unsigned char **out, unsigned char *outlen,
-                           const unsigned char *in, unsigned int inlen, void *arg)
-{
-    (void)ssl;
-    std::set<std::string> proset;
-    while (*in) {
-        uint8_t len = *in++;
-        proset.insert(std::string((const char*)in, len));
-        in+= len;
-    }
-    if (proset.count("http/1.1")) {
-        *out = (unsigned char*)"http/1.1";
-        *outlen = strlen((char*)*out);
-        return SSL_TLSEXT_ERR_OK;
-    }
-    LOGE("Can't select a protocol\n");
-    return SSL_TLSEXT_ERR_ALERT_FATAL;
-}
-
-#define NEXT_PROTO_STRING \
-    "\x8""http/1.1" \
-    "\x2""h2"
+static const unsigned char alpn_protos_string[] =
+    "\x8http/1.1" \
+    "\x2h2";
 
 
 void Proxy::waitconnectHE(uint32_t events) {
     connectmap.erase(this);
     Guest *guest = (Guest *)queryconnect(this);
     if (guest == nullptr) {
-        clean(this);
+        clean(this, PEER_LOST_ERR);
         return;
     }
     
@@ -136,7 +126,7 @@ void Proxy::waitconnectHE(uint32_t events) {
             goto reconnect;
         }
         SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);  // 去除支持SSLv2 SSLv3
-        SSL_CTX_set_alpn_select_cb(ctx, select_alpn_cb, this);
+        SSL_CTX_set_alpn_protos(ctx, alpn_protos_string, sizeof(alpn_protos_string)-1);
 
         ssl = SSL_new(ctx);
         SSL_set_fd(ssl, fd);
@@ -159,7 +149,7 @@ reconnect:
 void Proxy::shakehandHE(uint32_t events) {
     Guest *guest = (Guest *)queryconnect(this);
     if (guest == nullptr) {
-        clean(this);
+        clean(this, PEER_LOST_ERR);
         return;
     }
     if ((events & EPOLLIN) || (events & EPOLLOUT)) {
@@ -179,8 +169,18 @@ void Proxy::shakehandHE(uint32_t events) {
 
         const unsigned char *data;
         unsigned int len;
-        SSL_get0_next_proto_negotiated(ssl, &data, &len);
-        if (data && strncasecmp((const char*)data, "spdy/3.1", len) == 0) {
+        SSL_get0_alpn_selected(ssl, &data, &len);
+        if (data && strncasecmp((const char*)data, "h2", len) == 0) {
+            if(!proxy2){
+                proxy2 = new Proxy2(fd, ssl, ctx);
+                proxy2->init();
+                proxy2->Request(guest, req, true);
+                fd  = 0;
+                ssl = nullptr;
+                ctx = nullptr;
+                disconnect(nullptr, NOERROR);
+                delete this;
+            }
         }
         return;
     }
