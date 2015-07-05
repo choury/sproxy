@@ -1,6 +1,5 @@
 #include "guest_s.h"
 #include "host.h"
-#include "host2.h"
 #include "file.h"
 #include "cgi.h"
 
@@ -209,7 +208,7 @@ void Guest_s::ReqProc(HttpReqHeader& req) {
         LOG("([%s]:%d):[%d] %s %s\n", sourceip, sourceport, req.id, req.method, req.url);
         
         if(req.hostname[0] && strcmp(req.hostname, hostname)){
-            idmap.insert(decltype(idmap)::value_type(new Host2(req, this), req.id));
+            idmap.insert(decltype(idmap)::value_type(new Host(req, this), req.id));
         }else {
             if(req.parse()){
                 LOG("([%s]:%d):[%d] parse url failed\n", sourceip, sourceport, req.id);

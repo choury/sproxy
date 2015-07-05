@@ -2,16 +2,10 @@
 #include "proxy.h"
 
 #include <map>
-
-#define DNSERRTIP   "HTTP/1.0 502 Bad Gateway" CRLF CRLF\
-                    "Dns Query failed, you can try again"
-                    
-#define CONERRTIP   "HTTP/1.0 504 Gateway Timeout" CRLF CRLF\
-                    "Connect to the site failed, you can try again"
                     
 std::map<Host*,time_t> connectmap;
 
-Host::Host(HttpReqHeader& req, Guest* guest, bool transparent):Peer(0), HttpReq(transparent), req(req) {
+Host::Host(HttpReqHeader& req, Guest* guest):Peer(0), HttpReq(req.id?req.ismethod("CONNECT"):true), req(req) {
     ::connect(guest, this);
     Request(guest, req, false);
     snprintf(hostname, sizeof(hostname), "%s", req.hostname);
@@ -88,7 +82,7 @@ void Host::waitconnectHE(uint32_t events) {
     return;
 reconnect:
     if (connect() < 0) {
-        destory(CONERRTIP);
+        destory(H504);
     }
 }
 
@@ -143,7 +137,7 @@ void Host::closeHE(uint32_t events) {
 void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
     if (rcd.result != 0) {
         LOGE("Dns query failed: %s\n", host->hostname);
-        host->destory(DNSERRTIP);
+        host->destory(H502);
     } else {
         host->addrs = rcd.addrs;
         for (size_t i = 0; i < host->addrs.size(); ++i) {
@@ -151,7 +145,7 @@ void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
         }
         if (host->connect() < 0) {
             LOGE("connect to %s failed\n", host->hostname);
-            host->destory(CONERRTIP);
+            host->destory(H502);
         }
     }
 }
@@ -183,10 +177,13 @@ int Host::connect() {
 
 
 void Host::destory(const char* tip) {
-    Peer *guest = queryconnect(this);
+    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if(guest){
-        if(tip)
-            guest->Write(this,tip,strlen(tip));
+        if(tip){
+            HttpResHeader res(tip);
+            guest->Response(this, res);
+            guest->Write(this, "Something wrong with your request site, you can try angin.\n", 64);
+        }
         disconnect(this, CONNECT_ERR);
     }
     connectmap.erase(this);
@@ -210,6 +207,19 @@ void Host::Request(Guest* guest, HttpReqHeader& req, bool direct_send) {
     }
     this->req = req;
 }
+
+void Host::ResProc(HttpResHeader& res) {
+    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
+    if (guest == NULL) {
+        clean(this, PEER_LOST_ERR);
+        return;
+    }
+    if(res.get("Transfer-Encoding")){
+        guest->flag |= ISCHUNKED_F;
+    }
+    guest->Response(this, res);
+}
+
 
 
 Host* Host::gethost(HttpReqHeader &req, Guest* guest) {
@@ -287,7 +297,7 @@ void hosttick() {
         if(host && time(NULL) - i->second >= 30 && host->connect() < 0){
             connectmap.erase(i++);
             LOGE("connect to %s time out.\n", host->hostname);
-            host->destory(CONERRTIP);
+            host->destory(H504);
         }else{
             i++;
         }

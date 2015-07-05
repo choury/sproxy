@@ -152,8 +152,7 @@ void Proxy2::ResProc(HttpResHeader& res) {
             guest->flag |= ISCHUNKED_F;
             res.add("Transfer-Encoding", "chunked");
         }
-        char buff[HEADLENLIMIT];
-        guest->Write(this, buff, res.getstring(buff));
+        guest->Response(this, res);
     }else{
         Reset(res.id, ERR_STREAM_CLOSED);
     }

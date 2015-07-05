@@ -543,7 +543,11 @@ const char* HttpResHeader::get(const char* header) {
 
 int HttpResHeader::getstring(void* buff) {
     int p;
-    sprintf((char *)buff, "HTTP/1.1 %s" CRLF "%n", status, &p);
+    if(get("Content-Length") || get("Transfer-Encoding")){
+        sprintf((char *)buff, "HTTP/1.1 %s" CRLF "%n", status, &p);
+    }else {
+        sprintf((char *)buff, "HTTP/1.0 %s" CRLF "%n", status, &p);
+    }
     for (auto i : headers) {
         int len;
         sprintf((char *)buff + p, "%s: %s" CRLF "%n",

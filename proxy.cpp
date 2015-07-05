@@ -3,12 +3,6 @@
 
 #include <openssl/err.h>
 
-#define PROXYERRTIP     "HTTP/1.0 504 Gateway Timeout" CRLF CRLF\
-                        "Connect to the proxy failed, you can try again, or switch to another proxy"
-                        
-#define SSLERRTIP       "HTTP/1.0 502 Bad Gateway" CRLF CRLF\
-                        "Ssl shakehand error, you can try again, or switch to another proxy"
-
 extern std::map<Host*,time_t> connectmap;
 
 Proxy::Proxy(HttpReqHeader &req, Guest *guest):Host(req, guest, SHOST, SPORT) {}
@@ -141,7 +135,7 @@ void Proxy::waitconnectHE(uint32_t events) {
     return;
 reconnect:
     if (connect() < 0) {
-        destory(PROXYERRTIP);
+        destory(H502);
     }
 }
 
@@ -156,7 +150,7 @@ void Proxy::shakehandHE(uint32_t events) {
         int ret = SSL_connect(ssl);
         if (ret != 1) {
             if (showerrinfo(ret, "ssl connect error")) {
-                destory(SSLERRTIP);
+                destory(H502);
             }
             return;
         }
@@ -186,7 +180,7 @@ void Proxy::shakehandHE(uint32_t events) {
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("proxy unkown error: %s\n", strerror(errno));
-        destory(SSLERRTIP);
+        destory(H502);
     }
 }
 

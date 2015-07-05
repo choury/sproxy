@@ -8,23 +8,26 @@
 #define CRLF      "\r\n"
 
 
-#define  connecttip   "HTTP/1.0 200 Connection established" CRLF CRLF
+#define connecttip  "HTTP/1.0 200 Connection established" CRLF CRLF
 
-#define H200    "HTTP/1.1 200 OK" CRLF CRLF
+#define H200        "HTTP/1.0 200 OK" CRLF CRLF
 
-#define H206    "HTTP/1.1 206 Partial Content" CRLF CRLF
+#define H206        "HTTP/1.0 206 Partial Content" CRLF CRLF
 
-#define H416    "HTTP/1.1 416 Requested Range Not Satisfiable" CRLF\
-                "Content-Length: 0" CRLF CRLF
+#define H416        "HTTP/1.1 416 Requested Range Not Satisfiable" CRLF\
+                    "Content-Length: 0" CRLF CRLF
 
-#define H403    "HTTP/1.1 403 Forbidden" CRLF \
-                "Content-Length: 0" CRLF CRLF
+#define H403        "HTTP/1.1 403 Forbidden" CRLF \
+                    "Content-Length: 0" CRLF CRLF
 
-#define H404    "HTTP/1.1 404 Not Found" CRLF\
-                "Content-Length: 0" CRLF CRLF
+#define H404        "HTTP/1.1 404 Not Found" CRLF\
+                    "Content-Length: 0" CRLF CRLF
 
-#define H500    "HTTP/1.1 500 Internal Server Error" CRLF\
-                "Content-Length: 0" CRLF CRLF
+#define H500        "HTTP/1.1 500 Internal Server Error" CRLF\
+                    "Content-Length: 0" CRLF CRLF
+
+#define H502        "HTTP/1.0 502 Bad Gateway" CRLF CRLF
+#define H504        "HTTP/1.0 504 Gateway Timeout" CRLF CRLF
 
 #define CHUNCKEND "0" CRLF CRLF
 #ifdef  __cplusplus
