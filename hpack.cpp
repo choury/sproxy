@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <string.h>
 
 
 static const char *static_table[][2]= {

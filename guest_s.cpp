@@ -3,6 +3,7 @@
 #include "file.h"
 #include "cgi.h"
 
+#include <netinet/tcp.h>
 #include <openssl/err.h>
 
 Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL* ssl): Guest(fd, myaddr), ssl(ssl) {
@@ -130,6 +131,18 @@ void Guest_s::defaultHE_h2(uint32_t events)
 
 
 int Guest_s::showerrinfo(int ret, const char* s) {
+    struct tcp_info info;
+    int optlen = sizeof(struct tcp_info);
+    if (getsockopt (fd, IPPROTO_TCP, TCP_INFO, &info, (socklen_t *)&optlen) < 0) {
+        LOGE("([%s]:%d): %s;getsockopt(TCP_INFO) error:%s\n",
+            sourceip, sourceport, s, strerror(errno));
+        return 1;
+    }
+    if (info.tcpi_state != TCP_ESTABLISHED) {
+        LOGE("([%s]:%d): %s: the connection is lost\n",
+            sourceip, sourceport, s);
+        return 1;
+    }
     if(ret<=0) {
         epoll_event event;
         event.data.ptr = this;
