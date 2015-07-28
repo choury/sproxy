@@ -27,11 +27,11 @@ ssize_t Proxy2::Write(Peer* who, const void* buff, size_t size) {
         who->clean(this, PEER_LOST_ERR);
         return -1;
     }
+    size = size > FRAMEBODYLIMIT ? FRAMEBODYLIMIT:size;
     set24(header.length, size);
     if(size == 0) {
         header.flags = END_STREAM_F;
     }
-    header.type = 0;
     Peer::Write(who, &header, sizeof(header));
     return Peer::Write(who, buff, size);
 }
@@ -40,6 +40,15 @@ ssize_t Proxy2::Write(Peer* who, const void* buff, size_t size) {
 ssize_t Proxy2::Write2(const void* buff, size_t len) {
     return Peer::Write(this, buff, len);
 }
+
+size_t Proxy2::bufleft(Peer*) {
+    if(sizeof(wbuff) - writelen < FRAMELENLIMIT){
+        return 0;
+    }else{
+        return sizeof(wbuff) -writelen - FRAMELENLIMIT;
+    }
+}
+
 
 void Proxy2::defaultHE(u_int32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {

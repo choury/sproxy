@@ -198,7 +198,7 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
         clean(this, PEER_LOST_ERR);
         return -1;
     }
-    int len = host->bufleft();
+    int len = host->bufleft(this);
     if (len == 0) {
         LOGE("([%s]:%d): The host's buff is full\n", sourceip, sourceport);
         epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);

@@ -260,7 +260,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
         return -1;
     }
 
-    int len = guest->bufleft();
+    int len = guest->bufleft(this);
 
     if (len == 0) {
         LOGE("The guest's write buff is full\n");

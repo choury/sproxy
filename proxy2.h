@@ -17,6 +17,7 @@ protected:
     virtual void defaultHE(u_int32_t events)override;
 public:
     Proxy2(int fd, SSL *ssl, SSL_CTX *ctx);
+    size_t bufleft(Peer *)override;
     virtual void ResProc(HttpResHeader &res)override;
     virtual void Request(Guest* guest, HttpReqHeader& req, bool)override;
     virtual void clean(Peer *who, uint32_t errcode)override;

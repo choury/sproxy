@@ -29,8 +29,8 @@ ssize_t Peer::Read(void* buff, size_t size) {
 }
 
 
-ssize_t Peer::Write(Peer*, const void* buff, size_t size) {
-    int len = Min(size, bufleft());
+ssize_t Peer::Write(Peer* who, const void* buff, size_t size) {
+    int len = Min(size, bufleft(who));
     memcpy(wbuff + writelen, buff, len);
     writelen += len;
 
@@ -79,7 +79,7 @@ ssize_t Peer::Write() {
     return ret;
 }
 
-size_t Peer::bufleft() {
+size_t Peer::bufleft(Peer *) {
     return sizeof(wbuff)-writelen < 100?0:sizeof(wbuff)-writelen;
 }
 

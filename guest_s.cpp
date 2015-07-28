@@ -162,7 +162,7 @@ int Guest_s::showerrinfo(int ret, const char* s) {
 
 void Guest_s::shakehandHE(uint32_t events) {
     if ((events & EPOLLIN)|| (events & EPOLLOUT)) {
-        int ret = SSL_do_handshake(ssl);
+        int ret = SSL_accept(ssl);
         if (ret != 1) {
             if (showerrinfo(ret, "ssl accept error")) {
                 clean(this, SSL_SHAKEHAND_ERR);

@@ -9,7 +9,6 @@
 #include <string.h>
 
 #define H2_PREFACE "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
-#define FRAMELENLIMIT 16393
 
 #define get16(a)  (((uchar*)(a))[0]<<8 | ((uchar*)(a))[1])
 #define set16(a, x) do {\
@@ -82,6 +81,10 @@ struct SettingFrame{
 #define ERR_INADEQUATE_SECURITY 12
 #define ERR_HTTP_1_1_REQUIRED   13
 
+
+#define FRAMEBODYLIMIT 16384
+#define FRAMELENLIMIT FRAMEBODYLIMIT+sizeof(Http2_header) 
+
 class Http2Base{
 protected:
     char http2_buff[FRAMELENLIMIT];
@@ -121,6 +124,18 @@ protected:
     virtual void ResProc(HttpResHeader &res) = 0;
 public:
     void init();
+};
+
+struct Http2Info{
+    void *ptr;
+    uint32_t id;
+    uint32_t flags;
+};
+
+class Http2{
+    std::map<void *, Http2Info*> ptr2info;
+    std::map<uint32_t, Http2Info *> id2info;
+public:
 };
 
 #endif

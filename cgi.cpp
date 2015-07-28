@@ -79,7 +79,7 @@ void Cgi::defaultHE(uint32_t events)
         return;
     }
     if (events & EPOLLIN){
-        int len = guest->bufleft();
+        int len = guest->bufleft(this);
         if (len == 0) {
             LOGE( "The guest's write buff is full\n");
             epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);

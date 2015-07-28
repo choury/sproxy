@@ -242,7 +242,7 @@ void File::defaultHE(uint32_t events) {
             clean(this, WRITE_ERR);
             return;
         }
-        int len = guest->bufleft()<leftsize ? guest->bufleft() : leftsize;
+        int len = guest->bufleft(this)<leftsize ? guest->bufleft(this) : leftsize;
         if (len == 0) {
             LOGE("The guest's write buff is full\n");
             epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);

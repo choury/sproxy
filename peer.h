@@ -25,7 +25,7 @@ public:
     virtual void disconnected(Peer *who, uint32_t errcode);
     virtual ssize_t Write(Peer* who, const void *buff, size_t size);
     virtual void writedcb();
-    virtual size_t bufleft();
+    virtual size_t bufleft(Peer*);
     virtual int showerrinfo(int ret, const char *) = 0;
     virtual int showstatus(char *buff) {return 0;};
     virtual ~Peer();
