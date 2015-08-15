@@ -12,6 +12,7 @@ Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL* ssl): Guest(fd, myadd
     event.events = EPOLLIN | EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 
+    accept_start_time = time(nullptr);
     handleEvent = (void (Con::*)(uint32_t))&Guest_s::shakehandHE;
 }
 
@@ -175,8 +176,7 @@ void Guest_s::shakehandHE(uint32_t events) {
     if ((events & EPOLLIN)|| (events & EPOLLOUT)) {
         int ret = SSL_accept(ssl);
         if (ret != 1) {
-            accept_failed_times ++;
-            if (accept_failed_times>=100 || showerrinfo(ret, "ssl accept error")) {
+            if (time(nullptr) - accept_start_time>=120 || showerrinfo(ret, "ssl accept error")) {
                 clean(this, SSL_SHAKEHAND_ERR);
             }
         } else {
