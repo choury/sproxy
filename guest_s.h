@@ -9,6 +9,7 @@
 class Guest_s:public Guest ,public Http2Res {
     SSL *ssl;
     boost::bimap<Peer *, int> idmap;
+    uint32_t accept_failed_times=0;
 protected:
     virtual ssize_t Read(void *buff, size_t size)override;
     virtual ssize_t Write(Peer* who, const void *buff, size_t size)override;

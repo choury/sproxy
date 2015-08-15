@@ -139,8 +139,6 @@ int Guest_s::showerrinfo(int ret, const char* s) {
         return 1;
     }
     if (info.tcpi_state != TCP_ESTABLISHED) {
-        LOGE("([%s]:%d): %s: the connection is lost\n",
-            sourceip, sourceport, s);
         return 1;
     }
     if(ret<=0) {
@@ -177,7 +175,8 @@ void Guest_s::shakehandHE(uint32_t events) {
     if ((events & EPOLLIN)|| (events & EPOLLOUT)) {
         int ret = SSL_accept(ssl);
         if (ret != 1) {
-            if (showerrinfo(ret, "ssl accept error")) {
+            accept_failed_times ++;
+            if (accept_failed_times>=100 || showerrinfo(ret, "ssl accept error")) {
                 clean(this, SSL_SHAKEHAND_ERR);
             }
         } else {
