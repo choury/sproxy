@@ -14,7 +14,7 @@ void Http2Base::DefaultProc() {
         try {
         switch(header->type) {
             case DATA_TYPE:
-                DataProc2(header);
+                DataProc(header);
                 break;
             case HEADERS_TYPE:
                 HeadersProc(header);
@@ -27,11 +27,14 @@ void Http2Base::DefaultProc() {
             case PING_TYPE:
                 PingProc(header);
                 break;
-            case RST_STREAM_TYPE:
-                RstProc(header);
-                break;
             case GOAWAY_TYPE:
                 GoawayProc(header);
+                break;
+            case RST_STREAM_TYPE:
+                RstProc(get32(header->id), get32(header+1));
+                break;
+            case WINDOW_UPDATE_TYPE:
+                WindowUpdateProc(get32(header->id), get32(header+1));
                 break;
             default:
                 LOGE("unkown http2 frame:%d\n", header->type);
@@ -65,6 +68,9 @@ void Http2Base::SettingsProc(Http2_header* header) {
             case SETTINGS_HEADER_TABLE_SIZE:
                 response_table.set_dynamic_table_size_limit(get32(sf->value));
                 break;
+            case SETTINGS_INITIAL_WINDOW_SIZE:
+                initalframewindowsize = get32(sf->value);
+                break;
             default:
                 LOG("Get a unkown setting(%d): %d\n", get16(sf->identifier), get32(sf->value));
                 break;
@@ -73,25 +79,27 @@ void Http2Base::SettingsProc(Http2_header* header) {
         }
         set24(header->length, 0);
         header->flags |= ACK_F;
-        Write2(header,sizeof(*header));
+        Write(header,sizeof(*header));
     }
 }
 
 void Http2Base::PingProc(Http2_header* header) {
     if((header->flags & ACK_F) == 0) {
         header->flags |= ACK_F;
-        Write2(header, sizeof(*header) + get24(header->length));
+        Write(header, sizeof(*header) + get24(header->length));
     }
 }
 
-
-void Http2Base::RstProc(Http2_header* header) {
-    LOG("Get a reset frame [%d]: %d\n", get32(header->id), get32(header+1));
-}
-
-
 void Http2Base::GoawayProc(Http2_header* header) {
     LOG("Get a Goaway frame\n");
+}
+
+void Http2Base::RstProc(uint32_t id, uint32_t errcode) {
+    LOG("Get a reset frame [%d]: %d\n", id, errcode);
+}
+
+void Http2Base::WindowUpdateProc(uint32_t id, uint32_t size) {
+    LOG("Get a window update frame [%d]: %u\n", id, size);
 }
 
 
@@ -102,7 +110,7 @@ void Http2Base::Reset(uint32_t id, uint32_t code) {
     set32(header->id, id);
     set24(header->length, sizeof(uint32_t));
     set32(header+1, code);
-    Write2(rst_stream, sizeof(rst_stream));
+    Write(rst_stream, sizeof(rst_stream));
 }
 
 
@@ -124,7 +132,7 @@ void Http2Res::InitProc() {
         Http2_header header;
         memset(&header, 0, sizeof(header));
         header.type = SETTINGS_TYPE;
-        Write2(&header, sizeof(header));
+        Write(&header, sizeof(header));
     } else {
         ssize_t readlen = Read(http2_buff + http2_getlen, sizeof(http2_buff) - http2_getlen);
         if (readlen <= 0) {
@@ -162,11 +170,11 @@ void Http2Res::HeadersProc(Http2_header* header) {
 
 
 void Http2Req::init() {
-    Write2(H2_PREFACE, strlen(H2_PREFACE));
+    Write(H2_PREFACE, strlen(H2_PREFACE));
     Http2_header header;
     memset(&header, 0, sizeof(header));
     header.type = SETTINGS_TYPE;
-    Write2(&header, sizeof(header));
+    Write(&header, sizeof(header));
 }
 
 

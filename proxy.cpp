@@ -7,6 +7,13 @@ extern std::map<Host*,time_t> connectmap;
 
 Proxy::Proxy(HttpReqHeader &req, Guest *guest):Host(req, guest, SHOST, SPORT) {}
 
+Proxy::Proxy(Proxy *const copy):Host(copy->fd), ssl(copy->ssl), ctx(copy->ctx) {
+    copy->fd  = 0;
+    copy->ssl = nullptr;
+    copy->ctx = nullptr;
+    copy->disconnect(nullptr, NOERROR);
+}
+
 
 Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
     if (proxy2) {
@@ -165,16 +172,13 @@ void Proxy::shakehandHE(uint32_t events) {
         unsigned int len;
         SSL_get0_alpn_selected(ssl, &data, &len);
         if (data && strncasecmp((const char*)data, "h2", len) == 0) {
+            Proxy2 *new_proxy = new Proxy2(this);
+            new_proxy->init();
+            new_proxy->Request(guest, req, true);
             if(!proxy2){
-                proxy2 = new Proxy2(fd, ssl, ctx);
-                proxy2->init();
-                proxy2->Request(guest, req, true);
-                fd  = 0;
-                ssl = nullptr;
-                ctx = nullptr;
-                disconnect(nullptr, NOERROR);
-                delete this;
+                proxy2 = new_proxy;
             }
+            delete this;
         }
         return;
         

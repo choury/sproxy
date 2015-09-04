@@ -40,7 +40,7 @@ struct Http2_header {
 #define PUSH_PROMISE_TYPE   5
 #define PING_TYPE           6
 #define GOAWAY_TYPE         7
-#define WINDOW_UPDATE       8
+#define WINDOW_UPDATE_TYPE  8
 #define CONTINUATION        9
     uint8_t type;
 #define ACK_F               1
@@ -90,6 +90,7 @@ protected:
     char http2_buff[FRAMELENLIMIT];
     size_t http2_getlen = 0;
     size_t http2_expectlen = 0;
+    size_t initalframewindowsize = 0;
     Index_table request_table;
     Index_table response_table;
     void DefaultProc();
@@ -97,13 +98,14 @@ protected:
     virtual void InitProc()=0;
     virtual void HeadersProc(Http2_header *header) = 0;
     virtual ssize_t Read(void* buff, size_t len) = 0;
-    virtual ssize_t Write2(const void* buff, size_t len) = 0;
+    virtual ssize_t Write(const void* buff, size_t len) = 0;
     virtual void SettingsProc(Http2_header *header);
     virtual void PingProc(Http2_header *header);
-    virtual void ErrProc(int errcode) = 0;
-    virtual void RstProc(Http2_header *header);
     virtual void GoawayProc(Http2_header *header);
-    virtual void DataProc2(Http2_header *header)=0;
+    virtual void RstProc(uint32_t id, uint32_t errcode);
+    virtual void WindowUpdateProc(uint32_t id, uint32_t size);
+    virtual void DataProc(Http2_header *header)=0;
+    virtual void ErrProc(int errcode) = 0;
     void (Http2Base::*Http2_Proc)()=&Http2Base::InitProc;
 };
 
@@ -126,16 +128,5 @@ public:
     void init();
 };
 
-struct Http2Info{
-    void *ptr;
-    uint32_t id;
-    uint32_t flags;
-};
-
-class Http2{
-    std::map<void *, Http2Info*> ptr2info;
-    std::map<uint32_t, Http2Info *> id2info;
-public:
-};
 
 #endif

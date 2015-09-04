@@ -1,6 +1,7 @@
 #include "guest.h"
 #include "net.h"
 
+#include <unistd.h>
 #include <signal.h>
 #include <fcntl.h>
 #include <arpa/inet.h>

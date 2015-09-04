@@ -8,7 +8,6 @@
  * guest_s ---   (server) --- host/file/cgi */
 
 
-class Guest;
 
 class Peer:public Con{
 protected:
@@ -31,6 +30,7 @@ public:
     virtual ~Peer();
 };
 
+class Guest;
 void connect(Guest *p1, Peer *p2);
 Peer *queryconnect(Peer *key);
 

@@ -3,7 +3,6 @@
 
 #include "peer.h"
 #include "http.h"
-
 #include <netinet/in.h>
 
 class Guest:public Peer, public HttpRes{
@@ -25,6 +24,7 @@ public:
 #define ISCLOSED_F      4
     char flag;
     explicit Guest(int fd, struct sockaddr_in6 *myaddr);
+    explicit Guest(const Guest *const copy);
     virtual ~Guest();
     virtual void Response(Peer *who, HttpResHeader& res);
     virtual int showstatus(char *buff)override;

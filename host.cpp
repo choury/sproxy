@@ -1,4 +1,3 @@
-#include "host.h"
 #include "proxy.h"
 
 #include <map>

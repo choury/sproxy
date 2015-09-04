@@ -10,13 +10,13 @@ class Proxy2:public Proxy, public Http2Req{
 protected:
     virtual ssize_t Read(void* buff, size_t len);
     virtual ssize_t Write(Peer* who, const void *buff, size_t size)override;
-    virtual ssize_t Write2(const void* buff, size_t len)override;
-    virtual void DataProc2(Http2_header *header)override;
-    virtual void RstProc(Http2_header* header)override;
+    virtual ssize_t Write(const void* buff, size_t len)override;
+    virtual void DataProc(Http2_header *header)override;
+    virtual void RstProc(uint32_t id, uint32_t errcode)override;
     virtual void ErrProc(int errcode)override;
     virtual void defaultHE(u_int32_t events)override;
 public:
-    Proxy2(int fd, SSL *ssl, SSL_CTX *ctx);
+    Proxy2( Proxy *const copy );
     size_t bufleft(Peer *)override;
     virtual void ResProc(HttpResHeader &res)override;
     virtual void Request(Guest* guest, HttpReqHeader& req, bool)override;

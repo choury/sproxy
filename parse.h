@@ -2,7 +2,6 @@
 #define PARSE_H__
 
 #include "common.h"
-#include "hpack.h"
 
 #include <string>
 #include <map>
@@ -16,6 +15,7 @@ struct Cookie{
     string path;
 };
 
+class Index_table;
 
 class HttpReqHeader{
     std::list<std::pair<string, string>> headers;

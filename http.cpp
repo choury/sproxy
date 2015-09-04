@@ -8,7 +8,7 @@ void HttpBase::ChunkLProc() {
     if (char* headerend = strnstr(http_buff, CRLF, http_getlen)) {
         headerend += strlen(CRLF);
         size_t headerlen = headerend - http_buff;
-        sscanf(http_buff, "%lx", &http_expectlen);
+        sscanf(http_buff, "%x", &http_expectlen);
         if (http_expectlen) {
             Http_Proc = &HttpBase::ChunkBProc;
         } else {
@@ -120,7 +120,7 @@ void HttpRes::HeaderProc() {
             HttpReqHeader req(http_buff);
             if (req.ismethod("POST")) {
                 if (req.get("Content-Length")!= nullptr) {
-                    sscanf(req.get("Content-Length"), "%lu", &http_expectlen);
+                    sscanf(req.get("Content-Length"), "%u", &http_expectlen);
                     Http_Proc = &HttpRes::FixLenProc;
                 } else {
                     Http_Proc = &HttpRes::AlwaysProc;
@@ -165,7 +165,7 @@ void HttpReq::HeaderProc() {
             if (res.get("Transfer-Encoding")!= nullptr) {
                 Http_Proc = &HttpReq::ChunkLProc;
             } else if (res.get("Content-Length")!= nullptr) {
-                sscanf(res.get("Content-Length"), "%lu", &http_expectlen);
+                sscanf(res.get("Content-Length"), "%u", &http_expectlen);
                 Http_Proc = &HttpReq::FixLenProc;
             } else {
                 Http_Proc = &HttpReq::AlwaysProc;

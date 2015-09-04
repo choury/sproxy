@@ -8,7 +8,7 @@ set(CMAKE_C_FLAGS "-Wall -ggdb")
 set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -ggdb")
 
 add_executable(sproxy_server cgi.cpp file.cpp http.cpp http2.cpp 
-hpack.cpp host.cpp guest.cpp peer.cpp guest_s.cpp 
+hpack.cpp host.cpp guest.cpp peer.cpp guest_s.cpp guest_s2.cpp
 lib.c parse.cpp server.cpp net.c dns.cpp)
 
 

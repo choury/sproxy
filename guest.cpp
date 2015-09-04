@@ -40,10 +40,18 @@ Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Peer(fd) {
 
     struct epoll_event event;
     event.data.ptr = this;
-    event.events = EPOLLIN;
+    event.events = EPOLLIN | EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
     handleEvent = (void (Con::*)(uint32_t))&Guest::defaultHE;
 }
+
+Guest::Guest(const Guest *const copy): Peer(copy->fd), sourceport(copy->sourceport){
+    guest_set.insert(this);
+    strcpy(this->sourceip, copy->sourceip);
+
+}
+
+
 
 int Guest::showerrinfo(int ret, const char *s) {
     if (ret < 0) {

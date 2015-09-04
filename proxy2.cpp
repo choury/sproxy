@@ -2,7 +2,7 @@
 
 Proxy2* proxy2 = nullptr;
 
-Proxy2::Proxy2(int fd, SSL* ssl, SSL_CTX* ctx): Proxy(fd, ssl, ctx) {
+Proxy2::Proxy2(Proxy *const copy): Proxy(copy) {
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
@@ -37,7 +37,7 @@ ssize_t Proxy2::Write(Peer* who, const void* buff, size_t size) {
 }
 
 
-ssize_t Proxy2::Write2(const void* buff, size_t len) {
+ssize_t Proxy2::Write(const void* buff, size_t len) {
     return Peer::Write(this, buff, len);
 }
 
@@ -86,7 +86,7 @@ void Proxy2::defaultHE(u_int32_t events) {
 }
 
 
-void Proxy2::DataProc2(Http2_header* header) {
+void Proxy2::DataProc(Http2_header* header) {
     uint32_t id = get32(header->id);
     if(idmap.right.count(id)){
         Guest *guest = idmap.right.find(id)->second;
@@ -118,18 +118,16 @@ void Proxy2::ErrProc(int errcode) {
 }
 
 
-void Proxy2::RstProc(Http2_header* header) {
-    uint32_t id = get32(header->id);
-    uint32_t code = get32(header+1);
+void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
     if(idmap.right.count(id)){
         Guest *guest = idmap.right.find(id)->second;
         idmap.right.erase(id);
-        if(code){
-            LOGE("Guest reset stream [%d]: %d\n", id, code);
+        if(errcode){
+            LOGE("Guest reset stream [%d]: %d\n", id, errcode);
         }else if((guest->flag & ISCHUNKED_F) && (guest->flag & ISCLOSED_F) == 0){ //for http/1.0
             guest->Write(this, CHUNCKEND, strlen(CHUNCKEND));
         }
-        guest->clean(this, code);
+        guest->clean(this, errcode);
     }
 }
 
@@ -170,7 +168,8 @@ void Proxy2::ResProc(HttpResHeader& res) {
 void Proxy2::clean(Peer* who, uint32_t errcode) {
     Guest *guest = dynamic_cast<Guest*>(who);
     if(who == this) {
-        proxy2 = nullptr;
+        if(proxy2 == this)
+            proxy2 = nullptr;
         Peer::clean(who, errcode);
     }else if(idmap.left.count(guest)){
         Reset(idmap.left.find(guest)->second, errcode>30?ERR_INTERNAL_ERROR:errcode);

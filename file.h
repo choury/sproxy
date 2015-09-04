@@ -3,6 +3,7 @@
 
 #include "guest.h"
 #include "parse.h"
+#include <vector>
 
 class Range{
     void add(ssize_t begin,ssize_t end);
