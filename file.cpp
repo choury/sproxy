@@ -245,7 +245,7 @@ void File::defaultHE(uint32_t events) {
         int len = guest->bufleft(this)<leftsize ? guest->bufleft(this) : leftsize;
         if (len == 0) {
             LOGE("The guest's write buff is full\n");
-            epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+            guest->wait(this);
             return;
         }
         len = read(ffd, wbuff, len);

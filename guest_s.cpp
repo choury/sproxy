@@ -30,9 +30,13 @@ ssize_t Guest_s::Read(void* buff, size_t size) {
     return SSL_read(ssl, buff, size);
 }
 
+ssize_t Guest_s::Write(void *buff, size_t size) {
+    return SSL_write(ssl, buff, size);
+}
+
 
 ssize_t Guest_s::Write() {
-    ssize_t ret = SSL_write(ssl, wbuff, writelen);
+    ssize_t ret = Write(wbuff, writelen);
 
     if (ret <= 0) {
         return ret;
@@ -112,17 +116,6 @@ int Guest_s::showerrinfo(int ret, const char* s) {
 
 
 void Guest_s::shakehandHE(uint32_t events) {
-    if ((events & EPOLLIN)|| (events & EPOLLOUT)) {
-        int ret = SSL_accept(ssl);
-        if (ret != 1) {
-            if (time(nullptr) - accept_start_time>=120 || showerrinfo(ret, "ssl accept error")) {
-                clean(this, SSL_SHAKEHAND_ERR);
-            }
-        } else {
-            shakedhand();
-        }
-    }
-
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
@@ -133,6 +126,17 @@ void Guest_s::shakehandHE(uint32_t events) {
         }
         clean(this, INTERNAL_ERR);
     }
+    
+    if ((events & EPOLLIN)|| (events & EPOLLOUT)) {
+        int ret = SSL_accept(ssl);
+        if (ret != 1) {
+            if (time(nullptr) - accept_start_time>=120 || showerrinfo(ret, "ssl accept error")) {
+                clean(this, SSL_SHAKEHAND_ERR);
+            }
+        } else {
+            shakedhand();
+        }
+    } 
 }
 
 

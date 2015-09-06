@@ -20,14 +20,18 @@ protected:
     virtual void disconnect(Peer *who, uint32_t errcode);
     virtual void closeHE(uint32_t events) = 0;
 public:
+    virtual ~Peer();
+    ssize_t windowsize = 0; //for http2
+    ssize_t windowleft;     //for http2
     virtual void clean(Peer *who, uint32_t errcode);
     virtual void disconnected(Peer *who, uint32_t errcode);
     virtual ssize_t Write(Peer* who, const void *buff, size_t size);
+    virtual int showerrinfo(int ret, const char *) = 0;
+    virtual int showstatus(char *buff) {return 0;}
+    
     virtual void writedcb();
     virtual size_t bufleft(Peer*);
-    virtual int showerrinfo(int ret, const char *) = 0;
-    virtual int showstatus(char *buff) {return 0;};
-    virtual ~Peer();
+    virtual void wait(Peer *who);
 };
 
 class Guest;

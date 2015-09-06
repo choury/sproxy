@@ -80,7 +80,7 @@ ssize_t Peer::Write() {
 }
 
 size_t Peer::bufleft(Peer *) {
-    return sizeof(wbuff)-writelen < 100?0:sizeof(wbuff)-writelen;
+    return sizeof(wbuff)-writelen;
 }
 
 /*
@@ -166,4 +166,8 @@ void Peer::clean(Peer* who, uint32_t errcode) {
         }
         handleEvent = (void (Con::*)(uint32_t))&Peer::closeHE;
     }
+}
+
+void Peer::wait(Peer *who) {
+    epoll_ctl(efd, EPOLL_CTL_DEL, who->fd, NULL);
 }

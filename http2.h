@@ -12,22 +12,22 @@
 
 #define get16(a)  (((uchar*)(a))[0]<<8 | ((uchar*)(a))[1])
 #define set16(a, x) do {\
-                        ((uchar*)(a))[0] = (x)>>8;\
-                        ((uchar*)(a))[1] = (x);\
+                        ((uchar*)(a))[0] = ((x)>>8) & 0xff;\
+                        ((uchar*)(a))[1] = (x) & 0xff;\
                     }while(0);
 
 #define get24(a) (((uchar*)(a))[0]<<16 | ((uchar*)(a))[1]<<8 | ((uchar*)(a))[2])
 #define set24(a, x) do {\
-                        ((uchar*)(a))[0] = (x)>>16;\
-                        ((uchar*)(a))[1] = (x)>>8;\
-                        ((uchar*)(a))[2] = (x);\
+                        ((uchar*)(a))[0] = ((x)>>16) & 0xff;\
+                        ((uchar*)(a))[1] = ((x)>>8) & 0xff;\
+                        ((uchar*)(a))[2] = (x) & 0xff;\
                     }while(0);
 #define get32(a) (((uchar*)(a))[0]<<24 | ((uchar*)(a))[1]<<16 | ((uchar*)(a))[2]<<8 | ((uchar*)(a))[3])
 #define set32(a, x) do {\
-                        ((uchar*)(a))[0] = (x)>>24;\
-                        ((uchar*)(a))[1] = (x)>>16;\
-                        ((uchar*)(a))[2] = (x)>>8;\
-                        ((uchar*)(a))[3] = (x);\
+                        ((uchar*)(a))[0] = ((x)>>24) & 0xff;\
+                        ((uchar*)(a))[1] = ((x)>>16) & 0xff;\
+                        ((uchar*)(a))[2] = ((x)>>8) & 0xff;\
+                        ((uchar*)(a))[3] = (x) & 0xff;\
                     }while(0);
 
 struct Http2_header {
@@ -54,7 +54,7 @@ struct Http2_header {
 }__attribute__((packed));
 
 
-struct SettingFrame{
+struct Setting_Frame{
 #define SETTINGS_HEADER_TABLE_SIZE      1
 #define SETTINGS_ENABLE_PUSH            2
 #define SETTINGS_MAX_CONCURRENT_STREAMS 3
@@ -98,14 +98,17 @@ protected:
     virtual void InitProc()=0;
     virtual void HeadersProc(Http2_header *header) = 0;
     virtual ssize_t Read(void* buff, size_t len) = 0;
-    virtual ssize_t Write(const void* buff, size_t len) = 0;
+    virtual Http2_header* SendFrame(const Http2_header* header, size_t addlen) = 0;
+    
     virtual void SettingsProc(Http2_header *header);
     virtual void PingProc(Http2_header *header);
     virtual void GoawayProc(Http2_header *header);
     virtual void RstProc(uint32_t id, uint32_t errcode);
     virtual void WindowUpdateProc(uint32_t id, uint32_t size);
+    virtual uint32_t ExpandWindowSize(uint32_t id, uint32_t size);
     virtual void DataProc(Http2_header *header)=0;
     virtual void ErrProc(int errcode) = 0;
+    virtual void AdjustInitalFrameWindowSize(ssize_t diff) = 0;
     void (Http2Base::*Http2_Proc)()=&Http2Base::InitProc;
 };
 

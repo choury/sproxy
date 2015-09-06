@@ -209,7 +209,7 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
     int len = host->bufleft(this);
     if (len == 0) {
         LOGE("([%s]:%d): The host's buff is full\n", sourceip, sourceport);
-        epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+        host->wait(this);
         return -1;
     }
     return host->Write(this, buff, Min(size, len));

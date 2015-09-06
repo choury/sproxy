@@ -37,10 +37,6 @@ ssize_t Proxy2::Write(Peer* who, const void* buff, size_t size) {
 }
 
 
-ssize_t Proxy2::Write(const void* buff, size_t len) {
-    return Peer::Write(this, buff, len);
-}
-
 size_t Proxy2::bufleft(Peer*) {
     if(sizeof(wbuff) - writelen < FRAMELENLIMIT){
         return 0;

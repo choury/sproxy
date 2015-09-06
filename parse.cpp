@@ -480,7 +480,7 @@ int HttpReqHeader::getframe(void* outbuff, Index_table *index_table) {
     
     set24(header->length, p-(char *)(header + 1));
     
-    return p - (char *)outbuff;
+    return get24(header->length);
 }
 
 
@@ -575,7 +575,7 @@ int HttpResHeader::getframe(void* outbuff, Index_table* index_table) {
     
     set24(header->length, p-(char *)(header + 1));
     
-    return p - (char *)outbuff;
+    return get24(header->length);
 }
 
 

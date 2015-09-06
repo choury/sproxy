@@ -263,7 +263,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 
     if (len == 0) {
         LOGE("The guest's write buff is full\n");
-        epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+        guest->wait(this);
         return -1;
     }
 

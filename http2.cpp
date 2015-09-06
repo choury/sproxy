@@ -61,7 +61,7 @@ void Http2Base::DefaultProc() {
 
 
 void Http2Base::SettingsProc(Http2_header* header) {
-    SettingFrame *sf = (SettingFrame *)(header + 1);
+    Setting_Frame *sf = (Setting_Frame *)(header + 1);
     if((header->flags & ACK_F) == 0) {
         while((char *)sf-(char *)(header+1) < get24(header->length)){
             switch(get16(sf->identifier)){
@@ -69,6 +69,7 @@ void Http2Base::SettingsProc(Http2_header* header) {
                 response_table.set_dynamic_table_size_limit(get32(sf->value));
                 break;
             case SETTINGS_INITIAL_WINDOW_SIZE:
+                AdjustInitalFrameWindowSize(get32(sf->value) - initalframewindowsize);
                 initalframewindowsize = get32(sf->value);
                 break;
             default:
@@ -79,14 +80,14 @@ void Http2Base::SettingsProc(Http2_header* header) {
         }
         set24(header->length, 0);
         header->flags |= ACK_F;
-        Write(header,sizeof(*header));
+        SendFrame(header, get24(header->length));
     }
 }
 
 void Http2Base::PingProc(Http2_header* header) {
     if((header->flags & ACK_F) == 0) {
         header->flags |= ACK_F;
-        Write(header, sizeof(*header) + get24(header->length));
+        SendFrame(header, get24(header->length));
     }
 }
 
@@ -102,6 +103,17 @@ void Http2Base::WindowUpdateProc(uint32_t id, uint32_t size) {
     LOG("Get a window update frame [%d]: %u\n", id, size);
 }
 
+uint32_t Http2Base::ExpandWindowSize(uint32_t id, uint32_t size) {
+    char buff[sizeof(Http2_header)+sizeof(uint32_t)] = {0};
+    Http2_header *header = (Http2_header *)buff;
+    set24(header->id, id);
+    set24(header->length, sizeof(uint32_t));
+    header->type = WINDOW_UPDATE_TYPE;
+    set32(header+1, size);
+    SendFrame(header, sizeof(uint32_t));
+    return size;
+}
+
 
 void Http2Base::Reset(uint32_t id, uint32_t code) {
     char rst_stream[sizeof(Http2_header)+sizeof(uint32_t)]={0};
@@ -110,7 +122,7 @@ void Http2Base::Reset(uint32_t id, uint32_t code) {
     set32(header->id, id);
     set24(header->length, sizeof(uint32_t));
     set32(header+1, code);
-    Write(rst_stream, sizeof(rst_stream));
+    SendFrame(header, get24(header->length));
 }
 
 
@@ -129,10 +141,15 @@ void Http2Res::InitProc() {
         http2_getlen -= http2_expectlen;
         http2_expectlen = 0;
         Http2_Proc = &Http2Res::DefaultProc;
-        Http2_header header;
-        memset(&header, 0, sizeof(header));
-        header.type = SETTINGS_TYPE;
-        Write(&header, sizeof(header));
+        char settingframe[sizeof(Http2_header) + sizeof(Setting_Frame)];
+        Http2_header *header = (Http2_header *)settingframe;
+        Setting_Frame *sf = (Setting_Frame *)(header+1);
+        set16(sf->identifier, SETTINGS_INITIAL_WINDOW_SIZE);
+        set32(sf->value, 512 * 1024);
+        memset(header, 0, sizeof(Http2_header));
+        set24(header->length, sizeof(Setting_Frame));
+        header->type = SETTINGS_TYPE;
+        SendFrame(header, get24(header->length));
     } else {
         ssize_t readlen = Read(http2_buff + http2_getlen, sizeof(http2_buff) - http2_getlen);
         if (readlen <= 0) {
@@ -170,11 +187,11 @@ void Http2Res::HeadersProc(Http2_header* header) {
 
 
 void Http2Req::init() {
-    Write(H2_PREFACE, strlen(H2_PREFACE));
+    //Write(H2_PREFACE, strlen(H2_PREFACE));
     Http2_header header;
     memset(&header, 0, sizeof(header));
     header.type = SETTINGS_TYPE;
-    Write(&header, sizeof(header));
+    SendFrame(&header, get24(header.length));
 }
 
 
