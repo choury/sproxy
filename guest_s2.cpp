@@ -67,7 +67,8 @@ void Guest_s2::DataProc(Http2_header* header) {
         }
         host->Write(this, header+1, len);
         if((host->windowleft -= len) <= 300 * 1024){
-            host->windowleft += ExpandWindowSize(id, 300*1024);
+            ExpandWindowSize(id, 512*1024 - host->windowleft);
+            host->windowleft = 512*1024;
         }
         windowleft -= len;
     }else{
@@ -93,6 +94,7 @@ void Guest_s2::ReqProc(HttpReqHeader &req)
         }
         File *file = new File(req, this);
         file->windowsize = initalframewindowsize;
+        file->windowleft = 512 *1024;
         idmap.insert(decltype(idmap)::value_type(file, req.id));
     }
 }
@@ -168,14 +170,11 @@ void Guest_s2::RstProc(uint32_t id, uint32_t errcode) {
 
 
 void Guest_s2::WindowUpdateProc(uint32_t id, uint32_t size) {
-    LOG("get a window update frame[%u]: %u\n", id, size);
     if(id){
         if(idmap.right.count(id)){
-            LOG("current frame window size[%u]:%lu\n",id, idmap.right.find(id)->second->windowsize);
             idmap.right.find(id)->second->windowsize += size;
         }
     }else{
-        LOG("current connection window size:%lu\n", windowsize);
         windowsize += size;
     }
 }

@@ -127,7 +127,8 @@ void Proxy2::DataProc(Http2_header* header) {
             guest->flag |= ISCLOSED_F;
             idmap.right.erase(id);
         }else if((guest->windowleft -= len) <= 300 * 1024){
-            guest->windowleft += ExpandWindowSize(id, 300*1024);
+            ExpandWindowSize(id, 512*1024 - guest->windowleft);
+            guest->windowleft = 512*1024;
         }
         windowleft -= len;
     }else{
@@ -154,14 +155,11 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
 }
 
 void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
-    LOG("get a window update frame[%u]: %u\n", id, size);
     if(id){
         if(idmap.right.count(id)){
-            LOG("current frame window size[%u]:%lu\n",id, idmap.right.find(id)->second->windowsize);
             idmap.right.find(id)->second->windowsize += size;
         }
     }else{
-        LOG("current connection window size:%lu\n", windowsize);
         windowsize += size;
     }
 }
