@@ -17,6 +17,11 @@ ssize_t Proxy2::Read(void* buff, size_t len) {
 }
 
 
+ssize_t Proxy2::Write(const void *buff, size_t len) {
+    return Proxy::Write(buff, len);
+}
+
+
 ssize_t Proxy2::Write(Peer* who, const void* buff, size_t size) {
     Http2_header header;
     memset(&header, 0, sizeof(header));
@@ -32,17 +37,25 @@ ssize_t Proxy2::Write(Peer* who, const void* buff, size_t size) {
     if(size == 0) {
         header.flags = END_STREAM_F;
     }
-    Peer::Write(who, &header, sizeof(header));
-    return Peer::Write(who, buff, size);
+    SendFrame(&header, 0);
+    int ret = Peer::Write(who, buff, size);
+    this->windowsize -= ret;
+    who->windowsize -= ret;
+    return ret;
+}
+
+Http2_header *Proxy2::SendFrame(const Http2_header *header, size_t addlen){
+    struct epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLIN | EPOLLOUT;
+    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    return Http2Base::SendFrame(header, addlen);
 }
 
 
-size_t Proxy2::bufleft(Peer*) {
-    if(sizeof(wbuff) - writelen < FRAMELENLIMIT){
-        return 0;
-    }else{
-        return sizeof(wbuff) -writelen - FRAMELENLIMIT;
-    }
+size_t Proxy2::bufleft(Peer* peer) {
+    size_t windowsize = Min(peer->windowsize, this->windowsize);
+    return Min(windowsize, Peer::bufleft(peer));
 }
 
 
@@ -60,19 +73,23 @@ void Proxy2::defaultHE(u_int32_t events) {
     
     if (events & EPOLLIN) {
         (this->*Http2_Proc)();
+        if(windowleft < 50 *1024 *1024){
+            windowleft += ExpandWindowSize(0, 50*1024*1024);
+        }
     }
 
     if (events & EPOLLOUT) {
-        if (writelen) {
-            int ret = Proxy::Write();
-            if (ret <= 0) {
-                if (showerrinfo(ret, "proxy2 write error")) {
-                    clean(this, WRITE_ERR);
-                }
-                return;
+        int ret = Write_Proc(wbuff, writelen);
+        if(ret){
+            for(auto i:waitlist){
+                i->writedcb();
             }
+            waitlist.clear();
+        }else if (showerrinfo(ret, "proxy2 write error")) {
+            clean(this, WRITE_ERR);
+            return;
         }
-        if (writelen == 0) {
+        if (ret == 2) {
             struct epoll_event event;
             event.data.ptr = this;
             event.events = EPOLLIN;
@@ -86,6 +103,12 @@ void Proxy2::DataProc(Http2_header* header) {
     uint32_t id = get32(header->id);
     if(idmap.right.count(id)){
         Guest *guest = idmap.right.find(id)->second;
+        size_t len = get24(header->length);
+        if(len > guest->bufleft(this)){
+            Reset(id, ERR_FLOW_CONTROL_ERROR);
+            guest->clean(this, ERR_FLOW_CONTROL_ERROR);
+            return;
+        }
         if(guest->flag & ISCHUNKED_F){
             char chunkbuf[100];
             int chunklen;
@@ -103,7 +126,10 @@ void Proxy2::DataProc(Http2_header* header) {
         if(header->flags & END_STREAM_F){
             guest->flag |= ISCLOSED_F;
             idmap.right.erase(id);
+        }else if((guest->windowleft -= len) <= 300 * 1024){
+            guest->windowleft += ExpandWindowSize(id, 300*1024);
         }
+        windowleft -= len;
     }else{
         Reset(id, ERR_STREAM_CLOSED);
     }
@@ -127,22 +153,35 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
     }
 }
 
+void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
+    LOG("get a window update frame[%u]: %u\n", id, size);
+    if(id){
+        if(idmap.right.count(id)){
+            LOG("current frame window size[%u]:%lu\n",id, idmap.right.find(id)->second->windowsize);
+            idmap.right.find(id)->second->windowsize += size;
+        }
+    }else{
+        LOG("current connection window size:%lu\n", windowsize);
+        windowsize += size;
+    }
+}
+
 
 void Proxy2::Request(Guest* guest, HttpReqHeader& req, bool) {
     ::connect(guest, this);
     idmap.insert(decltype(idmap)::value_type(guest, curid));
     req.id = curid;
-    writelen+= req.getframe(wbuff+writelen, &request_table);
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     curid += 2;
-    guest->flag = 0;
-    
+    guest->windowsize = initalframewindowsize;
+    guest->windowleft = 512 *1024;
     if(req.ismethod("CONNECT")){
         guest->flag = ISCONNECT_F;
+    }else{
+        guest->flag = 0;
     }
+    
+    char buff[FRAMELENLIMIT];
+    SendFrame((Http2_header *)buff, req.getframe(buff, &request_table));
 }
 
 void Proxy2::ResProc(HttpResHeader& res) {
@@ -161,16 +200,28 @@ void Proxy2::ResProc(HttpResHeader& res) {
     }
 }
 
+void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
+    for(auto i: idmap.left){
+       i.first->windowsize += diff; 
+    }
+
+}
+
+
 void Proxy2::clean(Peer* who, uint32_t errcode) {
     Guest *guest = dynamic_cast<Guest*>(who);
     if(who == this) {
-        if(proxy2 == this)
-            proxy2 = nullptr;
+        proxy2 = (proxy2 == this) ? nullptr: proxy2;
         Peer::clean(who, errcode);
     }else if(idmap.left.count(guest)){
         Reset(idmap.left.find(guest)->second, errcode>30?ERR_INTERNAL_ERROR:errcode);
         idmap.left.erase(guest);
     }
+}
+
+void Proxy2::wait(Peer *who) {
+    waitlist.insert(who);
+    Peer::wait(who);
 }
 
 

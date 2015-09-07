@@ -7,7 +7,7 @@
 #include <string.h>
 
 char SHOST[DOMAINLIMIT];
-uint16_t SPORT = 3334;
+uint16_t SPORT = 443;
 
 boost::bimap<boost::bimaps::multiset_of<Guest *>,boost::bimaps::multiset_of<Peer *>> bindex;
 
@@ -24,11 +24,6 @@ Peer::~Peer() {
     }
 }
 
-ssize_t Peer::Read(void* buff, size_t size) {
-    return read(fd, buff, size);
-}
-
-
 ssize_t Peer::Write(Peer* who, const void* buff, size_t size) {
     int len = Min(size, bufleft(who));
     memcpy(wbuff + writelen, buff, len);
@@ -43,30 +38,19 @@ ssize_t Peer::Write(Peer* who, const void* buff, size_t size) {
     return len;
 }
 
-void Peer::writedcb() {
-    if (fd > 0) {
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN | EPOLLOUT;
-        if (epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
-            epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-        }
-    }
+ssize_t Peer::Read(void* buff, size_t size) {
+    return read(fd, buff, size);
 }
 
+ssize_t Peer::Write(const void* buff, size_t size) {
+    return write(fd, buff, size);
+}
 
 ssize_t Peer::Write() {
-    ssize_t ret = write(fd, wbuff, writelen);
+    ssize_t ret = Write(wbuff, writelen);
 
-    if (ret < 0) {
+    if (ret <= 0) {
         return ret;
-    }
-
-    if (ret == 0) {
-        if (errno == 0)
-            return 0;
-        else
-            return -1;
     }
 
     if ((size_t)ret != writelen) {
@@ -77,6 +61,17 @@ ssize_t Peer::Write() {
     }
 
     return ret;
+}
+
+void Peer::writedcb() {
+    if (fd > 0) {
+        struct epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLIN | EPOLLOUT;
+        if (epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
+            epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+        }
+    }
 }
 
 size_t Peer::bufleft(Peer *) {

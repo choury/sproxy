@@ -30,29 +30,9 @@ ssize_t Guest_s::Read(void* buff, size_t size) {
     return SSL_read(ssl, buff, size);
 }
 
-ssize_t Guest_s::Write(void *buff, size_t size) {
+ssize_t Guest_s::Write(const void *buff, size_t size) {
     return SSL_write(ssl, buff, size);
 }
-
-
-ssize_t Guest_s::Write() {
-    ssize_t ret = Write(wbuff, writelen);
-
-    if (ret <= 0) {
-        return ret;
-    }
-
-    if ((size_t)ret != writelen) {
-        memmove(wbuff, wbuff + ret, writelen - ret);
-        writelen -= ret;
-    } else {
-        writelen = 0;
-    }
-
-    return ret;
-}
-
-
 
 void Guest_s::shakedhand() {
     epoll_event event;

@@ -282,7 +282,7 @@ void query(const char *host , DNSCBfunc func, void *param, uint16_t times) {
     snprintf(dnsst->host, sizeof(dnsst->host), "%s", host);
 
 
-    for (size_t i = 0; i < srvs.size(); ++i) {
+    for (size_t i = times%srvs.size(); i < srvs.size(); ++i) {
         if (!(dnsst->flags & QARECORD) && srvs[i]->query(host, 1, dnsst->id)) {
             dnsst->flags |= QARECORD;
         }

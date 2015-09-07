@@ -7,12 +7,10 @@
 
 class Guest_s2: public Guest_s, public Http2Res{
     boost::bimap<Peer *, int> idmap;
-    std::queue<Http2_header *> framequeue;
     std::set<Peer *> waitlist;
-    size_t frameleft = 0;
-    size_t dataleft = 0;
     virtual void defaultHE(uint32_t events);
     virtual ssize_t Read(void *buff, size_t size)override;
+    virtual ssize_t Write(const void *buff, size_t size)override;
     virtual ssize_t Write(Peer* who, const void *buff, size_t size)override;
     virtual Http2_header* SendFrame(const Http2_header *header, size_t addlen)override;
     virtual void GoawayProc(Http2_header *header)override;

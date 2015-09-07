@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 #include <sys/epoll.h>
 
-#define DEBUG
+//#define DEBUG
 
 extern uint16_t SPORT;
 #define CPORT 3333

@@ -3,8 +3,6 @@
 #include "file.h"
 
 Guest_s2::Guest_s2(Guest_s *const copy): Guest_s(copy) {
-    windowsize = 65535;
-    windowleft = 65535;
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
@@ -18,6 +16,10 @@ ssize_t Guest_s2::Read(void *buff, size_t size) {
     return Guest_s::Read(buff, size);
 }
 
+ssize_t Guest_s2::Write(const void *buff, size_t size) {
+    return Guest_s::Write(buff, size);
+}
+
 
 ssize_t Guest_s2::Write(Peer *who, const void *buff, size_t size)
 {
@@ -29,12 +31,12 @@ ssize_t Guest_s2::Write(Peer *who, const void *buff, size_t size)
         who->clean(this, PEER_LOST_ERR);
         return -1;
     }
+    size = size > FRAMEBODYLIMIT ? FRAMEBODYLIMIT:size;
     set24(header.length, size);
     if(size == 0) {
         header.flags = END_STREAM_F;
         idmap.left.erase(who);
     }
-    header.type = 0;
     SendFrame(&header, 0);
     int ret = Peer::Write(who, buff, size);
     this->windowsize -= ret;
@@ -45,16 +47,11 @@ ssize_t Guest_s2::Write(Peer *who, const void *buff, size_t size)
 
 
 Http2_header* Guest_s2::SendFrame(const Http2_header *header, size_t addlen) {
-    size_t len = sizeof(Http2_header) + addlen;
-    Http2_header *frame = (Http2_header *)malloc(len);
-    memcpy(frame, header, len);
-    framequeue.push(frame);
-    
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    return frame;
+    return Http2Res::SendFrame(header, addlen);
 }
 
 
@@ -64,13 +61,13 @@ void Guest_s2::DataProc(Http2_header* header) {
         Peer *host = idmap.right.find(id)->second;
         size_t len = get24(header->length);
         if(len > host->bufleft(this)){
-            Reset(get32(header->id), ERR_FLOW_CONTROL_ERROR);
+            Reset(id, ERR_FLOW_CONTROL_ERROR);
             host->clean(this, ERR_FLOW_CONTROL_ERROR);
             return;
         }
         host->Write(this, header+1, len);
-        if((host->windowleft -= len) <= 100 * 1024){
-            host->windowleft += ExpandWindowSize(id, 512*1024);
+        if((host->windowleft -= len) <= 300 * 1024){
+            host->windowleft += ExpandWindowSize(id, 300*1024);
         }
         windowleft -= len;
     }else{
@@ -139,58 +136,18 @@ void Guest_s2::defaultHE(uint32_t events)
     }
 
     if (events & EPOLLOUT) {
-        if (dataleft) {
-            if(writelen){ //先将data帧的数据写完
-                int ret = Guest_s::Write(wbuff, Min(writelen,dataleft));
-                if(ret>0){
-                    memmove(wbuff, wbuff + ret, writelen - ret);
-                    writelen -= ret;
-                    dataleft -= ret;
-                }else if (showerrinfo(ret, "guest_s2 write error")) {
-                    clean(this, WRITE_ERR);
-                    return;
-                }
-                for(auto i:waitlist){
-                    i->writedcb();
-                }
-                waitlist.clear();
-            }else{
-                return;
+        int ret = Write_Proc(wbuff, writelen);
+        if(ret){
+            for(auto i:waitlist){
+                i->writedcb();
             }
-        }
-        if(dataleft == 0 && !framequeue.empty()){  //data帧已写完
-            do{
-                Http2_header *header = framequeue.front();
-                size_t framewritelen;
-                if(header->type){
-                    framewritelen = get24(header->length) + sizeof(Http2_header);
-                }else{
-                    framewritelen = sizeof(Http2_header);
-                }
-                frameleft = frameleft?frameleft:framewritelen;
-                int ret = Guest_s::Write((char *)header+framewritelen-frameleft, frameleft);
-                if(ret>0){
-                    frameleft -= ret;
-                    if(frameleft == 0 ){
-                        size_t len = get24(header->length);
-                        framequeue.pop();
-                        if(header->type == 0 && len){
-                            dataleft = len;
-                            free(header);
-                            break;
-                        }
-                        free(header);
-                    }
-                }else{
-                    if (showerrinfo(ret, "guest_s2 write error")) {
-                        clean(this, WRITE_ERR);
-                    }
-                    break;
-                }
-            }while(!framequeue.empty());
+            waitlist.clear();
+        }else if (showerrinfo(ret, "guest_s2 write error")) {
+            clean(this, WRITE_ERR);
+            return;
         }
 
-        if (writelen == 0 && framequeue.empty()) {
+        if (ret == 2) {
             struct epoll_event event;
             event.data.ptr = this;
             event.events = EPOLLIN;

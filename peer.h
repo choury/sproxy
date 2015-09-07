@@ -16,13 +16,14 @@ protected:
     char wbuff[1024 * 1024];
     explicit Peer(int fd = 0);
     virtual ssize_t Read(void *buff, size_t size);
+    virtual ssize_t Write(const void *buff, size_t size);
     virtual ssize_t Write();
     virtual void disconnect(Peer *who, uint32_t errcode);
     virtual void closeHE(uint32_t events) = 0;
 public:
     virtual ~Peer();
-    ssize_t windowsize = 0; //for http2
-    ssize_t windowleft;     //for http2
+    ssize_t windowsize = 65535; //(for http2) 对端提供的窗口大小，发送时减小，收到对段update时增加
+    ssize_t windowleft = 65535; //(for http2) 发送给对端的窗口大小，接受时减小，给对端发送update时增加
     virtual void clean(Peer *who, uint32_t errcode);
     virtual void disconnected(Peer *who, uint32_t errcode);
     virtual ssize_t Write(Peer* who, const void *buff, size_t size);

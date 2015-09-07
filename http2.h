@@ -4,6 +4,7 @@
 #include "parse.h"
 #include "hpack.h"
 
+#include <queue>
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -86,19 +87,24 @@ struct Setting_Frame{
 #define FRAMELENLIMIT FRAMEBODYLIMIT+sizeof(Http2_header) 
 
 class Http2Base{
+    std::queue<Http2_header *> framequeue;
+    size_t frameleft = 0;
+    size_t dataleft = 0;
 protected:
     char http2_buff[FRAMELENLIMIT];
     size_t http2_getlen = 0;
     size_t http2_expectlen = 0;
-    size_t initalframewindowsize = 0;
+    size_t initalframewindowsize = 65535; //由对端初始化的初始frame的窗口大小
     Index_table request_table;
     Index_table response_table;
     void DefaultProc();
     void Reset(uint32_t id, uint32_t code);
+    void SendInitSetting();
     virtual void InitProc()=0;
     virtual void HeadersProc(Http2_header *header) = 0;
     virtual ssize_t Read(void* buff, size_t len) = 0;
-    virtual Http2_header* SendFrame(const Http2_header* header, size_t addlen) = 0;
+    virtual ssize_t Write(const void *buff, size_t size) = 0;
+    virtual Http2_header* SendFrame(const Http2_header* header, size_t addlen);
     
     virtual void SettingsProc(Http2_header *header);
     virtual void PingProc(Http2_header *header);
@@ -110,6 +116,7 @@ protected:
     virtual void ErrProc(int errcode) = 0;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff) = 0;
     void (Http2Base::*Http2_Proc)()=&Http2Base::InitProc;
+    size_t Write_Proc(char *wbuf, size_t &writelen);
 };
 
 class Http2Res:public Http2Base {

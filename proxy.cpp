@@ -32,28 +32,14 @@ Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
     return new Proxy(req, guest);
 }
 
-
-ssize_t Proxy::Write() {
-    ssize_t ret = SSL_write(ssl, wbuff, writelen);
-
-    if (ret <= 0) {
-        return ret;
-    }
-
-    if ((size_t)ret != writelen) {
-        memmove(wbuff, wbuff + ret, writelen - ret);
-        writelen -= ret;
-    } else {
-        writelen = 0;
-    }
-
-    return ret;
-}
-
 ssize_t Proxy::Read(void* buff, size_t size) {
     return SSL_read(ssl, buff, size);
 }
 
+
+ssize_t Proxy::Write(const void *buff, size_t size) {
+    return SSL_write(ssl, buff, size);
+}
 
 int Proxy::showerrinfo(int ret, const char* s) {
     if(ret <= 0){
