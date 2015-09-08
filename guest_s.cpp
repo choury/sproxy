@@ -16,6 +16,7 @@ Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL* ssl): Guest(fd, myadd
 Guest_s::Guest_s(Guest_s *const copy): Guest(copy), ssl(copy->ssl) {
     copy->fd = 0;
     copy->ssl = nullptr;
+	copy->disconnect(nullptr, NOERROR);
 }
 
 

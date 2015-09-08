@@ -1,23 +1,78 @@
 #include "peer.h"
 #include "guest.h"
 
-#include <boost/bimap.hpp>
-#include <boost/bimap/multiset_of.hpp>
+#include <map>
+#include <set>
 
 #include <string.h>
+#include <unistd.h>
 
 char SHOST[DOMAINLIMIT];
 uint16_t SPORT = 443;
 
-boost::bimap<boost::bimaps::multiset_of<Guest *>,boost::bimaps::multiset_of<Peer *>> bindex;
+
+struct Bindex{
+    std::map<Guest* , std::set<Peer *>> left;
+    std::map<Peer* , std::set<Guest *>> right;
+    void insert(Guest* guest, Peer* peer);
+    Peer *query(Peer *peer);
+    void erase(Guest *guest, Peer *peer);
+}bindex;
 
 Peer::Peer(int fd):fd(fd) {
 }
 
+void Bindex::insert(Guest *guest, Peer *peer)
+{
+    if(!guest || !peer)
+        return;
+    if(left.count(guest)){
+        left[guest].insert(peer);
+    }else{
+        std::set<Peer *> peers;
+        peers.insert(peer);
+        left.insert(std::make_pair(guest, peers));
+    }
+    
+    if(right.count(peer)){
+        right[peer].insert(guest);
+    }else{
+        std::set<Guest *> guests;
+        guests.insert(guest);
+        right.insert(std::make_pair(peer, guests));
+    }
+}
+
+Peer * Bindex::query(Peer *peer){
+    Guest *guest = static_cast<Guest *>(peer);
+    if(left.count(guest)){
+        return *left[guest].begin();
+    }
+    if(right.count(peer)){
+        return *right[peer].begin();
+    }
+    return nullptr;
+}
+
+void Bindex::erase(Guest *guest, Peer *peer) {
+    if(left.count(guest)){
+        auto peers = left[guest];
+        peers.erase(peer);
+        if(peers.empty()){
+            left.erase(guest);
+        }
+    }
+    if(right.count(peer)){
+        auto guests = right[peer];
+        guests.erase(guest);
+        if(guests.empty()){
+            right.erase(peer);
+        }
+    }
+}
 
 
 Peer::~Peer() {
-//    disconnect(this);
     if (fd > 0) {
         epoll_ctl(efd,EPOLL_CTL_DEL,fd,nullptr);
         close(fd);
@@ -78,77 +133,54 @@ size_t Peer::bufleft(Peer *) {
     return sizeof(wbuff)-writelen;
 }
 
-/*
-void Peer::ErrProc(int errcode) {
-    if (showerrinfo(errcode, "Peer read")) {
-        clean(this);
-    }
-}
-*/
 
 void connect(Guest* p1, Peer* p2) {
-    auto range = bindex.left.equal_range(p1);
-    for(auto i=range.first;i!=range.second;i++)
-        if(p2 == i->second)
-            return;
-    bindex.insert(decltype(bindex)::value_type(p1,p2));
+    bindex.insert(p1, p2);
 }
 
 
 
 Peer* queryconnect(Peer* key) {
-    Guest *guest = dynamic_cast<Guest *>(key);
-    if (guest){
-        if (bindex.left.count(guest)){
-            return bindex.left.find(guest)->second;
-        }
-        return nullptr;
-    }else{
-        if (bindex.right.count(key)) {
-            return bindex.right.find(key)->second; 
-        }
-        return nullptr;
-    }
+    return bindex.query(key);
 }
 
 /*这里who为this，或者是NULL时都会disconnect所有连接的peer
  * 区别是who 为NULL时不会调用disconnect */
 void Peer::disconnect(Peer* who, uint32_t errcode) {
+    std::set<std::pair<Guest*, Peer*>> should_erase;
     Guest *this_is_guest= dynamic_cast<Guest *>(this);
-    if(this_is_guest){
-        auto range = bindex.left.equal_range(this_is_guest);
-        for(auto i=range.first;i!=range.second;){
-            Peer *found = i->second;
+    if(this_is_guest && bindex.left.count(this_is_guest)){
+        std::set<Peer *> peers = bindex.left[this_is_guest];
+        for(auto found: peers){
             if(who == this || who == nullptr || who == found) {
-                bindex.left.erase(i++);
-            }else{
-                i++;
-            }
-            if(who) {
-                found->disconnected(this, errcode);
+                should_erase.insert(std::make_pair(this_is_guest, found));
             }
         }
-        return;
     }
     
-    auto range = bindex.right.equal_range(this);
-    for(auto i=range.first;i!=range.second;){
-        Guest *found = i->second;
-        if(who == this || who == nullptr || who == found) {
-            bindex.right.erase(i++);
-        }else{
-            i++;
+    if(bindex.right.count(this)){
+        std::set<Guest *> guests = bindex.right[this];
+        for(auto found: guests){
+            if(who == this || who == nullptr || who == found) {
+                should_erase.insert(std::make_pair(found, this));
+            }
         }
-        if(who) {
-            found->disconnected(this, errcode);
+    }
+    
+    for(auto i: should_erase){
+        bindex.erase(i.first, i.second);
+    }
+    
+    if(who){
+        if(this_is_guest){
+            for(auto i: should_erase)
+                i.second->clean(this_is_guest, errcode);
+        }else{
+            for(auto i: should_erase)
+                i.first->clean(this, errcode);
         }
     }
 }
-
-void Peer::disconnected(Peer* who, uint32_t errcode) {
-    return clean(who, errcode);
-}
-
 
 void Peer::clean(Peer* who, uint32_t errcode) {
     disconnect(who, errcode);

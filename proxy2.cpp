@@ -215,6 +215,7 @@ void Proxy2::clean(Peer* who, uint32_t errcode) {
         Reset(idmap.left.find(guest)->second, errcode>30?ERR_INTERNAL_ERROR:errcode);
         idmap.left.erase(guest);
     }
+	waitlist.erase(who);
 }
 
 void Proxy2::wait(Peer *who) {
