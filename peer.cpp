@@ -56,16 +56,14 @@ Peer * Bindex::query(Peer *peer){
 
 void Bindex::erase(Guest *guest, Peer *peer) {
     if(left.count(guest)){
-        auto peers = left[guest];
-        peers.erase(peer);
-        if(peers.empty()){
+        left[guest].erase(peer);
+        if(left[guest].empty()){
             left.erase(guest);
         }
     }
     if(right.count(peer)){
-        auto guests = right[peer];
-        guests.erase(guest);
-        if(guests.empty()){
+        right[peer].erase(guest);
+        if(right[peer].empty()){
             right.erase(peer);
         }
     }
