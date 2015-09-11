@@ -81,7 +81,7 @@ void Guest_s2::ReqProc(HttpReqHeader &req)
     char hostname[HOST_NAME_MAX];
     gethostname(hostname, sizeof(hostname));
     LOG("([%s]:%d):[%d] %s %s\n", sourceip, sourceport, req.id, req.method, req.url);
-        
+    
     if(req.hostname[0] && strcmp(req.hostname, hostname)){
         Host *host = new Host(req, this);
         host->windowsize = initalframewindowsize;
@@ -172,7 +172,10 @@ void Guest_s2::RstProc(uint32_t id, uint32_t errcode) {
 void Guest_s2::WindowUpdateProc(uint32_t id, uint32_t size) {
     if(id){
         if(idmap.right.count(id)){
-            idmap.right.find(id)->second->windowsize += size;
+            Peer *peer = idmap.right.find(id)->second;
+            peer->windowsize += size;
+            peer->writedcb();
+            waitlist.erase(peer);
         }
     }else{
         windowsize += size;
@@ -213,4 +216,29 @@ size_t Guest_s2::bufleft(Peer *peer) {
 void Guest_s2::wait(Peer *who){
     waitlist.insert(who);
     Peer::wait(who);
+}
+
+int Guest_s2::showstatus(Peer *who, char *buff) {
+    int wlen,len=0;
+    sprintf(buff, "Guest_s2([%s]:%d) buffleft:%lu: windowsize: %ld, windowleft: %ld\n%n",
+                   sourceip, sourceport, sizeof(wbuff)-writelen, windowsize, windowleft, &wlen);
+    len += wlen;
+    for(auto i: idmap.left){
+        Peer *peer = i.first;
+        sprintf(buff+len,"[%d] buffleft:%lu, windowsize: %ld, windowleft:%ld : %n",
+                i.second, peer->bufleft(this), peer->windowsize, peer->windowleft, &wlen);
+        len += wlen;
+        len += i.first->showstatus(this, buff+len);
+    }
+    sprintf(buff+len, "waitlist:\r\n%n", &wlen);
+    len += wlen;
+    for(auto i:waitlist){
+        sprintf(buff+len, "[%d]: windowsize: %ld, windowleft: %ld, buffleft:%lu\r\n%n",
+                idmap.left.find(i)->second, i->windowsize, i->windowleft, 
+                i->bufleft(this), &wlen);
+        len += wlen;
+    }
+    sprintf(buff+len, "\r\n%n", &wlen);
+    len += wlen;
+    return len;
 }

@@ -330,7 +330,7 @@ void dnstick() {
 
 int dnsstatus(char* buff) {
     int wlen,len;
-    sprintf(buff, "\r\ndns cache:\r\n%n", &wlen);
+    sprintf(buff, "dns cache:\r\n%n", &wlen);
     for (auto i = rcd_index_host.begin(); i!= rcd_index_host.end();i++) {
         sprintf(buff+wlen, "[%s]:%u\r\n%n", i->first.c_str(),
                 (uint)(DNSTTL -(time(nullptr)-i->second.gettime)), &len);

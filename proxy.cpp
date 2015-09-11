@@ -188,7 +188,7 @@ Proxy::~Proxy() {
     }
 }
 
-int Proxy::showstatus(char* buff){
+int Proxy::showstatus(Peer *, char* buff){
     int wlen,len;
     sprintf(buff, "%s ##(proxy)%n", req.url, &wlen);
     const char *status;

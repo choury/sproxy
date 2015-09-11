@@ -120,13 +120,20 @@ void Guest_s::shakehandHE(uint32_t events) {
     } 
 }
 
-
-
 void Guest_s::ReqProc(HttpReqHeader& req) {
     char hostname[HOST_NAME_MAX];
     gethostname(hostname, sizeof(hostname));
-        
     LOG("([%s]:%d): %s %s\n", sourceip, sourceport, req.method, req.url);
+    
+    if(req.ismethod("SHOW")){
+        writelen += ::showstatus(wbuff+writelen, req.url);
+        struct epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLIN | EPOLLOUT;
+        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        return; 
+    }
+        
     if (req.url[0] == '/' && (hostname[0] )) {
         if(req.parse()){
             LOG("([%s]:%d): parse url failed\n", sourceip, sourceport);

@@ -270,7 +270,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     return guest->Write(this, buff, Min(size, len));
 }
 
-int Host::showstatus(char* buff) {
+int Host::showstatus(Peer *, char* buff) {
     int wlen,len;
     sprintf(buff, "%s %n", req.url, &wlen);
     const char *status;

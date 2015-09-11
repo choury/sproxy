@@ -27,7 +27,7 @@ public:
     explicit Guest(const Guest *const copy);
     virtual ~Guest();
     virtual void Response(Peer *who, HttpResHeader& res);
-    virtual int showstatus(char *buff)override;
+    virtual int showstatus(Peer *who, char *buff)override;
 };
 
 #endif

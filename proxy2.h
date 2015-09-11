@@ -26,6 +26,7 @@ public:
     virtual void Request(Guest* guest, HttpReqHeader& req, bool)override;
     virtual void clean(Peer *who, uint32_t errcode)override;
     virtual void wait(Peer *who)override;
+    virtual int showstatus(Peer *who, char *buff)override;
 };
 
 extern Proxy2* proxy2; 

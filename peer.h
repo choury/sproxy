@@ -27,7 +27,7 @@ public:
     virtual void clean(Peer *who, uint32_t errcode);
     virtual ssize_t Write(Peer* who, const void *buff, size_t size);
     virtual int showerrinfo(int ret, const char *) = 0;
-    virtual int showstatus(char *buff) {return 0;}
+    virtual int showstatus(Peer *who, char *buff) {return 0;}
     
     virtual void writedcb();
     virtual size_t bufleft(Peer*);

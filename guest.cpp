@@ -1,5 +1,10 @@
 #include "guest.h"
+
+#ifdef CLIENT
+#include "proxy2.h"
+#else
 #include "host.h"
+#endif
 
 #include <set>
 #include <string.h>
@@ -21,15 +26,26 @@
 
 std::set<Guest *> guest_set;
 
-
-int showstatus(char *buff){
-    int wlen;
-    sprintf(buff, "Guest:\r\n%n", &wlen);
-    for(auto i:guest_set){
-        wlen += i->showstatus(buff+wlen);
+int showstatus(char *buff, const char *command){
+    if(command[0] == 0 || strcasecmp(command, "guest") == 0){
+        int len = 0,wlen;
+        sprintf(buff, "Guest:\r\n%n", &wlen);
+        len += wlen;
+        for(auto i:guest_set){
+            wlen = i->showstatus(nullptr, buff+len);
+            len += wlen;
+        }
+        return len;
     }
-    wlen += dnsstatus(buff+wlen);
-    return wlen;
+    if(strcasecmp(command, "dns") == 0){
+        return dnsstatus(buff);
+    }
+#ifdef CLIENT
+    if(proxy2 && strcasecmp(command, "http2") == 0){
+        return proxy2->showstatus(nullptr, buff);
+    }
+#endif
+    return 0;
 }
                     
 Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Peer(fd) {
@@ -179,7 +195,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
         spliturl(req.url, SHOST, nullptr, &SPORT);
         Write(this, SWITCHTIP, strlen(SWITCHTIP));
     } else if (req.ismethod("SHOW")){
-        writelen += ::showstatus(wbuff+writelen);
+        writelen += ::showstatus(wbuff+writelen, req.url);
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLIN | EPOLLOUT;
@@ -219,12 +235,12 @@ Guest::~Guest(){
     guest_set.erase(this);
 }
 
-int Guest::showstatus(char* buff){
+int Guest::showstatus(Peer *,char* buff){
     int wlen,len;
-    sprintf(buff, "([%s]:%d): %n", sourceip, sourceport, &wlen);
+    sprintf(buff, "([%s]:%d) buffleft(%lu): %n", sourceip, sourceport, sizeof(wbuff)-writelen, &wlen);
     Peer *peer = queryconnect(this);
     if(peer){
-        len = peer->showstatus(buff+wlen);
+        len = peer->showstatus(this, buff+wlen);
     } else {
         sprintf(buff+wlen, "null %n", &len);
         wlen += len;

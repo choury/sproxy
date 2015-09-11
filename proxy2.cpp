@@ -157,7 +157,10 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
 void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
     if(id){
         if(idmap.right.count(id)){
-            idmap.right.find(id)->second->windowsize += size;
+            Guest *guest = idmap.right.find(id)->second;
+            guest->windowsize += size;
+            guest->writedcb();
+            waitlist.erase(guest);
         }
     }else{
         windowsize += size;
@@ -223,4 +226,29 @@ void Proxy2::wait(Peer *who) {
     Peer::wait(who);
 }
 
+int Proxy2::showstatus(Peer *who, char *buff){
+    Guest *guest = dynamic_cast<Guest*>(who);
+    int len = 0;
+    if(guest){
+        if(idmap.left.count(guest)){
+            sprintf(buff, "id:[%u], windowsize :%ld, windowleft: %ld #(proxy2)\n%n",
+                    idmap.left.find(guest)->second, guest->windowsize, 
+                    guest->windowleft, &len);
+        }else{
+            sprintf(buff, "null #(proxy2)%n", &len);
+        }
+    }else{
+        int wlen;
+        sprintf(buff, "Proxy2: windowsize: %ld, windowleft: %ld, buffleft:%lu\n"
+                      "waitlist: \n%n",
+                       windowsize, windowleft, sizeof(wbuff)-writelen, &wlen);
+        len+= wlen;
+        for(auto i:waitlist){
+            sprintf(buff+len, "[%d]: windowsize: %ld, windowleft: %ld, buffleft:%lu\r\n%n",
+                    idmap.left.find(static_cast<Guest *>(i))->second,
+                    i->windowsize, i->windowleft, i->bufleft(this), &wlen);
+        }
+    }
+    return len;
+}
 

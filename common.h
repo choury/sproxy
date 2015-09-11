@@ -84,6 +84,7 @@ int URLDecode(const char* src, char *des);
 void hosttick();
 void dnstick();
 void dump_trace();
+int showstatus(char *buff, const char *command);
 
 #ifdef  __cplusplus
 }
