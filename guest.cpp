@@ -223,7 +223,7 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
         return -1;
     }
     int len = host->bufleft(this);
-    if (len == 0) {
+    if (len <= 0) {
         LOGE("([%s]:%d): The host's buff is full\n", sourceip, sourceport);
         host->wait(this);
         return -1;
@@ -237,7 +237,8 @@ Guest::~Guest(){
 
 int Guest::showstatus(Peer *,char* buff){
     int wlen,len;
-    sprintf(buff, "([%s]:%d) buffleft(%lu): %n", sourceip, sourceport, sizeof(wbuff)-writelen, &wlen);
+    sprintf(buff, "([%s]:%d) buffleft(%d): %n", sourceip, sourceport,
+                   (int32_t)(sizeof(wbuff)-writelen), &wlen);
     Peer *peer = queryconnect(this);
     if(peer){
         len = peer->showstatus(this, buff+wlen);

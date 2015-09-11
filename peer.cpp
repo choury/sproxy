@@ -127,7 +127,7 @@ void Peer::writedcb() {
     }
 }
 
-size_t Peer::bufleft(Peer *) {
+int32_t Peer::bufleft(Peer *) {
     return sizeof(wbuff)-writelen;
 }
 

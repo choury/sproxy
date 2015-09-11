@@ -16,7 +16,7 @@ public:
 
 class File:public Peer{
     int ffd = 0;
-    size_t leftsize;
+    uint32_t leftsize;
     char filename[URLLIMIT];
 //protected:
     HttpReqHeader req;

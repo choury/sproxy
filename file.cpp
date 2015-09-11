@@ -186,7 +186,7 @@ void File::openHE(uint32_t events) {
         if(range.size() == 0){
             HttpResHeader res(H200);
             leftsize = st.st_size;
-            snprintf((char *)wbuff, sizeof(wbuff), "%lu", leftsize);
+            snprintf((char *)wbuff, sizeof(wbuff), "%u", leftsize);
             res.add("Content-Length", (char *)wbuff);
             guest->Response(this, res);
         } else if (range.size() == 1 && range.calcu(st.st_size)){
@@ -200,7 +200,7 @@ void File::openHE(uint32_t events) {
             snprintf((char *)wbuff, sizeof(wbuff), "bytes %lu-%lu/%lu", 
                      range.ranges[0].first, range.ranges[0].second, st.st_size);
             res.add("Content-Range",(char *)wbuff);
-            snprintf((char *)wbuff, sizeof(wbuff), "%lu", leftsize);
+            snprintf((char *)wbuff, sizeof(wbuff), "%u", leftsize);
             res.add("Content-Length", (char *)wbuff);
             guest->Response(this, res);
         } else {
@@ -242,8 +242,8 @@ void File::defaultHE(uint32_t events) {
             clean(this, WRITE_ERR);
             return;
         }
-        int len = guest->bufleft(this)<leftsize ? guest->bufleft(this) : leftsize;
-        if (len == 0) {
+        int len = Min(guest->bufleft(this), leftsize);
+        if (len <= 0) {
             LOGE("The guest's write buff is full\n");
             guest->wait(this);
             return;

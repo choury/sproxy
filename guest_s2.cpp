@@ -59,7 +59,7 @@ void Guest_s2::DataProc(Http2_header* header) {
     uint32_t id = get32(header->id);
     if(idmap.right.count(id)){
         Peer *host = idmap.right.find(id)->second;
-        size_t len = get24(header->length);
+        ssize_t len = get24(header->length);
         if(len > host->bufleft(this)){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
             host->clean(this, ERR_FLOW_CONTROL_ERROR);
@@ -208,8 +208,8 @@ void Guest_s2::clean(Peer *who, uint32_t errcode)
     waitlist.erase(who);
 }
 
-size_t Guest_s2::bufleft(Peer *peer) {
-    size_t windowsize = Min(peer->windowsize, this->windowsize);
+int32_t Guest_s2::bufleft(Peer *peer) {
+    int32_t windowsize = Min(peer->windowsize, this->windowsize);
     return Min(windowsize, Peer::bufleft(peer));
 }
 
@@ -220,12 +220,12 @@ void Guest_s2::wait(Peer *who){
 
 int Guest_s2::showstatus(Peer *who, char *buff) {
     int wlen,len=0;
-    sprintf(buff, "Guest_s2([%s]:%d) buffleft:%lu: windowsize: %ld, windowleft: %ld\n%n",
-                   sourceip, sourceport, sizeof(wbuff)-writelen, windowsize, windowleft, &wlen);
+    sprintf(buff, "Guest_s2([%s]:%d) buffleft:%d: windowsize: %d, windowleft: %d\n%n",
+                   sourceip, sourceport, (int32_t)(sizeof(wbuff)-writelen), windowsize, windowleft, &wlen);
     len += wlen;
     for(auto i: idmap.left){
         Peer *peer = i.first;
-        sprintf(buff+len,"[%d] buffleft:%lu, windowsize: %ld, windowleft:%ld : %n",
+        sprintf(buff+len,"[%d] buffleft:%d: windowsize: %d, windowleft:%d : %n",
                 i.second, peer->bufleft(this), peer->windowsize, peer->windowleft, &wlen);
         len += wlen;
         len += i.first->showstatus(this, buff+len);
@@ -233,9 +233,9 @@ int Guest_s2::showstatus(Peer *who, char *buff) {
     sprintf(buff+len, "waitlist:\r\n%n", &wlen);
     len += wlen;
     for(auto i:waitlist){
-        sprintf(buff+len, "[%d]: windowsize: %ld, windowleft: %ld, buffleft:%lu\r\n%n",
-                idmap.left.find(i)->second, i->windowsize, i->windowleft, 
-                i->bufleft(this), &wlen);
+        sprintf(buff+len, "[%d] buffleft(%d): windowsize: %d, windowleft: %d\r\n%n",
+                idmap.left.find(i)->second, i->bufleft(this),
+                i->windowsize, i->windowleft, &wlen);
         len += wlen;
     }
     sprintf(buff+len, "\r\n%n", &wlen);

@@ -21,7 +21,7 @@ protected:
     virtual void defaultHE(u_int32_t events)override;
 public:
     Proxy2( Proxy *const copy );
-    size_t bufleft(Peer *)override;
+    int32_t bufleft(Peer *)override;
     virtual void ResProc(HttpResHeader &res)override;
     virtual void Request(Guest* guest, HttpReqHeader& req, bool)override;
     virtual void clean(Peer *who, uint32_t errcode)override;

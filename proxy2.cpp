@@ -53,8 +53,8 @@ Http2_header *Proxy2::SendFrame(const Http2_header *header, size_t addlen){
 }
 
 
-size_t Proxy2::bufleft(Peer* peer) {
-    size_t windowsize = Min(peer->windowsize, this->windowsize);
+int32_t Proxy2::bufleft(Peer* peer) {
+    int32_t windowsize = Min(peer->windowsize, this->windowsize);
     return Min(windowsize, Peer::bufleft(peer));
 }
 
@@ -103,7 +103,7 @@ void Proxy2::DataProc(Http2_header* header) {
     uint32_t id = get32(header->id);
     if(idmap.right.count(id)){
         Guest *guest = idmap.right.find(id)->second;
-        size_t len = get24(header->length);
+        int32_t len = get24(header->length);
         if(len > guest->bufleft(this)){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
             guest->clean(this, ERR_FLOW_CONTROL_ERROR);
@@ -231,22 +231,22 @@ int Proxy2::showstatus(Peer *who, char *buff){
     int len = 0;
     if(guest){
         if(idmap.left.count(guest)){
-            sprintf(buff, "id:[%u], windowsize :%ld, windowleft: %ld #(proxy2)\n%n",
-                    idmap.left.find(guest)->second, guest->windowsize, 
-                    guest->windowleft, &len);
+            sprintf(buff, "id:[%u] buffleft(%d) windowsize :%d, windowleft: %d #(proxy2)\n%n",
+                    idmap.left.find(guest)->second, guest->bufleft(this),
+                    guest->windowsize, guest->windowleft, &len);
         }else{
             sprintf(buff, "null #(proxy2)%n", &len);
         }
     }else{
         int wlen;
-        sprintf(buff, "Proxy2: windowsize: %ld, windowleft: %ld, buffleft:%lu\n"
+        sprintf(buff, "Proxy2 buffleft(%d): windowsize: %d, windowleft: %d\n"
                       "waitlist: \n%n",
-                       windowsize, windowleft, sizeof(wbuff)-writelen, &wlen);
+                       (int32_t)(sizeof(wbuff)-writelen), windowsize, windowleft, &wlen);
         len+= wlen;
         for(auto i:waitlist){
-            sprintf(buff+len, "[%d]: windowsize: %ld, windowleft: %ld, buffleft:%lu\r\n%n",
-                    idmap.left.find(static_cast<Guest *>(i))->second,
-                    i->windowsize, i->windowleft, i->bufleft(this), &wlen);
+            sprintf(buff+len, "[%d] buffleft(%d): windowsize: %d, windowleft: %d\r\n%n",
+                    idmap.left.find(static_cast<Guest *>(i))->second, i->bufleft(this),
+                    i->windowsize, i->windowleft, &wlen);
         }
     }
     return len;

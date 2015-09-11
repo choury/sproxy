@@ -25,7 +25,7 @@ class Guest_s2: public Guest_s, public Http2Res{
     virtual void clean(Peer *who, uint32_t errcode)override;
 public:
     Guest_s2(Guest_s *const copy);
-    virtual size_t bufleft(Peer*)override;
+    virtual int32_t bufleft(Peer*)override;
     virtual void wait(Peer *who)override;
     virtual int showstatus(Peer *who, char *buff)override;
 };

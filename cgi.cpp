@@ -80,7 +80,7 @@ void Cgi::defaultHE(uint32_t events)
     }
     if (events & EPOLLIN){
         int len = guest->bufleft(this);
-        if (len == 0) {
+        if (len <= 0) {
             LOGE( "The guest's write buff is full\n");
             guest->wait(this);
             return;
