@@ -25,11 +25,11 @@
                     "This site is blocked, please contact administrator for more information" CRLF
                     
 #define PROXYTIP    "HTTP/1.1 200 Proxy" CRLF \
-                    "Content-Length:47" CRLF CRLF \
+                    "Content-Length:48" CRLF CRLF \
                     "This site is proxyed, you can do what you want" CRLF
                     
 #define NORMALIP    "HTTP/1.1 200 Ok" CRLF \
-                    "Content-Length:58" CRLF CRLF \
+                    "Content-Length:56" CRLF CRLF \
                     "This site won't be proxyed, you can add it by addpsite" CRLF
 
 std::set<Guest *> guest_set;
