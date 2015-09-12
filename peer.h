@@ -29,7 +29,7 @@ public:
     virtual int showerrinfo(int ret, const char *) = 0;
     virtual int showstatus(Peer *who, char *buff) {return 0;}
     
-    virtual void writedcb();
+    virtual void writedcb(Peer *);
     virtual int32_t bufleft(Peer*);
     virtual void wait(Peer *who);
 };

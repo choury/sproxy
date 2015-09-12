@@ -27,6 +27,7 @@ public:
     Guest_s2(Guest_s *const copy);
     virtual int32_t bufleft(Peer*)override;
     virtual void wait(Peer *who)override;
+    virtual void writedcb(Peer *who)override;
     virtual int showstatus(Peer *who, char *buff)override;
 };
 

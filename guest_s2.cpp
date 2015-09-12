@@ -66,10 +66,7 @@ void Guest_s2::DataProc(Http2_header* header) {
             return;
         }
         host->Write(this, header+1, len);
-        if((host->windowleft -= len) <= 300 * 1024){
-            ExpandWindowSize(id, 512*1024 - host->windowleft);
-            host->windowleft = 512*1024;
-        }
+        host->windowleft -= len;
         windowleft -= len;
     }else{
         Reset(get32(header->id), ERR_STREAM_CLOSED);
@@ -139,12 +136,7 @@ void Guest_s2::defaultHE(uint32_t events)
 
     if (events & EPOLLOUT) {
         int ret = Write_Proc(wbuff, writelen);
-        if(ret){
-            for(auto i:waitlist){
-                i->writedcb();
-            }
-            waitlist.clear();
-        }else if (showerrinfo(ret, "guest_s2 write error")) {
+        if (ret <= 0 && showerrinfo(ret, "guest_s2 write error")) {
             clean(this, WRITE_ERR);
             return;
         }
@@ -174,7 +166,7 @@ void Guest_s2::WindowUpdateProc(uint32_t id, uint32_t size) {
         if(idmap.right.count(id)){
             Peer *peer = idmap.right.find(id)->second;
             peer->windowsize += size;
-            peer->writedcb();
+            peer->writedcb(this);
             waitlist.erase(peer);
         }
     }else{
@@ -217,6 +209,18 @@ void Guest_s2::wait(Peer *who){
     waitlist.insert(who);
     Peer::wait(who);
 }
+
+void Guest_s2::writedcb(Peer *who){
+    if(idmap.left.count(who)){
+        if(who->bufleft(this) > 512*1024){
+            size_t len = Min(512*1024 - who->windowleft, who->bufleft(this) - 512*1024);
+            who->windowleft += ExpandWindowSize(idmap.left.find(who)->second, len);
+        }
+    }else{
+        who->clean(this, PEER_LOST_ERR);
+    }
+}
+
 
 int Guest_s2::showstatus(Peer *who, char *buff) {
     int wlen,len=0;

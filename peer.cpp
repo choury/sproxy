@@ -116,7 +116,7 @@ ssize_t Peer::Write() {
     return ret;
 }
 
-void Peer::writedcb() {
+void Peer::writedcb(Peer *) {
     if (fd > 0) {
         struct epoll_event event;
         event.data.ptr = this;

@@ -116,7 +116,7 @@ void Host::defaultHE(uint32_t events) {
                 }
                 return;
             }
-            guest->writedcb();
+            guest->writedcb(this);
         }
         if (writelen == 0) {
             struct epoll_event event;

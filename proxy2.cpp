@@ -80,12 +80,7 @@ void Proxy2::defaultHE(u_int32_t events) {
 
     if (events & EPOLLOUT) {
         int ret = Write_Proc(wbuff, writelen);
-        if(ret){
-            for(auto i:waitlist){
-                i->writedcb();
-            }
-            waitlist.clear();
-        }else if (showerrinfo(ret, "proxy2 write error")) {
+        if (ret <= 0 && showerrinfo(ret, "proxy2 write error")) {
             clean(this, WRITE_ERR);
             return;
         }
@@ -127,10 +122,8 @@ void Proxy2::DataProc(Http2_header* header) {
         if(header->flags & END_STREAM_F){
             guest->flag |= ISCLOSED_F;
             idmap.right.erase(id);
-        }else if((guest->windowleft -= len) <= 300 * 1024){
-            ExpandWindowSize(id, 512*1024 - guest->windowleft);
-            guest->windowleft = 512*1024;
         }
+        guest->windowleft -= len; 
         windowleft -= len;
     }else{
         Reset(id, ERR_STREAM_CLOSED);
@@ -160,7 +153,7 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
         if(idmap.right.count(id)){
             Guest *guest = idmap.right.find(id)->second;
             guest->windowsize += size;
-            guest->writedcb();
+            guest->writedcb(this);
             waitlist.erase(guest);
         }
     }else{
@@ -226,6 +219,19 @@ void Proxy2::wait(Peer *who) {
     waitlist.insert(who);
     Peer::wait(who);
 }
+
+void Proxy2::writedcb(Peer *who){
+    Guest *guest = dynamic_cast<Guest*>(who);
+    if(idmap.left.count(guest)){
+        if(guest->bufleft(this) > 512*1024){
+            size_t len = Min(512*1024 - guest->windowleft, guest->bufleft(this) - 512*1024);
+            guest->windowleft += ExpandWindowSize(idmap.left.find(guest)->second, len);
+        }
+    }else{
+        who->clean(this, PEER_LOST_ERR);
+    }
+}
+
 
 int Proxy2::showstatus(Peer *who, char *buff){
     Guest *guest = dynamic_cast<Guest*>(who);
