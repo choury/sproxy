@@ -106,6 +106,7 @@ void Proxy2::DataProc(Http2_header* header) {
         int32_t len = get24(header->length);
         if(len > guest->bufleft(this)){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
+            idmap.right.erase(id);
             guest->clean(this, ERR_FLOW_CONTROL_ERROR);
             return;
         }
@@ -235,7 +236,7 @@ int Proxy2::showstatus(Peer *who, char *buff){
                     idmap.left.find(guest)->second, guest->bufleft(this),
                     guest->windowsize, guest->windowleft, &len);
         }else{
-            sprintf(buff, "null #(proxy2)%n", &len);
+            sprintf(buff, "null #(proxy2)\n%n", &len);
         }
     }else{
         int wlen;

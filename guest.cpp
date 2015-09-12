@@ -21,8 +21,16 @@
 #define SWITCHTIP   "HTTP/1.0 200 Switched proxy server" CRLF CRLF
 
 #define BLOCKTIP    "HTTP/1.1 403 Forbidden" CRLF \
-                    "Content-Length:71" CRLF CRLF \
-                    "This site is blocked, please contact administrator for more information"
+                    "Content-Length:73" CRLF CRLF \
+                    "This site is blocked, please contact administrator for more information" CRLF
+                    
+#define PROXYTIP    "HTTP/1.1 200 Proxy" CRLF \
+                    "Content-Length:47" CRLF CRLF \
+                    "This site is proxyed, you can do what you want" CRLF
+                    
+#define NORMALIP    "HTTP/1.1 200 Ok" CRLF \
+                    "Content-Length:58" CRLF CRLF \
+                    "This site won't be proxyed, you can add it by addpsite" CRLF
 
 std::set<Guest *> guest_set;
 
@@ -200,7 +208,17 @@ void Guest::ReqProc(HttpReqHeader& req) {
         event.data.ptr = this;
         event.events = EPOLLIN | EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    } else {
+    } else if (req.ismethod("TEST")){
+        if(checkblock(req.hostname)){
+            Write(this, BLOCKTIP, strlen(BLOCKTIP));
+            return;
+        }
+        if(checkproxy(req.hostname)){
+            Write(this, PROXYTIP, strlen(PROXYTIP));
+            return; 
+        }
+        Write(this, NORMALIP, strlen(NORMALIP));
+    } else{
         LOGE("([%s]:%d): unsported method:%s\n",
               sourceip, sourceport, req.method);
         clean(this, HTTP_PROTOCOL_ERR);
