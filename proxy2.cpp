@@ -103,21 +103,22 @@ void Proxy2::DataProc(Http2_header* header) {
             Reset(id, ERR_FLOW_CONTROL_ERROR);
             idmap.right.erase(id);
             guest->clean(this, ERR_FLOW_CONTROL_ERROR);
+            LOGE("[%d]: window size error\n", id);
             return;
         }
         if(guest->flag & ISCHUNKED_F){
             char chunkbuf[100];
             int chunklen;
-            snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF "%n", (uint32_t)get24(header->length), &chunklen);
+            snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF "%n", (uint32_t)len, &chunklen);
             guest->Write(this, chunkbuf, chunklen);
-            guest->Write(this, header+1, get24(header->length));
+            guest->Write(this, header+1, len);
             guest->Write(this, CRLF, strlen(CRLF));
             
-            if((header->flags & END_STREAM_F) && get24(header->length)) {
+            if((header->flags & END_STREAM_F) && len) {
                 guest->Write(this, CHUNCKEND, strlen(CHUNCKEND));
             }
         }else{
-            guest->Write(this, header+1, get24(header->length));
+            guest->Write(this, header+1, len);
         }
         if(header->flags & END_STREAM_F){
             guest->flag |= ISCLOSED_F;
@@ -164,6 +165,7 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
 
 void Proxy2::Request(Guest* guest, HttpReqHeader& req, bool) {
     ::connect(guest, this);
+    idmap.left.erase(guest);
     idmap.insert(decltype(idmap)::value_type(guest, curid));
     req.id = curid;
     curid += 2;
@@ -227,8 +229,6 @@ void Proxy2::writedcb(Peer *who){
             size_t len = Min(512*1024 - guest->windowleft, guest->bufleft(this) - 512*1024);
             guest->windowleft += ExpandWindowSize(idmap.left.find(guest)->second, len);
         }
-    }else{
-        who->clean(this, PEER_LOST_ERR);
     }
 }
 

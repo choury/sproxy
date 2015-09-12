@@ -36,6 +36,7 @@ ssize_t Guest_s2::Write(Peer *who, const void *buff, size_t size)
     if(size == 0) {
         header.flags = END_STREAM_F;
         idmap.left.erase(who);
+        who->clean(nullptr, 0);
     }
     SendFrame(&header, 0);
     int ret = Peer::Write(who, buff, size);
@@ -63,6 +64,7 @@ void Guest_s2::DataProc(Http2_header* header) {
         if(len > host->bufleft(this)){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
             host->clean(this, ERR_FLOW_CONTROL_ERROR);
+            LOGE("(%s:[%d]):[%d] window size error\n", sourceip, sourceport, id);
             return;
         }
         host->Write(this, header+1, len);
@@ -216,8 +218,6 @@ void Guest_s2::writedcb(Peer *who){
             size_t len = Min(512*1024 - who->windowleft, who->bufleft(this) - 512*1024);
             who->windowleft += ExpandWindowSize(idmap.left.find(who)->second, len);
         }
-    }else{
-        who->clean(this, PEER_LOST_ERR);
     }
 }
 
