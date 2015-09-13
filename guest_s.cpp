@@ -56,21 +56,10 @@ void Guest_s::shakedhand() {
 
 
 int Guest_s::showerrinfo(int ret, const char* s) {
-    struct tcp_info info;
-    int optlen = sizeof(struct tcp_info);
-    if (getsockopt (fd, IPPROTO_TCP, TCP_INFO, &info, (socklen_t *)&optlen) < 0) {
-        LOGE("([%s]:%d): %s;getsockopt(TCP_INFO) error:%s\n",
-            sourceip, sourceport, s, strerror(errno));
-        return 1;
-    }
-    if (info.tcpi_state != TCP_ESTABLISHED) {
-        return 1;
-    }
     if(ret<=0) {
         epoll_event event;
         event.data.ptr = this;
         int error = SSL_get_error(ssl, ret);
-        ERR_clear_error();
         switch (error) {
         case SSL_ERROR_WANT_READ:
             return 0;
@@ -81,16 +70,26 @@ int Guest_s::showerrinfo(int ret, const char* s) {
         case SSL_ERROR_ZERO_RETURN:
             break;
         case SSL_ERROR_SYSCALL:
-            LOGE("([%s]:%d): %s:%s\n",
-                sourceip, sourceport, s, strerror(errno));
+            error = ERR_get_error();
+            if (error == 0 && ret == 0){
+                LOGE("([%s]:%d): %s: the connection was lost\n",
+                     sourceip, sourceport, s);
+            }else if (error == 0 && ret == -1){
+                LOGE("([%s]:%d): %s:%s\n",
+                     sourceip, sourceport, s, strerror(errno));
+            }else{
+                LOGE("([%s]:%d): %s:%s\n",
+                     sourceip, sourceport, s, ERR_error_string(error, NULL));
+            }
             break;
         default:
             LOGE("([%s]:%d): %s:%s\n",
-                sourceip, sourceport, s, ERR_error_string(error, NULL));
+                sourceip, sourceport, s, ERR_error_string(ERR_get_error(), NULL));
         }
     }else{
          LOGE("([%s]:%d): %s:%d\n", sourceip, sourceport, s, ret);
     }
+    ERR_clear_error();
     return 1;
 }
 

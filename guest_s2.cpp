@@ -31,7 +31,7 @@ ssize_t Guest_s2::Write(Peer *who, const void *buff, size_t size)
         who->clean(this, PEER_LOST_ERR);
         return -1;
     }
-    size = size > FRAMEBODYLIMIT ? FRAMEBODYLIMIT:size;
+    size = Min(size, FRAMEBODYLIMIT);
     set24(header.length, size);
     if(size == 0) {
         header.flags = END_STREAM_F;
@@ -138,7 +138,12 @@ void Guest_s2::defaultHE(uint32_t events)
 
     if (events & EPOLLOUT) {
         int ret = Write_Proc(wbuff, writelen);
-        if (ret <= 0 && showerrinfo(ret, "guest_s2 write error")) {
+        if(ret){ 
+            for(auto i:waitlist){      
+                i->writedcb(this);     
+            }      
+            waitlist.clear();      
+        }else if(ret <= 0 && showerrinfo(ret, "guest_s2 write error")) {
             clean(this, WRITE_ERR);
             return;
         }

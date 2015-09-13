@@ -196,3 +196,8 @@ void Peer::clean(Peer* who, uint32_t errcode) {
 void Peer::wait(Peer *who) {
     epoll_ctl(efd, EPOLL_CTL_DEL, who->fd, NULL);
 }
+
+int Peer::showstatus(Peer *who, char *buff) {
+    strcpy(buff, "\r\n");
+    return 2;
+}

@@ -17,8 +17,8 @@ public:
 class File:public Peer{
     int ffd = 0;
     uint32_t leftsize;
+    uint32_t wbuffof = 0;
     char filename[URLLIMIT];
-//protected:
     HttpReqHeader req;
     Range range;
     virtual void openHE(uint32_t events);

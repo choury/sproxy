@@ -36,6 +36,7 @@ ssize_t Proxy2::Write(Peer* who, const void* buff, size_t size) {
     set24(header.length, size);
     if(size == 0) {
         header.flags = END_STREAM_F;
+        idmap.left.erase(guest);
     }
     SendFrame(&header, 0);
     int ret = Peer::Write(who, buff, size);
@@ -80,7 +81,12 @@ void Proxy2::defaultHE(u_int32_t events) {
 
     if (events & EPOLLOUT) {
         int ret = Write_Proc(wbuff, writelen);
-        if (ret <= 0 && showerrinfo(ret, "proxy2 write error")) {
+        if(ret){ 
+            for(auto i:waitlist){      
+                i->writedcb(this);     
+            }      
+            waitlist.clear();      
+        }else if(showerrinfo(ret, "proxy2 write error")) {
             clean(this, WRITE_ERR);
             return;
         }

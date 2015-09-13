@@ -46,7 +46,6 @@ int Proxy::showerrinfo(int ret, const char* s) {
         epoll_event event;
         event.data.ptr = this;
         int error = SSL_get_error(ssl, ret);
-        ERR_clear_error();
         switch (error) {
         case SSL_ERROR_WANT_READ:
             event.events = EPOLLIN;
@@ -59,14 +58,22 @@ int Proxy::showerrinfo(int ret, const char* s) {
         case SSL_ERROR_ZERO_RETURN:
             break;
         case SSL_ERROR_SYSCALL:
-            LOGE("%s:%s\n", s, strerror(errno));
+            error = ERR_get_error();
+            if (error == 0 && ret == 0){
+                LOGE("%s: the connection was lost\n", s);
+            }else if (error == 0 && ret == -1){
+                LOGE("%s:%s\n", s, strerror(errno));
+            }else{
+                LOGE("%s:%s\n", s, ERR_error_string(error, NULL));
+            }
             break;
         default:
-            LOGE("%s:%s\n", s, ERR_error_string(error, NULL));
+            LOGE("%s:%s\n", s, ERR_error_string(ERR_get_error(), NULL));
         }
     } else {
         LOGE("%s:%d\n", s, ret);
     }
+    ERR_clear_error();
     return 1;
 }
 

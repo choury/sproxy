@@ -239,24 +239,31 @@ void File::defaultHE(uint32_t events) {
     if (events & EPOLLIN) {
         if (leftsize == 0) {
             guest->Write(this, wbuff, 0);
-            clean(this, WRITE_ERR);
+            clean(this, NOERROR);
             return;
         }
-        int len = Min(guest->bufleft(this), leftsize);
-        if (len <= 0) {
-            LOGE("The guest's write buff is full\n");
-            guest->wait(this);
-            return;
-        }
-        len = read(ffd, wbuff, len);
-        if (len <= 0) {
-            if (showerrinfo(len, "file read error")) {
-                clean(this, READ_ERR);
+        if(wbuffof < writelen){
+            int len = Min(guest->bufleft(this), writelen-wbuffof);
+            if (len <= 0) {
+                LOGE("The guest's write buff is full\n");
+                guest->wait(this);
+                return;
             }
-            return;
+            len = guest->Write(this, wbuff + wbuffof, len);
+            wbuffof  += len;
+            leftsize -= len;
+        }else{
+            int len = Min(sizeof(wbuff), leftsize);
+            len = read(ffd, wbuff, len);
+            if (len <= 0) {
+                if (showerrinfo(len, "file read error")) {
+                    clean(this, READ_ERR);
+                }
+                return;
+            }
+            wbuffof  = 0;
+            writelen = len;
         }
-        leftsize -= len;
-        guest->Write(this, wbuff, len);
     }
     if (events & EPOLLOUT) {
         event.events = EPOLLIN;
