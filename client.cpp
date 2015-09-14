@@ -1,6 +1,7 @@
 #include "guest.h"
-#include "dns.h"
+#include "net.h"
 
+#include <unistd.h>
 #include <signal.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
@@ -27,22 +28,19 @@ int main(int argc, char** argv) {
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
 
+    signal(SIGPIPE, SIG_IGN);
+    efd = epoll_create(10000);
+    
     int svsk;
-    if ((svsk = Listen(CPORT)) < 0) {
+    if ((svsk = Listen(SOCK_STREAM, CPORT)) < 0) {
         return -1;
     }
 
-    signal(SIGPIPE, SIG_IGN);
-    efd = epoll_create(10000);
     struct epoll_event event;
     event.data.ptr = NULL;
     event.events = EPOLLIN;
     epoll_ctl(efd, EPOLL_CTL_ADD, svsk, &event);
 
-    if (dnsinit() <= 0) {
-        LOGOUT("Dns Init failed\n");
-        return -1;
-    }
     LOGOUT("Accepting connections ...\n");
 #ifndef DEBUG
     if (daemon(1, 0) < 0) {
@@ -93,9 +91,9 @@ int main(int argc, char** argv) {
             }
         }
         
-        if(c == 0) {
+        if(c < 5) {
             dnstick();
-            connectset.tick();
+            hosttick();
         }
     }
 

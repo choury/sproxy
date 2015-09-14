@@ -7,14 +7,16 @@
 
 class Guest_s:public Guest {
     SSL *ssl;
+    uint32_t accept_start_time;
 protected:
     virtual ssize_t Read(void *buff, size_t size)override;
-    virtual ssize_t Write()override;
+    virtual ssize_t Write(const void *buff, size_t size)override;
     virtual void shakehandHE(uint32_t events);
+    
     virtual void ReqProc(HttpReqHeader &req)override;
 public:
     Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL *ssl);
-    explicit Guest_s(Guest_s* copy);
+    Guest_s( Guest_s *const copy );
     virtual void shakedhand();
     virtual int showerrinfo(int ret, const char *s)override;
     virtual ~Guest_s();

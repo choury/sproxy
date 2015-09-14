@@ -75,21 +75,21 @@ void Cgi::defaultHE(uint32_t events)
     event.data.ptr = this;
     Guest *guest=dynamic_cast<Guest *>(queryconnect(this));
     if( guest == NULL) {
-        clean(this);
+        clean(this, PEER_LOST_ERR);
         return;
     }
     if (events & EPOLLIN){
-        int len = guest->bufleft();
-        if (len == 0) {
+        int len = guest->bufleft(this);
+        if (len <= 0) {
             LOGE( "The guest's write buff is full\n");
-            epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+            guest->wait(this);
             return;
         }
 
         len=read(fd,wbuff,len);
         if (len<=0){
             if(showerrinfo(len,"cgi read error")){
-                clean(this);
+                clean(this, READ_ERR);
             }
             return;
         }
@@ -101,7 +101,7 @@ void Cgi::defaultHE(uint32_t events)
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("cgi unkown error: %s\n",strerror(errno));
-        clean(this);
+        clean(this, INTERNAL_ERR);
     }
 }
 
@@ -114,7 +114,7 @@ void Cgi::closeHE(uint32_t events){
 Cgi* Cgi::getcgi(HttpReqHeader& req, Guest* guest){
     Cgi* exist=dynamic_cast<Cgi *>(queryconnect(guest));
     if (exist) {
-        exist->clean(nullptr);
+        exist->clean(nullptr, NOERROR);
     }
     return new Cgi(req,guest);
 }

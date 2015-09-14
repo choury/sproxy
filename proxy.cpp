@@ -1,48 +1,35 @@
 #include "proxy.h"
-
-#include <set>
+#include "proxy2.h"
 
 #include <openssl/err.h>
 
-#define PROXYERRTIP     "HTTP/1.0 504 Gateway Timeout" CRLF CRLF\
-                        "Connect to the proxy failed, you can try again, or switch to another proxy"
-                        
-#define SSLERRTIP       "HTTP/1.0 502 Bad Gateway" CRLF CRLF\
-                        "Ssl shakehand error, you can try again, or switch to another proxy"
-
+extern std::map<Host*,time_t> connectmap;
 
 Proxy::Proxy(HttpReqHeader &req, Guest *guest):Host(req, guest, SHOST, SPORT) {}
 
-
-Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
-    Host *exist = (Host *)queryconnect(guest);
-    if (dynamic_cast<Proxy*>(exist)) {
-        exist->Request(req, guest);
-        return exist;
-    }
-    if (exist) {
-        exist->clean(nullptr);
-    }
-
-    return new Proxy(req, guest);
+Proxy::Proxy(Proxy *const copy):Host(copy->fd), ssl(copy->ssl), ctx(copy->ctx) {
+    copy->fd  = 0;
+    copy->ssl = nullptr;
+    copy->ctx = nullptr;
+    copy->disconnect(nullptr, NOERROR);
 }
 
 
-ssize_t Proxy::Write() {
-    ssize_t ret = SSL_write(ssl, wbuff, writelen);
-
-    if (ret <= 0) {
-        return ret;
+Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
+    if (proxy2) {
+        proxy2->Request(guest, req, true);
+        return proxy2;
+    }
+    Host *exist = (Host *)queryconnect(guest);
+    if (dynamic_cast<Proxy*>(exist)) {
+        exist->Request(guest, req, true);
+        return exist;
+    }
+    if (exist) {
+        exist->clean(nullptr, NOERROR);
     }
 
-    if ((size_t)ret != writelen) {
-        memmove(wbuff, wbuff + ret, writelen - ret);
-        writelen -= ret;
-    } else {
-        writelen = 0;
-    }
-
-    return ret;
+    return new Proxy(req, guest);
 }
 
 ssize_t Proxy::Read(void* buff, size_t size) {
@@ -50,58 +37,57 @@ ssize_t Proxy::Read(void* buff, size_t size) {
 }
 
 
+ssize_t Proxy::Write(const void *buff, size_t size) {
+    return SSL_write(ssl, buff, size);
+}
+
 int Proxy::showerrinfo(int ret, const char* s) {
-    epoll_event event;
-    event.data.ptr = this;
-    int error = SSL_get_error(ssl, ret);
-    switch (error) {
-    case SSL_ERROR_WANT_READ:
-        event.events = EPOLLIN;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-        return 0;
-    case SSL_ERROR_WANT_WRITE:
-        event.events = EPOLLIN|EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-        return 0;
-    case SSL_ERROR_ZERO_RETURN:
-        break;
-    case SSL_ERROR_SYSCALL:
-        LOGE("%s:%s\n", s, strerror(errno));
-        break;
-    default:
-        LOGE("%s:%s\n", s, ERR_error_string(error, NULL));
+    if(ret <= 0){
+        epoll_event event;
+        event.data.ptr = this;
+        int error = SSL_get_error(ssl, ret);
+        switch (error) {
+        case SSL_ERROR_WANT_READ:
+            event.events = EPOLLIN;
+            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            return 0;
+        case SSL_ERROR_WANT_WRITE:
+            event.events = EPOLLIN|EPOLLOUT;
+            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            return 0;
+        case SSL_ERROR_ZERO_RETURN:
+            break;
+        case SSL_ERROR_SYSCALL:
+            error = ERR_get_error();
+            if (error == 0 && ret == 0){
+                LOGE("%s: the connection was lost\n", s);
+            }else if (error == 0 && ret == -1){
+                LOGE("%s:%s\n", s, strerror(errno));
+            }else{
+                LOGE("%s:%s\n", s, ERR_error_string(error, NULL));
+            }
+            break;
+        default:
+            LOGE("%s:%s\n", s, ERR_error_string(ERR_get_error(), NULL));
+        }
+    } else {
+        LOGE("%s:%d\n", s, ret);
     }
+    ERR_clear_error();
     return 1;
 }
 
 
-static int select_next_proto_cb(SSL* ssl,
-                                unsigned char **out, unsigned char *outlen,
-                                const unsigned char *in, unsigned int inlen,
-                                void *arg)
-{
-    (void)ssl;
-    std::set<std::string> proset;
-    while (*in) {
-        uint8_t len = *in++;
-        proset.insert(std::string((const char*)in, len));
-        in+= len;
-    }
-    if (proset.count("http/1.1")) {
-        *out = (unsigned char*)"http/1.1";
-        *outlen = strlen((char*)*out);
-        return SSL_TLSEXT_ERR_OK;
-    }
-    LOGE("Can't select a protocol\n");
-    return SSL_TLSEXT_ERR_ALERT_FATAL;
-}
+static const unsigned char alpn_protos_string[] =
+    "\x8http/1.1" \
+    "\x2h2";
 
 
 void Proxy::waitconnectHE(uint32_t events) {
-    connectset.del(this);
+    connectmap.erase(this);
     Guest *guest = (Guest *)queryconnect(this);
     if (guest == nullptr) {
-        clean(this);
+        clean(this, PEER_LOST_ERR);
         return;
     }
     
@@ -134,7 +120,7 @@ void Proxy::waitconnectHE(uint32_t events) {
             goto reconnect;
         }
         SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);  // 去除支持SSLv2 SSLv3
-        SSL_CTX_set_next_proto_select_cb(ctx, select_next_proto_cb, this);
+        SSL_CTX_set_alpn_protos(ctx, alpn_protos_string, sizeof(alpn_protos_string)-1);
 
         ssl = SSL_new(ctx);
         SSL_set_fd(ssl, fd);
@@ -149,7 +135,7 @@ void Proxy::waitconnectHE(uint32_t events) {
     return;
 reconnect:
     if (connect() < 0) {
-        destory(PROXYERRTIP);
+        destory(H502);
     }
 }
 
@@ -157,14 +143,14 @@ reconnect:
 void Proxy::shakehandHE(uint32_t events) {
     Guest *guest = (Guest *)queryconnect(this);
     if (guest == nullptr) {
-        clean(this);
+        clean(this, PEER_LOST_ERR);
         return;
     }
     if ((events & EPOLLIN) || (events & EPOLLOUT)) {
         int ret = SSL_connect(ssl);
         if (ret != 1) {
             if (showerrinfo(ret, "ssl connect error")) {
-                destory(SSLERRTIP);
+                destory(H502);
             }
             return;
         }
@@ -177,14 +163,22 @@ void Proxy::shakehandHE(uint32_t events) {
 
         const unsigned char *data;
         unsigned int len;
-        SSL_get0_next_proto_negotiated(ssl, &data, &len);
-        if (data && strncasecmp((const char*)data, "spdy/3.1", len) == 0) {
+        SSL_get0_alpn_selected(ssl, &data, &len);
+        if (data && strncasecmp((const char*)data, "h2", len) == 0) {
+            Proxy2 *new_proxy = new Proxy2(this);
+            new_proxy->init();
+            new_proxy->Request(guest, req, true);
+            if(!proxy2){
+                proxy2 = new_proxy;
+            }
+            delete this;
         }
         return;
+        
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("proxy unkown error: %s\n", strerror(errno));
-        destory(SSLERRTIP);
+        destory(H502);
     }
 }
 
@@ -200,3 +194,25 @@ Proxy::~Proxy() {
         SSL_CTX_free(ctx);
     }
 }
+
+int Proxy::showstatus(Peer *, char* buff){
+    int wlen,len;
+    sprintf(buff, "%s ##(proxy)%n", req.url, &wlen);
+    const char *status;
+    if(handleEvent ==  nullptr)
+        status = "Waiting dns";
+    else if(handleEvent == (void (Con::*)(uint32_t))&Proxy::waitconnectHE)
+        status = "connecting...";
+    else if(handleEvent == (void (Con::*)(uint32_t))&Proxy::shakehandHE)
+        status = "ssl shankhand";
+    else if(handleEvent == (void (Con::*)(uint32_t))&Proxy::defaultHE)
+        status = "transfer data";
+    else if(handleEvent == (void (Con::*)(uint32_t))&Proxy::closeHE)
+        status = "Waiting close";
+    else
+        status = "unkown status";
+    
+    sprintf(buff+wlen, " %s\r\n%n", status, &len);
+    return wlen + len;
+}
+

@@ -3,16 +3,12 @@
 
 #include "peer.h"
 #include "http.h"
-
 #include <netinet/in.h>
 
-class Guest:public Peer, public Http{
+class Guest:public Peer, public HttpRes{
 protected:
     char sourceip[INET6_ADDRSTRLEN];
     uint16_t  sourceport;
-    
-    char destip[INET6_ADDRSTRLEN];
-    uint16_t  destport;
 
     virtual int showerrinfo(int ret, const char *)override;
     virtual void defaultHE(uint32_t events);
@@ -23,9 +19,15 @@ protected:
     virtual void ReqProc(HttpReqHeader &req)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
 public:
-    Guest();
+#define ISCONNECT_F     1
+#define ISCHUNKED_F     2
+#define ISCLOSED_F      4
+    char flag;
     explicit Guest(int fd, struct sockaddr_in6 *myaddr);
-    virtual void Response(HttpResHeader& res);
+    explicit Guest(const Guest *const copy);
+    virtual ~Guest();
+    virtual void Response(Peer *who, HttpResHeader& res);
+    virtual int showstatus(Peer *who, char *buff)override;
 };
 
 #endif

@@ -4,9 +4,8 @@
 #include "con.h"
 #include "common.h"
 
-/* guest   ---   (client) --- host(proxy) 
- * guest_s ---   (server) --- host */
-
+/* guest   ---   (client) --- host(proxy)
+ * guest_s ---   (server) --- host/file/cgi */
 
 
 
@@ -14,35 +13,29 @@ class Peer:public Con{
 protected:
     int fd;
     size_t  writelen = 0;
-    uchar wbuff[1024 * 1024];
+    char wbuff[1024 * 1024];
     explicit Peer(int fd = 0);
     virtual ssize_t Read(void *buff, size_t size);
+    virtual ssize_t Write(const void *buff, size_t size);
     virtual ssize_t Write();
-    virtual void disconnect(Peer *who);
+    virtual void disconnect(Peer *who, uint32_t errcode);
     virtual void closeHE(uint32_t events) = 0;
 public:
-    virtual void clean(Peer *who);
-    virtual void disconnected(Peer *who);
-    virtual ssize_t Write(Peer* who, const void *buff, size_t size);
-    virtual void writedcb();
-    virtual size_t bufleft();
-    virtual int showerrinfo(int ret, const char *) = 0;
     virtual ~Peer();
+    int32_t windowsize = 65535; //(for http2) 对端提供的窗口大小，发送时减小，收到对段update时增加
+    int32_t windowleft = 65535; //(for http2) 发送给对端的窗口大小，接受时减小，给对端发送update时增加
+    virtual void clean(Peer *who, uint32_t errcode);
+    virtual ssize_t Write(Peer* who, const void *buff, size_t size);
+    virtual int showerrinfo(int ret, const char *) = 0;
+    virtual int showstatus(Peer *who, char *buff);
+    
+    virtual void writedcb(Peer *);
+    virtual int32_t bufleft(Peer*);
+    virtual void wait(Peer *who);
 };
 
-void connect(Peer *p1, Peer *p2);
+class Guest;
+void connect(Guest *p1, Peer *p2);
 Peer *queryconnect(Peer *key);
-
-#include <map>
-
-class ConnectSet{
-    std::map<Peer *,time_t> map;
-public:
-    void add(Peer *key);
-    void del(Peer *key);
-    void tick();
-};
-
-extern ConnectSet connectset;
 
 #endif

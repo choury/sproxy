@@ -1,35 +1,84 @@
 #include "peer.h"
+#include "guest.h"
 
-#include <boost/bimap.hpp>  
+#include <map>
+#include <set>
 
 #include <string.h>
+#include <unistd.h>
 
 char SHOST[DOMAINLIMIT];
 uint16_t SPORT = 443;
 
-boost::bimap<Peer *,Peer *> bindex;
 
+struct Bindex{
+    std::map<Guest* , std::set<Peer *>> left;
+    std::map<Peer* , std::set<Guest *>> right;
+    void insert(Guest* guest, Peer* peer);
+    Peer *query(Peer *peer);
+    void erase(Guest *guest, Peer *peer);
+}bindex;
 
 Peer::Peer(int fd):fd(fd) {
 }
 
+void Bindex::insert(Guest *guest, Peer *peer)
+{
+    if(!guest || !peer)
+        return;
+    if(left.count(guest)){
+        left[guest].insert(peer);
+    }else{
+        std::set<Peer *> peers;
+        peers.insert(peer);
+        left.insert(std::make_pair(guest, peers));
+    }
+    
+    if(right.count(peer)){
+        right[peer].insert(guest);
+    }else{
+        std::set<Guest *> guests;
+        guests.insert(guest);
+        right.insert(std::make_pair(peer, guests));
+    }
+}
+
+Peer * Bindex::query(Peer *peer){
+    Guest *guest = static_cast<Guest *>(peer);
+    if(left.count(guest)){
+        return *left[guest].begin();
+    }
+    if(right.count(peer)){
+        return *right[peer].begin();
+    }
+    return nullptr;
+}
+
+void Bindex::erase(Guest *guest, Peer *peer) {
+    if(left.count(guest)){
+        left[guest].erase(peer);
+        if(left[guest].empty()){
+            left.erase(guest);
+        }
+    }
+    if(right.count(peer)){
+        right[peer].erase(guest);
+        if(right[peer].empty()){
+            right.erase(peer);
+        }
+    }
+}
 
 
 Peer::~Peer() {
-    disconnect(this);
     if (fd > 0) {
         epoll_ctl(efd,EPOLL_CTL_DEL,fd,nullptr);
         close(fd);
     }
 }
 
-ssize_t Peer::Read(void* buff, size_t size) {
-    return read(fd, buff, size);
-}
-
-
-ssize_t Peer::Write(Peer *, const void* buff, size_t size) {
-    int len = Min(size, bufleft());
+ssize_t Peer::Write(Peer* who, const void* buff, size_t size) {
+    int len = Min(size, bufleft(who));
     memcpy(wbuff + writelen, buff, len);
     writelen += len;
 
@@ -42,30 +91,19 @@ ssize_t Peer::Write(Peer *, const void* buff, size_t size) {
     return len;
 }
 
-void Peer::writedcb() {
-    if (fd > 0) {
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN | EPOLLOUT;
-        if (epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
-            epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-        }
-    }
+ssize_t Peer::Read(void* buff, size_t size) {
+    return read(fd, buff, size);
 }
 
+ssize_t Peer::Write(const void* buff, size_t size) {
+    return write(fd, buff, size);
+}
 
 ssize_t Peer::Write() {
-    ssize_t ret = write(fd, wbuff, writelen);
+    ssize_t ret = Write(wbuff, writelen);
 
-    if (ret < 0) {
+    if (ret <= 0) {
         return ret;
-    }
-
-    if (ret == 0) {
-        if (errno == 0)
-            return 0;
-        else
-            return -1;
     }
 
     if ((size_t)ret != writelen) {
@@ -78,61 +116,72 @@ ssize_t Peer::Write() {
     return ret;
 }
 
-size_t Peer::bufleft() {
-    return sizeof(wbuff)-writelen < 100?0:sizeof(wbuff)-writelen;
-}
-
-/*
-void Peer::ErrProc(int errcode) {
-    if (showerrinfo(errcode, "Peer read")) {
-        clean(this);
+void Peer::writedcb(Peer *) {
+    if (fd > 0) {
+        struct epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLIN | EPOLLOUT;
+        if (epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
+            epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+        }
     }
 }
-*/
 
-void connect(Peer* p1, Peer* p2) {
-    bindex.insert(boost::bimap<Peer *,Peer *>::value_type(p1,p2));
+int32_t Peer::bufleft(Peer *) {
+    return sizeof(wbuff)-writelen;
+}
+
+
+void connect(Guest* p1, Peer* p2) {
+    bindex.insert(p1, p2);
 }
 
 
 
 Peer* queryconnect(Peer* key) {
-    if (bindex.left.count(key)){
-        return bindex.left.find(key)->second;
-    }
-    if (bindex.right.count(key)) {
-        return bindex.right.find(key)->second; 
-    }
-    return nullptr;
+    return bindex.query(key);
 }
 
 /*这里who为this，或者是NULL时都会disconnect所有连接的peer
  * 区别是who 为NULL时不会调用disconnect */
-void Peer::disconnect(Peer* who) {
-    Peer *found = nullptr;
-    if(bindex.left.count(this)){
-        found = bindex.left.find(this)->second;
-        if(who == this || who == nullptr || who == found){
-            bindex.left.erase(this);
+void Peer::disconnect(Peer* who, uint32_t errcode) {
+    std::set<std::pair<Guest*, Peer*>> should_erase;
+    Guest *this_is_guest= dynamic_cast<Guest *>(this);
+    if(this_is_guest && bindex.left.count(this_is_guest)){
+        std::set<Peer *> peers = bindex.left[this_is_guest];
+        for(auto found: peers){
+            if(who == this || who == nullptr || who == found) {
+                should_erase.insert(std::make_pair(this_is_guest, found));
+            }
         }
     }
+    
     if(bindex.right.count(this)){
-        found = bindex.right.find(this)->second;
-        if(who == this || who == nullptr || who == found){
-            bindex.right.erase(this);
+        std::set<Guest *> guests = bindex.right[this];
+        for(auto found: guests){
+            if(who == this || who == nullptr || who == found) {
+                should_erase.insert(std::make_pair(found, this));
+            }
         }
     }
-    if(who && found)
-        found->disconnected(this);
+    
+    for(auto i: should_erase){
+        bindex.erase(i.first, i.second);
+    }
+    
+    if(who){
+        if(this_is_guest){
+            for(auto i: should_erase)
+                i.second->clean(this_is_guest, errcode);
+        }else{
+            for(auto i: should_erase)
+                i.first->clean(this, errcode);
+        }
+    }
 }
 
-void Peer::disconnected(Peer* who) {
-    return clean(who);
-}
-
-
-void Peer::clean(Peer* who) {
-    disconnect(who);
+void Peer::clean(Peer* who, uint32_t errcode) {
+    disconnect(who, errcode);
     if(fd > 0) {
         struct epoll_event event;
         event.data.ptr = this;
@@ -142,4 +191,13 @@ void Peer::clean(Peer* who) {
         }
         handleEvent = (void (Con::*)(uint32_t))&Peer::closeHE;
     }
+}
+
+void Peer::wait(Peer *who) {
+    epoll_ctl(efd, EPOLL_CTL_DEL, who->fd, NULL);
+}
+
+int Peer::showstatus(Peer *who, char *buff) {
+    strcpy(buff, "\r\n");
+    return 2;
 }

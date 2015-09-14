@@ -1,6 +1,12 @@
 #include "guest.h"
-#include "host.h"
 
+#ifdef CLIENT
+#include "proxy2.h"
+#else
+#include "host.h"
+#endif
+
+#include <set>
 #include <string.h>
 #include <arpa/inet.h>
 #include <linux/netfilter_ipv4.h>
@@ -15,52 +21,60 @@
 #define SWITCHTIP   "HTTP/1.0 200 Switched proxy server" CRLF CRLF
 
 #define BLOCKTIP    "HTTP/1.1 403 Forbidden" CRLF \
-                    "Content-Length:71" CRLF CRLF \
-                    "This site is blocked, please contact administrator for more information"
+                    "Content-Length:73" CRLF CRLF \
+                    "This site is blocked, please contact administrator for more information" CRLF
+                    
+#define PROXYTIP    "HTTP/1.1 200 Proxy" CRLF \
+                    "Content-Length:48" CRLF CRLF \
+                    "This site is proxyed, you can do what you want" CRLF
+                    
+#define NORMALIP    "HTTP/1.1 200 Ok" CRLF \
+                    "Content-Length:56" CRLF CRLF \
+                    "This site won't be proxyed, you can add it by addpsite" CRLF
 
+std::set<Guest *> guest_set;
+
+int showstatus(char *buff, const char *command){
+    if(command[0] == 0 || strcasecmp(command, "guest") == 0){
+        int len = 0,wlen;
+        sprintf(buff, "Guest:\r\n%n", &wlen);
+        len += wlen;
+        for(auto i:guest_set){
+            wlen = i->showstatus(nullptr, buff+len);
+            len += wlen;
+        }
+        return len;
+    }
+    if(strcasecmp(command, "dns") == 0){
+        return dnsstatus(buff);
+    }
+#ifdef CLIENT
+    if(proxy2 && strcasecmp(command, "http2") == 0){
+        return proxy2->showstatus(nullptr, buff);
+    }
+#endif
+    return 0;
+}
                     
 Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Peer(fd) {
+    guest_set.insert(this);
     inet_ntop(AF_INET6, &myaddr->sin6_addr, sourceip, sizeof(sourceip));
     sourceport = ntohs(myaddr->sin6_port);
 
-    struct sockaddr_in  Dst;
-    socklen_t sin_size = sizeof(Dst);
-    struct sockaddr_in6 Dst6;
-    socklen_t sin6_size = sizeof(Dst6);
 
-    int socktype;
-
-    if ((getsockopt(fd, SOL_IP, SO_ORIGINAL_DST, &Dst, &sin_size)
-            || (socktype = AF_INET, 0))
-         && (getsockopt(fd, SOL_IPV6, SO_ORIGINAL_DST, &Dst6, &sin6_size)
-            || (socktype = AF_INET6, 0)))
-    {
-/*        LOGE("([%s]:%d): getsockopt error:%s\n",
-              sourceip, sourceport, strerror(errno));*/
-        snprintf(destip, sizeof(destip), "%s", "Unkown IP");
-        destport = CPORT;
-    } else {
-        switch (socktype) {
-        case AF_INET:
-            inet_ntop(socktype, &Dst.sin_addr, destip, INET6_ADDRSTRLEN);
-            destport = ntohs(Dst.sin_port);
-            break;
-
-        case AF_INET6:
-            inet_ntop(socktype, &Dst6.sin6_addr, destip, INET6_ADDRSTRLEN);
-            destport = ntohs(Dst6.sin6_port);
-            break;
-        }
-    }
     struct epoll_event event;
     event.data.ptr = this;
-    event.events = EPOLLIN;
+    event.events = EPOLLIN | EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
     handleEvent = (void (Con::*)(uint32_t))&Guest::defaultHE;
 }
 
-Guest::Guest() {
+Guest::Guest(const Guest *const copy): Peer(copy->fd), sourceport(copy->sourceport){
+    guest_set.insert(this);
+    strcpy(this->sourceip, copy->sourceip);
+
 }
+
 
 
 int Guest::showerrinfo(int ret, const char *s) {
@@ -71,6 +85,8 @@ int Guest::showerrinfo(int ret, const char *s) {
         } else {
             return 0;
         }
+    }else if(ret){
+        LOGE("([%s]:%d): %s:%d\n",sourceip, sourceport, s, ret);
     }
     return 1;
 }
@@ -84,7 +100,7 @@ void Guest::defaultHE(uint32_t events) {
             LOGE("([%s]:%d): guest error:%s\n",
                   sourceip, sourceport, strerror(error));
         }
-        clean(this);
+        clean(this, INTERNAL_ERR);
         return;
     }
     
@@ -97,12 +113,12 @@ void Guest::defaultHE(uint32_t events) {
             int ret = Write();
             if (ret <= 0) {
                 if (showerrinfo(ret, "guest write error")) {
-                    clean(this);
+                    clean(this, WRITE_ERR);
                 }
                 return;
             }
             if (Peer *peer = queryconnect(this))
-                peer->writedcb();
+                peer->writedcb(this);
         }
 
         if (writelen == 0) {
@@ -134,8 +150,8 @@ ssize_t Guest::Read(void* buff, size_t len){
 }
 
 void Guest::ErrProc(int errcode) {
-    if (showerrinfo(errcode, "Host read")) {
-        clean(this);
+    if (showerrinfo(errcode, "Guest-Http error")) {
+        clean(this, errcode);
     }
 }
 
@@ -186,14 +202,30 @@ void Guest::ReqProc(HttpReqHeader& req) {
         SPORT = 443;
         spliturl(req.url, SHOST, nullptr, &SPORT);
         Write(this, SWITCHTIP, strlen(SWITCHTIP));
-    } else {
+    } else if (req.ismethod("SHOW")){
+        writelen += ::showstatus(wbuff+writelen, req.url);
+        struct epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLIN | EPOLLOUT;
+        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    } else if (req.ismethod("TEST")){
+        if(checkblock(req.hostname)){
+            Write(this, BLOCKTIP, strlen(BLOCKTIP));
+            return;
+        }
+        if(checkproxy(req.hostname)){
+            Write(this, PROXYTIP, strlen(PROXYTIP));
+            return; 
+        }
+        Write(this, NORMALIP, strlen(NORMALIP));
+    } else{
         LOGE("([%s]:%d): unsported method:%s\n",
               sourceip, sourceport, req.method);
-        clean(this);
+        clean(this, HTTP_PROTOCOL_ERR);
     }
 }
 
-void Guest::Response(HttpResHeader& res) {
+void Guest::Response(Peer* who, HttpResHeader& res) {
     writelen+=res.getstring(wbuff+writelen);
     struct epoll_event event;
     event.data.ptr = this;
@@ -205,14 +237,44 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
     Host *host = dynamic_cast<Host *>(queryconnect(this));
     if (host == NULL) {
         LOGE("([%s]:%d): connecting to host lost\n", sourceip, sourceport);
-        clean(this);
+        clean(this, PEER_LOST_ERR);
         return -1;
     }
-    int len = host->bufleft();
-    if (len == 0) {
+    int len = host->bufleft(this);
+    if (len <= 0) {
         LOGE("([%s]:%d): The host's buff is full\n", sourceip, sourceport);
-        epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+        host->wait(this);
         return -1;
     }
     return host->Write(this, buff, Min(size, len));
 }
+
+Guest::~Guest(){
+    guest_set.erase(this);
+}
+
+int Guest::showstatus(Peer *,char* buff){
+    int wlen,len;
+    sprintf(buff, "([%s]:%d) buffleft(%d): %n", sourceip, sourceport,
+                   (int32_t)(sizeof(wbuff)-writelen), &wlen);
+    Peer *peer = queryconnect(this);
+    if(peer){
+        len = peer->showstatus(this, buff+wlen);
+    } else {
+        sprintf(buff+wlen, "null %n", &len);
+        wlen += len;
+        const char *status;
+        if(handleEvent ==  nullptr)
+            status = "creating object";
+        else if(handleEvent == (void (Con::*)(uint32_t))&Guest::defaultHE)
+            status = "transfer data";
+        else if(handleEvent == (void (Con::*)(uint32_t))&Guest::closeHE)
+            status = "Waiting close";
+        else
+            status = "unkown status";
+        sprintf(buff+wlen, "##%s\r\n%n", status, &len);
+    
+    }
+    return wlen+len;
+}
+

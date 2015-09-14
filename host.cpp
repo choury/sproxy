@@ -1,27 +1,21 @@
-#include "host.h"
 #include "proxy.h"
 
-
-#define DNSERRTIP   "HTTP/1.0 502 Bad Gateway" CRLF CRLF\
-                    "Dns Query failed, you can try again"
+#include <map>
                     
-#define CONERRTIP   "HTTP/1.0 504 Gateway Timeout" CRLF CRLF\
-                    "Connect to the site failed, you can try again"
+std::map<Host*,time_t> connectmap;
 
-Host::Host(HttpReqHeader& req, Guest* guest, Http::Initstate state):Peer(0), Http(state), req(req) {
+Host::Host(HttpReqHeader& req, Guest* guest):Peer(0), HttpReq(req.id?req.ismethod("CONNECT"):true), req(req) {
     ::connect(guest, this);
-    writelen = req.getstring(wbuff);
-    this->req = req;
+    Request(guest, req, false);
     snprintf(hostname, sizeof(hostname), "%s", req.hostname);
     port = req.port;
     query(hostname, (DNSCBfunc)Host::Dnscallback, this);
 }
 
 
-Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0), Http(ALWAYS), req(req) {
+Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0), HttpReq(true), req(req) {
     ::connect(guest, this);
-    writelen = req.getstring(wbuff);
-    this->req = req;
+    Request(guest, req, false);
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
     this->port = port;
 
@@ -36,16 +30,18 @@ int Host::showerrinfo(int ret, const char* s) {
         } else {
             return 0;
         }
+    }else if(ret){
+        LOGE("%s:%d\n",s, ret);
     }
     return 1;
 }
 
 
 void Host::waitconnectHE(uint32_t events) {
-    connectset.del(this);
+    connectmap.erase(this);
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == nullptr) {
-        clean(this);
+        clean(this, PEER_LOST_ERR);
         return;
     }
     
@@ -78,15 +74,14 @@ void Host::waitconnectHE(uint32_t events) {
 
         if (req.ismethod("CONNECT")) {
             HttpResHeader res(connecttip);
-            res.id = req.id;
-            guest->Response(res);
+            guest->Response(this, res);
         }
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
     }
     return;
 reconnect:
     if (connect() < 0) {
-        destory(CONERRTIP);
+        destory(H504);
     }
 }
 
@@ -98,13 +93,13 @@ void Host::defaultHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("host error: %s\n", strerror(error));
         }
-        clean(this);
+        clean(this, INTERNAL_ERR);
         return;
     }
     
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
-        clean(this);
+        clean(this, PEER_LOST_ERR);
         return;
     }
 
@@ -117,11 +112,11 @@ void Host::defaultHE(uint32_t events) {
             int ret = Write();
             if (ret <= 0) {
                 if (showerrinfo(ret, "host write error")) {
-                    clean(this);
+                    clean(this, WRITE_ERR);
                 }
                 return;
             }
-            guest->writedcb();
+            guest->writedcb(this);
         }
         if (writelen == 0) {
             struct epoll_event event;
@@ -134,14 +129,14 @@ void Host::defaultHE(uint32_t events) {
 
 
 void Host::closeHE(uint32_t events) {
-    connectset.del(this);
+    connectmap.erase(this);
     delete this;
 }
 
 void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
     if (rcd.result != 0) {
         LOGE("Dns query failed: %s\n", host->hostname);
-        host->destory(DNSERRTIP);
+        host->destory(H502);
     } else {
         host->addrs = rcd.addrs;
         for (size_t i = 0; i < host->addrs.size(); ++i) {
@@ -149,7 +144,7 @@ void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
         }
         if (host->connect() < 0) {
             LOGE("connect to %s failed\n", host->hostname);
-            host->destory(CONERRTIP);
+            host->destory(H502);
         }
     }
 }
@@ -174,33 +169,56 @@ int Host::connect() {
         event.events = EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
         handleEvent = (void (Con::*)(uint32_t))&Host::waitconnectHE;
-        connectset.add(this);
+        connectmap[this]=time(NULL);
         return 0;
     }
 }
 
 
 void Host::destory(const char* tip) {
-    Peer *guest = queryconnect(this);
+    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if(guest){
-        if(tip)
-            guest->Write(this,tip,strlen(tip));
-        disconnect(this);
+        if(tip){
+            HttpResHeader res(tip);
+            guest->Response(this, res);
+            guest->Write(this, "Something wrong with your request site, you can try angin.\n", 64);
+        }
+        disconnect(this, CONNECT_ERR);
     }
-    connectset.del(this);
+    connectmap.erase(this);
     delete this;
 }
 
 
-void Host::Request(HttpReqHeader &req, Guest *guest) {
+void Host::Request(Guest* guest, HttpReqHeader& req, bool direct_send) {
     writelen+= req.getstring(wbuff+writelen);
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-
+    if(direct_send){
+        struct epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLIN | EPOLLOUT;
+        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    }
+    guest->flag = 0;
+    if(req.ismethod("HEAD")){
+        ignore_body = true;
+    }else if(req.ismethod("CONNECT")){
+        guest->flag = ISCONNECT_F;
+    }
     this->req = req;
 }
+
+void Host::ResProc(HttpResHeader& res) {
+    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
+    if (guest == NULL) {
+        clean(this, PEER_LOST_ERR);
+        return;
+    }
+    if(res.get("Transfer-Encoding")){
+        guest->flag |= ISCHUNKED_F;
+    }
+    guest->Response(this, res);
+}
+
 
 
 Host* Host::gethost(HttpReqHeader &req, Guest* guest) {
@@ -213,12 +231,12 @@ Host* Host::gethost(HttpReqHeader &req, Guest* guest) {
     if (exist && exist->port == req.port
         && strcasecmp(exist->hostname, req.hostname) == 0)
     {
-        exist->Request(req, guest);
+        exist->Request(guest, req, true);
         return exist;
     }
 
     if (exist) { 
-        exist->clean(nullptr);
+        exist->clean(nullptr, NOERROR);
     }
     return new Host(req, guest);
 }
@@ -229,47 +247,56 @@ ssize_t Host::Read(void* buff, size_t len){
 }
 
 void Host::ErrProc(int errcode) {
-    if (showerrinfo(errcode, "Host read")) {
-        clean(this);
+    if (showerrinfo(errcode, "Host-http error")) {
+        clean(this, errcode);
     }
 }
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
-        clean(this);
+        clean(this, PEER_LOST_ERR);
         return -1;
     }
 
-    int len = guest->bufleft();
+    int len = guest->bufleft(this);
 
-    if (len == 0) {
+    if (len <= 0) {
         LOGE("The guest's write buff is full\n");
-        epoll_ctl(efd, EPOLL_CTL_DEL, fd, NULL);
+        guest->wait(this);
         return -1;
     }
 
     return guest->Write(this, buff, Min(size, len));
 }
 
-
-ConnectSet connectset;
-
-void ConnectSet::add(Peer* key) {
-    map[key]=time(NULL);
+int Host::showstatus(Peer *, char* buff) {
+    int wlen,len;
+    sprintf(buff, "%s %n", req.url, &wlen);
+    const char *status;
+    if(handleEvent ==  nullptr)
+        status = "Waiting dns";
+    else if(handleEvent == (void (Con::*)(uint32_t))&Host::waitconnectHE)
+        status = "connecting...";
+    else if(handleEvent == (void (Con::*)(uint32_t))&Host::defaultHE)
+        status = "transfer data";
+    else if(handleEvent == (void (Con::*)(uint32_t))&Host::closeHE)
+        status = "Waiting close";
+    else
+        status = "unkown status";
+    
+    sprintf(buff+wlen, "##%s\r\n%n", status, &len);
+    return wlen + len;
 }
 
-void ConnectSet::del(Peer* key) {
-    map.erase(key);
-}
 
-void ConnectSet::tick() {
-    for(auto i = map.begin();i != map.end();){
+void hosttick() {
+    for(auto i = connectmap.begin();i != connectmap.end();){
         Host *host = (Host *)(i->first);
         if(host && time(NULL) - i->second >= 30 && host->connect() < 0){
-            map.erase(i++);
-            LOGE("connect to %s time out.", host->hostname);
-            host->destory(CONERRTIP);
+            connectmap.erase(i++);
+            LOGE("connect to %s time out.\n", host->hostname);
+            host->destory(H504);
         }else{
             i++;
         }

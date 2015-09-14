@@ -9,9 +9,19 @@
 #include <netinet/tcp.h>
 
 
-int Listen(short port) {
+const char *DEFAULT_CIPHER_LIST = 
+            "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:"
+            "ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-DSS-AES128-GCM-SHA256:"
+            "kEDH+AESGCM:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA:"
+            "ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA384:"
+            "ECDHE-RSA-AES256-SHA:ECDHE-ECDSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:"
+            "DHE-DSS-AES128-SHA256:DHE-RSA-AES256-SHA256:DHE-DSS-AES256-SHA:DHE-RSA-AES256-SHA:"
+            "!aNULL:!eNULL:!EXPORT:!DES:!RC4:!3DES:!MD5:!PSK";
+
+
+int Listen(int type, short port) {
     int svsk;
-    if ((svsk = socket(AF_INET6, SOCK_STREAM, 0)) < 0) {
+    if ((svsk = socket(AF_INET6, type, 0)) < 0) {
         LOGOUT("socket error:%s\n", strerror(errno));
         return -1;
     }
@@ -33,6 +43,20 @@ int Listen(short port) {
         LOGOUT("bind error:%s\n", strerror(errno));
         return -3;
     }
+    
+    //以下设置为keealive配置，非必须，所以不返回错误
+    int keepAlive = 1; // 开启keepalive属性
+    if(setsockopt(svsk, SOL_SOCKET, SO_KEEPALIVE, (void *)&keepAlive, sizeof(keepAlive)) <0)
+        LOGE("SO_KEEPALIVE:%s\n",strerror(errno));
+    int idle = 60; //一分种没有交互就进行探测
+    if(setsockopt(svsk, SOL_TCP, TCP_KEEPIDLE, &idle, sizeof(idle))<0)
+        LOGE("TCP_KEEPIDLE:%s\n",strerror(errno));
+    int intvl = 10; //每10秒探测一次
+    if(setsockopt(svsk, SOL_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl))<0)
+        LOGE("TCP_KEEPINTVL:%s\n",strerror(errno));
+    int cnt = 3; //探测3次无响应就关闭连接
+    if(setsockopt(svsk, SOL_TCP, TCP_KEEPCNT, &cnt, sizeof(cnt))<0)
+        LOGE("TCP_KEEPCNT:%s\n",strerror(errno));
 
     if (listen(svsk, 10000) < 0) {
         LOGOUT("listen error:%s\n", strerror(errno));
@@ -57,15 +81,19 @@ int Connect(struct sockaddr* addr) {
     }
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
     
-    //以下设置为keealive配置，非必须，所以不检查返回值
+    //以下设置为keealive配置，非必须，所以不返回错误
     int keepAlive = 1; // 开启keepalive属性
-    setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void *)&keepAlive, sizeof(keepAlive));
+    if(setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void *)&keepAlive, sizeof(keepAlive)) <0)
+        LOGE("SO_KEEPALIVE:%s\n",strerror(errno));
     int idle = 60; //一分种没有交互就进行探测
-    setsockopt(fd, SOL_TCP, TCP_KEEPIDLE, &idle, sizeof(idle));
+    if(setsockopt(fd, SOL_TCP, TCP_KEEPIDLE, &idle, sizeof(idle))<0)
+        LOGE("TCP_KEEPIDLE:%s\n",strerror(errno));
     int intvl = 10; //每10秒探测一次
-    setsockopt(fd, SOL_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl));
+    if(setsockopt(fd, SOL_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl))<0)
+        LOGE("TCP_KEEPINTVL:%s\n",strerror(errno));
     int cnt = 3; //探测3次无响应就关闭连接
-    setsockopt(fd, SOL_TCP, TCP_KEEPCNT, &cnt, sizeof(cnt));
+    if(setsockopt(fd, SOL_TCP, TCP_KEEPCNT, &cnt, sizeof(cnt))<0)
+        LOGE("TCP_KEEPCNT:%s\n",strerror(errno));
     
     if (connect(fd, addr, sizeof(struct sockaddr_in6)) == -1 && errno != EINPROGRESS) {
         LOGE("connecting error:%s\n",strerror(errno));

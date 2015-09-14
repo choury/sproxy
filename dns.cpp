@@ -14,6 +14,7 @@
 
 
 static unsigned int id_cur = 1;
+static bool dns_inited = false;
 
 std::vector<Dns_srv *> srvs;
 
@@ -114,7 +115,7 @@ void Dns_rcd::Down(const sockaddr_un& addr) {
 }
 
 
-unsigned char * getdomain(unsigned char *buf, unsigned char *p) {
+static unsigned char * getdomain(unsigned char *buf, unsigned char *p) {
     while (*p) {
         if (*p > 63) {
             unsigned char *q = buf+((*p & 0x3f) <<8) + *(p+1);
@@ -131,7 +132,7 @@ unsigned char * getdomain(unsigned char *buf, unsigned char *p) {
 }
 
 
-unsigned char *getrr(
+static unsigned char *getrr(
     unsigned char *buf,
     unsigned char *p,
     int num,
@@ -181,7 +182,7 @@ unsigned char *getrr(
     return p;
 }
 
-int dnsinit() {
+static int dnsinit() {
     struct epoll_event event;
     event.events = EPOLLIN;
     for (size_t i = 0; i < srvs.size(); ++i) {
@@ -193,7 +194,7 @@ int dnsinit() {
     if (res_file == NULL) {
         LOGE("[DNS] open resolv file:%s failed:%s\n",
              RESOLV_FILE, strerror(errno) );
-        return -1;
+        return 0;
     }
     char line[100];
     while (fscanf(res_file, "%99[^\n]\n", line)!= EOF) {
@@ -247,6 +248,8 @@ int dnsinit() {
 }
 
 void query(const char *host , DNSCBfunc func, void *param, uint16_t times) {
+    if(!dns_inited)
+        dns_inited = dnsinit();
     unsigned char buf[BUF_SIZE];
     if (inet_pton(PF_INET, host, buf) == 1) {
         sockaddr_un addr;
@@ -279,7 +282,7 @@ void query(const char *host , DNSCBfunc func, void *param, uint16_t times) {
     snprintf(dnsst->host, sizeof(dnsst->host), "%s", host);
 
 
-    for (size_t i = 0; i < srvs.size(); ++i) {
+    for (size_t i = times%srvs.size(); i < srvs.size(); ++i) {
         if (!(dnsst->flags & QARECORD) && srvs[i]->query(host, 1, dnsst->id)) {
             dnsst->flags |= QARECORD;
         }
@@ -307,19 +310,41 @@ void dnstick() {
     for (auto i = rcd_index_id.begin(); i!= rcd_index_id.end();) {
         auto tmp=i++;
         auto oldstate = tmp->second;
-        rcd_index_id.erase(tmp);
-        if (oldstate->addr.size()) {
-            oldstate->func(oldstate->param, Dns_rcd(oldstate->addr));
-        } else if (time(nullptr)-oldstate->reqtime>= DNSTIMEOUT) {           // 超时重试
-            if(oldstate->times < 10) {
-                LOGE("[DNS] %s: time out, retry...\n", oldstate->host);
-                query(oldstate->host, oldstate->func, oldstate->param, ++oldstate->times);
-            } else {
-                oldstate->func(oldstate->param, Dns_rcd(DNS_ERR));
+        if (time(nullptr)-oldstate->reqtime>= DNSTIMEOUT){
+            rcd_index_id.erase(tmp);
+            if (oldstate->addr.size()) {
+                oldstate->func(oldstate->param, Dns_rcd(oldstate->addr));
+            } else  {           // 超时重试
+                if(oldstate->times < 5) {
+                    LOGE("[DNS] %s: time out, retry...\n", oldstate->host);
+                    query(oldstate->host, oldstate->func, oldstate->param, ++oldstate->times);
+                } else {
+                    oldstate->func(oldstate->param, Dns_rcd(DNS_ERR));
+                }
             }
+            delete oldstate;
         }
-        delete oldstate;
     }
+}
+
+
+int dnsstatus(char* buff) {
+    int wlen,len;
+    sprintf(buff, "dns cache:\r\n%n", &wlen);
+    for (auto i = rcd_index_host.begin(); i!= rcd_index_host.end();i++) {
+        sprintf(buff+wlen, "[%s]:%u\r\n%n", i->first.c_str(),
+                (uint)(DNSTTL -(time(nullptr)-i->second.gettime)), &len);
+        wlen += len;
+        
+    }
+    sprintf(buff+wlen, "\r\ndns request:\r\n%n", &len);
+    wlen += len;
+    for (auto i = rcd_index_id.begin(); i!= rcd_index_id.end();i++) {
+        sprintf(buff+wlen, "[%s]:%d(%u)\r\n%n", i->second->host,
+                (uint)(time(nullptr)-i->second->reqtime), i->second->times, &len);
+        wlen += len;
+    }
+    return wlen;
 }
 
 

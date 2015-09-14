@@ -120,8 +120,6 @@ int URLDecode(const char* src, char *des)
 }
 
 
-
-#ifdef __USE_GNU
 #include <execinfo.h>
 void dump_trace() {
     void *stack_trace[100] = {0};
@@ -151,5 +149,3 @@ void dump_trace() {
 
     return;
 }
-
-#endif
