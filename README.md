@@ -6,7 +6,7 @@ sproxy
 
 TODO
 ======
-    支持HTTP2
-    基于udp的代理协议
+    支持HTTP2(已实现)
     实现sni支持
+    基于udp的代理协议
     
