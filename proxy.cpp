@@ -160,7 +160,8 @@ void Proxy::shakehandHE(uint32_t events) {
         event.events = EPOLLIN |EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
         handleEvent = (void (Con::*)(uint32_t))&Proxy::defaultHE;
-
+        guest->writedcb(this);
+        
         const unsigned char *data;
         unsigned int len;
         SSL_get0_alpn_selected(ssl, &data, &len);
@@ -182,6 +183,11 @@ void Proxy::shakehandHE(uint32_t events) {
     }
 }
 
+int32_t Proxy::bufleft(Peer *){
+    if(handleEvent == &Proxy::defaultHE)
+        return Peer::bufleft(this);
+    return 0;
+}
 
 
 Proxy::~Proxy() {

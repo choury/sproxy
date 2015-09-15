@@ -36,7 +36,6 @@ ssize_t Proxy2::Write(Peer* who, const void* buff, size_t size) {
     set24(header.length, size);
     if(size == 0) {
         header.flags = END_STREAM_F;
-        idmap.left.erase(guest);
     }
     SendFrame(&header, 0);
     int ret = Peer::Write(who, buff, size);

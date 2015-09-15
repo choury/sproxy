@@ -103,7 +103,7 @@ void Host::defaultHE(uint32_t events) {
         return;
     }
 
-    if (events & EPOLLIN) {
+    if (events & EPOLLIN || http_getlen) {
         (this->*Http_Proc)();
     }
 
