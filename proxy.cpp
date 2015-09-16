@@ -16,17 +16,19 @@ Proxy::Proxy(Proxy *const copy):Host(copy->fd), ssl(copy->ssl), ctx(copy->ctx) {
 
 
 Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
-    if (proxy2) {
-        proxy2->Request(guest, req, true);
-        return proxy2;
-    }
     Host *exist = (Host *)queryconnect(guest);
     if (dynamic_cast<Proxy*>(exist)) {
         exist->Request(guest, req, true);
         return exist;
     }
+    
     if (exist) {
-        exist->clean(nullptr, NOERROR);
+        exist->clean(nullptr, NOERROR); //只有exist是host才会走到这里
+    }
+    
+    if (proxy2) {
+        proxy2->Request(guest, req, true);
+        return proxy2;
     }
 
     return new Proxy(req, guest);
