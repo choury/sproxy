@@ -76,6 +76,7 @@ void Proxy2::defaultHE(u_int32_t events) {
         if(windowleft < 50 *1024 *1024){
             windowleft += ExpandWindowSize(0, 50*1024*1024);
         }
+        lastget = getutime();
     }
 
     if (events & EPOLLOUT) {
@@ -95,6 +96,7 @@ void Proxy2::defaultHE(u_int32_t events) {
             event.events = EPOLLIN;
             epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
         }
+        lastsend = getutime();
     }
 }
 
@@ -165,6 +167,14 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
     }else{
         windowsize += size;
     }
+}
+
+void Proxy2::PingProc(Http2_header *header){
+    if(header->flags & ACK_F){
+        size_t now = getutime();
+        LOG("[Proxy2] Get a ping diff:%fms\n", (now-get64(header+1))/1000.0);
+    }
+    Http2Base::PingProc(header);
 }
 
 
@@ -243,24 +253,34 @@ int Proxy2::showstatus(Peer *who, char *buff){
     int len = 0;
     if(guest){
         if(idmap.left.count(guest)){
-            sprintf(buff, "id:[%u] buffleft(%d) windowsize :%d, windowleft: %d #(proxy2)\n%n",
+            len =sprintf(buff, "id:[%u] buffleft(%d) windowsize :%d, windowleft: %d #(proxy2)\n",
                     idmap.left.find(guest)->second, guest->bufleft(this),
-                    guest->windowsize, guest->windowleft, &len);
+                    guest->windowsize, guest->windowleft);
         }else{
-            sprintf(buff, "null #(proxy2)\n%n", &len);
-        }
-    }else{
-        int wlen;
-        sprintf(buff, "Proxy2 buffleft(%d): windowsize: %d, windowleft: %d\n"
-                      "waitlist: \n%n",
-                       (int32_t)(sizeof(wbuff)-writelen), windowsize, windowleft, &wlen);
-        len+= wlen;
-        for(auto i:waitlist){
-            sprintf(buff+len, "[%d] buffleft(%d): windowsize: %d, windowleft: %d\r\n%n",
-                    idmap.left.find(static_cast<Guest *>(i))->second, i->bufleft(this),
-                    i->windowsize, i->windowleft, &wlen);
+            len =sprintf(buff, "null #(proxy2)\n");
         }
     }
     return len;
+}
+
+void Proxy2::Pingcheck() {
+    if(!lastget || !lastsend)
+        return;
+    size_t now = getutime();
+    if(now - lastsend >= 10000000){ //超过10秒就发ping包检测
+        char buff[8];
+        set64(buff, now);
+        Ping(buff);
+    }
+    if(now - lastget >= 30000000){ //超过30秒没收到报文，认为链接断开
+        clean(this, PEER_LOST_ERR);
+    }
+}
+
+
+void proxy2tick() {
+    if(proxy2){
+        proxy2->Pingcheck();
+    }
 }
 

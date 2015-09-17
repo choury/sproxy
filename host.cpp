@@ -1,6 +1,11 @@
+#ifdef CLIENT
 #include "proxy.h"
+#else
+#include "host.h"
+#endif
 
 #include <map>
+#include <string.h>
                     
 std::map<Host*,time_t> connectmap;
 
@@ -271,8 +276,8 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 }
 
 int Host::showstatus(Peer *, char* buff) {
-    int wlen,len;
-    sprintf(buff, "%s %n", req.url, &wlen);
+    int len;
+    len = sprintf(buff, "%s ", req.url);
     const char *status;
     if(handleEvent ==  nullptr)
         status = "Waiting dns";
@@ -285,8 +290,8 @@ int Host::showstatus(Peer *, char* buff) {
     else
         status = "unkown status";
     
-    sprintf(buff+wlen, "##%s\r\n%n", status, &len);
-    return wlen + len;
+    len += sprintf(buff+len, "##%s\r\n", status);
+    return len;
 }
 
 

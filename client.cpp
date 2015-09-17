@@ -94,6 +94,7 @@ int main(int argc, char** argv) {
         if(c < 5) {
             dnstick();
             hosttick();
+            proxy2tick();
         }
     }
 

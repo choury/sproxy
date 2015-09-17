@@ -5,7 +5,9 @@
 #include "http2.h"
 
 class Proxy2:public Proxy, public Http2Req{
-    u_int32_t curid = 1;
+    uint32_t curid = 1;
+    uint64_t lastsend = 0;
+    uint64_t lastget  = 0;
     boost::bimap<Guest *, int> idmap;
     std::set<Peer *> waitlist;
 protected:
@@ -16,6 +18,7 @@ protected:
     virtual void DataProc(Http2_header *header)override;
     virtual void RstProc(uint32_t id, uint32_t errcode)override;
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)override;
+    virtual void PingProc(Http2_header *header)override;
     virtual void ErrProc(int errcode)override;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
     virtual void defaultHE(u_int32_t events)override;
@@ -28,6 +31,7 @@ public:
     virtual void wait(Peer *who)override;
     virtual void writedcb(Peer *who)override;
     virtual int showstatus(Peer *who, char *buff)override;
+    void Pingcheck();
 };
 
 extern Proxy2* proxy2; 

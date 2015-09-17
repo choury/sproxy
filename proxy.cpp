@@ -204,8 +204,8 @@ Proxy::~Proxy() {
 }
 
 int Proxy::showstatus(Peer *, char* buff){
-    int wlen,len;
-    sprintf(buff, "%s ##(proxy)%n", req.url, &wlen);
+    int len;
+    len = sprintf(buff, "%s ##(proxy)", req.url);
     const char *status;
     if(handleEvent ==  nullptr)
         status = "Waiting dns";
@@ -220,7 +220,7 @@ int Proxy::showstatus(Peer *, char* buff){
     else
         status = "unkown status";
     
-    sprintf(buff+wlen, " %s\r\n%n", status, &len);
-    return wlen + len;
+    len += sprintf(buff+len, " %s\r\n", status);
+    return len;
 }
 

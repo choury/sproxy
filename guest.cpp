@@ -1,10 +1,5 @@
 #include "guest.h"
-
-#ifdef CLIENT
-#include "proxy2.h"
-#else
 #include "host.h"
-#endif
 
 #include <set>
 #include <string.h>
@@ -36,23 +31,16 @@ std::set<Guest *> guest_set;
 
 int showstatus(char *buff, const char *command){
     if(command[0] == 0 || strcasecmp(command, "guest") == 0){
-        int len = 0,wlen;
-        sprintf(buff, "Guest:\r\n%n", &wlen);
-        len += wlen;
+        int len = 0;
+        len = sprintf(buff, "Guest:\r\n");
         for(auto i:guest_set){
-            wlen = i->showstatus(nullptr, buff+len);
-            len += wlen;
+            len += i->showstatus(nullptr, buff+len);
         }
         return len;
     }
     if(strcasecmp(command, "dns") == 0){
         return dnsstatus(buff);
     }
-#ifdef CLIENT
-    if(proxy2 && strcasecmp(command, "http2") == 0){
-        return proxy2->showstatus(nullptr, buff);
-    }
-#endif
     return 0;
 }
                     
@@ -254,15 +242,14 @@ Guest::~Guest(){
 }
 
 int Guest::showstatus(Peer *,char* buff){
-    int wlen,len;
-    sprintf(buff, "([%s]:%d) buffleft(%d): %n", sourceip, sourceport,
-                   (int32_t)(sizeof(wbuff)-writelen), &wlen);
+    int len;
+    len = sprintf(buff, "([%s]:%d) buffleft(%d): ", sourceip, sourceport,
+                   (int32_t)(sizeof(wbuff)-writelen));
     Peer *peer = queryconnect(this);
     if(peer){
-        len = peer->showstatus(this, buff+wlen);
+        len += peer->showstatus(this, buff+len);
     } else {
-        sprintf(buff+wlen, "null %n", &len);
-        wlen += len;
+        len += sprintf(buff+len, "null ");
         const char *status;
         if(handleEvent ==  nullptr)
             status = "creating object";
@@ -272,9 +259,9 @@ int Guest::showstatus(Peer *,char* buff){
             status = "Waiting close";
         else
             status = "unkown status";
-        sprintf(buff+wlen, "##%s\r\n%n", status, &len);
+        len += sprintf(buff+len, "##%s\r\n", status);
     
     }
-    return wlen+len;
+    return len;
 }
 

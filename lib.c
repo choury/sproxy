@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <sys/time.h>
     
 /**
  * strnstr - Find the first substring in a length-limited string
@@ -119,6 +120,11 @@ int URLDecode(const char* src, char *des)
     return 1;
 }
 
+uint64_t getutime(){
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec * 1000000 + tv.tv_usec;
+}
 
 #include <execinfo.h>
 void dump_trace() {

@@ -59,11 +59,23 @@ void Http2Base::DefaultProc() {
     (this->*Http2_Proc)();
 }
 
+/* ping 帧永远插到最前面*/
 Http2_header *Http2Base::SendFrame(const Http2_header *header, size_t addlen) {
     size_t len = sizeof(Http2_header) + addlen;
     Http2_header *frame = (Http2_header *)malloc(len);
     memcpy(frame, header, len);
-    framequeue.push(frame);
+    switch(frame->type){
+    case PING_TYPE:
+        if(frameleft){
+            framequeue.insert(framequeue.begin(), frame);
+        }else{
+            framequeue.push_front(frame);
+        }
+        break;
+    default:
+        framequeue.push_back(frame);
+        break;
+    }
     return frame;
 }
 
@@ -98,7 +110,7 @@ size_t Http2Base::Write_Proc(char *wbuff, size_t &writelen){
                 frameleft -= ret;
                 if(frameleft == 0 ){
                     size_t len = get24(header->length);
-                    framequeue.pop();
+                    framequeue.pop_front();
                     if(header->type == 0 && len){
                         dataleft = len;
                         free(header);
@@ -155,10 +167,6 @@ void Http2Base::RstProc(uint32_t id, uint32_t errcode) {
     LOG("Get a reset frame [%d]: %d\n", id, errcode);
 }
 
-void Http2Base::WindowUpdateProc(uint32_t id, uint32_t size) {
-    LOG("Get a window update frame [%d]: %u\n", id, size);
-}
-
 uint32_t Http2Base::ExpandWindowSize(uint32_t id, uint32_t size) {
     char buff[sizeof(Http2_header)+sizeof(uint32_t)] = {0};
     Http2_header *header = (Http2_header *)buff;
@@ -168,6 +176,15 @@ uint32_t Http2Base::ExpandWindowSize(uint32_t id, uint32_t size) {
     set32(header+1, size);
     SendFrame(header, sizeof(uint32_t));
     return size;
+}
+
+void Http2Base::Ping(const void *buff) {
+    char ping[sizeof(Http2_header) + 8] = {0};
+    Http2_header *header = (Http2_header *)ping;
+    header->type = PING_TYPE;
+    set24(header->length, 8);
+    memcpy(header+1, buff, 8);
+    SendFrame(header, 8);
 }
 
 

@@ -4,7 +4,7 @@
 #include "parse.h"
 #include "hpack.h"
 
-#include <queue>
+#include <list>
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -29,6 +29,25 @@
                         ((uchar*)(a))[1] = ((x)>>16) & 0xff;\
                         ((uchar*)(a))[2] = ((x)>>8) & 0xff;\
                         ((uchar*)(a))[3] = (x) & 0xff;\
+                    }while(0);
+
+#define get64(a) ((uint64_t)((uchar*)(a))[0]<<56 |\
+                  (uint64_t)((uchar*)(a))[1]<<48 |\
+                  (uint64_t)((uchar*)(a))[2]<<40 |\
+                  (uint64_t)((uchar*)(a))[3]<<32 |\
+                  (uint64_t)((uchar*)(a))[4]<<24 |\
+                  (uint64_t)((uchar*)(a))[5]<<16 |\
+                  (uint64_t)((uchar*)(a))[6]<<8 |\
+                  (uint64_t)((uchar*)(a))[7])
+#define set64(a, x) do {\
+                        ((uchar*)(a))[0] = ((x)>>56) & 0xff;\
+                        ((uchar*)(a))[1] = ((x)>>48) & 0xff;\
+                        ((uchar*)(a))[2] = ((x)>>40) & 0xff;\
+                        ((uchar*)(a))[3] = ((x)>>32) & 0xff;\
+                        ((uchar*)(a))[4] = ((x)>>24) & 0xff;\
+                        ((uchar*)(a))[5] = ((x)>>16) & 0xff;\
+                        ((uchar*)(a))[6] = ((x)>>8) & 0xff;\
+                        ((uchar*)(a))[7] = (x) & 0xff;\
                     }while(0);
 
 struct Http2_header {
@@ -87,7 +106,7 @@ struct Setting_Frame{
 #define FRAMELENLIMIT FRAMEBODYLIMIT+sizeof(Http2_header) 
 
 class Http2Base{
-    std::queue<Http2_header *> framequeue;
+    std::list<Http2_header *> framequeue;
     size_t frameleft = 0;
     size_t dataleft = 0;
 protected:
@@ -98,6 +117,7 @@ protected:
     Index_table request_table;
     Index_table response_table;
     void DefaultProc();
+    void Ping( const void *buff );
     void Reset(uint32_t id, uint32_t code);
     void SendInitSetting();
     virtual void InitProc()=0;
@@ -110,8 +130,8 @@ protected:
     virtual void PingProc(Http2_header *header);
     virtual void GoawayProc(Http2_header *header);
     virtual void RstProc(uint32_t id, uint32_t errcode);
-    virtual void WindowUpdateProc(uint32_t id, uint32_t size);
     virtual uint32_t ExpandWindowSize(uint32_t id, uint32_t size);
+    virtual void WindowUpdateProc(uint32_t id, uint32_t size)=0;
     virtual void DataProc(Http2_header *header)=0;
     virtual void ErrProc(int errcode) = 0;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff) = 0;
