@@ -6,8 +6,8 @@
 
 class Proxy2:public Proxy, public Http2Req{
     uint32_t curid = 1;
-    uint64_t lastsend = 0;
-    uint64_t lastget  = 0;
+    uint64_t lastping = 0;
+    uint64_t lastrecv  = 0;
     boost::bimap<Guest *, int> idmap;
     std::set<Peer *> waitlist;
 protected:

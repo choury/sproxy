@@ -76,7 +76,7 @@ void Proxy2::defaultHE(u_int32_t events) {
         if(windowleft < 50 *1024 *1024){
             windowleft += ExpandWindowSize(0, 50*1024*1024);
         }
-        lastget = getutime();
+        lastrecv = getutime();
     }
 
     if (events & EPOLLOUT) {
@@ -96,7 +96,6 @@ void Proxy2::defaultHE(u_int32_t events) {
             event.events = EPOLLIN;
             epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
         }
-        lastsend = getutime();
     }
 }
 
@@ -171,8 +170,8 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
 
 void Proxy2::PingProc(Http2_header *header){
     if(header->flags & ACK_F){
-        size_t now = getutime();
-        LOG("[Proxy2] Get a ping diff:%fms\n", (now-get64(header+1))/1000.0);
+        uint64_t now = getutime();
+        LOG("[Proxy2] Get a ping time=%.3fms\n", (now-get64(header+1))/1000.0);
     }
     Http2Base::PingProc(header);
 }
@@ -264,15 +263,17 @@ int Proxy2::showstatus(Peer *who, char *buff){
 }
 
 void Proxy2::Pingcheck() {
-    if(!lastget || !lastsend)
+    if(!lastrecv)
         return;
-    size_t now = getutime();
-    if(now - lastsend >= 10000000){ //超过10秒就发ping包检测
+    uint64_t now = getutime();
+    if(now - lastrecv >= 10000000 && now - lastping >= 5000000){ //超过10秒就发ping包检测
         char buff[8];
         set64(buff, now);
         Ping(buff);
+        lastping = now;
     }
-    if(now - lastget >= 30000000){ //超过30秒没收到报文，认为链接断开
+    if(now - lastrecv >= 30000000){ //超过30秒没收到报文，认为链接断开
+        LOGE("[Proxy2] the ping timeout, so close it\n");
         clean(this, PEER_LOST_ERR);
     }
 }

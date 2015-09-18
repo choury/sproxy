@@ -40,14 +40,14 @@
                   (uint64_t)((uchar*)(a))[6]<<8 |\
                   (uint64_t)((uchar*)(a))[7])
 #define set64(a, x) do {\
-                        ((uchar*)(a))[0] = ((x)>>56) & 0xff;\
-                        ((uchar*)(a))[1] = ((x)>>48) & 0xff;\
-                        ((uchar*)(a))[2] = ((x)>>40) & 0xff;\
-                        ((uchar*)(a))[3] = ((x)>>32) & 0xff;\
-                        ((uchar*)(a))[4] = ((x)>>24) & 0xff;\
-                        ((uchar*)(a))[5] = ((x)>>16) & 0xff;\
-                        ((uchar*)(a))[6] = ((x)>>8) & 0xff;\
-                        ((uchar*)(a))[7] = (x) & 0xff;\
+                        ((uchar*)(a))[0] = ((uint64_t)(x)>>56) & 0xff;\
+                        ((uchar*)(a))[1] = ((uint64_t)(x)>>48) & 0xff;\
+                        ((uchar*)(a))[2] = ((uint64_t)(x)>>40) & 0xff;\
+                        ((uchar*)(a))[3] = ((uint64_t)(x)>>32) & 0xff;\
+                        ((uchar*)(a))[4] = ((uint64_t)(x)>>24) & 0xff;\
+                        ((uchar*)(a))[5] = ((uint64_t)(x)>>16) & 0xff;\
+                        ((uchar*)(a))[6] = ((uint64_t)(x)>>8) & 0xff;\
+                        ((uchar*)(a))[7] = ((uint64_t)x) & 0xff;\
                     }while(0);
 
 struct Http2_header {
