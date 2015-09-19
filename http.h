@@ -31,9 +31,7 @@ class HttpReq:public HttpBase{
     virtual void HeaderProc()override final;
 protected:
     bool ignore_body = false;
-    virtual void ResProc(HttpResHeader &res);
-public:
-    explicit HttpReq(bool transparent = false);
+    virtual void ResProc(HttpResHeader &res) = 0;
 };
 
 #endif

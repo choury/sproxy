@@ -9,7 +9,7 @@
 
 char SHOST[DOMAINLIMIT];
 uint16_t SPORT = 443;
-
+uint16_t CPORT = 3333;
 
 struct Bindex{
     std::map<Guest* , std::set<Peer *>> left;

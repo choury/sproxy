@@ -8,10 +8,10 @@
 #include <arpa/inet.h>
 #include <sys/epoll.h>
 
-#define DEBUG
+//#define DEBUG
 
 extern uint16_t SPORT;
-#define CPORT 3333
+extern uint16_t CPORT;
 
 extern char SHOST[];
 

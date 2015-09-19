@@ -74,8 +74,41 @@ static int select_alpn_cb(SSL *ssl,
     return SSL_TLSEXT_ERR_ALERT_FATAL;
 }
 
-int main(int argc, char **argv)
-{
+
+void usage(const char * programe){
+    printf("Usage: %s [-p port] [-k ca path] [-h] <CERT> <PRIVATE_KEY>\n"
+           "       -p: The port to listen, default is 443.\n"
+           "       -k: A optional intermediate CA certificate.\n"
+           "       -h: Print this.\n"
+           , programe);
+}
+
+
+
+int main(int argc, char **argv) {
+    int oc;
+    const char *capath = nullptr;
+    while((oc = getopt(argc, argv, "p:dthk:")) != -1)
+    {
+        switch(oc){
+        case 'p':
+            SPORT = atoi(optarg);
+            break;
+        case 'k':
+            capath = optarg;
+            break;
+        case 'h':
+            usage(argv[0]);
+            return 0;
+        case '?':
+            usage(argv[0]);
+            return -1;
+        }
+    }
+    if (argc < optind + 2) {
+        usage(argv[0]);
+        return -1;
+    }
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
     SSL_CTX *ctx = SSL_CTX_new(SSLv23_server_method());
@@ -97,7 +130,7 @@ int main(int argc, char **argv)
     SSL_CTX_set_tmp_ecdh(ctx, ecdh);
     EC_KEY_free(ecdh);
 
-    if (SSL_CTX_load_verify_locations(ctx, "/home/choury/keys/ca.pem", NULL) != 1)
+    if (capath && SSL_CTX_load_verify_locations(ctx, capath, NULL) != 1)
         ERR_print_errors_fp(stderr);
 
     if (SSL_CTX_set_default_verify_paths(ctx) != 1)
@@ -105,12 +138,12 @@ int main(int argc, char **argv)
 
 
     //加载证书和私钥
-    if (SSL_CTX_use_certificate_file(ctx, "/home/choury/keys/ssl.crt", SSL_FILETYPE_PEM) != 1) {
+    if (SSL_CTX_use_certificate_file(ctx, argv[optind], SSL_FILETYPE_PEM) != 1) {
         ERR_print_errors_fp(stderr);
         return 1;
     }
 
-    if (SSL_CTX_use_PrivateKey_file(ctx, "/home/choury/keys/ssl.key", SSL_FILETYPE_PEM) != 1) {
+    if (SSL_CTX_use_PrivateKey_file(ctx, argv[optind+1], SSL_FILETYPE_PEM) != 1) {
         ERR_print_errors_fp(stderr);
         return 1;
     }

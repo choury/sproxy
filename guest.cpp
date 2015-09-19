@@ -143,14 +143,20 @@ void Guest::ErrProc(int errcode) {
 }
 
 void Guest::ReqProc(HttpReqHeader& req) {
+    const char *hint = "";
     if (checkproxy(req.hostname)) {
-        LOG("([%s]:%d): PROXY %s %s\n",
-             sourceip, sourceport,
-             req.method, req.url);
-    } else {
-        LOG("([%s]:%d): %s %s\n",
-             sourceip, sourceport,
-             req.method, req.url);
+        hint = "PROXY ";
+    }
+    if(req.url[0] == '/'){
+        LOG("([%s]:%d): %s%s %s%s\n", sourceip, sourceport,
+            hint, req.method, req.hostname, req.url);
+        if(!req.hostname[0]){
+            Write(this, BLOCKTIP, strlen(BLOCKTIP));
+            return;
+        }
+    }else{
+        LOG("([%s]:%d): %s%s %s\n", sourceip, sourceport,
+            hint, req.method, req.url);
     }
 
     if (req.ismethod("GET") || req.ismethod("POST") || req.ismethod("CONNECT") || req.ismethod("HEAD")) {
