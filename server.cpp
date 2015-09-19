@@ -35,24 +35,17 @@ class Https_server: public Server {
             SSL *ssl = SSL_new(ctx);
             /* 将连接用户的socket 加入到SSL */
             SSL_set_fd(ssl, clsk);
-            Guest_s *guest = new Guest_s(clsk, &myaddr, ssl);
-            /* 建立SSL 连接*/
-            int ret = SSL_accept(ssl);
-            if (ret != 1) {
-                if (guest->showerrinfo(ret, "ssl accept error")) {
-                    guest->clean(guest, SSL_SHAKEHAND_ERR);
-                }
-                return;
-            }
-            guest->shakedhand();
-
+            new Guest_s(clsk, &myaddr, ssl);
         } else {
             LOGE("unknown error\n");
             return;
         }
     }
 public:
-    Https_server(int fd, SSL_CTX *ctx): Server(fd),ctx(ctx) {};
+    virtual ~Https_server(){
+        SSL_CTX_free(ctx);
+    };
+    Https_server(int fd, SSL_CTX *ctx): Server(fd),ctx(ctx) {}
 };
 
 
@@ -163,8 +156,6 @@ int main(int argc, char **argv)
             hosttick();
         }
     }
-    SSL_CTX_free(ctx);
-    close(svsk_tcp);
     return 0;
 }
 

@@ -2,6 +2,7 @@
 #define CON_H__
 
 #include <stdint.h>
+#include <unistd.h>
 #include <sys/epoll.h>
 
 extern int efd;
@@ -23,6 +24,9 @@ public:
         event.events = EPOLLIN;
         epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
         handleEvent = (void (Con::*)(uint32_t))&Server::defaultHE;
+    }
+    virtual ~Server(){
+        close(fd);
     }
 };
 

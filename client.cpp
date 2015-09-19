@@ -1,4 +1,5 @@
 #include "guest.h"
+#include "guest_sni.h"
 #include "net.h"
 
 #include <unistd.h>
@@ -35,7 +36,36 @@ class Http_server: public Server{
         }
     }
 public:
-    Http_server(int fd):Server(fd){};
+    Http_server(int fd):Server(fd){}
+};
+
+
+class Sni_server: public Server{
+    virtual void defaultHE(uint32_t events){
+        if (events & EPOLLIN) {
+            int clsk;
+            struct sockaddr_in6 myaddr;
+            socklen_t temp = sizeof(myaddr);
+            if ((clsk = accept(fd, (struct sockaddr*)&myaddr, &temp)) < 0) {
+                LOGE("accept error:%s\n", strerror(errno));
+                return;
+            }
+
+            int flags = fcntl(clsk, F_GETFL, 0);
+            if (flags < 0) {
+                LOGE("fcntl error:%s\n", strerror(errno));
+                close(clsk);
+                return;
+            }
+
+            fcntl(clsk, F_SETFL, flags | O_NONBLOCK);
+            new Guest_sni(clsk, &myaddr);
+        } else {
+            LOGE("unknown error\n");
+        }
+    }
+public:
+    Sni_server(int fd):Server(fd){}
 };
 
 #ifdef _ANDROID_
@@ -57,11 +87,17 @@ int main(int argc, char** argv) {
     signal(SIGPIPE, SIG_IGN);
     efd = epoll_create(10000);
     
-    int svsk;
-    if ((svsk = Listen(SOCK_STREAM, CPORT)) < 0) {
+    int http_svsk;
+    if ((http_svsk = Listen(SOCK_STREAM, CPORT)) < 0) {
         return -1;
     }
-    new Http_server(svsk);
+    new Http_server(http_svsk);
+    
+    int sni_svsk;
+    if ((sni_svsk = Listen(SOCK_STREAM, 4443)) < 0) {
+        return -1;
+    }
+    new Sni_server(sni_svsk);
 
     LOGOUT("Accepting connections ...\n");
 #ifndef DEBUG
@@ -91,8 +127,6 @@ int main(int argc, char** argv) {
             proxy2tick();
         }
     }
-
-    close(svsk);
     return 0;
 }
 

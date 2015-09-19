@@ -144,23 +144,23 @@ Peer* queryconnect(Peer* key) {
 
 /*这里who为this，或者是NULL时都会disconnect所有连接的peer
  * 区别是who 为NULL时不会调用disconnect */
-void Peer::disconnect(Peer* who, uint32_t errcode) {
+void disconnect(Peer *k1, Peer* k2, uint32_t errcode) {
     std::set<std::pair<Guest*, Peer*>> should_erase;
-    Guest *this_is_guest= dynamic_cast<Guest *>(this);
-    if(this_is_guest && bindex.left.count(this_is_guest)){
-        std::set<Peer *> peers = bindex.left[this_is_guest];
+    Guest *k1_is_guest= dynamic_cast<Guest *>(k1);
+    if(k1_is_guest && bindex.left.count(k1_is_guest)){
+        std::set<Peer *> peers = bindex.left[k1_is_guest];
         for(auto found: peers){
-            if(who == this || who == nullptr || who == found) {
-                should_erase.insert(std::make_pair(this_is_guest, found));
+            if(k2 == k1 || k2 == nullptr || k2 == found) {
+                should_erase.insert(std::make_pair(k1_is_guest, found));
             }
         }
     }
     
-    if(bindex.right.count(this)){
-        std::set<Guest *> guests = bindex.right[this];
+    if(bindex.right.count(k1)){
+        std::set<Guest *> guests = bindex.right[k1];
         for(auto found: guests){
-            if(who == this || who == nullptr || who == found) {
-                should_erase.insert(std::make_pair(found, this));
+            if(k2 == k1 || k2 == nullptr || k2 == found) {
+                should_erase.insert(std::make_pair(found, k1));
             }
         }
     }
@@ -169,19 +169,19 @@ void Peer::disconnect(Peer* who, uint32_t errcode) {
         bindex.erase(i.first, i.second);
     }
     
-    if(who){
-        if(this_is_guest){
+    if(k2){
+        if(k1_is_guest){
             for(auto i: should_erase)
-                i.second->clean(this_is_guest, errcode);
+                i.second->clean(k1_is_guest, errcode);
         }else{
             for(auto i: should_erase)
-                i.first->clean(this, errcode);
+                i.first->clean(k1, errcode);
         }
     }
 }
 
 void Peer::clean(Peer* who, uint32_t errcode) {
-    disconnect(who, errcode);
+    disconnect(this, who, errcode);
     if(fd > 0) {
         struct epoll_event event;
         event.data.ptr = this;

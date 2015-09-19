@@ -182,14 +182,12 @@ int Host::connect() {
 
 void Host::destory(const char* tip) {
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
-    if(guest){
-        if(tip){
-            HttpResHeader res(tip);
-            guest->Response(this, res);
-            guest->Write(this, "Something wrong with your request site, you can try angin.\n", 64);
-        }
-        disconnect(this, CONNECT_ERR);
+    if(guest && tip){
+        HttpResHeader res(tip);
+        guest->Response(this, res);
+        guest->Write(this, "Something wrong with your request site, you can try angin.\n", 64);
     }
+    clean(this, CONNECT_ERR);
     connectmap.erase(this);
     delete this;
 }
