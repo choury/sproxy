@@ -82,10 +82,14 @@ void Proxy2::defaultHE(u_int32_t events) {
     if (events & EPOLLOUT) {
         int ret = Write_Proc(wbuff, writelen);
         if(ret){ 
-            for(auto i:waitlist){      
-                i->writedcb(this);     
+            for(auto i = waitlist.begin(); i!= waitlist.end(); ){
+                if(bufleft(*i)){
+                    (*i)->writedcb(this);
+                    i = waitlist.erase(i);
+                }else{
+                    i++;
+                }
             }      
-            waitlist.clear();      
         }else if(showerrinfo(ret, "proxy2 write error")) {
             clean(this, WRITE_ERR);
             return;
@@ -241,6 +245,8 @@ void Proxy2::writedcb(Peer *who){
     if(idmap.left.count(guest)){
         if(guest->bufleft(this) > 512*1024){
             size_t len = Min(512*1024 - guest->windowleft, guest->bufleft(this) - 512*1024);
+            if(len < 10240)
+                return;
             guest->windowleft += ExpandWindowSize(idmap.left.find(guest)->second, len);
         }
     }

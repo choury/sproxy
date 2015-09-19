@@ -139,10 +139,14 @@ void Guest_s2::defaultHE(uint32_t events)
     if (events & EPOLLOUT) {
         int ret = Write_Proc(wbuff, writelen);
         if(ret){ 
-            for(auto i:waitlist){      
-                i->writedcb(this);     
+            for(auto i = waitlist.begin(); i!= waitlist.end(); ){
+                if(bufleft(*i)){
+                    (*i)->writedcb(this);
+                    i = waitlist.erase(i);
+                }else{
+                    i++;
+                }
             }      
-            waitlist.clear();      
         }else if(ret <= 0 && showerrinfo(ret, "guest_s2 write error")) {
             clean(this, WRITE_ERR);
             return;
@@ -221,6 +225,8 @@ void Guest_s2::writedcb(Peer *who){
     if(idmap.left.count(who)){
         if(who->bufleft(this) > 512*1024){
             size_t len = Min(512*1024 - who->windowleft, who->bufleft(this) - 512*1024);
+            if(len < 10240)
+                return;
             who->windowleft += ExpandWindowSize(idmap.left.find(who)->second, len);
         }
     }

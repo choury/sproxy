@@ -64,18 +64,30 @@ Http2_header *Http2Base::SendFrame(const Http2_header *header, size_t addlen) {
     size_t len = sizeof(Http2_header) + addlen;
     Http2_header *frame = (Http2_header *)malloc(len);
     memcpy(frame, header, len);
+    std::list<Http2_header *>::iterator i;
     switch(frame->type){
     case PING_TYPE:
-        if(frameleft){
-            framequeue.insert(framequeue.begin(), frame);
-        }else{
-            framequeue.push_front(frame);
-        }
+        for(i = framequeue.begin(); i!= framequeue.end() && (*i)->type == PING_TYPE; i++);
+        break;
+    case DATA_TYPE:
+        i = framequeue.end();
         break;
     default:
-        framequeue.push_back(frame);
+        auto j = framequeue.rbegin();
+        uint32_t id = get32(header->id);
+        for(auto j = framequeue.rbegin(); j!= framequeue.rend(); j++){
+            if((*j)->type != DATA_TYPE)
+                break;
+            uint32_t jid = get32((*j)->id);
+            if(jid == 0 || jid == id)
+                break;
+        }
+        i = j.base();
         break;
     }
+    if(frameleft && i == framequeue.begin())
+        i++;
+    framequeue.insert(i, frame);
     return frame;
 }
 
