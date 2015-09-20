@@ -18,7 +18,6 @@ protected:
     virtual ssize_t Read(void *buff, size_t size);
     virtual ssize_t Write(const void *buff, size_t size);
     virtual ssize_t Write();
-    virtual void disconnect(Peer *who, uint32_t errcode);
     virtual void closeHE(uint32_t events) = 0;
 public:
     virtual ~Peer();

@@ -9,21 +9,23 @@
                     
 std::map<Host*,time_t> connectmap;
 
-Host::Host(HttpReqHeader& req, Guest* guest):Peer(0), HttpReq(req.id?req.ismethod("CONNECT"):true), req(req) {
+Host::Host(HttpReqHeader& req, Guest* guest):Peer(0), req(req) {
     ::connect(guest, this);
     Request(guest, req, false);
     snprintf(hostname, sizeof(hostname), "%s", req.hostname);
     port = req.port;
     query(hostname, (DNSCBfunc)Host::Dnscallback, this);
+    if(!req.id || req.ismethod("CONNECT")){
+        Http_Proc = &Host::AlwaysProc;
+    }
 }
 
 
-Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0), HttpReq(true), req(req) {
+Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0), req(req) {
     ::connect(guest, this);
     Request(guest, req, false);
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
     this->port = port;
-
     query(hostname, (DNSCBfunc)Host::Dnscallback, this);
 }
 
@@ -182,14 +184,12 @@ int Host::connect() {
 
 void Host::destory(const char* tip) {
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
-    if(guest){
-        if(tip){
-            HttpResHeader res(tip);
-            guest->Response(this, res);
-            guest->Write(this, "Something wrong with your request site, you can try angin.\n", 64);
-        }
-        disconnect(this, CONNECT_ERR);
+    if(guest && tip){
+        HttpResHeader res(tip);
+        guest->Response(this, res);
+        guest->Write(this, "Something wrong with your request site, you can try angin.\n", 64);
     }
+    clean(this, CONNECT_ERR);
     connectmap.erase(this);
     delete this;
 }

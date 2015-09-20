@@ -11,7 +11,7 @@
 //#define DEBUG
 
 extern uint16_t SPORT;
-#define CPORT 3333
+extern uint16_t CPORT;
 
 extern char SHOST[];
 

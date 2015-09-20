@@ -201,15 +201,3 @@ void HttpReq::HeaderProc() {
     }
     (this->*Http_Proc)();
 }
-
-HttpReq::HttpReq(bool transparent) {
-    if(transparent) {
-        Http_Proc = &HttpReq::AlwaysProc;
-    } else {
-        Http_Proc = (void (HttpBase::*)())&HttpReq::HeaderProc;
-    }
-}
-
-void HttpReq::ResProc(HttpResHeader& res) {
-    LOG("Get a http response\n");
-}
