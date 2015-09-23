@@ -46,6 +46,8 @@ void Bindex::insert(Guest *guest, Peer *peer)
 Peer * Bindex::query(Peer *peer){
     Guest *guest = static_cast<Guest *>(peer);
     if(left.count(guest)){
+        assert(left[guest].size() == 1);
+        assert(right.count(peer) == 0);
         return *left[guest].begin();
     }
     if(right.count(peer)){
@@ -55,17 +57,15 @@ Peer * Bindex::query(Peer *peer){
 }
 
 void Bindex::erase(Guest *guest, Peer *peer) {
-    if(left.count(guest)){
-        left[guest].erase(peer);
-        if(left[guest].empty()){
-            left.erase(guest);
-        }
+    assert(left.count(guest));
+    left[guest].erase(peer);
+    if(left[guest].empty()){
+        left.erase(guest);
     }
-    if(right.count(peer)){
-        right[peer].erase(guest);
-        if(right[peer].empty()){
-            right.erase(peer);
-        }
+    assert(right.count(peer));
+    right[peer].erase(guest);
+    if(right[peer].empty()){
+        right.erase(peer);
     }
 }
 
@@ -75,6 +75,7 @@ Peer::~Peer() {
         epoll_ctl(efd,EPOLL_CTL_DEL,fd,nullptr);
         close(fd);
     }
+    assert(!queryconnect(this));
 }
 
 ssize_t Peer::Write(Peer* who, const void* buff, size_t size) {
@@ -142,24 +143,25 @@ Peer* queryconnect(Peer* key) {
     return bindex.query(key);
 }
 
-/*这里who为this，或者是NULL时都会disconnect所有连接的peer
- * 区别是who 为NULL时不会调用disconnect */
-void disconnect(Peer *k1, Peer* k2, uint32_t errcode) {
+/*这里who为this，会disconnect所有连接的peer */
+std::set<std::pair<Guest *, Peer *>> disconnect(Peer *k1, Peer* k2) {
     std::set<std::pair<Guest*, Peer*>> should_erase;
     Guest *k1_is_guest= dynamic_cast<Guest *>(k1);
     if(k1_is_guest && bindex.left.count(k1_is_guest)){
+        assert(k1 == k2 || !dynamic_cast<Guest *>(k2));
         std::set<Peer *> peers = bindex.left[k1_is_guest];
         for(auto found: peers){
-            if(k2 == k1 || k2 == nullptr || k2 == found) {
+            if(k2 == k1 || k2 == found) {
                 should_erase.insert(std::make_pair(k1_is_guest, found));
             }
         }
     }
     
     if(bindex.right.count(k1)){
+        assert(!k1_is_guest);
         std::set<Guest *> guests = bindex.right[k1];
         for(auto found: guests){
-            if(k2 == k1 || k2 == nullptr || k2 == found) {
+            if(k2 == k1 || k2 == found) {
                 should_erase.insert(std::make_pair(found, k1));
             }
         }
@@ -169,19 +171,18 @@ void disconnect(Peer *k1, Peer* k2, uint32_t errcode) {
         bindex.erase(i.first, i.second);
     }
     
-    if(k2){
-        if(k1_is_guest){
-            for(auto i: should_erase)
-                i.second->clean(k1_is_guest, errcode);
-        }else{
-            for(auto i: should_erase)
-                i.first->clean(k1, errcode);
-        }
-    }
+    return should_erase;
 }
 
 void Peer::clean(Peer* who, uint32_t errcode) {
-    disconnect(this, who, errcode);
+    auto &&disconnected = disconnect(this, who);
+    assert(!queryconnect(this));
+    for(auto i: disconnected){
+        if(i.first != who && i.first != this)
+            i.first->clean(this, errcode);
+        if(i.second != who && i.second != this)
+            i.second->clean(this, errcode);
+    }
     if(fd > 0) {
         struct epoll_event event;
         event.data.ptr = this;

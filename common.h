@@ -43,6 +43,7 @@ extern char SHOST[];
                         sprintf(tmp, __VA_ARGS__); \
                         syslog(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
                      }while(0);
+#define NDEBUG
 #else
 #define  LOG(...)  fprintf(stdout, __VA_ARGS__)
 #define  LOGE(...)   do{\
@@ -52,6 +53,8 @@ extern char SHOST[];
                      }while(0);
 #endif
 #endif
+
+#include <assert.h>
 
 #ifdef  __cplusplus
 extern "C" {

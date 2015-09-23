@@ -241,7 +241,7 @@ Host* Host::gethost(HttpReqHeader &req, Guest* guest) {
     }
 
     if (exist) { 
-        exist->clean(nullptr, NOERROR);
+        exist->clean(guest, NOERROR);
     }
     return new Host(req, guest);
 }

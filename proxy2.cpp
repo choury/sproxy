@@ -112,6 +112,7 @@ void Proxy2::DataProc(Http2_header* header) {
         if(len > guest->bufleft(this)){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
             idmap.right.erase(id);
+            waitlist.erase(guest);
             guest->clean(this, ERR_FLOW_CONTROL_ERROR);
             LOGE("[%d]: window size error\n", id);
             return;
@@ -149,12 +150,13 @@ void Proxy2::ErrProc(int errcode) {
 void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
     if(idmap.right.count(id)){
         Guest *guest = idmap.right.find(id)->second;
-        idmap.right.erase(id);
         if(errcode){
             LOGE("Guest reset stream [%d]: %d\n", id, errcode);
         }else if((guest->flag & ISCHUNKED_F) && (guest->flag & ISCLOSED_F) == 0){ //for http/1.0
             guest->Write(this, CHUNCKEND, strlen(CHUNCKEND));
         }
+        idmap.right.erase(id);
+        waitlist.erase(guest);
         guest->clean(this, errcode);
     }
 }
@@ -174,8 +176,13 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
 
 void Proxy2::PingProc(Http2_header *header){
     if(header->flags & ACK_F){
-        uint64_t now = getutime();
-        LOG("[Proxy2] Get a ping time=%.3fms\n", (now-get64(header+1))/1000.0);
+        double diff = (getutime()-get64(header+1))/1000.0;
+        LOG("[Proxy2] Get a ping time=%.3fms\n", diff);
+        if(diff >= 20000){
+            LOGE("[Proxy2] The ping time too long, close it.");
+            clean(this, PEER_LOST_ERR);
+        }
+ 
     }
     Http2Base::PingProc(header);
 }
@@ -227,11 +234,12 @@ void Proxy2::clean(Peer* who, uint32_t errcode) {
     Guest *guest = dynamic_cast<Guest*>(who);
     if(who == this) {
         proxy2 = (proxy2 == this) ? nullptr: proxy2;
-        Peer::clean(who, errcode);
+        return Peer::clean(who, errcode);
     }else if(idmap.left.count(guest)){
         Reset(idmap.left.find(guest)->second, errcode>30?ERR_INTERNAL_ERROR:errcode);
         idmap.left.erase(guest);
     }
+    disconnect(this, who);
 	waitlist.erase(who);
 }
 
@@ -278,7 +286,7 @@ void Proxy2::Pingcheck() {
         Ping(buff);
         lastping = now;
     }
-    if(now - lastrecv >= 30000000){ //超过30秒没收到报文，认为链接断开
+    if(now - lastrecv >= 20000000){ //超过20秒没收到报文，认为链接断开
         LOGE("[Proxy2] the ping timeout, so close it\n");
         clean(this, PEER_LOST_ERR);
     }

@@ -3,6 +3,7 @@
 
 #include "con.h"
 #include "common.h"
+#include <set>
 
 /* guest   ---   (client) --- host(proxy)
  * guest_s ---   (server) --- host/file/cgi */
@@ -36,5 +37,6 @@ public:
 class Guest;
 void connect(Guest *p1, Peer *p2);
 Peer *queryconnect(Peer *key);
+std::set<std::pair<Guest *, Peer *>> disconnect(Peer *k1, Peer* k2);
 
 #endif

@@ -239,7 +239,6 @@ void File::defaultHE(uint32_t events) {
     if (events & EPOLLIN) {
         if (leftsize == 0) {
             guest->Write(this, wbuff, 0);
-            clean(this, NOERROR);
             return;
         }
         if(wbuffof < writelen){

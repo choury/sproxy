@@ -11,7 +11,7 @@ Proxy::Proxy(Proxy *const copy):Host(copy->fd), ssl(copy->ssl), ctx(copy->ctx) {
     copy->fd  = 0;
     copy->ssl = nullptr;
     copy->ctx = nullptr;
-    copy->clean(nullptr, NOERROR);
+    copy->clean(queryconnect(copy), NOERROR);
 }
 
 
@@ -23,7 +23,7 @@ Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
     }
     
     if (exist) {
-        exist->clean(nullptr, NOERROR); //只有exist是host才会走到这里
+        exist->clean(guest, NOERROR); //只有exist是host才会走到这里
     }
     
     if (proxy2) {

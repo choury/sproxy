@@ -36,7 +36,8 @@ ssize_t Guest_s2::Write(Peer *who, const void *buff, size_t size)
     if(size == 0) {
         header.flags = END_STREAM_F;
         idmap.left.erase(who);
-        who->clean(nullptr, 0);
+        waitlist.erase(who);
+        who->clean(this, NOERROR);
     }
     SendFrame(&header, 0);
     int ret = Peer::Write(who, buff, size);
@@ -63,6 +64,8 @@ void Guest_s2::DataProc(Http2_header* header) {
         ssize_t len = get24(header->length);
         if(len > host->bufleft(this)){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
+            idmap.right.erase(id);
+            waitlist.erase(host);
             host->clean(this, ERR_FLOW_CONTROL_ERROR);
             LOGE("(%s:[%d]):[%d] window size error\n", sourceip, sourceport, id);
             return;
@@ -166,8 +169,10 @@ void Guest_s2::RstProc(uint32_t id, uint32_t errcode) {
     if(idmap.right.count(id)){
         if(errcode)
             LOGE("([%s]:%d): reset stream [%d]: %d\n", sourceip, sourceport, id, errcode);
-        idmap.right.find(id)->second->clean(this, errcode);
+        Peer *who = idmap.right.find(id)->second;
         idmap.right.erase(id);
+        waitlist.erase(who);
+        who->clean(this, errcode);
     }
 }
 
@@ -200,14 +205,14 @@ void Guest_s2::AdjustInitalFrameWindowSize(ssize_t diff) {
     }
 }
 
-void Guest_s2::clean(Peer *who, uint32_t errcode)
-{
+void Guest_s2::clean(Peer *who, uint32_t errcode) {
     if(who == this) {
-        Peer::clean(who, errcode);
+        return Peer::clean(who, errcode);
     }else if(idmap.left.count(who)){
         Reset(idmap.left.find(who)->second, errcode>30?ERR_INTERNAL_ERROR:errcode);
         idmap.left.erase(who);
     }
+    disconnect(this, who);
     waitlist.erase(who);
 }
 
