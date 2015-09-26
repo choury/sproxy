@@ -142,7 +142,7 @@ File::File(HttpReqHeader &req, Guest* guest):req(req), range(req.get("Range")) {
 File* File::getfile(HttpReqHeader &req, Guest* guest) {
     File* exist = dynamic_cast<File *>(queryconnect(guest));
     if (exist) {
-        exist->clean(nullptr, NOERROR);
+        exist->clean(guest, NOERROR);
     }
     return new File(req, guest);
 }

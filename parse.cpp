@@ -468,7 +468,7 @@ int HttpReqHeader::getframe(void* outbuff, Index_table *index_table) {
 
     char *p = (char *)(header + 1);
     p += index_table->hpack_encode(p, ":method", method);
-    if(get("host")){
+    if(get("host") && !ismethod("CONNECT")){
         p += index_table->hpack_encode(p, ":authority" ,get("host"));
     }else{
         char authority[URLLIMIT];
