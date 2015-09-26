@@ -337,6 +337,7 @@ HttpReqHeader::HttpReqHeader(std::list< std::pair< string, string > >&& headers)
                         get(":authority"), get(":path"));
         }
         spliturl(get(":authority"), hostname, nullptr, &port);
+        add("host", get(":authority"));
     } else {
         snprintf(url, sizeof(url), "%s", path);
         hostname[0] = 0;
@@ -467,10 +468,14 @@ int HttpReqHeader::getframe(void* outbuff, Index_table *index_table) {
 
     char *p = (char *)(header + 1);
     p += index_table->hpack_encode(p, ":method", method);
+    if(get("host")){
+        p += index_table->hpack_encode(p, ":authority" ,get("host"));
+    }else{
+        char authority[URLLIMIT];
+        snprintf(authority, sizeof(authority), "%s:%d", hostname, port);
+        p += index_table->hpack_encode(p, ":authority" ,authority);
+    }
     del("host");
-    char authority[URLLIMIT];
-    snprintf(authority, sizeof(authority), "%s:%d", hostname, port);
-    p += index_table->hpack_encode(p, ":authority" ,authority);
     
     if(!ismethod("CONNECT")){
         p += index_table->hpack_encode(p, ":scheme", "http");
