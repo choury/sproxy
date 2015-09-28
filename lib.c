@@ -26,6 +26,15 @@ char* strnstr(const char* s1, const char* s2, size_t len)
     return NULL;
 }
 
+
+int endwith(const char *s1, const char *s2) {
+    size_t l1 = strlen(s1);
+    size_t l2 = strlen(s2);
+    if(l1 < l2)
+        return 0;
+    return !memcmp(s1+l1-l2, s2, l2);
+}
+
 int epoll_my_ctl(int epfd, int op, int fd,struct epoll_event *event){
     if(op == EPOLL_CTL_MOD){
         LOGE("epoll mod %d: %p\n",fd,event->data.ptr);

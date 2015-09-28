@@ -90,10 +90,7 @@ void Guest_s2::ReqProc(HttpReqHeader &req)
         host->windowleft = 512 *1024;
         idmap.insert(decltype(idmap)::value_type(host, req.id));
     }else {
-        if(req.parse()){
-            LOG("([%s]:%d):[%d] parse url failed\n", sourceip, sourceport, req.id);
-            throw 0;
-        }
+        req.getfile();
         File *file = new File(req, this);
         file->windowsize = initalframewindowsize;
         file->windowleft = 512 *1024;

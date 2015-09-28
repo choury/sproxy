@@ -1,6 +1,7 @@
 #include "parse.h"
 #include "net.h"
 #include "http2.h"
+#include "cgi.h"
 
 #include <fstream>
 #include <iostream>
@@ -351,32 +352,63 @@ HttpReqHeader::HttpReqHeader(std::list< std::pair< string, string > >&& headers)
     }
 }
 
-
-int HttpReqHeader::parse() {
-    char paramsbuff[URLLIMIT];
-    if(URLDecode(path,paramsbuff) == 0){
-        return -1;
+HttpReqHeader::HttpReqHeader(CGI_Header *headers) {
+    if(headers->type != CGI_REQUEST)
+    {
+        LOGE("wrong CGI header");
+        throw 1;
     }
-    char *p=paramsbuff;
+    id = ntohl(headers->requestId);
+   
+    char *p = (char *)(headers +1);
+    uint32_t len = ntohs(headers->contentLength);
+    while(p - (char *)(headers +1) < len){
+        string name, value;
+        p = cgi_getnv(p, name, value);
+        if(name == ":method"){
+            strcpy(method, value.c_str());
+            continue;
+        }
+        if(name == ":path"){
+            strcpy(path, value.c_str());
+            continue;
+        }
+        this->headers.push_back(make_pair(name, value));
+   }
+}
+
+
+void HttpReqHeader::getfile() {
+    char *p=path;
     while (*p && *++p != '?');
     memset(filename, 0, sizeof(filename));
     filename[0]='.';
-    memcpy(filename+1,paramsbuff,p-paramsbuff);
+    memcpy(filename+1,path,p-path);
     char *q=p-1;
-    while (q != paramsbuff) {
+    while (q != path) {
         if (*q == '.' || *q == '/')
             break;
         q--;
     }
+/*
     memset(extname, 0, sizeof(extname));
     if (*q != '/') {
         if (p-q >= 20)
             return -1;
         memcpy(extname, q, p-q);
     }
+    return 0; */
+}
+
+std::map< string, string > HttpReqHeader::getparams() {
+    char paramsbuff[URLLIMIT];
+    URLDecode(path,paramsbuff);
+    char *p=paramsbuff;
+    while (*p && *++p != '?');
+    std::map< string, string > params;
     if(*p++){
         for (; ; p = NULL) {
-            q = strtok(p, "&");
+            char *q = strtok(p, "&");
 
             if (q == NULL)
                 break;
@@ -389,7 +421,7 @@ int HttpReqHeader::parse() {
             }
         }
     }
-    return 0;
+    return params;
 }
 
 
@@ -489,7 +521,23 @@ int HttpReqHeader::getframe(void* outbuff, Index_table *index_table) {
 }
 
 
-HttpResHeader::HttpResHeader(const char* header, int fd):fd(fd) {
+int HttpReqHeader::getcgi(void *outbuff) {
+    CGI_Header *cgi = (CGI_Header *)(outbuff);
+    cgi->type = CGI_REQUEST;
+    cgi->requestId = htonl(id);
+    
+    char *p = (char *)(cgi + 1);
+    p = cgi_addnv(p, ":method", method);
+    p = cgi_addnv(p, ":path", path);
+    for(auto i: headers){
+        p = cgi_addnv(p, i.first, i.second);
+    }
+    cgi->contentLength = htons(p - (char *)(cgi + 1));
+    return p - (char *)outbuff;
+}
+
+
+HttpResHeader::HttpResHeader(const char* header) {
     char httpheader[HEADLENLIMIT];
     snprintf(httpheader, sizeof(httpheader), "%s", header);
     *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
@@ -523,6 +571,27 @@ HttpResHeader::HttpResHeader(std::list<std::pair<string, string>>&& headers):hea
     }
 }
 
+HttpResHeader::HttpResHeader(CGI_Header *headers) {
+    if(headers->type != CGI_RESPONSE)
+    {
+        LOGE("wrong CGI header");
+        throw 1;
+    }
+    id = ntohl(headers->requestId);
+   
+    char *p = (char *)(headers +1);
+    uint32_t len = ntohs(headers->contentLength);
+    while(p - (char *)(headers +1) < len){
+        string name, value;
+        p = cgi_getnv(p, name, value);
+        if(name == ":status"){
+            strcpy(status, value.c_str());
+            continue;
+        }
+        this->headers.push_back(make_pair(name, value));
+   }
+}
+
 
 void HttpResHeader::add(const char* header, const char* value) {
     headers.push_back(std::make_pair(header, value));
@@ -546,21 +615,21 @@ const char* HttpResHeader::get(const char* header) {
 }
 
 
-int HttpResHeader::getstring(void* buff) {
+int HttpResHeader::getstring(void *outbuff) {
     int p;
     if(get("Content-Length") || get("Transfer-Encoding")){
-        sprintf((char *)buff, "HTTP/1.1 %s" CRLF "%n", status, &p);
+        sprintf((char *)outbuff, "HTTP/1.1 %s" CRLF "%n", status, &p);
     }else {
-        sprintf((char *)buff, "HTTP/1.0 %s" CRLF "%n", status, &p);
+        sprintf((char *)outbuff, "HTTP/1.0 %s" CRLF "%n", status, &p);
     }
     for (auto i : headers) {
         int len;
-        sprintf((char *)buff + p, "%s: %s" CRLF "%n",
+        sprintf((char *)outbuff + p, "%s: %s" CRLF "%n",
                 i.first.c_str(), i.second.c_str(), &len);
         p += len;
     }
 
-    sprintf((char *)buff + p, CRLF);
+    sprintf((char *)outbuff + p, CRLF);
     return p + strlen(CRLF);
 }
 
@@ -583,19 +652,39 @@ int HttpResHeader::getframe(void* outbuff, Index_table* index_table) {
     return get24(header->length);
 }
 
-
-int HttpResHeader::sendheader() {
-    char buff[HEADLENLIMIT];
-    return ::write(fd, buff, getstring(buff));
+int HttpResHeader::getcgi(void *outbuff) {
+    CGI_Header *cgi = (CGI_Header *)(outbuff);
+    cgi->type = CGI_RESPONSE;
+    cgi->requestId = htonl(id);
+    
+    char *p = (char *)(cgi + 1);
+    p = cgi_addnv(p, ":status", status);
+    for(auto i: headers){
+        p = cgi_addnv(p, i.first, i.second);
+    }
+    cgi->contentLength = htons(p - (char *)(cgi + 1));
+    return p - (char *)outbuff;
 }
 
 
-int HttpResHeader::write(const void* buff, size_t size) {
-    char chunkbuf[100];
-    int chunklen;
-    snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF "%n", (uint32_t)size, &chunklen);
-    ::write(fd, chunkbuf, chunklen);
-    size = ::write(fd, buff, size);
-    ::write(fd, CRLF, strlen(CRLF));
-    return size;
+char *cgi_addnv(char *p, const string &name, const string &value) {
+    CGI_NameValuePair *cgi_pairs = (CGI_NameValuePair *) p;
+    cgi_pairs->nameLength = htons(name.size());
+    cgi_pairs->valueLength = htons(value.size());
+    p = (char *)(cgi_pairs +1);
+    memcpy(p, name.c_str(), name.size());
+    p += name.size();
+    memcpy(p, value.c_str(), value.size());
+    return p + value.size();
+}
+
+char *cgi_getnv(char *p, string &name, string &value) {
+    CGI_NameValuePair *cgi_pairs = (CGI_NameValuePair *)p;
+    uint32_t name_len = ntohs(cgi_pairs->nameLength);
+    uint32_t value_len = ntohs(cgi_pairs->valueLength);
+    p = (char *)(cgi_pairs + 1);
+    name = string(p, name_len);
+    p += name_len;
+    value = string(p, value_len);
+    return p + value_len;
 }

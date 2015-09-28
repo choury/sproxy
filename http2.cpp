@@ -6,55 +6,58 @@
 
 void Http2Base::DefaultProc() {
     Http2_header *header = (Http2_header *)http2_buff;
-    if (http2_expectlen == 0 && http2_getlen >= sizeof(header)) {
-        http2_expectlen = sizeof(Http2_header) + get24(header->length);
-    }
-    //TODO 待优化，改为循环
-    if (http2_expectlen && http2_getlen >= http2_expectlen) {
-        try {
-        switch(header->type) {
-            case DATA_TYPE:
-                DataProc(header);
-                break;
-            case HEADERS_TYPE:
-                HeadersProc(header);
-                break;
-            case PRIORITY_TYPE:
-                break;
-            case SETTINGS_TYPE:
-                SettingsProc(header);
-                break;
-            case PING_TYPE:
-                PingProc(header);
-                break;
-            case GOAWAY_TYPE:
-                GoawayProc(header);
-                break;
-            case RST_STREAM_TYPE:
-                RstProc(get32(header->id), get32(header+1));
-                break;
-            case WINDOW_UPDATE_TYPE:
-                WindowUpdateProc(get32(header->id), get32(header+1));
-                break;
-            default:
-                LOGE("unkown http2 frame:%d\n", header->type);
+    if(http2_getlen < sizeof(Http2_header)){
+        ssize_t len = sizeof(Http2_header) - http2_getlen;
+        len = Read(http2_buff + http2_getlen, len);
+        if (len <= 0) {
+            ErrProc(len);
+            return;
+        }
+        http2_getlen += len;
+    }else{
+        ssize_t len = sizeof(Http2_header) + get24(header->length) - http2_getlen;
+        if(len == 0){
+            try {
+                switch(header->type) {
+                case DATA_TYPE:
+                    DataProc(header);
+                    break;
+                case HEADERS_TYPE:
+                    HeadersProc(header);
+                    break;
+                case PRIORITY_TYPE:
+                    break;
+                case SETTINGS_TYPE:
+                    SettingsProc(header);
+                    break;
+                case PING_TYPE:
+                    PingProc(header);
+                    break;
+                case GOAWAY_TYPE:
+                    GoawayProc(header);
+                    break;
+                case RST_STREAM_TYPE:
+                    RstProc(get32(header->id), get32(header+1));
+                    break;
+                case WINDOW_UPDATE_TYPE:
+                    WindowUpdateProc(get32(header->id), get32(header+1));
+                    break;
+                default:
+                    LOGE("unkown http2 frame:%d\n", header->type);
+                }
+            }catch(...){
+                ErrProc(0);
+                return;
             }
-        }catch(...){
-            ErrProc(0);
-            return;
+            http2_getlen = 0;
+        }else{
+            len = Read(http2_buff + http2_getlen, len);
+            if (len <= 0) {
+                ErrProc(len);
+                return;
+            }
+            http2_getlen += len;
         }
-        
-        memmove(http2_buff, http2_buff + http2_expectlen, http2_getlen - http2_expectlen);
-        http2_getlen -= http2_expectlen;
-        http2_expectlen = 0;
-    } else {
-        ssize_t readlen = Read(http2_buff + http2_getlen, sizeof(http2_buff) - http2_getlen );
-        if (readlen <= 0) {
-            ErrProc(readlen);
-            return;
-        }
-
-        http2_getlen += readlen;
     }
     (this->*Http2_Proc)();
 }
@@ -222,25 +225,18 @@ void Http2Base::SendInitSetting() {
     SendFrame(header, get24(header->length));
 }
 
-
-Http2Res::Http2Res() {
-    http2_expectlen = strlen(H2_PREFACE);
-}
-
-
 void Http2Res::InitProc() {
-    if(http2_getlen >= http2_expectlen) {
-        if (memcmp(http2_buff, H2_PREFACE, http2_expectlen)) {
+    size_t prelen = strlen(H2_PREFACE);
+    if(http2_getlen >= prelen) {
+        if (memcmp(http2_buff, H2_PREFACE, sizeof(H2_PREFACE))) {
             ErrProc(ERR_PROTOCOL_ERROR);
             return;
         }
-        memmove(http2_buff, http2_buff + http2_expectlen, http2_getlen - http2_expectlen);
-        http2_getlen -= http2_expectlen;
-        http2_expectlen = 0;
+        http2_getlen = 0;
         Http2_Proc = &Http2Res::DefaultProc;
         SendInitSetting();
     } else {
-        ssize_t readlen = Read(http2_buff + http2_getlen, sizeof(http2_buff) - http2_getlen);
+        ssize_t readlen = Read(http2_buff + http2_getlen, prelen - http2_getlen);
         if (readlen <= 0) {
             ErrProc(readlen);
             return;
@@ -284,29 +280,33 @@ void Http2Req::init() {
 
 void Http2Req::InitProc() {
     Http2_header *header = (Http2_header *)http2_buff;
-    if (http2_expectlen == 0 && http2_getlen >= sizeof(header)) {
-        http2_expectlen = sizeof(Http2_header) + get24(header->length);
-    }
-    if (http2_expectlen && http2_getlen >= http2_expectlen) {
-        if(header->type == SETTINGS_TYPE && (header->flags & ACK_F) == 0){
-            SettingsProc(header);
-            Http2_Proc = &Http2Req::DefaultProc;
-        }else {
-            ErrProc(ERR_PROTOCOL_ERROR);
+    if(http2_getlen < sizeof(Http2_header)){
+        ssize_t len = sizeof(Http2_header) - http2_getlen;
+        len = Read(http2_buff + http2_getlen, len);
+        if (len <= 0) {
+            ErrProc(len);
             return;
         }
-
-        memmove(http2_buff, http2_buff + http2_expectlen, http2_getlen - http2_expectlen);
-        http2_getlen -= http2_expectlen;
-        http2_expectlen = 0;
-    } else {
-        ssize_t readlen = Read(http2_buff + http2_getlen, sizeof(http2_buff) - http2_getlen );
-        if (readlen <= 0) {
-            ErrProc(readlen);
-            return;
+        http2_getlen += len;
+    }else{
+        ssize_t len = sizeof(Http2_header) + get24(header->length) - http2_getlen;
+        if(len == 0){
+            if(header->type == SETTINGS_TYPE && (header->flags & ACK_F) == 0){
+                SettingsProc(header);
+                Http2_Proc = &Http2Req::DefaultProc;
+            }else {
+                ErrProc(ERR_PROTOCOL_ERROR);
+                return;
+            }
+            http2_getlen = 0;
+        }else{
+            len = Read(http2_buff + http2_getlen, len);
+            if (len <= 0) {
+                ErrProc(len);
+                return;
+            }
+            http2_getlen += len;
         }
-
-        http2_getlen += readlen;
     }
     (this->*Http2_Proc)();
 }

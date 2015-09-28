@@ -21,9 +21,9 @@ void Guest_sni::initHE(uint32_t events) {
         ret = parse_tls_header(http_buff, http_getlen, &hostname);
         if(ret > 0){
             if (checkproxy(hostname)) {
-                LOG("([%s]%d): Sni(proxy):%s\n", sourceip, sourceport, hostname);
+                LOG("([%s]:%d): Sni(proxy):%s\n", sourceip, sourceport, hostname);
             }else{
-                LOG("([%s]%d): Sni:%s\n", sourceip, sourceport, hostname);
+                LOG("([%s]:%d): Sni:%s\n", sourceip, sourceport, hostname);
             }
             char buff[HEADLENLIMIT];
             sprintf(buff, "CONNECT %s:%d" CRLF CRLF, hostname, 443);

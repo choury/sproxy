@@ -119,8 +119,7 @@ void Proxy2::DataProc(Http2_header* header) {
         }
         if(guest->flag & ISCHUNKED_F){
             char chunkbuf[100];
-            int chunklen;
-            snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF "%n", (uint32_t)len, &chunklen);
+            int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)len);
             guest->Write(this, chunkbuf, chunklen);
             guest->Write(this, header+1, len);
             guest->Write(this, CRLF, strlen(CRLF));

@@ -67,6 +67,52 @@ extern "C" {
 #define NTOHL(x) (x = ntohl(x))
 #define NTOHS(x) (x = ntohs(x))
 
+#define get16(a)  (((uchar*)(a))[0]<<8 | ((uchar*)(a))[1])
+#define set16(a, x) \
+do {\
+    ((uchar*)(a))[0] = ((x)>>8) & 0xff;\
+    ((uchar*)(a))[1] = (x) & 0xff;\
+}while(0);
+
+#define get24(a) (((uchar*)(a))[0]<<16 | ((uchar*)(a))[1]<<8 | ((uchar*)(a))[2])
+#define set24(a, x) \
+do {\
+    ((uchar*)(a))[0] = ((x)>>16) & 0xff;\
+    ((uchar*)(a))[1] = ((x)>>8) & 0xff;\
+    ((uchar*)(a))[2] = (x) & 0xff;\
+}while(0);
+
+#define get32(a) (((uchar*)(a))[0]<<24 | ((uchar*)(a))[1]<<16 | ((uchar*)(a))[2]<<8 | ((uchar*)(a))[3])
+#define set32(a, x) \
+do {\
+    ((uchar*)(a))[0] = ((x)>>24) & 0xff;\
+    ((uchar*)(a))[1] = ((x)>>16) & 0xff;\
+    ((uchar*)(a))[2] = ((x)>>8) & 0xff;\
+    ((uchar*)(a))[3] = (x) & 0xff;\
+}while(0);
+
+#define get64(a) \
+    ((uint64_t)((uchar*)(a))[0]<<56 |\
+     (uint64_t)((uchar*)(a))[1]<<48 |\
+     (uint64_t)((uchar*)(a))[2]<<40 |\
+     (uint64_t)((uchar*)(a))[3]<<32 |\
+     (uint64_t)((uchar*)(a))[4]<<24 |\
+     (uint64_t)((uchar*)(a))[5]<<16 |\
+     (uint64_t)((uchar*)(a))[6]<<8 |\
+     (uint64_t)((uchar*)(a))[7])
+
+#define set64(a, x) \
+do {\
+    ((uchar*)(a))[0] = ((uint64_t)(x)>>56) & 0xff;\
+    ((uchar*)(a))[1] = ((uint64_t)(x)>>48) & 0xff;\
+    ((uchar*)(a))[2] = ((uint64_t)(x)>>40) & 0xff;\
+    ((uchar*)(a))[3] = ((uint64_t)(x)>>32) & 0xff;\
+    ((uchar*)(a))[4] = ((uint64_t)(x)>>24) & 0xff;\
+    ((uchar*)(a))[5] = ((uint64_t)(x)>>16) & 0xff;\
+    ((uchar*)(a))[6] = ((uint64_t)(x)>>8) & 0xff;\
+    ((uchar*)(a))[7] = ((uint64_t)x) & 0xff;\
+}while(0);
+
 #define likely(x)   __builtin_expect(!!(x), 1)  
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
@@ -82,6 +128,7 @@ extern "C" {
 
 typedef unsigned char uchar;
 char* strnstr(const char* s1, const char* s2, size_t len);
+int endwith(const char *s1, const char *s2);
 int URLEncode(const char* src, char *des);
 int URLDecode(const char* src, char *des);
 void hosttick();

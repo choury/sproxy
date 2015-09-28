@@ -134,11 +134,8 @@ void Guest_s::ReqProc(HttpReqHeader& req) {
     }
         
     if (req.url[0] == '/' && (hostname[0] )) {
-        if(req.parse()){
-            LOG("([%s]:%d): parse url failed\n", sourceip, sourceport);
-            throw 0;
-        }
-        if (strcmp(req.extname,".so") == 0) {
+        req.getfile();
+        if (endwith(req.filename,".so")) {
             Cgi::getcgi(req, this);
         } else {
             File::getfile(req,this);
