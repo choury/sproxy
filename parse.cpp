@@ -362,7 +362,7 @@ HttpReqHeader::HttpReqHeader(CGI_Header *headers) {
    
     char *p = (char *)(headers +1);
     uint32_t len = ntohs(headers->contentLength);
-    while(p - (char *)(headers +1) < len){
+    while(uint32_t(p - (char *)(headers +1)) < len){
         string name, value;
         p = cgi_getnv(p, name, value);
         if(name == ":method"){
@@ -581,7 +581,7 @@ HttpResHeader::HttpResHeader(CGI_Header *headers) {
    
     char *p = (char *)(headers +1);
     uint32_t len = ntohs(headers->contentLength);
-    while(p - (char *)(headers +1) < len){
+    while(uint32_t(p - (char *)(headers +1)) < len){
         string name, value;
         p = cgi_getnv(p, name, value);
         if(name == ":status"){

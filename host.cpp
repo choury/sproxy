@@ -27,6 +27,9 @@ Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
     this->port = port;
     query(hostname, (DNSCBfunc)Host::Dnscallback, this);
+    if(!req.id || req.ismethod("CONNECT")){
+        Http_Proc = &Host::AlwaysProc;
+    }   
 }
 
 
