@@ -184,10 +184,8 @@ int main(int argc, char **argv) {
             Con *con = (Con *)events[i].data.ptr;
             (con->*con->handleEvent)(events[i].events);
         }
-        if (c < 5) {
-            dnstick();
-            hosttick();
-        }
+        dnstick();
+        hosttick();
     }
     return 0;
 }

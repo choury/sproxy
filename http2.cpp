@@ -228,7 +228,7 @@ void Http2Base::SendInitSetting() {
 void Http2Res::InitProc() {
     size_t prelen = strlen(H2_PREFACE);
     if(http2_getlen >= prelen) {
-        if (memcmp(http2_buff, H2_PREFACE, sizeof(H2_PREFACE))) {
+        if (memcmp(http2_buff, H2_PREFACE, strlen(H2_PREFACE))) {
             ErrProc(ERR_PROTOCOL_ERROR);
             return;
         }
