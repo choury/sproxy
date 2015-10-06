@@ -7,7 +7,7 @@ class HttpBase {
 protected:
     char http_buff[HEADLENLIMIT];
     uint32_t http_getlen = 0;
-    uint32_t http_expectlen;
+    uint64_t http_expectlen;
     virtual void HeaderProc() = 0;
     void ChunkLProc();
     void ChunkBProc();

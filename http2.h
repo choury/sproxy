@@ -70,12 +70,12 @@ struct Setting_Frame{
 
 class Http2Base{
     std::list<Http2_header *> framequeue;
-    size_t frameleft = 0;
-    size_t dataleft = 0;
+    uint32_t frameleft = 0;
+    uint32_t dataleft = 0;
 protected:
     char http2_buff[FRAMELENLIMIT];
-    size_t http2_getlen = 0;
-    size_t initalframewindowsize = 65535; //由对端初始化的初始frame的窗口大小
+    uint32_t http2_getlen = 0;
+    uint32_t initalframewindowsize = 65535; //由对端初始化的初始frame的窗口大小
     Index_table request_table;
     Index_table response_table;
     void DefaultProc();
