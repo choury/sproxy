@@ -26,6 +26,7 @@ public:
     explicit Guest(int fd, struct sockaddr_in6 *myaddr);
     explicit Guest(const Guest *const copy);
     virtual ~Guest();
+    virtual ssize_t Write(Peer* who, const void *buff, size_t size)override;
     virtual void Response(Peer *who, HttpResHeader& res);
     virtual int showstatus(Peer *who, char *buff)override;
 };

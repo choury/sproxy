@@ -129,7 +129,7 @@ void Peer::writedcb(Peer *) {
 }
 
 int32_t Peer::bufleft(Peer *) {
-    return sizeof(wbuff)-writelen;
+    return sizeof(wbuff)-writelen - 20; //reserved 20 bytes for chunked(ffffffffffffffff\r\n.....\r\n)
 }
 
 

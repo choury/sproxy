@@ -117,16 +117,8 @@ void Proxy2::DataProc(Http2_header* header) {
             LOGE("[%d]: window size error\n", id);
             return;
         }
-        if(guest->flag & ISCHUNKED_F){
-            char chunkbuf[100];
-            int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)len);
-            guest->Write(this, chunkbuf, chunklen);
-            guest->Write(this, header+1, len);
-            guest->Write(this, CRLF, strlen(CRLF));
-            
-            if((header->flags & END_STREAM_F) && len) {
-                guest->Write(this, CHUNCKEND, strlen(CHUNCKEND));
-            }
+        if((header->flags & END_STREAM_F) && len) {
+            guest->Write(this, "", 0);
         }else{
             guest->Write(this, header+1, len);
         }
@@ -151,8 +143,9 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
         Guest *guest = idmap.right.find(id)->second;
         if(errcode){
             LOGE("Guest reset stream [%d]: %d\n", id, errcode);
-        }else if((guest->flag & ISCHUNKED_F) && (guest->flag & ISCLOSED_F) == 0){ //for http/1.0
-            guest->Write(this, CHUNCKEND, strlen(CHUNCKEND));
+        }
+        if((guest->flag & ISCLOSED_F) == 0){ //for http/1.0
+            guest->Write(this, "", 0);
         }
         idmap.right.erase(id);
         waitlist.erase(guest);
@@ -212,7 +205,6 @@ void Proxy2::ResProc(HttpResHeader& res) {
         if(guest->flag & ISCONNECT_F) {
             strcpy(res.status, "200 Connection established");
         }else if(!res.get("Content-Length")){
-            guest->flag |= ISCHUNKED_F;
             res.add("Transfer-Encoding", "chunked");
         }
         guest->Response(this, res);

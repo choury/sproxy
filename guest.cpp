@@ -97,7 +97,7 @@ void Guest::defaultHE(uint32_t events) {
 
     if (events & EPOLLOUT) {
         if (writelen) {
-            int ret = Write();
+            int ret = Peer::Write();
             if (ret <= 0) {
                 if (showerrinfo(ret, "guest write error")) {
                     clean(this, WRITE_ERR);
@@ -123,8 +123,7 @@ void Guest::closeHE(uint32_t events) {
         return;
     }
 
-    int ret = Write();
-
+    int ret = Peer::Write();
     if (ret <= 0 && showerrinfo(ret, "write error while closing")) {
         delete this;
         return;
@@ -163,38 +162,38 @@ void Guest::ReqProc(HttpReqHeader& req) {
         if (checkblock(req.hostname)) {
             LOG("([%s]:%d): site: %s blocked\n",
                  sourceip, sourceport, req.hostname);
-            Write(this, BLOCKTIP, strlen(BLOCKTIP));
+            Peer::Write(this, BLOCKTIP, strlen(BLOCKTIP));
         } else {
             Host::gethost(req, this);
         }
     } else if (req.ismethod("ADDPSITE")) {
         addpsite(req.url);
-        Write(this, ADDPTIP, strlen(ADDPTIP));
+        Peer::Write(ADDPTIP, strlen(ADDPTIP));
     } else if (req.ismethod("DELPSITE")) {
         if (delpsite(req.url)) {
-            Write(this, DELPTIP, strlen(DELPTIP));
+            Peer::Write(DELPTIP, strlen(DELPTIP));
         } else {
-            Write(this, DELFTIP, strlen(DELFTIP));
+            Peer::Write(DELFTIP, strlen(DELFTIP));
         }
     } else if (req.ismethod("ADDBSITE")) {
         addbsite(req.url);
-        Write(this, ADDBTIP, strlen(ADDBTIP));
+        Peer::Write(ADDBTIP, strlen(ADDBTIP));
     } else if (req.ismethod("DELBSITE")) {
         if (delbsite(req.url)) {
-            Write(this, DELBTIP, strlen(DELBTIP));
+            Peer::Write(DELBTIP, strlen(DELBTIP));
         } else {
-            Write(this, DELFTIP, strlen(DELFTIP));
+            Peer::Write(DELFTIP, strlen(DELFTIP));
         }
     } else if (req.ismethod("GLOBALPROXY")) {
         if (globalproxy()) {
-            Write(this, EGLOBLETIP, strlen(EGLOBLETIP));
+            Peer::Write(EGLOBLETIP, strlen(EGLOBLETIP));
         } else {
-            Write(this, DGLOBLETIP, strlen(DGLOBLETIP));
+            Peer::Write(DGLOBLETIP, strlen(DGLOBLETIP));
         }
     } else if (req.ismethod("SWITCH")) {
         SPORT = 443;
         spliturl(req.url, SHOST, nullptr, &SPORT);
-        Write(this, SWITCHTIP, strlen(SWITCHTIP));
+        Peer::Write(SWITCHTIP, strlen(SWITCHTIP));
     } else if (req.ismethod("SHOW")){
         writelen += ::showstatus(wbuff+writelen, req.url);
         struct epoll_event event;
@@ -203,14 +202,14 @@ void Guest::ReqProc(HttpReqHeader& req) {
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     } else if (req.ismethod("TEST")){
         if(checkblock(req.hostname)){
-            Write(this, BLOCKTIP, strlen(BLOCKTIP));
+            Peer::Write(BLOCKTIP, strlen(BLOCKTIP));
             return;
         }
         if(checkproxy(req.hostname)){
-            Write(this, PROXYTIP, strlen(PROXYTIP));
+            Peer::Write(PROXYTIP, strlen(PROXYTIP));
             return; 
         }
-        Write(this, NORMALIP, strlen(NORMALIP));
+        Peer::Write(NORMALIP, strlen(NORMALIP));
     } else{
         LOGE("([%s]:%d): unsported method:%s\n",
               sourceip, sourceport, req.method);
@@ -220,11 +219,32 @@ void Guest::ReqProc(HttpReqHeader& req) {
 
 void Guest::Response(Peer* who, HttpResHeader& res) {
     writelen+=res.getstring(wbuff+writelen);
+    if(res.get("Transfer-Encoding")){
+        flag |= ISCHUNKED_F;
+    }
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 }
+
+ssize_t Guest::Write(Peer *who, const void *buff, size_t size) {
+    size_t len = Min(bufleft(who), size);
+    ssize_t ret = 0;
+    if(flag & ISCHUNKED_F){
+        char chunkbuf[100];
+        int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)size);
+        if(Peer::Write(this, chunkbuf, chunklen) != chunklen)
+            assert(0);
+        ret = Peer::Write(this, buff, len);
+        if(Peer::Write(this, CRLF, strlen(CRLF)) != strlen(CRLF))
+            assert(0);
+    }else{
+        ret = Peer::Write(this, buff, size);
+    }
+    return ret;
+}
+
 
 ssize_t Guest::DataProc(const void *buff, size_t size) {
     Host *host = dynamic_cast<Host *>(queryconnect(this));

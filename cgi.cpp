@@ -116,7 +116,6 @@ void Cgi::InProc() {
         HttpResHeader res(header);
         if(res.get("content-length") == nullptr){
             res.add("Transfer-Encoding", "chunked");
-            guest->flag = ISCHUNKED_F;
         }
         guest->Response(this, res);
         status = WaitHeadr;
@@ -128,21 +127,13 @@ void Cgi::InProc() {
         status = HandleLeft;
     case HandleLeft:
         len = guest->bufleft(this);
-        if (len <= 10) { //保留点给chunk用
+        if (len <= 0) {
             LOGE("The guest's write buff is full\n");
             guest->wait(this);
             return;
         }
         len = Min(len, cgi_getlen - cgi_outlen);
-        if(guest->flag & ISCHUNKED_F){
-            char chunkbuf[10];
-            int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)len);
-            guest->Write(this, chunkbuf, chunklen);
-            guest->Write(this, cgi_buff+cgi_outlen, len);
-            guest->Write(this, CRLF, strlen(CRLF));
-        }else{
-            guest->Write(this, cgi_buff+cgi_outlen, len);
-        }
+        len = guest->Write(this, cgi_buff+cgi_outlen, len);
         cgi_outlen += len;
         if(cgi_outlen == cgi_getlen){
             status = WaitHeadr;

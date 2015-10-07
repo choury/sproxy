@@ -1,6 +1,7 @@
 #include "guest_s2.h"
 #include "host.h"
 #include "file.h"
+#include "cgi.h"
 
 Guest_s2::Guest_s2(Guest_s *const copy): Guest_s(copy) {
     struct epoll_event event;
@@ -91,10 +92,15 @@ void Guest_s2::ReqProc(HttpReqHeader &req)
         idmap.insert(decltype(idmap)::value_type(host, req.id));
     }else {
         req.getfile();
-        File *file = new File(req, this);
-        file->windowsize = initalframewindowsize;
-        file->windowleft = 512 *1024;
-        idmap.insert(decltype(idmap)::value_type(file, req.id));
+        Peer *peer;
+        if (endwith(req.filename,".so")) {
+            peer = Cgi::getcgi(req, this);
+        } else {
+            peer = File::getfile(req,this);
+        }
+        peer->windowsize = initalframewindowsize;
+        peer->windowleft = 512 *1024;
+        idmap.insert(decltype(idmap)::value_type(peer, req.id));
     }
 }
 
