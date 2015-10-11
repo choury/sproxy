@@ -4,6 +4,7 @@
 #include "peer.h"
 #include "guest.h"
 #include "parse.h"
+#include "binmap.h"
 
 // 可用于CGI_Header的type组件的值
 #define CGI_REQUEST       1
@@ -26,16 +27,23 @@ struct CGI_NameValuePair{
 
 
 class Cgi:public Peer{
+    char filename[URLLIMIT];
     char cgi_buff[CGI_LEN_MAX];
     size_t cgi_getlen  = 0;
     size_t cgi_outlen  = 0;
+    size_t curid = 1;
+    binmap<Guest *, int> idmap;
+    std::set<Peer *> waitlist;
     virtual void defaultHE(uint32_t events);
     virtual void closeHE(uint32_t events)override;
+    virtual void clean(Peer *who, uint32_t errcode)override;
     enum {WaitHeadr,WaitBody,HandleRes,HandleData, HandleLeft}status = WaitHeadr;
     void InProc();
     void Request(HttpReqHeader &req,Guest *guest);
 public:
     Cgi(const char *filename);
+    virtual ~Cgi();
+    virtual void wait(Peer *who);
     virtual int showerrinfo(int ret,const char *s)override;
     static Cgi *getcgi(HttpReqHeader &req, Guest *guest);
 };

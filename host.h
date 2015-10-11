@@ -31,8 +31,8 @@ public:
     Host(HttpReqHeader &req, Guest *guest, const char* hostname, uint16_t port);
     virtual void Request(Guest* guest, HttpReqHeader &req, bool direct_send);
     virtual void ResProc(HttpResHeader &res)override;
-    static Host *gethost(HttpReqHeader &req, Guest* guest);
     virtual int showstatus(Peer *who, char *buff)override;
+    static Host *gethost(HttpReqHeader &req, Guest* guest);
     friend void hosttick();
 };
 

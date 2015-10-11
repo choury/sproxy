@@ -123,7 +123,6 @@ void Proxy2::DataProc(Http2_header* header) {
             guest->Write(this, header+1, len);
         }
         if(header->flags & END_STREAM_F){
-            guest->flag |= ISCLOSED_F;
             idmap.right.erase(id);
         }
         guest->windowleft -= len; 
@@ -144,11 +143,9 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
         if(errcode){
             LOGE("Guest reset stream [%d]: %d\n", id, errcode);
         }
-        if((guest->flag & ISCLOSED_F) == 0){ //for http/1.0
-            guest->Write(this, "", 0);
-        }
         idmap.right.erase(id);
         waitlist.erase(guest);
+        guest->Write(this, "", 0);  //for http/1.0
         guest->clean(this, errcode);
     }
 }
@@ -230,7 +227,7 @@ void Proxy2::clean(Peer* who, uint32_t errcode) {
         Reset(idmap.left.find(guest)->second, errcode>30?ERR_INTERNAL_ERROR:errcode);
         idmap.left.erase(guest);
     }
-    disconnect(this, who);
+    disconnect(guest, this);
 	waitlist.erase(who);
 }
 

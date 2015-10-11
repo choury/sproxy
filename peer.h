@@ -36,7 +36,8 @@ public:
 
 class Guest;
 void connect(Guest *p1, Peer *p2);
-Peer *queryconnect(Peer *key);
+Guest *queryconnect(Peer *key);
+Peer *queryconnect(Guest *key);
 std::set<std::pair<Guest *, Peer *>> disconnect(Peer *k1, Peer* k2);
 
 #endif

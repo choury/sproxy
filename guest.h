@@ -21,7 +21,6 @@ protected:
 public:
 #define ISCONNECT_F     1
 #define ISCHUNKED_F     2
-#define ISCLOSED_F      4
     char flag;
     explicit Guest(int fd, struct sockaddr_in6 *myaddr);
     explicit Guest(const Guest *const copy);

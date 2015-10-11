@@ -1,8 +1,6 @@
 #include "peer.h"
 #include "guest.h"
-
-#include <map>
-#include <set>
+#include "binmap.h"
 
 #include <string.h>
 #include <unistd.h>
@@ -11,17 +9,21 @@ char SHOST[DOMAINLIMIT];
 uint16_t SPORT = 443;
 uint16_t CPORT = 3333;
 
+/*
 struct Bindex{
     std::map<Guest* , std::set<Peer *>> left;
     std::map<Peer* , std::set<Guest *>> right;
     void insert(Guest* guest, Peer* peer);
     Peer *query(Peer *peer);
     void erase(Guest *guest, Peer *peer);
-}bindex;
+}bindex; */
+
+class binmap<Guest *, Peer*> bindex;
 
 Peer::Peer(int fd):fd(fd) {
 }
 
+/*
 void Bindex::insert(Guest *guest, Peer *peer)
 {
     if(!guest || !peer)
@@ -68,7 +70,7 @@ void Bindex::erase(Guest *guest, Peer *peer) {
         right.erase(peer);
     }
 }
-
+*/
 
 Peer::~Peer() {
     if (fd > 0) {
@@ -138,18 +140,29 @@ void connect(Guest* p1, Peer* p2) {
 }
 
 
+Guest* queryconnect(Peer * key) {
+    try{
+        return bindex.at(key);
+    }catch(...){
+        return nullptr;
+    }
+}
 
-Peer* queryconnect(Peer* key) {
-    return bindex.query(key);
+Peer* queryconnect(Guest * key) {
+    try{
+        return bindex.at(key);
+    }catch(...){
+        return nullptr;
+    }
 }
 
 /*这里who为this，会disconnect所有连接的peer */
 std::set<std::pair<Guest *, Peer *>> disconnect(Peer *k1, Peer* k2) {
     std::set<std::pair<Guest*, Peer*>> should_erase;
     Guest *k1_is_guest= dynamic_cast<Guest *>(k1);
-    if(k1_is_guest && bindex.left.count(k1_is_guest)){
+    if(k1_is_guest && bindex.count(k1_is_guest)){
         assert(k1 == k2 || !dynamic_cast<Guest *>(k2));
-        std::set<Peer *> peers = bindex.left[k1_is_guest];
+        std::set<Peer *> peers = bindex[k1_is_guest];
         for(auto found: peers){
             if(k2 == k1 || k2 == found) {
                 should_erase.insert(std::make_pair(k1_is_guest, found));
@@ -157,9 +170,9 @@ std::set<std::pair<Guest *, Peer *>> disconnect(Peer *k1, Peer* k2) {
         }
     }
     
-    if(bindex.right.count(k1)){
+    if(bindex.count(k1)){
         assert(!k1_is_guest);
-        std::set<Guest *> guests = bindex.right[k1];
+        std::set<Guest *> guests = bindex[k1];
         for(auto found: guests){
             if(k2 == k1 || k2 == found) {
                 should_erase.insert(std::make_pair(found, k1));
@@ -170,7 +183,6 @@ std::set<std::pair<Guest *, Peer *>> disconnect(Peer *k1, Peer* k2) {
     for(auto i: should_erase){
         bindex.erase(i.first, i.second);
     }
-    
     return should_erase;
 }
 
