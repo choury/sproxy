@@ -9,68 +9,11 @@ char SHOST[DOMAINLIMIT];
 uint16_t SPORT = 443;
 uint16_t CPORT = 3333;
 
-/*
-struct Bindex{
-    std::map<Guest* , std::set<Peer *>> left;
-    std::map<Peer* , std::set<Guest *>> right;
-    void insert(Guest* guest, Peer* peer);
-    Peer *query(Peer *peer);
-    void erase(Guest *guest, Peer *peer);
-}bindex; */
-
 class binmap<Guest *, Peer*> bindex;
 
 Peer::Peer(int fd):fd(fd) {
 }
 
-/*
-void Bindex::insert(Guest *guest, Peer *peer)
-{
-    if(!guest || !peer)
-        return;
-    if(left.count(guest)){
-        left[guest].insert(peer);
-    }else{
-        std::set<Peer *> peers;
-        peers.insert(peer);
-        left.insert(std::make_pair(guest, peers));
-    }
-    
-    if(right.count(peer)){
-        right[peer].insert(guest);
-    }else{
-        std::set<Guest *> guests;
-        guests.insert(guest);
-        right.insert(std::make_pair(peer, guests));
-    }
-}
-
-Peer * Bindex::query(Peer *peer){
-    Guest *guest = static_cast<Guest *>(peer);
-    if(left.count(guest)){
-        assert(left[guest].size() == 1);
-        assert(right.count(peer) == 0);
-        return *left[guest].begin();
-    }
-    if(right.count(peer)){
-        return *right[peer].begin();
-    }
-    return nullptr;
-}
-
-void Bindex::erase(Guest *guest, Peer *peer) {
-    assert(left.count(guest));
-    left[guest].erase(peer);
-    if(left[guest].empty()){
-        left.erase(guest);
-    }
-    assert(right.count(peer));
-    right[peer].erase(guest);
-    if(right[peer].empty()){
-        right.erase(peer);
-    }
-}
-*/
 
 Peer::~Peer() {
     if (fd > 0) {

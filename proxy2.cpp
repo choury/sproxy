@@ -26,8 +26,8 @@ ssize_t Proxy2::Write(Peer* who, const void* buff, size_t size) {
     Http2_header header;
     memset(&header, 0, sizeof(header));
     Guest *guest = dynamic_cast<Guest*>(who);
-    if(idmap.left.count(guest)){
-        set32(header.id, idmap.left.find(guest)->second);
+    if(idmap.count(guest)){
+        set32(header.id, idmap.at(guest));
     }else{
         who->clean(this, PEER_LOST_ERR);
         return -1;
@@ -106,12 +106,12 @@ void Proxy2::defaultHE(u_int32_t events) {
 
 void Proxy2::DataProc(Http2_header* header) {
     uint32_t id = get32(header->id);
-    if(idmap.right.count(id)){
-        Guest *guest = idmap.right.find(id)->second;
+    if(idmap.count(id)){
+        Guest *guest = idmap.at(id);
         int32_t len = get24(header->length);
         if(len > guest->bufleft(this)){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
-            idmap.right.erase(id);
+            idmap.erase(id);
             waitlist.erase(guest);
             guest->clean(this, ERR_FLOW_CONTROL_ERROR);
             LOGE("[%d]: window size error\n", id);
@@ -123,7 +123,7 @@ void Proxy2::DataProc(Http2_header* header) {
             guest->Write(this, header+1, len);
         }
         if(header->flags & END_STREAM_F){
-            idmap.right.erase(id);
+            idmap.erase(id);
         }
         guest->windowleft -= len; 
         windowleft -= len;
@@ -138,12 +138,12 @@ void Proxy2::ErrProc(int errcode) {
 
 
 void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
-    if(idmap.right.count(id)){
-        Guest *guest = idmap.right.find(id)->second;
+    if(idmap.count(id)){
+        Guest *guest = idmap.at(id);
         if(errcode){
             LOGE("Guest reset stream [%d]: %d\n", id, errcode);
         }
-        idmap.right.erase(id);
+        idmap.erase(id);
         waitlist.erase(guest);
         guest->Write(this, "", 0);  //for http/1.0
         guest->clean(this, errcode);
@@ -152,8 +152,8 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
 
 void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
     if(id){
-        if(idmap.right.count(id)){
-            Guest *guest = idmap.right.find(id)->second;
+        if(idmap.count(id)){
+            Guest *guest = idmap.at(id);
             guest->windowsize += size;
             guest->writedcb(this);
             waitlist.erase(guest);
@@ -179,8 +179,8 @@ void Proxy2::PingProc(Http2_header *header){
 
 void Proxy2::Request(Guest* guest, HttpReqHeader& req, bool) {
     ::connect(guest, this);
-    idmap.left.erase(guest);
-    idmap.insert(decltype(idmap)::value_type(guest, curid));
+    idmap.erase(guest);
+    idmap.insert(guest, curid);
     req.id = curid;
     curid += 2;
     guest->windowsize = initalframewindowsize;
@@ -196,8 +196,8 @@ void Proxy2::Request(Guest* guest, HttpReqHeader& req, bool) {
 }
 
 void Proxy2::ResProc(HttpResHeader& res) {
-    if(idmap.right.count(res.id)){
-        Guest *guest = idmap.right.find(res.id)->second;
+    if(idmap.count(res.id)){
+        Guest *guest = idmap.at(res.id);
         
         if(guest->flag & ISCONNECT_F) {
             strcpy(res.status, "200 Connection established");
@@ -211,7 +211,7 @@ void Proxy2::ResProc(HttpResHeader& res) {
 }
 
 void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
-    for(auto i: idmap.left){
+    for(auto i: idmap.pairs()){
        i.first->windowsize += diff; 
     }
 
@@ -223,9 +223,9 @@ void Proxy2::clean(Peer* who, uint32_t errcode) {
     if(who == this) {
         proxy2 = (proxy2 == this) ? nullptr: proxy2;
         return Peer::clean(who, errcode);
-    }else if(idmap.left.count(guest)){
-        Reset(idmap.left.find(guest)->second, errcode>30?ERR_INTERNAL_ERROR:errcode);
-        idmap.left.erase(guest);
+    }else if(idmap.count(guest)){
+        Reset(idmap.at(guest), errcode>30?ERR_INTERNAL_ERROR:errcode);
+        idmap.erase(guest);
     }
     disconnect(guest, this);
 	waitlist.erase(who);
@@ -238,12 +238,12 @@ void Proxy2::wait(Peer *who) {
 
 void Proxy2::writedcb(Peer *who){
     Guest *guest = dynamic_cast<Guest*>(who);
-    if(idmap.left.count(guest)){
+    if(idmap.count(guest)){
         if(guest->bufleft(this) > 512*1024){
             size_t len = Min(512*1024 - guest->windowleft, guest->bufleft(this) - 512*1024);
             if(len < 10240)
                 return;
-            guest->windowleft += ExpandWindowSize(idmap.left.find(guest)->second, len);
+            guest->windowleft += ExpandWindowSize(idmap.at(guest), len);
         }
     }
 }
@@ -253,9 +253,9 @@ int Proxy2::showstatus(Peer *who, char *buff){
     Guest *guest = dynamic_cast<Guest*>(who);
     int len = 0;
     if(guest){
-        if(idmap.left.count(guest)){
+        if(idmap.count(guest)){
             len =sprintf(buff, "id:[%u] buffleft(%d) windowsize :%d, windowleft: %d #(proxy2)\n",
-                    idmap.left.find(guest)->second, guest->bufleft(this),
+                    idmap.at(guest), guest->bufleft(this),
                     guest->windowsize, guest->windowleft);
         }else{
             len =sprintf(buff, "null #(proxy2)\n");

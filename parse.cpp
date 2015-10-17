@@ -452,21 +452,18 @@ const char* HttpReqHeader::get(const char* header) {
 
 int HttpReqHeader::getstring(void* outbuff) {
     char *buff = (char *)outbuff;
-    int p;
+    int p = 0;
     if (checkproxy(hostname)) {
-        sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
-                method, url, &p);
+        p += sprintf(buff+p, "%s %s HTTP/1.1" CRLF, method, url);
     } else {
         if (strcmp(method, "CONNECT") == 0) {
             return 0;
         }
         if (get("Host") == nullptr && hostname[0] == 0) {
-            sprintf(buff, "%s %s HTTP/1.0" CRLF "%n",
-                        method, path, &p);
+            p += sprintf(buff, "%s %s HTTP/1.0" CRLF, method, path);
             
         }else{
-            sprintf(buff, "%s %s HTTP/1.1" CRLF "%n",
-                    method, path, &p);
+            p += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, path);
         }
     }
     
@@ -477,10 +474,8 @@ int HttpReqHeader::getstring(void* outbuff) {
     }
 
     for (auto i : headers) {
-        int len;
-        sprintf(buff + p, "%s: %s" CRLF "%n",
-                i.first.c_str(), i.second.c_str(), &len);
-        p += len;
+        p += sprintf(buff + p, "%s: %s" CRLF,
+                i.first.c_str(), i.second.c_str());
     }
 
     sprintf(buff + p, CRLF);
@@ -616,17 +611,15 @@ const char* HttpResHeader::get(const char* header) {
 
 
 int HttpResHeader::getstring(void *outbuff) {
-    int p;
+    int p = 0;
     if(get("Content-Length") || get("Transfer-Encoding")){
-        sprintf((char *)outbuff, "HTTP/1.1 %s" CRLF "%n", status, &p);
+        p += sprintf((char *)outbuff, "HTTP/1.1 %s" CRLF, status);
     }else {
-        sprintf((char *)outbuff, "HTTP/1.0 %s" CRLF "%n", status, &p);
+        p += sprintf((char *)outbuff, "HTTP/1.0 %s" CRLF, status);
     }
     for (auto i : headers) {
-        int len;
-        sprintf((char *)outbuff + p, "%s: %s" CRLF "%n",
-                i.first.c_str(), i.second.c_str(), &len);
-        p += len;
+        p += sprintf((char *)outbuff + p, "%s: %s" CRLF,
+                i.first.c_str(), i.second.c_str());
     }
 
     sprintf((char *)outbuff + p, CRLF);

@@ -19,6 +19,8 @@ char* strnstr(const char* s1, const char* s2, size_t len)
         return (char*)s1;
     while (len >= l2) {
         len--;
+        if (*s1 == 0)
+            break;
         if (!memcmp(s1, s2, l2))
             return (char*)s1;
         s1++;

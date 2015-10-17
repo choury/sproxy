@@ -3,10 +3,12 @@
 
 #include "guest_s.h"
 #include "http2.h"
+#include "binmap.h"
+
 #include <queue>
 
 class Guest_s2: public Guest_s, public Http2Res{
-    boost::bimap<Peer *, int> idmap;
+    binmap<Peer *, int> idmap;
     std::set<Peer *> waitlist;
     virtual void defaultHE(uint32_t events);
     virtual ssize_t Read(void *buff, size_t size)override;

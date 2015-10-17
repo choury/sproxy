@@ -3,12 +3,13 @@
 
 #include "proxy.h"
 #include "http2.h"
+#include "binmap.h"
 
 class Proxy2:public Proxy, public Http2Req{
     uint32_t curid = 1;
     uint64_t lastping = 0;
     uint64_t lastrecv  = 0;
-    boost::bimap<Guest *, int> idmap;
+    binmap<Guest *, int> idmap;
     std::set<Peer *> waitlist;
 protected:
     virtual ssize_t Read(void* buff, size_t len)override;
