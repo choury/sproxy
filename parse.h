@@ -21,7 +21,8 @@ class CGI_Header;
 class HttpReqHeader{
     std::list<std::pair<string, string>> headers;
 public:
-    uint32_t id = 0;  // 仅由http2/choury's cgi协议使用
+    uint32_t http_id = 0;  // 由http2协议使用
+    uint32_t cgi_id = 0;   // 由cgi 协议使用
     uint8_t flags = 0;
     char method[20];
     char url[URLLIMIT];
@@ -49,7 +50,8 @@ class HttpResHeader{
     std::list<std::pair<string, string>> headers;
     std::map<string, Cookie> Cookies;
 public:
-    uint32_t id = 0;  // 仅由http2/choury's cgi协议使用
+    uint32_t http_id = 0;  // 由http2协议使用
+    uint32_t cgi_id = 0;   // 由cgi 协议使用
     uint8_t flags = 0;
     char status[100];
     explicit HttpResHeader(const char* header);

@@ -16,7 +16,7 @@ Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL* ssl): Guest(fd, myadd
 Guest_s::Guest_s(Guest_s *const copy): Guest(copy), ssl(copy->ssl) {
     copy->fd = 0;
     copy->ssl = nullptr;
-	copy->clean(queryconnect(copy), NOERROR);
+	copy->clean(NOERROR, queryconnect(copy));
 }
 
 
@@ -104,14 +104,14 @@ void Guest_s::shakehandHE(uint32_t events) {
             LOGE("([%s]:%d): guest_s error:%s\n",
                   sourceip, sourceport, strerror(error));
         }
-        clean(this, INTERNAL_ERR);
+        clean(INTERNAL_ERR, this);
     }
     
     if ((events & EPOLLIN)|| (events & EPOLLOUT)) {
         int ret = SSL_accept(ssl);
         if (ret != 1) {
             if (time(nullptr) - accept_start_time>=120 || showerrinfo(ret, "ssl accept error")) {
-                clean(this, SSL_SHAKEHAND_ERR);
+                clean(SSL_SHAKEHAND_ERR, this);
             }
         } else {
             shakedhand();

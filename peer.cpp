@@ -23,7 +23,7 @@ Peer::~Peer() {
     assert(!queryconnect(this));
 }
 
-ssize_t Peer::Write(Peer* who, const void* buff, size_t size) {
+ssize_t Peer::Write(const void* buff, size_t size, Peer* who, uint32_t) {
     int len = Min(size, bufleft(who));
     memcpy(wbuff + writelen, buff, len);
     writelen += len;
@@ -129,14 +129,14 @@ std::set<std::pair<Guest *, Peer *>> disconnect(Peer *k1, Peer* k2) {
     return should_erase;
 }
 
-void Peer::clean(Peer* who, uint32_t errcode) {
+void Peer::clean(uint32_t errcode, Peer* who, uint32_t) {
     auto &&disconnected = disconnect(this, who);
     assert(!queryconnect(this));
     for(auto i: disconnected){
         if(i.first != who && i.first != this)
-            i.first->clean(this, errcode);
+            i.first->clean(errcode, this);
         if(i.second != who && i.second != this)
-            i.second->clean(this, errcode);
+            i.second->clean(errcode, this);
     }
     if(fd > 0) {
         struct epoll_event event;
@@ -153,7 +153,7 @@ void Peer::wait(Peer *who) {
     epoll_ctl(efd, EPOLL_CTL_DEL, who->fd, NULL);
 }
 
-int Peer::showstatus(Peer *who, char *buff) {
+int Peer::showstatus(char *buff, Peer* who) {
     strcpy(buff, "\r\n");
     return 2;
 }

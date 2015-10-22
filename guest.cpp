@@ -33,7 +33,7 @@ int showstatus(char *buff, const char *command){
         int len = 0;
         len = sprintf(buff, "Guest:\r\n");
         for(auto i:guest_set){
-            len += i->showstatus(nullptr, buff+len);
+            len += i->showstatus(buff+len, nullptr);
         }
         return len;
     }
@@ -87,7 +87,7 @@ void Guest::defaultHE(uint32_t events) {
             LOGE("([%s]:%d): guest error:%s\n",
                   sourceip, sourceport, strerror(error));
         }
-        clean(this, INTERNAL_ERR);
+        clean(INTERNAL_ERR, this);
         return;
     }
     
@@ -100,7 +100,7 @@ void Guest::defaultHE(uint32_t events) {
             int ret = Peer::Write();
             if (ret <= 0) {
                 if (showerrinfo(ret, "guest write error")) {
-                    clean(this, WRITE_ERR);
+                    clean(WRITE_ERR, this);
                 }
                 return;
             }
@@ -137,7 +137,7 @@ ssize_t Guest::Read(void* buff, size_t len){
 
 void Guest::ErrProc(int errcode) {
     if (showerrinfo(errcode, "Guest-Http error")) {
-        clean(this, errcode);
+        clean(errcode, this);
     }
 }
 
@@ -150,7 +150,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
         LOG("([%s]:%d): %s%s %s%s\n", sourceip, sourceport,
             hint, req.method, req.hostname, req.url);
         if(!req.hostname[0]){
-            Write(this, BLOCKTIP, strlen(BLOCKTIP));
+            Write(BLOCKTIP, strlen(BLOCKTIP), this);
             return;
         }
     }else{
@@ -162,7 +162,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
         if (checkblock(req.hostname)) {
             LOG("([%s]:%d): site: %s blocked\n",
                  sourceip, sourceport, req.hostname);
-            Peer::Write(this, BLOCKTIP, strlen(BLOCKTIP));
+            Peer::Write(BLOCKTIP, strlen(BLOCKTIP), this);
         } else {
             Host::gethost(req, this);
         }
@@ -213,11 +213,11 @@ void Guest::ReqProc(HttpReqHeader& req) {
     } else{
         LOGE("([%s]:%d): unsported method:%s\n",
               sourceip, sourceport, req.method);
-        clean(this, HTTP_PROTOCOL_ERR);
+        clean(HTTP_PROTOCOL_ERR, this);
     }
 }
 
-void Guest::Response(Peer* who, HttpResHeader& res) {
+void Guest::Response(HttpResHeader& res, Peer*) {
     writelen+=res.getstring(wbuff+writelen);
     if(res.get("Transfer-Encoding")){
         flag |= ISCHUNKED_F;
@@ -228,19 +228,19 @@ void Guest::Response(Peer* who, HttpResHeader& res) {
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 }
 
-ssize_t Guest::Write(Peer *who, const void *buff, size_t size) {
+ssize_t Guest::Write(const void *buff, size_t size, Peer* who, uint32_t) {
     size_t len = Min(bufleft(who), size);
     ssize_t ret = 0;
     if(flag & ISCHUNKED_F){
         char chunkbuf[100];
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)size);
-        if(Peer::Write(this, chunkbuf, chunklen) != chunklen)
+        if(Peer::Write(chunkbuf, chunklen, this) != chunklen)
             assert(0);
-        ret = Peer::Write(this, buff, len);
-        if(Peer::Write(this, CRLF, strlen(CRLF)) != strlen(CRLF))
+        ret = Peer::Write(buff, len, this);
+        if(Peer::Write(CRLF, strlen(CRLF), this) != strlen(CRLF))
             assert(0);
     }else{
-        ret = Peer::Write(this, buff, size);
+        ret = Peer::Write(buff, size, this);
     }
     return ret;
 }
@@ -250,7 +250,7 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
     Host *host = dynamic_cast<Host *>(queryconnect(this));
     if (host == NULL) {
         LOGE("([%s]:%d): connecting to host lost\n", sourceip, sourceport);
-        clean(this, PEER_LOST_ERR);
+        clean(PEER_LOST_ERR, this);
         return -1;
     }
     int len = host->bufleft(this);
@@ -259,20 +259,20 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
         host->wait(this);
         return -1;
     }
-    return host->Write(this, buff, Min(size, len));
+    return host->Write(buff, Min(size, len), this);
 }
 
 Guest::~Guest(){
     guest_set.erase(this);
 }
 
-int Guest::showstatus(Peer *,char* buff){
+int Guest::showstatus(char* buff, Peer *){
     int len;
     len = sprintf(buff, "([%s]:%d) buffleft(%d): ", sourceip, sourceport,
                    (int32_t)(sizeof(wbuff)-writelen));
     Peer *peer = queryconnect(this);
     if(peer){
-        len += peer->showstatus(this, buff+len);
+        len += peer->showstatus(buff+len, this);
     } else {
         len += sprintf(buff+len, "null ");
         const char *status;

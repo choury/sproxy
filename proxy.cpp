@@ -11,7 +11,7 @@ Proxy::Proxy(Proxy *const copy):Host(copy->fd), ssl(copy->ssl), ctx(copy->ctx) {
     copy->fd  = 0;
     copy->ssl = nullptr;
     copy->ctx = nullptr;
-    copy->clean(queryconnect(copy), NOERROR);
+    copy->clean(NOERROR, queryconnect(copy));
 }
 
 
@@ -23,7 +23,7 @@ Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
     }
     
     if (exist) {
-        exist->clean(guest, NOERROR); //只有exist是host才会走到这里
+        exist->clean(NOERROR, guest); //只有exist是host才会走到这里
     }
     
     if (proxy2) {
@@ -89,7 +89,7 @@ void Proxy::waitconnectHE(uint32_t events) {
     connectmap.erase(this);
     Guest *guest = (Guest *)queryconnect(this);
     if (guest == nullptr) {
-        clean(this, PEER_LOST_ERR);
+        clean(PEER_LOST_ERR, this);
         return;
     }
     
@@ -145,7 +145,7 @@ reconnect:
 void Proxy::shakehandHE(uint32_t events) {
     Guest *guest = (Guest *)queryconnect(this);
     if (guest == nullptr) {
-        clean(this, PEER_LOST_ERR);
+        clean(PEER_LOST_ERR, this);
         return;
     }
     if ((events & EPOLLIN) || (events & EPOLLOUT)) {
@@ -203,7 +203,7 @@ Proxy::~Proxy() {
     }
 }
 
-int Proxy::showstatus(Peer *, char* buff){
+int Proxy::showstatus(char* buff, Peer*){
     int len;
     len = sprintf(buff, "%s ##(proxy)", req.url);
     const char *status;

@@ -24,14 +24,14 @@ public:
     virtual ~Peer();
     int32_t windowsize = 65535; //(for http2) 对端提供的窗口大小，发送时减小，收到对段update时增加
     int32_t windowleft = 65535; //(for http2) 发送给对端的窗口大小，接受时减小，给对端发送update时增加
-    virtual void clean(Peer *who, uint32_t errcode);
-    virtual ssize_t Write(Peer* who, const void *buff, size_t size);
+    virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0);
+    virtual ssize_t Write(const void *buff, size_t size, Peer* who, uint32_t id = 0);
     virtual int showerrinfo(int ret, const char *) = 0;
-    virtual int showstatus(Peer *who, char *buff);
+    virtual int showstatus(char* buff, Peer* who);
     
-    virtual void writedcb(Peer *);
-    virtual int32_t bufleft(Peer*);
-    virtual void wait(Peer *who);
+    virtual void writedcb(Peer* who);
+    virtual int32_t bufleft(Peer* who);
+    virtual void wait(Peer* who);
 };
 
 class Guest;

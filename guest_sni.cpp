@@ -12,7 +12,7 @@ void Guest_sni::initHE(uint32_t events) {
         int ret=read(fd, http_buff+http_getlen, sizeof(http_buff)-http_getlen);
         if(ret <= 0){
             if (showerrinfo(ret, "guest_sni read error")) {
-                clean(this, READ_ERR);
+                clean(READ_ERR, this);
             }
             return;
         }
@@ -31,10 +31,10 @@ void Guest_sni::initHE(uint32_t events) {
             Host::gethost(req, this);
             handleEvent = (void (Con::*)(uint32_t))&Guest_sni::defaultHE;
         }else if(ret != -1){
-            clean(this, INTERNAL_ERR);
+            clean(INTERNAL_ERR, this);
         }
     }
 }
 
-void Guest_sni::Response(Peer *who, HttpResHeader &res){
+void Guest_sni::Response(HttpResHeader &, Peer *){
 }

@@ -358,7 +358,7 @@ HttpReqHeader::HttpReqHeader(CGI_Header *headers) {
         LOGE("wrong CGI header");
         throw 1;
     }
-    id = ntohl(headers->requestId);
+    cgi_id = ntohl(headers->requestId);
    
     char *p = (char *)(headers +1);
     uint32_t len = ntohs(headers->contentLength);
@@ -491,7 +491,7 @@ int HttpReqHeader::getframe(void* outbuff, Index_table *index_table) {
     if(!ismethod("POST") && !ismethod("CONNECT")){
         header->flags |= END_STREAM_F;
     }
-    set32(header->id, id);
+    set32(header->id, http_id);
 
     char *p = (char *)(header + 1);
     p += index_table->hpack_encode(p, ":method", method);
@@ -519,7 +519,7 @@ int HttpReqHeader::getframe(void* outbuff, Index_table *index_table) {
 int HttpReqHeader::getcgi(void *outbuff) {
     CGI_Header *cgi = (CGI_Header *)(outbuff);
     cgi->type = CGI_REQUEST;
-    cgi->requestId = htonl(id);
+    cgi->requestId = htonl(cgi_id);
     
     char *p = (char *)(cgi + 1);
     p = cgi_addnv(p, ":method", method);
@@ -528,7 +528,7 @@ int HttpReqHeader::getcgi(void *outbuff) {
         p = cgi_addnv(p, i.first, i.second);
     }
     cgi->contentLength = htons(p - (char *)(cgi + 1));
-    return p - (char *)outbuff;
+    return ntohs(cgi->contentLength);
 }
 
 
@@ -572,7 +572,7 @@ HttpResHeader::HttpResHeader(CGI_Header *headers) {
         LOGE("wrong CGI header");
         throw 1;
     }
-    id = ntohl(headers->requestId);
+    cgi_id = ntohl(headers->requestId);
    
     char *p = (char *)(headers +1);
     uint32_t len = ntohs(headers->contentLength);
@@ -632,7 +632,7 @@ int HttpResHeader::getframe(void* outbuff, Index_table* index_table) {
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F;
-    set32(header->id, id);
+    set32(header->id, http_id);
 
     char *p = (char *)(header + 1);
     char status_h2[100];
@@ -648,7 +648,7 @@ int HttpResHeader::getframe(void* outbuff, Index_table* index_table) {
 int HttpResHeader::getcgi(void *outbuff) {
     CGI_Header *cgi = (CGI_Header *)(outbuff);
     cgi->type = CGI_RESPONSE;
-    cgi->requestId = htonl(id);
+    cgi->requestId = htonl(cgi_id);
     
     char *p = (char *)(cgi + 1);
     p = cgi_addnv(p, ":status", status);
@@ -656,12 +656,12 @@ int HttpResHeader::getcgi(void *outbuff) {
         p = cgi_addnv(p, i.first, i.second);
     }
     cgi->contentLength = htons(p - (char *)(cgi + 1));
-    return p - (char *)outbuff;
+    return ntohs(cgi->contentLength);
 }
 
 
 char *cgi_addnv(char *p, const string &name, const string &value) {
-    CGI_NameValuePair *cgi_pairs = (CGI_NameValuePair *) p;
+    CGI_NVLenPair *cgi_pairs = (CGI_NVLenPair *) p;
     cgi_pairs->nameLength = htons(name.size());
     cgi_pairs->valueLength = htons(value.size());
     p = (char *)(cgi_pairs +1);
@@ -672,7 +672,7 @@ char *cgi_addnv(char *p, const string &name, const string &value) {
 }
 
 char *cgi_getnv(char *p, string &name, string &value) {
-    CGI_NameValuePair *cgi_pairs = (CGI_NameValuePair *)p;
+    CGI_NVLenPair *cgi_pairs = (CGI_NVLenPair *)p;
     uint32_t name_len = ntohs(cgi_pairs->nameLength);
     uint32_t value_len = ntohs(cgi_pairs->valueLength);
     p = (char *)(cgi_pairs + 1);

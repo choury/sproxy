@@ -76,6 +76,7 @@ int main(int argc, char** argv) {
     SSL_load_error_strings();  // 载入所有错误信息
 
     signal(SIGPIPE, SIG_IGN);
+    signal(SIGCHLD, SIG_IGN);
     efd = epoll_create(10000);
     
     if(istrans){

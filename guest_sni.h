@@ -8,7 +8,7 @@
 class Guest_sni: public Guest{
     virtual void initHE(uint32_t events);
 public:
-    virtual void Response(Peer *who, HttpResHeader& res)override;
+    virtual void Response(HttpResHeader& res, Peer* who)override;
     explicit Guest_sni ( int fd, sockaddr_in6 *myaddr);
 };
 

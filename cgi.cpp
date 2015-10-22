@@ -57,6 +57,38 @@ Cgi::~Cgi() {
     cgimap.erase(filename);
 }
 
+ssize_t Cgi::Write(const void *buff, size_t size, Peer* who, uint32_t id) {
+    Guest *guest = dynamic_cast<Guest *>(who);
+    if(idmap.count(std::make_pair(guest, id))){
+        uint32_t id = idmap.at(std::make_pair(guest, id));
+        CGI_Header header;
+        memset(&header, 0, sizeof(header));
+        size = Min(size, bufleft(guest));
+        header.type = CGI_DATA;
+        header.requestId = htonl(id);
+        header.contentLength = htons(size);
+        SendFrame(&header, 0);
+        return Peer::Write(buff, size, this);
+    }else{
+        who->clean(PEER_LOST_ERR, this);
+        return -1;
+    }
+}
+
+CGI_Header* Cgi::SendFrame(const CGI_Header *header, size_t addlen)
+{
+    size_t len = sizeof(CGI_Header) + addlen;
+    CGI_Header *frame = (CGI_Header *)malloc(len);
+    memcpy(frame, header, len);
+    framequeue.push_back(frame);
+    
+    struct epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLIN | EPOLLOUT;
+    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    return frame;
+}
+
 
 int Cgi::showerrinfo(int ret, const char* s) {
     if(ret < 0) {
@@ -75,6 +107,7 @@ void Cgi::InProc() {
     ssize_t len = 0;
     CGI_Header *header = (CGI_Header *)cgi_buff;
     try{
+        std::pair<Guest *, uint32_t> session;
         switch (status) {
         case WaitHeadr:
             len = sizeof(CGI_Header) - cgi_getlen;
@@ -85,7 +118,7 @@ void Cgi::InProc() {
             len = read(fd, cgi_buff + cgi_getlen, len);
             if (len <= 0) {
                 if (showerrinfo(len, "cgi read")) {
-                    clean(this, INTERNAL_ERR);
+                    clean(INTERNAL_ERR, this);
                 }
                 return;
             }
@@ -101,17 +134,19 @@ void Cgi::InProc() {
                 case CGI_DATA:
                     status = HandleData;
                     break;
+                case CGI_VALUE:
+                    status = HandleValue;
+                    break;
                 default:
                     LOGE("cgi unkown type: %d\n", header->type);
-                    clean(this, INTERNAL_ERR);
-                    return;
+                    throw 0;
                 }
                 break;
             }
             len = read(fd, cgi_buff + cgi_getlen, len);
             if (len <= 0) {
                 if (showerrinfo(len, "cgi read")) {
-                    clean(this, INTERNAL_ERR);
+                    clean(INTERNAL_ERR, this);
                 }
                 return;
             }
@@ -122,17 +157,42 @@ void Cgi::InProc() {
             if (res.get("content-length") == nullptr) {
                 res.add("Transfer-Encoding", "chunked");
             }
-            guest = idmap.at(res.id);
-            guest->Response(this, res);
+            session = idmap.at(res.cgi_id);
+            guest = session.first;
+            res.http_id = session.second;
+            guest->Response(res, this);
             status = WaitHeadr;
             cgi_getlen = 0;
             break;
         }
+        case HandleValue:
+            guest = idmap.at(ntohl(header->requestId)).first;
+            if((header->flag & CGI_FLAG_ACK)==0){
+                header->flag |= CGI_FLAG_ACK;
+                CGI_NameValue *nv = (CGI_NameValue *)(header+1);
+                while((char *)(nv+1) - (char*)header <= (int)cgi_getlen){
+                    switch(ntohl(nv->name)){
+                    case CGI_NAME_BUFFLEFT:
+                        nv->value = htonl(guest->bufleft(this));
+                        header->contentLength = htons((char *)(nv+1) - (char*)header);
+                        break;
+                    default:
+                        goto send;
+                    }
+                    nv++;
+               }
+            }
+send:
+            SendFrame(header, ntohs(header->contentLength));
+            status = WaitHeadr;
+            cgi_getlen = 0;
+            break;
         case HandleData:
             cgi_outlen = sizeof(CGI_Header);
             status = HandleLeft;
         case HandleLeft:
-            guest = idmap.at(ntohl(header->requestId));
+            session = idmap.at(ntohl(header->requestId));
+            guest = session.first;
             len = guest->bufleft(this);
             if (len <= 0) {
                 LOGE("The guest's write buff is full\n");
@@ -140,14 +200,14 @@ void Cgi::InProc() {
                 return;
             }
             len = Min(len, cgi_getlen - cgi_outlen);
-            len = guest->Write(this, cgi_buff + cgi_outlen, len);
+            len = guest->Write(cgi_buff + cgi_outlen, len, this, session.second);
             cgi_outlen += len;
             if (cgi_outlen == cgi_getlen) {
                 status = WaitHeadr;
                 cgi_getlen = 0;
             }
             if (cgi_outlen == sizeof(CGI_Header)) {
-                idmap.erase(guest);
+                idmap.erase(session);
             }
             break;
         }
@@ -158,26 +218,71 @@ void Cgi::InProc() {
     InProc();
 }
 
+int Cgi::OutProc() {
+    if (dataleft && writelen){ //先将data帧的数据写完
+        int len = Min(writelen, dataleft);
+        int ret = Peer::Write(wbuff, len);
+        if(ret>0){
+            memmove(wbuff, wbuff + ret, writelen - ret);
+            writelen -= ret;
+            dataleft -= ret;
+            if(ret != len){
+                return 1;
+            }
+        }else { 
+            return ret;
+        }
+    }
+    if(dataleft == 0 && !framequeue.empty()){  //data帧已写完
+        do{
+            CGI_Header *header = framequeue.front();
+            size_t framewritelen;
+            if(header->type == CGI_DATA){
+                framewritelen = sizeof(CGI_Header);
+            }else{
+                framewritelen = ntohs(header->contentLength) + sizeof(CGI_Header);
+            }
+            frameleft = frameleft?frameleft:framewritelen;
+            int ret = Peer::Write((char *)header+framewritelen-frameleft, frameleft);
+            if(ret>0){
+                frameleft -= ret;
+                if(frameleft == 0 ){
+                    size_t len = ntohs(header->contentLength);
+                    framequeue.pop_front();
+                    if(header->type == CGI_DATA && len){
+                        dataleft = len;
+                        free(header);
+                        return 1;
+                    }
+                    free(header);
+                }
+            }else{
+                return ret;
+            }
+        }while(!framequeue.empty());
+    }
+    return (dataleft == 0 && framequeue.empty()) ? 2 : 1;
+}
+
+
 
 void Cgi::defaultHE(uint32_t events) {
     if (events & EPOLLIN){
         InProc();
     }
     if (events & EPOLLOUT) {
-        if (writelen) {
-            int ret = Write();
-            if (ret <= 0) {
-                if (showerrinfo(ret, "host write error")) {
-                    clean(this, WRITE_ERR);
-                }
-                return;
-            }
+        int ret = OutProc();
+        if(ret){ 
             for(auto i: waitlist){
                 i->writedcb(this);
             }
             waitlist.clear();
+        }else if(ret <= 0 && showerrinfo(ret, "cgi write error")) {
+            clean(WRITE_ERR, this);
+            return;
         }
-        if (writelen == 0) {
+
+        if (ret == 2) {
             struct epoll_event event;
             event.data.ptr = this;
             event.events = EPOLLIN;
@@ -186,16 +291,16 @@ void Cgi::defaultHE(uint32_t events) {
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("cgi unkown error: %s\n",strerror(errno));
-        clean(this, INTERNAL_ERR);
+        clean(INTERNAL_ERR, this);
     }
 }
 
-void Cgi::clean(Peer *who, uint32_t errcode) {
+void Cgi::clean(uint32_t errcode, Peer* who, uint32_t id) {
     if(who == this) {
-        return Peer::clean(who, errcode);
+        return Peer::clean(errcode, this);
     }
     Guest *guest = dynamic_cast<Guest *>(who);
-    idmap.erase(guest);
+    idmap.erase(std::make_pair(guest, id));
     disconnect(guest, this);
     waitlist.erase(guest);
 }
@@ -208,13 +313,10 @@ void Cgi::closeHE(uint32_t events){
 
 void Cgi::Request(HttpReqHeader& req, Guest* guest){
     connect(guest, this);
-    req.id = curid++;
-    writelen += req.getcgi(wbuff + writelen);
-    idmap.insert(guest, req.id);
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    req.cgi_id = curid++;
+    idmap.insert(std::make_pair(guest, req.http_id), req.cgi_id);
+    char buff[CGI_LEN_MAX];
+    SendFrame((CGI_Header *)buff, req.getcgi(buff));
 }
 
 void Cgi::wait(Peer *who) {

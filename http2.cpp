@@ -114,10 +114,10 @@ size_t Http2Base::Write_Proc(char *wbuff, size_t &writelen){
         do{
             Http2_header *header = framequeue.front();
             size_t framewritelen;
-            if(header->type){
-                framewritelen = get24(header->length) + sizeof(Http2_header);
-            }else{
+            if(header->type == DATA_TYPE){
                 framewritelen = sizeof(Http2_header);
+            }else{
+                framewritelen = get24(header->length) + sizeof(Http2_header);
             }
             frameleft = frameleft?frameleft:framewritelen;
             int ret = Write((char *)header+framewritelen-frameleft, frameleft);
@@ -126,7 +126,7 @@ size_t Http2Base::Write_Proc(char *wbuff, size_t &writelen){
                 if(frameleft == 0 ){
                     size_t len = get24(header->length);
                     framequeue.pop_front();
-                    if(header->type == 0 && len){
+                    if(header->type == DATA_TYPE && len){
                         dataleft = len;
                         free(header);
                         return 1;
@@ -262,7 +262,7 @@ void Http2Res::HeadersProc(Http2_header* header) {
         weigth = *pos++;
     }
     HttpReqHeader req(response_table.hpack_decode(pos, get24(header->length) - padlen - (pos - (const char *)(header+1))));
-    req.id = get32(header->id);
+    req.http_id = get32(header->id);
     req.flags = header->flags;
     ReqProc(req);
     (void)weigth;
@@ -326,7 +326,7 @@ void Http2Req::HeadersProc(Http2_header* header) {
         weigth = *pos++;
     }
     HttpResHeader res(response_table.hpack_decode(pos, get24(header->length) - padlen - (pos - (const char *)(header+1))));
-    res.id = get32(header->id);
+    res.http_id = get32(header->id);
     res.flags = header->flags;
     ResProc(res);
     (void)weigth;

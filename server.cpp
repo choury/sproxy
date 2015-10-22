@@ -158,6 +158,7 @@ int main(int argc, char **argv) {
 
 
     signal(SIGPIPE, SIG_IGN);
+    signal(SIGCHLD, SIG_IGN);
     efd = epoll_create(10000);
     int svsk_tcp;
     if ((svsk_tcp = Listen(SOCK_STREAM, SPORT)) < 0) {

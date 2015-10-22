@@ -14,13 +14,13 @@ int cgimain(int fd){
             HttpReqHeader req(header);
             auto &&params = req.getparams();
             HttpResHeader res(H200);
-            res.id = req.id;
-            write(fd, buff, res.getcgi(buff));
+            res.cgi_id = req.cgi_id;
+            write(fd, buff, sizeof(CGI_Header) + res.getcgi(buff));
             for(auto i:params){
                 char buff[1024];
-                cgi_write(fd,res.id, buff, sprintf(buff, "%s =====> %s\n", i.first.c_str(), i.second.c_str()));
+                cgi_write(fd,res.cgi_id, buff, sprintf(buff, "%s =====> %s\n", i.first.c_str(), i.second.c_str()));
             }
-            cgi_write(fd,res.id, "", 0);
+            cgi_write(fd,res.cgi_id, "", 0);
         }
     }
     return 0;

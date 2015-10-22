@@ -51,7 +51,7 @@ void Host::waitconnectHE(uint32_t events) {
     connectmap.erase(this);
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == nullptr) {
-        clean(this, PEER_LOST_ERR);
+        clean(PEER_LOST_ERR, this);
         return;
     }
     
@@ -84,7 +84,7 @@ void Host::waitconnectHE(uint32_t events) {
 
         if (req.ismethod("CONNECT")) {
             HttpResHeader res(connecttip);
-            guest->Response(this, res);
+            guest->Response(res, this);
         }
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
     }
@@ -103,13 +103,13 @@ void Host::defaultHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("host error: %s\n", strerror(error));
         }
-        clean(this, INTERNAL_ERR);
+        clean(INTERNAL_ERR, this);
         return;
     }
     
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
-        clean(this, PEER_LOST_ERR);
+        clean(PEER_LOST_ERR, this);
         return;
     }
 
@@ -122,7 +122,7 @@ void Host::defaultHE(uint32_t events) {
             int ret = Write();
             if (ret <= 0) {
                 if (showerrinfo(ret, "host write error")) {
-                    clean(this, WRITE_ERR);
+                    clean(WRITE_ERR, this);
                 }
                 return;
             }
@@ -189,10 +189,10 @@ void Host::destory(const char* tip) {
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if(guest && tip){
         HttpResHeader res(tip);
-        guest->Response(this, res);
-        guest->Write(this, "Something wrong with your request site, you can try angin.\n", 64);
+        guest->Response(res, this);
+        guest->Write("Something wrong with your request site, you can try angin.\n", 64, this);
     }
-    clean(this, CONNECT_ERR);
+    clean(CONNECT_ERR, this);
     connectmap.erase(this);
     delete this;
 }
@@ -218,10 +218,10 @@ void Host::Request(Guest* guest, HttpReqHeader& req, bool direct_send) {
 void Host::ResProc(HttpResHeader& res) {
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
-        clean(this, PEER_LOST_ERR);
+        clean(PEER_LOST_ERR, this);
         return;
     }
-    guest->Response(this, res);
+    guest->Response(res, this);
 }
 
 
@@ -241,7 +241,7 @@ Host* Host::gethost(HttpReqHeader &req, Guest* guest) {
     }
 
     if (exist) { 
-        exist->clean(guest, NOERROR);
+        exist->clean(NOERROR, guest);
     }
     return new Host(req, guest);
 }
@@ -253,14 +253,14 @@ ssize_t Host::Read(void* buff, size_t len){
 
 void Host::ErrProc(int errcode) {
     if (showerrinfo(errcode, "Host-http error")) {
-        clean(this, errcode);
+        clean(errcode, this);
     }
 }
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
-        clean(this, PEER_LOST_ERR);
+        clean(PEER_LOST_ERR, this);
         return -1;
     }
 
@@ -272,10 +272,10 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
         return -1;
     }
 
-    return guest->Write(this, buff, Min(size, len));
+    return guest->Write(buff, Min(size, len), this);
 }
 
-int Host::showstatus(Peer *, char* buff) {
+int Host::showstatus(char* buff, Peer*) {
     int len;
     len = sprintf(buff, "%s ", req.url);
     const char *status;
