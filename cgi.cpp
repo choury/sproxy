@@ -326,10 +326,17 @@ void Cgi::wait(Peer *who) {
 
 Cgi *Cgi::getcgi(HttpReqHeader &req, Guest *guest){
     Cgi *cgi = nullptr;
-    if(cgimap.count(req.filename)){
-        cgi = cgimap[req.filename];
-    }else{
-        cgi = new Cgi(req.filename);
+    try{
+        if(cgimap.count(req.filename)){
+            cgi = cgimap[req.filename];
+        }else{
+            cgi = new Cgi(req.filename);
+        }
+    }catch(...){
+        HttpResHeader res(H500);
+        res.http_id = req.http_id;
+        guest->Response(res, nullptr);
+        throw 0;
     }
     cgi->Request(req, guest);
     return cgi;

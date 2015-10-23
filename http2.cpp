@@ -46,7 +46,8 @@ void Http2Base::DefaultProc() {
                     LOGE("unkown http2 frame:%d\n", header->type);
                 }
             }catch(...){
-                ErrProc(0);
+                Reset(get32(header->id), ERR_INTERNAL_ERROR);
+                http2_getlen = 0;
                 return;
             }
             http2_getlen = 0;
