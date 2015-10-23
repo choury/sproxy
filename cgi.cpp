@@ -70,7 +70,7 @@ ssize_t Cgi::Write(const void *buff, size_t size, Peer* who, uint32_t id) {
         SendFrame(&header, 0);
         return Peer::Write(buff, size, this);
     }else{
-        who->clean(PEER_LOST_ERR, this);
+        who->clean(PEER_LOST_ERR, this, id);
         return -1;
     }
 }

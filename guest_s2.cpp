@@ -113,7 +113,7 @@ void Guest_s2::ReqProc(HttpReqHeader &req)
 
 void Guest_s2::Response(HttpResHeader &res, Peer *who)
 {
-    if(res.http_id){
+    if(res.http_id == 0){
         if(idmap.count(who)){
             res.http_id = idmap.at(who);
         }else{
@@ -215,12 +215,16 @@ void Guest_s2::AdjustInitalFrameWindowSize(ssize_t diff) {
     }
 }
 
-void Guest_s2::clean(uint32_t errcode, Peer *who, uint32_t) {
+void Guest_s2::clean(uint32_t errcode, Peer *who, uint32_t id) {
     if(who == this) {
         return Peer::clean(errcode, this);
-    }else if(idmap.count(who)){
-        Reset(idmap.at(who), errcode>30?ERR_INTERNAL_ERROR:errcode);
-        idmap.erase(who);
+    }
+    if(id == 0 && idmap.count(who)){
+        id = idmap.at(who);
+    }
+    if(id){
+        Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
+        idmap.erase(who, id);
     }
     disconnect(this, who);
     waitlist.erase(who);

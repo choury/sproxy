@@ -22,23 +22,26 @@ ssize_t Proxy2::Write(const void *buff, size_t len) {
 }
 
 
-ssize_t Proxy2::Write(const void* buff, size_t size, Peer *who, uint32_t) {
+ssize_t Proxy2::Write(const void* buff, size_t size, Peer *who, uint32_t id) {
     Http2_header header;
     memset(&header, 0, sizeof(header));
     Guest *guest = dynamic_cast<Guest*>(who);
-    if(idmap.count(guest)){
-        set32(header.id, idmap.at(guest));
-    }else{
-        who->clean(PEER_LOST_ERR, this);
-        return -1;
+    if(!id){
+        if(idmap.count(guest)){
+            id = idmap.at(guest);
+        }else{
+            who->clean(PEER_LOST_ERR, this);
+            return -1;
+        }
     }
+    set32(header.id, id);
     size = size > FRAMEBODYLIMIT ? FRAMEBODYLIMIT:size;
     set24(header.length, size);
     if(size == 0) {
         header.flags = END_STREAM_F;
     }
     SendFrame(&header, 0);
-    int ret = Peer::Write(buff, size, this, get32(header.id));
+    int ret = Peer::Write(buff, size, this, id);
     this->windowsize -= ret;
     who->windowsize -= ret;
     return ret;
