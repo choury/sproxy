@@ -412,20 +412,20 @@ void HttpReqHeader::del(const char* header) {
 }
 
 const char* HttpReqHeader::get(const char* header) const{
-    if(headers.count(header)){
-        return headers.at(header).begin()->c_str();
+    for(auto i:headers) {
+        if(strcasecmp(i.first.c_str(),header)==0)
+            return headers.at(i.first).begin()->c_str();
     }
     return nullptr;
 }
 
 std::set< string > HttpReqHeader::getall(const char *header) const{
-    if(headers.count(header)){
-        return headers.at(header);
-    }else{
-        std::set<string> sets;
-        return sets;
+    std::set<string> sets;
+    for(auto i:headers) {
+        if(strcasecmp(i.first.c_str(),header)==0)
+            sets.insert(i.second);
     }
-
+    return sets;
 }
 
 
@@ -580,19 +580,20 @@ void HttpResHeader::del(const char* header) {
 }
 
 const char* HttpResHeader::get(const char* header) const{
-    if(headers.count(header)){
-        return headers.at(header).begin()->c_str();
+    for(auto i:headers) {
+        if(strcasecmp(i.first.c_str(),header)==0)
+            return headers.at(i.first).begin()->c_str();
     }
     return nullptr;
 }
 
 std::set< string > HttpResHeader::getall(const char *header) const{
-    if(headers.count(header)){
-        return headers.at(header);
-    }else{
-        std::set<string> sets;
-        return sets;
+    std::set<string> sets;
+    for(auto i:headers) {
+        if(strcasecmp(i.first.c_str(),header)==0)
+            sets.insert(i.second);
     }
+    return sets;
 }
 
 

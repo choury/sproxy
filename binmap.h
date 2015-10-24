@@ -11,21 +11,20 @@ class mulmap{
     std::map<T1, std::set<T2>> data;
 public:
     typedef class mulmap_iterator{
-        const std::map<T1, std::set<T2>> &data;
-        std::pair<T1, T2> p;
+        std::pair<T1, T2> temp_pair;
+        const mulmap<T1, T2> *map;
     public:
         typename std::map<T1, std::set<T2>>::iterator mi;
         typename std::set<T2>::iterator si;
-        mulmap_iterator(const std::map<T1, std::set<T2>> &data):data(data){
-        }
+        mulmap_iterator(const mulmap<T1, T2> *map):map(map){}
         bool operator!=(const mulmap_iterator &cmp){
-            if(mi == data.end() || cmp.mi == data.end()){
+            if(mi == map->data.end() || cmp.mi == map->data.end()){
                return mi != cmp.mi; 
             }
             return mi != cmp.mi || si != cmp.si;
         }
-        const mulmap_iterator operator++(int){
-            const mulmap_iterator tmp = *this;
+        mulmap_iterator operator++(int){
+            mulmap_iterator tmp = *this;
             si++;
             if(si == mi->second.end()){
                 mi++;
@@ -33,7 +32,7 @@ public:
             }
             return tmp;
         }
-        const mulmap_iterator operator++(){
+        mulmap_iterator& operator++(){
             si++;
             if(si == mi->second.end()){
                 mi++;
@@ -41,15 +40,52 @@ public:
             }
             return *this;
         }
-        std::pair<T1, T2> operator*(){
-            p = std::make_pair(mi->first, *si);
-            return p;
+        std::pair<const T1, const T2> operator*(){
+            return std::make_pair(mi->first, *si);
         }
-        std::pair<T1, T2>* operator->(){
-            p = std::make_pair(mi->first, *si);
-            return &p;
+        const std::pair<T1, T2>* operator->(){
+            temp_pair = std::make_pair(mi->first, *si);
+            return &temp_pair;
         }
     } iterator;
+    typedef class mulmap_const_iterator{
+        std::pair<T1, T2> temp_pair;
+        const mulmap<T1, T2> *map;
+    public:
+        typename std::map<T1, std::set<T2>>::const_iterator mi;
+        typename std::set<T2>::const_iterator si;
+        mulmap_const_iterator(const mulmap<T1, T2> *map):map(map){}
+        bool operator!=(const mulmap_const_iterator &cmp){
+            if(mi == map->data.end() || cmp.mi == map->data.end()){
+               return mi != cmp.mi; 
+            }
+            return mi != cmp.mi || si != cmp.si;
+        }
+        mulmap_const_iterator operator++(int){
+            mulmap_const_iterator tmp = *this;
+            si++;
+            if(si == mi->second.end()){
+                mi++;
+                si = mi->second.begin();
+            }
+            return tmp;
+        }
+        mulmap_const_iterator& operator++(){
+            si++;
+            if(si == mi->second.end()){
+                mi++;
+                si = mi->second.begin();
+            }
+            return *this;
+        }
+        std::pair<const T1, const T2> operator*(){
+            return std::make_pair(mi->first, *si);
+        }
+        const std::pair<T1, T2>* operator->(){
+            temp_pair = std::make_pair(mi->first, si->c_str());
+            return &temp_pair;
+        }
+    } const_iterator;
     size_t count(const T1 key) const{
         if(data.count(key)){
             return data.at(key).size();
@@ -92,14 +128,26 @@ public:
         }
     }
     iterator begin() {
-        iterator i(data);
+        iterator i(this);
+        i.mi = data.begin();
+        if(i.mi != data.end())
+            i.si = i.mi->second.begin();
+        return i;
+    }
+    const_iterator begin() const{
+        const_iterator i(this);
         i.mi = data.begin();
         if(i.mi != data.end())
             i.si = i.mi->second.begin();
         return i;
     }
     iterator end() {
-        iterator i(data);
+        iterator i(this);
+        i.mi = data.end();
+        return i;
+    }
+    const_iterator end() const {
+        const_iterator i(this);
         i.mi = data.end();
         return i;
     }
