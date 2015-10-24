@@ -487,12 +487,9 @@ int HttpReqHeader::getframe(void* outbuff, Index_table *index_table) {
         p += index_table->hpack_encode(p, ":scheme", "http");
         p += index_table->hpack_encode(p, ":path", path);
     }
-    for(auto i: headers){
-        p += index_table->hpack_encode(p, i.first.c_str(), i.second.c_str());
-    }
+    p += index_table->hpack_encode(p, headers);
     
     set24(header->length, p-(char *)(header + 1));
-    
     return get24(header->length);
 }
 
@@ -627,9 +624,7 @@ int HttpResHeader::getframe(void* outbuff, Index_table* index_table) {
     char status_h2[100];
     sscanf(status,"%s",status_h2);
     p += index_table->hpack_encode(p, ":status", status_h2);
-    for(auto i : headers){
-        p += index_table->hpack_encode(p, i.first.c_str(), i.second.c_str());
-    }
+    p += index_table->hpack_encode(p, headers);
     
     set24(header->length, p-(char *)(header + 1));
     return get24(header->length);

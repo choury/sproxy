@@ -890,3 +890,13 @@ int Index_table::hpack_encode(char* buf, const char* Name, const char* value) {
     return buf - buf_begin;
 }
 
+int Index_table::hpack_encode(char *buf, mulmap<std::string, std::string> headers) {
+    char *buf_begin = buf;
+    for(auto i:headers) {
+        buf += hpack_encode(buf, i.first.c_str(), i.second.c_str());
+    }
+    evict_dynamic_table();
+    return buf - buf_begin;
+}
+
+

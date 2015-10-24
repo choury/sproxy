@@ -27,6 +27,7 @@ public:
     void set_dynamic_table_size_limit(size_t size);
     mulmap<std::string, std::string> hpack_decode(const char *s, int len);
     int hpack_encode(char *buf, const char *name, const char *value);
+    int hpack_encode(char *buf, mulmap<std::string, std::string> headers);
 };
 
 #endif
