@@ -15,6 +15,7 @@ void HttpBase::ChunkLProc() {
             DataProc(http_buff, 0);
             Http_Proc = &HttpBase::HeaderProc;
             headerlen += strlen(CRLF);
+            assert(http_getlen >= headerlen);
         }
         if (headerlen != http_getlen) {
             memmove(http_buff, http_buff+headerlen, http_getlen-headerlen);
@@ -38,13 +39,22 @@ void HttpBase::ChunkLProc() {
 
 void HttpBase::ChunkBProc() {
     if (http_expectlen == 0) {
-        if (memcmp(http_buff, CRLF, strlen(CRLF))) {
-            ErrProc(HTTP_PROTOCOL_ERR);
-            return;
+        if (http_getlen >= strlen(CRLF)){
+            if(memcmp(http_buff, CRLF, strlen(CRLF))) {
+                ErrProc(HTTP_PROTOCOL_ERR);
+                return;
+            }
+            http_getlen-= strlen(CRLF);
+            memmove(http_buff, http_buff+strlen(CRLF), http_getlen);
+            Http_Proc = &HttpBase::ChunkLProc;
+        }else{
+            ssize_t readlen = Read(http_buff+http_getlen, sizeof(http_buff)-http_getlen);
+            if (readlen <= 0) {
+                ErrProc(readlen);
+                return;
+            }
+            http_getlen += readlen;
         }
-        http_getlen-= strlen(CRLF);
-        memmove(http_buff, http_buff+strlen(CRLF), http_getlen);
-        Http_Proc = &HttpBase::ChunkLProc;
     } else {
         if (http_getlen == 0) {
             ssize_t readlen = Read(http_buff, sizeof(http_buff));
@@ -170,6 +180,10 @@ void HttpReq::HeaderProc() {
             } else {
                 Http_Proc = &HttpReq::AlwaysProc;
             }
+            if(memcmp(res.status, "204", 3) == 0||
+               memcmp(res.status, "205", 3) == 0||
+               memcmp(res.status, "304", 3) == 0)
+               ignore_body = true;
             ResProc(res);
             if (ignore_body) {
                 Http_Proc = (void (HttpBase::*)())&HttpReq::HeaderProc;
@@ -181,6 +195,7 @@ void HttpReq::HeaderProc() {
             return;
         }
         if (headerlen != http_getlen) {
+            assert(headerlen < http_getlen);
             //TODO 待优化为环形buff
             memmove(http_buff, http_buff+headerlen, http_getlen-headerlen);
         }
