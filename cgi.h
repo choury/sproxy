@@ -6,6 +6,8 @@
 #include "parse.h"
 #include "binmap.h"
 
+#include <list>
+
 // 可用于CGI_Header的type组件的值
 #define CGI_REQUEST       1
 #define CGI_RESPONSE      2
@@ -68,6 +70,23 @@ public:
     static Cgi *getcgi(HttpReqHeader &req, Guest *guest);
 };
 
+class Cookie{
+public:
+    const char *name;
+    const char *value;
+    const char *path= nullptr;
+    const char *domain = nullptr;
+    uint32_t maxage = 0;
+    Cookie(const char *name, const char *value):name(name), value(value){}
+    void set(const char* name, const char *value){
+        this->name = name;
+        this->value = value;
+    }
+};
+
+std::map<std::string, std::string> getparams(const HttpReqHeader &req);
+std::map<std::string, std::string> getcookies(const HttpReqHeader &req);
+void addcookie(HttpResHeader &res, const Cookie &cookie);
 #ifdef  __cplusplus
 extern "C" {
 #endif

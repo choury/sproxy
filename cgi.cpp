@@ -2,6 +2,7 @@
 #include "net.h"
 
 #include <map>
+#include <sstream>
 
 #include <string.h>
 #include <dlfcn.h>
@@ -341,6 +342,70 @@ Cgi *Cgi::getcgi(HttpReqHeader &req, Guest *guest){
     cgi->Request(req, guest);
     return cgi;
 }
+
+std::map< string, string > getparams(const HttpReqHeader &req) {
+    char paramsbuff[URLLIMIT];
+    URLDecode(req.path,paramsbuff);
+    char *p=paramsbuff;
+    while (*p && *++p != '?');
+    std::map< string, string > params;
+    if(*p++){
+        for (; ; p = NULL) {
+            char *q = strtok(p, "&");
+
+            if (q == NULL)
+                break;
+
+            char* sp = strpbrk(q, "=");
+            if (sp) {
+                params[string(q, sp - q)] = sp + 1;
+            } else {
+                params[q] = "";
+            }
+        }
+    }
+    return params;
+}
+
+std::map< string, string > getcookies(const HttpReqHeader &req) {
+    std::set<string> cookieset = req.getall("cookie");
+    std::map<string, string> cookies;
+    char cookiebuff[URLLIMIT];
+    for(auto i:cookieset){
+        strcpy(cookiebuff, i.c_str());
+        char *p=cookiebuff;
+        for (; ; p = NULL) {
+            char *q = strtok(p, ";");
+
+            if (q == NULL)
+                break;
+
+            char* sp = strpbrk(q, "=");
+            if (sp) {
+                cookies[ltrim(string(q, sp - q))] = sp + 1;
+            } else {
+                cookies[q] = "";
+            }
+        }
+    }
+    return cookies;
+}
+
+void addcookie(HttpResHeader &res, const Cookie &cookie){
+    std::stringstream cookiestream;
+    cookiestream << cookie.name <<'='<<cookie.value;
+    if(cookie.path){
+        cookiestream << "; path="<< cookie.path;
+    }
+    if(cookie.domain){
+        cookiestream << "; domain="<< cookie.domain;
+    }
+    if(cookie.maxage){
+        cookiestream << "; max-age="<< cookie.maxage;
+    }
+    res.add("Set-Cookie", cookiestream.str().c_str());
+}
+
 
 int cgi_write(int fd, uint32_t id, const void *buff, size_t len) {
     CGI_Header header;

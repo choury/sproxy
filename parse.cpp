@@ -23,13 +23,6 @@ static int GLOBALPROXY = 0;
 static unordered_set<string> proxylist;
 static unordered_set<string> blocklist;
 
-// trim from start
-static inline string& ltrim(std::string && s) {
-    s.erase(0, s.find_first_not_of(" "));
-    return s;
-}
-
-
 void loadsites() {
     loadedsites = 1;
     proxylist.clear();
@@ -309,7 +302,7 @@ HttpReqHeader::HttpReqHeader(const char* header) {
             LOGE("wrong header format:%s\n", p);
             throw 0;
         }
-        headers.push_back(std::make_pair(string(p, sp - p), ltrim(string(sp + 1))));
+        headers.insert(string(p, sp - p), ltrim(string(sp + 1)));
     }
     
     
@@ -325,7 +318,7 @@ HttpReqHeader::HttpReqHeader(const char* header) {
 }
 
 
-HttpReqHeader::HttpReqHeader(std::list< std::pair< string, string > >&& headers):headers(headers) {
+HttpReqHeader::HttpReqHeader(mulmap<string, string>&& headers):headers(headers) {
     snprintf(method, sizeof(method), "%s", get(":method"));
     snprintf(path, sizeof(path), "%s", get(":path"));
     port = 80;
@@ -373,7 +366,7 @@ HttpReqHeader::HttpReqHeader(CGI_Header *headers) {
             strcpy(path, value.c_str());
             continue;
         }
-        this->headers.push_back(make_pair(name, value));
+        this->headers.insert(name, value);
    }
 }
 
@@ -400,37 +393,13 @@ void HttpReqHeader::getfile() {
     return 0; */
 }
 
-std::map< string, string > HttpReqHeader::getparams() {
-    char paramsbuff[URLLIMIT];
-    URLDecode(path,paramsbuff);
-    char *p=paramsbuff;
-    while (*p && *++p != '?');
-    std::map< string, string > params;
-    if(*p++){
-        for (; ; p = NULL) {
-            char *q = strtok(p, "&");
-
-            if (q == NULL)
-                break;
-
-            char* sp = strpbrk(q, "=");
-            if (sp) {
-                params[string(q, sp - q)] = sp + 1;
-            } else {
-                params[q] = "";
-            }
-        }
-    }
-    return params;
-}
-
 
 bool HttpReqHeader::ismethod(const char* method) {
     return strcmp(this->method, method) == 0;
 }
 
 void HttpReqHeader::add(const char* header, const char* value) {
-    headers.push_back(std::make_pair(header, value));
+    headers.insert(header, value);
 }
 
 void HttpReqHeader::del(const char* header) {
@@ -442,13 +411,23 @@ void HttpReqHeader::del(const char* header) {
     }
 }
 
-const char* HttpReqHeader::get(const char* header) {
-    for(auto i=headers.begin();i != headers.end(); ++i) {
-        if(strcasecmp(i->first.c_str(),header)==0)
-            return i->second.c_str();
+const char* HttpReqHeader::get(const char* header) const{
+    if(headers.count(header)){
+        return headers.at(header).begin()->c_str();
     }
     return nullptr;
 }
+
+std::set< string > HttpReqHeader::getall(const char *header) const{
+    if(headers.count(header)){
+        return headers.at(header);
+    }else{
+        std::set<string> sets;
+        return sets;
+    }
+
+}
+
 
 int HttpReqHeader::getstring(void* outbuff) {
     char *buff = (char *)outbuff;
@@ -470,7 +449,7 @@ int HttpReqHeader::getstring(void* outbuff) {
     if(get("Host") == nullptr && hostname[0]){
         char buff[DOMAINLIMIT];
         snprintf(buff, sizeof(buff), "%s:%d", hostname, port);
-        headers.push_back(std::make_pair("Host", buff));
+        headers.insert("Host", buff);
     }
 
     for (auto i : headers) {
@@ -508,7 +487,9 @@ int HttpReqHeader::getframe(void* outbuff, Index_table *index_table) {
         p += index_table->hpack_encode(p, ":scheme", "http");
         p += index_table->hpack_encode(p, ":path", path);
     }
-    p += index_table->hpack_encode(p, headers);
+    for(auto i: headers){
+        p += index_table->hpack_encode(p, i.first.c_str(), i.second.c_str());
+    }
     
     set24(header->length, p-(char *)(header + 1));
     
@@ -550,12 +531,12 @@ HttpResHeader::HttpResHeader(const char* header) {
             LOGE("wrong header format:%s\n", p);
             throw 0;
         }
-        headers.push_back(std::make_pair(string(p, sp - p), ltrim(string(sp + 1))));
+        headers.insert(string(p, sp - p), ltrim(string(sp + 1)));
     }
 }
 
 
-HttpResHeader::HttpResHeader(std::list<std::pair<string, string>>&& headers):headers(headers) {
+HttpResHeader::HttpResHeader(mulmap<string, string>&& headers):headers(headers) {
     snprintf(status, sizeof(status), "%s", get(":status"));
     for (auto i = this->headers.begin(); i!= this->headers.end();) {
         if (i->first[0] == ':') {
@@ -583,13 +564,13 @@ HttpResHeader::HttpResHeader(CGI_Header *headers) {
             strcpy(status, value.c_str());
             continue;
         }
-        this->headers.push_back(make_pair(name, value));
+        this->headers.insert(name, value);
    }
 }
 
 
 void HttpResHeader::add(const char* header, const char* value) {
-    headers.push_back(std::make_pair(header, value));
+    headers.insert(header, value);
 }
 
 void HttpResHeader::del(const char* header) {
@@ -601,12 +582,20 @@ void HttpResHeader::del(const char* header) {
     }
 }
 
-const char* HttpResHeader::get(const char* header) {
-    for(auto i=headers.begin();i != headers.end(); ++i) {
-        if(strcasecmp(i->first.c_str(),header)==0)
-            return i->second.c_str();
+const char* HttpResHeader::get(const char* header) const{
+    if(headers.count(header)){
+        return headers.at(header).begin()->c_str();
     }
     return nullptr;
+}
+
+std::set< string > HttpResHeader::getall(const char *header) const{
+    if(headers.count(header)){
+        return headers.at(header);
+    }else{
+        std::set<string> sets;
+        return sets;
+    }
 }
 
 
@@ -622,8 +611,8 @@ int HttpResHeader::getstring(void *outbuff) {
                 i.first.c_str(), i.second.c_str());
     }
 
-    sprintf((char *)outbuff + p, CRLF);
-    return p + strlen(CRLF);
+    p += sprintf((char *)outbuff + p, CRLF);
+    return p;
 }
 
 
@@ -638,10 +627,11 @@ int HttpResHeader::getframe(void* outbuff, Index_table* index_table) {
     char status_h2[100];
     sscanf(status,"%s",status_h2);
     p += index_table->hpack_encode(p, ":status", status_h2);
-    p += index_table->hpack_encode(p, headers);
+    for(auto i : headers){
+        p += index_table->hpack_encode(p, i.first.c_str(), i.second.c_str());
+    }
     
     set24(header->length, p-(char *)(header + 1));
-    
     return get24(header->length);
 }
 

@@ -10,9 +10,49 @@ template<class T1, class T2>
 class mulmap{
     std::map<T1, std::set<T2>> data;
 public:
-    size_t count(const T1 key){
+    typedef class mulmap_iterator{
+        const std::map<T1, std::set<T2>> &data;
+        std::pair<T1, T2> p;
+    public:
+        typename std::map<T1, std::set<T2>>::iterator mi;
+        typename std::set<T2>::iterator si;
+        mulmap_iterator(const std::map<T1, std::set<T2>> &data):data(data){
+        }
+        bool operator!=(const mulmap_iterator &cmp){
+            if(mi == data.end() || cmp.mi == data.end()){
+               return mi != cmp.mi; 
+            }
+            return mi != cmp.mi || si != cmp.si;
+        }
+        const mulmap_iterator operator++(int){
+            const mulmap_iterator tmp = *this;
+            si++;
+            if(si == mi->second.end()){
+                mi++;
+                si = mi->second.begin();
+            }
+            return tmp;
+        }
+        const mulmap_iterator operator++(){
+            si++;
+            if(si == mi->second.end()){
+                mi++;
+                si = mi->second.begin();
+            }
+            return *this;
+        }
+        std::pair<T1, T2> operator*(){
+            p = std::make_pair(mi->first, *si);
+            return p;
+        }
+        std::pair<T1, T2>* operator->(){
+            p = std::make_pair(mi->first, *si);
+            return &p;
+        }
+    } iterator;
+    size_t count(const T1 key) const{
         if(data.count(key)){
-            return data[key].size();
+            return data.at(key).size();
         }
         return 0;
     }
@@ -29,7 +69,7 @@ public:
     {
         return data[key];
     }
-    auto at(const T1 key) -> decltype(data.at(key))
+    auto at(const T1 key) const -> decltype(data.at(key))
     {
         return data.at(key);
     }
@@ -45,13 +85,23 @@ public:
             }
         }
     }
-    auto begin() -> decltype(data.begin())
-    {
-        return data.begin();
+    void erase(iterator i){
+        i.mi->second.erase(i.si);
+        if(i.mi->second.size() == 0){
+            data.erase(i.mi);
+        }
     }
-    auto end()   -> decltype(data.end())
-    {
-        return data.end();
+    iterator begin() {
+        iterator i(data);
+        i.mi = data.begin();
+        if(i.mi != data.end())
+            i.si = i.mi->second.begin();
+        return i;
+    }
+    iterator end() {
+        iterator i(data);
+        i.mi = data.end();
+        return i;
     }
 };
 
@@ -155,9 +205,7 @@ template<class T1, class T2>
 const std::set<std::pair<T1, T2 >> binmap<T1, T2>::pairs() { 
     std::set<std::pair<T1, T2>> pairs;
     for(auto i: left){
-        for(auto j: i.second){
-            pairs.insert(std::make_pair(i.first, j));
-        }
+        pairs.insert(i);
     }
     return pairs;
 }

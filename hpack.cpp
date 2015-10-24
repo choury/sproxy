@@ -819,17 +819,17 @@ Index_table::~Index_table()
 }
 
 
-std::list< std::pair< std::string, std::string > > Index_table::hpack_decode(const char* s, int len) {
+mulmap< std::string, std::string > Index_table::hpack_decode(const char* s, int len) {
     if(!hpack_inited)
         init_hpack();
     int i = 0;
-    std::list<std::pair<std::string, std::string>> headers;
+    mulmap<std::string, std::string> headers;
     while(i < len) {
         if(s[i] & 0x80) {
             uint index;
             i += integer_decode(s+i, 7, &index);
             const Index *value = getvalue(index);
-            headers.push_back(std::make_pair(value->name, value->value));
+            headers.insert(value->name, value->value);
         }else if(s[i] & 0x40) {
             uint index;
             i += integer_decode(s+i, 6, &index);
@@ -840,7 +840,7 @@ std::list< std::pair< std::string, std::string > > Index_table::hpack_decode(con
                 i += literal_decode(s+i, name);
             }
             i += literal_decode(s+i, value);
-            headers.push_back(std::make_pair(name, value));
+            headers.insert(name, value);
             add_dynamic_table(name, value);
         }else if(s[i] & 0x20) {
             uint size;
@@ -856,20 +856,11 @@ std::list< std::pair< std::string, std::string > > Index_table::hpack_decode(con
                 i += literal_decode(s+i, name);
             }
             i += literal_decode(s+i, value);
-            headers.push_back(std::make_pair(name, value));
+            headers.insert(name, value);
         }
     }
     evict_dynamic_table();
     return headers;
-}
-
-int Index_table::hpack_encode(char *buf, const std::list< std::pair< std::string, std::string > > headers) {
-    char *buf_begin = buf;
-    for(auto i:headers) {
-        buf += hpack_encode(buf, i.first.c_str(), i.second.c_str());
-    }
-    evict_dynamic_table();
-    return buf - buf_begin;
 }
 
 int Index_table::hpack_encode(char* buf, const char* Name, const char* value) {

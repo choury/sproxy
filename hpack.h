@@ -2,7 +2,6 @@
 #define HPACK_H__
 #include "binmap.h"
 
-#include <list>
 #include <string>
 
 struct Index{
@@ -26,8 +25,7 @@ public:
     Index_table(size_t dynamic_table_size_limit = 4096);
     ~Index_table();
     void set_dynamic_table_size_limit(size_t size);
-    std::list<std::pair<std::string, std::string>> hpack_decode(const char *s, int len);
-    int hpack_encode(char *buf, const std::list<std::pair<std::string, std::string>> headers);
+    mulmap<std::string, std::string> hpack_decode(const char *s, int len);
     int hpack_encode(char *buf, const char *name, const char *value);
 };
 

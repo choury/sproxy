@@ -12,11 +12,22 @@ int cgimain(int fd){
         readlen += read(fd, buff + readlen, ntohs(header->contentLength));
         if(header->type == CGI_REQUEST){
             HttpReqHeader req(header);
-            auto &&params = req.getparams();
+            auto &&params = getparams(req);
+            auto &&cookies = getcookies(req);
             HttpResHeader res(H200);
             res.cgi_id = req.cgi_id;
+            Cookie cookie("haha", "haowan");
+            addcookie(res, cookie);
+            cookie.set("test10s", "test");
+            cookie.path = "/";
+            cookie.domain = ".choury.com";
+            addcookie(res, cookie);
             write(fd, buff, sizeof(CGI_Header) + res.getcgi(buff));
             for(auto i:params){
+                char buff[1024];
+                cgi_write(fd,res.cgi_id, buff, sprintf(buff, "%s =====> %s\n", i.first.c_str(), i.second.c_str()));
+            }
+            for(auto i:cookies){
                 char buff[1024];
                 cgi_write(fd,res.cgi_id, buff, sprintf(buff, "%s =====> %s\n", i.first.c_str(), i.second.c_str()));
             }
