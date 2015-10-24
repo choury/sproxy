@@ -755,7 +755,7 @@ void Index_table::add_dynamic_table(const std::string &name, const std::string &
     Index *index=new Index{name, value, dynamic_table.size() + evicted_count};
     size_t entry_size = index->name.size() + index->value.size() + 32;
     dynamic_table[index->id]=index;
-    dynamic_map.insert(decltype(dynamic_map)::value_type(name+char(0)+value, index));
+    dynamic_map.insert(name+char(0)+value, index);
     dynamic_table_size += entry_size;
 }
 
@@ -764,16 +764,16 @@ uint Index_table::getid(const std::string& name, const std::string& value) {
     std::string key = name+char(0)+value;
     if(static_map.count(key))
         return static_map[key];
-    if(dynamic_map.left.count(key))
-        return static_table_count + dynamic_table.size() + evicted_count - dynamic_map.left.find(key)->second->id;
+    if(dynamic_map.count(key))
+        return static_table_count + dynamic_table.size() + evicted_count - dynamic_map.at(key)->id;
     return 0;
 }
 
 uint Index_table::getid(const std::string& name) {
     if(static_map.count(name))
         return static_map[name];
-    if(dynamic_map.left.count(name))
-        return static_table_count + dynamic_table.size() + evicted_count - dynamic_map.left.find(name)->second->id;
+    if(dynamic_map.count(name))
+        return static_table_count + dynamic_table.size() + evicted_count - dynamic_map.at(name)->id;
     return 0;
 }
 
@@ -804,7 +804,7 @@ void Index_table::evict_dynamic_table(){
     while(dynamic_table_size > dynamic_table_size_limit && dynamic_table.size()){
         Index *index = dynamic_table[evicted_count];
         dynamic_table.erase(evicted_count);
-        dynamic_map.right.erase(index);
+        dynamic_map.erase(index);
         evicted_count++;
         dynamic_table_size -= index->name.size() + index->value.size() + 32;
         delete index;
@@ -819,17 +819,17 @@ Index_table::~Index_table()
 }
 
 
-std::list< std::pair< std::string, std::string > > Index_table::hpack_decode(const char* s, int len) {
+mulmap< std::string, std::string > Index_table::hpack_decode(const char* s, int len) {
     if(!hpack_inited)
         init_hpack();
     int i = 0;
-    std::list<std::pair<std::string, std::string>> headers;
+    mulmap<std::string, std::string> headers;
     while(i < len) {
         if(s[i] & 0x80) {
             uint index;
             i += integer_decode(s+i, 7, &index);
             const Index *value = getvalue(index);
-            headers.push_back(std::make_pair(value->name, value->value));
+            headers.insert(value->name, value->value);
         }else if(s[i] & 0x40) {
             uint index;
             i += integer_decode(s+i, 6, &index);
@@ -840,7 +840,7 @@ std::list< std::pair< std::string, std::string > > Index_table::hpack_decode(con
                 i += literal_decode(s+i, name);
             }
             i += literal_decode(s+i, value);
-            headers.push_back(std::make_pair(name, value));
+            headers.insert(name, value);
             add_dynamic_table(name, value);
         }else if(s[i] & 0x20) {
             uint size;
@@ -856,20 +856,11 @@ std::list< std::pair< std::string, std::string > > Index_table::hpack_decode(con
                 i += literal_decode(s+i, name);
             }
             i += literal_decode(s+i, value);
-            headers.push_back(std::make_pair(name, value));
+            headers.insert(name, value);
         }
     }
     evict_dynamic_table();
     return headers;
-}
-
-int Index_table::hpack_encode(char *buf, const std::list< std::pair< std::string, std::string > > headers) {
-    char *buf_begin = buf;
-    for(auto i:headers) {
-        buf += hpack_encode(buf, i.first.c_str(), i.second.c_str());
-    }
-    evict_dynamic_table();
-    return buf - buf_begin;
 }
 
 int Index_table::hpack_encode(char* buf, const char* Name, const char* value) {
@@ -898,4 +889,14 @@ int Index_table::hpack_encode(char* buf, const char* Name, const char* value) {
     }
     return buf - buf_begin;
 }
+
+int Index_table::hpack_encode(char *buf, mulmap<std::string, std::string> headers) {
+    char *buf_begin = buf;
+    for(auto i:headers) {
+        buf += hpack_encode(buf, i.first.c_str(), i.second.c_str());
+    }
+    evict_dynamic_table();
+    return buf - buf_begin;
+}
+
 

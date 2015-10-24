@@ -12,7 +12,7 @@ void Guest_sni::initHE(uint32_t events) {
         int ret=read(fd, http_buff+http_getlen, sizeof(http_buff)-http_getlen);
         if(ret <= 0){
             if (showerrinfo(ret, "guest_sni read error")) {
-                clean(this, READ_ERR);
+                clean(READ_ERR, this);
             }
             return;
         }
@@ -21,9 +21,9 @@ void Guest_sni::initHE(uint32_t events) {
         ret = parse_tls_header(http_buff, http_getlen, &hostname);
         if(ret > 0){
             if (checkproxy(hostname)) {
-                LOG("([%s]%d): Sni(proxy):%s\n", sourceip, sourceport, hostname);
+                LOG("([%s]:%d): Sni(proxy):%s\n", sourceip, sourceport, hostname);
             }else{
-                LOG("([%s]%d): Sni:%s\n", sourceip, sourceport, hostname);
+                LOG("([%s]:%d): Sni:%s\n", sourceip, sourceport, hostname);
             }
             char buff[HEADLENLIMIT];
             sprintf(buff, "CONNECT %s:%d" CRLF CRLF, hostname, 443);
@@ -31,10 +31,10 @@ void Guest_sni::initHE(uint32_t events) {
             Host::gethost(req, this);
             handleEvent = (void (Con::*)(uint32_t))&Guest_sni::defaultHE;
         }else if(ret != -1){
-            clean(this, INTERNAL_ERR);
+            clean(INTERNAL_ERR, this);
         }
     }
 }
 
-void Guest_sni::Response(Peer *who, HttpResHeader &res){
+void Guest_sni::Response(HttpResHeader &, Peer *){
 }

@@ -1,22 +1,38 @@
-#include "parse.h"
+#include "cgi.h"
+#include "net.h"
+#include <unistd.h>
 
-#include <string>
-#include <map>
+#include <iostream>
 
-#include <string.h>
-
-
-using std::map;
-using std::string;
-int cgimain(const HttpReqHeader *req, HttpResHeader *res){
-    res->add("test","yes");
-    strcpy(res->status, "200 test");
-    res->add("Location","//www.amzon.com");
-    res->sendheader();
-    char buff[4096];
-    for(auto i:req->params){
-        sprintf(buff,"%s --> %s\n",i.first.c_str(),i.second.c_str());
-        res->write(buff,strlen(buff));
+int cgimain(int fd){
+    ssize_t readlen;
+    char buff[CGI_LEN_MAX];
+    while((readlen = read(fd, buff, sizeof(CGI_Header)))>0){
+        CGI_Header *header = (CGI_Header *)buff;
+        readlen += read(fd, buff + readlen, ntohs(header->contentLength));
+        if(header->type == CGI_REQUEST){
+            HttpReqHeader req(header);
+            auto &&params = getparams(req);
+            auto &&cookies = getcookies(req);
+            HttpResHeader res(H200);
+            res.cgi_id = req.cgi_id;
+            Cookie cookie("haha", "haowan");
+            addcookie(res, cookie);
+            cookie.set("test10s", "test");
+            cookie.path = "/";
+            cookie.domain = ".choury.com";
+            addcookie(res, cookie);
+            write(fd, buff, sizeof(CGI_Header) + res.getcgi(buff));
+            for(auto i:params){
+                char buff[1024];
+                cgi_write(fd,res.cgi_id, buff, sprintf(buff, "%s =====> %s\n", i.first.c_str(), i.second.c_str()));
+            }
+            for(auto i:cookies){
+                char buff[1024];
+                cgi_write(fd,res.cgi_id, buff, sprintf(buff, "%s =====> %s\n", i.first.c_str(), i.second.c_str()));
+            }
+            cgi_write(fd,res.cgi_id, "", 0);
+        }
     }
     return 0;
 }

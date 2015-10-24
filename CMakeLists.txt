@@ -1,7 +1,6 @@
 project(sproxy)
 cmake_minimum_required(VERSION 2.8)
 
-find_package(Boost)
 find_package(OpenSSL)
 
 set(CMAKE_C_FLAGS "-Wall -g -O2")

@@ -142,7 +142,7 @@ File::File(HttpReqHeader &req, Guest* guest):req(req), range(req.get("Range")) {
 File* File::getfile(HttpReqHeader &req, Guest* guest) {
     File* exist = dynamic_cast<File *>(queryconnect(guest));
     if (exist) {
-        exist->clean(guest, NOERROR);
+        exist->clean(NOERROR, guest);
     }
     return new File(req, guest);
 }
@@ -171,15 +171,15 @@ void File::openHE(uint32_t events) {
     if (stat(filename, &st)) {
         LOGE("get file info failed: %s\n", strerror(errno));
         HttpResHeader res(H404);
-        guest->Response(this, res);
-        guest->Write(this, wbuff, 0);
+        guest->Response(res, this);
+        guest->Write(wbuff, 0, this);
         goto err;
     }
     if (S_ISREG(st.st_mode)) {
         ffd = open(filename, O_RDONLY);
         if (ffd < 0) {
             LOGE("open file failed: %s\n", strerror(errno));
-            guest->Write(this, MISCERRTIP, strlen(MISCERRTIP));
+            guest->Write(MISCERRTIP, strlen(MISCERRTIP), this);
             goto err;
         }
         Range range(req.get("Range"));
@@ -188,11 +188,11 @@ void File::openHE(uint32_t events) {
             leftsize = st.st_size;
             snprintf((char *)wbuff, sizeof(wbuff), "%u", leftsize);
             res.add("Content-Length", (char *)wbuff);
-            guest->Response(this, res);
+            guest->Response(res, this);
         } else if (range.size() == 1 && range.calcu(st.st_size)){
             if(lseek(ffd,range.ranges[0].first,SEEK_SET)<0){
                 LOGE("lseek file failed: %s\n", strerror(errno));
-                guest->Write(this, MISCERRTIP, strlen(MISCERRTIP));
+                guest->Write(MISCERRTIP, strlen(MISCERRTIP), this);
                 throw 0;
             }
             HttpResHeader res(H206);
@@ -202,12 +202,12 @@ void File::openHE(uint32_t events) {
             res.add("Content-Range",(char *)wbuff);
             snprintf((char *)wbuff, sizeof(wbuff), "%u", leftsize);
             res.add("Content-Length", (char *)wbuff);
-            guest->Response(this, res);
+            guest->Response(res, this);
         } else {
             HttpResHeader res(H416);
             snprintf((char *)wbuff, sizeof(wbuff), "bytes */%lu", st.st_size);
             res.add("Content-Range", (char *)wbuff);
-            guest->Response(this, res);
+            guest->Response(res, this);
         }
     } else if (S_ISDIR(st.st_mode)) {
         strcat(filename, "/index.html");
@@ -216,7 +216,7 @@ void File::openHE(uint32_t events) {
     handleEvent = (void (Con::*)(uint32_t))&File::defaultHE;
     return;
 err:
-    clean(this, INTERNAL_ERR);
+    clean(INTERNAL_ERR, this);
     return;
 }
 
@@ -226,19 +226,19 @@ void File::defaultHE(uint32_t events) {
     event.data.ptr = this;
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == NULL) {
-        clean(this, PEER_LOST_ERR);
+        clean(PEER_LOST_ERR, this);
         return;
     }
     
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("file unkown error: %s\n", strerror(errno));
-        clean(this, INTERNAL_ERR);
+        clean(INTERNAL_ERR, this);
         return;
     }
     
     if (events & EPOLLIN) {
         if (leftsize == 0) {
-            guest->Write(this, wbuff, 0);
+            guest->Write(wbuff, 0, this);
             return;
         }
         if(wbuffof < writelen){
@@ -248,7 +248,7 @@ void File::defaultHE(uint32_t events) {
                 guest->wait(this);
                 return;
             }
-            len = guest->Write(this, wbuff + wbuffof, len);
+            len = guest->Write(wbuff + wbuffof, len, this);
             wbuffof  += len;
             leftsize -= len;
         }else{
@@ -256,7 +256,7 @@ void File::defaultHE(uint32_t events) {
             len = read(ffd, wbuff, len);
             if (len <= 0) {
                 if (showerrinfo(len, "file read error")) {
-                    clean(this, READ_ERR);
+                    clean(READ_ERR, this);
                 }
                 return;
             }

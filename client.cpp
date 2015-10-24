@@ -76,6 +76,7 @@ int main(int argc, char** argv) {
     SSL_load_error_strings();  // 载入所有错误信息
 
     signal(SIGPIPE, SIG_IGN);
+    signal(SIGCHLD, SIG_IGN);
     efd = epoll_create(10000);
     
     if(istrans){
@@ -114,11 +115,9 @@ int main(int argc, char** argv) {
             (con->*con->handleEvent)(events[i].events);
         }
         
-        if(c < 50) {
-            dnstick();
-            hosttick();
-        }
-        proxy2tick(); //这个开销很小，可以一直执行
+        dnstick();
+        hosttick();
+        proxy2tick();
     }
     return 0;
 }

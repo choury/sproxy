@@ -158,6 +158,7 @@ int main(int argc, char **argv) {
 
 
     signal(SIGPIPE, SIG_IGN);
+    signal(SIGCHLD, SIG_IGN);
     efd = epoll_create(10000);
     int svsk_tcp;
     if ((svsk_tcp = Listen(SOCK_STREAM, SPORT)) < 0) {
@@ -184,10 +185,8 @@ int main(int argc, char **argv) {
             Con *con = (Con *)events[i].data.ptr;
             (con->*con->handleEvent)(events[i].events);
         }
-        if (c < 5) {
-            dnstick();
-            hosttick();
-        }
+        dnstick();
+        hosttick();
     }
     return 0;
 }

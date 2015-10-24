@@ -2,75 +2,75 @@
 #define PARSE_H__
 
 #include "common.h"
+#include "binmap.h"
 
 #include <string>
-#include <map>
-#include <list>
 
 using std::string;
 
-struct Cookie{
-    string value;
-    int    maxage;
-    string path;
-};
 
 class Index_table;
+class CGI_Header;
 
 class HttpReqHeader{
-    std::list<std::pair<string, string>> headers;
+    mulmap<string, string> headers;
 public:
-    std::map<string, string> params;
-    uint32_t id = 0;  // 仅由http2协议使用
+    uint32_t http_id = 0;  // 由http2协议使用
+    uint32_t cgi_id = 0;   // 由cgi 协议使用
     uint8_t flags = 0;
     char method[20];
     char url[URLLIMIT];
     char hostname[DOMAINLIMIT];
     char path[URLLIMIT];
     char filename[URLLIMIT];
-    char extname[20];
     uint16_t port;
     explicit HttpReqHeader(const char* header = nullptr);
-    explicit HttpReqHeader(std::list<std::pair<string, string>>&& headers);
-    int parse();
-    
+    explicit HttpReqHeader(mulmap<string, string>&& headers);
+    explicit HttpReqHeader(CGI_Header *headers);
+    void getfile();
     bool ismethod(const char* method);
     void add(const char *header, const char *value);
     void del(const char *header);
-    const char* get(const char *header);
+    const char* get(const char *header) const;
+    std::set<string> getall(const char *header) const;
     
-    int getstring(void* outbuff);
+    int getstring(void* outbuff); 
     int getframe(void* outbuff, Index_table *index_table);
+    int getcgi(void *outbuff);
 };
 
 class HttpResHeader{
-    int fd;       // 由cgi使用
-    std::list<std::pair<string, string>> headers;
-    std::map<string, Cookie> Cookies;
+    mulmap<string, string> headers;
 public:
-    uint32_t id = 0;  // 仅由http2协议使用
+    uint32_t http_id = 0;  // 由http2协议使用
+    uint32_t cgi_id = 0;   // 由cgi 协议使用
     uint8_t flags = 0;
     char status[100];
-    explicit HttpResHeader(const char* header, int fd=0);
-    explicit HttpResHeader(std::list<std::pair<string, string>>&& headers);
+    explicit HttpResHeader(const char* header);
+    explicit HttpResHeader(mulmap<string, string>&& headers);
+    explicit HttpResHeader(CGI_Header *headers);
     
     void add(const char *header, const char *value);
     void del(const char *header);
-    const char* get(const char *header);
+    const char* get(const char *header) const;
+    std::set<string> getall(const char *header) const;
 
-    int getstring(void* buff);
+    int getstring(void* outbuff);
     int getframe(void* outbuff, Index_table *index_table);
-    
-    int sendheader();                          // 由cgi使用
-    int write(const void *outbuff, size_t size);  // 由cgi使用
+    int getcgi(void* outbuff);
 };
 
+// trim from start
+static inline string& ltrim(std::string && s) {
+    s.erase(0, s.find_first_not_of(" "));
+    return s;
+}
 
 #ifdef  __cplusplus
 extern "C" {
 #endif
 
-typedef int (cgifunc)(const HttpReqHeader *req, HttpResHeader *res);
+typedef int (cgifunc)(int fd);
 cgifunc cgimain;
 
 void addpsite(const char * host);
@@ -80,6 +80,8 @@ int delbsite(const char * host);
 int globalproxy();
 bool checkproxy(const char *hostname);
 bool checkblock(const char *hostname);
+char *cgi_addnv(char *p, const string &name, const string &value);
+char *cgi_getnv(char *p, string &name, string &value);
 
 #ifdef  __cplusplus
 }
