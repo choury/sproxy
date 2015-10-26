@@ -14,10 +14,10 @@ Host::Host(HttpReqHeader& req, Guest* guest):Peer(0), req(req) {
     Request(guest, req, false);
     snprintf(hostname, sizeof(hostname), "%s", req.hostname);
     port = req.port;
-    query(hostname, (DNSCBfunc)Host::Dnscallback, this);
     if(req.ismethod("CONNECT")){
         Http_Proc = &Host::AlwaysProc;
     }
+    query(hostname, (DNSCBfunc)Host::Dnscallback, this);
 }
 
 
@@ -26,10 +26,10 @@ Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port
     Request(guest, req, false);
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
     this->port = port;
-    query(hostname, (DNSCBfunc)Host::Dnscallback, this);
     if(req.ismethod("CONNECT")){
         Http_Proc = &Host::AlwaysProc;
     }   
+    query(hostname, (DNSCBfunc)Host::Dnscallback, this);
 }
 
 
