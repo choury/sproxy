@@ -51,7 +51,7 @@ void Host::waitconnectHE(uint32_t events) {
     connectmap.erase(this);
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == nullptr) {
-        clean(PEER_LOST_ERR, this);
+        destory();
         return;
     }
     
@@ -91,7 +91,7 @@ void Host::waitconnectHE(uint32_t events) {
     return;
 reconnect:
     if (connect() < 0) {
-        destory(H504);
+        destory();
     }
 }
 
@@ -144,18 +144,15 @@ void Host::closeHE(uint32_t events) {
 }
 
 void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
+    connectmap[host]=time(NULL);
     if (rcd.result != 0) {
         LOGE("Dns query failed: %s\n", host->hostname);
-        host->destory(H502);
     } else {
         host->addrs = rcd.addrs;
         for (size_t i = 0; i < host->addrs.size(); ++i) {
             host->addrs[i].addr_in6.sin6_port = htons(host->port);
         }
-        if (host->connect() < 0) {
-            LOGE("connect to %s failed\n", host->hostname);
-            host->destory(H502);
-        }
+        host->connect();
     }
 }
 
@@ -185,12 +182,11 @@ int Host::connect() {
 }
 
 
-void Host::destory(const char* tip) {
+void Host::destory() {
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
-    if(guest && tip){
-        HttpResHeader res(tip);
+    if(guest){
+        HttpResHeader res(H500);
         guest->Response(res, this);
-        guest->Write("Something wrong with your request site, you can try angin.\n", 64, this);
     }
     clean(CONNECT_ERR, this);
     connectmap.erase(this);
@@ -301,7 +297,7 @@ void hosttick() {
         if(host && time(NULL) - i->second >= 30 && host->connect() < 0){
             connectmap.erase(i++);
             LOGE("connect to %s time out.\n", host->hostname);
-            host->destory(H504);
+            host->destory();
         }else{
             i++;
         }

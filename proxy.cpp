@@ -89,7 +89,7 @@ void Proxy::waitconnectHE(uint32_t events) {
     connectmap.erase(this);
     Guest *guest = (Guest *)queryconnect(this);
     if (guest == nullptr) {
-        clean(PEER_LOST_ERR, this);
+        destory();
         return;
     }
     
@@ -137,7 +137,7 @@ void Proxy::waitconnectHE(uint32_t events) {
     return;
 reconnect:
     if (connect() < 0) {
-        destory(H502);
+        destory();
     }
 }
 
@@ -152,7 +152,7 @@ void Proxy::shakehandHE(uint32_t events) {
         int ret = SSL_connect(ssl);
         if (ret != 1) {
             if (showerrinfo(ret, "ssl connect error")) {
-                destory(H502);
+                clean(SSL_SHAKEHAND_ERR, this);
             }
             return;
         }
@@ -181,7 +181,7 @@ void Proxy::shakehandHE(uint32_t events) {
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
         LOGE("proxy unkown error: %s\n", strerror(errno));
-        destory(H502);
+        clean(SSL_SHAKEHAND_ERR, this);
     }
 }
 

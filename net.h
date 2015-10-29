@@ -26,9 +26,6 @@
 #define H500        "HTTP/1.1 500 Internal Server Error" CRLF\
                     "Content-Length: 0" CRLF CRLF
 
-#define H502        "HTTP/1.0 502 Bad Gateway" CRLF CRLF
-#define H504        "HTTP/1.0 504 Gateway Timeout" CRLF CRLF
-
 #define CHUNCKEND "0" CRLF CRLF
 #ifdef  __cplusplus
 extern "C" {

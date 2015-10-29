@@ -16,7 +16,7 @@ protected:
     
     int showerrinfo(int ret, const char *s)override;
     virtual int connect();
-    virtual void destory(const char *tip);
+    virtual void destory();
     virtual void waitconnectHE(uint32_t events);
     virtual void defaultHE(uint32_t events);
     virtual void closeHE(uint32_t events)override;
