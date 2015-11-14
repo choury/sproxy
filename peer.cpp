@@ -4,6 +4,7 @@
 
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 char SHOST[DOMAINLIMIT];
 uint16_t SPORT = 443;

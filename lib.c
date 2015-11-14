@@ -137,6 +137,7 @@ uint64_t getutime(){
     return tv.tv_sec * 1000000 + tv.tv_usec;
 }
 
+#ifndef __ANDROID__
 #include <execinfo.h>
 void dump_trace() {
     void *stack_trace[100] = {0};
@@ -166,3 +167,4 @@ void dump_trace() {
 
     return;
 }
+#endif

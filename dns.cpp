@@ -5,6 +5,7 @@
 #include <string>
 
 #include <string.h>
+#include <errno.h>
 
 
 //#define DEGUB_DNS
@@ -471,4 +472,10 @@ int Dns_srv::query(const char *host, int type, uint32_t id) {
     }
     return id;
 }
+
+
+void flushdns() {
+    rcd_index_host.clear();
+}
+
 

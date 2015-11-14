@@ -6,6 +6,7 @@
 
 #include <map>
 #include <string.h>
+#include <errno.h>
                     
 std::map<Host*,time_t> connectmap;
 

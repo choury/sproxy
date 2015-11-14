@@ -2,6 +2,7 @@
 #define NET__H__
 
 #include <netdb.h>
+#include <arpa/inet.h>
 
 #define HTTPSPORT 443
 #define HTTPPORT  80

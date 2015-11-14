@@ -46,5 +46,6 @@ typedef void (*DNSCBfunc)(void *, const Dns_rcd& );
 void query(const char* host, DNSCBfunc func, void* param, uint16_t times=0);
 void RcdDown(const char *hostname, const sockaddr_un &addr);
 int dnsstatus(char* buff);
+void flushdns();
 
 #endif

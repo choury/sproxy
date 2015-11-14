@@ -25,7 +25,7 @@ extern char SHOST[];
                     "Content-Length: 37" CRLF CRLF\
                     "The proxy server met a Internal error"
 
-#ifdef _ANDROID_
+#ifdef __ANDROID__
 
 #include <jni.h>
 #include <android/log.h>
@@ -60,12 +60,17 @@ extern char SHOST[];
 extern "C" {
 #endif
 
+#ifndef __ANDROID__
 #define HTONL(x) (x = htonl(x))
 #define HTONS(x) (x = htons(x))
 
 
 #define NTOHL(x) (x = ntohl(x))
 #define NTOHS(x) (x = ntohs(x))
+#else
+#define SCNx64   "llx"
+#define SCNu64   "llu"
+#endif
 
 #define get16(a)  (((uchar*)(a))[0]<<8 | ((uchar*)(a))[1])
 #define set16(a, x) \

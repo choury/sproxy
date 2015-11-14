@@ -3,6 +3,7 @@
 
 #include <set>
 #include <string.h>
+#include <errno.h>
 #include <arpa/inet.h>
 
 #define ADDPTIP    "HTTP/1.0 200 Proxy site Added" CRLF CRLF
@@ -200,6 +201,12 @@ void Guest::ReqProc(HttpReqHeader& req) {
         event.data.ptr = this;
         event.events = EPOLLIN | EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    } else if(req.ismethod("FLUSH")){
+        if(strcasecmp(req.url, "dns") == 0){
+            flushdns();
+            Peer::Write(H200, strlen(H200));
+            return;
+        }
     } else if (req.ismethod("TEST")){
         if(checkblock(req.hostname)){
             Peer::Write(BLOCKTIP, strlen(BLOCKTIP));

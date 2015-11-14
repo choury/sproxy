@@ -343,6 +343,13 @@ Cgi *Cgi::getcgi(HttpReqHeader &req, Guest *guest){
     return cgi;
 }
 
+void flushcgi() {
+    for(auto i:cgimap){
+        i.second->clean(NOERROR, i.second);
+    }
+}
+
+
 std::map< string, string > getparams(const HttpReqHeader &req) {
     char paramsbuff[URLLIMIT];
     URLDecode(req.path,paramsbuff);

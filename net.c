@@ -3,6 +3,7 @@
 
 #include <errno.h>
 #include <string.h>
+#include <strings.h>
 
 #include <unistd.h>
 #include <fcntl.h>

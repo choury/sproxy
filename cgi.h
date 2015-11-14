@@ -49,7 +49,6 @@ class Cgi:public Peer{
     std::list<CGI_Header *> framequeue;
     virtual void defaultHE(uint32_t events);
     virtual void closeHE(uint32_t events)override;
-    virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
     enum {WaitHeadr,
           WaitBody,
           HandleRes,
@@ -66,6 +65,7 @@ public:
     virtual ~Cgi();
     virtual ssize_t Write(const void *buff, size_t size, Peer* who, uint32_t id=0)override;
     virtual void wait(Peer *who)override;
+    virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
     virtual int showerrinfo(int ret,const char *s)override;
     static Cgi *getcgi(HttpReqHeader &req, Guest *guest);
 };
@@ -83,6 +83,8 @@ public:
         this->value = value;
     }
 };
+
+void flushcgi();
 
 std::map<std::string, std::string> getparams(const HttpReqHeader &req);
 std::map<std::string, std::string> getcookies(const HttpReqHeader &req);

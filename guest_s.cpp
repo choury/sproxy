@@ -131,6 +131,18 @@ void Guest_s::ReqProc(HttpReqHeader& req) {
         event.events = EPOLLIN | EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
         return; 
+    } else if(req.ismethod("FLUSH")){
+        if(strcasecmp(req.url, "dns") == 0){
+            flushdns();
+            Write(H200, strlen(H200));
+            return;
+        }
+        if(strcasecmp(req.url, "cgi") == 0){
+            flushcgi();
+            Write(H200, strlen(H200));
+            return;
+        }
+        return;
     }
         
     if (req.url[0] == '/' && (hostname[0] )) {
