@@ -124,6 +124,7 @@ void Guest_s::ReqProc(HttpReqHeader& req) {
     gethostname(hostname, sizeof(hostname));
     LOG("([%s]:%d): %s %s\n", sourceip, sourceport, req.method, req.url);
     
+    flag = 0;
     if(req.ismethod("SHOW")){
         writelen += ::showstatus(wbuff+writelen, req.url);
         struct epoll_event event;

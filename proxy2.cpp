@@ -189,9 +189,7 @@ void Proxy2::Request(Guest* guest, HttpReqHeader& req, bool) {
     guest->windowsize = initalframewindowsize;
     guest->windowleft = 512 *1024;
     if(req.ismethod("CONNECT")){
-        guest->flag = ISCONNECT_F;
-    }else{
-        guest->flag = 0;
+        guest->flag |= ISCONNECT_F;
     }
     
     char buff[FRAMELENLIMIT];

@@ -158,7 +158,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
         LOG("([%s]:%d): %s%s %s\n", sourceip, sourceport,
             hint, req.method, req.url);
     }
-
+    flag = 0;
     if (req.ismethod("GET") || req.ismethod("POST") || req.ismethod("CONNECT") || req.ismethod("HEAD")) {
         if (checkblock(req.hostname)) {
             LOG("([%s]:%d): site: %s blocked\n",

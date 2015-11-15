@@ -203,11 +203,10 @@ void Host::Request(Guest* guest, HttpReqHeader& req, bool direct_send) {
         event.events = EPOLLIN | EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     }
-    guest->flag = 0;
     if(req.ismethod("HEAD")){
         ignore_body = true;
     }else if(req.ismethod("CONNECT")){
-        guest->flag = ISCONNECT_F;
+        guest->flag |= ISCONNECT_F;
     }
     this->req = req;
 }
