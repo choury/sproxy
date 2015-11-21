@@ -128,7 +128,9 @@ void HttpRes::HeaderProc() {
         size_t headerlen = headerend - http_buff;
         try {
             HttpReqHeader req(http_buff);
-            if (req.ismethod("POST")) {
+            if (req.ismethod("POST") || 
+                req.ismethod("PATCH")
+            ) {
                 if (req.get("Content-Length")!= nullptr) {
                     sscanf(req.get("Content-Length"), "%" SCNu64, &http_expectlen);
                     Http_Proc = &HttpRes::FixLenProc;
