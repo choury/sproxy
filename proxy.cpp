@@ -26,7 +26,7 @@ Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
         exist->clean(NOERROR, guest); //只有exist是host才会走到这里
     }
     
-    if (proxy2) {
+    if (proxy2 && proxy2->bufleft(nullptr) >= 32 * 1024) {
         proxy2->Request(guest, req, true);
         return proxy2;
     }
@@ -122,7 +122,8 @@ void Proxy::waitconnectHE(uint32_t events) {
             goto reconnect;
         }
         SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);  // 去除支持SSLv2 SSLv3
-        SSL_CTX_set_alpn_protos(ctx, alpn_protos_string, sizeof(alpn_protos_string)-1);
+        if(proxy2 == nullptr)
+            SSL_CTX_set_alpn_protos(ctx, alpn_protos_string, sizeof(alpn_protos_string)-1);
 
         ssl = SSL_new(ctx);
         SSL_set_fd(ssl, fd);

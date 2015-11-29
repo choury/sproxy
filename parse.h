@@ -10,7 +10,7 @@ using std::string;
 
 
 class Index_table;
-class CGI_Header;
+struct CGI_Header;
 
 class HttpReqHeader{
     mulmap<string, string> headers;
