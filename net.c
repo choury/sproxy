@@ -59,6 +59,10 @@ int Listen(int type, short port) {
     if(setsockopt(svsk, SOL_TCP, TCP_KEEPCNT, &cnt, sizeof(cnt))<0)
         LOGE("TCP_KEEPCNT:%s\n",strerror(errno));
 
+    int enable = 1;
+    if(setsockopt(svsk, IPPROTO_TCP, TCP_NODELAY, (void*)&enable, sizeof(enable))<0)
+        LOGE("TCP_NODELAY:%s\n", strerror(errno));
+    
     if (listen(svsk, 10000) < 0) {
         LOGOUT("listen error:%s\n", strerror(errno));
         return -4;
@@ -95,6 +99,10 @@ int Connect(struct sockaddr* addr) {
     int cnt = 3; //探测3次无响应就关闭连接
     if(setsockopt(fd, SOL_TCP, TCP_KEEPCNT, &cnt, sizeof(cnt))<0)
         LOGE("TCP_KEEPCNT:%s\n",strerror(errno));
+    
+    int enable = 1;
+    if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (void*)&enable, sizeof(enable))<0)
+        LOGE("TCP_NODELAY:%s\n", strerror(errno));
     
     if (connect(fd, addr, sizeof(struct sockaddr_in6)) == -1 && errno != EINPROGRESS) {
         LOGE("connecting error:%s\n",strerror(errno));
