@@ -204,7 +204,7 @@ void Host::Request(Guest* guest, HttpReqHeader& req, bool direct_send) {
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     }
     if(req.ismethod("HEAD")){
-        ignore_body = true;
+        http_flag |= HTTP_IGNORE_BODY;
     }else if(req.ismethod("CONNECT")){
         guest->flag |= ISCONNECT_F;
     }

@@ -6,8 +6,11 @@
 class HttpBase {
 protected:
     char http_buff[HEADLENLIMIT];
-    uint32_t http_getlen = 0;
     uint64_t http_expectlen;
+    uint32_t http_getlen = 0;
+    uint32_t http_flag = 0;
+#define HTTP_IGNORE_BODY   1
+#define HTTP_CHUNK_END     2
     virtual void HeaderProc() = 0;
     void ChunkLProc();
     void ChunkBProc();
@@ -30,7 +33,6 @@ protected:
 class HttpReq:public HttpBase{
     virtual void HeaderProc()override final;
 protected:
-    bool ignore_body = false;
     virtual void ResProc(HttpResHeader &res) = 0;
 };
 

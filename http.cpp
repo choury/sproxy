@@ -9,14 +9,10 @@ void HttpBase::ChunkLProc() {
         headerend += strlen(CRLF);
         size_t headerlen = headerend - http_buff;
         sscanf(http_buff, "%" SCNx64, &http_expectlen);
-        if (http_expectlen) {
-            Http_Proc = &HttpBase::ChunkBProc;
-        } else {
-            DataProc(http_buff, 0);
-            Http_Proc = &HttpBase::HeaderProc;
-            headerlen += strlen(CRLF);
-            assert(http_getlen >= headerlen);
+        if (!http_expectlen) {
+            http_flag |= HTTP_CHUNK_END;
         }
+        Http_Proc = &HttpBase::ChunkBProc;
         if (headerlen != http_getlen) {
             memmove(http_buff, http_buff+headerlen, http_getlen-headerlen);
         }
@@ -46,7 +42,13 @@ void HttpBase::ChunkBProc() {
             }
             http_getlen-= strlen(CRLF);
             memmove(http_buff, http_buff+strlen(CRLF), http_getlen);
-            Http_Proc = &HttpBase::ChunkLProc;
+            if(http_flag & HTTP_CHUNK_END){
+                DataProc(http_buff, 0);
+                Http_Proc = &HttpBase::HeaderProc;
+                http_flag &= ~HTTP_CHUNK_END;
+            }else{
+                Http_Proc = &HttpBase::ChunkLProc;
+            }
         }else{
             ssize_t readlen = Read(http_buff+http_getlen, sizeof(http_buff)-http_getlen);
             if (readlen <= 0) {
@@ -185,12 +187,12 @@ void HttpReq::HeaderProc() {
             if(memcmp(res.status, "204", 3) == 0||
                memcmp(res.status, "205", 3) == 0||
                memcmp(res.status, "304", 3) == 0)
-               ignore_body = true;
+               http_flag |= HTTP_IGNORE_BODY;
             ResProc(res);
-            if (ignore_body) {
+            if (http_flag & HTTP_IGNORE_BODY) {
                 Http_Proc = (void (HttpBase::*)())&HttpReq::HeaderProc;
                 DataProc(http_buff, 0);
-                ignore_body = false;
+                http_flag &= ~HTTP_IGNORE_BODY;
             }
         }catch(...) {
             ErrProc(HTTP_PROTOCOL_ERR);
