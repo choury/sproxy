@@ -172,6 +172,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
         } else {
             Host::gethost(req, this);
         }
+#ifdef CLIENT
     } else if (req.ismethod("ADDPSITE")) {
         addpsite(req.url);
         Peer::Write(ADDPTIP, strlen(ADDPTIP));
@@ -199,7 +200,19 @@ void Guest::ReqProc(HttpReqHeader& req) {
     } else if (req.ismethod("SWITCH")) {
         SPORT = 443;
         spliturl(req.url, SHOST, nullptr, &SPORT);
+        flushproxy2();
         Peer::Write(SWITCHTIP, strlen(SWITCHTIP));
+    } else if (req.ismethod("TEST")){
+        if(checkblock(req.hostname)){
+            Peer::Write(BLOCKTIP, strlen(BLOCKTIP));
+            return;
+        }
+        if(checkproxy(req.hostname)){
+            Peer::Write(PROXYTIP, strlen(PROXYTIP));
+            return; 
+        }
+        Peer::Write(NORMALIP, strlen(NORMALIP));
+#endif
     } else if (req.ismethod("SHOW")){
         writelen += ::showstatus(wbuff+writelen, req.url);
         struct epoll_event event;
@@ -212,23 +225,6 @@ void Guest::ReqProc(HttpReqHeader& req) {
             Peer::Write(H200, strlen(H200));
             return;
         }
-#ifdef CLIENT
-        if(strcasecmp(req.url, "proxy2") == 0){
-            flushproxy2();
-            Peer::Write(H200, strlen(H200));
-            return;
-        }
-#endif
-    } else if (req.ismethod("TEST")){
-        if(checkblock(req.hostname)){
-            Peer::Write(BLOCKTIP, strlen(BLOCKTIP));
-            return;
-        }
-        if(checkproxy(req.hostname)){
-            Peer::Write(PROXYTIP, strlen(PROXYTIP));
-            return; 
-        }
-        Peer::Write(NORMALIP, strlen(NORMALIP));
     } else{
         LOGE("([%s]:%d): unsported method:%s\n",
               sourceip, sourceport, req.method);
