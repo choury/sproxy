@@ -212,6 +212,13 @@ void Guest::ReqProc(HttpReqHeader& req) {
             Peer::Write(H200, strlen(H200));
             return;
         }
+#ifdef CLIENT
+        if(strcasecmp(req.url, "proxy2") == 0){
+            flushproxy2();
+            Peer::Write(H200, strlen(H200));
+            return;
+        }
+#endif
     } else if (req.ismethod("TEST")){
         if(checkblock(req.hostname)){
             Peer::Write(BLOCKTIP, strlen(BLOCKTIP));

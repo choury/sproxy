@@ -290,3 +290,7 @@ void proxy2tick() {
     }
 }
 
+void flushproxy2() {
+    if(proxy2)
+        proxy2 = nullptr;
+}
