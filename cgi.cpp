@@ -34,23 +34,24 @@ Cgi::Cgi(const char *filename) {
         signal(SIGPIPE, SIG_DFL);
         close(fds[0]);   // 关闭管道的父进程端
         exit(func(fds[1]));
-    } else {    // 父进程
-        close(fds[1]);   // 关闭管道的子进程端
-        /* 现在可在fd[0]中读写数据 */
-        fd=fds[0];
-        int flags = fcntl(fd, F_GETFL, 0);
-        if (flags < 0) {
-            LOGE("fcntl error:%s\n",strerror(errno));
-            throw 0;
-        }
-        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
-        handleEvent=(void (Con::*)(uint32_t))&Cgi::defaultHE;
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN;
-        epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+    } 
+    // 父进程
+    dlclose(handle);
+    close(fds[1]);   // 关闭管道的子进程端
+    /* 现在可在fd[0]中读写数据 */
+    fd=fds[0];
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) {
+        LOGE("fcntl error:%s\n",strerror(errno));
+        throw 0;
     }
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+    handleEvent=(void (Con::*)(uint32_t))&Cgi::defaultHE;
+    struct epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLIN;
+    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
     cgimap[filename] = this;
 }
 
