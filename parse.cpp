@@ -282,7 +282,7 @@ HttpReqHeader::HttpReqHeader(const char* header) {
     *(strstr(httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
     memset(path, 0, sizeof(path));
     memset(url, 0, sizeof(url));
-    sscanf(httpheader, "%s%*[ ]%[^\r\n ]", method, url);
+    sscanf(httpheader, "%19s%*[ ]%4095[^\r\n ]", method, url);
     toUpper(method);
     port = 80;
 
@@ -515,7 +515,7 @@ HttpResHeader::HttpResHeader(const char* header) {
     snprintf(httpheader, sizeof(httpheader), "%s", header);
     *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
     memset(status, 0, sizeof(status));
-    sscanf((char *)httpheader, "%*s%*[ ]%[^\r\n]", status);
+    sscanf((char *)httpheader, "%*s%*[ ]%99[^\r\n]", status);
 
     for (char* str = strstr((char *)httpheader, CRLF)+strlen(CRLF); ; str = NULL) {
         char* p = strtok(str, CRLF);
@@ -623,7 +623,7 @@ int HttpResHeader::getframe(void* outbuff, Index_table* index_table) {
 
     char *p = (char *)(header + 1);
     char status_h2[100];
-    sscanf(status,"%s",status_h2);
+    sscanf(status,"%99s",status_h2);
     p += index_table->hpack_encode(p, ":status", status_h2);
     p += index_table->hpack_encode(p, headers);
     

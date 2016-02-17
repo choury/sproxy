@@ -64,15 +64,14 @@ int hex2num(char c)
 int URLEncode(const char* src, char *des)
 {
     int j = 0;//for result index
-    char ch;
-    int strSize=strlen(src);
+    int strSize;
 
-    if ((src==NULL) || (des==NULL) || (strSize==0) ) {
+    if ((src==NULL) || (des==NULL) || (strSize=strlen(src))==0 ) {
         return 0;
     }
     int i;
     for (i=0; i<strSize; ++i) {
-        ch = src[i];
+        char ch = src[i];
         if (((ch>='A') && (ch<'Z')) ||
             ((ch>='a') && (ch<'z')) ||
             ((ch>='0') && (ch<'9'))) {
@@ -95,26 +94,25 @@ int URLEncode(const char* src, char *des)
 
 int URLDecode(const char* src, char *des)
 {
-    char ch,ch1,ch2;
     int i;
     int j = 0;//record result index
 
-    int strSize = strlen(src);
+    int strSize;
 
-    if ((src==NULL) || (des==NULL) || (strSize<=0) ) {
+    if ((src==NULL) || (des==NULL) || (strSize=strlen(src))==0 ) {
         return 0;
     }
 
     for ( i=0; i<strSize; ++i) {
-        ch = src[i];
+        char ch = src[i];
         switch (ch) {
         case '+':
             des[j++] = ' ';
             break;
         case '%':
             if (i+2<strSize) {
-                ch1 = hex2num(src[i+1]);//高4位
-                ch2 = hex2num(src[i+2]);//低4位
+                char ch1 = hex2num(src[i+1]);//高4位
+                char ch2 = hex2num(src[i+2]);//低4位
                 if ((ch1!='0') && (ch2!='0'))
                     des[j++] = (char)((ch1<<4) | ch2);
                 i += 2;

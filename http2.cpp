@@ -71,7 +71,7 @@ Http2_header *Http2Base::SendFrame(const Http2_header *header, size_t addlen) {
     std::list<Http2_header *>::iterator i;
     switch(frame->type){
     case PING_TYPE:
-        for(i = framequeue.begin(); i!= framequeue.end() && (*i)->type == PING_TYPE; i++);
+        for(i = framequeue.begin(); i!= framequeue.end() && (*i)->type == PING_TYPE; ++i);
         break;
     case DATA_TYPE:
         i = framequeue.end();
@@ -90,7 +90,7 @@ Http2_header *Http2Base::SendFrame(const Http2_header *header, size_t addlen) {
         break;
     }
     if(frameleft && i == framequeue.begin())
-        i++;
+        ++i;
     framequeue.insert(i, frame);
     return frame;
 }
@@ -267,6 +267,7 @@ void Http2Res::HeadersProc(Http2_header* header) {
     req.flags = header->flags;
     ReqProc(req);
     (void)weigth;
+    (void)streamdep;
     return;
 }
 
@@ -331,5 +332,6 @@ void Http2Req::HeadersProc(Http2_header* header) {
     res.flags = header->flags;
     ResProc(res);
     (void)weigth;
+    (void)streamdep;
     return;
 }
