@@ -29,21 +29,10 @@
  * TLS handshake and RFC4366.
  */
 #include <stdio.h>
-#include <stdlib.h> /* malloc() */
 #include <string.h> /* strncpy() */
-#include <sys/socket.h>
 #include "tls.h"
 #include "common.h"
 
-
-
-
-static const char tls_alert[] = {
-    0x15, /* TLS Alert */
-    0x03, 0x01, /* TLS version  */
-    0x00, 0x02, /* Payload length */
-    0x02, 0x28, /* Fatal, handshake failure */
-};
 
 int parse_tls_header(const char *, size_t, char **);
 static int parse_extensions(const char *, size_t, char **);
