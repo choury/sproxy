@@ -146,7 +146,7 @@ void Guest_s::ReqProc(HttpReqHeader& req) {
         return;
     }
         
-    if (req.url[0] == '/' && strcasecmp(hostname, req.hostname)) {
+    if (req.url[0] == '/' && strcasecmp(hostname, req.hostname) == 0) {
         req.getfile();
         if (endwith(req.filename,".so")) {
             Cgi::getcgi(req, this);
