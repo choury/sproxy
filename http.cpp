@@ -139,7 +139,7 @@ void HttpRes::HeaderProc() {
                 } else {
                     Http_Proc = &HttpRes::AlwaysProc;
                 }
-            } else if (req.ismethod("CONNECT")) {
+            } else if (req.ismethod("CONNECT") || req.ismethod("SEND")) {
                 Http_Proc = &HttpRes::AlwaysProc;
             }
             ReqProc(req);

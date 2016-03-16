@@ -49,12 +49,13 @@ Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Peer(fd) {
     inet_ntop(AF_INET6, &myaddr->sin6_addr, sourceip, sizeof(sourceip));
     sourceport = ntohs(myaddr->sin6_port);
 
-
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-    handleEvent = (void (Con::*)(uint32_t))&Guest::defaultHE;
+    if(fd){
+        struct epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLIN | EPOLLOUT;
+        epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+        handleEvent = (void (Con::*)(uint32_t))&Guest::defaultHE;
+    }
 }
 
 Guest::Guest(const Guest *const copy): Peer(copy->fd), sourceport(copy->sourceport){
@@ -163,7 +164,8 @@ void Guest::ReqProc(HttpReqHeader& req) {
         req.ismethod("POST") || 
         req.ismethod("PATCH") || 
         req.ismethod("CONNECT") || 
-        req.ismethod("HEAD")) 
+        req.ismethod("HEAD") || 
+        req.ismethod("SEND")) 
     {
         if (checkblock(req.hostname)) {
             LOG("([%s]:%d): site: %s blocked\n",

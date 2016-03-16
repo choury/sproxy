@@ -18,6 +18,10 @@ Host::Host(HttpReqHeader& req, Guest* guest):Peer(0), req(req) {
     if(req.ismethod("CONNECT")){
         Http_Proc = &Host::AlwaysProc;
     }
+    if(req.ismethod("SEND")){
+        Http_Proc = &Host::AlwaysProc;
+        udp_mode = true;
+    }
     query(hostname, (DNSCBfunc)Host::Dnscallback, this);
 }
 
@@ -27,7 +31,7 @@ Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port
     Request(guest, req, false);
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
     this->port = port;
-    if(req.ismethod("CONNECT")){
+    if(req.ismethod("CONNECT") || req.ismethod("SEND")){
         Http_Proc = &Host::AlwaysProc;
     }   
     query(hostname, (DNSCBfunc)Host::Dnscallback, this);
@@ -145,7 +149,6 @@ void Host::closeHE(uint32_t events) {
 }
 
 void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
-    connectmap[host]=time(NULL);
     if (rcd.result != 0) {
         LOGE("Dns query failed: %s\n", host->hostname);
     } else {
@@ -157,7 +160,14 @@ void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
     }
 }
 
-int Host::connect() {
+int Host::connect(){
+    if(udp_mode){
+        return connect_udp();
+    }
+    return connect_tcp();
+}
+
+int Host::connect_tcp() {
     if (testedaddr>= addrs.size()) {
         return -1;
     } else {
@@ -167,7 +177,7 @@ int Host::connect() {
         if (testedaddr != 0) {
             RcdDown(hostname, addrs[testedaddr-1]);
         }
-        fd = Connect(&addrs[testedaddr++].addr);
+        fd = Connect(&addrs[testedaddr++].addr, SOCK_STREAM);
         if (fd < 0) {
             LOGE("connect to %s failed\n", this->hostname);
             return connect();
@@ -182,6 +192,38 @@ int Host::connect() {
     }
 }
 
+
+int Host::connect_udp(){
+    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
+    if (guest == nullptr) {
+        return -1;
+    }
+    if (testedaddr>= addrs.size()) {
+        return -1;
+    } else {
+        if (fd > 0) {
+            close(fd);
+        }
+        if (testedaddr != 0) {
+            RcdDown(hostname, addrs[testedaddr-1]);
+        }
+        fd = Connect(&addrs[testedaddr++].addr, SOCK_DGRAM);
+        if (fd < 0) {
+            LOGE("connect to %s failed\n", this->hostname);
+            return connect();
+        }
+        HttpResHeader res(connecttip);
+        guest->Response(res, this);
+
+        epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLOUT | EPOLLIN;
+        epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+        handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
+        return 0;
+    }
+
+}
 
 void Host::destory() {
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
@@ -205,8 +247,6 @@ void Host::Request(Guest* guest, HttpReqHeader& req, bool direct_send) {
     }
     if(req.ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY;
-    }else if(req.ismethod("CONNECT")){
-        guest->flag |= ISCONNECT_F;
     }
     this->req = req;
 }

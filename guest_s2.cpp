@@ -14,7 +14,6 @@ Guest_s2::Guest_s2(Guest_s *const copy): Guest_s(copy) {
 }
 
 
-
 ssize_t Guest_s2::Read(void *buff, size_t size) {
     return Guest_s::Read(buff, size);
 }

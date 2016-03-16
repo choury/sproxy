@@ -83,13 +83,13 @@ int main(int argc, char** argv) {
     if(istrans){
         CPORT = 80;
         int sni_svsk;
-        if ((sni_svsk = Listen(SOCK_STREAM, 443)) < 0) {
+        if ((sni_svsk = Listen(443)) < 0) {
             return -1;
         }
         new Http_server<Guest_sni>(sni_svsk);
     }
     int http_svsk;
-    if ((http_svsk = Listen(SOCK_STREAM, CPORT)) < 0) {
+    if ((http_svsk = Listen(CPORT)) < 0) {
         return -1;
     }
     new Http_server<Guest>(http_svsk);
