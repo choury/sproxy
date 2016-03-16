@@ -179,7 +179,8 @@ void File::openHE(uint32_t events) {
         ffd = open(filename, O_RDONLY);
         if (ffd < 0) {
             LOGE("open file failed: %s\n", strerror(errno));
-            guest->Write(MISCERRTIP, strlen(MISCERRTIP), this);
+            HttpResHeader res(H500);
+            guest->Response(res, this);
             goto err;
         }
         Range range(req.get("Range"));
@@ -192,7 +193,8 @@ void File::openHE(uint32_t events) {
         } else if (range.size() == 1 && range.calcu(st.st_size)){
             if(lseek(ffd,range.ranges[0].first,SEEK_SET)<0){
                 LOGE("lseek file failed: %s\n", strerror(errno));
-                guest->Write(MISCERRTIP, strlen(MISCERRTIP), this);
+                HttpResHeader res(H500);
+                guest->Response(res, this);
                 throw 0;
             }
             HttpResHeader res(H206);

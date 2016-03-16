@@ -8,6 +8,7 @@
 #include <signal.h>
 #include <arpa/inet.h>
 #include <openssl/err.h>
+#include <openssl/ssl.h>
 
 int efd;
 
@@ -49,6 +50,28 @@ public:
 };
 
 
+class Dtls_server: public Server {
+    SSL_CTX *ctx;
+    virtual void defaultHE(uint32_t events) {
+        if (events & EPOLLIN) {
+            struct sockaddr_in6 myaddr;
+            memset(&myaddr, 0, sizeof(myaddr));
+            BIO *bio = BIO_new_dgram(fd, BIO_NOCLOSE);
+            SSL *ssl = SSL_new(ctx);
+            SSL_set_bio(ssl, bio, bio);
+            SSL_set_options(ssl, SSL_OP_COOKIE_EXCHANGE);
+            if(DTLSv1_listen(ssl, &myaddr)<=0)
+                return;
+            new Guest_s(&myaddr, ssl);
+        }
+    }
+public:
+    virtual ~Dtls_server(){
+        SSL_CTX_free(ctx);
+    };
+    Dtls_server(int fd, SSL_CTX *ctx): Server(fd),ctx(ctx) {}
+};
+
 static int select_alpn_cb(SSL *ssl,
                           const unsigned char **out, unsigned char *outlen,
                           const unsigned char *in, unsigned int inlen, void *arg)
@@ -74,6 +97,20 @@ static int select_alpn_cb(SSL *ssl,
     return SSL_TLSEXT_ERR_ALERT_FATAL;
 }
 
+static int generate_cookie(SSL *ssl, unsigned char *cookie, unsigned int *cookie_len) {
+    struct sockaddr_in6 myaddr;
+    (void)BIO_dgram_get_peer(SSL_get_rbio(ssl), &myaddr);
+    char ip[46];
+    inet_ntop(AF_INET6, &myaddr.sin6_addr, ip, sizeof(ip));
+    *cookie_len = sprintf((char *)cookie, "[%s]:%d", ip, ntohs(myaddr.sin6_port));
+    return 1;
+}
+
+static int verify_cookie(SSL *ssl, unsigned char *cookie, unsigned int cookie_len){
+    struct sockaddr_in6 myaddr;
+    (void)BIO_dgram_get_peer(SSL_get_rbio(ssl), &myaddr);
+    return strcmp((char *)cookie, getaddrstring((sockaddr_un *)&myaddr))==0;
+}
 
 void usage(const char * programe){
     printf("Usage: %s [-p port] [-k ca path] [-h] <CERT> <PRIVATE_KEY>\n"
@@ -111,6 +148,7 @@ int main(int argc, char **argv) {
     }
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
+#if 1
     SSL_CTX *ctx = SSL_CTX_new(SSLv23_server_method());
     if (ctx == NULL) {
         ERR_print_errors_fp(stderr);
@@ -129,13 +167,20 @@ int main(int argc, char **argv) {
     EC_KEY *ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
     SSL_CTX_set_tmp_ecdh(ctx, ecdh);
     EC_KEY_free(ecdh);
-
+#else
+    SSL_CTX *ctx = SSL_CTX_new(DTLSv1_server_method());
+    if (ctx == NULL) {
+        ERR_print_errors_fp(stderr);
+        return 1;
+    }
+    SSL_CTX_set_cipher_list(ctx, "ALL:NULL:eNULL:aNULL");
+#endif
+    
     if (capath && SSL_CTX_load_verify_locations(ctx, capath, NULL) != 1)
         ERR_print_errors_fp(stderr);
 
     if (SSL_CTX_set_default_verify_paths(ctx) != 1)
         ERR_print_errors_fp(stderr);
-
 
     //加载证书和私钥
     if (SSL_CTX_use_certificate_file(ctx, argv[optind], SSL_FILETYPE_PEM) != 1) {
@@ -156,15 +201,27 @@ int main(int argc, char **argv) {
     SSL_CTX_set_verify_depth(ctx, 10);
     SSL_CTX_set_alpn_select_cb(ctx, select_alpn_cb, nullptr);
 
-
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
     efd = epoll_create(10000);
+#if 1
     int svsk_tcp;
-    if ((svsk_tcp = Listen(SOCK_STREAM, SPORT)) < 0) {
+    if ((svsk_tcp = Listen(SPORT)) < 0) {
         return -1;
     }
     new Https_server(svsk_tcp, ctx);
+#else
+    SSL_CTX_set_cookie_generate_cb(ctx, generate_cookie);
+    SSL_CTX_set_cookie_verify_cb(ctx, verify_cookie);
+    int svsk_udp;
+    if((svsk_udp = socket(PF_INET6, SOCK_DGRAM, 0)) < 0){
+        LOGOUT("socket error:%s\n", strerror(errno));
+        return -1;
+    }
+    if(Bind_any(svsk_udp, 4433))
+        return -1;
+    new Dtls_server(svsk_udp, ctx);
+#endif
     LOGOUT("Accepting connections ...\n");
 #ifndef DEBUG
     if (daemon(1, 0) < 0) {

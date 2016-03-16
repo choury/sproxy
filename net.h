@@ -42,8 +42,10 @@ union sockaddr_un{
 
 int spliturl(const char* url, char* host, char* path , uint16_t* port);
 
-int Listen(int type, short int port);
-int Connect(struct sockaddr*);
+int Bind_any(int fd, short port);
+int Listen(short int port);
+int Connect(struct sockaddr*, int type);
+const char *getaddrstring(union sockaddr_un *addr);
 
 
 #ifdef  __cplusplus

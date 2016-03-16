@@ -9,13 +9,16 @@
 class Host:public Peer, public HttpReq{
     size_t testedaddr = 0;
     std::vector<sockaddr_un> addrs;
+    bool udp_mode = false;
+    int connect_tcp();
+    int connect_udp();
 protected:
     char hostname[DOMAINLIMIT];
     uint16_t port;
     HttpReqHeader req;
     
-    int showerrinfo(int ret, const char *s)override;
-    virtual int connect();
+    int connect();
+    virtual int showerrinfo(int ret, const char *s)override;
     virtual void destory();
     virtual void waitconnectHE(uint32_t events);
     virtual void defaultHE(uint32_t events);

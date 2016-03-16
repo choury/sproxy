@@ -435,7 +435,7 @@ int HttpReqHeader::getstring(void* outbuff) {
     if (checkproxy(hostname)) {
         p += sprintf(buff+p, "%s %s HTTP/1.1" CRLF, method, url);
     } else {
-        if (strcmp(method, "CONNECT") == 0) {
+        if (strcmp(method, "CONNECT") == 0 || strcmp(method, "SEND") == 0) {
             return 0;
         }
         if (get("Host") == nullptr && hostname[0] == 0) {
