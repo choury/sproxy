@@ -190,8 +190,8 @@ void Proxy2::Request(Guest* guest, HttpReqHeader& req, bool) {
     curid += 2;
     guest->windowsize = initalframewindowsize;
     guest->windowleft = 512 *1024;
-    if(req.ismethod("CONNECT")){
-        guest->flag |= ISCONNECT_F;
+    if(req.ismethod("CONNECT") || req.ismethod("SEND")){
+        guest->flag |= ISPERSISTENT_F;
     }
     
     char buff[FRAMELENLIMIT];
@@ -202,7 +202,7 @@ void Proxy2::ResProc(HttpResHeader& res) {
     if(idmap.count(res.http_id)){
         Guest *guest = idmap.at(res.http_id);
         
-        if(guest->flag & ISCONNECT_F) {
+        if(guest->flag & ISPERSISTENT_F) {
             strcpy(res.status, "200 Connection established");
         }else if(!res.get("Content-Length")){
             res.add("Transfer-Encoding", "chunked");

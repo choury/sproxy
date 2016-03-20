@@ -324,7 +324,7 @@ HttpReqHeader::HttpReqHeader(mulmap<string, string>&& headers):headers(headers) 
     port = 80;
     
     if (get(":authority")){
-        if (ismethod("CONNECT")) {
+        if (ismethod("CONNECT") || ismethod("SEND")) {
             snprintf(url, sizeof(url), "%s", get(":authority"));
         } else {
             snprintf(url, sizeof(url), "%s://%s%s", get(":scheme"),
@@ -467,7 +467,11 @@ int HttpReqHeader::getframe(void* outbuff, Index_table *index_table) {
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F;
-    if(!ismethod("POST") && !ismethod("CONNECT")){
+    if(!ismethod("POST") && 
+       !ismethod("PUT") &&
+       !ismethod("PATCH") &&
+       !ismethod("CONNECT") &&
+       !ismethod("SEND")){
         header->flags |= END_STREAM_F;
     }
     set32(header->id, http_id);
@@ -483,7 +487,7 @@ int HttpReqHeader::getframe(void* outbuff, Index_table *index_table) {
     }
     del("host");
     
-    if(!ismethod("CONNECT")){
+    if(!ismethod("CONNECT") && !ismethod("SEND")){
         p += index_table->hpack_encode(p, ":scheme", "http");
         p += index_table->hpack_encode(p, ":path", path);
     }

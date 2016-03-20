@@ -17,8 +17,7 @@ Host::Host(HttpReqHeader& req, Guest* guest):Peer(0), req(req) {
     port = req.port;
     if(req.ismethod("CONNECT")){
         Http_Proc = &Host::AlwaysProc;
-    }
-    if(req.ismethod("SEND")){
+    }else if(req.ismethod("SEND")){
         Http_Proc = &Host::AlwaysProc;
         udp_mode = true;
     }
@@ -269,8 +268,9 @@ Host* Host::gethost(HttpReqHeader &req, Guest* guest) {
     }
 #endif
     Host* exist = dynamic_cast<Host *>(queryconnect(guest));
-    if (exist && exist->port == req.port
-        && strcasecmp(exist->hostname, req.hostname) == 0)
+    if (exist && strcasecmp(exist->hostname, req.hostname) == 0
+        && exist->port == req.port
+        && !req.ismethod("SEND"))
     {
         exist->Request(guest, req, true);
         return exist;
