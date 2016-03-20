@@ -10,8 +10,9 @@
 
 #ifdef DEBUG
 //#define DEGUB_DNS
-#define IGNOREIPV6
 #endif
+
+#define IGNOREIPV6
 #define BUF_SIZE 1024
 
 

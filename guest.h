@@ -19,8 +19,8 @@ protected:
     virtual void ReqProc(HttpReqHeader &req)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
 public:
-#define ISCONNECT_F     1
-#define ISCHUNKED_F     2
+#define ISPERSISTENT_F     1
+#define ISCHUNKED_F        2
     char flag;
     explicit Guest(int fd, struct sockaddr_in6 *myaddr);
     explicit Guest(const Guest *const copy);

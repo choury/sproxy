@@ -131,6 +131,7 @@ void HttpRes::HeaderProc() {
         try {
             HttpReqHeader req(http_buff);
             if (req.ismethod("POST") || 
+                req.ismethod("PUT") || 
                 req.ismethod("PATCH")
             ) {
                 if (req.get("Content-Length")!= nullptr) {

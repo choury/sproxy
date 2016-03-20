@@ -162,6 +162,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
     flag = 0;
     if (req.ismethod("GET") || 
         req.ismethod("POST") || 
+        req.ismethod("PUT") || 
         req.ismethod("PATCH") || 
         req.ismethod("CONNECT") || 
         req.ismethod("HEAD") || 
