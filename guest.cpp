@@ -159,7 +159,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
         LOG("([%s]:%d): %s%s %s\n", sourceip, sourceport,
             hint, req.method, req.url);
     }
-    flag = 0;
+    this->flag = 0;
     if (req.ismethod("GET") || 
         req.ismethod("POST") || 
         req.ismethod("PUT") || 
@@ -168,7 +168,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
         req.ismethod("HEAD") || 
         req.ismethod("SEND")) 
     {
-        if (checkblock(req.hostname)) {
+        if (checkblock(req.hostname) || checklocal(req.hostname)) {
             LOG("([%s]:%d): site: %s blocked\n",
                  sourceip, sourceport, req.hostname);
             Peer::Write(BLOCKTIP, strlen(BLOCKTIP), this);

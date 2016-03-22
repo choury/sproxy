@@ -80,6 +80,7 @@ int delbsite(const char * host);
 int globalproxy();
 bool checkproxy(const char *hostname);
 bool checkblock(const char *hostname);
+bool checklocal(const char *hostname);
 char *cgi_addnv(char *p, const string &name, const string &value);
 char *cgi_getnv(char *p, string &name, string &value);
 

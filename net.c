@@ -4,10 +4,12 @@
 #include <errno.h>
 #include <string.h>
 #include <strings.h>
+#include <stdlib.h>
 
 #include <unistd.h>
 #include <fcntl.h>
 #include <netinet/tcp.h>
+#include <ifaddrs.h>
 
 
 const char *DEFAULT_CIPHER_LIST = 
@@ -30,7 +32,7 @@ int Bind_any(int fd, short port){
         LOGOUT("setsockopt:%s\n", strerror(errno));
         return -1;
     }
-#endif 
+#endif
     struct sockaddr_in6 myaddr;
     bzero(&myaddr, sizeof(myaddr));
     myaddr.sin6_family = AF_INET6;
@@ -71,7 +73,7 @@ int Listen(short port) {
     int enable = 1;
     if(setsockopt(svsk, IPPROTO_TCP, TCP_NODELAY, (void*)&enable, sizeof(enable))<0)
         LOGE("TCP_NODELAY:%s\n", strerror(errno));
-    
+
     if (listen(svsk, 10000) < 0) {
         LOGOUT("listen error:%s\n", strerror(errno));
         return -3;
@@ -80,9 +82,9 @@ int Listen(short port) {
 }
 
 
-int Connect(struct sockaddr* addr, int type) {
+int Connect(union sockaddr_un* addr, int type) {
     int fd;
-    if ((fd = socket(addr->sa_family, type , 0)) < 0) {
+    if ((fd = socket(addr->addr.sa_family, type , 0)) < 0) {
         LOGE("socket error:%s\n",strerror(errno));
         return -1;
     }
@@ -115,13 +117,13 @@ int Connect(struct sockaddr* addr, int type) {
         if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (void*)&enable, sizeof(enable))<0)
             LOGE("TCP_NODELAY:%s\n", strerror(errno));
     }
-    
-    if (connect(fd, addr, sizeof(struct sockaddr_in6)) == -1 && errno != EINPROGRESS) {
+
+    if (connect(fd, &addr->addr, sizeof(struct sockaddr_in6)) == -1 && errno != EINPROGRESS) {
         LOGE("connecting error:%s\n",strerror(errno));
         close(fd);
         return -1;
     }
-    
+
     return fd;
 }
 
@@ -181,4 +183,27 @@ const char *getaddrstring(union sockaddr_un *addr){
         sprintf(buff, "%s:%d", ip, ntohs(addr->addr_in.sin_port));
     }
     return buff;
+}
+
+const char *getlocalip ()
+{
+    struct ifaddrs *ifap, *ifa;
+    static char ips [20][INET6_ADDRSTRLEN];
+    memset(ips, 0, sizeof(ips));
+    getifaddrs (&ifap);
+    int i = 0;
+    for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
+        if(ifa->ifa_addr->sa_family == AF_INET6){
+            struct sockaddr_in6 *sa = (struct sockaddr_in6 *) ifa->ifa_addr;
+            inet_ntop(AF_INET6, &sa->sin6_addr, ips[i], sizeof(ips[0]));
+            i++;
+        }
+        if(ifa->ifa_addr->sa_family == AF_INET){
+            struct sockaddr_in *sa = (struct sockaddr_in *) ifa->ifa_addr;
+            inet_ntop(AF_INET, &sa->sin_addr, ips[i], sizeof(ips[0]));
+            i++;
+        }
+    }
+    freeifaddrs(ifap);
+    return (char *)ips;
 }

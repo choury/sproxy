@@ -10,6 +10,7 @@
 
 #include <string.h>
 #include <unistd.h>
+#include <bits/local_lim.h>
 
 #define PROXYFILE "proxy.list"
 #define BLOCKFILE "block.list"
@@ -22,9 +23,11 @@ static int loadedsites = 0;
 static int GLOBALPROXY = 0;
 static unordered_set<string> proxylist;
 static unordered_set<string> blocklist;
+static unordered_set<string> locallist;
 
 void loadsites() {
     loadedsites = 1;
+#ifdef CLIENT
     proxylist.clear();
     ifstream proxyfile(PROXYFILE);
 
@@ -58,6 +61,14 @@ void loadsites() {
     } else {
         LOGE("There is no %s !\n", BLOCKFILE);
     }
+#endif
+
+    for(const char *ips=getlocalip(); strlen(ips); ips+=INET6_ADDRSTRLEN){
+       locallist.insert(ips);
+    }
+    char hostname[HOST_NAME_MAX];
+    gethostname(hostname, sizeof(hostname));
+    locallist.insert(hostname);
 }
 
 
@@ -173,6 +184,13 @@ bool checkblock(const char *hostname) {
     }
 #endif
     return false;
+}
+
+bool checklocal(const char *hostname) {
+    if (!loadedsites) {
+        loadsites();
+    }
+    return locallist.count(hostname);
 }
 
 char* toUpper(char* s) {

@@ -176,7 +176,7 @@ int Host::connect_tcp() {
         if (testedaddr != 0) {
             RcdDown(hostname, addrs[testedaddr-1]);
         }
-        fd = Connect(&addrs[testedaddr++].addr, SOCK_STREAM);
+        fd = Connect(&addrs[testedaddr++], SOCK_STREAM);
         if (fd < 0) {
             LOGE("connect to %s failed\n", this->hostname);
             return connect();
@@ -206,7 +206,7 @@ int Host::connect_udp(){
         if (testedaddr != 0) {
             RcdDown(hostname, addrs[testedaddr-1]);
         }
-        fd = Connect(&addrs[testedaddr++].addr, SOCK_DGRAM);
+        fd = Connect(&addrs[testedaddr++], SOCK_DGRAM);
         if (fd < 0) {
             LOGE("connect to %s failed\n", this->hostname);
             return connect();

@@ -12,7 +12,7 @@
 //#define DEGUB_DNS
 #endif
 
-#define IGNOREIPV6
+//#define IGNOREIPV6
 #define BUF_SIZE 1024
 
 
@@ -216,7 +216,7 @@ static int dnsinit() {
                 LOGE("[DNS] %s is not a valid ip address\n", ipaddr);
                 continue;
             }
-            int fd = Connect(&addr.addr, SOCK_DGRAM);
+            int fd = Connect(&addr, SOCK_DGRAM);
             if (fd == -1) {
                 LOGE("[DNS] connecting  %s error:%s\n",
                      ipaddr, strerror(errno));

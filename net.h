@@ -44,8 +44,9 @@ int spliturl(const char* url, char* host, char* path , uint16_t* port);
 
 int Bind_any(int fd, short port);
 int Listen(short int port);
-int Connect(struct sockaddr*, int type);
+int Connect(union sockaddr_un*, int type);
 const char *getaddrstring(union sockaddr_un *addr);
+const char* getlocalip ();
 
 
 #ifdef  __cplusplus

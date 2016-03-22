@@ -4,8 +4,6 @@
 #include "cgi.h"
 
 #include <unistd.h>
-#include <bits/local_lim.h>
-#include <netinet/tcp.h>
 #include <openssl/err.h>
 
 Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL* ssl): Guest(fd, myaddr), ssl(ssl) {
@@ -139,11 +137,9 @@ void Guest_s::shakehandHE(uint32_t events) {
 }
 
 void Guest_s::ReqProc(HttpReqHeader& req) {
-    char hostname[HOST_NAME_MAX];
-    gethostname(hostname, sizeof(hostname));
     LOG("([%s]:%d): %s %s\n", sourceip, sourceport, req.method, req.url);
-    
-    flag = 0;
+
+    this->flag = 0;
     if(req.ismethod("SHOW")){
         writelen += ::showstatus(wbuff+writelen, req.url);
         struct epoll_event event;
@@ -165,7 +161,7 @@ void Guest_s::ReqProc(HttpReqHeader& req) {
         return;
     }
         
-    if (req.url[0] == '/' && strcasecmp(hostname, req.hostname)) {
+    if (req.url[0] == '/' && checklocal(req.hostname)) {
         req.getfile();
         if (endwith(req.filename,".so")) {
             Cgi::getcgi(req, this);
