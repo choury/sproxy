@@ -150,6 +150,7 @@ void Host::closeHE(uint32_t events) {
 void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
     if (rcd.result != 0) {
         LOGE("Dns query failed: %s\n", host->hostname);
+        connectmap[host]=time(NULL);
     } else {
         host->addrs = rcd.addrs;
         for (size_t i = 0; i < host->addrs.size(); ++i) {
@@ -177,6 +178,7 @@ int Host::connect_tcp() {
             RcdDown(hostname, addrs[testedaddr-1]);
         }
         fd = Connect(&addrs[testedaddr++], SOCK_STREAM);
+        connectmap[this]=time(NULL);
         if (fd < 0) {
             LOGE("connect to %s failed\n", this->hostname);
             return connect();
@@ -186,7 +188,6 @@ int Host::connect_tcp() {
         event.events = EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
         handleEvent = (void (Con::*)(uint32_t))&Host::waitconnectHE;
-        connectmap[this]=time(NULL);
         return 0;
     }
 }
