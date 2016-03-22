@@ -159,9 +159,7 @@ void Guest_s::ReqProc(HttpReqHeader& req) {
             return;
         }
         return;
-    }
-        
-    if (req.url[0] == '/' && checklocal(req.hostname)) {
+    } else  if (checklocal(req.hostname)) {
         req.getfile();
         if (endwith(req.filename,".so")) {
             Cgi::getcgi(req, this);

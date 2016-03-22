@@ -85,11 +85,8 @@ void Guest_s2::DataProc(Http2_header* header) {
 
 void Guest_s2::ReqProc(HttpReqHeader &req)
 {
-    char hostname[HOST_NAME_MAX];
-    gethostname(hostname, sizeof(hostname));
     LOG("([%s]:%d):[%d] %s %s\n", sourceip, sourceport, req.http_id, req.method, req.url);
-    
-    if(req.hostname[0] && strcmp(req.hostname, hostname)){
+    if(!checklocal(req.hostname)){
         Host *host = new Host(req, this);
         host->windowsize = initalframewindowsize;
         host->windowleft = 512 *1024;
