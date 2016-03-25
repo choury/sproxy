@@ -11,25 +11,6 @@ Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL* ssl): Guest(fd, myadd
     handleEvent = (void (Con::*)(uint32_t))&Guest_s::shakehandHE;
 }
 
-Guest_s::Guest_s(sockaddr_in6* myaddr, SSL* ssl): Guest(0, myaddr), ssl(ssl) {
-    fd = socket(AF_INET6, SOCK_DGRAM, 0);
-    Bind_any(fd, 4433);
-    if(connect(fd, (struct sockaddr*)myaddr, sizeof(struct sockaddr_in6))){
-        LOGE("([%s]:%d): connect error: %s\n", sourceip, sourceport, strerror(errno));
-    }
-    /* Set new fd and set BIO to connected */
-    BIO_set_fd(SSL_get_rbio(ssl), fd, BIO_NOCLOSE);
-    BIO_ctrl(SSL_get_rbio(ssl), BIO_CTRL_DGRAM_SET_CONNECTED, 0, myaddr);
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-    handleEvent = (void (Con::*)(uint32_t))&Guest_s2::shakehandHE;
-
-
-}
-
-
 Guest_s::Guest_s(Guest_s *const copy): Guest(copy), ssl(copy->ssl) {
     copy->fd = 0;
     copy->ssl = nullptr;

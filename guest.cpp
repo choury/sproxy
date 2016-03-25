@@ -49,13 +49,11 @@ Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Peer(fd) {
     inet_ntop(AF_INET6, &myaddr->sin6_addr, sourceip, sizeof(sourceip));
     sourceport = ntohs(myaddr->sin6_port);
 
-    if(fd){
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN | EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-        handleEvent = (void (Con::*)(uint32_t))&Guest::defaultHE;
-    }
+    struct epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLIN | EPOLLOUT;
+    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+    handleEvent = (void (Con::*)(uint32_t))&Guest::defaultHE;
 }
 
 Guest::Guest(const Guest *const copy): Peer(copy->fd), sourceport(copy->sourceport){

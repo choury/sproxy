@@ -43,6 +43,15 @@ int Bind_any(int fd, short port){
         LOGOUT("bind error:%s\n", strerror(errno));
         return -1;
     }
+
+    if ((flag=fcntl(fd, F_GETFL)) == -1) {
+        LOGOUT("fcntl get error:%s\n", strerror(errno));
+        return -1;
+    }
+    if (fcntl(fd, F_SETFL, flag | O_NONBLOCK) == -1){
+        LOGOUT("fcntl set error:%s\n", strerror(errno));
+        return -1;
+    }
     return 0;
 }
 

@@ -58,11 +58,26 @@ class Dtls_server: public Server {
             memset(&myaddr, 0, sizeof(myaddr));
             BIO *bio = BIO_new_dgram(fd, BIO_NOCLOSE);
             SSL *ssl = SSL_new(ctx);
+            int new_fd = 0;
             SSL_set_bio(ssl, bio, bio);
-            SSL_set_options(ssl, SSL_OP_COOKIE_EXCHANGE);
             if(DTLSv1_listen(ssl, &myaddr)<=0)
-                return;
-            new Guest_s(&myaddr, ssl);
+                goto error;
+            new_fd = socket(AF_INET6, SOCK_DGRAM, 0);
+            if(Bind_any(new_fd, SPORT))
+                goto error;
+            if(connect(new_fd, (struct sockaddr*)&myaddr, sizeof(struct sockaddr_in6))){
+                LOGE("connect error: %s\n", strerror(errno));
+                goto error;
+            }
+            /* Set new fd and set BIO to connected */
+            BIO_set_fd(bio, new_fd, BIO_NOCLOSE);
+            BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_CONNECTED, 0, &myaddr);
+            new Guest_s(new_fd, &myaddr, ssl);
+            return;
+error:
+            if(new_fd > 0)
+                close(new_fd);
+            SSL_free(ssl);
         }
     }
 public:
@@ -116,6 +131,7 @@ void usage(const char * programe){
     printf("Usage: %s [-p port] [-k ca path] [-h] <CERT> <PRIVATE_KEY>\n"
            "       -p: The port to listen, default is 443.\n"
            "       -k: A optional intermediate CA certificate.\n"
+           "       -u: UDP mode.\n"
            "       -h: Print this.\n"
            , programe);
 }
@@ -124,8 +140,9 @@ void usage(const char * programe){
 
 int main(int argc, char **argv) {
     int oc;
+    bool udp_mode = false;
     const char *capath = nullptr;
-    while((oc = getopt(argc, argv, "p:dthk:")) != -1)
+    while((oc = getopt(argc, argv, "p:uhk:")) != -1)
     {
         switch(oc){
         case 'p':
@@ -133,6 +150,9 @@ int main(int argc, char **argv) {
             break;
         case 'k':
             capath = optarg;
+            break;
+        case 'u':
+            udp_mode = true;
             break;
         case 'h':
             usage(argv[0]);
@@ -148,33 +168,35 @@ int main(int argc, char **argv) {
     }
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
-#if 1
-    SSL_CTX *ctx = SSL_CTX_new(SSLv23_server_method());
-    if (ctx == NULL) {
-        ERR_print_errors_fp(stderr);
-        return 1;
-    }
-    SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3); // 去除支持SSLv2 SSLv3
-    SSL_CTX_set_options(ctx, SSL_OP_NO_COMPRESSION);
-    SSL_CTX_set_options(ctx, SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
-    SSL_CTX_set_options(ctx, SSL_OP_SINGLE_ECDH_USE);
-    SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET);
-    SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
-    SSL_CTX_set_cipher_list(ctx, DEFAULT_CIPHER_LIST);
-    SSL_CTX_set_mode(ctx, SSL_MODE_AUTO_RETRY);
-    SSL_CTX_set_mode(ctx, SSL_MODE_RELEASE_BUFFERS);
 
-    EC_KEY *ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
-    SSL_CTX_set_tmp_ecdh(ctx, ecdh);
-    EC_KEY_free(ecdh);
-#else
-    SSL_CTX *ctx = SSL_CTX_new(DTLSv1_server_method());
-    if (ctx == NULL) {
-        ERR_print_errors_fp(stderr);
-        return 1;
+    SSL_CTX *ctx = nullptr;
+    if(udp_mode){
+        ctx = SSL_CTX_new(DTLSv1_server_method());
+        if (ctx == NULL) {
+            ERR_print_errors_fp(stderr);
+            return 1;
+        }
+        SSL_CTX_set_cipher_list(ctx, "ALL:NULL:eNULL:aNULL");
+    }else{
+        ctx = SSL_CTX_new(SSLv23_server_method());
+        if (ctx == NULL) {
+            ERR_print_errors_fp(stderr);
+            return 1;
+        }
+        SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3); // 去除支持SSLv2 SSLv3
+        SSL_CTX_set_options(ctx, SSL_OP_NO_COMPRESSION);
+        SSL_CTX_set_options(ctx, SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
+        SSL_CTX_set_options(ctx, SSL_OP_SINGLE_ECDH_USE);
+        SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET);
+        SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
+        SSL_CTX_set_cipher_list(ctx, DEFAULT_CIPHER_LIST);
+        SSL_CTX_set_mode(ctx, SSL_MODE_AUTO_RETRY);
+        SSL_CTX_set_mode(ctx, SSL_MODE_RELEASE_BUFFERS);
+
+        EC_KEY *ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
+        SSL_CTX_set_tmp_ecdh(ctx, ecdh);
+        EC_KEY_free(ecdh);
     }
-    SSL_CTX_set_cipher_list(ctx, "ALL:NULL:eNULL:aNULL");
-#endif
     
     if (capath && SSL_CTX_load_verify_locations(ctx, capath, NULL) != 1)
         ERR_print_errors_fp(stderr);
@@ -200,28 +222,30 @@ int main(int argc, char **argv) {
 
     SSL_CTX_set_verify_depth(ctx, 10);
     SSL_CTX_set_alpn_select_cb(ctx, select_alpn_cb, nullptr);
+    SSL_CTX_set_read_ahead(ctx, 1);
 
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
     efd = epoll_create(10000);
-#if 1
-    int svsk_tcp;
-    if ((svsk_tcp = Listen(SPORT)) < 0) {
-        return -1;
+    if(udp_mode){
+        SSL_CTX_set_cookie_generate_cb(ctx, generate_cookie);
+        SSL_CTX_set_cookie_verify_cb(ctx, verify_cookie);
+        SSL_CTX_set_options(ctx, SSL_OP_COOKIE_EXCHANGE);
+        int svsk_udp;
+        if((svsk_udp = socket(PF_INET6, SOCK_DGRAM, 0)) < 0){
+            LOGOUT("socket error:%s\n", strerror(errno));
+            return -1;
+        }
+        if(Bind_any(svsk_udp, SPORT))
+            return -1;
+        new Dtls_server(svsk_udp, ctx);
+    }else{
+        int svsk_tcp;
+        if ((svsk_tcp = Listen(SPORT)) < 0) {
+            return -1;
+        }
+        new Https_server(svsk_tcp, ctx);
     }
-    new Https_server(svsk_tcp, ctx);
-#else
-    SSL_CTX_set_cookie_generate_cb(ctx, generate_cookie);
-    SSL_CTX_set_cookie_verify_cb(ctx, verify_cookie);
-    int svsk_udp;
-    if((svsk_udp = socket(PF_INET6, SOCK_DGRAM, 0)) < 0){
-        LOGOUT("socket error:%s\n", strerror(errno));
-        return -1;
-    }
-    if(Bind_any(svsk_udp, 4433))
-        return -1;
-    new Dtls_server(svsk_udp, ctx);
-#endif
     LOGOUT("Accepting connections ...\n");
 #ifndef DEBUG
     if (daemon(1, 0) < 0) {

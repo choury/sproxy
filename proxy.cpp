@@ -122,6 +122,7 @@ void Proxy::waitconnectHE(uint32_t events) {
             goto reconnect;
         }
         SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);  // 去除支持SSLv2 SSLv3
+        SSL_CTX_set_read_ahead(ctx, 1);
         if(proxy2 == nullptr)
             SSL_CTX_set_alpn_protos(ctx, alpn_protos_string, sizeof(alpn_protos_string)-1);
 
