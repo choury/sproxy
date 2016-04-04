@@ -25,6 +25,8 @@ static unordered_set<string> proxylist;
 static unordered_set<string> blocklist;
 static unordered_set<string> locallist;
 
+static unordered_set<string> blockips;
+
 void loadsites() {
     loadedsites = 1;
 #ifdef CLIENT
@@ -92,6 +94,16 @@ void addbsite(const char * host) {
     blockfile.close();
 }
 
+void addbip(const char *ip) {
+    if(strchr(ip, ':')){
+        blockips.insert(ip);
+    }else{
+        char ipv6[INET6_ADDRSTRLEN];
+        sprintf(ipv6,"::ffff:%s",ip);
+        blockips.insert(ipv6);
+    }
+}
+
 int delpsite(const char * host) {
     if (proxylist.count(host) == 0) {
         return 0;
@@ -117,6 +129,11 @@ int delbsite(const char * host) {
         blockfile << i << std::endl;
     }
     blockfile.close();
+    return 1;
+}
+
+int delbip(const char *ip) {
+    blockips.erase(ip);
     return 1;
 }
 
@@ -191,6 +208,10 @@ bool checklocal(const char *hostname) {
         loadsites();
     }
     return locallist.count(hostname);
+}
+
+bool checkbip(const char *ip) {
+    return blockips.count(ip);
 }
 
 char* toUpper(char* s) {

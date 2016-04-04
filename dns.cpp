@@ -12,7 +12,7 @@
 //#define DEGUB_DNS
 #endif
 
-//#define IGNOREIPV6
+#define IGNOREIPV6
 #define BUF_SIZE 1024
 
 

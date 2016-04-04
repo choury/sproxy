@@ -3,8 +3,8 @@ cmake_minimum_required(VERSION 2.8)
 
 find_package(OpenSSL)
 
-set(CMAKE_C_FLAGS "-Wall -g -O2")
-set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -g -O2")
+set(CMAKE_C_FLAGS "-Wall -ggdb -O0")
+set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -ggdb -O0")
 
 add_executable(sproxy_server cgi.cpp file.cpp http.cpp http2.cpp 
 hpack.cpp host.cpp guest.cpp peer.cpp guest_s.cpp guest_s2.cpp

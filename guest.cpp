@@ -7,9 +7,9 @@
 #include <arpa/inet.h>
 
 #define ADDPTIP    "HTTP/1.0 200 Proxy site Added" CRLF CRLF
-#define ADDBTIP    "HTTP/1.0 200 Block site Added" CRLF CRLF
+#define ADDBTIP    "HTTP/1.0 200 Block site/ip Added" CRLF CRLF
 #define DELPTIP    "HTTP/1.0 200 Proxy site Deleted" CRLF CRLF
-#define DELBTIP    "HTTP/1.0 200 Block site Deleted" CRLF CRLF
+#define DELBTIP    "HTTP/1.0 200 Block site/ip Deleted" CRLF CRLF
 #define DELFTIP    "HTTP/1.0 404 The site is not found" CRLF CRLF
 #define EGLOBLETIP  "HTTP/1.0 200 Global proxy enabled now" CRLF CRLF
 #define DGLOBLETIP  "HTTP/1.0 200 Global proxy disabled" CRLF CRLF
@@ -48,6 +48,12 @@ Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Peer(fd) {
     guest_set.insert(this);
     inet_ntop(AF_INET6, &myaddr->sin6_addr, sourceip, sizeof(sourceip));
     sourceport = ntohs(myaddr->sin6_port);
+
+    if(checkbip(sourceip)){
+        clean(IP_BLOCK_ERR, this);
+        LOGE("([%s]:%d): this ip was blocked!\n", sourceip, sourceport);
+        return;
+    }
 
     struct epoll_event event;
     event.data.ptr = this;
@@ -188,6 +194,15 @@ void Guest::ReqProc(HttpReqHeader& req) {
         Peer::Write(ADDBTIP, strlen(ADDBTIP));
     } else if (req.ismethod("DELBSITE")) {
         if (delbsite(req.url)) {
+            Peer::Write(DELBTIP, strlen(DELBTIP));
+        } else {
+            Peer::Write(DELFTIP, strlen(DELFTIP));
+        }
+    } else if (req.ismethod("ADDBIP")) {
+        addbip(req.url);
+        Peer::Write(ADDBTIP, strlen(ADDBTIP));
+    } else if (req.ismethod("DELBIP")) {
+        if (delbip(req.url)) {
             Peer::Write(DELBTIP, strlen(DELBTIP));
         } else {
             Peer::Write(DELFTIP, strlen(DELFTIP));

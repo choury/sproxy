@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 #include <sys/epoll.h>
 
-//#define DEBUG
+#define DEBUG
 
 extern uint16_t SPORT;
 extern uint16_t CPORT;
@@ -127,6 +127,7 @@ do {\
 #define WRITE_ERR           36
 #define INTERNAL_ERR        37
 #define PEER_LOST_ERR       38
+#define IP_BLOCK_ERR        39
 
 typedef unsigned char uchar;
 char* strnstr(const char* s1, const char* s2, size_t len);

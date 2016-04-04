@@ -172,31 +172,35 @@ int main(int argc, char **argv) {
     SSL_CTX *ctx = nullptr;
     if(udp_mode){
         ctx = SSL_CTX_new(DTLSv1_server_method());
+
         if (ctx == NULL) {
             ERR_print_errors_fp(stderr);
             return 1;
         }
-        SSL_CTX_set_cipher_list(ctx, "ALL:NULL:eNULL:aNULL");
+        SSL_CTX_set_cookie_generate_cb(ctx, generate_cookie);
+        SSL_CTX_set_cookie_verify_cb(ctx, verify_cookie);
+        SSL_CTX_set_options(ctx, SSL_OP_COOKIE_EXCHANGE);
     }else{
         ctx = SSL_CTX_new(SSLv23_server_method());
         if (ctx == NULL) {
             ERR_print_errors_fp(stderr);
             return 1;
         }
-        SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3); // 去除支持SSLv2 SSLv3
-        SSL_CTX_set_options(ctx, SSL_OP_NO_COMPRESSION);
-        SSL_CTX_set_options(ctx, SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
-        SSL_CTX_set_options(ctx, SSL_OP_SINGLE_ECDH_USE);
-        SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET);
-        SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
-        SSL_CTX_set_cipher_list(ctx, DEFAULT_CIPHER_LIST);
-        SSL_CTX_set_mode(ctx, SSL_MODE_AUTO_RETRY);
-        SSL_CTX_set_mode(ctx, SSL_MODE_RELEASE_BUFFERS);
-
-        EC_KEY *ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
-        SSL_CTX_set_tmp_ecdh(ctx, ecdh);
-        EC_KEY_free(ecdh);
     }
+
+    SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3); // 去除支持SSLv2 SSLv3
+    SSL_CTX_set_options(ctx, SSL_OP_NO_COMPRESSION);
+    SSL_CTX_set_options(ctx, SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
+    SSL_CTX_set_options(ctx, SSL_OP_SINGLE_ECDH_USE);
+    SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET);
+    SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
+    SSL_CTX_set_cipher_list(ctx, DEFAULT_CIPHER_LIST);
+    SSL_CTX_set_mode(ctx, SSL_MODE_AUTO_RETRY);
+    SSL_CTX_set_mode(ctx, SSL_MODE_RELEASE_BUFFERS);
+
+    EC_KEY *ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
+    SSL_CTX_set_tmp_ecdh(ctx, ecdh);
+    EC_KEY_free(ecdh);
     
     if (capath && SSL_CTX_load_verify_locations(ctx, capath, NULL) != 1)
         ERR_print_errors_fp(stderr);
@@ -228,9 +232,6 @@ int main(int argc, char **argv) {
     signal(SIGCHLD, SIG_IGN);
     efd = epoll_create(10000);
     if(udp_mode){
-        SSL_CTX_set_cookie_generate_cb(ctx, generate_cookie);
-        SSL_CTX_set_cookie_verify_cb(ctx, verify_cookie);
-        SSL_CTX_set_options(ctx, SSL_OP_COOKIE_EXCHANGE);
         int svsk_udp;
         if((svsk_udp = socket(PF_INET6, SOCK_DGRAM, 0)) < 0){
             LOGOUT("socket error:%s\n", strerror(errno));

@@ -30,6 +30,8 @@ ssize_t Guest_s::Read(void* buff, size_t size) {
 }
 
 ssize_t Guest_s::Write(const void *buff, size_t size) {
+    if(size > ssl->d1->mtu)
+        size = ssl->d1->mtu;
     return SSL_write(ssl, buff, size);
 }
 
