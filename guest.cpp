@@ -87,17 +87,15 @@ void Guest::defaultHE(uint32_t events) {
     }
 
     if (events & EPOLLOUT) {
-        if (!write_queue.empty()) {
-            int ret = Peer::Write();
-            if (ret <= 0) {
-                if (showerrinfo(ret, "guest write error")) {
-                    clean(WRITE_ERR, this);
-                }
-                return;
+        int ret = Peer::Write();
+        if (ret <= 0) {
+            if (showerrinfo(ret, "guest write error")) {
+                clean(WRITE_ERR, this);
             }
-            if (Peer *peer = queryconnect(this))
-                peer->writedcb(this);
+            return;
         }
+        if (Peer *peer = queryconnect(this))
+            peer->writedcb(this);
 
     }
 }

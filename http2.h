@@ -102,7 +102,9 @@ protected:
     virtual void ErrProc(int errcode) = 0;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff) = 0;
     void (Http2Base::*Http2_Proc)()=&Http2Base::InitProc;
-    size_t Write_Proc();
+    int Write_Proc();
+public:
+    ~Http2Base();
 };
 
 class Http2Res:public Http2Base {

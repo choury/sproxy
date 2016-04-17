@@ -86,7 +86,7 @@ void Proxy2::defaultHE(u_int32_t events) {
 
     if (events & EPOLLOUT) {
         int ret = Write_Proc();
-        if(ret){ 
+        if(ret > 0){
             for(auto i = waitlist.begin(); i!= waitlist.end(); ){
                 if(bufleft(*i)){
                     (*i)->writedcb(this);
@@ -172,8 +172,8 @@ void Proxy2::PingProc(Http2_header *header){
     if(header->flags & ACK_F){
         double diff = (getutime()-get64(header+1))/1000.0;
         LOG("[Proxy2] Get a ping time=%.3fms\n", diff);
-        if(diff >= 10000){
-            LOGE("[Proxy2] The ping time too long, close it.");
+        if(diff >= 5000){
+            LOGE("[Proxy2] The ping time too long, close it.\n");
             clean(PEER_LOST_ERR, this);
         }
  
@@ -182,7 +182,7 @@ void Proxy2::PingProc(Http2_header *header){
 }
 
 
-void Proxy2::Request(Guest* guest, HttpReqHeader& req, bool) {
+void Proxy2::Request(Guest* guest, HttpReqHeader& req) {
     ::connect(guest, this);
     idmap.erase(guest);
     idmap.insert(guest, curid);
@@ -271,13 +271,13 @@ void Proxy2::Pingcheck() {
     if(!lastrecv)
         return;
     uint64_t now = getutime();
-    if(now - lastrecv >= 5000000 && now - lastping >= 5000000){ //超过5秒就发ping包检测
+    if(now - lastrecv >= 20000000 && now - lastping >= 5000000){ //超过30秒就发ping包检测
         char buff[8];
         set64(buff, now);
         Ping(buff);
         lastping = now;
     }
-    if(now - lastrecv >= 10000000){ //超过10秒没收到报文，认为链接断开
+    if(now - lastrecv >= 30000000){ //超过30秒没收到报文，认为连接断开
         LOGE("[Proxy2] the ping timeout, so close it\n");
         clean(PEER_LOST_ERR, this);
     }

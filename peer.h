@@ -25,7 +25,7 @@ protected:
     explicit Peer(int fd = 0);
     virtual ssize_t Read(void *buff, size_t size);
     virtual ssize_t Write(const void *buff, size_t size);
-    virtual ssize_t Write();
+    virtual int Write();
     virtual void closeHE(uint32_t events) = 0;
 public:
     virtual ~Peer();

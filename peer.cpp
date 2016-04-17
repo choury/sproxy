@@ -22,6 +22,10 @@ Peer::~Peer() {
         close(fd);
     }
     assert(!queryconnect(this));
+    while(!write_queue.empty()){
+        free(write_queue.front().buff);
+        write_queue.pop();
+    }
 }
 
 ssize_t Peer::Write(const void* buff, size_t size, Peer* who, uint32_t id) {
@@ -55,32 +59,33 @@ ssize_t Peer::Write(const void* buff, size_t size) {
     return write(fd, buff, size);
 }
 
-ssize_t Peer::Write() {
-    write_block *wb = &write_queue.front();
-    ssize_t ret = Write((char *)wb->buff + wb->wlen, wb->len - wb->wlen);
+int Peer::Write() {
+    while(!write_queue.empty()){
+        write_block *wb = &write_queue.front();
+        ssize_t ret = Write((char *)wb->buff + wb->wlen, wb->len - wb->wlen);
 
-    if (ret <= 0) {
-        return ret;
+        if (ret <= 0) {
+            return ret;
+        }
+
+        if ((size_t)ret + wb->wlen == wb->len) {
+            free(wb->buff);
+            write_queue.pop();
+        } else {
+            wb->wlen += ret;
+            return 1;
+        }
     }
 
-    if ((size_t)ret + wb->wlen == wb->len) {
-        free(wb->buff);
-        write_queue.pop();
-    } else {
-        wb->wlen += ret;
-    }
-    if(write_queue.empty()){
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    }
-
-    return ret;
+    struct epoll_event event;
+    event.data.ptr = this;
+    event.events = EPOLLIN;
+    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    return 2;
 }
 
 void Peer::writedcb(Peer *) {
-    if (fd > 0) {
+    if (fd > 0 && !write_queue.empty()) {
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLIN | EPOLLOUT;

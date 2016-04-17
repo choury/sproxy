@@ -12,7 +12,7 @@ std::map<Host*,time_t> connectmap;
 
 Host::Host(HttpReqHeader& req, Guest* guest):Peer(0), req(req) {
     ::connect(guest, this);
-    Request(guest, req, false);
+    Request(guest, req);
     snprintf(hostname, sizeof(hostname), "%s", req.hostname);
     port = req.port;
     if(req.ismethod("CONNECT")){
@@ -27,7 +27,7 @@ Host::Host(HttpReqHeader& req, Guest* guest):Peer(0), req(req) {
 
 Host::Host(HttpReqHeader &req, Guest* guest, const char* hostname, uint16_t port):Peer(0), req(req) {
     ::connect(guest, this);
-    Request(guest, req, false);
+    Request(guest, req);
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
     this->port = port;
     if(req.ismethod("CONNECT") || req.ismethod("SEND")){
@@ -122,16 +122,14 @@ void Host::defaultHE(uint32_t events) {
     }
 
     if (events & EPOLLOUT) {
-        if (!write_queue.empty()) {
-            int ret = Write();
-            if (ret <= 0) {
-                if (showerrinfo(ret, "host write error")) {
-                    clean(WRITE_ERR, this);
-                }
-                return;
+        int ret = Write();
+        if (ret <= 0) {
+            if (showerrinfo(ret, "host write error")) {
+                clean(WRITE_ERR, this);
             }
-            guest->writedcb(this);
+            return;
         }
+        guest->writedcb(this);
     }
 }
 
@@ -231,16 +229,10 @@ void Host::destory() {
 }
 
 
-void Host::Request(Guest* guest, HttpReqHeader& req, bool direct_send) {
+void Host::Request(Guest* guest, HttpReqHeader& req) {
     size_t len;
     char *buff = req.getstring(len);
     Write(buff, len, this);
-    if(!direct_send){
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    }
     if(req.ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY;
     }
@@ -269,7 +261,7 @@ Host* Host::gethost(HttpReqHeader &req, Guest* guest) {
         && exist->port == req.port
         && !req.ismethod("SEND"))
     {
-        exist->Request(guest, req, true);
+        exist->Request(guest, req);
         return exist;
     }
 

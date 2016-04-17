@@ -18,7 +18,7 @@ Proxy::Proxy(Proxy *const copy):Host(copy->fd), ssl(copy->ssl), ctx(copy->ctx) {
 Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
     Host *exist = (Host *)queryconnect(guest);
     if (dynamic_cast<Proxy*>(exist)) {
-        exist->Request(guest, req, true);
+        exist->Request(guest, req);
         return exist;
     }
     
@@ -27,7 +27,7 @@ Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
     }
     
     if (proxy2 && proxy2->bufleft(nullptr) >= 32 * 1024) {
-        proxy2->Request(guest, req, true);
+        proxy2->Request(guest, req);
         return proxy2;
     }
 
@@ -172,7 +172,7 @@ void Proxy::shakehandHE(uint32_t events) {
         if (data && strncasecmp((const char*)data, "h2", len) == 0) {
             Proxy2 *new_proxy = new Proxy2(this);
             new_proxy->init();
-            new_proxy->Request(guest, req, true);
+            new_proxy->Request(guest, req);
             if(!proxy2){
                 proxy2 = new_proxy;
             }

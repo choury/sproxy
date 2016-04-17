@@ -32,7 +32,7 @@ public:
     Host(int fd):Peer(fd){}
     Host(HttpReqHeader &req, Guest *guest);
     Host(HttpReqHeader &req, Guest *guest, const char* hostname, uint16_t port);
-    virtual void Request(Guest* guest, HttpReqHeader &req, bool direct_send);
+    virtual void Request(Guest* guest, HttpReqHeader &req);
     virtual void ResProc(HttpResHeader &res)override;
     static Host *gethost(HttpReqHeader &req, Guest* guest);
     friend void hosttick();

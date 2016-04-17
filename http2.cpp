@@ -86,7 +86,7 @@ void Http2Base::SendFrame(Http2_header *header) {
         i = j.base();
         break;
     }
-    if(framequeue.front().wlen && i == framequeue.begin())
+    if(!framequeue.empty() && i == framequeue.begin() && framequeue.front().wlen)
         ++i;
     Http2_frame frame={header, 0};
     framequeue.insert(i, frame);
@@ -100,23 +100,25 @@ void Http2Base::SendFrame(const Http2_header *header) {
 }
 
 
-size_t Http2Base::Write_Proc(){
-    Http2_frame *frame = &framequeue.front();
-    size_t len = sizeof(Http2_header) + get24(frame->header->length);
-    ssize_t ret = Write((char *)frame->header + frame->wlen, len - frame->wlen);
+int Http2Base::Write_Proc(){
+    while(!framequeue.empty()){
+        Http2_frame *frame = &framequeue.front();
+        size_t len = sizeof(Http2_header) + get24(frame->header->length);
+        ssize_t ret = Write((char *)frame->header + frame->wlen, len - frame->wlen);
 
-    if (ret <= 0) {
-        return ret;
+        if (ret <= 0) {
+            return ret;
+        }
+
+        if ((size_t)ret + frame->wlen == len) {
+            free(frame->header);
+            framequeue.pop_front();
+        } else {
+            frame->wlen += ret;
+            break;
+        }
     }
-
-    if ((size_t)ret + frame->wlen == len) {
-        free(frame->header);
-        framequeue.pop_front();
-    } else {
-        frame->wlen += ret;
-    }
-
-    return ret;
+    return 1;
 }
 
 
@@ -198,6 +200,15 @@ void Http2Base::SendInitSetting() {
     header->type = SETTINGS_TYPE;
     SendFrame(header);
 }
+
+Http2Base::~Http2Base()
+{
+    while(!framequeue.empty()){
+        free(framequeue.front().header);
+        framequeue.pop_front();
+    }
+}
+
 
 void Http2Res::InitProc() {
     size_t prelen = strlen(H2_PREFACE);

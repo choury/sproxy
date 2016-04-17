@@ -27,7 +27,7 @@ public:
     Proxy2( Proxy *const copy );
     int32_t bufleft(Peer *)override;
     virtual void ResProc(HttpResHeader &res)override;
-    virtual void Request(Guest* guest, HttpReqHeader& req, bool)override;
+    virtual void Request(Guest* guest, HttpReqHeader& req)override;
     virtual void clean(uint32_t errcode, Peer *who, uint32_t id = 0)override;
     virtual void wait(Peer *who)override;
     virtual void writedcb(Peer *who)override;
