@@ -10,6 +10,7 @@ using std::string;
 
 
 class Index_table;
+struct Http2_header;
 struct CGI_Header;
 
 class HttpReqHeader{
@@ -28,15 +29,15 @@ public:
     explicit HttpReqHeader(mulmap<string, string>&& headers);
     explicit HttpReqHeader(CGI_Header *headers);
     void getfile();
-    bool ismethod(const char* method);
+    bool ismethod(const char* method) const;
     void add(const char *header, const char *value);
     void del(const char *header);
     const char* get(const char *header) const;
     std::set<string> getall(const char *header) const;
     
-    int getstring(void* outbuff); 
-    int getframe(void* outbuff, Index_table *index_table);
-    int getcgi(void *outbuff);
+    char *getstring(size_t &len) const;
+    Http2_header *getframe(Index_table *index_table) const;
+    CGI_Header *getcgi() const;
 };
 
 class HttpResHeader{
@@ -55,9 +56,9 @@ public:
     const char* get(const char *header) const;
     std::set<string> getall(const char *header) const;
 
-    int getstring(void* outbuff);
-    int getframe(void* outbuff, Index_table *index_table);
-    int getcgi(void* outbuff);
+    char *getstring(size_t &len) const;
+    Http2_header *getframe(Index_table *index_table) const;
+    CGI_Header *getcgi() const;
 };
 
 // trim from start

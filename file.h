@@ -17,7 +17,7 @@ public:
 class File:public Peer{
     int ffd = 0;
     uint32_t leftsize;
-    uint32_t wbuffof = 0;
+//    uint32_t wbuffof = 0;
     char filename[URLLIMIT];
     HttpReqHeader req;
     Range range;

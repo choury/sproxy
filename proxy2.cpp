@@ -23,8 +23,6 @@ ssize_t Proxy2::Write(const void *buff, size_t len) {
 
 
 ssize_t Proxy2::Write(const void* buff, size_t size, Peer *who, uint32_t id) {
-    Http2_header header;
-    memset(&header, 0, sizeof(header));
     Guest *guest = dynamic_cast<Guest*>(who);
     if(!id){
         if(idmap.count(guest)){
@@ -34,25 +32,27 @@ ssize_t Proxy2::Write(const void* buff, size_t size, Peer *who, uint32_t id) {
             return -1;
         }
     }
-    set32(header.id, id);
-    size = size > FRAMEBODYLIMIT ? FRAMEBODYLIMIT:size;
-    set24(header.length, size);
+    size = Min(size, FRAMEBODYLIMIT);
+    Http2_header *header=(Http2_header *)malloc(sizeof(Http2_header)+size);
+    memset(header, 0, sizeof(Http2_header));
+    set32(header->id, id);
+    set24(header->length, size);
     if(size == 0) {
-        header.flags = END_STREAM_F;
+        header->flags = END_STREAM_F;
     }
-    SendFrame(&header, 0);
-    int ret = Peer::Write(buff, size, this, id);
-    this->windowsize -= ret;
-    who->windowsize -= ret;
-    return ret;
+    memcpy(header+1, buff, size);
+    SendFrame(header);
+    this->windowsize -= size;
+    who->windowsize -= size;
+    return size;
 }
 
-Http2_header *Proxy2::SendFrame(const Http2_header *header, size_t addlen){
+void Proxy2::SendFrame(Http2_header *header){
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    return Http2Base::SendFrame(header, addlen);
+    return Http2Base::SendFrame(header);
 }
 
 
@@ -85,7 +85,7 @@ void Proxy2::defaultHE(u_int32_t events) {
     }
 
     if (events & EPOLLOUT) {
-        int ret = Write_Proc(wbuff, writelen);
+        int ret = Write_Proc();
         if(ret){ 
             for(auto i = waitlist.begin(); i!= waitlist.end(); ){
                 if(bufleft(*i)){
@@ -99,7 +99,7 @@ void Proxy2::defaultHE(u_int32_t events) {
             clean(WRITE_ERR, this);
             return;
         }
-        if (ret == 2) {
+        if (framequeue.empty()) {
             struct epoll_event event;
             event.data.ptr = this;
             event.events = EPOLLIN;
@@ -194,8 +194,7 @@ void Proxy2::Request(Guest* guest, HttpReqHeader& req, bool) {
         guest->flag |= ISPERSISTENT_F;
     }
     
-    char buff[FRAMELENLIMIT];
-    SendFrame((Http2_header *)buff, req.getframe(buff, &request_table));
+    SendFrame(req.getframe(&request_table));
 }
 
 void Proxy2::ResProc(HttpResHeader& res) {
@@ -251,7 +250,7 @@ void Proxy2::writedcb(Peer *who){
     }
 }
 
-
+/*
 int Proxy2::showstatus(char *buff, Peer *who){
     Guest *guest = dynamic_cast<Guest*>(who);
     int len = 0;
@@ -266,6 +265,7 @@ int Proxy2::showstatus(char *buff, Peer *who){
     }
     return len;
 }
+*/
 
 void Proxy2::Pingcheck() {
     if(!lastrecv)

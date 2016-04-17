@@ -122,7 +122,7 @@ void Host::defaultHE(uint32_t events) {
     }
 
     if (events & EPOLLOUT) {
-        if (writelen) {
+        if (!write_queue.empty()) {
             int ret = Write();
             if (ret <= 0) {
                 if (showerrinfo(ret, "host write error")) {
@@ -131,12 +131,6 @@ void Host::defaultHE(uint32_t events) {
                 return;
             }
             guest->writedcb(this);
-        }
-        if (writelen == 0) {
-            struct epoll_event event;
-            event.data.ptr = this;
-            event.events = EPOLLIN;
-            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
         }
     }
 }
@@ -238,11 +232,13 @@ void Host::destory() {
 
 
 void Host::Request(Guest* guest, HttpReqHeader& req, bool direct_send) {
-    writelen+= req.getstring(wbuff+writelen);
-    if(direct_send){
+    size_t len;
+    char *buff = req.getstring(len);
+    Write(buff, len, this);
+    if(!direct_send){
         struct epoll_event event;
         event.data.ptr = this;
-        event.events = EPOLLIN | EPOLLOUT;
+        event.events = EPOLLIN;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     }
     if(req.ismethod("HEAD")){
@@ -311,26 +307,6 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 
     return guest->Write(buff, Min(size, len), this);
 }
-
-int Host::showstatus(char* buff, Peer*) {
-    int len;
-    len = sprintf(buff, "%s ", req.url);
-    const char *status;
-    if(handleEvent ==  nullptr)
-        status = "Waiting dns";
-    else if(handleEvent == (void (Con::*)(uint32_t))&Host::waitconnectHE)
-        status = "connecting...";
-    else if(handleEvent == (void (Con::*)(uint32_t))&Host::defaultHE)
-        status = "transfer data";
-    else if(handleEvent == (void (Con::*)(uint32_t))&Host::closeHE)
-        status = "Waiting close";
-    else
-        status = "unkown status";
-    
-    len += sprintf(buff+len, "##%s\r\n", status);
-    return len;
-}
-
 
 void hosttick() {
     for(auto i = connectmap.begin();i != connectmap.end();){

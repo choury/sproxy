@@ -41,12 +41,9 @@ class Cgi:public Peer{
     char cgi_buff[CGI_LEN_MAX];
     size_t cgi_getlen  = 0;
     size_t cgi_outlen  = 0;
-    size_t dataleft = 0;
-    size_t frameleft = 0;
     uint32_t curid = 1;
     binmap<std::pair<Guest *, uint32_t>, uint32_t> idmap;
     std::set<Peer *> waitlist;
-    std::list<CGI_Header *> framequeue;
     virtual void defaultHE(uint32_t events);
     virtual void closeHE(uint32_t events)override;
     enum {WaitHeadr,
@@ -56,9 +53,7 @@ class Cgi:public Peer{
           HandleData,
           HandleLeft
     }status = WaitHeadr;
-    CGI_Header* SendFrame( const CGI_Header *header, size_t addlen );
     void InProc();
-    int  OutProc();
     void Request(HttpReqHeader &req,Guest *guest);
 public:
     Cgi(const char *filename);
@@ -92,6 +87,7 @@ void addcookie(HttpResHeader &res, const Cookie &cookie);
 #ifdef  __cplusplus
 extern "C" {
 #endif
+int cgi_response(int fd, const HttpResHeader &req);
 int cgi_write(int fd, uint32_t id, const void *buff, size_t len);
 #ifdef  __cplusplus
 }

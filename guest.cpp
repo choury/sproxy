@@ -29,21 +29,6 @@
 
 std::set<Guest *> guest_set;
 
-int showstatus(char *buff, const char *command){
-    if(command[0] == 0 || strcasecmp(command, "guest") == 0){
-        int len = 0;
-        len = sprintf(buff, "Guest:\r\n");
-        for(auto i:guest_set){
-            len += i->showstatus(buff+len, nullptr);
-        }
-        return len;
-    }
-    if(strcasecmp(command, "dns") == 0){
-        return dnsstatus(buff);
-    }
-    return 0;
-}
-                    
 Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Peer(fd) {
     guest_set.insert(this);
     inet_ntop(AF_INET6, &myaddr->sin6_addr, sourceip, sizeof(sourceip));
@@ -102,7 +87,7 @@ void Guest::defaultHE(uint32_t events) {
     }
 
     if (events & EPOLLOUT) {
-        if (writelen) {
+        if (!write_queue.empty()) {
             int ret = Peer::Write();
             if (ret <= 0) {
                 if (showerrinfo(ret, "guest write error")) {
@@ -114,17 +99,11 @@ void Guest::defaultHE(uint32_t events) {
                 peer->writedcb(this);
         }
 
-        if (writelen == 0) {
-            struct epoll_event event;
-            event.data.ptr = this;
-            event.events = EPOLLIN;
-            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-        }
     }
 }
 
 void Guest::closeHE(uint32_t events) {
-    if (writelen == 0) {
+    if (write_queue.empty()) {
         delete this;
         return;
     }
@@ -229,12 +208,12 @@ void Guest::ReqProc(HttpReqHeader& req) {
         }
         Peer::Write(NORMALIP, strlen(NORMALIP));
 #endif
-    } else if (req.ismethod("SHOW")){
+/*    } else if (req.ismethod("SHOW")){
         writelen += ::showstatus(wbuff+writelen, req.url);
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLIN | EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);*/
     } else if(req.ismethod("FLUSH")){
         if(strcasecmp(req.url, "dns") == 0){
             flushdns();
@@ -249,14 +228,12 @@ void Guest::ReqProc(HttpReqHeader& req) {
 }
 
 void Guest::Response(HttpResHeader& res, Peer*) {
-    writelen+=res.getstring(wbuff+writelen);
+    size_t len;
+    char *buff=res.getstring(len);
+    Peer::Write(buff, len, this);
     if(res.get("Transfer-Encoding")){
         flag |= ISCHUNKED_F;
     }
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 }
 
 ssize_t Guest::Write(const void *buff, size_t size, Peer* who, uint32_t) {
@@ -265,7 +242,7 @@ ssize_t Guest::Write(const void *buff, size_t size, Peer* who, uint32_t) {
     if(flag & ISCHUNKED_F){
         char chunkbuf[100];
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)size);
-        if(Peer::Write(chunkbuf, chunklen, this) != chunklen)
+        if(Peer::Write((const void *)chunkbuf, chunklen, this) != chunklen)
             assert(0);
         ret = Peer::Write(buff, len, this);
         if(Peer::Write(CRLF, strlen(CRLF), this) != strlen(CRLF))
@@ -296,28 +273,3 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
 Guest::~Guest(){
     guest_set.erase(this);
 }
-
-int Guest::showstatus(char* buff, Peer *){
-    int len;
-    len = sprintf(buff, "([%s]:%d) buffleft(%d): ", sourceip, sourceport,
-                   (int32_t)(sizeof(wbuff)-writelen));
-    Peer *peer = queryconnect(this);
-    if(peer){
-        len += peer->showstatus(buff+len, this);
-    } else {
-        len += sprintf(buff+len, "null ");
-        const char *status;
-        if(handleEvent ==  nullptr)
-            status = "creating object";
-        else if(handleEvent == (void (Con::*)(uint32_t))&Guest::defaultHE)
-            status = "transfer data";
-        else if(handleEvent == (void (Con::*)(uint32_t))&Guest::closeHE)
-            status = "Waiting close";
-        else
-            status = "unkown status";
-        len += sprintf(buff+len, "##%s\r\n", status);
-    
-    }
-    return len;
-}
-

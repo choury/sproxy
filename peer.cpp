@@ -24,10 +24,19 @@ Peer::~Peer() {
     assert(!queryconnect(this));
 }
 
-ssize_t Peer::Write(const void* buff, size_t size, Peer* who, uint32_t) {
-    int len = Min(size, bufleft(who));
-    memcpy(wbuff + writelen, buff, len);
-    writelen += len;
+ssize_t Peer::Write(const void* buff, size_t size, Peer* who, uint32_t id) {
+    void *dup_buff = malloc(size);
+    memcpy(dup_buff, buff, size);
+    return Write(dup_buff, size, who, id);
+}
+
+ssize_t Peer::Write(void* buff, size_t size, Peer* , uint32_t) {
+    if(size == 0) {
+        return 0;
+    }
+
+    write_block wb={buff, size, 0};
+    write_queue.push(wb);
 
     if (fd > 0) {
         struct epoll_event event;
@@ -35,7 +44,7 @@ ssize_t Peer::Write(const void* buff, size_t size, Peer* who, uint32_t) {
         event.events = EPOLLIN | EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     }
-    return len;
+    return size;
 }
 
 ssize_t Peer::Read(void* buff, size_t size) {
@@ -47,17 +56,24 @@ ssize_t Peer::Write(const void* buff, size_t size) {
 }
 
 ssize_t Peer::Write() {
-    ssize_t ret = Write(wbuff, writelen);
+    write_block *wb = &write_queue.front();
+    ssize_t ret = Write((char *)wb->buff + wb->wlen, wb->len - wb->wlen);
 
     if (ret <= 0) {
         return ret;
     }
 
-    if ((size_t)ret != writelen) {
-        memmove(wbuff, wbuff + ret, writelen - ret);
-        writelen -= ret;
+    if ((size_t)ret + wb->wlen == wb->len) {
+        free(wb->buff);
+        write_queue.pop();
     } else {
-        writelen = 0;
+        wb->wlen += ret;
+    }
+    if(write_queue.empty()){
+        struct epoll_event event;
+        event.data.ptr = this;
+        event.events = EPOLLIN;
+        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     }
 
     return ret;
@@ -75,7 +91,8 @@ void Peer::writedcb(Peer *) {
 }
 
 int32_t Peer::bufleft(Peer *) {
-    return sizeof(wbuff)-writelen - 20; //reserved 20 bytes for chunked(ffffffffffffffff\r\n.....\r\n)
+    return 16384;
+//    return sizeof(wbuff)-writelen - 20; //reserved 20 bytes for chunked(ffffffffffffffff\r\n.....\r\n)
 }
 
 
@@ -152,9 +169,4 @@ void Peer::clean(uint32_t errcode, Peer* who, uint32_t) {
 
 void Peer::wait(Peer *who) {
     epoll_ctl(efd, EPOLL_CTL_DEL, who->fd, NULL);
-}
-
-int Peer::showstatus(char *buff, Peer* who) {
-    strcpy(buff, "\r\n");
-    return 2;
 }

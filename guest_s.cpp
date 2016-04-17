@@ -30,8 +30,6 @@ ssize_t Guest_s::Read(void* buff, size_t size) {
 }
 
 ssize_t Guest_s::Write(const void *buff, size_t size) {
-    if(size > ssl->d1->mtu)
-        size = ssl->d1->mtu;
     return SSL_write(ssl, buff, size);
 }
 
@@ -123,14 +121,7 @@ void Guest_s::ReqProc(HttpReqHeader& req) {
     LOG("([%s]:%d): %s %s\n", sourceip, sourceport, req.method, req.url);
 
     this->flag = 0;
-    if(req.ismethod("SHOW")){
-        writelen += ::showstatus(wbuff+writelen, req.url);
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN | EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-        return; 
-    } else if(req.ismethod("FLUSH")){
+    if(req.ismethod("FLUSH")){
         if(strcasecmp(req.url, "dns") == 0){
             flushdns();
             Write(H200, strlen(H200));

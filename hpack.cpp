@@ -893,7 +893,10 @@ int Index_table::hpack_encode(char* buf, const char* Name, const char* value) {
 int Index_table::hpack_encode(char *buf, mulmap<std::string, std::string> headers) {
     char *buf_begin = buf;
     for(auto i:headers) {
-        buf += hpack_encode(buf, i.first.c_str(), i.second.c_str());
+        const char *name = i.first.c_str();
+        if(strcasecmp(name, "Host")==0)
+            continue;
+        buf += hpack_encode(buf, name, i.second.c_str());
     }
     evict_dynamic_table();
     return buf - buf_begin;

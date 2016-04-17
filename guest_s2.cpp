@@ -18,6 +18,7 @@ ssize_t Guest_s2::Read(void *buff, size_t size) {
     return Guest_s::Read(buff, size);
 }
 
+
 ssize_t Guest_s2::Write(const void *buff, size_t size) {
     return Guest_s::Write(buff, size);
 }
@@ -25,8 +26,6 @@ ssize_t Guest_s2::Write(const void *buff, size_t size) {
 
 ssize_t Guest_s2::Write(const void *buff, size_t size, Peer *who, uint32_t id)
 {
-    Http2_header header;
-    memset(&header, 0, sizeof(header));
     if(!id){
         if(idmap.count(who)){
             id = idmap.at(who);
@@ -35,30 +34,32 @@ ssize_t Guest_s2::Write(const void *buff, size_t size, Peer *who, uint32_t id)
             return -1;
         }
     }
-    set32(header.id, id);
     size = Min(size, FRAMEBODYLIMIT);
-    set24(header.length, size);
+    Http2_header *header=(Http2_header *)malloc(sizeof(Http2_header)+size);
+    memset(header, 0, sizeof(Http2_header));
+    set32(header->id, id);
+    set24(header->length, size);
     if(size == 0) {
-        header.flags = END_STREAM_F;
+        header->flags = END_STREAM_F;
         idmap.erase(who);
         waitlist.erase(who);
         who->clean(NOERROR, this, id);
     }
-    SendFrame(&header, 0);
-    int ret = Peer::Write(buff, size, this, id);
-    this->windowsize -= ret;
-    who->windowsize -= ret;
-    return ret;
+    memcpy(header+1, buff, size);
+    SendFrame(header);
+    this->windowsize -= size;
+    who->windowsize -= size;
+    return size;
 }
 
 
 
-Http2_header* Guest_s2::SendFrame(const Http2_header *header, size_t addlen) {
+void Guest_s2::SendFrame(Http2_header *header) {
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    return Http2Res::SendFrame(header, addlen);
+    return Http2Res::SendFrame(header);
 }
 
 
@@ -119,8 +120,7 @@ void Guest_s2::Response(HttpResHeader &res, Peer *who)
     }
     res.del("Transfer-Encoding");
     res.del("Connection");
-    char buff[FRAMELENLIMIT];
-    SendFrame((Http2_header *)buff, res.getframe(buff, &request_table));
+    SendFrame(res.getframe(&request_table));
 }
 
 
@@ -146,7 +146,7 @@ void Guest_s2::defaultHE(uint32_t events)
     }
 
     if (events & EPOLLOUT) {
-        int ret = Write_Proc(wbuff, writelen);
+        int ret = Write_Proc();
         if(ret){ 
             for(auto i = waitlist.begin(); i!= waitlist.end(); ){
                 if(bufleft(*i)){
@@ -161,7 +161,7 @@ void Guest_s2::defaultHE(uint32_t events)
             return;
         }
 
-        if (ret == 2) {
+        if (framequeue.empty()) {
             struct epoll_event event;
             event.data.ptr = this;
             event.events = EPOLLIN;
@@ -247,7 +247,7 @@ void Guest_s2::writedcb(Peer *who){
     }
 }
 
-
+/*
 int Guest_s2::showstatus(char *buff, Peer *who) {
     int wlen,len=0;
     sprintf(buff, "Guest_s2([%s]:%d) buffleft:%d: windowsize: %d, windowleft: %d\n%n",
@@ -272,3 +272,4 @@ int Guest_s2::showstatus(char *buff, Peer *who) {
     len += wlen;
     return len;
 }
+*/

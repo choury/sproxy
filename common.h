@@ -140,7 +140,7 @@ void proxy2tick();
 void flushproxy2();
 uint64_t getutime();
 void dump_trace();
-int showstatus(char *buff, const char *command);
+int showstatus(const char *command);
 
 #ifdef  __cplusplus
 }

@@ -172,7 +172,7 @@ void File::openHE(uint32_t events) {
         LOGE("get file info failed: %s\n", strerror(errno));
         HttpResHeader res(H404);
         guest->Response(res, this);
-        guest->Write(wbuff, 0, this);
+        guest->Write(nullptr, 0, this);
         goto err;
     }
     if (S_ISREG(st.st_mode)) {
@@ -186,9 +186,10 @@ void File::openHE(uint32_t events) {
         Range range(req.get("Range"));
         if(range.size() == 0){
             HttpResHeader res(H200);
+            char buff[100];
             leftsize = st.st_size;
-            snprintf((char *)wbuff, sizeof(wbuff), "%u", leftsize);
-            res.add("Content-Length", (char *)wbuff);
+            snprintf(buff, sizeof(buff), "%u", leftsize);
+            res.add("Content-Length", buff);
             guest->Response(res, this);
         } else if (range.size() == 1 && range.calcu(st.st_size)){
             if(lseek(ffd,range.ranges[0].first,SEEK_SET)<0){
@@ -198,17 +199,19 @@ void File::openHE(uint32_t events) {
                 throw 0;
             }
             HttpResHeader res(H206);
+            char buff[100];
             leftsize = range.ranges[0].second - range.ranges[0].first+1;
-            snprintf((char *)wbuff, sizeof(wbuff), "bytes %lu-%lu/%lu", 
+            snprintf(buff, sizeof(buff), "bytes %lu-%lu/%lu",
                      range.ranges[0].first, range.ranges[0].second, st.st_size);
-            res.add("Content-Range",(char *)wbuff);
-            snprintf((char *)wbuff, sizeof(wbuff), "%u", leftsize);
-            res.add("Content-Length", (char *)wbuff);
+            res.add("Content-Range", buff);
+            snprintf(buff, sizeof(buff), "%u", leftsize);
+            res.add("Content-Length", buff);
             guest->Response(res, this);
         } else {
             HttpResHeader res(H416);
-            snprintf((char *)wbuff, sizeof(wbuff), "bytes */%lu", st.st_size);
-            res.add("Content-Range", (char *)wbuff);
+            char buff[100];
+            snprintf(buff, sizeof(buff), "bytes */%lu", st.st_size);
+            res.add("Content-Range", buff);
             guest->Response(res, this);
         }
     } else if (S_ISDIR(st.st_mode)) {
@@ -240,30 +243,25 @@ void File::defaultHE(uint32_t events) {
     
     if (events & EPOLLIN) {
         if (leftsize == 0) {
-            guest->Write(wbuff, 0, this);
+            guest->Write(nullptr, 0, this);
             return;
         }
-        if(wbuffof < writelen){
-            int len = Min(guest->bufleft(this), writelen-wbuffof);
-            if (len <= 0) {
-                LOGE("The guest's write buff is full\n");
-                guest->wait(this);
-                return;
+        int len = Min(guest->bufleft(this), leftsize);
+        if (len <= 0) {
+            LOGE("The guest's write buff is full\n");
+            guest->wait(this);
+            return;
+        }
+        char *buff =  (char *)malloc(len);
+        len = read(ffd, buff, len);
+        if (len <= 0) {
+            if (showerrinfo(len, "file read error")) {
+                clean(READ_ERR, this);
             }
-            len = guest->Write(wbuff + wbuffof, len, this);
-            wbuffof  += len;
-            leftsize -= len;
+            free(buff);
+            return;
         }else{
-            int len = Min(sizeof(wbuff), leftsize);
-            len = read(ffd, wbuff, len);
-            if (len <= 0) {
-                if (showerrinfo(len, "file read error")) {
-                    clean(READ_ERR, this);
-                }
-                return;
-            }
-            wbuffof  = 0;
-            writelen = len;
+            leftsize -= guest->Write(buff, len, this);
         }
     }
     if (events & EPOLLOUT) {

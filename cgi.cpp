@@ -63,33 +63,30 @@ ssize_t Cgi::Write(const void *buff, size_t size, Peer* who, uint32_t id) {
     Guest *guest = dynamic_cast<Guest *>(who);
     if(idmap.count(std::make_pair(guest, id))){
         uint32_t id = idmap.at(std::make_pair(guest, id));
-        CGI_Header header;
-        memset(&header, 0, sizeof(header));
-        size = Min(size, bufleft(guest));
-        header.type = CGI_DATA;
-        header.requestId = htonl(id);
-        header.contentLength = htons(size);
-        SendFrame(&header, 0);
-        return Peer::Write(buff, size, this);
+        CGI_Header *header = (CGI_Header *)malloc(sizeof(CGI_Header) + size);
+        memset(header, 0, sizeof(CGI_Header));
+        header->type = CGI_DATA;
+        header->requestId = htonl(id);
+        header->contentLength = htons(size);
+        memcpy(header+1, buff, size);
+        return Peer::Write(header, sizeof(CGI_Header) + size, this);
     }else{
         who->clean(PEER_LOST_ERR, this, id);
         return -1;
     }
 }
 
-CGI_Header* Cgi::SendFrame(const CGI_Header *header, size_t addlen)
+/*
+void Cgi::SendFrame(CGI_Header *header, size_t len)
 {
-    size_t len = sizeof(CGI_Header) + addlen;
-    CGI_Header *frame = (CGI_Header *)malloc(len);
-    memcpy(frame, header, len);
-    framequeue.push_back(frame);
+    write_block wb={header, len, 0};
+    write_list.push_back(wb);
     
     struct epoll_event event;
     event.data.ptr = this;
     event.events = EPOLLIN | EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    return frame;
-}
+}*/
 
 
 int Cgi::showerrinfo(int ret, const char* s) {
@@ -185,7 +182,7 @@ void Cgi::InProc() {
                }
             }
 send:
-            SendFrame(header, ntohs(header->contentLength));
+            Peer::Write((const void *)header, sizeof(CGI_Header) + ntohs(header->contentLength), this);
             status = WaitHeadr;
             cgi_getlen = 0;
             break;
@@ -220,20 +217,11 @@ send:
     InProc();
 }
 
+
+/*
 int Cgi::OutProc() {
-    if (dataleft && writelen){ //先将data帧的数据写完
-        int len = Min(writelen, dataleft);
-        int ret = Peer::Write(wbuff, len);
-        if(ret>0){
-            memmove(wbuff, wbuff + ret, writelen - ret);
-            writelen -= ret;
-            dataleft -= ret;
-            if(ret != len){
-                return 1;
-            }
-        }else { 
-            return ret;
-        }
+    if (write_list.empty()){ //先将data帧的数据写完
+        return Peer::Write();
     }
     if(dataleft == 0 && !framequeue.empty()){  //data帧已写完
         do{
@@ -264,7 +252,7 @@ int Cgi::OutProc() {
         }while(!framequeue.empty());
     }
     return (dataleft == 0 && framequeue.empty()) ? 2 : 1;
-}
+}*/
 
 
 
@@ -273,7 +261,7 @@ void Cgi::defaultHE(uint32_t events) {
         InProc();
     }
     if (events & EPOLLOUT) {
-        int ret = OutProc();
+        int ret = Peer::Write();
         if(ret){ 
             for(auto i: waitlist){
                 i->writedcb(this);
@@ -282,13 +270,6 @@ void Cgi::defaultHE(uint32_t events) {
         }else if(ret <= 0 && showerrinfo(ret, "cgi write error")) {
             clean(WRITE_ERR, this);
             return;
-        }
-
-        if (ret == 2) {
-            struct epoll_event event;
-            event.data.ptr = this;
-            event.events = EPOLLIN;
-            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
         }
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
@@ -317,8 +298,8 @@ void Cgi::Request(HttpReqHeader& req, Guest* guest){
     connect(guest, this);
     req.cgi_id = curid++;
     idmap.insert(std::make_pair(guest, req.http_id), req.cgi_id);
-    char buff[CGI_LEN_MAX];
-    SendFrame((CGI_Header *)buff, req.getcgi(buff));
+    CGI_Header *header = req.getcgi();
+    Peer::Write(header, sizeof(CGI_Header) + ntohs(header->contentLength), this);
 }
 
 void Cgi::wait(Peer *who) {
@@ -414,6 +395,12 @@ void addcookie(HttpResHeader &res, const Cookie &cookie){
     res.add("Set-Cookie", cookiestream.str().c_str());
 }
 
+int cgi_response(int fd, const HttpResHeader &res){
+    CGI_Header *header = res.getcgi();
+    int ret = write(fd, header, sizeof(CGI_Header) + ntohs(header->contentLength));
+    free(header);
+    return ret;
+}
 
 int cgi_write(int fd, uint32_t id, const void *buff, size_t len) {
     CGI_Header header;

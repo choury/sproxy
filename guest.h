@@ -27,7 +27,7 @@ public:
     virtual ~Guest();
     virtual ssize_t Write(const void* buff, size_t size, Peer* who, uint32_t id=0)override;
     virtual void Response(HttpResHeader& res, Peer* who);
-    virtual int showstatus(char *buff, Peer* who)override;
+//    virtual int showstatus(char *buff, Peer* who)override;
 };
 
 #endif

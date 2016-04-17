@@ -205,6 +205,7 @@ Proxy::~Proxy() {
     }
 }
 
+/*
 int Proxy::showstatus(char* buff, Peer*){
     int len;
     len = sprintf(buff, "%s ##(proxy)", req.url);
@@ -225,4 +226,4 @@ int Proxy::showstatus(char* buff, Peer*){
     len += sprintf(buff+len, " %s\r\n", status);
     return len;
 }
-
+*/

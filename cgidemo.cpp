@@ -22,7 +22,7 @@ int cgimain(int fd){
             cookie.path = "/";
             cookie.domain = ".choury.com";
             addcookie(res, cookie);
-            write(fd, buff, sizeof(CGI_Header) + res.getcgi(buff));
+            cgi_response(fd, res);
             for(auto i:params){
                 char buff[1024];
                 cgi_write(fd,res.cgi_id, buff, sprintf(buff, "%s =====> %s\n", i.first.c_str(), i.second.c_str()));

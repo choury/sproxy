@@ -433,7 +433,7 @@ void HttpReqHeader::getfile() {
 }
 
 
-bool HttpReqHeader::ismethod(const char* method) {
+bool HttpReqHeader::ismethod(const char* method) const{
     return strcmp(this->method, method) == 0;
 }
 
@@ -468,41 +468,41 @@ std::set< string > HttpReqHeader::getall(const char *header) const{
 }
 
 
-int HttpReqHeader::getstring(void* outbuff) {
-    char *buff = (char *)outbuff;
-    int p = 0;
+char *HttpReqHeader::getstring(size_t &len) const{
+    char *buff = (char *)malloc(16384);
+    len = 0;
     if (checkproxy(hostname)) {
-        p += sprintf(buff+p, "%s %s HTTP/1.1" CRLF, method, url);
+        len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, url);
     } else {
         if (strcmp(method, "CONNECT") == 0 || strcmp(method, "SEND") == 0) {
             return 0;
         }
         if (get("Host") == nullptr && hostname[0] == 0) {
-            p += sprintf(buff, "%s %s HTTP/1.0" CRLF, method, path);
+            len += sprintf(buff, "%s %s HTTP/1.0" CRLF, method, path);
             
         }else{
-            p += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, path);
+            len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, path);
         }
     }
     
     if(get("Host") == nullptr && hostname[0]){
         char buff[DOMAINLIMIT];
         snprintf(buff, sizeof(buff), "%s:%d", hostname, port);
-        headers.insert("Host", buff);
+        len += sprintf(buff + len, "Host: %s" CRLF, buff);
     }
 
     for (auto i : headers) {
-        p += sprintf(buff + p, "%s: %s" CRLF,
+        len += sprintf(buff + len, "%s: %s" CRLF,
                 i.first.c_str(), i.second.c_str());
     }
 
-    sprintf(buff + p, CRLF);
-    return p + strlen(CRLF);
+    len += sprintf(buff + len, CRLF);
+    return buff;
 }
 
 
-int HttpReqHeader::getframe(void* outbuff, Index_table *index_table) {
-    Http2_header *header = (Http2_header *)outbuff;
+Http2_header *HttpReqHeader::getframe(Index_table *index_table) const{
+    Http2_header *header = (Http2_header *)malloc(16384);
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F;
@@ -524,7 +524,6 @@ int HttpReqHeader::getframe(void* outbuff, Index_table *index_table) {
         snprintf(authority, sizeof(authority), "%s:%d", hostname, port);
         p += index_table->hpack_encode(p, ":authority" ,authority);
     }
-    del("host");
     
     if(!ismethod("CONNECT") && !ismethod("SEND")){
         p += index_table->hpack_encode(p, ":scheme", "http");
@@ -533,12 +532,12 @@ int HttpReqHeader::getframe(void* outbuff, Index_table *index_table) {
     p += index_table->hpack_encode(p, headers);
     
     set24(header->length, p-(char *)(header + 1));
-    return get24(header->length);
+    return header;
 }
 
 
-int HttpReqHeader::getcgi(void *outbuff) {
-    CGI_Header *cgi = (CGI_Header *)(outbuff);
+CGI_Header *HttpReqHeader::getcgi() const{
+    CGI_Header *cgi = (CGI_Header *)malloc(16384);
     cgi->type = CGI_REQUEST;
     cgi->requestId = htonl(cgi_id);
     
@@ -549,7 +548,7 @@ int HttpReqHeader::getcgi(void *outbuff) {
         p = cgi_addnv(p, i.first, i.second);
     }
     cgi->contentLength = htons(p - (char *)(cgi + 1));
-    return ntohs(cgi->contentLength);
+    return cgi;
 }
 
 
@@ -640,25 +639,26 @@ std::set< string > HttpResHeader::getall(const char *header) const{
 }
 
 
-int HttpResHeader::getstring(void *outbuff) {
-    int p = 0;
+char * HttpResHeader::getstring(size_t &len) const{
+    char * buff = (char *)malloc(16384);
+    len = 0;
     if(get("Content-Length") || get("Transfer-Encoding")){
-        p += sprintf((char *)outbuff, "HTTP/1.1 %s" CRLF, status);
+        len += sprintf(buff, "HTTP/1.1 %s" CRLF, status);
     }else {
-        p += sprintf((char *)outbuff, "HTTP/1.0 %s" CRLF, status);
+        len += sprintf(buff, "HTTP/1.0 %s" CRLF, status);
     }
     for (auto i : headers) {
-        p += sprintf((char *)outbuff + p, "%s: %s" CRLF,
+        len += sprintf(buff + len, "%s: %s" CRLF,
                 i.first.c_str(), i.second.c_str());
     }
 
-    p += sprintf((char *)outbuff + p, CRLF);
-    return p;
+    len += sprintf(buff + len, CRLF);
+    return buff;
 }
 
 
-int HttpResHeader::getframe(void* outbuff, Index_table* index_table) {
-    Http2_header *header = (Http2_header *)outbuff;
+Http2_header *HttpResHeader::getframe(Index_table* index_table) const{
+    Http2_header *header = (Http2_header *)malloc(16384);
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F;
@@ -671,11 +671,11 @@ int HttpResHeader::getframe(void* outbuff, Index_table* index_table) {
     p += index_table->hpack_encode(p, headers);
     
     set24(header->length, p-(char *)(header + 1));
-    return get24(header->length);
+    return header;
 }
 
-int HttpResHeader::getcgi(void *outbuff) {
-    CGI_Header *cgi = (CGI_Header *)(outbuff);
+CGI_Header *HttpResHeader::getcgi()const {
+    CGI_Header *cgi = (CGI_Header *)malloc(16384);
     cgi->type = CGI_RESPONSE;
     cgi->requestId = htonl(cgi_id);
     
@@ -685,7 +685,7 @@ int HttpResHeader::getcgi(void *outbuff) {
         p = cgi_addnv(p, i.first, i.second);
     }
     cgi->contentLength = htons(p - (char *)(cgi + 1));
-    return ntohs(cgi->contentLength);
+    return cgi;
 }
 
 

@@ -5,8 +5,6 @@
 #include "http2.h"
 #include "binmap.h"
 
-#include <queue>
-
 class Guest_s2: public Guest_s, public Http2Res{
     binmap<Peer *, int> idmap;
     std::set<Peer *> waitlist;
@@ -14,7 +12,7 @@ class Guest_s2: public Guest_s, public Http2Res{
     virtual ssize_t Read(void *buff, size_t size)override;
     virtual ssize_t Write(const void *buff, size_t size)override;
     virtual ssize_t Write(const void *buff, size_t size, Peer *who, uint32_t id=0)override;
-    virtual Http2_header* SendFrame(const Http2_header *header, size_t addlen)override;
+    virtual void SendFrame(Http2_header *header)override;
     virtual void GoawayProc(Http2_header *header)override;
     virtual void Response(HttpResHeader& res, Peer *who)override;
     virtual void DataProc(Http2_header *header)override;
@@ -30,7 +28,7 @@ public:
     virtual int32_t bufleft(Peer*)override;
     virtual void wait(Peer *who)override;
     virtual void writedcb(Peer *who)override;
-    virtual int showstatus(char *buff, Peer *who)override;
+//    virtual int showstatus(char *buff, Peer *who)override;
 };
 
 #endif
