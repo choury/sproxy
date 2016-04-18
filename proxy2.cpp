@@ -57,10 +57,10 @@ void Proxy2::SendFrame(Http2_header *header){
 
 
 int32_t Proxy2::bufleft(Peer* peer) {
-    int32_t windowsize = this->windowsize;
     if(peer)
-         windowsize = Min(peer->windowsize, windowsize);
-    return Min(windowsize, Peer::bufleft(peer));
+        return Min(peer->windowsize, this->windowsize);
+    else
+        return this->windowsize;
 }
 
 
@@ -241,12 +241,10 @@ void Proxy2::wait(Peer *who) {
 void Proxy2::writedcb(Peer *who){
     Guest *guest = dynamic_cast<Guest*>(who);
     if(idmap.count(guest)){
-        if(guest->bufleft(this) > 512*1024){
-            size_t len = Min(512*1024 - guest->windowleft, guest->bufleft(this) - 512*1024);
-            if(len < 10240)
-                return;
-            guest->windowleft += ExpandWindowSize(idmap.at(guest), len);
-        }
+        size_t len = 512*1024 - guest->windowleft;
+        if(len < 10240)
+            return;
+        guest->windowleft += ExpandWindowSize(idmap.at(guest), len);
     }
 }
 

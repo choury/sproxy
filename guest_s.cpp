@@ -33,25 +33,6 @@ ssize_t Guest_s::Write(const void *buff, size_t size) {
     return SSL_write(ssl, buff, size);
 }
 
-void Guest_s::shakedhand() {
-    epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    handleEvent = (void (Con::*)(uint32_t))&Guest_s::defaultHE;
-
-    const unsigned char *data;
-    unsigned int len;
-    SSL_get0_alpn_selected(ssl, &data, &len);
-    if (data) {
-        if (strncasecmp((const char*)data, "h2", len) == 0) {
-            new Guest_s2(this);
-            delete this;
-            return;
-        }
-    }
-}
-
 
 int Guest_s::showerrinfo(int ret, const char* s) {
     if(ret<=0) {
@@ -112,7 +93,20 @@ void Guest_s::shakehandHE(uint32_t events) {
                 clean(SSL_SHAKEHAND_ERR, this);
             }
         } else {
-            shakedhand();
+            epoll_event event;
+            event.data.ptr = this;
+            event.events = EPOLLIN;
+            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            handleEvent = (void (Con::*)(uint32_t))&Guest_s::defaultHE;
+
+            const unsigned char *data;
+            unsigned int len;
+            SSL_get0_alpn_selected(ssl, &data, &len);
+            if (data && strncasecmp((const char*)data, "h2", len) == 0) {
+                new Guest_s2(this);
+                delete this;
+                return;
+            }
         }
     } 
 }

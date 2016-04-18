@@ -227,8 +227,10 @@ void Guest_s2::clean(uint32_t errcode, Peer *who, uint32_t id) {
 }
 
 int32_t Guest_s2::bufleft(Peer *peer) {
-    int32_t windowsize = Min(peer->windowsize, this->windowsize);
-    return Min(windowsize, Peer::bufleft(peer));
+    if(peer)
+        return Min(peer->windowsize, this->windowsize);
+    else
+        return this->windowsize;
 }
 
 void Guest_s2::wait(Peer *who){
@@ -238,12 +240,10 @@ void Guest_s2::wait(Peer *who){
 
 void Guest_s2::writedcb(Peer *who){
     if(idmap.count(who)){
-        if(who->bufleft(this) > 512*1024){
-            size_t len = Min(512*1024 - who->windowleft, who->bufleft(this) - 512*1024);
-            if(len < 10240)
-                return;
-            who->windowleft += ExpandWindowSize(idmap.at(who), len);
-        }
+        size_t len = 512*1024 - who->windowleft;
+        if(len < 10240)
+            return;
+        who->windowleft += ExpandWindowSize(idmap.at(who), len);
     }
 }
 

@@ -187,13 +187,6 @@ void Proxy::shakehandHE(uint32_t events) {
     }
 }
 
-int32_t Proxy::bufleft(Peer *){
-    if(handleEvent == &Proxy::defaultHE)
-        return Peer::bufleft(this);
-    return 0;
-}
-
-
 Proxy::~Proxy() {
     if (ssl) {
         SSL_shutdown(ssl);

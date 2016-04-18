@@ -17,11 +17,10 @@ struct write_block{
 
 
 class Peer:public Con{
+    size_t  writelen = 0;
+    std::queue<write_block> write_queue;
 protected:
     int fd;
-//    size_t  writelen = 0;
-//    char wbuff[1024 * 1024];
-    std::queue<write_block> write_queue;
     explicit Peer(int fd = 0);
     virtual ssize_t Read(void *buff, size_t size);
     virtual ssize_t Write(const void *buff, size_t size);

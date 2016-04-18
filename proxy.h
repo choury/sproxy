@@ -18,7 +18,6 @@ public:
     Proxy(HttpReqHeader &req, Guest *guest);
     Proxy(Proxy *const copy);
     virtual ~Proxy();
-    int32_t bufleft(Peer *)override;
 //    virtual int showstatus(char *buff, Peer *who)override;
     static Host *getproxy(HttpReqHeader &req, Guest *guest);
 };
