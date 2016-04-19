@@ -64,6 +64,7 @@ ssize_t Peer::Write(const void* buff, size_t size) {
 }
 
 int Peer::Write() {
+    bool writed = false;
     while(!write_queue.empty()){
         write_block *wb = &write_queue.front();
         ssize_t ret = Write((char *)wb->buff + wb->wlen, wb->len - wb->wlen);
@@ -72,13 +73,14 @@ int Peer::Write() {
             return ret;
         }
 
+        writed = true;
         writelen -= ret;
         if ((size_t)ret + wb->wlen == wb->len) {
             free(wb->buff);
             write_queue.pop();
         } else {
             wb->wlen += ret;
-            return 1;
+            return WRITE_INCOMP;
         }
     }
 
@@ -86,11 +88,11 @@ int Peer::Write() {
     event.data.ptr = this;
     event.events = EPOLLIN;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    return 2;
+    return writed ? WRITE_COMPLETE : WRITE_NOTHING;
 }
 
 void Peer::writedcb(Peer *) {
-    if (fd > 0 && !write_queue.empty()) {
+    if (fd > 0) {
         struct epoll_event event;
         event.data.ptr = this;
         event.events = EPOLLIN | EPOLLOUT;

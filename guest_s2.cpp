@@ -76,7 +76,7 @@ void Guest_s2::DataProc(Http2_header* header) {
             LOGE("(%s:[%d]):[%d] window size error\n", sourceip, sourceport, id);
             return;
         }
-        host->Write(header+1, len, this, id);
+        host->Write((const void *)(header+1), len, this, id);
         host->localwinsize -= len;
         localwinsize -= len;
     }else{

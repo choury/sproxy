@@ -9,6 +9,10 @@
 /* guest   ---   (client) --- host(proxy)
  * guest_s ---   (server) --- host/file/cgi */
 
+#define WRITE_NOTHING     1
+#define WRITE_INCOMP      2
+#define WRITE_COMPLETE    3
+
 struct write_block{
     void * buff;
     size_t len;

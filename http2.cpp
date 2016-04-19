@@ -86,7 +86,7 @@ void Http2Base::SendFrame(Http2_header *header) {
         i = j.base();
         break;
     }
-    if(!framequeue.empty() && i == framequeue.begin() && framequeue.front().wlen)
+    if(!framequeue.empty() && i == framequeue.begin()) //jump the first frame to avoid ssl invalid write retry error
         ++i;
     Http2_frame frame={header, 0};
     framequeue.insert(i, frame);

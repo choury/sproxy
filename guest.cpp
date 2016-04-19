@@ -94,8 +94,9 @@ void Guest::defaultHE(uint32_t events) {
             }
             return;
         }
-        if (Peer *peer = queryconnect(this))
-            peer->writedcb(this);
+        Peer *host;
+        if (ret != WRITE_NOTHING && (host = queryconnect(this)))
+            host->writedcb(this);
 
     }
 }

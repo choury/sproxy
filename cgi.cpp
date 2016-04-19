@@ -262,7 +262,7 @@ void Cgi::defaultHE(uint32_t events) {
     }
     if (events & EPOLLOUT) {
         int ret = Peer::Write();
-        if(ret > 0){
+        if(ret > 0 && ret != WRITE_NOTHING){
             for(auto i: waitlist){
                 i->writedcb(this);
             }

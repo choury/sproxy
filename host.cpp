@@ -52,7 +52,6 @@ int Host::showerrinfo(int ret, const char* s) {
 
 
 void Host::waitconnectHE(uint32_t events) {
-    connectmap.erase(this);
     Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
     if (guest == nullptr) {
         destory();
@@ -91,6 +90,7 @@ void Host::waitconnectHE(uint32_t events) {
             guest->Response(res, this);
         }
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
+        connectmap.erase(this);
     }
     return;
 reconnect:
@@ -129,14 +129,15 @@ void Host::defaultHE(uint32_t events) {
             }
             return;
         }
-        guest->writedcb(this);
+        if(ret != WRITE_NOTHING)
+            guest->writedcb(this);
     }
 }
 
 void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
+    connectmap[host]=time(NULL);
     if (rcd.result != 0) {
         LOGE("Dns query failed: %s\n", host->hostname);
-        connectmap[host]=time(NULL);
     } else {
         host->addrs = rcd.addrs;
         for (size_t i = 0; i < host->addrs.size(); ++i) {
@@ -147,10 +148,12 @@ void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
 }
 
 int Host::connect(){
+    connectmap[this]=time(NULL);
     if(udp_mode){
         return connect_udp();
+    }else{
+        return connect_tcp();
     }
-    return connect_tcp();
 }
 
 int Host::connect_tcp() {
@@ -164,7 +167,6 @@ int Host::connect_tcp() {
             RcdDown(hostname, addrs[testedaddr-1]);
         }
         fd = Connect(&addrs[testedaddr++], SOCK_STREAM);
-        connectmap[this]=time(NULL);
         if (fd < 0) {
             LOGE("connect to %s failed\n", this->hostname);
             return connect();
@@ -218,8 +220,12 @@ void Host::destory() {
         guest->Response(res, this);
     }
     clean(CONNECT_ERR, this);
-    connectmap.erase(this);
     delete this;
+}
+
+
+Host::~Host(){
+    connectmap.erase(this);
 }
 
 
@@ -297,7 +303,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 void hosttick() {
     for(auto i = connectmap.begin();i != connectmap.end();){
         Host *host = (Host *)(i->first);
-        if(host && time(NULL) - i->second >= 30 && host->connect() < 0){
+        if(time(NULL) - i->second >= 30 && host->connect() < 0){
             connectmap.erase(i++);
             LOGE("connect to %s time out.\n", host->hostname);
             host->destory();

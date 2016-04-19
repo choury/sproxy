@@ -42,6 +42,8 @@ extern char SHOST[];
                      }while(0);
 #define NDEBUG
 #else
+#define MALLOC_CHECK_ 1
+
 #define  LOG(...)  fprintf(stdout, __VA_ARGS__)
 #define  LOGE(...)   do{\
                         char tmp[1024]; \

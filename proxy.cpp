@@ -7,7 +7,8 @@ extern std::map<Host*,time_t> connectmap;
 
 Proxy::Proxy(HttpReqHeader &req, Guest *guest):Host(req, guest, SHOST, SPORT) {}
 
-Proxy::Proxy(Proxy *const copy):Host(copy->fd), ssl(copy->ssl), ctx(copy->ctx) {
+Proxy::Proxy(Proxy *const copy): ssl(copy->ssl), ctx(copy->ctx) {
+    this->fd = copy->fd;
     copy->fd  = 0;
     copy->ssl = nullptr;
     copy->ctx = nullptr;
@@ -86,7 +87,6 @@ static const unsigned char alpn_protos_string[] =
 
 
 void Proxy::waitconnectHE(uint32_t events) {
-    connectmap.erase(this);
     Guest *guest = (Guest *)queryconnect(this);
     if (guest == nullptr) {
         destory();
@@ -135,6 +135,7 @@ void Proxy::waitconnectHE(uint32_t events) {
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
 
         handleEvent = (void (Con::*)(uint32_t))&Proxy::shakehandHE;
+        connectmap.erase(this);
     }
     return;
 reconnect:
