@@ -7,7 +7,7 @@ extern std::map<Host*,time_t> connectmap;
 
 Proxy::Proxy(HttpReqHeader &req, Guest *guest):Host(req, guest, SHOST, SPORT) {}
 
-Proxy::Proxy(Proxy *const copy): ssl(copy->ssl), ctx(copy->ctx) {
+Proxy::Proxy(Proxy *const copy):Host(copy->fd), ssl(copy->ssl), ctx(copy->ctx) {
     this->fd = copy->fd;
     copy->fd  = 0;
     copy->ssl = nullptr;
