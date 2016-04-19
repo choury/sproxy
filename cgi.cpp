@@ -288,12 +288,6 @@ void Cgi::clean(uint32_t errcode, Peer* who, uint32_t id) {
     waitlist.erase(guest);
 }
 
-
-void Cgi::closeHE(uint32_t events){
-    delete this;
-}
-
-
 void Cgi::Request(HttpReqHeader& req, Guest* guest){
     connect(guest, this);
     req.cgi_id = curid++;

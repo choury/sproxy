@@ -47,8 +47,8 @@ ssize_t Guest_s2::Write(const void *buff, size_t size, Peer *who, uint32_t id)
     }
     memcpy(header+1, buff, size);
     SendFrame(header);
-    this->windowsize -= size;
-    who->windowsize -= size;
+    this->remotewinsize -= size;
+    who->remotewinsize -= size;
     return size;
 }
 
@@ -77,8 +77,8 @@ void Guest_s2::DataProc(Http2_header* header) {
             return;
         }
         host->Write(header+1, len, this, id);
-        host->windowleft -= len;
-        windowleft -= len;
+        host->localwinsize -= len;
+        localwinsize -= len;
     }else{
         Reset(get32(header->id), ERR_STREAM_CLOSED);
     }
@@ -87,23 +87,20 @@ void Guest_s2::DataProc(Http2_header* header) {
 void Guest_s2::ReqProc(HttpReqHeader &req)
 {
     LOG("([%s]:%d):[%d] %s %s\n", sourceip, sourceport, req.http_id, req.method, req.url);
+    Peer *peer;
     if(!checklocal(req.hostname)){
-        Host *host = new Host(req, this);
-        host->windowsize = initalframewindowsize;
-        host->windowleft = 512 *1024;
-        idmap.insert(host, req.http_id);
+        peer = new Host(req, this);
     }else {
         req.getfile();
-        Peer *peer;
         if (endwith(req.filename,".so")) {
             peer = Cgi::getcgi(req, this);
         } else {
             peer = File::getfile(req,this);
         }
-        peer->windowsize = initalframewindowsize;
-        peer->windowleft = 512 *1024;
-        idmap.insert(peer, req.http_id);
     }
+    peer->remotewinsize = remoteframewindowsize;
+    peer->localwinsize = localframewindowsize;
+    idmap.insert(peer, req.http_id);
 }
 
 
@@ -140,8 +137,8 @@ void Guest_s2::defaultHE(uint32_t events)
     
     if (events & EPOLLIN) {
         (this->*Http2_Proc)();
-        if(windowleft < 50 *1024 *1024){
-            windowleft += ExpandWindowSize(0, 50*1024*1024);
+        if(localwinsize < 50 *1024 *1024){
+            localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
     }
 
@@ -187,12 +184,12 @@ void Guest_s2::WindowUpdateProc(uint32_t id, uint32_t size) {
     if(id){
         if(idmap.count(id)){
             Peer *peer = idmap.at(id);
-            peer->windowsize += size;
+            peer->remotewinsize += size;
             peer->writedcb(this);
             waitlist.erase(peer);
         }
     }else{
-        windowsize += size;
+        remotewinsize += size;
     }
 }
 
@@ -207,7 +204,7 @@ void Guest_s2::ErrProc(int errcode) {
 
 void Guest_s2::AdjustInitalFrameWindowSize(ssize_t diff) {
     for(auto&& i: idmap.pairs()){
-       i.first->windowsize += diff; 
+       i.first->remotewinsize += diff; 
     }
 }
 
@@ -228,9 +225,9 @@ void Guest_s2::clean(uint32_t errcode, Peer *who, uint32_t id) {
 
 int32_t Guest_s2::bufleft(Peer *peer) {
     if(peer)
-        return Min(peer->windowsize, this->windowsize);
+        return Min(peer->remotewinsize, this->remotewinsize);
     else
-        return this->windowsize;
+        return this->remotewinsize;
 }
 
 void Guest_s2::wait(Peer *who){
@@ -240,32 +237,32 @@ void Guest_s2::wait(Peer *who){
 
 void Guest_s2::writedcb(Peer *who){
     if(idmap.count(who)){
-        size_t len = 512*1024 - who->windowleft;
-        if(len < 10240)
+        size_t len = localframewindowsize - who->localwinsize;
+        if(len < localframewindowsize/2)
             return;
-        who->windowleft += ExpandWindowSize(idmap.at(who), len);
+        who->localwinsize += ExpandWindowSize(idmap.at(who), len);
     }
 }
 
 /*
 int Guest_s2::showstatus(char *buff, Peer *who) {
     int wlen,len=0;
-    sprintf(buff, "Guest_s2([%s]:%d) buffleft:%d: windowsize: %d, windowleft: %d\n%n",
-                   sourceip, sourceport, (int32_t)(sizeof(wbuff)-writelen), windowsize, windowleft, &wlen);
+    sprintf(buff, "Guest_s2([%s]:%d) buffleft:%d: remotewinsize: %d, localwinsize: %d\n%n",
+                   sourceip, sourceport, (int32_t)(sizeof(wbuff)-writelen), remotewinsize, localwinsize, &wlen);
     len += wlen;
     for(auto&& i: idmap.pairs()){
         Peer *peer = i.first;
-        sprintf(buff+len,"[%d] buffleft:%d: windowsize: %d, windowleft:%d : %n",
-                i.second, peer->bufleft(this), peer->windowsize, peer->windowleft, &wlen);
+        sprintf(buff+len,"[%d] buffleft:%d: remotewinsize: %d, localwinsize:%d : %n",
+                i.second, peer->bufleft(this), peer->remotewinsize, peer->localwinsize, &wlen);
         len += wlen;
         len += i.first->showstatus(buff+len, this);
     }
     sprintf(buff+len, "waitlist:\r\n%n", &wlen);
     len += wlen;
     for(auto i:waitlist){
-        sprintf(buff+len, "[%d] buffleft(%d): windowsize: %d, windowleft: %d\r\n%n",
+        sprintf(buff+len, "[%d] buffleft(%d): remotewinsize: %d, localwinsize: %d\r\n%n",
                 idmap.at(i), i->bufleft(this),
-                i->windowsize, i->windowleft, &wlen);
+                i->remotewinsize, i->localwinsize, &wlen);
         len += wlen;
     }
     sprintf(buff+len, "\r\n%n", &wlen);

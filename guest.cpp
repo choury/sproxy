@@ -100,16 +100,6 @@ void Guest::defaultHE(uint32_t events) {
     }
 }
 
-void Guest::closeHE(uint32_t events) {
-    int ret = Peer::Write();
-    if (ret == 2 ||
-        (ret <= 0 && showerrinfo(ret, "write error while closing"))) {
-        delete this;
-        return;
-    }
-}
-
-
 ssize_t Guest::Read(void* buff, size_t len){
     return Peer::Read(buff, len);
 }

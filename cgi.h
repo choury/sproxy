@@ -45,7 +45,6 @@ class Cgi:public Peer{
     binmap<std::pair<Guest *, uint32_t>, uint32_t> idmap;
     std::set<Peer *> waitlist;
     virtual void defaultHE(uint32_t events);
-    virtual void closeHE(uint32_t events)override;
     enum {WaitHeadr,
           WaitBody,
           HandleRes,

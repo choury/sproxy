@@ -22,7 +22,6 @@ protected:
     virtual void destory();
     virtual void waitconnectHE(uint32_t events);
     virtual void defaultHE(uint32_t events);
-    virtual void closeHE(uint32_t events)override;
     
     virtual ssize_t Read(void* buff, size_t len)override;
     virtual void ErrProc(int errcode)override;

@@ -67,6 +67,7 @@ struct Setting_Frame{
 
 #define FRAMEBODYLIMIT 16384
 #define FRAMELENLIMIT FRAMEBODYLIMIT+sizeof(Http2_header) 
+#define localframewindowsize  (1024*1024)
 
 struct Http2_frame{
     Http2_header *header;
@@ -77,7 +78,7 @@ class Http2Base{
 protected:
     char http2_buff[FRAMELENLIMIT];
     uint32_t http2_getlen = 0;
-    uint32_t initalframewindowsize = 65535; //由对端初始化的初始frame的窗口大小
+    uint32_t remoteframewindowsize = 65535; //由对端初始化的初始frame的窗口大小
     Index_table request_table;
     Index_table response_table;
     std::list<Http2_frame> framequeue;

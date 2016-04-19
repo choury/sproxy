@@ -272,10 +272,9 @@ void File::defaultHE(uint32_t events) {
 }
 
 
-void File::closeHE(uint32_t events) {
+File::~File() {
     if (ffd > 0) {
         close(ffd);
     }
-    delete this;
 }
 

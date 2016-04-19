@@ -179,6 +179,19 @@ void Peer::clean(uint32_t errcode, Peer* who, uint32_t) {
     }
 }
 
+void Peer::closeHE(uint32_t events){
+    if (write_queue.empty()){
+        delete this;
+        return;
+    }
+
+    int ret = Write();
+    if (ret <= 0 && showerrinfo(ret, "write error while closing")) {
+        delete this;
+        return;
+    }
+}
+
 void Peer::wait(Peer *who) {
     epoll_ctl(efd, EPOLL_CTL_DEL, who->fd, NULL);
 }

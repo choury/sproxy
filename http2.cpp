@@ -132,8 +132,8 @@ void Http2Base::SettingsProc(Http2_header* header) {
                 response_table.set_dynamic_table_size_limit(get32(sf->value));
                 break;
             case SETTINGS_INITIAL_WINDOW_SIZE:
-                AdjustInitalFrameWindowSize(get32(sf->value) - initalframewindowsize);
-                initalframewindowsize = get32(sf->value);
+                AdjustInitalFrameWindowSize(get32(sf->value) - remoteframewindowsize);
+                remoteframewindowsize = get32(sf->value);
                 break;
             default:
                 LOG("Get a unkown setting(%d): %d\n", get16(sf->identifier), get32(sf->value));
@@ -194,7 +194,7 @@ void Http2Base::SendInitSetting() {
     Http2_header *header = (Http2_header *)malloc(sizeof(Http2_header) + sizeof(Setting_Frame));
     Setting_Frame *sf = (Setting_Frame *)(header+1);
     set16(sf->identifier, SETTINGS_INITIAL_WINDOW_SIZE);
-    set32(sf->value, 512 * 1024);
+    set32(sf->value, localframewindowsize);
     memset(header, 0, sizeof(Http2_header));
     set24(header->length, sizeof(Setting_Frame));
     header->type = SETTINGS_TYPE;

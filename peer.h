@@ -25,11 +25,11 @@ protected:
     virtual ssize_t Read(void *buff, size_t size);
     virtual ssize_t Write(const void *buff, size_t size);
     virtual int Write();
-    virtual void closeHE(uint32_t events) = 0;
+    virtual void closeHE(uint32_t events);
 public:
     virtual ~Peer();
-    int32_t windowsize = 65535; //(for http2) 对端提供的窗口大小，发送时减小，收到对段update时增加
-    int32_t windowleft = 65535; //(for http2) 发送给对端的窗口大小，接受时减小，给对端发送update时增加
+    int32_t remotewinsize = 65535; //(for http2) 对端提供的窗口大小，发送时减小，收到对段update时增加
+    int32_t localwinsize = 65535; //(for http2) 发送给对端的窗口大小，接受时减小，给对端发送update时增加
     virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0);
     virtual ssize_t Write(const void *buff, size_t size, Peer*, uint32_t id = 0);
     virtual ssize_t Write(void *buff, size_t size, Peer*, uint32_t id = 0);

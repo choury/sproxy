@@ -23,9 +23,9 @@ class File:public Peer{
     Range range;
     virtual void openHE(uint32_t events);
     virtual void defaultHE(uint32_t events);
-    virtual void closeHE(uint32_t events)override;
 public:
     File(HttpReqHeader &req, Guest* guest);
+    ~File();
     static File *getfile(HttpReqHeader &req, Guest *guest);
     int showerrinfo(int ret, const char *s)override;
 };
