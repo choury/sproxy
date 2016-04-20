@@ -202,6 +202,8 @@ const char *getlocalip ()
     getifaddrs (&ifap);
     int i = 0;
     for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
+        if(ifa->ifa_addr == NULL)
+            continue;
         if(ifa->ifa_addr->sa_family == AF_INET6){
             struct sockaddr_in6 *sa = (struct sockaddr_in6 *) ifa->ifa_addr;
             inet_ntop(AF_INET6, &sa->sin6_addr, ips[i], sizeof(ips[0]));
