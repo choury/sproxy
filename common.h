@@ -14,6 +14,7 @@ extern uint16_t SPORT;
 extern uint16_t CPORT;
 
 extern char SHOST[];
+extern char *auth_string;
 
 #define Min(x, y) ((int64_t)(x) < (int64_t)(y)?(x):(y))
 
@@ -136,6 +137,7 @@ char* strnstr(const char* s1, const char* s2, size_t len);
 int endwith(const char *s1, const char *s2);
 int URLEncode(const char* src, char *des);
 int URLDecode(const char* src, char *des);
+void Base64Encode(const char *src, size_t len, char *dst);
 void hosttick();
 void dnstick();
 void proxy2tick();

@@ -25,7 +25,7 @@ static unordered_set<string> proxylist;
 static unordered_set<string> blocklist;
 static unordered_set<string> locallist;
 
-static unordered_set<string> blockips;
+static unordered_set<string> authips;
 
 void loadsites() {
     loadedsites = 1;
@@ -94,14 +94,8 @@ void addbsite(const char * host) {
     blockfile.close();
 }
 
-void addbip(const char *ip) {
-    if(strchr(ip, ':')){
-        blockips.insert(ip);
-    }else{
-        char ipv6[INET6_ADDRSTRLEN];
-        sprintf(ipv6,"::ffff:%s",ip);
-        blockips.insert(ipv6);
-    }
+void addauth(const char *ip) {
+    authips.insert(ip);
 }
 
 int delpsite(const char * host) {
@@ -132,10 +126,6 @@ int delbsite(const char * host) {
     return 1;
 }
 
-int delbip(const char *ip) {
-    blockips.erase(ip);
-    return 1;
-}
 
 int globalproxy() {
     GLOBALPROXY = !GLOBALPROXY;
@@ -210,8 +200,8 @@ bool checklocal(const char *hostname) {
     return locallist.count(hostname);
 }
 
-bool checkbip(const char *ip) {
-    return blockips.count(ip);
+bool checkauth(const char *ip) {
+    return authips.count(ip);
 }
 
 char* toUpper(char* s) {

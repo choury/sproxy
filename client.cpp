@@ -10,6 +10,7 @@
 #include <openssl/ssl.h>
 
 int efd;
+uint16_t CPORT = 3333;
 
 template<class T>
 class Http_server: public Server{
@@ -41,9 +42,10 @@ public:
 };
 
 void usage(const char * programe){
-    printf("Usage: %s [-t] [-p port] [-h] server[:port]\n"
+    printf("Usage: %s [-t] [-p port] [-s user:passwd ] [-h] server[:port]\n"
            "       -p: The port to listen, default is 3333.\n"
            "       -t: Run as a transparent proxy, it will disable -p.\n"
+           "       -s: Set a user and passwd for client, default is none.\n"
            "       -h: Print this.\n"
            , programe);
 }
@@ -51,7 +53,7 @@ void usage(const char * programe){
 int main(int argc, char** argv) {
     int oc;
     bool istrans  = false;
-    while((oc = getopt(argc, argv, "p:th")) != -1)
+    while((oc = getopt(argc, argv, "p:ths:")) != -1)
     {
         switch(oc){
         case 'p':
@@ -59,6 +61,10 @@ int main(int argc, char** argv) {
             break;
         case 't':
             istrans = true;
+            break;
+        case 's':
+            auth_string = (char *)malloc((strlen(optarg)+2)*4/3+1);
+            Base64Encode(optarg, strlen(optarg), auth_string);
             break;
         case 'h':
             usage(argv[0]);

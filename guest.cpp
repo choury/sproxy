@@ -10,7 +10,6 @@
 #define ADDBTIP    "HTTP/1.0 200 Block site/ip Added" CRLF CRLF
 #define DELPTIP    "HTTP/1.0 200 Proxy site Deleted" CRLF CRLF
 #define DELBTIP    "HTTP/1.0 200 Block site/ip Deleted" CRLF CRLF
-#define DELFTIP    "HTTP/1.0 404 The site is not found" CRLF CRLF
 #define EGLOBLETIP  "HTTP/1.0 200 Global proxy enabled now" CRLF CRLF
 #define DGLOBLETIP  "HTTP/1.0 200 Global proxy disabled" CRLF CRLF
 #define SWITCHTIP   "HTTP/1.0 200 Switched proxy server" CRLF CRLF
@@ -18,6 +17,12 @@
 #define BLOCKTIP    "HTTP/1.1 403 Forbidden" CRLF \
                     "Content-Length:73" CRLF CRLF \
                     "This site is blocked, please contact administrator for more information" CRLF
+
+#define DELFTIP    "HTTP/1.0 404 The site is not found" CRLF CRLF
+
+#define AUTHNEED    "HTTP/1.1 407 Proxy Authentication Required" CRLF \
+                    "Proxy-Authenticate: Basic realm=\"Secure Area\"" CRLF \
+                    "Content-Length: 0" CRLF CRLF
                     
 #define PROXYTIP    "HTTP/1.1 200 Proxy" CRLF \
                     "Content-Length:48" CRLF CRLF \
@@ -27,18 +32,16 @@
                     "Content-Length:56" CRLF CRLF \
                     "This site won't be proxyed, you can add it by addpsite" CRLF
 
+char SHOST[DOMAINLIMIT];
+uint16_t SPORT = 443;
+char *auth_string=nullptr;
+
 std::set<Guest *> guest_set;
 
 Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Peer(fd) {
     guest_set.insert(this);
     inet_ntop(AF_INET6, &myaddr->sin6_addr, sourceip, sizeof(sourceip));
     sourceport = ntohs(myaddr->sin6_port);
-
-    if(checkbip(sourceip)){
-        clean(IP_BLOCK_ERR, this);
-        LOGE("([%s]:%d): this ip was blocked!\n", sourceip, sourceport);
-        return;
-    }
 
     struct epoll_event event;
     event.data.ptr = this;
@@ -128,6 +131,13 @@ void Guest::ReqProc(HttpReqHeader& req) {
             hint, req.method, req.url);
     }
     this->flag = 0;
+    if (auth_string &&
+        !checkauth(sourceip) &&
+        req.get("Proxy-Authorization") &&
+        strcmp(auth_string, req.get("Proxy-Authorization")+6) == 0)
+    {
+        addauth(sourceip);
+    }
     if (req.ismethod("GET") || 
         req.ismethod("POST") || 
         req.ismethod("PUT") || 
@@ -136,7 +146,9 @@ void Guest::ReqProc(HttpReqHeader& req) {
         req.ismethod("HEAD") || 
         req.ismethod("SEND")) 
     {
-        if (checkblock(req.hostname) || checklocal(req.hostname)) {
+        if (auth_string && !checkauth(sourceip)){
+            Peer::Write(AUTHNEED, strlen(AUTHNEED), this);
+        }else if (checkblock(req.hostname) || checklocal(req.hostname)) {
             LOG("([%s]:%d): site: %s blocked\n",
                  sourceip, sourceport, req.hostname);
             Peer::Write(BLOCKTIP, strlen(BLOCKTIP), this);
@@ -158,15 +170,6 @@ void Guest::ReqProc(HttpReqHeader& req) {
         Peer::Write(ADDBTIP, strlen(ADDBTIP));
     } else if (req.ismethod("DELBSITE")) {
         if (delbsite(req.url)) {
-            Peer::Write(DELBTIP, strlen(DELBTIP));
-        } else {
-            Peer::Write(DELFTIP, strlen(DELFTIP));
-        }
-    } else if (req.ismethod("ADDBIP")) {
-        addbip(req.url);
-        Peer::Write(ADDBTIP, strlen(ADDBTIP));
-    } else if (req.ismethod("DELBIP")) {
-        if (delbip(req.url)) {
             Peer::Write(DELBTIP, strlen(DELBTIP));
         } else {
             Peer::Write(DELFTIP, strlen(DELFTIP));

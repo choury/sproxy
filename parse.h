@@ -76,15 +76,14 @@ cgifunc cgimain;
 
 void addpsite(const char * host);
 void addbsite(const char * host);
-void addbip(const char * ip);
+void addauth(const char * ip);
 int delpsite(const char * host);
 int delbsite(const char * host);
-int delbip(const char * ip);
 int globalproxy();
 bool checkproxy(const char *hostname);
 bool checkblock(const char *hostname);
 bool checklocal(const char *hostname);
-bool checkbip(const char *ip);
+bool checkauth(const char *ip);
 char *cgi_addnv(char *p, const string &name, const string &value);
 char *cgi_getnv(char *p, string &name, string &value);
 

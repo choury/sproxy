@@ -129,6 +129,30 @@ int URLDecode(const char* src, char *des)
     return 1;
 }
 
+static const char *base64_digs="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+void Base64Encode(const char *src, size_t len, char *dst){
+    int i=0,j=0;
+    for(;i+2<len;i+=3){
+        dst[j++] = base64_digs[src[i]>>2];
+        dst[j++] = base64_digs[((src[i]<<4) & 0x30) | src[i+1]>>4];
+        dst[j++] = base64_digs[((src[i+1]<<2) & 0x3c) | src[i+2]>>6];
+        dst[j++] = base64_digs[src[i+2] & 0x3f];
+    }
+    if(i == len-1){
+        dst[j++] = base64_digs[src[i]>>2];
+        dst[j++] = base64_digs[(src[i]<<4) & 0x30];
+        dst[j++] = '=';
+        dst[j++] = '=';
+    }else if(i == len-2){
+        dst[j++] = base64_digs[src[i]>>2];
+        dst[j++] = base64_digs[((src[i]<<4) & 0x30) | src[i+1]>>4];
+        dst[j++] = base64_digs[(src[i+1]<<2) & 0x3c];
+        dst[j++] = '=';
+    }
+    dst[j++] = 0;
+}
+
 uint64_t getutime(){
     struct timeval tv;
     gettimeofday(&tv, NULL);

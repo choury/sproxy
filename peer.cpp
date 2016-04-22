@@ -6,9 +6,6 @@
 #include <unistd.h>
 #include <errno.h>
 
-char SHOST[DOMAINLIMIT];
-uint16_t SPORT = 443;
-uint16_t CPORT = 3333;
 
 class binmap<Guest *, Peer*> bindex;
 
