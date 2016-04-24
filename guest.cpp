@@ -7,9 +7,9 @@
 #include <arpa/inet.h>
 
 #define ADDPTIP    "HTTP/1.0 200 Proxy site Added" CRLF CRLF
-#define ADDBTIP    "HTTP/1.0 200 Block site/ip Added" CRLF CRLF
+#define ADDBTIP    "HTTP/1.0 200 Block site Added" CRLF CRLF
 #define DELPTIP    "HTTP/1.0 200 Proxy site Deleted" CRLF CRLF
-#define DELBTIP    "HTTP/1.0 200 Block site/ip Deleted" CRLF CRLF
+#define DELBTIP    "HTTP/1.0 200 Block site Deleted" CRLF CRLF
 #define EGLOBLETIP  "HTTP/1.0 200 Global proxy enabled now" CRLF CRLF
 #define DGLOBLETIP  "HTTP/1.0 200 Global proxy disabled" CRLF CRLF
 #define SWITCHTIP   "HTTP/1.0 200 Switched proxy server" CRLF CRLF
@@ -222,6 +222,23 @@ void Guest::Response(HttpResHeader& res, Peer*) {
     if(res.get("Transfer-Encoding")){
         flag |= ISCHUNKED_F;
     }
+}
+
+ssize_t Guest::Write(void *buff, size_t size, Peer* who, uint32_t) {
+    size_t len = Min(bufleft(who), size);
+    ssize_t ret = 0;
+    if(flag & ISCHUNKED_F){
+        char chunkbuf[100];
+        int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)size);
+        if(Peer::Write((const void *)chunkbuf, chunklen, this) != chunklen)
+            assert(0);
+        ret = Peer::Write(buff, len, this);
+        if(Peer::Write(CRLF, strlen(CRLF), this) != strlen(CRLF))
+            assert(0);
+    }else{
+        ret = Peer::Write(buff, size, this);
+    }
+    return ret;
 }
 
 ssize_t Guest::Write(const void *buff, size_t size, Peer* who, uint32_t) {

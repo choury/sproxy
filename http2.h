@@ -109,6 +109,8 @@ public:
 };
 
 class Http2Res:public Http2Base {
+    using Http2Base::http2_buff;
+    using Http2Base::http2_getlen;
 protected:
     virtual void InitProc()override;
     virtual void HeadersProc(Http2_header *header)override;
@@ -117,6 +119,8 @@ protected:
 
 
 class Http2Req:public Http2Base {
+    using Http2Base::http2_buff;
+    using Http2Base::http2_getlen;
 protected:
     virtual void InitProc()override;
     virtual void HeadersProc(Http2_header *header)override;

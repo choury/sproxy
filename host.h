@@ -18,7 +18,6 @@ protected:
     HttpReqHeader req;
     
     int connect();
-    virtual int showerrinfo(int ret, const char *s)override;
     virtual void destory();
     virtual void waitconnectHE(uint32_t events);
     virtual void defaultHE(uint32_t events);
@@ -32,6 +31,8 @@ public:
     Host(HttpReqHeader &req, Guest *guest);
     Host(HttpReqHeader &req, Guest *guest, const char* hostname, uint16_t port);
     ~Host();
+    
+    virtual int showerrinfo(int ret, const char *s)override;
     virtual void Request(Guest* guest, HttpReqHeader &req);
     virtual void ResProc(HttpResHeader &res)override;
     static Host *gethost(HttpReqHeader &req, Guest* guest);

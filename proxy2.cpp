@@ -11,7 +11,6 @@ Proxy2::Proxy2(Proxy *const copy): Proxy(copy) {
 }
 
 
-
 ssize_t Proxy2::Read(void* buff, size_t len) {
     return Proxy::Read(buff, len);
 }
@@ -21,6 +20,11 @@ ssize_t Proxy2::Write(const void *buff, size_t len) {
     return Proxy::Write(buff, len);
 }
 
+ssize_t Proxy2::Write(void* buff, size_t size, Peer *who, uint32_t id) {
+    ssize_t ret= Write((const void*)buff, size, who,id);
+    free(buff);
+    return ret;
+}
 
 ssize_t Proxy2::Write(const void* buff, size_t size, Peer *who, uint32_t id) {
     Guest *guest = dynamic_cast<Guest*>(who);

@@ -13,7 +13,6 @@ Guest_s2::Guest_s2(Guest_s *const copy): Guest_s(copy) {
     handleEvent = (void (Con::*)(uint32_t))&Guest_s2::defaultHE;
 }
 
-
 ssize_t Guest_s2::Read(void *buff, size_t size) {
     return Guest_s::Read(buff, size);
 }
@@ -23,6 +22,11 @@ ssize_t Guest_s2::Write(const void *buff, size_t size) {
     return Guest_s::Write(buff, size);
 }
 
+ssize_t Guest_s2::Write(void *buff, size_t size, Peer *who, uint32_t id) {
+    ssize_t ret = Write((const void*)buff, size, who, id);
+    free(buff);
+    return ret;
+}
 
 ssize_t Guest_s2::Write(const void *buff, size_t size, Peer *who, uint32_t id)
 {

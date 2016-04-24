@@ -271,7 +271,6 @@ Host* Host::gethost(HttpReqHeader &req, Guest* guest) {
     return new Host(req, guest);
 }
 
-
 ssize_t Host::Read(void* buff, size_t len){
     return Peer::Read(buff, len);
 }

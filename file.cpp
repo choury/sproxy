@@ -172,7 +172,7 @@ void File::openHE(uint32_t events) {
         LOGE("get file info failed: %s\n", strerror(errno));
         HttpResHeader res(H404);
         guest->Response(res, this);
-        guest->Write(nullptr, 0, this);
+        guest->Write((const void *)nullptr, 0, this);
         goto err;
     }
     if (S_ISREG(st.st_mode)) {
@@ -243,7 +243,7 @@ void File::defaultHE(uint32_t events) {
     
     if (events & EPOLLIN) {
         if (leftsize == 0) {
-            guest->Write(nullptr, 0, this);
+            guest->Write((const void*)nullptr, 0, this);
             return;
         }
         int len = Min(guest->bufleft(this), leftsize);
