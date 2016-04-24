@@ -31,7 +31,7 @@ ssize_t Peer::Write(const void* buff, size_t size, Peer* who, uint32_t id) {
     }
     void *dup_buff = malloc(size);
     memcpy(dup_buff, buff, size);
-    return Write(dup_buff, size, who, id);
+    return Peer::Write(dup_buff, size, who, id);
 }
 
 ssize_t Peer::Write(void* buff, size_t size, Peer* , uint32_t) {

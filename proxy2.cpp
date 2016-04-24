@@ -113,7 +113,7 @@ void Proxy2::defaultHE(u_int32_t events) {
 }
 
 
-void Proxy2::DataProc(Http2_header* header) {
+void Proxy2::DataProc(const Http2_header* header) {
     uint32_t id = get32(header->id);
     if(idmap.count(id)){
         Guest *guest = idmap.at(id);

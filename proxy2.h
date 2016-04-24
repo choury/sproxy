@@ -16,7 +16,7 @@ protected:
     virtual ssize_t Read(void* buff, size_t len)override;
     virtual ssize_t Write(const void* buff, size_t len)override;
     virtual void SendFrame(Http2_header *header)override;
-    virtual void DataProc(Http2_header *header)override;
+    virtual void DataProc(const Http2_header *header)override;
     virtual void RstProc(uint32_t id, uint32_t errcode)override;
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)override;
     virtual void PingProc(Http2_header *header)override;

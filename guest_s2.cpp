@@ -67,7 +67,8 @@ void Guest_s2::SendFrame(Http2_header *header) {
 }
 
 
-void Guest_s2::DataProc(Http2_header* header) {
+void Guest_s2::DataProc(const Http2_header* header)
+{
     uint32_t id = get32(header->id);
     if(idmap.count(id)){
         Peer *host = idmap.at(id);
@@ -80,7 +81,7 @@ void Guest_s2::DataProc(Http2_header* header) {
             LOGE("(%s:[%d]):[%d] window size error\n", sourceip, sourceport, id);
             return;
         }
-        host->Write((const void *)(header+1), len, this, id);
+        host->Write(header+1, len, this, id);
         host->localwinsize -= len;
         localwinsize -= len;
     }else{

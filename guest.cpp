@@ -123,7 +123,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
         LOG("([%s]:%d): %s%s %s%s\n", sourceip, sourceport,
             hint, req.method, req.hostname, req.url);
         if(!req.hostname[0]){
-            Write(BLOCKTIP, strlen(BLOCKTIP), this);
+            Peer::Write(BLOCKTIP, strlen(BLOCKTIP), this);
             return;
         }
     }else{
@@ -147,11 +147,11 @@ void Guest::ReqProc(HttpReqHeader& req) {
         req.ismethod("SEND")) 
     {
         if (auth_string && !checkauth(sourceip)){
-            Peer::Write(AUTHNEED, strlen(AUTHNEED), this);
+            Peer::Write(AUTHNEED, strlen(AUTHNEED));
         }else if (checkblock(req.hostname) || checklocal(req.hostname)) {
             LOG("([%s]:%d): site: %s blocked\n",
                  sourceip, sourceport, req.hostname);
-            Peer::Write(BLOCKTIP, strlen(BLOCKTIP), this);
+            Peer::Write(BLOCKTIP, strlen(BLOCKTIP));
         } else {
             Host::gethost(req, this);
         }

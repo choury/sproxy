@@ -17,7 +17,7 @@ protected:
     virtual void SendFrame(Http2_header *header)override;
     virtual void GoawayProc(Http2_header *header)override;
     virtual void Response(HttpResHeader& res, Peer *who)override;
-    virtual void DataProc(Http2_header *header)override;
+    virtual void DataProc(const Http2_header *header)override;
     virtual void ReqProc(HttpReqHeader &req)override;
     virtual void RstProc(uint32_t id, uint32_t errcode)override;
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)override;
