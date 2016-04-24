@@ -199,7 +199,7 @@ send:
                 return;
             }
             len = Min(len, cgi_getlen - cgi_outlen);
-            len = guest->Write(cgi_buff + cgi_outlen, len, this, session.second);
+            len = guest->Write((const char *)cgi_buff + cgi_outlen, len, this, session.second);
             cgi_outlen += len;
             if (cgi_outlen == cgi_getlen) {
                 status = WaitHeadr;
