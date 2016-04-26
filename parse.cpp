@@ -343,7 +343,6 @@ HttpReqHeader::HttpReqHeader(const char* header) {
         }
     }
     
-    del("Proxy-Connection");
 }
 
 
@@ -440,6 +439,11 @@ void HttpReqHeader::del(const char* header) {
     }
 }
 
+void HttpReqHeader::rmproxyinfo(){
+    del("Proxy-Connection");
+    del("Proxy-Authorization");
+}
+
 const char* HttpReqHeader::get(const char* header) const{
     for(auto i:headers) {
         if(strcasecmp(i.first.c_str(),header)==0)
@@ -459,7 +463,7 @@ std::set< string > HttpReqHeader::getall(const char *header) const{
 
 
 char *HttpReqHeader::getstring(size_t &len) const{
-    char *buff = (char *)malloc(16384);
+    char *buff = (char *)malloc(BUF_LEN);
     len = 0;
     if (checkproxy(hostname)) {
         len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, url);
@@ -492,7 +496,7 @@ char *HttpReqHeader::getstring(size_t &len) const{
 
 
 Http2_header *HttpReqHeader::getframe(Index_table *index_table) const{
-    Http2_header *header = (Http2_header *)malloc(16384);
+    Http2_header *header = (Http2_header *)malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F;
@@ -527,7 +531,7 @@ Http2_header *HttpReqHeader::getframe(Index_table *index_table) const{
 
 
 CGI_Header *HttpReqHeader::getcgi() const{
-    CGI_Header *cgi = (CGI_Header *)malloc(16384);
+    CGI_Header *cgi = (CGI_Header *)malloc(BUF_LEN);
     cgi->type = CGI_REQUEST;
     cgi->requestId = htonl(cgi_id);
     
@@ -630,7 +634,7 @@ std::set< string > HttpResHeader::getall(const char *header) const{
 
 
 char * HttpResHeader::getstring(size_t &len) const{
-    char * buff = (char *)malloc(16384);
+    char * buff = (char *)malloc(BUF_LEN);
     len = 0;
     if(get("Content-Length") || get("Transfer-Encoding")){
         len += sprintf(buff, "HTTP/1.1 %s" CRLF, status);
@@ -648,7 +652,7 @@ char * HttpResHeader::getstring(size_t &len) const{
 
 
 Http2_header *HttpResHeader::getframe(Index_table* index_table) const{
-    Http2_header *header = (Http2_header *)malloc(16384);
+    Http2_header *header = (Http2_header *)malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F;
@@ -665,7 +669,7 @@ Http2_header *HttpResHeader::getframe(Index_table* index_table) const{
 }
 
 CGI_Header *HttpResHeader::getcgi()const {
-    CGI_Header *cgi = (CGI_Header *)malloc(16384);
+    CGI_Header *cgi = (CGI_Header *)malloc(BUF_LEN);
     cgi->type = CGI_RESPONSE;
     cgi->requestId = htonl(cgi_id);
     

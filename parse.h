@@ -32,6 +32,7 @@ public:
     bool ismethod(const char* method) const;
     void add(const char *header, const char *value);
     void del(const char *header);
+    void rmproxyinfo();
     const char* get(const char *header) const;
     std::set<string> getall(const char *header) const;
     

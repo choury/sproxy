@@ -22,6 +22,8 @@ extern char *auth_string;
 #define HEADLENLIMIT  8192
 #define URLLIMIT      4096
 
+#define BUF_LEN       16384
+
 
 #ifdef __ANDROID__
 

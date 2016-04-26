@@ -17,7 +17,7 @@ void Guest_sni::initHE(uint32_t events) {
             return;
         }
         http_getlen += ret;
-        char *hostname;
+        char *hostname = nullptr;
         ret = parse_tls_header(http_buff, http_getlen, &hostname);
         if(ret > 0){
             if (checkproxy(hostname)) {
@@ -33,6 +33,7 @@ void Guest_sni::initHE(uint32_t events) {
         }else if(ret != -1){
             clean(INTERNAL_ERR, this);
         }
+        free(hostname);
     }
 }
 

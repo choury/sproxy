@@ -57,6 +57,12 @@ Cgi::Cgi(const char *filename) {
 
 Cgi::~Cgi() {
     cgimap.erase(filename);
+} 
+
+ssize_t Cgi::Write(void *buff, size_t size, Peer* who, uint32_t id) {
+    ssize_t ret= Write((const void*)buff, size, who,id);
+    free(buff);
+    return ret;
 }
 
 ssize_t Cgi::Write(const void *buff, size_t size, Peer* who, uint32_t id) {

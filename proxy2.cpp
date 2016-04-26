@@ -127,7 +127,7 @@ void Proxy2::DataProc(const Http2_header* header) {
             return;
         }
         if((header->flags & END_STREAM_F) && len) {
-            guest->Write("", 0, this, id);
+            guest->Write((const void*)nullptr, 0, this, id);
         }else{
             guest->Write(header+1, len, this, id);
         }
@@ -154,7 +154,7 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
         }
         idmap.erase(id);
         waitlist.erase(guest);
-        guest->Write("", 0, this, id);  //for http/1.0
+        guest->Write((const void*)nullptr, 0, this, id);  //for http/1.0
         guest->clean(errcode, this, id);
     }
 }

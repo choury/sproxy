@@ -123,7 +123,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
         LOG("([%s]:%d): %s%s %s%s\n", sourceip, sourceport,
             hint, req.method, req.hostname, req.url);
         if(!req.hostname[0]){
-            Peer::Write(BLOCKTIP, strlen(BLOCKTIP), this);
+            Peer::Write(BLOCKTIP, strlen(BLOCKTIP));
             return;
         }
     }else{
@@ -138,6 +138,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
     {
         addauth(sourceip);
     }
+    req.rmproxyinfo();
     if (req.ismethod("GET") || 
         req.ismethod("POST") || 
         req.ismethod("PUT") || 
@@ -148,6 +149,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
     {
         if (auth_string && !checkauth(sourceip)){
             Peer::Write(AUTHNEED, strlen(AUTHNEED));
+            LOG("([%s]:%d): Authorization needed\n", sourceip, sourceport);
         }else if (checkblock(req.hostname) || checklocal(req.hostname)) {
             LOG("([%s]:%d): site: %s blocked\n",
                  sourceip, sourceport, req.hostname);

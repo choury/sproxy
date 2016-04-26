@@ -25,13 +25,13 @@ Peer::~Peer() {
     }
 }
 
-ssize_t Peer::Write(const void* buff, size_t size, Peer* who, uint32_t id) {
+ssize_t Peer::Write(const void* buff, size_t size, Peer* who, uint32_t) {
     if(size == 0) {
         return 0;
     }
     void *dup_buff = malloc(size);
     memcpy(dup_buff, buff, size);
-    return Peer::Write(dup_buff, size, who, id);
+    return Peer::Write(dup_buff, size, who);
 }
 
 ssize_t Peer::Write(void* buff, size_t size, Peer* , uint32_t) {
@@ -103,7 +103,7 @@ int32_t Peer::bufleft(Peer *) {
     if(writelen >= 1024*1024)
         return 0;
     else
-        return 16384;
+        return BUF_LEN;
 }
 
 
