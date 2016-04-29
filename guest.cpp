@@ -120,8 +120,8 @@ void Guest::ReqProc(HttpReqHeader& req) {
         hint = "PROXY ";
     }
     if(req.url[0] == '/'){
-        LOG("([%s]:%d): %s%s %s%s\n", sourceip, sourceport,
-            hint, req.method, req.hostname, req.url);
+        LOG("([%s]:%d): %s%s %s%s [%s]\n", sourceip, sourceport,
+            hint, req.method, req.hostname, req.url, req.get("User-Agent"));
         if(!req.hostname[0]){
             Peer::Write(BLOCKTIP, strlen(BLOCKTIP));
             return;

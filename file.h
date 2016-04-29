@@ -15,12 +15,11 @@ public:
 };
 
 class File:public Peer{
-    int ffd = 0;
-    uint32_t leftsize;
-//    uint32_t wbuffof = 0;
+    void * mapptr = nullptr;
+    size_t offset = 0;
+    size_t size;
     char filename[URLLIMIT];
     HttpReqHeader req;
-    Range range;
     virtual void openHE(uint32_t events);
     virtual void defaultHE(uint32_t events);
 public:

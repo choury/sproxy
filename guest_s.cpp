@@ -112,7 +112,7 @@ void Guest_s::shakehandHE(uint32_t events) {
 }
 
 void Guest_s::ReqProc(HttpReqHeader& req) {
-    LOG("([%s]:%d): %s %s\n", sourceip, sourceport, req.method, req.url);
+    LOG("([%s]:%d): %s %s [%s]\n", sourceip, sourceport, req.method, req.url, req.get("User-Agent"));
 
     this->flag = 0;
     if(req.ismethod("FLUSH")){

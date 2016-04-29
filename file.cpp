@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/eventfd.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 
 
 using std::vector;
@@ -126,7 +127,7 @@ bool Range::calcu(size_t size) {
 }
 
 
-File::File(HttpReqHeader &req, Guest* guest):req(req), range(req.get("Range")) {
+File::File(HttpReqHeader &req, Guest* guest):req(req) {
     connect(guest, this);
     fd = eventfd(1, O_NONBLOCK);
     snprintf(filename, sizeof(filename), "%s", req.filename);
@@ -176,44 +177,49 @@ void File::openHE(uint32_t events) {
         goto err;
     }
     if (S_ISREG(st.st_mode)) {
-        ffd = open(filename, O_RDONLY);
+        int ffd = open(filename, O_RDONLY);
         if (ffd < 0) {
             LOGE("open file failed: %s\n", strerror(errno));
             HttpResHeader res(H500);
             guest->Response(res, this);
             goto err;
         }
+        size = st.st_size;
         Range range(req.get("Range"));
-        if(range.size() == 0){
-            HttpResHeader res(H200);
-            char buff[100];
-            leftsize = st.st_size;
-            snprintf(buff, sizeof(buff), "%u", leftsize);
-            res.add("Content-Length", buff);
-            guest->Response(res, this);
-        } else if (range.size() == 1 && range.calcu(st.st_size)){
-            if(lseek(ffd,range.ranges[0].first,SEEK_SET)<0){
-                LOGE("lseek file failed: %s\n", strerror(errno));
-                HttpResHeader res(H500);
-                guest->Response(res, this);
-                throw 0;
-            }
-            HttpResHeader res(H206);
-            char buff[100];
-            leftsize = range.ranges[0].second - range.ranges[0].first+1;
-            snprintf(buff, sizeof(buff), "bytes %lu-%lu/%lu",
-                     range.ranges[0].first, range.ranges[0].second, st.st_size);
-            res.add("Content-Range", buff);
-            snprintf(buff, sizeof(buff), "%u", leftsize);
-            res.add("Content-Length", buff);
-            guest->Response(res, this);
-        } else {
+        if (range.size() == 1 && range.calcu(st.st_size)){
+            offset = range.ranges[0].first;
+        } else if(range.size()){
             HttpResHeader res(H416);
             char buff[100];
             snprintf(buff, sizeof(buff), "bytes */%lu", st.st_size);
             res.add("Content-Range", buff);
             guest->Response(res, this);
+            goto err;
         }
+        mapptr = mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, ffd, 0);
+        if(mapptr == nullptr){
+            LOGE("lseek file failed: %s\n", strerror(errno));
+            HttpResHeader res(H500);
+            guest->Response(res, this);
+            goto err;
+        }else if(range.size()){
+            HttpResHeader res(H206);
+            char buff[100];
+            snprintf(buff, sizeof(buff), "bytes %lu-%lu/%lu",
+                     range.ranges[0].first, range.ranges[0].second, st.st_size);
+            res.add("Content-Range", buff);
+            size_t leftsize = range.ranges[0].second - range.ranges[0].first+1;
+            snprintf(buff, sizeof(buff), "%lu", leftsize);
+            res.add("Content-Length", buff);
+            guest->Response(res, this);
+        }else{
+            HttpResHeader res(H200);
+            char buff[100];
+            snprintf(buff, sizeof(buff), "%lu", size);
+            res.add("Content-Length", buff);
+            guest->Response(res, this);
+        }
+        close(ffd);
     } else if (S_ISDIR(st.st_mode)) {
         strcat(filename, "/index.html");
         openHE(events);
@@ -242,27 +248,18 @@ void File::defaultHE(uint32_t events) {
     }
     
     if (events & EPOLLIN) {
-        if (leftsize == 0) {
+        if (offset == size) {
             guest->Write((const void*)nullptr, 0, this);
             return;
         }
-        int len = Min(guest->bufleft(this), leftsize);
+        int len = Min(guest->bufleft(this), size - offset);
         if (len <= 0) {
             LOGE("The guest's write buff is full\n");
             guest->wait(this);
             return;
         }
-        char *buff =  (char *)malloc(len);
-        len = read(ffd, buff, len);
-        if (len <= 0) {
-            if (showerrinfo(len, "file read error")) {
-                clean(READ_ERR, this);
-            }
-            free(buff);
-            return;
-        }else{
-            leftsize -= guest->Write(buff, len, this);
-        }
+        len = guest->Write((const char *)mapptr+offset, len, this);
+        offset += len;
     }
     if (events & EPOLLOUT) {
         event.events = EPOLLIN;
@@ -273,8 +270,8 @@ void File::defaultHE(uint32_t events) {
 
 
 File::~File() {
-    if (ffd > 0) {
-        close(ffd);
+    if (mapptr) {
+        munmap(mapptr, size);
     }
 }
 
