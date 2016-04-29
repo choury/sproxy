@@ -127,8 +127,8 @@ void Guest::ReqProc(HttpReqHeader& req) {
             return;
         }
     }else{
-        LOG("([%s]:%d): %s%s %s\n", sourceip, sourceport,
-            hint, req.method, req.url);
+        LOG("([%s]:%d): %s%s %s [%s]\n", sourceip, sourceport,
+            hint, req.method, req.url, req.get("User-Agent"));
     }
     this->flag = 0;
     if (auth_string &&
