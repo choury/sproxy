@@ -164,6 +164,7 @@ void Http2Base::RstProc(uint32_t id, uint32_t errcode) {
 
 uint32_t Http2Base::ExpandWindowSize(uint32_t id, uint32_t size) {
     Http2_header *header = (Http2_header *)malloc(sizeof(Http2_header)+sizeof(uint32_t));
+    memset(header, 0, sizeof(Http2_header));
     set32(header->id, id);
     set24(header->length, sizeof(uint32_t));
     header->type = WINDOW_UPDATE_TYPE;
@@ -174,6 +175,7 @@ uint32_t Http2Base::ExpandWindowSize(uint32_t id, uint32_t size) {
 
 void Http2Base::Ping(const void *buff) {
     Http2_header *header = (Http2_header *)malloc(sizeof(Http2_header) + 8);
+    memset(header, 0, sizeof(Http2_header));
     header->type = PING_TYPE;
     set24(header->length, 8);
     memcpy(header+1, buff, 8);
@@ -183,6 +185,7 @@ void Http2Base::Ping(const void *buff) {
 
 void Http2Base::Reset(uint32_t id, uint32_t code) {
     Http2_header *header = (Http2_header *)malloc(sizeof(Http2_header)+sizeof(uint32_t));
+    memset(header, 0, sizeof(Http2_header));
     header->type = RST_STREAM_TYPE;
     set32(header->id, id);
     set24(header->length, sizeof(uint32_t));
@@ -192,10 +195,11 @@ void Http2Base::Reset(uint32_t id, uint32_t code) {
 
 void Http2Base::SendInitSetting() {
     Http2_header *header = (Http2_header *)malloc(sizeof(Http2_header) + sizeof(Setting_Frame));
+    memset(header, 0, sizeof(Http2_header));
     Setting_Frame *sf = (Setting_Frame *)(header+1);
     set16(sf->identifier, SETTINGS_INITIAL_WINDOW_SIZE);
     set32(sf->value, localframewindowsize);
-    memset(header, 0, sizeof(Http2_header));
+
     set24(header->length, sizeof(Setting_Frame));
     header->type = SETTINGS_TYPE;
     SendFrame(header);
