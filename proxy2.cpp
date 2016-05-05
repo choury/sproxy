@@ -118,7 +118,7 @@ void Proxy2::DataProc(const Http2_header* header) {
     if(idmap.count(id)){
         Guest *guest = idmap.at(id);
         int32_t len = get24(header->length);
-        if(len > guest->bufleft(this)){
+        if(len > guest->localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
             idmap.erase(id);
             waitlist.erase(guest);
