@@ -1,39 +1,43 @@
 #include "proxy.h"
 #include "proxy2.h"
+#include "guest.h"
 
 #include <openssl/err.h>
 
 
 extern std::map<Host*,time_t> connectmap;
 
-Proxy::Proxy(HttpReqHeader &req, Guest *guest):Host(req, guest, SHOST, SPORT) {}
 
-Proxy::Proxy(Proxy *const copy):Host(copy->fd), ssl(copy->ssl), ctx(copy->ctx) {
+Proxy::Proxy(const char* hostname, uint16_t port): Host(hostname, port) {
+
+}
+
+
+Proxy::Proxy(Proxy *const copy): ssl(copy->ssl), ctx(copy->ctx) {
     this->fd = copy->fd;
     copy->fd  = 0;
     copy->ssl = nullptr;
     copy->ctx = nullptr;
-    copy->clean(NOERROR, queryconnect(copy));
+    copy->clean(NOERROR, nullptr);
 }
 
 
-Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
-    Host *exist = (Host *)queryconnect(guest);
+Host* Proxy::getproxy(HttpReqHeader &req, Ptr responser_ptr) {
+    Host *exist = dynamic_cast<Host *>(responser_ptr.get());
     if (dynamic_cast<Proxy*>(exist)) {
-        exist->Request(guest, req);
         return exist;
     }
     
     if (exist) {
-        exist->clean(NOERROR, guest); //只有exist是host才会走到这里
+        exist->clean(NOERROR, dynamic_cast<Guest *>(exist->guest_ptr.get())); //只有exist是host才会走到这里
     }
     
     if (proxy2 && proxy2->bufleft(nullptr) >= 32 * 1024) {
-        proxy2->Request(guest, req);
+        proxy2->request(req);
         return proxy2;
     }
 
-    return new Proxy(req, guest);
+    return new Proxy(SHOST, SPORT);
 }
 
 ssize_t Proxy::Read(void* buff, size_t size) {
@@ -88,12 +92,6 @@ static const unsigned char alpn_protos_string[] =
 
 
 void Proxy::waitconnectHE(uint32_t events) {
-    Guest *guest = (Guest *)queryconnect(this);
-    if (guest == nullptr) {
-        destory();
-        return;
-    }
-    
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
@@ -147,11 +145,6 @@ reconnect:
 
 
 void Proxy::shakehandHE(uint32_t events) {
-    Guest *guest = (Guest *)queryconnect(this);
-    if (guest == nullptr) {
-        clean(PEER_LOST_ERR, this);
-        return;
-    }
     if ((events & EPOLLIN) || (events & EPOLLOUT)) {
         int ret = SSL_connect(ssl);
         if (ret != 1) {
@@ -166,7 +159,6 @@ void Proxy::shakehandHE(uint32_t events) {
         event.events = EPOLLIN |EPOLLOUT;
         epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
         handleEvent = (void (Con::*)(uint32_t))&Proxy::defaultHE;
-        guest->writedcb(this);
         
         const unsigned char *data;
         unsigned int len;
@@ -174,7 +166,7 @@ void Proxy::shakehandHE(uint32_t events) {
         if (data && strncasecmp((const char*)data, "h2", len) == 0) {
             Proxy2 *new_proxy = new Proxy2(this);
             new_proxy->init();
-            new_proxy->Request(guest, req);
+            new_proxy->request(req);
             if(!proxy2){
                 proxy2 = new_proxy;
             }

@@ -1,8 +1,7 @@
 #ifndef CGI_H__
 #define CGI_H__
 
-#include "peer.h"
-#include "guest.h"
+#include "responser.h"
 #include "parse.h"
 #include "binmap.h"
 
@@ -36,7 +35,9 @@ struct CGI_NameValue{
     uint32_t value;
 }__attribute__((packed));
 
-class Cgi:public Peer{
+class Guest;
+
+class Cgi:public Responser{
     char filename[URLLIMIT];
     char cgi_buff[CGI_LEN_MAX];
     size_t cgi_getlen  = 0;
@@ -53,7 +54,6 @@ class Cgi:public Peer{
           HandleLeft
     }status = WaitHeadr;
     void InProc();
-    void Request(HttpReqHeader &req,Guest *guest);
 public:
     Cgi(const char *filename);
     virtual ~Cgi();
@@ -62,7 +62,8 @@ public:
     virtual void wait(Peer *who)override;
     virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
     virtual int showerrinfo(int ret,const char *s)override;
-    static Cgi *getcgi(HttpReqHeader &req, Guest *guest);
+    virtual Ptr request(HttpReqHeader &req)override;
+//    static Cgi *getcgi(HttpReqHeader &req, Guest *guest);
 };
 
 class Cookie{

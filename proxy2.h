@@ -9,10 +9,11 @@ class Proxy2:public Proxy, public Http2Req{
     uint32_t curid = 1;
     uint64_t lastping = 0;
     uint64_t lastrecv  = 0;
-    binmap<Guest *, int> idmap;
+    binmap<Peer *, int> idmap;
     std::set<Peer *> waitlist;
 protected:
     using Proxy::DataProc; //make clang happy
+    virtual Ptr shared_from_this() override;
     virtual ssize_t Read(void* buff, size_t len)override;
     virtual ssize_t Write(const void* buff, size_t len)override;
     virtual void SendFrame(Http2_header *header)override;
@@ -31,7 +32,7 @@ public:
     virtual ssize_t Write(const void *buff, size_t size, Peer *who, uint32_t id=0)override;
     
     virtual void ResProc(HttpResHeader &res)override;
-    virtual void Request(Guest* guest, HttpReqHeader& req)override;
+    virtual Ptr request(HttpReqHeader& req)override;
     
     virtual int32_t bufleft(Peer *)override;
     virtual void wait(Peer *who)override;

@@ -1,45 +1,15 @@
 #include "guest.h"
-#include "host.h"
+#include "net.h"
+#include "responser.h"
 
 #include <set>
 #include <string.h>
 #include <errno.h>
 #include <arpa/inet.h>
 
-#define ADDPTIP    "HTTP/1.0 200 Proxy site Added" CRLF CRLF
-#define ADDBTIP    "HTTP/1.0 200 Block site Added" CRLF CRLF
-#define DELPTIP    "HTTP/1.0 200 Proxy site Deleted" CRLF CRLF
-#define DELBTIP    "HTTP/1.0 200 Block site Deleted" CRLF CRLF
-#define EGLOBLETIP  "HTTP/1.0 200 Global proxy enabled now" CRLF CRLF
-#define DGLOBLETIP  "HTTP/1.0 200 Global proxy disabled" CRLF CRLF
-#define SWITCHTIP   "HTTP/1.0 200 Switched proxy server" CRLF CRLF
 
-#define BLOCKTIP    "HTTP/1.1 403 Forbidden" CRLF \
-                    "Content-Length:73" CRLF CRLF \
-                    "This site is blocked, please contact administrator for more information" CRLF
-
-#define DELFTIP    "HTTP/1.0 404 The site is not found" CRLF CRLF
-
-#define AUTHNEED    "HTTP/1.1 407 Proxy Authentication Required" CRLF \
-                    "Proxy-Authenticate: Basic realm=\"Secure Area\"" CRLF \
-                    "Content-Length: 0" CRLF CRLF
-                    
-#define PROXYTIP    "HTTP/1.1 200 Proxy" CRLF \
-                    "Content-Length:48" CRLF CRLF \
-                    "This site is proxyed, you can do what you want" CRLF
-                    
-#define NORMALIP    "HTTP/1.1 200 Ok" CRLF \
-                    "Content-Length:56" CRLF CRLF \
-                    "This site won't be proxyed, you can add it by addpsite" CRLF
-
-char SHOST[DOMAINLIMIT];
-uint16_t SPORT = 443;
-char *auth_string=nullptr;
-
-std::set<Guest *> guest_set;
 
 Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Peer(fd) {
-    guest_set.insert(this);
     inet_ntop(AF_INET6, &myaddr->sin6_addr, sourceip, sizeof(sourceip));
     sourceport = ntohs(myaddr->sin6_port);
 
@@ -51,7 +21,6 @@ Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Peer(fd) {
 }
 
 Guest::Guest(const Guest *const copy): Peer(copy->fd), sourceport(copy->sourceport){
-    guest_set.insert(this);
     strcpy(this->sourceip, copy->sourceip);
 
 }
@@ -97,12 +66,18 @@ void Guest::defaultHE(uint32_t events) {
             }
             return;
         }
-        Peer *host;
-        if (ret != WRITE_NOTHING && (host = queryconnect(this)))
-            host->writedcb(this);
+        if (ret != WRITE_NOTHING && !responser_ptr.expired()){
+            Responser * responser = dynamic_cast<Responser *>(responser_ptr.get());
+            responser->writedcb(this);
+        }
 
     }
 }
+
+Ptr Guest::shared_from_this() {
+    return Peer::shared_from_this();
+}
+
 
 ssize_t Guest::Read(void* buff, size_t len){
     return Peer::Read(buff, len);
@@ -115,109 +90,11 @@ void Guest::ErrProc(int errcode) {
 }
 
 void Guest::ReqProc(HttpReqHeader& req) {
-    const char *hint = "";
-    if (checkproxy(req.hostname)) {
-        hint = "PROXY ";
-    }
-    if(req.url[0] == '/'){
-        LOG("([%s]:%d): %s%s %s%s [%s]\n", sourceip, sourceport,
-            hint, req.method, req.hostname, req.url, req.get("User-Agent"));
-        if(!req.hostname[0]){
-            Peer::Write(BLOCKTIP, strlen(BLOCKTIP));
-            return;
-        }
-    }else{
-        LOG("([%s]:%d): %s%s %s [%s]\n", sourceip, sourceport,
-            hint, req.method, req.url, req.get("User-Agent"));
-    }
     this->flag = 0;
-    if (auth_string &&
-        !checkauth(sourceip) &&
-        req.get("Proxy-Authorization") &&
-        strcmp(auth_string, req.get("Proxy-Authorization")+6) == 0)
-    {
-        addauth(sourceip);
-    }
-    req.rmproxyinfo();
-    if (req.ismethod("GET") || 
-        req.ismethod("POST") || 
-        req.ismethod("PUT") || 
-        req.ismethod("PATCH") || 
-        req.ismethod("CONNECT") || 
-        req.ismethod("HEAD") || 
-        req.ismethod("SEND")) 
-    {
-        if (auth_string && !checkauth(sourceip)){
-            Peer::Write(AUTHNEED, strlen(AUTHNEED));
-            LOG("([%s]:%d): Authorization needed\n", sourceip, sourceport);
-        }else if (checkblock(req.hostname) || checklocal(req.hostname)) {
-            LOG("([%s]:%d): site: %s blocked\n",
-                 sourceip, sourceport, req.hostname);
-            Peer::Write(BLOCKTIP, strlen(BLOCKTIP));
-        } else {
-            Host::gethost(req, this);
-        }
-#ifdef CLIENT
-    } else if (req.ismethod("ADDPSITE")) {
-        addpsite(req.url);
-        Peer::Write(ADDPTIP, strlen(ADDPTIP));
-    } else if (req.ismethod("DELPSITE")) {
-        if (delpsite(req.url)) {
-            Peer::Write(DELPTIP, strlen(DELPTIP));
-        } else {
-            Peer::Write(DELFTIP, strlen(DELFTIP));
-        }
-    } else if (req.ismethod("ADDBSITE")) {
-        addbsite(req.url);
-        Peer::Write(ADDBTIP, strlen(ADDBTIP));
-    } else if (req.ismethod("DELBSITE")) {
-        if (delbsite(req.url)) {
-            Peer::Write(DELBTIP, strlen(DELBTIP));
-        } else {
-            Peer::Write(DELFTIP, strlen(DELFTIP));
-        }
-    } else if (req.ismethod("GLOBALPROXY")) {
-        if (globalproxy()) {
-            Peer::Write(EGLOBLETIP, strlen(EGLOBLETIP));
-        } else {
-            Peer::Write(DGLOBLETIP, strlen(DGLOBLETIP));
-        }
-    } else if (req.ismethod("SWITCH")) {
-        SPORT = 443;
-        spliturl(req.url, SHOST, nullptr, &SPORT);
-        flushproxy2();
-        Peer::Write(SWITCHTIP, strlen(SWITCHTIP));
-    } else if (req.ismethod("TEST")){
-        if(checkblock(req.hostname)){
-            Peer::Write(BLOCKTIP, strlen(BLOCKTIP));
-            return;
-        }
-        if(checkproxy(req.hostname)){
-            Peer::Write(PROXYTIP, strlen(PROXYTIP));
-            return; 
-        }
-        Peer::Write(NORMALIP, strlen(NORMALIP));
-#endif
-/*    } else if (req.ismethod("SHOW")){
-        writelen += ::showstatus(wbuff+writelen, req.url);
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN | EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);*/
-    } else if(req.ismethod("FLUSH")){
-        if(strcasecmp(req.url, "dns") == 0){
-            flushdns();
-            Peer::Write(H200, strlen(H200));
-            return;
-        }
-    } else{
-        LOGE("([%s]:%d): unsported method:%s\n",
-              sourceip, sourceport, req.method);
-        clean(HTTP_PROTOCOL_ERR, this);
-    }
+    responser_ptr = distribute(req, responser_ptr);
 }
 
-void Guest::Response(HttpResHeader& res, Peer*) {
+void Guest::response(HttpResHeader& res) {
     size_t len;
     char *buff=res.getstring(len);
     Peer::Write(buff, len, this);
@@ -262,21 +139,43 @@ ssize_t Guest::Write(const void *buff, size_t size, Peer* who, uint32_t) {
 
 
 ssize_t Guest::DataProc(const void *buff, size_t size) {
-    Host *host = dynamic_cast<Host *>(queryconnect(this));
-    if (host == NULL) {
+    Responser *responser = dynamic_cast<Responser *>(responser_ptr.get());
+    if (responser == NULL) {
         LOGE("([%s]:%d): connecting to host lost\n", sourceip, sourceport);
         clean(PEER_LOST_ERR, this);
         return -1;
     }
-    int len = host->bufleft(this);
+    int len = responser->bufleft(this);
     if (len <= 0) {
         LOGE("([%s]:%d): The host's buff is full\n", sourceip, sourceport);
-        host->wait(this);
+        responser->wait(this);
         return -1;
     }
-    return host->Write(buff, Min(size, len), this);
+    return responser->Write(buff, Min(size, len), this);
 }
 
+void Guest::clean(uint32_t errcode, Peer* who, uint32_t id)
+{
+    reset_this_ptr();
+    if(!responser_ptr.expired()){
+        Responser *responser = dynamic_cast<Responser *>(responser_ptr.get());
+        responser->clean(errcode, this, id);
+    }
+    Peer::clean(errcode, who, id);
+}
+
+
+const char* Guest::getip(){
+    return sourceip;
+}
+
+const char* Guest::getsrc(){
+    static char src[DOMAINLIMIT];
+    sprintf(src, "([%s]:%d)", sourceip, sourceport);
+    return src;
+}
+
+
+
 Guest::~Guest(){
-    guest_set.erase(this);
 }

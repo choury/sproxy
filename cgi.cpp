@@ -1,4 +1,5 @@
 #include "cgi.h"
+#include "guest.h"
 #include "net.h"
 
 #include <map>
@@ -158,14 +159,14 @@ void Cgi::InProc() {
             cgi_getlen += len;
             break;
         case  HandleRes: {
-            HttpResHeader res(header);
+            HttpResHeader res(header, shared_from_this());
             if (res.get("content-length") == nullptr) {
                 res.add("Transfer-Encoding", "chunked");
             }
             session = idmap.at(res.cgi_id);
             guest = session.first;
             res.http_id = session.second;
-            guest->Response(res, this);
+            guest->response(res);
             status = WaitHeadr;
             cgi_getlen = 0;
             break;
@@ -290,23 +291,26 @@ void Cgi::clean(uint32_t errcode, Peer* who, uint32_t id) {
     }
     Guest *guest = dynamic_cast<Guest *>(who);
     idmap.erase(std::make_pair(guest, id));
-    disconnect(guest, this);
     waitlist.erase(guest);
 }
 
-void Cgi::Request(HttpReqHeader& req, Guest* guest){
-    connect(guest, this);
-    req.cgi_id = curid++;
-    idmap.insert(std::make_pair(guest, req.http_id), req.cgi_id);
-    CGI_Header *header = req.getcgi();
-    Peer::Write(header, sizeof(CGI_Header) + ntohs(header->contentLength), this);
+
+Ptr Cgi::request(HttpReqHeader& req){
+    Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
+    if(guest){
+        req.cgi_id = curid++;
+        idmap.insert(std::make_pair(guest, req.http_id), req.cgi_id);
+        CGI_Header *header = req.getcgi();
+        Peer::Write(header, sizeof(CGI_Header) + ntohs(header->contentLength), this);
+    }
+    return shared_from_this();
 }
 
 void Cgi::wait(Peer *who) {
     waitlist.insert(who);
 }
 
-
+/*
 Cgi *Cgi::getcgi(HttpReqHeader &req, Guest *guest){
     Cgi *cgi = nullptr;
     try{
@@ -316,14 +320,16 @@ Cgi *Cgi::getcgi(HttpReqHeader &req, Guest *guest){
             cgi = new Cgi(req.filename);
         }
     }catch(...){
-        HttpResHeader res(H500);
+        HttpResHeader res(H500, guest->get_this_ptr());
         res.http_id = req.http_id;
-        guest->Response(res, nullptr);
+        guest->response(res);
         throw 0;
     }
-    cgi->Request(req, guest);
+    cgi->request(req);
     return cgi;
 }
+
+*/
 
 void flushcgi() {
     for(auto i:cgimap){

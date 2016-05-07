@@ -246,7 +246,9 @@ void Http2Res::HeadersProc(Http2_header* header) {
         pos += sizeof(streamdep);
         weigth = *pos++;
     }
-    HttpReqHeader req(response_table.hpack_decode(pos, get24(header->length) - padlen - (pos - (const char *)(header+1))));
+    HttpReqHeader req(response_table.hpack_decode(pos,
+                                                  get24(header->length) - padlen - (pos - (const char *)(header+1))),
+                      shared_from_this());
     req.http_id = get32(header->id);
     req.flags = header->flags;
     ReqProc(req);
@@ -311,7 +313,9 @@ void Http2Req::HeadersProc(Http2_header* header) {
         pos += sizeof(streamdep);
         weigth = *pos++;
     }
-    HttpResHeader res(response_table.hpack_decode(pos, get24(header->length) - padlen - (pos - (const char *)(header+1))));
+    HttpResHeader res(response_table.hpack_decode(pos,
+                                                  get24(header->length) - padlen - (pos - (const char *)(header+1))),
+                      shared_from_this());
     res.http_id = get32(header->id);
     res.flags = header->flags;
     ResProc(res);

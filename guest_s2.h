@@ -12,11 +12,12 @@ protected:
     using Guest_s::DataProc; //make clang happy
     virtual void defaultHE(uint32_t events)override;
     
+    virtual Ptr shared_from_this() override;
     virtual ssize_t Read(void *buff, size_t size)override;
     virtual ssize_t Write(const void *buff, size_t size)override;
     virtual void SendFrame(Http2_header *header)override;
     virtual void GoawayProc(Http2_header *header)override;
-    virtual void Response(HttpResHeader& res, Peer *who)override;
+    virtual void response(HttpResHeader& res)override;
     virtual void DataProc(const Http2_header *header)override;
     virtual void ReqProc(HttpReqHeader &req)override;
     virtual void RstProc(uint32_t id, uint32_t errcode)override;
@@ -27,7 +28,7 @@ public:
     Guest_s2(Guest_s *const copy);
     
     virtual void clean(uint32_t errcode, Peer *who, uint32_t id = 0)override;
-    
+
     virtual ssize_t Write(void *buff, size_t size, Peer *who, uint32_t id=0)override;
     virtual ssize_t Write(const void *buff, size_t size, Peer *who, uint32_t id=0)override;
     

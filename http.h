@@ -16,6 +16,7 @@ protected:
     void ChunkBProc();
     void FixLenProc();
     void AlwaysProc();
+    virtual Ptr     shared_from_this() = 0;
     virtual ssize_t Read(void* buff, size_t len) = 0;
     virtual void ErrProc(int errcode) = 0;
     virtual ssize_t DataProc(const void *buff, size_t size) = 0;

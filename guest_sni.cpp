@@ -20,15 +20,10 @@ void Guest_sni::initHE(uint32_t events) {
         char *hostname = nullptr;
         ret = parse_tls_header(http_buff, http_getlen, &hostname);
         if(ret > 0){
-            if (checkproxy(hostname)) {
-                LOG("([%s]:%d): Sni(proxy):%s\n", sourceip, sourceport, hostname);
-            }else{
-                LOG("([%s]:%d): Sni:%s\n", sourceip, sourceport, hostname);
-            }
             char buff[HEADLENLIMIT];
             sprintf(buff, "CONNECT %s:%d" CRLF CRLF, hostname, 443);
-            HttpReqHeader req(buff);
-            Host::gethost(req, this);
+            HttpReqHeader req(buff, shared_from_this());
+            responser_ptr = distribute(req, responser_ptr);
             handleEvent = (void (Con::*)(uint32_t))&Guest_sni::defaultHE;
         }else if(ret != -1){
             clean(INTERNAL_ERR, this);
@@ -37,5 +32,11 @@ void Guest_sni::initHE(uint32_t events) {
     }
 }
 
-void Guest_sni::Response(HttpResHeader &, Peer *){
+void Guest_sni::response(HttpResHeader &){
+}
+
+const char* Guest_sni::getsrc(){
+    static char src[DOMAINLIMIT];
+    sprintf(src, "([%s]:%d [SNI])", sourceip, sourceport);
+    return src;
 }

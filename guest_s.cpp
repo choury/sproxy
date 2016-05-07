@@ -14,7 +14,7 @@ Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL* ssl): Guest(fd, myadd
 Guest_s::Guest_s(Guest_s *const copy): Guest(copy), ssl(copy->ssl) {
     copy->fd = 0;
     copy->ssl = nullptr;
-	copy->clean(NOERROR, queryconnect(copy));
+	copy->clean(NOERROR, nullptr);
 }
 
 
@@ -127,6 +127,8 @@ void Guest_s::ReqProc(HttpReqHeader& req) {
             return;
         }
         return;
+    }
+/*
     } else  if (checklocal(req.hostname)) {
         req.getfile();
         if (endwith(req.filename,".so")) {
@@ -137,4 +139,6 @@ void Guest_s::ReqProc(HttpReqHeader& req) {
     } else {
         Host::gethost(req, this);
     }
+    */
+    responser_ptr = distribute(req, responser_ptr);
 }

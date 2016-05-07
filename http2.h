@@ -86,7 +86,8 @@ protected:
     void Ping( const void *buff );
     void Reset(uint32_t id, uint32_t code);
     void SendInitSetting();
-    virtual void InitProc()=0;
+    virtual Ptr  shared_from_this() = 0;
+    virtual void InitProc() = 0;
     virtual void HeadersProc(Http2_header *header) = 0;
     virtual ssize_t Read(void* buff, size_t len) = 0;
     virtual ssize_t Write(const void *buff, size_t size) = 0;

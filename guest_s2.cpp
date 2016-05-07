@@ -1,7 +1,5 @@
 #include "guest_s2.h"
-#include "host.h"
-#include "file.h"
-#include "cgi.h"
+#include "responser.h"
 
 #include <limits.h>
 
@@ -12,6 +10,12 @@ Guest_s2::Guest_s2(Guest_s *const copy): Guest_s(copy) {
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     handleEvent = (void (Con::*)(uint32_t))&Guest_s2::defaultHE;
 }
+
+Ptr Guest_s2::shared_from_this() {
+    return Guest::shared_from_this();
+}
+
+
 
 ssize_t Guest_s2::Read(void *buff, size_t size) {
     return Guest_s::Read(buff, size);
@@ -92,7 +96,7 @@ void Guest_s2::DataProc(const Http2_header* header)
 void Guest_s2::ReqProc(HttpReqHeader &req)
 {
     LOG("([%s]:%d):[%d] %s %s [%s]\n", sourceip, sourceport, req.http_id, req.method, req.url, req.get("User-Agent"));
-    Peer *peer;
+/*
     if(!checklocal(req.hostname)){
         peer = new Host(req, this);
     }else {
@@ -103,20 +107,24 @@ void Guest_s2::ReqProc(HttpReqHeader &req)
             peer = File::getfile(req,this);
         }
     }
-    peer->remotewinsize = remoteframewindowsize;
-    peer->localwinsize = localframewindowsize;
-    idmap.insert(peer, req.http_id);
+    */
+    responser_ptr = distribute(req, Ptr());
+    Responser * responser = dynamic_cast<Responser *>(responser_ptr.get());
+    responser->remotewinsize = remoteframewindowsize;
+    responser->localwinsize = localframewindowsize;
+    idmap.insert(responser, req.http_id);
 }
 
 
 
-void Guest_s2::Response(HttpResHeader &res, Peer *who)
+void Guest_s2::response(HttpResHeader &res)
 {
+    Responser *responser = dynamic_cast<Responser *>(res.getsrc().get());
     if(res.http_id == 0){
-        if(idmap.count(who)){
-            res.http_id = idmap.at(who);
+        if(idmap.count(responser)){
+            res.http_id = idmap.at(responser);
         }else{
-            who->clean(PEER_LOST_ERR, who);
+            responser->clean(PEER_LOST_ERR, this);
             return;
         }
     }
@@ -217,15 +225,15 @@ void Guest_s2::clean(uint32_t errcode, Peer *who, uint32_t id) {
     if(who == this) {
         return Peer::clean(errcode, this);
     }
-    if(id == 0 && idmap.count(who)){
-        id = idmap.at(who);
+    Responser *responser = dynamic_cast<Responser *>(who);
+    if(id == 0 && idmap.count(responser)){
+        id = idmap.at(responser);
     }
     if(id){
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
-        idmap.erase(who, id);
+        idmap.erase(responser, id);
     }
-    disconnect(this, who);
-    waitlist.erase(who);
+    waitlist.erase(responser);
 }
 
 int32_t Guest_s2::bufleft(Peer *peer) {

@@ -301,11 +301,58 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
     return 0;
 }
 
+HttpHeader::HttpHeader(Ptr&& src):src(src){
+}
 
-HttpReqHeader::HttpReqHeader(const char* header) {
-    if(!header)
+HttpHeader::HttpHeader(mulmap< string, string > headers, Ptr&& src):
+               headers(headers), src(src)
+{
+
+}
+
+Ptr HttpHeader::getsrc() {
+    return src;
+}
+
+
+void HttpHeader::add(const char* header, const char* value) {
+    headers.insert(header, value);
+}
+
+void HttpHeader::del(const char* header) {
+    for(auto i=headers.begin();i != headers.end();) {
+        if(strcasecmp(i->first.c_str(),header)==0)
+            headers.erase(i++);
+        else
+            ++i;
+    }
+}
+
+const char* HttpHeader::get(const char* header) const{
+    for(auto i:headers) {
+        if(strcasecmp(i.first.c_str(),header)==0)
+            return headers.at(i.first).begin()->c_str();
+    }
+    return nullptr;
+}
+
+std::set< string > HttpHeader::getall(const char *header) const{
+    std::set<string> sets;
+    for(auto i:headers) {
+        if(strcasecmp(i.first.c_str(),header)==0)
+            sets.insert(i.second);
+    }
+    return sets;
+}
+
+
+
+HttpReqHeader::HttpReqHeader(const char* header, Ptr&& src):
+                   HttpHeader(std::move(src))
+{
+    if(header == nullptr){
         return;
-    
+    }
     char httpheader[HEADLENLIMIT];
     snprintf(httpheader, sizeof(httpheader), "%s", header);
     *(strstr(httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
@@ -346,7 +393,9 @@ HttpReqHeader::HttpReqHeader(const char* header) {
 }
 
 
-HttpReqHeader::HttpReqHeader(mulmap<string, string>&& headers):headers(headers) {
+HttpReqHeader::HttpReqHeader(mulmap<string, string>&& headers, Ptr&& src):
+                   HttpHeader(headers, std::move(src))
+{
     snprintf(method, sizeof(method), "%s", get(":method"));
     snprintf(path, sizeof(path), "%s", get(":path"));
     port = 80;
@@ -373,7 +422,9 @@ HttpReqHeader::HttpReqHeader(mulmap<string, string>&& headers):headers(headers) 
     }
 }
 
-HttpReqHeader::HttpReqHeader(CGI_Header *headers) {
+HttpReqHeader::HttpReqHeader(CGI_Header *headers, Ptr&& src):
+                   HttpHeader(std::move(src))
+{
     if(headers->type != CGI_REQUEST)
     {
         LOGE("wrong CGI header");
@@ -405,13 +456,13 @@ void HttpReqHeader::getfile() {
     memset(filename, 0, sizeof(filename));
     filename[0]='.';
     memcpy(filename+1,path,p-path);
+/*
     char *q=p-1;
     while (q != path) {
         if (*q == '.' || *q == '/')
             break;
         q--;
     }
-/*
     memset(extname, 0, sizeof(extname));
     if (*q != '/') {
         if (p-q >= 20)
@@ -426,63 +477,40 @@ bool HttpReqHeader::ismethod(const char* method) const{
     return strcmp(this->method, method) == 0;
 }
 
-void HttpReqHeader::add(const char* header, const char* value) {
-    headers.insert(header, value);
-}
-
-void HttpReqHeader::del(const char* header) {
-    for(auto i=headers.begin();i != headers.end();) {
-        if(strcasecmp(i->first.c_str(),header)==0)
-            headers.erase(i++);
-        else
-            ++i;
+void HttpReqHeader::rmonehupinfo(){
+    del("Connection");
+    if(get("Proxy-Connection")){
+        add("Connection", get("Proxy-Connection"));
+        del("Proxy-Connection");
     }
-}
-
-void HttpReqHeader::rmproxyinfo(){
-    del("Proxy-Connection");
+    del("Upgrade");
+    del("Public");
     del("Proxy-Authorization");
-}
-
-const char* HttpReqHeader::get(const char* header) const{
-    for(auto i:headers) {
-        if(strcasecmp(i.first.c_str(),header)==0)
-            return headers.at(i.first).begin()->c_str();
-    }
-    return nullptr;
-}
-
-std::set< string > HttpReqHeader::getall(const char *header) const{
-    std::set<string> sets;
-    for(auto i:headers) {
-        if(strcasecmp(i.first.c_str(),header)==0)
-            sets.insert(i.second);
-    }
-    return sets;
 }
 
 
 char *HttpReqHeader::getstring(size_t &len) const{
     char *buff = (char *)malloc(BUF_LEN);
     len = 0;
-    if (checkproxy(hostname)) {
+    if (should_proxy) {
         len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, url);
-    } else {
-        if (strcmp(method, "CONNECT") == 0 || strcmp(method, "SEND") == 0) {
-            return 0;
-        }
-        if (get("Host") == nullptr && hostname[0] == 0) {
-            len += sprintf(buff, "%s %s HTTP/1.0" CRLF, method, path);
-            
-        }else{
-            len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, path);
-        }
+    } else if (strcmp(method, "CONNECT") == 0 || 
+               strcmp(method, "SEND") == 0)
+    {
+        free(buff);
+        return 0;
+    }else{
+        len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, path);
     }
     
     if(get("Host") == nullptr && hostname[0]){
-        char buff[DOMAINLIMIT];
-        snprintf(buff, sizeof(buff), "%s:%d", hostname, port);
-        len += sprintf(buff + len, "Host: %s" CRLF, buff);
+        if(port == HTTPPORT){
+            len += sprintf(buff + len, "Host: %s" CRLF, hostname);
+        }else{
+            char host_buff[DOMAINLIMIT];
+            snprintf(host_buff, sizeof(host_buff), "%s:%d", hostname, port);
+            len += sprintf(buff + len, "Host: %s" CRLF, host_buff);
+        }
     }
 
     for (auto i : headers) {
@@ -546,7 +574,9 @@ CGI_Header *HttpReqHeader::getcgi() const{
 }
 
 
-HttpResHeader::HttpResHeader(const char* header) {
+HttpResHeader::HttpResHeader(const char* header, Ptr&& src):
+                   HttpHeader(std::move(src))
+{
     char httpheader[HEADLENLIMIT];
     snprintf(httpheader, sizeof(httpheader), "%s", header);
     *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
@@ -568,8 +598,9 @@ HttpResHeader::HttpResHeader(const char* header) {
     }
 }
 
-
-HttpResHeader::HttpResHeader(mulmap<string, string>&& headers):headers(headers) {
+HttpResHeader::HttpResHeader(mulmap<string, string>&& headers, Ptr&& src):
+                   HttpHeader(headers, std::move(src))
+{
     snprintf(status, sizeof(status), "%s", get(":status"));
     for (auto i = this->headers.begin(); i!= this->headers.end();) {
         if (i->first[0] == ':') {
@@ -580,7 +611,9 @@ HttpResHeader::HttpResHeader(mulmap<string, string>&& headers):headers(headers) 
     }
 }
 
-HttpResHeader::HttpResHeader(CGI_Header *headers) {
+HttpResHeader::HttpResHeader(CGI_Header *headers, Ptr&& src):
+                   HttpHeader(std::move(src))
+{
     if(headers->type != CGI_RESPONSE)
     {
         LOGE("wrong CGI header");
@@ -599,37 +632,6 @@ HttpResHeader::HttpResHeader(CGI_Header *headers) {
         }
         this->headers.insert(name, value);
    }
-}
-
-
-void HttpResHeader::add(const char* header, const char* value) {
-    headers.insert(header, value);
-}
-
-void HttpResHeader::del(const char* header) {
-    for(auto i=headers.begin();i != headers.end();) {
-        if(strcasecmp(i->first.c_str(),header)==0)
-            headers.erase(i++);
-        else
-            ++i;
-    }
-}
-
-const char* HttpResHeader::get(const char* header) const{
-    for(auto i:headers) {
-        if(strcasecmp(i.first.c_str(),header)==0)
-            return headers.at(i.first).begin()->c_str();
-    }
-    return nullptr;
-}
-
-std::set< string > HttpResHeader::getall(const char *header) const{
-    std::set<string> sets;
-    for(auto i:headers) {
-        if(strcasecmp(i.first.c_str(),header)==0)
-            sets.insert(i.second);
-    }
-    return sets;
 }
 
 

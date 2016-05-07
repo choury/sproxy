@@ -7,8 +7,6 @@
 #include <errno.h>
 
 
-class binmap<Guest *, Peer*> bindex;
-
 Peer::Peer(int fd):fd(fd) {
 }
 
@@ -18,7 +16,6 @@ Peer::~Peer() {
         epoll_ctl(efd,EPOLL_CTL_DEL,fd,nullptr);
         close(fd);
     }
-    assert(!queryconnect(this));
     while(!write_queue.empty()){
         free(write_queue.front().buff);
         write_queue.pop();
@@ -107,66 +104,7 @@ int32_t Peer::bufleft(Peer *) {
 }
 
 
-void connect(Guest* p1, Peer* p2) {
-    bindex.insert(p1, p2);
-}
-
-
-Guest* queryconnect(Peer * key) {
-    try{
-        return bindex.at(key);
-    }catch(...){
-        return nullptr;
-    }
-}
-
-Peer* queryconnect(Guest * key) {
-    try{
-        return bindex.at(key);
-    }catch(...){
-        return nullptr;
-    }
-}
-
-/*这里who为this，会disconnect所有连接的peer */
-std::set<std::pair<Guest *, Peer *>> disconnect(Peer *k1, Peer* k2) {
-    std::set<std::pair<Guest*, Peer*>> should_erase;
-    Guest *k1_is_guest= dynamic_cast<Guest *>(k1);
-    if(k1_is_guest && bindex.count(k1_is_guest)){
-        assert(k1 == k2 || !dynamic_cast<Guest *>(k2));
-        std::set<Peer *> peers = bindex[k1_is_guest];
-        for(auto found: peers){
-            if(k2 == k1 || k2 == found) {
-                should_erase.insert(std::make_pair(k1_is_guest, found));
-            }
-        }
-    }
-    
-    if(bindex.count(k1)){
-        assert(!k1_is_guest);
-        std::set<Guest *> guests = bindex[k1];
-        for(auto found: guests){
-            if(k2 == k1 || k2 == found) {
-                should_erase.insert(std::make_pair(found, k1));
-            }
-        }
-    }
-    
-    for(auto i: should_erase){
-        bindex.erase(i.first, i.second);
-    }
-    return should_erase;
-}
-
-void Peer::clean(uint32_t errcode, Peer* who, uint32_t) {
-    auto &&disconnected = disconnect(this, who);
-    assert(!queryconnect(this));
-    for(auto i: disconnected){
-        if(i.first != who && i.first != this)
-            i.first->clean(errcode, this);
-        if(i.second != who && i.second != this)
-            i.second->clean(errcode, this);
-    }
+void Peer::clean(uint32_t errcode, Peer* , uint32_t) {
     if(fd > 0) {
         struct epoll_event event;
         event.data.ptr = this;

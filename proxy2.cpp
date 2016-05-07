@@ -1,4 +1,5 @@
 #include "proxy2.h"
+#include "guest.h"
 
 Proxy2* proxy2 = nullptr;
 
@@ -8,6 +9,10 @@ Proxy2::Proxy2(Proxy *const copy): Proxy(copy) {
     event.events = EPOLLIN | EPOLLOUT;
     epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
     handleEvent = (void (Con::*)(uint32_t))&Proxy2::defaultHE;
+}
+
+Ptr Proxy2::shared_from_this() {
+    return Host::shared_from_this();
 }
 
 
@@ -27,10 +32,9 @@ ssize_t Proxy2::Write(void* buff, size_t size, Peer *who, uint32_t id) {
 }
 
 ssize_t Proxy2::Write(const void* buff, size_t size, Peer *who, uint32_t id) {
-    Guest *guest = dynamic_cast<Guest*>(who);
     if(!id){
-        if(idmap.count(guest)){
-            id = idmap.at(guest);
+        if(idmap.count(who)){
+            id = idmap.at(who);
         }else{
             who->clean(PEER_LOST_ERR, this);
             return -1;
@@ -116,7 +120,7 @@ void Proxy2::defaultHE(u_int32_t events) {
 void Proxy2::DataProc(const Http2_header* header) {
     uint32_t id = get32(header->id);
     if(idmap.count(id)){
-        Guest *guest = idmap.at(id);
+        Peer *guest = idmap.at(id);
         int32_t len = get24(header->length);
         if(len > guest->bufleft(this)){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
@@ -148,7 +152,7 @@ void Proxy2::ErrProc(int errcode) {
 
 void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
     if(idmap.count(id)){
-        Guest *guest = idmap.at(id);
+        Peer *guest = idmap.at(id);
         if(errcode){
             LOGE("Guest reset stream [%d]: %d\n", id, errcode);
         }
@@ -162,7 +166,7 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
 void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
     if(id){
         if(idmap.count(id)){
-            Guest *guest = idmap.at(id);
+            Peer *guest = idmap.at(id);
             guest->remotewinsize += size;
             guest->writedcb(this);
             waitlist.erase(guest);
@@ -186,8 +190,8 @@ void Proxy2::PingProc(Http2_header *header){
 }
 
 
-void Proxy2::Request(Guest* guest, HttpReqHeader& req) {
-    ::connect(guest, this);
+Ptr Proxy2::request(HttpReqHeader& req) {
+    Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
     idmap.erase(guest);
     idmap.insert(guest, curid);
     req.http_id = curid;
@@ -199,18 +203,19 @@ void Proxy2::Request(Guest* guest, HttpReqHeader& req) {
     }
     
     SendFrame(req.getframe(&request_table));
+    return shared_from_this();
 }
 
 void Proxy2::ResProc(HttpResHeader& res) {
     if(idmap.count(res.http_id)){
-        Guest *guest = idmap.at(res.http_id);
+        Guest *guest = dynamic_cast<Guest *>(idmap.at(res.http_id));
         
         if(guest->flag & ISPERSISTENT_F) {
             strcpy(res.status, "200 Connection established");
         }else if(!res.get("Content-Length")){
             res.add("Transfer-Encoding", "chunked");
         }
-        guest->Response(res, this);
+        guest->response(res);
     }else{
         Reset(res.http_id, ERR_STREAM_CLOSED);
     }
@@ -225,15 +230,13 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
 
 
 void Proxy2::clean(uint32_t errcode, Peer *who, uint32_t) {
-    Guest *guest = dynamic_cast<Guest*>(who);
     if(who == this) {
         proxy2 = (proxy2 == this) ? nullptr: proxy2;
         return Peer::clean(errcode, this);
-    }else if(idmap.count(guest)){
-        Reset(idmap.at(guest), errcode>30?ERR_INTERNAL_ERROR:errcode);
-        idmap.erase(guest);
+    }else if(idmap.count(who)){
+        Reset(idmap.at(who), errcode>30?ERR_INTERNAL_ERROR:errcode);
+        idmap.erase(who);
     }
-    disconnect(guest, this);
 	waitlist.erase(who);
 }
 
@@ -243,12 +246,11 @@ void Proxy2::wait(Peer *who) {
 }
 
 void Proxy2::writedcb(Peer *who){
-    Guest *guest = dynamic_cast<Guest*>(who);
-    if(idmap.count(guest)){
-        size_t len = localframewindowsize - guest->localwinsize;
+    if(idmap.count(who)){
+        size_t len = localframewindowsize - who->localwinsize;
         if(len < localframewindowsize/2)
             return;
-        guest->localwinsize += ExpandWindowSize(idmap.at(guest), len);
+        who->localwinsize += ExpandWindowSize(idmap.at(who), len);
     }
 }
 

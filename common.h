@@ -11,9 +11,8 @@
 #define DEBUG
 
 extern uint16_t SPORT;
-extern uint16_t CPORT;
-
 extern char SHOST[];
+
 extern char *auth_string;
 
 #define Min(x, y) ((int64_t)(x) < (int64_t)(y)?(x):(y))

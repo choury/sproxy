@@ -1,5 +1,6 @@
 #include "file.h"
 #include "net.h"
+#include "guest.h"
 
 #include <vector>
 
@@ -127,10 +128,10 @@ bool Range::calcu(size_t size) {
 }
 
 
-File::File(HttpReqHeader &req, Guest* guest):req(req) {
-    connect(guest, this);
+File::File(const char *fname) {
+    //connect(guest, this);
     fd = eventfd(1, O_NONBLOCK);
-    snprintf(filename, sizeof(filename), "%s", req.filename);
+    snprintf(filename, sizeof(filename), "%s", fname);
 
     handleEvent = (void (Con::*)(uint32_t))&File::openHE;
     struct epoll_event event;
@@ -139,15 +140,17 @@ File::File(HttpReqHeader &req, Guest* guest):req(req) {
     epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
 }
 
+/*
 
 File* File::getfile(HttpReqHeader &req, Guest* guest) {
-    File* exist = dynamic_cast<File *>(queryconnect(guest));
+    File* exist = dynamic_cast<File *>(guest);
     if (exist) {
         exist->clean(NOERROR, guest);
     }
     return new File(req, guest);
 }
 
+*/
 
 int File::showerrinfo(int ret, const char* s) {
     if (ret < 0 && errno != EAGAIN) {
@@ -157,8 +160,14 @@ int File::showerrinfo(int ret, const char* s) {
     return 0;
 }
 
+Ptr File::request(HttpReqHeader& req) {
+    guest_ptr = req.getsrc();
+    return shared_from_this();
+}
+
+
 void File::openHE(uint32_t events) {
-    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
+    Guest *guest = dynamic_cast<Guest *>(guest_ptr.get());
     if (guest == NULL) {
         goto err;
     }
@@ -171,8 +180,8 @@ void File::openHE(uint32_t events) {
     struct stat st;
     if (stat(filename, &st)) {
         LOGE("get file info failed: %s\n", strerror(errno));
-        HttpResHeader res(H404);
-        guest->Response(res, this);
+        HttpResHeader res(H404, shared_from_this());
+        guest->response(res);
         guest->Write((const void *)nullptr, 0, this);
         goto err;
     }
@@ -180,30 +189,30 @@ void File::openHE(uint32_t events) {
         int ffd = open(filename, O_RDONLY);
         if (ffd < 0) {
             LOGE("open file failed: %s\n", strerror(errno));
-            HttpResHeader res(H500);
-            guest->Response(res, this);
+            HttpResHeader res(H500, shared_from_this());
+            guest->response(res);
             goto err;
         }
         size = st.st_size;
-        Range range(req.get("Range"));
+        Range range(reqs.front().get("Range"));
         if (range.size() == 1 && range.calcu(st.st_size)){
             offset = range.ranges[0].first;
         } else if(range.size()){
-            HttpResHeader res(H416);
+            HttpResHeader res(H416, shared_from_this());
             char buff[100];
             snprintf(buff, sizeof(buff), "bytes */%lu", st.st_size);
             res.add("Content-Range", buff);
-            guest->Response(res, this);
+            guest->response(res);
             goto err;
         }
         mapptr = mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, ffd, 0);
         if(mapptr == nullptr){
             LOGE("lseek file failed: %s\n", strerror(errno));
-            HttpResHeader res(H500);
-            guest->Response(res, this);
+            HttpResHeader res(H500, shared_from_this());
+            guest->response(res);
             goto err;
         }else if(range.size()){
-            HttpResHeader res(H206);
+            HttpResHeader res(H206, shared_from_this());
             char buff[100];
             snprintf(buff, sizeof(buff), "bytes %lu-%lu/%lu",
                      range.ranges[0].first, range.ranges[0].second, st.st_size);
@@ -211,13 +220,13 @@ void File::openHE(uint32_t events) {
             size_t leftsize = range.ranges[0].second - range.ranges[0].first+1;
             snprintf(buff, sizeof(buff), "%lu", leftsize);
             res.add("Content-Length", buff);
-            guest->Response(res, this);
+            guest->response(res);
         }else{
-            HttpResHeader res(H200);
+            HttpResHeader res(H200, shared_from_this());
             char buff[100];
             snprintf(buff, sizeof(buff), "%lu", size);
             res.add("Content-Length", buff);
-            guest->Response(res, this);
+            guest->response(res);
         }
         close(ffd);
     } else if (S_ISDIR(st.st_mode)) {
@@ -235,9 +244,10 @@ err:
 void File::defaultHE(uint32_t events) {
     struct epoll_event event;
     event.data.ptr = this;
-    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
+
+    Guest *guest = dynamic_cast<Guest *>(reqs.front().getsrc().get());
     if (guest == NULL) {
-        clean(PEER_LOST_ERR, this);
+        reqs.pop();
         return;
     }
     

@@ -14,13 +14,12 @@ protected:
     virtual void waitconnectHE(uint32_t events)override;
     virtual void shakehandHE(uint32_t events);
 public:
-    Proxy(HttpReqHeader &req, Guest *guest);
+    Proxy(const char *hostname, uint16_t port);
     Proxy(Proxy *const copy);
     virtual ~Proxy();
     
     virtual int showerrinfo(int ret, const char *)override;
-//    virtual int showstatus(char *buff, Peer *who)override;
-    static Host *getproxy(HttpReqHeader &req, Guest *guest);
+    static Host *getproxy(HttpReqHeader &req, Ptr responser_ptr);
 };
 
 #endif

@@ -8,13 +8,13 @@ set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -ggdb -O0")
 
 add_executable(sproxy_server cgi.cpp file.cpp http.cpp http2.cpp 
 hpack.cpp host.cpp guest.cpp peer.cpp guest_s.cpp guest_s2.cpp
-lib.c parse.cpp server.cpp net.c dns.cpp)
+lib.c parse.cpp server.cpp net.c dns.cpp responser.cpp)
 
 
 
 add_executable(sproxy_client http.cpp http2.cpp hpack.cpp
 peer.cpp guest.cpp guest_sni.cpp host.cpp proxy.cpp proxy2.cpp
-lib.c parse.cpp client.cpp net.c dns.cpp tls.c)
+lib.c parse.cpp client.cpp net.c dns.cpp tls.c responser.cpp)
 
 
 #target_compile_definitions(sproxy_client PUBLIC CLIENT)

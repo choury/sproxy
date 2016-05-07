@@ -9,9 +9,11 @@ class Guest:public Peer, public HttpRes{
 protected:
     char sourceip[INET6_ADDRSTRLEN];
     uint16_t  sourceport;
+    Ptr responser_ptr;
 
     virtual void defaultHE(uint32_t events);
     
+    virtual Ptr shared_from_this() override;
     virtual ssize_t Read(void* buff, size_t len)override;
     virtual void ErrProc(int errcode)override;
     virtual void ReqProc(HttpReqHeader &req)override;
@@ -23,11 +25,14 @@ public:
     explicit Guest(int fd, struct sockaddr_in6 *myaddr);
     explicit Guest(const Guest *const copy);
     virtual ~Guest();
+
     virtual int showerrinfo(int ret, const char *)override;
     virtual ssize_t Write(void* buff, size_t size, Peer* who, uint32_t id=0)override;
     virtual ssize_t Write(const void* buff, size_t size, Peer* who, uint32_t id=0)override;
-    virtual void Response(HttpResHeader& res, Peer* who);
-//    virtual int showstatus(char *buff, Peer* who)override;
+    virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
+    virtual const char *getsrc();
+    virtual const char *getip();
+    virtual void response(HttpResHeader& res);
 };
 
 #endif

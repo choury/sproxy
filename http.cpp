@@ -129,7 +129,7 @@ void HttpRes::HeaderProc() {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - http_buff;
         try {
-            HttpReqHeader req(http_buff);
+            HttpReqHeader req(http_buff, shared_from_this());
             if (req.ismethod("POST") || 
                 req.ismethod("PUT") || 
                 req.ismethod("PATCH")
@@ -176,7 +176,7 @@ void HttpReq::HeaderProc() {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - http_buff;
         try {
-            HttpResHeader res(http_buff);
+            HttpResHeader res(http_buff, shared_from_this());
             if (res.get("Transfer-Encoding")!= nullptr) {
                 Http_Proc = &HttpReq::ChunkLProc;
             } else if (res.get("Content-Length")!= nullptr) {

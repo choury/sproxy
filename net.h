@@ -15,13 +15,22 @@
 
 #define H206        "HTTP/1.0 206 Partial Content" CRLF CRLF
 
-#define H416        "HTTP/1.1 416 Requested Range Not Satisfiable" CRLF\
-                    "Content-Length: 0" CRLF CRLF
+#define H400        "HTTP/1.1 400 Bad Request" CRLF \
+                    "Content-Length:0" CRLF CRLF
 
 #define H403        "HTTP/1.1 403 Forbidden" CRLF \
                     "Content-Length: 0" CRLF CRLF
 
 #define H404        "HTTP/1.1 404 Not Found" CRLF\
+                    "Content-Length: 0" CRLF CRLF
+
+#define H405        "HTTP/1.1 405 Method Not Allowed" CRLF\
+                    "Content-Length:0" CRLF CRLF
+
+#define H408        "HTTP/1.1 408 Request Timeout" CRLF\
+                    "Content-Length:0" CRLF CRLF
+
+#define H416        "HTTP/1.1 416 Requested Range Not Satisfiable" CRLF\
                     "Content-Length: 0" CRLF CRLF
 
 #define H500        "HTTP/1.1 500 Internal Server Error" CRLF\

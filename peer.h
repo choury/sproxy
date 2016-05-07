@@ -3,6 +3,7 @@
 
 #include "con.h"
 #include "common.h"
+#include "ptr.h"
 #include <queue>
 #include <set>
 
@@ -20,7 +21,7 @@ struct write_block{
 };
 
 
-class Peer:public Con{
+class Peer:public Con, public Ptr_for_this{
     std::queue<write_block> write_queue;
     size_t  writelen = 0;
 protected:
@@ -44,11 +45,5 @@ public:
     virtual int32_t bufleft(Peer* who);
     virtual void wait(Peer* who);
 };
-
-class Guest;
-void connect(Guest *p1, Peer *p2);
-Guest *queryconnect(Peer *key);
-Peer *queryconnect(Guest *key);
-std::set<std::pair<Guest *, Peer *>> disconnect(Peer *k1, Peer* k2);
 
 #endif

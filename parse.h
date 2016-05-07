@@ -3,63 +3,70 @@
 
 #include "common.h"
 #include "binmap.h"
+#include "ptr.h"
 
 #include <string>
 
 using std::string;
 
-
 class Index_table;
 struct Http2_header;
 struct CGI_Header;
 
-class HttpReqHeader{
+class HttpHeader{
+protected:
     mulmap<string, string> headers;
+    Ptr      src;
 public:
     uint32_t http_id = 0;  // 由http2协议使用
     uint32_t cgi_id = 0;   // 由cgi 协议使用
     uint8_t flags = 0;
+    bool should_proxy  = false;
+
+    explicit HttpHeader(Ptr&& src);
+    explicit HttpHeader(mulmap<string, string> headers, Ptr&& src);
+
+    Ptr getsrc();
+    void add(const char *header, const char *value);
+    void del(const char *header);
+    const char* get(const char *header) const;
+    std::set<string> getall(const char *header) const;
+
+    virtual char *getstring(size_t &len) const = 0;
+    virtual Http2_header *getframe(Index_table *index_table) const = 0;
+    virtual CGI_Header *getcgi() const = 0;
+};
+
+class HttpReqHeader: public HttpHeader{
+public:
     char method[20];
     char url[URLLIMIT];
     char hostname[DOMAINLIMIT];
     char path[URLLIMIT];
     char filename[URLLIMIT];
     uint16_t port;
-    explicit HttpReqHeader(const char* header = nullptr);
-    explicit HttpReqHeader(mulmap<string, string>&& headers);
-    explicit HttpReqHeader(CGI_Header *headers);
+    explicit HttpReqHeader(const char* header = nullptr,  Ptr &&src = Ptr());
+    explicit HttpReqHeader(mulmap<string, string>&& headers, Ptr &&src = Ptr());
+    explicit HttpReqHeader(CGI_Header *headers, Ptr &&src = Ptr());
     void getfile();
     bool ismethod(const char* method) const;
-    void add(const char *header, const char *value);
-    void del(const char *header);
-    void rmproxyinfo();
-    const char* get(const char *header) const;
-    std::set<string> getall(const char *header) const;
+    void rmonehupinfo();
     
-    char *getstring(size_t &len) const;
-    Http2_header *getframe(Index_table *index_table) const;
-    CGI_Header *getcgi() const;
+    virtual char *getstring(size_t &len) const override;
+    virtual Http2_header *getframe(Index_table *index_table) const override;
+    virtual CGI_Header *getcgi() const override;
 };
 
-class HttpResHeader{
-    mulmap<string, string> headers;
+class HttpResHeader: public HttpHeader{
 public:
-    uint32_t http_id = 0;  // 由http2协议使用
-    uint32_t cgi_id = 0;   // 由cgi 协议使用
-    uint8_t flags = 0;
     char status[100];
-    explicit HttpResHeader(const char* header);
-    explicit HttpResHeader(mulmap<string, string>&& headers);
-    explicit HttpResHeader(CGI_Header *headers);
+    explicit HttpResHeader(const char* header, Ptr &&src = Ptr());
+    explicit HttpResHeader(mulmap<string, string>&& headers, Ptr &&src = Ptr());
+    explicit HttpResHeader(CGI_Header *headers, Ptr &&src = Ptr());
     
-    void add(const char *header, const char *value);
-    void del(const char *header);
-    const char* get(const char *header) const;
-    std::set<string> getall(const char *header) const;
-
-    char *getstring(size_t &len) const;
-    Http2_header *getframe(Index_table *index_table) const;
-    CGI_Header *getcgi() const;
+    virtual char *getstring(size_t &len) const override;
+    virtual Http2_header *getframe(Index_table *index_table) const override;
+    virtual CGI_Header *getcgi() const override;
 };
 
 // trim from start
