@@ -11,11 +11,11 @@ RUN apt-get update && apt-get -y install gcc g++ cmake make git libssl-dev
 WORKDIR /root
 RUN git clone https://github.com/choury/sproxy
 WORKDIR /root/sproxy
-RUN  git checkout dtls && cmake . && make sproxy_server
+RUN  git checkout dtls && cmake . && make sproxy_client
 #COPY keys /root/keys/
 
 # Commands when creating a new container
-EXPOSE 443
+EXPOSE 3333
 #CMD  ./sproxy_server -k ../keys/ca.pem ../keys/ssl.crt /root/keys/ssl.key
-CMD  ./sproxy_server -h
+CMD  ./sproxy_client -s "choury:choury" l.choury.com
 
