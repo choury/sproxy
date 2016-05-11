@@ -77,7 +77,7 @@ void Guest_s2::DataProc(const Http2_header* header)
     if(idmap.count(id)){
         Peer *host = idmap.at(id);
         ssize_t len = get24(header->length);
-        if(len > host->bufleft(this)){
+        if(len > host->localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
             idmap.erase(id);
             waitlist.erase(host);
