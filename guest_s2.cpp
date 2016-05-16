@@ -223,6 +223,9 @@ void Guest_s2::AdjustInitalFrameWindowSize(ssize_t diff) {
 
 void Guest_s2::clean(uint32_t errcode, Peer *who, uint32_t id) {
     if(who == this) {
+        for(auto&& i: idmap.pairs()){
+            i.first->clean(errcode, this, i.second);
+        }
         return Peer::clean(errcode, this);
     }
     Responser *responser = dynamic_cast<Responser *>(who);

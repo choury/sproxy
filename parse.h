@@ -38,6 +38,7 @@ public:
 };
 
 class HttpReqHeader: public HttpHeader{
+    void getfile();
 public:
     char method[20];
     char url[URLLIMIT];
@@ -48,7 +49,6 @@ public:
     explicit HttpReqHeader(const char* header = nullptr,  Ptr &&src = Ptr());
     explicit HttpReqHeader(mulmap<string, string>&& headers, Ptr &&src = Ptr());
     explicit HttpReqHeader(CGI_Header *headers, Ptr &&src = Ptr());
-    void getfile();
     bool ismethod(const char* method) const;
     void rmonehupinfo();
     

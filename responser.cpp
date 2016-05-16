@@ -144,10 +144,25 @@ Ptr distribute(HttpReqHeader& req, Ptr responser_ptr) {
 #else
 
 Ptr distribute(HttpReqHeader& req, Ptr responser_ptr){
-    new Host(req.hostname, req.port);
-    req.getfile();
-    new File(req.filename);
-    new Cgi(req.filename);
+    Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
+    if(req.ismethod("FLUSH")){
+        if(strcasecmp(req.url, "dns") == 0){
+            flushdns();
+            guest->Write(H200, strlen(H200), guest);
+        }else if(strcasecmp(req.url, "cgi") == 0){
+            flushcgi();
+            guest->Write(H200, strlen(H200), guest);
+        }
+    } else  if (checklocal(req.hostname)) {
+/*        if (endwith(req.filename,".so")) {
+            Cgi::getcgi(req, this);
+        } else {
+            File::getfile(req,this);
+        } */
+    } else {
+        Host *host = Host::gethost(req, responser_ptr);
+        return host->request(req);
+    }
     return Ptr();
 }
 

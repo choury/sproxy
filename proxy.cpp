@@ -29,7 +29,7 @@ Host* Proxy::getproxy(HttpReqHeader &req, Ptr responser_ptr) {
     }
     
     if (exist) {
-        exist->clean(NOERROR, dynamic_cast<Guest *>(exist->guest_ptr.get())); //只有exist是host才会走到这里
+        exist->clean(NOERROR, nullptr); //只有exist是host才会走到这里
     }
     
     if (proxy2 && proxy2->bufleft(nullptr) >= 32 * 1024) {

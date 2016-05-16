@@ -133,7 +133,6 @@ int globalproxy() {
 }
 
 bool checkproxy(const char *hostname) {
-#ifdef CLIENT
     if (!loadedsites) {
         loadsites();
     }
@@ -160,13 +159,11 @@ bool checkproxy(const char *hostname) {
 
         subhost = strpbrk(subhost, ".");
     }
-#endif
     return false;
 }
 
 
 bool checkblock(const char *hostname) {
-#ifdef CLIENT
     if (!loadedsites) {
         loadsites();
     }
@@ -189,7 +186,6 @@ bool checkblock(const char *hostname) {
 
         subhost = strpbrk(subhost, ".");
     }
-#endif
     return false;
 }
 
@@ -389,7 +385,7 @@ HttpReqHeader::HttpReqHeader(const char* header, Ptr&& src):
             throw 0;
         }
     }
-    
+    getfile();
 }
 
 
@@ -420,6 +416,7 @@ HttpReqHeader::HttpReqHeader(mulmap<string, string>&& headers, Ptr&& src):
             i++;
         }
     }
+    getfile();
 }
 
 HttpReqHeader::HttpReqHeader(CGI_Header *headers, Ptr&& src):
@@ -446,7 +443,8 @@ HttpReqHeader::HttpReqHeader(CGI_Header *headers, Ptr&& src):
             continue;
         }
         this->headers.insert(name, value);
-   }
+    }
+    getfile();
 }
 
 

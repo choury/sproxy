@@ -111,34 +111,3 @@ void Guest_s::shakehandHE(uint32_t events) {
     } 
 }
 
-void Guest_s::ReqProc(HttpReqHeader& req) {
-    LOG("([%s]:%d): %s %s [%s]\n", sourceip, sourceport, req.method, req.url, req.get("User-Agent"));
-
-    this->flag = 0;
-    if(req.ismethod("FLUSH")){
-        if(strcasecmp(req.url, "dns") == 0){
-            flushdns();
-            Write(H200, strlen(H200));
-            return;
-        }
-        if(strcasecmp(req.url, "cgi") == 0){
-            flushcgi();
-            Write(H200, strlen(H200));
-            return;
-        }
-        return;
-    }
-/*
-    } else  if (checklocal(req.hostname)) {
-        req.getfile();
-        if (endwith(req.filename,".so")) {
-            Cgi::getcgi(req, this);
-        } else {
-            File::getfile(req,this);
-        }
-    } else {
-        Host::gethost(req, this);
-    }
-    */
-    responser_ptr = distribute(req, responser_ptr);
-}

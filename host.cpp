@@ -256,7 +256,7 @@ Host* Host::gethost(HttpReqHeader& req, Ptr responser_ptr) {
     }
 
     if (exist) { 
-        exist->clean(NOERROR, dynamic_cast<Guest*>(exist->guest_ptr.get()));
+        exist->clean(NOERROR, nullptr);
     }
     return new Host(req.hostname, req.port, req.ismethod("SEND"));
 }
