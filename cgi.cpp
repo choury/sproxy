@@ -310,8 +310,8 @@ void Cgi::wait(Peer *who) {
     waitlist.insert(who);
 }
 
-/*
-Cgi *Cgi::getcgi(HttpReqHeader &req, Guest *guest){
+
+Cgi *Cgi::getcgi(HttpReqHeader &req){
     Cgi *cgi = nullptr;
     try{
         if(cgimap.count(req.filename)){
@@ -320,16 +320,15 @@ Cgi *Cgi::getcgi(HttpReqHeader &req, Guest *guest){
             cgi = new Cgi(req.filename);
         }
     }catch(...){
-        HttpResHeader res(H500, guest->get_this_ptr());
+        Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
+        HttpResHeader res(H500);
         res.http_id = req.http_id;
         guest->response(res);
         throw 0;
     }
-    cgi->request(req);
     return cgi;
 }
 
-*/
 
 void flushcgi() {
     for(auto i:cgimap){

@@ -45,16 +45,16 @@ Ptr distribute(HttpReqHeader& req, Ptr responser_ptr) {
     Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
     req.should_proxy = checkproxy(req.hostname);
     if(req.url[0] == '/'){
-        LOG("%s: %s%s %s%s [%s]\n", guest->getsrc(),
-            req.should_proxy?"PROXY ":"", req.method,
+        LOG("(%s%s): %s %s%s [%s]\n", guest->getsrc(),
+            req.should_proxy?" PROXY":"", req.method,
             req.hostname, req.url, req.get("User-Agent"));
         if(!req.hostname[0]){
             guest->Write(H400, strlen(H400), guest);
             return Ptr();
         }
     }else{
-        LOG("%s: %s%s %s [%s]\n", guest->getsrc(),
-            req.should_proxy?"PROXY ":"", req.method,
+        LOG("(%s%s): %s %s [%s]\n", guest->getsrc(),
+            req.should_proxy?" PROXY":"", req.method,
             req.url, req.get("User-Agent"));
     }
     if (auth_string &&
@@ -145,6 +145,13 @@ Ptr distribute(HttpReqHeader& req, Ptr responser_ptr) {
 
 Ptr distribute(HttpReqHeader& req, Ptr responser_ptr){
     Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
+    if(req.http_id){
+        LOG("(%s [%d]): %s %s [%s]\n", guest->getsrc(), req.http_id,
+            req.method, req.url, req.get("User-Agent"));
+    }else{
+        LOG("(%s): %s %s [%s]\n", guest->getsrc(), req.method,
+            req.url, req.get("User-Agent"));
+    }
     if(req.ismethod("FLUSH")){
         if(strcasecmp(req.url, "dns") == 0){
             flushdns();
@@ -154,14 +161,15 @@ Ptr distribute(HttpReqHeader& req, Ptr responser_ptr){
             guest->Write(H200, strlen(H200), guest);
         }
     } else  if (checklocal(req.hostname)) {
-/*        if (endwith(req.filename,".so")) {
-            Cgi::getcgi(req, this);
+        if (endwith(req.filename,".so")) {
+            return Cgi::getcgi(req)->request(req);
+        }
+/*
         } else {
             File::getfile(req,this);
         } */
     } else {
-        Host *host = Host::gethost(req, responser_ptr);
-        return host->request(req);
+        return Host::gethost(req, responser_ptr)->request(req);
     }
     return Ptr();
 }

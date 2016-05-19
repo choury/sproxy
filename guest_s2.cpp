@@ -95,19 +95,6 @@ void Guest_s2::DataProc(const Http2_header* header)
 
 void Guest_s2::ReqProc(HttpReqHeader &req)
 {
-    LOG("([%s]:%d):[%d] %s %s [%s]\n", sourceip, sourceport, req.http_id, req.method, req.url, req.get("User-Agent"));
-/*
-    if(!checklocal(req.hostname)){
-        peer = new Host(req, this);
-    }else {
-        req.getfile();
-        if (endwith(req.filename,".so")) {
-            peer = Cgi::getcgi(req, this);
-        } else {
-            peer = File::getfile(req,this);
-        }
-    }
-    */
     responser_ptr = distribute(req, Ptr());
     Responser * responser = dynamic_cast<Responser *>(responser_ptr.get());
     responser->remotewinsize = remoteframewindowsize;

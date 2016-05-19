@@ -37,6 +37,6 @@ void Guest_sni::response(HttpResHeader &){
 
 const char* Guest_sni::getsrc(){
     static char src[DOMAINLIMIT];
-    sprintf(src, "([%s]:%d [SNI])", sourceip, sourceport);
+    sprintf(src, "[%s]:%d [SNI]", sourceip, sourceport);
     return src;
 }

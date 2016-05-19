@@ -63,7 +63,7 @@ public:
     virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
     virtual int showerrinfo(int ret,const char *s)override;
     virtual Ptr request(HttpReqHeader &req)override;
-//    static Cgi *getcgi(HttpReqHeader &req, Guest *guest);
+    static Cgi *getcgi(HttpReqHeader &req);
 };
 
 class Cookie{

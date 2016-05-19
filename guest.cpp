@@ -180,7 +180,7 @@ const char* Guest::getip(){
 
 const char* Guest::getsrc(){
     static char src[DOMAINLIMIT];
-    sprintf(src, "([%s]:%d)", sourceip, sourceport);
+    sprintf(src, "[%s]:%d", sourceip, sourceport);
     return src;
 }
 
