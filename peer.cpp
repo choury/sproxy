@@ -105,6 +105,7 @@ int32_t Peer::bufleft(Peer *) {
 
 
 void Peer::clean(uint32_t errcode, Peer* , uint32_t) {
+    reset_this_ptr();
     if(fd > 0) {
         struct epoll_event event;
         event.data.ptr = this;
@@ -113,19 +114,6 @@ void Peer::clean(uint32_t errcode, Peer* , uint32_t) {
             epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
         }
         handleEvent = (void (Con::*)(uint32_t))&Peer::closeHE;
-    }
-}
-
-void Peer::closeHE(uint32_t events){
-    if (write_queue.empty()){
-        delete this;
-        return;
-    }
-
-    int ret = Write();
-    if (ret <= 0 && showerrinfo(ret, "write error while closing")) {
-        delete this;
-        return;
     }
 }
 

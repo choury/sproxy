@@ -12,6 +12,7 @@ protected:
     Ptr responser_ptr;
 
     virtual void defaultHE(uint32_t events);
+    virtual void closeHE(uint32_t events)override;
     
     virtual Ptr shared_from_this() override;
     virtual ssize_t Read(void* buff, size_t len)override;

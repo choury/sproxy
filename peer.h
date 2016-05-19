@@ -30,7 +30,7 @@ protected:
     virtual ssize_t Read(void *buff, size_t size);
     virtual ssize_t Write(const void *buff, size_t size);
     virtual int Write() final;
-    virtual void closeHE(uint32_t events);
+    virtual void closeHE(uint32_t events) = 0;
 public:
     virtual ~Peer();
     int32_t remotewinsize = 65535; //(for http2) 对端提供的窗口大小，发送时减小，收到对段update时增加

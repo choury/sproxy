@@ -2,6 +2,7 @@
 #define PTR_H__
 
 #include <stddef.h>
+#include <vector>
 
 class Ptr_for_this;
 
@@ -55,21 +56,28 @@ public:
 };
 
 class Ptr_for_this{
-    Ptr_data *d;
+    std::vector<Ptr_data *> ps;
 public:
     explicit Ptr_for_this(){
-        d = new Ptr_data{this, 1};
+        ps.push_back(new Ptr_data{this, 1});
     }
     ~Ptr_for_this(){
-        d->data = nullptr;
-        d->deffer();
+        for(auto i:ps){
+            i->data = nullptr;
+            i->deffer();
+        }
     }
-    void reset_this_ptr(){
-        this->~Ptr_for_this();
-        d = new Ptr_data{this, 1};
+    void reset_this_ptr(Ptr_for_this *to = nullptr){
+        for(auto i:ps){
+            i->data = to;
+            if(to)
+                to->ps.push_back(i);
+        }
+        ps.clear();
+        ps.push_back(new Ptr_data{this, 1});
     }
     virtual Ptr shared_from_this(){
-        return d;
+        return ps[0];
     }
 };
 

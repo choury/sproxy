@@ -168,14 +168,17 @@ Ptr distribute(HttpReqHeader& req, Ptr responser_ptr){
 
 #endif
 
+void Responser::closeHE(uint32_t events) {
+    delete this;
+}
 
-void Responser::clean(uint32_t errcode, Peer* who, uint32_t id)
+
+void Responser::clean(uint32_t errcode, Peer* who, uint32_t)
 {
-    reset_this_ptr();
     Guest *guest = dynamic_cast<Guest *>(guest_ptr.get());
     if(who == this && guest){
-        guest->clean(errcode, this, id);
+        guest->clean(errcode, this);
     }
-    Peer::clean(errcode, who, id);
+    Peer::clean(errcode, who);
 }
 

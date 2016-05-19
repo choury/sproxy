@@ -18,6 +18,7 @@ Proxy::Proxy(Proxy *const copy): ssl(copy->ssl), ctx(copy->ctx) {
     copy->fd  = 0;
     copy->ssl = nullptr;
     copy->ctx = nullptr;
+    copy->reset_this_ptr(this);
     copy->clean(NOERROR, nullptr);
 }
 

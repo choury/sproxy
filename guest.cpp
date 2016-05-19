@@ -74,6 +74,16 @@ void Guest::defaultHE(uint32_t events) {
     }
 }
 
+void Guest::closeHE(uint32_t events) {
+    int ret = Peer::Write();
+    if (ret == WRITE_NOTHING ||
+        (ret <= 0 && showerrinfo(ret, "write error while closing"))) {
+        delete this;
+        return;
+    }
+}
+
+
 Ptr Guest::shared_from_this() {
     return Peer::shared_from_this();
 }
@@ -154,14 +164,13 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
     return responser->Write(buff, Min(size, len), this);
 }
 
-void Guest::clean(uint32_t errcode, Peer* who, uint32_t id)
+void Guest::clean(uint32_t errcode, Peer* who, uint32_t)
 {
-    reset_this_ptr();
     if(!responser_ptr.expired()){
         Responser *responser = dynamic_cast<Responser *>(responser_ptr.get());
-        responser->clean(errcode, this, id);
+        responser->clean(errcode, this);
     }
-    Peer::clean(errcode, who, id);
+    Peer::clean(errcode, who);
 }
 
 

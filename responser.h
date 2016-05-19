@@ -5,6 +5,8 @@
 #include "parse.h"
 
 class Responser:public Peer{
+protected:
+    virtual void closeHE(uint32_t events) override;
 public:
     Ptr guest_ptr;
     virtual Ptr request(HttpReqHeader &req) = 0;
