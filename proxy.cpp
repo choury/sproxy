@@ -34,7 +34,6 @@ Host* Proxy::getproxy(HttpReqHeader &req, Ptr responser_ptr) {
     }
     
     if (proxy2 && proxy2->bufleft(nullptr) >= 32 * 1024) {
-        proxy2->request(req);
         return proxy2;
     }
 
