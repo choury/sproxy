@@ -74,10 +74,7 @@ int Host::connect_tcp() {
             LOGE("connect to %s failed\n", this->hostname);
             return connect();
         }
-        epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+        updateEpoll(EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Host::waitconnectHE;
         return 0;
     }
@@ -100,10 +97,7 @@ int Host::connect_udp(){
             return connect();
         }
 
-        epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLOUT | EPOLLIN;
-        epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+        updateEpoll(EPOLLIN | EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
         return 0;
     }
@@ -138,11 +132,7 @@ void Host::waitconnectHE(uint32_t events) {
             LOGE("connect to %s: %s\n", this->hostname, strerror(error));
             goto reconnect;
         }
-        
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN | EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        updateEpoll(EPOLLIN | EPOLLOUT);
 
         if (req.ismethod("CONNECT")){
             HttpResHeader res(connecttip, shared_from_this());
@@ -289,6 +279,15 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     }
 
     return guest->Write(buff, Min(size, len), this);
+}
+
+void Host::clean(uint32_t errcode, Peer* who, uint32_t)
+{
+    Guest *guest = dynamic_cast<Guest *>(guest_ptr.get());
+    if(who == this && guest){
+        guest->clean(errcode, this);
+    }
+    Peer::clean(errcode, who);
 }
 
 void hosttick() {

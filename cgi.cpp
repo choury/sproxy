@@ -14,22 +14,27 @@
 
 std::map<std::string, Cgi *> cgimap;
 
-Cgi::Cgi(const char *filename) {
-    strcpy(this->filename, filename);
-    void *handle = dlopen(filename,RTLD_NOW);
+Cgi::Cgi(HttpReqHeader& req) {
+    const char *errinfo = nullptr;
+    cgifunc *func = nullptr;
+    int fds[2]={0},flags;
+    Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
+    void *handle = dlopen(req.filename,RTLD_NOW);
     if(handle == nullptr) {
         LOGE("dlopen failed: %s\n", dlerror());
-        throw 0;
+        errinfo = H404;
+        goto err;
     }
-    cgifunc *func=(cgifunc *)dlsym(handle,"cgimain");
+    func=(cgifunc *)dlsym(handle,"cgimain");
     if(func == nullptr) {
         LOGE("dlsym failed: %s\n", dlerror());
-        throw 0;
+        errinfo = H500;
+        goto err;
     }
-    int fds[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds)) {  // 创建管道
         LOGE("socketpair failed: %s\n", strerror(errno));
-        throw 0;
+        errinfo = H500;
+        goto err;
     }
     if (fork() == 0) { // 子进程
         signal(SIGPIPE, SIG_DFL);
@@ -41,19 +46,31 @@ Cgi::Cgi(const char *filename) {
     close(fds[1]);   // 关闭管道的子进程端
     /* 现在可在fd[0]中读写数据 */
     fd=fds[0];
-    int flags = fcntl(fd, F_GETFL, 0);
+    flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0) {
         LOGE("fcntl error:%s\n",strerror(errno));
-        throw 0;
+        errinfo = H500;
+        goto err;
     }
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
     handleEvent=(void (Con::*)(uint32_t))&Cgi::defaultHE;
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN;
-    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+    updateEpoll(EPOLLIN);
+
+    snprintf(filename, sizeof(filename), "%s", req.filename);
     cgimap[filename] = this;
+    return;
+err:
+    if(handle){
+        dlclose(handle);
+    }
+    if(fd){
+        close(fd);
+    }
+    HttpResHeader res(errinfo);
+    res.http_id = req.http_id;
+    guest->response(res);
+    throw 0;
 }
 
 Cgi::~Cgi() {
@@ -312,21 +329,11 @@ void Cgi::wait(Peer *who) {
 
 
 Cgi *Cgi::getcgi(HttpReqHeader &req){
-    Cgi *cgi = nullptr;
-    try{
-        if(cgimap.count(req.filename)){
-            cgi = cgimap[req.filename];
-        }else{
-            cgi = new Cgi(req.filename);
-        }
-    }catch(...){
-        Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
-        HttpResHeader res(H500);
-        res.http_id = req.http_id;
-        guest->response(res);
-        throw 0;
+    if(cgimap.count(req.filename)){
+        return cgimap[req.filename];
+    }else{
+        return new Cgi(req);
     }
-    return cgi;
 }
 
 

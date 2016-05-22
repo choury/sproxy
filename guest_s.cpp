@@ -37,15 +37,12 @@ ssize_t Guest_s::Write(const void *buff, size_t size) {
 
 int Guest_s::showerrinfo(int ret, const char* s) {
     if(ret<=0) {
-        epoll_event event;
-        event.data.ptr = this;
         int error = SSL_get_error(ssl, ret);
         switch (error) {
         case SSL_ERROR_WANT_READ:
             return 0;
         case SSL_ERROR_WANT_WRITE:
-            event.events = EPOLLIN|EPOLLOUT;
-            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            updateEpoll(EPOLLIN | EPOLLOUT);
             return 0;
         case SSL_ERROR_ZERO_RETURN:
             break;
@@ -94,10 +91,7 @@ void Guest_s::shakehandHE(uint32_t events) {
                 clean(SSL_SHAKEHAND_ERR, this);
             }
         } else {
-            epoll_event event;
-            event.data.ptr = this;
-            event.events = EPOLLIN;
-            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            updateEpoll(EPOLLIN);
             handleEvent = (void (Con::*)(uint32_t))&Guest_s::defaultHE;
 
             const unsigned char *data;

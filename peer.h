@@ -25,7 +25,6 @@ class Peer:public Con, public Ptr_for_this{
     std::queue<write_block> write_queue;
     size_t  writelen = 0;
 protected:
-    int fd;
     explicit Peer(int fd = 0);
     virtual ssize_t Read(void *buff, size_t size);
     virtual ssize_t Write(const void *buff, size_t size);

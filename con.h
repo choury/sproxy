@@ -1,6 +1,7 @@
 #ifndef CON_H__
 #define CON_H__
 
+#include <errno.h>
 #include <stdint.h>
 #include <unistd.h>
 #include <sys/epoll.h>
@@ -8,25 +9,36 @@
 extern int efd;
 
 class Con {
+protected:
+    int fd = 0;
+    void updateEpoll(uint32_t events){
+        if (fd > 0) {
+            struct epoll_event event;
+            event.data.ptr = this;
+            event.events = events;
+            if (epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
+                epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+            }
+        }
+    }
 public:
+    Con(int fd):fd(fd){}
     void (Con::*handleEvent)(uint32_t events)=nullptr;
-    virtual ~Con() {}
+    virtual ~Con(){
+        if(fd > 0){
+            epoll_ctl(efd,EPOLL_CTL_DEL,fd,nullptr);
+            close(fd);
+        }
+    }
 };
 
 class Server:public Con{
 protected:
-    int fd;
     virtual void defaultHE(uint32_t events)=0;
 public:
-    Server(int fd):fd(fd){
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN;
-        epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+    Server(int fd):Con(fd){
+        updateEpoll(EPOLLIN);
         handleEvent = (void (Con::*)(uint32_t))&Server::defaultHE;
-    }
-    virtual ~Server(){
-        close(fd);
     }
 };
 

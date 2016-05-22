@@ -4,10 +4,9 @@
 #include <limits.h>
 
 Guest_s2::Guest_s2(Guest_s *const copy): Guest_s(copy) {
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    remotewinsize = remoteframewindowsize;
+    localwinsize  = localframewindowsize;
+    updateEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Con::*)(uint32_t))&Guest_s2::defaultHE;
 }
 
@@ -63,10 +62,7 @@ ssize_t Guest_s2::Write(const void *buff, size_t size, Peer *who, uint32_t id)
 
 
 void Guest_s2::SendFrame(Http2_header *header) {
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    updateEpoll(EPOLLIN | EPOLLOUT);
     return Http2Res::SendFrame(header);
 }
 
@@ -159,10 +155,7 @@ void Guest_s2::defaultHE(uint32_t events)
         }
 
         if (framequeue.empty()) {
-            struct epoll_event event;
-            event.data.ptr = this;
-            event.events = EPOLLIN;
-            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            updateEpoll(EPOLLIN);
         }
     }
 }
@@ -206,6 +199,7 @@ void Guest_s2::AdjustInitalFrameWindowSize(ssize_t diff) {
     for(auto&& i: idmap.pairs()){
        i.first->remotewinsize += diff; 
     }
+    remotewinsize += diff;
 }
 
 void Guest_s2::clean(uint32_t errcode, Peer *who, uint32_t id) {

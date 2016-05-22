@@ -16,12 +16,10 @@
 #define DNSTTL     8640             // dns 缓存时间(s)
 
 class Dns_srv:public Con{
-    int fd;
 public:
     explicit Dns_srv(int fd);
     virtual void DnshandleEvent(uint32_t events);
     int query(const char *host, int type, uint32_t id);
-    virtual ~Dns_srv();
 };
 
 

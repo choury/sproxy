@@ -4,10 +4,9 @@
 Proxy2* proxy2 = nullptr;
 
 Proxy2::Proxy2(Proxy *const copy): Proxy(copy) {
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    remotewinsize = remoteframewindowsize;
+    localwinsize  = localframewindowsize;
+    updateEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Con::*)(uint32_t))&Proxy2::defaultHE;
 }
 
@@ -56,10 +55,7 @@ ssize_t Proxy2::Write(const void* buff, size_t size, Peer *who, uint32_t id) {
 }
 
 void Proxy2::SendFrame(Http2_header *header){
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    updateEpoll(EPOLLIN | EPOLLOUT);
     return Http2Base::SendFrame(header);
 }
 
@@ -108,10 +104,7 @@ void Proxy2::defaultHE(u_int32_t events) {
             return;
         }
         if (framequeue.empty()) {
-            struct epoll_event event;
-            event.data.ptr = this;
-            event.events = EPOLLIN;
-            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            updateEpoll(EPOLLIN);
         }
     }
 }
@@ -192,6 +185,8 @@ void Proxy2::PingProc(Http2_header *header){
 
 Ptr Proxy2::request(HttpReqHeader& req) {
     Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
+    if(guest == nullptr)
+        return shared_from_this();
     idmap.erase(guest);
     idmap.insert(guest, curid);
     req.http_id = curid;
@@ -225,6 +220,7 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
     for(auto&& i: idmap.pairs()){
        i.first->remotewinsize += diff; 
     }
+    remotewinsize += diff;
 }
 
 

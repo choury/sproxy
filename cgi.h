@@ -55,7 +55,7 @@ class Cgi:public Responser{
     }status = WaitHeadr;
     void InProc();
 public:
-    Cgi(const char *filename);
+    Cgi(HttpReqHeader& req);
     virtual ~Cgi();
     virtual ssize_t Write(void *buff, size_t size, Peer* who, uint32_t id=0)override;
     virtual ssize_t Write(const void *buff, size_t size, Peer* who, uint32_t id=0)override;

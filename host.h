@@ -28,12 +28,14 @@ protected:
     virtual ssize_t DataProc(const void *buff, size_t size)override;
     static void Dnscallback(Host * host, const Dns_rcd&&);
 public:
+    Ptr guest_ptr;
     Host(){}
     Host(const char* hostname, uint16_t port, bool udp_mode = false);
     ~Host();
     
     virtual int showerrinfo(int ret, const char *s)override;
     virtual Ptr request(HttpReqHeader &req)override;
+    virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
     virtual void ResProc(HttpResHeader &res)override;
     static Host* gethost(HttpReqHeader &req, Ptr responser_ptr);
     friend void hosttick();

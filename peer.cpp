@@ -7,15 +7,11 @@
 #include <errno.h>
 
 
-Peer::Peer(int fd):fd(fd) {
+Peer::Peer(int fd):Con(fd) {
 }
 
 
 Peer::~Peer() {
-    if (fd > 0) {
-        epoll_ctl(efd,EPOLL_CTL_DEL,fd,nullptr);
-        close(fd);
-    }
     while(!write_queue.empty()){
         free(write_queue.front().buff);
         write_queue.pop();
@@ -40,12 +36,7 @@ ssize_t Peer::Write(void* buff, size_t size, Peer* , uint32_t) {
     write_queue.push(wb);
     writelen += size;
 
-    if (fd > 0) {
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN | EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    }
+    updateEpoll(EPOLLIN | EPOLLOUT);
     return size;
 }
 
@@ -78,22 +69,12 @@ int Peer::Write() {
         }
     }
 
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+    updateEpoll(EPOLLIN);
     return writed ? WRITE_COMPLETE : WRITE_NOTHING;
 }
 
 void Peer::writedcb(Peer *) {
-    if (fd > 0) {
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN | EPOLLOUT;
-        if (epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
-            epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-        }
-    }
+    updateEpoll(EPOLLIN | EPOLLOUT);
 }
 
 int32_t Peer::bufleft(Peer *) {
@@ -107,12 +88,7 @@ int32_t Peer::bufleft(Peer *) {
 void Peer::clean(uint32_t errcode, Peer* , uint32_t) {
     reset_this_ptr();
     if(fd > 0) {
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLOUT;
-        if (epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
-            epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-        }
+        updateEpoll(EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Peer::closeHE;
     }
 }

@@ -52,17 +52,13 @@ ssize_t Proxy::Write(const void *buff, size_t size) {
 
 int Proxy::showerrinfo(int ret, const char* s) {
     if(ret <= 0){
-        epoll_event event;
-        event.data.ptr = this;
         int error = SSL_get_error(ssl, ret);
         switch (error) {
         case SSL_ERROR_WANT_READ:
-            event.events = EPOLLIN;
-            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            updateEpoll(EPOLLIN);
             return 0;
         case SSL_ERROR_WANT_WRITE:
-            event.events = EPOLLIN|EPOLLOUT;
-            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            updateEpoll(EPOLLIN | EPOLLOUT);
             return 0;
         case SSL_ERROR_ZERO_RETURN:
             break;
@@ -129,11 +125,7 @@ void Proxy::waitconnectHE(uint32_t events) {
         ssl = SSL_new(ctx);
         SSL_set_fd(ssl, fd);
 
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN | EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-
+        updateEpoll(EPOLLIN | EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Proxy::shakehandHE;
         connectmap.erase(this);
     }
@@ -155,10 +147,7 @@ void Proxy::shakehandHE(uint32_t events) {
             return;
         }
 
-        epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN |EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        updateEpoll(EPOLLIN | EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Proxy::defaultHE;
         
         const unsigned char *data;

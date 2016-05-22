@@ -340,14 +340,9 @@ void RcdDown(const char *hostname, const sockaddr_un &addr) {
     }
 }
 
-Dns_srv::Dns_srv(int fd):fd(fd) {
+Dns_srv::Dns_srv(int fd):Con(fd) {
     handleEvent = (void (Con::*)(uint32_t))&Dns_srv::DnshandleEvent;
 }
-
-Dns_srv::~Dns_srv() {
-    close(fd);
-}
-
 
 void Dns_srv::DnshandleEvent(uint32_t events) {
     unsigned char buf[BUF_SIZE];

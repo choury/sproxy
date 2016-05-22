@@ -163,11 +163,9 @@ Ptr distribute(HttpReqHeader& req, Ptr responser_ptr){
     } else  if (checklocal(req.hostname)) {
         if (endwith(req.filename,".so")) {
             return Cgi::getcgi(req)->request(req);
-        }
-/*
         } else {
-            File::getfile(req,this);
-        } */
+            return File::getfile(req)->request(req);
+        }
     } else {
         return Host::gethost(req, responser_ptr)->request(req);
     }
@@ -181,12 +179,4 @@ void Responser::closeHE(uint32_t events) {
 }
 
 
-void Responser::clean(uint32_t errcode, Peer* who, uint32_t)
-{
-    Guest *guest = dynamic_cast<Guest *>(guest_ptr.get());
-    if(who == this && guest){
-        guest->clean(errcode, this);
-    }
-    Peer::clean(errcode, who);
-}
 
