@@ -147,12 +147,16 @@ File::File(HttpReqHeader& req) {
         }
         size = st.st_size;
         mapptr = mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, ffd, 0);
-        close(ffd);
         if(mapptr == nullptr){
             LOGE("mapptr file failed: %s\n", strerror(errno));
             errinfo = H500;
+            close(ffd);
             goto err;
         }
+        close(ffd);
+    }else{
+        errinfo = H404;
+        goto err;
     }
 
     fd = eventfd(1, O_NONBLOCK);
@@ -214,7 +218,7 @@ Ptr File::request(HttpReqHeader& req) {
         guest->response(res);
     }else{
         rg.begin = 0;
-        rg.end = size;
+        rg.end = size - 1;
         HttpResHeader res(H200, shared_from_this());
         char buff[100];
         snprintf(buff, sizeof(buff), "%lu", size);
@@ -250,12 +254,12 @@ void File::defaultHE(uint32_t events) {
                 i = reqs.erase(i);
                 continue;
             }
-            if (rg.begin == rg.end) {
+            if (rg.begin > rg.end) {
                 guest->Write((const void*)nullptr, 0, this, req.http_id);
                 i = reqs.erase(i);
                 continue;
             }
-            int len = Min(guest->bufleft(this), rg.end - rg.begin);
+            int len = Min(guest->bufleft(this), rg.end - rg.begin + 1);
             if (len <= 0) {
                 LOGE("The guest's write buff is full\n");
                 guest->wait(this);

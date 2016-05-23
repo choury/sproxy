@@ -1,6 +1,5 @@
 #include "peer.h"
 #include "guest.h"
-#include "binmap.h"
 
 #include <string.h>
 #include <unistd.h>
