@@ -8,9 +8,6 @@
 class Host:public Responser, public HttpReq{
     size_t testedaddr = 0;
     std::vector<sockaddr_un> addrs;
-    bool udp_mode;
-    int connect_tcp();
-    int connect_udp();
 protected:
     char hostname[DOMAINLIMIT];
     uint16_t port;
@@ -30,7 +27,7 @@ protected:
 public:
     Ptr guest_ptr;
     Host(){}
-    Host(const char* hostname, uint16_t port, bool udp_mode = false);
+    Host(const char* hostname, uint16_t port);
     ~Host();
     
     virtual int showerrinfo(int ret, const char *s)override;

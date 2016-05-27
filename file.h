@@ -30,6 +30,7 @@ public:
     ~File();
     virtual int showerrinfo(int ret, const char *s)override;
     virtual Ptr request(HttpReqHeader &req) override;
+    virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
     static File* getfile(HttpReqHeader &req);
 };
 

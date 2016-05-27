@@ -11,14 +11,22 @@ extern int efd;
 class Con {
 protected:
     int fd = 0;
+    uint32_t events = 0;
     void updateEpoll(uint32_t events){
-        if (fd > 0) {
-            struct epoll_event event;
-            event.data.ptr = this;
-            event.events = events;
-            if (epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && errno == ENOENT) {
-                epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+        if (fd > 0 && events != this->events) {
+            if(events == 0){
+               epoll_ctl(efd, EPOLL_CTL_DEL, fd, nullptr);
+            }else{
+                struct epoll_event event;
+                event.data.ptr = this;
+                event.events = events;
+                if (epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && 
+                    errno == ENOENT)
+                {
+                    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+                }
             }
+            this->events = events;
         }
     }
 public:
@@ -26,7 +34,7 @@ public:
     void (Con::*handleEvent)(uint32_t events)=nullptr;
     virtual ~Con(){
         if(fd > 0){
-            epoll_ctl(efd,EPOLL_CTL_DEL,fd,nullptr);
+            updateEpoll(0);
             close(fd);
         }
     }

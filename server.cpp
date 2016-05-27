@@ -255,8 +255,8 @@ int main(int argc, char **argv) {
 #endif
     while (1) {
         int c;
-        struct epoll_event events[20];
-        if ((c = epoll_wait(efd, events, 20, 5000)) < 0) {
+        struct epoll_event events[200];
+        if ((c = epoll_wait(efd, events, 200, 5000)) < 0) {
             if (errno != EINTR) {
                 perror("epoll wait");
                 return 6;

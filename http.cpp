@@ -132,7 +132,8 @@ void HttpRes::HeaderProc() {
             HttpReqHeader req(http_buff, shared_from_this());
             if (req.ismethod("POST") || 
                 req.ismethod("PUT") || 
-                req.ismethod("PATCH")
+                req.ismethod("PATCH") ||
+                req.ismethod("SEND")
             ) {
                 if (req.get("Content-Length")!= nullptr) {
                     sscanf(req.get("Content-Length"), "%" SCNu64, &http_expectlen);
@@ -140,7 +141,7 @@ void HttpRes::HeaderProc() {
                 } else {
                     Http_Proc = &HttpRes::AlwaysProc;
                 }
-            } else if (req.ismethod("CONNECT") || req.ismethod("SEND")) {
+            } else if (req.ismethod("CONNECT")) {
                 Http_Proc = &HttpRes::AlwaysProc;
             }
             ReqProc(req);

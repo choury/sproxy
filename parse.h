@@ -28,6 +28,7 @@ public:
 
     Ptr getsrc();
     void add(const char *header, const char *value);
+    void add(const char *header, int value);
     void del(const char *header);
     const char* get(const char *header) const;
     std::set<string> getall(const char *header) const;

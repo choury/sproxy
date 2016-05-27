@@ -212,17 +212,14 @@ Ptr File::request(HttpReqHeader& req) {
                  rg.begin, rg.end, size);
         res.add("Content-Range", buff);
         size_t leftsize = rg.end - rg.begin+1;
-        snprintf(buff, sizeof(buff), "%lu", leftsize);
-        res.add("Content-Length", buff);
+        res.add("Content-Length", leftsize);
         res.http_id = req.http_id;
         guest->response(res);
     }else{
         rg.begin = 0;
         rg.end = size - 1;
         HttpResHeader res(H200, shared_from_this());
-        char buff[100];
-        snprintf(buff, sizeof(buff), "%lu", size);
-        res.add("Content-Length", buff);
+        res.add("Content-Length", size);
         res.http_id = req.http_id;
         guest->response(res);
     }
@@ -234,7 +231,7 @@ Ptr File::request(HttpReqHeader& req) {
 
 void File::defaultHE(uint32_t events) {
     if(reqs.empty()){
-        epoll_ctl(efd, EPOLL_CTL_DEL, fd, nullptr);
+        updateEpoll(0);
         return;
     }
 
@@ -280,6 +277,10 @@ void File::defaultHE(uint32_t events) {
     }
 }
 
+void File::clean(uint32_t errcode, Peer* who, uint32_t id){
+    if(who == this)
+        return Peer::clean(errcode, who, id);
+}
 
 File::~File() {
     if (mapptr) {

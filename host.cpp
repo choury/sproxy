@@ -24,7 +24,7 @@ Host::Host(HttpReqHeader& req, Guest* guest):Peer(0){
 
 */
 
-Host::Host(const char* hostname, uint16_t port, bool udp_mode):udp_mode(udp_mode), port(port){
+Host::Host(const char* hostname, uint16_t port): port(port){
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
     query(hostname, (DNSCBfunc)Host::Dnscallback, this);
 }
@@ -50,20 +50,13 @@ void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
     }
 }
 
-int Host::connect(){
-    if(udp_mode){
-        return connect_udp();
-    }else{
-        connectmap[this]=time(NULL);
-        return connect_tcp();
-    }
-}
-
-int Host::connect_tcp() {
+int Host::connect() {
+    connectmap[this]=time(NULL);
     if (testedaddr>= addrs.size()) {
         return -1;
     } else {
         if (fd > 0) {
+            updateEpoll(0);
             close(fd);
         }
         if (testedaddr != 0) {
@@ -78,30 +71,6 @@ int Host::connect_tcp() {
         handleEvent = (void (Con::*)(uint32_t))&Host::waitconnectHE;
         return 0;
     }
-}
-
-
-int Host::connect_udp(){
-    if (testedaddr>= addrs.size()) {
-        return -1;
-    } else {
-        if (fd > 0) {
-            close(fd);
-        }
-        if (testedaddr != 0) {
-            RcdDown(hostname, addrs[testedaddr-1]);
-        }
-        fd = Connect(&addrs[testedaddr++], SOCK_DGRAM);
-        if (fd < 0) {
-            LOGE("connect to %s failed\n", this->hostname);
-            return connect();
-        }
-
-        updateEpoll(EPOLLIN | EPOLLOUT);
-        handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
-        return 0;
-    }
-
 }
 
 
@@ -216,7 +185,7 @@ Ptr Host::request(HttpReqHeader& req) {
     if(req.ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY;
     }
-    if(req.ismethod("CONNECT") || req.ismethod("SEND")){
+    if(req.ismethod("CONNECT")){
         Http_Proc = &Host::AlwaysProc;
     }
     guest_ptr = req.getsrc();
@@ -239,8 +208,7 @@ Host* Host::gethost(HttpReqHeader& req, Ptr responser_ptr) {
     Host* exist = dynamic_cast<Host *>(responser_ptr.get());
     if (exist && strcasecmp(exist->hostname, req.hostname) == 0
         && exist->port == req.port
-        && !req.ismethod("CONNECT")
-        && !req.ismethod("SEND"))
+        && !req.ismethod("CONNECT"))
     {
         return exist;
     }
@@ -248,7 +216,7 @@ Host* Host::gethost(HttpReqHeader& req, Ptr responser_ptr) {
     if (exist) { 
         exist->clean(NOERROR, nullptr);
     }
-    return new Host(req.hostname, req.port, req.ismethod("SEND"));
+    return new Host(req.hostname, req.port);
 }
 
 

@@ -93,5 +93,5 @@ void Peer::clean(uint32_t errcode, Peer* , uint32_t) {
 }
 
 void Peer::wait(Peer *who) {
-    epoll_ctl(efd, EPOLL_CTL_DEL, who->fd, NULL);
+    updateEpoll(0);
 }

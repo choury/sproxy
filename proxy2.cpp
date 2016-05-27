@@ -193,7 +193,7 @@ Ptr Proxy2::request(HttpReqHeader& req) {
     curid += 2;
     guest->remotewinsize = remoteframewindowsize;
     guest->localwinsize = localframewindowsize;
-    if(req.ismethod("CONNECT") || req.ismethod("SEND")){
+    if(req.ismethod("CONNECT")){
         guest->flag |= ISPERSISTENT_F;
     }
     

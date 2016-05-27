@@ -315,6 +315,10 @@ void HttpHeader::add(const char* header, const char* value) {
     headers.insert(header, value);
 }
 
+void HttpHeader::add(const char* header, int value) {
+    headers.insert(header, std::to_string(value));
+}
+
 void HttpHeader::del(const char* header) {
     for(auto i=headers.begin();i != headers.end();) {
         if(strcasecmp(i->first.c_str(),header)==0)
