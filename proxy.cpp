@@ -146,10 +146,13 @@ void Proxy::shakehandHE(uint32_t events) {
         const unsigned char *data;
         unsigned int len;
         SSL_get0_alpn_selected(ssl, &data, &len);
-        if (!proxy2 && data && strncasecmp((const char*)data, "h2", len) == 0) {
-            proxy2 = new Proxy2(std::move(*this));
-            proxy2->init();
-            proxy2->request(req);
+        if (data && strncasecmp((const char*)data, "h2", len) == 0) {
+            Proxy2 *new_proxy = new Proxy2(std::move(*this));
+            new_proxy->init();
+            new_proxy->request(req);
+            if(!proxy2){
+                proxy2 = new_proxy;
+            }
             delete this;
         }
         return;
