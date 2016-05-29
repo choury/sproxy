@@ -6,18 +6,14 @@
 #include <unistd.h>
 #include <openssl/err.h>
 
+Guest_s::Guest_s(Guest_s&& copy): Guest(std::move(copy)), ssl(copy.ssl) {
+    copy.ssl = nullptr;
+}
+
 Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL* ssl): Guest(fd, myaddr), ssl(ssl) {
     accept_start_time = time(nullptr);
     handleEvent = (void (Con::*)(uint32_t))&Guest_s::shakehandHE;
 }
-
-Guest_s::Guest_s(Guest_s *const copy): Guest(copy), ssl(copy->ssl) {
-    copy->fd = 0;
-    copy->ssl = nullptr;
-    copy->reset_this_ptr(this);
-	copy->clean(NOERROR, nullptr);
-}
-
 
 Guest_s::~Guest_s() {
     if (ssl) {
@@ -98,7 +94,7 @@ void Guest_s::shakehandHE(uint32_t events) {
             unsigned int len;
             SSL_get0_alpn_selected(ssl, &data, &len);
             if (data && strncasecmp((const char*)data, "h2", len) == 0) {
-                new Guest_s2(this);
+                new Guest_s2(std::move(*this));
                 delete this;
                 return;
             }

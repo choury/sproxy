@@ -25,7 +25,7 @@ protected:
     virtual void ErrProc(int errcode)override;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
 public:
-    Guest_s2(Guest_s *const copy);
+    explicit Guest_s2(Guest_s&& copy);
     
     virtual void clean(uint32_t errcode, Peer *who, uint32_t id = 0)override;
 

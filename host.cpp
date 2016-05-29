@@ -7,22 +7,10 @@
                     
 std::map<Host*,time_t> connectmap;
 
-/*
-Host::Host(HttpReqHeader& req, Guest* guest):Peer(0){
-    ::connect(guest, this);
-    Request(guest, req);
-    snprintf(hostname, sizeof(hostname), "%s", req.hostname);
-    port = req.port;
-    if(req.ismethod("CONNECT")){
-        Http_Proc = &Host::AlwaysProc;
-    }else if(req.ismethod("SEND")){
-        Http_Proc = &Host::AlwaysProc;
-        udp_mode = true;
-    }
-    query(hostname, (DNSCBfunc)Host::Dnscallback, this);
+Host::Host(Host&& copy){
+    fd = copy.fd;
+    copy.fd  = 0;
 }
-
-*/
 
 Host::Host(const char* hostname, uint16_t port): port(port){
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);

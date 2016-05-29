@@ -8,20 +8,14 @@
 extern std::map<Host*,time_t> connectmap;
 
 
+Proxy::Proxy(Proxy&& copy): Host(std::move(copy)), ssl(copy.ssl), ctx(copy.ctx) {
+    copy.ssl = nullptr;
+    copy.ctx = nullptr;
+}
+
 Proxy::Proxy(const char* hostname, uint16_t port): Host(hostname, port) {
 
 }
-
-
-Proxy::Proxy(Proxy *const copy): ssl(copy->ssl), ctx(copy->ctx) {
-    this->fd = copy->fd;
-    copy->fd  = 0;
-    copy->ssl = nullptr;
-    copy->ctx = nullptr;
-    copy->reset_this_ptr(this);
-    copy->clean(NOERROR, nullptr);
-}
-
 
 Host* Proxy::getproxy(HttpReqHeader &req, Ptr responser_ptr) {
     Host *exist = dynamic_cast<Host *>(responser_ptr.get());
@@ -152,13 +146,10 @@ void Proxy::shakehandHE(uint32_t events) {
         const unsigned char *data;
         unsigned int len;
         SSL_get0_alpn_selected(ssl, &data, &len);
-        if (data && strncasecmp((const char*)data, "h2", len) == 0) {
-            Proxy2 *new_proxy = new Proxy2(this);
-            new_proxy->init();
-            new_proxy->request(req);
-            if(!proxy2){
-                proxy2 = new_proxy;
-            }
+        if (!proxy2 && data && strncasecmp((const char*)data, "h2", len) == 0) {
+            proxy2 = new Proxy2(std::move(*this));
+            proxy2->init();
+            proxy2->request(req);
             delete this;
         }
         return;

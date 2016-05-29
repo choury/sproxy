@@ -26,8 +26,8 @@ protected:
     static void Dnscallback(Host * host, const Dns_rcd&&);
 public:
     Ptr guest_ptr;
-    Host(){}
-    Host(const char* hostname, uint16_t port);
+    explicit Host(Host&& copy);
+    explicit Host(const char* hostname, uint16_t port);
     ~Host();
     
     virtual int showerrinfo(int ret, const char *s)override;

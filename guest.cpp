@@ -8,6 +8,10 @@
 #include <arpa/inet.h>
 
 
+Guest::Guest(Guest&& copy): Peer(copy.fd), sourceport(copy.sourceport){
+    strcpy(this->sourceip, copy.sourceip);
+    copy.fd = 0;
+}
 
 Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Peer(fd) {
     inet_ntop(AF_INET6, &myaddr->sin6_addr, sourceip, sizeof(sourceip));
@@ -16,12 +20,6 @@ Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Peer(fd) {
     updateEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Con::*)(uint32_t))&Guest::defaultHE;
 }
-
-Guest::Guest(const Guest *const copy): Peer(copy->fd), sourceport(copy->sourceport){
-    strcpy(this->sourceip, copy->sourceip);
-
-}
-
 
 
 int Guest::showerrinfo(int ret, const char *s) {

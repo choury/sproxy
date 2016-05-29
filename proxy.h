@@ -14,8 +14,8 @@ protected:
     virtual void waitconnectHE(uint32_t events)override;
     virtual void shakehandHE(uint32_t events);
 public:
-    Proxy(const char *hostname, uint16_t port);
-    Proxy(Proxy *const copy);
+    explicit Proxy(Proxy&& copy);
+    explicit Proxy(const char *hostname, uint16_t port);
     virtual ~Proxy();
     
     virtual int showerrinfo(int ret, const char *)override;

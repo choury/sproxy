@@ -80,8 +80,12 @@ int Listen(short port) {
         LOGE("TCP_KEEPCNT:%s\n",strerror(errno));
 
     int enable = 1;
-    if(setsockopt(svsk, IPPROTO_TCP, TCP_NODELAY, (void*)&enable, sizeof(enable))<0)
+    if(setsockopt(svsk, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(enable))<0)
         LOGE("TCP_NODELAY:%s\n", strerror(errno));
+
+    int timeout = 60;
+    if (setsockopt(svsk, IPPROTO_TCP, TCP_DEFER_ACCEPT, &timeout, sizeof(timeout))< 0)
+        LOGE("TCP_DEFER_ACCEPT:%s\n", strerror(errno));
 
     if (listen(svsk, 10000) < 0) {
         LOGOUT("listen error:%s\n", strerror(errno));
@@ -123,7 +127,7 @@ int Connect(union sockaddr_un* addr, int type) {
             LOGE("TCP_KEEPCNT:%s\n",strerror(errno));
 
         int enable = 1;
-        if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (void*)&enable, sizeof(enable))<0)
+        if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(enable))<0)
             LOGE("TCP_NODELAY:%s\n", strerror(errno));
     }
 

@@ -23,8 +23,8 @@ public:
 #define ISPERSISTENT_F     1
 #define ISCHUNKED_F        2
     char flag;
+    explicit Guest(Guest&& copy);
     explicit Guest(int fd, struct sockaddr_in6 *myaddr);
-    explicit Guest(const Guest *const copy);
     virtual ~Guest();
 
     virtual int showerrinfo(int ret, const char *)override;
