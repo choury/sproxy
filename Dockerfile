@@ -7,7 +7,7 @@ FROM debian:sid
 MAINTAINER choury zhouwei400@gmail.com
 
 # Commands to update the image
-RUN apt-get update && apt-get -y install gcc g++ cmake make git libssl-dev
+RUN apt-get update && apt-get -y install gcc g++ cmake make git libssl-dev wget
 WORKDIR /root
 RUN git clone https://github.com/choury/sproxy
 WORKDIR /root/sproxy
