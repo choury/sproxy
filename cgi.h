@@ -88,6 +88,8 @@ void addcookie(HttpResHeader &res, const Cookie &cookie);
 #ifdef  __cplusplus
 extern "C" {
 #endif
+typedef int (cgifunc)(int fd);
+cgifunc cgimain;
 int cgi_response(int fd, const HttpResHeader &req);
 int cgi_write(int fd, uint32_t id, const void *buff, size_t len);
 #ifdef  __cplusplus

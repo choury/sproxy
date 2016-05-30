@@ -80,9 +80,8 @@ static inline string& ltrim(std::string && s) {
 extern "C" {
 #endif
 
-typedef int (cgifunc)(int fd);
-cgifunc cgimain;
 
+void loadsites();
 void addpsite(const char * host);
 void addbsite(const char * host);
 void addauth(const char * ip);

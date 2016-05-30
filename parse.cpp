@@ -12,14 +12,12 @@
 #include <unistd.h>
 #include <bits/local_lim.h>
 
-#define PROXYFILE "proxy.list"
-#define BLOCKFILE "block.list"
+#define LISTFILE "sites.list"
 
 using std::unordered_set;
 using std::ifstream;
 using std::ofstream;
 
-static int loadedsites = 0;
 static int GLOBALPROXY = 0;
 static unordered_set<string> proxylist;
 static unordered_set<string> blocklist;
@@ -28,41 +26,30 @@ static unordered_set<string> locallist;
 static unordered_set<string> authips;
 
 void loadsites() {
-    loadedsites = 1;
 #ifdef CLIENT
     proxylist.clear();
-    ifstream proxyfile(PROXYFILE);
+    ifstream sitefile(LISTFILE);
 
-    if (proxyfile.good()) {
-        while (!proxyfile.eof()) {
+    if (sitefile.good()) {
+        while (!sitefile.eof()) {
             string site;
-            proxyfile >> site;
+            sitefile >> site;
 
-            if (!site.empty()) {
-                proxylist.insert(site);
+            int split = site.find(':');
+            if(site.substr(0, split) == "proxy"){
+                proxylist.insert(site.substr(split+1));
+            }else if(site.substr(0, split) == "block"){
+                blocklist.insert(site.substr(split+1));
+            }else{
+                LOGE("Wrong config line:%s\n",site.c_str());
             }
         }
 
-        proxyfile.close();
+        sitefile.close();
     } else {
-        LOGE("There is no %s !\n", PROXYFILE);
+        LOGE("There is no %s !\n", LISTFILE);
     }
 
-    ifstream blockfile(BLOCKFILE);
-    if (blockfile.good()) {
-        while (!blockfile.eof()) {
-            string site;
-            blockfile >> site;
-
-            if (!site.empty()) {
-                blocklist.insert(site);
-            }
-        }
-
-        blockfile.close();
-    } else {
-        LOGE("There is no %s !\n", BLOCKFILE);
-    }
 #endif
 
     for(const char *ips=getlocalip(); strlen(ips); ips+=INET6_ADDRSTRLEN){
@@ -73,25 +60,27 @@ void loadsites() {
     locallist.insert(hostname);
 }
 
+void savesites(){
+    ofstream listfile(LISTFILE);
+
+    for (auto i : proxylist) {
+        listfile <<"proxy:"<< i << std::endl;
+    }
+    for (auto i : blocklist) {
+        listfile <<"block:"<< i << std::endl;
+    }
+    listfile.close();
+}
+
 
 void addpsite(const char * host) {
     proxylist.insert(host);
-    ofstream proxyfile(PROXYFILE);
-
-    for (auto i : proxylist) {
-        proxyfile << i << std::endl;
-    }
-    proxyfile.close();
+    savesites();
 }
 
 void addbsite(const char * host) {
     blocklist.insert(host);
-    ofstream blockfile(BLOCKFILE);
-
-    for (auto i : blocklist) {
-        blockfile << i << std::endl;
-    }
-    blockfile.close();
+    savesites();
 }
 
 void addauth(const char *ip) {
@@ -103,12 +92,7 @@ int delpsite(const char * host) {
         return 0;
     }
     proxylist.erase(host);
-    ofstream proxyfile(PROXYFILE);
-
-    for (auto i : proxylist) {
-        proxyfile << i << std::endl;
-    }
-    proxyfile.close();
+    savesites();
     return 1;
 }
 
@@ -117,12 +101,7 @@ int delbsite(const char * host) {
         return 0;
     }
     blocklist.erase(host);
-    ofstream blockfile(BLOCKFILE);
-
-    for (auto i : blocklist) {
-        blockfile << i << std::endl;
-    }
-    blockfile.close();
+    savesites();
     return 1;
 }
 
@@ -133,10 +112,6 @@ int globalproxy() {
 }
 
 bool checkproxy(const char *hostname) {
-    if (!loadedsites) {
-        loadsites();
-    }
-
     if (GLOBALPROXY || proxylist.count("*")) {
         return true;
     }
@@ -164,10 +139,6 @@ bool checkproxy(const char *hostname) {
 
 
 bool checkblock(const char *hostname) {
-    if (!loadedsites) {
-        loadsites();
-    }
-
     // 如果list文件里面有*.*.*.* 那么匹配ip地址
     if (inet_addr(hostname) != INADDR_NONE && blocklist.count("*.*.*.*")) {
         return true;
@@ -190,9 +161,6 @@ bool checkblock(const char *hostname) {
 }
 
 bool checklocal(const char *hostname) {
-    if (!loadedsites) {
-        loadsites();
-    }
     return locallist.count(hostname);
 }
 
