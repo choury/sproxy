@@ -20,13 +20,13 @@ class Http_server: public Server{
             struct sockaddr_in6 myaddr;
             socklen_t temp = sizeof(myaddr);
             if ((clsk = accept(fd, (struct sockaddr*)&myaddr, &temp)) < 0) {
-                LOGE("accept error:%s\n", strerror(errno));
+                LOGE("accept error:%m\n");
                 return;
             }
 
             int flags = fcntl(clsk, F_GETFL, 0);
             if (flags < 0) {
-                LOGE("fcntl error:%s\n", strerror(errno));
+                LOGE("fcntl error:%m\n");
                 close(clsk);
                 return;
             }
@@ -103,7 +103,7 @@ int main(int argc, char** argv) {
     LOGOUT("Accepting connections ...\n");
 #ifndef DEBUG
     if (daemon(1, 0) < 0) {
-        LOGOUT("start daemon error:%s\n", strerror(errno));
+        LOGOUT("start daemon error:%m\n");
     }
 #endif
     while (1) {
@@ -111,7 +111,7 @@ int main(int argc, char** argv) {
         struct epoll_event events[200];
         if ((c = epoll_wait(efd, events, 200, 5000)) < 0) {
             if (errno != EINTR) {
-                LOGE("epoll wait:%s\n", strerror(errno));
+                LOGE("epoll wait:%m\n");
                 return 4;
             }
             continue;

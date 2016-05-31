@@ -73,7 +73,7 @@ void Host::waitconnectHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("connect to host error: %s\n", strerror(error));
+            LOGE("connect to host error: %m\n");
         }
         goto reconnect;
     }
@@ -82,11 +82,11 @@ void Host::waitconnectHE(uint32_t events) {
         int error;
         socklen_t len = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-            LOGE("getsokopt error: %s\n", strerror(error));
+            LOGE("getsokopt error: %m\n");
             goto reconnect;
         }
         if (error != 0) {
-            LOGE("connect to %s: %s\n", this->hostname, strerror(error));
+            LOGE("connect to %s: %m\n", this->hostname);
             goto reconnect;
         }
         updateEpoll(EPOLLIN | EPOLLOUT);
@@ -111,7 +111,7 @@ void Host::defaultHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("host error: %s\n", strerror(error));
+            LOGE("host error: %m\n");
         }
         clean(INTERNAL_ERR, this);
         return;
@@ -154,7 +154,7 @@ void Host::destory() {
 int Host::showerrinfo(int ret, const char* s) {
     if (ret < 0) {
         if (errno != EAGAIN) {
-            LOGE("%s: %s\n", s, strerror(errno));
+            LOGE("%s: %m\n", s);
         } else {
             return 0;
         }

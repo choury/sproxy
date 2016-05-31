@@ -134,21 +134,21 @@ File::File(HttpReqHeader& req) {
     const char *errinfo = nullptr;
     Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
     if (stat(req.filename, &st)) {
-        LOGE("get file info failed: %s\n", strerror(errno));
+        LOGE("get file info failed: %m\n");
         errinfo = H404;
         goto err;
     }
     if (S_ISREG(st.st_mode)) {
         int ffd = open(req.filename, O_RDONLY);
         if (ffd < 0) {
-            LOGE("open file failed: %s\n", strerror(errno));
+            LOGE("open file failed: %m\n");
             errinfo = H500;
             goto err;
         }
         size = st.st_size;
         mapptr = mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, ffd, 0);
         if(mapptr == nullptr){
-            LOGE("mapptr file failed: %s\n", strerror(errno));
+            LOGE("mapptr file failed: %m\n");
             errinfo = H500;
             close(ffd);
             goto err;
@@ -184,7 +184,7 @@ File* File::getfile(HttpReqHeader &req) {
 
 int File::showerrinfo(int ret, const char* s) {
     if (ret < 0 && errno != EAGAIN) {
-        LOGE("%s: %s\n", s, strerror(errno));
+        LOGE("%s: %m\n", s);
         return 1;
     }
     return 0;
@@ -236,7 +236,7 @@ void File::defaultHE(uint32_t events) {
     }
 
     if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("file unkown error: %s\n", strerror(errno));
+        LOGE("file unkown error: %m\n");
         clean(INTERNAL_ERR, this);
         return;
     }
