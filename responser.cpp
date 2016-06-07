@@ -41,9 +41,48 @@ uint16_t SPORT = 443;
 char *auth_string=nullptr;
 
 #ifdef CLIENT
-Ptr distribute(HttpReqHeader& req, Ptr responser_ptr) {
+int req_filter(HttpReqHeader& req){
     Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
     req.should_proxy = checkproxy(req.hostname);
+    if (auth_string &&
+        !checkauth(guest->getip()) &&
+        req.get("Proxy-Authorization") &&
+        strcmp(auth_string, req.get("Proxy-Authorization")+6) == 0)
+    {
+        addauth(guest->getip());
+    }
+    if (auth_string && !checkauth(guest->getip())){
+        LOG("%s: Authorization needed\n", guest->getsrc());
+        guest->Write(AUTHNEED, strlen(AUTHNEED), guest);
+        return 1;
+    }
+    if (checkblock(req.hostname)) {
+        LOG("%s: site: %s blocked\n", guest->getsrc(), req.hostname);
+        guest->Write(BLOCKTIP, strlen(BLOCKTIP), guest);
+        return 1;
+    } 
+    if(req.get("via") && strstr(req.get("via"), "sproxy")){
+        LOG("%s: [%s] redirect back!\n", guest->getsrc(), req.hostname);
+        guest->Write(H400, strlen(H400), guest);
+        return 1;
+    }
+    req.del("Connection");
+    if(req.get("Proxy-Connection")){
+        req.add("Connection", req.get("Proxy-Connection"));
+        req.del("Proxy-Connection");
+    }
+    req.del("Upgrade");
+    req.del("Public");
+    req.del("Proxy-Authorization");
+    req.append("Via", "HTTP/1.1 sproxy");
+    return 0;
+}
+
+Ptr distribute(HttpReqHeader& req, Ptr responser_ptr) {
+    if(req_filter(req)){
+        return Ptr();
+    }
+    Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
     if(req.url[0] == '/'){
         LOG("(%s%s): %s %s%s [%s]\n", guest->getsrc(),
             req.should_proxy?" PROXY":"", req.method,
@@ -57,14 +96,6 @@ Ptr distribute(HttpReqHeader& req, Ptr responser_ptr) {
             req.should_proxy?" PROXY":"", req.method,
             req.url, req.get("User-Agent"));
     }
-    if (auth_string &&
-        !checkauth(guest->getip()) &&
-        req.get("Proxy-Authorization") &&
-        strcmp(auth_string, req.get("Proxy-Authorization")+6) == 0)
-    {
-        addauth(guest->getip());
-    }
-    req.rmonehupinfo();
     if (req.ismethod("GET") ||
         req.ismethod("POST") ||
         req.ismethod("PUT") ||
@@ -73,21 +104,13 @@ Ptr distribute(HttpReqHeader& req, Ptr responser_ptr) {
         req.ismethod("HEAD") ||
         req.ismethod("SEND"))
     {
-        if (auth_string && !checkauth(guest->getip())){
-            guest->Write(AUTHNEED, strlen(AUTHNEED), guest);
-            LOG("%s: Authorization needed\n", guest->getsrc());
-        }else if (checkblock(req.hostname) || checklocal(req.hostname)) {
-            LOG("%s: site: %s blocked\n", guest->getsrc(), req.hostname);
-            guest->Write(BLOCKTIP, strlen(BLOCKTIP), guest);
-        } else {
-            Host *host;
-            if(req.should_proxy){
-                host = Proxy::getproxy(req, responser_ptr);
-            }else{
-                host = Host::gethost(req, responser_ptr);
-            }
-            return host->request(req);
+        Host *host;
+        if(req.should_proxy){
+            host = Proxy::getproxy(req, responser_ptr);
+        }else{
+            host = Host::gethost(req, responser_ptr);
         }
+        return host->request(req);
     } else if (req.ismethod("ADDPSITE")) {
         addpsite(req.url);
         guest->Write(ADDPTIP, strlen(ADDPTIP), guest);

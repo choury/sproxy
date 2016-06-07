@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+using std::string;
 std::map<std::string, Cgi *> cgimap;
 
 Cgi::Cgi(HttpReqHeader& req) {
@@ -368,28 +369,18 @@ std::map< string, string > getparams(const HttpReqHeader &req) {
     return params;
 }
 
-std::map< string, string > getcookies(const HttpReqHeader &req) {
-    std::set<string> cookieset = req.getall("cookie");
-    std::map<string, string> cookies;
-    char cookiebuff[URLLIMIT];
-    for(auto i:cookieset){
-        strcpy(cookiebuff, i.c_str());
-        char *p=cookiebuff;
-        for (; ; p = NULL) {
-            char *q = strtok(p, ";");
-
-            if (q == NULL)
-                break;
-
-            char* sp = strpbrk(q, "=");
-            if (sp) {
-                cookies[ltrim(string(q, sp - q))] = sp + 1;
-            } else {
-                cookies[q] = "";
-            }
+std::map<string, string> getcookies(const HttpReqHeader &req) {
+    std::map<string, string> cookie;
+    for(auto i:req.cookies){
+        const char *p = i.c_str();
+        const char* sp = strpbrk(p, "=");
+        if (sp) {
+            cookie[ltrim(string(p, sp - p))] = sp + 1;
+        } else {
+            cookie[p] = "";
         }
     }
-    return cookies;
+    return cookie;
 }
 
 void addcookie(HttpResHeader &res, const Cookie &cookie){
@@ -404,7 +395,7 @@ void addcookie(HttpResHeader &res, const Cookie &cookie){
     if(cookie.maxage){
         cookiestream << "; max-age="<< cookie.maxage;
     }
-    res.add("Set-Cookie", cookiestream.str().c_str());
+    res.cookies.insert(cookiestream.str());
 }
 
 int cgi_response(int fd, const HttpResHeader &res){

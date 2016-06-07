@@ -819,11 +819,11 @@ Index_table::~Index_table()
 }
 
 
-mulmap< std::string, std::string > Index_table::hpack_decode(const char* s, int len) {
+mulmap< istring, std::string > Index_table::hpack_decode(const char* s, int len) {
     if(!hpack_inited)
         init_hpack();
     int i = 0;
-    mulmap<std::string, std::string> headers;
+    mulmap<istring, std::string> headers;
     while(i < len) {
         if(s[i] & 0x80) {
             uint index;
@@ -890,13 +890,12 @@ int Index_table::hpack_encode(char* buf, const char* Name, const char* value) {
     return buf - buf_begin;
 }
 
-int Index_table::hpack_encode(char *buf, mulmap<std::string, std::string> headers) {
+int Index_table::hpack_encode(char *buf, std::map<istring, std::string> headers) {
     char *buf_begin = buf;
     for(auto i:headers) {
-        const char *name = i.first.c_str();
-        if(strcasecmp(name, "Host")==0)
+        if(i.first ==  "Host")
             continue;
-        buf += hpack_encode(buf, name, i.second.c_str());
+        buf += hpack_encode(buf, i.first.c_str(), i.second.c_str());
     }
     evict_dynamic_table();
     return buf - buf_begin;

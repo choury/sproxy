@@ -4,7 +4,7 @@
 #include "cgi.h"
 
 #include <fstream>
-#include <iostream>
+//#include <iostream>
 #include <algorithm>
 #include <unordered_set>
 
@@ -14,6 +14,7 @@
 
 #define LISTFILE "sites.list"
 
+using std::string;
 using std::unordered_set;
 using std::ifstream;
 using std::ofstream;
@@ -25,9 +26,13 @@ static unordered_set<string> locallist;
 
 static unordered_set<string> authips;
 
+static char *cgi_addnv(char *p, const istring &name, const string &value);
+static char *cgi_getnv(char *p, istring &name, string &value);
+
 void loadsites() {
 #ifdef CLIENT
     proxylist.clear();
+    blocklist.clear();
     ifstream sitefile(LISTFILE);
 
     if (sitefile.good()) {
@@ -268,42 +273,48 @@ int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
 HttpHeader::HttpHeader(Ptr&& src):src(src){
 }
 
+/*
 HttpHeader::HttpHeader(mulmap< string, string > headers, Ptr&& src):
                headers(headers), src(src)
 {
 
 }
+*/
 
 Ptr HttpHeader::getsrc() {
     return src;
 }
 
 
-void HttpHeader::add(const char* header, const char* value) {
-    headers.insert(header, value);
+void HttpHeader::add(const istring& header, const string& value) {
+    headers.insert(std::make_pair(header, value));
 }
 
-void HttpHeader::add(const char* header, int value) {
-    headers.insert(header, std::to_string(value));
+void HttpHeader::add(const istring& header, int value) {
+    headers.insert(std::make_pair(header, std::to_string(value)));
 }
 
-void HttpHeader::del(const char* header) {
-    for(auto i=headers.begin();i != headers.end();) {
-        if(strcasecmp(i->first.c_str(),header)==0)
-            headers.erase(i++);
-        else
-            ++i;
+void HttpHeader::append(const istring& header, const string& value){
+    if(headers.count(header)){
+        string old_value = headers[header];
+        add(header, old_value + ", " + value);
+    }else{
+        add(header, value);
     }
 }
 
+void HttpHeader::del(const istring& header) {
+    headers.erase(header);
+}
+
 const char* HttpHeader::get(const char* header) const{
-    for(auto i:headers) {
-        if(strcasecmp(i.first.c_str(),header)==0)
-            return headers.at(i.first).begin()->c_str();
+    if(headers.count(header)) {
+        return headers.at(header).c_str();
     }
     return nullptr;
 }
 
+/*
 std::set< string > HttpHeader::getall(const char *header) const{
     std::set<string> sets;
     for(auto i:headers) {
@@ -312,7 +323,7 @@ std::set< string > HttpHeader::getall(const char *header) const{
     }
     return sets;
 }
-
+*/
 
 
 HttpReqHeader::HttpReqHeader(const char* header, Ptr&& src):
@@ -346,7 +357,17 @@ HttpReqHeader::HttpReqHeader(const char* header, Ptr&& src):
             LOGE("wrong header format:%s\n", p);
             throw 0;
         }
-        headers.insert(string(p, sp - p), ltrim(string(sp + 1)));
+        string name = string(p, sp-p);
+        if(strcasecmp(name.c_str(), "cookie")==0){
+            char *cp = sp +1;
+            for(char *p = strsep(&cp, ";");cp;
+                p = strsep(&cp, ";"))
+            {
+                cookies.insert(ltrim(string(p)));
+            }
+        }else{
+            add(string(p, sp - p), ltrim(string(sp + 1)));
+        }
     }
     
     
@@ -361,9 +382,16 @@ HttpReqHeader::HttpReqHeader(const char* header, Ptr&& src):
 }
 
 
-HttpReqHeader::HttpReqHeader(mulmap<string, string>&& headers, Ptr&& src):
-                   HttpHeader(headers, std::move(src))
+HttpReqHeader::HttpReqHeader(mulmap<istring, string>&& headers, Ptr&& src):
+                   HttpHeader(std::move(src))
 {
+    for(auto i: headers){
+        if(i.first == "cookie"){
+            cookies.insert(i.second);
+        }else{
+            add(i.first, i.second);
+        }
+    }
     snprintf(method, sizeof(method), "%s", get(":method"));
     snprintf(path, sizeof(path), "%s", get(":path"));
     port = 80;
@@ -404,7 +432,8 @@ HttpReqHeader::HttpReqHeader(CGI_Header *headers, Ptr&& src):
     char *p = (char *)(headers +1);
     uint32_t len = ntohs(headers->contentLength);
     while(uint32_t(p - (char *)(headers +1)) < len){
-        string name, value;
+        istring name;
+        string value;
         p = cgi_getnv(p, name, value);
         if(name == ":method"){
             strcpy(method, value.c_str());
@@ -414,7 +443,11 @@ HttpReqHeader::HttpReqHeader(CGI_Header *headers, Ptr&& src):
             strcpy(path, value.c_str());
             continue;
         }
-        this->headers.insert(name, value);
+        if(name == "cookie"){
+            cookies.insert(value);
+            continue;
+        }
+        add(name, value);
     }
     getfile();
 }
@@ -447,18 +480,6 @@ bool HttpReqHeader::ismethod(const char* method) const{
     return strcmp(this->method, method) == 0;
 }
 
-void HttpReqHeader::rmonehupinfo(){
-    del("Connection");
-    if(get("Proxy-Connection")){
-        add("Connection", get("Proxy-Connection"));
-        del("Proxy-Connection");
-    }
-    del("Upgrade");
-    del("Public");
-    del("Proxy-Authorization");
-}
-
-
 char *HttpReqHeader::getstring(size_t &len) const{
     char *buff = (char *)malloc(BUF_LEN);
     len = 0;
@@ -486,6 +507,15 @@ char *HttpReqHeader::getstring(size_t &len) const{
     for (auto i : headers) {
         len += sprintf(buff + len, "%s: %s" CRLF,
                 i.first.c_str(), i.second.c_str());
+    }
+    if(!cookies.empty()){
+        string cookie_str;
+        for(auto i : cookies){
+            cookie_str += "; ";
+            cookie_str += i;
+        }
+        len += sprintf(buff + len, "Cookie: %s" CRLF, 
+                cookie_str.substr(2).c_str());
     }
 
     len += sprintf(buff + len, CRLF);
@@ -521,8 +551,11 @@ Http2_header *HttpReqHeader::getframe(Index_table *index_table) const{
         p += index_table->hpack_encode(p, ":scheme", "http");
         p += index_table->hpack_encode(p, ":path", path);
     }
-    p += index_table->hpack_encode(p, headers);
+    for(auto i: cookies){
+        p += index_table->hpack_encode(p, "cookie", i.c_str());
+    }
     
+    p += index_table->hpack_encode(p, headers);
     set24(header->length, p-(char *)(header + 1));
     return header;
 }
@@ -538,6 +571,9 @@ CGI_Header *HttpReqHeader::getcgi() const{
     p = cgi_addnv(p, ":path", path);
     for(auto i: headers){
         p = cgi_addnv(p, i.first, i.second);
+    }
+    for(auto i: cookies){
+        p = cgi_addnv(p, "cookie", i);
     }
     cgi->contentLength = htons(p - (char *)(cgi + 1));
     return cgi;
@@ -564,13 +600,27 @@ HttpResHeader::HttpResHeader(const char* header, Ptr&& src):
             LOGE("wrong header format:%s\n", p);
             throw 0;
         }
-        headers.insert(string(p, sp - p), ltrim(string(sp + 1)));
+        string name = string(p, sp-p);
+        string value = ltrim(string(sp + 1));
+        if(strcasecmp(name.c_str(), "set-cookie") == 0){
+            cookies.insert(value);
+        }else{
+            add(name, value);
+        }
     }
 }
 
-HttpResHeader::HttpResHeader(mulmap<string, string>&& headers, Ptr&& src):
-                   HttpHeader(headers, std::move(src))
+HttpResHeader::HttpResHeader(mulmap<istring, string>&& headers, Ptr&& src):
+                   HttpHeader(std::move(src))
 {
+    for(auto i: headers){
+        if(i.first == "set-cookies"){
+            cookies.insert(i.second);
+        }else{
+            add(i.first, i.second);
+        }
+    }
+
     snprintf(status, sizeof(status), "%s", get(":status"));
     for (auto i = this->headers.begin(); i!= this->headers.end();) {
         if (i->first[0] == ':') {
@@ -594,13 +644,18 @@ HttpResHeader::HttpResHeader(CGI_Header *headers, Ptr&& src):
     char *p = (char *)(headers +1);
     uint32_t len = ntohs(headers->contentLength);
     while(uint32_t(p - (char *)(headers +1)) < len){
-        string name, value;
+        istring name;
+        string value;
         p = cgi_getnv(p, name, value);
         if(name == ":status"){
             strcpy(status, value.c_str());
             continue;
         }
-        this->headers.insert(name, value);
+        if(name == "set-cookie"){
+            cookies.insert(value);
+            continue;
+        }
+        add(name, value);
    }
 }
 
@@ -616,6 +671,9 @@ char * HttpResHeader::getstring(size_t &len) const{
     for (auto i : headers) {
         len += sprintf(buff + len, "%s: %s" CRLF,
                 i.first.c_str(), i.second.c_str());
+    }
+    for (auto i : cookies) {
+        len += sprintf(buff + len, "Set-Cookie: %s" CRLF, i.c_str());
     }
 
     len += sprintf(buff + len, CRLF);
@@ -634,6 +692,9 @@ Http2_header *HttpResHeader::getframe(Index_table* index_table) const{
     char status_h2[100];
     sscanf(status,"%99s",status_h2);
     p += index_table->hpack_encode(p, ":status", status_h2);
+    for (auto i : cookies) {
+        p += index_table->hpack_encode(p, "set-cookie", i.c_str());
+    }
     p += index_table->hpack_encode(p, headers);
     
     set24(header->length, p-(char *)(header + 1));
@@ -650,12 +711,15 @@ CGI_Header *HttpResHeader::getcgi()const {
     for(auto i: headers){
         p = cgi_addnv(p, i.first, i.second);
     }
+    for(auto i: cookies){
+        p = cgi_addnv(p, "set-cookie", i);
+    }
     cgi->contentLength = htons(p - (char *)(cgi + 1));
     return cgi;
 }
 
 
-char *cgi_addnv(char *p, const string &name, const string &value) {
+static char *cgi_addnv(char *p, const istring &name, const string &value) {
     CGI_NVLenPair *cgi_pairs = (CGI_NVLenPair *) p;
     cgi_pairs->nameLength = htons(name.size());
     cgi_pairs->valueLength = htons(value.size());
@@ -666,12 +730,12 @@ char *cgi_addnv(char *p, const string &name, const string &value) {
     return p + value.size();
 }
 
-char *cgi_getnv(char *p, string &name, string &value) {
+static char *cgi_getnv(char* p, istring& name, string& value) {
     CGI_NVLenPair *cgi_pairs = (CGI_NVLenPair *)p;
     uint32_t name_len = ntohs(cgi_pairs->nameLength);
     uint32_t value_len = ntohs(cgi_pairs->valueLength);
     p = (char *)(cgi_pairs + 1);
-    name = string(p, name_len);
+    name = istring(p, name_len);
     p += name_len;
     value = string(p, value_len);
     return p + value_len;

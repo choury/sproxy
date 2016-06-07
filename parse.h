@@ -1,13 +1,11 @@
 #ifndef PARSE_H__
 #define PARSE_H__
 
-#include "common.h"
 #include "binmap.h"
+#include "common.h"
 #include "ptr.h"
 
-#include <string>
-
-using std::string;
+#include "istring.h"
 
 class Index_table;
 struct Http2_header;
@@ -15,23 +13,25 @@ struct CGI_Header;
 
 class HttpHeader{
 protected:
-    mulmap<string, string> headers;
+    std::map<istring, std::string> headers;
     Ptr      src;
 public:
+    std::set<std::string> cookies;
     uint32_t http_id = 0;  // 由http2协议使用
     uint32_t cgi_id = 0;   // 由cgi 协议使用
     uint8_t flags = 0;
     bool should_proxy  = false;
 
     explicit HttpHeader(Ptr&& src);
-    explicit HttpHeader(mulmap<string, string> headers, Ptr&& src);
+//    explicit HttpHeader(mulmap<string, string> headers, Ptr&& src);
 
     Ptr getsrc();
-    void add(const char *header, const char *value);
-    void add(const char *header, int value);
-    void del(const char *header);
+    void add(const istring& header, const std::string& value);
+    void add(const istring& header, int value);
+    void append(const istring& header, const std::string& value);
+    void del(const istring& header);
     const char* get(const char *header) const;
-    std::set<string> getall(const char *header) const;
+//    std::set<string> getall(const char *header) const;
 
     virtual char *getstring(size_t &len) const = 0;
     virtual Http2_header *getframe(Index_table *index_table) const = 0;
@@ -48,10 +48,9 @@ public:
     char filename[URLLIMIT];
     uint16_t port;
     explicit HttpReqHeader(const char* header = nullptr,  Ptr &&src = Ptr());
-    explicit HttpReqHeader(mulmap<string, string>&& headers, Ptr &&src = Ptr());
+    explicit HttpReqHeader(mulmap<istring, std::string>&& headers, Ptr &&src = Ptr());
     explicit HttpReqHeader(CGI_Header *headers, Ptr &&src = Ptr());
     bool ismethod(const char* method) const;
-    void rmonehupinfo();
     
     virtual char *getstring(size_t &len) const override;
     virtual Http2_header *getframe(Index_table *index_table) const override;
@@ -62,7 +61,7 @@ class HttpResHeader: public HttpHeader{
 public:
     char status[100];
     explicit HttpResHeader(const char* header, Ptr &&src = Ptr());
-    explicit HttpResHeader(mulmap<string, string>&& headers, Ptr &&src = Ptr());
+    explicit HttpResHeader(mulmap<istring, std::string>&& headers, Ptr &&src = Ptr());
     explicit HttpResHeader(CGI_Header *headers, Ptr &&src = Ptr());
     
     virtual char *getstring(size_t &len) const override;
@@ -71,7 +70,7 @@ public:
 };
 
 // trim from start
-static inline string& ltrim(std::string && s) {
+static inline std::string& ltrim(std::string && s) {
     s.erase(0, s.find_first_not_of(" "));
     return s;
 }
@@ -92,8 +91,6 @@ bool checkproxy(const char *hostname);
 bool checkblock(const char *hostname);
 bool checklocal(const char *hostname);
 bool checkauth(const char *ip);
-char *cgi_addnv(char *p, const string &name, const string &value);
-char *cgi_getnv(char *p, string &name, string &value);
 
 #ifdef  __cplusplus
 }
