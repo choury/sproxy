@@ -48,16 +48,15 @@ int Guest_s::showerrinfo(int ret, const char* s) {
                 LOGE("([%s]:%d): %s: the connection was lost\n",
                      sourceip, sourceport, s);
             }else if (error == 0 && ret == -1){
-                LOGE("([%s]:%d): %s:%s\n",
-                     sourceip, sourceport, s, strerror(errno));
+                LOGE("([%s]:%d): %s:%m\n", sourceip, sourceport, s);
             }else{
-                LOGE("([%s]:%d): %s:%s\n",
-                     sourceip, sourceport, s, ERR_error_string(error, NULL));
+                LOGE("([%s]:%d): %s:%s\n", sourceip, sourceport, s,
+                    ERR_error_string(error, NULL));
             }
             break;
         default:
-            LOGE("([%s]:%d): %s:%s\n",
-                sourceip, sourceport, s, ERR_error_string(ERR_get_error(), NULL));
+            LOGE("([%s]:%d): %s:%s\n", sourceip, sourceport, s,
+                ERR_error_string(ERR_get_error(), NULL));
         }
     }else{
          LOGE("([%s]:%d): %s:%d\n", sourceip, sourceport, s, ret);
@@ -74,8 +73,7 @@ void Guest_s::shakehandHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("([%s]:%d): guest_s error:%s\n",
-                  sourceip, sourceport, strerror(error));
+            LOGE("([%s]:%d): guest_s error:%m\n", sourceip, sourceport);
         }
         clean(INTERNAL_ERR, this);
     }

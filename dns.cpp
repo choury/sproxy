@@ -196,8 +196,7 @@ static int dnsinit() {
 
     FILE *res_file = fopen(RESOLV_FILE, "r");
     if (res_file == NULL) {
-        LOGE("[DNS] open resolv file:%s failed:%s\n",
-             RESOLV_FILE, strerror(errno) );
+        LOGE("[DNS] open resolv file:%s failed:%m\n", RESOLV_FILE);
         return 0;
     }
     char line[100];
@@ -218,8 +217,7 @@ static int dnsinit() {
             }
             int fd = Connect(&addr, SOCK_DGRAM);
             if (fd == -1) {
-                LOGE("[DNS] connecting  %s error:%s\n",
-                     ipaddr, strerror(errno));
+                LOGE("[DNS] connecting  %s error:%m\n", ipaddr);
                 continue;
             }
             Dns_srv *srv = new Dns_srv(fd);
@@ -314,22 +312,18 @@ void dnstick() {
 
 
 int dnsstatus(char* buff) {
-    int wlen,len;
-    sprintf(buff, "dns cache:\r\n%n", &wlen);
+    int len;
+    len = sprintf(buff, "dns cache:\r\n");
     for (auto i = rcd_index_host.begin(); i!= rcd_index_host.end();i++) {
-        sprintf(buff+wlen, "[%s]:%u\r\n%n", i->first.c_str(),
-                (uint)(DNSTTL -(time(nullptr)-i->second.gettime)), &len);
-        wlen += len;
-        
+        len += sprintf(buff+len, "[%s]:%u\r\n", i->first.c_str(),
+                (uint)(DNSTTL -(time(nullptr)-i->second.gettime)));
     }
-    sprintf(buff+wlen, "\r\ndns request:\r\n%n", &len);
-    wlen += len;
+    len += sprintf(buff+len, "\r\ndns request:\r\n");
     for (auto i = rcd_index_id.begin(); i!= rcd_index_id.end();i++) {
-        sprintf(buff+wlen, "[%s]:%d(%u)\r\n%n", i->second->host,
-                (uint)(time(nullptr)-i->second->reqtime), i->second->times, &len);
-        wlen += len;
+        len += sprintf(buff+len, "[%s]:%d(%u)\r\n", i->second->host,
+                (uint)(time(nullptr)-i->second->reqtime), i->second->times);
     }
-    return wlen;
+    return len;
 }
 
 
@@ -408,7 +402,7 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("[DNS] : %s\n", strerror(error));
+            LOGE("[DNS] : %m\n");
         }
     }
 }

@@ -33,7 +33,7 @@ Cgi::Cgi(HttpReqHeader& req) {
         goto err;
     }
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds)) {  // 创建管道
-        LOGE("socketpair failed: %s\n", strerror(errno));
+        LOGE("socketpair failed: %m\n");
         errinfo = H500;
         goto err;
     }
@@ -49,7 +49,7 @@ Cgi::Cgi(HttpReqHeader& req) {
     fd=fds[0];
     flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0) {
-        LOGE("fcntl error:%s\n",strerror(errno));
+        LOGE("fcntl error:%m\n");
         errinfo = H500;
         goto err;
     }
@@ -117,7 +117,7 @@ void Cgi::SendFrame(CGI_Header *header, size_t len)
 int Cgi::showerrinfo(int ret, const char* s) {
     if(ret < 0) {
         if(errno != EAGAIN) {
-            LOGE("%s: %s\n",s,strerror(errno));
+            LOGE("%s: %m\n",s);
         } else {
             return 0;
         }
@@ -298,7 +298,7 @@ void Cgi::defaultHE(uint32_t events) {
         }
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("cgi unkown error: %s\n",strerror(errno));
+        LOGE("cgi unkown error: %m\n");
         clean(INTERNAL_ERR, this);
     }
 }

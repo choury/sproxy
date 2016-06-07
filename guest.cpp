@@ -25,8 +25,7 @@ Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Peer(fd) {
 int Guest::showerrinfo(int ret, const char *s) {
     if (ret < 0) {
         if (errno != EAGAIN) {
-            LOGE("([%s]:%d): %s:%s\n",
-                 sourceip, sourceport, s, strerror(errno));
+            LOGE("([%s]:%d): %s:%m\n", sourceip, sourceport, s);
         } else {
             return 0;
         }
@@ -42,8 +41,7 @@ void Guest::defaultHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("([%s]:%d): guest error:%s\n",
-                  sourceip, sourceport, strerror(error));
+            LOGE("([%s]:%d): guest error:%m\n", sourceip, sourceport);
         }
         clean(INTERNAL_ERR, this);
         return;

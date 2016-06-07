@@ -60,7 +60,7 @@ int Proxy::showerrinfo(int ret, const char* s) {
             if (error == 0 && ret == 0){
                 LOGE("%s: the connection was lost\n", s);
             }else if (error == 0 && ret == -1){
-                LOGE("%s:%s\n", s, strerror(errno));
+                LOGE("%s:%m\n", s);
             }else{
                 LOGE("%s:%s\n", s, ERR_error_string(error, NULL));
             }
@@ -87,7 +87,7 @@ void Proxy::waitconnectHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("connect to proxy error: %s\n", strerror(error));
+            LOGE("connect to proxy error: %m\n");
         }
         goto reconnect;
     }
@@ -96,12 +96,12 @@ void Proxy::waitconnectHE(uint32_t events) {
         int error;
         socklen_t len = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-            LOGE("proxy getsokopt error: %s\n", strerror(errno));
+            LOGE("proxy getsokopt error: %m\n");
             goto reconnect;
         }
 
         if (error != 0) {
-            LOGE("connect to proxy:%s\n", strerror(error));
+            LOGE("connect to proxy:%m\n");
             goto reconnect;
         }
         ctx = SSL_CTX_new(SSLv23_client_method());
@@ -159,7 +159,7 @@ void Proxy::shakehandHE(uint32_t events) {
         
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("proxy unkown error: %s\n", strerror(errno));
+        LOGE("proxy unkown error: %m\n");
         clean(SSL_SHAKEHAND_ERR, this);
     }
 }

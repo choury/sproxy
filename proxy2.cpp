@@ -77,7 +77,7 @@ void Proxy2::defaultHE(u_int32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("proxy2 error: %s\n", strerror(error));
+            LOGE("proxy2 error: %m\n");
         }
         clean(INTERNAL_ERR, this);
         return;

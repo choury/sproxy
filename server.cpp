@@ -20,13 +20,13 @@ class Https_server: public Server {
             struct sockaddr_in6 myaddr;
             socklen_t temp = sizeof(myaddr);
             if ((clsk = accept(fd, (struct sockaddr *)&myaddr, &temp)) < 0) {
-                LOGE("accept error:%s\n", strerror(errno));
+                LOGE("accept error:%m\n");
                 return;
             }
 
             int flags = fcntl(clsk, F_GETFL, 0);
             if (flags < 0) {
-                LOGE("fcntl error:%s\n", strerror(errno));
+                LOGE("fcntl error:%m\n");
                 close(clsk);
                 return;
             }
@@ -66,7 +66,7 @@ class Dtls_server: public Server {
             if(Bind_any(new_fd, SPORT))
                 goto error;
             if(connect(new_fd, (struct sockaddr*)&myaddr, sizeof(struct sockaddr_in6))){
-                LOGE("connect error: %s\n", strerror(errno));
+                LOGE("connect error: %m\n");
                 goto error;
             }
             /* Set new fd and set BIO to connected */
@@ -234,7 +234,7 @@ int main(int argc, char **argv) {
     if(udp_mode){
         int svsk_udp;
         if((svsk_udp = socket(PF_INET6, SOCK_DGRAM, 0)) < 0){
-            LOGOUT("socket error:%s\n", strerror(errno));
+            LOGOUT("socket error:%m\n");
             return -1;
         }
         if(Bind_any(svsk_udp, SPORT))
@@ -250,7 +250,7 @@ int main(int argc, char **argv) {
     LOGOUT("Accepting connections ...\n");
 #ifndef DEBUG
     if (daemon(1, 0) < 0) {
-        LOGOUT("start daemon error:%s\n", strerror(errno));
+        LOGOUT("start daemon error:%m\n");
     }
 #endif
     while (1) {
