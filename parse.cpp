@@ -357,10 +357,10 @@ HttpReqHeader::HttpReqHeader(const char* header, Ptr&& src):
             LOGE("wrong header format:%s\n", p);
             throw 0;
         }
-        string name = string(p, sp-p);
-        if(strcasecmp(name.c_str(), "cookie")==0){
+        istring name = string(p, sp-p);
+        if(name == "cookie"){
             char *cp = sp +1;
-            for(char *p = strsep(&cp, ";");cp;
+            for(char *p = strsep(&cp, ";");p;
                 p = strsep(&cp, ";"))
             {
                 cookies.insert(ltrim(string(p)));
@@ -387,7 +387,14 @@ HttpReqHeader::HttpReqHeader(mulmap<istring, string>&& headers, Ptr&& src):
 {
     for(auto i: headers){
         if(i.first == "cookie"){
-            cookies.insert(i.second);
+            char cookiebuff[URLLIMIT];
+            strcpy(cookiebuff, i.second.c_str()); 
+            char *cp=cookiebuff;
+            for(char *p = strsep(&cp, ";");p;
+                p = strsep(&cp, ";"))
+            {
+                cookies.insert(ltrim(string(p)));
+            }
         }else{
             add(i.first, i.second);
         }
@@ -535,6 +542,11 @@ Http2_header *HttpReqHeader::getframe(Index_table *index_table) const{
        !ismethod("SEND")){
         header->flags |= END_STREAM_F;
     }
+    if(get("content-length") &&
+       strcmp("0", get("content-length"))==0)
+    {
+        header->flags |= END_STREAM_F;
+    }
     set32(header->id, http_id);
 
     char *p = (char *)(header + 1);
@@ -600,9 +612,9 @@ HttpResHeader::HttpResHeader(const char* header, Ptr&& src):
             LOGE("wrong header format:%s\n", p);
             throw 0;
         }
-        string name = string(p, sp-p);
+        istring name = istring(p, sp-p);
         string value = ltrim(string(sp + 1));
-        if(strcasecmp(name.c_str(), "set-cookie") == 0){
+        if(name == "set-cookie"){
             cookies.insert(value);
         }else{
             add(name, value);
@@ -686,6 +698,11 @@ Http2_header *HttpResHeader::getframe(Index_table* index_table) const{
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F;
+    if(get("content-length") &&
+       strcmp("0", get("content-length"))==0)
+    {
+        header->flags |= END_STREAM_F;
+    }
     set32(header->id, http_id);
 
     char *p = (char *)(header + 1);

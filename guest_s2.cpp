@@ -198,7 +198,7 @@ void Guest_s2::ErrProc(int errcode) {
 }
 
 void Guest_s2::AdjustInitalFrameWindowSize(ssize_t diff) {
-    for(auto&& i: idmap.pairs()){
+    for(auto i: idmap.Left()){
        i.first->remotewinsize += diff; 
     }
     remotewinsize += diff;
@@ -206,7 +206,7 @@ void Guest_s2::AdjustInitalFrameWindowSize(ssize_t diff) {
 
 void Guest_s2::clean(uint32_t errcode, Peer *who, uint32_t id) {
     if(who == this) {
-        for(auto&& i: idmap.pairs()){
+        for(auto i: idmap.Left()){
             i.first->clean(errcode, this, i.second);
         }
         return Peer::clean(errcode, this);

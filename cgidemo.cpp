@@ -21,6 +21,7 @@ int cgimain(int fd){
             cookie.set("test10s", "test");
             cookie.path = "/";
             cookie.domain = ".choury.com";
+            cookie.maxage = 10;
             addcookie(res, cookie);
             cgi_response(fd, res);
             for(auto i:params){

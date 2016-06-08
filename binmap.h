@@ -155,8 +155,8 @@ public:
 
 template<class T1, class T2>
 class binmap{
-    mulmap<T1, T2> left;
-    mulmap<T2, T1> right;
+    std::map<T1, T2> left;
+    std::map<T2, T1> right;
 public:
     void insert(const T1&, const T2&);
     void erase(const T1&, const T2&);
@@ -164,78 +164,79 @@ public:
     void erase(const T2&);
     T1 at(const T2& key);
     T2 at(const T1& key);
-    const std::set<T1> operator[](const T2& key);
-    const std::set<T2> operator[](const T1& key);
+    T1& operator[](const T2& key);
+    T1 operator[](const T2& key)const;
+    T2& operator[](const T1& key);
+    T2 operator[](const T1& key)const;
     size_t count(T1 t1);
     size_t count(T2 t2);
-    const std::set<std::pair<T1, T2>> pairs();
+    const std::map<T1, T2>& Left();
+    const std::map<T2, T1>& Right();
 };
 
 
 template<class T1, class T2>
 void binmap<T1, T2>::insert(const T1& t1, const T2& t2) {
     assert(typeid(t1) != typeid(t2));
-    left.insert(t1, t2);
-    right.insert(t2, t1);
+    left.insert(std::make_pair(t1, t2));
+    right.insert(std::make_pair(t2, t1));
 }
 
 template<class T1, class T2>
 void binmap<T1, T2>::erase(const T1& key) {
     if(left.count(key)){
-        auto set = left[key];
+        right.erase(left[key]);
         left.erase(key);
-        for(auto i: set){
-            right.erase(i, key);
-        }
     }
 }
 
 template<class T1, class T2>
 void binmap<T1, T2>::erase(const T2& key) {
     if(right.count(key)){
-        auto set = right[key];
+        left.erase(right[key]);
         right.erase(key);
-        for(auto i: set){
-            left.erase(i, key);
-        }
     }
 }
 
 template<class T1, class T2>
 void binmap<T1, T2>::erase(const T1& t1, const T2& t2) {
-    left.erase(t1, t2);
-    right.erase(t2, t1);
+    left.erase(t1);
+    right.erase(t2);
 }
 
 
 template<class T1, class T2>
 T2 binmap<T1, T2>::at(const T1& key) {
-    return *left.at(key).begin();
+    return left.at(key);
 }
 
 template<class T1, class T2>
 T1 binmap<T1, T2>::at(const T2& key) {
-    return *right.at(key).begin();
+    return right.at(key);
 }
 
 template<class T1, class T2>
-const std::set<T2> binmap<T1, T2>::operator[](const T1& key)
+T2& binmap<T1, T2>::operator[](const T1& key)
 {
-    std::set<T2> set;
-    if(left.count(key)){
-        set = left[key];
-    }
-    return set;
+    return left[key];
 }
 
 template<class T1, class T2>
-const std::set<T1> binmap<T1, T2>::operator[](const T2& key)
+T2 binmap<T1, T2>::operator[](const T1& key) const
 {
-    std::set<T1> set;
-    if(right.count(key)){
-        set =  right[key];
-    }
-    return set;
+    return left[key];
+}
+
+template<class T1, class T2>
+T1& binmap<T1, T2>::operator[](const T2& key)
+{
+    return  right[key];
+}
+
+template<class T1, class T2>
+T1 binmap<T1, T2>::operator[](const T2& key) const
+{
+    return  right[key];
 }
 
 template<class T1, class T2>
@@ -250,13 +251,14 @@ size_t binmap<T1, T2>::count(T2 t2) {
 }
 
 template<class T1, class T2>
-const std::set<std::pair<T1, T2 >> binmap<T1, T2>::pairs() { 
-    std::set<std::pair<T1, T2>> pairs;
-    for(auto i: left){
-        pairs.insert(i);
-    }
-    return pairs;
+const std::map<T1, T2>& binmap<T1, T2>::Left(){
+    return left;
 }
 
+template<class T1, class T2>
+const std::map<T2, T1>& binmap<T1, T2>::Right(){
+    return right;
+}
 
 #endif
+

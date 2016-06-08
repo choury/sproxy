@@ -220,7 +220,7 @@ void Proxy2::ResProc(HttpResHeader& res) {
 }
 
 void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
-    for(auto&& i: idmap.pairs()){
+    for(auto i: idmap.Left()){
        i.first->remotewinsize += diff; 
     }
     remotewinsize += diff;
@@ -230,7 +230,7 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
 void Proxy2::clean(uint32_t errcode, Peer *who, uint32_t) {
     if(who == this) {
         proxy2 = (proxy2 == this) ? nullptr: proxy2;
-        for(auto&& i: idmap.pairs()){
+        for(auto i: idmap.Left()){
             i.first->clean(errcode, this, i.second);
         }
         return Peer::clean(errcode, this);

@@ -50,6 +50,7 @@ public:
         return *this;
     }
     istring& operator=(istring&& is){
+        free(str);
         str = is.str;
         len = is.len;
         is.str = nullptr;
