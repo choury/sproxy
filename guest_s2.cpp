@@ -17,12 +17,9 @@ Ptr Guest_s2::shared_from_this() {
     return Guest::shared_from_this();
 }
 
-
-
 ssize_t Guest_s2::Read(void *buff, size_t size) {
     return Guest_s::Read(buff, size);
 }
-
 
 ssize_t Guest_s2::Write(const void *buff, size_t size) {
     return Guest_s::Write(buff, size);
@@ -69,7 +66,6 @@ void Guest_s2::SendFrame(Http2_header *header) {
     return Http2Res::SendFrame(header);
 }
 
-
 void Guest_s2::DataProc(const Http2_header* header)
 {
     uint32_t id = get32(header->id);
@@ -102,8 +98,6 @@ void Guest_s2::ReqProc(HttpReqHeader &req)
         idmap.insert(responser, req.http_id);
     }
 }
-
-
 
 void Guest_s2::response(HttpResHeader &res)
 {

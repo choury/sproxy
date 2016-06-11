@@ -526,6 +526,7 @@ char *HttpReqHeader::getstring(size_t &len) const{
     }
 
     len += sprintf(buff + len, CRLF);
+    assert(len < BUF_LEN);
     return buff;
 }
 
@@ -569,6 +570,7 @@ Http2_header *HttpReqHeader::getframe(Index_table *index_table) const{
     
     p += index_table->hpack_encode(p, headers);
     set24(header->length, p-(char *)(header + 1));
+    assert(get24(header->length) < BUF_LEN);
     return header;
 }
 
@@ -588,6 +590,7 @@ CGI_Header *HttpReqHeader::getcgi() const{
         p = cgi_addnv(p, "cookie", i);
     }
     cgi->contentLength = htons(p - (char *)(cgi + 1));
+    assert(ntohs(cgi->contentLength) < BUF_LEN);
     return cgi;
 }
 
@@ -689,6 +692,7 @@ char * HttpResHeader::getstring(size_t &len) const{
     }
 
     len += sprintf(buff + len, CRLF);
+    assert(len < BUF_LEN);
     return buff;
 }
 
@@ -697,7 +701,7 @@ Http2_header *HttpResHeader::getframe(Index_table* index_table) const{
     Http2_header *header = (Http2_header *)malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
-    header->flags = END_HEADERS_F;
+    header->flags = END_HEADERS_F | flags;
     if(get("content-length") &&
        strcmp("0", get("content-length"))==0)
     {
@@ -715,6 +719,7 @@ Http2_header *HttpResHeader::getframe(Index_table* index_table) const{
     p += index_table->hpack_encode(p, headers);
     
     set24(header->length, p-(char *)(header + 1));
+    assert(get24(header->length) < BUF_LEN);
     return header;
 }
 
@@ -732,6 +737,7 @@ CGI_Header *HttpResHeader::getcgi()const {
         p = cgi_addnv(p, "set-cookie", i);
     }
     cgi->contentLength = htons(p - (char *)(cgi + 1));
+    assert(ntohs(cgi->contentLength) < BUF_LEN);
     return cgi;
 }
 

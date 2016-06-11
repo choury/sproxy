@@ -194,12 +194,12 @@ void HttpReq::HeaderProc() {
                memcmp(res.status, "205", 3) == 0||
                memcmp(res.status, "304", 3) == 0)
                http_flag |= HTTP_IGNORE_BODY;
-            ResProc(res);
             if (http_flag & HTTP_IGNORE_BODY) {
-                Http_Proc = (void (HttpBase::*)())&HttpReq::HeaderProc;
-                DataProc(http_buff, 0);
                 http_flag &= ~HTTP_IGNORE_BODY;
+                res.flags = 1; //END_STREAM_F
+                Http_Proc = (void (HttpBase::*)())&HttpReq::HeaderProc;
             }
+            ResProc(res);
         }catch(...) {
             ErrProc(HTTP_PROTOCOL_ERR);
             return;

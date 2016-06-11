@@ -12,8 +12,8 @@ int cgimain(int fd){
         readlen += read(fd, buff + readlen, ntohs(header->contentLength));
         if(header->type == CGI_REQUEST){
             HttpReqHeader req(header);
-            auto &&params = getparams(req);
-            auto &&cookies = getcookies(req);
+            auto params = getparams(req);
+            auto cookies = getcookies(req);
             HttpResHeader res(H200);
             res.cgi_id = req.cgi_id;
             Cookie cookie("haha", "haowan");

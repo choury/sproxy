@@ -125,12 +125,11 @@ void Proxy2::DataProc(const Http2_header* header) {
             LOGE("[%d]: window size error\n", id);
             return;
         }
-        if((header->flags & END_STREAM_F) && len) {
-            guest->Write((const void*)nullptr, 0, this, id);
-        }else{
-            guest->Write(header+1, len, this, id);
-        }
+        guest->Write(header+1, len, this, id);
         if(header->flags & END_STREAM_F){
+            if(len){
+                guest->Write((const void*)nullptr, 0, this, id);
+            }
             idmap.erase(id);
         }
         guest->localwinsize -= len; 
@@ -209,7 +208,9 @@ void Proxy2::ResProc(HttpResHeader& res) {
         
         if(guest->flag & ISPERSISTENT_F) {
             strcpy(res.status, "200 Connection established");
-        }else if(!res.get("Content-Length")){
+        }else if((res.flags & END_STREAM_F) == 0 &&
+                 !res.get("Content-Length")
+        ){
             res.add("Transfer-Encoding", "chunked");
         }
         guest->response(res);

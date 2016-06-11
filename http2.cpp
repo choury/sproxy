@@ -121,8 +121,6 @@ int Http2Base::Write_Proc(){
     return 1;
 }
 
-
-
 void Http2Base::SettingsProc(Http2_header* header) {
     Setting_Frame *sf = (Setting_Frame *)(header + 1);
     if((header->flags & ACK_F) == 0) {
@@ -235,8 +233,6 @@ void Http2Res::InitProc() {
     (this->*Http2_Proc)();
 }
 
-
-
 void Http2Res::HeadersProc(Http2_header* header) {
     const char *pos = (const char *)(header+1);
     uint8_t padlen = 0;
@@ -260,7 +256,6 @@ void Http2Res::HeadersProc(Http2_header* header) {
     (void)streamdep;
     return;
 }
-
 
 
 void Http2Req::init() {
