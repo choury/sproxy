@@ -173,11 +173,15 @@ err:
 }
 
 
-File* File::getfile(HttpReqHeader &req) {
+Ptr File::getfile(HttpReqHeader &req) {
     if(filemap.count(req.filename)){
-        return filemap[req.filename];
+        return filemap[req.filename]->request(req);
     }else{
-        return new File(req);
+        try{
+            return (new File(req))->request(req);
+        }catch(...){
+            return Ptr();
+        }
     }
 }
 
@@ -192,39 +196,45 @@ int File::showerrinfo(int ret, const char* s) {
 
 Ptr File::request(HttpReqHeader& req) {
     Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
-    Ranges ranges(req.get("Range"));
-    range rg;
-    if (ranges.size() == 1 && ranges.calcu(size)){
-        rg = ranges.rgs[0];
-    } else if(ranges.size()){
-        HttpResHeader res(H416, shared_from_this());
-        char buff[100];
-        snprintf(buff, sizeof(buff), "bytes */%lu", size);
-        res.add("Content-Range", buff);
+    try{
+        Ranges ranges(req.get("Range"));
+        range rg;
+        if (ranges.size() == 1 && ranges.calcu(size)){
+            rg = ranges.rgs[0];
+        } else if(ranges.size()){
+            HttpResHeader res(H416, shared_from_this());
+            char buff[100];
+            snprintf(buff, sizeof(buff), "bytes */%lu", size);
+            res.add("Content-Range", buff);
+            res.http_id = req.http_id;
+            guest->response(res);
+            return shared_from_this();
+        }
+        if(ranges.size()){
+            HttpResHeader res(H206, shared_from_this());
+            char buff[100];
+            snprintf(buff, sizeof(buff), "bytes %lu-%lu/%lu",
+                     rg.begin, rg.end, size);
+            res.add("Content-Range", buff);
+            size_t leftsize = rg.end - rg.begin+1;
+            res.add("Content-Length", leftsize);
+            res.http_id = req.http_id;
+            guest->response(res);
+        }else{
+            rg.begin = 0;
+            rg.end = size - 1;
+            HttpResHeader res(H200, shared_from_this());
+            res.add("Content-Length", size);
+            res.http_id = req.http_id;
+            guest->response(res);
+        }
+        updateEpoll(EPOLLIN);
+        reqs.push_back(std::make_pair(req, rg));
+    }catch(...){
+        HttpResHeader res(H400, shared_from_this());
         res.http_id = req.http_id;
         guest->response(res);
-        return shared_from_this();
     }
-    if(ranges.size()){
-        HttpResHeader res(H206, shared_from_this());
-        char buff[100];
-        snprintf(buff, sizeof(buff), "bytes %lu-%lu/%lu",
-                 rg.begin, rg.end, size);
-        res.add("Content-Range", buff);
-        size_t leftsize = rg.end - rg.begin+1;
-        res.add("Content-Length", leftsize);
-        res.http_id = req.http_id;
-        guest->response(res);
-    }else{
-        rg.begin = 0;
-        rg.end = size - 1;
-        HttpResHeader res(H200, shared_from_this());
-        res.add("Content-Length", size);
-        res.http_id = req.http_id;
-        guest->response(res);
-    }
-    updateEpoll(EPOLLIN);
-    reqs.push_back(std::make_pair(req, rg));
     return shared_from_this();
 }
 
@@ -236,11 +246,15 @@ void File::defaultHE(uint32_t events) {
     }
 
     if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("file unkown error: %m\n");
+        int       error = 0;
+        socklen_t errlen = sizeof(error);
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
+            LOGE("file unkown error: %s\n", strerror(error));
+        }
         clean(INTERNAL_ERR, this);
         return;
     }
-    
+
     if (events & EPOLLIN) {
         bool allfull = true;
         for(auto i = reqs.begin();i!=reqs.end();){

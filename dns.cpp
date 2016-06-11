@@ -402,7 +402,7 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("[DNS] : %m\n");
+            LOGE("[DNS] : %s\n", strerror(error));
         }
     }
 }

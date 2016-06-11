@@ -17,10 +17,10 @@ Proxy::Proxy(const char* hostname, uint16_t port): Host(hostname, port) {
 
 }
 
-Host* Proxy::getproxy(HttpReqHeader &req, Ptr responser_ptr) {
+Ptr Proxy::getproxy(HttpReqHeader &req, Ptr responser_ptr) {
     Host *exist = dynamic_cast<Host *>(responser_ptr.get());
     if (dynamic_cast<Proxy*>(exist)) {
-        return exist;
+        return exist->request(req);
     }
     
     if (exist) {
@@ -28,10 +28,10 @@ Host* Proxy::getproxy(HttpReqHeader &req, Ptr responser_ptr) {
     }
     
     if (proxy2 && proxy2->bufleft(nullptr) >= 32 * 1024) {
-        return proxy2;
+        return proxy2->request(req);
     }
 
-    return new Proxy(SHOST, SPORT);
+    return (new Proxy(SHOST, SPORT))->request(req);
 }
 
 ssize_t Proxy::Read(void* buff, size_t size) {
@@ -87,11 +87,11 @@ void Proxy::waitconnectHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("connect to proxy error: %m\n");
+            LOGE("connect to proxy error: %s\n", strerror(error));
         }
         goto reconnect;
     }
-    
+
     if (events & EPOLLOUT) {
         int error;
         socklen_t len = sizeof(error);
@@ -101,7 +101,7 @@ void Proxy::waitconnectHE(uint32_t events) {
         }
 
         if (error != 0) {
-            LOGE("connect to proxy:%m\n");
+            LOGE("connect to proxy:%s\n", strerror(error));
             goto reconnect;
         }
         ctx = SSL_CTX_new(SSLv23_client_method());
@@ -131,6 +131,16 @@ reconnect:
 
 
 void Proxy::shakehandHE(uint32_t events) {
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        int       error = 0;
+        socklen_t errlen = sizeof(error);
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
+            LOGE("proxy unkown error: %s\n", strerror(error));
+        }
+        clean(SSL_SHAKEHAND_ERR, this);
+        return;
+    }
+
     if ((events & EPOLLIN) || (events & EPOLLOUT)) {
         int ret = SSL_connect(ssl);
         if (ret != 1) {
@@ -157,10 +167,6 @@ void Proxy::shakehandHE(uint32_t events) {
         }
         return;
         
-    }
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("proxy unkown error: %m\n");
-        clean(SSL_SHAKEHAND_ERR, this);
     }
 }
 

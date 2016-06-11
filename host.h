@@ -34,7 +34,7 @@ public:
     virtual Ptr request(HttpReqHeader &req)override;
     virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
     virtual void ResProc(HttpResHeader &res)override;
-    static Host* gethost(HttpReqHeader &req, Ptr responser_ptr);
+    static Ptr gethost(HttpReqHeader &req, Ptr responser_ptr);
     friend void hosttick();
 };
 

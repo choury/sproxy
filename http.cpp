@@ -137,7 +137,9 @@ void HttpRes::HeaderProc() {
             ) {
                 if (req.get("Content-Length")!= nullptr) {
                     sscanf(req.get("Content-Length"), "%" SCNu64, &http_expectlen);
-                    Http_Proc = &HttpRes::FixLenProc;
+                    if(http_expectlen){
+                        Http_Proc = &HttpRes::FixLenProc;
+                    }
                 } else {
                     Http_Proc = &HttpRes::AlwaysProc;
                 }
@@ -182,7 +184,9 @@ void HttpReq::HeaderProc() {
                 Http_Proc = &HttpReq::ChunkLProc;
             } else if (res.get("Content-Length")!= nullptr) {
                 sscanf(res.get("Content-Length"), "%" SCNu64, &http_expectlen);
-                Http_Proc = &HttpReq::FixLenProc;
+                if(http_expectlen){
+                    Http_Proc = &HttpReq::FixLenProc;
+                }
             } else {
                 Http_Proc = &HttpReq::AlwaysProc;
             }

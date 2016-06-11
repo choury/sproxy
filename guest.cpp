@@ -41,12 +41,12 @@ void Guest::defaultHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("([%s]:%d): guest error:%m\n", sourceip, sourceport);
+            LOGE("([%s]:%d): guest error:%s\n",
+                 sourceip, sourceport, strerror(error));
         }
         clean(INTERNAL_ERR, this);
-        return;
     }
-    
+
     if (events & EPOLLIN || http_getlen) {
         (this->*Http_Proc)();
     }

@@ -19,7 +19,7 @@ public:
     virtual ~Proxy();
     
     virtual int showerrinfo(int ret, const char *)override;
-    static Host *getproxy(HttpReqHeader &req, Ptr responser_ptr);
+    static Ptr getproxy(HttpReqHeader &req, Ptr responser_ptr);
 };
 
 #endif

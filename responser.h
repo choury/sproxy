@@ -7,7 +7,6 @@
 class Responser:public Peer{
 protected:
     virtual void closeHE(uint32_t events) override;
-public:
     virtual Ptr request(HttpReqHeader &req) = 0;
 };
 

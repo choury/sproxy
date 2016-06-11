@@ -68,12 +68,13 @@ void Host::waitconnectHE(uint32_t events) {
         clean(PEER_LOST_ERR, this);
         return;
     }
+
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("connect to host error: %m\n");
+            LOGE("connect to host error: %s\n", strerror(error));
         }
         goto reconnect;
     }
@@ -86,7 +87,7 @@ void Host::waitconnectHE(uint32_t events) {
             goto reconnect;
         }
         if (error != 0) {
-            LOGE("connect to %s: %m\n", this->hostname);
+            LOGE("connect to %s: %s\n", this->hostname, strerror(error));
             goto reconnect;
         }
         updateEpoll(EPOLLIN | EPOLLOUT);
@@ -106,20 +107,20 @@ reconnect:
 }
 
 void Host::defaultHE(uint32_t events) {
+    Guest *guest = dynamic_cast<Guest *>(guest_ptr.get());
+    if (guest == NULL) {
+        clean(PEER_LOST_ERR, this);
+        return;
+    }
+
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("host error: %m\n");
+            LOGE("host error: %s\n", strerror(error));
         }
         clean(INTERNAL_ERR, this);
-        return;
-    }
-    
-    Guest *guest = dynamic_cast<Guest *>(guest_ptr.get());
-    if (guest == NULL) {
-        clean(PEER_LOST_ERR, this);
         return;
     }
 
@@ -192,19 +193,19 @@ void Host::ResProc(HttpResHeader& res) {
 
 
 
-Host* Host::gethost(HttpReqHeader& req, Ptr responser_ptr) {
+Ptr Host::gethost(HttpReqHeader& req, Ptr responser_ptr) {
     Host* exist = dynamic_cast<Host *>(responser_ptr.get());
     if (exist && strcasecmp(exist->hostname, req.hostname) == 0
         && exist->port == req.port
         && !req.ismethod("CONNECT"))
     {
-        return exist;
+        return exist->request(req);
     }
 
     if (exist) { 
         exist->clean(NOERROR, nullptr);
     }
-    return new Host(req.hostname, req.port);
+    return (new Host(req.hostname, req.port))->request(req);
 }
 
 

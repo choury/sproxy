@@ -104,13 +104,11 @@ Ptr distribute(HttpReqHeader& req, Ptr responser_ptr) {
         req.ismethod("HEAD") ||
         req.ismethod("SEND"))
     {
-        Host *host;
         if(req.should_proxy){
-            host = Proxy::getproxy(req, responser_ptr);
+            return Proxy::getproxy(req, responser_ptr);
         }else{
-            host = Host::gethost(req, responser_ptr);
+            return Host::gethost(req, responser_ptr);
         }
-        return host->request(req);
     } else if (req.ismethod("ADDPSITE")) {
         addpsite(req.url);
         guest->Write(ADDPTIP, strlen(ADDPTIP), guest);
@@ -185,12 +183,12 @@ Ptr distribute(HttpReqHeader& req, Ptr responser_ptr){
         }
     } else  if (checklocal(req.hostname)) {
         if (endwith(req.filename,".so")) {
-            return Cgi::getcgi(req)->request(req);
+            return Cgi::getcgi(req);
         } else {
-            return File::getfile(req)->request(req);
+            return File::getfile(req);
         }
     } else {
-        return Host::gethost(req, responser_ptr)->request(req);
+        return Host::gethost(req, responser_ptr);
     }
     return Ptr();
 }

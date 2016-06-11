@@ -77,12 +77,11 @@ void Proxy2::defaultHE(u_int32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("proxy2 error: %m\n");
+            LOGE("proxy2 error: %s\n", strerror(error));
         }
         clean(INTERNAL_ERR, this);
         return;
     }
-    
     if (events & EPOLLIN) {
         (this->*Http2_Proc)();
         if(localwinsize < 50 *1024 *1024){
