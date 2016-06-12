@@ -1,10 +1,16 @@
 project(sproxy)
 cmake_minimum_required(VERSION 2.8)
 
-find_package(OpenSSL)
+find_package(OpenSSL 1.0.2 REQUIRED)
 
-set(CMAKE_C_FLAGS "-Wall -ggdb -O0")
-set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -ggdb -O0")
+set(CMAKE_C_FLAGS "-Wall")
+set(CMAKE_CXX_FLAGS "-std=c++11 -Wall")
+
+set(CMAKE_C_FLAGS_REALSE "${CMAKE_C_FLGS} -O3")
+set(CMAKE_CXX_FLAGS_REALSE "${CMAKE_CXX_FLAGS} -O3")
+
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS} -ggdb -fsanitize=address -O0")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} -ggdb -fsanitize=address -O0")
 
 add_executable(sproxy_server cgi.cpp file.cpp http.cpp http2.cpp 
 hpack.cpp host.cpp guest.cpp peer.cpp guest_s.cpp guest_s2.cpp

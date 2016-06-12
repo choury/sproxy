@@ -8,8 +8,6 @@
 #include <arpa/inet.h>
 #include <sys/epoll.h>
 
-#define DEBUG
-
 extern uint16_t SPORT;
 extern char SHOST[];
 
@@ -35,16 +33,14 @@ extern char *auth_string;
 
 #else
 #define  LOGOUT(...) fprintf(stderr, __VA_ARGS__)
-#ifndef DEBUG
+#ifdef NDEBUG
 #define  LOG(...)  syslog(LOG_INFO, __VA_ARGS__)
 #define  LOGE(...)   do{\
                         char tmp[1024]; \
                         sprintf(tmp, __VA_ARGS__); \
                         syslog(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
                      }while(0);
-#define NDEBUG
 #else
-#define MALLOC_CHECK_ 1
 
 #define  LOG(...)  fprintf(stdout, __VA_ARGS__)
 #define  LOGE(...)   do{\

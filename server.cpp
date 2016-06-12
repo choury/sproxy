@@ -249,7 +249,7 @@ int main(int argc, char **argv) {
         new Https_server(svsk_tcp, ctx);
     }
     LOGOUT("Accepting connections ...\n");
-#ifndef DEBUG
+#ifdef NDEBUG
     if (daemon(1, 0) < 0) {
         LOGOUT("start daemon error:%m\n");
     }

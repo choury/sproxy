@@ -117,6 +117,7 @@ void Proxy::waitconnectHE(uint32_t events) {
 
         ssl = SSL_new(ctx);
         SSL_set_fd(ssl, fd);
+        SSL_set_tlsext_host_name(ssl, hostname);
 
         updateEpoll(EPOLLIN | EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Proxy::shakehandHE;

@@ -101,7 +101,7 @@ int main(int argc, char** argv) {
     new Http_server<Guest>(http_svsk);
     
     LOGOUT("Accepting connections ...\n");
-#ifndef DEBUG
+#ifdef NDEBUG
     if (daemon(1, 0) < 0) {
         LOGOUT("start daemon error:%m\n");
     }

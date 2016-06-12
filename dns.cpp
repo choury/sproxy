@@ -8,8 +8,8 @@
 #include <errno.h>
 
 
-#ifdef DEBUG
-//#define DEGUB_DNS
+#ifndef NDEBUG
+//#define DEBUG_DNS
 #endif
 
 #define IGNOREIPV6
@@ -126,7 +126,7 @@ static unsigned char * getdomain(unsigned char *buf, unsigned char *p) {
             getdomain(buf, q);
             return p+2;
         } else {
-#if defined(DEBUG) && defined(DEGUB_DNS)
+#ifdef DEBUG_DNS
             printf("%.*s.", *p, p+1);
 #endif
             p+= *p+1;
@@ -151,7 +151,7 @@ static unsigned char *getrr(
         NTOHS(dnsrr->TTL);
         NTOHS(dnsrr->rdlength);
         p+= sizeof(DNS_RR);
-#if defined(DEBUG) && defined(DEGUB_DNS)
+#ifdef DEBUG_DNS
         printf(" ==> ");
         char ipaddr[INET6_ADDRSTRLEN];
 #endif
@@ -161,7 +161,7 @@ static unsigned char *getrr(
             ip.addr_in.sin_family = PF_INET;
             memcpy(&ip.addr_in.sin_addr, p, sizeof(in_addr));
             addr.push_back(ip);
-#if defined(DEBUG) && defined(DEGUB_DNS)
+#ifdef DEBUG_DNS
             printf("%s", inet_ntop(PF_INET, p, ipaddr, sizeof(ipaddr)));
 #endif
             break;
@@ -173,13 +173,13 @@ static unsigned char *getrr(
             ip.addr_in6.sin6_family = PF_INET6;
             memcpy(&ip.addr_in6.sin6_addr, p, sizeof(in6_addr));
             addr.push_back(ip);
-#if defined(DEBUG) && defined(DEGUB_DNS)
+#ifdef DEBUG_DNS
             printf("%s", inet_ntop(PF_INET6, p, ipaddr, sizeof(ipaddr)));
 #endif
             break;
         }
         p+= dnsrr->rdlength;
-#if defined(DEBUG) && defined(DEGUB_DNS)
+#ifdef DEBUG_DNS
         printf("\n");
 #endif
     }
@@ -379,7 +379,7 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
             unsigned char *p = buf+sizeof(DNS_HDR);
             for (int i = 0; i < dnshdr->numq; ++i) {
                 p = getdomain(buf, p);
-#if defined(DEBUG) && defined(DEGUB_DNS)
+#ifdef DEBUG_DNS
                 printf(" :\n");
 #endif
                 p+= sizeof(DNS_QER);
