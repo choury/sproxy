@@ -69,7 +69,7 @@ void Guest::defaultHE(uint32_t events) {
 
 void Guest::closeHE(uint32_t events) {
     int ret = Peer::Write();
-    if (ret == WRITE_NOTHING ||
+    if (ret != WRITE_INCOMP ||
         (ret <= 0 && showerrinfo(ret, "write error while closing"))) {
         delete this;
         return;
