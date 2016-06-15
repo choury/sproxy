@@ -11,6 +11,7 @@
 #include <openssl/ssl.h>
 
 int efd;
+int daemon_mode = 0;
 
 class Https_server: public Server {
     SSL_CTX *ctx;
@@ -132,6 +133,7 @@ void usage(const char * programe){
            "       -p: The port to listen, default is 443.\n"
            "       -k: A optional intermediate CA certificate.\n"
            "       -u: UDP mode.\n"
+           "       -D: Run as a daemon.\n"
            "       -h: Print this.\n"
            , programe);
 }
@@ -142,7 +144,7 @@ int main(int argc, char **argv) {
     int oc;
     bool udp_mode = false;
     const char *capath = nullptr;
-    while((oc = getopt(argc, argv, "p:uhk:")) != -1)
+    while((oc = getopt(argc, argv, "p:uhk:D")) != -1)
     {
         switch(oc){
         case 'p':
@@ -153,6 +155,9 @@ int main(int argc, char **argv) {
             break;
         case 'u':
             udp_mode = true;
+            break;
+        case 'D':
+            daemon_mode = 1;
             break;
         case 'h':
             usage(argv[0]);
@@ -249,11 +254,9 @@ int main(int argc, char **argv) {
         new Https_server(svsk_tcp, ctx);
     }
     LOGOUT("Accepting connections ...\n");
-#ifdef NDEBUG
-    if (daemon(1, 0) < 0) {
+    if (daemon_mode && daemon(1, 0) < 0) {
         LOGOUT("start daemon error:%m\n");
     }
-#endif
     while (1) {
         int c;
         struct epoll_event events[200];

@@ -8,9 +8,7 @@
 #include <errno.h>
 
 
-#ifndef NDEBUG
 //#define DEBUG_DNS
-#endif
 
 #define IGNOREIPV6
 #define BUF_SIZE 1024

@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <syslog.h>
+#include <assert.h>
 #include <arpa/inet.h>
 #include <sys/epoll.h>
 
@@ -12,6 +13,7 @@ extern uint16_t SPORT;
 extern char SHOST[];
 
 extern char *auth_string;
+extern int daemon_mode;
 
 #define Min(x, y) ((int64_t)(x) < (int64_t)(y)?(x):(y))
 
@@ -33,25 +35,22 @@ extern char *auth_string;
 
 #else
 #define  LOGOUT(...) fprintf(stderr, __VA_ARGS__)
-#ifdef NDEBUG
-#define  LOG(...)  syslog(LOG_INFO, __VA_ARGS__)
+#define  LOG(...)    do{ \
+                        if(daemon_mode) \
+                            syslog(LOG_INFO, __VA_ARGS__); \
+                        else \
+                            fprintf(stdout, __VA_ARGS__); \
+                     }while(0)
 #define  LOGE(...)   do{\
                         char tmp[1024]; \
                         sprintf(tmp, __VA_ARGS__); \
-                        syslog(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
-                     }while(0);
-#else
-
-#define  LOG(...)  fprintf(stdout, __VA_ARGS__)
-#define  LOGE(...)   do{\
-                        char tmp[1024]; \
-                        sprintf(tmp, __VA_ARGS__); \
-                        fprintf(stderr, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
-                     }while(0);
-#endif
+                        if(daemon_mode) \
+                            syslog(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
+                        else \
+                            fprintf(stderr, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
+                     }while(0)
 #endif
 
-#include <assert.h>
 
 #ifdef  __cplusplus
 extern "C" {

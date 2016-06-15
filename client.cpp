@@ -10,6 +10,7 @@
 #include <openssl/ssl.h>
 
 int efd;
+int daemon_mode = 0;
 uint16_t CPORT = 3333;
 
 template<class T>
@@ -42,10 +43,11 @@ public:
 };
 
 void usage(const char * programe){
-    printf("Usage: %s [-t] [-p port] [-s user:passwd ] [-h] server[:port]\n"
+    printf("Usage: %s [-t] [-p port] [-s user:passwd ] [-h] server[:port] -D\n"
            "       -p: The port to listen, default is 3333.\n"
            "       -t: Run as a transparent proxy, it will disable -p.\n"
            "       -s: Set a user and passwd for client, default is none.\n"
+           "       -D: Run as a daemon.\n"
            "       -h: Print this.\n"
            , programe);
 }
@@ -53,7 +55,7 @@ void usage(const char * programe){
 int main(int argc, char** argv) {
     int oc;
     bool istrans  = false;
-    while((oc = getopt(argc, argv, "p:ths:")) != -1)
+    while((oc = getopt(argc, argv, "p:ths:D")) != -1)
     {
         switch(oc){
         case 'p':
@@ -69,6 +71,9 @@ int main(int argc, char** argv) {
         case 'h':
             usage(argv[0]);
             return 0;
+        case 'D':
+            daemon_mode = 1;
+            break;
         case '?':
             usage(argv[0]);
             return -1;
@@ -101,11 +106,9 @@ int main(int argc, char** argv) {
     new Http_server<Guest>(http_svsk);
     
     LOGOUT("Accepting connections ...\n");
-#ifdef NDEBUG
-    if (daemon(1, 0) < 0) {
+    if (daemon_mode && daemon(1, 0) < 0) {
         LOGOUT("start daemon error:%m\n");
     }
-#endif
     while (1) {
         int c;
         struct epoll_event events[200];
