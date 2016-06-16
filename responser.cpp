@@ -181,7 +181,7 @@ Ptr distribute(HttpReqHeader& req, Ptr responser_ptr){
             flushcgi();
             guest->Write(H200, strlen(H200), guest);
         }
-    } else  if (checklocal(req.hostname)) {
+    } else  if (checklocal(req.hostname) && !req.ismethod("CONNECT")) {
         if (endwith(req.filename,".so")) {
             return Cgi::getcgi(req);
         } else {
