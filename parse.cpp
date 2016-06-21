@@ -45,7 +45,7 @@ void loadsites() {
                 proxylist.insert(site.substr(split+1));
             }else if(site.substr(0, split) == "block"){
                 blocklist.insert(site.substr(split+1));
-            }else{
+            }else if(site.length()){
                 LOGE("Wrong config line:%s\n",site.c_str());
             }
         }
@@ -55,6 +55,8 @@ void loadsites() {
         LOGE("There is no %s !\n", LISTFILE);
     }
 
+    addauth("::ffff:127.0.0.1");
+    addauth("::1");
 #endif
 
     for(const char *ips=getlocalip(); strlen(ips); ips+=INET6_ADDRSTRLEN){
