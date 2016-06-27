@@ -7,11 +7,12 @@ FROM debian:sid
 MAINTAINER choury zhouwei400@gmail.com
 
 # Commands to update the image
-RUN apt-get update && apt-get -y install gcc g++ cmake make git libssl-dev wget
+RUN apt-get update && apt-get -y install gcc g++ cmake make unzip libssl-dev wget
 WORKDIR /root
-RUN git clone https://github.com/choury/sproxy
-WORKDIR /root/sproxy
-RUN  git checkout dtls && cmake . && make sproxy_client
+RUN wget "https://github.com/choury/sproxy/archive/dtls.zip"
+RUN unzip dtls.zip
+WORKDIR /root/sproxy-dtls
+RUN cmake . && make sproxy_client
 #COPY keys /root/keys/
 
 ENV SPROXY_USER choury
