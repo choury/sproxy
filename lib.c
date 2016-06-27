@@ -159,6 +159,11 @@ uint64_t getutime(){
     return tv.tv_sec * 1000000 + tv.tv_usec;
 }
 
+void sighandle(int signum){
+    fflush(stdout);
+    exit(1);
+}
+
 #ifndef __ANDROID__
 #include <execinfo.h>
 void dump_trace() {

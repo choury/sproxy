@@ -207,10 +207,11 @@ void Proxy2::ResProc(HttpResHeader& res) {
         Guest *guest = dynamic_cast<Guest *>(idmap.at(res.http_id));
         
         if(guest->flag & ISPERSISTENT_F) {
-            strcpy(res.status, "200 Connection established");
+            if(memcmp(res.status, "200", 4) == 0)
+                strcpy(res.status, "200 Connection established");
         }else if((res.flags & END_STREAM_F) == 0 &&
-                 !res.get("Content-Length")
-        ){
+           !res.get("Content-Length"))
+        {
             res.add("Transfer-Encoding", "chunked");
         }
         guest->response(res);

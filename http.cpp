@@ -2,7 +2,7 @@
 #include "net.h"
 
 #include <string.h>
-#include <inttypes.h>
+#include <cinttypes>
 
 void HttpBase::ChunkLProc() {
     if (char* headerend = strnstr(http_buff, CRLF, http_getlen)) {
