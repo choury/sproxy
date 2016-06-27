@@ -705,7 +705,7 @@ Http2_header *HttpResHeader::getframe(Index_table* index_table) const{
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F | flags;
     if(get("content-length") &&
-       strcmp("0", get("content-length"))==0)
+       memcmp("0", get("content-length"), 2)==0)
     {
         header->flags |= END_STREAM_F;
     }
