@@ -5,7 +5,6 @@
 
 Guest_s2::Guest_s2(Guest_s&& copy): Guest_s(std::move(copy)) {
     copy.reset_this_ptr(this);
-    copy.clean(NOERROR, nullptr);
 
     remotewinsize = remoteframewindowsize;
     localwinsize  = localframewindowsize;

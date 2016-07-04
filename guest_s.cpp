@@ -95,7 +95,7 @@ void Guest_s::shakehandHE(uint32_t events) {
             SSL_get0_alpn_selected(ssl, &data, &len);
             if (data && strncasecmp((const char*)data, "h2", len) == 0) {
                 new Guest_s2(std::move(*this));
-                delete this;
+                clean(NOERROR, nullptr);
                 return;
             }
         }

@@ -26,9 +26,9 @@ Host::~Host(){
 }
 
 void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
-    if (rcd.result != 0) {
-        connectmap[host]=time(NULL);
+    if (rcd.addrs.size() == 0) {
         LOGE("Dns query failed: %s\n", host->hostname);
+        host->clean(CONNECT_ERR, nullptr);
     } else {
         host->addrs = rcd.addrs;
         for (size_t i = 0; i < host->addrs.size(); ++i) {
@@ -39,7 +39,6 @@ void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
 }
 
 int Host::connect() {
-    connectmap[this]=time(NULL);
     if (testedaddr>= addrs.size()) {
         return -1;
     } else {
@@ -51,6 +50,7 @@ int Host::connect() {
             RcdDown(hostname, addrs[testedaddr-1]);
         }
         fd = Connect(&addrs[testedaddr++], SOCK_STREAM);
+        connectmap[this]=time(NULL);
         if (fd < 0) {
             LOGE("connect to %s failed\n", this->hostname);
             return connect();
@@ -102,7 +102,7 @@ void Host::waitconnectHE(uint32_t events) {
     return;
 reconnect:
     if (connect() < 0) {
-        destory();
+        clean(CONNECT_ERR, nullptr);
     }
 }
 
@@ -141,16 +141,6 @@ void Host::defaultHE(uint32_t events) {
     }
 }
 
-
-void Host::destory() {
-    Guest *guest = dynamic_cast<Guest *>(guest_ptr.get());
-    if(guest){
-        HttpResHeader res(H408, shared_from_this());
-        guest->response(res);
-    }
-    clean(CONNECT_ERR, this);
-    delete this;
-}
 
 int Host::showerrinfo(int ret, const char* s) {
     if (ret < 0) {
@@ -241,8 +231,14 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 void Host::clean(uint32_t errcode, Peer* who, uint32_t)
 {
     Guest *guest = dynamic_cast<Guest *>(guest_ptr.get());
-    if(who == this && guest){
-        guest->clean(errcode, this);
+    if(guest){
+        if(errcode == CONNECT_ERR){
+            HttpResHeader res(H408, shared_from_this());
+            guest->response(res);
+        }
+        if(who == this){
+            guest->clean(errcode, this);
+        }
     }
     Peer::clean(errcode, who);
 }
@@ -253,7 +249,7 @@ void hosttick() {
         if(time(NULL) - i->second >= 30 && host->connect() < 0){
             connectmap.erase(i++);
             LOGE("connect to %s time out.\n", host->hostname);
-            host->destory();
+            host->clean(CONNECT_ERR, nullptr);
         }else{
             i++;
         }

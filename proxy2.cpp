@@ -5,7 +5,6 @@ Proxy2* proxy2 = nullptr;
 
 Proxy2::Proxy2(Proxy&& copy): Proxy(std::move(copy)) {
     copy.reset_this_ptr(this);
-    copy.clean(NOERROR, nullptr);
 
     remotewinsize = remoteframewindowsize;
     localwinsize  = localframewindowsize;

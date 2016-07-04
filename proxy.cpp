@@ -126,7 +126,7 @@ void Proxy::waitconnectHE(uint32_t events) {
     return;
 reconnect:
     if (connect() < 0) {
-        destory();
+        clean(CONNECT_ERR, nullptr);
     }
 }
 
@@ -164,7 +164,7 @@ void Proxy::shakehandHE(uint32_t events) {
             if(!proxy2){
                 proxy2 = new_proxy;
             }
-            delete this;
+            clean(NOERROR, nullptr);
         }
         return;
         

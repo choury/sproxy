@@ -89,6 +89,8 @@ void Peer::clean(uint32_t errcode, Peer* , uint32_t) {
     if(fd > 0) {
         updateEpoll(EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Peer::closeHE;
+    }else{
+        delete this;
     }
 }
 

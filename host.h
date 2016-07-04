@@ -15,7 +15,6 @@ protected:
 
     
     int connect();
-    virtual void destory();
     virtual void waitconnectHE(uint32_t events);
     virtual void defaultHE(uint32_t events);
     
