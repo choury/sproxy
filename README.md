@@ -9,4 +9,4 @@ TODO
 - [x] 支持HTTP2
 - [x] 实现sni支持
 - [x] 找个女朋友
-- [ ] 基于quci的代理协议...(等google先实现quic的库)
+- [ ] 基于dtls的代理协议

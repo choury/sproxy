@@ -1,6 +1,5 @@
 #include "proxy.h"
 #include "proxy2.h"
-#include "guest.h"
 
 #include <openssl/err.h>
 
@@ -170,6 +169,13 @@ void Proxy::shakehandHE(uint32_t events) {
         
     }
 }
+
+Ptr Proxy::request(HttpReqHeader& req)
+{
+    this->req = req;
+    return Host::request(req);
+}
+
 
 Proxy::~Proxy() {
     if (ssl) {

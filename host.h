@@ -6,15 +6,14 @@
 #include "dns.h"
 
 class Host:public Responser, public HttpReq{
+protected:
     size_t testedaddr = 0;
     std::vector<sockaddr_un> addrs;
-protected:
     char hostname[DOMAINLIMIT];
     uint16_t port;
-    HttpReqHeader req;
 
     
-    int connect();
+    virtual int connect();
     virtual void waitconnectHE(uint32_t events);
     virtual void defaultHE(uint32_t events);
     
@@ -22,7 +21,7 @@ protected:
     virtual ssize_t Read(void* buff, size_t len)override;
     virtual void ErrProc(int errcode)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
-    static void Dnscallback(Host * host, const Dns_rcd&&);
+    static void Dnscallback(Host * host, const char *hostname, const Dns_rcd&&);
 public:
     Ptr guest_ptr;
     explicit Host(Host&& copy);

@@ -13,7 +13,7 @@ Host::Host(Host&& copy){
 }
 
 Host::Host(const char* hostname, uint16_t port): port(port){
-    snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
+    memset(this->hostname, 0, sizeof(this->hostname));
     query(hostname, (DNSCBfunc)Host::Dnscallback, this);
 }
 
@@ -25,7 +25,8 @@ Host::~Host(){
     connectmap.erase(this);
 }
 
-void Host::Dnscallback(Host* host, const Dns_rcd&& rcd) {
+void Host::Dnscallback(Host* host, const char *hostname, const Dns_rcd&& rcd) {
+    snprintf(host->hostname, sizeof(host->hostname), "%s", hostname);
     if (rcd.addrs.size() == 0) {
         LOGE("Dns query failed: %s\n", host->hostname);
         host->clean(CONNECT_ERR, nullptr);
@@ -92,7 +93,7 @@ void Host::waitconnectHE(uint32_t events) {
         }
         updateEpoll(EPOLLIN | EPOLLOUT);
 
-        if (req.ismethod("CONNECT")){
+        if (guest->flag & ISPERSISTENT_F){
             HttpResHeader res(connecttip, shared_from_this());
             guest->response(res);
         }
@@ -164,11 +165,12 @@ Ptr Host::request(HttpReqHeader& req) {
     if(req.ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY;
     }
+    Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
     if(req.ismethod("CONNECT")){
+        guest->flag |= ISPERSISTENT_F;
         Http_Proc = &Host::AlwaysProc;
     }
     guest_ptr = req.getsrc();
-    this->req = req;
     return shared_from_this();
 }
 
@@ -240,7 +242,11 @@ void Host::clean(uint32_t errcode, Peer* who, uint32_t)
             guest->clean(errcode, this);
         }
     }
-    Peer::clean(errcode, who);
+    if(hostname[0]){
+        Peer::clean(errcode, who);
+    }else{
+        guest_ptr = nullptr;
+    }
 }
 
 void hosttick() {

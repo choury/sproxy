@@ -4,6 +4,7 @@
 
 #ifdef CLIENT
 #include "proxy2.h"
+#include "host_dtls.h"
 #else
 #include "file.h"
 #include "cgi.h"
@@ -104,6 +105,7 @@ Ptr distribute(HttpReqHeader& req, Ptr responser_ptr) {
         req.ismethod("HEAD") ||
         req.ismethod("SEND"))
     {
+//        return (new Host_dtls(SHOST, SPORT))->request(req);
         if(req.should_proxy){
             return Proxy::getproxy(req, responser_ptr);
         }else{

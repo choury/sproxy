@@ -59,25 +59,25 @@ class Dtls_server: public Server {
             memset(&myaddr, 0, sizeof(myaddr));
             BIO *bio = BIO_new_dgram(fd, BIO_NOCLOSE);
             SSL *ssl = SSL_new(ctx);
-            int new_fd = 0;
+            int client_fd = 0;
             SSL_set_bio(ssl, bio, bio);
             if(DTLSv1_listen(ssl, &myaddr)<=0)
                 goto error;
-            new_fd = socket(AF_INET6, SOCK_DGRAM, 0);
-            if(Bind_any(new_fd, SPORT))
+            client_fd = socket(AF_INET6, SOCK_DGRAM, 0);
+            if(Bind_any(client_fd, SPORT))
                 goto error;
-            if(connect(new_fd, (struct sockaddr*)&myaddr, sizeof(struct sockaddr_in6))){
+            if(connect(client_fd, (struct sockaddr*)&myaddr, sizeof(struct sockaddr_in6))){
                 LOGE("connect error: %m\n");
                 goto error;
             }
             /* Set new fd and set BIO to connected */
-            BIO_set_fd(bio, new_fd, BIO_NOCLOSE);
+            BIO_set_fd(bio, client_fd, BIO_NOCLOSE);
             BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_CONNECTED, 0, &myaddr);
-            new Guest_s(new_fd, &myaddr, ssl);
+            new Guest_s(client_fd, &myaddr, ssl);
             return;
 error:
-            if(new_fd > 0)
-                close(new_fd);
+            if(client_fd > 0)
+                close(client_fd);
             SSL_free(ssl);
         }
     }
@@ -176,7 +176,7 @@ int main(int argc, char **argv) {
 
     SSL_CTX *ctx = nullptr;
     if(udp_mode){
-        ctx = SSL_CTX_new(DTLSv1_server_method());
+        ctx = SSL_CTX_new(DTLS_server_method());
 
         if (ctx == NULL) {
             ERR_print_errors_fp(stderr);

@@ -29,7 +29,7 @@ public:
 };
 
 
-typedef void (*DNSCBfunc)(void *, const Dns_rcd&& );
+typedef void (*DNSCBfunc)(void *, const char *hostname, const Dns_rcd&& );
 
 
 void query(const char* host, DNSCBfunc func, void* param, uint16_t times=0);

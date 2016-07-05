@@ -300,7 +300,7 @@ void dnstick() {
     }
     for (auto i = rcd_gotten_list.begin(); i!= rcd_gotten_list.end();i++){
         auto dnsst = *i;
-        dnsst->func(dnsst->param, Dns_rcd(std::move(dnsst->addr)));
+        dnsst->func(dnsst->param, dnsst->host, Dns_rcd(std::move(dnsst->addr)));
         delete dnsst;
     }
     rcd_gotten_list.clear();
@@ -311,13 +311,13 @@ void dnstick() {
         if (time(nullptr)-oldstate->reqtime>= DNSTIMEOUT) {
             rcd_index_id.erase(tmp);
             if (oldstate->addr.size()) {
-                oldstate->func(oldstate->param, Dns_rcd(std::move(oldstate->addr)));
+                oldstate->func(oldstate->param, oldstate->host, Dns_rcd(std::move(oldstate->addr)));
             } else  {           // 超时重试
                 if(oldstate->times < 5) {
                     LOGE("[DNS] %s: time out, retry...\n", oldstate->host);
                     query(oldstate->host, oldstate->func, oldstate->param, ++oldstate->times);
                 } else {
-                    oldstate->func(oldstate->param, Dns_rcd());
+                    oldstate->func(oldstate->param, oldstate->host, Dns_rcd());
                 }
             }
             delete oldstate;
@@ -406,9 +406,9 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
             if (dnsst->addr.size()) {
                 Dns_rcd rcd(std::move(dnsst->addr));
                 rcd_index_host[dnsst->host] = rcd;
-                dnsst->func(dnsst->param, std::move(rcd));
+                dnsst->func(dnsst->param, dnsst->host, std::move(rcd));
             } else {
-                dnsst->func(dnsst->param, Dns_rcd());
+                dnsst->func(dnsst->param, dnsst->host, Dns_rcd());
             }
             delete dnsst;
         }

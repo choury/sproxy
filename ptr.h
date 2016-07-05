@@ -24,8 +24,8 @@ struct Ptr_data{
 class Ptr{
     Ptr_data *d = nullptr;
 public:
-    Ptr(){}
-    Ptr(Ptr_data *d):d(d){
+    explicit Ptr(){}
+    explicit Ptr(Ptr_data *d):d(d){
         d->count++;
     }
     Ptr(const Ptr &ptr){
@@ -38,6 +38,11 @@ public:
         d = ptr.d;
         if(d)
             d->count++;
+        return *this;
+    }
+    Ptr& operator=(decltype(nullptr) ptr){
+        this->~Ptr();
+        d = ptr;
         return *this;
     }
     Ptr_for_this* get(){
@@ -77,7 +82,7 @@ public:
         ps.push_back(new Ptr_data{this, 1});
     }
     virtual Ptr shared_from_this(){
-        return ps[0];
+        return Ptr(ps[0]);
     }
 };
 
