@@ -10,7 +10,7 @@ void HttpBase::ChunkLProc() {
         size_t headerlen = headerend - http_buff;
         sscanf(http_buff, "%" SCNx64, &http_expectlen);
         if (!http_expectlen) {
-            http_flag |= HTTP_CHUNK_END;
+            http_flag |= HTTP_CHUNK_END_F;
         }
         Http_Proc = &HttpBase::ChunkBProc;
         if (headerlen != http_getlen) {
@@ -42,10 +42,10 @@ void HttpBase::ChunkBProc() {
             }
             http_getlen-= strlen(CRLF);
             memmove(http_buff, http_buff+strlen(CRLF), http_getlen);
-            if(http_flag & HTTP_CHUNK_END){
+            if(http_flag & HTTP_CHUNK_END_F){
                 DataProc(http_buff, 0);
                 Http_Proc = &HttpBase::HeaderProc;
-                http_flag &= ~HTTP_CHUNK_END;
+                http_flag &= ~HTTP_CHUNK_END_F;
             }else{
                 Http_Proc = &HttpBase::ChunkLProc;
             }
@@ -193,9 +193,9 @@ void HttpReq::HeaderProc() {
             if(memcmp(res.status, "204", 3) == 0||
                memcmp(res.status, "205", 3) == 0||
                memcmp(res.status, "304", 3) == 0)
-               http_flag |= HTTP_IGNORE_BODY;
-            if (http_flag & HTTP_IGNORE_BODY) {
-                http_flag &= ~HTTP_IGNORE_BODY;
+               http_flag |= HTTP_IGNORE_BODY_F;
+            if (http_flag & HTTP_IGNORE_BODY_F) {
+                http_flag &= ~HTTP_IGNORE_BODY_F;
                 res.flags = 1; //END_STREAM_F
                 Http_Proc = (void (HttpBase::*)())&HttpReq::HeaderProc;
             }

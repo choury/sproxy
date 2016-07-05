@@ -93,7 +93,7 @@ void Host::waitconnectHE(uint32_t events) {
         }
         updateEpoll(EPOLLIN | EPOLLOUT);
 
-        if (guest->flag & ISPERSISTENT_F){
+        if (http_flag & HTTP_CONNECT_F){
             HttpResHeader res(connecttip, shared_from_this());
             guest->response(res);
         }
@@ -162,13 +162,11 @@ Ptr Host::request(HttpReqHeader& req) {
     size_t len;
     char *buff = req.getstring(len);
     Write(buff, len, this);
-    if(req.ismethod("HEAD")){
-        http_flag |= HTTP_IGNORE_BODY;
-    }
-    Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
     if(req.ismethod("CONNECT")){
-        guest->flag |= ISPERSISTENT_F;
+        http_flag = HTTP_CONNECT_F;
         Http_Proc = &Host::AlwaysProc;
+    }else if(req.ismethod("HEAD")){
+        http_flag |= HTTP_IGNORE_BODY_F;
     }
     guest_ptr = req.getsrc();
     return shared_from_this();

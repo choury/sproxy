@@ -9,8 +9,9 @@ protected:
     uint64_t http_expectlen;
     uint32_t http_getlen = 0;
     uint32_t http_flag = 0;
-#define HTTP_IGNORE_BODY   1
-#define HTTP_CHUNK_END     2
+#define HTTP_IGNORE_BODY_F   1
+#define HTTP_CHUNK_END_F     2
+#define HTTP_CONNECT_F       3
     virtual void HeaderProc() = 0;
     void ChunkLProc();
     void ChunkBProc();
