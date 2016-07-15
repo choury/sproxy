@@ -29,7 +29,7 @@ void Host::Dnscallback(Host* host, const char *hostname, const Dns_rcd&& rcd) {
     snprintf(host->hostname, sizeof(host->hostname), "%s", hostname);
     if (rcd.addrs.size() == 0) {
         LOGE("Dns query failed: %s\n", host->hostname);
-        host->clean(CONNECT_ERR, nullptr);
+        host->clean(CONNECT_ERR, host);
     } else {
         host->addrs = rcd.addrs;
         for (size_t i = 0; i < host->addrs.size(); ++i) {
@@ -103,7 +103,7 @@ void Host::waitconnectHE(uint32_t events) {
     return;
 reconnect:
     if (connect() < 0) {
-        clean(CONNECT_ERR, nullptr);
+        clean(CONNECT_ERR, this);
     }
 }
 
@@ -253,7 +253,7 @@ void hosttick() {
         if(time(NULL) - i->second >= 30 && host->connect() < 0){
             connectmap.erase(i++);
             LOGE("connect to %s time out.\n", host->hostname);
-            host->clean(CONNECT_ERR, nullptr);
+            host->clean(CONNECT_ERR, host);
         }else{
             i++;
         }

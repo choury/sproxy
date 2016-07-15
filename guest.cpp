@@ -161,7 +161,8 @@ void Guest::clean(uint32_t errcode, Peer* who, uint32_t)
 {
     if(!responser_ptr.expired()){
         Responser *responser = dynamic_cast<Responser *>(responser_ptr.get());
-        responser->clean(errcode, this);
+        if(responser != dynamic_cast<Responser *>(who))
+            responser->clean(errcode, this);
     }
     Peer::clean(errcode, who);
 }

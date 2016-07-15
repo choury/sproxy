@@ -88,16 +88,18 @@ public:
     Dtls_server(int fd, SSL_CTX *ctx): Server(fd),ctx(ctx) {}
 };
 
+
 static int select_alpn_cb(SSL *ssl,
                           const unsigned char **out, unsigned char *outlen,
                           const unsigned char *in, unsigned int inlen, void *arg)
 {
     (void)ssl;
     std::set<std::string> proset;
-    while (*in) {
-        uint8_t len = *in++;
-        proset.insert(std::string((const char *)in, len));
-        in += len;
+    const unsigned char *p = in;
+    while (p-in < inlen) {
+        uint8_t len = *p++;
+        proset.insert(std::string((const char *)p, len));
+        p += len;
     }
     if (proset.count("h2")) {
         *out = (unsigned char *)"h2";

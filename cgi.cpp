@@ -87,11 +87,11 @@ ssize_t Cgi::Write(void *buff, size_t size, Peer* who, uint32_t id) {
 ssize_t Cgi::Write(const void *buff, size_t size, Peer* who, uint32_t id) {
     Guest *guest = dynamic_cast<Guest *>(who);
     if(idmap.count(std::make_pair(guest, id))){
-        uint32_t id = idmap.at(std::make_pair(guest, id));
+        uint32_t cgi_id = idmap.at(std::make_pair(guest, id));
         CGI_Header *header = (CGI_Header *)malloc(sizeof(CGI_Header) + size);
         memset(header, 0, sizeof(CGI_Header));
         header->type = CGI_DATA;
-        header->requestId = htonl(id);
+        header->requestId = htonl(cgi_id);
         header->contentLength = htons(size);
         memcpy(header+1, buff, size);
         return Peer::Write(header, sizeof(CGI_Header) + size, this);
