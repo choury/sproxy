@@ -532,22 +532,30 @@ char *HttpReqHeader::getstring(size_t &len) const{
     return buff;
 }
 
+bool HttpReqHeader::no_left() const {
+    if(!ismethod("POST") && 
+       !ismethod("PUT") &&
+       !ismethod("PATCH") &&
+       !ismethod("CONNECT") &&
+       !ismethod("SEND"))
+    {
+        return true;
+    }
+    if(get("content-length") &&
+       strcmp("0", get("content-length"))==0)
+    {
+        return true;
+    }
+    return false;
+}
+
 
 Http2_header *HttpReqHeader::getframe(Index_table *index_table) const{
     Http2_header *header = (Http2_header *)malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F;
-    if(!ismethod("POST") && 
-       !ismethod("PUT") &&
-       !ismethod("PATCH") &&
-       !ismethod("CONNECT") &&
-       !ismethod("SEND")){
-        header->flags |= END_STREAM_F;
-    }
-    if(get("content-length") &&
-       strcmp("0", get("content-length"))==0)
-    {
+    if(no_left()){
         header->flags |= END_STREAM_F;
     }
     set32(header->id, http_id);
@@ -580,8 +588,12 @@ Http2_header *HttpReqHeader::getframe(Index_table *index_table) const{
 CGI_Header *HttpReqHeader::getcgi() const{
     CGI_Header *cgi = (CGI_Header *)malloc(BUF_LEN);
     cgi->type = CGI_REQUEST;
+    cgi->flag = 0;
     cgi->requestId = htonl(cgi_id);
     
+    if(no_left()){
+        cgi->flag |= CGI_FLAG_END;
+    }
     char *p = (char *)(cgi + 1);
     p = cgi_addnv(p, ":method", method);
     p = cgi_addnv(p, ":path", path);
@@ -595,6 +607,27 @@ CGI_Header *HttpReqHeader::getcgi() const{
     assert(ntohs(cgi->contentLength) < BUF_LEN);
     return cgi;
 }
+
+const char *HttpReqHeader::getparamstring() const {
+    const char *p = path;
+    while (*p && *p++ != '?');
+    return p;
+}
+
+std::map< string, string > HttpReqHeader::getcookies() const {
+    std::map<string, string> cookie;
+    for(auto i:cookies){
+        const char *p = i.c_str();
+        const char* sp = strpbrk(p, "=");
+        if (sp) {
+            cookie[ltrim(string(p, sp - p))] = sp + 1;
+        } else {
+            cookie[p] = "";
+        }
+    }
+    return cookie;
+}
+
 
 
 HttpResHeader::HttpResHeader(const char* header, Ptr&& src):
@@ -676,6 +709,23 @@ HttpResHeader::HttpResHeader(CGI_Header *headers, Ptr&& src):
    }
 }
 
+bool HttpResHeader::no_left() const {
+    if(memcmp(status, "204", 3) == 0||
+       memcmp(status, "205", 3) == 0||
+       memcmp(status, "304", 3) == 0)
+    {
+       return true;
+    }
+             
+    if(get("content-length") &&
+       memcmp("0", get("content-length"), 2)==0)
+    {
+        return true;
+    }
+        
+    return false;
+}
+
 
 char * HttpResHeader::getstring(size_t &len) const{
     char * buff = (char *)malloc(BUF_LEN);
@@ -703,10 +753,8 @@ Http2_header *HttpResHeader::getframe(Index_table* index_table) const{
     Http2_header *header = (Http2_header *)malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
-    header->flags = END_HEADERS_F | flags;
-    if(get("content-length") &&
-       memcmp("0", get("content-length"), 2)==0)
-    {
+    header->flags = END_HEADERS_F;
+    if(no_left()) {
         header->flags |= END_STREAM_F;
     }
     set32(header->id, http_id);
@@ -728,8 +776,12 @@ Http2_header *HttpResHeader::getframe(Index_table* index_table) const{
 CGI_Header *HttpResHeader::getcgi()const {
     CGI_Header *cgi = (CGI_Header *)malloc(BUF_LEN);
     cgi->type = CGI_RESPONSE;
+    cgi->flag = 0;
     cgi->requestId = htonl(cgi_id);
     
+    if(no_left()) {
+        cgi->flag |= CGI_FLAG_END;
+    }
     char *p = (char *)(cgi + 1);
     p = cgi_addnv(p, ":status", status);
     for(auto i: headers){

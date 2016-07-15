@@ -61,12 +61,15 @@ int hex2num(char c)
 }
 
 
-int URLEncode(const char* src, char *des)
+int URLEncode(char *des, const char* src, size_t len)
 {
     int j = 0;//for result index
     int strSize;
 
-    if ((src==NULL) || (des==NULL) || (strSize=strlen(src))==0 ) {
+    if(des==NULL)
+        return 0;
+    if ((src==NULL) || (des==NULL) || (strSize=len?len:strlen(src))==0 ) {
+        des[0]=0;
         return 0;
     }
     int i;
@@ -92,14 +95,16 @@ int URLEncode(const char* src, char *des)
 
 
 
-int URLDecode(const char* src, char *des)
+int URLDecode(char *des, const char *src, size_t len)
 {
     int i;
     int j = 0;//record result index
-
     int strSize;
-
-    if ((src==NULL) || (des==NULL) || (strSize=strlen(src))==0 ) {
+    
+    if(des==NULL)
+        return 0;
+    if ((src==NULL) || (strSize=len?len:strlen(src))==0 ) {
+        des[0]=0;
         return 0;
     }
 

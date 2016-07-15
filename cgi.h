@@ -13,13 +13,14 @@
 #define CGI_DATA          3
 #define CGI_VALUE         4
 
-#define CGI_LEN_MAX       (65536 - sizeof(CGI_Header))
+#define CGI_LEN_MAX       (BUF_LEN - sizeof(CGI_Header))
 
 struct CGI_Header{
     uint8_t type;
 #define CGI_FLAG_ACK      1
+#define CGI_FLAG_END      2
     uint8_t flag;
-    uint16_t contentLength; //最大65536 - 8
+    uint16_t contentLength; //最大65536 - 8 (实际是BUF_LEN - 8)
     uint32_t requestId;
 }__attribute__((packed));
 
@@ -82,8 +83,8 @@ public:
 
 void flushcgi();
 
-std::map<std::string, std::string> getparams(const HttpReqHeader &req);
-std::map<std::string, std::string> getcookies(const HttpReqHeader &req);
+std::map<std::string, std::string> getparamsmap(const char *param, size_t len);
+std::map<std::string, std::string> getparamsmap(const char *param);
 void addcookie(HttpResHeader &res, const Cookie &cookie);
 #ifdef  __cplusplus
 extern "C" {

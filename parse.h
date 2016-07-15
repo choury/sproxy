@@ -23,7 +23,6 @@ public:
     bool should_proxy  = false;
 
     explicit HttpHeader(Ptr&& src);
-//    explicit HttpHeader(mulmap<string, string> headers, Ptr&& src);
 
     Ptr getsrc();
     void add(const istring& header, const std::string& value);
@@ -31,11 +30,12 @@ public:
     void append(const istring& header, const std::string& value);
     void del(const istring& header);
     const char* get(const char *header) const;
-//    std::set<string> getall(const char *header) const;
 
+    virtual bool no_left() const = 0;
     virtual char *getstring(size_t &len) const = 0;
     virtual Http2_header *getframe(Index_table *index_table) const = 0;
     virtual CGI_Header *getcgi() const = 0;
+    virtual ~HttpHeader(){}
 };
 
 class HttpReqHeader: public HttpHeader{
@@ -52,9 +52,13 @@ public:
     explicit HttpReqHeader(CGI_Header *headers, Ptr &&src = Ptr());
     bool ismethod(const char* method) const;
     
+    virtual bool no_left() const override;
     virtual char *getstring(size_t &len) const override;
     virtual Http2_header *getframe(Index_table *index_table) const override;
     virtual CGI_Header *getcgi() const override;
+    
+    std::map<std::string, std::string> getcookies()const;
+    const char* getparamstring()const;
 };
 
 class HttpResHeader: public HttpHeader{
@@ -64,6 +68,7 @@ public:
     explicit HttpResHeader(mulmap<istring, std::string>&& headers, Ptr &&src = Ptr());
     explicit HttpResHeader(CGI_Header *headers, Ptr &&src = Ptr());
     
+    virtual bool no_left() const override;
     virtual char *getstring(size_t &len) const override;
     virtual Http2_header *getframe(Index_table *index_table) const override;
     virtual CGI_Header *getcgi() const override;

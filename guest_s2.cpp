@@ -80,6 +80,9 @@ void Guest_s2::DataProc(const Http2_header* header)
             return;
         }
         host->Write(header+1, len, this, id);
+        if((header->flags & END_STREAM_F) && len != 0){
+            host->Write((const void*)nullptr, 0, this, id);
+        }
         host->localwinsize -= len;
         localwinsize -= len;
     }else{

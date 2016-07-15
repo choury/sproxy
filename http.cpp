@@ -130,21 +130,15 @@ void HttpRes::HeaderProc() {
         size_t headerlen = headerend - http_buff;
         try {
             HttpReqHeader req(http_buff, shared_from_this());
-            if (req.ismethod("POST") || 
-                req.ismethod("PUT") || 
-                req.ismethod("PATCH") ||
-                req.ismethod("SEND")
-            ) {
-                if (req.get("Content-Length")!= nullptr) {
-                    sscanf(req.get("Content-Length"), "%" SCNu64, &http_expectlen);
-                    if(http_expectlen){
-                        Http_Proc = &HttpRes::FixLenProc;
-                    }
-                } else {
-                    Http_Proc = &HttpRes::AlwaysProc;
-                }
-            } else if (req.ismethod("CONNECT")) {
+            if(req.no_left()){
+                Http_Proc = (void (HttpBase::*)())&HttpRes::HeaderProc;
+            }else if (req.get("Content-Length") == nullptr || 
+                      req.ismethod("CONNECT")) 
+            {
                 Http_Proc = &HttpRes::AlwaysProc;
+            }else{
+                Http_Proc = &HttpRes::FixLenProc;
+                http_expectlen = strtoull(req.get("Content-Length"), nullptr, 10);
             }
             ReqProc(req);
         }catch(...) {
@@ -180,23 +174,18 @@ void HttpReq::HeaderProc() {
         size_t headerlen = headerend - http_buff;
         try {
             HttpResHeader res(http_buff, shared_from_this());
-            if (res.get("Transfer-Encoding")!= nullptr) {
+            if(res.no_left()){
+                http_flag |= HTTP_IGNORE_BODY_F;
+            }else if (res.get("Transfer-Encoding")!= nullptr) {
                 Http_Proc = &HttpReq::ChunkLProc;
-            } else if (res.get("Content-Length")!= nullptr) {
-                sscanf(res.get("Content-Length"), "%" SCNu64, &http_expectlen);
-                if(http_expectlen){
-                    Http_Proc = &HttpReq::FixLenProc;
-                }
-            } else {
+            } else if (res.get("Content-Length") == nullptr) {
                 Http_Proc = &HttpReq::AlwaysProc;
+            }else{
+                Http_Proc = &HttpReq::FixLenProc;
+                http_expectlen = strtoull(res.get("Content-Length"), nullptr, 10);
             }
-            if(memcmp(res.status, "204", 3) == 0||
-               memcmp(res.status, "205", 3) == 0||
-               memcmp(res.status, "304", 3) == 0)
-               http_flag |= HTTP_IGNORE_BODY_F;
             if (http_flag & HTTP_IGNORE_BODY_F) {
                 http_flag &= ~HTTP_IGNORE_BODY_F;
-                res.flags = 1; //END_STREAM_F
                 Http_Proc = (void (HttpBase::*)())&HttpReq::HeaderProc;
             }
             ResProc(res);

@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include <string.h>
+#include <assert.h>
 #include <dlfcn.h>
 #include <signal.h>
 #include <unistd.h>
@@ -79,22 +80,41 @@ Cgi::~Cgi() {
 } 
 
 ssize_t Cgi::Write(void *buff, size_t size, Peer* who, uint32_t id) {
-    ssize_t ret= Write((const void*)buff, size, who,id);
-    free(buff);
-    return ret;
+    Guest *guest = dynamic_cast<Guest *>(who);
+    if(idmap.count(std::make_pair(guest, id))){
+        size = size > CGI_LEN_MAX ? CGI_LEN_MAX : size;
+        uint32_t cgi_id = idmap.at(std::make_pair(guest, id));
+        CGI_Header *header = (CGI_Header *)malloc(sizeof(CGI_Header));
+        header->type = CGI_DATA;
+        header->flag = size ? 0: CGI_FLAG_END;
+        header->requestId = htonl(cgi_id);
+        header->contentLength = htons(size);
+        Peer::Write(header, sizeof(CGI_Header), this);
+        return Peer::Write(buff, size, this);
+    }else{
+        who->clean(PEER_LOST_ERR, this, id);
+        return -1;
+    }
 }
 
 ssize_t Cgi::Write(const void *buff, size_t size, Peer* who, uint32_t id) {
     Guest *guest = dynamic_cast<Guest *>(who);
     if(idmap.count(std::make_pair(guest, id))){
+        size = size > CGI_LEN_MAX ? CGI_LEN_MAX : size;
         uint32_t cgi_id = idmap.at(std::make_pair(guest, id));
         CGI_Header *header = (CGI_Header *)malloc(sizeof(CGI_Header) + size);
-        memset(header, 0, sizeof(CGI_Header));
         header->type = CGI_DATA;
+        header->flag = size ? 0: CGI_FLAG_END;
         header->requestId = htonl(cgi_id);
         header->contentLength = htons(size);
         memcpy(header+1, buff, size);
-        return Peer::Write(header, sizeof(CGI_Header) + size, this);
+        ssize_t ret = Peer::Write(header, sizeof(CGI_Header) + size, this);
+        if(ret <= 0){
+            return ret;
+        }else{
+            assert((size_t)ret >= sizeof(CGI_Header));
+            return ret - sizeof(CGI_Header);
+        }
     }else{
         who->clean(PEER_LOST_ERR, this, id);
         return -1;
@@ -231,7 +251,7 @@ send:
             status = WaitHeadr;
             cgi_getlen = 0;
         }
-        if (cgi_outlen == sizeof(CGI_Header)) {
+        if (header->flag & CGI_FLAG_END) {
             idmap.erase(session);
         }
         break;
@@ -313,44 +333,6 @@ void flushcgi() {
 }
 
 
-std::map< string, string > getparams(const HttpReqHeader &req) {
-    char paramsbuff[URLLIMIT];
-    URLDecode(req.path,paramsbuff);
-    char *p=paramsbuff;
-    while (*p && *++p != '?');
-    std::map< string, string > params;
-    if(*p++){
-        for (; ; p = NULL) {
-            char *q = strtok(p, "&");
-
-            if (q == NULL)
-                break;
-
-            char* sp = strpbrk(q, "=");
-            if (sp) {
-                params[string(q, sp - q)] = sp + 1;
-            } else {
-                params[q] = "";
-            }
-        }
-    }
-    return params;
-}
-
-std::map<string, string> getcookies(const HttpReqHeader &req) {
-    std::map<string, string> cookie;
-    for(auto i:req.cookies){
-        const char *p = i.c_str();
-        const char* sp = strpbrk(p, "=");
-        if (sp) {
-            cookie[ltrim(string(p, sp - p))] = sp + 1;
-        } else {
-            cookie[p] = "";
-        }
-    }
-    return cookie;
-}
-
 void addcookie(HttpResHeader &res, const Cookie &cookie){
     std::stringstream cookiestream;
     cookiestream << cookie.name <<'='<<cookie.value;
@@ -373,11 +355,44 @@ int cgi_response(int fd, const HttpResHeader &res){
     return ret;
 }
 
+std::map< string, string > getparamsmap(const char* param) {
+    return getparamsmap(param, strlen(param));
+}
+
+
+std::map< string, string > getparamsmap(const char *param, size_t len){
+    std::map< string, string > params;
+    if(len == 0){
+        return params;
+    }
+    char paramsbuff[URLLIMIT];
+    URLDecode(paramsbuff, param, len);
+    char *p=paramsbuff;
+    if(*p){
+        for (; ; p = NULL) {
+            char *q = strtok(p, "&");
+
+            if (q == NULL)
+                break;
+
+            char* sp = strpbrk(q, "=");
+            if (sp) {
+                params[string(q, sp - q)] = sp + 1;
+            } else {
+                params[q] = "";
+            }
+        }
+    }
+    return params;
+}
+
+
 int cgi_write(int fd, uint32_t id, const void *buff, size_t len) {
     CGI_Header header;
     do{
         size_t writelen = len > CGI_LEN_MAX ? CGI_LEN_MAX:len;
         header.type = CGI_DATA;
+        header.flag = (len == 0)? CGI_FLAG_END:0;
         header.contentLength = htons(writelen);
         header.requestId = htonl(id);
         int ret = write(fd, &header, sizeof(header));
