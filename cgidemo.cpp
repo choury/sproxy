@@ -36,12 +36,13 @@ int cgimain(int fd){
             for(auto i:params){
                 char buff[1024];
                 cgi_write(fd,res.cgi_id, buff, sprintf(buff, "%s =====> %s\n", i.first.c_str(), i.second.c_str()));
-            }
+            }/*
             for(auto i:cookies){
                 char buff[1024];
                 cgi_write(fd,res.cgi_id, buff, sprintf(buff, "%s =====> %s\n", i.first.c_str(), i.second.c_str()));
-            }
+            }*/
             cgi_write(fd,res.cgi_id, "", 0);
+            params.clear();
             delete req;
         }
     }
