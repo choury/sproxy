@@ -26,6 +26,7 @@ protected:
     virtual void defaultHE(u_int32_t events)override;
 public:
     explicit Proxy2(Proxy&& copy );
+    virtual ~Proxy2();
     
     virtual void clean(uint32_t errcode, Peer *who, uint32_t id = 0)override;
     virtual ssize_t Write(void *buff, size_t size, Peer *who, uint32_t id=0)override;
@@ -38,7 +39,7 @@ public:
     virtual void wait(Peer *who)override;
     virtual void writedcb(Peer *who)override;
 //    virtual int showstatus(char *buff, Peer *who)override;
-    void Pingcheck();
+    void check_alive();
 };
 
 extern Proxy2* proxy2; 

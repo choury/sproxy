@@ -3,6 +3,10 @@
 
 Proxy2* proxy2 = nullptr;
 
+void proxy2tick(Proxy2 *p){
+    p->check_alive();
+}
+
 Proxy2::Proxy2(Proxy&& copy): Proxy(std::move(copy)) {
     copy.reset_this_ptr(this);
 
@@ -10,7 +14,13 @@ Proxy2::Proxy2(Proxy&& copy): Proxy(std::move(copy)) {
     localwinsize  = localframewindowsize;
     updateEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Con::*)(uint32_t))&Proxy2::defaultHE;
+    add_tick_func((void (*)(void *))proxy2tick, this);
 }
+
+Proxy2::~Proxy2() {
+    del_tick_func((void (*)(void *))proxy2tick, this);
+}
+
 
 Ptr Proxy2::shared_from_this() {
     return Host::shared_from_this();
@@ -272,7 +282,11 @@ int Proxy2::showstatus(char *buff, Peer *who){
 }
 */
 
-void Proxy2::Pingcheck() {
+void Proxy2::check_alive() {
+    if(proxy2 && proxy2 != this && idmap.empty()){
+        clean(NOERROR, this);
+        return;
+    }
     if(!lastrecv)
         return;
     uint64_t now = getutime();
@@ -285,13 +299,6 @@ void Proxy2::Pingcheck() {
     if(now - lastrecv >= 30000000){ //超过30秒没收到报文，认为连接断开
         LOGE("[Proxy2] the ping timeout, so close it\n");
         clean(PEER_LOST_ERR, this);
-    }
-}
-
-
-void proxy2tick() {
-    if(proxy2){
-        proxy2->Pingcheck();
     }
 }
 

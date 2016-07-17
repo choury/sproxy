@@ -20,7 +20,6 @@
 #define DNSTTL      8640             // dns 缓存时间(s)
 
 
-
 static unsigned int id_cur = 1;
 static bool dns_inited = false;
 
@@ -92,6 +91,42 @@ typedef struct _DNS_STATE {
 std::unordered_map<int, DNS_STATE *> rcd_index_id;
 std::unordered_map<std::string, Dns_rcd> rcd_index_host;
 std::list<DNS_STATE *> rcd_gotten_list;
+
+void dnstick(void *) {
+    for (auto i = rcd_index_host.begin(); i!= rcd_index_host.end();) {
+        if (time(nullptr)-i->second.gettime>= DNSTTL) {           // 超时失效
+            rcd_index_host.erase(i++);
+        } else {
+            i++;
+        }
+    }
+    for (auto i = rcd_gotten_list.begin(); i!= rcd_gotten_list.end();i++){
+        auto dnsst = *i;
+        dnsst->func(dnsst->param, dnsst->host, Dns_rcd(std::move(dnsst->addr)));
+        delete dnsst;
+    }
+    rcd_gotten_list.clear();
+
+    for (auto i = rcd_index_id.begin(); i!= rcd_index_id.end();) {
+        auto tmp=i++;
+        auto oldstate = tmp->second;
+        if (time(nullptr)-oldstate->reqtime>= DNSTIMEOUT) {
+            rcd_index_id.erase(tmp);
+            if (oldstate->addr.size()) {
+                oldstate->func(oldstate->param, oldstate->host, Dns_rcd(std::move(oldstate->addr)));
+            } else  {           // 超时重试
+                if(oldstate->times < 5) {
+                    LOGE("[DNS] %s: time out, retry...\n", oldstate->host);
+                    query(oldstate->host, oldstate->func, oldstate->param, ++oldstate->times);
+                } else {
+                    oldstate->func(oldstate->param, oldstate->host, Dns_rcd());
+                }
+            }
+            delete oldstate;
+        }
+    }
+}
+
 
 Dns_rcd::Dns_rcd(): gettime(time(NULL)) {
 }
@@ -233,6 +268,7 @@ static int dnsinit() {
         }
     }
     fclose(res_file);
+    add_tick_func(dnstick, nullptr);
     return srvs.size();
 }
 
@@ -288,41 +324,6 @@ void query(const char *host , DNSCBfunc func, void *param, uint16_t times) {
     dnsst->reqtime = time(nullptr);
     rcd_index_id[dnsst->id] = dnsst;
     id_cur += 2;
-}
-
-void dnstick() {
-    for (auto i = rcd_index_host.begin(); i!= rcd_index_host.end();) {
-        if (time(nullptr)-i->second.gettime>= DNSTTL) {           // 超时失效
-            rcd_index_host.erase(i++);
-        } else {
-            i++;
-        }
-    }
-    for (auto i = rcd_gotten_list.begin(); i!= rcd_gotten_list.end();i++){
-        auto dnsst = *i;
-        dnsst->func(dnsst->param, dnsst->host, Dns_rcd(std::move(dnsst->addr)));
-        delete dnsst;
-    }
-    rcd_gotten_list.clear();
-
-    for (auto i = rcd_index_id.begin(); i!= rcd_index_id.end();) {
-        auto tmp=i++;
-        auto oldstate = tmp->second;
-        if (time(nullptr)-oldstate->reqtime>= DNSTIMEOUT) {
-            rcd_index_id.erase(tmp);
-            if (oldstate->addr.size()) {
-                oldstate->func(oldstate->param, oldstate->host, Dns_rcd(std::move(oldstate->addr)));
-            } else  {           // 超时重试
-                if(oldstate->times < 5) {
-                    LOGE("[DNS] %s: time out, retry...\n", oldstate->host);
-                    query(oldstate->host, oldstate->func, oldstate->param, ++oldstate->times);
-                } else {
-                    oldstate->func(oldstate->param, oldstate->host, Dns_rcd());
-                }
-            }
-            delete oldstate;
-        }
-    }
 }
 
 
@@ -424,7 +425,6 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
 }
 
 
-
 int Dns_srv::query(const char *host, int type, uint32_t id) {
     unsigned char  buf[BUF_SIZE];
     unsigned char  *p;
@@ -466,5 +466,4 @@ int Dns_srv::query(const char *host, int type, uint32_t id) {
 void flushdns() {
     rcd_index_host.clear();
 }
-
 

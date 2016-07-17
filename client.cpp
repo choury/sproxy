@@ -125,10 +125,7 @@ int main(int argc, char** argv) {
             Con* con = (Con*)events[i].data.ptr;
             (con->*con->handleEvent)(events[i].events);
         }
-        
-        dnstick();
-        hosttick();
-        proxy2tick();
+        tick();
     }
     return 0;
 }

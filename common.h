@@ -133,14 +133,13 @@ int endwith(const char *s1, const char *s2);
 int URLEncode(char *des,const char* src, size_t len);
 int URLDecode(char *des,const char* src, size_t len);
 void Base64Encode(const char *src, size_t len, char *dst);
-void hosttick();
-void dnstick();
-void proxy2tick();
 void flushproxy2();
 uint64_t getutime();
 void sighandle(int signum);
 void dump_trace();
-int showstatus(const char *command);
+void add_tick_func(void (*func)(void *), void *arg);
+void del_tick_func(void (*func)(void *), void *arg);
+void tick();
 
 #ifdef  __cplusplus
 }

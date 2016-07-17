@@ -172,6 +172,7 @@ public:
     size_t count(T2 t2);
     const std::map<T1, T2>& Left();
     const std::map<T2, T1>& Right();
+    bool empty() const;
 };
 
 
@@ -259,6 +260,12 @@ template<class T1, class T2>
 const std::map<T2, T1>& binmap<T1, T2>::Right(){
     return right;
 }
+
+template<class T1, class T2>
+bool binmap<T1, T2>::empty() const {
+    return left.empty() && right.empty();
+}
+
 
 #endif
 

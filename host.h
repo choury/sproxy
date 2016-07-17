@@ -33,7 +33,7 @@ public:
     virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
     virtual void ResProc(HttpResHeader &res)override;
     static Ptr gethost(HttpReqHeader &req, Ptr responser_ptr);
-    friend void hosttick();
+    friend void hosttick(void *);
 };
 
 #endif

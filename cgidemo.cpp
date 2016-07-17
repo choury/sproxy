@@ -14,8 +14,7 @@ int cgimain(int fd){
         readlen += read(fd, buff + readlen, ntohs(header->contentLength));
         if(header->type == CGI_REQUEST){
             req = new HttpReqHeader(header);
-        }
-        if(header->type == CGI_DATA){
+        }else if(header->type == CGI_DATA){
             auto param = getparamsmap((char *)(header+1), ntohs(header->contentLength));
             params.insert(param.begin(), param.end());
         }

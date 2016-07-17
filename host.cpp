@@ -7,6 +7,20 @@
                     
 std::map<Host*,time_t> connectmap;
 
+void hosttick(void *) {
+    for(auto i = connectmap.begin();i != connectmap.end();){
+        Host *host = (Host *)(i->first);
+        if(time(NULL) - i->second >= 30 && host->connect() < 0){
+            connectmap.erase(i++);
+            LOGE("connect to %s time out.\n", host->hostname);
+            host->clean(CONNECT_ERR, host);
+        }else{
+            i++;
+        }
+    }
+}
+
+
 Host::Host(Host&& copy){
     fd = copy.fd;
     copy.fd  = 0;
@@ -15,6 +29,7 @@ Host::Host(Host&& copy){
 Host::Host(const char* hostname, uint16_t port): port(port){
     memset(this->hostname, 0, sizeof(this->hostname));
     query(hostname, (DNSCBfunc)Host::Dnscallback, this);
+    add_tick_func(hosttick, nullptr);
 }
 
 Ptr Host::shared_from_this() {
@@ -247,16 +262,4 @@ void Host::clean(uint32_t errcode, Peer* who, uint32_t)
     }
 }
 
-void hosttick() {
-    for(auto i = connectmap.begin();i != connectmap.end();){
-        Host *host = (Host *)(i->first);
-        if(time(NULL) - i->second >= 30 && host->connect() < 0){
-            connectmap.erase(i++);
-            LOGE("connect to %s time out.\n", host->hostname);
-            host->clean(CONNECT_ERR, host);
-        }else{
-            i++;
-        }
-    }
-}
 

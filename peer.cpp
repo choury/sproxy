@@ -97,3 +97,19 @@ void Peer::clean(uint32_t errcode, Peer* , uint32_t) {
 void Peer::wait(Peer *who) {
     who->updateEpoll(0);
 }
+
+std::set<std::pair<void (*)(void *), void *>> callfunc_set;
+
+void add_tick_func(void (*func)(void *), void *arg){
+    callfunc_set.insert(std::make_pair(func, arg));
+}
+
+void del_tick_func(void (*func)(void *), void *arg){
+    callfunc_set.erase(std::make_pair(func, arg));
+}
+
+void tick(){
+    for(auto i: callfunc_set){
+        i.first(i.second);
+    }
+}
