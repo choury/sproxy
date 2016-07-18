@@ -140,7 +140,10 @@ void Guest_s2::defaultHE(uint32_t events)
 
     if (events & EPOLLOUT) {
         int ret = Write_Proc();
-        if(ret){ 
+        if(ret <= 0 && showerrinfo(ret, "guest_s2 write error")) {
+            clean(WRITE_ERR, this);
+            return;
+        }else{
             for(auto i = waitlist.begin(); i!= waitlist.end(); ){
                 if(bufleft(*i)){
                     (*i)->writedcb(this);
@@ -149,11 +152,7 @@ void Guest_s2::defaultHE(uint32_t events)
                     i++;
                 }
             }      
-        }else if(ret <= 0 && showerrinfo(ret, "guest_s2 write error")) {
-            clean(WRITE_ERR, this);
-            return;
         }
-
         if (framequeue.empty()) {
             updateEpoll(EPOLLIN);
         }

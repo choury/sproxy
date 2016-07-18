@@ -101,7 +101,10 @@ void Proxy2::defaultHE(u_int32_t events) {
 
     if (events & EPOLLOUT) {
         int ret = Write_Proc();
-        if(ret > 0){
+        if(ret <=0 && showerrinfo(ret, "proxy2 write error")) {
+            clean(WRITE_ERR, this);
+            return;
+        }else{
             for(auto i = waitlist.begin(); i!= waitlist.end(); ){
                 if(bufleft(*i)){
                     (*i)->writedcb(this);
@@ -110,9 +113,6 @@ void Proxy2::defaultHE(u_int32_t events) {
                     i++;
                 }
             }      
-        }else if(showerrinfo(ret, "proxy2 write error")) {
-            clean(WRITE_ERR, this);
-            return;
         }
         if (framequeue.empty()) {
             updateEpoll(EPOLLIN);
