@@ -161,7 +161,7 @@ void Base64Encode(const char *src, size_t len, char *dst){
 uint64_t getutime(){
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    return tv.tv_sec * 1000000 + tv.tv_usec;
+    return tv.tv_sec * 1000000ull + tv.tv_usec;
 }
 
 void sighandle(int signum){

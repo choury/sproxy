@@ -10,8 +10,8 @@ set(CMAKE_CXX_FLAGS "-std=c++11 -Wall")
 set(CMAKE_C_FLAGS_REALSE "${CMAKE_C_FLGS} -O3")
 set(CMAKE_CXX_FLAGS_REALSE "${CMAKE_CXX_FLAGS} -O3")
 
-set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS} -ggdb -fsanitize=address -O0")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} -ggdb -fsanitize=address -O0")
+set(CMAKE_C_FLAGS_DEBUG "-ggdb -fsanitize=bounds  -fsanitize=undefined -fsanitize=address -O0")
+set(CMAKE_CXX_FLAGS_DEBUG "-ggdb -fsanitize=bounds -fsanitize=undefined -fsanitize=address -O0")
 
 add_executable(sproxy_server cgi.cpp file.cpp http.cpp http2.cpp 
 hpack.cpp host.cpp guest.cpp peer.cpp guest_s.cpp guest_s2.cpp

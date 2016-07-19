@@ -28,7 +28,8 @@ public:
             ++si;
             if(si == mi->second.end()){
                 ++mi;
-                si = mi->second.begin();
+                if(mi != map->data.end()) 
+                    si = mi->second.begin();
             }
             return tmp;
         }
@@ -36,7 +37,8 @@ public:
             ++si;
             if(si == mi->second.end()){
                 ++mi;
-                si = mi->second.begin();
+                if(mi != map->data.end()) 
+                    si = mi->second.begin();
             }
             return *this;
         }
@@ -66,7 +68,8 @@ public:
             ++si;
             if(si == mi->second.end()){
                 ++mi;
-                si = mi->second.begin();
+                if(mi != map->data.end()) 
+                    si = mi->second.begin();
             }
             return tmp;
         }
@@ -74,7 +77,8 @@ public:
             ++si;
             if(si == mi->second.end()){
                 ++mi;
-                si = mi->second.begin();
+                if(mi != map->data.end()) 
+                    si = mi->second.begin();
             }
             return *this;
         }
@@ -173,6 +177,7 @@ public:
     const std::map<T1, T2>& Left();
     const std::map<T2, T1>& Right();
     bool empty() const;
+    void clear();
 };
 
 
@@ -264,6 +269,12 @@ const std::map<T2, T1>& binmap<T1, T2>::Right(){
 template<class T1, class T2>
 bool binmap<T1, T2>::empty() const {
     return left.empty() && right.empty();
+}
+
+template<class T1, class T2>
+void binmap<T1, T2>::clear() {
+    left.clear();
+    right.clear();
 }
 
 

@@ -206,17 +206,19 @@ void Guest_s2::clean(uint32_t errcode, Peer *who, uint32_t id) {
         for(auto i: idmap.Left()){
             i.first->clean(errcode, this, i.second);
         }
+        idmap.clear();
         return Peer::clean(errcode, this);
+    }else{
+        Responser *responser = dynamic_cast<Responser *>(who);
+        if(id == 0 && idmap.count(responser)){
+            id = idmap.at(responser);
+        }
+        if(id){
+            Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
+            idmap.erase(responser, id);
+        }
+        waitlist.erase(responser);
     }
-    Responser *responser = dynamic_cast<Responser *>(who);
-    if(id == 0 && idmap.count(responser)){
-        id = idmap.at(responser);
-    }
-    if(id){
-        Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
-        idmap.erase(responser, id);
-    }
-    waitlist.erase(responser);
 }
 
 int32_t Guest_s2::bufleft(Peer *peer) {
@@ -234,7 +236,7 @@ void Guest_s2::wait(Peer *who){
 void Guest_s2::writedcb(Peer *who){
     if(idmap.count(who)){
         size_t len = localframewindowsize - who->localwinsize;
-        if(len < localframewindowsize/2)
+        if(len < localframewindowsize/5)
             return;
         who->localwinsize += ExpandWindowSize(idmap.at(who), len);
     }

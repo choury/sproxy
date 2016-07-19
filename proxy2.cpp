@@ -17,11 +17,6 @@ Proxy2::Proxy2(Proxy&& copy): Proxy(std::move(copy)) {
     add_tick_func((void (*)(void *))proxy2tick, this);
 }
 
-Proxy2::~Proxy2() {
-    del_tick_func((void (*)(void *))proxy2tick, this);
-}
-
-
 Ptr Proxy2::shared_from_this() {
     return Host::shared_from_this();
 }
@@ -243,6 +238,8 @@ void Proxy2::clean(uint32_t errcode, Peer *who, uint32_t) {
         for(auto i: idmap.Left()){
             i.first->clean(errcode, this, i.second);
         }
+        idmap.clear();
+        del_tick_func((void (*)(void *))proxy2tick, this);
         return Peer::clean(errcode, this);
     }else if(idmap.count(who)){
         Reset(idmap.at(who), errcode>30?ERR_INTERNAL_ERROR:errcode);
@@ -259,7 +256,7 @@ void Proxy2::wait(Peer *who) {
 void Proxy2::writedcb(Peer *who){
     if(idmap.count(who)){
         size_t len = localframewindowsize - who->localwinsize;
-        if(len < localframewindowsize/2)
+        if(len < localframewindowsize/5)
             return;
         who->localwinsize += ExpandWindowSize(idmap.at(who), len);
     }
