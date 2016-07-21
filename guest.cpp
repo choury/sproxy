@@ -5,6 +5,7 @@
 #include <set>
 #include <string.h>
 #include <errno.h>
+#include <assert.h>
 #include <arpa/inet.h>
 
 

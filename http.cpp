@@ -2,6 +2,7 @@
 #include "net.h"
 
 #include <string.h>
+#include <assert.h>
 #include <cinttypes>
 
 void HttpBase::ChunkLProc() {

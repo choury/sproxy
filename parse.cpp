@@ -384,7 +384,7 @@ HttpReqHeader::HttpReqHeader(const char* header, Ptr&& src):
 }
 
 
-HttpReqHeader::HttpReqHeader(mulmap<istring, string>&& headers, Ptr&& src):
+HttpReqHeader::HttpReqHeader(std::multimap<istring, string>&& headers, Ptr&& src):
                    HttpHeader(std::move(src))
 {
     for(auto i: headers){
@@ -660,7 +660,7 @@ HttpResHeader::HttpResHeader(const char* header, Ptr&& src):
     }
 }
 
-HttpResHeader::HttpResHeader(mulmap<istring, string>&& headers, Ptr&& src):
+HttpResHeader::HttpResHeader(std::multimap<istring, string>&& headers, Ptr&& src):
                    HttpHeader(std::move(src))
 {
     for(auto i: headers){

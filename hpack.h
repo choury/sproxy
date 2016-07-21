@@ -25,7 +25,7 @@ public:
     Index_table(size_t dynamic_table_size_limit = 4096);
     ~Index_table();
     void set_dynamic_table_size_limit(size_t size);
-    mulmap<istring, std::string> hpack_decode(const char *s, int len);
+    std::multimap<istring, std::string> hpack_decode(const char *s, int len);
     int hpack_encode(char *buf, const char *name, const char *value);
 //    int hpack_encode(char *buf, mulmap<std::string, std::string> headers);
     int hpack_encode(char *buf, std::map<istring, std::string> headers);

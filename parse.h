@@ -1,11 +1,12 @@
 #ifndef PARSE_H__
 #define PARSE_H__
 
-#include "binmap.h"
 #include "common.h"
 #include "ptr.h"
-
 #include "istring.h"
+
+#include <map>
+#include <set>
 
 class Index_table;
 struct Http2_header;
@@ -48,7 +49,7 @@ public:
     char filename[URLLIMIT];
     uint16_t port;
     explicit HttpReqHeader(const char* header = nullptr,  Ptr &&src = Ptr());
-    explicit HttpReqHeader(mulmap<istring, std::string>&& headers, Ptr &&src = Ptr());
+    explicit HttpReqHeader(std::multimap<istring, std::string>&& headers, Ptr &&src = Ptr());
     explicit HttpReqHeader(CGI_Header *headers, Ptr &&src = Ptr());
     bool ismethod(const char* method) const;
     
@@ -65,7 +66,7 @@ class HttpResHeader: public HttpHeader{
 public:
     char status[100];
     explicit HttpResHeader(const char* header, Ptr &&src = Ptr());
-    explicit HttpResHeader(mulmap<istring, std::string>&& headers, Ptr &&src = Ptr());
+    explicit HttpResHeader(std::multimap<istring, std::string>&& headers, Ptr &&src = Ptr());
     explicit HttpResHeader(CGI_Header *headers, Ptr &&src = Ptr());
     
     virtual bool no_left() const override;
