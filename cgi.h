@@ -40,7 +40,7 @@ class Guest;
 
 class Cgi:public Responser{
     char filename[URLLIMIT];
-    char cgi_buff[CGI_LEN_MAX];
+    char cgi_buff[BUF_LEN];
     size_t cgi_getlen  = 0;
     size_t cgi_outlen  = 0;
     uint32_t curid = 1;

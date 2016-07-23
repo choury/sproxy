@@ -289,6 +289,10 @@ void Cgi::defaultHE(uint32_t events) {
 
 void Cgi::clean(uint32_t errcode, Peer* who, uint32_t id) {
     if(who == this) {
+        for(auto i: idmap.Left()){
+            i.first.first->clean(errcode, this, i.first.second);
+        }
+        idmap.clear();
         return Peer::clean(errcode, this);
     }
     Guest *guest = dynamic_cast<Guest *>(who);
@@ -389,8 +393,9 @@ std::map< string, string > getparamsmap(const char *param, size_t len){
 
 int cgi_write(int fd, uint32_t id, const void *buff, size_t len) {
     CGI_Header header;
+    size_t left = len;
     do{
-        size_t writelen = len > CGI_LEN_MAX ? CGI_LEN_MAX:len;
+        size_t writelen = left > CGI_LEN_MAX ? CGI_LEN_MAX:left;
         header.type = CGI_DATA;
         header.flag = (len == 0)? CGI_FLAG_END:0;
         header.contentLength = htons(writelen);
@@ -402,9 +407,9 @@ int cgi_write(int fd, uint32_t id, const void *buff, size_t len) {
         if(ret <= 0){
             return ret;
         }
-        len -= ret;
+        left -= ret;
         buff = (char *)buff + ret;
-    }while(len);
+    }while(left);
     return len;
 }
 
