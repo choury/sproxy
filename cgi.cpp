@@ -170,6 +170,11 @@ void Cgi::InProc() {
     case WaitBody:
         len = ntohs(header->contentLength) + sizeof(CGI_Header) - cgi_getlen;
         if (len == 0) {
+            if(idmap.count(ntohl(header->requestId)) == 0){
+                status = WaitHeadr;
+                cgi_getlen = 0;
+                break;
+            }
             switch (header->type) {
             case CGI_RESPONSE:
                 status = HandleRes;
