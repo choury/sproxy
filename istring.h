@@ -2,7 +2,7 @@
 #define ISTRING_H__
 
 #include <string.h>
-#include <stdlib.h>
+//#include <stdlib.h>
 
 #include <string>
 

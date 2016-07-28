@@ -12,25 +12,22 @@ Peer::Peer(int fd):Con(fd) {
 
 Peer::~Peer() {
     while(!write_queue.empty()){
-        free(write_queue.front().buff);
+        p_free(write_queue.front().buff);
         write_queue.pop();
     }
 }
 
-ssize_t Peer::Write(const void* buff, size_t size, Peer* who, uint32_t) {
-    if(size == 0) {
-        return 0;
-    }
-    void *dup_buff = malloc(size);
+ssize_t Peer::Write(const void* buff, size_t size, Peer* who, uint32_t id) {
+    void *dup_buff = p_malloc(size);
     memcpy(dup_buff, buff, size);
-    return Peer::Write(dup_buff, size, who);
+    return Write(dup_buff, size, who, id);
 }
 
 ssize_t Peer::Write(void* buff, size_t size, Peer* , uint32_t) {
     if(size == 0) {
+        p_free(buff);
         return 0;
     }
-    
     write_block wb={buff, size, 0};
     write_queue.push(wb);
     writelen += size;
@@ -60,7 +57,7 @@ int Peer::Write() {
         writed = true;
         writelen -= ret;
         if ((size_t)ret + wb->wlen == wb->len) {
-            free(wb->buff);
+            p_free(wb->buff);
             write_queue.pop();
         } else {
             wb->wlen += ret;

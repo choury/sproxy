@@ -2,7 +2,10 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <assert.h>
 #include <sys/time.h>
+
+#define PRIOR_HEAD 32
     
 /**
  * strnstr - Find the first substring in a length-limited string
@@ -167,6 +170,31 @@ uint64_t getutime(){
 void sighandle(int signum){
     fflush(stdout);
     exit(1);
+}
+
+void* p_malloc(size_t size){
+    void *ptr = malloc(size + PRIOR_HEAD);
+    if(ptr == NULL)
+        return ptr;
+    ptr += PRIOR_HEAD;
+    *(unsigned char *)(ptr-1) = PRIOR_HEAD;
+    return ptr;
+}
+
+void p_free(void* ptr){
+    if(ptr == NULL)
+        return;
+    unsigned char prior = *(unsigned char*)(ptr-1);
+    return free(ptr-prior);
+}
+
+void *p_move( void *ptr, char len ){
+    unsigned char prior = *(unsigned char*)(ptr-1);
+    prior += len;
+    assert(prior >= 1);
+    ptr += len;
+    *(unsigned char *)(ptr-1) = prior;
+    return ptr; 
 }
 
 #ifndef __ANDROID__

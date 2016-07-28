@@ -490,14 +490,14 @@ bool HttpReqHeader::ismethod(const char* method) const{
 }
 
 char *HttpReqHeader::getstring(size_t &len) const{
-    char *buff = (char *)malloc(BUF_LEN);
+    char *buff = (char *)p_malloc(BUF_LEN);
     len = 0;
     if (should_proxy) {
         len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, url);
     } else if (strcmp(method, "CONNECT") == 0 || 
                strcmp(method, "SEND") == 0)
     {
-        free(buff);
+        p_free(buff);
         return 0;
     }else{
         len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, path);
@@ -551,7 +551,7 @@ bool HttpReqHeader::no_left() const {
 
 
 Http2_header *HttpReqHeader::getframe(Index_table *index_table) const{
-    Http2_header *header = (Http2_header *)malloc(BUF_LEN);
+    Http2_header *header = (Http2_header *)p_malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F;
@@ -586,7 +586,7 @@ Http2_header *HttpReqHeader::getframe(Index_table *index_table) const{
 
 
 CGI_Header *HttpReqHeader::getcgi() const{
-    CGI_Header *cgi = (CGI_Header *)malloc(BUF_LEN);
+    CGI_Header *cgi = (CGI_Header *)p_malloc(BUF_LEN);
     cgi->type = CGI_REQUEST;
     cgi->flag = 0;
     cgi->requestId = htonl(cgi_id);
@@ -728,7 +728,7 @@ bool HttpResHeader::no_left() const {
 
 
 char * HttpResHeader::getstring(size_t &len) const{
-    char * buff = (char *)malloc(BUF_LEN);
+    char * buff = (char *)p_malloc(BUF_LEN);
     len = 0;
     if(get("Content-Length") || get("Transfer-Encoding")){
         len += sprintf(buff, "HTTP/1.1 %s" CRLF, status);
@@ -750,7 +750,7 @@ char * HttpResHeader::getstring(size_t &len) const{
 
 
 Http2_header *HttpResHeader::getframe(Index_table* index_table) const{
-    Http2_header *header = (Http2_header *)malloc(BUF_LEN);
+    Http2_header *header = (Http2_header *)p_malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F;
@@ -774,7 +774,7 @@ Http2_header *HttpResHeader::getframe(Index_table* index_table) const{
 }
 
 CGI_Header *HttpResHeader::getcgi()const {
-    CGI_Header *cgi = (CGI_Header *)malloc(BUF_LEN);
+    CGI_Header *cgi = (CGI_Header *)p_malloc(BUF_LEN);
     cgi->type = CGI_RESPONSE;
     cgi->flag = 0;
     cgi->requestId = htonl(cgi_id);

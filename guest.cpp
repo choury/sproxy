@@ -109,38 +109,25 @@ void Guest::response(HttpResHeader& res) {
 
 ssize_t Guest::Write(void *buff, size_t size, Peer* who, uint32_t) {
     size_t len = Min(bufleft(who), size);
-    ssize_t ret = 0;
     if(flag & ISCHUNKED_F){
         char chunkbuf[100];
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)size);
-        if(Peer::Write((const void *)chunkbuf, chunklen, this) != chunklen)
-            assert(0);
-        ret = Peer::Write(buff, len, this);
-        if(Peer::Write(CRLF, strlen(CRLF), this) != strlen(CRLF))
-            assert(0);
+        buff = p_move(buff, -chunklen);
+        memcpy(buff, chunkbuf, chunklen);
+        ssize_t ret = Peer::Write(buff, chunklen + len, this);
+        if(ret <= 0){
+            return ret;
+        }else{
+            if(Peer::Write(memcpy(p_malloc(strlen(CRLF)), CRLF, strlen(CRLF)),
+                           strlen(CRLF), this) != strlen(CRLF))
+                assert(0);
+            assert(ret >= chunklen);
+            return ret - chunklen;
+        }
     }else{
-        ret = Peer::Write(buff, size, this);
+        return Peer::Write(buff, size, this);
     }
-    return ret;
 }
-
-ssize_t Guest::Write(const void *buff, size_t size, Peer* who, uint32_t) {
-    size_t len = Min(bufleft(who), size);
-    ssize_t ret = 0;
-    if(flag & ISCHUNKED_F){
-        char chunkbuf[100];
-        int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)size);
-        if(Peer::Write((const void *)chunkbuf, chunklen, this) != chunklen)
-            assert(0);
-        ret = Peer::Write(buff, len, this);
-        if(Peer::Write(CRLF, strlen(CRLF), this) != strlen(CRLF))
-            assert(0);
-    }else{
-        ret = Peer::Write(buff, size, this);
-    }
-    return ret;
-}
-
 
 ssize_t Guest::DataProc(const void *buff, size_t size) {
     Responser *responser = dynamic_cast<Responser *>(responser_ptr.get());

@@ -25,13 +25,6 @@ ssize_t Guest_s2::Write(const void *buff, size_t size) {
 }
 
 ssize_t Guest_s2::Write(void *buff, size_t size, Peer *who, uint32_t id) {
-    ssize_t ret = Write((const void*)buff, size, who, id);
-    free(buff);
-    return ret;
-}
-
-ssize_t Guest_s2::Write(const void *buff, size_t size, Peer *who, uint32_t id)
-{
     if(!id){
         if(idmap.count(who)){
             id = idmap.at(who);
@@ -41,7 +34,7 @@ ssize_t Guest_s2::Write(const void *buff, size_t size, Peer *who, uint32_t id)
         }
     }
     size = Min(size, FRAMEBODYLIMIT);
-    Http2_header *header=(Http2_header *)malloc(sizeof(Http2_header)+size);
+    Http2_header *header=(Http2_header *)p_move(buff, -(char)sizeof(Http2_header));
     memset(header, 0, sizeof(Http2_header));
     set32(header->id, id);
     set24(header->length, size);
@@ -51,14 +44,11 @@ ssize_t Guest_s2::Write(const void *buff, size_t size, Peer *who, uint32_t id)
         waitlist.erase(who);
         who->clean(NOERROR, this, id);
     }
-    memcpy(header+1, buff, size);
     SendFrame(header);
     this->remotewinsize -= size;
     who->remotewinsize -= size;
     return size;
 }
-
-
 
 void Guest_s2::SendFrame(Http2_header *header) {
     updateEpoll(EPOLLIN | EPOLLOUT);

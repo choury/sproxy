@@ -20,6 +20,7 @@ protected:
     virtual void ReqProc(HttpReqHeader &req)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
 public:
+    using Peer::Write;
 #define ISPERSISTENT_F     1
 #define ISCHUNKED_F        2
     char flag;
@@ -29,7 +30,6 @@ public:
 
     virtual int showerrinfo(int ret, const char *)override;
     virtual ssize_t Write(void* buff, size_t size, Peer* who, uint32_t id=0)override;
-    virtual ssize_t Write(const void* buff, size_t size, Peer* who, uint32_t id=0)override;
     virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
     virtual const char *getsrc();
     virtual const char *getip();

@@ -137,6 +137,11 @@ void flushproxy2();
 uint64_t getutime();
 void sighandle(int signum);
 void dump_trace();
+
+void* p_malloc(size_t size);
+void p_free(void *ptr);
+void *p_move(void *ptr, char len);
+
 void add_tick_func(void (*func)(void *), void *arg);
 void del_tick_func(void (*func)(void *), void *arg);
 void tick();

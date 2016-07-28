@@ -84,31 +84,12 @@ ssize_t Cgi::Write(void *buff, size_t size, Peer* who, uint32_t id) {
     if(idmap.count(std::make_pair(guest, id))){
         size = size > CGI_LEN_MAX ? CGI_LEN_MAX : size;
         uint32_t cgi_id = idmap.at(std::make_pair(guest, id));
-        CGI_Header *header = (CGI_Header *)malloc(sizeof(CGI_Header));
+        CGI_Header *header = (CGI_Header *)p_move(buff, -(char)sizeof(CGI_Header));
         header->type = CGI_DATA;
         header->flag = size ? 0: CGI_FLAG_END;
         header->requestId = htonl(cgi_id);
         header->contentLength = htons(size);
-        Peer::Write(header, sizeof(CGI_Header), this);
-        return Peer::Write(buff, size, this);
-    }else{
-        who->clean(PEER_LOST_ERR, this, id);
-        return -1;
-    }
-}
-
-ssize_t Cgi::Write(const void *buff, size_t size, Peer* who, uint32_t id) {
-    Guest *guest = dynamic_cast<Guest *>(who);
-    if(idmap.count(std::make_pair(guest, id))){
-        size = size > CGI_LEN_MAX ? CGI_LEN_MAX : size;
-        uint32_t cgi_id = idmap.at(std::make_pair(guest, id));
-        CGI_Header *header = (CGI_Header *)malloc(sizeof(CGI_Header) + size);
-        header->type = CGI_DATA;
-        header->flag = size ? 0: CGI_FLAG_END;
-        header->requestId = htonl(cgi_id);
-        header->contentLength = htons(size);
-        memcpy(header+1, buff, size);
-        ssize_t ret = Peer::Write(header, sizeof(CGI_Header) + size, this);
+        ssize_t ret = Peer::Write(header, size+sizeof(CGI_Header), this) - sizeof(CGI_Header);
         if(ret <= 0){
             return ret;
         }else{
@@ -360,7 +341,7 @@ void addcookie(HttpResHeader &res, const Cookie &cookie){
 int cgi_response(int fd, const HttpResHeader &res){
     CGI_Header *header = res.getcgi();
     int ret = write(fd, header, sizeof(CGI_Header) + ntohs(header->contentLength));
-    free(header);
+    p_free(header);
     return ret;
 }
 
