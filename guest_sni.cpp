@@ -4,10 +4,23 @@
 
 Guest_sni::Guest_sni(int fd, sockaddr_in6 *myaddr):Guest(fd, myaddr){
     Http_Proc = &Guest_sni::AlwaysProc;
+    updateEpoll(EPOLLIN);
     handleEvent = (void (Con::*)(uint32_t))&Guest_sni::initHE;
 }
 
 void Guest_sni::initHE(uint32_t events) {
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        int       error = 0;
+        socklen_t errlen = sizeof(error);
+
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
+            LOGE("([%s]:%d): guest_sni error:%s\n",
+                 sourceip, sourceport, strerror(error));
+        }
+        clean(INTERNAL_ERR, this);
+        return;
+    }
+
     if(events & EPOLLIN){
         int ret=read(fd, http_buff+http_getlen, sizeof(http_buff)-http_getlen);
         if(ret <= 0){
@@ -24,11 +37,15 @@ void Guest_sni::initHE(uint32_t events) {
             sprintf(buff, "CONNECT %s:%d" CRLF CRLF, hostname, 443);
             HttpReqHeader req(buff, shared_from_this());
             responser_ptr = distribute(req, responser_ptr);
+            updateEpoll(EPOLLIN | EPOLLOUT);
             handleEvent = (void (Con::*)(uint32_t))&Guest_sni::defaultHE;
         }else if(ret != -1){
             clean(INTERNAL_ERR, this);
         }
         free(hostname);
+    }
+    if(events & EPOLLOUT){
+        updateEpoll(EPOLLIN);
     }
 }
 
