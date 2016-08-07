@@ -15,6 +15,7 @@ extern char *auth_string;
 extern int daemon_mode;
 
 #define Min(x, y) ((int64_t)(x) < (int64_t)(y)?(x):(y))
+#define Max(x, y) ((int64_t)(x) > (int64_t)(y)?(x):(y))
 
 #define DOMAINLIMIT   256
 #define HEADLENLIMIT  8192
@@ -140,7 +141,7 @@ void dump_trace();
 
 void* p_malloc(size_t size);
 void p_free(void *ptr);
-void *p_move(void *ptr, char len);
+void *p_move(void *ptr, signed char len);
 
 void add_tick_func(void (*func)(void *), void *arg);
 void del_tick_func(void (*func)(void *), void *arg);

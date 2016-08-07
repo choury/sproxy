@@ -188,7 +188,7 @@ void p_free(void* ptr){
     return free(ptr-prior);
 }
 
-void *p_move( void *ptr, char len ){
+void *p_move( void *ptr, signed char len ){
     unsigned char prior = *(unsigned char*)(ptr-1);
     prior += len;
     assert(prior >= 1);

@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <assert.h>
 
 
 Peer::Peer(int fd):Con(fd) {
@@ -56,6 +57,7 @@ int Peer::Write() {
 
         writed = true;
         writelen -= ret;
+        assert(ret + wb->wlen <= wb->len);
         if ((size_t)ret + wb->wlen == wb->len) {
             p_free(wb->buff);
             write_queue.pop();
