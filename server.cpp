@@ -132,11 +132,12 @@ static int verify_cookie(SSL *ssl, unsigned char *cookie, unsigned int cookie_le
 
 void usage(const char * programe){
     printf("Usage: %s [-p port] [-k ca path] [-h] <CERT> <PRIVATE_KEY>\n"
+           "       -D: Run as a daemon.\n"
+           "       -h: Print this.\n"
+           "       -H: Set a vhost.\n"
            "       -p: The port to listen, default is 443.\n"
            "       -k: A optional intermediate CA certificate.\n"
            "       -u: UDP mode.\n"
-           "       -D: Run as a daemon.\n"
-           "       -h: Print this.\n"
            , programe);
 }
 
@@ -146,9 +147,12 @@ int main(int argc, char **argv) {
     int oc;
     bool udp_mode = false;
     const char *capath = nullptr;
-    while((oc = getopt(argc, argv, "p:uhk:D")) != -1)
+    while((oc = getopt(argc, argv, "p:uhH:k:D")) != -1)
     {
         switch(oc){
+        case 'H':
+            addlocal(optarg);
+            break;
         case 'p':
             SPORT = atoi(optarg);
             break;
@@ -178,7 +182,7 @@ int main(int argc, char **argv) {
 
     SSL_CTX *ctx = nullptr;
     if(udp_mode){
-        ctx = SSL_CTX_new(DTLS_server_method());
+        ctx = SSL_CTX_new(DTLSv1_server_method());
 
         if (ctx == NULL) {
             ERR_print_errors_fp(stderr);

@@ -95,6 +95,7 @@ int delbsite(const char * host);
 int globalproxy();
 bool checkproxy(const char *hostname);
 bool checkblock(const char *hostname);
+void addlocal(const char *hostname);
 bool checklocal(const char *hostname);
 bool checkauth(const char *ip);
 

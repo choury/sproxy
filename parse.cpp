@@ -167,6 +167,10 @@ bool checkblock(const char *hostname) {
     return false;
 }
 
+void addlocal(const char *hostname) {
+    locallist.insert(hostname);
+}
+
 bool checklocal(const char *hostname) {
     return locallist.count(hostname);
 }

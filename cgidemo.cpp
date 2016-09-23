@@ -24,6 +24,7 @@ int cgimain(int fd){
             
             auto cookies = req->getcookies();
             HttpResHeader res(H200);
+            res.add("Content-Type", "text/plain; charset=utf-8");
             res.cgi_id = req->cgi_id;
             Cookie cookie("haha", "haowan");
             addcookie(res, cookie);
