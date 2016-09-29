@@ -20,7 +20,7 @@
 #define DNSTTL      8640             // dns 缓存时间(s)
 
 
-static unsigned int id_cur = 1;
+static uint16_t id_cur = 1;
 static bool dns_inited = false;
 
 std::vector<Dns_srv *> srvs;
@@ -74,7 +74,7 @@ typedef struct _DNS_RR {
 } __attribute__((packed)) DNS_RR;
 
 typedef struct _DNS_STATE {
-    unsigned int id;
+    uint16_t id;
     time_t reqtime;
     uint16_t times;
 #define QARECORD     0x1
@@ -88,7 +88,7 @@ typedef struct _DNS_STATE {
     std::vector<sockaddr_un> addr;
 } DNS_STATE;
 
-std::unordered_map<int, DNS_STATE *> rcd_index_id;
+std::unordered_map<uint16_t, DNS_STATE *> rcd_index_id;
 std::unordered_map<std::string, Dns_rcd> rcd_index_host;
 std::list<DNS_STATE *> rcd_gotten_list;
 
