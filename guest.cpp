@@ -5,23 +5,15 @@
 #include <set>
 #include <string.h>
 #include <errno.h>
-#include <assert.h>
 #include <arpa/inet.h>
 
 
-Guest::Guest(Guest&& copy): Peer(copy.fd), sourceport(copy.sourceport){
-    strcpy(this->sourceip, copy.sourceip);
-    copy.fd = 0;
+Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Requester(fd, myaddr) {
 }
 
-Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Peer(fd) {
-    inet_ntop(AF_INET6, &myaddr->sin6_addr, sourceip, sizeof(sourceip));
-    sourceport = ntohs(myaddr->sin6_port);
-
-    updateEpoll(EPOLLIN | EPOLLOUT);
-    handleEvent = (void (Con::*)(uint32_t))&Guest::defaultHE;
+void Guest::ResetResponser(Responser *r){
+    responser_ptr = r;
 }
-
 
 int Guest::showerrinfo(int ret, const char *s) {
     if (ret < 0) {
@@ -60,28 +52,12 @@ void Guest::defaultHE(uint32_t events) {
             }
             return;
         }
-        if (ret != WRITE_NOTHING && !responser_ptr.expired()){
-            Responser * responser = dynamic_cast<Responser *>(responser_ptr.get());
-            responser->writedcb(this);
+        if (ret != WRITE_NOTHING && responser_ptr){
+            responser_ptr->writedcb(this);
         }
 
     }
 }
-
-void Guest::closeHE(uint32_t events) {
-    int ret = Peer::Write();
-    if (ret != WRITE_INCOMP ||
-        (ret <= 0 && showerrinfo(ret, "write error while closing"))) {
-        delete this;
-        return;
-    }
-}
-
-
-Ptr Guest::shared_from_this() {
-    return Peer::shared_from_this();
-}
-
 
 ssize_t Guest::Read(void* buff, size_t len){
     return Peer::Read(buff, len);
@@ -130,43 +106,35 @@ ssize_t Guest::Write(void *buff, size_t size, Peer* who, uint32_t) {
 }
 
 ssize_t Guest::DataProc(const void *buff, size_t size) {
-    Responser *responser = dynamic_cast<Responser *>(responser_ptr.get());
-    if (responser == NULL) {
+    if (responser_ptr == NULL) {
         LOGE("([%s]:%d): connecting to host lost\n", sourceip, sourceport);
         clean(PEER_LOST_ERR, this);
         return -1;
     }
-    int len = responser->bufleft(this);
+    int len = responser_ptr->bufleft(this);
     if (len <= 0) {
         LOGE("([%s]:%d): The host's buff is full\n", sourceip, sourceport);
-        responser->wait(this);
+        responser_ptr->wait(this);
         return -1;
     }
-    return responser->Write(buff, Min(size, len), this);
+    return responser_ptr->Write(buff, Min(size, len), this);
 }
 
 void Guest::clean(uint32_t errcode, Peer* who, uint32_t)
 {
-    if(!responser_ptr.expired()){
-        Responser *responser = dynamic_cast<Responser *>(responser_ptr.get());
-        if(responser != dynamic_cast<Responser *>(who))
-            responser->clean(errcode, this);
+    if(responser_ptr){
+        if(responser_ptr != dynamic_cast<Responser *>(who)){
+            responser_ptr->clean(errcode, this);
+            assert(who == this);
+        }
+        responser_ptr = nullptr;
     }
     Peer::clean(errcode, who);
 }
 
-
-const char* Guest::getip(){
-    return sourceip;
-}
-
-const char* Guest::getsrc(){
-    static char src[DOMAINLIMIT];
-    sprintf(src, "[%s]:%d", sourceip, sourceport);
-    return src;
+void Guest::discard() {
+    responser_ptr = nullptr;
+    Requester::discard();
 }
 
 
-
-Guest::~Guest(){
-}

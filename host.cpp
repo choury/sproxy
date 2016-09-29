@@ -1,5 +1,5 @@
 #include "host.h"
-#include "guest.h"
+#include "requester.h"
 
 #include <map>
 #include <string.h>
@@ -20,25 +20,24 @@ void hosttick(void *) {
     }
 }
 
-
-Host::Host(Host&& copy){
-    fd = copy.fd;
-    copy.fd  = 0;
-}
-
-Host::Host(const char* hostname, uint16_t port): port(port){
+Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), protocol(protocol){
     memset(this->hostname, 0, sizeof(this->hostname));
+    if(this->port == 0){
+        this->port = 80;
+    }
     query(hostname, (DNSCBfunc)Host::Dnscallback, this);
     add_tick_func(hosttick, nullptr);
-}
-
-Ptr Host::shared_from_this() {
-    return Peer::shared_from_this();
 }
 
 Host::~Host(){
     connectmap.erase(this);
 }
+
+void Host::discard() {
+    requester_ptr = nullptr;
+    Responser::discard();
+}
+
 
 void Host::Dnscallback(Host* host, const char *hostname, const Dns_rcd&& rcd) {
     snprintf(host->hostname, sizeof(host->hostname), "%s", hostname);
@@ -65,7 +64,7 @@ int Host::connect() {
         if (testedaddr != 0) {
             RcdDown(hostname, addrs[testedaddr-1]);
         }
-        fd = Connect(&addrs[testedaddr++], SOCK_STREAM);
+        fd = Connect(&addrs[testedaddr++], protocol);
         connectmap[this]=time(NULL);
         if (fd < 0) {
             LOGE("connect to %s failed\n", this->hostname);
@@ -79,8 +78,7 @@ int Host::connect() {
 
 
 void Host::waitconnectHE(uint32_t events) {
-    Guest *guest = dynamic_cast<Guest *>(guest_ptr.get());
-    if (guest == nullptr){
+    if (requester_ptr == nullptr){
         clean(PEER_LOST_ERR, this);
         return;
     }
@@ -109,8 +107,8 @@ void Host::waitconnectHE(uint32_t events) {
         updateEpoll(EPOLLIN | EPOLLOUT);
 
         if (http_flag & HTTP_CONNECT_F){
-            HttpResHeader res(connecttip, shared_from_this());
-            guest->response(res);
+            HttpResHeader res(connecttip, this);
+            requester_ptr->response(res);
         }
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
         connectmap.erase(this);
@@ -123,8 +121,7 @@ reconnect:
 }
 
 void Host::defaultHE(uint32_t events) {
-    Guest *guest = dynamic_cast<Guest *>(guest_ptr.get());
-    if (guest == NULL) {
+    if (requester_ptr == NULL) {
         clean(PEER_LOST_ERR, this);
         return;
     }
@@ -153,7 +150,7 @@ void Host::defaultHE(uint32_t events) {
             return;
         }
         if(ret != WRITE_NOTHING)
-            guest->writedcb(this);
+            requester_ptr->writedcb(this);
     }
 }
 
@@ -173,7 +170,7 @@ int Host::showerrinfo(int ret, const char* s) {
 
 
 
-Ptr Host::request(HttpReqHeader& req) {
+void Host::request(HttpReqHeader& req) {
     size_t len;
     char *buff = req.getstring(len);
     Write(buff, len, this);
@@ -183,34 +180,36 @@ Ptr Host::request(HttpReqHeader& req) {
     }else if(req.ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY_F;
     }
-    guest_ptr = req.getsrc();
-    return shared_from_this();
+    requester_ptr = dynamic_cast<Requester *>(req.src);
 }
 
 void Host::ResProc(HttpResHeader& res) {
-    Guest *guest = dynamic_cast<Guest *>(guest_ptr.get());
-    if (guest == NULL) {
+    if (requester_ptr == NULL) {
         clean(PEER_LOST_ERR, this);
         return;
     }
-    guest->response(res);
+    requester_ptr->response(res);
 }
 
 
 
-Ptr Host::gethost(HttpReqHeader& req, Ptr responser_ptr) {
-    Host* exist = dynamic_cast<Host *>(responser_ptr.get());
-    if (exist && strcasecmp(exist->hostname, req.hostname) == 0
-        && exist->port == req.port
+Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr) {
+    Host* host = dynamic_cast<Host *>(responser_ptr);
+    if (host
+        && strcasecmp(host->hostname, req.hostname) == 0
+        && host->port == req.port
         && !req.ismethod("CONNECT"))
     {
-        return exist->request(req);
+        host->request(req);
+        return host;
     }
 
-    if (exist) { 
-        exist->clean(NOERROR, nullptr);
+    if (responser_ptr) {
+        responser_ptr->clean(NOERROR, nullptr);
     }
-    return (new Host(req.hostname, req.port))->request(req);
+    host = new Host(req.hostname, req.port, TCP);
+    host->request(req);
+    return host;
 }
 
 
@@ -226,39 +225,39 @@ void Host::ErrProc(int errcode) {
 }
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
-    Guest *guest = dynamic_cast<Guest *>(guest_ptr.get());
-    if (guest == NULL) {
+    if (requester_ptr == NULL) {
         clean(PEER_LOST_ERR, this);
         return -1;
     }
 
-    int len = guest->bufleft(this);
+    int len = requester_ptr->bufleft(this);
 
     if (len <= 0) {
         LOGE("The guest's write buff is full\n");
-        guest->wait(this);
+        requester_ptr->wait(this);
         return -1;
     }
 
-    return guest->Write(buff, Min(size, len), this);
+    return requester_ptr->Write(buff, Min(size, len), this);
 }
 
-void Host::clean(uint32_t errcode, Peer* who, uint32_t)
-{
-    Guest *guest = dynamic_cast<Guest *>(guest_ptr.get());
-    if(guest){
+void Host::clean(uint32_t errcode, Peer* who, uint32_t) {
+    if(requester_ptr){
         if(errcode == CONNECT_ERR){
-            HttpResHeader res(H408, shared_from_this());
-            guest->response(res);
+            HttpResHeader res(H408, this);
+            requester_ptr->response(res);
         }
         if(who == this){
-            guest->clean(errcode, this);
+            requester_ptr->clean(errcode, this);
+        }else{
+            assert(who == nullptr ||
+                   dynamic_cast<Requester *>(who) == requester_ptr);
         }
     }
     if(hostname[0]){
         Peer::clean(errcode, who);
     }else{
-        guest_ptr = nullptr;
+        requester_ptr = nullptr;
     }
 }
 

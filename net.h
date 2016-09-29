@@ -49,7 +49,6 @@ union sockaddr_un{
     struct sockaddr_in6 addr_in6;
 };
 
-int spliturl(const char* url, char* host, char* path , uint16_t* port);
 
 int Bind_any(int fd, short port);
 int Listen(short int port);

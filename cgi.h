@@ -36,7 +36,7 @@ struct CGI_NameValue{
     uint32_t value;
 }__attribute__((packed));
 
-class Guest;
+class Requester;
 
 class Cgi:public Responser{
     char filename[URLLIMIT];
@@ -44,7 +44,7 @@ class Cgi:public Responser{
     size_t cgi_getlen  = 0;
     size_t cgi_outlen  = 0;
     uint32_t curid = 1;
-    binmap<std::pair<Guest *, uint32_t>, uint32_t> idmap;
+    binmap<std::pair<Requester *, uint32_t>, uint32_t> idmap;
     std::set<Peer *> waitlist;
     virtual void defaultHE(uint32_t events);
     enum {WaitHeadr,
@@ -62,8 +62,8 @@ public:
     virtual void wait(Peer *who)override;
     virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
     virtual int showerrinfo(int ret,const char *s)override;
-    virtual Ptr request(HttpReqHeader &req)override;
-    static Ptr getcgi(HttpReqHeader &req);
+    virtual void request(HttpReqHeader &req)override;
+    static Cgi* getcgi(HttpReqHeader &req);
 };
 
 class Cookie{

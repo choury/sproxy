@@ -8,11 +8,6 @@
 #include <arpa/inet.h>
 #include <sys/epoll.h>
 
-extern uint16_t SPORT;
-extern char SHOST[];
-
-extern char *auth_string;
-extern int daemon_mode;
 
 #define Min(x, y) ((int64_t)(x) < (int64_t)(y)?(x):(y))
 #define Max(x, y) ((int64_t)(x) > (int64_t)(y)?(x):(y))
@@ -129,13 +124,20 @@ do {\
 #define IP_BLOCK_ERR        39
 
 typedef unsigned char uchar;
+
+typedef enum{TCP=SOCK_STREAM, UDP=SOCK_DGRAM}Protocol;
+
 char* strnstr(const char* s1, const char* s2, size_t len);
 int endwith(const char *s1, const char *s2);
+int spliturl(const char* url, char *protocol, char* host, char* path , uint16_t* port);
+
 int URLEncode(char *des,const char* src, size_t len);
 int URLDecode(char *des,const char* src, size_t len);
 void Base64Encode(const char *src, size_t len, char *dst);
-void flushproxy2();
+
 uint64_t getutime();
+uint32_t getmtime();
+
 void sighandle(int signum);
 void dump_trace();
 
@@ -146,6 +148,12 @@ void *p_move(void *ptr, signed char len);
 void add_tick_func(void (*func)(void *), void *arg);
 void del_tick_func(void (*func)(void *), void *arg);
 void tick();
+
+extern char SHOST[];
+extern uint16_t SPORT;
+extern Protocol SPROT;
+extern char *auth_string;
+extern int daemon_mode;
 
 #ifdef  __cplusplus
 }

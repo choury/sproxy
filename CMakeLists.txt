@@ -14,14 +14,14 @@ set(CMAKE_C_FLAGS_DEBUG "-ggdb -fsanitize=bounds  -fsanitize=undefined -fsanitiz
 set(CMAKE_CXX_FLAGS_DEBUG "-ggdb -fsanitize=bounds -fsanitize=undefined -fsanitize=address -O0")
 
 add_executable(sproxy_server cgi.cpp file.cpp http.cpp http2.cpp 
-hpack.cpp host.cpp guest.cpp peer.cpp guest_s.cpp guest_s2.cpp
-lib.c parse.cpp server.cpp net.c dns.cpp responser.cpp)
+hpack.cpp host.cpp guest.cpp peer.cpp guest_s.cpp guest_s2.cpp dtls.cpp
+lib.c parse.cpp server.cpp net.c dns.cpp responser.cpp requester.cpp)
 
 
 
-add_executable(sproxy_client http.cpp http2.cpp hpack.cpp host_dtls.cpp
-peer.cpp guest.cpp guest_sni.cpp host.cpp proxy.cpp proxy2.cpp
-lib.c parse.cpp client.cpp net.c dns.cpp tls.c responser.cpp)
+add_executable(sproxy_client http.cpp http2.cpp hpack.cpp
+peer.cpp guest.cpp guest_sni.cpp host.cpp proxy.cpp proxy2.cpp dtls.cpp
+lib.c parse.cpp client.cpp net.c dns.cpp tls.c responser.cpp requester.cpp)
 
 
 #target_compile_definitions(sproxy_client PUBLIC CLIENT)

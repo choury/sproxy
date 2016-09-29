@@ -207,76 +207,8 @@ string toLower(const string &s) {
     return str;
 }
 
-int spliturl(const char* url, char* hostname, char* path , uint16_t* port) {
-    const char* addrsplit;
-    char tmpaddr[DOMAINLIMIT];
-    int urllen = strlen(url);
-    int copylen;
-    bzero(hostname, DOMAINLIMIT);
-    if (path) {
-        bzero(path, urllen);
-    }
-    if (url[0] == '/' && path) {
-        strcpy(path, url);
-        return 0;
-    }
-    if (strncasecmp(url, "https://", 8) == 0) {
-        url += 8;
-        urllen -= 8;
-        *port = HTTPSPORT;
-    } else if (strncasecmp(url, "http://", 7) == 0) {
-        url += 7;
-        urllen -= 7;
-        *port = HTTPPORT;
-    } else if (strstr(url, "://") != 0) {
-        return -1;
-    }
-    
-    if ((addrsplit = strpbrk(url, "/"))) {
-        copylen = Min(url+urllen-addrsplit, (URLLIMIT-1));
-        if (path) {
-            memcpy(path, addrsplit, copylen);
-        }
-        copylen = addrsplit - url < (DOMAINLIMIT - 1) ? addrsplit - url : (DOMAINLIMIT - 1);
-        strncpy(tmpaddr, url, copylen);
-        tmpaddr[copylen] = 0;
-    } else {
-        copylen = urllen < (DOMAINLIMIT - 1) ? urllen : (DOMAINLIMIT - 1);
-        strncpy(tmpaddr, url, copylen);
-        if (path) {
-            strcpy(path, "/");
-        }
-        tmpaddr[copylen] = 0;
-    }
 
-    if (tmpaddr[0] == '[') {                        // this is a ipv6 address
-        if (!(addrsplit = strpbrk(tmpaddr, "]"))) {
-            return -1;
-        }
-
-        strncpy(hostname, tmpaddr + 1, addrsplit - tmpaddr - 1);
-
-        if (addrsplit[1] == ':') {
-            if (sscanf(addrsplit + 2, "%hd", port) != 1)
-                return -1;
-        } else if (addrsplit[1] != 0) {
-            return -1;
-        }
-    } else {
-        if ((addrsplit = strpbrk(tmpaddr, ":"))) {
-            strncpy(hostname, url, addrsplit - tmpaddr);
-
-            if (sscanf(addrsplit + 1, "%hd", port) != 1)
-                return -1;
-        } else {
-            strcpy(hostname, tmpaddr);
-        }
-    }
-
-    return 0;
-}
-
-HttpHeader::HttpHeader(Ptr&& src):src(src){
+HttpHeader::HttpHeader(Object* src):src(src){
 }
 
 /*
@@ -286,10 +218,6 @@ HttpHeader::HttpHeader(mulmap< string, string > headers, Ptr&& src):
 
 }
 */
-
-Ptr HttpHeader::getsrc() {
-    return src;
-}
 
 
 void HttpHeader::add(const istring& header, const string& value) {
@@ -332,8 +260,8 @@ std::set< string > HttpHeader::getall(const char *header) const{
 */
 
 
-HttpReqHeader::HttpReqHeader(const char* header, Ptr&& src):
-                   HttpHeader(std::move(src))
+HttpReqHeader::HttpReqHeader(const char* header, Object* src):
+               HttpHeader(src)
 {
     if(header == nullptr){
         return;
@@ -345,11 +273,13 @@ HttpReqHeader::HttpReqHeader(const char* header, Ptr&& src):
     memset(url, 0, sizeof(url));
     sscanf(httpheader, "%19s%*[ ]%4095[^\r\n ]", method, url);
     toUpper(method);
-    port = 80;
 
-    if (spliturl(url, hostname, path, &port)) {
+    if (spliturl(url, protocol, hostname, path, &port)) {
         LOGE("wrong url format:%s\n", url);
         throw 0;
+    }
+    if(strcasecmp(protocol, "https") == 0){
+        port = port?port:HTTPSPORT;
     }
 
     for (char* str = strstr(httpheader, CRLF) + strlen(CRLF); ; str = NULL) {
@@ -378,7 +308,7 @@ HttpReqHeader::HttpReqHeader(const char* header, Ptr&& src):
     
     
     if (!hostname[0] && get("Host")) {
-        if(spliturl(get("Host"), hostname, nullptr, &port))
+        if(spliturl(get("Host"), nullptr, hostname, nullptr, &port))
         {
             LOGE("wrong host format:%s\n", get("Host"));
             throw 0;
@@ -388,8 +318,8 @@ HttpReqHeader::HttpReqHeader(const char* header, Ptr&& src):
 }
 
 
-HttpReqHeader::HttpReqHeader(std::multimap<istring, string>&& headers, Ptr&& src):
-                   HttpHeader(std::move(src))
+HttpReqHeader::HttpReqHeader(std::multimap<istring, string>&& headers, Object* src):
+               HttpHeader(src)
 {
     for(auto i: headers){
         if(i.first == "cookie"){
@@ -405,18 +335,18 @@ HttpReqHeader::HttpReqHeader(std::multimap<istring, string>&& headers, Ptr&& src
             add(i.first, i.second);
         }
     }
+    snprintf(protocol, sizeof(protocol), "%s", get(":scheme"));
     snprintf(method, sizeof(method), "%s", get(":method"));
     snprintf(path, sizeof(path), "%s", get(":path"));
-    port = 80;
     
     if (get(":authority")){
         if (ismethod("CONNECT") || ismethod("SEND")) {
             snprintf(url, sizeof(url), "%s", get(":authority"));
         } else {
-            snprintf(url, sizeof(url), "%s://%s%s", get(":scheme"),
-                        get(":authority"), get(":path"));
+            snprintf(url, sizeof(url), "%s://%s%s",
+                     protocol, get(":authority"), path);
         }
-        spliturl(get(":authority"), hostname, nullptr, &port);
+        spliturl(get(":authority"), nullptr, hostname, nullptr, &port);
         add("host", get(":authority"));
     } else {
         snprintf(url, sizeof(url), "%s", path);
@@ -432,8 +362,8 @@ HttpReqHeader::HttpReqHeader(std::multimap<istring, string>&& headers, Ptr&& src
     getfile();
 }
 
-HttpReqHeader::HttpReqHeader(CGI_Header *headers, Ptr&& src):
-                   HttpHeader(std::move(src))
+HttpReqHeader::HttpReqHeader(CGI_Header *headers, Object* src):
+               HttpHeader(src)
 {
     if(headers->type != CGI_REQUEST)
     {
@@ -634,8 +564,8 @@ std::map< string, string > HttpReqHeader::getcookies() const {
 
 
 
-HttpResHeader::HttpResHeader(const char* header, Ptr&& src):
-                   HttpHeader(std::move(src))
+HttpResHeader::HttpResHeader(const char* header, Object* src):
+               HttpHeader(src)
 {
     char httpheader[HEADLENLIMIT];
     snprintf(httpheader, sizeof(httpheader), "%s", header);
@@ -664,8 +594,8 @@ HttpResHeader::HttpResHeader(const char* header, Ptr&& src):
     }
 }
 
-HttpResHeader::HttpResHeader(std::multimap<istring, string>&& headers, Ptr&& src):
-                   HttpHeader(std::move(src))
+HttpResHeader::HttpResHeader(std::multimap<istring, string>&& headers, Object* src):
+               HttpHeader(src)
 {
     for(auto i: headers){
         if(i.first == "set-cookies"){
@@ -685,8 +615,8 @@ HttpResHeader::HttpResHeader(std::multimap<istring, string>&& headers, Ptr&& src
     }
 }
 
-HttpResHeader::HttpResHeader(CGI_Header *headers, Ptr&& src):
-                   HttpHeader(std::move(src))
+HttpResHeader::HttpResHeader(CGI_Header *headers, Object* src):
+               HttpHeader(src)
 {
     if(headers->type != CGI_RESPONSE)
     {

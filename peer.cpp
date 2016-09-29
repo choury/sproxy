@@ -4,7 +4,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
-#include <assert.h>
 
 
 Peer::Peer(int fd):Con(fd) {
@@ -84,7 +83,6 @@ int32_t Peer::bufleft(Peer *) {
 
 
 void Peer::clean(uint32_t errcode, Peer* , uint32_t) {
-    reset_this_ptr();
     if(fd > 0) {
         updateEpoll(EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Peer::closeHE;

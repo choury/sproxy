@@ -1,4 +1,6 @@
 #include "guest_s.h"
+#include "guest_s2.h"
+#include "dtls.h"
 #include "net.h"
 
 #include <set>
@@ -8,7 +10,6 @@
 #include <signal.h>
 #include <arpa/inet.h>
 #include <openssl/err.h>
-#include <openssl/ssl.h>
 
 int efd;
 int daemon_mode = 0;
@@ -37,7 +38,7 @@ class Https_server: public Server {
             SSL *ssl = SSL_new(ctx);
             /* 将连接用户的socket 加入到SSL */
             SSL_set_fd(ssl, clsk);
-            new Guest_s(clsk, &myaddr, ssl);
+            new Guest_s(clsk, &myaddr, ssl, TCP);
         } else {
             LOGE("unknown error\n");
             return;
@@ -59,25 +60,23 @@ class Dtls_server: public Server {
             memset(&myaddr, 0, sizeof(myaddr));
             BIO *bio = BIO_new_dgram(fd, BIO_NOCLOSE);
             SSL *ssl = SSL_new(ctx);
-            int client_fd = 0;
             SSL_set_bio(ssl, bio, bio);
             if(DTLSv1_listen(ssl, &myaddr)<=0)
                 goto error;
-            client_fd = socket(AF_INET6, SOCK_DGRAM, 0);
-            if(Bind_any(client_fd, SPORT))
-                goto error;
-            if(connect(client_fd, (struct sockaddr*)&myaddr, sizeof(struct sockaddr_in6))){
+            if(connect(fd, (struct sockaddr*)&myaddr, sizeof(struct sockaddr_in6))){
                 LOGE("connect error: %m\n");
                 goto error;
             }
             /* Set new fd and set BIO to connected */
-            BIO_set_fd(bio, client_fd, BIO_NOCLOSE);
             BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_CONNECTED, 0, &myaddr);
-            new Guest_s(client_fd, &myaddr, ssl);
+            new Guest_s(fd, &myaddr, ssl, UDP);
+            
+            fd = socket(AF_INET6, SOCK_DGRAM, 0);
+            assert(fd > 0);
+            Bind_any(fd, SPORT);
+            updateEpoll(EPOLLIN);
             return;
 error:
-            if(client_fd > 0)
-                close(client_fd);
             SSL_free(ssl);
         }
     }
@@ -246,7 +245,7 @@ int main(int argc, char **argv) {
     efd = epoll_create(10000);
     if(udp_mode){
         int svsk_udp;
-        if((svsk_udp = socket(PF_INET6, SOCK_DGRAM, 0)) < 0){
+        if((svsk_udp = socket(AF_INET6, SOCK_DGRAM, 0)) < 0){
             LOGOUT("socket error:%m\n");
             return -1;
         }
@@ -267,7 +266,7 @@ int main(int argc, char **argv) {
     while (1) {
         int c;
         struct epoll_event events[200];
-        if ((c = epoll_wait(efd, events, 200, 5000)) < 0) {
+        if ((c = epoll_wait(efd, events, 200, 50)) < 0) {
             if (errno != EINTR) {
                 perror("epoll wait");
                 return 6;

@@ -1,10 +1,9 @@
 #include "host.h"
-#include "proxy.h"
-#include "guest.h"
+#include "requester.h"
 
 #ifdef CLIENT
+#include "proxy.h"
 #include "proxy2.h"
-#include "host_dtls.h"
 #else
 #include "file.h"
 #include "cgi.h"
@@ -39,32 +38,33 @@
 
 char SHOST[DOMAINLIMIT];
 uint16_t SPORT = 443;
+Protocol SPROT = TCP;
 char *auth_string=nullptr;
 
 #ifdef CLIENT
 int req_filter(HttpReqHeader& req){
-    Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
+    Requester *requester = dynamic_cast<Requester *>(req.src);
     req.should_proxy = checkproxy(req.hostname);
     if (auth_string &&
-        !checkauth(guest->getip()) &&
+        !checkauth(requester->getip()) &&
         req.get("Proxy-Authorization") &&
         strcmp(auth_string, req.get("Proxy-Authorization")+6) == 0)
     {
-        addauth(guest->getip());
+        addauth(requester->getip());
     }
-    if (auth_string && !checkauth(guest->getip())){
-        LOG("%s: Authorization needed\n", guest->getsrc());
-        guest->Write(AUTHNEED, strlen(AUTHNEED), guest);
+    if (auth_string && !checkauth(requester->getip())){
+        LOG("%s: Authorization needed\n", requester->getsrc());
+        requester->Write(AUTHNEED, strlen(AUTHNEED), requester);
         return 1;
     }
     if (checkblock(req.hostname)) {
-        LOG("%s: site: %s blocked\n", guest->getsrc(), req.hostname);
-        guest->Write(BLOCKTIP, strlen(BLOCKTIP), guest);
+        LOG("%s: site: %s blocked\n", requester->getsrc(), req.hostname);
+        requester->Write(BLOCKTIP, strlen(BLOCKTIP), requester);
         return 1;
     } 
     if(req.get("via") && strstr(req.get("via"), "sproxy")){
-        LOG("%s: [%s] redirect back!\n", guest->getsrc(), req.hostname);
-        guest->Write(H400, strlen(H400), guest);
+        LOG("%s: [%s] redirect back!\n", requester->getsrc(), req.hostname);
+        requester->Write(H400, strlen(H400), requester);
         return 1;
     }
     req.del("Connection");
@@ -79,21 +79,21 @@ int req_filter(HttpReqHeader& req){
     return 0;
 }
 
-Ptr distribute(HttpReqHeader& req, Ptr responser_ptr) {
+Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
     if(req_filter(req)){
-        return Ptr();
+        return nullptr;
     }
-    Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
+    Requester *requester = dynamic_cast<Requester *>(req.src);
     if(req.url[0] == '/'){
-        LOG("(%s%s): %s %s%s [%s]\n", guest->getsrc(),
+        LOG("(%s%s): %s %s%s [%s]\n", requester->getsrc(),
             req.should_proxy?" PROXY":"", req.method,
             req.hostname, req.url, req.get("User-Agent"));
         if(!req.hostname[0]){
-            guest->Write(H400, strlen(H400), guest);
-            return Ptr();
+            requester->Write(H400, strlen(H400), requester);
+            return nullptr;
         }
     }else{
-        LOG("(%s%s): %s %s [%s]\n", guest->getsrc(),
+        LOG("(%s%s): %s %s [%s]\n", requester->getsrc(),
             req.should_proxy?" PROXY":"", req.method,
             req.url, req.get("User-Agent"));
     }
@@ -105,7 +105,6 @@ Ptr distribute(HttpReqHeader& req, Ptr responser_ptr) {
         req.ismethod("HEAD") ||
         req.ismethod("SEND"))
     {
-//        return (new Host_dtls(SHOST, SPORT))->request(req);
         if(req.should_proxy){
             return Proxy::getproxy(req, responser_ptr);
         }else{
@@ -113,75 +112,86 @@ Ptr distribute(HttpReqHeader& req, Ptr responser_ptr) {
         }
     } else if (req.ismethod("ADDPSITE")) {
         addpsite(req.url);
-        guest->Write(ADDPTIP, strlen(ADDPTIP), guest);
+        requester->Write(ADDPTIP, strlen(ADDPTIP), requester);
     } else if (req.ismethod("DELPSITE")) {
         if (delpsite(req.url)) {
-            guest->Write(DELPTIP, strlen(DELPTIP), guest);
+            requester->Write(DELPTIP, strlen(DELPTIP), requester);
         } else {
-            guest->Write(DELFTIP, strlen(DELFTIP), guest);
+            requester->Write(DELFTIP, strlen(DELFTIP), requester);
         }
     } else if (req.ismethod("ADDBSITE")) {
         addbsite(req.url);
-        guest->Write(ADDBTIP, strlen(ADDBTIP), guest);
+        requester->Write(ADDBTIP, strlen(ADDBTIP), requester);
     } else if (req.ismethod("DELBSITE")) {
         if (delbsite(req.url)) {
-            guest->Write(DELBTIP, strlen(DELBTIP), guest);
+            requester->Write(DELBTIP, strlen(DELBTIP), requester);
         } else {
-            guest->Write(DELFTIP, strlen(DELFTIP), guest);
+            requester->Write(DELFTIP, strlen(DELFTIP), requester);
         }
     } else if (req.ismethod("GLOBALPROXY")) {
         if (globalproxy()) {
-            guest->Write(EGLOBLETIP, strlen(EGLOBLETIP), guest);
+            requester->Write(EGLOBLETIP, strlen(EGLOBLETIP), requester);
         } else {
-            guest->Write(DGLOBLETIP, strlen(DGLOBLETIP), guest);
+            requester->Write(DGLOBLETIP, strlen(DGLOBLETIP), requester);
         }
     } else if (req.ismethod("SWITCH")) {
-        SPORT = 443;
-        spliturl(req.url, SHOST, nullptr, &SPORT);
+        if(strlen(req.protocol) == 0 ||
+           strcasecmp(req.protocol, "ssl") == 0)
+        {
+            SPROT = TCP;
+        }else if(strcasecmp(req.protocol, "dtls") == 0){
+            SPROT = UDP;
+        }else{
+            requester->Write(H400, strlen(H400), requester);
+            return nullptr;
+        }
+        SPORT = req.port?req.port:443;
+        strcpy(SHOST, req.hostname);
         flushproxy2();
-        guest->Write(SWITCHTIP, strlen(SWITCHTIP), guest);
+        requester->Write(SWITCHTIP, strlen(SWITCHTIP), requester);
     } else if (req.ismethod("TEST")){
         if(checkblock(req.hostname)){
-            guest->Write(BLOCKTIP, strlen(BLOCKTIP), guest);
-            return Ptr();
+            requester->Write(BLOCKTIP, strlen(BLOCKTIP), requester);
+            return nullptr;
         }
         if(checkproxy(req.hostname)){
-            guest->Write(PROXYTIP, strlen(PROXYTIP), guest);
-            return Ptr();
+            requester->Write(PROXYTIP, strlen(PROXYTIP), requester);
+            return nullptr;
         }
-        guest->Write(NORMALIP, strlen(NORMALIP), guest);
+        requester->Write(NORMALIP, strlen(NORMALIP), requester);
     } else if(req.ismethod("FLUSH")){
         if(strcasecmp(req.url, "dns") == 0){
             flushdns();
-            guest->Write(H200, strlen(H200), guest);
-            return Ptr();
+            requester->Write(H200, strlen(H200), requester);
+            return nullptr;
         }
     } else{
-        LOGE("%s: unsported method:%s\n", guest->getsrc(), req.method);
-        guest->Write(H405, strlen(H405), guest);
-        return Ptr();
+        LOGE("%s: unsported method:%s\n", requester->getsrc(), req.method);
+        requester->Write(H405, strlen(H405), requester);
+        return nullptr;
     }
-    return Ptr();
+    return nullptr;
 }
 
 #else
 
-Ptr distribute(HttpReqHeader& req, Ptr responser_ptr){
-    Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
+Responser* distribute(HttpReqHeader& req, Responser* responser_ptr){
+    Requester *requester = dynamic_cast<Requester *>(req.src);
+    assert(requester);
     if(req.http_id){
-        LOG("(%s [%d]): %s %s [%s]\n", guest->getsrc(), req.http_id,
+        LOG("(%s [%d]): %s %s [%s]\n", requester->getsrc(), req.http_id,
             req.method, req.url, req.get("User-Agent"));
     }else{
-        LOG("(%s): %s %s [%s]\n", guest->getsrc(), req.method,
+        LOG("(%s): %s %s [%s]\n", requester->getsrc(), req.method,
             req.url, req.get("User-Agent"));
     }
     if(req.ismethod("FLUSH")){
         if(strcasecmp(req.url, "dns") == 0){
             flushdns();
-            guest->Write(H200, strlen(H200), guest);
+            requester->Write(H200, strlen(H200), requester);
         }else if(strcasecmp(req.url, "cgi") == 0){
             flushcgi();
-            guest->Write(H200, strlen(H200), guest);
+            requester->Write(H200, strlen(H200), requester);
         }
     } else  if (checklocal(req.hostname) && !req.ismethod("CONNECT")) {
         if (endwith(req.filename,".so")) {
@@ -192,7 +202,7 @@ Ptr distribute(HttpReqHeader& req, Ptr responser_ptr){
     } else {
         return Host::gethost(req, responser_ptr);
     }
-    return Ptr();
+    return nullptr;
 }
 
 #endif

@@ -83,7 +83,21 @@ int main(int argc, char** argv) {
         usage(argv[0]);
         return -1;
     }
-    spliturl(argv[optind], SHOST, nullptr, &SPORT);
+    char protocol[DOMAINLIMIT];
+    spliturl(argv[optind], protocol, SHOST, nullptr, &SPORT);
+    if(SPORT == 0){
+        SPORT = 443;
+    }
+    if(strlen(protocol) == 0 ||
+       strcasecmp(protocol, "ssl") == 0)
+    {
+        SPROT = TCP;
+    }else if(strcasecmp(protocol, "dtls") == 0){
+        SPROT = UDP;
+    }else{
+        LOGOUT("Only \"ssl://\" and \"dtls://\" protocol are supported!\n");
+        return -1;
+    }
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
 
@@ -113,7 +127,7 @@ int main(int argc, char** argv) {
     while (1) {
         int c;
         struct epoll_event events[200];
-        if ((c = epoll_wait(efd, events, 200, 5000)) < 0) {
+        if ((c = epoll_wait(efd, events, 200, 50)) < 0) {
             if (errno != EINTR) {
                 LOGE("epoll wait:%m\n");
                 return 4;

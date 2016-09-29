@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <sys/epoll.h>
+#include <assert.h>
 
 extern int efd;
 
@@ -13,17 +14,21 @@ protected:
     int fd = 0;
     uint32_t events = 0;
     void updateEpoll(uint32_t events){
-        if (fd > 0 && events != this->events) {
+        if (fd > 0) {
+            int ret = 0;
             if(events == 0){
-               epoll_ctl(efd, EPOLL_CTL_DEL, fd, nullptr);
+               ret = epoll_ctl(efd, EPOLL_CTL_DEL, fd, nullptr);
+               assert(ret == 0);
             }else{
                 struct epoll_event event;
                 event.data.ptr = this;
                 event.events = events;
-                if (epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event) && 
-                    errno == ENOENT)
+                ret = epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+                assert(ret == 0 || errno == ENOENT);
+                if (ret && errno == ENOENT)
                 {
-                    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+                    int ret = epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+                    assert(ret == 0);
                 }
             }
             this->events = events;
@@ -32,9 +37,11 @@ protected:
 public:
     Con(int fd):fd(fd){}
     void (Con::*handleEvent)(uint32_t events)=nullptr;
+    virtual void discard(){
+        fd = 0;
+    }
     virtual ~Con(){
         if(fd > 0){
-            updateEpoll(0);
             close(fd);
         }
     }

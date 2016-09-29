@@ -35,7 +35,7 @@ void Guest_sni::initHE(uint32_t events) {
         if(ret > 0){
             char buff[HEADLENLIMIT];
             sprintf(buff, "CONNECT %s:%d" CRLF CRLF, hostname, 443);
-            HttpReqHeader req(buff, shared_from_this());
+            HttpReqHeader req(buff, this);
             responser_ptr = distribute(req, responser_ptr);
             updateEpoll(EPOLLIN | EPOLLOUT);
             handleEvent = (void (Con::*)(uint32_t))&Guest_sni::defaultHE;

@@ -3,6 +3,7 @@
 
 #include "parse.h"
 #include "hpack.h"
+#include "object.h"
 
 #include <list>
 #include <stdio.h>
@@ -74,11 +75,12 @@ struct Http2_frame{
     size_t wlen;
 };
 
-class Http2Base{
+class Http2Base: virtual public Object{
 protected:
     char http2_buff[FRAMELENLIMIT];
     uint32_t http2_getlen = 0;
     uint32_t remoteframewindowsize = 65535; //由对端初始化的初始frame的窗口大小
+    bool inited = false;
     Index_table request_table;
     Index_table response_table;
     std::list<Http2_frame> framequeue;
@@ -86,7 +88,6 @@ protected:
     void Ping( const void *buff );
     void Reset(uint32_t id, uint32_t code);
     void SendInitSetting();
-    virtual Ptr  shared_from_this() = 0;
     virtual void InitProc() = 0;
     virtual void HeadersProc(Http2_header *header) = 0;
     virtual ssize_t Read(void* buff, size_t len) = 0;

@@ -1,4 +1,5 @@
 [Project]
+CreatedFrom=sproxy.kdev4
+Manager=KDevCustomMakeManager
 Name=sproxy
-Manager=KDevCMakeManager
 VersionControl=

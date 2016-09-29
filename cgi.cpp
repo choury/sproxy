@@ -1,12 +1,11 @@
 #include "cgi.h"
-#include "guest.h"
+#include "requester.h"
 #include "net.h"
 
 #include <map>
 #include <sstream>
 
 #include <string.h>
-#include <assert.h>
 #include <dlfcn.h>
 #include <signal.h>
 #include <unistd.h>
@@ -20,7 +19,7 @@ Cgi::Cgi(HttpReqHeader& req) {
     const char *errinfo = nullptr;
     cgifunc *func = nullptr;
     int fds[2]={0},flags;
-    Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
+    Requester *requester = dynamic_cast<Requester *>(req.src);
     void *handle = dlopen(req.filename,RTLD_NOW);
     if(handle == nullptr) {
         LOGE("dlopen failed: %s\n", dlerror());
@@ -71,7 +70,7 @@ err:
     }
     HttpResHeader res(errinfo);
     res.http_id = req.http_id;
-    guest->response(res);
+    requester->response(res);
     throw 0;
 }
 
@@ -80,10 +79,10 @@ Cgi::~Cgi() {
 } 
 
 ssize_t Cgi::Write(void *buff, size_t size, Peer* who, uint32_t id) {
-    Guest *guest = dynamic_cast<Guest *>(who);
-    if(idmap.count(std::make_pair(guest, id))){
+    Requester *requester = dynamic_cast<Requester *>(who);
+    if(idmap.count(std::make_pair(requester, id))){
         size = size > CGI_LEN_MAX ? CGI_LEN_MAX : size;
-        uint32_t cgi_id = idmap.at(std::make_pair(guest, id));
+        uint32_t cgi_id = idmap.at(std::make_pair(requester, id));
         CGI_Header *header = (CGI_Header *)p_move(buff, -(char)sizeof(CGI_Header));
         header->type = CGI_DATA;
         header->flag = size ? 0: CGI_FLAG_END;
@@ -128,10 +127,10 @@ int Cgi::showerrinfo(int ret, const char* s) {
 
 
 void Cgi::InProc() {
-    Guest *guest;
+    Requester *requester;
     ssize_t len = 0;
     CGI_Header *header = (CGI_Header *)cgi_buff;
-    std::pair<Guest *, uint32_t> session;
+    std::pair<Requester *, uint32_t> session;
     switch (status) {
     case WaitHeadr:
         len = sizeof(CGI_Header) - cgi_getlen;
@@ -184,27 +183,27 @@ void Cgi::InProc() {
         cgi_getlen += len;
         break;
     case  HandleRes: {
-        HttpResHeader res(header, shared_from_this());
+        HttpResHeader res(header, this);
         if (res.get("content-length") == nullptr) {
             res.add("Transfer-Encoding", "chunked");
         }
         session = idmap.at(res.cgi_id);
-        guest = session.first;
+        requester = session.first;
         res.http_id = session.second;
-        guest->response(res);
+        requester->response(res);
         status = WaitHeadr;
         cgi_getlen = 0;
         break;
     }
     case HandleValue:
-        guest = idmap.at(ntohl(header->requestId)).first;
+        requester = idmap.at(ntohl(header->requestId)).first;
         if((header->flag & CGI_FLAG_ACK)==0){
             header->flag |= CGI_FLAG_ACK;
             CGI_NameValue *nv = (CGI_NameValue *)(header+1);
             while((char *)(nv+1) - (char*)header <= (int)cgi_getlen){
                 switch(ntohl(nv->name)){
                 case CGI_NAME_BUFFLEFT:
-                    nv->value = htonl(guest->bufleft(this));
+                    nv->value = htonl(requester->bufleft(this));
                     header->contentLength = htons((char *)(nv+1) - (char*)header);
                     break;
                 default:
@@ -223,15 +222,15 @@ send:
         status = HandleLeft;
     case HandleLeft:
         session = idmap.at(ntohl(header->requestId));
-        guest = session.first;
-        len = guest->bufleft(this);
+        requester = session.first;
+        len = requester->bufleft(this);
         if (len <= 0) {
-            LOGE("The guest's write buff is full\n");
-            guest->wait(this);
+            LOGE("The requester's write buff is full\n");
+            requester->wait(this);
             return;
         }
         len = Min(len, cgi_getlen - cgi_outlen);
-        len = guest->Write((const char *)cgi_buff + cgi_outlen, len, this, session.second);
+        len = requester->Write((const char *)cgi_buff + cgi_outlen, len, this, session.second);
         cgi_outlen += len;
         if (cgi_outlen == cgi_getlen) {
             status = WaitHeadr;
@@ -281,21 +280,20 @@ void Cgi::clean(uint32_t errcode, Peer* who, uint32_t id) {
         idmap.clear();
         return Peer::clean(errcode, this);
     }
-    Guest *guest = dynamic_cast<Guest *>(who);
-    idmap.erase(std::make_pair(guest, id));
-    waitlist.erase(guest);
+    Requester *requester = dynamic_cast<Requester *>(who);
+    idmap.erase(std::make_pair(requester, id));
+    waitlist.erase(requester);
 }
 
 
-Ptr Cgi::request(HttpReqHeader& req){
-    Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
-    if(guest){
+void Cgi::request(HttpReqHeader& req){
+    Requester *requester = dynamic_cast<Requester *>(req.src);
+    if(requester){
         req.cgi_id = curid++;
-        idmap.insert(std::make_pair(guest, req.http_id), req.cgi_id);
+        idmap.insert(std::make_pair(requester, req.http_id), req.cgi_id);
         CGI_Header *header = req.getcgi();
         Peer::Write(header, sizeof(CGI_Header) + ntohs(header->contentLength), this);
     }
-    return shared_from_this();
 }
 
 void Cgi::wait(Peer *who) {
@@ -303,14 +301,19 @@ void Cgi::wait(Peer *who) {
 }
 
 
-Ptr Cgi::getcgi(HttpReqHeader &req){
+Cgi* Cgi::getcgi(HttpReqHeader &req){
+    Cgi *cgi;
     if(cgimap.count(req.filename)){
-        return cgimap[req.filename]->request(req);
+        cgi = cgimap[req.filename];
+        cgi->request(req);
+        return cgi;
     }else{
         try{
-            return (new Cgi(req))->request(req);
+            cgi = new Cgi(req);
+            cgi->request(req);
+            return cgi;
         }catch(...){
-            return Ptr();
+            return nullptr;
         }
     }
 }

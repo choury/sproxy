@@ -40,6 +40,79 @@ int endwith(const char *s1, const char *s2) {
     return !memcmp(s1+l1-l2, s2, l2);
 }
 
+int spliturl(const char* url, char *protocol, char* hostname, char* path , uint16_t* port) {
+    const char* addrsplit;
+    int urllen = strlen(url);
+    int copylen;
+    memset(hostname, 0, DOMAINLIMIT);
+    if (path) {
+        memset(path, 0, urllen);
+    }
+    if (url[0] == '/' && path) {
+        strcpy(path, url);
+        return 0;
+    }
+    
+    const char *tmp_pos = strstr(url, "://");
+    size_t protocol_len = 0;
+    if (tmp_pos == NULL) {
+        *port = 0;
+        tmp_pos = url;
+    }else{
+        protocol_len = tmp_pos - url;
+        tmp_pos = url + 3;
+    }
+    if(protocol){
+        memcpy(protocol, url, protocol_len);
+        protocol[protocol_len] = 0;
+    }
+    url = tmp_pos + protocol_len;
+    
+    char tmpaddr[DOMAINLIMIT];
+    if ((addrsplit = strpbrk(url, "/"))) {
+        copylen = Min(url+urllen-addrsplit, (URLLIMIT-1));
+        if (path) {
+            memcpy(path, addrsplit, copylen);
+        }
+        copylen = addrsplit - url < (DOMAINLIMIT - 1) ? addrsplit - url : (DOMAINLIMIT - 1);
+        strncpy(tmpaddr, url, copylen);
+        tmpaddr[copylen] = 0;
+    } else {
+        copylen = urllen < (DOMAINLIMIT - 1) ? urllen : (DOMAINLIMIT - 1);
+        strncpy(tmpaddr, url, copylen);
+        if (path) {
+            strcpy(path, "/");
+        }
+        tmpaddr[copylen] = 0;
+    }
+
+    if (tmpaddr[0] == '[') {                        // this is a ipv6 address
+        if (!(addrsplit = strpbrk(tmpaddr, "]"))) {
+            return -1;
+        }
+
+        strncpy(hostname, tmpaddr + 1, addrsplit - tmpaddr - 1);
+
+        if (addrsplit[1] == ':') {
+            if (sscanf(addrsplit + 2, "%hd", port) != 1)
+                return -1;
+        } else if (addrsplit[1] != 0) {
+            return -1;
+        }
+    } else {
+        if ((addrsplit = strpbrk(tmpaddr, ":"))) {
+            strncpy(hostname, url, addrsplit - tmpaddr);
+
+            if (sscanf(addrsplit + 1, "%hd", port) != 1)
+                return -1;
+        } else {
+            strcpy(hostname, tmpaddr);
+        }
+    }
+
+    return 0;
+}
+
 int epoll_my_ctl(int epfd, int op, int fd,struct epoll_event *event){
     if(op == EPOLL_CTL_MOD){
         LOGE("epoll mod %d: %p\n",fd,event->data.ptr);
@@ -165,6 +238,12 @@ uint64_t getutime(){
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return tv.tv_sec * 1000000ull + tv.tv_usec;
+}
+
+uint32_t getmtime(){
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+    return (tv.tv_sec * 1000ull + tv.tv_usec/1000)&0xFFFFFFFF;
 }
 
 void sighandle(int signum){

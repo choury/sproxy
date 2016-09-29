@@ -6,6 +6,7 @@
 
 void Http2Base::DefaultProc() {
     Http2_header *header = (Http2_header *)http2_buff;
+begin:
     if(http2_getlen < sizeof(Http2_header)){
         ssize_t len = sizeof(Http2_header) - http2_getlen;
         len = Read(http2_buff + http2_getlen, len);
@@ -16,6 +17,7 @@ void Http2Base::DefaultProc() {
         http2_getlen += len;
     }else{
         ssize_t len = sizeof(Http2_header) + get24(header->length) - http2_getlen;
+        assert(get24(header->length) <= FRAMEBODYLIMIT);
         if(len == 0){
             try {
                 switch(header->type) {
@@ -60,7 +62,7 @@ void Http2Base::DefaultProc() {
             http2_getlen += len;
         }
     }
-    (this->*Http2_Proc)();
+    goto begin;
 }
 
 /* ping 帧永远插到最前面*/
@@ -104,6 +106,7 @@ int Http2Base::Write_Proc(){
     while(!framequeue.empty()){
         Http2_frame *frame = &framequeue.front();
         size_t len = sizeof(Http2_header) + get24(frame->header->length);
+        assert(get24(frame->header->length) <= FRAMEBODYLIMIT);
         ssize_t ret = Write((char *)frame->header + frame->wlen, len - frame->wlen);
 
         if (ret <= 0) {
@@ -220,8 +223,9 @@ void Http2Res::InitProc() {
             return;
         }
         http2_getlen = 0;
-        Http2_Proc = &Http2Res::DefaultProc;
         SendInitSetting();
+        inited = true;
+        Http2_Proc = &Http2Res::DefaultProc;
     } else {
         ssize_t readlen = Read(http2_buff + http2_getlen, prelen - http2_getlen);
         if (readlen <= 0) {
@@ -248,7 +252,7 @@ void Http2Res::HeadersProc(Http2_header* header) {
     }
     HttpReqHeader req(response_table.hpack_decode(pos,
                                                   get24(header->length) - padlen - (pos - (const char *)(header+1))),
-                      shared_from_this());
+                      this);
     req.http_id = get32(header->id);
     req.flags = header->flags;
     ReqProc(req);
@@ -259,7 +263,8 @@ void Http2Res::HeadersProc(Http2_header* header) {
 
 
 void Http2Req::init() {
-    Write(H2_PREFACE, strlen(H2_PREFACE));
+    int ret=Write(H2_PREFACE, strlen(H2_PREFACE));
+    assert(ret == strlen(H2_PREFACE));
     SendInitSetting(); 
 }
 
@@ -280,6 +285,7 @@ void Http2Req::InitProc() {
         if(len == 0){
             if(header->type == SETTINGS_TYPE && (header->flags & ACK_F) == 0){
                 SettingsProc(header);
+                inited = true;
                 Http2_Proc = &Http2Req::DefaultProc;
             }else {
                 ErrProc(ERR_PROTOCOL_ERROR);
@@ -314,7 +320,7 @@ void Http2Req::HeadersProc(Http2_header* header) {
     }
     HttpResHeader res(response_table.hpack_decode(pos,
                                                   get24(header->length) - padlen - (pos - (const char *)(header+1))),
-                      shared_from_this());
+                      this);
     res.http_id = get32(header->id);
     res.flags = header->flags;
     ResProc(res);

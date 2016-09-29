@@ -2,12 +2,11 @@
 #define PROXY_H__
 
 #include "host.h"
-
 #include <openssl/ssl.h>
 
 class Proxy : public Host{
-    SSL *ssl = nullptr;
     SSL_CTX *ctx = nullptr;
+    SSL *ssl = nullptr;
 protected:
     HttpReqHeader req;
     virtual ssize_t Read(void *buff, size_t size)override;
@@ -15,13 +14,13 @@ protected:
     virtual void waitconnectHE(uint32_t events)override;
     virtual void shakehandHE(uint32_t events);
 public:
-    explicit Proxy(Proxy&& copy);
-    explicit Proxy(const char *hostname, uint16_t port);
+    explicit Proxy(const char *hostname, uint16_t port, Protocol protocol);
     virtual ~Proxy();
     
+    virtual void discard()override;
     virtual int showerrinfo(int ret, const char *)override;
-    virtual Ptr request(HttpReqHeader &req)override;
-    static Ptr getproxy(HttpReqHeader &req, Ptr responser_ptr);
+    virtual void request(HttpReqHeader &req)override;
+    static Responser* getproxy(HttpReqHeader &req, Responser* responser_ptr);
 };
 
 #endif

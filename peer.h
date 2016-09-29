@@ -3,7 +3,7 @@
 
 #include "con.h"
 #include "common.h"
-#include "ptr.h"
+#include "object.h"
 #include <queue>
 #include <set>
 
@@ -21,7 +21,7 @@ struct write_block{
 };
 
 
-class Peer:public Con, public Ptr_for_this{
+class Peer:public Con, virtual public Object{
     std::queue<write_block> write_queue;
     size_t  writelen = 0;
 protected:

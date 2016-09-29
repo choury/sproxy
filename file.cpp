@@ -1,6 +1,6 @@
 #include "file.h"
 #include "net.h"
-#include "guest.h"
+#include "requester.h"
 
 #include <vector>
 
@@ -132,7 +132,7 @@ bool Ranges::calcu(size_t size) {
 File::File(HttpReqHeader& req) {
     struct stat st;
     const char *errinfo = nullptr;
-    Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
+    Requester *requester = dynamic_cast<Requester *>(req.src);
     if (stat(req.filename, &st)) {
         LOGE("get file info failed: %m\n");
         errinfo = H404;
@@ -168,19 +168,24 @@ File::File(HttpReqHeader& req) {
 err:
     HttpResHeader res(errinfo);
     res.http_id = req.http_id;
-    guest->response(res);
+    requester->response(res);
     throw 0;
 }
 
 
-Ptr File::getfile(HttpReqHeader &req) {
+File* File::getfile(HttpReqHeader &req) {
+    File *file;
     if(filemap.count(req.filename)){
-        return filemap[req.filename]->request(req);
+        file = filemap[req.filename];
+        file->request(req);
+        return file;
     }else{
         try{
-            return (new File(req))->request(req);
+            file = new File(req);
+            file->request(req);
+            return file;
         }catch(...){
-            return Ptr();
+            return nullptr;
         }
     }
 }
@@ -194,24 +199,24 @@ int File::showerrinfo(int ret, const char* s) {
     return 0;
 }
 
-Ptr File::request(HttpReqHeader& req) {
-    Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
+void File::request(HttpReqHeader& req) {
+    Requester *requester = dynamic_cast<Requester *>(req.src);
     try{
         Ranges ranges(req.get("Range"));
         range rg;
         if (ranges.size() == 1 && ranges.calcu(size)){
             rg = ranges.rgs[0];
         } else if(ranges.size()){
-            HttpResHeader res(H416, shared_from_this());
+            HttpResHeader res(H416, this);
             char buff[100];
             snprintf(buff, sizeof(buff), "bytes */%lu", size);
             res.add("Content-Range", buff);
             res.http_id = req.http_id;
-            guest->response(res);
-            return shared_from_this();
+            requester->response(res);
+            return;
         }
         if(ranges.size()){
-            HttpResHeader res(H206, shared_from_this());
+            HttpResHeader res(H206, this);
             char buff[100];
             snprintf(buff, sizeof(buff), "bytes %lu-%lu/%lu",
                      rg.begin, rg.end, size);
@@ -219,23 +224,23 @@ Ptr File::request(HttpReqHeader& req) {
             size_t leftsize = rg.end - rg.begin+1;
             res.add("Content-Length", leftsize);
             res.http_id = req.http_id;
-            guest->response(res);
+            requester->response(res);
         }else{
             rg.begin = 0;
             rg.end = size - 1;
-            HttpResHeader res(H200, shared_from_this());
+            HttpResHeader res(H200, this);
             res.add("Content-Length", size);
             res.http_id = req.http_id;
-            guest->response(res);
+            requester->response(res);
         }
         updateEpoll(EPOLLIN);
         reqs.push_back(std::make_pair(req, rg));
     }catch(...){
-        HttpResHeader res(H400, shared_from_this());
+        HttpResHeader res(H400, this);
         res.http_id = req.http_id;
-        guest->response(res);
+        requester->response(res);
     }
-    return shared_from_this();
+    return;
 }
 
 
@@ -260,25 +265,25 @@ void File::defaultHE(uint32_t events) {
         for(auto i = reqs.begin();i!=reqs.end();){
             HttpReqHeader &req = i->first;
             range& rg = i->second;
-            Guest *guest = dynamic_cast<Guest *>(req.getsrc().get());
-            if (guest == NULL) {
+            Requester *requester = dynamic_cast<Requester *>(req.src);
+            if (requester == NULL) {
                 i = reqs.erase(i);
                 continue;
             }
             if (rg.begin > rg.end) {
-                guest->Write((const void*)nullptr, 0, this, req.http_id);
+                requester->Write((const void*)nullptr, 0, this, req.http_id);
                 i = reqs.erase(i);
                 continue;
             }
-            int len = Min(guest->bufleft(this), rg.end - rg.begin + 1);
+            int len = Min(requester->bufleft(this), rg.end - rg.begin + 1);
             if (len <= 0) {
-                LOGE("The guest's write buff is full\n");
-                guest->wait(this);
+                LOGE("The requester's write buff is full\n");
+                requester->wait(this);
                 i++;
                 continue;
             }
             allfull = false;
-            len = guest->Write((const char *)mapptr+rg.begin, len, this, req.http_id);
+            len = requester->Write((const char *)mapptr+rg.begin, len, this, req.http_id);
             rg.begin += len;
             i++;
         }

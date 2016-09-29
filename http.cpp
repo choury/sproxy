@@ -130,7 +130,7 @@ void HttpRes::HeaderProc() {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - http_buff;
         try {
-            HttpReqHeader req(http_buff, shared_from_this());
+            HttpReqHeader req(http_buff, this);
             if(req.no_left()){
                 Http_Proc = (void (HttpBase::*)())&HttpRes::HeaderProc;
             }else if (req.get("Content-Length") == nullptr || 
@@ -174,7 +174,7 @@ void HttpReq::HeaderProc() {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - http_buff;
         try {
-            HttpResHeader res(http_buff, shared_from_this());
+            HttpResHeader res(http_buff, this);
             if(res.no_left()){
                 http_flag |= HTTP_IGNORE_BODY_F;
             }else if (res.get("Transfer-Encoding")!= nullptr) {
