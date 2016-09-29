@@ -1,6 +1,5 @@
 sproxy
 ======
-**这是一个开发分支**
 + Linux Only!!
 + http proxy over ssl
 
