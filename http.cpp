@@ -2,7 +2,8 @@
 #include "net.h"
 
 #include <string.h>
-#include <inttypes.h>
+#include <assert.h>
+#include <cinttypes>
 
 void HttpBase::ChunkLProc() {
     if (char* headerend = strnstr(http_buff, CRLF, http_getlen)) {
@@ -10,7 +11,7 @@ void HttpBase::ChunkLProc() {
         size_t headerlen = headerend - http_buff;
         sscanf(http_buff, "%" SCNx64, &http_expectlen);
         if (!http_expectlen) {
-            http_flag |= HTTP_CHUNK_END;
+            http_flag |= HTTP_CHUNK_END_F;
         }
         Http_Proc = &HttpBase::ChunkBProc;
         if (headerlen != http_getlen) {
@@ -42,10 +43,10 @@ void HttpBase::ChunkBProc() {
             }
             http_getlen-= strlen(CRLF);
             memmove(http_buff, http_buff+strlen(CRLF), http_getlen);
-            if(http_flag & HTTP_CHUNK_END){
+            if(http_flag & HTTP_CHUNK_END_F){
                 DataProc(http_buff, 0);
                 Http_Proc = &HttpBase::HeaderProc;
-                http_flag &= ~HTTP_CHUNK_END;
+                http_flag &= ~HTTP_CHUNK_END_F;
             }else{
                 Http_Proc = &HttpBase::ChunkLProc;
             }
@@ -129,18 +130,16 @@ void HttpRes::HeaderProc() {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - http_buff;
         try {
-            HttpReqHeader req(http_buff);
-            if (req.ismethod("POST") || 
-                req.ismethod("PATCH")
-            ) {
-                if (req.get("Content-Length")!= nullptr) {
-                    sscanf(req.get("Content-Length"), "%" SCNu64, &http_expectlen);
-                    Http_Proc = &HttpRes::FixLenProc;
-                } else {
-                    Http_Proc = &HttpRes::AlwaysProc;
-                }
-            } else if (req.ismethod("CONNECT")) {
+            HttpReqHeader req(http_buff, this);
+            if(req.no_left()){
+                Http_Proc = (void (HttpBase::*)())&HttpRes::HeaderProc;
+            }else if (req.get("Content-Length") == nullptr || 
+                      req.ismethod("CONNECT")) 
+            {
                 Http_Proc = &HttpRes::AlwaysProc;
+            }else{
+                Http_Proc = &HttpRes::FixLenProc;
+                http_expectlen = strtoull(req.get("Content-Length"), nullptr, 10);
             }
             ReqProc(req);
         }catch(...) {
@@ -175,25 +174,22 @@ void HttpReq::HeaderProc() {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - http_buff;
         try {
-            HttpResHeader res(http_buff);
-            if (res.get("Transfer-Encoding")!= nullptr) {
+            HttpResHeader res(http_buff, this);
+            if(res.no_left()){
+                http_flag |= HTTP_IGNORE_BODY_F;
+            }else if (res.get("Transfer-Encoding")!= nullptr) {
                 Http_Proc = &HttpReq::ChunkLProc;
-            } else if (res.get("Content-Length")!= nullptr) {
-                sscanf(res.get("Content-Length"), "%" SCNu64, &http_expectlen);
-                Http_Proc = &HttpReq::FixLenProc;
-            } else {
+            } else if (res.get("Content-Length") == nullptr) {
                 Http_Proc = &HttpReq::AlwaysProc;
+            }else{
+                Http_Proc = &HttpReq::FixLenProc;
+                http_expectlen = strtoull(res.get("Content-Length"), nullptr, 10);
             }
-            if(memcmp(res.status, "204", 3) == 0||
-               memcmp(res.status, "205", 3) == 0||
-               memcmp(res.status, "304", 3) == 0)
-               http_flag |= HTTP_IGNORE_BODY;
-            ResProc(res);
-            if (http_flag & HTTP_IGNORE_BODY) {
+            if (http_flag & HTTP_IGNORE_BODY_F) {
+                http_flag &= ~HTTP_IGNORE_BODY_F;
                 Http_Proc = (void (HttpBase::*)())&HttpReq::HeaderProc;
-                DataProc(http_buff, 0);
-                http_flag &= ~HTTP_IGNORE_BODY;
             }
+            ResProc(res);
         }catch(...) {
             ErrProc(HTTP_PROTOCOL_ERR);
             return;

@@ -1,30 +1,26 @@
+#include "guest_s.h"
 #include "guest_s2.h"
-#include "host.h"
-#include "file.h"
-#include "cgi.h"
+#include "dtls.h"
 
 #include <unistd.h>
-#include <bits/local_lim.h>
-#include <netinet/tcp.h>
 #include <openssl/err.h>
 
-Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL* ssl): Guest(fd, myaddr), ssl(ssl) {
+
+Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL* ssl, Protocol protocol): Guest(fd, myaddr), ssl(ssl), protocol(protocol) {
     accept_start_time = time(nullptr);
     handleEvent = (void (Con::*)(uint32_t))&Guest_s::shakehandHE;
 }
-
-Guest_s::Guest_s(Guest_s *const copy): Guest(copy), ssl(copy->ssl) {
-    copy->fd = 0;
-    copy->ssl = nullptr;
-	copy->clean(NOERROR, queryconnect(copy));
-}
-
 
 Guest_s::~Guest_s() {
     if (ssl) {
         SSL_shutdown(ssl);
         SSL_free(ssl);
     }
+}
+
+void Guest_s::discard(){
+    ssl = nullptr;
+    Guest::discard();
 }
 
 ssize_t Guest_s::Read(void* buff, size_t size) {
@@ -35,37 +31,15 @@ ssize_t Guest_s::Write(const void *buff, size_t size) {
     return SSL_write(ssl, buff, size);
 }
 
-void Guest_s::shakedhand() {
-    epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-    handleEvent = (void (Con::*)(uint32_t))&Guest_s::defaultHE;
-
-    const unsigned char *data;
-    unsigned int len;
-    SSL_get0_alpn_selected(ssl, &data, &len);
-    if (data) {
-        if (strncasecmp((const char*)data, "h2", len) == 0) {
-            new Guest_s2(this);
-            delete this;
-            return;
-        }
-    }
-}
-
 
 int Guest_s::showerrinfo(int ret, const char* s) {
     if(ret<=0) {
-        epoll_event event;
-        event.data.ptr = this;
         int error = SSL_get_error(ssl, ret);
         switch (error) {
         case SSL_ERROR_WANT_READ:
             return 0;
         case SSL_ERROR_WANT_WRITE:
-            event.events = EPOLLIN|EPOLLOUT;
-            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            updateEpoll(EPOLLIN | EPOLLOUT);
             return 0;
         case SSL_ERROR_ZERO_RETURN:
             break;
@@ -75,16 +49,15 @@ int Guest_s::showerrinfo(int ret, const char* s) {
                 LOGE("([%s]:%d): %s: the connection was lost\n",
                      sourceip, sourceport, s);
             }else if (error == 0 && ret == -1){
-                LOGE("([%s]:%d): %s:%s\n",
-                     sourceip, sourceport, s, strerror(errno));
+                LOGE("([%s]:%d): %s:%m\n", sourceip, sourceport, s);
             }else{
-                LOGE("([%s]:%d): %s:%s\n",
-                     sourceip, sourceport, s, ERR_error_string(error, NULL));
+                LOGE("([%s]:%d): %s:%s\n", sourceip, sourceport, s,
+                    ERR_error_string(error, NULL));
             }
             break;
         default:
-            LOGE("([%s]:%d): %s:%s\n",
-                sourceip, sourceport, s, ERR_error_string(ERR_get_error(), NULL));
+            LOGE("([%s]:%d): %s:%s\n", sourceip, sourceport, s,
+                ERR_error_string(ERR_get_error(), NULL));
         }
     }else{
          LOGE("([%s]:%d): %s:%d\n", sourceip, sourceport, s, ret);
@@ -102,11 +75,12 @@ void Guest_s::shakehandHE(uint32_t events) {
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("([%s]:%d): guest_s error:%s\n",
-                  sourceip, sourceport, strerror(error));
+                 sourceip, sourceport, strerror(error));
         }
         clean(INTERNAL_ERR, this);
+        return;
     }
-    
+
     if ((events & EPOLLIN)|| (events & EPOLLOUT)) {
         int ret = SSL_accept(ssl);
         if (ret != 1) {
@@ -114,46 +88,23 @@ void Guest_s::shakehandHE(uint32_t events) {
                 clean(SSL_SHAKEHAND_ERR, this);
             }
         } else {
-            shakedhand();
+            updateEpoll(EPOLLIN);
+            handleEvent = (void (Con::*)(uint32_t))&Guest_s::defaultHE;
+
+            const unsigned char *data;
+            unsigned int len;
+            SSL_get0_alpn_selected(ssl, &data, &len);
+            if (data && strncasecmp((const char*)data, "h2", len) == 0) {
+                if(protocol == TCP){
+                    new Guest_s2(fd, sourceip, sourceport, new Ssl(ssl));
+                }else{
+                    new Guest_s2(fd, sourceip, sourceport, new Dtls(ssl));
+                }
+                this->discard();
+                clean(NOERROR, nullptr);
+                return;
+            }
         }
     } 
 }
 
-void Guest_s::ReqProc(HttpReqHeader& req) {
-    char hostname[HOST_NAME_MAX];
-    gethostname(hostname, sizeof(hostname));
-    LOG("([%s]:%d): %s %s\n", sourceip, sourceport, req.method, req.url);
-    
-    flag = 0;
-    if(req.ismethod("SHOW")){
-        writelen += ::showstatus(wbuff+writelen, req.url);
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN | EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-        return; 
-    } else if(req.ismethod("FLUSH")){
-        if(strcasecmp(req.url, "dns") == 0){
-            flushdns();
-            Write(H200, strlen(H200));
-            return;
-        }
-        if(strcasecmp(req.url, "cgi") == 0){
-            flushcgi();
-            Write(H200, strlen(H200));
-            return;
-        }
-        return;
-    }
-        
-    if (req.url[0] == '/' && strcasecmp(hostname, req.hostname) == 0) {
-        req.getfile();
-        if (endwith(req.filename,".so")) {
-            Cgi::getcgi(req, this);
-        } else {
-            File::getfile(req,this);
-        }
-    } else {
-        Host::gethost(req, this);
-    }
-}

@@ -2,7 +2,10 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <assert.h>
 #include <sys/time.h>
+
+#define PRIOR_HEAD 32
     
 /**
  * strnstr - Find the first substring in a length-limited string
@@ -37,6 +40,79 @@ int endwith(const char *s1, const char *s2) {
     return !memcmp(s1+l1-l2, s2, l2);
 }
 
+int spliturl(const char* url, char *protocol, char* hostname, char* path , uint16_t* port) {
+    const char* addrsplit;
+    int urllen = strlen(url);
+    int copylen;
+    memset(hostname, 0, DOMAINLIMIT);
+    if (path) {
+        memset(path, 0, urllen);
+    }
+    if (url[0] == '/' && path) {
+        strcpy(path, url);
+        return 0;
+    }
+    
+    const char *tmp_pos = strstr(url, "://");
+    size_t protocol_len = 0;
+    if (tmp_pos == NULL) {
+        *port = 0;
+        tmp_pos = url;
+    }else{
+        protocol_len = tmp_pos - url;
+        tmp_pos = url + 3;
+    }
+    if(protocol){
+        memcpy(protocol, url, protocol_len);
+        protocol[protocol_len] = 0;
+    }
+    url = tmp_pos + protocol_len;
+    
+    char tmpaddr[DOMAINLIMIT];
+    if ((addrsplit = strpbrk(url, "/"))) {
+        copylen = Min(url+urllen-addrsplit, (URLLIMIT-1));
+        if (path) {
+            memcpy(path, addrsplit, copylen);
+        }
+        copylen = addrsplit - url < (DOMAINLIMIT - 1) ? addrsplit - url : (DOMAINLIMIT - 1);
+        strncpy(tmpaddr, url, copylen);
+        tmpaddr[copylen] = 0;
+    } else {
+        copylen = urllen < (DOMAINLIMIT - 1) ? urllen : (DOMAINLIMIT - 1);
+        strncpy(tmpaddr, url, copylen);
+        if (path) {
+            strcpy(path, "/");
+        }
+        tmpaddr[copylen] = 0;
+    }
+
+    if (tmpaddr[0] == '[') {                        // this is a ipv6 address
+        if (!(addrsplit = strpbrk(tmpaddr, "]"))) {
+            return -1;
+        }
+
+        strncpy(hostname, tmpaddr + 1, addrsplit - tmpaddr - 1);
+
+        if (addrsplit[1] == ':') {
+            if (sscanf(addrsplit + 2, "%hd", port) != 1)
+                return -1;
+        } else if (addrsplit[1] != 0) {
+            return -1;
+        }
+    } else {
+        if ((addrsplit = strpbrk(tmpaddr, ":"))) {
+            strncpy(hostname, url, addrsplit - tmpaddr);
+
+            if (sscanf(addrsplit + 1, "%hd", port) != 1)
+                return -1;
+        } else {
+            strcpy(hostname, tmpaddr);
+        }
+    }
+
+    return 0;
+}
+
 int epoll_my_ctl(int epfd, int op, int fd,struct epoll_event *event){
     if(op == EPOLL_CTL_MOD){
         LOGE("epoll mod %d: %p\n",fd,event->data.ptr);
@@ -61,12 +137,15 @@ int hex2num(char c)
 }
 
 
-int URLEncode(const char* src, char *des)
+int URLEncode(char *des, const char* src, size_t len)
 {
     int j = 0;//for result index
     int strSize;
 
-    if ((src==NULL) || (des==NULL) || (strSize=strlen(src))==0 ) {
+    if(des==NULL)
+        return 0;
+    if ((src==NULL) || (des==NULL) || (strSize=len?len:strlen(src))==0 ) {
+        des[0]=0;
         return 0;
     }
     int i;
@@ -92,14 +171,16 @@ int URLEncode(const char* src, char *des)
 
 
 
-int URLDecode(const char* src, char *des)
+int URLDecode(char *des, const char *src, size_t len)
 {
     int i;
     int j = 0;//record result index
-
     int strSize;
-
-    if ((src==NULL) || (des==NULL) || (strSize=strlen(src))==0 ) {
+    
+    if(des==NULL)
+        return 0;
+    if ((src==NULL) || (strSize=len?len:strlen(src))==0 ) {
+        des[0]=0;
         return 0;
     }
 
@@ -129,10 +210,70 @@ int URLDecode(const char* src, char *des)
     return 1;
 }
 
+static const char *base64_digs="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+void Base64Encode(const char *src, size_t len, char *dst){
+    int i=0,j=0;
+    for(;i+2<len;i+=3){
+        dst[j++] = base64_digs[src[i]>>2];
+        dst[j++] = base64_digs[((src[i]<<4) & 0x30) | src[i+1]>>4];
+        dst[j++] = base64_digs[((src[i+1]<<2) & 0x3c) | src[i+2]>>6];
+        dst[j++] = base64_digs[src[i+2] & 0x3f];
+    }
+    if(i == len-1){
+        dst[j++] = base64_digs[src[i]>>2];
+        dst[j++] = base64_digs[(src[i]<<4) & 0x30];
+        dst[j++] = '=';
+        dst[j++] = '=';
+    }else if(i == len-2){
+        dst[j++] = base64_digs[src[i]>>2];
+        dst[j++] = base64_digs[((src[i]<<4) & 0x30) | src[i+1]>>4];
+        dst[j++] = base64_digs[(src[i+1]<<2) & 0x3c];
+        dst[j++] = '=';
+    }
+    dst[j++] = 0;
+}
+
 uint64_t getutime(){
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    return tv.tv_sec * 1000000 + tv.tv_usec;
+    return tv.tv_sec * 1000000ull + tv.tv_usec;
+}
+
+uint32_t getmtime(){
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+    return (tv.tv_sec * 1000ull + tv.tv_usec/1000)&0xFFFFFFFF;
+}
+
+void sighandle(int signum){
+    fflush(stdout);
+    exit(1);
+}
+
+void* p_malloc(size_t size){
+    void *ptr = malloc(size + PRIOR_HEAD);
+    if(ptr == NULL)
+        return ptr;
+    ptr += PRIOR_HEAD;
+    *(unsigned char *)(ptr-1) = PRIOR_HEAD;
+    return ptr;
+}
+
+void p_free(void* ptr){
+    if(ptr == NULL)
+        return;
+    unsigned char prior = *(unsigned char*)(ptr-1);
+    return free(ptr-prior);
+}
+
+void *p_move( void *ptr, signed char len ){
+    unsigned char prior = *(unsigned char*)(ptr-1);
+    prior += len;
+    assert(prior >= 1);
+    ptr += len;
+    *(unsigned char *)(ptr-1) = prior;
+    return ptr; 
 }
 
 #ifndef __ANDROID__

@@ -7,31 +7,44 @@
 int cgimain(int fd){
     ssize_t readlen;
     char buff[CGI_LEN_MAX];
+    HttpReqHeader *req;
+    std::map<std::string, std::string> params;
     while((readlen = read(fd, buff, sizeof(CGI_Header)))>0){
         CGI_Header *header = (CGI_Header *)buff;
         readlen += read(fd, buff + readlen, ntohs(header->contentLength));
         if(header->type == CGI_REQUEST){
-            HttpReqHeader req(header);
-            auto &&params = getparams(req);
-            auto &&cookies = getcookies(req);
+            req = new HttpReqHeader(header);
+        }else if(header->type == CGI_DATA){
+            auto param = getparamsmap((char *)(header+1), ntohs(header->contentLength));
+            params.insert(param.begin(), param.end());
+        }
+        if(header->flag & CGI_FLAG_END){
+            auto param = getparamsmap(req->getparamstring());
+            params.insert(param.begin(), param.end());
+            
+            auto cookies = req->getcookies();
             HttpResHeader res(H200);
-            res.cgi_id = req.cgi_id;
+            res.add("Content-Type", "text/plain; charset=utf-8");
+            res.cgi_id = req->cgi_id;
             Cookie cookie("haha", "haowan");
             addcookie(res, cookie);
             cookie.set("test10s", "test");
             cookie.path = "/";
             cookie.domain = ".choury.com";
+            cookie.maxage = 10;
             addcookie(res, cookie);
-            write(fd, buff, sizeof(CGI_Header) + res.getcgi(buff));
+            cgi_response(fd, res);
             for(auto i:params){
                 char buff[1024];
                 cgi_write(fd,res.cgi_id, buff, sprintf(buff, "%s =====> %s\n", i.first.c_str(), i.second.c_str()));
-            }
+            }/*
             for(auto i:cookies){
                 char buff[1024];
                 cgi_write(fd,res.cgi_id, buff, sprintf(buff, "%s =====> %s\n", i.first.c_str(), i.second.c_str()));
-            }
+            }*/
             cgi_write(fd,res.cgi_id, "", 0);
+            params.clear();
+            delete req;
         }
     }
     return 0;

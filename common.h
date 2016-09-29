@@ -8,22 +8,16 @@
 #include <arpa/inet.h>
 #include <sys/epoll.h>
 
-//#define DEBUG
-
-extern uint16_t SPORT;
-extern uint16_t CPORT;
-
-extern char SHOST[];
 
 #define Min(x, y) ((int64_t)(x) < (int64_t)(y)?(x):(y))
+#define Max(x, y) ((int64_t)(x) > (int64_t)(y)?(x):(y))
 
 #define DOMAINLIMIT   256
 #define HEADLENLIMIT  8192
 #define URLLIMIT      4096
 
-#define MISCERRTIP  "HTTP/1.0 500 Internal Server Error" CRLF\
-                    "Content-Length: 37" CRLF CRLF\
-                    "The proxy server met a Internal error"
+#define BUF_LEN       16384
+
 
 #ifdef __ANDROID__
 
@@ -36,25 +30,22 @@ extern char SHOST[];
 
 #else
 #define  LOGOUT(...) fprintf(stderr, __VA_ARGS__)
-#ifndef DEBUG
-#define  LOG(...)  syslog(LOG_INFO, __VA_ARGS__)
+#define  LOG(...)    do{ \
+                        if(daemon_mode) \
+                            syslog(LOG_INFO, __VA_ARGS__); \
+                        else \
+                            fprintf(stdout, __VA_ARGS__); \
+                     }while(0)
 #define  LOGE(...)   do{\
                         char tmp[1024]; \
                         sprintf(tmp, __VA_ARGS__); \
-                        syslog(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
-                     }while(0);
-#define NDEBUG
-#else
-#define  LOG(...)  fprintf(stdout, __VA_ARGS__)
-#define  LOGE(...)   do{\
-                        char tmp[1024]; \
-                        sprintf(tmp, __VA_ARGS__); \
-                        fprintf(stderr, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
-                     }while(0);
-#endif
+                        if(daemon_mode) \
+                            syslog(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
+                        else \
+                            fprintf(stderr, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
+                     }while(0)
 #endif
 
-#include <assert.h>
 
 #ifdef  __cplusplus
 extern "C" {
@@ -130,19 +121,39 @@ do {\
 #define WRITE_ERR           36
 #define INTERNAL_ERR        37
 #define PEER_LOST_ERR       38
+#define IP_BLOCK_ERR        39
 
 typedef unsigned char uchar;
+
+typedef enum{TCP=SOCK_STREAM, UDP=SOCK_DGRAM}Protocol;
+
 char* strnstr(const char* s1, const char* s2, size_t len);
 int endwith(const char *s1, const char *s2);
-int URLEncode(const char* src, char *des);
-int URLDecode(const char* src, char *des);
-void hosttick();
-void dnstick();
-void proxy2tick();
-void flushproxy2();
+int spliturl(const char* url, char *protocol, char* host, char* path , uint16_t* port);
+
+int URLEncode(char *des,const char* src, size_t len);
+int URLDecode(char *des,const char* src, size_t len);
+void Base64Encode(const char *src, size_t len, char *dst);
+
 uint64_t getutime();
+uint32_t getmtime();
+
+void sighandle(int signum);
 void dump_trace();
-int showstatus(char *buff, const char *command);
+
+void* p_malloc(size_t size);
+void p_free(void *ptr);
+void *p_move(void *ptr, signed char len);
+
+void add_tick_func(void (*func)(void *), void *arg);
+void del_tick_func(void (*func)(void *), void *arg);
+void tick();
+
+extern char SHOST[];
+extern uint16_t SPORT;
+extern Protocol SPROT;
+extern char *auth_string;
+extern int daemon_mode;
 
 #ifdef  __cplusplus
 }

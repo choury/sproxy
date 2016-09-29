@@ -1,33 +1,30 @@
 #ifndef GUEST_H__
 #define GUEST_H__
 
-#include "peer.h"
+#include "requester.h"
 #include "http.h"
 #include <netinet/in.h>
 
-class Guest:public Peer, public HttpRes{
+class Guest:public Requester, public HttpRes{
 protected:
-    char sourceip[INET6_ADDRSTRLEN];
-    uint16_t  sourceport;
+    Responser* responser_ptr;
 
-    virtual int showerrinfo(int ret, const char *)override;
-    virtual void defaultHE(uint32_t events);
-    virtual void closeHE(uint32_t events)override;
+    virtual void defaultHE(uint32_t events)override;
     
     virtual ssize_t Read(void* buff, size_t len)override;
     virtual void ErrProc(int errcode)override;
     virtual void ReqProc(HttpReqHeader &req)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
 public:
-#define ISCONNECT_F     1
-#define ISCHUNKED_F     2
-    char flag;
+    using Peer::Write;
     explicit Guest(int fd, struct sockaddr_in6 *myaddr);
-    explicit Guest(const Guest *const copy);
-    virtual ~Guest();
-    virtual ssize_t Write(const void* buff, size_t size, Peer* who, uint32_t id=0)override;
-    virtual void Response(HttpResHeader& res, Peer* who);
-    virtual int showstatus(char *buff, Peer* who)override;
+
+    virtual void ResetResponser(Responser *r)override;
+    virtual void discard()override;
+    virtual int showerrinfo(int ret, const char *)override;
+    virtual ssize_t Write(void* buff, size_t size, Peer* who, uint32_t id=0)override;
+    virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
+    virtual void response(HttpResHeader& res);
 };
 
 #endif

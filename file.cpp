@@ -1,5 +1,6 @@
 #include "file.h"
 #include "net.h"
+#include "requester.h"
 
 #include <vector>
 
@@ -8,32 +9,34 @@
 #include <string.h>
 #include <sys/eventfd.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 
 
 using std::vector;
 using std::pair;
 
 
+std::map<std::string, File *> filemap;
 
 
-Range::Range(const char *range){
-    if(range == nullptr) {
+Ranges::Ranges(const char *range_str){
+    if(range_str == nullptr) {
         return;
     }
-    if(strncasecmp(range,"bytes=",6) != 0) {
+    if(strncasecmp(range_str,"bytes=",6) != 0) {
         throw 0;
     }
-    range += 6;
+    range_str += 6;
     enum{start,testtail,first,testsecond,second}status=start;
     ssize_t begin,end;
     while (1){
         switch (status){
         case start:
             begin = end = -1;
-            if (*range == '-') {
-                range ++;
+            if (*range_str == '-') {
+                range_str ++;
                 status = testtail;
-            } else if (isdigit(*range)) {
+            } else if (isdigit(*range_str)) {
                 begin = 0;
                 status = first;
             } else {
@@ -41,7 +44,7 @@ Range::Range(const char *range){
             }
             break;
         case testtail:
-            if (isdigit(*range)) {
+            if (isdigit(*range_str)) {
                 end = 0;
                 status = second;
             } else {
@@ -49,42 +52,42 @@ Range::Range(const char *range){
             }
             break;
         case first:
-            if (*range == '-' ) {
-                range ++;
+            if (*range_str == '-' ) {
+                range_str ++;
                 status = testsecond;
-            } else if (isdigit(*range)) {
+            } else if (isdigit(*range_str)) {
                 begin *= 10;
-                begin += *range - '0';
-                range ++;
+                begin += *range_str - '0';
+                range_str ++;
             } else {
                 throw 0;
             }
             break;
         case testsecond:
-            if (*range == 0) {
+            if (*range_str == 0) {
                 add(begin,end);
                 return;
-            } else if (*range == ',') {
+            } else if (*range_str == ',') {
                 add(begin,end);
-                range ++;
+                range_str ++;
                 status = start;
-            } else if(isdigit(*range)) {
+            } else if(isdigit(*range_str)) {
                 end = 0;
                 status = second;
             }
             break;
         case second:
-            if (*range == 0) {
+            if (*range_str == 0) {
                 add(begin,end);
                 return;
-            } else if (*range == ',') {
+            } else if (*range_str == ',') {
                 add(begin,end);
-                range ++;
+                range_str ++;
                 status = start;
-            } else if (isdigit(*range)){
+            } else if (isdigit(*range_str)){
                 end *= 10 ;
-                end += *range - '0';
-                range ++;
+                end += *range_str - '0';
+                range_str ++;
             } else {
                 throw 0;
             }
@@ -93,189 +96,215 @@ Range::Range(const char *range){
     }
 }
 
-void Range::add(ssize_t begin, ssize_t end) {
-    ranges.push_back(std::make_pair(begin,end));
+void Ranges::add(ssize_t begin, ssize_t end) {
+    rgs.push_back(range{begin,end});
 }
 
-size_t Range::size() {
-    return ranges.size();
+size_t Ranges::size() {
+    return rgs.size();
 }
 
 
-bool Range::calcu(size_t size) {
-    for (size_t i=0;i < ranges.size();++i){
-        if (ranges[i].first > (ssize_t)size-1) {
+bool Ranges::calcu(size_t size) {
+    for (size_t i=0;i < rgs.size();++i){
+        if (rgs[i].begin > (ssize_t)size-1) {
             return false;
         }
-        if (ranges[i].first < 0) {
-            if (ranges[i].second == 0) {
+        if (rgs[i].begin < 0) {
+            if (rgs[i].end == 0) {
                 return false;
             }
-            ranges[i].first  = (int)size-ranges[i].second < 0 ? 0 : size-ranges[i].second;
-            ranges[i].second = size-1;
+            rgs[i].begin  = (int)size-rgs[i].end < 0 ? 0 : size-rgs[i].end;
+            rgs[i].end = size-1;
         }
-        if (ranges[i].second < 0) {
-            ranges[i].second = size-1;
+        if (rgs[i].end < 0) {
+            rgs[i].end = size-1;
         }
-        if (ranges[i].first > ranges[i].second) {
-            ranges[i].first = 0;
-            ranges[i].second = size-1;
+        if (rgs[i].begin > rgs[i].end) {
+            rgs[i].begin = 0;
+            rgs[i].end = size-1;
         }
     }
     return true;
 }
 
 
-File::File(HttpReqHeader &req, Guest* guest):req(req), range(req.get("Range")) {
-    connect(guest, this);
-    fd = eventfd(1, O_NONBLOCK);
-    snprintf(filename, sizeof(filename), "%s", req.filename);
+File::File(HttpReqHeader& req) {
+    struct stat st;
+    const char *errinfo = nullptr;
+    Requester *requester = dynamic_cast<Requester *>(req.src);
+    if (stat(req.filename, &st)) {
+        LOGE("get file info failed: %m\n");
+        errinfo = H404;
+        goto err;
+    }
+    if (S_ISREG(st.st_mode)) {
+        int ffd = open(req.filename, O_RDONLY);
+        if (ffd < 0) {
+            LOGE("open file failed: %m\n");
+            errinfo = H500;
+            goto err;
+        }
+        size = st.st_size;
+        mapptr = mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, ffd, 0);
+        if(mapptr == nullptr){
+            LOGE("mapptr file failed: %m\n");
+            errinfo = H500;
+            close(ffd);
+            goto err;
+        }
+        close(ffd);
+    }else{
+        errinfo = H404;
+        goto err;
+    }
 
-    handleEvent = (void (Con::*)(uint32_t))&File::openHE;
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN;
-    epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+    fd = eventfd(1, O_NONBLOCK);
+
+    handleEvent = (void (Con::*)(uint32_t))&File::defaultHE;
+    snprintf(filename, sizeof(filename), "%s", req.filename);
+    filemap[filename] = this;
+    return;
+err:
+    HttpResHeader res(errinfo);
+    res.http_id = req.http_id;
+    requester->response(res);
+    throw 0;
 }
 
 
-File* File::getfile(HttpReqHeader &req, Guest* guest) {
-    File* exist = dynamic_cast<File *>(queryconnect(guest));
-    if (exist) {
-        exist->clean(NOERROR, guest);
+File* File::getfile(HttpReqHeader &req) {
+    File *file;
+    if(filemap.count(req.filename)){
+        file = filemap[req.filename];
+        file->request(req);
+        return file;
+    }else{
+        try{
+            file = new File(req);
+            file->request(req);
+            return file;
+        }catch(...){
+            return nullptr;
+        }
     }
-    return new File(req, guest);
 }
 
 
 int File::showerrinfo(int ret, const char* s) {
     if (ret < 0 && errno != EAGAIN) {
-        LOGE("%s: %s\n", s, strerror(errno));
+        LOGE("%s: %m\n", s);
         return 1;
     }
     return 0;
 }
 
-void File::openHE(uint32_t events) {
-    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
-    if (guest == NULL) {
-        goto err;
-    }
-    
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("file unkown error: %s\n", strerror(errno));
-        goto err;
-    }
-    
-    struct stat st;
-    if (stat(filename, &st)) {
-        LOGE("get file info failed: %s\n", strerror(errno));
-        HttpResHeader res(H404);
-        guest->Response(res, this);
-        guest->Write(wbuff, 0, this);
-        goto err;
-    }
-    if (S_ISREG(st.st_mode)) {
-        ffd = open(filename, O_RDONLY);
-        if (ffd < 0) {
-            LOGE("open file failed: %s\n", strerror(errno));
-            guest->Write(MISCERRTIP, strlen(MISCERRTIP), this);
-            goto err;
+void File::request(HttpReqHeader& req) {
+    Requester *requester = dynamic_cast<Requester *>(req.src);
+    try{
+        Ranges ranges(req.get("Range"));
+        range rg;
+        if (ranges.size() == 1 && ranges.calcu(size)){
+            rg = ranges.rgs[0];
+        } else if(ranges.size()){
+            HttpResHeader res(H416, this);
+            char buff[100];
+            snprintf(buff, sizeof(buff), "bytes */%lu", size);
+            res.add("Content-Range", buff);
+            res.http_id = req.http_id;
+            requester->response(res);
+            return;
         }
-        Range range(req.get("Range"));
-        if(range.size() == 0){
-            HttpResHeader res(H200);
-            leftsize = st.st_size;
-            snprintf((char *)wbuff, sizeof(wbuff), "%u", leftsize);
-            res.add("Content-Length", (char *)wbuff);
-            guest->Response(res, this);
-        } else if (range.size() == 1 && range.calcu(st.st_size)){
-            if(lseek(ffd,range.ranges[0].first,SEEK_SET)<0){
-                LOGE("lseek file failed: %s\n", strerror(errno));
-                guest->Write(MISCERRTIP, strlen(MISCERRTIP), this);
-                throw 0;
-            }
-            HttpResHeader res(H206);
-            leftsize = range.ranges[0].second - range.ranges[0].first+1;
-            snprintf((char *)wbuff, sizeof(wbuff), "bytes %lu-%lu/%lu", 
-                     range.ranges[0].first, range.ranges[0].second, st.st_size);
-            res.add("Content-Range",(char *)wbuff);
-            snprintf((char *)wbuff, sizeof(wbuff), "%u", leftsize);
-            res.add("Content-Length", (char *)wbuff);
-            guest->Response(res, this);
-        } else {
-            HttpResHeader res(H416);
-            snprintf((char *)wbuff, sizeof(wbuff), "bytes */%lu", st.st_size);
-            res.add("Content-Range", (char *)wbuff);
-            guest->Response(res, this);
+        if(ranges.size()){
+            HttpResHeader res(H206, this);
+            char buff[100];
+            snprintf(buff, sizeof(buff), "bytes %lu-%lu/%lu",
+                     rg.begin, rg.end, size);
+            res.add("Content-Range", buff);
+            size_t leftsize = rg.end - rg.begin+1;
+            res.add("Content-Length", leftsize);
+            res.http_id = req.http_id;
+            requester->response(res);
+        }else{
+            rg.begin = 0;
+            rg.end = size - 1;
+            HttpResHeader res(H200, this);
+            res.add("Content-Length", size);
+            res.http_id = req.http_id;
+            requester->response(res);
         }
-    } else if (S_ISDIR(st.st_mode)) {
-        strcat(filename, "/index.html");
-        openHE(events);
+        updateEpoll(EPOLLIN);
+        reqs.push_back(std::make_pair(req, rg));
+    }catch(...){
+        HttpResHeader res(H400, this);
+        res.http_id = req.http_id;
+        requester->response(res);
     }
-    handleEvent = (void (Con::*)(uint32_t))&File::defaultHE;
-    return;
-err:
-    clean(INTERNAL_ERR, this);
     return;
 }
 
 
 void File::defaultHE(uint32_t events) {
-    struct epoll_event event;
-    event.data.ptr = this;
-    Guest *guest = dynamic_cast<Guest *>(queryconnect(this));
-    if (guest == NULL) {
-        clean(PEER_LOST_ERR, this);
+    if(reqs.empty()){
+        updateEpoll(0);
         return;
     }
-    
+
     if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("file unkown error: %s\n", strerror(errno));
+        int       error = 0;
+        socklen_t errlen = sizeof(error);
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
+            LOGE("file unkown error: %s\n", strerror(error));
+        }
         clean(INTERNAL_ERR, this);
         return;
     }
-    
+
     if (events & EPOLLIN) {
-        if (leftsize == 0) {
-            guest->Write(wbuff, 0, this);
-            return;
+        bool allfull = true;
+        for(auto i = reqs.begin();i!=reqs.end();){
+            HttpReqHeader &req = i->first;
+            range& rg = i->second;
+            Requester *requester = dynamic_cast<Requester *>(req.src);
+            if (requester == NULL) {
+                i = reqs.erase(i);
+                continue;
+            }
+            if (rg.begin > rg.end) {
+                requester->Write((const void*)nullptr, 0, this, req.http_id);
+                i = reqs.erase(i);
+                continue;
+            }
+            int len = Min(requester->bufleft(this), rg.end - rg.begin + 1);
+            if (len <= 0) {
+                LOGE("The requester's write buff is full\n");
+                requester->wait(this);
+                i++;
+                continue;
+            }
+            allfull = false;
+            len = requester->Write((const char *)mapptr+rg.begin, len, this, req.http_id);
+            rg.begin += len;
+            i++;
         }
-        if(wbuffof < writelen){
-            int len = Min(guest->bufleft(this), writelen-wbuffof);
-            if (len <= 0) {
-                LOGE("The guest's write buff is full\n");
-                guest->wait(this);
-                return;
-            }
-            len = guest->Write(wbuff + wbuffof, len, this);
-            wbuffof  += len;
-            leftsize -= len;
-        }else{
-            int len = Min(sizeof(wbuff), leftsize);
-            len = read(ffd, wbuff, len);
-            if (len <= 0) {
-                if (showerrinfo(len, "file read error")) {
-                    clean(READ_ERR, this);
-                }
-                return;
-            }
-            wbuffof  = 0;
-            writelen = len;
+        if(!allfull){
+            updateEpoll(EPOLLIN);
         }
     }
     if (events & EPOLLOUT) {
-        event.events = EPOLLIN;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        updateEpoll(EPOLLIN);
     }
-    
 }
 
+void File::clean(uint32_t errcode, Peer* who, uint32_t id){
+    if(who == this)
+        return Peer::clean(errcode, who, id);
+}
 
-void File::closeHE(uint32_t events) {
-    if (ffd > 0) {
-        close(ffd);
+File::~File() {
+    if (mapptr) {
+        munmap(mapptr, size);
     }
-    delete this;
+    filemap.erase(filename);
 }
 

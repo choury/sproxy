@@ -4,7 +4,6 @@
 #include <map>
 
 #include <stdint.h>
-#include <stdlib.h>
 #include <assert.h>
 #include <string.h>
 
@@ -819,17 +818,17 @@ Index_table::~Index_table()
 }
 
 
-mulmap< std::string, std::string > Index_table::hpack_decode(const char* s, int len) {
+std::multimap< istring, std::string > Index_table::hpack_decode(const char* s, int len) {
     if(!hpack_inited)
         init_hpack();
     int i = 0;
-    mulmap<std::string, std::string> headers;
+    std::multimap<istring, std::string> headers;
     while(i < len) {
         if(s[i] & 0x80) {
             uint index;
             i += integer_decode(s+i, 7, &index);
             const Index *value = getvalue(index);
-            headers.insert(value->name, value->value);
+            headers.insert(std::make_pair(value->name, value->value));
         }else if(s[i] & 0x40) {
             uint index;
             i += integer_decode(s+i, 6, &index);
@@ -840,7 +839,7 @@ mulmap< std::string, std::string > Index_table::hpack_decode(const char* s, int 
                 i += literal_decode(s+i, name);
             }
             i += literal_decode(s+i, value);
-            headers.insert(name, value);
+            headers.insert(std::make_pair(name, value));
             add_dynamic_table(name, value);
         }else if(s[i] & 0x20) {
             uint size;
@@ -856,7 +855,7 @@ mulmap< std::string, std::string > Index_table::hpack_decode(const char* s, int 
                 i += literal_decode(s+i, name);
             }
             i += literal_decode(s+i, value);
-            headers.insert(name, value);
+            headers.insert(std::make_pair(name, value));
         }
     }
     evict_dynamic_table();
@@ -890,9 +889,11 @@ int Index_table::hpack_encode(char* buf, const char* Name, const char* value) {
     return buf - buf_begin;
 }
 
-int Index_table::hpack_encode(char *buf, mulmap<std::string, std::string> headers) {
+int Index_table::hpack_encode(char *buf, std::map<istring, std::string> headers) {
     char *buf_begin = buf;
     for(auto i:headers) {
+        if(i.first ==  "Host")
+            continue;
         buf += hpack_encode(buf, i.first.c_str(), i.second.c_str());
     }
     evict_dynamic_table();

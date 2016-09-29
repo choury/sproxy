@@ -2,66 +2,80 @@
 #define PARSE_H__
 
 #include "common.h"
-#include "binmap.h"
+#include "istring.h"
 
-#include <string>
-
-using std::string;
-
+#include <map>
+#include <set>
 
 class Index_table;
+struct Http2_header;
 struct CGI_Header;
+class Object;
 
-class HttpReqHeader{
-    mulmap<string, string> headers;
+class HttpHeader{
+protected:
+    std::map<istring, std::string> headers;
 public:
+    Object* src;
+    std::set<std::string> cookies;
     uint32_t http_id = 0;  // 由http2协议使用
     uint32_t cgi_id = 0;   // 由cgi 协议使用
     uint8_t flags = 0;
+    bool should_proxy  = false;
+
+    explicit HttpHeader(Object* src);
+    void add(const istring& header, const std::string& value);
+    void add(const istring& header, int value);
+    void append(const istring& header, const std::string& value);
+    void del(const istring& header);
+    const char* get(const char *header) const;
+
+    virtual bool no_left() const = 0;
+    virtual char *getstring(size_t &len) const = 0;
+    virtual Http2_header *getframe(Index_table *index_table) const = 0;
+    virtual CGI_Header *getcgi() const = 0;
+    virtual ~HttpHeader(){}
+};
+
+class HttpReqHeader: public HttpHeader{
+    void getfile();
+public:
     char method[20];
     char url[URLLIMIT];
+    char protocol[DOMAINLIMIT];
     char hostname[DOMAINLIMIT];
     char path[URLLIMIT];
     char filename[URLLIMIT];
     uint16_t port;
-    explicit HttpReqHeader(const char* header = nullptr);
-    explicit HttpReqHeader(mulmap<string, string>&& headers);
-    explicit HttpReqHeader(CGI_Header *headers);
-    void getfile();
-    bool ismethod(const char* method);
-    void add(const char *header, const char *value);
-    void del(const char *header);
-    const char* get(const char *header) const;
-    std::set<string> getall(const char *header) const;
+    explicit HttpReqHeader(const char* header = nullptr,  Object* src = nullptr);
+    explicit HttpReqHeader(std::multimap<istring, std::string>&& headers, Object* src = nullptr);
+    explicit HttpReqHeader(CGI_Header *headers, Object* src = nullptr);
+    bool ismethod(const char* method) const;
     
-    int getstring(void* outbuff); 
-    int getframe(void* outbuff, Index_table *index_table);
-    int getcgi(void *outbuff);
+    virtual bool no_left() const override;
+    virtual char *getstring(size_t &len) const override;
+    virtual Http2_header *getframe(Index_table *index_table) const override;
+    virtual CGI_Header *getcgi() const override;
+    
+    std::map<std::string, std::string> getcookies()const;
+    const char* getparamstring()const;
 };
 
-class HttpResHeader{
-    mulmap<string, string> headers;
+class HttpResHeader: public HttpHeader{
 public:
-    uint32_t http_id = 0;  // 由http2协议使用
-    uint32_t cgi_id = 0;   // 由cgi 协议使用
-    uint8_t flags = 0;
     char status[100];
-    explicit HttpResHeader(const char* header);
-    explicit HttpResHeader(mulmap<string, string>&& headers);
-    explicit HttpResHeader(CGI_Header *headers);
+    explicit HttpResHeader(const char* header, Object* src = nullptr);
+    explicit HttpResHeader(std::multimap<istring, std::string>&& headers, Object* src = nullptr);
+    explicit HttpResHeader(CGI_Header *headers, Object* src = nullptr);
     
-    void add(const char *header, const char *value);
-    void del(const char *header);
-    const char* get(const char *header) const;
-    std::set<string> getall(const char *header) const;
-
-    int getstring(void* outbuff);
-    int getframe(void* outbuff, Index_table *index_table);
-    int getcgi(void* outbuff);
+    virtual bool no_left() const override;
+    virtual char *getstring(size_t &len) const override;
+    virtual Http2_header *getframe(Index_table *index_table) const override;
+    virtual CGI_Header *getcgi() const override;
 };
 
 // trim from start
-static inline string& ltrim(std::string && s) {
+static inline std::string& ltrim(std::string && s) {
     s.erase(0, s.find_first_not_of(" "));
     return s;
 }
@@ -70,18 +84,19 @@ static inline string& ltrim(std::string && s) {
 extern "C" {
 #endif
 
-typedef int (cgifunc)(int fd);
-cgifunc cgimain;
 
+void loadsites();
 void addpsite(const char * host);
 void addbsite(const char * host);
+void addauth(const char * ip);
 int delpsite(const char * host);
 int delbsite(const char * host);
 int globalproxy();
 bool checkproxy(const char *hostname);
 bool checkblock(const char *hostname);
-char *cgi_addnv(char *p, const string &name, const string &value);
-char *cgi_getnv(char *p, string &name, string &value);
+void addlocal(const char *hostname);
+bool checklocal(const char *hostname);
+bool checkauth(const char *ip);
 
 #ifdef  __cplusplus
 }

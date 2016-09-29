@@ -29,6 +29,7 @@
  * TLS handshake and RFC4366.
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h> /* strncpy() */
 #include "tls.h"
 #include "common.h"
@@ -74,20 +75,20 @@ int parse_tls_header(const char *data, size_t data_len, char **hostname) {
      * See RFC5246 Appendix E.2
      */
     if (data[0] & 0x80 && data[2] == 1) {
-        LOGE("Received SSL 2.0 Client Hello which can not support SNI.");
+        LOGE("Received SSL 2.0 Client Hello which can not support SNI.\n");
         return -2;
     }
 
     tls_content_type = data[0];
     if (tls_content_type != TLS_HANDSHAKE_CONTENT_TYPE) {
-        LOGE("Request did not begin with TLS handshake.");
+        LOGE("Request did not begin with TLS handshake.\n");
         return -5;
     }
 
     tls_version_major = data[1];
     tls_version_minor = data[2];
     if (tls_version_major < 3) {
-        LOGE("Received SSL %d.%d handshake which which can not support SNI.",
+        LOGE("Received SSL %d.%d handshake which which can not support SNI.\n",
               tls_version_major, tls_version_minor);
 
         return -2;
@@ -109,7 +110,7 @@ int parse_tls_header(const char *data, size_t data_len, char **hostname) {
         return -5;
     }
     if (data[pos] != TLS_HANDSHAKE_TYPE_CLIENT_HELLO) {
-        LOGE("Not a client hello");
+        LOGE("Not a client hello\n");
 
         return -5;
     }
@@ -142,7 +143,7 @@ int parse_tls_header(const char *data, size_t data_len, char **hostname) {
     pos += 1 + len;
 
     if (pos == data_len && tls_version_major == 3 && tls_version_minor == 0) {
-        LOGE("Received SSL 3.0 handshake without extensions");
+        LOGE("Received SSL 3.0 handshake without extensions\n");
         return -2;
     }
 
@@ -202,7 +203,7 @@ parse_server_name_extension(const char *data, size_t data_len,
             case 0x00: /* host_name */
                 *hostname = malloc(len + 1);
                 if (*hostname == NULL) {
-                    LOGE("malloc() failure");
+                    LOGE("malloc() failure\n");
                     return -4;
                 }
 
@@ -212,7 +213,7 @@ parse_server_name_extension(const char *data, size_t data_len,
 
                 return len;
             default:
-                LOGE("Unknown server name extension name type: %d",
+                LOGE("Unknown server name extension name type: %d\n",
                       data[pos]);
         }
         pos += 3 + len;

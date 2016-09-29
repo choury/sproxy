@@ -1,8 +1,7 @@
 #ifndef CGI_H__
 #define CGI_H__
 
-#include "peer.h"
-#include "guest.h"
+#include "responser.h"
 #include "parse.h"
 #include "binmap.h"
 
@@ -14,13 +13,14 @@
 #define CGI_DATA          3
 #define CGI_VALUE         4
 
-#define CGI_LEN_MAX       (65536 - sizeof(CGI_Header))
+#define CGI_LEN_MAX       (BUF_LEN - sizeof(CGI_Header))
 
 struct CGI_Header{
     uint8_t type;
 #define CGI_FLAG_ACK      1
+#define CGI_FLAG_END      2
     uint8_t flag;
-    uint16_t contentLength; //最大65536 - 8
+    uint16_t contentLength; //最大65536 - 8 (实际是BUF_LEN - 8)
     uint32_t requestId;
 }__attribute__((packed));
 
@@ -36,19 +36,17 @@ struct CGI_NameValue{
     uint32_t value;
 }__attribute__((packed));
 
-class Cgi:public Peer{
+class Requester;
+
+class Cgi:public Responser{
     char filename[URLLIMIT];
-    char cgi_buff[CGI_LEN_MAX];
+    char cgi_buff[BUF_LEN];
     size_t cgi_getlen  = 0;
     size_t cgi_outlen  = 0;
-    size_t dataleft = 0;
-    size_t frameleft = 0;
     uint32_t curid = 1;
-    binmap<std::pair<Guest *, uint32_t>, uint32_t> idmap;
+    binmap<std::pair<Requester *, uint32_t>, uint32_t> idmap;
     std::set<Peer *> waitlist;
-    std::list<CGI_Header *> framequeue;
     virtual void defaultHE(uint32_t events);
-    virtual void closeHE(uint32_t events)override;
     enum {WaitHeadr,
           WaitBody,
           HandleRes,
@@ -56,18 +54,16 @@ class Cgi:public Peer{
           HandleData,
           HandleLeft
     }status = WaitHeadr;
-    CGI_Header* SendFrame( const CGI_Header *header, size_t addlen );
     void InProc();
-    int  OutProc();
-    void Request(HttpReqHeader &req,Guest *guest);
 public:
-    Cgi(const char *filename);
+    Cgi(HttpReqHeader& req);
     virtual ~Cgi();
-    virtual ssize_t Write(const void *buff, size_t size, Peer* who, uint32_t id=0)override;
+    virtual ssize_t Write(void *buff, size_t size, Peer* who, uint32_t id=0)override;
     virtual void wait(Peer *who)override;
     virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
     virtual int showerrinfo(int ret,const char *s)override;
-    static Cgi *getcgi(HttpReqHeader &req, Guest *guest);
+    virtual void request(HttpReqHeader &req)override;
+    static Cgi* getcgi(HttpReqHeader &req);
 };
 
 class Cookie{
@@ -86,12 +82,15 @@ public:
 
 void flushcgi();
 
-std::map<std::string, std::string> getparams(const HttpReqHeader &req);
-std::map<std::string, std::string> getcookies(const HttpReqHeader &req);
+std::map<std::string, std::string> getparamsmap(const char *param, size_t len);
+std::map<std::string, std::string> getparamsmap(const char *param);
 void addcookie(HttpResHeader &res, const Cookie &cookie);
 #ifdef  __cplusplus
 extern "C" {
 #endif
+typedef int (cgifunc)(int fd);
+cgifunc cgimain;
+int cgi_response(int fd, const HttpResHeader &req);
 int cgi_write(int fd, uint32_t id, const void *buff, size_t len);
 #ifdef  __cplusplus
 }

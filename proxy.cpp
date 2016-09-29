@@ -2,36 +2,35 @@
 #include "proxy2.h"
 
 #include <openssl/err.h>
+#include "requester.h"
+#include "dtls.h"
+
 
 extern std::map<Host*,time_t> connectmap;
 
-Proxy::Proxy(HttpReqHeader &req, Guest *guest):Host(req, guest, SHOST, SPORT) {}
+Proxy::Proxy(const char* hostname, uint16_t port, Protocol protocol): Host(hostname, port, protocol) {
 
-Proxy::Proxy(Proxy *const copy):Host(copy->fd), ssl(copy->ssl), ctx(copy->ctx) {
-    copy->fd  = 0;
-    copy->ssl = nullptr;
-    copy->ctx = nullptr;
-    copy->clean(NOERROR, queryconnect(copy));
 }
 
-
-Host* Proxy::getproxy(HttpReqHeader &req, Guest* guest) {
-    Host *exist = (Host *)queryconnect(guest);
-    if (dynamic_cast<Proxy*>(exist)) {
-        exist->Request(guest, req, true);
-        return exist;
+Responser* Proxy::getproxy(HttpReqHeader &req, Responser* responser_ptr) {
+    Host *exist = dynamic_cast<Host *>(responser_ptr);
+    Proxy *proxy = dynamic_cast<Proxy *>(exist);
+    if (proxy) {
+        proxy->request(req);
+        return proxy;
     }
     
     if (exist) {
-        exist->clean(NOERROR, guest); //只有exist是host才会走到这里
+        exist->clean(NOERROR, nullptr); //只有exist是host才会走到这里
     }
     
     if (proxy2 && proxy2->bufleft(nullptr) >= 32 * 1024) {
-        proxy2->Request(guest, req, true);
+        proxy2->request(req);
         return proxy2;
     }
-
-    return new Proxy(req, guest);
+    proxy = new Proxy(SHOST, SPORT, SPROT);
+    proxy->request(req);
+    return proxy;
 }
 
 ssize_t Proxy::Read(void* buff, size_t size) {
@@ -45,17 +44,13 @@ ssize_t Proxy::Write(const void *buff, size_t size) {
 
 int Proxy::showerrinfo(int ret, const char* s) {
     if(ret <= 0){
-        epoll_event event;
-        event.data.ptr = this;
         int error = SSL_get_error(ssl, ret);
         switch (error) {
         case SSL_ERROR_WANT_READ:
-            event.events = EPOLLIN;
-            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            updateEpoll(EPOLLIN);
             return 0;
         case SSL_ERROR_WANT_WRITE:
-            event.events = EPOLLIN|EPOLLOUT;
-            epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+            updateEpoll(EPOLLIN | EPOLLOUT);
             return 0;
         case SSL_ERROR_ZERO_RETURN:
             break;
@@ -64,7 +59,7 @@ int Proxy::showerrinfo(int ret, const char* s) {
             if (error == 0 && ret == 0){
                 LOGE("%s: the connection was lost\n", s);
             }else if (error == 0 && ret == -1){
-                LOGE("%s:%s\n", s, strerror(errno));
+                LOGE("%s:%m\n", s);
             }else{
                 LOGE("%s:%s\n", s, ERR_error_string(error, NULL));
             }
@@ -86,13 +81,6 @@ static const unsigned char alpn_protos_string[] =
 
 
 void Proxy::waitconnectHE(uint32_t events) {
-    connectmap.erase(this);
-    Guest *guest = (Guest *)queryconnect(this);
-    if (guest == nullptr) {
-        destory();
-        return;
-    }
-    
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
@@ -102,53 +90,68 @@ void Proxy::waitconnectHE(uint32_t events) {
         }
         goto reconnect;
     }
-    
+
     if (events & EPOLLOUT) {
         int error;
         socklen_t len = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-            LOGE("proxy getsokopt error: %s\n", strerror(errno));
+            LOGE("proxy getsokopt error: %m\n");
             goto reconnect;
         }
-
+            
         if (error != 0) {
             LOGE("connect to proxy:%s\n", strerror(error));
             goto reconnect;
         }
-        ctx = SSL_CTX_new(SSLv23_client_method());
-
-        if (ctx == NULL) {
-            ERR_print_errors_fp(stderr);
-            goto reconnect;
+        if(protocol == TCP){
+            ctx = SSL_CTX_new(SSLv23_client_method());
+            if (ctx == NULL) {
+                ERR_print_errors_fp(stderr);
+                goto reconnect;
+            }
+            SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);  // 去除支持SSLv2 SSLv3
+            SSL_CTX_set_read_ahead(ctx, 1);
+            
+            ssl = SSL_new(ctx);
+            SSL_set_fd(ssl, fd);
+            SSL_set_tlsext_host_name(ssl, hostname);
+        }else{
+            ctx = SSL_CTX_new(DTLS_client_method());
+            if (ctx == NULL) {
+                ERR_print_errors_fp(stderr);
+                goto reconnect;
+            }
+            ssl = SSL_new(ctx);
+            BIO* bio = BIO_new_dgram(fd, BIO_CLOSE);
+            BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_CONNECTED, 0, &addrs[testedaddr-1]);
+            SSL_set_bio(ssl, bio, bio);
         }
-        SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);  // 去除支持SSLv2 SSLv3
+        
         if(proxy2 == nullptr)
-            SSL_CTX_set_alpn_protos(ctx, alpn_protos_string, sizeof(alpn_protos_string)-1);
-
-        ssl = SSL_new(ctx);
-        SSL_set_fd(ssl, fd);
-
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN | EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-
+            SSL_set_alpn_protos(ssl, alpn_protos_string, sizeof(alpn_protos_string)-1);
+        
+        updateEpoll(EPOLLIN | EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Proxy::shakehandHE;
     }
     return;
 reconnect:
     if (connect() < 0) {
-        destory();
+        clean(CONNECT_ERR, this);
     }
 }
 
 
 void Proxy::shakehandHE(uint32_t events) {
-    Guest *guest = (Guest *)queryconnect(this);
-    if (guest == nullptr) {
-        clean(PEER_LOST_ERR, this);
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        int       error = 0;
+        socklen_t errlen = sizeof(error);
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
+            LOGE("proxy unkown error: %s\n", strerror(error));
+        }
+        clean(SSL_SHAKEHAND_ERR, this);
         return;
     }
+
     if ((events & EPOLLIN) || (events & EPOLLOUT)) {
         int ret = SSL_connect(ssl);
         if (ret != 1) {
@@ -157,40 +160,50 @@ void Proxy::shakehandHE(uint32_t events) {
             }
             return;
         }
-
-        epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLIN |EPOLLOUT;
-        epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-        handleEvent = (void (Con::*)(uint32_t))&Proxy::defaultHE;
-        guest->writedcb(this);
         
         const unsigned char *data;
         unsigned int len;
         SSL_get0_alpn_selected(ssl, &data, &len);
         if (data && strncasecmp((const char*)data, "h2", len) == 0) {
-            Proxy2 *new_proxy = new Proxy2(this);
+            Proxy2 *new_proxy;
+            if(protocol == TCP){
+                new_proxy = new Proxy2(fd, ctx, new Ssl(ssl));
+            }else{
+                new_proxy = new Proxy2(fd, ctx, new Dtls(ssl));
+            }
             new_proxy->init();
-            new_proxy->Request(guest, req, true);
+            new_proxy->request(req);
             if(!proxy2){
                 proxy2 = new_proxy;
             }
-            delete this;
+            if(requester_ptr){
+                requester_ptr->ResetResponser(proxy2);
+            }
+            this->discard();
+            clean(NOERROR, nullptr);
+        }else{
+            assert(protocol != UDP);
+            updateEpoll(EPOLLIN | EPOLLOUT);
+            handleEvent = (void (Con::*)(uint32_t))&Proxy::defaultHE;
         }
+        connectmap.erase(this);
         return;
         
     }
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("proxy unkown error: %s\n", strerror(errno));
-        clean(SSL_SHAKEHAND_ERR, this);
-    }
 }
 
-int32_t Proxy::bufleft(Peer *){
-    if(handleEvent == &Proxy::defaultHE)
-        return Peer::bufleft(this);
-    return 0;
+void Proxy::request(HttpReqHeader& req)
+{
+    this->req = req;
+    return Host::request(req);
 }
+
+void Proxy::discard() {
+    ssl = nullptr;
+    ctx = nullptr;
+    Host::discard();
+}
+
 
 
 Proxy::~Proxy() {
@@ -198,12 +211,12 @@ Proxy::~Proxy() {
         SSL_shutdown(ssl);
         SSL_free(ssl);
     }
-
-    if (ctx) {
+    if (ctx){
         SSL_CTX_free(ctx);
     }
 }
 
+/*
 int Proxy::showstatus(char* buff, Peer*){
     int len;
     len = sprintf(buff, "%s ##(proxy)", req.url);
@@ -224,4 +237,4 @@ int Proxy::showstatus(char* buff, Peer*){
     len += sprintf(buff+len, " %s\r\n", status);
     return len;
 }
-
+*/

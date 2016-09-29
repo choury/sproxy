@@ -1,33 +1,37 @@
 #ifndef FILE_H__
 #define FILE_H__
 
-#include "guest.h"
+#include "responser.h"
 #include "parse.h"
-#include <vector>
+#include <list>
 
-class Range{
-    void add(ssize_t begin,ssize_t end);
+struct range{
+    ssize_t begin;
+    ssize_t end;
+};
+
+class Ranges{
+    void add(ssize_t begin, ssize_t end);
 public:
-    std::vector<std::pair<ssize_t,ssize_t>> ranges;
-    Range(const char *range);
+    std::vector<range> rgs;
+    Ranges(const char *range_str);
     size_t size();
     bool calcu(size_t size);
 };
 
-class File:public Peer{
-    int ffd = 0;
-    uint32_t leftsize;
-    uint32_t wbuffof = 0;
+class File:public Responser{
+    void * mapptr = nullptr;
+    size_t size;
     char filename[URLLIMIT];
-    HttpReqHeader req;
-    Range range;
-    virtual void openHE(uint32_t events);
+    std::list<std::pair<HttpReqHeader,range>> reqs;
     virtual void defaultHE(uint32_t events);
-    virtual void closeHE(uint32_t events)override;
 public:
-    File(HttpReqHeader &req, Guest* guest);
-    static File *getfile(HttpReqHeader &req, Guest *guest);
-    int showerrinfo(int ret, const char *s)override;
+    File(HttpReqHeader& req);
+    ~File();
+    virtual int showerrinfo(int ret, const char *s)override;
+    virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
+    void request(HttpReqHeader &req) override;
+    static File* getfile(HttpReqHeader &req);
 };
 
 #endif
