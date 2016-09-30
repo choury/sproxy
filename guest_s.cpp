@@ -94,7 +94,9 @@ void Guest_s::shakehandHE(uint32_t events) {
             const unsigned char *data;
             unsigned int len;
             SSL_get0_alpn_selected(ssl, &data, &len);
-            if (data && strncasecmp((const char*)data, "h2", len) == 0) {
+            if ((data && strncasecmp((const char*)data, "h2", len) == 0) ||
+                protocol == UDP)
+            {
                 if(protocol == TCP){
                     new Guest_s2(fd, sourceip, sourceport, new Ssl(ssl));
                 }else{

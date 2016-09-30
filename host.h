@@ -25,10 +25,11 @@ protected:
     virtual ssize_t DataProc(const void *buff, size_t size)override;
     static void Dnscallback(Host * host, const char *hostname, const Dns_rcd&&);
 public:
-    Requester* requester_ptr;
+    Requester* requester_ptr = nullptr;
     explicit Host(const char* hostname, uint16_t port, Protocol protocol);
     ~Host();
     
+    virtual void ResetRequester(Requester *r)override;
     virtual void discard()override;
     virtual int showerrinfo(int ret, const char *s)override;
     virtual void request(HttpReqHeader &req)override;

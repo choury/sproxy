@@ -113,7 +113,7 @@ void Proxy2::defaultHE(uint32_t events) {
 void Proxy2::DataProc(const Http2_header* header) {
     uint32_t id = get32(header->id);
     if(idmap.count(id)){
-        Peer *requester = idmap.at(id);
+        Requester *requester = idmap.at(id);
         int32_t len = get24(header->length);
         if(len > requester->localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
@@ -129,6 +129,7 @@ void Proxy2::DataProc(const Http2_header* header) {
                 requester->Write((const void*)nullptr, 0, this, id);
             }
             idmap.erase(id);
+            requester->ResetResponser(nullptr);
         }
         requester->localwinsize -= len; 
         localwinsize -= len;

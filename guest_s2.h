@@ -7,8 +7,8 @@
 #include "ssl_abstract.h"
 
 class Guest_s2: public Requester, public Http2Res{
-    uint32_t lastrecv  = 0;
-    binmap<Peer *, int> idmap;
+    uint32_t lastrecv ;
+    binmap<Responser *, int> idmap;
     std::set<Peer *> waitlist;
     Ssl *ssl;
 protected:
@@ -36,8 +36,7 @@ public:
     virtual int32_t bufleft(Peer*)override;
     virtual void wait(Peer *who)override;
     virtual void writedcb(Peer *who)override;
-    virtual int showerrinfo(int ret, const char *);
-//    virtual int showstatus(char *buff, Peer *who)override;
+    virtual int showerrinfo(int ret, const char *)override;
     void check_alive();
 };
 

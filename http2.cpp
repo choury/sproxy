@@ -263,7 +263,7 @@ void Http2Res::HeadersProc(Http2_header* header) {
 
 
 void Http2Req::init() {
-    int ret=Write(H2_PREFACE, strlen(H2_PREFACE));
+    int __attribute__((unused)) ret=Write(H2_PREFACE, strlen(H2_PREFACE));
     assert(ret == strlen(H2_PREFACE));
     SendInitSetting(); 
 }

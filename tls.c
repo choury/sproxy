@@ -59,7 +59,6 @@ int parse_tls_header(const char *data, size_t data_len, char **hostname) {
     char tls_version_major;
     char tls_version_minor;
     size_t pos = TLS_HEADER_LEN;
-    size_t len;
 
     if (hostname == NULL)
         return -3;
@@ -95,7 +94,7 @@ int parse_tls_header(const char *data, size_t data_len, char **hostname) {
     }
 
     /* TLS record length */
-    len = ((unsigned char)data[3] << 8) +
+    size_t len = ((unsigned char)data[3] << 8) +
         (unsigned char)data[4] + TLS_HEADER_LEN;
     data_len = Min(data_len, len);
 

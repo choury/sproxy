@@ -164,7 +164,9 @@ void Proxy::shakehandHE(uint32_t events) {
         const unsigned char *data;
         unsigned int len;
         SSL_get0_alpn_selected(ssl, &data, &len);
-        if (data && strncasecmp((const char*)data, "h2", len) == 0) {
+        if ((data && strncasecmp((const char*)data, "h2", len) == 0)||
+            protocol == UDP )
+        {
             Proxy2 *new_proxy;
             if(protocol == TCP){
                 new_proxy = new Proxy2(fd, ctx, new Ssl(ssl));
@@ -215,26 +217,3 @@ Proxy::~Proxy() {
         SSL_CTX_free(ctx);
     }
 }
-
-/*
-int Proxy::showstatus(char* buff, Peer*){
-    int len;
-    len = sprintf(buff, "%s ##(proxy)", req.url);
-    const char *status;
-    if(handleEvent ==  nullptr)
-        status = "Waiting dns";
-    else if(handleEvent == (void (Con::*)(uint32_t))&Proxy::waitconnectHE)
-        status = "connecting...";
-    else if(handleEvent == (void (Con::*)(uint32_t))&Proxy::shakehandHE)
-        status = "ssl shankhand";
-    else if(handleEvent == (void (Con::*)(uint32_t))&Proxy::defaultHE)
-        status = "transfer data";
-    else if(handleEvent == (void (Con::*)(uint32_t))&Proxy::closeHE)
-        status = "Waiting close";
-    else
-        status = "unkown status";
-    
-    len += sprintf(buff+len, " %s\r\n", status);
-    return len;
-}
-*/

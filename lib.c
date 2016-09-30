@@ -15,9 +15,7 @@
  */
 char* strnstr(const char* s1, const char* s2, size_t len)
 {
-    size_t l2;
-
-    l2 = strlen(s2);
+    size_t l2 = strlen(s2);
     if (!l2)
         return (char*)s1;
     while (len >= l2) {
@@ -45,6 +43,7 @@ int spliturl(const char* url, char *protocol, char* hostname, char* path , uint1
     int urllen = strlen(url);
     int copylen;
     memset(hostname, 0, DOMAINLIMIT);
+    *port = 0;
     if (path) {
         memset(path, 0, urllen);
     }
@@ -56,7 +55,6 @@ int spliturl(const char* url, char *protocol, char* hostname, char* path , uint1
     const char *tmp_pos = strstr(url, "://");
     size_t protocol_len = 0;
     if (tmp_pos == NULL) {
-        *port = 0;
         tmp_pos = url;
     }else{
         protocol_len = tmp_pos - url;

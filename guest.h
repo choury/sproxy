@@ -7,7 +7,7 @@
 
 class Guest:public Requester, public HttpRes{
 protected:
-    Responser* responser_ptr;
+    Responser* responser_ptr = nullptr;
 
     virtual void defaultHE(uint32_t events)override;
     
@@ -24,7 +24,7 @@ public:
     virtual int showerrinfo(int ret, const char *)override;
     virtual ssize_t Write(void* buff, size_t size, Peer* who, uint32_t id=0)override;
     virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
-    virtual void response(HttpResHeader& res);
+    virtual void response(HttpResHeader& res)override;
 };
 
 #endif

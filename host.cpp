@@ -33,6 +33,11 @@ Host::~Host(){
     connectmap.erase(this);
 }
 
+void Host::ResetRequester(Requester* r) {
+    requester_ptr = r;
+}
+
+
 void Host::discard() {
     requester_ptr = nullptr;
     Responser::discard();
@@ -58,7 +63,6 @@ int Host::connect() {
         return -1;
     } else {
         if (fd > 0) {
-            updateEpoll(0);
             close(fd);
         }
         if (testedaddr != 0) {

@@ -11,7 +11,7 @@ RUN apt-get update && apt-get -y install gcc g++ cmake make unzip libssl-dev wge
 WORKDIR /root
 RUN wget "https://github.com/choury/sproxy/archive/master.zip" && unzip master.zip && rm master.zip
 WORKDIR /root/sproxy-master
-RUN cmake . && make sproxy_client
+RUN cmake . && make client
 #COPY keys /root/keys/
 
 ENV SPROXY_USER choury

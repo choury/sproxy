@@ -181,7 +181,7 @@ int main(int argc, char **argv) {
 
     SSL_CTX *ctx = nullptr;
     if(udp_mode){
-        ctx = SSL_CTX_new(DTLSv1_server_method());
+        ctx = SSL_CTX_new(DTLS_server_method());
 
         if (ctx == NULL) {
             ERR_print_errors_fp(stderr);

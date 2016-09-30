@@ -14,6 +14,7 @@ Guest_s2::Guest_s2(int fd, const char* ip, uint16_t port, Ssl* ssl):
     localwinsize  = localframewindowsize;
     updateEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Con::*)(uint32_t))&Guest_s2::defaultHE;
+    lastrecv = getmtime();
     add_tick_func((void (*)(void *))guest2tick, this);
 }
 
@@ -24,6 +25,7 @@ Guest_s2::Guest_s2(int fd, struct sockaddr_in6* myaddr, Ssl* ssl):
     localwinsize  = localframewindowsize;
     updateEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Con::*)(uint32_t))&Guest_s2::defaultHE;
+    lastrecv = getmtime();
     add_tick_func((void (*)(void *))guest2tick, this);
 }
 
@@ -37,9 +39,10 @@ ssize_t Guest_s2::Write(const void *buff, size_t size) {
 }
 
 ssize_t Guest_s2::Write(void *buff, size_t size, Peer *who, uint32_t id) {
+    Responser* responser = dynamic_cast<Responser *>(who);
     if(!id){
-        if(idmap.count(who)){
-            id = idmap.at(who);
+        if(idmap.count(responser)){
+            id = idmap.at(responser);
         }else{
             who->clean(PEER_LOST_ERR, this);
             return -1;
@@ -52,7 +55,7 @@ ssize_t Guest_s2::Write(void *buff, size_t size, Peer *who, uint32_t id) {
     set24(header->length, size);
     if(size == 0) {
         header->flags = END_STREAM_F;
-        idmap.erase(who);
+        idmap.erase(responser);
         waitlist.erase(who);
         who->clean(NOERROR, this, id);
     }
@@ -71,7 +74,7 @@ void Guest_s2::DataProc(const Http2_header* header)
 {
     uint32_t id = get32(header->id);
     if(idmap.count(id)){
-        Peer *host = idmap.at(id);
+        Responser *host = idmap.at(id);
         ssize_t len = get24(header->length);
         if(len > host->localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
@@ -84,6 +87,7 @@ void Guest_s2::DataProc(const Http2_header* header)
         host->Write(header+1, len, this, id);
         if((header->flags & END_STREAM_F) && len != 0){
             host->Write((const void*)nullptr, 0, this, id);
+            host->ResetRequester(nullptr);
         }
         host->localwinsize -= len;
         localwinsize -= len;
@@ -240,11 +244,12 @@ void Guest_s2::wait(Peer *who){
 }
 
 void Guest_s2::writedcb(Peer *who){
-    if(idmap.count(who)){
+    Responser* responser = dynamic_cast<Responser *>(who);
+    if(idmap.count(responser)){
         size_t len = localframewindowsize - who->localwinsize;
         if(len < localframewindowsize/5)
             return;
-        who->localwinsize += ExpandWindowSize(idmap.at(who), len);
+        responser->localwinsize += ExpandWindowSize(idmap.at(responser), len);
     }
 }
 
@@ -253,7 +258,7 @@ int Guest_s2::showerrinfo(int ret, const char*) {
 }
 
 void Guest_s2::check_alive() {
-    if(lastrecv && getmtime() - lastrecv >= 30000){ //超过30秒没收到报文，认为连接断开
+    if(getmtime() - lastrecv >= 30000){ //超过30秒没收到报文，认为连接断开
         LOGE("[Guest_s2] Nothing got too long, so close it\n");
         clean(PEER_LOST_ERR, this);
     }

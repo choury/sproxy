@@ -245,7 +245,8 @@ void Dtls::send_ack(uint32_t time, uint32_t window) {
         decltype(seq) pre = seq;
         while(1){
             pre = seq++;
-            if(seq == read_seqs.end() || (unsigned char*)gaps-buff >= (uint32_t)DTLS_MTU)
+            if(seq == read_seqs.end() || 
+               (size_t)((unsigned char*)gaps-buff) >= (size_t)DTLS_MTU)
                 break;
             assert(before(pre->second, seq->first));
             *(gaps++)=htonl(pre->second);

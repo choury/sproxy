@@ -6,8 +6,6 @@
 #include "binmap.h"
 #include "ssl_abstract.h"
 
-class Requester;
-
 class Proxy2:public Responser, public Http2Req{
     uint32_t curid = 1;
     uint32_t lastping = 0;
