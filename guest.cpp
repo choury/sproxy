@@ -120,12 +120,12 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
     return responser_ptr->Write(buff, Min(size, len), this);
 }
 
-void Guest::clean(uint32_t errcode, Peer* who, uint32_t)
-{
+void Guest::clean(uint32_t errcode, Peer* who, uint32_t) {
+    assert(who);
+    assert(dynamic_cast<Responser *>(who) == responser_ptr || who == this);
     if(responser_ptr){
-        if(responser_ptr != dynamic_cast<Responser *>(who)){
+        if(who == this){
             responser_ptr->clean(errcode, this);
-            assert(who == this);
         }
         responser_ptr = nullptr;
     }

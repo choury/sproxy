@@ -16,7 +16,7 @@ protected:
 public:
     using Guest::Write; //make clang happy
     explicit Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL *ssl, Protocol protocol);
-    
+
     virtual void discard()override;
     virtual int showerrinfo(int ret, const char *s)override;
     virtual ~Guest_s();

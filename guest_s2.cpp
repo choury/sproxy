@@ -1,5 +1,6 @@
 #include "guest_s2.h"
 #include "responser.h"
+#include "dtls.h"
 
 #include <limits.h>
 
@@ -122,8 +123,7 @@ void Guest_s2::response(HttpResHeader &res) {
 }
 
 
-void Guest_s2::defaultHE(uint32_t events)
-{
+void Guest_s2::defaultHE(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
@@ -163,7 +163,6 @@ void Guest_s2::defaultHE(uint32_t events)
         }
     }
 }
-
 
 void Guest_s2::RstProc(uint32_t id, uint32_t errcode) {
     if(idmap.count(id)){
@@ -211,6 +210,7 @@ void Guest_s2::AdjustInitalFrameWindowSize(ssize_t diff) {
 }
 
 void Guest_s2::clean(uint32_t errcode, Peer *who, uint32_t id) {
+    Responser *responser = dynamic_cast<Responser *>(who);
     if(who == this) {
         for(auto i: idmap.Left()){
             i.first->clean(errcode, this, i.second);
@@ -219,15 +219,16 @@ void Guest_s2::clean(uint32_t errcode, Peer *who, uint32_t id) {
         del_tick_func((void (*)(void *))guest2tick, this);
         return Peer::clean(errcode, this);
     }else{
-        Responser *responser = dynamic_cast<Responser *>(who);
         if(id == 0 && idmap.count(responser)){
             id = idmap.at(responser);
         }
         if(id){
             Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
             idmap.erase(responser, id);
+        }else{
+            assert(0);
         }
-        waitlist.erase(responser);
+        waitlist.erase(who);
     }
 }
 
@@ -253,11 +254,20 @@ void Guest_s2::writedcb(Peer *who){
     }
 }
 
-int Guest_s2::showerrinfo(int ret, const char*) {
-    return 0;
+int Guest_s2::showerrinfo(int ret, const char* s) {
+    if(errno == EAGAIN){
+        return 0;
+    }
+    LOGE("([%s]:%d): %s:%m\n", sourceip, sourceport, s);
+    return 1;
 }
 
 void Guest_s2::check_alive() {
+    Dtls *dtls = dynamic_cast<Dtls*>(ssl);
+    if(dtls && dtls->send() < 0){
+        clean(PEER_LOST_ERR, this);
+        return;
+    }
     if(getmtime() - lastrecv >= 30000){ //超过30秒没收到报文，认为连接断开
         LOGE("[Guest_s2] Nothing got too long, so close it\n");
         clean(PEER_LOST_ERR, this);

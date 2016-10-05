@@ -7,8 +7,11 @@ include_directories(${OPENSSL_INCLUDE_DIR})
 set(CMAKE_C_FLAGS "-Wall")
 set(CMAKE_CXX_FLAGS "-std=c++11 -Wall")
 
-set(CMAKE_C_FLAGS_REALSE "${CMAKE_C_FLGS} -O3")
-set(CMAKE_CXX_FLAGS_REALSE "${CMAKE_CXX_FLAGS} -O3")
+set(CMAKE_C_FLAGS_RELEASE "-O3")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+
+set(CMAKE_C_FLAGS_RELWITHDEBINFO "-ggdb")
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-ggdb")
 
 set(CMAKE_C_FLAGS_DEBUG "-ggdb -fsanitize=bounds  -fsanitize=undefined -fsanitize=address -O0")
 set(CMAKE_CXX_FLAGS_DEBUG "-ggdb -fsanitize=bounds -fsanitize=undefined -fsanitize=address -O0")

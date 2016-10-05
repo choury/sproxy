@@ -21,7 +21,8 @@ Responser* Proxy::getproxy(HttpReqHeader &req, Responser* responser_ptr) {
     }
     
     if (exist) {
-        exist->clean(NOERROR, nullptr); //只有exist是host才会走到这里
+        exist->ResetRequester(nullptr);
+        exist->clean(NOERROR, exist); //只有exist是host才会走到这里
     }
     
     if (proxy2 && proxy2->bufleft(nullptr) >= 32 * 1024) {
@@ -81,6 +82,10 @@ static const unsigned char alpn_protos_string[] =
 
 
 void Proxy::waitconnectHE(uint32_t events) {
+    if (requester_ptr == NULL) {
+        clean(PEER_LOST_ERR, this);
+        return;
+    }
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
@@ -142,6 +147,10 @@ reconnect:
 
 
 void Proxy::shakehandHE(uint32_t events) {
+    if (requester_ptr == NULL) {
+        clean(PEER_LOST_ERR, this);
+        return;
+    }
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
@@ -175,14 +184,12 @@ void Proxy::shakehandHE(uint32_t events) {
             }
             new_proxy->init();
             new_proxy->request(req);
+            requester_ptr->ResetResponser(new_proxy);
             if(!proxy2){
                 proxy2 = new_proxy;
             }
-            if(requester_ptr){
-                requester_ptr->ResetResponser(proxy2);
-            }
             this->discard();
-            clean(NOERROR, nullptr);
+            clean(NOERROR, this);
         }else{
             assert(protocol != UDP);
             updateEpoll(EPOLLIN | EPOLLOUT);

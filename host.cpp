@@ -209,7 +209,8 @@ Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr) {
     }
 
     if (responser_ptr) {
-        responser_ptr->clean(NOERROR, nullptr);
+        responser_ptr->ResetRequester(nullptr);
+        responser_ptr->clean(NOERROR, responser_ptr);
     }
     host = new Host(req.hostname, req.port, TCP);
     host->request(req);
@@ -223,7 +224,8 @@ ssize_t Host::Read(void* buff, size_t len){
 
 
 void Host::ErrProc(int errcode) {
-    if (showerrinfo(errcode, "Host-http error")) {
+    if (errno != EAGAIN) {
+        LOGE("%s: %m\n", "Host-http error");
         clean(errcode, this);
     }
 }
@@ -246,6 +248,8 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 }
 
 void Host::clean(uint32_t errcode, Peer* who, uint32_t) {
+    assert(who);
+    assert(dynamic_cast<Requester *>(who) == requester_ptr || who == this);
     if(requester_ptr){
         if(errcode == CONNECT_ERR){
             HttpResHeader res(H408, this);
@@ -253,15 +257,11 @@ void Host::clean(uint32_t errcode, Peer* who, uint32_t) {
         }
         if(who == this){
             requester_ptr->clean(errcode, this);
-        }else{
-            assert(who == nullptr ||
-                   dynamic_cast<Requester *>(who) == requester_ptr);
         }
+        requester_ptr = nullptr;
     }
     if(hostname[0]){
         Peer::clean(errcode, who);
-    }else{
-        requester_ptr = nullptr;
     }
 }
 

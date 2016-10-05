@@ -1,5 +1,6 @@
 #include "proxy2.h"
 #include "requester.h"
+#include "dtls.h"
 
 Proxy2* proxy2 = nullptr;
 
@@ -242,6 +243,8 @@ void Proxy2::clean(uint32_t errcode, Peer *who, uint32_t) {
         Reset(idmap.at(requester), errcode>30?ERR_INTERNAL_ERROR:errcode);
         idmap.erase(requester);
         waitlist.erase(who);
+    }else{
+      assert(0);
     }
 }
 
@@ -260,11 +263,20 @@ void Proxy2::writedcb(Peer *who){
     }
 }
 
-int Proxy2::showerrinfo(int , const char* ) {
-    return 0;
+int Proxy2::showerrinfo(int ret, const char* s) {
+    if(errno == EAGAIN){
+        return 0;
+    }
+    LOGE("%s:%m\n", s);
+    return 1;
 }
 
 void Proxy2::check_alive() {
+    Dtls *dtls = dynamic_cast<Dtls*>(ssl);
+    if(dtls && dtls->send() < 0){
+        clean(PEER_LOST_ERR, this);
+        return;
+    }
     if(proxy2 && proxy2 != this && idmap.empty()){
         clean(NOERROR, this);
         return;

@@ -103,7 +103,7 @@ void Guest_s::shakehandHE(uint32_t events) {
                     new Guest_s2(fd, sourceip, sourceport, new Dtls(ssl));
                 }
                 this->discard();
-                clean(NOERROR, nullptr);
+                clean(NOERROR, this);
                 return;
             }
         }

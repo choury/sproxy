@@ -3,6 +3,7 @@
 
 #include <openssl/ssl.h>
 #include <assert.h>
+#include <errno.h>
 
 class Ssl{
 protected:
@@ -16,10 +17,41 @@ public:
         SSL_free(ssl);
     }
     virtual ssize_t write(const void *buff, size_t size){
-        return SSL_write(ssl, buff, size);
+        int ret = SSL_write(ssl, buff, size);
+        if(ret < 0){
+            int error = SSL_get_error(ssl, ret);
+            switch (error) {
+                case SSL_ERROR_WANT_READ:
+                case SSL_ERROR_WANT_WRITE:
+                    errno = EAGAIN;
+                case SSL_ERROR_ZERO_RETURN:
+                    ret = 0;
+                    errno = 0;
+                case SSL_ERROR_SYSCALL:
+                    break;
+            }
+        }
+        return ret;
     }
     virtual ssize_t read(void *buff, size_t size){
-        return SSL_read(ssl, buff, size);
+        int ret = SSL_read(ssl, buff, size);
+        if(ret < 0){
+            int error = SSL_get_error(ssl, ret);
+            switch (error) {
+                case SSL_ERROR_WANT_READ:
+                case SSL_ERROR_WANT_WRITE:
+                    errno = EAGAIN;
+                case SSL_ERROR_ZERO_RETURN:
+                    ret = 0;
+                    errno = 0;
+                case SSL_ERROR_SYSCALL:
+                    break;
+            }
+        }
+        return ret;
+    }
+    virtual SSL *GetSSL(){
+        return ssl;
     }
 };
 

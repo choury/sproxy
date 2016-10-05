@@ -14,19 +14,17 @@ protected:
     int fd = 0;
     void updateEpoll(uint32_t events){
         if (fd > 0) {
-            int __attribute__((unused)) ret = 0;
             if(events == 0){
-               ret = epoll_ctl(efd, EPOLL_CTL_DEL, fd, nullptr);
-               assert(ret == 0);
+                epoll_ctl(efd, EPOLL_CTL_DEL, fd, nullptr);
             }else{
                 struct epoll_event event;
                 event.data.ptr = this;
                 event.events = events;
-                ret = epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+                int __attribute__((unused)) ret = epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
                 assert(ret == 0 || errno == ENOENT);
                 if (ret && errno == ENOENT)
                 {
-                    int __attribute__((unused)) ret = epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+                    ret = epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
                     assert(ret == 0);
                 }
             }

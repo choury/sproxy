@@ -1,13 +1,12 @@
 #include "dtls.h"
-#include <iostream>
 #include <string.h>
-#include <assert.h>
-#include <errno.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
 
 #define DTLS_BUF_LEN (4*1024*1024ull)
+
+//#define DEBUG_DTLS
 
 /*
  * * The next routines deal with comparing 32 bit unsigned ints
@@ -47,13 +46,8 @@ uint32_t TTL::getsum() {
     return sum;
 }
 
-void Dtls_tick(void *ptr){
-    Dtls *dtls = (Dtls *)ptr;
-    dtls->send();
-}
 
 Dtls::Dtls(SSL* ssl):Ssl(ssl) {
-    add_tick_func(Dtls_tick, this);
     read_seqs.push_back(std::make_pair(0,0));
     tick_time = ack_time = getmtime();
     write_buff = new unsigned char[DTLS_BUF_LEN];
@@ -61,13 +55,15 @@ Dtls::Dtls(SSL* ssl):Ssl(ssl) {
 }
 
 Dtls::~Dtls(){
-    del_tick_func(Dtls_tick, this);
     delete []write_buff;
     delete []read_buff;
 }
 
 ssize_t Dtls::read(void* buff, size_t size) {
-    recv();
+    if(recv() < 0){
+        errno = EIO;
+        return -1;
+    }
     if(read_seqs.begin()->first == read_seqs.begin()->second){
         errno = EAGAIN;
         return -1;
@@ -88,8 +84,11 @@ ssize_t Dtls::read(void* buff, size_t size) {
 
 ssize_t Dtls::write(const void* buff, size_t size) {
     if(after(write_seq + size, recv_ack + DTLS_BUF_LEN)){
-        send();
-        errno = EAGAIN;
+        if(send() < 0){
+            errno= EIO;
+        }else{
+            errno = EAGAIN;
+        }
         return -1;
     }
     uint32_t from = write_seq &(DTLS_BUF_LEN-1);
@@ -97,16 +96,23 @@ ssize_t Dtls::write(const void* buff, size_t size) {
     memcpy(write_buff+from, buff, l);
     memcpy(write_buff, (const char*)buff + l, size -l);
     write_seq += size;
-    send();
+    if(send() < 0){
+        errno = EIO;
+        return -1;
+    }
     return size;
 }
 
-void Dtls::recv(){
+int Dtls::recv(){
     assert(!read_seqs.empty());
     unsigned char buff[DTLS_MTU];
     uint32_t tick_recvpkg = 0;
     uint32_t recv_time = 0;
     int ret;
+#ifdef DEBUG_DTLS
+    uint32_t recv_begin = 0;
+    uint32_t recv_end = 0;
+#endif
     while((ret = SSL_read(ssl, buff, DTLS_MTU)) > 0){
         Dtls_head *head = (Dtls_head *)buff;
         const uint32_t ack = ntohl(head->ack);
@@ -120,7 +126,14 @@ void Dtls::recv(){
         tick_recvpkg ++;
         if(head->type == DTLS_TYPE_DATA){
 #ifdef DEBUG_DTLS
-            fprintf(stderr, "%d: get a packge: %x -- %x\n", getmtime(), seq, seq+len);
+            if(recv_begin == 0){
+                recv_begin = seq;
+            }
+            if(recv_end && recv_end != seq){
+                fprintf(stderr, "%u: get pkg: %x -- %x\n", getmtime(), recv_begin, recv_end);
+                recv_begin = seq;
+            }
+            recv_end = seq + len;
 #endif
             uint32_t full_pos = read_seqs.begin()->second;
             if(after(seq + len, full_pos) &&
@@ -152,7 +165,7 @@ void Dtls::recv(){
                 
             }else{
 #ifdef DEBUG_DTLS
-                fprintf(stderr, "discard package %x -- %x (%x)\n", seq, seq+len, full_pos);
+                fprintf(stderr, "%u: discard pkg %x -- %x (%x)\n", getmtime(), seq, seq+len, full_pos);
 #endif
             }
             recv_time = time;
@@ -164,7 +177,7 @@ void Dtls::recv(){
                 gaps[gap_num++] = ntohl(*gap_ptr++);
             }
 #ifdef DEBUG_DTLS
-            fprintf(stderr, "%d: ack: %x window: %u  rtt: %u\n",getmtime(), ack, bucket_limit, rtt_time);
+            fprintf(stderr, "%u: ack: %x window: %u  rtt: %u\n",getmtime(), ack, bucket_limit, rtt_time);
 #endif
         }
         if(after(ack, recv_ack)){
@@ -172,12 +185,20 @@ void Dtls::recv(){
             ack_time = time;
         }
     }
+#ifdef DEBUG_DTLS
+    if(recv_end){
+        fprintf(stderr, "%u: get pkg: %x -- %x\n", getmtime(), recv_begin, recv_end);
+    }
+#endif
+    if(ret < 0 && !BIO_should_retry(SSL_get_rbio(ssl))){
+       return -1;
+    }
     recv_pkgs.add(tick_recvpkg);
     send_ack(recv_time, recv_pkgs.getsum());
-
+    return 0;
 }
 
-void Dtls::send() {
+int Dtls::send() {
     uint32_t recvp_num = recv_pkgs.getsum();
     uint32_t now = getmtime();
     uint32_t buckets = (now - tick_time) * bucket_limit /70;
@@ -191,43 +212,60 @@ void Dtls::send() {
             if(gap_num){
                 for(size_t i =0;i<gap_num;i+=2){
                     resend_pos = after(gaps[i], resend_pos)?gaps[i]:resend_pos;
-                    while(buckets && before(resend_pos, gaps[i+1])){
 #ifdef DEBUG_DTLS
-                        fprintf(stderr, "%d: resend a pkg: %x -- %x, buckets: %d rtt: %d\n",
-                            getmtime(), resend_pos, Min(resend_pos+DTLS_LEN, write_seq), buckets, rtt_time);
+                    uint32_t send_begin = resend_pos;
 #endif
+                    while(buckets && before(resend_pos, gaps[i+1])){
                         resend_pos += send_pkg(resend_pos, recvp_num, Min(DTLS_LEN, (int32_t)write_seq - (int32_t)resend_pos));
                         buckets--;
                     }
+#ifdef DEBUG_DTLS
+                    if(send_begin != resend_pos){
+                        fprintf(stderr, "%u: send pkg: %x -- %x, left buckets: %d rtt: %d [R]\n", getmtime(),
+                                send_begin, resend_pos, buckets, rtt_time);
+                    }
+#endif
                     if(buckets == 0){
                         break;
                     }
                 }
             }else{
-                while(buckets && before(resend_pos, send_pos)){
 #ifdef DEBUG_DTLS
-                    fprintf(stderr, "%d: resend a pkg: %x -- %x, buckets: %d rtt: %d\n",
-                            getmtime(), resend_pos, Min(resend_pos+DTLS_LEN, write_seq), buckets, rtt_time);
+                uint32_t send_begin = resend_pos;
 #endif
+                while(buckets && before(resend_pos, send_pos)){
                     resend_pos += send_pkg(resend_pos, recvp_num, Min(DTLS_LEN, (int32_t)write_seq - (int32_t)resend_pos));
                     buckets--;
                 }
+#ifdef DEBUG_DTLS
+                if(send_begin != resend_pos){
+                    fprintf(stderr, "%u: send pkg: %x -- %x, left buckets: %d rtt: %d [SR]\n", getmtime(),
+                            send_begin, resend_pos, buckets, rtt_time);
+                }
+#endif
             }
             if(buckets){
                 resend_pos = recv_ack;
                 ack_time = now;
             }
         }
-        while(buckets && before(send_pos, write_seq)) {
 #ifdef DEBUG_DTLS
-            fprintf(stderr, "%d: send a pkg: %x -- %x, buckets: %d rtt: %d\n",
-                    getmtime(), send_pos, Min(resend_pos+DTLS_LEN, write_seq), buckets, rtt_time);
+        uint32_t send_begin = send_pos;
+
 #endif
+        while(buckets && before(send_pos, write_seq)) {
             send_pos += send_pkg(send_pos, recvp_num, Min(DTLS_LEN, (int32_t)write_seq-(int32_t)send_pos));
             buckets --;
         }
+#ifdef DEBUG_DTLS
+        if(send_begin != send_pos){
+            fprintf(stderr, "%u: send pkg: %x -- %x, left buckets: %d rtt: %d\n",
+                    getmtime(), send_begin, send_pos, buckets, rtt_time);
+        }
+#endif
         tick_time = now - buckets*100/bucket_limit;
     }
+    return 0;
 }
 
 void Dtls::send_ack(uint32_t time, uint32_t window) {
@@ -277,7 +315,7 @@ uint32_t Dtls::send_pkg(uint32_t seq, uint32_t window, size_t len) {
         void(0); //TODO put some error info
     }
 #ifdef DEBUG_DTLS
-//    fprintf(stderr, "%d: send a pkg: %x -- %x\n",getmtime(), seq, seq+(uint32_t)len);
+//    fprintf(stderr, "%u: send a pkg: %x -- %x\n",getmtime(), seq, seq+(uint32_t)len);
 #endif
     return len;
 }
