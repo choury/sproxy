@@ -224,8 +224,7 @@ ssize_t Host::Read(void* buff, size_t len){
 
 
 void Host::ErrProc(int errcode) {
-    if (errno != EAGAIN) {
-        LOGE("%s: %m\n", "Host-http error");
+    if (showerrinfo(errcode, "Host-http error")) {
         clean(errcode, this);
     }
 }
