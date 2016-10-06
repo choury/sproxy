@@ -1,0 +1,10 @@
+language: cpp c
+before_install:
+- sudo apt-get update
+- sudo apt-get install libssl-dev
+compiler: 
+- gcc
+- clang
+
+# Change this to your needs
+script:  cmake && make
