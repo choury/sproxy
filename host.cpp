@@ -158,7 +158,7 @@ void Host::defaultHE(uint32_t events) {
     }
 }
 
-
+/*
 int Host::showerrinfo(int ret, const char* s) {
     if (ret < 0) {
         if (errno != EAGAIN) {
@@ -172,7 +172,7 @@ int Host::showerrinfo(int ret, const char* s) {
     return 1;
 }
 
-
+*/
 
 void Host::request(HttpReqHeader& req) {
     size_t len;

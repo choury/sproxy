@@ -314,6 +314,9 @@ HttpReqHeader::HttpReqHeader(const char* header, Object* src):
             throw 0;
         }
     }
+    if(url[0] == '/'){
+        snprintf(url, sizeof(url), "http://%s%s", hostname, path);
+    }
     getfile();
 }
 

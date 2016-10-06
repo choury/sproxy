@@ -15,6 +15,8 @@ void Guest::ResetResponser(Responser *r){
     responser_ptr = r;
 }
 
+/*
+
 int Guest::showerrinfo(int ret, const char *s) {
     if (ret < 0) {
         if (errno != EAGAIN) {
@@ -27,6 +29,7 @@ int Guest::showerrinfo(int ret, const char *s) {
     }
     return 1;
 }
+*/
 
 void Guest::defaultHE(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {

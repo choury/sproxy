@@ -140,8 +140,7 @@ void Proxy2::DataProc(const Http2_header* header) {
 }
 
 void Proxy2::ErrProc(int errcode) {
-    if (errcode > 0){
-        LOGE("Proxy2 Http2 error: %d\n", errcode);
+    if (showerrinfo(errcode, "Proxy2 Http2 error")){
         clean(errcode, this);
     }
 }
@@ -263,6 +262,7 @@ void Proxy2::writedcb(Peer *who){
     }
 }
 
+/*
 int Proxy2::showerrinfo(int ret, const char* s) {
     if(errno == EAGAIN){
         return 0;
@@ -270,6 +270,7 @@ int Proxy2::showerrinfo(int ret, const char* s) {
     LOGE("%s:%m\n", s);
     return 1;
 }
+*/
 
 void Proxy2::check_alive() {
     Dtls *dtls = dynamic_cast<Dtls*>(ssl);

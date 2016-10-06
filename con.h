@@ -7,25 +7,55 @@
 #include <sys/epoll.h>
 #include <assert.h>
 
+
 extern int efd;
+
+//#define DEBUG_EPOLL
+
+#ifdef DEBUG_EPOLL
+#include <map>
+#include "common.h"
+class Con;
+static  std::map<int, Con *> epolls;
+#endif
 
 class Con {
 protected:
     int fd = 0;
     void updateEpoll(uint32_t events){
+        int __attribute__((unused)) ret;
         if (fd > 0) {
             if(events == 0){
-                epoll_ctl(efd, EPOLL_CTL_DEL, fd, nullptr);
+#ifdef DEBUG_EPOLL
+                assert(epolls[fd] == this);
+                LOGE("[EPOLL] del %d: %p\n", fd, this);
+                epolls.erase(fd);
+#endif
+                ret =  epoll_ctl(efd, EPOLL_CTL_DEL, fd, nullptr);
+                assert(ret == 0);
             }else{
                 struct epoll_event event;
                 event.data.ptr = this;
                 event.events = events;
-                int __attribute__((unused)) ret = epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+                ret = epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
                 assert(ret == 0 || errno == ENOENT);
                 if (ret && errno == ENOENT)
                 {
                     ret = epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
                     assert(ret == 0);
+#ifdef DEBUG_EPOLL
+                    LOGE("[EPOLL] add %d: %p\n", fd, this);
+                    assert(epolls.count(fd) == 0);
+                    epolls[fd]=this;
+#endif
+                }else{
+#ifdef DEBUG_EPOLL
+                    assert(epolls.count(fd));
+                    if(epolls[fd] != this){
+                        LOGE("[EPOLL] change %d: %p --> %p\n", fd, epolls[fd], this);
+                    }
+                    epolls[fd]=this;
+#endif
                 }
             }
         }
@@ -38,7 +68,9 @@ public:
     }
     virtual ~Con(){
         if(fd > 0){
-            close(fd);
+            updateEpoll(0);
+            int __attribute__((unused)) ret = close(fd);
+            assert(ret == 0);
         }
     }
 };

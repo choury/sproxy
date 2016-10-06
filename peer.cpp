@@ -82,6 +82,20 @@ int32_t Peer::bufleft(Peer *) {
 }
 
 
+int Peer::showerrinfo(int ret, const char *s){
+    if (ret < 0) {
+        if (errno != EAGAIN) {
+            LOGE("%s: %m\n", s);
+        } else {
+            return 0;
+        }
+    }else if(ret){
+        LOGE("%s:%d\n",s, ret);
+    }
+    return 1;
+}
+
+
 void Peer::clean(uint32_t errcode, Peer* , uint32_t) {
     if(fd > 0) {
         updateEpoll(EPOLLOUT);

@@ -38,7 +38,7 @@ public:
     virtual int32_t bufleft(Peer *)override;
     virtual void wait(Peer *who)override;
     virtual void writedcb(Peer *who)override;
-    virtual int showerrinfo(int ret, const char* s)override;
+//    virtual int showerrinfo(int ret, const char* s)override;
     void check_alive();
 };
 

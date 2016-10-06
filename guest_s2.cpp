@@ -30,6 +30,10 @@ Guest_s2::Guest_s2(int fd, struct sockaddr_in6* myaddr, Ssl* ssl):
     add_tick_func((void (*)(void *))guest2tick, this);
 }
 
+Guest_s2::~Guest_s2() {
+    delete ssl;
+}
+
 
 ssize_t Guest_s2::Read(void *buff, size_t size) {
     return ssl->read(buff, size);
@@ -195,9 +199,7 @@ void Guest_s2::GoawayProc(Http2_header* header) {
 }
 
 void Guest_s2::ErrProc(int errcode) {
-    if (errcode > 0){
-        LOGE("Guest_s2([%s]:%d): Http2 error: %d\n",
-              sourceip, sourceport, errcode);
+    if(showerrinfo(errcode, "Guest_s2-Http2 error")){
         clean(errcode, this);
     }
 }
@@ -253,7 +255,7 @@ void Guest_s2::writedcb(Peer *who){
         responser->localwinsize += ExpandWindowSize(idmap.at(responser), len);
     }
 }
-
+/*
 int Guest_s2::showerrinfo(int ret, const char* s) {
     if(errno == EAGAIN){
         return 0;
@@ -261,6 +263,7 @@ int Guest_s2::showerrinfo(int ret, const char* s) {
     LOGE("([%s]:%d): %s:%m\n", sourceip, sourceport, s);
     return 1;
 }
+*/
 
 void Guest_s2::check_alive() {
     Dtls *dtls = dynamic_cast<Dtls*>(ssl);

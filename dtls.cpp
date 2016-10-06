@@ -130,7 +130,7 @@ int Dtls::recv(){
                 recv_begin = seq;
             }
             if(recv_end && recv_end != seq){
-                fprintf(stderr, "%u: get pkg: %x -- %x\n", getmtime(), recv_begin, recv_end);
+                LOGE("[DTLS] %u: get pkg: %x -- %x\n", getmtime(), recv_begin, recv_end);
                 recv_begin = seq;
             }
             recv_end = seq + len;
@@ -165,7 +165,7 @@ int Dtls::recv(){
                 
             }else{
 #ifdef DEBUG_DTLS
-                fprintf(stderr, "%u: discard pkg %x -- %x (%x)\n", getmtime(), seq, seq+len, full_pos);
+                LOGE("[DTLS] %u: discard pkg %x -- %x (%x)\n", getmtime(), seq, seq+len, full_pos);
 #endif
             }
             recv_time = time;
@@ -177,7 +177,7 @@ int Dtls::recv(){
                 gaps[gap_num++] = ntohl(*gap_ptr++);
             }
 #ifdef DEBUG_DTLS
-            fprintf(stderr, "%u: ack: %x window: %u  rtt: %u\n",getmtime(), ack, bucket_limit, rtt_time);
+            LOGE("[DTLS] %u: ack: %x window: %u  rtt: %u\n",getmtime(), ack, bucket_limit, rtt_time);
 #endif
         }
         if(after(ack, recv_ack)){
@@ -187,7 +187,7 @@ int Dtls::recv(){
     }
 #ifdef DEBUG_DTLS
     if(recv_end){
-        fprintf(stderr, "%u: get pkg: %x -- %x\n", getmtime(), recv_begin, recv_end);
+        LOGE("[DTLS] %u: get pkg: %x -- %x\n", getmtime(), recv_begin, recv_end);
     }
 #endif
     if(ret < 0 && !BIO_should_retry(SSL_get_rbio(ssl))){
@@ -221,7 +221,7 @@ int Dtls::send() {
                     }
 #ifdef DEBUG_DTLS
                     if(send_begin != resend_pos){
-                        fprintf(stderr, "%u: send pkg: %x -- %x, left buckets: %d rtt: %d [R]\n", getmtime(),
+                        LOGE("[DTLS] %u: send pkg: %x -- %x, left buckets: %d rtt: %d [R]\n", getmtime(),
                                 send_begin, resend_pos, buckets, rtt_time);
                     }
 #endif
@@ -239,7 +239,7 @@ int Dtls::send() {
                 }
 #ifdef DEBUG_DTLS
                 if(send_begin != resend_pos){
-                    fprintf(stderr, "%u: send pkg: %x -- %x, left buckets: %d rtt: %d [SR]\n", getmtime(),
+                    LOGE("[DTLS] %u: send pkg: %x -- %x, left buckets: %d rtt: %d [SR]\n", getmtime(),
                             send_begin, resend_pos, buckets, rtt_time);
                 }
 #endif
@@ -259,7 +259,7 @@ int Dtls::send() {
         }
 #ifdef DEBUG_DTLS
         if(send_begin != send_pos){
-            fprintf(stderr, "%u: send pkg: %x -- %x, left buckets: %d rtt: %d\n",
+            LOGE("[DTLS] %u: send pkg: %x -- %x, left buckets: %d rtt: %d\n",
                     getmtime(), send_begin, send_pos, buckets, rtt_time);
         }
 #endif
@@ -315,7 +315,7 @@ uint32_t Dtls::send_pkg(uint32_t seq, uint32_t window, size_t len) {
         void(0); //TODO put some error info
     }
 #ifdef DEBUG_DTLS
-//    fprintf(stderr, "%u: send a pkg: %x -- %x\n",getmtime(), seq, seq+(uint32_t)len);
+//    LOGE("[DTLS] %u: send a pkg: %x -- %x\n",getmtime(), seq, seq+(uint32_t)len);
 #endif
     return len;
 }

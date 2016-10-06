@@ -24,6 +24,7 @@ public:
                 case SSL_ERROR_WANT_READ:
                 case SSL_ERROR_WANT_WRITE:
                     errno = EAGAIN;
+                    break;
                 case SSL_ERROR_ZERO_RETURN:
                     ret = 0;
                     errno = 0;
@@ -41,6 +42,7 @@ public:
                 case SSL_ERROR_WANT_READ:
                 case SSL_ERROR_WANT_WRITE:
                     errno = EAGAIN;
+                    break;
                 case SSL_ERROR_ZERO_RETURN:
                     ret = 0;
                     errno = 0;
