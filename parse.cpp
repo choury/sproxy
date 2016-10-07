@@ -41,7 +41,9 @@ void loadsites() {
             sitefile >> site;
 
             int split = site.find(':');
-            if(site.substr(0, split) == "proxy"){
+            if(site[0] == '#'){
+                continue;
+            }else if(site.substr(0, split) == "proxy"){
                 proxylist.insert(site.substr(split+1));
             }else if(site.substr(0, split) == "block"){
                 blocklist.insert(site.substr(split+1));

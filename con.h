@@ -1,6 +1,7 @@
 #ifndef CON_H__
 #define CON_H__
 
+#include <stdio.h>
 #include <errno.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -32,17 +33,17 @@ protected:
                 epolls.erase(fd);
 #endif
                 ret =  epoll_ctl(efd, EPOLL_CTL_DEL, fd, nullptr);
-                assert(ret == 0);
+                assert(ret == 0 || fprintf(stderr, "epoll_ctl del failed:%m\n") == 0);
             }else{
                 struct epoll_event event;
                 event.data.ptr = this;
                 event.events = events;
                 ret = epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-                assert(ret == 0 || errno == ENOENT);
+                assert(ret == 0 || errno == ENOENT || fprintf(stderr, "epoll_ctl mod failed:%m\n")==0);
                 if (ret && errno == ENOENT)
                 {
                     ret = epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-                    assert(ret == 0);
+                    assert(ret == 0 || fprintf(stderr, "epoll_ctl add failed:%m\n")==0);
 #ifdef DEBUG_EPOLL
                     LOGE("[EPOLL] add %d: %p\n", fd, this);
                     assert(epolls.count(fd) == 0);
@@ -70,7 +71,7 @@ public:
         if(fd > 0){
             updateEpoll(0);
             int __attribute__((unused)) ret = close(fd);
-            assert(ret == 0);
+            assert(ret == 0 || fprintf(stderr, "close error:%m\n") == 0);
         }
     }
 };

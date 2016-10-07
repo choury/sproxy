@@ -139,7 +139,7 @@ uint64_t getutime();
 uint32_t getmtime();
 
 void sighandle(int signum);
-void dump_trace();
+void dump_trace(int ignore);
 
 void* p_malloc(size_t size);
 void p_free(void *ptr);

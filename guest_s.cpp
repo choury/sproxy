@@ -6,7 +6,9 @@
 #include <openssl/err.h>
 
 
-Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL* ssl, Protocol protocol): Guest(fd, myaddr), ssl(ssl), protocol(protocol) {
+Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL* ssl): Guest(fd, myaddr), ssl(ssl) {
+    socklen_t len = sizeof(protocol);
+    getsockopt( fd, SOL_SOCKET, SO_TYPE, &protocol, &len);
     accept_start_time = time(nullptr);
     handleEvent = (void (Con::*)(uint32_t))&Guest_s::shakehandHE;
 }

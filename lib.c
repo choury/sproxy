@@ -276,7 +276,7 @@ void *p_move( void *ptr, signed char len ){
 
 #ifndef __ANDROID__
 #include <execinfo.h>
-void dump_trace() {
+void dump_trace(int ignore) {
     void *stack_trace[100] = {0};
     char **stack_strings = NULL;
     int stack_depth = 0;

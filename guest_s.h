@@ -15,7 +15,7 @@ protected:
     virtual void shakehandHE(uint32_t events);
 public:
     using Guest::Write; //make clang happy
-    explicit Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL *ssl, Protocol protocol);
+    explicit Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL *ssl);
 
     virtual void discard()override;
     virtual int showerrinfo(int ret, const char *s)override;

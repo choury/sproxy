@@ -63,6 +63,7 @@ int Host::connect() {
         return -1;
     } else {
         if (fd > 0) {
+            updateEpoll(0);
             close(fd);
         }
         if (testedaddr != 0) {

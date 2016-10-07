@@ -127,7 +127,7 @@ void Proxy::waitconnectHE(uint32_t events) {
                 goto reconnect;
             }
             ssl = SSL_new(ctx);
-            BIO* bio = BIO_new_dgram(fd, BIO_CLOSE);
+            BIO* bio = BIO_new_dgram(fd, BIO_NOCLOSE);
             BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_CONNECTED, 0, &addrs[testedaddr-1]);
             SSL_set_bio(ssl, bio, bio);
         }
