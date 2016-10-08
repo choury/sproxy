@@ -297,8 +297,18 @@ void File::defaultHE(uint32_t events) {
 }
 
 void File::clean(uint32_t errcode, Peer* who, uint32_t id){
-    if(who == this)
+    if(who == this){
         return Peer::clean(errcode, who, id);
+    }else{
+        Requester *requester = dynamic_cast<Requester *>(who);
+        for(auto i = reqs.begin();i!=reqs.end();){
+            if(dynamic_cast<Requester *>(i->first.src) == requester){
+                i = reqs.erase(i);
+            }else{
+                i++;
+            }
+        }
+    }
 }
 
 File::~File() {

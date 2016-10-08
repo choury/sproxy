@@ -29,11 +29,11 @@ protected:
             if(events == 0){
 #ifdef DEBUG_EPOLL
                 assert(epolls[fd] == this);
-                LOGE("[EPOLL] del %d: %p\n", fd, this);
+                LOG("[EPOLL] del %d: %p\n", fd, this);
                 epolls.erase(fd);
 #endif
                 ret =  epoll_ctl(efd, EPOLL_CTL_DEL, fd, nullptr);
-                assert(ret == 0 || fprintf(stderr, "epoll_ctl del failed:%m\n") == 0);
+                assert(ret == 0 || fprintf(stderr, "epoll_ctl del failed:%m\n"));
             }else{
                 struct epoll_event event;
                 event.data.ptr = this;
@@ -45,7 +45,7 @@ protected:
                     ret = epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
                     assert(ret == 0 || fprintf(stderr, "epoll_ctl add failed:%m\n")==0);
 #ifdef DEBUG_EPOLL
-                    LOGE("[EPOLL] add %d: %p\n", fd, this);
+                    LOG("[EPOLL] add %d: %p\n", fd, this);
                     assert(epolls.count(fd) == 0);
                     epolls[fd]=this;
 #endif
@@ -53,7 +53,7 @@ protected:
 #ifdef DEBUG_EPOLL
                     assert(epolls.count(fd));
                     if(epolls[fd] != this){
-                        LOGE("[EPOLL] change %d: %p --> %p\n", fd, epolls[fd], this);
+                        LOG("[EPOLL] change %d: %p --> %p\n", fd, epolls[fd], this);
                     }
                     epolls[fd]=this;
 #endif

@@ -116,7 +116,7 @@ void dnstick(void *) {
                 oldstate->func(oldstate->param, oldstate->host, Dns_rcd(std::move(oldstate->addr)));
             } else  {           // 超时重试
                 if(oldstate->times < 5) {
-                    LOGE("[DNS] %s: time out, retry...\n", oldstate->host);
+                    LOG("[DNS] %s: time out, retry...\n", oldstate->host);
                     query(oldstate->host, oldstate->func, oldstate->param, ++oldstate->times);
                 } else {
                     oldstate->func(oldstate->param, oldstate->host, Dns_rcd());
@@ -237,7 +237,7 @@ static int dnsinit() {
 
     FILE *res_file = fopen(RESOLV_FILE, "r");
     if (res_file == NULL) {
-        LOGE("[DNS] open resolv file:%s failed:%m\n", RESOLV_FILE);
+        LOG("[DNS] open resolv file:%s failed:%m\n", RESOLV_FILE);
         return 0;
     }
     char line[100];
@@ -253,12 +253,12 @@ static int dnsinit() {
                 addr.addr_in6.sin6_family = PF_INET6;
                 addr.addr_in6.sin6_port = htons(DNSPORT);
             } else {
-                LOGE("[DNS] %s is not a valid ip address\n", ipaddr);
+                LOG("[DNS] %s is not a valid ip address\n", ipaddr);
                 continue;
             }
             int fd = Connect(&addr, SOCK_DGRAM);
             if (fd == -1) {
-                LOGE("[DNS] connecting  %s error:%m\n", ipaddr);
+                LOG("[DNS] connecting  %s error:%m\n", ipaddr);
                 continue;
             }
             Dns_srv *srv = new Dns_srv(fd);
@@ -374,13 +374,13 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
         uint32_t flags=0;
         if (dnshdr->id & 1) {
             if (rcd_index_id.count(dnshdr->id) == 0) {
-                LOGE("[DNS] Get a unkown id:%d\n", dnshdr->id);
+                LOG("[DNS] Get a unkown id:%d\n", dnshdr->id);
                 return;
             }
             flags |= GARECORD;
         } else {
             if (rcd_index_id.count(dnshdr->id-1) == 0) {
-                LOGE("[DNS] Get a unkown id:%d\n", dnshdr->id);
+                LOG("[DNS] Get a unkown id:%d\n", dnshdr->id);
                 return;
             }
             dnshdr->id--;
@@ -390,7 +390,7 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
         dnsst->flags |= flags;
 
         if ((dnshdr->flag & QR) == 0 || (dnshdr->flag & RCODE_MASK) != 0) {
-            LOGE("[DNS] ack error:%u\n", dnshdr->flag & RCODE_MASK);
+            LOG("[DNS] ack error:%u\n", dnshdr->flag & RCODE_MASK);
         } else {
             unsigned char *p = buf+sizeof(DNS_HDR);
             for (int i = 0; i < dnshdr->numq; ++i) {
@@ -419,7 +419,7 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("[DNS] : %s\n", strerror(error));
+            LOG("[DNS] : %s\n", strerror(error));
         }
     }
 }

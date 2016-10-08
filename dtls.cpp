@@ -1,6 +1,7 @@
 #include "dtls.h"
 #include <string.h>
 #include <unistd.h>
+#include <math.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
 
@@ -130,7 +131,7 @@ int Dtls::recv(){
                 recv_begin = seq;
             }
             if(recv_end && recv_end != seq){
-                LOGE("[DTLS] %u: get pkg: %x -- %x\n", getmtime(), recv_begin, recv_end);
+                LOG("[DTLS] %u: get pkg: %x -- %x\n", getmtime(), recv_begin, recv_end);
                 recv_begin = seq;
             }
             recv_end = seq + len;
@@ -165,7 +166,7 @@ int Dtls::recv(){
                 
             }else{
 #ifdef DEBUG_DTLS
-                LOGE("[DTLS] %u: discard pkg %x -- %x (%x)\n", getmtime(), seq, seq+len, full_pos);
+                LOG("[DTLS] %u: discard pkg %x -- %x (%x)\n", getmtime(), seq, seq+len, full_pos);
 #endif
             }
             recv_time = time;
@@ -177,7 +178,7 @@ int Dtls::recv(){
                 gaps[gap_num++] = ntohl(*gap_ptr++);
             }
 #ifdef DEBUG_DTLS
-            LOGE("[DTLS] %u: ack: %x window: %u  rtt: %u\n",getmtime(), ack, bucket_limit, rtt_time);
+            LOG("[DTLS] %u: ack: %x window: %u  rtt: %u\n",getmtime(), ack, bucket_limit, rtt_time);
 #endif
         }
         if(after(ack, recv_ack)){
@@ -187,7 +188,7 @@ int Dtls::recv(){
     }
 #ifdef DEBUG_DTLS
     if(recv_end){
-        LOGE("[DTLS] %u: get pkg: %x -- %x\n", getmtime(), recv_begin, recv_end);
+        LOG("[DTLS] %u: get pkg: %x -- %x\n", getmtime(), recv_begin, recv_end);
     }
 #endif
     if(ret < 0 && !BIO_should_retry(SSL_get_rbio(ssl))){
@@ -195,13 +196,19 @@ int Dtls::recv(){
     }
     recv_pkgs.add(tick_recvpkg);
     send_ack(recv_time, recv_pkgs.getsum());
-    return 0;
+    return send();
 }
 
 int Dtls::send() {
     uint32_t recvp_num = recv_pkgs.getsum();
     uint32_t now = getmtime();
-    uint32_t buckets = (now - tick_time) * bucket_limit /70;
+    uint32_t buckets;
+    if(bucket_limit < 50){
+        buckets = (now - tick_time) * sqrt(bucket_limit*100) /100;
+    }else{
+        buckets = (now - tick_time) * (bucket_limit+5) /80;
+    }
+
     assert(bucket_limit>=10);
     if(buckets){
         if(buckets > bucket_limit){
@@ -221,7 +228,7 @@ int Dtls::send() {
                     }
 #ifdef DEBUG_DTLS
                     if(send_begin != resend_pos){
-                        LOGE("[DTLS] %u: send pkg: %x -- %x, left buckets: %d rtt: %d [R]\n", getmtime(),
+                        LOG("[DTLS] %u: send pkg: %x -- %x, left buckets: %d rtt: %d [R]\n", getmtime(),
                                 send_begin, resend_pos, buckets, rtt_time);
                     }
 #endif
@@ -239,7 +246,7 @@ int Dtls::send() {
                 }
 #ifdef DEBUG_DTLS
                 if(send_begin != resend_pos){
-                    LOGE("[DTLS] %u: send pkg: %x -- %x, left buckets: %d rtt: %d [SR]\n", getmtime(),
+                    LOG("[DTLS] %u: send pkg: %x -- %x, left buckets: %d rtt: %d [SR]\n", getmtime(),
                             send_begin, resend_pos, buckets, rtt_time);
                 }
 #endif
@@ -259,7 +266,7 @@ int Dtls::send() {
         }
 #ifdef DEBUG_DTLS
         if(send_begin != send_pos){
-            LOGE("[DTLS] %u: send pkg: %x -- %x, left buckets: %d rtt: %d\n",
+            LOG("[DTLS] %u: send pkg: %x -- %x, left buckets: %d rtt: %d\n",
                     getmtime(), send_begin, send_pos, buckets, rtt_time);
         }
 #endif
@@ -315,7 +322,7 @@ uint32_t Dtls::send_pkg(uint32_t seq, uint32_t window, size_t len) {
         void(0); //TODO put some error info
     }
 #ifdef DEBUG_DTLS
-//    LOGE("[DTLS] %u: send a pkg: %x -- %x\n",getmtime(), seq, seq+(uint32_t)len);
+//    LOG("[DTLS] %u: send a pkg: %x -- %x\n",getmtime(), seq, seq+(uint32_t)len);
 #endif
     return len;
 }
