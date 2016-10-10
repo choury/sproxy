@@ -1,4 +1,6 @@
-language: cpp c
+language: cpp
+sudo: required
+dist: trusty
 before_install:
 #openSSL 1.0.2 stable
 - wget -O openssl.zip -c https://github.com/openssl/openssl/archive/OpenSSL_1_0_2-stable.zip
@@ -8,9 +10,13 @@ before_install:
 - make
 - sudo make install
 - cd ..
-compiler: 
-- gcc
-- clang
+compiler:
+  - clang
+  - gcc
+env:
+  - BUILD_TYPE=Debug
+  - BUILD_TYPE=Release
+  - BUILD_TYPE=RelWithDebInfo
 
 # Change this to your needs
-script:  cmake . -DCMAKE_BUILD_TYPE=RelWithDebInfo && make
+script:  cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE} && make
