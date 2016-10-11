@@ -1,73 +1,38 @@
 #include "guest_s.h"
 #include "guest_s2.h"
-#include "dtls.h"
 
 #include <unistd.h>
 #include <openssl/err.h>
 
 
-Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, SSL* ssl): Guest(fd, myaddr), ssl(ssl) {
-    socklen_t len = sizeof(protocol);
-    getsockopt( fd, SOL_SOCKET, SO_TYPE, &protocol, &len);
+Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, Ssl* ssl): Guest(fd, myaddr), ssl(ssl){
     accept_start_time = time(nullptr);
     handleEvent = (void (Con::*)(uint32_t))&Guest_s::shakehandHE;
+    if(ssl->is_dtls()){
+        add_tick_func(dtls_tick, ssl);
+    }
 }
 
 Guest_s::~Guest_s() {
-    if (ssl) {
-        SSL_shutdown(ssl);
-        SSL_free(ssl);
+    if(ssl){
+        delete ssl;
+        del_tick_func(dtls_tick, ssl);
     }
 }
 
 void Guest_s::discard(){
+    del_tick_func(dtls_tick, ssl);
     ssl = nullptr;
     Guest::discard();
 }
 
 ssize_t Guest_s::Read(void* buff, size_t size) {
-    return SSL_read(ssl, buff, size);
+    return ssl->read(buff, size);
 }
 
 ssize_t Guest_s::Write(const void *buff, size_t size) {
-    return SSL_write(ssl, buff, size);
+    return ssl->write(buff, size);
 }
-
-
-int Guest_s::showerrinfo(int ret, const char* s) {
-    if(ret<=0) {
-        int error = SSL_get_error(ssl, ret);
-        switch (error) {
-        case SSL_ERROR_WANT_READ:
-            return 0;
-        case SSL_ERROR_WANT_WRITE:
-            updateEpoll(EPOLLIN | EPOLLOUT);
-            return 0;
-        case SSL_ERROR_ZERO_RETURN:
-            break;
-        case SSL_ERROR_SYSCALL:
-            error = ERR_get_error();
-            if (error == 0 && ret == 0){
-                LOGE("([%s]:%d): %s: the connection was lost\n",
-                     sourceip, sourceport, s);
-            }else if (error == 0 && ret == -1){
-                LOGE("([%s]:%d): %s:%m\n", sourceip, sourceport, s);
-            }else{
-                LOGE("([%s]:%d): %s:%s\n", sourceip, sourceport, s,
-                    ERR_error_string(error, NULL));
-            }
-            break;
-        default:
-            LOGE("([%s]:%d): %s:%s\n", sourceip, sourceport, s,
-                ERR_error_string(ERR_get_error(), NULL));
-        }
-    }else{
-         LOGE("([%s]:%d): %s:%d\n", sourceip, sourceport, s, ret);
-    }
-    ERR_clear_error();
-    return 1;
-}
-
 
 
 void Guest_s::shakehandHE(uint32_t events) {
@@ -84,7 +49,7 @@ void Guest_s::shakehandHE(uint32_t events) {
     }
 
     if ((events & EPOLLIN)|| (events & EPOLLOUT)) {
-        int ret = SSL_accept(ssl);
+        int ret = ssl->accept();
         if (ret != 1) {
             if (time(nullptr) - accept_start_time>=120 || showerrinfo(ret, "ssl accept error")) {
                 clean(SSL_SHAKEHAND_ERR, this);
@@ -95,15 +60,9 @@ void Guest_s::shakehandHE(uint32_t events) {
 
             const unsigned char *data;
             unsigned int len;
-            SSL_get0_alpn_selected(ssl, &data, &len);
-            if ((data && strncasecmp((const char*)data, "h2", len) == 0) ||
-                protocol == UDP)
-            {
-                if(protocol == TCP){
-                    new Guest_s2(fd, sourceip, sourceport, new Ssl(ssl));
-                }else{
-                    new Guest_s2(fd, sourceip, sourceport, new Dtls(ssl));
-                }
+            ssl->get_alpn(&data, &len);
+            if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
+                new Guest_s2(fd, sourceip, sourceport, ssl);
                 this->discard();
                 clean(NOERROR, this);
                 return;

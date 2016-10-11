@@ -4,7 +4,7 @@
 #include "requester.h"
 #include "http2.h"
 #include "binmap.h"
-#include "ssl_abstract.h"
+#include "vssl.h"
 
 class Guest_s2: public Requester, public Http2Res{
     uint32_t lastrecv ;
@@ -37,7 +37,6 @@ public:
     virtual int32_t bufleft(Peer*)override;
     virtual void wait(Peer *who)override;
     virtual void writedcb(Peer *who)override;
-//    virtual int showerrinfo(int ret, const char *)override;
     void check_alive();
 };
 

@@ -6,6 +6,7 @@
 #include "dtls.h"
 
 
+extern int use_http2;
 extern std::map<Host*,time_t> connectmap;
 
 Proxy::Proxy(const char* hostname, uint16_t port, Protocol protocol): Host(hostname, port, protocol) {
@@ -35,44 +36,12 @@ Responser* Proxy::getproxy(HttpReqHeader &req, Responser* responser_ptr) {
 }
 
 ssize_t Proxy::Read(void* buff, size_t size) {
-    return SSL_read(ssl, buff, size);
+    return ssl->read(buff, size);
 }
 
 
 ssize_t Proxy::Write(const void *buff, size_t size) {
-    return SSL_write(ssl, buff, size);
-}
-
-int Proxy::showerrinfo(int ret, const char* s) {
-    if(ret <= 0){
-        int error = SSL_get_error(ssl, ret);
-        switch (error) {
-        case SSL_ERROR_WANT_READ:
-            updateEpoll(EPOLLIN);
-            return 0;
-        case SSL_ERROR_WANT_WRITE:
-            updateEpoll(EPOLLIN | EPOLLOUT);
-            return 0;
-        case SSL_ERROR_ZERO_RETURN:
-            break;
-        case SSL_ERROR_SYSCALL:
-            error = ERR_get_error();
-            if (error == 0 && ret == 0){
-                LOGE("%s: the connection was lost\n", s);
-            }else if (error == 0 && ret == -1){
-                LOGE("%s:%m\n", s);
-            }else{
-                LOGE("%s:%s\n", s, ERR_error_string(error, NULL));
-            }
-            break;
-        default:
-            LOGE("%s:%s\n", s, ERR_error_string(ERR_get_error(), NULL));
-        }
-    } else {
-        LOGE("%s:%d\n", s, ret);
-    }
-    ERR_clear_error();
-    return 1;
+    return ssl->write(buff, size);
 }
 
 
@@ -117,24 +86,30 @@ void Proxy::waitconnectHE(uint32_t events) {
             SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);  // 去除支持SSLv2 SSLv3
             SSL_CTX_set_read_ahead(ctx, 1);
             
-            ssl = SSL_new(ctx);
+            SSL *ssl = SSL_new(ctx);
             SSL_set_fd(ssl, fd);
             SSL_set_tlsext_host_name(ssl, hostname);
+            this->ssl = new Ssl(ssl);
         }else{
             ctx = SSL_CTX_new(DTLS_client_method());
             if (ctx == NULL) {
                 ERR_print_errors_fp(stderr);
                 goto reconnect;
             }
-            ssl = SSL_new(ctx);
+            SSL *ssl = SSL_new(ctx);
             BIO* bio = BIO_new_dgram(fd, BIO_NOCLOSE);
             BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_CONNECTED, 0, &addrs[testedaddr-1]);
             SSL_set_bio(ssl, bio, bio);
+            this->ssl = new Dtls(ssl);
         }
         
-        if(proxy2 == nullptr)
-            SSL_set_alpn_protos(ssl, alpn_protos_string, sizeof(alpn_protos_string)-1);
+        if(use_http2){
+            ssl->set_alpn(alpn_protos_string, sizeof(alpn_protos_string)-1);
+        }
         
+        if(ssl->is_dtls()){
+            add_tick_func(dtls_tick, ssl);
+        }
         updateEpoll(EPOLLIN | EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Proxy::shakehandHE;
     }
@@ -162,9 +137,10 @@ void Proxy::shakehandHE(uint32_t events) {
     }
 
     if ((events & EPOLLIN) || (events & EPOLLOUT)) {
-        int ret = SSL_connect(ssl);
+        int ret = ssl->connect();
         if (ret != 1) {
-            if (showerrinfo(ret, "ssl connect error")) {
+            if (errno != EAGAIN) {
+                LOGE("ssl connect error:%m\n");
                 clean(SSL_SHAKEHAND_ERR, this);
             }
             return;
@@ -172,16 +148,10 @@ void Proxy::shakehandHE(uint32_t events) {
         
         const unsigned char *data;
         unsigned int len;
-        SSL_get0_alpn_selected(ssl, &data, &len);
-        if ((data && strncasecmp((const char*)data, "h2", len) == 0)||
-            protocol == UDP )
+        ssl->get_alpn(&data, &len);
+        if ((data && strncasecmp((const char*)data, "h2", len) == 0))
         {
-            Proxy2 *new_proxy;
-            if(protocol == TCP){
-                new_proxy = new Proxy2(fd, ctx, new Ssl(ssl));
-            }else{
-                new_proxy = new Proxy2(fd, ctx, new Dtls(ssl));
-            }
+            Proxy2 *new_proxy = new Proxy2(fd, ctx,ssl);
             new_proxy->init();
             new_proxy->request(req);
             requester_ptr->ResetResponser(new_proxy);
@@ -191,7 +161,9 @@ void Proxy::shakehandHE(uint32_t events) {
             this->discard();
             clean(NOERROR, this);
         }else{
-            assert(protocol != UDP);
+            if(protocol == UDP){
+                LOGE("Warning: Use http1.1 on dtls!\n");
+            }
             updateEpoll(EPOLLIN | EPOLLOUT);
             handleEvent = (void (Con::*)(uint32_t))&Proxy::defaultHE;
         }
@@ -208,6 +180,7 @@ void Proxy::request(HttpReqHeader& req)
 }
 
 void Proxy::discard() {
+    del_tick_func(dtls_tick, ssl);
     ssl = nullptr;
     ctx = nullptr;
     Host::discard();
@@ -217,8 +190,8 @@ void Proxy::discard() {
 
 Proxy::~Proxy() {
     if (ssl) {
-        SSL_shutdown(ssl);
-        SSL_free(ssl);
+        del_tick_func(dtls_tick, ssl);
+        delete ssl;
     }
     if (ctx){
         SSL_CTX_free(ctx);

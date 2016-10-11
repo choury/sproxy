@@ -34,7 +34,7 @@
                         if(daemon_mode) \
                             syslog(LOG_INFO, __VA_ARGS__); \
                         else \
-                            fprintf(stdout, __VA_ARGS__); \
+                            printf(__VA_ARGS__); \
                      }while(0)
 #define  LOGE(...)   do{\
                         char tmp[1024]; \
@@ -140,10 +140,13 @@ uint32_t getmtime();
 
 void sighandle(int signum);
 void dump_trace(int ignore);
+int showerrinfo(int ret, const char *s);
 
 void* p_malloc(size_t size);
 void p_free(void *ptr);
 void *p_move(void *ptr, signed char len);
+
+void dtls_tick(void *p);
 
 void add_tick_func(void (*func)(void *), void *arg);
 void del_tick_func(void (*func)(void *), void *arg);

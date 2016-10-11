@@ -1,6 +1,5 @@
 #include "guest_s2.h"
 #include "responser.h"
-#include "dtls.h"
 
 #include <limits.h>
 
@@ -60,9 +59,9 @@ ssize_t Guest_s2::Write(void *buff, size_t size, Peer *who, uint32_t id) {
     set24(header->length, size);
     if(size == 0) {
         header->flags = END_STREAM_F;
-        idmap.erase(responser);
-        waitlist.erase(who);
-        who->clean(NOERROR, this, id);
+//        idmap.erase(responser);
+//        waitlist.erase(who);
+//        who->clean(NOERROR, this, id);
     }
     SendFrame(header);
     this->remotewinsize -= size;
@@ -255,21 +254,11 @@ void Guest_s2::writedcb(Peer *who){
         responser->localwinsize += ExpandWindowSize(idmap.at(responser), len);
     }
 }
-/*
-int Guest_s2::showerrinfo(int ret, const char* s) {
-    if(errno == EAGAIN){
-        return 0;
-    }
-    LOGE("([%s]:%d): %s:%m\n", sourceip, sourceport, s);
-    return 1;
-}
-*/
+
 
 void Guest_s2::check_alive() {
-    Dtls *dtls = dynamic_cast<Dtls*>(ssl);
-    if(dtls && dtls->send() < 0){
-        clean(PEER_LOST_ERR, this);
-        return;
+    if(ssl->is_dtls()){
+        dtls_tick(ssl);
     }
     if(getmtime() - lastrecv >= 30000){ //超过30秒没收到报文，认为连接断开
         LOGE("[Guest_s2] Nothing got too long, so close it\n");

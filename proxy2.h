@@ -4,7 +4,7 @@
 #include "responser.h"
 #include "http2.h"
 #include "binmap.h"
-#include "ssl_abstract.h"
+#include "vssl.h"
 
 class Proxy2:public Responser, public Http2Req{
     uint32_t curid = 1;
@@ -38,7 +38,6 @@ public:
     virtual int32_t bufleft(Peer *)override;
     virtual void wait(Peer *who)override;
     virtual void writedcb(Peer *who)override;
-//    virtual int showerrinfo(int ret, const char* s)override;
     void check_alive();
 };
 

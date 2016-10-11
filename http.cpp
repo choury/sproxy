@@ -175,7 +175,7 @@ void HttpReq::HeaderProc() {
         size_t headerlen = headerend - http_buff;
         try {
             HttpResHeader res(http_buff, this);
-            if(res.no_left()){
+            if(res.no_left() || res.status[0] == '1'){
                 http_flag |= HTTP_IGNORE_BODY_F;
             }else if (res.get("Transfer-Encoding")!= nullptr) {
                 Http_Proc = &HttpReq::ChunkLProc;

@@ -11,6 +11,7 @@
 
 int efd;
 int daemon_mode = 0;
+int use_http2 = 1;
 uint16_t CPORT = 3333;
 
 template<class T>
@@ -47,6 +48,7 @@ void usage(const char * programe){
            "       -p: The port to listen, default is 3333.\n"
            "       -t: Run as a transparent proxy, it will disable -p.\n"
            "       -s: Set a user and passwd for client, default is none.\n"
+           "       -1: use http/1.1 only.\n"
            "       -D: Run as a daemon.\n"
            "       -h: Print this.\n"
            , programe);
@@ -55,7 +57,7 @@ void usage(const char * programe){
 int main(int argc, char** argv) {
     int oc;
     bool istrans  = false;
-    while((oc = getopt(argc, argv, "p:ths:D")) != -1)
+    while((oc = getopt(argc, argv, "p:ths:D1")) != -1)
     {
         switch(oc){
         case 'p':
@@ -73,6 +75,9 @@ int main(int argc, char** argv) {
             return 0;
         case 'D':
             daemon_mode = 1;
+            break;
+        case '1':
+            use_http2 = 0;
             break;
         case '?':
             usage(argv[0]);
@@ -103,7 +108,7 @@ int main(int argc, char** argv) {
 
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
-    signal(SIGTERM, sighandle);
+    signal(SIGUSR1, sighandle);
     signal(SIGABRT, dump_trace);
     loadsites();
     efd = epoll_create(10000);

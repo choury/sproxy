@@ -61,7 +61,6 @@ public:
     virtual ssize_t Write(void *buff, size_t size, Peer* who, uint32_t id=0)override;
     virtual void wait(Peer *who)override;
     virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
-    virtual int showerrinfo(int ret,const char *s)override;
     virtual void request(HttpReqHeader &req)override;
     static Cgi* getcgi(HttpReqHeader &req);
 };

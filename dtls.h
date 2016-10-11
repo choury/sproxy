@@ -1,7 +1,7 @@
 #ifndef DTLS_H__
 #define DTLS_H__
 #include "common.h"
-#include "ssl_abstract.h"
+#include "vssl.h"
 
 #include <list>
 #include <queue>
@@ -55,7 +55,9 @@ public:
     virtual ~Dtls();
     virtual ssize_t write(const void *buff, size_t size) override;
     virtual ssize_t read(void *buff, size_t size) override;
+    virtual bool is_dtls()override;
     int send();
 };
+
 
 #endif

@@ -9,6 +9,17 @@
 
 //#define DEBUG_DTLS
 
+void dtls_tick(void* p) {
+    Ssl *ssl = (Ssl *)p;
+    Dtls *dtls = dynamic_cast<Dtls *>(ssl);
+    if(dtls){
+        dtls->send();
+    }else{
+        assert(fprintf(stderr, "Only dtls need tick!\n"));
+    }
+}
+
+
 /*
  * * The next routines deal with comparing 32 bit unsigned ints
  * * and worry about wraparound (automatic with unsigned arithmetic).
@@ -59,6 +70,11 @@ Dtls::~Dtls(){
     delete []write_buff;
     delete []read_buff;
 }
+
+bool Dtls::is_dtls() {
+    return true;
+}
+
 
 ssize_t Dtls::read(void* buff, size_t size) {
     if(recv() < 0){

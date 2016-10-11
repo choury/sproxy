@@ -38,7 +38,7 @@ class Https_server: public Server {
             SSL *ssl = SSL_new(ctx);
             /* 将连接用户的socket 加入到SSL */
             SSL_set_fd(ssl, clsk);
-            new Guest_s(clsk, &myaddr, ssl);
+            new Guest_s(clsk, &myaddr, new Ssl(ssl));
         } else {
             LOGE("unknown error\n");
             return;
@@ -69,7 +69,7 @@ class Dtls_server: public Server {
             }
             /* Set new fd and set BIO to connected */
             BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_CONNECTED, 0, &myaddr);
-            new Guest_s(fd, &myaddr, ssl);
+            new Guest_s(fd, &myaddr, new Dtls(ssl));
             
             fd = socket(AF_INET6, SOCK_DGRAM, 0);
             assert(fd > 0);
@@ -240,7 +240,7 @@ int main(int argc, char **argv) {
 
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
-    signal(SIGTERM, sighandle);
+    signal(SIGUSR1, sighandle);
     signal(SIGABRT, dump_trace);
     loadsites();
     efd = epoll_create(10000);

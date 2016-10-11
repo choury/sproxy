@@ -1,6 +1,6 @@
 #include "proxy2.h"
 #include "requester.h"
-#include "dtls.h"
+
 
 Proxy2* proxy2 = nullptr;
 
@@ -210,7 +210,8 @@ void Proxy2::ResProc(HttpResHeader& res) {
             if(memcmp(res.status, "200", 4) == 0)
                 strcpy(res.status, "200 Connection established");
         }else if((res.flags & END_STREAM_F) == 0 &&
-           !res.get("Content-Length"))
+           !res.get("Content-Length") &&
+           res.status[0] != '1')  //1xx should not have body
         {
             res.add("Transfer-Encoding", "chunked");
         }
@@ -262,21 +263,10 @@ void Proxy2::writedcb(Peer *who){
     }
 }
 
-/*
-int Proxy2::showerrinfo(int ret, const char* s) {
-    if(errno == EAGAIN){
-        return 0;
-    }
-    LOGE("%s:%m\n", s);
-    return 1;
-}
-*/
 
 void Proxy2::check_alive() {
-    Dtls *dtls = dynamic_cast<Dtls*>(ssl);
-    if(dtls && dtls->send() < 0){
-        clean(PEER_LOST_ERR, this);
-        return;
+    if(ssl->is_dtls()){
+        dtls_tick(ssl);
     }
     if(proxy2 && proxy2 != this && idmap.empty()){
         clean(NOERROR, this);

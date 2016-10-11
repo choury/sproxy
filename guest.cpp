@@ -15,21 +15,6 @@ void Guest::ResetResponser(Responser *r){
     responser_ptr = r;
 }
 
-/*
-
-int Guest::showerrinfo(int ret, const char *s) {
-    if (ret < 0) {
-        if (errno != EAGAIN) {
-            LOGE("([%s]:%d): %s:%m\n", sourceip, sourceport, s);
-        } else {
-            return 0;
-        }
-    }else if(ret){
-        LOGE("([%s]:%d): %s:%d\n",sourceip, sourceport, s, ret);
-    }
-    return 1;
-}
-*/
 
 void Guest::defaultHE(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
@@ -83,6 +68,8 @@ void Guest::response(HttpResHeader& res) {
     Peer::Write(buff, len, this);
     if(res.get("Transfer-Encoding")){
         flag |= ISCHUNKED_F;
+    }else{
+        flag &= ~ISCHUNKED_F;
     }
 }
 

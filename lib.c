@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <errno.h>
 #include <sys/time.h>
 
 #define PRIOR_HEAD 32
@@ -246,8 +247,21 @@ uint32_t getmtime(){
 
 void sighandle(int signum){
     fflush(stdout);
-    exit(1);
 }
+
+int showerrinfo(int ret, const char *s){
+    if (ret < 0) {
+        if (errno != EAGAIN) {
+            LOGE("%s: %m\n", s);
+        } else {
+            return 0;
+        }
+    }else if(ret){
+        LOGE("%s:%d\n",s, ret);
+    }
+    return 1;
+}
+
 
 void* p_malloc(size_t size){
     void *ptr = malloc(size + PRIOR_HEAD);

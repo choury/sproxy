@@ -114,18 +114,6 @@ void Cgi::SendFrame(CGI_Header *header, size_t len)
 }*/
 
 
-int Cgi::showerrinfo(int ret, const char* s) {
-    if(ret < 0) {
-        if(errno != EAGAIN) {
-            LOGE("%s: %m\n",s);
-        } else {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-
 void Cgi::InProc() {
     Requester *requester;
     ssize_t len = 0;
