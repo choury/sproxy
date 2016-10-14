@@ -7,7 +7,7 @@
 #include "vssl.h"
 
 class Guest_s2: public Requester, public Http2Res{
-    uint32_t lastrecv ;
+    uint32_t last_interactive ;
     binmap<Responser *, int> idmap;
     std::set<Peer *> waitlist;
     Ssl *ssl;

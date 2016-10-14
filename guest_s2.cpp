@@ -14,7 +14,7 @@ Guest_s2::Guest_s2(int fd, const char* ip, uint16_t port, Ssl* ssl):
     localwinsize  = localframewindowsize;
     updateEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Con::*)(uint32_t))&Guest_s2::defaultHE;
-    lastrecv = getmtime();
+    last_interactive = getmtime();
     add_tick_func((void (*)(void *))guest2tick, this);
 }
 
@@ -25,7 +25,7 @@ Guest_s2::Guest_s2(int fd, struct sockaddr_in6* myaddr, Ssl* ssl):
     localwinsize  = localframewindowsize;
     updateEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Con::*)(uint32_t))&Guest_s2::defaultHE;
-    lastrecv = getmtime();
+    last_interactive = getmtime();
     add_tick_func((void (*)(void *))guest2tick, this);
 }
 
@@ -143,7 +143,7 @@ void Guest_s2::defaultHE(uint32_t events) {
         if(inited && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
-        lastrecv = getmtime();
+        last_interactive = getmtime();
     }
 
     if (events & EPOLLOUT) {
@@ -159,7 +159,8 @@ void Guest_s2::defaultHE(uint32_t events) {
                 }else{
                     i++;
                 }
-            }      
+            }
+            last_interactive = getmtime();
         }
         if (framequeue.empty()) {
             updateEpoll(EPOLLIN);
@@ -260,8 +261,8 @@ void Guest_s2::check_alive() {
     if(ssl->is_dtls()){
         dtls_tick(ssl);
     }
-    if(getmtime() - lastrecv >= 30000){ //超过30秒没收到报文，认为连接断开
-        LOGE("[Guest_s2] Nothing got too long, so close it\n");
+    if(getmtime() - last_interactive >= 30000){ //超过30秒交互数据，认为连接断开
+        LOGE("([%s]:%d): [Guest_s2] Nothing got too long, so close it\n", sourceip, sourceport);
         clean(PEER_LOST_ERR, this);
     }
 }
