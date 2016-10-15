@@ -157,6 +157,7 @@ extern uint16_t SPORT;
 extern Protocol SPROT;
 extern char *auth_string;
 extern int daemon_mode;
+extern int ignore_cert_error;
 
 #ifdef  __cplusplus
 }

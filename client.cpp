@@ -44,20 +44,21 @@ public:
 };
 
 void usage(const char * programe){
-    printf("Usage: %s [-t] [-p port] [-s user:passwd ] [-h] server[:port] -D\n"
-           "       -p: The port to listen, default is 3333.\n"
-           "       -t: Run as a transparent proxy, it will disable -p.\n"
-           "       -s: Set a user and passwd for client, default is none.\n"
-           "       -1: use http/1.1 only.\n"
+    printf("Usage: %s  server[:port]\n"
+           "       -k: ignore the cert error of server (SHOULD NOT DO IT)\n"
            "       -D: Run as a daemon.\n"
            "       -h: Print this.\n"
+           "       -p: The port to listen, default is 3333.\n"
+           "       -s: Set a user and passwd for client (user:password), default is none.\n"
+           "       -t: Run as a transparent proxy, it will disable -p.\n"
+           "       -1: use http/1.1 only (SHOULD NOT USE IT WITH dtls).\n"
            , programe);
 }
 
 int main(int argc, char** argv) {
     int oc;
     bool istrans  = false;
-    while((oc = getopt(argc, argv, "p:ths:D1")) != -1)
+    while((oc = getopt(argc, argv, "kDhp:st:1")) != -1)
     {
         switch(oc){
         case 'p':
@@ -78,6 +79,9 @@ int main(int argc, char** argv) {
             break;
         case '1':
             use_http2 = 0;
+            break;
+        case 'k':
+            ignore_cert_error = 1;
             break;
         case '?':
             usage(argv[0]);

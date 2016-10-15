@@ -6,6 +6,7 @@
 #include "dtls.h"
 
 
+int ignore_cert_error = 0;
 extern int use_http2;
 extern std::map<Host*,time_t> connectmap;
 
@@ -44,6 +45,48 @@ ssize_t Proxy::Write(const void *buff, size_t size) {
     return ssl->write(buff, size);
 }
 
+int verify_host_callback(int ok, X509_STORE_CTX *ctx){
+    char    buf[256];
+    X509   *err_cert;
+    int     err, depth;
+
+    err_cert = X509_STORE_CTX_get_current_cert(ctx);
+    err = X509_STORE_CTX_get_error(ctx);
+    depth = X509_STORE_CTX_get_error_depth(ctx);
+
+    X509_NAME_oneline(X509_get_subject_name(err_cert), buf, 256);
+
+    /*
+     * Catch a too long certificate chain. The depth limit set using
+     * SSL_CTX_set_verify_depth() is by purpose set to "limit+1" so
+     * that whenever the "depth>verify_depth" condition is met, we
+     * have violated the limit and want to log this error condition.
+     * We must do it here, because the CHAIN_TOO_LONG error would not
+     * be found explicitly; only errors introduced by cutting off the
+     * additional certificates would be logged.
+     */
+    if (!ok) {
+        LOGE("verify cert error:num=%d:%s:depth=%d:%s\n", err,
+                 X509_verify_cert_error_string(err), depth, buf);
+    } else {
+        LOG("cert depth=%d:%s\n", depth, buf);
+    }
+
+    /*
+     * At this point, err contains the last verification error. We can use
+     * it for something special
+     */
+    if (!ok && (err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT))
+    {
+      X509_NAME_oneline(X509_get_issuer_name(ctx->current_cert), buf, 256);
+      LOGE("unable to get issuer= %s\n", buf);
+    }
+
+    if (ignore_cert_error)
+      return 1;
+    else
+      return ok; 
+}
 
 static const unsigned char alpn_protos_string[] =
     "\x8http/1.1" \
@@ -102,6 +145,12 @@ void Proxy::waitconnectHE(uint32_t events) {
             SSL_set_bio(ssl, bio, bio);
             this->ssl = new Dtls(ssl);
         }
+        if (SSL_CTX_load_verify_locations(ctx, NULL, "/etc/ssl/certs/") != 1)
+            ERR_print_errors_fp(stderr);
+
+        if (SSL_CTX_set_default_verify_paths(ctx) != 1)
+            ERR_print_errors_fp(stderr);
+        ssl->verify_hostname(SHOST, verify_host_callback);
         
         if(use_http2){
             ssl->set_alpn(alpn_protos_string, sizeof(alpn_protos_string)-1);

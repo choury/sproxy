@@ -4,6 +4,7 @@
 #include <openssl/ssl.h>
 #include <assert.h>
 #include <errno.h>
+#include <openssl/x509v3.h>
 
 class Ssl{
 protected:
@@ -20,6 +21,9 @@ protected:
                     ret = 0;
                     errno = 0;
                 case SSL_ERROR_SYSCALL:
+                    break;
+                default:
+                    errno = EIO;
                     break;
             }
         }
@@ -51,6 +55,16 @@ public:
     }
     int set_alpn(const unsigned char *s, unsigned int len){
         return SSL_set_alpn_protos(ssl, s, len);
+    }
+    void verify_hostname(const char *hostname, int (*callback) (int ok, X509_STORE_CTX *ctx)){
+        X509_VERIFY_PARAM *param = SSL_get0_param(ssl);
+
+        /* Enable automatic hostname checks */
+        X509_VERIFY_PARAM_set_hostflags(param, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+        X509_VERIFY_PARAM_set1_host(param, hostname, 0);
+
+        /* Configure a non-zero callback if desired */
+        SSL_set_verify(ssl, SSL_VERIFY_PEER, callback);
     }
     virtual bool is_dtls(){
         return false;
