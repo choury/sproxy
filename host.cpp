@@ -169,6 +169,8 @@ void Host::request(HttpReqHeader& req) {
         Http_Proc = &Host::AlwaysProc;
     }else if(req.ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY_F;
+    }else if(req.ismethod("SEND")){
+        Http_Proc = &Host::AlwaysProc;
     }
     requester_ptr = dynamic_cast<Requester *>(req.src);
 }
@@ -184,10 +186,12 @@ void Host::ResProc(HttpResHeader& res) {
 
 
 Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr) {
+    Protocol protocol = req.ismethod("SEND")?UDP:TCP;
     Host* host = dynamic_cast<Host *>(responser_ptr);
     if (host
         && strcasecmp(host->hostname, req.hostname) == 0
         && host->port == req.port
+        && protocol == host->protocol
         && !req.ismethod("CONNECT"))
     {
         host->request(req);
@@ -198,7 +202,7 @@ Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr) {
         responser_ptr->ResetRequester(nullptr);
         responser_ptr->clean(NOERROR, responser_ptr);
     }
-    host = new Host(req.hostname, req.port, TCP);
+    host = new Host(req.hostname, req.port, protocol);
     host->request(req);
     return host;
 }
