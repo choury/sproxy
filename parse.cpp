@@ -481,7 +481,8 @@ bool HttpReqHeader::no_left() const {
         return true;
     }
     if(get("content-length") &&
-       strcmp("0", get("content-length"))==0)
+       strcmp("0", get("content-length"))==0 &&
+       !ismethod("CONNECT"))
     {
         return true;
     }
