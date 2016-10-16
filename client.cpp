@@ -58,7 +58,7 @@ void usage(const char * programe){
 int main(int argc, char** argv) {
     int oc;
     bool istrans  = false;
-    while((oc = getopt(argc, argv, "kDhp:st:1")) != -1)
+    while((oc = getopt(argc, argv, "kDhp:s:t1")) != -1)
     {
         switch(oc){
         case 'p':
