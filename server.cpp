@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <arpa/inet.h>
 #include <openssl/err.h>
+#include <openssl/bio.h>
 
 int efd;
 int daemon_mode = 0;
@@ -56,19 +57,26 @@ class Dtls_server: public Server {
     SSL_CTX *ctx;
     virtual void defaultHE(uint32_t events) {
         if (events & EPOLLIN) {
-            struct sockaddr_in6 myaddr;
-            memset(&myaddr, 0, sizeof(myaddr));
             BIO *bio = BIO_new_dgram(fd, BIO_NOCLOSE);
             SSL *ssl = SSL_new(ctx);
             SSL_set_bio(ssl, bio, bio);
+            struct sockaddr_in6 myaddr;
+            memset(&myaddr, 0, sizeof(myaddr));
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
             if(DTLSv1_listen(ssl, &myaddr)<=0)
                 goto error;
+            BIO_ctrl_set_connected(bio, 0, &myaddr);
+#else
+            if(DTLSv1_listen(ssl, (BIO_ADDR *)&myaddr)<=0){
+                goto error;
+            }
+            BIO_ctrl_set_connected(bio, &myaddr);
+#endif
             if(connect(fd, (struct sockaddr*)&myaddr, sizeof(struct sockaddr_in6))){
                 LOGE("connect error: %m\n");
                 goto error;
             }
             /* Set new fd and set BIO to connected */
-            BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_CONNECTED, 0, &myaddr);
             new Guest_s(fd, &myaddr, new Dtls(ssl));
             
             fd = socket(AF_INET6, SOCK_DGRAM, 0);
@@ -123,7 +131,11 @@ static int generate_cookie(SSL *ssl, unsigned char *cookie, unsigned int *cookie
     return 1;
 }
 
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 static int verify_cookie(SSL *ssl, unsigned char *cookie, unsigned int cookie_len){
+#else
+static int verify_cookie(SSL *ssl, const unsigned char *cookie, unsigned int cookie_len){
+#endif
     struct sockaddr_in6 myaddr;
     (void)BIO_dgram_get_peer(SSL_get_rbio(ssl), &myaddr);
     return strcmp((char *)cookie, getaddrstring((sockaddr_un *)&myaddr))==0;

@@ -10,6 +10,12 @@ Requester::Requester(int fd, struct sockaddr_in6* myaddr): Peer(fd) {
 }
 
 
+Requester::Requester(int fd, const char* ip, uint16_t port): Peer(fd), sourceport(port) {
+    strcpy(sourceip, ip);
+    
+    updateEpoll(EPOLLIN | EPOLLOUT);
+    handleEvent = (void (Con::*)(uint32_t))&Requester::defaultHE;
+}
 
 void Requester::closeHE(uint32_t events) {
     int ret = Peer::Write();
@@ -20,9 +26,6 @@ void Requester::closeHE(uint32_t events) {
     }
 }
 
-Requester::Requester(int fd, const char* ip, uint16_t port): Peer(fd), sourceport(port) {
-    strcpy(sourceip, ip);
-}
 
 void Requester::ResetResponser(Responser* ) {
 }

@@ -78,14 +78,14 @@ int verify_host_callback(int ok, X509_STORE_CTX *ctx){
      */
     if (!ok && (err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT))
     {
-      X509_NAME_oneline(X509_get_issuer_name(ctx->current_cert), buf, 256);
-      LOGE("unable to get issuer= %s\n", buf);
+        X509_NAME_oneline(X509_get_issuer_name(err_cert), buf, 256);
+        LOGE("unable to get issuer= %s\n", buf);
     }
 
     if (ignore_cert_error)
-      return 1;
+        return 1;
     else
-      return ok; 
+        return ok; 
 }
 
 static const unsigned char alpn_protos_string[] =
@@ -131,7 +131,6 @@ void Proxy::waitconnectHE(uint32_t events) {
             
             SSL *ssl = SSL_new(ctx);
             SSL_set_fd(ssl, fd);
-            SSL_set_tlsext_host_name(ssl, hostname);
             this->ssl = new Ssl(ssl);
         }else{
             ctx = SSL_CTX_new(DTLS_client_method());
@@ -150,7 +149,7 @@ void Proxy::waitconnectHE(uint32_t events) {
 
         if (SSL_CTX_set_default_verify_paths(ctx) != 1)
             ERR_print_errors_fp(stderr);
-        ssl->verify_hostname(SHOST, verify_host_callback);
+        ssl->set_hostname(SHOST, verify_host_callback);
         
         if(use_http2){
             ssl->set_alpn(alpn_protos_string, sizeof(alpn_protos_string)-1);

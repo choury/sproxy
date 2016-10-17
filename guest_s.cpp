@@ -13,6 +13,7 @@ Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, Ssl* ssl): Guest(fd, myadd
     }
 }
 
+
 Guest_s::~Guest_s() {
     if(ssl){
         delete ssl;

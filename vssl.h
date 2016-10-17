@@ -2,9 +2,9 @@
 #define SSL_ABSTRACT_H_
 
 #include <openssl/ssl.h>
+#include <openssl/x509v3.h>
 #include <assert.h>
 #include <errno.h>
-#include <openssl/x509v3.h>
 
 class Ssl{
 protected:
@@ -56,7 +56,8 @@ public:
     int set_alpn(const unsigned char *s, unsigned int len){
         return SSL_set_alpn_protos(ssl, s, len);
     }
-    void verify_hostname(const char *hostname, int (*callback) (int ok, X509_STORE_CTX *ctx)){
+    void set_hostname(const char *hostname, int (*callback) (int ok, X509_STORE_CTX *ctx)){
+        SSL_set_tlsext_host_name(ssl, hostname);
         X509_VERIFY_PARAM *param = SSL_get0_param(ssl);
 
         /* Enable automatic hostname checks */

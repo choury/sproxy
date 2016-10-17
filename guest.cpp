@@ -11,6 +11,7 @@
 Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Requester(fd, myaddr) {
 }
 
+
 void Guest::ResetResponser(Responser *r){
     responser_ptr = r;
 }
