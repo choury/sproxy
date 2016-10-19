@@ -93,7 +93,8 @@ void Host::waitconnectHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("connect to host error: %s\n", strerror(error));
+            LOGE("(%s): connect to %s error: %s\n", 
+                 requester_ptr->getsrc(),  hostname, strerror(error));
         }
         goto reconnect;
     }
@@ -102,11 +103,12 @@ void Host::waitconnectHE(uint32_t events) {
         int error;
         socklen_t len = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-            LOGE("getsokopt error: %m\n");
+            LOGE("(%s): getsokopt error: %m\n", requester_ptr->getsrc());
             goto reconnect;
         }
         if (error != 0) {
-            LOGE("connect to %s: %s\n", this->hostname, strerror(error));
+            LOGE("(%s): connect to %s: %s\n", 
+                 requester_ptr->getsrc(), this->hostname, strerror(error));
             goto reconnect;
         }
         updateEpoll(EPOLLIN | EPOLLOUT);
@@ -136,7 +138,7 @@ void Host::defaultHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("host error: %s\n", strerror(error));
+            LOGE("(%s): host error: %s\n", requester_ptr->getsrc(), strerror(error));
         }
         clean(INTERNAL_ERR, this);
         return;
@@ -228,7 +230,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     int len = requester_ptr->bufleft(this);
 
     if (len <= 0) {
-        LOGE("The guest's write buff is full\n");
+        LOGE("(%s): The guest's write buff is full\n", requester_ptr->getsrc());
         requester_ptr->wait(this);
         return -1;
     }
@@ -253,5 +255,3 @@ void Host::clean(uint32_t errcode, Peer* who, uint32_t) {
         Peer::clean(errcode, who);
     }
 }
-
-

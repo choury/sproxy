@@ -23,8 +23,7 @@ void Guest::defaultHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("([%s]:%d): guest error:%s\n",
-                 sourceip, sourceport, strerror(error));
+            LOGE("(%s): guest error:%s\n", getsrc(), strerror(error));
         }
         clean(INTERNAL_ERR, this);
     }
@@ -98,13 +97,13 @@ ssize_t Guest::Write(void *buff, size_t size, Peer* who, uint32_t) {
 
 ssize_t Guest::DataProc(const void *buff, size_t size) {
     if (responser_ptr == NULL) {
-        LOGE("([%s]:%d): connecting to host lost\n", sourceip, sourceport);
+        LOGE("(%s): connecting to host lost\n", getsrc());
         clean(PEER_LOST_ERR, this);
         return -1;
     }
     int len = responser_ptr->bufleft(this);
     if (len <= 0) {
-        LOGE("([%s]:%d): The host's buff is full\n", sourceip, sourceport);
+        LOGE("(%s): The host's buff is full\n", getsrc());
         responser_ptr->wait(this);
         return -1;
     }

@@ -4,6 +4,7 @@
 #include "responser.h"
 #include "parse.h"
 #include "binmap.h"
+#include "object.h"
 
 #include <list>
 
@@ -38,7 +39,7 @@ struct CGI_NameValue{
 
 class Requester;
 
-class Cgi:public Responser{
+class Cgi:public Responser, public Object{
     char filename[URLLIMIT];
     char cgi_buff[BUF_LEN];
     size_t cgi_getlen  = 0;

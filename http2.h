@@ -75,7 +75,7 @@ struct Http2_frame{
     size_t wlen;
 };
 
-class Http2Base: virtual public Object{
+class Http2Base: public Object{
 protected:
     char http2_buff[FRAMELENLIMIT];
     uint32_t http2_getlen = 0;

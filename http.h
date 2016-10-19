@@ -4,7 +4,7 @@
 #include "parse.h"
 #include "object.h"
 
-class HttpBase: virtual public Object{
+class HttpBase: public Object{
 protected:
     char http_buff[HEADLENLIMIT];
     uint64_t http_expectlen;

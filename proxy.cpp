@@ -103,7 +103,8 @@ void Proxy::waitconnectHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("connect to proxy error: %s\n", strerror(error));
+            LOGE("(%s): connect to proxy error: %s\n",
+                 requester_ptr->getsrc(), strerror(error));
         }
         goto reconnect;
     }
@@ -112,12 +113,13 @@ void Proxy::waitconnectHE(uint32_t events) {
         int error;
         socklen_t len = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-            LOGE("proxy getsokopt error: %m\n");
+            LOGE("(%s): proxy getsokopt error: %m\n", requester_ptr->getsrc());
             goto reconnect;
         }
             
         if (error != 0) {
-            LOGE("connect to proxy:%s\n", strerror(error));
+            LOGE("(%s): connect to proxy:%s\n",
+                 requester_ptr->getsrc(), strerror(error));
             goto reconnect;
         }
         if(protocol == TCP){
@@ -178,7 +180,8 @@ void Proxy::shakehandHE(uint32_t events) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("proxy unkown error: %s\n", strerror(error));
+            LOGE("(%s): proxy unkown error: %s\n",
+                 requester_ptr->getsrc(), strerror(error));
         }
         clean(SSL_SHAKEHAND_ERR, this);
         return;
@@ -188,7 +191,7 @@ void Proxy::shakehandHE(uint32_t events) {
         int ret = ssl->connect();
         if (ret != 1) {
             if (errno != EAGAIN) {
-                LOGE("ssl connect error:%m\n");
+                LOGE("(%s): ssl connect error:%m\n", requester_ptr->getsrc());
                 clean(SSL_SHAKEHAND_ERR, this);
             }
             return;

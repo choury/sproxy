@@ -14,8 +14,7 @@ void Guest_sni::initHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("([%s]:%d): guest_sni error:%s\n",
-                 sourceip, sourceport, strerror(error));
+            LOGE("(%s): guest_sni error:%s\n", getsrc(), strerror(error));
         }
         clean(INTERNAL_ERR, this);
         return;

@@ -3,7 +3,6 @@
 
 #include "con.h"
 #include "common.h"
-#include "object.h"
 #include <queue>
 #include <set>
 
@@ -21,7 +20,7 @@ struct write_block{
 };
 
 
-class Peer:public Con, virtual public Object{
+class Peer:public Con{
     std::queue<write_block> write_queue;
     size_t  writelen = 0;
 protected:

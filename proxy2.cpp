@@ -121,7 +121,7 @@ void Proxy2::DataProc(const Http2_header* header) {
             idmap.erase(id);
             waitlist.erase(requester);
             requester->clean(ERR_FLOW_CONTROL_ERROR, this, id);
-            LOGE("[%d]: window size error\n", id);
+            LOGE("(%s) [%d]: window size error\n", requester->getsrc(), id);
             return;
         }
         requester->Write(header+1, len, this, id);
@@ -147,9 +147,10 @@ void Proxy2::ErrProc(int errcode) {
 
 void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
     if(idmap.count(id)){
-        Peer *requester = idmap.at(id);
+        Requester *requester = idmap.at(id);
         if(errcode){
-            LOGE("Requester reset stream [%d]: %d\n", id, errcode);
+            LOGE("(%s) [%d]: stream reseted: %d\n",
+                 requester->getsrc(), id, errcode);
         }
         idmap.erase(id);
         waitlist.erase(requester);

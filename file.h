@@ -3,6 +3,7 @@
 
 #include "responser.h"
 #include "parse.h"
+#include "object.h"
 #include <list>
 
 struct range{
@@ -19,7 +20,7 @@ public:
     bool calcu(size_t size);
 };
 
-class File:public Responser{
+class File:public Responser, public Object{
     void * mapptr = nullptr;
     size_t size;
     char filename[URLLIMIT];

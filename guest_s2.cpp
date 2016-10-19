@@ -85,7 +85,7 @@ void Guest_s2::DataProc(const Http2_header* header)
             idmap.erase(id);
             waitlist.erase(host);
             host->clean(ERR_FLOW_CONTROL_ERROR, this, id);
-            LOGE("(%s:[%d]):[%d] window size error\n", sourceip, sourceport, id);
+            LOGE("(%s):[%d] window size error\n", getsrc(), id);
             return;
         }
         host->Write(header+1, len, this, id);
@@ -132,8 +132,7 @@ void Guest_s2::defaultHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("([%s]:%d): guest_s error:%s\n",
-                 sourceip, sourceport, strerror(error));
+            LOGE("(%s): guest_s error:%s\n", getsrc(), strerror(error));
         }
         clean(INTERNAL_ERR, this);
         return;
@@ -171,7 +170,7 @@ void Guest_s2::defaultHE(uint32_t events) {
 void Guest_s2::RstProc(uint32_t id, uint32_t errcode) {
     if(idmap.count(id)){
         if(errcode)
-            LOGE("([%s]:%d): reset stream [%d]: %d\n", sourceip, sourceport, id, errcode);
+            LOGE("(%s) [%d]: stream  reseted: %d\n", getsrc(), id, errcode);
         Peer *who = idmap.at(id);
         idmap.erase(id);
         waitlist.erase(who);
@@ -262,7 +261,7 @@ void Guest_s2::check_alive() {
         dtls_tick(ssl);
     }
     if(getmtime() - last_interactive >= 30000){ //超过30秒交互数据，认为连接断开
-        LOGE("([%s]:%d): [Guest_s2] Nothing got too long, so close it\n", sourceip, sourceport);
+        LOGE("(%s): [Guest_s2] Nothing got too long, so close it\n", getsrc());
         clean(PEER_LOST_ERR, this);
     }
 }
