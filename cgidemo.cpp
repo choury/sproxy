@@ -21,7 +21,7 @@ int cgimain(int fd){
         if(header->flag & CGI_FLAG_END){
             auto param = getparamsmap(req->getparamstring());
             params.insert(param.begin(), param.end());
-            
+
             auto cookies = req->getcookies();
             HttpResHeader res(H200);
             res.add("Content-Type", "text/plain; charset=utf-8");
@@ -34,14 +34,19 @@ int cgimain(int fd){
             cookie.maxage = 10;
             addcookie(res, cookie);
             cgi_response(fd, res);
+            memset(buff, 0, sizeof(CGI_Header)+sizeof(CGI_NameValue));
+            header->type = CGI_VALUE;
+            header->requestId = req->cgi_id;
+            header->contentLength = htons(sizeof(CGI_NameValue));
             for(auto i:params){
                 char buff[1024];
                 cgi_write(fd,res.cgi_id, buff, sprintf(buff, "%s =====> %s\n", i.first.c_str(), i.second.c_str()));
-            }/*
+            }
+            cgi_write(fd,res.cgi_id, buff, sprintf(buff, "cookies:\n"));
             for(auto i:cookies){
                 char buff[1024];
                 cgi_write(fd,res.cgi_id, buff, sprintf(buff, "%s =====> %s\n", i.first.c_str(), i.second.c_str()));
-            }*/
+            }
             cgi_write(fd,res.cgi_id, "", 0);
             params.clear();
             delete req;

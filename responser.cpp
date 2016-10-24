@@ -57,7 +57,7 @@ int req_filter(HttpReqHeader& req){
         requester->Write(AUTHNEED, strlen(AUTHNEED), requester);
         return 1;
     }
-    if (checkblock(req.hostname)) {
+    if (checkblock(req.hostname) && !req.ismethod("DELBSITE")) {
         LOG("%s: site: %s blocked\n", requester->getsrc(), req.hostname);
         requester->Write(BLOCKTIP, strlen(BLOCKTIP), requester);
         return 1;

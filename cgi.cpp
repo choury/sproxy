@@ -188,20 +188,17 @@ void Cgi::InProc() {
         if((header->flag & CGI_FLAG_ACK)==0){
             header->flag |= CGI_FLAG_ACK;
             CGI_NameValue *nv = (CGI_NameValue *)(header+1);
-            while((char *)(nv+1) - (char*)header <= (int)cgi_getlen){
-                switch(ntohl(nv->name)){
-                case CGI_NAME_BUFFLEFT:
-                    nv->value = htonl(requester->bufleft(this));
-                    header->contentLength = htons((char *)(nv+1) - (char*)header);
-                    break;
-                default:
-                    goto send;
-                }
-                nv++;
+            switch(ntohl(nv->name)){
+            case CGI_NAME_BUFFLEFT:
+                set32(nv->value, htonl(requester->bufleft(this)));
+                header->contentLength = sizeof(CGI_NameValue) + sizeof(uint32_t);
+                break;
+            default:
+                goto ignore;
             }
+            Peer::Write((const void *)header, sizeof(CGI_Header) + ntohs(header->contentLength), this);
         }
-send:
-        Peer::Write((const void *)header, sizeof(CGI_Header) + ntohs(header->contentLength), this);
+ignore:
         status = WaitHeadr;
         cgi_getlen = 0;
         break;

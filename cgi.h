@@ -34,7 +34,7 @@ struct CGI_NVLenPair{
 #define CGI_NAME_BUFFLEFT  1
 struct CGI_NameValue{
     uint32_t name;
-    uint32_t value;
+    uint8_t value[0];
 }__attribute__((packed));
 
 class Requester;
