@@ -34,7 +34,6 @@
 #define H500        "HTTP/1.1 500 Internal Server Error" CRLF\
                     "Content-Length: 0" CRLF CRLF
 
-#define CHUNCKEND "0" CRLF CRLF
 #ifdef  __cplusplus
 extern "C" {
 #endif

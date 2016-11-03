@@ -62,6 +62,7 @@ class Dtls_server: public Server {
             SSL_set_bio(ssl, bio, bio);
             struct sockaddr_in6 myaddr;
             memset(&myaddr, 0, sizeof(myaddr));
+            SSL_set_accept_state(ssl);
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
             if(DTLSv1_listen(ssl, &myaddr)<=0)
                 goto error;
