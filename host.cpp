@@ -114,7 +114,7 @@ void Host::waitconnectHE(uint32_t events) {
         updateEpoll(EPOLLIN | EPOLLOUT);
 
         if (http_flag & HTTP_CONNECT_F){
-            HttpResHeader res(connecttip, this);
+            HttpResHeader res(H200, this);
             requester_ptr->response(res);
         }
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
@@ -190,14 +190,18 @@ void Host::ResProc(HttpResHeader& res) {
 Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr) {
     Protocol protocol = req.ismethod("SEND")?UDP:TCP;
     Host* host = dynamic_cast<Host *>(responser_ptr);
-    if (host
-        && strcasecmp(host->hostname, req.hostname) == 0
-        && host->port == req.port
-        && protocol == host->protocol
-        && !req.ismethod("CONNECT"))
-    {
-        host->request(req);
-        return host;
+    if (host){
+        if(strcasecmp(host->hostname, req.hostname) == 0
+            && host->port == req.port
+            && protocol == host->protocol
+            && !req.ismethod("CONNECT"))
+        {
+            host->request(req);
+            return host;
+        }else{
+            assert(host->requester_ptr == nullptr ||
+                   host->requester_ptr == dynamic_cast<Requester *>(req.src));
+        }
     }
 
     if (responser_ptr) {

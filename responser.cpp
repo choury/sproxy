@@ -53,17 +53,20 @@ int req_filter(HttpReqHeader& req){
         addauth(requester->getip());
     }
     if (auth_string && !checkauth(requester->getip())){
-        LOG("%s: Authorization needed\n", requester->getsrc());
+        LOG("%s: [[Authorization needed]] %s %s [%s]\n", 
+            requester->getsrc(), req.method, req.url, req.get("User-Agent"));
         requester->Write(AUTHNEED, strlen(AUTHNEED), requester);
         return 1;
     }
     if (checkblock(req.hostname) && !req.ismethod("DELBSITE")) {
-        LOG("%s: site: %s blocked\n", requester->getsrc(), req.hostname);
+        LOG("%s: [[site blocked]] %s %s [%s]\n", 
+            requester->getsrc(), req.method, req.url, req.get("User-Agent"));
         requester->Write(BLOCKTIP, strlen(BLOCKTIP), requester);
         return 1;
     } 
     if(req.get("via") && strstr(req.get("via"), "sproxy")){
-        LOG("%s: [%s] redirect back!\n", requester->getsrc(), req.hostname);
+        LOG("%s: [[redirect back]] %s %s [%s]\n",
+            requester->getsrc(), req.method, req.url, req.get("User-Agent"));
         requester->Write(H400, strlen(H400), requester);
         return 1;
     }

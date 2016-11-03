@@ -7,7 +7,7 @@
 
 class Requester;
 
-class Host:public Responser, public HttpReq{
+class Host:public Responser, public HttpRequester {
 protected:
     size_t testedaddr = 0;
     std::vector<sockaddr_un> addrs;
@@ -31,10 +31,10 @@ public:
     
     virtual void ResetRequester(Requester *r)override;
     virtual void discard()override;
-    virtual void request(HttpReqHeader &req)override;
+    virtual void request(HttpReqHeader& req)override;
     virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
-    virtual void ResProc(HttpResHeader &res)override;
-    static Host* gethost(HttpReqHeader &req, Responser* responser_ptr);
+    virtual void ResProc(HttpResHeader& res)override;
+    static Host* gethost(HttpReqHeader& req, Responser* responser_ptr);
     friend void hosttick(void *);
 };
 

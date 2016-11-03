@@ -6,7 +6,7 @@
 #include "binmap.h"
 #include "vssl.h"
 
-class Proxy2:public Responser, public Http2Req{
+class Proxy2:public Responser, public Http2Requster {
     uint32_t curid = 1;
     uint32_t lastping = 0;
     uint32_t lastrecv  = 0;
@@ -32,7 +32,7 @@ public:
     virtual void clean(uint32_t errcode, Peer *who, uint32_t id = 0)override;
     virtual ssize_t Write(void *buff, size_t size, Peer *who, uint32_t id=0)override;
     
-    virtual void ResProc(HttpResHeader &res)override;
+    virtual void ResProc(HttpResHeader& res)override;
     virtual void request(HttpReqHeader& req)override;
     
     virtual int32_t bufleft(Peer *)override;

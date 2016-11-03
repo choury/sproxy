@@ -18,18 +18,29 @@ extern int efd;
 #include "common.h"
 class Con;
 static  std::map<int, Con *> epolls;
+static const char *epoll_string[]= {
+    "NULL",
+    "EPOLLIN",
+    "EPOLLPRI",
+    "EPOLLIN|EPOLLPRI",
+    "EPOLLOUT",
+    "EPOLLOUT|EPOLLIN",
+    "EPOLLOUT|EPOLLPRI",
+    "EPOLLOUT|EPOLLIN|EPOLLPRI",
+};
 #endif
 
 class Con {
 protected:
     int fd = 0;
-    void updateEpoll(uint32_t events){
+    uint32_t events = 0;
+    void updateEpoll(uint32_t events) {
         int __attribute__((unused)) ret;
         if (fd > 0) {
             if(events == 0){
 #ifdef DEBUG_EPOLL
-                assert(epolls[fd] == this);
                 LOG("[EPOLL] del %d: %p\n", fd, this);
+                assert(epolls[fd] == this);
                 epolls.erase(fd);
 #endif
                 ret =  epoll_ctl(efd, EPOLL_CTL_DEL, fd, nullptr);
@@ -51,13 +62,20 @@ protected:
 #endif
                 }else{
 #ifdef DEBUG_EPOLL
-                    assert(epolls.count(fd));
-                    if(epolls[fd] != this){
+                    if(epolls[fd] != this) {
                         LOG("[EPOLL] change %d: %p --> %p\n", fd, epolls[fd], this);
                     }
+                    assert(epolls.count(fd));
                     epolls[fd]=this;
 #endif
                 }
+#ifdef DEBUG_EPOLL
+                if(events != this->events) {
+                    assert(events <= 7);
+                    LOG("[EPOLL] modify %d: %s --> %s\n", fd, epoll_string[this->events], epoll_string[events]);
+                }
+#endif
+                this->events = events;
             }
         }
     }
@@ -66,6 +84,7 @@ public:
     void (Con::*handleEvent)(uint32_t events)=nullptr;
     virtual void discard(){
         fd = 0;
+        events = 0;
     }
     virtual ~Con(){
         if(fd > 0){

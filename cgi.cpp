@@ -40,6 +40,7 @@ Cgi::Cgi(HttpReqHeader& req) {
     if (fork() == 0) { // 子进程
         signal(SIGPIPE, SIG_DFL);
         close(fds[0]);   // 关闭管道的父进程端
+        change_process_name(req.filename);
         exit(func(fds[1]));
     } 
     // 父进程
@@ -88,7 +89,7 @@ ssize_t Cgi::Write(void *buff, size_t size, Peer* who, uint32_t id) {
         header->flag = size ? 0: CGI_FLAG_END;
         header->requestId = htonl(cgi_id);
         header->contentLength = htons(size);
-        ssize_t ret = Peer::Write(header, size+sizeof(CGI_Header), this) - sizeof(CGI_Header);
+        ssize_t ret = Peer::Write(header, size+sizeof(CGI_Header), this);
         if(ret <= 0){
             return ret;
         }else{

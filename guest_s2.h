@@ -6,7 +6,7 @@
 #include "binmap.h"
 #include "vssl.h"
 
-class Guest_s2: public Requester, public Http2Res{
+class Guest_s2: public Requester, public Http2Responser {
     uint32_t last_interactive ;
     binmap<Responser *, int> idmap;
     std::set<Peer *> waitlist;

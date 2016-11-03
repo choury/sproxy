@@ -9,10 +9,10 @@ protected:
     char http_buff[HEADLENLIMIT];
     uint64_t http_expectlen;
     uint32_t http_getlen = 0;
-    uint32_t http_flag = 0;
 #define HTTP_IGNORE_BODY_F   1
 #define HTTP_CHUNK_END_F     2
-#define HTTP_CONNECT_F       3
+#define HTTP_CONNECT_F       4
+    uint32_t http_flag = 0;
     virtual void HeaderProc() = 0;
     void ChunkLProc();
     void ChunkBProc();
@@ -26,16 +26,16 @@ public:
 };
 
 
-class HttpRes:public HttpBase{
+class HttpResponser:public HttpBase{
     virtual void HeaderProc()override final;
 protected:
-    virtual void ReqProc(HttpReqHeader &req) = 0;
+    virtual void ReqProc(HttpReqHeader& req) = 0;
 };
 
-class HttpReq:public HttpBase{
+class HttpRequester:public HttpBase{
     virtual void HeaderProc()override final;
 protected:
-    virtual void ResProc(HttpResHeader &res) = 0;
+    virtual void ResProc(HttpResHeader& res) = 0;
 };
 
 #endif

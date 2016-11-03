@@ -215,7 +215,7 @@ Http2Base::~Http2Base()
 }
 
 
-void Http2Res::InitProc() {
+void Http2Responser::InitProc() {
     size_t prelen = strlen(H2_PREFACE);
     if(http2_getlen >= prelen) {
         if (memcmp(http2_buff, H2_PREFACE, strlen(H2_PREFACE))) {
@@ -225,7 +225,7 @@ void Http2Res::InitProc() {
         http2_getlen = 0;
         SendInitSetting();
         inited = true;
-        Http2_Proc = &Http2Res::DefaultProc;
+        Http2_Proc = &Http2Responser::DefaultProc;
     } else {
         ssize_t readlen = Read(http2_buff + http2_getlen, prelen - http2_getlen);
         if (readlen <= 0) {
@@ -237,7 +237,7 @@ void Http2Res::InitProc() {
     (this->*Http2_Proc)();
 }
 
-void Http2Res::HeadersProc(Http2_header* header) {
+void Http2Responser::HeadersProc(Http2_header* header) {
     const char *pos = (const char *)(header+1);
     uint8_t padlen = 0;
     if(header->flags & PADDED_F) {
@@ -262,7 +262,7 @@ void Http2Res::HeadersProc(Http2_header* header) {
 }
 
 
-void Http2Req::init() {
+void Http2Requster::init() {
     int __attribute__((unused)) ret=Write(H2_PREFACE, strlen(H2_PREFACE));
     assert(ret == strlen(H2_PREFACE));
     SendInitSetting(); 
@@ -270,7 +270,7 @@ void Http2Req::init() {
 
 
 
-void Http2Req::InitProc() {
+void Http2Requster::InitProc() {
     Http2_header *header = (Http2_header *)http2_buff;
     if(http2_getlen < sizeof(Http2_header)){
         ssize_t len = sizeof(Http2_header) - http2_getlen;
@@ -286,7 +286,7 @@ void Http2Req::InitProc() {
             if(header->type == SETTINGS_TYPE && (header->flags & ACK_F) == 0){
                 SettingsProc(header);
                 inited = true;
-                Http2_Proc = &Http2Req::DefaultProc;
+                Http2_Proc = &Http2Requster::DefaultProc;
             }else {
                 ErrProc(ERR_PROTOCOL_ERROR);
                 return;
@@ -305,7 +305,7 @@ void Http2Req::InitProc() {
 }
 
 
-void Http2Req::HeadersProc(Http2_header* header) {
+void Http2Requster::HeadersProc(Http2_header* header) {
     const char *pos = (const char *)(header+1);
     uint8_t padlen = 0;
     if(header->flags & PADDED_F) {

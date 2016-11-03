@@ -188,6 +188,7 @@ int main(int argc, char **argv) {
         usage(argv[0]);
         return -1;
     }
+    main_argv = argv;
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
 

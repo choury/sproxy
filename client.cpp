@@ -92,6 +92,7 @@ int main(int argc, char** argv) {
         usage(argv[0]);
         return -1;
     }
+    main_argv = argv;
     char protocol[DOMAINLIMIT];
     spliturl(argv[optind], protocol, SHOST, nullptr, &SPORT);
     if(SPORT == 0){

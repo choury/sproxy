@@ -213,6 +213,10 @@ string toLower(const string &s) {
 HttpHeader::HttpHeader(Object* src):src(src){
 }
 
+HttpHeader::~HttpHeader() {
+}
+
+
 /*
 HttpHeader::HttpHeader(mulmap< string, string > headers, Ptr&& src):
                headers(headers), src(src)
@@ -756,4 +760,58 @@ static char *cgi_getnv(char* p, istring& name, string& value) {
     p += name_len;
     value = string(p, value_len);
     return p + value_len;
+}
+
+HttpBody::HttpBody() {
+}
+
+
+HttpBody::HttpBody(HttpBody && copy):data(copy.data) {
+    while(!copy.data.empty()){
+        copy.data.pop();
+    }
+}
+
+
+size_t HttpBody::push(const void* buff, size_t len) {
+    if(len){
+        void *dup_buff = p_malloc(len);
+        memcpy(dup_buff, buff, len);
+        return push(dup_buff, len);
+    }
+    return 0;
+}
+
+size_t HttpBody::push(void* buff, size_t len) {
+    if(len){
+        data.push(std::make_pair(buff, len));
+        content_size += len;
+    }else{
+        data.push(std::make_pair(nullptr, 0));
+    }
+    return len;
+}
+
+std::pair<void*, size_t> HttpBody::pop(){
+    if(data.empty()){
+        return std::make_pair(nullptr, 0);
+    }else{
+        auto ret = data.front();
+        data.pop();
+        content_size -= ret.second;
+        return ret;
+    }
+}
+
+size_t HttpBody::size() {
+    return content_size;
+}
+
+
+
+HttpBody::~HttpBody() {
+    while(data.size()){
+       p_free(data.front().first);
+       data.pop();
+    }
 }

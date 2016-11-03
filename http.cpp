@@ -125,23 +125,24 @@ void HttpBase::AlwaysProc() {
 }
 
 
-void HttpRes::HeaderProc() {
+void HttpResponser::HeaderProc() {
     if (char* headerend = strnstr(http_buff, CRLF CRLF, http_getlen)) {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - http_buff;
         try {
             HttpReqHeader req(http_buff, this);
             if(req.no_left()){
-                Http_Proc = (void (HttpBase::*)())&HttpRes::HeaderProc;
+                Http_Proc = (void (HttpBase::*)())&HttpResponser::HeaderProc;
             }else if (req.get("Content-Length") == nullptr || 
                       req.ismethod("CONNECT")) 
             {
-                Http_Proc = &HttpRes::AlwaysProc;
+                Http_Proc = &HttpResponser::AlwaysProc;
             }else{
-                Http_Proc = &HttpRes::FixLenProc;
+                Http_Proc = &HttpResponser::FixLenProc;
                 http_expectlen = strtoull(req.get("Content-Length"), nullptr, 10);
             }
             ReqProc(req);
+
         }catch(...) {
             ErrProc(HTTP_PROTOCOL_ERR);
             return;
@@ -151,7 +152,6 @@ void HttpRes::HeaderProc() {
             memmove(http_buff, http_buff+headerlen, http_getlen-headerlen);
         }
         http_getlen-= headerlen;
-
     } else {
         if (http_getlen == sizeof(http_buff)) {
             ErrProc(HEAD_TOO_LONG_ERR);
@@ -169,7 +169,7 @@ void HttpRes::HeaderProc() {
 }
 
 
-void HttpReq::HeaderProc() {
+void HttpRequester::HeaderProc() {
     if (char* headerend = strnstr(http_buff, CRLF CRLF, http_getlen)) {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - http_buff;
@@ -178,16 +178,16 @@ void HttpReq::HeaderProc() {
             if(res.no_left() || res.status[0] == '1'){
                 http_flag |= HTTP_IGNORE_BODY_F;
             }else if (res.get("Transfer-Encoding")!= nullptr) {
-                Http_Proc = &HttpReq::ChunkLProc;
+                Http_Proc = &HttpRequester::ChunkLProc;
             } else if (res.get("Content-Length") == nullptr) {
-                Http_Proc = &HttpReq::AlwaysProc;
+                Http_Proc = &HttpRequester::AlwaysProc;
             }else{
-                Http_Proc = &HttpReq::FixLenProc;
+                Http_Proc = &HttpRequester::FixLenProc;
                 http_expectlen = strtoull(res.get("Content-Length"), nullptr, 10);
             }
             if (http_flag & HTTP_IGNORE_BODY_F) {
                 http_flag &= ~HTTP_IGNORE_BODY_F;
-                Http_Proc = (void (HttpBase::*)())&HttpReq::HeaderProc;
+                Http_Proc = (void (HttpBase::*)())&HttpRequester::HeaderProc;
             }
             ResProc(res);
         }catch(...) {
@@ -200,7 +200,6 @@ void HttpReq::HeaderProc() {
             memmove(http_buff, http_buff+headerlen, http_getlen-headerlen);
         }
         http_getlen-= headerlen;
-
     } else {
         if (http_getlen == sizeof(http_buff)) {
             ErrProc(HEAD_TOO_LONG_ERR);

@@ -8,12 +8,42 @@
 #include <arpa/inet.h>
 
 
+void guesttick(Guest* guest){
+    guest->request_next();
+}
+
 Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Requester(fd, myaddr) {
+    add_tick_func((void (*)(void *))guesttick, this);
 }
 
 
 void Guest::ResetResponser(Responser *r){
     responser_ptr = r;
+}
+
+void Guest::request_next() {
+    while(status == none && reqs.size()){
+        HttpReq req = std::move(reqs.front());
+        reqs.pop();
+        Responser *old_responser = responser_ptr;
+        responser_ptr = distribute(req.header, responser_ptr);
+        if(old_responser && old_responser != responser_ptr){
+            old_responser->ResetRequester(nullptr);
+        }
+        if(responser_ptr){
+            if(req.header.ismethod("CONNECT")){
+                status = presistent;
+            }else{
+                status = requesting;
+            }
+            while(1){
+                auto block = req.body.pop();
+                if(block.second == 0)
+                    break;
+                responser_ptr->Write(block.first, block.second, this);
+            }
+        }
+    }
 }
 
 
@@ -28,7 +58,7 @@ void Guest::defaultHE(uint32_t events) {
         clean(INTERNAL_ERR, this);
     }
 
-    if (events & EPOLLIN || http_getlen) {
+    if (events & EPOLLIN ) {
         (this->*Http_Proc)();
     }
 
@@ -58,41 +88,59 @@ void Guest::ErrProc(int errcode) {
 }
 
 void Guest::ReqProc(HttpReqHeader& req) {
-    this->flag = 0;
-    responser_ptr = distribute(req, responser_ptr);
-}
-
-void Guest::response(HttpResHeader& res) {
-    size_t len;
-    char *buff=res.getstring(len);
-    Peer::Write(buff, len, this);
-    if(res.get("Transfer-Encoding")){
-        flag |= ISCHUNKED_F;
+    if(status == none && reqs.empty()){
+        responser_ptr = distribute(req, responser_ptr);
+        if(responser_ptr){
+            if(req.ismethod("CONNECT")){
+                status = presistent;
+            }else{
+                status = requesting;
+            }
+        }
     }else{
-        flag &= ~ISCHUNKED_F;
+        reqs.push(HttpReq(req));
     }
 }
 
+void Guest::response(HttpResHeader& res) {
+    if(status == presistent){
+        if(memcmp(res.status, "200", 4) == 0){
+            strcpy(res.status, "200 Connection established");
+            res.del("Transfer-Encoding");
+        }
+    }else if(res.get("Transfer-Encoding")){
+        status = chunked;
+    }else if(res.no_left()){
+        status = none;
+    }
+    size_t len;
+    char *buff=res.getstring(len);
+    Peer::Write(buff, len, this);
+}
+
 ssize_t Guest::Write(void *buff, size_t size, Peer* who, uint32_t) {
+    size_t ret;
     size_t len = Min(bufleft(who), size);
-    if(flag & ISCHUNKED_F){
+    if(status == chunked){
         char chunkbuf[100];
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)size);
         buff = p_move(buff, -chunklen);
         memcpy(buff, chunkbuf, chunklen);
-        ssize_t ret = Peer::Write(buff, chunklen + len, this);
-        if(ret <= 0){
-            return ret;
-        }else{
+        ret = Peer::Write(buff, chunklen + len, this);
+        if(ret > 0){
             if(Peer::Write(memcpy(p_malloc(strlen(CRLF)), CRLF, strlen(CRLF)),
                            strlen(CRLF), this) != strlen(CRLF))
                 assert(0);
-            assert(ret >= chunklen);
-            return ret - chunklen;
+            assert(ret >= (size_t)chunklen);
+            ret -= chunklen;
         }
     }else{
-        return Peer::Write(buff, size, this);
+        ret =  Peer::Write(buff, size, this);
     }
+    if(size == 0){
+        status = none;
+    }
+    return ret;
 }
 
 ssize_t Guest::DataProc(const void *buff, size_t size) {
@@ -107,18 +155,21 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
         responser_ptr->wait(this);
         return -1;
     }
-    return responser_ptr->Write(buff, Min(size, len), this);
+    if(reqs.size()){
+        return reqs.back().body.push(buff, size);
+    }else{
+        return responser_ptr->Write(buff, Min(size, len), this);
+    }
 }
 
 void Guest::clean(uint32_t errcode, Peer* who, uint32_t) {
     assert(who);
     assert(dynamic_cast<Responser *>(who) == responser_ptr || who == this);
-    if(responser_ptr){
-        if(who == this){
-            responser_ptr->clean(errcode, this);
-        }
-        responser_ptr = nullptr;
+    if(who == this && responser_ptr){
+        responser_ptr->clean(errcode, this);
     }
+    responser_ptr = nullptr;
+    del_tick_func((void (*)(void *))guesttick, this);
     Peer::clean(errcode, who);
 }
 

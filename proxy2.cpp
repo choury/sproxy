@@ -196,21 +196,13 @@ void Proxy2::request(HttpReqHeader& req) {
     curid += 2;
     requester->remotewinsize = remoteframewindowsize;
     requester->localwinsize = localframewindowsize;
-    if(req.ismethod("CONNECT")){
-        requester->flag |= ISPERSISTENT_F;
-    }
-    
     SendFrame(req.getframe(&request_table));
 }
 
 void Proxy2::ResProc(HttpResHeader& res) {
     if(idmap.count(res.http_id)){
         Requester *requester = dynamic_cast<Requester *>(idmap.at(res.http_id));
-        
-        if(requester->flag & ISPERSISTENT_F) {
-            if(memcmp(res.status, "200", 4) == 0)
-                strcpy(res.status, "200 Connection established");
-        }else if((res.flags & END_STREAM_F) == 0 &&
+        if((res.flags & END_STREAM_F) == 0 &&
            !res.get("Content-Length") &&
            res.status[0] != '1')  //1xx should not have body
         {

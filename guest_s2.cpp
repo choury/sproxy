@@ -70,8 +70,8 @@ ssize_t Guest_s2::Write(void *buff, size_t size, Peer *who, uint32_t id) {
 }
 
 void Guest_s2::SendFrame(Http2_header *header) {
-    updateEpoll(EPOLLIN | EPOLLOUT);
-    return Http2Res::SendFrame(header);
+    updateEpoll(events | EPOLLOUT);
+    return Http2Responser::SendFrame(header);
 }
 
 void Guest_s2::DataProc(const Http2_header* header)

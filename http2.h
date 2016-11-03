@@ -110,23 +110,23 @@ public:
     ~Http2Base();
 };
 
-class Http2Res:public Http2Base {
+class Http2Responser:public Http2Base {
     using Http2Base::http2_buff;
     using Http2Base::http2_getlen;
 protected:
     virtual void InitProc()override;
     virtual void HeadersProc(Http2_header *header)override;
-    virtual void ReqProc(HttpReqHeader &req) = 0;
+    virtual void ReqProc(HttpReqHeader& req) = 0;
 };
 
 
-class Http2Req:public Http2Base {
+class Http2Requster:public Http2Base {
     using Http2Base::http2_buff;
     using Http2Base::http2_getlen;
 protected:
     virtual void InitProc()override;
     virtual void HeadersProc(Http2_header *header)override;
-    virtual void ResProc(HttpResHeader &res) = 0;
+    virtual void ResProc(HttpResHeader& res) = 0;
 public:
     void init();
 };

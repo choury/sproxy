@@ -19,7 +19,8 @@ Peer::~Peer() {
 
 ssize_t Peer::Write(const void* buff, size_t size, Peer* who, uint32_t id) {
     void *dup_buff = p_malloc(size);
-    memcpy(dup_buff, buff, size);
+    if(size)
+        memcpy(dup_buff, buff, size);
     return Write(dup_buff, size, who, id);
 }
 
@@ -32,7 +33,7 @@ ssize_t Peer::Write(void* buff, size_t size, Peer* , uint32_t) {
     write_queue.push(wb);
     writelen += size;
 
-    updateEpoll(EPOLLIN | EPOLLOUT);
+    updateEpoll(events | EPOLLOUT);
     return size;
 }
 
@@ -71,7 +72,7 @@ int Peer::Write() {
 }
 
 void Peer::writedcb(Peer *) {
-    updateEpoll(EPOLLIN | EPOLLOUT);
+    updateEpoll(events | EPOLLIN);
 }
 
 int32_t Peer::bufleft(Peer *) {

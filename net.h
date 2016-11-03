@@ -9,8 +9,6 @@
 #define CRLF      "\r\n"
 
 
-#define connecttip  "HTTP/1.0 200 Connection established" CRLF CRLF
-
 #define H200        "HTTP/1.0 200 OK" CRLF CRLF
 
 #define H206        "HTTP/1.0 206 Partial Content" CRLF CRLF

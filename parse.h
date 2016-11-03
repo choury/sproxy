@@ -6,6 +6,7 @@
 
 #include <map>
 #include <set>
+#include <queue>
 
 class Index_table;
 struct Http2_header;
@@ -24,6 +25,7 @@ public:
     bool should_proxy  = false;
 
     explicit HttpHeader(Object* src);
+
     void add(const istring& header, const std::string& value);
     void add(const istring& header, int value);
     void append(const istring& header, const std::string& value);
@@ -34,7 +36,7 @@ public:
     virtual char *getstring(size_t &len) const = 0;
     virtual Http2_header *getframe(Index_table *index_table) const = 0;
     virtual CGI_Header *getcgi() const = 0;
-    virtual ~HttpHeader(){}
+    virtual ~HttpHeader();
 };
 
 class HttpReqHeader: public HttpHeader{
@@ -72,6 +74,34 @@ public:
     virtual char *getstring(size_t &len) const override;
     virtual Http2_header *getframe(Index_table *index_table) const override;
     virtual CGI_Header *getcgi() const override;
+};
+
+class HttpBody{
+    size_t content_size = 0;
+    std::queue<std::pair<void *, size_t>> data;
+public:
+    explicit HttpBody();
+    explicit HttpBody(const HttpBody &) = delete;
+    explicit HttpBody(HttpBody&& copy);
+    size_t push(const void *buff, size_t len);
+    size_t push(void *buff, size_t len);
+    std::pair<void*, size_t> pop();
+    size_t size();
+    ~HttpBody();
+};
+
+class HttpReq{
+public:
+    HttpReqHeader  header;
+    HttpBody       body;
+    HttpReq(HttpReqHeader& header):header(header){};
+};
+
+class HttpRes{
+public:
+    HttpResHeader  header;
+    HttpBody       body;
+    HttpRes(HttpResHeader& header):header(header){};
 };
 
 // trim from start

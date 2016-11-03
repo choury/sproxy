@@ -5,8 +5,11 @@
 #include <assert.h>
 #include <errno.h>
 #include <sys/time.h>
+#include <sys/prctl.h>
 
 #define PRIOR_HEAD 32
+
+char **main_argv;
     
 /**
  * strnstr - Find the first substring in a length-limited string
@@ -286,6 +289,17 @@ void *p_move( void *ptr, signed char len ){
     ptr += len;
     *(unsigned char *)(ptr-1) = prior;
     return ptr; 
+}
+
+void change_process_name(const char *name){
+    prctl(PR_SET_NAME, name);
+    size_t len  = 0;
+    int i;
+    for(i = 0;main_argv[i]; i++){
+        len += strlen(main_argv[i]) + 1;
+    }
+    memset(main_argv[0], 0, len);
+    strncpy(main_argv[0], name, len - 1);
 }
 
 #ifndef __ANDROID__
