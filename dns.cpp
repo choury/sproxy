@@ -11,19 +11,28 @@
 
 //#define DEBUG_DNS
 
-#define IGNOREIPV6
+//#define IGNOREIPV6
 #define BUF_SIZE 1024
 
 #define RESOLV_FILE "/etc/resolv.conf"
 #define DNSPORT     53
 #define DNSTIMEOUT  5                // dns 超时时间(s)
-#define DNSTTL      8640             // dns 缓存时间(s)
 
 
 static uint16_t id_cur = 1;
 static bool dns_inited = false;
 
 std::vector<Dns_srv *> srvs;
+
+class Dns_rcd{
+    std::list<std::pair<time_t, sockaddr_un>> addrs;
+public:
+    void push(sockaddr_un &&addr, uint32_t ttl);
+    void down(const sockaddr_un &addr);
+    bool empty();
+    std::vector<sockaddr_un> get();
+    void expired();
+};
 
 
 typedef struct DNS_HDR {
@@ -85,7 +94,7 @@ typedef struct _DNS_STATE {
     DNSCBfunc func;
     void *param;
     char host[DOMAINLIMIT];
-    std::vector<sockaddr_un> addr;
+    Dns_rcd addr;
 } DNS_STATE;
 
 std::unordered_map<uint16_t, DNS_STATE *> rcd_index_id;
@@ -94,16 +103,19 @@ std::list<DNS_STATE *> rcd_gotten_list;
 
 void dnstick(void *) {
     for (auto i = rcd_index_host.begin(); i!= rcd_index_host.end();) {
-        if (time(nullptr)-i->second.gettime>= DNSTTL) {           // 超时失效
-            rcd_index_host.erase(i++);
+        i->second.expired();
+        if (i->second.empty()) {           // 超时失效
+#ifdef DEBUG_DNS
+            LOG("[DNS] %s: expired\n", i->first.c_str());
+#endif
+            i = rcd_index_host.erase(i);
         } else {
             i++;
         }
     }
-    for (auto i = rcd_gotten_list.begin(); i!= rcd_gotten_list.end();i++){
-        auto dnsst = *i;
-        dnsst->func(dnsst->param, dnsst->host, Dns_rcd(std::move(dnsst->addr)));
-        delete dnsst;
+    for (auto i : rcd_gotten_list){
+        i->func(i->param, i->host, i->addr.get());
+        delete i;
     }
     rcd_gotten_list.clear();
 
@@ -112,14 +124,14 @@ void dnstick(void *) {
         auto oldstate = tmp->second;
         if (time(nullptr)-oldstate->reqtime>= DNSTIMEOUT) {
             rcd_index_id.erase(tmp);
-            if (oldstate->addr.size()) {
-                oldstate->func(oldstate->param, oldstate->host, Dns_rcd(std::move(oldstate->addr)));
+            if (!oldstate->addr.empty()) {
+                oldstate->func(oldstate->param, oldstate->host, oldstate->addr.get());
             } else  {           // 超时重试
                 if(oldstate->times < 5) {
                     LOG("[DNS] %s: time out, retry...\n", oldstate->host);
                     query(oldstate->host, oldstate->func, oldstate->param, ++oldstate->times);
                 } else {
-                    oldstate->func(oldstate->param, oldstate->host, Dns_rcd());
+                    oldstate->func(oldstate->param, oldstate->host, std::vector<sockaddr_un>());
                 }
             }
             delete oldstate;
@@ -128,36 +140,57 @@ void dnstick(void *) {
 }
 
 
-Dns_rcd::Dns_rcd(): gettime(time(NULL)) {
+
+void Dns_rcd::push(sockaddr_un &&addr, uint32_t ttl){
+    addrs.push_back(std::make_pair(time(NULL)+ttl, std::move(addr)));
 }
 
-Dns_rcd::Dns_rcd(std::vector<sockaddr_un>&& addrs):
-    gettime(time(NULL)), addrs(addrs) {
-}
-
-
-Dns_rcd::Dns_rcd(const sockaddr_un &&addr): gettime(time(NULL)) {
-    this->addrs.push_back(addr);
-}
-
-void Dns_rcd::Down(const sockaddr_un& addr) {
+void Dns_rcd::down(const sockaddr_un& addr) {
     for (auto i = addrs.begin(); i != addrs.end(); ++i) {
         switch (addr.addr.sa_family) {
         case AF_INET:
-            if (memcmp(&addr.addr_in.sin_addr, &i->addr_in.sin_addr, sizeof(in_addr)) == 0) {
+            if (memcmp(&addr.addr_in.sin_addr, &i->second.addr_in.sin_addr, sizeof(in_addr)) == 0) {
+                time_t expire = i->first;
                 addrs.erase(i);
-                addrs.push_back(addr);
+                addrs.push_back(std::make_pair(expire, addr));
                 return;
             }
         case AF_INET6:
-            if (memcmp(&addr.addr_in6.sin6_addr, &i->addr_in6.sin6_addr, sizeof(in6_addr)) == 0) {
+            if (memcmp(&addr.addr_in6.sin6_addr, &i->second.addr_in6.sin6_addr, sizeof(in6_addr)) == 0) {
+                time_t expire = i->first;
                 addrs.erase(i);
-                addrs.push_back(addr);
+                addrs.push_back(std::make_pair(expire, addr));
                 return;
             }
         }
     }
 }
+
+std::vector<sockaddr_un> Dns_rcd::get() {
+    std::vector<sockaddr_un> a;
+    for(auto i : addrs){
+        a.push_back(i.second);
+    }
+    return a;
+}
+
+bool Dns_rcd::empty() {
+    return addrs.empty();
+}
+
+
+void Dns_rcd::expired() {
+    time_t now = time(NULL);
+    for (auto i = addrs.begin(); i != addrs.end(); ) {
+        if(i->first < now){
+            i = addrs.erase(i);
+        }else{
+            i++;
+        }
+    }
+}
+
+
 
 
 static unsigned char * getdomain(unsigned char *buf, unsigned char *p) {
@@ -181,7 +214,7 @@ static unsigned char *getrr(
     unsigned char *buf,
     unsigned char *p,
     int num,
-    std::vector<sockaddr_un>& addr)
+    Dns_rcd& rcd)
 {
     int i;
     for (i = 0; i < num; ++i) {
@@ -189,7 +222,7 @@ static unsigned char *getrr(
         DNS_RR *dnsrr = (DNS_RR *)p;
         NTOHS(dnsrr->type);
         NTOHS(dnsrr->classes);
-        NTOHS(dnsrr->TTL);
+        NTOHL(dnsrr->TTL);
         NTOHS(dnsrr->rdlength);
         p+= sizeof(DNS_RR);
 #ifdef DEBUG_DNS
@@ -201,7 +234,7 @@ static unsigned char *getrr(
         case 1:
             ip.addr_in.sin_family = PF_INET;
             memcpy(&ip.addr_in.sin_addr, p, sizeof(in_addr));
-            addr.push_back(ip);
+            rcd.push(std::move(ip), dnsrr->TTL);
 #ifdef DEBUG_DNS
             printf("%s", inet_ntop(PF_INET, p, ipaddr, sizeof(ipaddr)));
 #endif
@@ -213,7 +246,7 @@ static unsigned char *getrr(
         case 28:
             ip.addr_in6.sin6_family = PF_INET6;
             memcpy(&ip.addr_in6.sin6_addr, p, sizeof(in6_addr));
-            addr.push_back(ip);
+            rcd.push(std::move(ip), dnsrr->TTL);
 #ifdef DEBUG_DNS
             printf("%s", inet_ntop(PF_INET6, p, ipaddr, sizeof(ipaddr)));
 #endif
@@ -221,7 +254,7 @@ static unsigned char *getrr(
         }
         p+= dnsrr->rdlength;
 #ifdef DEBUG_DNS
-        printf("\n");
+        printf(" [%d]\n", dnsrr->TTL);
 #endif
     }
     return p;
@@ -291,21 +324,20 @@ void query(const char *host , DNSCBfunc func, void *param, uint16_t times) {
     sockaddr_un addr;
     if (inet_pton(PF_INET, host, &addr.addr_in.sin_addr) == 1) {
         addr.addr_in.sin_family = PF_INET;
-        dnsst->addr.push_back(addr);
+        dnsst->addr.push(std::move(addr), 0);
         rcd_gotten_list.push_back(dnsst);
         return ;
     }
 
     if (inet_pton(PF_INET6, host, &addr.addr_in6.sin6_addr) == 1) {
         addr.addr_in6.sin6_family = PF_INET6;
-        dnsst->addr.push_back(addr);
+        dnsst->addr.push(std::move(addr), 0);
         rcd_gotten_list.push_back(dnsst);
         return ;
     }
 
     if (rcd_index_host.count(host)) {
-        const auto & rcd = rcd_index_host[host].addrs;
-        dnsst->addr.insert(dnsst->addr.end(), rcd.begin(), rcd.end());
+        dnsst->addr = rcd_index_host[host];
         rcd_gotten_list.push_back(dnsst);
         return ;
     }
@@ -327,26 +359,9 @@ void query(const char *host , DNSCBfunc func, void *param, uint16_t times) {
 }
 
 
-int dnsstatus(char* buff) {
-    int len;
-    len = sprintf(buff, "dns cache:\r\n");
-    for (auto i = rcd_index_host.begin(); i!= rcd_index_host.end();i++) {
-        len += sprintf(buff+len, "[%s]:%u\r\n", i->first.c_str(),
-                (uint)(DNSTTL -(time(nullptr)-i->second.gettime)));
-    }
-    len += sprintf(buff+len, "\r\ndns request:\r\n");
-    for (auto i = rcd_index_id.begin(); i!= rcd_index_id.end();i++) {
-        len += sprintf(buff+len, "[%s]:%d(%u)\r\n", i->second->host,
-                (uint)(time(nullptr)-i->second->reqtime), i->second->times);
-    }
-    return len;
-}
-
-
-
 void RcdDown(const char *hostname, const sockaddr_un &addr) {
     if (rcd_index_host.count(hostname)) {
-        return rcd_index_host[hostname].Down(addr);
+        return rcd_index_host[hostname].down(addr);
     }
 }
 
@@ -360,7 +375,7 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
         int len = read(fd, buf, BUF_SIZE);
 
         if ( len <= 0 ) {
-            perror("[DNS] read");
+            LOGE("[DNS] read error: %m\n");
             return;
         }
         DNS_HDR *dnshdr = (DNS_HDR *)buf;
@@ -396,7 +411,7 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
             for (int i = 0; i < dnshdr->numq; ++i) {
                 p = getdomain(buf, p);
 #ifdef DEBUG_DNS
-                printf(" :\n");
+                printf(" [%d]: \n", dnshdr->id);
 #endif
                 p+= sizeof(DNS_QER);
             }
@@ -404,12 +419,11 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
         }
         if ((dnsst->flags & GARECORD) &&(dnsst->flags & GAAAARECORD)) {
             rcd_index_id.erase(dnsst->id);
-            if (dnsst->addr.size()) {
-                Dns_rcd rcd(std::move(dnsst->addr));
-                rcd_index_host[dnsst->host] = rcd;
-                dnsst->func(dnsst->param, dnsst->host, std::move(rcd));
+            if (!dnsst->addr.empty()) {
+                rcd_index_host[dnsst->host] = dnsst->addr;
+                dnsst->func(dnsst->param, dnsst->host, dnsst->addr.get());
             } else {
-                dnsst->func(dnsst->param, dnsst->host, Dns_rcd());
+                dnsst->func(dnsst->param, dnsst->host, std::vector<sockaddr_un>());
             }
             delete dnsst;
         }
@@ -419,7 +433,7 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOG("[DNS] : %s\n", strerror(error));
+            LOG("[DNS] unkown error: %s\n", strerror(error));
         }
     }
 }
@@ -456,7 +470,7 @@ int Dns_srv::query(const char *host, int type, uint32_t id) {
 
     int len = sizeof(DNS_HDR)+sizeof(DNS_QER)+strlen(host)+2;
     if (write(fd, buf, len)!= len) {
-        perror("[DNS] write");
+        LOGE("[DNS] write error: %m\n");
         return 0;
     }
     return id;

@@ -49,6 +49,7 @@ void Guest_sni::initHE(uint32_t events) {
 }
 
 void Guest_sni::response(HttpResHeader &){
+    (this->*Http_Proc)();
 }
 
 const char* Guest_sni::getsrc(){

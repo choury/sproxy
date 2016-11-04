@@ -66,12 +66,12 @@ class Dtls_server: public Server {
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
             if(DTLSv1_listen(ssl, &myaddr)<=0)
                 goto error;
-            BIO_ctrl_set_connected(bio, 0, &myaddr);
+            (void)BIO_ctrl_set_connected(bio, 0, &myaddr);
 #else
             if(DTLSv1_listen(ssl, (BIO_ADDR *)&myaddr)<=0){
                 goto error;
             }
-            BIO_ctrl_set_connected(bio, &myaddr);
+            (void)BIO_ctrl_set_connected(bio, &myaddr);
 #endif
             if(connect(fd, (struct sockaddr*)&myaddr, sizeof(struct sockaddr_in6))){
                 LOGE("connect error: %m\n");

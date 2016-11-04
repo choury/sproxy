@@ -23,7 +23,7 @@ protected:
     virtual ssize_t Read(void* buff, size_t len)override;
     virtual void ErrProc(int errcode)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
-    static void Dnscallback(Host * host, const char *hostname, const Dns_rcd&&);
+    static void Dnscallback(Host * host, const char *hostname, std::vector<sockaddr_un> addrs);
 public:
     Requester* requester_ptr = nullptr;
     explicit Host(const char* hostname, uint16_t port, Protocol protocol);

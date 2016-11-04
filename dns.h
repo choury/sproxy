@@ -18,23 +18,11 @@ public:
 };
 
 
-class Dns_rcd{
-public:
-    time_t gettime;
-    std::vector<sockaddr_un> addrs;
-    explicit Dns_rcd();
-    explicit Dns_rcd(std::vector<sockaddr_un>&& addrs);
-    explicit Dns_rcd(const sockaddr_un &&addr);
-    void Down(const sockaddr_un &addr);
-};
-
-
-typedef void (*DNSCBfunc)(void *, const char *hostname, const Dns_rcd&& );
+typedef void (*DNSCBfunc)(void *, const char *hostname, std::vector<sockaddr_un> addrs);
 
 
 void query(const char* host, DNSCBfunc func, void* param, uint16_t times=0);
 void RcdDown(const char *hostname, const sockaddr_un &addr);
-int dnsstatus(char* buff);
 void flushdns();
 
 #endif

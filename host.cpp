@@ -44,13 +44,13 @@ void Host::discard() {
 }
 
 
-void Host::Dnscallback(Host* host, const char *hostname, const Dns_rcd&& rcd) {
+void Host::Dnscallback(Host* host, const char *hostname, std::vector<sockaddr_un> addrs) {
     snprintf(host->hostname, sizeof(host->hostname), "%s", hostname);
-    if (rcd.addrs.size() == 0) {
+    if (addrs.size() == 0) {
         LOGE("Dns query failed: %s\n", host->hostname);
         host->clean(CONNECT_ERR, host);
     } else {
-        host->addrs = rcd.addrs;
+        host->addrs = addrs;
         for (size_t i = 0; i < host->addrs.size(); ++i) {
             host->addrs[i].addr_in6.sin6_port = htons(host->port);
         }
