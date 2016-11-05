@@ -21,10 +21,8 @@ void hosttick(void *) {
 }
 
 Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), protocol(protocol){
+    assert(port);
     memset(this->hostname, 0, sizeof(this->hostname));
-    if(this->port == 0){
-        this->port = 80;
-    }
     query(hostname, (DNSCBfunc)Host::Dnscallback, this);
     add_tick_func(hosttick, nullptr);
 }
@@ -203,7 +201,6 @@ Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr) {
                    host->requester_ptr == dynamic_cast<Requester *>(req.src));
         }
     }
-
     if (responser_ptr) {
         responser_ptr->ResetRequester(nullptr);
         responser_ptr->clean(NOERROR, responser_ptr);

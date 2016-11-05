@@ -108,6 +108,9 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
         req.ismethod("HEAD") ||
         req.ismethod("SEND"))
     {
+        if(req.port == 0){
+            req.port = HTTPPORT;
+        }
         if(req.should_proxy){
             return Proxy::getproxy(req, responser_ptr);
         }else{
@@ -203,6 +206,9 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr){
             return File::getfile(req);
         }
     } else {
+        if(req.port == 0){
+            req.port = HTTPPORT;
+        }
         return Host::gethost(req, responser_ptr);
     }
     return nullptr;

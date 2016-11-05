@@ -261,7 +261,7 @@ void Proxy2::check_alive() {
     if(ssl->is_dtls()){
         dtls_tick(ssl);
     }
-    if(proxy2 && proxy2 != this && idmap.empty()){
+    if(proxy2 != this && idmap.empty()){
         clean(NOERROR, this);
         return;
     }

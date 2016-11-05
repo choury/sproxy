@@ -25,12 +25,11 @@ void Guest::request_next() {
     while(status == none && reqs.size()){
         HttpReq req = std::move(reqs.front());
         reqs.pop();
-        Responser *old_responser = responser_ptr;
-        responser_ptr = distribute(req.header, responser_ptr);
-        if(old_responser && old_responser != responser_ptr){
-            old_responser->ResetRequester(nullptr);
+        Responser* responser = distribute(req.header, responser_ptr);
+        if(responser && responser != responser_ptr){
+           responser_ptr = responser;
         }
-        if(responser_ptr){
+        if(responser){
             if(req.header.ismethod("CONNECT")){
                 status = presistent;
             }else{
@@ -89,8 +88,11 @@ void Guest::ErrProc(int errcode) {
 
 void Guest::ReqProc(HttpReqHeader& req) {
     if(status == none && reqs.empty()){
-        responser_ptr = distribute(req, responser_ptr);
-        if(responser_ptr){
+        Responser* responser = distribute(req, responser_ptr);
+        if(responser && responser != responser_ptr){
+           responser_ptr = responser;
+        }
+        if(responser){
             if(req.ismethod("CONNECT")){
                 status = presistent;
             }else{
@@ -121,6 +123,7 @@ void Guest::response(HttpResHeader& res) {
 ssize_t Guest::Write(void *buff, size_t size, Peer* who, uint32_t) {
     size_t ret;
     size_t len = Min(bufleft(who), size);
+    assert(who == this || who == responser_ptr);
     if(status == chunked){
         char chunkbuf[100];
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)size);

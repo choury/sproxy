@@ -16,7 +16,7 @@
 
 #define RESOLV_FILE "/etc/resolv.conf"
 #define DNSPORT     53
-#define DNSTIMEOUT  5                // dns 超时时间(s)
+#define DNSTIMEOUT  10                // dns 超时时间(s)
 
 
 static uint16_t id_cur = 1;
@@ -270,7 +270,7 @@ static int dnsinit() {
 
     FILE *res_file = fopen(RESOLV_FILE, "r");
     if (res_file == NULL) {
-        LOG("[DNS] open resolv file:%s failed:%m\n", RESOLV_FILE);
+        LOGE("[DNS] open resolv file:%s failed:%m\n", RESOLV_FILE);
         return 0;
     }
     char line[100];
@@ -286,12 +286,12 @@ static int dnsinit() {
                 addr.addr_in6.sin6_family = PF_INET6;
                 addr.addr_in6.sin6_port = htons(DNSPORT);
             } else {
-                LOG("[DNS] %s is not a valid ip address\n", ipaddr);
+                LOGE("[DNS] %s is not a valid ip address\n", ipaddr);
                 continue;
             }
             int fd = Connect(&addr, SOCK_DGRAM);
             if (fd == -1) {
-                LOG("[DNS] connecting  %s error:%m\n", ipaddr);
+                LOGE("[DNS] connecting  %s error:%m\n", ipaddr);
                 continue;
             }
             Dns_srv *srv = new Dns_srv(fd);
@@ -360,6 +360,9 @@ void query(const char *host , DNSCBfunc func, void *param, uint16_t times) {
 
 
 void RcdDown(const char *hostname, const sockaddr_un &addr) {
+#ifdef DEBUG_DNS
+    LOG("[DNS] down for %s: %s\n", hostname, getaddrstring(&addr));
+#endif
     if (rcd_index_host.count(hostname)) {
         return rcd_index_host[hostname].down(addr);
     }

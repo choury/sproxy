@@ -50,7 +50,7 @@ union sockaddr_un{
 int Bind_any(int fd, short port);
 int Listen(short int port);
 int Connect(union sockaddr_un*, int type);
-const char *getaddrstring(union sockaddr_un *addr);
+const char *getaddrstring(const union sockaddr_un *addr);
 const char* getlocalip ();
 
 

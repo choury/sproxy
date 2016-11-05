@@ -142,7 +142,7 @@ int Connect(union sockaddr_un* addr, int type) {
 
 
 
-const char *getaddrstring(union sockaddr_un *addr){
+const char *getaddrstring(const union sockaddr_un *addr){
     static char buff[100];
     char ip[INET6_ADDRSTRLEN];
     if(addr->addr.sa_family == AF_INET6){
