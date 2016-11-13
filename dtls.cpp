@@ -125,14 +125,16 @@ int Dtls::recv(){
     unsigned char buff[DTLS_MTU];
     uint32_t tick_recvpkg = 0;
     uint32_t recv_time = 0;
+    uint32_t org_ack = 0;
     int ret;
 #ifdef DEBUG_DTLS
     uint32_t recv_begin = 0;
     uint32_t recv_end = 0;
+    uint32_t discard_begin = 0;
+    uint32_t discard_end = 0;
 #endif
     while((ret = SSL_read(ssl, buff, DTLS_MTU)) > 0){
         Dtls_head *head = (Dtls_head *)buff;
-        const uint32_t ack = ntohl(head->ack);
         const uint32_t seq = ntohl(head->seq);
         const uint32_t time = ntohl(head->time);
         const uint16_t len = ret - sizeof(Dtls_head);
@@ -147,7 +149,7 @@ int Dtls::recv(){
                 recv_begin = seq;
             }
             if(recv_end && recv_end != seq){
-                LOG("[DTLS] %u: get pkg: %x -- %x\n", getmtime(), recv_begin, recv_end);
+                LOG("[DTLS] %u: get pkg: %x -- %x [%u]\n", getmtime()&0xffff, recv_begin, recv_end, recv_end-recv_begin);
                 recv_begin = seq;
             }
             recv_end = seq + len;
@@ -179,36 +181,65 @@ int Dtls::recv(){
                 size_t l = Min(DTLS_BUF_LEN - from, size);
                 memcpy(read_buff+ from , (const char*)(head+1) + (start_pos-seq), l);
                 memcpy(read_buff , (const char*)(head+1) + (start_pos + l -seq), size - l);
-                
-            }else{
-#ifdef DEBUG_DTLS
-                LOG("[DTLS] %u: discard pkg %x -- %x (%x)\n", getmtime(), seq, seq+len, full_pos);
-#endif
+
             }
-            recv_time = time;
+#ifdef DEBUG_DTLS
+            else{
+                if(discard_begin == 0){
+                    discard_begin = seq;
+                }
+                if(discard_end && discard_end != seq){
+                    LOG("[DTLS] %u: discard pkg: %x -- %x [%u] (%x)\n",
+                        getmtime()&0xffff, discard_begin, discard_end, discard_end-discard_begin, full_pos);
+                    discard_begin = seq;
+                }
+                discard_end = seq + len;
+            }
+#endif
+            recv_time = time>recv_time?time:recv_time;
         }else{
-            rtt_time = rtt_time * 0.8 + (getmtime()-time) * 0.2;
+            uint32_t now = getmtime();
+            if(org_ack == 0){
+                org_ack = recv_ack;
+            }
+            rtt_time = rtt_time * 0.8 + (now-time) * 0.2;
             gap_num = 0;
             uint32_t *gap_ptr = (uint32_t *)(head+1);
             while((unsigned char*)gap_ptr - buff <ret){
                 gaps[gap_num++] = ntohl(*gap_ptr++);
             }
-#ifdef DEBUG_DTLS
-            LOG("[DTLS] %u: ack: %x window: %u  rtt: %u\n",getmtime(), ack, bucket_limit, rtt_time);
+            if(after(seq, recv_ack)){
+                recv_ack = seq;
+                ack_time = now;
+#ifndef DEBUG_DTLS
+            }
+#else
+                LOG("[DTLS] %u: ack: %x  window: %u  rtt: %u\n",
+                    now&0xffff, seq, bucket_limit, rtt_time);
+            } else{
+                LOG("[DTLS] %u: ack [R]: %x (%x) window: %u  rtt: %u\n",
+                    now&0xffff, seq, recv_ack, bucket_limit, rtt_time);
+            }
 #endif
-        }
-        if(after(ack, recv_ack)){
-            recv_ack = ack;
-            ack_time = time;
         }
     }
 #ifdef DEBUG_DTLS
     if(recv_end){
-        LOG("[DTLS] %u: get pkg: %x -- %x\n", getmtime(), recv_begin, recv_end);
+        LOG("[DTLS] %u: get pkg: %x -- %x [%u]\n",
+            getmtime()&0xffff, recv_begin, recv_end, recv_end-recv_begin);
+    }
+    if(discard_end){
+        LOG("[DTLS] %u: discard pkg: %x -- %x [%u] (%x)\n",
+            getmtime()&0xffff, discard_begin, discard_end, discard_end-discard_begin, read_seqs.begin()->second);
     }
 #endif
     if(ret < 0 && !BIO_should_retry(SSL_get_rbio(ssl))){
        return -1;
+    }
+    if(org_ack && recv_ack != write_seq && org_ack == recv_ack){
+        ackhold_times ++;
+    }else{
+        ackhold_times = 0;
     }
     recv_pkgs.add(tick_recvpkg);
     send_ack(recv_time, recv_pkgs.getsum());
@@ -230,7 +261,21 @@ int Dtls::send() {
         if(buckets > bucket_limit){
             buckets = bucket_limit;
         }
-        if(now-ack_time >= Max(2,rtt_time*1.2) && before(recv_ack, write_seq)){
+        if((ackhold_times >= 3 || now-ack_time >= Max(2,rtt_time*1.2)) && before(recv_ack, write_seq)){
+            if(ackhold_times >= 3){
+#ifdef DEBUG_DTLS
+                LOG("[DTLS] %u: ackhol %u times reset resend_pos(%x) to %x\n",
+                    getmtime()&0xffff, ackhold_times, resend_pos, recv_ack);
+#endif
+                resend_pos = recv_ack;
+                ackhold_times = 0;
+            }
+#ifdef DEBUG_DTLS
+            else if(before(recv_ack, send_pos)){
+                LOG("[DTLS] %u: acktime %u diff %u, begin resend\n",
+                    getmtime()&0xffff, ack_time&0xffff, now-ack_time);
+            }
+#endif
             resend_pos = after(recv_ack, resend_pos)?recv_ack: resend_pos;
             if(gap_num){
                 for(size_t i =0;i<gap_num;i+=2){
@@ -244,8 +289,8 @@ int Dtls::send() {
                     }
 #ifdef DEBUG_DTLS
                     if(send_begin != resend_pos){
-                        LOG("[DTLS] %u: send pkg: %x -- %x, left buckets: %d rtt: %d [R]\n", getmtime(),
-                                send_begin, resend_pos, buckets, rtt_time);
+                        LOG("[DTLS] %u: send pkg: %x - %x [%u], left buckets: %d rtt: %d [R]\n",
+                            getmtime()&0xffff, send_begin, resend_pos, resend_pos-send_begin, buckets, rtt_time);
                     }
 #endif
                     if(buckets == 0){
@@ -262,8 +307,8 @@ int Dtls::send() {
                 }
 #ifdef DEBUG_DTLS
                 if(send_begin != resend_pos){
-                    LOG("[DTLS] %u: send pkg: %x -- %x, left buckets: %d rtt: %d [SR]\n", getmtime(),
-                            send_begin, resend_pos, buckets, rtt_time);
+                    LOG("[DTLS] %u: send pkg: %x - %x [%u], left buckets: %d rtt: %d [SR]\n",
+                        getmtime()&0xffff, send_begin, resend_pos, resend_pos-send_begin,buckets, rtt_time);
                 }
 #endif
             }
@@ -282,8 +327,8 @@ int Dtls::send() {
         }
 #ifdef DEBUG_DTLS
         if(send_begin != send_pos){
-            LOG("[DTLS] %u: send pkg: %x -- %x, left buckets: %d rtt: %d\n",
-                    getmtime(), send_begin, send_pos, buckets, rtt_time);
+            LOG("[DTLS] %u: send pkg: %x - %x [%u], left buckets: %d rtt: %d\n",
+                    getmtime()&0xffff, send_begin, send_pos, send_pos-send_begin, buckets, rtt_time);
         }
 #endif
         tick_time = now - buckets*100/bucket_limit;
@@ -297,8 +342,7 @@ void Dtls::send_ack(uint32_t time, uint32_t window) {
         unsigned char buff[DTLS_MTU];
         Dtls_head *head = (Dtls_head *)buff;
         auto seq = read_seqs.begin();
-        head->ack = htonl(seq->second);
-        head->seq = 0;
+        head->seq = htonl(seq->second);
         head->time = htonl(time);
         head->window = htons(window);
         head->type = DTLS_TYPE_ACK;
@@ -322,7 +366,6 @@ uint32_t Dtls::send_pkg(uint32_t seq, uint32_t window, size_t len) {
     assert(window < 65536);
     unsigned char buff[DTLS_MTU];
     Dtls_head *head = (Dtls_head *)buff;
-    head->ack = htonl(read_seqs.begin()->second);
     head->seq = htonl(seq);
     head->time = htonl(getmtime());
     head->window = htons(window);
@@ -337,9 +380,6 @@ uint32_t Dtls::send_pkg(uint32_t seq, uint32_t window, size_t len) {
     }else{
         void(0); //TODO put some error info
     }
-#ifdef DEBUG_DTLS
-//    LOG("[DTLS] %u: send a pkg: %x -- %x\n",getmtime(), seq, seq+(uint32_t)len);
-#endif
     return len;
 }
 

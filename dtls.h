@@ -10,7 +10,6 @@
 
 struct Dtls_head{
     uint32_t seq;
-    uint32_t ack;
     uint32_t time;
     uint16_t window;
 #define DTLS_TYPE_DATA  0
@@ -45,6 +44,7 @@ class Dtls:public Ssl{
     uint32_t write_seq = 0;
     uint32_t bucket_limit = 10;
     uint32_t rtt_time = 50;
+    uint32_t ackhold_times = 0;
     uint32_t ack_time;
     uint32_t tick_time;
     int recv();
