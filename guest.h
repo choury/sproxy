@@ -9,7 +9,9 @@
 class Guest:public Requester, public HttpResponser {
     void request_next();
 protected:
-    enum {none, requesting, presistent, chunked} status = none;
+    enum class Status{
+        none, requesting, presistent, chunked,
+    } status = Status::none;
     Responser* responser_ptr = nullptr;
     std::queue<HttpReq> reqs;
 

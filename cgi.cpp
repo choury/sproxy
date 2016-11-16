@@ -121,10 +121,10 @@ void Cgi::InProc() {
     CGI_Header *header = (CGI_Header *)cgi_buff;
     std::pair<Requester *, uint32_t> session;
     switch (status) {
-    case WaitHeadr:
+    case Status::WaitHeadr:
         len = sizeof(CGI_Header) - cgi_getlen;
         if (len == 0) {
-            status = WaitBody;
+            status = Status::WaitBody;
             break;
         }
         len = read(fd, cgi_buff + cgi_getlen, len);
@@ -136,27 +136,27 @@ void Cgi::InProc() {
         }
         cgi_getlen += len;
         break;
-    case WaitBody:
+    case Status::WaitBody:
         len = ntohs(header->contentLength) + sizeof(CGI_Header) - cgi_getlen;
         if (len == 0) {
             if(idmap.count(ntohl(header->requestId)) == 0){
-                status = WaitHeadr;
+                status = Status::WaitHeadr;
                 cgi_getlen = 0;
                 break;
             }
             switch (header->type) {
             case CGI_RESPONSE:
-                status = HandleRes;
+                status = Status::HandleRes;
                 break;
             case CGI_DATA:
-                status = HandleData;
+                status = Status::HandleData;
                 break;
             case CGI_VALUE:
-                status = HandleValue;
+                status = Status::HandleValue;
                 break;
             default:
                 LOGE("cgi unkown type: %d\n", header->type);
-                status = WaitHeadr;
+                status = Status::WaitHeadr;
                 cgi_getlen = 0;
                 break;
             }
@@ -171,7 +171,7 @@ void Cgi::InProc() {
         }
         cgi_getlen += len;
         break;
-    case  HandleRes: {
+    case  Status::HandleRes: {
         HttpResHeader res(header, this);
         if (res.get("content-length") == nullptr) {
             res.add("Transfer-Encoding", "chunked");
@@ -180,11 +180,11 @@ void Cgi::InProc() {
         requester = session.first;
         res.http_id = session.second;
         requester->response(res);
-        status = WaitHeadr;
+        status = Status::WaitHeadr;
         cgi_getlen = 0;
         break;
     }
-    case HandleValue:
+    case Status::HandleValue:
         requester = idmap.at(ntohl(header->requestId)).first;
         if((header->flag & CGI_FLAG_ACK)==0){
             header->flag |= CGI_FLAG_ACK;
@@ -200,13 +200,13 @@ void Cgi::InProc() {
             Peer::Write((const void *)header, sizeof(CGI_Header) + ntohs(header->contentLength), this);
         }
 ignore:
-        status = WaitHeadr;
+        status = Status::WaitHeadr;
         cgi_getlen = 0;
         break;
-    case HandleData:
+    case Status::HandleData:
         cgi_outlen = sizeof(CGI_Header);
-        status = HandleLeft;
-    case HandleLeft:
+        status = Status::HandleLeft;
+    case Status::HandleLeft:
         session = idmap.at(ntohl(header->requestId));
         requester = session.first;
         len = requester->bufleft(this);
@@ -219,7 +219,7 @@ ignore:
         len = requester->Write((const char *)cgi_buff + cgi_outlen, len, this, session.second);
         cgi_outlen += len;
         if (cgi_outlen == cgi_getlen) {
-            status = WaitHeadr;
+            status = Status::WaitHeadr;
             cgi_getlen = 0;
         }
         if (header->flag & CGI_FLAG_END) {

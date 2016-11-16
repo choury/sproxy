@@ -22,7 +22,7 @@ void Guest::ResetResponser(Responser *r){
 }
 
 void Guest::request_next() {
-    while(status == none && reqs.size()){
+    while(status == Status::none && reqs.size()){
         HttpReq req = std::move(reqs.front());
         reqs.pop();
         Responser* responser = distribute(req.header, responser_ptr);
@@ -31,9 +31,9 @@ void Guest::request_next() {
         }
         if(responser){
             if(req.header.ismethod("CONNECT")){
-                status = presistent;
+                status = Status::presistent;
             }else{
-                status = requesting;
+                status = Status::requesting;
             }
             while(1){
                 auto block = req.body.pop();
@@ -87,16 +87,16 @@ void Guest::ErrProc(int errcode) {
 }
 
 void Guest::ReqProc(HttpReqHeader& req) {
-    if(status == none && reqs.empty()){
+    if(status == Status::none && reqs.empty()){
         Responser* responser = distribute(req, responser_ptr);
         if(responser && responser != responser_ptr){
            responser_ptr = responser;
         }
         if(responser){
             if(req.ismethod("CONNECT")){
-                status = presistent;
+                status = Status::presistent;
             }else{
-                status = requesting;
+                status = Status::requesting;
             }
         }
     }else{
@@ -105,15 +105,15 @@ void Guest::ReqProc(HttpReqHeader& req) {
 }
 
 void Guest::response(HttpResHeader& res) {
-    if(status == presistent){
+    if(status == Status::presistent){
         if(memcmp(res.status, "200", 4) == 0){
             strcpy(res.status, "200 Connection established");
             res.del("Transfer-Encoding");
         }
     }else if(res.get("Transfer-Encoding")){
-        status = chunked;
+        status = Status::chunked;
     }else if(res.no_left()){
-        status = none;
+        status = Status::none;
     }
     size_t len;
     char *buff=res.getstring(len);
@@ -124,7 +124,7 @@ ssize_t Guest::Write(void *buff, size_t size, Peer* who, uint32_t) {
     size_t ret;
     size_t len = Min(bufleft(who), size);
     assert(who == this || who == responser_ptr);
-    if(status == chunked){
+    if(status == Status::chunked){
         char chunkbuf[100];
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)size);
         buff = p_move(buff, -chunklen);
@@ -141,7 +141,7 @@ ssize_t Guest::Write(void *buff, size_t size, Peer* who, uint32_t) {
         ret =  Peer::Write(buff, size, this);
     }
     if(size == 0){
-        status = none;
+        status = Status::none;
     }
     return ret;
 }

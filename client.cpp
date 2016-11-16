@@ -101,9 +101,9 @@ int main(int argc, char** argv) {
     if(strlen(protocol) == 0 ||
        strcasecmp(protocol, "ssl") == 0)
     {
-        SPROT = TCP;
+        SPROT = Protocol::TCP;
     }else if(strcasecmp(protocol, "dtls") == 0){
-        SPROT = UDP;
+        SPROT = Protocol::UDP;
     }else{
         LOGOUT("Only \"ssl://\" and \"dtls://\" protocol are supported!\n");
         return -1;

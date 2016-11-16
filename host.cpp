@@ -67,7 +67,7 @@ int Host::connect() {
         if (testedaddr != 0) {
             RcdDown(hostname, addrs[testedaddr-1]);
         }
-        fd = Connect(&addrs[testedaddr++], protocol);
+        fd = Connect(&addrs[testedaddr++], (int)protocol);
         connectmap[this]=time(NULL);
         if (fd < 0) {
             LOGE("connect to %s failed\n", this->hostname);
@@ -186,7 +186,7 @@ void Host::ResProc(HttpResHeader& res) {
 
 
 Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr) {
-    Protocol protocol = req.ismethod("SEND")?UDP:TCP;
+    Protocol protocol = req.ismethod("SEND")?Protocol::UDP:Protocol::TCP;
     Host* host = dynamic_cast<Host *>(responser_ptr);
     if (host){
         if(strcasecmp(host->hostname, req.hostname) == 0

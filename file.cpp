@@ -27,34 +27,36 @@ Ranges::Ranges(const char *range_str){
         throw 0;
     }
     range_str += 6;
-    enum{start,testtail,first,testsecond,second}status=start;
-    ssize_t begin,end;
+    enum class Status{
+        start,testtail,first,testsecond,second
+    }status= Status::start;
+    ssize_t begin = -1,end = -1;
     while (1){
         switch (status){
-        case start:
+        case Status::start:
             begin = end = -1;
             if (*range_str == '-') {
                 range_str ++;
-                status = testtail;
+                status = Status::testtail;
             } else if (isdigit(*range_str)) {
                 begin = 0;
-                status = first;
+                status = Status::first;
             } else {
                 throw 0;
             }
             break;
-        case testtail:
+        case Status::testtail:
             if (isdigit(*range_str)) {
                 end = 0;
-                status = second;
+                status = Status::second;
             } else {
                 throw 0;
             }
             break;
-        case first:
+        case Status::first:
             if (*range_str == '-' ) {
                 range_str ++;
-                status = testsecond;
+                status = Status::testsecond;
             } else if (isdigit(*range_str)) {
                 begin *= 10;
                 begin += *range_str - '0';
@@ -63,27 +65,27 @@ Ranges::Ranges(const char *range_str){
                 throw 0;
             }
             break;
-        case testsecond:
+        case Status::testsecond:
             if (*range_str == 0) {
                 add(begin,end);
                 return;
             } else if (*range_str == ',') {
                 add(begin,end);
                 range_str ++;
-                status = start;
+                status = Status::start;
             } else if(isdigit(*range_str)) {
                 end = 0;
-                status = second;
+                status = Status::second;
             }
             break;
-        case second:
+        case Status::second:
             if (*range_str == 0) {
                 add(begin,end);
                 return;
             } else if (*range_str == ',') {
                 add(begin,end);
                 range_str ++;
-                status = start;
+                status = Status::start;
             } else if (isdigit(*range_str)){
                 end *= 10 ;
                 end += *range_str - '0';

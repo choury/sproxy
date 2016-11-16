@@ -38,7 +38,7 @@
 
 char SHOST[DOMAINLIMIT];
 uint16_t SPORT = 443;
-Protocol SPROT = TCP;
+Protocol SPROT = Protocol::TCP;
 char *auth_string=nullptr;
 
 #ifdef CLIENT

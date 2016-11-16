@@ -48,13 +48,9 @@ class Cgi:public Responser, public Object{
     binmap<std::pair<Requester *, uint32_t>, uint32_t> idmap;
     std::set<Peer *> waitlist;
     virtual void defaultHE(uint32_t events);
-    enum {WaitHeadr,
-          WaitBody,
-          HandleRes,
-          HandleValue,
-          HandleData,
-          HandleLeft
-    }status = WaitHeadr;
+    enum class Status{
+        WaitHeadr, WaitBody, HandleRes, HandleValue, HandleData, HandleLeft
+    }status = Status::WaitHeadr;
     void InProc();
 public:
     Cgi(HttpReqHeader& req);

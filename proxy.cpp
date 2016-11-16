@@ -122,7 +122,7 @@ void Proxy::waitconnectHE(uint32_t events) {
                  requester_ptr->getsrc(), strerror(error));
             goto reconnect;
         }
-        if(protocol == TCP){
+        if(protocol == Protocol::TCP){
             ctx = SSL_CTX_new(SSLv23_client_method());
             if (ctx == NULL) {
                 ERR_print_errors_fp(stderr);
@@ -212,7 +212,7 @@ void Proxy::shakehandHE(uint32_t events) {
             this->discard();
             clean(NOERROR, this);
         }else{
-            if(protocol == UDP){
+            if(protocol == Protocol::UDP){
                 LOGE("Warning: Use http1.1 on dtls!\n");
             }
             updateEpoll(EPOLLIN | EPOLLOUT);
