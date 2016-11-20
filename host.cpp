@@ -202,8 +202,7 @@ Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr) {
         }
     }
     if (responser_ptr) {
-        responser_ptr->ResetRequester(nullptr);
-        responser_ptr->clean(NOERROR, responser_ptr);
+        responser_ptr->clean(NOERROR, dynamic_cast<Requester *>(req.src));
     }
     host = new Host(req.hostname, req.port, protocol);
     host->request(req);

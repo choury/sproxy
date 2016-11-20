@@ -27,7 +27,7 @@ void Guest::request_next() {
         reqs.pop();
         Responser* responser = distribute(req.header, responser_ptr);
         if(responser && responser != responser_ptr){
-           responser_ptr = responser;
+            responser_ptr = responser;
         }
         if(responser){
             if(req.header.ismethod("CONNECT")){
@@ -90,7 +90,7 @@ void Guest::ReqProc(HttpReqHeader& req) {
     if(status == Status::none && reqs.empty()){
         Responser* responser = distribute(req, responser_ptr);
         if(responser && responser != responser_ptr){
-           responser_ptr = responser;
+            responser_ptr = responser;
         }
         if(responser){
             if(req.ismethod("CONNECT")){
