@@ -75,11 +75,15 @@ struct Http2_frame{
     size_t wlen;
 };
 
+
 class Http2Base: public Object{
 protected:
     char http2_buff[FRAMELENLIMIT];
     uint32_t http2_getlen = 0;
     uint32_t remoteframewindowsize = 65535; //由对端初始化的初始frame的窗口大小
+    
+    int32_t remotewinsize = 65535; // 对端提供的窗口大小，发送时减小，收到对端update时增加
+    int32_t localwinsize = 65535; // 发送给对端的窗口大小，接受时减小，给对端发送update时增加
     bool inited = false;
     Index_table request_table;
     Index_table response_table;
@@ -92,8 +96,8 @@ protected:
     virtual void HeadersProc(Http2_header *header) = 0;
     virtual ssize_t Read(void* buff, size_t len) = 0;
     virtual ssize_t Write(const void *buff, size_t size) = 0;
-    virtual void SendFrame(const Http2_header* header);
-    virtual void SendFrame(Http2_header* header);
+    virtual void PushFrame(const Http2_header* header)final;
+    virtual void PushFrame(Http2_header* header);
 
     virtual void SettingsProc(Http2_header *header);
     virtual void PingProc(Http2_header *header);
@@ -105,7 +109,7 @@ protected:
     virtual void ErrProc(int errcode) = 0;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff) = 0;
     void (Http2Base::*Http2_Proc)()=&Http2Base::InitProc;
-    int Write_Proc();
+    int SendFrame();
 public:
     ~Http2Base();
 };
@@ -116,7 +120,7 @@ class Http2Responser:public Http2Base {
 protected:
     virtual void InitProc()override;
     virtual void HeadersProc(Http2_header *header)override;
-    virtual void ReqProc(HttpReqHeader& req) = 0;
+    virtual void ReqProc(HttpReqHeader&& req) = 0;
 };
 
 
@@ -126,7 +130,7 @@ class Http2Requster:public Http2Base {
 protected:
     virtual void InitProc()override;
     virtual void HeadersProc(Http2_header *header)override;
-    virtual void ResProc(HttpResHeader& res) = 0;
+    virtual void ResProc(HttpResHeader&& res) = 0;
 public:
     void init();
 };

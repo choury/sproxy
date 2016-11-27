@@ -13,23 +13,24 @@ protected:
         none, requesting, presistent, chunked,
     } status = Status::none;
     Responser* responser_ptr = nullptr;
+    uint32_t   responser_id = 0;
     std::queue<HttpReq> reqs;
 
     virtual void defaultHE(uint32_t events)override;
     
     virtual ssize_t Read(void* buff, size_t len)override;
     virtual void ErrProc(int errcode)override;
-    virtual void ReqProc(HttpReqHeader& req)override;
+    virtual void ReqProc(HttpReqHeader&& req)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
+    virtual void discard()override;
 public:
-    using Peer::Write;
+    using Peer::Write_buff;
     explicit Guest(int fd, struct sockaddr_in6 *myaddr);
 
-    virtual void ResetResponser(Responser *r)override;
-    virtual void discard()override;
-    virtual ssize_t Write(void* buff, size_t size, Peer* who, uint32_t id=0)override;
-    virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
-    virtual void response(HttpResHeader& res)override;
+    virtual void ResetResponser(Responser *r, uint32_t id)override;
+    virtual ssize_t Write(void* buff, size_t size, uint32_t id)override;
+    virtual void clean(uint32_t errcode, uint32_t id)override;
+    virtual void response(HttpResHeader&& res)override;
     friend void guesttick(Guest * guest);
 };
 

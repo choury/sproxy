@@ -1,73 +1,14 @@
-#include "host.h"
 #include "requester.h"
 
-#ifdef CLIENT
 #include "proxy.h"
-#include "proxy2.h"
-#else
 #include "file.h"
 #include "cgi.h"
-#endif
-
-#define ADDPTIP    "HTTP/1.0 200 Proxy site Added" CRLF CRLF
-#define ADDBTIP    "HTTP/1.0 200 Block site Added" CRLF CRLF
-#define DELPTIP    "HTTP/1.0 200 Proxy site Deleted" CRLF CRLF
-#define DELBTIP    "HTTP/1.0 200 Block site Deleted" CRLF CRLF
-#define EGLOBLETIP  "HTTP/1.0 200 Global proxy enabled" CRLF CRLF
-#define DGLOBLETIP  "HTTP/1.0 200 Global proxy disabled" CRLF CRLF
-#define SWITCHTIP   "HTTP/1.0 200 Switched proxy server" CRLF CRLF
-
-#define BLOCKTIP    "HTTP/1.1 403 Forbidden" CRLF \
-                    "Content-Length:73" CRLF CRLF \
-                    "This site is blocked, please contact administrator for more information" CRLF
-
-#define DELFTIP    "HTTP/1.0 404 The site is not found" CRLF CRLF
-
-#define AUTHNEED    "HTTP/1.1 407 Proxy Authentication Required" CRLF \
-                    "Proxy-Authenticate: Basic realm=\"Secure Area\"" CRLF \
-                    "Content-Length: 0" CRLF CRLF
-
-#define PROXYTIP    "HTTP/1.1 200 Proxy" CRLF \
-                    "Content-Length:48" CRLF CRLF \
-                    "This site is proxyed, you can do what you want" CRLF
-
-#define NORMALIP    "HTTP/1.1 200 Ok" CRLF \
-                    "Content-Length:56" CRLF CRLF \
-                    "This site won't be proxyed, you can add it by addpsite" CRLF
 
 
-char SHOST[DOMAINLIMIT];
-uint16_t SPORT = 443;
-Protocol SPROT = Protocol::TCP;
-char *auth_string=nullptr;
+extern void flushproxy2();
 
-#ifdef CLIENT
-int req_filter(HttpReqHeader& req){
-    Requester *requester = dynamic_cast<Requester *>(req.src);
-    req.should_proxy = checkproxy(req.hostname);
-    if (auth_string &&
-        !checkauth(requester->getip()) &&
-        req.get("Proxy-Authorization") &&
-        strcmp(auth_string, req.get("Proxy-Authorization")+6) == 0)
-    {
-        addauth(requester->getip());
-    }
-    if (auth_string && !checkauth(requester->getip())){
-        LOG("%s: [[Authorization needed]] %s %s [%s]\n", 
-            requester->getsrc(), req.method, req.url, req.get("User-Agent"));
-        requester->Write(AUTHNEED, strlen(AUTHNEED), requester);
-        return 1;
-    }
-    if (checkblock(req.hostname) && !req.ismethod("DELBSITE")) {
-        LOG("%s: [[site blocked]] %s %s [%s]\n", 
-            requester->getsrc(), req.method, req.url, req.get("User-Agent"));
-        requester->Write(BLOCKTIP, strlen(BLOCKTIP), requester);
-        return 1;
-    } 
+int prepare_header(HttpReqHeader& req){
     if(req.get("via") && strstr(req.get("via"), "sproxy")){
-        LOG("%s: [[redirect back]] %s %s [%s]\n",
-            requester->getsrc(), req.method, req.url, req.get("User-Agent"));
-        requester->Write(H400, strlen(H400), requester);
         return 1;
     }
     req.del("Connection");
@@ -77,28 +18,50 @@ int req_filter(HttpReqHeader& req){
     }
     req.del("Upgrade");
     req.del("Public");
-    req.del("Proxy-Authorization");
     req.append("Via", "HTTP/1.1 sproxy");
     return 0;
 }
 
-Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
-    if(req_filter(req)){
-        return nullptr;
-    }
+int check_auth(HttpReqHeader& req){
     Requester *requester = dynamic_cast<Requester *>(req.src);
+    if (auth_string[0] &&
+        !checkauth(requester->getip()) &&
+        req.get("Proxy-Authorization") &&
+        strcmp(auth_string, req.get("Proxy-Authorization")+6) == 0)
+    {
+        addauth(requester->getip());
+    }
+    if (auth_string[0] && !checkauth(requester->getip())){
+        return 1;
+    }
+    return 0;
+}
+
+Responser* distribute(HttpReqHeader& req, Responser* responser_ptr, uint32_t id) {
+    Requester *requester = dynamic_cast<Requester *>(req.src);
+    char log_buff[URLLIMIT];
     if(req.url[0] == '/'){
-        LOG("(%s%s): %s %s%s [%s]\n", requester->getsrc(),
-            req.should_proxy?" PROXY":"", req.method,
-            req.hostname, req.url, req.get("User-Agent"));
+        sprintf(log_buff, "(%s): %s %s%s [%s]",
+                requester->getsrc(), req.method,
+                req.hostname, req.url, req.get("User-Agent"));
         if(!req.hostname[0]){
-            requester->Write(H400, strlen(H400), requester);
+            LOG("[[bad request]] %s\n", log_buff);
+            HttpResHeader res(H400);
+            res.http_id = req.http_id;
+            requester->response(std::move(res));
             return nullptr;
         }
     }else{
-        LOG("(%s%s): %s %s [%s]\n", requester->getsrc(),
-            req.should_proxy?" PROXY":"", req.method,
-            req.url, req.get("User-Agent"));
+        sprintf(log_buff, "(%s): %s %s [%s]",
+                requester->getsrc(), req.method,
+                req.url, req.get("User-Agent"));
+    }
+    if(prepare_header(req)){
+        LOG("[[redirect back]] %s\n", log_buff);
+        HttpResHeader res(H400);
+        res.http_id = req.http_id;
+        requester->response(std::move(res));
+        return nullptr;
     }
     if (req.ismethod("GET") ||
         req.ismethod("POST") ||
@@ -111,116 +74,148 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
         if(req.port == 0){
             req.port = HTTPPORT;
         }
-        if(req.should_proxy){
-            return Proxy::getproxy(req, responser_ptr);
+        switch(getstrategy(req.hostname)){
+            case Strategy::local:
+                LOG("[[local]] %s\n", log_buff);
+                if(index_file && endwith(req.filename, "/")){
+                    strncat(req.filename, index_file, sizeof(req.filename));
+                }
+                if(req.ismethod("CONNECT")){
+                    HttpResHeader res(H400);
+                    res.http_id = req.http_id;
+                    requester->response(std::move(res));
+                    return nullptr;
+                }else if (endwith(req.filename,".so")) {
+                    return Cgi::getcgi(req);
+                } else {
+                    return File::getfile(req);
+                }
+            case Strategy::direct:
+                if(check_auth(req)){
+                    HttpResHeader res(H407);
+                    res.http_id = req.http_id;
+                    requester->response(std::move(res));
+                    LOG("[[Authorization needed]] %s\n", log_buff);
+                    return nullptr;
+                }
+                LOG("[[dirct]] %s\n", log_buff);
+                req.del("Proxy-Authorization");
+                return Host::gethost(req, responser_ptr, id);
+            case Strategy::proxy:
+                if(check_auth(req)){
+                    HttpResHeader res(H407);
+                    res.http_id = req.http_id;
+                    requester->response(std::move(res));
+                    LOG("[[Authorization needed]] %s\n", log_buff);
+                    return nullptr;
+                }else if(SPORT == 0){
+                    HttpResHeader res(H400);
+                    res.http_id = req.http_id;
+                    requester->response(std::move(res));
+                    LOG("[[server not set]] %s\n", log_buff);
+                    return nullptr;
+                }
+                req.del("via");
+                LOG("[[proxy]] %s\n", log_buff);
+                req.should_proxy = true;
+                return Proxy::getproxy(req, responser_ptr, id);
+            case Strategy::block:
+                LOG("[[block]] %s\n", log_buff);
+                HttpResHeader res("HTTP/1.1 403 Forbidden" CRLF
+                                  "Content-Length:73" CRLF CRLF);
+                res.http_id = req.http_id;
+                requester->response(std::move(res));
+                requester->Write("This site is blocked, please contact administrator"
+                                 " for more information.\n", 73, req.http_id);
+                return nullptr;
+        }
+    }else if (req.ismethod("ADD")) {
+        const char *strategy = req.get("s");
+        LOG("[[add %s]] %s\n", strategy, log_buff);
+        if(addstrategy(req.hostname, strategy)){
+            HttpResHeader res(H200);
+            res.http_id = req.http_id;
+            requester->response(std::move(res));
         }else{
-            return Host::gethost(req, responser_ptr);
+            HttpResHeader res(H400);
+            res.http_id = req.http_id;
+            requester->response(std::move(res));
         }
-    } else if (req.ismethod("ADDPSITE")) {
-        addpsite(req.url);
-        requester->Write(ADDPTIP, strlen(ADDPTIP), requester);
-    } else if (req.ismethod("DELPSITE")) {
-        if (delpsite(req.url)) {
-            requester->Write(DELPTIP, strlen(DELPTIP), requester);
-        } else {
-            requester->Write(DELFTIP, strlen(DELFTIP), requester);
+        return nullptr;
+    } else if (req.ismethod("DEL")) {
+        const char* strategy = getstrategystring(req.hostname);
+        LOG("[[del %s]] %s\n", strategy, log_buff);
+        if(delstrategy(req.hostname)){
+            HttpResHeader res(H200);
+            res.add("Strategy", strategy);
+            res.http_id = req.http_id;
+            requester->response(std::move(res));
+        }else{
+            HttpResHeader res(H404);
+            res.http_id = req.http_id;
+            requester->response(std::move(res));
         }
-    } else if (req.ismethod("ADDBSITE")) {
-        addbsite(req.url);
-        requester->Write(ADDBTIP, strlen(ADDBTIP), requester);
-    } else if (req.ismethod("DELBSITE")) {
-        if (delbsite(req.url)) {
-            requester->Write(DELBTIP, strlen(DELBTIP), requester);
-        } else {
-            requester->Write(DELFTIP, strlen(DELFTIP), requester);
-        }
-    } else if (req.ismethod("GLOBALPROXY")) {
-        if (globalproxy()) {
-            requester->Write(EGLOBLETIP, strlen(EGLOBLETIP), requester);
-        } else {
-            requester->Write(DGLOBLETIP, strlen(DGLOBLETIP), requester);
-        }
+        return nullptr;
     } else if (req.ismethod("SWITCH")) {
         if(strlen(req.protocol) == 0 ||
-           strcasecmp(req.protocol, "ssl") == 0)
+            strcasecmp(req.protocol, "ssl") == 0)
         {
             SPROT = TCP;
         }else if(strcasecmp(req.protocol, "dtls") == 0){
             SPROT = UDP;
         }else{
-            requester->Write(H400, strlen(H400), requester);
+            HttpResHeader res(H400);
+            res.http_id = req.http_id;
+            requester->response(std::move(res));
             return nullptr;
         }
         SPORT = req.port?req.port:443;
         strcpy(SHOST, req.hostname);
         flushproxy2();
-        requester->Write(SWITCHTIP, strlen(SWITCHTIP), requester);
+        HttpResHeader res(H200);
+        res.http_id = req.http_id;
+        requester->response(std::move(res));
     } else if (req.ismethod("TEST")){
-        if(checkblock(req.hostname)){
-            requester->Write(BLOCKTIP, strlen(BLOCKTIP), requester);
-            return nullptr;
-        }
-        if(checkproxy(req.hostname)){
-            requester->Write(PROXYTIP, strlen(PROXYTIP), requester);
-            return nullptr;
-        }
-        requester->Write(NORMALIP, strlen(NORMALIP), requester);
+        HttpResHeader res("HTTP/1.1 200 Ok" CRLF
+                          "Content-Length:0" CRLF CRLF);
+        res.add("Strategy", getstrategystring(req.hostname));
+        res.http_id = req.http_id;
+        requester->response(std::move(res));
     } else if(req.ismethod("FLUSH")){
         if(strcasecmp(req.url, "dns") == 0){
             flushdns();
-            requester->Write(H200, strlen(H200), requester);
-            return nullptr;
-        }
-    } else{
-        LOGE("%s: unsported method:%s\n", requester->getsrc(), req.method);
-        requester->Write(H405, strlen(H405), requester);
-        return nullptr;
-    }
-    return nullptr;
-}
-
-#else
-
-Responser* distribute(HttpReqHeader& req, Responser* responser_ptr){
-    Requester *requester = dynamic_cast<Requester *>(req.src);
-    assert(requester);
-    if(req.http_id){
-        LOG("(%s [%d]): %s %s [%s]\n", requester->getsrc(), req.http_id,
-            req.method, req.url, req.get("User-Agent"));
-    }else{
-        LOG("(%s): %s %s [%s]\n", requester->getsrc(), req.method,
-            req.url, req.get("User-Agent"));
-    }
-    if(req.ismethod("FLUSH")){
-        if(strcasecmp(req.url, "dns") == 0){
-            flushdns();
-            requester->Write(H200, strlen(H200), requester);
+            HttpResHeader res(H200);
+            res.http_id = req.http_id;
+            requester->response(std::move(res));
         }else if(strcasecmp(req.url, "cgi") == 0){
             flushcgi();
-            requester->Write(H200, strlen(H200), requester);
+            HttpResHeader res(H200);
+            res.http_id = req.http_id;
+            requester->response(std::move(res));
+        }else if(strcasecmp(req.url, "sites") == 0){
+            loadsites();
+            HttpResHeader res(H200);
+            res.http_id = req.http_id;
+            requester->response(std::move(res));
+        }else{
+            HttpResHeader res(H400);
+            res.http_id = req.http_id;
+            requester->response(std::move(res));
         }
-    } else  if (checklocal(req.hostname) && !req.ismethod("CONNECT")) {
-        if (endwith(req.filename,".so")) {
-            return Cgi::getcgi(req);
-        } else {
-            return File::getfile(req);
-        }
-    } else {
-        if(req.port == 0){
-            req.port = HTTPPORT;
-        }
-        return Host::gethost(req, responser_ptr);
+    } else{
+        LOG("[[unsported method]] %s\n", log_buff);
+        HttpResHeader res(H405);
+        res.http_id = req.http_id;
+        requester->response(std::move(res));
+        return nullptr;
     }
+    LOG("%s\n", log_buff);
     return nullptr;
 }
-
-#endif
 
 void Responser::closeHE(uint32_t events) {
     delete this;
 }
 
-void Responser::ResetRequester(Requester* r){
+void Responser::ResetRequester(Requester*, uint32_t){
 }
-
-

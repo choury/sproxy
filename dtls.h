@@ -8,15 +8,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
-struct Dtls_head{
-    uint32_t seq;
-    uint32_t time;
-    uint16_t window;
-#define DTLS_TYPE_DATA  0
-#define DTLS_TYPE_ACK   1
-    uint8_t  type;
-    uint8_t _;
-}__attribute__((packed));
+#define DTLS_LEN 1280
+#define DTLS_MTU (DTLS_LEN+sizeof(Dtls_head))
 
 class TTL{
     std::queue<std::pair<uint32_t, uint32_t>> data;
@@ -25,10 +18,6 @@ public:
     void add(uint32_t value);
     uint32_t getsum();
 };
-
-
-#define DTLS_LEN 1024
-#define DTLS_MTU (DTLS_LEN+sizeof(Dtls_head))
 
 class Dtls:public Ssl{
     unsigned char *read_buff;

@@ -44,7 +44,7 @@ void Guest_s::shakehandHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("(%s): guest_s error:%s\n", getsrc(), strerror(error));
         }
-        clean(INTERNAL_ERR, this);
+        clean(INTERNAL_ERR, 0);
         return;
     }
 
@@ -52,7 +52,7 @@ void Guest_s::shakehandHE(uint32_t events) {
         int ret = ssl->accept();
         if (ret != 1) {
             if (time(nullptr) - accept_start_time>=120 || showerrinfo(ret, "ssl accept error")) {
-                clean(SSL_SHAKEHAND_ERR, this);
+                clean(SSL_SHAKEHAND_ERR, 0);
             }
         } else {
             updateEpoll(EPOLLIN);
@@ -64,7 +64,7 @@ void Guest_s::shakehandHE(uint32_t events) {
             if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
                 new Guest_s2(fd, sourceip, sourceport, ssl);
                 this->discard();
-                clean(NOERROR, this);
+                clean(NOERROR, 0);
                 return;
             }
         }

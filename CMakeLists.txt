@@ -41,25 +41,17 @@ if (HAVE_SAN_UNDEF)
 endif()
 
 
-add_executable(server cgi.cpp file.cpp http.cpp http2.cpp 
-hpack.cpp host.cpp guest.cpp peer.cpp guest_s.cpp guest_s2.cpp dtls.cpp
-lib.c parse.cpp server.cpp net.c dns.cpp responser.cpp requester.cpp)
+add_executable(sproxy main.cpp peer.cpp cgi.cpp file.cpp
+http.cpp http2.cpp hpack.cpp responser.cpp requester.cpp
+host.cpp proxy.cpp proxy2.cpp
+guest.cpp  guest_sni.cpp guest_s.cpp guest_s2.cpp
+tls.c dtls.cpp lib.c parse.cpp net.c dns.cpp)
 
-set_target_properties(server PROPERTIES OUTPUT_NAME "sproxy_server") 
-target_link_libraries(server ${OPENSSL_LIBRARIES} dl)
+set_target_properties(sproxy PROPERTIES OUTPUT_NAME "sproxy")
+target_link_libraries(sproxy ${OPENSSL_LIBRARIES} dl)
 
 
-add_executable(client http.cpp http2.cpp hpack.cpp
-peer.cpp guest.cpp guest_sni.cpp host.cpp proxy.cpp proxy2.cpp dtls.cpp
-lib.c parse.cpp client.cpp net.c dns.cpp tls.c responser.cpp requester.cpp)
-
-#target_compile_definitions(sproxy_client PUBLIC CLIENT)
-set_target_properties(client PROPERTIES COMPILE_FLAGS "-DCLIENT")
-set_target_properties(client PROPERTIES OUTPUT_NAME "sproxy_client") 
-
-target_link_libraries(client ${OPENSSL_LIBRARIES} dl)
-
-install(TARGETS client RUNTIME DESTINATION bin)
+install(TARGETS sproxy RUNTIME DESTINATION bin)
 
 
 add_library(demo SHARED cgidemo.cpp)

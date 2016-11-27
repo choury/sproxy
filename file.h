@@ -4,11 +4,15 @@
 #include "responser.h"
 #include "parse.h"
 #include "object.h"
-#include <list>
 
 struct range{
     ssize_t begin;
     ssize_t end;
+};
+
+struct FileStatus{
+    HttpReqHeader req;
+    range rg;
 };
 
 class Ranges{
@@ -24,14 +28,15 @@ class File:public Responser, public Object{
     void * mapptr = nullptr;
     size_t size;
     char filename[URLLIMIT];
-    std::list<std::pair<HttpReqHeader,range>> reqs;
+    uint32_t req_id = 1;
+    std::map<uint32_t, FileStatus> statusmap;
     virtual void defaultHE(uint32_t events);
+    virtual uint32_t request(HttpReqHeader&& req) override;
 public:
     File(HttpReqHeader& req);
     ~File();
-    virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
-    void request(HttpReqHeader &req) override;
-    static File* getfile(HttpReqHeader &req);
+    virtual void clean(uint32_t errcode, uint32_t id)override;
+    static File* getfile(HttpReqHeader& req);
 };
 
 #endif

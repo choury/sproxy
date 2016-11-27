@@ -16,15 +16,19 @@ void Guest_sni::initHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("(%s): guest_sni error:%s\n", getsrc(), strerror(error));
         }
-        clean(INTERNAL_ERR, this);
+        clean(INTERNAL_ERR, 0);
         return;
+    }
+
+    if(events & EPOLLOUT){
+        updateEpoll(EPOLLIN);
     }
 
     if(events & EPOLLIN){
         int ret=read(fd, http_buff+http_getlen, sizeof(http_buff)-http_getlen);
         if(ret <= 0){
             if (showerrinfo(ret, "guest_sni read error")) {
-                clean(READ_ERR, this);
+                clean(READ_ERR, 0);
             }
             return;
         }
@@ -35,20 +39,22 @@ void Guest_sni::initHE(uint32_t events) {
             char buff[HEADLENLIMIT];
             sprintf(buff, "CONNECT %s:%d" CRLF CRLF, hostname, 443);
             HttpReqHeader req(buff, this);
-            responser_ptr = distribute(req, responser_ptr);
-            updateEpoll(EPOLLIN | EPOLLOUT);
-            handleEvent = (void (Con::*)(uint32_t))&Guest_sni::defaultHE;
+            req.http_id =1;
+            responser_ptr = distribute(req, responser_ptr, responser_id);
+            if(responser_ptr){
+                responser_id = responser_ptr->request(std::move(req));
+                updateEpoll(EPOLLIN | EPOLLOUT);
+                handleEvent = (void (Con::*)(uint32_t))&Guest_sni::defaultHE;
+            }
         }else if(ret != -1){
-            clean(INTERNAL_ERR, this);
+            clean(INTERNAL_ERR, 0);
         }
         free(hostname);
     }
-    if(events & EPOLLOUT){
-        updateEpoll(EPOLLIN);
-    }
 }
 
-void Guest_sni::response(HttpResHeader &){
+void Guest_sni::response(HttpResHeader&& res){
+    assert(res.http_id == 1);
     (this->*Http_Proc)();
 }
 

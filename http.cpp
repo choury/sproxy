@@ -131,7 +131,7 @@ void HttpResponser::HeaderProc() {
         size_t headerlen = headerend - http_buff;
         try {
             HttpReqHeader req(http_buff, this);
-            if(req.no_left()){
+            if(req.no_body()){
                 Http_Proc = (void (HttpBase::*)())&HttpResponser::HeaderProc;
             }else if (req.get("Content-Length") == nullptr || 
                       req.ismethod("CONNECT")) 
@@ -141,7 +141,7 @@ void HttpResponser::HeaderProc() {
                 Http_Proc = &HttpResponser::FixLenProc;
                 http_expectlen = strtoull(req.get("Content-Length"), nullptr, 10);
             }
-            ReqProc(req);
+            ReqProc(std::move(req));
 
         }catch(...) {
             ErrProc(HTTP_PROTOCOL_ERR);
@@ -175,7 +175,7 @@ void HttpRequester::HeaderProc() {
         size_t headerlen = headerend - http_buff;
         try {
             HttpResHeader res(http_buff, this);
-            if(res.no_left() || res.status[0] == '1'){
+            if(res.no_body() || res.status[0] == '1'){
                 http_flag |= HTTP_IGNORE_BODY_F;
             }else if (res.get("Transfer-Encoding")!= nullptr) {
                 Http_Proc = &HttpRequester::ChunkLProc;
@@ -189,7 +189,7 @@ void HttpRequester::HeaderProc() {
                 http_flag &= ~HTTP_IGNORE_BODY_F;
                 Http_Proc = (void (HttpBase::*)())&HttpRequester::HeaderProc;
             }
-            ResProc(res);
+            ResProc(std::move(res));
         }catch(...) {
             ErrProc(HTTP_PROTOCOL_ERR);
             return;

@@ -11,11 +11,11 @@ protected:
     virtual ssize_t Read(void *buff, size_t size)override;
     virtual ssize_t Write(const void *buff, size_t size)override;
     virtual void shakehandHE(uint32_t events);
+    virtual void discard()override;
 public:
     using Guest::Write; //make clang happy
     explicit Guest_s(int fd, struct sockaddr_in6 *myaddr, Ssl *ssl);
 
-    virtual void discard()override;
     virtual ~Guest_s();
 };
 

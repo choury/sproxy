@@ -3,7 +3,6 @@
 
 #include "responser.h"
 #include "parse.h"
-#include "binmap.h"
 #include "object.h"
 
 #include <list>
@@ -39,14 +38,19 @@ struct CGI_NameValue{
 
 class Requester;
 
+struct CgiStatus{
+    Requester *req_ptr;
+    uint32_t   req_id;
+};
+
 class Cgi:public Responser, public Object{
     char filename[URLLIMIT];
     char cgi_buff[BUF_LEN];
     size_t cgi_getlen  = 0;
     size_t cgi_outlen  = 0;
     uint32_t curid = 1;
-    binmap<std::pair<Requester *, uint32_t>, uint32_t> idmap;
-    std::set<Peer *> waitlist;
+    std::map<uint32_t, CgiStatus> statusmap;
+    std::set<uint32_t> waitlist;
     virtual void defaultHE(uint32_t events);
     enum class Status{
         WaitHeadr, WaitBody, HandleRes, HandleValue, HandleData, HandleLeft
@@ -55,11 +59,11 @@ class Cgi:public Responser, public Object{
 public:
     Cgi(HttpReqHeader& req);
     virtual ~Cgi();
-    virtual ssize_t Write(void *buff, size_t size, Peer* who, uint32_t id=0)override;
-    virtual void wait(Peer *who)override;
-    virtual void clean(uint32_t errcode, Peer* who, uint32_t id = 0)override;
-    virtual void request(HttpReqHeader &req)override;
-    static Cgi* getcgi(HttpReqHeader &req);
+    virtual ssize_t Write(void *buff, size_t size, uint32_t id)override;
+    virtual void wait(uint32_t id)override;
+    virtual void clean(uint32_t errcode, uint32_t id)override;
+    virtual uint32_t request(HttpReqHeader&& req)override;
+    static Cgi* getcgi(HttpReqHeader& req);
 };
 
 class Cookie{
@@ -86,7 +90,7 @@ extern "C" {
 #endif
 typedef int (cgifunc)(int fd);
 cgifunc cgimain;
-int cgi_response(int fd, const HttpResHeader &req);
+int cgi_response(int fd, const HttpResHeader &req, uint32_t cgi_id);
 int cgi_write(int fd, uint32_t id, const void *buff, size_t len);
 #ifdef  __cplusplus
 }

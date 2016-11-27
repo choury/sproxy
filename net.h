@@ -25,6 +25,10 @@
 #define H405        "HTTP/1.1 405 Method Not Allowed" CRLF\
                     "Content-Length:0" CRLF CRLF
 
+#define H407        "HTTP/1.1 407 Proxy Authentication Required" CRLF \
+                    "Proxy-Authenticate: Basic realm=\"Secure Area\"" CRLF \
+                    "Content-Length: 0" CRLF CRLF
+
 #define H408        "HTTP/1.1 408 Request Timeout" CRLF\
                     "Content-Length:0" CRLF CRLF
 

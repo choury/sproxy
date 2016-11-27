@@ -79,13 +79,13 @@ protected:
             }
         }
     }
-public:
-    Con(int fd):fd(fd){}
-    void (Con::*handleEvent)(uint32_t events)=nullptr;
     virtual void discard(){
         fd = 0;
         events = 0;
     }
+public:
+    Con(int fd):fd(fd){}
+    void (Con::*handleEvent)(uint32_t events)=nullptr;
     virtual ~Con(){
         if(fd > 0){
             updateEpoll(0);

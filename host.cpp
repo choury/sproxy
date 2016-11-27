@@ -13,7 +13,7 @@ void hosttick(void *) {
         if(time(NULL) - i->second >= 30 && host->connect() < 0){
             connectmap.erase(i++);
             LOGE("connect to %s time out.\n", host->hostname);
-            host->clean(CONNECT_ERR, host);
+            host->clean(CONNECT_ERR, 0);
         }else{
             i++;
         }
@@ -31,7 +31,8 @@ Host::~Host(){
     connectmap.erase(this);
 }
 
-void Host::ResetRequester(Requester* r) {
+void Host::ResetRequester(Requester* r, uint32_t id) {
+    assert(id == 1);
     requester_ptr = r;
 }
 
@@ -46,7 +47,7 @@ void Host::Dnscallback(Host* host, const char *hostname, std::vector<sockaddr_un
     snprintf(host->hostname, sizeof(host->hostname), "%s", hostname);
     if (addrs.size() == 0) {
         LOGE("Dns query failed: %s\n", host->hostname);
-        host->clean(CONNECT_ERR, host);
+        host->clean(CONNECT_ERR, 0);
     } else {
         host->addrs = addrs;
         for (size_t i = 0; i < host->addrs.size(); ++i) {
@@ -82,7 +83,7 @@ int Host::connect() {
 
 void Host::waitconnectHE(uint32_t events) {
     if (requester_ptr == nullptr){
-        clean(PEER_LOST_ERR, this);
+        clean(PEER_LOST_ERR, 0);
         return;
     }
 
@@ -113,7 +114,8 @@ void Host::waitconnectHE(uint32_t events) {
 
         if (http_flag & HTTP_CONNECT_F){
             HttpResHeader res(H200, this);
-            requester_ptr->response(res);
+            res.http_id = requester_id;
+            requester_ptr->response(std::move(res));
         }
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
         connectmap.erase(this);
@@ -121,13 +123,13 @@ void Host::waitconnectHE(uint32_t events) {
     return;
 reconnect:
     if (connect() < 0) {
-        clean(CONNECT_ERR, this);
+        clean(CONNECT_ERR, 0);
     }
 }
 
 void Host::defaultHE(uint32_t events) {
     if (requester_ptr == NULL) {
-        clean(PEER_LOST_ERR, this);
+        clean(PEER_LOST_ERR, 0);
         return;
     }
 
@@ -138,7 +140,7 @@ void Host::defaultHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("(%s): host error: %s\n", requester_ptr->getsrc(), strerror(error));
         }
-        clean(INTERNAL_ERR, this);
+        clean(INTERNAL_ERR, 0);
         return;
     }
 
@@ -147,23 +149,23 @@ void Host::defaultHE(uint32_t events) {
     }
 
     if (events & EPOLLOUT) {
-        int ret = Write();
+        int ret = Peer::Write_buff();
         if (ret <= 0) {
             if (showerrinfo(ret, "host write error")) {
-                clean(WRITE_ERR, this);
+                clean(WRITE_ERR, 0);
             }
             return;
         }
         if(ret != WRITE_NOTHING)
-            requester_ptr->writedcb(this);
+            requester_ptr->writedcb(requester_id);
     }
 }
 
 
-void Host::request(HttpReqHeader& req) {
+uint32_t Host::request(HttpReqHeader&& req) {
     size_t len;
     char *buff = req.getstring(len);
-    Write(buff, len, this);
+    Responser::Write(buff, len, 0);
     if(req.ismethod("CONNECT")){
         http_flag = HTTP_CONNECT_F;
         Http_Proc = &Host::AlwaysProc;
@@ -173,19 +175,24 @@ void Host::request(HttpReqHeader& req) {
         Http_Proc = &Host::AlwaysProc;
     }
     requester_ptr = dynamic_cast<Requester *>(req.src);
+    requester_id = req.http_id;
+    assert(requester_ptr);
+    assert(requester_id);
+    return 1;
 }
 
-void Host::ResProc(HttpResHeader& res) {
+void Host::ResProc(HttpResHeader&& res) {
     if (requester_ptr == NULL) {
-        clean(PEER_LOST_ERR, this);
+        clean(PEER_LOST_ERR, 0);
         return;
     }
-    requester_ptr->response(res);
+    res.http_id = requester_id;
+    requester_ptr->response(std::move(res));
 }
 
 
 
-Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr) {
+Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr, uint32_t id) {
     Protocol protocol = req.ismethod("SEND")?Protocol::UDP:Protocol::TCP;
     Host* host = dynamic_cast<Host *>(responser_ptr);
     if (host){
@@ -194,7 +201,6 @@ Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr) {
             && protocol == host->protocol
             && !req.ismethod("CONNECT"))
         {
-            host->request(req);
             return host;
         }else{
             assert(host->requester_ptr == nullptr ||
@@ -202,11 +208,9 @@ Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr) {
         }
     }
     if (responser_ptr) {
-        responser_ptr->clean(NOERROR, dynamic_cast<Requester *>(req.src));
+        responser_ptr->clean(NOERROR, id);
     }
-    host = new Host(req.hostname, req.port, protocol);
-    host->request(req);
-    return host;
+    return new Host(req.hostname, req.port, protocol);
 }
 
 
@@ -217,41 +221,43 @@ ssize_t Host::Read(void* buff, size_t len){
 
 void Host::ErrProc(int errcode) {
     if (showerrinfo(errcode, "Host-http error")) {
-        clean(errcode, this);
+        clean(errcode, 0);
     }
 }
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
     if (requester_ptr == NULL) {
-        clean(PEER_LOST_ERR, this);
+        clean(PEER_LOST_ERR, 0);
         return -1;
     }
 
-    int len = requester_ptr->bufleft(this);
+    int len = requester_ptr->bufleft(requester_id);
 
     if (len <= 0) {
         LOGE("(%s): The guest's write buff is full\n", requester_ptr->getsrc());
-        requester_ptr->wait(this);
+        requester_ptr->wait(requester_id);
+        updateEpoll(0);
         return -1;
     }
 
-    return requester_ptr->Write(buff, Min(size, len), this);
+    return requester_ptr->Write(buff, Min(size, len), requester_id);
 }
 
-void Host::clean(uint32_t errcode, Peer* who, uint32_t) {
-    assert(who);
-    assert(dynamic_cast<Requester *>(who) == requester_ptr || who == this);
+void Host::clean(uint32_t errcode, uint32_t id) {
+    assert(id == 1 || id == 0);
     if(requester_ptr){
         if(errcode == CONNECT_ERR){
             HttpResHeader res(H408, this);
-            requester_ptr->response(res);
+            res.http_id = requester_id;
+            requester_ptr->response(std::move(res));
         }
-        if(who == this){
-            requester_ptr->clean(errcode, this);
+        if(id == 0){
+            requester_ptr->clean(errcode, requester_id);
         }
         requester_ptr = nullptr;
+        requester_id = 0;
     }
     if(hostname[0]){
-        Peer::clean(errcode, who);
+        Peer::clean(errcode, 0);
     }
 }

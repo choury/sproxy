@@ -17,14 +17,7 @@ Peer::~Peer() {
     }
 }
 
-ssize_t Peer::Write(const void* buff, size_t size, Peer* who, uint32_t id) {
-    void *dup_buff = p_malloc(size);
-    if(size)
-        memcpy(dup_buff, buff, size);
-    return Write(dup_buff, size, who, id);
-}
-
-ssize_t Peer::Write(void* buff, size_t size, Peer* , uint32_t) {
+ssize_t Peer::push_buff(void* buff, size_t size) {
     if(size == 0) {
         p_free(buff);
         return 0;
@@ -45,7 +38,7 @@ ssize_t Peer::Write(const void* buff, size_t size) {
     return write(fd, buff, size);
 }
 
-int Peer::Write() {
+int Peer::Write_buff() {
     bool writed = false;
     while(!write_queue.empty()){
         write_block *wb = &write_queue.front();
@@ -71,11 +64,24 @@ int Peer::Write() {
     return writed ? WRITE_COMPLETE : WRITE_NOTHING;
 }
 
-void Peer::writedcb(Peer *) {
+
+ssize_t Peer::Write(const void* buff, size_t size, uint32_t id) {
+    return Write(p_memdup(buff, size), size, id);
+}
+
+ssize_t Peer::Write(void* buff, size_t size, uint32_t) {
+    return push_buff(buff, size);
+}
+
+void Peer::wait(uint32_t){
+
+}
+
+void Peer::writedcb(uint32_t) {
     updateEpoll(events | EPOLLIN);
 }
 
-int32_t Peer::bufleft(Peer *) {
+int32_t Peer::bufleft(uint32_t) {
     if(writelen >= 1024*1024)
         return 0;
     else
@@ -84,17 +90,13 @@ int32_t Peer::bufleft(Peer *) {
 
 
 
-void Peer::clean(uint32_t errcode, Peer* , uint32_t) {
+void Peer::clean(uint32_t errcode, uint32_t) {
     if(fd > 0) {
         updateEpoll(EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Peer::closeHE;
     }else{
         delete this;
     }
-}
-
-void Peer::wait(Peer *who) {
-    who->updateEpoll(0);
 }
 
 std::set<std::pair<void (*)(void *), void *>> callfunc_set;

@@ -143,6 +143,7 @@ void dump_trace(int ignore);
 int showerrinfo(int ret, const char *s);
 
 void* p_malloc(size_t size);
+void* p_memdup(const void *ptr, size_t size);
 void p_free(void *ptr);
 void *p_move(void *ptr, signed char len);
 void change_process_name(const char *name);
@@ -157,9 +158,11 @@ extern char **main_argv;
 extern char SHOST[];
 extern uint16_t SPORT;
 extern Protocol SPROT;
-extern char *auth_string;
 extern int daemon_mode;
 extern int ignore_cert_error;
+extern int use_http2;
+extern char auth_string[];
+extern const char *index_file;
 
 #ifdef  __cplusplus
 }

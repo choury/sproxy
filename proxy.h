@@ -13,13 +13,13 @@ protected:
     virtual ssize_t Write(const void *buff, size_t size)override;
     virtual void waitconnectHE(uint32_t events)override;
     virtual void shakehandHE(uint32_t events);
+    virtual void discard()override;
 public:
     explicit Proxy(const char *hostname, uint16_t port, Protocol protocol);
     virtual ~Proxy();
     
-    virtual void discard()override;
-    virtual void request(HttpReqHeader &req)override;
-    static Responser* getproxy(HttpReqHeader &req, Responser* responser_ptr);
+    virtual uint32_t request(HttpReqHeader&& req)override;
+    static Responser* getproxy(HttpReqHeader &req, Responser* responser_ptr, uint32_t id);
 };
 
 #endif

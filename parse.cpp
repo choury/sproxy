@@ -4,9 +4,9 @@
 #include "cgi.h"
 
 #include <fstream>
-//#include <iostream>
 #include <algorithm>
 #include <unordered_set>
+#include <unordered_map>
 
 #include <string.h>
 #include <unistd.h>
@@ -16,165 +16,157 @@
 
 using std::string;
 using std::unordered_set;
+using std::unordered_map;
 using std::ifstream;
 using std::ofstream;
 
-static int GLOBALPROXY = 0;
-static unordered_set<string> proxylist;
-static unordered_set<string> blocklist;
-static unordered_set<string> locallist;
-
 static unordered_set<string> authips;
+
+static unordered_map<string, Strategy> sites; 
 
 static char *cgi_addnv(char *p, const istring &name, const string &value);
 static char *cgi_getnv(char *p, istring &name, string &value);
 
 void loadsites() {
-#ifdef CLIENT
-    proxylist.clear();
-    blocklist.clear();
-    ifstream sitefile(LISTFILE);
+    sites.clear();
 
-    if (sitefile.good()) {
-        while (!sitefile.eof()) {
-            string site;
-            sitefile >> site;
+    //default strategy
+    for(const char *ips=getlocalip(); strlen(ips); ips+=INET6_ADDRSTRLEN){
+        sites[ips] = Strategy::local;
+    }
+    char hostname[HOST_NAME_MAX];
+    gethostname(hostname, sizeof(hostname));
+    sites[hostname] = Strategy::local;
 
-            int split = site.find(':');
-            if(site[0] == '#'){
+    ifstream sitesfile(LISTFILE);
+    if (sitesfile.good()) {
+
+
+        while (!sitesfile.eof()) {
+            string line;
+            sitesfile >> line;
+
+            int split = line.find(':');
+            if(line[0] == '#'){
                 continue;
-            }else if(site.substr(0, split) == "proxy"){
-                proxylist.insert(site.substr(split+1));
-            }else if(site.substr(0, split) == "block"){
-                blocklist.insert(site.substr(split+1));
+            }
+            string site = line.substr(0, split);
+            if(line.substr(split+1) == "direct"){
+                sites[site] = Strategy::direct;
+            }else if(line.substr(split+1) == "proxy"){
+                sites[site] = Strategy::proxy;
+            }else if(line.substr(split+1) == "local"){
+                sites[site] = Strategy::local;
+            }else if(line.substr(split+1) == "block"){
+                sites[site] = Strategy::block;
             }else if(site.length()){
-                LOGE("Wrong config line:%s\n",site.c_str());
+                LOGE("Wrong config line:%s\n",line.c_str());
             }
         }
 
-        sitefile.close();
+        sitesfile.close();
     } else {
         LOGE("There is no %s !\n", LISTFILE);
     }
 
     addauth("::ffff:127.0.0.1");
     addauth("::1");
-#endif
 
-    for(const char *ips=getlocalip(); strlen(ips); ips+=INET6_ADDRSTRLEN){
-       locallist.insert(ips);
-    }
-    char hostname[HOST_NAME_MAX];
-    gethostname(hostname, sizeof(hostname));
-    locallist.insert(hostname);
 }
 
 void savesites(){
-    ofstream listfile(LISTFILE);
+    ofstream sitesfile(LISTFILE);
 
-    for (auto i : proxylist) {
-        listfile <<"proxy:"<< i << std::endl;
+    for (auto i : sites) {
+        switch(i.second){
+        case Strategy::direct:
+            sitesfile <<i.first<<":direct"<< std::endl;
+            break;
+        case Strategy::proxy:
+            sitesfile <<i.first<<":proxy"<< std::endl;
+            break;
+        case Strategy::local:
+            sitesfile <<i.first<<":local"<< std::endl;
+            break;
+        case Strategy::block:
+            sitesfile <<i.first<<":block"<< std::endl;
+            break;
+        }
     }
-    for (auto i : blocklist) {
-        listfile <<"block:"<< i << std::endl;
+    sitesfile.close();
+}
+
+bool addstrategy(const char* host, const char* strategy) {
+    if(strcmp(strategy, "direct") == 0){
+        sites[host] = Strategy::direct;
+        return true;
+    }else if(strcmp(strategy, "proxy") == 0){
+        sites[host] = Strategy::proxy;
+        return true;
+    }else if(strcmp(strategy, "local") == 0){
+        sites[host] = Strategy::local;
+        return true;
+    }else if(strcmp(strategy, "block") == 0){
+        sites[host] = Strategy::block;
+        return true;
+    }else{
+        return false;
     }
-    listfile.close();
+}
+
+bool delstrategy(const char* host) {
+    if(sites.count(host)){
+        sites.erase(host);
+        return true;
+    }else{
+        return false;
+    }
 }
 
 
-void addpsite(const char * host) {
-    proxylist.insert(host);
-    savesites();
+
+Strategy getstrategy(const char *host){
+    if (inet_addr(host) != INADDR_NONE){
+        //ip address should not be split
+        if(sites.count("*.*.*.*")) {
+            return sites["*.*.*.*"];
+        }else if(sites.count(host)){
+            return sites[host];
+        }else{
+            return sites["_"];
+        }
+    }
+    const char* subhost = host;
+
+    while (subhost) {
+        if (subhost[0] == '.') {
+            subhost++;
+        }
+
+        if (sites.count(subhost)) {
+            return sites[subhost];
+        }
+        subhost = strpbrk(subhost, ".");
+    }
+    return sites["_"];
 }
 
-void addbsite(const char * host) {
-    blocklist.insert(host);
-    savesites();
+const char *getstrategystring(const char *host){
+    switch(getstrategy(host)){
+    case Strategy::direct:
+        return "direct";
+    case Strategy::proxy:
+        return "proxy";
+    case Strategy::local:
+        return "local";
+    case Strategy::block:
+        return "block";
+    }
+    return nullptr;
 }
 
 void addauth(const char *ip) {
     authips.insert(ip);
-}
-
-int delpsite(const char * host) {
-    if (proxylist.count(host) == 0) {
-        return 0;
-    }
-    proxylist.erase(host);
-    savesites();
-    return 1;
-}
-
-int delbsite(const char * host) {
-    if (blocklist.count(host) == 0) {
-        return 0;
-    }
-    blocklist.erase(host);
-    savesites();
-    return 1;
-}
-
-
-int globalproxy() {
-    GLOBALPROXY = !GLOBALPROXY;
-    return GLOBALPROXY;
-}
-
-bool checkproxy(const char *hostname) {
-    if (GLOBALPROXY || proxylist.count("*")) {
-        return true;
-    }
-
-    // 如果proxylist里面有*.*.*.* 那么ip地址直接代理
-    if (inet_addr(hostname) != INADDR_NONE && proxylist.count("*.*.*.*")) {
-        return true;
-    }
-
-    const char* subhost = hostname;
-
-    while (subhost) {
-        if (subhost[0] == '.') {
-            subhost++;
-        }
-
-        if (proxylist.count(subhost)) {
-            return true;
-        }
-
-        subhost = strpbrk(subhost, ".");
-    }
-    return false;
-}
-
-
-bool checkblock(const char *hostname) {
-    // 如果list文件里面有*.*.*.* 那么匹配ip地址
-    if (inet_addr(hostname) != INADDR_NONE && blocklist.count("*.*.*.*")) {
-        return true;
-    }
-
-    const char* subhost = hostname;
-
-    while (subhost) {
-        if (subhost[0] == '.') {
-            subhost++;
-        }
-
-        if (blocklist.count(subhost)) {
-            return true;
-        }
-
-        subhost = strpbrk(subhost, ".");
-    }
-    return false;
-}
-
-void addlocal(const char *hostname) {
-    locallist.insert(hostname);
-}
-
-bool checklocal(const char *hostname) {
-    return locallist.count(hostname);
 }
 
 bool checkauth(const char *ip) {
@@ -269,9 +261,9 @@ std::set< string > HttpHeader::getall(const char *header) const{
 HttpReqHeader::HttpReqHeader(const char* header, Object* src):
                HttpHeader(src)
 {
-    if(header == nullptr){
+    if(header == nullptr)
         return;
-    }
+    
     char httpheader[HEADLENLIMIT];
     snprintf(httpheader, sizeof(httpheader), "%s", header);
     *(strstr(httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
@@ -379,7 +371,7 @@ HttpReqHeader::HttpReqHeader(CGI_Header *headers, Object* src):
         LOGE("wrong CGI header");
         throw 1;
     }
-    cgi_id = ntohl(headers->requestId);
+//    cgi_id = ntohl(headers->requestId);
    
     char *p = (char *)(headers +1);
     uint32_t len = ntohs(headers->contentLength);
@@ -433,16 +425,17 @@ bool HttpReqHeader::ismethod(const char* method) const{
 }
 
 char *HttpReqHeader::getstring(size_t &len) const{
-    char *buff = (char *)p_malloc(BUF_LEN);
+    char *buff = nullptr;
     len = 0;
     if (should_proxy) {
+        buff= (char *)p_malloc(BUF_LEN);
         len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, url);
     } else if (strcmp(method, "CONNECT") == 0 || 
                strcmp(method, "SEND") == 0)
     {
-        p_free(buff);
         return 0;
     }else{
+        buff= (char *)p_malloc(BUF_LEN);
         len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, path);
     }
     
@@ -475,7 +468,7 @@ char *HttpReqHeader::getstring(size_t &len) const{
     return buff;
 }
 
-bool HttpReqHeader::no_left() const {
+bool HttpReqHeader::no_body() const {
     if(!ismethod("POST") && 
        !ismethod("PUT") &&
        !ismethod("PATCH") &&
@@ -499,7 +492,7 @@ Http2_header *HttpReqHeader::getframe(Index_table *index_table) const{
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F;
-    if(no_left()){
+    if(no_body()){
         header->flags |= END_STREAM_F;
     }
     set32(header->id, http_id);
@@ -529,13 +522,13 @@ Http2_header *HttpReqHeader::getframe(Index_table *index_table) const{
 }
 
 
-CGI_Header *HttpReqHeader::getcgi() const{
+CGI_Header *HttpReqHeader::getcgi(uint32_t cgi_id) const{
     CGI_Header *cgi = (CGI_Header *)p_malloc(BUF_LEN);
     cgi->type = CGI_REQUEST;
     cgi->flag = 0;
     cgi->requestId = htonl(cgi_id);
     
-    if(no_left()){
+    if(no_body()){
         cgi->flag |= CGI_FLAG_END;
     }
     char *p = (char *)(cgi + 1);
@@ -633,7 +626,7 @@ HttpResHeader::HttpResHeader(CGI_Header *headers, Object* src):
         LOGE("wrong CGI header");
         throw 1;
     }
-    cgi_id = ntohl(headers->requestId);
+//    cgi_id = ntohl(headers->requestId);
    
     char *p = (char *)(headers +1);
     uint32_t len = ntohs(headers->contentLength);
@@ -653,7 +646,7 @@ HttpResHeader::HttpResHeader(CGI_Header *headers, Object* src):
    }
 }
 
-bool HttpResHeader::no_left() const {
+bool HttpResHeader::no_body() const {
     if(memcmp(status, "204", 3) == 0||
        memcmp(status, "205", 3) == 0||
        memcmp(status, "304", 3) == 0)
@@ -698,7 +691,7 @@ Http2_header *HttpResHeader::getframe(Index_table* index_table) const{
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F;
-    if(no_left()) {
+    if(no_body()) {
         header->flags |= END_STREAM_F;
     }
     set32(header->id, http_id);
@@ -717,13 +710,13 @@ Http2_header *HttpResHeader::getframe(Index_table* index_table) const{
     return header;
 }
 
-CGI_Header *HttpResHeader::getcgi()const {
+CGI_Header *HttpResHeader::getcgi(uint32_t cgi_id)const {
     CGI_Header *cgi = (CGI_Header *)p_malloc(BUF_LEN);
     cgi->type = CGI_RESPONSE;
     cgi->flag = 0;
     cgi->requestId = htonl(cgi_id);
     
-    if(no_left()) {
+    if(no_body()) {
         cgi->flag |= CGI_FLAG_END;
     }
     char *p = (char *)(cgi + 1);
@@ -774,12 +767,7 @@ HttpBody::HttpBody(HttpBody && copy):data(copy.data) {
 
 
 size_t HttpBody::push(const void* buff, size_t len) {
-    if(len){
-        void *dup_buff = p_malloc(len);
-        memcpy(dup_buff, buff, len);
-        return push(dup_buff, len);
-    }
-    return 0;
+    return push(p_memdup(buff, len), len);
 }
 
 size_t HttpBody::push(void* buff, size_t len) {
@@ -787,6 +775,7 @@ size_t HttpBody::push(void* buff, size_t len) {
         data.push(std::make_pair(buff, len));
         content_size += len;
     }else{
+        p_free(buff);
         data.push(std::make_pair(nullptr, 0));
     }
     return len;

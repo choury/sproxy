@@ -66,7 +66,7 @@ begin:
 }
 
 /* ping 帧永远插到最前面*/
-void Http2Base::SendFrame(Http2_header *header) {
+void Http2Base::PushFrame(Http2_header *header) {
     std::list<Http2_frame>::iterator i;
     switch(header->type){
     case PING_TYPE:
@@ -94,15 +94,13 @@ void Http2Base::SendFrame(Http2_header *header) {
     framequeue.insert(i, frame);
 }
 
-void Http2Base::SendFrame(const Http2_header *header) {
+void Http2Base::PushFrame(const Http2_header *header) {
     size_t len = sizeof(Http2_header) + get24(header->length);
-    Http2_header *dup_header = (Http2_header *)p_malloc(len);
-    memcpy(dup_header, header, len);
-    return SendFrame(dup_header);
+    Http2_header *dup_header = (Http2_header *)p_memdup(header, len);
+    return PushFrame(dup_header);
 }
 
-
-int Http2Base::Write_Proc(){
+int Http2Base::SendFrame(){
     while(!framequeue.empty()){
         Http2_frame *frame = &framequeue.front();
         size_t len = sizeof(Http2_header) + get24(frame->header->length);
@@ -144,14 +142,14 @@ void Http2Base::SettingsProc(Http2_header* header) {
         }
         set24(header->length, 0);
         header->flags |= ACK_F;
-        SendFrame((const Http2_header*)header);
+        PushFrame((const Http2_header*)header);
     }
 }
 
 void Http2Base::PingProc(Http2_header* header) {
     if((header->flags & ACK_F) == 0) {
         header->flags |= ACK_F;
-        SendFrame((const Http2_header *)header);
+        PushFrame((const Http2_header *)header);
     }
 }
 
@@ -170,7 +168,7 @@ uint32_t Http2Base::ExpandWindowSize(uint32_t id, uint32_t size) {
     set24(header->length, sizeof(uint32_t));
     header->type = WINDOW_UPDATE_TYPE;
     set32(header+1, size);
-    SendFrame(header);
+    PushFrame(header);
     return size;
 }
 
@@ -180,7 +178,7 @@ void Http2Base::Ping(const void *buff) {
     header->type = PING_TYPE;
     set24(header->length, 8);
     memcpy(header+1, buff, 8);
-    SendFrame(header);
+    PushFrame(header);
 }
 
 
@@ -191,7 +189,7 @@ void Http2Base::Reset(uint32_t id, uint32_t code) {
     set32(header->id, id);
     set24(header->length, sizeof(uint32_t));
     set32(header+1, code);
-    SendFrame(header);
+    PushFrame(header);
 }
 
 void Http2Base::SendInitSetting() {
@@ -203,7 +201,7 @@ void Http2Base::SendInitSetting() {
 
     set24(header->length, sizeof(Setting_Frame));
     header->type = SETTINGS_TYPE;
-    SendFrame(header);
+    PushFrame(header);
 }
 
 Http2Base::~Http2Base()
@@ -255,7 +253,7 @@ void Http2Responser::HeadersProc(Http2_header* header) {
                       this);
     req.http_id = get32(header->id);
     req.flags = header->flags;
-    ReqProc(req);
+    ReqProc(std::move(req));
     (void)weigth;
     (void)streamdep;
     return;
@@ -323,7 +321,7 @@ void Http2Requster::HeadersProc(Http2_header* header) {
                       this);
     res.http_id = get32(header->id);
     res.flags = header->flags;
-    ResProc(res);
+    ResProc(std::move(res));
     (void)weigth;
     (void)streamdep;
     return;

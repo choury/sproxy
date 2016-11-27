@@ -170,22 +170,17 @@ File::File(HttpReqHeader& req) {
 err:
     HttpResHeader res(errinfo);
     res.http_id = req.http_id;
-    requester->response(res);
+    requester->response(std::move(res));
     throw 0;
 }
 
 
-File* File::getfile(HttpReqHeader &req) {
-    File *file;
+File* File::getfile(HttpReqHeader& req) {
     if(filemap.count(req.filename)){
-        file = filemap[req.filename];
-        file->request(req);
-        return file;
+        return filemap[req.filename];
     }else{
         try{
-            file = new File(req);
-            file->request(req);
-            return file;
+            return new File(req);
         }catch(...){
             return nullptr;
         }
@@ -193,53 +188,55 @@ File* File::getfile(HttpReqHeader &req) {
 }
 
 
-void File::request(HttpReqHeader& req) {
+uint32_t File::request(HttpReqHeader&& req) {
     Requester *requester = dynamic_cast<Requester *>(req.src);
     try{
         Ranges ranges(req.get("Range"));
-        range rg;
+        FileStatus status;
+        status.req = req;
         if (ranges.size() == 1 && ranges.calcu(size)){
-            rg = ranges.rgs[0];
+            status.rg = ranges.rgs[0];
         } else if(ranges.size()){
             HttpResHeader res(H416, this);
             char buff[100];
-            snprintf(buff, sizeof(buff), "bytes */%lu", size);
+            snprintf(buff, sizeof(buff), "bytes */%zu", size);
             res.add("Content-Range", buff);
             res.http_id = req.http_id;
-            requester->response(res);
-            return;
+            requester->response(std::move(res));
+            return 0;
         }
         if(ranges.size()){
             HttpResHeader res(H206, this);
             char buff[100];
-            snprintf(buff, sizeof(buff), "bytes %lu-%lu/%lu",
-                     rg.begin, rg.end, size);
+            snprintf(buff, sizeof(buff), "bytes %zu-%zu/%zu",
+                     status.rg.begin, status.rg.end, size);
             res.add("Content-Range", buff);
-            size_t leftsize = rg.end - rg.begin+1;
+            size_t leftsize = status.rg.end - status.rg.begin+1;
             res.add("Content-Length", leftsize);
             res.http_id = req.http_id;
-            requester->response(res);
+            requester->response(std::move(res));
         }else{
-            rg.begin = 0;
-            rg.end = size - 1;
+            status.rg.begin = 0;
+            status.rg.end = size - 1;
             HttpResHeader res(H200, this);
             res.add("Content-Length", size);
             res.http_id = req.http_id;
-            requester->response(res);
+            requester->response(std::move(res));
         }
         updateEpoll(EPOLLIN);
-        reqs.push_back(std::make_pair(req, rg));
+        statusmap[req_id] = status;
     }catch(...){
         HttpResHeader res(H400, this);
         res.http_id = req.http_id;
-        requester->response(res);
+        requester->response(std::move(res));
+        return 0;
     }
-    return;
+    return req_id++;
 }
 
 
 void File::defaultHE(uint32_t events) {
-    if(reqs.empty()){
+    if(statusmap.empty()){
         updateEpoll(0);
         return;
     }
@@ -250,39 +247,39 @@ void File::defaultHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("file unkown error: %s\n", strerror(error));
         }
-        clean(INTERNAL_ERR, this);
+        clean(INTERNAL_ERR, 0);
         return;
     }
 
     if (events & EPOLLIN) {
         bool allfull = true;
-        for(auto i = reqs.begin();i!=reqs.end();){
-            HttpReqHeader &req = i->first;
-            range& rg = i->second;
+        for(auto i = statusmap.begin();i!=statusmap.end();){
+            HttpReqHeader &req = i->second.req;
+            range& rg = i->second.rg;
             Requester *requester = dynamic_cast<Requester *>(req.src);
             if (requester == NULL) {
-                i = reqs.erase(i);
+                i = statusmap.erase(i);
                 continue;
             }
             if (rg.begin > rg.end) {
-                requester->Write((const void*)nullptr, 0, this, req.http_id);
-                i = reqs.erase(i);
+                requester->Write((const void*)nullptr, 0, req.http_id);
+                i = statusmap.erase(i);
                 continue;
             }
-            int len = Min(requester->bufleft(this), rg.end - rg.begin + 1);
+            int len = Min(requester->bufleft(req.http_id), rg.end - rg.begin + 1);
             if (len <= 0) {
                 LOGE("The requester's write buff is full\n");
-                requester->wait(this);
+                requester->wait(req.http_id);
                 i++;
                 continue;
             }
             allfull = false;
-            len = requester->Write((const char *)mapptr+rg.begin, len, this, req.http_id);
+            len = requester->Write((const char *)mapptr+rg.begin, len, req.http_id);
             rg.begin += len;
             i++;
         }
-        if(!allfull){
-            updateEpoll(EPOLLIN);
+        if(allfull){
+            updateEpoll(0);
         }
     }
     if (events & EPOLLOUT) {
@@ -290,18 +287,11 @@ void File::defaultHE(uint32_t events) {
     }
 }
 
-void File::clean(uint32_t errcode, Peer* who, uint32_t id){
-    if(who == this){
-        return Peer::clean(errcode, who, id);
+void File::clean(uint32_t errcode, uint32_t id){
+    if(id == 0){
+        return Peer::clean(errcode, id);
     }else{
-        Requester *requester = dynamic_cast<Requester *>(who);
-        for(auto i = reqs.begin();i!=reqs.end();){
-            if(dynamic_cast<Requester *>(i->first.src) == requester){
-                i = reqs.erase(i);
-            }else{
-                i++;
-            }
-        }
+        statusmap.erase(id);
     }
 }
 

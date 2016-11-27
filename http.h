@@ -29,13 +29,13 @@ public:
 class HttpResponser:public HttpBase{
     virtual void HeaderProc()override final;
 protected:
-    virtual void ReqProc(HttpReqHeader& req) = 0;
+    virtual void ReqProc(HttpReqHeader&& req) = 0;
 };
 
 class HttpRequester:public HttpBase{
     virtual void HeaderProc()override final;
 protected:
-    virtual void ResProc(HttpResHeader& res) = 0;
+    virtual void ResProc(HttpResHeader&& res) = 0;
 };
 
 #endif

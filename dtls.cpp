@@ -7,6 +7,19 @@
 
 #define DTLS_BUF_LEN (4*1024*1024ull)
 
+struct Dtls_head{
+    uint32_t seq;
+    uint32_t time;
+    uint16_t window;
+#define DTLS_TYPE_DATA  0
+#define DTLS_TYPE_ACK   1
+    uint8_t  type;
+    uint8_t _;
+}__attribute__((packed));
+
+
+
+
 //#define DEBUG_DTLS
 
 void dtls_tick(void* p) {

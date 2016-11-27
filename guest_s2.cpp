@@ -42,16 +42,7 @@ ssize_t Guest_s2::Write(const void *buff, size_t size) {
     return ssl->write(buff, size);
 }
 
-ssize_t Guest_s2::Write(void *buff, size_t size, Peer *who, uint32_t id) {
-    Responser* responser = dynamic_cast<Responser *>(who);
-    if(!id){
-        if(idmap.count(responser)){
-            id = idmap.at(responser);
-        }else{
-            who->clean(PEER_LOST_ERR, this);
-            return -1;
-        }
-    }
+ssize_t Guest_s2::Write(void *buff, size_t size, uint32_t id) {
     size = Min(size, FRAMEBODYLIMIT);
     Http2_header *header=(Http2_header *)p_move(buff, -(char)sizeof(Http2_header));
     memset(header, 0, sizeof(Http2_header));
@@ -59,70 +50,62 @@ ssize_t Guest_s2::Write(void *buff, size_t size, Peer *who, uint32_t id) {
     set24(header->length, size);
     if(size == 0) {
         header->flags = END_STREAM_F;
-//        idmap.erase(responser);
-//        waitlist.erase(who);
-//        who->clean(NOERROR, this, id);
     }
-    SendFrame(header);
+    PushFrame(header);
     this->remotewinsize -= size;
-    who->remotewinsize -= size;
+    if(statusmap.count(id))
+        statusmap.at(id).remotewinsize -= size;
     return size;
 }
 
-void Guest_s2::SendFrame(Http2_header *header) {
+void Guest_s2::PushFrame(Http2_header *header) {
     updateEpoll(events | EPOLLOUT);
-    return Http2Responser::SendFrame(header);
+    return Http2Base::PushFrame(header);
 }
 
-void Guest_s2::DataProc(const Http2_header* header)
-{
+void Guest_s2::DataProc(const Http2_header* header) {
     uint32_t id = get32(header->id);
-    if(idmap.count(id)){
-        Responser *host = idmap.at(id);
+    if(statusmap.count(id)){
+        ResStatus& status = statusmap[id];
+        Responser* responser = status.res_ptr;
         ssize_t len = get24(header->length);
-        if(len > host->localwinsize){
+        if(len > statusmap[id].localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
-            idmap.erase(id);
-            waitlist.erase(host);
-            host->clean(ERR_FLOW_CONTROL_ERROR, this, id);
+            responser->clean(ERR_FLOW_CONTROL_ERROR, status.res_id);
             LOGE("(%s):[%d] window size error\n", getsrc(), id);
+            statusmap.erase(id);
+            waitlist.erase(id);
             return;
         }
-        host->Write(header+1, len, this, id);
+        responser->Write(header+1, len, status.res_id);
         if((header->flags & END_STREAM_F) && len != 0){
-            host->Write((const void*)nullptr, 0, this, id);
-            host->ResetRequester(nullptr);
+            responser->Write((const void*)nullptr, 0, status.res_id);
+            responser->ResetRequester(nullptr, status.res_id);
         }
-        host->localwinsize -= len;
+        statusmap[id].localwinsize -= len;
         localwinsize -= len;
     }else{
         Reset(get32(header->id), ERR_STREAM_CLOSED);
     }
 }
 
-void Guest_s2::ReqProc(HttpReqHeader &req)
-{
-    Responser *responser = distribute(req, nullptr);
+void Guest_s2::ReqProc(HttpReqHeader&& req) {
+    Responser *responser = distribute(req, nullptr, 0);
     if(responser){
-        responser->remotewinsize = remoteframewindowsize;
-        responser->localwinsize = localframewindowsize;
-        idmap.insert(responser, req.http_id);
+        statusmap[req.http_id]=ResStatus{
+            responser,
+            responser->request(std::move(req)),
+            (int32_t)remoteframewindowsize,
+            localframewindowsize
+        };
     }
 }
 
-void Guest_s2::response(HttpResHeader &res) {
-    Responser *responser = dynamic_cast<Responser *>(res.src);
-    if(res.http_id == 0){
-        if(idmap.count(responser)){
-            res.http_id = idmap.at(responser);
-        }else{
-            responser->clean(PEER_LOST_ERR, this);
-            return;
-        }
-    }
+void Guest_s2::response(HttpResHeader&& res) {
+    assert(res.http_id);
     res.del("Transfer-Encoding");
     res.del("Connection");
-    SendFrame(res.getframe(&request_table));
+    PushFrame(res.getframe(&request_table));
 }
 
 
@@ -134,7 +117,7 @@ void Guest_s2::defaultHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("(%s): guest_s error:%s\n", getsrc(), strerror(error));
         }
-        clean(INTERNAL_ERR, this);
+        clean(INTERNAL_ERR, 0);
         return;
     }
     if (events & EPOLLIN) {
@@ -146,14 +129,14 @@ void Guest_s2::defaultHE(uint32_t events) {
     }
 
     if (events & EPOLLOUT) {
-        int ret = Write_Proc();
+        int ret = SendFrame();
         if(ret <= 0 && showerrinfo(ret, "guest_s2 write error")) {
-            clean(WRITE_ERR, this);
+            clean(WRITE_ERR, 0);
             return;
         }else{
             for(auto i = waitlist.begin(); i!= waitlist.end(); ){
                 if(bufleft(*i)){
-                    (*i)->writedcb(this);
+                    statusmap.at(*i).res_ptr->writedcb(*i);
                     i = waitlist.erase(i);
                 }else{
                     i++;
@@ -168,24 +151,24 @@ void Guest_s2::defaultHE(uint32_t events) {
 }
 
 void Guest_s2::RstProc(uint32_t id, uint32_t errcode) {
-    if(idmap.count(id)){
+    if(statusmap.count(id)){
         if(errcode)
             LOGE("(%s) [%d]: stream  reseted: %d\n", getsrc(), id, errcode);
-        Peer *who = idmap.at(id);
-        idmap.erase(id);
-        waitlist.erase(who);
-        who->clean(errcode, this, id);
+        ResStatus& status = statusmap[id];
+        status.res_ptr->clean(errcode,  status.res_id);
+        statusmap.erase(id);
+        waitlist.erase(id);
     }
 }
 
 
 void Guest_s2::WindowUpdateProc(uint32_t id, uint32_t size) {
     if(id){
-        if(idmap.count(id)){
-            Peer *peer = idmap.at(id);
-            peer->remotewinsize += size;
-            peer->writedcb(this);
-            waitlist.erase(peer);
+        if(statusmap.count(id)){
+            ResStatus& status = statusmap[id];
+            status.remotewinsize += size;
+            status.res_ptr->writedcb(status.res_id);
+            waitlist.erase(id);
         }
     }else{
         remotewinsize += size;
@@ -194,64 +177,65 @@ void Guest_s2::WindowUpdateProc(uint32_t id, uint32_t size) {
 
 
 void Guest_s2::GoawayProc(Http2_header* header) {
-    clean(get32(header+1), this);
+    clean(get32(header+1), 0);
 }
 
 void Guest_s2::ErrProc(int errcode) {
     if(showerrinfo(errcode, "Guest_s2-Http2 error")){
-        clean(errcode, this);
+        clean(errcode, 0);
     }
 }
 
 void Guest_s2::AdjustInitalFrameWindowSize(ssize_t diff) {
-    for(auto i: idmap.Left()){
-       i.first->remotewinsize += diff; 
+    for(auto i: statusmap){
+       i.second.remotewinsize += diff;
     }
     remotewinsize += diff;
 }
 
-void Guest_s2::clean(uint32_t errcode, Peer *who, uint32_t id) {
-    Responser *responser = dynamic_cast<Responser *>(who);
-    if(who == this) {
-        for(auto i: idmap.Left()){
-            i.first->clean(errcode, this, i.second);
-        }
-        idmap.clear();
-        del_tick_func((void (*)(void *))guest2tick, this);
-        return Peer::clean(errcode, this);
+void Guest_s2::ResetResponser(Responser* r, uint32_t id) {
+    assert(statusmap.count(id));
+    if(r){
+        statusmap[id].res_ptr = r;
     }else{
-        if(id == 0 && idmap.count(responser)){
-            id = idmap.at(responser);
-        }
-        if(id){
-            Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
-            idmap.erase(responser, id);
-        }else{
-            assert(0);
-        }
-        waitlist.erase(who);
+        statusmap.erase(id);
     }
 }
 
-int32_t Guest_s2::bufleft(Peer *peer) {
-    if(peer)
-        return Min(peer->remotewinsize, this->remotewinsize);
+
+void Guest_s2::clean(uint32_t errcode, uint32_t id) {
+    if(id == 0) {
+        for(auto i: statusmap){
+            i.second.res_ptr->clean(errcode, i.second.res_id);
+        }
+        statusmap.clear();
+        del_tick_func((void (*)(void *))guest2tick, this);
+        return Peer::clean(errcode, 0);
+    }else{
+        Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
+        statusmap.erase(id);
+        waitlist.erase(id);
+    }
+}
+
+int32_t Guest_s2::bufleft(uint32_t id) {
+    if(id)
+        return Min(statusmap[id].remotewinsize, this->remotewinsize);
     else
         return this->remotewinsize;
 }
 
-void Guest_s2::wait(Peer *who){
-    waitlist.insert(who);
-    Peer::wait(who);
+void Guest_s2::wait(uint32_t id){
+    waitlist.insert(id);
 }
 
-void Guest_s2::writedcb(Peer *who){
-    Responser* responser = dynamic_cast<Responser *>(who);
-    if(idmap.count(responser)){
-        size_t len = localframewindowsize - who->localwinsize;
+void Guest_s2::writedcb(uint32_t id){
+    if(statusmap.count(id)){
+        ResStatus& status = statusmap[id];
+        size_t len = localframewindowsize - status.localwinsize;
         if(len < localframewindowsize/5)
             return;
-        responser->localwinsize += ExpandWindowSize(idmap.at(responser), len);
+        status.localwinsize += ExpandWindowSize(id, len);
     }
 }
 
@@ -262,6 +246,6 @@ void Guest_s2::check_alive() {
     }
     if(getmtime() - last_interactive >= 30000){ //超过30秒交互数据，认为连接断开
         LOGE("(%s): [Guest_s2] Nothing got too long, so close it\n", getsrc());
-        clean(PEER_LOST_ERR, this);
+        clean(PEER_LOST_ERR, 0);
     }
 }

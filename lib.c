@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include <assert.h>
 #include <errno.h>
 #include <sys/time.h>
@@ -273,6 +274,15 @@ void* p_malloc(size_t size){
     ptr += PRIOR_HEAD;
     *(unsigned char *)(ptr-1) = PRIOR_HEAD;
     return ptr;
+}
+
+void* p_memdup(const void *ptr, size_t size){
+    void *dup = p_malloc(size);
+    assert(dup);
+    if(dup && size){
+        memcpy(dup, ptr, size);
+    }
+    return dup;
 }
 
 void p_free(void* ptr){

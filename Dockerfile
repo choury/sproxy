@@ -11,14 +11,13 @@ RUN apt-get update && apt-get -y install gcc g++ cmake make unzip libssl-dev wge
 WORKDIR /root
 RUN wget "https://github.com/choury/sproxy/archive/master.zip" && unzip master.zip && rm master.zip
 WORKDIR /root/sproxy-master
-RUN cmake . && make client
+RUN cmake . && make
 #COPY keys /root/keys/
 
 ENV SPROXY_USER choury
 ENV SPROXY_PASS choury
 # Commands when creating a new container
-EXPOSE 3333
-#CMD  ./sproxy_server -k ../keys/ca.pem ../keys/ssl.crt /root/keys/ssl.key
+EXPOSE 80
 RUN wget https://gist.githubusercontent.com/choury/c42dd14f1f1bfb9401b5f2b4986cb9a9/raw/sites.list
-CMD  ./sproxy_client -s "${SPROXY_USER}:${SPROXY_PASS}" ssl://l.choury.com
+CMD  ./sproxy -s "${SPROXY_USER}:${SPROXY_PASS}" ssl://l.choury.com
 

@@ -13,6 +13,13 @@ struct Http2_header;
 struct CGI_Header;
 class Object;
 
+enum class Strategy{
+    direct,
+    proxy,
+    local,
+    block,
+};
+
 class HttpHeader{
 protected:
     std::map<istring, std::string> headers;
@@ -20,7 +27,7 @@ public:
     Object* src;
     std::set<std::string> cookies;
     uint32_t http_id = 0;  // 由http2协议使用
-    uint32_t cgi_id = 0;   // 由cgi 协议使用
+//    uint32_t cgi_id = 0;   // 由cgi 协议使用
     uint8_t flags = 0;
     bool should_proxy  = false;
 
@@ -32,10 +39,10 @@ public:
     void del(const istring& header);
     const char* get(const char *header) const;
 
-    virtual bool no_left() const = 0;
+    virtual bool no_body() const = 0;
     virtual char *getstring(size_t &len) const = 0;
     virtual Http2_header *getframe(Index_table *index_table) const = 0;
-    virtual CGI_Header *getcgi() const = 0;
+    virtual CGI_Header *getcgi(uint32_t cgi_id) const = 0;
     virtual ~HttpHeader();
 };
 
@@ -54,10 +61,10 @@ public:
     explicit HttpReqHeader(CGI_Header *headers, Object* src = nullptr);
     bool ismethod(const char* method) const;
     
-    virtual bool no_left() const override;
+    virtual bool no_body() const override;
     virtual char *getstring(size_t &len) const override;
     virtual Http2_header *getframe(Index_table *index_table) const override;
-    virtual CGI_Header *getcgi() const override;
+    virtual CGI_Header *getcgi(uint32_t cgi_id) const override;
     
     std::map<std::string, std::string> getcookies()const;
     const char* getparamstring()const;
@@ -70,10 +77,10 @@ public:
     explicit HttpResHeader(std::multimap<istring, std::string>&& headers, Object* src = nullptr);
     explicit HttpResHeader(CGI_Header *headers, Object* src = nullptr);
     
-    virtual bool no_left() const override;
+    virtual bool no_body() const override;
     virtual char *getstring(size_t &len) const override;
     virtual Http2_header *getframe(Index_table *index_table) const override;
-    virtual CGI_Header *getcgi() const override;
+    virtual CGI_Header *getcgi(uint32_t cgi_id) const override;
 };
 
 class HttpBody{
@@ -83,11 +90,12 @@ public:
     explicit HttpBody();
     explicit HttpBody(const HttpBody &) = delete;
     explicit HttpBody(HttpBody&& copy);
+    ~HttpBody();
+    
     size_t push(const void *buff, size_t len);
     size_t push(void *buff, size_t len);
     std::pair<void*, size_t> pop();
     size_t size();
-    ~HttpBody();
 };
 
 class HttpReq{
@@ -110,22 +118,19 @@ static inline std::string& ltrim(std::string && s) {
     return s;
 }
 
+
 #ifdef  __cplusplus
 extern "C" {
 #endif
 
 
 void loadsites();
-void addpsite(const char * host);
-void addbsite(const char * host);
+bool addstrategy(const char *host, const char *strategy);
+bool delstrategy(const char *host);
+Strategy getstrategy(const char *host);
+const char* getstrategystring(const char *host);
+
 void addauth(const char * ip);
-int delpsite(const char * host);
-int delbsite(const char * host);
-int globalproxy();
-bool checkproxy(const char *hostname);
-bool checkblock(const char *hostname);
-void addlocal(const char *hostname);
-bool checklocal(const char *hostname);
 bool checkauth(const char *ip);
 
 #ifdef  __cplusplus

@@ -6,34 +6,27 @@
 #include "dtls.h"
 
 
-int ignore_cert_error = 0;
-extern int use_http2;
 extern std::map<Host*,time_t> connectmap;
 
 Proxy::Proxy(const char* hostname, uint16_t port, Protocol protocol): Host(hostname, port, protocol) {
 
 }
 
-Responser* Proxy::getproxy(HttpReqHeader &req, Responser* responser_ptr) {
+Responser* Proxy::getproxy(HttpReqHeader &req, Responser* responser_ptr, uint32_t id) {
     Host *exist = dynamic_cast<Host *>(responser_ptr);
     Proxy *proxy = dynamic_cast<Proxy *>(exist);
     if (proxy) {
-        proxy->request(req);
         return proxy;
     }
     
     if (exist) {
-        exist->ResetRequester(nullptr);
-        exist->clean(NOERROR, exist); //只有exist是host才会走到这里
+        exist->clean(NOERROR, id); //只有exist是host才会走到这里
     }
     
-    if (proxy2 && proxy2->bufleft(nullptr) >= 32 * 1024) {
-        proxy2->request(req);
+    if (proxy2 && proxy2->bufleft(0) >= 32 * 1024) {
         return proxy2;
     }
-    proxy = new Proxy(SHOST, SPORT, SPROT);
-    proxy->request(req);
-    return proxy;
+    return new Proxy(SHOST, SPORT, SPROT);
 }
 
 ssize_t Proxy::Read(void* buff, size_t size) {
@@ -95,7 +88,7 @@ static const unsigned char alpn_protos_string[] =
 
 void Proxy::waitconnectHE(uint32_t events) {
     if (requester_ptr == NULL) {
-        clean(PEER_LOST_ERR, this);
+        clean(PEER_LOST_ERR, 0);
         return;
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
@@ -166,14 +159,14 @@ void Proxy::waitconnectHE(uint32_t events) {
     return;
 reconnect:
     if (connect() < 0) {
-        clean(CONNECT_ERR, this);
+        clean(CONNECT_ERR, 0);
     }
 }
 
 
 void Proxy::shakehandHE(uint32_t events) {
     if (requester_ptr == NULL) {
-        clean(PEER_LOST_ERR, this);
+        clean(PEER_LOST_ERR, 0);
         return;
     }
     if (events & EPOLLERR || events & EPOLLHUP) {
@@ -183,7 +176,7 @@ void Proxy::shakehandHE(uint32_t events) {
             LOGE("(%s): proxy unkown error: %s\n",
                  requester_ptr->getsrc(), strerror(error));
         }
-        clean(SSL_SHAKEHAND_ERR, this);
+        clean(SSL_SHAKEHAND_ERR, 0);
         return;
     }
 
@@ -192,7 +185,7 @@ void Proxy::shakehandHE(uint32_t events) {
         if (ret != 1) {
             if (errno != EAGAIN) {
                 LOGE("(%s): ssl connect error:%m\n", requester_ptr->getsrc());
-                clean(SSL_SHAKEHAND_ERR, this);
+                clean(SSL_SHAKEHAND_ERR, 0);
             }
             return;
         }
@@ -204,13 +197,13 @@ void Proxy::shakehandHE(uint32_t events) {
         {
             Proxy2 *new_proxy = new Proxy2(fd, ctx,ssl);
             new_proxy->init();
-            new_proxy->request(req);
-            requester_ptr->ResetResponser(new_proxy);
+            requester_ptr->ResetResponser(new_proxy, req.http_id);
+            new_proxy->request(std::move(req));
             if(!proxy2){
                 proxy2 = new_proxy;
             }
             this->discard();
-            clean(NOERROR, this);
+            clean(NOERROR, 0);
         }else{
             if(protocol == Protocol::UDP){
                 LOGE("Warning: Use http1.1 on dtls!\n");
@@ -224,10 +217,11 @@ void Proxy::shakehandHE(uint32_t events) {
     }
 }
 
-void Proxy::request(HttpReqHeader& req)
-{
-    this->req = req;
-    return Host::request(req);
+uint32_t Proxy::request(HttpReqHeader&& req) {
+    if(hostname[0] == 0 || connectmap.count(this)){
+        this->req = req;
+    }
+    return Host::request(std::move(req));
 }
 
 void Proxy::discard() {
