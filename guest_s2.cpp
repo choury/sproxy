@@ -69,23 +69,26 @@ void Guest_s2::DataProc(const Http2_header* header) {
         ResStatus& status = statusmap[id];
         Responser* responser = status.res_ptr;
         ssize_t len = get24(header->length);
-        if(len > statusmap[id].localwinsize){
+        if(len > status.localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
             responser->clean(ERR_FLOW_CONTROL_ERROR, status.res_id);
-            LOGE("(%s):[%d] window size error\n", getsrc(), id);
+            LOGE("(%s) :[%d] window size error\n", getsrc(), id);
             statusmap.erase(id);
             waitlist.erase(id);
             return;
         }
         responser->Write(header+1, len, status.res_id);
-        if((header->flags & END_STREAM_F) && len != 0){
-            responser->Write((const void*)nullptr, 0, status.res_id);
-            responser->ResetRequester(nullptr, status.res_id);
+        if(header->flags & END_STREAM_F){
+            if(len)
+                responser->Write((const void*)nullptr, 0, status.res_id);
+            responser->clean(NOERROR, status.res_id);
+            statusmap.erase(id);
+        }else{
+            status.localwinsize -= len;
         }
-        statusmap[id].localwinsize -= len;
         localwinsize -= len;
     }else{
-        Reset(get32(header->id), ERR_STREAM_CLOSED);
+        Reset(id, ERR_STREAM_CLOSED);
     }
 }
 

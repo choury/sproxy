@@ -254,7 +254,7 @@ static unsigned char *getrr(
         }
         p+= dnsrr->rdlength;
 #ifdef DEBUG_DNS
-        printf(" [%d]\n", dnsrr->TTL);
+        printf(" [%u]\n", dnsrr->TTL);
 #endif
     }
     return p;

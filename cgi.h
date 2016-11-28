@@ -5,7 +5,6 @@
 #include "parse.h"
 #include "object.h"
 
-#include <list>
 
 // 可用于CGI_Header的type组件的值
 #define CGI_REQUEST       1
@@ -57,7 +56,7 @@ class Cgi:public Responser, public Object{
     }status = Status::WaitHeadr;
     void InProc();
 public:
-    Cgi(HttpReqHeader& req);
+    explicit Cgi(HttpReqHeader& req);
     virtual ~Cgi();
     virtual ssize_t Write(void *buff, size_t size, uint32_t id)override;
     virtual void wait(uint32_t id)override;

@@ -35,7 +35,6 @@ public:
     explicit Proxy2(int fd, SSL_CTX *ctx, Ssl *ssl);
     virtual ~Proxy2();
     
-    virtual void ResetRequester(Requester *r, uint32_t id)override;
     virtual void clean(uint32_t errcode, uint32_t id)override;
     virtual ssize_t Write(void *buff, size_t size, uint32_t)override;
     

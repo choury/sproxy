@@ -22,7 +22,7 @@ class Index_table{
     uint getid(const std::string& name);
     const Index *getvalue(uint id);
 public:
-    Index_table(size_t dynamic_table_size_limit = 4096);
+    explicit Index_table(size_t dynamic_table_size_limit = 4096);
     ~Index_table();
     void set_dynamic_table_size_limit(size_t size);
     std::multimap<istring, std::string> hpack_decode(const char *s, int len);

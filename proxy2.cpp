@@ -98,7 +98,7 @@ void Proxy2::defaultHE(uint32_t events) {
                 }else{
                     i++;
                 }
-            }      
+            }
         }
         if (framequeue.empty()) {
             updateEpoll(EPOLLIN);
@@ -110,23 +110,22 @@ void Proxy2::defaultHE(uint32_t events) {
 void Proxy2::DataProc(const Http2_header* header) {
     uint32_t id = get32(header->id);
     if(statusmap.count(id)){
-        ReqStatus &status = statusmap[id];
-        Requester *requester = status.req_ptr;
+        ReqStatus& status = statusmap[id];
+        Requester* requester = status.req_ptr;
         int32_t len = get24(header->length);
-        if(len > statusmap.at(id).localwinsize){
+        if(len > status.localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
             requester->clean(ERR_FLOW_CONTROL_ERROR, status.req_id);
-            LOGE("(%s) [%d]: window size error\n", requester->getsrc(), id);
+            LOGE("(%s) :[%d] window size error\n", requester->getsrc(), id);
             statusmap.erase(id);
             waitlist.erase(id);
             return;
         }
         requester->Write(header+1, len, status.req_id);
         if(header->flags & END_STREAM_F){
-            if(len){
+            if(len)
                 requester->Write((const void*)nullptr, 0, status.req_id);
-            }
-            requester->ResetResponser(nullptr, status.req_id);
+            requester->clean(NOERROR, status.req_id);
             statusmap.erase(id);
         }else{
             status.localwinsize -= len;
@@ -201,7 +200,7 @@ uint32_t Proxy2::request(HttpReqHeader&& req) {
 
 void Proxy2::ResProc(HttpResHeader&& res) {
     if(statusmap.count(res.http_id)){
-        ReqStatus &status = statusmap[res.http_id];
+        ReqStatus& status = statusmap[res.http_id];
         if((res.flags & END_STREAM_F) == 0 &&
            !res.get("Content-Length") &&
            res.status[0] != '1')  //1xx should not have body
@@ -221,16 +220,6 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
     }
     remotewinsize += diff;
 }
-
-void Proxy2::ResetRequester(Requester* r, uint32_t id) {
-    assert(statusmap.count(id));
-    if(r){
-       statusmap[id].req_ptr = r;
-    }else{
-       statusmap.erase(id);
-    }
-}
-
 
 void Proxy2::clean(uint32_t errcode, uint32_t id) {
     if(id == 0) {

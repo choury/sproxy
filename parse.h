@@ -27,7 +27,6 @@ public:
     Object* src;
     std::set<std::string> cookies;
     uint32_t http_id = 0;  // 由http2协议使用
-//    uint32_t cgi_id = 0;   // 由cgi 协议使用
     uint8_t flags = 0;
     bool should_proxy  = false;
 
@@ -46,6 +45,12 @@ public:
     virtual ~HttpHeader();
 };
 
+
+struct Range{
+    ssize_t begin;
+    ssize_t end;
+};
+
 class HttpReqHeader: public HttpHeader{
     void getfile();
 public:
@@ -56,6 +61,7 @@ public:
     char path[URLLIMIT];
     char filename[URLLIMIT];
     uint16_t port;
+    std::vector<Range> ranges;
     explicit HttpReqHeader(const char* header = nullptr,  Object* src = nullptr);
     explicit HttpReqHeader(std::multimap<istring, std::string>&& headers, Object* src = nullptr);
     explicit HttpReqHeader(CGI_Header *headers, Object* src = nullptr);
@@ -68,6 +74,7 @@ public:
     
     std::map<std::string, std::string> getcookies()const;
     const char* getparamstring()const;
+    bool getrange();
 };
 
 class HttpResHeader: public HttpHeader{
@@ -82,6 +89,7 @@ public:
     virtual Http2_header *getframe(Index_table *index_table) const override;
     virtual CGI_Header *getcgi(uint32_t cgi_id) const override;
 };
+
 
 class HttpBody{
     size_t content_size = 0;

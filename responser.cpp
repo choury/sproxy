@@ -216,6 +216,3 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr, uint32_t id)
 void Responser::closeHE(uint32_t events) {
     delete this;
 }
-
-void Responser::ResetRequester(Requester*, uint32_t){
-}

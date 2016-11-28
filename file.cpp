@@ -18,117 +18,28 @@ using std::pair;
 
 std::map<std::string, File *> filemap;
 
-
-Ranges::Ranges(const char *range_str){
-    if(range_str == nullptr) {
-        return;
+bool checkrange(Range& rg, size_t size) {
+    if (rg.begin > (ssize_t)size-1) {
+        return false;
     }
-    if(strncasecmp(range_str,"bytes=",6) != 0) {
-        throw 0;
-    }
-    range_str += 6;
-    enum class Status{
-        start,testtail,first,testsecond,second
-    }status= Status::start;
-    ssize_t begin = -1,end = -1;
-    while (1){
-        switch (status){
-        case Status::start:
-            begin = end = -1;
-            if (*range_str == '-') {
-                range_str ++;
-                status = Status::testtail;
-            } else if (isdigit(*range_str)) {
-                begin = 0;
-                status = Status::first;
-            } else {
-                throw 0;
-            }
-            break;
-        case Status::testtail:
-            if (isdigit(*range_str)) {
-                end = 0;
-                status = Status::second;
-            } else {
-                throw 0;
-            }
-            break;
-        case Status::first:
-            if (*range_str == '-' ) {
-                range_str ++;
-                status = Status::testsecond;
-            } else if (isdigit(*range_str)) {
-                begin *= 10;
-                begin += *range_str - '0';
-                range_str ++;
-            } else {
-                throw 0;
-            }
-            break;
-        case Status::testsecond:
-            if (*range_str == 0) {
-                add(begin,end);
-                return;
-            } else if (*range_str == ',') {
-                add(begin,end);
-                range_str ++;
-                status = Status::start;
-            } else if(isdigit(*range_str)) {
-                end = 0;
-                status = Status::second;
-            }
-            break;
-        case Status::second:
-            if (*range_str == 0) {
-                add(begin,end);
-                return;
-            } else if (*range_str == ',') {
-                add(begin,end);
-                range_str ++;
-                status = Status::start;
-            } else if (isdigit(*range_str)){
-                end *= 10 ;
-                end += *range_str - '0';
-                range_str ++;
-            } else {
-                throw 0;
-            }
-            break;
-        }
-    }
-}
-
-void Ranges::add(ssize_t begin, ssize_t end) {
-    rgs.push_back(range{begin,end});
-}
-
-size_t Ranges::size() {
-    return rgs.size();
-}
-
-
-bool Ranges::calcu(size_t size) {
-    for (size_t i=0;i < rgs.size();++i){
-        if (rgs[i].begin > (ssize_t)size-1) {
+    if (rg.begin < 0) {
+        if (rg.end == 0) {
             return false;
         }
-        if (rgs[i].begin < 0) {
-            if (rgs[i].end == 0) {
-                return false;
-            }
-            rgs[i].begin  = (int)size-rgs[i].end < 0 ? 0 : size-rgs[i].end;
-            rgs[i].end = size-1;
-        }
-        if (rgs[i].end < 0) {
-            rgs[i].end = size-1;
-        }
-        if (rgs[i].begin > rgs[i].end) {
-            rgs[i].begin = 0;
-            rgs[i].end = size-1;
-        }
+        rg.begin  = (int)size-rg.end < 0 ? 0 : size-rg.end;
+        rg.end = size-1;
+    }
+    if (rg.end < 0) {
+        rg.end = size-1;
+    }
+    if (rg.begin > rg.end) {
+        rg.begin = 0;
+        rg.end = size-1;
     }
     return true;
 }
+
+
 
 
 File::File(HttpReqHeader& req) {
@@ -176,6 +87,14 @@ err:
 
 
 File* File::getfile(HttpReqHeader& req) {
+    Requester* requester = dynamic_cast<Requester *>(req.src);
+    assert(requester);
+    if(!req.getrange()){
+        HttpResHeader res(H400);
+        res.http_id = req.http_id;
+        requester->response(std::move(res));
+        return nullptr;
+    }
     if(filemap.count(req.filename)){
         return filemap[req.filename];
     }else{
@@ -190,47 +109,50 @@ File* File::getfile(HttpReqHeader& req) {
 
 uint32_t File::request(HttpReqHeader&& req) {
     Requester *requester = dynamic_cast<Requester *>(req.src);
-    try{
-        Ranges ranges(req.get("Range"));
-        FileStatus status;
-        status.req = req;
-        if (ranges.size() == 1 && ranges.calcu(size)){
-            status.rg = ranges.rgs[0];
-        } else if(ranges.size()){
-            HttpResHeader res(H416, this);
-            char buff[100];
-            snprintf(buff, sizeof(buff), "bytes */%zu", size);
-            res.add("Content-Range", buff);
-            res.http_id = req.http_id;
-            requester->response(std::move(res));
-            return 0;
-        }
-        if(ranges.size()){
-            HttpResHeader res(H206, this);
-            char buff[100];
-            snprintf(buff, sizeof(buff), "bytes %zu-%zu/%zu",
-                     status.rg.begin, status.rg.end, size);
-            res.add("Content-Range", buff);
-            size_t leftsize = status.rg.end - status.rg.begin+1;
-            res.add("Content-Length", leftsize);
-            res.http_id = req.http_id;
-            requester->response(std::move(res));
-        }else{
-            status.rg.begin = 0;
-            status.rg.end = size - 1;
-            HttpResHeader res(H200, this);
-            res.add("Content-Length", size);
-            res.http_id = req.http_id;
-            requester->response(std::move(res));
-        }
-        updateEpoll(EPOLLIN);
-        statusmap[req_id] = status;
-    }catch(...){
-        HttpResHeader res(H400, this);
+    assert(requester);
+    FileStatus status;
+    status.req_ptr = requester;
+    status.req_id = req.http_id;
+    status.responsed = false;
+    if (req.ranges.size()){
+        status.rg = req.ranges[0];
+    }else{
+        status.rg.begin = -1;
+        status.rg.end = - 1;
+    }
+#if 0
+    if (req.ranges.size() == 1 && checkrange(req.ranges[0], size)){
+        status.rg = req.ranges[0];
+    } else if(req.ranges.size()){
+        HttpResHeader res(H416, this);
+        char buff[100];
+        snprintf(buff, sizeof(buff), "bytes */%zu", size);
+        res.add("Content-Range", buff);
         res.http_id = req.http_id;
         requester->response(std::move(res));
         return 0;
     }
+    if(req.ranges.size()){
+        HttpResHeader res(H206, this);
+        char buff[100];
+        snprintf(buff, sizeof(buff), "bytes %zu-%zu/%zu",
+                 status.rg.begin, status.rg.end, size);
+        res.add("Content-Range", buff);
+        size_t leftsize = status.rg.end - status.rg.begin+1;
+        res.add("Content-Length", leftsize);
+        res.http_id = req.http_id;
+        requester->response(std::move(res));
+    }else{
+        status.rg.begin = 0;
+        status.rg.end = size - 1;
+        HttpResHeader res(H200, this);
+        res.add("Content-Length", size);
+        res.http_id = req.http_id;
+        requester->response(std::move(res));
+    }
+#endif
+    updateEpoll(EPOLLIN);
+    statusmap[req_id] = status;
     return req_id++;
 }
 
@@ -254,27 +176,55 @@ void File::defaultHE(uint32_t events) {
     if (events & EPOLLIN) {
         bool allfull = true;
         for(auto i = statusmap.begin();i!=statusmap.end();){
-            HttpReqHeader &req = i->second.req;
-            range& rg = i->second.rg;
-            Requester *requester = dynamic_cast<Requester *>(req.src);
-            if (requester == NULL) {
-                i = statusmap.erase(i);
-                continue;
+            Range& rg = i->second.rg;
+            Requester *requester = i->second.req_ptr;
+            assert(requester);
+            if (!i->second.responsed){
+                if(checkrange(rg, size)){
+                    if(rg.begin == -1 && rg.end == -1){
+                        rg.begin = 0;
+                        rg.end = size - 1;
+                        HttpResHeader res(H200, this);
+                        res.add("Content-Length", size);
+                        res.http_id = i->second.req_id;
+                        requester->response(std::move(res));
+                    }else{
+                        HttpResHeader res(H206, this);
+                        char buff[100];
+                        snprintf(buff, sizeof(buff), "bytes %zu-%zu/%zu",
+                                 rg.begin, rg.end, size);
+                        res.add("Content-Range", buff);
+                        size_t leftsize = rg.end - rg.begin+1;
+                        res.add("Content-Length", leftsize);
+                        res.http_id = i->second.req_id;
+                        requester->response(std::move(res));
+                    }
+                }else{
+                    HttpResHeader res(H416, this);
+                    char buff[100];
+                    snprintf(buff, sizeof(buff), "bytes */%zu", size);
+                    res.add("Content-Range", buff);
+                    res.http_id = i->second.req_id;
+                    requester->response(std::move(res));
+                    i = statusmap.erase(i);
+                    continue;
+                }
+                i->second.responsed = true;
             }
             if (rg.begin > rg.end) {
-                requester->Write((const void*)nullptr, 0, req.http_id);
+                requester->Write((const void*)nullptr, 0, i->second.req_id);
                 i = statusmap.erase(i);
                 continue;
             }
-            int len = Min(requester->bufleft(req.http_id), rg.end - rg.begin + 1);
+            int len = Min(requester->bufleft(i->second.req_id), rg.end - rg.begin + 1);
             if (len <= 0) {
                 LOGE("The requester's write buff is full\n");
-                requester->wait(req.http_id);
+                requester->wait(i->second.req_id);
                 i++;
                 continue;
             }
             allfull = false;
-            len = requester->Write((const char *)mapptr+rg.begin, len, req.http_id);
+            len = requester->Write((const char *)mapptr+rg.begin, len, i->second.req_id);
             rg.begin += len;
             i++;
         }

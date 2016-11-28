@@ -31,12 +31,6 @@ Host::~Host(){
     connectmap.erase(this);
 }
 
-void Host::ResetRequester(Requester* r, uint32_t id) {
-    assert(id == 1);
-    requester_ptr = r;
-}
-
-
 void Host::discard() {
     requester_ptr = nullptr;
     Responser::discard();

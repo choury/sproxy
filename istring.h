@@ -42,18 +42,22 @@ public:
         return strcasecmp(this->str, is.str) == 0;
     }
     istring& operator=(const istring& is){
-        free(str);
-        len = is.len;
-        str = (char *)malloc(len+1);
-        memcpy(str, is.c_str(), len);
-        str[len] = 0;
+        if(&is != this){
+            free(str);
+            len = is.len;
+            str = (char *)malloc(len+1);
+            memcpy(str, is.c_str(), len);
+            str[len] = 0;
+        }
         return *this;
     }
     istring& operator=(istring&& is){
-        free(str);
-        str = is.str;
-        len = is.len;
-        is.str = nullptr;
+        if(&is != this){
+            free(str);
+            str = is.str;
+            len = is.len;
+            is.str = nullptr;
+        }
         return *this;
     }
     istring&& operator+(const istring& is) const{

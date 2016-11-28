@@ -32,7 +32,6 @@ public:
     explicit Host(const char* hostname, uint16_t port, Protocol protocol);
     ~Host();
     
-    virtual void ResetRequester(Requester *r, uint32_t id)override;
     virtual void clean(uint32_t errcode, uint32_t id)override;
     virtual void ResProc(HttpResHeader&& res)override;
     static Host* gethost(HttpReqHeader& req, Responser* responser_ptr, uint32_t id);

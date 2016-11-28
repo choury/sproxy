@@ -755,6 +755,89 @@ static char *cgi_getnv(char* p, istring& name, string& value) {
     return p + value_len;
 }
 
+
+bool HttpReqHeader::getrange() {
+    const char *range_str = get("Range");
+    if(range_str == nullptr){
+        return  true;
+    }
+    if(strncasecmp(range_str,"bytes=",6) != 0) {
+        return false;
+    }
+    range_str += 6;
+    enum class Status{
+        start,testtail,first,testsecond,second
+    }status= Status::start;
+    ssize_t begin = -1,end = -1;
+    while (1){
+        switch (status){
+        case Status::start:
+            begin = end = -1;
+            if (*range_str == '-') {
+                range_str ++;
+                status = Status::testtail;
+            } else if (isdigit(*range_str)) {
+                begin = 0;
+                status = Status::first;
+            } else {
+                return false;
+            }
+            break;
+        case Status::testtail:
+            if (isdigit(*range_str)) {
+                end = 0;
+                status = Status::second;
+            } else {
+                return false;
+            }
+            break;
+        case Status::first:
+            if (*range_str == '-' ) {
+                range_str ++;
+                status = Status::testsecond;
+            } else if (isdigit(*range_str)) {
+                begin *= 10;
+                begin += *range_str - '0';
+                range_str ++;
+            } else {
+                return false;
+            }
+            break;
+        case Status::testsecond:
+            if (*range_str == 0) {
+                ranges.push_back(Range{begin,end});
+                return true;
+            } else if (*range_str == ',') {
+                ranges.push_back(Range{begin,end});
+                range_str ++;
+                status = Status::start;
+            } else if(isdigit(*range_str)) {
+                end = 0;
+                status = Status::second;
+            }
+            break;
+        case Status::second:
+            if (*range_str == 0) {
+                ranges.push_back(Range{begin,end});
+                return true;
+            } else if (*range_str == ',') {
+                ranges.push_back(Range{begin,end});
+                range_str ++;
+                status = Status::start;
+            } else if (isdigit(*range_str)){
+                end *= 10 ;
+                end += *range_str - '0';
+                range_str ++;
+            } else {
+                return false;
+            }
+            break;
+        }
+    }
+}
+
+
+
 HttpBody::HttpBody() {
 }
 

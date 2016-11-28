@@ -218,7 +218,7 @@ void Proxy::shakehandHE(uint32_t events) {
 }
 
 uint32_t Proxy::request(HttpReqHeader&& req) {
-    if(hostname[0] == 0 || connectmap.count(this)){
+    if(use_http2 && (hostname[0] == 0 || connectmap.count(this))){
         this->req = req;
     }
     return Host::request(std::move(req));

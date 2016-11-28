@@ -345,7 +345,7 @@ int main(int argc, char **argv) {
             break;
 
         case 's':
-            Base64Encode(optarg, sizeof(optarg), auth_string);
+            Base64Encode(optarg, strlen(optarg), auth_string);
             printf("option secret with value '%s'\n", auth_string);
             break;
         case 'h':

@@ -147,7 +147,7 @@ int URLEncode(char *des, const char* src, size_t len)
 
     if(des==NULL)
         return 0;
-    if ((src==NULL) || (des==NULL) || (strSize=len?len:strlen(src))==0 ) {
+    if ((src==NULL) || (strSize=len?len:strlen(src))==0 ) {
         des[0]=0;
         return 0;
     }
