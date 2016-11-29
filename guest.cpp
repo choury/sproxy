@@ -148,7 +148,11 @@ ssize_t Guest::Write(void *buff, size_t size, uint32_t id) {
 }
 
 ssize_t Guest::DataProc(const void *buff, size_t size) {
-    assert(responser_ptr && responser_id);
+    if (responser_ptr == nullptr) {
+        LOGE("(%s): connecting to host lost\n", getsrc());
+        clean(PEER_LOST_ERR, 0);
+        return -1;
+    }
     int len = responser_ptr->bufleft(responser_id);
     if (len <= 0) {
         LOGE("(%s): The host's buff is full\n", getsrc());
