@@ -244,9 +244,9 @@ std::set< string > HttpHeader::getall(const char *header) const{
 HttpReqHeader::HttpReqHeader(const char* header, Object* src):
                              src(dynamic_cast<Requester *>(src))
 {
-    assert(src);
     if(header == nullptr)
         return;
+    assert(src);
     
     char httpheader[HEADLENLIMIT];
     snprintf(httpheader, sizeof(httpheader), "%s", header);

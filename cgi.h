@@ -3,7 +3,6 @@
 
 #include "responser.h"
 #include "parse.h"
-#include "object.h"
 
 
 // 可用于CGI_Header的type组件的值
@@ -42,7 +41,7 @@ struct CgiStatus{
     uint32_t   req_id;
 };
 
-class Cgi:public Responser, public Object{
+class Cgi:public Responser{
     char filename[URLLIMIT];
     char cgi_buff[BUF_LEN];
     size_t cgi_getlen  = 0;

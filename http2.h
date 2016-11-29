@@ -76,7 +76,7 @@ struct Http2_frame{
 };
 
 
-class Http2Base: public Object{
+class Http2Base{
 protected:
     char http2_buff[FRAMELENLIMIT];
     uint32_t http2_getlen = 0;
@@ -114,7 +114,7 @@ public:
     ~Http2Base();
 };
 
-class Http2Responser:public Http2Base {
+class Http2Responser:public Http2Base, public Object{
     using Http2Base::http2_buff;
     using Http2Base::http2_getlen;
 protected:
@@ -124,7 +124,7 @@ protected:
 };
 
 
-class Http2Requster:public Http2Base {
+class Http2Requster:public Http2Base{
     using Http2Base::http2_buff;
     using Http2Base::http2_getlen;
 protected:

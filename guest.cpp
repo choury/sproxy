@@ -19,6 +19,7 @@ Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Requester(fd, myaddr) {
 
 void Guest::ResetResponser(Responser *r, uint32_t id){
     assert(id == 1);
+    assert(r);
     responser_ptr = r;
 }
 
@@ -27,16 +28,14 @@ void Guest::request_next() {
         HttpReq req = std::move(reqs.front());
         reqs.pop();
         Responser* responser = distribute(req.header, responser_ptr, responser_id);
-        if(responser && responser != responser_ptr){
-            responser_ptr = responser;
-        }
         if(responser){
             if(req.header.ismethod("CONNECT")){
                 status = Status::presistent;
             }else{
                 status = Status::requesting;
             }
-            responser_id = responser->request(std::move(req.header));
+            responser_ptr = responser;
+            responser_id = responser_ptr->request(std::move(req.header));
             while(1){
                 auto block = req.body.pop();
                 if(block.second == 0)
@@ -92,16 +91,14 @@ void Guest::ReqProc(HttpReqHeader&& req) {
     req.http_id = 1;
     if(status == Status::none && reqs.empty()){
         Responser* responser = distribute(req, responser_ptr, responser_id);
-        if(responser && responser != responser_ptr){
-            responser_ptr = responser;
-        }
         if(responser){
             if(req.ismethod("CONNECT")){
                 status = Status::presistent;
             }else{
                 status = Status::requesting;
             }
-            responser_id = responser->request(std::move(req));
+            responser_ptr = responser;
+            responser_id = responser_ptr->request(std::move(req));
         }
     }else{
         reqs.push(HttpReq(req));
@@ -151,11 +148,7 @@ ssize_t Guest::Write(void *buff, size_t size, uint32_t id) {
 }
 
 ssize_t Guest::DataProc(const void *buff, size_t size) {
-    if (responser_ptr == NULL) {
-        LOGE("(%s): connecting to host lost\n", getsrc());
-        clean(PEER_LOST_ERR, 0);
-        return -1;
-    }
+    assert(responser_ptr && responser_id);
     int len = responser_ptr->bufleft(responser_id);
     if (len <= 0) {
         LOGE("(%s): The host's buff is full\n", getsrc());
@@ -184,5 +177,3 @@ void Guest::discard() {
     responser_ptr = nullptr;
     Requester::discard();
 }
-
-

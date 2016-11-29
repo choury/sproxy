@@ -3,7 +3,6 @@
 
 #include "responser.h"
 #include "parse.h"
-#include "object.h"
 
 
 struct FileStatus{
@@ -15,7 +14,7 @@ struct FileStatus{
 
 
 
-class File:public Responser, public Object{
+class File:public Responser{
     void * mapptr = nullptr;
     size_t size;
     char filename[URLLIMIT];

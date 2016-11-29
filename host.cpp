@@ -122,10 +122,7 @@ reconnect:
 }
 
 void Host::defaultHE(uint32_t events) {
-    if (requester_ptr == NULL) {
-        clean(PEER_LOST_ERR, 0);
-        return;
-    }
+    assert(requester_ptr && requester_id);
 
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
@@ -176,10 +173,7 @@ uint32_t Host::request(HttpReqHeader&& req) {
 }
 
 void Host::ResProc(HttpResHeader&& res) {
-    if (requester_ptr == NULL) {
-        clean(PEER_LOST_ERR, 0);
-        return;
-    }
+    assert(requester_ptr && requester_id);
     res.http_id = requester_id;
     requester_ptr->response(std::move(res));
 }

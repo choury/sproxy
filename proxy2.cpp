@@ -33,23 +33,19 @@ ssize_t Proxy2::Write(const void *buff, size_t len) {
 }
 
 ssize_t Proxy2::Write(void* buff, size_t size, uint32_t id) {
-    if(statusmap.count(id)){
-        size = Min(size, FRAMEBODYLIMIT);
-        Http2_header *header=(Http2_header *)p_move(buff, -(char)sizeof(Http2_header));
-        memset(header, 0, sizeof(Http2_header));
-        set32(header->id, id);
-        set24(header->length, size);
-        if(size == 0) {
-            header->flags = END_STREAM_F;
-        }
-        PushFrame(header);
-        this->remotewinsize -= size;
-        statusmap.at(id).remotewinsize -= size;
-        return size;
-    }else{
-        assert(0);
-        return -1;
+    assert(statusmap.count(id));
+    size = Min(size, FRAMEBODYLIMIT);
+    Http2_header *header=(Http2_header *)p_move(buff, -(char)sizeof(Http2_header));
+    memset(header, 0, sizeof(Http2_header));
+    set32(header->id, id);
+    set24(header->length, size);
+    if(size == 0) {
+        header->flags = END_STREAM_F;
     }
+    PushFrame(header);
+    this->remotewinsize -= size;
+    statusmap[id].remotewinsize -= size;
+    return size;
 }
 
 void Proxy2::PushFrame(Http2_header *header){
@@ -229,6 +225,7 @@ void Proxy2::clean(uint32_t errcode, uint32_t id) {
         del_tick_func((void (*)(void *))proxy2tick, this);
         return Peer::clean(errcode, 0);
     }else{
+        assert(statusmap.count(id));
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
         waitlist.erase(id);

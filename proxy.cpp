@@ -9,22 +9,21 @@
 extern std::map<Host*,time_t> connectmap;
 
 Proxy::Proxy(const char* hostname, uint16_t port, Protocol protocol): 
-        Host(hostname, port, protocol), req(nullptr, this) {
+        Host(hostname, port, protocol), req(nullptr, nullptr) {
 
 }
 
 Responser* Proxy::getproxy(HttpReqHeader &req, Responser* responser_ptr, uint32_t id) {
-    Host *exist = dynamic_cast<Host *>(responser_ptr);
-    Proxy *proxy = dynamic_cast<Proxy *>(exist);
+    Proxy *proxy = dynamic_cast<Proxy *>(responser_ptr);
     if (proxy) {
         return proxy;
     }
     
-    if (exist) {
-        exist->clean(NOERROR, id); //只有exist是host才会走到这里
+    if (responser_ptr) {
+        responser_ptr->clean(NOERROR, id);
     }
     
-    if (proxy2 && proxy2->bufleft(0) >= 32 * 1024) {
+    if (proxy2) {
         return proxy2;
     }
     return new Proxy(SHOST, SPORT, SPROT);

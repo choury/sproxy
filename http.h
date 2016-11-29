@@ -4,7 +4,7 @@
 #include "parse.h"
 #include "object.h"
 
-class HttpBase: public Object{
+class HttpBase{
 protected:
     char http_buff[HEADLENLIMIT];
     uint64_t http_expectlen;
@@ -26,7 +26,7 @@ public:
 };
 
 
-class HttpResponser:public HttpBase{
+class HttpResponser:public HttpBase, public Object{
     virtual void HeaderProc()override final;
 protected:
     virtual void ReqProc(HttpReqHeader&& req) = 0;
