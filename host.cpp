@@ -107,7 +107,7 @@ void Host::waitconnectHE(uint32_t events) {
         updateEpoll(EPOLLIN | EPOLLOUT);
 
         if (http_flag & HTTP_CONNECT_F){
-            HttpResHeader res(H200, this);
+            HttpResHeader res(H200);
             res.http_id = requester_id;
             requester_ptr->response(std::move(res));
         }
@@ -168,7 +168,7 @@ uint32_t Host::request(HttpReqHeader&& req) {
     }else if(req.ismethod("SEND")){
         Http_Proc = &Host::AlwaysProc;
     }
-    requester_ptr = dynamic_cast<Requester *>(req.src);
+    requester_ptr = req.src;
     requester_id = req.http_id;
     assert(requester_ptr);
     assert(requester_id);
@@ -198,7 +198,7 @@ Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr, uint32_t id) {
             return host;
         }else{
             assert(host->requester_ptr == nullptr ||
-                   host->requester_ptr == dynamic_cast<Requester *>(req.src));
+                   host->requester_ptr == req.src);
         }
     }
     if (responser_ptr) {
@@ -241,7 +241,7 @@ void Host::clean(uint32_t errcode, uint32_t id) {
     assert(id == 1 || id == 0);
     if(requester_ptr){
         if(errcode == CONNECT_ERR){
-            HttpResHeader res(H408, this);
+            HttpResHeader res(H408);
             res.http_id = requester_id;
             requester_ptr->response(std::move(res));
         }

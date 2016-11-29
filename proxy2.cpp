@@ -184,10 +184,8 @@ void Proxy2::PingProc(Http2_header *header){
 
 
 uint32_t Proxy2::request(HttpReqHeader&& req) {
-    Requester *requester = dynamic_cast<Requester *>(req.src);
-    assert(requester);
     statusmap[curid] = ReqStatus{
-       requester,
+       req.src,
        req.http_id,
        (int32_t)remoteframewindowsize,
        localframewindowsize

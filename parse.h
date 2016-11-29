@@ -12,6 +12,7 @@ class Index_table;
 struct Http2_header;
 struct CGI_Header;
 class Object;
+class Requester;
 
 enum class Strategy{
     direct,
@@ -24,13 +25,10 @@ class HttpHeader{
 protected:
     std::map<istring, std::string> headers;
 public:
-    Object* src;
     std::set<std::string> cookies;
     uint32_t http_id = 0;  // 由http2协议使用
     uint8_t flags = 0;
     bool should_proxy  = false;
-
-    explicit HttpHeader(Object* src);
 
     void add(const istring& header, const std::string& value);
     void add(const istring& header, int value);
@@ -42,7 +40,7 @@ public:
     virtual char *getstring(size_t &len) const = 0;
     virtual Http2_header *getframe(Index_table *index_table) const = 0;
     virtual CGI_Header *getcgi(uint32_t cgi_id) const = 0;
-    virtual ~HttpHeader();
+    virtual ~HttpHeader(){}
 };
 
 
@@ -54,6 +52,7 @@ struct Range{
 class HttpReqHeader: public HttpHeader{
     void getfile();
 public:
+    Requester* src;
     char method[20];
     char url[URLLIMIT];
     char protocol[DOMAINLIMIT];
@@ -62,9 +61,9 @@ public:
     char filename[URLLIMIT];
     uint16_t port;
     std::vector<Range> ranges;
-    explicit HttpReqHeader(const char* header = nullptr,  Object* src = nullptr);
-    explicit HttpReqHeader(std::multimap<istring, std::string>&& headers, Object* src = nullptr);
-    explicit HttpReqHeader(CGI_Header *headers, Object* src = nullptr);
+    explicit HttpReqHeader(const char* header,  Object* src);
+    explicit HttpReqHeader(std::multimap<istring, std::string>&& headers, Object* src);
+    explicit HttpReqHeader(CGI_Header *headers);
     bool ismethod(const char* method) const;
     
     virtual bool no_body() const override;
@@ -80,9 +79,9 @@ public:
 class HttpResHeader: public HttpHeader{
 public:
     char status[100];
-    explicit HttpResHeader(const char* header, Object* src = nullptr);
-    explicit HttpResHeader(std::multimap<istring, std::string>&& headers, Object* src = nullptr);
-    explicit HttpResHeader(CGI_Header *headers, Object* src = nullptr);
+    explicit HttpResHeader(const char* header);
+    explicit HttpResHeader(std::multimap<istring, std::string>&& headers);
+    explicit HttpResHeader(CGI_Header *headers);
     
     virtual bool no_body() const override;
     virtual char *getstring(size_t &len) const override;

@@ -33,8 +33,7 @@ bool checkrange(Range& rg, size_t size) {
         rg.end = size-1;
     }
     if (rg.begin > rg.end) {
-        rg.begin = 0;
-        rg.end = size-1;
+        return false;
     }
     return true;
 }
@@ -45,7 +44,6 @@ bool checkrange(Range& rg, size_t size) {
 File::File(HttpReqHeader& req) {
     struct stat st;
     const char *errinfo = nullptr;
-    Requester *requester = dynamic_cast<Requester *>(req.src);
     if (stat(req.filename, &st)) {
         LOGE("get file info failed %s: %m\n", req.filename);
         errinfo = H404;
@@ -81,18 +79,16 @@ File::File(HttpReqHeader& req) {
 err:
     HttpResHeader res(errinfo);
     res.http_id = req.http_id;
-    requester->response(std::move(res));
+    req.src->response(std::move(res));
     throw 0;
 }
 
 
 File* File::getfile(HttpReqHeader& req) {
-    Requester* requester = dynamic_cast<Requester *>(req.src);
-    assert(requester);
     if(!req.getrange()){
         HttpResHeader res(H400);
         res.http_id = req.http_id;
-        requester->response(std::move(res));
+        req.src->response(std::move(res));
         return nullptr;
     }
     if(filemap.count(req.filename)){
@@ -108,10 +104,8 @@ File* File::getfile(HttpReqHeader& req) {
 
 
 uint32_t File::request(HttpReqHeader&& req) {
-    Requester *requester = dynamic_cast<Requester *>(req.src);
-    assert(requester);
     FileStatus status;
-    status.req_ptr = requester;
+    status.req_ptr = req.src;
     status.req_id = req.http_id;
     status.responsed = false;
     if (req.ranges.size()){
@@ -180,27 +174,25 @@ void File::defaultHE(uint32_t events) {
             Requester *requester = i->second.req_ptr;
             assert(requester);
             if (!i->second.responsed){
-                if(checkrange(rg, size)){
-                    if(rg.begin == -1 && rg.end == -1){
-                        rg.begin = 0;
-                        rg.end = size - 1;
-                        HttpResHeader res(H200, this);
-                        res.add("Content-Length", size);
-                        res.http_id = i->second.req_id;
-                        requester->response(std::move(res));
-                    }else{
-                        HttpResHeader res(H206, this);
-                        char buff[100];
-                        snprintf(buff, sizeof(buff), "bytes %zu-%zu/%zu",
-                                 rg.begin, rg.end, size);
-                        res.add("Content-Range", buff);
-                        size_t leftsize = rg.end - rg.begin+1;
-                        res.add("Content-Length", leftsize);
-                        res.http_id = i->second.req_id;
-                        requester->response(std::move(res));
-                    }
+                if(rg.begin == -1 && rg.end == -1){
+                    rg.begin = 0;
+                    rg.end = size - 1;
+                    HttpResHeader res(H200);
+                    res.add("Content-Length", size);
+                    res.http_id = i->second.req_id;
+                    requester->response(std::move(res));
+                }else if(checkrange(rg, size)){
+                    HttpResHeader res(H206);
+                    char buff[100];
+                    snprintf(buff, sizeof(buff), "bytes %zu-%zu/%zu",
+                             rg.begin, rg.end, size);
+                    res.add("Content-Range", buff);
+                    size_t leftsize = rg.end - rg.begin+1;
+                    res.add("Content-Length", leftsize);
+                    res.http_id = i->second.req_id;
+                    requester->response(std::move(res));
                 }else{
-                    HttpResHeader res(H416, this);
+                    HttpResHeader res(H416);
                     char buff[100];
                     snprintf(buff, sizeof(buff), "bytes */%zu", size);
                     res.add("Content-Range", buff);

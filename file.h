@@ -21,7 +21,6 @@ class File:public Responser, public Object{
     char filename[URLLIMIT];
     uint32_t req_id = 1;
     std::map<uint32_t, FileStatus> statusmap;
-    bool check(FileStatus& status);
     virtual void defaultHE(uint32_t events);
     virtual uint32_t request(HttpReqHeader&& req) override;
 public:

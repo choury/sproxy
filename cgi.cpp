@@ -19,7 +19,6 @@ Cgi::Cgi(HttpReqHeader& req) {
     const char *errinfo = nullptr;
     cgifunc *func = nullptr;
     int fds[2]={0},flags;
-    Requester *requester = dynamic_cast<Requester *>(req.src);
     void *handle = dlopen(req.filename,RTLD_NOW);
     if(handle == nullptr) {
         LOGE("dlopen failed: %s\n", dlerror());
@@ -71,7 +70,7 @@ err:
     }
     HttpResHeader res(errinfo);
     res.http_id = req.http_id;
-    requester->response(std::move(res));
+    req.src->response(std::move(res));
     throw 0;
 }
 
@@ -171,7 +170,7 @@ void Cgi::InProc() {
         break;
     case  Status::HandleRes: {
         cgi_id = ntohl(header->requestId);
-        HttpResHeader res(header, this);
+        HttpResHeader res(header);
         if (res.get("content-length") == nullptr) {
             res.add("Transfer-Encoding", "chunked");
         }
@@ -273,10 +272,8 @@ void Cgi::clean(uint32_t errcode, uint32_t id) {
 
 
 uint32_t Cgi::request(HttpReqHeader&& req){
-    Requester *requester = dynamic_cast<Requester *>(req.src);
-    assert(requester);
     uint32_t cgi_id = curid++;
-    statusmap.insert(std::make_pair(cgi_id, CgiStatus{requester, req.http_id}));
+    statusmap.insert(std::make_pair(cgi_id, CgiStatus{req.src, req.http_id}));
     CGI_Header *header = req.getcgi(cgi_id);
     Responser::Write(header, sizeof(CGI_Header) + ntohs(header->contentLength), 0);
     return cgi_id;

@@ -23,7 +23,7 @@ int prepare_header(HttpReqHeader& req){
 }
 
 int check_auth(HttpReqHeader& req){
-    Requester *requester = dynamic_cast<Requester *>(req.src);
+    Requester *requester = req.src;
     if (auth_string[0] &&
         !checkauth(requester->getip()) &&
         req.get("Proxy-Authorization") &&
@@ -38,7 +38,7 @@ int check_auth(HttpReqHeader& req){
 }
 
 Responser* distribute(HttpReqHeader& req, Responser* responser_ptr, uint32_t id) {
-    Requester *requester = dynamic_cast<Requester *>(req.src);
+    Requester *requester = req.src;
     char log_buff[URLLIMIT];
     if(req.url[0] == '/'){
         sprintf(log_buff, "(%s): %s %s%s [%s]",

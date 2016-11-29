@@ -317,8 +317,7 @@ void Http2Requster::HeadersProc(Http2_header* header) {
         weigth = *pos++;
     }
     HttpResHeader res(response_table.hpack_decode(pos,
-                                                  get24(header->length) - padlen - (pos - (const char *)(header+1))),
-                      this);
+                                                  get24(header->length) - padlen - (pos - (const char *)(header+1))));
     res.http_id = get32(header->id);
     res.flags = header->flags;
     ResProc(std::move(res));

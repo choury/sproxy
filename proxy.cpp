@@ -8,7 +8,8 @@
 
 extern std::map<Host*,time_t> connectmap;
 
-Proxy::Proxy(const char* hostname, uint16_t port, Protocol protocol): Host(hostname, port, protocol) {
+Proxy::Proxy(const char* hostname, uint16_t port, Protocol protocol): 
+        Host(hostname, port, protocol), req(nullptr, this) {
 
 }
 

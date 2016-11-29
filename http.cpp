@@ -174,7 +174,7 @@ void HttpRequester::HeaderProc() {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - http_buff;
         try {
-            HttpResHeader res(http_buff, this);
+            HttpResHeader res(http_buff);
             if(res.no_body() || res.status[0] == '1'){
                 http_flag |= HTTP_IGNORE_BODY_F;
             }else if (res.get("Transfer-Encoding")!= nullptr) {

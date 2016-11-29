@@ -2,10 +2,10 @@
 #include "net.h"
 #include "http2.h"
 #include "cgi.h"
+#include "requester.h"
 
 #include <fstream>
 #include <algorithm>
-#include <unordered_set>
 #include <unordered_map>
 
 #include <string.h>
@@ -15,12 +15,11 @@
 #define LISTFILE "sites.list"
 
 using std::string;
-using std::unordered_set;
 using std::unordered_map;
 using std::ifstream;
 using std::ofstream;
 
-static unordered_set<string> authips;
+static std::set<string> authips;
 
 static unordered_map<string, Strategy> sites; 
 
@@ -202,22 +201,6 @@ string toLower(const string &s) {
 }
 
 
-HttpHeader::HttpHeader(Object* src):src(src){
-}
-
-HttpHeader::~HttpHeader() {
-}
-
-
-/*
-HttpHeader::HttpHeader(mulmap< string, string > headers, Ptr&& src):
-               headers(headers), src(src)
-{
-
-}
-*/
-
-
 void HttpHeader::add(const istring& header, const string& value) {
     headers.insert(std::make_pair(header, value));
 }
@@ -259,8 +242,9 @@ std::set< string > HttpHeader::getall(const char *header) const{
 
 
 HttpReqHeader::HttpReqHeader(const char* header, Object* src):
-               HttpHeader(src)
+                             src(dynamic_cast<Requester *>(src))
 {
+    assert(src);
     if(header == nullptr)
         return;
     
@@ -320,8 +304,9 @@ HttpReqHeader::HttpReqHeader(const char* header, Object* src):
 
 
 HttpReqHeader::HttpReqHeader(std::multimap<istring, string>&& headers, Object* src):
-               HttpHeader(src)
+               src(dynamic_cast<Requester *>(src))
 {
+    assert(src);
     for(auto i: headers){
         if(i.first == "cookie"){
             char cookiebuff[URLLIMIT];
@@ -363,15 +348,13 @@ HttpReqHeader::HttpReqHeader(std::multimap<istring, string>&& headers, Object* s
     getfile();
 }
 
-HttpReqHeader::HttpReqHeader(CGI_Header *headers, Object* src):
-               HttpHeader(src)
+HttpReqHeader::HttpReqHeader(CGI_Header *headers): src(nullptr)
 {
     if(headers->type != CGI_REQUEST)
     {
         LOGE("wrong CGI header");
         throw 1;
     }
-//    cgi_id = ntohl(headers->requestId);
    
     char *p = (char *)(headers +1);
     uint32_t len = ntohs(headers->contentLength);
@@ -567,9 +550,7 @@ std::map< string, string > HttpReqHeader::getcookies() const {
 
 
 
-HttpResHeader::HttpResHeader(const char* header, Object* src):
-               HttpHeader(src)
-{
+HttpResHeader::HttpResHeader(const char* header) {
     char httpheader[HEADLENLIMIT];
     snprintf(httpheader, sizeof(httpheader), "%s", header);
     *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
@@ -597,9 +578,7 @@ HttpResHeader::HttpResHeader(const char* header, Object* src):
     }
 }
 
-HttpResHeader::HttpResHeader(std::multimap<istring, string>&& headers, Object* src):
-               HttpHeader(src)
-{
+HttpResHeader::HttpResHeader(std::multimap<istring, string>&& headers) {
     for(auto i: headers){
         if(i.first == "set-cookies"){
             cookies.insert(i.second);
@@ -618,15 +597,12 @@ HttpResHeader::HttpResHeader(std::multimap<istring, string>&& headers, Object* s
     }
 }
 
-HttpResHeader::HttpResHeader(CGI_Header *headers, Object* src):
-               HttpHeader(src)
-{
+HttpResHeader::HttpResHeader(CGI_Header *headers) {
     if(headers->type != CGI_RESPONSE)
     {
         LOGE("wrong CGI header");
         throw 1;
     }
-//    cgi_id = ntohl(headers->requestId);
    
     char *p = (char *)(headers +1);
     uint32_t len = ntohs(headers->contentLength);
