@@ -8,7 +8,8 @@
 struct FileStatus{
     Requester* req_ptr;
     uint32_t req_id;
-    bool responsed ;
+    bool responsed;
+    bool head_only;
     Range rg;
 };
 

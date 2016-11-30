@@ -107,6 +107,7 @@ uint32_t File::request(HttpReqHeader&& req) {
     FileStatus status;
     status.req_ptr = req.src;
     status.req_id = req.http_id;
+    status.head_only = req.ismethod("HEAD");
     status.responsed = false;
     if (req.ranges.size()){
         status.rg = req.ranges[0];
@@ -114,37 +115,6 @@ uint32_t File::request(HttpReqHeader&& req) {
         status.rg.begin = -1;
         status.rg.end = - 1;
     }
-#if 0
-    if (req.ranges.size() == 1 && checkrange(req.ranges[0], size)){
-        status.rg = req.ranges[0];
-    } else if(req.ranges.size()){
-        HttpResHeader res(H416, this);
-        char buff[100];
-        snprintf(buff, sizeof(buff), "bytes */%zu", size);
-        res.add("Content-Range", buff);
-        res.http_id = req.http_id;
-        requester->response(std::move(res));
-        return 0;
-    }
-    if(req.ranges.size()){
-        HttpResHeader res(H206, this);
-        char buff[100];
-        snprintf(buff, sizeof(buff), "bytes %zu-%zu/%zu",
-                 status.rg.begin, status.rg.end, size);
-        res.add("Content-Range", buff);
-        size_t leftsize = status.rg.end - status.rg.begin+1;
-        res.add("Content-Length", leftsize);
-        res.http_id = req.http_id;
-        requester->response(std::move(res));
-    }else{
-        status.rg.begin = 0;
-        status.rg.end = size - 1;
-        HttpResHeader res(H200, this);
-        res.add("Content-Length", size);
-        res.http_id = req.http_id;
-        requester->response(std::move(res));
-    }
-#endif
     updateEpoll(EPOLLIN);
     statusmap[req_id] = status;
     return req_id++;
@@ -201,7 +171,12 @@ void File::defaultHE(uint32_t events) {
                     i = statusmap.erase(i);
                     continue;
                 }
-                i->second.responsed = true;
+                if(i->second.head_only){
+                    i = statusmap.erase(i);
+                    continue;
+                }else{
+                    i->second.responsed = true;
+                }
             }
             if (rg.begin > rg.end) {
                 requester->Write((const void*)nullptr, 0, i->second.req_id);

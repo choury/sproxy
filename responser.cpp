@@ -66,9 +66,9 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr, uint32_t id)
     if (req.ismethod("GET") ||
         req.ismethod("POST") ||
         req.ismethod("PUT") ||
-        req.ismethod("PATCH") ||
         req.ismethod("CONNECT") ||
         req.ismethod("HEAD") ||
+        req.ismethod("DELETE") ||
         req.ismethod("SEND"))
     {
         if(req.port == 0){
