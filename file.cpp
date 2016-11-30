@@ -167,8 +167,8 @@ void File::defaultHE(uint32_t events) {
                 }else if(checkrange(rg, st.st_size)){
                     HttpResHeader res(H206);
                     char buff[100];
-                    snprintf(buff, sizeof(buff), "bytes %zu-%zu/%zu",
-                             rg.begin, rg.end, st.st_size);
+                    snprintf(buff, sizeof(buff), "bytes %zu-%zu/%jd",
+                             rg.begin, rg.end, (intmax_t)st.st_size);
                     res.add("Content-Range", buff);
                     size_t leftsize = rg.end - rg.begin+1;
                     res.add("Content-Length", leftsize);
@@ -177,7 +177,7 @@ void File::defaultHE(uint32_t events) {
                 }else{
                     HttpResHeader res(H416);
                     char buff[100];
-                    snprintf(buff, sizeof(buff), "bytes */%zu", st.st_size);
+                    snprintf(buff, sizeof(buff), "bytes */%jd", (intmax_t)st.st_size);
                     res.add("Content-Range", buff);
                     res.http_id = i->second.req_id;
                     requester->response(std::move(res));
