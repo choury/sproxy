@@ -147,7 +147,7 @@ void Host::defaultHE(uint32_t events) {
             }
             return;
         }
-        if(ret != WRITE_NOTHING)
+        if(ret != WRITE_NOTHING && requester_ptr)
             requester_ptr->writedcb(requester_id);
     }
 }

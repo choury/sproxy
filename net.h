@@ -13,6 +13,8 @@
 
 #define H206        "HTTP/1.0 206 Partial Content" CRLF CRLF
 
+#define H304        "HTTP/1.0 304 Not Modified" CRLF CRLF
+
 #define H400        "HTTP/1.1 400 Bad Request" CRLF \
                     "Content-Length:0" CRLF CRLF
 
@@ -36,6 +38,9 @@
                     "Content-Length: 0" CRLF CRLF
 
 #define H500        "HTTP/1.1 500 Internal Server Error" CRLF\
+                    "Content-Length: 0" CRLF CRLF
+
+#define H503        "HTTP/1.1 503 Service Unavailable" CRLF\
                     "Content-Length: 0" CRLF CRLF
 
 #ifdef  __cplusplus
