@@ -30,6 +30,7 @@ const char *cafile =  nullptr;
 const char *cert = nullptr;
 const char *key = nullptr;
 const char *index_file = nullptr;
+uint32_t debug = 0;
 
 template<class T>
 class Http_server: public Server{
@@ -201,6 +202,11 @@ static struct option long_options[] = {
     {"port",    required_argument, 0, 'p'},
     {"secret",  required_argument, 0, 's'},
     {"sni",     no_argument,       0,  0 },
+#ifndef NDEBUG
+    {"debug-epoll", no_argument,   0,  0 },
+    {"debug-dns",   no_argument,   0,  0 },
+    {"debug-dtls",  no_argument,   0,  0 },
+#endif
     {0,         0,                 0,  0 }
 };
 
@@ -217,6 +223,11 @@ const char *option_detail[] = {
     "The port to listen, default is 80 but 443 for ssl/dtls/sni",
     "Set a user and passwd for proxy (user:password), default is none.",
     "Act as a sni proxy",
+#ifndef NDEBUG
+    "debug-epoll",
+    "\tdebug-dns",
+    "debug-dtls",
+#endif
 };
 
 void usage(const char * programe){
@@ -316,6 +327,15 @@ int main(int argc, char **argv) {
             }else if(strcmp(long_options[option_index].name, "sni") == 0){
                 sni_mode = 1;
                 printf("long option sni\n");
+            }else if(strcmp(long_options[option_index].name, "debug-epoll") == 0){
+                debug |= DEPOLL;
+                printf("long option debug-epoll\n");
+            }else if(strcmp(long_options[option_index].name, "debug-dns") == 0){
+                debug |= DDNS;
+                printf("long option debug-dns\n");
+            }else if(strcmp(long_options[option_index].name, "debug-dtls") == 0){
+                debug |= DDTLS;
+                printf("long option debug-dtls\n");
             }
             break;
 

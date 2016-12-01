@@ -18,6 +18,27 @@
 
 #define BUF_LEN       16384
 
+typedef enum{TCP=SOCK_STREAM, UDP=SOCK_DGRAM}Protocol;
+
+extern char **main_argv;
+extern char SHOST[];
+extern uint16_t SPORT;
+extern Protocol SPROT;
+extern int daemon_mode;
+extern int ignore_cert_error;
+extern int use_http2;
+extern char auth_string[];
+extern const char *index_file;
+extern uint32_t debug;
+
+#define DEPOLL    1
+#define DDNS      2
+#define DDTLS     4
+
+#define DEPOLL_STR  "[EPOLL]"
+#define DDNS_STR    "[DNS]"
+#define DDTLS_STR   "[DTLS]"
+
 
 #ifdef __ANDROID__
 
@@ -44,6 +65,17 @@
                         else \
                             fprintf(stderr, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
                      }while(0)
+
+#define LOGD(mod, ...)    do{\
+                             if(debug & mod) {\
+                                char tmp[1024]; \
+                                sprintf(tmp, __VA_ARGS__); \
+                                if(daemon_mode) \
+                                  syslog(LOG_INFO,"%s: %s",mod##_STR, tmp); \
+                                else \
+                                  printf("%s: %s", mod##_STR, tmp); \
+                             }\
+                           }while(0)
 #endif
 
 
@@ -125,7 +157,6 @@ do {\
 
 typedef unsigned char uchar;
 
-typedef enum{TCP=SOCK_STREAM, UDP=SOCK_DGRAM}Protocol;
 
 char* strnstr(const char* s1, const char* s2, size_t len);
 int endwith(const char *s1, const char *s2);
@@ -154,15 +185,6 @@ void add_tick_func(void (*func)(void *), void *arg);
 void del_tick_func(void (*func)(void *), void *arg);
 void tick();
 
-extern char **main_argv;
-extern char SHOST[];
-extern uint16_t SPORT;
-extern Protocol SPROT;
-extern int daemon_mode;
-extern int ignore_cert_error;
-extern int use_http2;
-extern char auth_string[];
-extern const char *index_file;
 
 #ifdef  __cplusplus
 }

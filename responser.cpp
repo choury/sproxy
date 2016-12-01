@@ -7,22 +7,7 @@
 
 extern void flushproxy2();
 
-int prepare_header(HttpReqHeader& req){
-    if(req.get("via") && strstr(req.get("via"), "sproxy")){
-        return 1;
-    }
-    req.del("Connection");
-    if(req.get("Proxy-Connection")){
-        req.add("Connection", req.get("Proxy-Connection"));
-        req.del("Proxy-Connection");
-    }
-    req.del("Upgrade");
-    req.del("Public");
-    req.append("Via", "HTTP/1.1 sproxy");
-    return 0;
-}
-
-int check_auth(HttpReqHeader& req){
+static int check_header(HttpReqHeader& req){
     Requester *requester = req.src;
     if (auth_string[0] &&
         !checkauth(requester->getip()) &&
@@ -32,8 +17,26 @@ int check_auth(HttpReqHeader& req){
         addauth(requester->getip());
     }
     if (auth_string[0] && !checkauth(requester->getip())){
+        HttpResHeader res(H407);
+        res.http_id = req.http_id;
+        requester->response(std::move(res));
         return 1;
     }
+
+    if(req.get("via") && strstr(req.get("via"), "sproxy")){
+        HttpResHeader res(H508);
+        res.http_id = req.http_id;
+        requester->response(std::move(res));
+        return 2;
+    }
+    req.del("Connection");
+    if(req.get("Proxy-Connection")){
+        req.add("Connection", req.get("Proxy-Connection"));
+        req.del("Proxy-Connection");
+    }
+    req.del("Upgrade");
+    req.del("Public");
+    req.append("Via", "HTTP/1.1 sproxy");
     return 0;
 }
 
@@ -55,13 +58,6 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr, uint32_t id)
         sprintf(log_buff, "(%s): %s %s [%s]",
                 requester->getsrc(), req.method,
                 req.url, req.get("User-Agent"));
-    }
-    if(prepare_header(req)){
-        LOG("[[redirect back]] %s\n", log_buff);
-        HttpResHeader res(H400);
-        res.http_id = req.http_id;
-        requester->response(std::move(res));
-        return nullptr;
     }
     if (req.ismethod("GET") ||
         req.ismethod("POST") ||
@@ -91,24 +87,27 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr, uint32_t id)
                     return File::getfile(req);
                 }
             case Strategy::direct:
-                if(check_auth(req)){
-                    HttpResHeader res(H407);
-                    res.http_id = req.http_id;
-                    requester->response(std::move(res));
+                switch(check_header(req)){
+                case 1:
                     LOG("[[Authorization needed]] %s\n", log_buff);
+                    return nullptr;
+                case 2:
+                    LOG("[[redirect back]] %s\n", log_buff);
                     return nullptr;
                 }
                 LOG("[[dirct]] %s\n", log_buff);
                 req.del("Proxy-Authorization");
                 return Host::gethost(req, responser_ptr, id);
             case Strategy::proxy:
-                if(check_auth(req)){
-                    HttpResHeader res(H407);
-                    res.http_id = req.http_id;
-                    requester->response(std::move(res));
+                switch(check_header(req)){
+                case 1:
                     LOG("[[Authorization needed]] %s\n", log_buff);
                     return nullptr;
-                }else if(SPORT == 0){
+                case 2:
+                    LOG("[[redirect back]] %s\n", log_buff);
+                    return nullptr;
+                }
+                if(SPORT == 0){
                     HttpResHeader res(H400);
                     res.http_id = req.http_id;
                     requester->response(std::move(res));
