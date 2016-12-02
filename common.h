@@ -34,10 +34,12 @@ extern uint32_t debug;
 #define DEPOLL    1
 #define DDNS      2
 #define DDTLS     4
+#define DHTTP2     8
 
 #define DEPOLL_STR  "[EPOLL]"
 #define DDNS_STR    "[DNS]"
 #define DDTLS_STR   "[DTLS]"
+#define DHTTP2_STR  "[HTTP2]"
 
 
 #ifdef __ANDROID__

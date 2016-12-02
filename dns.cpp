@@ -9,8 +9,6 @@
 #include <errno.h>
 
 
-//#define DEBUG_DNS
-
 //#define IGNOREIPV6
 #define BUF_SIZE 1024
 
@@ -105,8 +103,8 @@ void dnstick(void *) {
     for (auto i = rcd_index_host.begin(); i!= rcd_index_host.end();) {
         i->second.expired();
         if (i->second.empty()) {           // 超时失效
-#ifdef DEBUG_DNS
-            LOG("[DNS] %s: expired\n", i->first.c_str());
+#ifndef NDEBUG
+            LOGD(DDNS, "%s: expired\n", i->first.c_str());
 #endif
             i = rcd_index_host.erase(i);
         } else {
@@ -190,22 +188,26 @@ void Dns_rcd::expired() {
     }
 }
 
-
-
-
 static unsigned char * getdomain(unsigned char *buf, unsigned char *p) {
+#ifndef NDEBUG
+    char buff[DOMAINLIMIT];
+    int pos = 0;
+#endif
     while (*p) {
         if (*p > 63) {
             unsigned char *q = buf+((*p & 0x3f) <<8) + *(p+1);
             getdomain(buf, q);
             return p+2;
         } else {
-#ifdef DEBUG_DNS
-            printf("%.*s.", *p, p+1);
+#ifndef NDEBUG
+            pos += sprintf(buff+pos, "%.*s.", *p, p+1);
 #endif
             p+= *p+1;
         }
     }
+#ifndef NDEBUG
+    LOGD(DDNS, "%s", buff);
+#endif
     return p+1;
 }
 
@@ -225,8 +227,7 @@ static unsigned char *getrr(
         NTOHL(dnsrr->TTL);
         NTOHS(dnsrr->rdlength);
         p+= sizeof(DNS_RR);
-#ifdef DEBUG_DNS
-        printf(" ==> ");
+#ifndef NDEBUG
         char ipaddr[INET6_ADDRSTRLEN];
 #endif
         switch (dnsrr->type) {
@@ -235,8 +236,8 @@ static unsigned char *getrr(
             ip.addr_in.sin_family = PF_INET;
             memcpy(&ip.addr_in.sin_addr, p, sizeof(in_addr));
             rcd.push(std::move(ip), dnsrr->TTL);
-#ifdef DEBUG_DNS
-            printf("%s", inet_ntop(PF_INET, p, ipaddr, sizeof(ipaddr)));
+#ifndef NDEBUG
+            LOGD(DDNS, " ==> %s [%d]\n", inet_ntop(PF_INET, p, ipaddr, sizeof(ipaddr)), dnsrr->TTL);
 #endif
             break;
         case 2:
@@ -247,15 +248,12 @@ static unsigned char *getrr(
             ip.addr_in6.sin6_family = PF_INET6;
             memcpy(&ip.addr_in6.sin6_addr, p, sizeof(in6_addr));
             rcd.push(std::move(ip), dnsrr->TTL);
-#ifdef DEBUG_DNS
-            printf("%s", inet_ntop(PF_INET6, p, ipaddr, sizeof(ipaddr)));
+#ifndef NDEBUG
+            LOGD(DDNS, "==> %s [%d]\n", inet_ntop(PF_INET6, p, ipaddr, sizeof(ipaddr)), dnsrr->TTL);
 #endif
             break;
         }
         p+= dnsrr->rdlength;
-#ifdef DEBUG_DNS
-        printf(" [%u]\n", dnsrr->TTL);
-#endif
     }
     return p;
 }
@@ -360,8 +358,8 @@ void query(const char *host , DNSCBfunc func, void *param, uint16_t times) {
 
 
 void RcdDown(const char *hostname, const sockaddr_un &addr) {
-#ifdef DEBUG_DNS
-    LOG("[DNS] down for %s: %s\n", hostname, getaddrstring(&addr));
+#ifndef NDEBUG
+    LOGD(DDNS, "down for %s: %s\n", hostname, getaddrstring(&addr));
 #endif
     if (rcd_index_host.count(hostname)) {
         return rcd_index_host[hostname].down(addr);
@@ -413,8 +411,8 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
             unsigned char *p = buf+sizeof(DNS_HDR);
             for (int i = 0; i < dnshdr->numq; ++i) {
                 p = getdomain(buf, p);
-#ifdef DEBUG_DNS
-                printf(" [%d]: \n", dnshdr->id);
+#ifndef NDEBUG
+                LOGD(DDNS, "[%d]: \n", dnshdr->id);
 #endif
                 p+= sizeof(DNS_QER);
             }

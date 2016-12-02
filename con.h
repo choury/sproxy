@@ -11,9 +11,7 @@
 
 extern int efd;
 
-//#define DEBUG_EPOLL
-
-#ifdef DEBUG_EPOLL
+#ifndef NDEBUG
 #include <map>
 #include "common.h"
 class Con;
@@ -38,8 +36,8 @@ protected:
         int __attribute__((unused)) ret;
         if (fd > 0) {
             if(events == 0){
-#ifdef DEBUG_EPOLL
-                LOG("[EPOLL] del %d: %p\n", fd, this);
+#ifndef NDEBUG
+                LOGD(DEPOLL, "del %d: %p\n", fd, this);
                 assert(epolls[fd] == this);
                 epolls.erase(fd);
 #endif
@@ -55,24 +53,24 @@ protected:
                 {
                     ret = epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
                     assert(ret == 0 || fprintf(stderr, "epoll_ctl add failed:%m\n")==0);
-#ifdef DEBUG_EPOLL
-                    LOG("[EPOLL] add %d: %p\n", fd, this);
+#ifndef NDEBUG
+                    LOGD(DEPOLL, "add %d: %p\n", fd, this);
                     assert(epolls.count(fd) == 0);
                     epolls[fd]=this;
 #endif
                 }else{
-#ifdef DEBUG_EPOLL
+#ifndef NDEBUG
                     if(epolls[fd] != this) {
-                        LOG("[EPOLL] change %d: %p --> %p\n", fd, epolls[fd], this);
+                        LOGD(DEPOLL, "change %d: %p --> %p\n", fd, epolls[fd], this);
                     }
                     assert(epolls.count(fd));
                     epolls[fd]=this;
 #endif
                 }
-#ifdef DEBUG_EPOLL
+#ifndef NDEBUG
                 if(events != this->events) {
                     assert(events <= 7);
-                    LOG("[EPOLL] modify %d: %s --> %s\n", fd, epoll_string[this->events], epoll_string[events]);
+                    LOGD(DEPOLL, "modify %d: %s --> %s\n", fd, epoll_string[this->events], epoll_string[events]);
                 }
 #endif
                 this->events = events;

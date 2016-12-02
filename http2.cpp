@@ -162,6 +162,9 @@ void Http2Base::RstProc(uint32_t id, uint32_t errcode) {
 }
 
 uint32_t Http2Base::ExpandWindowSize(uint32_t id, uint32_t size) {
+#ifndef NDEBUG
+    LOGD(DHTTP2, "expand window size [%d]: %d\n", id, size);
+#endif
     Http2_header *header = (Http2_header *)p_malloc(sizeof(Http2_header)+sizeof(uint32_t));
     memset(header, 0, sizeof(Http2_header));
     set32(header->id, id);
