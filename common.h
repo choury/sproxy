@@ -26,6 +26,7 @@ extern uint16_t SPORT;
 extern Protocol SPROT;
 extern int daemon_mode;
 extern int ignore_cert_error;
+extern int disable_ipv6;
 extern int use_http2;
 extern char auth_string[];
 extern const char *index_file;

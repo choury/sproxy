@@ -298,8 +298,8 @@ int Dtls::send() {
                     }
 #ifndef NDEBUG
                     if(send_begin != resend_pos){
-                        LOGD(DDTLS, "%u: send pkg: %x - %x [%u], left buckets: %d rtt: %d [R]\n",
-                            getmtime()&0xffff, send_begin, resend_pos, resend_pos-send_begin, buckets, rtt_time);
+                        LOGD(DDTLS, "%u: send pkg: %x - %x [%u], left buckets: %d [R]\n",
+                            getmtime()&0xffff, send_begin, resend_pos, resend_pos-send_begin, buckets);
                     }
 #endif
                     if(buckets == 0){
@@ -316,8 +316,8 @@ int Dtls::send() {
                 }
 #ifndef DDEBUG
                 if(send_begin != resend_pos){
-                    LOGD(DDTLS, "%u: send pkg: %x - %x [%u], left buckets: %d rtt: %d [SR]\n",
-                        getmtime()&0xffff, send_begin, resend_pos, resend_pos-send_begin,buckets, rtt_time);
+                    LOGD(DDTLS, "%u: send pkg: %x - %x [%u], left buckets: %d [SR]\n",
+                        getmtime()&0xffff, send_begin, resend_pos, resend_pos-send_begin,buckets);
                 }
 #endif
             }
@@ -336,8 +336,8 @@ int Dtls::send() {
         }
 #ifndef NDEBUG
         if(send_begin != send_pos){
-            LOGD(DDTLS, "%u: send pkg: %x - %x [%u], left buckets: %d rtt: %d\n",
-                    getmtime()&0xffff, send_begin, send_pos, send_pos-send_begin, buckets, rtt_time);
+            LOGD(DDTLS, "%u: send pkg: %x - %x [%u], left buckets: %d\n",
+                    getmtime()&0xffff, send_begin, send_pos, send_pos-send_begin, buckets);
         }
 #endif
         tick_time = now - buckets*100/bucket_limit;

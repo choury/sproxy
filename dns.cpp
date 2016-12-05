@@ -9,7 +9,6 @@
 #include <errno.h>
 
 
-//#define IGNOREIPV6
 #define BUF_SIZE 1024
 
 #define RESOLV_FILE "/etc/resolv.conf"
@@ -311,11 +310,11 @@ void query(const char *host , DNSCBfunc func, void *param, uint16_t times) {
     dnsst->func = func;
     dnsst->param = param;
     dnsst->times = times;
-#ifndef IGNOREIPV6
-    dnsst->flags = 0;
-#else
-    dnsst->flags = QAAAARECORD | GAAAARECORD;
-#endif
+    if(disable_ipv6){
+        dnsst->flags = QAAAARECORD | GAAAARECORD;
+    }else{
+        dnsst->flags = 0;
+    }
     dnsst->id = id_cur;
     snprintf(dnsst->host, sizeof(dnsst->host), "%s", host);
 

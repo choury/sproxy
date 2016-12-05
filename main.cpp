@@ -21,6 +21,7 @@ int use_http2 = 1;
 int udp_mode = 0;
 int sni_mode = 0;
 int ignore_cert_error = 0;
+int disable_ipv6 = 0;
 uint16_t CPORT = 0;
 char SHOST[DOMAINLIMIT] = {0};
 uint16_t SPORT = 0;
@@ -190,18 +191,19 @@ static int verify_cookie(SSL *ssl, const unsigned char *cookie, unsigned int coo
 
 
 static struct option long_options[] = {
-    {"cafile",  required_argument, 0,  0 },
-    {"cert",    required_argument, 0,  0 },
-    {"daemon",  no_argument,       0, 'D'},
-    {"dtls",    no_argument,       0, 'u'},
-    {"http1",   no_argument,       0, '1'},
-    {"help",    no_argument,       0, 'h'},
-    {"index",   required_argument, 0,  0 },
-    {"insecure",no_argument,       0, 'k'},
-    {"key",     required_argument, 0,  0 },
-    {"port",    required_argument, 0, 'p'},
-    {"secret",  required_argument, 0, 's'},
-    {"sni",     no_argument,       0,  0 },
+    {"cafile",      required_argument, 0,  0 },
+    {"cert",        required_argument, 0,  0 },
+    {"daemon",      no_argument,       0, 'D'},
+    {"disable-ipv6",no_argument,       0,  0 },
+    {"dtls",        no_argument,       0, 'u'},
+    {"http1",       no_argument,       0, '1'},
+    {"help",        no_argument,       0, 'h'},
+    {"index",       required_argument, 0,  0 },
+    {"insecure",    no_argument,       0, 'k'},
+    {"key",         required_argument, 0,  0 },
+    {"port",        required_argument, 0, 'p'},
+    {"secret",      required_argument, 0, 's'},
+    {"sni",         no_argument,       0,  0 },
 #ifndef NDEBUG
     {"debug-epoll", no_argument,   0,  0 },
     {"debug-dns",   no_argument,   0,  0 },
@@ -215,6 +217,7 @@ const char *option_detail[] = {
     "CA certificate for server (ssl/dtls)",
     "Certificate file for server (ssl/dtls)",
     "Run as daemon",
+    "Disable ipv6 in dns",
     "UDP mode (dtls)",
     "Use http/1.1 only (SHOULD NOT USE IT WITH dtls)",
     "Print this usage",
@@ -326,6 +329,9 @@ int main(int argc, char **argv) {
             }else if(strcmp(long_options[option_index].name, "index") == 0){
                 index_file = optarg;
                 printf("long option  index file: %s\n", index_file);
+            }else if(strcmp(long_options[option_index].name, "disable-ipv6") == 0){
+                disable_ipv6 = 1;
+                printf("long option  disable-ipv6\n");
             }else if(strcmp(long_options[option_index].name, "sni") == 0){
                 sni_mode = 1;
                 printf("long option sni\n");
