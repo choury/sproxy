@@ -30,6 +30,9 @@ protected:
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)override;
     virtual void ErrProc(int errcode)override;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
+#ifndef NDEBUG
+    virtual void PingProc(Http2_header *header)override;
+#endif
 public:
     explicit Guest_s2(int fd, const char *ip, uint16_t port, Ssl *ssl);
     explicit Guest_s2(int fd, struct sockaddr_in6* myaddr, Ssl *ssl);

@@ -65,10 +65,10 @@ void Guest_s2::PushFrame(Http2_header *header) {
 
 void Guest_s2::DataProc(const Http2_header* header) {
     uint32_t id = get32(header->id);
+    ssize_t len = get24(header->length);
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
         Responser* responser = status.res_ptr;
-        ssize_t len = get24(header->length);
         if(len > status.localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
             responser->clean(ERR_FLOW_CONTROL_ERROR, status.res_id);
@@ -86,10 +86,10 @@ void Guest_s2::DataProc(const Http2_header* header) {
         }else{
             status.localwinsize -= len;
         }
-        localwinsize -= len;
     }else{
         Reset(id, ERR_STREAM_CLOSED);
     }
+    localwinsize -= len;
 }
 
 void Guest_s2::ReqProc(HttpReqHeader&& req) {
@@ -169,11 +169,21 @@ void Guest_s2::WindowUpdateProc(uint32_t id, uint32_t size) {
     if(id){
         if(statusmap.count(id)){
             ResStatus& status = statusmap[id];
+#ifndef NDEBUG
+            LOGD(DHTTP2, "window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
+#endif
             status.remotewinsize += size;
             status.res_ptr->writedcb(status.res_id);
             waitlist.erase(id);
+#ifndef NDEBUG
+        }else{
+            LOGD(DHTTP2, "window size updated [%d]: not found\n", id);
+#endif
         }
     }else{
+#ifndef NDEBUG
+        LOGD(DHTTP2, "window size updated global: %d+%d\n", remotewinsize, size);
+#endif
         remotewinsize += size;
     }
 }
@@ -242,6 +252,12 @@ void Guest_s2::writedcb(uint32_t id){
     }
 }
 
+#ifndef NDEBUG
+void Guest_s2::PingProc(Http2_header *header){
+    LOGD(DHTTP2, "window size global: %d/%d\n", localwinsize, remotewinsize);
+    return Http2Base::PingProc(header);
+}
+#endif
 
 void Guest_s2::check_alive() {
     if(ssl->is_dtls()){

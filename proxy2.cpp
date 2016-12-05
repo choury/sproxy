@@ -105,10 +105,10 @@ void Proxy2::defaultHE(uint32_t events) {
 
 void Proxy2::DataProc(const Http2_header* header) {
     uint32_t id = get32(header->id);
+    ssize_t len = get24(header->length);
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         Requester* requester = status.req_ptr;
-        int32_t len = get24(header->length);
         if(len > status.localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
             requester->clean(ERR_FLOW_CONTROL_ERROR, status.req_id);
@@ -126,10 +126,10 @@ void Proxy2::DataProc(const Http2_header* header) {
         }else{
             status.localwinsize -= len;
         }
-        localwinsize -= len;
     }else{
         Reset(id, ERR_STREAM_CLOSED);
     }
+    localwinsize -= len;
 }
 
 void Proxy2::ErrProc(int errcode) {
@@ -156,11 +156,21 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
     if(id){
         if(statusmap.count(id)){
             ReqStatus& status = statusmap[id];
+#ifndef NDEBUG
+            LOGD(DHTTP2, "window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
+#endif
             status.remotewinsize += size;
             status.req_ptr->writedcb(status.req_id);
             waitlist.erase(id);
+#ifndef NDEBUG
+        }else{
+            LOGD(DHTTP2, "window size updated [%d]: not found\n", id);
+#endif
         }
     }else{
+#ifndef NDEBUG
+        LOGD(DHTTP2, "window size updated global: %d+%d\n", remotewinsize, size);
+#endif
         remotewinsize += size;
     }
 }
@@ -263,6 +273,9 @@ void Proxy2::check_alive() {
         set64(buff, getutime());
         Ping(buff);
         lastping = now;
+#ifndef NDEBUG
+        LOGD(DHTTP2, "window size global: %d/%d\n", localwinsize, remotewinsize);
+#endif
     }
     if(now - lastrecv >= 30000){ //超过30秒没收到报文，认为连接断开
         LOGE("[Proxy2] the ping timeout, so close it\n");

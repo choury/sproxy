@@ -153,7 +153,7 @@ int Dtls::recv(){
 
         tick_recvpkg ++;
         if(head->type == DTLS_TYPE_DATA){
-#ifndef DDEBUG
+#ifndef NDEBUG
             if(recv_begin == 0){
                 recv_begin = seq;
             }
