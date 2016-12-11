@@ -37,6 +37,7 @@ class Dtls:public Ssl{
     uint32_t ack_time;
     uint32_t tick_time;
     int recv();
+    int send();
     uint32_t send_pkg(uint32_t seq, uint32_t window, size_t len);
     void send_ack(uint32_t time, uint32_t window);
 public:
@@ -44,8 +45,7 @@ public:
     virtual ~Dtls();
     virtual ssize_t write(const void *buff, size_t size) override;
     virtual ssize_t read(void *buff, size_t size) override;
-    virtual bool is_dtls()override;
-    int send();
+    static void dtls_send(Dtls* dtls);
 };
 
 

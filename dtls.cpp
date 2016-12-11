@@ -18,14 +18,8 @@ struct Dtls_head{
 }__attribute__((packed));
 
 
-void dtls_tick(void* p) {
-    Ssl *ssl = (Ssl *)p;
-    Dtls *dtls = dynamic_cast<Dtls *>(ssl);
-    if(dtls){
-        dtls->send();
-    }else{
-        assert(fprintf(stderr, "Only dtls need tick!\n"));
-    }
+void Dtls::dtls_send(Dtls* dtls) {
+    dtls->send();
 }
 
 
@@ -76,14 +70,10 @@ Dtls::Dtls(SSL* ssl):Ssl(ssl) {
 }
 
 Dtls::~Dtls(){
+    del_job((job_func)dtls_send, this);
     delete []write_buff;
     delete []read_buff;
 }
-
-bool Dtls::is_dtls() {
-    return true;
-}
-
 
 ssize_t Dtls::read(void* buff, size_t size) {
     if(recv() < 0){
@@ -259,13 +249,13 @@ int Dtls::send() {
     uint32_t recvp_num = recv_pkgs.getsum();
     uint32_t now = getmtime();
     uint32_t buckets;
+    assert(bucket_limit>=10);
     if(bucket_limit < 50){
         buckets = (now - tick_time) * sqrt(bucket_limit*100) /100;
     }else{
         buckets = (now - tick_time) * (bucket_limit+5) /80;
     }
 
-    assert(bucket_limit>=10);
     if(buckets){
         if(buckets > bucket_limit){
             buckets = bucket_limit;
@@ -273,7 +263,7 @@ int Dtls::send() {
         if((ackhold_times >= 3 || now-ack_time >= Max(2,rtt_time*1.2)) && before(recv_ack, write_seq)){
             if(ackhold_times >= 3){
 #ifndef NDEBUG
-                LOGD(DDTLS, "%u: ackhol %u times reset resend_pos(%x) to %x\n",
+                LOGD(DDTLS, "%u: ackhold %u times reset resend_pos(%x) to %x\n",
                     getmtime()&0xffff, ackhold_times, resend_pos, recv_ack);
 #endif
                 resend_pos = recv_ack;
@@ -341,6 +331,13 @@ int Dtls::send() {
         }
 #endif
         tick_time = now - buckets*100/bucket_limit;
+    }
+    if(recv_ack == write_seq){
+        del_job((job_func)dtls_send, this);
+    }else if(buckets){
+        add_job((job_func)dtls_send, this, Max(2,rtt_time*1.2));
+    }else{
+        add_job((job_func)dtls_send, this, Max(5, 100/bucket_limit));
     }
     return 0;
 }

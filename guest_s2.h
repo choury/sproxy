@@ -13,7 +13,6 @@ struct ResStatus{
 };
 
 class Guest_s2: public Requester, public Http2Responser {
-    uint32_t last_interactive ;
     std::map<uint32_t, ResStatus> statusmap;
     std::set<uint32_t> waitlist;
     Ssl *ssl;
@@ -47,7 +46,7 @@ public:
     virtual void wait(uint32_t id)override;
     virtual void response(HttpResHeader&& res)override;
     virtual void writedcb(uint32_t id)override;
-    void check_alive();
+    static void peer_lost(Guest_s2* g);
 };
 
 #endif

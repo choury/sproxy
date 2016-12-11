@@ -13,6 +13,6 @@ public:
     virtual uint32_t request(HttpReqHeader&& req) = 0;
 };
 
-Responser* distribute(HttpReqHeader& req, Responser* responser_ptr, uint32_t id);
+Responser* distribute(HttpReqHeader& req, Responser* responser_ptr);
 
 #endif

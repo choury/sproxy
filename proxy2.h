@@ -14,8 +14,6 @@ struct ReqStatus{
 
 class Proxy2:public Responser, public Http2Requster {
     uint32_t curid = 1;
-    uint32_t lastping = 0;
-    uint32_t lastrecv  = 0;
     std::map<uint32_t, ReqStatus> statusmap;
     std::set<uint32_t> waitlist;
     SSL_CTX *ctx;
@@ -44,7 +42,9 @@ public:
     virtual int32_t bufleft(uint32_t id)override;
     virtual void wait(uint32_t id)override;
     virtual void writedcb(uint32_t id)override;
-    void check_alive();
+
+    static void ping_check(Proxy2 *p);
+    static void ping_timeout(Proxy2 *p);
 };
 
 extern Proxy2* proxy2; 

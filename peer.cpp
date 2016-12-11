@@ -99,18 +99,74 @@ void Peer::clean(uint32_t errcode, uint32_t) {
     }
 }
 
-std::set<std::pair<void (*)(void *), void *>> callfunc_set;
+struct tick_n{
+    void (* func)(void *);
+    void *arg;
+};
 
-void add_tick_func(void (*func)(void *), void *arg){
-    callfunc_set.insert(std::make_pair(func, arg));
-}
+struct tick_v{
+    const char *func_name;
+    uint32_t interval;
+    uint32_t last_tick;
+};
 
-void del_tick_func(void (*func)(void *), void *arg){
-    callfunc_set.erase(std::make_pair(func, arg));
-}
 
-void tick(){
-    for(auto i: callfunc_set){
-        i.first(i.second);
+class tick_n_cmp{
+public:
+    bool operator()(const struct tick_n& a, const struct tick_n& b) const{
+        if(a.func == b.func){
+            return a.arg < b.arg;
+        }else{
+            return a.func < b.func;
+        }
     }
+};
+
+std::map<tick_n, tick_v, tick_n_cmp> callfunc_map;
+
+void add_job_real(job_func func, const char *func_name, void *arg, uint32_t interval){
+#ifndef NDEBUG
+    if(callfunc_map.count(tick_n{func, arg})){
+        LOGD(DTICK, "update a function %s for %p by %d\n", func_name, arg, interval);
+    }else{
+        LOGD(DTICK, "add a function %s for %p by %d\n", func_name, arg, interval);
+    }
+#endif
+    callfunc_map[tick_n{func, arg}] = tick_v{func_name, interval, getmtime()};
+}
+
+void del_job_real(job_func func, const char *func_name, void *arg){
+#ifndef NDEBUG
+    if(callfunc_map.count(tick_n{func, arg})){
+        LOGD(DTICK, "del a function %s of %p\n", func_name, arg);
+    }else{
+        LOGD(DTICK, "del a function %s of %p not found\n", func_name, arg);
+    }
+#endif
+    callfunc_map.erase(tick_n{func, arg});
+}
+
+uint32_t do_job(){
+    uint32_t now = getmtime();
+    uint32_t min_interval = 0xffffffff;
+    std::vector<tick_n> tick_set;
+    for(auto i=callfunc_map.begin(); i!= callfunc_map.end(); i++){
+        uint32_t diff = now - i->second.last_tick;
+        if(diff >= i->second.interval){
+#ifndef NDEBUG
+            LOGD(DTICK, "%s for %p ticked diff %u\n",
+                 i->second.func_name, i->first.arg, diff );
+#endif
+            i->second.last_tick = now;
+            tick_set.push_back(i->first);
+        }
+        uint32_t left = i->second.interval + i->second.last_tick - now;
+        if(left < min_interval){
+            min_interval = left;
+        }
+    }
+    for(auto i:tick_set){
+        i.func(i.arg);
+    }
+    return min_interval;
 }

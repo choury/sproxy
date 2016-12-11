@@ -5,30 +5,20 @@
 #include <string.h>
 #include <errno.h>
                     
-std::map<Host*,time_t> connectmap;
-
-void hosttick(void *) {
-    for(auto i = connectmap.begin();i != connectmap.end();){
-        Host *host = (Host *)(i->first);
-        if(time(NULL) - i->second >= 30 && host->connect() < 0){
-            connectmap.erase(i++);
-            LOGE("connect to %s time out.\n", host->hostname);
-            host->clean(CONNECT_ERR, 0);
-        }else{
-            i++;
-        }
-    }
+void Host::con_timeout(Host* host) {
+    LOGE("connect to %s time out.\n", host->hostname);
+    host->clean(CONNECT_ERR, 0);
+    del_job((job_func)con_timeout, host);
 }
 
 Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), protocol(protocol){
     assert(port);
     memset(this->hostname, 0, sizeof(this->hostname));
     query(hostname, (DNSCBfunc)Host::Dnscallback, this);
-    add_tick_func(hosttick, nullptr);
 }
 
 Host::~Host(){
-    connectmap.erase(this);
+    del_job((job_func)con_timeout, this);
 }
 
 void Host::discard() {
@@ -63,7 +53,7 @@ int Host::connect() {
             RcdDown(hostname, addrs[testedaddr-1]);
         }
         fd = Connect(&addrs[testedaddr++], (int)protocol);
-        connectmap[this]=time(NULL);
+        add_job((job_func)con_timeout, this, 30000);
         if (fd < 0) {
             LOGE("connect to %s failed\n", this->hostname);
             return connect();
@@ -112,7 +102,7 @@ void Host::waitconnectHE(uint32_t events) {
             requester_ptr->response(std::move(res));
         }
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
-        connectmap.erase(this);
+        del_job((job_func)con_timeout, this);
     }
     return;
 reconnect:
@@ -180,7 +170,7 @@ void Host::ResProc(HttpResHeader&& res) {
 
 
 
-Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr, uint32_t id) {
+Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr) {
     Protocol protocol = req.ismethod("SEND")?Protocol::UDP:Protocol::TCP;
     Host* host = dynamic_cast<Host *>(responser_ptr);
     if (host){
@@ -194,9 +184,6 @@ Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr, uint32_t id) {
             assert(host->requester_ptr == nullptr ||
                    host->requester_ptr == req.src);
         }
-    }
-    if (responser_ptr) {
-        responser_ptr->clean(NOERROR, id);
     }
     return new Host(req.hostname, req.port, protocol);
 }

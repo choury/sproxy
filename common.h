@@ -29,18 +29,21 @@ extern int ignore_cert_error;
 extern int disable_ipv6;
 extern int use_http2;
 extern char auth_string[];
+extern const char *cafile;
 extern const char *index_file;
 extern uint32_t debug;
 
 #define DEPOLL    1
 #define DDNS      2
 #define DDTLS     4
-#define DHTTP2     8
+#define DHTTP2    8
+#define DTICK     16
 
 #define DEPOLL_STR  "[EPOLL]"
 #define DDNS_STR    "[DNS]"
 #define DDTLS_STR   "[DTLS]"
 #define DHTTP2_STR  "[HTTP2]"
+#define DTICK_STR   "[TICK]"
 
 
 #ifdef __ANDROID__
@@ -182,11 +185,14 @@ void p_free(void *ptr);
 void *p_move(void *ptr, signed char len);
 void change_process_name(const char *name);
 
-void dtls_tick(void *p);
+typedef void (*job_func)(void *);
 
-void add_tick_func(void (*func)(void *), void *arg);
-void del_tick_func(void (*func)(void *), void *arg);
-void tick();
+void add_job_real(job_func func, const char *func_name, void *arg, uint32_t interval);
+
+#define add_job(a, b, c) add_job_real(a, #a, b, c)
+void del_job_real(job_func func, const char *func_name, void *arg);
+#define del_job(a, b) del_job_real(a, #a, b)
+uint32_t do_job();
 
 
 #ifdef  __cplusplus

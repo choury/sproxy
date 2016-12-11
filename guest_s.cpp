@@ -8,21 +8,16 @@
 Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, Ssl* ssl): Guest(fd, myaddr), ssl(ssl){
     accept_start_time = time(nullptr);
     handleEvent = (void (Con::*)(uint32_t))&Guest_s::shakehandHE;
-    if(ssl->is_dtls()){
-        add_tick_func(dtls_tick, ssl);
-    }
 }
 
 
 Guest_s::~Guest_s() {
     if(ssl){
         delete ssl;
-        del_tick_func(dtls_tick, ssl);
     }
 }
 
 void Guest_s::discard(){
-    del_tick_func(dtls_tick, ssl);
     ssl = nullptr;
     Guest::discard();
 }

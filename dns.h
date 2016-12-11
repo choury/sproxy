@@ -23,6 +23,5 @@ typedef void (*DNSCBfunc)(void *, const char *hostname, std::vector<sockaddr_un>
 
 void query(const char* host, DNSCBfunc func, void* param, uint16_t times=0);
 void RcdDown(const char *hostname, const sockaddr_un &addr);
-void flushdns();
 
 #endif

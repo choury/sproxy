@@ -6,21 +6,15 @@
 #include "dtls.h"
 
 
-extern std::map<Host*,time_t> connectmap;
-
 Proxy::Proxy(const char* hostname, uint16_t port, Protocol protocol): 
         Host(hostname, port, protocol), req(nullptr, nullptr) {
 
 }
 
-Responser* Proxy::getproxy(HttpReqHeader &req, Responser* responser_ptr, uint32_t id) {
+Responser* Proxy::getproxy(HttpReqHeader &req, Responser* responser_ptr) {
     Proxy *proxy = dynamic_cast<Proxy *>(responser_ptr);
     if (proxy) {
         return proxy;
-    }
-    
-    if (responser_ptr) {
-        responser_ptr->clean(NOERROR, id);
     }
     
     if (proxy2) {
@@ -139,7 +133,7 @@ void Proxy::waitconnectHE(uint32_t events) {
             SSL_set_bio(ssl, bio, bio);
             this->ssl = new Dtls(ssl);
         }
-        if (SSL_CTX_load_verify_locations(ctx, NULL, "/etc/ssl/certs/") != 1)
+        if (SSL_CTX_load_verify_locations(ctx, cafile, "/etc/ssl/certs/") != 1)
             ERR_print_errors_fp(stderr);
 
         if (SSL_CTX_set_default_verify_paths(ctx) != 1)
@@ -150,9 +144,6 @@ void Proxy::waitconnectHE(uint32_t events) {
             ssl->set_alpn(alpn_protos_string, sizeof(alpn_protos_string)-1);
         }
         
-        if(ssl->is_dtls()){
-            add_tick_func(dtls_tick, ssl);
-        }
         updateEpoll(EPOLLIN | EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Proxy::shakehandHE;
     }
@@ -210,22 +201,21 @@ void Proxy::shakehandHE(uint32_t events) {
             }
             updateEpoll(EPOLLIN | EPOLLOUT);
             handleEvent = (void (Con::*)(uint32_t))&Proxy::defaultHE;
-        }
-        connectmap.erase(this);
+        }  
+        del_job((job_func)con_timeout, this);
         return;
         
     }
 }
 
 uint32_t Proxy::request(HttpReqHeader&& req) {
-    if(use_http2 && (hostname[0] == 0 || connectmap.count(this))){
+    if(use_http2){
         this->req = req;
     }
     return Host::request(std::move(req));
 }
 
 void Proxy::discard() {
-    del_tick_func(dtls_tick, ssl);
     ssl = nullptr;
     ctx = nullptr;
     Host::discard();
@@ -235,7 +225,6 @@ void Proxy::discard() {
 
 Proxy::~Proxy() {
     if (ssl) {
-        del_tick_func(dtls_tick, ssl);
         delete ssl;
     }
     if (ctx){
