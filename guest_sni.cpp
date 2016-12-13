@@ -40,7 +40,8 @@ void Guest_sni::initHE(uint32_t events) {
             sprintf(buff, "CONNECT %s:%d" CRLF CRLF, hostname, 443);
             HttpReqHeader req(buff, this);
             req.http_id =1;
-            responser_ptr = distribute(req, responser_ptr);
+            assert(responser_ptr == nullptr);
+            responser_ptr = distribute(req, nullptr);
             if(responser_ptr){
                 responser_id = responser_ptr->request(std::move(req));
                 updateEpoll(EPOLLIN | EPOLLOUT);

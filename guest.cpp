@@ -26,18 +26,19 @@ void Guest::request_next() {
     while(status == Status::none && reqs.size()){
         HttpReq req = std::move(reqs.front());
         reqs.pop();
-        Responser* responser = distribute(req.header, responser_ptr);
-        if(responser){
+        Responser* res_ptr = distribute(req.header, responser_ptr);
+        if(res_ptr){
             if(req.header.ismethod("CONNECT")){
                 status = Status::presistent;
             }else{
                 status = Status::requesting;
             }
-            if(responser_ptr && responser != responser_ptr){
+            uint32_t res_id = res_ptr->request(std::move(req.header));
+            if(responser_ptr && (res_ptr != responser_ptr || res_id != responser_id)){
                 responser_ptr->clean(NOERROR, responser_id);
             }
-            responser_ptr = responser;
-            responser_id = responser_ptr->request(std::move(req.header));
+            responser_ptr = res_ptr;
+            responser_id = res_id;
             while(1){
                 auto block = req.body.pop();
                 if(block.second == 0)
@@ -93,18 +94,19 @@ void Guest::ErrProc(int errcode) {
 void Guest::ReqProc(HttpReqHeader&& req) {
     req.http_id = 1;
     if(status == Status::none && reqs.empty()){
-        Responser* responser = distribute(req, responser_ptr);
-        if(responser){
+        Responser* res_ptr = distribute(req, responser_ptr);
+        if(res_ptr){
             if(req.ismethod("CONNECT")){
                 status = Status::presistent;
             }else{
                 status = Status::requesting;
             }
-            if(responser_ptr && responser_ptr != responser){
+            uint32_t res_id = res_ptr->request(std::move(req));
+            if(responser_ptr && (res_ptr != responser_ptr || res_id != responser_id)){
                 responser_ptr->clean(NOERROR, responser_id);
             }
-            responser_ptr = responser;
-            responser_id = responser_ptr->request(std::move(req));
+            responser_ptr = res_ptr;
+            responser_id = res_id;
         }
     }else{
         reqs.push(HttpReq(req));
