@@ -19,7 +19,7 @@ public:
     virtual ~Proxy();
     
     virtual uint32_t request(HttpReqHeader&& req)override;
-    static Responser* getproxy(HttpReqHeader &req, Responser* responser_ptr, uint32_t id);
+    static Responser* getproxy(HttpReqHeader &req, Responser* responser_ptr);
 };
 
 #endif

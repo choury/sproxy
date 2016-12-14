@@ -40,7 +40,7 @@ static int check_header(HttpReqHeader& req){
     return 0;
 }
 
-Responser* distribute(HttpReqHeader& req, Responser* responser_ptr, uint32_t id) {
+Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
     Requester *requester = req.src;
     char log_buff[URLLIMIT];
     if(req.url[0] == '/'){
@@ -97,7 +97,7 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr, uint32_t id)
                 }
                 LOG("[[dirct]] %s\n", log_buff);
                 req.del("Proxy-Authorization");
-                return Host::gethost(req, responser_ptr, id);
+                return Host::gethost(req, responser_ptr);
             case Strategy::proxy:
                 switch(check_header(req)){
                 case 1:
@@ -117,7 +117,7 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr, uint32_t id)
                 req.del("via");
                 LOG("[[proxy]] %s\n", log_buff);
                 req.should_proxy = true;
-                return Proxy::getproxy(req, responser_ptr, id);
+                return Proxy::getproxy(req, responser_ptr);
             case Strategy::block:
                 LOG("[[block]] %s\n", log_buff);
                 HttpResHeader res("HTTP/1.1 403 Forbidden" CRLF
@@ -128,10 +128,10 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr, uint32_t id)
                                  " for more information.\n", 73, req.http_id);
                 return nullptr;
         }
-    }else if (req.ismethod("ADD")) {
+    }else if (req.ismethod("ADDS")) {
         const char *strategy = req.get("s");
         LOG("[[add %s]] %s\n", strategy, log_buff);
-        if(addstrategy(req.hostname, strategy)){
+        if(strategy && addstrategy(req.hostname, strategy)){
             HttpResHeader res(H200);
             res.http_id = req.http_id;
             requester->response(std::move(res));
@@ -141,7 +141,7 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr, uint32_t id)
             requester->response(std::move(res));
         }
         return nullptr;
-    } else if (req.ismethod("DEL")) {
+    } else if (req.ismethod("DELS")) {
         const char* strategy = getstrategystring(req.hostname);
         LOG("[[del %s]] %s\n", strategy, log_buff);
         if(delstrategy(req.hostname)){
@@ -181,12 +181,7 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr, uint32_t id)
         res.http_id = req.http_id;
         requester->response(std::move(res));
     } else if(req.ismethod("FLUSH")){
-        if(strcasecmp(req.url, "dns") == 0){
-            flushdns();
-            HttpResHeader res(H200);
-            res.http_id = req.http_id;
-            requester->response(std::move(res));
-        }else if(strcasecmp(req.url, "cgi") == 0){
+        if(strcasecmp(req.url, "cgi") == 0){
             flushcgi();
             HttpResHeader res(H200);
             res.http_id = req.http_id;

@@ -11,4 +11,5 @@ build
 
 TODO
 ======
-- [ ] 动态调节tick的速度
+- [x] 动态job机制，减少cpu使用率
+- [ ] Guest_sni 可以转化为 Guest_s(2)

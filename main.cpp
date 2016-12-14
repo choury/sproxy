@@ -209,6 +209,7 @@ static struct option long_options[] = {
     {"debug-dns",   no_argument,   0,  0 },
     {"debug-dtls",  no_argument,   0,  0 },
     {"debug-http2", no_argument,   0,  0 },
+    {"debug-tick",  no_argument,   0,  0 },
 #endif
     {0,         0,                 0,  0 }
 };
@@ -217,7 +218,7 @@ const char *option_detail[] = {
     "CA certificate for server (ssl/dtls)",
     "Certificate file for server (ssl/dtls)",
     "Run as daemon",
-    "Disable ipv6 in dns",
+    "Disable ipv6 when querying dns",
     "UDP mode (dtls)",
     "Use http/1.1 only (SHOULD NOT USE IT WITH dtls)",
     "Print this usage",
@@ -232,6 +233,7 @@ const char *option_detail[] = {
     "\tdebug-dns",
     "debug-dtls",
     "debug-http2",
+    "debug-tick",
 #endif
 };
 
@@ -347,6 +349,9 @@ int main(int argc, char **argv) {
             }else if(strcmp(long_options[option_index].name, "debug-http2") == 0){
                 debug |= DHTTP2;
                 printf("long option debug-http2\n");
+            }else if(strcmp(long_options[option_index].name, "debug-tick") == 0){
+                debug |= DTICK;
+                printf("long option debug-tick\n");
             }
             break;
 
@@ -470,7 +475,7 @@ int main(int argc, char **argv) {
     while (1) {
         int c;
         struct epoll_event events[200];
-        if ((c = epoll_wait(efd, events, 200, 50)) < 0) {
+        if ((c = epoll_wait(efd, events, 200, do_job())) < 0) {
             if (errno != EINTR) {
                 perror("epoll wait");
                 return 6;
@@ -481,7 +486,6 @@ int main(int argc, char **argv) {
             Con *con = (Con *)events[i].data.ptr;
             (con->*con->handleEvent)(events[i].events);
         }
-        tick();
     }
     return 0;
 }

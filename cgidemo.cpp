@@ -7,7 +7,7 @@
 int cgimain(int fd){
     ssize_t readlen;
     char buff[CGI_LEN_MAX];
-    HttpReqHeader *req;
+    HttpReqHeader *req = nullptr;
     std::map<std::string, std::string> params;
     while((readlen = read(fd, buff, sizeof(CGI_Header)))>0){
         CGI_Header *header = (CGI_Header *)buff;

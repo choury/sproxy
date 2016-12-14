@@ -4,8 +4,23 @@
 
 Proxy2* proxy2 = nullptr;
 
-void proxy2tick(Proxy2 *p){
-    p->check_alive();
+void Proxy2::ping_check(Proxy2 *p){
+    if(proxy2 != p && p->statusmap.empty()){
+        p->clean(NOERROR, 0);
+        return;
+    }
+    char buff[8];
+    set64(buff, getutime());
+    p->Ping(buff);
+#ifndef NDEBUG
+    LOGD(DHTTP2, "window size global: %d/%d\n", p->localwinsize, p->remotewinsize);
+#endif
+    add_job((job_func)ping_check, p, 5000);
+}
+
+void Proxy2::ping_timeout(Proxy2 *p){
+    LOGE("[Proxy2] %p the ping timeout, so close it\n", p);
+    p->clean(PEER_LOST_ERR, 0);
 }
 
 Proxy2::Proxy2(int fd, SSL_CTX *ctx, Ssl *ssl): ctx(ctx), ssl(ssl) {
@@ -14,7 +29,6 @@ Proxy2::Proxy2(int fd, SSL_CTX *ctx, Ssl *ssl): ctx(ctx), ssl(ssl) {
     localwinsize  = localframewindowsize;
     updateEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Con::*)(uint32_t))&Proxy2::defaultHE;
-    add_tick_func((void (*)(void *))proxy2tick, this);
 }
 
 Proxy2::~Proxy2() {
@@ -74,11 +88,12 @@ void Proxy2::defaultHE(uint32_t events) {
         return;
     }
     if (events & EPOLLIN) {
+        add_job((job_func)ping_check, this, 20000);
+        add_job((job_func)ping_timeout, this, 30000);
         (this->*Http2_Proc)();
         if(inited && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
-        lastrecv = getmtime();
     }
 
     if (events & EPOLLOUT) {
@@ -232,7 +247,8 @@ void Proxy2::clean(uint32_t errcode, uint32_t id) {
             i.second.req_ptr->clean(errcode, i.second.req_id);
         }
         statusmap.clear();
-        del_tick_func((void (*)(void *))proxy2tick, this);
+        del_job((job_func)ping_check, this);
+        del_job((job_func)ping_timeout, this);
         return Peer::clean(errcode, 0);
     }else{
         assert(statusmap.count(id));
@@ -253,33 +269,6 @@ void Proxy2::writedcb(uint32_t id){
         if(len < localframewindowsize/5)
             return;
         status.localwinsize += ExpandWindowSize(id, len);
-    }
-}
-
-
-void Proxy2::check_alive() {
-    if(ssl->is_dtls()){
-        dtls_tick(ssl);
-    }
-    if(proxy2 != this && statusmap.empty()){
-        clean(NOERROR, 0);
-        return;
-    }
-    if(!lastrecv)
-        return;
-    uint32_t now = getmtime();
-    if(now - lastrecv >= 20000 && now - lastping >= 5000){ //超过20秒就发ping包检测
-        char buff[8];
-        set64(buff, getutime());
-        Ping(buff);
-        lastping = now;
-#ifndef NDEBUG
-        LOGD(DHTTP2, "window size global: %d/%d\n", localwinsize, remotewinsize);
-#endif
-    }
-    if(now - lastrecv >= 30000){ //超过30秒没收到报文，认为连接断开
-        LOGE("[Proxy2] the ping timeout, so close it\n");
-        clean(PEER_LOST_ERR, 0);
     }
 }
 

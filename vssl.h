@@ -67,9 +67,6 @@ public:
         /* Configure a non-zero callback if desired */
         SSL_set_verify(ssl, SSL_VERIFY_PEER, callback);
     }
-    virtual bool is_dtls(){
-        return false;
-    }
 };
 
 

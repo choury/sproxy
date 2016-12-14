@@ -3,8 +3,9 @@
 
 #include <limits.h>
 
-void guest2tick(Guest_s2 *g){
-    g->check_alive();
+void Guest_s2::peer_lost(Guest_s2 *g){
+    LOGE("(%s): [Guest_s2] Nothing got too long, so close it\n", g->getsrc());
+    g->clean(PEER_LOST_ERR, 0);
 }
 
 Guest_s2::Guest_s2(int fd, const char* ip, uint16_t port, Ssl* ssl):
@@ -14,8 +15,6 @@ Guest_s2::Guest_s2(int fd, const char* ip, uint16_t port, Ssl* ssl):
     localwinsize  = localframewindowsize;
     updateEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Con::*)(uint32_t))&Guest_s2::defaultHE;
-    last_interactive = getmtime();
-    add_tick_func((void (*)(void *))guest2tick, this);
 }
 
 Guest_s2::Guest_s2(int fd, struct sockaddr_in6* myaddr, Ssl* ssl):
@@ -25,8 +24,6 @@ Guest_s2::Guest_s2(int fd, struct sockaddr_in6* myaddr, Ssl* ssl):
     localwinsize  = localframewindowsize;
     updateEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Con::*)(uint32_t))&Guest_s2::defaultHE;
-    last_interactive = getmtime();
-    add_tick_func((void (*)(void *))guest2tick, this);
 }
 
 Guest_s2::~Guest_s2() {
@@ -93,7 +90,7 @@ void Guest_s2::DataProc(const Http2_header* header) {
 }
 
 void Guest_s2::ReqProc(HttpReqHeader&& req) {
-    Responser *responser = distribute(req, nullptr, 0);
+    Responser *responser = distribute(req, nullptr);
     if(responser){
         statusmap[req.http_id]=ResStatus{
             responser,
@@ -124,11 +121,11 @@ void Guest_s2::defaultHE(uint32_t events) {
         return;
     }
     if (events & EPOLLIN) {
+        add_job((job_func)peer_lost, this, 30000);
         (this->*Http2_Proc)();
         if(inited && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
-        last_interactive = getmtime();
     }
 
     if (events & EPOLLOUT) {
@@ -145,7 +142,7 @@ void Guest_s2::defaultHE(uint32_t events) {
                     i++;
                 }
             }
-            last_interactive = getmtime();
+            add_job((job_func)peer_lost, this, 30000);
         }
         if (framequeue.empty()) {
             updateEpoll(EPOLLIN);
@@ -222,7 +219,7 @@ void Guest_s2::clean(uint32_t errcode, uint32_t id) {
             i.second.res_ptr->clean(errcode, i.second.res_id);
         }
         statusmap.clear();
-        del_tick_func((void (*)(void *))guest2tick, this);
+        del_job((job_func)peer_lost, this);
         return Peer::clean(errcode, 0);
     }else{
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
@@ -259,12 +256,3 @@ void Guest_s2::PingProc(Http2_header *header){
 }
 #endif
 
-void Guest_s2::check_alive() {
-    if(ssl->is_dtls()){
-        dtls_tick(ssl);
-    }
-    if(getmtime() - last_interactive >= 30000){ //超过30秒交互数据，认为连接断开
-        LOGE("(%s): [Guest_s2] Nothing got too long, so close it\n", getsrc());
-        clean(PEER_LOST_ERR, 0);
-    }
-}

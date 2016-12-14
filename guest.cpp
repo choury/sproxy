@@ -8,12 +8,11 @@
 #include <arpa/inet.h>
 
 
-void guesttick(Guest* guest){
+void request_next(Guest* guest){
     guest->request_next();
 }
 
 Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Requester(fd, myaddr) {
-    add_tick_func((void (*)(void *))guesttick, this);
 }
 
 
@@ -27,15 +26,19 @@ void Guest::request_next() {
     while(status == Status::none && reqs.size()){
         HttpReq req = std::move(reqs.front());
         reqs.pop();
-        Responser* responser = distribute(req.header, responser_ptr, responser_id);
-        if(responser){
+        Responser* res_ptr = distribute(req.header, responser_ptr);
+        if(res_ptr){
             if(req.header.ismethod("CONNECT")){
                 status = Status::presistent;
             }else{
                 status = Status::requesting;
             }
-            responser_ptr = responser;
-            responser_id = responser_ptr->request(std::move(req.header));
+            uint32_t res_id = res_ptr->request(std::move(req.header));
+            if(responser_ptr && (res_ptr != responser_ptr || res_id != responser_id)){
+                responser_ptr->clean(NOERROR, responser_id);
+            }
+            responser_ptr = res_ptr;
+            responser_id = res_id;
             while(1){
                 auto block = req.body.pop();
                 if(block.second == 0)
@@ -44,6 +47,7 @@ void Guest::request_next() {
             }
         }
     }
+    del_job((job_func)::request_next, this);
 }
 
 
@@ -90,15 +94,19 @@ void Guest::ErrProc(int errcode) {
 void Guest::ReqProc(HttpReqHeader&& req) {
     req.http_id = 1;
     if(status == Status::none && reqs.empty()){
-        Responser* responser = distribute(req, responser_ptr, responser_id);
-        if(responser){
+        Responser* res_ptr = distribute(req, responser_ptr);
+        if(res_ptr){
             if(req.ismethod("CONNECT")){
                 status = Status::presistent;
             }else{
                 status = Status::requesting;
             }
-            responser_ptr = responser;
-            responser_id = responser_ptr->request(std::move(req));
+            uint32_t res_id = res_ptr->request(std::move(req));
+            if(responser_ptr && (res_ptr != responser_ptr || res_id != responser_id)){
+                responser_ptr->clean(NOERROR, responser_id);
+            }
+            responser_ptr = res_ptr;
+            responser_id = res_id;
         }
     }else{
         reqs.push(HttpReq(req));
@@ -116,6 +124,8 @@ void Guest::response(HttpResHeader&& res) {
         status = Status::chunked;
     }else if(res.no_body()){
         status = Status::none;
+        if(!reqs.empty())
+            add_job((job_func)::request_next, this, 0);
     }
     size_t len;
     char *buff=res.getstring(len);
@@ -143,6 +153,8 @@ ssize_t Guest::Write(void *buff, size_t size, uint32_t id) {
     }
     if(size == 0){
         status = Status::none;
+        if(!reqs.empty())
+            add_job((job_func)::request_next, this, 0);
     }
     return ret;
 }
@@ -173,7 +185,7 @@ void Guest::clean(uint32_t errcode, uint32_t id) {
         responser_ptr->clean(errcode, responser_id);
     }
     responser_ptr = nullptr;
-    del_tick_func((void (*)(void *))guesttick, this);
+    del_job((job_func)::request_next, this);
     Peer::clean(errcode, 0);
 }
 

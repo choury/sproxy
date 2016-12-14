@@ -31,7 +31,7 @@ public:
     virtual ssize_t Write(void* buff, size_t size, uint32_t id)override;
     virtual void clean(uint32_t errcode, uint32_t id)override;
     virtual void response(HttpResHeader&& res)override;
-    friend void guesttick(Guest * guest);
+    friend void request_next(Guest * guest);
 };
 
 #endif
