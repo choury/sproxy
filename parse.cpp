@@ -370,6 +370,10 @@ HttpReqHeader::HttpReqHeader(CGI_Header *headers): src(nullptr)
             strcpy(path, value.c_str());
             continue;
         }
+        if(name == ":authority"){
+            strcpy(hostname, value.c_str());
+            continue;
+        }
         if(name == "cookie"){
             cookies.insert(value);
             continue;
@@ -517,6 +521,7 @@ CGI_Header *HttpReqHeader::getcgi(uint32_t cgi_id) const{
     char *p = (char *)(cgi + 1);
     p = cgi_addnv(p, ":method", method);
     p = cgi_addnv(p, ":path", path);
+    p = cgi_addnv(p, ":authority", hostname);
     for(auto i: headers){
         p = cgi_addnv(p, i.first, i.second);
     }

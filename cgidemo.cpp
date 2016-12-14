@@ -31,7 +31,7 @@ int cgimain(int fd){
             addcookie(res, cookie);
             cookie.set("test10s", "test");
             cookie.path = "/";
-            cookie.domain = ".choury.com";
+            cookie.domain = req->hostname;
             cookie.maxage = 10;
             addcookie(res, cookie);
             cgi_response(fd, res, cgi_id);
