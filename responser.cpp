@@ -44,7 +44,7 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
     Requester *requester = req.src;
     char log_buff[URLLIMIT];
     if(req.url[0] == '/'){
-        sprintf(log_buff, "(%s): %s %s%s [%s]",
+        snprintf(log_buff, sizeof(log_buff), "(%s): %s %s%s [%s]",
                 requester->getsrc(), req.method,
                 req.hostname, req.url, req.get("User-Agent"));
         if(!req.hostname[0]){
@@ -55,7 +55,7 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
             return nullptr;
         }
     }else{
-        sprintf(log_buff, "(%s): %s %s [%s]",
+        snprintf(log_buff, sizeof(log_buff),"(%s): %s %s [%s]",
                 requester->getsrc(), req.method,
                 req.url, req.get("User-Agent"));
     }

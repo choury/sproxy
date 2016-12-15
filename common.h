@@ -65,7 +65,7 @@ extern uint32_t debug;
                      }while(0)
 #define  LOGE(...)   do{\
                         char tmp[1024]; \
-                        sprintf(tmp, __VA_ARGS__); \
+                        snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
                         if(daemon_mode) \
                             syslog(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
                         else \
