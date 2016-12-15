@@ -136,8 +136,6 @@ void Proxy2::DataProc(const Http2_header* header) {
         if(header->flags & END_STREAM_F){
             if(len)
                 requester->Write((const void*)nullptr, 0, status.req_id);
-            requester->clean(NOERROR, status.req_id);
-            statusmap.erase(id);
         }else{
             status.localwinsize -= len;
         }

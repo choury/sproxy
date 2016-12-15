@@ -78,8 +78,6 @@ void Guest_s2::DataProc(const Http2_header* header) {
         if(header->flags & END_STREAM_F){
             if(len)
                 responser->Write((const void*)nullptr, 0, status.res_id);
-            responser->clean(NOERROR, status.res_id);
-            statusmap.erase(id);
         }else{
             status.localwinsize -= len;
         }
