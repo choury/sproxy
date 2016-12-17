@@ -1,4 +1,5 @@
 #include "dns.h"
+#include "job.h"
 #include "common.h"
 
 #include <unordered_map>

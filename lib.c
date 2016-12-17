@@ -116,20 +116,7 @@ int spliturl(const char* url, char *protocol, char* hostname, char* path , uint1
     return 0;
 }
 
-int epoll_my_ctl(int epfd, int op, int fd,struct epoll_event *event){
-    if(op == EPOLL_CTL_MOD){
-        LOGE("epoll mod %d: %p\n",fd,event->data.ptr);
-    }
-    if(op == EPOLL_CTL_ADD) {
-        LOGE("epoll add %d: %p\n",fd,event->data.ptr);
-    }
-    if(op == EPOLL_CTL_DEL) {
-        LOGE("epoll del %d\n",fd);
-    }
-    return epoll_ctl(epfd,op,fd,event);
-}
-
-int hex2num(char c)
+static int hex2num(char c)
 {
     if (c>='0' && c<='9') return c - '0';
     if (c>='a' && c<='z') return c - 'a' + 10;

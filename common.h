@@ -37,13 +37,13 @@ extern uint32_t debug;
 #define DDNS      2
 #define DDTLS     4
 #define DHTTP2    8
-#define DTICK     16
+#define DJOB      16
 
 #define DEPOLL_STR  "[EPOLL]"
 #define DDNS_STR    "[DNS]"
 #define DDTLS_STR   "[DTLS]"
 #define DHTTP2_STR  "[HTTP2]"
-#define DTICK_STR   "[TICK]"
+#define DJOB_STR    "[JOB]"
 
 
 #ifdef __ANDROID__
@@ -147,7 +147,7 @@ do {\
     ((uchar*)(a))[7] = ((uint64_t)x) & 0xff;\
 }while(0);
 
-#define likely(x)   __builtin_expect(!!(x), 1)  
+#define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
 #define NOERROR             0
@@ -184,15 +184,6 @@ void* p_memdup(const void *ptr, size_t size);
 void p_free(void *ptr);
 void *p_move(void *ptr, signed char len);
 void change_process_name(const char *name);
-
-typedef void (*job_func)(void *);
-
-void add_job_real(job_func func, const char *func_name, void *arg, uint32_t interval);
-
-#define add_job(a, b, c) add_job_real(a, #a, b, c)
-void del_job_real(job_func func, const char *func_name, void *arg);
-#define del_job(a, b) del_job_real(a, #a, b)
-uint32_t do_job();
 
 
 #ifdef  __cplusplus

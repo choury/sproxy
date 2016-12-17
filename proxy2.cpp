@@ -1,5 +1,6 @@
 #include "proxy2.h"
 #include "requester.h"
+#include "job.h"
 
 
 Proxy2* proxy2 = nullptr;

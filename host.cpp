@@ -1,5 +1,6 @@
 #include "host.h"
 #include "requester.h"
+#include "job.h"
 
 #include <map>
 #include <string.h>

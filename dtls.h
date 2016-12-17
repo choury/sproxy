@@ -1,6 +1,5 @@
 #ifndef DTLS_H__
 #define DTLS_H__
-#include "common.h"
 #include "vssl.h"
 
 #include <list>

@@ -1,5 +1,6 @@
 #include "guest_s2.h"
 #include "responser.h"
+#include "job.h"
 
 #include <limits.h>
 

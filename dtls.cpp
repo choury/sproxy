@@ -1,4 +1,7 @@
 #include "dtls.h"
+#include "common.h"
+#include "job.h"
+
 #include <string.h>
 #include <unistd.h>
 #include <math.h>

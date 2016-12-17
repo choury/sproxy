@@ -3,6 +3,7 @@
 #include "guest_s2.h"
 #include "dtls.h"
 #include "net.h"
+#include "job.h"
 
 #include <set>
 
@@ -209,7 +210,7 @@ static struct option long_options[] = {
     {"debug-dns",   no_argument,   0,  0 },
     {"debug-dtls",  no_argument,   0,  0 },
     {"debug-http2", no_argument,   0,  0 },
-    {"debug-tick",  no_argument,   0,  0 },
+    {"debug-job",   no_argument,   0,  0 },
 #endif
     {0,         0,                 0,  0 }
 };
@@ -233,7 +234,7 @@ const char *option_detail[] = {
     "\tdebug-dns",
     "debug-dtls",
     "debug-http2",
-    "debug-tick",
+    "debug-job",
 #endif
 };
 
@@ -349,9 +350,9 @@ int main(int argc, char **argv) {
             }else if(strcmp(long_options[option_index].name, "debug-http2") == 0){
                 debug |= DHTTP2;
                 printf("long option debug-http2\n");
-            }else if(strcmp(long_options[option_index].name, "debug-tick") == 0){
-                debug |= DTICK;
-                printf("long option debug-tick\n");
+            }else if(strcmp(long_options[option_index].name, "debug-job") == 0){
+                debug |= DJOB;
+                printf("long option debug-job\n");
             }
             break;
 

@@ -1,9 +1,10 @@
 #include "proxy.h"
 #include "proxy2.h"
-
-#include <openssl/err.h>
 #include "requester.h"
 #include "dtls.h"
+#include "job.h"
+
+#include <openssl/err.h>
 
 
 Proxy::Proxy(const char* hostname, uint16_t port, Protocol protocol): 
