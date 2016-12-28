@@ -262,9 +262,7 @@ static int dnsinit() {
 }
 
 void query_back(DNS_STATE *dnsst){
-    if(dnsst->func){
-        dnsst->func(dnsst->param, dnsst->host, dnsst->addr.get());
-    }
+    dnsst->func(dnsst->param, dnsst->host, dnsst->addr.get());   //func 肯定不为空
     del_job((job_func)query_back, dnsst);
     delete dnsst;
 }
