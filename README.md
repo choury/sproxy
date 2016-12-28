@@ -12,4 +12,5 @@ build
 TODO
 ======
 - [x] 动态job机制，减少cpu使用率
+- [x] dns 请求时刷新ttl
 - [ ] Guest_sni 可以转化为 Guest_s(2)

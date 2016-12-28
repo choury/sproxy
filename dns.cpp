@@ -26,6 +26,7 @@ class Dns_rcd{
     std::list<sockaddr_un> addrs;
 public:
     uint16_t  ttl = 0;
+    time_t gettime = 0;
     void push(sockaddr_un &&addr);
     void down(const sockaddr_un &addr);
     bool empty();
@@ -82,7 +83,6 @@ typedef struct _DNS_RR {
 
 typedef struct _DNS_STATE {
     uint16_t id;
-    time_t reqtime;
     uint16_t times;
 #define QARECORD     0x1
 #define QAAAARECORD  0x2
@@ -101,6 +101,7 @@ std::unordered_map<std::string, Dns_rcd> rcd_index_host;
 void dns_expired(const char* host) {
     del_job((job_func)dns_expired, (void *)host);
     assert(rcd_index_host.count(host));
+    assert(rcd_index_host[host].gettime + rcd_index_host[host].ttl >= time(nullptr));
 #ifndef NDEBUG
     LOGD(DDNS, "%s: expired\n", host);
 #endif
@@ -261,7 +262,9 @@ static int dnsinit() {
 }
 
 void query_back(DNS_STATE *dnsst){
-    dnsst->func(dnsst->param, dnsst->host, dnsst->addr.get());
+    if(dnsst->func){
+        dnsst->func(dnsst->param, dnsst->host, dnsst->addr.get());
+    }
     del_job((job_func)query_back, dnsst);
     delete dnsst;
 }
@@ -271,6 +274,10 @@ void query_timeout(uint16_t id){
     auto oldstate = rcd_index_id[id];
     rcd_index_id.erase(id);
     del_job((job_func)query_timeout, (void *)(size_t)id);
+    if(oldstate->func == nullptr){    //刷新ttl的任务不重试
+        delete oldstate;
+        return;
+    }
     if (!oldstate->addr.empty()) {
         oldstate->func(oldstate->param, oldstate->host, oldstate->addr.get());
     } else  {           // 超时重试
@@ -318,7 +325,17 @@ void query(const char *host , DNSCBfunc func, void *param, uint16_t times) {
     if (rcd_index_host.count(host)) {
         dnsst->addr = rcd_index_host[host];
         add_job((job_func)query_back, dnsst, 0);
-        return ;
+        if(dnsst->addr.gettime + dnsst->addr.ttl - time(nullptr) > 15){
+            return ;
+        }
+        //刷新ttl
+        DNS_STATE * newst = new DNS_STATE;
+        newst->func = nullptr;
+        newst->times = 0;
+        newst->flags = dnsst->flags;
+        newst->id = dnsst->id;
+        snprintf(newst->host, sizeof(newst->host), "%s", host);
+        dnsst = newst;
     }
 
     for (size_t i = times%srvs.size(); i < srvs.size(); ++i) {
@@ -332,7 +349,6 @@ void query(const char *host , DNSCBfunc func, void *param, uint16_t times) {
             break;
         }
     }
-    dnsst->reqtime = time(nullptr);
     rcd_index_id[dnsst->id] = dnsst;
     add_job((job_func)query_timeout, (void *)(size_t)dnsst->id, DNSTIMEOUT);
     id_cur += 2;
@@ -404,11 +420,14 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
             rcd_index_id.erase(dnsst->id);
             del_job((job_func)query_timeout, (void *)(size_t)dnsst->id);
             if (!dnsst->addr.empty()) {
-                auto i =rcd_index_host.insert(std::make_pair(dnsst->host, dnsst->addr)).first;
-                add_job((job_func)dns_expired, (void *)i->first.c_str(), dnsst->addr.ttl * 1000);
+                dnsst->addr.gettime = time(nullptr);
+                rcd_index_host[dnsst->host] =  dnsst->addr;
+                add_job((job_func)dns_expired,
+                        (void *)rcd_index_host.find(dnsst->host)->first.c_str(),
+                        dnsst->addr.ttl * 1000);
+            }
+            if(dnsst->func){
                 dnsst->func(dnsst->param, dnsst->host, dnsst->addr.get());
-            } else {
-                dnsst->func(dnsst->param, dnsst->host, std::vector<sockaddr_un>());
             }
             delete dnsst;
         }
