@@ -20,6 +20,7 @@ struct FileStatus{
 
 class File:public Responser{
     char filename[URLLIMIT];
+    char *suffix = nullptr;
     int  ffd = 0;
     struct stat st;
     bool valid = true;
