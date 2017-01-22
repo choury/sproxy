@@ -170,7 +170,7 @@ int spliturl(const char* url, char *protocol, char* host, char* path , uint16_t*
 
 int URLEncode(char *des,const char* src, size_t len);
 int URLDecode(char *des,const char* src, size_t len);
-void Base64Encode(const char *src, size_t len, char *dst);
+void Base64Encode(const char* s, size_t len, char* dst);
 
 uint64_t getutime();
 uint32_t getmtime();

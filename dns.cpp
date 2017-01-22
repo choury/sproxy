@@ -101,7 +101,7 @@ std::unordered_map<std::string, Dns_rcd> rcd_index_host;
 void dns_expired(const char* host) {
     del_job((job_func)dns_expired, (void *)host);
     assert(rcd_index_host.count(host));
-    assert(rcd_index_host[host].gettime + rcd_index_host[host].ttl >= time(nullptr));
+    assert(time(nullptr) >= rcd_index_host[host].gettime + rcd_index_host[host].ttl);
 #ifndef NDEBUG
     LOGD(DDNS, "%s: expired\n", host);
 #endif

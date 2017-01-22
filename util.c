@@ -202,8 +202,9 @@ int URLDecode(char *des, const char *src, size_t len)
 
 static const char *base64_digs="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-void Base64Encode(const char *src, size_t len, char *dst){
+void Base64Encode(const char *s, size_t len, char *dst){
     int i=0,j=0;
+    const unsigned char* src = (const unsigned char *)s;
     for(;i+2<len;i+=3){
         dst[j++] = base64_digs[src[i]>>2];
         dst[j++] = base64_digs[((src[i]<<4) & 0x30) | src[i+1]>>4];
