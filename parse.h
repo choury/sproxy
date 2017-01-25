@@ -31,7 +31,7 @@ public:
     bool should_proxy  = false;
 
     void add(const istring& header, const std::string& value);
-    void add(const istring& header, int value);
+    void add(const istring& header, uint64_t value);
     void append(const istring& header, const std::string& value);
     void del(const istring& header);
     const char* get(const char *header) const;

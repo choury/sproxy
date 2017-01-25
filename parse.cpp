@@ -205,7 +205,7 @@ void HttpHeader::add(const istring& header, const string& value) {
     headers.insert(std::make_pair(header, value));
 }
 
-void HttpHeader::add(const istring& header, int value) {
+void HttpHeader::add(const istring& header, uint64_t value) {
     headers.insert(std::make_pair(header, std::to_string(value)));
 }
 
