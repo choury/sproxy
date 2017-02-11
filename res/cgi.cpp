@@ -1,6 +1,6 @@
 #include "cgi.h"
-#include "requester.h"
-#include "net.h"
+#include "req/requester.h"
+#include "misc/net.h"
 
 #include <map>
 #include <sstream>

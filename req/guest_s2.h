@@ -2,8 +2,8 @@
 #define GUEST_S2_H__
 
 #include "requester.h"
-#include "http2.h"
-#include "vssl.h"
+#include "prot/http2.h"
+#include "misc/vssl.h"
 
 struct ResStatus{
     Responser *res_ptr;

@@ -1,5 +1,5 @@
 #include "http.h"
-#include "net.h"
+#include "misc/net.h"
 
 #include <string.h>
 #include <assert.h>

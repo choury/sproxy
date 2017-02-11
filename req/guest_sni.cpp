@@ -1,6 +1,6 @@
 #include "guest_sni.h"
-#include "host.h"
-#include "tls.h"
+#include "res/host.h"
+#include "misc/tls.h"
 
 Guest_sni::Guest_sni(int fd, sockaddr_in6 *myaddr):Guest(fd, myaddr){
     Http_Proc = &Guest_sni::AlwaysProc;

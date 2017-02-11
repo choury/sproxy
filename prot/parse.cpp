@@ -1,8 +1,8 @@
 #include "parse.h"
-#include "net.h"
+#include "misc/net.h"
 #include "http2.h"
-#include "cgi.h"
-#include "requester.h"
+#include "res/cgi.h"
+#include "req/requester.h"
 
 #include <fstream>
 #include <algorithm>

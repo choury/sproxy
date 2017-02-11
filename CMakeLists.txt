@@ -45,14 +45,17 @@ if (HAVE_SAN_UNDEF)
 endif()
 
 
-add_executable(sproxy main.cpp peer.cpp cgi.cpp file.cpp
-http.cpp http2.cpp hpack.cpp responser.cpp requester.cpp
-host.cpp proxy.cpp proxy2.cpp
-guest.cpp  guest_sni.cpp guest_s.cpp guest_s2.cpp
-tls.c dtls.cpp util.c parse.cpp net.c dns.cpp job.cpp)
 
+ADD_SUBDIRECTORY(misc)
+ADD_SUBDIRECTORY(prot)
+ADD_SUBDIRECTORY(req)
+ADD_SUBDIRECTORY(res)
+
+INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR})
+
+add_executable(sproxy main.cpp peer.cpp)
 set_target_properties(sproxy PROPERTIES OUTPUT_NAME "sproxy")
-target_link_libraries(sproxy ${OPENSSL_LIBRARIES} dl)
+target_link_libraries(sproxy ${OPENSSL_LIBRARIES} dl req res prot misc)
 
 
 install(TARGETS sproxy RUNTIME DESTINATION bin)

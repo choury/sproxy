@@ -2,7 +2,7 @@
 #define PARSE_H__
 
 #include "common.h"
-#include "istring.h"
+#include "misc/istring.h"
 
 #include <map>
 #include <set>

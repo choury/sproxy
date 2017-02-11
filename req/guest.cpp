@@ -1,7 +1,7 @@
 #include "guest.h"
-#include "net.h"
-#include "responser.h"
-#include "job.h"
+#include "misc/net.h"
+#include "res/responser.h"
+#include "misc/job.h"
 
 #include <set>
 #include <string.h>

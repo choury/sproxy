@@ -2,7 +2,7 @@
 #define HPACK_H__
 #include "binmap.h"
 
-#include "istring.h"
+#include "misc/istring.h"
 
 struct Index{
     std::string name;

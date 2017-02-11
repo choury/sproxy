@@ -1,8 +1,8 @@
 #include "proxy.h"
 #include "proxy2.h"
-#include "requester.h"
-#include "dtls.h"
-#include "job.h"
+#include "req/requester.h"
+#include "misc/dtls.h"
+#include "misc/job.h"
 
 #include <openssl/err.h>
 

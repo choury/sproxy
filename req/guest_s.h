@@ -2,7 +2,7 @@
 #define GUEST_S_H__
 
 #include "guest.h"
-#include "vssl.h"
+#include "misc/vssl.h"
 
 class Guest_s:public Guest {
     Ssl *ssl;

@@ -1,6 +1,6 @@
 #include "file.h"
-#include "net.h"
-#include "requester.h"
+#include "misc/net.h"
+#include "req/requester.h"
 
 #include <vector>
 

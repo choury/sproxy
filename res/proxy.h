@@ -2,7 +2,7 @@
 #define PROXY_H__
 
 #include "host.h"
-#include "vssl.h"
+#include "misc/vssl.h"
 
 class Proxy : public Host{
     SSL_CTX *ctx = nullptr;

@@ -1,5 +1,5 @@
-#include "cgi.h"
-#include "net.h"
+#include "res/cgi.h"
+#include "misc/net.h"
 #include <unistd.h>
 
 #include <iostream>

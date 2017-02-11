@@ -2,8 +2,8 @@
 #define PROXY2_H__
 
 #include "responser.h"
-#include "http2.h"
-#include "vssl.h"
+#include "prot/http2.h"
+#include "misc/vssl.h"
 
 struct ReqStatus{
     Requester *req_ptr;

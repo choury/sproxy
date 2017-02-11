@@ -2,8 +2,8 @@
 #define HOST_H__
 
 #include "responser.h"
-#include "http.h"
-#include "dns.h"
+#include "prot/http.h"
+#include "misc/dns.h"
 
 class Requester;
 

@@ -2,7 +2,7 @@
 #define GUEST_H__
 
 #include "requester.h"
-#include "http.h"
+#include "prot/http.h"
 #include <netinet/in.h>
 #include <queue>
 
