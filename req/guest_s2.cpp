@@ -28,6 +28,7 @@ Guest_s2::Guest_s2(int fd, struct sockaddr_in6* myaddr, Ssl* ssl):
 }
 
 Guest_s2::~Guest_s2() {
+    del_job((job_func)peer_lost, this);
     delete ssl;
 }
 
@@ -136,8 +137,9 @@ void Guest_s2::defaultHE(uint32_t events) {
             return;
         }else{
             for(auto i = waitlist.begin(); i!= waitlist.end(); ){
-                if(bufleft(reinterpret_cast<void *>(*i))){
-                    statusmap.at(*i).res_ptr->writedcb(reinterpret_cast<void*>(*i));
+                ResStatus& status = statusmap.at(*i);
+                if(status.remotewinsize > 0){
+                    status.res_ptr->writedcb(status.res_index);
                     i = waitlist.erase(i);
                 }else{
                     i++;
@@ -222,7 +224,6 @@ void Guest_s2::clean(uint32_t errcode, void* index) {
             i.second.res_ptr->clean(errcode, i.second.res_index);
         }
         statusmap.clear();
-        del_job((job_func)peer_lost, this);
         return Peer::clean(errcode, 0);
     }else{
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);

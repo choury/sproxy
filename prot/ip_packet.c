@@ -340,7 +340,7 @@ uint16_t checksum_comp(uint16_t *addr, int len) {
  */
 char* build_tcpip_packet(const struct ip_packet* pac,
                            uint16_t window, uint8_t flags,
-                           unsigned int *packetlen) {
+                           size_t* packetlen) {
     char *packet;
     struct ip *iplocal;
     struct tcphdr *tcplocal;
@@ -357,13 +357,13 @@ char* build_tcpip_packet(const struct ip_packet* pac,
     }
 
     *packetlen = sizeof(ip_hdr) + sizeof(tcp_hdr) + pac->tcpoptlen + pac->datalen;
-    LOGD(DVPN, "packetlen %d, datalen %d.", *packetlen, pac->datalen);
+    LOGD(DVPN, "packetlen %zd, datalen %d.", *packetlen, pac->datalen);
     if (*packetlen % 2)
         chklen = *packetlen + 1;
     else
         chklen = *packetlen;
 
-    packet = (char *) malloc(chklen + sizeof(*phdr));
+    packet = (char *) p_malloc(chklen + sizeof(*phdr));
 
     iplocal = (struct ip *) packet;
     tcplocal = (struct tcphdr *) ((char *) iplocal + sizeof(ip_hdr));

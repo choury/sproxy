@@ -248,7 +248,8 @@ void Cgi::defaultHE(uint32_t events) {
         int ret = Peer::Write_buff();
         if(ret > 0 && ret != WRITE_NOTHING){
             for(auto i: waitlist){
-                statusmap.at(i).req_ptr->writedcb(statusmap.at(i).req_index);
+                CgiStatus& status = statusmap.at(i);
+                status.req_ptr->writedcb(status.req_index);
             }
             waitlist.clear();
         }else if(ret <= 0 && showerrinfo(ret, "cgi write error")) {

@@ -162,6 +162,7 @@ do {\
 #define INTERNAL_ERR        37
 #define PEER_LOST_ERR       38
 #define IP_BLOCK_ERR        39
+#define TCP_RESET_ERR        40
 
 typedef unsigned char uchar;
 

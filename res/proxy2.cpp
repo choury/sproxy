@@ -35,6 +35,8 @@ Proxy2::Proxy2(int fd, SSL_CTX *ctx, Ssl *ssl): ctx(ctx), ssl(ssl) {
 Proxy2::~Proxy2() {
     delete ssl;
     SSL_CTX_free(ctx);
+    del_job((job_func)ping_check, this);
+    del_job((job_func)ping_timeout, this);
 }
 
 
@@ -105,8 +107,10 @@ void Proxy2::defaultHE(uint32_t events) {
             return;
         }else{
             for(auto i = waitlist.begin(); i!= waitlist.end(); ){
-                if(bufleft(reinterpret_cast<void *>(*i))){
-                    statusmap.at(*i).req_ptr->writedcb(reinterpret_cast<void *>(*i));
+                assert(statusmap.count(*i));
+                ReqStatus& status = statusmap.at(*i);
+                if(status.remotewinsize > 0){
+                    status.req_ptr->writedcb(status.req_index);
                     i = waitlist.erase(i);
                 }else{
                     i++;
@@ -248,8 +252,6 @@ void Proxy2::clean(uint32_t errcode, void* index) {
             i.second.req_ptr->clean(errcode, i.second.req_index);
         }
         statusmap.clear();
-        del_job((job_func)ping_check, this);
-        del_job((job_func)ping_timeout, this);
         return Peer::clean(errcode, 0);
     }else{
         uint32_t id = (uint32_t)(long)index;

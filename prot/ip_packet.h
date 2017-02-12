@@ -102,7 +102,7 @@ uint16_t checksum_comp(uint16_t *addr, int len);
 /* build packet  */
 char *build_tcpip_packet(const struct ip_packet* pac,
                          uint16_t window, uint8_t flags,
-                         unsigned int *packetlen);
+                         size_t* packetlen);
 
 char *build_udpip_packet(const struct ip_packet*pac, unsigned int *packetlen);
 
