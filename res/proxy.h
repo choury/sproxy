@@ -18,7 +18,7 @@ public:
     explicit Proxy(const char *hostname, uint16_t port, Protocol protocol);
     virtual ~Proxy();
     
-    virtual uint32_t request(HttpReqHeader&& req)override;
+    virtual void* request(HttpReqHeader&& req)override;
     static Responser* getproxy(HttpReqHeader &req, Responser* responser_ptr);
 };
 

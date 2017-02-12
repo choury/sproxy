@@ -26,7 +26,7 @@ protected:
     std::map<istring, std::string> headers;
 public:
     std::set<std::string> cookies;
-    uint32_t http_id = 0;  // 由http2协议使用
+    void* index = 0;
     uint8_t flags = 0;
     bool should_proxy  = false;
 
@@ -38,7 +38,7 @@ public:
 
     virtual bool no_body() const = 0;
     virtual char *getstring(size_t &len) const = 0;
-    virtual Http2_header *getframe(Index_table *index_table) const = 0;
+    virtual Http2_header *getframe(Index_table *index_table, uint32_t http_id) const = 0;
     virtual CGI_Header *getcgi(uint32_t cgi_id) const = 0;
     virtual ~HttpHeader(){}
 };
@@ -68,7 +68,7 @@ public:
     
     virtual bool no_body() const override;
     virtual char *getstring(size_t &len) const override;
-    virtual Http2_header *getframe(Index_table *index_table) const override;
+    virtual Http2_header *getframe(Index_table *index_table, uint32_t http_id) const override;
     virtual CGI_Header *getcgi(uint32_t cgi_id) const override;
     
     std::map<std::string, std::string> getcookies()const;
@@ -85,7 +85,7 @@ public:
     
     virtual bool no_body() const override;
     virtual char *getstring(size_t &len) const override;
-    virtual Http2_header *getframe(Index_table *index_table) const override;
+    virtual Http2_header *getframe(Index_table *index_table, uint32_t http_id) const override;
     virtual CGI_Header *getcgi(uint32_t cgi_id) const override;
 };
 

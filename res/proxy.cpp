@@ -189,7 +189,7 @@ void Proxy::shakehandHE(uint32_t events) {
         {
             Proxy2 *new_proxy = new Proxy2(fd, ctx,ssl);
             new_proxy->init();
-            requester_ptr->ResetResponser(new_proxy, req.http_id);
+            requester_ptr->ResetResponser(new_proxy, req.index);
             new_proxy->request(std::move(req));
             if(!proxy2){
                 proxy2 = new_proxy;
@@ -209,7 +209,7 @@ void Proxy::shakehandHE(uint32_t events) {
     }
 }
 
-uint32_t Proxy::request(HttpReqHeader&& req) {
+void* Proxy::request(HttpReqHeader&& req) {
     if(use_http2){
         this->req = req;
     }

@@ -69,7 +69,7 @@ err:
         close(fd);
     }
     HttpResHeader res(errinfo);
-    res.http_id = req.http_id;
+    res.index = req.index;
     req.src->response(std::move(res));
     throw 0;
 }
@@ -78,7 +78,8 @@ Cgi::~Cgi() {
     cgimap.erase(filename);
 } 
 
-ssize_t Cgi::Write(void *buff, size_t size, uint32_t id) {
+ssize_t Cgi::Write(void *buff, size_t size, void* index) {
+    uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id)){
         size = size > CGI_LEN_MAX ? CGI_LEN_MAX : size;
         CGI_Header *header = (CGI_Header *)p_move(buff, -(char)sizeof(CGI_Header));
@@ -175,7 +176,7 @@ void Cgi::InProc() {
             res.add("Transfer-Encoding", "chunked");
         }
         requester = statusmap.at(cgi_id).req_ptr;
-        res.http_id = statusmap.at(cgi_id).req_id;
+        res.index = statusmap.at(cgi_id).req_index;
         requester->response(std::move(res));
         status = Status::WaitHeadr;
         cgi_getlen = 0;
@@ -189,7 +190,7 @@ void Cgi::InProc() {
             CGI_NameValue *nv = (CGI_NameValue *)(header+1);
             switch(ntohl(nv->name)){
             case CGI_NAME_BUFFLEFT:
-                set32(nv->value, htonl(requester->bufleft(statusmap.at(cgi_id).req_id)));
+                set32(nv->value, htonl(requester->bufleft(statusmap.at(cgi_id).req_index)));
                 header->contentLength = sizeof(CGI_NameValue) + sizeof(uint32_t);
                 break;
             default:
@@ -207,15 +208,15 @@ ignore:
     case Status::HandleLeft:
         cgi_id = ntohl(header->requestId);
         requester = statusmap.at(cgi_id).req_ptr;
-        len = requester->bufleft(statusmap.at(cgi_id).req_id);
+        len = requester->bufleft(statusmap.at(cgi_id).req_index);
         if (len <= 0) {
             LOGE("The requester's write buff is full\n");
-            requester->wait(statusmap.at(cgi_id).req_id);
+            requester->wait(statusmap.at(cgi_id).req_index);
             updateEpoll(0);
             return;
         }
         len = Min(len, cgi_getlen - cgi_outlen);
-        len = requester->Write((const char *)cgi_buff + cgi_outlen, len, statusmap.at(cgi_id).req_id);
+        len = requester->Write((const char *)cgi_buff + cgi_outlen, len, statusmap.at(cgi_id).req_index);
         cgi_outlen += len;
         if (cgi_outlen == cgi_getlen) {
             status = Status::WaitHeadr;
@@ -247,7 +248,7 @@ void Cgi::defaultHE(uint32_t events) {
         int ret = Peer::Write_buff();
         if(ret > 0 && ret != WRITE_NOTHING){
             for(auto i: waitlist){
-                statusmap.at(i).req_ptr->writedcb(i);
+                statusmap.at(i).req_ptr->writedcb(statusmap.at(i).req_index);
             }
             waitlist.clear();
         }else if(ret <= 0 && showerrinfo(ret, "cgi write error")) {
@@ -257,30 +258,31 @@ void Cgi::defaultHE(uint32_t events) {
     }
 }
 
-void Cgi::clean(uint32_t errcode, uint32_t id) {
-    if(id == 0) {
+void Cgi::clean(uint32_t errcode, void* index) {
+    if(index == nullptr) {
         for(auto i: statusmap){
-            i.second.req_ptr->clean(errcode, i.second.req_id);
+            i.second.req_ptr->clean(errcode, i.second.req_index);
         }
         statusmap.clear();
         return Peer::clean(errcode, 0);
     }else{
+        uint32_t id = (uint32_t)(long)index;
         statusmap.erase(id);
         waitlist.erase(id);
     }
 }
 
 
-uint32_t Cgi::request(HttpReqHeader&& req){
+void* Cgi::request(HttpReqHeader&& req){
     uint32_t cgi_id = curid++;
-    statusmap.insert(std::make_pair(cgi_id, CgiStatus{req.src, req.http_id}));
+    statusmap.insert(std::make_pair(cgi_id, CgiStatus{req.src, req.index}));
     CGI_Header *header = req.getcgi(cgi_id);
     Responser::Write(header, sizeof(CGI_Header) + ntohs(header->contentLength), 0);
-    return cgi_id;
+    return reinterpret_cast<void*>(cgi_id);
 }
 
-void Cgi::wait(uint32_t id) {
-    waitlist.insert(id);
+void Cgi::wait(void* index) {
+    waitlist.insert((uint32_t)(long)index);
 }
 
 

@@ -9,7 +9,7 @@
 
 struct FileStatus{
     Requester* req_ptr;
-    uint32_t req_id;
+    void*      req_index;
     bool responsed;
     bool head_only;
     time_t modified_since;
@@ -28,11 +28,11 @@ class File:public Responser{
     std::map<uint32_t, FileStatus> statusmap;
     bool checkvalid();
     virtual void defaultHE(uint32_t events);
-    virtual uint32_t request(HttpReqHeader&& req) override;
+    virtual void* request(HttpReqHeader&& req) override;
 public:
     explicit File(HttpReqHeader& req);
     ~File();
-    virtual void clean(uint32_t errcode, uint32_t id)override;
+    virtual void clean(uint32_t errcode, void* index)override;
     static File* getfile(HttpReqHeader& req);
 };
 

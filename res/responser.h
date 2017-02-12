@@ -10,7 +10,7 @@ class Responser:public Peer{
 protected:
     virtual void closeHE(uint32_t events) override;
 public:
-    virtual uint32_t request(HttpReqHeader&& req) = 0;
+    virtual void* request(HttpReqHeader&& req) = 0;
 };
 
 Responser* distribute(HttpReqHeader& req, Responser* responser_ptr);

@@ -7,7 +7,7 @@
 
 struct ResStatus{
     Responser *res_ptr;
-    uint32_t   res_id;
+    void*      res_index;
     int32_t remotewinsize; //对端提供的窗口大小，发送时减小，收到对端update时增加
     int32_t localwinsize; //发送给对端的窗口大小，接受时减小，给对端发送update时增加
 };
@@ -37,15 +37,15 @@ public:
     explicit Guest_s2(int fd, struct sockaddr_in6* myaddr, Ssl *ssl);
     virtual ~Guest_s2();
     
-    virtual void ResetResponser(Responser *r, uint32_t id)override;
-    virtual void clean(uint32_t errcode, uint32_t id)override;
+    virtual void ResetResponser(Responser *r, void* index)override;
+    virtual void clean(uint32_t errcode, void* index)override;
 
-    virtual ssize_t Write(void *buff, size_t size, uint32_t)override;
+    virtual ssize_t Write(void *buff, size_t size, void* index)override;
     
-    virtual int32_t bufleft(uint32_t id)override;
-    virtual void wait(uint32_t id)override;
+    virtual int32_t bufleft(void* index)override;
+    virtual void wait(void* index)override;
     virtual void response(HttpResHeader&& res)override;
-    virtual void writedcb(uint32_t id)override;
+    virtual void writedcb(void* index)override;
     static void peer_lost(Guest_s2* g);
 };
 

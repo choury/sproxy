@@ -99,7 +99,7 @@ void Host::waitconnectHE(uint32_t events) {
 
         if (http_flag & HTTP_CONNECT_F){
             HttpResHeader res(H200);
-            res.http_id = requester_id;
+            res.index = requester_index;
             requester_ptr->response(std::move(res));
         }
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
@@ -113,7 +113,7 @@ reconnect:
 }
 
 void Host::defaultHE(uint32_t events) {
-    assert(requester_ptr && requester_id);
+    assert(requester_ptr && requester_index);
 
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
@@ -139,12 +139,12 @@ void Host::defaultHE(uint32_t events) {
             return;
         }
         if(ret != WRITE_NOTHING && requester_ptr)
-            requester_ptr->writedcb(requester_id);
+            requester_ptr->writedcb(requester_index);
     }
 }
 
 
-uint32_t Host::request(HttpReqHeader&& req) {
+void* Host::request(HttpReqHeader&& req) {
     size_t len;
     char *buff = req.getstring(len);
     Responser::Write(buff, len, 0);
@@ -157,15 +157,15 @@ uint32_t Host::request(HttpReqHeader&& req) {
         Http_Proc = &Host::AlwaysProc;
     }
     requester_ptr = req.src;
-    requester_id = req.http_id;
+    requester_index = req.index;
     assert(requester_ptr);
-    assert(requester_id);
-    return 1;
+    assert(requester_index);
+    return (void *)1;
 }
 
 void Host::ResProc(HttpResHeader&& res) {
-    assert(requester_ptr && requester_id);
-    res.http_id = requester_id;
+    assert(requester_ptr && requester_index);
+    res.index = requester_index;
     requester_ptr->response(std::move(res));
 }
 
@@ -207,31 +207,31 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
         return -1;
     }
 
-    int len = requester_ptr->bufleft(requester_id);
+    int len = requester_ptr->bufleft(requester_index);
 
     if (len <= 0) {
         LOGE("(%s): The guest's write buff is full\n", requester_ptr->getsrc());
-        requester_ptr->wait(requester_id);
+        requester_ptr->wait(requester_index);
         updateEpoll(0);
         return -1;
     }
 
-    return requester_ptr->Write(buff, Min(size, len), requester_id);
+    return requester_ptr->Write(buff, Min(size, len), requester_index);
 }
 
-void Host::clean(uint32_t errcode, uint32_t id) {
-    assert(id == 1 || id == 0);
+void Host::clean(uint32_t errcode, void* index) {
+    assert((long)index == 1 || (void*)index == 0);
     if(requester_ptr){
         if(errcode == CONNECT_ERR){
             HttpResHeader res(H408);
-            res.http_id = requester_id;
+            res.index = requester_index;
             requester_ptr->response(std::move(res));
         }
-        if(id == 0){
-            requester_ptr->clean(errcode, requester_id);
+        if(index == nullptr){
+            requester_ptr->clean(errcode, requester_index);
         }
         requester_ptr = nullptr;
-        requester_id = 0;
+        requester_index = nullptr;
     }
     if(hostname[0]){
         Peer::clean(errcode, 0);

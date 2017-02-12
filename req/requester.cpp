@@ -2,11 +2,13 @@
 
 
 Requester::Requester(int fd, struct sockaddr_in6* myaddr): Peer(fd) {
-    inet_ntop(AF_INET6, &myaddr->sin6_addr, sourceip, sizeof(sourceip));
-    sourceport = ntohs(myaddr->sin6_port);
+    if(myaddr){
+        inet_ntop(AF_INET6, &myaddr->sin6_addr, sourceip, sizeof(sourceip));
+        sourceport = ntohs(myaddr->sin6_port);
 
-    updateEpoll(EPOLLIN | EPOLLOUT);
-    handleEvent = (void (Con::*)(uint32_t))&Requester::defaultHE;
+        updateEpoll(EPOLLIN | EPOLLOUT);
+        handleEvent = (void (Con::*)(uint32_t))&Requester::defaultHE;
+    }
 }
 
 
@@ -27,7 +29,7 @@ void Requester::closeHE(uint32_t events) {
 }
 
 
-void Requester::ResetResponser(Responser* , uint32_t) {
+void Requester::ResetResponser(Responser* , void*) {
 }
 
 const char* Requester::getip(){

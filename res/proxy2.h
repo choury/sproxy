@@ -7,7 +7,7 @@
 
 struct ReqStatus{
     Requester *req_ptr;
-    uint32_t   req_id;
+    void*      req_index;
     int32_t remotewinsize; //对端提供的窗口大小，发送时减小，收到对端update时增加
     int32_t localwinsize; //发送给对端的窗口大小，接受时减小，给对端发送update时增加
 };
@@ -33,15 +33,15 @@ public:
     explicit Proxy2(int fd, SSL_CTX *ctx, Ssl *ssl);
     virtual ~Proxy2();
     
-    virtual void clean(uint32_t errcode, uint32_t id)override;
-    virtual ssize_t Write(void *buff, size_t size, uint32_t)override;
+    virtual void clean(uint32_t errcode, void* index)override;
+    virtual ssize_t Write(void *buff, size_t size, void* index)override;
     
     virtual void ResProc(HttpResHeader&& res)override;
-    virtual uint32_t request(HttpReqHeader&& req)override;
+    virtual void* request(HttpReqHeader&& req)override;
     
-    virtual int32_t bufleft(uint32_t id)override;
-    virtual void wait(uint32_t id)override;
-    virtual void writedcb(uint32_t id)override;
+    virtual int32_t bufleft(void* index)override;
+    virtual void wait(void* index)override;
+    virtual void writedcb(void* index)override;
 
     static void ping_check(Proxy2 *p);
     static void ping_timeout(Proxy2 *p);

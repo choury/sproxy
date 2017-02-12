@@ -64,23 +64,23 @@ int Peer::Write_buff() {
 }
 
 
-ssize_t Peer::Write(const void* buff, size_t size, uint32_t id) {
-    return Write(p_memdup(buff, size), size, id);
+ssize_t Peer::Write(const void* buff, size_t size, void* index) {
+    return Write(p_memdup(buff, size), size, index);
 }
 
-ssize_t Peer::Write(void* buff, size_t size, uint32_t) {
+ssize_t Peer::Write(void* buff, size_t size, void*) {
     return push_buff(buff, size);
 }
 
-void Peer::wait(uint32_t){
+void Peer::wait(void*){
 
 }
 
-void Peer::writedcb(uint32_t) {
+void Peer::writedcb(void*) {
     updateEpoll(events | EPOLLIN);
 }
 
-int32_t Peer::bufleft(uint32_t) {
+int32_t Peer::bufleft(void*) {
     if(writelen >= 1024*1024)
         return 0;
     else
@@ -89,7 +89,7 @@ int32_t Peer::bufleft(uint32_t) {
 
 
 
-void Peer::clean(uint32_t errcode, uint32_t) {
+void Peer::clean(uint32_t errcode, void*) {
     if(fd > 0) {
         updateEpoll(EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Peer::closeHE;

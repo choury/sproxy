@@ -38,7 +38,7 @@ class Requester;
 
 struct CgiStatus{
     Requester *req_ptr;
-    uint32_t   req_id;
+    void*      req_index;
 };
 
 class Cgi:public Responser{
@@ -57,10 +57,10 @@ class Cgi:public Responser{
 public:
     explicit Cgi(HttpReqHeader& req);
     virtual ~Cgi();
-    virtual ssize_t Write(void *buff, size_t size, uint32_t id)override;
-    virtual void wait(uint32_t id)override;
-    virtual void clean(uint32_t errcode, uint32_t id)override;
-    virtual uint32_t request(HttpReqHeader&& req)override;
+    virtual ssize_t Write(void *buff, size_t size, void* info)override;
+    virtual void wait(void* index)override;
+    virtual void clean(uint32_t errcode, void* index)override;
+    virtual void* request(HttpReqHeader&& req)override;
     static Cgi* getcgi(HttpReqHeader& req);
 };
 

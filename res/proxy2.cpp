@@ -47,7 +47,8 @@ ssize_t Proxy2::Write(const void *buff, size_t len) {
     return ssl->write(buff, len);
 }
 
-ssize_t Proxy2::Write(void* buff, size_t size, uint32_t id) {
+ssize_t Proxy2::Write(void* buff, size_t size, void* index) {
+    uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     size = Min(size, FRAMEBODYLIMIT);
     Http2_header *header=(Http2_header *)p_move(buff, -(char)sizeof(Http2_header));
@@ -69,9 +70,9 @@ void Proxy2::PushFrame(Http2_header *header){
 }
 
 
-int32_t Proxy2::bufleft(uint32_t id) {
-    if(id)
-        return Min(statusmap.at(id).remotewinsize, this->remotewinsize);
+int32_t Proxy2::bufleft(void* index) {
+    if(index)
+        return Min(statusmap.at((uint32_t)(long)index).remotewinsize, this->remotewinsize);
     else
         return this->remotewinsize;
 }
@@ -104,8 +105,8 @@ void Proxy2::defaultHE(uint32_t events) {
             return;
         }else{
             for(auto i = waitlist.begin(); i!= waitlist.end(); ){
-                if(bufleft(*i)){
-                    statusmap.at(*i).req_ptr->writedcb(*i);
+                if(bufleft(reinterpret_cast<void *>(*i))){
+                    statusmap.at(*i).req_ptr->writedcb(reinterpret_cast<void *>(*i));
                     i = waitlist.erase(i);
                 }else{
                     i++;
@@ -127,16 +128,16 @@ void Proxy2::DataProc(const Http2_header* header) {
         Requester* requester = status.req_ptr;
         if(len > status.localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
-            requester->clean(ERR_FLOW_CONTROL_ERROR, status.req_id);
+            requester->clean(ERR_FLOW_CONTROL_ERROR, status.req_index);
             LOGE("(%s) :[%d] window size error\n", requester->getsrc(), id);
             statusmap.erase(id);
             waitlist.erase(id);
             return;
         }
-        requester->Write(header+1, len, status.req_id);
+        requester->Write(header+1, len, status.req_index);
         if(header->flags & END_STREAM_F){
             if(len)
-                requester->Write((const void*)nullptr, 0, status.req_id);
+                requester->Write((const void*)nullptr, 0, status.req_index);
         }else{
             status.localwinsize -= len;
         }
@@ -159,8 +160,8 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
             LOGE("(%s) [%d]: stream reseted: %d\n",
                  status.req_ptr->getsrc(), id, errcode);
         }
-        status.req_ptr->Write((const void*)nullptr, 0, status.req_id);  //for http/1.0
-        status.req_ptr->clean(errcode, status.req_id);
+        status.req_ptr->Write((const void*)nullptr, 0, status.req_index);  //for http/1.0
+        status.req_ptr->clean(errcode, status.req_index);
         statusmap.erase(id);
         waitlist.erase(id);
     }
@@ -174,7 +175,7 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
             LOGD(DHTTP2, "window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
 #endif
             status.remotewinsize += size;
-            status.req_ptr->writedcb(status.req_id);
+            status.req_ptr->writedcb(status.req_index);
             waitlist.erase(id);
 #ifndef NDEBUG
         }else{
@@ -203,32 +204,33 @@ void Proxy2::PingProc(Http2_header *header){
 }
 
 
-uint32_t Proxy2::request(HttpReqHeader&& req) {
+void* Proxy2::request(HttpReqHeader&& req) {
     statusmap[curid] = ReqStatus{
        req.src,
-       req.http_id,
+       req.index,
        (int32_t)remoteframewindowsize,
        localframewindowsize
     };
-    req.http_id = curid;  //change to proxy server's id
+    req.index = reinterpret_cast<void*>(curid);  //change to proxy server's id
     curid += 2;
-    PushFrame(req.getframe(&request_table));
-    return req.http_id;
+    PushFrame(req.getframe(&request_table, (uint32_t)(long)req.index));
+    return req.index;
 }
 
 void Proxy2::ResProc(HttpResHeader&& res) {
-    if(statusmap.count(res.http_id)){
-        ReqStatus& status = statusmap[res.http_id];
+    uint32_t id = (uint32_t)(long)res.index;
+    if(statusmap.count(id)){
+        ReqStatus& status = statusmap[id];
         if((res.flags & END_STREAM_F) == 0 &&
            !res.get("Content-Length") &&
            res.status[0] != '1')  //1xx should not have body
         {
             res.add("Transfer-Encoding", "chunked");
         }
-        res.http_id = status.req_id;  //change back to req's id
+        res.index = status.req_index;  //change back to req's id
         status.req_ptr->response(std::move(res));
     }else{
-        Reset(res.http_id, ERR_STREAM_CLOSED);
+        Reset(id, ERR_STREAM_CLOSED);
     }
 }
 
@@ -239,17 +241,18 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
     remotewinsize += diff;
 }
 
-void Proxy2::clean(uint32_t errcode, uint32_t id) {
-    if(id == 0) {
+void Proxy2::clean(uint32_t errcode, void* index) {
+    if(index == nullptr) {
         proxy2 = (proxy2 == this) ? nullptr: proxy2;
         for(auto i: statusmap){
-            i.second.req_ptr->clean(errcode, i.second.req_id);
+            i.second.req_ptr->clean(errcode, i.second.req_index);
         }
         statusmap.clear();
         del_job((job_func)ping_check, this);
         del_job((job_func)ping_timeout, this);
         return Peer::clean(errcode, 0);
     }else{
+        uint32_t id = (uint32_t)(long)index;
         assert(statusmap.count(id));
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
@@ -257,11 +260,12 @@ void Proxy2::clean(uint32_t errcode, uint32_t id) {
     }
 }
 
-void Proxy2::wait(uint32_t id) {
-    waitlist.insert(id);
+void Proxy2::wait(void* index) {
+    waitlist.insert((uint32_t)(long)index);
 }
 
-void Proxy2::writedcb(uint32_t id){
+void Proxy2::writedcb(void* index){
+    uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         size_t len = localframewindowsize - status.localwinsize;

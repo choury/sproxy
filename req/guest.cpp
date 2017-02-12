@@ -17,8 +17,8 @@ Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Requester(fd, myaddr) {
 }
 
 
-void Guest::ResetResponser(Responser *r, uint32_t id){
-    assert(id == 1);
+void Guest::ResetResponser(Responser *r, void* index){
+    assert((uint32_t)(long)index == 1);
     assert(r);
     responser_ptr = r;
 }
@@ -34,17 +34,17 @@ void Guest::request_next() {
             }else{
                 status = Status::requesting;
             }
-            uint32_t res_id = res_ptr->request(std::move(req.header));
-            if(responser_ptr && (res_ptr != responser_ptr || res_id != responser_id)){
-                responser_ptr->clean(NOERROR, responser_id);
+            void* res_index = res_ptr->request(std::move(req.header));
+            if(responser_ptr && (res_ptr != responser_ptr || res_index != responser_index)){
+                responser_ptr->clean(NOERROR, responser_index);
             }
             responser_ptr = res_ptr;
-            responser_id = res_id;
+            responser_index = res_index;
             while(1){
                 auto block = req.body.pop();
                 if(block.second == 0)
                     break;
-                responser_ptr->Write(block.first, block.second, responser_id);
+                responser_ptr->Write(block.first, block.second, responser_index);
             }
         }
     }
@@ -76,7 +76,7 @@ void Guest::defaultHE(uint32_t events) {
             return;
         }
         if (ret != WRITE_NOTHING && responser_ptr){
-            responser_ptr->writedcb(responser_id);
+            responser_ptr->writedcb(responser_index);
         }
 
     }
@@ -93,7 +93,7 @@ void Guest::ErrProc(int errcode) {
 }
 
 void Guest::ReqProc(HttpReqHeader&& req) {
-    req.http_id = 1;
+    req.index = (void *)1;
     if(status == Status::none && reqs.empty()){
         Responser* res_ptr = distribute(req, responser_ptr);
         if(res_ptr){
@@ -102,12 +102,12 @@ void Guest::ReqProc(HttpReqHeader&& req) {
             }else{
                 status = Status::requesting;
             }
-            uint32_t res_id = res_ptr->request(std::move(req));
-            if(responser_ptr && (res_ptr != responser_ptr || res_id != responser_id)){
-                responser_ptr->clean(NOERROR, responser_id);
+            void* res_index = res_ptr->request(std::move(req));
+            if(responser_ptr && (res_ptr != responser_ptr || res_index != responser_index)){
+                responser_ptr->clean(NOERROR, responser_index);
             }
             responser_ptr = res_ptr;
-            responser_id = res_id;
+            responser_index = res_index;
         }
     }else{
         reqs.push(HttpReq(req));
@@ -115,7 +115,7 @@ void Guest::ReqProc(HttpReqHeader&& req) {
 }
 
 void Guest::response(HttpResHeader&& res) {
-    assert(res.http_id == 1);
+    assert((uint32_t)(long)res.index == 1);
     if(status == Status::presistent){
         if(memcmp(res.status, "200", 3) == 0){
             strcpy(res.status, "200 Connection established");
@@ -133,10 +133,10 @@ void Guest::response(HttpResHeader&& res) {
     Requester::Write(buff, len, 0);
 }
 
-ssize_t Guest::Write(void *buff, size_t size, uint32_t id) {
-    assert(id == 1);
+ssize_t Guest::Write(void *buff, size_t size, void* index) {
+    assert((uint32_t)(long)index == 1);
     size_t ret;
-    size_t len = Min(bufleft(responser_id), size);
+    size_t len = Min(bufleft(responser_index), size);
     if(status == Status::chunked){
         char chunkbuf[100];
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)size);
@@ -145,7 +145,7 @@ ssize_t Guest::Write(void *buff, size_t size, uint32_t id) {
         ret = Requester::Write(buff, chunklen + len, 0);
         if(ret > 0){
             assert(ret >= (size_t)chunklen);
-            if(Requester::Write(p_memdup(CRLF, strlen(CRLF)), strlen(CRLF), id) != strlen(CRLF))
+            if(Requester::Write(p_memdup(CRLF, strlen(CRLF)), strlen(CRLF), index) != strlen(CRLF))
                 assert(0);
             ret -= chunklen;
         }
@@ -166,24 +166,24 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
         clean(PEER_LOST_ERR, 0);
         return -1;
     }
-    int len = responser_ptr->bufleft(responser_id);
+    int len = responser_ptr->bufleft(responser_index);
     if (len <= 0) {
         LOGE("(%s): The host's buff is full\n", getsrc());
-        responser_ptr->wait(responser_id);
+        responser_ptr->wait(responser_index);
         updateEpoll(0);
         return -1;
     }
     if(reqs.size()){
         return reqs.back().body.push(buff, size);
     }else{
-        return responser_ptr->Write(buff, Min(size, len), responser_id);
+        return responser_ptr->Write(buff, Min(size, len), responser_index);
     }
 }
 
-void Guest::clean(uint32_t errcode, uint32_t id) {
-    assert(id == 0 || id == 1);
-    if(id == 0 && responser_ptr){
-        responser_ptr->clean(errcode, responser_id);
+void Guest::clean(uint32_t errcode, void* index) {
+    assert((long)index == 0 || (long)index == 1);
+    if(index == nullptr && responser_ptr){
+        responser_ptr->clean(errcode, responser_index);
     }
     responser_ptr = nullptr;
     del_job((job_func)::request_next, this);

@@ -39,11 +39,11 @@ void Guest_sni::initHE(uint32_t events) {
             char buff[HEADLENLIMIT];
             sprintf(buff, "CONNECT %s:%d" CRLF CRLF, hostname, 443);
             HttpReqHeader req(buff, this);
-            req.http_id =1;
+            req.index = (void *)1;
             assert(responser_ptr == nullptr);
             responser_ptr = distribute(req, nullptr);
             if(responser_ptr){
-                responser_id = responser_ptr->request(std::move(req));
+                responser_index = responser_ptr->request(std::move(req));
                 updateEpoll(EPOLLIN | EPOLLOUT);
                 handleEvent = (void (Con::*)(uint32_t))&Guest_sni::defaultHE;
             }
@@ -55,7 +55,7 @@ void Guest_sni::initHE(uint32_t events) {
 }
 
 void Guest_sni::response(HttpResHeader&& res){
-    assert(res.http_id == 1);
+    assert((long)res.index == 1);
     (this->*Http_Proc)();
 }
 

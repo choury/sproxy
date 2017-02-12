@@ -254,7 +254,7 @@ void Http2Responser::HeadersProc(Http2_header* header) {
     HttpReqHeader req(response_table.hpack_decode(pos,
                                                   get24(header->length) - padlen - (pos - (const char *)(header+1))),
                       this);
-    req.http_id = get32(header->id);
+    req.index = reinterpret_cast<void*>(get32(header->id));
     req.flags = header->flags;
     ReqProc(std::move(req));
     (void)weigth;
@@ -321,7 +321,7 @@ void Http2Requster::HeadersProc(Http2_header* header) {
     }
     HttpResHeader res(response_table.hpack_decode(pos,
                                                   get24(header->length) - padlen - (pos - (const char *)(header+1))));
-    res.http_id = get32(header->id);
+    res.index = reinterpret_cast<void*>(get32(header->id));
     res.flags = header->flags;
     ResProc(std::move(res));
     (void)weigth;

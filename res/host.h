@@ -15,7 +15,7 @@ protected:
     uint16_t port;
     Protocol protocol;
     Requester* requester_ptr = nullptr;
-    uint32_t   requester_id = 0;
+    void*      requester_index = nullptr;
 
     
     virtual int connect();
@@ -26,13 +26,13 @@ protected:
     virtual void ErrProc(int errcode)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
     static void Dnscallback(Host* host, const char *hostname, std::vector<sockaddr_un> addrs);
-    virtual uint32_t request(HttpReqHeader&& req)override;
+    virtual void* request(HttpReqHeader&& req)override;
     virtual void discard()override;
 public:
     explicit Host(const char* hostname, uint16_t port, Protocol protocol);
     ~Host();
     
-    virtual void clean(uint32_t errcode, uint32_t id)override;
+    virtual void clean(uint32_t errcode, void* index)override;
     virtual void ResProc(HttpResHeader&& res)override;
     static Host* gethost(HttpReqHeader& req, Responser* responser_ptr);
     static void con_timeout(Host* host);

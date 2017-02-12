@@ -18,14 +18,14 @@ static int check_header(HttpReqHeader& req){
     }
     if (auth_string[0] && !checkauth(requester->getip())){
         HttpResHeader res(H407);
-        res.http_id = req.http_id;
+        res.index = req.index;
         requester->response(std::move(res));
         return 1;
     }
 
     if(req.get("via") && strstr(req.get("via"), "sproxy")){
         HttpResHeader res(H508);
-        res.http_id = req.http_id;
+        res.index = req.index;
         requester->response(std::move(res));
         return 2;
     }
@@ -50,7 +50,7 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
         if(!req.hostname[0]){
             LOG("[[bad request]] %s\n", log_buff);
             HttpResHeader res(H400);
-            res.http_id = req.http_id;
+            res.index = req.index;
             requester->response(std::move(res));
             return nullptr;
         }
@@ -78,7 +78,7 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
                 }
                 if(req.ismethod("CONNECT")){
                     HttpResHeader res(H400);
-                    res.http_id = req.http_id;
+                    res.index = req.index;
                     requester->response(std::move(res));
                     return nullptr;
                 }else if (endwith(req.filename,".so")) {
@@ -109,7 +109,7 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
                 }
                 if(SPORT == 0){
                     HttpResHeader res(H400);
-                    res.http_id = req.http_id;
+                    res.index = req.index;
                     requester->response(std::move(res));
                     LOG("[[server not set]] %s\n", log_buff);
                     return nullptr;
@@ -122,10 +122,10 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
                 LOG("[[block]] %s\n", log_buff);
                 HttpResHeader res("HTTP/1.1 403 Forbidden" CRLF
                                   "Content-Length:73" CRLF CRLF);
-                res.http_id = req.http_id;
+                res.index = req.index;
                 requester->response(std::move(res));
                 requester->Write("This site is blocked, please contact administrator"
-                                 " for more information.\n", 73, req.http_id);
+                                 " for more information.\n", 73, req.index);
                 return nullptr;
         }
     }else if (req.ismethod("ADDS")) {
@@ -133,11 +133,11 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
         LOG("[[add %s]] %s\n", strategy, log_buff);
         if(strategy && addstrategy(req.hostname, strategy)){
             HttpResHeader res(H200);
-            res.http_id = req.http_id;
+            res.index = req.index;
             requester->response(std::move(res));
         }else{
             HttpResHeader res(H400);
-            res.http_id = req.http_id;
+            res.index = req.index;
             requester->response(std::move(res));
         }
         return nullptr;
@@ -147,11 +147,11 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
         if(delstrategy(req.hostname)){
             HttpResHeader res(H200);
             res.add("Strategy", strategy);
-            res.http_id = req.http_id;
+            res.index = req.index;
             requester->response(std::move(res));
         }else{
             HttpResHeader res(H404);
-            res.http_id = req.http_id;
+            res.index = req.index;
             requester->response(std::move(res));
         }
         return nullptr;
@@ -164,7 +164,7 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
             SPROT = UDP;
         }else{
             HttpResHeader res(H400);
-            res.http_id = req.http_id;
+            res.index = req.index;
             requester->response(std::move(res));
             return nullptr;
         }
@@ -172,34 +172,34 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
         strcpy(SHOST, req.hostname);
         flushproxy2();
         HttpResHeader res(H200);
-        res.http_id = req.http_id;
+        res.index = req.index;
         requester->response(std::move(res));
     } else if (req.ismethod("TEST")){
         HttpResHeader res("HTTP/1.1 200 Ok" CRLF
                           "Content-Length:0" CRLF CRLF);
         res.add("Strategy", getstrategystring(req.hostname));
-        res.http_id = req.http_id;
+        res.index = req.index;
         requester->response(std::move(res));
     } else if(req.ismethod("FLUSH")){
         if(strcasecmp(req.url, "cgi") == 0){
             flushcgi();
             HttpResHeader res(H200);
-            res.http_id = req.http_id;
+            res.index = req.index;
             requester->response(std::move(res));
         }else if(strcasecmp(req.url, "sites") == 0){
             loadsites();
             HttpResHeader res(H200);
-            res.http_id = req.http_id;
+            res.index = req.index;
             requester->response(std::move(res));
         }else{
             HttpResHeader res(H400);
-            res.http_id = req.http_id;
+            res.index = req.index;
             requester->response(std::move(res));
         }
     } else{
         LOG("[[unsported method]] %s\n", log_buff);
         HttpResHeader res(H405);
-        res.http_id = req.http_id;
+        res.index = req.index;
         requester->response(std::move(res));
         return nullptr;
     }

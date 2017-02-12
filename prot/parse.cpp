@@ -474,7 +474,7 @@ bool HttpReqHeader::no_body() const {
 }
 
 
-Http2_header *HttpReqHeader::getframe(Index_table *index_table) const{
+Http2_header *HttpReqHeader::getframe(Index_table *index_table, uint32_t http_id) const{
     Http2_header *header = (Http2_header *)p_malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
@@ -667,7 +667,7 @@ char * HttpResHeader::getstring(size_t &len) const{
 }
 
 
-Http2_header *HttpResHeader::getframe(Index_table* index_table) const{
+Http2_header *HttpResHeader::getframe(Index_table* index_table, uint32_t http_id) const{
     Http2_header *header = (Http2_header *)p_malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;

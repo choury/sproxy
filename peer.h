@@ -33,14 +33,14 @@ protected:
 public:
     virtual ~Peer();
     
-    virtual void clean(uint32_t errcode, uint32_t id);
+    virtual void clean(uint32_t errcode, void* info);
     
-    virtual ssize_t Write(const void *buff, size_t size, uint32_t id)final;
-    virtual ssize_t Write(void* buff, size_t size, uint32_t id);
+    virtual ssize_t Write(const void *buff, size_t size, void* index)final;
+    virtual ssize_t Write(void* buff, size_t size, void* index);
     
-    virtual void wait(uint32_t id);
-    virtual void writedcb(uint32_t id);
-    virtual int32_t bufleft(uint32_t id);
+    virtual void wait(void* index);
+    virtual void writedcb(void* index);
+    virtual int32_t bufleft(void* index);
 };
 
 #endif

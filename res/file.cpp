@@ -136,7 +136,7 @@ err:
         close(ffd);
     }
     HttpResHeader res(errinfo);
-    res.http_id = req.http_id;
+    res.index = req.index;
     req.src->response(std::move(res));
     throw 0;
 }
@@ -155,10 +155,10 @@ bool File::checkvalid() {
 }
 
 
-uint32_t File::request(HttpReqHeader&& req) {
+void* File::request(HttpReqHeader&& req) {
     FileStatus status;
     status.req_ptr = req.src;
-    status.req_id = req.http_id;
+    status.req_index = req.index;
     status.head_only = req.ismethod("HEAD");
     status.responsed = false;
     if (req.ranges.size()){
@@ -176,7 +176,7 @@ uint32_t File::request(HttpReqHeader&& req) {
     }
     updateEpoll(EPOLLIN);
     statusmap[req_id] = status;
-    return req_id++;
+    return reinterpret_cast<void*>(req_id++);
 }
 
 
@@ -212,7 +212,7 @@ void File::defaultHE(uint32_t events) {
                     char buff[100];
                     strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime(&st.st_mtime));
                     res.add("Last-Modified", buff);
-                    res.http_id = i->second.req_id;
+                    res.index = i->second.req_index;
                     requester->response(std::move(res));
                     i = statusmap.erase(i);
                     continue;
@@ -228,7 +228,7 @@ void File::defaultHE(uint32_t events) {
                     if(suffix && mimetype.count(suffix)){
                         res.add("Content-Type", mimetype.at(suffix));
                     }
-                    res.http_id = i->second.req_id;
+                    res.index = i->second.req_index;
                     requester->response(std::move(res));
                 }else if(checkrange(rg, st.st_size)){
                     HttpResHeader res(H206);
@@ -241,14 +241,14 @@ void File::defaultHE(uint32_t events) {
                     if(suffix && mimetype.count(suffix)){
                         res.add("Content-Type", mimetype.at(suffix));
                     }
-                    res.http_id = i->second.req_id;
+                    res.index = i->second.req_index;
                     requester->response(std::move(res));
                 }else{
                     HttpResHeader res(H416);
                     char buff[100];
                     snprintf(buff, sizeof(buff), "bytes */%jd", (intmax_t)st.st_size);
                     res.add("Content-Range", buff);
-                    res.http_id = i->second.req_id;
+                    res.index = i->second.req_index;
                     requester->response(std::move(res));
                     i = statusmap.erase(i);
                     continue;
@@ -261,14 +261,14 @@ void File::defaultHE(uint32_t events) {
                 }
             }
             if (rg.begin > rg.end) {
-                requester->Write((const void*)nullptr, 0, i->second.req_id);
+                requester->Write((const void*)nullptr, 0, i->second.req_index);
                 i = statusmap.erase(i);
                 continue;
             }
-            int len = Min(requester->bufleft(i->second.req_id), rg.end - rg.begin + 1);
+            int len = Min(requester->bufleft(i->second.req_index), rg.end - rg.begin + 1);
             if (len <= 0) {
                 LOGE("The requester's write buff is full\n");
-                requester->wait(i->second.req_id);
+                requester->wait(i->second.req_index);
                 i++;
                 continue;
             }
@@ -279,7 +279,7 @@ void File::defaultHE(uint32_t events) {
                 clean(INTERNAL_ERR, 0);
                 return;
             }
-            len = requester->Write(buff, len, i->second.req_id);
+            len = requester->Write(buff, len, i->second.req_index);
             rg.begin += len;
             i++;
         }
@@ -292,20 +292,20 @@ void File::defaultHE(uint32_t events) {
     }
 }
 
-void File::clean(uint32_t errcode, uint32_t id){
-    if(id == 0){
+void File::clean(uint32_t errcode, void* index){
+    if(index == nullptr){
         for(auto i:statusmap){
             if(!i.second.responsed){
                 HttpResHeader res(H503);
-                res.http_id = i.second.req_id;
+                res.index = i.second.req_index;
                 i.second.req_ptr->response(std::move(res));
             }
-            i.second.req_ptr->clean(errcode, i.second.req_id);
+            i.second.req_ptr->clean(errcode, i.second.req_index);
         }
         statusmap.clear();
-        return Peer::clean(errcode, id);
+        return Peer::clean(errcode, index);
     }else{
-        statusmap.erase(id);
+        statusmap.erase((uint32_t)(long)index);
     }
 }
 
@@ -319,7 +319,7 @@ File::~File() {
 File* File::getfile(HttpReqHeader& req) {
     if(!req.getrange()){
         HttpResHeader res(H400);
-        res.http_id = req.http_id;
+        res.index = req.index;
         req.src->response(std::move(res));
         return nullptr;
     }

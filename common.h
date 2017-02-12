@@ -38,12 +38,14 @@ extern uint32_t debug;
 #define DDTLS     4
 #define DHTTP2    8
 #define DJOB      16
+#define DVPN      32
 
 #define DEPOLL_STR  "[EPOLL]"
 #define DDNS_STR    "[DNS]"
 #define DDTLS_STR   "[DTLS]"
 #define DHTTP2_STR  "[HTTP2]"
 #define DJOB_STR    "[JOB]"
+#define DVPN_STR     "[VPN]"
 
 
 #ifdef __ANDROID__
