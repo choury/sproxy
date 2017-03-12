@@ -3,7 +3,7 @@
 
 #include "requester.h"
 #include "res/responser.h"
-#include "prot/ip_packet.h"
+#include "prot/ip_pack.h"
 
 struct VpnStatus{
     Responser* res_ptr;

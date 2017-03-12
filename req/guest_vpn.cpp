@@ -1,5 +1,5 @@
 #include "guest_vpn.h"
-#include "prot/ip_packet.h"
+#include "prot/ip_pack.h"
 #include "vpn.h"
 
 #include "misc/net.h"
