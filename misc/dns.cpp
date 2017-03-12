@@ -102,9 +102,7 @@ void dns_expired(const char* host) {
     del_job((job_func)dns_expired, (void *)host);
     assert(rcd_index_host.count(host));
     assert(time(nullptr) >= rcd_index_host[host].gettime + rcd_index_host[host].ttl);
-#ifndef NDEBUG
     LOGD(DDNS, "%s: expired\n", host);
-#endif
     rcd_index_host.erase(host);
 }
 
@@ -354,9 +352,7 @@ void query(const char *host , DNSCBfunc func, void *param, uint16_t times) {
 
 
 void RcdDown(const char *hostname, const sockaddr_un &addr) {
-#ifndef NDEBUG
     LOGD(DDNS, "down for %s: %s\n", hostname, getaddrstring(&addr));
-#endif
     if (rcd_index_host.count(hostname)) {
         return rcd_index_host[hostname].down(addr);
     }
@@ -407,9 +403,7 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
             unsigned char *p = buf+sizeof(DNS_HDR);
             for (int i = 0; i < dnshdr->numq; ++i) {
                 p = getdomain(buf, p);
-#ifndef NDEBUG
                 LOGD(DDNS, "[%d]: \n", dnshdr->id);
-#endif
                 p+= sizeof(DNS_QER);
             }
             getrr(buf, p, dnshdr->numa, dnsst->addr);

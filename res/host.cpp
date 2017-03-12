@@ -6,10 +6,15 @@
 #include <string.h>
 #include <errno.h>
                     
-void Host::con_timeout(Host* host) {
-    LOGE("connect to %s time out.\n", host->hostname);
-    host->clean(CONNECT_ERR, 0);
-    del_job((job_func)con_timeout, host);
+void Host::host_timeout(Host* host) {
+    if(host->protocol == Protocol::TCP){
+        LOGE("connect to %s time out.\n", host->hostname);
+        host->clean(CONNECT_TIMEOUT, 0);
+    }else{
+        LOGD(DHOST, "udp to %s time out.\n", host->hostname);
+        host->clean(0, 0);
+    }
+    del_job((job_func)host_timeout, host);
 }
 
 Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), protocol(protocol){
@@ -19,7 +24,7 @@ Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), 
 }
 
 Host::~Host(){
-    del_job((job_func)con_timeout, this);
+    del_job((job_func)host_timeout, this);
 }
 
 void Host::discard() {
@@ -32,7 +37,7 @@ void Host::Dnscallback(Host* host, const char *hostname, std::vector<sockaddr_un
     snprintf(host->hostname, sizeof(host->hostname), "%s", hostname);
     if (addrs.size() == 0) {
         LOGE("Dns query failed: %s\n", host->hostname);
-        host->clean(CONNECT_ERR, 0);
+        host->clean(DNS_FAILED, 0);
     } else {
         host->addrs = addrs;
         for (size_t i = 0; i < host->addrs.size(); ++i) {
@@ -54,7 +59,7 @@ int Host::connect() {
             RcdDown(hostname, addrs[testedaddr-1]);
         }
         fd = Connect(&addrs[testedaddr++], (int)protocol);
-        add_job((job_func)con_timeout, this, 30000);
+        add_job((job_func)host_timeout, this, 30000);
         if (fd < 0) {
             LOGE("connect to %s failed\n", this->hostname);
             return connect();
@@ -103,12 +108,12 @@ void Host::waitconnectHE(uint32_t events) {
             requester_ptr->response(std::move(res));
         }
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
-        del_job((job_func)con_timeout, this);
+        del_job((job_func)host_timeout, this);
     }
     return;
 reconnect:
     if (connect() < 0) {
-        clean(CONNECT_ERR, 0);
+        clean(PEER_UNREACHABLE, 0);
     }
 }
 
@@ -140,6 +145,9 @@ void Host::defaultHE(uint32_t events) {
         }
         if(ret != WRITE_NOTHING && requester_ptr)
             requester_ptr->writedcb(requester_index);
+    }
+    if(protocol == Protocol::UDP){
+        add_job((job_func)host_timeout, this, 300000);
     }
 }
 
@@ -222,8 +230,12 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 void Host::clean(uint32_t errcode, void* index) {
     assert((long)index == 1 || (void*)index == 0);
     if(requester_ptr){
-        if(errcode == CONNECT_ERR){
-            HttpResHeader res(H408);
+        if(errcode == CONNECT_TIMEOUT || errcode == DNS_FAILED){
+            HttpResHeader res(H504);
+            res.index = requester_index;
+            requester_ptr->response(std::move(res));
+        }else if(errcode == PEER_UNREACHABLE){
+            HttpResHeader res(H503);
             res.index = requester_index;
             requester_ptr->response(std::move(res));
         }

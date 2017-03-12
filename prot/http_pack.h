@@ -1,7 +1,8 @@
-#ifndef PARSE_H__
-#define PARSE_H__
+#ifndef HTTP_PACK_H__
+#define HTTP_PACK_H__
 
 #include "common.h"
+#include "resobject.h"
 #include "misc/istring.h"
 
 #include <map>
@@ -11,15 +12,9 @@
 class Index_table;
 struct Http2_header;
 struct CGI_Header;
-class Object;
 class Requester;
 
-enum class Strategy{
-    direct,
-    proxy,
-    local,
-    block,
-};
+
 
 class HttpHeader{
 protected:
@@ -61,8 +56,8 @@ public:
     char filename[URLLIMIT];
     uint16_t port;
     std::vector<Range> ranges;
-    explicit HttpReqHeader(const char* header,  Object* src);
-    explicit HttpReqHeader(std::multimap<istring, std::string>&& headers, Object* src);
+    explicit HttpReqHeader(const char* header,  ResObject* src);
+    explicit HttpReqHeader(std::multimap<istring, std::string>&& headers, ResObject* src);
     explicit HttpReqHeader(CGI_Header *headers);
     bool ismethod(const char* method) const;
     
@@ -126,22 +121,6 @@ static inline std::string& ltrim(std::string && s) {
 }
 
 
-#ifdef  __cplusplus
-extern "C" {
-#endif
 
-
-void loadsites();
-bool addstrategy(const char *host, const char *strategy);
-bool delstrategy(const char *host);
-Strategy getstrategy(const char *host);
-const char* getstrategystring(const char *host);
-
-void addauth(const char * ip);
-bool checkauth(const char *ip);
-
-#ifdef  __cplusplus
-}
-#endif
 
 #endif

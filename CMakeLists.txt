@@ -22,8 +22,8 @@ endif()
 find_package(OpenSSL 1.0.2 REQUIRED)
 include_directories(${OPENSSL_INCLUDE_DIR})
 
-set(CMAKE_C_FLAGS "-Wall")
-set(CMAKE_CXX_FLAGS "-std=c++11 -Wall")
+set(CMAKE_C_FLAGS "-Wall -fPIC")
+set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -fPIC")
 
 set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
@@ -60,6 +60,13 @@ target_link_libraries(sproxy ${OPENSSL_LIBRARIES} dl req res prot misc)
 
 install(TARGETS sproxy RUNTIME DESTINATION bin)
 
+add_library(sproxy_vpn SHARED vpn.cpp peer.cpp)
+set_target_properties(sproxy_vpn PROPERTIES OUTPUT_NAME "sproxy_vpn") 
+target_link_libraries(sproxy_vpn req res prot misc)
 
 add_library(demo SHARED cgidemo.cpp)
 set_target_properties(demo PROPERTIES OUTPUT_NAME "demo") 
+
+add_executable(vpn vpndemo.c)
+set_target_properties(vpn PROPERTIES OUTPUT_NAME "vpndemo")
+target_link_libraries(vpn asan ${OPENSSL_LIBRARIES} sproxy_vpn)

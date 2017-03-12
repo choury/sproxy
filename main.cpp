@@ -4,6 +4,7 @@
 #include "misc/dtls.h"
 #include "misc/net.h"
 #include "misc/job.h"
+#include "misc/strategy.h"
 
 #include <set>
 
@@ -144,6 +145,10 @@ public:
     Dtls_server(int fd, SSL_CTX *ctx): Server(fd),ctx(ctx) {}
 };
 
+//do nothing, useful for vpn only
+void protectFd(int){
+
+}
 
 static int select_alpn_cb(SSL *ssl,
                           const unsigned char **out, unsigned char *outlen,

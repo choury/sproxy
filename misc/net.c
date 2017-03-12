@@ -131,6 +131,7 @@ int Connect(union sockaddr_un* addr, int type) {
             LOGE("TCP_NODELAY:%m\n");
     }
 
+    protectFd(fd);
     if (connect(fd, &addr->addr, sizeof(struct sockaddr_in6)) == -1 && errno != EINPROGRESS) {
         LOGE("connecting error:%m\n");
         close(fd);

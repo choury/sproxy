@@ -1,8 +1,7 @@
 #ifndef HTTP_H__
 #define HTTP_H__
 
-#include "parse.h"
-#include "object.h"
+#include "http_pack.h"
 
 class HttpBase{
 protected:
@@ -26,7 +25,7 @@ public:
 };
 
 
-class HttpResponser:public HttpBase, public Object{
+class HttpResponser:public HttpBase, virtual public ResObject{
     virtual void HeaderProc()override final;
 protected:
     virtual void ReqProc(HttpReqHeader&& req) = 0;

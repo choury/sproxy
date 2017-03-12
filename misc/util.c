@@ -8,7 +8,7 @@
 #include <sys/time.h>
 #include <sys/prctl.h>
 
-#define PRIOR_HEAD 32
+#define PRIOR_HEAD 48
 
 char **main_argv;
     
@@ -252,6 +252,15 @@ int showerrinfo(int ret, const char *s){
         LOGE("%s:%d\n",s, ret);
     }
     return 1;
+}
+
+void* memdup(const void* ptr, size_t size){
+   void *dup = malloc(size);
+   assert(dup);
+   if(dup && size){
+       memcpy(dup, ptr, size);
+   }
+   return dup;
 }
 
 

@@ -43,6 +43,9 @@
 #define H503        "HTTP/1.1 503 Service Unavailable" CRLF\
                     "Content-Length: 0" CRLF CRLF
 
+#define H504        "HTTP/1.1 504 Gateway Timeout" CRLF\
+                    "Content-Length: 0" CRLF CRLF
+
 #define H508        "HTTP/1.1 508 Loop Detected" CRLF\
                     "Content-Length: 0" CRLF CRLF
 

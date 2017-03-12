@@ -39,6 +39,7 @@ extern uint32_t debug;
 #define DHTTP2    8
 #define DJOB      16
 #define DVPN      32
+#define DHOST     64
 
 #define DEPOLL_STR  "[EPOLL]"
 #define DDNS_STR    "[DNS]"
@@ -46,6 +47,7 @@ extern uint32_t debug;
 #define DHTTP2_STR  "[HTTP2]"
 #define DJOB_STR    "[JOB]"
 #define DVPN_STR     "[VPN]"
+#define DHOST_STR    "[HOST]"
 
 
 #ifdef __ANDROID__
@@ -73,6 +75,7 @@ extern uint32_t debug;
                         else \
                             fprintf(stderr, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
                      }while(0)
+#ifndef NDEBUG
 
 #define LOGD(mod, ...)    do{\
                              if(debug & mod) {\
@@ -84,6 +87,9 @@ extern uint32_t debug;
                                   printf("%s: %s", mod##_STR, tmp); \
                              }\
                            }while(0)
+#else
+#define LOGD(...)          void(0)
+#endif
 #endif
 
 
@@ -153,16 +159,18 @@ do {\
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
 #define NOERROR             0
-#define CONNECT_ERR         31
-#define SSL_SHAKEHAND_ERR   32
-#define HEAD_TOO_LONG_ERR   33
-#define HTTP_PROTOCOL_ERR   34
-#define READ_ERR            34
-#define WRITE_ERR           36
-#define INTERNAL_ERR        37
-#define PEER_LOST_ERR       38
-#define IP_BLOCK_ERR        39
-#define TCP_RESET_ERR        40
+#define PEER_UNREACHABLE    31
+#define CONNECT_TIMEOUT     32
+#define SSL_SHAKEHAND_ERR   33
+#define HEAD_TOO_LONG_ERR   34
+#define HTTP_PROTOCOL_ERR   35
+#define READ_ERR            36
+#define WRITE_ERR           37
+#define INTERNAL_ERR        38
+#define PEER_LOST_ERR       39
+#define IP_BLOCK_ERR        40
+#define TCP_RESET_ERR       41
+#define DNS_FAILED          42
 
 typedef unsigned char uchar;
 
@@ -181,6 +189,7 @@ uint32_t getmtime();
 void sighandle(int signum);
 void dump_trace(int ignore);
 int showerrinfo(int ret, const char *s);
+void* memdup(const void* ptr, size_t size);
 
 void* p_malloc(size_t size);
 void* p_memdup(const void *ptr, size_t size);
@@ -188,6 +197,7 @@ void p_free(void *ptr);
 void *p_move(void *ptr, signed char len);
 void change_process_name(const char *name);
 
+void protectFd(int sockfd);
 
 #ifdef  __cplusplus
 }

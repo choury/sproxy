@@ -2,7 +2,7 @@
 #define CGI_H__
 
 #include "responser.h"
-#include "prot/parse.h"
+#include "prot/http_pack.h"
 
 
 // 可用于CGI_Header的type组件的值

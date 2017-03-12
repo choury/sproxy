@@ -1,9 +1,8 @@
 #ifndef HTTP2_H__
 #define HTTP2_H__
 
-#include "parse.h"
+#include "http_pack.h"
 #include "hpack.h"
-#include "object.h"
 
 #include <list>
 #include <stdio.h>
@@ -114,7 +113,7 @@ public:
     ~Http2Base();
 };
 
-class Http2Responser:public Http2Base, public Object{
+class Http2Responser:public Http2Base, virtual public ResObject{
     using Http2Base::http2_buff;
     using Http2Base::http2_getlen;
 protected:

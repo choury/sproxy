@@ -151,7 +151,7 @@ void Proxy::waitconnectHE(uint32_t events) {
     return;
 reconnect:
     if (connect() < 0) {
-        clean(CONNECT_ERR, 0);
+        clean(PEER_UNREACHABLE, 0);
     }
 }
 
@@ -203,7 +203,7 @@ void Proxy::shakehandHE(uint32_t events) {
             updateEpoll(EPOLLIN | EPOLLOUT);
             handleEvent = (void (Con::*)(uint32_t))&Proxy::defaultHE;
         }  
-        del_job((job_func)con_timeout, this);
+        del_job((job_func)host_timeout, this);
         return;
         
     }

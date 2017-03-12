@@ -5,5 +5,5 @@
 
 INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR})
 
-ADD_LIBRARY(misc dns.cpp dtls.cpp job.cpp net.c tls.c util.c)
+ADD_LIBRARY(misc dns.cpp dtls.cpp job.cpp net.c tls.c util.c strategy.cpp)
 

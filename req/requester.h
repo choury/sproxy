@@ -2,7 +2,7 @@
 #define REQUESTER_H__
 
 #include "peer.h"
-#include "prot/parse.h"
+#include "prot/http_pack.h"
 
 class Responser;
 

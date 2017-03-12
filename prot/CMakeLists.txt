@@ -5,5 +5,5 @@
 
 INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR})
 
-ADD_LIBRARY(prot ip_packet.c hpack.cpp http.cpp http2.cpp parse.cpp)
+ADD_LIBRARY(prot ip_packet.cpp hpack.cpp http.cpp http2.cpp http_pack.cpp)
 

@@ -13,9 +13,7 @@ void Proxy2::ping_check(Proxy2 *p){
     char buff[8];
     set64(buff, getutime());
     p->Ping(buff);
-#ifndef NDEBUG
     LOGD(DHTTP2, "window size global: %d/%d\n", p->localwinsize, p->remotewinsize);
-#endif
     add_job((job_func)ping_check, p, 5000);
 }
 
@@ -175,21 +173,15 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
     if(id){
         if(statusmap.count(id)){
             ReqStatus& status = statusmap[id];
-#ifndef NDEBUG
             LOGD(DHTTP2, "window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
-#endif
             status.remotewinsize += size;
             status.req_ptr->writedcb(status.req_index);
             waitlist.erase(id);
-#ifndef NDEBUG
         }else{
             LOGD(DHTTP2, "window size updated [%d]: not found\n", id);
-#endif
         }
     }else{
-#ifndef NDEBUG
         LOGD(DHTTP2, "window size updated global: %d+%d\n", remotewinsize, size);
-#endif
         remotewinsize += size;
     }
 }

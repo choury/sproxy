@@ -57,10 +57,8 @@ uint32_t do_job(){
     for(auto i=callfunc_map.begin(); i!= callfunc_map.end(); i++){
         uint32_t diff = now - i->second.last_done;
         if(diff >= i->second.interval){
-#ifndef NDEBUG
             LOGD(DJOB, "start job %s for %p diff %u\n",
                  i->second.func_name, i->first.arg, diff );
-#endif
             i->second.last_done = now;
             job_set.push_back(i->first);
         }
