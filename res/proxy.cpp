@@ -151,7 +151,7 @@ void Proxy::waitconnectHE(uint32_t events) {
     return;
 reconnect:
     if (connect() < 0) {
-        clean(PEER_UNREACHABLE, 0);
+        clean(CONNECT_FAILED, 0);
     }
 }
 

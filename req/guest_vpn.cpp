@@ -79,48 +79,21 @@ void Guest_vpn::response(HttpResHeader && res) {
     assert(memcmp(protocol, "tcp", 4) == 0);
     assert(statusmap.count(key));
     VpnStatus& status = statusmap[key];
-    if(memcmp(res.status, "200", 3) == 0){
-        //创建回包
-        LOGD(DVPN, "write syn ack packet (%s) (%u - %u).\n", key, status.seq, status.ack);
-        Ip pac_return(IPPROTO_TCP, dip, dport, sip, sport);
-        pac_return.tcp
-        ->setseq(status.seq)
-        ->setack(status.ack)
-        ->setwindow(status.res_ptr->bufleft(status.res_index))
-        ->setflag(TH_ACK | TH_SYN);
+    //创建回包
+    LOGD(DVPN, "write syn ack packet (%s) (%u - %u).\n", key, status.seq, status.ack);
+    Ip pac_return(IPPROTO_TCP, dip, dport, sip, sport);
+    pac_return.tcp
+    ->setseq(status.seq)
+    ->setack(status.ack)
+    ->setwindow(status.res_ptr->bufleft(status.res_index))
+    ->setflag(TH_ACK | TH_SYN);
 
-        size_t packetlen = 0;
-        char* packet = pac_return.build_packet(nullptr, packetlen);
-        status.seq ++;
+    size_t packetlen = 0;
+    char* packet = pac_return.build_packet(nullptr, packetlen);
+    status.seq ++;
 
-        //write back to vpn fd
-        Requester::Write(packet, packetlen, 0);
-    }else if(memcmp(res.status, "503", 3) == 0){
-        LOGD(DVPN, "write rst to unreachable port (%s) (%u - %u).\n", key, status.seq, status.ack);
-        Ip pac_return(IPPROTO_TCP, dip, dport, sip, sport);
-        pac_return.tcp
-        ->setseq(status.seq)
-        ->setack(status.ack)
-        ->setwindow(bufleft(0))
-        ->setflag(TH_ACK | TH_RST);
-
-        size_t packetlen;
-        char* packet = pac_return.build_packet(nullptr, packetlen);
-        Requester::Write(packet, packetlen, 0);
-        free(status.packet);
-        statusmap.erase(key);
-    }else if(memcpy(res.status, "504", 3) == 0){
-        LOGD(DVPN, "write icmp unreachable msg: %s\n", key);
-        Ip pac_return(IPPROTO_ICMP, dip, 0, sip, 0);
-        pac_return.icmp
-        ->settype(ICMP_UNREACH)
-        ->setcode(ICMP_UNREACH_HOST);
-        size_t packetlen = status.packet_len;
-        char* packet = pac_return.build_packet(status.packet, packetlen);
-        Requester::Write(packet, packetlen, 0);
-        free(status.packet);
-        statusmap.erase(key);
-    }
+    //write back to vpn fd
+    Requester::Write(packet, packetlen, 0);
     return;
 }
 
@@ -153,16 +126,17 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
 
         //create a http proxy request
         char buff[HEADLENLIMIT];
-        sprintf(buff, "CONNECT %s:%d" CRLF CRLF, dip, dport);
+        sprintf(buff, "CONNECT %s:%d" CRLF "Sproxy_vpn: %d" CRLF CRLF, dip, dport, sport);
         HttpReqHeader req(buff, this);
-        req.index = (void *)strdup(key);
+        void *key_index = (void *)strdup(key);
+        req.index =  key_index;
         Responser *responser_ptr = distribute(req, nullptr);
         if(responser_ptr){
             void* responser_index = responser_ptr->request(std::move(req));
             statusmap[key] =  VpnStatus{
                 responser_ptr,
                 responser_index,
-                req.index,
+                key_index,
                 (char *)memdup(packet, pac->gethdrlen()),
                 (uint16_t)pac->gethdrlen(),
                 uint32_t(time(0)), seq };
@@ -285,16 +259,17 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
         LOGD(DVPN, "send udp data(N) (%s).\n", key);
         //create a http proxy request
         char buff[HEADLENLIMIT];
-        sprintf(buff, "SEND %s:%d" CRLF CRLF, dip, dport);
+        sprintf(buff, "SEND %s:%d" CRLF "Sproxy_vpn: %d" CRLF CRLF, dip, dport, sport);
         HttpReqHeader req(buff, this);
-        req.index = (void *)strdup(key);
+        void *key_index = (void *)strdup(key);
+        req.index = key_index;
         Responser *responser_ptr = distribute(req, nullptr);
         if(responser_ptr){
             void* responser_index = responser_ptr->request(std::move(req));
             statusmap[key] =  VpnStatus{
                 responser_ptr,
                 responser_index,
-                req.index,
+                key_index,
                 (char *)memdup(packet, pac->gethdrlen()),
                 (uint16_t)pac->gethdrlen(),
                 0, 0};
@@ -413,63 +388,85 @@ void Guest_vpn::wait(void* index) {
     waitlist.insert((char *)index);
 }
 
+void Guest_vpn::ResetResponser(Responser* r, void* index) {
+    char* key = (char *)index;
+    assert(statusmap.count(key));
+    if(r){
+        statusmap[key].res_ptr = r;
+    }else{
+        statusmap.erase(key);
+    }
+}
+
+
 void Guest_vpn::clean(uint32_t errcode, void* index) {
     char* key = (char*)index;
     LOGD(DVPN, "(%s) clean: %d\n", key, errcode);
     if(key == 0){
-        return;
-    }
-    if(statusmap.count(key)){
-        char sip[INET_ADDRSTRLEN];
-        char dip[INET_ADDRSTRLEN];
-        int sport, dport;
-        char protocol[20];
-        sscanf(key, "%s %d %s %d %s", sip, &sport, dip, &dport, protocol);
-        VpnStatus& status = statusmap[key];
-        if(strcmp(protocol, "udp") == 0){
-            if(errcode){
-                LOGD(DVPN, "write icmp unreachable msg for udp clean\n");
-                Ip pac_return(IPPROTO_ICMP, dip, 0, sip, 0);
-                pac_return.icmp
-                ->settype(ICMP_UNREACH)
-                ->setcode(ICMP_UNREACH_PORT);
-                size_t packetlen = status.packet_len;
-                char* packet = pac_return.build_packet(status.packet, packetlen);
-                Requester::Write(packet, packetlen, 0);
-            }
-        }else{
-            if(errcode){
-                LOGD(DVPN, "write rst packet\n");
-                Ip pac_return(IPPROTO_TCP, dip, dport, sip, sport);
-                pac_return.tcp
-                ->setseq(status.seq)
-                ->setack(status.ack)
-                ->setwindow(bufleft(0))
-                ->setflag(TH_RST | TH_ACK);
-
-                size_t packetlen;
-                char* packet = pac_return.build_packet(nullptr, packetlen);
-                Requester::Write(packet, packetlen, 0);
-            }else{
-                LOGD(DVPN, "write fin packet\n");
-                Ip pac_return(IPPROTO_TCP, dip, dport, sip, sport);
-                pac_return.tcp
-                ->setseq(status.seq)
-                ->setack(status.ack)
-                ->setwindow(bufleft(0))
-                ->setflag(TH_FIN | TH_ACK);
-
-                size_t packetlen;
-                char *packet = pac_return.build_packet(nullptr, packetlen);
-                //write back to vpn fd
-                Requester::Write(packet, packetlen, 0);
-            }
+        for(auto i: statusmap){
+            i.second.res_ptr->clean(errcode, i.second.res_index);
+            free(i.second.key);
+            free(i.second.packet);
         }
-        free(status.packet);
-        statusmap.erase(key);
-        free(index);
-    }else{
-        LOGD(DVPN, "key not exist, ignore\n");
-        free(index);
+        statusmap.clear();
+        return Peer::clean(errcode, 0);
     }
+    assert(statusmap.count(key));
+    char sip[INET_ADDRSTRLEN];
+    char dip[INET_ADDRSTRLEN];
+    int sport, dport;
+    char protocol[20];
+    sscanf(key, "%s %d %s %d %s", sip, &sport, dip, &dport, protocol);
+    VpnStatus& status = statusmap[key];
+    if(strcmp(protocol, "udp") == 0){
+        if(errcode){
+            LOGD(DVPN, "write icmp unreachable msg for udp clean\n");
+            Ip pac_return(IPPROTO_ICMP, dip, 0, sip, 0);
+            pac_return.icmp
+            ->settype(ICMP_UNREACH)
+            ->setcode(ICMP_UNREACH_PORT);
+            size_t packetlen = status.packet_len;
+            char* packet = pac_return.build_packet(status.packet, packetlen);
+            Requester::Write(packet, packetlen, 0);
+        }
+    }else{
+        if(errcode == 0){
+            LOGD(DVPN, "write fin packet\n");
+            Ip pac_return(IPPROTO_TCP, dip, dport, sip, sport);
+            pac_return.tcp
+            ->setseq(status.seq)
+            ->setack(status.ack)
+            ->setwindow(bufleft(0))
+            ->setflag(TH_FIN | TH_ACK);
+
+            size_t packetlen;
+            char *packet = pac_return.build_packet(nullptr, packetlen);
+            //write back to vpn fd
+            Requester::Write(packet, packetlen, 0);
+        }else if(errcode == CONNECT_TIMEOUT){
+            LOGD(DVPN, "write icmp unreachable msg: %s\n", key);
+            Ip pac_return(IPPROTO_ICMP, dip, 0, sip, 0);
+            pac_return.icmp
+            ->settype(ICMP_UNREACH)
+            ->setcode(ICMP_UNREACH_HOST);
+            size_t packetlen = status.packet_len;
+            char* packet = pac_return.build_packet(status.packet, packetlen);
+            Requester::Write(packet, packetlen, 0);
+        }else{
+            LOGD(DVPN, "write rst packet\n");
+            Ip pac_return(IPPROTO_TCP, dip, dport, sip, sport);
+            pac_return.tcp
+            ->setseq(status.seq)
+            ->setack(status.ack)
+            ->setwindow(bufleft(0))
+            ->setflag(TH_RST | TH_ACK);
+
+            size_t packetlen;
+            char* packet = pac_return.build_packet(nullptr, packetlen);
+            Requester::Write(packet, packetlen, 0);
+        }
+    }
+    free(status.packet);
+    statusmap.erase(key);
+    free(index);
 }

@@ -11,6 +11,7 @@ protected:
 #define HTTP_IGNORE_BODY_F   1
 #define HTTP_CHUNK_END_F     2
 #define HTTP_CONNECT_F       4
+#define HTTP_VPN_MODE_F      8
     uint32_t http_flag = 0;
     virtual void HeaderProc() = 0;
     void ChunkLProc();

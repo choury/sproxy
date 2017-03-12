@@ -112,7 +112,7 @@ void Host::waitconnectHE(uint32_t events) {
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
         del_job((job_func)con_timeout, this);
 
-        if(vpn_mode){
+        if(http_flag & HTTP_VPN_MODE_F){
             if(protocol == Protocol::UDP){
                 add_job((job_func)vpn_aged, this, 180000);
             }else{
@@ -123,7 +123,7 @@ void Host::waitconnectHE(uint32_t events) {
     return;
 reconnect:
     if (connect() < 0) {
-        clean(PEER_UNREACHABLE, 0);
+        clean(CONNECT_FAILED, 0);
     }
 }
 
@@ -156,7 +156,7 @@ void Host::defaultHE(uint32_t events) {
         if(ret != WRITE_NOTHING && requester_ptr)
             requester_ptr->writedcb(requester_index);
     }
-    if(vpn_mode){
+    if(http_flag & HTTP_VPN_MODE_F){
         if(protocol == Protocol::UDP){
             add_job((job_func)vpn_aged, this, 180000);
         }else{
@@ -177,6 +177,9 @@ void* Host::request(HttpReqHeader&& req) {
         http_flag |= HTTP_IGNORE_BODY_F;
     }else if(req.ismethod("SEND")){
         Http_Proc = &Host::AlwaysProc;
+    }
+    if(req.get("Sproxy_vpn")){
+        http_flag |= HTTP_VPN_MODE_F;
     }
     requester_ptr = req.src;
     requester_index = req.index;
@@ -244,12 +247,12 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 void Host::clean(uint32_t errcode, void* index) {
     assert((long)index == 1 || (void*)index == 0);
     if(requester_ptr){
-        if(protocol == Protocol::TCP){
+        if((http_flag & HTTP_VPN_MODE_F) == 0 && protocol == Protocol::TCP){
             if(errcode == CONNECT_TIMEOUT || errcode == DNS_FAILED){
                 HttpResHeader res(H504);
                 res.index = requester_index;
                 requester_ptr->response(std::move(res));
-            }else if(errcode == PEER_UNREACHABLE){
+            }else if(errcode == CONNECT_FAILED){
                 HttpResHeader res(H503);
                 res.index = requester_index;
                 requester_ptr->response(std::move(res));

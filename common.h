@@ -28,7 +28,6 @@ extern int daemon_mode;
 extern int ignore_cert_error;
 extern int disable_ipv6;
 extern int use_http2;
-extern int vpn_mode;
 extern char auth_string[];
 extern const char *cafile;
 extern const char *index_file;
@@ -159,7 +158,7 @@ do {\
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
 #define NOERROR             0
-#define PEER_UNREACHABLE    31
+#define CONNECT_FAILED    31
 #define CONNECT_TIMEOUT     32
 #define SSL_SHAKEHAND_ERR   33
 #define HEAD_TOO_LONG_ERR   34

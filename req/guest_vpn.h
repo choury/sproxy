@@ -30,6 +30,8 @@ public:
     virtual void response(HttpResHeader&& res)override;
     virtual ssize_t Write(void* buff, size_t size, void* index)override;
     virtual ssize_t Write(const void* buff, size_t size, void* index)override;
+
+    virtual void ResetResponser(Responser* r, void* index)override;
     virtual void clean(uint32_t errcode, void* index)override;
 };
 
