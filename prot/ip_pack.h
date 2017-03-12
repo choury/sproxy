@@ -26,6 +26,9 @@ public:
     
     Icmp* settype(uint8_t type);
     Icmp* setcode(uint8_t code);
+
+    uint8_t gettype()const;
+    uint8_t getcode()const;
 };
 
 

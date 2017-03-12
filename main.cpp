@@ -22,6 +22,7 @@ int daemon_mode = 0;
 int use_http2 = 1;
 int udp_mode = 0;
 int sni_mode = 0;
+int vpn_mode = 0;
 int ignore_cert_error = 0;
 int disable_ipv6 = 0;
 uint16_t CPORT = 0;

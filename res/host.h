@@ -35,7 +35,8 @@ public:
     virtual void clean(uint32_t errcode, void* index)override;
     virtual void ResProc(HttpResHeader&& res)override;
     static Host* gethost(HttpReqHeader& req, Responser* responser_ptr);
-    static void host_timeout(Host* host);
+    static void con_timeout(Host* host);
+    static void vpn_aged(Host* host);
 };
 
 #endif

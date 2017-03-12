@@ -129,6 +129,15 @@ int Connect(union sockaddr_un* addr, int type) {
         int enable = 1;
         if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(enable))<0)
             LOGE("TCP_NODELAY:%m\n");
+    }else{
+        if(addr->addr.sa_family == AF_INET && addr->addr_in.sin_addr.s_addr == htonl(INADDR_BROADCAST)){
+            int enable=1;
+            if(setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable)) < 0){
+                LOGE("set broadcast:%m\n");
+                close(fd);
+                return -1;
+            }
+        }
     }
 
     protectFd(fd);

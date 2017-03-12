@@ -6,15 +6,16 @@
 #include <string.h>
 #include <errno.h>
                     
-void Host::host_timeout(Host* host) {
-    if(host->protocol == Protocol::TCP){
-        LOGE("connect to %s time out.\n", host->hostname);
-        host->clean(CONNECT_TIMEOUT, 0);
-    }else{
-        LOGD(DHOST, "udp to %s time out.\n", host->hostname);
-        host->clean(0, 0);
-    }
-    del_job((job_func)host_timeout, host);
+void Host::con_timeout(Host* host) {
+    LOGE("connect to %s time out.\n", host->hostname);
+    host->clean(CONNECT_TIMEOUT, 0);
+    del_job((job_func)con_timeout, host);
+}
+
+void Host::vpn_aged(Host* host){
+    LOGD(DVPN, "connecting to %s aged.\n", host->hostname);
+    host->clean(0, 0);
+    del_job((job_func)vpn_aged, host);
 }
 
 Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), protocol(protocol){
@@ -24,7 +25,8 @@ Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), 
 }
 
 Host::~Host(){
-    del_job((job_func)host_timeout, this);
+    del_job((job_func)con_timeout, this);
+    del_job((job_func)vpn_aged, this);
 }
 
 void Host::discard() {
@@ -59,7 +61,7 @@ int Host::connect() {
             RcdDown(hostname, addrs[testedaddr-1]);
         }
         fd = Connect(&addrs[testedaddr++], (int)protocol);
-        add_job((job_func)host_timeout, this, 30000);
+        add_job((job_func)con_timeout, this, 30000);
         if (fd < 0) {
             LOGE("connect to %s failed\n", this->hostname);
             return connect();
@@ -108,7 +110,15 @@ void Host::waitconnectHE(uint32_t events) {
             requester_ptr->response(std::move(res));
         }
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
-        del_job((job_func)host_timeout, this);
+        del_job((job_func)con_timeout, this);
+
+        if(vpn_mode){
+            if(protocol == Protocol::UDP){
+                add_job((job_func)vpn_aged, this, 180000);
+            }else{
+                add_job((job_func)vpn_aged, this, 300000);
+            }
+        }
     }
     return;
 reconnect:
@@ -146,8 +156,12 @@ void Host::defaultHE(uint32_t events) {
         if(ret != WRITE_NOTHING && requester_ptr)
             requester_ptr->writedcb(requester_index);
     }
-    if(protocol == Protocol::UDP){
-        add_job((job_func)host_timeout, this, 300000);
+    if(vpn_mode){
+        if(protocol == Protocol::UDP){
+            add_job((job_func)vpn_aged, this, 180000);
+        }else{
+            add_job((job_func)vpn_aged, this, 300000);
+        }
     }
 }
 
@@ -230,14 +244,16 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 void Host::clean(uint32_t errcode, void* index) {
     assert((long)index == 1 || (void*)index == 0);
     if(requester_ptr){
-        if(errcode == CONNECT_TIMEOUT || errcode == DNS_FAILED){
-            HttpResHeader res(H504);
-            res.index = requester_index;
-            requester_ptr->response(std::move(res));
-        }else if(errcode == PEER_UNREACHABLE){
-            HttpResHeader res(H503);
-            res.index = requester_index;
-            requester_ptr->response(std::move(res));
+        if(protocol == Protocol::TCP){
+            if(errcode == CONNECT_TIMEOUT || errcode == DNS_FAILED){
+                HttpResHeader res(H504);
+                res.index = requester_index;
+                requester_ptr->response(std::move(res));
+            }else if(errcode == PEER_UNREACHABLE){
+                HttpResHeader res(H503);
+                res.index = requester_index;
+                requester_ptr->response(std::move(res));
+            }
         }
         if(index == nullptr){
             requester_ptr->clean(errcode, requester_index);

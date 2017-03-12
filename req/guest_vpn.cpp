@@ -55,8 +55,7 @@ void Guest_vpn::buffHE(char* buff, size_t buflen) {
         /* determine protocol */
         switch (pac.gettype()) {
             case IPPROTO_ICMP:
-                pac.print();
-                return;
+                return icmpHE(&pac, buff, buflen);
             case IPPROTO_TCP:
                 return tcpHE(&pac, buff, buflen);
             case IPPROTO_UDP:
@@ -219,7 +218,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
             statusmap.erase(key);
         }
     }
-    if(flag & TH_PUSH){//2数据包，创建ack包
+    if(len > pac->gethdrlen()){//2数据包，创建ack包
         Ip pac_return(IPPROTO_TCP, pac->getdst(), pac->tcp->getdport(), pac->getsrc(), pac->tcp->getsport());
         if(statusmap.count(key) == 0){     //如果不存在，直接发送rst断开
             pac_return.tcp
@@ -308,6 +307,55 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
     }
 }
 
+void Guest_vpn::icmpHE(const Ip* pac, const char* packet, size_t len) {
+    switch(pac->icmp->gettype()){
+    case ICMP_ECHO:
+        LOGD(DVPN, "Want ping %s, we don't reply ping\n", inet_ntoa(*pac->getdst()));
+        break;
+    case ICMP_UNREACH:{
+        Ip icmp_pac(packet+pac->gethdrlen(), len-pac->gethdrlen());
+
+        int dport = icmp_pac.udp->getsport();
+        int sport = icmp_pac.udp->getdport();
+        char sip[INET_ADDRSTRLEN];
+        char dip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, icmp_pac.getsrc(), dip, sizeof(dip));
+        inet_ntop(AF_INET, icmp_pac.getdst(), sip, sizeof(sip));
+        char key[100];
+        switch(icmp_pac.gettype()){
+        case IPPROTO_TCP:
+            sprintf(key, "%s %d %s %d tcp", sip, sport, dip, dport);
+            break;
+        case IPPROTO_UDP:
+            sprintf(key, "%s %d %s %d udp", sip, sport, dip, dport);
+            break;
+        default:
+            LOGD(DVPN, "Get unreach icmp packet unkown protocol:%d\n", icmp_pac.gettype());
+            return;
+        }
+        LOGD(DVPN, "Get unreach icmp packet (%s) \n", key);
+        if(statusmap.count(key)){
+            LOGD(DVPN, "clean this connection\n");
+            VpnStatus& status = statusmap[key];
+
+            status.res_ptr->clean(PEER_LOST_ERR, status.res_index);
+            free(status.key);
+            free(status.packet);
+            statusmap.erase(key);
+
+        }else{
+            LOGD(DVPN, "key not exist, ignore\n");
+        }
+    } break;
+    default:
+        LOGD(DVPN, "Get icmp type:%d code: %d, ignore it.\n",
+             pac->icmp->gettype(),
+             pac->icmp->getcode());
+        break;
+    }
+}
+
+
 
 ssize_t Guest_vpn::Write(const void* buff, size_t size, void* index) {
     char *key  = (char *)index;
@@ -391,7 +439,7 @@ void Guest_vpn::clean(uint32_t errcode, void* index) {
             }
         }else{
             if(errcode){
-                LOGD(DVPN, "write rst packet");
+                LOGD(DVPN, "write rst packet\n");
                 Ip pac_return(IPPROTO_TCP, dip, dport, sip, sport);
                 pac_return.tcp
                 ->setseq(status.seq)

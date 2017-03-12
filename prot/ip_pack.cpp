@@ -100,6 +100,16 @@ Icmp* Icmp::setcode(uint8_t code) {
     return this;
 }
 
+uint8_t Icmp::gettype() const {
+    return icmp_hdr.type;
+}
+
+uint8_t Icmp::getcode() const {
+    return icmp_hdr.code;
+}
+
+
+
 
 char * Icmp::build_packet(const void* data, size_t& len) {
     size_t datalen = data?len:0;
@@ -593,7 +603,7 @@ Ip::~Ip(){
 
 
 char* Ip::build_packet(const void* data, size_t &len){
-    char* packet = nullptr;
+    char* packet;
     switch(gettype()){
     case IPPROTO_ICMP:
         packet = icmp->build_packet(data, len);
@@ -603,6 +613,10 @@ char* Ip::build_packet(const void* data, size_t &len){
         break;
     case IPPROTO_UDP:
         packet = udp->build_packet(data, len);
+        break;
+    default:
+        packet = (char *)p_malloc(len);
+        memcpy(packet, data, len);
         break;
     }
     packet = (char *)p_move(packet, -(int)sizeof(ip));

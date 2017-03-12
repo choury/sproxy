@@ -28,10 +28,12 @@ extern int daemon_mode;
 extern int ignore_cert_error;
 extern int disable_ipv6;
 extern int use_http2;
+extern int vpn_mode;
 extern char auth_string[];
 extern const char *cafile;
 extern const char *index_file;
 extern uint32_t debug;
+
 
 #define DEPOLL    1
 #define DDNS      2
@@ -39,7 +41,6 @@ extern uint32_t debug;
 #define DHTTP2    8
 #define DJOB      16
 #define DVPN      32
-#define DHOST     64
 
 #define DEPOLL_STR  "[EPOLL]"
 #define DDNS_STR    "[DNS]"
@@ -47,7 +48,6 @@ extern uint32_t debug;
 #define DHTTP2_STR  "[HTTP2]"
 #define DJOB_STR    "[JOB]"
 #define DVPN_STR     "[VPN]"
-#define DHOST_STR    "[HOST]"
 
 
 #ifdef __ANDROID__

@@ -23,6 +23,7 @@ protected:
     void buffHE(char* buff, size_t buflen);
     void tcpHE(const Ip* pac,const char* packet, size_t len);
     void udpHE(const Ip* pac,const char* packet, size_t len);
+    void icmpHE(const Ip* pac,const char* packet, size_t len);
 public:
     explicit Guest_vpn(int fd);
     virtual void wait(void* index)override;
