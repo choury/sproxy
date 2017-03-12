@@ -593,7 +593,7 @@ Ip::~Ip(){
 
 
 char* Ip::build_packet(const void* data, size_t &len){
-    char* packet;
+    char* packet = nullptr;
     switch(gettype()){
     case IPPROTO_ICMP:
         packet = icmp->build_packet(data, len);
