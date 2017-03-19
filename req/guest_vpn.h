@@ -11,6 +11,7 @@ struct VpnKey{
     sockaddr_un dst;
     Protocol    protocol;
     VpnKey(const Ip* ip);
+    void reverse();
     const char* getstr() const;
 }__attribute__((packed));
 

@@ -28,6 +28,13 @@ VpnKey::VpnKey(const Ip* ip) {
     }
 }
 
+void VpnKey::reverse() {
+    auto tmp  = dst;
+    dst = src;
+    src = tmp;
+}
+
+
 const char * VpnKey::getstr() const{
     static char str[100];
     
@@ -357,6 +364,7 @@ void Guest_vpn::icmpHE(const Ip* pac, const char* packet, size_t len) {
         Ip icmp_pac(packet+pac->gethdrlen(), len-pac->gethdrlen());
         uint8_t type = icmp_pac.gettype();
         VpnKey key(&icmp_pac);
+        key.reverse();
         
         LOGD(DVPN, "Get unreach icmp packet (%s) type: %d\n", key.getstr(), type);
         if(type != IPPROTO_TCP && type != IPPROTO_UDP){
