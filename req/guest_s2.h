@@ -37,7 +37,6 @@ public:
     explicit Guest_s2(int fd, struct sockaddr_in6* myaddr, Ssl *ssl);
     virtual ~Guest_s2();
     
-    virtual void ResetResponser(Responser *r, void* index)override;
     virtual void clean(uint32_t errcode, void* index)override;
 
     virtual ssize_t Write(void *buff, size_t size, void* index)override;

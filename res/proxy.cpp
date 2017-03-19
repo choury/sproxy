@@ -8,7 +8,7 @@
 
 
 Proxy::Proxy(const char* hostname, uint16_t port, Protocol protocol): 
-        Host(hostname, port, protocol), req(nullptr, nullptr) {
+        Host(hostname, port, protocol){
 
 }
 
@@ -189,13 +189,11 @@ void Proxy::shakehandHE(uint32_t events) {
         {
             Proxy2 *new_proxy = new Proxy2(fd, ctx,ssl);
             new_proxy->init();
-            requester_ptr->ResetResponser(new_proxy, req.index);
-            new_proxy->request(std::move(req));
             if(!proxy2){
                 proxy2 = new_proxy;
             }
             this->discard();
-            clean(NOERROR, 0);
+            clean(CONNECT_FAILED, 0); //discard the first request, let client to retry.
         }else{
             if(protocol == Protocol::UDP){
                 LOGE("Warning: Use http1.1 on dtls!\n");
@@ -209,12 +207,6 @@ void Proxy::shakehandHE(uint32_t events) {
     }
 }
 
-void* Proxy::request(HttpReqHeader&& req) {
-    if(use_http2){
-        this->req = req;
-    }
-    return Host::request(std::move(req));
-}
 
 void Proxy::discard() {
     ssl = nullptr;

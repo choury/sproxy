@@ -17,12 +17,6 @@ Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Requester(fd, myaddr) {
 }
 
 
-void Guest::ResetResponser(Responser *r, void* index){
-    assert((uint32_t)(long)index == 1);
-    assert(r);
-    responser_ptr = r;
-}
-
 void Guest::request_next() {
     while(status == Status::idle && reqs.size()){
         HttpReq req = std::move(reqs.front());
@@ -188,9 +182,4 @@ void Guest::clean(uint32_t errcode, void* index) {
     responser_ptr = nullptr;
     del_job((job_func)::request_next, this);
     Peer::clean(errcode, 0);
-}
-
-void Guest::discard() {
-    responser_ptr = nullptr;
-    Requester::discard();
 }

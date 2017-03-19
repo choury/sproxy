@@ -441,17 +441,6 @@ void Guest_vpn::wait(void* index) {
     waitlist.insert((VpnKey *)index);
 }
 
-void Guest_vpn::ResetResponser(Responser* r, void* index) {
-    VpnKey& key = *(VpnKey *)index;
-    assert(statusmap.count(key));
-    if(r){
-        statusmap[key].res_ptr = r;
-    }else{
-        statusmap.erase(key);
-        delete (VpnKey*)index;
-    }
-}
-
 int32_t Guest_vpn::bufleft(void* index) {
     VpnKey *key = (VpnKey *)index;
     assert(index == nullptr || statusmap.count(*key));

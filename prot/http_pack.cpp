@@ -84,8 +84,7 @@ std::set< string > HttpHeader::getall(const char *header) const{
 HttpReqHeader::HttpReqHeader(const char* header, ResObject* src):
                              src(dynamic_cast<Requester *>(src))
 {
-    if(header == nullptr)
-        return;
+    assert(header);
     assert(src);
     
     char httpheader[HEADLENLIMIT];
@@ -396,6 +395,7 @@ std::map< string, string > HttpReqHeader::getcookies() const {
 
 
 HttpResHeader::HttpResHeader(const char* header) {
+    assert(header);
     char httpheader[HEADLENLIMIT];
     snprintf(httpheader, sizeof(httpheader), "%s", header);
     *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;

@@ -18,7 +18,6 @@ public:
     
     virtual const char *getsrc();
     virtual const char *getip();
-    virtual void ResetResponser(Responser *r, void* index);
     virtual void response(HttpResHeader&& res) = 0;
 };
 

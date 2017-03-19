@@ -29,11 +29,6 @@ Host::~Host(){
     del_job((job_func)vpn_aged, this);
 }
 
-void Host::discard() {
-    requester_ptr = nullptr;
-    Responser::discard();
-}
-
 
 void Host::Dnscallback(Host* host, const char *hostname, std::vector<sockaddr_un> addrs) {
     snprintf(host->hostname, sizeof(host->hostname), "%s", hostname);

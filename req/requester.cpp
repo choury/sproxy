@@ -29,9 +29,6 @@ void Requester::closeHE(uint32_t events) {
 }
 
 
-void Requester::ResetResponser(Responser* , void*) {
-}
-
 const char* Requester::getip(){
     return sourceip;
 }

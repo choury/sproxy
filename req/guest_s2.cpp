@@ -206,17 +206,6 @@ void Guest_s2::AdjustInitalFrameWindowSize(ssize_t diff) {
     remotewinsize += diff;
 }
 
-void Guest_s2::ResetResponser(Responser* r, void* index) {
-    uint32_t id = (uint32_t)(long)index;
-    assert(statusmap.count(id));
-    if(r){
-        statusmap[id].res_ptr = r;
-    }else{
-        statusmap.erase(id);
-    }
-}
-
-
 void Guest_s2::clean(uint32_t errcode, void* index) {
     uint32_t id = (uint32_t)(long)index;
     if(id == 0) {
