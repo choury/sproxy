@@ -35,7 +35,7 @@ public:
     
     virtual void clean(uint32_t errcode, void* info);
     
-    virtual ssize_t Write(const void *buff, size_t size, void* index);
+    virtual ssize_t Write(const void *buff, size_t size, void* index) final;
     virtual ssize_t Write(void* buff, size_t size, void* index);
     
     virtual void wait(void* index);

@@ -14,12 +14,11 @@ int efd;
 
 int daemon_mode = 0;
 int use_http2 = 1;
-int udp_mode = 0;
 int ignore_cert_error = 0;
 int disable_ipv6 = 0;
 char SHOST[DOMAINLIMIT] = {"b.choury.com"};
 uint16_t SPORT = 443;
-Protocol SPROT = Protocol::TCP;
+Protocol SPROT = Protocol::UDP;
 char auth_string[DOMAINLIMIT] = {0};
 const char *cafile =  nullptr;
 const char *index_file = nullptr;

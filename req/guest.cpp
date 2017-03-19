@@ -24,7 +24,7 @@ void Guest::ResetResponser(Responser *r, void* index){
 }
 
 void Guest::request_next() {
-    while(status == Status::none && reqs.size()){
+    while(status == Status::idle && reqs.size()){
         HttpReq req = std::move(reqs.front());
         reqs.pop();
         Responser* res_ptr = distribute(req.header, responser_ptr);
@@ -94,7 +94,7 @@ void Guest::ErrProc(int errcode) {
 
 void Guest::ReqProc(HttpReqHeader&& req) {
     req.index = (void *)1;
-    if(status == Status::none && reqs.empty()){
+    if(status == Status::idle && reqs.empty()){
         Responser* res_ptr = distribute(req, responser_ptr);
         if(res_ptr){
             if(req.ismethod("CONNECT")){
@@ -124,7 +124,7 @@ void Guest::response(HttpResHeader&& res) {
     }else if(res.get("Transfer-Encoding")){
         status = Status::chunked;
     }else if(res.no_body()){
-        status = Status::none;
+        status = Status::idle;
         if(!reqs.empty())
             add_job((job_func)::request_next, this, 0);
     }
@@ -153,7 +153,7 @@ ssize_t Guest::Write(void *buff, size_t size, void* index) {
         ret =  Requester::Write(buff, size, 0);
     }
     if(size == 0){
-        status = Status::none;
+        status = Status::idle;
         if(!reqs.empty())
             add_job((job_func)::request_next, this, 0);
     }

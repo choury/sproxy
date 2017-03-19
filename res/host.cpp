@@ -247,7 +247,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 void Host::clean(uint32_t errcode, void* index) {
     assert((long)index == 1 || (void*)index == 0);
     if(requester_ptr){
-        if((http_flag & HTTP_VPN_MODE_F) == 0 && protocol == Protocol::TCP){
+        if(protocol == Protocol::TCP){
             if(errcode == CONNECT_TIMEOUT || errcode == DNS_FAILED){
                 HttpResHeader res(H504);
                 res.index = requester_index;

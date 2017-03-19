@@ -10,8 +10,8 @@ class Guest:public Requester, public HttpResponser {
     void request_next();
 protected:
     enum class Status{
-        none, requesting, presistent, chunked,
-    } status = Status::none;
+        idle, requesting, presistent, chunked,
+    } status = Status::idle;
     Responser* responser_ptr = nullptr;
     void*      responser_index = nullptr;
     std::queue<HttpReq> reqs;

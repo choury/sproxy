@@ -1,11 +1,15 @@
 #ifndef IP_PACKET_H_
 #define IP_PACKET_H_
 
+#include "misc/net.h"
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
+
+#include <assert.h>
+
 
 #define PTYPE_TCP_SYN  1
 #define PTYPE_TCP_DATA 2
@@ -23,6 +27,7 @@ public:
     Icmp(const char* packet, size_t len);
     void print() const;
     char *build_packet(const void* data, size_t &len);
+    char* build_packet(void* data, size_t &len);
     
     Icmp* settype(uint8_t type);
     Icmp* setcode(uint8_t code);
@@ -43,6 +48,7 @@ public:
     Tcp(const ip* ip_hdr, uint16_t sport, uint16_t dport);
     void print() const;
     char *build_packet(const void* data, size_t &len);
+    char* build_packet(void* data, size_t &len);
 
 
     Tcp* setack(uint32_t ack);
@@ -55,6 +61,7 @@ public:
     uint32_t getseq() const;
     uint16_t getsport() const;
     uint16_t getdport() const;
+    uint16_t getwindow() const;
     uint8_t  getflag() const;
     int gettimestamp(uint32_t *tsval, uint32_t *tsecr) const;
     ~Tcp();
@@ -68,6 +75,7 @@ public:
     Udp(const ip* ip_hdr, uint16_t sport, uint16_t dport);
     void print() const;
     char *build_packet(const void* data, size_t &len);
+    char* build_packet(void* data, size_t &len);
 
     uint16_t getsport() const;
     uint16_t getdport() const;
@@ -85,14 +93,15 @@ public:
         Udp* udp;
     };
     Ip(const char* packet, size_t len);
-    Ip(uint8_t type, const char* src, uint16_t sport, const char* dst, uint16_t dport);
     Ip(uint8_t type, const in_addr* src, uint16_t sport, const in_addr* dst, uint16_t dport);
+    Ip(uint8_t type, const sockaddr_un* src,  const sockaddr_un* dst);
     void print() const;
     const in_addr* getsrc() const;
     const in_addr* getdst() const;
     uint8_t gettype() const;
     size_t gethdrlen() const;
     char* build_packet(const void* data, size_t &len);
+    char* build_packet(void* data, size_t &len);
     
     ~Ip();
 };
