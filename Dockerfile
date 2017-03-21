@@ -7,7 +7,7 @@ FROM debian:sid
 MAINTAINER choury zhouwei400@gmail.com
 
 # Commands to update the image
-RUN apt-get update && apt-get -y install gcc g++ cmake make unzip libssl-dev wget
+RUN apt-get update && apt-get -y install gcc g++ cmake make unzip libssl-dev libjson-c-dev wget
 WORKDIR /root
 RUN wget "https://github.com/choury/sproxy/archive/master.zip" && unzip master.zip && rm master.zip
 WORKDIR /root/sproxy-master

@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 2.8)
 project(sproxy)
 
 INCLUDE(CheckCXXCompilerFlag)
+set(CMAKE_MODULE_PATH "cmake")
 
 #SET(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
 #SET(BUILD_SHARED_LIBRARIES OFF)
@@ -21,6 +22,15 @@ endif()
 
 find_package(OpenSSL 1.0.2 REQUIRED)
 include_directories(${OPENSSL_INCLUDE_DIR})
+
+find_package(JSON-C)
+
+if(NOT JSON-C_FOUND)
+    message(WARNING "json-c not found, disable demo")
+else()
+    include_directories(${JSON-C_INCLUDE_DIR})
+    set(BUILD_DEMO TRUE)
+endif()
 
 set(CMAKE_C_FLAGS "-Wall -fPIC")
 set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -fPIC")
@@ -62,12 +72,14 @@ install(TARGETS sproxy RUNTIME DESTINATION bin)
 
 add_library(sproxy_vpn SHARED vpn.cpp base.cpp)
 set_target_properties(sproxy_vpn PROPERTIES OUTPUT_NAME "sproxy_vpn") 
-target_link_libraries(sproxy_vpn req res prot misc)
+target_link_libraries(sproxy_vpn ${OPENSSL_LIBRARIES} dl req res prot misc)
 
-add_library(demo SHARED cgidemo.cpp)
-target_link_libraries(demo json-c)
-set_target_properties(demo PROPERTIES OUTPUT_NAME "demo") 
+if(BUILD_DEMO)
+    add_library(demo SHARED cgidemo.cpp)
+    target_link_libraries(demo ${JSON-C_LIBRARIES})
+    set_target_properties(demo PROPERTIES OUTPUT_NAME "demo") 
 
-#add_executable(vpn vpndemo.c)
-#set_target_properties(vpn PROPERTIES OUTPUT_NAME "vpndemo")
-#target_link_libraries(vpn asan ${OPENSSL_LIBRARIES} sproxy_vpn)
+    add_executable(vpn vpndemo.c)
+    target_link_libraries(vpn sproxy_vpn)
+    set_target_properties(vpn PROPERTIES OUTPUT_NAME "vpndemo")
+endif()

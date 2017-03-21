@@ -2,11 +2,12 @@ language: cpp
 sudo: required
 dist: trusty
 before_install:
+- sudo apt-get install -y libjson-c-dev
 #openSSL 1.0.2 stable
 - wget -O openssl.zip -c https://github.com/openssl/openssl/archive/OpenSSL_1_0_2-stable.zip
 - unzip openssl.zip
 - cd openssl-OpenSSL_1_0_2-stable
-- ./config --prefix=/usr/local
+- ./config --prefix=/usr/local -fPIC
 - make
 - sudo make install
 - cd ..
