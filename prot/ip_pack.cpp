@@ -160,17 +160,12 @@ Tcp::Tcp(const ip* ip_hdr, const char* packet, size_t len):ip_hdr(ip_hdr){
 }
 
 Tcp::Tcp(const ip* ip_hdr, uint16_t sport, uint16_t dport):ip_hdr(ip_hdr){
+    memset(&tcp_hdr, 0, sizeof(tcphdr));
+    
     tcp_hdr.source = htons(sport);
     tcp_hdr.dest = htons(dport);
 
-    tcp_hdr.seq = 0;
-    tcp_hdr.ack_seq = 0;
-    tcp_hdr.res1 = 0;
     tcp_hdr.doff = 5;
-    tcp_hdr.th_flags = 0;
-    tcp_hdr.window = 0;
-    tcp_hdr.check = 0;
-    tcp_hdr.urg_ptr = 0;
 }
 
 Tcp::~Tcp() {
@@ -200,7 +195,7 @@ Tcp * Tcp::setwindow(uint32_t window) {
 }
 
 Tcp * Tcp::setflag(uint8_t flag) {
-    tcp_hdr.th_flags = flag;
+    ((uint8_t *)&tcp_hdr)[13] = flag;
     return this;
 }
 
@@ -391,7 +386,7 @@ uint16_t Tcp::getwindow() const {
 
 
 uint8_t Tcp::getflag() const {
-    return tcp_hdr.th_flags;
+    return ((uint8_t *)&tcp_hdr)[13];
 }
 
 /**
@@ -404,7 +399,6 @@ void Tcp::print() const{
     "Seq num: %u, "
     "Ack num: %u, "
     "Length: %u, "
-    "Flags: %d, "
     "FIN= %d, "
     "SYN= %d, "
     "RST= %d, "
@@ -420,7 +414,6 @@ void Tcp::print() const{
          ntohl(tcp_hdr.seq),
          ntohl(tcp_hdr.ack_seq),
          tcp_hdr.doff * 4,
-         tcp_hdr.th_flags,
          tcp_hdr.fin,
          tcp_hdr.syn,
          tcp_hdr.rst,

@@ -11,13 +11,29 @@
 #include <assert.h>
 
 
-#define PTYPE_TCP_SYN  1
-#define PTYPE_TCP_DATA 2
-#define PTYPE_TCP_ACK  3
-#define PTYPE_TCP_RST  4
-#define PTYPE_TCP_FIN  5
-#define PTYPE_UNKNOW 0
+#ifndef TH_FIN
+#define TH_FIN        0x01
+#endif
 
+#ifndef TH_SYN
+#define TH_SYN        0x02
+#endif
+
+#ifndef TH_RST
+#define TH_RST        0x04
+#endif
+
+#ifndef TH_PUSH
+#define TH_PUSH       0x08
+#endif
+
+#ifndef TH_ACK
+#define TH_ACK        0x10
+#endif
+
+#ifndef TH_URG
+#define TH_URG        0x20
+#endif
 
 
 class Icmp{

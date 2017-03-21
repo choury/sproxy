@@ -48,7 +48,7 @@ int Bind_any(int fd, short port){
         LOGOUT("fcntl get error:%m\n");
         return -1;
     }
-    if (fcntl(fd, F_SETFL, flag | O_NONBLOCK | O_CLOEXEC) == -1){
+    if (fcntl(fd, F_SETFL, flag | O_NONBLOCK) == -1){
         LOGOUT("fcntl set error:%m\n");
         return -1;
     }
@@ -108,7 +108,7 @@ int Connect(union sockaddr_un* addr, int type) {
         close(fd);
         return -1;
     }
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK | O_CLOEXEC);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
     if(type == SOCK_STREAM){
 
