@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <sys/eventfd.h>
 #include <sys/stat.h>
 #include <sys/mman.h>

@@ -8,6 +8,7 @@
 
 #include <string.h>
 #include <errno.h>
+#include <assert.h>
 
 
 #define BUF_SIZE 1024
@@ -221,8 +222,6 @@ static unsigned char *getrr(
 }
 
 static int dnsinit() {
-    struct epoll_event event;
-    event.events = EPOLLIN;
     for (size_t i = 0; i < srvs.size(); ++i) {
         delete srvs[i];
     }
@@ -254,10 +253,7 @@ static int dnsinit() {
                 LOGE("[DNS] connecting  %s error:%m\n", ipaddr);
                 continue;
             }
-            Dns_srv *srv = new Dns_srv(fd);
-            srvs.push_back(srv);
-            event.data.ptr = srv;
-            epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+            new Dns_srv(fd);
         }
     }
     fclose(res_file);
@@ -385,8 +381,20 @@ void RcdDown(const char *hostname, const sockaddr_un &addr) {
 }
 
 Dns_srv::Dns_srv(int fd):Con(fd) {
+    updateEpoll(EPOLLIN);
     handleEvent = (void (Con::*)(uint32_t))&Dns_srv::DnshandleEvent;
+    srvs.push_back(this);
 }
+
+Dns_srv::~Dns_srv(){
+    for(auto i=srvs.begin(); i != srvs.end(); i++){
+        if(this == *i){
+            srvs.erase(i);
+            return;
+        }
+    }
+}
+
 
 void Dns_srv::DnshandleEvent(uint32_t events) {
     unsigned char buf[BUF_SIZE];

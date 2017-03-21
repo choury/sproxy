@@ -143,7 +143,7 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
         }
         return nullptr;
     } else if (req.ismethod("DELS")) {
-        const char* strategy = getstrategystring(req.hostname);
+        const char* strategy = getstrategystring(getstrategy(req.hostname));
         LOG("[[del %s]] %s\n", strategy, log_buff);
         if(delstrategy(req.hostname)){
             HttpResHeader res(H200);
@@ -178,7 +178,7 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
     } else if (req.ismethod("TEST")){
         HttpResHeader res("HTTP/1.1 200 Ok" CRLF
                           "Content-Length:0" CRLF CRLF);
-        res.add("Strategy", getstrategystring(req.hostname));
+        res.add("Strategy", getstrategystring(getstrategy(req.hostname)));
         res.index = req.index;
         requester->response(std::move(res));
     } else if(req.ismethod("FLUSH")){

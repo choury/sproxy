@@ -5,6 +5,7 @@
 #include <map>
 #include <string.h>
 #include <errno.h>
+#include <assert.h>
                     
 void Host::con_timeout(Host* host) {
     LOGE("connect to %s time out.\n", host->hostname);

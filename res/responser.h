@@ -1,7 +1,7 @@
 #ifndef RESPONSE_H__
 #define RESPONSE_H__
 
-#include "peer.h"
+#include "base.h"
 #include "prot/http_pack.h"
 
 class Requester;

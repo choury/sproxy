@@ -1,7 +1,7 @@
 #ifndef DNS_H__
 #define DNS_H__
 
-#include "con.h"
+#include "base.h"
 #include "net.h"
 
 #include <vector>
@@ -13,6 +13,7 @@
 class Dns_srv:public Con{
 public:
     explicit Dns_srv(int fd);
+    ~Dns_srv();
     virtual void DnshandleEvent(uint32_t events);
     int query(const char *host, int type, uint32_t id);
 };

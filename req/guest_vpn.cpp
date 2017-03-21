@@ -5,6 +5,8 @@
 #include "misc/net.h"
 #include "res/responser.h"
 
+#include <unistd.h>
+
 
 VpnKey::VpnKey(const Ip* ip) {
     memset(&src, 0, sizeof(src));

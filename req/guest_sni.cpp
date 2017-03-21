@@ -2,6 +2,8 @@
 #include "res/host.h"
 #include "misc/tls.h"
 
+#include <assert.h>
+
 Guest_sni::Guest_sni(int fd, sockaddr_in6 *myaddr):Guest(fd, myaddr){
     Http_Proc = &Guest_sni::AlwaysProc;
     updateEpoll(EPOLLIN);

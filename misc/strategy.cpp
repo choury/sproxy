@@ -36,26 +36,26 @@ void loadsites() {
 
     ifstream sitesfile(LISTFILE);
     if (sitesfile.good()) {
-
-
-        while (!sitesfile.eof()) {
-            string line;
-            sitesfile >> line;
-
-            int split = line.find(':');
+        string line;
+        while (std::getline(sitesfile, line)) {
             if(line[0] == '#'){
                 continue;
             }
-            string site = line.substr(0, split);
-            if(line.substr(split+1) == "direct"){
+
+            char site[DOMAINLIMIT];
+            char strategy[20];
+            char proxy[DOMAINLIMIT];
+            sscanf(line.c_str(), "%s %s %s", site, strategy, proxy);
+
+            if(strcmp(strategy, "direct") == 0){
                 sites[site] = Strategy::direct;
-            }else if(line.substr(split+1) == "proxy"){
+            }else if(strcmp(strategy, "proxy") == 0){
                 sites[site] = Strategy::proxy;
-            }else if(line.substr(split+1) == "local"){
+            }else if(strcmp(strategy, "local") == 0){
                 sites[site] = Strategy::local;
-            }else if(line.substr(split+1) == "block"){
+            }else if(strcmp(strategy, "block") == 0){
                 sites[site] = Strategy::block;
-            }else if(site.length()){
+            }else if(line.length()){
                 LOGE("Wrong config line:%s\n",line.c_str());
             }
         }
@@ -147,8 +147,9 @@ Strategy getstrategy(const char *host){
     return sites["_"];
 }
 
-const char *getstrategystring(const char *host){
-    switch(getstrategy(host)){
+const char* getstrategystring(Strategy s)
+{
+    switch(s){
     case Strategy::direct:
         return "direct";
     case Strategy::proxy:
@@ -159,6 +160,14 @@ const char *getstrategystring(const char *host){
         return "block";
     }
     return nullptr;
+}
+
+std::map<std::string, std::string> getallstrategy(){
+    std::map<std::string, std::string> smap;
+    for(auto i:sites){
+        smap[i.first] = getstrategystring(i.second);
+    }
+    return smap;
 }
 
 void addauth(const char *ip) {

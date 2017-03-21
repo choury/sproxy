@@ -1,12 +1,28 @@
-#ifndef PEER_H__
-#define PEER_H__
+#ifndef BASE_H__
+#define BASE_H__
 
-#include "con.h"
 #include "common.h"
 #include <queue>
 
-/* guest   ---   (client) --- host(proxy)
- * guest_s ---   (server) --- host/file/cgi */
+class Con {
+protected:
+    int fd = 0;
+    uint32_t events = 0;
+    void updateEpoll(uint32_t events);
+    virtual void discard();
+public:
+    Con(int fd);
+    void (Con::*handleEvent)(uint32_t events)=nullptr;
+    virtual ~Con();
+};
+
+class Server:public Con{
+protected:
+    virtual void defaultHE(uint32_t events)=0;
+public:
+    Server(int fd);
+};
+
 
 #define WRITE_NOTHING     1
 #define WRITE_INCOMP      2
@@ -42,5 +58,7 @@ public:
     virtual void writedcb(void* index);
     virtual int32_t bufleft(void* index);
 };
+
+void releaseall();
 
 #endif

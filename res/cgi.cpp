@@ -1,6 +1,7 @@
 #include "cgi.h"
 #include "req/requester.h"
 #include "misc/net.h"
+#include "misc/strategy.h"
 
 #include <map>
 #include <sstream>
@@ -11,6 +12,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <assert.h>
 
 using std::string;
 std::map<std::string, Cgi *> cgimap;
@@ -36,17 +38,18 @@ Cgi::Cgi(HttpReqHeader& req) {
         errinfo = H500;
         goto err;
     }
+    fd=fds[0];
+
     if (fork() == 0) { // 子进程
         signal(SIGPIPE, SIG_DFL);
-        close(fds[0]);   // 关闭管道的父进程端
-        change_process_name(req.filename);
+        change_process_name(basename(req.filename));
+        releaseall();
         exit(func(fds[1]));
     } 
     // 父进程
     dlclose(handle);
     close(fds[1]);   // 关闭管道的子进程端
     /* 现在可在fd[0]中读写数据 */
-    fd=fds[0];
     flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0) {
         LOGE("fcntl error:%m\n");
@@ -185,20 +188,43 @@ void Cgi::InProc() {
     case Status::HandleValue:
         cgi_id = ntohl(header->requestId);
         requester = statusmap.at(cgi_id).req_ptr;
-        if((header->flag & CGI_FLAG_ACK)==0){
-            header->flag |= CGI_FLAG_ACK;
+        if((header->flag & CGI_FLAG_NAMESET)==0){
             CGI_NameValue *nv = (CGI_NameValue *)(header+1);
             switch(ntohl(nv->name)){
-            case CGI_NAME_BUFFLEFT:
-                set32(nv->value, htonl(requester->bufleft(statusmap.at(cgi_id).req_index)));
-                header->contentLength = sizeof(CGI_NameValue) + sizeof(uint32_t);
-                break;
+            case CGI_NAME_BUFFLEFT:{
+                CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + sizeof(uint32_t));
+                memcpy(header_back, header, sizeof(CGI_Header));
+                header_back->flag = CGI_FLAG_NAMESET;
+                header_back->contentLength = htons(sizeof(CGI_NameValue) + sizeof(uint32_t));
+                CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
+                nv_back->name = htonl(CGI_NAME_BUFFLEFT);
+                set32(nv_back->value, htonl(requester->bufleft(statusmap.at(cgi_id).req_index)));
+                Responser::Write(header_back, sizeof(CGI_Header) + ntohs(header->contentLength), 0);
+                break;}
+            case CGI_NAME_STRATEGY:{
+                auto smap = getallstrategy();
+                for(auto i: smap){
+                    //"name value\0"
+                    size_t value_len = sizeof(CGI_NameValue) + i.first.length() + i.second.length() + 2;
+                    CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + value_len);
+                    memcpy(header_back, header, sizeof(CGI_Header));
+                    header_back->flag = CGI_FLAG_NAMESET;
+                    header_back->contentLength = htons(value_len);
+                    CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
+                    nv_back->name = htonl(CGI_NAME_STRATEGY);
+                    sprintf((char *)nv_back->value, "%s %s", i.first.c_str(), i.second.c_str());
+                    Responser::Write(header_back, sizeof(CGI_Header) + value_len, 0);
+                }
+                break;}
             default:
-                goto ignore;
-            }
-            Responser::Write((const void *)header, sizeof(CGI_Header) + ntohs(header->contentLength), 0);
+                break;
+            } 
+            CGI_Header* header_end = (CGI_Header*)p_malloc(sizeof(CGI_Header));
+            memcpy(header_end, header, sizeof(CGI_Header));
+            header_end->contentLength = 0;
+            header_end->flag = CGI_FLAG_END;
+            Responser::Write(header_end, sizeof(CGI_Header), 0);
         }
-ignore:
         status = Status::WaitHeadr;
         cgi_getlen = 0;
         break;
@@ -381,6 +407,24 @@ int cgi_write(int fd, uint32_t id, const void *buff, size_t len) {
         buff = (char *)buff + ret;
     }while(left);
     return len;
+}
+
+int cgi_query(int fd, uint32_t id, int name){
+    CGI_Header header;
+    header.type = CGI_VALUE;
+    header.flag = CGI_FLAG_END;
+    header.contentLength = htons(sizeof(CGI_NameValue));
+    header.requestId = htonl(id);
+    int ret = write(fd, &header, sizeof(header));
+    if(ret != sizeof(header))
+        return -1;
+    CGI_NameValue nv;
+    nv.name = htonl(name);
+    
+    ret = write(fd, &nv, sizeof(nv));
+    if(ret != sizeof(nv))
+        return -1;
+    return 0;
 }
 
 

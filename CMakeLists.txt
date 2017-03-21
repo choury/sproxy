@@ -53,18 +53,19 @@ ADD_SUBDIRECTORY(res)
 
 INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR})
 
-add_executable(sproxy main.cpp peer.cpp)
+add_executable(sproxy main.cpp base.cpp)
 set_target_properties(sproxy PROPERTIES OUTPUT_NAME "sproxy")
 target_link_libraries(sproxy ${OPENSSL_LIBRARIES} dl req res prot misc)
 
 
 install(TARGETS sproxy RUNTIME DESTINATION bin)
 
-add_library(sproxy_vpn SHARED vpn.cpp peer.cpp)
+add_library(sproxy_vpn SHARED vpn.cpp base.cpp)
 set_target_properties(sproxy_vpn PROPERTIES OUTPUT_NAME "sproxy_vpn") 
 target_link_libraries(sproxy_vpn req res prot misc)
 
 add_library(demo SHARED cgidemo.cpp)
+target_link_libraries(demo json-c)
 set_target_properties(demo PROPERTIES OUTPUT_NAME "demo") 
 
 #add_executable(vpn vpndemo.c)
