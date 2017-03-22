@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8)
 project(sproxy)
 
 INCLUDE(CheckCXXCompilerFlag)
-set(CMAKE_MODULE_PATH "cmake")
+set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 #SET(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
 #SET(BUILD_SHARED_LIBRARIES OFF)

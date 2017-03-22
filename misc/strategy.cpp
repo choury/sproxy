@@ -33,6 +33,7 @@ void loadsites() {
     char hostname[HOST_NAME_MAX];
     gethostname(hostname, sizeof(hostname));
     sites[hostname] = Strategy::local;
+    sites["localhost"] = Strategy::local;
 
     ifstream sitesfile(LISTFILE);
     if (sitesfile.good()) {

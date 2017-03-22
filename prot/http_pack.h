@@ -58,7 +58,7 @@ public:
     std::vector<Range> ranges;
     explicit HttpReqHeader(const char* header,  ResObject* src);
     explicit HttpReqHeader(std::multimap<istring, std::string>&& headers, ResObject* src);
-    explicit HttpReqHeader(CGI_Header *headers);
+    explicit HttpReqHeader(const CGI_Header *headers);
     bool ismethod(const char* method) const;
     
     virtual bool no_body() const override;
@@ -76,7 +76,7 @@ public:
     char status[100];
     explicit HttpResHeader(const char* header);
     explicit HttpResHeader(std::multimap<istring, std::string>&& headers);
-    explicit HttpResHeader(CGI_Header *headers);
+    explicit HttpResHeader(const CGI_Header *headers);
     
     virtual bool no_body() const override;
     virtual char *getstring(size_t &len) const override;

@@ -747,8 +747,8 @@ const in_addr * Ip::getdst() const {
  * 输出ip头
  */
 void Ip::print() const{
-    char sip[INET_ADDRSTRLEN];
-    char dip[INET_ADDRSTRLEN];
+    char sip[INET_ADDRSTRLEN] __attribute__((unused));
+    char dip[INET_ADDRSTRLEN] __attribute__((unused));
     LOGD(DVPN,"IP header: "
     "From: %s, "
     "To: %s, "

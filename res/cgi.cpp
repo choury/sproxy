@@ -249,6 +249,8 @@ void Cgi::InProc() {
             cgi_getlen = 0;
         }
         if (header->flag & CGI_FLAG_END) {
+            CgiStatus& cs = statusmap.at(cgi_id);
+            cs.req_ptr->clean(NOERROR, cs.req_index);
             statusmap.erase(cgi_id);
         }
         break;
@@ -302,7 +304,7 @@ void Cgi::clean(uint32_t errcode, void* index) {
 
 void* Cgi::request(HttpReqHeader&& req){
     uint32_t cgi_id = curid++;
-    statusmap.insert(std::make_pair(cgi_id, CgiStatus{req.src, req.index}));
+    statusmap[cgi_id] = CgiStatus{req.src, req.index};
     CGI_Header *header = req.getcgi(cgi_id);
     Responser::Write(header, sizeof(CGI_Header) + ntohs(header->contentLength), 0);
     return reinterpret_cast<void*>(cgi_id);

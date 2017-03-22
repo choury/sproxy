@@ -67,11 +67,12 @@ public:
 
 class Cookie{
 public:
-    const char *name;
-    const char *value;
+    const char *name = nullptr;
+    const char *value = nullptr;
     const char *path= nullptr;
     const char *domain = nullptr;
     uint32_t maxage = 0;
+    Cookie(){};
     Cookie(const char *name, const char *value):name(name), value(value){}
     void set(const char* name, const char *value){
         this->name = name;
