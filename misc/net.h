@@ -13,6 +13,9 @@
 
 #define H206        "HTTP/1.0 206 Partial Content" CRLF CRLF
 
+#define H302        "HTTP/1.0 302 Found" CRLF\
+                    "Content-Length:0" CRLF CRLF
+
 #define H304        "HTTP/1.0 304 Not Modified" CRLF CRLF
 
 #define H400        "HTTP/1.1 400 Bad Request" CRLF \

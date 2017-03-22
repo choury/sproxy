@@ -247,7 +247,7 @@ void HttpReqHeader::getfile() {
 
 
 bool HttpReqHeader::ismethod(const char* method) const{
-    return strcmp(this->method, method) == 0;
+    return strcasecmp(this->method, method) == 0;
 }
 
 char *HttpReqHeader::getstring(size_t &len) const{

@@ -20,7 +20,7 @@ std::map<std::string, Cgi *> cgimap;
 Cgi::Cgi(HttpReqHeader& req) {
     const char *errinfo = nullptr;
     cgifunc *func = nullptr;
-    int fds[2]={0},flags;
+    int fds[2]= {0},flags;
     void *handle = dlopen(req.filename,RTLD_NOW);
     if(handle == nullptr) {
         LOGE("dlopen failed: %s\n", dlerror());
@@ -45,7 +45,7 @@ Cgi::Cgi(HttpReqHeader& req) {
         change_process_name(basename(req.filename));
         releaseall();
         exit(func(fds[1]));
-    } 
+    }
     // 父进程
     dlclose(handle);
     close(fds[1]);   // 关闭管道的子进程端
@@ -65,10 +65,10 @@ Cgi::Cgi(HttpReqHeader& req) {
     cgimap[filename] = this;
     return;
 err:
-    if(handle){
+    if(handle) {
         dlclose(handle);
     }
-    if(fd){
+    if(fd) {
         close(fd);
     }
     HttpResHeader res(errinfo);
@@ -79,11 +79,11 @@ err:
 
 Cgi::~Cgi() {
     cgimap.erase(filename);
-} 
+}
 
 ssize_t Cgi::Write(void *buff, size_t size, void* index) {
     uint32_t id = (uint32_t)(long)index;
-    if(statusmap.count(id)){
+    if(statusmap.count(id)) {
         size = size > CGI_LEN_MAX ? CGI_LEN_MAX : size;
         CGI_Header *header = (CGI_Header *)p_move(buff, -(char)sizeof(CGI_Header));
         header->type = CGI_DATA;
@@ -91,29 +91,29 @@ ssize_t Cgi::Write(void *buff, size_t size, void* index) {
         header->requestId = htonl(id);
         header->contentLength = htons(size);
         ssize_t ret = Responser::Write(header, size+sizeof(CGI_Header), 0);
-        if(ret <= 0){
+        if(ret <= 0) {
             return ret;
-        }else{
+        } else {
             assert((size_t)ret >= sizeof(CGI_Header));
             return ret - sizeof(CGI_Header);
         }
-    }else{
+    } else {
         assert(0);
         return -1;
     }
 }
 
 /*
-void Cgi::SendFrame(CGI_Header *header, size_t len)
-{
-    write_block wb={header, len, 0};
-    write_list.push_back(wb);
-    
-    struct epoll_event event;
-    event.data.ptr = this;
-    event.events = EPOLLIN | EPOLLOUT;
-    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-}*/
+ * void Cgi::SendFrame(CGI_Header *header, size_t len)
+ * {
+ *    write_block wb={header, len, 0};
+ *    write_list.push_back(wb);
+ *
+ *    struct epoll_event event;
+ *    event.data.ptr = this;
+ *    event.events = EPOLLIN | EPOLLOUT;
+ *    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+ * }*/
 
 
 void Cgi::InProc() {
@@ -140,7 +140,7 @@ void Cgi::InProc() {
     case Status::WaitBody:
         len = ntohs(header->contentLength) + sizeof(CGI_Header) - cgi_getlen;
         if (len == 0) {
-            if(statusmap.count(ntohl(header->requestId)) == 0){
+            if(statusmap.count(ntohl(header->requestId)) == 0) {
                 status = Status::WaitHeadr;
                 cgi_getlen = 0;
                 break;
@@ -172,7 +172,7 @@ void Cgi::InProc() {
         }
         cgi_getlen += len;
         break;
-    case  Status::HandleRes: {
+    case Status::HandleRes: {
         cgi_id = ntohl(header->requestId);
         HttpResHeader res(header);
         if (res.get("content-length") == nullptr) {
@@ -185,49 +185,61 @@ void Cgi::InProc() {
         cgi_getlen = 0;
         break;
     }
-    case Status::HandleValue:
+    case Status::HandleValue: {
         cgi_id = ntohl(header->requestId);
         requester = statusmap.at(cgi_id).req_ptr;
-        if((header->flag & CGI_FLAG_NAMESET)==0){
-            CGI_NameValue *nv = (CGI_NameValue *)(header+1);
-            switch(ntohl(nv->name)){
-            case CGI_NAME_BUFFLEFT:{
-                CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + sizeof(uint32_t));
-                memcpy(header_back, header, sizeof(CGI_Header));
-                header_back->flag = CGI_FLAG_NAMESET;
-                header_back->contentLength = htons(sizeof(CGI_NameValue) + sizeof(uint32_t));
-                CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
-                nv_back->name = htonl(CGI_NAME_BUFFLEFT);
-                set32(nv_back->value, htonl(requester->bufleft(statusmap.at(cgi_id).req_index)));
-                Responser::Write(header_back, sizeof(CGI_Header) + ntohs(header->contentLength), 0);
-                break;}
-            case CGI_NAME_STRATEGY:{
-                auto smap = getallstrategy();
-                for(auto i: smap){
-                    //"name value\0"
-                    size_t value_len = sizeof(CGI_NameValue) + i.first.length() + i.second.length() + 2;
-                    CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + value_len);
-                    memcpy(header_back, header, sizeof(CGI_Header));
-                    header_back->flag = CGI_FLAG_NAMESET;
-                    header_back->contentLength = htons(value_len);
-                    CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
-                    nv_back->name = htonl(CGI_NAME_STRATEGY);
-                    sprintf((char *)nv_back->value, "%s %s", i.first.c_str(), i.second.c_str());
-                    Responser::Write(header_back, sizeof(CGI_Header) + value_len, 0);
-                }
-                break;}
-            default:
-                break;
-            } 
-            CGI_Header* header_end = (CGI_Header*)p_malloc(sizeof(CGI_Header));
-            memcpy(header_end, header, sizeof(CGI_Header));
-            header_end->contentLength = 0;
-            header_end->flag = CGI_FLAG_END;
-            Responser::Write(header_end, sizeof(CGI_Header), 0);
+        CGI_NameValue *nv = (CGI_NameValue *)(header+1);
+        switch(ntohl(nv->name)) {
+        case CGI_NAME_BUFFLEFT: {
+            CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + sizeof(uint32_t));
+            memcpy(header_back, header, sizeof(CGI_Header));
+            header_back->flag = 0;
+            header_back->contentLength = htons(sizeof(CGI_NameValue) + sizeof(uint32_t));
+            CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
+            nv_back->name = htonl(CGI_NAME_BUFFLEFT);
+            set32(nv_back->value, htonl(requester->bufleft(statusmap.at(cgi_id).req_index)));
+            Responser::Write(header_back, sizeof(CGI_Header) + ntohs(header->contentLength), 0);
+            break;
         }
+        case CGI_NAME_STRATEGYGET: {
+            auto smap = getallstrategy();
+            for(auto i: smap) {
+                //"name value\0"
+                size_t value_len = sizeof(CGI_NameValue) + i.first.length() + i.second.length() + 2;
+                CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + value_len);
+                memcpy(header_back, header, sizeof(CGI_Header));
+                header_back->flag = 0;
+                header_back->contentLength = htons(value_len);
+                CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
+                nv_back->name = htonl(CGI_NAME_STRATEGYGET);
+                sprintf((char *)nv_back->value, "%s %s", i.first.c_str(), i.second.c_str());
+                Responser::Write(header_back, sizeof(CGI_Header) + value_len, 0);
+            }
+            break;
+        }
+        case CGI_NAME_STRATEGYADD:{
+            char site[DOMAINLIMIT];
+            char strategy[20];
+            sscanf((char*)nv->value, "%s %s", site, strategy);
+            addstrategy(site, strategy);
+            break;
+        }
+        case CGI_NAME_STRATEGYDEL:{
+            delstrategy((char *)nv->value);
+            break;
+        }
+        default:
+            break;
+        }
+        CGI_Header* header_end = (CGI_Header*)p_malloc(sizeof(CGI_Header));
+        memcpy(header_end, header, sizeof(CGI_Header));
+        header_end->contentLength = 0;
+        header_end->flag = CGI_FLAG_END;
+        Responser::Write(header_end, sizeof(CGI_Header), 0);
         status = Status::WaitHeadr;
         cgi_getlen = 0;
         break;
+    }
     case Status::HandleData:
         cgi_outlen = sizeof(CGI_Header);
         status = Status::HandleLeft;
@@ -269,18 +281,18 @@ void Cgi::defaultHE(uint32_t events) {
         return;
     }
 
-    if (events & EPOLLIN){
+    if (events & EPOLLIN) {
         InProc();
     }
     if (events & EPOLLOUT) {
         int ret = Peer::Write_buff();
-        if(ret > 0 && ret != WRITE_NOTHING){
-            for(auto i: waitlist){
+        if(ret > 0 && ret != WRITE_NOTHING) {
+            for(auto i: waitlist) {
                 CgiStatus& status = statusmap.at(i);
                 status.req_ptr->writedcb(status.req_index);
             }
             waitlist.clear();
-        }else if(ret <= 0 && showerrinfo(ret, "cgi write error")) {
+        } else if(ret <= 0 && showerrinfo(ret, "cgi write error")) {
             clean(WRITE_ERR, 0);
             return;
         }
@@ -289,12 +301,12 @@ void Cgi::defaultHE(uint32_t events) {
 
 void Cgi::clean(uint32_t errcode, void* index) {
     if(index == nullptr) {
-        for(auto i: statusmap){
+        for(auto i: statusmap) {
             i.second.req_ptr->clean(errcode, i.second.req_index);
         }
         statusmap.clear();
         return Peer::clean(errcode, 0);
-    }else{
+    } else {
         uint32_t id = (uint32_t)(long)index;
         statusmap.erase(id);
         waitlist.erase(id);
@@ -302,9 +314,9 @@ void Cgi::clean(uint32_t errcode, void* index) {
 }
 
 
-void* Cgi::request(HttpReqHeader&& req){
+void* Cgi::request(HttpReqHeader&& req) {
     uint32_t cgi_id = curid++;
-    statusmap[cgi_id] = CgiStatus{req.src, req.index};
+    statusmap[cgi_id] = CgiStatus {req.src, req.index};
     CGI_Header *header = req.getcgi(cgi_id);
     Responser::Write(header, sizeof(CGI_Header) + ntohs(header->contentLength), 0);
     return reinterpret_cast<void*>(cgi_id);
@@ -315,13 +327,13 @@ void Cgi::wait(void* index) {
 }
 
 
-Cgi* Cgi::getcgi(HttpReqHeader &req){
-    if(cgimap.count(req.filename)){
+Cgi* Cgi::getcgi(HttpReqHeader &req) {
+    if(cgimap.count(req.filename)) {
         return cgimap[req.filename];
-    }else{
-        try{
+    } else {
+        try {
             return new Cgi(req);
-        }catch(...){
+        } catch(...) {
             return nullptr;
         }
     }
@@ -329,28 +341,28 @@ Cgi* Cgi::getcgi(HttpReqHeader &req){
 
 
 void flushcgi() {
-    for(auto i:cgimap){
+    for(auto i:cgimap) {
         i.second->clean(NOERROR, 0);
     }
 }
 
 
-void addcookie(HttpResHeader &res, const Cookie &cookie){
+void addcookie(HttpResHeader &res, const Cookie &cookie) {
     std::stringstream cookiestream;
     cookiestream << cookie.name <<'='<<cookie.value;
-    if(cookie.path){
+    if(cookie.path) {
         cookiestream << "; path="<< cookie.path;
     }
-    if(cookie.domain){
+    if(cookie.domain) {
         cookiestream << "; domain="<< cookie.domain;
     }
-    if(cookie.maxage){
+    if(cookie.maxage) {
         cookiestream << "; max-age="<< cookie.maxage;
     }
     res.cookies.insert(cookiestream.str());
 }
 
-int cgi_response(int fd, const HttpResHeader &res, uint32_t cgi_id){
+int cgi_response(int fd, const HttpResHeader &res, uint32_t cgi_id) {
     CGI_Header *header = res.getcgi(cgi_id);
     int ret = write(fd, header, sizeof(CGI_Header) + ntohs(header->contentLength));
     p_free(header);
@@ -362,15 +374,15 @@ std::map< string, string > getparamsmap(const char* param) {
 }
 
 
-std::map< string, string > getparamsmap(const char *param, size_t len){
+std::map< string, string > getparamsmap(const char *param, size_t len) {
     std::map< string, string > params;
-    if(len == 0){
+    if(len == 0) {
         return params;
     }
     char paramsbuff[URLLIMIT];
     URLDecode(paramsbuff, param, len);
     char *p=paramsbuff;
-    if(*p){
+    if(*p) {
         for (; ; p = NULL) {
             char *q = strtok(p, "&");
 
@@ -392,7 +404,7 @@ std::map< string, string > getparamsmap(const char *param, size_t len){
 int cgi_write(int fd, uint32_t id, const void *buff, size_t len) {
     CGI_Header header;
     size_t left = len;
-    do{
+    do {
         size_t writelen = left > CGI_LEN_MAX ? CGI_LEN_MAX:left;
         header.type = CGI_DATA;
         header.flag = (len == 0)? CGI_FLAG_END:0;
@@ -402,16 +414,16 @@ int cgi_write(int fd, uint32_t id, const void *buff, size_t len) {
         if(ret != sizeof(header))
             return -1;
         ret = write(fd, buff, writelen);
-        if(ret <= 0){
+        if(ret <= 0) {
             return ret;
         }
         left -= ret;
         buff = (char *)buff + ret;
-    }while(left);
+    } while(left);
     return len;
 }
 
-int cgi_query(int fd, uint32_t id, int name){
+int cgi_query(int fd, uint32_t id, int name) {
     CGI_Header header;
     header.type = CGI_VALUE;
     header.flag = CGI_FLAG_END;
@@ -422,7 +434,7 @@ int cgi_query(int fd, uint32_t id, int name){
         return -1;
     CGI_NameValue nv;
     nv.name = htonl(name);
-    
+
     ret = write(fd, &nv, sizeof(nv));
     if(ret != sizeof(nv))
         return -1;
@@ -430,3 +442,20 @@ int cgi_query(int fd, uint32_t id, int name){
 }
 
 
+int cgi_set(int fd, uint32_t id, int name, const void* value, size_t len) {
+    size_t size = sizeof(CGI_Header) + sizeof(CGI_NameValue) + len;
+    CGI_Header* header = (CGI_Header*)malloc(size);
+    header->type = CGI_VALUE;
+    header->flag = CGI_FLAG_END;
+    header->contentLength = htons(sizeof(CGI_NameValue) + len);
+    header->requestId = htonl(id);
+
+    CGI_NameValue *nv = (CGI_NameValue* )(header + 1);
+    nv->name = htonl(name);
+    memcpy(nv->value, value, len);
+    int ret = write(fd, header, size);
+    free(header);
+    if(ret != (ssize_t)size)
+        return -1;
+    return 0;
+}

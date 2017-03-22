@@ -1,0 +1,63 @@
+<DOCTYPE html>
+<html>
+    <head>
+    </head>
+    <body>
+        <table id ="list" border="1">
+            <tr>
+                <td>站点</td>
+                <td>策略</td>
+                <td>操作</td>
+            </tr>
+            <tr>
+                <form id="form1" action='/libdemo.so' method='post'><input type="hidden" name="method" value="put" /></form>
+                <td><input form="form1" type="text" name="site"/></td>
+                <td><select name="strategy" form="form1">
+                        <option value="local">local</option>
+                        <option value="proxy">proxy</option>
+                        <option value="block">block</option>
+                        <option value="local">local</option>
+                    </select>
+                </td>
+                <td><input form="form1" type='submit' value='提交'></td>
+            </tr>
+        </table>
+        <script>
+        var table = document.getElementById("list");
+        fetch('/libdemo.so').then(
+            function(response) {  
+                if(response.status !== 200) {  
+                    console.log('Looks like there was a problem. Status Code: ' +  response.status);  
+                    return;
+                }
+
+                // Examine the text in the response  
+                response.json().then(function(data) {  
+                    for(var i=0,l=data.length;i<l;i++){
+                        for(var key in data[i]){
+                            //原来的行数    比如：此处获得表格的行数是5，则每一行对应的index是0~4，所以下面在insertRow时，使用的是表格的当前行数
+                            var currentRows = table.rows.length; 
+                            var insertTr = table.insertRow(currentRows);
+                            var insertTd = insertTr.insertCell(0);
+                            insertTd.style.textAlign="center";
+                            insertTd.innerHTML = key;
+
+                            insertTd = insertTr.insertCell(1);
+                            insertTd.style.textAlign="center";
+                            insertTd.innerHTML = data[i][key];
+
+                            insertTd = insertTr.insertCell(2);
+                            insertTd.style.textAlign="center";
+                            insertTd.innerHTML = "<form action='/libdemo.so?site="+key+"' method='post'><input type='hidden' name='method' value='delete'><input type='submit' value='删除'></form>";
+
+                        }
+                    }
+                });  
+            })  
+        .catch(function(err) {  
+            console.log('Fetch Error :-S', err);  
+        });
+        </script>
+    </body>
+</html>
+

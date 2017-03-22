@@ -77,16 +77,16 @@ void savesites(){
     for (auto i : sites) {
         switch(i.second){
         case Strategy::direct:
-            sitesfile <<i.first<<":direct"<< std::endl;
+            sitesfile <<i.first<<" direct"<< std::endl;
             break;
         case Strategy::proxy:
-            sitesfile <<i.first<<":proxy"<< std::endl;
+            sitesfile <<i.first<<" proxy"<< std::endl;
             break;
         case Strategy::local:
-            sitesfile <<i.first<<":local"<< std::endl;
+            sitesfile <<i.first<<" local"<< std::endl;
             break;
         case Strategy::block:
-            sitesfile <<i.first<<":block"<< std::endl;
+            sitesfile <<i.first<<" block"<< std::endl;
             break;
         }
     }

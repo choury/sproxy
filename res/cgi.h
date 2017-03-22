@@ -15,7 +15,6 @@
 
 struct CGI_Header{
     uint8_t type;
-#define CGI_FLAG_NAMESET    1
 #define CGI_FLAG_END        0x80
     uint8_t flag;
     uint16_t contentLength; //最大65536 - 8 (实际是BUF_LEN - 8)
@@ -28,8 +27,11 @@ struct CGI_NVLenPair{
 }__attribute__((packed));
 
 
-#define CGI_NAME_BUFFLEFT  1
-#define CGI_NAME_STRATEGY  2
+#define CGI_NAME_BUFFLEFT     1
+#define CGI_NAME_STRATEGYGET  2
+#define CGI_NAME_STRATEGYADD  3
+#define CGI_NAME_STRATEGYDEL  4
+
 struct CGI_NameValue{
     uint32_t name;
     uint8_t value[0];
@@ -93,6 +95,7 @@ cgifunc cgimain;
 int cgi_response(int fd, const HttpResHeader &req, uint32_t cgi_id);
 int cgi_write(int fd, uint32_t id, const void *buff, size_t len);
 int cgi_query(int fd, uint32_t id, int name);
+int cgi_set(int fd, uint32_t id, int name, const void* value, long unsigned int len);
 #ifdef  __cplusplus
 }
 #endif
