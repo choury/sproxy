@@ -69,7 +69,7 @@ class handle{
             cgi_response(cgi_fd, res, cgi_id);
             return 1;
         }else{
-            HttpResHeader res(H302);
+            HttpResHeader res(H303);
             res.add("Location", "/list/");
             cgi_response(cgi_fd, res, cgi_id);
             return 0;
@@ -86,7 +86,7 @@ class handle{
             cgi_response(cgi_fd, res, cgi_id);
             return 1;
         }else{
-            HttpResHeader res(H302);
+            HttpResHeader res(H303);
             res.add("Location", "/list/");
             cgi_response(cgi_fd, res, cgi_id);
             return 0;
