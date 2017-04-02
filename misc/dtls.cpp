@@ -258,25 +258,23 @@ int Dtls::send() {
     }else{
         buckets = (now - tick_time) * (bucket_limit+5) /80;
     }
+    if(ackhold_times >= 3){
+#ifndef NDEBUG
+        LOGD(DDTLS, "%u: ackhold %u times reset resend_pos(%x) to %x\n",
+            getmtime()&0xffff, ackhold_times, resend_pos, recv_ack);
+#endif
+        resend_pos = recv_ack;
+        ackhold_times = 0;
+    }
 
     if(buckets){
         if(buckets > bucket_limit){
             buckets = bucket_limit;
         }
-        if((ackhold_times >= 3 || now-ack_time >= Max(2,rtt_time*1.2)) && before(recv_ack, write_seq)){
-            if(ackhold_times >= 3){
+        if(before(recv_ack, write_seq) && now-ack_time >= Max(2,rtt_time*1.2)){
 #ifndef NDEBUG
-                LOGD(DDTLS, "%u: ackhold %u times reset resend_pos(%x) to %x\n",
-                    getmtime()&0xffff, ackhold_times, resend_pos, recv_ack);
-#endif
-                resend_pos = recv_ack;
-                ackhold_times = 0;
-            }
-#ifndef NDEBUG
-            else if(before(recv_ack, send_pos)){
-                LOGD(DDTLS, "%u: acktime %u diff %u, begin resend\n",
-                    getmtime()&0xffff, ack_time&0xffff, now-ack_time);
-            }
+            LOGD(DDTLS, "%u: acktime %u diff %u, begin resend\n",
+                getmtime()&0xffff, ack_time&0xffff, now-ack_time);
 #endif
             resend_pos = after(recv_ack, resend_pos)?recv_ack: resend_pos;
             if(gap_num){
@@ -330,7 +328,7 @@ int Dtls::send() {
 #ifndef NDEBUG
         if(send_begin != send_pos){
             LOGD(DDTLS, "%u: send pkg: %x - %x [%u], left buckets: %d\n",
-                    getmtime()&0xffff, send_begin, send_pos, send_pos-send_begin, buckets);
+                getmtime()&0xffff, send_begin, send_pos, send_pos-send_begin, buckets);
         }
 #endif
         tick_time = now - buckets*100/bucket_limit;

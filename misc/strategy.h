@@ -16,7 +16,6 @@ extern "C" {
 
 
 void loadsites();
-void savesites();
 bool addstrategy(const char *host, const char *strategy);
 bool delstrategy(const char *host);
 Strategy getstrategy(const char *host);

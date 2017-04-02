@@ -96,24 +96,23 @@ void savesites(){
 bool addstrategy(const char* host, const char* strategy) {
     if(strcmp(strategy, "direct") == 0){
         sites[host] = Strategy::direct;
-        return true;
     }else if(strcmp(strategy, "proxy") == 0){
         sites[host] = Strategy::proxy;
-        return true;
     }else if(strcmp(strategy, "local") == 0){
         sites[host] = Strategy::local;
-        return true;
     }else if(strcmp(strategy, "block") == 0){
         sites[host] = Strategy::block;
-        return true;
     }else{
         return false;
     }
+    savesites();
+    return true;
 }
 
 bool delstrategy(const char* host) {
     if(sites.count(host)){
         sites.erase(host);
+        savesites();
         return true;
     }else{
         return false;
