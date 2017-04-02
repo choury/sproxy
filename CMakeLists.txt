@@ -65,14 +65,14 @@ INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR})
 
 add_executable(sproxy main.cpp base.cpp)
 set_target_properties(sproxy PROPERTIES OUTPUT_NAME "sproxy")
-target_link_libraries(sproxy ${OPENSSL_LIBRARIES} dl req res prot misc)
+target_link_libraries(sproxy ${OPENSSL_LIBRARIES} dl req res prot misc pthread)
 
 
 install(TARGETS sproxy RUNTIME DESTINATION bin)
 
 add_library(sproxy_vpn SHARED vpn.cpp base.cpp)
 set_target_properties(sproxy_vpn PROPERTIES OUTPUT_NAME "sproxy_vpn") 
-target_link_libraries(sproxy_vpn ${OPENSSL_LIBRARIES} dl req res prot misc)
+target_link_libraries(sproxy_vpn ${OPENSSL_LIBRARIES} dl req res prot misc pthread)
 
 if(BUILD_DEMO)
     add_library(demo SHARED cgidemo.cpp)

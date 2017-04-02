@@ -95,7 +95,7 @@ cgifunc cgimain;
 int cgi_response(int fd, const HttpResHeader &req, uint32_t cgi_id);
 int cgi_write(int fd, uint32_t id, const void *buff, size_t len);
 int cgi_query(int fd, uint32_t id, int name);
-int cgi_set(int fd, uint32_t id, int name, const void* value, long unsigned int len);
+int cgi_set(int fd, uint32_t id, int name, const void* value, size_t len);
 #ifdef  __cplusplus
 }
 #endif
