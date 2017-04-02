@@ -60,5 +60,7 @@ public:
 };
 
 void releaseall();
+int setproxy(const char* proxy);
+int getproxy(char *buff, size_t buflen);
 
 #endif

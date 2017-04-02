@@ -1,0 +1,157 @@
+<DOCTYPE html>
+<html>
+    <head>
+        <style>
+*{
+    margin:0;
+    padding:0;
+}
+body{
+    background-color: #FFBFFF;
+    background-attachment:fixed;
+    background-repeat:no-repeat;
+    text-align:center;
+}
+
+.strategy{
+    color:#00F;
+    font-family:"Trebuchet MS", Arial, Helvetica, sans-serif;
+}
+.delate{
+    color:#F39;
+}
+button{
+    background-color:#FFF
+    color:#C39;
+}
+#logo{
+    background-repeat:no-repeat;
+    margin:5px auto;
+    width:700px;
+    height:100px;
+    background-image:url(images3.jpg);
+}
+#content{
+    display:inline-block;
+    width:auto; */
+    height:auto;
+    padding:5px;
+    background-color:#FCF;
+    margin:20px auto;
+}
+
+#search{
+    margin:10px auto;
+    text-align:right;
+    min-width:600px
+}
+
+#tdw{
+    box-sizing: border-box;
+    width: 100%;
+}
+.left{
+    float: left;
+}
+.right{
+    float: right;
+}
+        </style>
+    </head>
+    <body>
+        <div id="logo"> </div>
+        <div id="content">
+            <lable class='left'>Proxy: </lable>
+            <p id='current_proxy' class='left'>
+            <form action='/cgi/libproxy.so' method='post' class='right'>
+                <input type="text" name="proxy">
+                <input type="submit" value="修改" onclick='setproxy(this.form.proxy.value)'>
+            </form>
+
+            <br>
+            <div id='search'>
+                <lable for"KeyWorld">keyWorld: </lable>
+                <input type="text" id="keyWorld">
+                <input type="button" value="搜索" id="btn1">
+            </div>
+            <table id ="list" border="1">
+                <tr>
+                    <th>站点</th>
+                    <th>策略</th>
+                    <th>操作</th>
+                </tr>
+                <tr>
+                    <form id="form1" action='/cgi/libsites.so' method='post'><input type="hidden" name="method" value="put" /></form>
+                    <td><input form="form1" type="text" name="site" id="tdw"/></td>
+                    <td><select name="strategy" form="form1">
+                            <option value="proxy">proxy</option>
+                            <option value="block">block</option>
+                            <option value="direct">direct</option>
+                            <option value="local">local</option>
+                        </select>
+                    </td>
+                    <td><input form="form1" type='submit' value='添加'></td>
+                </tr>
+            </table>
+        </div>
+        <script>
+        var table = document.getElementById("list");
+        fetch('/cgi/libsites.so').then(
+            function(response) {
+                if(response.status !== 200) {
+                    console.log('Looks like there was a problem. Status Code: ' +  response.status);
+                    return;
+                }
+
+                // Examine the text in the response
+                response.json().then(function(data) {
+                    for(var i=0,l=data.length;i<l;i++){
+                        for(var key in data[i]){
+                            //原来的行数    比如：此处获得表格的行数是5，则每一行对应的index是0~4，所以下面在insertRow时，使用的是表格的当前行数
+                            var currentRows = table.tBodies[0].rows.length;
+                            var insertTr = table.insertRow(currentRows);
+                            if(i%2==0){
+                                insertTr.style.background='#FFF'
+                            }
+                            var insertTd = insertTr.insertCell(0);
+                            insertTd.style.textAlign="center";
+                            insertTd.innerHTML =key;
+
+                            insertTd = insertTr.insertCell(1);
+                            insertTd.style.textAlign="center";
+                            insertTd.className='strategy';
+                            insertTd.innerHTML = data[i][key];
+
+                            insertTd = insertTr.insertCell(2);
+                            insertTd.style.textAlign="center";
+                            insertTd.className='delate';
+                            insertTd.innerHTML = "<form action='/cgi/libsites.so?site="+key+"' method='post'><input type='hidden' name='method' value='delete'><input type='submit' value='删除'></form>";
+
+                        }
+                    }
+                });
+            })
+        .catch(function(err) {
+            console.log('Fetch Error :-S', err);
+        });
+        var btn=document.getElementById('btn1');
+        var text=document.getElementById('keyWorld');
+        btn.onclick=function(){
+            for(var i=2;i<table.tBodies[0].rows.length;i++){
+                var text1=table.tBodies[0].rows[i].cells[0].innerHTML.toLowerCase();
+                var text2=text.value.toLowerCase();
+                if(text1.search(text2)!=-1){
+                    table.tBodies[0].rows[i].style.display='';
+                }else{
+                    table.tBodies[0].rows[i].style.display='none';
+                }
+            }
+        }
+        function setproxy(proxy){
+            document.getElementById('current_proxy').innerHTML=proxy;
+        }
+        </script>
+        <script type="text/javascript" src="/cgi/libproxy.so"></script>
+    </body>
+</html>
+

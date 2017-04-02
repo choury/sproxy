@@ -414,25 +414,14 @@ int main(int argc, char **argv) {
     }
 
     if (optind < argc) {
-        char protocol[DOMAINLIMIT];
-        if(spliturl(argv[optind], protocol, SHOST, nullptr, &SPORT)){
+        if(setproxy(argv[optind])){
             LOGOUT("wrong server format\n");
-            return -1;
-        }
-        if(SPORT == 0){
-            SPORT = 443;
-        }
-        if(strlen(protocol) == 0 ||
-            strcasecmp(protocol, "ssl") == 0)
-        {
-            SPROT = Protocol::TCP;
-        }else if(strcasecmp(protocol, "dtls") == 0){
-            SPROT = Protocol::UDP;
-        }else{
             LOGOUT("Only \"ssl://\" and \"dtls://\" protocol are supported!\n");
             return -1;
         }
-        printf("server %s:%d \n", SHOST, SPORT);
+        char proxy[DOMAINLIMIT];
+        getproxy(proxy, sizeof(proxy));
+        printf("server %s\n", proxy);
     }
     main_argv = argv;
     

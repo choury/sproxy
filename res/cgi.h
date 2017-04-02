@@ -15,6 +15,7 @@
 
 struct CGI_Header{
     uint8_t type;
+#define CGI_FLAG_ERROR       0x40
 #define CGI_FLAG_END        0x80
     uint8_t flag;
     uint16_t contentLength; //最大65536 - 8 (实际是BUF_LEN - 8)
@@ -31,6 +32,9 @@ struct CGI_NVLenPair{
 #define CGI_NAME_STRATEGYGET  2
 #define CGI_NAME_STRATEGYADD  3
 #define CGI_NAME_STRATEGYDEL  4
+#define CGI_NAME_GETPROXY     5
+#define CGI_NAME_SETPROXY     6
+#define CGI_NAME_LOGIN        7
 
 struct CGI_NameValue{
     uint32_t name;

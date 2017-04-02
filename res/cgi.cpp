@@ -175,7 +175,7 @@ void Cgi::InProc() {
     case Status::HandleRes: {
         cgi_id = ntohl(header->requestId);
         HttpResHeader res(header);
-        if (res.get("content-length") == nullptr) {
+        if (!res.no_body() && res.get("content-length") == nullptr) {
             res.add("Transfer-Encoding", "chunked");
         }
         requester = statusmap.at(cgi_id).req_ptr;
@@ -189,6 +189,7 @@ void Cgi::InProc() {
         cgi_id = ntohl(header->requestId);
         requester = statusmap.at(cgi_id).req_ptr;
         CGI_NameValue *nv = (CGI_NameValue *)(header+1);
+        uint8_t flag = 0;
         switch(ntohl(nv->name)) {
         case CGI_NAME_BUFFLEFT: {
             CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + sizeof(uint32_t));
@@ -198,7 +199,7 @@ void Cgi::InProc() {
             CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
             nv_back->name = htonl(CGI_NAME_BUFFLEFT);
             set32(nv_back->value, htonl(requester->bufleft(statusmap.at(cgi_id).req_index)));
-            Responser::Write(header_back, sizeof(CGI_Header) + ntohs(header->contentLength), 0);
+            Responser::Write(header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength), 0);
             break;
         }
         case CGI_NAME_STRATEGYGET: {
@@ -221,11 +222,34 @@ void Cgi::InProc() {
             char site[DOMAINLIMIT];
             char strategy[20];
             sscanf((char*)nv->value, "%s %s", site, strategy);
-            addstrategy(site, strategy);
+            if(addstrategy(site, strategy) == false){
+                flag = CGI_FLAG_ERROR;
+            }
             break;
         }
         case CGI_NAME_STRATEGYDEL:{
-            delstrategy((char *)nv->value);
+            if(delstrategy((char *)nv->value) == false){
+                flag = CGI_FLAG_ERROR;
+            }
+            break;
+        }
+        case CGI_NAME_GETPROXY:{
+            char proxy[DOMAINLIMIT];
+            int len = getproxy(proxy, sizeof(proxy));
+            CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + len);
+            memcpy(header_back, header, sizeof(CGI_Header));
+            header_back->flag = 0;
+            header_back->contentLength = htons(sizeof(CGI_NameValue) + len);
+            CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
+            nv_back->name = htonl(CGI_NAME_GETPROXY);
+            memcpy(nv_back->value, proxy, len);
+            Responser::Write(header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength), 0);
+            break;
+        }
+        case CGI_NAME_SETPROXY:{
+            if(setproxy((char *)nv->value)){
+                flag = CGI_FLAG_ERROR;
+            }
             break;
         }
         default:
@@ -234,7 +258,7 @@ void Cgi::InProc() {
         CGI_Header* header_end = (CGI_Header*)p_malloc(sizeof(CGI_Header));
         memcpy(header_end, header, sizeof(CGI_Header));
         header_end->contentLength = 0;
-        header_end->flag = CGI_FLAG_END;
+        header_end->flag = flag | CGI_FLAG_END;
         Responser::Write(header_end, sizeof(CGI_Header), 0);
         status = Status::WaitHeadr;
         cgi_getlen = 0;

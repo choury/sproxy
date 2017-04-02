@@ -120,7 +120,7 @@ File::File(HttpReqHeader& req) {
         goto err;
     }
 
-    if(S_ISDIR(st.st_mode)){
+    if(S_ISDIR(st.st_mode) && !endwith(req.filename, "/")){
         res = new HttpResHeader(H301);
         snprintf(filename, sizeof(filename), "%s/", req.filename);
         res->add("Location", filename);
@@ -129,7 +129,7 @@ File::File(HttpReqHeader& req) {
 
     if(!S_ISREG(st.st_mode)){
         LOGE("access to no regular file %s\n", req.filename);
-        res = new HttpResHeader(H500);
+        res = new HttpResHeader(H403);
         goto err;
     }
 

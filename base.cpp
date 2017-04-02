@@ -196,3 +196,41 @@ void releaseall() {
     close(efd);
 }
 
+extern void flushproxy2();
+
+int setproxy(const char* proxy){
+    char protocol[DOMAINLIMIT];
+    char shost[DOMAINLIMIT];
+    uint16_t sport;
+    if(spliturl(proxy, protocol, shost, nullptr, &sport)){
+        return -1;
+    }
+
+    if(strlen(protocol) == 0 ||
+        strcasecmp(protocol, "ssl") == 0)
+    {
+        SPROT = Protocol::TCP;
+    }else if(strcasecmp(protocol, "dtls") == 0){
+        SPROT = Protocol::UDP;
+    }else{
+        return -1;
+    }
+    if(sport == 0){
+        SPORT = 443;
+    }else{
+        SPORT = sport;
+    }
+    strcpy(SHOST, shost);
+    flushproxy2();
+    return 0;
+}
+
+int getproxy(char *buff, size_t buflen){
+    switch(SPROT){
+    case Protocol::TCP:
+        return snprintf(buff, buflen, "ssl://%s:%d", SHOST, SPORT)+1;
+    case Protocol::UDP:
+        return snprintf(buff, buflen, "dtls://%s:%d", SHOST, SPORT)+1;
+    }
+}
+

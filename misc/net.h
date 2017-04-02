@@ -11,6 +11,10 @@
 
 #define H200        "HTTP/1.0 200 OK" CRLF CRLF
 
+#define H204        "HTTP/1.0 204 No Content" CRLF CRLF
+
+#define H205        "HTTP/1.0 205 Reset Content" CRLF CRLF
+
 #define H206        "HTTP/1.0 206 Partial Content" CRLF CRLF
 
 #define H301        "HTTP/1.0 301 Moved Permanently" CRLF\

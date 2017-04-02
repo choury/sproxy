@@ -6,7 +6,6 @@
 #include "cgi.h"
 
 
-extern void flushproxy2();
 
 static int check_header(HttpReqHeader& req){
     Requester *requester = req.src;
@@ -157,24 +156,15 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
         }
         return nullptr;
     } else if (req.ismethod("SWITCH")) {
-        if(strlen(req.protocol) == 0 ||
-            strcasecmp(req.protocol, "ssl") == 0)
-        {
-            SPROT = TCP;
-        }else if(strcasecmp(req.protocol, "dtls") == 0){
-            SPROT = UDP;
-        }else{
+        if(setproxy(req.url)){
             HttpResHeader res(H400);
             res.index = req.index;
             requester->response(std::move(res));
-            return nullptr;
+        }else{
+            HttpResHeader res(H200);
+            res.index = req.index;
+            requester->response(std::move(res));
         }
-        SPORT = req.port?req.port:443;
-        strcpy(SHOST, req.hostname);
-        flushproxy2();
-        HttpResHeader res(H200);
-        res.index = req.index;
-        requester->response(std::move(res));
     } else if (req.ismethod("TEST")){
         HttpResHeader res("HTTP/1.1 200 Ok" CRLF
                           "Content-Length:0" CRLF CRLF);
