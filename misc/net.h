@@ -13,6 +13,9 @@
 
 #define H206        "HTTP/1.0 206 Partial Content" CRLF CRLF
 
+#define H301        "HTTP/1.0 301 Moved Permanently" CRLF\
+                    "Content-Length:0" CRLF CRLF
+
 #define H302        "HTTP/1.0 302 Found" CRLF\
                     "Content-Length:0" CRLF CRLF
 

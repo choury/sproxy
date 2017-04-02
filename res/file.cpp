@@ -103,26 +103,33 @@ bool checkrange(Range& rg, size_t size) {
 
 
 File::File(HttpReqHeader& req) {
-    const char *errinfo = nullptr;
+    HttpResHeader *res = nullptr;
     ffd = open(req.filename, O_RDONLY);
     if (ffd < 0) {
         LOGE("open file failed %s: %m\n", req.filename);
         if(errno == ENOENT){
-            errinfo = H404;
+            res = new HttpResHeader(H404);
         }else{
-            errinfo = H500;
+            res = new HttpResHeader(H500);
         }
         goto err;
     }
     if (fstat(ffd, &st)) {
         LOGE("get file info failed %s: %m\n", req.filename);
-        errinfo = H500;
+        res = new HttpResHeader(H500);
+        goto err;
+    }
+
+    if(S_ISDIR(st.st_mode)){
+        res = new HttpResHeader(H301);
+        snprintf(filename, sizeof(filename), "%s/", req.filename);
+        res->add("Location", filename);
         goto err;
     }
 
     if(!S_ISREG(st.st_mode)){
         LOGE("access to no regular file %s\n", req.filename);
-        errinfo = H500;
+        res = new HttpResHeader(H500);
         goto err;
     }
 
@@ -136,9 +143,9 @@ err:
     if(ffd > 0){
         close(ffd);
     }
-    HttpResHeader res(errinfo);
-    res.index = req.index;
-    req.src->response(std::move(res));
+    res->index = req.index;
+    req.src->response(std::move(*res));
+    delete res;
     throw 0;
 }
 
