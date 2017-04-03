@@ -3,7 +3,8 @@
 #Created:  2017/4/2
 
 
-INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR})
+include_directories(${PROJECT_SOURCE_DIR})
+include_directories(${JSON-C_INCLUDE_DIR})
 
 add_library(sites SHARED sites.cpp)
 target_link_libraries(sites ${JSON-C_LIBRARIES})

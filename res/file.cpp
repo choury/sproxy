@@ -122,7 +122,7 @@ File::File(HttpReqHeader& req) {
 
     if(S_ISDIR(st.st_mode) && !endwith(req.filename, "/")){
         res = new HttpResHeader(H301);
-        snprintf(filename, sizeof(filename), "%s/", req.filename);
+        snprintf(filename, sizeof(filename), "/%s/", req.filename);
         res->add("Location", filename);
         goto err;
     }

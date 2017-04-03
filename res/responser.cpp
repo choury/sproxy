@@ -73,7 +73,7 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
         switch(getstrategy(req.hostname)){
             case Strategy::local:
                 LOG("[[local]] %s\n", log_buff);
-                if(index_file && endwith(req.filename, "/")){
+                if(index_file && (endwith(req.filename, "/") || strlen(req.filename)==0)){
                     strncat(req.filename, index_file, sizeof(req.filename));
                 }
                 if(req.ismethod("CONNECT")){

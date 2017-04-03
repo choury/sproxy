@@ -28,7 +28,6 @@ find_package(JSON-C)
 if(NOT JSON-C_FOUND)
     message(WARNING "json-c not found, disable demo")
 else()
-    include_directories(${JSON-C_INCLUDE_DIR})
     set(BUILD_CGI TRUE)
 endif()
 

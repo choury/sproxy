@@ -224,25 +224,12 @@ HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(nullptr)
 
 
 void HttpReqHeader::getfile() {
-    char *p=path;
-    while (*p && *++p != '?');
+    char *start = path;
+    while (*start && *++start == '/');
+    char *end=start;
+    while (*end && *++end != '?');
     memset(filename, 0, sizeof(filename));
-    filename[0]='.';
-    memcpy(filename+1,path,p-path);
-/*
-    char *q=p-1;
-    while (q != path) {
-        if (*q == '.' || *q == '/')
-            break;
-        q--;
-    }
-    memset(extname, 0, sizeof(extname));
-    if (*q != '/') {
-        if (p-q >= 20)
-            return -1;
-        memcpy(extname, q, p-q);
-    }
-    return 0; */
+    memcpy(filename, start, end-start);
 }
 
 

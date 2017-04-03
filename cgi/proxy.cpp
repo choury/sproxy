@@ -2,7 +2,6 @@
 #include "misc/net.h"
 #include <unistd.h>
 #include <assert.h>
-#include <json-c/json.h>
 
 #include <iostream>
 
@@ -15,7 +14,6 @@ class handle{
     std::map<std::string, std::string> params;
     bool queryed = false;
     bool reqended = false;
-    json_object* proxy = nullptr;
 
     int GET(const CGI_Header* header){
         if(header->flag & CGI_FLAG_END){
@@ -25,7 +23,6 @@ class handle{
                 HttpResHeader res(H200);
                 res.add("Content-Type", "application/json");
                 cgi_response(cgi_fd, res, cgi_id);
-                proxy = json_object_new_object();
                 return 0;
             }
             return 1;
@@ -62,7 +59,6 @@ class handle{
     }
 public:
     ~handle(){
-        json_object_put(proxy);
         delete req;
     }
     int operator()(const CGI_Header* header){

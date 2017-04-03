@@ -232,5 +232,6 @@ int getproxy(char *buff, size_t buflen){
     case Protocol::UDP:
         return snprintf(buff, buflen, "dtls://%s:%d", SHOST, SPORT)+1;
     }
+    return 0;
 }
 
