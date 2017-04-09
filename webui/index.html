@@ -57,6 +57,7 @@ button{
     float: right;
 }
         </style>
+        <meta charset="UTF-8" />
     </head>
     <body>
         <div id="logo"> </div>
@@ -98,6 +99,10 @@ button{
         var table = document.getElementById("list");
         fetch('/cgi/libsites.so').then(
             function(response) {
+                if(response.status == 403) {
+                    window.location="/webui/login.html";
+                    return;
+                }
                 if(response.status !== 200) {
                     console.log('Looks like there was a problem. Status Code: ' +  response.status);
                     return;

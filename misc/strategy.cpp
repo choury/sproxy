@@ -175,5 +175,7 @@ void addauth(const char *ip) {
 }
 
 bool checkauth(const char *ip) {
+    if(strlen(auth_string) == 0)
+        return true;
     return authips.count(ip);
 }

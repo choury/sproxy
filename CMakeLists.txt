@@ -26,7 +26,7 @@ include_directories(${OPENSSL_INCLUDE_DIR})
 find_package(JSON-C)
 
 if(NOT JSON-C_FOUND)
-    message(WARNING "json-c not found, disable demo")
+    message(WARNING "json-c not found, disable webui")
 else()
     set(BUILD_CGI TRUE)
 endif()

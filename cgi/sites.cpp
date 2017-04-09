@@ -22,6 +22,13 @@ class handle{
             if(queryed == false){
                 cgi_query(cgi_fd, cgi_id, CGI_NAME_STRATEGYGET);
                 queryed = true;
+                sitelist = json_object_new_array();
+                return 0;
+            }else if(header->flag & CGI_FLAG_ERROR){
+                HttpResHeader res(H403);
+                cgi_response(cgi_fd, res, cgi_id);
+                return 1;
+            }else{
                 HttpResHeader res(H200);
                 res.add("Content-Type", "application/json");
                 Cookie cookie;
@@ -33,9 +40,6 @@ class handle{
                     addcookie(res, cookie);
                 }
                 cgi_response(cgi_fd, res, cgi_id);
-                sitelist = json_object_new_array();
-                return 0;
-            }else{
                 const char* jstring = json_object_get_string(sitelist);
                 cgi_write(cgi_fd, cgi_id, jstring, strlen(jstring));
                 cgi_write(cgi_fd, cgi_id, "", 0);
@@ -147,7 +151,7 @@ public:
 };
 
 
-std::map<uint32_t, handle> cgimap;
+static std::map<uint32_t, handle> cgimap;
 
 int cgimain(int fd){
     ssize_t readlen;

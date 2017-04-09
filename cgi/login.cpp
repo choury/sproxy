@@ -15,35 +15,10 @@ class handle{
     bool queryed = false;
     bool reqended = false;
 
-    int GET(const CGI_Header* header){
-        if(header->flag & CGI_FLAG_END){
-            if(queryed == false){
-                cgi_query(cgi_fd, cgi_id, CGI_NAME_GETPROXY);
-                queryed = true;
-                return 0;
-            }else if(header->flag & CGI_FLAG_ERROR){
-                HttpResHeader res(H403);
-                cgi_response(cgi_fd, res, cgi_id);
-                return 1;
-            }
-            return 1;
-        }
-        assert(header->type == CGI_VALUE);
-        assert(queryed);
-        CGI_NameValue *nv = (CGI_NameValue *)(header+1);
-        assert(ntohl(nv->name) == CGI_NAME_GETPROXY);
-        HttpResHeader res(H200);
-        res.add("Content-Type", "application/json");
-        cgi_response(cgi_fd, res, cgi_id);
-        char callback[DOMAINLIMIT+sizeof("setproxy(\"\");")];
-        cgi_write(cgi_fd, cgi_id, callback, sprintf(callback, "setproxy(\"%s\");", (char *)nv->value));
-        cgi_write(cgi_fd, cgi_id, "", 0);
-        return 0;
-    }
     int POST(const CGI_Header* header){
         if(queryed == false){
-            if(params.count("proxy")){
-                cgi_set(cgi_fd, cgi_id, CGI_NAME_SETPROXY, params["proxy"].c_str(), params["proxy"].size()+1);
+            if(params.count("key")){
+                cgi_set(cgi_fd, cgi_id, CGI_NAME_LOGIN, params["key"].c_str(), params["key"].size()+1);
                 queryed = true;
                 return 0;
             }
@@ -51,12 +26,11 @@ class handle{
             cgi_response(cgi_fd, res, cgi_id);
             return 1;
         }else if(header->flag & CGI_FLAG_ERROR){
-            HttpResHeader res(H303);
-            res.add("Location", "/webui/");
+            HttpResHeader res(H403);
             cgi_response(cgi_fd, res, cgi_id);
             return 1;
         }else{
-            HttpResHeader res(H205);
+            HttpResHeader res(H204);
             cgi_response(cgi_fd, res, cgi_id);
             return 1;
         }
@@ -94,8 +68,6 @@ public:
         }
         if(req->ismethod("post")){
             return POST(header);
-        }else{
-            return GET(header);
         }
         HttpResHeader res(H400);
         cgi_response(cgi_fd, res, cgi_id);

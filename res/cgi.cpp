@@ -15,7 +15,7 @@
 #include <assert.h>
 
 using std::string;
-std::map<std::string, Cgi *> cgimap;
+static std::map<std::string, Cgi *> cgimap;
 
 Cgi::Cgi(HttpReqHeader& req) {
     const char *errinfo = nullptr;
@@ -117,15 +117,13 @@ ssize_t Cgi::Write(void *buff, size_t size, void* index) {
 
 
 void Cgi::InProc() {
-    ssize_t len = 0;
-    uint32_t cgi_id;
-    Requester *requester;
     CGI_Header *header = (CGI_Header *)cgi_buff;
-    switch (status) {
-    case Status::WaitHeadr:
-        len = sizeof(CGI_Header) - cgi_getlen;
+    uint32_t cgi_id = ntohl(header->requestId);
+    switch (cgistage) {
+    case Status::WaitHeadr:{
+        int len = sizeof(CGI_Header) - cgi_getlen;
         if (len == 0) {
-            status = Status::WaitBody;
+            cgistage = Status::WaitBody;
             break;
         }
         len = read(fd, cgi_buff + cgi_getlen, len);
@@ -137,27 +135,28 @@ void Cgi::InProc() {
         }
         cgi_getlen += len;
         break;
-    case Status::WaitBody:
-        len = ntohs(header->contentLength) + sizeof(CGI_Header) - cgi_getlen;
+    }
+    case Status::WaitBody:{
+        int len = ntohs(header->contentLength) + sizeof(CGI_Header) - cgi_getlen;
         if (len == 0) {
-            if(statusmap.count(ntohl(header->requestId)) == 0) {
-                status = Status::WaitHeadr;
+            if(statusmap.count(cgi_id) == 0) {
+                cgistage = Status::WaitHeadr;
                 cgi_getlen = 0;
                 break;
             }
             switch (header->type) {
             case CGI_RESPONSE:
-                status = Status::HandleRes;
+                cgistage = Status::HandleRes;
                 break;
             case CGI_DATA:
-                status = Status::HandleData;
+                cgistage = Status::HandleData;
                 break;
             case CGI_VALUE:
-                status = Status::HandleValue;
+                cgistage = Status::HandleValue;
                 break;
             default:
                 LOGE("cgi unkown type: %d\n", header->type);
-                status = Status::WaitHeadr;
+                cgistage = Status::WaitHeadr;
                 cgi_getlen = 0;
                 break;
             }
@@ -172,22 +171,21 @@ void Cgi::InProc() {
         }
         cgi_getlen += len;
         break;
+    }
     case Status::HandleRes: {
-        cgi_id = ntohl(header->requestId);
         HttpResHeader res(header);
         if (!res.no_body() && res.get("content-length") == nullptr) {
             res.add("Transfer-Encoding", "chunked");
         }
-        requester = statusmap.at(cgi_id).req_ptr;
-        res.index = statusmap.at(cgi_id).req_index;
-        requester->response(std::move(res));
-        status = Status::WaitHeadr;
+        CgiStatus &status = statusmap.at(cgi_id);
+        res.index = status.req_index;
+        status.req_ptr->response(std::move(res));
+        cgistage = Status::WaitHeadr;
         cgi_getlen = 0;
         break;
     }
     case Status::HandleValue: {
-        cgi_id = ntohl(header->requestId);
-        requester = statusmap.at(cgi_id).req_ptr;
+        CgiStatus& status = statusmap.at(cgi_id);
         CGI_NameValue *nv = (CGI_NameValue *)(header+1);
         uint8_t flag = 0;
         switch(ntohl(nv->name)) {
@@ -198,11 +196,15 @@ void Cgi::InProc() {
             header_back->contentLength = htons(sizeof(CGI_NameValue) + sizeof(uint32_t));
             CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
             nv_back->name = htonl(CGI_NAME_BUFFLEFT);
-            set32(nv_back->value, htonl(requester->bufleft(statusmap.at(cgi_id).req_index)));
+            set32(nv_back->value, htonl(status.req_ptr->bufleft(status.req_index)));
             Responser::Write(header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength), 0);
             break;
         }
         case CGI_NAME_STRATEGYGET: {
+            if(!checkauth(status.req_ptr->getip())){
+                flag = CGI_FLAG_ERROR;
+                break;
+            }
             auto smap = getallstrategy();
             for(auto i: smap) {
                 //"name value\0"
@@ -219,21 +221,35 @@ void Cgi::InProc() {
             break;
         }
         case CGI_NAME_STRATEGYADD:{
+            if(!checkauth(status.req_ptr->getip())){
+                flag = CGI_FLAG_ERROR;
+                break;
+            }
             char site[DOMAINLIMIT];
             char strategy[20];
             sscanf((char*)nv->value, "%s %s", site, strategy);
             if(addstrategy(site, strategy) == false){
+                LOG("[CGI] addstrategy %s (%s)\n", site, strategy);
                 flag = CGI_FLAG_ERROR;
             }
             break;
         }
         case CGI_NAME_STRATEGYDEL:{
+            if(!checkauth(status.req_ptr->getip())){
+                flag = CGI_FLAG_ERROR;
+                break;
+            }
             if(delstrategy((char *)nv->value) == false){
+                LOG("[CGI] delstrategy %s\n", (char *)nv->value);
                 flag = CGI_FLAG_ERROR;
             }
             break;
         }
         case CGI_NAME_GETPROXY:{
+            if(!checkauth(status.req_ptr->getip())){
+                flag = CGI_FLAG_ERROR;
+                break;
+            }
             char proxy[DOMAINLIMIT];
             int len = getproxy(proxy, sizeof(proxy));
             CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + len);
@@ -247,8 +263,22 @@ void Cgi::InProc() {
             break;
         }
         case CGI_NAME_SETPROXY:{
-            if(setproxy((char *)nv->value)){
+            if(!checkauth(status.req_ptr->getip())){
                 flag = CGI_FLAG_ERROR;
+                break;
+            }
+            if(setproxy((char *)nv->value)){
+                LOG("[CGI] switch %s\n", (char *)nv->value);
+                flag = CGI_FLAG_ERROR;
+            }
+            break;
+        }
+        case CGI_NAME_LOGIN:{
+            if(strcmp(auth_string, (char *)nv->value)){
+                flag = CGI_FLAG_ERROR;
+            }else{
+                LOG("[CGI] %s login\n", status.req_ptr->getip());
+                addauth(status.req_ptr->getip());
             }
             break;
         }
@@ -260,35 +290,36 @@ void Cgi::InProc() {
         header_end->contentLength = 0;
         header_end->flag = flag | CGI_FLAG_END;
         Responser::Write(header_end, sizeof(CGI_Header), 0);
-        status = Status::WaitHeadr;
+        cgistage = Status::WaitHeadr;
         cgi_getlen = 0;
         break;
     }
     case Status::HandleData:
         cgi_outlen = sizeof(CGI_Header);
-        status = Status::HandleLeft;
-    case Status::HandleLeft:
-        cgi_id = ntohl(header->requestId);
-        requester = statusmap.at(cgi_id).req_ptr;
-        len = requester->bufleft(statusmap.at(cgi_id).req_index);
+        cgistage = Status::HandleLeft;
+    case Status::HandleLeft:{
+        CgiStatus& status = statusmap.at(cgi_id);
+        int len = status.req_ptr->bufleft(status.req_index);
         if (len <= 0) {
             LOGE("The requester's write buff is full\n");
-            requester->wait(statusmap.at(cgi_id).req_index);
+            status.req_ptr->wait(status.req_index);
             updateEpoll(0);
             return;
         }
         len = Min(len, cgi_getlen - cgi_outlen);
-        len = requester->Write((const char *)cgi_buff + cgi_outlen, len, statusmap.at(cgi_id).req_index);
+        len = status.req_ptr->Write((const char *)cgi_buff + cgi_outlen, len, status.req_index);
         cgi_outlen += len;
         if (cgi_outlen == cgi_getlen) {
-            status = Status::WaitHeadr;
+            cgistage = Status::WaitHeadr;
             cgi_getlen = 0;
         }
         if (header->flag & CGI_FLAG_END) {
-            CgiStatus& cs = statusmap.at(cgi_id);
-            cs.req_ptr->clean(NOERROR, cs.req_index);
+            status.req_ptr->clean(NOERROR, status.req_index);
             statusmap.erase(cgi_id);
         }
+        break;
+    }
+    default:
         break;
     }
     InProc();

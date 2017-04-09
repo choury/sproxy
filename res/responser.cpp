@@ -9,14 +9,13 @@
 
 static int check_header(HttpReqHeader& req){
     Requester *requester = req.src;
-    if (auth_string[0] &&
-        !checkauth(requester->getip()) &&
+    if (!checkauth(requester->getip()) &&
         req.get("Proxy-Authorization") &&
         strcmp(auth_string, req.get("Proxy-Authorization")+6) == 0)
     {
         addauth(requester->getip());
     }
-    if (auth_string[0] && !checkauth(requester->getip())){
+    if (!checkauth(requester->getip())){
         HttpResHeader res(H407);
         res.index = req.index;
         requester->response(std::move(res));

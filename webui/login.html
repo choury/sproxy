@@ -1,0 +1,36 @@
+<DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+    </head>
+    <body>
+        <lable>User:</lable>
+        <input type="text" id="user">
+        <lable>Password:</lable>
+        <input type="password" id="password">
+        <input type="button" value="login" onclick="login()">
+    </body>
+    <script>
+    function login(){
+		var user = document.getElementById("user").value;
+		var password = document.getElementById("password").value;
+        var key = btoa(user+":"+password);
+       	fetch("/cgi/liblogin.so", {
+  			method: "POST",
+  			headers: {
+    			"Content-Type": "application/x-www-form-urlencoded"
+  			},
+  			body: "key="+key
+		}).then(function(res) {
+			if(res.ok){
+				window.location="/webui/";
+			}else{
+    			alert("Oops! You are not authorized.");
+  			}
+		}, function(e) {
+  			alert("Error submitting form!");
+		}); 
+    }
+    </script>
+</html>
+

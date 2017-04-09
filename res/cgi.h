@@ -59,7 +59,7 @@ class Cgi:public Responser{
     virtual void defaultHE(uint32_t events);
     enum class Status{
         WaitHeadr, WaitBody, HandleRes, HandleValue, HandleData, HandleLeft
-    }status = Status::WaitHeadr;
+    }cgistage = Status::WaitHeadr;
     void InProc();
 public:
     explicit Cgi(HttpReqHeader& req);
