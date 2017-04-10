@@ -132,10 +132,7 @@ void Guest_s2::defaultHE(uint32_t events) {
 
     if (events & EPOLLOUT) {
         int ret = SendFrame();
-        if(ret <= 0 && showerrinfo(ret, "guest_s2 write error")) {
-            clean(WRITE_ERR, 0);
-            return;
-        }else{
+        if(ret > 0){
             for(auto i = waitlist.begin(); i!= waitlist.end(); ){
                 ResStatus& status = statusmap.at(*i);
                 if(status.remotewinsize > 0){
@@ -146,6 +143,9 @@ void Guest_s2::defaultHE(uint32_t events) {
                 }
             }
             add_job((job_func)peer_lost, this, 30000);
+        }else if(showerrinfo(ret, "guest_s2 write error")) {
+            clean(WRITE_ERR, 0);
+            return;
         }
         if (framequeue.empty()) {
             updateEpoll(EPOLLIN);
