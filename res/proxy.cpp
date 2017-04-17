@@ -82,7 +82,7 @@ static const unsigned char alpn_protos_string[] =
 
 
 void Proxy::waitconnectHE(uint32_t events) {
-    if (requester_ptr == NULL) {
+    if (status.req_ptr == NULL) {
         clean(PEER_LOST_ERR, 0);
         return;
     }
@@ -91,8 +91,7 @@ void Proxy::waitconnectHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("(%s): connect to proxy error: %s\n",
-                 requester_ptr->getsrc(), strerror(error));
+            LOGE("(%s): connect to proxy error: %s\n", hostname, strerror(error));
         }
         goto reconnect;
     }
@@ -101,13 +100,12 @@ void Proxy::waitconnectHE(uint32_t events) {
         int error;
         socklen_t len = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-            LOGE("(%s): proxy getsokopt error: %m\n", requester_ptr->getsrc());
+            LOGE("(%s): proxy getsokopt error: %m\n", hostname);
             goto reconnect;
         }
             
         if (error != 0) {
-            LOGE("(%s): connect to proxy:%s\n",
-                 requester_ptr->getsrc(), strerror(error));
+            LOGE("(%s): connect to proxy:%s\n", hostname, strerror(error));
             goto reconnect;
         }
         if(protocol == Protocol::TCP){
@@ -157,7 +155,7 @@ reconnect:
 
 
 void Proxy::shakehandHE(uint32_t events) {
-    if (requester_ptr == NULL) {
+    if (status.req_ptr == NULL) {
         clean(PEER_LOST_ERR, 0);
         return;
     }
@@ -165,8 +163,7 @@ void Proxy::shakehandHE(uint32_t events) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("(%s): proxy unkown error: %s\n",
-                 requester_ptr->getsrc(), strerror(error));
+            LOGE("(%s): proxy unkown error: %s\n", hostname, strerror(error));
         }
         clean(SSL_SHAKEHAND_ERR, 0);
         return;
@@ -176,7 +173,7 @@ void Proxy::shakehandHE(uint32_t events) {
         int ret = ssl->connect();
         if (ret != 1) {
             if (errno != EAGAIN) {
-                LOGE("(%s): ssl connect error:%m\n", requester_ptr->getsrc());
+                LOGE("(%s): ssl connect error:%m\n", hostname);
                 clean(SSL_SHAKEHAND_ERR, 0);
             }
             return;

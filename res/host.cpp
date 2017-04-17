@@ -21,7 +21,7 @@ void Host::vpn_aged(Host* host){
 
 Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), protocol(protocol){
     assert(port);
-    memset(this->hostname, 0, sizeof(this->hostname));
+    snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
     query(hostname, (DNSCBfunc)Host::Dnscallback, this);
 }
 
@@ -32,9 +32,9 @@ Host::~Host(){
 
 
 void Host::Dnscallback(Host* host, const char *hostname, std::vector<sockaddr_un> addrs) {
-    snprintf(host->hostname, sizeof(host->hostname), "%s", hostname);
+    host->testedaddr = 0;
     if (addrs.size() == 0) {
-        LOGE("Dns query failed: %s\n", host->hostname);
+        LOGE("Dns query failed: %s\n", hostname);
         host->clean(DNS_FAILED, 0);
     } else {
         host->addrs = addrs;
@@ -46,7 +46,7 @@ void Host::Dnscallback(Host* host, const char *hostname, std::vector<sockaddr_un
 }
 
 int Host::connect() {
-    if (testedaddr>= addrs.size()) {
+    if ((size_t)testedaddr>= addrs.size()) {
         return -1;
     } else {
         if (fd > 0) {
@@ -59,7 +59,7 @@ int Host::connect() {
         fd = Connect(&addrs[testedaddr++], (int)protocol);
         add_job((job_func)con_timeout, this, 30000);
         if (fd < 0) {
-            LOGE("connect to %s failed\n", this->hostname);
+            LOGE("connect to %s failed\n", hostname);
             return connect();
         }
         updateEpoll(EPOLLOUT);
@@ -70,7 +70,7 @@ int Host::connect() {
 
 
 void Host::waitconnectHE(uint32_t events) {
-    if (requester_ptr == nullptr){
+    if (status.req_ptr == nullptr){
         clean(PEER_LOST_ERR, 0);
         return;
     }
@@ -80,8 +80,7 @@ void Host::waitconnectHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("(%s): connect to %s error: %s\n", 
-                 requester_ptr->getsrc(),  hostname, strerror(error));
+            LOGE("(%s): host connect error: %s\n", hostname, strerror(error));
         }
         goto reconnect;
     }
@@ -90,26 +89,25 @@ void Host::waitconnectHE(uint32_t events) {
         int error;
         socklen_t len = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-            LOGE("(%s): getsokopt error: %m\n", requester_ptr->getsrc());
+            LOGE("(%s): getsokopt error: %m\n", hostname);
             goto reconnect;
         }
         if (error != 0) {
-            LOGE("(%s): connect to %s: %s\n", 
-                 requester_ptr->getsrc(), this->hostname, strerror(error));
+            LOGE("(%s): connect error: %s\n",hostname, strerror(error));
             goto reconnect;
         }
         updateEpoll(EPOLLIN | EPOLLOUT);
 
         if (http_flag & HTTP_CONNECT_F){
             HttpResHeader res(H200);
-            res.index = requester_index;
-            requester_ptr->response(std::move(res));
+            res.index = status.req_index;
+            status.req_ptr->response(std::move(res));
         }
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
         del_job((job_func)con_timeout, this);
 
         if(http_flag & HTTP_VPN_MODE_F){
-            if(protocol == Protocol::UDP){
+            if(status.protocol == Protocol::UDP){
                 add_job((job_func)vpn_aged, this, 180000);
             }else{
                 add_job((job_func)vpn_aged, this, 300000);
@@ -124,14 +122,14 @@ reconnect:
 }
 
 void Host::defaultHE(uint32_t events) {
-    assert(requester_ptr && requester_index);
+    assert(status.req_ptr && status.req_index);
 
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("(%s): host error: %s\n", requester_ptr->getsrc(), strerror(error));
+            LOGE("(%s): host error: %s\n", hostname, strerror(error));
         }
         clean(INTERNAL_ERR, 0);
         return;
@@ -149,11 +147,11 @@ void Host::defaultHE(uint32_t events) {
             }
             return;
         }
-        if(ret != WRITE_NOTHING && requester_ptr)
-            requester_ptr->writedcb(requester_index);
+        if(ret != WRITE_NOTHING && status.req_ptr)
+            status.req_ptr->writedcb(status.req_index);
     }
     if(http_flag & HTTP_VPN_MODE_F){
-        if(protocol == Protocol::UDP){
+        if(status.protocol == Protocol::UDP){
             add_job((job_func)vpn_aged, this, 180000);
         }else{
             add_job((job_func)vpn_aged, this, 300000);
@@ -177,17 +175,20 @@ void* Host::request(HttpReqHeader&& req) {
     if(req.get("Sproxy_vpn")){
         http_flag |= HTTP_VPN_MODE_F;
     }
-    requester_ptr = req.src;
-    requester_index = req.index;
-    assert(requester_ptr);
-    assert(requester_index);
-    return (void *)1;
+    status.req_ptr = req.src;
+    status.req_index = req.index;
+    assert(status.req_ptr);
+    assert(status.req_index);
+    strcpy(status.hostname, req.hostname);
+    status.port = req.port;
+    status.protocol = req.ismethod("SEND")?Protocol::UDP:Protocol::TCP;
+    return reinterpret_cast<void*>(1);
 }
 
 void Host::ResProc(HttpResHeader&& res) {
-    assert(requester_ptr && requester_index);
-    res.index = requester_index;
-    requester_ptr->response(std::move(res));
+    assert(status.req_ptr && status.req_index);
+    res.index = status.req_index;
+    status.req_ptr->response(std::move(res));
 }
 
 
@@ -203,8 +204,8 @@ Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr) {
         {
             return host;
         }else{
-            assert(host->requester_ptr == nullptr ||
-                   host->requester_ptr == req.src);
+            assert(host->status.req_ptr == nullptr ||
+                   host->status.req_ptr == req.src);
         }
     }
     return new Host(req.hostname, req.port, protocol);
@@ -223,44 +224,44 @@ void Host::ErrProc(int errcode) {
 }
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
-    if (requester_ptr == NULL) {
+    if (status.req_ptr == NULL) {
         clean(PEER_LOST_ERR, 0);
         return -1;
     }
 
-    int len = requester_ptr->bufleft(requester_index);
+    int len = status.req_ptr->bufleft(status.req_index);
 
     if (len <= 0) {
-        LOGE("(%s): The guest's write buff is full\n", requester_ptr->getsrc());
-        requester_ptr->wait(requester_index);
+        LOGE("(%s): The guest's write buff is full (%s)\n", status.req_ptr->getsrc(), hostname);
+        status.req_ptr->wait(status.req_index);
         updateEpoll(0);
         return -1;
     }
 
-    return requester_ptr->Write(buff, Min(size, len), requester_index);
+    return status.req_ptr->Write(buff, Min(size, len), status.req_index);
 }
 
 void Host::clean(uint32_t errcode, void* index) {
     assert((long)index == 1 || (void*)index == 0);
-    if(requester_ptr){
-        if(protocol == Protocol::TCP){
+    if(status.req_ptr){
+        if(status.protocol == Protocol::TCP){
             if(errcode == CONNECT_TIMEOUT || errcode == DNS_FAILED){
                 HttpResHeader res(H504);
-                res.index = requester_index;
-                requester_ptr->response(std::move(res));
+                res.index = status.req_index;
+                status.req_ptr->response(std::move(res));
             }else if(errcode == CONNECT_FAILED){
                 HttpResHeader res(H503);
-                res.index = requester_index;
-                requester_ptr->response(std::move(res));
+                res.index = status.req_index;
+                status.req_ptr->response(std::move(res));
             }
         }
         if(index == nullptr){
-            requester_ptr->clean(errcode, requester_index);
+            status.req_ptr->clean(errcode, status.req_index);
         }
-        requester_ptr = nullptr;
-        requester_index = nullptr;
+        status.req_ptr = nullptr;
+        status.req_index = nullptr;
     }
-    if(hostname[0]){
+    if(testedaddr >= 0){
         Peer::clean(errcode, 0);
     }
 }

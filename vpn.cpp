@@ -16,24 +16,34 @@ int daemon_mode = 0;
 int use_http2 = 1;
 int ignore_cert_error = 0;
 int disable_ipv6 = 0;
-char SHOST[DOMAINLIMIT] = {"b.choury.com"};
-uint16_t SPORT = 443;
-Protocol SPROT = Protocol::UDP;
+char SHOST[DOMAINLIMIT];
+uint16_t SPORT;
+Protocol SPROT;
 char auth_string[DOMAINLIMIT] = {0};
 const char *cafile =  nullptr;
 const char *index_file = nullptr;
 uint32_t debug = DVPN;
 
 
-int vpn_start(int fd){
+int vpn_start(const struct VpnConfig* vpn){
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
     signal(SIGABRT, dump_trace);
+    disable_ipv6 = vpn->disable_ipv6;
+    ignore_cert_error = vpn->ignore_cert_error;
+    if(setproxy(vpn->server)){
+        LOGE("wrong server format\n");
+        return -1;
+    }
     loadsites();
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
     efd = epoll_create(10000);
-    new Guest_vpn(fd);
+    if(efd < 0){
+        LOGE("epoll_create: %m\n");
+        return -1;
+    }
+    new Guest_vpn(vpn->fd);
     LOGOUT("Accepting connections ...\n");
     while (1) {
         int c;

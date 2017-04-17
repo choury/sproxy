@@ -7,16 +7,22 @@
 
 class Requester;
 
+struct HostStatus{
+    Requester* req_ptr;
+    void*      req_index;
+    char       hostname[DOMAINLIMIT];
+    uint16_t   port;
+    Protocol   protocol;
+};
+
 class Host:public Responser, public HttpRequester {
 protected:
-    size_t testedaddr = 0;
+    int testedaddr = -1;
     std::vector<sockaddr_un> addrs;
     char hostname[DOMAINLIMIT];
     uint16_t port;
     Protocol protocol;
-    Requester* requester_ptr = nullptr;
-    void*      requester_index = nullptr;
-
+    HostStatus status;
     
     virtual int connect();
     virtual void waitconnectHE(uint32_t events);

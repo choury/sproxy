@@ -13,7 +13,14 @@ extern "C" {
 #define UINT32_MAX 0xFFFFFFFF
 #endif
 
-int vpn_start(int fd);
+struct VpnConfig{
+    int fd;
+    int ignore_cert_error;
+    int disable_ipv6;
+    const char* server;
+};
+
+int vpn_start(const struct VpnConfig* vpn);
 #endif
 
 #ifdef  __cplusplus

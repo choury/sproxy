@@ -314,6 +314,9 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
     if(statusmap.count(key)){     //更新window
         VpnStatus &status = statusmap[key];
         status.window = pac->tcp->getwindow();
+        if(flag & TH_ACK){
+            status.res_ptr->writedcb(status.res_index);
+        }
     }
 }
 

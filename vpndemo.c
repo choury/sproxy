@@ -98,8 +98,8 @@ int tun_create(char *dev, int flags) {
 
 
 int main(int argc, char** argv) {
-    if(argc < 2){
-        fprintf(stderr, "usage: %s interface\n", argv[0]);
+    if(argc < 3){
+        fprintf(stderr, "usage: %s interface server\n", argv[0]);
         return -1;
     }
     out_interface = argv[1];
@@ -110,6 +110,11 @@ int main(int argc, char** argv) {
         return 1;
     }
     fprintf(stderr, "TUN name is %s\n", tun_name);
-    vpn_start(tun);
+    struct VpnConfig vpn;
+    vpn.disable_ipv6 = 1;
+    vpn.ignore_cert_error = 0;
+    vpn.server=argv[2];
+    vpn.fd = tun;
+    vpn_start(&vpn);
     return 0;
 }
