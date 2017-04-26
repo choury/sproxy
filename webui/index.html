@@ -125,6 +125,13 @@ button{
                             insertTd = insertTr.insertCell(1);
                             insertTd.style.textAlign="center";
                             insertTd.className='strategy';
+                            if(data[i][key] == 'block'){
+                                insertTd.style.backgroundColor = "red"
+                            }
+                            if(data[i][key] == 'proxy'){
+                                insertTd.style.backgroundColor = "green"
+                            }
+
                             insertTd.innerHTML = data[i][key];
 
                             insertTd = insertTr.insertCell(2);

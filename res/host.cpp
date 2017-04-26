@@ -96,15 +96,12 @@ void Host::waitconnectHE(uint32_t events) {
             LOGE("(%s): connect error: %s\n",hostname, strerror(error));
             goto reconnect;
         }
-        updateEpoll(EPOLLIN | EPOLLOUT);
 
         if (http_flag & HTTP_CONNECT_F){
             HttpResHeader res(H200);
             res.index = status.req_index;
             status.req_ptr->response(std::move(res));
         }
-        handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
-        del_job((job_func)con_timeout, this);
 
         if(http_flag & HTTP_VPN_MODE_F){
             if(status.protocol == Protocol::UDP){
@@ -113,6 +110,9 @@ void Host::waitconnectHE(uint32_t events) {
                 add_job((job_func)vpn_aged, this, 300000);
             }
         }
+        updateEpoll(EPOLLIN | EPOLLOUT);
+        handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
+        del_job((job_func)con_timeout, this);
     }
     return;
 reconnect:

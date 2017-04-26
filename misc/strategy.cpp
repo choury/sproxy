@@ -21,6 +21,39 @@ static std::set<string> authips;
 
 static unordered_map<string, Strategy> sites;
 
+static bool mergestrategy(const char* host, const char* strategy){
+    Strategy s;
+    if(strcmp(strategy, "direct") == 0){
+        s = Strategy::direct;
+    }else if(strcmp(strategy, "proxy") == 0){
+        s = Strategy::proxy;
+    }else if(strcmp(strategy, "local") == 0){
+        s = Strategy::local;
+    }else if(strcmp(strategy, "block") == 0){
+        s = Strategy::block;
+    }else{
+        return false;
+    }
+    if(getstrategy(host) != s){
+        sites[host] = s;
+        return true;
+    }
+    const char* subhost = host;
+    while (subhost) {
+        if (subhost[0] == '.') {
+            subhost++;
+        }
+
+        if (sites.count(subhost)) {
+            sites.erase(host);
+            sites.erase(subhost);
+            sites[subhost] = s;
+            LOG("merge strategy for %s and %s\n", host, subhost);
+        }
+        subhost = strpbrk(subhost, ".");
+    }
+    return true;
+}
 
 
 void loadsites() {
@@ -48,15 +81,7 @@ void loadsites() {
             char proxy[DOMAINLIMIT];
             sscanf(line.c_str(), "%s %s %s", site, strategy, proxy);
 
-            if(strcmp(strategy, "direct") == 0){
-                sites[site] = Strategy::direct;
-            }else if(strcmp(strategy, "proxy") == 0){
-                sites[site] = Strategy::proxy;
-            }else if(strcmp(strategy, "local") == 0){
-                sites[site] = Strategy::local;
-            }else if(strcmp(strategy, "block") == 0){
-                sites[site] = Strategy::block;
-            }else if(line.length()){
+            if(line.length() && mergestrategy(site, strategy) == false){
                 LOGE("Wrong config line:%s\n",line.c_str());
             }
         }
@@ -93,20 +118,13 @@ void savesites(){
     sitesfile.close();
 }
 
+
 bool addstrategy(const char* host, const char* strategy) {
-    if(strcmp(strategy, "direct") == 0){
-        sites[host] = Strategy::direct;
-    }else if(strcmp(strategy, "proxy") == 0){
-        sites[host] = Strategy::proxy;
-    }else if(strcmp(strategy, "local") == 0){
-        sites[host] = Strategy::local;
-    }else if(strcmp(strategy, "block") == 0){
-        sites[host] = Strategy::block;
-    }else{
-        return false;
+    if(mergestrategy(host, strategy)){
+        savesites();
+        return true;
     }
-    savesites();
-    return true;
+    return false;
 }
 
 bool delstrategy(const char* host) {

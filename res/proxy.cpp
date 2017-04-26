@@ -57,7 +57,7 @@ int verify_host_callback(int ok, X509_STORE_CTX *ctx){
         LOGE("verify cert error:num=%d:%s:depth=%d:%s\n", err,
                  X509_verify_cert_error_string(err), depth, buf);
     } else {
-        LOG("cert depth=%d:%s\n", depth, buf);
+//        LOG("cert depth=%d:%s\n", depth, buf);
     }
 
     /*
@@ -153,7 +153,6 @@ reconnect:
     }
 }
 
-
 void Proxy::shakehandHE(uint32_t events) {
     if (status.req_ptr == NULL) {
         clean(PEER_LOST_ERR, 0);
@@ -197,10 +196,9 @@ void Proxy::shakehandHE(uint32_t events) {
             }
             updateEpoll(EPOLLIN | EPOLLOUT);
             handleEvent = (void (Con::*)(uint32_t))&Proxy::defaultHE;
+            del_job((job_func)con_timeout, this);
         }  
-        del_job((job_func)con_timeout, this);
         return;
-        
     }
 }
 
