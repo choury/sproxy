@@ -39,7 +39,12 @@ Proxy2::~Proxy2() {
 
 
 ssize_t Proxy2::Read(void* buff, size_t len) {
-    return ssl->read(buff, len);
+    auto ret = ssl->read(buff, len);
+    if(ret > 0){
+        add_job((job_func)ping_check, this, 20000);
+        add_job((job_func)ping_timeout, this, 30000);
+    }
+    return ret;
 }
 
 
@@ -90,8 +95,6 @@ void Proxy2::defaultHE(uint32_t events) {
         return;
     }
     if (events & EPOLLIN) {
-        add_job((job_func)ping_check, this, 20000);
-        add_job((job_func)ping_timeout, this, 30000);
         (this->*Http2_Proc)();
         if(inited && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);

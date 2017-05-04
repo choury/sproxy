@@ -34,11 +34,19 @@ Guest_s2::~Guest_s2() {
 
 
 ssize_t Guest_s2::Read(void *buff, size_t size) {
-    return ssl->read(buff, size);
+    auto ret = ssl->read(buff, size);
+    if(ret > 0){
+        add_job((job_func)peer_lost, this, 30000);
+    }
+    return ret;
 }
 
 ssize_t Guest_s2::Write(const void *buff, size_t size) {
-    return ssl->write(buff, size);
+    auto ret =  ssl->write(buff, size);
+    if(ret > 0){
+        add_job((job_func)peer_lost, this, 30000);
+    }
+    return ret;
 }
 
 ssize_t Guest_s2::Write(void *buff, size_t size, void* index) {
@@ -123,7 +131,6 @@ void Guest_s2::defaultHE(uint32_t events) {
         return;
     }
     if (events & EPOLLIN) {
-        add_job((job_func)peer_lost, this, 30000);
         (this->*Http2_Proc)();
         if(inited && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
@@ -142,7 +149,6 @@ void Guest_s2::defaultHE(uint32_t events) {
                     i++;
                 }
             }
-            add_job((job_func)peer_lost, this, 30000);
         }else if(showerrinfo(ret, "guest_s2 write error")) {
             clean(WRITE_ERR, 0);
             return;
