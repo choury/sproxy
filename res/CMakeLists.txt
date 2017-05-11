@@ -5,5 +5,5 @@
 
 INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR})
 
-ADD_LIBRARY(res responser.cpp host.cpp proxy.cpp proxy2.cpp file.cpp cgi.cpp)
+ADD_LIBRARY(res responser.cpp host.cpp proxy.cpp proxy2.cpp file.cpp cgi.cpp fdns.cpp)
 

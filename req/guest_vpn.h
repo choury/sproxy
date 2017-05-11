@@ -2,7 +2,6 @@
 #define GUEST_VPN_H__
 
 #include "requester.h"
-#include "res/responser.h"
 #include "prot/ip_pack.h"
 #include "misc/net.h"
 
@@ -12,7 +11,8 @@ struct VpnKey{
     Protocol    protocol;
     VpnKey(const Ip* ip);
     void reverse();
-    const char* getstr() const;
+    const char* getsrc() const;
+    const char* getdst() const;
 }__attribute__((packed));
 
 bool operator<(const VpnKey a, const VpnKey b);

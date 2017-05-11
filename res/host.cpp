@@ -31,15 +31,15 @@ Host::~Host(){
 }
 
 
-void Host::Dnscallback(Host* host, const char *hostname, std::vector<sockaddr_un> addrs) {
+void Host::Dnscallback(Host* host, const char *hostname, std::list<sockaddr_un> addrs) {
     host->testedaddr = 0;
     if (addrs.size() == 0) {
         LOGE("Dns query failed: %s\n", hostname);
         host->clean(DNS_FAILED, 0);
     } else {
-        host->addrs = addrs;
-        for (size_t i = 0; i < host->addrs.size(); ++i) {
-            host->addrs[i].addr_in6.sin6_port = htons(host->port);
+        for (auto i: addrs){
+            host->addrs.push_back(i);
+            host->addrs.back().addr_in6.sin6_port = htons(host->port);
         }
         host->connect();
     }

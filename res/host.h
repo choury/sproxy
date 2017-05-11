@@ -3,7 +3,7 @@
 
 #include "responser.h"
 #include "prot/http.h"
-#include "misc/dns.h"
+#include "prot/dns.h"
 
 class Requester;
 
@@ -31,7 +31,7 @@ protected:
     virtual ssize_t Read(void* buff, size_t len)override;
     virtual void ErrProc(int errcode)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
-    static void Dnscallback(Host* host, const char *hostname, std::vector<sockaddr_un> addrs);
+    static void Dnscallback(Host* host, const char *hostname, std::list<sockaddr_un> addrs);
     virtual void* request(HttpReqHeader&& req)override;
 public:
     explicit Host(const char* hostname, uint16_t port, Protocol protocol);
