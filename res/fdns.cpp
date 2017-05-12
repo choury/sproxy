@@ -7,6 +7,11 @@ binmap<uint32_t, std::string> fdns_records;
 
 static FDns *fdns = nullptr;
 
+FDns::FDns() {
+    fake_ip = ntohl(inet_addr("10.0.0.2"));
+}
+
+
 void* FDns::request(HttpReqHeader&& req){
     statusmap[req_id]= FDnsStatus{
         req.src,
@@ -15,7 +20,6 @@ void* FDns::request(HttpReqHeader&& req){
     };
     return reinterpret_cast<void*>(req_id++);
 }
-
 
 ssize_t FDns::Write(void* buff, size_t size, void* index) {
     Dns_Que que((char *)buff);
@@ -57,7 +61,22 @@ void FDns::ResponseCb(uint32_t id, const char* buff, size_t size) {
 }
 
 void FDns::clean(uint32_t errcode, void* index) {
-    return;
+    if(index == nullptr) {
+        fdns = (fdns == this) ? nullptr: fdns;
+        for(auto i: statusmap){
+            i.second.req_ptr->clean(errcode, i.second.req_index);
+        }
+        statusmap.clear();
+        return Peer::clean(errcode, 0);
+    }else{
+        uint32_t id = (uint32_t)(long)index;
+        assert(statusmap.count(id));
+        if(errcode == VPN_AGED_ERR){
+           FDnsStatus& status = statusmap[id];
+           status.req_ptr->clean(errcode, status.req_index);
+        }
+        statusmap.erase(id);
+    }
 }
 
 

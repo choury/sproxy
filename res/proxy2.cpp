@@ -252,6 +252,10 @@ void Proxy2::clean(uint32_t errcode, void* index) {
         uint32_t id = (uint32_t)(long)index;
         assert(statusmap.count(id));
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
+        if(errcode == VPN_AGED_ERR){
+           ReqStatus& status = statusmap[id];
+           status.req_ptr->clean(errcode, status.req_index);
+        }
         statusmap.erase(id);
         waitlist.erase(id);
     }

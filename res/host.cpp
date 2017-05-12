@@ -13,12 +13,6 @@ void Host::con_timeout(Host* host) {
     del_job((job_func)con_timeout, host);
 }
 
-void Host::vpn_aged(Host* host){
-    LOGD(DVPN, "connecting to %s aged.\n", host->hostname);
-    host->clean(0, 0);
-    del_job((job_func)vpn_aged, host);
-}
-
 Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), protocol(protocol){
     assert(port);
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
@@ -27,7 +21,6 @@ Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), 
 
 Host::~Host(){
     del_job((job_func)con_timeout, this);
-    del_job((job_func)vpn_aged, this);
 }
 
 
@@ -103,13 +96,6 @@ void Host::waitconnectHE(uint32_t events) {
             status.req_ptr->response(std::move(res));
         }
 
-        if(http_flag & HTTP_VPN_MODE_F){
-            if(status.protocol == Protocol::UDP){
-                add_job((job_func)vpn_aged, this, 180000);
-            }else{
-                add_job((job_func)vpn_aged, this, 300000);
-            }
-        }
         updateEpoll(EPOLLIN | EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
         del_job((job_func)con_timeout, this);
@@ -150,13 +136,6 @@ void Host::defaultHE(uint32_t events) {
         if(ret != WRITE_NOTHING && status.req_ptr)
             status.req_ptr->writedcb(status.req_index);
     }
-    if(http_flag & HTTP_VPN_MODE_F){
-        if(status.protocol == Protocol::UDP){
-            add_job((job_func)vpn_aged, this, 180000);
-        }else{
-            add_job((job_func)vpn_aged, this, 300000);
-        }
-    }
 }
 
 
@@ -171,9 +150,6 @@ void* Host::request(HttpReqHeader&& req) {
         http_flag |= HTTP_IGNORE_BODY_F;
     }else if(req.ismethod("SEND")){
         Http_Proc = &Host::AlwaysProc;
-    }
-    if(req.get("Sproxy_vpn")){
-        http_flag |= HTTP_VPN_MODE_F;
     }
     status.req_ptr = req.src;
     status.req_index = req.index;
@@ -255,7 +231,7 @@ void Host::clean(uint32_t errcode, void* index) {
                 status.req_ptr->response(std::move(res));
             }
         }
-        if(index == nullptr){
+        if(index == nullptr || errcode == VPN_AGED_ERR){
             status.req_ptr->clean(errcode, status.req_index);
         }
         status.req_ptr = nullptr;

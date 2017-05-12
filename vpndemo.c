@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
+#include <net/route.h>
 #include <string.h>
 
 const char* out_interface;
@@ -40,13 +41,13 @@ int tun_create(char *dev, int flags) {
     }
     strcpy(dev, ifr.ifr_name);
 
-    int tmp_fd = socket( AF_INET, SOCK_DGRAM, 0);
+    int tmp_fd = socket(AF_INET, SOCK_DGRAM, 0);
 
     /* set ip of this end point of tunnel */
     ifr.ifr_addr.sa_family = AF_INET;
     struct sockaddr_in* addr = (struct sockaddr_in*)&ifr.ifr_addr;
     inet_pton(AF_INET, "10.0.0.1", &addr->sin_addr);
-    if((err = ioctl(tmp_fd, SIOCSIFADDR, &ifr)) < 0 ) {
+    if((err = ioctl(tmp_fd, SIOCSIFADDR, &ifr)) < 0) {
         perror("ioctl (SIOCSIFADDR) failed");
         close(fd);
         close(tmp_fd);
@@ -61,7 +62,7 @@ int tun_create(char *dev, int flags) {
         return err;
     }
 
-    if((err = ioctl(tmp_fd, SIOCGIFFLAGS, &ifr)) < 0 ) {
+    if((err = ioctl(tmp_fd, SIOCGIFFLAGS, &ifr)) < 0) {
         perror("ioctl (SIOCGIFFLAGS) failed");
         close(fd);
         close(tmp_fd);
@@ -72,7 +73,7 @@ int tun_create(char *dev, int flags) {
     ifr.ifr_flags |= IFF_UP;
     ifr.ifr_flags |= IFF_RUNNING;
 
-    if ((err = ioctl(tmp_fd, SIOCSIFFLAGS, &ifr)) < 0 ) {
+    if ((err = ioctl(tmp_fd, SIOCSIFFLAGS, &ifr)) < 0) {
         perror("ioctl (SIOCSIFFLAGS) failed");
         close(fd);
         close(tmp_fd);
@@ -88,8 +89,33 @@ int tun_create(char *dev, int flags) {
         return err;
     }
 
+    struct rtentry route;
+    memset(&route, 0, sizeof(route));
+
+    addr = (struct sockaddr_in *)&route.rt_gateway;
+    addr->sin_family = AF_INET;
+    addr->sin_addr.s_addr = inet_addr("10.0.0.1");
+
+    addr = (struct sockaddr_in*)&route.rt_dst;
+    addr->sin_family = AF_INET;
+    addr->sin_addr.s_addr = INADDR_ANY;
+
+    addr = (struct sockaddr_in*)&route.rt_genmask;
+    addr->sin_family = AF_INET;
+    addr->sin_addr.s_addr = INADDR_ANY;
+
+    route.rt_flags = RTF_UP | RTF_GATEWAY;
+    route.rt_dev = dev;
+
+    if((err = ioctl(tmp_fd, SIOCADDRT, &route)) < 0){
+        perror("ioctl (SIOCADDRT) failed");
+        close(fd);
+        close(tmp_fd);
+        return err;
+    }
+
     /* make tun socket non blocking */
-    uint32_t sock_opts = fcntl(fd, F_GETFL, 0 );
+    uint32_t sock_opts = fcntl(fd, F_GETFL, 0);
     fcntl(fd, F_SETFL, sock_opts | O_NONBLOCK );
 
     close(tmp_fd);

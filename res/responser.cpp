@@ -75,7 +75,7 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
                 if(index_file && (endwith(req.filename, "/") || strlen(req.filename)==0)){
                     strncat(req.filename, index_file, sizeof(req.filename));
                 }
-                if(req.ismethod("CONNECT")){
+                if(req.ismethod("CONNECT") || req.ismethod("SEND")){
                     HttpResHeader res(H400);
                     res.index = req.index;
                     requester->response(std::move(res));

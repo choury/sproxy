@@ -170,6 +170,7 @@ do {\
 #define IP_BLOCK_ERR        40
 #define TCP_RESET_ERR       41
 #define DNS_FAILED          42
+#define VPN_AGED_ERR        43
 
 typedef unsigned char uchar;
 
