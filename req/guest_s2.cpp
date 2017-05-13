@@ -258,7 +258,7 @@ void Guest_s2::dump_stat() {
     if(!waitlist.empty()){
         LOG(">>> waitlist (may due to low connect):\n");
         for(auto i: waitlist){
-            LOG("> %d\n", i);
+            LOG("> 0x%x\n", i);
         }
     }
 }

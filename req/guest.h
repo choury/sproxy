@@ -10,7 +10,7 @@ class Guest:public Requester, public HttpResponser {
     void request_next();
 protected:
     enum class Status{
-        idle, requesting, presistent, chunked,
+        idle, requesting, presistent, chunked, headonly,
     } status = Status::idle;
     Responser* responser_ptr = nullptr;
     void*      responser_index = nullptr;

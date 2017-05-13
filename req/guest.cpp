@@ -26,6 +26,8 @@ void Guest::request_next() {
         if(res_ptr){
             if(req.header.ismethod("CONNECT")){
                 status = Status::presistent;
+            }else if(req.header.ismethod("HEAD")){
+                status = Status::headonly;
             }else{
                 status = Status::requesting;
             }
@@ -94,6 +96,8 @@ void Guest::ReqProc(HttpReqHeader&& req) {
         if(res_ptr){
             if(req.ismethod("CONNECT")){
                 status = Status::presistent;
+            }else if(req.ismethod("HEAD")){
+                status = Status::headonly;
             }else{
                 status = Status::requesting;
             }
@@ -118,7 +122,7 @@ void Guest::response(HttpResHeader&& res) {
         }
     }else if(res.get("Transfer-Encoding")){
         status = Status::chunked;
-    }else if(res.no_body()){
+    }else if(res.no_body() || status == Status::headonly){
         status = Status::idle;
         if(!reqs.empty())
             add_job((job_func)::request_next, this, 0);
@@ -188,7 +192,7 @@ void Guest::clean(uint32_t errcode, void* index) {
 void Guest::dump_stat(){
     LOG("Guest %p, %s: %p, %p\n", this, getsrc(), responser_ptr, responser_index);
     for(auto& i: reqs){
-        LOG("%s [%s:%d%s]",
+        LOG("%s %s:%d%s\n",
             i.header.method, i.header.hostname,
             i.header.port, i.header.path);
     }
