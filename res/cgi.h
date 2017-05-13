@@ -68,6 +68,7 @@ public:
     virtual void wait(void* index)override;
     virtual void clean(uint32_t errcode, void* index)override;
     virtual void* request(HttpReqHeader&& req)override;
+    virtual void dump_stat()override;
     static Cgi* getcgi(HttpReqHeader& req);
 };
 

@@ -29,6 +29,7 @@ int vpn_start(const struct VpnConfig* vpn){
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
     signal(SIGABRT, dump_trace);
+    signal(SIGUSR1, dump_stat);
     disable_ipv6 = vpn->disable_ipv6;
     ignore_cert_error = vpn->ignore_cert_error;
     if(setproxy(vpn->server)){

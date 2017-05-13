@@ -21,7 +21,7 @@ Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Requester(fd, myaddr) {
 void Guest::request_next() {
     while(status == Status::idle && reqs.size()){
         HttpReq req = std::move(reqs.front());
-        reqs.pop();
+        reqs.pop_front();
         Responser* res_ptr = distribute(req.header, responser_ptr);
         if(res_ptr){
             if(req.header.ismethod("CONNECT")){
@@ -105,7 +105,7 @@ void Guest::ReqProc(HttpReqHeader&& req) {
             responser_index = res_index;
         }
     }else{
-        reqs.push(HttpReq(req));
+        reqs.push_back(HttpReq(req));
     }
 }
 
@@ -183,4 +183,13 @@ void Guest::clean(uint32_t errcode, void* index) {
     responser_ptr = nullptr;
     del_job((job_func)::request_next, this);
     Peer::clean(errcode, 0);
+}
+
+void Guest::dump_stat(){
+    LOG("Guest %p, %s: %p, %p\n", this, getsrc(), responser_ptr, responser_index);
+    for(auto& i: reqs){
+        LOG("%s [%s:%d%s]",
+            i.header.method, i.header.hostname,
+            i.header.port, i.header.path);
+    }
 }

@@ -196,6 +196,15 @@ void releaseall() {
     close(efd);
 }
 
+void dump_stat(int){
+    LOG("======================================\n");
+    for(auto i: cons){
+        i->dump_stat();
+        LOG("--------------------------------------");
+    }
+    LOG("======================================\n");
+}
+
 extern void flushproxy2();
 
 int setproxy(const char* proxy){

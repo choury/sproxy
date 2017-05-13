@@ -50,6 +50,7 @@ public:
     ~Dns_srv();
     virtual void DnshandleEvent(uint32_t events);
     int query(const char *host, int type, uint32_t id);
+    virtual void dump_stat()override;
 };
 
 
@@ -79,8 +80,8 @@ typedef void (*DNSCBfunc)(void *, const char *hostname, std::list<sockaddr_un> a
 typedef void (*DNSRAWCB)(void *, const char *buff, size_t size);
 
 
-void query(const char* host, DNSCBfunc func, void* param, uint16_t times=0);
-void query(const char* host, uint16_t type, DNSRAWCB func, void* parm, uint16_t times=0);
+void query(const char* host, DNSCBfunc func, void* param);
+void query(const char* host, uint16_t type, DNSRAWCB func, void* parm);
 void RcdDown(const char *hostname, const sockaddr_un &addr);
 
 #endif

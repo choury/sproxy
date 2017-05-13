@@ -62,6 +62,9 @@ class Http_server: public Server{
     }
 public:
     Http_server(int fd):Server(fd){}
+    virtual void dump_stat(){
+        LOG("Http_server %p\n", this);
+    }
 };
 
 class Https_server: public Server {
@@ -99,6 +102,9 @@ public:
         SSL_CTX_free(ctx);
     };
     Https_server(int fd, SSL_CTX *ctx): Server(fd),ctx(ctx) {}
+    virtual void dump_stat(){
+        LOG("Https_server %p\n", this);
+    }
 };
 
 
@@ -143,11 +149,14 @@ public:
         SSL_CTX_free(ctx);
     };
     Dtls_server(int fd, SSL_CTX *ctx): Server(fd),ctx(ctx) {}
+    virtual void dump_stat(){
+        LOG("Dtls_server %p\n", this);
+    }
 };
 
 //do nothing, useful for vpn only
-void protectFd(int){
-
+int protectFd(int){
+    return 1;
 }
 
 static int select_alpn_cb(SSL *ssl,
@@ -428,6 +437,7 @@ int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
     signal(SIGABRT, dump_trace);
+    signal(SIGUSR1, dump_stat);
     loadsites();
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息

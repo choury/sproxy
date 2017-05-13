@@ -10,7 +10,8 @@
 #include <unistd.h>
 
 static void vpn_aged(VpnStatus* status){
-    LOGD(DVPN, "%s -> %s aged.\n", status->key->getsrc(), status->key->getdst());
+    LOGD(DVPN, "<%s> %s -> %s aged.\n",
+         protstr(status->key->protocol), status->key->getsrc(), status->key->getdst());
     status->res_ptr->clean(VPN_AGED_ERR, status->res_index);
     del_job((job_func)vpn_aged, status);
 }
@@ -48,18 +49,9 @@ const char * VpnKey::getsrc() const{
     static char str[100];
     
     char sip[INET_ADDRSTRLEN];
-    switch(protocol){
-    case Protocol::TCP:
-        sprintf(str, "<tcp> %s:%d",
-                inet_ntop(AF_INET, &src.addr_in.sin_addr, sip, sizeof(sip)),
-                ntohs(src.addr_in.sin_port));
-        break;
-    case Protocol::UDP:
-        sprintf(str, "<udp> %s:%d",
-                inet_ntop(AF_INET, &src.addr_in.sin_addr, sip, sizeof(sip)),
-                ntohs(src.addr_in.sin_port));
-        break;
-    }
+    sprintf(str, "%s:%d",
+            inet_ntop(AF_INET, &src.addr_in.sin_addr, sip, sizeof(sip)),
+            ntohs(src.addr_in.sin_port));
     return str;
 }
 
@@ -67,18 +59,9 @@ const char * VpnKey::getdst() const{
     static char str[100];
 
     char dip[INET_ADDRSTRLEN];
-    switch(protocol){
-    case Protocol::TCP:
-        sprintf(str, "<tcp> %s:%d",
-                inet_ntop(AF_INET, &dst.addr_in.sin_addr, dip, sizeof(dip)),
-                ntohs(dst.addr_in.sin_port));
-        break;
-    case Protocol::UDP:
-        sprintf(str, "<udp> %s:%d",
-                inet_ntop(AF_INET, &dst.addr_in.sin_addr, dip, sizeof(dip)),
-                ntohs(dst.addr_in.sin_port));
-        break;
-    }
+    sprintf(str, "%s:%d",
+            inet_ntop(AF_INET, &dst.addr_in.sin_addr, dip, sizeof(dip)),
+            ntohs(dst.addr_in.sin_port));
     return str;
 }
 
@@ -227,7 +210,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
     size_t datalen = len - pac->gethdrlen();
     
     VpnKey key(pac);
-    LOGD(DVPN, "(%s -> %s) (%u - %u) flag: %d size:%zd\n",
+    LOGD(DVPN, "<tcp> (%s -> %s) (%u - %u) flag: %d size:%zd\n",
          key.getsrc(), key.getdst(), seq, ack, flag, datalen);
 
     if(flag & TH_SYN){//1握手包，创建握手回包
@@ -391,12 +374,12 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
     VpnKey key(pac);
 
     if(statusmap.count(key)){
-        LOGD(DVPN, "(%s -> %s) size: %zd\n", key.getsrc(), key.getdst(), datalen);
+        LOGD(DVPN, "<udp> (%s -> %s) size: %zd\n", key.getsrc(), key.getdst(), datalen);
         VpnStatus& status = statusmap[key];
         status.res_ptr->Write(data, datalen, status.res_index);
         add_job((job_func)vpn_aged, &status, 300000);
     }else{
-        LOGD(DVPN, "(%s -> %s) (N) size: %zd\n", key.getsrc(), key.getdst(), datalen);
+        LOGD(DVPN, "<udp> (%s -> %s) (N) size: %zd\n", key.getsrc(), key.getdst(), datalen);
         //create a http proxy request
         char buff[HEADLENLIMIT];
         uint32_t fip = ntohl(pac->getdst()->s_addr);
@@ -451,8 +434,8 @@ void Guest_vpn::icmpHE(const Ip* pac, const char* packet, size_t len) {
         VpnKey key(&icmp_pac);
         key.reverse();
         
-        LOGD(DVPN, "Get unreach icmp packet (%s -> %s) type: %d\n",
-             key.getsrc(), key.getdst(), type);
+        LOGD(DVPN, "Get unreach icmp packet <%s> (%s -> %s) type: %d\n",
+             protstr(key.protocol), key.getsrc(), key.getdst(), type);
         if(type != IPPROTO_TCP && type != IPPROTO_UDP){
             LOGD(DVPN, "Get unreach icmp packet unkown protocol:%d\n", type);
             return;
@@ -544,7 +527,8 @@ int32_t Guest_vpn::bufleft(void* index) {
 
 void Guest_vpn::clean(uint32_t errcode, void* index) {
     VpnKey* key = (VpnKey *)index;
-    LOGD(DVPN, "(%s -> %s) clean: %d\n", key->getsrc(), key->getdst(), errcode);
+    LOGD(DVPN, "<%s> (%s -> %s) clean: %d\n",
+         protstr(key->protocol), key->getsrc(), key->getdst(), errcode);
     if(key == nullptr){
         for(auto i: statusmap){
             i.second.res_ptr->clean(errcode, i.second.res_index);
@@ -559,7 +543,7 @@ void Guest_vpn::clean(uint32_t errcode, void* index) {
     assert(status.key == key);
     if(key->protocol == Protocol::UDP){
         if(errcode){
-            LOGD(DVPN, "write icmp unreachable msg for udp clean\n");
+            LOGD(DVPN, "write icmp unreachable msg: <udp> (%s -> %s)\n", key->getsrc(), key->getdst());
             Ip pac_return(IPPROTO_ICMP, &key->dst, &key->src);
             pac_return.icmp
                 ->settype(ICMP_UNREACH)
@@ -585,7 +569,7 @@ void Guest_vpn::clean(uint32_t errcode, void* index) {
             //write back to vpn fd
             Requester::Write(packet, packetlen, 0);
         }else if(errcode == CONNECT_TIMEOUT){
-            LOGD(DVPN, "write icmp unreachable msg: %s -> %s\n", key->getsrc(), key->getdst());
+            LOGD(DVPN, "write icmp unreachable msg: <tcp> (%s -> %s)\n", key->getsrc(), key->getdst());
             Ip pac_return(IPPROTO_ICMP, &key->dst, &key->src);
             pac_return.icmp
                 ->settype(ICMP_UNREACH)
@@ -595,7 +579,7 @@ void Guest_vpn::clean(uint32_t errcode, void* index) {
             char* packet = pac_return.build_packet((const void*)status.packet, packetlen);
             Requester::Write(packet, packetlen, 0);
         }else{
-            LOGD(DVPN, "write rst packet\n");
+            LOGD(DVPN, "write rst packet: %s -> %s\n", key->getsrc(), key->getdst());
             Ip pac_return(IPPROTO_TCP, &key->dst, &key->src);
             pac_return.tcp
                 ->setseq(status.seq)
@@ -612,3 +596,19 @@ void Guest_vpn::clean(uint32_t errcode, void* index) {
     statusmap.erase(*key);
     delete key;
 }
+
+void Guest_vpn::dump_stat() {
+    LOG("Guest_vpn %p:\n", this);
+    for(auto i: statusmap){
+        LOG("<%s> (%s -> %s) %p: %p, %p\n",
+            protstr(i.first.protocol), i.first.getsrc(), i.first.getdst(),
+            i.second.key, i.second.res_ptr, i.second.res_index);
+    }
+    if(!waitlist.empty()){
+        LOG(">>> waitlist (may due to low connect):\n");
+        for(auto i: waitlist){
+            LOG("%p\n", i);
+        }
+    }
+}
+

@@ -237,9 +237,16 @@ uint32_t getmtime(){
     return (tv.tv_sec * 1000ull + tv.tv_usec/1000)&0xFFFFFFFF;
 }
 
-void sighandle(int signum){
-    fflush(stdout);
+const char * protstr(Protocol p) {
+    if(p == TCP){
+        return "tcp";
+    }
+    if(p == UDP){
+        return "udp";
+    }
+    return "unknown";
 }
+
 
 int showerrinfo(int ret, const char *s){
     if (ret < 0) {
@@ -289,7 +296,7 @@ void p_free(void* ptr){
     return free(ptr-prior);
 }
 
-void *p_move( void *ptr, signed char len ){
+void *p_move(void *ptr, signed char len){
     unsigned char prior = *(unsigned char*)(ptr-1);
     prior += len;
     assert(prior >= 1);
@@ -308,6 +315,7 @@ void change_process_name(const char *name){
     memset(main_argv[0], 0, len);
     strncpy(main_argv[0], name, len - 1);
 }
+
 
 #ifndef __ANDROID__
 #include <execinfo.h>
@@ -336,7 +344,5 @@ void dump_trace(int ignore) {
     /* 获取函数名称时申请的内存需要自行释放 */
     free(stack_strings);
     stack_strings = NULL;
-
-    return;
 }
 #endif

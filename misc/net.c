@@ -140,7 +140,11 @@ int Connect(union sockaddr_un* addr, int type) {
         }
     }
 
-    protectFd(fd);
+    if(protectFd(fd) == 0){
+        LOGE("protecd fd error:%m\n");
+        close(fd);
+        return -1;
+    }
     if (connect(fd, &addr->addr, sizeof(struct sockaddr_in6)) == -1 && errno != EINPROGRESS) {
         LOGE("connecting error:%m\n");
         close(fd);

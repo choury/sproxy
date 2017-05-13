@@ -43,6 +43,7 @@ public:
     virtual void wait(void* index)override;
     virtual void writedcb(void* index)override;
 
+    virtual void dump_stat()override;
     static void ping_check(Proxy2 *p);
     static void ping_timeout(Proxy2 *p);
 };

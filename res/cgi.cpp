@@ -381,6 +381,20 @@ void Cgi::wait(void* index) {
     waitlist.insert((uint32_t)(long)index);
 }
 
+void Cgi::dump_stat(){
+    LOG("Cgi %p %s, id=%d:\n", this, filename, curid);
+    for(auto i: statusmap){
+        LOG("%d: %p, %p", i.first, i.second.req_ptr, i.second.req_index);
+    }
+    if(!waitlist.empty()){
+        LOG(">>> waitlist (may due to low connect):\n");
+        for(auto i: waitlist){
+            LOG("> %d\n", i);
+        }
+    }
+}
+
+
 
 Cgi* Cgi::getcgi(HttpReqHeader &req) {
     if(cgimap.count(req.filename)) {

@@ -35,6 +35,7 @@ void Host::Dnscallback(Host* host, const char *hostname, std::list<sockaddr_un> 
             host->addrs.back().addr_in6.sin6_port = htons(host->port);
         }
         host->connect();
+        add_job((job_func)con_timeout, host, 60000);
     }
 }
 
@@ -50,7 +51,6 @@ int Host::connect() {
             RcdDown(hostname, addrs[testedaddr-1]);
         }
         fd = Connect(&addrs[testedaddr++], (int)protocol);
-        add_job((job_func)con_timeout, this, 30000);
         if (fd < 0) {
             LOGE("connect to %s failed\n", hostname);
             return connect();
@@ -240,4 +240,9 @@ void Host::clean(uint32_t errcode, void* index) {
     if(testedaddr >= 0){
         Peer::clean(errcode, 0);
     }
+}
+
+void Host::dump_stat() {
+    LOG("Host %p, <%s> ( -> %s:%d): %p, %p\n", this, protstr(protocol),
+        status.hostname, status.port, status.req_ptr, status.req_index);
 }

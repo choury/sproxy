@@ -317,6 +317,16 @@ void File::clean(uint32_t errcode, void* index){
     }
 }
 
+void File::dump_stat(){
+    LOG("File %p, %s, id=%d:\n", this, filename, req_id);
+    for(auto i: statusmap){
+        LOG("0x%x: (%zd-%zd) %p, %p",
+            i.first, i.second.rg.begin, i.second.rg.end,
+            i.second.req_ptr, i.second.req_index);
+    }
+}
+
+
 File::~File() {
     if(ffd > 0){
         close(ffd);

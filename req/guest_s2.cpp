@@ -250,6 +250,20 @@ void Guest_s2::writedcb(void* index){
     }
 }
 
+void Guest_s2::dump_stat() {
+    LOG("Guest_s2 %p:\n", this);
+    for(auto i: statusmap){
+        LOG("0x%x: %p, %p", i.first, i.second.res_ptr, i.second.res_index);
+    }
+    if(!waitlist.empty()){
+        LOG(">>> waitlist (may due to low connect):\n");
+        for(auto i: waitlist){
+            LOG("> %d\n", i);
+        }
+    }
+}
+
+
 #ifndef NDEBUG
 void Guest_s2::PingProc(Http2_header *header){
     LOGD(DHTTP2, "window size global: %d/%d\n", localwinsize, remotewinsize);

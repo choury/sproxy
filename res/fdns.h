@@ -25,6 +25,7 @@ public:
     virtual ssize_t Write(void *buff, size_t size, void* index)override;
     static void ResponseCb(uint32_t id, const char *buff, size_t size);
     virtual void clean(uint32_t errcode, void* index)override;
+    virtual void dump_stat()override;
     static FDns* getfdns();
 };
 

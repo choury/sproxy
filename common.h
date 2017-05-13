@@ -186,8 +186,9 @@ void Base64Encode(const char* s, size_t len, char* dst);
 uint64_t getutime();
 uint32_t getmtime();
 
-void sighandle(int signum);
+void dump_stat(int ignore);
 void dump_trace(int ignore);
+const char* protstr(Protocol p);
 int showerrinfo(int ret, const char *s);
 void* memdup(const void* ptr, size_t size);
 
@@ -197,7 +198,7 @@ void p_free(void *ptr);
 void *p_move(void *ptr, signed char len);
 void change_process_name(const char *name);
 
-void protectFd(int sockfd);
+int protectFd(int sockfd);
 
 #ifdef  __cplusplus
 }

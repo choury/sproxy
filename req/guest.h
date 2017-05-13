@@ -4,7 +4,7 @@
 #include "requester.h"
 #include "prot/http.h"
 #include <netinet/in.h>
-#include <queue>
+#include <list>
 
 class Guest:public Requester, public HttpResponser {
     void request_next();
@@ -14,7 +14,7 @@ protected:
     } status = Status::idle;
     Responser* responser_ptr = nullptr;
     void*      responser_index = nullptr;
-    std::queue<HttpReq> reqs;
+    std::list<HttpReq> reqs;
 
     virtual void defaultHE(uint32_t events)override;
     
@@ -29,6 +29,7 @@ public:
     virtual ssize_t Write(void* buff, size_t size, void* index)override;
     virtual void clean(uint32_t errcode, void* index)override;
     virtual void response(HttpResHeader&& res)override;
+    virtual void dump_stat()override;
     friend void request_next(Guest * guest);
 };
 

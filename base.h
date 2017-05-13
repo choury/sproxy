@@ -13,6 +13,7 @@ protected:
 public:
     Con(int fd);
     void (Con::*handleEvent)(uint32_t events)=nullptr;
+    virtual void dump_stat() = 0;
     virtual ~Con();
 };
 

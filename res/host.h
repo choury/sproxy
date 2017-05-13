@@ -39,6 +39,7 @@ public:
     
     virtual void clean(uint32_t errcode, void* index)override;
     virtual void ResProc(HttpResHeader&& res)override;
+    virtual void dump_stat()override;
     static Host* gethost(HttpReqHeader& req, Responser* responser_ptr);
     static void con_timeout(Host* host);
 };

@@ -79,6 +79,13 @@ void FDns::clean(uint32_t errcode, void* index) {
     }
 }
 
+void FDns::dump_stat() {
+    LOG("FDns %p, id: %d:\n", this, req_id);
+    for(auto i: statusmap){
+        LOG("0x%x: %p, %p\n", i.first, i.second.req_ptr, i.second.req_index);
+    }
+}
+
 
 
 FDns * FDns::getfdns() {

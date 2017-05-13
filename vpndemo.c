@@ -10,14 +10,15 @@
 
 const char* out_interface;
 
-void protectFd(int fd) {
+int protectFd(int fd) {
     struct ifreq ifr;
 
     memset(&ifr, 0, sizeof(ifr));
     snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), out_interface);
     if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
-        perror("bind interface");
+        return 0;
     }
+    return 1;
 }
 
 int tun_create(char *dev, int flags) {
