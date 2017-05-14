@@ -414,7 +414,7 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
             statusmap[key].res_ptr = responser_ptr;
             statusmap[key].res_index = responser_index;
             responser_ptr->Write(data, datalen, responser_index);
-            add_job((job_func)vpn_aged, &statusmap[key], 30000);
+            add_job((job_func)vpn_aged, &statusmap[key], 60000);
         }else{
             free(statusmap[key].packet);
             delete statusmap[key].key;
@@ -443,6 +443,7 @@ void Guest_vpn::icmpHE(const Ip* pac, const char* packet, size_t len) {
         if(statusmap.count(key)){
             LOGD(DVPN, "clean this connection\n");
             VpnStatus& status = statusmap[key];
+            del_job((job_func)vpn_aged, &status);
 
             status.res_ptr->clean(PEER_LOST_ERR, status.res_index);
             delete status.key;

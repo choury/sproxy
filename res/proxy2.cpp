@@ -279,7 +279,7 @@ void Proxy2::writedcb(void* index){
 void Proxy2::dump_stat() {
     LOG("Proxy2 %p, id:%d:\n", this, curid);
     for(auto i: statusmap){
-        LOG("0x%x: %p, %p", i.first, i.second.req_ptr, i.second.req_index);
+        LOG("0x%x: %p, %p\n", i.first, i.second.req_ptr, i.second.req_index);
     }
     if(!waitlist.empty()){
         LOG(">>> waitlist (may due to low connect):\n");

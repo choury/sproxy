@@ -208,7 +208,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     int len = status.req_ptr->bufleft(status.req_index);
 
     if (len <= 0) {
-        LOGE("(%s): The guest's write buff is full (%s)\n", status.req_ptr->getsrc(), hostname);
+        LOGE("(%s): The guest's write buff is full (%s)\n", status.req_ptr->getsrc(), status.hostname);
         status.req_ptr->wait(status.req_index);
         updateEpoll(0);
         return -1;
@@ -243,6 +243,11 @@ void Host::clean(uint32_t errcode, void* index) {
 }
 
 void Host::dump_stat() {
-    LOG("Host %p, <%s> ( -> %s:%d): %p, %p\n", this, protstr(protocol),
-        status.hostname, status.port, status.req_ptr, status.req_index);
+    if(strcmp(hostname, status.hostname) == 0 && protocol == status.protocol && port == status.port){
+        LOG("Host %p, <%s> (%s:%d): %p, %p\n", this, protstr(protocol),
+            status.hostname, status.port, status.req_ptr, status.req_index);
+    }else{
+        LOG("Host %p [p], <%s> (%s:%d): %p, %p\n", this, protstr(protocol),
+            status.hostname, status.port, status.req_ptr, status.req_index);
+    }
 }
