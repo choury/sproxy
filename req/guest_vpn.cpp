@@ -218,12 +218,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
             LOGD(DVPN, "drop dup syn packet\n");
             return;
         }
-        if (seq > UINT32_MAX - 1) { //溢出情况，即计算后的ack将大于UINT32_MAX，这里只可能是先等于UINT32_MAX
-            seq = 0;
-            LOG("ack reach to %u, restart from 0.\n", UINT32_MAX);
-        } else{
-            seq++;
-        }
+        seq++;
 
         //create a http proxy request
         char buff[HEADLENLIMIT];
@@ -331,32 +326,30 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
             return;
         }
         VpnStatus &status = statusmap[key];
-        if(seq < status.ack){
-            LOGD(DVPN, "drop dup data packet\n");
+        if(seq != status.ack){
+            LOGD(DVPN, "drop unwanted data packet\n");
             return;
         }
-        if (seq > UINT32_MAX - datalen) { //溢出情况，即计算后的ack将大于UINT32_MAX
-            seq = datalen - (UINT32_MAX - seq);
-            LOG("ack reach to %u, restart from %u.\n", UINT32_MAX, seq);
-        } else{
-            seq = seq + datalen;
+        int buflen = status.res_ptr->bufleft(status.res_index);
+        if(buflen <= 0){
+            LOGE("responser buff is full, drop packet\n");
+        }else{
+            const char* data = packet + pac->gethdrlen();
+            status.res_ptr->Write(data, datalen, status.res_index);
+            status.ack = seq + datalen;
+
+            //创建回包
+            pac_return.tcp
+                ->setseq(status.seq)
+                ->setack(status.ack)
+                ->setwindow(buflen)
+                ->setflag(TH_ACK);
+
+
+            size_t  packetlen;
+            char *packet = pac_return.build_packet((const void *)nullptr, packetlen);
+            Requester::Write(packet, packetlen, 0);
         }
-
-        const char* data = packet + pac->gethdrlen();
-        status.res_ptr->Write(data, datalen, status.res_index);
-        status.ack = seq;
-
-        //创建回包
-        pac_return.tcp
-            ->setseq(status.seq)
-            ->setack(status.ack)
-            ->setwindow(status.res_ptr->bufleft(status.res_index))
-            ->setflag(TH_ACK);
-
-
-        size_t  packetlen;
-        char *packet = pac_return.build_packet((const void *)nullptr, packetlen);
-        Requester::Write(packet, packetlen, 0);
     }
     if(statusmap.count(key)){     //更新window
         VpnStatus &status = statusmap[key];
@@ -376,7 +369,11 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
     if(statusmap.count(key)){
         LOGD(DVPN, "<udp> (%s -> %s) size: %zd\n", key.getsrc(), key.getdst(), datalen);
         VpnStatus& status = statusmap[key];
-        status.res_ptr->Write(data, datalen, status.res_index);
+        if(status.res_ptr->bufleft(status.res_index)<=0){
+            LOGE("responser buff is full, drop packet\n");
+        }else{
+            status.res_ptr->Write(data, datalen, status.res_index);
+        }
         add_job((job_func)vpn_aged, &status, 300000);
     }else{
         LOGD(DVPN, "<udp> (%s -> %s) (N) size: %zd\n", key.getsrc(), key.getdst(), datalen);
@@ -474,6 +471,7 @@ ssize_t Guest_vpn::Write(void* buff, size_t size, void* index) {
     if(status.res_ptr == nullptr){
         return size;
     }
+    assert(size <= status.window);
     if(key.protocol == Protocol::TCP){
         LOGD(DVPN, "write tcp back (%s -> %s) (%u - %u) size: %zu\n",
              key.getdst(), key.getsrc(), status.seq, status.ack, size);
@@ -488,13 +486,7 @@ ssize_t Guest_vpn::Write(void* buff, size_t size, void* index) {
         size_t packetlen = size;
         char* packet = pac_return.build_packet(buff, packetlen);
 
-        if (status.seq > UINT32_MAX - size) { //溢出情况，即计算后的ack将大于UINT32_MAX
-            status.seq = size - (UINT32_MAX - status.seq);
-            LOG("seq reach to %u, restart from %u.\n", UINT32_MAX, status.seq);
-        }
-        else{
-            status.seq = status.seq + size;
-        }
+        status.seq = status.seq + size;
         Requester::Write(packet, packetlen, 0);
         return size;
     }

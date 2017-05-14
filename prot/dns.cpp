@@ -120,7 +120,13 @@ void query_back(Dns_Status *dnsst){
 
 
 static void query(Dns_Status* dnsst){
+    assert(id_cur &1);
     dnsst->id = id_cur;
+    if(disable_ipv6){
+        dnsst->flags = QAAAARECORD | GAAAARECORD;
+    }else{
+        dnsst->flags = 0;
+    }
 
     sockaddr_un addr;
     if (inet_pton(AF_INET, dnsst->host, &addr.addr_in.sin_addr) == 1) {
@@ -187,16 +193,13 @@ void query(const char *host , DNSCBfunc func, void *param) {
     dnsst->reqs.push_back(Dns_Req{
             func, param
         });
-    if(disable_ipv6){
-        dnsst->flags = QAAAARECORD | GAAAARECORD;
-    }else{
-        dnsst->flags = 0;
-    }
+
     snprintf(dnsst->host, sizeof(dnsst->host), "%s", host);
     query(dnsst);
 }
 
 static void query(Dns_RawReq* dnsreq){
+    assert(id_cur &1);
     dnsreq->id = id_cur;
     for (size_t i = dnsreq->times%srvs.size(); i < srvs.size(); ++i) {
         if(srvs[i]->query(dnsreq->host, dnsreq->type, id_cur))
@@ -206,7 +209,7 @@ static void query(Dns_RawReq* dnsreq){
     dnsreq->times++;
     querying_raw_id[id_cur] = dnsreq;
     add_job((job_func)query_timeout, (void *)(size_t)id_cur, DNSTIMEOUT);
-    id_cur ++;
+    id_cur += 2;
 }
 
 void query(const char *host , uint16_t type, DNSRAWCB func, void *param) {
@@ -325,11 +328,11 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
             }
             flags |= GARECORD;
         } else {
-            if (querying_index_id.count(id-1) == 0) {
+            id--;
+            if (querying_index_id.count(id) == 0) {
                 LOG("[DNS] Get a unkown id:%d\n", id);
                 return;
             }
-            id--;
             flags |= GAAAARECORD;
         }
         auto host = querying_index_id[id];
