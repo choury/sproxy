@@ -1,15 +1,43 @@
-<DOCTYPE html>
+<!doctype html>
 <html>
     <head>
         <meta charset="UTF-8" />
+        <style>
+		  body{
+			  background-image:url(529192cd7fa4c.jpg);
+			  background-repeat:no-repeat;
+			  background-size:cover;
+		  }
+		  #div1{
+			  width:200px;
+			  height:150px;
+			  background-image:url(54301.jpg);
+			  margin:100px auto 10px; 
+			  padding:15px;
+		  }
+		  #div2{
+			width:300px;
+			height:200px;
+			margin:auto;
+			padding:15px;  
+			color:#F0C;
+		  }
+		</style>
     </head>
     <body>
+      <div id="div1">
         <lable>User:</lable>
         <input type="text" id="user">
         <lable>Password:</lable>
         <input type="password" id="password">
-        <input type="button" value="login" onclick="login()">
-    </body>
+        <p></p>
+        <input type="button" value="login" onClick="login()" id="input1">
+      </div>
+      <div id="div2">
+      <h3>&nbsp honey,l love you forever!</h3>
+      <img src="52001.jpg" width="300px" height="200px">
+      </div>
+</body>
     <script>
     function login(){
 		var user = document.getElementById("user").value;
@@ -33,4 +61,3 @@
     }
     </script>
 </html>
-
