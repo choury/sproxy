@@ -196,12 +196,19 @@ void releaseall() {
     close(efd);
 }
 
+extern void dump_dns();
+
 void dump_stat(int){
     LOG("======================================\n");
+    char buff[DOMAINLIMIT];
+    getproxy(buff, sizeof(buff));
+    LOG("Proxy server: %s\n", buff);
+    LOG("--------------------------------------\n");
     for(auto i: cons){
         i->dump_stat();
         LOG("--------------------------------------\n");
     }
+    dump_dns();
     LOG("======================================\n");
 }
 

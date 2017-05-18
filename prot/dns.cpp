@@ -3,6 +3,7 @@
 #include "common.h"
 
 #include <unordered_map>
+#include <set>
 #include <list>
 #include <string>
 
@@ -20,6 +21,16 @@
 
 static uint16_t id_cur = 1;
 static bool dns_inited = false;
+
+class Dns_srv:public Con{
+    char name[INET6_ADDRSTRLEN];
+public:
+    explicit Dns_srv(int fd, const char* name);
+    ~Dns_srv();
+    virtual void DnshandleEvent(uint32_t events);
+    int query(const char *host, int type, uint32_t id);
+    virtual void dump_stat()override;
+};
 
 std::vector<Dns_srv *> srvs;
 
@@ -72,11 +83,7 @@ void dns_expired(const char* host) {
 void query_timeout(uint16_t id);
 
 static int dnsinit() {
-    for (size_t i = 0; i < srvs.size(); ++i) {
-        delete srvs[i];
-    }
-    srvs.clear();
-
+    assert(srvs.empty());
     FILE *res_file = fopen(RESOLV_FILE, "r");
     if (res_file == NULL) {
         LOGE("[DNS] open resolv file:%s failed:%m\n", RESOLV_FILE);
@@ -103,7 +110,7 @@ static int dnsinit() {
                 LOGE("[DNS] connecting  %s error:%m\n", ipaddr);
                 continue;
             }
-            new Dns_srv(fd);
+            new Dns_srv(fd, ipaddr);
         }
     }
     fclose(res_file);
@@ -282,7 +289,8 @@ void RcdDown(const char *hostname, const sockaddr_un &addr) {
     }
 }
 
-Dns_srv::Dns_srv(int fd):Con(fd) {
+Dns_srv::Dns_srv(int fd, const char* name):Con(fd) {
+    strcpy(this->name, name);
     updateEpoll(EPOLLIN);
     handleEvent = (void (Con::*)(uint32_t))&Dns_srv::DnshandleEvent;
     srvs.push_back(this);
@@ -386,9 +394,36 @@ int Dns_srv::query(const char *host, int type, uint32_t id) {
 }
 
 void Dns_srv::dump_stat(){
-    LOG("Dns_srv %p\n", this);
+    LOG("Dns_srv %p: %s\n", this, name);
 }
 
+
+void dump_dns(){
+    LOG("Dns querying:\n");
+    for(auto i: querying_index_id){
+       assert(querying_index_host.count(i.second));;
+       LOG("    %d: %s\n", i.first, i.second.c_str());
+    }
+    LOG("Dns cache:\n");
+    for(auto i: rcd_cache){
+        LOG("    %s: %ld\n", i.first.c_str(), i.second.ttl+i.second.gettime-time(0));
+        for(auto j: i.second.addrs){
+            char ip[INET6_ADDRSTRLEN];
+            switch(j.addr.sa_family){
+            case AF_INET:
+                inet_ntop(j.addr.sa_family, &j.addr_in.sin_addr, ip, sizeof(ip));
+                break;
+            case AF_INET6:
+                inet_ntop(j.addr.sa_family, &j.addr_in6.sin6_addr, ip, sizeof(ip));
+                break;
+            default:
+                LOGE("Wrong ip address type: %d\n", j.addr.sa_family);
+                strcpy(ip, "UNKOWN");
+            }
+            LOG("        %s\n", ip);
+        }
+    }
+}
 
 
 typedef struct DNS_QUE {

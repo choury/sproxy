@@ -4,7 +4,6 @@
 #include "base.h"
 #include "misc/net.h"
 
-#include <vector>
 #include <list>
 #include <string>
 
@@ -41,17 +40,6 @@ typedef struct DNS_HDR {
     uint16_t numa1;              // 授权记录数
     uint16_t numa2;              // 额外资源记录数
 } __attribute__((packed)) DNS_HDR;
-
-
-
-class Dns_srv:public Con{
-public:
-    explicit Dns_srv(int fd);
-    ~Dns_srv();
-    virtual void DnshandleEvent(uint32_t events);
-    int query(const char *host, int type, uint32_t id);
-    virtual void dump_stat()override;
-};
 
 
 class Dns_Que{
