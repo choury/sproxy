@@ -72,3 +72,12 @@ uint32_t do_job(){
     }
     return min_interval;
 }
+
+void dump_job(){
+    LOG("Job queue:\n");
+    uint32_t now = getmtime();
+    for(auto i : callfunc_map){
+        uint32_t left = i.second.interval + i.second.last_done - now;
+        LOG("%s(%p): %d/%d\n", i.second.func_name, i.first.arg, left, i.second.interval);
+    }
+}

@@ -197,6 +197,7 @@ void releaseall() {
 }
 
 extern void dump_dns();
+extern void dump_job();
 
 void dump_stat(int){
     LOG("======================================\n");
@@ -209,6 +210,8 @@ void dump_stat(int){
         LOG("--------------------------------------\n");
     }
     dump_dns();
+    LOG("--------------------------------------\n");
+    dump_job();
     LOG("======================================\n");
 }
 
