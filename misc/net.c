@@ -9,7 +9,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <netinet/tcp.h>
-#include <ifaddrs.h>
 
 
 const char *DEFAULT_CIPHER_LIST = 
@@ -170,6 +169,9 @@ const char *getaddrstring(const union sockaddr_un *addr){
     return buff;
 }
 
+
+#ifndef __ANDROID__
+#include <ifaddrs.h>
 const char *getlocalip ()
 {
     struct ifaddrs *ifap, *ifa;
@@ -194,4 +196,9 @@ const char *getlocalip ()
     freeifaddrs(ifap);
     return (char *)ips;
 }
+#else
+const char *getlocalip (){
+    return NULL;
+}
+#endif
 

@@ -2,9 +2,9 @@
 #include "req/requester.h"
 #include "misc/job.h"
 
-#include <map>
-#include <string.h>
-#include <errno.h>
+//#include <map>
+//#include <string.h>
+//#include <errno.h>
 #include <assert.h>
                     
 void Host::con_timeout(Host* host) {

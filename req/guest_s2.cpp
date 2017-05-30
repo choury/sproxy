@@ -2,7 +2,7 @@
 #include "res/responser.h"
 #include "misc/job.h"
 
-#include <limits.h>
+//#include <limits.h>
 
 void Guest_s2::peer_lost(Guest_s2 *g){
     LOGE("(%s): [Guest_s2] Nothing got too long, so close it\n", g->getsrc());

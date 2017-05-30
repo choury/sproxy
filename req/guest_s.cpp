@@ -1,8 +1,8 @@
 #include "guest_s.h"
 #include "guest_s2.h"
 
-#include <unistd.h>
-#include <openssl/err.h>
+//#include <unistd.h>
+//#include <openssl/err.h>
 
 
 Guest_s::Guest_s(int fd, struct sockaddr_in6 *myaddr, Ssl* ssl): Guest(fd, myaddr), ssl(ssl){

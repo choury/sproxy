@@ -1,13 +1,13 @@
 #include "guest_vpn.h"
-#include "prot/ip_pack.h"
+//#include "prot/ip_pack.h"
 #include "vpn.h"
 
-#include "misc/net.h"
+//#include "misc/net.h"
 #include "misc/job.h"
 #include "res/proxy.h"
 #include "res/fdns.h"
 
-#include <unistd.h>
+//#include <unistd.h>
 
 static void vpn_aged(VpnStatus* status){
     LOGD(DVPN, "<%s> %s -> %s aged.\n",
@@ -471,8 +471,8 @@ ssize_t Guest_vpn::Write(void* buff, size_t size, void* index) {
     if(status.res_ptr == nullptr){
         return size;
     }
-    assert(size <= status.window);
     if(key.protocol == Protocol::TCP){
+        assert(size <= status.window);
         LOGD(DVPN, "write tcp back (%s -> %s) (%u - %u) size: %zu\n",
              key.getdst(), key.getsrc(), status.seq, status.ack, size);
         Ip pac_return(IPPROTO_TCP, &key.dst, &key.src);

@@ -9,21 +9,35 @@ set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 #SET(CMAKE_EXE_LINKER_FLAGS "-static")
 
 CHECK_CXX_COMPILER_FLAG("-std=c++11" HAVE_CXX11)
-CHECK_CXX_COMPILER_FLAG("-fsanitize=undefined" HAVE_SAN_UNDEF)
-
-set(CMAKE_REQUIRED_FLAGS "-fsanitize=address")
-CHECK_CXX_COMPILER_FLAG("-fsanitize=address" HAVE_SAN_ADDR)
-unset(CMAKE_REQUIRED_FLAGS)
 
 if(NOT HAVE_CXX11)
     message(FATAL_ERROR "this project need c++11")
 endif()
 
 
-find_package(OpenSSL 1.0.2 REQUIRED)
+
+if(ANDROID_NDK)
+    set(OPENSSL_ROOT_DIR ${OPENSSL_ROOT}/${ANDROID_ABI})
+    set(OPENSSL_INCLUDE_DIR ${OPENSSL_ROOT_DIR}/include)
+    set(OPENSSL_LIBRARIES ${OPENSSL_ROOT_DIR}/lib)
+    set(OPENSSL_SSL_LIBRARY ${OPENSSL_LIBRARIES}/libssl.so)
+    set(OPENSSL_CRYPTO_LIBRARY ${OPENSSL_LIBRARIES}/libcrypto.so)
+
+    find_library(log-lib log)
+    find_package(OpenSSL)
+else()
+    CHECK_CXX_COMPILER_FLAG("-fsanitize=undefined" HAVE_SAN_UNDEF)
+    set(CMAKE_REQUIRED_FLAGS "-fsanitize=address")
+    CHECK_CXX_COMPILER_FLAG("-fsanitize=address" HAVE_SAN_ADDR)
+    unset(CMAKE_REQUIRED_FLAGS)
+
+    find_package(OpenSSL 1.0.2 REQUIRED)
+    find_package(JSON-C)
+endif()
+
+
 include_directories(${OPENSSL_INCLUDE_DIR})
 
-find_package(JSON-C)
 
 if(NOT JSON-C_FOUND)
     message(WARNING "json-c not found, disable webui")
@@ -59,24 +73,29 @@ ADD_SUBDIRECTORY(misc)
 ADD_SUBDIRECTORY(prot)
 ADD_SUBDIRECTORY(req)
 ADD_SUBDIRECTORY(res)
-
-INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR})
-
-add_executable(sproxy main.cpp base.cpp)
-set_target_properties(sproxy PROPERTIES OUTPUT_NAME "sproxy")
-target_link_libraries(sproxy ${OPENSSL_LIBRARIES} dl req res prot misc pthread)
-
-
-install(TARGETS sproxy RUNTIME DESTINATION bin)
-
-add_library(sproxy_vpn SHARED vpn.cpp base.cpp)
-set_target_properties(sproxy_vpn PROPERTIES OUTPUT_NAME "sproxy_vpn") 
-target_link_libraries(sproxy_vpn ${OPENSSL_LIBRARIES} dl req res prot misc pthread)
-
 if(BUILD_CGI)
     ADD_SUBDIRECTORY(cgi)
 endif()
 
-add_executable(vpn vpndemo.c)
-target_link_libraries(vpn sproxy_vpn)
-set_target_properties(vpn PROPERTIES OUTPUT_NAME "vpndemo")
+INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR})
+
+
+if(NOT ANDROID_NDK)
+    add_executable(sproxy main.cpp base.cpp)
+    set_target_properties(sproxy PROPERTIES OUTPUT_NAME "sproxy")
+    target_link_libraries(sproxy ${OPENSSL_LIBRARIES} dl req res prot misc pthread)
+
+    add_library(sproxy_vpn SHARED vpn.cpp base.cpp)
+    set_target_properties(sproxy_vpn PROPERTIES OUTPUT_NAME "sproxy_vpn")
+    target_link_libraries(sproxy_vpn ${OPENSSL_LIBRARIES} dl req res prot misc)
+
+    add_executable(vpn vpndemo.c)
+    target_link_libraries(vpn sproxy_vpn)
+    set_target_properties(vpn PROPERTIES OUTPUT_NAME "vpndemo")
+
+    install(TARGETS sproxy RUNTIME DESTINATION bin)
+else()
+    add_library(sproxy_vpn SHARED vpn.cpp base.cpp com_choury_sproxy_Service.cpp)
+    set_target_properties(sproxy_vpn PROPERTIES OUTPUT_NAME "sproxy_vpn")
+    target_link_libraries(sproxy_vpn ${OPENSSL_LIBRARIES} dl req res prot misc ${log-lib})
+endif()

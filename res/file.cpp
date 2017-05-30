@@ -2,15 +2,16 @@
 #include "misc/net.h"
 #include "req/requester.h"
 
-#include <vector>
+//#include <vector>
 
 #include <fcntl.h>
 #include <unistd.h>
-#include <string.h>
+//#include <string.h>
+#include <time.h>
 #include <assert.h>
 #include <sys/eventfd.h>
-#include <sys/stat.h>
-#include <sys/mman.h>
+//#include <sys/stat.h>
+//#include <sys/mman.h>
 
 
 using std::vector;
@@ -218,7 +219,7 @@ void File::defaultHE(uint32_t events) {
                 if(i->second.modified_since >= st.st_mtime){
                     HttpResHeader res(H304);
                     char buff[100];
-                    strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime(&st.st_mtime));
+                    strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
                     res.add("Last-Modified", buff);
                     res.index = i->second.req_index;
                     requester->response(std::move(res));
@@ -231,7 +232,7 @@ void File::defaultHE(uint32_t events) {
                     HttpResHeader res(H200);
                     res.add("Content-Length", st.st_size);
                     char buff[100];
-                    strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime(&st.st_mtime));
+                    strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
                     res.add("Last-Modified", buff);
                     if(suffix && mimetype.count(suffix)){
                         res.add("Content-Type", mimetype.at(suffix));

@@ -1,13 +1,6 @@
 #include "hpack.h"
 #include "common.h"
 
-#include <map>
-
-#include <stdint.h>
-#include <assert.h>
-#include <string.h>
-
-
 static const char *static_table[][2]= {
     {0, 0},
     {":authority", 0},

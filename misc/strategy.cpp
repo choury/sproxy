@@ -1,14 +1,18 @@
 #include "strategy.h"
 #include "net.h"
 #include "common.h"
-#include <string>
+//#include <string>
 #include <unordered_map>
 #include <set>
 #include <fstream>
 
 #include <string.h>
-#include <bits/local_lim.h>
 #include <unistd.h>
+#ifdef __ANDROID__
+#define HOST_NAME_MAX   64
+#else
+#include <limits.h>
+#endif
 
 #define LISTFILE "sites.list"
 
@@ -60,7 +64,7 @@ void loadsites() {
     sites.clear();
 
     //default strategy
-    for(const char *ips=getlocalip(); strlen(ips); ips+=INET6_ADDRSTRLEN){
+    for(const char *ips=getlocalip(); ips && strlen(ips); ips+=INET6_ADDRSTRLEN){
         sites[ips] = Strategy::local;
     }
     char hostname[HOST_NAME_MAX];

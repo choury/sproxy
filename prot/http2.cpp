@@ -1,7 +1,7 @@
 #include "http2.h"
-#include "common.h"
+//#include "common.h"
 
-#include <string.h>
+//#include <string.h>
 
 
 void Http2Base::DefaultProc() {

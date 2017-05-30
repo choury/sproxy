@@ -3,11 +3,11 @@
 #include "res/responser.h"
 #include "misc/job.h"
 
-#include <set>
-#include <string.h>
-#include <errno.h>
+//#include <set>
+//#include <string.h>
+//#include <errno.h>
 #include <assert.h>
-#include <arpa/inet.h>
+//#include <arpa/inet.h>
 
 
 void request_next(Guest* guest){

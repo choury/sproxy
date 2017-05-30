@@ -2,10 +2,11 @@
 #include "common.h"
 #include <stdlib.h>
 #include <string.h>
-#include <arpa/inet.h>
+//#include <arpa/inet.h>
 #include <sys/time.h>
 #include <assert.h>
 
+#define ICMP_HEAD_LEN       8
 
 /*
  * Pseudo-header used for checksumming; this header should never
@@ -69,15 +70,15 @@ static uint16_t checksum_comp(uint8_t *addr, int len) {
 
 
 Icmp::Icmp() {
-    memset(&icmp_hdr, 0, sizeof(icmphdr));
+    memset(&icmp_hdr, 0, ICMP_HEAD_LEN);
 }
 
 Icmp::Icmp(const char* packet, size_t len){
-    if(len < sizeof(icmphdr)){
+    if(len < ICMP_HEAD_LEN){
         LOGE("Invalid ICMP header length: %zu bytes\n", len);
         throw 0;
     }
-    memcpy(&icmp_hdr, packet, sizeof(icmphdr));
+    memcpy(&icmp_hdr, packet, ICMP_HEAD_LEN);
 }
 
 
@@ -87,55 +88,56 @@ void Icmp::print() const {
     "code: %d, "
     "checksum: %d\n",
 
-        icmp_hdr.type,
-        icmp_hdr.code,
-        icmp_hdr.checksum
+        icmp_hdr.icmp_type,
+        icmp_hdr.icmp_code,
+        icmp_hdr.icmp_cksum
     );
 }
 
 Icmp* Icmp::settype(uint8_t type) {
-    icmp_hdr.type = type;
+    icmp_hdr.icmp_type = type;
     return this;
 }
 
 Icmp* Icmp::setcode(uint8_t code) {
-    icmp_hdr.code = code;
+    icmp_hdr.icmp_code = code;
     return this;
 }
 
 uint8_t Icmp::gettype() const {
-    return icmp_hdr.type;
+    return icmp_hdr.icmp_type;
 }
 
 uint8_t Icmp::getcode() const {
-    return icmp_hdr.code;
+    return icmp_hdr.icmp_code;
 }
 
 
 
 char * Icmp::build_packet(const void* data, size_t& len) {
-    size_t datalen = data?len:0;
-    len = datalen + sizeof(icmphdr);
+    assert(len);
+    size_t datalen = len;
+    len = datalen + ICMP_HEAD_LEN;
     char* packet = (char *) p_malloc(len);
 
     memset(packet, 0, len);
-    memcpy(packet, &icmp_hdr, sizeof(icmphdr));
+    memcpy(packet, &icmp_hdr, ICMP_HEAD_LEN);
 
     if(data){
-        char *icmpdata = (char *) (packet + sizeof(icmphdr));
+        char *icmpdata = (char *) (packet + ICMP_HEAD_LEN);
         memcpy(icmpdata, data, datalen);
     }
 
-    ((icmphdr *)packet)->checksum = htons(checksum_comp((uint8_t*)packet, len));
+    ((icmp *)packet)->icmp_cksum = htons(checksum_comp((uint8_t*)packet, len));
     return packet;
 }
 
 char * Icmp::build_packet(void* data, size_t& len) {
     assert(data);
-    len = len + sizeof(icmphdr);
-    char* packet = (char *)p_move(data, -(char)sizeof(icmphdr));
-    memcpy(packet, &icmp_hdr, sizeof(icmphdr));
-    ((icmphdr *)packet)->checksum = htons(checksum_comp((uint8_t*) packet, len));
+    len = len + ICMP_HEAD_LEN;
+    char* packet = (char *)p_move(data, -(char)ICMP_HEAD_LEN);
+    memcpy(packet, &icmp_hdr, ICMP_HEAD_LEN);
+    ((icmp *)packet)->icmp_cksum = htons(checksum_comp((uint8_t*) packet, len));
     return packet;
 }
 
@@ -618,7 +620,7 @@ Ip::Ip(uint8_t type, uint16_t sport, uint16_t dport){
     switch(type){
     case IPPROTO_ICMP:
         icmp = new Icmp();
-        ip_hdr.ip_len = sizeof(ip) + sizeof(icmp);
+        ip_hdr.ip_len = sizeof(ip) + ICMP_HEAD_LEN;
         break;
     case IPPROTO_TCP:
         tcp = new Tcp(&ip_hdr, sport, dport);
@@ -720,7 +722,7 @@ char* Ip::build_packet(void* data, size_t &len){
 size_t Ip::gethdrlen() const {
     switch(gettype()){
     case IPPROTO_ICMP:
-        return hdrlen + sizeof(icmp);
+        return hdrlen + ICMP_HEAD_LEN;
     case IPPROTO_TCP:
         return hdrlen + tcp->hdrlen;
     case IPPROTO_UDP:

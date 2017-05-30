@@ -5,7 +5,7 @@
 #include "req/guest_vpn.h"
 
 #include <signal.h>
-#include <sys/epoll.h>
+//#include <sys/epoll.h>
 #include <openssl/ssl.h>
 
 
@@ -28,7 +28,9 @@ uint32_t debug = DVPN;
 int vpn_start(const struct VpnConfig* vpn){
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
+#ifndef __ANDROID__
     signal(SIGABRT, dump_trace);
+#endif
     signal(SIGUSR1, dump_stat);
     disable_ipv6 = vpn->disable_ipv6;
     ignore_cert_error = vpn->ignore_cert_error;

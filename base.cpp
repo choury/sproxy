@@ -3,12 +3,12 @@
 #include <set>
 #include <string.h>
 #include <unistd.h>
-#include <errno.h>
+//#include <errno.h>
 #include <assert.h>
 
 #ifndef NDEBUG
 #include <map>
-#include "common.h"
+//#include "common.h"
 static  std::map<int, Con *> epolls;
 static const char *epoll_string[]= {
     "NULL",

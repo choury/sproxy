@@ -3,7 +3,7 @@
 #Created:  2017/2/11
 
 
-INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR})
+include_directories(${PROJECT_SOURCE_DIR})
 
-ADD_LIBRARY(req requester.cpp  guest.cpp guest_s.cpp guest_sni.cpp guest_s2.cpp guest_vpn.cpp)
+add_library(req requester.cpp  guest.cpp guest_s.cpp guest_sni.cpp guest_s2.cpp guest_vpn.cpp)
 

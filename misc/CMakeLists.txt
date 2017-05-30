@@ -3,7 +3,7 @@
 #Created:  2017/2/11
 
 
-INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR})
+include_directories(${PROJECT_SOURCE_DIR})
 
-ADD_LIBRARY(misc dtls.cpp job.cpp net.c tls.c util.c strategy.cpp)
+add_library(misc dtls.cpp job.cpp net.c tls.c util.c strategy.cpp)
 

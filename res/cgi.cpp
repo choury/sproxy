@@ -3,16 +3,19 @@
 #include "misc/net.h"
 #include "misc/strategy.h"
 
-#include <map>
+//#include <map>
 #include <sstream>
 
-#include <string.h>
+//#include <string.h>
+//#include <stdlib.h>
 #include <dlfcn.h>
 #include <signal.h>
 #include <unistd.h>
-#include <sys/stat.h>
+//#include <sys/stat.h>
 #include <fcntl.h>
 #include <assert.h>
+#include <libgen.h>
+
 
 using std::string;
 static std::map<std::string, Cgi *> cgimap;

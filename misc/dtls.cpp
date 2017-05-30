@@ -3,10 +3,10 @@
 #include "job.h"
 
 #include <string.h>
-#include <unistd.h>
+//#include <unistd.h>
 #include <math.h>
 #include <arpa/inet.h>
-#include <sys/time.h>
+//#include <sys/time.h>
 
 #define DTLS_BUF_LEN (4*1024*1024ull)
 

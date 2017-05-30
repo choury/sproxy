@@ -55,8 +55,21 @@ extern uint32_t debug;
 #include <android/log.h>
 #define  LOG_TAG    "sproxy_client"   // 定义logcat中tag标签
 #define  LOG(...)  __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
-#define  LOGE(...)   __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#define  LOGE(...)  __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 #define  LOGOUT(...) LOGE(__VA_ARGS__)
+
+#ifndef NDEBUG
+
+#define LOGD(mod, ...)    do{\
+                             if(debug & mod) {\
+                                char tmp[1024]; \
+                                sprintf(tmp, __VA_ARGS__); \
+                                __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG ,"%s: %s",mod##_STR, tmp); \
+                             }\
+                           }while(0)
+#else
+#define LOGD(...)          void(0)
+#endif
 
 #else
 #define  LOGOUT(...) fprintf(stderr, __VA_ARGS__)

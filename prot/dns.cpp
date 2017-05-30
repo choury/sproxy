@@ -1,14 +1,14 @@
 #include "dns.h"
 #include "misc/job.h"
-#include "common.h"
+//#include "common.h"
 
 #include <unordered_map>
 #include <set>
-#include <list>
-#include <string>
+//#include <list>
+//#include <string>
 
 #include <string.h>
-#include <errno.h>
+//#include <errno.h>
 #include <assert.h>
 
 

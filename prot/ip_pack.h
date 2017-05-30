@@ -8,9 +8,6 @@
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 
-#include <assert.h>
-
-
 #ifndef TH_FIN
 #define TH_FIN        0x01
 #endif
@@ -37,7 +34,7 @@
 
 
 class Icmp{
-    icmphdr icmp_hdr;
+    icmp icmp_hdr;
 public:
     Icmp();
     Icmp(const char* packet, size_t len);
