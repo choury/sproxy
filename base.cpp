@@ -3,7 +3,7 @@
 #include <set>
 #include <string.h>
 #include <unistd.h>
-//#include <errno.h>
+#include <errno.h>
 #include <assert.h>
 
 #ifndef NDEBUG
