@@ -26,6 +26,7 @@ struct VpnStatus{
     uint32_t   seq;
     uint32_t   ack;
     uint16_t   window;
+    uint8_t    window_scale;
 };
 
 

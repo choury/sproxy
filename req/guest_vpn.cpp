@@ -159,10 +159,11 @@ void Guest_vpn::response(HttpResHeader && res) {
         pac_return.tcp
             ->setseq(status.seq)
             ->setack(status.ack)
+            ->setwindowscale(0)
             ->setwindow(status.res_ptr->bufleft(status.res_index))
             ->setmss(BUF_LEN)
             ->setflag(TH_ACK | TH_SYN);
-        
+
         size_t packetlen = 0;
         char* packet = pac_return.build_packet((const void *)nullptr, packetlen);
         status.seq ++;
@@ -235,6 +236,8 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         HttpReqHeader req(buff, this);
         VpnKey *key_index = new VpnKey(key);
         req.index =  key_index;
+        uint16_t window = pac->tcp->getwindow();
+        uint8_t  scale = pac->tcp->getwindowscale();
         statusmap[key] =  VpnStatus{
             nullptr,
             nullptr,
@@ -243,7 +246,8 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
             (uint16_t)pac->gethdrlen(),
             uint32_t(time(0)),
             seq,
-            pac->tcp->getwindow(),
+            uint16_t(window >> scale),
+            scale,
         };
         Responser *responser_ptr = distribute(req, nullptr);
         if(responser_ptr){
@@ -472,7 +476,7 @@ ssize_t Guest_vpn::Write(void* buff, size_t size, void* index) {
         return size;
     }
     if(key.protocol == Protocol::TCP){
-        assert(size <= status.window);
+        assert(size <= uint32_t(status.window << status.window_scale));
         LOGD(DVPN, "write tcp back (%s -> %s) (%u - %u) size: %zu\n",
              key.getdst(), key.getsrc(), status.seq, status.ack, size);
         Ip pac_return(IPPROTO_TCP, &key.dst, &key.src);
@@ -512,7 +516,8 @@ int32_t Guest_vpn::bufleft(void* index) {
     VpnKey *key = (VpnKey *)index;
     assert(index == nullptr || statusmap.count(*key));
     if(key && key->protocol == Protocol::TCP){
-        return statusmap[*key].window;
+        VpnStatus& status = statusmap[*key];
+        return status.window << status.window_scale;
     }
     return Requester::bufleft(0);
 }
@@ -535,7 +540,7 @@ void Guest_vpn::clean(uint32_t errcode, void* index) {
     VpnStatus& status = statusmap[*key];
     assert(status.key == key);
     if(key->protocol == Protocol::UDP){
-        if(errcode){
+        if(errcode && errcode != VPN_AGED_ERR){
             LOGD(DVPN, "write icmp unreachable msg: <udp> (%s -> %s)\n", key->getsrc(), key->getdst());
             Ip pac_return(IPPROTO_ICMP, &key->dst, &key->src);
             pac_return.icmp

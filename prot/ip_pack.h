@@ -70,6 +70,7 @@ public:
     Tcp* setflag(uint8_t flag);
     Tcp* setmss(uint16_t mss);
     Tcp* settimestamp(uint32_t tsval, uint32_t tsecr);
+    Tcp* setwindowscale(uint8_t scale);
     uint32_t getack() const;
     uint32_t getseq() const;
     uint16_t getsport() const;
@@ -77,6 +78,7 @@ public:
     uint16_t getwindow() const;
     uint8_t  getflag() const;
     int gettimestamp(uint32_t *tsval, uint32_t *tsecr) const;
+    uint8_t getwindowscale() const;
     ~Tcp();
 };
 

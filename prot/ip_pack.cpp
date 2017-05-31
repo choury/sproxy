@@ -25,7 +25,7 @@ typedef struct pseudo_hdr {
 typedef struct tcp_opt{
     uint8_t kind;
     uint8_t length;
-    char* data[0];
+    uint8_t data[0];
 } __attribute__((packed)) tcp_opt;
 
 /*
@@ -47,6 +47,13 @@ typedef struct tcp_mss {
     char length;
     uint16_t mss;
 } __attribute__((packed)) tcp_mss;
+
+typedef struct tcp_windowscale{
+    uint8_t kind;
+    uint8_t length;
+    uint8_t scale;
+    uint8_t padding;
+} __attribute__((packed)) tcp_windowscale;
 
 
 /**
@@ -221,7 +228,7 @@ Tcp* Tcp::settimestamp(uint32_t tsval, uint32_t tsecr) {
 
     memset(t, TCPOPT_NOP, sizeof(tcp_timestamp));
     t->kind = TCPOPT_TIMESTAMP;
-    t->length = 10;
+    t->length = TCPOLEN_TIMESTAMP;
 
     struct timeval now;
     if (gettimeofday(&now, NULL) < 0)
@@ -247,11 +254,29 @@ Tcp* Tcp::setmss(uint16_t mss) {
 
     memset(t, TCPOPT_NOP, sizeof(tcp_mss));
     t->kind = TCPOPT_MAXSEG;
-    t->length = 4;
+    t->length = TCPOLEN_MAXSEG;
     t->mss = htons(mss);
 
     tcpoptlen += sizeof(tcp_mss);
 
+    return this;
+}
+
+Tcp* Tcp::setwindowscale(uint8_t scale) {
+    if (tcpopt) {
+        tcpopt = (char *)realloc(tcpopt, tcpoptlen + sizeof(tcp_windowscale));
+    } else{
+        assert(tcpoptlen == 0);
+        tcpopt = (char *) malloc(sizeof(tcp_windowscale));
+    }
+    struct tcp_windowscale *t = (tcp_windowscale *)(tcpopt + tcpoptlen);
+
+    memset(t, TCPOPT_NOP, sizeof(tcp_windowscale));
+    t->kind = TCPOPT_WINDOW;
+    t->length = TCPOLEN_WINDOW;
+    t->scale = scale;
+
+    tcpoptlen += sizeof(tcp_windowscale);
     return this;
 }
 
@@ -350,10 +375,10 @@ int Tcp::gettimestamp(uint32_t *tsval, uint32_t *tsecr) const{
         if(opt->kind == TCPOPT_NOP){
             len --;
             opt = (tcp_opt*)((char *)opt+1);
-            break;
+            continue;
         }
         if (opt->kind == TCPOPT_TIMESTAMP) {
-            assert(opt->length == 10);
+            assert(opt->length == TCPOLEN_TIMESTAMP);
             tcp_timestamp *timestamp = (tcp_timestamp *)opt;
             *tsval = ntohl(timestamp->tsval);
             *tsecr = ntohl(timestamp->tsecr);
@@ -364,6 +389,28 @@ int Tcp::gettimestamp(uint32_t *tsval, uint32_t *tsecr) const{
     }
     *tsval = 0;
     *tsecr = 0;
+    return 0;
+}
+
+uint8_t Tcp::getwindowscale() const{
+    tcp_opt* opt = (tcp_opt *)tcpopt;
+    size_t len = tcpoptlen;
+
+    while (len > 0 && opt) {
+        if (opt->kind == TCPOPT_EOL)
+            break;
+        if(opt->kind == TCPOPT_NOP){
+            len --;
+            opt = (tcp_opt*)((char *)opt+1);
+            continue;
+        }
+        if (opt->kind == TCPOPT_WINDOW) {
+            assert(opt->length == TCPOLEN_WINDOW);
+            return opt->data[0];
+        }
+        len -= opt->length;
+        opt = (tcp_opt*)((char *)opt+opt->length);
+    }
     return 0;
 }
 
