@@ -377,6 +377,7 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
             LOGE("responser buff is full, drop packet\n");
         }else{
             status.res_ptr->Write(data, datalen, status.res_index);
+            status.res_ptr->writedcb(status.res_index);
         }
         add_job((job_func)vpn_aged, &status, 300000);
     }else{
