@@ -45,8 +45,22 @@ void HttpHeader::add(const istring& header, const string& value) {
     headers.insert(std::make_pair(header, value));
 }
 
+#ifdef __ANDROID__
+#include <sstream>
+template <typename T>
+std::string to_string(T value)
+{
+    std::ostringstream os ;
+    os << value ;
+    return os.str() ;
+}
+#else
+using std::to_string;
+#endif
+
+
 void HttpHeader::add(const istring& header, uint64_t value) {
-    headers.insert(std::make_pair(header, std::to_string(value)));
+    headers.insert(std::make_pair(header, to_string(value)));
 }
 
 void HttpHeader::append(const istring& header, const string& value){

@@ -8,6 +8,7 @@
 
 static JavaVM *jnijvm;
 static jobject jniobj;
+static VpnConfig vpn;
 
 /*
  * Class:     com_choury_sproxy_SproxyVpnService
@@ -18,19 +19,22 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
         (JNIEnv *env, jobject obj, jint sockfd) {
     env->GetJavaVM(&jnijvm);
     jniobj = env->NewGlobalRef(obj);
-    LOG("native CapCapture.startCapture %d.", sockfd);
+    LOG("native SproxyVpnService.start %d.", sockfd);
     int flags  = fcntl(sockfd,F_GETFL,0);
     fcntl(sockfd,F_SETFL,flags&~O_NONBLOCK);
 
-    struct VpnConfig vpn;
     vpn.disable_ipv6 = 1;
-    vpn.ignore_cert_error = 0;
-    vpn.server="a.choury.com";
+    vpn.ignore_cert_error = 1;
+    vpn.server="dtls://a.choury.com";
     vpn.fd = sockfd;
 
     pthread_t thread_recv;
     pthread_create(&thread_recv, NULL, (void *(*)(void*))(vpn_start), (void *)&vpn);
-    pthread_join(thread_recv, NULL);
+}
+
+JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(JNIEnv *, jobject){
+    LOG("native SproxyVpnService.stop.");
+    return vpn_stop();
 }
 
 /*

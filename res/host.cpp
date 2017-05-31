@@ -82,7 +82,7 @@ void Host::waitconnectHE(uint32_t events) {
         int error;
         socklen_t len = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-            LOGE("(%s): getsokopt error: %m\n", hostname);
+            LOGE("(%s): getsokopt error: %s\n", hostname, strerror(errno));
             goto reconnect;
         }
         if (error != 0) {

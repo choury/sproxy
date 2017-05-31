@@ -107,7 +107,7 @@ File::File(HttpReqHeader& req) {
     HttpResHeader *res = nullptr;
     ffd = open(req.filename, O_RDONLY);
     if (ffd < 0) {
-        LOGE("open file failed %s: %m\n", req.filename);
+        LOGE("open file failed %s: %s\n", req.filename, strerror(errno));
         if(errno == ENOENT){
             res = new HttpResHeader(H404);
         }else{
@@ -116,7 +116,7 @@ File::File(HttpReqHeader& req) {
         goto err;
     }
     if (fstat(ffd, &st)) {
-        LOGE("get file info failed %s: %m\n", req.filename);
+        LOGE("get file info failed %s: %s\n", req.filename, strerror(errno));
         res = new HttpResHeader(H500);
         goto err;
     }

@@ -99,7 +99,7 @@ void Guest_vpn::defaultHE(uint32_t events) {
         char recvBuf[VPN_MTU];
         int readlen = read(fd, recvBuf, VPN_MTU);
         if (readlen <= 0) { //error recv, maybe fd is closed or broken
-            LOGE("read error:%m\n");
+            LOGE("read error:%s\n", strerror(errno));
         }else{
             //give the buf to packetManager
             buffHE(recvBuf, readlen);

@@ -67,7 +67,7 @@ struct Setting_Frame{
 
 #define FRAMEBODYLIMIT 16384
 #define FRAMELENLIMIT FRAMEBODYLIMIT+sizeof(Http2_header) 
-#define localframewindowsize  (1024*1024)
+#define localframewindowsize  16384
 
 struct Http2_frame{
     Http2_header *header;

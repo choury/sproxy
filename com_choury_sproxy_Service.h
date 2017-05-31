@@ -16,6 +16,13 @@ extern "C" {
  */
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start(JNIEnv *, jobject, jint);
 
+/*
+ * Class:     com_choury_sproxy_SproxyVpnService
+ * Method:    stop
+ * Signature: ()V
+ */
+JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(JNIEnv *, jobject);
+
 #ifdef __cplusplus
 }
 #endif

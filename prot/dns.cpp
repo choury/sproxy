@@ -20,12 +20,11 @@
 
 
 static uint16_t id_cur = 1;
-static bool dns_inited = false;
 
 class Dns_srv:public Con{
     char name[INET6_ADDRSTRLEN];
 public:
-    explicit Dns_srv(int fd, const char* name);
+    explicit Dns_srv(const char* name);
     ~Dns_srv();
     virtual void DnshandleEvent(uint32_t events);
     int query(const char *host, int type, uint32_t id);
@@ -82,11 +81,33 @@ void dns_expired(const char* host) {
 
 void query_timeout(uint16_t id);
 
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+static int dnsinit() {
+    assert(srvs.empty());
+    char ipaddr[PROP_VALUE_MAX];
+    __system_property_get("net.dns1", ipaddr);
+    if(strlen(ipaddr)) {
+        try {
+            new Dns_srv(ipaddr);
+        } catch (...) {
+        }
+    }
+    __system_property_get("net.dns2", ipaddr);
+    if(strlen(ipaddr)){
+        try{
+            new Dns_srv(ipaddr);
+        }catch(...){
+        }
+    }
+    return srvs.size();
+}
+#else
 static int dnsinit() {
     assert(srvs.empty());
     FILE *res_file = fopen(RESOLV_FILE, "r");
     if (res_file == NULL) {
-        LOGE("[DNS] open resolv file:%s failed:%m\n", RESOLV_FILE);
+        LOGE("[DNS] open resolv file:%s failed:%s\n", RESOLV_FILE, strerror(errno));
         return 0;
     }
     char line[100];
@@ -94,28 +115,17 @@ static int dnsinit() {
         char command[11], ipaddr[INET6_ADDRSTRLEN];
         sscanf(line, "%10s %45s", command, ipaddr);
         if (strcmp(command, "nameserver") == 0) {
-            sockaddr_un addr;
-            if (inet_pton(AF_INET, ipaddr, &addr.addr_in.sin_addr) == 1) {
-                addr.addr_in.sin_family = AF_INET;
-                addr.addr_in.sin_port = htons(DNSPORT);
-            } else if (inet_pton(AF_INET6, ipaddr, &addr.addr_in6.sin6_addr) == 1) {
-                addr.addr_in6.sin6_family = AF_INET6;
-                addr.addr_in6.sin6_port = htons(DNSPORT);
-            } else {
-                LOGE("[DNS] %s is not a valid ip address\n", ipaddr);
+            try{
+                new Dns_srv(ipaddr);
+            }catch(...){
                 continue;
             }
-            int fd = Connect(&addr, SOCK_DGRAM);
-            if (fd == -1) {
-                LOGE("[DNS] connecting  %s error:%m\n", ipaddr);
-                continue;
-            }
-            new Dns_srv(fd, ipaddr);
         }
     }
     fclose(res_file);
     return srvs.size();
 }
+#endif
 
 void query_back(Dns_Status *dnsst){
     for(auto i: dnsst->reqs){
@@ -128,6 +138,12 @@ void query_back(Dns_Status *dnsst){
 
 static void query(Dns_Status* dnsst){
     assert(id_cur &1);
+    while(srvs.size() == 0) {
+        dnsinit();
+        if (srvs.size() == 0) {
+            sleep(5);
+        }
+    }
     dnsst->id = id_cur;
     if(disable_ipv6){
         dnsst->flags = QAAAARECORD | GAAAARECORD;
@@ -185,9 +201,6 @@ static void query(Dns_Status* dnsst){
 
 
 void query(const char *host , DNSCBfunc func, void *param) {
-    if(!dns_inited)
-        dns_inited = dnsinit();
-    
     if(querying_index_host.count(host)){
         querying_index_host[host]->reqs.push_back(Dns_Req{
             func, param
@@ -207,6 +220,12 @@ void query(const char *host , DNSCBfunc func, void *param) {
 
 static void query(Dns_RawReq* dnsreq){
     assert(id_cur &1);
+    while(srvs.size() == 0) {
+        dnsinit();
+        if(srvs.size() == 0){
+            sleep(5);
+        }
+    }
     dnsreq->id = id_cur;
     for (size_t i = dnsreq->times%srvs.size(); i < srvs.size(); ++i) {
         if(srvs[i]->query(dnsreq->host, dnsreq->type, id_cur))
@@ -220,9 +239,6 @@ static void query(Dns_RawReq* dnsreq){
 }
 
 void query(const char *host , uint16_t type, DNSRAWCB func, void *param) {
-    if(!dns_inited)
-        dns_inited = dnsinit();
-
     Dns_RawReq *dnsreq = new Dns_RawReq;
     snprintf(dnsreq->host, sizeof(dnsreq->host), "%s", host);
     dnsreq->type = type;
@@ -289,7 +305,24 @@ void RcdDown(const char *hostname, const sockaddr_un &addr) {
     }
 }
 
-Dns_srv::Dns_srv(int fd, const char* name):Con(fd) {
+Dns_srv::Dns_srv(const char* name):Con(0){
+    sockaddr_un addr;
+    if (inet_pton(AF_INET, name, &addr.addr_in.sin_addr) == 1) {
+        addr.addr_in.sin_family = AF_INET;
+        addr.addr_in.sin_port = htons(DNSPORT);
+    } else if (inet_pton(AF_INET6, name, &addr.addr_in6.sin6_addr) == 1) {
+        addr.addr_in6.sin6_family = AF_INET6;
+        addr.addr_in6.sin6_port = htons(DNSPORT);
+    } else {
+        LOGE("[DNS] %s is not a valid ip address\n", name);
+        throw 0;
+    }
+    int fd = Connect(&addr, SOCK_DGRAM);
+    if (fd == -1) {
+        LOGE("[DNS] connecting  %s error:%s\n", name, strerror(errno));
+        throw 0;
+    }
+    this->fd = fd;
     strcpy(this->name, name);
     updateEpoll(EPOLLIN);
     handleEvent = (void (Con::*)(uint32_t))&Dns_srv::DnshandleEvent;
@@ -312,7 +345,7 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
         int len = read(fd, buf, BUF_SIZE);
 
         if ( len <= 0 ) {
-            LOGE("[DNS] read error: %m\n");
+            LOGE("[DNS] read error: %s\n", strerror(errno));
             return;
         }
         DNS_HDR *dnshdr = (DNS_HDR *)buf;
@@ -378,6 +411,7 @@ void Dns_srv::DnshandleEvent(uint32_t events) {
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOG("[DNS] unkown error: %s\n", strerror(error));
+            delete this;
         }
     }
 }
@@ -387,7 +421,8 @@ int Dns_srv::query(const char *host, int type, uint32_t id) {
     unsigned char  buf[BUF_SIZE];
     int len = Dns_Que(host, type, id).build(buf);
     if (write(fd, buf, len)!= len) {
-        LOGE("[DNS] write error: %m\n");
+        LOGE("[DNS] write error: %s\n", strerror(errno));
+        delete this;
         return 0;
     }
     return id;

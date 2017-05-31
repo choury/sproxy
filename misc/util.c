@@ -250,7 +250,7 @@ const char * protstr(Protocol p) {
 int showerrinfo(int ret, const char *s){
     if (ret < 0) {
         if (errno != EAGAIN) {
-            LOGE("%s: %m\n", s);
+            LOGE("%s: %s\n", s, strerror(errno));
         } else {
             return 0;
         }

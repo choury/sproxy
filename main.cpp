@@ -16,7 +16,7 @@
 #include <openssl/err.h>
 #include <openssl/bio.h>
 
-int efd;
+int efd = 0;
 
 int daemon_mode = 0;
 int use_http2 = 1;
@@ -43,13 +43,13 @@ class Http_server: public Server{
             struct sockaddr_in6 myaddr;
             socklen_t temp = sizeof(myaddr);
             if ((clsk = accept(fd, (struct sockaddr*)&myaddr, &temp)) < 0) {
-                LOGE("accept error:%m\n");
+                LOGE("accept error:%s\n", strerror(errno));
                 return;
             }
 
             int flags = fcntl(clsk, F_GETFL, 0);
             if (flags < 0) {
-                LOGE("fcntl error:%m\n");
+                LOGE("fcntl error:%s\n", strerror(errno));
                 close(clsk);
                 return;
             }
@@ -75,13 +75,13 @@ class Https_server: public Server {
             struct sockaddr_in6 myaddr;
             socklen_t temp = sizeof(myaddr);
             if ((clsk = accept(fd, (struct sockaddr *)&myaddr, &temp)) < 0) {
-                LOGE("accept error:%m\n");
+                LOGE("accept error:%s\n", strerror(errno));
                 return;
             }
 
             int flags = fcntl(clsk, F_GETFL, 0);
             if (flags < 0) {
-                LOGE("fcntl error:%m\n");
+                LOGE("fcntl error:%s\n", strerror(errno));
                 close(clsk);
                 return;
             }
@@ -129,7 +129,7 @@ class Dtls_server: public Server {
             (void)BIO_ctrl_set_connected(bio, &myaddr);
 #endif
             if(connect(fd, (struct sockaddr*)&myaddr, sizeof(struct sockaddr_in6))){
-                LOGE("connect error: %m\n");
+                LOGE("connect error: %s\n", strerror(errno));
                 goto error;
             }
             /* Set new fd and set BIO to connected */
@@ -448,7 +448,7 @@ int main(int argc, char **argv) {
         if(udp_mode){
             int svsk_udp;
             if((svsk_udp = socket(AF_INET6, SOCK_DGRAM, 0)) < 0){
-                LOGOUT("socket error:%m\n");
+                LOGOUT("socket error:%s\n", strerror(errno));
                 return -1;
             }
             if(Bind_any(svsk_udp, CPORT))
@@ -480,7 +480,7 @@ int main(int argc, char **argv) {
     }
     LOGOUT("Accepting connections ...\n");
     if (daemon_mode && daemon(1, 0) < 0) {
-        LOGOUT("start daemon error:%m\n");
+        LOGOUT("start daemon error:%s\n", strerror(errno));
     }
     while (1) {
         int c;

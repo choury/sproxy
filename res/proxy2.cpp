@@ -269,10 +269,10 @@ void Proxy2::writedcb(void* index){
     uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
-        size_t len = localframewindowsize - status.localwinsize;
-        if(len < localframewindowsize/5)
+        auto len = status.req_ptr->bufleft(status.req_index);
+        if(len <= status.localwinsize)
             return;
-        status.localwinsize += ExpandWindowSize(id, len);
+        status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
     }
 }
 

@@ -23,12 +23,12 @@ const char *DEFAULT_CIPHER_LIST =
 int Bind_any(int fd, short port){
     int flag = 1;
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
-        LOGOUT("setsockopt:%m\n");
+        LOGOUT("setsockopt:%s\n", strerror(errno));
         return -1;
     }
 #ifdef SO_REUSEPORT
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) < 0) {
-        LOGOUT("setsockopt:%m\n");
+        LOGOUT("setsockopt:%s\n", strerror(errno));
         return -1;
     }
 #endif
@@ -39,16 +39,16 @@ int Bind_any(int fd, short port){
     myaddr.sin6_addr = in6addr_any;
 
     if (bind(fd, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
-        LOGOUT("bind error:%m\n");
+        LOGOUT("bind error:%s\n", strerror(errno));
         return -1;
     }
 
     if ((flag=fcntl(fd, F_GETFL)) == -1) {
-        LOGOUT("fcntl get error:%m\n");
+        LOGOUT("fcntl get error:%s\n", strerror(errno));
         return -1;
     }
     if (fcntl(fd, F_SETFL, flag | O_NONBLOCK) == -1){
-        LOGOUT("fcntl set error:%m\n");
+        LOGOUT("fcntl set error:%s\n", strerror(errno));
         return -1;
     }
     return 0;
@@ -57,7 +57,7 @@ int Bind_any(int fd, short port){
 int Listen(short port) {
     int svsk;
     if ((svsk = socket(AF_INET6, SOCK_STREAM, 0)) < 0) {
-        LOGOUT("socket error:%m\n");
+        LOGOUT("socket error:%s\n", strerror(errno));
         return -1;
     }
 
@@ -67,27 +67,27 @@ int Listen(short port) {
     //以下设置为keealive配置，非必须，所以不返回错误
     int keepAlive = 1; // 开启keepalive属性
     if(setsockopt(svsk, SOL_SOCKET, SO_KEEPALIVE, (void *)&keepAlive, sizeof(keepAlive)) <0)
-        LOGE("SO_KEEPALIVE:%m\n");
+        LOGE("SO_KEEPALIVE:%s\n", strerror(errno));
     int idle = 60; //一分种没有交互就进行探测
     if(setsockopt(svsk, SOL_TCP, TCP_KEEPIDLE, &idle, sizeof(idle))<0)
-        LOGE("TCP_KEEPIDLE:%m\n");
+        LOGE("TCP_KEEPIDLE:%s\n", strerror(errno));
     int intvl = 10; //每10秒探测一次
     if(setsockopt(svsk, SOL_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl))<0)
-        LOGE("TCP_KEEPINTVL:%m\n");
+        LOGE("TCP_KEEPINTVL:%s\n", strerror(errno));
     int cnt = 3; //探测3次无响应就关闭连接
     if(setsockopt(svsk, SOL_TCP, TCP_KEEPCNT, &cnt, sizeof(cnt))<0)
-        LOGE("TCP_KEEPCNT:%m\n");
+        LOGE("TCP_KEEPCNT:%s\n", strerror(errno));
 
     int enable = 1;
     if(setsockopt(svsk, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(enable))<0)
-        LOGE("TCP_NODELAY:%m\n");
+        LOGE("TCP_NODELAY:%s\n", strerror(errno));
 
     int timeout = 60;
     if (setsockopt(svsk, IPPROTO_TCP, TCP_DEFER_ACCEPT, &timeout, sizeof(timeout))< 0)
-        LOGE("TCP_DEFER_ACCEPT:%m\n");
+        LOGE("TCP_DEFER_ACCEPT:%s\n", strerror(errno));
 
     if (listen(svsk, 10000) < 0) {
-        LOGOUT("listen error:%m\n");
+        LOGOUT("listen error:%s\n", strerror(errno));
         return -3;
     }
     return svsk;
@@ -97,13 +97,13 @@ int Listen(short port) {
 int Connect(union sockaddr_un* addr, int type) {
     int fd;
     if ((fd = socket(addr->addr.sa_family, type , 0)) < 0) {
-        LOGE("socket error:%m\n");
+        LOGE("socket error:%s\n", strerror(errno));
         return -1;
     }
 
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0) {
-        LOGE("fcntl error:%m\n");
+        LOGE("fcntl error:%s\n", strerror(errno));
         close(fd);
         return -1;
     }
@@ -114,25 +114,25 @@ int Connect(union sockaddr_un* addr, int type) {
         //以下设置为keealive配置，非必须，所以不返回错误
         int keepAlive = 1; // 开启keepalive属性
         if(setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void *)&keepAlive, sizeof(keepAlive)) <0)
-            LOGE("SO_KEEPALIVE:%m\n");
+            LOGE("SO_KEEPALIVE:%s\n", strerror(errno));
         int idle = 60; //一分种没有交互就进行探测
         if(setsockopt(fd, SOL_TCP, TCP_KEEPIDLE, &idle, sizeof(idle))<0)
-            LOGE("TCP_KEEPIDLE:%m\n");
+            LOGE("TCP_KEEPIDLE:%s\n", strerror(errno));
         int intvl = 10; //每10秒探测一次
         if(setsockopt(fd, SOL_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl))<0)
-            LOGE("TCP_KEEPINTVL:%m\n");
+            LOGE("TCP_KEEPINTVL:%s\n", strerror(errno));
         int cnt = 3; //探测3次无响应就关闭连接
         if(setsockopt(fd, SOL_TCP, TCP_KEEPCNT, &cnt, sizeof(cnt))<0)
-            LOGE("TCP_KEEPCNT:%m\n");
+            LOGE("TCP_KEEPCNT:%s\n", strerror(errno));
 
         int enable = 1;
         if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(enable))<0)
-            LOGE("TCP_NODELAY:%m\n");
+            LOGE("TCP_NODELAY:%s\n", strerror(errno));
     }else{
         if(addr->addr.sa_family == AF_INET && addr->addr_in.sin_addr.s_addr == htonl(INADDR_BROADCAST)){
             int enable=1;
             if(setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable)) < 0){
-                LOGE("set broadcast:%m\n");
+                LOGE("set broadcast:%s\n", strerror(errno));
                 close(fd);
                 return -1;
             }
@@ -140,12 +140,12 @@ int Connect(union sockaddr_un* addr, int type) {
     }
 
     if(protectFd(fd) == 0){
-        LOGE("protecd fd error:%m\n");
+        LOGE("protecd fd error:%s\n", strerror(errno));
         close(fd);
         return -1;
     }
     if (connect(fd, &addr->addr, sizeof(struct sockaddr_in6)) == -1 && errno != EINPROGRESS) {
-        LOGE("connecting error:%m\n");
+        LOGE("connecting error:%s\n", strerror(errno));
         close(fd);
         return -1;
     }

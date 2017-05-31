@@ -193,7 +193,10 @@ void releaseall() {
     for(auto i:cons_copy){
         delete i;
     }
-    close(efd);
+    if(efd){
+        close(efd);
+        efd = 0;
+    }
 }
 
 extern void dump_dns();

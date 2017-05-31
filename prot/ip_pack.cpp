@@ -2,6 +2,7 @@
 #include "common.h"
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 //#include <arpa/inet.h>
 #include <sys/time.h>
 #include <assert.h>
@@ -224,7 +225,7 @@ Tcp* Tcp::settimestamp(uint32_t tsval, uint32_t tsecr) {
 
     struct timeval now;
     if (gettimeofday(&now, NULL) < 0)
-        LOGE("Couldn't get time of day:%m\n");
+        LOGE("Couldn't get time of day:%s\n", strerror(errno));
     t->tsval = htonl((tsval) ? tsval : (uint32_t) now.tv_sec);
     t->tsecr = htonl((tsecr) ? tsecr : 0);
 

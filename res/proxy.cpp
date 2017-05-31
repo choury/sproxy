@@ -100,7 +100,7 @@ void Proxy::waitconnectHE(uint32_t events) {
         int error;
         socklen_t len = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-            LOGE("(%s): proxy getsokopt error: %m\n", hostname);
+            LOGE("(%s): proxy getsokopt error: %s\n", hostname, strerror(errno));
             goto reconnect;
         }
             
@@ -132,7 +132,11 @@ void Proxy::waitconnectHE(uint32_t events) {
             SSL_set_bio(ssl, bio, bio);
             this->ssl = new Dtls(ssl);
         }
+#ifdef __ANDROID__
+        if (SSL_CTX_load_verify_locations(ctx, cafile, "/etc/security/cacerts/") != 1)
+#else
         if (SSL_CTX_load_verify_locations(ctx, cafile, "/etc/ssl/certs/") != 1)
+#endif
             ERR_print_errors_fp(stderr);
 
         if (SSL_CTX_set_default_verify_paths(ctx) != 1)
@@ -172,7 +176,7 @@ void Proxy::shakehandHE(uint32_t events) {
         int ret = ssl->connect();
         if (ret != 1) {
             if (errno != EAGAIN) {
-                LOGE("(%s): ssl connect error:%m\n", hostname);
+                LOGE("(%s): ssl connect error:%s\n", hostname, strerror(errno));
                 clean(SSL_SHAKEHAND_ERR, 0);
             }
             return;

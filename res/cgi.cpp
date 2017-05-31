@@ -7,7 +7,7 @@
 #include <sstream>
 
 //#include <string.h>
-//#include <stdlib.h>
+#include <stdlib.h>
 #include <dlfcn.h>
 #include <signal.h>
 #include <unistd.h>
@@ -37,7 +37,7 @@ Cgi::Cgi(HttpReqHeader& req) {
         goto err;
     }
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds)) {  // 创建管道
-        LOGE("socketpair failed: %m\n");
+        LOGE("socketpair failed: %s\n", strerror(errno));
         errinfo = H500;
         goto err;
     }
@@ -55,7 +55,7 @@ Cgi::Cgi(HttpReqHeader& req) {
     /* 现在可在fd[0]中读写数据 */
     flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0) {
-        LOGE("fcntl error:%m\n");
+        LOGE("fcntl error:%s\n", strerror(errno));
         errinfo = H500;
         goto err;
     }

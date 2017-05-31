@@ -243,10 +243,10 @@ void Guest_s2::writedcb(void* index){
     uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
-        size_t len = localframewindowsize - status.localwinsize;
-        if(len < localframewindowsize/5)
+        auto len = status.res_ptr->bufleft(status.res_index);
+        if(len <= status.localwinsize)
             return;
-        status.localwinsize += ExpandWindowSize(id, len);
+        status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
     }
 }
 

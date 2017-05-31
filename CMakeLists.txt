@@ -24,7 +24,7 @@ if(ANDROID_NDK)
     set(OPENSSL_CRYPTO_LIBRARY ${OPENSSL_LIBRARIES}/libcrypto.so)
 
     find_library(log-lib log)
-    find_package(OpenSSL)
+    find_package(OpenSSL REQUIRED IMPORTED)
 else()
     CHECK_CXX_COMPILER_FLAG("-fsanitize=undefined" HAVE_SAN_UNDEF)
     set(CMAKE_REQUIRED_FLAGS "-fsanitize=address")

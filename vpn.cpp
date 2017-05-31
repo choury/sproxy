@@ -10,7 +10,7 @@
 
 
 
-int efd;
+int efd = 0;
 
 int daemon_mode = 0;
 int use_http2 = 1;
@@ -22,7 +22,7 @@ Protocol SPROT;
 char auth_string[DOMAINLIMIT] = {0};
 const char *cafile =  nullptr;
 const char *index_file = nullptr;
-uint32_t debug = DVPN;
+uint32_t debug = 0;
 
 
 int vpn_start(const struct VpnConfig* vpn){
@@ -43,7 +43,7 @@ int vpn_start(const struct VpnConfig* vpn){
     SSL_load_error_strings();  // 载入所有错误信息
     efd = epoll_create(10000);
     if(efd < 0){
-        LOGE("epoll_create: %m\n");
+        LOGE("epoll_create: %s\n", strerror(errno));
         return -1;
     }
     new Guest_vpn(vpn->fd);
@@ -53,7 +53,7 @@ int vpn_start(const struct VpnConfig* vpn){
         struct epoll_event events[200];
         if ((c = epoll_wait(efd, events, 200, do_job())) < 0) {
             if (errno != EINTR) {
-                perror("epoll wait");
+                LOGE("epoll wait %s\n", strerror(errno));
                 return 6;
             }
             continue;
@@ -64,4 +64,8 @@ int vpn_start(const struct VpnConfig* vpn){
         }
     }
     return 0;
+}
+
+void vpn_stop(){
+    releaseall();
 }
