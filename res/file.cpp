@@ -277,7 +277,7 @@ void File::defaultHE(uint32_t events) {
             int len = Min(requester->bufleft(i->second.req_index), rg.end - rg.begin + 1);
             if (len <= 0) {
                 LOGE("The requester's write buff is full\n");
-                requester->wait(i->second.req_index);
+//                requester->wait(i->second.req_index);
                 i++;
                 continue;
             }
@@ -285,6 +285,7 @@ void File::defaultHE(uint32_t events) {
             char *buff = (char *)p_malloc(len);
             len = pread(ffd, buff, len, rg.begin);
             if(len <= 0){
+                LOGE("file pread error: %s\n", strerror(errno));
                 clean(INTERNAL_ERR, 0);
                 return;
             }

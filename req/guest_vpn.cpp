@@ -107,13 +107,7 @@ void Guest_vpn::defaultHE(uint32_t events) {
     }
     if (events & EPOLLOUT) {
         int ret = Peer::Write_buff();
-        if(ret > 0 && ret != WRITE_NOTHING){
-            for(auto i: waitlist){
-                VpnStatus& status = statusmap.at(*i);
-                status.res_ptr->writedcb(status.res_index);
-            }
-            waitlist.clear();
-        }else if(ret <= 0 && showerrinfo(ret, "guest_vpn write error")) {
+        if(ret <= 0 && showerrinfo(ret, "guest_vpn write error")) {
             clean(WRITE_ERR, 0);
             return;
         }
@@ -377,7 +371,6 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
             LOGE("responser buff is full, drop packet\n");
         }else{
             status.res_ptr->Write(data, datalen, status.res_index);
-            status.res_ptr->writedcb(status.res_index);
         }
         add_job((job_func)vpn_aged, &status, 300000);
     }else{
@@ -502,6 +495,7 @@ ssize_t Guest_vpn::Write(void* buff, size_t size, void* index) {
         size_t packetlen = size;
         char *packet = pac_return.build_packet(buff, packetlen);
         Requester::Write(packet, packetlen, 0);
+        status.res_ptr->writedcb(status.res_index);
         add_job((job_func)vpn_aged, &status, 300000);
         return size;
     }
@@ -509,9 +503,10 @@ ssize_t Guest_vpn::Write(void* buff, size_t size, void* index) {
     return 0;
 }
 
+/*
 void Guest_vpn::wait(void* index) {
     waitlist.insert((VpnKey *)index);
-}
+}*/
 
 int32_t Guest_vpn::bufleft(void* index) {
     VpnKey *key = (VpnKey *)index;
@@ -602,12 +597,6 @@ void Guest_vpn::dump_stat() {
         LOG("<%s> (%s -> %s) %p: %p, %p\n",
             protstr(i.first.protocol), i.first.getsrc(), i.first.getdst(),
             i.second.key, i.second.res_ptr, i.second.res_index);
-    }
-    if(!waitlist.empty()){
-        LOG(">>> waitlist (may due to low connect):\n");
-        for(auto i: waitlist){
-            LOG("%p\n", i);
-        }
     }
 }
 

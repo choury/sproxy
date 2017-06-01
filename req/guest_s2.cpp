@@ -12,8 +12,6 @@ void Guest_s2::peer_lost(Guest_s2 *g){
 Guest_s2::Guest_s2(int fd, const char* ip, uint16_t port, Ssl* ssl):
         Requester(fd, ip, port), ssl(ssl)
 {
-    remotewinsize = remoteframewindowsize;
-    localwinsize  = localframewindowsize;
     updateEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Con::*)(uint32_t))&Guest_s2::defaultHE;
 }
@@ -21,8 +19,6 @@ Guest_s2::Guest_s2(int fd, const char* ip, uint16_t port, Ssl* ssl):
 Guest_s2::Guest_s2(int fd, struct sockaddr_in6* myaddr, Ssl* ssl):
         Requester(fd, myaddr),ssl(ssl)
 {
-    remotewinsize = remoteframewindowsize;
-    localwinsize  = localframewindowsize;
     updateEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Con::*)(uint32_t))&Guest_s2::defaultHE;
 }
@@ -82,7 +78,7 @@ void Guest_s2::DataProc(const Http2_header* header) {
             responser->clean(ERR_FLOW_CONTROL_ERROR, status.res_index);
             LOGE("(%s) :[%d] window size error\n", getsrc(), id);
             statusmap.erase(id);
-            waitlist.erase(id);
+//            waitlist.erase(id);
             return;
         }
         responser->Write(header+1, len, status.res_index);
@@ -138,18 +134,17 @@ void Guest_s2::defaultHE(uint32_t events) {
     }
 
     if (events & EPOLLOUT) {
-        int ret = SendFrame();
-        if(ret > 0){
-            for(auto i = waitlist.begin(); i!= waitlist.end(); ){
-                ResStatus& status = statusmap.at(*i);
+        if(framelen >= 1024*1024){
+            LOGD(DHTTP2, "active all frame because of framelen\n");
+            for(auto i: statusmap){
+                ResStatus& status = i.second;
                 if(status.remotewinsize > 0){
                     status.res_ptr->writedcb(status.res_index);
-                    i = waitlist.erase(i);
-                }else{
-                    i++;
                 }
             }
-        }else if(showerrinfo(ret, "guest_s2 write error")) {
+        }
+        int ret = SendFrame();
+        if(ret <= 0  && showerrinfo(ret, "guest_s2 write error")) {
             clean(WRITE_ERR, 0);
             return;
         }
@@ -166,7 +161,7 @@ void Guest_s2::RstProc(uint32_t id, uint32_t errcode) {
         ResStatus& status = statusmap[id];
         status.res_ptr->clean(errcode,  status.res_index);
         statusmap.erase(id);
-        waitlist.erase(id);
+//        waitlist.erase(id);
     }
 }
 
@@ -175,22 +170,25 @@ void Guest_s2::WindowUpdateProc(uint32_t id, uint32_t size) {
     if(id){
         if(statusmap.count(id)){
             ResStatus& status = statusmap[id];
-#ifndef NDEBUG
             LOGD(DHTTP2, "window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
-#endif
             status.remotewinsize += size;
             status.res_ptr->writedcb(status.res_index);
-            waitlist.erase(id);
-#ifndef NDEBUG
+//            waitlist.erase(id);
         }else{
             LOGD(DHTTP2, "window size updated [%d]: not found\n", id);
-#endif
         }
     }else{
-#ifndef NDEBUG
         LOGD(DHTTP2, "window size updated global: %d+%d\n", remotewinsize, size);
-#endif
         remotewinsize += size;
+        if(remotewinsize == (int32_t)size){
+            LOGD(DHTTP2, "get global window active all frame\n");
+            for(auto i: statusmap){
+                ResStatus& status = i.second;
+                if(status.remotewinsize > 0){
+                    status.res_ptr->writedcb(status.res_index);
+                }
+            }
+        }
     }
 }
 
@@ -209,7 +207,6 @@ void Guest_s2::AdjustInitalFrameWindowSize(ssize_t diff) {
     for(auto i: statusmap){
        i.second.remotewinsize += diff;
     }
-    remotewinsize += diff;
 }
 
 void Guest_s2::clean(uint32_t errcode, void* index) {
@@ -223,28 +220,33 @@ void Guest_s2::clean(uint32_t errcode, void* index) {
     }else{
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
-        waitlist.erase(id);
+//        waitlist.erase(id);
     }
 }
 
 int32_t Guest_s2::bufleft(void* index) {
+    int32_t globalwindow = Min(1024*1024 - (int32_t)framelen, this->remotewinsize);
     if(index){
         assert(statusmap.count((uint32_t)(long)index));
-        return Min(statusmap[(uint32_t)(long)index].remotewinsize, this->remotewinsize);
+        return Min(statusmap[(uint32_t)(long)index].remotewinsize, globalwindow);
     }else
-        return this->remotewinsize;
+        return globalwindow;
 }
 
+/*
 void Guest_s2::wait(void* index){
     waitlist.insert((uint32_t)(long)index);
 }
+*/
 
 void Guest_s2::writedcb(void* index){
     uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
         auto len = status.res_ptr->bufleft(status.res_index);
-        if(len <= status.localwinsize)
+        if(len <= status.localwinsize ||
+           (len - status.localwinsize < FRAMEBODYLIMIT &&
+            status.localwinsize >= FRAMEBODYLIMIT))
             return;
         status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
     }
@@ -254,12 +256,6 @@ void Guest_s2::dump_stat() {
     LOG("Guest_s2 %p:\n", this);
     for(auto i: statusmap){
         LOG("0x%x: %p, %p", i.first, i.second.res_ptr, i.second.res_index);
-    }
-    if(!waitlist.empty()){
-        LOG(">>> waitlist (may due to low connect):\n");
-        for(auto i: waitlist){
-            LOG("> 0x%x\n", i);
-        }
     }
 }
 

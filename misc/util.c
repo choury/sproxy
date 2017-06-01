@@ -272,8 +272,12 @@ void* memdup(const void* ptr, size_t size){
 
 void* p_malloc(size_t size){
     void *ptr = malloc(size + PRIOR_HEAD);
-    if(ptr == NULL)
+    if(ptr == NULL){
+        int err = errno;
+        LOGE("malloc failed[%zd]: %s\n", size, strerror(errno));
+        errno = err;
         return ptr;
+    }
     ptr += PRIOR_HEAD;
     *(unsigned char *)(ptr-1) = PRIOR_HEAD;
     return ptr;

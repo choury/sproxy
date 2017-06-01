@@ -55,7 +55,7 @@ class Cgi:public Responser{
     size_t cgi_outlen  = 0;
     uint32_t curid = 1;
     std::map<uint32_t, CgiStatus> statusmap;
-    std::set<uint32_t> waitlist;
+//    std::set<uint32_t> waitlist;
     virtual void defaultHE(uint32_t events);
     enum class Status{
         WaitHeadr, WaitBody, HandleRes, HandleValue, HandleData, HandleLeft
@@ -65,7 +65,7 @@ public:
     explicit Cgi(HttpReqHeader& req);
     virtual ~Cgi();
     virtual ssize_t Write(void *buff, size_t size, void* info)override;
-    virtual void wait(void* index)override;
+//    virtual void wait(void* index)override;
     virtual void clean(uint32_t errcode, void* index)override;
     virtual void* request(HttpReqHeader&& req)override;
     virtual void dump_stat()override;

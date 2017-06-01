@@ -168,7 +168,7 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
     int len = responser_ptr->bufleft(responser_index);
     if (len <= 0) {
         LOGE("(%s): The host's buff is full\n", getsrc());
-        responser_ptr->wait(responser_index);
+//        responser_ptr->wait(responser_index);
         updateEpoll(0);
         return -1;
     }

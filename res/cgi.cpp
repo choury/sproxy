@@ -305,7 +305,7 @@ void Cgi::InProc() {
         int len = status.req_ptr->bufleft(status.req_index);
         if (len <= 0) {
             LOGE("The requester's write buff is full\n");
-            status.req_ptr->wait(status.req_index);
+//            status.req_ptr->wait(status.req_index);
             updateEpoll(0);
             return;
         }
@@ -345,11 +345,10 @@ void Cgi::defaultHE(uint32_t events) {
     if (events & EPOLLOUT) {
         int ret = Peer::Write_buff();
         if(ret > 0 && ret != WRITE_NOTHING) {
-            for(auto i: waitlist) {
-                CgiStatus& status = statusmap.at(i);
+            for(auto i: statusmap) {
+                CgiStatus& status = i.second;
                 status.req_ptr->writedcb(status.req_index);
             }
-            waitlist.clear();
         } else if(ret <= 0 && showerrinfo(ret, "cgi write error")) {
             clean(WRITE_ERR, 0);
             return;
@@ -367,7 +366,7 @@ void Cgi::clean(uint32_t errcode, void* index) {
     } else {
         uint32_t id = (uint32_t)(long)index;
         statusmap.erase(id);
-        waitlist.erase(id);
+//        waitlist.erase(id);
     }
 }
 
@@ -380,20 +379,16 @@ void* Cgi::request(HttpReqHeader&& req) {
     return reinterpret_cast<void*>(cgi_id);
 }
 
+/*
 void Cgi::wait(void* index) {
     waitlist.insert((uint32_t)(long)index);
 }
+*/
 
 void Cgi::dump_stat(){
     LOG("Cgi %p %s, id=%d:\n", this, filename, curid);
     for(auto i: statusmap){
         LOG("%d: %p, %p", i.first, i.second.req_ptr, i.second.req_index);
-    }
-    if(!waitlist.empty()){
-        LOG(">>> waitlist (may due to low connect):\n");
-        for(auto i: waitlist){
-            LOG("> %d\n", i);
-        }
     }
 }
 

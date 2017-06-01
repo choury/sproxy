@@ -161,19 +161,17 @@ ssize_t Peer::Write(void* buff, size_t size, void*) {
     return push_buff(buff, size);
 }
 
+/*
 void Peer::wait(void*){
 
-}
+}*/
 
 void Peer::writedcb(void*) {
     updateEpoll(events | EPOLLIN);
 }
 
 int32_t Peer::bufleft(void*) {
-    if(writelen >= 1024*1024)
-        return 0;
-    else
-        return BUF_LEN;
+    return 1024*1024 - writelen;
 }
 
 

@@ -54,8 +54,8 @@ public:
     
     virtual ssize_t Write(const void *buff, size_t size, void* index) final;
     virtual ssize_t Write(void* buff, size_t size, void* index);
-    
-    virtual void wait(void* index);
+
+//    virtual void wait(void* index);
     virtual void writedcb(void* index);
     virtual int32_t bufleft(void* index);
 };

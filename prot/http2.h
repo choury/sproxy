@@ -67,7 +67,7 @@ struct Setting_Frame{
 
 #define FRAMEBODYLIMIT 16384
 #define FRAMELENLIMIT FRAMEBODYLIMIT+sizeof(Http2_header) 
-#define localframewindowsize  16384
+#define localframewindowsize  FRAMEBODYLIMIT
 
 struct Http2_frame{
     Http2_header *header;
@@ -82,11 +82,12 @@ protected:
     uint32_t remoteframewindowsize = 65535; //由对端初始化的初始frame的窗口大小
     
     int32_t remotewinsize = 65535; // 对端提供的窗口大小，发送时减小，收到对端update时增加
-    int32_t localwinsize = 65535; // 发送给对端的窗口大小，接受时减小，给对端发送update时增加
+    int32_t localwinsize = localframewindowsize; // 发送给对端的窗口大小，接受时减小，给对端发送update时增加
     bool inited = false;
+    uint32_t framelen = 0;
+    std::list<Http2_frame> framequeue;
     Index_table request_table;
     Index_table response_table;
-    std::list<Http2_frame> framequeue;
     void DefaultProc();
     void Ping( const void *buff );
     void Reset(uint32_t id, uint32_t code);

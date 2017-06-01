@@ -15,7 +15,7 @@ struct ReqStatus{
 class Proxy2:public Responser, public Http2Requster {
     uint32_t curid = 1;
     std::map<uint32_t, ReqStatus> statusmap;
-    std::set<uint32_t> waitlist;
+//    std::set<uint32_t> waitlist;
     SSL_CTX *ctx;
     Ssl *ssl;
 protected:
@@ -40,7 +40,7 @@ public:
     virtual void* request(HttpReqHeader&& req)override;
     
     virtual int32_t bufleft(void* index)override;
-    virtual void wait(void* index)override;
+//    virtual void wait(void* index)override;
     virtual void writedcb(void* index)override;
 
     virtual void dump_stat()override;

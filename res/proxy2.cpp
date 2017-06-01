@@ -24,8 +24,6 @@ void Proxy2::ping_timeout(Proxy2 *p){
 
 Proxy2::Proxy2(int fd, SSL_CTX *ctx, Ssl *ssl): ctx(ctx), ssl(ssl) {
     this->fd = fd;
-    remotewinsize = remoteframewindowsize;
-    localwinsize  = localframewindowsize;
     updateEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Con::*)(uint32_t))&Proxy2::defaultHE;
 }
@@ -76,10 +74,11 @@ void Proxy2::PushFrame(Http2_header *header){
 
 
 int32_t Proxy2::bufleft(void* index) {
+    int32_t globalwindow = Min(1024*1024 - (int32_t)framelen, this->remotewinsize);
     if(index)
-        return Min(statusmap.at((uint32_t)(long)index).remotewinsize, this->remotewinsize);
+        return Min(statusmap.at((uint32_t)(long)index).remotewinsize, globalwindow);
     else
-        return this->remotewinsize;
+        return globalwindow;
 }
 
 
@@ -102,19 +101,17 @@ void Proxy2::defaultHE(uint32_t events) {
     }
 
     if (events & EPOLLOUT) {
-        int ret = SendFrame();
-        if(ret > 0){
-            for(auto i = waitlist.begin(); i!= waitlist.end(); ){
-                assert(statusmap.count(*i));
-                ReqStatus& status = statusmap.at(*i);
+        if(framelen >= 1024*1024){
+            LOGD(DHTTP2, "active all frame because of framelen\n");
+            for(auto i: statusmap){
+                ReqStatus& status = i.second;
                 if(status.remotewinsize > 0){
                     status.req_ptr->writedcb(status.req_index);
-                    i = waitlist.erase(i);
-                }else{
-                    i++;
                 }
             }
-        }else if(showerrinfo(ret, "proxy2 write error")) {
+        }
+        int ret = SendFrame();
+        if(ret <= 0 && showerrinfo(ret, "proxy2 write error")) {
             clean(WRITE_ERR, 0);
             return;
         }
@@ -136,7 +133,7 @@ void Proxy2::DataProc(const Http2_header* header) {
             requester->clean(ERR_FLOW_CONTROL_ERROR, status.req_index);
             LOGE("(%s) :[%d] window size error\n", requester->getsrc(), id);
             statusmap.erase(id);
-            waitlist.erase(id);
+//            waitlist.erase(id);
             return;
         }
         requester->Write(header+1, len, status.req_index);
@@ -168,7 +165,7 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
         status.req_ptr->Write((const void*)nullptr, 0, status.req_index);  //for http/1.0
         status.req_ptr->clean(errcode, status.req_index);
         statusmap.erase(id);
-        waitlist.erase(id);
+//        waitlist.erase(id);
     }
 }
 
@@ -179,13 +176,22 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
             LOGD(DHTTP2, "window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
             status.remotewinsize += size;
             status.req_ptr->writedcb(status.req_index);
-            waitlist.erase(id);
+//            waitlist.erase(id);
         }else{
             LOGD(DHTTP2, "window size updated [%d]: not found\n", id);
         }
     }else{
         LOGD(DHTTP2, "window size updated global: %d+%d\n", remotewinsize, size);
         remotewinsize += size;
+        if(remotewinsize == (int32_t)size){
+            LOGD(DHTTP2, "active all frame\n");
+            for(auto i: statusmap){
+                ReqStatus& status = i.second;
+                if(status.remotewinsize > 0){
+                    status.req_ptr->writedcb(status.req_index);
+                }
+            }
+        }
     }
 }
 
@@ -237,7 +243,6 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
     for(auto i: statusmap){
        i.second.remotewinsize += diff;
     }
-    remotewinsize += diff;
 }
 
 void Proxy2::clean(uint32_t errcode, void* index) {
@@ -257,20 +262,24 @@ void Proxy2::clean(uint32_t errcode, void* index) {
            status.req_ptr->clean(errcode, status.req_index);
         }
         statusmap.erase(id);
-        waitlist.erase(id);
+//        waitlist.erase(id);
     }
 }
 
+/*
 void Proxy2::wait(void* index) {
     waitlist.insert((uint32_t)(long)index);
 }
+*/
 
 void Proxy2::writedcb(void* index){
     uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         auto len = status.req_ptr->bufleft(status.req_index);
-        if(len <= status.localwinsize)
+        if(len <= status.localwinsize ||
+           (len - status.localwinsize < FRAMEBODYLIMIT &&
+            status.localwinsize >= FRAMEBODYLIMIT))
             return;
         status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
     }
@@ -280,12 +289,6 @@ void Proxy2::dump_stat() {
     LOG("Proxy2 %p, id:%d:\n", this, curid);
     for(auto i: statusmap){
         LOG("0x%x: %p, %p\n", i.first, i.second.req_ptr, i.second.req_index);
-    }
-    if(!waitlist.empty()){
-        LOG(">>> waitlist (may due to low connect):\n");
-        for(auto i: waitlist){
-            LOG("> 0x%x\n", i);
-        }
     }
 }
 

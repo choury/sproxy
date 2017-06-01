@@ -14,7 +14,7 @@ struct ResStatus{
 
 class Guest_s2: public Requester, public Http2Responser {
     std::map<uint32_t, ResStatus> statusmap;
-    std::set<uint32_t> waitlist;
+//    std::set<uint32_t> waitlist;
     Ssl *ssl;
 protected:
     virtual void defaultHE(uint32_t events)override;
@@ -42,7 +42,7 @@ public:
     virtual ssize_t Write(void *buff, size_t size, void* index)override;
     
     virtual int32_t bufleft(void* index)override;
-    virtual void wait(void* index)override;
+//    virtual void wait(void* index)override;
     virtual void response(HttpResHeader&& res)override;
     virtual void writedcb(void* index)override;
 
