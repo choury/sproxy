@@ -202,7 +202,7 @@ void Http2Base::SendInitSetting() {
     memset(header, 0, sizeof(Http2_header));
     Setting_Frame *sf = (Setting_Frame *)(header+1);
     set16(sf->identifier, SETTINGS_INITIAL_WINDOW_SIZE);
-    set32(sf->value, localwinsize);
+    set32(sf->value, localframewindowsize);
 
     set24(header->length, sizeof(Setting_Frame));
     header->type = SETTINGS_TYPE;

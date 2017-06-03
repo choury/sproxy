@@ -127,6 +127,12 @@ static int dnsinit() {
 }
 #endif
 
+void dnsdeinit(){
+    for(auto i : srvs){
+        delete i;
+    }
+}
+
 void query_back(Dns_Status *dnsst){
     for(auto i: dnsst->reqs){
         i.func(i.param, dnsst->host, dnsst->rcd.addrs);   //func 肯定不为空

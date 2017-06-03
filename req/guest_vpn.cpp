@@ -286,23 +286,10 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         Requester::Write(packet, packetlen, 0);
 
         if(statusmap.count(key)){
-            pac_return.tcp
-                ->setseq(ack)
-                ->setack(seq)
-                ->setwindow(bufleft(0))
-                ->setflag(TH_ACK | TH_FIN);
-
-            packet = pac_return.build_packet((const void *)nullptr, packetlen);
-            LOGD(DVPN, "write fin packet.\n");
-            //write back to vpn fd
-            Requester::Write(packet, packetlen, 0);
-
             VpnStatus &status = statusmap[key];
             status.res_ptr->clean(0, status.res_index);
-
-            delete status.key;
-            free(status.packet);
-            statusmap.erase(key);
+            status.ack = seq;
+            clean(0, &key);
         }
         return;
     }
@@ -352,6 +339,12 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
     if(statusmap.count(key)){     //更新window
         VpnStatus &status = statusmap[key];
         status.window = pac->tcp->getwindow();
+        if(status.window == 0){
+            LOGE("Get zero tcp window, reset it!\n");
+            status.res_ptr->clean(TCP_RESET_ERR, status.res_index);
+            clean(TCP_RESET_ERR, &key);
+            return;
+        }
         if(flag & TH_ACK){
             status.res_ptr->writedcb(status.res_index);
         }
@@ -534,7 +527,7 @@ void Guest_vpn::clean(uint32_t errcode, void* index) {
     }
     assert(statusmap.count(*key));
     VpnStatus& status = statusmap[*key];
-    assert(status.key == key);
+    key = status.key;
     if(key->protocol == Protocol::UDP){
         if(errcode && errcode != VPN_AGED_ERR){
             LOGD(DVPN, "write icmp unreachable msg: <udp> (%s -> %s)\n", key->getsrc(), key->getdst());
