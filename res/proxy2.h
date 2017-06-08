@@ -49,6 +49,5 @@ public:
 };
 
 extern Proxy2* proxy2; 
-void flushproxy2();
 
 #endif

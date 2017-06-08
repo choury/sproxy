@@ -17,7 +17,7 @@ struct VpnConfig{
     int fd;
     int ignore_cert_error;
     int disable_ipv6;
-    const char* server;
+    char server[DOMAINLIMIT];
 };
 
 int vpn_start(const struct VpnConfig* vpn);

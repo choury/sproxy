@@ -83,6 +83,14 @@ bool operator<(const VpnKey a, const VpnKey b) {
 Guest_vpn::Guest_vpn(int fd):Requester(fd, "127.0.0.1", 0) {
 }
 
+Guest_vpn::~Guest_vpn(){
+    for(auto& i: statusmap){
+        delete i.second.key;
+        free(i.second.packet);
+        del_job((job_func)vpn_aged, &i.second);
+    }
+    statusmap.clear();
+}
 
 void Guest_vpn::defaultHE(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
@@ -513,18 +521,10 @@ int32_t Guest_vpn::bufleft(void* index) {
 
 
 void Guest_vpn::clean(uint32_t errcode, void* index) {
+    assert(index);
     VpnKey* key = (VpnKey *)index;
     LOGD(DVPN, "<%s> (%s -> %s) clean: %d\n",
          protstr(key->protocol), key->getsrc(), key->getdst(), errcode);
-    if(key == nullptr){
-        for(auto i: statusmap){
-            i.second.res_ptr->clean(errcode, i.second.res_index);
-            delete i.second.key;
-            free(i.second.packet);
-        }
-        statusmap.clear();
-        return Peer::clean(errcode, 0);
-    }
     assert(statusmap.count(*key));
     VpnStatus& status = statusmap[*key];
     key = status.key;

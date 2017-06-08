@@ -41,6 +41,7 @@ protected:
     void icmpHE(const Ip* pac,const char* packet, size_t len);
 public:
     explicit Guest_vpn(int fd);
+    ~Guest_vpn();
 //    virtual void wait(void* index)override;
     virtual void response(HttpResHeader&& res)override;
     virtual ssize_t Write(void* buff, size_t size, void* index)override;

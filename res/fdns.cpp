@@ -6,11 +6,14 @@
 binmap<uint32_t, std::string> fdns_records;
 
 static FDns *fdns = nullptr;
+static in_addr_t fake_ip = ntohl(inet_addr("10.0.0.2"));
 
 FDns::FDns() {
-    fake_ip = ntohl(inet_addr("10.0.0.2"));
 }
 
+FDns::~FDns() {
+    fdns = (fdns == this) ? nullptr: fdns;
+}
 
 void* FDns::request(HttpReqHeader&& req){
     statusmap[req_id]= FDnsStatus{

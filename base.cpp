@@ -216,8 +216,6 @@ void dump_stat(int){
     LOG("======================================\n");
 }
 
-extern void flushproxy2();
-
 int setproxy(const char* proxy){
     char protocol[DOMAINLIMIT];
     char shost[DOMAINLIMIT];

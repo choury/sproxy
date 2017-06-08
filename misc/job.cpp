@@ -81,3 +81,8 @@ void dump_job(){
         LOG("%s(%p): %d/%d\n", i.second.func_name, i.first.arg, left, i.second.interval);
     }
 }
+
+void job_clear(){
+    LOGD(DJOB, "clear all jobs\n");
+    callfunc_map.clear();
+}

@@ -33,6 +33,7 @@ Proxy2::~Proxy2() {
     SSL_CTX_free(ctx);
     del_job((job_func)ping_check, this);
     del_job((job_func)ping_timeout, this);
+    proxy2 = (proxy2 == this) ? nullptr: proxy2;
 }
 
 

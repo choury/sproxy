@@ -18,9 +18,9 @@ struct FDnsStatus{
 class FDns: public Responser{
     std::map<int, FDnsStatus> statusmap;
     uint32_t req_id = 1;
-    in_addr_t fake_ip;
 public:
     FDns();
+    ~FDns();
     virtual void* request(HttpReqHeader&& req) override;
     virtual ssize_t Write(void *buff, size_t size, void* index)override;
     static void ResponseCb(uint32_t id, const char *buff, size_t size);

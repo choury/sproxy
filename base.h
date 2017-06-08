@@ -60,6 +60,7 @@ public:
     virtual int32_t bufleft(void* index);
 };
 
+void flushproxy2();
 void releaseall();
 int setproxy(const char* proxy);
 int getproxy(char *buff, size_t buflen);

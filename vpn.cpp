@@ -1,11 +1,11 @@
 #include "misc/strategy.h"
 #include "misc/job.h"
+#include "prot/dns.h"
 #include "vpn.h"
 
 #include "req/guest_vpn.h"
 
 #include <signal.h>
-//#include <sys/epoll.h>
 #include <openssl/ssl.h>
 
 
@@ -23,9 +23,10 @@ char auth_string[DOMAINLIMIT] = {0};
 const char *cafile =  nullptr;
 const char *index_file = nullptr;
 uint32_t debug = 0;
-
+uint32_t vpn_contiune;
 
 int vpn_start(const struct VpnConfig* vpn){
+    vpn_contiune = 1;
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
 #ifndef __ANDROID__
@@ -48,7 +49,7 @@ int vpn_start(const struct VpnConfig* vpn){
     }
     new Guest_vpn(vpn->fd);
     LOGOUT("Accepting connections ...\n");
-    while (1) {
+    while (vpn_contiune) {
         int c;
         struct epoll_event events[200];
         if ((c = epoll_wait(efd, events, 200, do_job())) < 0) {
@@ -67,5 +68,8 @@ int vpn_start(const struct VpnConfig* vpn){
 }
 
 void vpn_stop(){
+    vpn_contiune = 0;
     releaseall();
+    dnsdeinit();
+    flushproxy2();
 }

@@ -7,6 +7,7 @@
 #include <net/if.h>
 #include <net/route.h>
 #include <string.h>
+#include <signal.h>
 
 const char* out_interface;
 
@@ -130,18 +131,21 @@ int main(int argc, char** argv) {
         return -1;
     }
     out_interface = argv[1];
-    char tun_name[IFNAMSIZ]= {0};
-    int tun = tun_create(tun_name, IFF_TUN | IFF_NO_PI);
-    if (tun < 0) {
-        perror("tun_create");
-        return 1;
+    signal(SIGUSR2, vpn_stop);
+    while(1){
+        char tun_name[IFNAMSIZ]= {0};
+        int tun = tun_create(tun_name, IFF_TUN | IFF_NO_PI);
+        if (tun < 0) {
+            perror("tun_create");
+            return 1;
+        }
+        fprintf(stderr, "TUN name is %s\n", tun_name);
+        struct VpnConfig vpn;
+        vpn.disable_ipv6 = 1;
+        vpn.ignore_cert_error = 0;
+        strcpy(vpn.server, argv[2]);
+        vpn.fd = tun;
+        vpn_start(&vpn);
     }
-    fprintf(stderr, "TUN name is %s\n", tun_name);
-    struct VpnConfig vpn;
-    vpn.disable_ipv6 = 1;
-    vpn.ignore_cert_error = 0;
-    vpn.server=argv[2];
-    vpn.fd = tun;
-    vpn_start(&vpn);
     return 0;
 }

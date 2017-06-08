@@ -347,5 +347,6 @@ void dump_trace(int ignore) {
     /* 获取函数名称时申请的内存需要自行释放 */
     free(stack_strings);
     stack_strings = NULL;
+    exit(-1);
 }
 #endif

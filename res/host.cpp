@@ -247,7 +247,7 @@ void Host::dump_stat() {
         LOG("Host %p, <%s> (%s:%d): %p, %p\n", this, protstr(protocol),
             status.hostname, status.port, status.req_ptr, status.req_index);
     }else{
-        LOG("Host %p [p], <%s> (%s:%d): %p, %p\n", this, protstr(protocol),
+        LOG("Host %p [p], <%s> (%s:%d): %p, %p\n", this, protstr(status.protocol),
             status.hostname, status.port, status.req_ptr, status.req_index);
     }
 }

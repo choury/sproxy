@@ -80,6 +80,7 @@ void dns_expired(const char* host) {
 }
 
 void query_timeout(uint16_t id);
+void query_back(Dns_Status *dnsst);
 
 #ifdef __ANDROID__
 #include <sys/system_properties.h>
@@ -128,9 +129,26 @@ static int dnsinit() {
 #endif
 
 void dnsdeinit(){
-    for(auto i : srvs){
-        delete i;
+    LOGD(DDNS, "deinit dns\n");
+    while(srvs.size()){
+        delete srvs[0];
     }
+    for(auto& i:rcd_cache){
+       del_job((job_func)dns_expired, (void *)i.first.c_str());
+    }
+    rcd_cache.clear();
+    for(auto i: querying_index_id){
+        del_job((job_func)query_timeout, (void *)(long)i.first);
+    }
+    querying_index_id.clear();
+    for(auto i: querying_index_host){
+        delete i.second;
+    }
+    querying_index_host.clear();
+    for(auto i: querying_raw_id){
+        delete i.second;
+    }
+    querying_raw_id.clear();
 }
 
 void query_back(Dns_Status *dnsst){
@@ -330,6 +348,7 @@ Dns_srv::Dns_srv(const char* name):Con(0){
     }
     this->fd = fd;
     strcpy(this->name, name);
+    LOGD(DDNS, "new dns server: %s\n", name);
     updateEpoll(EPOLLIN);
     handleEvent = (void (Con::*)(uint32_t))&Dns_srv::DnshandleEvent;
     srvs.push_back(this);
