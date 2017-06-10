@@ -27,7 +27,7 @@ void* FDns::request(HttpReqHeader&& req){
 ssize_t FDns::Write(void* buff, size_t size, void* index) {
     Dns_Que que((char *)buff);
     p_free(buff);
-    LOGD(DDNS, "Query %s: %d\n", que.host.c_str(), que.type);
+    LOGD(DDNS, "FQuery %s: %d\n", que.host.c_str(), que.type);
     uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id)){
         FDnsStatus& status = statusmap[id];
@@ -37,7 +37,9 @@ ssize_t FDns::Write(void* buff, size_t size, void* index) {
             return size;
         }
         in_addr addr;
-        if(que.type == 1){
+        if(que.host.find_first_of(".") == std::string::npos){
+                addr.s_addr = inet_addr("10.0.0.1");
+        }else if(que.type == 1){
             if(fdns_records.count(que.host)){
                 addr.s_addr = htonl(fdns_records[que.host]);
             }else{

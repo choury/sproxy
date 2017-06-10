@@ -17,8 +17,7 @@ static void vpn_aged(VpnStatus* status){
 }
 
 VpnKey::VpnKey(const Ip* ip) {
-    memset(&src, 0, sizeof(src));
-    memset(&dst, 0, sizeof(dst));
+    memset(this, 0, sizeof(VpnKey));
     src.addr.sa_family = AF_INET;
     src.addr_in.sin_addr = *ip->getsrc();
     dst.addr.sa_family = AF_INET;

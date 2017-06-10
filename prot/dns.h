@@ -61,6 +61,7 @@ public:
     Dns_Rr(const char *buff);
     Dns_Rr(const in_addr* addr);
     int build(const Dns_Que* query, unsigned char *buf)const;
+    static int buildError(const Dns_Que* query, unsigned char errcode);
 };
 
 

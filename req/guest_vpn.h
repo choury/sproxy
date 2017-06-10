@@ -13,7 +13,7 @@ struct VpnKey{
     void reverse();
     const char* getsrc() const;
     const char* getdst() const;
-}__attribute__((packed));
+};
 
 bool operator<(const VpnKey a, const VpnKey b);
 
