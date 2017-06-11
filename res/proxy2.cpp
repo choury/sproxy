@@ -17,7 +17,7 @@ void Proxy2::ping_check(Proxy2 *p){
     add_job((job_func)ping_check, p, 5000);
 }
 
-void Proxy2::ping_timeout(Proxy2 *p){
+void Proxy2::connection_lost(Proxy2 *p){
     LOGE("[Proxy2] %p the ping timeout, so close it\n", p);
     p->clean(PEER_LOST_ERR, 0);
 }
@@ -32,7 +32,7 @@ Proxy2::~Proxy2() {
     delete ssl;
     SSL_CTX_free(ctx);
     del_job((job_func)ping_check, this);
-    del_job((job_func)ping_timeout, this);
+    del_job((job_func)connection_lost, this);
     proxy2 = (proxy2 == this) ? nullptr: proxy2;
 }
 
@@ -40,8 +40,8 @@ Proxy2::~Proxy2() {
 ssize_t Proxy2::Read(void* buff, size_t len) {
     auto ret = ssl->read(buff, len);
     if(ret > 0){
-        add_job((job_func)ping_check, this, 20000);
-        add_job((job_func)ping_timeout, this, 30000);
+        add_job((job_func)ping_check, this, 60000);
+        add_job((job_func)connection_lost, this, 63000);
     }
     return ret;
 }
@@ -134,7 +134,6 @@ void Proxy2::DataProc(const Http2_header* header) {
             requester->clean(ERR_FLOW_CONTROL_ERROR, status.req_index);
             LOGE("(%s) :[%d] window size error\n", requester->getsrc(), id);
             statusmap.erase(id);
-//            waitlist.erase(id);
             return;
         }
         requester->Write(header+1, len, status.req_index);
@@ -177,7 +176,6 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
             LOGD(DHTTP2, "window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
             status.remotewinsize += size;
             status.req_ptr->writedcb(status.req_index);
-//            waitlist.erase(id);
         }else{
             LOGD(DHTTP2, "window size updated [%d]: not found\n", id);
         }
@@ -201,10 +199,8 @@ void Proxy2::PingProc(Http2_header *header){
         double diff = (getutime()-get64(header+1))/1000.0;
         LOG("[Proxy2] Get a ping time=%.3fms\n", diff);
         if(diff >= 5000){
-            LOGE("[Proxy2] The ping time too long, close it.\n");
-            clean(PEER_LOST_ERR, 0);
+            LOGE("[Proxy2] The ping time too long!\n");
         }
- 
     }
     Http2Base::PingProc(header);
 }
@@ -240,6 +236,12 @@ void Proxy2::ResProc(HttpResHeader&& res) {
     }
 }
 
+void Proxy2::GoawayProc(Http2_header* header){
+    Goaway_Frame* goaway = (Goaway_Frame *)(header+1);
+    clean(get32(goaway->errcode), nullptr);
+}
+
+
 void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
     for(auto i: statusmap){
        i.second.remotewinsize += diff;
@@ -253,6 +255,7 @@ void Proxy2::clean(uint32_t errcode, void* index) {
             i.second.req_ptr->clean(errcode, i.second.req_index);
         }
         statusmap.clear();
+        Goaway(-1, errcode);
         return Peer::clean(errcode, 0);
     }else{
         uint32_t id = (uint32_t)(long)index;
@@ -267,11 +270,6 @@ void Proxy2::clean(uint32_t errcode, void* index) {
     }
 }
 
-/*
-void Proxy2::wait(void* index) {
-    waitlist.insert((uint32_t)(long)index);
-}
-*/
 
 void Proxy2::writedcb(void* index){
     uint32_t id = (uint32_t)(long)index;

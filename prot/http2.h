@@ -48,6 +48,12 @@ struct Setting_Frame{
     uint8_t value[4];
 }__attribute__((packed));
 
+struct Goaway_Frame{
+    uint8_t last_stream_id[4];
+    uint8_t errcode[4];
+    uint8_t data[0];
+}__attribute__((packed));
+
 
 #define ERR_NO_ERROR            0
 #define ERR_PROTOCOL_ERROR      1
@@ -91,6 +97,7 @@ protected:
     void DefaultProc();
     void Ping( const void *buff );
     void Reset(uint32_t id, uint32_t code);
+    void Goaway(uint32_t lastid, uint32_t code, char* message = nullptr);
     void SendInitSetting();
     virtual void InitProc() = 0;
     virtual void HeadersProc(Http2_header *header) = 0;

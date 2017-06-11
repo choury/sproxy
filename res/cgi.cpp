@@ -21,10 +21,11 @@ using std::string;
 static std::map<std::string, Cgi *> cgimap;
 
 Cgi::Cgi(HttpReqHeader& req) {
+    snprintf(filename, sizeof(filename), "%s", req.filename.c_str());
     const char *errinfo = nullptr;
     cgifunc *func = nullptr;
     int fds[2]= {0},flags;
-    void *handle = dlopen(req.filename,RTLD_NOW);
+    void *handle = dlopen(filename, RTLD_NOW);
     if(handle == nullptr) {
         LOGE("dlopen failed: %s\n", dlerror());
         errinfo = H404;
@@ -45,7 +46,7 @@ Cgi::Cgi(HttpReqHeader& req) {
 
     if (fork() == 0) { // 子进程
         signal(SIGPIPE, SIG_DFL);
-        change_process_name(basename(req.filename));
+        change_process_name(basename(filename));
         releaseall();
         exit(func(fds[1]));
     }
@@ -64,7 +65,6 @@ Cgi::Cgi(HttpReqHeader& req) {
     handleEvent=(void (Con::*)(uint32_t))&Cgi::defaultHE;
     updateEpoll(EPOLLIN);
 
-    snprintf(filename, sizeof(filename), "%s", req.filename);
     cgimap[filename] = this;
     return;
 err:

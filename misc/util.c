@@ -48,8 +48,11 @@ int spliturl(const char* url, char *protocol, char* hostname, char* path , uint1
     int copylen;
     memset(hostname, 0, DOMAINLIMIT);
     *port = 0;
+    if (protocol){
+        protocol[0] = 0;
+    }
     if (path) {
-        memset(path, 0, urllen);
+        path[0] = 0;
     }
     if (url[0] == '/' && path) {
         strcpy(path, url);
@@ -75,6 +78,7 @@ int spliturl(const char* url, char *protocol, char* hostname, char* path , uint1
         copylen = Min(url+urllen-addrsplit, (URLLIMIT-1));
         if (path) {
             memcpy(path, addrsplit, copylen);
+            path[copylen] = 0;
         }
         copylen = addrsplit - url < (DOMAINLIMIT - 1) ? addrsplit - url : (DOMAINLIMIT - 1);
         strncpy(tmpaddr, url, copylen);

@@ -104,8 +104,7 @@ HttpReqHeader::HttpReqHeader(const char* header, ResObject* src):
     char httpheader[HEADLENLIMIT];
     snprintf(httpheader, sizeof(httpheader), "%s", header);
     *(strstr(httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
-    memset(path, 0, sizeof(path));
-    memset(url, 0, sizeof(url));
+    char url[URLLIMIT];
     sscanf(httpheader, "%19s%*[ ]%4095[^\r\n ]", method, url);
     toUpper(method);
 
@@ -149,9 +148,6 @@ HttpReqHeader::HttpReqHeader(const char* header, ResObject* src):
             throw 0;
         }
     }
-    if(url[0] == '/'){
-        snprintf(url, sizeof(url), "http://%s%s", hostname, path);
-    }
     getfile();
 }
 
@@ -179,17 +175,8 @@ HttpReqHeader::HttpReqHeader(std::multimap<istring, string>&& headers, ResObject
     snprintf(path, sizeof(path), "%s", get(":path"));
     
     if (get(":authority")){
-        if (ismethod("CONNECT") || ismethod("SEND")) {
-            snprintf(url, sizeof(url), "%s", get(":authority"));
-        } else {
-            snprintf(url, sizeof(url), "%s://%s%s",
-                     protocol, get(":authority"), path);
-        }
         spliturl(get(":authority"), nullptr, hostname, nullptr, &port);
         add("host", get(":authority"));
-    } else {
-        snprintf(url, sizeof(url), "%s", path);
-        hostname[0] = 0;
     }
     for (auto i = this->headers.begin(); i!= this->headers.end();) {
         if (i->first[0] == ':') {
@@ -237,13 +224,34 @@ HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(nullptr)
 }
 
 
-void HttpReqHeader::getfile() {
+void HttpReqHeader::getfile()
+{
     char *start = path;
     while (*start && *++start == '/');
     char *end=start;
     while (*end && *++end != '?');
-    memset(filename, 0, sizeof(filename));
-    memcpy(filename, start, end-start);
+    filename = string(start, end-start);
+}
+
+std::string HttpReqHeader::geturl() const {
+    char url[URLLIMIT]={0};
+    char *pos = url;
+    if(protocol[0]){
+        pos += sprintf(pos, "%s://%s", protocol, hostname);
+    }else{
+        pos += sprintf(pos, "%s", hostname);
+    }
+    if((port == 0) ||
+        (protocol[0] == 0 && port == HTTPPORT) ||
+        (strcasecmp(protocol, "http") == 0 && port == HTTPPORT) ||
+        (strcasecmp(protocol, "https") == 0 && port == HTTPSPORT)) {
+    }else{
+        pos += sprintf(pos, ":%d", port);
+    }
+    if(path[1]){
+        pos += sprintf(pos, "%s", path);
+    }
+    return url;
 }
 
 
@@ -254,16 +262,24 @@ bool HttpReqHeader::ismethod(const char* method) const{
 char *HttpReqHeader::getstring(size_t &len) const{
     char *buff = nullptr;
     len = 0;
-    if (should_proxy) {
-        buff= (char *)p_malloc(BUF_LEN);
-        len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, url);
-    } else if (strcmp(method, "CONNECT") == 0 || 
-               strcmp(method, "SEND") == 0)
+    if (strcmp(method, "CONNECT") == 0 ||
+        strcmp(method, "SEND") == 0)
     {
-        return 0;
+        if(should_proxy){
+            buff= (char *)p_malloc(BUF_LEN);
+            len += sprintf(buff, "%s %s:%d HTTP/1.1" CRLF, method, hostname, port);
+        }else{
+            //本地请求，自己处理connect和send方法
+            return 0;
+        }
     }else{
-        buff= (char *)p_malloc(BUF_LEN);
-        len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, path);
+        if(should_proxy){
+            buff= (char *)p_malloc(BUF_LEN);
+            len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, geturl().c_str());
+        }else{
+            buff= (char *)p_malloc(BUF_LEN);
+            len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, path);
+        }
     }
     
     if(get("Host") == nullptr && hostname[0]){
@@ -665,12 +681,11 @@ HttpBody::HttpBody() {
 }
 
 
-HttpBody::HttpBody(HttpBody && copy):data(copy.data) {
-    while(!copy.data.empty()){
-        copy.data.pop();
+HttpBody::HttpBody(HttpBody && copy){
+    while(copy.size()){
+       this->push(copy.pop());
     }
 }
-
 
 size_t HttpBody::push(const void* buff, size_t len) {
     return push(p_memdup(buff, len), len);
@@ -687,6 +702,12 @@ size_t HttpBody::push(void* buff, size_t len) {
     return len;
 }
 
+size_t HttpBody::push(std::pair<void *, size_t> data) {
+    return push(data.first, data.second);
+}
+
+
+
 std::pair<void*, size_t> HttpBody::pop(){
     if(data.empty()){
         return std::make_pair(nullptr, 0);
@@ -699,6 +720,7 @@ std::pair<void*, size_t> HttpBody::pop(){
 }
 
 size_t HttpBody::size() {
+    assert(bool(content_size) ==  data.empty());
     return content_size;
 }
 

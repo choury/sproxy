@@ -140,15 +140,17 @@ void Host::defaultHE(uint32_t events) {
 
 
 void* Host::request(HttpReqHeader&& req) {
+    assert(Http_Proc != &Host::AlwaysProc);
     size_t len;
     char *buff = req.getstring(len);
     Responser::Write(buff, len, 0);
     if(req.ismethod("CONNECT")){
-        http_flag = HTTP_CONNECT_F;
+        http_flag |= HTTP_CONNECT_F;
         Http_Proc = &Host::AlwaysProc;
     }else if(req.ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY_F;
     }else if(req.ismethod("SEND")){
+        http_flag |= HTTP_SEND_F;
         Http_Proc = &Host::AlwaysProc;
     }
     status.req_ptr = req.src;
@@ -172,11 +174,19 @@ void Host::ResProc(HttpResHeader&& res) {
 Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr) {
     Protocol protocol = req.ismethod("SEND")?Protocol::UDP:Protocol::TCP;
     Host* host = dynamic_cast<Host *>(responser_ptr);
+    if(req.ismethod("CONNECT") || req.ismethod("SEND")){
+#ifndef NDEBUG
+        if (host){
+            assert((host->http_flag & HTTP_CONNECT_F) == 0 &&
+                   (host->http_flag & HTTP_SEND_F) == 0);
+        }
+#endif
+        return new Host(req.hostname, req.port, protocol);
+    }
     if (host){
         if(strcasecmp(host->hostname, req.hostname) == 0
             && host->port == req.port
-            && protocol == host->protocol
-            && !req.ismethod("CONNECT"))
+            && protocol == host->protocol)
         {
             return host;
         }else{
@@ -209,7 +219,6 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 
     if (len <= 0) {
         LOGE("(%s): The guest's write buff is full (%s)\n", status.req_ptr->getsrc(), status.hostname);
-//        status.req_ptr->wait(status.req_index);
         updateEpoll(0);
         return -1;
     }

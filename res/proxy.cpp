@@ -12,13 +12,21 @@ Proxy::Proxy(const char* hostname, uint16_t port, Protocol protocol):
 }
 
 Responser* Proxy::getproxy(HttpReqHeader &req, Responser* responser_ptr) {
-    Proxy *proxy = dynamic_cast<Proxy *>(responser_ptr);
-    if (proxy) {
-        return proxy;
-    }
-    
     if (proxy2) {
         return proxy2;
+    }
+    Proxy *proxy = dynamic_cast<Proxy *>(responser_ptr);
+    if(req.ismethod("CONNECT") || req.ismethod("SEND")){
+#ifndef NDEBUG
+        if (proxy) {
+            assert((proxy->http_flag & HTTP_CONNECT_F) == 0 &&
+                   (proxy->http_flag & HTTP_SEND_F) == 0);
+        }
+#endif
+        return new Proxy(SHOST, SPORT, SPROT);
+    }
+    if(proxy){
+        return proxy;
     }
     return new Proxy(SHOST, SPORT, SPROT);
 }
@@ -127,7 +135,6 @@ void Proxy::waitconnectHE(uint32_t events) {
             }
             SSL *ssl = SSL_new(ctx);
             BIO* bio = BIO_new_dgram(fd, BIO_NOCLOSE);
-//            BIO *bio = nullptr;
             BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_CONNECTED, 0, &addrs[testedaddr-1]);
             SSL_set_bio(ssl, bio, bio);
             this->ssl = new Dtls(ssl);
@@ -200,8 +207,8 @@ void Proxy::shakehandHE(uint32_t events) {
             }
             updateEpoll(EPOLLIN | EPOLLOUT);
             handleEvent = (void (Con::*)(uint32_t))&Proxy::defaultHE;
-            del_job((job_func)con_timeout, this);
-        }  
+        }
+        del_job((job_func)con_timeout, this);
         return;
     }
 }

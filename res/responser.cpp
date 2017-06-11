@@ -42,21 +42,15 @@ static int check_header(HttpReqHeader& req){
 Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
     Requester *requester = req.src;
     char log_buff[URLLIMIT];
-    if(req.url[0] == '/'){
-        snprintf(log_buff, sizeof(log_buff), "(%s): %s %s%s [%s]",
-                requester->getsrc(), req.method,
-                req.hostname, req.url, req.get("User-Agent"));
-        if(!req.hostname[0]){
-            LOG("[[bad request]] %s\n", log_buff);
-            HttpResHeader res(H400);
-            res.index = req.index;
-            requester->response(std::move(res));
-            return nullptr;
-        }
-    }else{
-        snprintf(log_buff, sizeof(log_buff),"(%s): %s %s [%s]",
-                requester->getsrc(), req.method,
-                req.url, req.get("User-Agent"));
+    snprintf(log_buff, sizeof(log_buff), "(%s): %s %s [%s]",
+            requester->getsrc(), req.method,
+            req.geturl().c_str(), req.get("User-Agent"));
+    if(!req.hostname[0]){
+        LOG("[[bad request]] %s\n", log_buff);
+        HttpResHeader res(H400);
+        res.index = req.index;
+        requester->response(std::move(res));
+        return nullptr;
     }
     if (req.ismethod("GET") ||
         req.ismethod("POST") ||
@@ -72,15 +66,15 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
         switch(getstrategy(req.hostname)){
             case Strategy::local:
                 LOG("[[local]] %s\n", log_buff);
-                if(index_file && (endwith(req.filename, "/") || strlen(req.filename)==0)){
-                    strncat(req.filename, index_file, sizeof(req.filename));
+                if(index_file && (endwith(req.filename.c_str(), "/") || req.filename.empty())){
+                    req.filename += index_file;
                 }
                 if(req.ismethod("CONNECT") || req.ismethod("SEND")){
                     HttpResHeader res(H400);
                     res.index = req.index;
                     requester->response(std::move(res));
                     return nullptr;
-                }else if (endwith(req.filename,".so")) {
+                }else if (endwith(req.filename.c_str(),".so")) {
                     return Cgi::getcgi(req);
                 } else {
                     return File::getfile(req);
@@ -155,7 +149,7 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
         }
         return nullptr;
     } else if (req.ismethod("SWITCH")) {
-        if(setproxy(req.url)){
+        if(setproxy(req.geturl().c_str())){
             HttpResHeader res(H400);
             res.index = req.index;
             requester->response(std::move(res));
@@ -171,12 +165,12 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
         res.index = req.index;
         requester->response(std::move(res));
     } else if(req.ismethod("FLUSH")){
-        if(strcasecmp(req.url, "cgi") == 0){
+        if(strcasecmp(req.hostname, "cgi") == 0){
             flushcgi();
             HttpResHeader res(H200);
             res.index = req.index;
             requester->response(std::move(res));
-        }else if(strcasecmp(req.url, "sites") == 0){
+        }else if(strcasecmp(req.hostname, "sites") == 0){
             loadsites();
             HttpResHeader res(H200);
             res.index = req.index;

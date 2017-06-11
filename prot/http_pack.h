@@ -23,7 +23,6 @@ public:
     std::set<std::string> cookies;
     void* index = 0;
     uint8_t flags = 0;
-    bool should_proxy  = false;
 
     void add(const istring& header, const std::string& value);
     void add(const istring& header, uint64_t value);
@@ -48,14 +47,14 @@ class HttpReqHeader: public HttpHeader{
     void getfile();
 public:
     Requester* src;
-    char method[20];
-    char url[URLLIMIT];
-    char protocol[DOMAINLIMIT];
     char hostname[DOMAINLIMIT];
+    char method[20];
     char path[URLLIMIT];
-    char filename[URLLIMIT];
+    char protocol[20];
+    std::string filename;
     uint16_t port;
     std::vector<Range> ranges;
+    bool should_proxy  = false;
     explicit HttpReqHeader(const char* header,  ResObject* src);
     explicit HttpReqHeader(std::multimap<istring, std::string>&& headers, ResObject* src);
     explicit HttpReqHeader(const CGI_Header *headers);
@@ -69,6 +68,7 @@ public:
     std::map<std::string, std::string> getcookies()const;
     const char* getparamstring()const;
     bool getrange();
+    std::string geturl() const;
 };
 
 class HttpResHeader: public HttpHeader{
@@ -96,6 +96,7 @@ public:
     
     size_t push(const void *buff, size_t len);
     size_t push(void *buff, size_t len);
+    size_t push(std::pair<void *, size_t>);
     std::pair<void*, size_t> pop();
     size_t size();
 };

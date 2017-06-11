@@ -197,6 +197,25 @@ void Http2Base::Reset(uint32_t id, uint32_t code) {
     PushFrame(header);
 }
 
+void Http2Base::Goaway(uint32_t lastid, uint32_t code, char *message) {
+    size_t len = sizeof(Goaway_Frame);
+    if(message){
+        len += strlen(message)+1;
+    }
+    Http2_header *header = (Http2_header *)p_malloc(sizeof(Http2_header)+len);
+    memset(header, 0, sizeof(Http2_header));
+    set24(header->length, len);
+    header->type = GOAWAY_TYPE;
+    Goaway_Frame *goaway = (Goaway_Frame*)(header+1);
+    set32(goaway->last_stream_id, lastid);
+    set32(goaway->errcode, code);
+    if(message){
+        strcpy((char *)goaway->data, message);
+    }
+    PushFrame(header);
+}
+
+
 void Http2Base::SendInitSetting() {
     Http2_header *header = (Http2_header *)p_malloc(sizeof(Http2_header) + sizeof(Setting_Frame));
     memset(header, 0, sizeof(Http2_header));

@@ -67,9 +67,13 @@ int vpn_start(const struct VpnConfig* vpn){
     return 0;
 }
 
-void vpn_stop(){
-    vpn_contiune = 0;
-    releaseall();
+void vpn_reset(){
     dnsdeinit();
     flushproxy2();
+}
+
+void vpn_stop(){
+    vpn_contiune = 0;
+    vpn_reset();
+    releaseall();
 }

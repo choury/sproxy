@@ -105,9 +105,10 @@ bool checkrange(Range& rg, size_t size) {
 
 File::File(HttpReqHeader& req) {
     HttpResHeader *res = nullptr;
-    ffd = open(req.filename, O_RDONLY);
+    snprintf(filename, sizeof(filename), "%s", req.filename.c_str());
+    ffd = open(filename, O_RDONLY);
     if (ffd < 0) {
-        LOGE("open file failed %s: %s\n", req.filename, strerror(errno));
+        LOGE("open file failed %s: %s\n", filename, strerror(errno));
         if(errno == ENOENT){
             res = new HttpResHeader(H404);
         }else{
@@ -116,27 +117,26 @@ File::File(HttpReqHeader& req) {
         goto err;
     }
     if (fstat(ffd, &st)) {
-        LOGE("get file info failed %s: %s\n", req.filename, strerror(errno));
+        LOGE("get file info failed %s: %s\n", filename, strerror(errno));
         res = new HttpResHeader(H500);
         goto err;
     }
 
-    if(S_ISDIR(st.st_mode) && !endwith(req.filename, "/")){
+    if(S_ISDIR(st.st_mode) && !endwith(filename, "/")){
         res = new HttpResHeader(H301);
-        snprintf(filename, sizeof(filename), "/%s/", req.filename);
+        snprintf(filename, sizeof(filename), "/%s/", filename);
         res->add("Location", filename);
         goto err;
     }
 
     if(!S_ISREG(st.st_mode)){
-        LOGE("access to no regular file %s\n", req.filename);
+        LOGE("access to no regular file %s\n", filename);
         res = new HttpResHeader(H403);
         goto err;
     }
 
     fd = eventfd(1, O_NONBLOCK);
     handleEvent = (void (Con::*)(uint32_t))&File::defaultHE;
-    snprintf(filename, sizeof(filename), "%s", req.filename);
     filemap[filename] = this;
     suffix = strrchr(filename, '.');
     return;

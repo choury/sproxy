@@ -15,7 +15,6 @@ struct ReqStatus{
 class Proxy2:public Responser, public Http2Requster {
     uint32_t curid = 1;
     std::map<uint32_t, ReqStatus> statusmap;
-//    std::set<uint32_t> waitlist;
     SSL_CTX *ctx;
     Ssl *ssl;
 protected:
@@ -27,6 +26,8 @@ protected:
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)override;
     virtual void PingProc(Http2_header *header)override;
     virtual void ErrProc(int errcode)override;
+    virtual void ResProc(HttpResHeader&& res)override;
+    virtual void GoawayProc(Http2_header * header) override;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
     virtual void defaultHE(uint32_t events);
 public:
@@ -36,16 +37,14 @@ public:
     virtual void clean(uint32_t errcode, void* index)override;
     virtual ssize_t Write(void *buff, size_t size, void* index)override;
     
-    virtual void ResProc(HttpResHeader&& res)override;
     virtual void* request(HttpReqHeader&& req)override;
     
     virtual int32_t bufleft(void* index)override;
-//    virtual void wait(void* index)override;
     virtual void writedcb(void* index)override;
 
     virtual void dump_stat()override;
     static void ping_check(Proxy2 *p);
-    static void ping_timeout(Proxy2 *p);
+    static void connection_lost(Proxy2 *p);
 };
 
 extern Proxy2* proxy2; 

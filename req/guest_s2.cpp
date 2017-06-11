@@ -4,7 +4,7 @@
 
 //#include <limits.h>
 
-void Guest_s2::peer_lost(Guest_s2 *g){
+void Guest_s2::connection_lost(Guest_s2 *g){
     LOGE("(%s): [Guest_s2] Nothing got too long, so close it\n", g->getsrc());
     g->clean(PEER_LOST_ERR, 0);
 }
@@ -24,15 +24,14 @@ Guest_s2::Guest_s2(int fd, struct sockaddr_in6* myaddr, Ssl* ssl):
 }
 
 Guest_s2::~Guest_s2() {
-    del_job((job_func)peer_lost, this);
+    del_job((job_func)connection_lost, this);
     delete ssl;
 }
-
 
 ssize_t Guest_s2::Read(void *buff, size_t size) {
     auto ret = ssl->read(buff, size);
     if(ret > 0){
-        add_job((job_func)peer_lost, this, 30000);
+        add_job((job_func)connection_lost, this, 90000);
     }
     return ret;
 }
@@ -40,7 +39,7 @@ ssize_t Guest_s2::Read(void *buff, size_t size) {
 ssize_t Guest_s2::Write(const void *buff, size_t size) {
     auto ret =  ssl->write(buff, size);
     if(ret > 0){
-        add_job((job_func)peer_lost, this, 30000);
+        add_job((job_func)connection_lost, this, 90000);
     }
     return ret;
 }
@@ -78,7 +77,6 @@ void Guest_s2::DataProc(const Http2_header* header) {
             responser->clean(ERR_FLOW_CONTROL_ERROR, status.res_index);
             LOGE("(%s) :[%d] window size error\n", getsrc(), id);
             statusmap.erase(id);
-//            waitlist.erase(id);
             return;
         }
         responser->Write(header+1, len, status.res_index);
@@ -161,7 +159,6 @@ void Guest_s2::RstProc(uint32_t id, uint32_t errcode) {
         ResStatus& status = statusmap[id];
         status.res_ptr->clean(errcode,  status.res_index);
         statusmap.erase(id);
-//        waitlist.erase(id);
     }
 }
 
@@ -173,7 +170,6 @@ void Guest_s2::WindowUpdateProc(uint32_t id, uint32_t size) {
             LOGD(DHTTP2, "window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
             status.remotewinsize += size;
             status.res_ptr->writedcb(status.res_index);
-//            waitlist.erase(id);
         }else{
             LOGD(DHTTP2, "window size updated [%d]: not found\n", id);
         }
@@ -194,7 +190,8 @@ void Guest_s2::WindowUpdateProc(uint32_t id, uint32_t size) {
 
 
 void Guest_s2::GoawayProc(Http2_header* header) {
-    clean(get32(header+1), 0);
+    Goaway_Frame* goaway = (Goaway_Frame *)(header+1);
+    clean(get32(goaway->errcode), nullptr);
 }
 
 void Guest_s2::ErrProc(int errcode) {
@@ -216,11 +213,11 @@ void Guest_s2::clean(uint32_t errcode, void* index) {
             i.second.res_ptr->clean(errcode, i.second.res_index);
         }
         statusmap.clear();
+        Goaway(-1, errcode);
         return Peer::clean(errcode, 0);
     }else{
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
-//        waitlist.erase(id);
     }
 }
 
@@ -232,12 +229,6 @@ int32_t Guest_s2::bufleft(void* index) {
     }else
         return globalwindow;
 }
-
-/*
-void Guest_s2::wait(void* index){
-    waitlist.insert((uint32_t)(long)index);
-}
-*/
 
 void Guest_s2::writedcb(void* index){
     uint32_t id = (uint32_t)(long)index;
@@ -253,7 +244,7 @@ void Guest_s2::writedcb(void* index){
 }
 
 void Guest_s2::dump_stat() {
-    LOG("Guest_s2 %p:\n", this);
+    LOG("Guest_s2 %p %s:\n", this, getsrc());
     for(auto i: statusmap){
         LOG("0x%x: %p, %p", i.first, i.second.res_ptr, i.second.res_index);
     }

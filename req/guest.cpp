@@ -192,8 +192,6 @@ void Guest::clean(uint32_t errcode, void* index) {
 void Guest::dump_stat(){
     LOG("Guest %p, %s: %p, %p\n", this, getsrc(), responser_ptr, responser_index);
     for(auto& i: reqs){
-        LOG("%s %s:%d%s\n",
-            i.header.method, i.header.hostname,
-            i.header.port, i.header.path);
+        LOG("%s %s\n", i.header.method, i.header.geturl().c_str());
     }
 }

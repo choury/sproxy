@@ -145,7 +145,7 @@ void Guest_vpn::buffHE(char* buff, size_t buflen) {
     }
 }
 
-void Guest_vpn::response(HttpResHeader && res) {
+void Guest_vpn::response(HttpResHeader&& res) {
     VpnKey& key  = *(VpnKey *)res.index;
 
     assert(statusmap.count(key));

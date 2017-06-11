@@ -81,7 +81,7 @@ public:
         return len;
     }
     size_t size() const{
-        return len+1;
+        return len;
     }
     ~istring(){
         free(str);
