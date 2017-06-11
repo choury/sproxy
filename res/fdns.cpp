@@ -6,9 +6,12 @@
 binmap<uint32_t, std::string> fdns_records;
 
 static FDns *fdns = nullptr;
-static in_addr_t fake_ip = ntohl(inet_addr("10.0.0.2"));
+static in_addr_t fake_ip = 0 ;
 
 FDns::FDns() {
+    if(fake_ip == 0){
+        fake_ip = ntohl(inet_addr("10.0.0.2"));
+    }
 }
 
 FDns::~FDns() {
