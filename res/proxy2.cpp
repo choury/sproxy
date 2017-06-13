@@ -131,8 +131,8 @@ void Proxy2::DataProc(const Http2_header* header) {
         Requester* requester = status.req_ptr;
         if(len > status.localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
+            LOGE("(%s) :[%d] window size error\n", requester->getsrc(status.req_index), id);
             requester->clean(ERR_FLOW_CONTROL_ERROR, status.req_index);
-            LOGE("(%s) :[%d] window size error\n", requester->getsrc(), id);
             statusmap.erase(id);
             return;
         }
@@ -160,7 +160,7 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
         ReqStatus& status = statusmap[id];
         if(errcode){
             LOGE("(%s) [%d]: stream reseted: %d\n",
-                 status.req_ptr->getsrc(), id, errcode);
+                 status.req_ptr->getsrc(status.req_index), id, errcode);
         }
         status.req_ptr->Write((const void*)nullptr, 0, status.req_index);  //for http/1.0
         status.req_ptr->clean(errcode, status.req_index);

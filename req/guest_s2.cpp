@@ -5,7 +5,7 @@
 //#include <limits.h>
 
 void Guest_s2::connection_lost(Guest_s2 *g){
-    LOGE("(%s): [Guest_s2] Nothing got too long, so close it\n", g->getsrc());
+    LOGE("(%s): [Guest_s2] Nothing got too long, so close it\n", g->getsrc(nullptr));
     g->clean(PEER_LOST_ERR, 0);
 }
 
@@ -75,7 +75,7 @@ void Guest_s2::DataProc(const Http2_header* header) {
         if(len > status.localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
             responser->clean(ERR_FLOW_CONTROL_ERROR, status.res_index);
-            LOGE("(%s) :[%d] window size error\n", getsrc(), id);
+            LOGE("(%s) :[%d] window size error\n", getsrc(nullptr), id);
             statusmap.erase(id);
             return;
         }
@@ -119,7 +119,7 @@ void Guest_s2::defaultHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("(%s): guest_s error:%s\n", getsrc(), strerror(error));
+            LOGE("(%s): guest_s error:%s\n", getsrc(nullptr), strerror(error));
         }
         clean(INTERNAL_ERR, 0);
         return;
@@ -155,7 +155,7 @@ void Guest_s2::defaultHE(uint32_t events) {
 void Guest_s2::RstProc(uint32_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         if(errcode)
-            LOGE("(%s) [%d]: stream  reseted: %d\n", getsrc(), id, errcode);
+            LOGE("(%s) [%d]: stream  reseted: %d\n", getsrc(nullptr), id, errcode);
         ResStatus& status = statusmap[id];
         status.res_ptr->clean(errcode,  status.res_index);
         statusmap.erase(id);
@@ -243,8 +243,19 @@ void Guest_s2::writedcb(void* index){
     }
 }
 
+const char * Guest_s2::getsrc(void* index){
+    static char src[DOMAINLIMIT];
+    if(index == nullptr){
+        sprintf(src, "%s:%d", sourceip, sourceport);
+    }else{
+        sprintf(src, "%s:%d [%u]", sourceip, sourceport, (uint32_t)(long)index);
+    }
+    return src;
+}
+
+
 void Guest_s2::dump_stat() {
-    LOG("Guest_s2 %p %s:\n", this, getsrc());
+    LOG("Guest_s2 %p %s:\n", this, getsrc(nullptr));
     for(auto i: statusmap){
         LOG("0x%x: %p, %p", i.first, i.second.res_ptr, i.second.res_index);
     }

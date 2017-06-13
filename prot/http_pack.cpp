@@ -170,9 +170,17 @@ HttpReqHeader::HttpReqHeader(std::multimap<istring, string>&& headers, ResObject
             add(i.first, i.second);
         }
     }
-    snprintf(protocol, sizeof(protocol), "%s", get(":scheme"));
     snprintf(method, sizeof(method), "%s", get(":method"));
-    snprintf(path, sizeof(path), "%s", get(":path"));
+    if(get(":scheme")){
+        snprintf(protocol, sizeof(protocol), "%s", get(":scheme"));
+    }else{
+        protocol[0] = 0;
+    }
+    if(get(":path")){
+        snprintf(path, sizeof(path), "%s", get(":path"));
+    }else{
+        strcpy(path, "/");
+    }
     
     if (get(":authority")){
         spliturl(get(":authority"), nullptr, hostname, nullptr, &port);
@@ -248,6 +256,7 @@ std::string HttpReqHeader::geturl() const {
     }else{
         pos += sprintf(pos, ":%d", port);
     }
+    assert(path[0] == '/');
     if(path[1]){
         pos += sprintf(pos, "%s", path);
     }
@@ -312,17 +321,16 @@ char *HttpReqHeader::getstring(size_t &len) const{
 }
 
 bool HttpReqHeader::no_body() const {
-    if(!ismethod("POST") && 
-       !ismethod("PUT") &&
-       !ismethod("PATCH") &&
-       !ismethod("CONNECT") &&
-       !ismethod("SEND"))
+    if(ismethod("GET") ||
+       ismethod("DELETE") ||
+       ismethod("HEAD"))
     {
         return true;
     }
     if(get("content-length") &&
        strcmp("0", get("content-length"))==0 &&
-       !ismethod("CONNECT"))
+       !ismethod("CONNECT") &&
+       !ismethod("SEND"))
     {
         return true;
     }
@@ -342,7 +350,7 @@ Http2_header *HttpReqHeader::getframe(Index_table *index_table, uint32_t http_id
 
     char *p = (char *)(header + 1);
     p += index_table->hpack_encode(p, ":method", method);
-    if(get("host") && !ismethod("CONNECT")){
+    if(get("host") && !ismethod("CONNECT") && !ismethod("SEND")){
         p += index_table->hpack_encode(p, ":authority" ,get("host"));
     }else{
         char authority[URLLIMIT];

@@ -48,6 +48,7 @@ public:
 
     virtual int32_t bufleft(void* index)override;
     virtual void clean(uint32_t errcode, void* index)override;
+    virtual const char *getsrc(void* index)override;
     virtual void dump_stat()override;
 };
 

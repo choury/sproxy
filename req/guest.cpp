@@ -55,7 +55,7 @@ void Guest::defaultHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("(%s): guest error:%s\n", getsrc(), strerror(error));
+            LOGE("(%s): guest error:%s\n", getsrc(nullptr), strerror(error));
         }
         clean(INTERNAL_ERR, 0);
     }
@@ -161,13 +161,13 @@ ssize_t Guest::Write(void *buff, size_t size, void* index) {
 
 ssize_t Guest::DataProc(const void *buff, size_t size) {
     if (responser_ptr == nullptr) {
-        LOGE("(%s): connecting to host lost\n", getsrc());
+        LOGE("(%s): connecting to host lost\n", getsrc(nullptr));
         clean(PEER_LOST_ERR, 0);
         return -1;
     }
     int len = responser_ptr->bufleft(responser_index);
     if (len <= 0) {
-        LOGE("(%s): The host's buff is full\n", getsrc());
+        LOGE("(%s): The host's buff is full\n", getsrc(nullptr));
 //        responser_ptr->wait(responser_index);
         updateEpoll(0);
         return -1;
@@ -189,8 +189,14 @@ void Guest::clean(uint32_t errcode, void* index) {
     Peer::clean(errcode, 0);
 }
 
+const char* Guest::getsrc(void *){
+    static char src[DOMAINLIMIT];
+    sprintf(src, "[%s]:%d", sourceip, sourceport);
+    return src;
+}
+
 void Guest::dump_stat(){
-    LOG("Guest %p, %s: %p, %p\n", this, getsrc(), responser_ptr, responser_index);
+    LOG("Guest %p, %s: %p, %p\n", this, getsrc(nullptr), responser_ptr, responser_index);
     for(auto& i: reqs){
         LOG("%s %s\n", i.header.method, i.header.geturl().c_str());
     }

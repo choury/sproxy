@@ -16,7 +16,7 @@ public:
     explicit Requester(int fd, struct sockaddr_in6 *myaddr = nullptr);
     explicit Requester(int fd, const char *ip, uint16_t port);
     
-    virtual const char *getsrc();
+    virtual const char *getsrc(void* index) = 0;
     virtual const char *getip();
     virtual void response(HttpResHeader&& res) = 0;
 };

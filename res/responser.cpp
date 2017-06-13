@@ -43,7 +43,7 @@ Responser* distribute(HttpReqHeader& req, Responser* responser_ptr) {
     Requester *requester = req.src;
     char log_buff[URLLIMIT];
     snprintf(log_buff, sizeof(log_buff), "(%s): %s %s [%s]",
-            requester->getsrc(), req.method,
+            requester->getsrc(req.index), req.method,
             req.geturl().c_str(), req.get("User-Agent"));
     if(!req.hostname[0]){
         LOG("[[bad request]] %s\n", log_buff);

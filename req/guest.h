@@ -29,6 +29,7 @@ public:
     virtual ssize_t Write(void* buff, size_t size, void* index)override;
     virtual void clean(uint32_t errcode, void* index)override;
     virtual void response(HttpResHeader&& res)override;
+    virtual const char* getsrc(void *)override;
     virtual void dump_stat()override;
     friend void request_next(Guest * guest);
 };

@@ -44,6 +44,7 @@ public:
     virtual void response(HttpResHeader&& res)override;
     virtual void writedcb(void* index)override;
 
+    virtual const char* getsrc(void *)override;
     virtual void dump_stat()override;
     static void connection_lost(Guest_s2* g);
 };

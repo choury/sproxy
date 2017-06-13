@@ -1,13 +1,11 @@
 #include "guest_vpn.h"
-//#include "prot/ip_pack.h"
 #include "vpn.h"
 
-//#include "misc/net.h"
 #include "misc/job.h"
 #include "res/proxy.h"
 #include "res/fdns.h"
 
-//#include <unistd.h>
+#include <fstream>
 
 static void vpn_aged(VpnStatus* status){
     LOGD(DVPN, "<%s> %s -> %s aged.\n",
@@ -582,6 +580,129 @@ void Guest_vpn::clean(uint32_t errcode, void* index) {
     statusmap.erase(*key);
     delete key;
 }
+
+#ifndef __ANDROID__
+#include<dirent.h>
+const char* findpid(ino_t inode){
+    static char pid[30];
+    sprintf(pid, "Unkown pid(%lu)", inode);
+    bool found = false;
+    DIR* dir = opendir("/proc");
+    if(dir == nullptr){
+        LOGE("open proc dir failed: %s\n", strerror(errno));
+        return 0;
+    }
+    char socklink[20];
+    sprintf(socklink, "socket:[%lu]", inode);
+    struct dirent *ptr;
+    while((ptr = readdir(dir)) != nullptr && found == false)
+    {
+        //如果读取到的是"."或者".."则跳过，读取到的不是文件夹名字也跳过
+        if((strcmp(ptr->d_name, ".") == 0) || (strcmp(ptr->d_name, "..") == 0)) continue;
+        if(ptr->d_type != DT_DIR) continue;
+
+        char fddirname[20];
+        sprintf(fddirname, "/proc/%s/fd", ptr->d_name);
+        DIR *fddir = opendir(fddirname);
+        if(fddir == nullptr){
+            continue;
+        }
+        struct dirent *fdptr;
+        while((fdptr = readdir(fddir)) != nullptr){
+            char fdname[50];
+            sprintf(fdname, "%s/%s", fddirname, fdptr->d_name);
+            char iname[20];
+            int ret = readlink(fdname, iname, sizeof(iname));
+            if(ret > 0 && memcmp(iname, socklink, ret) == 0){
+                strcpy(pid, ptr->d_name);
+                found = true;
+                break;
+            }
+        }
+        closedir(fddir);
+    }
+    closedir(dir);
+    return pid;
+}
+#else
+const char* getpackagename(int uid);
+#endif
+
+const char * Guest_vpn::getsrc(void* index) {
+    VpnKey* key = (VpnKey*)index;
+    if(index == nullptr){
+        return "Myself";
+    }
+    std::ifstream netfile;
+    if(key->protocol == Protocol::TCP){
+        netfile.open("/proc/net/tcp");
+    }
+    if(key->protocol == Protocol::UDP){
+        netfile.open("/proc/net/udp");
+    }
+    if(netfile.good()) {
+        std::string line;
+        std::getline(netfile, line); //drop the title line
+        while (std::getline(netfile, line)) {
+            uint32_t srcip, dstip;
+            unsigned int srcport, dstport;
+            int uid = 0;
+            ino_t inode = 0;
+            sscanf(line.c_str(), "%*d: %x:%x %x:%x %*x %*x:%*x %*d:%*x %*d %d %*d %lu",
+                                &srcip, &srcport, &dstip, &dstport, &uid, &inode);
+            if(key->src.addr_in.sin_port == htons(srcport) &&
+                key->dst.addr_in.sin_addr.s_addr == dstip &&
+                key->dst.addr_in.sin_port == htons(dstport))
+            {
+#ifndef __ANDROID__
+                return findpid(inode);
+#else
+                return getpackagename(uid);
+#endif
+            }
+        }
+        netfile.close();
+    }
+    std::ifstream net6file;
+    if(key->protocol == Protocol::TCP){
+        net6file.open("/proc/net/tcp6");
+    }
+    if(key->protocol == Protocol::UDP){
+        net6file.open("/proc/net/udp6");
+    }
+    if(net6file.good()) {
+        std::string line;
+        std::getline(net6file, line); //drop the title line
+        while (std::getline(net6file, line)) {
+            unsigned int srcport, dstport;
+            int uid = 0;
+            ino_t inode = 0;
+            uint32_t srcip[4], dstip[4];
+            sscanf(line.c_str(), "%*d: %8X%8X%8X%8X:%X %8X%8X%8X%8X:%X %*x %*x:%*x %*d:%*x %*d %d %*d %lu",
+                                srcip, srcip+1, srcip+2, srcip+3, &srcport,
+                                dstip, dstip+1, dstip+2, dstip+3, &dstport, &uid, &inode);
+            if(key->src.addr_in.sin_port == htons(srcport) &&
+                key->dst.addr_in.sin_addr.s_addr == dstip[3] &&
+                key->dst.addr_in.sin_port == htons(dstport))
+            {
+#ifndef __ANDROID__
+                return findpid(inode);
+#else
+                return getpackagename(uid);
+#endif
+            }
+        }
+        netfile.close();
+    }
+    LOGE("Get src failed for %s %08X:%04X %08X:%04X\n",
+                    protstr(key->protocol),
+                    key->src.addr_in.sin_addr.s_addr,
+                    ntohs(key->src.addr_in.sin_port),
+                    key->dst.addr_in.sin_addr.s_addr,
+                    ntohs(key->dst.addr_in.sin_port));
+    return "Unkown inode";
+}
+
 
 void Guest_vpn::dump_stat() {
     LOG("Guest_vpn %p:\n", this);

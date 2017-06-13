@@ -30,7 +30,7 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     sprintf(vpn.server, "dtls://%s", server_str);
     env->ReleaseStringUTFChars(server, server_str);
     vpn.fd = sockfd;
-
+    env->DeleteLocalRef(server);
     vpn_start(&vpn);
 }
 
@@ -53,5 +53,22 @@ int protectFd(int sockfd) {
     jnijvm->GetEnv((void **)&jnienv, JNI_VERSION_1_6);
     jclass cls = jnienv->GetObjectClass(jniobj);
     jmethodID mid = jnienv->GetMethodID(cls, "protect", "(I)Z");
-    return jnienv->CallBooleanMethod(jniobj, mid, sockfd);
+    int ret =  jnienv->CallBooleanMethod(jniobj, mid, sockfd);
+    jnienv->DeleteLocalRef(cls);
+    return ret;
+}
+
+const char* getpackagename(int uid) {
+    static char name[DOMAINLIMIT];
+    JNIEnv *jnienv;
+    jnijvm->GetEnv((void **)&jnienv, JNI_VERSION_1_6);
+    jclass cls = jnienv->GetObjectClass(jniobj);
+    jmethodID mid = jnienv->GetMethodID(cls, "getPackageName", "(I)Ljava/lang/String;");
+    jstring jname = (jstring)jnienv->CallObjectMethod(jniobj, mid, uid);
+    const char *jname_str = jnienv->GetStringUTFChars(jname, 0);
+    strcpy(name, jname_str);
+    jnienv->ReleaseStringUTFChars(jname, jname_str);
+    jnienv->DeleteLocalRef(jname);
+    jnienv->DeleteLocalRef(cls);
+    return name;
 }

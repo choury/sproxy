@@ -47,12 +47,12 @@ class HttpReqHeader: public HttpHeader{
     void getfile();
 public:
     Requester* src;
-    char hostname[DOMAINLIMIT];
     char method[20];
-    char path[URLLIMIT];
     char protocol[20];
+    char path[URLLIMIT];
+    char hostname[DOMAINLIMIT] = {0};
+    uint16_t port = 0;
     std::string filename;
-    uint16_t port;
     std::vector<Range> ranges;
     bool should_proxy  = false;
     explicit HttpReqHeader(const char* header,  ResObject* src);

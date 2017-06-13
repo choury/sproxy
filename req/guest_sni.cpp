@@ -16,7 +16,7 @@ void Guest_sni::initHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("(%s): guest_sni error:%s\n", getsrc(), strerror(error));
+            LOGE("(%s): guest_sni error:%s\n", getsrc(nullptr), strerror(error));
         }
         clean(INTERNAL_ERR, 0);
         return;
@@ -61,7 +61,7 @@ void Guest_sni::response(HttpResHeader&& res){
     (this->*Http_Proc)();
 }
 
-const char* Guest_sni::getsrc(){
+const char* Guest_sni::getsrc(void *){
     static char src[DOMAINLIMIT];
     sprintf(src, "[%s]:%d [SNI]", sourceip, sourceport);
     return src;
