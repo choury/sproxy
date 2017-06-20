@@ -695,48 +695,107 @@ HttpBody::HttpBody(HttpBody && copy){
     }
 }
 
-size_t HttpBody::push(const void* buff, size_t len) {
+void HttpBody::push(const void* buff, size_t len) {
     return push(p_memdup(buff, len), len);
 }
 
-size_t HttpBody::push(void* buff, size_t len) {
+void HttpBody::push(void* buff, size_t len) {
+    content_size += len;
     if(len){
-        data.push(std::make_pair(buff, len));
-        content_size += len;
+        data.push(write_block{buff, len, 0});
     }else{
         p_free(buff);
-        data.push(std::make_pair(nullptr, 0));
+        data.push(write_block{nullptr, 0, 0});
     }
-    return len;
 }
 
-size_t HttpBody::push(std::pair<void *, size_t> data) {
-    return push(data.first, data.second);
+void HttpBody::push(const write_block& wb) {
+    content_size += (wb.len - wb.wlen);
+    return data.push(wb);
 }
 
 
 
-std::pair<void*, size_t> HttpBody::pop(){
+write_block HttpBody::pop(){
     if(data.empty()){
-        return std::make_pair(nullptr, 0);
+        return write_block{nullptr, 0, 0};
     }else{
         auto ret = data.front();
         data.pop();
-        content_size -= ret.second;
+        content_size -= (ret.len - ret.wlen);
         return ret;
     }
 }
 
-size_t HttpBody::size() {
-    assert(bool(content_size) ==  data.empty());
+size_t& HttpBody::size() {
+    assert(bool(content_size) ==  !data.empty() ||
+          (content_size == 0 && data.size() == 1 && data.back().wlen == data.back().len));
     return content_size;
 }
 
-
-
 HttpBody::~HttpBody() {
     while(data.size()){
-       p_free(data.front().first);
+       p_free(data.front().buff);
        data.pop();
     }
 }
+
+HttpReq::~HttpReq() {
+    p_free(header_buff);
+    delete header;
+}
+
+HttpReq::HttpReq(HttpReq && copy):body(std::move(copy.body)){
+    header_buff = copy.header_buff;
+    header_len = copy.header_len;
+    header_sent = copy.header_sent;
+    header = copy.header;
+
+    copy.header_buff = nullptr;
+    copy.header = nullptr;
+}
+
+
+ssize_t HttpReq::Write_string(std::function<ssize_t (const void *, size_t)> write_func){
+    if(header_buff == nullptr){
+        header_buff = header->getstring(header_len);
+    }
+    ssize_t writed = 0;
+    assert(header_sent <= header_len);
+    while(header_sent <  header_len){
+        ssize_t ret = write_func((char *)header_buff + header_sent, header_len - header_sent);
+        if(ret <= 0){
+            return ret;
+        }
+        header_sent += ret;
+        writed += ret;
+    }
+    while(body.size()){
+        write_block& wb = body.data.front();
+        ssize_t ret = write_func((char *)wb.buff + wb.wlen, wb.len - wb.wlen);
+        if (ret <= 0) {
+            return ret;
+        }
+
+        writed += true;
+        body.size() -= ret;
+        assert(ret + wb.wlen <= wb.len);
+        if ((size_t)ret + wb.wlen == wb.len) {
+            p_free(wb.buff);
+            body.data.pop();
+        } else {
+            wb.wlen += ret;
+            break;
+        }
+    }
+    return writed;
+}
+
+size_t HttpReq::size(){
+    if(header_buff == nullptr){
+        return body.size() + BUF_LEN;
+    }else{
+        return body.size() + header_len - header_sent;
+    }
+}
+

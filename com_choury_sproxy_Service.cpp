@@ -27,7 +27,7 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
 
     vpn.disable_ipv6 = 1;
     vpn.ignore_cert_error = 1;
-    sprintf(vpn.server, "dtls://%s", server_str);
+    sprintf(vpn.server, "ssl://%s", server_str);
     env->ReleaseStringUTFChars(server, server_str);
     vpn.fd = sockfd;
     env->DeleteLocalRef(server);
@@ -37,11 +37,6 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(JNIEnv *, jobject){
     LOG("native SproxyVpnService.stop.");
     return vpn_stop();
-}
-
-JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reset(JNIEnv *, jobject) {
-    LOG("native SproxyVpnService.reset.");
-    return vpn_reset();
 }
 
 /*

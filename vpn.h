@@ -21,7 +21,6 @@ struct VpnConfig{
 };
 
 int vpn_start(const struct VpnConfig* vpn);
-void vpn_reset();
 void vpn_stop();
 #endif
 

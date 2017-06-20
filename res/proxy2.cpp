@@ -5,27 +5,29 @@
 
 Proxy2* proxy2 = nullptr;
 
+
+static void connection_lost(Proxy2 *p){
+    LOGE("[Proxy2] %p the ping timeout, so close it\n", p);
+    p->clean(PEER_LOST_ERR, 0);
+}
+
 void Proxy2::ping_check(Proxy2 *p){
-    if(proxy2 != p && p->statusmap.empty()){
-        p->clean(NOERROR, 0);
-        return;
-    }
+    del_job((job_func)ping_check, p);
     char buff[8];
     set64(buff, getutime());
     p->Ping(buff);
     LOGD(DHTTP2, "window size global: %d/%d\n", p->localwinsize, p->remotewinsize);
-    add_job((job_func)ping_check, p, 5000);
-}
-
-void Proxy2::connection_lost(Proxy2 *p){
-    LOGE("[Proxy2] %p the ping timeout, so close it\n", p);
-    p->clean(PEER_LOST_ERR, 0);
+    add_job((job_func)connection_lost, p, 3000);
 }
 
 Proxy2::Proxy2(int fd, SSL_CTX *ctx, Ssl *ssl): ctx(ctx), ssl(ssl) {
     this->fd = fd;
     updateEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Con::*)(uint32_t))&Proxy2::defaultHE;
+#ifdef __ANDROID__
+    receive_time = getmtime();
+    ping_time = getmtime();
+#endif
 }
 
 Proxy2::~Proxy2() {
@@ -40,8 +42,11 @@ Proxy2::~Proxy2() {
 ssize_t Proxy2::Read(void* buff, size_t len) {
     auto ret = ssl->read(buff, len);
     if(ret > 0){
-        add_job((job_func)ping_check, this, 60000);
-        add_job((job_func)connection_lost, this, 63000);
+#ifndef __ANDROID__
+        add_job((job_func)ping_check, this, 30000);
+#else
+        receive_time = getmtime();
+#endif
     }
     return ret;
 }
@@ -51,7 +56,16 @@ ssize_t Proxy2::Write(const void *buff, size_t len) {
     return ssl->write(buff, len);
 }
 
-ssize_t Proxy2::Write(void* buff, size_t size, void* index) {
+int32_t Proxy2::bufleft(void* index) {
+    int32_t globalwindow = Min(1024*1024 - (int32_t)framelen, this->remotewinsize);
+    if(index)
+        return Min(statusmap.at((uint32_t)(long)index).remotewinsize, globalwindow);
+    else
+        return globalwindow;
+}
+
+
+ssize_t Proxy2::Send(void* buff, size_t size, void* index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     size = Min(size, FRAMEBODYLIMIT);
@@ -70,18 +84,15 @@ ssize_t Proxy2::Write(void* buff, size_t size, void* index) {
 
 void Proxy2::PushFrame(Http2_header *header){
     updateEpoll(EPOLLIN | EPOLLOUT);
+#ifdef __ANDROID__
+    uint32_t now = getmtime();
+    if(now - receive_time >=30000 && now - ping_time >=5000){
+        ping_time = now;
+        ping_check(this);
+    }
+#endif
     return Http2Base::PushFrame(header);
 }
-
-
-int32_t Proxy2::bufleft(void* index) {
-    int32_t globalwindow = Min(1024*1024 - (int32_t)framelen, this->remotewinsize);
-    if(index)
-        return Min(statusmap.at((uint32_t)(long)index).remotewinsize, globalwindow);
-    else
-        return globalwindow;
-}
-
 
 void Proxy2::defaultHE(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
@@ -116,9 +127,13 @@ void Proxy2::defaultHE(uint32_t events) {
             clean(WRITE_ERR, 0);
             return;
         }
-        if (framequeue.empty()) {
+        if(framequeue.empty()){
             updateEpoll(EPOLLIN);
         }
+    }
+    if(proxy2 != this && statusmap.empty()){
+        LOG("this is not the proxy2 and no clients, close it.\n");
+        clean(NOERROR, 0);
     }
 }
 
@@ -136,10 +151,10 @@ void Proxy2::DataProc(const Http2_header* header) {
             statusmap.erase(id);
             return;
         }
-        requester->Write(header+1, len, status.req_index);
+        requester->Send(header+1, len, status.req_index);
         if(header->flags & END_STREAM_F){
             if(len)
-                requester->Write((const void*)nullptr, 0, status.req_index);
+                requester->Send((const void*)nullptr, 0, status.req_index);
         }else{
             status.localwinsize -= len;
         }
@@ -162,11 +177,11 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
             LOGE("(%s) [%d]: stream reseted: %d\n",
                  status.req_ptr->getsrc(status.req_index), id, errcode);
         }
-        status.req_ptr->Write((const void*)nullptr, 0, status.req_index);  //for http/1.0
+        status.req_ptr->Send((const void*)nullptr, 0, status.req_index);  //for http/1.0
         status.req_ptr->clean(errcode, status.req_index);
         statusmap.erase(id);
-//        waitlist.erase(id);
     }
+
 }
 
 void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
@@ -196,6 +211,7 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
 
 void Proxy2::PingProc(Http2_header *header){
     if(header->flags & ACK_F){
+        del_job((job_func)connection_lost, this);
         double diff = (getutime()-get64(header+1))/1000.0;
         LOG("[Proxy2] Get a ping time=%.3fms\n", diff);
         if(diff >= 5000){
@@ -206,32 +222,35 @@ void Proxy2::PingProc(Http2_header *header){
 }
 
 
-void* Proxy2::request(HttpReqHeader&& req) {
+void* Proxy2::request(HttpReqHeader* req) {
     statusmap[curid] = ReqStatus{
-       req.src,
-       req.index,
+       req->src,
+       req->index,
        (int32_t)remoteframewindowsize,
        localframewindowsize
     };
-    req.index = reinterpret_cast<void*>(curid);  //change to proxy server's id
+    req->index = reinterpret_cast<void*>(curid);  //change to proxy server's id
     curid += 2;
-    PushFrame(req.getframe(&request_table, (uint32_t)(long)req.index));
-    return req.index;
+    PushFrame(req->getframe(&request_table, (uint32_t)(long)req->index));
+    auto ret = req->index;
+    delete req;
+    return ret;
 }
 
-void Proxy2::ResProc(HttpResHeader&& res) {
-    uint32_t id = (uint32_t)(long)res.index;
+void Proxy2::ResProc(HttpResHeader* res) {
+    uint32_t id = (uint32_t)(long)res->index;
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
-        if((res.flags & END_STREAM_F) == 0 &&
-           !res.get("Content-Length") &&
-           res.status[0] != '1')  //1xx should not have body
+        if((res->flags & END_STREAM_F) == 0 &&
+           !res->get("Content-Length") &&
+           res->status[0] != '1')  //1xx should not have body
         {
-            res.add("Transfer-Encoding", "chunked");
+            res->add("Transfer-Encoding", "chunked");
         }
-        res.index = status.req_index;  //change back to req's id
-        status.req_ptr->response(std::move(res));
+        res->index = status.req_index;  //change back to req's id
+        status.req_ptr->response(res);
     }else{
+        delete res;
         Reset(id, ERR_STREAM_CLOSED);
     }
 }
@@ -266,7 +285,6 @@ void Proxy2::clean(uint32_t errcode, void* index) {
            status.req_ptr->clean(errcode, status.req_index);
         }
         statusmap.erase(id);
-//        waitlist.erase(id);
     }
 }
 
@@ -290,7 +308,6 @@ void Proxy2::dump_stat() {
         LOG("0x%x: %p, %p\n", i.first, i.second.req_ptr, i.second.req_index);
     }
 }
-
 
 void flushproxy2() {
     if(proxy2)

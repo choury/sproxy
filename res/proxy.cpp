@@ -11,12 +11,12 @@ Proxy::Proxy(const char* hostname, uint16_t port, Protocol protocol):
 
 }
 
-Responser* Proxy::getproxy(HttpReqHeader &req, Responser* responser_ptr) {
+Responser* Proxy::getproxy(HttpReqHeader* req, Responser* responser_ptr) {
     if (proxy2) {
         return proxy2;
     }
     Proxy *proxy = dynamic_cast<Proxy *>(responser_ptr);
-    if(req.ismethod("CONNECT") || req.ismethod("SEND")){
+    if(req->ismethod("CONNECT") || req->ismethod("SEND")){
 #ifndef NDEBUG
         if (proxy) {
             assert((proxy->http_flag & HTTP_CONNECT_F) == 0 &&
@@ -199,8 +199,13 @@ void Proxy::shakehandHE(uint32_t events) {
             if(!proxy2){
                 proxy2 = new_proxy;
             }
+            while(!reqs.empty()){
+                status.req_ptr->transfer(status.req_index, new_proxy,
+                                        new_proxy->request(std::move(reqs.front())));
+                reqs.pop_front();
+            }
             this->discard();
-            clean(CONNECT_FAILED, 0); //discard the first request, let client to retry.
+            clean(CONNECT_FAILED, 0);
         }else{
             if(protocol == Protocol::UDP){
                 LOGE("Warning: Use http1.1 on dtls!\n");

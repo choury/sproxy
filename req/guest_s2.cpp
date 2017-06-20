@@ -4,7 +4,7 @@
 
 //#include <limits.h>
 
-void Guest_s2::connection_lost(Guest_s2 *g){
+static void connection_lost(Guest_s2 *g){
     LOGE("(%s): [Guest_s2] Nothing got too long, so close it\n", g->getsrc(nullptr));
     g->clean(PEER_LOST_ERR, 0);
 }
@@ -31,7 +31,7 @@ Guest_s2::~Guest_s2() {
 ssize_t Guest_s2::Read(void *buff, size_t size) {
     auto ret = ssl->read(buff, size);
     if(ret > 0){
-        add_job((job_func)connection_lost, this, 90000);
+        add_job((job_func)connection_lost, this, 900000);
     }
     return ret;
 }
@@ -39,12 +39,21 @@ ssize_t Guest_s2::Read(void *buff, size_t size) {
 ssize_t Guest_s2::Write(const void *buff, size_t size) {
     auto ret =  ssl->write(buff, size);
     if(ret > 0){
-        add_job((job_func)connection_lost, this, 90000);
+        add_job((job_func)connection_lost, this, 900000);
     }
     return ret;
 }
 
-ssize_t Guest_s2::Write(void *buff, size_t size, void* index) {
+int32_t Guest_s2::bufleft(void* index) {
+    int32_t globalwindow = Min(1024*1024 - (int32_t)framelen, this->remotewinsize);
+    if(index){
+        assert(statusmap.count((uint32_t)(long)index));
+        return Min(statusmap[(uint32_t)(long)index].remotewinsize, globalwindow);
+    }else
+        return globalwindow;
+}
+
+ssize_t Guest_s2::Send(void *buff, size_t size, void* index) {
     uint32_t id = (uint32_t)(long)index;
     size = Min(size, FRAMEBODYLIMIT);
     Http2_header *header=(Http2_header *)p_move(buff, -(char)sizeof(Http2_header));
@@ -79,10 +88,10 @@ void Guest_s2::DataProc(const Http2_header* header) {
             statusmap.erase(id);
             return;
         }
-        responser->Write(header+1, len, status.res_index);
+        responser->Send(header+1, len, status.res_index);
         if(header->flags & END_STREAM_F){
             if(len)
-                responser->Write((const void*)nullptr, 0, status.res_index);
+                responser->Send((const void*)nullptr, 0, status.res_index);
         }else{
             status.localwinsize -= len;
         }
@@ -92,25 +101,37 @@ void Guest_s2::DataProc(const Http2_header* header) {
     localwinsize -= len;
 }
 
-void Guest_s2::ReqProc(HttpReqHeader&& req) {
+void Guest_s2::ReqProc(HttpReqHeader* req) {
     Responser *responser = distribute(req, nullptr);
-    uint32_t id = (uint32_t)(long)req.index;
+    uint32_t id = (uint32_t)(long)req->index;
     if(responser){
         statusmap[id]=ResStatus{
             responser,
-            responser->request(std::move(req)),
+            responser->request(req),
             (int32_t)remoteframewindowsize,
             localframewindowsize
         };
+    }else{
+        delete req;
     }
 }
 
-void Guest_s2::response(HttpResHeader&& res) {
-    assert(res.index);
-    res.del("Transfer-Encoding");
-    res.del("Connection");
-    PushFrame(res.getframe(&request_table, (uint32_t)(long)res.index));
+void Guest_s2::response(HttpResHeader* res) {
+    assert(res->index);
+    res->del("Transfer-Encoding");
+    res->del("Connection");
+    PushFrame(res->getframe(&request_table, (uint32_t)(long)res->index));
+    delete res;
 }
+
+void Guest_s2::transfer(void* index, Responser* res_ptr, void* res_index) {
+    uint32_t id = (uint32_t)(long)index;
+    assert(statusmap.count(id));
+    ResStatus& status = statusmap[id];
+    status.res_ptr = res_ptr;
+    status.res_index = res_index;
+}
+
 
 
 void Guest_s2::defaultHE(uint32_t events) {
@@ -146,11 +167,21 @@ void Guest_s2::defaultHE(uint32_t events) {
             clean(WRITE_ERR, 0);
             return;
         }
-        if (framequeue.empty()) {
+        if(framequeue.empty()) {
             updateEpoll(EPOLLIN);
         }
     }
 }
+
+void Guest_s2::closeHE(uint32_t events) {
+    int ret = SendFrame();
+    if (framequeue.empty() ||
+        (ret <= 0 && showerrinfo(ret, "write error while closing"))) {
+        delete this;
+        return;
+    }
+}
+
 
 void Guest_s2::RstProc(uint32_t id, uint32_t errcode) {
     if(statusmap.count(id)){
@@ -221,14 +252,6 @@ void Guest_s2::clean(uint32_t errcode, void* index) {
     }
 }
 
-int32_t Guest_s2::bufleft(void* index) {
-    int32_t globalwindow = Min(1024*1024 - (int32_t)framelen, this->remotewinsize);
-    if(index){
-        assert(statusmap.count((uint32_t)(long)index));
-        return Min(statusmap[(uint32_t)(long)index].remotewinsize, globalwindow);
-    }else
-        return globalwindow;
-}
 
 void Guest_s2::writedcb(void* index){
     uint32_t id = (uint32_t)(long)index;
@@ -257,7 +280,7 @@ const char * Guest_s2::getsrc(void* index){
 void Guest_s2::dump_stat() {
     LOG("Guest_s2 %p %s:\n", this, getsrc(nullptr));
     for(auto i: statusmap){
-        LOG("0x%x: %p, %p", i.first, i.second.res_ptr, i.second.res_index);
+        LOG("0x%x: %p, %p\n", i.first, i.second.res_ptr, i.second.res_index);
     }
 }
 

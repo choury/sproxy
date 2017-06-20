@@ -131,18 +131,18 @@ void HttpResponser::HeaderProc() {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - http_buff;
         try {
-            HttpReqHeader req(http_buff, this);
-            if(req.no_body()){
+            HttpReqHeader* req = new HttpReqHeader(http_buff, this);
+            if(req->no_body()){
                 Http_Proc = (void (HttpBase::*)())&HttpResponser::HeaderProc;
-            }else if (req.get("Content-Length") == nullptr || 
-                      req.ismethod("CONNECT")) 
+            }else if (req->get("Content-Length") == nullptr ||
+                      req->ismethod("CONNECT"))
             {
                 Http_Proc = &HttpResponser::AlwaysProc;
             }else{
                 Http_Proc = &HttpResponser::FixLenProc;
-                http_expectlen = strtoull(req.get("Content-Length"), nullptr, 10);
+                http_expectlen = strtoull(req->get("Content-Length"), nullptr, 10);
             }
-            ReqProc(std::move(req));
+            ReqProc(req);
 
         }catch(...) {
             ErrProc(HTTP_PROTOCOL_ERR);
@@ -175,22 +175,22 @@ void HttpRequester::HeaderProc() {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - http_buff;
         try {
-            HttpResHeader res(http_buff);
-            if(res.no_body() || res.status[0] == '1'){
+            HttpResHeader* res = new HttpResHeader(http_buff);
+            if(res->no_body() || res->status[0] == '1'){
                 http_flag |= HTTP_IGNORE_BODY_F;
-            }else if (res.get("Transfer-Encoding")!= nullptr) {
+            }else if (res->get("Transfer-Encoding")!= nullptr) {
                 Http_Proc = &HttpRequester::ChunkLProc;
-            } else if (res.get("Content-Length") == nullptr) {
+            } else if (res->get("Content-Length") == nullptr) {
                 Http_Proc = &HttpRequester::AlwaysProc;
             }else{
                 Http_Proc = &HttpRequester::FixLenProc;
-                http_expectlen = strtoull(res.get("Content-Length"), nullptr, 10);
+                http_expectlen = strtoull(res->get("Content-Length"), nullptr, 10);
             }
             if (http_flag & HTTP_IGNORE_BODY_F) {
                 http_flag &= ~HTTP_IGNORE_BODY_F;
                 Http_Proc = (void (HttpBase::*)())&HttpRequester::HeaderProc;
             }
-            ResProc(std::move(res));
+            ResProc(res);
         }catch(...) {
             ErrProc(HTTP_PROTOCOL_ERR);
             return;

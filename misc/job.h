@@ -13,8 +13,7 @@ void add_job_real(job_func func, const char *func_name, void *arg, uint32_t inte
 void del_job_real(job_func func, const char *func_name, void *arg);
 #define del_job(a, b) del_job_real(a, #a, b)
 uint32_t do_job();
-
-void job_clear();
+int check_job(job_func func, void* arg);
 
 #ifdef  __cplusplus
 }

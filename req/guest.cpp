@@ -10,14 +10,17 @@
 //#include <arpa/inet.h>
 
 
+/*
 void request_next(Guest* guest){
     guest->request_next();
 }
+*/
 
 Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Requester(fd, myaddr) {
 }
 
 
+        /*
 void Guest::request_next() {
     while(status == Status::idle && reqs.size()){
         HttpReq req = std::move(reqs.front());
@@ -47,6 +50,7 @@ void Guest::request_next() {
     }
     del_job((job_func)::request_next, this);
 }
+        */
 
 
 void Guest::defaultHE(uint32_t events) {
@@ -65,19 +69,32 @@ void Guest::defaultHE(uint32_t events) {
     }
 
     if (events & EPOLLOUT) {
-        int ret = Peer::Write_buff();
-        if (ret <= 0) {
-            if (showerrinfo(ret, "guest write error")) {
-                clean(WRITE_ERR, 0);
-            }
+        int ret = buffer.Write([this](const void* buff, size_t size){
+            return Write(buff, size);
+        });
+        if (ret < 0 && showerrinfo(ret, "guest write error")) {
+            clean(WRITE_ERR, 0);
             return;
         }
-        if (ret != WRITE_NOTHING && responser_ptr){
+        if(buffer.length == 0){
+            updateEpoll(EPOLLIN);
+        }
+        if (responser_ptr){
             responser_ptr->writedcb(responser_index);
         }
-
     }
 }
+
+void Guest::closeHE(uint32_t events) {
+    int ret = buffer.Write([this](const void* buff, size_t size){
+        return Write(buff, size);
+    });
+    if (ret <= 0 && showerrinfo(ret, "write error while closing")) {
+        delete this;
+        return;
+    }
+}
+
 
 ssize_t Guest::Read(void* buff, size_t len){
     return Peer::Read(buff, len);
@@ -89,75 +106,79 @@ void Guest::ErrProc(int errcode) {
     }
 }
 
-void Guest::ReqProc(HttpReqHeader&& req) {
-    req.index = (void *)1;
-    if(status == Status::idle && reqs.empty()){
-        Responser* res_ptr = distribute(req, responser_ptr);
-        if(res_ptr){
-            if(req.ismethod("CONNECT")){
-                status = Status::presistent;
-            }else if(req.ismethod("HEAD")){
-                status = Status::headonly;
-            }else{
-                status = Status::requesting;
-            }
-            void* res_index = res_ptr->request(std::move(req));
-            if(responser_ptr && (res_ptr != responser_ptr || res_index != responser_index)){
-                responser_ptr->clean(NOERROR, responser_index);
-            }
-            responser_ptr = res_ptr;
-            responser_index = res_index;
+void Guest::ReqProc(HttpReqHeader* req) {
+    req->index = (void *)1;
+    assert(status != Status::connect_method && status != Status::send_method);
+    Responser* res_ptr = distribute(req, responser_ptr);
+    if(res_ptr){
+        if(req->ismethod("CONNECT")){
+            status = Status::connect_method;
+        }else if(req->ismethod("SEND")){
+            status = Status::send_method;
+        }else if(req->ismethod("HEAD")){
+            status = Status::head_methon;
         }
+        void* res_index = res_ptr->request(req);
+        if(responser_ptr && (res_ptr != responser_ptr || res_index != responser_index)){
+            responser_ptr->clean(NOERROR, responser_index);
+        }
+        responser_ptr = res_ptr;
+        responser_index = res_index;
     }else{
-        reqs.push_back(HttpReq(req));
+        delete req;
     }
 }
 
-void Guest::response(HttpResHeader&& res) {
-    assert((uint32_t)(long)res.index == 1);
-    if(status == Status::presistent){
-        if(memcmp(res.status, "200", 3) == 0){
-            strcpy(res.status, "200 Connection established");
-            res.del("Transfer-Encoding");
+void Guest::response(HttpResHeader* res) {
+    assert((uint32_t)(long)res->index == 1);
+    if(status == Status::connect_method){
+        if(memcmp(res->status, "200", 3) == 0){
+            strcpy(res->status, "200 Connection established");
+            res->del("Transfer-Encoding");
         }
-    }else if(res.get("Transfer-Encoding")){
+    }else if(res->get("Transfer-Encoding")){
         status = Status::chunked;
-    }else if(res.no_body() || status == Status::headonly){
+    }else if(res->no_body() || status == Status::head_methon){
         status = Status::idle;
-        if(!reqs.empty())
-            add_job((job_func)::request_next, this, 0);
     }
     size_t len;
-    char *buff=res.getstring(len);
-    Requester::Write(buff, len, 0);
+    char *buff=res->getstring(len);
+    buffer.push(buff, len);
+    updateEpoll(events | EPOLLOUT);
+    delete res;
 }
 
-ssize_t Guest::Write(void *buff, size_t size, void* index) {
+int32_t Guest::bufleft(void*){
+    return 1024*1024 - buffer.length;
+}
+
+
+ssize_t Guest::Send(void *buff, size_t size, void* index) {
     assert((uint32_t)(long)index == 1);
-    size_t ret;
-    size_t len = Min(bufleft(responser_index), size);
+    size_t len = Min(bufleft(nullptr), size);
     if(status == Status::chunked){
         char chunkbuf[100];
-        int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)size);
+        int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)len);
         buff = p_move(buff, -chunklen);
         memcpy(buff, chunkbuf, chunklen);
-        ret = Requester::Write(buff, chunklen + len, 0);
-        if(ret > 0){
-            assert(ret >= (size_t)chunklen);
-            if(Requester::Write(p_memdup(CRLF, strlen(CRLF)), strlen(CRLF), index) != strlen(CRLF))
-                assert(0);
-            ret -= chunklen;
-        }
+        buffer.push(buff, chunklen+len);
+        buffer.push(p_memdup(CRLF, strlen(CRLF)), strlen(CRLF));
     }else{
-        ret =  Requester::Write(buff, size, 0);
+        buffer.push(buff, size);
     }
     if(size == 0){
         status = Status::idle;
-        if(!reqs.empty())
-            add_job((job_func)::request_next, this, 0);
     }
-    return ret;
+    updateEpoll(events | EPOLLOUT);
+    return len;
 }
+
+void Guest::transfer(void* index, Responser* res_ptr, void* res_index) {
+    assert(index == responser_index);
+    responser_ptr = res_ptr;
+    responser_index = res_index;
+}
+
 
 ssize_t Guest::DataProc(const void *buff, size_t size) {
     if (responser_ptr == nullptr) {
@@ -168,15 +189,10 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
     int len = responser_ptr->bufleft(responser_index);
     if (len <= 0) {
         LOGE("(%s): The host's buff is full\n", getsrc(nullptr));
-//        responser_ptr->wait(responser_index);
         updateEpoll(0);
         return -1;
     }
-    if(reqs.size()){
-        return reqs.back().body.push(buff, size);
-    }else{
-        return responser_ptr->Write(buff, Min(size, len), responser_index);
-    }
+    return responser_ptr->Send(buff, Min(size, len), responser_index);
 }
 
 void Guest::clean(uint32_t errcode, void* index) {
@@ -185,7 +201,6 @@ void Guest::clean(uint32_t errcode, void* index) {
         responser_ptr->clean(errcode, responser_index);
     }
     responser_ptr = nullptr;
-    del_job((job_func)::request_next, this);
     Peer::clean(errcode, 0);
 }
 
@@ -197,7 +212,4 @@ const char* Guest::getsrc(void *){
 
 void Guest::dump_stat(){
     LOG("Guest %p, %s: %p, %p\n", this, getsrc(nullptr), responser_ptr, responser_index);
-    for(auto& i: reqs){
-        LOG("%s %s\n", i.header.method, i.header.geturl().c_str());
-    }
 }

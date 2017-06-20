@@ -55,21 +55,23 @@ class Cgi:public Responser{
     size_t cgi_outlen  = 0;
     uint32_t curid = 1;
     std::map<uint32_t, CgiStatus> statusmap;
-//    std::set<uint32_t> waitlist;
+    Buffer buffer;
     virtual void defaultHE(uint32_t events);
     enum class Status{
         WaitHeadr, WaitBody, HandleRes, HandleValue, HandleData, HandleLeft
     }cgistage = Status::WaitHeadr;
     void InProc();
 public:
-    explicit Cgi(HttpReqHeader& req);
+    explicit Cgi(HttpReqHeader* req);
     virtual ~Cgi();
-    virtual ssize_t Write(void *buff, size_t size, void* info)override;
-//    virtual void wait(void* index)override;
+
+    virtual int32_t bufleft(void * index) override;
+    virtual ssize_t Send(void *buff, size_t size, void* info)override;
+
     virtual void clean(uint32_t errcode, void* index)override;
-    virtual void* request(HttpReqHeader&& req)override;
+    virtual void* request(HttpReqHeader* req)override;
     virtual void dump_stat()override;
-    static Cgi* getcgi(HttpReqHeader& req);
+    static Cgi* getcgi(HttpReqHeader* req);
 };
 
 class Cookie{

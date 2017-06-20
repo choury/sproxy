@@ -111,10 +111,15 @@ void Guest_vpn::defaultHE(uint32_t events) {
         }
     }
     if (events & EPOLLOUT) {
-        int ret = Peer::Write_buff();
-        if(ret <= 0 && showerrinfo(ret, "guest_vpn write error")) {
+        int ret = buffer.Write([this](const void* buff, size_t size){
+            return Write(buff, size);
+        });
+        if(ret < 0 && showerrinfo(ret, "guest_vpn write error")) {
             clean(WRITE_ERR, 0);
             return;
+        }
+        if(buffer.length == 0){
+            updateEpoll(EPOLLIN);
         }
     }
 }
@@ -143,14 +148,14 @@ void Guest_vpn::buffHE(char* buff, size_t buflen) {
     }
 }
 
-void Guest_vpn::response(HttpResHeader&& res) {
-    VpnKey& key  = *(VpnKey *)res.index;
+void Guest_vpn::response(HttpResHeader* res) {
+    VpnKey& key  = *(VpnKey *)res->index;
 
     assert(statusmap.count(key));
     VpnStatus& status = statusmap[key];
-    LOGD(DVPN, "Get response (%s)\n", res.status);
+    LOGD(DVPN, "Get response (%s)\n", res->status);
     //创建回包
-    if(memcmp(res.status, "200", 3) == 0){
+    if(memcmp(res->status, "200", 3) == 0){
         assert(key.protocol == Protocol::TCP);
         LOGD(DVPN, "write syn ack packet (%s -> %s) (%u - %u).\n",
              key.getdst(), key.getsrc(), status.seq, status.ack);
@@ -168,9 +173,9 @@ void Guest_vpn::response(HttpResHeader&& res) {
         status.seq ++;
         
         //write back to vpn fd
-        Requester::Write(packet, packetlen, 0);
+        buffer.push(packet, packetlen);
     }
-    if(res.status[0] == '4'){
+    if(res->status[0] == '4'){
         //site is blocked or bad request, return rst for tcp, icmp for udp
         if(key.protocol == Protocol::TCP){
             LOGD(DVPN, "write rst packet\n");
@@ -183,8 +188,7 @@ void Guest_vpn::response(HttpResHeader&& res) {
 
             size_t packetlen;
             char* packet = pac_return.build_packet((const void *)nullptr, packetlen);
-            Requester::Write(packet, packetlen, 0);
-            return;
+            buffer.push(packet, packetlen);
         }
         if(key.protocol == Protocol::UDP){
             Ip pac_return(IPPROTO_ICMP, &key.dst, &key.src);
@@ -194,12 +198,21 @@ void Guest_vpn::response(HttpResHeader&& res) {
 
             size_t packetlen = status.packet_len;
             char* packet = pac_return.build_packet((const void*)status.packet, packetlen);
-            Requester::Write(packet, packetlen, 0);
-            return;
+            buffer.push(packet, packetlen);
         }
     }
+    delete res;
     return;
 }
+
+void Guest_vpn::transfer(void* index, Responser* res_ptr, void* res_index) {
+    VpnKey& key  = *(VpnKey *)index;
+    assert(statusmap.count(key));
+    VpnStatus& status = statusmap[key];
+    status.res_ptr = res_ptr;
+    status.res_index = res_index;
+}
+
 
 
 void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
@@ -232,9 +245,9 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
                 inet_ntop(AF_INET, pac->getdst(), dip, sizeof(dip)),
                 pac->tcp->getdport(), pac->tcp->getsport());
         }
-        HttpReqHeader req(buff, this);
+        HttpReqHeader* req = new HttpReqHeader(buff, this);
         VpnKey *key_index = new VpnKey(key);
-        req.index =  key_index;
+        req->index =  key_index;
         uint16_t window = pac->tcp->getwindow();
         uint8_t  scale = pac->tcp->getwindowscale();
         statusmap[key] =  VpnStatus{
@@ -254,6 +267,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
             statusmap[key].res_ptr = responser_ptr;
             statusmap[key].res_index = responser_index;
         }else{
+            delete req;
             free(statusmap[key].packet);
             delete statusmap[key].key;
             statusmap.erase(key);
@@ -288,7 +302,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         size_t packetlen;
         char* packet = pac_return.build_packet((const void *)nullptr, packetlen);
         //write back to vpn fd
-        Requester::Write(packet, packetlen, 0);
+        buffer.push(packet, packetlen);
 
         if(statusmap.count(key)){
             VpnStatus &status = statusmap[key];
@@ -312,7 +326,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
 
             size_t packetlen;
             char* packet = pac_return.build_packet((const void *)nullptr, packetlen);
-            Requester::Write(packet, packetlen, 0);
+            buffer.push(packet, packetlen);
             return;
         }
         VpnStatus &status = statusmap[key];
@@ -325,7 +339,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
             LOGE("responser buff is full, drop packet\n");
         }else{
             const char* data = packet + pac->gethdrlen();
-            status.res_ptr->Write(data, datalen, status.res_index);
+            status.res_ptr->Send(data, datalen, status.res_index);
             status.ack = seq + datalen;
 
             //创建回包
@@ -338,7 +352,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
 
             size_t  packetlen;
             char *packet = pac_return.build_packet((const void *)nullptr, packetlen);
-            Requester::Write(packet, packetlen, 0);
+            buffer.push(packet, packetlen);
         }
     }
     if(statusmap.count(key)){     //更新window
@@ -368,7 +382,7 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
         if(status.res_ptr->bufleft(status.res_index)<=0){
             LOGE("responser buff is full, drop packet\n");
         }else{
-            status.res_ptr->Write(data, datalen, status.res_index);
+            status.res_ptr->Send(data, datalen, status.res_index);
         }
         add_job((job_func)vpn_aged, &status, 300000);
     }else{
@@ -385,9 +399,9 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
                 inet_ntop(AF_INET, pac->getdst(), dip, sizeof(dip)),
                 pac->udp->getdport(), pac->udp->getsport());
         }
-        HttpReqHeader req(buff, this);
+        HttpReqHeader* req = new HttpReqHeader(buff, this);
         VpnKey *key_index = new VpnKey(key);
-        req.index = key_index;
+        req->index = key_index;
         statusmap[key] =  VpnStatus{
             nullptr,
             nullptr,
@@ -406,9 +420,10 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
             void* responser_index = responser_ptr->request(std::move(req));
             statusmap[key].res_ptr = responser_ptr;
             statusmap[key].res_index = responser_index;
-            responser_ptr->Write(data, datalen, responser_index);
+            responser_ptr->Send(data, datalen, responser_index);
             add_job((job_func)vpn_aged, &statusmap[key], 60000);
         }else{
+            delete req;
             free(statusmap[key].packet);
             delete statusmap[key].key;
             statusmap.erase(key);
@@ -455,9 +470,17 @@ void Guest_vpn::icmpHE(const Ip* pac, const char* packet, size_t len) {
     }
 }
 
+int32_t Guest_vpn::bufleft(void* index) {
+    VpnKey *key = (VpnKey *)index;
+    assert(index == nullptr || statusmap.count(*key));
+    if(key && key->protocol == Protocol::TCP){
+        VpnStatus& status = statusmap[*key];
+        return status.window << status.window_scale;
+    }
+    return 1024*1024 - buffer.length;
+}
 
-
-ssize_t Guest_vpn::Write(void* buff, size_t size, void* index) {
+ssize_t Guest_vpn::Send(void* buff, size_t size, void* index) {
     if(size == 0){
         return 0;
     }
@@ -483,7 +506,7 @@ ssize_t Guest_vpn::Write(void* buff, size_t size, void* index) {
         char* packet = pac_return.build_packet(buff, packetlen);
 
         status.seq = status.seq + size;
-        Requester::Write(packet, packetlen, 0);
+        buffer.push(packet, packetlen);
         return size;
     }
     if(key.protocol == Protocol::UDP){
@@ -492,28 +515,13 @@ ssize_t Guest_vpn::Write(void* buff, size_t size, void* index) {
 
         size_t packetlen = size;
         char *packet = pac_return.build_packet(buff, packetlen);
-        Requester::Write(packet, packetlen, 0);
+        buffer.push(packet, packetlen);
         status.res_ptr->writedcb(status.res_index);
         add_job((job_func)vpn_aged, &status, 300000);
         return size;
     }
     assert(0);
     return 0;
-}
-
-/*
-void Guest_vpn::wait(void* index) {
-    waitlist.insert((VpnKey *)index);
-}*/
-
-int32_t Guest_vpn::bufleft(void* index) {
-    VpnKey *key = (VpnKey *)index;
-    assert(index == nullptr || statusmap.count(*key));
-    if(key && key->protocol == Protocol::TCP){
-        VpnStatus& status = statusmap[*key];
-        return status.window << status.window_scale;
-    }
-    return Requester::bufleft(0);
 }
 
 
@@ -535,7 +543,7 @@ void Guest_vpn::clean(uint32_t errcode, void* index) {
 
             size_t packetlen = status.packet_len;
             char* packet = pac_return.build_packet((const void*)status.packet, packetlen);
-            Requester::Write(packet, packetlen, 0);
+            buffer.push(packet, packetlen);
         }
         del_job((job_func)vpn_aged, &status);
     }else{
@@ -551,7 +559,7 @@ void Guest_vpn::clean(uint32_t errcode, void* index) {
             size_t packetlen;
             char *packet = pac_return.build_packet((const void*)nullptr, packetlen);
             //write back to vpn fd
-            Requester::Write(packet, packetlen, 0);
+            buffer.push(packet, packetlen);
         }else if(errcode == CONNECT_TIMEOUT){
             LOGD(DVPN, "write icmp unreachable msg: <tcp> (%s -> %s)\n", key->getsrc(), key->getdst());
             Ip pac_return(IPPROTO_ICMP, &key->dst, &key->src);
@@ -561,7 +569,7 @@ void Guest_vpn::clean(uint32_t errcode, void* index) {
 
             size_t packetlen = status.packet_len;
             char* packet = pac_return.build_packet((const void*)status.packet, packetlen);
-            Requester::Write(packet, packetlen, 0);
+            buffer.push(packet, packetlen);
         }else{
             LOGD(DVPN, "write rst packet: %s -> %s\n", key->getsrc(), key->getdst());
             Ip pac_return(IPPROTO_TCP, &key->dst, &key->src);
@@ -573,7 +581,7 @@ void Guest_vpn::clean(uint32_t errcode, void* index) {
 
             size_t packetlen;
             char* packet = pac_return.build_packet((const void *)nullptr, packetlen);
-            Requester::Write(packet, packetlen, 0);
+            buffer.push(packet, packetlen);
         }
     }
     free(status.packet);

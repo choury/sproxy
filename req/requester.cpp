@@ -19,14 +19,6 @@ Requester::Requester(int fd, const char* ip, uint16_t port): Peer(fd), sourcepor
     handleEvent = (void (Con::*)(uint32_t))&Requester::defaultHE;
 }
 
-void Requester::closeHE(uint32_t events) {
-    int ret = Peer::Write_buff();
-    if (ret != WRITE_INCOMP ||
-        (ret <= 0 && showerrinfo(ret, "write error while closing"))) {
-        delete this;
-        return;
-    }
-}
 
 
 const char* Requester::getip(){

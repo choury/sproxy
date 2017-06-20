@@ -9,7 +9,7 @@ class Guest_sni: public Guest{
     virtual void initHE(uint32_t events);
 public:
     explicit Guest_sni(int fd, sockaddr_in6 *myaddr);
-    virtual void response(HttpResHeader&& res)override;
+    virtual void response(HttpResHeader* res)override;
     virtual const char *getsrc(void* index)override;
 };
 

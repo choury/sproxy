@@ -28,13 +28,16 @@ class File:public Responser{
     std::map<uint32_t, FileStatus> statusmap;
     bool checkvalid();
     virtual void defaultHE(uint32_t events);
-    virtual void* request(HttpReqHeader&& req) override;
+    virtual void* request(HttpReqHeader* req) override;
 public:
-    explicit File(HttpReqHeader& req);
+    explicit File(HttpReqHeader* req);
     ~File();
+    virtual int32_t bufleft(void* index)override;
+    virtual ssize_t Send(void* buff, size_t size, void* index)override;
+
     virtual void clean(uint32_t errcode, void* index)override;
     virtual void dump_stat()override;
-    static File* getfile(HttpReqHeader& req);
+    static File* getfile(HttpReqHeader* req);
 };
 
 bool checkrange(Range& rg, size_t size);

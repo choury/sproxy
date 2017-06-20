@@ -76,8 +76,10 @@ extern uint32_t debug;
 #define  LOG(...)    do{ \
                         if(daemon_mode) \
                             syslog(LOG_INFO, __VA_ARGS__); \
-                        else \
+                        else{ \
                             printf(__VA_ARGS__); \
+                            fflush(stdout); \
+                        } \
                      }while(0)
 #define  LOGE(...)   do{\
                         char tmp[1024]; \
@@ -95,8 +97,10 @@ extern uint32_t debug;
                                 sprintf(tmp, __VA_ARGS__); \
                                 if(daemon_mode) \
                                   syslog(LOG_INFO,"%s: %s",mod##_STR, tmp); \
-                                else \
+                                else {\
                                   printf("%s: %s", mod##_STR, tmp); \
+                                  fflush(stdout); \
+                                } \
                              }\
                            }while(0)
 #else
@@ -212,6 +216,12 @@ void *p_move(void *ptr, signed char len);
 void change_process_name(const char *name);
 
 int protectFd(int sockfd);
+
+struct write_block{
+    void* buff;
+    size_t len;
+    size_t wlen;
+};
 
 #ifdef  __cplusplus
 }

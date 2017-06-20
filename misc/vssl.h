@@ -20,6 +20,7 @@ protected:
                 case SSL_ERROR_ZERO_RETURN:
                     ret = 0;
                     errno = 0;
+                    break;
                 case SSL_ERROR_SYSCALL:
                     break;
                 default:

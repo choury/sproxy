@@ -97,12 +97,10 @@ void loadsites() {
 
     addauth("::ffff:127.0.0.1");
     addauth("::1");
-
 }
 
 void savesites(){
     ofstream sitesfile(LISTFILE);
-
     for (auto i : sites) {
         switch(i.second){
         case Strategy::direct:

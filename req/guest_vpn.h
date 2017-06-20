@@ -33,7 +33,7 @@ struct VpnStatus{
 class Guest_vpn:public Requester, public ResObject{
 protected:
     std::map<VpnKey, VpnStatus> statusmap;
-//    std::set<VpnKey*> waitlist;
+    Buffer buffer;
     void defaultHE(uint32_t events) override;
     void buffHE(char* buff, size_t buflen);
     void tcpHE(const Ip* pac,const char* packet, size_t len);
@@ -42,11 +42,12 @@ protected:
 public:
     explicit Guest_vpn(int fd);
     ~Guest_vpn();
-//    virtual void wait(void* index)override;
-    virtual void response(HttpResHeader&& res)override;
-    virtual ssize_t Write(void* buff, size_t size, void* index)override;
+    virtual void response(HttpResHeader* res)override;
+    virtual void transfer(void* index, Responser* res_ptr, void* res_index)override;
 
     virtual int32_t bufleft(void* index)override;
+    virtual ssize_t Send(void* buff, size_t size, void* index)override;
+
     virtual void clean(uint32_t errcode, void* index)override;
     virtual const char *getsrc(void* index)override;
     virtual void dump_stat()override;

@@ -18,16 +18,22 @@ FDns::~FDns() {
     fdns = (fdns == this) ? nullptr: fdns;
 }
 
-void* FDns::request(HttpReqHeader&& req){
+void* FDns::request(HttpReqHeader* req){
     statusmap[req_id]= FDnsStatus{
-        req.src,
-        req.index,
+        req->src,
+        req->index,
         0
     };
+    delete req;
     return reinterpret_cast<void*>(req_id++);
 }
 
-ssize_t FDns::Write(void* buff, size_t size, void* index) {
+int32_t FDns::bufleft(void*) {
+    return 1024*1024;
+}
+
+
+ssize_t FDns::Send(void* buff, size_t size, void* index) {
     Dns_Que que((char *)buff);
     p_free(buff);
     LOGD(DDNS, "FQuery %s: %d\n", que.host.c_str(), que.type);
@@ -52,7 +58,7 @@ ssize_t FDns::Write(void* buff, size_t size, void* index) {
         }
         Dns_Rr rr(&addr);
         unsigned char * buff = (unsigned char *)p_malloc(BUF_LEN);
-        status.req_ptr->Write(buff, rr.build(&que, buff), status.req_index);
+        status.req_ptr->Send(buff, rr.build(&que, buff), status.req_index);
     }
     return size;
 }
@@ -63,10 +69,11 @@ void FDns::ResponseCb(uint32_t id, const char* buff, size_t size) {
         if(buff){
             DNS_HDR *dnshdr = (DNS_HDR*)buff;
             dnshdr->id = htons(status.dns_id);
-            status.req_ptr->Write(buff, size, status.req_index);
+            status.req_ptr->Send(buff, size, status.req_index);
         }
     }
 }
+
 
 void FDns::clean(uint32_t errcode, void* index) {
     if(index == nullptr) {

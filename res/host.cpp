@@ -2,9 +2,6 @@
 #include "req/requester.h"
 #include "misc/job.h"
 
-//#include <map>
-//#include <string.h>
-//#include <errno.h>
 #include <assert.h>
                     
 void Host::con_timeout(Host* host) {
@@ -91,9 +88,9 @@ void Host::waitconnectHE(uint32_t events) {
         }
 
         if (http_flag & HTTP_CONNECT_F){
-            HttpResHeader res(H200);
-            res.index = status.req_index;
-            status.req_ptr->response(std::move(res));
+            HttpResHeader* res = new HttpResHeader(H200);
+            res->index = status.req_index;
+            status.req_ptr->response(res);
         }
 
         updateEpoll(EPOLLIN | EPOLLOUT);
@@ -106,6 +103,22 @@ reconnect:
         clean(CONNECT_FAILED, 0);
     }
 }
+
+ssize_t Host::Write_buff() {
+    ssize_t ret = 0;
+    for(auto& req:reqs){
+        if(req.size() == 0){
+            continue;
+        }
+        ret = req.Write_string([this](const void *buff, size_t size){
+            return Write(buff, size);
+        });
+        if(ret <= 0)
+            break;
+    }
+    return ret;
+}
+
 
 void Host::defaultHE(uint32_t events) {
     assert(status.req_ptr && status.req_index);
@@ -126,75 +139,84 @@ void Host::defaultHE(uint32_t events) {
     }
 
     if (events & EPOLLOUT) {
-        int ret = Peer::Write_buff();
-        if (ret <= 0) {
-            if (showerrinfo(ret, "host write error")) {
-                clean(WRITE_ERR, 0);
-            }
+        int ret = Write_buff();
+        if(ret < 0 && showerrinfo(ret, "host write error")) {
+            clean(WRITE_ERR, 0);
             return;
         }
-        if(ret != WRITE_NOTHING && status.req_ptr)
+        if(reqs.empty() || reqs.back().size()==0){
+            updateEpoll(EPOLLIN);
+        }
+        if(status.req_ptr)
             status.req_ptr->writedcb(status.req_index);
     }
 }
 
 
-void* Host::request(HttpReqHeader&& req) {
+void* Host::request(HttpReqHeader* req) {
     assert(Http_Proc != &Host::AlwaysProc);
-    size_t len;
-    char *buff = req.getstring(len);
-    Responser::Write(buff, len, 0);
-    if(req.ismethod("CONNECT")){
+    if(req->ismethod("CONNECT")){
         http_flag |= HTTP_CONNECT_F;
         Http_Proc = &Host::AlwaysProc;
-    }else if(req.ismethod("HEAD")){
+    }else if(req->ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY_F;
-    }else if(req.ismethod("SEND")){
+    }else if(req->ismethod("SEND")){
         http_flag |= HTTP_SEND_F;
         Http_Proc = &Host::AlwaysProc;
     }
-    status.req_ptr = req.src;
-    status.req_index = req.index;
+    status.req_ptr = req->src;
+    status.req_index = req->index;
     assert(status.req_ptr);
     assert(status.req_index);
-    strcpy(status.hostname, req.hostname);
-    status.port = req.port;
-    status.protocol = req.ismethod("SEND")?Protocol::UDP:Protocol::TCP;
+    strcpy(status.hostname, req->hostname);
+    status.port = req->port;
+    status.protocol = req->ismethod("SEND")?Protocol::UDP:Protocol::TCP;
+    reqs.push_back(req);
+    updateEpoll(events | EPOLLOUT);
     return reinterpret_cast<void*>(1);
 }
 
-void Host::ResProc(HttpResHeader&& res) {
-    assert(status.req_ptr && status.req_index);
-    res.index = status.req_index;
-    status.req_ptr->response(std::move(res));
+int32_t Host::bufleft(void*) {
+    size_t len = 0;
+    for(auto& req: reqs){
+        len += req.size();
+    }
+    return 1024*1024 - len;
 }
 
 
+ssize_t Host::Send(void* buff, size_t size, void* index) {
+    assert((long)index == 1);
+    reqs.back().body.push(buff, size);
+    updateEpoll(events | EPOLLOUT);
+    return size;
+}
 
-Host* Host::gethost(HttpReqHeader& req, Responser* responser_ptr) {
-    Protocol protocol = req.ismethod("SEND")?Protocol::UDP:Protocol::TCP;
+
+Host* Host::gethost(HttpReqHeader* req, Responser* responser_ptr) {
+    Protocol protocol = req->ismethod("SEND")?Protocol::UDP:Protocol::TCP;
     Host* host = dynamic_cast<Host *>(responser_ptr);
-    if(req.ismethod("CONNECT") || req.ismethod("SEND")){
+    if(req->ismethod("CONNECT") || req->ismethod("SEND")){
 #ifndef NDEBUG
         if (host){
             assert((host->http_flag & HTTP_CONNECT_F) == 0 &&
                    (host->http_flag & HTTP_SEND_F) == 0);
         }
 #endif
-        return new Host(req.hostname, req.port, protocol);
+        return new Host(req->hostname, req->port, protocol);
     }
     if (host){
-        if(strcasecmp(host->hostname, req.hostname) == 0
-            && host->port == req.port
+        if(strcasecmp(host->hostname, req->hostname) == 0
+            && host->port == req->port
             && protocol == host->protocol)
         {
             return host;
         }else{
             assert(host->status.req_ptr == nullptr ||
-                   host->status.req_ptr == req.src);
+                   host->status.req_ptr == req->src);
         }
     }
-    return new Host(req.hostname, req.port, protocol);
+    return new Host(req->hostname, req->port, protocol);
 }
 
 
@@ -203,10 +225,10 @@ ssize_t Host::Read(void* buff, size_t len){
 }
 
 
-void Host::ErrProc(int errcode) {
-    if (showerrinfo(errcode, "Host-http error")) {
-        clean(errcode, 0);
-    }
+void Host::ResProc(HttpResHeader* res) {
+    assert(status.req_ptr && status.req_index);
+    res->index = status.req_index;
+    status.req_ptr->response(res);
 }
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
@@ -223,21 +245,34 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
         return -1;
     }
 
-    return status.req_ptr->Write(buff, Min(size, len), status.req_index);
+    return status.req_ptr->Send(buff, Min(size, len), status.req_index);
 }
+
+void Host::ErrProc(int errcode) {
+    if (showerrinfo(errcode, "Host-http error")) {
+        clean(errcode, 0);
+    }
+}
+
+void Host::discard() {
+    status.req_index = nullptr;
+    status.req_ptr = nullptr;
+    return Responser::discard();
+}
+
 
 void Host::clean(uint32_t errcode, void* index) {
     assert((long)index == 1 || (void*)index == 0);
     if(status.req_ptr){
         if(status.protocol == Protocol::TCP){
             if(errcode == CONNECT_TIMEOUT || errcode == DNS_FAILED){
-                HttpResHeader res(H504);
-                res.index = status.req_index;
-                status.req_ptr->response(std::move(res));
+                HttpResHeader* res = new HttpResHeader(H504);
+                res->index = status.req_index;
+                status.req_ptr->response(res);
             }else if(errcode == CONNECT_FAILED){
-                HttpResHeader res(H503);
-                res.index = status.req_index;
-                status.req_ptr->response(std::move(res));
+                HttpResHeader* res = new HttpResHeader(H503);
+                res->index = status.req_index;
+                status.req_ptr->response(res);
             }
         }
         if(index == nullptr || errcode == VPN_AGED_ERR){

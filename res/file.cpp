@@ -103,9 +103,9 @@ bool checkrange(Range& rg, size_t size) {
 }
 
 
-File::File(HttpReqHeader& req) {
+File::File(HttpReqHeader* req) {
     HttpResHeader *res = nullptr;
-    snprintf(filename, sizeof(filename), "%s", req.filename.c_str());
+    snprintf(filename, sizeof(filename), "%s", req->filename.c_str());
     ffd = open(filename, O_RDONLY);
     if (ffd < 0) {
         LOGE("open file failed %s: %s\n", filename, strerror(errno));
@@ -124,8 +124,9 @@ File::File(HttpReqHeader& req) {
 
     if(S_ISDIR(st.st_mode) && !endwith(filename, "/")){
         res = new HttpResHeader(H301);
-        snprintf(filename, sizeof(filename), "/%s/", filename);
-        res->add("Location", filename);
+        char location[FILENAME_MAX];
+        snprintf(location, sizeof(location), "/%s/", filename);
+        res->add("Location", location);
         goto err;
     }
 
@@ -144,9 +145,8 @@ err:
     if(ffd > 0){
         close(ffd);
     }
-    res->index = req.index;
-    req.src->response(std::move(*res));
-    delete res;
+    res->index = req->index;
+    req->src->response(res);
     throw 0;
 }
 
@@ -163,28 +163,38 @@ bool File::checkvalid() {
     return valid;
 }
 
+int32_t File::bufleft(void*){
+    return 0;
+}
 
-void* File::request(HttpReqHeader&& req) {
+//discard everything!
+ssize_t File::Send(void* buff, size_t size, void*) {
+    p_free(buff);
+    return size;
+}
+
+void* File::request(HttpReqHeader* req) {
     FileStatus status;
-    status.req_ptr = req.src;
-    status.req_index = req.index;
-    status.head_only = req.ismethod("HEAD");
+    status.req_ptr = req->src;
+    status.req_index = req->index;
+    status.head_only = req->ismethod("HEAD");
     status.responsed = false;
-    if (req.ranges.size()){
-        status.rg = req.ranges[0];
+    if (req->ranges.size()){
+        status.rg = req->ranges[0];
     }else{
         status.rg.begin = -1;
         status.rg.end = - 1;
     }
-    if(req.get("If-Modified-Since")){
+    if(req->get("If-Modified-Since")){
         struct tm tp;
-        strptime(req.get("If-Modified-Since"), "%a, %d %b %Y %H:%M:%S GMT", &tp);
+        strptime(req->get("If-Modified-Since"), "%a, %d %b %Y %H:%M:%S GMT", &tp);
         status.modified_since = timegm(&tp);
     }else{
         status.modified_since = 0;
     }
     updateEpoll(EPOLLIN);
     statusmap[req_id] = status;
+    delete req;
     return reinterpret_cast<void*>(req_id++);
 }
 
@@ -217,47 +227,47 @@ void File::defaultHE(uint32_t events) {
             assert(requester);
             if (!i->second.responsed){
                 if(i->second.modified_since >= st.st_mtime){
-                    HttpResHeader res(H304);
+                    HttpResHeader* res = new HttpResHeader(H304);
                     char buff[100];
                     strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
-                    res.add("Last-Modified", buff);
-                    res.index = i->second.req_index;
-                    requester->response(std::move(res));
+                    res->add("Last-Modified", buff);
+                    res->index = i->second.req_index;
+                    requester->response(res);
                     i = statusmap.erase(i);
                     continue;
                 }
                 if(rg.begin == -1 && rg.end == -1){
                     rg.begin = 0;
                     rg.end = st.st_size - 1;
-                    HttpResHeader res(H200);
-                    res.add("Content-Length", st.st_size);
+                    HttpResHeader* res = new HttpResHeader(H200);
+                    res->add("Content-Length", st.st_size);
                     char buff[100];
                     strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
-                    res.add("Last-Modified", buff);
+                    res->add("Last-Modified", buff);
                     if(suffix && mimetype.count(suffix)){
-                        res.add("Content-Type", mimetype.at(suffix));
+                        res->add("Content-Type", mimetype.at(suffix));
                     }
-                    res.index = i->second.req_index;
+                    res->index = i->second.req_index;
                     requester->response(std::move(res));
                 }else if(checkrange(rg, st.st_size)){
-                    HttpResHeader res(H206);
+                    HttpResHeader* res = new HttpResHeader(H206);
                     char buff[100];
                     snprintf(buff, sizeof(buff), "bytes %zu-%zu/%jd",
                              rg.begin, rg.end, (intmax_t)st.st_size);
-                    res.add("Content-Range", buff);
+                    res->add("Content-Range", buff);
                     size_t leftsize = rg.end - rg.begin+1;
-                    res.add("Content-Length", leftsize);
+                    res->add("Content-Length", leftsize);
                     if(suffix && mimetype.count(suffix)){
-                        res.add("Content-Type", mimetype.at(suffix));
+                        res->add("Content-Type", mimetype.at(suffix));
                     }
-                    res.index = i->second.req_index;
+                    res->index = i->second.req_index;
                     requester->response(std::move(res));
                 }else{
-                    HttpResHeader res(H416);
+                    HttpResHeader* res = new HttpResHeader(H416);
                     char buff[100];
                     snprintf(buff, sizeof(buff), "bytes */%jd", (intmax_t)st.st_size);
-                    res.add("Content-Range", buff);
-                    res.index = i->second.req_index;
+                    res->add("Content-Range", buff);
+                    res->index = i->second.req_index;
                     requester->response(std::move(res));
                     i = statusmap.erase(i);
                     continue;
@@ -270,7 +280,7 @@ void File::defaultHE(uint32_t events) {
                 }
             }
             if (rg.begin > rg.end) {
-                requester->Write((const void*)nullptr, 0, i->second.req_index);
+                requester->Send((const void*)nullptr, 0, i->second.req_index);
                 i = statusmap.erase(i);
                 continue;
             }
@@ -289,7 +299,7 @@ void File::defaultHE(uint32_t events) {
                 clean(INTERNAL_ERR, 0);
                 return;
             }
-            len = requester->Write(buff, len, i->second.req_index);
+            len = requester->Send(buff, len, i->second.req_index);
             rg.begin += len;
             i++;
         }
@@ -306,8 +316,8 @@ void File::clean(uint32_t errcode, void* index){
     if(index == nullptr){
         for(auto i:statusmap){
             if(!i.second.responsed){
-                HttpResHeader res(H503);
-                res.index = i.second.req_index;
+                HttpResHeader* res = new HttpResHeader(H503);
+                res->index = i.second.req_index;
                 i.second.req_ptr->response(std::move(res));
             }
             i.second.req_ptr->clean(errcode, i.second.req_index);
@@ -322,7 +332,7 @@ void File::clean(uint32_t errcode, void* index){
 void File::dump_stat(){
     LOG("File %p, %s, id=%d:\n", this, filename, req_id);
     for(auto i: statusmap){
-        LOG("0x%x: (%zd-%zd) %p, %p",
+        LOG("0x%x: (%zd-%zd) %p, %p\n",
             i.first, i.second.rg.begin, i.second.rg.end,
             i.second.req_ptr, i.second.req_index);
     }
@@ -336,15 +346,15 @@ File::~File() {
     filemap.erase(filename);
 }
 
-File* File::getfile(HttpReqHeader& req) {
-    if(!req.getrange()){
-        HttpResHeader res(H400);
-        res.index = req.index;
-        req.src->response(std::move(res));
+File* File::getfile(HttpReqHeader* req) {
+    if(!req->getrange()){
+        HttpResHeader* res = new HttpResHeader(H400);
+        res->index = req->index;
+        req->src->response(std::move(res));
         return nullptr;
     }
-    if(filemap.count(req.filename)){
-        File *file = filemap[req.filename];
+    if(filemap.count(req->filename)){
+        File *file = filemap[req->filename];
         if(file->checkvalid()){
             return file;
         }

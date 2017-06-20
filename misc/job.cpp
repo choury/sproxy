@@ -73,6 +73,10 @@ uint32_t do_job(){
     return min_interval;
 }
 
+int check_job(job_func func, void* arg){
+    return callfunc_map.count(job_n{func, arg});
+}
+
 void dump_job(){
     LOG("Job queue:\n");
     uint32_t now = getmtime();

@@ -67,6 +67,7 @@ begin:
 
 /* ping 帧永远插到最前面*/
 void Http2Base::PushFrame(Http2_header *header) {
+    LOGD(DHTTP2, "push a frame:%d\n", header->type);
     std::list<Http2_frame>::iterator i;
     switch(header->type){
     case PING_TYPE:
@@ -272,12 +273,12 @@ void Http2Responser::HeadersProc(Http2_header* header) {
         pos += sizeof(streamdep);
         weigth = *pos++;
     }
-    HttpReqHeader req(response_table.hpack_decode(pos,
+    HttpReqHeader* req = new HttpReqHeader(response_table.hpack_decode(pos,
                                                   get24(header->length) - padlen - (pos - (const char *)(header+1))),
                       this);
-    req.index = reinterpret_cast<void*>(get32(header->id));
-    req.flags = header->flags;
-    ReqProc(std::move(req));
+    req->index = reinterpret_cast<void*>(get32(header->id));
+    req->flags = header->flags;
+    ReqProc(req);
     (void)weigth;
     (void)streamdep;
     return;
@@ -340,11 +341,11 @@ void Http2Requster::HeadersProc(Http2_header* header) {
         pos += sizeof(streamdep);
         weigth = *pos++;
     }
-    HttpResHeader res(response_table.hpack_decode(pos,
+    HttpResHeader* res = new HttpResHeader(response_table.hpack_decode(pos,
                                                   get24(header->length) - padlen - (pos - (const char *)(header+1))));
-    res.index = reinterpret_cast<void*>(get32(header->id));
-    res.flags = header->flags;
-    ResProc(std::move(res));
+    res->index = reinterpret_cast<void*>(get32(header->id));
+    res->flags = header->flags;
+    ResProc(res);
     (void)weigth;
     (void)streamdep;
     return;

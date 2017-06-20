@@ -17,13 +17,16 @@ class Guest_s2: public Requester, public Http2Responser {
     Ssl *ssl;
 protected:
     virtual void defaultHE(uint32_t events)override;
-    
+    virtual void closeHE(uint32_t events) override;
+
     virtual ssize_t Read(void *buff, size_t size)override;
     virtual ssize_t Write(const void *buff, size_t size)override;
+
+
     virtual void PushFrame(Http2_header *header)override;
     virtual void GoawayProc(Http2_header *header)override;
     virtual void DataProc(const Http2_header *header)override;
-    virtual void ReqProc(HttpReqHeader&& req)override;
+    virtual void ReqProc(HttpReqHeader* req)override;
     virtual void RstProc(uint32_t id, uint32_t errcode)override;
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)override;
     virtual void ErrProc(int errcode)override;
@@ -38,15 +41,15 @@ public:
     
     virtual void clean(uint32_t errcode, void* index)override;
 
-    virtual ssize_t Write(void *buff, size_t size, void* index)override;
-    
     virtual int32_t bufleft(void* index)override;
-    virtual void response(HttpResHeader&& res)override;
+    virtual ssize_t Send(void *buff, size_t size, void* index)override;
+    
+    virtual void response(HttpResHeader* res)override;
+    virtual void transfer(void* index, Responser* res_ptr, void* res_index)override;
     virtual void writedcb(void* index)override;
 
     virtual const char* getsrc(void *)override;
     virtual void dump_stat()override;
-    static void connection_lost(Guest_s2* g);
 };
 
 #endif

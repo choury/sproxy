@@ -21,10 +21,13 @@ class FDns: public Responser{
 public:
     FDns();
     ~FDns();
-    virtual void* request(HttpReqHeader&& req) override;
-    virtual ssize_t Write(void *buff, size_t size, void* index)override;
+    virtual void* request(HttpReqHeader* req) override;
+    virtual ssize_t Send(void *buff, size_t size, void* index)override;
     static void ResponseCb(uint32_t id, const char *buff, size_t size);
+
+    virtual int32_t bufleft(void* index)override;
     virtual void clean(uint32_t errcode, void* index)override;
+
     virtual void dump_stat()override;
     static FDns* getfdns();
 };

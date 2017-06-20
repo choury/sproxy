@@ -8,6 +8,7 @@
 #include <map>
 #include <set>
 #include <queue>
+#include <functional>
 
 class Index_table;
 struct Http2_header;
@@ -87,32 +88,33 @@ public:
 
 class HttpBody{
     size_t content_size = 0;
-    std::queue<std::pair<void *, size_t>> data;
 public:
+    std::queue<write_block> data;
     explicit HttpBody();
     explicit HttpBody(const HttpBody &) = delete;
     explicit HttpBody(HttpBody&& copy);
     ~HttpBody();
     
-    size_t push(const void *buff, size_t len);
-    size_t push(void *buff, size_t len);
-    size_t push(std::pair<void *, size_t>);
-    std::pair<void*, size_t> pop();
-    size_t size();
+    void push(const void *buff, size_t len);
+    void push(void *buff, size_t len);
+    void push(const write_block& wb);
+    write_block pop();
+    size_t& size();
 };
 
 class HttpReq{
+    size_t header_sent = 0;
+    size_t header_len = 0;
+    void *header_buff = nullptr;
 public:
-    HttpReqHeader  header;
+    HttpReqHeader*  header;
     HttpBody       body;
-    HttpReq(HttpReqHeader& header):header(header){};
-};
-
-class HttpRes{
-public:
-    HttpResHeader  header;
-    HttpBody       body;
-    HttpRes(HttpResHeader& header):header(header){};
+    HttpReq(const HttpReq&) = delete;
+    HttpReq(HttpReq&&);
+    HttpReq(HttpReqHeader* header):header(header){};
+    ~HttpReq();
+    ssize_t  Write_string(std::function<ssize_t(const void*, size_t)> write_func);
+    size_t size();
 };
 
 // trim from start
