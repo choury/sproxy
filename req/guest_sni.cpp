@@ -46,6 +46,9 @@ void Guest_sni::initHE(uint32_t events) {
                 responser_index = responser_ptr->request(req);
                 updateEpoll(EPOLLIN | EPOLLOUT);
                 handleEvent = (void (Con::*)(uint32_t))&Guest_sni::defaultHE;
+            }else{
+                delete req;
+                deleteLater(PEER_LOST_ERR);
             }
         }else if(ret != -1){
             deleteLater(INTERNAL_ERR);
