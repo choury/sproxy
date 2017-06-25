@@ -39,6 +39,9 @@ protected:
     void tcpHE(const Ip* pac,const char* packet, size_t len);
     void udpHE(const Ip* pac,const char* packet, size_t len);
     void icmpHE(const Ip* pac,const char* packet, size_t len);
+    template <class T>
+    void sendPkg(Ip* pac, T* packet, size_t len);
+    void cleanKey(const VpnKey* key);
 public:
     explicit Guest_vpn(int fd);
     ~Guest_vpn();
@@ -48,7 +51,7 @@ public:
     virtual int32_t bufleft(void* index)override;
     virtual ssize_t Send(void* buff, size_t size, void* index)override;
 
-    virtual void clean(uint32_t errcode, void* index)override;
+    virtual void finish(uint32_t errcode, void* index)override;
     virtual const char *getsrc(void* index)override;
     virtual void dump_stat()override;
 };

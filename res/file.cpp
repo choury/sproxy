@@ -202,7 +202,7 @@ void* File::request(HttpReqHeader* req) {
 void File::defaultHE(uint32_t events) {
     if(statusmap.empty()){
         if(!valid){
-            clean(NOERROR, 0);
+            deleteLater(PEER_LOST_ERR);
         }else{
             updateEpoll(0);
         }
@@ -215,7 +215,7 @@ void File::defaultHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("file unkown error: %s\n", strerror(error));
         }
-        clean(INTERNAL_ERR, 0);
+        deleteLater(INTERNAL_ERR);
         return;
     }
 
@@ -233,6 +233,7 @@ void File::defaultHE(uint32_t events) {
                     res->add("Last-Modified", buff);
                     res->index = i->second.req_index;
                     requester->response(res);
+                    requester->finish(NOERROR, i->second.req_index);
                     i = statusmap.erase(i);
                     continue;
                 }
@@ -248,7 +249,7 @@ void File::defaultHE(uint32_t events) {
                         res->add("Content-Type", mimetype.at(suffix));
                     }
                     res->index = i->second.req_index;
-                    requester->response(std::move(res));
+                    requester->response(res);
                 }else if(checkrange(rg, st.st_size)){
                     HttpResHeader* res = new HttpResHeader(H206);
                     char buff[100];
@@ -261,18 +262,20 @@ void File::defaultHE(uint32_t events) {
                         res->add("Content-Type", mimetype.at(suffix));
                     }
                     res->index = i->second.req_index;
-                    requester->response(std::move(res));
+                    requester->response(res);
                 }else{
                     HttpResHeader* res = new HttpResHeader(H416);
                     char buff[100];
                     snprintf(buff, sizeof(buff), "bytes */%jd", (intmax_t)st.st_size);
                     res->add("Content-Range", buff);
                     res->index = i->second.req_index;
-                    requester->response(std::move(res));
+                    requester->response(res);
+                    requester->finish(NOERROR, i->second.req_index);
                     i = statusmap.erase(i);
                     continue;
                 }
                 if(i->second.head_only){
+                    requester->finish(NOERROR, i->second.req_index);
                     i = statusmap.erase(i);
                     continue;
                 }else{
@@ -280,7 +283,7 @@ void File::defaultHE(uint32_t events) {
                 }
             }
             if (rg.begin > rg.end) {
-                requester->Send((const void*)nullptr, 0, i->second.req_index);
+                requester->finish(NOERROR, i->second.req_index);
                 i = statusmap.erase(i);
                 continue;
             }
@@ -296,7 +299,7 @@ void File::defaultHE(uint32_t events) {
             len = pread(ffd, buff, len, rg.begin);
             if(len <= 0){
                 LOGE("file pread error: %s\n", strerror(errno));
-                clean(INTERNAL_ERR, 0);
+                deleteLater(READ_ERR);
                 return;
             }
             len = requester->Send(buff, len, i->second.req_index);
@@ -312,21 +315,25 @@ void File::defaultHE(uint32_t events) {
     }
 }
 
-void File::clean(uint32_t errcode, void* index){
-    if(index == nullptr){
-        for(auto i:statusmap){
-            if(!i.second.responsed){
-                HttpResHeader* res = new HttpResHeader(H503);
-                res->index = i.second.req_index;
-                i.second.req_ptr->response(std::move(res));
-            }
-            i.second.req_ptr->clean(errcode, i.second.req_index);
-        }
-        statusmap.clear();
-        return Peer::clean(errcode, index);
-    }else{
-        statusmap.erase((uint32_t)(long)index);
+void File::finish(uint32_t errcode, void* index){
+    uint32_t id = (uint32_t)(long)index;
+    assert(statusmap.count(id));
+    if(errcode){
+        statusmap.erase(id);
     }
+}
+
+void File::deleteLater(uint32_t errcode){
+   for(auto i:statusmap){
+        if(!i.second.responsed){
+            HttpResHeader* res = new HttpResHeader(H503);
+            res->index = i.second.req_index;
+            i.second.req_ptr->response(res);
+        }
+        i.second.req_ptr->finish(errcode, i.second.req_index);
+    }
+    statusmap.clear();
+    return Peer::deleteLater(errcode);
 }
 
 void File::dump_stat(){
@@ -350,7 +357,7 @@ File* File::getfile(HttpReqHeader* req) {
     if(!req->getrange()){
         HttpResHeader* res = new HttpResHeader(H400);
         res->index = req->index;
-        req->src->response(std::move(res));
+        req->src->response(res);
         return nullptr;
     }
     if(filemap.count(req->filename)){

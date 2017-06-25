@@ -42,6 +42,7 @@ string toLower(const string &s) {
 
 
 void HttpHeader::add(const istring& header, const string& value) {
+    assert(value != "");
     headers.insert(std::make_pair(header, value));
 }
 
@@ -271,15 +272,14 @@ bool HttpReqHeader::ismethod(const char* method) const{
 char *HttpReqHeader::getstring(size_t &len) const{
     char *buff = nullptr;
     len = 0;
-    if (strcmp(method, "CONNECT") == 0 ||
-        strcmp(method, "SEND") == 0)
-    {
+    if (ismethod("CONNECT")|| ismethod("SEND")){
         if(should_proxy){
             buff= (char *)p_malloc(BUF_LEN);
             len += sprintf(buff, "%s %s:%d HTTP/1.1" CRLF, method, hostname, port);
         }else{
             //本地请求，自己处理connect和send方法
-            return 0;
+            len = 0;
+            return (char *)p_malloc(0);
         }
     }else{
         if(should_proxy){

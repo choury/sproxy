@@ -61,7 +61,8 @@ void Guest::defaultHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("(%s): guest error:%s\n", getsrc(nullptr), strerror(error));
         }
-        clean(INTERNAL_ERR, 0);
+        deleteLater(INTERNAL_ERR);
+        return;
     }
 
     if (events & EPOLLIN ) {
@@ -73,7 +74,7 @@ void Guest::defaultHE(uint32_t events) {
             return Write(buff, size);
         });
         if (ret < 0 && showerrinfo(ret, "guest write error")) {
-            clean(WRITE_ERR, 0);
+            deleteLater(WRITE_ERR);
             return;
         }
         if(buffer.length == 0){
@@ -100,11 +101,6 @@ ssize_t Guest::Read(void* buff, size_t len){
     return Peer::Read(buff, len);
 }
 
-void Guest::ErrProc(int errcode) {
-    if (showerrinfo(errcode, "Guest-Http error")) {
-        clean(errcode, 0);
-    }
-}
 
 void Guest::ReqProc(HttpReqHeader* req) {
     req->index = (void *)1;
@@ -115,17 +111,44 @@ void Guest::ReqProc(HttpReqHeader* req) {
             status = Status::connect_method;
         }else if(req->ismethod("SEND")){
             status = Status::send_method;
-        }else if(req->ismethod("HEAD")){
-            status = Status::head_methon;
         }
         void* res_index = res_ptr->request(req);
         if(responser_ptr && (res_ptr != responser_ptr || res_index != responser_index)){
-            responser_ptr->clean(NOERROR, responser_index);
+            responser_ptr->finish(PEER_LOST_ERR, responser_index);
         }
         responser_ptr = res_ptr;
         responser_index = res_index;
     }else{
         delete req;
+    }
+}
+
+ssize_t Guest::DataProc(const void *buff, size_t size) {
+    if (responser_ptr == nullptr) {
+        LOGE("(%s): connecting to host lost\n", getsrc(nullptr));
+        deleteLater(PEER_LOST_ERR);
+        return -1;
+    }
+    int len = responser_ptr->bufleft(responser_index);
+    if (len <= 0) {
+        LOGE("(%s): The host's buff is full\n", getsrc(nullptr));
+        updateEpoll(0);
+        return -1;
+    }
+    return responser_ptr->Send(buff, Min(size, len), responser_index);
+}
+
+void Guest::EndProc() {
+    status = Status::idle;
+    if(responser_ptr){
+        responser_ptr->finish(NOERROR, responser_index);
+    }
+}
+
+
+void Guest::ErrProc(int errcode) {
+    if (showerrinfo(errcode, "Guest-Http error")) {
+        deleteLater(HTTP_PROTOCOL_ERR);
     }
 }
 
@@ -138,8 +161,6 @@ void Guest::response(HttpResHeader* res) {
         }
     }else if(res->get("Transfer-Encoding")){
         status = Status::chunked;
-    }else if(res->no_body() || status == Status::head_methon){
-        status = Status::idle;
     }
     size_t len;
     char *buff=res->getstring(len);
@@ -166,9 +187,6 @@ ssize_t Guest::Send(void *buff, size_t size, void* index) {
     }else{
         buffer.push(buff, size);
     }
-    if(size == 0){
-        status = Status::idle;
-    }
     updateEpoll(events | EPOLLOUT);
     return len;
 }
@@ -179,29 +197,32 @@ void Guest::transfer(void* index, Responser* res_ptr, void* res_index) {
     responser_index = res_index;
 }
 
-
-ssize_t Guest::DataProc(const void *buff, size_t size) {
-    if (responser_ptr == nullptr) {
-        LOGE("(%s): connecting to host lost\n", getsrc(nullptr));
-        clean(PEER_LOST_ERR, 0);
-        return -1;
-    }
-    int len = responser_ptr->bufleft(responser_index);
-    if (len <= 0) {
-        LOGE("(%s): The host's buff is full\n", getsrc(nullptr));
-        updateEpoll(0);
-        return -1;
-    }
-    return responser_ptr->Send(buff, Min(size, len), responser_index);
+void Guest::discard() {
+    responser_ptr = nullptr;
+    responser_index = nullptr;
+    Requester::discard();
 }
 
-void Guest::clean(uint32_t errcode, void* index) {
-    assert((long)index == 0 || (long)index == 1);
-    if(index == nullptr && responser_ptr){
-        responser_ptr->clean(errcode, responser_index);
+
+void Guest::deleteLater(uint32_t errcode){
+    if(responser_ptr){
+        assert(responser_index);
+        responser_ptr->finish(errcode, responser_index);
+        responser_ptr = nullptr;
+        responser_index = nullptr;
     }
+    Peer::deleteLater(errcode);
+}
+
+void Guest::finish(uint32_t errcode, void* index) {
+    assert((uint32_t)(long)index == 1);
     responser_ptr = nullptr;
-    Peer::clean(errcode, 0);
+    responser_index = nullptr;
+    if(errcode){
+        return Peer::deleteLater(errcode ? errcode : PEER_LOST_ERR);
+    }else{
+        Peer::Send((const void*)nullptr,0, index);
+    }
 }
 
 const char* Guest::getsrc(void *){

@@ -17,12 +17,6 @@ Responser* Proxy::getproxy(HttpReqHeader* req, Responser* responser_ptr) {
     }
     Proxy *proxy = dynamic_cast<Proxy *>(responser_ptr);
     if(req->ismethod("CONNECT") || req->ismethod("SEND")){
-#ifndef NDEBUG
-        if (proxy) {
-            assert((proxy->http_flag & HTTP_CONNECT_F) == 0 &&
-                   (proxy->http_flag & HTTP_SEND_F) == 0);
-        }
-#endif
         return new Proxy(SHOST, SPORT, SPROT);
     }
     if(proxy){
@@ -89,10 +83,6 @@ static const unsigned char alpn_protos_string[] =
 
 
 void Proxy::waitconnectHE(uint32_t events) {
-    if (status.req_ptr == NULL) {
-        clean(PEER_LOST_ERR, 0);
-        return;
-    }
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
@@ -160,22 +150,18 @@ void Proxy::waitconnectHE(uint32_t events) {
     return;
 reconnect:
     if (connect() < 0) {
-        clean(CONNECT_FAILED, 0);
+        deleteLater(CONNECT_FAILED);
     }
 }
 
 void Proxy::shakehandHE(uint32_t events) {
-    if (status.req_ptr == NULL) {
-        clean(PEER_LOST_ERR, 0);
-        return;
-    }
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("(%s): proxy unkown error: %s\n", hostname, strerror(error));
         }
-        clean(SSL_SHAKEHAND_ERR, 0);
+        deleteLater(INTERNAL_ERR);
         return;
     }
 
@@ -184,7 +170,7 @@ void Proxy::shakehandHE(uint32_t events) {
         if (ret != 1) {
             if (errno != EAGAIN) {
                 LOGE("(%s): ssl connect error:%s\n", hostname, strerror(errno));
-                clean(SSL_SHAKEHAND_ERR, 0);
+                deleteLater(SSL_SHAKEHAND_ERR);
             }
             return;
         }
@@ -200,12 +186,14 @@ void Proxy::shakehandHE(uint32_t events) {
                 proxy2 = new_proxy;
             }
             while(!reqs.empty()){
-                status.req_ptr->transfer(status.req_index, new_proxy,
-                                        new_proxy->request(std::move(reqs.front())));
+                Requester* req_ptr = reqs.front().header->src;
+                void*      req_index = reqs.front().header->index;
+                req_ptr->transfer(req_index, new_proxy,
+                                  new_proxy->request(std::move(reqs.front())));
                 reqs.pop_front();
             }
             this->discard();
-            clean(CONNECT_FAILED, 0);
+            deleteLater(PEER_LOST_ERR);
         }else{
             if(protocol == Protocol::UDP){
                 LOGE("Warning: Use http1.1 on dtls!\n");

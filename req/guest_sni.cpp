@@ -18,7 +18,7 @@ void Guest_sni::initHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("(%s): guest_sni error:%s\n", getsrc(nullptr), strerror(error));
         }
-        clean(INTERNAL_ERR, 0);
+        deleteLater(INTERNAL_ERR);
         return;
     }
 
@@ -28,10 +28,8 @@ void Guest_sni::initHE(uint32_t events) {
 
     if(events & EPOLLIN){
         int ret=read(fd, http_buff+http_getlen, sizeof(http_buff)-http_getlen);
-        if(ret <= 0){
-            if (showerrinfo(ret, "guest_sni read error")) {
-                clean(READ_ERR, 0);
-            }
+        if(ret <= 0 && showerrinfo(ret, "guest_sni read error")) {
+            deleteLater(READ_ERR);
             return;
         }
         http_getlen += ret;
@@ -50,7 +48,7 @@ void Guest_sni::initHE(uint32_t events) {
                 handleEvent = (void (Con::*)(uint32_t))&Guest_sni::defaultHE;
             }
         }else if(ret != -1){
-            clean(INTERNAL_ERR, 0);
+            deleteLater(INTERNAL_ERR);
         }
         free(hostname);
     }

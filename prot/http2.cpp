@@ -104,21 +104,21 @@ void Http2Base::PushFrame(const Http2_header *header) {
 
 int Http2Base::SendFrame(){
     while(!framequeue.empty()){
-        Http2_frame *frame = &framequeue.front();
-        size_t len = sizeof(Http2_header) + get24(frame->header->length);
-        assert(get24(frame->header->length) <= FRAMEBODYLIMIT);
-        ssize_t ret = Write((char *)frame->header + frame->wlen, len - frame->wlen);
+        Http2_frame& frame = framequeue.front();
+        size_t len = sizeof(Http2_header) + get24(frame.header->length);
+        assert(get24(frame.header->length) <= FRAMEBODYLIMIT);
+        ssize_t ret = Write((char *)frame.header + frame.wlen, len - frame.wlen);
 
         if (ret <= 0) {
             return ret;
         }
 
         framelen -= ret;
-        if ((size_t)ret + frame->wlen == len) {
-            p_free(frame->header);
+        if ((size_t)ret + frame.wlen == len) {
+            p_free(frame.header);
             framequeue.pop_front();
         } else {
-            frame->wlen += ret;
+            frame.wlen += ret;
             break;
         }
     }

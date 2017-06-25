@@ -45,9 +45,9 @@ void HttpBase::ChunkBProc() {
             http_getlen-= strlen(CRLF);
             memmove(http_buff, http_buff+strlen(CRLF), http_getlen);
             if(http_flag & HTTP_CHUNK_END_F){
-                DataProc(http_buff, 0);
                 Http_Proc = &HttpBase::HeaderProc;
                 http_flag &= ~HTTP_CHUNK_END_F;
+                EndProc();
             }else{
                 Http_Proc = &HttpBase::ChunkLProc;
             }
@@ -82,8 +82,8 @@ void HttpBase::ChunkBProc() {
 
 void HttpBase::FixLenProc() {
     if (http_expectlen == 0) {
-        DataProc(http_buff, 0);
         Http_Proc = &HttpBase::HeaderProc;
+        EndProc();
     } else {
         if (http_getlen == 0) {
             ssize_t readlen = Read(http_buff, sizeof(http_buff));
@@ -125,6 +125,9 @@ void HttpBase::AlwaysProc() {
     AlwaysProc();
 }
 
+void HttpBase::EndProc() {
+}
+
 
 void HttpResponser::HeaderProc() {
     if (char* headerend = strnstr(http_buff, CRLF CRLF, http_getlen)) {
@@ -134,6 +137,7 @@ void HttpResponser::HeaderProc() {
             HttpReqHeader* req = new HttpReqHeader(http_buff, this);
             if(req->no_body()){
                 Http_Proc = (void (HttpBase::*)())&HttpResponser::HeaderProc;
+                EndProc();
             }else if (req->get("Content-Length") == nullptr ||
                       req->ismethod("CONNECT"))
             {
@@ -186,11 +190,12 @@ void HttpRequester::HeaderProc() {
                 Http_Proc = &HttpRequester::FixLenProc;
                 http_expectlen = strtoull(res->get("Content-Length"), nullptr, 10);
             }
+            ResProc(res);
             if (http_flag & HTTP_IGNORE_BODY_F) {
                 http_flag &= ~HTTP_IGNORE_BODY_F;
                 Http_Proc = (void (HttpBase::*)())&HttpRequester::HeaderProc;
+                EndProc();
             }
-            ResProc(res);
         }catch(...) {
             ErrProc(HTTP_PROTOCOL_ERR);
             return;

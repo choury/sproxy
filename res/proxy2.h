@@ -47,7 +47,8 @@ public:
     
     virtual void* request(HttpReqHeader* req)override;
     
-    virtual void clean(uint32_t errcode, void* index)override;
+    virtual void finish(uint32_t errcode, void* index)override;
+    virtual void deleteLater(uint32_t errcode) override;
 
     virtual void dump_stat()override;
     static void ping_check(Proxy2 *p);

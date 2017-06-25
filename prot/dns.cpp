@@ -648,6 +648,7 @@ Dns_Rr::Dns_Rr(const in_addr* addr){
     sockaddr_un ip;
     ip.addr_in.sin_family = AF_INET;
     memcpy(&ip.addr_in.sin_addr, addr, sizeof(in_addr));
+    ttl = 0;
     addrs.push_back(ip);
 }
 

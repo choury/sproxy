@@ -75,24 +75,27 @@ void FDns::ResponseCb(uint32_t id, const char* buff, size_t size) {
 }
 
 
-void FDns::clean(uint32_t errcode, void* index) {
-    if(index == nullptr) {
-        fdns = (fdns == this) ? nullptr: fdns;
-        for(auto i: statusmap){
-            i.second.req_ptr->clean(errcode, i.second.req_index);
-        }
-        statusmap.clear();
-        return Peer::clean(errcode, 0);
-    }else{
-        uint32_t id = (uint32_t)(long)index;
-        assert(statusmap.count(id));
-        if(errcode == VPN_AGED_ERR){
-           FDnsStatus& status = statusmap[id];
-           status.req_ptr->clean(errcode, status.req_index);
-        }
+void FDns::finish(uint32_t errcode, void* index) {
+    uint32_t id = (uint32_t)(long)index;
+    assert(statusmap.count(id));
+    if(errcode == VPN_AGED_ERR){
+        FDnsStatus& status = statusmap[id];
+        status.req_ptr->finish(errcode, status.req_index);
+    }
+    if(errcode){
         statusmap.erase(id);
     }
 }
+
+void FDns::deleteLater(uint32_t errcode) {
+    fdns = (fdns == this) ? nullptr: fdns;
+    for(auto i: statusmap){
+        i.second.req_ptr->finish(errcode, i.second.req_index);
+    }
+    statusmap.clear();
+    return Peer::deleteLater(errcode);
+}
+
 
 void FDns::dump_stat() {
     LOG("FDns %p, id: %d:\n", this, req_id);

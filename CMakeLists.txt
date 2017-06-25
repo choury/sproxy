@@ -35,7 +35,6 @@ else()
     find_package(JSON-C)
 endif()
 
-
 include_directories(${OPENSSL_INCLUDE_DIR})
 
 

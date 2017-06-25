@@ -38,27 +38,11 @@ static bool mergestrategy(const char* host, const char* strategy){
     }else{
         return false;
     }
-    if(getstrategy(host) != s){
-        sites[host] = s;
-        return true;
-    }
-    const char* subhost = host;
-    while (subhost) {
-        if (subhost[0] == '.') {
-            subhost++;
-        }
-
-        if (sites.count(subhost)) {
-            sites.erase(host);
-            sites.erase(subhost);
-            sites[subhost] = s;
-            LOG("merge strategy for %s and %s\n", host, subhost);
-        }
-        subhost = strpbrk(subhost, ".");
-    }
+    sites[host] = s;
     return true;
 }
 
+std::string getExternalFilesDir();
 
 void loadsites() {
     sites.clear();
@@ -72,7 +56,12 @@ void loadsites() {
     sites[hostname] = Strategy::local;
     sites["localhost"] = Strategy::local;
 
+#ifdef __ANDROID__
+    ifstream sitesfile(getExternalFilesDir() + "/" + LISTFILE);
+    LOG("load sites from: %s\n", getExternalFilesDir().c_str());
+#else
     ifstream sitesfile(LISTFILE);
+#endif
     if (sitesfile.good()) {
         string line;
         while (std::getline(sitesfile, line)) {
@@ -100,6 +89,7 @@ void loadsites() {
 }
 
 void savesites(){
+#ifndef __ANDROID__
     ofstream sitesfile(LISTFILE);
     for (auto i : sites) {
         switch(i.second){
@@ -118,6 +108,7 @@ void savesites(){
         }
     }
     sitesfile.close();
+#endif
 }
 
 

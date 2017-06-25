@@ -139,7 +139,7 @@ void Cgi::InProc() {
         len = read(fd, cgi_buff + cgi_getlen, len);
         if (len <= 0) {
             if (showerrinfo(len, "cgi read")) {
-                clean(INTERNAL_ERR, 0);
+                deleteLater(READ_ERR);
             }
             return;
         }
@@ -173,10 +173,8 @@ void Cgi::InProc() {
             break;
         }
         len = read(fd, cgi_buff + cgi_getlen, len);
-        if (len <= 0) {
-            if (showerrinfo(len, "cgi read")) {
-                clean(INTERNAL_ERR, 0);
-            }
+        if (len <= 0 && showerrinfo(len, "cgi read")) {
+            deleteLater(READ_ERR);
             return;
         }
         cgi_getlen += len;
@@ -313,7 +311,6 @@ void Cgi::InProc() {
         int len = status.req_ptr->bufleft(status.req_index);
         if (len <= 0) {
             LOGE("The requester's write buff is full\n");
-//            status.req_ptr->wait(status.req_index);
             updateEpoll(0);
             return;
         }
@@ -325,7 +322,7 @@ void Cgi::InProc() {
             cgi_getlen = 0;
         }
         if (header->flag & CGI_FLAG_END) {
-            status.req_ptr->clean(NOERROR, status.req_index);
+            status.req_ptr->finish(NOERROR, status.req_index);
             statusmap.erase(cgi_id);
         }
         break;
@@ -343,7 +340,7 @@ void Cgi::defaultHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("cgi unkown error: %s\n", strerror(error));
         }
-        clean(INTERNAL_ERR, 0);
+        deleteLater(INTERNAL_ERR);
         return;
     }
 
@@ -355,7 +352,7 @@ void Cgi::defaultHE(uint32_t events) {
             return Write(buff, size);
         });
         if(ret < 0 && showerrinfo(ret, "cgi write error")) {
-            clean(WRITE_ERR, 0);
+            deleteLater(WRITE_ERR);
             return;
         }
         if(buffer.length == 0){
@@ -368,17 +365,21 @@ void Cgi::defaultHE(uint32_t events) {
     }
 }
 
-void Cgi::clean(uint32_t errcode, void* index) {
-    if(index == nullptr) {
-        for(auto i: statusmap) {
-            i.second.req_ptr->clean(errcode, i.second.req_index);
-        }
-        statusmap.clear();
-        return Peer::clean(errcode, 0);
-    } else {
-        uint32_t id = (uint32_t)(long)index;
+void Cgi::finish(uint32_t errcode, void* index) {
+    uint32_t id = (uint32_t)(long)index;
+    assert(statusmap.count(id));
+    Peer::Send((const void*)nullptr, 0, index);
+    if(errcode){
         statusmap.erase(id);
     }
+}
+
+void Cgi::deleteLater(uint32_t errcode){
+    for(auto i: statusmap) {
+        i.second.req_ptr->finish(errcode, i.second.req_index);
+    }
+    statusmap.clear();
+    return Peer::deleteLater(errcode);
 }
 
 
@@ -416,7 +417,7 @@ Cgi* Cgi::getcgi(HttpReqHeader* req) {
 
 void flushcgi() {
     for(auto i:cgimap) {
-        i.second->clean(NOERROR, 0);
+        i.second->deleteLater(PEER_LOST_ERR);
     }
 }
 

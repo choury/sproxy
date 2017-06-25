@@ -114,6 +114,17 @@ void Peer::closeHE(uint32_t events){
     delete this;
 }
 
+void Peer::deleteLater(uint32_t errcode) {
+    assert(errcode);
+    if(fd > 0) {
+        updateEpoll(EPOLLOUT);
+        handleEvent = (void (Con::*)(uint32_t))&Peer::closeHE;
+    }else{
+        delete this;
+    }
+}
+
+
 
 ssize_t Peer::Send(const void* buff, size_t size, void* index) {
     return Send(p_memdup(buff, size), size, index);
@@ -123,14 +134,6 @@ void Peer::writedcb(void*) {
     updateEpoll(events | EPOLLIN);
 }
 
-void Peer::clean(uint32_t errcode, void*) {
-    if(fd > 0) {
-        updateEpoll(EPOLLOUT);
-        handleEvent = (void (Con::*)(uint32_t))&Peer::closeHE;
-    }else{
-        delete this;
-    }
-}
 
 void Buffer::push(void* buff, size_t size) {
     if(size == 0) {
@@ -143,7 +146,7 @@ void Buffer::push(void* buff, size_t size) {
 }
 
 ssize_t  Buffer::Write(std::function<ssize_t(const void*, size_t)> write_func){
-    size_t writed = 0;
+    size_t written = 0;
     while(!write_queue.empty()){
         write_block& wb = write_queue.front();
         ssize_t ret = write_func((char *)wb.buff + wb.wlen, wb.len - wb.wlen);
@@ -151,7 +154,7 @@ ssize_t  Buffer::Write(std::function<ssize_t(const void*, size_t)> write_func){
             return ret;
         }
 
-        writed += true;
+        written += ret;
         length -= ret;
         assert(ret + wb.wlen <= wb.len);
         if ((size_t)ret + wb.wlen == wb.len) {
@@ -162,7 +165,7 @@ ssize_t  Buffer::Write(std::function<ssize_t(const void*, size_t)> write_func){
             break;
         }
     }
-    return writed;
+    return written;
 }
 
 Buffer::~Buffer() {

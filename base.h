@@ -35,12 +35,13 @@ protected:
     virtual void closeHE(uint32_t events);
 public:
     virtual ~Peer();
+    virtual void deleteLater(uint32_t errcode);
     
-    virtual void clean(uint32_t errcode, void* info);
-    
+
     virtual int32_t bufleft(void* index) = 0;
     virtual ssize_t Send(const void *buff, size_t size, void* index) final;
     virtual ssize_t Send(void* buff, size_t size, void* index) = 0;
+    virtual void finish(uint32_t errcode, void* info) = 0;
 
     virtual void writedcb(void* index);
 };

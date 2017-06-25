@@ -8,7 +8,7 @@ Proxy2* proxy2 = nullptr;
 
 static void connection_lost(Proxy2 *p){
     LOGE("[Proxy2] %p the ping timeout, so close it\n", p);
-    p->clean(PEER_LOST_ERR, 0);
+    p->deleteLater(PEER_LOST_ERR);
 }
 
 void Proxy2::ping_check(Proxy2 *p){
@@ -19,6 +19,7 @@ void Proxy2::ping_check(Proxy2 *p){
     LOGD(DHTTP2, "window size global: %d/%d\n", p->localwinsize, p->remotewinsize);
     add_job((job_func)connection_lost, p, 3000);
 }
+
 
 Proxy2::Proxy2(int fd, SSL_CTX *ctx, Ssl *ssl): ctx(ctx), ssl(ssl) {
     this->fd = fd;
@@ -102,7 +103,7 @@ void Proxy2::defaultHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("proxy2 error: %s\n", strerror(error));
         }
-        clean(INTERNAL_ERR, 0);
+        deleteLater(INTERNAL_ERR);
         return;
     }
     if (events & EPOLLIN) {
@@ -124,7 +125,7 @@ void Proxy2::defaultHE(uint32_t events) {
         }
         int ret = SendFrame();
         if(ret <= 0 && showerrinfo(ret, "proxy2 write error")) {
-            clean(WRITE_ERR, 0);
+            deleteLater(WRITE_ERR);
             return;
         }
         if(framequeue.empty()){
@@ -133,7 +134,7 @@ void Proxy2::defaultHE(uint32_t events) {
     }
     if(proxy2 != this && statusmap.empty()){
         LOG("this is not the proxy2 and no clients, close it.\n");
-        clean(NOERROR, 0);
+        deleteLater(PEER_LOST_ERR);
     }
 }
 
@@ -147,14 +148,13 @@ void Proxy2::DataProc(const Http2_header* header) {
         if(len > status.localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
             LOGE("(%s) :[%d] window size error\n", requester->getsrc(status.req_index), id);
-            requester->clean(ERR_FLOW_CONTROL_ERROR, status.req_index);
+            requester->finish(ERR_FLOW_CONTROL_ERROR, status.req_index);
             statusmap.erase(id);
             return;
         }
         requester->Send(header+1, len, status.req_index);
         if(header->flags & END_STREAM_F){
-            if(len)
-                requester->Send((const void*)nullptr, 0, status.req_index);
+            requester->finish(NOERROR, status.req_index);
         }else{
             status.localwinsize -= len;
         }
@@ -166,7 +166,7 @@ void Proxy2::DataProc(const Http2_header* header) {
 
 void Proxy2::ErrProc(int errcode) {
     if (showerrinfo(errcode, "Proxy2 Http2 error")){
-        clean(errcode, 0);
+        deleteLater(HTTP_PROTOCOL_ERR);
     }
 }
 
@@ -177,8 +177,7 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
             LOGE("(%s) [%d]: stream reseted: %d\n",
                  status.req_ptr->getsrc(status.req_index), id, errcode);
         }
-        status.req_ptr->Send((const void*)nullptr, 0, status.req_index);  //for http/1.0
-        status.req_ptr->clean(errcode, status.req_index);
+        status.req_ptr->finish(errcode, status.req_index);
         statusmap.erase(id);
     }
 
@@ -223,18 +222,19 @@ void Proxy2::PingProc(Http2_header *header){
 
 
 void* Proxy2::request(HttpReqHeader* req) {
+    assert(req->src && req->index);
     statusmap[curid] = ReqStatus{
        req->src,
        req->index,
        (int32_t)remoteframewindowsize,
        localframewindowsize
     };
-    req->index = reinterpret_cast<void*>(curid);  //change to proxy server's id
+    void *index =reinterpret_cast<void*>(curid);  //change to proxy server's id
+    req->index = index;
     curid += 2;
-    PushFrame(req->getframe(&request_table, (uint32_t)(long)req->index));
-    auto ret = req->index;
+    PushFrame(req->getframe(&request_table, (uint32_t)(long)index));
     delete req;
-    return ret;
+    return index;
 }
 
 void Proxy2::ResProc(HttpResHeader* res) {
@@ -257,7 +257,7 @@ void Proxy2::ResProc(HttpResHeader* res) {
 
 void Proxy2::GoawayProc(Http2_header* header){
     Goaway_Frame* goaway = (Goaway_Frame *)(header+1);
-    clean(get32(goaway->errcode), nullptr);
+    deleteLater(get32(goaway->errcode));
 }
 
 
@@ -267,25 +267,29 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
     }
 }
 
-void Proxy2::clean(uint32_t errcode, void* index) {
-    if(index == nullptr) {
-        proxy2 = (proxy2 == this) ? nullptr: proxy2;
-        for(auto i: statusmap){
-            i.second.req_ptr->clean(errcode, i.second.req_index);
-        }
-        statusmap.clear();
-        Goaway(-1, errcode);
-        return Peer::clean(errcode, 0);
-    }else{
-        uint32_t id = (uint32_t)(long)index;
-        assert(statusmap.count(id));
-        Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
-        if(errcode == VPN_AGED_ERR){
-           ReqStatus& status = statusmap[id];
-           status.req_ptr->clean(errcode, status.req_index);
-        }
-        statusmap.erase(id);
+void Proxy2::finish(uint32_t errcode, void* index) {
+    uint32_t id = (uint32_t)(long)index;
+    assert(statusmap.count(id));
+    if(errcode == VPN_AGED_ERR){
+        ReqStatus& status = statusmap[id];
+        status.req_ptr->finish(errcode, status.req_index);
     }
+    if(errcode){
+        Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
+        statusmap.erase(id);
+    }else{
+        Peer::Send((const void*)nullptr, 0, index);
+    }
+}
+
+void Proxy2::deleteLater(uint32_t errcode){
+    proxy2 = (proxy2 == this) ? nullptr: proxy2;
+    for(auto i: statusmap){
+        i.second.req_ptr->finish(errcode, i.second.req_index);
+    }
+    statusmap.clear();
+    Goaway(-1, errcode);
+    return Peer::deleteLater(errcode);
 }
 
 

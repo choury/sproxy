@@ -3,7 +3,7 @@
 
 #include <unistd.h>
 #include <fcntl.h>
-#include <pthread.h>
+#include <iostream>
 
 
 static JavaVM *jnijvm;
@@ -66,4 +66,26 @@ const char* getpackagename(int uid) {
     jnienv->DeleteLocalRef(jname);
     jnienv->DeleteLocalRef(cls);
     return name;
+}
+
+std::string getExternalFilesDir() {
+    JNIEnv *jnienv;
+    jnijvm->GetEnv((void **)&jnienv, JNI_VERSION_1_6);
+    // getExternalFilesDir() - java
+    jclass cls = jnienv->GetObjectClass(jniobj);
+    jmethodID mid = jnienv->GetMethodID(cls, "getExternalFilesDir",
+                                     "(Ljava/lang/String;)Ljava/io/File;");
+    jobject File_obj = jnienv->CallObjectMethod(jniobj, mid, NULL);
+    jclass File_cls = jnienv->FindClass("java/io/File");
+    jmethodID getPath_mid = jnienv->GetMethodID(File_cls, "getPath", "()Ljava/lang/String;");
+    jstring Path_obj = (jstring) jnienv->CallObjectMethod(File_obj, getPath_mid);
+
+    const char *path_str = jnienv->GetStringUTFChars(Path_obj, 0);
+
+    char path[PATH_MAX];
+    strcpy(path, path_str);
+    jnienv->ReleaseStringUTFChars(Path_obj, path_str);
+    jnienv->DeleteLocalRef(Path_obj);
+    jnienv->DeleteLocalRef(File_obj);
+    return path;
 }

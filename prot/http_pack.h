@@ -105,8 +105,8 @@ public:
 class HttpReq{
     size_t header_sent = 0;
     size_t header_len = 0;
-    void *header_buff = nullptr;
 public:
+    void *header_buff = nullptr;
     HttpReqHeader*  header;
     HttpBody       body;
     HttpReq(const HttpReq&) = delete;

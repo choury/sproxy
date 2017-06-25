@@ -6,7 +6,7 @@
 
 static void connection_lost(Guest_s2 *g){
     LOGE("(%s): [Guest_s2] Nothing got too long, so close it\n", g->getsrc(nullptr));
-    g->clean(PEER_LOST_ERR, 0);
+    g->deleteLater(PEER_LOST_ERR);
 }
 
 Guest_s2::Guest_s2(int fd, const char* ip, uint16_t port, Ssl* ssl):
@@ -83,15 +83,14 @@ void Guest_s2::DataProc(const Http2_header* header) {
         Responser* responser = status.res_ptr;
         if(len > status.localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
-            responser->clean(ERR_FLOW_CONTROL_ERROR, status.res_index);
+            responser->finish(ERR_FLOW_CONTROL_ERROR, status.res_index);
             LOGE("(%s) :[%d] window size error\n", getsrc(nullptr), id);
             statusmap.erase(id);
             return;
         }
         responser->Send(header+1, len, status.res_index);
         if(header->flags & END_STREAM_F){
-            if(len)
-                responser->Send((const void*)nullptr, 0, status.res_index);
+            responser->finish(NOERROR, status.res_index);
         }else{
             status.localwinsize -= len;
         }
@@ -142,7 +141,7 @@ void Guest_s2::defaultHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("(%s): guest_s error:%s\n", getsrc(nullptr), strerror(error));
         }
-        clean(INTERNAL_ERR, 0);
+        deleteLater(INTERNAL_ERR);
         return;
     }
     if (events & EPOLLIN) {
@@ -163,8 +162,8 @@ void Guest_s2::defaultHE(uint32_t events) {
             }
         }
         int ret = SendFrame();
-        if(ret <= 0  && showerrinfo(ret, "guest_s2 write error")) {
-            clean(WRITE_ERR, 0);
+        if(ret < 0  && showerrinfo(ret, "guest_s2 write error")) {
+            deleteLater(WRITE_ERR);
             return;
         }
         if(framequeue.empty()) {
@@ -188,7 +187,7 @@ void Guest_s2::RstProc(uint32_t id, uint32_t errcode) {
         if(errcode)
             LOGE("(%s) [%d]: stream  reseted: %d\n", getsrc(nullptr), id, errcode);
         ResStatus& status = statusmap[id];
-        status.res_ptr->clean(errcode,  status.res_index);
+        status.res_ptr->finish(errcode,  status.res_index);
         statusmap.erase(id);
     }
 }
@@ -222,12 +221,12 @@ void Guest_s2::WindowUpdateProc(uint32_t id, uint32_t size) {
 
 void Guest_s2::GoawayProc(Http2_header* header) {
     Goaway_Frame* goaway = (Goaway_Frame *)(header+1);
-    clean(get32(goaway->errcode), nullptr);
+    deleteLater(get32(goaway->errcode));
 }
 
 void Guest_s2::ErrProc(int errcode) {
     if(showerrinfo(errcode, "Guest_s2-Http2 error")){
-        clean(errcode, 0);
+        deleteLater(HTTP_PROTOCOL_ERR);
     }
 }
 
@@ -237,19 +236,24 @@ void Guest_s2::AdjustInitalFrameWindowSize(ssize_t diff) {
     }
 }
 
-void Guest_s2::clean(uint32_t errcode, void* index) {
+void Guest_s2::finish(uint32_t errcode, void* index) {
     uint32_t id = (uint32_t)(long)index;
-    if(id == 0) {
-        for(auto i: statusmap){
-            i.second.res_ptr->clean(errcode, i.second.res_index);
-        }
-        statusmap.clear();
-        Goaway(-1, errcode);
-        return Peer::clean(errcode, 0);
-    }else{
+    assert(statusmap.count(id));
+    if(errcode){
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
-        statusmap.erase(id);
+    }else{
+        Peer::Send((const void*)nullptr, 0, index);
     }
+    statusmap.erase(id);
+}
+
+void Guest_s2::deleteLater(uint32_t errcode){
+    for(auto i: statusmap){
+        i.second.res_ptr->finish(errcode, i.second.res_index);
+    }
+    statusmap.clear();
+    Goaway(-1, errcode);
+    return Peer::deleteLater(errcode);
 }
 
 
