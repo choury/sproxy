@@ -117,8 +117,11 @@ ssize_t Host::Write_buff() {
         ret = req.Write_string([this](const void *buff, size_t size){
             return Write(buff, size);
         });
-        if(ret <= 0)
+        if(ret <= 0){
             break;
+        }else{
+            req.header->src->writedcb(req.header->index);
+        }
     }
     return ret;
 }
@@ -148,9 +151,6 @@ void Host::defaultHE(uint32_t events) {
         }
         if(reqs.empty() || reqs.back().size()==0){
             updateEpoll(EPOLLIN);
-        }else{
-            HttpReq& req = reqs.back();
-            req.header->src->writedcb(req.header->index);
         }
     }
 }

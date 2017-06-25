@@ -327,7 +327,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         }
         int buflen = status.res_ptr->bufleft(status.res_index);
         if(buflen <= 0){
-            LOGE("responser buff is full, drop packet\n");
+            LOGE("(%s): responser buff is full, drop packet\n", getsrc(&key));
         }else{
             const char* data = packet + pac->gethdrlen();
             status.res_ptr->Send(data, datalen, status.res_index);
@@ -347,7 +347,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         VpnStatus &status = statusmap[key];
         status.window = pac->tcp->getwindow();
         if(status.window == 0){
-            LOGE("Get zero tcp window, reset it!\n");
+            LOGE("(%s): Get zero tcp window, reset it!\n", getsrc(&key));
             status.res_ptr->finish(TCP_RESET_ERR, status.res_index);
             cleanKey(&key);
             return;
@@ -472,7 +472,9 @@ ssize_t Guest_vpn::Send(void* buff, size_t size, void* index) {
         return size;
     }
     if(key.protocol == Protocol::TCP){
-        assert(size <= uint32_t(status.window << status.window_scale));
+        if(size > uint32_t(status.window << status.window_scale)){
+            LOGE("(%s): window size smaller than send size!\n", getsrc(&key));
+        }
         LOGD(DVPN, "write tcp back (%s -> %s) (%u - %u) size: %zu\n",
              key.getdst(), key.getsrc(), status.seq, status.ack, size);
         Ip pac_return(IPPROTO_TCP, &key.dst, &key.src);
