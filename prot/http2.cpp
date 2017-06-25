@@ -247,7 +247,7 @@ void Http2Responser::InitProc() {
         }
         http2_getlen = 0;
         SendInitSetting();
-        inited = true;
+        http2_flag |= HTTP2_FLAG_INITED;
         Http2_Proc = &Http2Responser::DefaultProc;
     } else {
         ssize_t readlen = Read(http2_buff + http2_getlen, prelen - http2_getlen);
@@ -308,7 +308,7 @@ void Http2Requster::InitProc() {
         if(len == 0){
             if(header->type == SETTINGS_TYPE && (header->flags & ACK_F) == 0){
                 SettingsProc(header);
-                inited = true;
+                http2_flag |=  HTTP2_FLAG_INITED;
                 Http2_Proc = &Http2Requster::DefaultProc;
             }else {
                 ErrProc(ERR_PROTOCOL_ERROR);

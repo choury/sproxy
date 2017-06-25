@@ -308,18 +308,19 @@ void Cgi::InProc() {
         cgistage = Status::HandleLeft;
     case Status::HandleLeft:{
         CgiStatus& status = statusmap.at(cgi_id);
-        int len = status.req_ptr->bufleft(status.req_index);
-        if (len <= 0) {
-            LOGE("The requester's write buff is full\n");
-            updateEpoll(0);
-            return;
-        }
-        len = Min(len, cgi_getlen - cgi_outlen);
-        len = status.req_ptr->Send((const char *)cgi_buff + cgi_outlen, len, status.req_index);
-        cgi_outlen += len;
         if (cgi_outlen == cgi_getlen) {
             cgistage = Status::WaitHeadr;
             cgi_getlen = 0;
+        }else{
+            int len = status.req_ptr->bufleft(status.req_index);
+            if (len <= 0) {
+                LOGE("The requester's write buff is full\n");
+                updateEpoll(0);
+                return;
+            }
+            len = Min(len, cgi_getlen - cgi_outlen);
+            len = status.req_ptr->Send((const char *)cgi_buff + cgi_outlen, len, status.req_index);
+            cgi_outlen += len;
         }
         if (header->flag & CGI_FLAG_END) {
             status.req_ptr->finish(NOERROR, status.req_index);

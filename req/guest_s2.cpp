@@ -31,7 +31,7 @@ Guest_s2::~Guest_s2() {
 ssize_t Guest_s2::Read(void *buff, size_t size) {
     auto ret = ssl->read(buff, size);
     if(ret > 0){
-        add_job((job_func)connection_lost, this, 900000);
+        add_job((job_func)connection_lost, this, 1800000);
     }
     return ret;
 }
@@ -39,7 +39,7 @@ ssize_t Guest_s2::Read(void *buff, size_t size) {
 ssize_t Guest_s2::Write(const void *buff, size_t size) {
     auto ret =  ssl->write(buff, size);
     if(ret > 0){
-        add_job((job_func)connection_lost, this, 900000);
+        add_job((job_func)connection_lost, this, 1800000);
     }
     return ret;
 }
@@ -88,7 +88,8 @@ void Guest_s2::DataProc(const Http2_header* header) {
             statusmap.erase(id);
             return;
         }
-        responser->Send(header+1, len, status.res_index);
+        if(len)
+            responser->Send(header+1, len, status.res_index);
         if(header->flags & END_STREAM_F){
             responser->finish(NOERROR, status.res_index);
         }else{
@@ -146,7 +147,7 @@ void Guest_s2::defaultHE(uint32_t events) {
     }
     if (events & EPOLLIN) {
         (this->*Http2_Proc)();
-        if(inited && localwinsize < 50 *1024 *1024){
+        if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
     }
@@ -187,7 +188,7 @@ void Guest_s2::RstProc(uint32_t id, uint32_t errcode) {
         if(errcode)
             LOGE("(%s) [%d]: stream  reseted: %d\n", getsrc(nullptr), id, errcode);
         ResStatus& status = statusmap[id];
-        status.res_ptr->finish(errcode,  status.res_index);
+        status.res_ptr->finish(errcode?errcode:PEER_LOST_ERR,  status.res_index);
         statusmap.erase(id);
     }
 }
@@ -221,7 +222,9 @@ void Guest_s2::WindowUpdateProc(uint32_t id, uint32_t size) {
 
 void Guest_s2::GoawayProc(Http2_header* header) {
     Goaway_Frame* goaway = (Goaway_Frame *)(header+1);
-    deleteLater(get32(goaway->errcode));
+    uint32_t errcode = get32(goaway->errcode);
+    http2_flag |= HTTP2_FLAG_GOAWAYED;
+    deleteLater(errcode ? errcode:PEER_LOST_ERR);
 }
 
 void Guest_s2::ErrProc(int errcode) {
@@ -252,7 +255,8 @@ void Guest_s2::deleteLater(uint32_t errcode){
         i.second.res_ptr->finish(errcode, i.second.res_index);
     }
     statusmap.clear();
-    Goaway(-1, errcode);
+    if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0)
+        Goaway(-1, errcode);
     return Peer::deleteLater(errcode);
 }
 

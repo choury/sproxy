@@ -290,7 +290,6 @@ void File::defaultHE(uint32_t events) {
             int len = Min(requester->bufleft(i->second.req_index), rg.end - rg.begin + 1);
             if (len <= 0) {
                 LOGE("The requester's write buff is full\n");
-//                requester->wait(i->second.req_index);
                 i++;
                 continue;
             }

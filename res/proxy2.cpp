@@ -108,7 +108,7 @@ void Proxy2::defaultHE(uint32_t events) {
     }
     if (events & EPOLLIN) {
         (this->*Http2_Proc)();
-        if(inited && localwinsize < 50 *1024 *1024){
+        if((http2_flag & HTTP2_FLAG_INITED)  && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
     }
@@ -152,7 +152,8 @@ void Proxy2::DataProc(const Http2_header* header) {
             statusmap.erase(id);
             return;
         }
-        requester->Send(header+1, len, status.req_index);
+        if(len)
+            requester->Send(header+1, len, status.req_index);
         if(header->flags & END_STREAM_F){
             requester->finish(NOERROR, status.req_index);
             statusmap.erase(id);
@@ -178,7 +179,7 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
             LOGE("(%s) [%d]: stream reseted: %d\n",
                  status.req_ptr->getsrc(status.req_index), id, errcode);
         }
-        status.req_ptr->finish(errcode, status.req_index);
+        status.req_ptr->finish(errcode?errcode:PEER_LOST_ERR, status.req_index);
         statusmap.erase(id);
     }
 
@@ -258,7 +259,14 @@ void Proxy2::ResProc(HttpResHeader* res) {
 
 void Proxy2::GoawayProc(Http2_header* header){
     Goaway_Frame* goaway = (Goaway_Frame *)(header+1);
-    deleteLater(get32(goaway->errcode));
+    uint32_t errcode = get32(goaway->errcode);
+    errcode = errcode ? errcode:PEER_LOST_ERR;
+    proxy2 = (proxy2 == this) ? nullptr: proxy2;
+    for(auto i: statusmap){
+        i.second.req_ptr->finish(errcode, i.second.req_index);
+    }
+    statusmap.clear();
+    return Peer::deleteLater(errcode);
 }
 
 
@@ -289,7 +297,8 @@ void Proxy2::deleteLater(uint32_t errcode){
         i.second.req_ptr->finish(errcode, i.second.req_index);
     }
     statusmap.clear();
-    Goaway(-1, errcode);
+    if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0)
+        Goaway(-1, errcode);
     return Peer::deleteLater(errcode);
 }
 

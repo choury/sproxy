@@ -89,7 +89,9 @@ protected:
     
     int32_t remotewinsize = 65535; // 对端提供的窗口大小，发送时减小，收到对端update时增加
     int32_t localwinsize = localframewindowsize; // 发送给对端的窗口大小，接受时减小，给对端发送update时增加
-    bool inited = false;
+#define HTTP2_FLAG_INITED    1
+#define HTTP2_FLAG_GOAWAYED  2
+    uint32_t http2_flag = 0;
     uint32_t framelen = 0;
     std::list<Http2_frame> framequeue;
     Index_table request_table;
