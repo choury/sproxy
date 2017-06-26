@@ -128,6 +128,7 @@ ssize_t Cgi::Send(void *buff, size_t size, void* index) {
 
 void Cgi::InProc() {
     CGI_Header *header = (CGI_Header *)cgi_buff;
+begin:
     uint32_t cgi_id = ntohl(header->requestId);
     switch (cgistage) {
     case Status::WaitHeadr:{
@@ -331,7 +332,7 @@ void Cgi::InProc() {
     default:
         break;
     }
-    InProc();
+    goto begin;
 }
 
 void Cgi::defaultHE(uint32_t events) {
@@ -367,12 +368,11 @@ void Cgi::defaultHE(uint32_t events) {
 }
 
 void Cgi::finish(uint32_t errcode, void* index) {
+    assert(errcode);
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     Peer::Send((const void*)nullptr, 0, index);
-    if(errcode){
-        statusmap.erase(id);
-    }
+    statusmap.erase(id);
 }
 
 void Cgi::deleteLater(uint32_t errcode){

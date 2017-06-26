@@ -139,32 +139,35 @@ void Proxy2::defaultHE(uint32_t events) {
 }
 
 
-void Proxy2::DataProc(const Http2_header* header) {
-    uint32_t id = get32(header->id);
-    ssize_t len = get24(header->length);
+void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
+    if( len == 0)
+        return;
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         Requester* requester = status.req_ptr;
-        if(len > status.localwinsize){
+        if(len > (size_t)status.localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
             LOGE("(%s) :[%d] window size error\n", requester->getsrc(status.req_index), id);
             requester->finish(ERR_FLOW_CONTROL_ERROR, status.req_index);
             statusmap.erase(id);
             return;
         }
-        if(len)
-            requester->Send(header+1, len, status.req_index);
-        if(header->flags & END_STREAM_F){
-            requester->finish(NOERROR, status.req_index);
-            statusmap.erase(id);
-        }else{
-            status.localwinsize -= len;
-        }
+        requester->Send(data, len, status.req_index);
+        status.localwinsize -= len;
     }else{
         Reset(id, ERR_STREAM_CLOSED);
     }
     localwinsize -= len;
 }
+
+void Proxy2::EndProc(uint32_t id){
+    if(statusmap.count(id)){
+        ReqStatus& status = statusmap[id];
+        status.req_ptr->finish(NOERROR, status.req_index);
+        statusmap.erase(id);
+    }
+}
+
 
 void Proxy2::ErrProc(int errcode) {
     if (showerrinfo(errcode, "Proxy2 Http2 error")){
@@ -243,9 +246,8 @@ void Proxy2::ResProc(HttpResHeader* res) {
     uint32_t id = (uint32_t)(long)res->index;
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
-        if((res->flags & END_STREAM_F) == 0 &&
-           !res->get("Content-Length") &&
-           res->status[0] != '1')  //1xx should not have body
+        if(!res->no_body() && res->status[0] != '1' &&  //1xx should not have body
+           !res->get("Content-Length"))
         {
             res->add("Transfer-Encoding", "chunked");
         }
@@ -277,18 +279,15 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
 }
 
 void Proxy2::finish(uint32_t errcode, void* index) {
+    assert(errcode);
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     if(errcode == VPN_AGED_ERR){
         ReqStatus& status = statusmap[id];
         status.req_ptr->finish(errcode, status.req_index);
     }
-    if(errcode){
-        Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
-        statusmap.erase(id);
-    }else{
-        Peer::Send((const void*)nullptr, 0, index);
-    }
+    Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
+    statusmap.erase(id);
 }
 
 void Proxy2::deleteLater(uint32_t errcode){
@@ -297,8 +296,10 @@ void Proxy2::deleteLater(uint32_t errcode){
         i.second.req_ptr->finish(errcode, i.second.req_index);
     }
     statusmap.clear();
-    if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0)
+    if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){
+        http2_flag |= HTTP2_FLAG_GOAWAYED;
         Goaway(-1, errcode);
+    }
     return Peer::deleteLater(errcode);
 }
 

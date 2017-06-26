@@ -140,9 +140,6 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
 
 void Guest::EndProc() {
     status = Status::idle;
-    if(responser_ptr){
-        responser_ptr->finish(NOERROR, responser_index);
-    }
 }
 
 

@@ -26,12 +26,13 @@ protected:
     virtual ssize_t Write(const void* buff, size_t len)override;
 
     virtual void PushFrame(Http2_header *header)override;
-    virtual void DataProc(const Http2_header *header)override;
     virtual void RstProc(uint32_t id, uint32_t errcode)override;
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)override;
     virtual void PingProc(Http2_header *header)override;
     virtual void ErrProc(int errcode)override;
     virtual void ResProc(HttpResHeader* res)override;
+    virtual void DataProc(uint32_t id, const void *data, size_t len)override;
+    virtual void EndProc(uint32_t id) override;
     virtual void GoawayProc(Http2_header * header) override;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
     virtual void defaultHE(uint32_t events);

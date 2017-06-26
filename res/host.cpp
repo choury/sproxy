@@ -251,11 +251,10 @@ void Host::ErrProc(int errcode) {
 
 void Host::finish(uint32_t errcode, void* index) {
     assert((long)index == 1);
-    if(errcode){
-        reqs.clear();
-        if(testedaddr >= 0){
-            Peer::deleteLater(errcode);
-        }
+    assert(errcode);
+    reqs.clear();
+    if(testedaddr >= 0){
+        Peer::deleteLater(errcode);
     }
 }
 

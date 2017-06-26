@@ -75,26 +75,21 @@ void Guest_s2::PushFrame(Http2_header *header) {
     return Http2Base::PushFrame(header);
 }
 
-void Guest_s2::DataProc(const Http2_header* header) {
-    uint32_t id = get32(header->id);
-    ssize_t len = get24(header->length);
+void Guest_s2::DataProc(uint32_t id, const void* data, size_t len) {
+    if(len == 0)
+        return;
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
         Responser* responser = status.res_ptr;
-        if(len > status.localwinsize){
+        if(len > (size_t)status.localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
             responser->finish(ERR_FLOW_CONTROL_ERROR, status.res_index);
             LOGE("(%s) :[%d] window size error\n", getsrc(nullptr), id);
             statusmap.erase(id);
             return;
         }
-        if(len)
-            responser->Send(header+1, len, status.res_index);
-        if(header->flags & END_STREAM_F){
-            responser->finish(NOERROR, status.res_index);
-        }else{
-            status.localwinsize -= len;
-        }
+        responser->Send(data, len, status.res_index);
+        status.localwinsize -= len;
     }else{
         Reset(id, ERR_STREAM_CLOSED);
     }
@@ -255,8 +250,10 @@ void Guest_s2::deleteLater(uint32_t errcode){
         i.second.res_ptr->finish(errcode, i.second.res_index);
     }
     statusmap.clear();
-    if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0)
+    if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){
+        http2_flag |= HTTP2_FLAG_GOAWAYED;
         Goaway(-1, errcode);
+    }
     return Peer::deleteLater(errcode);
 }
 

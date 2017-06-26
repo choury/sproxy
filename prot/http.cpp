@@ -180,11 +180,13 @@ void HttpRequester::HeaderProc() {
         size_t headerlen = headerend - http_buff;
         try {
             HttpResHeader* res = new HttpResHeader(http_buff);
-            if(res->no_body() || res->status[0] == '1'){
+            if(res->no_body()){
                 http_flag |= HTTP_IGNORE_BODY_F;
-            }else if (res->get("Transfer-Encoding")!= nullptr) {
+            }else if(res->status[0] == '1'){
+                http_flag |= HTTP_STATUS_1XX;
+            }else if(res->get("Transfer-Encoding")!= nullptr) {
                 Http_Proc = &HttpRequester::ChunkLProc;
-            } else if (res->get("Content-Length") == nullptr) {
+            }else if(res->get("Content-Length") == nullptr) {
                 Http_Proc = &HttpRequester::AlwaysProc;
             }else{
                 Http_Proc = &HttpRequester::FixLenProc;
@@ -195,6 +197,9 @@ void HttpRequester::HeaderProc() {
                 http_flag &= ~HTTP_IGNORE_BODY_F;
                 Http_Proc = (void (HttpBase::*)())&HttpRequester::HeaderProc;
                 EndProc();
+            }else if(http_flag & HTTP_STATUS_1XX){
+                http_flag &= ~HTTP_STATUS_1XX;
+                Http_Proc = (void (HttpBase::*)())&HttpRequester::HeaderProc;
             }
         }catch(...) {
             ErrProc(HTTP_PROTOCOL_ERR);

@@ -76,15 +76,14 @@ void FDns::ResponseCb(uint32_t id, const char* buff, size_t size) {
 
 
 void FDns::finish(uint32_t errcode, void* index) {
+    assert(errcode);
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     if(errcode == VPN_AGED_ERR){
         FDnsStatus& status = statusmap[id];
         status.req_ptr->finish(errcode, status.req_index);
     }
-    if(errcode){
-        statusmap.erase(id);
-    }
+    statusmap.erase(id);
 }
 
 void FDns::deleteLater(uint32_t errcode) {

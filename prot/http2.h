@@ -112,9 +112,10 @@ protected:
     virtual void PingProc(Http2_header *header);
     virtual void GoawayProc(Http2_header *header);
     virtual void RstProc(uint32_t id, uint32_t errcode);
+    virtual void EndProc(uint32_t id);
     virtual uint32_t ExpandWindowSize(uint32_t id, uint32_t size);
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)=0;
-    virtual void DataProc(const Http2_header *header)=0;
+    virtual void DataProc(uint32_t id, const void *data, size_t len)=0;
     virtual void ErrProc(int errcode) = 0;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff) = 0;
     void (Http2Base::*Http2_Proc)()=&Http2Base::InitProc;

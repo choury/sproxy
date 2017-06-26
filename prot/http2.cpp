@@ -19,13 +19,20 @@ begin:
         ssize_t len = sizeof(Http2_header) + get24(header->length) - http2_getlen;
         assert(get24(header->length) <= FRAMEBODYLIMIT);
         if(len == 0){
+            uint32_t id = get32(header->id);
             try {
                 switch(header->type) {
                 case DATA_TYPE:
-                    DataProc(header);
+                    DataProc(id, header+1, get24(header->length));
+                    if(header->flags & END_STREAM_F){
+                        EndProc(get32(header->id));
+                    }
                     break;
                 case HEADERS_TYPE:
                     HeadersProc(header);
+                    if(header->flags & END_STREAM_F){
+                        EndProc(get32(header->id));
+                    }
                     break;
                 case PRIORITY_TYPE:
                     break;
@@ -39,16 +46,16 @@ begin:
                     GoawayProc(header);
                     break;
                 case RST_STREAM_TYPE:
-                    RstProc(get32(header->id), get32(header+1));
+                    RstProc(id, get32(header+1));
                     break;
                 case WINDOW_UPDATE_TYPE:
-                    WindowUpdateProc(get32(header->id), get32(header+1));
+                    WindowUpdateProc(id, get32(header+1));
                     break;
                 default:
                     LOGE("unkown http2 frame:%d\n", header->type);
                 }
             }catch(...){
-                Reset(get32(header->id), ERR_INTERNAL_ERROR);
+                Reset(id, ERR_INTERNAL_ERROR);
                 http2_getlen = 0;
                 return;
             }
@@ -159,11 +166,15 @@ void Http2Base::PingProc(Http2_header* header) {
 }
 
 void Http2Base::GoawayProc(Http2_header* header) {
-    LOG("Get a Goaway frame\n");
+    LOGD(DHTTP2, "Get a Goaway frame\n");
 }
 
 void Http2Base::RstProc(uint32_t id, uint32_t errcode) {
-    LOG("Get a reset frame [%d]: %d\n", id, errcode);
+    LOGD(DHTTP2, "Get a reset frame [%d]: %d\n", id, errcode);
+}
+
+void Http2Base::EndProc(uint32_t id) {
+    LOGD(DHTTP2, "Stream end: %d\n", id);
 }
 
 uint32_t Http2Base::ExpandWindowSize(uint32_t id, uint32_t size) {

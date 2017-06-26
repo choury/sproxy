@@ -315,11 +315,10 @@ void File::defaultHE(uint32_t events) {
 }
 
 void File::finish(uint32_t errcode, void* index){
+    assert(errcode);
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
-    if(errcode){
-        statusmap.erase(id);
-    }
+    statusmap.erase(id);
 }
 
 void File::deleteLater(uint32_t errcode){
