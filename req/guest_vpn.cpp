@@ -284,7 +284,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         }
         return;
     }
-    if(flag & TH_FIN){ //5 fin包，回两个包，ack包，fin包
+    if(flag & TH_FIN){ //5 fin包，回ack包
         LOGD(DVPN, "get fin, checking key\n");
         seq++;
         //创建回包
@@ -299,9 +299,8 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
 
         if(statusmap.count(key)){
             VpnStatus &status = statusmap[key];
-            status.res_ptr->finish(PEER_LOST_ERR, status.res_index);
+            status.res_ptr->finish(NOERROR, status.res_index);
             status.ack = seq;
-            cleanKey(&key);
         }
         return;
     }

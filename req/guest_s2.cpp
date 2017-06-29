@@ -75,6 +75,21 @@ void Guest_s2::PushFrame(Http2_header *header) {
     return Http2Base::PushFrame(header);
 }
 
+void Guest_s2::ReqProc(HttpReqHeader* req) {
+    Responser *responser = distribute(req, nullptr);
+    uint32_t id = (uint32_t)(long)req->index;
+    if(responser){
+        statusmap[id]=ResStatus{
+            responser,
+            responser->request(req),
+            (int32_t)remoteframewindowsize,
+            localframewindowsize
+        };
+    }else{
+        delete req;
+    }
+}
+
 void Guest_s2::DataProc(uint32_t id, const void* data, size_t len) {
     if(len == 0)
         return;
@@ -96,20 +111,13 @@ void Guest_s2::DataProc(uint32_t id, const void* data, size_t len) {
     localwinsize -= len;
 }
 
-void Guest_s2::ReqProc(HttpReqHeader* req) {
-    Responser *responser = distribute(req, nullptr);
-    uint32_t id = (uint32_t)(long)req->index;
-    if(responser){
-        statusmap[id]=ResStatus{
-            responser,
-            responser->request(req),
-            (int32_t)remoteframewindowsize,
-            localframewindowsize
-        };
-    }else{
-        delete req;
+void Guest_s2::EndProc(uint32_t id) {
+    if(statusmap.count(id)){
+        ResStatus& status = statusmap[id];
+        status.res_ptr->finish(NOERROR, status.res_index);
     }
 }
+
 
 void Guest_s2::response(HttpResHeader* res) {
     assert(res->index);

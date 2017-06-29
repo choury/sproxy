@@ -70,15 +70,16 @@ void Guest::defaultHE(uint32_t events) {
     }
 
     if (events & EPOLLOUT) {
+        if(buffer.length == 0){
+            updateEpoll(EPOLLIN);
+            return;
+        }
         int ret = buffer.Write([this](const void* buff, size_t size){
             return Write(buff, size);
         });
-        if (ret < 0 && showerrinfo(ret, "guest write error")) {
+        if (ret <= 0 && showerrinfo(ret, "guest write error")) {
             deleteLater(WRITE_ERR);
             return;
-        }
-        if(buffer.length == 0){
-            updateEpoll(EPOLLIN);
         }
         if (responser_ptr){
             responser_ptr->writedcb(responser_index);
@@ -140,11 +141,18 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
 
 void Guest::EndProc() {
     status = Status::idle;
+    if(responser_ptr){
+        responser_ptr->finish(NOERROR, responser_index);
+    }
 }
 
 
 void Guest::ErrProc(int errcode) {
-    if (showerrinfo(errcode, "Guest-Http error")) {
+    if(errcode == 0 && responser_ptr){
+        responser_ptr->finish(NOERROR, responser_index);
+        return;
+    }
+    if(showerrinfo(errcode, "Guest-Http error")) {
         deleteLater(HTTP_PROTOCOL_ERR);
     }
 }
@@ -216,9 +224,10 @@ void Guest::finish(uint32_t errcode, void* index) {
     responser_ptr = nullptr;
     responser_index = nullptr;
     if(errcode){
-        return Peer::deleteLater(errcode ? errcode : PEER_LOST_ERR);
+        return Peer::deleteLater(PEER_LOST_ERR);
     }else{
         Peer::Send((const void*)nullptr,0, index);
+        return Peer::deleteLater(NOERROR);
     }
 }
 

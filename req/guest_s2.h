@@ -27,6 +27,7 @@ protected:
     virtual void GoawayProc(Http2_header *header)override;
     virtual void ReqProc(HttpReqHeader* req)override;
     virtual void DataProc(uint32_t id, const void* data, size_t len)override;
+    virtual void EndProc(uint32_t id) override;
     virtual void RstProc(uint32_t id, uint32_t errcode)override;
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)override;
     virtual void ErrProc(int errcode)override;

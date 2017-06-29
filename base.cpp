@@ -115,7 +115,6 @@ void Peer::closeHE(uint32_t events){
 }
 
 void Peer::deleteLater(uint32_t errcode) {
-    assert(errcode);
     if(fd > 0) {
         updateEpoll(EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Peer::closeHE;

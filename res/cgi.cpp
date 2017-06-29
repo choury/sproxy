@@ -189,6 +189,7 @@ begin:
         CgiStatus &status = statusmap.at(cgi_id);
         res->index = status.req_index;
         status.req_ptr->response(res);
+        status.responsed = true;
         cgistage = Status::WaitHeadr;
         cgi_getlen = 0;
         break;
@@ -350,15 +351,16 @@ void Cgi::defaultHE(uint32_t events) {
         InProc();
     }
     if (events & EPOLLOUT) {
+        if(buffer.length == 0){
+            updateEpoll(EPOLLIN);
+            return;
+        }
         int ret = buffer.Write([this](const void * buff, size_t size){
             return Write(buff, size);
         });
-        if(ret < 0 && showerrinfo(ret, "cgi write error")) {
+        if(ret <= 0 && showerrinfo(ret, "cgi write error")) {
             deleteLater(WRITE_ERR);
             return;
-        }
-        if(buffer.length == 0){
-            updateEpoll(EPOLLIN);
         }
         for(auto i: statusmap) {
             CgiStatus& status = i.second;
@@ -368,15 +370,21 @@ void Cgi::defaultHE(uint32_t events) {
 }
 
 void Cgi::finish(uint32_t errcode, void* index) {
-    assert(errcode);
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     Peer::Send((const void*)nullptr, 0, index);
-    statusmap.erase(id);
+    if(errcode){
+        statusmap.erase(id);
+    }
 }
 
 void Cgi::deleteLater(uint32_t errcode){
     for(auto i: statusmap) {
+        if(!i.second.responsed){
+            HttpResHeader* res = new HttpResHeader(H503);
+            res->index = i.second.req_index;
+            i.second.req_ptr->response(res);
+        }
         i.second.req_ptr->finish(errcode, i.second.req_index);
     }
     statusmap.clear();
@@ -386,7 +394,11 @@ void Cgi::deleteLater(uint32_t errcode){
 
 void* Cgi::request(HttpReqHeader* req) {
     uint32_t cgi_id = curid++;
-    statusmap[cgi_id] = CgiStatus {req->src, req->index};
+    statusmap[cgi_id] = CgiStatus{
+        req->src,
+        req->index,
+        false
+    };
     CGI_Header *header = req->getcgi(cgi_id);
     buffer.push(header, sizeof(CGI_Header) + ntohs(header->contentLength));
     updateEpoll(events | EPOLLOUT);

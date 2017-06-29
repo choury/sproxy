@@ -240,21 +240,30 @@ void Host::EndProc() {
     HttpReq& req = reqs.front();
     req.header->src->finish(NOERROR, req.header->index);
     reqs.pop_front();
+    if(reqs.empty()){
+        deleteLater(NOERROR);
+    }
 }
 
 
 void Host::ErrProc(int errcode) {
-    if (showerrinfo(errcode, "Host-http error")) {
+    if(errcode == 0 && reqs.size()){
+        HttpReq& req = reqs.front();
+        req.header->src->finish(NOERROR, req.header->index);
+        reqs.pop_front();
+    }
+    if(showerrinfo(errcode, "Host-http error")) {
         deleteLater(HTTP_PROTOCOL_ERR);
     }
 }
 
 void Host::finish(uint32_t errcode, void* index) {
     assert((long)index == 1);
-    assert(errcode);
-    reqs.clear();
-    if(testedaddr >= 0){
-        Peer::deleteLater(errcode);
+    if(errcode){
+        reqs.clear();
+        if(testedaddr >= 0){
+            Peer::deleteLater(errcode);
+        }
     }
 }
 

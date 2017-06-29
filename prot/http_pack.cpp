@@ -343,9 +343,6 @@ Http2_header *HttpReqHeader::getframe(Index_table *index_table, uint32_t http_id
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F;
-    if(no_body()){
-        header->flags |= END_STREAM_F;
-    }
     set32(header->id, http_id);
 
     char *p = (char *)(header + 1);
@@ -379,9 +376,6 @@ CGI_Header *HttpReqHeader::getcgi(uint32_t cgi_id) const{
     cgi->flag = 0;
     cgi->requestId = htonl(cgi_id);
     
-    if(no_body()){
-        cgi->flag |= CGI_FLAG_END;
-    }
     char *p = (char *)(cgi + 1);
     p = cgi_addnv(p, ":method", method);
     p = cgi_addnv(p, ":path", path);
@@ -538,9 +532,6 @@ Http2_header *HttpResHeader::getframe(Index_table* index_table, uint32_t http_id
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F;
-    if(no_body()) {
-        header->flags |= END_STREAM_F;
-    }
     set32(header->id, http_id);
 
     char *p = (char *)(header + 1);
@@ -563,9 +554,6 @@ CGI_Header *HttpResHeader::getcgi(uint32_t cgi_id)const {
     cgi->flag = 0;
     cgi->requestId = htonl(cgi_id);
     
-    if(no_body()) {
-        cgi->flag |= CGI_FLAG_END;
-    }
     char *p = (char *)(cgi + 1);
     p = cgi_addnv(p, ":status", status);
     for(auto i: headers){
@@ -705,7 +693,6 @@ void HttpBody::push(void* buff, size_t len) {
         data.push(write_block{buff, len, 0});
     }else{
         p_free(buff);
-        data.push(write_block{nullptr, 0, 0});
     }
 }
 

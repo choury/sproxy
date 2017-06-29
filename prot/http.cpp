@@ -136,8 +136,7 @@ void HttpResponser::HeaderProc() {
         try {
             HttpReqHeader* req = new HttpReqHeader(http_buff, this);
             if(req->no_body()){
-                Http_Proc = (void (HttpBase::*)())&HttpResponser::HeaderProc;
-                EndProc();
+                http_flag |= HTTP_IGNORE_BODY_F;
             }else if (req->get("Content-Length") == nullptr ||
                       req->ismethod("CONNECT"))
             {
@@ -147,7 +146,10 @@ void HttpResponser::HeaderProc() {
                 http_expectlen = strtoull(req->get("Content-Length"), nullptr, 10);
             }
             ReqProc(req);
-
+            if(http_flag & HTTP_IGNORE_BODY_F){
+                EndProc();
+                Http_Proc = (void (HttpBase::*)())&HttpResponser::HeaderProc;
+            }
         }catch(...) {
             ErrProc(HTTP_PROTOCOL_ERR);
             return;

@@ -138,6 +138,23 @@ void Proxy2::defaultHE(uint32_t events) {
     }
 }
 
+void Proxy2::ResProc(HttpResHeader* res) {
+    uint32_t id = (uint32_t)(long)res->index;
+    if(statusmap.count(id)){
+        ReqStatus& status = statusmap[id];
+        if(!res->no_body() && res->status[0] != '1' &&  //1xx should not have body
+           !res->get("Content-Length"))
+        {
+            res->add("Transfer-Encoding", "chunked");
+        }
+        res->index = status.req_index;  //change back to req's id
+        status.req_ptr->response(res);
+    }else{
+        delete res;
+        Reset(id, ERR_STREAM_CLOSED);
+    }
+}
+
 
 void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
     if( len == 0)
@@ -161,11 +178,10 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
 }
 
 void Proxy2::EndProc(uint32_t id){
-    if(statusmap.count(id)){
-        ReqStatus& status = statusmap[id];
-        status.req_ptr->finish(NOERROR, status.req_index);
-        statusmap.erase(id);
-    }
+    assert(statusmap.count(id));
+    ReqStatus& status = statusmap[id];
+    status.req_ptr->finish(NOERROR, status.req_index);
+    statusmap.erase(id);
 }
 
 
@@ -242,22 +258,6 @@ void* Proxy2::request(HttpReqHeader* req) {
     return index;
 }
 
-void Proxy2::ResProc(HttpResHeader* res) {
-    uint32_t id = (uint32_t)(long)res->index;
-    if(statusmap.count(id)){
-        ReqStatus& status = statusmap[id];
-        if(!res->no_body() && res->status[0] != '1' &&  //1xx should not have body
-           !res->get("Content-Length"))
-        {
-            res->add("Transfer-Encoding", "chunked");
-        }
-        res->index = status.req_index;  //change back to req's id
-        status.req_ptr->response(res);
-    }else{
-        delete res;
-        Reset(id, ERR_STREAM_CLOSED);
-    }
-}
 
 void Proxy2::GoawayProc(Http2_header* header){
     Goaway_Frame* goaway = (Goaway_Frame *)(header+1);
@@ -279,15 +279,19 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
 }
 
 void Proxy2::finish(uint32_t errcode, void* index) {
-    assert(errcode);
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     if(errcode == VPN_AGED_ERR){
         ReqStatus& status = statusmap[id];
         status.req_ptr->finish(errcode, status.req_index);
+        Reset(id, ERR_CANCEL);
     }
-    Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
-    statusmap.erase(id);
+    if(errcode){
+        Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
+        statusmap.erase(id);
+    }else{
+        Peer::Send((const void*)nullptr, 0, index);
+    }
 }
 
 void Proxy2::deleteLater(uint32_t errcode){

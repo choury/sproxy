@@ -46,6 +46,7 @@ class Requester;
 struct CgiStatus{
     Requester *req_ptr;
     void*      req_index;
+    bool       responsed;
 };
 
 class Cgi:public Responser{
