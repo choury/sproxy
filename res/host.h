@@ -16,7 +16,7 @@ protected:
     Protocol protocol;
     std::list<HttpReq> reqs;
     
-    virtual int connect();
+    virtual void connect();
     virtual void waitconnectHE(uint32_t events);
     virtual void defaultHE(uint32_t events);
     

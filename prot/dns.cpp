@@ -307,7 +307,7 @@ void query_timeout(uint16_t id){
 }
 
 void RcdDown(const char *hostname, const sockaddr_un &addr) {
-    LOGD(DDNS, "down for %s: %s\n", hostname, getaddrstring(&addr));
+    LOG("[DNS] down for %s: %s\n", hostname, getaddrstring(&addr));
     if (rcd_cache.count(hostname)) {
         auto &addrs  = rcd_cache[hostname].addrs;
         for (auto i = addrs.begin(); i != addrs.end(); ++i) {

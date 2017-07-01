@@ -5,7 +5,6 @@
 #include <assert.h>
                     
 void Host::con_timeout(Host* host) {
-    del_job((job_func)con_timeout, host);
     LOGE("connect to %s time out.\n", host->hostname);
     host->deleteLater(CONNECT_TIMEOUT);
 }
@@ -28,17 +27,16 @@ void Host::Dnscallback(Host* host, const char *hostname, std::list<sockaddr_un> 
         host->deleteLater(DNS_FAILED);
     } else {
         for (auto i: addrs){
+            i.addr_in6.sin6_port = htons(host->port);
             host->addrs.push_back(i);
-            host->addrs.back().addr_in6.sin6_port = htons(host->port);
         }
         host->connect();
-        add_job((job_func)con_timeout, host, 60000);
     }
 }
 
-int Host::connect() {
+void Host::connect() {
     if ((size_t)testedaddr>= addrs.size()) {
-        return -1;
+        deleteLater(PEER_LOST_ERR);
     } else {
         if (fd > 0) {
             updateEpoll(0);
@@ -52,13 +50,9 @@ int Host::connect() {
             LOGE("connect to %s failed\n", hostname);
             return connect();
         }
-        if(reqs.size()){
-            updateEpoll(EPOLLOUT);
-            handleEvent = (void (Con::*)(uint32_t))&Host::waitconnectHE;
-        }else{
-            deleteLater(PEER_LOST_ERR);
-        }
-        return 0;
+        updateEpoll(EPOLLOUT);
+        handleEvent = (void (Con::*)(uint32_t))&Host::waitconnectHE;
+        add_job((job_func)con_timeout, this, 30000);
     }
 }
 
@@ -92,9 +86,7 @@ void Host::waitconnectHE(uint32_t events) {
     }
     return;
 reconnect:
-    if (connect() < 0) {
-        deleteLater(CONNECT_FAILED);
-    }
+    connect();
 }
 
 ssize_t Host::Write_buff() {

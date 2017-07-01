@@ -149,8 +149,8 @@ void Guest::EndProc() {
 
 void Guest::ErrProc(int errcode) {
     if(errcode == 0 && responser_ptr){
-        responser_ptr->finish(NOERROR, responser_index);
-        return;
+        responser_ptr->finish(PEER_LOST_ERR, responser_index);
+        responser_ptr = nullptr;
     }
     if(showerrinfo(errcode, "Guest-Http error")) {
         deleteLater(HTTP_PROTOCOL_ERR);

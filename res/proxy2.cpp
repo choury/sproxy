@@ -178,10 +178,11 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
 }
 
 void Proxy2::EndProc(uint32_t id){
-    assert(statusmap.count(id));
-    ReqStatus& status = statusmap[id];
-    status.req_ptr->finish(NOERROR, status.req_index);
-    statusmap.erase(id);
+    if(statusmap.count(id)) {
+        ReqStatus &status = statusmap[id];
+        status.req_ptr->finish(NOERROR, status.req_index);
+        statusmap.erase(id);
+    }
 }
 
 

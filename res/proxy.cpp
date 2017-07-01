@@ -149,9 +149,7 @@ void Proxy::waitconnectHE(uint32_t events) {
     }
     return;
 reconnect:
-    if (connect() < 0) {
-        deleteLater(CONNECT_FAILED);
-    }
+    connect();
 }
 
 void Proxy::shakehandHE(uint32_t events) {

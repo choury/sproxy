@@ -42,7 +42,6 @@ string toLower(const string &s) {
 
 
 void HttpHeader::add(const istring& header, const string& value) {
-    assert(value != "");
     headers.insert(std::make_pair(header, value));
 }
 
@@ -51,7 +50,7 @@ void HttpHeader::add(const istring& header, const string& value) {
 template <typename T>
 std::string to_string(T value)
 {
-    std::ostringstream os ;
+    std::ostringstream os;
     os << value ;
     return os.str() ;
 }
