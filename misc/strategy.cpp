@@ -1,14 +1,15 @@
 #include "strategy.h"
 #include "net.h"
 #include "common.h"
-//#include <string>
-#include <unordered_map>
+#include <map>
 #include <set>
 #include <fstream>
 
 #include <string.h>
 #include <unistd.h>
+#include <assert.h>
 #ifdef __ANDROID__
+#include <stdlib.h>
 #define HOST_NAME_MAX   64
 #else
 #include <limits.h>
@@ -17,13 +18,237 @@
 #define LISTFILE "sites.list"
 
 using std::string;
-using std::unordered_map;
+using std::map;
 using std::ifstream;
 using std::ofstream;
 
 static std::set<string> authips;
 
-static unordered_map<string, Strategy> sites;
+static string reverse(string str){
+    string::size_type split = 0;
+    string result;
+    while((split = str.find_last_of(".")) != string::npos){
+        result += str.substr(split+1) + '.';
+        str = str.substr(0, split);
+    }
+    result += str;
+    return result;
+}
+
+
+class Stra{
+    Strategy strategy = Strategy::none;
+    map<string, Stra> domains;
+    map<uint64_t, Strategy> ip4s;
+    void insert(string host, Strategy strategy);
+    Strategy find(string host);
+    bool remove(string host);
+    bool purge(Strategy strategy);
+public:
+    void add(const char* host, Strategy strategy){
+        string domain = host;
+        auto mask_pos = domain.find_first_of("/");
+        string ip = domain.substr(0, mask_pos);
+        uint32_t ipv4 = inet_addr(ip.c_str());
+        if(ipv4 != INADDR_NONE){
+            uint32_t mask = 0xffffffff;
+            if(mask_pos != string::npos){
+#ifdef __ANDROID__
+                int prefix = atoi(domain.substr(mask_pos+1).c_str());
+#else
+                int prefix = stoi(domain.substr(mask_pos+1));
+#endif
+                mask =  ((uint64_t)1 << prefix) - 1;
+            }
+            ip4s[(uint64_t)ipv4 << 32 | mask] = strategy;
+            return;
+        }
+        if(host[0] == '_'){
+            this->strategy = strategy;
+        }
+        return insert(reverse(host), strategy);
+    }
+    Strategy get(const char* host){
+        uint32_t ipv4 = inet_addr(host);
+        if(ipv4 != INADDR_NONE){
+            for(auto i: ip4s){
+                uint32_t mask = i.first & 0xffffffff;
+                uint32_t net = i.first >> 32;
+                if((net & mask ) == (ipv4 & mask)){
+                   return i.second;
+                }
+            }
+            return strategy;
+        }
+        return find(reverse(host));
+    }
+    bool del(const char *host){
+        uint32_t ipv4 = inet_addr(host);
+        if(ipv4 != INADDR_NONE){
+            for(auto i: ip4s){
+                uint32_t mask = i.first & 0xffffffff;
+                uint32_t net = i.first >> 32;
+                if((net & mask ) == (ipv4 & mask)){
+                    ip4s.erase(i.first);
+                    return true;
+                }
+            }
+            return false;
+        }
+        if(host[0] == '_'){
+            strategy = Strategy::direct;
+        }
+        return remove(reverse(host));
+    }
+    void clear();
+    void stats(int tab);
+    std::map<string, string>dump();
+}sites;
+
+void Stra::insert(string host, Strategy strategy){
+    assert(strategy != Strategy::none);
+    if(this->strategy == strategy){
+        return;
+    }
+    auto pos = host.find_first_of(".");
+    if(pos == string::npos){
+        domains[host].strategy =  strategy;
+        domains[host].purge(strategy);
+        return;
+    }else{
+        domains[host.substr(0, pos)].insert(host.substr(pos+1), strategy);
+    }
+}
+
+bool Stra::purge(Strategy strategy){
+    for(auto i= domains.begin();i != domains.end();){
+        if(i->second.purge(strategy)){
+            i = domains.erase(i);
+        }else{
+            i++;
+        }
+    }
+    return (domains.empty() &&
+        (this->strategy == strategy || this->strategy == Strategy::none));
+}
+
+Strategy Stra::find(string host) {
+    if(host == ""){
+        return strategy;
+    }
+    string subhost;
+    auto pos = host.find_first_of(".");
+    if(pos == string::npos){
+        subhost = "";
+    }else{
+        subhost = host.substr(pos+1);
+    }
+    Strategy s = Strategy::none;
+    if(domains.count(host.substr(0, pos)))
+        s= domains[host.substr(0, pos)].find(subhost);
+    if(s != Strategy::none)
+        return s;
+    return strategy;
+}
+
+void Stra::clear() {
+    ip4s.clear();
+    domains.clear();
+}
+
+
+bool Stra::remove(string host) {
+    auto pos = host.find_first_of(".");
+    if(pos == string::npos){
+        if(domains.count(host)){
+            if(domains[host].strategy == Strategy::none){
+                return false;
+            }
+            if(domains[host].domains.empty()){
+                domains.erase(host);
+            }else{
+                domains[host].strategy = Strategy::none;
+            }
+            return true;
+        }else{
+            return false;
+        }
+    }else{
+        string subhost = host.substr(pos+1);
+        if(domains.count(host.substr(0, pos))){
+            return domains[host.substr(0, pos)].remove(subhost);
+        }else{
+            return false;
+        }
+    }
+}
+
+void Stra::stats(int tab){
+    for(auto i: ip4s){
+        int prefix = 0;
+        uint32_t mask = i.first&0xffffffff;
+        while(mask){
+            prefix ++;
+            mask >>= 1;
+        }
+        uint32_t net = i.first >> 32;
+        LOG("%s/%u: %s\n", inet_ntoa(in_addr{net}), prefix, getstrategystring(i.second));
+    }
+    char tabs[100]= {0};
+    for(int i = 0; i<tab; i++){
+        tabs[i]='\t';
+    }
+    if(domains.size()){
+        if(strategy != Strategy::none){
+            LOG("[%zu] %s\n", domains.size(), getstrategystring(strategy));
+        }else{
+            LOG("[%zu]\n", domains.size());
+        }
+        for(auto i: domains){
+            LOG("%s %s", tabs, i.first.c_str());
+            i.second.stats(tab+1);
+        }
+    }else{
+        LOG(" %s\n", getstrategystring(strategy));
+    }
+}
+
+
+std::map<string, string> Stra::dump(){
+    std::map<string, string> smap;
+    for(auto i: ip4s){
+        uint32_t net = i.first >> 32;
+        uint32_t mask = i.first&0xffffffff;
+        char ipv4_string[100];
+        if(mask != 0xffffffff){
+            int prefix = 0;
+            while(mask){
+                prefix ++;
+                mask >>= 1;
+            }
+            sprintf(ipv4_string, "%s/%u", inet_ntoa(in_addr{net}), prefix);
+        }else{
+            sprintf(ipv4_string, "%s", inet_ntoa(in_addr{net}));
+        }
+        smap[ipv4_string] = getstrategystring(i.second);
+    }
+    if(domains.size()){
+        for(auto i: domains){
+            auto submap =  i.second.dump();
+            for(auto j:submap){
+                if(j.first != ""){
+                    smap[j.first+'.'+i.first] = j.second;
+                }else{
+                    smap[i.first] = j.second;
+                }
+            }
+        }
+    }
+    if(strategy != Strategy::none){
+        smap[""] = getstrategystring(strategy);
+    }
+    return smap;
+}
 
 static bool mergestrategy(const char* host, const char* strategy){
     Strategy s;
@@ -38,23 +263,24 @@ static bool mergestrategy(const char* host, const char* strategy){
     }else{
         return false;
     }
-    sites[host] = s;
+    sites.add(host, s);
     return true;
 }
 
 std::string getExternalFilesDir();
 
-void loadsites() {
+void reloadstrategy() {
     sites.clear();
 
     //default strategy
     for(const char *ips=getlocalip(); ips && strlen(ips); ips+=INET6_ADDRSTRLEN){
-        sites[ips] = Strategy::local;
+        sites.add(ips, Strategy::local);
     }
     char hostname[HOST_NAME_MAX];
     gethostname(hostname, sizeof(hostname));
-    sites[hostname] = Strategy::local;
-    sites["localhost"] = Strategy::local;
+    sites.add(hostname, Strategy::local);
+    sites.add("localhost", Strategy::local);
+    sites.add("_", Strategy::direct);
 
 #ifdef __ANDROID__
     ifstream sitesfile(getExternalFilesDir() + "/" + LISTFILE);
@@ -74,7 +300,7 @@ void loadsites() {
             char proxy[DOMAINLIMIT];
             sscanf(line.c_str(), "%s %s %s", site, strategy, proxy);
 
-            if(line.length() && mergestrategy(site, strategy) == false){
+            if(line.length() && !mergestrategy(site, strategy)){
                 LOGE("Wrong config line:%s\n",line.c_str());
             }
         }
@@ -86,26 +312,15 @@ void loadsites() {
 
     addauth("::ffff:127.0.0.1");
     addauth("::1");
+//    sites.stats(0);
 }
 
 void savesites(){
 #ifndef __ANDROID__
     ofstream sitesfile(LISTFILE);
-    for (auto i : sites) {
-        switch(i.second){
-        case Strategy::direct:
-            sitesfile <<i.first<<" direct"<< std::endl;
-            break;
-        case Strategy::proxy:
-            sitesfile <<i.first<<" proxy"<< std::endl;
-            break;
-        case Strategy::local:
-            sitesfile <<i.first<<" local"<< std::endl;
-            break;
-        case Strategy::block:
-            sitesfile <<i.first<<" block"<< std::endl;
-            break;
-        }
+    auto list = getallstrategy();
+    for (auto i:list) {
+        sitesfile <<i.first<<' '<<i.second<< std::endl;
     }
     sitesfile.close();
 #endif
@@ -121,8 +336,7 @@ bool addstrategy(const char* host, const char* strategy) {
 }
 
 bool delstrategy(const char* host) {
-    if(sites.count(host)){
-        sites.erase(host);
+    if(sites.del(host)){
         savesites();
         return true;
     }else{
@@ -133,29 +347,7 @@ bool delstrategy(const char* host) {
 
 
 Strategy getstrategy(const char *host){
-    if (inet_addr(host) != INADDR_NONE){
-        //ip address should not be split
-        if(sites.count("*.*.*.*")) {
-            return sites["*.*.*.*"];
-        }else if(sites.count(host)){
-            return sites[host];
-        }else{
-            return sites["_"];
-        }
-    }
-    const char* subhost = host;
-
-    while (subhost) {
-        if (subhost[0] == '.') {
-            subhost++;
-        }
-
-        if (sites.count(subhost)) {
-            return sites[subhost];
-        }
-        subhost = strpbrk(subhost, ".");
-    }
-    return sites["_"];
+    return sites.get(host);
 }
 
 const char* getstrategystring(Strategy s)
@@ -169,15 +361,15 @@ const char* getstrategystring(Strategy s)
         return "local";
     case Strategy::block:
         return "block";
+    case Strategy::none:
+        return "null";
     }
     return nullptr;
 }
 
 std::map<std::string, std::string> getallstrategy(){
-    std::map<std::string, std::string> smap;
-    for(auto i:sites){
-        smap[i.first] = getstrategystring(i.second);
-    }
+    std::map<std::string, std::string> smap =  sites.dump();
+    smap.erase("");
     return smap;
 }
 

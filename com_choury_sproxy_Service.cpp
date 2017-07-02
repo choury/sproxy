@@ -39,6 +39,16 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(JNIEnv *, jo
     return vpn_stop();
 }
 
+JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reset(JNIEnv *, jobject){
+    LOG("native SproxyVpnService.reset.");
+    return vpn_reset();
+}
+
+JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload(JNIEnv *, jobject){
+    LOG("native SproxyVpnService.reload.");
+    return vpn_reload();
+}
+
 /*
  * call back to java to
  * protect fd so that the socket can access internet

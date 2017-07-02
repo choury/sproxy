@@ -25,6 +25,10 @@ const char *index_file = nullptr;
 uint32_t debug = 0;
 uint32_t vpn_contiune;
 
+#define VPN_RESET 1
+#define VPN_RELOAD 2
+uint32_t vpn_action = 0;
+
 int vpn_start(const struct VpnConfig* vpn){
     vpn_contiune = 1;
     signal(SIGPIPE, SIG_IGN);
@@ -39,7 +43,7 @@ int vpn_start(const struct VpnConfig* vpn){
         LOGE("wrong server format\n");
         return -1;
     }
-    loadsites();
+    reloadstrategy();
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
     efd = epoll_create(10000);
@@ -50,6 +54,15 @@ int vpn_start(const struct VpnConfig* vpn){
     new Guest_vpn(vpn->fd);
     LOGOUT("Accepting connections ...\n");
     while (vpn_contiune) {
+        if(vpn_action & VPN_RESET){
+            flushdns();
+            flushproxy2();
+            vpn_action &= ~VPN_RESET;
+        }
+        if(vpn_action & VPN_RELOAD){
+            reloadstrategy();
+            vpn_action &= ~VPN_RELOAD;
+        }
         int c;
         struct epoll_event events[200];
         if ((c = epoll_wait(efd, events, 200, do_job())) < 0) {
@@ -64,12 +77,21 @@ int vpn_start(const struct VpnConfig* vpn){
             (con->*con->handleEvent)(events[i].events);
         }
     }
+    releaseall();
+    flushdns();
     return 0;
 }
 
+
 void vpn_stop(){
     vpn_contiune = 0;
-    dnsdeinit();
-    flushproxy2();
-    releaseall();
+}
+
+
+void vpn_reset(){
+    vpn_action |= VPN_RESET;
+}
+
+void vpn_reload(){
+    vpn_action |= VPN_RELOAD;
 }

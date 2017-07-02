@@ -111,7 +111,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
                 LOG("[[proxy]] %s\n", log_buff);
                 req->should_proxy = true;
                 return Proxy::getproxy(req, responser_ptr);
-            case Strategy::block:
+            case Strategy::block:{
                 LOG("[[block]] %s\n", log_buff);
                 HttpResHeader* res = new HttpResHeader("HTTP/1.1 403 Forbidden" CRLF
                                   "Content-Length:73" CRLF CRLF);
@@ -120,11 +120,19 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
                 requester->Send("This site is blocked, please contact administrator"
                                  " for more information.\n", 73, req->index);
                 return nullptr;
+            }
+            case Strategy::none:{
+                LOG("[[BUG]] %s\n", log_buff);
+                HttpResHeader* res = new HttpResHeader(H503);
+                res->index = req->index;
+                requester->response(res);
+                return nullptr;
+            }
         }
     }else if (req->ismethod("ADDS")) {
         const char *strategy = req->get("s");
         LOG("[[add %s]] %s\n", strategy, log_buff);
-        if(strategy && addstrategy(req->hostname, strategy)){
+        if(strategy && addstrategy(req->geturl().c_str(), strategy)){
             HttpResHeader* res = new HttpResHeader(H200);
             res->index = req->index;
             requester->response(res);
@@ -170,8 +178,13 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
             HttpResHeader* res = new HttpResHeader(H200);
             res->index = req->index;
             requester->response(res);
-        }else if(strcasecmp(req->hostname, "sites") == 0){
-            loadsites();
+        }else if(strcasecmp(req->hostname, "strategy") == 0){
+            reloadstrategy();
+            HttpResHeader* res = new HttpResHeader(H200);
+            res->index = req->index;
+            requester->response(res);
+        }else if(strcasecmp(req->hostname, "dns") == 0){
+            flushdns();
             HttpResHeader* res = new HttpResHeader(H200);
             res->index = req->index;
             requester->response(res);

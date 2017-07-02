@@ -4,11 +4,8 @@
 
 #include <unordered_map>
 #include <set>
-//#include <list>
-//#include <string>
 
 #include <string.h>
-//#include <errno.h>
 #include <assert.h>
 
 
@@ -128,11 +125,7 @@ static int dnsinit() {
 }
 #endif
 
-void dnsdeinit(){
-    LOGD(DDNS, "deinit dns\n");
-    while(srvs.size()){
-        delete srvs[0];
-    }
+void flushdns(){
     for(auto& i:rcd_cache){
        del_job((job_func)dns_expired, (void *)i.first.c_str());
     }

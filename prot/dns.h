@@ -73,6 +73,6 @@ void query(const char* host, DNSCBfunc func, void* param);
 void query(const char* host, uint16_t type, DNSRAWCB func, void* parm);
 void RcdDown(const char *hostname, const sockaddr_un &addr);
 
-void dnsdeinit();
+void flushdns();
 
 #endif

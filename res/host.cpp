@@ -5,8 +5,9 @@
 #include <assert.h>
                     
 void Host::con_timeout(Host* host) {
-    LOGE("connect to %s time out.\n", host->hostname);
-    host->deleteLater(CONNECT_TIMEOUT);
+    del_job((job_func)con_timeout, host);
+    LOGE("connect to %s time out. retry...\n", host->hostname);
+    host->connect();
 }
 
 Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), protocol(protocol){

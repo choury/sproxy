@@ -22,6 +22,8 @@ struct VpnConfig{
 
 int vpn_start(const struct VpnConfig* vpn);
 void vpn_stop();
+void vpn_reset();
+void vpn_reload();
 #endif
 
 #ifdef  __cplusplus

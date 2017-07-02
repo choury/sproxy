@@ -8,6 +8,7 @@ enum class Strategy{
     proxy,
     local,
     block,
+    none,
 };
 
 #ifdef  __cplusplus
@@ -15,7 +16,7 @@ extern "C" {
 #endif
 
 
-void loadsites();
+void reloadstrategy();
 bool addstrategy(const char *host, const char *strategy);
 bool delstrategy(const char *host);
 Strategy getstrategy(const char *host);

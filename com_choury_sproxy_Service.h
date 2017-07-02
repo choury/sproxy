@@ -22,6 +22,8 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start(JNIEnv *, j
  * Signature: ()V
  */
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(JNIEnv *, jobject);
+JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reset(JNIEnv *, jobject);
+JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload(JNIEnv *, jobject);
 
 #ifdef __cplusplus
 }
