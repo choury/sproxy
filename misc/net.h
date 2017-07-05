@@ -13,7 +13,8 @@
 
 #define H204        "HTTP/1.0 204 No Content" CRLF CRLF
 
-#define H205        "HTTP/1.0 205 Reset Content" CRLF CRLF
+#define H205        "HTTP/1.0 205 Reset Content" CRLF \
+                    "Content-Length:0" CRLF CRLF
 
 #define H206        "HTTP/1.0 206 Partial Content" CRLF CRLF
 

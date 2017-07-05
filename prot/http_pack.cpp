@@ -488,7 +488,6 @@ HttpResHeader::HttpResHeader(const CGI_Header* headers)
 
 bool HttpResHeader::no_body() const {
     if(memcmp(status, "204", 3) == 0||
-       memcmp(status, "205", 3) == 0||
        memcmp(status, "304", 3) == 0)
     {
        return true;

@@ -4,11 +4,13 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <iostream>
+#include <map>
 
 
 static JavaVM *jnijvm;
 static jobject jniobj;
 static VpnConfig vpn;
+static std::map<int, std::string> packages;
 
 /*
  * Class:     com_choury_sproxy_SproxyVpnService
@@ -65,16 +67,20 @@ int protectFd(int sockfd) {
 
 const char* getpackagename(int uid) {
     static char name[DOMAINLIMIT];
-    JNIEnv *jnienv;
-    jnijvm->GetEnv((void **)&jnienv, JNI_VERSION_1_6);
-    jclass cls = jnienv->GetObjectClass(jniobj);
-    jmethodID mid = jnienv->GetMethodID(cls, "getPackageName", "(I)Ljava/lang/String;");
-    jstring jname = (jstring)jnienv->CallObjectMethod(jniobj, mid, uid);
-    const char *jname_str = jnienv->GetStringUTFChars(jname, 0);
-    strcpy(name, jname_str);
-    jnienv->ReleaseStringUTFChars(jname, jname_str);
-    jnienv->DeleteLocalRef(jname);
-    jnienv->DeleteLocalRef(cls);
+    if(packages.count(uid)){
+        strcpy(name, packages[uid].c_str());
+    }else {
+        JNIEnv *jnienv;
+        jnijvm->GetEnv((void **) &jnienv, JNI_VERSION_1_6);
+        jclass cls = jnienv->GetObjectClass(jniobj);
+        jmethodID mid = jnienv->GetMethodID(cls, "getPackageName", "(I)Ljava/lang/String;");
+        jstring jname = (jstring) jnienv->CallObjectMethod(jniobj, mid, uid);
+        const char *jname_str = jnienv->GetStringUTFChars(jname, 0);
+        strcpy(name, jname_str);
+        jnienv->ReleaseStringUTFChars(jname, jname_str);
+        jnienv->DeleteLocalRef(jname);
+        jnienv->DeleteLocalRef(cls);
+    }
     return name;
 }
 

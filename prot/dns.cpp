@@ -126,6 +126,9 @@ static int dnsinit() {
 #endif
 
 void flushdns(){
+    while(!srvs.empty()){
+        delete srvs.front();
+    }
     for(auto& i:rcd_cache){
        del_job((job_func)dns_expired, (void *)i.first.c_str());
     }
