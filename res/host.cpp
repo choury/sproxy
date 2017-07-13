@@ -230,10 +230,11 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 }
 
 void Host::EndProc() {
-    HttpReq& req = reqs.front();
-    req.header->src->finish(NOERROR, req.header->index);
+    Requester* req_ptr = reqs.front().header->src;
+    void*    req_index = reqs.front().header->index;
     reqs.pop_front();
     if(reqs.empty()){
+        req_ptr->finish(NOERROR, req_index);
         deleteLater(NOERROR);
     }
 }
