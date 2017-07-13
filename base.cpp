@@ -39,8 +39,8 @@ Con::~Con(){
 }
 
 void Con::updateEpoll(uint32_t events) {
-    int __attribute__((unused)) ret;
     if (fd > 0) {
+	int __attribute__((unused)) ret;
         if(events == 0){
 #ifndef NDEBUG
             LOGD(DEPOLL, "del %d: %p\n", fd, this);

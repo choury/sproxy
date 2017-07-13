@@ -224,7 +224,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
     size_t datalen = len - pac->gethdrlen();
     
     VpnKey key(pac);
-    LOGD(DVPN, "<tcp> (%s -> %s) (%u - %u) flag: %d size:%zd\n",
+    LOGD(DVPN, "<tcp> (%s -> %s) (%u - %u) flag: %d size:%zu\n",
          key.getsrc(), key.getdst(), seq, ack, flag, datalen);
 
     if(flag & TH_SYN){//1握手包，创建握手回包
@@ -364,7 +364,7 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
     VpnKey key(pac);
 
     if(statusmap.count(key)){
-        LOGD(DVPN, "<udp> (%s -> %s) size: %zd\n", key.getsrc(), key.getdst(), datalen);
+        LOGD(DVPN, "<udp> (%s -> %s) size: %zu\n", key.getsrc(), key.getdst(), datalen);
         VpnStatus& status = statusmap[key];
         if(status.res_ptr->bufleft(status.res_index)<=0){
             LOGE("responser buff is full, drop packet\n");
@@ -373,7 +373,7 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
         }
         add_job((job_func)vpn_aged, &status, 300000);
     }else{
-        LOGD(DVPN, "<udp> (%s -> %s) (N) size: %zd\n", key.getsrc(), key.getdst(), datalen);
+        LOGD(DVPN, "<udp> (%s -> %s) (N) size: %zu\n", key.getsrc(), key.getdst(), datalen);
         //create a http proxy request
         char buff[HEADLENLIMIT];
         uint32_t fip = ntohl(pac->getdst()->s_addr);
@@ -454,7 +454,7 @@ void Guest_vpn::icmpHE(const Ip* pac, const char* packet, size_t len) {
 
 int32_t Guest_vpn::bufleft(void* index) {
     VpnKey *key = (VpnKey *)index;
-    assert(index == nullptr || statusmap.count(*key));
+    assert(key == nullptr || statusmap.count(*key));
     if(key && key->protocol == Protocol::TCP){
         VpnStatus& status = statusmap[*key];
         return status.window << status.window_scale;

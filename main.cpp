@@ -61,7 +61,7 @@ class Http_server: public Server{
         }
     }
 public:
-    Http_server(int fd):Server(fd){}
+    explicit Http_server(int fd):Server(fd){}
     virtual void dump_stat(){
         LOG("Http_server %p\n", this);
     }

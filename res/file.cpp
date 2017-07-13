@@ -253,7 +253,7 @@ void File::defaultHE(uint32_t events) {
                 }else if(checkrange(rg, st.st_size)){
                     HttpResHeader* res = new HttpResHeader(H206);
                     char buff[100];
-                    snprintf(buff, sizeof(buff), "bytes %zu-%zu/%jd",
+                    snprintf(buff, sizeof(buff), "bytes %zd-%zd/%jd",
                              rg.begin, rg.end, (intmax_t)st.st_size);
                     res->add("Content-Range", buff);
                     size_t leftsize = rg.end - rg.begin+1;

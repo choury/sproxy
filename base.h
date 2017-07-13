@@ -12,7 +12,7 @@ protected:
     void updateEpoll(uint32_t events);
     virtual void discard();
 public:
-    Con(int fd);
+    explicit Con(int fd);
     void (Con::*handleEvent)(uint32_t events)=nullptr;
     virtual void dump_stat() = 0;
     virtual ~Con();
@@ -22,7 +22,7 @@ class Server:public Con{
 protected:
     virtual void defaultHE(uint32_t events)=0;
 public:
-    Server(int fd);
+    explicit Server(int fd);
 };
 
 

@@ -152,7 +152,7 @@ void Host::defaultHE(uint32_t events) {
 void* Host::request(HttpReqHeader* req) {
     assert(Http_Proc != &Host::AlwaysProc);
 
-    reqs.push_back(req);
+    reqs.push_back(HttpReq(req));
     updateEpoll(events | EPOLLOUT);
     return reinterpret_cast<void*>(1);
 }

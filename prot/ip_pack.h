@@ -59,6 +59,7 @@ public:
     uint8_t hdrlen = 0;
     Tcp(const ip* ip_hdr, const char* packet, size_t len);
     Tcp(const ip* ip_hdr, uint16_t sport, uint16_t dport);
+    Tcp(const Tcp&) = delete;
     void print() const;
     char *build_packet(const void* data, size_t &len);
     char* build_packet(void* data, size_t &len);
@@ -110,6 +111,7 @@ public:
     Ip(const char* packet, size_t len);
     Ip(uint8_t type, const in_addr* src, uint16_t sport, const in_addr* dst, uint16_t dport);
     Ip(uint8_t type, const sockaddr_un* src,  const sockaddr_un* dst);
+    Ip(const Ip&) = delete;
     void print() const;
     const in_addr* getsrc() const;
     const in_addr* getdst() const;

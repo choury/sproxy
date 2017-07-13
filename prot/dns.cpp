@@ -361,8 +361,8 @@ Dns_srv::~Dns_srv(){
 
 
 void Dns_srv::DnshandleEvent(uint32_t events) {
-    char buf[BUF_SIZE];
     if (events & EPOLLIN) {
+        char buf[BUF_SIZE];
         int len = read(fd, buf, BUF_SIZE);
 
         if ( len <= 0 ) {
@@ -588,7 +588,7 @@ Dns_Rr::Dns_Rr(const char* buff) {
 
     uint16_t flag = ntohs(dnshdr->flag);
     if ((flag & QR) == 0 || (flag & RCODE_MASK) != 0) {
-        LOG("[DNS] ack error:%u\n", flag & RCODE_MASK);
+        LOG("[DNS] ack error:%u\n", uint32_t(flag & RCODE_MASK));
         return;
     }
     const unsigned char *p = (const unsigned char *)(dnshdr +1);

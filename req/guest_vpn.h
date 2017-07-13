@@ -9,7 +9,7 @@ struct VpnKey{
     sockaddr_un src;
     sockaddr_un dst;
     Protocol    protocol;
-    VpnKey(const Ip* ip);
+    explicit VpnKey(const Ip* ip);
     void reverse();
     const char* getsrc() const;
     const char* getdst() const;

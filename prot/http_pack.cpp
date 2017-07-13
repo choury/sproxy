@@ -204,6 +204,7 @@ HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(nullptr)
         throw 1;
     }
    
+    protocol[0] = 0;
     char *p = (char *)(headers +1);
     uint32_t len = ntohs(headers->contentLength);
     while(uint32_t(p - (char *)(headers +1)) < len){

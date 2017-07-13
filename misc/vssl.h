@@ -31,7 +31,7 @@ protected:
         return ret;
     }
 public:
-    Ssl(SSL *ssl):ssl(ssl){
+    explicit Ssl(SSL *ssl):ssl(ssl){
         assert(ssl);
     }
     virtual ~Ssl(){

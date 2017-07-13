@@ -192,7 +192,7 @@ void Stra::stats(int tab){
             mask >>= 1;
         }
         uint32_t net = i.first >> 32;
-        LOG("%s/%u: %s\n", inet_ntoa(in_addr{net}), prefix, getstrategystring(i.second));
+        LOG("%s/%d: %s\n", inet_ntoa(in_addr{net}), prefix, getstrategystring(i.second));
     }
     char tabs[100]= {0};
     for(int i = 0; i<tab; i++){
@@ -226,7 +226,7 @@ std::map<string, string> Stra::dump(){
                 prefix ++;
                 mask >>= 1;
             }
-            sprintf(ipv4_string, "%s/%u", inet_ntoa(in_addr{net}), prefix);
+            sprintf(ipv4_string, "%s/%d", inet_ntoa(in_addr{net}), prefix);
         }else{
             sprintf(ipv4_string, "%s", inet_ntoa(in_addr{net}));
         }

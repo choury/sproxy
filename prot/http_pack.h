@@ -111,7 +111,7 @@ public:
     HttpBody       body;
     HttpReq(const HttpReq&) = delete;
     HttpReq(HttpReq&&);
-    HttpReq(HttpReqHeader* header):header(header){};
+    explicit HttpReq(HttpReqHeader* header):header(header){};
     ~HttpReq();
     ssize_t  Write_string(std::function<ssize_t(const void*, size_t)> write_func);
     size_t size();
