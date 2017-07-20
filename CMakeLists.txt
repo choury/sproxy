@@ -76,7 +76,7 @@ if(BUILD_CGI)
     add_subdirectory(cgi)
 endif()
 
-set(SPROXY_LIBS  dl req res prot misc ${OPENSSL_LIBRARIES})
+set(SPROXY_LIBS  req res prot misc ${OPENSSL_LIBRARIES} dl)
 find_package(Backtrace)
 if(Backtrace_FOUND)
     include_directories(${Backtrace_INCLUDE_DIRS})
@@ -85,7 +85,7 @@ endif()
 
 include_directories(${PROJECT_SOURCE_DIR})
 
-configure_file(common.h.in common.h ESCAPE_QUOTES)
+configure_file(common.h.in ${PROJECT_SOURCE_DIR}/common.h ESCAPE_QUOTES)
 
 if(NOT ANDROID_NDK)
     add_executable(sproxy main.cpp base.cpp)

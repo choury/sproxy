@@ -1,23 +1,26 @@
 # This dockerfile uses the debian:sid image
 
 # Base image to use, this must be set as the first line
-FROM debian:sid
+FROM alpine
 
 # Maintainer: docker_user <docker_user at email.com> (@docker_user)
 MAINTAINER choury zhouwei400@gmail.com
 
 # Commands to update the image
-RUN apt-get update && apt-get -y install gcc g++ cmake make unzip libssl-dev libjson-c-dev wget
-WORKDIR /root
-RUN wget "https://github.com/choury/sproxy/archive/master.zip" && unzip master.zip && rm master.zip
-WORKDIR /root/sproxy-master
-RUN cmake . && make
+RUN apk update && \
+    apk add gcc g++ cmake make wget libexecinfo-dev openssl-dev libgcc libstdc++ ca-certificates && \
+    cd /root && \
+    wget "https://github.com/choury/sproxy/archive/master.zip" && \
+    unzip master.zip && \
+    rm master.zip && \
+    cd /root/sproxy-master && \
+    cmake . && \
+    make sproxy VERBOSE=1 && \
+    wget https://gist.githubusercontent.com/choury/c42dd14f1f1bfb9401b5f2b4986cb9a9/raw/sites.list && \
+    apk del gcc g++ cmake make wget
 #COPY keys /root/keys/
 
-ENV SPROXY_USER choury
-ENV SPROXY_PASS choury
 # Commands when creating a new container
 EXPOSE 80
-RUN wget https://gist.githubusercontent.com/choury/c42dd14f1f1bfb9401b5f2b4986cb9a9/raw/sites.list
-CMD  ./sproxy -s "${SPROXY_USER}:${SPROXY_PASS}" ssl://l.choury.com
-
+WORKDIR /root/sproxy-master
+ENTRYPOINT ["./sproxy"]
