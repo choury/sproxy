@@ -18,9 +18,9 @@ class Index_table{
     binmap<std::string, Index*> dynamic_map;
     void evict_dynamic_table();
     void add_dynamic_table(const std::string &name, const std::string &value);
-    uint getid(const std::string& name, const std::string& value);
-    uint getid(const std::string& name);
-    const Index *getvalue(uint id);
+    uint32_t getid(const std::string& name, const std::string& value);
+    uint32_t getid(const std::string& name);
+    const Index *getvalue(uint32_t id);
 public:
     explicit Index_table(size_t dynamic_table_size_limit = 4096);
     ~Index_table();

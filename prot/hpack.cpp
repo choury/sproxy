@@ -681,9 +681,9 @@ static size_t hfm_encode(char *buf, const char *s, int len){
     return buf - buf_begin;
 }
 
-static size_t integer_decode(const char *s, int n, uint *value) {
+static size_t integer_decode(const char *s, int n, uint32_t *value) {
     assert(n<=8);
-    uint prefix = ((1<<n)-1);
+    uint32_t prefix = ((1<<n)-1);
     if((s[0]& prefix) == prefix){
         *value = prefix;
         size_t i;
@@ -698,10 +698,10 @@ static size_t integer_decode(const char *s, int n, uint *value) {
     }
 }
 
-static size_t integer_encode(char *buff, int n, uint value){
+static size_t integer_encode(char *buff, int n, uint32_t value){
     assert(n<=8);
     char *buf_begin = buff;
-    uint prefix = ((1<<n)-1);
+    uint32_t prefix = ((1<<n)-1);
     if(value < prefix) {
         *buff++ |= value;
     }else{
@@ -717,7 +717,7 @@ static size_t integer_encode(char *buff, int n, uint value){
 }
 
 static size_t literal_decode(const char *s, std::string &result) {
-    uint len;
+    uint32_t len;
     int i = integer_decode(s, 7, &len);
     if(s[0] & 0x80) {
         result = hfm_decode(s+i, len);
@@ -752,7 +752,7 @@ void Index_table::add_dynamic_table(const std::string &name, const std::string &
 }
 
 
-uint Index_table::getid(const std::string& name, const std::string& value) {
+uint32_t Index_table::getid(const std::string& name, const std::string& value) {
     std::string key = name+char(0)+value;
     if(static_map.count(key))
         return static_map[key];
@@ -761,7 +761,7 @@ uint Index_table::getid(const std::string& name, const std::string& value) {
     return 0;
 }
 
-uint Index_table::getid(const std::string& name) {
+uint32_t Index_table::getid(const std::string& name) {
     if(static_map.count(name))
         return static_map[name];
     if(dynamic_map.count(name))
@@ -769,7 +769,7 @@ uint Index_table::getid(const std::string& name) {
     return 0;
 }
 
-const Index *Index_table::getvalue(uint id) {
+const Index *Index_table::getvalue(uint32_t id) {
     static Index index;
     if(id <= static_table_count) {
         index.name = static_table[id][0];
@@ -818,12 +818,12 @@ std::multimap< istring, std::string > Index_table::hpack_decode(const char* s, i
     std::multimap<istring, std::string> headers;
     while(i < len) {
         if(s[i] & 0x80) {
-            uint index;
+            uint32_t index;
             i += integer_decode(s+i, 7, &index);
             const Index *value = getvalue(index);
             headers.insert(std::make_pair(value->name, value->value));
         }else if(s[i] & 0x40) {
-            uint index;
+            uint32_t index;
             i += integer_decode(s+i, 6, &index);
             std::string name, value;
             if(index) {
@@ -835,11 +835,11 @@ std::multimap< istring, std::string > Index_table::hpack_decode(const char* s, i
             headers.insert(std::make_pair(name, value));
             add_dynamic_table(name, value);
         }else if(s[i] & 0x20) {
-            uint size;
+            uint32_t size;
             i += integer_decode(s+i, 5, &size);
             set_dynamic_table_size_limit(size);
         }else {
-            uint index;
+            uint32_t index;
             i += integer_decode(s+i, 4, &index);
             std::string name, value;
             if(index) {
@@ -864,7 +864,7 @@ int Index_table::hpack_encode(char* buf, const char* Name, const char* value) {
     while(*Name) {
         name += tolower(*Name++);
     }
-    uint index = getid(name, value);
+    uint32_t index = getid(name, value);
     if(index){
         *buf = 0x80;
         buf += integer_encode(buf, 7, index);

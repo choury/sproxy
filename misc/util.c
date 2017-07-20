@@ -324,9 +324,8 @@ void change_process_name(const char *name){
 }
 
 
-#ifndef __ANDROID__
-#include <execinfo.h>
 void dump_trace(int ignore) {
+#if Backtrace_FOUND
     void *stack_trace[100] = {0};
     char **stack_strings = NULL;
     int stack_depth = 0;
@@ -351,6 +350,6 @@ void dump_trace(int ignore) {
     /* 获取函数名称时申请的内存需要自行释放 */
     free(stack_strings);
     stack_strings = NULL;
+#endif
     exit(-1);
 }
-#endif

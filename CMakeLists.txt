@@ -68,25 +68,33 @@ endif()
 
 
 
-ADD_SUBDIRECTORY(misc)
-ADD_SUBDIRECTORY(prot)
-ADD_SUBDIRECTORY(req)
-ADD_SUBDIRECTORY(res)
+add_subdirectory(misc)
+add_subdirectory(prot)
+add_subdirectory(req)
+add_subdirectory(res)
 if(BUILD_CGI)
-    ADD_SUBDIRECTORY(cgi)
+    add_subdirectory(cgi)
 endif()
 
-INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR})
+set(SPROXY_LIBS  dl req res prot misc ${OPENSSL_LIBRARIES})
+find_package(Backtrace)
+if(Backtrace_FOUND)
+    include_directories(${Backtrace_INCLUDE_DIRS})
+    set(SPROXY_LIBS ${SPROXY_LIBS} ${Backtrace_LIBRARIES})
+endif()
 
+include_directories(${PROJECT_SOURCE_DIR})
+
+configure_file(common.h.in common.h ESCAPE_QUOTES)
 
 if(NOT ANDROID_NDK)
     add_executable(sproxy main.cpp base.cpp)
     set_target_properties(sproxy PROPERTIES OUTPUT_NAME "sproxy")
-    target_link_libraries(sproxy ${OPENSSL_LIBRARIES} dl req res prot misc pthread)
+    target_link_libraries(sproxy ${SPROXY_LIBS})
 
     add_library(sproxy_vpn SHARED vpn.cpp base.cpp)
     set_target_properties(sproxy_vpn PROPERTIES OUTPUT_NAME "sproxy_vpn")
-    target_link_libraries(sproxy_vpn req res prot misc ${OPENSSL_LIBRARIES} dl)
+    target_link_libraries(sproxy_vpn ${SPROXY_LIBS})
 
     add_executable(vpn vpndemo.c)
     target_link_libraries(vpn sproxy_vpn)
@@ -96,5 +104,5 @@ if(NOT ANDROID_NDK)
 else()
     add_library(sproxy_vpn SHARED vpn.cpp base.cpp com_choury_sproxy_Service.cpp)
     set_target_properties(sproxy_vpn PROPERTIES OUTPUT_NAME "sproxy_vpn")
-    target_link_libraries(sproxy_vpn req res prot misc ${OPENSSL_LIBRARIES} dl ${log-lib})
+    target_link_libraries(sproxy_vpn ${SPROXY_LIBS} ${log-lib})
 endif()
