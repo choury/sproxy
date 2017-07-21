@@ -5,6 +5,10 @@
 #include "file.h"
 #include "cgi.h"
 
+#include <map>
+
+
+std::map<std::pair<Requester*, void*>, Responser*> sessions;
 
 
 static int check_header(HttpReqHeader* req){
@@ -66,19 +70,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
         switch(getstrategy(req->hostname)){
             case Strategy::local:
                 LOG("[[local]] %s\n", log_buff);
-                if(index_file && (endwith(req->filename.c_str(), "/") || req->filename.empty())){
-                    req->filename += index_file;
-                }
-                if(req->ismethod("CONNECT") || req->ismethod("SEND")){
-                    HttpResHeader* res = new HttpResHeader(H400);
-                    res->index = req->index;
-                    requester->response(res);
-                    return nullptr;
-                }else if (endwith(req->filename.c_str(),".so")) {
-                    return Cgi::getcgi(req);
-                } else {
-                    return File::getfile(req);
-                }
+                return File::getfile(req);
             case Strategy::direct:
                 switch(check_header(req)){
                 case 1:

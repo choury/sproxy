@@ -33,6 +33,7 @@ const char *cafile =  nullptr;
 const char *cert = nullptr;
 const char *key = nullptr;
 const char *index_file = nullptr;
+int autoindex = 0;
 uint32_t debug = 0;
 
 template<class T>
@@ -206,6 +207,7 @@ static int verify_cookie(SSL *ssl, const unsigned char *cookie, unsigned int coo
 
 
 static struct option long_options[] = {
+    {"autoindex",   no_argument,       0, 'i' },
     {"cafile",      required_argument, 0,  0 },
     {"cert",        required_argument, 0,  0 },
     {"daemon",      no_argument,       0, 'D'},
@@ -231,6 +233,7 @@ static struct option long_options[] = {
 };
 
 const char *option_detail[] = {
+    "Enables or disables the directory listing output",
     "CA certificate for server (ssl/dtls)",
     "Certificate file for server (ssl/dtls)",
     "Run as daemon",
@@ -330,7 +333,7 @@ SSL_CTX* initssl(int udp, const char *ca, const char *cert, const char *key){
 int main(int argc, char **argv) {
     while (1) {
         int option_index = 0;
-        int c = getopt_long(argc, argv, "Du1hks:p:",
+        int c = getopt_long(argc, argv, "Du1hiks:p:",
             long_options, &option_index);
         if (c == -1)
             break;
@@ -403,6 +406,10 @@ int main(int argc, char **argv) {
         case 's':
             Base64Encode(optarg, strlen(optarg), auth_string);
             printf("option secret with value '%s'\n", auth_string);
+            break;
+        case 'i':
+            autoindex = 1;
+            printf("option autoindex\n");
             break;
         case 'h':
             printf("option help\n");

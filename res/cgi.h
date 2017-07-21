@@ -43,19 +43,13 @@ struct CGI_NameValue{
 
 class Requester;
 
-struct CgiStatus{
-    Requester *req_ptr;
-    void*      req_index;
-    bool       responsed;
-};
-
 class Cgi:public Responser{
     char filename[URLLIMIT];
     char cgi_buff[BUF_LEN];
     size_t cgi_getlen  = 0;
     size_t cgi_outlen  = 0;
     uint32_t curid = 1;
-    std::map<uint32_t, CgiStatus> statusmap;
+    std::map<uint32_t, HttpReqHeader*> statusmap;
     Buffer buffer;
     virtual void defaultHE(uint32_t events);
     enum class Status{
@@ -63,7 +57,7 @@ class Cgi:public Responser{
     }cgistage = Status::WaitHeadr;
     void InProc();
 public:
-    explicit Cgi(HttpReqHeader* req);
+    explicit Cgi(const char* filename, int sv[2]);
     virtual ~Cgi();
 
     virtual int32_t bufleft(void * index) override;
@@ -73,8 +67,9 @@ public:
     virtual void deleteLater(uint32_t errcode) override;
     virtual void* request(HttpReqHeader* req)override;
     virtual void dump_stat()override;
-    static Cgi* getcgi(HttpReqHeader* req);
 };
+
+Cgi* getcgi(HttpReqHeader* req, const char* filename);
 
 class Cookie{
 public:

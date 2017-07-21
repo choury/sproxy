@@ -32,6 +32,7 @@ extern char auth_string[];
 extern const char *cafile;
 extern const char *index_file;
 extern uint32_t debug;
+extern int autoindex;
 
 
 #define DEPOLL    1

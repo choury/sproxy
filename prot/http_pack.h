@@ -23,6 +23,7 @@ protected:
 public:
     std::set<std::string> cookies;
     void* index = 0;
+#define HTTP_RESPONED    1
     uint8_t flags = 0;
 
     void add(const istring& header, const std::string& value);

@@ -30,7 +30,8 @@ class File:public Responser{
     virtual void defaultHE(uint32_t events);
     virtual void* request(HttpReqHeader* req) override;
 public:
-    explicit File(HttpReqHeader* req);
+//    explicit File(HttpReqHeader* req);
+    explicit File(const char* fname, int ffd, const struct stat* st);
     ~File();
     virtual int32_t bufleft(void* index)override;
     virtual ssize_t Send(void* buff, size_t size, void* index)override;
@@ -38,9 +39,7 @@ public:
     virtual void finish(uint32_t errcode, void* index)override;
     virtual void deleteLater(uint32_t errcode) override;
     virtual void dump_stat()override;
-    static File* getfile(HttpReqHeader* req);
+    static Responser* getfile(HttpReqHeader* req);
 };
-
-bool checkrange(Range& rg, size_t size);
 
 #endif

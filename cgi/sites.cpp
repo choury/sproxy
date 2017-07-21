@@ -163,7 +163,12 @@ int cgimain(int fd){
         assert(ret == ntohs(header->contentLength));
         uint32_t cgi_id = ntohl(header->requestId);
 
-        if(cgimap[cgi_id](header)){
+        if(header->type == CGI_REQUEST){
+            assert(cgimap.count(cgi_id) == 0);
+            cgimap[cgi_id] =  handle{};
+        }
+
+        if(cgimap.count(cgi_id) && cgimap[cgi_id](header)){
             cgimap.erase(cgi_id);
         }
     }

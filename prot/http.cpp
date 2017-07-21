@@ -148,6 +148,7 @@ void HttpResponser::HeaderProc() {
             ReqProc(req);
             if(http_flag & HTTP_IGNORE_BODY_F){
                 EndProc();
+                http_flag &= ~HTTP_IGNORE_BODY_F;
                 Http_Proc = (void (HttpBase::*)())&HttpResponser::HeaderProc;
             }
         }catch(...) {

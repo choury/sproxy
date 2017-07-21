@@ -240,6 +240,9 @@ void HttpReqHeader::getfile()
     char *end=start;
     while (*end && *++end != '?');
     filename = string(start, end-start);
+    if(filename.empty()){
+        filename = "/";
+    }
 }
 
 std::string HttpReqHeader::geturl() const {

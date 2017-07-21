@@ -21,73 +21,45 @@
 using std::string;
 static std::map<std::string, Cgi *> cgimap;
 
-Cgi::Cgi(HttpReqHeader* req) {
-    snprintf(filename, sizeof(filename), "%s", req->filename.c_str());
-    HttpResHeader* res = nullptr;
-    cgifunc *func = nullptr;
-    int fds[2]= {0},flags;
-    void *handle = dlopen(filename, RTLD_NOW);
-    if(handle == nullptr) {
-        LOGE("dlopen failed: %s\n", dlerror());
-        res = new HttpResHeader(H404);
-        goto err;
-    }
-    func=(cgifunc *)dlsym(handle,"cgimain");
-    if(func == nullptr) {
-        LOGE("dlsym failed: %s\n", dlerror());
-        res = new HttpResHeader(H500);
-        goto err;
-    }
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds)) {  // 创建管道
-        LOGE("socketpair failed: %s\n", strerror(errno));
-        res = new HttpResHeader(H500);
-        goto err;
-    }
-    fd=fds[0];
+#define CGI_RETURN_DLOPEN_FAILED       1
+#define CGI_RETURN_DLSYM_FAILED        2
 
+Cgi::Cgi(const char* fname, int sv[2]) {
     if (fork() == 0) { // 子进程
+        cgifunc *func = nullptr;
+        void *handle = dlopen(fname, RTLD_NOW);
+        if(handle == nullptr) {
+            LOGE("dlopen failed: %s\n", dlerror());
+            exit(-1);
+        }
+        func=(cgifunc *)dlsym(handle,"cgimain");
+        if(func == nullptr) {
+            LOGE("dlsym failed: %s\n", dlerror());
+            exit(-1);
+        }
         struct rlimit limits;
         if(getrlimit(RLIMIT_NOFILE, &limits)) {
             LOGE("getrlimit failed: %s\n", strerror(errno));
             exit(-1);
         }
         for(int i = 3; i< (int)limits.rlim_cur; i++){
-            if(i == fds[1]){
+            if(i == sv[1]){
                 continue;
             }
             close(i);
         }
         signal(SIGPIPE, SIG_DFL);
         change_process_name(basename(filename));
-        exit(func(fds[1]));
+        exit(func(sv[1]));
     }
     // 父进程
-    dlclose(handle);
-    close(fds[1]);   // 关闭管道的子进程端
+    snprintf(filename, sizeof(filename), "%s", fname);
+    close(sv[1]);   // 关闭管道的子进程端
     /* 现在可在fd[0]中读写数据 */
-    flags = fcntl(fd, F_GETFL, 0);
-    if (flags < 0) {
-        LOGE("fcntl error:%s\n", strerror(errno));
-        res = new HttpResHeader(H500);
-        goto err;
-    }
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
+    fd = sv[0];
     handleEvent=(void (Con::*)(uint32_t))&Cgi::defaultHE;
     updateEpoll(EPOLLIN);
-
     cgimap[filename] = this;
-    return;
-err:
-    if(handle) {
-        dlclose(handle);
-    }
-    if(fd) {
-        close(fd);
-    }
-    res->index = req->index;
-    req->src->response(res);
-    throw 0;
 }
 
 Cgi::~Cgi() {
@@ -186,16 +158,16 @@ begin:
         if (!res->no_body() && res->get("content-length") == nullptr) {
             res->add("Transfer-Encoding", "chunked");
         }
-        CgiStatus &status = statusmap.at(cgi_id);
-        res->index = status.req_index;
-        status.req_ptr->response(res);
-        status.responsed = true;
+        HttpReqHeader* req = statusmap.at(cgi_id);
+        res->index = req->index;
+        req->src->response(res);
+        req->flags |= HTTP_RESPONED;
         cgistage = Status::WaitHeadr;
         cgi_getlen = 0;
         break;
     }
     case Status::HandleValue: {
-        CgiStatus& status = statusmap.at(cgi_id);
+        HttpReqHeader* req = statusmap.at(cgi_id);
         CGI_NameValue *nv = (CGI_NameValue *)(header+1);
         uint8_t flag = 0;
         switch(ntohl(nv->name)) {
@@ -206,12 +178,12 @@ begin:
             header_back->contentLength = htons(sizeof(CGI_NameValue) + sizeof(uint32_t));
             CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
             nv_back->name = htonl(CGI_NAME_BUFFLEFT);
-            set32(nv_back->value, htonl(status.req_ptr->bufleft(status.req_index)));
+            set32(nv_back->value, htonl(req->src->bufleft(req->index)));
             buffer.push(header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength));
             break;
         }
         case CGI_NAME_STRATEGYGET: {
-            if(!checkauth(status.req_ptr->getip())){
+            if(!checkauth(req->src->getip())){
                 flag = CGI_FLAG_ERROR;
                 break;
             }
@@ -231,7 +203,7 @@ begin:
             break;
         }
         case CGI_NAME_STRATEGYADD:{
-            if(!checkauth(status.req_ptr->getip())){
+            if(!checkauth(req->src->getip())){
                 flag = CGI_FLAG_ERROR;
                 break;
             }
@@ -245,7 +217,7 @@ begin:
             break;
         }
         case CGI_NAME_STRATEGYDEL:{
-            if(!checkauth(status.req_ptr->getip())){
+            if(!checkauth(req->src->getip())){
                 flag = CGI_FLAG_ERROR;
                 break;
             }
@@ -256,7 +228,7 @@ begin:
             break;
         }
         case CGI_NAME_GETPROXY:{
-            if(!checkauth(status.req_ptr->getip())){
+            if(!checkauth(req->src->getip())){
                 flag = CGI_FLAG_ERROR;
                 break;
             }
@@ -273,7 +245,7 @@ begin:
             break;
         }
         case CGI_NAME_SETPROXY:{
-            if(!checkauth(status.req_ptr->getip())){
+            if(!checkauth(req->src->getip())){
                 flag = CGI_FLAG_ERROR;
                 break;
             }
@@ -287,8 +259,8 @@ begin:
             if(strcmp(auth_string, (char *)nv->value)){
                 flag = CGI_FLAG_ERROR;
             }else{
-                LOG("[CGI] %s login\n", status.req_ptr->getip());
-                addauth(status.req_ptr->getip());
+                LOG("[CGI] %s login\n", req->src->getip());
+                addauth(req->src->getip());
             }
             break;
         }
@@ -309,23 +281,24 @@ begin:
         cgi_outlen = sizeof(CGI_Header);
         cgistage = Status::HandleLeft;
     case Status::HandleLeft:{
-        CgiStatus& status = statusmap.at(cgi_id);
+        HttpReqHeader* req = statusmap.at(cgi_id);
         if (cgi_outlen == cgi_getlen) {
             cgistage = Status::WaitHeadr;
             cgi_getlen = 0;
         }else{
-            int len = status.req_ptr->bufleft(status.req_index);
+            int len = req->src->bufleft(req->index);
             if (len <= 0) {
                 LOGE("The requester's write buff is full\n");
                 updateEpoll(0);
                 return;
             }
             len = Min(len, cgi_getlen - cgi_outlen);
-            len = status.req_ptr->Send((const char *)cgi_buff + cgi_outlen, len, status.req_index);
+            len = req->src->Send((const char *)cgi_buff + cgi_outlen, len, req->index);
             cgi_outlen += len;
         }
         if (header->flag & CGI_FLAG_END) {
-            status.req_ptr->finish(NOERROR, status.req_index);
+            req->src->finish(NOERROR, req->index);
+            delete req;
             statusmap.erase(cgi_id);
         }
         break;
@@ -363,8 +336,7 @@ void Cgi::defaultHE(uint32_t events) {
             return;
         }
         for(auto i: statusmap) {
-            CgiStatus& status = i.second;
-            status.req_ptr->writedcb(status.req_index);
+            i.second->src->writedcb(i.second->index);
         }
     }
 }
@@ -374,18 +346,20 @@ void Cgi::finish(uint32_t errcode, void* index) {
     assert(statusmap.count(id));
     Peer::Send((const void*)nullptr, 0, index);
     if(errcode){
+        delete statusmap[id];
         statusmap.erase(id);
     }
 }
 
 void Cgi::deleteLater(uint32_t errcode){
     for(auto i: statusmap) {
-        if(!i.second.responsed){
+        if((i.second->flags & HTTP_RESPONED) == 0){
             HttpResHeader* res = new HttpResHeader(H503);
-            res->index = i.second.req_index;
-            i.second.req_ptr->response(res);
+            res->index = i.second->index;
+            i.second->src->response(res);
         }
-        i.second.req_ptr->finish(errcode, i.second.req_index);
+        i.second->src->finish(errcode, i.second->index);
+        delete i.second;
     }
     statusmap.clear();
     return Peer::deleteLater(errcode);
@@ -394,36 +368,47 @@ void Cgi::deleteLater(uint32_t errcode){
 
 void* Cgi::request(HttpReqHeader* req) {
     uint32_t cgi_id = curid++;
-    statusmap[cgi_id] = CgiStatus{
-        req->src,
-        req->index,
-        false
-    };
+    statusmap[cgi_id] = req;
     CGI_Header *header = req->getcgi(cgi_id);
     buffer.push(header, sizeof(CGI_Header) + ntohs(header->contentLength));
     updateEpoll(events | EPOLLOUT);
-    delete req;
     return reinterpret_cast<void*>(cgi_id);
 }
 
 void Cgi::dump_stat(){
     LOG("Cgi %p %s, id=%d:\n", this, filename, curid);
     for(auto i: statusmap){
-        LOG("%d: %p, %p", i.first, i.second.req_ptr, i.second.req_index);
+        LOG("%d: %p, %p", i.first, i.second->src, i.second->index);
     }
 }
 
 
 
-Cgi* Cgi::getcgi(HttpReqHeader* req) {
-    if(cgimap.count(req->filename)) {
-        return cgimap[req->filename];
+Cgi* getcgi(HttpReqHeader* req, const char* filename){
+    if(cgimap.count(filename)) {
+        return cgimap[filename];
     } else {
-        try {
-            return new Cgi(req);
-        } catch(...) {
-            return nullptr;
+        int fds[2] = {0}, flags;
+        if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds)) {  // 创建管道
+            LOGE("socketpair failed: %s\n", strerror(errno));
+            goto err;
         }
+        flags = fcntl(fds[0], F_GETFL, 0);
+        if (flags < 0) {
+            LOGE("fcntl error:%s\n", strerror(errno));
+            goto err;
+        }
+        fcntl(fds[0], F_SETFL, flags | O_NONBLOCK);
+        return new Cgi(filename, fds);
+err:
+        if(fds[0]){
+            close(fds[0]);
+            close(fds[1]);
+        }
+        HttpResHeader* res = new HttpResHeader(H500);
+        res->index = req->index;
+        req->src->response(res);
+        return nullptr;
     }
 }
 

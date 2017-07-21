@@ -22,6 +22,7 @@ Protocol SPROT;
 char auth_string[DOMAINLIMIT] = {0};
 const char *cafile =  nullptr;
 const char *index_file = nullptr;
+int autoindex = 0;
 uint32_t debug = 0;
 uint32_t vpn_contiune;
 

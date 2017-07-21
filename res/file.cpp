@@ -1,4 +1,5 @@
 #include "file.h"
+#include "cgi.h"
 #include "misc/net.h"
 #include "req/requester.h"
 
@@ -6,6 +7,7 @@
 
 #include <fcntl.h>
 #include <unistd.h>
+#include <dirent.h>
 //#include <string.h>
 #include <time.h>
 #include <assert.h>
@@ -103,38 +105,9 @@ bool checkrange(Range& rg, size_t size) {
 }
 
 
+#if 0
 File::File(HttpReqHeader* req) {
-    HttpResHeader *res = nullptr;
-    snprintf(filename, sizeof(filename), "%s", req->filename.c_str());
-    ffd = open(filename, O_RDONLY);
-    if (ffd < 0) {
-        LOGE("open file failed %s: %s\n", filename, strerror(errno));
-        if(errno == ENOENT){
-            res = new HttpResHeader(H404);
-        }else{
-            res = new HttpResHeader(H500);
-        }
-        goto err;
-    }
-    if (fstat(ffd, &st)) {
-        LOGE("get file info failed %s: %s\n", filename, strerror(errno));
-        res = new HttpResHeader(H500);
-        goto err;
-    }
 
-    if(S_ISDIR(st.st_mode) && !endwith(filename, "/")){
-        res = new HttpResHeader(H301);
-        char location[FILENAME_MAX];
-        snprintf(location, sizeof(location), "/%s/", filename);
-        res->add("Location", location);
-        goto err;
-    }
-
-    if(!S_ISREG(st.st_mode)){
-        LOGE("access to no regular file %s\n", filename);
-        res = new HttpResHeader(H403);
-        goto err;
-    }
 
     fd = eventfd(1, O_NONBLOCK);
     handleEvent = (void (Con::*)(uint32_t))&File::defaultHE;
@@ -149,6 +122,17 @@ err:
     req->src->response(res);
     throw 0;
 }
+#endif
+
+File::File(const char* fname, int ffd, const struct stat* st):ffd(ffd), st(*st){
+    snprintf(filename, sizeof(filename), "./%s", fname);
+    strcpy(filename, fname);
+    fd = eventfd(1, O_NONBLOCK);
+    handleEvent = (void (Con::*)(uint32_t))&File::defaultHE;
+    filemap[filename] = this;
+    suffix = strrchr(filename, '.');
+}
+
 
 bool File::checkvalid() {
     struct stat nt;
@@ -352,22 +336,114 @@ File::~File() {
     filemap.erase(filename);
 }
 
-File* File::getfile(HttpReqHeader* req) {
+Responser* File::getfile(HttpReqHeader* req) {
     if(!req->getrange()){
         HttpResHeader* res = new HttpResHeader(H400);
         res->index = req->index;
         req->src->response(res);
         return nullptr;
     }
-    if(filemap.count(req->filename)){
-        File *file = filemap[req->filename];
-        if(file->checkvalid()){
-            return file;
+    char filename[URLLIMIT];
+    bool slash_end = endwith(req->filename.c_str(), "/"), index_not_found = false;
+    snprintf(filename, sizeof(filename), "./%s", req->filename.c_str());
+    HttpResHeader* res = nullptr;
+    while(true){
+        struct stat st;
+        if(stat(filename, &st) < 0){
+            LOGE("get file stat failed %s: %s\n", filename, strerror(errno));
+            if(errno == ENOENT){
+                if(slash_end && !endwith(filename, "/") && autoindex){
+                    index_not_found = true;
+                    snprintf(filename, sizeof(filename), "./%s", req->filename.c_str());
+                    continue;
+                }
+                res = new HttpResHeader(H404);
+            }else{
+                res = new HttpResHeader(H500);
+            }
+            break;
         }
+
+        if(S_ISDIR(st.st_mode)){
+            if(!slash_end){
+                res = new HttpResHeader(H301);
+                char location[FILENAME_MAX];
+                snprintf(location, sizeof(location), "/%s/", req->filename.c_str());
+                res->add("Location", location);
+                break;
+            }
+            if(slash_end && !index_not_found && index_file){
+                snprintf(filename, sizeof(filename), "./%s%s", req->filename.c_str(), index_file);
+                continue;
+            }
+            if(slash_end && !autoindex){
+                res = new HttpResHeader(H403);
+                break;
+            }
+
+            DIR* dir = opendir(filename);
+            if(dir == nullptr){
+                LOGE("open %s dir failed: %s\n", filename, strerror(errno));
+                res = new HttpResHeader(H500);
+                break;
+            }
+            res = new HttpResHeader(H200);
+            res->add("Transfer-Encoding", "chunked");
+            res->index = req->index;
+            req->src->response(res);
+            char buff[1024];
+            req->src->Send((const void*)buff,
+                           sprintf(buff, "<html>"
+                           "<head><title>Index of %s</title></head>"
+                           "<body><h1>Index of %s</h1><hr/><pre>",
+                           req->filename.c_str(), req->filename.c_str()),
+                           req->index);
+            struct dirent *ptr;
+            while((ptr = readdir(dir))){
+                if(ptr->d_type == DT_DIR){
+                    req->src->Send((const void*)buff,
+                                   sprintf(buff, "<a href='%s/'>%s/</a><br/>", ptr->d_name, ptr->d_name),
+                                   req->index);
+                }else{
+                    req->src->Send((const void*)buff,
+                                   sprintf(buff, "<a href='%s'>%s</a><br/>", ptr->d_name, ptr->d_name),
+                                   req->index);
+
+                }
+            }
+            closedir(dir);
+            req->src->Send((const void*)buff,
+                           sprintf(buff, "</pre><hr></body></html>"),
+                           req->index);
+            req->src->Send((const void*)nullptr, 0, req->index);
+            return nullptr;
+        }
+
+        if(!S_ISREG(st.st_mode)){
+            LOGE("access to no regular file %s\n", filename);
+            res = new HttpResHeader(H403);
+            break;
+        }
+        if(endwith(filename, ".so")){
+            return getcgi(req, filename);
+        }
+
+        if(filemap.count(filename)){
+            File *file = filemap[filename];
+            if(file->checkvalid()){
+                return file;
+            }
+        }
+        int fd = open(filename, O_RDONLY);
+        if(fd < 0){
+            LOGE("open file failed %s: %s\n", filename, strerror(errno));
+            res = new HttpResHeader(H500);
+            break;
+        }
+        return new File(filename, fd, &st);
     }
-    try{
-        return new File(req);
-    }catch(...){
-        return nullptr;
-    }
+    assert(res);
+    res->index = req->index;
+    req->src->response(res);
+    return nullptr;
 }
