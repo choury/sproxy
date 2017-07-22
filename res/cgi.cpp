@@ -106,6 +106,7 @@ begin:
     case Status::WaitHeadr:{
         int len = sizeof(CGI_Header) - cgi_getlen;
         if (len == 0) {
+            assert(ntohs(header->contentLength) <= CGI_LEN_MAX);
             cgistage = Status::WaitBody;
             break;
         }
@@ -146,8 +147,10 @@ begin:
             break;
         }
         len = read(fd, cgi_buff + cgi_getlen, len);
-        if (len <= 0 && showerrinfo(len, "cgi read")) {
-            deleteLater(READ_ERR);
+        if (len <= 0){
+            if(showerrinfo(len, "cgi read")) {
+                deleteLater(READ_ERR);
+            }
             return;
         }
         cgi_getlen += len;
