@@ -25,14 +25,14 @@ static std::map<std::string, Cgi *> cgimap;
 #define CGI_RETURN_DLSYM_FAILED        2
 
 Cgi::Cgi(const char* fname, int sv[2]) {
+    snprintf(filename, sizeof(filename), "%s", fname);
     if (fork() == 0) { // 子进程
-        cgifunc *func = nullptr;
         void *handle = dlopen(fname, RTLD_NOW);
         if(handle == nullptr) {
             LOGE("dlopen failed: %s\n", dlerror());
             exit(-1);
         }
-        func=(cgifunc *)dlsym(handle,"cgimain");
+        cgifunc* func=(cgifunc *)dlsym(handle,"cgimain");
         if(func == nullptr) {
             LOGE("dlsym failed: %s\n", dlerror());
             exit(-1);
@@ -53,7 +53,6 @@ Cgi::Cgi(const char* fname, int sv[2]) {
         exit(func(sv[1]));
     }
     // 父进程
-    snprintf(filename, sizeof(filename), "%s", fname);
     close(sv[1]);   // 关闭管道的子进程端
     /* 现在可在fd[0]中读写数据 */
     fd = sv[0];
@@ -83,19 +82,6 @@ ssize_t Cgi::Send(void *buff, size_t size, void* index) {
     updateEpoll(events | EPOLLOUT);
     return size;
 }
-
-
-/*
- * void Cgi::SendFrame(CGI_Header *header, size_t len)
- * {
- *    write_block wb={header, len, 0};
- *    write_list.push_back(wb);
- *
- *    struct epoll_event event;
- *    event.data.ptr = this;
- *    event.events = EPOLLIN | EPOLLOUT;
- *    epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
- * }*/
 
 
 void Cgi::InProc() {

@@ -34,7 +34,10 @@ class Dtls:public Ssl{
     uint32_t rtt_time = 50;
     uint32_t ackhold_times = 0;
     uint32_t ack_time;
+    uint32_t resend_time = 0;
     uint32_t tick_time;
+#define DTLS_SEND_TIMEOUT    1
+    uint32_t flags = 0;
     int recv();
     int send();
     uint32_t send_pkg(uint32_t seq, uint32_t window, size_t len);

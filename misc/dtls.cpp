@@ -3,10 +3,8 @@
 #include "job.h"
 
 #include <string.h>
-//#include <unistd.h>
 #include <math.h>
 #include <arpa/inet.h>
-//#include <sys/time.h>
 
 #define DTLS_BUF_LEN (4*1024*1024ull)
 
@@ -79,6 +77,10 @@ Dtls::~Dtls(){
 }
 
 ssize_t Dtls::read(void* buff, size_t size) {
+    if(flags & DTLS_SEND_TIMEOUT) {
+        errno = ETIMEDOUT;
+        return -1;
+    }
     if(recv() < 0){
         errno = EIO;
         return -1;
@@ -102,6 +104,10 @@ ssize_t Dtls::read(void* buff, size_t size) {
 
 
 ssize_t Dtls::write(const void* buff, size_t size) {
+    if(flags & DTLS_SEND_TIMEOUT) {
+        errno = ETIMEDOUT;
+        return -1;
+    }
     if(after(write_seq + size, recv_ack + DTLS_BUF_LEN)){
         if(send() < 0){
             errno= EIO;
@@ -267,14 +273,28 @@ int Dtls::send() {
         ackhold_times = 0;
     }
 
+    if(recv_ack == send_pos){
+        ack_time = now;
+    }
+
     if(buckets){
         if(buckets > bucket_limit){
             buckets = bucket_limit;
         }
-        if(before(recv_ack, write_seq) && now-ack_time >= Max(2,rtt_time*1.2)){
+        if(before(recv_ack, write_seq) &&
+           now - ack_time >= Max(2,rtt_time*1.3) &&
+           now - resend_time >= Max(2, rtt_time*1.2))
+        {
+            if(now - ack_time >= 10000){
+                LOGE("[DTLS] %u: acktime %u diff %u, timeout\n",
+                    getmtime()&0xffff, ack_time&0xffff, now-ack_time);
+                del_job((job_func)dtls_send, this);
+                flags |= DTLS_SEND_TIMEOUT;
+                return -1;
+            }
 #ifndef NDEBUG
-            LOGD(DDTLS, "%u: acktime %u diff %u, begin resend\n",
-                getmtime()&0xffff, ack_time&0xffff, now-ack_time);
+            LOGD(DDTLS, "%u: acktime %u diff %u/%u, begin resend\n",
+                getmtime()&0xffff, ack_time&0xffff, now-ack_time, (now-resend_time)&0xffff);
 #endif
             resend_pos = after(recv_ack, resend_pos)?recv_ack: resend_pos;
             if(gap_num){
@@ -314,7 +334,7 @@ int Dtls::send() {
             }
             if(buckets){
                 resend_pos = recv_ack;
-                ack_time = now;
+                resend_time = now;
             }
         }
 #ifndef NDEBUG
