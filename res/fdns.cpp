@@ -59,6 +59,8 @@ ssize_t FDns::Send(void* buff, size_t size, void* index) {
         Dns_Rr rr(&addr);
         unsigned char * buff = (unsigned char *)p_malloc(BUF_LEN);
         status.req_ptr->Send(buff, rr.build(&que, buff), status.req_index);
+        status.req_ptr->finish(0, status.req_index);
+        statusmap.erase(id);
     }
     return size;
 }
@@ -71,6 +73,8 @@ void FDns::ResponseCb(uint32_t id, const char* buff, size_t size) {
             dnshdr->id = htons(status.dns_id);
             status.req_ptr->Send(buff, size, status.req_index);
         }
+        status.req_ptr->finish(0, status.req_index);
+        fdns->statusmap.erase(id);
     }
 }
 

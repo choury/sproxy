@@ -366,12 +366,12 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
     if(statusmap.count(key)){
         LOGD(DVPN, "<udp> (%s -> %s) size: %zu\n", key.getsrc(), key.getdst(), datalen);
         VpnStatus& status = statusmap[key];
+        add_delayjob((job_func)vpn_aged, &status, 300000);
         if(status.res_ptr->bufleft(status.res_index)<=0){
             LOGE("responser buff is full, drop packet\n");
         }else{
             status.res_ptr->Send(data, datalen, status.res_index);
         }
-        add_delayjob((job_func)vpn_aged, &status, 300000);
     }else{
         LOGD(DVPN, "<udp> (%s -> %s) (N) size: %zu\n", key.getsrc(), key.getdst(), datalen);
         //create a http proxy request
@@ -404,11 +404,11 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
             responser_ptr = distribute(req, nullptr);
         }
         if(responser_ptr){
+            add_delayjob((job_func)vpn_aged, &statusmap[key], 60000);
             void* responser_index = responser_ptr->request(std::move(req));
             statusmap[key].res_ptr = responser_ptr;
             statusmap[key].res_index = responser_index;
             responser_ptr->Send(data, datalen, responser_index);
-            add_delayjob((job_func)vpn_aged, &statusmap[key], 60000);
         }else{
             delete req;
             cleanKey(key_index);
