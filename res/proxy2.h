@@ -52,7 +52,7 @@ public:
     virtual void deleteLater(uint32_t errcode) override;
 
     virtual void dump_stat()override;
-    static void ping_check(Proxy2 *p);
+    static int ping_check(Proxy2 *p);
 };
 
 extern Proxy2* proxy2; 

@@ -4,10 +4,10 @@
 
 #include <assert.h>
                     
-void Host::con_timeout(Host* host) {
-    del_job((job_func)con_timeout, host);
+int Host::con_timeout(Host* host) {
     LOGE("connect to %s time out. retry...\n", host->hostname);
     host->connect();
+    return 0;
 }
 
 Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), protocol(protocol){
@@ -17,7 +17,7 @@ Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), 
 }
 
 Host::~Host(){
-    del_job((job_func)con_timeout, this);
+    del_delayjob((job_func)con_timeout, this);
 }
 
 
@@ -53,7 +53,7 @@ void Host::connect() {
         }
         updateEpoll(EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Host::waitconnectHE;
-        add_job((job_func)con_timeout, this, 30000);
+        add_delayjob((job_func)con_timeout, this, 30000);
     }
 }
 
@@ -83,7 +83,7 @@ void Host::waitconnectHE(uint32_t events) {
 
         updateEpoll(EPOLLIN | EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
-        del_job((job_func)con_timeout, this);
+        del_delayjob((job_func)con_timeout, this);
     }
     return;
 reconnect:

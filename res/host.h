@@ -41,7 +41,7 @@ public:
     virtual void deleteLater(uint32_t errcode) override;
     virtual void dump_stat()override;
     static Host* gethost(HttpReqHeader* req, Responser* responser_ptr);
-    static void con_timeout(Host* host);
+    static int con_timeout(Host* host);
 };
 
 #endif

@@ -47,7 +47,7 @@ public:
     virtual ~Dtls();
     virtual ssize_t write(const void *buff, size_t size) override;
     virtual ssize_t read(void *buff, size_t size) override;
-    static void dtls_send(Dtls* dtls);
+    static int dtls_send(Dtls* dtls);
 };
 
 

@@ -7,11 +7,11 @@
 
 #include <fstream>
 
-static void vpn_aged(VpnStatus* status){
+int vpn_aged(VpnStatus* status){
     LOGD(DVPN, "<%s> %s -> %s aged.\n",
          protstr(status->key->protocol), status->key->getsrc(), status->key->getdst());
     status->res_ptr->finish(VPN_AGED_ERR, status->res_index);
-    del_job((job_func)vpn_aged, status);
+    return 0;
 }
 
 VpnKey::VpnKey(const Ip* ip) {
@@ -84,7 +84,7 @@ Guest_vpn::~Guest_vpn(){
     for(auto& i: statusmap){
         delete i.second.key;
         free(i.second.packet);
-        del_job((job_func)vpn_aged, &i.second);
+        del_delayjob((job_func)vpn_aged, &i.second);
     }
     statusmap.clear();
 }
@@ -371,7 +371,7 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
         }else{
             status.res_ptr->Send(data, datalen, status.res_index);
         }
-        add_job((job_func)vpn_aged, &status, 300000);
+        add_delayjob((job_func)vpn_aged, &status, 300000);
     }else{
         LOGD(DVPN, "<udp> (%s -> %s) (N) size: %zu\n", key.getsrc(), key.getdst(), datalen);
         //create a http proxy request
@@ -408,7 +408,7 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
             statusmap[key].res_ptr = responser_ptr;
             statusmap[key].res_index = responser_index;
             responser_ptr->Send(data, datalen, responser_index);
-            add_job((job_func)vpn_aged, &statusmap[key], 60000);
+            add_delayjob((job_func)vpn_aged, &statusmap[key], 60000);
         }else{
             delete req;
             cleanKey(key_index);
@@ -438,7 +438,7 @@ void Guest_vpn::icmpHE(const Ip* pac, const char* packet, size_t len) {
             VpnStatus& status = statusmap[key];
 
             status.res_ptr->finish(PEER_LOST_ERR, status.res_index);
-            del_job((job_func)vpn_aged, &status);
+            del_delayjob((job_func)vpn_aged, &status);
             cleanKey(&key);
         }else{
             LOGD(DVPN, "key not exist, ignore\n");
@@ -493,7 +493,7 @@ ssize_t Guest_vpn::Send(void* buff, size_t size, void* index) {
 
         sendPkg(&pac_return, buff, size);
         status.res_ptr->writedcb(status.res_index);
-        add_job((job_func)vpn_aged, &status, 300000);
+        add_delayjob((job_func)vpn_aged, &status, 300000);
         return size;
     }
     assert(0);
@@ -505,7 +505,7 @@ void Guest_vpn::cleanKey(const VpnKey* key) {
     VpnStatus& status = statusmap[*key];
     VpnKey* key_ptr = status.key;
     free(status.packet);
-    assert(check_job(job_func(vpn_aged), &status) == 0);
+    assert(check_delayjob(job_func(vpn_aged), &status) == 0);
     statusmap.erase(*key);
     delete key_ptr;
 }
@@ -529,7 +529,7 @@ void Guest_vpn::finish(uint32_t errcode, void* index) {
 
             sendPkg(&pac_return, (const void *)status.packet, status.packet_len);
         }
-        del_job((job_func)vpn_aged, &status);
+        del_delayjob((job_func)vpn_aged, &status);
     }else{
         if(errcode == 0){
             LOGD(DVPN, "write fin packet\n");
@@ -562,7 +562,7 @@ void Guest_vpn::finish(uint32_t errcode, void* index) {
         }
     }
     free(status.packet);
-    assert(check_job(job_func(vpn_aged), &status) == 0);
+    assert(check_delayjob(job_func(vpn_aged), &status) == 0);
     statusmap.erase(*key);
     delete key;
 }

@@ -492,17 +492,19 @@ int main(int argc, char **argv) {
     while (1) {
         int c;
         struct epoll_event events[200];
-        if ((c = epoll_wait(efd, events, 200, do_job())) < 0) {
+        if ((c = epoll_wait(efd, events, 200, do_delayjob())) < 0) {
             if (errno != EINTR) {
                 perror("epoll wait");
                 return 6;
             }
             continue;
         }
+        do_prejob();
         for (int i = 0; i < c; ++i) {
             Con *con = (Con *)events[i].data.ptr;
             (con->*con->handleEvent)(events[i].events);
         }
+        do_postjob();
     }
     return 0;
 }

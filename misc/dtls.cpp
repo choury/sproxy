@@ -19,8 +19,9 @@ struct Dtls_head{
 }__attribute__((packed));
 
 
-void Dtls::dtls_send(Dtls* dtls) {
+int Dtls::dtls_send(Dtls* dtls) {
     dtls->send();
+    return 0;
 }
 
 
@@ -71,7 +72,7 @@ Dtls::Dtls(SSL* ssl):Ssl(ssl) {
 }
 
 Dtls::~Dtls(){
-    del_job((job_func)dtls_send, this);
+    del_delayjob((job_func)dtls_send, this);
     delete []write_buff;
     delete []read_buff;
 }
@@ -288,7 +289,6 @@ int Dtls::send() {
             if(now - ack_time >= 10000){
                 LOGE("[DTLS] %u: acktime %u diff %u, timeout\n",
                     getmtime()&0xffff, ack_time&0xffff, now-ack_time);
-                del_job((job_func)dtls_send, this);
                 flags |= DTLS_SEND_TIMEOUT;
                 return -1;
             }
@@ -353,12 +353,12 @@ int Dtls::send() {
 #endif
         tick_time = now - buckets*100/bucket_limit;
     }
-    if(recv_ack == write_seq){
-        del_job((job_func)dtls_send, this);
-    }else if(buckets){
-        add_job((job_func)dtls_send, this, Max(2,rtt_time*1.2));
-    }else{
-        add_job((job_func)dtls_send, this, Max(5, 100/bucket_limit));
+    if(recv_ack != write_seq){
+        if(buckets){
+            add_delayjob((job_func)dtls_send, this, Max(2,rtt_time*1.2));
+        }else{
+            add_delayjob((job_func)dtls_send, this, Max(5, 100/bucket_limit));
+        }
     }
     return 0;
 }

@@ -4,9 +4,10 @@
 
 //#include <limits.h>
 
-static void connection_lost(Guest_s2 *g){
+static int connection_lost(Guest_s2 *g){
     LOGE("(%s): [Guest_s2] Nothing got too long, so close it\n", g->getsrc(nullptr));
     g->deleteLater(PEER_LOST_ERR);
+    return 0;
 }
 
 Guest_s2::Guest_s2(int fd, const char* ip, uint16_t port, Ssl* ssl):
@@ -24,14 +25,14 @@ Guest_s2::Guest_s2(int fd, struct sockaddr_in6* myaddr, Ssl* ssl):
 }
 
 Guest_s2::~Guest_s2() {
-    del_job((job_func)connection_lost, this);
+    del_delayjob((job_func)connection_lost, this);
     delete ssl;
 }
 
 ssize_t Guest_s2::Read(void *buff, size_t size) {
     auto ret = ssl->read(buff, size);
     if(ret > 0){
-        add_job((job_func)connection_lost, this, 1800000);
+        add_delayjob((job_func)connection_lost, this, 1800000);
     }
     return ret;
 }
@@ -39,7 +40,7 @@ ssize_t Guest_s2::Read(void *buff, size_t size) {
 ssize_t Guest_s2::Write(const void *buff, size_t size) {
     auto ret =  ssl->write(buff, size);
     if(ret > 0){
-        add_job((job_func)connection_lost, this, 1800000);
+        add_delayjob((job_func)connection_lost, this, 1800000);
     }
     return ret;
 }
