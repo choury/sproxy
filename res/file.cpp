@@ -203,6 +203,10 @@ void File::defaultHE(uint32_t events) {
         return;
     }
 
+    if (events & EPOLLOUT) {
+        updateEpoll(EPOLLIN);
+    }
+
     if (events & EPOLLIN) {
         bool allfull = true;
         for(auto i = statusmap.begin();i!=statusmap.end();){
@@ -217,7 +221,7 @@ void File::defaultHE(uint32_t events) {
                     res->add("Last-Modified", buff);
                     res->index = i->second.req_index;
                     requester->response(res);
-                    requester->finish(NOERROR, i->second.req_index);
+                    requester->finish(NOERROR | DISCONNECT_FLAG, i->second.req_index);
                     i = statusmap.erase(i);
                     continue;
                 }
@@ -254,12 +258,12 @@ void File::defaultHE(uint32_t events) {
                     res->add("Content-Range", buff);
                     res->index = i->second.req_index;
                     requester->response(res);
-                    requester->finish(NOERROR, i->second.req_index);
+                    requester->finish(NOERROR | DISCONNECT_FLAG, i->second.req_index);
                     i = statusmap.erase(i);
                     continue;
                 }
                 if(i->second.head_only){
-                    requester->finish(NOERROR, i->second.req_index);
+                    requester->finish(NOERROR | DISCONNECT_FLAG, i->second.req_index);
                     i = statusmap.erase(i);
                     continue;
                 }else{
@@ -267,7 +271,7 @@ void File::defaultHE(uint32_t events) {
                 }
             }
             if (rg.begin > rg.end) {
-                requester->finish(NOERROR, i->second.req_index);
+                requester->finish(NOERROR | DISCONNECT_FLAG, i->second.req_index);
                 i = statusmap.erase(i);
                 continue;
             }
@@ -293,17 +297,17 @@ void File::defaultHE(uint32_t events) {
             updateEpoll(0);
         }
     }
-    if (events & EPOLLOUT) {
-        updateEpoll(EPOLLIN);
-    }
 }
 
-void File::finish(uint32_t errcode, void* index){
+bool File::finish(uint32_t flags, void* index){
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
+    uint8_t errcode = flags & ERROR_MASK;
     if(errcode){
         statusmap.erase(id);
+        return false;
     }
+    return true;
 }
 
 void File::deleteLater(uint32_t errcode){

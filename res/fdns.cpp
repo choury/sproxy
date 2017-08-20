@@ -2,8 +2,7 @@
 #include "req/requester.h"
 #include "fdns.h"
 
-
-binmap<uint32_t, std::string> fdns_records;
+static binmap<uint32_t, std::string> fdns_records;
 
 static FDns *fdns = nullptr;
 static in_addr_t fake_ip = 0 ;
@@ -59,7 +58,7 @@ ssize_t FDns::Send(void* buff, size_t size, void* index) {
         Dns_Rr rr(&addr);
         unsigned char * buff = (unsigned char *)p_malloc(BUF_LEN);
         status.req_ptr->Send(buff, rr.build(&que, buff), status.req_index);
-        status.req_ptr->finish(0, status.req_index);
+        status.req_ptr->finish(NOERROR, status.req_index);
         statusmap.erase(id);
     }
     return size;
@@ -73,23 +72,27 @@ void FDns::ResponseCb(uint32_t id, const char* buff, size_t size) {
             dnshdr->id = htons(status.dns_id);
             status.req_ptr->Send(buff, size, status.req_index);
         }
-        status.req_ptr->finish(0, status.req_index);
+        status.req_ptr->finish(NOERROR, status.req_index);
         fdns->statusmap.erase(id);
     }
 }
 
 
-void FDns::finish(uint32_t errcode, void* index) {
+bool FDns::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
+    uint8_t errcode = flags & ERROR_MASK;
     if(errcode == VPN_AGED_ERR){
         FDnsStatus& status = statusmap[id];
         status.req_ptr->finish(errcode, status.req_index);
         statusmap.erase(id);
+        return false;
     }
     if(errcode){
         statusmap.erase(id);
+        return false;
     }
+    return true;
 }
 
 void FDns::deleteLater(uint32_t errcode) {
@@ -117,5 +120,16 @@ FDns * FDns::getfdns() {
     }
     return fdns;
 }
+
+const char * FDns::getRdns(const struct in_addr* addr) {
+    static char sip[INET_ADDRSTRLEN];
+    uint32_t fip = ntohl(addr->s_addr);
+    if(fdns_records.count(fip)){
+        return fdns_records[fip].c_str();
+    }else{
+        return inet_ntop(AF_INET, addr, sip, sizeof(sip));
+    }
+}
+
 
 

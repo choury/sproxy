@@ -337,14 +337,14 @@ void dump_trace(int ignore) {
     /* 查找符号表将函数调用地址转换为函数名称 */
     stack_strings = (char **)backtrace_symbols(stack_trace, stack_depth);
     if (NULL == stack_strings) {
-        LOGE(" Memory is not enough while dump Stack Trace! \r\n");
+        LOGE(" Memory is not enough while dump Stack Trace! \n");
         return;
     }
 
     /* 打印调用栈 */
-    LOGE(" Stack Trace: \r\n");
+    LOGE(" Stack Trace: \n");
     for (i = 0; i < stack_depth; ++i) {
-        LOGE(" [%d] %s \r\n", i, stack_strings[i]);
+        LOGE(" [%d] %s \n", i, stack_strings[i]);
     }
 
     /* 获取函数名称时申请的内存需要自行释放 */

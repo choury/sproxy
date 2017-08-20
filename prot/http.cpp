@@ -47,7 +47,9 @@ void HttpBase::ChunkBProc() {
             if(http_flag & HTTP_CHUNK_END_F){
                 Http_Proc = &HttpBase::HeaderProc;
                 http_flag &= ~HTTP_CHUNK_END_F;
-                EndProc();
+                if(!EndProc()){
+                    return;
+                }
             }else{
                 Http_Proc = &HttpBase::ChunkLProc;
             }
@@ -83,7 +85,9 @@ void HttpBase::ChunkBProc() {
 void HttpBase::FixLenProc() {
     if (http_expectlen == 0) {
         Http_Proc = &HttpBase::HeaderProc;
-        EndProc();
+        if(!EndProc()){
+            return;
+        }
     } else {
         if (http_getlen == 0) {
             ssize_t readlen = Read(http_buff, sizeof(http_buff));
@@ -109,7 +113,10 @@ void HttpBase::FixLenProc() {
 void HttpBase::AlwaysProc() {
     if (http_getlen == 0) {
         ssize_t readlen = Read(http_buff, sizeof(http_buff));
-        if (readlen <= 0) {
+        if(readlen == 0){
+            EndProc();
+        }
+        if(readlen <= 0) {
             ErrProc(readlen);
             return;
         }
@@ -125,11 +132,8 @@ void HttpBase::AlwaysProc() {
     AlwaysProc();
 }
 
-void HttpBase::EndProc() {
-}
-
-
 void HttpResponser::HeaderProc() {
+    bool proc = true;
     if (char* headerend = strnstr(http_buff, CRLF CRLF, http_getlen)) {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - http_buff;
@@ -147,7 +151,7 @@ void HttpResponser::HeaderProc() {
             }
             ReqProc(req);
             if(http_flag & HTTP_IGNORE_BODY_F){
-                EndProc();
+                proc = EndProc();
                 http_flag &= ~HTTP_IGNORE_BODY_F;
                 Http_Proc = (void (HttpBase::*)())&HttpResponser::HeaderProc;
             }
@@ -172,6 +176,9 @@ void HttpResponser::HeaderProc() {
         } else {
             http_getlen += readlen;
         }
+    }
+    if(!proc){
+        return;
     }
     (this->*Http_Proc)();
 }
@@ -199,7 +206,9 @@ void HttpRequester::HeaderProc() {
             if (http_flag & HTTP_IGNORE_BODY_F) {
                 http_flag &= ~HTTP_IGNORE_BODY_F;
                 Http_Proc = (void (HttpBase::*)())&HttpRequester::HeaderProc;
-                EndProc();
+                if(!EndProc()){
+                    return;
+                }
             }else if(http_flag & HTTP_STATUS_1XX){
                 http_flag &= ~HTTP_STATUS_1XX;
                 Http_Proc = (void (HttpBase::*)())&HttpRequester::HeaderProc;

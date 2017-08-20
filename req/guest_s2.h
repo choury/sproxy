@@ -10,6 +10,7 @@ struct ResStatus{
     void*      res_index;
     int32_t remotewinsize; //对端提供的窗口大小，发送时减小，收到对端update时增加
     int32_t localwinsize; //发送给对端的窗口大小，接受时减小，给对端发送update时增加
+    uint32_t res_flags;
 };
 
 class Guest_s2: public Requester, public Http2Responser {
@@ -18,6 +19,7 @@ class Guest_s2: public Requester, public Http2Responser {
 protected:
     virtual void defaultHE(uint32_t events)override;
     virtual void closeHE(uint32_t events) override;
+    virtual void deleteLater(uint32_t errcode) override;
 
     virtual ssize_t Read(void *buff, size_t size)override;
     virtual ssize_t Write(const void *buff, size_t size)override;
@@ -40,8 +42,7 @@ public:
     explicit Guest_s2(int fd, struct sockaddr_in6* myaddr, Ssl *ssl);
     virtual ~Guest_s2();
     
-    virtual void finish(uint32_t errcode, void* index)override;
-    virtual void deleteLater(uint32_t errcode) override;
+    virtual bool finish(uint32_t flags, void* index)override;
 
     virtual int32_t bufleft(void* index)override;
     virtual ssize_t Send(void *buff, size_t size, void* index)override;
@@ -52,6 +53,8 @@ public:
 
     virtual const char* getsrc(void *)override;
     virtual void dump_stat()override;
+
+    static int connection_lost(Guest_s2 *g);
 };
 
 #endif

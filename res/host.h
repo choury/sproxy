@@ -14,16 +14,17 @@ protected:
     char hostname[DOMAINLIMIT];
     uint16_t port;
     Protocol protocol;
-    std::list<HttpReq> reqs;
+    HttpReq* req = nullptr;
     
     virtual void connect();
     virtual void waitconnectHE(uint32_t events);
     virtual void defaultHE(uint32_t events);
+    virtual void deleteLater(uint32_t errcode) override;
     
     virtual ssize_t Read(void* buff, size_t len)override;
     virtual void ResProc(HttpResHeader* res)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
-    virtual void EndProc() override;
+    virtual bool EndProc() override;
     virtual void ErrProc(int errcode)override;
 
     virtual void* request(HttpReqHeader* req)override;
@@ -37,8 +38,8 @@ public:
     virtual int32_t bufleft(void*) override;
     virtual ssize_t Send(void* buff, size_t size, void* index)override;
 
-    virtual void finish(uint32_t errcode, void* index)override;
-    virtual void deleteLater(uint32_t errcode) override;
+    virtual bool finish(uint32_t flags, void* index)override;
+    virtual void writedcb(void * index) override;
     virtual void dump_stat()override;
     static Host* gethost(HttpReqHeader* req, Responser* responser_ptr);
     static int con_timeout(Host* host);

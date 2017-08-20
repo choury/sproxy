@@ -176,7 +176,7 @@ do {\
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
 #define NOERROR             0
-#define CONNECT_FAILED    31
+#define CONNECT_FAILED      31
 #define CONNECT_TIMEOUT     32
 #define SSL_SHAKEHAND_ERR   33
 #define HEAD_TOO_LONG_ERR   34
@@ -189,6 +189,8 @@ do {\
 #define TCP_RESET_ERR       41
 #define DNS_FAILED          42
 #define VPN_AGED_ERR        43
+#define ERROR_MASK          0xff
+#define DISCONNECT_FLAG     (1<<31)
 
 typedef unsigned char uchar;
 

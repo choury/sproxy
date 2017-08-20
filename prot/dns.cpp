@@ -86,23 +86,17 @@ int query_timeout(uint16_t id);
 int query_back(Dns_Status *dnsst);
 
 #ifdef __ANDROID__
-#include <sys/system_properties.h>
+extern std::vector<std::string> getDns();
 static int dnsinit() {
     assert(srvs.empty());
-    char ipaddr[PROP_VALUE_MAX];
-    __system_property_get("net.dns1", ipaddr);
-    if(strlen(ipaddr)) {
-        try {
-            new Dns_srv(ipaddr);
-        } catch (...) {
+    auto dns = getDns();
+    try {
+        for (auto i : dns) {
+            LOG("[DNS] set dns server: %s\n", i.c_str());
+            new Dns_srv(i.c_str());
         }
-    }
-    __system_property_get("net.dns2", ipaddr);
-    if(strlen(ipaddr)){
-        try{
-            new Dns_srv(ipaddr);
-        }catch(...){
-        }
+    }catch (...){
+
     }
     add_prejob(job_func(dns_expired), 0);
     return srvs.size();

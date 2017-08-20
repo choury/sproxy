@@ -16,14 +16,12 @@ void Guest_sni::initHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("(%s): guest_sni error:%s\n", getsrc(nullptr), strerror(error));
+            if(error){
+                LOGE("(%s): guest_sni error:%s\n", getsrc(nullptr), strerror(error));
+            }
         }
         deleteLater(INTERNAL_ERR);
         return;
-    }
-
-    if(events & EPOLLOUT){
-        updateEpoll(EPOLLIN);
     }
 
     if(events & EPOLLIN){
@@ -39,21 +37,22 @@ void Guest_sni::initHE(uint32_t events) {
             char buff[HEADLENLIMIT];
             sprintf(buff, "CONNECT %s:%d" CRLF CRLF, hostname, 443);
             HttpReqHeader* req = new HttpReqHeader(buff, this);
-            req->index = (void *)1;
             assert(responser_ptr == nullptr);
-            responser_ptr = distribute(req, nullptr);
-            if(responser_ptr){
-                responser_index = responser_ptr->request(req);
+            ReqProc(req);
+            if(responser_ptr == nullptr){
+                deleteLater(PEER_LOST_ERR);
+            }else{
                 updateEpoll(EPOLLIN | EPOLLOUT);
                 handleEvent = (void (Con::*)(uint32_t))&Guest_sni::defaultHE;
-            }else{
-                delete req;
-                deleteLater(PEER_LOST_ERR);
             }
         }else if(ret != -1){
             deleteLater(INTERNAL_ERR);
         }
         free(hostname);
+    }
+    
+    if(events & EPOLLOUT){
+        updateEpoll(EPOLLIN);
     }
 }
 

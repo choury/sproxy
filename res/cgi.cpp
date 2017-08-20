@@ -150,7 +150,7 @@ begin:
         HttpReqHeader* req = statusmap.at(cgi_id);
         res->index = req->index;
         req->src->response(res);
-        req->flags |= HTTP_RESPONED;
+        req->flags |= HTTP_RESPONED_F;
         cgistage = Status::WaitHeadr;
         cgi_getlen = 0;
         break;
@@ -286,9 +286,9 @@ begin:
             cgi_outlen += len;
         }
         if (header->flag & CGI_FLAG_END) {
-            req->src->finish(NOERROR, req->index);
-            delete req;
+            req->src->finish(NOERROR | DISCONNECT_FLAG, req->index);
             statusmap.erase(cgi_id);
+            delete req;
         }
         break;
     }
@@ -309,40 +309,43 @@ void Cgi::defaultHE(uint32_t events) {
         return;
     }
 
-    if (events & EPOLLIN) {
-        InProc();
-    }
     if (events & EPOLLOUT) {
-        if(buffer.length == 0){
-            updateEpoll(EPOLLIN);
-            return;
-        }
         int ret = buffer.Write([this](const void * buff, size_t size){
             return Write(buff, size);
         });
-        if(ret <= 0 && showerrinfo(ret, "cgi write error")) {
+        if(ret < 0 && showerrinfo(ret, "cgi write error")) {
             deleteLater(WRITE_ERR);
             return;
         }
         for(auto i: statusmap) {
             i.second->src->writedcb(i.second->index);
         }
+        if(buffer.length == 0){
+            updateEpoll(this->events & ~EPOLLOUT);
+        }
+    }
+    
+    if (events & EPOLLIN) {
+        InProc();
     }
 }
 
-void Cgi::finish(uint32_t errcode, void* index) {
+bool Cgi::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     Peer::Send((const void*)nullptr, 0, index);
+    uint8_t errcode = flags & ERROR_MASK;
     if(errcode){
         delete statusmap[id];
         statusmap.erase(id);
+        return false;
     }
+    return true;
 }
 
 void Cgi::deleteLater(uint32_t errcode){
     for(auto i: statusmap) {
-        if((i.second->flags & HTTP_RESPONED) == 0){
+        if((i.second->flags & HTTP_RESPONED_F) == 0){
             HttpResHeader* res = new HttpResHeader(H503);
             res->index = i.second->index;
             i.second->src->response(res);

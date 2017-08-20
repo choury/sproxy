@@ -33,15 +33,16 @@ protected:
     virtual ssize_t Write(const void *buff, size_t size);
     
     virtual void closeHE(uint32_t events);
+    virtual void deleteLater(uint32_t errcode);
 public:
     virtual ~Peer();
-    virtual void deleteLater(uint32_t errcode);
     
 
     virtual int32_t bufleft(void* index) = 0;
     virtual ssize_t Send(const void *buff, size_t size, void* index) final;
     virtual ssize_t Send(void* buff, size_t size, void* index) = 0;
-    virtual void finish(uint32_t errcode, void* info) = 0;
+    //return false means break the connection
+    virtual bool finish(uint32_t flags, void* info) = 0;
 
     virtual void writedcb(void* index);
 };

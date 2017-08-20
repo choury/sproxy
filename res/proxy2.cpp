@@ -6,7 +6,7 @@
 Proxy2* proxy2 = nullptr;
 
 
-static int connection_lost(Proxy2 *p){
+int Proxy2::connection_lost(Proxy2 *p){
     LOGE("[Proxy2] %p the ping timeout, so close it\n", p);
     p->deleteLater(PEER_LOST_ERR);
     return 0;
@@ -70,6 +70,7 @@ int32_t Proxy2::bufleft(void* index) {
 ssize_t Proxy2::Send(void* buff, size_t size, void* index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
+    assert((statusmap[id].req_flags & STREAM_WRITE_CLOSED) == 0);
     size = Min(size, FRAMEBODYLIMIT);
     Http2_header *header=(Http2_header *)p_move(buff, -(char)sizeof(Http2_header));
     memset(header, 0, sizeof(Http2_header));
@@ -107,12 +108,6 @@ void Proxy2::defaultHE(uint32_t events) {
         deleteLater(INTERNAL_ERR);
         return;
     }
-    if (events & EPOLLIN) {
-        (this->*Http2_Proc)();
-        if((http2_flag & HTTP2_FLAG_INITED)  && localwinsize < 50 *1024 *1024){
-            localwinsize += ExpandWindowSize(0, 50*1024*1024);
-        }
-    }
 
     if (events & EPOLLOUT) {
         if(framelen >= 1024*1024){
@@ -125,14 +120,22 @@ void Proxy2::defaultHE(uint32_t events) {
             }
         }
         int ret = SendFrame();
-        if(ret <= 0 && showerrinfo(ret, "proxy2 write error")) {
+        if(ret < 0 && showerrinfo(ret, "proxy2 write error")) {
             deleteLater(WRITE_ERR);
             return;
         }
         if(framequeue.empty()){
-            updateEpoll(EPOLLIN);
+            updateEpoll(this->events & ~EPOLLOUT);
         }
     }
+    
+    if (events & EPOLLIN) {
+        (this->*Http2_Proc)();
+        if((http2_flag & HTTP2_FLAG_INITED)  && localwinsize < 50 *1024 *1024){
+            localwinsize += ExpandWindowSize(0, 50*1024*1024);
+        }
+    }
+    
     if(proxy2 != this && statusmap.empty()){
         LOG("this is not the proxy2 and no clients, close it.\n");
         deleteLater(PEER_LOST_ERR);
@@ -181,8 +184,13 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
 void Proxy2::EndProc(uint32_t id){
     if(statusmap.count(id)) {
         ReqStatus &status = statusmap[id];
-        status.req_ptr->finish(NOERROR, status.req_index);
-        statusmap.erase(id);
+        if(status.req_flags & STREAM_WRITE_CLOSED){
+            status.req_ptr->finish(NOERROR | DISCONNECT_FLAG, status.req_index);
+            statusmap.erase(id);
+        }else{
+            status.req_ptr->finish(NOERROR, status.req_index);
+            status.req_flags |= STREAM_READ_CLOSED;
+        }
     }
 }
 
@@ -203,7 +211,6 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
         status.req_ptr->finish(errcode?errcode:PEER_LOST_ERR, status.req_index);
         statusmap.erase(id);
     }
-
 }
 
 void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
@@ -250,7 +257,8 @@ void* Proxy2::request(HttpReqHeader* req) {
        req->src,
        req->index,
        (int32_t)remoteframewindowsize,
-       localframewindowsize
+       localframewindowsize,
+       0,
     };
     void *index =reinterpret_cast<void*>(curid);  //change to proxy server's id
     req->index = index;
@@ -280,26 +288,40 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
     }
 }
 
-void Proxy2::finish(uint32_t errcode, void* index) {
+bool Proxy2::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
+    ReqStatus& status = statusmap[id];
+    uint8_t errcode = flags & ERROR_MASK;
     if(errcode == VPN_AGED_ERR){
-        ReqStatus& status = statusmap[id];
         status.req_ptr->finish(errcode, status.req_index);
         Reset(id, ERR_CANCEL);
+        statusmap.erase(id);
+        return false;
     }
-    if(errcode){
+    if(errcode || (flags & DISCONNECT_FLAG)){
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
+        return false;
     }else{
-        Peer::Send((const void*)nullptr, 0, index);
+        if((status.req_flags & STREAM_WRITE_CLOSED) == 0){
+            Peer::Send((const void*)nullptr, 0, index);
+            status.req_flags |= STREAM_WRITE_CLOSED;
+        }
+        if(status.req_flags & STREAM_READ_CLOSED){
+            statusmap.erase(id);
+            return false;
+        }
+        return true;
     }
 }
 
 void Proxy2::deleteLater(uint32_t errcode){
     proxy2 = (proxy2 == this) ? nullptr: proxy2;
     for(auto i: statusmap){
-        i.second.req_ptr->finish(errcode, i.second.req_index);
+        if((i.second.req_flags & STREAM_WRITE_CLOSED) == 0){
+            i.second.req_ptr->finish(errcode, i.second.req_index);
+        }
     }
     statusmap.clear();
     if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){
@@ -324,9 +346,11 @@ void Proxy2::writedcb(void* index){
 }
 
 void Proxy2::dump_stat() {
-    LOG("Proxy2 %p, id:%d:\n", this, curid);
+    LOG("Proxy2 %p, id:%d: %s\n", this, curid, this==proxy2?"[M]":"");
     for(auto i: statusmap){
-        LOG("0x%x: %p, %p\n", i.first, i.second.req_ptr, i.second.req_index);
+        LOG("0x%x: %p, %p (%d/%d)\n",
+            i.first, i.second.req_ptr, i.second.req_index,
+            i.second.remotewinsize, i.second.localwinsize);
     }
 }
 

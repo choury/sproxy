@@ -40,46 +40,36 @@ Con::~Con(){
 
 void Con::updateEpoll(uint32_t events) {
     if (fd > 0) {
-	int __attribute__((unused)) ret;
-        if(events == 0){
+        int __attribute__((unused)) ret;
+        struct epoll_event event;
+        event.data.ptr = this;
+        event.events = events | EPOLLHUP | EPOLLERR;
+        ret = epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        assert(ret == 0 || errno == ENOENT || fprintf(stderr, "epoll_ctl mod failed:%m\n")==0);
+        if (ret && errno == ENOENT)
+        {
+            ret = epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+            assert(ret == 0 || fprintf(stderr, "epoll_ctl add failed:%m\n")==0);
 #ifndef NDEBUG
-            LOGD(DEPOLL, "del %d: %p\n", fd, this);
-            assert(epolls[fd] == this);
-            epolls.erase(fd);
+            LOGD(DEPOLL, "add %d: %p\n", fd, this);
+            epolls[fd]=this;
 #endif
-            ret =  epoll_ctl(efd, EPOLL_CTL_DEL, fd, nullptr);
-            assert(ret == 0 || fprintf(stderr, "epoll_ctl del failed:%m\n"));
         }else{
-            struct epoll_event event;
-            event.data.ptr = this;
-            event.events = events;
-            ret = epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-            assert(ret == 0 || errno == ENOENT || fprintf(stderr, "epoll_ctl mod failed:%m\n")==0);
-            if (ret && errno == ENOENT)
-            {
-                ret = epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-                assert(ret == 0 || fprintf(stderr, "epoll_ctl add failed:%m\n")==0);
 #ifndef NDEBUG
-                LOGD(DEPOLL, "add %d: %p\n", fd, this);
-                epolls[fd]=this;
-#endif
-            }else{
-#ifndef NDEBUG
-                if(epolls[fd] != this) {
-                    LOGD(DEPOLL, "change %d: %p --> %p\n", fd, epolls[fd], this);
-                }
-                assert(epolls.count(fd));
-                epolls[fd]=this;
-#endif
+            if(epolls[fd] != this) {
+                LOGD(DEPOLL, "change %d: %p --> %p\n", fd, epolls[fd], this);
             }
-#ifndef NDEBUG
-            if(events != this->events) {
-                assert(events <= 7);
-                LOGD(DEPOLL, "modify %d: %s --> %s\n", fd, epoll_string[this->events], epoll_string[events]);
-            }
+            assert(epolls.count(fd));
+            epolls[fd]=this;
 #endif
-            this->events = events;
         }
+#ifndef NDEBUG
+        if(events != this->events) {
+            assert(events <= 7);
+            LOGD(DEPOLL, "modify %d: %s --> %s\n", fd, epoll_string[this->events], epoll_string[events]);
+        }
+#endif
+        this->events = events;
     }
 }
 void Con::discard(){

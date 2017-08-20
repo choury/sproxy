@@ -183,12 +183,12 @@ void Proxy::shakehandHE(uint32_t events) {
             if(!proxy2){
                 proxy2 = new_proxy;
             }
-            while(!reqs.empty()){
-                Requester* req_ptr = reqs.front().header->src;
-                void*      req_index = reqs.front().header->index;
-                req_ptr->transfer(req_index, new_proxy,
-                                  new_proxy->request(std::move(reqs.front())));
-                reqs.pop_front();
+            if(req){
+                Requester* req_ptr = req->header->src;
+                void*      req_index = req->header->index;
+                req_ptr->transfer(req_index, new_proxy, new_proxy->request(req));
+                delete req;
+                req = nullptr;
             }
             this->discard();
             deleteLater(PEER_LOST_ERR);

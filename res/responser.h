@@ -9,7 +9,7 @@ class Requester;
 class Responser:public Peer{
 public:
     virtual void* request(HttpReqHeader* req) = 0;
-    virtual void* request(HttpReq&& req);
+    virtual void* request(HttpReq* req);
 };
 
 Responser* distribute(HttpReqHeader* req, Responser* responser_ptr);

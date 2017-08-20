@@ -691,14 +691,11 @@ void HttpBody::push(const void* buff, size_t len) {
 
 void HttpBody::push(void* buff, size_t len) {
     content_size += len;
-    if(len){
-        data.push(write_block{buff, len, 0});
-    }else{
-        p_free(buff);
-    }
+    data.push(write_block{buff, len, 0});
 }
 
 void HttpBody::push(const write_block& wb) {
+    assert(wb.buff);
     content_size += (wb.len - wb.wlen);
     return data.push(wb);
 }
@@ -706,14 +703,11 @@ void HttpBody::push(const write_block& wb) {
 
 
 write_block HttpBody::pop(){
-    if(data.empty()){
-        return write_block{nullptr, 0, 0};
-    }else{
-        auto ret = data.front();
-        data.pop();
-        content_size -= (ret.len - ret.wlen);
-        return ret;
-    }
+    assert(data.size());
+    auto ret = data.front();
+    data.pop();
+    content_size -= (ret.len - ret.wlen);
+    return ret;
 }
 
 size_t& HttpBody::size() {
@@ -724,8 +718,7 @@ size_t& HttpBody::size() {
 
 HttpBody::~HttpBody() {
     while(data.size()){
-       p_free(data.front().buff);
-       data.pop();
+       p_free(pop().buff);
     }
 }
 

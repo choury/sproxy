@@ -196,12 +196,12 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
     return nullptr;
 }
 
-void* Responser::request(HttpReq&& req){
-    void* index = request(req.header);
-    while(req.body.size()){
-        auto wb =req.body.pop();
+void* Responser::request(HttpReq* req){
+    void* index = request(req->header);
+    while(req->body.size()){
+        auto wb =req->body.pop();
         Send(wb.buff, wb.len , index);
     }
-    req.header = nullptr;
+    req->header = nullptr;
     return index;
 }

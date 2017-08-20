@@ -445,6 +445,9 @@ int main(int argc, char **argv) {
     signal(SIGCHLD, SIG_IGN);
     signal(SIGABRT, dump_trace);
     signal(SIGUSR1, dump_stat);
+#ifndef NODEBUG
+    signal(SIGUSR2, exit);
+#endif
     reloadstrategy();
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息

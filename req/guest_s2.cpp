@@ -4,7 +4,7 @@
 
 //#include <limits.h>
 
-static int connection_lost(Guest_s2 *g){
+int Guest_s2::connection_lost(Guest_s2 *g){
     LOGE("(%s): [Guest_s2] Nothing got too long, so close it\n", g->getsrc(nullptr));
     g->deleteLater(PEER_LOST_ERR);
     return 0;
@@ -56,6 +56,8 @@ int32_t Guest_s2::bufleft(void* index) {
 
 ssize_t Guest_s2::Send(void *buff, size_t size, void* index) {
     uint32_t id = (uint32_t)(long)index;
+    assert(statusmap.count(id));
+    assert((statusmap[id].res_flags & STREAM_WRITE_CLOSED) == 0);
     size = Min(size, FRAMEBODYLIMIT);
     Http2_header *header=(Http2_header *)p_move(buff, -(char)sizeof(Http2_header));
     memset(header, 0, sizeof(Http2_header));
@@ -66,8 +68,7 @@ ssize_t Guest_s2::Send(void *buff, size_t size, void* index) {
     }
     PushFrame(header);
     this->remotewinsize -= size;
-    if(statusmap.count(id))
-        statusmap.at(id).remotewinsize -= size;
+    statusmap[id].remotewinsize -= size;
     return size;
 }
 
@@ -84,7 +85,8 @@ void Guest_s2::ReqProc(HttpReqHeader* req) {
             responser,
             responser->request(req),
             (int32_t)remoteframewindowsize,
-            localframewindowsize
+            localframewindowsize,
+            0,
         };
     }else{
         delete req;
@@ -115,7 +117,13 @@ void Guest_s2::DataProc(uint32_t id, const void* data, size_t len) {
 void Guest_s2::EndProc(uint32_t id) {
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
-        status.res_ptr->finish(NOERROR, status.res_index);
+        if(status.res_flags & STREAM_WRITE_CLOSED){
+            status.res_ptr->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
+            statusmap.erase(id);
+        }else{
+            status.res_ptr->finish(NOERROR, status.res_index);
+            status.res_flags |= STREAM_READ_CLOSED;
+        }
     }
 }
 
@@ -149,12 +157,6 @@ void Guest_s2::defaultHE(uint32_t events) {
         deleteLater(INTERNAL_ERR);
         return;
     }
-    if (events & EPOLLIN) {
-        (this->*Http2_Proc)();
-        if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
-            localwinsize += ExpandWindowSize(0, 50*1024*1024);
-        }
-    }
 
     if (events & EPOLLOUT) {
         if(framelen >= 1024*1024){
@@ -172,9 +174,17 @@ void Guest_s2::defaultHE(uint32_t events) {
             return;
         }
         if(framequeue.empty()) {
-            updateEpoll(EPOLLIN);
+            updateEpoll(this->events & ~EPOLLOUT);
         }
     }
+    
+    if (events & EPOLLIN) {
+        (this->*Http2_Proc)();
+        if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
+            localwinsize += ExpandWindowSize(0, 50*1024*1024);
+        }
+    }
+
 }
 
 void Guest_s2::closeHE(uint32_t events) {
@@ -243,20 +253,33 @@ void Guest_s2::AdjustInitalFrameWindowSize(ssize_t diff) {
     }
 }
 
-void Guest_s2::finish(uint32_t errcode, void* index) {
+bool Guest_s2::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
-    if(errcode){
+    ResStatus& status = statusmap[id];
+    uint8_t errcode = flags & ERROR_MASK;
+    if(errcode || (flags & DISCONNECT_FLAG)){
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
+        statusmap.erase(id);
+        return false;
     }else{
-        Peer::Send((const void*)nullptr, 0, index);
+        if((status.res_flags & STREAM_WRITE_CLOSED) == 0){
+            Peer::Send((const void*)nullptr, 0, index);
+            status.res_flags |= STREAM_WRITE_CLOSED;
+        }
+        if(status.res_flags & STREAM_READ_CLOSED){
+            statusmap.erase(id);
+            return false;
+        }
+        return true;
     }
-    statusmap.erase(id);
 }
 
 void Guest_s2::deleteLater(uint32_t errcode){
     for(auto i: statusmap){
-        i.second.res_ptr->finish(errcode, i.second.res_index);
+        if((i.second.res_flags & STREAM_WRITE_CLOSED) == 0){
+            i.second.res_ptr->finish(errcode, i.second.res_index);
+        }
     }
     statusmap.clear();
     if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){
@@ -294,7 +317,9 @@ const char * Guest_s2::getsrc(void* index){
 void Guest_s2::dump_stat() {
     LOG("Guest_s2 %p %s:\n", this, getsrc(nullptr));
     for(auto i: statusmap){
-        LOG("0x%x: %p, %p\n", i.first, i.second.res_ptr, i.second.res_index);
+        LOG("0x%x: %p, %p (%d/%d)\n",
+            i.first, i.second.res_ptr, i.second.res_index,
+            i.second.remotewinsize, i.second.localwinsize);
     }
 }
 

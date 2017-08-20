@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <iostream>
 #include <map>
+#include <vector>
 
 
 static JavaVM *jnijvm;
@@ -82,6 +83,25 @@ const char* getpackagename(int uid) {
         jnienv->DeleteLocalRef(cls);
     }
     return name;
+}
+
+std::vector<std::string> getDns(){
+    JNIEnv *jnienv;
+    jnijvm->GetEnv((void **) &jnienv, JNI_VERSION_1_6);
+    jclass cls = jnienv->GetObjectClass(jniobj);
+    jmethodID mid = jnienv->GetMethodID(cls, "getDns", "()[Ljava/lang/String;");
+    jobjectArray jDns = (jobjectArray) jnienv->CallObjectMethod(jniobj, mid);
+    int n = jnienv->GetArrayLength(jDns);
+    std::vector<std::string> dns;
+    for(int i=0; i< n; i++){
+        jstring jdns=(jstring)jnienv->GetObjectArrayElement(jDns,i);
+        const char *jdns_str = jnienv->GetStringUTFChars(jdns, 0);
+        dns.push_back(jdns_str);
+        jnienv->ReleaseStringUTFChars(jdns, jdns_str);
+        jnienv->DeleteLocalRef(jdns);
+    }
+    jnienv->DeleteLocalRef(cls);
+    return dns;
 }
 
 std::string getExternalFilesDir() {

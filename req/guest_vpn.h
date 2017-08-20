@@ -23,10 +23,18 @@ struct VpnStatus{
     VpnKey*    key;
     char*      packet;
     uint16_t   packet_len;
-    uint32_t   seq;
-    uint32_t   ack;
+    void*      protocol_info;
+};
+
+struct TcpStatus{
+    uint32_t   send_seq;
+    uint32_t   send_acked;
+    uint32_t   want_seq;
     uint16_t   window;
     uint8_t    window_scale;
+#define FIN_RECV   1
+#define FIN_SEND   (1<<1)
+    uint8_t    flags;
 };
 
 
@@ -51,7 +59,7 @@ public:
     virtual int32_t bufleft(void* index)override;
     virtual ssize_t Send(void* buff, size_t size, void* index)override;
 
-    virtual void finish(uint32_t errcode, void* index)override;
+    virtual bool finish(uint32_t flags, void* index)override;
     virtual const char *getsrc(void* index)override;
     virtual void dump_stat()override;
 };

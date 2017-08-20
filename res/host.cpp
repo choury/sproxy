@@ -17,6 +17,7 @@ Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), 
 }
 
 Host::~Host(){
+    assert(req == nullptr);
     del_delayjob((job_func)con_timeout, this);
 }
 
@@ -91,34 +92,25 @@ reconnect:
 }
 
 ssize_t Host::Write_buff() {
-    ssize_t ret = 0;
-    for(auto& req:reqs){
-        if(req.size() == 0){
-            continue;
-        }
-        if(req.header_buff == nullptr && !req.header->should_proxy){
-            if(req.header->ismethod("CONNECT")){
-                Http_Proc = &Host::AlwaysProc;
-                HttpResHeader* res = new HttpResHeader(H200);
-                HttpReq& req = reqs.front();
-                res->index = req.header->index;
-                req.header->src->response(res);
-            }else if(req.header->ismethod("SEND")){
-                Http_Proc = &Host::AlwaysProc;
-            }
-        }
-        ret = req.Write_string([this](const void *buff, size_t size){
-            return Write(buff, size);
-        });
-        if(ret <= 0){
-            break;
-        }else{
-            req.header->src->writedcb(req.header->index);
+    if(req->header_buff == nullptr && !req->header->should_proxy){
+        if(req->header->ismethod("CONNECT")){
+            Http_Proc = &Host::AlwaysProc;
+            HttpResHeader* res = new HttpResHeader(H200);
+            res->index = req->header->index;
+            req->header->src->response(res);
+        }else if(req->header->ismethod("SEND")){
+            Http_Proc = &Host::AlwaysProc;
         }
     }
+    ssize_t ret = req->Write_string([this](const void *buff, size_t size){
+        return Write(buff, size);
+    });
+    if(ret <= 0){
+        return ret;
+    }
+    req->header->src->writedcb(req->header->index);
     return ret;
 }
-
 
 void Host::defaultHE(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
@@ -126,14 +118,12 @@ void Host::defaultHE(uint32_t events) {
         socklen_t errlen = sizeof(error);
 
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("(%s): host error: %s\n", hostname, strerror(error));
+            if(error){
+                LOGE("(%s): host error: %s\n", hostname, strerror(error));
+            }
         }
         deleteLater(INTERNAL_ERR);
         return;
-    }
-
-    if (events & EPOLLIN || http_getlen) {
-        (this->*Http_Proc)();
     }
 
     if (events & EPOLLOUT) {
@@ -142,35 +132,150 @@ void Host::defaultHE(uint32_t events) {
             deleteLater(WRITE_ERR);
             return;
         }
-        if(reqs.empty() || reqs.back().size()==0){
-            updateEpoll(EPOLLIN);
+        if(req->size() == 0){
+            updateEpoll(this->events & ~EPOLLOUT);
+            if(http_flag & HTTP_CLIENT_CLOSE_F){
+                shutdown(fd, SHUT_WR);
+            }
         }
     }
-}
 
+    if (events & EPOLLIN || http_getlen) {
+        (this->*Http_Proc)();
+    }
+}
 
 void* Host::request(HttpReqHeader* req) {
     assert(Http_Proc != &Host::AlwaysProc);
 
-    reqs.push_back(HttpReq(req));
+    if(this->req){
+        delete this->req;
+    }
+    this->req =  new HttpReq(req);
     updateEpoll(events | EPOLLOUT);
     return reinterpret_cast<void*>(1);
 }
 
 int32_t Host::bufleft(void*) {
-    size_t len = 0;
-    for(auto& req: reqs){
-        len += req.size();
-    }
-    return 1024*1024 - len;
+    return 1024*1024 - req->size();
 }
-
 
 ssize_t Host::Send(void* buff, size_t size, void* index) {
     assert((long)index == 1);
-    reqs.back().body.push(buff, size);
+    req->body.push(buff, size);
     updateEpoll(events | EPOLLOUT);
     return size;
+}
+
+ssize_t Host::Read(void* buff, size_t len){
+    return Peer::Read(buff, len);
+}
+
+
+void Host::ResProc(HttpResHeader* res) {
+    if(req == nullptr){
+        deleteLater(PEER_LOST_ERR);
+        delete res;
+        return;
+    }
+    if(req->header->ismethod("HEAD")){
+        http_flag |= HTTP_IGNORE_BODY_F;
+    }
+    res->index = req->header->index;
+    req->header->src->response(res);
+}
+
+ssize_t Host::DataProc(const void* buff, size_t size) {
+    if(req == nullptr){
+        deleteLater(PEER_LOST_ERR);
+        return -1;
+    }
+
+    int len = req->header->src->bufleft(req->header->index);
+
+    if (len <= 0) {
+        LOGE("(%s): The guest's write buff is full (%s)\n",
+             req->header->src->getsrc(req->header->index), req->header->hostname);
+        updateEpoll(0);
+        return -1;
+    }
+    return req->header->src->Send(buff, Min(size, len), req->header->index);
+}
+
+bool Host::EndProc() {
+    assert(req);
+    if(!req->header->src->finish(NOERROR, req->header->index)){
+        delete req;
+        req = nullptr;
+        Peer::deleteLater(PEER_LOST_ERR);
+        return false;
+    }
+    return true;
+}
+
+
+void Host::ErrProc(int errcode) {
+    if(errcode == 0 && req){
+        http_flag |= HTTP_SERVER_CLOSE_F;
+        if(!req->header->ismethod("CONNECT")){
+            deleteLater(PEER_LOST_ERR);
+        }else{
+            updateEpoll(events & ~EPOLLIN);
+        }
+        return;
+    }
+    if(showerrinfo(errcode, "Host-http error")) {
+        deleteLater(HTTP_PROTOCOL_ERR);
+    }
+}
+
+bool Host::finish(uint32_t flags, void* index) {
+    assert((long)index == 1);
+    uint8_t errcode = flags & ERROR_MASK;
+    if(errcode == VPN_AGED_ERR){
+        deleteLater(errcode);
+        return false;
+    }
+    if(errcode || (flags & DISCONNECT_FLAG)){
+        delete req;
+        req = nullptr;
+        deleteLater(flags);
+        return false;
+    }
+    Peer::Send((const void*)nullptr,0, index);
+    if(req->header->ismethod("CONNECT")){
+        http_flag |= HTTP_CLIENT_CLOSE_F;
+    }
+    return true;
+}
+
+void Host::deleteLater(uint32_t errcode){
+    assert(errcode);
+    if(req){
+        if(!req->header->ismethod("SEND")){
+            if(errcode == CONNECT_TIMEOUT || errcode == DNS_FAILED){
+                HttpResHeader* res = new HttpResHeader(H504);
+                res->index = req->header->index;
+                req->header->src->response(res);
+            }else if(errcode == CONNECT_FAILED){
+                HttpResHeader* res = new HttpResHeader(H503);
+                res->index = req->header->index;
+                req->header->src->response(res);
+            }
+        }
+        req->header->src->finish(errcode, req->header->index);
+        delete req;
+        req = nullptr;
+    }
+    if(testedaddr >= 0){
+        Peer::deleteLater(errcode);
+    }
+}
+
+void Host::writedcb(void* index) {
+    if((http_flag & HTTP_SERVER_CLOSE_F) == 0){
+        Peer::writedcb(index);
+    }
 }
 
 
@@ -192,101 +297,11 @@ Host* Host::gethost(HttpReqHeader* req, Responser* responser_ptr) {
 }
 
 
-ssize_t Host::Read(void* buff, size_t len){
-    return Peer::Read(buff, len);
-}
-
-
-void Host::ResProc(HttpResHeader* res) {
-    if(reqs.empty()){
-        deleteLater(PEER_LOST_ERR);
-        delete res;
-        return;
-    }
-    if(reqs.front().header->ismethod("HEAD")){
-        http_flag |= HTTP_IGNORE_BODY_F;
-    }
-    HttpReq& req = reqs.front();
-    res->index = req.header->index;
-    req.header->src->response(res);
-}
-
-ssize_t Host::DataProc(const void* buff, size_t size) {
-    if(reqs.empty()){
-        deleteLater(PEER_LOST_ERR);
-        return -1;
-    }
-
-    HttpReq& req = reqs.front();
-    int len = req.header->src->bufleft(req.header->index);
-
-    if (len <= 0) {
-        LOGE("(%s): The guest's write buff is full (%s)\n",
-             req.header->src->getsrc(req.header->index), req.header->hostname);
-        updateEpoll(0);
-        return -1;
-    }
-    return req.header->src->Send(buff, Min(size, len), req.header->index);
-}
-
-void Host::EndProc() {
-    Requester* req_ptr = reqs.front().header->src;
-    void*    req_index = reqs.front().header->index;
-    reqs.pop_front();
-    if(reqs.empty()){
-        req_ptr->finish(NOERROR, req_index);
-        deleteLater(NOERROR);
-    }
-}
-
-
-void Host::ErrProc(int errcode) {
-    if(errcode == 0 && reqs.size()){
-        HttpReq& req = reqs.front();
-        req.header->src->finish(NOERROR, req.header->index);
-        reqs.pop_front();
-    }
-    if(showerrinfo(errcode, "Host-http error")) {
-        deleteLater(HTTP_PROTOCOL_ERR);
-    }
-}
-
-void Host::finish(uint32_t errcode, void* index) {
-    assert((long)index == 1);
-    if(errcode){
-        reqs.clear();
-        if(testedaddr >= 0){
-            Peer::deleteLater(errcode);
-        }
-    }
-}
-
-void Host::deleteLater(uint32_t errcode){
-    for(auto& req: reqs){
-        if(!req.header->ismethod("SEND")){
-            if(errcode == CONNECT_TIMEOUT || errcode == DNS_FAILED){
-                HttpResHeader* res = new HttpResHeader(H504);
-                res->index = req.header->index;
-                req.header->src->response(res);
-            }else if(errcode == CONNECT_FAILED){
-                HttpResHeader* res = new HttpResHeader(H503);
-                res->index = req.header->index;
-                req.header->src->response(res);
-            }
-        }
-        req.header->src->finish(errcode, req.header->index);
-    }
-    reqs.clear();
-    if(testedaddr >= 0){
-        Peer::deleteLater(errcode);
-    }
-}
-
 void Host::dump_stat() {
     LOG("Host %p, <%s> (%s:%d):\n", this, protstr(protocol), hostname, port);
-    for(auto& req: reqs){
+    if(req){
         LOG("    %s %s: %p, %p\n",
-            req.header->method, req.header->geturl().c_str(),
-            req.header->src, req.header->index);
+            req->header->method, req->header->geturl().c_str(),
+            req->header->src, req->header->index);
     }
 }

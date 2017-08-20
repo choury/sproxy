@@ -7,8 +7,6 @@
 #include "prot/binmap.h"
 #include <map>
 
-extern binmap<uint32_t, std::string> fdns_records;
-
 struct FDnsStatus{
     Requester* req_ptr;
     void*      req_index;
@@ -18,6 +16,8 @@ struct FDnsStatus{
 class FDns: public Responser{
     std::map<int, FDnsStatus> statusmap;
     uint32_t req_id = 1;
+
+    virtual void deleteLater(uint32_t errcode) override;
 public:
     FDns();
     ~FDns();
@@ -26,11 +26,11 @@ public:
     static void ResponseCb(uint32_t id, const char *buff, size_t size);
 
     virtual int32_t bufleft(void* index)override;
-    virtual void finish(uint32_t errcode, void* index)override;
-    virtual void deleteLater(uint32_t errcode) override;
+    virtual bool finish(uint32_t flags, void* index)override;
 
     virtual void dump_stat()override;
     static FDns* getfdns();
+    static const char* getRdns(const struct in_addr* addr);
 };
 
 #endif

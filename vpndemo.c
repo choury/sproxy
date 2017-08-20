@@ -131,7 +131,7 @@ int main(int argc, char** argv) {
         return -1;
     }
     out_interface = argv[1];
-    signal(SIGUSR2, vpn_stop);
+    signal(SIGUSR2, vpn_reload);
     while(1){
         char tun_name[IFNAMSIZ]= {0};
         int tun = tun_create(tun_name, IFF_TUN | IFF_NO_PI);

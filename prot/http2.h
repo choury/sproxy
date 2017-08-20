@@ -145,5 +145,8 @@ public:
     void init();
 };
 
+#define STREAM_HEAD_ENDED    1
+#define STREAM_WRITE_CLOSED (1<<1)
+#define STREAM_READ_CLOSED  (1<<2)
 
 #endif
