@@ -313,7 +313,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
             ->setflag(TH_ACK);
         sendPkg(&pac_return, (const void*)nullptr, 0);
     }else if(seq != tcpStatus->want_seq){
-        LOGD(DVPN, "drop unwanted data packet %u/%u\n", seq, tcpStatus->want_seq);
+        LOGE("(%s): drop unwanted data packet %u/%u\n", getsrc(&key), seq, tcpStatus->want_seq);
         return;
     }
 

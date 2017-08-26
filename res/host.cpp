@@ -60,6 +60,9 @@ void Host::connect() {
 
 
 void Host::waitconnectHE(uint32_t events) {
+    if (req == nullptr){
+        return deleteLater(PEER_LOST_ERR);
+    }
     if (events & EPOLLERR || events & EPOLLHUP) {
         int       error = 0;
         socklen_t errlen = sizeof(error);
@@ -149,6 +152,7 @@ void* Host::request(HttpReqHeader* req) {
     assert(Http_Proc != &Host::AlwaysProc);
 
     if(this->req){
+        assert(req->src == this->req->header->src);
         delete this->req;
     }
     this->req =  new HttpReq(req);
@@ -173,11 +177,7 @@ ssize_t Host::Read(void* buff, size_t len){
 
 
 void Host::ResProc(HttpResHeader* res) {
-    if(req == nullptr){
-        deleteLater(PEER_LOST_ERR);
-        delete res;
-        return;
-    }
+    assert(req);
     if(req->header->ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY_F;
     }
@@ -186,11 +186,7 @@ void Host::ResProc(HttpResHeader* res) {
 }
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
-    if(req == nullptr){
-        deleteLater(PEER_LOST_ERR);
-        return -1;
-    }
-
+    assert(req);
     int len = req->header->src->bufleft(req->header->index);
 
     if (len <= 0) {

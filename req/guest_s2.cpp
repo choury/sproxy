@@ -277,9 +277,7 @@ bool Guest_s2::finish(uint32_t flags, void* index) {
 
 void Guest_s2::deleteLater(uint32_t errcode){
     for(auto i: statusmap){
-        if((i.second.res_flags & STREAM_WRITE_CLOSED) == 0){
-            i.second.res_ptr->finish(errcode, i.second.res_index);
-        }
+        i.second.res_ptr->finish(errcode, i.second.res_index);
     }
     statusmap.clear();
     if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){

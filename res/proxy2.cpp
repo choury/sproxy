@@ -319,9 +319,7 @@ bool Proxy2::finish(uint32_t flags, void* index) {
 void Proxy2::deleteLater(uint32_t errcode){
     proxy2 = (proxy2 == this) ? nullptr: proxy2;
     for(auto i: statusmap){
-        if((i.second.req_flags & STREAM_WRITE_CLOSED) == 0){
-            i.second.req_ptr->finish(errcode, i.second.req_index);
-        }
+        i.second.req_ptr->finish(errcode, i.second.req_index);
     }
     statusmap.clear();
     if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){
