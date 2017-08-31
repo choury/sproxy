@@ -359,7 +359,7 @@ Http2_header *HttpReqHeader::getframe(Index_table *index_table, uint32_t http_id
     }
     
     if(!ismethod("CONNECT") && !ismethod("SEND")){
-        p += index_table->hpack_encode(p, ":scheme", "http");
+        p += index_table->hpack_encode(p, ":scheme", protocol[0]?protocol:"http");
         p += index_table->hpack_encode(p, ":path", path);
     }
     for(auto i: cookies){

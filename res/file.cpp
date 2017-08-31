@@ -419,7 +419,7 @@ Responser* File::getfile(HttpReqHeader* req) {
             req->src->Send((const void*)buff,
                            sprintf(buff, "</pre><hr></body></html>"),
                            req->index);
-            req->src->Send((const void*)nullptr, 0, req->index);
+            req->src->finish(NOERROR | DISCONNECT_FLAG, req->index);
             return nullptr;
         }
 

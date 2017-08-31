@@ -24,9 +24,7 @@ class handle{
             }else if(header->flag & CGI_FLAG_ERROR){
                 HttpResHeader res(H403);
                 cgi_response(cgi_fd, res, cgi_id);
-                return 1;
             }
-            return 1;
         }
         assert(header->type == CGI_VALUE);
         assert(queryed);
@@ -37,8 +35,7 @@ class handle{
         cgi_response(cgi_fd, res, cgi_id);
         char callback[DOMAINLIMIT+sizeof("setproxy(\"\");")];
         cgi_write(cgi_fd, cgi_id, callback, sprintf(callback, "setproxy(\"%s\");", (char *)nv->value));
-        cgi_write(cgi_fd, cgi_id, "", 0);
-        return 0;
+        return 1;
     }
     int POST(const CGI_Header* header){
         if(queryed == false){
@@ -49,17 +46,15 @@ class handle{
             }
             HttpResHeader res(H400);
             cgi_response(cgi_fd, res, cgi_id);
-            return 1;
         }else if(header->flag & CGI_FLAG_ERROR){
             HttpResHeader res(H303);
             res.add("Location", "/webui/");
             cgi_response(cgi_fd, res, cgi_id);
-            return 1;
         }else{
             HttpResHeader res(H205);
             cgi_response(cgi_fd, res, cgi_id);
-            return 1;
         }
+        return 1;
     }
 public:
     ~handle(){
@@ -122,6 +117,7 @@ int cgimain(int fd){
         }
 
         if(cgimap.count(cgi_id) && cgimap[cgi_id](header)){
+            cgi_write(cgi_fd, cgi_id, "", 0);
             cgimap.erase(cgi_id);
         }
     }

@@ -27,7 +27,6 @@ class handle{
             }else if(header->flag & CGI_FLAG_ERROR){
                 HttpResHeader res(H403);
                 cgi_response(cgi_fd, res, cgi_id);
-                return 1;
             }else{
                 HttpResHeader res(H200);
                 res.add("Content-Type", "application/json");
@@ -42,9 +41,8 @@ class handle{
                 cgi_response(cgi_fd, res, cgi_id);
                 const char* jstring = json_object_get_string(sitelist);
                 cgi_write(cgi_fd, cgi_id, jstring, strlen(jstring));
-                cgi_write(cgi_fd, cgi_id, "", 0);
-                return 1;
             }
+            return 1;
         }
 
         assert(header->type == CGI_VALUE);
@@ -57,7 +55,6 @@ class handle{
         json_object* jsite = json_object_new_object();
         json_object_object_add(jsite, site, json_object_new_string(strategy));
         json_object_array_add(sitelist, jsite);
-
         return 0;
     }
     int PUT(const CGI_Header* header){
@@ -72,13 +69,12 @@ class handle{
                 }
                 HttpResHeader res(H400);
                 cgi_response(cgi_fd, res, cgi_id);
-                return 1;
             }else{
                 HttpResHeader res(H303);
                 res.add("Location", "/webui/");
                 cgi_response(cgi_fd, res, cgi_id);
-                return 1;
             }
+            return 1;
         }
         return 0;
     }
@@ -92,13 +88,12 @@ class handle{
                 }
                 HttpResHeader res(H400);
                 cgi_response(cgi_fd, res, cgi_id);
-                return 1;
             }else{
                 HttpResHeader res(H303);
                 res.add("Location", "/webui/");
                 cgi_response(cgi_fd, res, cgi_id);
-                return 1;
             }
+            return 1;
         }
         return 0;
     }
@@ -169,6 +164,7 @@ int cgimain(int fd){
         }
 
         if(cgimap.count(cgi_id) && cgimap[cgi_id](header)){
+            cgi_write(cgi_fd, cgi_id, "", 0);
             cgimap.erase(cgi_id);
         }
     }

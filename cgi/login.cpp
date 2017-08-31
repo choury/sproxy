@@ -24,16 +24,14 @@ class handle{
             }
             HttpResHeader res(H400);
             cgi_response(cgi_fd, res, cgi_id);
-            return 1;
         }else if(header->flag & CGI_FLAG_ERROR){
             HttpResHeader res(H403);
             cgi_response(cgi_fd, res, cgi_id);
-            return 1;
         }else{
             HttpResHeader res(H204);
             cgi_response(cgi_fd, res, cgi_id);
-            return 1;
         }
+        return 1;
     }
 public:
     ~handle(){
@@ -94,6 +92,7 @@ int cgimain(int fd){
         }
 
         if(cgimap.count(cgi_id) && cgimap[cgi_id](header)){
+            cgi_write(cgi_fd, cgi_id, "", 0);
             cgimap.erase(cgi_id);
         }
     }

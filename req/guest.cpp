@@ -126,7 +126,7 @@ bool Guest::EndProc() {
         }
         return false;
     }else{
-        assert(Status_flags == GUEST_IDELE_F);
+        Status_flags = GUEST_IDELE_F;
         return true;
     }
 }
