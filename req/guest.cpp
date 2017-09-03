@@ -136,7 +136,7 @@ void Guest::ErrProc(int errcode) {
     if(errcode == 0){
         http_flag |= HTTP_CLIENT_CLOSE_F;
         if(Status_flags == GUEST_IDELE_F){
-            deleteLater(PEER_LOST_ERR);
+            deleteLater(NOERROR | DISCONNECT_FLAG);
         }else{
             updateEpoll(events & ~EPOLLIN);
         }

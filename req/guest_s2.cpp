@@ -258,21 +258,20 @@ bool Guest_s2::finish(uint32_t flags, void* index) {
     assert(statusmap.count(id));
     ResStatus& status = statusmap[id];
     uint8_t errcode = flags & ERROR_MASK;
+    if(errcode == 0 && (status.res_flags & STREAM_WRITE_CLOSED) == 0){
+        Peer::Send((const void*)nullptr, 0, index);
+        status.res_flags |= STREAM_WRITE_CLOSED;
+    }
+    if(status.res_flags & STREAM_READ_CLOSED){
+        statusmap.erase(id);
+        return false;
+    }
     if(errcode || (flags & DISCONNECT_FLAG)){
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
         return false;
-    }else{
-        if((status.res_flags & STREAM_WRITE_CLOSED) == 0){
-            Peer::Send((const void*)nullptr, 0, index);
-            status.res_flags |= STREAM_WRITE_CLOSED;
-        }
-        if(status.res_flags & STREAM_READ_CLOSED){
-            statusmap.erase(id);
-            return false;
-        }
-        return true;
     }
+    return true;
 }
 
 void Guest_s2::deleteLater(uint32_t errcode){

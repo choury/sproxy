@@ -299,21 +299,20 @@ bool Proxy2::finish(uint32_t flags, void* index) {
         statusmap.erase(id);
         return false;
     }
+    if(errcode == 0 && (status.req_flags & STREAM_WRITE_CLOSED) == 0){
+        Peer::Send((const void*)nullptr, 0, index);
+        status.req_flags |= STREAM_WRITE_CLOSED;
+    }
+    if(status.req_flags & STREAM_READ_CLOSED){
+        statusmap.erase(id);
+        return false;
+    }
     if(errcode || (flags & DISCONNECT_FLAG)){
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
         return false;
-    }else{
-        if((status.req_flags & STREAM_WRITE_CLOSED) == 0){
-            Peer::Send((const void*)nullptr, 0, index);
-            status.req_flags |= STREAM_WRITE_CLOSED;
-        }
-        if(status.req_flags & STREAM_READ_CLOSED){
-            statusmap.erase(id);
-            return false;
-        }
-        return true;
     }
+    return true;
 }
 
 void Proxy2::deleteLater(uint32_t errcode){
