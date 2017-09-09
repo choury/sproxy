@@ -127,25 +127,28 @@ int tun_create(char *dev, int flags) {
 
 int main(int argc, char** argv) {
     if(argc < 3){
-        fprintf(stderr, "usage: %s interface server\n", argv[0]);
+        fprintf(stderr, "usage: %s interface server [secret]\n", argv[0]);
         return -1;
     }
     out_interface = argv[1];
     signal(SIGUSR2, vpn_reload);
-    while(1){
-        char tun_name[IFNAMSIZ]= {0};
-        int tun = tun_create(tun_name, IFF_TUN | IFF_NO_PI);
-        if (tun < 0) {
-            perror("tun_create");
-            return 1;
-        }
-        fprintf(stderr, "TUN name is %s\n", tun_name);
-        struct VpnConfig vpn;
-        vpn.disable_ipv6 = 1;
-        vpn.ignore_cert_error = 0;
-        strcpy(vpn.server, argv[2]);
-        vpn.fd = tun;
-        vpn_start(&vpn);
+    char tun_name[IFNAMSIZ]= {0};
+    int tun = tun_create(tun_name, IFF_TUN | IFF_NO_PI);
+    if (tun < 0) {
+        perror("tun_create");
+        return 1;
     }
+    fprintf(stderr, "TUN name is %s\n", tun_name);
+    struct VpnConfig vpn;
+    vpn.disable_ipv6 = 1;
+    vpn.ignore_cert_error = 0;
+    strcpy(vpn.server, argv[2]);
+    printf("set server to: %s\n", vpn.server);
+    if(argc >= 4){
+        strcpy(vpn.secret, argv[3]);
+        printf("set secret to: %s\n", vpn.secret);
+    }
+    vpn.fd = tun;
+    vpn_start(&vpn);
     return 0;
 }

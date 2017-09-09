@@ -100,6 +100,9 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
                     return nullptr;
                 }
                 req->del("via");
+                if(strlen(rewrite_auth)){
+                    req->add("Proxy-Authorization", std::string("Basic ")+rewrite_auth);
+                }
                 LOG("[[proxy]] %s\n", log_buff);
                 req->should_proxy = true;
                 return Proxy::getproxy(req, responser_ptr);

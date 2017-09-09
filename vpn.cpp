@@ -20,6 +20,7 @@ char SHOST[DOMAINLIMIT];
 uint16_t SPORT;
 Protocol SPROT;
 char auth_string[DOMAINLIMIT] = {0};
+char rewrite_auth[DOMAINLIMIT] = {0};
 const char *cafile =  nullptr;
 const char *index_file = nullptr;
 int autoindex = 0;
@@ -52,6 +53,8 @@ int vpn_start(const struct VpnConfig* vpn){
         LOGE("epoll_create: %s\n", strerror(errno));
         return -1;
     }
+    Base64Encode(vpn->secret, strlen(vpn->secret), rewrite_auth);
+    LOG("set encoded secret to: %s\n", rewrite_auth);
     new Guest_vpn(vpn->fd);
     LOGOUT("Accepting connections ...\n");
     while (vpn_contiune) {

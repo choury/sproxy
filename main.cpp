@@ -29,6 +29,7 @@ char SHOST[DOMAINLIMIT] = {0};
 uint16_t SPORT = 0;
 Protocol SPROT = Protocol::TCP;
 char auth_string[DOMAINLIMIT] = {0};
+char rewrite_auth[DOMAINLIMIT] = {0};
 const char *cafile =  nullptr;
 const char *cert = nullptr;
 const char *key = nullptr;
@@ -219,6 +220,7 @@ static struct option long_options[] = {
     {"insecure",    no_argument,       0, 'k'},
     {"key",         required_argument, 0,  0 },
     {"port",        required_argument, 0, 'p'},
+    {"rewrite_auth",required_argument, 0, 'r'},
     {"secret",      required_argument, 0, 's'},
     {"sni",         no_argument,       0,  0 },
 #ifndef NDEBUG
@@ -245,6 +247,7 @@ const char *option_detail[] = {
     "Ignore the cert error of server (SHOULD NOT DO IT)",
     "Private key file name (ssl/dtls)",
     "The port to listen, default is 80 but 443 for ssl/dtls/sni",
+    "rewrite the auth info (user:password) to proxy server",
     "Set a user and passwd for proxy (user:password), default is none.",
     "Act as a sni proxy",
 #ifndef NDEBUG
@@ -333,7 +336,7 @@ SSL_CTX* initssl(int udp, const char *ca, const char *cert, const char *key){
 int main(int argc, char **argv) {
     while (1) {
         int option_index = 0;
-        int c = getopt_long(argc, argv, "Du1hiks:p:",
+        int c = getopt_long(argc, argv, "Du1hikr:s:p:",
             long_options, &option_index);
         if (c == -1)
             break;
@@ -403,10 +406,16 @@ int main(int argc, char **argv) {
             printf("option port with value '%d'\n", CPORT);
             break;
 
+        case 'r':
+            Base64Encode(optarg, strlen(optarg), rewrite_auth);
+            printf("option rewrite-auth with value '%s'\n", rewrite_auth);
+            break;
+
         case 's':
             Base64Encode(optarg, strlen(optarg), auth_string);
             printf("option secret with value '%s'\n", auth_string);
             break;
+
         case 'i':
             autoindex = 1;
             printf("option autoindex\n");
