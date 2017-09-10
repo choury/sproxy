@@ -19,7 +19,7 @@ static std::map<int, std::string> packages;
  * Signature: (ILjava/lang/String;)V
  */
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
-        (JNIEnv *env, jobject obj, jint sockfd, jstring server) {
+        (JNIEnv *env, jobject obj, jint sockfd, jstring server, jstring secret) {
     env->GetJavaVM(&jnijvm);
     jniobj = env->NewGlobalRef(obj);
     LOG("native SproxyVpnService.start %d.", sockfd);
@@ -27,13 +27,17 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     fcntl(sockfd,F_SETFL,flags&~O_NONBLOCK);
 
     const char *server_str = env->GetStringUTFChars(server, 0);
+    const char *secret_str = env->GetStringUTFChars(secret, 0);
 
     vpn.disable_ipv6 = 1;
     vpn.ignore_cert_error = 1;
     sprintf(vpn.server, "ssl://%s", server_str);
+    strcpy(vpn.secret, secret_str);
     env->ReleaseStringUTFChars(server, server_str);
+    env->ReleaseStringUTFChars(secret, secret_str);
     vpn.fd = sockfd;
     env->DeleteLocalRef(server);
+    env->DeleteLocalRef(secret);
     vpn_start(&vpn);
 }
 

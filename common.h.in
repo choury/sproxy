@@ -29,6 +29,7 @@ extern int ignore_cert_error;
 extern int disable_ipv6;
 extern int use_http2;
 extern char auth_string[];
+extern char rewrite_auth[];
 extern const char *cafile;
 extern const char *index_file;
 extern uint32_t debug;

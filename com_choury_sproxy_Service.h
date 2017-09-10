@@ -14,7 +14,7 @@ extern "C" {
  * Method:    start
  * Signature: (ILjava/lang/String;)V
  */
-JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start(JNIEnv *, jobject, jint, jstring);
+JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start(JNIEnv *, jobject, jint, jstring, jstring);
 
 /*
  * Class:     com_choury_sproxy_SproxyVpnService
