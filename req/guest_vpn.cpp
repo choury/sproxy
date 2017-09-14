@@ -598,9 +598,9 @@ bool Guest_vpn::finish(uint32_t flags, void* index) {
 
 #ifndef __ANDROID__
 #include<dirent.h>
-const char* findpid(ino_t inode){
-    static char pid[30];
-    sprintf(pid, "Unkown pid(%lu)", inode);
+const char* findprogram(ino_t inode){
+    static char program[URLLIMIT];
+    sprintf(program, "Unkown pid(%lu)", inode);
     bool found = false;
     DIR* dir = opendir("/proc");
     if(dir == nullptr){
@@ -624,12 +624,15 @@ const char* findpid(ino_t inode){
         }
         struct dirent *fdptr;
         while((fdptr = readdir(fddir)) != nullptr){
-            char fdname[50];
-            sprintf(fdname, "%s/%s", fddirname, fdptr->d_name);
-            char iname[20];
-            int ret = readlink(fdname, iname, sizeof(iname));
-            if(ret > 0 && memcmp(iname, socklink, ret) == 0){
-                strcpy(pid, ptr->d_name);
+            char fname[50];
+            sprintf(fname, "%s/%s", fddirname, fdptr->d_name);
+            char linkname[URLLIMIT];
+            int ret = readlink(fname, linkname, sizeof(linkname));
+            if(ret > 0 && ret < 20 && memcmp(linkname, socklink, ret) == 0){
+                sprintf(fname, "/proc/%s/exe", ptr->d_name);
+                ret = readlink(fname, linkname, sizeof(linkname)),
+                linkname[ret] = 0;
+                sprintf(program, "%s/%s", basename(linkname), ptr->d_name);
                 found = true;
                 break;
             }
@@ -637,12 +640,11 @@ const char* findpid(ino_t inode){
         closedir(fddir);
     }
     closedir(dir);
-    return pid;
+    return program;
 }
 #else
 const char* getpackagename(int uid);
 #endif
-
 const char * Guest_vpn::getsrc(void* index) {
     VpnKey* key = (VpnKey*)index;
     if(index == nullptr){
@@ -670,13 +672,12 @@ const char * Guest_vpn::getsrc(void* index) {
                 key->dst.addr_in.sin_port == htons(dstport))
             {
 #ifndef __ANDROID__
-                return findpid(inode);
+                return findprogram(inode);
 #else
                 return getpackagename(uid);
 #endif
             }
         }
-        netfile.close();
     }
     std::ifstream net6file;
     if(key->protocol == Protocol::TCP){
@@ -701,13 +702,12 @@ const char * Guest_vpn::getsrc(void* index) {
                 key->dst.addr_in.sin_port == htons(dstport))
             {
 #ifndef __ANDROID__
-                return findpid(inode);
+                return findprogram(inode);
 #else
                 return getpackagename(uid);
 #endif
             }
         }
-        netfile.close();
     }
     LOGE("Get src failed for %s %08X:%04X %08X:%04X\n",
                     protstr(key->protocol),
