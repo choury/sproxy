@@ -238,7 +238,6 @@ bool Host::finish(uint32_t flags, void* index) {
         deleteLater(flags);
         return false;
     }
-    Peer::Send((const void*)nullptr,0, index);
     if(req->header->ismethod("CONNECT")){
         http_flag |= HTTP_CLIENT_CLOSE_F;
     }

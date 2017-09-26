@@ -690,12 +690,14 @@ void HttpBody::push(const void* buff, size_t len) {
 }
 
 void HttpBody::push(void* buff, size_t len) {
+    assert(len);
     content_size += len;
     data.push(write_block{buff, len, 0});
 }
 
 void HttpBody::push(const write_block& wb) {
     assert(wb.buff);
+    assert(wb.len);
     content_size += (wb.len - wb.wlen);
     return data.push(wb);
 }
