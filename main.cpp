@@ -109,6 +109,12 @@ public:
     }
 };
 
+void ssl_callback_ServerName(SSL *ssl){
+    const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+    if (servername) {
+        //TODO: someting ...
+    }
+}
 
 class Dtls_server: public Server {
     SSL_CTX *ctx;
@@ -328,6 +334,7 @@ SSL_CTX* initssl(int udp, const char *ca, const char *cert, const char *key){
     }
 
     SSL_CTX_set_verify_depth(ctx, 10);
+    SSL_CTX_set_tlsext_servername_callback(ctx, ssl_callback_ServerName);
     SSL_CTX_set_alpn_select_cb(ctx, select_alpn_cb, nullptr);
     SSL_CTX_set_read_ahead(ctx, 1);
     return ctx;

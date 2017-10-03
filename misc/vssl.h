@@ -45,10 +45,10 @@ public:
     virtual ssize_t read(void *buff, size_t size){
         return get_error(SSL_read(ssl, buff, size));
     }
-    int accept(){
+    virtual int accept(){
         return get_error(SSL_accept(ssl));
     }
-    int connect(){
+    virtual int connect(){
         return get_error(SSL_connect(ssl));
     }
     void get_alpn(const unsigned char **s, unsigned int * len){
@@ -67,6 +67,9 @@ public:
 
         /* Configure a non-zero callback if desired */
         SSL_set_verify(ssl, SSL_VERIFY_PEER, callback);
+    }
+    void set_hostname_callback(void (* cb)(void)){
+        SSL_callback_ctrl(ssl, SSL_CTRL_SET_TLSEXT_SERVERNAME_CB, cb);
     }
 };
 
