@@ -198,8 +198,7 @@ HttpReqHeader::HttpReqHeader(std::multimap<istring, string>&& headers, ResObject
     getfile();
 }
 
-HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(nullptr)
-{
+HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(nullptr) {
     if(headers->type != CGI_REQUEST)
     {
         LOGE("wrong CGI header");
@@ -239,8 +238,7 @@ HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(nullptr)
 }
 
 
-void HttpReqHeader::getfile()
-{
+void HttpReqHeader::getfile() {
     char *start = path;
     while (*start && *++start == '/');
     char *end=start;

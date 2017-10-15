@@ -6,6 +6,7 @@
 
 enum class Strategy{
     direct,
+    forward,
     proxy,
     local,
     block,

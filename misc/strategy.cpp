@@ -260,6 +260,8 @@ static bool mergestrategy(const char* host, const char* strategy, string ext){
         s = Strategy::local;
     }else if(strcmp(strategy, "block") == 0){
         s = Strategy::block;
+    }else if(strcmp(strategy, "forward") == 0){
+        s = Strategy::forward;
     }else{
         return false;
     }
@@ -289,8 +291,10 @@ void reloadstrategy() {
     ifstream sitesfile(LISTFILE);
 #endif
     if (sitesfile.good()) {
+        int lineNum = 0;
         string line;
         while (std::getline(sitesfile, line)) {
+            lineNum ++;
             if(line[0] == '#'){
                 continue;
             }
@@ -301,7 +305,7 @@ void reloadstrategy() {
             int ret = sscanf(line.c_str(), "%s %s %s", site, strategy, ext);
 
             if(line.length() && (ret < 2 || !mergestrategy(site, strategy, ext))){
-                LOGE("Wrong config line:%s\n",line.c_str());
+                LOGE("Wrong config line %d:%s\n", lineNum, line.c_str());
             }
         }
 
@@ -359,6 +363,8 @@ const char* getstrategystring(Strategy s)
     switch(s){
     case Strategy::direct:
         return "direct";
+    case Strategy::forward:
+        return "forward";
     case Strategy::proxy:
         return "proxy";
     case Strategy::local:

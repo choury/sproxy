@@ -68,62 +68,73 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
             req->port = HTTPPORT;
         }
         std::string ext;
-        switch(getstrategy(req->hostname, ext)){
-            case Strategy::local:
-                LOG("[[local]] %s\n", log_buff);
-                return File::getfile(req);
-            case Strategy::direct:
-                switch(check_header(req)){
-                case 1:
-                    LOG("[[Authorization needed]] %s\n", log_buff);
-                    return nullptr;
-                case 2:
-                    LOG("[[redirect back]] %s\n", log_buff);
-                    return nullptr;
+        Strategy s = getstrategy(req->hostname, ext);
+        if(s == Strategy::block){
+            LOG("[[block]] %s\n", log_buff);
+            HttpResHeader* res = new HttpResHeader("HTTP/1.1 403 Forbidden" CRLF
+                                "Content-Length:73" CRLF CRLF);
+            res->index = req->index;
+            requester->response(res);
+            requester->Send("This site is blocked, please contact administrator"
+                            " for more information.\n", 73, req->index);
+            return nullptr;
+        }
+        if(s == Strategy::local){
+            LOG("[[local]] %s\n", log_buff);
+            return File::getfile(req);
+        }
+        switch(check_header(req)){
+        case 1:
+            LOG("[[Authorization needed]] %s\n", log_buff);
+            return nullptr;
+        case 2:
+            LOG("[[redirect back]] %s\n", log_buff);
+            return nullptr;
+        }
+        switch(s){
+        case Strategy::direct:
+            LOG("[[dirct]] %s\n", log_buff);
+            req->del("Proxy-Authorization");
+            return Host::gethost(req, responser_ptr);
+        case Strategy::forward:{
+            char fprotocol[DOMAINLIMIT];
+            char fhost[DOMAINLIMIT];
+            uint16_t fport;
+            if(!spliturl(ext.c_str(), fprotocol, fhost, nullptr, &fport)){
+                if(fprotocol[0] == 0 || strcasecmp(fprotocol, "tcp") == 0 ){
+                    return new Host(fhost, fport, Protocol::TCP);
                 }
-                LOG("[[dirct]] %s\n", log_buff);
-                req->del("Proxy-Authorization");
-                return Host::gethost(req, responser_ptr);
-            case Strategy::proxy:
-                switch(check_header(req)){
-                case 1:
-                    LOG("[[Authorization needed]] %s\n", log_buff);
-                    return nullptr;
-                case 2:
-                    LOG("[[redirect back]] %s\n", log_buff);
-                    return nullptr;
+                if(strcasecmp(fprotocol, "udp") == 0){
+                    return new Host(fhost, fport, Protocol::UDP);
                 }
-                if(SPORT == 0){
-                    HttpResHeader* res = new HttpResHeader(H400);
-                    res->index = req->index;
-                    requester->response(res);
-                    LOG("[[server not set]] %s\n", log_buff);
-                    return nullptr;
-                }
-                req->del("via");
-                if(strlen(rewrite_auth)){
-                    req->add("Proxy-Authorization", std::string("Basic ")+rewrite_auth);
-                }
-                LOG("[[proxy]] %s\n", log_buff);
-                req->should_proxy = true;
-                return Proxy::getproxy(req, responser_ptr);
-            case Strategy::block:{
-                LOG("[[block]] %s\n", log_buff);
-                HttpResHeader* res = new HttpResHeader("HTTP/1.1 403 Forbidden" CRLF
-                                  "Content-Length:73" CRLF CRLF);
+            }
+            HttpResHeader* res = new HttpResHeader(H500);
+            res->index = req->index;
+            requester->response(res);
+            LOGE("[[forword misformat]] %s -> %s\n", log_buff, ext.c_str());
+            return nullptr;
+        }
+        case Strategy::proxy:
+            if(SPORT == 0){
+                HttpResHeader* res = new HttpResHeader(H400);
                 res->index = req->index;
                 requester->response(res);
-                requester->Send("This site is blocked, please contact administrator"
-                                 " for more information.\n", 73, req->index);
+                LOG("[[server not set]] %s\n", log_buff);
                 return nullptr;
             }
-            case Strategy::none:{
-                LOG("[[BUG]] %s\n", log_buff);
-                HttpResHeader* res = new HttpResHeader(H503);
-                res->index = req->index;
-                requester->response(res);
-                return nullptr;
+            req->del("via");
+            if(strlen(rewrite_auth)){
+                req->add("Proxy-Authorization", std::string("Basic ")+rewrite_auth);
             }
+            LOG("[[proxy]] %s\n", log_buff);
+            req->should_proxy = true;
+            return Proxy::getproxy(req, responser_ptr);
+        default:{
+            LOG("[[BUG]] %s\n", log_buff);
+            HttpResHeader* res = new HttpResHeader(H503);
+            res->index = req->index;
+            requester->response(res);
+            return nullptr;}
         }
     }else if (req->ismethod("ADDS")) {
         const char *strategy = req->get("s");
