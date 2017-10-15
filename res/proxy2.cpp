@@ -303,12 +303,12 @@ bool Proxy2::finish(uint32_t flags, void* index) {
         Peer::Send((const void*)nullptr, 0, index);
         status.req_flags |= STREAM_WRITE_CLOSED;
     }
-    if(status.req_flags & STREAM_READ_CLOSED){
+    if(errcode || (flags & DISCONNECT_FLAG)){
+        Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
         return false;
     }
-    if(errcode || (flags & DISCONNECT_FLAG)){
-        Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
+    if(status.req_flags & STREAM_READ_CLOSED){
         statusmap.erase(id);
         return false;
     }

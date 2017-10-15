@@ -56,8 +56,6 @@ int32_t Guest_s2::bufleft(void* index) {
 
 ssize_t Guest_s2::Send(void *buff, size_t size, void* index) {
     uint32_t id = (uint32_t)(long)index;
-    assert(statusmap.count(id));
-    assert((statusmap[id].res_flags & STREAM_WRITE_CLOSED) == 0);
     size = Min(size, FRAMEBODYLIMIT);
     Http2_header *header=(Http2_header *)p_move(buff, -(char)sizeof(Http2_header));
     memset(header, 0, sizeof(Http2_header));
@@ -68,7 +66,10 @@ ssize_t Guest_s2::Send(void *buff, size_t size, void* index) {
     }
     PushFrame(header);
     this->remotewinsize -= size;
-    statusmap[id].remotewinsize -= size;
+    if(statusmap.count(id)){
+        assert((statusmap[id].res_flags & STREAM_WRITE_CLOSED) == 0);
+        statusmap[id].remotewinsize -= size;
+    }
     return size;
 }
 
@@ -89,6 +90,7 @@ void Guest_s2::ReqProc(HttpReqHeader* req) {
             0,
         };
     }else{
+        finish(0, req->index);
         delete req;
     }
 }
@@ -255,19 +257,22 @@ void Guest_s2::AdjustInitalFrameWindowSize(ssize_t diff) {
 
 bool Guest_s2::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
-    assert(statusmap.count(id));
+    if(statusmap.count(id) == 0){
+        Peer::Send((const void*)nullptr, 0, index);
+        return false;
+    }
     ResStatus& status = statusmap[id];
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode == 0 && (status.res_flags & STREAM_WRITE_CLOSED) == 0){
         Peer::Send((const void*)nullptr, 0, index);
         status.res_flags |= STREAM_WRITE_CLOSED;
     }
-    if(status.res_flags & STREAM_READ_CLOSED){
+    if(errcode || (flags & DISCONNECT_FLAG)){
+        Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
         return false;
     }
-    if(errcode || (flags & DISCONNECT_FLAG)){
-        Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
+    if(status.res_flags & STREAM_READ_CLOSED){
         statusmap.erase(id);
         return false;
     }

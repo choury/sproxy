@@ -67,7 +67,8 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
         if(req->port == 0){
             req->port = HTTPPORT;
         }
-        switch(getstrategy(req->hostname)){
+        std::string ext;
+        switch(getstrategy(req->hostname, ext)){
             case Strategy::local:
                 LOG("[[local]] %s\n", log_buff);
                 return File::getfile(req);
@@ -126,8 +127,8 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
         }
     }else if (req->ismethod("ADDS")) {
         const char *strategy = req->get("s");
-        LOG("[[add %s]] %s\n", strategy, log_buff);
-        if(strategy && addstrategy(req->geturl().c_str(), strategy)){
+        LOG("[[add %s]] %s %s\n", strategy, log_buff, req->version);
+        if(strategy && addstrategy(req->geturl().c_str(), strategy, req->version)){
             HttpResHeader* res = new HttpResHeader(H200);
             res->index = req->index;
             requester->response(res);
@@ -138,11 +139,13 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
         }
         return nullptr;
     } else if (req->ismethod("DELS")) {
-        const char* strategy = getstrategystring(getstrategy(req->hostname));
-        LOG("[[del %s]] %s\n", strategy, log_buff);
+        std::string ext;
+        const char* strategy = getstrategystring(getstrategy(req->hostname, ext));
+        LOG("[[del %s]] %s %s\n", strategy, log_buff, ext.c_str());
         if(delstrategy(req->hostname)){
             HttpResHeader* res = new HttpResHeader(H200);
             res->add("Strategy", strategy);
+            res->add("Ext", ext);
             res->index = req->index;
             requester->response(res);
         }else{
@@ -164,7 +167,9 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
     } else if (req->ismethod("TEST")){
         HttpResHeader* res = new HttpResHeader("HTTP/1.1 200 Ok" CRLF
                           "Content-Length:0" CRLF CRLF);
-        res->add("Strategy", getstrategystring(getstrategy(req->hostname)));
+        std::string ext;
+        res->add("Strategy", getstrategystring(getstrategy(req->hostname, ext)));
+        res->add("Ext", ext);
         res->index = req->index;
         requester->response(res);
     } else if(req->ismethod("FLUSH")){

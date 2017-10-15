@@ -23,12 +23,12 @@ const char *DEFAULT_CIPHER_LIST =
 int Bind_any(int fd, short port){
     int flag = 1;
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
-        LOGOUT("setsockopt:%s\n", strerror(errno));
+        LOGOUT("setsockopt SO_REUSEADDR:%s\n", strerror(errno));
         return -1;
     }
 #ifdef SO_REUSEPORT
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) < 0) {
-        LOGOUT("setsockopt:%s\n", strerror(errno));
+        LOGOUT("setsockopt SO_REUSEPORT:%s\n", strerror(errno));
         return -1;
     }
 #endif

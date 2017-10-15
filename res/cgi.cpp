@@ -176,17 +176,23 @@ begin:
                 flag = CGI_FLAG_ERROR;
                 break;
             }
-            auto smap = getallstrategy();
-            for(auto i: smap) {
-                //"name value\0"
-                size_t value_len = sizeof(CGI_NameValue) + i.first.length() + i.second.length() + 2;
+            auto slist = getallstrategy();
+            for(auto i: slist) {
+                auto host = std::get<0>(i);
+                if(host == ""){
+                   host = "_";
+                }
+                auto strategy =  std::get<1>(i);
+                auto ext = std::get<2>(i);
+                //"host strategy ext\0"
+                size_t value_len = sizeof(CGI_NameValue) + host.length() + strategy.length() + ext.length() + 3;
                 CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + value_len);
                 memcpy(header_back, header, sizeof(CGI_Header));
                 header_back->flag = 0;
                 header_back->contentLength = htons(value_len);
                 CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
                 nv_back->name = htonl(CGI_NAME_STRATEGYGET);
-                sprintf((char *)nv_back->value, "%s %s", i.first.c_str(), i.second.c_str());
+                sprintf((char *)nv_back->value, "%s %s %s", host.c_str(), strategy.c_str(), ext.c_str());
                 buffer.push(header_back, sizeof(CGI_Header) + value_len);
             }
             break;
@@ -199,7 +205,7 @@ begin:
             char site[DOMAINLIMIT];
             char strategy[20];
             sscanf((char*)nv->value, "%s %s", site, strategy);
-            if(addstrategy(site, strategy) == false){
+            if(addstrategy(site, strategy, "") == false){
                 LOG("[CGI] addstrategy %s (%s)\n", site, strategy);
                 flag = CGI_FLAG_ERROR;
             }

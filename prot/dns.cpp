@@ -438,7 +438,6 @@ int Dns_srv::query(const char *host, int type, uint32_t id) {
     int len = Dns_Que(host, type, id).build(buf);
     if (write(fd, buf, len)!= len) {
         LOGE("[DNS] write error: %s\n", strerror(errno));
-        delete this;
         return 0;
     }
     return id;

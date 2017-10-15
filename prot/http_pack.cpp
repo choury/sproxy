@@ -104,8 +104,9 @@ HttpReqHeader::HttpReqHeader(const char* header, ResObject* src):
     char httpheader[HEADLENLIMIT];
     snprintf(httpheader, sizeof(httpheader), "%s", header);
     *(strstr(httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
-    char url[URLLIMIT];
-    sscanf(httpheader, "%19s%*[ ]%4095[^\r\n ]", method, url);
+    char url[URLLIMIT] = {0};
+    version[0] = 0;
+    sscanf(httpheader, "%19s%*[ ]%4095s%*[ ]%4095s[\r\n]", method, url, version);
     toUpper(method);
 
     if (spliturl(url, protocol, hostname, path, &port)) {
@@ -193,6 +194,7 @@ HttpReqHeader::HttpReqHeader(std::multimap<istring, string>&& headers, ResObject
             i++;
         }
     }
+    strcpy(version, "HTTP/2");
     getfile();
 }
 
@@ -223,6 +225,10 @@ HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(nullptr)
             strcpy(hostname, value.c_str());
             continue;
         }
+        if(name == ":version"){
+            strcpy(version, value.c_str());
+            continue;
+        }
         if(name == "cookie"){
             cookies.insert(value);
             continue;
@@ -239,9 +245,13 @@ void HttpReqHeader::getfile()
     while (*start && *++start == '/');
     char *end=start;
     while (*end && *++end != '?');
-    filename = string(start, end-start);
-    if(filename.empty()){
+    string filepath = string(start, end-start);
+    if(filepath.empty()){
         filename = "/";
+    }else{
+        char buff[URLLIMIT * 3];
+        URLDecode(buff, filepath.c_str(), filepath.length());
+        filename = buff;
     }
 }
 
@@ -383,6 +393,7 @@ CGI_Header *HttpReqHeader::getcgi(uint32_t cgi_id) const{
     p = cgi_addnv(p, ":method", method);
     p = cgi_addnv(p, ":path", path);
     p = cgi_addnv(p, ":authority", hostname);
+    p = cgi_addnv(p, ":version", version);
     for(auto i: headers){
         p = cgi_addnv(p, i.first, i.second);
     }

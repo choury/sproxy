@@ -1,7 +1,8 @@
 #ifndef STRATEGY_H__
 #define STRATEGY_H__
 
-#include <map>
+#include <tuple>
+#include <list>
 
 enum class Strategy{
     direct,
@@ -17,9 +18,9 @@ extern "C" {
 
 
 void reloadstrategy();
-bool addstrategy(const char *host, const char *strategy);
+bool addstrategy(const char *host, const char *strategy, std::string ext);
 bool delstrategy(const char *host);
-Strategy getstrategy(const char *host);
+Strategy getstrategy(const char *host, std::string& ext);
 const char* getstrategystring(Strategy s);
 
 void addauth(const char * ip);
@@ -29,6 +30,6 @@ bool checkauth(const char *ip);
 }
 #endif
 
-std::map<std::string, std::string> getallstrategy();
+std::list<std::tuple<std::string, std::string, std::string>> getallstrategy();
 
 #endif

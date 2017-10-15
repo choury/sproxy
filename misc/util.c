@@ -159,7 +159,7 @@ int URLEncode(char *des, const char* src, size_t len)
     }
 
     des[j] = '\0';
-    return 1;
+    return j;
 }
 
 
@@ -200,7 +200,7 @@ int URLDecode(char *des, const char *src, size_t len)
         }
     }
     des[j] = 0;
-    return 1;
+    return j;
 }
 
 static const char *base64_digs="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
