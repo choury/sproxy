@@ -97,6 +97,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
             req->del("Proxy-Authorization");
             return Host::gethost(req, responser_ptr);
         case Strategy::forward:{
+            LOG("[[forward]] %s\n", log_buff);
             char fprotocol[DOMAINLIMIT];
             char fhost[DOMAINLIMIT];
             uint16_t fport;
@@ -111,7 +112,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
             HttpResHeader* res = new HttpResHeader(H500);
             res->index = req->index;
             requester->response(res);
-            LOGE("[[forword misformat]] %s -> %s\n", log_buff, ext.c_str());
+            LOGE("[[forward misformat]] %s -> %s\n", log_buff, ext.c_str());
             return nullptr;
         }
         case Strategy::proxy:
