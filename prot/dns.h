@@ -25,12 +25,17 @@ typedef struct DNS_HDR {
 
 // 0 没有错误。
 // 1 报文格式错误(Format error) - 服务器不能理解请求的报文。
+#define DNS_FORMAT_ERROR  1
 // 2 服务器失败(Server failure) - 因为服务器的原因导致没办法处理这个请求。
+#define DNS_SERVER_FAIL   2
 // 3 名字错误(Name Error) - 只有对授权域名解析服务器有意义，指出解析的域名不存在。
+#define DNS_NAME_ERROR    3
 // 4 没有实现(Not Implemented) - 域名服务器不支持查询类型。
+#define DNS_NOT_IMPLE     4
 // 5 拒绝(Refused) - 服务器由于设置的策略拒绝给出应答。
 // 比如，服务器不希望对某些请求者给出应答，
 // 或者服务器不希望进行某些操作（比如区域传送zone transfer）。
+#define DNS_REFUSE        5
 
 // 6-15 保留值，暂时未使用。
 #define  RCODE_MASK 0x000F  // 应答码
@@ -61,7 +66,7 @@ public:
     explicit Dns_Rr(const char *buff);
     explicit Dns_Rr(const in_addr* addr);
     int build(const Dns_Que* query, unsigned char *buf)const;
-    static int buildError(const Dns_Que* query, unsigned char errcode);
+    static int buildError(const Dns_Que* query, unsigned char errcode, unsigned char *buf);
 };
 
 

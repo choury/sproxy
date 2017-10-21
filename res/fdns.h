@@ -31,6 +31,7 @@ public:
     virtual void dump_stat()override;
     static FDns* getfdns();
     static const char* getRdns(const struct in_addr* addr);
+    static in_addr getInet(std::string hostname);
 };
 
 #endif

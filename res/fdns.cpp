@@ -1,5 +1,6 @@
 #include "prot/dns.h"
 #include "req/requester.h"
+#include "misc/strategy.h"
 #include "fdns.h"
 
 static binmap<uint32_t, std::string> fdns_records;
@@ -33,7 +34,7 @@ int32_t FDns::bufleft(void*) {
 
 
 ssize_t FDns::Send(void* buff, size_t size, void* index) {
-    Dns_Que que((char *)buff);
+    Dns_Que que((const char *)buff);
     p_free(buff);
     LOGD(DDNS, "FQuery %s: %d\n", que.host.c_str(), que.type);
     uint32_t id = (uint32_t)(long)index;
@@ -44,24 +45,19 @@ ssize_t FDns::Send(void* buff, size_t size, void* index) {
             query(que.host.c_str(), que.type, DNSRAWCB(ResponseCb), reinterpret_cast<void*>(id));
             return size;
         }
-        in_addr addr;
-        if(que.host.find_first_of(".") == std::string::npos){
-                addr.s_addr = inet_addr("10.0.0.1");
-        }else if(que.type == 1){
-            if(fdns_records.count(que.host)){
-                addr.s_addr = htonl(fdns_records[que.host]);
-            }else{
-                addr.s_addr= htonl(fake_ip);
-                fdns_records.insert(fake_ip++, que.host);
-            }
+        std::string ignore;
+        if(getstrategy(que.host.c_str(), ignore) == Strategy::direct){
+            query(que.host.c_str(), nullptr, nullptr);
         }
+        in_addr addr = getInet(que.host);
         Dns_Rr rr(&addr);
         unsigned char * buff = (unsigned char *)p_malloc(BUF_LEN);
         status.req_ptr->Send(buff, rr.build(&que, buff), status.req_index);
         status.req_ptr->finish(NOERROR, status.req_index);
-        statusmap.erase(id);
+        fdns->statusmap.erase(id);
+        return size;
     }
-    return size;
+    return 0;
 }
 
 void FDns::ResponseCb(uint32_t id, const char* buff, size_t size) {
@@ -132,4 +128,16 @@ const char * FDns::getRdns(const struct in_addr* addr) {
 }
 
 
+in_addr FDns::getInet(std::string hostname) {
+    in_addr addr;
 
+    if(hostname.find_first_of(".") == std::string::npos){
+        addr.s_addr = inet_addr("10.0.0.1");
+    }else if(fdns_records.count(hostname)){
+        addr.s_addr = htonl(fdns_records[hostname]);
+    }else{
+        addr.s_addr= htonl(fake_ip);
+        fdns_records.insert(fake_ip++, hostname);
+    }
+    return addr;
+}

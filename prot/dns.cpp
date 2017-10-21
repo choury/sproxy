@@ -43,7 +43,6 @@ struct Dns_Rcd{
 };
 
 typedef struct Dns_Status {
-    uint16_t id;
     uint16_t times;
 #define QARECORD     0x1
 #define QAAAARECORD  0x2
@@ -163,7 +162,7 @@ static void query(Dns_Status* dnsst){
             sleep(5);
         }
     }
-    dnsst->id = id_cur;
+    id_cur += 2;
     if(disable_ipv6){
         dnsst->flags = QAAAARECORD | GAAAARECORD;
     }else{
@@ -195,43 +194,52 @@ static void query(Dns_Status* dnsst){
         Dns_Status * newst = new Dns_Status;
         newst->times = 0;
         newst->flags = dnsst->flags;
-        newst->id = dnsst->id;
         strcpy(newst->host, dnsst->host);
         dnsst = newst;
     }
 
     for (size_t i = dnsst->times%srvs.size(); i < srvs.size(); ++i) {
-        if (!(dnsst->flags & QARECORD) && srvs[i]->query(dnsst->host, 1, dnsst->id)) {
-            dnsst->flags |= QARECORD;
+        uint16_t flags = 0;
+        if (!(dnsst->flags & QARECORD) && srvs[i]->query(dnsst->host, 1, id_cur)) {
+            flags |= QARECORD;
         }
-        if (!(dnsst->flags & QAAAARECORD) && srvs[i]->query(dnsst->host, 28, dnsst->id+1)) {
-            dnsst->flags |= QAAAARECORD;
+        if (!(dnsst->flags & QAAAARECORD) && srvs[i]->query(dnsst->host, 28, id_cur+1)) {
+            flags |= QAAAARECORD;
         }
+        dnsst->flags |= flags;
         if((dnsst->flags & QARECORD) &&(dnsst->flags & QAAAARECORD)) {
             break;
         }
+        if(flags == 0){
+            delete srvs[i];
+            dnsst -> times ++;
+            return query(dnsst);
+        }
     }
     dnsst->times++;
-    querying_index_id[dnsst->id] = dnsst->host;
+    querying_index_id[id_cur] = dnsst->host;
     querying_index_host[dnsst->host] = dnsst;
-    add_delayjob((job_func)query_timeout, (void *)(size_t)dnsst->id, DNSTIMEOUT);
-    id_cur += 2;
+    add_delayjob((job_func)query_timeout, (void *)(size_t)id_cur, DNSTIMEOUT);
 }
 
 
 void query(const char *host , DNSCBfunc func, void *param) {
     if(querying_index_host.count(host)){
-        querying_index_host[host]->reqs.push_back(Dns_Req{
-            func, param
-        });
+        if(func){
+            querying_index_host[host]->reqs.push_back(Dns_Req{
+                func, param
+            });
+        }
         return;
     }
     
     Dns_Status *dnsst = new Dns_Status;
     dnsst->times = 0;
-    dnsst->reqs.push_back(Dns_Req{
-            func, param
-        });
+    if(func){
+        dnsst->reqs.push_back(Dns_Req{
+                func, param
+            });
+    }
 
     snprintf(dnsst->host, sizeof(dnsst->host), "%s", host);
     query(dnsst);
@@ -679,3 +687,12 @@ int Dns_Rr::build(const Dns_Que* query, unsigned char* buf)const {
     return len;
 }
 
+int Dns_Rr::buildError(const Dns_Que* query, unsigned char errcode, unsigned char *buf){
+    int len = query->build(buf);
+    DNS_HDR *dnshdr = (DNS_HDR *)buf;
+    dnshdr->flag  = htons(QR|RD|RA|errcode);
+    dnshdr->numa = 0;
+    dnshdr->numa1 = 0;
+    dnshdr->numa2 = 0;
+    return len;
+}
