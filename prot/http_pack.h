@@ -54,7 +54,6 @@ public:
     char protocol[20];
     char path[URLLIMIT];
     char hostname[DOMAINLIMIT] = {0};
-    char version[URLLIMIT];
     uint16_t port = 0;
     std::string filename;
     std::vector<Range> ranges;

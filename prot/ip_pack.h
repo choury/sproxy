@@ -32,9 +32,32 @@
 #define TH_URG        0x20
 #endif
 
+#ifdef __ANDROID__
+//copy from glibc
+struct icmphdr
+{
+  u_int8_t type;		/* message type */
+  u_int8_t code;		/* type sub-code */
+  u_int16_t checksum;
+  union
+  {
+    struct
+    {
+      u_int16_t	id;
+      u_int16_t	sequence;
+    } echo;			/* echo datagram */
+    u_int32_t	gateway;	/* gateway address */
+    struct
+    {
+      u_int16_t	__glibc_reserved;
+      u_int16_t	mtu;
+    } frag;			/* path mtu discovery */
+  } un;
+};
+#endif
 
 class Icmp{
-    icmp icmp_hdr;
+    icmphdr icmp_hdr;
 public:
     Icmp();
     Icmp(const char* packet, size_t len);
@@ -44,9 +67,13 @@ public:
     
     Icmp* settype(uint8_t type);
     Icmp* setcode(uint8_t code);
+    Icmp* setid(uint16_t id);
+    Icmp* setseq(uint16_t seq);
 
     uint8_t gettype()const;
     uint8_t getcode()const;
+    uint16_t getid()const;
+    uint16_t getseq()const;
 };
 
 
@@ -97,7 +124,6 @@ public:
     uint16_t getdport() const;
 };
 
-/**** class CapPacket, use for parse and build packet ****/
 class Ip {
     ip ip_hdr; //ip头
     Ip(uint8_t type, uint16_t sport, uint16_t dport);
@@ -113,10 +139,15 @@ public:
     Ip(uint8_t type, const sockaddr_un* src,  const sockaddr_un* dst);
     Ip(const Ip&) = delete;
     void print() const;
+    uint16_t getid() const;
+    uint16_t  getflag() const;
     const in_addr* getsrc() const;
     const in_addr* getdst() const;
     uint8_t gettype() const;
     size_t gethdrlen() const;
+
+    Ip* setid(uint16_t id);
+    Ip* setflag(uint16_t flag);
     char* build_packet(const void* data, size_t &len);
     char* build_packet(void* data, size_t &len);
     

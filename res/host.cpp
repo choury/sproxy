@@ -12,6 +12,7 @@ int Host::con_timeout(Host* host) {
 
 Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), protocol(protocol){
     assert(port);
+    assert(protocol == Protocol::TCP || protocol == Protocol::UDP);
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
     query(hostname, (DNSCBfunc)Host::Dnscallback, this);
 }
@@ -123,6 +124,9 @@ void Host::defaultHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             if(error){
                 LOGE("(%s): host error: %s\n", hostname, strerror(error));
+            }else if(req->header->ismethod("CONNECT")){
+                EndProc();
+                return;
             }
         }
         deleteLater(INTERNAL_ERR);
@@ -240,6 +244,7 @@ bool Host::finish(uint32_t flags, void* index) {
     }
     if(req->header->ismethod("CONNECT")){
         http_flag |= HTTP_CLIENT_CLOSE_F;
+        updateEpoll(events | EPOLLOUT);
     }
     return true;
 }

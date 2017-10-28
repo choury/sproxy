@@ -78,7 +78,8 @@ union sockaddr_un{
 
 int Bind_any(int fd, short port);
 int Listen(short int port);
-int Connect(union sockaddr_un*, int type);
+int Connect(const union sockaddr_un*, int type);
+int IcmpSocket(const union sockaddr_un* addr, uint16_t id);
 const char *getaddrstring(const union sockaddr_un *addr);
 const char* getlocalip ();
 

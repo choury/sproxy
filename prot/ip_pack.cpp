@@ -7,8 +7,6 @@
 #include <sys/time.h>
 #include <assert.h>
 
-#define ICMP_HEAD_LEN       8
-
 /*
  * Pseudo-header used for checksumming; this header should never
  * reach the wire
@@ -78,15 +76,15 @@ static uint16_t checksum_comp(uint8_t *addr, int len) {
 
 
 Icmp::Icmp() {
-    memset(&icmp_hdr, 0, ICMP_HEAD_LEN);
+    memset(&icmp_hdr, 0, sizeof(icmp_hdr));
 }
 
 Icmp::Icmp(const char* packet, size_t len){
-    if(len < ICMP_HEAD_LEN){
+    if(len < sizeof(icmp_hdr)){
         LOGE("Invalid ICMP header length: %zu bytes\n", len);
         throw 0;
     }
-    memcpy(&icmp_hdr, packet, ICMP_HEAD_LEN);
+    memcpy(&icmp_hdr, packet, sizeof(icmp_hdr));
 }
 
 
@@ -96,28 +94,52 @@ void Icmp::print() const {
     "code: %d, "
     "checksum: %d\n",
 
-        icmp_hdr.icmp_type,
-        icmp_hdr.icmp_code,
-        icmp_hdr.icmp_cksum
+        icmp_hdr.type,
+        icmp_hdr.code,
+        icmp_hdr.checksum
     );
 }
 
 Icmp* Icmp::settype(uint8_t type) {
-    icmp_hdr.icmp_type = type;
+    icmp_hdr.type = type;
     return this;
 }
 
 Icmp* Icmp::setcode(uint8_t code) {
-    icmp_hdr.icmp_code = code;
+    icmp_hdr.code = code;
+    return this;
+}
+
+Icmp* Icmp::setid(uint16_t id){
+    assert(icmp_hdr.type == ICMP_ECHO || icmp_hdr.type == ICMP_ECHOREPLY);
+    icmp_hdr.un.echo.id = htons(id);
+    return this;
+}
+
+Icmp* Icmp::setseq(uint16_t seq){
+    assert(icmp_hdr.type == ICMP_ECHO || icmp_hdr.type == ICMP_ECHOREPLY);
+    icmp_hdr.un.echo.sequence = htons(seq);
     return this;
 }
 
 uint8_t Icmp::gettype() const {
-    return icmp_hdr.icmp_type;
+    return icmp_hdr.type;
 }
 
 uint8_t Icmp::getcode() const {
-    return icmp_hdr.icmp_code;
+    return icmp_hdr.code;
+}
+
+uint16_t Icmp::getid() const
+{
+    assert(icmp_hdr.type == ICMP_ECHO || icmp_hdr.type == ICMP_ECHOREPLY);
+    return ntohs(icmp_hdr.un.echo.id);
+}
+
+uint16_t Icmp::getseq() const
+{
+    assert(icmp_hdr.type == ICMP_ECHO || icmp_hdr.type == ICMP_ECHOREPLY);
+    return ntohs(icmp_hdr.un.echo.sequence);
 }
 
 
@@ -125,14 +147,14 @@ uint8_t Icmp::getcode() const {
 char * Icmp::build_packet(const void* data, size_t& len) {
     assert(len);
     size_t datalen = len;
-    len = datalen + ICMP_HEAD_LEN;
+    len = datalen + sizeof(icmp_hdr);
     char* packet = (char *) p_malloc(len);
 
     memset(packet, 0, len);
-    memcpy(packet, &icmp_hdr, ICMP_HEAD_LEN);
+    memcpy(packet, &icmp_hdr, sizeof(icmp_hdr));
 
     if(data){
-        char *icmpdata = (char *) (packet + ICMP_HEAD_LEN);
+        char *icmpdata = (char *) (packet + sizeof(icmp_hdr));
         memcpy(icmpdata, data, datalen);
     }
 
@@ -142,9 +164,10 @@ char * Icmp::build_packet(const void* data, size_t& len) {
 
 char * Icmp::build_packet(void* data, size_t& len) {
     assert(data);
-    len = len + ICMP_HEAD_LEN;
-    char* packet = (char *)p_move(data, -(char)ICMP_HEAD_LEN);
-    memcpy(packet, &icmp_hdr, ICMP_HEAD_LEN);
+    len = len + sizeof(icmp_hdr);
+    char* packet = (char *)p_move(data, -(char)sizeof(icmp_hdr));
+    icmp_hdr.checksum = 0;
+    memcpy(packet, &icmp_hdr, sizeof(icmp_hdr));
     ((icmp *)packet)->icmp_cksum = htons(checksum_comp((uint8_t*) packet, len));
     return packet;
 }
@@ -668,7 +691,7 @@ Ip::Ip(uint8_t type, uint16_t sport, uint16_t dport){
     switch(type){
     case IPPROTO_ICMP:
         icmp = new Icmp();
-        ip_hdr.ip_len = sizeof(ip) + ICMP_HEAD_LEN;
+        ip_hdr.ip_len = sizeof(ip) + sizeof(icmphdr);
         break;
     case IPPROTO_TCP:
         tcp = new Tcp(&ip_hdr, sport, dport);
@@ -770,7 +793,7 @@ char* Ip::build_packet(void* data, size_t &len){
 size_t Ip::gethdrlen() const {
     switch(gettype()){
     case IPPROTO_ICMP:
-        return hdrlen + ICMP_HEAD_LEN;
+        return hdrlen + sizeof(icmphdr);
     case IPPROTO_TCP:
         return hdrlen + tcp->hdrlen;
     case IPPROTO_UDP:
@@ -785,6 +808,16 @@ uint8_t Ip::gettype() const
     return ip_hdr.ip_p;
 }
 
+uint16_t Ip::getid() const
+{
+    return ntohs(ip_hdr.ip_id);
+}
+
+uint16_t Ip::getflag() const
+{
+    return ntohs(ip_hdr.ip_off) & (~IP_OFFMASK);
+}
+
 const in_addr * Ip::getsrc() const {
     return &ip_hdr.ip_src;
 }
@@ -792,6 +825,18 @@ const in_addr * Ip::getsrc() const {
 const in_addr * Ip::getdst() const {
     return &ip_hdr.ip_dst;
 }
+
+Ip* Ip::setid(uint16_t id){
+    ip_hdr.ip_id = htons(id);
+    return this;
+}
+
+Ip* Ip::setflag(uint16_t flag)
+{
+    ip_hdr.ip_off |= htons(flag & (~IP_OFFMASK));
+    return this;
+}
+
 
 /**
  * 输出ip头

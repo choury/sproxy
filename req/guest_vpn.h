@@ -37,6 +37,11 @@ struct TcpStatus{
     uint8_t    flags;
 };
 
+struct IcmpStatus{
+    uint16_t id;
+    uint16_t seq;
+};
+
 
 class Guest_vpn:public Requester, public ResObject{
 protected:

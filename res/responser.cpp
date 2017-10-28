@@ -4,6 +4,7 @@
 #include "proxy.h"
 #include "file.h"
 #include "cgi.h"
+#include "ping.h"
 
 #include <map>
 
@@ -62,7 +63,8 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
         req->ismethod("CONNECT") ||
         req->ismethod("HEAD") ||
         req->ismethod("DELETE") ||
-        req->ismethod("SEND"))
+        req->ismethod("SEND") ||
+        req->ismethod("PING"))
     {
         if(req->port == 0){
             req->port = HTTPPORT;
@@ -95,13 +97,20 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
         case Strategy::direct:
             LOG("[[dirct]] %s\n", log_buff);
             req->del("Proxy-Authorization");
-            return Host::gethost(req, responser_ptr);
+            if(req->ismethod("PING")){
+                return new Ping(req);
+            }else{
+                return Host::gethost(req, responser_ptr);
+            }
         case Strategy::forward:{
             LOG("[[forward]] %s\n", log_buff);
             char fprotocol[DOMAINLIMIT];
             char fhost[DOMAINLIMIT];
             uint16_t fport;
             if(!spliturl(ext.c_str(), fprotocol, fhost, nullptr, &fport)){
+                if(req->ismethod("PING")){
+                    return new Ping(fhost, fport);
+                }
                 if(fprotocol[0] == 0 || strcasecmp(fprotocol, "tcp") == 0 ){
                     return new Host(fhost, fport, Protocol::TCP);
                 }
@@ -139,8 +148,9 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
         }
     }else if (req->ismethod("ADDS")) {
         const char *strategy = req->get("s");
-        LOG("[[add %s]] %s %s\n", strategy, log_buff, req->version);
-        if(strategy && addstrategy(req->geturl().c_str(), strategy, req->version)){
+        const char *ext = req->get("ext");
+        LOG("[[add %s]] %s %s\n", strategy, log_buff, ext);
+        if(strategy && addstrategy(req->geturl().c_str(), strategy, ext ? ext:"")){
             HttpResHeader* res = new HttpResHeader(H200);
             res->index = req->index;
             requester->response(res);

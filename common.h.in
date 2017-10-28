@@ -18,7 +18,7 @@
 
 #define BUF_LEN       16384
 
-typedef enum{TCP=SOCK_STREAM, UDP=SOCK_DGRAM}Protocol;
+typedef enum{TCP=SOCK_STREAM, UDP=SOCK_DGRAM, ICMP}Protocol;
 
 extern char **main_argv;
 extern char SHOST[];

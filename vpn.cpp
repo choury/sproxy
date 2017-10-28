@@ -25,14 +25,13 @@ const char *cafile =  nullptr;
 const char *index_file = nullptr;
 int autoindex = 0;
 uint32_t debug = 0;
-uint32_t vpn_contiune;
+uint32_t vpn_contiune = 1;
 
 #define VPN_RESET 1
 #define VPN_RELOAD 2
 uint32_t vpn_action = 0;
 
 int vpn_start(const struct VpnConfig* vpn){
-    vpn_contiune = 1;
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
 #ifndef __ANDROID__

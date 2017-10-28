@@ -94,7 +94,7 @@ int Listen(short port) {
 }
 
 
-int Connect(union sockaddr_un* addr, int type) {
+int Connect(const union sockaddr_un* addr, int type) {
     int fd;
     if ((fd = socket(addr->addr.sa_family, type , 0)) < 0) {
         LOGE("socket error:%s\n", strerror(errno));
@@ -153,7 +153,62 @@ int Connect(union sockaddr_un* addr, int type) {
     return fd;
 }
 
+int IcmpSocket(const union sockaddr_un* addr, uint16_t id){
+    int fd = -1;
+    if(addr->addr.sa_family == AF_INET){
+        fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
 
+        struct sockaddr_in myaddr;
+        bzero(&myaddr, sizeof(myaddr));
+        myaddr.sin_family = AF_INET;
+        myaddr.sin_port = htons(id);
+        myaddr.sin_addr.s_addr = INADDR_ANY;
+
+        if(fd <= 0){
+            LOGE("create icmp socket failed: %s\n", strerror(errno));
+            return -1;
+        }
+
+        if (bind(fd, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
+            LOGOUT("bind error:%s\n", strerror(errno));
+            close(fd);
+            return -1;
+        }
+    }
+    if(addr->addr.sa_family == AF_INET6){
+        fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMPV6);
+
+        struct sockaddr_in6 myaddr;
+        bzero(&myaddr, sizeof(myaddr));
+        myaddr.sin6_family = AF_INET6;
+        myaddr.sin6_port = htons(id);
+        myaddr.sin6_addr = in6addr_any;
+
+        if(fd <= 0){
+            LOGE("create icmp6 socket failed: %s\n", strerror(errno));
+            return -1;
+        }
+
+        if (bind(fd, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
+            LOGOUT("bind error:%s\n", strerror(errno));
+            close(fd);
+            return -1;
+        }
+    }
+
+    if(protectFd(fd) == 0){
+        LOGE("protecd fd error:%s\n", strerror(errno));
+        close(fd);
+        return -1;
+    }
+
+    if(connect(fd, &addr->addr, sizeof(union sockaddr_un))){
+        LOGE("connect failed: %s\n", strerror(errno));
+        close(fd);
+        return -1;
+    }
+    return fd;
+}
 
 const char *getaddrstring(const union sockaddr_un *addr){
     static char buff[100];
