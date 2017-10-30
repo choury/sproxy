@@ -197,6 +197,7 @@ typedef unsigned char uchar;
 
 
 char* strnstr(const char* s1, const char* s2, size_t len);
+int startwith(const char *s1, const char *s2);
 int endwith(const char *s1, const char *s2);
 int spliturl(const char* url, char *protocol, char* host, char* path , uint16_t* port);
 

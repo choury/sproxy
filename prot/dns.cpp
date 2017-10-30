@@ -586,7 +586,7 @@ Dns_Que::Dns_Que(const char* buff) {
         }else if(startwith(ptr.c_str(), IPV6_PTR_PREFIX)){
             ptr = ptr.substr(sizeof(IPV6_PTR_PREFIX) - 1);
             host.clear();
-            for(int i = 0; i< ptr.length(); i++){
+            for(size_t i = 0; i< ptr.length(); i++){
                 if(i&1){
                     host += ptr[i];
                 }
