@@ -39,22 +39,35 @@ ssize_t FDns::Send(void* buff, size_t size, void* index) {
     LOGD(DDNS, "FQuery %s: %d\n", que.host.c_str(), que.type);
     uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id)){
-        FDnsStatus& status = statusmap[id];
-        status.dns_id = que.id;
-        if(que.type != 1 && que.type != 28){
+        Dns_Rr* rr = nullptr;
+        if(que.type == 12 && que.ptr_addr.addr.sa_family == AF_INET){
+            uint32_t ip = ntohl(que.ptr_addr.addr_in.sin_addr.s_addr);
+            if(fdns_records.count(ip)){
+                rr = new Dns_Rr(fdns_records[ip].c_str(), true);
+            }
+        }
+        if(que.type == 1) {
+            std::string ignore;
+            if (getstrategy(que.host.c_str(), ignore) == Strategy::direct) {
+                query(que.host.c_str(), nullptr, nullptr);
+            }
+            in_addr addr = getInet(que.host);
+            rr = new Dns_Rr(&addr);
+        }
+        if(que.type == 28){
+            rr = new Dns_Rr();
+        }
+        if(rr == nullptr){
             query(que.host.c_str(), que.type, DNSRAWCB(ResponseCb), reinterpret_cast<void*>(id));
             return size;
         }
-        std::string ignore;
-        if(getstrategy(que.host.c_str(), ignore) == Strategy::direct){
-            query(que.host.c_str(), nullptr, nullptr);
-        }
-        in_addr addr = getInet(que.host);
-        Dns_Rr rr(&addr);
+        FDnsStatus &status = statusmap[id];
+        status.dns_id = que.id;
         unsigned char * buff = (unsigned char *)p_malloc(BUF_LEN);
-        status.req_ptr->Send(buff, rr.build(&que, buff), status.req_index);
+        status.req_ptr->Send(buff, rr->build(&que, buff), status.req_index);
         status.req_ptr->finish(NOERROR, status.req_index);
         fdns->statusmap.erase(id);
+        delete rr;
         return size;
     }
     return 0;

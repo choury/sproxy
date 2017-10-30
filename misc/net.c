@@ -158,41 +158,43 @@ int IcmpSocket(const union sockaddr_un* addr, uint16_t id){
     if(addr->addr.sa_family == AF_INET){
         fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
 
-        struct sockaddr_in myaddr;
-        bzero(&myaddr, sizeof(myaddr));
-        myaddr.sin_family = AF_INET;
-        myaddr.sin_port = htons(id);
-        myaddr.sin_addr.s_addr = INADDR_ANY;
-
         if(fd <= 0){
             LOGE("create icmp socket failed: %s\n", strerror(errno));
             return -1;
         }
+        if(id) {
+            struct sockaddr_in myaddr;
+            bzero(&myaddr, sizeof(myaddr));
+            myaddr.sin_family = AF_INET;
+            myaddr.sin_port = htons(id);
+            myaddr.sin_addr.s_addr = INADDR_ANY;
 
-        if (bind(fd, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
-            LOGOUT("bind error:%s\n", strerror(errno));
-            close(fd);
-            return -1;
+            if (bind(fd, (struct sockaddr *) &myaddr, sizeof(myaddr)) < 0) {
+                LOGOUT("bind error:%s\n", strerror(errno));
+                close(fd);
+                return -1;
+            }
         }
     }
     if(addr->addr.sa_family == AF_INET6){
         fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMPV6);
-
-        struct sockaddr_in6 myaddr;
-        bzero(&myaddr, sizeof(myaddr));
-        myaddr.sin6_family = AF_INET6;
-        myaddr.sin6_port = htons(id);
-        myaddr.sin6_addr = in6addr_any;
-
         if(fd <= 0){
             LOGE("create icmp6 socket failed: %s\n", strerror(errno));
             return -1;
         }
 
-        if (bind(fd, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
-            LOGOUT("bind error:%s\n", strerror(errno));
-            close(fd);
-            return -1;
+        if(id) {
+            struct sockaddr_in6 myaddr;
+            bzero(&myaddr, sizeof(myaddr));
+            myaddr.sin6_family = AF_INET6;
+            myaddr.sin6_port = htons(id);
+            myaddr.sin6_addr = in6addr_any;
+
+            if (bind(fd, (struct sockaddr *) &myaddr, sizeof(myaddr)) < 0) {
+                LOGOUT("bind error:%s\n", strerror(errno));
+                close(fd);
+                return -1;
+            }
         }
     }
 
@@ -207,6 +209,10 @@ int IcmpSocket(const union sockaddr_un* addr, uint16_t id){
         close(fd);
         return -1;
     }
+
+    time_t time = 1;
+    setsockopt(3, SOL_SOCKET, SO_SNDTIMEO, &time, sizeof(time));
+    setsockopt(3, SOL_SOCKET, SO_RCVTIMEO, &time, sizeof(time));
     return fd;
 }
 

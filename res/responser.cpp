@@ -66,7 +66,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
         req->ismethod("SEND") ||
         req->ismethod("PING"))
     {
-        if(req->port == 0){
+        if(req->port == 0 && req->ismethod("SEND") && req->ismethod("PING")){
             req->port = HTTPPORT;
         }
         std::string ext;

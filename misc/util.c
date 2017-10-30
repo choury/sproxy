@@ -33,6 +33,13 @@ char* strnstr(const char* s1, const char* s2, size_t len)
     return NULL;
 }
 
+int startwith(const char *s1, const char *s2) {
+    size_t l1 = strlen(s1);
+    size_t l2 = strlen(s2);
+    if(l1 < l2)
+        return 0;
+    return !memcmp(s1, s2, l2);
+}
 
 int endwith(const char *s1, const char *s2) {
     size_t l1 = strlen(s1);

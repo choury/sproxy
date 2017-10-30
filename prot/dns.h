@@ -50,6 +50,7 @@ typedef struct DNS_HDR {
 class Dns_Que{
 public:
     std::string host;
+    sockaddr_un ptr_addr;
     uint16_t type;
     uint16_t id;
     Dns_Que(const std::string& host, uint16_t type, uint16_t id);
@@ -61,10 +62,13 @@ public:
 class Dns_Rr{
 public:
     std::vector<sockaddr_un> addrs;
+    std::string rDns;
     uint16_t  id = 0;
     uint32_t  ttl = 0;
+    explicit Dns_Rr();
     explicit Dns_Rr(const char *buff);
     explicit Dns_Rr(const in_addr* addr);
+    explicit Dns_Rr(const char *rDns, bool isRdns);
     int build(const Dns_Que* query, unsigned char *buf)const;
     static int buildError(const Dns_Que* query, unsigned char errcode, unsigned char *buf);
 };

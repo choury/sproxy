@@ -11,7 +11,10 @@ void Ping::Dnscallback(Ping* p, const char *hostname, std::list<sockaddr_un> add
         p->iserror = true;
         return;
     }
-    p->addrs = addrs;
+    for (auto i: addrs){
+        i.addr_in6.sin6_port = 0;
+        p->addrs.push_back(i);
+    }
     p->fd = IcmpSocket(&p->addrs.front(), p->id);
     if(p->fd <= 0){
         LOGE("create icmp socket failed: %s\n", strerror(errno));

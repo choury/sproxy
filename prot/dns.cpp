@@ -550,6 +550,20 @@ Dns_Que::Dns_Que(const std::string& host, uint16_t type, uint16_t id):host(host)
 
 }
 
+static std::string reverse(std::string str){
+    std::string::size_type split = 0;
+    std::string result;
+    while((split = str.find_last_of(".")) != std::string::npos){
+        result += str.substr(split+1) + '.';
+        str = str.substr(0, split);
+    }
+    result += str;
+    return result;
+}
+
+#define IPV4_PTR_PREFIX "arpa.in-addr."
+#define IPV6_PTR_PREFIX "arpa.ip6."
+
 Dns_Que::Dns_Que(const char* buff) {
     const DNS_HDR *dnshdr = (const DNS_HDR*)buff;
 
@@ -560,6 +574,35 @@ Dns_Que::Dns_Que(const char* buff) {
     const DNS_QUE *que = (const DNS_QUE*)p;
     type = ntohs(que->type);
     assert(ntohs(que->classes) == 1);
+    if(type == 12){
+        std::string ptr = reverse(host);
+        if(startwith(ptr.c_str(), IPV4_PTR_PREFIX)){
+            ptr = ptr.substr(sizeof(IPV4_PTR_PREFIX) - 1);
+            ptr_addr.addr.sa_family = AF_INET;
+            if(inet_pton(AF_INET, ptr.c_str(), &ptr_addr.addr_in.sin_addr) != 1){
+                LOGE("[DNS] wrong ptr format: %s", host.c_str());
+                return;
+            }
+        }else if(startwith(ptr.c_str(), IPV6_PTR_PREFIX)){
+            ptr = ptr.substr(sizeof(IPV6_PTR_PREFIX) - 1);
+            host.clear();
+            for(int i = 0; i< ptr.length(); i++){
+                if(i&1){
+                    host += ptr[i];
+                }
+                if(i%8 == 0){
+                    host += ':';
+                }
+            }
+            ptr_addr.addr.sa_family = AF_INET6;
+            if(inet_pton(AF_INET6, ptr.c_str(), &ptr_addr.addr_in6.sin6_addr) != 1){
+                LOGE("[DNS] wrong ptr format: %s", host.c_str());
+                return;
+            }
+        }else{
+            LOGE("unkown ptr request: %s", host.c_str());
+        }
+    }
 }
 
 
@@ -584,22 +627,29 @@ int Dns_Que::build(unsigned char* buf)const {
     return len+sizeof(DNS_QUE);
 }
 
+Dns_Rr::Dns_Rr() {
+}
+
 Dns_Rr::Dns_Rr(const char* buff) {
     const DNS_HDR *dnshdr = (const DNS_HDR *)buff;
     id = ntohs(dnshdr->id);
 
-    uint16_t flag = ntohs(dnshdr->flag);
-    if ((flag & QR) == 0 || (flag & RCODE_MASK) != 0) {
-        LOG("[DNS] ack error:%u\n", uint32_t(flag & RCODE_MASK));
-        return;
-    }
     const unsigned char *p = (const unsigned char *)(dnshdr +1);
     uint16_t numq = ntohs(dnshdr->numq);
+    uint16_t flag = ntohs(dnshdr->flag);
+    assert(numq && (flag & QR));
     for (int i = 0; i < numq; ++i) {
         char domain[DOMAINLIMIT];
         p = (unsigned char *)getdomain(dnshdr, p, domain);
-        LOGD(DDNS, "[%d]: \n", dnshdr->id);
+        LOGD(DDNS, "[%d]:\n", dnshdr->id);
         p+= sizeof(DNS_QUE);
+
+        if((flag & RCODE_MASK) != 0) {
+            LOG("[DNS] ack error: %s: %u\n", domain, uint32_t(flag & RCODE_MASK));
+        }
+    }
+    if((flag & RCODE_MASK) !=0 ){
+        return;
     }
     uint16_t numa = ntohs(dnshdr->numa);
     for(int i = 0; i < numa; ++i) {
@@ -643,11 +693,15 @@ Dns_Rr::Dns_Rr(const char* buff) {
 }
 
 Dns_Rr::Dns_Rr(const in_addr* addr){
-    sockaddr_un ip;
-    ip.addr_in.sin_family = AF_INET;
-    memcpy(&ip.addr_in.sin_addr, addr, sizeof(in_addr));
-    ttl = 0;
-    addrs.push_back(ip);
+    if(addr) {
+        sockaddr_un ip;
+        ip.addr_in.sin_family = AF_INET;
+        memcpy(&ip.addr_in.sin_addr, addr, sizeof(in_addr));
+        addrs.push_back(ip);
+    }
+}
+
+Dns_Rr::Dns_Rr(const char *rDns, bool):rDns(rDns) {
 }
 
 
@@ -682,6 +736,17 @@ int Dns_Rr::build(const Dns_Que* query, unsigned char* buf)const {
             len += sizeof(DNS_RR) + sizeof(in6_addr);
             dnshdr->numa ++;
         }
+    }
+    if(query->type == 12){
+        len += putdomain(buf+len, query->host.c_str());
+        DNS_RR* rr= (DNS_RR*)(buf + len);
+        rr->classes = htons(1);
+        rr->type = htons(12);
+        rr->TTL = htonl(ttl);
+        int rdlength = putdomain((unsigned char *)(rr+1), rDns.c_str());
+        rr->rdlength = htons(rdlength);
+        len += sizeof(DNS_RR) + rdlength;
+        dnshdr->numa ++;
     }
     HTONS(dnshdr->numa);
     return len;
