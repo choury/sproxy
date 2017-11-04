@@ -36,10 +36,12 @@ int32_t FDns::bufleft(void*) {
 ssize_t FDns::Send(void* buff, size_t size, void* index) {
     Dns_Que que((const char *)buff);
     p_free(buff);
-    LOGD(DDNS, "FQuery %s: %d\n", que.host.c_str(), que.type);
+    LOGD(DDNS, "FQuery %s [%d]: %d\n", que.host.c_str(), que.id, que.type);
     uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id)){
         Dns_Rr* rr = nullptr;
+        FDnsStatus &status = statusmap[id];
+        status.dns_id = que.id;
         if(que.type == 12 && que.ptr_addr.addr.sa_family == AF_INET){
             uint32_t ip = ntohl(que.ptr_addr.addr_in.sin_addr.s_addr);
             if(fdns_records.count(ip)){
@@ -61,8 +63,6 @@ ssize_t FDns::Send(void* buff, size_t size, void* index) {
             query(que.host.c_str(), que.type, DNSRAWCB(ResponseCb), reinterpret_cast<void*>(id));
             return size;
         }
-        FDnsStatus &status = statusmap[id];
-        status.dns_id = que.id;
         unsigned char * buff = (unsigned char *)p_malloc(BUF_LEN);
         status.req_ptr->Send(buff, rr->build(&que, buff), status.req_index);
         status.req_ptr->finish(NOERROR, status.req_index);
@@ -77,6 +77,7 @@ void FDns::ResponseCb(uint32_t id, const char* buff, size_t size) {
     if(fdns && fdns->statusmap.count(id)){
         FDnsStatus& status = fdns->statusmap[id];
         if(buff){
+            LOGD(DDNS, "[FQuery] raw response [%d]\n", status.dns_id);
             DNS_HDR *dnshdr = (DNS_HDR*)buff;
             dnshdr->id = htons(status.dns_id);
             status.req_ptr->Send(buff, size, status.req_index);
