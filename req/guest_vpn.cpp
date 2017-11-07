@@ -8,8 +8,8 @@
 #include <fstream>
 
 int vpn_aged(VpnStatus* status){
-    LOGD(DVPN, "<%s> ( -> %s) aged.\n",
-         protstr(status->key->protocol), status->key->getdst());
+    LOGD(DVPN, "<%s> (%d -> %s) aged.\n",
+         protstr(status->key->protocol), status->key->getsport(), status->key->getdst());
     status->res_ptr->finish(VPN_AGED_ERR, status->res_index);
     return 0;
 }
@@ -47,11 +47,8 @@ void VpnKey::reverse() {
 }
 
 
-const char * VpnKey::getsrc() const{
-    static char str[100];
-    sprintf(str, "%s:%d",FDns::getRdns(&src.addr_in.sin_addr),
-            ntohs(src.addr_in.sin_port));
-    return str;
+int VpnKey::getsport() const{
+    return ntohs(src.addr_in.sin_port);
 }
 
 const char * VpnKey::getdst() const{
@@ -169,8 +166,9 @@ void Guest_vpn::response(HttpResHeader* res) {
         assert(key.protocol == Protocol::TCP);
         TcpStatus* tcpStatus = (TcpStatus *)status.protocol_info;
         assert(tcpStatus);
-        LOGD(DVPN, "write syn ack packet ( <- %s) (%u - %u).\n",
-             key.getdst(), tcpStatus->send_seq, tcpStatus->want_seq);
+        LOGD(DVPN, "write syn ack packet (%d <- %s) (%u - %u).\n",
+             key.getsport(), key.getdst(),
+             tcpStatus->send_seq, tcpStatus->want_seq);
         Ip pac_return(IPPROTO_TCP, &key.dst, &key.src);
         pac_return.tcp
             ->setseq(tcpStatus->send_seq++)
@@ -235,8 +233,9 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
     size_t datalen = len - pac->gethdrlen();
     
     VpnKey key(pac);
-    LOGD(DVPN, "<tcp> ( -> %s) (%u - %u) flag: %d size:%zu\n",
-         key.getdst(), seq, ack, flag, datalen);
+    LOGD(DVPN, "<tcp> (%d -> %s) (%u - %u) flag: %d size:%zu\n",
+         key.getsport(), key.getdst(),
+         seq, ack, flag, datalen);
 
     if(flag & TH_SYN){//1握手包，创建握手回包
         if(statusmap.count(key)){
@@ -338,11 +337,11 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
             status.res_ptr->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
             LOGD(DVPN, "clean up connection\n");
             cleanKey(&key);
+            return;
         }else{
             status.res_ptr->finish(NOERROR, status.res_index);
             tcpStatus->flags |= FIN_RECV;
         }
-        return;
     }
     //下面处理数据包和ack包
     if(datalen > 0){//2数据包，创建ack包
@@ -352,7 +351,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         }else{
             const char* data = packet + pac->gethdrlen();
             status.res_ptr->Send(data, datalen, status.res_index);
-            tcpStatus->want_seq = seq + datalen;
+            tcpStatus->want_seq += datalen;
 
             //创建回包
             pac_return.tcp
@@ -385,7 +384,7 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
     VpnKey key(pac);
 
     if(statusmap.count(key)){
-        LOGD(DVPN, "<udp> ( -> %s) size: %zu\n", key.getdst(), datalen);
+        LOGD(DVPN, "<udp> (%d -> %s) size: %zu\n", key.getsport(), key.getdst(), datalen);
         VpnStatus& status = statusmap[key];
         add_delayjob((job_func)vpn_aged, &status, 300000);
         if(status.res_ptr->bufleft(status.res_index)<=0){
@@ -394,7 +393,7 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
             status.res_ptr->Send(data, datalen, status.res_index);
         }
     }else{
-        LOGD(DVPN, "<udp> ( -> %s) (N) size: %zu\n", key.getdst(), datalen);
+        LOGD(DVPN, "<udp> (%d -> %s) (N) size: %zu\n", key.getsport(), key.getdst(), datalen);
         //create a http proxy request
         char buff[HEADLENLIMIT];
         sprintf(buff, "SEND %s:%d" CRLF "Sproxy_vpn: %d" CRLF CRLF,
@@ -489,8 +488,8 @@ void Guest_vpn::icmpHE(const Ip* pac, const char* packet, size_t len) {
         VpnKey key(&icmp_pac);
         key.reverse();
         
-        LOGD(DVPN, "Get unreach icmp packet <%s> ( -> %s) type: %d\n",
-             protstr(key.protocol), key.getdst(), type);
+        LOGD(DVPN, "Get unreach icmp packet <%s> (%d -> %s) type: %d\n",
+             protstr(key.protocol), key.getsport(), key.getdst(), type);
         if(type != IPPROTO_TCP && type != IPPROTO_UDP){
             LOGD(DVPN, "Get unreach icmp packet unkown protocol:%d\n", type);
             return;
@@ -542,8 +541,9 @@ ssize_t Guest_vpn::Send(void* buff, size_t size, void* index) {
             LOGE("(%s): window left smaller than send size!\n", getsrc(&key));
             size = winlen;
         }
-        LOGD(DVPN, "<tcp> ( <- %s) (%u - %u) size: %zu\n",
-             key.getdst(), tcpStatus->send_seq, tcpStatus->want_seq, size);
+        LOGD(DVPN, "<tcp> (%d <- %s) (%u - %u) size: %zu\n",
+             key.getsport(), key.getdst(),
+             tcpStatus->send_seq, tcpStatus->want_seq, size);
         Ip pac_return(IPPROTO_TCP, &key.dst, &key.src);
         pac_return.tcp
             ->setseq(tcpStatus->send_seq)
@@ -556,7 +556,7 @@ ssize_t Guest_vpn::Send(void* buff, size_t size, void* index) {
         return size;
     }
     if(key.protocol == Protocol::UDP){
-        LOGD(DVPN, "<udp> ( <- %s) size: %zu\n", key.getdst(), size);
+        LOGD(DVPN, "<udp> (%d <- %s) size: %zu\n", key.getsport(), key.getdst(), size);
         Ip pac_return(IPPROTO_UDP, &key.dst, &key.src);
 
         sendPkg(&pac_return, buff, size);
@@ -567,7 +567,7 @@ ssize_t Guest_vpn::Send(void* buff, size_t size, void* index) {
     if(key.protocol == Protocol::ICMP){
         Ip pac_return(IPPROTO_ICMP, &key.dst, &key.src);
         IcmpStatus* icmpStatus = (IcmpStatus*)status.protocol_info;
-        const Icmp *icmp = (const Icmp*)buff;
+        const Icmp __attribute__((unused)) *icmp = (const Icmp*)buff;
 
         assert(icmp->gettype() == ICMP_ECHOREPLY && icmp->getcode() == 0);
         LOGD(DVPN, "<ping> ( <- %s) (%u - %u) size: %zu\n",
@@ -605,8 +605,8 @@ bool Guest_vpn::finish(uint32_t flags, void* index) {
     assert(index);
     VpnKey* key = (VpnKey *)index;
     uint8_t errcode = flags & ERROR_MASK;
-    LOGD(DVPN, "<%s> ( -> %s) finish: %u\n",
-         protstr(key->protocol),  key->getdst(), errcode);
+    LOGD(DVPN, "<%s> (%d -> %s) finish: %u\n",
+         protstr(key->protocol),  key->getsport(), key->getdst(), errcode);
     assert(statusmap.count(*key));
     VpnStatus& status = statusmap[*key];
     if(key->protocol == Protocol::TCP){
@@ -631,7 +631,7 @@ bool Guest_vpn::finish(uint32_t flags, void* index) {
                 return true;
             }
         }else if(errcode == CONNECT_TIMEOUT){
-            LOGD(DVPN, "write icmp unreachable msg: <tcp> ( -> %s)\n", key->getdst());
+            LOGD(DVPN, "write icmp unreachable msg: <tcp> (%d -> %s)\n", key->getsport(), key->getdst());
             Ip pac_return(IPPROTO_ICMP, &key->dst, &key->src);
             pac_return.icmp
                 ->settype(ICMP_UNREACH)
@@ -639,7 +639,7 @@ bool Guest_vpn::finish(uint32_t flags, void* index) {
 
             sendPkg(&pac_return, (const void*)status.packet, status.packet_len);
         }else{
-            LOGD(DVPN, "write rst packet:  -> %s\n",  key->getdst());
+            LOGD(DVPN, "write rst packet: %d -> %s\n",  key->getsport(), key->getdst());
             Ip pac_return(IPPROTO_TCP, &key->dst, &key->src);
             pac_return.tcp
                 ->setseq(tcpStatus->send_seq)
@@ -652,7 +652,7 @@ bool Guest_vpn::finish(uint32_t flags, void* index) {
     }
     if(key->protocol == Protocol::UDP){
         if(errcode && errcode != VPN_AGED_ERR){
-            LOGD(DVPN, "write icmp unreachable msg: <udp> ( -> %s)\n", key->getdst());
+            LOGD(DVPN, "write icmp unreachable msg: <udp> (%d -> %s)\n", key->getsport(), key->getdst());
             Ip pac_return(IPPROTO_ICMP, &key->dst, &key->src);
             pac_return.icmp
                 ->settype(ICMP_UNREACH)
@@ -804,8 +804,8 @@ const char * Guest_vpn::getsrc(void* index) {
 void Guest_vpn::dump_stat() {
     LOG("Guest_vpn %p (%zd):\n", this, (4*1024*1024 - buffer.length));
     for(auto i: statusmap){
-        LOG("<%s> ( -> %s) %p: %p, %p\n",
-            protstr(i.first.protocol), i.first.getdst(),
+        LOG("<%s> (%d -> %s) %p: %p, %p\n",
+            protstr(i.first.protocol), i.first.getsport(), i.first.getdst(),
             i.second.key, i.second.res_ptr, i.second.res_index);
     }
 }

@@ -25,7 +25,7 @@ const char *cafile =  nullptr;
 const char *index_file = nullptr;
 int autoindex = 0;
 uint32_t debug = 0;
-uint32_t vpn_contiune = 1;
+uint32_t vpn_contiune;
 
 #define VPN_RESET 1
 #define VPN_RELOAD 2
@@ -55,6 +55,7 @@ int vpn_start(const struct VpnConfig* vpn){
     Base64Encode(vpn->secret, strlen(vpn->secret), rewrite_auth);
     LOG("set encoded secret to: %s\n", rewrite_auth);
     new Guest_vpn(vpn->fd);
+    vpn_contiune = 1;
     LOGOUT("Accepting connections ...\n");
     while (vpn_contiune) {
         if(vpn_action & VPN_RESET){

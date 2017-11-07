@@ -18,7 +18,9 @@ Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), 
 }
 
 Host::~Host(){
-    assert(req == nullptr);
+    if(req){
+        delete req;
+    }
     del_delayjob((job_func)con_timeout, this);
 }
 

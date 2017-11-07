@@ -11,7 +11,7 @@ struct VpnKey{
     Protocol    protocol;
     explicit VpnKey(const Ip* ip);
     void reverse();
-    const char* getsrc() const;
+    int getsport() const;
     const char* getdst() const;
 };
 

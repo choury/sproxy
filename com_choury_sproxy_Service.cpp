@@ -39,6 +39,7 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     env->DeleteLocalRef(server);
     env->DeleteLocalRef(secret);
     vpn_start(&vpn);
+    env->DeleteGlobalRef(jniobj);
 }
 
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(JNIEnv *, jobject){
@@ -104,6 +105,7 @@ std::vector<std::string> getDns(){
         jnienv->ReleaseStringUTFChars(jdns, jdns_str);
         jnienv->DeleteLocalRef(jdns);
     }
+    jnienv->DeleteLocalRef(jDns);
     jnienv->DeleteLocalRef(cls);
     return dns;
 }
@@ -127,5 +129,6 @@ std::string getExternalFilesDir() {
     jnienv->ReleaseStringUTFChars(Path_obj, path_str);
     jnienv->DeleteLocalRef(Path_obj);
     jnienv->DeleteLocalRef(File_obj);
+    jnienv->DeleteLocalRef(cls);
     return path;
 }
