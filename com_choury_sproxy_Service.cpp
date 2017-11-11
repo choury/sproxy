@@ -6,12 +6,15 @@
 #include <iostream>
 #include <map>
 #include <vector>
-
+#include <fstream>
+#include <android/log.h>
 
 static JavaVM *jnijvm;
 static jobject jniobj;
 static VpnConfig vpn;
 static std::map<int, std::string> packages;
+static std::string extenalFilesDir;
+static std::string extenalCacheDir;
 
 /*
  * Class:     com_choury_sproxy_SproxyVpnService
@@ -111,6 +114,9 @@ std::vector<std::string> getDns(){
 }
 
 std::string getExternalFilesDir() {
+    if(extenalFilesDir != ""){
+        return extenalFilesDir;
+    }
     JNIEnv *jnienv;
     jnijvm->GetEnv((void **)&jnienv, JNI_VERSION_1_6);
     // getExternalFilesDir() - java
@@ -124,11 +130,64 @@ std::string getExternalFilesDir() {
 
     const char *path_str = jnienv->GetStringUTFChars(Path_obj, 0);
 
-    char path[PATH_MAX];
-    strcpy(path, path_str);
+    extenalFilesDir = path_str;
     jnienv->ReleaseStringUTFChars(Path_obj, path_str);
     jnienv->DeleteLocalRef(Path_obj);
     jnienv->DeleteLocalRef(File_obj);
     jnienv->DeleteLocalRef(cls);
-    return path;
+    return extenalFilesDir;
+}
+
+std::string getExternalCacheDir() {
+    if(extenalCacheDir != ""){
+        return extenalCacheDir;
+    }
+    JNIEnv *jnienv;
+    jnijvm->GetEnv((void **)&jnienv, JNI_VERSION_1_6);
+    // getExternalCacheDir() - java
+    jclass cls = jnienv->GetObjectClass(jniobj);
+    jmethodID mid = jnienv->GetMethodID(cls, "getExternalCacheDir", "()Ljava/io/File;");
+    jobject File_obj = jnienv->CallObjectMethod(jniobj, mid);
+    jclass File_cls = jnienv->FindClass("java/io/File");
+    jmethodID getPath_mid = jnienv->GetMethodID(File_cls, "getPath", "()Ljava/lang/String;");
+    jstring Path_obj = (jstring) jnienv->CallObjectMethod(File_obj, getPath_mid);
+
+    const char *path_str = jnienv->GetStringUTFChars(Path_obj, 0);
+
+    extenalCacheDir = path_str;
+    jnienv->ReleaseStringUTFChars(Path_obj, path_str);
+    jnienv->DeleteLocalRef(Path_obj);
+    jnienv->DeleteLocalRef(File_obj);
+    jnienv->DeleteLocalRef(cls);
+    return extenalCacheDir;
+}
+
+
+void android_log(int level, const char* fmt, ...){
+    va_list args;
+    va_start(args, fmt);
+    switch(level){
+    case LOG_INFO:
+        level = ANDROID_LOG_INFO;
+        break;
+    case LOG_ERR:
+        level = ANDROID_LOG_ERROR;
+        break;
+    case LOG_DEBUG:
+        level = ANDROID_LOG_DEBUG;
+        break;
+    default:
+        level = ANDROID_LOG_DEFAULT;
+
+    }
+    char printbuff[1024];
+    vsnprintf(printbuff, sizeof(printbuff), fmt, args);
+    va_end(args);
+    if(level != ANDROID_LOG_DEBUG) {
+        __android_log_print(level, "sproxy_client", "%s", printbuff);
+    }
+    std::string cachedir = getExternalCacheDir();
+    std::ofstream logfile(cachedir+"/vpn.log", std::ios::app);
+    logfile<<printbuff;
+    logfile.close();
 }

@@ -21,10 +21,15 @@ struct VpnConfig{
     char secret[DOMAINLIMIT];
 };
 
-int vpn_start(const struct VpnConfig* vpn);
-void vpn_stop();
-void vpn_reset();
-void vpn_reload();
+typedef int (Vpn_start)(const struct VpnConfig* vpn);
+typedef void (Vpn_stop)();
+typedef void (Vpn_reset)();
+typedef void (Vpn_reload)();
+
+Vpn_start vpn_start;
+Vpn_stop vpn_stop;
+Vpn_reset vpn_reset;
+Vpn_reload vpn_reload;
 #endif
 
 #ifdef  __cplusplus

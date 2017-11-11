@@ -308,7 +308,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
     TcpStatus* tcpStatus = (TcpStatus*)status.protocol_info;
     assert(tcpStatus);
 
-    if(seq == tcpStatus->want_seq - 1){
+    if(seq == tcpStatus->want_seq - 1 && flag == TH_ACK){
         LOGD(DVPN, "get keepalive packet, reply it.\n");
         pac_return.tcp
             ->setseq(tcpStatus->send_seq)

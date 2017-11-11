@@ -53,25 +53,26 @@ extern int autoindex;
 
 #ifdef __ANDROID__
 
-#include <jni.h>
-#include <android/log.h>
-#define  LOG_TAG    "sproxy_client"   // 定义logcat中tag标签
-#define  LOG(...)  __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
-#define  LOGE(...)  __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-#define  LOGOUT(...) LOGE(__VA_ARGS__)
+#ifdef  __cplusplus
+extern "C" void android_log(int level, const char* fmt, ...);
+#else
+void android_log(int level, const char* fmt, ...);
+#endif
 
-#ifndef NDEBUG
-
-#define LOGD(mod, ...)    do{\
+#define  LOG(...)  android_log(LOG_INFO,  __VA_ARGS__)
+#define  LOGOUT(...) LOG(__VA_ARGS__)
+#define  LOGE(...)  do{\
+                        char tmp[1024]; \
+                        snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
+                        android_log(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
+                     }while(0)
+#define  LOGD(mod, ...)    do{\
                              if(debug & mod) {\
                                 char tmp[1024]; \
-                                sprintf(tmp, __VA_ARGS__); \
-                                __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG ,"%s: %s",mod##_STR, tmp); \
+                                snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
+                                android_log(LOG_DEBUG, "%s: %s",mod##_STR, tmp); \
                              }\
                            }while(0)
-#else
-#define LOGD(...)          void(0)
-#endif
 
 #else
 #define  LOGOUT(...) fprintf(stderr, __VA_ARGS__)
@@ -96,7 +97,7 @@ extern int autoindex;
 #define LOGD(mod, ...)    do{\
                              if(debug & mod) {\
                                 char tmp[1024]; \
-                                sprintf(tmp, __VA_ARGS__); \
+                                snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
                                 if(daemon_mode) \
                                   syslog(LOG_INFO,"%s: %s",mod##_STR, tmp); \
                                 else {\

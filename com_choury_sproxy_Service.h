@@ -25,6 +25,8 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(JNIEnv *, jo
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reset(JNIEnv *, jobject);
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload(JNIEnv *, jobject);
 
+
+void android_log(int level, const char* fmt, ...);
 #ifdef __cplusplus
 }
 #endif

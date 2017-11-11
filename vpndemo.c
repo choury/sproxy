@@ -8,7 +8,10 @@
 #include <net/route.h>
 #include <string.h>
 #include <signal.h>
+#include <dlfcn.h>
 
+
+int daemon_mode = 0;
 const char* out_interface;
 
 int protectFd(int fd) {
@@ -131,7 +134,6 @@ int main(int argc, char** argv) {
         return -1;
     }
     out_interface = argv[1];
-    signal(SIGUSR2, vpn_reload);
     char tun_name[IFNAMSIZ]= {0};
     int tun = tun_create(tun_name, IFF_TUN | IFF_NO_PI);
     if (tun < 0) {
@@ -144,11 +146,28 @@ int main(int argc, char** argv) {
     vpn.ignore_cert_error = 0;
     strcpy(vpn.server, argv[2]);
     printf("set server to: %s\n", vpn.server);
+    void *handle = dlopen("./libsproxy_vpn.so", RTLD_NOW);
+    if(handle == NULL) {
+        LOGE("dlopen libsproxy_vpn.so failed: %s\n", dlerror());
+        return 1;
+    }
+    Vpn_reload* vpn_reload=(Vpn_reload *)dlsym(handle,"vpn_reload");
+    if(vpn_reload == NULL) {
+        LOGE("dlsym vpn_reload failed: %s\n", dlerror());
+        return 1;
+    }
+    Vpn_start* vpn_start=(Vpn_start *)dlsym(handle,"vpn_start");
+    if(vpn_start == NULL) {
+        LOGE("dlsym vpn_start failed: %s\n", dlerror());
+        return 1;
+    }
+    signal(SIGUSR2, vpn_reload);
     if(argc >= 4){
         strcpy(vpn.secret, argv[3]);
         printf("set secret to: %s\n", vpn.secret);
     }
     vpn.fd = tun;
     vpn_start(&vpn);
+    dlclose(handle);
     return 0;
 }
