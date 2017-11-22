@@ -1,7 +1,5 @@
 #include "http2.h"
-//#include "common.h"
-
-//#include <string.h>
+#include "misc/util.h"
 
 void Http2Base::DefaultProc() {
     Http2_header *header = (Http2_header *)http2_buff;

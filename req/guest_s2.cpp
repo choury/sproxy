@@ -1,13 +1,20 @@
 #include "guest_s2.h"
 #include "res/responser.h"
 #include "misc/job.h"
+#include "misc/util.h"
 
-//#include <limits.h>
 
 int Guest_s2::connection_lost(Guest_s2 *g){
     LOGE("(%s): [Guest_s2] Nothing got too long, so close it\n", g->getsrc(nullptr));
     g->deleteLater(PEER_LOST_ERR);
     return 0;
+}
+
+Guest_s2::Guest_s2(Rudp_c* rudp):
+        Requester(rudp->GetFd(), (sockaddr_in6*)rudp->GetPeer()), rudp(rudp)
+{
+    updateEpoll(EPOLLIN | EPOLLOUT);
+    handleEvent = (void (Con::*)(uint32_t))&Guest_s2::defaultHE;
 }
 
 Guest_s2::Guest_s2(int fd, const char* ip, uint16_t port, Ssl* ssl):
@@ -27,10 +34,16 @@ Guest_s2::Guest_s2(int fd, struct sockaddr_in6* myaddr, Ssl* ssl):
 Guest_s2::~Guest_s2() {
     del_delayjob((job_func)connection_lost, this);
     delete ssl;
+    delete rudp;
 }
 
 ssize_t Guest_s2::Read(void *buff, size_t size) {
-    auto ret = ssl->read(buff, size);
+    int ret = 0;
+    if(rudp){
+        ret = rudp->Read(buff,size);
+    }else{
+        ret = ssl->read(buff, size);
+    }
     if(ret > 0){
         add_delayjob((job_func)connection_lost, this, 1800000);
     }
@@ -38,7 +51,12 @@ ssize_t Guest_s2::Read(void *buff, size_t size) {
 }
 
 ssize_t Guest_s2::Write(const void *buff, size_t size) {
-    auto ret =  ssl->write(buff, size);
+    int ret = 0;
+    if(rudp){
+        ret = rudp->Write(buff, size);
+    }else{
+        ret = ssl->write(buff, size);
+    }
     if(ret > 0){
         add_delayjob((job_func)connection_lost, this, 1800000);
     }

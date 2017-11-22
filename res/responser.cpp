@@ -1,5 +1,6 @@
 #include "req/requester.h"
 #include "misc/strategy.h"
+#include "misc/util.h"
 
 #include "proxy.h"
 #include "file.h"

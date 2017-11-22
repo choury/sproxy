@@ -1,4 +1,5 @@
 #include "base.h"
+#include "misc/util.h"
 
 #include <set>
 #include <string.h>
@@ -214,6 +215,8 @@ int setproxy(const char* proxy){
         SPROT = Protocol::TCP;
     }else if(strcasecmp(protocol, "dtls") == 0){
         SPROT = Protocol::UDP;
+    }else if(strcasecmp(protocol, "rudp") == 0){
+        SPROT = Protocol::RUDP;
     }else{
         return -1;
     }
@@ -233,9 +236,10 @@ int getproxy(char *buff, size_t buflen){
         return snprintf(buff, buflen, "ssl://%s:%d", SHOST, SPORT)+1;
     case Protocol::UDP:
         return snprintf(buff, buflen, "dtls://%s:%d", SHOST, SPORT)+1;
+    case Protocol::RUDP:
+        return snprintf(buff, buflen, "rudp://%s:%d", SHOST, SPORT)+1;
     default:
         assert(0);
     }
     return 0;
 }
-

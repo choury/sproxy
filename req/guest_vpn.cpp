@@ -1,9 +1,10 @@
 #include "guest_vpn.h"
 #include "vpn.h"
 
-#include "misc/job.h"
 #include "res/proxy.h"
 #include "res/fdns.h"
+#include "misc/job.h"
+#include "misc/util.h"
 
 #include <fstream>
 

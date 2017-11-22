@@ -12,7 +12,7 @@ protected:
     uint16_t  sourceport;
     virtual void defaultHE(uint32_t events) = 0;
 public:
-    explicit Requester(int fd, struct sockaddr_in6 *myaddr = nullptr);
+    explicit Requester(int fd, const struct sockaddr_in6 *myaddr = nullptr);
     explicit Requester(int fd, const char *ip, uint16_t port);
     
     virtual const char *getsrc(const void* index) = 0;

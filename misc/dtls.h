@@ -3,26 +3,19 @@
 #include "vssl.h"
 
 #include <list>
-#include <queue>
 #include <stdint.h>
 #include <stddef.h>
 
 #define DTLS_LEN 1280
 #define DTLS_MTU (DTLS_LEN+sizeof(Dtls_head))
 
-class TTL{
-    std::queue<std::pair<uint32_t, uint32_t>> data;
-    uint32_t sum = 0;
-public:
-    void add(uint32_t value);
-    uint32_t getsum();
-};
+class TTL;
 
 class Dtls:public Ssl{
     unsigned char *read_buff;
     unsigned char *write_buff;
     std::list<std::pair<uint32_t, uint32_t>> read_seqs;
-    TTL recv_pkgs;
+    TTL* recv_pkgs;
     uint32_t gaps[DTLS_LEN/sizeof(uint32_t)];
     uint32_t gap_num=0;
 

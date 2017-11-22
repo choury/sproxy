@@ -1,6 +1,7 @@
 #include "guest_sni.h"
 #include "res/host.h"
 #include "misc/tls.h"
+#include "misc/util.h"
 
 #include <string.h>
 #include <stdlib.h>

@@ -15,6 +15,9 @@ Responser* Proxy::getproxy(HttpReqHeader* req, Responser* responser_ptr) {
     if (proxy2) {
         return proxy2;
     }
+    if(SPROT == Protocol::RUDP){
+        return new Proxy2(SHOST, SPORT);
+    }
     Proxy *proxy = dynamic_cast<Proxy *>(responser_ptr);
     if(req->ismethod("CONNECT") || req->ismethod("SEND")){
         return new Proxy(SHOST, SPORT, SPROT);
@@ -83,33 +86,24 @@ static const unsigned char alpn_protos_string[] =
 
 
 void Proxy::waitconnectHE(uint32_t events) {
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        int       error = 0;
-        socklen_t errlen = sizeof(error);
+    int       error = 0;
+    socklen_t errlen = sizeof(error);
 
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("(%s): connect to proxy error: %s\n", hostname, strerror(error));
-        }
-        goto reconnect;
+    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) != 0) {
+        LOGE("(%s): proxy getsokopt error: %s\n", hostname, strerror(errno));
+        return deleteLater(INTERNAL_ERR);
+    }
+    if (error != 0){
+        LOGE("(%s): connect to proxy error: %s\n", hostname, strerror(error));
+        return connect();
     }
 
     if (events & EPOLLOUT) {
-        int error;
-        socklen_t len = sizeof(error);
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-            LOGE("(%s): proxy getsokopt error: %s\n", hostname, strerror(errno));
-            goto reconnect;
-        }
-            
-        if (error != 0) {
-            LOGE("(%s): connect to proxy:%s\n", hostname, strerror(error));
-            goto reconnect;
-        }
         if(protocol == Protocol::TCP){
             ctx = SSL_CTX_new(SSLv23_client_method());
             if (ctx == NULL) {
                 LOGE("SSL_CTX_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
-                goto reconnect;
+                return deleteLater(INTERNAL_ERR);
             }
             SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);  // 去除支持SSLv2 SSLv3
             SSL_CTX_set_read_ahead(ctx, 1);
@@ -121,11 +115,11 @@ void Proxy::waitconnectHE(uint32_t events) {
             ctx = SSL_CTX_new(DTLS_client_method());
             if (ctx == NULL) {
                 LOGE("SSL_CTX_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
-                goto reconnect;
+                return deleteLater(INTERNAL_ERR);
             }
             SSL *ssl = SSL_new(ctx);
             BIO* bio = BIO_new_dgram(fd, BIO_NOCLOSE);
-            BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_CONNECTED, 0, &addrs[testedaddr-1]);
+            BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_CONNECTED, 0, &addrs.front());
             SSL_set_bio(ssl, bio, bio);
             this->ssl = new Dtls(ssl);
         }
@@ -147,9 +141,6 @@ void Proxy::waitconnectHE(uint32_t events) {
         updateEpoll(EPOLLIN | EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Proxy::shakehandHE;
     }
-    return;
-reconnect:
-    connect();
 }
 
 void Proxy::shakehandHE(uint32_t events) {
@@ -159,8 +150,7 @@ void Proxy::shakehandHE(uint32_t events) {
         if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
             LOGE("(%s): proxy unkown error: %s\n", hostname, strerror(error));
         }
-        deleteLater(INTERNAL_ERR);
-        return;
+        return deleteLater(INTERNAL_ERR);
     }
 
     if ((events & EPOLLIN) || (events & EPOLLOUT)) {
@@ -180,9 +170,6 @@ void Proxy::shakehandHE(uint32_t events) {
         {
             Proxy2 *new_proxy = new Proxy2(fd, ctx,ssl);
             new_proxy->init();
-            if(!proxy2){
-                proxy2 = new_proxy;
-            }
             if(req){
                 Requester* req_ptr = req->header->src;
                 void*      req_index = req->header->index;
@@ -191,7 +178,7 @@ void Proxy::shakehandHE(uint32_t events) {
                 req = nullptr;
             }
             this->discard();
-            deleteLater(PEER_LOST_ERR);
+            return deleteLater(PEER_LOST_ERR);
         }else{
             if(protocol == Protocol::UDP){
                 LOGE("Warning: Use http1.1 on dtls!\n");
@@ -200,18 +187,14 @@ void Proxy::shakehandHE(uint32_t events) {
             handleEvent = (void (Con::*)(uint32_t))&Proxy::defaultHE;
         }
         del_delayjob((job_func)con_timeout, this);
-        return;
     }
 }
-
 
 void Proxy::discard() {
     ssl = nullptr;
     ctx = nullptr;
     Host::discard();
 }
-
-
 
 Proxy::~Proxy() {
     if (ssl) {

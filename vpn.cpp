@@ -1,7 +1,8 @@
+#include "vpn.h"
+#include "prot/dns.h"
 #include "misc/strategy.h"
 #include "misc/job.h"
-#include "prot/dns.h"
-#include "vpn.h"
+#include "misc/util.h"
 
 #include "req/guest_vpn.h"
 
@@ -46,6 +47,7 @@ int vpn_start(const struct VpnConfig* vpn){
         LOGE("wrong server format\n");
         return -1;
     }
+    LOG("set server to: %s\n", vpn->server);
     reloadstrategy();
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
@@ -58,7 +60,7 @@ int vpn_start(const struct VpnConfig* vpn){
     LOG("set encoded secret to: %s\n", rewrite_auth);
     new Guest_vpn(vpn->fd);
     vpn_contiune = 1;
-    LOGOUT("Accepting connections ...\n");
+    LOG("Accepting connections ...\n");
     while (vpn_contiune) {
         if(vpn_action & VPN_RESET){
             flushdns();

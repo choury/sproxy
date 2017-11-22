@@ -69,16 +69,11 @@ extern "C" {
     
 extern const char *DEFAULT_CIPHER_LIST;
 
-union sockaddr_un{
-    struct sockaddr addr;
-    struct sockaddr_in addr_in;
-    struct sockaddr_in6 addr_in6;
-};
+union sockaddr_un;
 
-
-int Bind_any(int fd, short port);
-int Listen(short int port);
+int Listen(int type, short int port);
 int Connect(const union sockaddr_un*, int type);
+int Bind(int type, short port, const union sockaddr_un* addr);
 int IcmpSocket(const union sockaddr_un* addr, uint16_t id);
 const char *getaddrstring(const union sockaddr_un *addr);
 const char* getlocalip ();

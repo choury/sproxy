@@ -39,7 +39,7 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
 
     vpn.disable_ipv6 = 1;
     vpn.ignore_cert_error = 1;
-    sprintf(vpn.server, "ssl://%s", server_str);
+    strcpy(vpn.server, server_str);
     strcpy(vpn.secret, secret_str);
     jnienv->ReleaseStringUTFChars(server, server_str);
     jnienv->ReleaseStringUTFChars(secret, secret_str);
@@ -117,9 +117,9 @@ const char *getDeviceName(){
     __system_property_get("ro.product.model", model);
     char release[64];
     __system_property_get("ro.build.version.release", release);
-    char buildid[64];
-    __system_property_get("ro.build.id", buildid);
-    sprintf(deviceName, "Android %s; %s Build/%s", release, model, buildid);
+    char buildtime[64];
+    __system_property_get("ro.build.date.utc", buildtime);
+    sprintf(deviceName, "Android %s; %s Build/%s", release, model, buildtime);
     return deviceName;
 }
 

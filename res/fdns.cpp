@@ -1,7 +1,8 @@
+#include "fdns.h"
 #include "prot/dns.h"
 #include "req/requester.h"
 #include "misc/strategy.h"
-#include "fdns.h"
+#include "misc/util.h"
 
 static binmap<uint32_t, std::string> fdns_records;
 

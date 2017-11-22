@@ -4,6 +4,7 @@
 #include "requester.h"
 #include "prot/http2.h"
 #include "misc/vssl.h"
+#include "misc/rudp.h"
 
 struct ResStatus{
     Responser *res_ptr;
@@ -15,7 +16,8 @@ struct ResStatus{
 
 class Guest_s2: public Requester, public Http2Responser {
     std::map<uint32_t, ResStatus> statusmap;
-    Ssl *ssl;
+    Ssl*    ssl;
+    Rudp_c* rudp;
 protected:
     virtual void defaultHE(uint32_t events)override;
     virtual void closeHE(uint32_t events) override;
@@ -38,6 +40,7 @@ protected:
     virtual void PingProc(Http2_header *header)override;
 #endif
 public:
+    explicit Guest_s2(Rudp_c* rudp);
     explicit Guest_s2(int fd, const char *ip, uint16_t port, Ssl *ssl);
     explicit Guest_s2(int fd, struct sockaddr_in6* myaddr, Ssl *ssl);
     virtual ~Guest_s2();

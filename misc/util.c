@@ -1,4 +1,4 @@
-#include "common.h"
+#include "util.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -240,6 +240,27 @@ void Base64Encode(const char *s, size_t len, char *dst){
     dst[j++] = 0;
 }
 
+/**
+  * calculate checksum in ip/tcp header
+  */
+uint16_t checksum16(uint8_t *addr, int len) {
+    long sum = 0;
+
+    while (len > 1) {
+        sum += (*addr++) << 8;
+        sum += *addr++;
+        len -= 2;
+    }
+    if (len > 0)
+        sum += (*addr)<<8;
+
+    while (sum >> 16)
+        sum = (sum & 0xffff) + (sum >> 16);
+
+    return ~(uint16_t)sum;
+}
+
+
 uint64_t getutime(){
     struct timeval tv;
     gettimeofday(&tv, NULL);
@@ -263,15 +284,15 @@ const char * protstr(Protocol p) {
 }
 
 
-int showerrinfo(int ret, const char *s){
+int showerr(int ret, const char *msg, const char* function, int line){
     if (ret < 0) {
         if (errno != EAGAIN) {
-            LOGE("%s: %s\n", s, strerror(errno));
+            LOG_RAW(LOG_ERR, "%s[%d]: %s:%s\n", function, line, msg, strerror(errno));
         } else {
             return 0;
         }
     }else if(ret){
-        LOGE("%s:%d\n",s, ret);
+        LOG_RAW(LOG_ERR, "%s[%d]: %s:%d\n", function, line, msg, ret);
     }
     return 1;
 }
@@ -336,7 +357,7 @@ void change_process_name(const char *name){
 }
 
 const char* findprogram(ino_t inode){
-    static char program[DOMAINLIMIT];
+    static char program[DOMAINLIMIT+1];
     sprintf(program, "Unkown pid(%lu)", inode);
     int found = 0;
     DIR* dir = opendir("/proc");
@@ -370,7 +391,7 @@ const char* findprogram(ino_t inode){
                 sprintf(fname, "/proc/%.20s/exe", ptr->d_name);
                 ret = readlink(fname, linkname, sizeof(linkname)),
                 linkname[ret] = 0;
-                sprintf(program, "%s/%s", basename(linkname), ptr->d_name);
+                snprintf(program, sizeof(program), "%s/%s", basename(linkname), ptr->d_name);
                 found = 1;
                 break;
             }
@@ -382,7 +403,7 @@ const char* findprogram(ino_t inode){
 }
 
 const char* getDeviceInfo(){
-    static char infoString[DOMAINLIMIT] = {0};
+    static char infoString[DOMAINLIMIT+5] = {0};
     if(strlen(infoString)){
         return infoString;
     }
@@ -391,11 +412,11 @@ const char* getDeviceInfo(){
         LOGE("uname failed: %s\n", strerror(errno));
         return "Unkown platform";
     }
-    sprintf(infoString, "%s %s; %s %s", info.sysname, info.machine, info.nodename, info.release);
+    snprintf(infoString, sizeof(infoString), "%s %s; %s %s", info.sysname, info.machine, info.nodename, info.release);
     return infoString;
 }
 
-void dump_trace(int ignore) {
+void dump_trace(int signal) {
 #if Backtrace_FOUND
     void *stack_trace[100] = {0};
     char **stack_strings = NULL;
@@ -421,6 +442,8 @@ void dump_trace(int ignore) {
     /* 获取函数名称时申请的内存需要自行释放 */
     free(stack_strings);
     stack_strings = NULL;
+#else
+    LOGE("stub dump_trace: %d\n", signal);
 #endif
     exit(-1);
 }

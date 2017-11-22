@@ -1,6 +1,7 @@
 #include "host.h"
 #include "req/requester.h"
 #include "misc/job.h"
+#include "misc/util.h"
 
 #include <string.h>
 #include <errno.h>
@@ -28,12 +29,11 @@ Host::~Host(){
 
 
 void Host::Dnscallback(Host* host, const char *hostname, std::list<sockaddr_un> addrs) {
-    host->testedaddr = 0;
-    if (addrs.size() == 0) {
-        LOGE("Dns query failed: %s\n", hostname);
+    host->fd = -EAGAIN;
+    if (addrs.empty()) {
         host->deleteLater(DNS_FAILED);
     } else {
-        for (auto i: addrs){
+        for (auto& i: addrs){
             i.addr_in6.sin6_port = htons(host->port);
             host->addrs.push_back(i);
         }
@@ -42,25 +42,29 @@ void Host::Dnscallback(Host* host, const char *hostname, std::list<sockaddr_un> 
 }
 
 void Host::connect() {
-    if ((size_t)testedaddr>= addrs.size()) {
-        deleteLater(PEER_LOST_ERR);
+    if (addrs.empty()) {
+        LOGE("connect to %s time out.\n", hostname);
+        return deleteLater(PEER_LOST_ERR);
     } else {
         if (fd > 0) {
-            updateEpoll(0);
             close(fd);
+            fd = -EAGAIN;
+            goto retry;
         }
-        if (testedaddr != 0) {
-            RcdDown(hostname, addrs[testedaddr-1]);
-        }
-        fd = Connect(&addrs[testedaddr++], (int)protocol);
+        fd = Connect(&addrs.front(), (int)protocol);
         if (fd < 0) {
             LOGE("connect to %s failed\n", hostname);
-            return connect();
+            goto retry;
         }
         updateEpoll(EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Host::waitconnectHE;
-        add_delayjob((job_func)con_timeout, this, 30000);
+        return add_delayjob((job_func)con_timeout, this, 30000);
     }
+retry:
+    assert(fd < 0);
+    RcdDown(hostname, addrs.front());
+    addrs.pop_front();
+    connect();
 }
 
 
@@ -68,35 +72,23 @@ void Host::waitconnectHE(uint32_t events) {
     if (req == nullptr){
         return deleteLater(PEER_LOST_ERR);
     }
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        int       error = 0;
-        socklen_t errlen = sizeof(error);
-
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("(%s): host connect error: %s\n", hostname, strerror(error));
-        }
-        goto reconnect;
-    }
     
-    if (events & EPOLLOUT) {
-        int error;
-        socklen_t len = sizeof(error);
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-            LOGE("(%s): getsokopt error: %s\n", hostname, strerror(errno));
-            goto reconnect;
-        }
-        if (error != 0) {
-            LOGE("(%s): connect error: %s\n",hostname, strerror(error));
-            goto reconnect;
-        }
+    int error;
+    socklen_t len = sizeof(error);
+    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
+        LOGE("(%s): getsokopt error: %s\n", hostname, strerror(errno));
+        return deleteLater(INTERNAL_ERR);
+    }
+    if (error != 0) {
+        LOGE("(%s): connect error: %s\n",hostname, strerror(error));
+        return connect();
+    }
 
+    if (events & EPOLLOUT) {
         updateEpoll(EPOLLIN | EPOLLOUT);
         handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
         del_delayjob((job_func)con_timeout, this);
     }
-    return;
-reconnect:
-    connect();
 }
 
 ssize_t Host::Write_buff() {
@@ -133,15 +125,13 @@ void Host::defaultHE(uint32_t events) {
                 return;
             }
         }
-        deleteLater(INTERNAL_ERR);
-        return;
+        return deleteLater(INTERNAL_ERR);
     }
 
     if (events & EPOLLOUT) {
         int ret = Write_buff();
         if(ret < 0 && showerrinfo(ret, "host write error")) {
-            deleteLater(WRITE_ERR);
-            return;
+            return deleteLater(WRITE_ERR);
         }
         if(req->size() == 0){
             updateEpoll(this->events & ~EPOLLOUT);
@@ -271,7 +261,7 @@ void Host::deleteLater(uint32_t errcode){
         delete req;
         req = nullptr;
     }
-    if(testedaddr >= 0){
+    if(fd){
         Peer::deleteLater(errcode);
     }
 }

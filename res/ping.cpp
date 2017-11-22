@@ -2,6 +2,7 @@
 #include "prot/dns.h"
 #include "prot/ip_pack.h"
 #include "req/requester.h"
+#include "misc/util.h"
 
 #include <string.h>
 #include <errno.h>

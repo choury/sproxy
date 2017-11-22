@@ -2,10 +2,9 @@
 #include "misc/net.h"
 #include "res/responser.h"
 #include "misc/job.h"
+#include "misc/util.h"
 
-//#include <set>
 #include <string.h>
-//#include <errno.h>
 #include <assert.h>
 
 Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Requester(fd, myaddr) {

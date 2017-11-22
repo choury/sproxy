@@ -27,7 +27,7 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reset(JNIEnv *, j
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload(JNIEnv *, jobject);
 
 
-void android_log(int level, const char* fmt, ...);
+void android_log(int level, const char* fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));
 const char* getPackageName(int uid);
 const char *getDeviceName();
 #ifdef __cplusplus

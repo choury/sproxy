@@ -2,6 +2,7 @@
 #include "req/requester.h"
 #include "misc/net.h"
 #include "misc/strategy.h"
+#include "misc/util.h"
 
 #include <sstream>
 

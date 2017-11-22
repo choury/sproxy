@@ -1,6 +1,8 @@
 #include "proxy2.h"
 #include "req/requester.h"
 #include "misc/job.h"
+#include "misc/util.h"
+#include "prot/dns.h"
 
 
 Proxy2* proxy2 = nullptr;
@@ -17,32 +19,62 @@ int Proxy2::ping_check(Proxy2 *p){
     set64(buff, getutime());
     p->Ping(buff);
     LOGD(DHTTP2, "window size global: %d/%d\n", p->localwinsize, p->remotewinsize);
-    add_delayjob((job_func)connection_lost, p, 3000);
+    add_delayjob((job_func)connection_lost, p, 5000);
     return 0;
 }
 
-
-Proxy2::Proxy2(int fd, SSL_CTX *ctx, Ssl *ssl): ctx(ctx), ssl(ssl) {
-    this->fd = fd;
+void Proxy2::init_helper(){
     updateEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Con::*)(uint32_t))&Proxy2::defaultHE;
+    if(proxy2 == nullptr){
+        proxy2 = this;
+    }
 #ifdef __ANDROID__
     receive_time = getmtime();
     ping_time = getmtime();
 #endif
 }
 
+Proxy2::Proxy2(const char* host, uint16_t port):port(port) {
+    query(host, (DNSCBfunc)Proxy2::Dnscallback, this);
+}
+
+void Proxy2::Dnscallback(Proxy2* proxy2, const char *hostname, std::list<sockaddr_un> addrs){
+    if(addrs.empty()){
+        proxy2->fd = -EAGAIN;
+        return proxy2->deleteLater(DNS_FAILED);
+    }
+    for (auto& i: addrs){
+        i.addr_in6.sin6_port = htons(proxy2->port);
+    }
+    proxy2->rudp = new Rudp_c(&addrs.front());
+    proxy2->fd = proxy2->rudp->GetFd();
+    proxy2->init();
+    proxy2->init_helper();
+}
+
+Proxy2::Proxy2(int fd, SSL_CTX *ctx, Ssl *ssl): ctx(ctx), ssl(ssl) {
+    this->fd = fd;
+    init_helper();
+}
+
 Proxy2::~Proxy2() {
-    delete ssl;
-    SSL_CTX_free(ctx);
     del_delayjob((job_func)ping_check, this);
     del_delayjob((job_func)connection_lost, this);
     proxy2 = (proxy2 == this) ? nullptr: proxy2;
+    delete rudp;
+    delete ssl;
+    SSL_CTX_free(ctx);
 }
 
 
 ssize_t Proxy2::Read(void* buff, size_t len) {
-    auto ret = ssl->read(buff, len);
+    ssize_t ret = 0;
+    if(rudp){
+        ret = rudp->Read(buff, len);
+    }else{
+        ret = ssl->read(buff, len);
+    }
     if(ret > 0){
 #ifndef __ANDROID__
         add_delayjob((job_func)ping_check, this, 30000);
@@ -55,7 +87,11 @@ ssize_t Proxy2::Read(void* buff, size_t len) {
 
 
 ssize_t Proxy2::Write(const void *buff, size_t len) {
-    return ssl->write(buff, len);
+    if(rudp){
+        return rudp->Write(buff, len);
+    }else{
+        return ssl->write(buff, len);
+    }
 }
 
 int32_t Proxy2::bufleft(void* index) {
@@ -89,7 +125,11 @@ void Proxy2::PushFrame(Http2_header *header){
     updateEpoll(EPOLLIN | EPOLLOUT);
 #ifdef __ANDROID__
     uint32_t now = getmtime();
-    if(now - receive_time >=30000 && now - ping_time >=5000){
+    if(rudp == nullptr
+        && (http2_flag & HTTP2_FLAG_INITED)
+        && now - receive_time >=30000
+        && now - ping_time >=5000)
+    {
         ping_time = now;
         ping_check(this);
     }
@@ -350,9 +390,10 @@ void Proxy2::deleteLater(uint32_t errcode){
         http2_flag |= HTTP2_FLAG_GOAWAYED;
         Goaway(-1, errcode);
     }
-    return Peer::deleteLater(errcode);
+    if(fd){
+        Peer::deleteLater(errcode);
+    }
 }
-
 
 void Proxy2::writedcb(void* index){
     uint32_t id = (uint32_t)(long)index;
@@ -377,6 +418,6 @@ void Proxy2::dump_stat() {
 }
 
 void flushproxy2() {
-    if(proxy2)
+    if(proxy2 && SPROT != Protocol::RUDP)
         proxy2 = nullptr;
 }

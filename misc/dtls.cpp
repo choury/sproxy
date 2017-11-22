@@ -1,6 +1,9 @@
 #include "dtls.h"
 #include "common.h"
 #include "job.h"
+#include "misc/util.h"
+
+#include <queue>
 
 #include <string.h>
 #include <math.h>
@@ -41,27 +44,13 @@ static inline int noafter(uint32_t seq1, uint32_t seq2)
 #define after(seq2, seq1) before(seq1, seq2)
 #define nobefore(seq2, seq1) noafter(seq1, seq2)
 
-
-
-void TTL::add(uint32_t value) {
-    if(value){
-        data.push(std::make_pair(getmtime(), value));
-        sum += value;
-    }
-}
-
-uint32_t TTL::getsum() {
-    uint32_t  now =getmtime();
-    while(!data.empty()){
-        if( now - data.front().first > 100){
-            sum -= data.front().second;
-            data.pop();
-        }else{
-            break;
-        }
-    }
-    return sum;
-}
+class TTL{
+    std::queue<std::pair<uint32_t, uint32_t>> data;
+    uint32_t sum = 0;
+public:
+    void add(uint32_t value);
+    uint32_t getsum();
+};
 
 
 Dtls::Dtls(SSL* ssl):Ssl(ssl) {
@@ -69,12 +58,14 @@ Dtls::Dtls(SSL* ssl):Ssl(ssl) {
     tick_time = ack_time = getmtime();
     write_buff = new unsigned char[DTLS_BUF_LEN];
     read_buff = new unsigned char[DTLS_BUF_LEN];
+    recv_pkgs = new TTL;
 }
 
 Dtls::~Dtls(){
     del_delayjob((job_func)dtls_send, this);
     delete []write_buff;
     delete []read_buff;
+    delete recv_pkgs;
 }
 
 ssize_t Dtls::read(void* buff, size_t size) {
@@ -250,21 +241,16 @@ int Dtls::recv(){
     }else{
         ackhold_times = 0;
     }
-    recv_pkgs.add(tick_recvpkg);
-    send_ack(recv_time, recv_pkgs.getsum());
+    recv_pkgs->add(tick_recvpkg);
+    send_ack(recv_time, recv_pkgs->getsum());
     return send();
 }
 
 int Dtls::send() {
-    uint32_t recvp_num = recv_pkgs.getsum();
+    uint32_t recvp_num = recv_pkgs->getsum();
     uint32_t now = getmtime();
-    uint32_t buckets;
     assert(bucket_limit>=10);
-    if(bucket_limit < 50){
-        buckets = (now - tick_time) * sqrt(bucket_limit*100) /100;
-    }else{
-        buckets = (now - tick_time) * (bucket_limit+5) /80;
-    }
+    uint32_t buckets = (now - tick_time) * (bucket_limit+10)/95;
     if(ackhold_times >= 3){
 #ifndef NDEBUG
         LOGD(DDTLS, "%u: ackhold %u times reset resend_pos(%x) to %x\n",

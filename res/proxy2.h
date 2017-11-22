@@ -4,6 +4,7 @@
 #include "responser.h"
 #include "prot/http2.h"
 #include "misc/vssl.h"
+#include "misc/rudp.h"
 
 struct ReqStatus{
     Requester *req_ptr;
@@ -19,12 +20,15 @@ struct ReqStatus{
 
 class Proxy2:public Responser, public Http2Requster {
     std::map<uint32_t, ReqStatus> statusmap;
-    SSL_CTX *ctx;
-    Ssl *ssl;
+    Rudp_c*  rudp = nullptr;
+    SSL_CTX* ctx = nullptr;
+    Ssl*     ssl = nullptr;
+    uint16_t port = 0;
 #ifdef __ANDROID__
     uint32_t receive_time;
     uint32_t ping_time;
 #endif
+    void init_helper();
 protected:
     virtual ssize_t Read(void* buff, size_t len)override;
     virtual ssize_t Write(const void* buff, size_t len)override;
@@ -43,8 +47,11 @@ protected:
     virtual void defaultHE(uint32_t events);
     virtual void closeHE(uint32_t events) override;
     virtual void deleteLater(uint32_t errcode) override;
+
+    static void Dnscallback(Proxy2* host, const char *hostname, std::list<sockaddr_un> addrs);
 public:
     using Responser::request;
+    explicit Proxy2(const char* host, uint16_t port); //for rudp
     explicit Proxy2(int fd, SSL_CTX *ctx, Ssl *ssl);
     virtual ~Proxy2();
 

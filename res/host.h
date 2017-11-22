@@ -9,8 +9,7 @@ class Requester;
 
 class Host:public Responser, public HttpRequester {
 protected:
-    int testedaddr = -1;
-    std::vector<sockaddr_un> addrs;
+    std::list<sockaddr_un> addrs;
     char hostname[DOMAINLIMIT];
     uint16_t port;
     Protocol protocol;

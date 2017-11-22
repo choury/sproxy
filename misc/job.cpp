@@ -1,4 +1,5 @@
 #include "job.h"
+#include "util.h"
 #include "common.h"
 #include <map>
 #include <vector>

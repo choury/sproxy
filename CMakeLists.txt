@@ -102,7 +102,7 @@ if(NOT ANDROID_NDK)
 
     add_executable(vpn vpndemo.c)
     set_target_properties(vpn PROPERTIES OUTPUT_NAME "vpndemo")
-    target_link_libraries(vpn dl)
+    target_link_libraries(vpn sproxy_vpn)
 
     install(TARGETS sproxy RUNTIME DESTINATION bin)
 else()

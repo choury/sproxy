@@ -1,6 +1,7 @@
 #include "dns.h"
 #include "misc/job.h"
-//#include "common.h"
+#include "misc/util.h"
+#include "common.h"
 
 #include <unordered_map>
 #include <set>
