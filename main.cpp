@@ -235,6 +235,7 @@ static struct option long_options[] = {
     {"debug-dtls",  no_argument,   0,  0 },
     {"debug-http2", no_argument,   0,  0 },
     {"debug-job",   no_argument,   0,  0 },
+    {"debug-hpack", no_argument,   0,  0 },
     {"debug-all",   no_argument,   0,  0 },
 #endif
     {0,         0,                 0,  0 }
@@ -262,6 +263,7 @@ const char *option_detail[] = {
     "debug-dtls",
     "debug-http2",
     "\tdebug-job",
+    "debug-hpack",
     "\tdebug-all",
 #endif
 };
@@ -382,6 +384,9 @@ int main(int argc, char **argv) {
             }else if(strcmp(long_options[option_index].name, "debug-job") == 0){
                 debug |= DJOB;
                 printf("long option debug-job\n");
+            }else if(strcmp(long_options[option_index].name, "debug-hpack") == 0){
+                debug |= DHPACK;
+                printf("long option debug-hpack\n");
             }else if(strcmp(long_options[option_index].name, "debug-all") == 0){
                 debug = (uint32_t)(-1);
                 printf("long option debug-all\n");

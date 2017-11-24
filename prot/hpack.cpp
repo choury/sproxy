@@ -72,9 +72,9 @@ static std::map<std::string, int> static_map;
 static void init_static_map(){
     for(size_t i=1;i<static_table_count;++i){
         if(static_table[i][1])
-            static_map[std::string(static_table[i][0])+(char)0+static_table[i][1]]=i;
+            static_map[std::string(static_table[i][0])+char(0)+static_table[i][1]]=i;
         else
-            static_map[static_table[i][0]]=i;
+            static_map[std::string(static_table[i][0])+char(0)]=i;
     }
 }
 
@@ -600,6 +600,12 @@ static struct node {
 
 static struct node root= {NULL, NULL, 0, 0, 0};
 
+#define HPACK_EOS 256
+
+#ifndef ERR_COMPRESSION_ERROR
+#define ERR_COMPRESSION_ERROR 9
+#endif
+
 void init_hfmtree() {
     int tail = 511;
     int i;
@@ -634,9 +640,10 @@ static void init_hpack() {
     hpack_inited = true;
 }
 
-static std::string hfm_decode(const char *s, int len) {
+static std::string hfm_decode(const unsigned char *s, int len) {
     std::string result;
     struct node *curnode = &root;
+    int padding = 0;
     for(int i = 0; i < len; ++i){
         uint8_t c = s[i];
         for(int j = 8; j; --j) {
@@ -645,19 +652,27 @@ static std::string hfm_decode(const char *s, int len) {
             else
                 curnode = curnode->left;
             c <<= 1;
+            padding ++;
             
             if(unlikely(curnode->len)) {
+                if(unlikely(curnode->info == HPACK_EOS)){
+                    throw ERR_COMPRESSION_ERROR;
+                }
                 result += (char)curnode->info;
                 curnode = &root;
+                padding = 0;
             }
         }
+    }
+    if(padding >= 8){
+        throw ERR_COMPRESSION_ERROR;
     }
     return result;
 }
 
-static size_t hfm_encode(char *buf, const char *s, int len){
+static size_t hfm_encode(unsigned char *buf, const char *s, int len){
     unsigned char out=0;
-    char *buf_begin = buf;
+    unsigned char *buf_begin = buf;
     int count=0;
     while(len--) {
         int lenght = hfmnodes[*(uchar *)s].len;
@@ -681,7 +696,7 @@ static size_t hfm_encode(char *buf, const char *s, int len){
     return buf - buf_begin;
 }
 
-static size_t integer_decode(const char *s, int n, uint32_t *value) {
+static size_t integer_decode(const unsigned char *s, int n, uint32_t *value) {
     assert(n<=8);
     uint32_t prefix = ((1<<n)-1);
     if((s[0]& prefix) == prefix){
@@ -698,9 +713,9 @@ static size_t integer_decode(const char *s, int n, uint32_t *value) {
     }
 }
 
-static size_t integer_encode(char *buff, int n, uint32_t value){
+static size_t integer_encode(unsigned char *buff, int n, uint32_t value){
     assert(n<=8);
-    char *buf_begin = buff;
+    unsigned char *buf_begin = buff;
     uint32_t prefix = ((1<<n)-1);
     if(value < prefix) {
         *buff++ |= value;
@@ -716,19 +731,22 @@ static size_t integer_encode(char *buff, int n, uint32_t value){
     return buff - buf_begin;
 }
 
-static size_t literal_decode(const char *s, std::string &result) {
+static size_t literal_decode(const unsigned char *s, std::string &result) {
     uint32_t len;
     int i = integer_decode(s, 7, &len);
+    if(len >= 0xffff){
+        throw ERR_COMPRESSION_ERROR;
+    }
     if(s[0] & 0x80) {
         result = hfm_decode(s+i, len);
     } else {
-        result = std::string(s+i, len);
+        result = std::string((char*)s+i, len);
     }
     return i+len;
 }
 
-static size_t literal_encode(char *buf, const std::string &s){
-    char *buf_begin = buf;
+static size_t literal_encode(unsigned char *buf, const std::string &s){
+    unsigned char *buf_begin = buf;
     *buf = 0;
     size_t len = s.size();
     *buf = 0;
@@ -738,67 +756,99 @@ static size_t literal_encode(char *buf, const std::string &s){
 }
 
 
-Index_table::Index_table(size_t dynamic_table_size_limit):dynamic_table_size_limit(dynamic_table_size_limit)
+Index_table::Index_table(size_t dynamic_table_size_limit_max):dynamic_table_size_limit_max(dynamic_table_size_limit_max)
 {
+    LOGD(DHPACK, "init dynamic table size max [%zd]\n", dynamic_table_size_limit_max);
 }
 
 
 void Index_table::add_dynamic_table(const std::string &name, const std::string &value){
+    size_t entry_size = name.size() + value.size() + 32;
+    assert(dynamic_table_size >= 0);
     Index *index=new Index{name, value, dynamic_table.size() + evicted_count};
-    size_t entry_size = index->name.size() + index->value.size() + 32;
     dynamic_table[index->id]=index;
-    dynamic_map.insert(name+char(0)+value, index);
+    dynamic_map.insert(std::make_pair(name+char(0)+value, index));
     dynamic_table_size += entry_size;
+
+    LOGD(DHPACK, "add hpack %s: %s [%zd/%zd]\n", name.c_str(), value.c_str(), 
+        dynamic_table_size, dynamic_table_size_limit);
+
+    evict_dynamic_table();
 }
 
 
 uint32_t Index_table::getid(const std::string& name, const std::string& value) {
     std::string key = name+char(0)+value;
+    uint32_t id = 0;
     if(static_map.count(key))
-        return static_map[key];
-    if(dynamic_map.count(key))
-        return static_table_count + dynamic_table.size() + evicted_count - dynamic_map.at(key)->id;
-    return 0;
+        id = static_map[key];
+    else if(dynamic_map.count(key))
+        id = static_table_count + dynamic_table.size() + evicted_count - dynamic_map.at(key)->id;
+    LOGD(DHPACK, "get hpack %s: %s id: %d\n", name.c_str(), value.c_str(), id);
+    return id;
 }
 
 uint32_t Index_table::getid(const std::string& name) {
-    if(static_map.count(name))
-        return static_map[name];
-    if(dynamic_map.count(name))
-        return static_table_count + dynamic_table.size() + evicted_count - dynamic_map.at(name)->id;
-    return 0;
+    std::string key = name+char(0);
+    uint32_t id = 0;
+    if(static_map.count(key))
+        id = static_map[key];
+    else if(dynamic_map.count(key))
+        id = static_table_count + dynamic_table.size() + evicted_count - dynamic_map.at(key)->id;
+    LOGD(DHPACK, "get hpack %s id: %d\n", name.c_str(), id);
+    return id;
 }
 
 const Index *Index_table::getvalue(uint32_t id) {
     static Index index;
-    if(id <= static_table_count) {
+    const Index * ret = nullptr;
+    if(id == 0){
+        throw ERR_COMPRESSION_ERROR;
+    }else if(id <= static_table_count) {
         index.name = static_table[id][0];
         index.value = static_table[id][1]?static_table[id][1]:"";
         index.id=id;
-        return &index;
+        ret = &index;
     }else{
         size_t key = dynamic_table.size() - (id - static_table_count) + evicted_count;
         if(dynamic_table.count(key))
-            return dynamic_table[key];
-        else
-            return nullptr;
+            ret = dynamic_table[key];
+    }
+#ifndef NDEBUG
+    if(ret){
+        LOGD(DHPACK, "get hpack value [%d], %s: %s\n", id, ret->name.c_str(), ret->value.c_str());
+    }else{
+        LOGD(DHPACK, "get hpack not found value [%d]", id);
+    }
+#endif
+    return ret;
+}
+
+void Index_table::set_dynamic_table_size_limit_max(size_t size){
+    LOGD(DHPACK, "set dynamic table size max [%zd]\n", size);
+    dynamic_table_size_limit_max = size;
+    if(dynamic_table_size_limit > dynamic_table_size_limit_max){
+        set_dynamic_table_size_limit(size);
     }
 }
 
 void Index_table::set_dynamic_table_size_limit(size_t size){
-    dynamic_table_size_limit = size;
-    if(dynamic_table_size > size) {
-        evict_dynamic_table();
+    LOGD(DHPACK, "set dynamic table size [%zd]\n", size);
+    if(size > dynamic_table_size_limit_max){
+        throw ERR_COMPRESSION_ERROR;
     }
+    dynamic_table_size_limit = size;
+    evict_dynamic_table();
 }
 
 void Index_table::evict_dynamic_table(){
     while(dynamic_table_size > dynamic_table_size_limit && dynamic_table.size()){
         Index *index = dynamic_table[evicted_count];
         dynamic_table.erase(evicted_count);
-        dynamic_map.erase(index);
+        dynamic_map.erase(index->name+char(0)+index->value);
         evicted_count++;
         dynamic_table_size -= index->name.size() + index->value.size() + 32;
+        LOGD(DHPACK, "evict dynamic table [%zd], %s: %s\n", index->id, index->name.c_str(), index->value.c_str());
         delete index;
     }
 }
@@ -811,18 +861,24 @@ Index_table::~Index_table()
 }
 
 
-std::multimap< istring, std::string > Index_table::hpack_decode(const char* s, int len) {
+std::multimap< istring, std::string > Index_table::hpack_decode(const unsigned char* s, int len) {
     if(!hpack_inited)
         init_hpack();
     int i = 0;
     std::multimap<istring, std::string> headers;
+    bool noDynamic = false;
     while(i < len) {
         if(s[i] & 0x80) {
+            noDynamic = true;
             uint32_t index;
             i += integer_decode(s+i, 7, &index);
             const Index *value = getvalue(index);
+            if(value == nullptr){
+                throw ERR_COMPRESSION_ERROR;
+            }
             headers.insert(std::make_pair(value->name, value->value));
         }else if(s[i] & 0x40) {
+            noDynamic = true;
             uint32_t index;
             i += integer_decode(s+i, 6, &index);
             std::string name, value;
@@ -835,10 +891,14 @@ std::multimap< istring, std::string > Index_table::hpack_decode(const char* s, i
             headers.insert(std::make_pair(name, value));
             add_dynamic_table(name, value);
         }else if(s[i] & 0x20) {
+            if(noDynamic){
+                throw ERR_COMPRESSION_ERROR;
+            }
             uint32_t size;
             i += integer_decode(s+i, 5, &size);
             set_dynamic_table_size_limit(size);
         }else {
+            noDynamic = true;
             uint32_t index;
             i += integer_decode(s+i, 4, &index);
             std::string name, value;
@@ -850,16 +910,19 @@ std::multimap< istring, std::string > Index_table::hpack_decode(const char* s, i
             i += literal_decode(s+i, value);
             headers.insert(std::make_pair(name, value));
         }
+        if(i > len){
+            throw ERR_COMPRESSION_ERROR;
+        }
     }
-    evict_dynamic_table();
+    //evict_dynamic_table();
     return headers;
 }
 
-int Index_table::hpack_encode(char* buf, const char* Name, const char* value) {
+int Index_table::hpack_encode(unsigned char* buf, const char* Name, const char* value) {
     if(!hpack_inited)
         init_hpack();
     
-    char *buf_begin = buf;
+    unsigned char *buf_begin = buf;
     std::string name;
     while(*Name) {
         name += tolower(*Name++);
@@ -874,7 +937,8 @@ int Index_table::hpack_encode(char* buf, const char* Name, const char* value) {
         buf += literal_encode(buf, value);
         add_dynamic_table(name, value);
     }else {
-        *buf++ = 0x40;
+        *buf = 0x40;
+        buf++;
         buf += literal_encode(buf, name);
         buf += literal_encode(buf, value);
         add_dynamic_table(name, value);
@@ -882,14 +946,14 @@ int Index_table::hpack_encode(char* buf, const char* Name, const char* value) {
     return buf - buf_begin;
 }
 
-int Index_table::hpack_encode(char *buf, std::map<istring, std::string> headers) {
-    char *buf_begin = buf;
+int Index_table::hpack_encode(unsigned char *buf, std::map<istring, std::string> headers) {
+    unsigned char *buf_begin = buf;
     for(auto i:headers) {
         if(i.first ==  "Host")
             continue;
         buf += hpack_encode(buf, i.first.c_str(), i.second.c_str());
     }
-    evict_dynamic_table();
+    //evict_dynamic_table();
     return buf - buf_begin;
 }
 

@@ -81,6 +81,17 @@ void Guest_s2::PushFrame(Http2_header *header) {
 void Guest_s2::ReqProc(HttpReqHeader* req) {
     Responser *responser = distribute(req, nullptr);
     uint32_t id = (uint32_t)(long)req->index;
+    if(statusmap.count(id)){
+        delete req;
+        Reset(id, ERR_STREAM_CLOSED);
+        return;
+    }
+    if(id <= maxid || (id&1) == 0){
+        delete req;
+        ErrProc(ERR_STREAM_CLOSED);
+        return;
+    }
+    maxid = id;
     if(responser){
         statusmap[id]=ResStatus{
             responser,
@@ -111,7 +122,7 @@ void Guest_s2::DataProc(uint32_t id, const void* data, size_t len) {
         responser->Send(data, len, status.res_index);
         status.localwinsize -= len;
     }else{
-        Reset(id, ERR_STREAM_CLOSED);
+        ErrProc(ERR_PROTOCOL_ERROR);
     }
     localwinsize -= len;
 }
@@ -206,6 +217,8 @@ void Guest_s2::RstProc(uint32_t id, uint32_t errcode) {
         ResStatus& status = statusmap[id];
         status.res_ptr->finish(errcode?errcode:PEER_LOST_ERR,  status.res_index);
         statusmap.erase(id);
+    }else{
+        ErrProc(ERR_PROTOCOL_ERROR);
     }
 }
 
@@ -215,13 +228,22 @@ void Guest_s2::WindowUpdateProc(uint32_t id, uint32_t size) {
         if(statusmap.count(id)){
             ResStatus& status = statusmap[id];
             LOGD(DHTTP2, "window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
+            if((uint64_t)status.remotewinsize + size >= (uint64_t)1<<31){
+                Reset(id, ERR_FLOW_CONTROL_ERROR);
+                return;
+            }
             status.remotewinsize += size;
             status.res_ptr->writedcb(status.res_index);
         }else{
             LOGD(DHTTP2, "window size updated [%d]: not found\n", id);
+            ErrProc(ERR_PROTOCOL_ERROR);
         }
     }else{
         LOGD(DHTTP2, "window size updated global: %d+%d\n", remotewinsize, size);
+        if((uint64_t)remotewinsize + size >= (uint64_t)1<<31){
+            ErrProc(ERR_FLOW_CONTROL_ERROR);
+            return;
+        }
         remotewinsize += size;
         if(remotewinsize == (int32_t)size){
             LOGD(DHTTP2, "get global window active all frame\n");
@@ -245,7 +267,7 @@ void Guest_s2::GoawayProc(Http2_header* header) {
 
 void Guest_s2::ErrProc(int errcode) {
     if(showerrinfo(errcode, "Guest_s2-Http2 error")){
-        deleteLater(HTTP_PROTOCOL_ERR);
+        deleteLater(errcode > ERR_HTTP_1_1_REQUIRED ? ERR_INTERNAL_ERROR: errcode);
     }
 }
 
@@ -267,12 +289,12 @@ bool Guest_s2::finish(uint32_t flags, void* index) {
         Peer::Send((const void*)nullptr, 0, index);
         status.res_flags |= STREAM_WRITE_CLOSED;
     }
-    if(errcode || (flags & DISCONNECT_FLAG)){
-        Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
+    if(status.res_flags & STREAM_READ_CLOSED){
         statusmap.erase(id);
         return false;
     }
-    if(status.res_flags & STREAM_READ_CLOSED){
+    if(errcode || (flags & DISCONNECT_FLAG)){
+        Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
         return false;
     }

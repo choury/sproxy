@@ -36,6 +36,7 @@ struct Http2_header {
     uint8_t id[4];
 }__attribute__((packed));
 
+#define HTTP2_ID(x) (get32(x) & 0x7fffffff)
 
 struct Setting_Frame{
 #define SETTINGS_HEADER_TABLE_SIZE      1

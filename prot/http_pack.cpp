@@ -156,6 +156,10 @@ HttpReqHeader::HttpReqHeader(std::multimap<istring, string>&& headers, ResObject
                src(dynamic_cast<Requester *>(src))
 {
     assert(src);
+    if(!headers.count(":method")){
+        LOGE("wrong http2 request\n");
+        throw ERR_PROTOCOL_ERROR;
+    }
     for(auto i: headers){
         if(i.first == "cookie"){
             char cookiebuff[URLLIMIT];
@@ -178,6 +182,9 @@ HttpReqHeader::HttpReqHeader(std::multimap<istring, string>&& headers, ResObject
     }
     if(get(":path")){
         snprintf(path, sizeof(path), "%s", get(":path"));
+        if(!path[0]){
+            throw ERR_PROTOCOL_ERROR;
+        }
     }else{
         strcpy(path, "/");
     }
@@ -350,7 +357,7 @@ Http2_header *HttpReqHeader::getframe(Index_table *index_table, uint32_t http_id
     header->flags = END_HEADERS_F;
     set32(header->id, http_id);
 
-    char *p = (char *)(header + 1);
+    unsigned char *p = (unsigned char *)(header + 1);
     p += index_table->hpack_encode(p, ":method", method);
     if(get("host") && !ismethod("CONNECT") && !ismethod("SEND")){
         p += index_table->hpack_encode(p, ":authority" ,get("host"));
@@ -369,7 +376,7 @@ Http2_header *HttpReqHeader::getframe(Index_table *index_table, uint32_t http_id
     }
     
     p += index_table->hpack_encode(p, headers);
-    set24(header->length, p-(char *)(header + 1));
+    set24(header->length, p-(unsigned char *)(header + 1));
     assert(get24(header->length) < BUF_LEN);
     return header;
 }
@@ -538,7 +545,7 @@ Http2_header *HttpResHeader::getframe(Index_table* index_table, uint32_t http_id
     header->flags = END_HEADERS_F;
     set32(header->id, http_id);
 
-    char *p = (char *)(header + 1);
+    unsigned char *p = (unsigned char *)(header + 1);
     char status_h2[100];
     sscanf(status,"%99s",status_h2);
     p += index_table->hpack_encode(p, ":status", status_h2);
@@ -547,7 +554,7 @@ Http2_header *HttpResHeader::getframe(Index_table* index_table, uint32_t http_id
     }
     p += index_table->hpack_encode(p, headers);
     
-    set24(header->length, p-(char *)(header + 1));
+    set24(header->length, p-(unsigned char *)(header + 1));
     assert(get24(header->length) < BUF_LEN);
     return header;
 }

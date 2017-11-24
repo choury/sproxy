@@ -176,7 +176,7 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
         requester->Send(data, len, status.req_index);
         status.localwinsize -= len;
     }else{
-        Reset(id, ERR_STREAM_CLOSED);
+        ErrProc(ERR_PROTOCOL_ERROR);
     }
     localwinsize -= len;
 }
@@ -197,7 +197,7 @@ void Proxy2::EndProc(uint32_t id){
 
 void Proxy2::ErrProc(int errcode) {
     if (showerrinfo(errcode, "Proxy2 Http2 error")){
-        deleteLater(HTTP_PROTOCOL_ERR);
+        deleteLater(errcode > ERR_HTTP_1_1_REQUIRED ? ERR_INTERNAL_ERROR: errcode);
     }
 }
 
@@ -210,6 +210,8 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
         }
         status.req_ptr->finish(errcode?errcode:PEER_LOST_ERR, status.req_index);
         statusmap.erase(id);
+    }else{
+        ErrProc(ERR_PROTOCOL_ERROR);
     }
 }
 
@@ -218,13 +220,22 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
         if(statusmap.count(id)){
             ReqStatus& status = statusmap[id];
             LOGD(DHTTP2, "window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
+            if((uint64_t)status.remotewinsize + size >= (uint64_t)1<<31){
+                Reset(id, ERR_FLOW_CONTROL_ERROR);
+                return;
+            }
             status.remotewinsize += size;
             status.req_ptr->writedcb(status.req_index);
         }else{
             LOGD(DHTTP2, "window size updated [%d]: not found\n", id);
+            ErrProc(ERR_PROTOCOL_ERROR);
         }
     }else{
         LOGD(DHTTP2, "window size updated global: %d+%d\n", remotewinsize, size);
+        if((uint64_t)remotewinsize + size >= (uint64_t)1<<31){
+            ErrProc(ERR_FLOW_CONTROL_ERROR);
+            return;
+        }
         remotewinsize += size;
         if(remotewinsize == (int32_t)size){
             LOGD(DHTTP2, "active all frame\n");
@@ -303,12 +314,12 @@ bool Proxy2::finish(uint32_t flags, void* index) {
         Peer::Send((const void*)nullptr, 0, index);
         status.req_flags |= STREAM_WRITE_CLOSED;
     }
-    if(errcode || (flags & DISCONNECT_FLAG)){
-        Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
+    if(status.req_flags & STREAM_READ_CLOSED){
         statusmap.erase(id);
         return false;
     }
-    if(status.req_flags & STREAM_READ_CLOSED){
+    if(errcode || (flags & DISCONNECT_FLAG)){
+        Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
         return false;
     }

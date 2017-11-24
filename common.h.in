@@ -42,14 +42,15 @@ extern int autoindex;
 #define DHTTP2    8
 #define DJOB      16
 #define DVPN      32
+#define DHPACK    64
 
 #define DEPOLL_STR  "[EPOLL]"
 #define DDNS_STR    "[DNS]"
 #define DDTLS_STR   "[DTLS]"
 #define DHTTP2_STR  "[HTTP2]"
 #define DJOB_STR    "[JOB]"
-#define DVPN_STR     "[VPN]"
-
+#define DVPN_STR    "[VPN]"
+#define DHPACK_STR  "[HPACK]"
 
 #ifdef __ANDROID__
 

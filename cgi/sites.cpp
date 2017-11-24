@@ -33,7 +33,7 @@ class handle{
                 Cookie cookie;
                 cookie.path = "/";
                 cookie.domain = req->hostname;
-                cookie.maxage = 10;
+                cookie.maxage = 3600;
                 for(auto i: params){
                     cookie.set(i.first.c_str(), i.second.c_str());
                     addcookie(res, cookie);
