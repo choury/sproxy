@@ -108,7 +108,7 @@ void Proxy::waitconnectHE(uint32_t events) {
         if(protocol == Protocol::TCP){
             ctx = SSL_CTX_new(SSLv23_client_method());
             if (ctx == NULL) {
-                ERR_print_errors_fp(stderr);
+                LOGE("SSL_CTX_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
                 goto reconnect;
             }
             SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);  // 去除支持SSLv2 SSLv3
@@ -120,7 +120,7 @@ void Proxy::waitconnectHE(uint32_t events) {
         }else{
             ctx = SSL_CTX_new(DTLS_client_method());
             if (ctx == NULL) {
-                ERR_print_errors_fp(stderr);
+                LOGE("SSL_CTX_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
                 goto reconnect;
             }
             SSL *ssl = SSL_new(ctx);
@@ -134,10 +134,10 @@ void Proxy::waitconnectHE(uint32_t events) {
 #else
         if (SSL_CTX_load_verify_locations(ctx, cafile, "/etc/ssl/certs/") != 1)
 #endif
-            ERR_print_errors_fp(stderr);
+            LOGE("SSL_CTX_load_verify_locations: %s\n", ERR_error_string(ERR_get_error(), nullptr));
 
         if (SSL_CTX_set_default_verify_paths(ctx) != 1)
-            ERR_print_errors_fp(stderr);
+            LOGE("SSL_CTX_set_default_verify_paths: %s\n", ERR_error_string(ERR_get_error(), nullptr));
         ssl->set_hostname(SHOST, verify_host_callback);
         
         if(use_http2){

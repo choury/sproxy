@@ -5,6 +5,7 @@
 
 #include "req/guest_vpn.h"
 
+#include <errno.h>
 #include <signal.h>
 #include <openssl/ssl.h>
 

@@ -94,6 +94,8 @@ protected:
 #define HTTP2_FLAG_GOAWAYED  2
     uint32_t http2_flag = 0;
     uint32_t framelen = 0;
+    uint32_t recvid = 0;
+    uint32_t sendid = 1;
     std::list<Http2_frame> framequeue;
     Index_table request_table;
     Index_table response_table;
@@ -121,6 +123,7 @@ protected:
     virtual void AdjustInitalFrameWindowSize(ssize_t diff) = 0;
     void (Http2Base::*Http2_Proc)()=&Http2Base::InitProc;
     int SendFrame();
+    uint32_t GetSendId();
 public:
     ~Http2Base();
 };

@@ -18,7 +18,6 @@ struct ReqStatus{
 };
 
 class Proxy2:public Responser, public Http2Requster {
-    uint32_t curid = 1;
     std::map<uint32_t, ReqStatus> statusmap;
     SSL_CTX *ctx;
     Ssl *ssl;
@@ -42,6 +41,7 @@ protected:
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
 
     virtual void defaultHE(uint32_t events);
+    virtual void closeHE(uint32_t events) override;
     virtual void deleteLater(uint32_t errcode) override;
 public:
     using Responser::request;

@@ -3,17 +3,15 @@
 #include "misc/net.h"
 #include "misc/strategy.h"
 
-//#include <map>
 #include <sstream>
 
-//#include <string.h>
 #include <stdlib.h>
 #include <dlfcn.h>
 #include <signal.h>
 #include <unistd.h>
-//#include <sys/stat.h>
 #include <sys/resource.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <assert.h>
 #include <libgen.h>
 

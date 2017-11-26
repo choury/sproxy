@@ -9,12 +9,16 @@
 #include <fstream>
 #include <android/log.h>
 
+#include <string.h>
+
 static JavaVM *jnijvm;
 static jobject jniobj;
 static VpnConfig vpn;
 static std::map<int, std::string> packages;
 static std::string extenalFilesDir;
 static std::string extenalCacheDir;
+
+const struct in6_addr in6addr_any = IN6ADDR_ANY_INIT;
 
 /*
  * Class:     com_choury_sproxy_SproxyVpnService

@@ -3,17 +3,13 @@
 #include "misc/net.h"
 #include "req/requester.h"
 
-//#include <vector>
-
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
-//#include <string.h>
 #include <time.h>
+#include <errno.h>
 #include <assert.h>
 #include <sys/eventfd.h>
-//#include <sys/stat.h>
-//#include <sys/mman.h>
 
 
 using std::vector;

@@ -8,11 +8,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <assert.h>
+#include <limits.h>
+
 #ifdef __ANDROID__
 #include <stdlib.h>
-#define HOST_NAME_MAX   64
-#else
-#include <limits.h>
 #endif
 
 #define LISTFILE "sites.list"

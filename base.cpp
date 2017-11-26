@@ -8,7 +8,6 @@
 
 #ifndef NDEBUG
 #include <map>
-//#include "common.h"
 static  std::map<int, Con *> epolls;
 static const char *epoll_string[]= {
     "NULL",
@@ -33,7 +32,9 @@ Con::Con(int fd):fd(fd){
 Con::~Con(){
     if(fd > 0){
         int __attribute__((unused)) ret = close(fd);
-        assert(ret == 0 || fprintf(stderr, "close error:%m\n") == 0);
+        if(ret != 0){
+            LOGE("close error:%s\n", strerror(errno));
+        }
     }
     cons.erase(this);
 }
@@ -45,11 +46,15 @@ void Con::updateEpoll(uint32_t events) {
         event.data.ptr = this;
         event.events = events | EPOLLHUP | EPOLLERR;
         ret = epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-        assert(ret == 0 || errno == ENOENT || fprintf(stderr, "epoll_ctl mod failed:%m\n")==0);
+        if(ret != 0 && errno != ENOENT){
+            LOGE("epoll_ctl mod failed:%s\n", strerror(errno));
+        }
         if (ret && errno == ENOENT)
         {
             ret = epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-            assert(ret == 0 || fprintf(stderr, "epoll_ctl add failed:%m\n")==0);
+            if(ret != 0){
+                LOGE("epoll_ctl add failed:%s\n", strerror(errno));
+            }
 #ifndef NDEBUG
             LOGD(DEPOLL, "add %d: %p\n", fd, this);
             epolls[fd]=this;

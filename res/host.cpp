@@ -2,6 +2,7 @@
 #include "req/requester.h"
 #include "misc/job.h"
 
+#include <errno.h>
 #include <assert.h>
                     
 int Host::con_timeout(Host* host) {

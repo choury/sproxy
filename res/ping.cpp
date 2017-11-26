@@ -3,6 +3,7 @@
 #include "prot/ip_pack.h"
 #include "req/requester.h"
 
+#include <errno.h>
 #include <assert.h>
 
 void Ping::Dnscallback(Ping* p, const char *hostname, std::list<sockaddr_un> addrs){

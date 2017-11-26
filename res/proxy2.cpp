@@ -142,6 +142,16 @@ void Proxy2::defaultHE(uint32_t events) {
     }
 }
 
+void Proxy2::closeHE(uint32_t events) {
+    int ret = SendFrame();
+    if (framequeue.empty() ||
+        (ret <= 0 && showerrinfo(ret, "write error while closing"))) {
+        delete this;
+        return;
+    }
+}
+
+
 void Proxy2::ResProc(HttpResHeader* res) {
     uint32_t id = (uint32_t)(long)res->index;
     if(statusmap.count(id)){
@@ -175,8 +185,6 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
         }
         requester->Send(data, len, status.req_index);
         status.localwinsize -= len;
-    }else{
-        ErrProc(ERR_PROTOCOL_ERROR);
     }
     localwinsize -= len;
 }
@@ -197,7 +205,13 @@ void Proxy2::EndProc(uint32_t id){
 
 void Proxy2::ErrProc(int errcode) {
     if (showerrinfo(errcode, "Proxy2 Http2 error")){
-        deleteLater(errcode > ERR_HTTP_1_1_REQUIRED ? ERR_INTERNAL_ERROR: errcode);
+        if(errcode > ERR_HTTP_1_1_REQUIRED){
+            deleteLater(ERR_INTERNAL_ERROR);
+        }else if(errcode == 0){
+            deleteLater(PEER_LOST_ERR);
+        }else{
+            deleteLater(errcode);
+        }
     }
 }
 
@@ -210,8 +224,6 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
         }
         status.req_ptr->finish(errcode?errcode:PEER_LOST_ERR, status.req_index);
         statusmap.erase(id);
-    }else{
-        ErrProc(ERR_PROTOCOL_ERROR);
     }
 }
 
@@ -228,7 +240,6 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
             status.req_ptr->writedcb(status.req_index);
         }else{
             LOGD(DHTTP2, "window size updated [%d]: not found\n", id);
-            ErrProc(ERR_PROTOCOL_ERROR);
         }
     }else{
         LOGD(DHTTP2, "window size updated global: %d+%d\n", remotewinsize, size);
@@ -264,16 +275,16 @@ void Proxy2::PingProc(Http2_header *header){
 
 void* Proxy2::request(HttpReqHeader* req) {
     assert(req->src && req->index);
-    statusmap[curid] = ReqStatus{
+    uint32_t id = GetSendId();
+    statusmap[id] = ReqStatus{
        req->src,
        req->index,
        (int32_t)remoteframewindowsize,
        localframewindowsize,
        0,
     };
-    void *index =reinterpret_cast<void*>(curid);  //change to proxy server's id
+    void *index =reinterpret_cast<void*>(id);  //change to proxy server's id
     req->index = index;
-    curid += 2;
     PushFrame(req->getframe(&request_table, (uint32_t)(long)index));
     delete req;
     return index;
@@ -354,7 +365,7 @@ void Proxy2::writedcb(void* index){
 }
 
 void Proxy2::dump_stat() {
-    LOG("Proxy2 %p, id:%d: %s\n", this, curid, this==proxy2?"[M]":"");
+    LOG("Proxy2 %p, id:%d: %s\n", this, sendid, this==proxy2?"[M]":"");
     for(auto i: statusmap){
         LOG("0x%x: %p, %p (%d/%d)\n",
             i.first, i.second.req_ptr, i.second.req_index,

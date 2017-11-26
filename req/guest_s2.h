@@ -16,7 +16,6 @@ struct ResStatus{
 class Guest_s2: public Requester, public Http2Responser {
     std::map<uint32_t, ResStatus> statusmap;
     Ssl *ssl;
-    uint32_t maxid = 0;
 protected:
     virtual void defaultHE(uint32_t events)override;
     virtual void closeHE(uint32_t events) override;

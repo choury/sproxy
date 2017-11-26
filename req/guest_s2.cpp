@@ -86,12 +86,7 @@ void Guest_s2::ReqProc(HttpReqHeader* req) {
         Reset(id, ERR_STREAM_CLOSED);
         return;
     }
-    if(id <= maxid || (id&1) == 0){
-        delete req;
-        ErrProc(ERR_STREAM_CLOSED);
-        return;
-    }
-    maxid = id;
+
     if(responser){
         statusmap[id]=ResStatus{
             responser,
@@ -121,8 +116,6 @@ void Guest_s2::DataProc(uint32_t id, const void* data, size_t len) {
         }
         responser->Send(data, len, status.res_index);
         status.localwinsize -= len;
-    }else{
-        ErrProc(ERR_PROTOCOL_ERROR);
     }
     localwinsize -= len;
 }
@@ -217,8 +210,6 @@ void Guest_s2::RstProc(uint32_t id, uint32_t errcode) {
         ResStatus& status = statusmap[id];
         status.res_ptr->finish(errcode?errcode:PEER_LOST_ERR,  status.res_index);
         statusmap.erase(id);
-    }else{
-        ErrProc(ERR_PROTOCOL_ERROR);
     }
 }
 
@@ -236,7 +227,6 @@ void Guest_s2::WindowUpdateProc(uint32_t id, uint32_t size) {
             status.res_ptr->writedcb(status.res_index);
         }else{
             LOGD(DHTTP2, "window size updated [%d]: not found\n", id);
-            ErrProc(ERR_PROTOCOL_ERROR);
         }
     }else{
         LOGD(DHTTP2, "window size updated global: %d+%d\n", remotewinsize, size);
@@ -267,7 +257,13 @@ void Guest_s2::GoawayProc(Http2_header* header) {
 
 void Guest_s2::ErrProc(int errcode) {
     if(showerrinfo(errcode, "Guest_s2-Http2 error")){
-        deleteLater(errcode > ERR_HTTP_1_1_REQUIRED ? ERR_INTERNAL_ERROR: errcode);
+        if(errcode > ERR_HTTP_1_1_REQUIRED){
+            deleteLater(ERR_INTERNAL_ERROR);
+        }else if(errcode == 0){
+            deleteLater(PEER_LOST_ERR);
+        }else{
+            deleteLater(errcode);
+        }
     }
 }
 
