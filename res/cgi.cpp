@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include <stdlib.h>
+#include <string.h>
 #include <dlfcn.h>
 #include <signal.h>
 #include <unistd.h>

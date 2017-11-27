@@ -1,10 +1,12 @@
 #include "res/cgi.h"
 #include "misc/net.h"
-#include <unistd.h>
-#include <assert.h>
-#include <json-c/json.h>
 
 #include <iostream>
+
+#include <unistd.h>
+#include <string.h>
+#include <assert.h>
+#include <json-c/json.h>
 
 int cgi_fd;
 

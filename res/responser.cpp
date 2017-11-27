@@ -7,6 +7,7 @@
 #include "ping.h"
 
 #include <map>
+#include <string.h>
 
 
 std::map<std::pair<Requester*, void*>, Responser*> sessions;

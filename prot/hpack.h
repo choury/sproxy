@@ -2,9 +2,6 @@
 #define HPACK_H__
 #include "binmap.h"
 
-#include "misc/istring.h"
-
-
 struct Index{
     std::string name;
     std::string value;
@@ -28,10 +25,10 @@ public:
     explicit Index_table(size_t dynamic_table_size_limit_max = 4096);
     ~Index_table();
     void set_dynamic_table_size_limit_max(size_t size);
-    std::multimap<istring, std::string> hpack_decode(const unsigned char *s, int len);
+    std::multimap<std::string, std::string> hpack_decode(const unsigned char *s, int len);
     int hpack_encode(unsigned char *buf, const char *name, const char *value);
 //    int hpack_encode(char *buf, mulmap<std::string, std::string> headers);
-    int hpack_encode(unsigned char *buf, std::map<istring, std::string> headers);
+    int hpack_encode(unsigned char *buf, std::map<std::string, std::string> headers);
 };
 
 #endif

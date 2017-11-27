@@ -1,6 +1,8 @@
 #include "hpack.h"
 #include "common.h"
 
+#include <string.h>
+
 static const char *static_table[][2]= {
     {0, 0},
     {":authority", 0},
@@ -656,6 +658,7 @@ static std::string hfm_decode(const unsigned char *s, int len) {
             
             if(unlikely(curnode->len)) {
                 if(unlikely(curnode->info == HPACK_EOS)){
+                    LOGE("found EOS in hpack packet\n");
                     throw ERR_COMPRESSION_ERROR;
                 }
                 result += (char)curnode->info;
@@ -665,6 +668,7 @@ static std::string hfm_decode(const unsigned char *s, int len) {
         }
     }
     if(padding >= 8){
+        LOGE("the padding len in hpack packet is more than 7\n");
         throw ERR_COMPRESSION_ERROR;
     }
     return result;
@@ -735,6 +739,7 @@ static size_t literal_decode(const unsigned char *s, std::string &result) {
     uint32_t len;
     int i = integer_decode(s, 7, &len);
     if(len >= 0xffff){
+        LOGE("too long len: %d\n", len);
         throw ERR_COMPRESSION_ERROR;
     }
     if(s[0] & 0x80) {
@@ -803,6 +808,7 @@ const Index *Index_table::getvalue(uint32_t id) {
     static Index index;
     const Index * ret = nullptr;
     if(id == 0){
+        LOGE("want to get value of index zero\n");
         throw ERR_COMPRESSION_ERROR;
     }else if(id <= static_table_count) {
         index.name = static_table[id][0];
@@ -835,6 +841,7 @@ void Index_table::set_dynamic_table_size_limit_max(size_t size){
 void Index_table::set_dynamic_table_size_limit(size_t size){
     LOGD(DHPACK, "set dynamic table size [%zd]\n", size);
     if(size > dynamic_table_size_limit_max){
+        LOGE("set a dynamic table size more than limit: %zd/%zd\n", size, dynamic_table_size_limit_max);
         throw ERR_COMPRESSION_ERROR;
     }
     dynamic_table_size_limit = size;
@@ -861,11 +868,11 @@ Index_table::~Index_table()
 }
 
 
-std::multimap< istring, std::string > Index_table::hpack_decode(const unsigned char* s, int len) {
+std::multimap< std::string, std::string > Index_table::hpack_decode(const unsigned char* s, int len) {
     if(!hpack_inited)
         init_hpack();
     int i = 0;
-    std::multimap<istring, std::string> headers;
+    std::multimap<std::string, std::string> headers;
     bool noDynamic = false;
     while(i < len) {
         if(s[i] & 0x80) {
@@ -874,6 +881,7 @@ std::multimap< istring, std::string > Index_table::hpack_decode(const unsigned c
             i += integer_decode(s+i, 7, &index);
             const Index *value = getvalue(index);
             if(value == nullptr){
+                LOGE("get null index from %d\n", index);
                 throw ERR_COMPRESSION_ERROR;
             }
             headers.insert(std::make_pair(value->name, value->value));
@@ -892,6 +900,7 @@ std::multimap< istring, std::string > Index_table::hpack_decode(const unsigned c
             add_dynamic_table(name, value);
         }else if(s[i] & 0x20) {
             if(noDynamic){
+                LOGE("found update dynamic talbe limit after normal entry\n");
                 throw ERR_COMPRESSION_ERROR;
             }
             uint32_t size;
@@ -911,6 +920,7 @@ std::multimap< istring, std::string > Index_table::hpack_decode(const unsigned c
             headers.insert(std::make_pair(name, value));
         }
         if(i > len){
+            LOGE("may be overflow: %d/%d\n", i, len);
             throw ERR_COMPRESSION_ERROR;
         }
     }
@@ -946,7 +956,7 @@ int Index_table::hpack_encode(unsigned char* buf, const char* Name, const char* 
     return buf - buf_begin;
 }
 
-int Index_table::hpack_encode(unsigned char *buf, std::map<istring, std::string> headers) {
+int Index_table::hpack_encode(unsigned char *buf, std::map<std::string, std::string> headers) {
     unsigned char *buf_begin = buf;
     for(auto i:headers) {
         if(i.first ==  "Host")

@@ -18,7 +18,7 @@ begin:
         uint32_t length = get24(header->length);
         ssize_t len = sizeof(Http2_header) + length - http2_getlen;
         if(length > FRAMEBODYLIMIT){
-            LOGE("ERROR");
+            LOGE("ERROR frame size: %d\n", length);
             ErrProc(ERR_FRAME_SIZE_ERROR);
             return;
         }
@@ -34,6 +34,11 @@ begin:
                 uint32_t value;
                 switch(header->type) {
                 case DATA_TYPE:
+                    if(id == 0 || (id > recvid && id >= sendid-1)){
+                        LOGE("ERROR wrong data id: %d/%d/%d\n", id, recvid, sendid);
+                        ErrProc(ERR_PROTOCOL_ERROR);
+                        return;
+                    }
                     DataProc(id, header+1, length);
                     if(header->flags & END_STREAM_F){
                         EndProc(id);
@@ -44,13 +49,12 @@ begin:
                     if(header->flags & END_STREAM_F){
                         EndProc(id);
                     }
-                    recvid = id;
                     break;
                 case PRIORITY_TYPE:
                     break;
                 case SETTINGS_TYPE:
                     if(id != 0 || length%6 != 0){
-                        LOGE("ERROR");
+                        LOGE("ERROR wrong setting frame : %d/%d\n", id, length);
                         ErrProc(ERR_PROTOCOL_ERROR);
                         return;
                     }
@@ -58,7 +62,7 @@ begin:
                     break;
                 case PING_TYPE:
                     if(id != 0 || length != 8){
-                        LOGE("ERROR");
+                        LOGE("ERROR wrong ping frame: %d/%d\n", id, length);
                         ErrProc(ERR_FRAME_SIZE_ERROR);
                         return;
                     }
@@ -70,12 +74,12 @@ begin:
                 case RST_STREAM_TYPE:
                     value = get32(header+1);
                     if(length != 4){
-                        LOGE("ERROR");
+                        LOGE("ERROR rst frame: %d/%d\n", id, length);
                         ErrProc(ERR_FRAME_SIZE_ERROR);
                         return;
                     }
-                    if(id == 0 || (id > sendid && id > recvid)){
-                        LOGE("ERROR");
+                    if(id == 0 || (id > recvid && id >= sendid-1)){
+                        LOGE("ERROR rst frame: %d/%d/%d\n", id, sendid, recvid);
                         ErrProc(ERR_PROTOCOL_ERROR);
                         return;
                     }
@@ -84,12 +88,12 @@ begin:
                 case WINDOW_UPDATE_TYPE:
                     value = get32(header+1);
                     if(length != 4){
-                        LOGE("ERROR");
+                        LOGE("ERROR window update frame: %d/%d\n", id, length);
                         ErrProc(ERR_FRAME_SIZE_ERROR);
                         return;
                     }
-                    if(value == 0 || (id > sendid && id > recvid)){
-                        LOGE("ERROR");
+                    if(value == 0 || (id > recvid && id >= sendid-1)){
+                        LOGE("ERROR window update frame: value=%d id=%d/%d/%d\n", value, id, sendid, recvid);
                         ErrProc(ERR_PROTOCOL_ERROR);
                         return;
                     }
@@ -188,7 +192,7 @@ void Http2Base::SettingsProc(Http2_header* header) {
                 break;
             case SETTINGS_INITIAL_WINDOW_SIZE:
                 if(value >= (uint32_t)1<<31){
-                    LOGE("ERROR");
+                    LOGE("ERROR window overflow\n");
                     ErrProc(ERR_FLOW_CONTROL_ERROR);
                     return;
                 }
@@ -206,7 +210,7 @@ void Http2Base::SettingsProc(Http2_header* header) {
         header->flags |= ACK_F;
         PushFrame((const Http2_header*)header);
     }else if(get24(header->length) != 0){
-        LOGE("ERROR");
+        LOGE("ERROR setting ack with content\n");
         ErrProc(ERR_FRAME_SIZE_ERROR);
         return;
     }
@@ -318,7 +322,7 @@ void Http2Responser::InitProc() {
     size_t prelen = strlen(H2_PREFACE);
     if(http2_getlen >= prelen) {
         if (memcmp(http2_buff, H2_PREFACE, strlen(H2_PREFACE))) {
-            LOGE("ERROR");
+            LOGE("ERROR get http2 perface: %*s\n", (int)prelen, http2_buff);
             ErrProc(ERR_PROTOCOL_ERROR);
             return;
         }
@@ -340,10 +344,11 @@ void Http2Responser::InitProc() {
 void Http2Responser::HeadersProc(Http2_header* header) {
     uint32_t id = HTTP2_ID(header->id);
     if(id <= recvid || (id&1) == 0){
-        LOGE("ERROR");
+        LOGE("ERROR header id: %d/%d\n", id, recvid);
         ErrProc(ERR_STREAM_CLOSED);
         return;
     }
+    recvid = id;
     const unsigned char *pos = (const unsigned char *)(header+1);
     uint8_t padlen = 0;
     if(header->flags & PADDED_F) {
@@ -360,16 +365,9 @@ void Http2Responser::HeadersProc(Http2_header* header) {
         HttpReqHeader* req = new HttpReqHeader(response_table.hpack_decode(pos,
                                                     get24(header->length) - padlen - (pos - (const unsigned char *)(header+1))),
                         this);
-        if(id  == 0){
-            delete req;
-            LOGE("ERROR");
-            ErrProc(ERR_PROTOCOL_ERROR);
-            return;
-        }
         req->index = reinterpret_cast<void*>(id);
         ReqProc(req);
     }catch(int error){
-        LOGE("ERROR");
         ErrProc(error);
         return;
     }
@@ -405,7 +403,7 @@ void Http2Requster::InitProc() {
                 http2_flag |=  HTTP2_FLAG_INITED;
                 Http2_Proc = &Http2Requster::DefaultProc;
             }else {
-                LOGE("ERROR");
+                LOGE("ERROR get wrong setting frame from server\n");
                 ErrProc(ERR_PROTOCOL_ERROR);
                 return;
             }
@@ -425,8 +423,8 @@ void Http2Requster::InitProc() {
 
 void Http2Requster::HeadersProc(Http2_header* header) {
     uint32_t id = HTTP2_ID(header->id);
-    if(id > sendid || (id&1) == 0){
-        LOGE("ERROR");
+    if(id >= sendid-1 || (id&1) == 0){
+        LOGE("ERROR header id: %d/%d\n", id, sendid);
         ErrProc(ERR_STREAM_CLOSED);
         return;
     }
@@ -446,16 +444,9 @@ void Http2Requster::HeadersProc(Http2_header* header) {
         HttpResHeader* res = new HttpResHeader(response_table.hpack_decode(pos,
                                                     get24(header->length) - padlen - (pos - (const unsigned char *)(header+1))));
 
-        if(id  == 0){
-            delete res;
-            LOGE("ERROR");
-            ErrProc(ERR_PROTOCOL_ERROR);
-            return;
-        }
         res->index = reinterpret_cast<void*>(id);
         ResProc(res);
     }catch(int error){
-        LOGE("ERROR");
         ErrProc(error);
         return;
     }

@@ -7,6 +7,8 @@
 
 #include <fstream>
 
+#include <string.h>
+
 int vpn_aged(VpnStatus* status){
     LOGD(DVPN, "<%s> (%d -> %s) aged.\n",
          protstr(status->key->protocol), status->key->getsport(), status->key->getdst());

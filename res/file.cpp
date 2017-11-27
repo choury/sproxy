@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <time.h>
+#include <string.h>
 #include <errno.h>
 #include <assert.h>
 #include <sys/eventfd.h>
@@ -99,26 +100,6 @@ bool checkrange(Range& rg, size_t size) {
     }
     return true;
 }
-
-
-#if 0
-File::File(HttpReqHeader* req) {
-
-
-    fd = eventfd(1, O_NONBLOCK);
-    handleEvent = (void (Con::*)(uint32_t))&File::defaultHE;
-    filemap[filename] = this;
-    suffix = strrchr(filename, '.');
-    return;
-err:
-    if(ffd > 0){
-        close(ffd);
-    }
-    res->index = req->index;
-    req->src->response(res);
-    throw 0;
-}
-#endif
 
 File::File(const char* fname, int ffd, const struct stat* st):ffd(ffd), st(*st){
     snprintf(filename, sizeof(filename), "./%s", fname);

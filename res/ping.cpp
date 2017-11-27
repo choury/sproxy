@@ -3,6 +3,7 @@
 #include "prot/ip_pack.h"
 #include "req/requester.h"
 
+#include <string.h>
 #include <errno.h>
 #include <assert.h>
 

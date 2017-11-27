@@ -2,6 +2,7 @@
 #include "req/requester.h"
 #include "misc/job.h"
 
+#include <string.h>
 #include <errno.h>
 #include <assert.h>
                     

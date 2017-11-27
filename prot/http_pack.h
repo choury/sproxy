@@ -3,7 +3,6 @@
 
 #include "common.h"
 #include "resobject.h"
-#include "misc/istring.h"
 
 #include <map>
 #include <set>
@@ -19,7 +18,7 @@ class Requester;
 
 class HttpHeader{
 protected:
-    std::map<istring, std::string> headers;
+    std::map<std::string, std::string> headers;
 public:
     std::set<std::string> cookies;
     void* index = 0;
@@ -27,11 +26,11 @@ public:
 
     uint8_t flags = 0;
 
-    void add(const istring& header, const std::string& value);
-    void add(const istring& header, uint64_t value);
-    void append(const istring& header, const std::string& value);
-    void del(const istring& header);
-    const char* get(const char *header) const;
+    void add(const std::string& header, const std::string& value);
+    void add(const std::string& header, uint64_t value);
+    void append(const std::string& header, const std::string& value);
+    void del(const std::string& header);
+    const char* get(const std::string& header) const;
 
     virtual bool no_body() const = 0;
     virtual char *getstring(size_t &len) const = 0;
@@ -59,7 +58,7 @@ public:
     std::vector<Range> ranges;
     bool should_proxy  = false;
     explicit HttpReqHeader(const char* header,  ResObject* src);
-    explicit HttpReqHeader(std::multimap<istring, std::string>&& headers, ResObject* src);
+    explicit HttpReqHeader(std::multimap<std::string, std::string>&& headers, ResObject* src);
     explicit HttpReqHeader(const CGI_Header *headers);
     bool ismethod(const char* method) const;
     
@@ -78,7 +77,7 @@ class HttpResHeader: public HttpHeader{
 public:
     char status[100];
     explicit HttpResHeader(const char* header);
-    explicit HttpResHeader(std::multimap<istring, std::string>&& headers);
+    explicit HttpResHeader(std::multimap<std::string, std::string>&& headers);
     explicit HttpResHeader(const CGI_Header *headers);
     
     virtual bool no_body() const override;

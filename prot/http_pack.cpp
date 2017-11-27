@@ -9,10 +9,10 @@
 
 using std::string;
 
-static char *cgi_addnv(char *p, const istring &name, const string &value);
-static char *cgi_getnv(char *p, istring &name, string &value);
+static char *cgi_addnv(char *p, const string &name, const string &value);
+static char *cgi_getnv(char *p, string &name, string &value);
 
-char* toUpper(char* s) {
+static char* toUpper(char* s) {
     char* p = s;
 
     while (*p) {
@@ -23,7 +23,7 @@ char* toUpper(char* s) {
     return s;
 }
 
-char* toLower(char* s) {
+static char* toLower(char* s) {
     char* p = s;
 
     while (*p) {
@@ -34,15 +34,26 @@ char* toLower(char* s) {
     return s;
 }
 
-string toLower(const string &s) {
+static string toLower(const string &s) {
     string str = s;
     std::transform(str.begin(), str.end(), str.begin(), ::tolower);
     return str;
 }
 
+static string toUpHeader(const string &s){
+    string str = s;
+    str[0] = toupper(str[0]);
+    for(size_t i = 0; i < str.length(); i++){
+        if(str[i] == '-' && i != str.length() - 1){
+            str[i+1] = toupper(str[i+1]);
+        }
+    }
+    return str;
+}
 
-void HttpHeader::add(const istring& header, const string& value) {
-    headers.insert(std::make_pair(header, value));
+
+void HttpHeader::add(const std::string& header, const string& value) {
+    headers.insert(std::make_pair(toLower(header), value));
 }
 
 #ifdef __ANDROID__
@@ -59,26 +70,26 @@ using std::to_string;
 #endif
 
 
-void HttpHeader::add(const istring& header, uint64_t value) {
-    headers.insert(std::make_pair(header, to_string(value)));
+void HttpHeader::add(const std::string& header, uint64_t value) {
+    headers.insert(std::make_pair(toLower(header), to_string(value)));
 }
 
-void HttpHeader::append(const istring& header, const string& value){
-    if(headers.count(header)){
-        string old_value = headers[header];
+void HttpHeader::append(const std::string& header, const string& value){
+    if(get(header)){
+        string old_value = get(header);
         add(header, old_value + ", " + value);
     }else{
         add(header, value);
     }
 }
 
-void HttpHeader::del(const istring& header) {
-    headers.erase(header);
+void HttpHeader::del(const std::string& header) {
+    headers.erase(toLower(header));
 }
 
-const char* HttpHeader::get(const char* header) const{
-    if(headers.count(header)) {
-        return headers.at(header).c_str();
+const char* HttpHeader::get(const std::string& header) const{
+    if(headers.count(toLower(header))) {
+        return headers.at(toLower(header)).c_str();
     }
     return nullptr;
 }
@@ -110,7 +121,7 @@ HttpReqHeader::HttpReqHeader(const char* header, ResObject* src):
 
     if (spliturl(url, protocol, hostname, path, &port)) {
         LOGE("wrong url format:%s\n", url);
-        throw 0;
+        throw ERR_PROTOCOL_ERROR;
     }
     if(strcasecmp(protocol, "https") == 0){
         port = port?port:HTTPSPORT;
@@ -125,9 +136,9 @@ HttpReqHeader::HttpReqHeader(const char* header, ResObject* src):
         char* sp = strpbrk(p, ":");
         if (sp == NULL) {
             LOGE("wrong header format:%s\n", p);
-            throw 0;
+            throw ERR_PROTOCOL_ERROR;
         }
-        istring name = string(p, sp-p);
+        string name = toLower(string(p, sp-p));
         if(name == "cookie"){
             char *cp = sp +1;
             for(char *p = strsep(&cp, ";");p;
@@ -136,7 +147,7 @@ HttpReqHeader::HttpReqHeader(const char* header, ResObject* src):
                 cookies.insert(ltrim(string(p)));
             }
         }else{
-            add(string(p, sp - p), ltrim(string(sp + 1)));
+            add(name, ltrim(string(sp + 1)));
         }
     }
     
@@ -145,14 +156,14 @@ HttpReqHeader::HttpReqHeader(const char* header, ResObject* src):
         if(spliturl(get("Host"), nullptr, hostname, nullptr, &port))
         {
             LOGE("wrong host format:%s\n", get("Host"));
-            throw 0;
+            throw ERR_PROTOCOL_ERROR;
         }
     }
     getfile();
 }
 
 
-HttpReqHeader::HttpReqHeader(std::multimap<istring, string>&& headers, ResObject* src):
+HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers, ResObject* src):
                src(dynamic_cast<Requester *>(src))
 {
     assert(src);
@@ -207,15 +218,14 @@ HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(nullptr) {
     if(headers->type != CGI_REQUEST)
     {
         LOGE("wrong CGI header");
-        throw 1;
+        throw ERR_PROTOCOL_ERROR;
     }
    
     protocol[0] = 0;
     char *p = (char *)(headers +1);
     uint32_t len = ntohs(headers->contentLength);
     while(uint32_t(p - (char *)(headers +1)) < len){
-        istring name;
-        string value;
+        string name, value;
         p = cgi_getnv(p, name, value);
         if(name == ":method"){
             strcpy(method, value.c_str());
@@ -315,7 +325,7 @@ char *HttpReqHeader::getstring(size_t &len) const{
 
     for (auto i : headers) {
         len += sprintf(buff + len, "%s: %s" CRLF,
-                i.first.c_str(), i.second.c_str());
+                toUpHeader(i.first).c_str(), i.second.c_str());
     }
     if(!cookies.empty()){
         string cookie_str;
@@ -442,9 +452,9 @@ HttpResHeader::HttpResHeader(const char* header) {
         char* sp = strpbrk(p, ":");
         if (sp == NULL) {
             LOGE("wrong header format:%s\n", p);
-            throw 0;
+            throw ERR_PROTOCOL_ERROR;
         }
-        istring name = istring(p, sp-p);
+        string name = toLower(string(p, sp-p));
         string value = ltrim(string(sp + 1));
         if(name == "set-cookie"){
             cookies.insert(value);
@@ -454,7 +464,7 @@ HttpResHeader::HttpResHeader(const char* header) {
     }
 }
 
-HttpResHeader::HttpResHeader(std::multimap<istring, string>&& headers) {
+HttpResHeader::HttpResHeader(std::multimap<string, string>&& headers) {
     for(auto i: headers){
         if(i.first == "set-cookies"){
             cookies.insert(i.second);
@@ -478,14 +488,13 @@ HttpResHeader::HttpResHeader(const CGI_Header* headers)
     if(headers->type != CGI_RESPONSE)
     {
         LOGE("wrong CGI header");
-        throw 1;
+        throw ERR_PROTOCOL_ERROR;
     }
    
     char *p = (char *)(headers +1);
     uint32_t len = ntohs(headers->contentLength);
     while(uint32_t(p - (char *)(headers +1)) < len){
-        istring name;
-        string value;
+        string name, value;
         p = cgi_getnv(p, name, value);
         if(name == ":status"){
             strcpy(status, value.c_str());
@@ -526,7 +535,7 @@ char * HttpResHeader::getstring(size_t &len) const{
     }
     for (auto i : headers) {
         len += sprintf(buff + len, "%s: %s" CRLF,
-                i.first.c_str(), i.second.c_str());
+                toUpHeader(i.first).c_str(), i.second.c_str());
     }
     for (auto i : cookies) {
         len += sprintf(buff + len, "Set-Cookie: %s" CRLF, i.c_str());
@@ -579,7 +588,7 @@ CGI_Header *HttpResHeader::getcgi(uint32_t cgi_id)const {
 }
 
 
-static char *cgi_addnv(char *p, const istring &name, const string &value) {
+static char *cgi_addnv(char *p, const string &name, const string &value) {
     CGI_NVLenPair *cgi_pairs = (CGI_NVLenPair *) p;
     cgi_pairs->nameLength = htons(name.size());
     cgi_pairs->valueLength = htons(value.size());
@@ -590,12 +599,12 @@ static char *cgi_addnv(char *p, const istring &name, const string &value) {
     return p + value.size();
 }
 
-static char *cgi_getnv(char* p, istring& name, string& value) {
+static char *cgi_getnv(char* p, string& name, string& value) {
     CGI_NVLenPair *cgi_pairs = (CGI_NVLenPair *)p;
     uint32_t name_len = ntohs(cgi_pairs->nameLength);
     uint32_t value_len = ntohs(cgi_pairs->valueLength);
     p = (char *)(cgi_pairs + 1);
-    name = istring(p, name_len);
+    name = string(p, name_len);
     p += name_len;
     value = string(p, value_len);
     return p + value_len;

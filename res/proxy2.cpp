@@ -173,6 +173,7 @@ void Proxy2::ResProc(HttpResHeader* res) {
 void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
     if( len == 0)
         return;
+    localwinsize -= len;
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         Requester* requester = status.req_ptr;
@@ -185,8 +186,10 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
         }
         requester->Send(data, len, status.req_index);
         status.localwinsize -= len;
+    }else{
+        LOGE("not found data id: %d\n", id);
+        ErrProc(ERR_PROTOCOL_ERROR);
     }
-    localwinsize -= len;
 }
 
 void Proxy2::EndProc(uint32_t id){

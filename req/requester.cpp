@@ -1,5 +1,7 @@
 #include "requester.h"
 
+#include <string.h>
+
 
 Requester::Requester(int fd, struct sockaddr_in6* myaddr): Peer(fd) {
     if(myaddr){

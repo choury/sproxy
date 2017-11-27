@@ -4,7 +4,7 @@
 #include "misc/job.h"
 
 //#include <set>
-//#include <string.h>
+#include <string.h>
 //#include <errno.h>
 #include <assert.h>
 
