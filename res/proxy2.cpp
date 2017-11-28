@@ -188,7 +188,7 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
         status.localwinsize -= len;
     }else{
         LOGE("not found data id: %d\n", id);
-        ErrProc(ERR_PROTOCOL_ERROR);
+        Reset(id, ERR_STREAM_CLOSED);
     }
 }
 
