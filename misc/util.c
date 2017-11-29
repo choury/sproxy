@@ -2,10 +2,15 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <assert.h>
 #include <errno.h>
+#include <dirent.h>
+#include <libgen.h>
 #include <sys/time.h>
 #include <sys/prctl.h>
+#include <sys/utsname.h>
+
 
 #define PRIOR_HEAD 48
 
@@ -330,6 +335,65 @@ void change_process_name(const char *name){
     strncpy(main_argv[0], name, len - 1);
 }
 
+const char* findprogram(ino_t inode){
+    static char program[DOMAINLIMIT];
+    sprintf(program, "Unkown pid(%lu)", inode);
+    int found = 0;
+    DIR* dir = opendir("/proc");
+    if(dir == NULL){
+        LOGE("open proc dir failed: %s\n", strerror(errno));
+        return 0;
+    }
+    char socklink[20];
+    sprintf(socklink, "socket:[%lu]", inode);
+    struct dirent *ptr;
+    while((ptr = readdir(dir)) != NULL && found == 0)
+    {
+        //如果读取到的是"."或者".."则跳过，读取到的不是文件夹名字也跳过
+        if((strcmp(ptr->d_name, ".") == 0) || (strcmp(ptr->d_name, "..") == 0)) continue;
+        if(ptr->d_type != DT_DIR) continue;
+
+        char fddirname[30];
+        sprintf(fddirname, "/proc/%.20s/fd", ptr->d_name);
+        DIR *fddir = opendir(fddirname);
+        if(fddir == NULL){
+            continue;
+        }
+        struct dirent *fdptr;
+        while((fdptr = readdir(fddir)) != NULL){
+            char fname[50];
+            //example:  /proc/1111/fd/222
+            sprintf(fname, "%s/%.20s", fddirname, fdptr->d_name);
+            char linkname[URLLIMIT];
+            int ret = readlink(fname, linkname, sizeof(linkname));
+            if(ret > 0 && ret < 20 && memcmp(linkname, socklink, ret) == 0){
+                sprintf(fname, "/proc/%.20s/exe", ptr->d_name);
+                ret = readlink(fname, linkname, sizeof(linkname)),
+                linkname[ret] = 0;
+                sprintf(program, "%s/%s", basename(linkname), ptr->d_name);
+                found = 1;
+                break;
+            }
+        }
+        closedir(fddir);
+    }
+    closedir(dir);
+    return program;
+}
+
+const char* getDeviceInfo(){
+    static char infoString[DOMAINLIMIT] = {0};
+    if(strlen(infoString)){
+        return infoString;
+    }
+    struct utsname info;
+    if(uname(&info)){
+        LOGE("uname failed: %s\n", strerror(errno));
+        return "Unkown platform";
+    }
+    sprintf(infoString, "%s %s; %s %s", info.sysname, info.machine, info.nodename, info.release);
+    return infoString;
+}
 
 void dump_trace(int ignore) {
 #if Backtrace_FOUND

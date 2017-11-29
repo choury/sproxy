@@ -41,7 +41,7 @@ public:
 
     virtual bool finish(uint32_t flags, void* index)override;
     virtual void writedcb(void * index) override;
-    virtual const char* getsrc(void *)override;
+    virtual const char* getsrc(const void *)override;
     virtual void dump_stat()override;
 };
 

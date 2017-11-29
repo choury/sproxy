@@ -2,14 +2,14 @@
 #include "vpn.h"
 
 #include <unistd.h>
+#include <string.h>
 #include <fcntl.h>
 #include <iostream>
 #include <map>
 #include <vector>
 #include <fstream>
 #include <android/log.h>
-
-#include <string.h>
+#include <sys/system_properties.h>
 
 static JavaVM *jnijvm;
 static jobject jniobj;
@@ -17,6 +17,7 @@ static VpnConfig vpn;
 static std::map<int, std::string> packages;
 static std::string extenalFilesDir;
 static std::string extenalCacheDir;
+char   version[DOMAINLIMIT];
 
 const struct in6_addr in6addr_any = IN6ADDR_ANY_INIT;
 
@@ -26,27 +27,37 @@ const struct in6_addr in6addr_any = IN6ADDR_ANY_INIT;
  * Signature: (ILjava/lang/String;)V
  */
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
-        (JNIEnv *env, jobject obj, jint sockfd, jstring server, jstring secret) {
-    env->GetJavaVM(&jnijvm);
-    jniobj = env->NewGlobalRef(obj);
+        (JNIEnv *jnienv, jobject obj, jint sockfd, jstring server, jstring secret) {
+    jnienv->GetJavaVM(&jnijvm);
+    jniobj = jnienv->NewGlobalRef(obj);
     LOG("native SproxyVpnService.start %d.", sockfd);
     int flags  = fcntl(sockfd,F_GETFL,0);
     fcntl(sockfd,F_SETFL,flags&~O_NONBLOCK);
 
-    const char *server_str = env->GetStringUTFChars(server, 0);
-    const char *secret_str = env->GetStringUTFChars(secret, 0);
+    const char *server_str = jnienv->GetStringUTFChars(server, 0);
+    const char *secret_str = jnienv->GetStringUTFChars(secret, 0);
 
     vpn.disable_ipv6 = 1;
     vpn.ignore_cert_error = 1;
     sprintf(vpn.server, "ssl://%s", server_str);
     strcpy(vpn.secret, secret_str);
-    env->ReleaseStringUTFChars(server, server_str);
-    env->ReleaseStringUTFChars(secret, secret_str);
+    jnienv->ReleaseStringUTFChars(server, server_str);
+    jnienv->ReleaseStringUTFChars(secret, secret_str);
     vpn.fd = sockfd;
-    env->DeleteLocalRef(server);
-    env->DeleteLocalRef(secret);
+    jnienv->DeleteLocalRef(server);
+    jnienv->DeleteLocalRef(secret);
+
+    jclass cls = jnienv->GetObjectClass(jniobj);
+    jmethodID mid = jnienv->GetMethodID(cls, "getMyVersion", "()Ljava/lang/String;");
+    jstring jversion = (jstring) jnienv->CallObjectMethod(jniobj, mid);
+    const char *jversion_str = jnienv->GetStringUTFChars(jversion, 0);
+    strcpy(version, jversion_str);
+    jnienv->ReleaseStringUTFChars(jversion, jversion_str);
+    jnienv->DeleteLocalRef(jversion);
+    jnienv->DeleteLocalRef(cls);
+
     vpn_start(&vpn);
-    env->DeleteGlobalRef(jniobj);
+    jnienv->DeleteGlobalRef(jniobj);
 }
 
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(JNIEnv *, jobject){
@@ -78,7 +89,7 @@ int protectFd(int sockfd) {
     return ret;
 }
 
-const char* getpackagename(int uid) {
+const char* getPackageName(int uid) {
     static char name[DOMAINLIMIT];
     if(packages.count(uid)){
         strcpy(name, packages[uid].c_str());
@@ -86,7 +97,7 @@ const char* getpackagename(int uid) {
         JNIEnv *jnienv;
         jnijvm->GetEnv((void **) &jnienv, JNI_VERSION_1_6);
         jclass cls = jnienv->GetObjectClass(jniobj);
-        jmethodID mid = jnienv->GetMethodID(cls, "getPackageName", "(I)Ljava/lang/String;");
+        jmethodID mid = jnienv->GetMethodID(cls, "getPackageString", "(I)Ljava/lang/String;");
         jstring jname = (jstring) jnienv->CallObjectMethod(jniobj, mid, uid);
         const char *jname_str = jnienv->GetStringUTFChars(jname, 0);
         strcpy(name, jname_str);
@@ -95,6 +106,21 @@ const char* getpackagename(int uid) {
         jnienv->DeleteLocalRef(cls);
     }
     return name;
+}
+
+const char *getDeviceName(){
+    static char deviceName[DOMAINLIMIT];
+    if(strlen(deviceName)){
+        return deviceName;
+    }
+    char model[64];
+    __system_property_get("ro.product.model", model);
+    char release[64];
+    __system_property_get("ro.build.version.release", release);
+    char buildid[64];
+    __system_property_get("ro.build.id", buildid);
+    sprintf(deviceName, "Android %s; %s Build/%s", release, model, buildid);
+    return deviceName;
 }
 
 std::vector<std::string> getDns(){

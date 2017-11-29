@@ -326,7 +326,7 @@ void Guest_s2::writedcb(void* index){
     }
 }
 
-const char * Guest_s2::getsrc(void* index){
+const char * Guest_s2::getsrc(const void* index){
     static char src[DOMAINLIMIT];
     if(index == nullptr){
         sprintf(src, "%s:%d", sourceip, sourceport);

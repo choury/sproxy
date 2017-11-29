@@ -244,7 +244,7 @@ void Guest::writedcb(void* index) {
 }
 
 
-const char* Guest::getsrc(void *){
+const char* Guest::getsrc(const void *){
     static char src[DOMAINLIMIT];
     sprintf(src, "[%s]:%d", sourceip, sourceport);
     return src;

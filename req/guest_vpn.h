@@ -44,6 +44,7 @@ struct IcmpStatus{
 
 
 class Guest_vpn:public Requester, public ResObject{
+    const char* generateUA(const VpnKey* key);
 protected:
     std::map<VpnKey, VpnStatus> statusmap;
     Buffer buffer;
@@ -65,7 +66,7 @@ public:
     virtual ssize_t Send(void* buff, size_t size, void* index)override;
 
     virtual bool finish(uint32_t flags, void* index)override;
-    virtual const char *getsrc(void* index)override;
+    virtual const char *getsrc(const void* index)override;
     virtual void dump_stat()override;
 };
 

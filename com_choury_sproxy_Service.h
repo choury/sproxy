@@ -8,6 +8,7 @@
 extern "C" {
 #endif
 
+extern char version[];
 
 /*
  * Class:     com_choury_sproxy_SproxyVpnService
@@ -27,6 +28,8 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload(JNIEnv *, 
 
 
 void android_log(int level, const char* fmt, ...);
+const char* getPackageName(int uid);
+const char *getDeviceName();
 #ifdef __cplusplus
 }
 #endif

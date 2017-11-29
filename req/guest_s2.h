@@ -51,7 +51,7 @@ public:
     virtual void transfer(void* index, Responser* res_ptr, void* res_index)override;
     virtual void writedcb(void* index)override;
 
-    virtual const char* getsrc(void *)override;
+    virtual const char* getsrc(const void *)override;
     virtual void dump_stat()override;
 
     static int connection_lost(Guest_s2 *g);

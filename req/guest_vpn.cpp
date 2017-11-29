@@ -247,9 +247,13 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
 
         //create a http proxy request
         char buff[HEADLENLIMIT];
-        sprintf(buff, "CONNECT %s:%d" CRLF "Sproxy_vpn: %d" CRLF CRLF,
+        sprintf(buff,   "CONNECT %s:%d" CRLF
+                        "User-Agent: %s" CRLF
+                        "Sproxy-vpn: %d" CRLF CRLF,
                 FDns::getRdns(pac->getdst()),
-                pac->tcp->getdport(), pac->tcp->getsport());
+                pac->tcp->getdport(),
+                generateUA(&key),
+                pac->tcp->getsport());
 
         HttpReqHeader* req = new HttpReqHeader(buff, this);
         VpnKey *key_index = new VpnKey(key);
@@ -398,9 +402,13 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
         LOGD(DVPN, "<udp> (%d -> %s) (N) size: %zu\n", key.getsport(), key.getdst(), datalen);
         //create a http proxy request
         char buff[HEADLENLIMIT];
-        sprintf(buff, "SEND %s:%d" CRLF "Sproxy_vpn: %d" CRLF CRLF,
+        sprintf(buff,   "SEND %s:%d" CRLF
+                        "User-Agent: %s" CRLF
+                        "Sproxy_vpn: %d" CRLF CRLF,
                 FDns::getRdns(pac->getdst()),
-                pac->udp->getdport(), pac->udp->getsport());
+                pac->udp->getdport(),
+                generateUA(&key),
+                pac->udp->getsport());
 
         HttpReqHeader* req = new HttpReqHeader(buff, this);
         VpnKey *key_index = new VpnKey(key);
@@ -453,8 +461,12 @@ void Guest_vpn::icmpHE(const Ip* pac, const char* packet, size_t len) {
             LOGD(DVPN, "<ping> ( -> %s) (N) (%u - %u) size: %zd\n",
                  key.getdst(), pac->icmp->getid(), pac->icmp->getseq(), len - pac->gethdrlen());
             char buff[HEADLENLIMIT];
-            sprintf(buff, "PING %s" CRLF "Sproxy_vpn: %d" CRLF CRLF,
-                    FDns::getRdns(pac->getdst()), pac->icmp->getid());
+            sprintf(buff,   "PING %s" CRLF
+                            "User-Agent: %s" CRLF
+                            "Sproxy_vpn: %d" CRLF CRLF,
+                    FDns::getRdns(pac->getdst()),
+                    generateUA(&key),
+                    pac->icmp->getid());
             HttpReqHeader* req = new HttpReqHeader(buff, this);
 
             VpnKey *key_index = new VpnKey(key);
@@ -671,59 +683,9 @@ bool Guest_vpn::finish(uint32_t flags, void* index) {
     return false;
 }
 
-#ifndef __ANDROID__
-#include<dirent.h>
-#include <res/ping.h>
-const char* findprogram(ino_t inode){
-    static char program[URLLIMIT];
-    sprintf(program, "Unkown pid(%lu)", inode);
-    bool found = false;
-    DIR* dir = opendir("/proc");
-    if(dir == nullptr){
-        LOGE("open proc dir failed: %s\n", strerror(errno));
-        return 0;
-    }
-    char socklink[20];
-    sprintf(socklink, "socket:[%lu]", inode);
-    struct dirent *ptr;
-    while((ptr = readdir(dir)) != nullptr && found == false)
-    {
-        //如果读取到的是"."或者".."则跳过，读取到的不是文件夹名字也跳过
-        if((strcmp(ptr->d_name, ".") == 0) || (strcmp(ptr->d_name, "..") == 0)) continue;
-        if(ptr->d_type != DT_DIR) continue;
 
-        char fddirname[30];
-        sprintf(fddirname, "/proc/%.20s/fd", ptr->d_name);
-        DIR *fddir = opendir(fddirname);
-        if(fddir == nullptr){
-            continue;
-        }
-        struct dirent *fdptr;
-        while((fdptr = readdir(fddir)) != nullptr){
-            char fname[50];
-            //example:  /proc/1111/fd/222
-            sprintf(fname, "%s/%.20s", fddirname, fdptr->d_name);
-            char linkname[URLLIMIT];
-            int ret = readlink(fname, linkname, sizeof(linkname));
-            if(ret > 0 && ret < 20 && memcmp(linkname, socklink, ret) == 0){
-                sprintf(fname, "/proc/%.20s/exe", ptr->d_name);
-                ret = readlink(fname, linkname, sizeof(linkname)),
-                linkname[ret] = 0;
-                sprintf(program, "%s/%s", basename(linkname), ptr->d_name);
-                found = true;
-                break;
-            }
-        }
-        closedir(fddir);
-    }
-    closedir(dir);
-    return program;
-}
-#else
-const char* getpackagename(int uid);
-#endif
-const char * Guest_vpn::getsrc(void* index) {
-    VpnKey* key = (VpnKey*)index;
+const char * Guest_vpn::getsrc(const void* index) {
+    const VpnKey* key = (const VpnKey*)index;
     if(index == nullptr){
         return "Myself";
     }
@@ -755,7 +717,7 @@ const char * Guest_vpn::getsrc(void* index) {
 #ifndef __ANDROID__
                 return findprogram(inode);
 #else
-                return getpackagename(uid);
+                return getPackageName(uid);
 #endif
             }
         }
@@ -788,7 +750,7 @@ const char * Guest_vpn::getsrc(void* index) {
 #ifndef __ANDROID__
                 return findprogram(inode);
 #else
-                return getpackagename(uid);
+                return getPackageName(uid);
 #endif
             }
         }
@@ -802,6 +764,15 @@ const char * Guest_vpn::getsrc(void* index) {
     return "Unkown inode";
 }
 
+const char* Guest_vpn::generateUA(const VpnKey *key) {
+    static char UA[URLLIMIT];
+#ifndef __ANDROID__
+    sprintf(UA, "Sproxy/1.0 (%s) %s", getDeviceInfo(), getsrc(key));
+#else
+    sprintf(UA, "Sproxy/%s (%s) %s", version, getDeviceName(), getsrc(key));
+#endif
+    return UA;
+}
 
 void Guest_vpn::dump_stat() {
     LOG("Guest_vpn %p (%zd):\n", this, (4*1024*1024 - buffer.length));

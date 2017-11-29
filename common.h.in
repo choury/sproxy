@@ -53,12 +53,7 @@ extern int autoindex;
 #define DHPACK_STR  "[HPACK]"
 
 #ifdef __ANDROID__
-
-#ifdef  __cplusplus
-extern "C" void android_log(int level, const char* fmt, ...);
-#else
-void android_log(int level, const char* fmt, ...);
-#endif
+#include "com_choury_sproxy_Service.h"
 
 #define  LOG(...)  android_log(LOG_INFO,  __VA_ARGS__)
 #define  LOGOUT(...) LOG(__VA_ARGS__)
@@ -221,6 +216,8 @@ void* p_memdup(const void *ptr, size_t size);
 void p_free(void *ptr);
 void *p_move(void *ptr, signed char len);
 void change_process_name(const char *name);
+const char* findprogram(ino_t inode);
+const char* getDeviceInfo();
 
 int protectFd(int sockfd);
 

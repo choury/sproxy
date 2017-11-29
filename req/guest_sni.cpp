@@ -64,7 +64,7 @@ void Guest_sni::response(HttpResHeader* res){
     delete res;
 }
 
-const char* Guest_sni::getsrc(void *){
+const char* Guest_sni::getsrc(const void *){
     static char src[DOMAINLIMIT];
     sprintf(src, "[%s]:%d [SNI]", sourceip, sourceport);
     return src;
