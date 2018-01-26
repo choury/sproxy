@@ -22,7 +22,7 @@ char **main_argv;
  * @s2: The string to search for
  * @len: the maximum number of characters to search
  */
-char* strnstr(const char* s1, const char* s2, size_t len)
+const char* strnstr(const char* s1, const char* s2, size_t len)
 {
     size_t l2 = strlen(s2);
     if (!l2)
@@ -281,20 +281,6 @@ const char * protstr(Protocol p) {
         return "udp";
     }
     return "unknown";
-}
-
-
-int showerr(int ret, const char *msg, const char* function, int line){
-    if (ret < 0) {
-        if (errno != EAGAIN) {
-            LOG_RAW(LOG_ERR, "%s[%d]: %s:%s\n", function, line, msg, strerror(errno));
-        } else {
-            return 0;
-        }
-    }else if(ret){
-        LOG_RAW(LOG_ERR, "%s[%d]: %s:%d\n", function, line, msg, ret);
-    }
-    return 1;
 }
 
 void* memdup(const void* ptr, size_t size){

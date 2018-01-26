@@ -11,7 +11,7 @@ static in_addr_t fake_ip = 0 ;
 
 FDns::FDns() {
     if(fake_ip == 0){
-        fake_ip = ntohl(inet_addr("10.0.0.2"));
+        fake_ip = ntohl(inet_addr("10.1.0.2"));
     }
 }
 
@@ -35,7 +35,7 @@ int32_t FDns::bufleft(void*) {
 
 
 ssize_t FDns::Send(void* buff, size_t size, void* index) {
-    Dns_Que que((const char *)buff);
+    Dns_Que que((const char *)buff, size);
     p_free(buff);
     LOGD(DDNS, "FQuery %s [%d]: %d\n", que.host.c_str(), que.id, que.type);
     uint32_t id = (uint32_t)(long)index;
@@ -106,6 +106,9 @@ bool FDns::finish(uint32_t flags, void* index) {
     return true;
 }
 
+void FDns::writedcb(void*){
+}
+
 void FDns::deleteLater(uint32_t errcode) {
     fdns = (fdns == this) ? nullptr: fdns;
     for(auto i: statusmap){
@@ -147,7 +150,7 @@ in_addr FDns::getInet(std::string hostname) {
     in_addr addr;
 
     if(hostname.find_first_of(".") == std::string::npos){
-        addr.s_addr = inet_addr("10.0.0.1");
+        addr.s_addr = inet_addr("10.1.0.1");
     }else if(fdns_records.count(hostname)){
         addr.s_addr = htonl(fdns_records[hostname]);
     }else{

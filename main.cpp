@@ -1,7 +1,6 @@
-#include "req/guest_s.h"
 #include "req/guest_sni.h"
-#include "req/guest_s2.h"
-#include "misc/dtls.h"
+//#include "req/guest_s2.h"
+//#include "misc/dtls.h"
 #include "misc/rudp.h"
 #include "misc/net.h"
 #include "misc/job.h"
@@ -11,12 +10,13 @@
 #include <set>
 
 #include <unistd.h>
+#include <assert.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <getopt.h>
 #include <arpa/inet.h>
+#include <openssl/ssl.h>
 #include <openssl/err.h>
-#include <openssl/bio.h>
 
 int efd = 0;
 int daemon_mode = 0;
@@ -24,9 +24,9 @@ int use_http2 = 1;
 int ignore_cert_error = 0;
 int disable_ipv6 = 0;
 static uint16_t CPORT = 0;
+char SPROT[DOMAINLIMIT] = {0};
 char SHOST[DOMAINLIMIT] = {0};
 uint16_t SPORT = 0;
-Protocol SPROT = Protocol::TCP;
 char auth_string[DOMAINLIMIT] = {0};
 char rewrite_auth[DOMAINLIMIT] = {0};
 const char *cafile =  nullptr;
@@ -41,7 +41,7 @@ static const char *cert = nullptr;
 static const char *key = nullptr;
 
 template<class T>
-class Http_server: public Server{
+class Http_server: public Ep{
     virtual void defaultHE(uint32_t events){
         if (events & EPOLLIN) {
             int clsk;
@@ -66,13 +66,16 @@ class Http_server: public Server{
         }
     }
 public:
-    explicit Http_server(int fd):Server(fd){}
+    explicit Http_server(int fd):Ep(fd){
+        setEpoll(EPOLLIN);
+        handleEvent = (void (Ep::*)(uint32_t))&Http_server::defaultHE;
+    }
     virtual void dump_stat(){
         LOG("Http_server %p\n", this);
     }
 };
 
-class Https_server: public Server {
+class Https_server: public Ep {
     SSL_CTX *ctx;
     virtual void defaultHE(uint32_t events) {
         if (events & EPOLLIN) {
@@ -92,11 +95,7 @@ class Https_server: public Server {
             }
             fcntl(clsk, F_SETFL, flags | O_NONBLOCK);
 
-            /* 基于ctx 产生一个新的SSL */
-            SSL *ssl = SSL_new(ctx);
-            /* 将连接用户的socket 加入到SSL */
-            SSL_set_fd(ssl, clsk);
-            new Guest_s(clsk, &myaddr, new Ssl(ssl));
+            new Guest(clsk, &myaddr, ctx);
         } else {
             LOGE("unknown error\n");
             return;
@@ -106,7 +105,10 @@ public:
     virtual ~Https_server(){
         SSL_CTX_free(ctx);
     };
-    Https_server(int fd, SSL_CTX *ctx): Server(fd),ctx(ctx) {}
+    Https_server(int fd, SSL_CTX *ctx): Ep(fd),ctx(ctx) {
+        setEpoll(EPOLLIN);
+        handleEvent = (void (Ep::*)(uint32_t))&Https_server::defaultHE;
+    }
     virtual void dump_stat(){
         LOG("Https_server %p\n", this);
     }
@@ -118,6 +120,8 @@ void ssl_callback_ServerName(SSL *ssl){
         //TODO: new sni mode
     }
 }
+
+#if 0
 
 class Dtls_server: public Server {
     SSL_CTX *ctx;
@@ -193,6 +197,7 @@ public:
         LOG("Http_server %p\n", this);
     }
 };
+#endif
 
 //do nothing, useful for vpn only
 int protectFd(int){
@@ -526,7 +531,9 @@ int main(int argc, char **argv) {
         if((svsk_rudp = Listen(SOCK_DGRAM, CPORT)) < 0){
             return -1;
         }
-        new Rudp_server(svsk_rudp);
+        assert(0);
+        //TODO
+        //new Rudp_server(svsk_rudp);
     }else if(cert && key){
         SSL_CTX * ctx = initssl(udp_mode, cafile, cert, key);
         CPORT = CPORT?CPORT:443;
@@ -535,7 +542,9 @@ int main(int argc, char **argv) {
             if((svsk_dtls = Listen(SOCK_DGRAM, CPORT)) < 0){
                 return -1;
             }
-            new Dtls_server(svsk_dtls, ctx);
+            assert(0);
+            //TODO
+            //new Dtls_server(svsk_dtls, ctx);
         }else{
             int svsk_https;
             if ((svsk_https = Listen(SOCK_STREAM, CPORT)) < 0) {
@@ -576,8 +585,8 @@ int main(int argc, char **argv) {
         }
         do_prejob();
         for (int i = 0; i < c; ++i) {
-            Con *con = (Con *)events[i].data.ptr;
-            (con->*con->handleEvent)(events[i].events);
+            Ep *ep = (Ep *)events[i].data.ptr;
+            (ep->*ep->handleEvent)(events[i].events);
         }
         do_postjob();
     }

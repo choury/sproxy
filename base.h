@@ -3,59 +3,131 @@
 
 #include "common.h"
 #include <queue>
+#include <list>
 #include <functional>
 
-class Con {
+#include <string.h>
+
+class RWer;
+
+#ifndef insert_iterator
+#ifdef HAVE_CONST_ITERATOR_BUG
+#define insert_iterator iterator
+#else
+#define insert_iterator const_iterator
+#endif
+#endif
+
+class Server {
 protected:
-    int fd = 0;
-    uint32_t events = 0;
-    void updateEpoll(uint32_t events);
-    virtual void discard();
+    RWer* rwer = nullptr;
 public:
-    explicit Con(int fd);
-    void (Con::*handleEvent)(uint32_t events)=nullptr;
+    explicit Server();
     virtual void dump_stat() = 0;
-    virtual ~Con();
+    virtual ~Server();
 };
 
-class Server:public Con{
+class Peer:public Server {
 protected:
-    virtual void defaultHE(uint32_t events)=0;
-public:
-    explicit Server(int fd);
-};
-
-
-class Peer:public Con{
-protected:
-    explicit Peer(int fd = 0);
-    virtual ssize_t Read(void *buff, size_t size);
-    virtual ssize_t Write(const void *buff, size_t size);
-    
-    virtual void closeHE(uint32_t events);
     virtual void deleteLater(uint32_t errcode);
 public:
-    virtual ~Peer();
     
-
     virtual int32_t bufleft(void* index) = 0;
     virtual ssize_t Send(const void *buff, size_t size, void* index) final;
     virtual ssize_t Send(void* buff, size_t size, void* index) = 0;
-    //return false means break the connection
+    //return wheather remain the connection, false means break the connection
     virtual bool finish(uint32_t flags, void* info) = 0;
 
     virtual void writedcb(void* index);
 };
 
-
-
-class Buffer{
-    std::queue<write_block> write_queue;
+class Ep{
+protected:
+    int fd;
+    uint32_t events = 0;
 public:
-    ~Buffer();
-    size_t  length = 0;
-    void push(void *buff, size_t size);
+    Ep(int fd);
+    virtual ~Ep();
+    void setEpoll(uint32_t events);
+    void addEpoll(uint32_t events);
+    void delEpoll(uint32_t events);
+    void (Ep::*handleEvent)(uint32_t events)=nullptr;
+};
+
+class RBuffer {
+    char content[BUF_LEN];
+    uint16_t len = 0;
+public:
+    size_t left();
+    size_t length();
+    size_t add(size_t l);
+    size_t sub(size_t l);
+    char* start();
+    char* end();
+};
+
+class WBuffer {
+    std::list<write_block> write_queue;
+    size_t  len = 0;
+public:
+    ~WBuffer();
+    size_t length();
+    std::list<write_block>::iterator start();
+    std::list<write_block>::iterator end();
+    std::list<write_block>::iterator push(std::list<write_block>::insert_iterator i, void *buff, size_t size);
     ssize_t  Write(std::function<ssize_t(const void*, size_t)> write_func);
+};
+
+
+using std::placeholders::_1;
+using std::placeholders::_2;
+
+class RWer: public Ep{
+protected:
+    RBuffer rb;
+    WBuffer wb;
+    uint16_t port = 0;
+    Protocol protocol;
+    char     hostname[DOMAINLIMIT] = {0};
+    std::function<void(int ret, int code)> errorCB = nullptr;
+    std::function<void(size_t len)> readCB = nullptr;
+    std::function<void(size_t len)> writeCB = nullptr;
+    std::function<void()> connectCB = nullptr;
+    std::function<void()> closeCB = nullptr;
+    std::queue<sockaddr_un> addrs;
+    virtual void waitconnectHE(int events);
+    virtual void defaultHE(int events);
+    virtual void closeHE(int events);
+    void connect();
+    void reconnect(int error);
+    int checksocket();
+    static void Dnscallback(RWer* rwer, const char *hostname, std::list<sockaddr_un> addrs);
+    static int  con_timeout(RWer* rwer);
+
+    virtual ssize_t Read(void* buff, size_t len);
+    virtual ssize_t Write(const void* buff, size_t len);
+public:
+    RWer(int fd, std::function<void(int ret, int code)> errorCB);
+    RWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB);
+    void SetErrorCB(std::function<void(int ret, int code)> func);
+    void SetReadCB(std::function<void(size_t len)> func);
+    void SetWriteCB(std::function<void(size_t len)> func);
+    void SetConnectCB(std::function<void()> func);
+
+    virtual void TrigRead();
+    virtual void Close(std::function<void()> func);
+    virtual void Shutdown();
+
+    size_t rlength();
+    const char *data();
+    void consume(size_t l);
+
+    size_t wlength();
+
+    std::list<write_block>::insert_iterator buffer_head();
+    std::list<write_block>::insert_iterator buffer_end();
+    virtual ssize_t buffer_insert(std::list<write_block>::insert_iterator where, const void* buff, size_t len);
+    virtual ssize_t buffer_insert(std::list<write_block>::insert_iterator where, void* buff, size_t len);
 };
 
 void flushproxy2();

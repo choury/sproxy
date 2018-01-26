@@ -21,9 +21,9 @@
 typedef enum{TCP=SOCK_STREAM, UDP=SOCK_DGRAM, ICMP, RUDP}Protocol;
 
 extern char **main_argv;
+extern char SPROT[];
 extern char SHOST[];
 extern uint16_t SPORT;
-extern Protocol SPROT;
 extern int daemon_mode;
 extern int ignore_cert_error;
 extern int disable_ipv6;
@@ -94,6 +94,7 @@ do{\
 #define LOGD(...)          void(0)
 #endif
 
+
 #ifdef  __cplusplus
 extern "C" {
 #endif
@@ -160,19 +161,20 @@ do {\
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
 #define NOERROR             0
-#define CONNECT_FAILED      31
-#define CONNECT_TIMEOUT     32
-#define SSL_SHAKEHAND_ERR   33
-#define HEAD_TOO_LONG_ERR   34
-#define HTTP_PROTOCOL_ERR   35
-#define READ_ERR            36
-#define WRITE_ERR           37
-#define INTERNAL_ERR        38
-#define PEER_LOST_ERR       39
-#define IP_BLOCK_ERR        40
-#define TCP_RESET_ERR       41
-#define DNS_FAILED          42
-#define VPN_AGED_ERR        43
+#define SOCKET_ERR          80
+#define CONNECT_FAILED      81
+#define CONNECT_TIMEOUT     82
+#define SSL_SHAKEHAND_ERR   83
+#define HEAD_TOO_LONG_ERR   84
+#define HTTP_PROTOCOL_ERR   85
+#define READ_ERR            86
+#define WRITE_ERR           87
+#define PEER_LOST_ERR       88
+#define IP_BLOCK_ERR        89
+#define TCP_RESET_ERR       90
+#define DNS_FAILED          91
+#define VPN_AGED_ERR        92
+#define SNI_HOST_ERR        93
 #define ERROR_MASK          0xff
 #define DISCONNECT_FLAG     (1<<31)
 

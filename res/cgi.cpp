@@ -55,9 +55,16 @@ Cgi::Cgi(const char* fname, int sv[2]) {
     // 父进程
     close(sv[1]);   // 关闭管道的子进程端
     /* 现在可在fd[0]中读写数据 */
-    fd = sv[0];
-    handleEvent=(void (Con::*)(uint32_t))&Cgi::defaultHE;
-    updateEpoll(EPOLLIN);
+    rwer = new RWer(sv[0], [this](int ret, int code){
+        LOGE("CGI error: %d/%d\n", ret, code);
+        deleteLater(ret);
+    });
+    rwer->SetReadCB(std::bind(&Cgi::readHE, this, _1));
+    rwer->SetWriteCB([this](size_t len){
+        for(auto i: statusmap) {
+            i.second->src->writedcb(i.second->index);
+        }
+    });
     cgimap[filename] = this;
 }
 
@@ -66,7 +73,7 @@ Cgi::~Cgi() {
 }
 
 int32_t Cgi::bufleft(void*) {
-    return 1024*1024 - buffer.length;
+    return 1024*1024 - rwer->wlength();
 }
 
 ssize_t Cgi::Send(void *buff, size_t size, void* index) {
@@ -78,231 +85,196 @@ ssize_t Cgi::Send(void *buff, size_t size, void* index) {
     header->flag = size ? 0: CGI_FLAG_END;
     header->requestId = htonl(id);
     header->contentLength = htons(size);
-    buffer.push(header, size+sizeof(CGI_Header));
-    updateEpoll(events | EPOLLOUT);
+    rwer->buffer_insert(rwer->buffer_end(), header, size+sizeof(CGI_Header));
     return size;
 }
 
 
-void Cgi::InProc() {
-    CGI_Header *header = (CGI_Header *)cgi_buff;
+void Cgi::readHE(size_t len) {
+    if (len < sizeof(CGI_Header)) {
+        return;
+    }
 begin:
+    const CGI_Header *header = (const CGI_Header *)rwer->data();
+    size_t size = ntohs(header->contentLength) + sizeof(CGI_Header);
+    if(len < size){
+        return;
+    }
     uint32_t cgi_id = ntohl(header->requestId);
-    switch (cgistage) {
-    case Status::WaitHeadr:{
-        int len = sizeof(CGI_Header) - cgi_getlen;
-        if (len == 0) {
-            assert(ntohs(header->contentLength) <= CGI_LEN_MAX);
-            cgistage = Status::WaitBody;
-            break;
-        }
-        len = read(fd, cgi_buff + cgi_getlen, len);
-        if (len <= 0) {
-            if (showerrinfo(len, "cgi read")) {
-                deleteLater(READ_ERR);
-            }
-            return;
-        }
-        cgi_getlen += len;
-        break;
-    }
-    case Status::WaitBody:{
-        int len = ntohs(header->contentLength) + sizeof(CGI_Header) - cgi_getlen;
-        if (len == 0) {
-            if(statusmap.count(cgi_id) == 0) {
-                cgistage = Status::WaitHeadr;
-                cgi_getlen = 0;
-                break;
-            }
-            switch (header->type) {
-            case CGI_RESPONSE:
-                cgistage = Status::HandleRes;
-                break;
-            case CGI_DATA:
-                cgistage = Status::HandleData;
-                break;
-            case CGI_VALUE:
-                cgistage = Status::HandleValue;
-                break;
-            default:
-                LOGE("cgi unkown type: %d\n", header->type);
-                cgistage = Status::WaitHeadr;
-                cgi_getlen = 0;
-                break;
-            }
-            break;
-        }
-        len = read(fd, cgi_buff + cgi_getlen, len);
-        if (len <= 0){
-            if(showerrinfo(len, "cgi read")) {
-                deleteLater(READ_ERR);
-            }
-            return;
-        }
-        cgi_getlen += len;
-        break;
-    }
-    case Status::HandleRes: {
-        HttpResHeader* res = new HttpResHeader(header);
-        if (!res->no_body() && res->get("content-length") == nullptr) {
-            res->add("Transfer-Encoding", "chunked");
-        }
+    bool consumed = false;
+    if(statusmap.count(cgi_id)) {
         HttpReqHeader* req = statusmap.at(cgi_id);
-        res->index = req->index;
-        req->src->response(res);
-        req->flags |= HTTP_RESPONED_F;
-        cgistage = Status::WaitHeadr;
-        cgi_getlen = 0;
-        break;
-    }
-    case Status::HandleValue: {
-        HttpReqHeader* req = statusmap.at(cgi_id);
-        CGI_NameValue *nv = (CGI_NameValue *)(header+1);
-        uint8_t flag = 0;
-        switch(ntohl(nv->name)) {
-        case CGI_NAME_BUFFLEFT: {
-            CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + sizeof(uint32_t));
-            memcpy(header_back, header, sizeof(CGI_Header));
-            header_back->flag = 0;
-            header_back->contentLength = htons(sizeof(CGI_NameValue) + sizeof(uint32_t));
-            CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
-            nv_back->name = htonl(CGI_NAME_BUFFLEFT);
-            set32(nv_back->value, htonl(req->src->bufleft(req->index)));
-            buffer.push(header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength));
+        switch (header->type) {
+        case CGI_RESPONSE:
+            consumed = HandleRes(header, req);
             break;
-        }
-        case CGI_NAME_STRATEGYGET: {
-            if(!checkauth(req->src->getip())){
-                flag = CGI_FLAG_ERROR;
-                break;
-            }
-            auto slist = getallstrategy();
-            for(auto i: slist) {
-                auto host = std::get<0>(i);
-                if(host == ""){
-                   host = "_";
-                }
-                auto strategy =  std::get<1>(i);
-                auto ext = std::get<2>(i);
-                //"host strategy ext\0"
-                size_t value_len = sizeof(CGI_NameValue) + host.length() + strategy.length() + ext.length() + 3;
-                CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + value_len);
-                memcpy(header_back, header, sizeof(CGI_Header));
-                header_back->flag = 0;
-                header_back->contentLength = htons(value_len);
-                CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
-                nv_back->name = htonl(CGI_NAME_STRATEGYGET);
-                sprintf((char *)nv_back->value, "%s %s %s", host.c_str(), strategy.c_str(), ext.c_str());
-                buffer.push(header_back, sizeof(CGI_Header) + value_len);
-            }
+        case CGI_DATA:
+            consumed = HandleData(header, req);
             break;
-        }
-        case CGI_NAME_STRATEGYADD:{
-            if(!checkauth(req->src->getip())){
-                flag = CGI_FLAG_ERROR;
-                break;
-            }
-            char site[DOMAINLIMIT];
-            char strategy[20];
-            sscanf((char*)nv->value, "%s %s", site, strategy);
-            if(addstrategy(site, strategy, "") == false){
-                LOG("[CGI] addstrategy %s (%s)\n", site, strategy);
-                flag = CGI_FLAG_ERROR;
-            }
+        case CGI_VALUE:
+            consumed = HandleValue(header, req);
             break;
-        }
-        case CGI_NAME_STRATEGYDEL:{
-            if(!checkauth(req->src->getip())){
-                flag = CGI_FLAG_ERROR;
-                break;
-            }
-            if(delstrategy((char *)nv->value) == false){
-                LOG("[CGI] delstrategy %s\n", (char *)nv->value);
-                flag = CGI_FLAG_ERROR;
-            }
-            break;
-        }
-        case CGI_NAME_GETPROXY:{
-            if(!checkauth(req->src->getip())){
-                flag = CGI_FLAG_ERROR;
-                break;
-            }
-            char proxy[DOMAINLIMIT];
-            int len = getproxy(proxy, sizeof(proxy));
-            CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + len);
-            memcpy(header_back, header, sizeof(CGI_Header));
-            header_back->flag = 0;
-            header_back->contentLength = htons(sizeof(CGI_NameValue) + len);
-            CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
-            nv_back->name = htonl(CGI_NAME_GETPROXY);
-            memcpy(nv_back->value, proxy, len);
-            buffer.push(header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength));
-            break;
-        }
-        case CGI_NAME_SETPROXY:{
-            if(!checkauth(req->src->getip())){
-                flag = CGI_FLAG_ERROR;
-                break;
-            }
-            if(setproxy((char *)nv->value)){
-                LOG("[CGI] switch %s\n", (char *)nv->value);
-                flag = CGI_FLAG_ERROR;
-            }
-            break;
-        }
-        case CGI_NAME_LOGIN:{
-            if(strcmp(auth_string, (char *)nv->value)){
-                flag = CGI_FLAG_ERROR;
-            }else{
-                LOG("[CGI] %s login\n", req->src->getip());
-                addauth(req->src->getip());
-            }
-            break;
-        }
         default:
+            LOGE("cgi unkown type: %d\n", header->type);
+            consumed = true;
             break;
         }
-        CGI_Header* header_end = (CGI_Header*)p_malloc(sizeof(CGI_Header));
-        memcpy(header_end, header, sizeof(CGI_Header));
-        header_end->contentLength = 0;
-        header_end->flag = flag | CGI_FLAG_END;
-        buffer.push(header_end, sizeof(CGI_Header));
-        updateEpoll(events | EPOLLOUT);
-        cgistage = Status::WaitHeadr;
-        cgi_getlen = 0;
+    }
+    if(consumed){
+        rwer->consume(size);
+        len -= size;
+        goto begin;
+    }
+}
+
+bool Cgi::HandleRes(const CGI_Header *header, HttpReqHeader* req){
+    HttpResHeader* res = new HttpResHeader(header);
+    if (!res->no_body() && res->get("content-length") == nullptr) {
+        res->add("transfer-encoding", "chunked");
+    }
+    res->index = req->index;
+    req->src->response(res);
+    req->flags |= HTTP_RESPONED_F;
+    return true;
+}
+
+bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
+    const CGI_NameValue *nv = (const CGI_NameValue *)(header+1);
+    uint8_t flag = 0;
+    switch(ntohl(nv->name)) {
+    case CGI_NAME_BUFFLEFT: {
+        CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + sizeof(uint32_t));
+        memcpy(header_back, header, sizeof(CGI_Header));
+        header_back->flag = 0;
+        header_back->contentLength = htons(sizeof(CGI_NameValue) + sizeof(uint32_t));
+        CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
+        nv_back->name = htonl(CGI_NAME_BUFFLEFT);
+        set32(nv_back->value, htonl(req->src->bufleft(req->index)));
+        rwer->buffer_insert(rwer->buffer_end(), header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength));
         break;
     }
-    case Status::HandleData:
-        cgi_outlen = sizeof(CGI_Header);
-        cgistage = Status::HandleLeft;
-    case Status::HandleLeft:{
-        HttpReqHeader* req = statusmap.at(cgi_id);
-        if (cgi_outlen == cgi_getlen) {
-            cgistage = Status::WaitHeadr;
-            cgi_getlen = 0;
-        }else{
-            int len = req->src->bufleft(req->index);
-            if (len <= 0) {
-                LOGE("The requester's write buff is full\n");
-                updateEpoll(0);
-                return;
-            }
-            len = Min(len, cgi_getlen - cgi_outlen);
-            len = req->src->Send((const char *)cgi_buff + cgi_outlen, len, req->index);
-            cgi_outlen += len;
+    case CGI_NAME_STRATEGYGET: {
+        if(!checkauth(req->src->getip())){
+            flag = CGI_FLAG_ERROR;
+            break;
         }
-        if (header->flag & CGI_FLAG_END) {
-            req->src->finish(NOERROR | DISCONNECT_FLAG, req->index);
-            statusmap.erase(cgi_id);
-            delete req;
+        auto slist = getallstrategy();
+        for(auto i: slist) {
+            auto host = std::get<0>(i);
+            if(host == ""){
+               host = "_";
+            }
+            auto strategy =  std::get<1>(i);
+            auto ext = std::get<2>(i);
+            //"host strategy ext\0"
+            size_t value_len = sizeof(CGI_NameValue) + host.length() + strategy.length() + ext.length() + 3;
+            CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + value_len);
+            memcpy(header_back, header, sizeof(CGI_Header));
+            header_back->flag = 0;
+            header_back->contentLength = htons(value_len);
+            CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
+            nv_back->name = htonl(CGI_NAME_STRATEGYGET);
+            sprintf((char *)nv_back->value, "%s %s %s", host.c_str(), strategy.c_str(), ext.c_str());
+            rwer->buffer_insert(rwer->buffer_end(), header_back, sizeof(CGI_Header) + value_len);
+        }
+        break;
+    }
+    case CGI_NAME_STRATEGYADD:{
+        if(!checkauth(req->src->getip())){
+            flag = CGI_FLAG_ERROR;
+            break;
+        }
+        char site[DOMAINLIMIT];
+        char strategy[20];
+        sscanf((char*)nv->value, "%s %s", site, strategy);
+        if(addstrategy(site, strategy, "") == false){
+            LOG("[CGI] addstrategy %s (%s)\n", site, strategy);
+            flag = CGI_FLAG_ERROR;
+        }
+        break;
+    }
+    case CGI_NAME_STRATEGYDEL:{
+        if(!checkauth(req->src->getip())){
+            flag = CGI_FLAG_ERROR;
+            break;
+        }
+        if(delstrategy((char *)nv->value) == false){
+            LOG("[CGI] delstrategy %s\n", (char *)nv->value);
+            flag = CGI_FLAG_ERROR;
+        }
+        break;
+    }
+    case CGI_NAME_GETPROXY:{
+        if(!checkauth(req->src->getip())){
+            flag = CGI_FLAG_ERROR;
+            break;
+        }
+        char proxy[DOMAINLIMIT];
+        int len = getproxy(proxy, sizeof(proxy));
+        CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + len);
+        memcpy(header_back, header, sizeof(CGI_Header));
+        header_back->flag = 0;
+        header_back->contentLength = htons(sizeof(CGI_NameValue) + len);
+        CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
+        nv_back->name = htonl(CGI_NAME_GETPROXY);
+        memcpy(nv_back->value, proxy, len);
+        rwer->buffer_insert(rwer->buffer_end(), header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength));
+        break;
+    }
+    case CGI_NAME_SETPROXY:{
+        if(!checkauth(req->src->getip())){
+            flag = CGI_FLAG_ERROR;
+            break;
+        }
+        if(setproxy((char *)nv->value)){
+            LOG("[CGI] switch %s\n", (char *)nv->value);
+            flag = CGI_FLAG_ERROR;
+        }
+        break;
+    }
+    case CGI_NAME_LOGIN:{
+        if(strcmp(auth_string, (char *)nv->value)){
+            flag = CGI_FLAG_ERROR;
+        }else{
+            LOG("[CGI] %s login\n", req->src->getip());
+            addauth(req->src->getip());
         }
         break;
     }
     default:
         break;
     }
-    goto begin;
+    CGI_Header* header_end = (CGI_Header*)p_malloc(sizeof(CGI_Header));
+    memcpy(header_end, header, sizeof(CGI_Header));
+    header_end->contentLength = 0;
+    header_end->flag = flag | CGI_FLAG_END;
+    rwer->buffer_insert(rwer->buffer_end(), header_end, sizeof(CGI_Header));
+    return true;
 }
+
+bool Cgi::HandleData(const CGI_Header* header, HttpReqHeader* req){
+    int len = req->src->bufleft(req->index);
+    size_t size = ntohs(header->contentLength);
+    if (len < (int)size) {
+        LOGE("The requester's write buff is not enougth(%zu/%d)\n", size, len);
+        rwer->delEpoll(EPOLLIN);
+        return false;
+    }
+
+    if(size){
+        req->src->Send((const char *)(header+1), size, req->index);
+    }
+
+    if (header->flag & CGI_FLAG_END) {
+        uint32_t cgi_id = ntohl(header->requestId);
+        req->src->finish(NOERROR | DISCONNECT_FLAG, req->index);
+        statusmap.erase(cgi_id);
+        delete req;
+    }
+    return true;
+}
+
+#if 0
 
 void Cgi::defaultHE(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
@@ -335,6 +307,7 @@ void Cgi::defaultHE(uint32_t events) {
         InProc();
     }
 }
+#endif
 
 bool Cgi::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
@@ -352,7 +325,7 @@ bool Cgi::finish(uint32_t flags, void* index) {
 void Cgi::deleteLater(uint32_t errcode){
     for(auto i: statusmap) {
         if((i.second->flags & HTTP_RESPONED_F) == 0){
-            HttpResHeader* res = new HttpResHeader(H503);
+            HttpResHeader* res = new HttpResHeader(H503, sizeof(H503));
             res->index = i.second->index;
             i.second->src->response(res);
         }
@@ -368,8 +341,7 @@ void* Cgi::request(HttpReqHeader* req) {
     uint32_t cgi_id = curid++;
     statusmap[cgi_id] = req;
     CGI_Header *header = req->getcgi(cgi_id);
-    buffer.push(header, sizeof(CGI_Header) + ntohs(header->contentLength));
-    updateEpoll(events | EPOLLOUT);
+    rwer->buffer_insert(rwer->buffer_end(), header, sizeof(CGI_Header) + ntohs(header->contentLength));
     return reinterpret_cast<void*>(cgi_id);
 }
 
@@ -403,7 +375,7 @@ err:
             close(fds[0]);
             close(fds[1]);
         }
-        HttpResHeader* res = new HttpResHeader(H500);
+        HttpResHeader* res = new HttpResHeader(H500, sizeof(H500));
         res->index = req->index;
         req->src->response(res);
         return nullptr;

@@ -44,12 +44,12 @@ struct IcmpStatus{
 
 
 class Guest_vpn:public Requester, public ResObject{
+    bool fulled = false;
     const char* generateUA(const VpnKey* key);
 protected:
     std::map<VpnKey, VpnStatus> statusmap;
-    Buffer buffer;
-    void defaultHE(uint32_t events) override;
-    void buffHE(char* buff, size_t buflen);
+//    void defaultHE(uint32_t events) override;
+    void buffHE(const char* buff, size_t buflen);
     void tcpHE(const Ip* pac,const char* packet, size_t len);
     void udpHE(const Ip* pac,const char* packet, size_t len);
     void icmpHE(const Ip* pac,const char* packet, size_t len);
@@ -58,7 +58,7 @@ protected:
     void cleanKey(const VpnKey* key);
 public:
     explicit Guest_vpn(int fd);
-    ~Guest_vpn();
+    virtual ~Guest_vpn();
     virtual void response(HttpResHeader* res)override;
     virtual void transfer(void* index, Responser* res_ptr, void* res_index)override;
 

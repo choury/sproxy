@@ -21,17 +21,17 @@ struct FileStatus{
 class File:public Responser{
     char filename[URLLIMIT];
     char *suffix = nullptr;
-    int  ffd = 0;
+    int  fd = 0;
     struct stat st;
     bool valid = true;
     uint32_t req_id = 1;
     std::map<uint32_t, FileStatus> statusmap;
     bool checkvalid();
-    virtual void defaultHE(uint32_t events);
+    virtual void readHE(size_t len);
     virtual void deleteLater(uint32_t errcode) override;
     virtual void* request(HttpReqHeader* req) override;
 public:
-    explicit File(const char* fname, int ffd, const struct stat* st);
+    explicit File(const char* fname, int fd, const struct stat* st);
     ~File();
     virtual int32_t bufleft(void* index)override;
     virtual ssize_t Send(void* buff, size_t size, void* index)override;

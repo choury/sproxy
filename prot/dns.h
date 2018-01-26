@@ -54,7 +54,7 @@ public:
     uint16_t type;
     uint16_t id;
     Dns_Que(const std::string& host, uint16_t type, uint16_t id);
-    explicit Dns_Que(const char *buff);
+    explicit Dns_Que(const char *buff, size_t len);
     int build(unsigned char *buf)const;
 };
 
@@ -66,7 +66,7 @@ public:
     uint16_t  id = 0;
     uint32_t  ttl = 0;
     explicit Dns_Rr();
-    explicit Dns_Rr(const char *buff);
+    explicit Dns_Rr(const char *buff, size_t len);
     explicit Dns_Rr(const in_addr* addr);
     explicit Dns_Rr(const char *rDns, bool isRdns);
     int build(const Dns_Que* query, unsigned char *buf)const;

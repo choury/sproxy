@@ -633,7 +633,10 @@ void Udp::print() const{
  * 解析packet，不能带L2的头，ip头+tcp/udp头+data
  */
 Ip::Ip(const char *packet, size_t len){
-
+    if(len < sizeof(struct ip)){
+        LOGE("Invalid IP header length: %zu bytes\n", len);
+        throw 0;
+    }
     /* define/compute ip header offset */
     memcpy(&ip_hdr, packet, sizeof(struct ip));
     hdrlen = ip_hdr.ip_hl * 4;

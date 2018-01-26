@@ -281,7 +281,13 @@ int IcmpSocket(const union sockaddr_un* addr, uint16_t id){
         LOGE("protecd fd error:%s\n", strerror(errno));
         goto ERR;
     }
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) {
+        LOGE("fcntl error:%s\n", strerror(errno));
+        goto ERR;
+    }
 
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
     if(connect(fd, &addr->addr, sizeof(union sockaddr_un))){
         LOGE("connect failed: %s\n", strerror(errno));
         goto ERR;

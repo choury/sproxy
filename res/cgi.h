@@ -45,17 +45,12 @@ class Requester;
 
 class Cgi:public Responser{
     char filename[URLLIMIT];
-    char cgi_buff[BUF_LEN];
-    size_t cgi_getlen  = 0;
-    size_t cgi_outlen  = 0;
     uint32_t curid = 1;
     std::map<uint32_t, HttpReqHeader*> statusmap;
-    Buffer buffer;
-    virtual void defaultHE(uint32_t events);
-    enum class Status{
-        WaitHeadr, WaitBody, HandleRes, HandleValue, HandleData, HandleLeft
-    }cgistage = Status::WaitHeadr;
-    void InProc();
+    void readHE(size_t len);
+    bool HandleRes(const CGI_Header* header, HttpReqHeader* req);
+    bool HandleValue(const CGI_Header* header, HttpReqHeader* req);
+    bool HandleData(const CGI_Header* header, HttpReqHeader* req);
 public:
     explicit Cgi(const char* filename, int sv[2]);
     virtual ~Cgi();

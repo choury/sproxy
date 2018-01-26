@@ -4,10 +4,9 @@
 #include "requester.h"
 #include "prot/http.h"
 #include <netinet/in.h>
-#include <list>
+#include <openssl/ssl.h>
 
 class Guest:public Requester, public HttpResponser {
-    Buffer buffer;
 protected:
     Responser* responser_ptr = nullptr;
     void*      responser_index = nullptr;
@@ -18,20 +17,20 @@ protected:
 #define GUEST_CHUNK_F        (1<<4)
 #define GUEST_REQ_COMPLETED  (1<<5)
 #define GUEST_RES_COMPLETED  (1<<6)
+#define GUEST_ERROR_F        (1<<7)
     uint32_t Status_flags = GUEST_IDELE_F;
 
-    virtual void defaultHE(uint32_t events)override;
-    virtual void closeHE(uint32_t) override;
+
     virtual void deleteLater(uint32_t errcode) override;
+    virtual void Error(int ret, int code);
     
-    virtual ssize_t Read(void* buff, size_t len)override;
     virtual void ReqProc(HttpReqHeader* req)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
-    virtual bool EndProc() override;
-    virtual void ErrProc(int errcode)override;
-    virtual void discard() override;
+    virtual void EndProc() override;
+    virtual void ErrProc() override;
 public:
     explicit Guest(int fd, struct sockaddr_in6 *myaddr);
+    explicit Guest(int fd, struct sockaddr_in6 *myaddr, SSL_CTX* ctx);
 
     virtual int32_t bufleft(void * index) override;
     virtual ssize_t Send(void* buff, size_t size, void* index)override;

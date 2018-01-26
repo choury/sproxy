@@ -20,12 +20,12 @@
 
 static uint16_t id_cur = 1;
 
-class Dns_srv:public Con{
+class Dns_srv:public Server{
     char name[INET6_ADDRSTRLEN];
 public:
     explicit Dns_srv(const char* name);
-    ~Dns_srv();
-    virtual void DnshandleEvent(uint32_t events);
+    virtual ~Dns_srv();
+    void buffHE(const char* buffer, size_t len);
     int query(const char *host, int type, uint32_t id);
     virtual void dump_stat()override;
 };
@@ -333,7 +333,7 @@ void RcdDown(const char *hostname, const sockaddr_un &addr) {
     }
 }
 
-Dns_srv::Dns_srv(const char* name):Con(0){
+Dns_srv::Dns_srv(const char* name){
     sockaddr_un addr;
     if (inet_pton(AF_INET, name, &addr.addr_in.sin_addr) == 1) {
         addr.addr_in.sin_family = AF_INET;
@@ -350,11 +350,16 @@ Dns_srv::Dns_srv(const char* name):Con(0){
         LOGE("[DNS] connecting  %s error:%s\n", name, strerror(errno));
         throw 0;
     }
-    this->fd = fd;
+    rwer = new RWer(fd, [](int ret, int code){
+        LOGE("DNS error: %d/%d\n", ret, code);
+    });
+    rwer->SetReadCB([this](size_t len){
+        buffHE(rwer->data(), len);
+        rwer->consume(len);
+    });
+
     strcpy(this->name, name);
     LOGD(DDNS, "new dns server: %s\n", name);
-    updateEpoll(EPOLLIN);
-    handleEvent = (void (Con::*)(uint32_t))&Dns_srv::DnshandleEvent;
     srvs.push_back(this);
 }
 
@@ -368,88 +373,65 @@ Dns_srv::~Dns_srv(){
 }
 
 
-void Dns_srv::DnshandleEvent(uint32_t events) {
-    if (events & EPOLLIN) {
-        char buf[BUF_SIZE];
-        int len = read(fd, buf, BUF_SIZE);
+void Dns_srv::buffHE(const char *buffer, size_t len) {
+    Dns_Rr dnsrcd(buffer, len);
+    uint16_t id = dnsrcd.id;
 
-        if ( len <= 0 ) {
-            LOGE("[DNS] read error: %s\n", strerror(errno));
-            return;
-        }
-        DNS_HDR *dnshdr = (DNS_HDR *)buf;
-        uint16_t id = ntohs(dnshdr->id);
-
-        if(querying_raw_id.count(id)){
-            del_delayjob((job_func)query_timeout, (void *)(size_t)id);
-            Dns_RawReq *dnsreq =  querying_raw_id[id];
-            querying_raw_id.erase(id);
-            dnsreq->func(dnsreq->param, buf, len);
-            delete dnsreq;
-            return;
-        }
-        Dns_Rr dnsrcd(buf);
-    
-        uint32_t flags=0;
-        if (id & 1) {
-            if (querying_index_id.count(id) == 0) {
-                LOG("[DNS] Get a unkown id:%d\n", id);
-                return;
-            }
-            flags |= GARECORD;
-        } else {
-            id--;
-            if (querying_index_id.count(id) == 0) {
-                LOG("[DNS] Get a unkown id:%d\n", id);
-                return;
-            }
-            flags |= GAAAARECORD;
-        }
-        auto host = querying_index_id[id];
-        Dns_Status *dnsst = querying_index_host[host];
-        dnsst->flags |= flags;
-
-        if(dnsrcd.addrs.size()){
-            for(auto i: dnsrcd.addrs){
-                dnsst->rcd.addrs.push_back(i);
-            }
-            dnsst->rcd.gettime = time(0);
-            dnsst->rcd.ttl = dnsrcd.ttl;
-        }
-
-        if ((dnsst->flags & GARECORD) &&(dnsst->flags & GAAAARECORD)) {
-            del_delayjob((job_func)query_timeout, (void *)(size_t)id);
-            querying_index_id.erase(id);
-            querying_index_host.erase(host);
-            if (!dnsst->rcd.addrs.empty()) {
-                dnsst->rcd.gettime = time(nullptr);
-                rcd_cache[host] =  dnsst->rcd;
-            }
-            for(auto i: dnsst->reqs ){
-                i.func(i.param, dnsst->host, dnsst->rcd.addrs);
-            }
-            delete dnsst;
-        }
+    if(querying_raw_id.count(id)){
+        del_delayjob((job_func)query_timeout, (void *)(size_t)id);
+        Dns_RawReq *dnsreq =  querying_raw_id[id];
+        querying_raw_id.erase(id);
+        dnsreq->func(dnsreq->param, buffer, len);
+        delete dnsreq;
+        return;
     }
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        int       error = 0;
-        socklen_t errlen = sizeof(error);
 
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOG("[DNS] unkown error: %s\n", strerror(error));
-            delete this;
+    uint32_t flags=0;
+    if (id & 1) {
+        if (querying_index_id.count(id) == 0) {
+            LOG("[DNS] Get a unkown id:%d\n", id);
+            return;
         }
+        flags |= GARECORD;
+    } else {
+        id--;
+        if (querying_index_id.count(id) == 0) {
+            LOG("[DNS] Get a unkown id:%d\n", id);
+            return;
+        }
+        flags |= GAAAARECORD;
+    }
+    std::string host = querying_index_id[id];
+    Dns_Status *dnsst = querying_index_host[host];
+    dnsst->flags |= flags;
+
+    if(dnsrcd.addrs.size()){
+        for(auto i: dnsrcd.addrs){
+            dnsst->rcd.addrs.push_back(i);
+        }
+        dnsst->rcd.gettime = time(0);
+        dnsst->rcd.ttl = dnsrcd.ttl;
+    }
+
+    if ((dnsst->flags & GARECORD) &&(dnsst->flags & GAAAARECORD)) {
+        del_delayjob((job_func)query_timeout, (void *)(size_t)id);
+        querying_index_id.erase(id);
+        querying_index_host.erase(host);
+        if (!dnsst->rcd.addrs.empty()) {
+            dnsst->rcd.gettime = time(nullptr);
+            rcd_cache[host] =  dnsst->rcd;
+        }
+        for(auto i: dnsst->reqs ){
+            i.func(i.param, dnsst->host, dnsst->rcd.addrs);
+        }
+        delete dnsst;
     }
 }
 
-
 int Dns_srv::query(const char *host, int type, uint32_t id) {
-    unsigned char  buf[BUF_SIZE];
+    unsigned char*  buf = (unsigned char*)p_malloc(BUF_SIZE);
     int len = Dns_Que(host, type, id).build(buf);
-    if (write(fd, buf, len)!= len) {
-        LOGE("[DNS] write error: %s\n", strerror(errno));
-        return 0;
-    }
+    rwer->buffer_insert(rwer->buffer_end(), buf, len);
     return id;
 }
 
@@ -510,12 +492,12 @@ typedef struct DNS_RR {
     uint16_t rdlength;           // rdata 长度
 } __attribute__((packed)) DNS_RR;
 
-static const unsigned char * getdomain(const DNS_HDR *hdr, const unsigned char *p, char* domain) {
+static const unsigned char * getdomain(const DNS_HDR *hdr, const unsigned char *p, size_t len, char* domain) {
     const unsigned char* buf = (const unsigned char *)hdr;
-    while (*p) {
+    while (p < (unsigned char*)hdr + len && *p) {
         if (*p > 63) {
             const unsigned char *q = buf+((*p & 0x3f) <<8) + *(p+1);
-            getdomain(hdr, q, domain);
+            getdomain(hdr, q, len, domain);
             return p+2;
         } else {
             memcpy(domain, p+1, *p);
@@ -566,12 +548,12 @@ static std::string reverse(std::string str){
 #define IPV4_PTR_PREFIX "arpa.in-addr."
 #define IPV6_PTR_PREFIX "arpa.ip6."
 
-Dns_Que::Dns_Que(const char* buff) {
+Dns_Que::Dns_Que(const char* buff, size_t len) {
     const DNS_HDR *dnshdr = (const DNS_HDR*)buff;
 
     id = ntohs(dnshdr->id);
     char domain[DOMAINLIMIT];
-    const unsigned char *p = getdomain(dnshdr, (const unsigned char *)(dnshdr+1), domain);
+    const unsigned char *p = getdomain(dnshdr, (const unsigned char *)(dnshdr+1), len, domain);
     host = (char *)domain;
     const DNS_QUE *que = (const DNS_QUE*)p;
     type = ntohs(que->type);
@@ -632,7 +614,7 @@ int Dns_Que::build(unsigned char* buf)const {
 Dns_Rr::Dns_Rr() {
 }
 
-Dns_Rr::Dns_Rr(const char* buff) {
+Dns_Rr::Dns_Rr(const char* buff, size_t len) {
     const DNS_HDR *dnshdr = (const DNS_HDR *)buff;
     id = ntohs(dnshdr->id);
 
@@ -642,7 +624,7 @@ Dns_Rr::Dns_Rr(const char* buff) {
     assert(numq && (flag & QR));
     for (int i = 0; i < numq; ++i) {
         char domain[DOMAINLIMIT];
-        p = (unsigned char *)getdomain(dnshdr, p, domain);
+        p = (unsigned char *)getdomain(dnshdr, p, len, domain);
         LOGD(DDNS, "[%d]:\n", dnshdr->id);
         p+= sizeof(DNS_QUE);
 
@@ -656,7 +638,7 @@ Dns_Rr::Dns_Rr(const char* buff) {
     uint16_t numa = ntohs(dnshdr->numa);
     for(int i = 0; i < numa; ++i) {
         char domain[DOMAINLIMIT];
-        p = (unsigned char *)getdomain(dnshdr, p, domain);
+        p = (unsigned char *)getdomain(dnshdr, p, len, domain);
         DNS_RR *dnsrr = (DNS_RR *)p;
         assert(ntohs(dnsrr->classes) == 1);
 
@@ -679,7 +661,7 @@ Dns_Rr::Dns_Rr(const char* buff) {
             break;
         case 2:
         case 5:
-            getdomain(dnshdr, p, domain);
+            getdomain(dnshdr, p, len, domain);
             break;
         case 28:
             ip.addr_in6.sin6_family = AF_INET6;

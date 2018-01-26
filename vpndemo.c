@@ -50,7 +50,7 @@ int tun_create(char *dev, int flags) {
     /* set ip of this end point of tunnel */
     ifr.ifr_addr.sa_family = AF_INET;
     struct sockaddr_in* addr = (struct sockaddr_in*)&ifr.ifr_addr;
-    inet_pton(AF_INET, "10.0.0.1", &addr->sin_addr);
+    inet_pton(AF_INET, "10.1.0.1", &addr->sin_addr);
     if((err = ioctl(tmp_fd, SIOCSIFADDR, &ifr)) < 0) {
         perror("ioctl (SIOCSIFADDR) failed");
         close(fd);
@@ -98,7 +98,7 @@ int tun_create(char *dev, int flags) {
 
     addr = (struct sockaddr_in *)&route.rt_gateway;
     addr->sin_family = AF_INET;
-    addr->sin_addr.s_addr = inet_addr("10.0.0.1");
+    addr->sin_addr.s_addr = inet_addr("10.1.0.1");
 
     addr = (struct sockaddr_in*)&route.rt_dst;
     addr->sin_family = AF_INET;

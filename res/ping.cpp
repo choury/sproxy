@@ -8,60 +8,24 @@
 #include <errno.h>
 #include <assert.h>
 
-void Ping::Dnscallback(Ping* p, const char *hostname, std::list<sockaddr_un> addrs){
-    if(addrs.size() == 0 ){
-        LOGE("dns failed for ping\n");
-        p->iserror = true;
-        return;
-    }
-    for (auto i: addrs){
-        i.addr_in6.sin6_port = 0;
-        p->addrs.push_back(i);
-    }
-    p->fd = IcmpSocket(&p->addrs.front(), p->id);
-    if(p->fd <= 0){
-        LOGE("create icmp socket failed: %s\n", strerror(errno));
-        p->iserror = true;
-        return;
-    }
-    p->updateEpoll(EPOLLIN);
-    p->handleEvent = (void (Con::*)(uint32_t))&Ping::defaultHE;
-}
-
 Ping::Ping(const char* host, uint16_t id): id(id) {
     strcpy(hostname, host);
-    query(host, (DNSCBfunc)Dnscallback, this);
+    rwer = new RWer(hostname, id, Protocol::ICMP, [this](int ret, int code){
+        LOGE("Ping error: %d/%d\n", ret, code);
+        iserror = true;
+        if(ret == READ_ERR || ret == WRITE_ERR){
+            deleteLater(ret);
+        }
+    });
+    rwer->SetReadCB([this](int len){
+        req_ptr->Send(rwer->data(), len, req_index);
+        rwer->consume(len);
+    });
 }
 
 
 Ping::Ping(HttpReqHeader* req):Ping(req->hostname, req->port) {
 }
-
-void Ping::defaultHE(uint32_t events) {
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        int       error = 0;
-        socklen_t errlen = sizeof(error);
-
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            if(error){
-                LOGE("(%s): ping error: %s\n", hostname, strerror(error));
-            }
-        }
-        deleteLater(INTERNAL_ERR);
-        return;
-    }
-
-    if (events & EPOLLIN) {
-        void* buff = p_malloc(BUF_LEN);
-        int ret = Read(buff, BUF_LEN);
-        if(ret <= 0 && showerrinfo(ret, "ping read")){
-            deleteLater(READ_ERR);
-        }else{
-            req_ptr->Send(buff, ret, req_index);
-        }
-    }
-}
-
 
 void* Ping::request(HttpReqHeader* req) {
     req_ptr = req->src;
@@ -73,10 +37,10 @@ void* Ping::request(HttpReqHeader* req) {
 
 ssize_t Ping::Send(void* buff, size_t size, void* index){
     assert(index == (void *)1);
-    if(fd <= 0 || iserror){
+    if(iserror){
         return size;
     }
-    return Write(buff, size);
+    return rwer->buffer_insert(rwer->buffer_end(), buff, size);
 }
 
 void Ping::deleteLater(uint32_t errcode) {

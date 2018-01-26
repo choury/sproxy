@@ -14,6 +14,15 @@ if(NOT HAVE_CXX11)
     message(FATAL_ERROR "this project need c++11")
 endif()
 
+CHECK_CXX_SOURCE_COMPILES("
+#include <list>
+using namespace std; 
+int main(){
+    list<int> a;
+    a.insert(list<int>::const_iterator(a.begin()), 0);
+    return 0;
+}" HAVE_NO_CONST_ITERATOR_BUG)
+
 
 
 if(ANDROID_NDK)
@@ -50,6 +59,11 @@ endif()
 
 set(CMAKE_C_FLAGS "-Wall -fPIC ${CMAKE_C_FLAGS}")
 set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -fPIC ${CMAKE_CXX_FLAGS}")
+
+if(NOT HAVE_NO_CONST_ITERATOR_BUG)
+    message(WARNING "have const_iterator insert bug, see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=55817")
+    set(CMAKE_CXX_FLAGS "-DHAVE_CONST_ITERATOR_BUG ${CMAKE_CXX_FLAGS}")
+endif()
 
 set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")

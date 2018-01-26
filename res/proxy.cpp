@@ -1,5 +1,5 @@
 #include "proxy.h"
-#include "proxy2.h"
+//#include "proxy2.h"
 #include "req/requester.h"
 #include "misc/dtls.h"
 #include "misc/job.h"
@@ -7,17 +7,20 @@
 #include <openssl/err.h>
 
 Proxy::Proxy(const char* hostname, uint16_t port, Protocol protocol): 
-        Host(hostname, port, protocol){
-
+        Host(hostname, port, protocol)
+{
+    rwer = new SRWer();
 }
 
 Responser* Proxy::getproxy(HttpReqHeader* req, Responser* responser_ptr) {
+#if 0
     if (proxy2) {
         return proxy2;
     }
     if(SPROT == Protocol::RUDP){
         return new Proxy2(SHOST, SPORT);
     }
+#endif
     Proxy *proxy = dynamic_cast<Proxy *>(responser_ptr);
     if(req->ismethod("CONNECT") || req->ismethod("SEND")){
         return new Proxy(SHOST, SPORT, SPROT);
@@ -28,62 +31,11 @@ Responser* Proxy::getproxy(HttpReqHeader* req, Responser* responser_ptr) {
     return new Proxy(SHOST, SPORT, SPROT);
 }
 
-ssize_t Proxy::Read(void* buff, size_t size) {
-    return ssl->read(buff, size);
-}
-
-
-ssize_t Proxy::Write(const void *buff, size_t size) {
-    return ssl->write(buff, size);
-}
-
-int verify_host_callback(int ok, X509_STORE_CTX *ctx){
-    char    buf[256];
-    X509   *err_cert;
-    int     err, depth;
-
-    err_cert = X509_STORE_CTX_get_current_cert(ctx);
-    err = X509_STORE_CTX_get_error(ctx);
-    depth = X509_STORE_CTX_get_error_depth(ctx);
-
-    X509_NAME_oneline(X509_get_subject_name(err_cert), buf, 256);
-
-    /*
-     * Catch a too long certificate chain. The depth limit set using
-     * SSL_CTX_set_verify_depth() is by purpose set to "limit+1" so
-     * that whenever the "depth>verify_depth" condition is met, we
-     * have violated the limit and want to log this error condition.
-     * We must do it here, because the CHAIN_TOO_LONG error would not
-     * be found explicitly; only errors introduced by cutting off the
-     * additional certificates would be logged.
-     */
-    if (!ok) {
-        LOGE("verify cert error:num=%d:%s:depth=%d:%s\n", err,
-                 X509_verify_cert_error_string(err), depth, buf);
-    } else {
-//        LOG("cert depth=%d:%s\n", depth, buf);
-    }
-
-    /*
-     * At this point, err contains the last verification error. We can use
-     * it for something special
-     */
-    if (!ok && (err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT))
-    {
-        X509_NAME_oneline(X509_get_issuer_name(err_cert), buf, 256);
-        LOGE("unable to get issuer= %s\n", buf);
-    }
-
-    if (ignore_cert_error)
-        return 1;
-    else
-        return ok; 
-}
-
 static const unsigned char alpn_protos_string[] =
     "\x8http/1.1" \
     "\x2h2";
 
+#if 0
 
 void Proxy::waitconnectHE(uint32_t events) {
     int       error = 0;
@@ -189,6 +141,7 @@ void Proxy::shakehandHE(uint32_t events) {
         del_delayjob((job_func)con_timeout, this);
     }
 }
+#endif
 
 void Proxy::discard() {
     ssl = nullptr;

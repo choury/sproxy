@@ -84,8 +84,8 @@ struct Http2_frame{
 
 class Http2Base{
 protected:
-    char http2_buff[FRAMELENLIMIT];
-    uint32_t http2_getlen = 0;
+    //char http2_buff[FRAMELENLIMIT];
+    //uint32_t http2_getlen = 0;
     uint32_t remoteframewindowsize = 65535; //由对端初始化的初始frame的窗口大小
     
     int32_t remotewinsize = 65535; // 对端提供的窗口大小，发送时减小，收到对端update时增加
@@ -93,63 +93,72 @@ protected:
 #define HTTP2_FLAG_INITED    1
 #define HTTP2_FLAG_GOAWAYED  2
     uint32_t http2_flag = 0;
-    uint32_t framelen = 0;
+//    uint32_t framelen = 0;
     uint32_t recvid = 0;
     uint32_t sendid = 1;
-    std::list<Http2_frame> framequeue;
+    //std::list<Http2_frame> framequeue;
     Index_table request_table;
     Index_table response_table;
-    void DefaultProc();
-    void Ping( const void *buff );
+    virtual size_t InitProc(const uchar* http2_buff, size_t len) = 0;
+    size_t DefaultProc(const uchar* http2_buff, size_t len);
+    
+    virtual void HeadersProc(const Http2_header *header) = 0;
+    virtual void SettingsProc(const Http2_header *header);
+    virtual void PingProc(const Http2_header *header);
+    virtual void GoawayProc(const Http2_header *header);
+    virtual void DataProc(uint32_t id, const void *data, size_t len)=0;
+    virtual void RstProc(uint32_t id, uint32_t errcode);
+    virtual void EndProc(uint32_t id);
+    virtual void ErrProc(int errcode) = 0;
+
+    void Ping(const void *buff);
     void Reset(uint32_t id, uint32_t code);
     void Goaway(uint32_t lastid, uint32_t code, char* message = nullptr);
     void SendInitSetting();
-    virtual void InitProc() = 0;
-    virtual void HeadersProc(Http2_header *header) = 0;
-    virtual ssize_t Read(void* buff, size_t len) = 0;
-    virtual ssize_t Write(const void *buff, size_t size) = 0;
-    virtual void PushFrame(const Http2_header* header)final;
     virtual void PushFrame(Http2_header* header);
 
-    virtual void SettingsProc(Http2_header *header);
-    virtual void PingProc(Http2_header *header);
-    virtual void GoawayProc(Http2_header *header);
-    virtual void RstProc(uint32_t id, uint32_t errcode);
-    virtual void EndProc(uint32_t id);
     virtual uint32_t ExpandWindowSize(uint32_t id, uint32_t size);
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)=0;
-    virtual void DataProc(uint32_t id, const void *data, size_t len)=0;
-    virtual void ErrProc(int errcode) = 0;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff) = 0;
-    void (Http2Base::*Http2_Proc)()=&Http2Base::InitProc;
-    int SendFrame();
+    size_t (Http2Base::*Http2_Proc)(const uchar* http2_buff, size_t len)=&Http2Base::InitProc;
     uint32_t GetSendId();
+
+#ifndef insert_iterator
+#ifdef HAVE_CONST_ITERATOR_BUG
+#define insert_iterator iterator
+#else
+#define insert_iterator const_iterator
+#endif
+#endif
+    virtual std::list<write_block>::insert_iterator queue_head() = 0;
+    virtual std::list<write_block>::insert_iterator queue_end() = 0;
+    virtual void queue_insert(std::list<write_block>::insert_iterator where, void* buff, size_t len) = 0;
 public:
     ~Http2Base();
 };
 
 class Http2Responser:public Http2Base, virtual public ResObject{
-    using Http2Base::http2_buff;
-    using Http2Base::http2_getlen;
+    //using Http2Base::http2_buff;
+    //using Http2Base::http2_getlen;
 protected:
-    virtual void InitProc()override;
-    virtual void HeadersProc(Http2_header *header)override;
+    virtual size_t InitProc(const uchar* http2_buff, size_t len)override;
+    virtual void HeadersProc(const Http2_header *header)override;
     virtual void ReqProc(HttpReqHeader* req) = 0;
 };
 
 
 class Http2Requster:public Http2Base{
-    using Http2Base::http2_buff;
-    using Http2Base::http2_getlen;
+    //using Http2Base::http2_buff;
+    //using Http2Base::http2_getlen;
 protected:
-    virtual void InitProc()override;
-    virtual void HeadersProc(Http2_header *header)override;
+    virtual size_t InitProc(const uchar* http2_buff, size_t len)override;
+    virtual void HeadersProc(const Http2_header *header)override;
     virtual void ResProc(HttpResHeader* res) = 0;
 public:
     void init();
 };
 
-#define STREAM_HEAD_ENDED    1
+#define STREAM_HEAD_ENDED   (1<<0)
 #define STREAM_WRITE_CLOSED (1<<1)
 #define STREAM_READ_CLOSED  (1<<2)
 

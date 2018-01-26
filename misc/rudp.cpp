@@ -252,9 +252,8 @@ int Rudp_c::Recv(){
 #endif
         }
     }
-    if(showerrinfo(ret, "rudp read")){
-        return -1;
-    }
+    LOGE("rudp read: %s\n", strerror(errno));
+    assert(0);
 #ifndef NDEBUG
     if(recv_end){
         LOGD(DRUDP, "%05u:[%d] get pkg: %x -- %x [%u]\n",

@@ -17,6 +17,7 @@ class FDns: public Responser{
     std::map<int, FDnsStatus> statusmap;
     uint32_t req_id = 1;
 
+    virtual void writedcb(void* index) override;
     virtual void deleteLater(uint32_t errcode) override;
 public:
     FDns();

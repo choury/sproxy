@@ -107,15 +107,16 @@ std::set< string > HttpHeader::getall(const char *header) const{
 */
 
 
-HttpReqHeader::HttpReqHeader(const char* header, ResObject* src):
+HttpReqHeader::HttpReqHeader(const char* header, size_t len, ResObject* src):
                              src(dynamic_cast<Requester *>(src))
 {
     assert(header);
     assert(src);
+    assert(len < HEADLENLIMIT);
     
     char httpheader[HEADLENLIMIT];
-    snprintf(httpheader, sizeof(httpheader), "%s", header);
-    *(strstr(httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
+    memcpy(httpheader, header, len);
+    *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
     char url[URLLIMIT] = {0};
     sscanf(httpheader, "%19s%*[ ]%4095[^\r\n ]", method, url);
     toUpper(method);
@@ -436,10 +437,10 @@ std::map< string, string > HttpReqHeader::getcookies() const {
 
 
 
-HttpResHeader::HttpResHeader(const char* header) {
+HttpResHeader::HttpResHeader(const char* header, size_t len) {
     assert(header);
     char httpheader[HEADLENLIMIT];
-    snprintf(httpheader, sizeof(httpheader), "%s", header);
+    memcpy(httpheader, header, len);
     *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
     memset(status, 0, sizeof(status));
     sscanf((char *)httpheader, "%*s%*[ ]%99[^\r\n]", status);
@@ -692,7 +693,7 @@ bool HttpReqHeader::getrange() {
     }
 }
 
-
+#if 0
 
 HttpBody::HttpBody() {
 }
@@ -801,4 +802,4 @@ size_t HttpReq::size(){
         return body.size() + header_len - header_sent;
     }
 }
-
+#endif

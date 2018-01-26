@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-char* strnstr(const char* s1, const char* s2, size_t len);
+const char* strnstr(const char* s1, const char* s2, size_t len);
 int startwith(const char *s1, const char *s2);
 int endwith(const char *s1, const char *s2);
 int spliturl(const char* url, char *protocol, char* host, char* path , uint16_t* port);
@@ -24,9 +24,6 @@ uint32_t getmtime();
 
 void dump_stat(int ignore);
 void dump_trace(int ignore);
-int showerr(int ret, const char *msg, const char* function, int line);
-
-#define showerrinfo(ret, msg)  showerr(ret, msg,  __PRETTY_FUNCTION__, __LINE__)
 
 void* memdup(const void* ptr, size_t size);
 

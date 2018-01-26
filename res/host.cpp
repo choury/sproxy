@@ -2,224 +2,161 @@
 #include "req/requester.h"
 #include "misc/job.h"
 #include "misc/util.h"
+#include "misc/vssl.h"
 
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
                     
-int Host::con_timeout(Host* host) {
-    LOGE("connect to %s time out. retry...\n", host->hostname);
-    host->connect();
-    return 0;
-}
+static const unsigned char alpn_protos_string[] =
+    "\x8http/1.1" \
+    "\x2h2";
 
-Host::Host(const char* hostname, uint16_t port, Protocol protocol): port(port), protocol(protocol){
+Host::Host(Protocol protocol, const char* hostname, uint16_t port, bool use_ssl): protocol(protocol), port(port){
     assert(port);
     assert(protocol == Protocol::TCP || protocol == Protocol::UDP);
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
-    query(hostname, (DNSCBfunc)Host::Dnscallback, this);
+
+    if(use_ssl){
+        SRWer *srwer = new SRWer(hostname, port, protocol, std::bind(&Host::Error, this, _1, _2));
+        if(use_http2){
+            srwer->set_alpn(alpn_protos_string, sizeof(alpn_protos_string)-1);
+        }
+        rwer = srwer;
+    }else{
+        rwer = new RWer(hostname, port, protocol, std::bind(&Host::Error, this, _1, _2));
+    }
+    rwer->SetConnectCB(std::bind(&Host::connected, this));
 }
 
 Host::~Host(){
     if(req){
         delete req;
     }
-    del_delayjob((job_func)con_timeout, this);
 }
 
-
-void Host::Dnscallback(Host* host, const char *hostname, std::list<sockaddr_un> addrs) {
-    host->fd = -EAGAIN;
-    if (addrs.empty()) {
-        host->deleteLater(DNS_FAILED);
-    } else {
-        for (auto& i: addrs){
-            i.addr_in6.sin6_port = htons(host->port);
-            host->addrs.push_back(i);
-        }
-        host->connect();
-    }
+#if 0
+void Host::discard() {
+    req = nullptr;
 }
+#endif
 
-void Host::connect() {
-    if (addrs.empty()) {
-        LOGE("connect to %s time out.\n", hostname);
-        return deleteLater(PEER_LOST_ERR);
-    } else {
-        if (fd > 0) {
-            close(fd);
-            fd = -EAGAIN;
-            goto retry;
-        }
-        fd = Connect(&addrs.front(), (int)protocol);
-        if (fd < 0) {
-            LOGE("connect to %s failed\n", hostname);
-            goto retry;
-        }
-        updateEpoll(EPOLLOUT);
-        handleEvent = (void (Con::*)(uint32_t))&Host::waitconnectHE;
-        return add_delayjob((job_func)con_timeout, this, 30000);
-    }
-retry:
-    assert(fd < 0);
-    RcdDown(hostname, addrs.front());
-    addrs.pop_front();
-    connect();
-}
-
-
-void Host::waitconnectHE(uint32_t events) {
-    if (req == nullptr){
-        return deleteLater(PEER_LOST_ERR);
-    }
-    
-    int error;
-    socklen_t len = sizeof(error);
-    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &len)) {
-        LOGE("(%s): getsokopt error: %s\n", hostname, strerror(errno));
-        return deleteLater(INTERNAL_ERR);
-    }
-    if (error != 0) {
-        LOGE("(%s): connect error: %s\n",hostname, strerror(error));
-        return connect();
-    }
-
-    if (events & EPOLLOUT) {
-        updateEpoll(EPOLLIN | EPOLLOUT);
-        handleEvent = (void (Con::*)(uint32_t))&Host::defaultHE;
-        del_delayjob((job_func)con_timeout, this);
-    }
-}
-
-ssize_t Host::Write_buff() {
-    if(req->header_buff == nullptr && !req->header->should_proxy){
-        if(req->header->ismethod("CONNECT")){
+void Host::connected() {
+    isconnected = true;
+    if(req->ismethod("CONNECT")){
+        if(!req->should_proxy){
             Http_Proc = &Host::AlwaysProc;
-            HttpResHeader* res = new HttpResHeader(H200);
-            res->index = req->header->index;
-            req->header->src->response(res);
-        }else if(req->header->ismethod("SEND")){
-            Http_Proc = &Host::AlwaysProc;
+            HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
+            res->index = req->index;
+            req->src->response(res);
         }
+    }else if(req->ismethod("SEND") || req->ismethod("PING")){
+        Http_Proc = &Host::AlwaysProc;
     }
-    ssize_t ret = req->Write_string([this](const void *buff, size_t size){
-        return Write(buff, size);
+    size_t len;
+    char* buff = req->getstring(len);
+    auto head = rwer->buffer_head();
+    assert(head->wlen == 0);
+    rwer->buffer_insert(head, buff, len);
+    rwer->SetReadCB([this](size_t len){
+        len = (this->*Http_Proc)(rwer->data(), len);
+        rwer->consume(len);
     });
-    if(ret <= 0){
-        return ret;
-    }
-    req->header->src->writedcb(req->header->index);
-    return ret;
-}
-
-void Host::defaultHE(uint32_t events) {
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        int       error = 0;
-        socklen_t errlen = sizeof(error);
-
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            if(error){
-                LOGE("(%s): host error: %s\n", hostname, strerror(error));
-            }else if(req->header->ismethod("CONNECT")){
-                EndProc();
-                return;
-            }
+    rwer->SetWriteCB([this](size_t len){
+        if(req && len){
+            req->src->writedcb(req->index);
         }
-        return deleteLater(INTERNAL_ERR);
-    }
-
-    if (events & EPOLLOUT) {
-        int ret = Write_buff();
-        if(ret < 0 && showerrinfo(ret, "host write error")) {
-            return deleteLater(WRITE_ERR);
+        if(rwer->wlength() == 0 && (http_flag & HTTP_CLIENT_CLOSE_F)){
+            rwer->Shutdown();
         }
-        if(req->size() == 0){
-            updateEpoll(this->events & ~EPOLLOUT);
-            if(http_flag & HTTP_CLIENT_CLOSE_F){
-                shutdown(fd, SHUT_WR);
-            }
-        }
-    }
-
-    if (events & EPOLLIN || http_getlen) {
-        (this->*Http_Proc)();
-    }
+    });
 }
 
 void* Host::request(HttpReqHeader* req) {
-    assert(Http_Proc != &Host::AlwaysProc);
-
     if(this->req){
-        assert(req->src == this->req->header->src);
+        assert(req->src == this->req->src);
         delete this->req;
     }
-    this->req =  new HttpReq(req);
-    updateEpoll(events | EPOLLOUT);
+    if(isconnected){
+        size_t len;
+        char* buff = req->getstring(len);
+        rwer->buffer_insert(rwer->buffer_end(), buff, len);
+        if(req->ismethod("CONNECT")){
+            if(!req->should_proxy){
+                Http_Proc = &Host::AlwaysProc;
+                HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
+                res->index = req->index;
+                req->src->response(res);
+            }
+        }else if(req->ismethod("SEND") || req->ismethod("PING")){
+            Http_Proc = &Host::AlwaysProc;
+        }
+    }
+    this->req = req;
     return reinterpret_cast<void*>(1);
 }
 
 int32_t Host::bufleft(void*) {
-    return 1024*1024 - req->size();
+    return 1024*1024 - rwer->wlength();
 }
 
 ssize_t Host::Send(void* buff, size_t size, void* index) {
     assert((long)index == 1);
-    req->body.push(buff, size);
-    updateEpoll(events | EPOLLOUT);
+    assert((http_flag & HTTP_CLIENT_CLOSE_F) == 0);
+    rwer->buffer_insert(rwer->buffer_end(), buff, size);
     return size;
 }
 
-ssize_t Host::Read(void* buff, size_t len){
-    return Peer::Read(buff, len);
-}
-
-
 void Host::ResProc(HttpResHeader* res) {
     assert(req);
-    if(req->header->ismethod("HEAD")){
+    if(req->ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY_F;
     }
-    res->index = req->header->index;
-    req->header->src->response(res);
+    res->index = req->index;
+    req->src->response(res);
 }
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
     assert(req);
-    int len = req->header->src->bufleft(req->header->index);
+    int len = req->src->bufleft(req->index);
 
     if (len <= 0) {
         LOGE("(%s): The guest's write buff is full (%s)\n",
-             req->header->src->getsrc(req->header->index), req->header->hostname);
-        updateEpoll(0);
+             req->src->getsrc(req->index), req->hostname);
+        rwer->setEpoll(0);
         return -1;
     }
-    return req->header->src->Send(buff, Min(size, len), req->header->index);
+    return req->src->Send(buff, Min(size, len), req->index);
 }
 
-bool Host::EndProc() {
+void Host::EndProc() {
     assert(req);
-    if(!req->header->src->finish(NOERROR, req->header->index)){
+    if(!req->src->finish(NOERROR, req->index)){
         delete req;
         req = nullptr;
         Peer::deleteLater(PEER_LOST_ERR);
-        return false;
     }
-    return true;
 }
 
+void Host::ErrProc(){
+    Error(HTTP_PROTOCOL_ERR, 0);
+}
 
-void Host::ErrProc(int errcode) {
-    if(errcode == 0 && req){
+void Host::Error(int ret, int code) {
+    if(ret == READ_ERR && code == 0 && req){
         http_flag |= HTTP_SERVER_CLOSE_F;
-        if(!req->header->ismethod("CONNECT")){
-            deleteLater(PEER_LOST_ERR);
+        if(Http_Proc == &Host::AlwaysProc){
+            EndProc();
         }else{
-            updateEpoll(events & ~EPOLLIN);
+            deleteLater(PEER_LOST_ERR);
         }
         return;
     }
-    if(showerrinfo(errcode, "Host-http error")) {
-        deleteLater(HTTP_PROTOCOL_ERR);
+    if(ret == SOCKET_ERR && code == 0 && ret){
+        deleteLater(NOERROR | DISCONNECT_FLAG);
+    }else{
+        LOGE("Host-http error %d/%d\n", ret, code);
+        deleteLater(ret);
     }
 }
 
@@ -236,9 +173,11 @@ bool Host::finish(uint32_t flags, void* index) {
         deleteLater(flags);
         return false;
     }
-    if(req->header->ismethod("CONNECT")){
+    if(Http_Proc == &Host::AlwaysProc){
         http_flag |= HTTP_CLIENT_CLOSE_F;
-        updateEpoll(events | EPOLLOUT);
+        if(rwer->wlength() == 0){
+            rwer->Shutdown();
+        }
     }
     return true;
 }
@@ -246,24 +185,22 @@ bool Host::finish(uint32_t flags, void* index) {
 void Host::deleteLater(uint32_t errcode){
     assert(errcode);
     if(req){
-        if(!req->header->ismethod("SEND")){
+        if(!req->ismethod("SEND")){
             if(errcode == CONNECT_TIMEOUT || errcode == DNS_FAILED){
-                HttpResHeader* res = new HttpResHeader(H504);
-                res->index = req->header->index;
-                req->header->src->response(res);
+                HttpResHeader* res = new HttpResHeader(H504, sizeof(H504));
+                res->index = req->index;
+                req->src->response(res);
             }else if(errcode == CONNECT_FAILED){
-                HttpResHeader* res = new HttpResHeader(H503);
-                res->index = req->header->index;
-                req->header->src->response(res);
+                HttpResHeader* res = new HttpResHeader(H503, sizeof(H503));
+                res->index = req->index;
+                req->src->response(res);
             }
         }
-        req->header->src->finish(errcode, req->header->index);
+        req->src->finish(errcode, req->index);
         delete req;
         req = nullptr;
     }
-    if(fd){
-        Peer::deleteLater(errcode);
-    }
+    Peer::deleteLater(errcode);
 }
 
 void Host::writedcb(void* index) {
@@ -273,21 +210,20 @@ void Host::writedcb(void* index) {
 }
 
 
-Host* Host::gethost(HttpReqHeader* req, Responser* responser_ptr) {
-    Protocol protocol = req->ismethod("SEND")?Protocol::UDP:Protocol::TCP;
+Host* Host::gethost(const char* hostname, uint16_t port, Protocol protocol, HttpReqHeader* req, Responser* responser_ptr){
     Host* host = dynamic_cast<Host *>(responser_ptr);
     if(req->ismethod("CONNECT") || req->ismethod("SEND")){
-        return new Host(req->hostname, req->port, protocol);
+        return new Host(protocol, hostname, port, req->should_proxy);
     }
     if (host){
-        if(strcasecmp(host->hostname, req->hostname) == 0
-            && host->port == req->port
-            && protocol == host->protocol)
+        if(strcasecmp(host->hostname, hostname) == 0
+            && host->port == port
+            && host->protocol == protocol)
         {
             return host;
         }
     }
-    return new Host(req->hostname, req->port, protocol);
+    return new Host(protocol, hostname, port, req->should_proxy);
 }
 
 
@@ -295,7 +231,7 @@ void Host::dump_stat() {
     LOG("Host %p, <%s> (%s:%d):\n", this, protstr(protocol), hostname, port);
     if(req){
         LOG("    %s %s: %p, %p\n",
-            req->header->method, req->header->geturl().c_str(),
-            req->header->src, req->header->index);
+            req->method, req->geturl().c_str(),
+            req->src, req->index);
     }
 }

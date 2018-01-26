@@ -1,77 +1,30 @@
 #ifndef SSL_ABSTRACT_H_
 #define SSL_ABSTRACT_H_
 
+#include "base.h"
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
-#include <assert.h>
-#include <errno.h>
 
-class Ssl{
+class SRWer: public RWer{
 protected:
     SSL *ssl;
-    int get_error(int ret){
-        if(ret < 0){
-            int error = SSL_get_error(ssl, ret);
-            switch (error) {
-                case SSL_ERROR_WANT_READ:
-                case SSL_ERROR_WANT_WRITE:
-                    errno = EAGAIN;
-                    break;
-                case SSL_ERROR_ZERO_RETURN:
-                    ret = 0;
-                    errno = 0;
-                    break;
-                case SSL_ERROR_SYSCALL:
-                    break;
-                default:
-                    errno = EIO;
-                    break;
-            }
-        }
-        return ret;
-    }
+    SSL_CTX* ctx;
+    int get_error(int ret);
+
+    virtual ssize_t Read(void* buff, size_t len) override;
+    virtual ssize_t Write(const void* buff, size_t len) override;
 public:
-    explicit Ssl(SSL *ssl):ssl(ssl){
-        assert(ssl);
-    }
-    virtual ~Ssl(){
-        SSL_shutdown(ssl);
-        SSL_free(ssl);
-    }
-    virtual ssize_t write(const void *buff, size_t size){
-        return get_error(SSL_write(ssl, buff, size));
+    explicit SRWer(int fd, SSL_CTX* ctx, std::function<void(int ret, int code)> errorCB);
+    explicit SRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB);
+    virtual ~SRWer();
 
-    }
-    virtual ssize_t read(void *buff, size_t size){
-        return get_error(SSL_read(ssl, buff, size));
-    }
-    virtual int accept(){
-        return get_error(SSL_accept(ssl));
-    }
-    virtual int connect(){
-        return get_error(SSL_connect(ssl));
-    }
-    void get_alpn(const unsigned char **s, unsigned int * len){
-        SSL_get0_alpn_selected(ssl, s, len);
-    }
-    int set_alpn(const unsigned char *s, unsigned int len){
-        return SSL_set_alpn_protos(ssl, s, len);
-    }
-    void set_hostname(const char *hostname, int (*callback) (int ok, X509_STORE_CTX *ctx)){
-        SSL_set_tlsext_host_name(ssl, hostname);
-        X509_VERIFY_PARAM *param = SSL_get0_param(ssl);
-
-        /* Enable automatic hostname checks */
-        X509_VERIFY_PARAM_set_hostflags(param, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
-        X509_VERIFY_PARAM_set1_host(param, hostname, 0);
-
-        /* Configure a non-zero callback if desired */
-        SSL_set_verify(ssl, SSL_VERIFY_PEER, callback);
-    }
-    void set_hostname_callback(void (* cb)(void)){
-        SSL_callback_ctrl(ssl, SSL_CTRL_SET_TLSEXT_SERVERNAME_CB, cb);
-    }
+    virtual int saccept();
+    virtual int sconnect();
+    virtual void waitconnectHE(int events) override;
+    virtual void shakehandHE(int events);
+    void get_alpn(const unsigned char **s, unsigned int * len);
+    int set_alpn(const unsigned char *s, unsigned int len);
+    void set_hostname_callback(void (* cb)(void));
 };
-
 
 #endif
