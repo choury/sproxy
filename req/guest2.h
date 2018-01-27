@@ -1,5 +1,5 @@
-#ifndef GUEST_S2_H__
-#define GUEST_S2_H__
+#ifndef GUEST2_H__
+#define GUEST2_H__
 
 #include "requester.h"
 #include "prot/http2.h"
@@ -14,7 +14,7 @@ struct ResStatus{
     uint32_t res_flags;
 };
 
-class Guest_s2: public Requester, public Http2Responser {
+class Guest2: public Requester, public Http2Responser {
     std::map<uint32_t, ResStatus> statusmap;
 protected:
     virtual void deleteLater(uint32_t errcode) override;
@@ -37,8 +37,8 @@ protected:
     virtual std::list<write_block>::insert_iterator queue_end() override;
     virtual void queue_insert(std::list<write_block>::insert_iterator where, void* buff, size_t len) override;
 public:
-    explicit Guest_s2(const char *ip, uint16_t port, RWer* rwer);
-    virtual ~Guest_s2();
+    explicit Guest2(const char *ip, uint16_t port, RWer* rwer);
+    virtual ~Guest2();
     
     virtual bool finish(uint32_t flags, void* index)override;
 
@@ -52,7 +52,7 @@ public:
     virtual const char* getsrc(const void *)override;
     virtual void dump_stat()override;
 
-    static int connection_lost(Guest_s2 *g);
+    static int connection_lost(Guest2 *g);
 };
 
 #endif

@@ -120,42 +120,6 @@ matrix:
   - addons:
       apt:
         packages:
-        - clang-3.3
-    env:
-    - BUILD_TYPE=Debug COMPILE="CC=clang CXX=clang++" CLANG=3.3
-  - addons:
-      apt:
-        packages:
-        - clang-3.3
-    env:
-    - BUILD_TYPE=Release COMPILE="CC=clang CXX=clang++" CLANG=3.3
-  - addons:
-      apt:
-        packages:
-        - clang-3.3
-    env:
-    - BUILD_TYPE=RelWithDebInfo COMPILE="CC=clang CXX=clang++" CLANG=3.3
-  - addons:
-      apt:
-        packages:
-        - clang-3.4
-    env:
-    - BUILD_TYPE=Debug COMPILE="CC=clang CXX=clang++" CLANG=3.4
-  - addons:
-      apt:
-        packages:
-        - clang-3.4
-    env:
-    - BUILD_TYPE=Release COMPILE="CC=clang CXX=clang++" CLANG=3.4
-  - addons:
-      apt:
-        packages:
-        - clang-3.4
-    env:
-    - BUILD_TYPE=RelWithDebInfo COMPILE="CC=clang CXX=clang++" CLANG=3.4
-  - addons:
-      apt:
-        packages:
         - clang-3.5
     env:
     - BUILD_TYPE=Debug COMPILE="CC=clang-3.5 CXX=clang++-3.5"
@@ -207,14 +171,6 @@ matrix:
         - clang-3.8
     env:
     - BUILD_TYPE=RelWithDebInfo COMPILE="CC=clang-3.8 CXX=clang++-3.8"
-  - addons:
-      apt:
-        sources:
-        - llvm-toolchain-trusty-3.9
-        packages:
-        - clang-3.9
-    env:
-    - BUILD_TYPE=Debug COMPILE="CC=clang-3.9 CXX=clang++-3.9"
   - addons:
       apt:
         sources:

@@ -1,5 +1,5 @@
 #include "guest.h"
-#include "guest_s2.h"
+#include "guest2.h"
 #include "misc/net.h"
 #include "res/responser.h"
 #include "misc/job.h"
@@ -45,7 +45,7 @@ Guest::Guest(int fd,  struct sockaddr_in6 *myaddr, SSL_CTX* ctx): Requester(myad
         unsigned int len;
         srwer->get_alpn(&data, &len);
         if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
-            new Guest_s2(sourceip, sourceport, srwer);
+            new Guest2(sourceip, sourceport, srwer);
             rwer = nullptr;
             delete this;
             return;

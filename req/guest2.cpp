@@ -1,18 +1,18 @@
-#include "guest_s2.h"
+#include "guest2.h"
 #include "res/responser.h"
 #include "misc/job.h"
 #include "misc/util.h"
 
 
-int Guest_s2::connection_lost(Guest_s2 *g){
+int Guest2::connection_lost(Guest2 *g){
     LOGE("(%s): [Guest_s2] Nothing got too long, so close it\n", g->getsrc(nullptr));
     g->deleteLater(PEER_LOST_ERR);
     return 0;
 }
 
-Guest_s2::Guest_s2(const char* ip, uint16_t port, RWer* rwer): Requester(ip, port) {
+Guest2::Guest2(const char* ip, uint16_t port, RWer* rwer): Requester(ip, port) {
     this->rwer = rwer;
-    rwer->SetErrorCB(std::bind(&Guest_s2::Error, this, _1, _2));
+    rwer->SetErrorCB(std::bind(&Guest2::Error, this, _1, _2));
     rwer->SetReadCB([this](size_t len){
         len = (this->*Http2_Proc)((uchar*)this->rwer->data(), len);
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
@@ -33,11 +33,11 @@ Guest_s2::Guest_s2(const char* ip, uint16_t port, RWer* rwer): Requester(ip, por
     });
 }
 
-Guest_s2::~Guest_s2() {
+Guest2::~Guest2() {
     del_delayjob((job_func)connection_lost, this);
 }
 
-void Guest_s2::Error(int ret, int code){
+void Guest2::Error(int ret, int code){
     if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0){
         deleteLater(NOERROR | DISCONNECT_FLAG);
         return;
@@ -75,7 +75,7 @@ ssize_t Guest_s2::Write(const void *buff, size_t size) {
 
 #endif
 
-int32_t Guest_s2::bufleft(void* index) {
+int32_t Guest2::bufleft(void* index) {
     int32_t globalwindow = Min(1024*1024 - rwer->wlength(), this->remotewinsize);
     if(index){
         assert(statusmap.count((uint32_t)(long)index));
@@ -84,7 +84,7 @@ int32_t Guest_s2::bufleft(void* index) {
         return globalwindow;
 }
 
-ssize_t Guest_s2::Send(void *buff, size_t size, void* index) {
+ssize_t Guest2::Send(void *buff, size_t size, void* index) {
     uint32_t id = (uint32_t)(long)index;
     size = Min(size, FRAMEBODYLIMIT);
     Http2_header *header=(Http2_header *)p_move(buff, -(char)sizeof(Http2_header));
@@ -103,7 +103,7 @@ ssize_t Guest_s2::Send(void *buff, size_t size, void* index) {
     return size;
 }
 
-void Guest_s2::ReqProc(HttpReqHeader* req) {
+void Guest2::ReqProc(HttpReqHeader* req) {
     Responser *responser = distribute(req, nullptr);
     uint32_t id = (uint32_t)(long)req->index;
     if(statusmap.count(id)){
@@ -126,7 +126,7 @@ void Guest_s2::ReqProc(HttpReqHeader* req) {
     }
 }
 
-void Guest_s2::DataProc(uint32_t id, const void* data, size_t len) {
+void Guest2::DataProc(uint32_t id, const void* data, size_t len) {
     if(len == 0)
         return;
     localwinsize -= len;
@@ -148,7 +148,7 @@ void Guest_s2::DataProc(uint32_t id, const void* data, size_t len) {
     }
 }
 
-void Guest_s2::EndProc(uint32_t id) {
+void Guest2::EndProc(uint32_t id) {
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
         if(status.res_flags & STREAM_WRITE_CLOSED){
@@ -162,7 +162,7 @@ void Guest_s2::EndProc(uint32_t id) {
 }
 
 
-void Guest_s2::response(HttpResHeader* res) {
+void Guest2::response(HttpResHeader* res) {
     assert(res->index);
     res->del("Transfer-Encoding");
     res->del("Connection");
@@ -170,7 +170,7 @@ void Guest_s2::response(HttpResHeader* res) {
     delete res;
 }
 
-void Guest_s2::transfer(void* index, Responser* res_ptr, void* res_index) {
+void Guest2::transfer(void* index, Responser* res_ptr, void* res_index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     ResStatus& status = statusmap[id];
@@ -233,7 +233,7 @@ void Guest_s2::closeHE(uint32_t events) {
 
 #endif
 
-void Guest_s2::RstProc(uint32_t id, uint32_t errcode) {
+void Guest2::RstProc(uint32_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         if(errcode)
             LOGE("(%s) [%d]: stream  reseted: %d\n", getsrc(nullptr), id, errcode);
@@ -244,7 +244,7 @@ void Guest_s2::RstProc(uint32_t id, uint32_t errcode) {
 }
 
 
-void Guest_s2::WindowUpdateProc(uint32_t id, uint32_t size) {
+void Guest2::WindowUpdateProc(uint32_t id, uint32_t size) {
     if(id){
         if(statusmap.count(id)){
             ResStatus& status = statusmap[id];
@@ -278,37 +278,37 @@ void Guest_s2::WindowUpdateProc(uint32_t id, uint32_t size) {
 }
 
 
-void Guest_s2::GoawayProc(const Http2_header* header) {
+void Guest2::GoawayProc(const Http2_header* header) {
     Goaway_Frame* goaway = (Goaway_Frame *)(header+1);
     uint32_t errcode = get32(goaway->errcode);
     http2_flag |= HTTP2_FLAG_GOAWAYED;
     deleteLater(errcode | DISCONNECT_FLAG);
 }
 
-void Guest_s2::ErrProc(int errcode) {
+void Guest2::ErrProc(int errcode) {
     LOGE("Guest2 http2 error:%d\n", errcode);
     deleteLater(ERR_INTERNAL_ERROR);
 }
 
-void Guest_s2::AdjustInitalFrameWindowSize(ssize_t diff) {
+void Guest2::AdjustInitalFrameWindowSize(ssize_t diff) {
     for(auto i: statusmap){
        i.second.remotewinsize += diff;
     }
 }
 
-std::list<write_block>::insert_iterator Guest_s2::queue_head() {
+std::list<write_block>::insert_iterator Guest2::queue_head() {
     return rwer->buffer_head();
 }
 
-std::list<write_block>::insert_iterator Guest_s2::queue_end() {
+std::list<write_block>::insert_iterator Guest2::queue_end() {
     return rwer->buffer_end();
 }
 
-void Guest_s2::queue_insert(std::list<write_block>::insert_iterator where, void* buff, size_t len) {
+void Guest2::queue_insert(std::list<write_block>::insert_iterator where, void* buff, size_t len) {
     rwer->buffer_insert(where, buff, len);
 }
 
-bool Guest_s2::finish(uint32_t flags, void* index) {
+bool Guest2::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id) == 0){
         Peer::Send((const void*)nullptr, 0, index);
@@ -332,7 +332,7 @@ bool Guest_s2::finish(uint32_t flags, void* index) {
     return true;
 }
 
-void Guest_s2::deleteLater(uint32_t errcode){
+void Guest2::deleteLater(uint32_t errcode){
     for(auto i: statusmap){
         i.second.res_ptr->finish(errcode, i.second.res_index);
     }
@@ -344,7 +344,7 @@ void Guest_s2::deleteLater(uint32_t errcode){
     return Peer::deleteLater(errcode);
 }
 
-void Guest_s2::writedcb(void* index){
+void Guest2::writedcb(void* index){
     uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
@@ -357,7 +357,7 @@ void Guest_s2::writedcb(void* index){
     }
 }
 
-const char * Guest_s2::getsrc(const void* index){
+const char * Guest2::getsrc(const void* index){
     static char src[DOMAINLIMIT];
     if(index == nullptr){
         sprintf(src, "%s:%d", sourceip, sourceport);
@@ -368,7 +368,7 @@ const char * Guest_s2::getsrc(const void* index){
 }
 
 
-void Guest_s2::dump_stat() {
+void Guest2::dump_stat() {
     LOG("Guest_s2 %p %s:\n", this, getsrc(nullptr));
     for(auto i: statusmap){
         LOG("0x%x: %p, %p (%d/%d)\n",
@@ -379,7 +379,7 @@ void Guest_s2::dump_stat() {
 
 
 #ifndef NDEBUG
-void Guest_s2::PingProc(const Http2_header *header){
+void Guest2::PingProc(const Http2_header *header){
     LOGD(DHTTP2, "window size global: %d/%d\n", localwinsize, remotewinsize);
     return Http2Base::PingProc(header);
 }
