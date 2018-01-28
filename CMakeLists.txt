@@ -21,7 +21,7 @@ int main(){
     list<int> a;
     a.insert(list<int>::const_iterator(a.begin()), 0);
     return 0;
-}" HAVE_NO_CONST_ITERATOR_BUG)
+}" NO_CONST_ITERATOR_BUG)
 
 
 
@@ -60,7 +60,7 @@ endif()
 set(CMAKE_C_FLAGS "-Wall -fPIC ${CMAKE_C_FLAGS}")
 set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -fPIC ${CMAKE_CXX_FLAGS}")
 
-if(NOT HAVE_NO_CONST_ITERATOR_BUG)
+if(NOT NO_CONST_ITERATOR_BUG)
     message(WARNING "have const_iterator insert bug, see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=55817")
     set(CMAKE_CXX_FLAGS "-DHAVE_CONST_ITERATOR_BUG ${CMAKE_CXX_FLAGS}")
 endif()

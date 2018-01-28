@@ -11,7 +11,7 @@ static in_addr_t fake_ip = 0 ;
 
 FDns::FDns() {
     if(fake_ip == 0){
-        fake_ip = ntohl(inet_addr("10.1.0.2"));
+        fake_ip = ntohl(inet_addr("10.1.0.1"));
     }
 }
 
@@ -154,8 +154,9 @@ in_addr FDns::getInet(std::string hostname) {
     }else if(fdns_records.count(hostname)){
         addr.s_addr = htonl(fdns_records[hostname]);
     }else{
+        fake_ip++;
         addr.s_addr= htonl(fake_ip);
-        fdns_records.insert(fake_ip++, hostname);
+        fdns_records.insert(fake_ip, hostname);
     }
     return addr;
 }

@@ -105,6 +105,8 @@ int SRWer::get_error(int ret){
                 break;
             case SSL_ERROR_SYSCALL:
                 break;
+            case SSL_ERROR_SSL:
+                LOGE("SSL error: %s\n", ERR_error_string(error, nullptr));
             default:
                 errno = EIO;
                 break;
@@ -133,7 +135,7 @@ void SRWer::waitconnectHE(int events) {
     if (events & EPOLLOUT) {
         setEpoll(EPOLLIN | EPOLLOUT);
         if(protocol == Protocol::TCP){
-            ssl = SSL_new(ctx);
+            //ssl = SSL_new(ctx);
             SSL_set_fd(ssl, fd);
         }else{
             BIO* bio = BIO_new_dgram(fd, BIO_NOCLOSE);
@@ -152,6 +154,7 @@ void SRWer::waitconnectHE(int events) {
         SSL_set_verify(ssl, SSL_VERIFY_PEER, verify_host_callback);
 
         handleEvent = (void (Ep::*)(uint32_t))&SRWer::shakehandHE;
+        add_delayjob((job_func)con_timeout, this, 30000);
     }
 }
 
@@ -195,7 +198,7 @@ void SRWer::get_alpn(const unsigned char **s, unsigned int * len){
 }
 
 int SRWer::set_alpn(const unsigned char *s, unsigned int len){
-    return SSL_set_alpn_protos(ssl, s, len);
+    return get_error(SSL_set_alpn_protos(ssl, s, len));
 }
 
 void SRWer::set_hostname_callback(void (* cb)(void)){

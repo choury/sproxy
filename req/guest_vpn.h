@@ -44,7 +44,6 @@ struct IcmpStatus{
 
 
 class Guest_vpn:public Requester, public ResObject{
-    bool fulled = false;
     const char* generateUA(const VpnKey* key);
 protected:
     std::map<VpnKey, VpnStatus> statusmap;

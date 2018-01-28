@@ -196,7 +196,7 @@ bool Guest::finish(uint32_t flags, void* index) {
     if(errcode){
         responser_ptr = nullptr;
         responser_index = nullptr;
-        Peer::deleteLater(PEER_LOST_ERR);
+        Peer::deleteLater(errcode);
         return false;
     }
     rwer->addEpoll(EPOLLIN);

@@ -38,7 +38,6 @@ extern int autoindex;
 
 #define DEPOLL    1
 #define DDNS      2
-#define DDTLS     4
 #define DHTTP2    8
 #define DJOB      16
 #define DVPN      32
@@ -47,7 +46,6 @@ extern int autoindex;
 
 #define DEPOLL_STR  "[EPOLL]"
 #define DDNS_STR    "[DNS]"
-#define DDTLS_STR   "[DTLS]"
 #define DHTTP2_STR  "[HTTP2]"
 #define DJOB_STR    "[JOB]"
 #define DVPN_STR    "[VPN]"
@@ -81,12 +79,17 @@ do{\
 }while(0)
 
 #ifndef NDEBUG
+#ifdef __cplusplus
+extern "C" uint32_t getmtime();
+#else
+uint32_t getmtime();
+#endif
 #define  LOGD(mod, ...)  \
 do{\
     if(debug & mod) {\
         char tmp[1024]; \
         snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
-        LOG_RAW(LOG_DEBUG, "%s: %s",mod##_STR, tmp); \
+        LOG_RAW(LOG_DEBUG, "%05u:%s: %s", getmtime()%100000, mod##_STR, tmp); \
     }\
 }while(0)
 

@@ -19,8 +19,6 @@ class Guest2: public Requester, public Http2Responser {
 protected:
     virtual void deleteLater(uint32_t errcode) override;
     virtual void Error(int ret, int code);
-
-
 #ifndef NDEBUG
     virtual void PingProc(const Http2_header *header)override;
 #endif
@@ -40,14 +38,14 @@ public:
     explicit Guest2(const char *ip, uint16_t port, RWer* rwer);
     virtual ~Guest2();
     
-    virtual bool finish(uint32_t flags, void* index)override;
 
     virtual int32_t bufleft(void* index)override;
     virtual ssize_t Send(void *buff, size_t size, void* index)override;
+    virtual void writedcb(void* index)override;
+    virtual bool finish(uint32_t flags, void* index)override;
     
     virtual void response(HttpResHeader* res)override;
     virtual void transfer(void* index, Responser* res_ptr, void* res_index)override;
-    virtual void writedcb(void* index)override;
 
     virtual const char* getsrc(const void *)override;
     virtual void dump_stat()override;

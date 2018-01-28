@@ -55,7 +55,7 @@ public:
 };
 
 class RBuffer {
-    char content[BUF_LEN];
+    char content[BUF_LEN + DOMAINLIMIT];
     uint16_t len = 0;
 public:
     size_t left();
@@ -72,6 +72,7 @@ class WBuffer {
 public:
     ~WBuffer();
     size_t length();
+    void clear(bool freebuffer);
     std::list<write_block>::iterator start();
     std::list<write_block>::iterator end();
     std::list<write_block>::iterator push(std::list<write_block>::insert_iterator i, void *buff, size_t size);
@@ -109,6 +110,7 @@ protected:
 public:
     RWer(int fd, std::function<void(int ret, int code)> errorCB);
     RWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB);
+    virtual ~RWer();
     void SetErrorCB(std::function<void(int ret, int code)> func);
     void SetReadCB(std::function<void(size_t len)> func);
     void SetWriteCB(std::function<void(size_t len)> func);
@@ -118,16 +120,18 @@ public:
     virtual void Close(std::function<void()> func);
     virtual void Shutdown();
 
+    //for read buffer
     size_t rlength();
     const char *data();
     void consume(size_t l);
 
+    //for write buffer
     size_t wlength();
-
     std::list<write_block>::insert_iterator buffer_head();
     std::list<write_block>::insert_iterator buffer_end();
     virtual ssize_t buffer_insert(std::list<write_block>::insert_iterator where, const void* buff, size_t len);
     virtual ssize_t buffer_insert(std::list<write_block>::insert_iterator where, void* buff, size_t len);
+    virtual void Clear(bool freebuffer);
 };
 
 void flushproxy2();

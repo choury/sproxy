@@ -228,9 +228,7 @@ static void query(Dns_Status* dnsst){
 void query(const char *host , DNSCBfunc func, void *param) {
     if(querying_index_host.count(host)){
         if(func){
-            querying_index_host[host]->reqs.push_back(Dns_Req{
-                func, param
-            });
+            querying_index_host[host]->reqs.push_back(Dns_Req{func, param});
         }
         return;
     }
@@ -238,9 +236,7 @@ void query(const char *host , DNSCBfunc func, void *param) {
     Dns_Status *dnsst = new Dns_Status;
     dnsst->times = 0;
     if(func){
-        dnsst->reqs.push_back(Dns_Req{
-                func, param
-            });
+        dnsst->reqs.push_back(Dns_Req{func, param});
     }
 
     snprintf(dnsst->host, sizeof(dnsst->host), "%s", host);
@@ -255,6 +251,7 @@ static void query(Dns_RawReq* dnsreq){
             sleep(5);
         }
     }
+    id_cur += 2;
     dnsreq->id = id_cur;
     for (size_t i = dnsreq->times%srvs.size(); i < srvs.size(); ++i) {
         if(srvs[i]->query(dnsreq->host, dnsreq->type, id_cur))
@@ -264,7 +261,6 @@ static void query(Dns_RawReq* dnsreq){
     dnsreq->times++;
     querying_raw_id[id_cur] = dnsreq;
     add_delayjob((job_func)query_timeout, (void *)(size_t)id_cur, DNSTIMEOUT);
-    id_cur += 2;
 }
 
 void query(const char *host , uint16_t type, DNSRAWCB func, void *param) {

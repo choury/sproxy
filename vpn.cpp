@@ -8,7 +8,6 @@
 
 #include <string.h>
 #include <errno.h>
-#include <assert.h>
 #include <signal.h>
 #include <openssl/ssl.h>
 
@@ -17,7 +16,7 @@
 int efd = 0;
 
 int daemon_mode = 0;
-int use_http2 = 0;
+int use_http2 = 1;
 int ignore_cert_error = 0;
 int disable_ipv6 = 0;
 char SPROT[DOMAINLIMIT];
@@ -28,7 +27,7 @@ char rewrite_auth[DOMAINLIMIT] = {0};
 const char *cafile =  nullptr;
 const char *index_file = nullptr;
 int autoindex = 0;
-uint32_t debug = DVPN;
+uint32_t debug = 0;
 uint32_t vpn_contiune;
 
 #define VPN_RESET 1
@@ -65,9 +64,7 @@ int vpn_start(const struct VpnConfig* vpn){
     while (vpn_contiune) {
         if(vpn_action & VPN_RESET){
             flushdns();
-            //TODO
-            assert(0);
-            //flushproxy2();
+            flushproxy2();
             vpn_action &= ~VPN_RESET;
         }
         if(vpn_action & VPN_RELOAD){

@@ -1,6 +1,4 @@
 #include "req/guest_sni.h"
-//#include "req/guest_s2.h"
-//#include "misc/dtls.h"
 #include "misc/rudp.h"
 #include "misc/net.h"
 #include "misc/job.h"
@@ -34,7 +32,6 @@ const char *index_file = nullptr;
 int autoindex = 0;
 uint32_t debug = 0;
 
-static int udp_mode = 0;
 static int sni_mode = 0;
 static int rudp_mode = 0;
 static const char *cert = nullptr;
@@ -123,52 +120,6 @@ void ssl_callback_ServerName(SSL *ssl){
 
 #if 0
 
-class Dtls_server: public Server {
-    SSL_CTX *ctx;
-    virtual void defaultHE(uint32_t events) {
-        if (events & EPOLLIN) {
-            BIO *bio = BIO_new_dgram(fd, BIO_NOCLOSE);
-            SSL *ssl = SSL_new(ctx);
-            SSL_set_bio(ssl, bio, bio);
-            struct sockaddr_in6 myaddr;
-            memset(&myaddr, 0, sizeof(myaddr));
-            SSL_set_accept_state(ssl);
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-            if(DTLSv1_listen(ssl, &myaddr)<=0)
-                goto error;
-            (void)BIO_ctrl_set_connected(bio, 0, &myaddr);
-#else
-            if(DTLSv1_listen(ssl, (BIO_ADDR *)&myaddr)<=0){
-                goto error;
-            }
-            (void)BIO_ctrl_set_connected(bio, &myaddr);
-#endif
-            if(connect(fd, (struct sockaddr*)&myaddr, sizeof(struct sockaddr_in6))){
-                LOGE("connect error: %s\n", strerror(errno));
-                goto error;
-            }
-            /* Set new fd and set BIO to connected */
-            new Guest_s(fd, &myaddr, new Dtls(ssl));
-            
-            fd = Listen(SOCK_DGRAM, CPORT);
-            assert(fd > 0);
-            updateEpoll(EPOLLIN);
-            return;
-error:
-            SSL_free(ssl);
-        }
-    }
-public:
-    virtual ~Dtls_server(){
-        SSL_CTX_free(ctx);
-    };
-    Dtls_server(int fd, SSL_CTX *ctx): Server(fd),ctx(ctx) {}
-    virtual void dump_stat(){
-        LOG("Dtls_server %p\n", this);
-    }
-};
-
-
 class Rudp_server: public Server {
     Rudp rudp;
     static void Rudp_connect(Rudp_server* my, Rudp_c* connection){
@@ -256,7 +207,6 @@ static struct option long_options[] = {
     {"cert",        required_argument, 0,  0 },
     {"daemon",      no_argument,       0, 'D'},
     {"disable-ipv6",no_argument,       0,  0 },
-    {"dtls",        no_argument,       0, 'u'},
     {"http1",       no_argument,       0, '1'},
     {"help",        no_argument,       0, 'h'},
     {"index",       required_argument, 0,  0 },
@@ -270,7 +220,6 @@ static struct option long_options[] = {
 #ifndef NDEBUG
     {"debug-epoll", no_argument,   0,  0 },
     {"debug-dns",   no_argument,   0,  0 },
-    {"debug-dtls",  no_argument,   0,  0 },
     {"debug-http2", no_argument,   0,  0 },
     {"debug-job",   no_argument,   0,  0 },
     {"debug-hpack", no_argument,   0,  0 },
@@ -282,17 +231,16 @@ static struct option long_options[] = {
 
 const char *option_detail[] = {
     "Enables or disables the directory listing output",
-    "CA certificate for server (ssl/dtls)",
-    "Certificate file for server (ssl/dtls)",
+    "CA certificate for server (ssl)",
+    "Certificate file for server (ssl)",
     "Run as daemon",
     "Disable ipv6 when querying dns",
-    "UDP mode (dtls) (deprecated, will replaced by rudp)",
-    "Use http/1.1 only (SHOULD NOT USE IT WITH dtls)",
+    "Use http/1.1 only",
     "Print this usage",
     "Index file for path (when as a http(s) server)",
     "Ignore the cert error of server (SHOULD NOT DO IT)",
-    "Private key file name (ssl/dtls)",
-    "The port to listen, default is 80 but 443 for ssl/dtls/sni",
+    "Private key file name (ssl)",
+    "The port to listen, default is 80 but 443 for ssl/sni",
     "rewrite the auth info (user:password) to proxy server",
     "RUDP modle (experiment)",
     "Set a user and passwd for proxy (user:password), default is none.",
@@ -300,7 +248,6 @@ const char *option_detail[] = {
 #ifndef NDEBUG
     "debug-epoll",
     "\tdebug-dns",
-    "debug-dtls",
     "debug-http2",
     "\tdebug-job",
     "debug-hpack",
@@ -386,7 +333,7 @@ SSL_CTX* initssl(int udp, const char *ca, const char *cert, const char *key){
 static int parseConfig(int argc, char **argv){
     while (1) {
         int option_index = 0;
-        int c = getopt_long(argc, argv, "Du1hikr:s:p:",
+        int c = getopt_long(argc, argv, "D1hikr:s:p:",
             long_options, &option_index);
         if (c == -1)
             break;
@@ -419,9 +366,6 @@ static int parseConfig(int argc, char **argv){
             }else if(strcmp(long_options[option_index].name, "debug-dns") == 0){
                 debug |= DDNS;
                 printf("long option debug-dns\n");
-            }else if(strcmp(long_options[option_index].name, "debug-dtls") == 0){
-                debug |= DDTLS;
-                printf("long option debug-dtls\n");
             }else if(strcmp(long_options[option_index].name, "debug-http2") == 0){
                 debug |= DHTTP2;
                 printf("long option debug-http2\n");
@@ -448,11 +392,6 @@ static int parseConfig(int argc, char **argv){
         case 'D':
             daemon_mode = 1;
             printf("option daemon\n");
-            break;
-
-        case 'u':
-            udp_mode = 1;
-            printf("option udp\n");
             break;
 
         case 'k':
@@ -500,7 +439,6 @@ static int parseConfig(int argc, char **argv){
     if (optind < argc) {
         if(setproxy(argv[optind])){
             LOGE("wrong server format\n");
-            LOGE("Only \"ssl://\" and \"dtls://\" protocol are supported!\n");
             return -1;
         }
         char proxy[DOMAINLIMIT];
@@ -535,23 +473,13 @@ int main(int argc, char **argv) {
         //TODO
         //new Rudp_server(svsk_rudp);
     }else if(cert && key){
-        SSL_CTX * ctx = initssl(udp_mode, cafile, cert, key);
+        SSL_CTX * ctx = initssl(0, cafile, cert, key);
         CPORT = CPORT?CPORT:443;
-        if(udp_mode){
-            int svsk_dtls;
-            if((svsk_dtls = Listen(SOCK_DGRAM, CPORT)) < 0){
-                return -1;
-            }
-            assert(0);
-            //TODO
-            //new Dtls_server(svsk_dtls, ctx);
-        }else{
-            int svsk_https;
-            if ((svsk_https = Listen(SOCK_STREAM, CPORT)) < 0) {
-                return -1;
-            }
-            new Https_server(svsk_https, ctx);
+        int svsk_https;
+        if ((svsk_https = Listen(SOCK_STREAM, CPORT)) < 0) {
+            return -1;
         }
+        new Https_server(svsk_https, ctx);
     }else{
         if(sni_mode){
             CPORT = CPORT?CPORT:443;

@@ -151,11 +151,11 @@ class Http2Requster:public Http2Base{
     //using Http2Base::http2_buff;
     //using Http2Base::http2_getlen;
 protected:
+    void init();
     virtual size_t InitProc(const uchar* http2_buff, size_t len)override;
     virtual void HeadersProc(const Http2_header *header)override;
     virtual void ResProc(HttpResHeader* res) = 0;
 public:
-    void init();
 };
 
 #define STREAM_HEAD_ENDED   (1<<0)

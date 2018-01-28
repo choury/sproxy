@@ -1,9 +1,12 @@
 #include "http2.h"
 #include "misc/util.h"
 
+#include <cinttypes>
+
 size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
     const Http2_header *header = (const Http2_header *)http2_buff;
     if(len < sizeof(Http2_header)){
+        LOGD(DHTTP2, "get a incompleted head, size:%zu\n", len);
         return 0;
     }else{
         uint32_t length = get24(header->length);
@@ -13,6 +16,7 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
             return 0;
         }
         if(len < length + sizeof(Http2_header)){
+            LOGD(DHTTP2, "get a incompleted packet, size:%zu/%zu\n", len, length + sizeof(Http2_header));
             return 0;
         }else{
             uint32_t id = HTTP2_ID(header->id);
@@ -114,7 +118,7 @@ void Http2Base::PushFrame(Http2_header *header) {
     }
     switch(header->type){
     case PING_TYPE:
-        for(i = queue_head(); i!= queue_head() ; i++){
+        for(i = queue_head(); i!= queue_end() ; i++){
             if(i->wlen){
                 continue;
             }
@@ -147,6 +151,7 @@ void Http2Base::PushFrame(Http2_header *header) {
     }
 ret:
     size_t length = sizeof(Http2_header) + get24(header->length);
+    assert(i == queue_end() || i == queue_head() || i->wlen == 0);
     queue_insert(i, header, length);
 }
 

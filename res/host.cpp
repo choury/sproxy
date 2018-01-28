@@ -1,4 +1,5 @@
 #include "host.h"
+#include "proxy2.h"
 #include "req/requester.h"
 #include "misc/job.h"
 #include "misc/util.h"
@@ -43,6 +44,21 @@ void Host::discard() {
 
 void Host::connected() {
     isconnected = true;
+    SRWer* swrer = dynamic_cast<SRWer*>(rwer);
+    if(swrer){
+        const unsigned char *data;
+        unsigned int len;
+        swrer->get_alpn(&data, &len);
+        if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
+            LOG("delegate %s to proxy2\n", req?req->geturl().c_str():"NONE");
+            Proxy2 *proxy = new Proxy2(rwer);
+            rwer = nullptr;
+
+            proxy->init(req);
+            req = nullptr;
+            return deleteLater(PEER_LOST_ERR);
+        }
+    }
     if(req->ismethod("CONNECT")){
         if(!req->should_proxy){
             Http_Proc = &Host::AlwaysProc;
@@ -56,7 +72,7 @@ void Host::connected() {
     size_t len;
     char* buff = req->getstring(len);
     auto head = rwer->buffer_head();
-    assert(head->wlen == 0);
+    assert(rwer->wlength() == 0 || head->wlen == 0);
     rwer->buffer_insert(head, buff, len);
     rwer->SetReadCB([this](size_t len){
         len = (this->*Http_Proc)(rwer->data(), len);
@@ -123,6 +139,9 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     if (len <= 0) {
         LOGE("(%s): The guest's write buff is full (%s)\n",
              req->src->getsrc(req->index), req->hostname);
+        if(protocol == Protocol::UDP){
+            return size;
+        }
         rwer->setEpoll(0);
         return -1;
     }
@@ -143,7 +162,7 @@ void Host::ErrProc(){
 }
 
 void Host::Error(int ret, int code) {
-    if(ret == READ_ERR && code == 0 && req){
+    if(ret == READ_ERR && code == 0){
         http_flag |= HTTP_SERVER_CLOSE_F;
         if(Http_Proc == &Host::AlwaysProc){
             EndProc();
@@ -152,12 +171,11 @@ void Host::Error(int ret, int code) {
         }
         return;
     }
-    if(ret == SOCKET_ERR && code == 0 && ret){
-        deleteLater(NOERROR | DISCONNECT_FLAG);
-    }else{
-        LOGE("Host-http error %d/%d\n", ret, code);
-        deleteLater(ret);
+    if(ret == SOCKET_ERR && code == 0){
+        return deleteLater(NOERROR | DISCONNECT_FLAG);
     }
+    LOGE("Host error %d/%d\n", ret, code);
+    deleteLater(ret);
 }
 
 bool Host::finish(uint32_t flags, void* index) {
@@ -173,6 +191,7 @@ bool Host::finish(uint32_t flags, void* index) {
         deleteLater(flags);
         return false;
     }
+    Peer::Send((const void*)nullptr,0, index);
     if(Http_Proc == &Host::AlwaysProc){
         http_flag |= HTTP_CLIENT_CLOSE_F;
         if(rwer->wlength() == 0){
@@ -210,7 +229,10 @@ void Host::writedcb(void* index) {
 }
 
 
-Host* Host::gethost(const char* hostname, uint16_t port, Protocol protocol, HttpReqHeader* req, Responser* responser_ptr){
+Responser* Host::gethost(const char* hostname, uint16_t port, Protocol protocol, HttpReqHeader* req, Responser* responser_ptr){
+    if(req->should_proxy && proxy2){
+        return proxy2;
+    }
     Host* host = dynamic_cast<Host *>(responser_ptr);
     if(req->ismethod("CONNECT") || req->ismethod("SEND")){
         return new Host(protocol, hostname, port, req->should_proxy);
@@ -228,7 +250,7 @@ Host* Host::gethost(const char* hostname, uint16_t port, Protocol protocol, Http
 
 
 void Host::dump_stat() {
-    LOG("Host %p, <%s> (%s:%d):\n", this, protstr(protocol), hostname, port);
+    LOG("Host %p, <%s> (%s:%d): %s\n", this, protstr(protocol), hostname, port, isconnected?"[C]":"");
     if(req){
         LOG("    %s %s: %p, %p\n",
             req->method, req->geturl().c_str(),

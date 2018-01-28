@@ -35,7 +35,7 @@ public:
     virtual bool finish(uint32_t flags, void* index)override;
     virtual void writedcb(void * index) override;
     virtual void dump_stat()override;
-    static Host* gethost(const char* hostname, uint16_t port, Protocol protocol, HttpReqHeader* req, Responser* responser_ptr);
+    static Responser* gethost(const char* hostname, uint16_t port, Protocol protocol, HttpReqHeader* req, Responser* responser_ptr);
 };
 
 #endif

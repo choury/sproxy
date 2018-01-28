@@ -21,9 +21,13 @@ Server::~Server(){
 }
 
 void Peer::deleteLater(uint32_t errcode) {
-    rwer->Close([this](){
+    if(rwer){
+        rwer->Close([this](){
+            delete this;
+        });
+    }else{
         delete this;
-    });
+    }
 }
 
 ssize_t Peer::Send(const void* buff, size_t size, void* index) {
@@ -115,10 +119,8 @@ void Ep::delEpoll(uint32_t events){
     return setEpoll(this->events & ~events);
 }
 
-
-
 size_t RBuffer::left(){
-    return BUF_LEN - len;
+    return sizeof(content) - len;
 }
 
 size_t RBuffer::length(){
@@ -126,7 +128,7 @@ size_t RBuffer::length(){
 }
 
 size_t RBuffer::add(size_t l){
-    assert(len + l <= BUF_LEN);
+    assert(len + l <= sizeof(content));
     len += l;
     return l;
 }
@@ -159,6 +161,7 @@ std::list<write_block>::iterator WBuffer::push(std::list<write_block>::insert_it
         p_free(buff);
         return write_queue.erase(i, i);
     }
+    assert(buff);
     write_block wb={buff, size, 0};
     len += size;
     return write_queue.insert(i, wb);
@@ -167,16 +170,18 @@ std::list<write_block>::iterator WBuffer::push(std::list<write_block>::insert_it
 
 
 ssize_t  WBuffer::Write(std::function<ssize_t(const void*, size_t)> write_func){
-    write_block& wb = write_queue.front();
-    ssize_t ret = write_func((char *)wb.buff + wb.wlen, wb.len - wb.wlen);
+    auto i = write_queue.begin();
+    assert(i->buff);
+    assert(i->wlen < i->len);
+    ssize_t ret = write_func((char *)i->buff + i->wlen, i->len - i->wlen);
     if (ret > 0) {
         len -= ret;
-        assert(ret + wb.wlen <= wb.len);
-        if ((size_t)ret + wb.wlen == wb.len) {
-            p_free(wb.buff);
+        assert(ret + i->wlen <= i->len);
+        if ((size_t)ret + i->wlen == i->len) {
+            p_free(i->buff);
             write_queue.pop_front();
         } else {
-            wb.wlen += ret;
+            i->wlen += ret;
         }
     }
     return ret;
@@ -186,11 +191,20 @@ size_t WBuffer::length() {
     return len;
 }
 
-WBuffer::~WBuffer() {
-    while(!write_queue.empty()){
-        p_free(write_queue.front().buff);
-        write_queue.pop_front();
+void WBuffer::clear(bool freebuffer){
+    if(freebuffer){
+        while(!write_queue.empty()){
+            p_free(write_queue.begin()->buff);
+            write_queue.pop_front();
+        }
+    }else{
+        write_queue.clear();
     }
+    len = 0;
+}
+
+WBuffer::~WBuffer() {
+    clear(true);
 }
 
 
@@ -205,11 +219,15 @@ RWer::RWer(const char* hostname, uint16_t port, Protocol protocol, std::function
     query(hostname, (DNSCBfunc)RWer::Dnscallback, this);
 }
 
+RWer::~RWer() {
+    del_delayjob((job_func)con_timeout, this);
+}
+
 void RWer::Dnscallback(RWer* rwer, const char* hostname, std::list<sockaddr_un> addrs) {
+    strcpy(rwer->hostname, hostname);
     if(rwer->closeCB){
         return rwer->closeCB();
     }
-    strcpy(rwer->hostname, hostname);
     if (addrs.empty()) {
         return rwer->errorCB(DNS_FAILED, 0);
     }
@@ -239,7 +257,6 @@ void RWer::reconnect(int error) {
         addrs.pop();
     }
     if(addrs.empty()){
-        del_delayjob((job_func)con_timeout, this);
         errorCB(error, 0);
         return;
     }
@@ -272,6 +289,7 @@ int RWer::checksocket(){
 
 int RWer::con_timeout(RWer* rwer) {
     close(rwer->fd);
+    rwer->fd = -1;
     LOGE("connect to %s timeout\n", rwer->hostname);
     rwer->reconnect(CONNECT_TIMEOUT);
     return 0;
@@ -293,32 +311,11 @@ void RWer::SetConnectCB(std::function<void()> func){
     connectCB = func;
 }
 
-#if 0
-ssize_t RWer::push_back(const void* buff, size_t len) {
-    return push_back(p_memdup(buff, len), len);
-}
-
-ssize_t RWer::push_back(void* buff, size_t len){
-    addEpoll(EPOLLOUT);
-    wb.push_back(buff, len);
-    return len;
-}
-
-ssize_t RWer::push_front(const void* buff, size_t len) {
-    return push_front(p_memdup(buff, len), len);
-}
-
-ssize_t RWer::push_front(void* buff, size_t len) {
-    addEpoll(EPOLLOUT);
-    wb.push_front(buff, len);
-    return len;
-}
-#endif
-
 void RWer::waitconnectHE(int events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
         checksocket();
         close(fd);
+        fd = -1;
         return reconnect(CONNECT_FAILED);
     }
     if (events & EPOLLOUT) {
@@ -345,7 +342,7 @@ void RWer::defaultHE(int events) {
                 if(readCB){
                     readCB(rb.length());
                 }
-                continue;
+                break;
             }
             if(ret == 0){
                 delEpoll(EPOLLIN);
@@ -387,6 +384,10 @@ void RWer::defaultHE(int events) {
 }
 
 void RWer::closeHE(int events) {
+    if(wb.length() == 0){
+        closeCB();
+        return;
+    }
     int ret = wb.Write(std::bind(&RWer::Write, this, _1, _2));
     if ((wb.length() == 0) || (ret <= 0 && errno != EAGAIN)) {
         closeCB();
@@ -457,6 +458,10 @@ ssize_t RWer::buffer_insert(std::list<write_block>::insert_iterator where, void*
     return len;
 }
 
+void RWer::Clear(bool freebuffer) {
+    wb.clear(freebuffer);
+}
+
 void releaseall() {
     auto cons_copy = servers;
     for(auto i:cons_copy){
@@ -495,8 +500,7 @@ int setproxy(const char* proxy){
     if(SPORT == 0){
         SPORT = 443;
     }
-    //TODO
-    //flushproxy2();
+    flushproxy2();
     return 0;
 }
 

@@ -8,6 +8,7 @@
 #include <fstream>
 
 #include <string.h>
+#include <stdlib.h>
 
 int vpn_aged(VpnStatus* status){
     LOGD(DVPN, "<%s> (%d -> %s) aged.\n",
@@ -54,8 +55,8 @@ int VpnKey::getsport() const{
 }
 
 const char * VpnKey::getdst() const{
-    static char str[100];
-    sprintf(str, "%s:%d", FDns::getRdns(&dst.addr_in.sin_addr),
+    static char str[DOMAINLIMIT];
+    snprintf(str, sizeof(str), "%s:%d", FDns::getRdns(&dst.addr_in.sin_addr),
             ntohs(dst.addr_in.sin_port));
     return str;
 }
@@ -84,15 +85,11 @@ Guest_vpn::Guest_vpn(int fd):Requester("VPN", 0) {
         rwer->consume(len);
     });
     rwer->SetWriteCB([this](size_t len){
-        if(fulled && len){
-            LOGD(DVPN, "active all udp because of buff full\n");
-            for(auto i: statusmap){
-                VpnStatus& status = i.second;
-                if(i.first.protocol == Protocol::UDP){
-                    status.res_ptr->writedcb(status.res_index);
-                }
+        for(auto i: statusmap){
+            VpnStatus& status = i.second;
+            if(i.first.protocol != Protocol::TCP){
+                status.res_ptr->writedcb(status.res_index);
             }
-            fulled = false;
         }
     });
 }
@@ -105,56 +102,6 @@ Guest_vpn::~Guest_vpn(){
     }
     statusmap.clear();
 }
-
-#if 0
-
-void Guest_vpn::defaultHE(uint32_t events) {
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        int       error = 0;
-        socklen_t errlen = sizeof(error);
-
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("(VPN): guest error:%s\n", strerror(error));
-        }
-        deleteLater(INTERNAL_ERR);
-        return;
-    }
-
-    if (events & EPOLLOUT) {
-        if(buffer.length >= 1024*1024){
-            LOGD(DVPN, "active all udp because of buff full\n");
-            for(auto i: statusmap){
-                VpnStatus& status = i.second;
-                if(i.first.protocol == Protocol::UDP){
-                    status.res_ptr->writedcb(status.res_index);
-                }
-            }
-        }
-        int ret = buffer.Write([this](const void* buff, size_t size){
-            return Write(buff, size);
-        });
-        if(ret < 0 && showerrinfo(ret, "guest_vpn write error")) {
-            deleteLater(WRITE_ERR);
-            return;
-        }
-        if(buffer.length == 0){
-            updateEpoll(this->events & ~EPOLLOUT);
-        }
-    }
-    
-    if (events & EPOLLIN) {
-        char recvBuf[VPN_MTU];
-        int readlen = read(fd, recvBuf, VPN_MTU);
-        if (readlen <= 0) { //error recv, maybe fd is closed or broken
-            LOGE("read error:%s\n", strerror(errno));
-        }else{
-            //give the buf to packetManager
-            buffHE(recvBuf, readlen);
-        }
-    }
-}
-
-#endif
 
 void Guest_vpn::buffHE(const char* buff, size_t buflen) {
     //先解析
@@ -554,7 +501,6 @@ void Guest_vpn::icmpHE(const Ip* pac, const char* packet, size_t len) {
 int32_t Guest_vpn::bufleft(void* index) {
     VpnKey *key = (VpnKey *)index;
     assert(key == nullptr || statusmap.count(*key));
-    fulled = rwer->wlength() >= 4*1024*1024;
     if(key == nullptr){
         return 4*1024*1024 - rwer->wlength();
     }
@@ -606,7 +552,6 @@ ssize_t Guest_vpn::Send(void* buff, size_t size, void* index) {
         Ip pac_return(IPPROTO_UDP, &key.dst, &key.src);
 
         sendPkg(&pac_return, buff, size);
-        status.res_ptr->writedcb(status.res_index);
         add_delayjob((job_func)vpn_aged, &status, 300000);
         return size;
     }
@@ -626,7 +571,6 @@ ssize_t Guest_vpn::Send(void* buff, size_t size, void* index) {
 
         buff = p_move(buff, sizeof(icmphdr));
         sendPkg(&pac_return, buff, size - sizeof(icmphdr));
-        status.res_ptr->writedcb(status.res_index);
         add_delayjob((job_func)vpn_aged, &status, 5000);
         return size;
     }

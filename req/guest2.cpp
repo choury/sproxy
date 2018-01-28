@@ -19,6 +19,7 @@ Guest2::Guest2(const char* ip, uint16_t port, RWer* rwer): Requester(ip, port) {
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
         this->rwer->consume(len);
+        add_delayjob((job_func)connection_lost, this, 1800000);
     });
     rwer->SetWriteCB([this](size_t len){
          if(this->rwer->wlength() + len >= 1024*1024){
@@ -45,35 +46,6 @@ void Guest2::Error(int ret, int code){
     LOGE("guest2 error: %d/%d\n", ret, code);
     deleteLater(ret);
 }
-
-#if 0
-ssize_t Guest_s2::Read(void *buff, size_t size) {
-    int ret = 0;
-    if(rudp){
-        ret = rudp->Read(buff,size);
-    }else{
-        ret = ssl->read(buff, size);
-    }
-    if(ret > 0){
-        add_delayjob((job_func)connection_lost, this, 1800000);
-    }
-    return ret;
-}
-
-ssize_t Guest_s2::Write(const void *buff, size_t size) {
-    int ret = 0;
-    if(rudp){
-        ret = rudp->Write(buff, size);
-    }else{
-        ret = ssl->write(buff, size);
-    }
-    if(ret > 0){
-        add_delayjob((job_func)connection_lost, this, 1800000);
-    }
-    return ret;
-}
-
-#endif
 
 int32_t Guest2::bufleft(void* index) {
     int32_t globalwindow = Min(1024*1024 - rwer->wlength(), this->remotewinsize);
@@ -132,6 +104,7 @@ void Guest2::DataProc(uint32_t id, const void* data, size_t len) {
     localwinsize -= len;
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
+        assert((status.res_flags & STREAM_READ_CLOSED) == 0);
         Responser* responser = status.res_ptr;
         if(len > (size_t)status.localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
@@ -143,7 +116,6 @@ void Guest2::DataProc(uint32_t id, const void* data, size_t len) {
         responser->Send(data, len, status.res_index);
         status.localwinsize -= len;
     }else{
-        LOGE("not found data id: %d\n", id);
         Reset(id, ERR_STREAM_CLOSED);
     }
 }
@@ -178,60 +150,6 @@ void Guest2::transfer(void* index, Responser* res_ptr, void* res_index) {
     status.res_index = res_index;
 }
 
-
-#if 0
-
-void Guest_s2::defaultHE(uint32_t events) {
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        int       error = 0;
-        socklen_t errlen = sizeof(error);
-
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOGE("(%s): guest_s error:%s\n", getsrc(nullptr), strerror(error));
-        }
-        deleteLater(INTERNAL_ERR);
-        return;
-    }
-
-    if (events & EPOLLOUT) {
-        if(framelen >= 1024*1024){
-            LOGD(DHTTP2, "active all frame because of framelen\n");
-            for(auto i: statusmap){
-                ResStatus& status = i.second;
-                if(status.remotewinsize > 0){
-                    status.res_ptr->writedcb(status.res_index);
-                }
-            }
-        }
-        int ret = SendFrame();
-        if(ret < 0  && showerrinfo(ret, "guest_s2 write error")) {
-            deleteLater(WRITE_ERR);
-            return;
-        }
-        if(framequeue.empty()) {
-            updateEpoll(this->events & ~EPOLLOUT);
-        }
-    }
-    
-    if (events & EPOLLIN) {
-        (this->*Http2_Proc)();
-        if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
-            localwinsize += ExpandWindowSize(0, 50*1024*1024);
-        }
-    }
-
-}
-
-void Guest_s2::closeHE(uint32_t events) {
-    int ret = SendFrame();
-    if (framequeue.empty() ||
-        (ret <= 0 && showerrinfo(ret, "write error while closing"))) {
-        delete this;
-        return;
-    }
-}
-
-#endif
 
 void Guest2::RstProc(uint32_t id, uint32_t errcode) {
     if(statusmap.count(id)){
