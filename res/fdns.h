@@ -4,7 +4,6 @@
 //fake dns
 
 #include "responser.h"
-#include "prot/binmap.h"
 #include <map>
 
 struct FDnsStatus{

@@ -3,8 +3,6 @@
 
 #include "requester.h"
 #include "prot/http2.h"
-#include "misc/vssl.h"
-#include "misc/rudp.h"
 
 struct ResStatus{
     Responser *res_ptr;
@@ -16,6 +14,7 @@ struct ResStatus{
 
 class Guest2: public Requester, public Http2Responser {
     std::map<uint32_t, ResStatus> statusmap;
+    void init(RWer* rwer);
 protected:
     virtual void deleteLater(uint32_t errcode) override;
     virtual void Error(int ret, int code);
@@ -36,6 +35,7 @@ protected:
     virtual void queue_insert(std::list<write_block>::insert_iterator where, void* buff, size_t len) override;
 public:
     explicit Guest2(const char *ip, uint16_t port, RWer* rwer);
+    explicit Guest2(const sockaddr_un* addr, RWer* rwer);
     virtual ~Guest2();
     
 

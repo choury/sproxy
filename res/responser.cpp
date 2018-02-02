@@ -1,6 +1,8 @@
 #include "req/requester.h"
 #include "misc/strategy.h"
 #include "misc/util.h"
+#include "misc/net.h"
+#include "prot/dns.h"
 
 #include "host.h"
 #include "file.h"
@@ -158,7 +160,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
             }
         }
         if(fprotocol[0] && strcasecmp(fprotocol, "rudp") == 0){
-            fprot = Protocol::UDP;
+            fprot = Protocol::RUDP;
         }
         LOG("[[%s]] %s\n", getstrategystring(s), log_buff);
         return Host::gethost(fhost, fport, fprot, req, responser_ptr);

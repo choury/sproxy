@@ -1,6 +1,7 @@
 #include "dns.h"
 #include "misc/job.h"
 #include "misc/util.h"
+#include "misc/simpleio.h"
 #include "common.h"
 
 #include <unordered_map>
@@ -176,21 +177,21 @@ static void query(Dns_Status* dnsst){
         addr.addr_in.sin_family = AF_INET;
         dnsst->rcd.addrs.push_back(addr);
         add_postjob((job_func)query_back, dnsst);
-        return ;
+        return;
     }
 
     if (inet_pton(AF_INET6, dnsst->host, &addr.addr_in6.sin6_addr) == 1) {
         addr.addr_in6.sin6_family = AF_INET6;
         dnsst->rcd.addrs.push_back(addr);
         add_postjob((job_func)query_back, dnsst);
-        return ;
+        return;
     }
 
     if (rcd_cache.count(dnsst->host)) {
         dnsst->rcd = rcd_cache[dnsst->host];
         add_postjob((job_func)query_back, dnsst);
         if(dnsst->rcd.gettime + dnsst->rcd.ttl - time(nullptr) > 15){
-            return ;
+            return;
         }
         //刷新ttl
         Dns_Status * newst = new Dns_Status;
@@ -225,7 +226,7 @@ static void query(Dns_Status* dnsst){
 }
 
 
-void query(const char *host , DNSCBfunc func, void *param) {
+void query(const char* host , DNSCBfunc func, void* param) {
     if(querying_index_host.count(host)){
         if(func){
             querying_index_host[host]->reqs.push_back(Dns_Req{func, param});
@@ -241,6 +242,18 @@ void query(const char *host , DNSCBfunc func, void *param) {
 
     snprintf(dnsst->host, sizeof(dnsst->host), "%s", host);
     query(dnsst);
+}
+
+void query_cancel(const char* host, DNSCBfunc func, void* param){
+    if(querying_index_host.count(host)){
+        Dns_Status* status = querying_index_host[host];
+        for(auto i = status->reqs.begin(); i!= status->reqs.end(); i++){
+            if(i->func == func && i->param == param){
+                status->reqs.erase(i);
+                return;
+            }
+        }
+    }
 }
 
 static void query(Dns_RawReq* dnsreq){
@@ -346,12 +359,13 @@ Dns_srv::Dns_srv(const char* name){
         LOGE("[DNS] connecting  %s error:%s\n", name, strerror(errno));
         throw 0;
     }
-    rwer = new RWer(fd, [](int ret, int code){
+    rwer = new FdRWer(fd, [](int ret, int code){
         LOGE("DNS error: %d/%d\n", ret, code);
     });
     rwer->SetReadCB([this](size_t len){
-        buffHE(rwer->data(), len);
-        rwer->consume(len);
+        const char* data = rwer->data();
+        buffHE(data, len);
+        rwer->consume(data, len);
     });
 
     strcpy(this->name, name);

@@ -1,6 +1,7 @@
 #include "file.h"
 #include "cgi.h"
 #include "req/requester.h"
+#include "misc/simpleio.h"
 #include "misc/net.h"
 #include "misc/util.h"
 
@@ -109,7 +110,7 @@ File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
         LOGE("create evventfd failed: %s\n", strerror(errno));
         throw 0;
     }
-    rwer = new RWer(evfd, [this](int ret, int code){
+    rwer = new FdRWer(evfd, [this](int ret, int code){
         deleteLater(ret);
     });
     snprintf(filename, sizeof(filename), "./%s", fname);
@@ -170,7 +171,7 @@ void* File::request(HttpReqHeader* req) {
 
 
 void File::readHE(size_t len) {
-    rwer->consume(len);
+    rwer->consume(nullptr, len);
     rwer->buffer_insert(rwer->buffer_end(), "FILEFILE", 8);
     if(statusmap.empty()){
         if(!valid){

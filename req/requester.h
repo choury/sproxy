@@ -11,7 +11,7 @@ protected:
     char sourceip[INET6_ADDRSTRLEN];
     uint16_t  sourceport;
 public:
-    explicit Requester(const struct sockaddr_in6 *myaddr = nullptr);
+    explicit Requester(const sockaddr_un *myaddr = nullptr);
     explicit Requester(const char *ip, uint16_t port);
     
     virtual const char *getsrc(const void* index) = 0;

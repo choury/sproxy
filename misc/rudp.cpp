@@ -2,6 +2,8 @@
 #include "job.h"
 #include "misc/util.h"
 #include "misc/net.h"
+#include "req/guest2.h"
+#include "prot/dns.h"
 
 #include <queue>
 
@@ -12,7 +14,7 @@
 #include <unistd.h>
 #include <assert.h>
 
-int Rudp_c::rudp_send(Rudp_c* rudp) {
+int RudpRWer::rudp_send(RudpRWer* rudp) {
     rudp->Send();
     return 0;
 }
@@ -63,7 +65,18 @@ uint32_t TTL::getsum() {
 }
 
 
-Rudp_c::Rudp_c(int fd, uint32_t id, Rudp* ord):fd(fd),id(id), ord(ord) {
+RudpRWer::RudpRWer(int fd, uint32_t id, Rudp_server* ord):RWer(nullptr, fd),id(id), ord(ord) {
+    read_seqs.push_back(std::make_pair(0,0));
+    tick_time = ack_time = getmtime();
+    write_buff = new unsigned char[RUDP_BUF_LEN];
+    read_buff = new unsigned char[RUDP_BUF_LEN];
+    recv_pkgs = new TTL();
+    connected();
+}
+
+RudpRWer::RudpRWer(const char* hostname, uint16_t port):RWer(nullptr), port(port){
+    strcpy(this->hostname, hostname);
+    query(hostname, (DNSCBfunc)RudpRWer::Dnscallback, this);
     read_seqs.push_back(std::make_pair(0,0));
     tick_time = ack_time = getmtime();
     write_buff = new unsigned char[RUDP_BUF_LEN];
@@ -71,57 +84,69 @@ Rudp_c::Rudp_c(int fd, uint32_t id, Rudp* ord):fd(fd),id(id), ord(ord) {
     recv_pkgs = new TTL();
 }
 
-Rudp_c::Rudp_c(const sockaddr_un* addr) {
-    fd = Connect(addr, SOCK_DGRAM);
-    if(fd < 0){
-        throw 0;
+void RudpRWer::connected(){
+    if(connectCB){
+        connectCB();
     }
-    read_seqs.push_back(std::make_pair(0,0));
-    memcpy(&this->addr, addr, sizeof(sockaddr_un));
-    tick_time = ack_time = getmtime();
-    write_buff = new unsigned char[RUDP_BUF_LEN];
-    read_buff = new unsigned char[RUDP_BUF_LEN];
-    recv_pkgs = new TTL();
+    setEpoll(EPOLLIN | EPOLLOUT);
+    Send();
+    handleEvent = (void (Ep::*)(uint32_t))&RudpRWer::defaultHE;
 }
 
-Rudp_c::~Rudp_c(){
+void RudpRWer::Dnscallback(RudpRWer* rwer, const char*, std::list<sockaddr_un> addrs) {
+    for(auto& i: addrs){
+        i.addr_in6.sin6_port = htons(rwer->port);
+        int fd = Connect(&i, SOCK_DGRAM);
+        if(fd > 0){
+            rwer->fd = fd;
+            memcpy(&rwer->addr, &i, sizeof(sockaddr_un));
+            rwer->connected();
+            return;
+        }
+    }
+    return rwer->errorCB(CONNECT_FAILED, 0);
+}
+
+RudpRWer::~RudpRWer(){
     if(ord){
         ord->evict(id);
     }
     del_delayjob((job_func)rudp_send, this);
+    query_cancel(hostname, (DNSCBfunc)RudpRWer::Dnscallback, this);
     delete []write_buff;
     delete []read_buff;
     delete recv_pkgs;
 }
 
-ssize_t Rudp_c::Read(void* buff, size_t size) {
-    if(flags & RUDP_SEND_TIMEOUT) {
-        errno = ETIMEDOUT;
-        return -1;
-    }
-    if(Recv() < 0){
-        errno = EIO;
-        return -1;
-    }
-    if(read_seqs.begin()->first == read_seqs.begin()->second){
-        errno = EAGAIN;
-        return -1;
-    }
-    uint32_t start_pos = read_seqs.begin()->first;
-    if(read_seqs.begin()->second - read_seqs.begin()->first < size){
-        size = read_seqs.begin()->second - read_seqs.begin()->first;
-    }
-    read_seqs.begin()->first += size;
-
-    uint32_t from = start_pos &(RUDP_BUF_LEN-1);
-    size_t l = Min(RUDP_BUF_LEN - from, size);
-    memcpy(buff, read_buff + from, l);
-    memcpy((char *)buff + l, read_buff, size - l);
-    return size;
+size_t RudpRWer::rlength(){
+    return read_seqs.begin()->second - read_seqs.begin()->first;
 }
 
+const char *RudpRWer::data(){
+    uint32_t size = read_seqs.begin()->second - read_seqs.begin()->first;
+    uint32_t start_pos = read_seqs.begin()->first;
+    uint32_t from = start_pos &(RUDP_BUF_LEN-1);
 
-ssize_t Rudp_c::Write(const void* buff, size_t size) {
+    if(size <= RUDP_BUF_LEN - from){
+        return  (char*)read_buff + from;
+    }else{
+        char* buff = (char*)malloc(size);
+        size_t l = RUDP_BUF_LEN - from;
+        memcpy(buff, read_buff + from, l);
+        memcpy((char *)buff + l, read_buff, size - l);
+        return  buff;
+    }
+}
+
+void RudpRWer::consume(const char* data, size_t l){
+    read_seqs.begin()->first += l;
+    assert(read_seqs.begin()->first <= read_seqs.begin()->second);
+    if(data < (char*)read_buff || data > (char*)read_buff + RUDP_BUF_LEN){
+        free((char*)data);
+    }
+}
+
+ssize_t RudpRWer::Write(const void* buff, size_t size) {
     if(flags & RUDP_SEND_TIMEOUT) {
         errno = ETIMEDOUT;
         return -1;
@@ -137,152 +162,192 @@ ssize_t Rudp_c::Write(const void* buff, size_t size) {
     memcpy(write_buff+from, buff, l);
     memcpy(write_buff, (const char*)buff + l, size -l);
     write_seq += size;
-    if(Send() < 0){
+    if(fd > 0 && Send() < 0){
         return -1;
     }
     return size;
 }
 
-int Rudp_c::Recv(){
-    assert(!read_seqs.empty());
-    unsigned char buff[RUDP_MTU];
-    uint32_t tick_recvpkg = 0;
-    uint32_t recv_time = 0;
-    uint32_t org_ack = 0;
-    int ret;
-#ifndef NDEBUG
-    uint32_t recv_begin = 0;
-    uint32_t recv_end = 0;
-    uint32_t discard_begin = 0;
-    uint32_t discard_end = 0;
-#endif
-    while((ret = read(fd, buff, RUDP_MTU)) > 0){
-        Rudp_head *head = (Rudp_head *)buff;
-        const uint32_t id = ntohl(head->id);
-        const uint32_t seq = ntohl(head->seq);
-        const uint32_t time = ntohl(head->time);
-        const uint16_t len = ret - sizeof(Rudp_head);
+void RudpRWer::handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats) {
+    const uint32_t id = ntohl(head->id);
+    const uint32_t seq = ntohl(head->seq);
+    const uint32_t time = ntohl(head->time);
+    const uint16_t len = size - sizeof(Rudp_head);
 
-        if(this->id == 0){
-            this->id = id;
-            LOGD(DRUDP, "[RUDP]: get id: %d\n", id);
+    stats->tick_recvpkg ++ ;
+    if(this->id == 0){
+        this->id = id;
+        LOGD(DRUDP, "get id: %d\n", id);
+    }
+
+    bucket_limit = (bucket_limit*8 + ntohs(head->window)*2)/10;
+    bucket_limit = Max(bucket_limit,1);
+
+    if(head->type == RUDP_TYPE_DATA){
+#ifndef NDEBUG
+        if(stats->recv_begin == 0){
+            stats->recv_begin = seq;
         }
-
-        bucket_limit = (bucket_limit*8 + ntohs(head->window)*2)/10;
-        bucket_limit = Max(bucket_limit,1);
-
-        tick_recvpkg ++;
-        if(head->type == RUDP_TYPE_DATA){
-#ifndef NDEBUG
-            if(recv_begin == 0){
-                recv_begin = seq;
-            }
-            if(recv_end && recv_end != seq){
-                LOGD(DRUDP, "%05u:[%d] get pkg: %x -- %x [%u]\n", getmtime()%100000, id, recv_begin, recv_end, recv_end-recv_begin);
-                recv_begin = seq;
-            }
-            recv_end = seq + len;
+        if(stats->recv_end && stats->recv_end != seq){
+            LOGD(DRUDP, "[%d] get pkg: %x -- %x [%u]\n", 
+                id, stats->recv_begin, stats->recv_end, 
+                stats->recv_end - stats->recv_begin);
+            stats->recv_begin = seq;
+        }
+        stats->recv_end = seq + len;
 #endif
-            uint32_t full_pos = read_seqs.begin()->second;
-            if(after(seq + len, full_pos) &&
-               before(seq + len , read_seqs.begin()->first + RUDP_BUF_LEN))
-            {
-                uint32_t start_pos = after(seq, full_pos)?seq:full_pos;
-                auto i = read_seqs.begin();
-                for(;i!=read_seqs.end();i++){
-                    if(nobefore(i->first, start_pos))
-                        break;
-                }
-                read_seqs.insert(i, std::make_pair(start_pos, seq+len));
 
-                for(auto i= read_seqs.begin(); ;){
-                    auto pre = i++;
-                    if(i == read_seqs.end())
-                        break;
-                    if(nobefore(pre->second, i->first)){
-                        pre->second = after(pre->second, i->second)?pre->second:i->second;
-                        read_seqs.erase(i);
-                        i = pre;
-                    }
-                }
-                size_t size = seq - start_pos + len;
-                size_t from = start_pos  & (RUDP_BUF_LEN-1);
-                size_t l = Min(RUDP_BUF_LEN - from, size);
-                memcpy(read_buff+ from , (const char*)(head+1) + (start_pos-seq), l);
-                memcpy(read_buff , (const char*)(head+1) + (start_pos + l -seq), size - l);
+        uint32_t full_pos = read_seqs.begin()->second;
+        if(after(seq + len, full_pos) &&
+            before(seq + len , read_seqs.begin()->first + RUDP_BUF_LEN))
+        {
+            uint32_t start_pos = after(seq, full_pos)?seq:full_pos;
+            auto i = read_seqs.begin();
+            for(;i!=read_seqs.end();i++){
+                if(nobefore(i->first, start_pos))
+                    break;
+            }
+            read_seqs.insert(i, std::make_pair(start_pos, seq+len));
 
-            }
-#ifndef NDEBUG
-            else{
-                if(discard_begin == 0){
-                    discard_begin = seq;
+            for(auto i= read_seqs.begin(); ;){
+                auto pre = i++;
+                if(i == read_seqs.end())
+                    break;
+                if(nobefore(pre->second, i->first)){
+                    pre->second = after(pre->second, i->second)?pre->second:i->second;
+                    read_seqs.erase(i);
+                    i = pre;
                 }
-                if(discard_end && discard_end != seq){
-                    LOGD(DRUDP, "%05u:[%d] discard pkg: %x -- %x [%u] (%x)\n",
-                        getmtime()%100000, id, discard_begin, discard_end, discard_end-discard_begin, full_pos);
-                    discard_begin = seq;
-                }
-                discard_end = seq + len;
             }
-#endif
-            recv_time = time>recv_time?time:recv_time;
+            size_t size = seq - start_pos + len;
+            size_t from = start_pos  & (RUDP_BUF_LEN-1);
+            size_t l = Min(RUDP_BUF_LEN - from, size);
+            memcpy(read_buff+ from , (const char*)(head+1) + (start_pos-seq), l);
+            memcpy(read_buff , (const char*)(head+1) + (start_pos + l -seq), size - l);
+ #ifndef NDEBUG
         }else{
-            uint32_t now = getmtime();
-            if(org_ack == 0){
-                org_ack = recv_ack;
+            if(stats->discard_begin == 0){
+                stats->discard_begin = seq;
             }
-            rtt_time = (rtt_time * 8 + (now-time) * 2)/10;
-            gap_num = 0;
-            uint32_t *gap_ptr = (uint32_t *)(head+1);
-            while((unsigned char*)gap_ptr - buff <ret){
-                gaps[gap_num++] = ntohl(*gap_ptr++);
+            if(stats->discard_end && stats->discard_end != seq){
+                LOGD(DRUDP, "[%d] discard pkg: %x -- %x [%u] (%x)\n",
+                    id, stats->discard_begin, stats->discard_end,
+                    stats->discard_end - stats->discard_begin, full_pos);
+                stats->discard_begin = seq;
             }
-            if(after(seq, recv_ack)){
-                recv_ack = seq;
-                ack_time = now;
-#ifdef NDEBUG
-            }
-#else
-                LOGD(DRUDP, "%05u:[%d] ack: %x  window: %u  rtt: %u\n",
-                    now%100000, id, seq, bucket_limit, rtt_time);
-            } else{
-                LOGD(DRUDP, "%05u:[%d] ack [R]: %x (%x) window: %u  rtt: %u\n",
-                    now%100000, id, seq, recv_ack, bucket_limit, rtt_time);
-            }
+            stats->discard_end = seq + len;
 #endif
         }
-    }
-    LOGE("rudp read: %s\n", strerror(errno));
-    assert(0);
-#ifndef NDEBUG
-    if(recv_end){
-        LOGD(DRUDP, "%05u:[%d] get pkg: %x -- %x [%u]\n",
-            getmtime()%100000, id, recv_begin, recv_end, recv_end-recv_begin);
-    }
-    if(discard_end){
-        LOGD(DRUDP, "%05u:[%d] discard pkg: %x -- %x [%u] (%x)\n",
-            getmtime()%100000, id, discard_begin, discard_end, discard_end-discard_begin, read_seqs.begin()->second);
-    }
-#endif
-    if(org_ack && recv_ack != write_seq && org_ack == recv_ack){
-        ackhold_times ++;
+        stats->recv_time = time>stats->recv_time?time:stats->recv_time;
     }else{
-        ackhold_times = 0;
+        uint32_t now = getmtime();
+        rtt_time = (rtt_time * 8 + (now-time) * 2)/10;
+        gap_num = 0;
+        uint32_t *gap_ptr = (uint32_t *)(head+1);
+        while((uchar*)gap_ptr - (uchar*)head < (int)size){
+            gaps[gap_num++] = ntohl(*gap_ptr++);
+        }
+        if(after(seq, recv_ack)){
+            recv_ack = seq;
+            ack_time = now;
+            ackhold_times = 0;
+#ifdef NDEBUG
+        }else if(seq == recv_ack){
+            ackhold_times ++;
+        }
+#else
+            LOGD(DRUDP, "[%d] ack: %x  window: %u  rtt: %u\n", 
+                id, seq, bucket_limit, rtt_time);
+        }else{
+            LOGD(DRUDP, "[%d] ack [R]: %x (%x) window: %u  rtt: %u\n",
+                id, seq, recv_ack, bucket_limit, rtt_time);
+            if(seq == recv_ack){
+                ackhold_times ++ ;
+            }
+        }
+#endif
     }
-    recv_pkgs->add(tick_recvpkg);
-    send_ack(recv_time, recv_pkgs->getsum());
-    return Send();
 }
 
-int Rudp_c::Send() {
+void RudpRWer::finish_recv(Rudp_stats* stats){
+#ifndef NDEBUG
+    if(stats->recv_end){
+        LOGD(DRUDP, "[%d] get pkg: %x -- %x [%u]\n",
+            id, stats->recv_begin, stats->recv_end, 
+            stats->recv_end - stats->recv_begin);
+    }
+    if(stats->discard_end){
+        LOGD(DRUDP, "[%d] discard pkg: %x -- %x [%u] (%x)\n",
+            id, stats->discard_begin, stats->discard_end, 
+            stats->discard_end - stats->discard_begin, read_seqs.begin()->second);
+    }
+#endif
+    if(recv_ack == write_seq){
+        ackhold_times = 0;
+        
+    }
+    if(readCB){
+        readCB(read_seqs.begin()->second - read_seqs.begin()->first);
+    }
+    recv_pkgs->add(stats->tick_recvpkg);
+    send_ack(stats->recv_time, recv_pkgs->getsum());
+
+}
+
+void RudpRWer::defaultHE(uint32_t events) {
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        errorCB(SOCKET_ERR, Checksocket(fd));
+        return;
+    }
+    if(events & EPOLLIN){
+        assert(!read_seqs.empty());
+        Rudp_stats stats;
+        int ret;
+        unsigned char buff[RUDP_MTU];
+        while((ret = read(fd, buff, RUDP_MTU)) > 0){
+            Rudp_head *head = (Rudp_head *)buff;
+            handle_pkg(head, ret, &stats);
+        }
+        if(errno != EAGAIN){
+            errorCB(READ_ERR, errno);
+            return;
+        }
+        finish_recv(&stats);
+    }
+    if(events & EPOLLOUT){
+        size_t writed = 0;
+        while(wb.length()){
+            int ret = wb.Write(std::bind(&RudpRWer::Write, this, _1, _2));
+            assert(ret != 0);
+            if(ret > 0){
+                writed += ret;
+                continue;
+            }
+            if(errno == EAGAIN){
+                break;
+            }
+            errorCB(WRITE_ERR, errno);
+            break;
+        }
+        if(wb.length() == 0){
+            delEpoll(EPOLLOUT);
+        }
+        if(writed && writeCB){
+            writeCB(writed);
+        }
+    }
+    Send();
+}
+
+int RudpRWer::Send() {
     uint32_t recvp_num = recv_pkgs->getsum();
     uint32_t now = getmtime();
     assert(bucket_limit>0);
     uint32_t buckets = (now - tick_time) * (bucket_limit+10)/95;
     if(ackhold_times >= 3){
 #ifndef NDEBUG
-        LOGD(DRUDP, "%05u:[%d] ackhold %u times reset resend_pos(%x) to %x\n",
-            getmtime()%100000, id, ackhold_times, resend_pos, recv_ack);
+        LOGD(DRUDP, "[%d] ackhold %u times reset resend_pos(%x) to %x\n",
+            id, ackhold_times, resend_pos, recv_ack);
 #endif
         resend_pos = recv_ack;
         ackhold_times = 0;
@@ -308,8 +373,8 @@ int Rudp_c::Send() {
                 return -1;
             }
 #ifndef NDEBUG
-            LOGD(DRUDP, "%05u:[%d] acktime %05u diff %u/%u, begin resend\n",
-                getmtime()%100000, id, ack_time%100000, now-ack_time, now-resend_time);
+            LOGD(DRUDP, "[%d] acktime %05u diff %u/%u, begin resend\n",
+                id, ack_time%100000, now-ack_time, now-resend_time);
 #endif
             resend_pos = after(recv_ack, resend_pos)?recv_ack: resend_pos;
             if(gap_num){
@@ -324,8 +389,8 @@ int Rudp_c::Send() {
                     }
 #ifndef NDEBUG
                     if(send_begin != resend_pos){
-                        LOGD(DRUDP, "%05u:[%d] send pkg: %x - %x [%u], left buckets: %d [R]\n",
-                            getmtime()%100000, id, send_begin, resend_pos, resend_pos-send_begin, buckets);
+                        LOGD(DRUDP, "[%d] send pkg: %x - %x [%u], left buckets: %d [R]\n",
+                            id, send_begin, resend_pos, resend_pos-send_begin, buckets);
                     }
 #endif
                     if(buckets == 0){
@@ -342,8 +407,8 @@ int Rudp_c::Send() {
                 }
 #ifndef DDEBUG
                 if(send_begin != resend_pos){
-                    LOGD(DRUDP, "%05u:[%d] send pkg: %x - %x [%u], left buckets: %d [SR]\n",
-                        getmtime()%100000, id, send_begin, resend_pos, resend_pos-send_begin,buckets);
+                    LOGD(DRUDP, "[%d] send pkg: %x - %x [%u], left buckets: %d [SR]\n",
+                        id, send_begin, resend_pos, resend_pos-send_begin,buckets);
                 }
 #endif
             }
@@ -364,8 +429,8 @@ int Rudp_c::Send() {
         }
 #ifndef NDEBUG
         if(send_begin != send_pos){
-            LOGD(DRUDP, "%05u:[%d] send pkg: %x - %x [%u], left buckets: %d\n",
-                getmtime()%100000, id, send_begin, send_pos, send_pos-send_begin, buckets);
+            LOGD(DRUDP, "[%d] send pkg: %x - %x [%u], left buckets: %d\n",
+                id, send_begin, send_pos, send_pos-send_begin, buckets);
         }
 #endif
         tick_time = now - buckets*100/bucket_limit;
@@ -380,7 +445,7 @@ int Rudp_c::Send() {
     return 0;
 }
 
-void Rudp_c::send_ack(uint32_t time, uint32_t window) {
+void RudpRWer::send_ack(uint32_t time, uint32_t window) {
     if(time){
         assert(window && window < 65536);
         unsigned char buff[RUDP_MTU];
@@ -411,7 +476,7 @@ void Rudp_c::send_ack(uint32_t time, uint32_t window) {
     }
 }
 
-uint32_t Rudp_c::send_pkg(uint32_t seq, uint32_t window, size_t len) {
+uint32_t RudpRWer::send_pkg(uint32_t seq, uint32_t window, size_t len) {
     assert(len && len <= RUDP_LEN);
     assert(window < 65536);
     unsigned char buff[RUDP_MTU];
@@ -431,20 +496,17 @@ uint32_t Rudp_c::send_pkg(uint32_t seq, uint32_t window, size_t len) {
     return len;
 }
 
-int Rudp_c::PushPkg(const Rudp_head* pkg, size_t len, const sockaddr_un* addr) {
+int RudpRWer::PushPkg(const Rudp_head* pkg, size_t len, const sockaddr_un* addr) {
     if(connect(fd, &addr->addr, sizeof(sockaddr_un))){
-        LOGE("[RUDP] connect failed: %s", strerror(errno));
+        errorCB(CONNECT_FAILED, errno);
+        return 0;
     }
     memcpy(&this->addr, addr, sizeof(sockaddr_un));
+    Rudp_stats stats;
+    handle_pkg(pkg, len, &stats);
+    finish_recv(&stats);
+    Send();
     return 0;
-}
-
-int Rudp_c::GetFd() {
-    return fd;
-}
-
-const sockaddr_un* Rudp_c::GetPeer() {
-    return &addr;
 }
 
 bool operator< (const sockaddr_un a, const sockaddr_un b){
@@ -457,50 +519,47 @@ bool operator< (const sockaddr_un a, const sockaddr_un b){
     return false;
 }
 
-
-Rudp::Rudp(int fd, uint16_t port, rudp_accept_cb cb, void* param):
-        fd(fd), port(port), Accept(cb), AcceptParam(param) 
-{
-}
-
-Rudp::~Rudp(){
-}
-
-int Rudp::Recv() {
-    unsigned char buff[RUDP_MTU];
-    sockaddr_un addr;
-    socklen_t addr_len = sizeof(addr);
-    int ret;
-    while((ret = recvfrom(fd, buff, RUDP_MTU, 0, (struct sockaddr*)&addr, &addr_len)) > 0){
-        Rudp_head *head = (Rudp_head *)buff;
-        uint32_t id = ntohl(head->id);
-        if(id){
-            if(connections.Get(id) == nullptr){
-                LOGD(DRUDP, "not found id: %d\n", id);
-                continue;
-            }
-            LOGD(DRUDP, "connection %d addr changed\n", id);
-            Rudp_c* r = connections.Get(id)->data;
-            r->PushPkg(head, ret, &addr);
-        }else{
-            auto t = connections.Get(addr);
-            if(t != nullptr){
-                LOGD(DRUDP, "dup syn packet: %d\n", t->t1);
-                t->data->PushPkg(head, ret, &addr);
+void Rudp_server::defaultHE(uint32_t events){
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        LOGE("Rudp server: %d\n", Checksocket(fd));
+        return;
+    }
+    if(events & EPOLLIN){
+        sockaddr_un addr;
+        socklen_t addr_len = sizeof(addr);
+        int ret;
+        while((ret = recvfrom(fd, buff, RUDP_MTU, 0, (struct sockaddr*)&addr, &addr_len)) > 0){
+            Rudp_head *head = (Rudp_head *)buff;
+            uint32_t id = ntohl(head->id);
+            if(id){
+                if(connections.Get(id) == nullptr){
+                    LOGD(DRUDP, "not found id: %d\n", id);
+                    continue;
+                }
+                LOGD(DRUDP, "connection %d addr changed\n", id);
+                connections.Get(id)->data->PushPkg(head, ret, &addr);
             }else{
-                Maxid ++;
-                int fd = Bind(SOCK_DGRAM, port, &addr);
-                Rudp_c* r = new Rudp_c(fd, Maxid, this);
-                r->PushPkg(head, ret, &addr);
-                connections.Add(Maxid, addr, r);
-                Accept(AcceptParam, r);
-                LOGD(DRUDP, "new connection %d accept\n", Maxid);
+                auto container = connections.Get(addr);
+                if(container != nullptr){
+                    LOGD(DRUDP, "dup syn packet: %d\n", container->t1);
+                    container->data->PushPkg(head, ret, &addr);
+                }else{
+                    Maxid ++;
+                    int fd = Bind(SOCK_DGRAM, port, &addr);
+                    RudpRWer* rwer = new RudpRWer(fd, Maxid, this);
+                    rwer->PushPkg(head, ret, &addr);
+                    connections.Add(Maxid, addr, rwer);
+                    LOGD(DRUDP, "new connection %d accept\n", Maxid);
+                    new Guest2(&addr, rwer);
+                }
             }
         }
+    }else{
+        LOGE("unknown error\n");
+        return;
     }
-    return 0;
 }
 
-void Rudp::evict(int id) {
+void Rudp_server::evict(int id) {
     connections.Delete(id);
 }

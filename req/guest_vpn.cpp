@@ -2,6 +2,7 @@
 #include "vpn.h"
 
 #include "res/fdns.h"
+#include "misc/simpleio.h"
 #include "misc/job.h"
 #include "misc/util.h"
 
@@ -9,6 +10,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <assert.h>
 
 int vpn_aged(VpnStatus* status){
     LOGD(DVPN, "<%s> (%d -> %s) aged.\n",
@@ -77,12 +79,13 @@ bool operator<(const VpnKey a, const VpnKey b) {
 
 
 Guest_vpn::Guest_vpn(int fd):Requester("VPN", 0) {
-    rwer = new RWer(fd, [](int ret, int code){
+    rwer = new FdRWer(fd, [](int ret, int code){
         LOGE("Guest_vpn error: %d/%d\n", ret, code);
     });
     rwer->SetReadCB([this](size_t len){
-        buffHE(rwer->data(), len);
-        rwer->consume(len);
+        const char* data = rwer->data();
+        buffHE(data, len);
+        rwer->consume(data, len);
     });
     rwer->SetWriteCB([this](size_t len){
         for(auto i: statusmap){

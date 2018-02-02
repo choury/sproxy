@@ -3,7 +3,9 @@
 #include "req/requester.h"
 #include "misc/job.h"
 #include "misc/util.h"
-#include "misc/vssl.h"
+#include "misc/sslio.h"
+#include "misc/rudp.h"
+#include "misc/net.h"
 
 #include <string.h>
 #include <errno.h>
@@ -19,13 +21,13 @@ Host::Host(Protocol protocol, const char* hostname, uint16_t port, bool use_ssl)
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
 
     if(use_ssl){
-        SRWer *srwer = new SRWer(hostname, port, protocol, std::bind(&Host::Error, this, _1, _2));
+        SslRWer *srwer = new SslRWer(hostname, port, protocol, std::bind(&Host::Error, this, _1, _2));
         if(use_http2){
             srwer->set_alpn(alpn_protos_string, sizeof(alpn_protos_string)-1);
         }
         rwer = srwer;
     }else{
-        rwer = new RWer(hostname, port, protocol, std::bind(&Host::Error, this, _1, _2));
+        rwer = new FdRWer(hostname, port, protocol, std::bind(&Host::Error, this, _1, _2));
     }
     rwer->SetConnectCB(std::bind(&Host::connected, this));
 }
@@ -36,15 +38,9 @@ Host::~Host(){
     }
 }
 
-#if 0
-void Host::discard() {
-    req = nullptr;
-}
-#endif
-
 void Host::connected() {
     isconnected = true;
-    SRWer* swrer = dynamic_cast<SRWer*>(rwer);
+    SslRWer* swrer = dynamic_cast<SslRWer*>(rwer);
     if(swrer){
         const unsigned char *data;
         unsigned int len;
@@ -75,8 +71,9 @@ void Host::connected() {
     assert(rwer->wlength() == 0 || head->wlen == 0);
     rwer->buffer_insert(head, buff, len);
     rwer->SetReadCB([this](size_t len){
-        len = (this->*Http_Proc)(rwer->data(), len);
-        rwer->consume(len);
+        const char* data = rwer->data();
+        len = (this->*Http_Proc)(data, len);
+        rwer->consume(data, len);
     });
     rwer->SetWriteCB([this](size_t len){
         if(req && len){
@@ -174,7 +171,7 @@ void Host::Error(int ret, int code) {
     if(ret == SOCKET_ERR && code == 0){
         return deleteLater(NOERROR | DISCONNECT_FLAG);
     }
-    LOGE("Host error %d/%d\n", ret, code);
+    LOGE("Host error <%s> (%s:%d) %d/%d\n", protstr(protocol), hostname, port, ret, code);
     deleteLater(ret);
 }
 
@@ -232,6 +229,11 @@ void Host::writedcb(void* index) {
 Responser* Host::gethost(const char* hostname, uint16_t port, Protocol protocol, HttpReqHeader* req, Responser* responser_ptr){
     if(req->should_proxy && proxy2){
         return proxy2;
+    }
+    if(protocol == Protocol::RUDP){
+        Proxy2* proxy = new Proxy2(new RudpRWer(hostname, port));
+        proxy->init(nullptr);
+        return proxy;
     }
     Host* host = dynamic_cast<Host *>(responser_ptr);
     if(req->ismethod("CONNECT") || req->ismethod("SEND")){

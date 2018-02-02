@@ -29,8 +29,8 @@ protected:
     virtual void EndProc() override;
     virtual void ErrProc() override;
 public:
-    explicit Guest(int fd, struct sockaddr_in6 *myaddr);
-    explicit Guest(int fd, struct sockaddr_in6 *myaddr, SSL_CTX* ctx);
+    explicit Guest(int fd, const sockaddr_un *myaddr);
+    explicit Guest(int fd, const sockaddr_un *myaddr, SSL_CTX* ctx);
 
     virtual int32_t bufleft(void * index) override;
     virtual ssize_t Send(void* buff, size_t size, void* index)override;

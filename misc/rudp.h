@@ -1,12 +1,12 @@
 #ifndef RUDP_H__
 #define RUDP_H__
 
-#include "common.h"
+#include "base.h"
 #include "misc/index.h"
 
 #include <list>
 
-class Rudp;
+class Rudp_server;
 class TTL;
 
 struct Rudp_head{
@@ -24,10 +24,22 @@ struct Rudp_head{
 #define RUDP_MTU (RUDP_LEN+sizeof(Rudp_head))
 #define RUDP_BUF_LEN (1024*1024ull)
 
-class Rudp_c{
-    int fd = 0;
+struct Rudp_stats{
+    uint32_t recv_time = 0;
+    uint32_t tick_recvpkg = 0;
+#ifndef NDEBUG
+    uint32_t recv_begin = 0;
+    uint32_t recv_end = 0;
+    uint32_t discard_begin = 0;
+    uint32_t discard_end = 0;
+#endif
+};
+
+class RudpRWer: public RWer {
     uint32_t id = 0;
-    Rudp* ord = nullptr;
+    uint16_t port;
+    char     hostname[DOMAINLIMIT] = {0};
+    Rudp_server* ord = nullptr;
     sockaddr_un addr;
     unsigned char *read_buff;
     unsigned char *write_buff;
@@ -48,40 +60,50 @@ class Rudp_c{
     uint32_t tick_time;
 #define RUDP_SEND_TIMEOUT    1
     uint32_t flags = 0;
+
+    void connected();
+    void defaultHE(uint32_t events);
+
+    int Send();
     uint32_t send_pkg(uint32_t seq, uint32_t window, size_t len);
     void send_ack(uint32_t time, uint32_t window);
+    ssize_t Write(const void* buff, size_t len) override;
+    void handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats);
+    void finish_recv(Rudp_stats* stats);
 public:
-    Rudp_c(int fd, uint32_t id, Rudp* ord);
-    Rudp_c(const sockaddr_un* addr);
-    ~Rudp_c();
-    int Send();
-    int Recv();
+    RudpRWer(int fd, uint32_t id, Rudp_server* ord);
+    RudpRWer(const char* host, uint16_t port);
+    ~RudpRWer();
 
     int PushPkg(const Rudp_head* pkg, size_t len, const sockaddr_un* addr);
-    ssize_t Write(const void* buff, size_t len);
-    ssize_t Read(void* buff, size_t len);
-    int GetFd();
-    const sockaddr_un* GetPeer();
-    static int rudp_send(Rudp_c* r);
+
+    //for read buffer
+    virtual size_t rlength() override;
+    virtual const char *data() override;
+    virtual void consume(const char* data, size_t l) override;
+
+    static void Dnscallback(RudpRWer* rwer, const char*, std::list<sockaddr_un> addrs);
+    static int rudp_send(RudpRWer* r);
 };
 
 
 bool operator<(const sockaddr_un a, const sockaddr_un b);
 
-typedef void (*rudp_accept_cb)(void* param, Rudp_c*);
-class Rudp {
-    int fd;
+class Rudp_server: public Ep {
     uint16_t port;
-    rudp_accept_cb Accept = nullptr;
-    void* AcceptParam = nullptr;
+    unsigned char buff[RUDP_MTU];
     uint32_t Maxid = 0;
-
-    Index2<int, sockaddr_un, Rudp_c*> connections;
+    Index2<int, sockaddr_un, RudpRWer*> connections;
+    virtual void defaultHE(uint32_t events);
 public:
-    explicit Rudp(int fd, uint16_t port, rudp_accept_cb cb, void* param);
+    explicit Rudp_server(int fd, uint16_t port): Ep(fd), port(port){
+        setEpoll(EPOLLIN);
+        handleEvent = (void (Ep::*)(uint32_t))&Rudp_server::defaultHE;
+    }
     void evict(int id);
-    ~Rudp();
-    int Recv();
+    virtual void dump_stat(){
+        LOG("Rudp_server %p\n", this);
+    }
 };
 
 #endif

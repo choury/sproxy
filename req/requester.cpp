@@ -3,10 +3,18 @@
 #include <string.h>
 
 
-Requester::Requester(const struct sockaddr_in6* myaddr) {
+Requester::Requester(const sockaddr_un* myaddr) {
     if(myaddr){
-        inet_ntop(AF_INET6, &myaddr->sin6_addr, sourceip, sizeof(sourceip));
-        sourceport = ntohs(myaddr->sin6_port);
+        switch(myaddr->addr.sa_family){
+        case AF_INET:
+            inet_ntop(AF_INET, &myaddr->addr_in.sin_addr, sourceip, sizeof(sourceip));
+            sourceport = ntohs(myaddr->addr_in.sin_port);
+            break;
+        case AF_INET6:
+            inet_ntop(AF_INET6, &myaddr->addr_in6.sin6_addr, sourceip, sizeof(sourceip));
+            sourceport = ntohs(myaddr->addr_in6.sin6_port);
+            break;
+        }
     }
 }
 

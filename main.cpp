@@ -40,6 +40,10 @@ static const char *key = nullptr;
 template<class T>
 class Http_server: public Ep{
     virtual void defaultHE(uint32_t events){
+        if (events & EPOLLERR || events & EPOLLHUP) {
+            LOGE("Http server: %d\n", Checksocket(fd));
+            return;
+        }
         if (events & EPOLLIN) {
             int clsk;
             struct sockaddr_in6 myaddr;
@@ -57,7 +61,7 @@ class Http_server: public Ep{
             }
 
             fcntl(clsk, F_SETFL, flags | O_NONBLOCK);
-            new T(clsk, &myaddr);
+            new T(clsk, (const sockaddr_un*)&myaddr);
         } else {
             LOGE("unknown error\n");
         }
@@ -75,6 +79,10 @@ public:
 class Https_server: public Ep {
     SSL_CTX *ctx;
     virtual void defaultHE(uint32_t events) {
+        if (events & EPOLLERR || events & EPOLLHUP) {
+            LOGE("Https server: %d\n", Checksocket(fd));
+            return;
+        }
         if (events & EPOLLIN) {
             int clsk;
             struct sockaddr_in6 myaddr;
@@ -92,7 +100,7 @@ class Https_server: public Ep {
             }
             fcntl(clsk, F_SETFL, flags | O_NONBLOCK);
 
-            new Guest(clsk, &myaddr, ctx);
+            new Guest(clsk, (const sockaddr_un*)&myaddr, ctx);
         } else {
             LOGE("unknown error\n");
             return;
@@ -111,44 +119,8 @@ public:
     }
 };
 
-void ssl_callback_ServerName(SSL *ssl){
-    const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
-    if (servername) {
-        //TODO: new sni mode
-    }
-}
 
-#if 0
 
-class Rudp_server: public Server {
-    Rudp rudp;
-    static void Rudp_connect(Rudp_server* my, Rudp_c* connection){
-        new Guest_s2(connection);
-    }
-    virtual void defaultHE(uint32_t events){
-        if (events & EPOLLERR || events & EPOLLHUP) {
-            int       error = 0;
-            socklen_t errlen = sizeof(error);
-
-            if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-                LOGE("Rudp error: %s\n", strerror(error));
-            }
-            return;
-        }
-        if(events & EPOLLIN){
-            rudp.Recv();
-        }
-    }
-public:
-    explicit Rudp_server(int fd):
-                Server(fd),
-                rudp(fd, CPORT, (rudp_accept_cb)Rudp_connect, this)
-    {}
-    virtual void dump_stat(){
-        LOG("Http_server %p\n", this);
-    }
-};
-#endif
 
 //do nothing, useful for vpn only
 int protectFd(int){
@@ -200,6 +172,12 @@ static int verify_cookie(SSL *ssl, const unsigned char *cookie, unsigned int coo
     return strcmp((char *)cookie, getaddrstring((sockaddr_un *)&myaddr))==0;
 }
 
+void ssl_callback_ServerName(SSL *ssl){
+    const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+    if (servername) {
+        //TODO: new sni mode
+    }
+}
 
 static struct option long_options[] = {
     {"autoindex",   no_argument,       0, 'i'},
@@ -466,12 +444,11 @@ int main(int argc, char **argv) {
     efd = epoll_create(10000);
     if(rudp_mode){
         int svsk_rudp;
+        CPORT = CPORT?CPORT:443;
         if((svsk_rudp = Listen(SOCK_DGRAM, CPORT)) < 0){
             return -1;
         }
-        assert(0);
-        //TODO
-        //new Rudp_server(svsk_rudp);
+        new Rudp_server(svsk_rudp, CPORT);
     }else if(cert && key){
         SSL_CTX * ctx = initssl(0, cafile, cert, key);
         CPORT = CPORT?CPORT:443;

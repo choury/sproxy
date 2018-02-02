@@ -2,8 +2,6 @@
 #define PING_H__
 
 #include "responser.h"
-#include "misc/net.h"
-#include <list>
 
 
 class Ping: public Responser{

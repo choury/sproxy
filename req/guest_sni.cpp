@@ -1,13 +1,13 @@
 #include "guest_sni.h"
-#include "res/host.h"
 #include "misc/tls.h"
 #include "misc/util.h"
+#include "misc/net.h"
 
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
 
-Guest_sni::Guest_sni(int fd, sockaddr_in6 *myaddr):Guest(fd, myaddr){
+Guest_sni::Guest_sni(int fd, const sockaddr_un *myaddr):Guest(fd, myaddr){
     Http_Proc = &Guest_sni::AlwaysProc;
 }
 

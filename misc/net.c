@@ -20,6 +20,19 @@ const char *DEFAULT_CIPHER_LIST =
             "DHE-DSS-AES128-SHA256:DHE-RSA-AES256-SHA256:DHE-DSS-AES256-SHA:DHE-RSA-AES256-SHA:"
             "!aNULL:!eNULL:!EXPORT:!DES:!RC4:!3DES:!MD5:!PSK";
 
+int Checksocket(int fd){
+    int       error = 0;
+    socklen_t errlen = sizeof(error);
+
+    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) != 0) {
+        error = errno;
+        LOGE("getsockopt error: %s\n", strerror(error));
+    }else if(error){
+        LOGE("sock error: %s\n", strerror(error));
+    }
+    return error;
+}
+
 int Listen(int type, short port) {
     int fd = socket(AF_INET6, type, 0);
     if (fd < 0) {

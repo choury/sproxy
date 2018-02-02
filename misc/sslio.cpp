@@ -1,5 +1,6 @@
-#include "misc/vssl.h"
+#include "misc/sslio.h"
 #include "misc/job.h"
+#include "misc/net.h"
 
 #include <openssl/err.h>
 #include <assert.h>
@@ -50,15 +51,15 @@ static int verify_host_callback(int ok, X509_STORE_CTX *ctx){
 }
 
 
-SRWer::SRWer(int fd, SSL_CTX* ctx, std::function<void(int ret, int code)> errorCB): RWer(fd, errorCB){
+SslRWer::SslRWer(int fd, SSL_CTX* ctx, std::function<void(int ret, int code)> errorCB): FdRWer(fd, errorCB){
     ssl = SSL_new(ctx);
     SSL_set_fd(ssl, fd);
     setEpoll(EPOLLIN | EPOLLOUT);
-    handleEvent = (void (Ep::*)(uint32_t))&SRWer::shakehandHE;
+    handleEvent = (void (Ep::*)(uint32_t))&SslRWer::shakehandHE;
 }
 
-SRWer::SRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB):
-        RWer(hostname, port, protocol, errorCB)
+SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB):
+        FdRWer(hostname, port, protocol, errorCB)
 {
     if(protocol == Protocol::TCP){
         ctx = SSL_CTX_new(SSLv23_client_method());
@@ -91,7 +92,7 @@ SRWer::SRWer(const char* hostname, uint16_t port, Protocol protocol, std::functi
     SSL_set_tlsext_host_name(ssl, hostname);
 }
 
-int SRWer::get_error(int ret){
+int SslRWer::get_error(int ret){
     if(ret < 0){
         int error = SSL_get_error(ssl, ret);
         switch (error) {
@@ -115,10 +116,11 @@ int SRWer::get_error(int ret){
     return ret;
 }
 
-int SRWer::sconnect(){
+int SslRWer::sconnect(){
     return get_error(SSL_connect(ssl));
 }
-SRWer::~SRWer(){
+
+SslRWer::~SslRWer(){
     SSL_shutdown(ssl);
     SSL_free(ssl);
     if(ctx){
@@ -126,10 +128,11 @@ SRWer::~SRWer(){
     }
 }
 
-void SRWer::waitconnectHE(int events) {
+void SslRWer::waitconnectHE(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
-        checksocket();
+        Checksocket(fd);
         close(fd);
+        fd = -1;
         return reconnect(CONNECT_FAILED);
     }
     if (events & EPOLLOUT) {
@@ -153,14 +156,14 @@ void SRWer::waitconnectHE(int events) {
         /* Configure a non-zero callback if desired */
         SSL_set_verify(ssl, SSL_VERIFY_PEER, verify_host_callback);
 
-        handleEvent = (void (Ep::*)(uint32_t))&SRWer::shakehandHE;
+        handleEvent = (void (Ep::*)(uint32_t))&SslRWer::shakehandHE;
         add_delayjob((job_func)con_timeout, this, 30000);
     }
 }
 
-void SRWer::shakehandHE(int events){
+void SslRWer::shakehandHE(uint32_t events){
     if (events & EPOLLERR || events & EPOLLHUP) {
-        errorCB(SOCKET_ERR, checksocket());
+        errorCB(SOCKET_ERR, Checksocket(fd));
         return;
     }
     if ((events & EPOLLIN) || (events & EPOLLOUT)) {
@@ -176,32 +179,32 @@ void SRWer::shakehandHE(int events){
         if(connectCB){
             connectCB();
         }
-        handleEvent = (void (Ep::*)(uint32_t))&SRWer::defaultHE;
+        handleEvent = (void (Ep::*)(uint32_t))&SslRWer::defaultHE;
         del_delayjob((job_func)con_timeout, this);
     }
 }
 
-int SRWer::saccept(){
+int SslRWer::saccept(){
     return get_error(SSL_accept(ssl));
 }
 
-ssize_t SRWer::Read(void* buff, size_t len){
+ssize_t SslRWer::Read(void* buff, size_t len){
     return get_error(SSL_read(ssl, buff, len));
 }
 
-ssize_t SRWer::Write(const void* buff, size_t len){
+ssize_t SslRWer::Write(const void* buff, size_t len){
     return get_error(SSL_write(ssl, buff, len));
 }
 
-void SRWer::get_alpn(const unsigned char **s, unsigned int * len){
+void SslRWer::get_alpn(const unsigned char **s, unsigned int * len){
     SSL_get0_alpn_selected(ssl, s, len);
 }
 
-int SRWer::set_alpn(const unsigned char *s, unsigned int len){
+int SslRWer::set_alpn(const unsigned char *s, unsigned int len){
     return get_error(SSL_set_alpn_protos(ssl, s, len));
 }
 
-void SRWer::set_hostname_callback(void (* cb)(void)){
+void SslRWer::set_hostname_callback(void (* cb)(void)){
     SSL_callback_ctrl(ssl, SSL_CTRL_SET_TLSEXT_SERVERNAME_CB, cb);
 }
 

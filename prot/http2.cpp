@@ -1,7 +1,8 @@
 #include "http2.h"
 #include "misc/util.h"
 
-#include <cinttypes>
+//#include <cinttypes>
+#include <assert.h>
 
 size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
     const Http2_header *header = (const Http2_header *)http2_buff;

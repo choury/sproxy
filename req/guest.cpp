@@ -4,16 +4,17 @@
 #include "res/responser.h"
 #include "misc/job.h"
 #include "misc/util.h"
-#include "misc/vssl.h"
+#include "misc/sslio.h"
 
 #include <string.h>
 #include <assert.h>
 
-Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Requester(myaddr) {
-    rwer = new RWer(fd, std::bind(&Guest::Error, this, _1, _2));
+Guest::Guest(int fd,  const sockaddr_un *myaddr): Requester(myaddr) {
+    rwer = new FdRWer(fd, std::bind(&Guest::Error, this, _1, _2));
     rwer->SetReadCB([this](size_t len){
-        len = (this->*Http_Proc)(rwer->data(), len);
-        rwer->consume(len);
+        const char* data = rwer->data();
+        len = (this->*Http_Proc)(data, len);
+        rwer->consume(data, len);
     });
     rwer->SetWriteCB([this](size_t len){
         if(responser_ptr && len){
@@ -25,11 +26,12 @@ Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Requester(myaddr) {
     });
 }
 
-Guest::Guest(int fd,  struct sockaddr_in6 *myaddr, SSL_CTX* ctx): Requester(myaddr) {
-    rwer = new SRWer(fd, ctx, std::bind(&Guest::Error, this, _1, _2));
+Guest::Guest(int fd,  const sockaddr_un *myaddr, SSL_CTX* ctx): Requester(myaddr) {
+    rwer = new SslRWer(fd, ctx, std::bind(&Guest::Error, this, _1, _2));
     rwer->SetReadCB([this](size_t len){
-        len = (this->*Http_Proc)(rwer->data(), len);
-        rwer->consume(len);
+        const char* data = rwer->data();
+        len = (this->*Http_Proc)(data, len);
+        rwer->consume(data, len);
     });
     rwer->SetWriteCB([this](size_t len){
         if(responser_ptr && len){
@@ -40,7 +42,7 @@ Guest::Guest(int fd,  struct sockaddr_in6 *myaddr, SSL_CTX* ctx): Requester(myad
         }
     });
     rwer->SetConnectCB([this](){
-        SRWer* srwer = dynamic_cast<SRWer*>(rwer);
+        SslRWer* srwer = dynamic_cast<SslRWer*>(rwer);
         const unsigned char *data;
         unsigned int len;
         srwer->get_alpn(&data, &len);
@@ -130,7 +132,7 @@ void Guest::Error(int ret, int code) {
         deleteLater(NOERROR | DISCONNECT_FLAG);
         return;
     }
-    LOGE("Guest-Http error: %d/%d\n", ret, code);
+    LOGE("Guest error %s: %d/%d\n", getsrc(nullptr), ret, code);
     deleteLater(ret);
 }
 

@@ -9,7 +9,7 @@
 #include <queue>
 #include <functional>
 
-class Index_table;
+class Hpack_index_table;
 struct Http2_header;
 struct CGI_Header;
 class Requester;
@@ -34,7 +34,7 @@ public:
 
     virtual bool no_body() const = 0;
     virtual char *getstring(size_t &len) const = 0;
-    virtual Http2_header *getframe(Index_table *index_table, uint32_t http_id) const = 0;
+    virtual Http2_header *getframe(Hpack_index_table *index_table, uint32_t http_id) const = 0;
     virtual CGI_Header *getcgi(uint32_t cgi_id) const = 0;
     virtual ~HttpHeader(){}
 };
@@ -64,7 +64,7 @@ public:
     
     virtual bool no_body() const override;
     virtual char *getstring(size_t &len) const override;
-    virtual Http2_header *getframe(Index_table *index_table, uint32_t http_id) const override;
+    virtual Http2_header *getframe(Hpack_index_table *index_table, uint32_t http_id) const override;
     virtual CGI_Header *getcgi(uint32_t cgi_id) const override;
     
     std::map<std::string, std::string> getcookies()const;
@@ -82,7 +82,7 @@ public:
     
     virtual bool no_body() const override;
     virtual char *getstring(size_t &len) const override;
-    virtual Http2_header *getframe(Index_table *index_table, uint32_t http_id) const override;
+    virtual Http2_header *getframe(Hpack_index_table *index_table, uint32_t http_id) const override;
     virtual CGI_Header *getcgi(uint32_t cgi_id) const override;
 };
 

@@ -2,6 +2,7 @@
 #include "common.h"
 
 #include <string.h>
+#include <assert.h>
 
 static const char *static_table[][2]= {
     {0, 0},
@@ -761,16 +762,16 @@ static size_t literal_encode(unsigned char *buf, const std::string &s){
 }
 
 
-Index_table::Index_table(size_t dynamic_table_size_limit_max):dynamic_table_size_limit_max(dynamic_table_size_limit_max)
+Hpack_index_table::Hpack_index_table(size_t dynamic_table_size_limit_max):dynamic_table_size_limit_max(dynamic_table_size_limit_max)
 {
     LOGD(DHPACK, "init dynamic table size max [%zd]\n", dynamic_table_size_limit_max);
 }
 
 
-void Index_table::add_dynamic_table(const std::string &name, const std::string &value){
+void Hpack_index_table::add_dynamic_table(const std::string &name, const std::string &value){
     size_t entry_size = name.size() + value.size() + 32;
     assert(dynamic_table_size >= 0);
-    Index *index=new Index{name, value, dynamic_table.size() + evicted_count};
+    Hpack_index *index=new Hpack_index {name, value, dynamic_table.size() + evicted_count};
     dynamic_table[index->id]=index;
     dynamic_map.insert(std::make_pair(name+char(0)+value, index));
     dynamic_table_size += entry_size;
@@ -782,7 +783,7 @@ void Index_table::add_dynamic_table(const std::string &name, const std::string &
 }
 
 
-uint32_t Index_table::getid(const std::string& name, const std::string& value) {
+uint32_t Hpack_index_table::getid(const std::string& name, const std::string& value) {
     std::string key = name+char(0)+value;
     uint32_t id = 0;
     if(static_map.count(key))
@@ -793,7 +794,7 @@ uint32_t Index_table::getid(const std::string& name, const std::string& value) {
     return id;
 }
 
-uint32_t Index_table::getid(const std::string& name) {
+uint32_t Hpack_index_table::getid(const std::string& name) {
     std::string key = name+char(0);
     uint32_t id = 0;
     if(static_map.count(key))
@@ -804,9 +805,9 @@ uint32_t Index_table::getid(const std::string& name) {
     return id;
 }
 
-const Index *Index_table::getvalue(uint32_t id) {
-    static Index index;
-    const Index * ret = nullptr;
+const Hpack_index *Hpack_index_table::getvalue(uint32_t id) {
+    static Hpack_index index;
+    const Hpack_index * ret = nullptr;
     if(id == 0){
         LOGE("want to get value of index zero\n");
         throw ERR_COMPRESSION_ERROR;
@@ -830,7 +831,7 @@ const Index *Index_table::getvalue(uint32_t id) {
     return ret;
 }
 
-void Index_table::set_dynamic_table_size_limit_max(size_t size){
+void Hpack_index_table::set_dynamic_table_size_limit_max(size_t size){
     LOGD(DHPACK, "set dynamic table size max [%zd]\n", size);
     dynamic_table_size_limit_max = size;
     if(dynamic_table_size_limit > dynamic_table_size_limit_max){
@@ -838,7 +839,7 @@ void Index_table::set_dynamic_table_size_limit_max(size_t size){
     }
 }
 
-void Index_table::set_dynamic_table_size_limit(size_t size){
+void Hpack_index_table::set_dynamic_table_size_limit(size_t size){
     LOGD(DHPACK, "set dynamic table size [%zd]\n", size);
     if(size > dynamic_table_size_limit_max){
         LOGE("set a dynamic table size more than limit: %zd/%zd\n", size, dynamic_table_size_limit_max);
@@ -848,9 +849,9 @@ void Index_table::set_dynamic_table_size_limit(size_t size){
     evict_dynamic_table();
 }
 
-void Index_table::evict_dynamic_table(){
+void Hpack_index_table::evict_dynamic_table(){
     while(dynamic_table_size > dynamic_table_size_limit && dynamic_table.size()){
-        Index *index = dynamic_table[evicted_count];
+        Hpack_index *index = dynamic_table[evicted_count];
         dynamic_table.erase(evicted_count);
         dynamic_map.erase(index->name+char(0)+index->value);
         evicted_count++;
@@ -860,7 +861,7 @@ void Index_table::evict_dynamic_table(){
     }
 }
 
-Index_table::~Index_table()
+Hpack_index_table::~Hpack_index_table()
 {
     for(auto i:dynamic_table){
         delete i.second;
@@ -868,7 +869,7 @@ Index_table::~Index_table()
 }
 
 
-std::multimap< std::string, std::string > Index_table::hpack_decode(const unsigned char* s, int len) {
+std::multimap< std::string, std::string > Hpack_index_table::hpack_decode(const unsigned char* s, int len) {
     if(!hpack_inited)
         init_hpack();
     int i = 0;
@@ -879,7 +880,7 @@ std::multimap< std::string, std::string > Index_table::hpack_decode(const unsign
             noDynamic = true;
             uint32_t index;
             i += integer_decode(s+i, 7, &index);
-            const Index *value = getvalue(index);
+            const Hpack_index *value = getvalue(index);
             if(value == nullptr){
                 LOGE("get null index from %d\n", index);
                 throw ERR_COMPRESSION_ERROR;
@@ -928,7 +929,7 @@ std::multimap< std::string, std::string > Index_table::hpack_decode(const unsign
     return headers;
 }
 
-int Index_table::hpack_encode(unsigned char* buf, const char* Name, const char* value) {
+int Hpack_index_table::hpack_encode(unsigned char* buf, const char* Name, const char* value) {
     if(!hpack_inited)
         init_hpack();
     
@@ -956,7 +957,7 @@ int Index_table::hpack_encode(unsigned char* buf, const char* Name, const char* 
     return buf - buf_begin;
 }
 
-int Index_table::hpack_encode(unsigned char *buf, std::map<std::string, std::string> headers) {
+int Hpack_index_table::hpack_encode(unsigned char *buf, std::map<std::string, std::string> headers) {
     unsigned char *buf_begin = buf;
     for(auto i:headers) {
         if(i.first ==  "Host")

@@ -3,8 +3,9 @@
 #include "req/requester.h"
 #include "misc/strategy.h"
 #include "misc/util.h"
+#include "misc/index.h"
 
-static binmap<uint32_t, std::string> fdns_records;
+static Index2<uint32_t, std::string, void*> fdns_records;
 
 static FDns *fdns = nullptr;
 static in_addr_t fake_ip = 0 ;
@@ -45,8 +46,9 @@ ssize_t FDns::Send(void* buff, size_t size, void* index) {
         status.dns_id = que.id;
         if(que.type == 12 && que.ptr_addr.addr.sa_family == AF_INET){
             uint32_t ip = ntohl(que.ptr_addr.addr_in.sin_addr.s_addr);
-            if(fdns_records.count(ip)){
-                rr = new Dns_Rr(fdns_records[ip].c_str(), true);
+            auto record = fdns_records.Get(ip);
+            if(record){
+                rr = new Dns_Rr(record->t2.c_str(), true);
             }
         }
         if(que.type == 1) {
@@ -138,8 +140,9 @@ FDns * FDns::getfdns() {
 const char * FDns::getRdns(const struct in_addr* addr) {
     static char sip[INET_ADDRSTRLEN];
     uint32_t fip = ntohl(addr->s_addr);
-    if(fdns_records.count(fip)){
-        return fdns_records[fip].c_str();
+    auto record = fdns_records.Get(fip);
+    if(record){
+        return record->t2.c_str();
     }else{
         return inet_ntop(AF_INET, addr, sip, sizeof(sip));
     }
@@ -151,12 +154,12 @@ in_addr FDns::getInet(std::string hostname) {
 
     if(hostname.find_first_of(".") == std::string::npos){
         addr.s_addr = inet_addr("10.1.0.1");
-    }else if(fdns_records.count(hostname)){
-        addr.s_addr = htonl(fdns_records[hostname]);
+    }else if(fdns_records.Get(hostname)){
+        addr.s_addr = htonl(fdns_records.Get(hostname)->t1);
     }else{
         fake_ip++;
         addr.s_addr= htonl(fake_ip);
-        fdns_records.insert(fake_ip, hostname);
+        fdns_records.Add(fake_ip, hostname, nullptr);
     }
     return addr;
 }

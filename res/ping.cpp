@@ -1,7 +1,7 @@
 #include "ping.h"
-#include "prot/dns.h"
 #include "prot/ip_pack.h"
 #include "req/requester.h"
+#include "misc/simpleio.h"
 #include "misc/util.h"
 
 #include <string.h>
@@ -10,7 +10,7 @@
 
 Ping::Ping(const char* host, uint16_t id): id(id) {
     strcpy(hostname, host);
-    rwer = new RWer(hostname, id, Protocol::ICMP, [this](int ret, int code){
+    rwer = new FdRWer(hostname, id, Protocol::ICMP, [this](int ret, int code){
         LOGE("Ping error: %d/%d\n", ret, code);
         iserror = true;
         if(ret == READ_ERR || ret == WRITE_ERR){
@@ -18,8 +18,9 @@ Ping::Ping(const char* host, uint16_t id): id(id) {
         }
     });
     rwer->SetReadCB([this](int len){
-        req_ptr->Send(rwer->data(), len, req_index);
-        rwer->consume(len);
+        const char* data = rwer->data();
+        req_ptr->Send(data, len, req_index);
+        rwer->consume(data, len);
     });
 }
 

@@ -2,6 +2,7 @@
 #include "req/requester.h"
 #include "misc/net.h"
 #include "misc/strategy.h"
+#include "misc/simpleio.h"
 #include "misc/util.h"
 
 #include <sstream>
@@ -55,7 +56,7 @@ Cgi::Cgi(const char* fname, int sv[2]) {
     // 父进程
     close(sv[1]);   // 关闭管道的子进程端
     /* 现在可在fd[0]中读写数据 */
-    rwer = new RWer(sv[0], [this](int ret, int code){
+    rwer = new FdRWer(sv[0], [this](int ret, int code){
         LOGE("CGI error: %d/%d\n", ret, code);
         deleteLater(ret);
     });
@@ -121,7 +122,7 @@ begin:
         }
     }
     if(consumed){
-        rwer->consume(size);
+        rwer->consume((const char*)header, size);
         len -= size;
         goto begin;
     }

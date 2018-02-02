@@ -1,11 +1,11 @@
-#ifndef SSL_ABSTRACT_H_
-#define SSL_ABSTRACT_H_
+#ifndef SSL_IO_H_
+#define SSL_IO_H_
 
-#include "base.h"
+#include "simpleio.h"
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 
-class SRWer: public RWer{
+class SslRWer: public FdRWer {
 protected:
     SSL *ssl;
     SSL_CTX* ctx;
@@ -14,14 +14,14 @@ protected:
     virtual ssize_t Read(void* buff, size_t len) override;
     virtual ssize_t Write(const void* buff, size_t len) override;
 public:
-    explicit SRWer(int fd, SSL_CTX* ctx, std::function<void(int ret, int code)> errorCB);
-    explicit SRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB);
-    virtual ~SRWer();
+    explicit SslRWer(int fd, SSL_CTX* ctx, std::function<void(int ret, int code)> errorCB);
+    explicit SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB);
+    virtual ~SslRWer();
 
     virtual int saccept();
     virtual int sconnect();
-    virtual void waitconnectHE(int events) override;
-    virtual void shakehandHE(int events);
+    virtual void waitconnectHE(uint32_t events) override;
+    virtual void shakehandHE(uint32_t events);
     void get_alpn(const unsigned char **s, unsigned int * len);
     int set_alpn(const unsigned char *s, unsigned int len);
     void set_hostname_callback(void (* cb)(void));

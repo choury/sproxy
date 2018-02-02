@@ -5,5 +5,4 @@
 
 include_directories(${PROJECT_SOURCE_DIR})
 
-add_library(misc vssl.cpp job.cpp net.c tls.c util.c strategy.cpp rudp.cpp)
-
+add_library(misc job.cpp net.c tls.c util.c strategy.cpp simpleio.cpp sslio.cpp rudp.cpp)

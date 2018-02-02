@@ -2,8 +2,8 @@
 #include "req/requester.h"
 #include "misc/job.h"
 #include "misc/util.h"
-#include "prot/dns.h"
 
+#include <assert.h>
 
 Proxy2* proxy2 = nullptr;
 
@@ -30,11 +30,12 @@ Proxy2::Proxy2(RWer* rwer) {
     }
     rwer->SetErrorCB(std::bind(&Proxy2::Error, this, _1, _2));
     rwer->SetReadCB([this](size_t len){
-        len = (this->*Http2_Proc)((uchar*)this->rwer->data(), len);
+        const char* data = this->rwer->data();
+        len = (this->*Http2_Proc)((uchar*)data, len);
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
-        this->rwer->consume(len);
+        this->rwer->consume(data, len);
 #ifndef __ANDROID__
         add_delayjob((job_func)ping_check, this, 30000);
 #else

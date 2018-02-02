@@ -3,7 +3,6 @@
 
 #include "responser.h"
 #include "prot/http.h"
-#include "prot/dns.h"
 
 class Requester;
 
