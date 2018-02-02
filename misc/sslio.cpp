@@ -51,7 +51,7 @@ static int verify_host_callback(int ok, X509_STORE_CTX *ctx){
 }
 
 
-SslRWer::SslRWer(int fd, SSL_CTX* ctx, std::function<void(int ret, int code)> errorCB): FdRWer(fd, errorCB){
+SslRWer::SslRWer(int fd, SSL_CTX* ctx, std::function<void(int ret, int code)> errorCB): FdRWer(fd, false, errorCB){
     ssl = SSL_new(ctx);
     SSL_set_fd(ssl, fd);
     setEpoll(EPOLLIN | EPOLLOUT);

@@ -3,17 +3,29 @@
 #include "base.h"
 
 class RBuffer {
-    char content[BUF_LEN + DOMAINLIMIT];
+    char content[BUF_LEN*2];
     uint16_t len = 0;
 public:
     size_t left();
     size_t length();
     size_t add(size_t l);
-    size_t sub(size_t l);
-    char* start();
+    const char* data();
+    size_t consume(const char*, size_t l);
     char* end();
 };
 
+class CBuffer {
+    char content[BUF_LEN*2];
+    uint32_t begin_pos = 0;
+    uint32_t end_pos = 0;
+public:
+    size_t left();
+    size_t length();
+    void add(size_t l);
+    const char* data();
+    void consume(const char* data, size_t l);
+    char* end();
+};
 
 class FdRWer: public RWer{
 protected:
@@ -21,6 +33,7 @@ protected:
     uint16_t port = 0;
     Protocol protocol;
     char     hostname[DOMAINLIMIT] = {0};
+    bool     packet_mode = false;
     std::queue<sockaddr_un> addrs;
     virtual void waitconnectHE(uint32_t events);
     virtual void defaultHE(uint32_t events);
@@ -32,7 +45,7 @@ protected:
     virtual ssize_t Read(void* buff, size_t len);
     virtual ssize_t Write(const void* buff, size_t len) override;
 public:
-    FdRWer(int fd, std::function<void(int ret, int code)> errorCB);
+    FdRWer(int fd, bool packet_mode, std::function<void(int ret, int code)> errorCB);
     FdRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB);
     virtual ~FdRWer();
 

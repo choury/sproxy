@@ -102,8 +102,7 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
                 Reset(id, ERR_INTERNAL_ERROR);
                 return 0;
             }
-            length += sizeof(Http2_header);
-            return length+DefaultProc(http2_buff+length, len-length);
+            return length + sizeof(Http2_header);
         }
     }
 }

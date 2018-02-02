@@ -22,7 +22,6 @@ struct Rudp_head{
 
 #define RUDP_LEN 1280
 #define RUDP_MTU (RUDP_LEN+sizeof(Rudp_head))
-#define RUDP_BUF_LEN (1024*1024ull)
 
 struct Rudp_stats{
     uint32_t recv_time = 0;
@@ -41,8 +40,8 @@ class RudpRWer: public RWer {
     char     hostname[DOMAINLIMIT] = {0};
     Rudp_server* ord = nullptr;
     sockaddr_un addr;
-    unsigned char *read_buff;
-    unsigned char *write_buff;
+    unsigned char read_buff[BUF_LEN * 2];
+    unsigned char write_buff[BUF_LEN * 2];
     std::list<std::pair<uint32_t, uint32_t>> read_seqs;
     TTL* recv_pkgs;
     uint32_t gaps[RUDP_LEN/sizeof(uint32_t)];

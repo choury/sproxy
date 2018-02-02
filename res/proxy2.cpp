@@ -31,11 +31,15 @@ Proxy2::Proxy2(RWer* rwer) {
     rwer->SetErrorCB(std::bind(&Proxy2::Error, this, _1, _2));
     rwer->SetReadCB([this](size_t len){
         const char* data = this->rwer->data();
-        len = (this->*Http2_Proc)((uchar*)data, len);
+        size_t consumed = 0;
+        size_t ret = 0;
+        while((ret = (this->*Http2_Proc)((uchar*)data+consumed, len-consumed))){
+            consumed += ret;
+        }
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
-        this->rwer->consume(data, len);
+        this->rwer->consume(data, consumed);
 #ifndef __ANDROID__
         add_delayjob((job_func)ping_check, this, 30000);
 #else

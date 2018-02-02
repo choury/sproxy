@@ -3,6 +3,7 @@
 #include "job.h"
 
 #include <assert.h>
+#include <errno.h>
 
 size_t RBuffer::left(){
     return sizeof(content) - len;
@@ -18,23 +19,63 @@ size_t RBuffer::add(size_t l){
     return l;
 }
 
-size_t RBuffer::sub(size_t l){
+const char* RBuffer::data(){
+    return content;
+}
+
+size_t RBuffer::consume(const char*, size_t l){
     assert(l <= len);
     len -= l;
     memmove(content, content+l, len);
     return l;
 }
 
-char* RBuffer::start(){
-    return content;
-}
-
 char* RBuffer::end(){
     return content+len;
 }
 
+size_t CBuffer::left(){
+    uint32_t start = begin_pos % sizeof(content);
+    uint32_t finish = end_pos % sizeof(content);
+    if(finish >= start){
+        return sizeof(content) - finish;
+    }else{
+        return start - finish;
+    }
+}
+size_t CBuffer::length(){
+    return end_pos - begin_pos;
+}
+void CBuffer::add(size_t l){
+    assert(l <= left());
+    end_pos += l;
+};
+const char* CBuffer::data(){
+    uint32_t start = begin_pos % sizeof(content);
+    uint32_t finish = end_pos % sizeof(content);
+    if(finish >= start){
+        return content + start;
+    }else{
+        char* buff = (char*)malloc(end_pos - begin_pos);
+        size_t l = sizeof(content) - start;
+        memcpy(buff, content + start, sizeof(content) - start);
+        memcpy((char *)buff + l, content, finish);
+        return  buff;
+    }
+}
+void CBuffer::consume(const char* data, size_t l){
+    begin_pos += l;
+    assert(begin_pos <= end_pos);
+    if(data < content || data >= content + sizeof(content)){
+        free((char*)data);
+    }
+}
 
-FdRWer::FdRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(errorCB, fd) {
+char* CBuffer::end(){
+    return content + (end_pos % sizeof(content));
+}
+
+FdRWer::FdRWer(int fd, bool packet_mode, std::function<void(int ret, int code)> errorCB):RWer(errorCB, fd), packet_mode(packet_mode) {
     setEpoll(EPOLLIN);
     handleEvent = (void (Ep::*)(uint32_t))&FdRWer::defaultHE;
 }
@@ -135,10 +176,10 @@ void FdRWer::defaultHE(uint32_t events) {
             int ret = Read(rb.end(), rb.left());
             if(ret > 0){
                 rb.add(ret);
-                if(readCB){
+                if(packet_mode && readCB){
                     readCB(rb.length());
                 }
-                break;
+                continue;
             }
             if(ret == 0){
                 delEpoll(EPOLLIN);
@@ -150,6 +191,9 @@ void FdRWer::defaultHE(uint32_t events) {
             }
             errorCB(READ_ERR, errno);
             break;
+        }
+        if(readCB && rb.length()){
+            readCB(rb.length());
         }
         if(rb.left()==0){
             delEpoll(EPOLLIN);
@@ -192,11 +236,11 @@ size_t FdRWer::rlength() {
 }
 
 const char* FdRWer::data(){
-    return rb.start();
+    return rb.data();
 }
 
-void FdRWer::consume(const char*, size_t l){
-    rb.sub(l);
+void FdRWer::consume(const char* data, size_t l){
+    rb.consume(data, l);
 }
 
 

@@ -79,7 +79,7 @@ bool operator<(const VpnKey a, const VpnKey b) {
 
 
 Guest_vpn::Guest_vpn(int fd):Requester("VPN", 0) {
-    rwer = new FdRWer(fd, [](int ret, int code){
+    rwer = new FdRWer(fd, true, [](int ret, int code){
         LOGE("Guest_vpn error: %d/%d\n", ret, code);
     });
     rwer->SetReadCB([this](size_t len){

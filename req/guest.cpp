@@ -10,7 +10,7 @@
 #include <assert.h>
 
 Guest::Guest(int fd,  const sockaddr_un *myaddr): Requester(myaddr) {
-    rwer = new FdRWer(fd, std::bind(&Guest::Error, this, _1, _2));
+    rwer = new FdRWer(fd, false, std::bind(&Guest::Error, this, _1, _2));
     rwer->SetReadCB([this](size_t len){
         const char* data = rwer->data();
         len = (this->*Http_Proc)(data, len);
