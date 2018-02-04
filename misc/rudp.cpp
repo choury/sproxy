@@ -15,7 +15,12 @@
 #include <assert.h>
 
 int RudpRWer::rudp_send(RudpRWer* rudp) {
-    rudp->Send();
+    rudp->send();
+    return 0;
+}
+
+int RudpRWer::rudp_ack(RudpRWer* rudp){
+    rudp->ack();
     return 0;
 }
 
@@ -67,7 +72,7 @@ uint32_t TTL::getsum() {
 
 RudpRWer::RudpRWer(int fd, uint32_t id, Rudp_server* ord):RWer(nullptr, fd),id(id), ord(ord) {
     read_seqs.push_back(std::make_pair(0,0));
-    tick_time = ack_time = getmtime();
+    tick_time = data_time = ack_time = getmtime();
     recv_pkgs = new TTL();
     connected();
 }
@@ -76,7 +81,7 @@ RudpRWer::RudpRWer(const char* hostname, uint16_t port):RWer(nullptr), port(port
     strcpy(this->hostname, hostname);
     query(hostname, (DNSCBfunc)RudpRWer::Dnscallback, this);
     read_seqs.push_back(std::make_pair(0,0));
-    tick_time = ack_time = getmtime();
+    tick_time = data_time = ack_time = getmtime();
     recv_pkgs = new TTL();
 }
 
@@ -107,9 +112,25 @@ RudpRWer::~RudpRWer(){
         ord->evict(id);
     }
     del_delayjob((job_func)rudp_send, this);
+    del_postjob((job_func)rudp_send, this);
     query_cancel(hostname, (DNSCBfunc)RudpRWer::Dnscallback, this);
     delete recv_pkgs;
 }
+
+bool RudpRWer::supportReconnect() {
+    return true;
+}
+
+void RudpRWer::Reconnect() {
+    int fd = Connect(&addr, SOCK_DGRAM);
+    if(fd > 0){
+        setEpoll(0);
+        close(this->fd);
+        this->fd = fd;
+        setEpoll(EPOLLIN | EPOLLOUT);
+    }
+}
+
 
 size_t RudpRWer::rlength(){
     return read_seqs.begin()->second - read_seqs.begin()->first;
@@ -145,7 +166,7 @@ ssize_t RudpRWer::Write(const void* buff, size_t size) {
         return -1;
     }
     if(after(write_seq + size, recv_ack + sizeof(write_buff))){
-        if(Send() >= 0){
+        if(send() >= 0){
             errno = EAGAIN;
         }
         return -1;
@@ -155,19 +176,22 @@ ssize_t RudpRWer::Write(const void* buff, size_t size) {
     memcpy(write_buff+from, buff, l);
     memcpy(write_buff, (const char*)buff + l, size -l);
     write_seq += size;
-    if(fd > 0 && Send() < 0){
-        return -1;
-    }
     return size;
 }
 
 void RudpRWer::handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats) {
+    if(checksum8((uchar*)head, size)){
+        LOGD(DRUDP, "drop error checksum packet!\n");
+        return;
+    }
     const uint32_t id = ntohl(head->id);
     const uint32_t seq = ntohl(head->seq);
     const uint32_t time = ntohl(head->time);
     const uint16_t len = size - sizeof(Rudp_head);
 
     stats->tick_recvpkg ++ ;
+    uint32_t now = getmtime();
+
     if(this->id == 0){
         this->id = id;
         LOGD(DRUDP, "get id: %d\n", id);
@@ -177,6 +201,8 @@ void RudpRWer::handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats)
     bucket_limit = Max(bucket_limit,1);
 
     if(head->type == RUDP_TYPE_DATA){
+        data_time = now;
+        stats->tick_recvdata ++ ;
 #ifndef NDEBUG
         if(stats->recv_begin == 0){
             stats->recv_begin = seq;
@@ -231,9 +257,8 @@ void RudpRWer::handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats)
             stats->discard_end = seq + len;
 #endif
         }
-        stats->recv_time = time>stats->recv_time?time:stats->recv_time;
+        recv_time = time>recv_time?time:recv_time;
     }else{
-        uint32_t now = getmtime();
         rtt_time = (rtt_time * 8 + (now-time) * 2)/10;
         gap_num = 0;
         uint32_t *gap_ptr = (uint32_t *)(head+1);
@@ -249,11 +274,11 @@ void RudpRWer::handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats)
             ackhold_times ++;
         }
 #else
-            LOGD(DRUDP, "[%d] ack: %x  window: %u  rtt: %u\n", 
-                id, seq, bucket_limit, rtt_time);
+            LOGD(DRUDP, "[%d] ack: %x  window: %u  rtt: %u/%u\n",
+                id, seq, bucket_limit, now-time, rtt_time);
         }else{
-            LOGD(DRUDP, "[%d] ack [R]: %x (%x) window: %u  rtt: %u\n",
-                id, seq, recv_ack, bucket_limit, rtt_time);
+            LOGD(DRUDP, "[%d] ack [R]: %x (%x) window: %u  rtt: %u/%u\n",
+                id, seq, recv_ack, bucket_limit, now-time, rtt_time);
             if(seq == recv_ack){
                 ackhold_times ++ ;
             }
@@ -263,6 +288,7 @@ void RudpRWer::handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats)
 }
 
 void RudpRWer::finish_recv(Rudp_stats* stats){
+    auto begin = read_seqs.begin();
 #ifndef NDEBUG
     if(stats->recv_end){
         LOGD(DRUDP, "[%d] get pkg: %x -- %x [%u]\n",
@@ -272,18 +298,19 @@ void RudpRWer::finish_recv(Rudp_stats* stats){
     if(stats->discard_end){
         LOGD(DRUDP, "[%d] discard pkg: %x -- %x [%u] (%x)\n",
             id, stats->discard_begin, stats->discard_end, 
-            stats->discard_end - stats->discard_begin, read_seqs.begin()->second);
+            stats->discard_end - stats->discard_begin, begin->second);
     }
 #endif
     if(recv_ack == write_seq){
         ackhold_times = 0;
     }
-    if(readCB){
-        readCB(read_seqs.begin()->second - read_seqs.begin()->first);
+    if((begin->second > begin->first) && readCB){
+        readCB(begin->second - begin->first);
     }
     recv_pkgs->add(stats->tick_recvpkg);
-    send_ack(stats->recv_time, recv_pkgs->getsum());
-
+    if(stats->tick_recvdata && !check_delayjob((job_func)rudp_ack, this)){
+        add_delayjob((job_func)rudp_ack, this, 10);
+    }
 }
 
 void RudpRWer::defaultHE(uint32_t events) {
@@ -327,15 +354,16 @@ void RudpRWer::defaultHE(uint32_t events) {
         if(writed && writeCB){
             writeCB(writed);
         }
+        add_postjob((job_func)rudp_send, this);
+        del_delayjob((job_func)rudp_send, this);
     }
-    Send();
 }
 
-int RudpRWer::Send() {
+int RudpRWer::send() {
     uint32_t recvp_num = recv_pkgs->getsum();
     uint32_t now = getmtime();
     assert(bucket_limit>0);
-    uint32_t buckets = (now - tick_time) * (bucket_limit+10)/95;
+    uint32_t buckets = (now - tick_time) * (bucket_limit+30)/90;
     if(ackhold_times >= 3){
 #ifndef NDEBUG
         LOGD(DRUDP, "[%d] ackhold %u times reset resend_pos(%x) to %x\n",
@@ -354,12 +382,12 @@ int RudpRWer::Send() {
             buckets = bucket_limit;
         }
         if(before(recv_ack, write_seq) &&
-           now - ack_time >= Max(2,rtt_time*1.3) &&
-           now - resend_time >= Max(2, rtt_time*1.2))
+           now - ack_time > Max(2,rtt_time*1.2) + 10 &&
+           now - resend_time > Max(2, rtt_time*1.2) + 10)
         {
-            if(now - ack_time >= 60000){
-                LOGE("[RUDP] %05u:[%d] acktime %05u diff %u, timeout\n",
-                    getmtime()%100000, id, ack_time%100000, now-ack_time);
+            if(now - data_time >= 60000 && now - ack_time >= 6000){
+                LOGE("[RUDP] %05u:[%d] data diff %u, ack diff %u, timeout\n",
+                    getmtime()%100000, id, now-data_time, now-ack_time);
                 flags |= RUDP_SEND_TIMEOUT;
                 errno = ETIMEDOUT;
                 return -1;
@@ -429,7 +457,7 @@ int RudpRWer::Send() {
     }
     if(recv_ack != write_seq){
         if(buckets){
-            add_delayjob((job_func)rudp_send, this, Max(2,rtt_time*1.2));
+            add_delayjob((job_func)rudp_send, this, Max(2, rtt_time*1.2));
         }else{
             add_delayjob((job_func)rudp_send, this, Max(5, 100/bucket_limit));
         }
@@ -437,34 +465,34 @@ int RudpRWer::Send() {
     return 0;
 }
 
-void RudpRWer::send_ack(uint32_t time, uint32_t window) {
-    if(time){
-        assert(window && window < 65536);
-        unsigned char buff[RUDP_MTU];
-        Rudp_head *head = (Rudp_head *)buff;
-        auto seq = read_seqs.begin();
-        head->id = htonl(id);
-        head->seq = htonl(seq->second);
-        head->time = htonl(time);
-        head->window = htons(window);
-        head->type = RUDP_TYPE_ACK;
-        uint32_t *gaps= (uint32_t *)(head+1);
-        decltype(seq) pre = seq;
-        while(1){
-            pre = seq++;
-            if(seq == read_seqs.end() ||
-               (size_t)((unsigned char*)gaps-buff) >= (size_t)RUDP_MTU)
-                break;
-            assert(before(pre->second, seq->first));
-            *(gaps++)=htonl(pre->second);
-            *(gaps++)=htonl(seq->first);
-        }
-        if(write(fd, buff, (unsigned char*)gaps-buff) <= 0){
-            LOGE("[RUDP] write: %s\n", strerror(errno));
-            if(connect(fd, (sockaddr *)&addr, sizeof(addr))) {
-                LOGE("[RUDP] reconnect: %s\n", strerror(errno));
-            }
-        }
+void RudpRWer::ack() {
+    unsigned char buff[RUDP_MTU];
+    Rudp_head *head = (Rudp_head *)buff;
+    auto seq = read_seqs.begin();
+    uint32_t now = getmtime();
+    LOGD(DRUDP, "[%d] send ack: %x, time: %05u/%u\n", id, seq->second, recv_time%100000, (now-data_time));
+    head->id = htonl(id);
+    head->seq = htonl(seq->second);
+    head->time = htonl(recv_time + (now - data_time));
+    head->window = htons(recv_pkgs->getsum());
+    head->type = RUDP_TYPE_ACK;
+    head->checksum = 0;
+    uint32_t *gaps= (uint32_t *)(head+1);
+    decltype(seq) pre = seq;
+    while(1){
+        pre = seq++;
+        if(seq == read_seqs.end() ||
+            (size_t)((unsigned char*)gaps-buff) >= (size_t)RUDP_MTU)
+            break;
+        assert(before(pre->second, seq->first));
+        *(gaps++)=htonl(pre->second);
+        *(gaps++)=htonl(seq->first);
+    }
+    size_t len = (unsigned char*)gaps-buff;
+    head->checksum = checksum8(buff, len);
+    if(write(fd, buff, len) <= 0){
+        LOGE("[RUDP] write: %s\n", strerror(errno));
+        Reconnect();
     }
 }
 
@@ -478,12 +506,15 @@ uint32_t RudpRWer::send_pkg(uint32_t seq, uint32_t window, size_t len) {
     head->time = htonl(getmtime());
     head->window = htons(window);
     head->type = RUDP_TYPE_DATA;
+    head->checksum = 0;
     uint32_t from = seq % sizeof(write_buff);
     size_t l = Min(sizeof(write_buff) - from, len);
     memcpy(head+1, write_buff + from, l);
     memcpy((char *)(head+1) + l, write_buff, len - l);
+    head->checksum = checksum8((uchar*)head, len + sizeof(Rudp_head));
     if(write(fd, buff, len + sizeof(Rudp_head)) <= 0){
         LOGE("[RUDP] write: %s\n", strerror(errno));
+        Reconnect();
     }
     return len;
 }

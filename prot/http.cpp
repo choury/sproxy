@@ -16,7 +16,7 @@ size_t HttpBase::ChunkLProc(const char* buffer, size_t len) {
             http_flag |= HTTP_CHUNK_END_F;
         }
         Http_Proc = &HttpBase::ChunkBProc;
-        return headerlen + ChunkBProc(buffer+headerlen, len-headerlen);
+        return headerlen;
     } else {
         return 0;
     }
@@ -36,8 +36,7 @@ size_t HttpBase::ChunkBProc(const char* buffer, size_t len) {
             }else{
                 Http_Proc = &HttpBase::ChunkLProc;
             }
-            int ret = strlen(CRLF);
-            return ret + (this->*Http_Proc)(buffer+ret, len-ret);
+            return strlen(CRLF);
         }
         return 0;
     } else {
@@ -49,7 +48,7 @@ size_t HttpBase::ChunkBProc(const char* buffer, size_t len) {
             return 0;
         }
         http_expectlen -= ret;
-        return ret + ChunkBProc(buffer + ret, len - ret);
+        return ret;
     }
 }
 
@@ -67,7 +66,7 @@ size_t HttpBase::FixLenProc(const char* buffer, size_t len) {
             return 0;
         }
         http_expectlen -= ret;
-        return ret + FixLenProc(buffer + ret, len - ret);
+        return ret;
     }
 }
 
@@ -79,7 +78,7 @@ size_t HttpBase::AlwaysProc(const char* buffer, size_t len) {
     if (ret <= 0) {
         return 0;
     }
-    return ret + AlwaysProc(buffer+ret, len -ret);
+    return ret;
 }
 
 size_t HttpResponser::HeaderProc(const char* buffer, size_t len) {
@@ -108,7 +107,7 @@ size_t HttpResponser::HeaderProc(const char* buffer, size_t len) {
             ErrProc();
             return 0;
         }
-        return headerlen + (this->*Http_Proc)(buffer+headerlen, len-headerlen);
+        return headerlen;
     } else {
         return 0;
     }
@@ -146,7 +145,7 @@ size_t HttpRequester::HeaderProc(const char* buffer, size_t len) {
             ErrProc();
             return 0;
         }
-        return headerlen + (this->*Http_Proc)(buffer+headerlen, len-headerlen);
+        return headerlen;
     } else {
         return 0;
     }

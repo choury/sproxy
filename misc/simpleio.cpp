@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <stdlib.h>
 
 size_t RBuffer::left(){
     return sizeof(content) - len;
@@ -37,13 +38,14 @@ char* RBuffer::end(){
 size_t CBuffer::left(){
     uint32_t start = begin_pos % sizeof(content);
     uint32_t finish = end_pos % sizeof(content);
-    if(finish >= start){
+    if(finish > start || (finish == start && begin_pos == end_pos)){
         return sizeof(content) - finish;
     }else{
         return start - finish;
     }
 }
 size_t CBuffer::length(){
+    assert(end_pos - begin_pos <= sizeof(content));
     return end_pos - begin_pos;
 }
 void CBuffer::add(size_t l){
@@ -53,7 +55,7 @@ void CBuffer::add(size_t l){
 const char* CBuffer::data(){
     uint32_t start = begin_pos % sizeof(content);
     uint32_t finish = end_pos % sizeof(content);
-    if(finish >= start){
+    if(finish > start || (finish == start && begin_pos == end_pos)){
         return content + start;
     }else{
         char* buff = (char*)malloc(end_pos - begin_pos);
@@ -75,7 +77,7 @@ char* CBuffer::end(){
     return content + (end_pos % sizeof(content));
 }
 
-FdRWer::FdRWer(int fd, bool packet_mode, std::function<void(int ret, int code)> errorCB):RWer(errorCB, fd), packet_mode(packet_mode) {
+FdRWer::FdRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(errorCB, fd){
     setEpoll(EPOLLIN);
     handleEvent = (void (Ep::*)(uint32_t))&FdRWer::defaultHE;
 }
@@ -116,7 +118,7 @@ void FdRWer::Dnscallback(FdRWer* rwer, const char* hostname, std::list<sockaddr_
     rwer->connect();
 }
 
-void FdRWer::reconnect(int error) {
+void FdRWer::retryconnect(int error) {
     if(!addrs.empty()){
         RcdDown(hostname, addrs.front());
         addrs.pop();
@@ -132,7 +134,7 @@ void FdRWer::connect() {
     fd = Connect(&addrs.front(), (int)protocol);
     if (fd < 0) {
         LOGE("connect to %s failed\n", hostname);
-        return reconnect(CONNECT_FAILED);
+        return retryconnect(CONNECT_FAILED);
     }
     setEpoll(EPOLLOUT);
     handleEvent = (void (Ep::*)(uint32_t))&FdRWer::waitconnectHE;
@@ -143,7 +145,7 @@ int FdRWer::con_timeout(FdRWer* rwer) {
     close(rwer->fd);
     rwer->fd = -1;
     LOGE("connect to %s timeout\n", rwer->hostname);
-    rwer->reconnect(CONNECT_TIMEOUT);
+    rwer->retryconnect(CONNECT_TIMEOUT);
     return 0;
 }
 
@@ -153,7 +155,7 @@ void FdRWer::waitconnectHE(uint32_t events) {
         Checksocket(fd);
         close(fd);
         fd = -1;
-        return reconnect(CONNECT_FAILED);
+        return retryconnect(CONNECT_FAILED);
     }
     if (events & EPOLLOUT) {
         setEpoll(EPOLLIN | EPOLLOUT);
@@ -165,21 +167,142 @@ void FdRWer::waitconnectHE(uint32_t events) {
     }
 }
 
+ssize_t FdRWer::Write(const void* buff, size_t len){
+    return write(fd, buff, len);
+}
 
-void FdRWer::defaultHE(uint32_t events) {
+void FdRWer::Send(){
+    size_t writed = 0;
+    while(wb.length()){
+        int ret = wb.Write(std::bind(&FdRWer::Write, this, _1, _2));
+        assert(ret != 0);
+        if(ret > 0){
+            writed += ret;
+            continue;
+        }
+        if(errno == EAGAIN){
+            break;
+        }
+        errorCB(WRITE_ERR, errno);
+        return;
+    }
+    if(wb.length() == 0){
+        delEpoll(EPOLLOUT);
+    }
+    if(writed && writeCB){
+        writeCB(writed);
+    }
+}
+
+StreamRWer::StreamRWer(int fd, std::function<void (int, int)> errorCB):
+            FdRWer(fd, errorCB)
+{
+}
+
+StreamRWer::StreamRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void (int, int)> errorCB):
+            FdRWer(hostname, port, protocol, errorCB)
+{
+}
+
+size_t StreamRWer::rlength() {
+    return rb.length();
+}
+
+const char* StreamRWer::data(){
+    return rb.data();
+}
+
+void StreamRWer::consume(const char* data, size_t l){
+    rb.consume(data, l);
+}
+
+ssize_t StreamRWer::Read(void* buff, size_t len) {
+    return read(fd, buff, len);
+}
+
+void StreamRWer::defaultHE(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
         errorCB(SOCKET_ERR, Checksocket(fd));
         return;
     }
     if (events & EPOLLIN){
-        while(rb.left()){
-            int ret = Read(rb.end(), rb.left());
+        bool closed = false;
+        size_t left = 0;
+        while((left = rb.left())){
+            int ret = Read(rb.end(), left);
             if(ret > 0){
                 rb.add(ret);
-                if(packet_mode && readCB){
+                continue;
+            }
+            if(ret == 0){
+                delEpoll(EPOLLIN);
+                closed = true;
+                break;
+            }
+            if(errno == EAGAIN){
+                break;
+            }
+            errorCB(READ_ERR, errno);
+            return;
+        }
+        if(rb.length() && readCB){
+            readCB(rb.length());
+        }
+        if(closed){
+            errorCB(READ_ERR, 0);
+        }
+        if(rb.left() == 0){
+            delEpoll(EPOLLIN);
+        }
+    }
+    if (events & EPOLLOUT){
+        Send();
+    }
+}
+
+PacketRWer::PacketRWer(int fd, std::function<void (int, int)> errorCB):
+            FdRWer(fd, errorCB)
+{
+}
+
+PacketRWer::PacketRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void (int, int)> errorCB):
+            FdRWer(hostname, port, protocol, errorCB)
+{
+}
+
+
+size_t PacketRWer::rlength() {
+    return rb.length();
+}
+
+const char* PacketRWer::data(){
+    return rb.data();
+}
+
+void PacketRWer::consume(const char* data, size_t l){
+    rb.consume(data, l);
+}
+
+ssize_t PacketRWer::Read(void* buff, size_t len) {
+    return read(fd, buff, len);
+}
+
+
+void PacketRWer::defaultHE(uint32_t events) {
+    if (events & EPOLLERR || events & EPOLLHUP) {
+        errorCB(SOCKET_ERR, Checksocket(fd));
+        return;
+    }
+    if (events & EPOLLIN){
+        size_t left = 0;
+        while((left = rb.left())){
+            int ret = Read(rb.end(), left);
+            if(ret > 0){
+                rb.add(ret);
+                if(readCB){
                     readCB(rb.length());
                 }
-                continue;
+                break; //break for do something else
             }
             if(ret == 0){
                 delEpoll(EPOLLIN);
@@ -190,58 +313,13 @@ void FdRWer::defaultHE(uint32_t events) {
                 break;
             }
             errorCB(READ_ERR, errno);
-            break;
+            return;
         }
-        if(readCB && rb.length()){
-            readCB(rb.length());
-        }
-        if(rb.left()==0){
+        if(rb.left() == 0){
             delEpoll(EPOLLIN);
         }
     }
     if (events & EPOLLOUT){
-        size_t writed = 0;
-        while(wb.length()){
-            int ret = wb.Write(std::bind(&FdRWer::Write, this, _1, _2));
-            assert(ret != 0);
-            if(ret > 0){
-                writed += ret;
-                continue;
-            }
-            if(errno == EAGAIN){
-                break;
-            }
-            errorCB(WRITE_ERR, errno);
-            break;
-        }
-        if(wb.length() == 0){
-            delEpoll(EPOLLOUT);
-        }
-        if(writed && writeCB){
-            writeCB(writed);
-        }
+        Send();
     }
 }
-
-ssize_t FdRWer::Read(void* buff, size_t len){
-    return read(fd, buff, len);
-}
-
-ssize_t FdRWer::Write(const void* buff, size_t len){
-    return write(fd, buff, len);
-}
-
-size_t FdRWer::rlength() {
-    return rb.length();
-}
-
-const char* FdRWer::data(){
-    return rb.data();
-}
-
-void FdRWer::consume(const char* data, size_t l){
-    rb.consume(data, l);
-}
-
-
-

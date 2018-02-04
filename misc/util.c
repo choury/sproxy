@@ -260,6 +260,17 @@ uint16_t checksum16(uint8_t *addr, int len) {
     return ~(uint16_t)sum;
 }
 
+uint8_t checksum8(uint8_t *addr, int len) {
+    uint8_t sum = 0;
+
+    while (len) {
+        sum += *addr++;
+        len --;
+    }
+
+    return ~(uint8_t)sum;
+}
+
 
 uint64_t getutime(){
     struct timeval tv;

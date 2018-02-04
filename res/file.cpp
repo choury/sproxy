@@ -110,7 +110,7 @@ File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
         LOGE("create evventfd failed: %s\n", strerror(errno));
         throw 0;
     }
-    rwer = new FdRWer(evfd, true, [this](int ret, int code){
+    rwer = new PacketRWer(evfd, [this](int ret, int code){
         deleteLater(ret);
     });
     snprintf(filename, sizeof(filename), "./%s", fname);

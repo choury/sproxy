@@ -90,6 +90,8 @@ public:
     virtual void SetWriteCB(std::function<void(size_t len)> func);
     virtual void SetConnectCB(std::function<void()> func);
 
+    virtual bool supportReconnect();
+    virtual void Reconnect();
     virtual void TrigRead();
     virtual void Close(std::function<void()> func);
     virtual void Shutdown();
@@ -109,7 +111,7 @@ public:
 };
 
 
-void flushproxy2();
+void flushproxy2(bool force);
 void releaseall();
 int setproxy(const char* proxy);
 int getproxy(char *buff, size_t buflen);

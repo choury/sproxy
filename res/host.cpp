@@ -27,7 +27,11 @@ Host::Host(Protocol protocol, const char* hostname, uint16_t port, bool use_ssl)
         }
         rwer = srwer;
     }else{
-        rwer = new FdRWer(hostname, port, protocol, std::bind(&Host::Error, this, _1, _2));
+        if(protocol == Protocol::TCP){
+            rwer = new StreamRWer(hostname, port, protocol, std::bind(&Host::Error, this, _1, _2));
+        }else{
+            rwer = new PacketRWer(hostname, port, protocol, std::bind(&Host::Error, this, _1, _2));
+        }
     }
     rwer->SetConnectCB(std::bind(&Host::connected, this));
 }
@@ -71,9 +75,13 @@ void Host::connected() {
     assert(rwer->wlength() == 0 || head->wlen == 0);
     rwer->buffer_insert(head, buff, len);
     rwer->SetReadCB([this](size_t len){
-        const char* data = rwer->data();
-        len = (this->*Http_Proc)(data, len);
-        rwer->consume(data, len);
+        const char* data = this->rwer->data();
+        size_t consumed = 0;
+        size_t ret = 0;
+        while((ret = (this->*Http_Proc)(data+consumed, len-consumed))){
+            consumed += ret;
+        }
+        this->rwer->consume(data, consumed);
     });
     rwer->SetWriteCB([this](size_t len){
         if(req && len){

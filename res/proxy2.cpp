@@ -373,6 +373,19 @@ void Proxy2::dump_stat() {
     }
 }
 
-void flushproxy2() {
-    proxy2 = nullptr;
+void Proxy2::flush() {
+    if(!rwer->supportReconnect()){
+        proxy2 = (proxy2 == this) ? nullptr: proxy2;
+    }
+}
+
+
+void flushproxy2(bool force) {
+    if(force){
+        proxy2 = nullptr;
+        return;
+    }
+    if(proxy2){
+        proxy2->flush();
+    }
 }

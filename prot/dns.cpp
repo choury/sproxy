@@ -359,7 +359,7 @@ Dns_srv::Dns_srv(const char* name){
         LOGE("[DNS] connecting  %s error:%s\n", name, strerror(errno));
         throw 0;
     }
-    rwer = new FdRWer(fd, true, [](int ret, int code){
+    rwer = new PacketRWer(fd, [](int ret, int code){
         LOGE("DNS error: %d/%d\n", ret, code);
     });
     rwer->SetReadCB([this](size_t len){

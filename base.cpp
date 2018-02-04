@@ -190,6 +190,7 @@ void RWer::SetErrorCB(std::function<void(int ret, int code)> func){
 
 void RWer::SetReadCB(std::function<void(size_t len)> func){
     readCB = func;
+    TrigRead();
 }
 
 void RWer::SetWriteCB(std::function<void(size_t len)> func){
@@ -211,6 +212,14 @@ void RWer::closeHE(uint32_t events) {
         return;
     }
 }
+
+bool RWer::supportReconnect(){
+    return false;
+}
+
+void RWer::Reconnect() {
+}
+
 
 void RWer::TrigRead(){
     if(rlength() && readCB){
@@ -293,7 +302,7 @@ int setproxy(const char* proxy){
     if(SPORT == 0){
         SPORT = 443;
     }
-    flushproxy2();
+    flushproxy2(true);
     return 0;
 }
 

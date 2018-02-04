@@ -56,7 +56,7 @@ Cgi::Cgi(const char* fname, int sv[2]) {
     // 父进程
     close(sv[1]);   // 关闭管道的子进程端
     /* 现在可在fd[0]中读写数据 */
-    rwer = new FdRWer(sv[0], false, [this](int ret, int code){
+    rwer = new StreamRWer(sv[0], [this](int ret, int code){
         LOGE("CGI error: %d/%d\n", ret, code);
         deleteLater(ret);
     });

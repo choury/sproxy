@@ -51,7 +51,9 @@ static int verify_host_callback(int ok, X509_STORE_CTX *ctx){
 }
 
 
-SslRWer::SslRWer(int fd, SSL_CTX* ctx, std::function<void(int ret, int code)> errorCB): FdRWer(fd, false, errorCB){
+SslRWer::SslRWer(int fd, SSL_CTX* ctx, std::function<void(int ret, int code)> errorCB):
+        StreamRWer(fd, errorCB)
+{
     ssl = SSL_new(ctx);
     SSL_set_fd(ssl, fd);
     setEpoll(EPOLLIN | EPOLLOUT);
@@ -59,7 +61,7 @@ SslRWer::SslRWer(int fd, SSL_CTX* ctx, std::function<void(int ret, int code)> er
 }
 
 SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB):
-        FdRWer(hostname, port, protocol, errorCB)
+        StreamRWer(hostname, port, protocol, errorCB)
 {
     if(protocol == Protocol::TCP){
         ctx = SSL_CTX_new(SSLv23_client_method());
@@ -133,7 +135,7 @@ void SslRWer::waitconnectHE(uint32_t events) {
         Checksocket(fd);
         close(fd);
         fd = -1;
-        return reconnect(CONNECT_FAILED);
+        return retryconnect(CONNECT_FAILED);
     }
     if (events & EPOLLOUT) {
         setEpoll(EPOLLIN | EPOLLOUT);

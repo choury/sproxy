@@ -47,10 +47,12 @@ public:
     virtual void writedcb(void* index)override;
     virtual bool finish(uint32_t flags, void* index)override;
     
-    virtual void init(HttpReqHeader* req);
     virtual void* request(HttpReqHeader* req)override;
     
     virtual void dump_stat()override;
+
+    void init(HttpReqHeader* req);
+    void flush();
     static int ping_check(Proxy2 *p);
     static int connection_lost(Proxy2 *p);
 };

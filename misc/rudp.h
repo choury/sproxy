@@ -24,8 +24,8 @@ struct Rudp_head{
 #define RUDP_MTU (RUDP_LEN+sizeof(Rudp_head))
 
 struct Rudp_stats{
-    uint32_t recv_time = 0;
     uint32_t tick_recvpkg = 0;
+    uint32_t tick_recvdata = 0;
 #ifndef NDEBUG
     uint32_t recv_begin = 0;
     uint32_t recv_end = 0;
@@ -40,14 +40,15 @@ class RudpRWer: public RWer {
     char     hostname[DOMAINLIMIT] = {0};
     Rudp_server* ord = nullptr;
     sockaddr_un addr;
-    unsigned char read_buff[BUF_LEN * 2];
-    unsigned char write_buff[BUF_LEN * 2];
+    unsigned char read_buff[BUF_LEN * 64];
+    unsigned char write_buff[BUF_LEN * 64];
     std::list<std::pair<uint32_t, uint32_t>> read_seqs;
     TTL* recv_pkgs;
     uint32_t gaps[RUDP_LEN/sizeof(uint32_t)];
     uint32_t gap_num=0;
 
     uint32_t recv_ack = 0;
+    uint32_t recv_time = 0;
     uint32_t send_pos = 0;
     uint32_t resend_pos = 0;
     uint32_t write_seq = 0;
@@ -55,17 +56,19 @@ class RudpRWer: public RWer {
     uint32_t rtt_time = 50;
     uint32_t ackhold_times = 0;
     uint32_t ack_time;
+    uint32_t data_time;
     uint32_t resend_time = 0;
     uint32_t tick_time;
 #define RUDP_SEND_TIMEOUT    1
+#define RUDP_RESET            2
     uint32_t flags = 0;
 
     void connected();
     void defaultHE(uint32_t events);
 
-    int Send();
+    int send();
+    void ack();
     uint32_t send_pkg(uint32_t seq, uint32_t window, size_t len);
-    void send_ack(uint32_t time, uint32_t window);
     ssize_t Write(const void* buff, size_t len) override;
     void handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats);
     void finish_recv(Rudp_stats* stats);
@@ -76,6 +79,8 @@ public:
 
     int PushPkg(const Rudp_head* pkg, size_t len, const sockaddr_un* addr);
 
+    virtual bool supportReconnect() override;
+    virtual void Reconnect() override;
     //for read buffer
     virtual size_t rlength() override;
     virtual const char *data() override;
@@ -83,6 +88,7 @@ public:
 
     static void Dnscallback(RudpRWer* rwer, const char*, std::list<sockaddr_un> addrs);
     static int rudp_send(RudpRWer* r);
+    static int rudp_ack(RudpRWer* r);
 };
 
 

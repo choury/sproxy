@@ -5,7 +5,7 @@
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 
-class SslRWer: public FdRWer {
+class SslRWer: public StreamRWer {
 protected:
     SSL *ssl;
     SSL_CTX* ctx;

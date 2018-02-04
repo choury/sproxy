@@ -64,7 +64,7 @@ int vpn_start(const struct VpnConfig* vpn){
     while (vpn_contiune) {
         if(vpn_action & VPN_RESET){
             flushdns();
-            flushproxy2();
+            flushproxy2(false);
             vpn_action &= ~VPN_RESET;
         }
         if(vpn_action & VPN_RELOAD){

@@ -10,7 +10,7 @@
 
 Ping::Ping(const char* host, uint16_t id): id(id) {
     strcpy(hostname, host);
-    rwer = new FdRWer(hostname, id, Protocol::ICMP, [this](int ret, int code){
+    rwer = new PacketRWer(hostname, id, Protocol::ICMP, [this](int ret, int code){
         LOGE("Ping error: %d/%d\n", ret, code);
         iserror = true;
         if(ret == READ_ERR || ret == WRITE_ERR){
