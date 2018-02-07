@@ -113,12 +113,8 @@ void Guest::EndProc() {
         }else{
             Status_flags |= GUEST_REQ_COMPLETED;
         }
-        if(!responser_ptr->finish(NOERROR, responser_index)){
-            responser_ptr = nullptr;
-            Peer::deleteLater(PEER_LOST_ERR);
-        }else{
-            rwer->delEpoll(EPOLLIN);
-        }
+        responser_ptr->finish(NOERROR, responser_index);
+        rwer->delEpoll(EPOLLIN);
         return;
     }else if((Status_flags & GUEST_ERROR_F) == 0){
         Status_flags = GUEST_IDELE_F;
@@ -196,14 +192,14 @@ void Guest::deleteLater(uint32_t errcode){
     Peer::deleteLater(errcode);
 }
 
-bool Guest::finish(uint32_t flags, void* index) {
+void Guest::finish(uint32_t flags, void* index) {
     assert((uint32_t)(long)index == 1);
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode){
         responser_ptr = nullptr;
         responser_index = nullptr;
         Peer::deleteLater(errcode);
-        return false;
+        return;
     }
     rwer->addEpoll(EPOLLIN);
     Peer::Send((const void*)nullptr,0, index);
@@ -213,7 +209,7 @@ bool Guest::finish(uint32_t flags, void* index) {
         if(rwer->wlength() == 0){
             rwer->Shutdown();
         }
-        return true;
+        return;
     } 
 
     if(Status_flags & GUEST_REQ_COMPLETED){
@@ -224,9 +220,7 @@ bool Guest::finish(uint32_t flags, void* index) {
     if(flags & DISCONNECT_FLAG){
         responser_ptr = nullptr;
         responser_index = nullptr;
-        return false;
     }
-    return true;
 }
 
 void Guest::writedcb(void* index) {

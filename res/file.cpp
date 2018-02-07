@@ -272,15 +272,13 @@ void File::readHE(size_t len) {
     }
 }
 
-bool File::finish(uint32_t flags, void* index){
+void File::finish(uint32_t flags, void* index){
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode || (flags & DISCONNECT_FLAG)){
         statusmap.erase(id);
-        return false;
     }
-    return true;
 }
 
 void File::deleteLater(uint32_t errcode){

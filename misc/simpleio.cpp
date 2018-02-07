@@ -186,11 +186,11 @@ void FdRWer::Send(){
         errorCB(WRITE_ERR, errno);
         return;
     }
-    if(wb.length() == 0){
-        delEpoll(EPOLLOUT);
-    }
     if(writed && writeCB){
         writeCB(writed);
+    }
+    if(wb.length() == 0){
+        delEpoll(EPOLLOUT);
     }
 }
 

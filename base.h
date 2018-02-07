@@ -36,7 +36,7 @@ public:
     virtual ssize_t Send(const void *buff, size_t size, void* index) final;
     virtual ssize_t Send(void* buff, size_t size, void* index) = 0;
     //return wheather remain the connection, false means break the connection
-    virtual bool finish(uint32_t flags, void* info) = 0;
+    virtual void finish(uint32_t flags, void* info) = 0;
 
     virtual void writedcb(void* index);
 };

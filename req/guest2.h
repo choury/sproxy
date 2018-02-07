@@ -42,7 +42,7 @@ public:
     virtual int32_t bufleft(void* index)override;
     virtual ssize_t Send(void *buff, size_t size, void* index)override;
     virtual void writedcb(void* index)override;
-    virtual bool finish(uint32_t flags, void* index)override;
+    virtual void finish(uint32_t flags, void* index)override;
     
     virtual void response(HttpResHeader* res)override;
     virtual void transfer(void* index, Responser* res_ptr, void* res_index)override;

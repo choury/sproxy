@@ -155,11 +155,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 
 void Host::EndProc() {
     assert(req);
-    if(!req->src->finish(NOERROR, req->index)){
-        delete req;
-        req = nullptr;
-        Peer::deleteLater(PEER_LOST_ERR);
-    }
+    req->src->finish(NOERROR, req->index);
 }
 
 void Host::ErrProc(){
@@ -183,18 +179,18 @@ void Host::Error(int ret, int code) {
     deleteLater(ret);
 }
 
-bool Host::finish(uint32_t flags, void* index) {
+void Host::finish(uint32_t flags, void* index) {
     assert((long)index == 1);
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode == VPN_AGED_ERR){
         deleteLater(errcode);
-        return false;
+        return;
     }
     if(errcode || (flags & DISCONNECT_FLAG)){
         delete req;
         req = nullptr;
         deleteLater(flags);
-        return false;
+        return;
     }
     Peer::Send((const void*)nullptr,0, index);
     if(Http_Proc == &Host::AlwaysProc){
@@ -203,22 +199,19 @@ bool Host::finish(uint32_t flags, void* index) {
             rwer->Shutdown();
         }
     }
-    return true;
 }
 
 void Host::deleteLater(uint32_t errcode){
     assert(errcode);
     if(req){
-        if(!req->ismethod("SEND")){
-            if(errcode == CONNECT_TIMEOUT || errcode == DNS_FAILED){
-                HttpResHeader* res = new HttpResHeader(H504, sizeof(H504));
-                res->index = req->index;
-                req->src->response(res);
-            }else if(errcode == CONNECT_FAILED){
-                HttpResHeader* res = new HttpResHeader(H503, sizeof(H503));
-                res->index = req->index;
-                req->src->response(res);
-            }
+        if(errcode == CONNECT_TIMEOUT || errcode == DNS_FAILED){
+            HttpResHeader* res = new HttpResHeader(H504, sizeof(H504));
+            res->index = req->index;
+            req->src->response(res);
+        }else if(errcode == CONNECT_FAILED){
+            HttpResHeader* res = new HttpResHeader(H503, sizeof(H503));
+            res->index = req->index;
+            req->src->response(res);
         }
         req->src->finish(errcode, req->index);
         delete req;

@@ -169,7 +169,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
         const char *ext = req->get("ext");
         LOG("[[add %s]] %s %s\n", strategy, log_buff, ext);
         if(strategy && addstrategy(req->geturl().c_str(), strategy, ext ? ext:"")){
-            HttpResHeader* res = new HttpResHeader(H200, sizeof(200));
+            HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
             res->index = req->index;
             requester->response(res);
         }else{

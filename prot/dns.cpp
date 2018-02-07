@@ -149,9 +149,6 @@ void flushdns(){
 }
 
 int query_back(Dns_Status *dnsst){
-    for(auto i: dnsst->reqs){
-        i.func(i.param, dnsst->host, dnsst->rcd.addrs);   //func 肯定不为空
-    }
     delete dnsst;
     return 0;
 }
@@ -176,21 +173,30 @@ static void query(Dns_Status* dnsst){
     if (inet_pton(AF_INET, dnsst->host, &addr.addr_in.sin_addr) == 1) {
         addr.addr_in.sin_family = AF_INET;
         dnsst->rcd.addrs.push_back(addr);
-        add_postjob((job_func)query_back, dnsst);
+        for(auto i: dnsst->reqs){
+            i.func(i.param, dnsst->host, dnsst->rcd.addrs);
+        }
+        delete dnsst;
         return;
     }
 
     if (inet_pton(AF_INET6, dnsst->host, &addr.addr_in6.sin6_addr) == 1) {
         addr.addr_in6.sin6_family = AF_INET6;
         dnsst->rcd.addrs.push_back(addr);
-        add_postjob((job_func)query_back, dnsst);
+        for(auto i: dnsst->reqs){
+            i.func(i.param, dnsst->host, dnsst->rcd.addrs);
+        }
+        delete dnsst;
         return;
     }
 
     if (rcd_cache.count(dnsst->host)) {
-        dnsst->rcd = rcd_cache[dnsst->host];
-        add_postjob((job_func)query_back, dnsst);
-        if(dnsst->rcd.gettime + dnsst->rcd.ttl - time(nullptr) > 15){
+        auto& rcd = rcd_cache[dnsst->host];
+        for(auto i: dnsst->reqs){
+            i.func(i.param, dnsst->host, rcd.addrs);
+        }
+        if(rcd.gettime + rcd.ttl - time(nullptr) > 15){
+            delete dnsst;
             return;
         }
         //刷新ttl
@@ -198,6 +204,7 @@ static void query(Dns_Status* dnsst){
         newst->times = 0;
         newst->flags = dnsst->flags;
         strcpy(newst->host, dnsst->host);
+        delete dnsst;
         dnsst = newst;
     }
 

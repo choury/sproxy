@@ -310,17 +310,15 @@ void Cgi::defaultHE(uint32_t events) {
 }
 #endif
 
-bool Cgi::finish(uint32_t flags, void* index) {
+void Cgi::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     Peer::Send((const void*)nullptr, 0, index);
     uint8_t errcode = flags & ERROR_MASK;
-    if(errcode){
+    if(errcode || (flags & DISCONNECT_FLAG)){
         delete statusmap[id];
         statusmap.erase(id);
-        return false;
     }
-    return true;
 }
 
 void Cgi::deleteLater(uint32_t errcode){

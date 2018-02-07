@@ -57,7 +57,6 @@ protected:
 public:
     StreamRWer(int fd, std::function<void(int ret, int code)> errorCB);
     StreamRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB);
-    virtual ~StreamRWer(){}
 
     //for read buffer
     virtual size_t rlength() override;
@@ -73,7 +72,6 @@ protected:
 public:
     PacketRWer(int fd, std::function<void(int ret, int code)> errorCB);
     PacketRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB);
-    virtual ~PacketRWer(){}
 
     //for read buffer
     virtual size_t rlength() override;

@@ -91,7 +91,7 @@ void FDns::ResponseCb(uint32_t id, const char* buff, size_t size) {
 }
 
 
-bool FDns::finish(uint32_t flags, void* index) {
+void FDns::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     uint8_t errcode = flags & ERROR_MASK;
@@ -99,13 +99,10 @@ bool FDns::finish(uint32_t flags, void* index) {
         FDnsStatus& status = statusmap[id];
         status.req_ptr->finish(errcode, status.req_index);
         statusmap.erase(id);
-        return false;
     }
-    if(errcode){
+    if(errcode || (flags & DISCONNECT_FLAG)){
         statusmap.erase(id);
-        return false;
     }
-    return true;
 }
 
 void FDns::writedcb(void*){

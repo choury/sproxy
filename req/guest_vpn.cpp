@@ -594,7 +594,7 @@ void Guest_vpn::cleanKey(const VpnKey* key) {
 }
 
 
-bool Guest_vpn::finish(uint32_t flags, void* index) {
+void Guest_vpn::finish(uint32_t flags, void* index) {
     assert(index);
     VpnKey* key = (VpnKey *)index;
     uint8_t errcode = flags & ERROR_MASK;
@@ -618,10 +618,8 @@ bool Guest_vpn::finish(uint32_t flags, void* index) {
             if(tcpStatus->flags & FIN_RECV){
                 status.res_ptr = nullptr;
                 status.res_index = nullptr;
-                return false;
             }else{
                 tcpStatus->flags |=  FIN_SEND;
-                return true;
             }
         }else if(errcode == CONNECT_TIMEOUT){
             LOGD(DVPN, "write icmp unreachable msg: <tcp> (%d -> %s)\n", key->getsport(), key->getdst());
@@ -653,13 +651,14 @@ bool Guest_vpn::finish(uint32_t flags, void* index) {
 
             sendPkg(&pac_return, (const void *)status.packet, status.packet_len);
         }
-        del_delayjob((job_func)vpn_aged, &status);
     }
     if(key->protocol == Protocol::ICMP){
-        del_delayjob((job_func)vpn_aged, &status);
+        //ignore it.
     }
-    cleanKey(key);
-    return false;
+    if(errcode || flags & DISCONNECT_FLAG){
+        del_delayjob((job_func)vpn_aged, &status);
+        cleanKey(key);
+    }
 }
 
 

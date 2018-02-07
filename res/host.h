@@ -31,7 +31,7 @@ public:
     virtual int32_t bufleft(void*) override;
     virtual ssize_t Send(void* buff, size_t size, void* index)override;
 
-    virtual bool finish(uint32_t flags, void* index)override;
+    virtual void finish(uint32_t flags, void* index)override;
     virtual void writedcb(void * index) override;
     virtual void dump_stat()override;
     static Responser* gethost(const char* hostname, uint16_t port, Protocol protocol, HttpReqHeader* req, Responser* responser_ptr);

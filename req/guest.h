@@ -38,7 +38,7 @@ public:
     virtual void response(HttpResHeader* res)override;
     virtual void transfer(void* index, Responser* res_ptr, void* res_index)override;
 
-    virtual bool finish(uint32_t flags, void* index)override;
+    virtual void finish(uint32_t flags, void* index)override;
     virtual void writedcb(void * index) override;
     virtual const char* getsrc(const void *)override;
     virtual void dump_stat()override;

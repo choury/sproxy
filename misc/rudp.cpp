@@ -45,7 +45,7 @@ class TTL{
     uint32_t sum = 0;
 public:
     void add(uint32_t value);
-    uint32_t getsum();
+    uint32_t getsum(uint32_t now);
 };
 
 
@@ -56,8 +56,7 @@ void TTL::add(uint32_t value) {
     }
 }
 
-uint32_t TTL::getsum() {
-    uint32_t  now =getmtime();
+uint32_t TTL::getsum(uint32_t now) {
     while(!data.empty()){
         if( now - data.front().first > 100){
             sum -= data.front().second;
@@ -112,6 +111,7 @@ RudpRWer::~RudpRWer(){
         ord->evict(id);
     }
     del_delayjob((job_func)rudp_send, this);
+    del_delayjob((job_func)rudp_ack, this);
     del_postjob((job_func)rudp_send, this);
     query_cancel(hostname, (DNSCBfunc)RudpRWer::Dnscallback, this);
     delete recv_pkgs;
@@ -166,9 +166,7 @@ ssize_t RudpRWer::Write(const void* buff, size_t size) {
         return -1;
     }
     if(after(write_seq + size, recv_ack + sizeof(write_buff))){
-        if(send() >= 0){
-            errno = EAGAIN;
-        }
+        errno = EAGAIN;
         return -1;
     }
     uint32_t from = write_seq % sizeof(write_buff);
@@ -346,13 +344,13 @@ void RudpRWer::defaultHE(uint32_t events) {
                 break;
             }
             errorCB(WRITE_ERR, errno);
-            break;
-        }
-        if(wb.length() == 0){
-            delEpoll(EPOLLOUT);
+            return;
         }
         if(writed && writeCB){
             writeCB(writed);
+        }
+        if(wb.length() == 0){
+            delEpoll(EPOLLOUT);
         }
         add_postjob((job_func)rudp_send, this);
         del_delayjob((job_func)rudp_send, this);
@@ -360,8 +358,8 @@ void RudpRWer::defaultHE(uint32_t events) {
 }
 
 int RudpRWer::send() {
-    uint32_t recvp_num = recv_pkgs->getsum();
     uint32_t now = getmtime();
+    uint32_t recvp_num = recv_pkgs->getsum(now);
     assert(bucket_limit>0);
     uint32_t buckets = (now - tick_time) * (bucket_limit+30)/90;
     if(ackhold_times >= 3){
@@ -385,7 +383,7 @@ int RudpRWer::send() {
            now - ack_time > Max(2,rtt_time*1.2) + 10 &&
            now - resend_time > Max(2, rtt_time*1.2) + 10)
         {
-            if(now - data_time >= 60000 && now - ack_time >= 6000){
+            if(now - data_time >= 60000 && now - ack_time >= 60000){
                 LOGE("[RUDP] %05u:[%d] data diff %u, ack diff %u, timeout\n",
                     getmtime()%100000, id, now-data_time, now-ack_time);
                 flags |= RUDP_SEND_TIMEOUT;
@@ -474,7 +472,7 @@ void RudpRWer::ack() {
     head->id = htonl(id);
     head->seq = htonl(seq->second);
     head->time = htonl(recv_time + (now - data_time));
-    head->window = htons(recv_pkgs->getsum());
+    head->window = htons(recv_pkgs->getsum(now));
     head->type = RUDP_TYPE_ACK;
     head->checksum = 0;
     uint32_t *gaps= (uint32_t *)(head+1);

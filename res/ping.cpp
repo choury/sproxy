@@ -52,15 +52,16 @@ void Ping::deleteLater(uint32_t errcode) {
     return Peer::deleteLater(errcode);
 }
 
-bool Ping::finish(uint32_t flags, void* index) {
+void Ping::finish(uint32_t flags, void* index) {
     assert(index == (void *)1);
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode != VPN_AGED_ERR){
         req_ptr = nullptr;
         req_index = nullptr;
     }
-    deleteLater(PEER_LOST_ERR);
-    return false;
+    if(errcode && (flags & DISCONNECT_FLAG)){
+        deleteLater(PEER_LOST_ERR);
+    }
 }
 
 

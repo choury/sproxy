@@ -242,28 +242,28 @@ void Guest2::queue_insert(std::list<write_block>::insert_iterator where, void* b
     rwer->buffer_insert(where, buff, len);
 }
 
-bool Guest2::finish(uint32_t flags, void* index) {
+void Guest2::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id) == 0){
         Peer::Send((const void*)nullptr, 0, index);
-        return false;
+        return;
     }
     ResStatus& status = statusmap[id];
     uint8_t errcode = flags & ERROR_MASK;
-    if(errcode == 0 && (status.res_flags & STREAM_WRITE_CLOSED) == 0){
-        Peer::Send((const void*)nullptr, 0, index);
-        status.res_flags |= STREAM_WRITE_CLOSED;
-    }
-    if(status.res_flags & STREAM_READ_CLOSED){
-        statusmap.erase(id);
-        return false;
+    if(errcode == 0 ){
+        if((status.res_flags & STREAM_WRITE_CLOSED) == 0){
+            Peer::Send((const void*)nullptr, 0, index);
+            status.res_flags |= STREAM_WRITE_CLOSED;
+        }
+        if(flags & DISCONNECT_FLAG && (status.res_flags & STREAM_READ_CLOSED)){
+            statusmap.erase(id);
+            return;
+        }
     }
     if(errcode || (flags & DISCONNECT_FLAG)){
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
-        return false;
     }
-    return true;
 }
 
 void Guest2::deleteLater(uint32_t errcode){

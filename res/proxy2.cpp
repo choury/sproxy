@@ -311,7 +311,7 @@ void Proxy2::queue_insert(std::list<write_block>::insert_iterator where, void* b
 }
 
 
-bool Proxy2::finish(uint32_t flags, void* index) {
+void Proxy2::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     ReqStatus& status = statusmap[id];
@@ -320,22 +320,22 @@ bool Proxy2::finish(uint32_t flags, void* index) {
         status.req_ptr->finish(errcode, status.req_index);
         Reset(id, ERR_CANCEL);
         statusmap.erase(id);
-        return false;
+        return;
     }
-    if(errcode == 0 && (status.req_flags & STREAM_WRITE_CLOSED) == 0){
-        Peer::Send((const void*)nullptr, 0, index);
-        status.req_flags |= STREAM_WRITE_CLOSED;
-    }
-    if(status.req_flags & STREAM_READ_CLOSED){
-        statusmap.erase(id);
-        return false;
+    if(errcode == 0 ){
+        if((status.req_flags & STREAM_WRITE_CLOSED) == 0){
+            Peer::Send((const void*)nullptr, 0, index);
+            status.req_flags |= STREAM_WRITE_CLOSED;
+        }
+        if(flags & DISCONNECT_FLAG && (status.req_flags & STREAM_READ_CLOSED)){
+            statusmap.erase(id);
+            return;
+        }
     }
     if(errcode || (flags & DISCONNECT_FLAG)){
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
-        return false;
     }
-    return true;
 }
 
 void Proxy2::deleteLater(uint32_t errcode){
