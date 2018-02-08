@@ -655,7 +655,7 @@ void Guest_vpn::finish(uint32_t flags, void* index) {
     if(key->protocol == Protocol::ICMP){
         //ignore it.
     }
-    if(errcode || flags & DISCONNECT_FLAG){
+    if(errcode || (flags & DISCONNECT_FLAG)){
         del_delayjob((job_func)vpn_aged, &status);
         cleanKey(key);
     }

@@ -2,6 +2,7 @@
 #include "misc/job.h"
 #include "misc/util.h"
 #include "misc/simpleio.h"
+#include "misc/index.h"
 #include "common.h"
 
 #include <unordered_map>
@@ -41,8 +42,7 @@ struct Dns_Req{
 
 struct Dns_Rcd{
     std::list<sockaddr_un> addrs;
-    uint32_t  ttl;
-    time_t gettime;
+    time_t expire_time;
 };
 
 typedef struct Dns_Status {
@@ -66,19 +66,26 @@ typedef struct Dns_RawReq {
     void *param;
 } Dns_RawReq;
 
-std::unordered_map<uint16_t, std::string> querying_index_id;
-std::unordered_map<std::string, Dns_Status *> querying_index_host;
+Index2<uint16_t, std::string, Dns_Status *> querying_index;
 std::unordered_map<uint16_t, Dns_RawReq *> querying_raw_id;
 std::unordered_map<std::string, Dns_Rcd> rcd_cache;
+std::multimap<int, std::string> expire_time;
 
 int dns_expired(void* ) {
     time_t now = time(nullptr);
-    for(auto i = rcd_cache.begin(); i!= rcd_cache.end();){
-        if(now > i->second.gettime + i->second.ttl){
-            LOGD(DDNS, "%s: expired\n", i->first.c_str());
-            i = rcd_cache.erase(i);
+    std::set<std::string> should_expired;
+    for(auto i =  expire_time.begin(); i!= expire_time.end(); ){
+        if(now > i->first){
+            should_expired.insert(i->second);
+            i = expire_time.erase(i);
         }else{
-            i++;
+            break;
+        }
+    }
+    for(auto i : should_expired){
+        if(rcd_cache.count(i) && now > rcd_cache[i].expire_time){
+            LOGD(DDNS, "%s: expired\n", i.c_str());
+            rcd_cache.erase(i);
         }
     }
     return 1;
@@ -134,25 +141,16 @@ void flushdns(){
         delete srvs.front();
     }
     rcd_cache.clear();
-    for(auto i: querying_index_id){
+    for(auto i: querying_index.index1()){
         del_delayjob((job_func)query_timeout, (void *)(long)i.first);
+        delete i.second->data;
     }
-    querying_index_id.clear();
-    for(auto i: querying_index_host){
-        delete i.second;
-    }
-    querying_index_host.clear();
+    querying_index.clear();
     for(auto i: querying_raw_id){
         delete i.second;
     }
     querying_raw_id.clear();
 }
-
-int query_back(Dns_Status *dnsst){
-    delete dnsst;
-    return 0;
-}
-
 
 static void query(Dns_Status* dnsst){
     assert(id_cur &1);
@@ -195,7 +193,7 @@ static void query(Dns_Status* dnsst){
         for(auto i: dnsst->reqs){
             i.func(i.param, dnsst->host, rcd.addrs);
         }
-        if(rcd.gettime + rcd.ttl - time(nullptr) > 15){
+        if(rcd.expire_time - time(nullptr) > 15){
             delete dnsst;
             return;
         }
@@ -227,16 +225,15 @@ static void query(Dns_Status* dnsst){
         }
     }
     dnsst->times++;
-    querying_index_id[id_cur] = dnsst->host;
-    querying_index_host[dnsst->host] = dnsst;
+    querying_index.Add(id_cur, dnsst->host, dnsst);
     add_delayjob((job_func)query_timeout, (void *)(size_t)id_cur, DNSTIMEOUT);
 }
 
 
 void query(const char* host , DNSCBfunc func, void* param) {
-    if(querying_index_host.count(host)){
+    if(querying_index.Get(host)){
         if(func){
-            querying_index_host[host]->reqs.push_back(Dns_Req{func, param});
+            querying_index.Get(host)->data->reqs.push_back(Dns_Req{func, param});
         }
         return;
     }
@@ -252,8 +249,8 @@ void query(const char* host , DNSCBfunc func, void* param) {
 }
 
 void query_cancel(const char* host, DNSCBfunc func, void* param){
-    if(querying_index_host.count(host)){
-        Dns_Status* status = querying_index_host[host];
+    if(querying_index.Get(host)){
+        Dns_Status* status = querying_index.Get(host)->data;
         for(auto i = status->reqs.begin(); i!= status->reqs.end(); i++){
             if(i->func == func && i->param == param){
                 status->reqs.erase(i);
@@ -294,7 +291,7 @@ void query(const char *host , uint16_t type, DNSRAWCB func, void *param) {
 }
 
 int query_timeout(uint16_t id){
-    assert(querying_index_id.count(id) || querying_raw_id.count(id));
+    assert(querying_index.Get(id) || querying_raw_id.count(id));
     if(querying_raw_id.count(id)){
         auto req = querying_raw_id[id];
         querying_raw_id.erase(id);
@@ -308,11 +305,9 @@ int query_timeout(uint16_t id){
             delete req;
         }
     }else{
-        auto host = querying_index_id[id];
-        querying_index_id.erase(id);
-        assert(querying_index_host.count(host));
-        auto status = querying_index_host[host];
-        querying_index_host.erase(host);
+        assert(querying_index.Get(id));
+        auto status = querying_index.Get(id)->data;
+        querying_index.Delete(id);
         if(status->rcd.addrs.empty() && status->times <= 5) {
             LOG("[DNS] %s: time out, retry...\n", status->host);
             query(status);
@@ -329,7 +324,7 @@ int query_timeout(uint16_t id){
 void RcdDown(const char *hostname, const sockaddr_un &addr) {
     LOG("[DNS] down for %s: %s\n", hostname, getaddrstring(&addr));
     if (rcd_cache.count(hostname)) {
-        auto &addrs  = rcd_cache[hostname].addrs;
+        auto& addrs  = rcd_cache[hostname].addrs;
         for (auto i = addrs.begin(); i != addrs.end(); ++i) {
             switch (addr.addr.sa_family) {
             case AF_INET:
@@ -405,38 +400,35 @@ void Dns_srv::buffHE(const char *buffer, size_t len) {
 
     uint32_t flags=0;
     if (id & 1) {
-        if (querying_index_id.count(id) == 0) {
+        if (querying_index.Get(id) == nullptr) {
             LOG("[DNS] Get a unkown id:%d\n", id);
             return;
         }
         flags |= GARECORD;
     } else {
         id--;
-        if (querying_index_id.count(id) == 0) {
+        if (querying_index.Get(id) == nullptr) {
             LOG("[DNS] Get a unkown id:%d\n", id);
             return;
         }
         flags |= GAAAARECORD;
     }
-    std::string host = querying_index_id[id];
-    Dns_Status *dnsst = querying_index_host[host];
+    Dns_Status *dnsst = querying_index.Get(id)->data;
     dnsst->flags |= flags;
 
     if(dnsrcd.addrs.size()){
         for(auto i: dnsrcd.addrs){
             dnsst->rcd.addrs.push_back(i);
         }
-        dnsst->rcd.gettime = time(0);
-        dnsst->rcd.ttl = dnsrcd.ttl;
+        dnsst->rcd.expire_time = time(nullptr) + dnsrcd.ttl;
     }
 
     if ((dnsst->flags & GARECORD) &&(dnsst->flags & GAAAARECORD)) {
         del_delayjob((job_func)query_timeout, (void *)(size_t)id);
-        querying_index_id.erase(id);
-        querying_index_host.erase(host);
+        querying_index.Delete(id);
         if (!dnsst->rcd.addrs.empty()) {
-            dnsst->rcd.gettime = time(nullptr);
-            rcd_cache[host] =  dnsst->rcd;
+            rcd_cache[dnsst->host] = dnsst->rcd;
+            expire_time.insert(std::make_pair(dnsst->rcd.expire_time, dnsst->host));
         }
         for(auto i: dnsst->reqs ){
             i.func(i.param, dnsst->host, dnsst->rcd.addrs);
@@ -459,13 +451,12 @@ void Dns_srv::dump_stat(){
 
 void dump_dns(){
     LOG("Dns querying:\n");
-    for(auto i: querying_index_id){
-       assert(querying_index_host.count(i.second));;
-       LOG("    %d: %s\n", i.first, i.second.c_str());
+    for(auto i: querying_index.index1()){
+       LOG("    %d: %s\n", i.first, i.second->data->host);
     }
     LOG("Dns cache:\n");
     for(auto i: rcd_cache){
-        LOG("    %s: %ld\n", i.first.c_str(), i.second.ttl+i.second.gettime-time(0));
+        LOG("    %s: %ld\n", i.first.c_str(), i.second.expire_time - time(0));
         for(auto j: i.second.addrs){
             char ip[INET6_ADDRSTRLEN];
             switch(j.addr.sa_family){

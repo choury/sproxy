@@ -291,6 +291,9 @@ const char * protstr(Protocol p) {
     if(p == UDP){
         return "udp";
     }
+    if(p == ICMP){
+        return "icmp";
+    }
     return "unknown";
 }
 
