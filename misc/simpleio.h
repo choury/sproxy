@@ -38,7 +38,7 @@ protected:
     void connect();
     void retryconnect(int error);
     static void Dnscallback(FdRWer* rwer, const char *hostname, std::list<sockaddr_un> addrs);
-    static int  con_timeout(FdRWer* rwer);
+    static int  con_failed(FdRWer* rwer);
 
     virtual void Send();
     virtual ssize_t Write(const void* buff, size_t len) override;

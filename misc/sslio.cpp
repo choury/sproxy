@@ -159,7 +159,7 @@ void SslRWer::waitconnectHE(uint32_t events) {
         SSL_set_verify(ssl, SSL_VERIFY_PEER, verify_host_callback);
 
         handleEvent = (void (Ep::*)(uint32_t))&SslRWer::shakehandHE;
-        add_delayjob((job_func)con_timeout, this, 30000);
+        add_delayjob((job_func)con_failed, this, 30000);
     }
 }
 
@@ -182,7 +182,7 @@ void SslRWer::shakehandHE(uint32_t events){
             connectCB();
         }
         handleEvent = (void (Ep::*)(uint32_t))&SslRWer::defaultHE;
-        del_delayjob((job_func)con_timeout, this);
+        del_delayjob((job_func)con_failed, this);
     }
 }
 

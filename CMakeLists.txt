@@ -35,7 +35,7 @@ if(ANDROID_NDK)
     find_library(log-lib log)
     find_package(OpenSSL REQUIRED IMPORTED)
 
-    string(REPLACE "-${ANDROID_TOOLCHAIN}" ""  ANDROID_TARGET ${ANDROID_TOOLCHAIN_NAME})
+    string(REGEX REPLACE "-[^-]+$" ""  ANDROID_TARGET ${ANDROID_TOOLCHAIN_NAME})
     set(CMAKE_C_FLAGS "-isystem ${ANDROID_NDK}/sysroot/usr/include/${ANDROID_TARGET}")
     set(CMAKE_CXX_FLAGS "-isystem ${ANDROID_NDK}/sysroot/usr/include/${ANDROID_TARGET}")
 else()
