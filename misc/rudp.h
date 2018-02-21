@@ -16,6 +16,7 @@ struct Rudp_head{
     uint16_t window;
 #define RUDP_TYPE_DATA  0
 #define RUDP_TYPE_ACK   1
+#define RUDP_TYPE_RESET 2
     uint8_t  type;
     uint8_t  checksum;
 }__attribute__((packed));

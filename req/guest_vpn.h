@@ -55,6 +55,7 @@ protected:
     template <class T>
     void sendPkg(Ip* pac, T* packet, size_t len);
     void cleanKey(const VpnKey* key);
+    const char *getProg(const void* index) const;
 public:
     explicit Guest_vpn(int fd);
     virtual ~Guest_vpn();

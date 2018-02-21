@@ -297,7 +297,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
             ->setflag(TH_ACK);
         sendPkg(&pac_return, (const void*)nullptr, 0);
     }else if(seq != tcpStatus->want_seq){
-        LOGE("(%s): drop unwanted data packet %u/%u\n", getsrc(&key), seq, tcpStatus->want_seq);
+        LOGE("(%s): drop unwanted data packet %u/%u\n", getProg(&key), seq, tcpStatus->want_seq);
         return;
     }
 
@@ -327,7 +327,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
     if(datalen > 0){//2数据包，创建ack包
         int buflen = status.res_ptr->bufleft(status.res_index);
         if(buflen <= 0){
-            LOGE("(%s): responser buff is full, drop packet %u\n", getsrc(&key), seq);
+            LOGE("(%s): responser buff is full, drop packet %u\n", getProg(&key), seq);
         }else{
             const char* data = packet + pac->gethdrlen();
             status.res_ptr->Send(data, datalen, status.res_index);
@@ -533,7 +533,7 @@ ssize_t Guest_vpn::Send(void* buff, size_t size, void* index) {
         assert(tcpStatus);
         size_t winlen = (tcpStatus->window << tcpStatus->window_scale) - (tcpStatus->send_seq - tcpStatus->send_acked);
         if(size > winlen){
-            LOGE("(%s): window left smaller than send size!\n", getsrc(&key));
+            LOGE("(%s): window left smaller than send size!\n", getProg(&key));
             size = winlen;
         }
         LOGD(DVPN, "<tcp> (%d <- %s) (%u - %u) size: %zu\n",
@@ -661,12 +661,8 @@ void Guest_vpn::finish(uint32_t flags, void* index) {
     }
 }
 
-
-const char * Guest_vpn::getsrc(const void* index) {
+const char * Guest_vpn::getProg(const void* index) const{
     const VpnKey* key = (const VpnKey*)index;
-    if(index == nullptr){
-        return "Myself";
-    }
     std::ifstream netfile;
     if(key->protocol == Protocol::TCP){
         netfile.open("/proc/net/tcp");
@@ -742,12 +738,16 @@ const char * Guest_vpn::getsrc(const void* index) {
     return "Unkown inode";
 }
 
+const char * Guest_vpn::getsrc(const void*){
+    return "Sproxy";
+}
+
 const char* Guest_vpn::generateUA(const VpnKey *key) {
     static char UA[URLLIMIT];
 #ifndef __ANDROID__
-    sprintf(UA, "Sproxy/1.0 (%s) %s", getDeviceInfo(), getsrc(key));
+    sprintf(UA, "Sproxy/1.0 (%s) %s", getDeviceInfo(), getProg(key));
 #else
-    sprintf(UA, "Sproxy/%s (%s) %s", version, getDeviceName(), getsrc(key));
+    sprintf(UA, "Sproxy/%s (%s) %s", version, getDeviceName(), getProg(key));
 #endif
     return UA;
 }

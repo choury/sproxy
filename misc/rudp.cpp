@@ -165,6 +165,10 @@ ssize_t RudpRWer::Write(const void* buff, size_t size) {
         errno = ETIMEDOUT;
         return -1;
     }
+    if(flags & RUDP_RESET){
+        errno = ECONNRESET;
+        return -1;
+    }
     if(after(write_seq + size, recv_ack + sizeof(write_buff))){
         errno = EAGAIN;
         return -1;
@@ -256,7 +260,7 @@ void RudpRWer::handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats)
 #endif
         }
         recv_time = time>recv_time?time:recv_time;
-    }else{
+    }else if(head->type == RUDP_TYPE_ACK){
         rtt_time = (rtt_time * 8 + (now-time) * 2)/10;
         gap_num = 0;
         uint32_t *gap_ptr = (uint32_t *)(head+1);
@@ -282,10 +286,19 @@ void RudpRWer::handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats)
             }
         }
 #endif
+    }else if(head->type == RUDP_TYPE_RESET){
+        if(this->id == id){
+            LOGE("[RUDP] connection %d reseted\n", id);
+            flags |= RUDP_RESET;
+        }
     }
 }
 
 void RudpRWer::finish_recv(Rudp_stats* stats){
+    if(flags & RUDP_RESET){
+        errorCB(READ_ERR, ENETRESET);
+        return;
+    }
     auto begin = read_seqs.begin();
 #ifndef NDEBUG
     if(stats->recv_end){
@@ -387,7 +400,6 @@ int RudpRWer::send() {
                 LOGE("[RUDP] %05u:[%d] data diff %u, ack diff %u, timeout\n",
                     getmtime()%100000, id, now-data_time, now-ack_time);
                 flags |= RUDP_SEND_TIMEOUT;
-                errno = ETIMEDOUT;
                 return -1;
             }
 #ifndef NDEBUG
@@ -556,6 +568,10 @@ void Rudp_server::defaultHE(uint32_t events){
             if(id){
                 if(connections.Get(id) == nullptr){
                     LOGD(DRUDP, "not found id: %d\n", id);
+                    head->type = RUDP_TYPE_RESET;
+                    head->checksum = 0;
+                    head->checksum = checksum8((uchar*)head, sizeof(Rudp_head));
+                    sendto(fd, head, sizeof(Rudp_head), 0, (struct sockaddr*)&addr, addr_len);
                     continue;
                 }
                 LOGD(DRUDP, "connection %d addr changed\n", id);
