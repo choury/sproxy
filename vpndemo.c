@@ -143,6 +143,7 @@ int main(int argc, char** argv) {
     struct VpnConfig vpn;
     vpn.disable_ipv6 = 1;
     vpn.ignore_cert_error = 1;
+    vpn.secret[0] = 0;
     strcpy(vpn.server, argv[2]);
     signal(SIGUSR2, vpn_reload);
     if(argc >= 4){

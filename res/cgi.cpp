@@ -61,7 +61,7 @@ Cgi::Cgi(const char* fname, int sv[2]) {
         deleteLater(ret);
     });
     rwer->SetReadCB(std::bind(&Cgi::readHE, this, _1));
-    rwer->SetWriteCB([this](size_t len){
+    rwer->SetWriteCB([this](size_t){
         for(auto i: statusmap) {
             i.second->src->writedcb(i.second->index);
         }

@@ -15,8 +15,8 @@ class Index2{
     std::map<T2, Container*> idx2;
 public:
     void Add(const T1 t1, const T2 t2, const D data);
-    Container* Get(const T1 t1);
-    Container* Get(const T2 t2);
+    Container* Get(const T1 t1) const;
+    Container* Get(const T2 t2) const;
     void Delete(const T1 t1);
     void Delete(const T2 t2);
     const std::map<T1, Container*>& index1(){
@@ -37,7 +37,7 @@ void Index2<T1, T2, D>::Add(const T1 t1, const T2 t2, const D data) {
 }
 
 template<class T1, class T2, class D>
-typename Index2<T1, T2, D>::Container* Index2<T1, T2, D>::Get(const T1 t1){
+typename Index2<T1, T2, D>::Container* Index2<T1, T2, D>::Get(const T1 t1) const{
     if(idx1.count(t1) == 0){
         return nullptr;
     }
@@ -45,7 +45,7 @@ typename Index2<T1, T2, D>::Container* Index2<T1, T2, D>::Get(const T1 t1){
 }
 
 template<class T1, class T2, class D>
-typename Index2<T1, T2, D>::Container* Index2<T1, T2, D>::Get(const T2 t2) {
+typename Index2<T1, T2, D>::Container* Index2<T1, T2, D>::Get(const T2 t2) const{
     if(idx2.count(t2) == 0){
         return nullptr;
     }

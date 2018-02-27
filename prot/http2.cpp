@@ -226,7 +226,7 @@ void Http2Base::PingProc(const Http2_header* header) {
     }
 }
 
-void Http2Base::GoawayProc(const Http2_header* header) {
+void Http2Base::GoawayProc(const Http2_header*) {
     LOGD(DHTTP2, "Get a Goaway frame\n");
 }
 

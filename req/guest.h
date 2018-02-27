@@ -20,7 +20,7 @@ protected:
 #define GUEST_ERROR_F        (1<<7)
     uint32_t Status_flags = GUEST_IDELE_F;
 
-
+    void ReadHE(size_t len);
     virtual void deleteLater(uint32_t errcode) override;
     virtual void Error(int ret, int code);
     

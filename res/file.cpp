@@ -111,6 +111,7 @@ File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
         throw 0;
     }
     rwer = new PacketRWer(evfd, [this](int ret, int code){
+        LOGE("file error: %d/%d\n", ret, code);
         deleteLater(ret);
     });
     snprintf(filename, sizeof(filename), "./%s", fname);

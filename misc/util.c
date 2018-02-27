@@ -218,7 +218,7 @@ int URLDecode(char *des, const char *src, size_t len)
 static const char *base64_digs="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 void Base64Encode(const char *s, size_t len, char *dst){
-    int i=0,j=0;
+    size_t i=0,j=0;
     const unsigned char* src = (const unsigned char *)s;
     for(;i+2<len;i+=3){
         dst[j++] = base64_digs[src[i]>>2];
@@ -417,6 +417,7 @@ const char* getDeviceInfo(){
 }
 
 void dump_trace(int signal) {
+    (void)signal;
 #if Backtrace_FOUND
     void *stack_trace[100] = {0};
     char **stack_strings = NULL;

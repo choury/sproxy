@@ -84,8 +84,6 @@ struct Http2_frame{
 
 class Http2Base{
 protected:
-    //char http2_buff[FRAMELENLIMIT];
-    //uint32_t http2_getlen = 0;
     uint32_t remoteframewindowsize = 65535; //由对端初始化的初始frame的窗口大小
     
     int32_t remotewinsize = 65535; // 对端提供的窗口大小，发送时减小，收到对端update时增加
@@ -136,8 +134,6 @@ public:
 };
 
 class Http2Responser:public Http2Base, virtual public ResObject{
-    //using Http2Base::http2_buff;
-    //using Http2Base::http2_getlen;
 protected:
     virtual size_t InitProc(const uchar* http2_buff, size_t len)override;
     virtual void HeadersProc(const Http2_header *header)override;
@@ -146,8 +142,6 @@ protected:
 
 
 class Http2Requster:public Http2Base{
-    //using Http2Base::http2_buff;
-    //using Http2Base::http2_getlen;
 protected:
     void init();
     virtual size_t InitProc(const uchar* http2_buff, size_t len)override;

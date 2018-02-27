@@ -110,6 +110,7 @@ int SslRWer::get_error(int ret){
                 break;
             case SSL_ERROR_SSL:
                 LOGE("SSL error: %s\n", ERR_error_string(error, nullptr));
+                /* FALLTHRU */
             default:
                 errno = EIO;
                 break;

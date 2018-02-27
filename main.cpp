@@ -119,9 +119,6 @@ public:
     }
 };
 
-
-
-
 //do nothing, useful for vpn only
 int protectFd(int){
     return 1;
@@ -132,6 +129,7 @@ static int select_alpn_cb(SSL *ssl,
                           const unsigned char *in, unsigned int inlen, void *arg)
 {
     (void)ssl;
+    (void)arg;
     std::set<std::string> proset;
     const unsigned char *p = in;
     while ((size_t)(p-in) < inlen) {
@@ -169,7 +167,7 @@ static int verify_cookie(SSL *ssl, const unsigned char *cookie, unsigned int coo
 #endif
     struct sockaddr_in6 myaddr;
     (void)BIO_dgram_get_peer(SSL_get_rbio(ssl), &myaddr);
-    return strcmp((char *)cookie, getaddrstring((sockaddr_un *)&myaddr))==0;
+    return strncmp((char *)cookie, getaddrstring((sockaddr_un *)&myaddr), cookie_len)==0;
 }
 
 void ssl_callback_ServerName(SSL *ssl){
@@ -442,6 +440,11 @@ int main(int argc, char **argv) {
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
     efd = epoll_create(10000);
+    setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
+    if (daemon_mode && daemon(1, 0) < 0) {
+        fprintf(stderr, "start daemon error:%s\n", strerror(errno));
+        return -1;
+    }
     if(rudp_mode){
         int svsk_rudp;
         CPORT = CPORT?CPORT:443;
@@ -475,9 +478,6 @@ int main(int argc, char **argv) {
         }
     }
     LOG("Accepting connections ...\n");
-    if (daemon_mode && daemon(1, 0) < 0) {
-        LOGE("start daemon error:%s\n", strerror(errno));
-    }
     while (1) {
         int c;
         struct epoll_event events[200];

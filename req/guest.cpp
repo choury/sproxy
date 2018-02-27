@@ -9,17 +9,19 @@
 #include <string.h>
 #include <assert.h>
 
+void Guest::ReadHE(size_t len){
+    const char* data = rwer->data();
+    size_t consumed = 0;
+    size_t ret = 0;
+    while((ret = (this->*Http_Proc)(data+consumed, len-consumed))){
+        consumed += ret;
+    }
+    rwer->consume(data, consumed);
+}
+
 Guest::Guest(int fd,  const sockaddr_un *myaddr): Requester(myaddr) {
     rwer = new StreamRWer(fd, std::bind(&Guest::Error, this, _1, _2));
-    rwer->SetReadCB([this](size_t len){
-        const char* data = this->rwer->data();
-        size_t consumed = 0;
-        size_t ret = 0;
-        while((ret = (this->*Http_Proc)(data+consumed, len-consumed))){
-            consumed += ret;
-        }
-        this->rwer->consume(data, consumed);
-    });
+    rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
     rwer->SetWriteCB([this](size_t len){
         if(responser_ptr && len){
             responser_ptr->writedcb(responser_index);
@@ -32,11 +34,7 @@ Guest::Guest(int fd,  const sockaddr_un *myaddr): Requester(myaddr) {
 
 Guest::Guest(int fd,  const sockaddr_un *myaddr, SSL_CTX* ctx): Requester(myaddr) {
     rwer = new SslRWer(fd, ctx, std::bind(&Guest::Error, this, _1, _2));
-    rwer->SetReadCB([this](size_t len){
-        const char* data = rwer->data();
-        len = (this->*Http_Proc)(data, len);
-        rwer->consume(data, len);
-    });
+    rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
     rwer->SetWriteCB([this](size_t len){
         if(responser_ptr && len){
             responser_ptr->writedcb(responser_index);

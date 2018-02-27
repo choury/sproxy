@@ -94,7 +94,7 @@ FdRWer::~FdRWer() {
     query_cancel(hostname, (DNSCBfunc)FdRWer::Dnscallback, this);
 }
 
-void FdRWer::Dnscallback(FdRWer* rwer, const char* hostname, std::list<sockaddr_un> addrs) {
+void FdRWer::Dnscallback(FdRWer* rwer, const char*, std::list<sockaddr_un> addrs) {
     if (addrs.empty()) {
         return rwer->errorCB(DNS_FAILED, 0);
     }
@@ -198,6 +198,8 @@ void FdRWer::Send(){
     }
 }
 
+/*
+
 StreamRWer::StreamRWer(int fd, std::function<void (int, int)> errorCB):
             FdRWer(fd, errorCB)
 {
@@ -207,6 +209,7 @@ StreamRWer::StreamRWer(const char* hostname, uint16_t port, Protocol protocol, s
             FdRWer(hostname, port, protocol, errorCB)
 {
 }
+*/
 
 size_t StreamRWer::rlength() {
     return rb.length();
@@ -264,6 +267,7 @@ void StreamRWer::defaultHE(uint32_t events) {
     }
 }
 
+/*
 PacketRWer::PacketRWer(int fd, std::function<void (int, int)> errorCB):
             FdRWer(fd, errorCB)
 {
@@ -274,6 +278,7 @@ PacketRWer::PacketRWer(const char* hostname, uint16_t port, Protocol protocol, s
 {
 }
 
+*/
 
 size_t PacketRWer::rlength() {
     return rb.length();

@@ -47,7 +47,6 @@ class Guest_vpn:public Requester, public ResObject{
     const char* generateUA(const VpnKey* key);
 protected:
     std::map<VpnKey, VpnStatus> statusmap;
-//    void defaultHE(uint32_t events) override;
     void buffHE(const char* buff, size_t buflen);
     void tcpHE(const Ip* pac,const char* packet, size_t len);
     void udpHE(const Ip* pac,const char* packet, size_t len);

@@ -20,7 +20,7 @@ Server::~Server(){
     servers.erase(this);
 }
 
-void Peer::deleteLater(uint32_t errcode) {
+void Peer::deleteLater(uint32_t) {
     if(rwer){
         rwer->Close([this](){
             delete this;
@@ -201,7 +201,7 @@ void RWer::SetConnectCB(std::function<void()> func){
     connectCB = func;
 }
 
-void RWer::closeHE(uint32_t events) {
+void RWer::closeHE(uint32_t) {
     if(wb.length() == 0){
         closeCB();
         return;
@@ -262,7 +262,6 @@ ssize_t RWer::buffer_insert(std::list<write_block>::insert_iterator where, void*
 void RWer::Clear(bool freebuffer) {
     wb.clear(freebuffer);
 }
-
 
 void releaseall() {
     auto cons_copy = servers;

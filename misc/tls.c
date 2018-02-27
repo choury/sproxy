@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h> /* strncpy() */
+#include <errno.h>
 #include "tls.h"
 #include "common.h"
 
@@ -55,11 +56,6 @@ static int parse_server_name_extension(const char *, size_t, char **);
  *  < -4 - Invalid TLS client hello
  */
 int parse_tls_header(const char *data, size_t data_len, char **hostname) {
-    char tls_content_type;
-    char tls_version_major;
-    char tls_version_minor;
-    size_t pos = TLS_HEADER_LEN;
-
     if (hostname == NULL)
         return -3;
 
@@ -78,18 +74,19 @@ int parse_tls_header(const char *data, size_t data_len, char **hostname) {
         return -2;
     }
 
-    tls_content_type = data[0];
+    char tls_content_type = data[0];
     if (tls_content_type != TLS_HANDSHAKE_CONTENT_TYPE) {
-        LOGE("Request did not begin with TLS handshake.\n");
+        LOGE("Request did not begin with TLS handshake: %d.\n", tls_content_type);
+        LOG("%02x %02x %02x %02x %02x %02x %02x %02x\n", 
+	         data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]);
         return -5;
     }
 
-    tls_version_major = data[1];
-    tls_version_minor = data[2];
+    char tls_version_major = data[1];
+    char tls_version_minor = data[2];
     if (tls_version_major < 3) {
         LOGE("Received SSL %d.%d handshake which which can not support SNI.\n",
               tls_version_major, tls_version_minor);
-
         return -2;
     }
 
@@ -105,12 +102,12 @@ int parse_tls_header(const char *data, size_t data_len, char **hostname) {
     /*
      * Handshake
      */
+    size_t pos = TLS_HEADER_LEN;
     if (pos + 1 > data_len) {
         return -5;
     }
     if (data[pos] != TLS_HANDSHAKE_TYPE_CLIENT_HELLO) {
         LOGE("Not a client hello\n");
-
         return -5;
     }
 
@@ -200,7 +197,7 @@ parse_server_name_extension(const char *data, size_t data_len,
             case 0x00: /* host_name */
                 *hostname = malloc(len + 1);
                 if (*hostname == NULL) {
-                    LOGE("malloc() failure\n");
+                    LOGE("malloc() failure: %s\n", strerror(errno));
                     return -4;
                 }
 

@@ -770,7 +770,6 @@ Hpack_index_table::Hpack_index_table(size_t dynamic_table_size_limit_max):dynami
 
 void Hpack_index_table::add_dynamic_table(const std::string &name, const std::string &value){
     size_t entry_size = name.size() + value.size() + 32;
-    assert(dynamic_table_size >= 0);
     Hpack_index *index=new Hpack_index {name, value, dynamic_table.size() + evicted_count};
     dynamic_table[index->id]=index;
     dynamic_map.insert(std::make_pair(name+char(0)+value, index));
@@ -783,7 +782,7 @@ void Hpack_index_table::add_dynamic_table(const std::string &name, const std::st
 }
 
 
-uint32_t Hpack_index_table::getid(const std::string& name, const std::string& value) {
+uint32_t Hpack_index_table::getid(const std::string& name, const std::string& value) const{
     std::string key = name+char(0)+value;
     uint32_t id = 0;
     if(static_map.count(key))
@@ -794,7 +793,7 @@ uint32_t Hpack_index_table::getid(const std::string& name, const std::string& va
     return id;
 }
 
-uint32_t Hpack_index_table::getid(const std::string& name) {
+uint32_t Hpack_index_table::getid(const std::string& name) const{
     std::string key = name+char(0);
     uint32_t id = 0;
     if(static_map.count(key))
@@ -805,7 +804,7 @@ uint32_t Hpack_index_table::getid(const std::string& name) {
     return id;
 }
 
-const Hpack_index *Hpack_index_table::getvalue(uint32_t id) {
+const Hpack_index *Hpack_index_table::getvalue(uint32_t id) const{
     static Hpack_index index;
     const Hpack_index * ret = nullptr;
     if(id == 0){
@@ -819,7 +818,7 @@ const Hpack_index *Hpack_index_table::getvalue(uint32_t id) {
     }else{
         size_t key = dynamic_table.size() - (id - static_table_count) + evicted_count;
         if(dynamic_table.count(key))
-            ret = dynamic_table[key];
+            ret = dynamic_table.at(key);
     }
 #ifndef NDEBUG
     if(ret){

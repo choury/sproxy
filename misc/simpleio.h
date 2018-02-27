@@ -55,8 +55,7 @@ protected:
     virtual ssize_t Read(void* buff, size_t len);
     virtual void defaultHE(uint32_t events) override;
 public:
-    StreamRWer(int fd, std::function<void(int ret, int code)> errorCB);
-    StreamRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB);
+    using FdRWer::FdRWer;
 
     //for read buffer
     virtual size_t rlength() override;
@@ -70,8 +69,7 @@ protected:
     virtual ssize_t Read(void* buff, size_t len);
     virtual void defaultHE(uint32_t events) override;
 public:
-    PacketRWer(int fd, std::function<void(int ret, int code)> errorCB);
-    PacketRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB);
+    using FdRWer::FdRWer;
 
     //for read buffer
     virtual size_t rlength() override;

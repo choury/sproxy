@@ -18,9 +18,9 @@ class Hpack_index_table {
     std::map<std::string, Hpack_index*> dynamic_map;
     void evict_dynamic_table();
     void add_dynamic_table(const std::string &name, const std::string &value);
-    uint32_t getid(const std::string& name, const std::string& value);
-    uint32_t getid(const std::string& name);
-    const Hpack_index *getvalue(uint32_t id);
+    uint32_t getid(const std::string& name, const std::string& value) const;
+    uint32_t getid(const std::string& name) const;
+    const Hpack_index *getvalue(uint32_t id) const;
     void set_dynamic_table_size_limit(size_t size);
 public:
     explicit Hpack_index_table(size_t dynamic_table_size_limit_max = 4096);

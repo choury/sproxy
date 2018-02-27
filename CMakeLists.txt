@@ -57,8 +57,8 @@ else()
     set(BUILD_CGI TRUE)
 endif()
 
-set(CMAKE_C_FLAGS "-Wall -fPIC ${CMAKE_C_FLAGS}")
-set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -fPIC ${CMAKE_CXX_FLAGS}")
+set(CMAKE_C_FLAGS "-Wall -Wextra -fPIC ${CMAKE_C_FLAGS}")
+set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -Wextra -fPIC ${CMAKE_CXX_FLAGS}")
 
 if(NOT NO_CONST_ITERATOR_BUG)
     message(WARNING "have const_iterator insert bug, see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=55817")

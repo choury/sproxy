@@ -87,7 +87,7 @@ Guest_vpn::Guest_vpn(int fd):Requester("VPN", 0) {
         buffHE(data, len);
         rwer->consume(data, len);
     });
-    rwer->SetWriteCB([this](size_t len){
+    rwer->SetWriteCB([this](size_t){
         for(auto i: statusmap){
             VpnStatus& status = i.second;
             if(i.first.protocol != Protocol::TCP){

@@ -333,12 +333,14 @@ void RcdDown(const char *hostname, const sockaddr_un &addr) {
                     addrs.push_back(addr);
                     return;
                 }
+                break;
             case AF_INET6:
                 if (memcmp(&addr.addr_in6.sin6_addr, &i->addr_in6.sin6_addr, sizeof(in6_addr)) == 0) {
                     addrs.erase(i);
                     addrs.push_back(addr);
                     return;
                 }
+                break;
             }
         }
     }
