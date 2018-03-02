@@ -302,12 +302,12 @@ const char * Guest2::getsrc(const void* index){
 }
 
 
-void Guest2::dump_stat() {
-    LOG("Guest_s2 %p %s:\n", this, getsrc(nullptr));
+void Guest2::dump_stat(Dumper dp, void* param) {
+    dp(param, "Guest_s2 %p %s:\n", this, getsrc(nullptr));
     for(auto i: statusmap){
-        LOG("0x%x: %p, %p (%d/%d)\n",
-            i.first, i.second.res_ptr, i.second.res_index,
-            i.second.remotewinsize, i.second.localwinsize);
+        dp(param, "0x%x: %p, %p (%d/%d)\n",
+                i.first, i.second.res_ptr, i.second.res_index,
+                i.second.remotewinsize, i.second.localwinsize);
     }
 }
 

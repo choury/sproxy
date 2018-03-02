@@ -39,9 +39,9 @@ int vpn_start(const struct VpnConfig* vpn){
     signal(SIGCHLD, SIG_IGN);
 #ifndef __ANDROID__
     signal(SIGABRT, dump_trace);
+    setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
 #endif
     signal(SIGUSR1, dump_stat);
-    setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
     disable_ipv6 = vpn->disable_ipv6;
     ignore_cert_error = vpn->ignore_cert_error;
     if(setproxy(vpn->server)){

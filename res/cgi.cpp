@@ -344,10 +344,10 @@ void* Cgi::request(HttpReqHeader* req) {
     return reinterpret_cast<void*>(cgi_id);
 }
 
-void Cgi::dump_stat(){
-    LOG("Cgi %p %s, id=%d:\n", this, filename, curid);
+void Cgi::dump_stat(Dumper dp, void* param){
+    dp(param, "Cgi %p %s, id=%d:\n", this, filename, curid);
     for(auto i: statusmap){
-        LOG("%d: %p, %p", i.first, i.second->src, i.second->index);
+        dp(param, "%d: %p, %p", i.first, i.second->src, i.second->index);
     }
 }
 

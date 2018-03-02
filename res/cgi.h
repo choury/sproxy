@@ -61,7 +61,7 @@ public:
     virtual void finish(uint32_t flags, void* index)override;
     virtual void deleteLater(uint32_t errcode) override;
     virtual void* request(HttpReqHeader* req)override;
-    virtual void dump_stat()override;
+    virtual void dump_stat(Dumper dp, void* param) override;
 };
 
 Cgi* getcgi(HttpReqHeader* req, const char* filename);

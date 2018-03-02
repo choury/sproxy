@@ -31,6 +31,7 @@ void* p_malloc(size_t size);
 void* p_memdup(const void *ptr, size_t size);
 void p_free(void *ptr);
 void *p_move(void *ptr, signed char len);
+char* p_avsprintf(size_t* size, const char* fmt, va_list ap);
 void change_process_name(const char *name);
 const char* findprogram(ino_t inode);
 const char* getDeviceInfo();

@@ -364,10 +364,10 @@ void Proxy2::writedcb(void* index){
     }
 }
 
-void Proxy2::dump_stat() {
-    LOG("Proxy2 %p, id:%d: %s\n", this, sendid, this==proxy2?"[M]":"");
+void Proxy2::dump_stat(Dumper dp, void* param) {
+    dp(param, "Proxy2 %p, id:%d: %s\n", this, sendid, this==proxy2?"[M]":"");
     for(auto i: statusmap){
-        LOG("0x%x: %p, %p (%d/%d)\n",
+        dp(param, "0x%x: %p, %p (%d/%d)\n",
             i.first, i.second.req_ptr, i.second.req_index,
             i.second.remotewinsize, i.second.localwinsize);
     }

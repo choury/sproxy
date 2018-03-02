@@ -2,6 +2,8 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
+#include <syslog.h>
 #include <unistd.h>
 #include <assert.h>
 #include <errno.h>
@@ -336,6 +338,19 @@ void p_free(void* ptr){
     return free((char *)ptr-prior);
 }
 
+char* p_avsprintf(size_t* size, const char* fmt, va_list ap){
+    va_list cp;
+    va_copy(cp, ap);
+    size_t len = vsnprintf(NULL, 0, fmt, ap);
+    char* buff = p_malloc(len+1);
+    vsprintf(buff, fmt, cp);
+    if(size){
+        *size = len;
+    }
+    va_end(cp);
+    return buff;
+}
+
 void *p_move(void *ptr, signed char len){
     unsigned char prior = *((unsigned char*)ptr-1);
     prior += len;
@@ -343,6 +358,27 @@ void *p_move(void *ptr, signed char len){
     ptr = (char *)ptr + len;
     *((unsigned char *)ptr-1) = prior;
     return ptr; 
+}
+
+#ifndef __ANDROID__
+void vslog(int level, const char* fmt, va_list arg){
+    if(daemon_mode){
+        vsyslog(level, fmt, arg);
+    }else{
+        if(level <= LOG_ERR){
+            vfprintf(stderr, fmt, arg);
+        }else{
+            vfprintf(stdout, fmt, arg);
+        }
+    }
+}
+#endif
+
+void slog(int level, const char* fmt, ...){
+    va_list ap;
+    va_start(ap, fmt);
+    VLOG(level, fmt, ap);
+    va_end(ap);
 }
 
 void change_process_name(const char *name){

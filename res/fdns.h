@@ -28,7 +28,7 @@ public:
     virtual int32_t bufleft(void* index)override;
     virtual void finish(uint32_t flags, void* index)override;
 
-    virtual void dump_stat()override;
+    virtual void dump_stat(Dumper dp, void* param) override;
     static FDns* getfdns();
     static const char* getRdns(const struct in_addr* addr);
     static in_addr getInet(std::string hostname);

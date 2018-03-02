@@ -5,6 +5,7 @@
 
 #include <set>
 #include <string.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <errno.h>
 #include <assert.h>
@@ -35,8 +36,10 @@ ssize_t Peer::Send(const void* buff, size_t size, void* index) {
 }
 
 void Peer::writedcb(void*) {
-    rwer->addEpoll(EPOLLIN);
-    rwer->TrigRead();
+    if(rwer){
+        rwer->addEpoll(EPOLLIN);
+        rwer->TrigRead();
+    }
 }
 
 
@@ -274,23 +277,34 @@ void releaseall() {
     }
 }
 
-extern void dump_dns();
-extern void dump_job();
+extern void dump_dns(Dumper dp, void* param);
+extern void dump_job(Dumper dp, void* param);
 
-void dump_stat(int){
-    LOG("======================================\n");
+void dump_stat(Dumper dp, void* param){
+    dp(param, "======================================\n");
     char buff[DOMAINLIMIT];
     getproxy(buff, sizeof(buff));
-    LOG("Proxy server: %s\n", buff);
-    LOG("--------------------------------------\n");
+    dp(param, "Proxy server: %s\n", buff);
+    dp(param, "--------------------------------------\n");
     for(auto i: servers){
-        i->dump_stat();
-        LOG("--------------------------------------\n");
+        i->dump_stat(dp, param);
+        dp(param, "--------------------------------------\n");
     }
-    dump_dns();
-    LOG("--------------------------------------\n");
-    dump_job();
-    LOG("======================================\n");
+    dump_dns(dp, param);
+    dp(param, "--------------------------------------\n");
+    dump_job(dp, param);
+    dp(param, "======================================\n");
+}
+
+static void LogDump(void*, const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    VLOG(LOG_INFO, fmt, ap);
+    va_end(ap);
+}
+
+void dump_stat(int){
+    dump_stat(LogDump, nullptr);
 }
 
 int setproxy(const char* proxy){
@@ -306,5 +320,14 @@ int setproxy(const char* proxy){
 }
 
 int getproxy(char *buff, size_t buflen){
-    return snprintf(buff, buflen, "%s://%s:%d", SPROT, SHOST, SPORT)+1;
+    if(SHOST[0] == 0) {
+        buff[0] = 0;
+        return 0;
+    }else{
+        if(SPROT[0]){
+            return snprintf(buff, buflen, "%s://%s:%d", SPROT, SHOST, SPORT)+1;
+        }else{
+            return snprintf(buff, buflen, "%s:%d", SHOST, SPORT)+1;
+        }
+    }
 }

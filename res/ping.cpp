@@ -71,6 +71,6 @@ int32_t Ping::bufleft(void* index) {
     return 1024*1024;
 }
 
-void Ping::dump_stat() {
-    LOG("ping %p, %s%s:%d\n", this, iserror?"[E] ":"", hostname, id);
+void Ping::dump_stat(Dumper dp, void* param) {
+    dp(param, "ping %p, %s%s:%d\n", this, iserror?"[E] ":"", hostname, id);
 }

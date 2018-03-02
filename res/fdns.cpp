@@ -118,10 +118,10 @@ void FDns::deleteLater(uint32_t errcode) {
 }
 
 
-void FDns::dump_stat() {
-    LOG("FDns %p, id: %d:\n", this, req_id);
+void FDns::dump_stat(Dumper dp, void* param) {
+    dp(param, "FDns %p, id: %d:\n", this, req_id);
     for(auto i: statusmap){
-        LOG("0x%x: %p, %p\n", i.first, i.second.req_ptr, i.second.req_index);
+        dp(param, "0x%x: %p, %p\n", i.first, i.second.req_ptr, i.second.req_index);
     }
 }
 

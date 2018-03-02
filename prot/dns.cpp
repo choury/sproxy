@@ -29,7 +29,7 @@ public:
     virtual ~Dns_srv();
     void buffHE(const char* buffer, size_t len);
     int query(const char *host, int type, uint32_t id);
-    virtual void dump_stat()override;
+    virtual void dump_stat(Dumper dp, void* param) override;
 };
 
 std::vector<Dns_srv *> srvs;
@@ -447,19 +447,18 @@ int Dns_srv::query(const char *host, int type, uint32_t id) {
     return id;
 }
 
-void Dns_srv::dump_stat(){
-    LOG("Dns_srv %p: %s\n", this, name);
+void Dns_srv::dump_stat(Dumper dp, void* param){
+    dp(param, "Dns_srv %p: %s\n", this, name);
 }
 
-
-void dump_dns(){
-    LOG("Dns querying:\n");
+void dump_dns(Dumper dp, void* param){
+    dp(param, "Dns querying:\n");
     for(auto i: querying_index.index1()){
-       LOG("    %d: %s\n", i.first, i.second->data->host);
+       dp(param, "    %d: %s\n", i.first, i.second->data->host);
     }
-    LOG("Dns cache:\n");
+    dp(param, "Dns cache:\n");
     for(auto i: rcd_cache){
-        LOG("    %s: %ld\n", i.first.c_str(), i.second.expire_time - time(0));
+        dp(param, "    %s: %ld\n", i.first.c_str(), i.second.expire_time - time(0));
         for(auto j: i.second.addrs){
             char ip[INET6_ADDRSTRLEN];
             switch(j.addr.sa_family){
@@ -473,7 +472,7 @@ void dump_dns(){
                 LOGE("Wrong ip address type: %d\n", j.addr.sa_family);
                 strcpy(ip, "UNKOWN");
             }
-            LOG("        %s\n", ip);
+            dp(param, "        %s\n", ip);
         }
     }
 }

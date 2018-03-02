@@ -105,14 +105,15 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
 }
 
 void Guest::EndProc() {
+    rwer->addEpoll(EPOLLIN);
     if(responser_ptr){
         if(Status_flags & GUEST_RES_COMPLETED){
             Status_flags = GUEST_IDELE_F;
         }else{
             Status_flags |= GUEST_REQ_COMPLETED;
+            rwer->delEpoll(EPOLLIN);
         }
         responser_ptr->finish(NOERROR, responser_index);
-        rwer->delEpoll(EPOLLIN);
         return;
     }else if((Status_flags & GUEST_ERROR_F) == 0){
         Status_flags = GUEST_IDELE_F;
@@ -234,6 +235,6 @@ const char* Guest::getsrc(const void *){
     return src;
 }
 
-void Guest::dump_stat(){
-    LOG("Guest %p, %s: %p, %p\n", this, getsrc(nullptr), responser_ptr, responser_index);
+void Guest::dump_stat(Dumper dp, void* param){
+    dp(param, "Guest %p, %s: %p, %p\n", this, getsrc(nullptr), responser_ptr, responser_index);
 }

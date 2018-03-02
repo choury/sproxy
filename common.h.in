@@ -2,7 +2,6 @@
 #define COMMON_H__
 
 #include <stdio.h>
-#include <stddef.h>
 #include <stdint.h>
 #include <syslog.h>
 #include <arpa/inet.h>
@@ -52,54 +51,41 @@ extern int autoindex;
 #define DHPACK_STR  "[HPACK]"
 #define DRUDP_STR   "[RUDP]"
 
-#ifdef __ANDROID__
-#include "com_choury_sproxy_Service.h"
-#define LOG_RAW(level, ...) android_log(level, __VA_ARGS__)
-#else
-#define LOG_RAW(level, ...) \
-do{\
-    if(daemon_mode){\
-        syslog(level, __VA_ARGS__);\
-    }else{ \
-        if(level <= LOG_ERR){\
-            fprintf(stderr, __VA_ARGS__);\
-        }else{\
-            fprintf(stdout, __VA_ARGS__);\
-        }\
-    }\
-}while(0)
+#ifdef  __cplusplus
+extern "C" {
 #endif
 
-#define  LOG(...)  LOG_RAW(LOG_INFO,  __VA_ARGS__)
+void slog(int level, const char* fmt, ...);
+
+#ifndef __ANDROID__
+void vslog(int level, const char* fmt, va_list arg);
+#define VLOG(...) vslog(__VA_ARGS__)
+#else
+#include "com_choury_sproxy_Service.h"
+#define VLOG(...) android_vlog(__VA_ARGS__);
+#endif
+
+#define  LOG(...)  slog(LOG_INFO,  __VA_ARGS__)
 #define  LOGE(...) \
 do{\
     char tmp[1024]; \
     snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
-    LOG_RAW(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
+    slog(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
 }while(0)
 
 #ifndef NDEBUG
-#ifdef __cplusplus
-extern "C" uint32_t getmtime();
-#else
 uint32_t getmtime();
-#endif
 #define  LOGD(mod, ...)  \
 do{\
     if(debug & mod) {\
         char tmp[1024]; \
         snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
-        LOG_RAW(LOG_DEBUG, "%05u:%s: %s", getmtime()%100000, mod##_STR, tmp); \
+        slog(LOG_DEBUG, "%05u:%s: %s", getmtime()%100000, mod##_STR, tmp); \
     }\
 }while(0)
 
 #else
 #define LOGD(...)          void(0)
-#endif
-
-
-#ifdef  __cplusplus
-extern "C" {
 #endif
 
 #ifndef __ANDROID__
@@ -182,7 +168,7 @@ do {\
 #define DISCONNECT_FLAG     (1<<31)
 
 typedef unsigned char uchar;
-
+typedef void (* Dumper)(void* param, const char* fmt, ...);
 
 int protectFd(int sockfd);
 

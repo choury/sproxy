@@ -23,7 +23,7 @@ protected:
     RWer* rwer = nullptr;
 public:
     explicit Server();
-    virtual void dump_stat() = 0;
+    virtual void dump_stat(Dumper dp, void* param) = 0;
     virtual ~Server();
 };
 
@@ -31,11 +31,9 @@ class Peer:public Server {
 protected:
     virtual void deleteLater(uint32_t errcode);
 public:
-    
     virtual int32_t bufleft(void* index) = 0;
     virtual ssize_t Send(const void *buff, size_t size, void* index) final;
     virtual ssize_t Send(void* buff, size_t size, void* index) = 0;
-    //return wheather remain the connection, false means break the connection
     virtual void finish(uint32_t flags, void* info) = 0;
 
     virtual void writedcb(void* index);
@@ -115,5 +113,6 @@ void flushproxy2(bool force);
 void releaseall();
 int setproxy(const char* proxy);
 int getproxy(char *buff, size_t buflen);
+void dump_stat(Dumper dp, void* param);
 
 #endif

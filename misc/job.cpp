@@ -148,20 +148,20 @@ int check_delayjob(job_func func, void* arg){
     return delayjobs.count(job_n{func, arg});
 }
 
-void dump_job(){
-    LOG("delay job queue:\n");
+void dump_job(Dumper dp, void* param){
+    dp(param, "delay job queue:\n");
     uint32_t now = getmtime();
     for(auto i : delayjobs){
         uint32_t left = i.second.delay + i.second.last_done - now;
-        LOG("\t%s(%p): %d/%d\n", i.second.func_name, i.first.arg, left, i.second.delay);
+        dp(param, "\t%s(%p): %d/%d\n", i.second.func_name, i.first.arg, left, i.second.delay);
     }
-    LOG("pre job queue:\n");
+    dp(param, "pre job queue:\n");
     for(auto i: prejobs){
-        LOG("\t%s(%p)\n", i.second, i.first.arg);
+        dp(param, "\t%s(%p)\n", i.second, i.first.arg);
     }
-    LOG("post job queue:\n");
+    dp(param, "post job queue:\n");
     for(auto i: postjobs){
-        LOG("\t%s(%p)\n", i.second, i.first.arg);
+        dp(param, "\t%s(%p)\n", i.second, i.first.arg);
     }
 }
 

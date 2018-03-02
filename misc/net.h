@@ -32,6 +32,9 @@
 #define H400        "HTTP/1.1 400 Bad Request" CRLF \
                     "Content-Length:0" CRLF CRLF
 
+#define H401        "HTTP/1.1 401 Unauthorized" CRLF \
+                    "Content-Length:0" CRLF CRLF
+
 #define H403        "HTTP/1.1 403 Forbidden" CRLF \
                     "Content-Length: 0" CRLF CRLF
 

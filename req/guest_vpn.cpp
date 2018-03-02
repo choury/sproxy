@@ -752,10 +752,10 @@ const char* Guest_vpn::generateUA(const VpnKey *key) {
     return UA;
 }
 
-void Guest_vpn::dump_stat() {
-    LOG("Guest_vpn %p (%zd):\n", this, 4*1024*1024 - rwer->wlength());
+void Guest_vpn::dump_stat(Dumper dp, void* param) {
+    dp(param, "Guest_vpn %p (%zd):\n", this, 4*1024*1024 - rwer->wlength());
     for(auto i: statusmap){
-        LOG("<%s> (%d -> %s) %p: %p, %p\n",
+        dp(param, "<%s> (%d -> %s) %p: %p, %p\n",
             protstr(i.first.protocol), i.first.getsport(), i.first.getdst(),
             i.second.key, i.second.res_ptr, i.second.res_index);
     }

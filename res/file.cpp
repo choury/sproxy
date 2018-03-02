@@ -1,5 +1,6 @@
 #include "file.h"
 #include "cgi.h"
+#include "status.h"
 #include "req/requester.h"
 #include "misc/simpleio.h"
 #include "misc/net.h"
@@ -295,12 +296,12 @@ void File::deleteLater(uint32_t errcode){
     return Peer::deleteLater(errcode);
 }
 
-void File::dump_stat(){
-    LOG("File %p, %s, id=%d:\n", this, filename, req_id);
+void File::dump_stat(Dumper dp, void* param){
+    dp(param, "File %p, %s, id=%d:\n", this, filename, req_id);
     for(auto i: statusmap){
-        LOG("0x%x: (%zd-%zd) %p, %p\n",
-            i.first, i.second.rg.begin, i.second.rg.end,
-            i.second.req_ptr, i.second.req_index);
+        dp(param, "0x%x: (%zd-%zd) %p, %p\n",
+                i.first, i.second.rg.begin, i.second.rg.end,
+                i.second.req_ptr, i.second.req_index);
     }
 }
 
@@ -318,6 +319,9 @@ Responser* File::getfile(HttpReqHeader* req) {
         res->index = req->index;
         req->src->response(res);
         return nullptr;
+    }
+    if(strcmp(req->path, "/status") == 0 ){
+        return new Status();
     }
     char filename[URLLIMIT];
     bool slash_end = endwith(req->filename.c_str(), "/"), index_not_found = false;

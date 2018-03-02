@@ -49,7 +49,7 @@ public:
     
     virtual void* request(HttpReqHeader* req)override;
     
-    virtual void dump_stat()override;
+    virtual void dump_stat(Dumper dp, void* param) override;
 
     void init(HttpReqHeader* req);
     void flush();

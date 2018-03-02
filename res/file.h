@@ -37,7 +37,7 @@ public:
     virtual ssize_t Send(void* buff, size_t size, void* index)override;
 
     virtual void finish(uint32_t flags, void* index)override;
-    virtual void dump_stat()override;
+    virtual void dump_stat(Dumper dp, void* param) override;
     static Responser* getfile(HttpReqHeader* req);
 };
 

@@ -252,11 +252,11 @@ Responser* Host::gethost(const char* hostname, uint16_t port, Protocol protocol,
 }
 
 
-void Host::dump_stat() {
-    LOG("Host %p, <%s> (%s:%d): %s\n", this, protstr(protocol), hostname, port, isconnected?"[C]":"");
+void Host::dump_stat(Dumper dp, void* param) {
+    dp(param, "Host %p, <%s> (%s:%d): %s\n", this, protstr(protocol), hostname, port, isconnected?"[C]":"");
     if(req){
-        LOG("    %s %s: %p, %p\n",
-            req->method, req->geturl().c_str(),
-            req->src, req->index);
+        dp(param, "    %s %s: %p, %p\n",
+                req->method, req->geturl().c_str(),
+                req->src, req->index);
     }
 }

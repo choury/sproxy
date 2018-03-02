@@ -3,6 +3,7 @@
 
 #include <unistd.h>
 #include <string.h>
+#include <stdarg.h>
 #include <fcntl.h>
 #include <iostream>
 #include <map>
@@ -192,10 +193,7 @@ std::string getExternalCacheDir() {
     return extenalCacheDir;
 }
 
-
-void android_log(int level, const char* fmt, ...){
-    va_list args;
-    va_start(args, fmt);
+void android_vlog(int level, const char* fmt, va_list args){
     switch(level){
     case LOG_INFO:
         level = ANDROID_LOG_INFO;
@@ -212,7 +210,6 @@ void android_log(int level, const char* fmt, ...){
     }
     char printbuff[1024];
     vsnprintf(printbuff, sizeof(printbuff), fmt, args);
-    va_end(args);
     if(level != ANDROID_LOG_DEBUG) {
         __android_log_print(level, "sproxy_client", "%s", printbuff);
     }
@@ -220,4 +217,11 @@ void android_log(int level, const char* fmt, ...){
     std::ofstream logfile(cachedir+"/vpn.log", std::ios::app);
     logfile<<printbuff;
     logfile.close();
+}
+
+void android_log(int level, const char* fmt, ...){
+    va_list args;
+    va_start(args, fmt);
+    android_vlog(level, fmt, args);
+    va_end(args);
 }

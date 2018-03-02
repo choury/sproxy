@@ -48,7 +48,7 @@ public:
     virtual void transfer(void* index, Responser* res_ptr, void* res_index)override;
 
     virtual const char* getsrc(const void *)override;
-    virtual void dump_stat()override;
+    virtual void dump_stat(Dumper dp, void* param) override;
 
     static int connection_lost(Guest2 *g);
 };
