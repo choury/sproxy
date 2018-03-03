@@ -8,7 +8,7 @@
 class SslRWer: public StreamRWer {
 protected:
     SSL *ssl;
-    SSL_CTX* ctx;
+    SSL_CTX* ctx = nullptr;
     int get_error(int ret);
 
     virtual ssize_t Read(void* buff, size_t len) override;
