@@ -156,7 +156,7 @@ int32_t Guest::bufleft(void*){
 }
 
 
-ssize_t Guest::Send(void *buff, size_t size, void* index) {
+ssize_t Guest::Send(void *buff, size_t size, __attribute__ ((unused)) void* index) {
     assert((uint32_t)(long)index == 1);
     assert((http_flag & HTTP_SERVER_CLOSE_F) == 0);
     size_t len = Min(bufleft(nullptr), size);
@@ -173,7 +173,7 @@ ssize_t Guest::Send(void *buff, size_t size, void* index) {
     return len;
 }
 
-void Guest::transfer(void* index, Responser* res_ptr, void* res_index) {
+void Guest::transfer(__attribute__ ((unused)) void* index, Responser* res_ptr, void* res_index) {
     assert(index == responser_index);
     responser_ptr = res_ptr;
     responser_index = res_index;

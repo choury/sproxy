@@ -121,7 +121,7 @@ int32_t Host::bufleft(void*) {
     return 1024*1024 - rwer->wlength();
 }
 
-ssize_t Host::Send(void* buff, size_t size, void* index) {
+ssize_t Host::Send(void* buff, size_t size, __attribute__ ((unused)) void* index) {
     assert((long)index == 1);
     assert((http_flag & HTTP_CLIENT_CLOSE_F) == 0);
     rwer->buffer_insert(rwer->buffer_end(), buff, size);

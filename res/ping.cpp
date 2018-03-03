@@ -36,7 +36,7 @@ void* Ping::request(HttpReqHeader* req) {
 }
 
 
-ssize_t Ping::Send(void* buff, size_t size, void* index){
+ssize_t Ping::Send(void* buff, size_t size, __attribute__ ((unused)) void* index){
     assert(index == (void *)1);
     if(iserror){
         return size;
@@ -52,7 +52,7 @@ void Ping::deleteLater(uint32_t errcode) {
     return Peer::deleteLater(errcode);
 }
 
-void Ping::finish(uint32_t flags, void* index) {
+void Ping::finish(uint32_t flags, __attribute__ ((unused)) void* index) {
     assert(index == (void *)1);
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode != VPN_AGED_ERR){
@@ -66,7 +66,7 @@ void Ping::finish(uint32_t flags, void* index) {
 
 
 
-int32_t Ping::bufleft(void* index) {
+int32_t Ping::bufleft(__attribute__ ((unused)) void* index) {
     assert(index == (void *)1);
     return 1024*1024;
 }

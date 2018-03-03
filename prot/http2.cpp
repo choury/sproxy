@@ -230,11 +230,11 @@ void Http2Base::GoawayProc(const Http2_header*) {
     LOGD(DHTTP2, "Get a Goaway frame\n");
 }
 
-void Http2Base::RstProc(uint32_t id, uint32_t errcode) {
+void Http2Base::RstProc(__attribute__ ((unused)) uint32_t id, __attribute__ ((unused)) uint32_t errcode) {
     LOGD(DHTTP2, "Get a reset frame [%d]: %d\n", id, errcode);
 }
 
-void Http2Base::EndProc(uint32_t id) {
+void Http2Base::EndProc(__attribute__ ((unused)) uint32_t id) {
     LOGD(DHTTP2, "Stream end: %d\n", id);
 }
 

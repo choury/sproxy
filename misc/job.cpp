@@ -56,7 +56,7 @@ void add_postjob_real(job_func func, const char *func_name, void *arg){
     postjobs[job_n{func, arg}] = func_name;
 }
 
-void del_delayjob_real(job_func func, const char *func_name, void *arg){
+void del_delayjob_real(job_func func, __attribute__ ((unused)) const char *func_name, void *arg){
 #ifndef NDEBUG
     if(delayjobs.count(job_n{func, arg})){
         LOGD(DJOB, "del a delay job %s of %p\n", func_name, arg);
@@ -67,7 +67,7 @@ void del_delayjob_real(job_func func, const char *func_name, void *arg){
     delayjobs.erase(job_n{func, arg});
 }
 
-void del_prejob_real(job_func func, const char *func_name, void *arg){
+void del_prejob_real(job_func func, __attribute__ ((unused)) const char *func_name, void *arg){
 #ifndef NDEBUG
     if(prejobs.count(job_n{func, arg})){
         LOGD(DJOB, "del a prejob %s of %p\n", func_name, arg);
@@ -78,7 +78,7 @@ void del_prejob_real(job_func func, const char *func_name, void *arg){
     prejobs.erase(job_n{func, arg});
 }
 
-void del_postjob_real(job_func func, const char *func_name, void *arg){
+void del_postjob_real(job_func func, __attribute__ ((unused)) const char *func_name, void *arg){
 #ifndef NDEBUG
     if(postjobs.count(job_n{func, arg})){
         LOGD(DJOB, "del a postjob %s of %p\n", func_name, arg);

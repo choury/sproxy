@@ -609,7 +609,7 @@ static struct node root= {NULL, NULL, 0, 0, 0};
 #define ERR_COMPRESSION_ERROR 9
 #endif
 
-void init_hfmtree() {
+static void init_hfmtree() {
     int tail = 511;
     int i;
     for(i = 0; i <= 256; ++i) {
@@ -753,11 +753,19 @@ static size_t literal_decode(const unsigned char *s, std::string &result) {
 
 static size_t literal_encode(unsigned char *buf, const std::string &s){
     unsigned char *buf_begin = buf;
-    *buf = 0;
-    size_t len = s.size();
-    *buf = 0;
-    buf += integer_encode(buf, 7, len);
-    memcpy(buf, s.data(), len);
+    size_t len = hfm_encode(buf+1, s.data(), s.size());
+    if(len >= s.size()){
+        *buf = 0;
+        len = s.size();
+        buf += integer_encode(buf, 7, len);
+        memcpy(buf, s.data(), len);
+    }else{
+        *buf = 0x80;
+        buf += integer_encode(buf, 7, len);
+        if(buf - buf_begin > 1){
+            hfm_encode(buf, s.data(), s.size());
+        }
+    }
     return buf + len - buf_begin;
 }
 

@@ -103,11 +103,12 @@ void Guest2::ReqProc(HttpReqHeader* req) {
     if(responser){
         statusmap[id]=ResStatus{
             responser,
-            responser->request(req),
+            nullptr,
             (int32_t)remoteframewindowsize,
             localframewindowsize,
             0,
         };
+        statusmap[id].res_index = responser->request(req);
     }else{
         finish(0, req->index);
         delete req;
