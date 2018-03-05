@@ -14,6 +14,7 @@
 
 static JavaVM *jnijvm;
 static jobject jniobj;
+static jmethodID protecdMid;
 static VpnConfig vpn;
 static std::map<int, std::string> packages;
 static std::string extenalFilesDir;
@@ -55,6 +56,8 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     strcpy(version, jversion_str);
     jnienv->ReleaseStringUTFChars(jversion, jversion_str);
     jnienv->DeleteLocalRef(jversion);
+
+    protecdMid = jnienv->GetMethodID(cls, "protect", "(I)Z");
     jnienv->DeleteLocalRef(cls);
 
     vpn_start(&vpn);
@@ -83,11 +86,7 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload(JNIEnv *, 
 int protectFd(int sockfd) {
     JNIEnv *jnienv;
     jnijvm->GetEnv((void **)&jnienv, JNI_VERSION_1_6);
-    jclass cls = jnienv->GetObjectClass(jniobj);
-    jmethodID mid = jnienv->GetMethodID(cls, "protect", "(I)Z");
-    int ret =  jnienv->CallBooleanMethod(jniobj, mid, sockfd);
-    jnienv->DeleteLocalRef(cls);
-    return ret;
+    return  jnienv->CallBooleanMethod(jniobj, protecdMid, sockfd);
 }
 
 const char* getPackageName(int uid) {

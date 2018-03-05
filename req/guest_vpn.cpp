@@ -739,7 +739,7 @@ const char * Guest_vpn::getProg(const void* index) const{
 }
 
 const char * Guest_vpn::getsrc(const void*){
-    return "Sproxy";
+    return "VPN";
 }
 
 const char* Guest_vpn::generateUA(const VpnKey *key) {

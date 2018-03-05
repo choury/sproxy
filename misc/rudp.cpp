@@ -14,6 +14,8 @@
 #include <unistd.h>
 #include <assert.h>
 
+#define RUDP_BUF_LEN (BUF_LEN*64)
+
 int RudpRWer::rudp_send(RudpRWer* rudp) {
     rudp->send();
     return 0;
@@ -73,6 +75,8 @@ RudpRWer::RudpRWer(int fd, uint32_t id, Rudp_server* ord):RWer(nullptr, fd),id(i
     read_seqs.push_back(std::make_pair(0,0));
     tick_time = data_time = ack_time = getmtime();
     recv_pkgs = new TTL();
+    read_buff = (unsigned char*)malloc(RUDP_BUF_LEN);
+    write_buff = (unsigned char*)malloc(RUDP_BUF_LEN);
     connected();
 }
 
@@ -82,6 +86,8 @@ RudpRWer::RudpRWer(const char* hostname, uint16_t port):RWer(nullptr), port(port
     read_seqs.push_back(std::make_pair(0,0));
     tick_time = data_time = ack_time = getmtime();
     recv_pkgs = new TTL();
+    read_buff = (unsigned char*)malloc(RUDP_BUF_LEN);
+    write_buff = (unsigned char*)malloc(RUDP_BUF_LEN);
 }
 
 void RudpRWer::connected(){
@@ -115,6 +121,8 @@ RudpRWer::~RudpRWer(){
     del_postjob((job_func)rudp_send, this);
     query_cancel(hostname, (DNSCBfunc)RudpRWer::Dnscallback, this);
     delete recv_pkgs;
+    free(read_buff);
+    free(write_buff);
 }
 
 bool RudpRWer::supportReconnect() {
@@ -139,13 +147,13 @@ size_t RudpRWer::rlength(){
 const char *RudpRWer::data(){
     uint32_t size = read_seqs.begin()->second - read_seqs.begin()->first;
     uint32_t start_pos = read_seqs.begin()->first;
-    uint32_t from = start_pos % sizeof(read_buff);
+    uint32_t from = start_pos % RUDP_BUF_LEN;
 
-    if(size <= sizeof(read_buff) - from){
+    if(size <= RUDP_BUF_LEN - from){
         return  (char*)read_buff + from;
     }else{
         char* buff = (char*)malloc(size);
-        size_t l = sizeof(read_buff) - from;
+        size_t l = RUDP_BUF_LEN - from;
         memcpy(buff, read_buff + from, l);
         memcpy((char *)buff + l, read_buff, size - l);
         return  buff;
@@ -155,7 +163,7 @@ const char *RudpRWer::data(){
 void RudpRWer::consume(const char* data, size_t l){
     read_seqs.begin()->first += l;
     assert(read_seqs.begin()->first <= read_seqs.begin()->second);
-    if(data < (char*)read_buff || data >= (char*)read_buff + sizeof(read_buff)){
+    if(data < (char*)read_buff || data >= (char*)read_buff + RUDP_BUF_LEN){
         free((char*)data);
     }
 }
@@ -169,12 +177,12 @@ ssize_t RudpRWer::Write(const void* buff, size_t size) {
         errno = ECONNRESET;
         return -1;
     }
-    if(after(write_seq + size, recv_ack + sizeof(write_buff))){
+    if(after(write_seq + size, recv_ack + RUDP_BUF_LEN)){
         errno = EAGAIN;
         return -1;
     }
-    uint32_t from = write_seq % sizeof(write_buff);
-    size_t l = Min(sizeof(write_buff) - from, size);
+    uint32_t from = write_seq % RUDP_BUF_LEN;
+    size_t l = Min(RUDP_BUF_LEN - from, size);
     memcpy(write_buff+from, buff, l);
     memcpy(write_buff, (const char*)buff + l, size -l);
     write_seq += size;
@@ -220,7 +228,7 @@ void RudpRWer::handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats)
 
         uint32_t full_pos = read_seqs.begin()->second;
         if(after(seq + len, full_pos) &&
-            before(seq + len , read_seqs.begin()->first + sizeof(read_buff)))
+            before(seq + len , read_seqs.begin()->first + RUDP_BUF_LEN))
         {
             uint32_t start_pos = after(seq, full_pos)?seq:full_pos;
             auto i = read_seqs.begin();
@@ -241,8 +249,8 @@ void RudpRWer::handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats)
                 }
             }
             size_t size = seq - start_pos + len;
-            size_t from = start_pos  % sizeof(read_buff);
-            size_t l = Min(sizeof(read_buff) - from, size);
+            size_t from = start_pos  % RUDP_BUF_LEN;
+            size_t l = Min(RUDP_BUF_LEN - from, size);
             memcpy(read_buff+ from , (const char*)(head+1) + (start_pos-seq), l);
             memcpy(read_buff , (const char*)(head+1) + (start_pos + l -seq), size - l);
  #ifndef NDEBUG
@@ -375,7 +383,7 @@ int RudpRWer::send() {
     uint32_t now = getmtime();
     uint32_t recvp_num = recv_pkgs->getsum(now);
     assert(bucket_limit>0);
-    uint32_t buckets = (now - tick_time) * (bucket_limit+30)/90;
+    uint32_t buckets = (now - tick_time) * (bucket_limit+30)/70;
     if(ackhold_times >= 3){
 #ifndef NDEBUG
         LOGD(DRUDP, "[%d] ackhold %u times reset resend_pos(%x) to %x\n",
@@ -518,8 +526,8 @@ uint32_t RudpRWer::send_pkg(uint32_t seq, uint32_t window, size_t len) {
     head->window = htons(window);
     head->type = RUDP_TYPE_DATA;
     head->checksum = 0;
-    uint32_t from = seq % sizeof(write_buff);
-    size_t l = Min(sizeof(write_buff) - from, len);
+    uint32_t from = seq % RUDP_BUF_LEN;
+    size_t l = Min(RUDP_BUF_LEN - from, len);
     memcpy(head+1, write_buff + from, l);
     memcpy((char *)(head+1) + l, write_buff, len - l);
     head->checksum = checksum8((uchar*)head, len + sizeof(Rudp_head));
