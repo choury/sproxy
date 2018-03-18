@@ -101,7 +101,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
         char fprotocol[DOMAINLIMIT];
         char fhost[DOMAINLIMIT];
         Protocol fprot = Protocol::TCP;
-        uint16_t fport;
+        uint16_t fport = SPORT;
         switch(s){
         case Strategy::proxy:
             req->should_proxy = true;

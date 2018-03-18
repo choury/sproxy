@@ -405,7 +405,7 @@ int RudpRWer::send() {
            now - ack_time > Max(2,rtt_time*1.2) + 10 &&
            now - resend_time > Max(2, rtt_time*1.2) + 10)
         {
-            if(now - data_time >= 60000 && now - ack_time >= 60000){
+            if(now - data_time >= 60000 && now - ack_time >= 60000 && id != 0){
                 LOGE("[RUDP] %05u:[%d] data diff %u, ack diff %u, timeout\n",
                     getmtime()%100000, id, now-data_time, now-ack_time);
                 flags |= RUDP_SEND_TIMEOUT;
@@ -475,11 +475,11 @@ int RudpRWer::send() {
         tick_time = now - buckets*100/bucket_limit;
     }
     if(recv_ack != write_seq){
+        uint32_t tick = Max(5, 100/bucket_limit);
         if(buckets){
-            add_delayjob((job_func)rudp_send, this, Max(2, rtt_time*1.2));
-        }else{
-            add_delayjob((job_func)rudp_send, this, Max(5, 100/bucket_limit));
+            tick = Max(2, rtt_time*1.2);
         }
+        add_delayjob((job_func)rudp_send, this, Min(tick, 5000));
     }
     return 0;
 }

@@ -324,7 +324,8 @@ Responser* File::getfile(HttpReqHeader* req) {
         return new Status();
     }
     char filename[URLLIMIT];
-    bool slash_end = endwith(req->filename.c_str(), "/"), index_not_found = false;
+    bool slash_end = req->filename.back() == '/';
+    bool index_not_found = false;
     snprintf(filename, sizeof(filename), "./%s", req->filename.c_str());
     HttpResHeader* res = nullptr;
     while(true){
@@ -352,11 +353,11 @@ Responser* File::getfile(HttpReqHeader* req) {
                 res->add("Location", location);
                 break;
             }
-            if(slash_end && !index_not_found && index_file){
+            if(!index_not_found && index_file){
                 snprintf(filename, sizeof(filename), "./%s%s", req->filename.c_str(), index_file);
                 continue;
             }
-            if(slash_end && !autoindex){
+            if(!autoindex){
                 res = new HttpResHeader(H403, sizeof(H403));
                 break;
             }
