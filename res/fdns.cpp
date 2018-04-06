@@ -48,7 +48,7 @@ ssize_t FDns::Send(void* buff, size_t size, void* index) {
             uint32_t ip = ntohl(que.ptr_addr.addr_in.sin_addr.s_addr);
             auto record = fdns_records.Get(ip);
             if(record){
-                rr = new Dns_Rr(record->t2.c_str(), true);
+                rr = new Dns_Rr(record->t2.c_str());
             }
         }
         if(que.type == 1) {
@@ -57,10 +57,10 @@ ssize_t FDns::Send(void* buff, size_t size, void* index) {
                 query(que.host.c_str(), nullptr, nullptr);
             }
             in_addr addr = getInet(que.host);
-            rr = new Dns_Rr(&addr);
+            rr = new Dns_Rr(que.host.c_str(), &addr);
         }
         if(que.type == 28){
-            rr = new Dns_Rr();
+            rr = new Dns_Rr(que.host.c_str());
         }
         if(rr == nullptr){
             query(que.host.c_str(), que.type, DNSRAWCB(ResponseCb), reinterpret_cast<void*>(id));

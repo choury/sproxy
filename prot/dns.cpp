@@ -140,15 +140,6 @@ void flushdns(){
         delete srvs.front();
     }
     rcd_cache.clear();
-    for(auto i: querying_index.index1()){
-        del_delayjob((job_func)query_timeout, (void *)(long)i.first);
-        delete i.second->data;
-    }
-    querying_index.clear();
-    for(auto i: querying_raw_id){
-        delete i.second;
-    }
-    querying_raw_id.clear();
 }
 
 static void query(Dns_Status* dnsst){
@@ -291,7 +282,20 @@ void query(const char *host , uint16_t type, DNSRAWCB func, void *param) {
 }
 
 int query_timeout(uint16_t id){
-    assert(querying_index.Get(id) || querying_raw_id.count(id));
+    if(querying_index.Get(id)){
+        auto status = querying_index.Get(id)->data;
+        querying_index.Delete(id);
+        if(status->rcd.addrs.empty() && status->times <= 5) {
+            LOG("[DNS] %s: time out, retry...\n", status->host);
+            query(status);
+        }else{
+            for(auto i: status->reqs){
+                i.func(i.param, status->host, status->rcd.addrs);
+            }
+            delete status;
+        }
+        return 0;
+    }
     if(querying_raw_id.count(id)){
         auto req = querying_raw_id[id];
         querying_raw_id.erase(id);
@@ -304,20 +308,9 @@ int query_timeout(uint16_t id){
             req->func(req->param, nullptr, 0);
             delete req;
         }
-    }else{
-        assert(querying_index.Get(id));
-        auto status = querying_index.Get(id)->data;
-        querying_index.Delete(id);
-        if(status->rcd.addrs.empty() && status->times <= 5) {
-            LOG("[DNS] %s: time out, retry...\n", status->host);
-            query(status);
-        }else{
-            for(auto i: status->reqs){
-                i.func(i.param, status->host, status->rcd.addrs);
-            }
-            delete status;
-        }
+        return 0;
     }
+    assert("not found id in query_timeout");
     return 0;
 }
 
@@ -403,18 +396,22 @@ void Dns_srv::buffHE(const char *buffer, size_t len) {
 
     uint32_t flags=0;
     if (id & 1) {
-        if (querying_index.Get(id) == nullptr) {
-            LOG("[DNS] Get a unkown id:%d\n", id);
-            return;
-        }
         flags |= GARECORD;
     } else {
         id--;
-        if (querying_index.Get(id) == nullptr) {
-            LOG("[DNS] Get a unkown id:%d\n", id);
-            return;
-        }
         flags |= GAAAARECORD;
+    }
+    if (querying_index.Get(id) == nullptr) {
+        if(!dnsrcd.addrs.empty()){
+            Dns_Rcd rcd;
+            for(auto i: dnsrcd.addrs){
+                rcd.addrs.push_back(i);
+            }
+            rcd.expire_time = time(nullptr) + 10;
+            rcd_cache[dnsrcd.domain] = rcd;
+        }
+        LOG("[DNS] Get a unkown id:%d [%s]\n", id, dnsrcd.domain);
+        return;
     }
     Dns_Status *dnsst = querying_index.Get(id)->data;
     dnsst->flags |= flags;
@@ -621,9 +618,6 @@ int Dns_Que::build(unsigned char* buf)const {
     return len+sizeof(DNS_QUE);
 }
 
-Dns_Rr::Dns_Rr() {
-}
-
 Dns_Rr::Dns_Rr(const char* buff, size_t len) {
     const DNS_HDR *dnshdr = (const DNS_HDR *)buff;
     id = ntohs(dnshdr->id);
@@ -633,7 +627,6 @@ Dns_Rr::Dns_Rr(const char* buff, size_t len) {
     uint16_t flag = ntohs(dnshdr->flag);
     assert(numq && (flag & QR));
     for (int i = 0; i < numq; ++i) {
-        char domain[DOMAINLIMIT];
         p = (unsigned char *)getdomain(dnshdr, p, len, domain);
         LOGD(DDNS, "[%d]:\n", dnshdr->id);
         p+= sizeof(DNS_QUE);
@@ -647,7 +640,6 @@ Dns_Rr::Dns_Rr(const char* buff, size_t len) {
     }
     uint16_t numa = ntohs(dnshdr->numa);
     for(int i = 0; i < numa; ++i) {
-        char domain[DOMAINLIMIT];
         p = (unsigned char *)getdomain(dnshdr, p, len, domain);
         DNS_RR *dnsrr = (DNS_RR *)p;
         assert(ntohs(dnsrr->classes) == 1);
@@ -686,7 +678,8 @@ Dns_Rr::Dns_Rr(const char* buff, size_t len) {
     }
 }
 
-Dns_Rr::Dns_Rr(const in_addr* addr){
+Dns_Rr::Dns_Rr(const char *domain, const in_addr* addr){
+    strcpy(this->domain, domain);
     if(addr) {
         sockaddr_un ip;
         ip.addr_in.sin_family = AF_INET;
@@ -695,7 +688,8 @@ Dns_Rr::Dns_Rr(const in_addr* addr){
     }
 }
 
-Dns_Rr::Dns_Rr(const char *rDns, bool):rDns(rDns) {
+Dns_Rr::Dns_Rr(const char *domain) {
+    strcpy(this->domain, domain);
 }
 
 
@@ -737,7 +731,7 @@ int Dns_Rr::build(const Dns_Que* query, unsigned char* buf)const {
         rr->classes = htons(1);
         rr->type = htons(12);
         rr->TTL = htonl(ttl);
-        int rdlength = putdomain((unsigned char *)(rr+1), rDns.c_str());
+        int rdlength = putdomain((unsigned char *)(rr+1), domain);
         rr->rdlength = htons(rdlength);
         len += sizeof(DNS_RR) + rdlength;
         dnshdr->numa ++;

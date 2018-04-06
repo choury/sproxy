@@ -95,7 +95,11 @@ void RudpRWer::connected(){
     handleEvent = (void (Ep::*)(uint32_t))&RudpRWer::defaultHE;
 }
 
-void RudpRWer::Dnscallback(RudpRWer* rwer, const char*, std::list<sockaddr_un> addrs) {
+void RudpRWer::Dnscallback(RudpRWer* rwer, const char* hostname, std::list<sockaddr_un> addrs) {
+    if(addrs.empty()){
+        LOGE("[RUDP] dns query failed: %s\n", hostname);
+        return rwer->errorCB(DNS_FAILED, 0);
+    }
     for(auto& i: addrs){
         i.addr_in6.sin6_port = htons(rwer->port);
         int fd = Connect(&i, SOCK_DGRAM);
@@ -151,7 +155,7 @@ const char *RudpRWer::data(){
         char* buff = (char*)malloc(size);
         size_t l = RUDP_BUF_LEN - from;
         memcpy(buff, read_buff + from, l);
-        memcpy((char *)buff + l, read_buff, size - l);
+        memcpy(buff + l, read_buff, size - l);
         return  buff;
     }
 }

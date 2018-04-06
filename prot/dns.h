@@ -61,14 +61,13 @@ public:
 
 class Dns_Rr{
 public:
+    char domain[DOMAINLIMIT];
     std::vector<sockaddr_un> addrs;
-    std::string rDns;
     uint16_t  id = 0;
     uint32_t  ttl = 0;
-    explicit Dns_Rr();
-    explicit Dns_Rr(const char *buff, size_t len);
-    explicit Dns_Rr(const in_addr* addr);
-    explicit Dns_Rr(const char *rDns, bool isRdns);
+    explicit Dns_Rr(const char* domain);
+    explicit Dns_Rr(const char* domain, const in_addr* addr);
+    explicit Dns_Rr(const char* buff, size_t len);
     int build(const Dns_Que* query, unsigned char *buf)const;
     static int buildError(const Dns_Que* query, unsigned char errcode, unsigned char *buf);
 };
