@@ -156,7 +156,7 @@ int FdRWer::con_failed(FdRWer* rwer) {
 
 void FdRWer::waitconnectHE(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
-        Checksocket(fd);
+        Checksocket(fd, __PRETTY_FUNCTION__);
         close(fd);
         fd = -1;
         return retryconnect(CONNECT_FAILED);
@@ -229,7 +229,7 @@ ssize_t StreamRWer::Read(void* buff, size_t len) {
 
 void StreamRWer::defaultHE(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
-        errorCB(SOCKET_ERR, Checksocket(fd));
+        errorCB(SOCKET_ERR, Checksocket(fd, __PRETTY_FUNCTION__));
         return;
     }
     if (events & EPOLLIN){
@@ -299,7 +299,7 @@ ssize_t PacketRWer::Read(void* buff, size_t len) {
 
 void PacketRWer::defaultHE(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
-        errorCB(SOCKET_ERR, Checksocket(fd));
+        errorCB(SOCKET_ERR, Checksocket(fd, __PRETTY_FUNCTION__));
         return;
     }
     if (events & EPOLLIN){

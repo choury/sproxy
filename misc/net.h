@@ -74,7 +74,7 @@ extern const char *DEFAULT_CIPHER_LIST;
 
 union sockaddr_un;
 
-int Checksocket(int fd);
+int Checksocket(int fd, const char* msg);
 int Listen(int type, short int port);
 int Connect(const union sockaddr_un*, int type);
 int Bind(int type, short port, const union sockaddr_un* addr);

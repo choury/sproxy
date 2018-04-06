@@ -20,15 +20,15 @@ const char *DEFAULT_CIPHER_LIST =
             "DHE-DSS-AES128-SHA256:DHE-RSA-AES256-SHA256:DHE-DSS-AES256-SHA:DHE-RSA-AES256-SHA:"
             "!aNULL:!eNULL:!EXPORT:!DES:!RC4:!3DES:!MD5:!PSK";
 
-int Checksocket(int fd){
+int Checksocket(int fd, const char *msg){
     int       error = 0;
     socklen_t errlen = sizeof(error);
 
     if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) != 0) {
         error = errno;
-        LOGE("getsockopt error: %s\n", strerror(error));
+        LOGE("%s:getsockopt error: %s\n", msg, strerror(error));
     }else if(error){
-        LOGE("sock error: %s\n", strerror(error));
+        LOGE("%s:sock error: %s\n", msg, strerror(error));
     }
     return error;
 }

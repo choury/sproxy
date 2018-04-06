@@ -92,7 +92,6 @@ int dns_expired(void* ) {
 }
 
 int query_timeout(uint16_t id);
-int query_back(Dns_Status *dnsst);
 
 #ifdef __ANDROID__
 extern std::vector<std::string> getDns();
@@ -154,11 +153,8 @@ void flushdns(){
 
 static void query(Dns_Status* dnsst){
     assert(id_cur &1);
-    while(srvs.size() == 0) {
+    if(srvs.size() == 0) {
         dnsinit();
-        if (srvs.size() == 0) {
-            sleep(5);
-        }
     }
     id_cur += 2;
     if(disable_ipv6){
@@ -206,6 +202,10 @@ static void query(Dns_Status* dnsst){
         dnsst = newst;
     }
 
+    if (srvs.size() == 0) {
+        goto ret;
+    }
+
     for (size_t i = dnsst->times%srvs.size(); i < srvs.size(); ++i) {
         uint16_t flags = 0;
         if (!(dnsst->flags & QARECORD) && srvs[i]->query(dnsst->host, 1, id_cur)) {
@@ -220,10 +220,10 @@ static void query(Dns_Status* dnsst){
         }
         if(flags == 0){
             delete srvs[i];
-            dnsst -> times ++;
             return query(dnsst);
         }
     }
+ret:
     dnsst->times++;
     querying_index.Add(id_cur, dnsst->host, dnsst);
     add_delayjob((job_func)query_timeout, (void *)(size_t)id_cur, DNSTIMEOUT);

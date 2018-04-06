@@ -41,7 +41,7 @@ template<class T>
 class Http_server: public Ep{
     virtual void defaultHE(uint32_t events){
         if (events & EPOLLERR || events & EPOLLHUP) {
-            LOGE("Http server: %d\n", Checksocket(fd));
+            LOGE("Http server: %d\n", Checksocket(fd, __PRETTY_FUNCTION__));
             return;
         }
         if (events & EPOLLIN) {
@@ -80,7 +80,7 @@ class Https_server: public Ep {
     SSL_CTX *ctx;
     virtual void defaultHE(uint32_t events) {
         if (events & EPOLLERR || events & EPOLLHUP) {
-            LOGE("Https server: %d\n", Checksocket(fd));
+            LOGE("Https server: %d\n", Checksocket(fd, __PRETTY_FUNCTION__));
             return;
         }
         if (events & EPOLLIN) {

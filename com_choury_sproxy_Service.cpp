@@ -32,7 +32,7 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
         (JNIEnv *jnienv, jobject obj, jint sockfd, jstring server, jstring secret) {
     jnienv->GetJavaVM(&jnijvm);
     jniobj = jnienv->NewGlobalRef(obj);
-    LOG("native SproxyVpnService.start %d.", sockfd);
+    LOG("native SproxyVpnService.start %d.\n", sockfd);
     int flags  = fcntl(sockfd,F_GETFL,0);
     fcntl(sockfd,F_SETFL,flags&~O_NONBLOCK);
 
@@ -65,17 +65,17 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
 }
 
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(JNIEnv *, jobject){
-    LOG("native SproxyVpnService.stop.");
+    LOG("native SproxyVpnService.stop.\n");
     return vpn_stop();
 }
 
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reset(JNIEnv *, jobject){
-    LOG("native SproxyVpnService.reset.");
+    LOG("native SproxyVpnService.reset.\n");
     return vpn_reset();
 }
 
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload(JNIEnv *, jobject){
-    LOG("native SproxyVpnService.reload.");
+    LOG("native SproxyVpnService.reload.\n");
     return vpn_reload();
 }
 

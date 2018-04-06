@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <assert.h>
 #include <errno.h>
+#include <signal.h>
 #include <dirent.h>
 #include <libgen.h>
 #include <sys/time.h>
@@ -452,8 +453,7 @@ const char* getDeviceInfo(){
     return infoString;
 }
 
-void dump_trace(int signal) {
-    (void)signal;
+void dump_trace(int signum) {
 #if Backtrace_FOUND
     void *stack_trace[100] = {0};
     char **stack_strings = NULL;
@@ -480,7 +480,8 @@ void dump_trace(int signal) {
     free(stack_strings);
     stack_strings = NULL;
 #else
-    LOGE("stub dump_trace: %d\n", signal);
+    LOGE("stub dump_trace: %d\n", signum);
 #endif
-    exit(-1);
+    signal(signum, SIG_DFL);
+    kill(getpid(), signum);
 }

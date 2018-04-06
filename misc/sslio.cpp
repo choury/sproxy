@@ -133,7 +133,7 @@ SslRWer::~SslRWer(){
 
 void SslRWer::waitconnectHE(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
-        Checksocket(fd);
+        Checksocket(fd, __PRETTY_FUNCTION__);
         close(fd);
         fd = -1;
         return retryconnect(CONNECT_FAILED);
@@ -166,7 +166,7 @@ void SslRWer::waitconnectHE(uint32_t events) {
 
 void SslRWer::shakehandHE(uint32_t events){
     if (events & EPOLLERR || events & EPOLLHUP) {
-        errorCB(SOCKET_ERR, Checksocket(fd));
+        errorCB(SOCKET_ERR, Checksocket(fd, __PRETTY_FUNCTION__));
         return;
     }
     if ((events & EPOLLIN) || (events & EPOLLOUT)) {

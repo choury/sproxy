@@ -61,13 +61,13 @@ class RudpRWer: public RWer {
     uint32_t resend_time = 0;
     uint32_t tick_time;
 #define RUDP_SEND_TIMEOUT    1
-#define RUDP_RESET            2
+#define RUDP_RESET           2
     uint32_t flags = 0;
 
     void connected();
     void defaultHE(uint32_t events);
 
-    int send();
+    void send();
     void ack();
     uint32_t send_pkg(uint32_t seq, uint32_t window, size_t len);
     ssize_t Write(const void* buff, size_t len) override;

@@ -91,9 +91,6 @@ RudpRWer::RudpRWer(const char* hostname, uint16_t port):RWer(nullptr), port(port
 }
 
 void RudpRWer::connected(){
-    if(connectCB){
-        connectCB();
-    }
     setEpoll(EPOLLIN | EPOLLOUT);
     handleEvent = (void (Ep::*)(uint32_t))&RudpRWer::defaultHE;
 }
@@ -132,7 +129,6 @@ bool RudpRWer::supportReconnect() {
 void RudpRWer::Reconnect() {
     int fd = Connect(&addr, SOCK_DGRAM);
     if(fd > 0){
-        setEpoll(0);
         close(this->fd);
         this->fd = fd;
         setEpoll(EPOLLIN | EPOLLOUT);
@@ -169,14 +165,6 @@ void RudpRWer::consume(const char* data, size_t l){
 }
 
 ssize_t RudpRWer::Write(const void* buff, size_t size) {
-    if(flags & RUDP_SEND_TIMEOUT) {
-        errno = ETIMEDOUT;
-        return -1;
-    }
-    if(flags & RUDP_RESET){
-        errno = ECONNRESET;
-        return -1;
-    }
     if(after(write_seq + size, recv_ack + RUDP_BUF_LEN)){
         errno = EAGAIN;
         return -1;
@@ -204,11 +192,14 @@ void RudpRWer::handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats)
 
     if(this->id == 0){
         this->id = id;
-        LOGD(DRUDP, "get id: %d\n", id);
+        LOG("[RUDP] get new id: %d\n", id);
+        if(connectCB){
+            connectCB();
+        }
     }
 
     bucket_limit = (bucket_limit*8 + ntohs(head->window)*2)/10;
-    bucket_limit = Max(bucket_limit,1);
+    bucket_limit = Max(bucket_limit, 10);
 
     if(head->type == RUDP_TYPE_DATA){
         data_time = now;
@@ -297,7 +288,7 @@ void RudpRWer::handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats)
     }else if(head->type == RUDP_TYPE_RESET){
         if(this->id == id){
             LOGE("[RUDP] connection %d reseted\n", id);
-            flags |= RUDP_RESET;
+            errorCB(SOCKET_ERR, ECONNRESET);
         }
     }
 }
@@ -335,7 +326,14 @@ void RudpRWer::finish_recv(Rudp_stats* stats){
 
 void RudpRWer::defaultHE(uint32_t events) {
     if (events & EPOLLERR || events & EPOLLHUP) {
-        errorCB(SOCKET_ERR, Checksocket(fd));
+        Checksocket(fd, __PRETTY_FUNCTION__);
+    }
+    if(flags & RUDP_SEND_TIMEOUT) {
+        errorCB(SOCKET_ERR, ETIMEDOUT);
+        return;
+    }
+    if(flags & RUDP_RESET){
+        errorCB(SOCKET_ERR, ECONNRESET);
         return;
     }
     if(events & EPOLLIN){
@@ -368,22 +366,23 @@ void RudpRWer::defaultHE(uint32_t events) {
             errorCB(WRITE_ERR, errno);
             return;
         }
-        if(writed && writeCB){
-            writeCB(writed);
+        if(writed){
+            if(writeCB)
+                writeCB(writed);
+            add_postjob((job_func)rudp_send, this);
+            del_delayjob((job_func)rudp_send, this);
         }
         if(wb.length() == 0){
             delEpoll(EPOLLOUT);
         }
-        add_postjob((job_func)rudp_send, this);
-        del_delayjob((job_func)rudp_send, this);
     }
 }
 
-int RudpRWer::send() {
+void RudpRWer::send() {
     uint32_t now = getmtime();
     uint32_t recvp_num = recv_pkgs->getsum(now);
     assert(bucket_limit>0);
-    uint32_t buckets = (now - tick_time) * (bucket_limit+30)/70;
+    uint32_t buckets = (now - tick_time) * (bucket_limit+30)/90;
     if(ackhold_times >= 3){
 #ifndef NDEBUG
         LOGD(DRUDP, "[%d] ackhold %u times reset resend_pos(%x) to %x\n",
@@ -409,7 +408,8 @@ int RudpRWer::send() {
                 LOGE("[RUDP] %05u:[%d] data diff %u, ack diff %u, timeout\n",
                     getmtime()%100000, id, now-data_time, now-ack_time);
                 flags |= RUDP_SEND_TIMEOUT;
-                return -1;
+                errorCB(SOCKET_ERR, ETIMEDOUT);
+                return;
             }
 #ifndef NDEBUG
             LOGD(DRUDP, "[%d] acktime %05u diff %u/%u, begin resend\n",
@@ -481,7 +481,7 @@ int RudpRWer::send() {
         }
         add_delayjob((job_func)rudp_send, this, Min(tick, 5000));
     }
-    return 0;
+    return;
 }
 
 void RudpRWer::ack() {
@@ -543,6 +543,7 @@ int RudpRWer::PushPkg(const Rudp_head* pkg, size_t len, const sockaddr_un* addr)
         errorCB(CONNECT_FAILED, errno);
         return 0;
     }
+    setEpoll(EPOLLIN | EPOLLOUT);
     memcpy(&this->addr, addr, sizeof(sockaddr_un));
     Rudp_stats stats;
     handle_pkg(pkg, len, &stats);
@@ -564,7 +565,7 @@ bool operator< (const sockaddr_un a, const sockaddr_un b){
 
 void Rudp_server::defaultHE(uint32_t events){
     if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("Rudp server: %d\n", Checksocket(fd));
+        LOGE("Rudp server: %d\n", Checksocket(fd, __PRETTY_FUNCTION__));
         return;
     }
     if(events & EPOLLIN){
@@ -576,14 +577,14 @@ void Rudp_server::defaultHE(uint32_t events){
             uint32_t id = ntohl(head->id);
             if(id){
                 if(connections.Get(id) == nullptr){
-                    LOGD(DRUDP, "not found id: %d\n", id);
+                    LOGE("[RUDP] not found id: %d\n", id);
                     head->type = RUDP_TYPE_RESET;
                     head->checksum = 0;
                     head->checksum = checksum8((uchar*)head, sizeof(Rudp_head));
                     sendto(fd, head, sizeof(Rudp_head), 0, (struct sockaddr*)&addr, addr_len);
                     continue;
                 }
-                LOGD(DRUDP, "connection %d addr changed\n", id);
+                LOG("[RUDP] connection %d addr changed\n", id);
                 connections.Get(id)->data->PushPkg(head, ret, &addr);
             }else{
                 auto container = connections.Get(addr);
@@ -596,7 +597,7 @@ void Rudp_server::defaultHE(uint32_t events){
                     RudpRWer* rwer = new RudpRWer(fd, Maxid, this);
                     rwer->PushPkg(head, ret, &addr);
                     connections.Add(Maxid, addr, rwer);
-                    LOGD(DRUDP, "new connection %d accept\n", Maxid);
+                    LOG("[RUDP] new connection %d accept\n", Maxid);
                     new Guest2(&addr, rwer);
                 }
             }

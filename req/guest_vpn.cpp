@@ -213,7 +213,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
          key.getsport(), key.getdst(),
          seq, ack, flag, datalen);
 
-    if(flag & TH_SYN){//1握手包，创建握手回包
+    if(flag & TH_SYN){
         if(statusmap.count(key)){
             LOGD(DVPN, "drop dup syn packet\n");
             return;
@@ -258,8 +258,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         }
         return;
     }
-    if(flag & TH_RST){//4 rst包，不用回包，直接断开
-        //get the key
+    if(flag & TH_RST){//rst包，不用回包，直接断开
         LOGD(DVPN, "get rst, checking key\n");
         //check the map
         if (statusmap.count(key)) {
@@ -279,7 +278,6 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
             ->setflag(TH_ACK | TH_RST);
 
         LOGD(DVPN, "write rst to break no exists connection.\n");
-
         sendPkg(&pac_return, (const void*)nullptr, 0);
         return;
     }
@@ -301,7 +299,28 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         return;
     }
 
-    if(flag & TH_FIN){ //5 fin包，回ack包
+    //下面处理数据
+    if(datalen > 0){//有数据，创建ack包
+        int buflen = status.res_ptr->bufleft(status.res_index);
+        if(buflen <= 0){
+            LOGE("(%s): responser buff is full, drop packet %u\n", getProg(&key), seq);
+        }else{
+            const char* data = packet + pac->gethdrlen();
+            status.res_ptr->Send(data, datalen, status.res_index);
+            tcpStatus->want_seq += datalen;
+
+            //创建回包
+            pac_return.tcp
+                ->setseq(tcpStatus->send_seq)
+                ->setack(tcpStatus->want_seq)
+                ->setwindow(buflen)
+                ->setflag(TH_ACK);
+
+            sendPkg(&pac_return, (const void*)nullptr, 0);
+        }
+    }
+
+    if(flag & TH_FIN){ //fin包，回ack包
         LOGD(DVPN, "get fin, send ack back\n");
         tcpStatus->want_seq++;
         //创建回包
@@ -323,26 +342,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
             tcpStatus->flags |= FIN_RECV;
         }
     }
-    //下面处理数据包和ack包
-    if(datalen > 0){//2数据包，创建ack包
-        int buflen = status.res_ptr->bufleft(status.res_index);
-        if(buflen <= 0){
-            LOGE("(%s): responser buff is full, drop packet %u\n", getProg(&key), seq);
-        }else{
-            const char* data = packet + pac->gethdrlen();
-            status.res_ptr->Send(data, datalen, status.res_index);
-            tcpStatus->want_seq += datalen;
 
-            //创建回包
-            pac_return.tcp
-                ->setseq(tcpStatus->send_seq)
-                ->setack(tcpStatus->want_seq)
-                ->setwindow(buflen)
-                ->setflag(TH_ACK);
-
-            sendPkg(&pac_return, (const void*)nullptr, 0);
-        }
-    }
     tcpStatus->window = pac->tcp->getwindow();
     if(flag & TH_ACK){
         if(ack > tcpStatus->send_acked){

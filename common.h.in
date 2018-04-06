@@ -73,7 +73,6 @@ do{\
     slog(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
 }while(0)
 
-#ifndef NDEBUG
 uint32_t getmtime();
 #define  LOGD(mod, ...)  \
 do{\
@@ -84,9 +83,6 @@ do{\
     }\
 }while(0)
 
-#else
-#define LOGD(...)          void(0)
-#endif
 
 #ifndef __ANDROID__
 #define HTONL(x) (x = htonl(x))
