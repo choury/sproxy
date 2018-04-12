@@ -167,8 +167,9 @@ void Host::Error(int ret, int code) {
         http_flag |= HTTP_SERVER_CLOSE_F;
         if(Http_Proc == &Host::AlwaysProc){
             EndProc();
+        }else {
+            deleteLater(PEER_LOST_ERR);
         }
-        deleteLater(PEER_LOST_ERR);
         return;
     }
     if(ret == SOCKET_ERR && code == 0){

@@ -15,9 +15,10 @@ protected:
 #define GUEST_CONNECT_F      (1<<2)
 #define GUEST_SEND_F         (1<<3)
 #define GUEST_CHUNK_F        (1<<4)
-#define GUEST_REQ_COMPLETED  (1<<5)
-#define GUEST_RES_COMPLETED  (1<<6)
-#define GUEST_ERROR_F        (1<<7)
+#define GUEST_NOLENGTH_F     (1<<5)
+#define GUEST_REQ_COMPLETED  (1<<6)
+#define GUEST_RES_COMPLETED  (1<<7)
+#define GUEST_ERROR_F        (1<<8)
     uint32_t Status_flags = GUEST_IDELE_F;
 
     void ReadHE(size_t len);

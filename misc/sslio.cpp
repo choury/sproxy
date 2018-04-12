@@ -94,6 +94,11 @@ SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::fu
     SSL_set_tlsext_host_name(ssl, hostname);
 }
 
+static int ssl_err_cb(const char* str, size_t len, void* ){
+    LOGE("SSL error: %*s\n", (int)len, str);
+    return len;
+}
+
 int SslRWer::get_error(int ret){
     if(ret < 0){
         int error = SSL_get_error(ssl, ret);
@@ -109,12 +114,13 @@ int SslRWer::get_error(int ret){
             case SSL_ERROR_SYSCALL:
                 break;
             case SSL_ERROR_SSL:
-                LOGE("SSL error: %s\n", ERR_error_string(error, nullptr));
+                ERR_print_errors_cb(ssl_err_cb, nullptr);
                 /* FALLTHRU */
             default:
                 errno = EIO;
                 break;
         }
+        ERR_clear_error();
     }
     return ret;
 }
@@ -124,7 +130,9 @@ int SslRWer::sconnect(){
 }
 
 SslRWer::~SslRWer(){
-    SSL_shutdown(ssl);
+    if(!SSL_in_init(ssl)){
+        SSL_shutdown(ssl);
+    }
     SSL_free(ssl);
     if(ctx){
         SSL_CTX_free(ctx);

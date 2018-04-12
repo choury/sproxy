@@ -577,6 +577,10 @@ void Rudp_server::defaultHE(uint32_t events){
         socklen_t addr_len = sizeof(addr);
         int ret;
         while((ret = recvfrom(fd, buff, RUDP_MTU, 0, (struct sockaddr*)&addr, &addr_len)) > 0){
+            if(checksum8(buff, ret)){
+                LOGD(DRUDP, "drop error checksum packet!\n");
+                return;
+            }
             Rudp_head *head = (Rudp_head *)buff;
             uint32_t id = ntohl(head->id);
             if(id){

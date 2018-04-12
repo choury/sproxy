@@ -142,8 +142,13 @@ void Guest::response(HttpResHeader* res) {
             strcpy(res->status, "200 Connection established");
             res->del("Transfer-Encoding");
         }
+    }else if(Status_flags & GUEST_SEND_F){
+        //should't response
+        assert(0);
     }else if(res->get("Transfer-Encoding")){
         Status_flags |= GUEST_CHUNK_F;
+    }else if(res->get("Content-Length") == nullptr) {
+        Status_flags |= GUEST_NOLENGTH_F;
     }
     size_t len;
     char *buff=res->getstring(len);
@@ -202,7 +207,10 @@ void Guest::finish(uint32_t flags, void* index) {
     }
     rwer->addEpoll(EPOLLIN);
     Peer::Send((const void*)nullptr,0, index);
-    if((Status_flags & GUEST_CONNECT_F) || (Status_flags & GUEST_SEND_F)){
+    if((Status_flags & GUEST_CONNECT_F) ||
+       (Status_flags & GUEST_SEND_F) ||
+       (Status_flags & GUEST_NOLENGTH_F))
+    {
         assert((flags & DISCONNECT_FLAG) == 0);
         http_flag |= HTTP_SERVER_CLOSE_F;
         if(rwer->wlength() == 0){
