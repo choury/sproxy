@@ -8,7 +8,6 @@
 #include <net/route.h>
 #include <string.h>
 #include <signal.h>
-#include <dlfcn.h>
 
 
 int daemon_mode = 0;
@@ -51,7 +50,7 @@ int tun_create(char *dev, int flags) {
     /* set ip of this end point of tunnel */
     ifr.ifr_addr.sa_family = AF_INET;
     struct sockaddr_in* addr = (struct sockaddr_in*)&ifr.ifr_addr;
-    inet_pton(AF_INET, "10.0.0.1", &addr->sin_addr);
+    inet_pton(AF_INET, "10.1.0.1", &addr->sin_addr);
     if((err = ioctl(tmp_fd, SIOCSIFADDR, &ifr)) < 0) {
         perror("ioctl (SIOCSIFADDR) failed");
         close(fd);
@@ -99,7 +98,7 @@ int tun_create(char *dev, int flags) {
 
     addr = (struct sockaddr_in *)&route.rt_gateway;
     addr->sin_family = AF_INET;
-    addr->sin_addr.s_addr = inet_addr("10.0.0.1");
+    addr->sin_addr.s_addr = inet_addr("10.1.0.1");
 
     addr = (struct sockaddr_in*)&route.rt_dst;
     addr->sin_family = AF_INET;
@@ -143,24 +142,9 @@ int main(int argc, char** argv) {
     fprintf(stderr, "TUN name is %s\n", tun_name);
     struct VpnConfig vpn;
     vpn.disable_ipv6 = 1;
-    vpn.ignore_cert_error = 0;
+    vpn.ignore_cert_error = 1;
+    vpn.secret[0] = 0;
     strcpy(vpn.server, argv[2]);
-    printf("set server to: %s\n", vpn.server);
-    void *handle = dlopen("./libsproxy_vpn.so", RTLD_NOW);
-    if(handle == NULL) {
-        LOGE("dlopen libsproxy_vpn.so failed: %s\n", dlerror());
-        return 1;
-    }
-    Vpn_reload* vpn_reload=(Vpn_reload *)dlsym(handle,"vpn_reload");
-    if(vpn_reload == NULL) {
-        LOGE("dlsym vpn_reload failed: %s\n", dlerror());
-        return 1;
-    }
-    Vpn_start* vpn_start=(Vpn_start *)dlsym(handle,"vpn_start");
-    if(vpn_start == NULL) {
-        LOGE("dlsym vpn_start failed: %s\n", dlerror());
-        return 1;
-    }
     signal(SIGUSR2, vpn_reload);
     if(argc >= 4){
         strcpy(vpn.secret, argv[3]);
@@ -168,6 +152,5 @@ int main(int argc, char** argv) {
     }
     vpn.fd = tun;
     vpn_start(&vpn);
-    dlclose(handle);
     return 0;
 }

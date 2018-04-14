@@ -1,6 +1,9 @@
 #include "dns.h"
 #include "misc/job.h"
-//#include "common.h"
+#include "misc/util.h"
+#include "misc/simpleio.h"
+#include "misc/index.h"
+#include "common.h"
 
 #include <unordered_map>
 #include <set>
@@ -19,14 +22,14 @@
 
 static uint16_t id_cur = 1;
 
-class Dns_srv:public Con{
+class Dns_srv:public Server{
     char name[INET6_ADDRSTRLEN];
 public:
     explicit Dns_srv(const char* name);
-    ~Dns_srv();
-    virtual void DnshandleEvent(uint32_t events);
+    virtual ~Dns_srv();
+    void buffHE(const char* buffer, size_t len);
     int query(const char *host, int type, uint32_t id);
-    virtual void dump_stat()override;
+    virtual void dump_stat(Dumper dp, void* param) override;
 };
 
 std::vector<Dns_srv *> srvs;
@@ -39,8 +42,7 @@ struct Dns_Req{
 
 struct Dns_Rcd{
     std::list<sockaddr_un> addrs;
-    uint32_t  ttl;
-    time_t gettime;
+    time_t expire_time;
 };
 
 typedef struct Dns_Status {
@@ -64,26 +66,32 @@ typedef struct Dns_RawReq {
     void *param;
 } Dns_RawReq;
 
-std::unordered_map<uint16_t, std::string> querying_index_id;
-std::unordered_map<std::string, Dns_Status *> querying_index_host;
+Index2<uint16_t, std::string, Dns_Status *> querying_index;
 std::unordered_map<uint16_t, Dns_RawReq *> querying_raw_id;
 std::unordered_map<std::string, Dns_Rcd> rcd_cache;
+std::multimap<int, std::string> expire_time;
 
 int dns_expired(void* ) {
     time_t now = time(nullptr);
-    for(auto i = rcd_cache.begin(); i!= rcd_cache.end();){
-        if(now > i->second.gettime + i->second.ttl){
-            LOGD(DDNS, "%s: expired\n", i->first.c_str());
-            i = rcd_cache.erase(i);
+    std::set<std::string> should_expired;
+    for(auto i =  expire_time.begin(); i!= expire_time.end(); ){
+        if(now > i->first){
+            should_expired.insert(i->second);
+            i = expire_time.erase(i);
         }else{
-            i++;
+            break;
+        }
+    }
+    for(auto i : should_expired){
+        if(rcd_cache.count(i) && now > rcd_cache[i].expire_time){
+            LOGD(DDNS, "%s: expired\n", i.c_str());
+            rcd_cache.erase(i);
         }
     }
     return 1;
 }
 
 int query_timeout(uint16_t id);
-int query_back(Dns_Status *dnsst);
 
 #ifdef __ANDROID__
 extern std::vector<std::string> getDns();
@@ -132,36 +140,12 @@ void flushdns(){
         delete srvs.front();
     }
     rcd_cache.clear();
-    for(auto i: querying_index_id){
-        del_delayjob((job_func)query_timeout, (void *)(long)i.first);
-    }
-    querying_index_id.clear();
-    for(auto i: querying_index_host){
-        delete i.second;
-    }
-    querying_index_host.clear();
-    for(auto i: querying_raw_id){
-        delete i.second;
-    }
-    querying_raw_id.clear();
 }
-
-int query_back(Dns_Status *dnsst){
-    for(auto i: dnsst->reqs){
-        i.func(i.param, dnsst->host, dnsst->rcd.addrs);   //func 肯定不为空
-    }
-    delete dnsst;
-    return 0;
-}
-
 
 static void query(Dns_Status* dnsst){
     assert(id_cur &1);
-    while(srvs.size() == 0) {
+    if(srvs.size() == 0) {
         dnsinit();
-        if (srvs.size() == 0) {
-            sleep(5);
-        }
     }
     id_cur += 2;
     if(disable_ipv6){
@@ -174,29 +158,43 @@ static void query(Dns_Status* dnsst){
     if (inet_pton(AF_INET, dnsst->host, &addr.addr_in.sin_addr) == 1) {
         addr.addr_in.sin_family = AF_INET;
         dnsst->rcd.addrs.push_back(addr);
-        add_postjob((job_func)query_back, dnsst);
-        return ;
+        for(auto i: dnsst->reqs){
+            i.func(i.param, dnsst->host, dnsst->rcd.addrs);
+        }
+        delete dnsst;
+        return;
     }
 
     if (inet_pton(AF_INET6, dnsst->host, &addr.addr_in6.sin6_addr) == 1) {
         addr.addr_in6.sin6_family = AF_INET6;
         dnsst->rcd.addrs.push_back(addr);
-        add_postjob((job_func)query_back, dnsst);
-        return ;
+        for(auto i: dnsst->reqs){
+            i.func(i.param, dnsst->host, dnsst->rcd.addrs);
+        }
+        delete dnsst;
+        return;
     }
 
     if (rcd_cache.count(dnsst->host)) {
-        dnsst->rcd = rcd_cache[dnsst->host];
-        add_postjob((job_func)query_back, dnsst);
-        if(dnsst->rcd.gettime + dnsst->rcd.ttl - time(nullptr) > 15){
-            return ;
+        auto& rcd = rcd_cache[dnsst->host];
+        for(auto i: dnsst->reqs){
+            i.func(i.param, dnsst->host, rcd.addrs);
+        }
+        if(rcd.expire_time - time(nullptr) > 15){
+            delete dnsst;
+            return;
         }
         //刷新ttl
         Dns_Status * newst = new Dns_Status;
         newst->times = 0;
         newst->flags = dnsst->flags;
         strcpy(newst->host, dnsst->host);
+        delete dnsst;
         dnsst = newst;
+    }
+
+    if (srvs.size() == 0) {
+        goto ret;
     }
 
     for (size_t i = dnsst->times%srvs.size(); i < srvs.size(); ++i) {
@@ -213,23 +211,20 @@ static void query(Dns_Status* dnsst){
         }
         if(flags == 0){
             delete srvs[i];
-            dnsst -> times ++;
             return query(dnsst);
         }
     }
+ret:
     dnsst->times++;
-    querying_index_id[id_cur] = dnsst->host;
-    querying_index_host[dnsst->host] = dnsst;
+    querying_index.Add(id_cur, dnsst->host, dnsst);
     add_delayjob((job_func)query_timeout, (void *)(size_t)id_cur, DNSTIMEOUT);
 }
 
 
-void query(const char *host , DNSCBfunc func, void *param) {
-    if(querying_index_host.count(host)){
+void query(const char* host , DNSCBfunc func, void* param) {
+    if(querying_index.Get(host)){
         if(func){
-            querying_index_host[host]->reqs.push_back(Dns_Req{
-                func, param
-            });
+            querying_index.Get(host)->data->reqs.push_back(Dns_Req{func, param});
         }
         return;
     }
@@ -237,13 +232,23 @@ void query(const char *host , DNSCBfunc func, void *param) {
     Dns_Status *dnsst = new Dns_Status;
     dnsst->times = 0;
     if(func){
-        dnsst->reqs.push_back(Dns_Req{
-                func, param
-            });
+        dnsst->reqs.push_back(Dns_Req{func, param});
     }
 
     snprintf(dnsst->host, sizeof(dnsst->host), "%s", host);
     query(dnsst);
+}
+
+void query_cancel(const char* host, DNSCBfunc func, void* param){
+    if(querying_index.Get(host)){
+        Dns_Status* status = querying_index.Get(host)->data;
+        for(auto i = status->reqs.begin(); i!= status->reqs.end(); i++){
+            if(i->func == func && i->param == param){
+                status->reqs.erase(i);
+                return;
+            }
+        }
+    }
 }
 
 static void query(Dns_RawReq* dnsreq){
@@ -254,6 +259,7 @@ static void query(Dns_RawReq* dnsreq){
             sleep(5);
         }
     }
+    id_cur += 2;
     dnsreq->id = id_cur;
     for (size_t i = dnsreq->times%srvs.size(); i < srvs.size(); ++i) {
         if(srvs[i]->query(dnsreq->host, dnsreq->type, id_cur))
@@ -263,7 +269,6 @@ static void query(Dns_RawReq* dnsreq){
     dnsreq->times++;
     querying_raw_id[id_cur] = dnsreq;
     add_delayjob((job_func)query_timeout, (void *)(size_t)id_cur, DNSTIMEOUT);
-    id_cur += 2;
 }
 
 void query(const char *host , uint16_t type, DNSRAWCB func, void *param) {
@@ -277,7 +282,20 @@ void query(const char *host , uint16_t type, DNSRAWCB func, void *param) {
 }
 
 int query_timeout(uint16_t id){
-    assert(querying_index_id.count(id) || querying_raw_id.count(id));
+    if(querying_index.Get(id)){
+        auto status = querying_index.Get(id)->data;
+        querying_index.Delete(id);
+        if(status->rcd.addrs.empty() && status->times <= 5) {
+            LOG("[DNS] %s: time out, retry...\n", status->host);
+            query(status);
+        }else{
+            for(auto i: status->reqs){
+                i.func(i.param, status->host, status->rcd.addrs);
+            }
+            delete status;
+        }
+        return 0;
+    }
     if(querying_raw_id.count(id)){
         auto req = querying_raw_id[id];
         querying_raw_id.erase(id);
@@ -290,29 +308,16 @@ int query_timeout(uint16_t id){
             req->func(req->param, nullptr, 0);
             delete req;
         }
-    }else{
-        auto host = querying_index_id[id];
-        querying_index_id.erase(id);
-        assert(querying_index_host.count(host));
-        auto status = querying_index_host[host];
-        querying_index_host.erase(host);
-        if(status->rcd.addrs.empty() && status->times <= 5) {
-            LOG("[DNS] %s: time out, retry...\n", status->host);
-            query(status);
-        }else{
-            for(auto i: status->reqs){
-                i.func(i.param, status->host, status->rcd.addrs);
-            }
-            delete status;
-        }
+        return 0;
     }
+    assert("not found id in query_timeout");
     return 0;
 }
 
 void RcdDown(const char *hostname, const sockaddr_un &addr) {
     LOG("[DNS] down for %s: %s\n", hostname, getaddrstring(&addr));
     if (rcd_cache.count(hostname)) {
-        auto &addrs  = rcd_cache[hostname].addrs;
+        auto& addrs  = rcd_cache[hostname].addrs;
         for (auto i = addrs.begin(); i != addrs.end(); ++i) {
             switch (addr.addr.sa_family) {
             case AF_INET:
@@ -321,18 +326,20 @@ void RcdDown(const char *hostname, const sockaddr_un &addr) {
                     addrs.push_back(addr);
                     return;
                 }
+                break;
             case AF_INET6:
                 if (memcmp(&addr.addr_in6.sin6_addr, &i->addr_in6.sin6_addr, sizeof(in6_addr)) == 0) {
                     addrs.erase(i);
                     addrs.push_back(addr);
                     return;
                 }
+                break;
             }
         }
     }
 }
 
-Dns_srv::Dns_srv(const char* name):Con(0){
+Dns_srv::Dns_srv(const char* name){
     sockaddr_un addr;
     if (inet_pton(AF_INET, name, &addr.addr_in.sin_addr) == 1) {
         addr.addr_in.sin_family = AF_INET;
@@ -349,11 +356,18 @@ Dns_srv::Dns_srv(const char* name):Con(0){
         LOGE("[DNS] connecting  %s error:%s\n", name, strerror(errno));
         throw 0;
     }
-    this->fd = fd;
+    rwer = new PacketRWer(fd, [this](int ret, int code){
+        LOGE("DNS error: %d/%d\n", ret, code);
+        delete this;
+    });
+    rwer->SetReadCB([this](size_t len){
+        const char* data = rwer->data();
+        buffHE(data, len);
+        rwer->consume(data, len);
+    });
+
     strcpy(this->name, name);
     LOGD(DDNS, "new dns server: %s\n", name);
-    updateEpoll(EPOLLIN);
-    handleEvent = (void (Con::*)(uint32_t))&Dns_srv::DnshandleEvent;
     srvs.push_back(this);
 }
 
@@ -367,105 +381,81 @@ Dns_srv::~Dns_srv(){
 }
 
 
-void Dns_srv::DnshandleEvent(uint32_t events) {
-    if (events & EPOLLIN) {
-        char buf[BUF_SIZE];
-        int len = read(fd, buf, BUF_SIZE);
+void Dns_srv::buffHE(const char *buffer, size_t len) {
+    Dns_Rr dnsrcd(buffer, len);
+    uint16_t id = dnsrcd.id;
 
-        if ( len <= 0 ) {
-            LOGE("[DNS] read error: %s\n", strerror(errno));
-            return;
-        }
-        DNS_HDR *dnshdr = (DNS_HDR *)buf;
-        uint16_t id = ntohs(dnshdr->id);
-
-        if(querying_raw_id.count(id)){
-            del_delayjob((job_func)query_timeout, (void *)(size_t)id);
-            Dns_RawReq *dnsreq =  querying_raw_id[id];
-            querying_raw_id.erase(id);
-            dnsreq->func(dnsreq->param, buf, len);
-            delete dnsreq;
-            return;
-        }
-        Dns_Rr dnsrcd(buf);
-    
-        uint32_t flags=0;
-        if (id & 1) {
-            if (querying_index_id.count(id) == 0) {
-                LOG("[DNS] Get a unkown id:%d\n", id);
-                return;
-            }
-            flags |= GARECORD;
-        } else {
-            id--;
-            if (querying_index_id.count(id) == 0) {
-                LOG("[DNS] Get a unkown id:%d\n", id);
-                return;
-            }
-            flags |= GAAAARECORD;
-        }
-        auto host = querying_index_id[id];
-        Dns_Status *dnsst = querying_index_host[host];
-        dnsst->flags |= flags;
-
-        if(dnsrcd.addrs.size()){
-            for(auto i: dnsrcd.addrs){
-                dnsst->rcd.addrs.push_back(i);
-            }
-            dnsst->rcd.gettime = time(0);
-            dnsst->rcd.ttl = dnsrcd.ttl;
-        }
-
-        if ((dnsst->flags & GARECORD) &&(dnsst->flags & GAAAARECORD)) {
-            del_delayjob((job_func)query_timeout, (void *)(size_t)id);
-            querying_index_id.erase(id);
-            querying_index_host.erase(host);
-            if (!dnsst->rcd.addrs.empty()) {
-                dnsst->rcd.gettime = time(nullptr);
-                rcd_cache[host] =  dnsst->rcd;
-            }
-            for(auto i: dnsst->reqs ){
-                i.func(i.param, dnsst->host, dnsst->rcd.addrs);
-            }
-            delete dnsst;
-        }
+    if(querying_raw_id.count(id)){
+        del_delayjob((job_func)query_timeout, (void *)(size_t)id);
+        Dns_RawReq *dnsreq =  querying_raw_id[id];
+        querying_raw_id.erase(id);
+        dnsreq->func(dnsreq->param, buffer, len);
+        delete dnsreq;
+        return;
     }
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        int       error = 0;
-        socklen_t errlen = sizeof(error);
 
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            LOG("[DNS] unkown error: %s\n", strerror(error));
-            delete this;
+    uint32_t flags=0;
+    if (id & 1) {
+        flags |= GARECORD;
+    } else {
+        id--;
+        flags |= GAAAARECORD;
+    }
+    if (querying_index.Get(id) == nullptr) {
+        if(!dnsrcd.addrs.empty()){
+            Dns_Rcd rcd;
+            for(auto i: dnsrcd.addrs){
+                rcd.addrs.push_back(i);
+            }
+            rcd.expire_time = time(nullptr) + 10;
+            rcd_cache[dnsrcd.domain] = rcd;
         }
+        LOG("[DNS] Get a unkown id:%d [%s]\n", id, dnsrcd.domain);
+        return;
+    }
+    Dns_Status *dnsst = querying_index.Get(id)->data;
+    dnsst->flags |= flags;
+
+    if(dnsrcd.addrs.size()){
+        for(auto i: dnsrcd.addrs){
+            dnsst->rcd.addrs.push_back(i);
+        }
+        dnsst->rcd.expire_time = time(nullptr) + dnsrcd.ttl;
+    }
+
+    if ((dnsst->flags & GARECORD) &&(dnsst->flags & GAAAARECORD)) {
+        del_delayjob((job_func)query_timeout, (void *)(size_t)id);
+        querying_index.Delete(id);
+        if (!dnsst->rcd.addrs.empty()) {
+            rcd_cache[dnsst->host] = dnsst->rcd;
+            expire_time.insert(std::make_pair(dnsst->rcd.expire_time, dnsst->host));
+        }
+        for(auto i: dnsst->reqs ){
+            i.func(i.param, dnsst->host, dnsst->rcd.addrs);
+        }
+        delete dnsst;
     }
 }
 
-
 int Dns_srv::query(const char *host, int type, uint32_t id) {
-    unsigned char  buf[BUF_SIZE];
+    unsigned char*  buf = (unsigned char*)p_malloc(BUF_SIZE);
     int len = Dns_Que(host, type, id).build(buf);
-    if (write(fd, buf, len)!= len) {
-        LOGE("[DNS] write error: %s\n", strerror(errno));
-        return 0;
-    }
+    rwer->buffer_insert(rwer->buffer_end(), buf, len);
     return id;
 }
 
-void Dns_srv::dump_stat(){
-    LOG("Dns_srv %p: %s\n", this, name);
+void Dns_srv::dump_stat(Dumper dp, void* param){
+    dp(param, "Dns_srv %p: %s\n", this, name);
 }
 
-
-void dump_dns(){
-    LOG("Dns querying:\n");
-    for(auto i: querying_index_id){
-       assert(querying_index_host.count(i.second));;
-       LOG("    %d: %s\n", i.first, i.second.c_str());
+void dump_dns(Dumper dp, void* param){
+    dp(param, "Dns querying:\n");
+    for(auto i: querying_index.index1()){
+       dp(param, "    %d: %s\n", i.first, i.second->data->host);
     }
-    LOG("Dns cache:\n");
+    dp(param, "Dns cache:\n");
     for(auto i: rcd_cache){
-        LOG("    %s: %ld\n", i.first.c_str(), i.second.ttl+i.second.gettime-time(0));
+        dp(param, "    %s: %ld\n", i.first.c_str(), i.second.expire_time - time(0));
         for(auto j: i.second.addrs){
             char ip[INET6_ADDRSTRLEN];
             switch(j.addr.sa_family){
@@ -479,7 +469,7 @@ void dump_dns(){
                 LOGE("Wrong ip address type: %d\n", j.addr.sa_family);
                 strcpy(ip, "UNKOWN");
             }
-            LOG("        %s\n", ip);
+            dp(param, "        %s\n", ip);
         }
     }
 }
@@ -509,12 +499,12 @@ typedef struct DNS_RR {
     uint16_t rdlength;           // rdata 长度
 } __attribute__((packed)) DNS_RR;
 
-static const unsigned char * getdomain(const DNS_HDR *hdr, const unsigned char *p, char* domain) {
+static const unsigned char * getdomain(const DNS_HDR *hdr, const unsigned char *p, size_t len, char* domain) {
     const unsigned char* buf = (const unsigned char *)hdr;
-    while (*p) {
+    while (p < (unsigned char*)hdr + len && *p) {
         if (*p > 63) {
             const unsigned char *q = buf+((*p & 0x3f) <<8) + *(p+1);
-            getdomain(hdr, q, domain);
+            getdomain(hdr, q, len, domain);
             return p+2;
         } else {
             memcpy(domain, p+1, *p);
@@ -565,12 +555,12 @@ static std::string reverse(std::string str){
 #define IPV4_PTR_PREFIX "arpa.in-addr."
 #define IPV6_PTR_PREFIX "arpa.ip6."
 
-Dns_Que::Dns_Que(const char* buff) {
+Dns_Que::Dns_Que(const char* buff, size_t len) {
     const DNS_HDR *dnshdr = (const DNS_HDR*)buff;
 
     id = ntohs(dnshdr->id);
     char domain[DOMAINLIMIT];
-    const unsigned char *p = getdomain(dnshdr, (const unsigned char *)(dnshdr+1), domain);
+    const unsigned char *p = getdomain(dnshdr, (const unsigned char *)(dnshdr+1), len, domain);
     host = (char *)domain;
     const DNS_QUE *que = (const DNS_QUE*)p;
     type = ntohs(que->type);
@@ -628,10 +618,7 @@ int Dns_Que::build(unsigned char* buf)const {
     return len+sizeof(DNS_QUE);
 }
 
-Dns_Rr::Dns_Rr() {
-}
-
-Dns_Rr::Dns_Rr(const char* buff) {
+Dns_Rr::Dns_Rr(const char* buff, size_t len) {
     const DNS_HDR *dnshdr = (const DNS_HDR *)buff;
     id = ntohs(dnshdr->id);
 
@@ -640,8 +627,7 @@ Dns_Rr::Dns_Rr(const char* buff) {
     uint16_t flag = ntohs(dnshdr->flag);
     assert(numq && (flag & QR));
     for (int i = 0; i < numq; ++i) {
-        char domain[DOMAINLIMIT];
-        p = (unsigned char *)getdomain(dnshdr, p, domain);
+        p = (unsigned char *)getdomain(dnshdr, p, len, domain);
         LOGD(DDNS, "[%d]:\n", dnshdr->id);
         p+= sizeof(DNS_QUE);
 
@@ -654,8 +640,7 @@ Dns_Rr::Dns_Rr(const char* buff) {
     }
     uint16_t numa = ntohs(dnshdr->numa);
     for(int i = 0; i < numa; ++i) {
-        char domain[DOMAINLIMIT];
-        p = (unsigned char *)getdomain(dnshdr, p, domain);
+        p = (unsigned char *)getdomain(dnshdr, p, len, domain);
         DNS_RR *dnsrr = (DNS_RR *)p;
         assert(ntohs(dnsrr->classes) == 1);
 
@@ -678,7 +663,7 @@ Dns_Rr::Dns_Rr(const char* buff) {
             break;
         case 2:
         case 5:
-            getdomain(dnshdr, p, domain);
+            getdomain(dnshdr, p, len, domain);
             break;
         case 28:
             ip.addr_in6.sin6_family = AF_INET6;
@@ -693,7 +678,8 @@ Dns_Rr::Dns_Rr(const char* buff) {
     }
 }
 
-Dns_Rr::Dns_Rr(const in_addr* addr){
+Dns_Rr::Dns_Rr(const char *domain, const in_addr* addr){
+    strcpy(this->domain, domain);
     if(addr) {
         sockaddr_un ip;
         ip.addr_in.sin_family = AF_INET;
@@ -702,7 +688,8 @@ Dns_Rr::Dns_Rr(const in_addr* addr){
     }
 }
 
-Dns_Rr::Dns_Rr(const char *rDns, bool):rDns(rDns) {
+Dns_Rr::Dns_Rr(const char *domain) {
+    strcpy(this->domain, domain);
 }
 
 
@@ -744,7 +731,7 @@ int Dns_Rr::build(const Dns_Que* query, unsigned char* buf)const {
         rr->classes = htons(1);
         rr->type = htons(12);
         rr->TTL = htonl(ttl);
-        int rdlength = putdomain((unsigned char *)(rr+1), rDns.c_str());
+        int rdlength = putdomain((unsigned char *)(rr+1), domain);
         rr->rdlength = htons(rdlength);
         len += sizeof(DNS_RR) + rdlength;
         dnshdr->numa ++;

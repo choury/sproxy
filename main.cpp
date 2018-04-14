@@ -1,45 +1,49 @@
-#include "req/guest_s.h"
 #include "req/guest_sni.h"
-#include "req/guest_s2.h"
-#include "misc/dtls.h"
+#include "misc/rudp.h"
 #include "misc/net.h"
 #include "misc/job.h"
 #include "misc/strategy.h"
+#include "misc/util.h"
 
 #include <set>
 
 #include <unistd.h>
+#include <assert.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <getopt.h>
 #include <arpa/inet.h>
+#include <openssl/ssl.h>
 #include <openssl/err.h>
-#include <openssl/bio.h>
 
 int efd = 0;
-
 int daemon_mode = 0;
 int use_http2 = 1;
-int udp_mode = 0;
-int sni_mode = 0;
 int ignore_cert_error = 0;
 int disable_ipv6 = 0;
-uint16_t CPORT = 0;
+static uint16_t CPORT = 0;
+char SPROT[DOMAINLIMIT] = {0};
 char SHOST[DOMAINLIMIT] = {0};
 uint16_t SPORT = 0;
-Protocol SPROT = Protocol::TCP;
 char auth_string[DOMAINLIMIT] = {0};
 char rewrite_auth[DOMAINLIMIT] = {0};
 const char *cafile =  nullptr;
-const char *cert = nullptr;
-const char *key = nullptr;
 const char *index_file = nullptr;
 int autoindex = 0;
 uint32_t debug = 0;
 
+static int sni_mode = 0;
+static int rudp_mode = 0;
+static const char *cert = nullptr;
+static const char *key = nullptr;
+
 template<class T>
-class Http_server: public Server{
+class Http_server: public Ep{
     virtual void defaultHE(uint32_t events){
+        if (events & EPOLLERR || events & EPOLLHUP) {
+            LOGE("Http server: %d\n", Checksocket(fd, __PRETTY_FUNCTION__));
+            return;
+        }
         if (events & EPOLLIN) {
             int clsk;
             struct sockaddr_in6 myaddr;
@@ -57,21 +61,28 @@ class Http_server: public Server{
             }
 
             fcntl(clsk, F_SETFL, flags | O_NONBLOCK);
-            new T(clsk, &myaddr);
+            new T(clsk, (const sockaddr_un*)&myaddr);
         } else {
             LOGE("unknown error\n");
         }
     }
 public:
-    explicit Http_server(int fd):Server(fd){}
+    explicit Http_server(int fd):Ep(fd){
+        setEpoll(EPOLLIN);
+        handleEvent = (void (Ep::*)(uint32_t))&Http_server::defaultHE;
+    }
     virtual void dump_stat(){
         LOG("Http_server %p\n", this);
     }
 };
 
-class Https_server: public Server {
+class Https_server: public Ep {
     SSL_CTX *ctx;
     virtual void defaultHE(uint32_t events) {
+        if (events & EPOLLERR || events & EPOLLHUP) {
+            LOGE("Https server: %d\n", Checksocket(fd, __PRETTY_FUNCTION__));
+            return;
+        }
         if (events & EPOLLIN) {
             int clsk;
             struct sockaddr_in6 myaddr;
@@ -89,11 +100,7 @@ class Https_server: public Server {
             }
             fcntl(clsk, F_SETFL, flags | O_NONBLOCK);
 
-            /* 基于ctx 产生一个新的SSL */
-            SSL *ssl = SSL_new(ctx);
-            /* 将连接用户的socket 加入到SSL */
-            SSL_set_fd(ssl, clsk);
-            new Guest_s(clsk, &myaddr, new Ssl(ssl));
+            new Guest(clsk, (const sockaddr_un*)&myaddr, ctx);
         } else {
             LOGE("unknown error\n");
             return;
@@ -103,62 +110,12 @@ public:
     virtual ~Https_server(){
         SSL_CTX_free(ctx);
     };
-    Https_server(int fd, SSL_CTX *ctx): Server(fd),ctx(ctx) {}
+    Https_server(int fd, SSL_CTX *ctx): Ep(fd),ctx(ctx) {
+        setEpoll(EPOLLIN);
+        handleEvent = (void (Ep::*)(uint32_t))&Https_server::defaultHE;
+    }
     virtual void dump_stat(){
         LOG("Https_server %p\n", this);
-    }
-};
-
-void ssl_callback_ServerName(SSL *ssl){
-    const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
-    if (servername) {
-        //TODO: someting ...
-    }
-}
-
-class Dtls_server: public Server {
-    SSL_CTX *ctx;
-    virtual void defaultHE(uint32_t events) {
-        if (events & EPOLLIN) {
-            BIO *bio = BIO_new_dgram(fd, BIO_NOCLOSE);
-            SSL *ssl = SSL_new(ctx);
-            SSL_set_bio(ssl, bio, bio);
-            struct sockaddr_in6 myaddr;
-            memset(&myaddr, 0, sizeof(myaddr));
-            SSL_set_accept_state(ssl);
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-            if(DTLSv1_listen(ssl, &myaddr)<=0)
-                goto error;
-            (void)BIO_ctrl_set_connected(bio, 0, &myaddr);
-#else
-            if(DTLSv1_listen(ssl, (BIO_ADDR *)&myaddr)<=0){
-                goto error;
-            }
-            (void)BIO_ctrl_set_connected(bio, &myaddr);
-#endif
-            if(connect(fd, (struct sockaddr*)&myaddr, sizeof(struct sockaddr_in6))){
-                LOGE("connect error: %s\n", strerror(errno));
-                goto error;
-            }
-            /* Set new fd and set BIO to connected */
-            new Guest_s(fd, &myaddr, new Dtls(ssl));
-            
-            fd = socket(AF_INET6, SOCK_DGRAM, 0);
-            assert(fd > 0);
-            Bind_any(fd, CPORT);
-            updateEpoll(EPOLLIN);
-            return;
-error:
-            SSL_free(ssl);
-        }
-    }
-public:
-    virtual ~Dtls_server(){
-        SSL_CTX_free(ctx);
-    };
-    Dtls_server(int fd, SSL_CTX *ctx): Server(fd),ctx(ctx) {}
-    virtual void dump_stat(){
-        LOG("Dtls_server %p\n", this);
     }
 };
 
@@ -172,6 +129,7 @@ static int select_alpn_cb(SSL *ssl,
                           const unsigned char *in, unsigned int inlen, void *arg)
 {
     (void)ssl;
+    (void)arg;
     std::set<std::string> proset;
     const unsigned char *p = in;
     while ((size_t)(p-in) < inlen) {
@@ -209,17 +167,22 @@ static int verify_cookie(SSL *ssl, const unsigned char *cookie, unsigned int coo
 #endif
     struct sockaddr_in6 myaddr;
     (void)BIO_dgram_get_peer(SSL_get_rbio(ssl), &myaddr);
-    return strcmp((char *)cookie, getaddrstring((sockaddr_un *)&myaddr))==0;
+    return strncmp((char *)cookie, getaddrstring((sockaddr_un *)&myaddr), cookie_len)==0;
 }
 
+void ssl_callback_ServerName(SSL *ssl){
+    const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+    if (servername) {
+        //TODO: new sni mode
+    }
+}
 
 static struct option long_options[] = {
-    {"autoindex",   no_argument,       0, 'i' },
+    {"autoindex",   no_argument,       0, 'i'},
     {"cafile",      required_argument, 0,  0 },
     {"cert",        required_argument, 0,  0 },
     {"daemon",      no_argument,       0, 'D'},
     {"disable-ipv6",no_argument,       0,  0 },
-    {"dtls",        no_argument,       0, 'u'},
     {"http1",       no_argument,       0, '1'},
     {"help",        no_argument,       0, 'h'},
     {"index",       required_argument, 0,  0 },
@@ -227,15 +190,16 @@ static struct option long_options[] = {
     {"key",         required_argument, 0,  0 },
     {"port",        required_argument, 0, 'p'},
     {"rewrite_auth",required_argument, 0, 'r'},
+    {"rudp",        no_argument,       0,  0 },
     {"secret",      required_argument, 0, 's'},
     {"sni",         no_argument,       0,  0 },
 #ifndef NDEBUG
     {"debug-epoll", no_argument,   0,  0 },
     {"debug-dns",   no_argument,   0,  0 },
-    {"debug-dtls",  no_argument,   0,  0 },
     {"debug-http2", no_argument,   0,  0 },
     {"debug-job",   no_argument,   0,  0 },
     {"debug-hpack", no_argument,   0,  0 },
+    {"debug-rudp",  no_argument,   0,  0 },
     {"debug-all",   no_argument,   0,  0 },
 #endif
     {0,         0,                 0,  0 }
@@ -243,27 +207,27 @@ static struct option long_options[] = {
 
 const char *option_detail[] = {
     "Enables or disables the directory listing output",
-    "CA certificate for server (ssl/dtls)",
-    "Certificate file for server (ssl/dtls)",
+    "CA certificate for server (ssl)",
+    "Certificate file for server (ssl)",
     "Run as daemon",
     "Disable ipv6 when querying dns",
-    "UDP mode (dtls)",
-    "Use http/1.1 only (SHOULD NOT USE IT WITH dtls)",
+    "Use http/1.1 only",
     "Print this usage",
     "Index file for path (when as a http(s) server)",
     "Ignore the cert error of server (SHOULD NOT DO IT)",
-    "Private key file name (ssl/dtls)",
-    "The port to listen, default is 80 but 443 for ssl/dtls/sni",
+    "Private key file name (ssl)",
+    "The port to listen, default is 80 but 443 for ssl/sni",
     "rewrite the auth info (user:password) to proxy server",
+    "RUDP modle (experiment)",
     "Set a user and passwd for proxy (user:password), default is none.",
     "Act as a sni proxy",
 #ifndef NDEBUG
     "debug-epoll",
     "\tdebug-dns",
-    "debug-dtls",
     "debug-http2",
     "\tdebug-job",
     "debug-hpack",
+    "debug-rudp",
     "\tdebug-all",
 #endif
 };
@@ -312,9 +276,12 @@ SSL_CTX* initssl(int udp, const char *ca, const char *cert, const char *key){
     SSL_CTX_set_mode(ctx, SSL_MODE_AUTO_RETRY);
     SSL_CTX_set_mode(ctx, SSL_MODE_RELEASE_BUFFERS);
 
+    /*
     EC_KEY *ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
     SSL_CTX_set_tmp_ecdh(ctx, ecdh);
     EC_KEY_free(ecdh);
+    */
+    SSL_CTX_set_ecdh_auto(ctx, 1);
     
     if (ca && SSL_CTX_load_verify_locations(ctx, ca, NULL) != 1)
         ERR_print_errors_fp(stderr);
@@ -342,10 +309,10 @@ SSL_CTX* initssl(int udp, const char *ca, const char *cert, const char *key){
     return ctx;
 }
 
-int main(int argc, char **argv) {
+static int parseConfig(int argc, char **argv){
     while (1) {
         int option_index = 0;
-        int c = getopt_long(argc, argv, "Du1hikr:s:p:",
+        int c = getopt_long(argc, argv, "D1hikr:s:p:",
             long_options, &option_index);
         if (c == -1)
             break;
@@ -369,15 +336,15 @@ int main(int argc, char **argv) {
             }else if(strcmp(long_options[option_index].name, "sni") == 0){
                 sni_mode = 1;
                 printf("long option sni\n");
+            }else if(strcmp(long_options[option_index].name, "rudp") == 0){
+                rudp_mode = 1;
+                printf("long option rudp\n");
             }else if(strcmp(long_options[option_index].name, "debug-epoll") == 0){
                 debug |= DEPOLL;
                 printf("long option debug-epoll\n");
             }else if(strcmp(long_options[option_index].name, "debug-dns") == 0){
                 debug |= DDNS;
                 printf("long option debug-dns\n");
-            }else if(strcmp(long_options[option_index].name, "debug-dtls") == 0){
-                debug |= DDTLS;
-                printf("long option debug-dtls\n");
             }else if(strcmp(long_options[option_index].name, "debug-http2") == 0){
                 debug |= DHTTP2;
                 printf("long option debug-http2\n");
@@ -387,6 +354,9 @@ int main(int argc, char **argv) {
             }else if(strcmp(long_options[option_index].name, "debug-hpack") == 0){
                 debug |= DHPACK;
                 printf("long option debug-hpack\n");
+            }else if(strcmp(long_options[option_index].name, "debug-rudp") == 0){
+                debug |= DRUDP;
+                printf("long option debug-rudp\n");
             }else if(strcmp(long_options[option_index].name, "debug-all") == 0){
                 debug = (uint32_t)(-1);
                 printf("long option debug-all\n");
@@ -401,11 +371,6 @@ int main(int argc, char **argv) {
         case 'D':
             daemon_mode = 1;
             printf("option daemon\n");
-            break;
-
-        case 'u':
-            udp_mode = 1;
-            printf("option udp\n");
             break;
 
         case 'k':
@@ -435,7 +400,7 @@ int main(int argc, char **argv) {
         case 'h':
             printf("option help\n");
             usage(argv[0]);
-            return 0;
+            return 1;
         case '?':
             return -1;
 
@@ -444,7 +409,7 @@ int main(int argc, char **argv) {
             return -1;
         }
     }
-    
+
     if( optind != argc && optind+1 != argc){
         usage(argv[0]);
         return -1;
@@ -452,16 +417,21 @@ int main(int argc, char **argv) {
 
     if (optind < argc) {
         if(setproxy(argv[optind])){
-            LOGOUT("wrong server format\n");
-            LOGOUT("Only \"ssl://\" and \"dtls://\" protocol are supported!\n");
+            LOGE("wrong server format\n");
             return -1;
         }
         char proxy[DOMAINLIMIT];
         getproxy(proxy, sizeof(proxy));
         printf("server %s\n", proxy);
     }
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    if(parseConfig(argc, argv)){
+       return -1;
+    }
     main_argv = argv;
-    
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
     signal(SIGABRT, dump_trace);
@@ -473,46 +443,44 @@ int main(int argc, char **argv) {
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
     efd = epoll_create(10000);
-    if(cert && key){
-        SSL_CTX * ctx = initssl(udp_mode, cafile, cert, key);
+    setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
+    if (daemon_mode && daemon(1, 0) < 0) {
+        fprintf(stderr, "start daemon error:%s\n", strerror(errno));
+        return -1;
+    }
+    if(rudp_mode){
+        int svsk_rudp;
         CPORT = CPORT?CPORT:443;
-        if(udp_mode){
-            int svsk_udp;
-            if((svsk_udp = socket(AF_INET6, SOCK_DGRAM, 0)) < 0){
-                LOGOUT("socket error:%s\n", strerror(errno));
-                return -1;
-            }
-            if(Bind_any(svsk_udp, CPORT))
-                return -1;
-            new Dtls_server(svsk_udp, ctx);
-        }else{
-            int svsk_tcp;
-            if ((svsk_tcp = Listen(CPORT)) < 0) {
-                return -1;
-            }
-            new Https_server(svsk_tcp, ctx);
+        if((svsk_rudp = Listen(SOCK_DGRAM, CPORT)) < 0){
+            return -1;
         }
+        new Rudp_server(svsk_rudp, CPORT);
+    }else if(cert && key){
+        SSL_CTX * ctx = initssl(0, cafile, cert, key);
+        CPORT = CPORT?CPORT:443;
+        int svsk_https;
+        if ((svsk_https = Listen(SOCK_STREAM, CPORT)) < 0) {
+            return -1;
+        }
+        new Https_server(svsk_https, ctx);
     }else{
         if(sni_mode){
             CPORT = CPORT?CPORT:443;
-            int sni_svsk;
-            if ((sni_svsk = Listen(443)) < 0) {
+            int svsk_sni;
+            if ((svsk_sni = Listen(SOCK_STREAM, 443)) < 0) {
                 return -1;
             }
-            new Http_server<Guest_sni>(sni_svsk);
+            new Http_server<Guest_sni>(svsk_sni);
         }else{
             CPORT = CPORT?CPORT:80;
-            int http_svsk;
-            if ((http_svsk = Listen(CPORT)) < 0) {
+            int svsk_http;
+            if ((svsk_http = Listen(SOCK_STREAM, CPORT)) < 0) {
                 return -1;
             }
-            new Http_server<Guest>(http_svsk);
+            new Http_server<Guest>(svsk_http);
         }
     }
-    LOGOUT("Accepting connections ...\n");
-    if (daemon_mode && daemon(1, 0) < 0) {
-        LOGOUT("start daemon error:%s\n", strerror(errno));
-    }
+    LOG("Accepting connections ...\n");
     while (1) {
         int c;
         struct epoll_event events[200];
@@ -525,8 +493,8 @@ int main(int argc, char **argv) {
         }
         do_prejob();
         for (int i = 0; i < c; ++i) {
-            Con *con = (Con *)events[i].data.ptr;
-            (con->*con->handleEvent)(events[i].events);
+            Ep *ep = (Ep *)events[i].data.ptr;
+            (ep->*ep->handleEvent)(events[i].events);
         }
         do_postjob();
     }

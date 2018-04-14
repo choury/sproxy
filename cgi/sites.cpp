@@ -27,10 +27,10 @@ class handle{
                 sitelist = json_object_new_array();
                 return 0;
             }else if(header->flag & CGI_FLAG_ERROR){
-                HttpResHeader res(H403);
+                HttpResHeader res(H403, sizeof(H403));
                 cgi_response(cgi_fd, res, cgi_id);
             }else{
-                HttpResHeader res(H200);
+                HttpResHeader res(H200, sizeof(H200));
                 res.add("Content-Type", "application/json");
                 Cookie cookie;
                 cookie.path = "/";
@@ -69,10 +69,10 @@ class handle{
                     queryed = true;
                     return 0;
                 }
-                HttpResHeader res(H400);
+                HttpResHeader res(H400, sizeof(H400));
                 cgi_response(cgi_fd, res, cgi_id);
             }else{
-                HttpResHeader res(H303);
+                HttpResHeader res(H303, sizeof(H303));
                 res.add("Location", "/webui/");
                 cgi_response(cgi_fd, res, cgi_id);
             }
@@ -88,10 +88,10 @@ class handle{
                     queryed = true;
                     return 0;
                 }
-                HttpResHeader res(H400);
+                HttpResHeader res(H400, sizeof(H400));
                 cgi_response(cgi_fd, res, cgi_id);
             }else{
-                HttpResHeader res(H303);
+                HttpResHeader res(H303, sizeof(H303));
                 res.add("Location", "/webui/");
                 cgi_response(cgi_fd, res, cgi_id);
             }
@@ -141,7 +141,7 @@ public:
         }else{
             return GET(header);
         }
-        HttpResHeader res(H400);
+        HttpResHeader res(H400, sizeof(H400));
         cgi_response(cgi_fd, res, cgi_id);
         return 1;
     }

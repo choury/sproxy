@@ -22,7 +22,7 @@ class handle{
                 queryed = true;
                 return 0;
             }else if(header->flag & CGI_FLAG_ERROR){
-                HttpResHeader res(H403);
+                HttpResHeader res(H403, sizeof(H403));
                 cgi_response(cgi_fd, res, cgi_id);
             }
         }
@@ -30,7 +30,7 @@ class handle{
         assert(queryed);
         CGI_NameValue *nv = (CGI_NameValue *)(header+1);
         assert(ntohl(nv->name) == CGI_NAME_GETPROXY);
-        HttpResHeader res(H200);
+        HttpResHeader res(H200, sizeof(H200));
         res.add("Content-Type", "application/json");
         cgi_response(cgi_fd, res, cgi_id);
         char callback[DOMAINLIMIT+sizeof("setproxy(\"\");")];
@@ -44,14 +44,14 @@ class handle{
                 queryed = true;
                 return 0;
             }
-            HttpResHeader res(H400);
+            HttpResHeader res(H400, sizeof(H400));
             cgi_response(cgi_fd, res, cgi_id);
         }else if(header->flag & CGI_FLAG_ERROR){
-            HttpResHeader res(H303);
+            HttpResHeader res(H303, sizeof(H303));
             res.add("Location", "/webui/");
             cgi_response(cgi_fd, res, cgi_id);
         }else{
-            HttpResHeader res(H205);
+            HttpResHeader res(H205, sizeof(H205));
             cgi_response(cgi_fd, res, cgi_id);
         }
         return 1;
@@ -92,7 +92,7 @@ public:
         }else{
             return GET(header);
         }
-        HttpResHeader res(H400);
+        HttpResHeader res(H400, sizeof(H400));
         cgi_response(cgi_fd, res, cgi_id);
         return 1;
     }

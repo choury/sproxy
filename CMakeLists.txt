@@ -14,6 +14,15 @@ if(NOT HAVE_CXX11)
     message(FATAL_ERROR "this project need c++11")
 endif()
 
+CHECK_CXX_SOURCE_COMPILES("
+#include <list>
+using namespace std; 
+int main(){
+    list<int> a;
+    a.insert(list<int>::const_iterator(a.begin()), 0);
+    return 0;
+}" NO_CONST_ITERATOR_BUG)
+
 
 
 if(ANDROID_NDK)
@@ -26,7 +35,7 @@ if(ANDROID_NDK)
     find_library(log-lib log)
     find_package(OpenSSL REQUIRED IMPORTED)
 
-    string(REPLACE "-${ANDROID_TOOLCHAIN}" ""  ANDROID_TARGET ${ANDROID_TOOLCHAIN_NAME})
+    string(REGEX REPLACE "-[^-]+$" ""  ANDROID_TARGET ${ANDROID_TOOLCHAIN_NAME})
     set(CMAKE_C_FLAGS "-isystem ${ANDROID_NDK}/sysroot/usr/include/${ANDROID_TARGET}")
     set(CMAKE_CXX_FLAGS "-isystem ${ANDROID_NDK}/sysroot/usr/include/${ANDROID_TARGET}")
 else()
@@ -48,8 +57,13 @@ else()
     set(BUILD_CGI TRUE)
 endif()
 
-set(CMAKE_C_FLAGS "-Wall -fPIC ${CMAKE_C_FLAGS}")
-set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -fPIC ${CMAKE_CXX_FLAGS}")
+set(CMAKE_C_FLAGS "-Wall -Wextra -fPIC ${CMAKE_C_FLAGS}")
+set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -Wextra -fPIC ${CMAKE_CXX_FLAGS}")
+
+if(NOT NO_CONST_ITERATOR_BUG)
+    message(WARNING "have const_iterator insert bug, see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=55817")
+    set(CMAKE_CXX_FLAGS "-DHAVE_CONST_ITERATOR_BUG ${CMAKE_CXX_FLAGS}")
+endif()
 
 set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
@@ -102,7 +116,7 @@ if(NOT ANDROID_NDK)
 
     add_executable(vpn vpndemo.c)
     set_target_properties(vpn PROPERTIES OUTPUT_NAME "vpndemo")
-    target_link_libraries(vpn dl)
+    target_link_libraries(vpn sproxy_vpn)
 
     install(TARGETS sproxy RUNTIME DESTINATION bin)
 else()

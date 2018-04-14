@@ -9,7 +9,7 @@
 #include <queue>
 #include <functional>
 
-class Index_table;
+class Hpack_index_table;
 struct Http2_header;
 struct CGI_Header;
 class Requester;
@@ -34,7 +34,7 @@ public:
 
     virtual bool no_body() const = 0;
     virtual char *getstring(size_t &len) const = 0;
-    virtual Http2_header *getframe(Index_table *index_table, uint32_t http_id) const = 0;
+    virtual Http2_header *getframe(Hpack_index_table *index_table, uint32_t http_id) const = 0;
     virtual CGI_Header *getcgi(uint32_t cgi_id) const = 0;
     virtual ~HttpHeader(){}
 };
@@ -57,14 +57,14 @@ public:
     std::string filename;
     std::vector<Range> ranges;
     bool should_proxy  = false;
-    explicit HttpReqHeader(const char* header,  ResObject* src);
+    explicit HttpReqHeader(const char* header, size_t len,  ResObject* src);
     explicit HttpReqHeader(std::multimap<std::string, std::string>&& headers, ResObject* src);
     explicit HttpReqHeader(const CGI_Header *headers);
     bool ismethod(const char* method) const;
     
     virtual bool no_body() const override;
     virtual char *getstring(size_t &len) const override;
-    virtual Http2_header *getframe(Index_table *index_table, uint32_t http_id) const override;
+    virtual Http2_header *getframe(Hpack_index_table *index_table, uint32_t http_id) const override;
     virtual CGI_Header *getcgi(uint32_t cgi_id) const override;
     
     std::map<std::string, std::string> getcookies()const;
@@ -76,16 +76,17 @@ public:
 class HttpResHeader: public HttpHeader{
 public:
     char status[100];
-    explicit HttpResHeader(const char* header);
+    explicit HttpResHeader(const char* header, size_t len);
     explicit HttpResHeader(std::multimap<std::string, std::string>&& headers);
     explicit HttpResHeader(const CGI_Header *headers);
     
     virtual bool no_body() const override;
     virtual char *getstring(size_t &len) const override;
-    virtual Http2_header *getframe(Index_table *index_table, uint32_t http_id) const override;
+    virtual Http2_header *getframe(Hpack_index_table *index_table, uint32_t http_id) const override;
     virtual CGI_Header *getcgi(uint32_t cgi_id) const override;
 };
 
+#if 0
 
 class HttpBody{
     size_t content_size = 0;
@@ -117,6 +118,7 @@ public:
     ssize_t  Write_string(std::function<ssize_t(const void*, size_t)> write_func);
     size_t size();
 };
+#endif
 
 // trim from start
 static inline std::string& ltrim(std::string && s) {

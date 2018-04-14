@@ -2,7 +2,6 @@
 #define COMMON_H__
 
 #include <stdio.h>
-#include <stddef.h>
 #include <stdint.h>
 #include <syslog.h>
 #include <arpa/inet.h>
@@ -18,12 +17,12 @@
 
 #define BUF_LEN       16384
 
-typedef enum{TCP=SOCK_STREAM, UDP=SOCK_DGRAM, ICMP}Protocol;
+typedef enum{TCP=SOCK_STREAM, UDP=SOCK_DGRAM, ICMP, RUDP}Protocol;
 
 extern char **main_argv;
+extern char SPROT[];
 extern char SHOST[];
 extern uint16_t SPORT;
-extern Protocol SPROT;
 extern int daemon_mode;
 extern int ignore_cert_error;
 extern int disable_ipv6;
@@ -38,79 +37,52 @@ extern int autoindex;
 
 #define DEPOLL    1
 #define DDNS      2
-#define DDTLS     4
 #define DHTTP2    8
 #define DJOB      16
 #define DVPN      32
 #define DHPACK    64
+#define DRUDP     128
 
 #define DEPOLL_STR  "[EPOLL]"
 #define DDNS_STR    "[DNS]"
-#define DDTLS_STR   "[DTLS]"
 #define DHTTP2_STR  "[HTTP2]"
 #define DJOB_STR    "[JOB]"
 #define DVPN_STR    "[VPN]"
 #define DHPACK_STR  "[HPACK]"
-
-#ifdef __ANDROID__
-#include "com_choury_sproxy_Service.h"
-
-#define  LOG(...)  android_log(LOG_INFO,  __VA_ARGS__)
-#define  LOGOUT(...) LOG(__VA_ARGS__)
-#define  LOGE(...)  do{\
-                        char tmp[1024]; \
-                        snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
-                        android_log(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
-                     }while(0)
-#define  LOGD(mod, ...)    do{\
-                             if(debug & mod) {\
-                                char tmp[1024]; \
-                                snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
-                                android_log(LOG_DEBUG, "%s: %s",mod##_STR, tmp); \
-                             }\
-                           }while(0)
-
-#else
-#define  LOGOUT(...) fprintf(stderr, __VA_ARGS__)
-#define  LOG(...)    do{ \
-                        if(daemon_mode) \
-                            syslog(LOG_INFO, __VA_ARGS__); \
-                        else{ \
-                            printf(__VA_ARGS__); \
-                            fflush(stdout); \
-                        } \
-                     }while(0)
-#define  LOGE(...)   do{\
-                        char tmp[1024]; \
-                        snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
-                        if(daemon_mode) \
-                            syslog(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
-                        else \
-                            fprintf(stderr, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
-                     }while(0)
-#ifndef NDEBUG
-
-#define LOGD(mod, ...)    do{\
-                             if(debug & mod) {\
-                                char tmp[1024]; \
-                                snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
-                                if(daemon_mode) \
-                                  syslog(LOG_INFO,"%s: %s",mod##_STR, tmp); \
-                                else {\
-                                  printf("%s: %s", mod##_STR, tmp); \
-                                  fflush(stdout); \
-                                } \
-                             }\
-                           }while(0)
-#else
-#define LOGD(...)          void(0)
-#endif
-#endif
-
+#define DRUDP_STR   "[RUDP]"
 
 #ifdef  __cplusplus
 extern "C" {
 #endif
+
+void slog(int level, const char* fmt, ...);
+
+#ifndef __ANDROID__
+void vslog(int level, const char* fmt, va_list arg);
+#define VLOG(...) vslog(__VA_ARGS__)
+#else
+#include "com_choury_sproxy_Service.h"
+#define VLOG(...) android_vlog(__VA_ARGS__);
+#endif
+
+#define  LOG(...)  slog(LOG_INFO,  __VA_ARGS__)
+#define  LOGE(...) \
+do{\
+    char tmp[1024]; \
+    snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
+    slog(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
+}while(0)
+
+uint32_t getmtime();
+#define  LOGD(mod, ...)  \
+do{\
+    if(debug & mod) {\
+        char tmp[1024]; \
+        snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
+        slog(LOG_DEBUG, "%05u:%s: %s", getmtime()%100000, mod##_STR, tmp); \
+    }\
+}while(0)
+
 
 #ifndef __ANDROID__
 #define HTONL(x) (x = htonl(x))
@@ -174,50 +146,25 @@ do {\
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
 #define NOERROR             0
-#define CONNECT_FAILED      31
-#define CONNECT_TIMEOUT     32
-#define SSL_SHAKEHAND_ERR   33
-#define HEAD_TOO_LONG_ERR   34
-#define HTTP_PROTOCOL_ERR   35
-#define READ_ERR            36
-#define WRITE_ERR           37
-#define INTERNAL_ERR        38
-#define PEER_LOST_ERR       39
-#define IP_BLOCK_ERR        40
-#define TCP_RESET_ERR       41
-#define DNS_FAILED          42
-#define VPN_AGED_ERR        43
+#define SOCKET_ERR          80
+#define CONNECT_FAILED      81
+#define CONNECT_TIMEOUT     82
+#define SSL_SHAKEHAND_ERR   83
+#define HEAD_TOO_LONG_ERR   84
+#define HTTP_PROTOCOL_ERR   85
+#define READ_ERR            86
+#define WRITE_ERR           87
+#define PEER_LOST_ERR       88
+#define IP_BLOCK_ERR        89
+#define TCP_RESET_ERR       90
+#define DNS_FAILED          91
+#define VPN_AGED_ERR        92
+#define SNI_HOST_ERR        93
 #define ERROR_MASK          0xff
 #define DISCONNECT_FLAG     (1<<31)
 
 typedef unsigned char uchar;
-
-
-char* strnstr(const char* s1, const char* s2, size_t len);
-int startwith(const char *s1, const char *s2);
-int endwith(const char *s1, const char *s2);
-int spliturl(const char* url, char *protocol, char* host, char* path , uint16_t* port);
-
-int URLEncode(char *des,const char* src, size_t len);
-int URLDecode(char *des,const char* src, size_t len);
-void Base64Encode(const char* s, size_t len, char* dst);
-
-uint64_t getutime();
-uint32_t getmtime();
-
-void dump_stat(int ignore);
-void dump_trace(int ignore);
-const char* protstr(Protocol p);
-int showerrinfo(int ret, const char *s);
-void* memdup(const void* ptr, size_t size);
-
-void* p_malloc(size_t size);
-void* p_memdup(const void *ptr, size_t size);
-void p_free(void *ptr);
-void *p_move(void *ptr, signed char len);
-void change_process_name(const char *name);
-const char* findprogram(ino_t inode);
-const char* getDeviceInfo();
+typedef void (* Dumper)(void* param, const char* fmt, ...);
 
 int protectFd(int sockfd);
 
@@ -225,6 +172,13 @@ struct write_block{
     void* buff;
     size_t len;
     size_t wlen;
+};
+
+
+union sockaddr_un{
+    struct sockaddr addr;
+    struct sockaddr_in addr_in;
+    struct sockaddr_in6 addr_in6;
 };
 
 #cmakedefine01 Backtrace_FOUND

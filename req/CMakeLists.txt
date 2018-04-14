@@ -5,5 +5,5 @@
 
 include_directories(${PROJECT_SOURCE_DIR})
 
-add_library(req requester.cpp  guest.cpp guest_s.cpp guest_sni.cpp guest_s2.cpp guest_vpn.cpp)
+add_library(req requester.cpp  guest.cpp guest_sni.cpp guest_vpn.cpp guest2.cpp)
 

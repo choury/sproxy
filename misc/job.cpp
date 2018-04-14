@@ -1,4 +1,5 @@
 #include "job.h"
+#include "util.h"
 #include "common.h"
 #include <map>
 #include <vector>
@@ -55,7 +56,7 @@ void add_postjob_real(job_func func, const char *func_name, void *arg){
     postjobs[job_n{func, arg}] = func_name;
 }
 
-void del_delayjob_real(job_func func, const char *func_name, void *arg){
+void del_delayjob_real(job_func func, __attribute__ ((unused)) const char *func_name, void *arg){
 #ifndef NDEBUG
     if(delayjobs.count(job_n{func, arg})){
         LOGD(DJOB, "del a delay job %s of %p\n", func_name, arg);
@@ -66,7 +67,7 @@ void del_delayjob_real(job_func func, const char *func_name, void *arg){
     delayjobs.erase(job_n{func, arg});
 }
 
-void del_prejob_real(job_func func, const char *func_name, void *arg){
+void del_prejob_real(job_func func, __attribute__ ((unused)) const char *func_name, void *arg){
 #ifndef NDEBUG
     if(prejobs.count(job_n{func, arg})){
         LOGD(DJOB, "del a prejob %s of %p\n", func_name, arg);
@@ -77,7 +78,7 @@ void del_prejob_real(job_func func, const char *func_name, void *arg){
     prejobs.erase(job_n{func, arg});
 }
 
-void del_postjob_real(job_func func, const char *func_name, void *arg){
+void del_postjob_real(job_func func, __attribute__ ((unused)) const char *func_name, void *arg){
 #ifndef NDEBUG
     if(postjobs.count(job_n{func, arg})){
         LOGD(DJOB, "del a postjob %s of %p\n", func_name, arg);
@@ -147,20 +148,20 @@ int check_delayjob(job_func func, void* arg){
     return delayjobs.count(job_n{func, arg});
 }
 
-void dump_job(){
-    LOG("delay job queue:\n");
+void dump_job(Dumper dp, void* param){
+    dp(param, "delay job queue:\n");
     uint32_t now = getmtime();
     for(auto i : delayjobs){
         uint32_t left = i.second.delay + i.second.last_done - now;
-        LOG("\t%s(%p): %d/%d\n", i.second.func_name, i.first.arg, left, i.second.delay);
+        dp(param, "\t%s(%p): %d/%d\n", i.second.func_name, i.first.arg, left, i.second.delay);
     }
-    LOG("pre job queue:\n");
+    dp(param, "pre job queue:\n");
     for(auto i: prejobs){
-        LOG("\t%s(%p)\n", i.second, i.first.arg);
+        dp(param, "\t%s(%p)\n", i.second, i.first.arg);
     }
-    LOG("post job queue:\n");
+    dp(param, "post job queue:\n");
     for(auto i: postjobs){
-        LOG("\t%s(%p)\n", i.second, i.first.arg);
+        dp(param, "\t%s(%p)\n", i.second, i.first.arg);
     }
 }
 

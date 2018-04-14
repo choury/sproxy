@@ -47,7 +47,7 @@ public:
         string domain = host;
         auto mask_pos = domain.find_first_of("/");
         string ip = domain.substr(0, mask_pos);
-        uint32_t ipv4 = inet_addr(ip.c_str());
+        uint32_t ipv4 = ntohl(inet_addr(ip.c_str()));
         if(ipv4 != INADDR_NONE){
             uint32_t mask = 0xffffffff;
             if(mask_pos != string::npos){
@@ -56,7 +56,7 @@ public:
 #else
                 int prefix = stoi(domain.substr(mask_pos+1));
 #endif
-                mask =  ((uint64_t)1 << prefix) - 1;
+                mask =  (((uint64_t)1 << prefix) - 1) << (32 - prefix);
             }
             ip4s[(uint64_t)ipv4 << 32 | mask] = strategy;
             return;
@@ -67,7 +67,7 @@ public:
         return insert(reverse(host), strategy, ext);
     }
     Strategy get(const char* host, string& ext){
-        uint32_t ipv4 = inet_addr(host);
+        uint32_t ipv4 = ntohl(inet_addr(host));
         if(ipv4 != INADDR_NONE){
             for(auto i: ip4s){
                 uint32_t mask = i.first & 0xffffffff;

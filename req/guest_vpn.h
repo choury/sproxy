@@ -47,27 +47,26 @@ class Guest_vpn:public Requester, public ResObject{
     const char* generateUA(const VpnKey* key);
 protected:
     std::map<VpnKey, VpnStatus> statusmap;
-    Buffer buffer;
-    void defaultHE(uint32_t events) override;
-    void buffHE(char* buff, size_t buflen);
+    void buffHE(const char* buff, size_t buflen);
     void tcpHE(const Ip* pac,const char* packet, size_t len);
     void udpHE(const Ip* pac,const char* packet, size_t len);
     void icmpHE(const Ip* pac,const char* packet, size_t len);
     template <class T>
     void sendPkg(Ip* pac, T* packet, size_t len);
     void cleanKey(const VpnKey* key);
+    const char *getProg(const void* index) const;
 public:
     explicit Guest_vpn(int fd);
-    ~Guest_vpn();
+    virtual ~Guest_vpn();
     virtual void response(HttpResHeader* res)override;
     virtual void transfer(void* index, Responser* res_ptr, void* res_index)override;
 
     virtual int32_t bufleft(void* index)override;
     virtual ssize_t Send(void* buff, size_t size, void* index)override;
 
-    virtual bool finish(uint32_t flags, void* index)override;
+    virtual void finish(uint32_t flags, void* index)override;
     virtual const char *getsrc(const void* index)override;
-    virtual void dump_stat()override;
+    virtual void dump_stat(Dumper dp, void* param) override;
 };
 
 #endif

@@ -3,6 +3,7 @@
 
 #include <unistd.h>
 #include <string.h>
+#include <stdarg.h>
 #include <fcntl.h>
 #include <iostream>
 #include <map>
@@ -13,6 +14,7 @@
 
 static JavaVM *jnijvm;
 static jobject jniobj;
+static jmethodID protecdMid;
 static VpnConfig vpn;
 static std::map<int, std::string> packages;
 static std::string extenalFilesDir;
@@ -30,7 +32,7 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
         (JNIEnv *jnienv, jobject obj, jint sockfd, jstring server, jstring secret) {
     jnienv->GetJavaVM(&jnijvm);
     jniobj = jnienv->NewGlobalRef(obj);
-    LOG("native SproxyVpnService.start %d.", sockfd);
+    LOG("native SproxyVpnService.start %d.\n", sockfd);
     int flags  = fcntl(sockfd,F_GETFL,0);
     fcntl(sockfd,F_SETFL,flags&~O_NONBLOCK);
 
@@ -39,7 +41,7 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
 
     vpn.disable_ipv6 = 1;
     vpn.ignore_cert_error = 1;
-    sprintf(vpn.server, "ssl://%s", server_str);
+    strcpy(vpn.server, server_str);
     strcpy(vpn.secret, secret_str);
     jnienv->ReleaseStringUTFChars(server, server_str);
     jnienv->ReleaseStringUTFChars(secret, secret_str);
@@ -54,6 +56,8 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     strcpy(version, jversion_str);
     jnienv->ReleaseStringUTFChars(jversion, jversion_str);
     jnienv->DeleteLocalRef(jversion);
+
+    protecdMid = jnienv->GetMethodID(cls, "protect", "(I)Z");
     jnienv->DeleteLocalRef(cls);
 
     vpn_start(&vpn);
@@ -61,17 +65,17 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
 }
 
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(JNIEnv *, jobject){
-    LOG("native SproxyVpnService.stop.");
+    LOG("native SproxyVpnService.stop.\n");
     return vpn_stop();
 }
 
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reset(JNIEnv *, jobject){
-    LOG("native SproxyVpnService.reset.");
+    LOG("native SproxyVpnService.reset.\n");
     return vpn_reset();
 }
 
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload(JNIEnv *, jobject){
-    LOG("native SproxyVpnService.reload.");
+    LOG("native SproxyVpnService.reload.\n");
     return vpn_reload();
 }
 
@@ -82,11 +86,7 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload(JNIEnv *, 
 int protectFd(int sockfd) {
     JNIEnv *jnienv;
     jnijvm->GetEnv((void **)&jnienv, JNI_VERSION_1_6);
-    jclass cls = jnienv->GetObjectClass(jniobj);
-    jmethodID mid = jnienv->GetMethodID(cls, "protect", "(I)Z");
-    int ret =  jnienv->CallBooleanMethod(jniobj, mid, sockfd);
-    jnienv->DeleteLocalRef(cls);
-    return ret;
+    return  jnienv->CallBooleanMethod(jniobj, protecdMid, sockfd);
 }
 
 const char* getPackageName(int uid) {
@@ -117,9 +117,9 @@ const char *getDeviceName(){
     __system_property_get("ro.product.model", model);
     char release[64];
     __system_property_get("ro.build.version.release", release);
-    char buildid[64];
-    __system_property_get("ro.build.id", buildid);
-    sprintf(deviceName, "Android %s; %s Build/%s", release, model, buildid);
+    char buildtime[64];
+    __system_property_get("ro.build.date.utc", buildtime);
+    sprintf(deviceName, "Android %s; %s Build/%s", release, model, buildtime);
     return deviceName;
 }
 
@@ -192,10 +192,7 @@ std::string getExternalCacheDir() {
     return extenalCacheDir;
 }
 
-
-void android_log(int level, const char* fmt, ...){
-    va_list args;
-    va_start(args, fmt);
+void android_vlog(int level, const char* fmt, va_list args){
     switch(level){
     case LOG_INFO:
         level = ANDROID_LOG_INFO;
@@ -212,7 +209,6 @@ void android_log(int level, const char* fmt, ...){
     }
     char printbuff[1024];
     vsnprintf(printbuff, sizeof(printbuff), fmt, args);
-    va_end(args);
     if(level != ANDROID_LOG_DEBUG) {
         __android_log_print(level, "sproxy_client", "%s", printbuff);
     }
@@ -220,4 +216,11 @@ void android_log(int level, const char* fmt, ...){
     std::ofstream logfile(cachedir+"/vpn.log", std::ios::app);
     logfile<<printbuff;
     logfile.close();
+}
+
+void android_log(int level, const char* fmt, ...){
+    va_list args;
+    va_start(args, fmt);
+    android_vlog(level, fmt, args);
+    va_end(args);
 }

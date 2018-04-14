@@ -1,7 +1,8 @@
+#include "vpn.h"
+#include "prot/dns.h"
 #include "misc/strategy.h"
 #include "misc/job.h"
-#include "prot/dns.h"
-#include "vpn.h"
+#include "misc/util.h"
 
 #include "req/guest_vpn.h"
 
@@ -18,9 +19,9 @@ int daemon_mode = 0;
 int use_http2 = 1;
 int ignore_cert_error = 0;
 int disable_ipv6 = 0;
+char SPROT[DOMAINLIMIT];
 char SHOST[DOMAINLIMIT];
 uint16_t SPORT;
-Protocol SPROT;
 char auth_string[DOMAINLIMIT] = {0};
 char rewrite_auth[DOMAINLIMIT] = {0};
 const char *cafile =  nullptr;
@@ -38,6 +39,7 @@ int vpn_start(const struct VpnConfig* vpn){
     signal(SIGCHLD, SIG_IGN);
 #ifndef __ANDROID__
     signal(SIGABRT, dump_trace);
+    setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
 #endif
     signal(SIGUSR1, dump_stat);
     disable_ipv6 = vpn->disable_ipv6;
@@ -46,6 +48,7 @@ int vpn_start(const struct VpnConfig* vpn){
         LOGE("wrong server format\n");
         return -1;
     }
+    LOG("set server to: %s\n", vpn->server);
     reloadstrategy();
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
@@ -58,11 +61,11 @@ int vpn_start(const struct VpnConfig* vpn){
     LOG("set encoded secret to: %s\n", rewrite_auth);
     new Guest_vpn(vpn->fd);
     vpn_contiune = 1;
-    LOGOUT("Accepting connections ...\n");
+    LOG("Accepting connections ...\n");
     while (vpn_contiune) {
         if(vpn_action & VPN_RESET){
             flushdns();
-            flushproxy2();
+            flushproxy2(false);
             vpn_action &= ~VPN_RESET;
         }
         if(vpn_action & VPN_RELOAD){
@@ -80,8 +83,8 @@ int vpn_start(const struct VpnConfig* vpn){
         }
         do_prejob();
         for (int i = 0; i < c; ++i) {
-            Con *con = (Con *)events[i].data.ptr;
-            (con->*con->handleEvent)(events[i].events);
+            Ep *ep = (Ep *)events[i].data.ptr;
+            (ep->*ep->handleEvent)(events[i].events);
         }
         do_postjob();
     }

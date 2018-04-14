@@ -54,21 +54,20 @@ public:
     uint16_t type;
     uint16_t id;
     Dns_Que(const std::string& host, uint16_t type, uint16_t id);
-    explicit Dns_Que(const char *buff);
+    explicit Dns_Que(const char *buff, size_t len);
     int build(unsigned char *buf)const;
 };
 
 
 class Dns_Rr{
 public:
+    char domain[DOMAINLIMIT];
     std::vector<sockaddr_un> addrs;
-    std::string rDns;
     uint16_t  id = 0;
     uint32_t  ttl = 0;
-    explicit Dns_Rr();
-    explicit Dns_Rr(const char *buff);
-    explicit Dns_Rr(const in_addr* addr);
-    explicit Dns_Rr(const char *rDns, bool isRdns);
+    explicit Dns_Rr(const char* domain);
+    explicit Dns_Rr(const char* domain, const in_addr* addr);
+    explicit Dns_Rr(const char* buff, size_t len);
     int build(const Dns_Que* query, unsigned char *buf)const;
     static int buildError(const Dns_Que* query, unsigned char errcode, unsigned char *buf);
 };
@@ -80,6 +79,7 @@ typedef void (*DNSRAWCB)(void *, const char *buff, size_t size);
 
 void query(const char* host, DNSCBfunc func, void* param);
 void query(const char* host, uint16_t type, DNSRAWCB func, void* parm);
+void query_cancel(const char* host, DNSCBfunc func, void* parm);
 void RcdDown(const char *hostname, const sockaddr_un &addr);
 
 void flushdns();

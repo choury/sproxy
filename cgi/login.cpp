@@ -22,13 +22,13 @@ class handle{
                 queryed = true;
                 return 0;
             }
-            HttpResHeader res(H400);
+            HttpResHeader res(H400, sizeof(H400));
             cgi_response(cgi_fd, res, cgi_id);
         }else if(header->flag & CGI_FLAG_ERROR){
-            HttpResHeader res(H403);
+            HttpResHeader res(H403, sizeof(H403));
             cgi_response(cgi_fd, res, cgi_id);
         }else{
-            HttpResHeader res(H204);
+            HttpResHeader res(H204, sizeof(H204));
             cgi_response(cgi_fd, res, cgi_id);
         }
         return 1;
@@ -67,7 +67,7 @@ public:
         if(req->ismethod("post")){
             return POST(header);
         }
-        HttpResHeader res(H400);
+        HttpResHeader res(H400, sizeof(H400));
         cgi_response(cgi_fd, res, cgi_id);
         return 1;
     }

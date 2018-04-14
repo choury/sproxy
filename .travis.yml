@@ -2,7 +2,6 @@ language: cpp
 sudo: required
 dist: trusty
 before_install:
-- sudo apt-get install -y libjson-c-dev
 #openSSL 1.0.2 stable
 - wget -O openssl.zip -c https://github.com/openssl/openssl/archive/OpenSSL_1_0_2-stable.zip
 - unzip openssl.zip
@@ -11,13 +10,231 @@ before_install:
 - make
 - sudo make install
 - cd ..
-compiler:
-  - clang
-  - gcc
-env:
-  - BUILD_TYPE=Debug
-  - BUILD_TYPE=Release
-  - BUILD_TYPE=RelWithDebInfo
+- sudo apt-get install -yq --no-install-suggests --no-install-recommends libjson-c-dev
+- eval "${COMPILE}"
+
+matrix:
+  include:
+  - env:
+    - BUILD_TYPE=Debug COMPILE="CC=gcc-4.8 CXX=g++-4.8"
+  - env:
+    - BUILD_TYPE=Release COMPILE="CC=gcc-4.8 CXX=g++-4.8"
+  - env:
+    - BUILD_TYPE=RelWithDebInfo COMPILE="CC=gcc-4.8 CXX=g++-4.8"
+  - addons:
+      apt:
+        sources:
+        - ubuntu-toolchain-r-test
+        packages:
+        - g++-4.9
+    env:
+    - BUILD_TYPE=Debug COMPILE="CC=gcc-4.9 CXX=g++-4.9"
+  - addons:
+      apt:
+        sources:
+        - ubuntu-toolchain-r-test
+        packages:
+        - g++-4.9
+    env:
+    - BUILD_TYPE=Release COMPILE="CC=gcc-4.9 CXX=g++-4.9"
+  - addons:
+      apt:
+        sources:
+        - ubuntu-toolchain-r-test
+        packages:
+        - g++-4.9
+    env:
+    - BUILD_TYPE=RelWithDebInfo COMPILE="CC=gcc-4.9 CXX=g++-4.9"
+  - addons:
+      apt:
+        sources:
+        - ubuntu-toolchain-r-test
+        packages:
+        - g++-5
+    env:
+    - BUILD_TYPE=Debug COMPILE="CC=gcc-5 CXX=g++-5"
+  - addons:
+      apt:
+        sources:
+        - ubuntu-toolchain-r-test
+        packages:
+        - g++-5
+    env:
+    - BUILD_TYPE=Release COMPILE="CC=gcc-5 CXX=g++-5"
+  - addons:
+      apt:
+        sources:
+        - ubuntu-toolchain-r-test
+        packages:
+        - g++-5
+    env:
+    - BUILD_TYPE=RelWithDebInfo COMPILE="CC=gcc-5 CXX=g++-5"
+  - addons:
+      apt:
+        sources:
+        - ubuntu-toolchain-r-test
+        packages:
+        - g++-6
+    env:
+    - BUILD_TYPE=Debug COMPILE="CC=gcc-6 CXX=g++-6"
+  - addons:
+      apt:
+        sources:
+        - ubuntu-toolchain-r-test
+        packages:
+        - g++-6
+    env:
+    - BUILD_TYPE=Release COMPILE="CC=gcc-6 CXX=g++-6"
+  - addons:
+      apt:
+        sources:
+        - ubuntu-toolchain-r-test
+        packages:
+        - g++-6
+    env:
+    - BUILD_TYPE=RelWithDebInfo COMPILE="CC=gcc-6 CXX=g++-6"
+  - addons:
+      apt:
+        sources:
+        - ubuntu-toolchain-r-test
+        packages:
+        - g++-7
+    env:
+    - BUILD_TYPE=Debug COMPILE="CC=gcc-7 CXX=g++-7"
+  - addons:
+      apt:
+        sources:
+        - ubuntu-toolchain-r-test
+        packages:
+        - g++-7
+    env:
+    - BUILD_TYPE=Release COMPILE="CC=gcc-7 CXX=g++-7"
+  - addons:
+      apt:
+        sources:
+        - ubuntu-toolchain-r-test
+        packages:
+        - g++-7
+    env:
+    - BUILD_TYPE=RelWithDebInfo COMPILE="CC=gcc-7 CXX=g++-7"
+  - addons:
+      apt:
+        packages:
+        - clang-3.5
+    env:
+    - BUILD_TYPE=Debug COMPILE="CC=clang-3.5 CXX=clang++-3.5"
+  - addons:
+      apt:
+        packages:
+        - clang-3.5
+    env:
+    - BUILD_TYPE=Release COMPILE="CC=clang-3.5 CXX=clang++-3.5"
+  - addons:
+      apt:
+        packages:
+        - clang-3.5
+    env:
+    - BUILD_TYPE=RelWithDebInfo COMPILE="CC=clang-3.5 CXX=clang++-3.5"
+  - addons:
+      apt:
+        packages:
+        - clang-3.6
+    env:
+    - BUILD_TYPE=Debug COMPILE="CC=clang-3.6 CXX=clang++-3.6"
+  - addons:
+      apt:
+        packages:
+        - clang-3.6
+    env:
+    - BUILD_TYPE=Release COMPILE="CC=clang-3.6 CXX=clang++-3.6"
+  - addons:
+      apt:
+        packages:
+        - clang-3.6
+    env:
+    - BUILD_TYPE=RelWithDebInfo COMPILE="CC=clang-3.6 CXX=clang++-3.6"
+  - addons:
+      apt:
+        packages:
+        - clang-3.8
+    env:
+    - BUILD_TYPE=Debug COMPILE="CC=clang-3.8 CXX=clang++-3.8"
+  - addons:
+      apt:
+        packages:
+        - clang-3.8
+    env:
+    - BUILD_TYPE=Release COMPILE="CC=clang-3.8 CXX=clang++-3.8"
+  - addons:
+      apt:
+        packages:
+        - clang-3.8
+    env:
+    - BUILD_TYPE=RelWithDebInfo COMPILE="CC=clang-3.8 CXX=clang++-3.8"
+  - addons:
+      apt:
+        sources:
+        - llvm-toolchain-trusty-3.9
+        packages:
+        - clang-3.9
+    env:
+    - BUILD_TYPE=Release COMPILE="CC=clang-3.9 CXX=clang++-3.9"
+  - addons:
+      apt:
+        sources:
+        - llvm-toolchain-trusty-3.9
+        packages:
+        - clang-3.9
+    env:
+    - BUILD_TYPE=RelWithDebInfo COMPILE="CC=clang-3.9 CXX=clang++-3.9"
+  - addons:
+      apt:
+        sources:
+        - llvm-toolchain-trusty-4.0
+        packages:
+        - clang-4.0
+    env:
+    - BUILD_TYPE=Debug COMPILE="CC=clang-4.0 CXX=clang++-4.0"
+  - addons:
+      apt:
+        sources:
+        - llvm-toolchain-trusty-4.0
+        packages:
+        - clang-4.0
+    env:
+    - BUILD_TYPE=Release COMPILE="CC=clang-4.0 CXX=clang++-4.0"
+  - addons:
+      apt:
+        sources:
+        - llvm-toolchain-trusty-4.0
+        packages:
+        - clang-4.0
+    env:
+    - BUILD_TYPE=RelWithDebInfo COMPILE="CC=clang-4.0 CXX=clang++-4.0"
+  - addons:
+      apt:
+        sources:
+        - llvm-toolchain-trusty-5.0
+        packages:
+        - clang-5.0
+    env:
+    - BUILD_TYPE=Debug COMPILE="CC=clang-5.0 CXX=clang++-5.0"
+  - addons:
+      apt:
+        sources:
+        - llvm-toolchain-trusty-5.0
+        packages:
+        - clang-5.0
+    env:
+    - BUILD_TYPE=Release COMPILE="CC=clang-5.0 CXX=clang++-5.0"
+  - addons:
+      apt:
+        sources:
+        - llvm-toolchain-trusty-5.0
+        packages:
+        - clang-5.0
+    env:
+    - BUILD_TYPE=RelWithDebInfo COMPILE="CC=clang-5.0 CXX=clang++-5.0"
 
 # Change this to your needs
-script:  cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE} && make
+script:  cmake . -DCMAKE_BUILD_TYPE=${BUILD_TYPE} && make VERBOSE=1

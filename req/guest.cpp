@@ -1,77 +1,70 @@
 #include "guest.h"
+#include "guest2.h"
 #include "misc/net.h"
 #include "res/responser.h"
 #include "misc/job.h"
+#include "misc/util.h"
+#include "misc/sslio.h"
 
-//#include <set>
 #include <string.h>
-//#include <errno.h>
 #include <assert.h>
 
-Guest::Guest(int fd,  struct sockaddr_in6 *myaddr): Requester(fd, myaddr) {
+void Guest::ReadHE(size_t len){
+    const char* data = rwer->data();
+    size_t consumed = 0;
+    size_t ret = 0;
+    while((ret = (this->*Http_Proc)(data+consumed, len-consumed))){
+        consumed += ret;
+    }
+    rwer->consume(data, consumed);
 }
 
-
-void Guest::defaultHE(uint32_t events) {
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        int       error = 0;
-        socklen_t errlen = sizeof(error);
-
-        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) == 0) {
-            if(error){
-                LOGE("(%s): guest error:%s\n", getsrc(nullptr), strerror(error));
-            }
-        }
-        deleteLater(INTERNAL_ERR);
-        return;
-    }
-
-    if (events & EPOLLOUT) {
-        int ret = buffer.Write([this](const void* buff, size_t size){
-            return Write(buff, size);
-        });
-        if (ret < 0 && showerrinfo(ret, "guest write error")) {
-            deleteLater(WRITE_ERR);
-            return;
-        }
-        if (ret && responser_ptr){
+Guest::Guest(int fd,  const sockaddr_un *myaddr): Requester(myaddr) {
+    rwer = new StreamRWer(fd, std::bind(&Guest::Error, this, _1, _2));
+    rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
+    rwer->SetWriteCB([this](size_t len){
+        if(responser_ptr && len){
             responser_ptr->writedcb(responser_index);
         }
-        if(buffer.length == 0){
-            updateEpoll(this->events & ~EPOLLOUT);
-            if(http_flag & HTTP_SERVER_CLOSE_F){
-                shutdown(fd, SHUT_WR);
-            }
+        if(rwer->wlength() == 0 && (http_flag & HTTP_SERVER_CLOSE_F)){
+            rwer->Shutdown();
         }
-    }
-    
-    if ((events & EPOLLIN || http_getlen) &&
-        (Status_flags & GUEST_REQ_COMPLETED) == 0 )
-    {
-        (this->*Http_Proc)();
-    }
-}
-
-void Guest::closeHE(uint32_t) {
-    int ret = buffer.Write([this](const void* buff, size_t size){
-        return Write(buff, size);
     });
-    if ((buffer.length == 0) ||
-        (ret <= 0 && showerrinfo(ret, "write error while closing"))) {
-        delete this;
-        return;
-    }
 }
 
-
-ssize_t Guest::Read(void* buff, size_t len){
-    return Peer::Read(buff, len);
+Guest::Guest(int fd,  const sockaddr_un *myaddr, SSL_CTX* ctx): Requester(myaddr) {
+    rwer = new SslRWer(fd, ctx, std::bind(&Guest::Error, this, _1, _2));
+    rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
+    rwer->SetWriteCB([this](size_t len){
+        if(responser_ptr && len){
+            responser_ptr->writedcb(responser_index);
+        }
+        if(rwer->wlength() == 0 && (http_flag & HTTP_SERVER_CLOSE_F)){
+            rwer->Shutdown();
+        }
+    });
+    rwer->SetConnectCB([this](){
+        SslRWer* srwer = dynamic_cast<SslRWer*>(rwer);
+        const unsigned char *data;
+        unsigned int len;
+        srwer->get_alpn(&data, &len);
+        if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
+            new Guest2(sourceip, sourceport, srwer);
+            rwer = nullptr;
+            delete this;
+            return;
+        }
+    });
 }
-
 
 void Guest::ReqProc(HttpReqHeader* req) {
+    if(Status_flags != GUEST_IDELE_F){
+        Status_flags |= GUEST_ERROR_F;
+        LOGE("pipeline are not supported!\n");
+        delete req;
+        return;
+    }
     req->index = (void *)1;
-    assert(Status_flags == GUEST_IDELE_F);
     Responser* res_ptr = distribute(req, responser_ptr);
     if(res_ptr){
         if(req->ismethod("CONNECT")){
@@ -97,54 +90,49 @@ void Guest::ReqProc(HttpReqHeader* req) {
 }
 
 ssize_t Guest::DataProc(const void *buff, size_t size) {
-    if (responser_ptr == nullptr) {
-        LOGE("(%s): connecting to host lost\n", getsrc(nullptr));
+    if (responser_ptr == nullptr || (Status_flags & GUEST_ERROR_F)) {
+        LOGE("(%s): connecting to host lost or error ocured\n", getsrc(nullptr));
         deleteLater(PEER_LOST_ERR);
         return -1;
     }
     int len = responser_ptr->bufleft(responser_index);
     if (len <= 0) {
         LOGE("(%s): The host's buff is full\n", getsrc(nullptr));
-        updateEpoll(0);
+        rwer->setEpoll(0);
         return -1;
     }
     return responser_ptr->Send(buff, Min(size, len), responser_index);
 }
 
-bool Guest::EndProc() {
+void Guest::EndProc() {
+    rwer->addEpoll(EPOLLIN);
     if(responser_ptr){
         if(Status_flags & GUEST_RES_COMPLETED){
             Status_flags = GUEST_IDELE_F;
         }else{
             Status_flags |= GUEST_REQ_COMPLETED;
+            rwer->delEpoll(EPOLLIN);
         }
-        if(!responser_ptr->finish(NOERROR, responser_index)){
-            responser_ptr = nullptr;
-            Peer::deleteLater(PEER_LOST_ERR);
-        }else{
-            updateEpoll(events & ~EPOLLIN);
-        }
-        return false;
-    }else{
+        responser_ptr->finish(NOERROR, responser_index);
+        return;
+    }else if((Status_flags & GUEST_ERROR_F) == 0){
         Status_flags = GUEST_IDELE_F;
-        return true;
     }
 }
 
+void Guest::ErrProc() {
+    Error(HTTP_PROTOCOL_ERR, 0);
+}
 
-void Guest::ErrProc(int errcode) {
-    if(errcode == 0){
+
+void Guest::Error(int ret, int code) {
+    if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0){
         http_flag |= HTTP_CLIENT_CLOSE_F;
-        if(Status_flags == GUEST_IDELE_F){
-            deleteLater(NOERROR | DISCONNECT_FLAG);
-        }else{
-            updateEpoll(events & ~EPOLLIN);
-        }
+        deleteLater(NOERROR | DISCONNECT_FLAG);
         return;
     }
-    if(showerrinfo(errcode, "Guest-Http error")) {
-        deleteLater(HTTP_PROTOCOL_ERR);
-    }
+    LOGE("Guest error %s: %d/%d\n", getsrc(nullptr), ret, code);
+    deleteLater(ret);
 }
 
 void Guest::response(HttpResHeader* res) {
@@ -154,53 +142,51 @@ void Guest::response(HttpResHeader* res) {
             strcpy(res->status, "200 Connection established");
             res->del("Transfer-Encoding");
         }
+    }else if(Status_flags & GUEST_SEND_F){
+        //should't response
+        assert(0);
     }else if(res->get("Transfer-Encoding")){
         Status_flags |= GUEST_CHUNK_F;
+    }else if(res->get("Content-Length") == nullptr) {
+        Status_flags |= GUEST_NOLENGTH_F;
     }
     size_t len;
     char *buff=res->getstring(len);
-    buffer.push(buff, len);
-    updateEpoll(events | EPOLLOUT);
+    rwer->buffer_insert(rwer->buffer_end(), buff, len);
     delete res;
 }
 
 int32_t Guest::bufleft(void*){
-    return 1024*1024 - buffer.length;
+    return 1024*1024 - rwer->wlength();
 }
 
 
-ssize_t Guest::Send(void *buff, size_t size, void* index) {
+ssize_t Guest::Send(void *buff, size_t size, __attribute__ ((unused)) void* index) {
     assert((uint32_t)(long)index == 1);
+    assert((http_flag & HTTP_SERVER_CLOSE_F) == 0);
     size_t len = Min(bufleft(nullptr), size);
     if(Status_flags & GUEST_CHUNK_F){
         char chunkbuf[100];
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)len);
         buff = p_move(buff, -chunklen);
         memcpy(buff, chunkbuf, chunklen);
-        buffer.push(buff, chunklen+len);
-        buffer.push(p_memdup(CRLF, strlen(CRLF)), strlen(CRLF));
+        rwer->buffer_insert(rwer->buffer_end(), buff, chunklen+len);
+        rwer->buffer_insert(rwer->buffer_end(), CRLF, strlen(CRLF));
     }else{
-        buffer.push(buff, size);
+        rwer->buffer_insert(rwer->buffer_end(), buff, size);
     }
-    updateEpoll(events | EPOLLOUT);
     return len;
 }
 
-void Guest::transfer(void* index, Responser* res_ptr, void* res_index) {
+void Guest::transfer(__attribute__ ((unused)) void* index, Responser* res_ptr, void* res_index) {
     assert(index == responser_index);
     responser_ptr = res_ptr;
     responser_index = res_index;
 }
 
-void Guest::discard() {
-    responser_ptr = nullptr;
-    responser_index = nullptr;
-    Requester::discard();
-}
-
-
 void Guest::deleteLater(uint32_t errcode){
     assert(errcode);
+    Status_flags |= GUEST_ERROR_F;
     if(responser_ptr){
         assert(responser_index);
         responser_ptr->finish(errcode, responser_index);
@@ -210,20 +196,29 @@ void Guest::deleteLater(uint32_t errcode){
     Peer::deleteLater(errcode);
 }
 
-bool Guest::finish(uint32_t flags, void* index) {
+void Guest::finish(uint32_t flags, void* index) {
     assert((uint32_t)(long)index == 1);
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode){
         responser_ptr = nullptr;
         responser_index = nullptr;
-        Peer::deleteLater(PEER_LOST_ERR);
-        return false;
+        Peer::deleteLater(errcode);
+        return;
     }
-    updateEpoll(events | EPOLLIN);
+    rwer->addEpoll(EPOLLIN);
     Peer::Send((const void*)nullptr,0, index);
-    if(Status_flags & GUEST_CONNECT_F){
+    if((Status_flags & GUEST_CONNECT_F) ||
+       (Status_flags & GUEST_SEND_F) ||
+       (Status_flags & GUEST_NOLENGTH_F))
+    {
+        assert((flags & DISCONNECT_FLAG) == 0);
         http_flag |= HTTP_SERVER_CLOSE_F;
-    }
+        if(rwer->wlength() == 0){
+            rwer->Shutdown();
+        }
+        return;
+    } 
+
     if(Status_flags & GUEST_REQ_COMPLETED){
         Status_flags = GUEST_IDELE_F;
     }else{
@@ -232,9 +227,7 @@ bool Guest::finish(uint32_t flags, void* index) {
     if(flags & DISCONNECT_FLAG){
         responser_ptr = nullptr;
         responser_index = nullptr;
-        return false;
     }
-    return true;
 }
 
 void Guest::writedcb(void* index) {
@@ -250,6 +243,6 @@ const char* Guest::getsrc(const void *){
     return src;
 }
 
-void Guest::dump_stat(){
-    LOG("Guest %p, %s: %p, %p\n", this, getsrc(nullptr), responser_ptr, responser_index);
+void Guest::dump_stat(Dumper dp, void* param){
+    dp(param, "Guest %p, %s: %p, %p\n", this, getsrc(nullptr), responser_ptr, responser_index);
 }

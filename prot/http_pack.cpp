@@ -1,11 +1,13 @@
 #include "http_pack.h"
-#include "misc/net.h"
 #include "http2.h"
 #include "res/cgi.h"
 #include "req/requester.h"
+#include "misc/net.h"
+#include "misc/util.h"
 
 #include <algorithm>
 
+#include <assert.h>
 
 using std::string;
 
@@ -106,15 +108,16 @@ std::set< string > HttpHeader::getall(const char *header) const{
 */
 
 
-HttpReqHeader::HttpReqHeader(const char* header, ResObject* src):
+HttpReqHeader::HttpReqHeader(const char* header, size_t len, ResObject* src):
                              src(dynamic_cast<Requester *>(src))
 {
     assert(header);
     assert(src);
+    assert(len < HEADLENLIMIT);
     
     char httpheader[HEADLENLIMIT];
-    snprintf(httpheader, sizeof(httpheader), "%s", header);
-    *(strstr(httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
+    memcpy(httpheader, header, len);
+    *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
     char url[URLLIMIT] = {0};
     sscanf(httpheader, "%19s%*[ ]%4095[^\r\n ]", method, url);
     toUpper(method);
@@ -360,7 +363,7 @@ bool HttpReqHeader::no_body() const {
 }
 
 
-Http2_header *HttpReqHeader::getframe(Index_table *index_table, uint32_t http_id) const{
+Http2_header *HttpReqHeader::getframe(Hpack_index_table *index_table, uint32_t http_id) const{
     Http2_header *header = (Http2_header *)p_malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
@@ -435,10 +438,10 @@ std::map< string, string > HttpReqHeader::getcookies() const {
 
 
 
-HttpResHeader::HttpResHeader(const char* header) {
+HttpResHeader::HttpResHeader(const char* header, size_t len) {
     assert(header);
     char httpheader[HEADLENLIMIT];
-    snprintf(httpheader, sizeof(httpheader), "%s", header);
+    memcpy(httpheader, header, len);
     *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
     memset(status, 0, sizeof(status));
     sscanf((char *)httpheader, "%*s%*[ ]%99[^\r\n]", status);
@@ -547,7 +550,7 @@ char * HttpResHeader::getstring(size_t &len) const{
 }
 
 
-Http2_header *HttpResHeader::getframe(Index_table* index_table, uint32_t http_id) const{
+Http2_header *HttpResHeader::getframe(Hpack_index_table* index_table, uint32_t http_id) const{
     Http2_header *header = (Http2_header *)p_malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
@@ -691,7 +694,7 @@ bool HttpReqHeader::getrange() {
     }
 }
 
-
+#if 0
 
 HttpBody::HttpBody() {
 }
@@ -800,4 +803,4 @@ size_t HttpReq::size(){
         return body.size() + header_len - header_sent;
     }
 }
-
+#endif

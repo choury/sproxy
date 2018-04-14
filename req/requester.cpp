@@ -3,28 +3,26 @@
 #include <string.h>
 
 
-Requester::Requester(int fd, struct sockaddr_in6* myaddr): Peer(fd) {
+Requester::Requester(const sockaddr_un* myaddr) {
     if(myaddr){
-        inet_ntop(AF_INET6, &myaddr->sin6_addr, sourceip, sizeof(sourceip));
-        sourceport = ntohs(myaddr->sin6_port);
-
-        updateEpoll(EPOLLIN | EPOLLOUT);
-        handleEvent = (void (Con::*)(uint32_t))&Requester::defaultHE;
+        switch(myaddr->addr.sa_family){
+        case AF_INET:
+            inet_ntop(AF_INET, &myaddr->addr_in.sin_addr, sourceip, sizeof(sourceip));
+            sourceport = ntohs(myaddr->addr_in.sin_port);
+            break;
+        case AF_INET6:
+            inet_ntop(AF_INET6, &myaddr->addr_in6.sin6_addr, sourceip, sizeof(sourceip));
+            sourceport = ntohs(myaddr->addr_in6.sin6_port);
+            break;
+        }
     }
 }
 
 
-Requester::Requester(int fd, const char* ip, uint16_t port): Peer(fd), sourceport(port) {
+Requester::Requester(const char* ip, uint16_t port):sourceport(port) {
     strcpy(sourceip, ip);
-    
-    updateEpoll(EPOLLIN | EPOLLOUT);
-    handleEvent = (void (Con::*)(uint32_t))&Requester::defaultHE;
 }
-
-
 
 const char* Requester::getip(){
     return sourceip;
 }
-
-

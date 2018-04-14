@@ -1,9 +1,10 @@
 #include "ip_pack.h"
 #include "common.h"
+#include "misc/util.h"
+
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-//#include <arpa/inet.h>
 #include <sys/time.h>
 #include <assert.h>
 
@@ -54,25 +55,6 @@ typedef struct tcp_windowscale{
 } __attribute__((packed)) tcp_windowscale;
 
 
-/**
-  * calculate checksum in ip/tcp header
-  */
-static uint16_t checksum_comp(uint8_t *addr, int len) {
-    long sum = 0;
-
-    while (len > 1) {
-        sum += (*addr++) << 8;
-        sum += *addr++;
-        len -= 2;
-    }
-    if (len > 0)
-        sum += (*addr)<<8;
-
-    while (sum >> 16)
-        sum = (sum & 0xffff) + (sum >> 16);
-
-    return ~(uint16_t)sum;
-}
 
 
 Icmp::Icmp() {
@@ -158,7 +140,7 @@ char * Icmp::build_packet(const void* data, size_t& len) {
         memcpy(icmpdata, data, datalen);
     }
 
-    ((icmp *)packet)->icmp_cksum = htons(checksum_comp((uint8_t*)packet, len));
+    ((icmp *)packet)->icmp_cksum = htons(checksum16((uint8_t*)packet, len));
     return packet;
 }
 
@@ -168,7 +150,7 @@ char * Icmp::build_packet(void* data, size_t& len) {
     char* packet = (char *)p_move(data, -(char)sizeof(icmp_hdr));
     icmp_hdr.checksum = 0;
     memcpy(packet, &icmp_hdr, sizeof(icmp_hdr));
-    ((icmp *)packet)->icmp_cksum = htons(checksum_comp((uint8_t*) packet, len));
+    ((icmp *)packet)->icmp_cksum = htons(checksum16((uint8_t*) packet, len));
     return packet;
 }
 
@@ -345,7 +327,7 @@ char* Tcp::build_packet(const void* data, size_t& len) {
     phdr->proto = IPPROTO_TCP;
     phdr->len = htons(len);
     /* tcp checksum */
-    ((tcphdr *)(packet+sizeof(pseudo_hdr)))->check = htons(checksum_comp((uint8_t*)packet, packet_end - packet));
+    ((tcphdr *)(packet+sizeof(pseudo_hdr)))->check = htons(checksum16((uint8_t*)packet, packet_end - packet));
     return (char *)p_move(packet, sizeof(pseudo_hdr));
 }
 
@@ -375,7 +357,7 @@ char * Tcp::build_packet(void* data, size_t& len) {
     phdr->proto = IPPROTO_TCP;
     phdr->len = htons(len);
     /* tcp checksum */
-    ((tcphdr *)(packet+sizeof(pseudo_hdr)))->check = htons(checksum_comp((uint8_t*)packet, len  + sizeof(pseudo_hdr)));
+    ((tcphdr *)(packet+sizeof(pseudo_hdr)))->check = htons(checksum16((uint8_t*)packet, len  + sizeof(pseudo_hdr)));
     return (char *)p_move(packet, sizeof(pseudo_hdr));
 }
 
@@ -590,7 +572,7 @@ char* Udp::build_packet(const void* data, size_t& len) {
     phdr->proto = IPPROTO_UDP;
     phdr->len = htons(len);
     /* udp checksum */
-    ((udphdr*)(packet+sizeof(pseudo_hdr)))->check = htons(checksum_comp((uint8_t*)packet, packet_end - packet));
+    ((udphdr*)(packet+sizeof(pseudo_hdr)))->check = htons(checksum16((uint8_t*)packet, packet_end - packet));
 
     return (char*)p_move(packet, sizeof(pseudo_hdr));
 }
@@ -613,7 +595,7 @@ char* Udp::build_packet(void* data, size_t& len) {
     phdr->proto = IPPROTO_UDP;
     phdr->len = htons(len);
     /* udp checksum */
-    ((udphdr*)(packet+sizeof(pseudo_hdr)))->check = htons(checksum_comp((uint8_t*) packet, len + sizeof(pseudo_hdr)));
+    ((udphdr*)(packet+sizeof(pseudo_hdr)))->check = htons(checksum16((uint8_t*) packet, len + sizeof(pseudo_hdr)));
 
     return (char*)p_move(packet, sizeof(pseudo_hdr));
 }
@@ -651,7 +633,10 @@ void Udp::print() const{
  * 解析packet，不能带L2的头，ip头+tcp/udp头+data
  */
 Ip::Ip(const char *packet, size_t len){
-
+    if(len < sizeof(struct ip)){
+        LOGE("Invalid IP header length: %zu bytes\n", len);
+        throw 0;
+    }
     /* define/compute ip header offset */
     memcpy(&ip_hdr, packet, sizeof(struct ip));
     hdrlen = ip_hdr.ip_hl * 4;
@@ -759,7 +744,7 @@ char* Ip::build_packet(const void* data, size_t &len){
     ip_hdr.ip_sum = 0;
     memcpy(packet, &ip_hdr, sizeof(ip));
 
-    ((ip*)packet)->ip_sum = htons(checksum_comp((uint8_t*)packet, sizeof(struct ip)));
+    ((ip*)packet)->ip_sum = htons(checksum16((uint8_t*)packet, sizeof(struct ip)));
     return packet;
 }
 
@@ -786,7 +771,7 @@ char* Ip::build_packet(void* data, size_t &len){
     ip_hdr.ip_sum = 0;
     memcpy(packet, &ip_hdr, sizeof(ip));
 
-    ((ip*)packet)->ip_sum = htons(checksum_comp((uint8_t*)packet, sizeof(struct ip)));
+    ((ip*)packet)->ip_sum = htons(checksum16((uint8_t*)packet, sizeof(struct ip)));
     return packet;
 }
 

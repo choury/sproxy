@@ -1,9 +1,8 @@
-#ifndef GUEST_S2_H__
-#define GUEST_S2_H__
+#ifndef GUEST2_H__
+#define GUEST2_H__
 
 #include "requester.h"
 #include "prot/http2.h"
-#include "misc/vssl.h"
 
 struct ResStatus{
     Responser *res_ptr;
@@ -13,48 +12,45 @@ struct ResStatus{
     uint32_t res_flags;
 };
 
-class Guest_s2: public Requester, public Http2Responser {
+class Guest2: public Requester, public Http2Responser {
     std::map<uint32_t, ResStatus> statusmap;
-    Ssl *ssl;
+    void init(RWer* rwer);
 protected:
-    virtual void defaultHE(uint32_t events)override;
-    virtual void closeHE(uint32_t events) override;
     virtual void deleteLater(uint32_t errcode) override;
-
-    virtual ssize_t Read(void *buff, size_t size)override;
-    virtual ssize_t Write(const void *buff, size_t size)override;
-
-
-    virtual void PushFrame(Http2_header *header)override;
-    virtual void GoawayProc(Http2_header *header)override;
+    virtual void Error(int ret, int code);
+#ifndef NDEBUG
+    virtual void PingProc(const Http2_header *header)override;
+#endif
+    virtual void GoawayProc(const Http2_header *header)override;
     virtual void ReqProc(HttpReqHeader* req)override;
     virtual void DataProc(uint32_t id, const void* data, size_t len)override;
     virtual void EndProc(uint32_t id) override;
     virtual void RstProc(uint32_t id, uint32_t errcode)override;
-    virtual void WindowUpdateProc(uint32_t id, uint32_t size)override;
     virtual void ErrProc(int errcode)override;
+    virtual void WindowUpdateProc(uint32_t id, uint32_t size)override;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
-#ifndef NDEBUG
-    virtual void PingProc(Http2_header *header)override;
-#endif
+
+    virtual std::list<write_block>::insert_iterator queue_head() override;
+    virtual std::list<write_block>::insert_iterator queue_end() override;
+    virtual void queue_insert(std::list<write_block>::insert_iterator where, void* buff, size_t len) override;
 public:
-    explicit Guest_s2(int fd, const char *ip, uint16_t port, Ssl *ssl);
-    explicit Guest_s2(int fd, struct sockaddr_in6* myaddr, Ssl *ssl);
-    virtual ~Guest_s2();
+    explicit Guest2(const char *ip, uint16_t port, RWer* rwer);
+    explicit Guest2(const sockaddr_un* addr, RWer* rwer);
+    virtual ~Guest2();
     
-    virtual bool finish(uint32_t flags, void* index)override;
 
     virtual int32_t bufleft(void* index)override;
     virtual ssize_t Send(void *buff, size_t size, void* index)override;
+    virtual void writedcb(void* index)override;
+    virtual void finish(uint32_t flags, void* index)override;
     
     virtual void response(HttpResHeader* res)override;
     virtual void transfer(void* index, Responser* res_ptr, void* res_index)override;
-    virtual void writedcb(void* index)override;
 
     virtual const char* getsrc(const void *)override;
-    virtual void dump_stat()override;
+    virtual void dump_stat(Dumper dp, void* param) override;
 
-    static int connection_lost(Guest_s2 *g);
+    static int connection_lost(Guest2 *g);
 };
 
 #endif
