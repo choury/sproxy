@@ -9,7 +9,7 @@ Proxy2* proxy2 = nullptr;
 
 
 int Proxy2::connection_lost(Proxy2 *p){
-    LOGE("[Proxy2] %p the ping timeout, so close it\n", p);
+    LOGE("<proxy2> %p the ping timeout, so close it\n", p);
     p->deleteLater(PEER_LOST_ERR);
     return 0;
 }
@@ -18,7 +18,7 @@ int Proxy2::ping_check(Proxy2 *p){
     char buff[8];
     set64(buff, getutime());
     p->Ping(buff);
-    LOGD(DHTTP2, "window size global: %d/%d\n", p->localwinsize, p->remotewinsize);
+    LOGD(DHTTP2, "<proxy2> ping: window size global: %d/%d\n", p->localwinsize, p->remotewinsize);
     add_delayjob((job_func)connection_lost, p, 10000);
     return 0;
 }
@@ -50,14 +50,11 @@ Proxy2::Proxy2(RWer* rwer) {
             deleteLater(PEER_LOST_ERR);
         }
     });
-    rwer->SetWriteCB([this](size_t len){
-        if(this->rwer->wlength() + len >= 1024*1024){
-            LOGD(DHTTP2, "active all frame because of framelen\n");
-            for(auto i: statusmap){
-                ReqStatus& status = i.second;
-                if(status.remotewinsize > 0){
-                    status.req_ptr->writedcb(status.req_index);
-                }
+    rwer->SetWriteCB([this](size_t){
+        for(auto i: statusmap){
+            ReqStatus& status = i.second;
+            if(status.remotewinsize > 0){
+                status.req_ptr->writedcb(status.req_index);
             }
         }
     });
@@ -79,7 +76,7 @@ void Proxy2::Error(int ret, int code) {
         deleteLater(PEER_LOST_ERR);
         return;
     }
-    LOGE("guest2 error: %d/%d\n", ret, code);
+    LOGE("proxy2 error: %d/%d\n", ret, code);
     deleteLater(ret);
 }
 
@@ -102,6 +99,7 @@ ssize_t Proxy2::Send(void* buff, size_t size, void* index) {
     set32(header->id, id);
     set24(header->length, size);
     if(size == 0) {
+        LOGD(DHTTP2, "<proxy2> [%d]: set stream end\n", id);
         header->flags = END_STREAM_F;
     }
     PushFrame(header);
@@ -137,6 +135,7 @@ void Proxy2::ResProc(HttpResHeader* res) {
         status.req_ptr->response(res);
     }else{
         delete res;
+        LOGD(DHTTP2, "<proxy2> ResProc not found id: %d\n", id);
         Reset(id, ERR_STREAM_CLOSED);
     }
 }
@@ -152,7 +151,7 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
         Requester* requester = status.req_ptr;
         if(len > (size_t)status.localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
-            LOGE("(%s) :[%d] window size error\n", requester->getsrc(status.req_index), id);
+            LOGE("(%s) :<proxy2> [%d] window size error\n", requester->getsrc(status.req_index), id);
             requester->finish(ERR_FLOW_CONTROL_ERROR, status.req_index);
             statusmap.erase(id);
             return;
@@ -160,11 +159,13 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
         requester->Send(data, len, status.req_index);
         status.localwinsize -= len;
     }else{
+        LOGD(DHTTP2, "<proxy2> DataProc not found id: %d\n", id);
         Reset(id, ERR_STREAM_CLOSED);
     }
 }
 
 void Proxy2::EndProc(uint32_t id){
+    LOGD(DHTTP2, "<proxy2> [%d]: end of stream\n", id);
     if(statusmap.count(id)) {
         ReqStatus &status = statusmap[id];
         if(status.req_flags & STREAM_WRITE_CLOSED){
@@ -187,7 +188,7 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(errcode){
-            LOGE("(%s) [%d]: stream reseted: %d\n",
+            LOGE("(%s) <proxy2> [%d]: stream reseted: %d\n",
                  status.req_ptr->getsrc(status.req_index), id, errcode);
         }
         status.req_ptr->finish(errcode?errcode:PEER_LOST_ERR, status.req_index);
@@ -199,7 +200,7 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
     if(id){
         if(statusmap.count(id)){
             ReqStatus& status = statusmap[id];
-            LOGD(DHTTP2, "window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
+            LOGD(DHTTP2, "<proxy2> window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
             if((uint64_t)status.remotewinsize + size >= (uint64_t)1<<31){
                 Reset(id, ERR_FLOW_CONTROL_ERROR);
                 return;
@@ -207,17 +208,17 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
             status.remotewinsize += size;
             status.req_ptr->writedcb(status.req_index);
         }else{
-            LOGD(DHTTP2, "window size updated [%d]: not found\n", id);
+            LOGD(DHTTP2, "<proxy2> window size updated [%d]: not found\n", id);
         }
     }else{
-        LOGD(DHTTP2, "window size updated global: %d+%d\n", remotewinsize, size);
+        LOGD(DHTTP2, "<proxy2> window size updated global: %d+%d\n", remotewinsize, size);
         if((uint64_t)remotewinsize + size >= (uint64_t)1<<31){
             ErrProc(ERR_FLOW_CONTROL_ERROR);
             return;
         }
         remotewinsize += size;
         if(remotewinsize == (int32_t)size){
-            LOGD(DHTTP2, "active all frame\n");
+            LOGD(DHTTP2, "<proxy2> active all frame\n");
             for(auto i: statusmap){
                 ReqStatus& status = i.second;
                 if(status.remotewinsize > 0){
@@ -232,9 +233,9 @@ void Proxy2::PingProc(const Http2_header *header){
     if(header->flags & ACK_F){
         del_delayjob((job_func)connection_lost, this);
         double diff = (getutime()-get64(header+1))/1000.0;
-        LOG("[Proxy2] Get a ping time=%.3fms\n", diff);
+        LOG("<Proxy2> Get a ping time=%.3fms\n", diff);
         if(diff >= 5000){
-            LOGE("[Proxy2] The ping time too long!\n");
+            LOGE("<Proxy2> The ping time too long!\n");
         }
     }
     Http2Base::PingProc(header);

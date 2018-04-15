@@ -7,7 +7,8 @@
 size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
     const Http2_header *header = (const Http2_header *)http2_buff;
     if(len < sizeof(Http2_header)){
-        LOGD(DHTTP2, "get a incompleted head, size:%zu\n", len);
+        if(len)
+            LOGD(DHTTP2, "get a incompleted head, size:%zu\n", len);
         return 0;
     }else{
         uint32_t length = get24(header->length);
@@ -25,7 +26,7 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
                 LOG("get a frame [%d]:%d, size:%d after goaway, ignore it.\n", id, header->type, length);
                 return length + sizeof(Http2_header);
             }
-            LOGD(DHTTP2, "get a frame [%d]:%d, size:%d\n", id, header->type, length);
+            LOGD(DHTTP2, "get a frame [%d]:%d, size:%d, flags:%d\n", id, header->type, length, header->flags);
             try {
                 uint32_t value;
                 switch(header->type) {
@@ -110,7 +111,7 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
 /* ping 帧永远插到最前面*/
 void Http2Base::PushFrame(Http2_header *header) {
     uint32_t id = HTTP2_ID(header->id);
-    LOGD(DHTTP2, "push a frame [%d]:%d, size:%d\n", id, header->type, get24(header->length));
+    LOGD(DHTTP2, "push a frame [%d]:%d, size:%d, flags: %d\n", id, header->type, get24(header->length), header->flags);
     std::list<write_block>::insert_iterator i;
     if((http2_flag & HTTP2_FLAG_INITED) == 0){
         i = queue_end();
