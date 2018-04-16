@@ -145,6 +145,8 @@ void Guest::response(HttpResHeader* res) {
     }else if(Status_flags & GUEST_SEND_F){
         //should't response
         assert(0);
+    }else if(res->no_body()){
+        Status_flags |= GUEST_RES_COMPLETED;
     }else if(res->get("Transfer-Encoding")){
         Status_flags |= GUEST_CHUNK_F;
     }else if(res->get("Content-Length") == nullptr) {

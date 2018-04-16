@@ -531,7 +531,7 @@ bool HttpResHeader::no_body() const {
 char * HttpResHeader::getstring(size_t &len) const{
     char * buff = (char *)p_malloc(BUF_LEN);
     len = 0;
-    if(get("Content-Length") || get("Transfer-Encoding")){
+    if(get("Content-Length") || get("Transfer-Encoding") || no_body()){
         len += sprintf(buff, "HTTP/1.1 %s" CRLF, status);
     }else {
         len += sprintf(buff, "HTTP/1.0 %s" CRLF, status);
