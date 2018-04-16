@@ -616,6 +616,7 @@ void Guest_vpn::finish(uint32_t flags, void* index) {
 
             sendPkg(&pac_return, (const void*)nullptr, 0);
             if(tcpStatus->flags & FIN_RECV){
+                status.res_ptr->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
                 status.res_ptr = nullptr;
                 status.res_index = nullptr;
             }else{

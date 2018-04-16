@@ -188,10 +188,10 @@ void Stra::stats(int tab){
         uint32_t mask = i.first&0xffffffff;
         while(mask){
             prefix ++;
-            mask >>= 1;
+            mask <<= 1;
         }
         uint32_t net = i.first >> 32;
-        LOG("%s/%d: %s\n", inet_ntoa(in_addr{net}), prefix, getstrategystring(i.second));
+        LOG("%s/%d: %s\n", inet_ntoa(in_addr{htonl(net)}), prefix, getstrategystring(i.second));
     }
     char tabs[100]= {0};
     for(int i = 0; i<tab; i++){
@@ -223,11 +223,11 @@ std::list<std::tuple<string, string, string>> Stra::dump(){
             int prefix = 0;
             while(mask){
                 prefix ++;
-                mask >>= 1;
+                mask <<= 1;
             }
-            sprintf(ipv4_string, "%s/%d", inet_ntoa(in_addr{net}), prefix);
+            sprintf(ipv4_string, "%s/%d", inet_ntoa(in_addr{htonl(net)}), prefix);
         }else{
-            sprintf(ipv4_string, "%s", inet_ntoa(in_addr{net}));
+            sprintf(ipv4_string, "%s", inet_ntoa(in_addr{htonl(net)}));
         }
         slist.push_back(std::make_tuple(ipv4_string, getstrategystring(i.second), ext));
     }
