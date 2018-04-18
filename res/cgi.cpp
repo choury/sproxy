@@ -69,8 +69,17 @@ Cgi::Cgi(const char* fname, int sv[2]) {
     cgimap[filename] = this;
 }
 
-Cgi::~Cgi() {
+void Cgi::evictMe(){
+    if(cgimap.count(filename) == 0){
+        return;
+    }
+    if(cgimap[filename] != this){
+        return;
+    }
     cgimap.erase(filename);
+}
+
+Cgi::~Cgi() {
 }
 
 int32_t Cgi::bufleft(void*) {
@@ -322,6 +331,7 @@ void Cgi::finish(uint32_t flags, void* index) {
 }
 
 void Cgi::deleteLater(uint32_t errcode){
+    evictMe();
     for(auto i: statusmap) {
         if((i.second->flags & HTTP_RESPONED_F) == 0){
             HttpResHeader* res = new HttpResHeader(H503, sizeof(H503));

@@ -27,6 +27,7 @@ class File:public Responser{
     uint32_t req_id = 1;
     std::map<uint32_t, FileStatus> statusmap;
     bool checkvalid();
+    void evictMe();
     virtual void readHE(size_t len);
     virtual void deleteLater(uint32_t errcode) override;
     virtual void* request(HttpReqHeader* req) override;

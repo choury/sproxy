@@ -131,9 +131,20 @@ bool File::checkvalid() {
         valid = nt.st_mtime == st.st_mtime && nt.st_ino == st.st_ino;
     }
     if(!valid){
+        evictMe();
         rwer->addEpoll(EPOLLIN);
     }
     return valid;
+}
+
+void File::evictMe(){
+    if(filemap.count(filename) == 0){
+        return;
+    }
+    if(filemap[filename] != this){
+        return;
+    }
+    filemap.erase(filename);
 }
 
 int32_t File::bufleft(void*){
@@ -175,14 +186,6 @@ void* File::request(HttpReqHeader* req) {
 void File::readHE(size_t len) {
     rwer->consume(nullptr, len);
     rwer->buffer_insert(rwer->buffer_end(), "FILEFILE", 8);
-    if(statusmap.empty()){
-        if(!valid){
-            deleteLater(PEER_LOST_ERR);
-        }else{
-            rwer->delEpoll(EPOLLIN);
-        }
-        return;
-    }
 
     bool allfull = true;
     for(auto i = statusmap.begin();i!=statusmap.end();){
@@ -270,7 +273,11 @@ void File::readHE(size_t len) {
         i++;
     }
     if(allfull){
-        rwer->delEpoll(EPOLLIN);
+        if(!valid && statusmap.empty()){
+            deleteLater(PEER_LOST_ERR);
+        }else{
+            rwer->delEpoll(EPOLLIN);
+        }
     }
 }
 
@@ -284,7 +291,8 @@ void File::finish(uint32_t flags, void* index){
 }
 
 void File::deleteLater(uint32_t errcode){
-   for(auto i:statusmap){
+    evictMe();
+    for(auto i:statusmap){
         if(!i.second.responsed){
             HttpResHeader* res = new HttpResHeader(H503, sizeof(H503));
             res->index = i.second.req_index;
@@ -310,7 +318,6 @@ File::~File() {
     if(fd > 0){
         close(fd);
     }
-    filemap.erase(filename);
 }
 
 Responser* File::getfile(HttpReqHeader* req) {

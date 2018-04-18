@@ -47,6 +47,7 @@ class Cgi:public Responser{
     char filename[URLLIMIT];
     uint32_t curid = 1;
     std::map<uint32_t, HttpReqHeader*> statusmap;
+    void evictMe();
     void readHE(size_t len);
     bool HandleRes(const CGI_Header* header, HttpReqHeader* req);
     bool HandleValue(const CGI_Header* header, HttpReqHeader* req);

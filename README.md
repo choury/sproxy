@@ -1,7 +1,8 @@
 sproxy [![Build Status](https://travis-ci.org/choury/sproxy.svg?branch=master)](https://travis-ci.org/choury/sproxy)
 ======
 + Linux Only!!
-+ http proxy over ssl and dtls
++ http proxy
++ http/http2 proxy over ssl
 
 build
 =====
@@ -11,6 +12,4 @@ build
 
 TODO
 ======
-- [x] 动态job机制，减少cpu使用率
-- [x] dns 请求时刷新ttl
-- [ ] Guest_sni 可以转化为 Guest_s(2)
+- [ ] 支持动态生成pac文件
