@@ -82,7 +82,7 @@ public:
         return find(reverse(host), ext);
     }
     bool del(const char *host){
-        uint32_t ipv4 = inet_addr(host);
+        uint32_t ipv4 = ntohl(inet_addr(host));
         if(ipv4 != INADDR_NONE){
             for(auto i: ip4s){
                 uint32_t mask = i.first & 0xffffffff;
