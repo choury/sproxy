@@ -129,7 +129,10 @@ void Guest2::DataProc(uint32_t id, const void* data, size_t len) {
             statusmap.erase(id);
             return;
         }
-        responser->Send(data, len, status.res_index);
+        size_t sended = 0;
+        while(sended != len){
+            sended += responser->Send((const char*)data + sended, len - sended, status.res_index);
+        }
         status.localwinsize -= len;
     }else{
         LOGD(DHTTP2, "<guest2> DateProc not found id: %d\n", id);

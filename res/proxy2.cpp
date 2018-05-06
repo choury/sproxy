@@ -156,7 +156,10 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
             statusmap.erase(id);
             return;
         }
-        requester->Send(data, len, status.req_index);
+        size_t sended = 0;
+        while(sended != len){
+            sended += requester->Send((const char*)data + sended, len - sended, status.req_index);
+        }
         status.localwinsize -= len;
     }else{
         LOGD(DHTTP2, "<proxy2> DataProc not found id: %d\n", id);

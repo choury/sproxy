@@ -213,9 +213,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
         requester->response(res);
     } else if(req->ismethod("FLUSH")){
         if(strcasecmp(req->hostname, "cgi") == 0){
-            //TODO
-            assert(0);
-            //flushcgi();
+            flushcgi();
             HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
             res->index = req->index;
             requester->response(res);

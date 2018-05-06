@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <sys/time.h>
+#include <time.h>
 #include <assert.h>
 
 /*
@@ -201,8 +201,8 @@ Tcp * Tcp::setack(uint32_t ack) {
 }
 
 Tcp * Tcp::setwindow(uint32_t window) {
-    if(window > 65535){
-        tcp_hdr.window = htons(65535);
+    if(window > TCP_MAXWIN){
+        tcp_hdr.window = htons(TCP_MAXWIN);
     }else{
         tcp_hdr.window = htons(window);
     }
@@ -221,7 +221,9 @@ Tcp * Tcp::setflag(uint8_t flag) {
  * so inspect current TCP option length (tcpopt_len)
  */
 Tcp* Tcp::settimestamp(uint32_t tsval, uint32_t tsecr) {
-
+    if(tsval == 0){
+        tsval = time(0);
+    }
     if (tcpopt) {
         tcpopt = (char *) realloc(tcpopt, tcpoptlen + sizeof(tcp_timestamp));
     } else{
@@ -235,11 +237,8 @@ Tcp* Tcp::settimestamp(uint32_t tsval, uint32_t tsecr) {
     t->kind = TCPOPT_TIMESTAMP;
     t->length = TCPOLEN_TIMESTAMP;
 
-    struct timeval now;
-    if (gettimeofday(&now, NULL) < 0)
-        LOGE("Couldn't get time of day:%s\n", strerror(errno));
-    t->tsval = htonl((tsval) ? tsval : (uint32_t) now.tv_sec);
-    t->tsecr = htonl((tsecr) ? tsecr : 0);
+    t->tsval = htonl(tsval);
+    t->tsecr = htonl(tsecr);
 
     tcpoptlen += sizeof(tcp_timestamp);
     return this;
@@ -361,7 +360,28 @@ char * Tcp::build_packet(void* data, size_t& len) {
     return (char *)p_move(packet, sizeof(pseudo_hdr));
 }
 
+uint16_t Tcp::getmss() const{
+    tcp_opt* opt = (tcp_opt *)tcpopt;
+    size_t len = tcpoptlen;
 
+    while (len > 0 && opt) {
+        if (opt->kind == TCPOPT_EOL)
+            break;
+        if(opt->kind == TCPOPT_NOP){
+            len --;
+            opt = (tcp_opt*)((char *)opt+1);
+            continue;
+        }
+        if (opt->kind == TCPOPT_MAXSEG) {
+            assert(opt->length == TCPOLEN_MAXSEG);
+            struct tcp_mss *t = (tcp_mss *)(opt);
+            return ntohs(t->mss);
+        }
+        len -= opt->length;
+        opt = (tcp_opt*)((char *)opt+opt->length);
+    }
+    return TCP_MSS;
+}
 
 /**
  * Parse TCP options and get timestamp if it exists.

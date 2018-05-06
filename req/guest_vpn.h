@@ -11,8 +11,7 @@ struct VpnKey{
     Protocol    protocol;
     explicit VpnKey(const Ip* ip);
     void reverse();
-    int getsport() const;
-    const char* getdst() const;
+    const char* getString(const char* sep) const;
 };
 
 bool operator<(const VpnKey a, const VpnKey b);
@@ -31,6 +30,7 @@ struct TcpStatus{
     uint32_t   send_acked;
     uint32_t   want_seq;
     uint16_t   window;
+    uint16_t   mss;
     uint8_t    window_scale;
 #define FIN_RECV   1
 #define FIN_SEND   (1<<1)

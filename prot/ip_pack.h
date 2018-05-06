@@ -32,6 +32,14 @@
 #define TH_URG        0x20
 #endif
 
+#ifndef TCP_MAXWIN
+#define TCP_MAXWIN 65535
+#endif
+
+#ifndef TCP_MSS
+#define TCP_MSS  512
+#endif
+
 #ifdef __ANDROID__
 //copy from glibc
 struct icmphdr
@@ -105,6 +113,7 @@ public:
     uint16_t getdport() const;
     uint16_t getwindow() const;
     uint8_t  getflag() const;
+    uint16_t getmss() const;
     int gettimestamp(uint32_t *tsval, uint32_t *tsecr) const;
     uint8_t getwindowscale() const;
     ~Tcp();

@@ -271,8 +271,9 @@ bool Cgi::HandleData(const CGI_Header* header, HttpReqHeader* req){
         return false;
     }
 
-    if(size){
-        req->src->Send((const char *)(header+1), size, req->index);
+    size_t sended = 0;
+    while(sended != size){
+        sended += req->src->Send((const char *)(header+1) + sended, size - sended, req->index);
     }
 
     if (header->flag & CGI_FLAG_END) {
