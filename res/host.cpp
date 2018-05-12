@@ -182,10 +182,6 @@ void Host::Error(int ret, int code) {
 void Host::finish(uint32_t flags, void* index) {
     assert((long)index == 1);
     uint8_t errcode = flags & ERROR_MASK;
-    if(errcode == VPN_AGED_ERR){
-        deleteLater(errcode);
-        return;
-    }
     if(errcode || (flags & DISCONNECT_FLAG)){
         delete req;
         req = nullptr;

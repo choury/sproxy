@@ -95,11 +95,6 @@ void FDns::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     uint8_t errcode = flags & ERROR_MASK;
-    if(errcode == VPN_AGED_ERR){
-        FDnsStatus& status = statusmap[id];
-        status.req_ptr->finish(errcode, status.req_index);
-        statusmap.erase(id);
-    }
     if(errcode || (flags & DISCONNECT_FLAG)){
         statusmap.erase(id);
     }

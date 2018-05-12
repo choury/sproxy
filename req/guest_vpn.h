@@ -16,7 +16,10 @@ struct VpnKey{
 
 bool operator<(const VpnKey a, const VpnKey b);
 
+class Guest_vpn;
+
 struct VpnStatus{
+    Guest_vpn* vpn;
     Responser* res_ptr;
     void*      res_index;
     VpnKey*    key;
@@ -31,10 +34,10 @@ struct TcpStatus{
     uint32_t   want_seq;
     uint16_t   window;
     uint16_t   mss;
-    uint8_t    window_scale;
-#define FIN_RECV   1
-#define FIN_SEND   (1<<1)
-    uint8_t    flags;
+    uint16_t   options;
+    uint8_t    recv_wscale;
+    uint8_t    send_wscale;
+    uint8_t    status;
 };
 
 struct IcmpStatus{

@@ -316,7 +316,7 @@ void* p_malloc(size_t size){
         int err = errno;
         LOGE("malloc failed[%zu]: %s\n", size, strerror(errno));
         errno = err;
-        return ptr;
+        return NULL;
     }
     ptr += PRIOR_HEAD;
     *(ptr-1) = PRIOR_HEAD;

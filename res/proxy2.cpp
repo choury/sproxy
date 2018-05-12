@@ -320,12 +320,6 @@ void Proxy2::finish(uint32_t flags, void* index) {
     assert(statusmap.count(id));
     ReqStatus& status = statusmap[id];
     uint8_t errcode = flags & ERROR_MASK;
-    if(errcode == VPN_AGED_ERR){
-        status.req_ptr->finish(errcode, status.req_index);
-        Reset(id, ERR_CANCEL);
-        statusmap.erase(id);
-        return;
-    }
     if(errcode == 0 ){
         if((status.req_flags & STREAM_WRITE_CLOSED) == 0){
             Peer::Send((const void*)nullptr, 0, index);

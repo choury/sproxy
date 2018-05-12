@@ -360,6 +360,27 @@ char * Tcp::build_packet(void* data, size_t& len) {
     return (char *)p_move(packet, sizeof(pseudo_hdr));
 }
 
+uint16_t Tcp::getoptions() const {
+    tcp_opt* opt = (tcp_opt *)tcpopt;
+    size_t len = tcpoptlen;
+    uint16_t options = 0;
+
+    while (len > 0 && opt) {
+        if (opt->kind == TCPOPT_EOL)
+            break;
+        if(opt->kind == TCPOPT_NOP){
+            len --;
+            opt = (tcp_opt*)((char *)opt+1);
+            continue;
+        }
+        assert(opt->kind<16);
+        options |= (1<<opt->kind);
+        len -= opt->length;
+        opt = (tcp_opt*)((char *)opt+opt->length);
+    }
+    return options;
+}
+
 uint16_t Tcp::getmss() const{
     tcp_opt* opt = (tcp_opt *)tcpopt;
     size_t len = tcpoptlen;

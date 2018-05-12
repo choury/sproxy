@@ -12,9 +12,11 @@
 #include <stdlib.h>
 #include <assert.h>
 
+#define VPN_WSCALE   4
+
 int vpn_aged(VpnStatus* status){
     LOGD(DVPN, "%s aged.\n", status->key->getString("-"));
-    status->res_ptr->finish(VPN_AGED_ERR, status->res_index);
+    status->vpn->finish(VPN_AGED_ERR, status->key);
     return 0;
 }
 
@@ -140,15 +142,15 @@ void Guest_vpn::response(HttpResHeader* res) {
     if(memcmp(res->status, "200", 3) == 0){
         assert(key.protocol == Protocol::TCP);
         TcpStatus* tcpStatus = (TcpStatus *)status.protocol_info;
-        assert(tcpStatus);
+        tcpStatus->status = TCP_ESTABLISHED;
         LOGD(DVPN, "write syn ack packet %s (%u - %u).\n",
              key.getString("<-"), tcpStatus->send_seq, tcpStatus->want_seq);
         Ip pac_return(IPPROTO_TCP, &key.dst, &key.src);
         pac_return.tcp
             ->setseq(tcpStatus->send_seq++)
             ->setack(tcpStatus->want_seq)
-            ->setwindowscale(0)
-            ->setwindow(status.res_ptr->bufleft(status.res_index))
+            ->setwindowscale(tcpStatus->send_wscale)
+            ->setwindow(status.res_ptr->bufleft(status.res_index) >> tcpStatus->send_wscale)
             ->setmss(BUF_LEN)
             ->setflag(TH_ACK | TH_SYN);
 
@@ -163,7 +165,7 @@ void Guest_vpn::response(HttpResHeader* res) {
             pac_return.tcp
                 ->setseq(tcpStatus->send_seq)
                 ->setack(tcpStatus->want_seq)
-                ->setwindow(bufleft(0))
+                ->setwindow(bufleft(0) >> tcpStatus->send_wscale)
                 ->setflag(TH_RST | TH_ACK);
 
             sendPkg(&pac_return, (const void *)nullptr, 0);
@@ -212,7 +214,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
          key.getString("->"), seq, ack, flag, datalen);
 
     if(flag & TH_SYN){
-        if(statusmap.count(key)){
+        if(statusmap.count(key)) {
             LOGD(DVPN, "drop dup syn packet\n");
             return;
         }
@@ -228,17 +230,24 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
                 pac->tcp->getsport());
 
         HttpReqHeader* req = new HttpReqHeader(buff, headlen, this);
-        VpnKey *key_index = new VpnKey(key);
-        req->index =  key_index;
+        VpnKey* key_index = new VpnKey(key);
+        req->index = key_index;
         TcpStatus* tcpStatus = (TcpStatus*)malloc(sizeof(TcpStatus));
         tcpStatus->send_seq = time(0);
         tcpStatus->send_acked = tcpStatus->send_seq;
         tcpStatus->want_seq = seq+1;
         tcpStatus->window = pac->tcp->getwindow();
+        tcpStatus->options = pac->tcp->getoptions();
         tcpStatus->mss = pac->tcp->getmss();
-        tcpStatus->window_scale = pac->tcp->getwindowscale();
-        tcpStatus->flags = 0;
+        tcpStatus->recv_wscale = pac->tcp->getwindowscale();
+        tcpStatus->status = TCP_SYN_RECV;
+        if(tcpStatus->options & (1<<TCPOPT_WINDOW)){
+            tcpStatus->send_wscale = VPN_WSCALE;
+        }else{
+            tcpStatus->send_wscale = 0;
+        }
         statusmap[key] =  VpnStatus{
+            this,
             nullptr,
             nullptr,
             key_index,
@@ -261,7 +270,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         LOGD(DVPN, "get rst, checking key\n");
         //check the map
         if (statusmap.count(key)) {
-            VpnStatus &status = statusmap[key];
+            VpnStatus& status = statusmap[key];
             if(status.res_ptr)
                 status.res_ptr->finish(TCP_RESET_ERR, status.res_index);
             cleanKey(&key);
@@ -281,7 +290,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         return;
     }
 
-    VpnStatus &status = statusmap[key];
+    VpnStatus& status = statusmap[key];
     TcpStatus* tcpStatus = (TcpStatus*)status.protocol_info;
     assert(tcpStatus);
 
@@ -290,7 +299,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         pac_return.tcp
             ->setseq(tcpStatus->send_seq)
             ->setack(tcpStatus->want_seq)
-            ->setwindow(bufleft(0))
+            ->setwindow(bufleft(0) >> tcpStatus->send_wscale)
             ->setflag(TH_ACK);
         sendPkg(&pac_return, (const void*)nullptr, 0);
         return;
@@ -310,7 +319,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
             pac_return.tcp
                 ->setseq(tcpStatus->send_seq)
                 ->setack(tcpStatus->want_seq)
-                ->setwindow(buflen)
+                ->setwindow(buflen >> tcpStatus->send_wscale)
                 ->setflag(TH_ACK);
 
             sendPkg(&pac_return, (const void*)nullptr, 0);
@@ -324,19 +333,32 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         pac_return.tcp
             ->setseq(tcpStatus->send_seq)
             ->setack(tcpStatus->want_seq)
-            ->setwindow(bufleft(0))
+            ->setwindow(bufleft(0) >> tcpStatus->send_wscale)
             ->setflag(TH_ACK);
 
         sendPkg(&pac_return, (const void*)nullptr, 0);
-
-        if(tcpStatus->flags & FIN_SEND){
-            status.res_ptr->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
-            LOGD(DVPN, "clean up connection\n");
-            cleanKey(&key);
-            return;
-        }else{
+        switch(tcpStatus->status){
+        case TCP_ESTABLISHED:
             status.res_ptr->finish(NOERROR, status.res_index);
-            tcpStatus->flags |= FIN_RECV;
+            tcpStatus->status = TCP_CLOSE_WAIT;
+            return;
+        case TCP_FIN_WAIT1:
+            tcpStatus->status = TCP_CLOSING;
+            if(status.res_ptr){
+                status.res_ptr->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
+                status.res_ptr = nullptr;
+                status.res_index = nullptr;
+            }
+            break;
+        case TCP_FIN_WAIT2:
+            tcpStatus->status = TCP_TIME_WAIT;
+            if(status.res_ptr){
+                status.res_ptr->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
+                status.res_ptr = nullptr;
+                status.res_index = nullptr;
+            }
+            add_delayjob((job_func)vpn_aged, &status, 1000);
+            return;
         }
     }
 
@@ -345,11 +367,23 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         if(ack > tcpStatus->send_acked){
             tcpStatus->send_acked = ack;
         }
-        if(status.res_ptr){
-            status.res_ptr->writedcb(status.res_index);
-        }else{
+        switch(tcpStatus->status){
+        case TCP_ESTABLISHED:
+            if(status.res_ptr){
+                status.res_ptr->writedcb(status.res_index);
+            }
+            break;
+        case TCP_FIN_WAIT1:
+            tcpStatus->status = TCP_FIN_WAIT2;
+            break;
+        case TCP_CLOSING:
+            tcpStatus->status = TCP_TIME_WAIT;
+            add_delayjob((job_func)vpn_aged, &status, 1000);
+            break;
+        case TCP_LAST_ACK:
             LOGD(DVPN, "clean closed connection\n");
             cleanKey(&key);
+            break;
         }
     }
 }
@@ -364,7 +398,7 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
         LOGD(DVPN, "%s size: %zu\n", key.getString("->"), datalen);
         VpnStatus& status = statusmap[key];
         add_delayjob((job_func)vpn_aged, &status, 300000);
-        if(status.res_ptr->bufleft(status.res_index)<=0){
+        if(status.res_ptr->bufleft(status.res_index) <= 0){
             LOGE("responser buff is full, drop packet\n");
         }else{
             status.res_ptr->Send(data, datalen, status.res_index);
@@ -385,6 +419,7 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
         VpnKey *key_index = new VpnKey(key);
         req->index = key_index;
         statusmap[key] =  VpnStatus{
+            this,
             nullptr,
             nullptr,
             key_index,
@@ -446,6 +481,7 @@ void Guest_vpn::icmpHE(const Ip* pac, const char* packet, size_t len) {
             icmpStatus->id = pac->icmp->getid();
             icmpStatus->seq = pac->icmp->getseq();
             statusmap[key] =  VpnStatus{
+                this,
                 nullptr,
                 nullptr,
                 key_index,
@@ -507,7 +543,7 @@ int32_t Guest_vpn::bufleft(void* index) {
         VpnStatus& status = statusmap[*key];
         TcpStatus* tcpStatus = (TcpStatus*)status.protocol_info;
         assert(tcpStatus);
-        return (tcpStatus->window << tcpStatus->window_scale) - (tcpStatus->send_seq - tcpStatus->send_acked);
+        return (tcpStatus->window << tcpStatus->recv_wscale) - (tcpStatus->send_seq - tcpStatus->send_acked);
     }
     if(key->protocol == Protocol::ICMP){
         return BUF_LEN;
@@ -527,7 +563,7 @@ ssize_t Guest_vpn::Send(void* buff, size_t size, void* index) {
     if(key.protocol == Protocol::TCP){
         TcpStatus* tcpStatus = (TcpStatus*)status.protocol_info;
         assert(tcpStatus);
-        size_t winlen = (tcpStatus->window << tcpStatus->window_scale) - (tcpStatus->send_seq - tcpStatus->send_acked);
+        size_t winlen = (tcpStatus->window << tcpStatus->recv_wscale) - (tcpStatus->send_seq - tcpStatus->send_acked);
         if(size > winlen){
             LOGE("(%s): window left smaller than send size (%zu/%zu)!\n", getProg(&key), size, winlen);
             size = winlen;
@@ -542,7 +578,7 @@ ssize_t Guest_vpn::Send(void* buff, size_t size, void* index) {
         pac_return.tcp
             ->setseq(tcpStatus->send_seq)
             ->setack(tcpStatus->want_seq)
-            ->setwindow(status.res_ptr->bufleft(status.res_index))
+            ->setwindow(status.res_ptr->bufleft(status.res_index) >> tcpStatus->send_wscale)
             ->setflag(TH_ACK | TH_PUSH);
 
         sendPkg(&pac_return, buff, size);
@@ -600,6 +636,12 @@ void Guest_vpn::finish(uint32_t flags, void* index) {
     LOGD(DVPN, "%s finish: %u\n", key->getString("<-"), errcode);
     assert(statusmap.count(*key));
     VpnStatus& status = statusmap[*key];
+    if(errcode == VPN_AGED_ERR){
+        if(status.res_ptr)
+            status.res_ptr->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
+        cleanKey(key);
+        return;
+    }
     if(key->protocol == Protocol::TCP){
         TcpStatus* tcpStatus = (TcpStatus*)status.protocol_info;
         assert(tcpStatus);
@@ -609,17 +651,23 @@ void Guest_vpn::finish(uint32_t flags, void* index) {
             pac_return.tcp
                 ->setseq(tcpStatus->send_seq++)
                 ->setack(tcpStatus->want_seq)
-                ->setwindow(bufleft(0))
+                ->setwindow(bufleft(0) >> tcpStatus->send_wscale)
                 ->setflag(TH_FIN | TH_ACK);
 
             sendPkg(&pac_return, (const void*)nullptr, 0);
-            if(tcpStatus->flags & FIN_RECV){
-                status.res_ptr->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
-                status.res_ptr = nullptr;
-                status.res_index = nullptr;
-            }else{
-                tcpStatus->flags |=  FIN_SEND;
+            switch(tcpStatus->status){
+            case TCP_ESTABLISHED:
+                tcpStatus->status = TCP_FIN_WAIT1;
+                break;
+            case TCP_CLOSE_WAIT:
+                tcpStatus->status = TCP_LAST_ACK;
+                break;
             }
+            if(flags & DISCONNECT_FLAG){
+                status.res_index = nullptr;
+                status.res_ptr = nullptr;
+            }
+            return;
         }else if(errcode == CONNECT_TIMEOUT){
             LOGD(DVPN, "write icmp unreachable msg: %s\n", key->getString("<-"));
             Ip pac_return(IPPROTO_ICMP, &key->dst, &key->src);
@@ -641,7 +689,7 @@ void Guest_vpn::finish(uint32_t flags, void* index) {
         }
     }
     if(key->protocol == Protocol::UDP){
-        if(errcode && errcode != VPN_AGED_ERR){
+        if(errcode){
             LOGD(DVPN, "write icmp unreachable msg: %s\n", key->getString("<-"));
             Ip pac_return(IPPROTO_ICMP, &key->dst, &key->src);
             pac_return.icmp
