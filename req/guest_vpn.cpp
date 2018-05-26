@@ -54,7 +54,7 @@ void VpnKey::reverse() {
 
 
 const char* VpnKey::getString(const char* sep) const{
-    static char str[DOMAINLIMIT];
+    static char str[URLLIMIT];
     snprintf(str, sizeof(str), "<%s> (%s:%d %s %s:%d)",
              protstr(protocol),
              FDns::getRdns(&src.addr_in.sin_addr),
@@ -382,6 +382,9 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
             break;
         case TCP_LAST_ACK:
             LOGD(DVPN, "clean closed connection\n");
+            if(status.res_ptr){
+                status.res_ptr->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
+            }
             cleanKey(&key);
             break;
         }
@@ -519,7 +522,6 @@ void Guest_vpn::icmpHE(const Ip* pac, const char* packet, size_t len) {
             VpnStatus& status = statusmap[key];
 
             status.res_ptr->finish(PEER_LOST_ERR, status.res_index);
-            del_delayjob((job_func)vpn_aged, &status);
             cleanKey(&key);
         }else{
             LOGD(DVPN, "key not exist, ignore\n");
@@ -619,10 +621,11 @@ ssize_t Guest_vpn::Send(void* buff, size_t size, void* index) {
 void Guest_vpn::cleanKey(const VpnKey* key) {
     assert(statusmap.count(*key));
     VpnStatus& status = statusmap[*key];
+    del_delayjob((job_func)vpn_aged, &status);
+
     free(status.protocol_info);
     VpnKey* key_ptr = status.key;
     free(status.packet);
-    assert(check_delayjob(job_func(vpn_aged), &status) == 0);
     statusmap.erase(*key);
     assert(statusmap.count(*key_ptr) == 0);
     delete key_ptr;
@@ -703,7 +706,6 @@ void Guest_vpn::finish(uint32_t flags, void* index) {
         //ignore it.
     }
     if(errcode || (flags & DISCONNECT_FLAG)){
-        del_delayjob((job_func)vpn_aged, &status);
         cleanKey(key);
     }
 }

@@ -29,6 +29,7 @@ Ping::Ping(HttpReqHeader* req):Ping(req->hostname, req->port) {
 }
 
 void* Ping::request(HttpReqHeader* req) {
+    assert(req_ptr == nullptr && req_index == nullptr);
     req_ptr = req->src;
     req_index = req->index;
     delete req;
@@ -55,11 +56,8 @@ void Ping::deleteLater(uint32_t errcode) {
 void Ping::finish(uint32_t flags, __attribute__ ((unused)) void* index) {
     assert(index == (void *)1);
     uint8_t errcode = flags & ERROR_MASK;
-    if(errcode != VPN_AGED_ERR){
+    if(errcode || (flags & DISCONNECT_FLAG)){
         req_ptr = nullptr;
-        req_index = nullptr;
-    }
-    if(errcode && (flags & DISCONNECT_FLAG)){
         deleteLater(PEER_LOST_ERR);
     }
 }
@@ -72,5 +70,6 @@ int32_t Ping::bufleft(__attribute__ ((unused)) void* index) {
 }
 
 void Ping::dump_stat(Dumper dp, void* param) {
-    dp(param, "ping %p, %s%s:%d\n", this, iserror?"[E] ":"", hostname, id);
+    dp(param, "ping %p, %s%s:%d %s %s\n",
+       this, iserror?"[E] ":"", hostname, id, req_ptr, req_index);
 }

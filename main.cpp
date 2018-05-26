@@ -435,6 +435,7 @@ int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
     signal(SIGABRT, dump_trace);
+    signal(SIGSEGV, dump_stat);
     signal(SIGUSR1, dump_stat);
 #ifndef NODEBUG
     signal(SIGUSR2, exit);

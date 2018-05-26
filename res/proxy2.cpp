@@ -325,7 +325,7 @@ void Proxy2::finish(uint32_t flags, void* index) {
             Peer::Send((const void*)nullptr, 0, index);
             status.req_flags |= STREAM_WRITE_CLOSED;
         }
-        if(flags & DISCONNECT_FLAG && (status.req_flags & STREAM_READ_CLOSED)){
+        if((flags & DISCONNECT_FLAG) && (status.req_flags & STREAM_READ_CLOSED)){
             statusmap.erase(id);
             return;
         }

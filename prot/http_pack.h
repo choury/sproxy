@@ -7,6 +7,7 @@
 #include <map>
 #include <set>
 #include <queue>
+#include <string>
 #include <functional>
 
 class Hpack_index_table;

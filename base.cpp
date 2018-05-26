@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <assert.h>
+#include <signal.h>
 
 static std::set<Server*> servers;
 
@@ -303,8 +304,11 @@ static void LogDump(void*, const char* fmt, ...) {
     va_end(ap);
 }
 
-void dump_stat(int){
+void dump_stat(int sig){
     dump_stat(LogDump, nullptr);
+    if(sig == SIGSEGV){
+        exit(-1);
+    }
 }
 
 int setproxy(const char* proxy){

@@ -37,6 +37,7 @@ uint32_t vpn_action = 0;
 int vpn_start(const struct VpnConfig* vpn){
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
+    signal(SIGSEGV, dump_stat);
 #ifndef __ANDROID__
     signal(SIGABRT, dump_trace);
     setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
