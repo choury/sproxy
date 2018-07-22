@@ -19,7 +19,6 @@ bool operator<(const VpnKey a, const VpnKey b);
 class Guest_vpn;
 
 struct VpnStatus{
-    Guest_vpn* vpn;
     Responser* res_ptr;
     void*      res_index;
     VpnKey*    key;
@@ -58,7 +57,7 @@ protected:
     void sendPkg(Ip* pac, T* packet, size_t len);
     void cleanKey(const VpnKey* key);
     const char *getProg(const void* index) const;
-    static void SendAck();
+    int aged(VpnStatus* status);
 public:
     explicit Guest_vpn(int fd);
     virtual ~Guest_vpn();

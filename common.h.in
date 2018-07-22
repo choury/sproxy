@@ -74,6 +74,8 @@ do{\
 }while(0)
 
 uint32_t getmtime();
+
+#ifndef NDEBUG
 #define  LOGD(mod, ...)  \
 do{\
     if(debug & mod) {\
@@ -82,6 +84,9 @@ do{\
         slog(LOG_DEBUG, "%05u:%s: %s", getmtime()%100000, mod##_STR, tmp); \
     }\
 }while(0)
+#else
+#define LOGD(mod, ...) void(0)
+#endif
 
 
 #ifndef __ANDROID__

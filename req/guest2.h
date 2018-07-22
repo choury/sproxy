@@ -16,6 +16,7 @@ class Guest2: public Requester, public Http2Responser {
     std::map<uint32_t, ResStatus> statusmap;
     void init(RWer* rwer);
 protected:
+    int connection_lost();
     virtual void deleteLater(uint32_t errcode) override;
     virtual void Error(int ret, int code);
 #ifndef NDEBUG
@@ -50,7 +51,6 @@ public:
     virtual const char* getsrc(const void *)override;
     virtual void dump_stat(Dumper dp, void* param) override;
 
-    static int connection_lost(Guest2 *g);
 };
 
 #endif

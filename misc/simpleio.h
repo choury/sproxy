@@ -37,8 +37,8 @@ protected:
     virtual void defaultHE(uint32_t events) = 0;
     void connect();
     void retryconnect(int error);
+    int  con_failed();
     static void Dnscallback(FdRWer* rwer, const char *hostname, std::list<sockaddr_un> addrs);
-    static int  con_failed(FdRWer* rwer);
 
     virtual void Send();
     virtual ssize_t Write(const void* buff, size_t len) override;

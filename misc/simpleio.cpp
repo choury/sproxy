@@ -90,7 +90,7 @@ FdRWer::FdRWer(const char* hostname, uint16_t port, Protocol protocol, std::func
 }
 
 FdRWer::~FdRWer() {
-    del_delayjob((job_func)con_failed, this);
+    del_delayjob(std::bind(&FdRWer::con_failed, this), this);
     query_cancel(hostname, (DNSCBfunc)FdRWer::Dnscallback, this);
 }
 
@@ -133,22 +133,22 @@ void FdRWer::retryconnect(int error) {
 void FdRWer::connect() {
     fd = Connect(&addrs.front(), (int)protocol);
     if (fd < 0) {
-        return add_postjob((job_func)con_failed, this);
+        return add_postjob(std::bind(&FdRWer::con_failed, this), this);
     }
     setEpoll(EPOLLOUT);
     handleEvent = (void (Ep::*)(uint32_t))&FdRWer::waitconnectHE;
-    return add_delayjob((job_func)con_failed, this, 30000);
+    return add_delayjob(std::bind(&FdRWer::con_failed, this), this, 30000);
 }
 
-int FdRWer::con_failed(FdRWer* rwer) {
-    if(rwer->fd > 0){
-        close(rwer->fd);
-        rwer->fd = -1;
-        LOGE("connect to %s timeout\n", rwer->hostname);
-        rwer->retryconnect(CONNECT_TIMEOUT);
+int FdRWer::con_failed() {
+    if(fd > 0){
+        close(fd);
+        fd = -1;
+        LOGE("connect to %s timeout\n", hostname);
+        retryconnect(CONNECT_TIMEOUT);
     }else{
-        LOGE("connect to %s error\n", rwer->hostname);
-        rwer->retryconnect(CONNECT_FAILED);
+        LOGE("connect to %s error\n", hostname);
+        retryconnect(CONNECT_FAILED);
     }
     return 0;
 }
@@ -167,7 +167,7 @@ void FdRWer::waitconnectHE(uint32_t events) {
             connectCB();
         }
         handleEvent = (void (Ep::*)(uint32_t))&FdRWer::defaultHE;
-        del_delayjob((job_func)con_failed, this);
+        del_delayjob(std::bind(&FdRWer::con_failed, this), this);
     }
 }
 

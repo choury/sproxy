@@ -16,16 +16,6 @@
 
 #define RUDP_BUF_LEN (BUF_LEN*64)
 
-int RudpRWer::rudp_send(RudpRWer* rudp) {
-    rudp->send();
-    return 0;
-}
-
-int RudpRWer::rudp_ack(RudpRWer* rudp){
-    rudp->ack();
-    return 0;
-}
-
 /*
  * * The next routines deal with comparing 32 bit unsigned ints
  * * and worry about wraparound (automatic with unsigned arithmetic).
@@ -117,9 +107,9 @@ RudpRWer::~RudpRWer(){
     if(ord){
         ord->evict(id);
     }
-    del_delayjob((job_func)rudp_send, this);
-    del_delayjob((job_func)rudp_ack, this);
-    del_postjob((job_func)rudp_send, this);
+    del_delayjob(std::bind(&RudpRWer::send, this), this);
+    del_delayjob(std::bind(&RudpRWer::ack, this), this);
+    del_postjob(std::bind(&RudpRWer::send, this), this);
     query_cancel(hostname, (DNSCBfunc)RudpRWer::Dnscallback, this);
     delete recv_pkgs;
     free(read_buff);
@@ -323,8 +313,8 @@ void RudpRWer::finish_recv(Rudp_stats* stats){
         readCB(begin->second - begin->first);
     }
     recv_pkgs->add(stats->tick_recvpkg);
-    if(stats->tick_recvdata && !check_delayjob((job_func)rudp_ack, this)){
-        add_delayjob((job_func)rudp_ack, this, 10);
+    if(stats->tick_recvdata && !check_delayjob(std::bind(&RudpRWer::ack, this), this)){
+        add_delayjob(std::bind(&RudpRWer::ack, this), this, 10);
     }
 }
 
@@ -373,8 +363,8 @@ void RudpRWer::defaultHE(uint32_t events) {
         if(writed){
             if(writeCB)
                 writeCB(writed);
-            add_postjob((job_func)rudp_send, this);
-            del_delayjob((job_func)rudp_send, this);
+            add_postjob(std::bind(&RudpRWer::send, this), this);
+            del_delayjob(std::bind(&RudpRWer::send, this), this);
         }
         if(wb.length() == 0){
             delEpoll(EPOLLOUT);
@@ -382,7 +372,7 @@ void RudpRWer::defaultHE(uint32_t events) {
     }
 }
 
-void RudpRWer::send() {
+int RudpRWer::send() {
     uint32_t now = getmtime();
     uint32_t recvp_num = recv_pkgs->getsum(now);
     assert(bucket_limit>0);
@@ -413,7 +403,7 @@ void RudpRWer::send() {
                     getmtime()%100000, id, now-data_time, now-ack_time);
                 flags |= RUDP_SEND_TIMEOUT;
                 errorCB(SOCKET_ERR, ETIMEDOUT);
-                return;
+                return 0;
             }
 #ifndef NDEBUG
             LOGD(DRUDP, "[%d] acktime %05u diff %u/%u, begin resend\n",
@@ -483,12 +473,12 @@ void RudpRWer::send() {
         if(buckets){
             tick = Max(2, rtt_time*1.2);
         }
-        add_delayjob((job_func)rudp_send, this, Min(tick, 5000));
+        add_delayjob(std::bind(&RudpRWer::send, this), this, Min(tick, 5000));
     }
-    return;
+    return 0;
 }
 
-void RudpRWer::ack() {
+int RudpRWer::ack() {
     unsigned char buff[RUDP_MTU];
     Rudp_head *head = (Rudp_head *)buff;
     auto seq = read_seqs.begin();
@@ -517,6 +507,7 @@ void RudpRWer::ack() {
         LOGE("[RUDP] write: %s\n", strerror(errno));
         Reconnect();
     }
+    return 0;
 }
 
 uint32_t RudpRWer::send_pkg(uint32_t seq, uint32_t window, size_t len) {

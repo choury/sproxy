@@ -8,18 +8,18 @@
 Proxy2* proxy2 = nullptr;
 
 
-int Proxy2::connection_lost(Proxy2 *p){
-    LOGE("<proxy2> %p the ping timeout, so close it\n", p);
-    p->deleteLater(PEER_LOST_ERR);
+int Proxy2::connection_lost(){
+    LOGE("<proxy2> %p the ping timeout, so close it\n", this);
+    deleteLater(PEER_LOST_ERR);
     return 0;
 }
 
-int Proxy2::ping_check(Proxy2 *p){
+int Proxy2::ping_check(){
     char buff[8];
     set64(buff, getutime());
-    p->Ping(buff);
-    LOGD(DHTTP2, "<proxy2> ping: window size global: %d/%d\n", p->localwinsize, p->remotewinsize);
-    add_delayjob((job_func)connection_lost, p, 10000);
+    Ping(buff);
+    LOGD(DHTTP2, "<proxy2> ping: window size global: %d/%d\n", localwinsize, remotewinsize);
+    add_delayjob(std::bind(&Proxy2::connection_lost, this), this, 10000);
     return 0;
 }
 
@@ -41,7 +41,7 @@ Proxy2::Proxy2(RWer* rwer) {
         }
         this->rwer->consume(data, consumed);
 #ifndef __ANDROID__
-        add_delayjob((job_func)ping_check, this, 30000);
+        add_delayjob(std::bind(&Proxy2::ping_check, this), this, 30000);
 #else
         receive_time = getmtime();
 #endif
@@ -66,8 +66,8 @@ Proxy2::Proxy2(RWer* rwer) {
 
 
 Proxy2::~Proxy2() {
-    del_delayjob((job_func)ping_check, this);
-    del_delayjob((job_func)connection_lost, this);
+    del_delayjob(std::bind(&Proxy2::ping_check, this), this);
+    del_delayjob(std::bind(&Proxy2::connection_lost, this), this);
     proxy2 = (proxy2 == this) ? nullptr: proxy2;
 }
 
@@ -234,7 +234,7 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
 
 void Proxy2::PingProc(const Http2_header *header){
     if(header->flags & ACK_F){
-        del_delayjob((job_func)connection_lost, this);
+        del_delayjob(std::bind(&Proxy2::connection_lost, this), this);
         double diff = (getutime()-get64(header+1))/1000.0;
         LOG("<Proxy2> Get a ping time=%.3fms\n", diff);
         if(diff >= 5000){

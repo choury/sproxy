@@ -19,6 +19,8 @@ class Proxy2:public Responser, public Http2Requster {
     uint32_t ping_time;
 #endif
 protected:
+    int ping_check();
+    int connection_lost();
     virtual void Error(int ret, int code);
     virtual void deleteLater(uint32_t errcode) override;
 
@@ -53,8 +55,6 @@ public:
 
     void init(HttpReqHeader* req);
     void flush();
-    static int ping_check(Proxy2 *p);
-    static int connection_lost(Proxy2 *p);
 };
 
 extern Proxy2* proxy2; 

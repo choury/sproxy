@@ -67,8 +67,8 @@ class RudpRWer: public RWer {
     void connected();
     void defaultHE(uint32_t events);
 
-    void send();
-    void ack();
+    int send();
+    int ack();
     uint32_t send_pkg(uint32_t seq, uint32_t window, size_t len);
     ssize_t Write(const void* buff, size_t len) override;
     void handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats);
@@ -88,8 +88,6 @@ public:
     virtual void consume(const char* data, size_t l) override;
 
     static void Dnscallback(RudpRWer* rwer, const char*, std::list<sockaddr_un> addrs);
-    static int rudp_send(RudpRWer* r);
-    static int rudp_ack(RudpRWer* r);
 };
 
 

@@ -5,9 +5,9 @@
 
 #include <assert.h>
 
-int Guest2::connection_lost(Guest2 *g){
-    LOGE("(%s): <guest2> Nothing got too long, so close it\n", g->getsrc(nullptr));
-    g->deleteLater(PEER_LOST_ERR);
+int Guest2::connection_lost(){
+    LOGE("(%s): <guest2> Nothing got too long, so close it\n", getsrc(nullptr));
+    deleteLater(PEER_LOST_ERR);
     return 0;
 }
 
@@ -25,7 +25,7 @@ void Guest2::init(RWer* rwer) {
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
         this->rwer->consume(data, consumed);
-        add_delayjob((job_func)connection_lost, this, 1800000);
+        add_delayjob(std::bind(&Guest2::connection_lost, this), this, 1800000);
     });
     rwer->SetWriteCB([this](size_t){
         for(auto i: statusmap){
@@ -48,7 +48,7 @@ Guest2::Guest2::Guest2(const sockaddr_un* addr, RWer* rwer):Requester(addr) {
 
 
 Guest2::~Guest2() {
-    del_delayjob((job_func)connection_lost, this);
+    del_delayjob(std::bind(&Guest2::connection_lost, this), this);
 }
 
 void Guest2::Error(int ret, int code){

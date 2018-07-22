@@ -42,7 +42,8 @@ struct Dns_Req{
 
 struct Dns_Rcd{
     std::list<sockaddr_un> addrs;
-    time_t expire_time;
+    time_t get_time;
+    uint32_t ttl;
 };
 
 typedef struct Dns_Status {
@@ -69,9 +70,10 @@ typedef struct Dns_RawReq {
 Index2<uint16_t, std::string, Dns_Status *> querying_index;
 std::unordered_map<uint16_t, Dns_RawReq *> querying_raw_id;
 std::unordered_map<std::string, Dns_Rcd> rcd_cache;
-std::multimap<int, std::string> expire_time;
+//std::multimap<int, std::string> expire_time;
 
-int dns_expired(void* ) {
+/*
+int dns_expired() {
     time_t now = time(nullptr);
     std::set<std::string> should_expired;
     for(auto i =  expire_time.begin(); i!= expire_time.end(); ){
@@ -83,12 +85,22 @@ int dns_expired(void* ) {
         }
     }
     for(auto i : should_expired){
-        if(rcd_cache.count(i) && now > rcd_cache[i].expire_time){
-            LOGD(DDNS, "%s: expired\n", i.c_str());
-            rcd_cache.erase(i);
-        }
     }
     return 1;
+}
+*/
+
+int dns_expired(std::string host){
+    time_t now = time(nullptr);
+    auto i = rcd_cache.find(host);
+    if(i != rcd_cache.end()){
+        LOGD(DDNS, "%s expired (%ld)\n", host.c_str(), i->second.get_time + i->second.ttl);
+        assert(now >= i->second.get_time + i->second.ttl);
+        rcd_cache.erase(i);
+    }else{
+        LOGE("[DNS] expired %s not found\n", host.c_str());
+    }
+    return 0;
 }
 
 int query_timeout(uint16_t id);
@@ -130,7 +142,6 @@ static int dnsinit() {
         }
     }
     fclose(res_file);
-    add_prejob(job_func(dns_expired), 0);
     return srvs.size();
 }
 #endif
@@ -139,7 +150,10 @@ void flushdns(){
     while(!srvs.empty()){
         delete srvs.front();
     }
-    rcd_cache.clear();
+    for(auto i = rcd_cache.begin(); i != rcd_cache.end(); i = rcd_cache.erase(i)){
+        assert(check_delayjob(std::bind(dns_expired, i->first), i->first.data()));
+        del_delayjob(std::bind(dns_expired, i->first), i->first.data());
+    }
 }
 
 static void query(Dns_Status* dnsst){
@@ -180,7 +194,7 @@ static void query(Dns_Status* dnsst){
         for(auto i: dnsst->reqs){
             i.func(i.param, dnsst->host, rcd.addrs);
         }
-        if(rcd.expire_time - time(nullptr) > 15){
+        if(rcd.get_time + rcd.ttl - time(nullptr) > 15){
             delete dnsst;
             return;
         }
@@ -217,7 +231,7 @@ static void query(Dns_Status* dnsst){
 ret:
     dnsst->times++;
     querying_index.Add(id_cur, dnsst->host, dnsst);
-    add_delayjob((job_func)query_timeout, (void *)(size_t)id_cur, DNSTIMEOUT);
+    add_delayjob(std::bind(query_timeout, id_cur), (void*)(size_t)id_cur, DNSTIMEOUT);
 }
 
 
@@ -268,7 +282,7 @@ static void query(Dns_RawReq* dnsreq){
 
     dnsreq->times++;
     querying_raw_id[id_cur] = dnsreq;
-    add_delayjob((job_func)query_timeout, (void *)(size_t)id_cur, DNSTIMEOUT);
+    add_delayjob(std::bind(query_timeout, id_cur), (void *)(size_t)id_cur, DNSTIMEOUT);
 }
 
 void query(const char *host , uint16_t type, DNSRAWCB func, void *param) {
@@ -386,7 +400,7 @@ void Dns_srv::buffHE(const char *buffer, size_t len) {
     uint16_t id = dnsrcd.id;
 
     if(querying_raw_id.count(id)){
-        del_delayjob((job_func)query_timeout, (void *)(size_t)id);
+        del_delayjob(std::bind(query_timeout, id), (void *)(size_t)id);
         Dns_RawReq *dnsreq =  querying_raw_id[id];
         querying_raw_id.erase(id);
         dnsreq->func(dnsreq->param, buffer, len);
@@ -403,12 +417,13 @@ void Dns_srv::buffHE(const char *buffer, size_t len) {
     }
     if (querying_index.Get(id) == nullptr) {
         if(!dnsrcd.addrs.empty()){
-            Dns_Rcd rcd;
+            Dns_Rcd rcd{{}, time(0), 10};
             for(auto i: dnsrcd.addrs){
                 rcd.addrs.push_back(i);
             }
-            rcd.expire_time = time(nullptr) + 10;
             rcd_cache[dnsrcd.domain] = rcd;
+            auto i = rcd_cache.find(dnsrcd.domain);
+            add_delayjob(std::bind(dns_expired, i->first), i->first.data(), 10 * 1000);
         }
         LOG("[DNS] Get a unkown id:%d [%s]\n", id, dnsrcd.domain);
         return;
@@ -420,15 +435,18 @@ void Dns_srv::buffHE(const char *buffer, size_t len) {
         for(auto i: dnsrcd.addrs){
             dnsst->rcd.addrs.push_back(i);
         }
-        dnsst->rcd.expire_time = time(nullptr) + dnsrcd.ttl;
+        dnsst->rcd.get_time = time(nullptr);
+        dnsst->rcd.ttl = dnsrcd.ttl;
     }
 
     if ((dnsst->flags & GARECORD) &&(dnsst->flags & GAAAARECORD)) {
-        del_delayjob((job_func)query_timeout, (void *)(size_t)id);
+        del_delayjob(std::bind(query_timeout, id), (void *)(size_t)id);
         querying_index.Delete(id);
         if (!dnsst->rcd.addrs.empty()) {
             rcd_cache[dnsst->host] = dnsst->rcd;
-            expire_time.insert(std::make_pair(dnsst->rcd.expire_time, dnsst->host));
+
+            auto i = rcd_cache.find(dnsst->host);
+            add_delayjob(std::bind(dns_expired, i->first), i->first.data(), dnsst->rcd.ttl * 1000);
         }
         for(auto i: dnsst->reqs ){
             i.func(i.param, dnsst->host, dnsst->rcd.addrs);
@@ -455,7 +473,7 @@ void dump_dns(Dumper dp, void* param){
     }
     dp(param, "Dns cache:\n");
     for(auto i: rcd_cache){
-        dp(param, "    %s: %ld\n", i.first.c_str(), i.second.expire_time - time(0));
+        dp(param, "    %s: %ld\n", i.first.c_str(), i.second.get_time + i.second.ttl - time(0));
         for(auto j: i.second.addrs){
             char ip[INET6_ADDRSTRLEN];
             switch(j.addr.sa_family){
