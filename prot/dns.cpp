@@ -619,12 +619,16 @@ int Dns_Que::build(unsigned char* buf)const {
 }
 
 Dns_Rr::Dns_Rr(const char* buff, size_t len) {
+    if(len < sizeof(DNS_HDR)){
+        LOGE("[DNS] incompleted DNS response\n");
+        id = 0;
+        return;
+    }
     const DNS_HDR *dnshdr = (const DNS_HDR *)buff;
     id = ntohs(dnshdr->id);
-
-    const unsigned char *p = (const unsigned char *)(dnshdr +1);
     uint16_t numq = ntohs(dnshdr->numq);
     uint16_t flag = ntohs(dnshdr->flag);
+    const unsigned char *p = (const unsigned char *)(dnshdr +1);
     assert(numq && (flag & QR));
     for (int i = 0; i < numq; ++i) {
         p = (unsigned char *)getdomain(dnshdr, p, len, domain);

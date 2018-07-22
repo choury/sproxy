@@ -5,8 +5,8 @@
 
 
 class Ping: public Responser{
-    Requester *req_ptr;
-    void*      req_index;
+    Requester *req_ptr = nullptr;
+    void*      req_index = nullptr;
     char hostname[DOMAINLIMIT];
     uint16_t   id;
     bool iserror = false;

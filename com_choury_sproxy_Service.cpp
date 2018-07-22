@@ -33,9 +33,6 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     jnienv->GetJavaVM(&jnijvm);
     jniobj = jnienv->NewGlobalRef(obj);
     LOG("native SproxyVpnService.start %d.\n", sockfd);
-    int flags  = fcntl(sockfd,F_GETFL,0);
-    fcntl(sockfd,F_SETFL,flags&~O_NONBLOCK);
-
     const char *server_str = jnienv->GetStringUTFChars(server, 0);
     const char *secret_str = jnienv->GetStringUTFChars(secret, 0);
 

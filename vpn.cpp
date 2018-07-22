@@ -9,6 +9,7 @@
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
+#include <fcntl.h>
 #include <openssl/ssl.h>
 
 
@@ -60,6 +61,11 @@ int vpn_start(const struct VpnConfig* vpn){
     }
     Base64Encode(vpn->secret, strlen(vpn->secret), rewrite_auth);
     LOG("set encoded secret to: %s\n", rewrite_auth);
+
+    /* make tun socket non blocking */
+    uint32_t sock_opts = fcntl(vpn->fd, F_GETFL, 0);
+    fcntl(vpn->fd, F_SETFL, sock_opts | O_NONBLOCK );
+
     new Guest_vpn(vpn->fd);
     vpn_contiune = 1;
     LOG("Accepting connections ...\n");

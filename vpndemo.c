@@ -118,9 +118,6 @@ int tun_create(char *dev, int flags) {
         return err;
     }
 
-    /* make tun socket non blocking */
-    uint32_t sock_opts = fcntl(fd, F_GETFL, 0);
-    fcntl(fd, F_SETFL, sock_opts | O_NONBLOCK );
 
     close(tmp_fd);
     return fd;

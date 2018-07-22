@@ -311,7 +311,7 @@ void PacketRWer::defaultHE(uint32_t events) {
                 if(readCB){
                     readCB(rb.length());
                 }
-                break; //break for do something else
+                continue;
             }
             if(ret == 0){
                 delEpoll(EPOLLIN);

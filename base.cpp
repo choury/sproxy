@@ -253,14 +253,13 @@ std::list<write_block>::insert_iterator RWer::buffer_end() {
     return wb.end();
 }
 
-ssize_t RWer::buffer_insert(std::list<write_block>::insert_iterator where, const void* buff, size_t len) {
+std::list<write_block>::insert_iterator RWer::buffer_insert(std::list<write_block>::insert_iterator where, const void* buff, size_t len) {
     return buffer_insert(where, p_memdup(buff, len), len);
 }
 
-ssize_t RWer::buffer_insert(std::list<write_block>::insert_iterator where, void* buff, size_t len) {
+std::list<write_block>::insert_iterator RWer::buffer_insert(std::list<write_block>::insert_iterator where, void* buff, size_t len) {
     addEpoll(EPOLLOUT);
-    wb.push(where, buff, len);
-    return len;
+    return wb.push(where, buff, len);
 }
 
 void RWer::Clear(bool freebuffer) {
@@ -306,8 +305,9 @@ static void LogDump(void*, const char* fmt, ...) {
 
 void dump_stat(int sig){
     dump_stat(LogDump, nullptr);
-    if(sig == SIGSEGV){
-        exit(-1);
+    if(sig != SIGUSR1){
+        signal(sig, SIG_DFL);
+        kill(getpid(), sig);
     }
 }
 

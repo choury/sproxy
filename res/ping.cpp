@@ -42,7 +42,8 @@ ssize_t Ping::Send(void* buff, size_t size, __attribute__ ((unused)) void* index
     if(iserror){
         return size;
     }
-    return rwer->buffer_insert(rwer->buffer_end(), buff, size);
+    rwer->buffer_insert(rwer->buffer_end(), buff, size);
+    return size;
 }
 
 void Ping::deleteLater(uint32_t errcode) {

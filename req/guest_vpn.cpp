@@ -295,7 +295,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
     assert(tcpStatus);
 
     if(seq != tcpStatus->want_seq){
-        LOGD(DVPN, "get keepalive pkt or unwanted pkt, reply ack.\n");
+        LOGD(DVPN, "get keepalive pkt or unwanted pkt, reply ack(%u).\n", tcpStatus->want_seq);
         pac_return.tcp
             ->setseq(tcpStatus->send_seq)
             ->setack(tcpStatus->want_seq)
@@ -787,8 +787,13 @@ const char * Guest_vpn::getProg(const void* index) const{
     return "Unkown inode";
 }
 
-const char * Guest_vpn::getsrc(const void*){
-    return "VPN";
+const char * Guest_vpn::getsrc(const void* index){
+    const VpnKey *key = (const VpnKey*)index;
+    static char src[INET6_ADDRSTRLEN + 6];
+    snprintf(src, sizeof(src), "%s:%d",
+             FDns::getRdns(&key->src.addr_in.sin_addr),
+             ntohs(key->src.addr_in.sin_port));
+    return src;
 }
 
 const char* Guest_vpn::generateUA(const VpnKey *key) {
@@ -801,11 +806,29 @@ const char* Guest_vpn::generateUA(const VpnKey *key) {
     return UA;
 }
 
+static const char* dump_vpnStatus(const VpnStatus* status){
+    static char buff[URLLIMIT];
+    int len = sprintf(buff, "%p: %p, %p", status->key, status->res_ptr, status->res_index);
+    switch(status->key->protocol){
+    case TCP:{
+        TcpStatus* tcp = (TcpStatus*)status->protocol_info;
+        sprintf(buff+len, " [%d %d]", tcp->window, tcp->status);
+        break;
+    }
+    case ICMP:{
+        IcmpStatus* icmp = (IcmpStatus *)status->protocol_info;
+        sprintf(buff+len, " [%d %d]", icmp->id, icmp->seq);
+    }
+    default:
+        break;
+    }
+    return buff;
+}
+
 void Guest_vpn::dump_stat(Dumper dp, void* param) {
     dp(param, "Guest_vpn %p (%zd):\n", this, 4*1024*1024 - rwer->wlength());
     for(auto i: statusmap){
-        dp(param, "%s %p: %p, %p\n", i.first.getString("-"),
-            i.second.key, i.second.res_ptr, i.second.res_index);
+        dp(param, "%s %s\n", i.first.getString("-"), dump_vpnStatus(&i.second));
     }
 }
 

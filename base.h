@@ -103,8 +103,8 @@ public:
     virtual size_t wlength();
     virtual std::list<write_block>::insert_iterator buffer_head();
     virtual std::list<write_block>::insert_iterator buffer_end();
-    virtual ssize_t buffer_insert(std::list<write_block>::insert_iterator where, const void* buff, size_t len);
-    virtual ssize_t buffer_insert(std::list<write_block>::insert_iterator where, void* buff, size_t len);
+    virtual std::list<write_block>::insert_iterator buffer_insert(std::list<write_block>::insert_iterator where, const void* buff, size_t len);
+    virtual std::list<write_block>::insert_iterator buffer_insert(std::list<write_block>::insert_iterator where, void* buff, size_t len);
     virtual void Clear(bool freebuffer);
 };
 
