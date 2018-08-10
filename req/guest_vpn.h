@@ -58,6 +58,7 @@ protected:
     void cleanKey(const VpnKey* key);
     const char *getProg(const void* index) const;
     int aged(VpnStatus* status);
+    int tcp_ack(VpnStatus* status);
 public:
     explicit Guest_vpn(int fd);
     virtual ~Guest_vpn();

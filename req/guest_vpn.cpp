@@ -52,10 +52,10 @@ const char* VpnKey::getString(const char* sep) const{
     static char str[URLLIMIT];
     snprintf(str, sizeof(str), "<%s> (%s:%d %s %s:%d)",
              protstr(protocol),
-             FDns::getRdns(&src.addr_in.sin_addr),
+             FDns::getRdns(&src.addr_in.sin_addr).c_str(),
              ntohs(src.addr_in.sin_port),
              sep,
-             FDns::getRdns(&dst.addr_in.sin_addr),
+             FDns::getRdns(&dst.addr_in.sin_addr).c_str(),
              ntohs(dst.addr_in.sin_port));
     return str;
 }
@@ -196,6 +196,30 @@ void Guest_vpn::transfer(void* index, Responser* res_ptr, void* res_index) {
     status.res_index = res_index;
 }
 
+int Guest_vpn::tcp_ack(VpnStatus* status) {
+    if(status->protocol_info == nullptr){
+        return 0;
+    }
+    TcpStatus* tcpStatus = (TcpStatus*)status->protocol_info;
+    if(tcpStatus->status != TCP_ESTABLISHED){
+        return 0;
+    }
+    assert(status->res_ptr);
+    int buflen = status->res_ptr->bufleft(status->res_index);
+    if(buflen < 0) buflen = 0;
+    //创建回包
+    Ip pac_return(IPPROTO_TCP, &status->key->dst, &status->key->src);
+    pac_return.tcp
+        ->setseq(tcpStatus->send_seq)
+        ->setack(tcpStatus->want_seq)
+        ->setwindow(buflen >> tcpStatus->send_wscale)
+        ->setflag(TH_ACK);
+
+    LOGD(DVPN, "%s (%u - %u) ack\n", status->key->getString("<-"), tcpStatus->send_seq, tcpStatus->want_seq);
+    sendPkg(&pac_return, (const void*)nullptr, 0);
+    return 0;
+}
+
 
 void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
     uint32_t seq = pac->tcp->getseq();
@@ -219,7 +243,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         int headlen = sprintf(buff,   "CONNECT %s:%d" CRLF
                         "User-Agent: %s" CRLF
                         "Sproxy-vpn: %d" CRLF CRLF,
-                FDns::getRdns(pac->getdst()),
+                FDns::getRdns(pac->getdst()).c_str(),
                 pac->tcp->getdport(),
                 generateUA(&key),
                 pac->tcp->getsport());
@@ -290,12 +314,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
 
     if(seq != tcpStatus->want_seq){
         LOGD(DVPN, "get keepalive pkt or unwanted pkt, reply ack(%u).\n", tcpStatus->want_seq);
-        pac_return.tcp
-            ->setseq(tcpStatus->send_seq)
-            ->setack(tcpStatus->want_seq)
-            ->setwindow(bufleft(0) >> tcpStatus->send_wscale)
-            ->setflag(TH_ACK);
-        sendPkg(&pac_return, (const void*)nullptr, 0);
+        add_postjob(std::bind(&Guest_vpn::tcp_ack, this, &status), &status);
         return;
     }
 
@@ -309,14 +328,7 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
             status.res_ptr->Send(data, datalen, status.res_index);
             tcpStatus->want_seq += datalen;
 
-            //创建回包
-            pac_return.tcp
-                ->setseq(tcpStatus->send_seq)
-                ->setack(tcpStatus->want_seq)
-                ->setwindow(buflen >> tcpStatus->send_wscale)
-                ->setflag(TH_ACK);
-
-            sendPkg(&pac_return, (const void*)nullptr, 0);
+            add_postjob(std::bind(&Guest_vpn::tcp_ack, this, &status), &status);
         }
     }
 
@@ -407,7 +419,7 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
         int headlen = sprintf(buff,   "SEND %s:%d" CRLF
                         "User-Agent: %s" CRLF
                         "Sproxy_vpn: %d" CRLF CRLF,
-                FDns::getRdns(pac->getdst()),
+                FDns::getRdns(pac->getdst()).c_str(),
                 pac->udp->getdport(),
                 generateUA(&key),
                 pac->udp->getsport());
@@ -466,7 +478,7 @@ void Guest_vpn::icmpHE(const Ip* pac, const char* packet, size_t len) {
             int headlen = sprintf(buff,   "PING %s" CRLF
                             "User-Agent: %s" CRLF
                             "Sproxy_vpn: %d" CRLF CRLF,
-                    FDns::getRdns(pac->getdst()),
+                    FDns::getRdns(pac->getdst()).c_str(),
                     generateUA(&key),
                     pac->icmp->getid());
             HttpReqHeader* req = new HttpReqHeader(buff, headlen, this);
@@ -513,7 +525,10 @@ void Guest_vpn::icmpHE(const Ip* pac, const char* packet, size_t len) {
             LOGD(DVPN, "clean this connection\n");
             VpnStatus& status = statusmap[key];
 
-            status.res_ptr->finish(PEER_LOST_ERR, status.res_index);
+            if(status.res_ptr) {
+                assert(status.res_index);
+                status.res_ptr->finish(PEER_LOST_ERR, status.res_index);
+            }
             cleanKey(&key);
         }else{
             LOGD(DVPN, "key not exist, ignore\n");
@@ -614,6 +629,7 @@ void Guest_vpn::cleanKey(const VpnKey* key) {
     assert(statusmap.count(*key));
     VpnStatus& status = statusmap[*key];
     del_delayjob(std::bind(&Guest_vpn::aged, this, &status), &status);
+    del_postjob(std::bind(&Guest_vpn::tcp_ack, this, &status), &status);
 
     free(status.protocol_info);
     VpnKey* key_ptr = status.key;
@@ -789,7 +805,7 @@ const char * Guest_vpn::getsrc(const void* index){
     const VpnKey *key = (const VpnKey*)index;
     static char src[INET6_ADDRSTRLEN + 6];
     snprintf(src, sizeof(src), "%s:%d",
-             FDns::getRdns(&key->src.addr_in.sin_addr),
+             FDns::getRdns(&key->src.addr_in.sin_addr).c_str(),
              ntohs(key->src.addr_in.sin_port));
     return src;
 }

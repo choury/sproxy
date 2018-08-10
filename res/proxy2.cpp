@@ -116,7 +116,7 @@ void Proxy2::PushFrame(Http2_header *header){
         && now - ping_time >=5000)
     {
         ping_time = now;
-        ping_check(this);
+        ping_check();
     }
 #endif
     return Http2Base::PushFrame(header);

@@ -30,7 +30,7 @@ public:
 
     virtual void dump_stat(Dumper dp, void* param) override;
     static FDns* getfdns();
-    static const char* getRdns(const struct in_addr* addr);
+    static std::string getRdns(const struct in_addr* addr);
     static in_addr getInet(std::string hostname);
 };
 

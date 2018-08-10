@@ -91,7 +91,7 @@ int dns_expired() {
 */
 
 int dns_expired(std::string host){
-    time_t now = time(nullptr);
+    time_t __attribute__((unused)) now = time(nullptr);
     auto i = rcd_cache.find(host);
     if(i != rcd_cache.end()){
         LOGD(DDNS, "%s expired (%ld)\n", host.c_str(), i->second.get_time + i->second.ttl);
@@ -118,7 +118,6 @@ static int dnsinit() {
     }catch (...){
 
     }
-    add_prejob(job_func(dns_expired), 0);
     return srvs.size();
 }
 #else

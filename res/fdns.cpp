@@ -122,19 +122,19 @@ void FDns::dump_stat(Dumper dp, void* param) {
 
 
 
-FDns * FDns::getfdns() {
+FDns* FDns::getfdns() {
     if(fdns == nullptr){
        fdns = new FDns;
     }
     return fdns;
 }
 
-const char * FDns::getRdns(const struct in_addr* addr) {
+std::string FDns::getRdns(const struct in_addr* addr) {
     static char sip[INET_ADDRSTRLEN];
     uint32_t fip = ntohl(addr->s_addr);
     auto record = fdns_records.Get(fip);
     if(record){
-        return record->t2.c_str();
+        return record->t2;
     }else{
         return inet_ntop(AF_INET, addr, sip, sizeof(sip));
     }
