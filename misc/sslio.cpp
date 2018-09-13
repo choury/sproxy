@@ -137,6 +137,7 @@ SslRWer::~SslRWer(){
     if(ctx){
         SSL_CTX_free(ctx);
     }
+    del_delayjob(std::bind(&SslRWer::con_failed, this), this);
 }
 
 void SslRWer::waitconnectHE(uint32_t events) {
