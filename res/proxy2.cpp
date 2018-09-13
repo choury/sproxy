@@ -126,10 +126,9 @@ void Proxy2::ResProc(HttpResHeader* res) {
     uint32_t id = (uint32_t)(long)res->index;
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
-        if(!res->no_body() && res->status[0] != '1' &&  //1xx should not have body
-           !res->get("Content-Length"))
+        if(!res->no_body() && !res->get("Content-Length"))
         {
-            res->add("Transfer-Encoding", "chunked");
+            res->set("Transfer-Encoding", "chunked");
         }
         res->index = status.req_index;  //change back to req's id
         status.req_ptr->response(res);

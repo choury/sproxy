@@ -27,8 +27,8 @@ public:
 
     uint8_t flags = 0;
 
-    void add(const std::string& header, const std::string& value);
-    void add(const std::string& header, uint64_t value);
+    void set(const std::string& header, const std::string& value);
+    void set(const std::string& header, uint64_t value);
     void append(const std::string& header, const std::string& value);
     void del(const std::string& header);
     const char* get(const std::string& header) const;

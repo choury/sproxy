@@ -197,7 +197,7 @@ void File::readHE(size_t len) {
                 HttpResHeader* res = new HttpResHeader(H304, sizeof(H304));
                 char buff[100];
                 strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
-                res->add("Last-Modified", buff);
+                res->set("Last-Modified", buff);
                 res->index = i->second.req_index;
                 requester->response(res);
                 requester->finish(NOERROR | DISCONNECT_FLAG, i->second.req_index);
@@ -208,12 +208,12 @@ void File::readHE(size_t len) {
                 rg.begin = 0;
                 rg.end = st.st_size - 1;
                 HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
-                res->add("Content-Length", st.st_size);
+                res->set("Content-Length", st.st_size);
                 char buff[100];
                 strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
-                res->add("Last-Modified", buff);
+                res->set("Last-Modified", buff);
                 if(suffix && mimetype.count(suffix)){
-                    res->add("Content-Type", mimetype.at(suffix));
+                    res->set("Content-Type", mimetype.at(suffix));
                 }
                 res->index = i->second.req_index;
                 requester->response(res);
@@ -222,11 +222,11 @@ void File::readHE(size_t len) {
                 char buff[100];
                 snprintf(buff, sizeof(buff), "bytes %zd-%zd/%jd",
                          rg.begin, rg.end, (intmax_t)st.st_size);
-                res->add("Content-Range", buff);
+                res->set("Content-Range", buff);
                 size_t leftsize = rg.end - rg.begin+1;
-                res->add("Content-Length", leftsize);
+                res->set("Content-Length", leftsize);
                 if(suffix && mimetype.count(suffix)){
-                    res->add("Content-Type", mimetype.at(suffix));
+                    res->set("Content-Type", mimetype.at(suffix));
                 }
                 res->index = i->second.req_index;
                 requester->response(res);
@@ -234,7 +234,7 @@ void File::readHE(size_t len) {
                 HttpResHeader* res = new HttpResHeader(H416, sizeof(H416));
                 char buff[100];
                 snprintf(buff, sizeof(buff), "bytes */%jd", (intmax_t)st.st_size);
-                res->add("Content-Range", buff);
+                res->set("Content-Range", buff);
                 res->index = i->second.req_index;
                 requester->response(res);
                 requester->finish(NOERROR | DISCONNECT_FLAG, i->second.req_index);
@@ -357,7 +357,7 @@ Responser* File::getfile(HttpReqHeader* req) {
                 res = new HttpResHeader(H301, sizeof(H301));
                 char location[FILENAME_MAX];
                 snprintf(location, sizeof(location), "/%s/", req->filename.c_str());
-                res->add("Location", location);
+                res->set("Location", location);
                 break;
             }
             if(!index_not_found && index_file){
@@ -376,7 +376,7 @@ Responser* File::getfile(HttpReqHeader* req) {
                 break;
             }
             res = new HttpResHeader(H200, sizeof(H200));
-            res->add("Transfer-Encoding", "chunked");
+            res->set("Transfer-Encoding", "chunked");
             res->index = req->index;
             req->src->response(res);
             char buff[1024];

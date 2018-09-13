@@ -140,7 +140,7 @@ begin:
 bool Cgi::HandleRes(const CGI_Header *header, HttpReqHeader* req){
     HttpResHeader* res = new HttpResHeader(header);
     if (!res->no_body() && res->get("content-length") == nullptr) {
-        res->add("transfer-encoding", "chunked");
+        res->set("transfer-encoding", "chunked");
     }
     res->index = req->index;
     req->src->response(res);

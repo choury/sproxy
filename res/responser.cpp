@@ -40,7 +40,7 @@ static int check_header(HttpReqHeader* req){
     }
     req->del("Connection");
     if(req->get("Proxy-Connection")){
-        req->add("Connection", req->get("Proxy-Connection"));
+        req->set("Connection", req->get("Proxy-Connection"));
         req->del("Proxy-Connection");
     }
     req->del("Upgrade");
@@ -114,7 +114,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
             }
             req->del("via");
             if(strlen(rewrite_auth)){
-                req->add("Proxy-Authorization", std::string("Basic ")+rewrite_auth);
+                req->set("Proxy-Authorization", std::string("Basic ")+rewrite_auth);
             }
             strcpy(fprotocol, SPROT);
             strcpy(fhost, SHOST);
@@ -184,8 +184,8 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
         LOG("[[del %s]] %s %s\n", strategy, log_buff, ext.c_str());
         if(delstrategy(req->hostname)){
             HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
-            res->add("Strategy", strategy);
-            res->add("Ext", ext);
+            res->set("Strategy", strategy);
+            res->set("Ext", ext);
             res->index = req->index;
             requester->response(res);
         }else{
@@ -207,8 +207,8 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
     } else if (req->ismethod("TEST")){
         HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
         std::string ext;
-        res->add("Strategy", getstrategystring(getstrategy(req->hostname, ext)));
-        res->add("Ext", ext);
+        res->set("Strategy", getstrategystring(getstrategy(req->hostname, ext)));
+        res->set("Ext", ext);
         res->index = req->index;
         requester->response(res);
     } else if(req->ismethod("FLUSH")){

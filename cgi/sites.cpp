@@ -31,7 +31,7 @@ class handle{
                 cgi_response(cgi_fd, res, cgi_id);
             }else{
                 HttpResHeader res(H200, sizeof(H200));
-                res.add("Content-Type", "application/json");
+                res.set("Content-Type", "application/json");
                 Cookie cookie;
                 cookie.path = "/";
                 cookie.domain = req->hostname;
@@ -73,7 +73,7 @@ class handle{
                 cgi_response(cgi_fd, res, cgi_id);
             }else{
                 HttpResHeader res(H303, sizeof(H303));
-                res.add("Location", "/webui/");
+                res.set("Location", "/webui/");
                 cgi_response(cgi_fd, res, cgi_id);
             }
             return 1;
@@ -92,7 +92,7 @@ class handle{
                 cgi_response(cgi_fd, res, cgi_id);
             }else{
                 HttpResHeader res(H303, sizeof(H303));
-                res.add("Location", "/webui/");
+                res.set("Location", "/webui/");
                 cgi_response(cgi_fd, res, cgi_id);
             }
             return 1;

@@ -24,7 +24,7 @@ const char* RBuffer::data(){
     return content;
 }
 
-size_t RBuffer::consume(const char*, size_t l){
+size_t RBuffer::consume(const char*, size_t l) {
     assert(l <= len);
     len -= l;
     memmove(content, content+l, len);
@@ -44,14 +44,18 @@ size_t CBuffer::left(){
         return start - finish;
     }
 }
+
 size_t CBuffer::length(){
     assert(end_pos - begin_pos <= sizeof(content));
     return end_pos - begin_pos;
 }
+
+
 void CBuffer::add(size_t l){
     assert(l <= left());
     end_pos += l;
 };
+
 const char* CBuffer::data(){
     uint32_t start = begin_pos % sizeof(content);
     uint32_t finish = end_pos % sizeof(content);
@@ -65,9 +69,9 @@ const char* CBuffer::data(){
         return  buff;
     }
 }
+
 void CBuffer::consume(const char* data, size_t l){
     begin_pos += l;
-    assert(begin_pos <= end_pos);
     if(data < content || data >= content + sizeof(content)){
         free((char*)data);
     }
@@ -215,11 +219,11 @@ size_t StreamRWer::rlength() {
     return rb.length();
 }
 
-const char* StreamRWer::data(){
+const char* StreamRWer::data() {
     return rb.data();
 }
 
-void StreamRWer::consume(const char* data, size_t l){
+void StreamRWer::consume(const char* data, size_t l) {
     rb.consume(data, l);
 }
 
@@ -284,11 +288,11 @@ size_t PacketRWer::rlength() {
     return rb.length();
 }
 
-const char* PacketRWer::data(){
+const char* PacketRWer::data() {
     return rb.data();
 }
 
-void PacketRWer::consume(const char* data, size_t l){
+void PacketRWer::consume(const char* data, size_t l) {
     rb.consume(data, l);
 }
 

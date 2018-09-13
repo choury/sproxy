@@ -54,7 +54,7 @@ static string toUpHeader(const string &s){
 }
 
 
-void HttpHeader::add(const std::string& header, const string& value) {
+void HttpHeader::set(const std::string& header, const string& value) {
     headers.insert(std::make_pair(toLower(header), value));
 }
 
@@ -72,16 +72,16 @@ using std::to_string;
 #endif
 
 
-void HttpHeader::add(const std::string& header, uint64_t value) {
+void HttpHeader::set(const std::string& header, uint64_t value) {
     headers.insert(std::make_pair(toLower(header), to_string(value)));
 }
 
 void HttpHeader::append(const std::string& header, const string& value){
     if(get(header)){
         string old_value = get(header);
-        add(header, old_value + ", " + value);
+        set(header, old_value + ", " + value);
     }else{
-        add(header, value);
+        set(header, value);
     }
 }
 
@@ -150,7 +150,7 @@ HttpReqHeader::HttpReqHeader(const char* header, size_t len, ResObject* src):
                 cookies.insert(ltrim(string(p)));
             }
         }else{
-            add(name, ltrim(string(sp + 1)));
+            set(name, ltrim(string(sp + 1)));
         }
     }
     
@@ -185,7 +185,7 @@ HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers, ResOb
                 cookies.insert(ltrim(string(p)));
             }
         }else{
-            add(i.first, i.second);
+            set(i.first, i.second);
         }
     }
     snprintf(method, sizeof(method), "%s", get(":method"));
@@ -205,7 +205,7 @@ HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers, ResOb
     
     if (get(":authority")){
         spliturl(get(":authority"), nullptr, hostname, nullptr, &port);
-        add("host", get(":authority"));
+        set("host", get(":authority"));
     }
     for (auto i = this->headers.begin(); i!= this->headers.end();) {
         if (i->first[0] == ':') {
@@ -246,7 +246,7 @@ HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(nullptr) {
             cookies.insert(value);
             continue;
         }
-        add(name, value);
+        set(name, value);
     }
     getfile();
 }
@@ -462,7 +462,7 @@ HttpResHeader::HttpResHeader(const char* header, size_t len) {
         if(name == "set-cookie"){
             cookies.insert(value);
         }else{
-            add(name, value);
+            set(name, value);
         }
     }
 }
@@ -472,7 +472,7 @@ HttpResHeader::HttpResHeader(std::multimap<string, string>&& headers) {
         if(i.first == "set-cookies"){
             cookies.insert(i.second);
         }else{
-            add(i.first, i.second);
+            set(i.first, i.second);
         }
     }
 
@@ -507,7 +507,7 @@ HttpResHeader::HttpResHeader(const CGI_Header* headers)
             cookies.insert(value);
             continue;
         }
-        add(name, value);
+        set(name, value);
    }
 }
 

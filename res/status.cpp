@@ -27,8 +27,8 @@ void* Status::request(HttpReqHeader* req){
         req->src->response(res);
     }else{
         HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
-        res->add("Transfer-Encoding", "chunked");
-        res->add("Content-Type", "text/plain; charset=utf8");
+        res->set("Transfer-Encoding", "chunked");
+        res->set("Content-Type", "text/plain; charset=utf8");
         res->index = req->index;
         req->src->response(res);
         ::dump_stat(StatusDump, req);

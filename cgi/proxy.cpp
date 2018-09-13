@@ -31,7 +31,7 @@ class handle{
         CGI_NameValue *nv = (CGI_NameValue *)(header+1);
         assert(ntohl(nv->name) == CGI_NAME_GETPROXY);
         HttpResHeader res(H200, sizeof(H200));
-        res.add("Content-Type", "application/json");
+        res.set("Content-Type", "application/json");
         cgi_response(cgi_fd, res, cgi_id);
         char callback[DOMAINLIMIT+sizeof("setproxy(\"\");")];
         cgi_write(cgi_fd, cgi_id, callback, sprintf(callback, "setproxy(\"%s\");", (char *)nv->value));
@@ -48,7 +48,7 @@ class handle{
             cgi_response(cgi_fd, res, cgi_id);
         }else if(header->flag & CGI_FLAG_ERROR){
             HttpResHeader res(H303, sizeof(H303));
-            res.add("Location", "/webui/");
+            res.set("Location", "/webui/");
             cgi_response(cgi_fd, res, cgi_id);
         }else{
             HttpResHeader res(H205, sizeof(H205));
