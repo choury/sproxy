@@ -8,6 +8,7 @@
 #include <iostream>
 #include <map>
 #include <vector>
+#include <iomanip>
 #include <fstream>
 #include <android/log.h>
 #include <sys/system_properties.h>
@@ -227,11 +228,12 @@ void android_vlog(int level, const char* fmt, va_list args){
     char printbuff[1024];
     vsnprintf(printbuff, sizeof(printbuff), fmt, args);
     if(level != ANDROID_LOG_DEBUG) {
-        __android_log_print(level, "sproxy_client", "%s", printbuff);
+        __android_log_print(level, "SproxyClient", "%s", printbuff);
     }
     std::string cachedir = getExternalCacheDir();
     std::ofstream logfile(cachedir+"/vpn.log", std::ios::app);
-    logfile<<printbuff;
+    auto now = time(nullptr);
+    logfile<<std::put_time(std::localtime(&now), "%F %T: ")<<printbuff;
     logfile.close();
 }
 

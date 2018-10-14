@@ -95,7 +95,6 @@ int dns_expired(std::string host){
     auto i = rcd_cache.find(host);
     if(i != rcd_cache.end()){
         LOGD(DDNS, "%s expired (%ld)\n", host.c_str(), i->second.get_time + i->second.ttl);
-        assert(now >= i->second.get_time + i->second.ttl);
         rcd_cache.erase(i);
     }else{
         LOGE("[DNS] expired %s not found\n", host.c_str());

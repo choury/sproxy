@@ -13,6 +13,7 @@ static in_addr_t fake_ip = 0 ;
 FDns::FDns() {
     if(fake_ip == 0){
         fake_ip = ntohl(inet_addr("10.1.0.1"));
+        fdns_records.Add(fake_ip, "VPN", nullptr);
     }
 }
 
