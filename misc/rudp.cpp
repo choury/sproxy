@@ -330,7 +330,9 @@ void RudpRWer::defaultHE(uint32_t events) {
         errorCB(SOCKET_ERR, ECONNRESET);
         return;
     }
-    if(events & EPOLLIN){
+    if(events & EPOLLRDHUP){
+        errorCB(READ_ERR, 0);
+    }else if(events & EPOLLIN){
         assert(!read_seqs.empty());
         Rudp_stats stats;
         int ret;

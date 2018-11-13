@@ -236,7 +236,9 @@ void StreamRWer::defaultHE(uint32_t events) {
         errorCB(SOCKET_ERR, Checksocket(fd, __PRETTY_FUNCTION__));
         return;
     }
-    if (events & EPOLLIN){
+    if(events & EPOLLRDHUP){
+        errorCB(READ_ERR, 0);
+    }else if (events & EPOLLIN){
         bool closed = false;
         size_t left = 0;
         while((left = rb.left())){
@@ -269,6 +271,7 @@ void StreamRWer::defaultHE(uint32_t events) {
     if (events & EPOLLOUT){
         Send();
     }
+
 }
 
 /*
@@ -306,7 +309,9 @@ void PacketRWer::defaultHE(uint32_t events) {
         errorCB(SOCKET_ERR, Checksocket(fd, __PRETTY_FUNCTION__));
         return;
     }
-    if (events & EPOLLIN){
+    if (events & EPOLLRDHUP){
+        errorCB(READ_ERR, 0);
+    }else if (events & EPOLLIN){
         size_t left = 0;
         while((left = rb.left())){
             int ret = Read(rb.end(), left);

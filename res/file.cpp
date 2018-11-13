@@ -256,7 +256,6 @@ void File::readHE(size_t len) {
         }
         int len = Min(requester->bufleft(i->second.req_index), rg.end - rg.begin + 1);
         if (len <= 0) {
-            LOGE("The requester's write buff is full\n");
             i++;
             continue;
         }

@@ -81,7 +81,7 @@ void Ep::setEpoll(uint32_t events) {
         int __attribute__((unused)) ret;
         struct epoll_event event;
         event.data.ptr = this;
-        event.events = events | EPOLLHUP | EPOLLERR;
+        event.events = events | EPOLLHUP | EPOLLERR | EPOLLRDHUP;
         ret = epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
         if(ret != 0 && errno != ENOENT){
             LOGE("epoll_ctl mod failed:%s\n", strerror(errno));

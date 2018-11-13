@@ -71,6 +71,6 @@ int32_t Ping::bufleft(__attribute__ ((unused)) void* index) {
 }
 
 void Ping::dump_stat(Dumper dp, void* param) {
-    dp(param, "ping %p, %s%s:%d %s %s\n",
+    dp(param, "ping %p, %s%s:%d %p %p\n",
        this, iserror?"[E] ":"", hostname, id, req_ptr, req_index);
 }

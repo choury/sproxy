@@ -38,7 +38,6 @@ uint32_t vpn_action = 0;
 int vpn_start(const struct VpnConfig* vpn){
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
-    signal(SIGSEGV, dump_stat);
 #ifndef __ANDROID__
     signal(SIGABRT, dump_trace);
     setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
@@ -63,7 +62,7 @@ int vpn_start(const struct VpnConfig* vpn){
     LOG("set encoded secret to: %s\n", rewrite_auth);
 
     /* make tun socket non blocking */
-    uint32_t sock_opts = fcntl(vpn->fd, F_GETFL, 0);
+    int sock_opts = fcntl(vpn->fd, F_GETFL, 0);
     fcntl(vpn->fd, F_SETFL, sock_opts | O_NONBLOCK );
 
     new Guest_vpn(vpn->fd);
@@ -95,6 +94,7 @@ int vpn_start(const struct VpnConfig* vpn){
         }
         do_postjob();
     }
+    LOG("VPN exiting ...\n");
     releaseall();
     flushdns();
     return 0;
