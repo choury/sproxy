@@ -55,7 +55,7 @@ extern int autoindex;
 extern "C" {
 #endif
 
-void slog(int level, const char* fmt, ...);
+void slog(int level, const char* fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));
 
 #ifndef __ANDROID__
 void vslog(int level, const char* fmt, va_list arg);
@@ -165,7 +165,7 @@ do {\
 #define DISCONNECT_FLAG     (1<<31)
 
 typedef unsigned char uchar;
-typedef void (* Dumper)(void* param, const char* fmt, ...);
+typedef void (* Dumper)(void* param, const char* fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));
 
 int protectFd(int sockfd);
 

@@ -23,7 +23,7 @@ public:
     ~FDns();
     virtual void* request(HttpReqHeader* req) override;
     virtual ssize_t Send(void *buff, size_t size, void* index)override;
-    static void ResponseCb(uint32_t id, const char *buff, size_t size);
+    static void ResponseCb(void* param, const char *buff, size_t size);
 
     virtual int32_t bufleft(void* index)override;
     virtual void finish(uint32_t flags, void* index)override;

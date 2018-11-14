@@ -77,7 +77,8 @@ ssize_t FDns::Send(void* buff, size_t size, void* index) {
     return 0;
 }
 
-void FDns::ResponseCb(uint32_t id, const char* buff, size_t size) {
+void FDns::ResponseCb(void* param, const char* buff, size_t size) {
+    uint32_t id = (uint32_t)(long)param;
     if(fdns && fdns->statusmap.count(id)){
         FDnsStatus& status = fdns->statusmap[id];
         if(buff){

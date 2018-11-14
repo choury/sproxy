@@ -6,6 +6,10 @@
 #include "misc/net.h"
 #include "misc/util.h"
 
+#ifdef ENABLE_GZIP_TEST
+#include "gzip_test.h"
+#endif
+
 #include <fstream>
 #include <sstream>
 #include <fcntl.h>
@@ -292,9 +296,16 @@ Responser* File::getfile(HttpReqHeader* req) {
         req->src->response(res);
         return nullptr;
     }
-    if(strcmp(req->path, "/status") == 0 ){
+    if(req->filename == "status"){
         return new Status();
     }
+
+#ifdef ENABLE_GZIP_TEST
+    if(req->filename == "test"){
+        return new GzipTest();
+    }
+#endif
+
     char filename[URLLIMIT];
     bool slash_end = req->filename.back() == '/';
     bool index_not_found = false;

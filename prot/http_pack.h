@@ -69,6 +69,7 @@ public:
     virtual CGI_Header *getcgi(uint32_t cgi_id) const override;
     
     std::map<std::string, std::string> getcookies()const;
+    std::map<std::string, std::string> getparamsmap()const;
     const char* getparamstring()const;
     bool getrange();
     std::string geturl() const;

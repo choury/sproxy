@@ -110,7 +110,7 @@ public:
                 assert(req == nullptr);
                 cgi_id = ntohl(header->requestId);
                 req = new HttpReqHeader(header);
-                auto param = getparamsmap(req->getparamstring());
+                auto param = req->getparamsmap();
                 params.insert(param.begin(), param.end());
                 break;
             }

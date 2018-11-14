@@ -422,6 +422,10 @@ const char *HttpReqHeader::getparamstring() const {
     return p;
 }
 
+std::map<std::string, std::string> HttpReqHeader::getparamsmap()const{
+	return ::getparamsmap(getparamstring());
+}
+
 std::map< string, string > HttpReqHeader::getcookies() const {
     std::map<string, string> cookie;
     for(auto i:cookies){

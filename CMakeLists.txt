@@ -47,17 +47,19 @@ else()
     set(CMAKE_C_FLAGS "-fuse-ld=gold ${CMAKE_C_FLAGS}")
     set(CMAKE_CXX_FLAGS "-fuse-ld=gold ${CMAKE_CXX_FLAGS}")
     find_package(OpenSSL 1.0.2 REQUIRED)
-    find_package(JSON-C)
 endif()
 
 include_directories(${OPENSSL_INCLUDE_DIR})
 
 
+find_package(JSON-C)
 if(NOT JSON-C_FOUND)
     message(WARNING "json-c not found, disable webui")
 else()
     set(BUILD_CGI TRUE)
 endif()
+
+
 
 set(CMAKE_C_FLAGS "-Wall -Wextra -fPIC ${CMAKE_C_FLAGS}")
 set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -Wextra -fPIC ${CMAKE_CXX_FLAGS}")
@@ -65,6 +67,14 @@ set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -Wextra -fPIC ${CMAKE_CXX_FLAGS}")
 if(NOT NO_CONST_ITERATOR_BUG)
     message(WARNING "have const_iterator insert bug, see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=55817")
     set(CMAKE_CXX_FLAGS "-DHAVE_CONST_ITERATOR_BUG ${CMAKE_CXX_FLAGS}")
+endif()
+
+find_package(ZLIB)
+if(NOT ZLIB_FOUND)
+    message(WARNING "zlib not found, disable gzip test")
+else()
+    set(CMAKE_CXX_FLAGS "-DENABLE_GZIP_TEST ${CMAKE_CXX_FLAGS}")
+    set(ENABLE_GZIP_TEST TRUE)
 endif()
 
 set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
@@ -101,6 +111,10 @@ find_package(Backtrace)
 if(Backtrace_FOUND)
     include_directories(${Backtrace_INCLUDE_DIRS})
     set(SPROXY_LIBS ${SPROXY_LIBS} ${Backtrace_LIBRARIES})
+endif()
+
+if(ZLIB_FOUND)
+    set(SPROXY_LIBS ${SPROXY_LIBS} z)
 endif()
 
 include_directories(${PROJECT_SOURCE_DIR})
