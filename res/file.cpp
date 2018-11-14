@@ -6,7 +6,8 @@
 #include "misc/net.h"
 #include "misc/util.h"
 
-
+#include <fstream>
+#include <sstream>
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -22,70 +23,9 @@ using std::pair;
 
 
 static std::map<std::string, File *> filemap;
+static std::map<std::string, std::string> mimetype;
 
-//from https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Complete_list_of_MIME_types
-const static std::map<std::string, const char*> mimetype={
-    {".aac", "audio/aac"},
-    {".abw", "application/x-abiword"},
-    {".arc", "application/octet-stream"},
-    {".avi", "video/x-msvideo"},
-    {".azw", "application/vnd.amazon.ebook"},
-    {".bin", "application/octet-stream"},
-    {".bz", "application/x-bzip"},
-    {".bz2", "application/x-bzip2"},
-    {".csh", "application/x-csh"},
-    {".css", "text/css"},
-    {".csv", "text/csv"},
-    {".doc", "application/msword"},
-    {".epub", "application/epub+zip"},
-    {".gif", "image/gif"},
-    {".htm", "text/html"},
-    {".html", "text/html"},
-    {".ico", "image/x-icon"},
-    {".ics", "text/calendar"},
-    {".jar", "application/java-archive"},
-    {".jpeg", "image/jpeg"},
-    {".jpg", "image/jpeg"},
-    {".js", "application/javascript"},
-    {".json", "application/json"},
-    {".mid", "audio/midi"},
-    {".midi", "audio/midi"},
-    {".mpeg", "video/mpeg"},
-    {".mpkg", "application/vnd.apple.installer+xml"},
-    {".odp", "application/vnd.oasis.opendocument.presentation"},
-    {".ods", "application/vnd.oasis.opendocument.spreadsheet"},
-    {".odt", "application/vnd.oasis.opendocument.text"},
-    {".oga", "audio/ogg"},
-    {".ogv", "video/ogg"},
-    {".ogx", "application/ogg"},
-    {".pdf", "application/pdf"},
-    {".ppt", "application/vnd.ms-powerpoint"},
-    {".rar", "application/x-rar-compressed"},
-    {".rtf", "application/rtf"},
-    {".sh", "application/x-sh"},
-    {".svg", "image/svg+xml"},
-    {".swf", "application/x-shockwave-flash"},
-    {".tar", "application/x-tar"},
-    {".tif", "image/tiff"},
-    {".tiff", "image/tiff"},
-    {".ttf", "application/x-font-ttf"},
-    {".vsd", "application/vnd.visio"},
-    {".wav", "audio/x-wav"},
-    {".weba", "audio/webm"},
-    {".webm", "video/webm"},
-    {".webp", "image/webp"},
-    {".woff", "application/x-font-woff"},
-    {".xhtml", "application/xhtml+xml"},
-    {".xls", "application/vnd.ms-excel"},
-    {".xml", "application/xml"},
-    {".xul", "application/vnd.mozilla.xul+xml"},
-    {".zip", "application/zip"},
-    {".3gp", "video/3gpp"},
-    {".3g2", "video/3gpp2"},
-    {".7z", "application/x-7z-compressed"},
-};
-
-bool checkrange(Range& rg, size_t size) {
+static bool checkrange(Range& rg, size_t size) {
     if (rg.begin > (ssize_t)size-1) {
         return false;
     }
@@ -105,6 +45,30 @@ bool checkrange(Range& rg, size_t size) {
     return true;
 }
 
+static void loadmine(){
+    std::ifstream mimefile("/etc/mime.types");
+    if(!mimefile.good()){
+        LOGE("read /etc/mime.types failed, Content-Type will be disabled.\n");
+        return;
+    }
+    std::string line;
+    while(std::getline(mimefile,line)){
+        std::stringstream ss(line);
+        std::string type;
+        if(!(ss>>type)){
+            continue;
+        }
+        if(type == "" || type[0] == '#'){
+            continue;
+        }
+        std::string suffix;
+        while(ss >> suffix){
+            mimetype.emplace("." + suffix, type);
+        }
+    }
+    mimefile.close();
+}
+
 File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
     int evfd = eventfd(1, O_NONBLOCK);
     if(evfd < 0){
@@ -115,7 +79,9 @@ File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
         LOGE("file error: %d/%d\n", ret, code);
         deleteLater(ret);
     });
-    snprintf(filename, sizeof(filename), "./%s", fname);
+    if(filemap.empty()){
+        loadmine();
+    }
     strcpy(filename, fname);
     filemap[filename] = this;
     suffix = strrchr(filename, '.');
