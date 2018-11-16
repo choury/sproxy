@@ -149,10 +149,8 @@ void GzipTest::rawreadHE(size_t len) {
     }
 }
 
-ssize_t GzipTest::Send(void *buff, size_t size, __attribute__((unused)) void *index) {
+void GzipTest::Send(const void*, size_t , __attribute__((unused)) void *index) {
     assert((long)index == 1);
-    p_free(buff);
-    return size;
 }
 
 int32_t GzipTest::bufleft(__attribute__((unused)) void *index) {

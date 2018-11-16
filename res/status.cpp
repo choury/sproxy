@@ -37,10 +37,13 @@ void* Status::request(HttpReqHeader* req){
     return (void*)1;
 }
 
-ssize_t Status::Send(void *buff, size_t size, __attribute__ ((unused)) void* index){
+void Status::Send(const void *, size_t, __attribute__ ((unused)) void* index){
     assert((long)index == 1);
+}
+
+void Status::Send(void *buff, size_t size, __attribute__ ((unused)) void* index){
+    Send((const void*)buff, size, index);
     p_free(buff);
-    return size;
 }
 
 int32_t Status::bufleft(__attribute__ ((unused)) void* index){

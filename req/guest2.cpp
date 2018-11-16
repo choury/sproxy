@@ -69,24 +69,14 @@ int32_t Guest2::bufleft(void* index) {
         return globalwindow;
 }
 
-ssize_t Guest2::Send(void *buff, size_t size, void* index) {
+void Guest2::Send(const void* buff, size_t size, void* index){
     uint32_t id = (uint32_t)(long)index;
-    size = Min(size, FRAMEBODYLIMIT);
-    Http2_header *header=(Http2_header *)p_move(buff, -(char)sizeof(Http2_header));
-    memset(header, 0, sizeof(Http2_header));
-    set32(header->id, id);
-    set24(header->length, size);
-    if(size == 0) {
-        LOGD(DHTTP2, "<guest2> [%d]: set stream end\n", id);
-        header->flags = END_STREAM_F;
-    }
-    PushFrame(header);
-    this->remotewinsize -= size;
+    PushData(id, buff, size);
+
     if(statusmap.count(id)){
         assert((statusmap[id].res_flags & STREAM_WRITE_CLOSED) == 0);
         statusmap[id].remotewinsize -= size;
     }
-    return size;
 }
 
 void Guest2::ReqProc(HttpReqHeader* req) {
@@ -129,10 +119,7 @@ void Guest2::DataProc(uint32_t id, const void* data, size_t len) {
             statusmap.erase(id);
             return;
         }
-        size_t sended = 0;
-        while(sended != len){
-            sended += responser->Send((const char*)data + sended, len - sended, status.res_index);
-        }
+        responser->Send(data, len, status.res_index);
         status.localwinsize -= len;
     }else{
         LOGD(DHTTP2, "<guest2> DateProc not found id: %d\n", id);
@@ -228,7 +215,7 @@ void Guest2::GoawayProc(const Http2_header* header) {
 
 void Guest2::ErrProc(int errcode) {
     LOGE("Guest2 http2 error:%d\n", errcode);
-    deleteLater(ERR_INTERNAL_ERROR);
+    deleteLater(errcode);
 }
 
 void Guest2::AdjustInitalFrameWindowSize(ssize_t diff) {

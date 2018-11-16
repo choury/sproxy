@@ -156,6 +156,34 @@ ret:
     queue_insert(i, header, length);
 }
 
+void Http2Base::PushData(uint32_t id, const void* data, size_t size) {
+    assert(size <= 0xffffff);
+    size_t left = size;
+    while(left > remoteframebodylimit){
+        Http2_header *header=(Http2_header *)p_move(p_malloc(remoteframebodylimit), -(char)sizeof(Http2_header));
+        memset(header, 0, sizeof(Http2_header));
+        set32(header->id, id);
+        set24(header->length, remoteframebodylimit);
+        memcpy(header+1, data, remoteframebodylimit);
+        PushFrame(header);
+        data = (char*)data + remoteframebodylimit;
+        left -= remoteframebodylimit;
+    }
+    Http2_header *header=(Http2_header *)p_move(p_malloc(left), -(char)sizeof(Http2_header));
+    memset(header, 0, sizeof(Http2_header));
+    set32(header->id, id);
+    set24(header->length, left);
+    if(size == 0) {
+        LOGD(DHTTP2, "<guest2> [%d]: set stream end\n", id);
+        header->flags = END_STREAM_F;
+    }else{
+        memcpy(header+1, data, left);
+    }
+    PushFrame(header);
+    remotewinsize -= size;
+}
+
+
 #if 0
 
 int Http2Base::SendFrame(){
@@ -202,6 +230,15 @@ void Http2Base::SettingsProc(const Http2_header* header) {
                 AdjustInitalFrameWindowSize(value - remoteframewindowsize);
                 remoteframewindowsize = value;
                 LOGD(DHTTP2, "set inital frame window size:%d\n", remoteframewindowsize);
+                break;
+            case SETTINGS_MAX_FRAME_SIZE:
+                if(value > 0xffffff || value < FRAMEBODYLIMIT){
+                    LOGE("ERROR frame size overflow\n");
+                    ErrProc(ERR_FRAME_SIZE_ERROR);
+                    return;
+                }
+                remoteframebodylimit = value;
+                LOGD(DHTTP2, "set frame body size limit: %d\n", remoteframebodylimit);
                 break;
             default:
                 LOG("Get a unkown setting(%d): %d\n", get16(sf->identifier), value);

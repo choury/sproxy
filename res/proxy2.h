@@ -45,7 +45,7 @@ public:
 
 
     virtual int32_t bufleft(void* index)override;
-    virtual ssize_t Send(void *buff, size_t size, void* index)override;
+    virtual void Send(const void *buff, size_t size, void* index)override;
     virtual void writedcb(void* index)override;
     virtual void finish(uint32_t flags, void* index)override;
     

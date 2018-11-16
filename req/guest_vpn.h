@@ -66,7 +66,7 @@ public:
     virtual void transfer(void* index, Responser* res_ptr, void* res_index)override;
 
     virtual int32_t bufleft(void* index)override;
-    virtual ssize_t Send(void* buff, size_t size, void* index)override;
+    virtual void Send(void* buff, size_t size, void* index)override;
 
     virtual void finish(uint32_t flags, void* index)override;
     virtual const char *getsrc(const void* index)override;

@@ -561,13 +561,13 @@ int32_t Guest_vpn::bufleft(void* index) {
     return 4*1024*1024 - rwer->wlength();
 }
 
-ssize_t Guest_vpn::Send(void* buff, size_t size, void* index) {
+void Guest_vpn::Send(void* buff, size_t size, void* index) {
     VpnKey& key  = *(VpnKey *)index;
     assert(statusmap.count(key));
     VpnStatus& status = statusmap[key];
     if(status.res_ptr == nullptr || size == 0){
         p_free(buff);
-        return size;
+        return;
     }
     if(key.protocol == Protocol::TCP){
         TcpStatus* tcpStatus = (TcpStatus*)status.protocol_info;
@@ -592,7 +592,7 @@ ssize_t Guest_vpn::Send(void* buff, size_t size, void* index) {
 
         sendPkg(&pac_return, buff, size);
         tcpStatus->send_seq += size;
-        return size;
+        return;
     }
     if(key.protocol == Protocol::UDP){
         LOGD(DVPN, "%s size: %zu\n", key.getString("<-"), size);
@@ -600,7 +600,7 @@ ssize_t Guest_vpn::Send(void* buff, size_t size, void* index) {
 
         sendPkg(&pac_return, buff, size);
         add_delayjob(std::bind(&Guest_vpn::aged, this, &status), &status, 300000);
-        return size;
+        return;
     }
     if(key.protocol == Protocol::ICMP){
         Ip pac_return(IPPROTO_ICMP, &key.dst, &key.src);
@@ -619,10 +619,10 @@ ssize_t Guest_vpn::Send(void* buff, size_t size, void* index) {
         buff = p_move(buff, sizeof(icmphdr));
         sendPkg(&pac_return, buff, size - sizeof(icmphdr));
         add_delayjob(std::bind(&Guest_vpn::aged, this, &status), &status, 5000);
-        return size;
+        return;
     }
     assert(0);
-    return 0;
+    return;
 }
 
 void Guest_vpn::cleanKey(const VpnKey* key) {

@@ -89,23 +89,13 @@ int32_t Proxy2::bufleft(void* index) {
         return globalwindow;
 }
 
-ssize_t Proxy2::Send(void* buff, size_t size, void* index) {
+void Proxy2::Send(const void* buff, size_t size, void* index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     assert((statusmap[id].req_flags & STREAM_WRITE_CLOSED) == 0);
-    size = Min(size, FRAMEBODYLIMIT);
-    Http2_header *header=(Http2_header *)p_move(buff, -(char)sizeof(Http2_header));
-    memset(header, 0, sizeof(Http2_header));
-    set32(header->id, id);
-    set24(header->length, size);
-    if(size == 0) {
-        LOGD(DHTTP2, "<proxy2> [%d]: set stream end\n", id);
-        header->flags = END_STREAM_F;
-    }
-    PushFrame(header);
-    this->remotewinsize -= size;
+    PushData(id, buff, size);
+
     statusmap[id].remotewinsize -= size;
-    return size;
 }
 
 void Proxy2::PushFrame(Http2_header *header){
@@ -155,10 +145,7 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
             statusmap.erase(id);
             return;
         }
-        size_t sended = 0;
-        while(sended != len){
-            sended += requester->Send((const char*)data + sended, len - sended, status.req_index);
-        }
+        requester->Send(data, len, status.req_index);
         status.localwinsize -= len;
     }else{
         LOGD(DHTTP2, "<proxy2> DataProc not found id: %d\n", id);
@@ -183,7 +170,7 @@ void Proxy2::EndProc(uint32_t id){
 
 void Proxy2::ErrProc(int errcode) {
     LOGE("Proxy2 Http2 error: %d\n", errcode);
-    deleteLater(ERR_INTERNAL_ERROR);
+    deleteLater(errcode);
 }
 
 void Proxy2::RstProc(uint32_t id, uint32_t errcode) {

@@ -32,8 +32,8 @@ protected:
     virtual void deleteLater(uint32_t errcode);
 public:
     virtual int32_t bufleft(void* index) = 0;
-    virtual ssize_t Send(const void *buff, size_t size, void* index) final;
-    virtual ssize_t Send(void* buff, size_t size, void* index) = 0;
+    virtual void Send(const void *buff, size_t size, void* index);
+    virtual void Send(void* buff, size_t size, void* index);
     virtual void finish(uint32_t flags, void* info) = 0;
 
     virtual void writedcb(void* index);

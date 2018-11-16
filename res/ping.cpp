@@ -37,13 +37,12 @@ void* Ping::request(HttpReqHeader* req) {
 }
 
 
-ssize_t Ping::Send(void* buff, size_t size, __attribute__ ((unused)) void* index){
+void Ping::Send(void* buff, size_t size, __attribute__ ((unused)) void* index){
     assert(index == (void *)1);
     if(iserror){
-        return size;
+        return;
     }
     rwer->buffer_insert(rwer->buffer_end(), buff, size);
-    return size;
 }
 
 void Ping::deleteLater(uint32_t errcode) {

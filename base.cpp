@@ -32,8 +32,13 @@ void Peer::deleteLater(uint32_t) {
     }
 }
 
-ssize_t Peer::Send(const void* buff, size_t size, void* index) {
-    return Send(p_memdup(buff, size), size, index);
+void Peer::Send(const void* buff, size_t size, void* index) {
+    Send(p_memdup(buff, size), size, index);
+}
+
+void Peer::Send(void* buff, size_t size, void* index) {
+    Send((const void*)buff, size, index);
+    p_free(buff);
 }
 
 void Peer::writedcb(void*) {

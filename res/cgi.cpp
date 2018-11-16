@@ -86,7 +86,7 @@ int32_t Cgi::bufleft(void*) {
     return 1024*1024 - rwer->wlength();
 }
 
-ssize_t Cgi::Send(void *buff, size_t size, void* index) {
+void Cgi::Send(void *buff, size_t size, void* index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     size = size > CGI_LEN_MAX ? CGI_LEN_MAX : size;
@@ -96,7 +96,6 @@ ssize_t Cgi::Send(void *buff, size_t size, void* index) {
     header->requestId = htonl(id);
     header->contentLength = htons(size);
     rwer->buffer_insert(rwer->buffer_end(), header, size+sizeof(CGI_Header));
-    return size;
 }
 
 
@@ -271,11 +270,7 @@ bool Cgi::HandleData(const CGI_Header* header, HttpReqHeader* req){
         return false;
     }
 
-    size_t sended = 0;
-    while(sended != size){
-        sended += req->src->Send((const char *)(header+1) + sended, size - sended, req->index);
-    }
-
+    req->src->Send((const char *)(header+1), size, req->index);
     if (header->flag & CGI_FLAG_END) {
         uint32_t cgi_id = ntohl(header->requestId);
         req->src->finish(NOERROR | DISCONNECT_FLAG, req->index);

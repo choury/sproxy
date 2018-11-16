@@ -122,9 +122,7 @@ int32_t File::bufleft(void*){
 }
 
 //discard everything!
-ssize_t File::Send(void* buff, size_t size, void*) {
-    p_free(buff);
-    return size;
+void File::Send(const void*, size_t, void*) {
 }
 
 void* File::request(HttpReqHeader* req) {
@@ -237,7 +235,7 @@ void File::readHE(size_t len) {
             deleteLater(READ_ERR);
             return;
         }
-        len = requester->Send(buff, len, i->second.req_index);
+        requester->Send(buff, len, i->second.req_index);
         rg.begin += len;
         i++;
     }

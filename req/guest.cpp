@@ -101,7 +101,8 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
         rwer->setEpoll(0);
         return -1;
     }
-    return responser_ptr->Send(buff, Min(size, len), responser_index);
+    responser_ptr->Send(buff, Min(size, len), responser_index);
+    return Min(size, len);
 }
 
 void Guest::EndProc() {
@@ -163,7 +164,7 @@ int32_t Guest::bufleft(void*){
 }
 
 
-ssize_t Guest::Send(void *buff, size_t size, __attribute__ ((unused)) void* index) {
+void Guest::Send(void *buff, size_t size, __attribute__ ((unused)) void* index) {
     assert((uint32_t)(long)index == 1);
     assert((http_flag & HTTP_SERVER_CLOSE_F) == 0);
     size_t len = Min(bufleft(nullptr), size);
@@ -177,7 +178,6 @@ ssize_t Guest::Send(void *buff, size_t size, __attribute__ ((unused)) void* inde
     }else{
         rwer->buffer_insert(rwer->buffer_end(), buff, size);
     }
-    return len;
 }
 
 void Guest::transfer(__attribute__ ((unused)) void* index, Responser* res_ptr, void* res_index) {

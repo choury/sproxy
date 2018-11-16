@@ -256,7 +256,12 @@ void HttpReqHeader::getfile() {
     char *start = path;
     while (*start && *++start == '/');
     char *end=start;
-    while (*end && *++end != '?');
+    while (*end ){
+        if(*end == '?'){
+            break;
+        }
+        end++;
+    }
     string filepath = string(start, end-start);
     if(filepath.empty()){
         filename = "/";

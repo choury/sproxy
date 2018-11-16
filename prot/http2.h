@@ -73,7 +73,6 @@ struct Goaway_Frame{
 
 
 #define FRAMEBODYLIMIT 16384
-#define FRAMELENLIMIT FRAMEBODYLIMIT+sizeof(Http2_header) 
 #define localframewindowsize  FRAMEBODYLIMIT
 
 struct Http2_frame{
@@ -85,6 +84,7 @@ struct Http2_frame{
 class Http2Base{
 protected:
     uint32_t remoteframewindowsize = 65535; //由对端初始化的初始frame的窗口大小
+    uint32_t remoteframebodylimit = FRAMEBODYLIMIT;
     
     int32_t remotewinsize = 65535; // 对端提供的窗口大小，发送时减小，收到对端update时增加
     int32_t localwinsize = localframewindowsize; // 发送给对端的窗口大小，接受时减小，给对端发送update时增加
@@ -112,6 +112,7 @@ protected:
     void Goaway(uint32_t lastid, uint32_t code, char* message = nullptr);
     void SendInitSetting();
     virtual void PushFrame(Http2_header* header);
+    virtual void PushData(uint32_t id, const void* data, size_t size);
 
     virtual uint32_t ExpandWindowSize(uint32_t id, uint32_t size);
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)=0;

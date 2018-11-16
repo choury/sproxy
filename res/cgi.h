@@ -57,7 +57,7 @@ public:
     virtual ~Cgi();
 
     virtual int32_t bufleft(void * index) override;
-    virtual ssize_t Send(void *buff, size_t size, void* info)override;
+    virtual void Send(void *buff, size_t size, void* info)override;
 
     virtual void finish(uint32_t flags, void* index)override;
     virtual void deleteLater(uint32_t errcode) override;

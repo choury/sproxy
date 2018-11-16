@@ -36,9 +36,8 @@ int32_t FDns::bufleft(void*) {
 }
 
 
-ssize_t FDns::Send(void* buff, size_t size, void* index) {
+void FDns::Send(const void* buff, size_t size, void* index) {
     Dns_Que que((const char *)buff, size);
-    p_free(buff);
     LOGD(DDNS, "FQuery %s [%d]: %d\n", que.host.c_str(), que.id, que.type);
     uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id)){
@@ -65,16 +64,16 @@ ssize_t FDns::Send(void* buff, size_t size, void* index) {
         }
         if(rr == nullptr){
             query(que.host.c_str(), que.type, DNSRAWCB(ResponseCb), reinterpret_cast<void*>(id));
-            return size;
+            return;
         }
         unsigned char * buff = (unsigned char *)p_malloc(BUF_LEN);
         status.req_ptr->Send(buff, rr->build(&que, buff), status.req_index);
         status.req_ptr->finish(NOERROR | DISCONNECT_FLAG, status.req_index);
         fdns->statusmap.erase(id);
         delete rr;
-        return size;
+        return;
     }
-    return 0;
+    return;
 }
 
 void FDns::ResponseCb(void* param, const char* buff, size_t size) {

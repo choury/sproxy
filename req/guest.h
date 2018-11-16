@@ -34,7 +34,7 @@ public:
     explicit Guest(int fd, const sockaddr_un *myaddr, SSL_CTX* ctx);
 
     virtual int32_t bufleft(void * index) override;
-    virtual ssize_t Send(void* buff, size_t size, void* index)override;
+    virtual void Send(void* buff, size_t size, void* index)override;
 
     virtual void response(HttpResHeader* res)override;
     virtual void transfer(void* index, Responser* res_ptr, void* res_index)override;
