@@ -109,6 +109,11 @@ void GzipTest::gzipreadHE(size_t len) {
     }
 
     size_t chunk = req_ptr->bufleft(req_index);
+    if(chunk <= 0){
+        rwer->delEpoll(EPOLLIN);
+        return;
+    }
+
     unsigned char *out = (unsigned char *)p_malloc(chunk);
     strm.next_out = out;
     strm.avail_out = chunk;
@@ -140,6 +145,11 @@ void GzipTest::rawreadHE(size_t len) {
     }
 
     size_t chunk = req_ptr->bufleft(req_index);
+    if(chunk <= 0){
+        rwer->delEpoll(EPOLLIN);
+        return;
+    }
+
     len = Min(chunk, left);
     unsigned char *out = (unsigned char *)p_malloc(len);
     req_ptr->Send(out, len, req_index);

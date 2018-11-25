@@ -331,6 +331,7 @@ void RudpRWer::defaultHE(uint32_t events) {
         return;
     }
     if(events & EPOLLRDHUP){
+        delEpoll(EPOLLIN);
         errorCB(READ_ERR, 0);
     }else if(events & EPOLLIN){
         assert(!read_seqs.empty());

@@ -237,6 +237,7 @@ void StreamRWer::defaultHE(uint32_t events) {
         return;
     }
     if(events & EPOLLRDHUP){
+        delEpoll(EPOLLIN);
         errorCB(READ_ERR, 0);
     }else if (events & EPOLLIN){
         bool closed = false;
@@ -310,6 +311,7 @@ void PacketRWer::defaultHE(uint32_t events) {
         return;
     }
     if (events & EPOLLRDHUP){
+        delEpoll(EPOLLIN);
         errorCB(READ_ERR, 0);
     }else if (events & EPOLLIN){
         size_t left = 0;

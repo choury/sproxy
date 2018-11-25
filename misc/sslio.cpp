@@ -100,7 +100,7 @@ static int ssl_err_cb(const char* str, size_t len, void* ){
 }
 
 int SslRWer::get_error(int ret){
-    if(ret < 0){
+    if(ret <= 0){
         int error = SSL_get_error(ssl, ret);
         switch (error) {
             case SSL_ERROR_WANT_READ:
