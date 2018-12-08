@@ -5,6 +5,7 @@
 #include <openssl/err.h>
 #include <assert.h>
 #include <errno.h>
+#include <string.h>
 #include <unistd.h>
 
 static int verify_host_callback(int ok, X509_STORE_CTX *ctx){
@@ -38,10 +39,9 @@ static int verify_host_callback(int ok, X509_STORE_CTX *ctx){
      * At this point, err contains the last verification error. We can use
      * it for something special
      */
-    if (!ok && (err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT))
-    {
+    if (!ok && (err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT || err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY)) {
         X509_NAME_oneline(X509_get_issuer_name(err_cert), buf, 256);
-        LOGE("unable to get issuer= %s\n", buf);
+        LOGE("unable to verify issuer= %s\n", buf);
     }
 
     if (ignore_cert_error)
@@ -51,17 +51,22 @@ static int verify_host_callback(int ok, X509_STORE_CTX *ctx){
 }
 
 
-SslRWer::SslRWer(int fd, SSL_CTX* ctx, std::function<void(int ret, int code)> errorCB):
+SslRWer::SslRWer(int fd, SSL_CTX* ctx,
+                 std::function<void(int ret, int code)> errorCB,
+                 std::function<void(const sockaddr_un*)> connectCB):
         StreamRWer(fd, errorCB)
 {
     ssl = SSL_new(ctx);
     SSL_set_fd(ssl, fd);
-    setEpoll(EPOLLIN | EPOLLOUT);
-    handleEvent = (void (Ep::*)(uint32_t))&SslRWer::shakehandHE;
+    this->connectCB = connectCB;
+    setEvents(RW_EVENT::READWRITE);
+    handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::shakehandHE;
 }
 
-SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB):
-        StreamRWer(hostname, port, protocol, errorCB)
+SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol,
+                 std::function<void(int ret, int code)> errorCB,
+                 std::function<void(const sockaddr_un*)> connectCB):
+        StreamRWer(hostname, port, protocol, errorCB, connectCB)
 {
     if(protocol == Protocol::TCP){
         ctx = SSL_CTX_new(SSLv23_client_method());
@@ -73,8 +78,7 @@ SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::fu
         LOGE("SSL_CTX_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
         throw 0;
     }
-
-#ifdef __ANDROID__
+#if __ANDROID__
     if (SSL_CTX_load_verify_locations(ctx, cafile, "/etc/security/cacerts/") != 1)
 #else
     if (SSL_CTX_load_verify_locations(ctx, cafile, "/etc/ssl/certs/") != 1)
@@ -104,7 +108,15 @@ int SslRWer::get_error(int ret){
         int error = SSL_get_error(ssl, ret);
         switch (error) {
             case SSL_ERROR_WANT_READ:
+                if(SSL_state(ssl) != SSL_ST_OK){
+                    setEvents(RW_EVENT::READ);
+                }
+                errno = EAGAIN;
+                break;
             case SSL_ERROR_WANT_WRITE:
+                if(SSL_state(ssl) != SSL_ST_OK){
+                    setEvents(RW_EVENT::WRITE);
+                }
                 errno = EAGAIN;
                 break;
             case SSL_ERROR_ZERO_RETURN:
@@ -140,20 +152,18 @@ SslRWer::~SslRWer(){
     del_delayjob(std::bind(&SslRWer::con_failed, this), this);
 }
 
-void SslRWer::waitconnectHE(uint32_t events) {
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        Checksocket(fd, __PRETTY_FUNCTION__);
-        close(fd);
-        fd = -1;
+void SslRWer::waitconnectHE(RW_EVENT events) {
+    if (!!(events & RW_EVENT::ERROR)) {
+        checkSocket(__PRETTY_FUNCTION__);
         return retryconnect(CONNECT_FAILED);
     }
-    if (events & EPOLLOUT) {
-        setEpoll(EPOLLIN | EPOLLOUT);
+    if (!!(events & RW_EVENT::WRITE)) {
+        setEvents(RW_EVENT::READWRITE);
         if(protocol == Protocol::TCP){
             //ssl = SSL_new(ctx);
-            SSL_set_fd(ssl, fd);
+            SSL_set_fd(ssl, getFd());
         }else{
-            BIO* bio = BIO_new_dgram(fd, BIO_NOCLOSE);
+            BIO* bio = BIO_new_dgram(getFd(), BIO_NOCLOSE);
             BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_CONNECTED, 0, &addrs.front());
 
             SSL_set_bio(ssl, bio, bio);
@@ -168,17 +178,17 @@ void SslRWer::waitconnectHE(uint32_t events) {
         /* Configure a non-zero callback if desired */
         SSL_set_verify(ssl, SSL_VERIFY_PEER, verify_host_callback);
 
-        handleEvent = (void (Ep::*)(uint32_t))&SslRWer::shakehandHE;
+        handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::shakehandHE;
         add_delayjob(std::bind(&SslRWer::con_failed, this), this, 30000);
     }
 }
 
-void SslRWer::shakehandHE(uint32_t events){
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        errorCB(SOCKET_ERR, Checksocket(fd, __PRETTY_FUNCTION__));
+void SslRWer::shakehandHE(RW_EVENT events){
+    if (!!(events & RW_EVENT::ERROR)) {
+        errorCB(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
         return;
     }
-    if ((events & EPOLLIN) || (events & EPOLLOUT)) {
+    if (!!(events & RW_EVENT::READ) || !!(events & RW_EVENT::WRITE)) {
         int ret = ctx?sconnect():saccept();
         if (ret != 1) {
             if (errno != EAGAIN) {
@@ -189,9 +199,10 @@ void SslRWer::shakehandHE(uint32_t events){
             return;
         }
         if(connectCB){
-            connectCB();
+            connectCB(addrs.empty()?nullptr : &addrs.front());
         }
-        handleEvent = (void (Ep::*)(uint32_t))&SslRWer::defaultHE;
+        setEvents(RW_EVENT::READWRITE);
+        handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::defaultHE;
         del_delayjob(std::bind(&SslRWer::con_failed, this), this);
     }
 }

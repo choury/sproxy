@@ -13,6 +13,10 @@
 #ifdef __ANDROID__
 #include <stdlib.h>
 #endif
+#ifdef __APPLE__
+#include <sys/param.h>
+#define HOST_NAME_MAX  MAXHOSTNAMELEN
+#endif
 
 #define LISTFILE "sites.list"
 

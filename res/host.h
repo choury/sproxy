@@ -32,9 +32,9 @@ public:
     virtual void Send(void* buff, size_t size, void* index)override;
 
     virtual void finish(uint32_t flags, void* index)override;
-    virtual void writedcb(void * index) override;
+    virtual void writedcb(const void * index) override;
     virtual void dump_stat(Dumper dp, void* param) override;
-    static Responser* gethost(const char* hostname, uint16_t port, Protocol protocol, HttpReqHeader* req, Responser* responser_ptr);
+    static std::weak_ptr<Responser> gethost(const char* hostname, uint16_t port, Protocol protocol, HttpReqHeader* req, std::weak_ptr<Responser> responser_ptr);
 };
 
 #endif

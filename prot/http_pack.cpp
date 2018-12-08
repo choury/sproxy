@@ -108,11 +108,11 @@ std::set< string > HttpHeader::getall(const char *header) const{
 */
 
 
-HttpReqHeader::HttpReqHeader(const char* header, size_t len, ResObject* src):
-                             src(dynamic_cast<Requester *>(src))
+HttpReqHeader::HttpReqHeader(const char* header, size_t len, std::weak_ptr<RwObject> src):
+                             src(std::dynamic_pointer_cast<Requester>(src.lock()))
 {
     assert(header);
-    assert(src);
+    assert(!src.expired());
     assert(len < HEADLENLIMIT);
     
     char httpheader[HEADLENLIMIT];
@@ -166,10 +166,10 @@ HttpReqHeader::HttpReqHeader(const char* header, size_t len, ResObject* src):
 }
 
 
-HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers, ResObject* src):
-               src(dynamic_cast<Requester *>(src))
+HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers, std::weak_ptr<RwObject> src):
+               src(std::dynamic_pointer_cast<Requester>(src.lock()))
 {
-    assert(src);
+    assert(!src.expired());
     if(!headers.count(":method")){
         LOGE("wrong http2 request\n");
         throw ERR_PROTOCOL_ERROR;
@@ -217,7 +217,7 @@ HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers, ResOb
     getfile();
 }
 
-HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(nullptr) {
+HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(std::weak_ptr<Requester>()) {
     if(headers->type != CGI_REQUEST)
     {
         LOGE("wrong CGI header");
@@ -385,7 +385,7 @@ Http2_header *HttpReqHeader::getframe(Hpack_index_table *index_table, uint32_t h
         p += index_table->hpack_encode(p, ":authority" ,authority);
     }
     
-    if(!ismethod("CONNECT") && !ismethod("SEND")){
+    if(!ismethod("CONNECT") && !ismethod("SEND") && !ismethod("PING")){
         p += index_table->hpack_encode(p, ":scheme", protocol[0]?protocol:"http");
         p += index_table->hpack_encode(p, ":path", path);
     }

@@ -114,7 +114,7 @@ uint32_t do_delayjob(){
             LOGD(DJOB, "delay job %s readded\n", i.second.func_name);
         }
     }
-    uint32_t min_interval = 0xffffffff;
+    uint32_t min_interval = 0xffffff7f;
     for(auto i : delayjobs){
         uint32_t left = i.second.delay_ms + i.second.last_done_ms - now;
         if(left < min_interval){

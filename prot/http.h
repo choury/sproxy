@@ -27,7 +27,7 @@ public:
 };
 
 
-class HttpResponser:public HttpBase, virtual public ResObject{
+class HttpResponser:public HttpBase, virtual public RwObject{
     virtual size_t HeaderProc(const char* buffer, size_t len)override final;
 protected:
     virtual void ReqProc(HttpReqHeader* req) = 0;

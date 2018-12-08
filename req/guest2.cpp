@@ -28,10 +28,11 @@ void Guest2::init(RWer* rwer) {
         add_delayjob(std::bind(&Guest2::connection_lost, this), this, 1800000);
     });
     rwer->SetWriteCB([this](size_t){
-        for(auto i: statusmap){
+        for(auto& i: statusmap){
             ResStatus& status = i.second;
+            assert(!status.res_ptr.expired());
             if(status.remotewinsize > 0){
-                status.res_ptr->writedcb(status.res_index);
+                status.res_ptr.lock()->writedcb(status.res_index);
             }
         }
     });
@@ -71,12 +72,15 @@ int32_t Guest2::bufleft(void* index) {
 
 void Guest2::Send(const void* buff, size_t size, void* index){
     uint32_t id = (uint32_t)(long)index;
-    PushData(id, buff, size);
-
     if(statusmap.count(id)){
-        assert((statusmap[id].res_flags & STREAM_WRITE_CLOSED) == 0);
-        statusmap[id].remotewinsize -= size;
+        ResStatus& status = statusmap[id];
+        assert((status.res_flags & STREAM_WRITE_CLOSED) == 0);
+        status.remotewinsize -= size;
+        assert(status.remotewinsize >= 0);
+        LOGD(DHTTP2, "<guest2> send data [%d]: %zu/%d\n", id, size, status.remotewinsize);
     }
+    remotewinsize -= size;
+    PushData(id, buff, size);
 }
 
 void Guest2::ReqProc(HttpReqHeader* req) {
@@ -88,8 +92,8 @@ void Guest2::ReqProc(HttpReqHeader* req) {
         return;
     }
 
-    Responser *responser = distribute(req, nullptr);
-    if(responser){
+    auto responser = distribute(req, std::weak_ptr<Responser>());
+    if(!responser.expired()){
         statusmap[id]=ResStatus{
             responser,
             nullptr,
@@ -97,7 +101,7 @@ void Guest2::ReqProc(HttpReqHeader* req) {
             localframewindowsize,
             0,
         };
-        statusmap[id].res_index = responser->request(req);
+        statusmap[id].res_index = responser.lock()->request(req);
     }else{
         finish(0, req->index);
         delete req;
@@ -111,11 +115,12 @@ void Guest2::DataProc(uint32_t id, const void* data, size_t len) {
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
         assert((status.res_flags & STREAM_READ_CLOSED) == 0);
-        Responser* responser = status.res_ptr;
+        assert(!status.res_ptr.expired());
+        auto responser = status.res_ptr.lock();
         if(len > (size_t)status.localwinsize){
             Reset(id, ERR_FLOW_CONTROL_ERROR);
             responser->finish(ERR_FLOW_CONTROL_ERROR, status.res_index);
-            LOGE("(%s): <guest2> [%d] window size error\n", getsrc(nullptr), id);
+            LOGE("(%s): <guest2> [%d] window size error %zu/%d\n", getsrc(nullptr), id, len, status.localwinsize);
             statusmap.erase(id);
             return;
         }
@@ -131,11 +136,12 @@ void Guest2::EndProc(uint32_t id) {
     LOGD(DHTTP2, "<guest2> [%d]: end of stream\n", id);
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
+        assert(!status.res_ptr.expired());
         if(status.res_flags & STREAM_WRITE_CLOSED){
-            status.res_ptr->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
+            status.res_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
             statusmap.erase(id);
         }else{
-            status.res_ptr->finish(NOERROR, status.res_index);
+            status.res_ptr.lock()->finish(NOERROR, status.res_index);
             status.res_flags |= STREAM_READ_CLOSED;
         }
     }
@@ -152,7 +158,7 @@ void Guest2::response(HttpResHeader* res) {
     delete res;
 }
 
-void Guest2::transfer(void* index, Responser* res_ptr, void* res_index) {
+void Guest2::transfer(void* index, std::weak_ptr<Responser> res_ptr, void* res_index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     ResStatus& status = statusmap[id];
@@ -166,7 +172,8 @@ void Guest2::RstProc(uint32_t id, uint32_t errcode) {
         if(errcode)
             LOGE("(%s) <guest2> [%d]: stream  reseted: %d\n", getsrc(nullptr), id, errcode);
         ResStatus& status = statusmap[id];
-        status.res_ptr->finish(errcode | DISCONNECT_FLAG,  status.res_index);
+        assert(!status.res_ptr.expired());
+        status.res_ptr.lock()->finish(errcode | DISCONNECT_FLAG,  status.res_index);
         statusmap.erase(id);
     }
 }
@@ -182,7 +189,8 @@ void Guest2::WindowUpdateProc(uint32_t id, uint32_t size) {
                 return;
             }
             status.remotewinsize += size;
-            status.res_ptr->writedcb(status.res_index);
+            assert(!status.res_ptr.expired());
+            status.res_ptr.lock()->writedcb(status.res_index);
         }else{
             LOGD(DHTTP2, "<guest2> window size updated [%d]: not found\n", id);
         }
@@ -195,10 +203,11 @@ void Guest2::WindowUpdateProc(uint32_t id, uint32_t size) {
         remotewinsize += size;
         if(remotewinsize == (int32_t)size){
             LOGD(DHTTP2, "<guest2> get global window active all frame\n");
-            for(auto i: statusmap){
+            for(auto& i: statusmap){
                 ResStatus& status = i.second;
+                assert(!status.res_ptr.expired());
                 if(status.remotewinsize > 0){
-                    status.res_ptr->writedcb(status.res_index);
+                    status.res_ptr.lock()->writedcb(status.res_index);
                 }
             }
         }
@@ -219,7 +228,7 @@ void Guest2::ErrProc(int errcode) {
 }
 
 void Guest2::AdjustInitalFrameWindowSize(ssize_t diff) {
-    for(auto i: statusmap){
+    for(auto& i: statusmap){
        i.second.remotewinsize += diff;
     }
 }
@@ -232,8 +241,8 @@ std::list<write_block>::insert_iterator Guest2::queue_end() {
     return rwer->buffer_end();
 }
 
-void Guest2::queue_insert(std::list<write_block>::insert_iterator where, void* buff, size_t len) {
-    rwer->buffer_insert(where, buff, len);
+void Guest2::queue_insert(std::list<write_block>::insert_iterator where, const write_block& wb) {
+    rwer->buffer_insert(where, wb);
 }
 
 void Guest2::finish(uint32_t flags, void* index) {
@@ -262,8 +271,9 @@ void Guest2::finish(uint32_t flags, void* index) {
 }
 
 void Guest2::deleteLater(uint32_t errcode){
-    for(auto i: statusmap){
-        i.second.res_ptr->finish(errcode, i.second.res_index);
+    for(auto& i: statusmap){
+        assert(!i.second.res_ptr.expired());
+        i.second.res_ptr.lock()->finish(errcode, i.second.res_index);
     }
     statusmap.clear();
     if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){
@@ -273,16 +283,15 @@ void Guest2::deleteLater(uint32_t errcode){
     return Peer::deleteLater(errcode);
 }
 
-void Guest2::writedcb(void* index){
+void Guest2::writedcb(const void* index){
     uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
-        auto len = status.res_ptr->bufleft(status.res_index);
-        if(len <= status.localwinsize ||
-           (len - status.localwinsize < FRAMEBODYLIMIT &&
-            status.localwinsize >= FRAMEBODYLIMIT))
-            return;
-        status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
+        assert(!status.res_ptr.expired());
+        auto len = status.res_ptr.lock()->bufleft(status.res_index);
+        if(len > status.localwinsize && (len - status.localwinsize > FRAMEBODYLIMIT)){
+            status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
+        }
     }
 }
 
@@ -299,9 +308,9 @@ const char * Guest2::getsrc(const void* index){
 
 void Guest2::dump_stat(Dumper dp, void* param) {
     dp(param, "Guest2 %p %s:\n", this, getsrc(nullptr));
-    for(auto i: statusmap){
+    for(auto& i: statusmap){
         dp(param, "0x%x: %p, %p (%d/%d)\n",
-                i.first, i.second.res_ptr, i.second.res_index,
+                i.first, i.second.res_ptr.lock().get(), i.second.res_index,
                 i.second.remotewinsize, i.second.localwinsize);
     }
 }

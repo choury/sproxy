@@ -109,7 +109,7 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
 }
 
 /* ping 帧永远插到最前面*/
-void Http2Base::PushFrame(Http2_header *header) {
+void Http2Base::PushFrame(Http2_header *header){
     uint32_t id = HTTP2_ID(header->id);
     LOGD(DHTTP2, "push a frame [%d]:%d, size:%d, flags: %d\n", id, header->type, get24(header->length), header->flags);
     std::list<write_block>::insert_iterator i;
@@ -120,7 +120,7 @@ void Http2Base::PushFrame(Http2_header *header) {
     switch(header->type){
     case PING_TYPE:
         for(i = queue_head(); i!= queue_end() ; i++){
-            if(i->wlen){
+            if(i->offset){
                 continue;
             }
             const Http2_header* check = (const Http2_header*)i->buff;
@@ -133,7 +133,7 @@ void Http2Base::PushFrame(Http2_header *header) {
         auto j = queue_end();
         do{
             i = j--;
-            if(j == queue_head() || j->wlen){
+            if(j == queue_head() || j->offset){
                 break;
             }
 
@@ -152,11 +152,11 @@ void Http2Base::PushFrame(Http2_header *header) {
     }
 ret:
     size_t length = sizeof(Http2_header) + get24(header->length);
-    assert(i == queue_end() || i == queue_head() || i->wlen == 0);
-    queue_insert(i, header, length);
+    assert(i == queue_end() || i == queue_head() || i->offset == 0);
+    queue_insert(i, write_block{header, length, 0});
 }
 
-void Http2Base::PushData(uint32_t id, const void* data, size_t size) {
+void Http2Base::PushData(uint32_t id, const void* data, size_t size){
     assert(size <= 0xffffff);
     size_t left = size;
     while(left > remoteframebodylimit){
@@ -180,7 +180,6 @@ void Http2Base::PushData(uint32_t id, const void* data, size_t size) {
         memcpy(header+1, data, left);
     }
     PushFrame(header);
-    remotewinsize -= size;
 }
 
 
@@ -227,7 +226,7 @@ void Http2Base::SettingsProc(const Http2_header* header) {
                     ErrProc(ERR_FLOW_CONTROL_ERROR);
                     return;
                 }
-                AdjustInitalFrameWindowSize(value - remoteframewindowsize);
+                AdjustInitalFrameWindowSize((ssize_t)value - (ssize_t)remoteframewindowsize);
                 remoteframewindowsize = value;
                 LOGD(DHTTP2, "set inital frame window size:%d\n", remoteframewindowsize);
                 break;
@@ -338,6 +337,7 @@ void Http2Base::SendInitSetting() {
     sf++;
     set16(sf->identifier, SETTINGS_INITIAL_WINDOW_SIZE);
     set32(sf->value, localframewindowsize);
+    LOGD(DHTTP2, "send inital frame window size:%d\n", localframewindowsize);
 
     set24(header->length, 2*sizeof(Setting_Frame));
     header->type = SETTINGS_TYPE;
@@ -393,7 +393,7 @@ void Http2Responser::HeadersProc(const Http2_header* header) {
     try{
         HttpReqHeader* req = new HttpReqHeader(response_table.hpack_decode(pos,
                                                     get24(header->length) - padlen - (pos - (const unsigned char *)(header+1))),
-                        this);
+                                               shared_from_this());
         req->index = reinterpret_cast<void*>(id);
         ReqProc(req);
     }catch(int error){
@@ -407,7 +407,9 @@ void Http2Responser::HeadersProc(const Http2_header* header) {
 
 
 void Http2Requster::init() {
-    queue_insert(queue_head(), p_memdup(H2_PREFACE, sizeof(H2_PREFACE)), sizeof(H2_PREFACE)-1);
+    queue_insert(queue_head(),
+                 write_block{p_memdup(H2_PREFACE, sizeof(H2_PREFACE)), sizeof(H2_PREFACE)-1, 0}
+                );
     SendInitSetting(); 
 }
 

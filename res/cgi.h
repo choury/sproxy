@@ -41,7 +41,6 @@ struct CGI_NameValue{
     uint8_t value[0];
 }__attribute__((packed));
 
-class Requester;
 
 class Cgi:public Responser{
     char filename[URLLIMIT];
@@ -57,7 +56,7 @@ public:
     virtual ~Cgi();
 
     virtual int32_t bufleft(void * index) override;
-    virtual void Send(void *buff, size_t size, void* info)override;
+    virtual void Send(void* buff, size_t size, void* index)override;
 
     virtual void finish(uint32_t flags, void* index)override;
     virtual void deleteLater(uint32_t errcode) override;
@@ -65,7 +64,7 @@ public:
     virtual void dump_stat(Dumper dp, void* param) override;
 };
 
-Cgi* getcgi(HttpReqHeader* req, const char* filename);
+std::weak_ptr<Cgi> getcgi(HttpReqHeader* req, const char* filename);
 
 class Cookie{
 public:
@@ -84,8 +83,8 @@ public:
 
 void flushcgi();
 
-std::map<std::string, std::string> getparamsmap(const char *param, size_t len);
-std::map<std::string, std::string> getparamsmap(const char *param);
+std::map<std::string, std::string> __attribute__((weak)) getparamsmap(const char *param, size_t len);
+std::map<std::string, std::string> __attribute__((weak)) getparamsmap(const char *param);
 void addcookie(HttpResHeader &res, const Cookie &cookie);
 #ifdef  __cplusplus
 extern "C" {

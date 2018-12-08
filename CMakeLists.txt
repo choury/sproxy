@@ -9,6 +9,7 @@ set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 #SET(CMAKE_EXE_LINKER_FLAGS "-static")
 
 CHECK_CXX_COMPILER_FLAG("-std=c++11" HAVE_CXX11)
+CHECK_CXX_COMPILER_FLAG("-std=c++14" HAVE_CXX14)
 
 if(NOT HAVE_CXX11)
     message(FATAL_ERROR "this project need c++11")
@@ -44,25 +45,42 @@ else()
     CHECK_CXX_COMPILER_FLAG("-fsanitize=address" HAVE_SAN_ADDR)
     unset(CMAKE_REQUIRED_FLAGS)
 
-    set(CMAKE_C_FLAGS "-fuse-ld=gold ${CMAKE_C_FLAGS}")
-    set(CMAKE_CXX_FLAGS "-fuse-ld=gold ${CMAKE_CXX_FLAGS}")
+if(LINUX)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=gold")
+endif()
     find_package(OpenSSL 1.0.2 REQUIRED)
 endif()
 
 include_directories(${OPENSSL_INCLUDE_DIR})
 
-
-find_package(JSON-C)
-if(NOT JSON-C_FOUND)
-    message(WARNING "json-c not found, disable webui")
-else()
-    set(BUILD_CGI TRUE)
+if(NOT APPLE)
+    find_package(JSON-C)
+    if(NOT JSON-C_FOUND)
+        message(WARNING "json-c not found, disable webui")
+    else()
+        set(BUILD_CGI TRUE)
+    endif()
 endif()
 
 
 
 set(CMAKE_C_FLAGS "-Wall -Wextra -fPIC ${CMAKE_C_FLAGS}")
-set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -Wextra -fPIC ${CMAKE_CXX_FLAGS}")
+
+if(HAVE_CXX14)
+    set(CMAKE_CXX_FLAGS "-std=c++14 -Wall -Wextra -fPIC ${CMAKE_CXX_FLAGS}")
+else()
+    set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -Wextra -fPIC ${CMAKE_CXX_FLAGS}")
+endif()
+
+execute_process(COMMAND uname -r
+    OUTPUT_VARIABLE KERNEL_NAME
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+if(KERNEL_NAME MATCHES ".*-Microsoft")
+    message("wsl kernel: ${KERNEL_NAME}")
+    set(CMAKE_CXX_FLAGS "-DWSL ${CMAKE_CXX_FLAGS}")
+endif()
 
 if(NOT NO_CONST_ITERATOR_BUG)
     message(WARNING "have const_iterator insert bug, see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=55817")
@@ -96,15 +114,14 @@ if (HAVE_SAN_UNDEF)
     set(CMAKE_CXX_FLAGS_DEBUG "-fsanitize=undefined ${CMAKE_CXX_FLAGS_DEBUG}")
 endif()
 
-
-
+if(BUILD_CGI)
+    set(CMAKE_CXX_FLAGS "-DENABLE_CGI ${CMAKE_CXX_FLAGS}")
+    add_subdirectory(cgi)
+endif()
 add_subdirectory(misc)
 add_subdirectory(prot)
 add_subdirectory(req)
 add_subdirectory(res)
-if(BUILD_CGI)
-    add_subdirectory(cgi)
-endif()
 
 set(SPROXY_LIBS  req res prot misc ${OPENSSL_LIBRARIES} dl)
 find_package(Backtrace)
@@ -126,6 +143,7 @@ if(NOT ANDROID_NDK)
     set_target_properties(sproxy PROPERTIES OUTPUT_NAME "sproxy")
     target_link_libraries(sproxy ${SPROXY_LIBS})
 
+if(NOT APPLE)
     add_library(sproxy_vpn SHARED vpn.cpp base.cpp)
     set_target_properties(sproxy_vpn PROPERTIES OUTPUT_NAME "sproxy_vpn")
     target_link_libraries(sproxy_vpn ${SPROXY_LIBS})
@@ -133,6 +151,7 @@ if(NOT ANDROID_NDK)
     add_executable(vpn vpndemo.c)
     set_target_properties(vpn PROPERTIES OUTPUT_NAME "vpndemo")
     target_link_libraries(vpn sproxy_vpn)
+endif()
 
     install(TARGETS sproxy RUNTIME DESTINATION bin)
 else()

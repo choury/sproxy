@@ -14,11 +14,8 @@
 #include <assert.h>
 
 
-std::map<std::pair<Requester*, void*>, Responser*> sessions;
-
-
 static int check_header(HttpReqHeader* req){
-    Requester *requester = req->src;
+    auto requester = req->src.lock();
     if (!checkauth(requester->getip()) &&
         req->get("Proxy-Authorization") &&
         strcmp(auth_string, req->get("Proxy-Authorization")+6) == 0)
@@ -49,8 +46,9 @@ static int check_header(HttpReqHeader* req){
     return 0;
 }
 
-Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
-    Requester *requester = req->src;
+std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser> responser_ptr) {
+    assert(!req->src.expired());
+    auto requester = req->src.lock();
     char log_buff[URLLIMIT];
     snprintf(log_buff, sizeof(log_buff), "(%s): %s %s [%s]",
             requester->getsrc(req->index), req->method,
@@ -60,7 +58,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
         HttpResHeader* res = new HttpResHeader(H400, sizeof(H400));
         res->index = req->index;
         requester->response(res);
-        return nullptr;
+        return std::weak_ptr<Responser>();
     }
     if (req->ismethod("GET") ||
         req->ismethod("POST") ||
@@ -84,7 +82,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
             requester->response(res);
             requester->Send("This site is blocked, please contact administrator"
                             " for more information.\n", 73, req->index);
-            return nullptr;
+            return std::weak_ptr<Responser>();
         }
         if(s == Strategy::local){
             LOG("[[local]] %s\n", log_buff);
@@ -93,10 +91,10 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
         switch(check_header(req)){
         case 1:
             LOG("[[Authorization needed]] %s\n", log_buff);
-            return nullptr;
+            return std::weak_ptr<Responser>();
         case 2:
             LOG("[[redirect back]] %s\n", log_buff);
-            return nullptr;
+            return std::weak_ptr<Responser>();
         }
         char fprotocol[DOMAINLIMIT];
         char fhost[DOMAINLIMIT];
@@ -110,7 +108,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
                 res->index = req->index;
                 requester->response(res);
                 LOG("[[server not set]] %s\n", log_buff);
-                return nullptr;
+                return std::weak_ptr<Responser>();
             }
             req->del("via");
             if(strlen(rewrite_auth)){
@@ -123,7 +121,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
         case Strategy::direct:
             if(req->ismethod("PING")){
                 LOG("[[%s]] %s\n", getstrategystring(s), log_buff);
-                return new Ping(req);
+                return std::dynamic_pointer_cast<Responser>((new Ping(req))->shared_from_this());
             }else if(req->ismethod("SEND")){
                 fprot = Protocol::UDP;
             }else{
@@ -140,7 +138,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
                 res->index = req->index;
                 requester->response(res);
                 LOGE("[[destination not set]] %s\n", log_buff);
-                return nullptr;
+                return std::weak_ptr<Responser>();
             }
             break;
         default:{
@@ -148,7 +146,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
             HttpResHeader* res = new HttpResHeader(H503, sizeof(H503));
             res->index = req->index;
             requester->response(res);
-            return nullptr;}
+            return std::weak_ptr<Responser>();}
         }
         if(!ext.empty() && s != Strategy::direct){
             if(spliturl(ext.c_str(), fprotocol, fhost, nullptr, &fport)){
@@ -156,7 +154,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
                 res->index = req->index;
                 requester->response(res);
                 LOGE("[[ext misformat]] %s -> %s\n", log_buff, ext.c_str());
-                return nullptr;
+                return std::weak_ptr<Responser>();
             }
         }
         if(fprotocol[0] && strcasecmp(fprotocol, "rudp") == 0){
@@ -177,7 +175,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
             res->index = req->index;
             requester->response(res);
         }
-        return nullptr;
+        return std::weak_ptr<Responser>();
     } else if (req->ismethod("DELS")) {
         std::string ext;
         const char* strategy = getstrategystring(getstrategy(req->hostname, ext));
@@ -193,7 +191,7 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
             res->index = req->index;
             requester->response(res);
         }
-        return nullptr;
+        return std::weak_ptr<Responser>();
     } else if (req->ismethod("SWITCH")) {
         if(setproxy(req->geturl().c_str())){
             HttpResHeader* res = new HttpResHeader(H400, sizeof(H400));
@@ -237,10 +235,10 @@ Responser* distribute(HttpReqHeader* req, Responser* responser_ptr) {
         HttpResHeader* res = new HttpResHeader(H405, sizeof(H405));
         res->index = req->index;
         requester->response(res);
-        return nullptr;
+        return std::weak_ptr<Responser>();
     }
     LOG("%s\n", log_buff);
-    return nullptr;
+    return std::weak_ptr<Responser>();
 }
 
 #if 0

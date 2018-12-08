@@ -5,7 +5,11 @@
 #include <stdint.h>
 #include <syslog.h>
 #include <arpa/inet.h>
+#ifdef __APPLE__
+#include <sys/event.h>
+#else
 #include <sys/epoll.h>
+#endif
 
 
 #define Min(x, y) ((int64_t)(x) < (int64_t)(y)?(x):(y))
@@ -17,7 +21,7 @@
 
 #define BUF_LEN       16384
 
-typedef enum{TCP=SOCK_STREAM, UDP=SOCK_DGRAM, ICMP, RUDP}Protocol;
+typedef enum{NONE, TCP=SOCK_STREAM, UDP=SOCK_DGRAM, ICMP, RUDP}Protocol;
 
 extern char **main_argv;
 extern char SPROT[];
@@ -35,7 +39,7 @@ extern uint32_t debug;
 extern int autoindex;
 
 
-#define DEPOLL    1
+#define DEVENT    1
 #define DDNS      2
 #define DHTTP2    8
 #define DJOB      16
@@ -43,7 +47,7 @@ extern int autoindex;
 #define DHPACK    64
 #define DRUDP     128
 
-#define DEPOLL_STR  "[EPOLL]"
+#define DEVENT_STR  "[EVENT]"
 #define DDNS_STR    "[DNS]"
 #define DHTTP2_STR  "[HTTP2]"
 #define DJOB_STR    "[JOB]"
@@ -85,15 +89,27 @@ do{\
 }while(0)
 
 
-#ifndef __ANDROID__
+#ifndef HTONL
 #define HTONL(x) (x = htonl(x))
+#endif
+
+#ifndef HTONS
 #define HTONS(x) (x = htons(x))
+#endif
 
-
+#ifndef NTOHL
 #define NTOHL(x) (x = ntohl(x))
+#endif
+
+#ifndef NTOHS
 #define NTOHS(x) (x = ntohs(x))
-#else
+#endif
+
+#ifndef SCNx64
 #define SCNx64   "llx"
+#endif
+
+#ifndef SCNu64
 #define SCNu64   "llu"
 #endif
 
@@ -168,13 +184,6 @@ typedef unsigned char uchar;
 typedef void (* Dumper)(void* param, const char* fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));
 
 int protectFd(int sockfd);
-
-struct write_block{
-    void* buff;
-    size_t len;
-    size_t wlen;
-};
-
 
 union sockaddr_un{
     struct sockaddr addr;

@@ -2,9 +2,14 @@
 #include "prot/dns.h"
 #include "job.h"
 
+#include <fcntl.h>
+#include <sys/ioctl.h>
 #include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
+#ifdef __linux__
+#include <sys/eventfd.h>
+#endif
 
 size_t RBuffer::left(){
     return sizeof(content) - len;
@@ -81,24 +86,27 @@ char* CBuffer::end(){
     return content + (end_pos % sizeof(content));
 }
 
-FdRWer::FdRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(errorCB, fd){
-    setEpoll(EPOLLIN);
-    handleEvent = (void (Ep::*)(uint32_t))&FdRWer::defaultHE;
+FdRWer::FdRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(errorCB, nullptr, fd){
+    setEvents(RW_EVENT::READ);
+    handleEvent = (void (Ep::*)(RW_EVENT))&FdRWer::defaultHE;
 }
 
-FdRWer::FdRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB):
-            RWer(errorCB), port(port), protocol(protocol)
+FdRWer::FdRWer(const char* hostname, uint16_t port, Protocol protocol,
+               std::function<void(int ret, int code)> errorCB,
+               std::function<void(const sockaddr_un*)> connectCB):
+            RWer(errorCB, connectCB), port(port), protocol(protocol)
 {
     strcpy(this->hostname, hostname);
-    query(hostname, (DNSCBfunc)FdRWer::Dnscallback, this);
+    query(hostname, FdRWer::Dnscallback, this);
 }
 
 FdRWer::~FdRWer() {
     del_delayjob(std::bind(&FdRWer::con_failed, this), this);
-    query_cancel(hostname, (DNSCBfunc)FdRWer::Dnscallback, this);
+    query_cancel(hostname, FdRWer::Dnscallback, this);
 }
 
-void FdRWer::Dnscallback(FdRWer* rwer, const char*, std::list<sockaddr_un> addrs) {
+void FdRWer::Dnscallback(void* param, const char*, std::list<sockaddr_un> addrs) {
+    FdRWer* rwer = static_cast<FdRWer*>(param);
     if (addrs.empty()) {
         return rwer->errorCB(DNS_FAILED, 0);
     }
@@ -108,21 +116,23 @@ void FdRWer::Dnscallback(FdRWer* rwer, const char*, std::list<sockaddr_un> addrs
         rwer->addrs.push(i);
     }
     if(rwer->protocol == Protocol::ICMP){
-        rwer->fd = IcmpSocket(&addrs.front(), rwer->port);
-        if(rwer->fd < 0){
+        int fd = IcmpSocket(&addrs.front(), rwer->port);
+        if(fd < 0){
             return rwer->errorCB(CONNECT_FAILED, errno);
         }
-        rwer->setEpoll(EPOLLIN | EPOLLOUT);
+        rwer->setFd(fd);
+        rwer->setEvents(RW_EVENT::READWRITE);
         if(rwer->connectCB){
-            rwer->connectCB();
+            rwer->connectCB(addrs.empty()? nullptr: &addrs.front());
         }
-        rwer->handleEvent = (void (Ep::*)(uint32_t))&FdRWer::defaultHE;
+        rwer->handleEvent = (void (Ep::*)(RW_EVENT))&FdRWer::defaultHE;
         return;
     }
     rwer->connect();
 }
 
 void FdRWer::retryconnect(int error) {
+    setFd(-1);
     if(!addrs.empty()){
         RcdDown(hostname, addrs.front());
         addrs.pop();
@@ -135,19 +145,18 @@ void FdRWer::retryconnect(int error) {
 }
 
 void FdRWer::connect() {
-    fd = Connect(&addrs.front(), (int)protocol);
+    int fd = Connect(&addrs.front(), (int)protocol);
     if (fd < 0) {
         return add_postjob(std::bind(&FdRWer::con_failed, this), this);
     }
-    setEpoll(EPOLLOUT);
-    handleEvent = (void (Ep::*)(uint32_t))&FdRWer::waitconnectHE;
+    setFd(fd);
+    setEvents(RW_EVENT::WRITE);
+    handleEvent = (void (Ep::*)(RW_EVENT))&FdRWer::waitconnectHE;
     return add_delayjob(std::bind(&FdRWer::con_failed, this), this, 30000);
 }
 
 int FdRWer::con_failed() {
-    if(fd > 0){
-        close(fd);
-        fd = -1;
+    if(getFd() >= 0){
         LOGE("connect to %s timeout\n", hostname);
         retryconnect(CONNECT_TIMEOUT);
     }else{
@@ -158,62 +167,24 @@ int FdRWer::con_failed() {
 }
 
 
-void FdRWer::waitconnectHE(uint32_t events) {
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        Checksocket(fd, __PRETTY_FUNCTION__);
-        close(fd);
-        fd = -1;
+void FdRWer::waitconnectHE(RW_EVENT events) {
+    if (!!(events & RW_EVENT::ERROR)) {
+        checkSocket(__PRETTY_FUNCTION__);
         return retryconnect(CONNECT_FAILED);
     }
-    if (events & EPOLLOUT) {
-        setEpoll(EPOLLIN | EPOLLOUT);
+    if (!!(events & RW_EVENT::WRITE)) {
+        setEvents(RW_EVENT::READWRITE);
         if(connectCB){
-            connectCB();
+            connectCB(addrs.empty()? nullptr: &addrs.front());
         }
-        handleEvent = (void (Ep::*)(uint32_t))&FdRWer::defaultHE;
+        handleEvent = (void (Ep::*)(RW_EVENT))&FdRWer::defaultHE;
         del_delayjob(std::bind(&FdRWer::con_failed, this), this);
     }
 }
 
 ssize_t FdRWer::Write(const void* buff, size_t len){
-    return write(fd, buff, len);
+    return write(getFd(), buff, len);
 }
-
-void FdRWer::Send(){
-    size_t writed = 0;
-    while(wb.length()){
-        int ret = wb.Write(std::bind(&FdRWer::Write, this, _1, _2));
-        assert(ret != 0);
-        if(ret > 0){
-            writed += ret;
-            continue;
-        }
-        if(errno == EAGAIN){
-            break;
-        }
-        errorCB(WRITE_ERR, errno);
-        return;
-    }
-    if(writed && writeCB){
-        writeCB(writed);
-    }
-    if(wb.length() == 0){
-        delEpoll(EPOLLOUT);
-    }
-}
-
-/*
-
-StreamRWer::StreamRWer(int fd, std::function<void (int, int)> errorCB):
-            FdRWer(fd, errorCB)
-{
-}
-
-StreamRWer::StreamRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void (int, int)> errorCB):
-            FdRWer(hostname, port, protocol, errorCB)
-{
-}
-*/
 
 size_t StreamRWer::rlength() {
     return rb.length();
@@ -228,18 +199,18 @@ void StreamRWer::consume(const char* data, size_t l) {
 }
 
 ssize_t StreamRWer::Read(void* buff, size_t len) {
-    return read(fd, buff, len);
+    return read(getFd(), buff, len);
 }
 
-void StreamRWer::defaultHE(uint32_t events) {
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        errorCB(SOCKET_ERR, Checksocket(fd, __PRETTY_FUNCTION__));
+void StreamRWer::defaultHE(RW_EVENT events) {
+    if (!!(events & RW_EVENT::ERROR)) {
+        errorCB(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
         return;
     }
-    if(events & EPOLLRDHUP){
-        delEpoll(EPOLLIN);
+    if(!!(events & RW_EVENT::READEOF)){
+        delEvents(RW_EVENT::READ);
         errorCB(READ_ERR, 0);
-    }else if (events & EPOLLIN){
+    }else if (!!(events & RW_EVENT::READ)){
         bool closed = false;
         size_t left = 0;
         while((left = rb.left())){
@@ -249,7 +220,7 @@ void StreamRWer::defaultHE(uint32_t events) {
                 continue;
             }
             if(ret == 0){
-                delEpoll(EPOLLIN);
+                delEvents(RW_EVENT::READ);
                 closed = true;
                 break;
             }
@@ -266,11 +237,11 @@ void StreamRWer::defaultHE(uint32_t events) {
             errorCB(READ_ERR, 0);
         }
         if(rb.left() == 0){
-            delEpoll(EPOLLIN);
+            delEvents(RW_EVENT::READ);
         }
     }
-    if (events & EPOLLOUT){
-        Send();
+    if (!!(events & RW_EVENT::WRITE)){
+        SendData();
     }
 
 }
@@ -301,19 +272,19 @@ void PacketRWer::consume(const char* data, size_t l) {
 }
 
 ssize_t PacketRWer::Read(void* buff, size_t len) {
-    return read(fd, buff, len);
+    return read(getFd(), buff, len);
 }
 
 
-void PacketRWer::defaultHE(uint32_t events) {
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        errorCB(SOCKET_ERR, Checksocket(fd, __PRETTY_FUNCTION__));
+void PacketRWer::defaultHE(RW_EVENT events) {
+    if (!!(events & RW_EVENT::ERROR)) {
+        errorCB(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
         return;
     }
-    if (events & EPOLLRDHUP){
-        delEpoll(EPOLLIN);
+    if (!!(events & RW_EVENT::READEOF)){
+        delEvents(RW_EVENT::READ);
         errorCB(READ_ERR, 0);
-    }else if (events & EPOLLIN){
+    }else if (!!(events & RW_EVENT::READ)){
         size_t left = 0;
         while((left = rb.left())){
             int ret = Read(rb.end(), left);
@@ -325,7 +296,7 @@ void PacketRWer::defaultHE(uint32_t events) {
                 continue;
             }
             if(ret == 0){
-                delEpoll(EPOLLIN);
+                delEvents(RW_EVENT::READ);
                 errorCB(READ_ERR, 0);
                 break;
             }
@@ -336,10 +307,110 @@ void PacketRWer::defaultHE(uint32_t events) {
             return;
         }
         if(rb.left() == 0){
-            delEpoll(EPOLLIN);
+            delEvents(RW_EVENT::READ);
         }
     }
-    if (events & EPOLLOUT){
-        Send();
+    if (!!(events & RW_EVENT::WRITE)){
+        SendData();
     }
+}
+
+
+#ifdef __linux__
+EventRWer::EventRWer(std::function<void(int ret, int code)> errorCB):RWer(errorCB) {
+    int evfd = eventfd(1, O_NONBLOCK);
+    if(evfd < 0){
+        errorCB(SOCKET_ERR, errno);
+        return;
+    }
+    setFd(evfd);
+#else
+EventRWer::EventRWer(std::function<void(int ret, int code)> errorCB):RWer(errorCB), pairfd(-1){
+    int pairs[2];
+    int ret = socketpair(AF_UNIX, SOCK_STREAM, 0, pairs);
+    if(ret){
+        errorCB(SOCKET_ERR, errno);
+        return;
+    }
+    pairfd = pairs[1];
+    int flags = fcntl(pairfd, F_GETFL, 0);
+    if (flags < 0) {
+        LOGE("fcntl error:%s\n", strerror(errno));
+        return;
+    }
+    fcntl(pairfd, F_SETFL, flags | O_NONBLOCK);
+    setFd(pairs[0]);
+#endif
+    setEvents(RW_EVENT::READ);
+    handleEvent = (void (Ep::*)(RW_EVENT))&EventRWer::defaultHE;
+}
+
+EventRWer::~EventRWer(){
+#ifndef __linux__
+    if(pairfd >= 0){
+        close(pairfd);
+    }
+#endif
+}
+
+ssize_t EventRWer::Write(const void* buff, size_t len) {
+#ifndef __linux__
+    return write(pairfd, buff, len);
+#else
+    return write(getFd(), buff, len);
+#endif
+}
+
+size_t EventRWer::rlength() {
+    size_t len = 0;
+    if(getFd() >= 0){
+        ioctl(getFd(), FIONREAD, &len);
+    }
+    return len;
+}
+
+const char* EventRWer::data() {
+    return buff;
+}
+
+void EventRWer::consume(const char*, size_t) {
+}
+
+
+void EventRWer::defaultHE(RW_EVENT events){
+    if (!!(events & RW_EVENT::ERROR)) {
+        errorCB(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
+        return;
+    }
+    if (!!(events & RW_EVENT::READEOF)){
+        delEvents(RW_EVENT::READ);
+        errorCB(READ_ERR, 0);
+    }else if (!!(events & RW_EVENT::READ)){
+        while(true){
+            int ret = read(getFd(), buff, sizeof(buff));
+            if(ret > 0){
+                if(readCB){
+                    readCB(ret);
+                }
+                continue;
+            }
+            if(ret == 0){
+                delEvents(RW_EVENT::READ);
+                errorCB(READ_ERR, 0);
+                break;
+            }
+            if(errno == EAGAIN){
+                break;
+            }
+            errorCB(READ_ERR, errno);
+            return;
+        }
+    }
+    if (!!(events & RW_EVENT::WRITE)){
+        SendData();
+    }
+}
+
+void EventRWer::closeHE(uint32_t) {
+    closeCB();
 }

@@ -17,23 +17,26 @@ static void StatusDump(void* param, const char* fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
     char* buff = p_avsprintf(&len, fmt, ap);
-    req->src->Send(buff, len, req->index);
+    assert(!req->src.expired());
+    req->src.lock()->Send(buff, len, req->index);
 }
 
 void* Status::request(HttpReqHeader* req){
-    if(!checkauth(req->src->getip())){
+    assert(!req->src.expired());
+    auto req_ptr = req->src.lock();
+    if(!checkauth(req_ptr->getip())){
         HttpResHeader* res = new HttpResHeader(H401, sizeof(H401));
         res->index = req->index;
-        req->src->response(res);
+        req_ptr->response(res);
     }else{
         HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
         res->set("Transfer-Encoding", "chunked");
         res->set("Content-Type", "text/plain; charset=utf8");
         res->index = req->index;
-        req->src->response(res);
+        req_ptr->response(res);
         ::dump_stat(StatusDump, req);
     }
-    req->src->finish(NOERROR, req->index);
+    req_ptr->finish(NOERROR, req->index);
     return (void*)1;
 }
 

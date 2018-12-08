@@ -86,7 +86,7 @@ size_t HttpResponser::HeaderProc(const char* buffer, size_t len) {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - buffer;
         try {
-            HttpReqHeader* req = new HttpReqHeader(buffer, headerlen, this);
+            HttpReqHeader* req = new HttpReqHeader(buffer, headerlen, shared_from_this());
             if(req->no_body()){
                 http_flag |= HTTP_IGNORE_BODY_F;
             }else if (req->get("Content-Length") == nullptr ||

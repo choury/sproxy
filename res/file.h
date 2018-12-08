@@ -8,7 +8,7 @@
 
 
 struct FileStatus{
-    Requester* req_ptr;
+    std::weak_ptr<Requester> req_ptr;
     void*      req_index;
     bool responsed;
     bool head_only;
@@ -39,7 +39,7 @@ public:
 
     virtual void finish(uint32_t flags, void* index)override;
     virtual void dump_stat(Dumper dp, void* param) override;
-    static Responser* getfile(HttpReqHeader* req);
+    static std::weak_ptr<Responser> getfile(HttpReqHeader* req);
 };
 
 #endif

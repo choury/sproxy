@@ -1,5 +1,4 @@
 #include "file.h"
-#include "cgi.h"
 #include "status.h"
 #include "req/requester.h"
 #include "misc/simpleio.h"
@@ -8,6 +7,9 @@
 
 #ifdef ENABLE_GZIP_TEST
 #include "gzip_test.h"
+#endif
+#ifdef ENABLE_CGI
+#include "cgi.h"
 #endif
 
 #include <fstream>
@@ -19,14 +21,13 @@
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
-#include <sys/eventfd.h>
 
 
 using std::vector;
 using std::pair;
 
 
-static std::map<std::string, File *> filemap;
+static std::map<std::string, std::weak_ptr<File>> filemap;
 static std::map<std::string, std::string> mimetype;
 
 static bool checkrange(Range& rg, size_t size) {
@@ -50,7 +51,11 @@ static bool checkrange(Range& rg, size_t size) {
 }
 
 static void loadmine(){
+#ifdef __APPLE__
+    std::ifstream mimefile("/private/etc/apache2/mime.types");
+#else
     std::ifstream mimefile("/etc/mime.types");
+#endif
     if(!mimefile.good()){
         LOGE("read /etc/mime.types failed, Content-Type will be disabled.\n");
         return;
@@ -74,12 +79,7 @@ static void loadmine(){
 }
 
 File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
-    int evfd = eventfd(1, O_NONBLOCK);
-    if(evfd < 0){
-        LOGE("create evventfd failed: %s\n", strerror(errno));
-        throw 0;
-    }
-    rwer = new PacketRWer(evfd, [this](int ret, int code){
+    rwer = new EventRWer([this](int ret, int code){
         LOGE("file error: %d/%d\n", ret, code);
         deleteLater(ret);
     });
@@ -87,7 +87,7 @@ File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
         loadmine();
     }
     strcpy(filename, fname);
-    filemap[filename] = this;
+    filemap[filename] = std::dynamic_pointer_cast<File>(shared_from_this());
     suffix = strrchr(filename, '.');
     rwer->SetReadCB(std::bind(&File::readHE, this, _1));
 }
@@ -102,7 +102,7 @@ bool File::checkvalid() {
     }
     if(!valid){
         evictMe();
-        rwer->addEpoll(EPOLLIN);
+        rwer->addEvents(RW_EVENT::READ);
     }
     return valid;
 }
@@ -111,7 +111,7 @@ void File::evictMe(){
     if(filemap.count(filename) == 0){
         return;
     }
-    if(filemap[filename] != this){
+    if(!filemap[filename].expired() && filemap[filename].lock() != shared_from_this()){
         return;
     }
     filemap.erase(filename);
@@ -146,20 +146,21 @@ void* File::request(HttpReqHeader* req) {
     }
     statusmap[req_id] = status;
     delete req;
-    rwer->addEpoll(EPOLLIN);
+    rwer->addEvents(RW_EVENT::READ);
+    rwer->buffer_insert(rwer->buffer_end(), write_block{p_strdup("FILEFILE"), 8, 0});
     return reinterpret_cast<void*>(req_id++);
 }
 
 
 void File::readHE(size_t len) {
     rwer->consume(nullptr, len);
-    rwer->buffer_insert(rwer->buffer_end(), "FILEFILE", 8);
+    rwer->buffer_insert(rwer->buffer_end(), write_block{p_strdup("FILEFILE"), 8, 0});
 
     bool allfull = true;
     for(auto i = statusmap.begin();i!=statusmap.end();){
         Range& rg = i->second.rg;
-        Requester *requester = i->second.req_ptr;
-        assert(requester);
+        assert(!i->second.req_ptr.expired());
+        auto requester = i->second.req_ptr.lock();
         if (!i->second.responsed){
             if(i->second.modified_since >= st.st_mtime){
                 HttpResHeader* res = new HttpResHeader(H304, sizeof(H304));
@@ -243,7 +244,7 @@ void File::readHE(size_t len) {
         if(!valid && statusmap.empty()){
             deleteLater(PEER_LOST_ERR);
         }else{
-            rwer->delEpoll(EPOLLIN);
+            rwer->delEvents(RW_EVENT::READ);
         }
     }
 }
@@ -260,12 +261,13 @@ void File::finish(uint32_t flags, void* index){
 void File::deleteLater(uint32_t errcode){
     evictMe();
     for(auto i:statusmap){
+        assert(!i.second.req_ptr.expired());
         if(!i.second.responsed){
             HttpResHeader* res = new HttpResHeader(H503, sizeof(H503));
             res->index = i.second.req_index;
-            i.second.req_ptr->response(res);
+            i.second.req_ptr.lock()->response(res);
         }
-        i.second.req_ptr->finish(errcode, i.second.req_index);
+        i.second.req_ptr.lock()->finish(errcode, i.second.req_index);
     }
     statusmap.clear();
     return Peer::deleteLater(errcode);
@@ -274,9 +276,10 @@ void File::deleteLater(uint32_t errcode){
 void File::dump_stat(Dumper dp, void* param){
     dp(param, "File %p, %s, id=%d:\n", this, filename, req_id);
     for(auto i: statusmap){
+        assert(!i.second.req_ptr.expired());
         dp(param, "0x%x: (%zd-%zd) %p, %p\n",
                 i.first, i.second.rg.begin, i.second.rg.end,
-                i.second.req_ptr, i.second.req_index);
+                i.second.req_ptr.lock().get(), i.second.req_index);
     }
 }
 
@@ -287,20 +290,22 @@ File::~File() {
     }
 }
 
-Responser* File::getfile(HttpReqHeader* req) {
+std::weak_ptr<Responser> File::getfile(HttpReqHeader* req) {
+    assert(!req->src.expired());
+    auto req_ptr = req->src.lock();
     if(!req->getrange()){
         HttpResHeader* res = new HttpResHeader(H400, sizeof(H400));
         res->index = req->index;
-        req->src->response(res);
-        return nullptr;
+        req_ptr->response(res);
+        return std::weak_ptr<Responser>();
     }
     if(req->filename == "status"){
-        return new Status();
+        return std::dynamic_pointer_cast<Responser>((new Status())->shared_from_this());
     }
 
 #ifdef ENABLE_GZIP_TEST
     if(req->filename == "test"){
-        return new GzipTest();
+        return std::dynamic_pointer_cast<Responser>((new GzipTest())->shared_from_this());
     }
 #endif
 
@@ -352,9 +357,9 @@ Responser* File::getfile(HttpReqHeader* req) {
             res = new HttpResHeader(H200, sizeof(H200));
             res->set("Transfer-Encoding", "chunked");
             res->index = req->index;
-            req->src->response(res);
+            req_ptr->response(res);
             char buff[1024];
-            req->src->Send((const void*)buff,
+            req_ptr->Send((const void*)buff,
                            sprintf(buff, "<html>"
                            "<head><title>Index of %s</title></head>"
                            "<body><h1>Index of %s</h1><hr/><pre>",
@@ -363,22 +368,22 @@ Responser* File::getfile(HttpReqHeader* req) {
             struct dirent *ptr;
             while((ptr = readdir(dir))){
                 if(ptr->d_type == DT_DIR){
-                    req->src->Send((const void*)buff,
+                    req_ptr->Send((const void*)buff,
                                    sprintf(buff, "<a href='%s/'>%s/</a><br/>", ptr->d_name, ptr->d_name),
                                    req->index);
                 }else{
-                    req->src->Send((const void*)buff,
+                    req_ptr->Send((const void*)buff,
                                    sprintf(buff, "<a href='%s'>%s</a><br/>", ptr->d_name, ptr->d_name),
                                    req->index);
 
                 }
             }
             closedir(dir);
-            req->src->Send((const void*)buff,
+            req_ptr->Send((const void*)buff,
                            sprintf(buff, "</pre><hr></body></html>"),
                            req->index);
-            req->src->finish(NOERROR | DISCONNECT_FLAG, req->index);
-            return nullptr;
+            req_ptr->finish(NOERROR | DISCONNECT_FLAG, req->index);
+            return std::weak_ptr<Responser>();
         }
 
         if(!S_ISREG(st.st_mode)){
@@ -386,13 +391,15 @@ Responser* File::getfile(HttpReqHeader* req) {
             res = new HttpResHeader(H403, sizeof(H403));
             break;
         }
+#ifdef ENABLE_CGI
         if(endwith(filename, ".so")){
             return getcgi(req, filename);
         }
+#endif
 
         if(filemap.count(filename)){
-            File *file = filemap[filename];
-            if(file->checkvalid()){
+            auto file = filemap[filename];
+            if(!file.expired() && file.lock()->checkvalid()){
                 return file;
             }
         }
@@ -402,10 +409,10 @@ Responser* File::getfile(HttpReqHeader* req) {
             res = new HttpResHeader(H500, sizeof(H500));
             break;
         }
-        return new File(filename, fd, &st);
+        return std::dynamic_pointer_cast<Responser>((new File(filename, fd, &st))->shared_from_this());
     }
     assert(res);
     res->index = req->index;
-    req->src->response(res);
-    return nullptr;
+    req_ptr->response(res);
+    return std::weak_ptr<Responser>();
 }

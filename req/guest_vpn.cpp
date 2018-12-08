@@ -1,5 +1,4 @@
 #include "guest_vpn.h"
-#include "vpn.h"
 
 #include "res/fdns.h"
 #include "misc/simpleio.h"
@@ -12,15 +11,10 @@
 #include <stdlib.h>
 #include <assert.h>
 
-#define VPN_WSCALE   4
 
-
-VpnKey::VpnKey(const Ip* ip) {
-    memset(this, 0, sizeof(VpnKey));
-    src.addr.sa_family = AF_INET;
-    src.addr_in.sin_addr = *ip->getsrc();
-    dst.addr.sa_family = AF_INET;
-    dst.addr_in.sin_addr = *ip->getdst();
+VpnKey::VpnKey(std::shared_ptr<const Ip> ip) {
+    src = ip->getsrc();
+    dst = ip->getdst();
     switch(ip->gettype()){
     case IPPROTO_TCP:
         protocol = Protocol::TCP;
@@ -36,48 +30,51 @@ VpnKey::VpnKey(const Ip* ip) {
         protocol = Protocol::ICMP;
         src.addr_in.sin_port = htons(ip->icmp->getid());
         break;
+    case IPPROTO_ICMPV6:
+        protocol = Protocol::ICMP;
+        src.addr_in.sin_port = htons(ip->icmp6->getid());
+        break;
     default:
-        assert(0);
+        protocol = Protocol::NONE;
+        break;
     }
 }
 
-void VpnKey::reverse() {
+const VpnKey& VpnKey::reverse() {
     auto tmp  = dst;
     dst = src;
     src = tmp;
+    return *this;
+}
+
+char VpnKey::version() const {
+    if(dst.addr.sa_family == AF_INET){
+        return 4;
+    }
+    if(dst.addr.sa_family == AF_INET6){
+        return 6;
+    }
+    assert(0);
+    return 0;
 }
 
 
 const char* VpnKey::getString(const char* sep) const{
     static char str[URLLIMIT];
     snprintf(str, sizeof(str), "<%s> (%s:%d %s %s:%d)",
-             protstr(protocol),
-             FDns::getRdns(&src.addr_in.sin_addr).c_str(),
-             ntohs(src.addr_in.sin_port),
-             sep,
-             FDns::getRdns(&dst.addr_in.sin_addr).c_str(),
-             ntohs(dst.addr_in.sin_port));
+             protstr(protocol), FDns::getRdns(src).c_str(), ntohs(src.addr_in.sin_port),
+             sep, FDns::getRdns(dst).c_str(), ntohs(dst.addr_in.sin_port));
     return str;
 }
 
 bool operator<(const VpnKey a, const VpnKey b) {
-    const char* acmp = (char*)&a;
-    const char* bcmp = (char*)&b;
-    for(size_t i=0;i< sizeof(VpnKey); i++){
-        if(acmp[i] < bcmp[i]){
-            return true;
-        }
-        if(acmp[i] > bcmp[i]){
-            return false;
-        }
-    }
-    return false;
+    return memcmp(&a, &b, sizeof(VpnKey)) < 0;
 }
 
 
-Guest_vpn::Guest_vpn(int fd):Requester("VPN", 0) {
+VPN_nanny::VPN_nanny(int fd){
     rwer = new PacketRWer(fd, [](int ret, int code){
-        LOGE("Guest_vpn error: %d/%d\n", ret, code);
+        LOGE("VPN_nanny error: %d/%d\n", ret, code);
     });
     rwer->SetReadCB([this](size_t len){
         const char* data = rwer->data();
@@ -86,93 +83,276 @@ Guest_vpn::Guest_vpn(int fd):Requester("VPN", 0) {
     });
     rwer->SetWriteCB([this](size_t){
         for(auto i: statusmap){
-            VpnStatus& status = i.second;
-            if(i.first.protocol != Protocol::TCP){
-                status.res_ptr->writedcb(status.res_index);
-            }
+            assert(!i.second.expired());
+            auto vpn = i.second.lock();
+            vpn->writed();
         }
     });
 }
 
-Guest_vpn::~Guest_vpn(){
+VPN_nanny::~VPN_nanny(){
     for(auto& i: statusmap){
-        delete i.second.key;
-        free(i.second.packet);
-        del_delayjob(std::bind(&Guest_vpn::aged, this, &i.second), &i.second);
+        assert(!i.second.expired());
+        i.second.lock()->finish(VPN_AGED_ERR, 0);
     }
     statusmap.clear();
 }
 
-void Guest_vpn::buffHE(const char* buff, size_t buflen) {
+void VPN_nanny::buffHE(const char* buff, size_t buflen) {
     //先解析
     try{
-        const Ip pac(buff, buflen);
+        auto pac = MakeIp(buff, buflen);
         //打印ip/tcp/udp头
-        //pac.print();
-        
-        /* determine protocol */
-        switch (pac.gettype()) {
-            case IPPROTO_ICMP:
-                return icmpHE(&pac, buff, buflen);
-            case IPPROTO_TCP:
-                return tcpHE(&pac, buff, buflen);
-            case IPPROTO_UDP:
-                return udpHE(&pac, buff, buflen);
-            default:
-                LOG("unknow protocol: %d\n", pac.gettype());
-                return;
+        //pac->dump();
+        VpnKey key(pac);
+
+        if(pac->gettype() == IPPROTO_ICMP && pac->icmp->gettype() ==  ICMP_UNREACH){
+            auto icmp_pac = MakeIp(buff + pac->gethdrlen(), buflen-pac->gethdrlen());
+            key = VpnKey(icmp_pac).reverse();
         }
+
+        if(statusmap.count(key) == 0 || statusmap[key].expired()){
+            statusmap[key] = std::dynamic_pointer_cast<Guest_vpn>((new Guest_vpn(key, this))->shared_from_this());
+        }
+        assert(!statusmap[key].expired());
+        statusmap[key].lock()->packetHE(pac, buff, buflen);
     }catch(...){
         return;
     }
 }
 
+int32_t VPN_nanny::bufleft() {
+    return 4*1024*1024 - rwer->wlength();
+}
+
+
+void VPN_nanny::cleanKey(const VpnKey& key) {
+    statusmap.erase(key);
+}
+
+
+void VPN_nanny::dump_stat(Dumper dp, void* param) {
+    dp(param, "vpn_nanny %p (%zd):\n", this, rwer->wlength());
+}
+
+
+Guest_vpn::Guest_vpn(const VpnKey& key, VPN_nanny* nanny):key(key), nanny(nanny) {
+    res_index = nullptr;
+    packet = nullptr;
+    packet_len = 0;
+    protocol_info = nullptr;
+}
+
+
+Guest_vpn::~Guest_vpn(){
+    nanny->cleanKey(key);
+    free(packet);
+    del_delayjob(std::bind(&Guest_vpn::aged, this), nullptr);
+}
+
+
+
+const char * Guest_vpn::getProg() const{
+    if(key.version() == 4){
+        std::ifstream netfile;
+        switch(key.protocol){
+        case Protocol::TCP:
+            netfile.open("/proc/net/tcp");
+            break;
+        case Protocol::UDP:
+            netfile.open("/proc/net/udp");
+            break;
+        case Protocol::ICMP:
+            netfile.open("/proc/net/icmp");
+            break;
+        default:
+            return "<NONE>";
+        }
+        if(netfile.good()) {
+            std::string line;
+            std::getline(netfile, line); //drop the title line
+            while (std::getline(netfile, line)) {
+                uint32_t srcip, dstip;
+                unsigned int srcport, dstport;
+                int uid = 0;
+                ino_t inode = 0;
+                sscanf(line.c_str(), "%*d: %x:%x %x:%x %*x %*x:%*x %*d:%*x %*d %d %*d %lu",
+                                    &srcip, &srcport, &dstip, &dstport, &uid, &inode);
+                if(key.src.addr_in.sin_port == htons(srcport) &&(
+                    key.protocol == Protocol::ICMP || key.protocol == Protocol::UDP ||
+                    (key.dst.addr_in.sin_addr.s_addr == dstip &&
+                    key.dst.addr_in.sin_port == htons(dstport))))
+                {
+#ifndef __ANDROID__
+                    return findprogram(inode);
+#else
+                    return getPackageName(uid);
+#endif
+                }
+            }
+
+            netfile.clear();
+            netfile.seekg(0);
+            while (std::getline(netfile, line)) {
+                //LOGD(DVPN, "%s\n", line.c_str());
+            }
+        }
+        LOGD(DVPN, "Get src failed for %s %08X:%04X %08X:%04X\n",
+                        protstr(key.protocol),
+                        key.src.addr_in.sin_addr.s_addr, ntohs(key.src.addr_in.sin_port),
+                        key.dst.addr_in.sin_addr.s_addr, ntohs(key.dst.addr_in.sin_port));
+    }
+    std::ifstream net6file;
+    switch(key.protocol){
+    case Protocol::TCP:
+        net6file.open("/proc/net/tcp6");
+        break;
+    case Protocol::UDP:
+        net6file.open("/proc/net/udp6");
+        break;
+    case Protocol::ICMP:
+        net6file.open("/proc/net/icmp6");
+        break;
+    default:
+        return "<NONE>";
+    }
+    if(net6file.good()) {
+        std::string line;
+        std::getline(net6file, line); //drop the title line
+        in6_addr dst;
+        if(key.version() == 4){
+            dst = mapIpv4(key.dst.addr_in.sin_addr);
+        }else{
+            dst = key.dst.addr_in6.sin6_addr;
+        }
+        while (std::getline(net6file, line)) {
+            unsigned int srcport, dstport;
+            int uid = 0;
+            ino_t inode = 0;
+            uint32_t srcip[4], dstip[4];
+            sscanf(line.c_str(), "%*d: %8X%8X%8X%8X:%X %8X%8X%8X%8X:%X %*x %*x:%*x %*d:%*x %*d %d %*d %lu",
+                                srcip, srcip+1, srcip+2, srcip+3, &srcport,
+                                dstip, dstip+1, dstip+2, dstip+3, &dstport, &uid, &inode);
+            if(key.src.addr_in6.sin6_port == htons(srcport) &&(
+                key.protocol == Protocol::ICMP || key.protocol == Protocol::UDP ||
+                (memcmp(&dst, dstip, 16) == 0 &&
+                key.dst.addr_in6.sin6_port == htons(dstport))))
+            {
+#ifndef __ANDROID__
+                return findprogram(inode);
+#else
+                return getPackageName(uid);
+#endif
+            }
+        }
+        net6file.clear();
+        net6file.seekg(0);
+        while (std::getline(net6file, line)) {
+            //LOGD(DVPN, "%s\n", line.c_str());
+        }
+    }
+    LOGD(DVPN, "Get src failed for %s %08X%08X%08X%08X:%04X %08X%08X%08X%08X:%04X\n",
+                    protstr(key.protocol),
+                    key.src.addr_in6.sin6_addr.s6_addr32[0],
+                    key.src.addr_in6.sin6_addr.s6_addr32[1],
+                    key.src.addr_in6.sin6_addr.s6_addr32[2],
+                    key.src.addr_in6.sin6_addr.s6_addr32[3],
+                    ntohs(key.src.addr_in6.sin6_port),
+                    key.dst.addr_in6.sin6_addr.s6_addr32[0],
+                    key.dst.addr_in6.sin6_addr.s6_addr32[1],
+                    key.dst.addr_in6.sin6_addr.s6_addr32[2],
+                    key.dst.addr_in6.sin6_addr.s6_addr32[3],
+                    ntohs(key.dst.addr_in6.sin6_port));
+    return "Unkown inode";
+}
+
+const char* Guest_vpn::generateUA() const {
+    static char UA[URLLIMIT];
+#ifndef __ANDROID__
+    sprintf(UA, "Sproxy/1.0 (%s) %s", getDeviceInfo(), getProg());
+#else
+    sprintf(UA, "Sproxy/%s (%s) %s", version, getDeviceName(), getProg());
+#endif
+    return UA;
+}
+
+
+void Guest_vpn::packetHE(std::shared_ptr<const Ip> pac, const char* packet, size_t len){
+    /* determine protocol */
+    switch (pac->gettype()) {
+    case IPPROTO_ICMP:
+        return icmpHE(pac, packet, len);
+    case IPPROTO_ICMPV6:
+        return icmp6HE(pac, packet, len);
+    case IPPROTO_TCP:
+        return tcpHE(pac, packet, len);
+    case IPPROTO_UDP:
+        return udpHE(pac, packet, len);
+    default:
+        LOG("unknow protocol: %d\n", pac->gettype());
+        return;
+    }
+}
+
+void Guest_vpn::writed() {
+    if(key.protocol != Protocol::TCP && !res_ptr.expired()){
+        res_ptr.lock()->writedcb(res_index);
+    }
+}
+
+
 void Guest_vpn::response(HttpResHeader* res) {
     VpnKey& key  = *(VpnKey *)res->index;
-
-    assert(statusmap.count(key));
-    VpnStatus& status = statusmap[key];
     LOGD(DVPN, "Get response (%s)\n", res->status);
     //创建回包
     if(memcmp(res->status, "200", 3) == 0){
+        assert(!res_ptr.expired());
         assert(key.protocol == Protocol::TCP);
-        TcpStatus* tcpStatus = (TcpStatus *)status.protocol_info;
+        TcpStatus* tcpStatus = (TcpStatus *)protocol_info;
         tcpStatus->status = TCP_ESTABLISHED;
         LOGD(DVPN, "write syn ack packet %s (%u - %u).\n",
              key.getString("<-"), tcpStatus->send_seq, tcpStatus->want_seq);
-        Ip pac_return(IPPROTO_TCP, &key.dst, &key.src);
-        pac_return.tcp
+        auto pac_return = MakeIp(IPPROTO_TCP, &key.dst, &key.src);
+        pac_return->tcp
             ->setseq(tcpStatus->send_seq++)
             ->setack(tcpStatus->want_seq)
             ->setwindowscale(tcpStatus->send_wscale)
-            ->setwindow(status.res_ptr->bufleft(status.res_index) >> tcpStatus->send_wscale)
+            ->setwindow(res_ptr.lock()->bufleft(res_index) >> tcpStatus->send_wscale)
             ->setmss(BUF_LEN)
             ->setflag(TH_ACK | TH_SYN);
 
-        sendPkg(&pac_return, (const void*)nullptr, 0);
+        nanny->sendPkg(pac_return, (const void*)nullptr, 0);
     }else if(res->status[0] == '4'){
         //site is blocked or bad request, return rst for tcp, icmp for udp
         if(key.protocol == Protocol::TCP){
-            TcpStatus* tcpStatus = (TcpStatus*)status.protocol_info;
+            TcpStatus* tcpStatus = (TcpStatus*)protocol_info;
             assert(tcpStatus);
             LOGD(DVPN, "write rst packet\n");
-            Ip pac_return(IPPROTO_TCP, &key.dst, &key.src);
-            pac_return.tcp
+            auto pac_return = MakeIp(IPPROTO_TCP, &key.dst, &key.src);
+            pac_return->tcp
                 ->setseq(tcpStatus->send_seq)
                 ->setack(tcpStatus->want_seq)
                 ->setwindow(bufleft(0) >> tcpStatus->send_wscale)
                 ->setflag(TH_RST | TH_ACK);
 
-            sendPkg(&pac_return, (const void *)nullptr, 0);
+            nanny->sendPkg(pac_return, (const void *)nullptr, 0);
         }
         if(key.protocol == Protocol::UDP){
-            LOGD(DVPN, "write icmp unrach packet\n");
-            Ip pac_return(IPPROTO_ICMP, &key.dst, &key.src);
-            pac_return.icmp
-                ->settype(ICMP_UNREACH)
-                ->setcode(ICMP_UNREACH_PORT);
-
-            sendPkg(&pac_return, (const void*)status.packet, status.packet_len);
+            std::shared_ptr<Ip> pac_return;
+            if(key.version() == 4){
+                LOGD(DVPN, "write icmp unrach packet\n");
+                pac_return = MakeIp(IPPROTO_ICMP, &key.dst, &key.src);
+                pac_return->icmp
+                    ->settype(ICMP_UNREACH)
+                    ->setcode(ICMP_UNREACH_PORT);
+            }else{
+                LOGD(DVPN, "write icmp6 unrach packet\n");
+                pac_return = MakeIp(IPPROTO_ICMPV6, &key.dst, &key.src);
+                pac_return->icmp6
+                    ->settype(ICMP6_DST_UNREACH)
+                    ->setcode(ICMP6_DST_UNREACH_ADDR);
+            }
+            nanny->sendPkg(pac_return, (const void*)packet, packet_len);
         }
     }else{
         LOGD(DVPN, "ignore this response\n");
@@ -181,59 +361,51 @@ void Guest_vpn::response(HttpResHeader* res) {
     return;
 }
 
-template <class T>
-void Guest_vpn::sendPkg(Ip* pac, T* buff, size_t len){
-    char* packet = pac->build_packet(buff, len);
-    rwer->buffer_insert(rwer->buffer_end(), packet, len);
+
+
+void Guest_vpn::transfer(void* index, std::weak_ptr<Responser> res_ptr, void* res_index) {
+    assert(index == &key);
+    this->res_ptr = res_ptr;
+    this->res_index = res_index;
 }
 
-
-void Guest_vpn::transfer(void* index, Responser* res_ptr, void* res_index) {
-    VpnKey& key  = *(VpnKey *)index;
-    assert(statusmap.count(key));
-    VpnStatus& status = statusmap[key];
-    status.res_ptr = res_ptr;
-    status.res_index = res_index;
-}
-
-int Guest_vpn::tcp_ack(VpnStatus* status) {
-    if(status->protocol_info == nullptr){
+int Guest_vpn::tcp_ack() {
+    if(protocol_info == nullptr){
         return 0;
     }
-    TcpStatus* tcpStatus = (TcpStatus*)status->protocol_info;
+    TcpStatus* tcpStatus = (TcpStatus*)protocol_info;
     if(tcpStatus->status != TCP_ESTABLISHED){
         return 0;
     }
-    assert(status->res_ptr);
-    int buflen = status->res_ptr->bufleft(status->res_index);
+    assert(!res_ptr.expired());
+    int buflen = res_ptr.lock()->bufleft(res_index);
     if(buflen < 0) buflen = 0;
     //创建回包
-    Ip pac_return(IPPROTO_TCP, &status->key->dst, &status->key->src);
-    pac_return.tcp
+    auto pac_return = MakeIp(IPPROTO_TCP, &key.dst, &key.src);
+    pac_return->tcp
         ->setseq(tcpStatus->send_seq)
         ->setack(tcpStatus->want_seq)
         ->setwindow(buflen >> tcpStatus->send_wscale)
         ->setflag(TH_ACK);
 
-    LOGD(DVPN, "%s (%u - %u) ack\n", status->key->getString("<-"), tcpStatus->send_seq, tcpStatus->want_seq);
-    sendPkg(&pac_return, (const void*)nullptr, 0);
+    LOGD(DVPN, "%s (%u - %u) ack\n", key.getString("<-"), tcpStatus->send_seq, tcpStatus->want_seq);
+    nanny->sendPkg(pac_return, (const void*)nullptr, 0);
     return 0;
 }
 
 
-void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
+void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t len) {
     uint32_t seq = pac->tcp->getseq();
     uint32_t ack = pac->tcp->getack();
     uint8_t flag = pac->tcp->getflag();
     
     size_t datalen = len - pac->gethdrlen();
     
-    VpnKey key(pac);
     LOGD(DVPN, "%s (%u - %u) flag: %d size:%zu\n",
          key.getString("->"), seq, ack, flag, datalen);
 
     if(flag & TH_SYN){
-        if(statusmap.count(key)) {
+        if(!res_ptr.expired()) {
             LOGD(DVPN, "drop dup syn packet\n");
             return;
         }
@@ -245,12 +417,11 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
                         "Sproxy-vpn: %d" CRLF CRLF,
                 FDns::getRdns(pac->getdst()).c_str(),
                 pac->tcp->getdport(),
-                generateUA(&key),
+                generateUA(),
                 pac->tcp->getsport());
 
-        HttpReqHeader* req = new HttpReqHeader(buff, headlen, this);
-        VpnKey* key_index = new VpnKey(key);
-        req->index = key_index;
+        HttpReqHeader* req = new HttpReqHeader(buff, headlen, shared_from_this());
+        req->index = &key;
         TcpStatus* tcpStatus = (TcpStatus*)malloc(sizeof(TcpStatus));
         tcpStatus->send_seq = time(0);
         tcpStatus->send_acked = tcpStatus->send_seq;
@@ -261,74 +432,65 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         tcpStatus->recv_wscale = pac->tcp->getwindowscale();
         tcpStatus->status = TCP_SYN_RECV;
         if(tcpStatus->options & (1<<TCPOPT_WINDOW)){
-            tcpStatus->send_wscale = VPN_WSCALE;
+            tcpStatus->send_wscale = VPN_TCP_WSCALE;
         }else{
             tcpStatus->send_wscale = 0;
         }
-        statusmap[key] =  VpnStatus{
-            nullptr,
-            nullptr,
-            key_index,
-            (char *)memdup(packet, pac->gethdrlen()),
-            (uint16_t)pac->gethdrlen(),
-            tcpStatus,
-        };
-        Responser *responser_ptr = distribute(req, nullptr);
-        if(responser_ptr){
-            void* responser_index = responser_ptr->request(std::move(req));
-            statusmap[key].res_ptr = responser_ptr;
-            statusmap[key].res_index = responser_index;
+        this->packet = (char *)memdup(packet, pac->gethdrlen());
+        this->packet_len = (uint16_t)pac->gethdrlen();
+        this->protocol_info = tcpStatus;
+
+        res_ptr = distribute(req, std::weak_ptr<Responser>());
+        if(!res_ptr.expired()){
+            res_index = res_ptr.lock()->request(std::move(req));
         }else{
             delete req;
-            cleanKey(&key);
+            deleteLater(PEER_LOST_ERR);
         }
         return;
     }
     if(flag & TH_RST){//rst包，不用回包，直接断开
         LOGD(DVPN, "get rst, checking key\n");
         //check the map
-        if (statusmap.count(key)) {
-            VpnStatus& status = statusmap[key];
-            if(status.res_ptr)
-                status.res_ptr->finish(TCP_RESET_ERR, status.res_index);
-            cleanKey(&key);
+        if(!res_ptr.expired()){
+            res_ptr.lock()->finish(TCP_RESET_ERR, res_index);
         }
+        deleteLater(PEER_LOST_ERR);
         return;
     }
-    Ip pac_return(IPPROTO_TCP, pac->getdst(), pac->tcp->getdport(), pac->getsrc(), pac->tcp->getsport());
-    if(statusmap.count(key) == 0){     //如果不存在，直接发送rst断开
-        pac_return.tcp
+    auto pac_return = MakeIp(IPPROTO_TCP, &key.dst, &key.src);
+    if(protocol_info == nullptr){     //如果不存在，直接发送rst断开
+        pac_return->tcp
             ->setseq(ack)
             ->setack(seq)
             ->setwindow(0)
             ->setflag(TH_ACK | TH_RST);
 
         LOGD(DVPN, "write rst to break no exists connection.\n");
-        sendPkg(&pac_return, (const void*)nullptr, 0);
+        nanny->sendPkg(pac_return, (const void*)nullptr, 0);
+        deleteLater(PEER_LOST_ERR);
         return;
     }
 
-    VpnStatus& status = statusmap[key];
-    TcpStatus* tcpStatus = (TcpStatus*)status.protocol_info;
-    assert(tcpStatus);
-
+    TcpStatus* tcpStatus = (TcpStatus*)protocol_info;
     if(seq != tcpStatus->want_seq){
         LOGD(DVPN, "get keepalive pkt or unwanted pkt, reply ack(%u).\n", tcpStatus->want_seq);
-        add_postjob(std::bind(&Guest_vpn::tcp_ack, this, &status), &status);
+        add_postjob(std::bind(&Guest_vpn::tcp_ack, this), nullptr);
         return;
     }
 
     //下面处理数据
-    if(datalen > 0){//有数据，创建ack包
-        int buflen = status.res_ptr->bufleft(status.res_index);
+    if(datalen > 0 && !res_ptr.expired()){//有数据，创建ack包
+        int buflen = res_ptr.lock()->bufleft(res_index);
         if(buflen <= 0){
-            LOGE("(%s): responser buff is full, drop packet %u\n", getProg(&key), seq);
+            LOGE("(%s): responser buff is full, drop packet %u\n", getProg(), seq);
+            return;
         }else{
             const char* data = packet + pac->gethdrlen();
-            status.res_ptr->Send(data, datalen, status.res_index);
+            res_ptr.lock()->Send(data, datalen, res_index);
             tcpStatus->want_seq += datalen;
 
-            add_postjob(std::bind(&Guest_vpn::tcp_ack, this, &status), &status);
+            add_postjob(std::bind(&Guest_vpn::tcp_ack, this), nullptr);
         }
     }
 
@@ -336,34 +498,34 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         LOGD(DVPN, "get fin, send ack back\n");
         tcpStatus->want_seq++;
         //创建回包
-        pac_return.tcp
+        pac_return->tcp
             ->setseq(tcpStatus->send_seq)
             ->setack(tcpStatus->want_seq)
             ->setwindow(bufleft(0) >> tcpStatus->send_wscale)
             ->setflag(TH_ACK);
 
-        sendPkg(&pac_return, (const void*)nullptr, 0);
+        nanny->sendPkg(pac_return, (const void*)nullptr, 0);
         switch(tcpStatus->status){
         case TCP_ESTABLISHED:
-            status.res_ptr->finish(NOERROR, status.res_index);
+            res_ptr.lock()->finish(NOERROR, res_index);
             tcpStatus->status = TCP_CLOSE_WAIT;
             return;
         case TCP_FIN_WAIT1:
             tcpStatus->status = TCP_CLOSING;
-            if(status.res_ptr){
-                status.res_ptr->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
-                status.res_ptr = nullptr;
-                status.res_index = nullptr;
+            if(!res_ptr.expired()){
+                res_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, res_index);
             }
+            res_ptr = std::weak_ptr<Responser>();
+            res_index = nullptr;
             break;
         case TCP_FIN_WAIT2:
             tcpStatus->status = TCP_TIME_WAIT;
-            if(status.res_ptr){
-                status.res_ptr->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
-                status.res_ptr = nullptr;
-                status.res_index = nullptr;
+            if(!res_ptr.expired()){
+                res_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, res_index);
             }
-            add_delayjob(std::bind(&Guest_vpn::aged, this, &status), &status, 1000);
+            res_ptr = std::weak_ptr<Responser>();
+            res_index = nullptr;
+            add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 1000);
             return;
         }
     }
@@ -375,42 +537,36 @@ void Guest_vpn::tcpHE(const Ip* pac, const char* packet, size_t len) {
         }
         switch(tcpStatus->status){
         case TCP_ESTABLISHED:
-            if(status.res_ptr){
-                status.res_ptr->writedcb(status.res_index);
-            }
+            res_ptr.lock()->writedcb(res_index);
             break;
         case TCP_FIN_WAIT1:
             tcpStatus->status = TCP_FIN_WAIT2;
             break;
         case TCP_CLOSING:
             tcpStatus->status = TCP_TIME_WAIT;
-            add_delayjob(std::bind(&Guest_vpn::aged, this, &status), &status, 1000);
+            add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 1000);
             break;
         case TCP_LAST_ACK:
             LOGD(DVPN, "clean closed connection\n");
-            if(status.res_ptr){
-                status.res_ptr->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
+            if(!res_ptr.expired()){
+                res_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, res_index);
             }
-            cleanKey(&key);
-            break;
+            deleteLater(PEER_LOST_ERR);
+            return;
         }
     }
 }
 
-void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
+void Guest_vpn::udpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t len) {
     const char* data = packet + pac->gethdrlen();
     size_t datalen = len - pac->gethdrlen();
-    
-    VpnKey key(pac);
-
-    if(statusmap.count(key)){
+    if(!res_ptr.expired()){
         LOGD(DVPN, "%s size: %zu\n", key.getString("->"), datalen);
-        VpnStatus& status = statusmap[key];
-        add_delayjob(std::bind(&Guest_vpn::aged, this, &status), &status, 300000);
-        if(status.res_ptr->bufleft(status.res_index) <= 0){
+        add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 300000);
+        if(res_ptr.lock()->bufleft(res_index) <= 0){
             LOGE("responser buff is full, drop packet\n");
         }else{
-            status.res_ptr->Send(data, datalen, status.res_index);
+            res_ptr.lock()->Send(data, datalen, res_index);
         }
     }else{
         LOGD(DVPN, "%s (N) size: %zu\n", key.getString("->"), datalen);
@@ -421,118 +577,92 @@ void Guest_vpn::udpHE(const Ip *pac, const char* packet, size_t len) {
                         "Sproxy_vpn: %d" CRLF CRLF,
                 FDns::getRdns(pac->getdst()).c_str(),
                 pac->udp->getdport(),
-                generateUA(&key),
+                generateUA(),
                 pac->udp->getsport());
 
-        HttpReqHeader* req = new HttpReqHeader(buff, headlen, this);
-        VpnKey *key_index = new VpnKey(key);
-        req->index = key_index;
-        statusmap[key] =  VpnStatus{
-            nullptr,
-            nullptr,
-            key_index,
-            (char *)memdup(packet, pac->gethdrlen()),
-            (uint16_t)pac->gethdrlen(),
-            nullptr,
-        };
+        HttpReqHeader* req = new HttpReqHeader(buff, headlen, shared_from_this());
+        req->index = &key;
+        this->packet = (char *)memdup(packet, pac->gethdrlen());
+        this->packet_len = (uint16_t)pac->gethdrlen();
 
-        Responser *responser_ptr = nullptr;
+        auto responser_ptr = std::weak_ptr<Responser>();
         if(pac->udp->getdport() == 53){
             responser_ptr = FDns::getfdns();
         }else{
-            responser_ptr = distribute(req, nullptr);
+            responser_ptr = distribute(req, std::weak_ptr<Responser>());
         }
-        if(responser_ptr){
-            add_delayjob(std::bind(&Guest_vpn::aged, this, &statusmap[key]), &statusmap[key], 60000);
-            void* responser_index = responser_ptr->request(std::move(req));
+        if(!responser_ptr.expired()){
+            add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 60000);
+            void* responser_index = responser_ptr.lock()->request(std::move(req));
             assert(responser_index);
-            statusmap[key].res_ptr = responser_ptr;
-            statusmap[key].res_index = responser_index;
-            responser_ptr->Send(data, datalen, responser_index);
+            res_ptr = responser_ptr;
+            res_index = responser_index;
+            responser_ptr.lock()->Send(data, datalen, responser_index);
         }else{
             delete req;
-            cleanKey(key_index);
+            deleteLater(PEER_LOST_ERR);
         }
     }
 }
 
-void Guest_vpn::icmpHE(const Ip* pac, const char* packet, size_t len) {
+void Guest_vpn::icmpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t len) {
     switch(pac->icmp->gettype()){
     case ICMP_ECHO:{
-        VpnKey key(pac);
-        if(statusmap.count(key)){
+        if(!res_ptr.expired()){
             LOGD(DVPN, "%s (ping) (%u - %u) size: %zd\n",
                  key.getString("->"), pac->icmp->getid(), pac->icmp->getseq(), len - pac->gethdrlen());
-            VpnStatus& status = statusmap[key];
-            add_delayjob(std::bind(&Guest_vpn::aged, this, &status), &status, 5000);
-            assert(status.res_ptr->bufleft(status.res_index)>0);
-            status.packet_len = pac->getid();
-            IcmpStatus* icmpStatus = (IcmpStatus *)status.protocol_info;
+            add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 5000);
+            assert(res_ptr.lock()->bufleft(res_index)>0);
+            IcmpStatus* icmpStatus = (IcmpStatus *)protocol_info;
             assert(icmpStatus->id == pac->icmp->getid());
             icmpStatus->seq = pac->icmp->getseq();
-            status.res_ptr->Send(packet + pac->hdrlen, len - pac->hdrlen, status.res_index);
+            res_ptr.lock()->Send(packet + pac->gethdrlen(), len - pac->gethdrlen(), res_index);
         }else{
             LOGD(DVPN, "%s (ping/N) (%u - %u) size: %zd\n",
                  key.getString("->"), pac->icmp->getid(), pac->icmp->getseq(), len - pac->gethdrlen());
             char buff[HEADLENLIMIT];
-            int headlen = sprintf(buff,   "PING %s" CRLF
+            int headlen = sprintf(buff,   "PING %s:%d" CRLF
                             "User-Agent: %s" CRLF
                             "Sproxy_vpn: %d" CRLF CRLF,
                     FDns::getRdns(pac->getdst()).c_str(),
-                    generateUA(&key),
+                    pac->icmp->getid(),
+                    generateUA(),
                     pac->icmp->getid());
-            HttpReqHeader* req = new HttpReqHeader(buff, headlen, this);
+            HttpReqHeader* req = new HttpReqHeader(buff, headlen, shared_from_this());
+            req->index = &key;
 
-            VpnKey *key_index = new VpnKey(key);
-            req->index = key_index;
             IcmpStatus *icmpStatus = (IcmpStatus*)malloc(sizeof(IcmpStatus));
             icmpStatus->id = pac->icmp->getid();
             icmpStatus->seq = pac->icmp->getseq();
-            statusmap[key] =  VpnStatus{
-                nullptr,
-                nullptr,
-                key_index,
-                nullptr,
-                0,
-                icmpStatus,
-            };
-            Responser* responser_ptr = distribute(req, nullptr);
-            if(responser_ptr){
-                add_delayjob(std::bind(&Guest_vpn::aged, this, &statusmap[key]), &statusmap[key], 3000);
-                void* responser_index = responser_ptr->request(std::move(req));
-                assert(responser_index);
-                statusmap[key].res_ptr = responser_ptr;
-                statusmap[key].res_index = responser_index;
-                responser_ptr->Send(packet + pac->hdrlen, len - pac->hdrlen, responser_index);
+            this->protocol_info = icmpStatus;
+            res_ptr = distribute(req, std::weak_ptr<Responser>());
+            if(!res_ptr.expired()){
+                add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 3000);
+                res_index = res_ptr.lock()->request(std::move(req));
+                res_ptr.lock()->Send(packet + pac->gethdrlen(), len - pac->gethdrlen(), res_index);
             }else{
                 delete req;
-                cleanKey(key_index);
+                deleteLater(PEER_LOST_ERR);
             }
         }
     }break;
     case ICMP_UNREACH:{
-        Ip icmp_pac(packet+pac->gethdrlen(), len-pac->gethdrlen());
-        uint8_t type = icmp_pac.gettype();
-        VpnKey key(&icmp_pac);
-        key.reverse();
+        auto icmp_pac = MakeIp(packet+pac->gethdrlen(), len-pac->gethdrlen());
+
+        uint8_t type = icmp_pac->gettype();
         
         LOGD(DVPN, "Get unreach icmp packet %s type: %d\n", key.getString("->"), type);
         if(type != IPPROTO_TCP && type != IPPROTO_UDP){
             LOGD(DVPN, "Get unreach icmp packet unkown protocol:%d\n", type);
             return;
         }
-        if(statusmap.count(key)){
+        if(!res_ptr.expired()) {
             LOGD(DVPN, "clean this connection\n");
-            VpnStatus& status = statusmap[key];
-
-            if(status.res_ptr) {
-                assert(status.res_index);
-                status.res_ptr->finish(PEER_LOST_ERR, status.res_index);
-            }
-            cleanKey(&key);
+            res_ptr.lock()->finish(PEER_LOST_ERR, res_index);
         }else{
-            LOGD(DVPN, "key not exist, ignore\n");
+            LOGD(DVPN, "connection doesn't exists, ignore it\n");
         }
+        deleteLater(PEER_LOST_ERR);
     } break;
     default:
         LOGD(DVPN, "Get icmp type:%d code: %d, ignore it.\n",
@@ -542,130 +672,188 @@ void Guest_vpn::icmpHE(const Ip* pac, const char* packet, size_t len) {
     }
 }
 
-int32_t Guest_vpn::bufleft(void* index) {
-    VpnKey *key = (VpnKey *)index;
-    assert(key == nullptr || statusmap.count(*key));
-    if(key == nullptr){
-        return 4*1024*1024 - rwer->wlength();
+
+void Guest_vpn::icmp6HE(std::shared_ptr<const Ip> pac, const char* packet, size_t len) {
+    switch(pac->icmp6->gettype()){
+    case ICMP6_ECHO_REQUEST:{
+        if(!res_ptr.expired()){
+            LOGD(DVPN, "%s (ping6) (%u - %u) size: %zd\n",
+                 key.getString("->"), pac->icmp6->getid(), pac->icmp6->getseq(), len - pac->gethdrlen());
+            add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 5000);
+            assert(res_ptr.lock()->bufleft(res_index)>0);
+            IcmpStatus* icmpStatus = (IcmpStatus *)protocol_info;
+            assert(icmpStatus->id == pac->icmp6->getid());
+            icmpStatus->seq = pac->icmp6->getseq();
+            res_ptr.lock()->Send(packet + pac->gethdrlen(), len - pac->gethdrlen(), res_index);
+        }else{
+            LOGD(DVPN, "%s (ping6/N) (%u - %u) size: %zd\n",
+                 key.getString("->"), pac->icmp6->getid(), pac->icmp6->getseq(), len - pac->gethdrlen());
+            char buff[HEADLENLIMIT];
+            int headlen = sprintf(buff,   "PING %s:%d" CRLF
+                            "User-Agent: %s" CRLF
+                            "Sproxy_vpn: %d" CRLF CRLF,
+                    FDns::getRdns(pac->getdst()).c_str(),
+                    pac->icmp6->getid(),
+                    generateUA(),
+                    pac->icmp6->getid());
+            HttpReqHeader* req = new HttpReqHeader(buff, headlen, shared_from_this());
+            req->index = &key;
+
+            IcmpStatus *icmpStatus = (IcmpStatus*)malloc(sizeof(IcmpStatus));
+            icmpStatus->id = pac->icmp6->getid();
+            icmpStatus->seq = pac->icmp6->getseq();
+            this->protocol_info = icmpStatus;
+            res_ptr = distribute(req, std::weak_ptr<Responser>());
+            if(!res_ptr.expired()){
+                add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 3000);
+                res_index = res_ptr.lock()->request(std::move(req));
+                res_ptr.lock()->Send(packet + pac->gethdrlen(), len - pac->gethdrlen(), res_index);
+            }else{
+                delete req;
+                deleteLater(PEER_LOST_ERR);
+            }
+        }
+    }break;
+    case ICMP6_DST_UNREACH:{
+        auto icmp_pac = MakeIp(packet+pac->gethdrlen(), len-pac->gethdrlen());
+
+        uint8_t type = icmp_pac->gettype();
+
+        LOGD(DVPN, "Get unreach icmp6 packet %s type: %d\n", key.getString("->"), type);
+        if(type != IPPROTO_TCP && type != IPPROTO_UDP){
+            LOGD(DVPN, "Get unreach icmp packet unkown protocol:%d\n", type);
+            return;
+        }
+        if(!res_ptr.expired()) {
+            LOGD(DVPN, "clean this connection\n");
+            res_ptr.lock()->finish(PEER_LOST_ERR, res_index);
+        }else{
+            LOGD(DVPN, "connection doesn't exists, ignore it\n");
+        }
+        deleteLater(PEER_LOST_ERR);
+    } break;
+    default:
+        LOGD(DVPN, "Get icmp6 type:%d code: %d, ignore it.\n",
+             pac->icmp6->gettype(),
+             pac->icmp6->getcode());
+        break;
     }
-    if(key->protocol == Protocol::TCP){
-        VpnStatus& status = statusmap[*key];
-        TcpStatus* tcpStatus = (TcpStatus*)status.protocol_info;
+}
+
+
+int32_t Guest_vpn::bufleft(void* index) {
+    assert(index == nullptr || index == &key);
+    if(index == nullptr){
+        nanny->bufleft();
+    }
+    if(key.protocol == Protocol::TCP){
+        TcpStatus* tcpStatus = (TcpStatus*)protocol_info;
         assert(tcpStatus);
         return (tcpStatus->window << tcpStatus->recv_wscale) - (tcpStatus->send_seq - tcpStatus->send_acked);
     }
-    if(key->protocol == Protocol::ICMP){
+    if(key.protocol == Protocol::ICMP){
         return BUF_LEN;
     }
     //udp
-    return 4*1024*1024 - rwer->wlength();
+    return nanny->bufleft();
 }
 
 void Guest_vpn::Send(void* buff, size_t size, void* index) {
-    VpnKey& key  = *(VpnKey *)index;
-    assert(statusmap.count(key));
-    VpnStatus& status = statusmap[key];
-    if(status.res_ptr == nullptr || size == 0){
+    assert(index == &key);
+    if(res_ptr.expired() || size == 0){
         p_free(buff);
         return;
     }
     if(key.protocol == Protocol::TCP){
-        TcpStatus* tcpStatus = (TcpStatus*)status.protocol_info;
+        TcpStatus* tcpStatus = (TcpStatus*)protocol_info;
         assert(tcpStatus);
         size_t winlen = (tcpStatus->window << tcpStatus->recv_wscale) - (tcpStatus->send_seq - tcpStatus->send_acked);
         if(size > winlen){
-            LOGE("(%s): window left smaller than send size (%zu/%zu)!\n", getProg(&key), size, winlen);
+            LOGE("(%s): window left smaller than send size (%zu/%zu)!\n", getProg(), size, winlen);
             size = winlen;
         }
         if(size > tcpStatus->mss){
-            LOGD(DVPN, "(%s): mss smaller than send size (%zu/%u)!\n", getProg(&key), size, tcpStatus->mss);
+            LOGD(DVPN, "(%s): mss smaller than send size (%zu/%u)!\n", getProg(), size, tcpStatus->mss);
             size = tcpStatus->mss;
         }
         LOGD(DVPN, "%s (%u - %u) size: %zu\n",
              key.getString("<-"), tcpStatus->send_seq, tcpStatus->want_seq, size);
-        Ip pac_return(IPPROTO_TCP, &key.dst, &key.src);
-        pac_return.tcp
+        auto pac_return = MakeIp(IPPROTO_TCP, &key.dst, &key.src);
+        pac_return->tcp
             ->setseq(tcpStatus->send_seq)
             ->setack(tcpStatus->want_seq)
-            ->setwindow(status.res_ptr->bufleft(status.res_index) >> tcpStatus->send_wscale)
+            ->setwindow(res_ptr.lock()->bufleft(res_index) >> tcpStatus->send_wscale)
             ->setflag(TH_ACK | TH_PUSH);
 
-        sendPkg(&pac_return, buff, size);
+        nanny->sendPkg(pac_return, buff, size);
         tcpStatus->send_seq += size;
         return;
     }
     if(key.protocol == Protocol::UDP){
         LOGD(DVPN, "%s size: %zu\n", key.getString("<-"), size);
-        Ip pac_return(IPPROTO_UDP, &key.dst, &key.src);
+        auto pac_return = MakeIp(IPPROTO_UDP, &key.dst, &key.src);
 
-        sendPkg(&pac_return, buff, size);
-        add_delayjob(std::bind(&Guest_vpn::aged, this, &status), &status, 300000);
+        nanny->sendPkg(pac_return, buff, size);
+        add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 300000);
         return;
     }
     if(key.protocol == Protocol::ICMP){
-        Ip pac_return(IPPROTO_ICMP, &key.dst, &key.src);
-        IcmpStatus* icmpStatus = (IcmpStatus*)status.protocol_info;
-        const Icmp __attribute__((unused)) *icmp = (const Icmp*)buff;
+        IcmpStatus* icmpStatus = (IcmpStatus*)protocol_info;
+        std::shared_ptr<Ip> pac_return;
+        if(key.version() == 4){
+            pac_return = MakeIp(IPPROTO_ICMP, &key.dst, &key.src);
+            LOGD(DVPN, "%s (ping) (%u - %u) size: %zu\n",
+                key.getString("<-"), icmpStatus->id, icmpStatus->seq, size - sizeof(icmphdr));
+            pac_return->icmp
+                ->settype(ICMP_ECHOREPLY)
+                ->setcode(0)
+                ->setid(icmpStatus->id)
+                ->setseq(icmpStatus->seq);
 
-        assert(icmp->gettype() == ICMP_ECHOREPLY && icmp->getcode() == 0);
-        LOGD(DVPN, "%s (ping) (%u - %u) size: %zu\n",
-             key.getString("<-"), icmpStatus->id, icmpStatus->seq, size - sizeof(icmphdr));
-        pac_return.icmp
-            ->settype(ICMP_ECHOREPLY)
-            ->setcode(0)
-            ->setid(icmpStatus->id)
-            ->setseq(icmpStatus->seq);
+            nanny->sendPkg(pac_return, buff, size);
+        }else{
+            pac_return = MakeIp(IPPROTO_ICMPV6, &key.dst, &key.src);
+            LOGD(DVPN, "%s (ping6) (%u - %u) size: %zu\n",
+                key.getString("<-"), icmpStatus->id, icmpStatus->seq, size - sizeof(icmphdr));
+            pac_return->icmp6
+                ->settype(ICMP6_ECHO_REPLY)
+                ->setcode(0)
+                ->setid(icmpStatus->id)
+                ->setseq(icmpStatus->seq);
 
-        buff = p_move(buff, sizeof(icmphdr));
-        sendPkg(&pac_return, buff, size - sizeof(icmphdr));
-        add_delayjob(std::bind(&Guest_vpn::aged, this, &status), &status, 5000);
+            nanny->sendPkg(pac_return, buff, size);
+        }
+        add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 5000);
         return;
     }
     assert(0);
     return;
 }
 
-void Guest_vpn::cleanKey(const VpnKey* key) {
-    assert(statusmap.count(*key));
-    VpnStatus& status = statusmap[*key];
-    del_delayjob(std::bind(&Guest_vpn::aged, this, &status), &status);
-    del_postjob(std::bind(&Guest_vpn::tcp_ack, this, &status), &status);
-
-    free(status.protocol_info);
-    VpnKey* key_ptr = status.key;
-    free(status.packet);
-    statusmap.erase(*key);
-    assert(statusmap.count(*key_ptr) == 0);
-    delete key_ptr;
-}
-
 
 void Guest_vpn::finish(uint32_t flags, void* index) {
-    assert(index);
-    VpnKey* key = (VpnKey *)index;
     uint8_t errcode = flags & ERROR_MASK;
-    LOGD(DVPN, "%s finish: %u\n", key->getString("<-"), errcode);
-    assert(statusmap.count(*key));
-    VpnStatus& status = statusmap[*key];
+    LOGD(DVPN, "%s finish: %u\n", key.getString("<-"), errcode);
     if(errcode == VPN_AGED_ERR){
-        if(status.res_ptr)
-            status.res_ptr->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
-        cleanKey(key);
+        if(!res_ptr.expired())
+            res_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, res_index);
+        deleteLater(errcode);
         return;
     }
-    if(key->protocol == Protocol::TCP){
-        TcpStatus* tcpStatus = (TcpStatus*)status.protocol_info;
+    assert(index == &key);
+    if(key.protocol == Protocol::TCP){
+        TcpStatus* tcpStatus = (TcpStatus*)protocol_info;
         assert(tcpStatus);
         if(errcode == 0){
             LOGD(DVPN, "write fin packet\n");
-            Ip pac_return(IPPROTO_TCP, &key->dst, &key->src);
-            pac_return.tcp
+            auto pac_return = MakeIp(IPPROTO_TCP, &key.dst, &key.src);
+            pac_return->tcp
                 ->setseq(tcpStatus->send_seq++)
                 ->setack(tcpStatus->want_seq)
                 ->setwindow(bufleft(0) >> tcpStatus->send_wscale)
                 ->setflag(TH_FIN | TH_ACK);
 
-            sendPkg(&pac_return, (const void*)nullptr, 0);
+            nanny->sendPkg(pac_return, (const void*)nullptr, 0);
             switch(tcpStatus->status){
             case TCP_ESTABLISHED:
                 tcpStatus->status = TCP_FIN_WAIT1;
@@ -675,163 +863,94 @@ void Guest_vpn::finish(uint32_t flags, void* index) {
                 break;
             }
             if(flags & DISCONNECT_FLAG){
-                status.res_index = nullptr;
-                status.res_ptr = nullptr;
+                res_ptr = std::weak_ptr<Responser>();
+                res_index = nullptr;
             }
             return;
         }else if(errcode == CONNECT_TIMEOUT){
-            LOGD(DVPN, "write icmp unreachable msg: %s\n", key->getString("<-"));
-            Ip pac_return(IPPROTO_ICMP, &key->dst, &key->src);
-            pac_return.icmp
-                ->settype(ICMP_UNREACH)
-                ->setcode(ICMP_UNREACH_HOST);
+            std::shared_ptr<Ip> pac_return;
+            if(key.version() == 4){
+                LOGD(DVPN, "write icmp unreachable msg: %s\n", key.getString("<-"));
+                pac_return = MakeIp(IPPROTO_ICMP, &key.dst, &key.src);
+                pac_return->icmp
+                    ->settype(ICMP_UNREACH)
+                    ->setcode(ICMP_UNREACH_HOST);
+            }else{
+                LOGD(DVPN, "write icmpv6 unreachable msg: %s\n", key.getString("<-"));
+                pac_return = MakeIp(IPPROTO_ICMPV6, &key.dst, &key.src);
+                pac_return->icmp6
+                    ->settype(ICMP6_DST_UNREACH)
+                    ->setcode(ICMP6_DST_UNREACH_ADDR);
+            }
 
-            sendPkg(&pac_return, (const void*)status.packet, status.packet_len);
+            nanny->sendPkg(pac_return, (const void*)packet, packet_len);
         }else{
-            LOGD(DVPN, "write rst packet: %s\n",  key->getString("<-"));
-            Ip pac_return(IPPROTO_TCP, &key->dst, &key->src);
-            pac_return.tcp
+            LOGD(DVPN, "write rst packet: %s\n",  key.getString("<-"));
+            auto pac_return = MakeIp(IPPROTO_TCP, &key.dst, &key.src);
+            pac_return->tcp
                 ->setseq(tcpStatus->send_seq)
                 ->setack(tcpStatus->want_seq)
                 ->setwindow(0)
                 ->setflag(TH_RST | TH_ACK);
 
-            sendPkg(&pac_return, (const void*)nullptr, 0);
+            nanny->sendPkg(pac_return, (const void*)nullptr, 0);
         }
     }
-    if(key->protocol == Protocol::UDP){
+    if(key.protocol == Protocol::UDP){
         if(errcode){
-            LOGD(DVPN, "write icmp unreachable msg: %s\n", key->getString("<-"));
-            Ip pac_return(IPPROTO_ICMP, &key->dst, &key->src);
-            pac_return.icmp
-                ->settype(ICMP_UNREACH)
-                ->setcode(ICMP_UNREACH_PORT);
+            std::shared_ptr<Ip> pac_return;
+            if(key.version() == 4){
+                LOGD(DVPN, "write icmp unreachable msg: %s\n", key.getString("<-"));
+                pac_return = MakeIp(IPPROTO_ICMP, &key.dst, &key.src);
+                pac_return->icmp
+                    ->settype(ICMP_UNREACH)
+                    ->setcode(ICMP_UNREACH_PORT);
+            }else{
+                LOGD(DVPN, "write icmp6 unreachable msg: %s\n", key.getString("<-"));
+                pac_return = MakeIp(IPPROTO_ICMPV6, &key.dst, &key.src);
+                pac_return->icmp6
+                    ->settype(ICMP6_DST_UNREACH)
+                    ->setcode(ICMP6_DST_UNREACH_ADDR);
+            }
 
-            sendPkg(&pac_return, (const void *)status.packet, status.packet_len);
+            nanny->sendPkg(pac_return, (const void *)packet, packet_len);
         }
     }
-    if(key->protocol == Protocol::ICMP){
+    if(key.protocol == Protocol::ICMP){
         //ignore it.
     }
     if(errcode || (flags & DISCONNECT_FLAG)){
-        cleanKey(key);
+        deleteLater(errcode);
     }
 }
 
-int Guest_vpn::aged(VpnStatus* status){
-    LOGD(DVPN, "%s aged.\n", status->key->getString("-"));
-    finish(VPN_AGED_ERR, status->key);
+int Guest_vpn::aged(){
+    LOGD(DVPN, "%s aged.\n", key.getString("-"));
+    finish(VPN_AGED_ERR, &key);
     return 0;
 }
 
-const char * Guest_vpn::getProg(const void* index) const{
-    const VpnKey* key = (const VpnKey*)index;
-    std::ifstream netfile;
-    if(key->protocol == Protocol::TCP){
-        netfile.open("/proc/net/tcp");
-    }
-    if(key->protocol == Protocol::UDP){
-        netfile.open("/proc/net/udp");
-    }
-    if(key->protocol == Protocol::ICMP){
-        netfile.open("/proc/net/icmp");
-    }
-    if(netfile.good()) {
-        std::string line;
-        std::getline(netfile, line); //drop the title line
-        while (std::getline(netfile, line)) {
-            uint32_t srcip, dstip;
-            unsigned int srcport, dstport;
-            int uid = 0;
-            ino_t inode = 0;
-            sscanf(line.c_str(), "%*d: %x:%x %x:%x %*x %*x:%*x %*d:%*x %*d %d %*d %lu",
-                                &srcip, &srcport, &dstip, &dstport, &uid, &inode);
-            if(key->src.addr_in.sin_port == htons(srcport) &&(
-                (key->protocol == Protocol::ICMP) ||
-                (key->dst.addr_in.sin_addr.s_addr == dstip &&
-                key->dst.addr_in.sin_port == htons(dstport))))
-            {
-#ifndef __ANDROID__
-                return findprogram(inode);
-#else
-                return getPackageName(uid);
-#endif
-            }
-        }
-    }
-    std::ifstream net6file;
-    if(key->protocol == Protocol::TCP){
-        net6file.open("/proc/net/tcp6");
-    }
-    if(key->protocol == Protocol::UDP){
-        net6file.open("/proc/net/udp6");
-    }
-    if(key->protocol == Protocol::ICMP){
-        netfile.open("/proc/net/icmp6");
-    }
-    if(net6file.good()) {
-        std::string line;
-        std::getline(net6file, line); //drop the title line
-        while (std::getline(net6file, line)) {
-            unsigned int srcport, dstport;
-            int uid = 0;
-            ino_t inode = 0;
-            uint32_t srcip[4], dstip[4];
-            sscanf(line.c_str(), "%*d: %8X%8X%8X%8X:%X %8X%8X%8X%8X:%X %*x %*x:%*x %*d:%*x %*d %d %*d %lu",
-                                srcip, srcip+1, srcip+2, srcip+3, &srcport,
-                                dstip, dstip+1, dstip+2, dstip+3, &dstport, &uid, &inode);
-            if(key->src.addr_in.sin_port == htons(srcport) &&
-                key->dst.addr_in.sin_addr.s_addr == dstip[3] &&
-                key->dst.addr_in.sin_port == htons(dstport))
-            {
-#ifndef __ANDROID__
-                return findprogram(inode);
-#else
-                return getPackageName(uid);
-#endif
-            }
-        }
-    }
-    LOGD(DVPN, "Get src failed for %s %08X:%04X %08X:%04X\n",
-                    protstr(key->protocol),
-                    key->src.addr_in.sin_addr.s_addr,
-                    ntohs(key->src.addr_in.sin_port),
-                    key->dst.addr_in.sin_addr.s_addr,
-                    ntohs(key->dst.addr_in.sin_port));
-    return "Unkown inode";
-}
 
 const char * Guest_vpn::getsrc(const void* index){
-    const VpnKey *key = (const VpnKey*)index;
+    assert(index == &key);
     static char src[INET6_ADDRSTRLEN + 6];
     snprintf(src, sizeof(src), "%s:%d",
-             FDns::getRdns(&key->src.addr_in.sin_addr).c_str(),
-             ntohs(key->src.addr_in.sin_port));
+             FDns::getRdns(key.src).c_str(), ntohs(key.src.addr_in.sin_port));
     return src;
 }
 
-const char* Guest_vpn::generateUA(const VpnKey *key) {
-    static char UA[URLLIMIT];
-#ifndef __ANDROID__
-    sprintf(UA, "Sproxy/1.0 (%s) %s", getDeviceInfo(), getProg(key));
-#else
-    sprintf(UA, "Sproxy/%s (%s) %s", version, getDeviceName(), getProg(key));
-#endif
-    return UA;
-}
 
-static const char* dump_vpnStatus(const VpnStatus* status){
+static const char* dump_vpnStatus(const VpnKey& key, void* protocol_info){
     static char buff[URLLIMIT];
-    int len = sprintf(buff, "%p: %p, %p", status->key, status->res_ptr, status->res_index);
-    switch(status->key->protocol){
+    switch(key.protocol){
     case TCP:{
-        TcpStatus* tcp = (TcpStatus*)status->protocol_info;
-        sprintf(buff+len, " [%d %d]", tcp->window, tcp->status);
+        TcpStatus* tcp = (TcpStatus*)protocol_info;
+        sprintf(buff, " [%d %d]", tcp->window, tcp->status);
         break;
     }
     case ICMP:{
-        IcmpStatus* icmp = (IcmpStatus *)status->protocol_info;
-        sprintf(buff+len, " [%d %d]", icmp->id, icmp->seq);
+        IcmpStatus* icmp = (IcmpStatus *)protocol_info;
+        sprintf(buff, " [%d %d]", icmp->id, icmp->seq);
     }
     default:
         break;
@@ -840,9 +959,10 @@ static const char* dump_vpnStatus(const VpnStatus* status){
 }
 
 void Guest_vpn::dump_stat(Dumper dp, void* param) {
-    dp(param, "Guest_vpn %p (%zd):\n", this, 4*1024*1024 - rwer->wlength());
-    for(auto i: statusmap){
-        dp(param, "%s %s\n", i.first.getString("-"), dump_vpnStatus(&i.second));
+    if(res_ptr.expired()){
+        dp(param, "Guest_vpn %p: %s %s, %p, %p\n", this,
+           key.getString("-"), dump_vpnStatus(key, protocol_info), res_ptr.lock().get(), res_index);
+    }else{
+        dp(param, "Guest_vpn %p: %s %s\n", this, key.getString("-"), dump_vpnStatus(key, protocol_info));
     }
 }
-

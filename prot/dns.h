@@ -67,6 +67,7 @@ public:
     uint32_t  ttl = 0;
     explicit Dns_Rr(const char* domain);
     explicit Dns_Rr(const char* domain, const in_addr* addr);
+    explicit Dns_Rr(const char* domain, const in6_addr* addr);
     explicit Dns_Rr(const char* buff, size_t len);
     int build(const Dns_Que* query, unsigned char *buf)const;
     static int buildError(const Dns_Que* query, unsigned char errcode, unsigned char *buf);

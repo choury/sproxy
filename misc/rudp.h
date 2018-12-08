@@ -1,7 +1,8 @@
 #ifndef RUDP_H__
 #define RUDP_H__
 
-#include "base.h"
+#include "common.h"
+#include "prot/rwer.h"
 #include "misc/index.h"
 
 #include <list>
@@ -65,7 +66,7 @@ class RudpRWer: public RWer {
     uint32_t flags = 0;
 
     void connected();
-    void defaultHE(uint32_t events);
+    void defaultHE(RW_EVENT events);
 
     int send();
     int ack();
@@ -87,7 +88,7 @@ public:
     virtual const char *data() override;
     virtual void consume(const char* data, size_t l) override;
 
-    static void Dnscallback(RudpRWer* rwer, const char*, std::list<sockaddr_un> addrs);
+    static void Dnscallback(void* param, const char*, std::list<sockaddr_un> addrs);
 };
 
 
@@ -98,11 +99,11 @@ class Rudp_server: public Ep {
     unsigned char buff[RUDP_MTU];
     uint32_t Maxid = 0;
     Index2<int, sockaddr_un, RudpRWer*> connections;
-    virtual void defaultHE(uint32_t events);
+    virtual void defaultHE(RW_EVENT events);
 public:
     explicit Rudp_server(int fd, uint16_t port): Ep(fd), port(port){
-        setEpoll(EPOLLIN);
-        handleEvent = (void (Ep::*)(uint32_t))&Rudp_server::defaultHE;
+        setEvents(RW_EVENT::READ);
+        handleEvent = (void (Ep::*)(RW_EVENT))&Rudp_server::defaultHE;
     }
     void evict(int id);
     virtual void dump_stat(){

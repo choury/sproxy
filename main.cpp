@@ -39,28 +39,21 @@ static const char *key = nullptr;
 
 template<class T>
 class Http_server: public Ep{
-    virtual void defaultHE(uint32_t events){
-        if (events & EPOLLERR || events & EPOLLHUP) {
-            LOGE("Http server: %d\n", Checksocket(fd, __PRETTY_FUNCTION__));
+    virtual void defaultHE(RW_EVENT events){
+        if (!!(events & RW_EVENT::ERROR)) {
+            LOGE("Http server: %d\n", checkSocket(__PRETTY_FUNCTION__));
             return;
         }
-        if (events & EPOLLIN) {
+        if (!!(events & RW_EVENT::READ)) {
             int clsk;
             struct sockaddr_in6 myaddr;
             socklen_t temp = sizeof(myaddr);
-            if ((clsk = accept(fd, (struct sockaddr*)&myaddr, &temp)) < 0) {
+            if ((clsk = accept(getFd(), (struct sockaddr*)&myaddr, &temp)) < 0) {
                 LOGE("accept error:%s\n", strerror(errno));
                 return;
             }
 
-            int flags = fcntl(clsk, F_GETFL, 0);
-            if (flags < 0) {
-                LOGE("fcntl error:%s\n", strerror(errno));
-                close(clsk);
-                return;
-            }
-
-            fcntl(clsk, F_SETFL, flags | O_NONBLOCK);
+            SetTcpOptions(clsk);
             new T(clsk, (const sockaddr_un*)&myaddr);
         } else {
             LOGE("unknown error\n");
@@ -68,8 +61,8 @@ class Http_server: public Ep{
     }
 public:
     explicit Http_server(int fd):Ep(fd){
-        setEpoll(EPOLLIN);
-        handleEvent = (void (Ep::*)(uint32_t))&Http_server::defaultHE;
+        setEvents(RW_EVENT::READ);
+        handleEvent = (void (Ep::*)(RW_EVENT))&Http_server::defaultHE;
     }
     virtual void dump_stat(){
         LOG("Http_server %p\n", this);
@@ -78,28 +71,21 @@ public:
 
 class Https_server: public Ep {
     SSL_CTX *ctx;
-    virtual void defaultHE(uint32_t events) {
-        if (events & EPOLLERR || events & EPOLLHUP) {
-            LOGE("Https server: %d\n", Checksocket(fd, __PRETTY_FUNCTION__));
+    virtual void defaultHE(RW_EVENT events) {
+        if (!!(events & RW_EVENT::ERROR)) {
+            LOGE("Https server: %d\n", checkSocket(__PRETTY_FUNCTION__));
             return;
         }
-        if (events & EPOLLIN) {
+        if (!!(events & RW_EVENT::READ)) {
             int clsk;
             struct sockaddr_in6 myaddr;
             socklen_t temp = sizeof(myaddr);
-            if ((clsk = accept(fd, (struct sockaddr *)&myaddr, &temp)) < 0) {
+            if ((clsk = accept(getFd(), (struct sockaddr *)&myaddr, &temp)) < 0) {
                 LOGE("accept error:%s\n", strerror(errno));
                 return;
             }
 
-            int flags = fcntl(clsk, F_GETFL, 0);
-            if (flags < 0) {
-                LOGE("fcntl error:%s\n", strerror(errno));
-                close(clsk);
-                return;
-            }
-            fcntl(clsk, F_SETFL, flags | O_NONBLOCK);
-
+            SetTcpOptions(clsk);
             new Guest(clsk, (const sockaddr_un*)&myaddr, ctx);
         } else {
             LOGE("unknown error\n");
@@ -111,8 +97,8 @@ public:
         SSL_CTX_free(ctx);
     };
     Https_server(int fd, SSL_CTX *ctx): Ep(fd),ctx(ctx) {
-        setEpoll(EPOLLIN);
-        handleEvent = (void (Ep::*)(uint32_t))&Https_server::defaultHE;
+        setEvents(RW_EVENT::READ);
+        handleEvent = (void (Ep::*)(RW_EVENT))&Https_server::defaultHE;
     }
     virtual void dump_stat(){
         LOG("Https_server %p\n", this);
@@ -137,7 +123,7 @@ static int select_alpn_cb(SSL *ssl,
         proset.insert(std::string((const char *)p, len));
         p += len;
     }
-    if (proset.count("h2")) {
+    if (use_http2 && proset.count("h2")) {
         *out = (unsigned char *)"h2";
         *outlen = strlen((char *)*out);
         return SSL_TLSEXT_ERR_OK;
@@ -167,7 +153,7 @@ static int verify_cookie(SSL *ssl, const unsigned char *cookie, unsigned int coo
 #endif
     struct sockaddr_in6 myaddr;
     (void)BIO_dgram_get_peer(SSL_get_rbio(ssl), &myaddr);
-    return strncmp((char *)cookie, getaddrstring((sockaddr_un *)&myaddr), cookie_len)==0;
+    return strncmp((char *)cookie, getaddrportstring((sockaddr_un *)&myaddr), cookie_len)==0;
 }
 
 void ssl_callback_ServerName(SSL *ssl){
@@ -194,7 +180,7 @@ static struct option long_options[] = {
     {"secret",      required_argument, 0, 's'},
     {"sni",         no_argument,       0,  0 },
 #ifndef NDEBUG
-    {"debug-epoll", no_argument,   0,  0 },
+    {"debug-event", no_argument,   0,  0 },
     {"debug-dns",   no_argument,   0,  0 },
     {"debug-http2", no_argument,   0,  0 },
     {"debug-job",   no_argument,   0,  0 },
@@ -218,11 +204,11 @@ const char *option_detail[] = {
     "Private key file name (ssl)",
     "The port to listen, default is 80 but 443 for ssl/sni",
     "rewrite the auth info (user:password) to proxy server",
-    "RUDP modle (experiment)",
+    "RUDP modle (experiment, will be replaced by quic)",
     "Set a user and passwd for proxy (user:password), default is none.",
     "Act as a sni proxy",
 #ifndef NDEBUG
-    "debug-epoll",
+    "debug-event",
     "\tdebug-dns",
     "debug-http2",
     "\tdebug-job",
@@ -339,9 +325,9 @@ static int parseConfig(int argc, char **argv){
             }else if(strcmp(long_options[option_index].name, "rudp") == 0){
                 rudp_mode = 1;
                 printf("long option rudp\n");
-            }else if(strcmp(long_options[option_index].name, "debug-epoll") == 0){
-                debug |= DEPOLL;
-                printf("long option debug-epoll\n");
+            }else if(strcmp(long_options[option_index].name, "debug-event") == 0){
+                debug |= DEVENT;
+                printf("long option debug-event\n");
             }else if(strcmp(long_options[option_index].name, "debug-dns") == 0){
                 debug |= DDNS;
                 printf("long option debug-dns\n");
@@ -437,14 +423,21 @@ int main(int argc, char **argv) {
     signal(SIGABRT, dump_trace);
     signal(SIGSEGV, dump_stat);
     signal(SIGUSR1, dump_stat);
-#ifndef NODEBUG
+#ifndef NDEBUG
     signal(SIGUSR2, exit);
 #endif
     reloadstrategy();
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
+#if __linux__
     efd = epoll_create(10000);
+#elif __APPLE__
+    efd = kqueue();
+#else
+#error "Only macOS and linux are supported"
+#endif
     setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
+    openlog("sproxy", LOG_PID | LOG_PERROR, LOG_LOCAL0);
     if (daemon_mode && daemon(1, 0) < 0) {
         fprintf(stderr, "start daemon error:%s\n", strerror(errno));
         return -1;
@@ -481,24 +474,45 @@ int main(int argc, char **argv) {
             new Http_server<Guest>(svsk_http);
         }
     }
+    srand(time(0));
     LOG("Accepting connections ...\n");
     while (1) {
         int c;
+#if __linux__
         struct epoll_event events[200];
-        if ((c = epoll_wait(efd, events, 200, do_delayjob())) < 0) {
-            if (errno != EINTR) {
-                perror("epoll wait");
+        if ((c = epoll_wait(efd, events, 200, do_delayjob())) <= 0) {
+            if (c != 0 && errno != EINTR) {
+                LOGE("epoll_wait: %s\n", strerror(errno));
                 return 6;
             }
             continue;
         }
         do_prejob();
         for (int i = 0; i < c; ++i) {
+            LOGD(DEVENT, "handle event %s\n", events_string[int(convertEpoll(events[i].events))]);
             Ep *ep = (Ep *)events[i].data.ptr;
-            (ep->*ep->handleEvent)(events[i].events);
+            (ep->*ep->handleEvent)(convertEpoll(events[i].events));
         }
+#endif
+#if __APPLE__
+        struct kevent events[200];
+        uint32_t msec = do_delayjob();
+        struct timespec timeout{msec/1000, (msec%1000)*1000000};
+        if((c = kevent(efd, NULL, 0, events, 200, &timeout)) <= 0){
+            if (c != 0 && errno != EINTR) {
+                LOGE("kevent: %s\n", strerror(errno));
+                return 6;
+            }
+            continue;
+        }
+        do_prejob();
+        for(int i = 0; i < c; ++i){
+            LOGD(DEVENT, "handle event %lu: %s\n", events[i].ident, events_string[int(convertKevent(events[i]))]);
+            Ep *ep = (Ep*)events[i].udata;
+            (ep->*ep->handleEvent)(convertKevent(events[i]));
+        }
+#endif
         do_postjob();
     }
     return 0;
 }
-

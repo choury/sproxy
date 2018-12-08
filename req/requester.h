@@ -17,7 +17,7 @@ public:
     virtual const char *getsrc(const void* index) = 0;
     virtual const char *getip();
     virtual void response(HttpResHeader* res) = 0;
-    virtual void transfer(void* index, Responser* res_ptr, void* res_index) = 0;
+    virtual void transfer(void* index, std::weak_ptr<Responser> res_ptr, void* res_index) = 0;
 };
 
 #endif

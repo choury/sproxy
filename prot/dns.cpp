@@ -37,7 +37,7 @@ std::vector<Dns_srv *> srvs;
 
 struct Dns_Req{
     DNSCBfunc func;
-    void *param;
+    void*     param;
 };
 
 struct Dns_Rcd{
@@ -146,8 +146,9 @@ static int dnsinit() {
 
 void flushdns(){
     while(!srvs.empty()){
-        delete srvs.front();
+        srvs.front()->deleteLater(0);
     }
+    srvs.clear();
     for(auto i = rcd_cache.begin(); i != rcd_cache.end(); i = rcd_cache.erase(i)){
         assert(check_delayjob(std::bind(dns_expired, i->first), i->first.data()));
         del_delayjob(std::bind(dns_expired, i->first), i->first.data());
@@ -175,6 +176,13 @@ static void query(Dns_Status* dnsst){
         }
         delete dnsst;
         return;
+    }
+    if(dnsst->host[0] == '['){ //may be ipv6
+        char* end = strchr(dnsst->host, ']');
+        if(end){
+            *end = 0;
+            memmove(dnsst->host, dnsst->host+1, end - dnsst->host);
+        }
     }
 
     if (inet_pton(AF_INET6, dnsst->host, &addr.addr_in6.sin6_addr) == 1) {
@@ -222,7 +230,7 @@ static void query(Dns_Status* dnsst){
             break;
         }
         if(flags == 0){
-            delete srvs[i];
+            srvs[i]->deleteLater(0);
             return query(dnsst);
         }
     }
@@ -370,7 +378,7 @@ Dns_srv::Dns_srv(const char* name){
     }
     rwer = new PacketRWer(fd, [this](int ret, int code){
         LOGE("DNS error: %d/%d\n", ret, code);
-        delete this;
+        deleteLater(code);
     });
     rwer->SetReadCB([this](size_t len){
         const char* data = rwer->data();
@@ -456,7 +464,7 @@ void Dns_srv::buffHE(const char *buffer, size_t len) {
 int Dns_srv::query(const char *host, int type, uint32_t id) {
     unsigned char*  buf = (unsigned char*)p_malloc(BUF_SIZE);
     int len = Dns_Que(host, type, id).build(buf);
-    rwer->buffer_insert(rwer->buffer_end(), buf, len);
+    rwer->buffer_insert(rwer->buffer_end(), write_block{buf, (size_t)len, 0});
     return id;
 }
 
@@ -584,30 +592,30 @@ Dns_Que::Dns_Que(const char* buff, size_t len) {
     if(type == 12){
         std::string ptr = reverse(host);
         if(startwith(ptr.c_str(), IPV4_PTR_PREFIX)){
-            ptr = ptr.substr(sizeof(IPV4_PTR_PREFIX) - 1);
+            std::string ipstr = ptr.substr(sizeof(IPV4_PTR_PREFIX) - 1);
             ptr_addr.addr.sa_family = AF_INET;
-            if(inet_pton(AF_INET, ptr.c_str(), &ptr_addr.addr_in.sin_addr) != 1){
-                LOGE("[DNS] wrong ptr format: %s", host.c_str());
+            if(inet_pton(AF_INET, ipstr.c_str(), &ptr_addr.addr_in.sin_addr) != 1){
+                LOGE("[DNS] wrong ptr format: %s\n", host.c_str());
                 return;
             }
         }else if(startwith(ptr.c_str(), IPV6_PTR_PREFIX)){
             ptr = ptr.substr(sizeof(IPV6_PTR_PREFIX) - 1);
-            host.clear();
-            for(size_t i = 0; i< ptr.length(); i++){
+            std::string ipstr;
+            for(size_t i = 1; i<= ptr.length(); i++){
                 if(i&1){
-                    host += ptr[i];
+                    ipstr += ptr[i-1];
                 }
                 if(i%8 == 0){
-                    host += ':';
+                    ipstr += ':';
                 }
             }
             ptr_addr.addr.sa_family = AF_INET6;
-            if(inet_pton(AF_INET6, ptr.c_str(), &ptr_addr.addr_in6.sin6_addr) != 1){
-                LOGE("[DNS] wrong ptr format: %s", host.c_str());
+            if(inet_pton(AF_INET6, ipstr.c_str(), &ptr_addr.addr_in6.sin6_addr) != 1){
+                LOGE("[DNS] wrong ptr format: %s\n", host.c_str());
                 return;
             }
         }else{
-            LOGE("unkown ptr request: %s", host.c_str());
+            LOGE("unkown ptr request: %s\n", host.c_str());
         }
     }
 }
@@ -703,10 +711,21 @@ Dns_Rr::Dns_Rr(const char *domain, const in_addr* addr){
     if(addr) {
         sockaddr_un ip;
         ip.addr_in.sin_family = AF_INET;
-        memcpy(&ip.addr_in.sin_addr, addr, sizeof(in_addr));
+        ip.addr_in.sin_addr = *addr;
         addrs.push_back(ip);
     }
 }
+
+Dns_Rr::Dns_Rr(const char *domain, const in6_addr* addr){
+    strcpy(this->domain, domain);
+    if(addr) {
+        sockaddr_un ip;
+        ip.addr_in.sin_family = AF_INET6;
+        ip.addr_in6.sin6_addr = *addr;
+        addrs.push_back(ip);
+    }
+}
+
 
 Dns_Rr::Dns_Rr(const char *domain) {
     strcpy(this->domain, domain);

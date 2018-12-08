@@ -32,6 +32,19 @@ static inline int noafter(uint32_t seq1, uint32_t seq2)
 #define after(seq2, seq1) before(seq1, seq2)
 #define nobefore(seq2, seq1) noafter(seq1, seq2)
 
+static uint8_t checksum8(uint8_t *addr, int len) {
+    uint8_t sum = 0;
+
+    while (len) {
+        sum += *addr++;
+        len --;
+    }
+
+    return ~(uint8_t)sum;
+}
+
+
+
 class TTL{
     std::queue<std::pair<uint32_t, uint32_t>> data;
     uint32_t sum = 0;
@@ -61,7 +74,7 @@ uint32_t TTL::getsum(uint32_t now) {
 }
 
 
-RudpRWer::RudpRWer(int fd, uint32_t id, Rudp_server* ord):RWer(nullptr, fd),id(id), ord(ord) {
+RudpRWer::RudpRWer(int fd, uint32_t id, Rudp_server* ord):RWer(nullptr, nullptr, fd),id(id), ord(ord) {
     read_seqs.push_back(std::make_pair(0,0));
     tick_time = data_time = ack_time = getmtime();
     recv_pkgs = new TTL();
@@ -72,7 +85,7 @@ RudpRWer::RudpRWer(int fd, uint32_t id, Rudp_server* ord):RWer(nullptr, fd),id(i
 
 RudpRWer::RudpRWer(const char* hostname, uint16_t port):RWer(nullptr), port(port){
     strcpy(this->hostname, hostname);
-    query(hostname, (DNSCBfunc)RudpRWer::Dnscallback, this);
+    query(hostname, RudpRWer::Dnscallback, this);
     read_seqs.push_back(std::make_pair(0,0));
     tick_time = data_time = ack_time = getmtime();
     recv_pkgs = new TTL();
@@ -81,11 +94,12 @@ RudpRWer::RudpRWer(const char* hostname, uint16_t port):RWer(nullptr), port(port
 }
 
 void RudpRWer::connected(){
-    setEpoll(EPOLLIN | EPOLLOUT);
-    handleEvent = (void (Ep::*)(uint32_t))&RudpRWer::defaultHE;
+    setEvents(RW_EVENT::READWRITE);
+    handleEvent = (void (Ep::*)(RW_EVENT))&RudpRWer::defaultHE;
 }
 
-void RudpRWer::Dnscallback(RudpRWer* rwer, const char* hostname, std::list<sockaddr_un> addrs) {
+void RudpRWer::Dnscallback(void* param, const char* hostname, std::list<sockaddr_un> addrs) {
+    RudpRWer* rwer = static_cast<RudpRWer*>(param);
     if(addrs.empty()){
         LOGE("[RUDP] dns query failed: %s\n", hostname);
         return rwer->errorCB(DNS_FAILED, 0);
@@ -94,7 +108,7 @@ void RudpRWer::Dnscallback(RudpRWer* rwer, const char* hostname, std::list<socka
         i.addr_in6.sin6_port = htons(rwer->port);
         int fd = Connect(&i, SOCK_DGRAM);
         if(fd > 0){
-            rwer->fd = fd;
+            rwer->setFd(fd);
             memcpy(&rwer->addr, &i, sizeof(sockaddr_un));
             rwer->connected();
             return;
@@ -110,7 +124,7 @@ RudpRWer::~RudpRWer(){
     del_delayjob(std::bind(&RudpRWer::send, this), this);
     del_delayjob(std::bind(&RudpRWer::ack, this), this);
     del_postjob(std::bind(&RudpRWer::send, this), this);
-    query_cancel(hostname, (DNSCBfunc)RudpRWer::Dnscallback, this);
+    query_cancel(hostname, RudpRWer::Dnscallback, this);
     delete recv_pkgs;
     free(read_buff);
     free(write_buff);
@@ -123,9 +137,8 @@ bool RudpRWer::supportReconnect() {
 void RudpRWer::Reconnect() {
     int fd = Connect(&addr, SOCK_DGRAM);
     if(fd > 0){
-        close(this->fd);
-        this->fd = fd;
-        setEpoll(EPOLLIN | EPOLLOUT);
+        setFd(fd);
+        setEvents(RW_EVENT::READWRITE);
     }
 }
 
@@ -188,7 +201,7 @@ void RudpRWer::handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats)
         this->id = id;
         LOG("[RUDP] get new id: %d\n", id);
         if(connectCB){
-            connectCB();
+            connectCB(&addr);
         }
     }
 
@@ -318,9 +331,9 @@ void RudpRWer::finish_recv(Rudp_stats* stats){
     }
 }
 
-void RudpRWer::defaultHE(uint32_t events) {
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        Checksocket(fd, __PRETTY_FUNCTION__);
+void RudpRWer::defaultHE(RW_EVENT events) {
+    if (!!(events & RW_EVENT::ERROR)) {
+        checkSocket(__PRETTY_FUNCTION__);
     }
     if(flags & RUDP_SEND_TIMEOUT) {
         errorCB(SOCKET_ERR, ETIMEDOUT);
@@ -330,15 +343,15 @@ void RudpRWer::defaultHE(uint32_t events) {
         errorCB(SOCKET_ERR, ECONNRESET);
         return;
     }
-    if(events & EPOLLRDHUP){
-        delEpoll(EPOLLIN);
+    if(!!(events & RW_EVENT::READEOF)){
+        delEvents(RW_EVENT::READ);
         errorCB(READ_ERR, 0);
-    }else if(events & EPOLLIN){
+    }else if(!!(events & RW_EVENT::READ)){
         assert(!read_seqs.empty());
         Rudp_stats stats;
         int ret;
         unsigned char buff[RUDP_MTU];
-        while((ret = read(fd, buff, RUDP_MTU)) > 0){
+        while((ret = read(getFd(), buff, RUDP_MTU)) > 0){
             Rudp_head *head = (Rudp_head *)buff;
             handle_pkg(head, ret, &stats);
         }
@@ -348,10 +361,10 @@ void RudpRWer::defaultHE(uint32_t events) {
         }
         finish_recv(&stats);
     }
-    if(events & EPOLLOUT){
+    if(!!(events & RW_EVENT::WRITE)){
         size_t writed = 0;
-        while(wb.length()){
-            int ret = wb.Write(std::bind(&RudpRWer::Write, this, _1, _2));
+        while(wbuff.length()){
+            int ret = wbuff.Write(std::bind(&RudpRWer::Write, this, _1, _2));
             assert(ret != 0);
             if(ret > 0){
                 writed += ret;
@@ -369,8 +382,8 @@ void RudpRWer::defaultHE(uint32_t events) {
             add_postjob(std::bind(&RudpRWer::send, this), this);
             del_delayjob(std::bind(&RudpRWer::send, this), this);
         }
-        if(wb.length() == 0){
-            delEpoll(EPOLLOUT);
+        if(wbuff.length() == 0){
+            delEvents(RW_EVENT::WRITE);
         }
     }
 }
@@ -506,7 +519,7 @@ int RudpRWer::ack() {
     }
     size_t len = (unsigned char*)gaps-buff;
     head->checksum = checksum8(buff, len);
-    if(write(fd, buff, len) <= 0){
+    if(write(getFd(), buff, len) <= 0){
         LOGE("[RUDP] write: %s\n", strerror(errno));
         Reconnect();
     }
@@ -529,7 +542,7 @@ uint32_t RudpRWer::send_pkg(uint32_t seq, uint32_t window, size_t len) {
     memcpy(head+1, write_buff + from, l);
     memcpy((char *)(head+1) + l, write_buff, len - l);
     head->checksum = checksum8((uchar*)head, len + sizeof(Rudp_head));
-    if(write(fd, buff, len + sizeof(Rudp_head)) <= 0){
+    if(write(getFd(), buff, len + sizeof(Rudp_head)) <= 0){
         LOGE("[RUDP] write: %s\n", strerror(errno));
         Reconnect();
     }
@@ -537,11 +550,11 @@ uint32_t RudpRWer::send_pkg(uint32_t seq, uint32_t window, size_t len) {
 }
 
 int RudpRWer::PushPkg(const Rudp_head* pkg, size_t len, const sockaddr_un* addr) {
-    if(connect(fd, &addr->addr, sizeof(sockaddr_un))){
+    if(connect(getFd(), &addr->addr, sizeof(sockaddr_un))){
         errorCB(CONNECT_FAILED, errno);
         return 0;
     }
-    setEpoll(EPOLLIN | EPOLLOUT);
+    setEvents(RW_EVENT::READWRITE);
     memcpy(&this->addr, addr, sizeof(sockaddr_un));
     Rudp_stats stats;
     handle_pkg(pkg, len, &stats);
@@ -561,16 +574,16 @@ bool operator< (const sockaddr_un a, const sockaddr_un b){
 
 #ifndef __ANDROID__
 
-void Rudp_server::defaultHE(uint32_t events){
-    if (events & EPOLLERR || events & EPOLLHUP) {
-        LOGE("Rudp server: %d\n", Checksocket(fd, __PRETTY_FUNCTION__));
+void Rudp_server::defaultHE(RW_EVENT events){
+    if (!!(events & RW_EVENT::ERROR)) {
+        LOGE("Rudp server: %d\n", checkSocket(__PRETTY_FUNCTION__));
         return;
     }
-    if(events & EPOLLIN){
+    if(!!(events & RW_EVENT::READ)){
         sockaddr_un addr;
         socklen_t addr_len = sizeof(addr);
         int ret;
-        while((ret = recvfrom(fd, buff, RUDP_MTU, 0, (struct sockaddr*)&addr, &addr_len)) > 0){
+        while((ret = recvfrom(getFd(), buff, RUDP_MTU, 0, (struct sockaddr*)&addr, &addr_len)) > 0){
             if(checksum8(buff, ret)){
                 LOGD(DRUDP, "drop error checksum packet!\n");
                 return;
@@ -583,7 +596,7 @@ void Rudp_server::defaultHE(uint32_t events){
                     head->type = RUDP_TYPE_RESET;
                     head->checksum = 0;
                     head->checksum = checksum8((uchar*)head, sizeof(Rudp_head));
-                    sendto(fd, head, sizeof(Rudp_head), 0, (struct sockaddr*)&addr, addr_len);
+                    sendto(getFd(), head, sizeof(Rudp_head), 0, (struct sockaddr*)&addr, addr_len);
                     continue;
                 }
                 LOG("[RUDP] connection %d addr changed\n", id);

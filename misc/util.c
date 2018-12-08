@@ -10,15 +10,19 @@
 #include <signal.h>
 #include <dirent.h>
 #include <libgen.h>
-#include <sys/time.h>
-#include <sys/prctl.h>
 #include <sys/utsname.h>
+#ifndef __APPLE__
+#include <sys/prctl.h>
+#else
+#include <pthread.h>
+#endif
 
 
-#define PRIOR_HEAD 48
+#define PRIOR_HEAD 80
 
 char **main_argv;
     
+#ifndef __APPLE__
 /**
  * strnstr - Find the first substring in a length-limited string
  * @s1: The string to be searched
@@ -40,6 +44,7 @@ const char* strnstr(const char* s1, const char* s2, size_t len)
     }
     return NULL;
 }
+#endif
 
 int startwith(const char *s1, const char *s2) {
     size_t l1 = strlen(s1);
@@ -112,7 +117,7 @@ int spliturl(const char* url, char *protocol, char* hostname, char* path , uint1
             return -1;
         }
 
-        strncpy(hostname, tmpaddr + 1, addrsplit - tmpaddr - 1);
+        strncpy(hostname, tmpaddr, addrsplit - tmpaddr + 1);
 
         if (addrsplit[1] == ':') {
             if (sscanf(addrsplit + 2, "%hd", port) != 1)
@@ -243,49 +248,7 @@ void Base64Encode(const char *s, size_t len, char *dst){
     dst[j++] = 0;
 }
 
-/**
-  * calculate checksum in ip/tcp header
-  */
-uint16_t checksum16(uint8_t *addr, int len) {
-    long sum = 0;
 
-    while (len > 1) {
-        sum += (*addr++) << 8;
-        sum += *addr++;
-        len -= 2;
-    }
-    if (len > 0)
-        sum += (*addr)<<8;
-
-    while (sum >> 16)
-        sum = (sum & 0xffff) + (sum >> 16);
-
-    return ~(uint16_t)sum;
-}
-
-uint8_t checksum8(uint8_t *addr, int len) {
-    uint8_t sum = 0;
-
-    while (len) {
-        sum += *addr++;
-        len --;
-    }
-
-    return ~(uint8_t)sum;
-}
-
-
-uint64_t getutime(){
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return tv.tv_sec * 1000000ull + tv.tv_usec;
-}
-
-uint32_t getmtime(){
-    struct timeval tv;
-    gettimeofday(&tv, 0);
-    return (tv.tv_sec * 1000ull + tv.tv_usec/1000)&0xFFFFFFFF;
-}
 
 const char * protstr(Protocol p) {
     if(p == TCP){
@@ -332,6 +295,7 @@ void* p_memdup(const void *ptr, size_t size){
     return dup;
 }
 
+
 void p_free(void* ptr){
     if(ptr == NULL)
         return;
@@ -353,11 +317,11 @@ char* p_avsprintf(size_t* size, const char* fmt, va_list ap){
 }
 
 void *p_move(void *ptr, signed char len){
-    unsigned char prior = *((unsigned char*)ptr-1);
+    signed char prior = *((unsigned char*)ptr-1);
     prior += len;
     assert(prior >= 1);
     ptr = (char *)ptr + len;
-    *((unsigned char *)ptr-1) = prior;
+    *((unsigned char *)ptr-1) = (unsigned char)prior;
     return ptr; 
 }
 
@@ -383,7 +347,11 @@ void slog(int level, const char* fmt, ...){
 }
 
 void change_process_name(const char *name){
+#ifdef __APPLE__
+    pthread_setname_np(name);
+#else
     prctl(PR_SET_NAME, name);
+#endif
     size_t len  = 0;
     int i;
     for(i = 0;main_argv[i]; i++){
@@ -395,7 +363,7 @@ void change_process_name(const char *name){
 
 const char* findprogram(ino_t inode){
     static char program[DOMAINLIMIT+1];
-    sprintf(program, "Unkown pid(%lu)", inode);
+    sprintf(program, "Unkown pid(%ju)", inode);
     int found = 0;
     DIR* dir = opendir("/proc");
     if(dir == NULL){
@@ -403,7 +371,7 @@ const char* findprogram(ino_t inode){
         return 0;
     }
     char socklink[20];
-    sprintf(socklink, "socket:[%lu]", inode);
+    sprintf(socklink, "socket:[%ju]", inode);
     struct dirent *ptr;
     while((ptr = readdir(dir)) != NULL && found == 0)
     {
@@ -452,6 +420,28 @@ const char* getDeviceInfo(){
     snprintf(infoString, sizeof(infoString), "%s %s; %s %s", info.sysname, info.machine, info.nodename, info.release);
     return infoString;
 }
+
+#ifndef s6_addr32
+#define	s6_addr32   __u6_addr.__u6_addr32
+#endif
+
+struct in6_addr mapIpv4(struct in_addr addr) {
+    struct in6_addr addr6;
+    memcpy(addr6.s6_addr, "\0\0\0\0\0\0\0\0\0\0\xff\xff", 12);
+    addr6.s6_addr32[3] = addr.s_addr;
+    return addr6;
+}
+
+struct in_addr getMapped(struct in6_addr addr) {
+    struct in_addr addr4;
+    if(memcmp(addr.s6_addr, "\0\0\0\0\0\0\0\0\0\0\xff\xff", 12) == 0){
+        addr4.s_addr = addr.s6_addr32[3];
+    }else{
+        addr4.s_addr = INADDR_NONE;
+    }
+    return addr4;
+}
+
 
 void dump_trace(int signum) {
 #if Backtrace_FOUND

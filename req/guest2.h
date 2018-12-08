@@ -5,7 +5,7 @@
 #include "prot/http2.h"
 
 struct ResStatus{
-    Responser *res_ptr;
+    std::weak_ptr<Responser> res_ptr;
     void*      res_index;
     int32_t remotewinsize; //对端提供的窗口大小，发送时减小，收到对端update时增加
     int32_t localwinsize; //发送给对端的窗口大小，接受时减小，给对端发送update时增加
@@ -33,7 +33,7 @@ protected:
 
     virtual std::list<write_block>::insert_iterator queue_head() override;
     virtual std::list<write_block>::insert_iterator queue_end() override;
-    virtual void queue_insert(std::list<write_block>::insert_iterator where, void* buff, size_t len) override;
+    virtual void queue_insert(std::list<write_block>::insert_iterator where, const write_block& wb) override;
 public:
     explicit Guest2(const char *ip, uint16_t port, RWer* rwer);
     explicit Guest2(const sockaddr_un* addr, RWer* rwer);
@@ -41,12 +41,12 @@ public:
     
 
     virtual int32_t bufleft(void* index)override;
-    virtual void Send(const void *buff, size_t size, void* index)override;
-    virtual void writedcb(void* index)override;
+    virtual void Send(const void* buff, size_t size, void* index)override;
+    virtual void writedcb(const void* index)override;
     virtual void finish(uint32_t flags, void* index)override;
     
     virtual void response(HttpResHeader* res)override;
-    virtual void transfer(void* index, Responser* res_ptr, void* res_index)override;
+    virtual void transfer(void* index, std::weak_ptr<Responser> res_ptr, void* res_index)override;
 
     virtual const char* getsrc(const void *)override;
     virtual void dump_stat(Dumper dp, void* param) override;

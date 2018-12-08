@@ -7,7 +7,7 @@
 #include <map>
 
 struct FDnsStatus{
-    Requester* req_ptr;
+    std::weak_ptr<Requester> req_ptr;
     void*      req_index;
     uint32_t   dns_id;
 };
@@ -16,7 +16,7 @@ class FDns: public Responser{
     std::map<int, FDnsStatus> statusmap;
     uint32_t req_id = 1;
 
-    virtual void writedcb(void* index) override;
+    virtual void writedcb(const void* index) override;
     virtual void deleteLater(uint32_t errcode) override;
 public:
     FDns();
@@ -29,9 +29,10 @@ public:
     virtual void finish(uint32_t flags, void* index)override;
 
     virtual void dump_stat(Dumper dp, void* param) override;
-    static FDns* getfdns();
-    static std::string getRdns(const struct in_addr* addr);
+    static std::weak_ptr<FDns> getfdns();
+    static std::string getRdns(const sockaddr_un& addr);
     static in_addr getInet(std::string hostname);
+    static in6_addr getInet6(std::string hostname);
 };
 
 #endif

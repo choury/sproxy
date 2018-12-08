@@ -20,7 +20,7 @@
 
 
 using std::string;
-static std::map<std::string, Cgi *> cgimap;
+static std::map<std::string, std::weak_ptr<Cgi>> cgimap;
 
 #define CGI_RETURN_DLOPEN_FAILED       1
 #define CGI_RETURN_DLSYM_FAILED        2
@@ -63,17 +63,18 @@ Cgi::Cgi(const char* fname, int sv[2]) {
     rwer->SetReadCB(std::bind(&Cgi::readHE, this, _1));
     rwer->SetWriteCB([this](size_t){
         for(auto i: statusmap) {
-            i.second->src->writedcb(i.second->index);
+            assert(!i.second->src.expired());
+            i.second->src.lock()->writedcb(i.second->index);
         }
     });
-    cgimap[filename] = this;
+    cgimap[filename] = std::dynamic_pointer_cast<Cgi>(shared_from_this());
 }
 
 void Cgi::evictMe(){
     if(cgimap.count(filename) == 0){
         return;
     }
-    if(cgimap[filename] != this){
+    if(!cgimap[filename].expired() && cgimap[filename].lock() != shared_from_this()){
         return;
     }
     cgimap.erase(filename);
@@ -95,7 +96,7 @@ void Cgi::Send(void *buff, size_t size, void* index) {
     header->flag = size ? 0: CGI_FLAG_END;
     header->requestId = htonl(id);
     header->contentLength = htons(size);
-    rwer->buffer_insert(rwer->buffer_end(), header, size+sizeof(CGI_Header));
+    rwer->buffer_insert(rwer->buffer_end(), write_block{header, size+sizeof(CGI_Header), 0});
 }
 
 
@@ -113,6 +114,7 @@ begin:
     bool consumed = false;
     if(statusmap.count(cgi_id)) {
         HttpReqHeader* req = statusmap.at(cgi_id);
+        assert(!req->src.expired());
         switch (header->type) {
         case CGI_RESPONSE:
             consumed = HandleRes(header, req);
@@ -142,7 +144,7 @@ bool Cgi::HandleRes(const CGI_Header *header, HttpReqHeader* req){
         res->set("transfer-encoding", "chunked");
     }
     res->index = req->index;
-    req->src->response(res);
+    req->src.lock()->response(res);
     req->flags |= HTTP_RESPONED_F;
     return true;
 }
@@ -158,12 +160,14 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
         header_back->contentLength = htons(sizeof(CGI_NameValue) + sizeof(uint32_t));
         CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
         nv_back->name = htonl(CGI_NAME_BUFFLEFT);
-        set32(nv_back->value, htonl(req->src->bufleft(req->index)));
-        rwer->buffer_insert(rwer->buffer_end(), header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength));
+        set32(nv_back->value, htonl(req->src.lock()->bufleft(req->index)));
+        rwer->buffer_insert(rwer->buffer_end(),
+                            write_block{header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength), 0}
+                           );
         break;
     }
     case CGI_NAME_STRATEGYGET: {
-        if(!checkauth(req->src->getip())){
+        if(!checkauth(req->src.lock()->getip())){
             flag = CGI_FLAG_ERROR;
             break;
         }
@@ -184,12 +188,14 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
             CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
             nv_back->name = htonl(CGI_NAME_STRATEGYGET);
             sprintf((char *)nv_back->value, "%s %s %s", host.c_str(), strategy.c_str(), ext.c_str());
-            rwer->buffer_insert(rwer->buffer_end(), header_back, sizeof(CGI_Header) + value_len);
+            rwer->buffer_insert(rwer->buffer_end(),
+                                write_block{header_back, sizeof(CGI_Header) + value_len, 0}
+                               );
         }
         break;
     }
     case CGI_NAME_STRATEGYADD:{
-        if(!checkauth(req->src->getip())){
+        if(!checkauth(req->src.lock()->getip())){
             flag = CGI_FLAG_ERROR;
             break;
         }
@@ -203,7 +209,7 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
         break;
     }
     case CGI_NAME_STRATEGYDEL:{
-        if(!checkauth(req->src->getip())){
+        if(!checkauth(req->src.lock()->getip())){
             flag = CGI_FLAG_ERROR;
             break;
         }
@@ -214,7 +220,7 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
         break;
     }
     case CGI_NAME_GETPROXY:{
-        if(!checkauth(req->src->getip())){
+        if(!checkauth(req->src.lock()->getip())){
             flag = CGI_FLAG_ERROR;
             break;
         }
@@ -227,11 +233,13 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
         CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
         nv_back->name = htonl(CGI_NAME_GETPROXY);
         memcpy(nv_back->value, proxy, len);
-        rwer->buffer_insert(rwer->buffer_end(), header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength));
+        rwer->buffer_insert(rwer->buffer_end(),
+                            write_block{header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength), 0}
+                           );
         break;
     }
     case CGI_NAME_SETPROXY:{
-        if(!checkauth(req->src->getip())){
+        if(!checkauth(req->src.lock()->getip())){
             flag = CGI_FLAG_ERROR;
             break;
         }
@@ -245,8 +253,8 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
         if(strcmp(auth_string, (char *)nv->value)){
             flag = CGI_FLAG_ERROR;
         }else{
-            LOG("[CGI] %s login\n", req->src->getip());
-            addauth(req->src->getip());
+            LOG("[CGI] %s login\n", req->src.lock()->getip());
+            addauth(req->src.lock()->getip());
         }
         break;
     }
@@ -257,23 +265,27 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
     memcpy(header_end, header, sizeof(CGI_Header));
     header_end->contentLength = 0;
     header_end->flag = flag | CGI_FLAG_END;
-    rwer->buffer_insert(rwer->buffer_end(), header_end, sizeof(CGI_Header));
+    rwer->buffer_insert(rwer->buffer_end(),
+                        write_block{header_end, sizeof(CGI_Header), 0}
+                       );
     return true;
 }
 
 bool Cgi::HandleData(const CGI_Header* header, HttpReqHeader* req){
-    int len = req->src->bufleft(req->index);
+    assert(!req->src.expired());
+    auto req_ptr = req->src.lock();
+    int len = req_ptr->bufleft(req->index);
     size_t size = ntohs(header->contentLength);
     if (len < (int)size) {
         LOGE("The requester's write buff is not enougth(%zu/%d)\n", size, len);
-        rwer->delEpoll(EPOLLIN);
+        rwer->delEvents(RW_EVENT::READ);
         return false;
     }
 
-    req->src->Send((const char *)(header+1), size, req->index);
+    req_ptr->Send((const char *)(header+1), size, req->index);
     if (header->flag & CGI_FLAG_END) {
         uint32_t cgi_id = ntohl(header->requestId);
-        req->src->finish(NOERROR | DISCONNECT_FLAG, req->index);
+        req_ptr->finish(NOERROR | DISCONNECT_FLAG, req->index);
         statusmap.erase(cgi_id);
         delete req;
     }
@@ -329,12 +341,13 @@ void Cgi::finish(uint32_t flags, void* index) {
 void Cgi::deleteLater(uint32_t errcode){
     evictMe();
     for(auto i: statusmap) {
+        assert(!i.second->src.expired());
         if((i.second->flags & HTTP_RESPONED_F) == 0){
             HttpResHeader* res = new HttpResHeader(H503, sizeof(H503));
             res->index = i.second->index;
-            i.second->src->response(res);
+            i.second->src.lock()->response(res);
         }
-        i.second->src->finish(errcode, i.second->index);
+        i.second->src.lock()->finish(errcode, i.second->index);
         delete i.second;
     }
     statusmap.clear();
@@ -346,35 +359,32 @@ void* Cgi::request(HttpReqHeader* req) {
     uint32_t cgi_id = curid++;
     statusmap[cgi_id] = req;
     CGI_Header *header = req->getcgi(cgi_id);
-    rwer->buffer_insert(rwer->buffer_end(), header, sizeof(CGI_Header) + ntohs(header->contentLength));
+    rwer->buffer_insert(rwer->buffer_end(),
+                        write_block{header, sizeof(CGI_Header) + ntohs(header->contentLength), 0}
+                       );
     return reinterpret_cast<void*>(cgi_id);
 }
 
 void Cgi::dump_stat(Dumper dp, void* param){
     dp(param, "Cgi %p %s, id=%d:\n", this, filename, curid);
     for(auto i: statusmap){
-        dp(param, "%d: %p, %p", i.first, i.second->src, i.second->index);
+        assert(!i.second->src.expired());
+        dp(param, "%d: %p, %p", i.first, i.second->src.lock().get(), i.second->index);
     }
 }
 
 
 
-Cgi* getcgi(HttpReqHeader* req, const char* filename){
+std::weak_ptr<Cgi> getcgi(HttpReqHeader* req, const char* filename){
     if(cgimap.count(filename)) {
         return cgimap[filename];
     } else {
-        int fds[2] = {0}, flags;
+        int fds[2];
         if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds)) {  // 创建管道
             LOGE("socketpair failed: %s\n", strerror(errno));
             goto err;
         }
-        flags = fcntl(fds[0], F_GETFL, 0);
-        if (flags < 0) {
-            LOGE("fcntl error:%s\n", strerror(errno));
-            goto err;
-        }
-        fcntl(fds[0], F_SETFL, flags | O_NONBLOCK);
-        return new Cgi(filename, fds);
+        return std::dynamic_pointer_cast<Cgi>((new Cgi(filename, fds))->shared_from_this());
 err:
         if(fds[0]){
             close(fds[0]);
@@ -382,15 +392,16 @@ err:
         }
         HttpResHeader* res = new HttpResHeader(H500, sizeof(H500));
         res->index = req->index;
-        req->src->response(res);
-        return nullptr;
+        req->src.lock()->response(res);
+        return std::weak_ptr<Cgi>();
     }
 }
 
 
 void flushcgi() {
     for(auto i:cgimap) {
-        i.second->deleteLater(PEER_LOST_ERR);
+        assert(!i.second.expired());
+        i.second.lock()->deleteLater(PEER_LOST_ERR);
     }
 }
 

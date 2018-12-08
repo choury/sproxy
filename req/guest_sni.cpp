@@ -16,10 +16,9 @@ Guest_sni::Guest_sni(int fd, const sockaddr_un *myaddr):Guest(fd, myaddr){
         if(ret > 0){
             char buff[HEADLENLIMIT];
             int len = sprintf(buff, "CONNECT %s:%d" CRLF CRLF, hostname, 443);
-            HttpReqHeader* req = new HttpReqHeader(buff, len, this);
-            assert(responser_ptr == nullptr);
+            HttpReqHeader* req = new HttpReqHeader(buff, len, shared_from_this());
             ReqProc(req);
-            if(responser_ptr == nullptr){
+            if(responser_ptr.expired()){
                 deleteLater(PEER_LOST_ERR);
             }else{
                 rwer->SetReadCB(std::bind(&Guest_sni::ReadHE, this, _1));

@@ -8,17 +8,29 @@
 #include <time.h>
 #include <assert.h>
 
+
+#define UDP_CHECKSUM
+
 /*
  * Pseudo-header used for checksumming; this header should never
  * reach the wire
  */
 typedef struct pseudo_hdr {
-    uint32_t src;
-    uint32_t dst;
+    in_addr src;
+    in_addr dst;
     unsigned char mbz;
     unsigned char proto;
     uint16_t len;
 } __attribute__((packed)) pseudo_hdr;
+
+typedef struct pseudo_hdr6 {
+    in6_addr src;
+    in6_addr dst;
+    uint32_t len;
+    uint8_t zero[3];
+    uint8_t proto;
+} __attribute__((packed)) pseudo_hdr6;
+
 
 
 typedef struct tcp_opt{
@@ -55,7 +67,61 @@ typedef struct tcp_windowscale{
 } __attribute__((packed)) tcp_windowscale;
 
 
+/**
+  * calculate checksum in ip/tcp header
+  */
+static uint16_t checksum16(uint8_t *addr, int len) {
+    long sum = 0;
 
+    while (len > 1) {
+        sum += (*addr++) << 8;
+        sum += *addr++;
+        len -= 2;
+    }
+    if (len > 0)
+        sum += (*addr)<<8;
+
+    while (sum >> 16)
+        sum = (sum & 0xffff) + (sum >> 16);
+
+    return ~(uint16_t)sum;
+}
+
+
+static uint16_t ip_checksum(const ip* ip_hdr, uint8_t protocol, void* data, size_t len){
+    if(ip_hdr == nullptr){
+        return 0;
+    }
+
+    /* pseudo header used for checksumming */
+    pseudo_hdr *phdr = (struct pseudo_hdr *)p_move(data, -(char)sizeof(pseudo_hdr));
+    phdr->src = ip_hdr->ip_src;
+    phdr->dst = ip_hdr->ip_dst;
+    phdr->mbz = 0;
+    phdr->proto = protocol;
+    phdr->len = htons(len);
+    /* tcp checksum */
+    uint16_t cksum = checksum16((uint8_t*)phdr, len  + sizeof(pseudo_hdr));
+    p_move(phdr, sizeof(pseudo_hdr));
+    return htons(cksum);
+}
+
+static uint16_t ip6_checksum(const ip6_hdr* ip_hdr, uint8_t protocol, void* data, size_t len){
+    if(ip_hdr == nullptr){
+        return 0;
+    }
+    /* pseudo header used for checksumming */
+    pseudo_hdr6 *phdr = (struct pseudo_hdr6 *)p_move(data, -(char)sizeof(pseudo_hdr6));
+    phdr->src = ip_hdr->ip6_src;
+    phdr->dst = ip_hdr->ip6_dst;
+    memset(phdr->zero, 0, sizeof(phdr->zero));
+    phdr->proto = protocol;
+    phdr->len = htonl(len);
+    /* tcp checksum */
+    uint16_t cksum = checksum16((uint8_t*)phdr, len  + sizeof(pseudo_hdr6));
+    p_move(phdr, sizeof(pseudo_hdr6));
+    return htons(cksum);
+}
 
 Icmp::Icmp() {
     memset(&icmp_hdr, 0, sizeof(icmp_hdr));
@@ -112,39 +178,19 @@ uint8_t Icmp::getcode() const {
     return icmp_hdr.code;
 }
 
-uint16_t Icmp::getid() const
-{
-    assert(icmp_hdr.type == ICMP_ECHO || icmp_hdr.type == ICMP_ECHOREPLY);
-    return ntohs(icmp_hdr.un.echo.id);
+uint16_t Icmp::getid() const {
+    if(icmp_hdr.type == ICMP_ECHO || icmp_hdr.type == ICMP_ECHOREPLY){
+        return ntohs(icmp_hdr.un.echo.id);
+    }
+    return 0;
 }
 
-uint16_t Icmp::getseq() const
-{
+uint16_t Icmp::getseq() const {
     assert(icmp_hdr.type == ICMP_ECHO || icmp_hdr.type == ICMP_ECHOREPLY);
     return ntohs(icmp_hdr.un.echo.sequence);
 }
 
-
-
-char * Icmp::build_packet(const void* data, size_t& len) {
-    assert(len);
-    size_t datalen = len;
-    len = datalen + sizeof(icmp_hdr);
-    char* packet = (char *) p_malloc(len);
-
-    memset(packet, 0, len);
-    memcpy(packet, &icmp_hdr, sizeof(icmp_hdr));
-
-    if(data){
-        char *icmpdata = (char *) (packet + sizeof(icmp_hdr));
-        memcpy(icmpdata, data, datalen);
-    }
-
-    ((icmp *)packet)->icmp_cksum = htons(checksum16((uint8_t*)packet, len));
-    return packet;
-}
-
-char * Icmp::build_packet(void* data, size_t& len) {
+char* Icmp::build_packet(void* data, size_t& len) {
     assert(data);
     len = len + sizeof(icmp_hdr);
     char* packet = (char *)p_move(data, -(char)sizeof(icmp_hdr));
@@ -154,11 +200,85 @@ char * Icmp::build_packet(void* data, size_t& len) {
     return packet;
 }
 
+Icmp6::Icmp6() {
+    memset(&icmp_hdr, 0 ,sizeof(icmp_hdr));
+}
 
+Icmp6::Icmp6(const char* packet, size_t len){
+    if(len < sizeof(icmp_hdr)){
+        LOGE("Invalid ICMPV6 header length: %zu bytes\n", len);
+        throw 0;
+    }
+    memcpy(&icmp_hdr, packet, sizeof(icmp_hdr));
+}
 
-Tcp::Tcp(const ip* ip_hdr, const char* packet, size_t len):ip_hdr(ip_hdr){
+void Icmp6::print() const {
+    LOGD(DVPN,"ICMPV6 header: "
+    "type: %d, "
+    "code: %d, "
+    "checksum: %d\n",
+
+        icmp_hdr.icmp6_type,
+        icmp_hdr.icmp6_code,
+        icmp_hdr.icmp6_cksum
+    );
+}
+
+Icmp6* Icmp6::settype(uint8_t type) {
+    icmp_hdr.icmp6_type = type;
+    return this;
+}
+
+Icmp6* Icmp6::setcode(uint8_t code) {
+    icmp_hdr.icmp6_code = code;
+    return this;
+}
+
+Icmp6* Icmp6::setid(uint16_t id){
+    assert(icmp_hdr.icmp6_type == ICMP6_ECHO_REQUEST || icmp_hdr.icmp6_type == ICMP6_ECHO_REPLY);
+    icmp_hdr.icmp6_id = htons(id);
+    return this;
+}
+
+Icmp6* Icmp6::setseq(uint16_t seq){
+    assert(icmp_hdr.icmp6_type == ICMP6_ECHO_REQUEST || icmp_hdr.icmp6_type == ICMP6_ECHO_REPLY);
+    icmp_hdr.icmp6_seq = htons(seq);
+    return this;
+}
+
+uint8_t Icmp6::gettype() const {
+    return icmp_hdr.icmp6_type;
+}
+
+uint8_t Icmp6::getcode() const {
+    return icmp_hdr.icmp6_code;
+}
+
+uint16_t Icmp6::getid() const {
+    if(icmp_hdr.icmp6_type == ICMP6_ECHO_REQUEST || icmp_hdr.icmp6_type == ICMP6_ECHO_REPLY){
+        return ntohs(icmp_hdr.icmp6_id);
+    }
+    return 0;
+}
+
+uint16_t Icmp6::getseq() const {
+    assert(icmp_hdr.icmp6_type == ICMP6_ECHO_REQUEST || icmp_hdr.icmp6_type == ICMP6_ECHO_REPLY);
+    return ntohs(icmp_hdr.icmp6_seq);
+}
+
+char* Icmp6::build_packet(const ip6_hdr* ip_hdr, void* data, size_t& len) {
+    assert(data);
+    len = len + sizeof(icmp6_hdr);
+    char* packet = (char *)p_move(data, -(char)sizeof(icmp_hdr));
+    icmp_hdr.icmp6_cksum = 0;
+    memcpy(packet, &icmp_hdr, sizeof(icmp_hdr));
+    ((icmp6_hdr *)packet)->icmp6_cksum = ip6_checksum(ip_hdr, IPPROTO_ICMPV6, packet, len);
+    return packet;
+}
+
+Tcp::Tcp(const char* packet, size_t len){
     memcpy(&tcp_hdr, packet, sizeof(struct tcphdr));
-    hdrlen = tcp_hdr.doff * 4;
+    hdrlen = tcp_hdr.th_off * 4;
     if (hdrlen < 20) {
         LOGE("Invalid TCP header length: %u bytes\n", hdrlen);
         throw 0;
@@ -174,13 +294,13 @@ Tcp::Tcp(const ip* ip_hdr, const char* packet, size_t len):ip_hdr(ip_hdr){
     }
 }
 
-Tcp::Tcp(const ip* ip_hdr, uint16_t sport, uint16_t dport):ip_hdr(ip_hdr){
+Tcp::Tcp(uint16_t sport, uint16_t dport){
     memset(&tcp_hdr, 0, sizeof(tcphdr));
     
-    tcp_hdr.source = htons(sport);
-    tcp_hdr.dest = htons(dport);
+    tcp_hdr.th_sport = htons(sport);
+    tcp_hdr.th_dport = htons(dport);
 
-    tcp_hdr.doff = 5;
+    tcp_hdr.th_off = 5;
 }
 
 Tcp::~Tcp() {
@@ -190,21 +310,21 @@ Tcp::~Tcp() {
 
 
 Tcp * Tcp::setseq(uint32_t seq) {
-    tcp_hdr.seq = htonl(seq);
+    tcp_hdr.th_seq = htonl(seq);
     return this;
 }
 
 
 Tcp * Tcp::setack(uint32_t ack) {
-    tcp_hdr.ack_seq = htonl(ack);
+    tcp_hdr.th_ack = htonl(ack);
     return this;
 }
 
 Tcp * Tcp::setwindow(uint32_t window) {
     if(window > TCP_MAXWIN){
-        tcp_hdr.window = htons(TCP_MAXWIN);
+        tcp_hdr.th_win = htons(TCP_MAXWIN);
     }else{
-        tcp_hdr.window = htons(window);
+        tcp_hdr.th_win = htons(window);
     }
     return this;
 }
@@ -284,53 +404,8 @@ Tcp* Tcp::setwindowscale(uint8_t scale) {
     return this;
 }
 
-/**
- * 组建tcp/ip回包，
- */
-char* Tcp::build_packet(const void* data, size_t& len) {
 
-    if (tcpoptlen % 4) {
-        LOGE("TCP option length must be divisible by 4.\n");
-        return 0;
-    }
-
-    size_t datalen = data?len:0;
-    len = sizeof(tcphdr) + tcpoptlen + datalen;
-
-    char* packet = (char *) p_malloc(len + sizeof(pseudo_hdr));
-    memset(packet, 0, len);
-
-    tcp_hdr.doff = (sizeof(tcphdr) + tcpoptlen) >> 2;
-    tcp_hdr.check = 0;
-
-    char* packet_end = packet + sizeof(pseudo_hdr);
-    memcpy(packet_end, &tcp_hdr, sizeof(tcphdr));
-
-    packet_end += sizeof(tcphdr);
-
-    if (tcpoptlen > 0){
-        memcpy(packet_end, tcpopt, tcpoptlen); //copy tcp header option to packet
-        packet_end += tcpoptlen;
-    }
-
-    if(data){
-        memcpy(packet_end, data, datalen); // copy tcp data to packet
-        packet_end += datalen;
-    }
-
-    /* pseudo header used for checksumming */
-    pseudo_hdr *phdr = (struct pseudo_hdr *)packet;
-    phdr->src = ip_hdr->ip_src.s_addr;
-    phdr->dst = ip_hdr->ip_dst.s_addr;
-    phdr->mbz = 0;
-    phdr->proto = IPPROTO_TCP;
-    phdr->len = htons(len);
-    /* tcp checksum */
-    ((tcphdr *)(packet+sizeof(pseudo_hdr)))->check = htons(checksum16((uint8_t*)packet, packet_end - packet));
-    return (char *)p_move(packet, sizeof(pseudo_hdr));
-}
-
-char * Tcp::build_packet(void* data, size_t& len) {
+char * Tcp::build_packet(const ip* ip_hdr, void* data, size_t& len) {
     if (tcpoptlen % 4) {
         LOGE("TCP option length must be divisible by 4.\n");
         return 0;
@@ -338,27 +413,38 @@ char * Tcp::build_packet(void* data, size_t& len) {
     assert(data);
 
     len = sizeof(tcphdr) + tcpoptlen + len;
+    tcp_hdr.th_off = (sizeof(tcphdr) + tcpoptlen) >> 2;
+    tcp_hdr.th_sum = 0;
 
-    char* packet = (char *) p_move(data, -(char)(sizeof(pseudo_hdr)+sizeof(tcphdr)+tcpoptlen));
-
-    tcp_hdr.doff = (sizeof(tcphdr) + tcpoptlen) >> 2;
-    tcp_hdr.check = 0;
-    memcpy(packet + sizeof(pseudo_hdr), &tcp_hdr, sizeof(tcphdr));
-
+    char* packet = (char *) p_move(data, -(char)(sizeof(tcphdr)+tcpoptlen));
+    memcpy(packet, &tcp_hdr, sizeof(tcphdr));
     if (tcpoptlen > 0)
-        memcpy(packet + sizeof(pseudo_hdr) + sizeof(tcphdr), tcpopt, tcpoptlen); //copy tcp header option to packet
+        memcpy(packet + sizeof(tcphdr), tcpopt, tcpoptlen); //copy tcp header option to packet
 
-    /* pseudo header used for checksumming */
-    pseudo_hdr *phdr = (struct pseudo_hdr *)packet;
-    phdr->src = ip_hdr->ip_src.s_addr;
-    phdr->dst = ip_hdr->ip_dst.s_addr;
-    phdr->mbz = 0;
-    phdr->proto = IPPROTO_TCP;
-    phdr->len = htons(len);
-    /* tcp checksum */
-    ((tcphdr *)(packet+sizeof(pseudo_hdr)))->check = htons(checksum16((uint8_t*)packet, len  + sizeof(pseudo_hdr)));
-    return (char *)p_move(packet, sizeof(pseudo_hdr));
+    ((tcphdr *)packet)->th_sum = ip_checksum(ip_hdr, IPPROTO_TCP, packet, len);
+    return packet;
 }
+
+char * Tcp::build_packet(const ip6_hdr* ip_hdr, void* data, size_t& len) {
+    if (tcpoptlen % 4) {
+        LOGE("TCP option length must be divisible by 4.\n");
+        return 0;
+    }
+    assert(data);
+
+    len = sizeof(tcphdr) + tcpoptlen + len;
+    tcp_hdr.th_off = (sizeof(tcphdr) + tcpoptlen) >> 2;
+    tcp_hdr.th_sum = 0;
+
+    char* packet = (char *) p_move(data, -(char)(sizeof(tcphdr)+tcpoptlen));
+    memcpy(packet, &tcp_hdr, sizeof(tcphdr));
+    if (tcpoptlen > 0)
+        memcpy(packet + sizeof(tcphdr), tcpopt, tcpoptlen); //copy tcp header option to packet
+
+    ((tcphdr *)packet)->th_sum = ip6_checksum(ip_hdr, IPPROTO_TCP, packet, len);
+    return packet;
+}
+
 
 uint16_t Tcp::getoptions() const {
     tcp_opt* opt = (tcp_opt *)tcpopt;
@@ -461,23 +547,23 @@ uint8_t Tcp::getwindowscale() const{
 }
 
 uint32_t Tcp::getseq() const {
-    return ntohl(tcp_hdr.seq);
+    return ntohl(tcp_hdr.th_seq);
 }
 
 uint32_t Tcp::getack() const {
-    return ntohl(tcp_hdr.ack_seq);
+    return ntohl(tcp_hdr.th_ack);
 }
 
 uint16_t Tcp::getsport() const {
-    return ntohs(tcp_hdr.source);
+    return ntohs(tcp_hdr.th_sport);
 }
 
 uint16_t Tcp::getdport() const {
-    return ntohs(tcp_hdr.dest);
+    return ntohs(tcp_hdr.th_dport);
 }
 
 uint16_t Tcp::getwindow() const {
-    return ntohs(tcp_hdr.window);
+    return ntohs(tcp_hdr.th_win);
 }
 
 
@@ -505,20 +591,20 @@ void Tcp::print() const{
     "Checksum: %d, "
     "Urgent point: %d\n",
 
-         ntohs(tcp_hdr.source),
-         ntohs(tcp_hdr.dest),
-         ntohl(tcp_hdr.seq),
-         ntohl(tcp_hdr.ack_seq),
-         tcp_hdr.doff * 4,
-         tcp_hdr.fin,
-         tcp_hdr.syn,
-         tcp_hdr.rst,
-         tcp_hdr.psh,
-         tcp_hdr.ack,
-         tcp_hdr.urg,
-         ntohs(tcp_hdr.window),
-         ntohs(tcp_hdr.check),
-         ntohs(tcp_hdr.urg_ptr));
+         ntohs(tcp_hdr.th_sport),
+         ntohs(tcp_hdr.th_dport),
+         ntohl(tcp_hdr.th_seq),
+         ntohl(tcp_hdr.th_ack),
+         tcp_hdr.th_off * 4,
+         tcp_hdr.th_flags & TH_FIN,
+         tcp_hdr.th_flags & TH_SYN,
+         tcp_hdr.th_flags & TH_RST,
+         tcp_hdr.th_flags & TH_PUSH,
+         tcp_hdr.th_flags & TH_ACK,
+         tcp_hdr.th_flags & TH_URG,
+         ntohs(tcp_hdr.th_win),
+         ntohs(tcp_hdr.th_sum),
+         ntohs(tcp_hdr.th_urp));
     
     tcp_opt *opt = (tcp_opt*)tcpopt;
     size_t len = tcpoptlen;
@@ -559,14 +645,14 @@ int Tcp::getType() const{
 
 #endif
 
-Udp::Udp(const ip* ip_hdr, const char* packet, size_t len):ip_hdr(ip_hdr){
+Udp::Udp(const char* packet, size_t len){
     if(len < sizeof(udphdr)){
         LOGE("Invalid UDP packet length: %zu bytes\n", len);
         throw 0;
     }
     /* define/compute udp header offset */
     memcpy(&udp_hdr, packet, sizeof(struct udphdr));
-    uint16_t udplen = ntohs(udp_hdr.len);
+    uint16_t udplen = ntohs(udp_hdr.uh_ulen);
     if (udplen < 8) {
         LOGE("Invalid UDP length: %u bytes\n", udplen);
         throw 0;
@@ -575,79 +661,54 @@ Udp::Udp(const ip* ip_hdr, const char* packet, size_t len):ip_hdr(ip_hdr){
 }
 
 
-Udp::Udp(const ip* ip_hdr, uint16_t sport, uint16_t dport):ip_hdr(ip_hdr) {
-    udp_hdr.source = htons(sport);
-    udp_hdr.dest = htons(dport);
-    udp_hdr.len = htons(sizeof(udphdr));
-    udp_hdr.check = 0;
+Udp::Udp(uint16_t sport, uint16_t dport) {
+    udp_hdr.uh_sport = htons(sport);
+    udp_hdr.uh_dport = htons(dport);
+    udp_hdr.uh_ulen = htons(sizeof(udphdr));
+    udp_hdr.uh_sum = 0;
 }
 
 
-/**
- * 组建udp/ip回包
- */
-char* Udp::build_packet(const void* data, size_t& len) {
-    size_t datalen = data?len:0;
-    len =  sizeof(udphdr) + datalen;
-
-    char* packet = (char *) p_malloc(len + sizeof(pseudo_hdr));
-    memset(packet, 0, len);
-
-    char* packet_end = packet + sizeof(pseudo_hdr);
-
-    udp_hdr.len = htons(len);
-    udp_hdr.check = 0;
-    memcpy(packet_end, &udp_hdr, sizeof(udphdr));
-    packet_end += sizeof(udphdr);
-
-    if(data){
-        memcpy(packet_end, data, datalen); // copy tcp data to packet
-        packet_end += datalen;
-    }
-
-    /* pseudo header used for checksumming */
-    pseudo_hdr *phdr = (struct pseudo_hdr *)packet;
-    phdr->src = ip_hdr->ip_src.s_addr;
-    phdr->dst = ip_hdr->ip_dst.s_addr;
-    phdr->mbz = 0;
-    phdr->proto = IPPROTO_UDP;
-    phdr->len = htons(len);
-    /* udp checksum */
-    ((udphdr*)(packet+sizeof(pseudo_hdr)))->check = htons(checksum16((uint8_t*)packet, packet_end - packet));
-
-    return (char*)p_move(packet, sizeof(pseudo_hdr));
-}
-
-char* Udp::build_packet(void* data, size_t& len) {
+char* Udp::build_packet(const ip* ip_hdr, void* data, size_t& len) {
     assert(data);
     
     len =  sizeof(udphdr) + len;
-    char* packet = (char *) p_move(data, -(char)(sizeof(udphdr)+sizeof(pseudo_hdr)));
 
-    udp_hdr.len = htons(len);
-    udp_hdr.check = 0;
-    memcpy(packet+sizeof(pseudo_hdr), &udp_hdr, sizeof(udphdr));
+    udp_hdr.uh_ulen = htons(len);
+    udp_hdr.uh_sum = 0;
+    char* packet = (char *)p_move(data, -(char)sizeof(udphdr));
+    memcpy(packet, &udp_hdr, sizeof(udphdr));
 
-    /* pseudo header used for checksumming */
-    pseudo_hdr *phdr = (struct pseudo_hdr *)packet;
-    phdr->src = ip_hdr->ip_src.s_addr;
-    phdr->dst = ip_hdr->ip_dst.s_addr;
-    phdr->mbz = 0;
-    phdr->proto = IPPROTO_UDP;
-    phdr->len = htons(len);
-    /* udp checksum */
-    ((udphdr*)(packet+sizeof(pseudo_hdr)))->check = htons(checksum16((uint8_t*) packet, len + sizeof(pseudo_hdr)));
-
-    return (char*)p_move(packet, sizeof(pseudo_hdr));
+#ifdef UDP_CHECKSUM
+    ((udphdr *)packet)->uh_sum = ip_checksum(ip_hdr, IPPROTO_UDP, packet, len);
+#endif
+    return packet;
 }
+
+char * Udp::build_packet(const ip6_hdr* ip_hdr, void* data, size_t& len) {
+    assert(data);
+
+    len =  sizeof(udphdr) + len;
+
+    udp_hdr.uh_ulen = htons(len);
+    udp_hdr.uh_sum = 0;
+    char* packet = (char *)p_move(data, -(char)sizeof(udphdr));
+    memcpy(packet, &udp_hdr, sizeof(udphdr));
+
+#ifdef UDP_CHECKSUM
+    ((udphdr *)packet)->uh_sum = ip6_checksum(ip_hdr, IPPROTO_UDP, packet, len);
+#endif
+    return packet;
+}
+
 
 
 uint16_t Udp::getsport() const{
-    return ntohs(udp_hdr.source);
+    return ntohs(udp_hdr.uh_sport);
 }
 
 uint16_t Udp::getdport() const{
-    return ntohs(udp_hdr.dest);
+    return ntohs(udp_hdr.uh_dport);
 }
 
 
@@ -661,165 +722,18 @@ void Udp::print() const{
     "Length: %d, "
     "Checksum: %d\n",
 
-        ntohs(udp_hdr.source),
-        ntohs(udp_hdr.dest),
-        ntohs(udp_hdr.len),
-        ntohs(udp_hdr.check));
-}
-
-
-
-
-/**
- * 解析packet，不能带L2的头，ip头+tcp/udp头+data
- */
-Ip::Ip(const char *packet, size_t len){
-    if(len < sizeof(struct ip)){
-        LOGE("Invalid IP header length: %zu bytes\n", len);
-        throw 0;
-    }
-    /* define/compute ip header offset */
-    memcpy(&ip_hdr, packet, sizeof(struct ip));
-    hdrlen = ip_hdr.ip_hl * 4;
-    if (hdrlen < 20) {
-        LOGE("Invalid IP header length: %u bytes\n", hdrlen);
-        throw 0;
-    }
-
-    /* determine protocol */
-    switch (gettype()) {
-        case IPPROTO_ICMP:
-            icmp = new Icmp(packet+hdrlen, len-hdrlen);
-            break;
-        case IPPROTO_TCP:
-            tcp = new Tcp(&ip_hdr, packet+hdrlen, len-hdrlen);
-            break;
-        case IPPROTO_UDP:
-            udp = new Udp(&ip_hdr, packet+hdrlen, len-hdrlen);
-            break;
-        default:
-            LOGD(DVPN, "IP(%u) packet size: %u, ip hrdlen: %u.\n", gettype(), ntohs(ip_hdr.ip_len), hdrlen);
-            break;
-    }
-}
-
-
-Ip::Ip(uint8_t type, uint16_t sport, uint16_t dport){
-    ip_hdr.ip_v = 4;
-    ip_hdr.ip_hl = 5;
-    ip_hdr.ip_tos = 0;
-    ip_hdr.ip_len = 0;
-    ip_hdr.ip_id = htons(0); /* kernel will fill with random value if 0 */
-    ip_hdr.ip_off = 0;
-    ip_hdr.ip_ttl = 64;
-    ip_hdr.ip_p = type;
-    ip_hdr.ip_sum = 0;
-    switch(type){
-    case IPPROTO_ICMP:
-        icmp = new Icmp();
-        ip_hdr.ip_len = sizeof(ip) + sizeof(icmphdr);
-        break;
-    case IPPROTO_TCP:
-        tcp = new Tcp(&ip_hdr, sport, dport);
-        ip_hdr.ip_len = sizeof(ip) + sizeof(tcphdr);
-        break;
-    case IPPROTO_UDP:
-        udp = new Udp(&ip_hdr, sport, dport);
-        ip_hdr.ip_len = sizeof(ip) + sizeof(udphdr);
-        break;
-    default:
-        throw 0;
-    }
-}
-
-Ip::Ip(uint8_t type, const in_addr* src, uint16_t sport, const in_addr* dst, uint16_t dport):
-    Ip(type, sport, dport) {
-    ip_hdr.ip_src = *src;
-    ip_hdr.ip_dst = *dst;
-}
-
-Ip::Ip(uint8_t type, const sockaddr_un* src, const sockaddr_un* dst):
-    Ip(type, ntohs(src->addr_in.sin_port), ntohs(dst->addr_in.sin_port)) {
-    ip_hdr.ip_src = src->addr_in.sin_addr;
-    ip_hdr.ip_dst = dst->addr_in.sin_addr;
-}
-
-
-
-Ip::~Ip(){
-    switch(gettype()){
-    case IPPROTO_TCP:
-        delete tcp;
-        break;
-    case IPPROTO_UDP:
-        delete udp;
-        break;
-    case IPPROTO_ICMP:
-        delete icmp;
-        break;
-    default:
-        break;
-    }
-}
-
-char* Ip::build_packet(const void* data, size_t &len){
-    char* packet;
-    switch(gettype()){
-    case IPPROTO_ICMP:
-        packet = icmp->build_packet(data, len);
-        break;
-    case IPPROTO_TCP:
-        packet = tcp->build_packet(data, len);
-        break;
-    case IPPROTO_UDP:
-        packet = udp->build_packet(data, len);
-        break;
-    default:
-        packet = (char *)p_malloc(len);
-        memcpy(packet, data, len);
-        break;
-    }
-    packet = (char *)p_move(packet, -(int)sizeof(ip));
-    len += sizeof(ip);
-    ip_hdr.ip_len = htons(len);
-    ip_hdr.ip_sum = 0;
-    memcpy(packet, &ip_hdr, sizeof(ip));
-
-    ((ip*)packet)->ip_sum = htons(checksum16((uint8_t*)packet, sizeof(struct ip)));
-    return packet;
-}
-
-char* Ip::build_packet(void* data, size_t &len){
-    char* packet;
-    switch(gettype()){
-    case IPPROTO_ICMP:
-        packet = icmp->build_packet(data, len);
-        break;
-    case IPPROTO_TCP:
-        packet = tcp->build_packet(data, len);
-        break;
-    case IPPROTO_UDP:
-        packet = udp->build_packet(data, len);
-        break;
-    default:
-        packet = (char *)data;
-        break;
-    }
-    packet = (char *)p_move(packet, -(int)sizeof(ip));
-    len += sizeof(ip);
-
-    ip_hdr.ip_len = htons(len);
-    ip_hdr.ip_sum = 0;
-    memcpy(packet, &ip_hdr, sizeof(ip));
-
-    ((ip*)packet)->ip_sum = htons(checksum16((uint8_t*)packet, sizeof(struct ip)));
-    return packet;
+        ntohs(udp_hdr.uh_sport),
+        ntohs(udp_hdr.uh_dport),
+        ntohs(udp_hdr.uh_ulen),
+        ntohs(udp_hdr.uh_sum));
 }
 
 size_t Ip::gethdrlen() const {
-    switch(gettype()){
+    switch(type){
     case IPPROTO_ICMP:
         return hdrlen + sizeof(icmphdr);
+    case IPPROTO_ICMPV6:
+        return hdrlen + sizeof(icmp6_hdr);
     case IPPROTO_TCP:
         return hdrlen + tcp->hdrlen;
     case IPPROTO_UDP:
@@ -829,47 +743,207 @@ size_t Ip::gethdrlen() const {
     }
 }
 
-uint8_t Ip::gettype() const
+uint8_t Ip::gettype() const {
+    return type;
+}
+
+
+void Ip::dump() const{
+    print();
+    switch (type) {
+    case IPPROTO_ICMP:
+        icmp->print();
+        break;
+    case IPPROTO_ICMPV6:
+        icmp6->print();
+        break;
+    case IPPROTO_TCP:
+        tcp->print();
+        break;
+    case IPPROTO_UDP:
+        udp->print();
+        break;
+    default:
+        break;
+    }
+}
+
+char* Ip::build_packet(const void* data, size_t &len){
+    return build_packet(p_memdup(data, len), len);
+}
+
+Ip::~Ip() {
+    switch(type){
+    case IPPROTO_TCP:
+        delete tcp;
+        break;
+    case IPPROTO_UDP:
+        delete udp;
+        break;
+    case IPPROTO_ICMP:
+        delete icmp;
+        break;
+    case IPPROTO_ICMPV6:
+        delete icmp6;
+        break;
+    default:
+        break;
+    }
+}
+
+
+std::shared_ptr<Ip> MakeIp(const char* packet, size_t len) {
+    const ip* hdr = (const ip*)packet;
+    if(hdr->ip_v == IPVERSION){
+        return std::shared_ptr<Ip4>(new Ip4(packet, len));
+    }
+    if(hdr->ip_v == 6){
+        return std::shared_ptr<Ip6>(new Ip6(packet, len));
+    }
+    LOGE("Invalid IP version: %u\n", hdr->ip_v);
+    throw 0;
+}
+
+std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_un* src, const sockaddr_un* dst) {
+    if(src->addr.sa_family == AF_INET){
+        return std::shared_ptr<Ip4>(new Ip4(type, src, dst));
+    }
+    if(src->addr.sa_family == AF_INET6){
+        return std::shared_ptr<Ip6>(new Ip6(type, src, dst));
+    }
+    LOGE("Invalid sa_family: %u\n", src->addr.sa_family);
+    throw 0;
+}
+
+
+/**
+ * 解析packet，不能带L2的头，ip头+tcp/udp头+data
+ */
+Ip4::Ip4(const char *packet, size_t len){
+    if(len < sizeof(struct ip)){
+        LOGE("Invalid IP header length: %zu bytes\n", len);
+        throw 0;
+    }
+    /* define/compute ip header offset */
+    memcpy(&hdr, packet, sizeof(struct ip));
+    hdrlen = hdr.ip_hl * 4;
+    if (hdrlen < 20) {
+        LOGE("Invalid IP header length: %u bytes\n", hdrlen);
+        throw 0;
+    }
+    type = hdr.ip_p;
+
+    /* determine protocol */
+    switch (type) {
+    case IPPROTO_ICMP:
+        icmp = new Icmp(packet+hdrlen, len-hdrlen);
+        break;
+    case IPPROTO_TCP:
+        tcp = new Tcp(packet+hdrlen, len-hdrlen);
+        break;
+    case IPPROTO_UDP:
+        udp = new Udp(packet+hdrlen, len-hdrlen);
+        break;
+    default:
+        LOGD(DVPN, "IP(%u) packet size: %u, ip hrdlen: %u.\n", type, ntohs(hdr.ip_len), hdrlen);
+        break;
+    }
+}
+
+
+Ip4::Ip4(uint8_t type, uint16_t sport, uint16_t dport){
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.ip_v = 4;
+    hdr.ip_hl = 5;
+    hdr.ip_tos = 0;
+    hdr.ip_len = 0;
+    hdr.ip_id = htons(0); /* kernel will fill with random value if 0 */
+    hdr.ip_off = 0;
+    hdr.ip_ttl = 64;
+    hdr.ip_p = type;
+    hdr.ip_sum = 0;
+    this->type = type;
+    switch(type){
+    case IPPROTO_ICMP:
+        icmp = new Icmp();
+        hdr.ip_len = sizeof(ip) + sizeof(icmphdr);
+        break;
+    case IPPROTO_TCP:
+        tcp = new Tcp(sport, dport);
+        hdr.ip_len = sizeof(ip) + sizeof(tcphdr);
+        break;
+    case IPPROTO_UDP:
+        udp = new Udp(sport, dport);
+        hdr.ip_len = sizeof(ip) + sizeof(udphdr);
+        break;
+    default:
+        throw 0;
+    }
+}
+
+Ip4::Ip4(uint8_t type, const in_addr* src, uint16_t sport, const in_addr* dst, uint16_t dport):
+    Ip4(type, sport, dport) {
+    hdr.ip_src = *src;
+    hdr.ip_dst = *dst;
+}
+
+Ip4::Ip4(uint8_t type, const sockaddr_un* src, const sockaddr_un* dst):
+    Ip4(type, &src->addr_in.sin_addr, ntohs(src->addr_in.sin_port),
+        &dst->addr_in.sin_addr, ntohs(dst->addr_in.sin_port))
 {
-    return ip_hdr.ip_p;
 }
 
-uint16_t Ip::getid() const
-{
-    return ntohs(ip_hdr.ip_id);
+
+char* Ip4::build_packet(void* data, size_t &len){
+    char* packet;
+    switch(type){
+    case IPPROTO_ICMP:
+        packet = icmp->build_packet(data, len);
+        break;
+    case IPPROTO_TCP:
+        packet = tcp->build_packet(&hdr, data, len);
+        break;
+    case IPPROTO_UDP:
+        packet = udp->build_packet(&hdr, data, len);
+        break;
+    default:
+        assert(0);
+    }
+    packet = (char *)p_move(packet, -(int)sizeof(ip));
+    len += sizeof(ip);
+
+    hdr.ip_len = htons(len);
+    hdr.ip_sum = 0;
+    memcpy(packet, &hdr, sizeof(ip));
+
+    ((ip*)packet)->ip_sum = htons(checksum16((uint8_t*)packet, sizeof(struct ip)));
+    return packet;
 }
 
-uint16_t Ip::getflag() const
-{
-    return ntohs(ip_hdr.ip_off) & (~IP_OFFMASK);
+
+sockaddr_un Ip4::getsrc() const {
+    sockaddr_un  addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.addr.sa_family = AF_INET;
+    addr.addr_in.sin_addr = hdr.ip_src;
+    return addr;
 }
 
-const in_addr * Ip::getsrc() const {
-    return &ip_hdr.ip_src;
-}
-
-const in_addr * Ip::getdst() const {
-    return &ip_hdr.ip_dst;
-}
-
-Ip* Ip::setid(uint16_t id){
-    ip_hdr.ip_id = htons(id);
-    return this;
-}
-
-Ip* Ip::setflag(uint16_t flag)
-{
-    ip_hdr.ip_off |= htons(flag & (~IP_OFFMASK));
-    return this;
+sockaddr_un Ip4::getdst() const {
+    sockaddr_un  addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.addr.sa_family = AF_INET;
+    addr.addr_in.sin_addr = hdr.ip_dst;
+    return addr;
 }
 
 
 /**
  * 输出ip头
  */
-void Ip::print() const{
-    char sip[INET_ADDRSTRLEN] __attribute__((unused));
-    char dip[INET_ADDRSTRLEN] __attribute__((unused));
+void Ip4::print() const{
+    char sip[INET_ADDRSTRLEN];
+    char dip[INET_ADDRSTRLEN];
     LOGD(DVPN,"IP header: "
     "From: %s, "
     "To: %s, "
@@ -881,31 +955,149 @@ void Ip::print() const{
     "TTL: %d, "
     "Proto: %d, "
     "Checksum: %d\n",
+         inet_ntop(AF_INET, &hdr.ip_src, sip, sizeof(sip)),
+         inet_ntop(AF_INET, &hdr.ip_dst, dip, sizeof(dip)),
+         hdr.ip_v,
+         hdr.ip_hl * 4 ,
+         hdr.ip_tos,
+         ntohs(hdr.ip_len),
+         ntohs(hdr.ip_id),
+         hdr.ip_ttl,
+         hdr.ip_p,
+         ntohs(hdr.ip_sum));
+}
 
-         inet_ntop(AF_INET, &ip_hdr.ip_src, sip, sizeof(sip)),
-         inet_ntop(AF_INET, &ip_hdr.ip_dst, dip, sizeof(dip)),
-         ip_hdr.ip_v,
-         ip_hdr.ip_hl * 4 ,
-         ip_hdr.ip_tos,
-         ntohs(ip_hdr.ip_len),
-         ntohs(ip_hdr.ip_id),
-         ip_hdr.ip_ttl,
-         ip_hdr.ip_p,
-         ntohs(ip_hdr.ip_sum));
-
-    switch (gettype()) {
-        case IPPROTO_ICMP:
-            icmp->print();
+Ip6::Ip6(const char* packet, size_t len) {
+    if(len < sizeof(struct ip6_hdr)){
+        LOGE("Invalid IP6 header length: %zu bytes\n", len);
+        throw 0;
+    }
+    /* define/compute ip header offset */
+    memcpy(&hdr, packet, sizeof(struct ip6_hdr));
+    type = hdr.ip6_nxt;
+    ip6_ext* ext_hdr = (ip6_ext*)(packet+sizeof(ip6_hdr));
+    while((const char*)ext_hdr - packet < (long)len){
+        switch(type){
+        case IPPROTO_ICMPV6:
+            hdrlen = (const char*)ext_hdr - packet;
+            icmp6 = new Icmp6((const char*)ext_hdr, packet+len-(char*)ext_hdr);
             break;
         case IPPROTO_TCP:
-            tcp->print();
+            hdrlen = (const char*)ext_hdr - packet;
+            tcp = new Tcp((const char*)ext_hdr, packet+len-(char*)ext_hdr);
             break;
         case IPPROTO_UDP:
-            udp->print();
+            hdrlen = (const char*)ext_hdr - packet;
+            udp = new Udp((const char*)ext_hdr, packet+len-(char*)ext_hdr);
             break;
-        default:
-            LOGD(DVPN, "unsopported protol.\n");
+        }
+        if(icmp6){
             break;
+        }
+        type = ext_hdr->ip6e_nxt;
+        ext_hdr = (ip6_ext*)((char*)(ext_hdr + 1)+ext_hdr->ip6e_len);
     }
 }
+
+Ip6::Ip6(uint8_t type, uint16_t sport, uint16_t dport) {
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.ip6_vfc = 0x60;
+    hdr.ip6_nxt = type;
+    hdr.ip6_hlim = 64;
+    this->type = type;
+    switch(type){
+    case IPPROTO_ICMPV6:
+        icmp6 = new Icmp6();
+        hdr.ip6_plen = htons(sizeof(icmp6_hdr));
+        break;
+    case IPPROTO_TCP:
+        tcp = new Tcp(sport, dport);
+        hdr.ip6_plen = htons(sizeof(tcphdr));
+        break;
+    case IPPROTO_UDP:
+        udp = new Udp(sport, dport);
+        hdr.ip6_plen = htons(sizeof(udphdr));
+        break;
+    default:
+        throw 0;
+    }
+}
+
+Ip6::Ip6(uint8_t type, const in6_addr* src, uint16_t sport, const in6_addr* dst, uint16_t dport):
+    Ip6(type, sport, dport) {
+    hdr.ip6_src = *src;
+    hdr.ip6_dst = *dst;
+}
+
+
+Ip6::Ip6(uint8_t type, const sockaddr_un* src,  const sockaddr_un* dst):
+    Ip6(type, &src->addr_in6.sin6_addr, ntohs(src->addr_in6.sin6_port),
+        &dst->addr_in6.sin6_addr, ntohs(dst->addr_in6.sin6_port))
+{
+}
+
+sockaddr_un Ip6::getdst() const {
+    sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.addr_in6.sin6_family = AF_INET6;
+    addr.addr_in6.sin6_addr = hdr.ip6_dst;
+    return addr;
+}
+
+sockaddr_un Ip6::getsrc() const {
+    sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.addr_in6.sin6_family = AF_INET6;
+    addr.addr_in6.sin6_addr = hdr.ip6_src;
+    return addr;
+}
+
+void Ip6::print() const {
+    char sip[INET6_ADDRSTRLEN];
+    char dip[INET6_ADDRSTRLEN];
+    LOGD(DVPN,"IP header: "
+    "From: %s, "
+    "To: %s, "
+    "Version: %d, "
+    "TC: %d, "
+    "Flow: %d, "
+    "payload length: %d, "
+    "type: %d, "
+    "TTL: %d\n",
+         inet_ntop(AF_INET6, &hdr.ip6_src, sip, sizeof(sip)),
+         inet_ntop(AF_INET6, &hdr.ip6_dst, dip, sizeof(dip)),
+         hdr.ip6_vfc >> 4,
+         (ntohl(hdr.ip6_flow) >> 20) & 0xff,
+         ntohl(hdr.ip6_flow) & 0xfffff,
+         ntohs(hdr.ip6_plen),
+         type,
+         hdr.ip6_hlim);
+}
+
+
+char* Ip6::build_packet(void* data, size_t& len) {
+    char* packet;
+    switch(type){
+    case IPPROTO_ICMPV6:
+        packet = icmp6->build_packet(&hdr, data, len);
+        break;
+    case IPPROTO_TCP:
+        packet = tcp->build_packet(&hdr, data, len);
+        break;
+    case IPPROTO_UDP:
+        packet = udp->build_packet(&hdr, data, len);
+        break;
+    default:
+        assert(0);
+    }
+    packet = (char *)p_move(packet, -(int)sizeof(ip6_hdr));
+
+    hdr.ip6_plen = htons(len);
+    memcpy(packet, &hdr, sizeof(ip6_hdr));
+    len += sizeof(ip6_hdr);
+    return packet;
+}
+
+
+
 

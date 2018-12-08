@@ -9,11 +9,11 @@
 class GzipTest: public Responser{
     z_stream strm;
     size_t left = 0;
-    Requester* req_ptr;
+    std::weak_ptr<Requester> req_ptr;
     void*      req_index;
 public:
     GzipTest();
-	virtual ~GzipTest(){}
+	virtual ~GzipTest();
     virtual void* request(HttpReqHeader* req) override;
     virtual void gzipreadHE(size_t len);
     virtual void rawreadHE(size_t len);

@@ -6,17 +6,17 @@
 
 #include <stdio.h>
 #include <assert.h>
+#include <errno.h>
 #include <fcntl.h>
-#include <sys/eventfd.h>
 
 static unsigned char in[16384];
 
 GzipTest::GzipTest() {
-    int fd = eventfd(1, O_NONBLOCK);
-    if (fd < 0) {
-        LOGE("create evventfd failed: %s\n", strerror(errno));
-        throw 0;
-    }
+    rwer = new EventRWer([this](int ret, int code) {
+        LOGE("gzip_test error: %d/%d\n", ret, code);
+        deleteLater(ret);
+    });
+
     /* allocate deflate state */
     strm.zalloc = Z_NULL;
     strm.zfree = Z_NULL;
@@ -27,11 +27,9 @@ GzipTest::GzipTest() {
         throw 0;
     }
 
-    rwer = new PacketRWer(fd, [this](int ret, int code) {
-        LOGE("gzip_test error: %d/%d\n", ret, code);
-        deleteLater(ret);
-    });
+}
 
+GzipTest::~GzipTest(){
 }
 
 static size_t parseSize(std::string size) {
@@ -88,29 +86,32 @@ void *GzipTest::request(HttpReqHeader *req) {
         res->set("Content-Length", left);
         rwer->SetReadCB(std::bind(&GzipTest::rawreadHE, this, _1));
     }
-    req->src->response(res);
+    req->src.lock()->response(res);
     req_ptr = req->src;
     req_index = req->index;
     if (req->ismethod("HEAD")) {
         left = 0;
+    }else{
+        rwer->buffer_insert(rwer->buffer_end(), write_block{p_memdup(&left, 8), 8, 0});
     }
     return (void *)1;
 }
 
 void GzipTest::gzipreadHE(size_t len) {
     rwer->consume(nullptr, len);
-    rwer->buffer_insert(rwer->buffer_end(), (const void *)&left, 8);
+    rwer->buffer_insert(rwer->buffer_end(), write_block{p_memdup(&left, 8), 8, 0});
 
+    assert(!req_ptr.expired());
     if (left == 0) {
         (void)deflateEnd(&strm);
-        req_ptr->finish(NOERROR | DISCONNECT_FLAG, req_index);
+        req_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, req_index);
         deleteLater(NOERROR);
         return;
     }
 
-    size_t chunk = req_ptr->bufleft(req_index);
+    size_t chunk = req_ptr.lock()->bufleft(req_index);
     if(chunk <= 0){
-        rwer->delEpoll(EPOLLIN);
+        rwer->delEvents(RW_EVENT::READ);
         return;
     }
 
@@ -127,35 +128,36 @@ void GzipTest::gzipreadHE(size_t len) {
         assert(ret != Z_STREAM_ERROR);  /* state not clobbered */
     } while (strm.avail_out && left);
 
-    req_ptr->Send(out, chunk - strm.avail_out, req_index);
+    req_ptr.lock()->Send(out, chunk - strm.avail_out, req_index);
     if (strm.avail_out == 0) {
-        rwer->delEpoll(EPOLLIN);
+        rwer->delEvents(RW_EVENT::READ);
     }
 }
 
 void GzipTest::rawreadHE(size_t len) {
     rwer->consume(nullptr, len);
-    rwer->buffer_insert(rwer->buffer_end(), (const void *)&left, 8);
+    rwer->buffer_insert(rwer->buffer_end(), write_block{p_memdup(&left, 8), 8, 0});
 
+    assert(!req_ptr.expired());
     if (left == 0) {
         (void)deflateEnd(&strm);
-        req_ptr->finish(NOERROR | DISCONNECT_FLAG, req_index);
+        req_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, req_index);
         deleteLater(NOERROR);
         return;
     }
 
-    size_t chunk = req_ptr->bufleft(req_index);
+    size_t chunk = req_ptr.lock()->bufleft(req_index);
     if(chunk <= 0){
-        rwer->delEpoll(EPOLLIN);
+        rwer->delEvents(RW_EVENT::READ);
         return;
     }
 
     len = Min(chunk, left);
     unsigned char *out = (unsigned char *)p_malloc(len);
-    req_ptr->Send(out, len, req_index);
+    req_ptr.lock()->Send(out, len, req_index);
     left -= len;
     if (left) {
-        rwer->delEpoll(EPOLLIN);
+        rwer->delEvents(RW_EVENT::READ);
     }
 }
 

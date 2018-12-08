@@ -8,7 +8,7 @@
 
 class Guest:public Requester, public HttpResponser {
 protected:
-    Responser* responser_ptr = nullptr;
+    std::weak_ptr<Responser> responser_ptr;
     void*      responser_index = nullptr;
 #define GUEST_IDELE_F        0
 #define GUEST_PROCESSING_F   (1<<1)
@@ -37,10 +37,10 @@ public:
     virtual void Send(void* buff, size_t size, void* index)override;
 
     virtual void response(HttpResHeader* res)override;
-    virtual void transfer(void* index, Responser* res_ptr, void* res_index)override;
+    virtual void transfer(void* index, std::weak_ptr<Responser> res_ptr, void* res_index)override;
 
     virtual void finish(uint32_t flags, void* index)override;
-    virtual void writedcb(void * index) override;
+    virtual void writedcb(const void * index) override;
     virtual const char* getsrc(const void *)override;
     virtual void dump_stat(Dumper dp, void* param) override;
 };

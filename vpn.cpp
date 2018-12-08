@@ -28,7 +28,7 @@ char rewrite_auth[DOMAINLIMIT] = {0};
 const char *cafile =  nullptr;
 const char *index_file = nullptr;
 int autoindex = 0;
-uint32_t debug = 0;
+uint32_t debug = DVPN;
 uint32_t vpn_contiune;
 
 #define VPN_RESET 1
@@ -61,12 +61,9 @@ int vpn_start(const struct VpnConfig* vpn){
     Base64Encode(vpn->secret, strlen(vpn->secret), rewrite_auth);
     LOG("set encoded secret to: %s\n", rewrite_auth);
 
-    /* make tun socket non blocking */
-    int sock_opts = fcntl(vpn->fd, F_GETFL, 0);
-    fcntl(vpn->fd, F_SETFL, sock_opts | O_NONBLOCK );
-
-    new Guest_vpn(vpn->fd);
+    new VPN_nanny(vpn->fd);
     vpn_contiune = 1;
+    srand(time(0));
     LOG("Accepting connections ...\n");
     while (vpn_contiune) {
         if(vpn_action & VPN_RESET){
@@ -80,9 +77,9 @@ int vpn_start(const struct VpnConfig* vpn){
         }
         int c;
         struct epoll_event events[200];
-        if ((c = epoll_wait(efd, events, 200, do_delayjob())) < 0) {
-            if (errno != EINTR) {
-                LOGE("epoll wait %s\n", strerror(errno));
+        if ((c = epoll_wait(efd, events, 200, do_delayjob())) <= 0) {
+            if (c != 0 && errno != EINTR) {
+                LOGE("epoll_wait %s\n", strerror(errno));
                 return 6;
             }
             continue;
@@ -90,7 +87,7 @@ int vpn_start(const struct VpnConfig* vpn){
         do_prejob();
         for (int i = 0; i < c; ++i) {
             Ep *ep = (Ep *)events[i].data.ptr;
-            (ep->*ep->handleEvent)(events[i].events);
+            (ep->*ep->handleEvent)(convertEpoll(events[i].events));
         }
         do_postjob();
     }

@@ -11,8 +11,6 @@
 
 #define H2_PREFACE "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 
-
-
 struct Http2_header {
     uint8_t length[3];
 #define DATA_TYPE           0
@@ -87,7 +85,7 @@ protected:
     uint32_t remoteframebodylimit = FRAMEBODYLIMIT;
     
     int32_t remotewinsize = 65535; // 对端提供的窗口大小，发送时减小，收到对端update时增加
-    int32_t localwinsize = localframewindowsize; // 发送给对端的窗口大小，接受时减小，给对端发送update时增加
+    int32_t localwinsize = 65535; // 发送给对端的窗口大小，接受时减小，给对端发送update时增加
 #define HTTP2_FLAG_INITED    1
 #define HTTP2_FLAG_GOAWAYED  2
     uint32_t http2_flag = 0;
@@ -129,12 +127,12 @@ protected:
 #endif
     virtual std::list<write_block>::insert_iterator queue_head() = 0;
     virtual std::list<write_block>::insert_iterator queue_end() = 0;
-    virtual void queue_insert(std::list<write_block>::insert_iterator where, void* buff, size_t len) = 0;
+    virtual void queue_insert(std::list<write_block>::insert_iterator where, const write_block& wb) = 0;
 public:
     ~Http2Base();
 };
 
-class Http2Responser:public Http2Base, virtual public ResObject{
+class Http2Responser:public Http2Base, virtual public RwObject{
 protected:
     virtual size_t InitProc(const uchar* http2_buff, size_t len)override;
     virtual void HeadersProc(const Http2_header *header)override;

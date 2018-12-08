@@ -11,6 +11,6 @@ public:
     virtual void* request(HttpReqHeader* req) = 0;
 };
 
-Responser* distribute(HttpReqHeader* req, Responser* responser_ptr);
+std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser> responser_ptr);
 
 #endif

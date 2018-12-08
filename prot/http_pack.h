@@ -1,8 +1,8 @@
 #ifndef HTTP_PACK_H__
 #define HTTP_PACK_H__
 
+#include "rwer.h"
 #include "common.h"
-#include "resobject.h"
 
 #include <map>
 #include <set>
@@ -49,7 +49,7 @@ struct Range{
 class HttpReqHeader: public HttpHeader{
     void getfile();
 public:
-    Requester* src;
+    std::weak_ptr<Requester> src;
     char method[20];
     char protocol[20];
     char path[URLLIMIT];
@@ -58,8 +58,8 @@ public:
     std::string filename;
     std::vector<Range> ranges;
     bool should_proxy  = false;
-    explicit HttpReqHeader(const char* header, size_t len,  ResObject* src);
-    explicit HttpReqHeader(std::multimap<std::string, std::string>&& headers, ResObject* src);
+    explicit HttpReqHeader(const char* header, size_t len, std::weak_ptr<RwObject> src);
+    explicit HttpReqHeader(std::multimap<std::string, std::string>&& headers, std::weak_ptr<RwObject> src);
     explicit HttpReqHeader(const CGI_Header *headers);
     bool ismethod(const char* method) const;
     
