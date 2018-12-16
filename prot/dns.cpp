@@ -15,7 +15,6 @@
 
 #define BUF_SIZE 1024
 
-#define RESOLV_FILE "/etc/resolv.conf"
 #define DNSPORT     53
 #define DNSTIMEOUT  5000                // dns 超时时间(ms)
 
@@ -23,9 +22,9 @@
 static uint16_t id_cur = 1;
 
 class Dns_srv:public Server{
-    char name[INET6_ADDRSTRLEN];
+    sockaddr_un addr;
 public:
-    explicit Dns_srv(const char* name);
+    explicit Dns_srv(const sockaddr_un* server);
     virtual ~Dns_srv();
     void buffHE(const char* buffer, size_t len);
     int query(const char *host, int type, uint32_t id);
@@ -106,43 +105,78 @@ int query_timeout(uint16_t id);
 
 #ifdef __ANDROID__
 extern std::vector<std::string> getDns();
+void getDnsConfig(struct DnsConfig* config){
+    std::vector<std::string> dns = getDns();
+    int get = 0;
+    for(int i = 0; i < dns.size(); i++ ){
+        if(get == 3){
+            break;
+        }
+        if (inet_pton(AF_INET, dns[i], &config->server[get].addr_in.sin_addr) == 1) {
+            config->server[get].addr_in.sin_family = AF_INET;
+            config->server[get].addr_in.sin_port = htons(DNSPORT);
+            put++;
+        } else if (inet_pton(AF_INET6, dns[i], &config->server[get].addr_in6.sin6_addr) == 1) {
+            config->server[get].addr_in6.sin6_family = AF_INET6;
+            config->server[get].addr_in6.sin6_port = htons(DNSPORT);
+            put++;
+        } else {
+            LOGE("[DNS] %s is not a valid ip address\n", dns[i]);
+        }
+    }
+    config->namecount = get;
+}
+
+#else
+#define RESOLV_FILE "/etc/resolv.conf"
+void getDnsConfig(struct DnsConfig* config){
+    config->namecount = 0;
+    FILE *res_file = fopen(RESOLV_FILE, "r");
+    if (res_file == NULL) {
+        LOGE("[DNS] open resolv file:%s failed:%s\n", RESOLV_FILE, strerror(errno));
+        return;
+    }
+    int get = 0;
+    char line[100];
+    while (fscanf(res_file, "%99[^\n]\n", line)!= EOF) {
+        if(get == 3){
+            break;
+        }
+        char command[11], ipaddr[INET6_ADDRSTRLEN];
+        sscanf(line, "%10s %45s", command, ipaddr);
+        if (strcmp(command, "nameserver") == 0) {
+            if (inet_pton(AF_INET, ipaddr, &config->server[get].addr_in.sin_addr) == 1) {
+                config->server[get].addr_in.sin_family = AF_INET;
+                config->server[get].addr_in.sin_port = htons(DNSPORT);
+                get++;
+            } else if (inet_pton(AF_INET6, ipaddr, &config->server[get].addr_in6.sin6_addr) == 1) {
+                config->server[get].addr_in6.sin6_family = AF_INET6;
+                config->server[get].addr_in6.sin6_port = htons(DNSPORT);
+                get++;
+            } else {
+                LOGE("[DNS] %s is not a valid ip address\n", ipaddr);
+            }
+        }
+    }
+    fclose(res_file);
+    config->namecount = get;
+}
+#endif
+
 static int dnsinit() {
     assert(srvs.empty());
-    auto dns = getDns();
+    DnsConfig config;
+    getDnsConfig(&config);
     try {
-        for (auto i : dns) {
-            LOG("[DNS] set dns server: %s\n", i.c_str());
-            new Dns_srv(i.c_str());
+        for(int i =0;i< config.namecount; i++) {
+            LOG("[DNS] set dns server: %s\n", getaddrstring(&config.server[i]));
+            new Dns_srv(&config.server[i]);
         }
     }catch (...){
 
     }
     return srvs.size();
 }
-#else
-static int dnsinit() {
-    assert(srvs.empty());
-    FILE *res_file = fopen(RESOLV_FILE, "r");
-    if (res_file == NULL) {
-        LOGE("[DNS] open resolv file:%s failed:%s\n", RESOLV_FILE, strerror(errno));
-        return 0;
-    }
-    char line[100];
-    while (fscanf(res_file, "%99[^\n]\n", line)!= EOF) {
-        char command[11], ipaddr[INET6_ADDRSTRLEN];
-        sscanf(line, "%10s %45s", command, ipaddr);
-        if (strcmp(command, "nameserver") == 0) {
-            try{
-                new Dns_srv(ipaddr);
-            }catch(...){
-                continue;
-            }
-        }
-    }
-    fclose(res_file);
-    return srvs.size();
-}
-#endif
 
 void flushdns(){
     while(!srvs.empty()){
@@ -359,21 +393,12 @@ void RcdDown(const char *hostname, const sockaddr_un &addr) {
     }
 }
 
-Dns_srv::Dns_srv(const char* name){
+Dns_srv::Dns_srv(const sockaddr_un* server){
     sockaddr_un addr;
-    if (inet_pton(AF_INET, name, &addr.addr_in.sin_addr) == 1) {
-        addr.addr_in.sin_family = AF_INET;
-        addr.addr_in.sin_port = htons(DNSPORT);
-    } else if (inet_pton(AF_INET6, name, &addr.addr_in6.sin6_addr) == 1) {
-        addr.addr_in6.sin6_family = AF_INET6;
-        addr.addr_in6.sin6_port = htons(DNSPORT);
-    } else {
-        LOGE("[DNS] %s is not a valid ip address\n", name);
-        throw 0;
-    }
+    memcpy(&addr, server, sizeof(sockaddr_un));
     int fd = Connect(&addr, SOCK_DGRAM);
     if (fd == -1) {
-        LOGE("[DNS] connecting  %s error:%s\n", name, strerror(errno));
+        LOGE("[DNS] connecting  %s error:%s\n", getaddrstring(&addr), strerror(errno));
         throw 0;
     }
     rwer = new PacketRWer(fd, [this](int ret, int code){
@@ -386,8 +411,7 @@ Dns_srv::Dns_srv(const char* name){
         rwer->consume(data, len);
     });
 
-    strcpy(this->name, name);
-    LOGD(DDNS, "new dns server: %s\n", name);
+    LOGD(DDNS, "new dns server: %s\n", getaddrstring(&addr));
     srvs.push_back(this);
 }
 
@@ -469,7 +493,7 @@ int Dns_srv::query(const char *host, int type, uint32_t id) {
 }
 
 void Dns_srv::dump_stat(Dumper dp, void* param){
-    dp(param, "Dns_srv %p: %s\n", this, name);
+    dp(param, "Dns_srv %p: %s\n", this, getaddrstring(&addr));
 }
 
 void dump_dns(Dumper dp, void* param){

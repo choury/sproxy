@@ -108,13 +108,21 @@ int SslRWer::get_error(int ret){
         int error = SSL_get_error(ssl, ret);
         switch (error) {
             case SSL_ERROR_WANT_READ:
-                if(SSL_state(ssl) != SSL_ST_OK){
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+                if(SSL_get_state(ssl) != SSL_ST_OK){
+#else
+                if(SSL_get_state(ssl) != TLS_ST_OK){
+#endif
                     setEvents(RW_EVENT::READ);
                 }
                 errno = EAGAIN;
                 break;
             case SSL_ERROR_WANT_WRITE:
-                if(SSL_state(ssl) != SSL_ST_OK){
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+                if(SSL_get_state(ssl) != SSL_ST_OK){
+#else
+                if(SSL_get_state(ssl) != TLS_ST_OK){
+#endif
                     setEvents(RW_EVENT::WRITE);
                 }
                 errno = EAGAIN;

@@ -363,7 +363,11 @@ void change_process_name(const char *name){
 
 const char* findprogram(ino_t inode){
     static char program[DOMAINLIMIT+1];
+#ifdef __APPLE__
+    sprintf(program, "Unkown pid(%llu)", inode);
+#else
     sprintf(program, "Unkown pid(%ju)", inode);
+#endif
     int found = 0;
     DIR* dir = opendir("/proc");
     if(dir == NULL){
@@ -371,7 +375,11 @@ const char* findprogram(ino_t inode){
         return 0;
     }
     char socklink[20];
+#ifdef __APPLE__
+    sprintf(socklink, "socket:[%llu]", inode);
+#else
     sprintf(socklink, "socket:[%ju]", inode);
+#endif
     struct dirent *ptr;
     while((ptr = readdir(dir)) != NULL && found == 0)
     {

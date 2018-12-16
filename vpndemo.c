@@ -92,7 +92,21 @@ int set_if(struct ifreq* ifr){
         close(fd);
         return err;
     }
-
+    struct DnsConfig config;
+    getDnsConfig(&config);
+    for(int i = 0; i < config.namecount; i++){
+        if(config.server[i].addr_in.sin_family != AF_INET){
+            continue;
+        }
+        memcpy(&route.rt_dst, &config.server[i], sizeof(struct sockaddr_in));
+        addr = (struct sockaddr_in*)&route.rt_genmask;
+        inet_pton(AF_INET, "255.255.255.255", &addr->sin_addr);
+        if((err = ioctl(fd, SIOCADDRT, &route)) < 0){
+            perror("ioctl (SIOCADDRT) for dns failed");
+            close(fd);
+            return err;
+        }
+    }
     close(fd);
     return 0;
 }
@@ -152,6 +166,20 @@ int set_if6(struct ifreq* ifr){
         return err;
     }
 
+    struct DnsConfig config;
+    getDnsConfig(&config);
+    for(int i = 0; i < config.namecount; i++){
+        if(config.server[i].addr_in6.sin6_family != AF_INET6){
+            continue;
+        }
+        route.rtmsg_dst = config.server[i].addr_in6.sin6_addr;
+        route.rtmsg_dst_len = 128;
+        if((err = ioctl(fd, SIOCADDRT, &route)) < 0){
+            perror("ioctl (SIOCADDRT) for dns failed");
+            close(fd);
+            return err;
+        }
+    }
     close(fd);
     return 0;
 }
