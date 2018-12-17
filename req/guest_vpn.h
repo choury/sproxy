@@ -81,16 +81,16 @@ public:
 
     void packetHE(std::shared_ptr<const Ip> pac, const char* packet, size_t len);
     void writed();
-    virtual void response(HttpResHeader* res)override;
-    virtual void transfer(void* index, std::weak_ptr<Responser> res_ptr, void* res_index)override;
+    virtual void response(HttpResHeader* res) override;
+    virtual void transfer(void* index, std::weak_ptr<Responser> res_ptr, void* res_index) override;
 
-    virtual int32_t bufleft(void* index)override;
-    virtual void Send(void* buff, size_t size, void* index)override;
+    virtual int32_t bufleft(void* index) override;
+    virtual void Send(void* buff, size_t size, void* index) override;
 
-    virtual void finish(uint32_t flags, void* index)override;
-    virtual const char *getsrc(const void* index)override;
+    virtual void finish(uint32_t flags, void* index) override;
+    virtual void deleteLater(uint32_t error) override;
+    virtual const char *getsrc(const void* index) override;
     virtual void dump_stat(Dumper dp, void* param) override;
-
 };
 
 #endif

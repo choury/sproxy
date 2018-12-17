@@ -145,9 +145,7 @@ Guest_vpn::Guest_vpn(const VpnKey& key, VPN_nanny* nanny):key(key), nanny(nanny)
 
 
 Guest_vpn::~Guest_vpn(){
-    nanny->cleanKey(key);
     free(packet);
-    del_delayjob(std::bind(&Guest_vpn::aged, this), nullptr);
 }
 
 
@@ -744,7 +742,7 @@ void Guest_vpn::icmp6HE(std::shared_ptr<const Ip> pac, const char* packet, size_
 int32_t Guest_vpn::bufleft(void* index) {
     assert(index == nullptr || index == &key);
     if(index == nullptr){
-        nanny->bufleft();
+        return nanny->bufleft();
     }
     if(key.protocol == Protocol::TCP){
         TcpStatus* tcpStatus = (TcpStatus*)protocol_info;
@@ -767,17 +765,14 @@ void Guest_vpn::Send(void* buff, size_t size, void* index) {
     if(key.protocol == Protocol::TCP){
         TcpStatus* tcpStatus = (TcpStatus*)protocol_info;
         assert(tcpStatus);
-        size_t winlen = (tcpStatus->window << tcpStatus->recv_wscale) - (tcpStatus->send_seq - tcpStatus->send_acked);
-        if(size > winlen){
-            LOGE("(%s): window left smaller than send size (%zu/%zu)!\n", getProg(), size, winlen);
-            size = winlen;
-        }
+        assert((tcpStatus->window << tcpStatus->recv_wscale) - (tcpStatus->send_seq - tcpStatus->send_acked) >= size);
+        size_t sendlen = size;
         if(size > tcpStatus->mss){
             LOGD(DVPN, "(%s): mss smaller than send size (%zu/%u)!\n", getProg(), size, tcpStatus->mss);
-            size = tcpStatus->mss;
+            sendlen = tcpStatus->mss;
         }
         LOGD(DVPN, "%s (%u - %u) size: %zu\n",
-             key.getString("<-"), tcpStatus->send_seq, tcpStatus->want_seq, size);
+             key.getString("<-"), tcpStatus->send_seq, tcpStatus->want_seq, sendlen);
         auto pac_return = MakeIp(IPPROTO_TCP, &key.dst, &key.src);
         pac_return->tcp
             ->setseq(tcpStatus->send_seq)
@@ -785,8 +780,11 @@ void Guest_vpn::Send(void* buff, size_t size, void* index) {
             ->setwindow(res_ptr.lock()->bufleft(res_index) >> tcpStatus->send_wscale)
             ->setflag(TH_ACK | TH_PUSH);
 
-        nanny->sendPkg(pac_return, buff, size);
-        tcpStatus->send_seq += size;
+        nanny->sendPkg(pac_return, buff, sendlen);
+        tcpStatus->send_seq += sendlen;
+        if(size > sendlen){
+            Peer::Send((const char*)buff+sendlen, size-sendlen, index);
+        }
         return;
     }
     if(key.protocol == Protocol::UDP){
@@ -928,6 +926,15 @@ int Guest_vpn::aged(){
     LOGD(DVPN, "%s aged.\n", key.getString("-"));
     finish(VPN_AGED_ERR, &key);
     return 0;
+}
+
+void Guest_vpn::deleteLater(uint32_t error){
+    res_ptr = std::weak_ptr<Responser>();
+    res_index = nullptr;
+    nanny->cleanKey(key);
+    del_delayjob(std::bind(&Guest_vpn::aged, this), nullptr);
+    del_postjob(std::bind(&Guest_vpn::tcp_ack, this), nullptr);
+    return Peer::deleteLater(error);
 }
 
 

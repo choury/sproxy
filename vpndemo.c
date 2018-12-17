@@ -10,6 +10,8 @@
 #include <string.h>
 #include <signal.h>
 
+#define TUNADDR  "10.1.0.1"
+#define TUNADDR6 "fdab:cdef::1"
 
 int daemon_mode = 0;
 const char* out_interface;
@@ -32,7 +34,7 @@ int set_if(struct ifreq* ifr){
     /* set ip of this end point of tunnel */
     ifr->ifr_addr.sa_family = AF_INET;
     struct sockaddr_in* addr = (struct sockaddr_in*)&ifr->ifr_addr;
-    inet_pton(AF_INET, "10.1.0.1", &addr->sin_addr);
+    inet_pton(AF_INET, TUNADDR, &addr->sin_addr);
     if((err = ioctl(fd, SIOCSIFADDR, ifr)) < 0) {
         perror("ioctl (SIOCSIFADDR) failed");
         close(fd);
@@ -74,7 +76,7 @@ int set_if(struct ifreq* ifr){
 
     addr = (struct sockaddr_in *)&route.rt_gateway;
     addr->sin_family = AF_INET;
-    addr->sin_addr.s_addr = inet_addr("10.1.0.1");
+    addr->sin_addr.s_addr = inet_addr(TUNADDR);
 
     addr = (struct sockaddr_in*)&route.rt_dst;
     addr->sin_family = AF_INET;
@@ -125,8 +127,7 @@ int set_if6(struct ifreq* ifr){
     struct in6_ifreq ifr6;
     ifr6.ifr6_ifindex = ifr->ifr_ifindex;
     ifr6.ifr6_prefixlen = 128;
-    //inet_pton(AF_INET6, "::ffff:10.1.0.1", &ifr6.ifr6_addr);
-    inet_pton(AF_INET6, "fd00::abcd", &ifr6.ifr6_addr);
+    inet_pton(AF_INET6, TUNADDR6, &ifr6.ifr6_addr);
     if((err = ioctl(fd, SIOCSIFADDR, &ifr6)) < 0) {
         perror("ioctl (SIOCSIFADDR) failed");
         close(fd);
@@ -153,7 +154,7 @@ int set_if6(struct ifreq* ifr){
     struct in6_rtmsg route;
     memset(&route, 0, sizeof(route));
 
-    inet_pton(AF_INET6, "fd00::abcd", &route.rtmsg_gateway);
+    inet_pton(AF_INET6, TUNADDR6, &route.rtmsg_gateway);
     route.rtmsg_dst = in6addr_any;
     //route.rtmsg_flags = RTF_UP | RTF_GATEWAY;
     route.rtmsg_flags = RTF_UP;

@@ -243,7 +243,6 @@ void StreamRWer::defaultHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::WRITE)){
         SendData();
     }
-
 }
 
 /*

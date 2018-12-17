@@ -429,6 +429,12 @@ int main(int argc, char **argv) {
     reloadstrategy();
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
+    setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
+    openlog("sproxy", LOG_PID | LOG_PERROR, LOG_LOCAL0);
+    if (daemon_mode && daemon(1, 0) < 0) {
+        fprintf(stderr, "start daemon error:%s\n", strerror(errno));
+        return -1;
+    }
 #if __linux__
     efd = epoll_create(10000);
 #elif __APPLE__
@@ -436,12 +442,6 @@ int main(int argc, char **argv) {
 #else
 #error "Only macOS and linux are supported"
 #endif
-    setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
-    openlog("sproxy", LOG_PID | LOG_PERROR, LOG_LOCAL0);
-    if (daemon_mode && daemon(1, 0) < 0) {
-        fprintf(stderr, "start daemon error:%s\n", strerror(errno));
-        return -1;
-    }
     if(rudp_mode){
         int svsk_rudp;
         CPORT = CPORT?CPORT:443;
