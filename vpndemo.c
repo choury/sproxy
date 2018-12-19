@@ -13,7 +13,6 @@
 #define TUNADDR  "10.1.0.1"
 #define TUNADDR6 "fdab:cdef::1"
 
-int daemon_mode = 0;
 const char* out_interface;
 
 int protectFd(int fd) {
@@ -232,8 +231,9 @@ int main(int argc, char** argv) {
     }
     fprintf(stderr, "TUN name is %s\n", tun_name);
     struct VpnConfig vpn;
+    vpn.daemon_mode = 1;
     vpn.disable_ipv6 = 1;
-    vpn.ignore_cert_error = 1;
+    vpn.ignore_cert_error = 0;
     vpn.secret[0] = 0;
     strcpy(vpn.server, argv[2]);
     signal(SIGUSR2, vpn_reload);

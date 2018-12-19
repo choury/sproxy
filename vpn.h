@@ -15,6 +15,7 @@ extern "C" {
 
 struct VpnConfig{
     int fd;
+    int daemon_mode;
     int ignore_cert_error;
     int disable_ipv6;
     char server[DOMAINLIMIT];

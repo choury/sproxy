@@ -67,6 +67,7 @@ public:
         }
         if(host[0] == '_'){
             this->strategy = strategy;
+            this->ext = ext;
         }
         return insert(reverse(host), strategy, ext);
     }
@@ -100,6 +101,7 @@ public:
         }
         if(host[0] == '_'){
             strategy = Strategy::direct;
+            ext.clear();
         }
         return remove(reverse(host));
     }
@@ -233,7 +235,7 @@ std::list<std::tuple<string, string, string>> Stra::dump(){
         }else{
             sprintf(ipv4_string, "%s", inet_ntoa(in_addr{htonl(net)}));
         }
-        slist.push_back(std::make_tuple(ipv4_string, getstrategystring(i.second), ext));
+        slist.push_back(std::make_tuple(ipv4_string, getstrategystring(i.second), ""));
     }
     if(domains.size()){
         for(auto i: domains){

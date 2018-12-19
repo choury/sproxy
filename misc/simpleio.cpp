@@ -207,10 +207,7 @@ void StreamRWer::defaultHE(RW_EVENT events) {
         errorCB(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
         return;
     }
-    if(!!(events & RW_EVENT::READEOF)){
-        delEvents(RW_EVENT::READ);
-        errorCB(READ_ERR, 0);
-    }else if (!!(events & RW_EVENT::READ)){
+    if (!!(events & RW_EVENT::READ)){
         bool closed = false;
         size_t left = 0;
         while((left = rb.left())){
@@ -233,12 +230,16 @@ void StreamRWer::defaultHE(RW_EVENT events) {
         if(rb.length() && readCB){
             readCB(rb.length());
         }
-        if(closed){
+        if(closed && !(events & RW_EVENT::READEOF)){
             errorCB(READ_ERR, 0);
         }
         if(rb.left() == 0){
             delEvents(RW_EVENT::READ);
         }
+    }
+    if(!!(events & RW_EVENT::READEOF)){
+        delEvents(RW_EVENT::READ);
+        errorCB(READ_ERR, 0);
     }
     if (!!(events & RW_EVENT::WRITE)){
         SendData();
@@ -280,10 +281,8 @@ void PacketRWer::defaultHE(RW_EVENT events) {
         errorCB(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
         return;
     }
-    if (!!(events & RW_EVENT::READEOF)){
-        delEvents(RW_EVENT::READ);
-        errorCB(READ_ERR, 0);
-    }else if (!!(events & RW_EVENT::READ)){
+    
+    if (!!(events & RW_EVENT::READ)){
         size_t left = 0;
         while((left = rb.left())){
             int ret = Read(rb.end(), left);
@@ -294,7 +293,7 @@ void PacketRWer::defaultHE(RW_EVENT events) {
                 }
                 continue;
             }
-            if(ret == 0){
+            if(ret == 0 && !(events & RW_EVENT::READEOF)){
                 delEvents(RW_EVENT::READ);
                 errorCB(READ_ERR, 0);
                 break;
@@ -308,6 +307,10 @@ void PacketRWer::defaultHE(RW_EVENT events) {
         if(rb.left() == 0){
             delEvents(RW_EVENT::READ);
         }
+    }
+    if (!!(events & RW_EVENT::READEOF)){
+        delEvents(RW_EVENT::READ);
+        errorCB(READ_ERR, 0);
     }
     if (!!(events & RW_EVENT::WRITE)){
         SendData();
@@ -381,10 +384,7 @@ void EventRWer::defaultHE(RW_EVENT events){
         errorCB(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
         return;
     }
-    if (!!(events & RW_EVENT::READEOF)){
-        delEvents(RW_EVENT::READ);
-        errorCB(READ_ERR, 0);
-    }else if (!!(events & RW_EVENT::READ)){
+    if (!!(events & RW_EVENT::READ)){
         while(true){
             int ret = read(getFd(), buff, sizeof(buff));
             if(ret > 0){
@@ -393,7 +393,7 @@ void EventRWer::defaultHE(RW_EVENT events){
                 }
                 continue;
             }
-            if(ret == 0){
+            if(ret == 0 && !(events & RW_EVENT::READEOF)){
                 delEvents(RW_EVENT::READ);
                 errorCB(READ_ERR, 0);
                 break;
@@ -404,6 +404,10 @@ void EventRWer::defaultHE(RW_EVENT events){
             errorCB(READ_ERR, errno);
             return;
         }
+    }
+    if (!!(events & RW_EVENT::READEOF)){
+        delEvents(RW_EVENT::READ);
+        errorCB(READ_ERR, 0);
     }
     if (!!(events & RW_EVENT::WRITE)){
         SendData();

@@ -9,7 +9,7 @@ class Requester;
 class Host:public Responser, public HttpRequester {
     bool isconnected = false;
 protected:
-    Protocol protocol;
+    char protocol[DOMAINLIMIT];
     char hostname[DOMAINLIMIT];
     uint16_t port;
     HttpReqHeader* req = nullptr;
@@ -25,7 +25,7 @@ protected:
     virtual void* request(HttpReqHeader* req)override;
     virtual void connected();
 public:
-    explicit Host(Protocol protocol, const char* hostname, uint16_t port, bool use_ssl);
+    explicit Host(const char* protocol, const char* hostname, uint16_t port);
     virtual ~Host();
     
     virtual int32_t bufleft(void*) override;
@@ -34,7 +34,7 @@ public:
     virtual void finish(uint32_t flags, void* index)override;
     virtual void writedcb(const void * index) override;
     virtual void dump_stat(Dumper dp, void* param) override;
-    static std::weak_ptr<Responser> gethost(const char* hostname, uint16_t port, Protocol protocol, HttpReqHeader* req, std::weak_ptr<Responser> responser_ptr);
+    static std::weak_ptr<Responser> gethost(const char* protocol, const char* hostname, uint16_t port, HttpReqHeader* req, std::weak_ptr<Responser> responser_ptr);
 };
 
 #endif

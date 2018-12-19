@@ -15,29 +15,30 @@ static const unsigned char alpn_protos_string[] =
     "\x8http/1.1" \
     "\x2h2";
 
-Host::Host(Protocol protocol, const char* hostname, uint16_t port, bool use_ssl): protocol(protocol), port(port){
+Host::Host(const char* protocol, const char* hostname, uint16_t port): port(port){
     assert(port);
-    assert(protocol == Protocol::TCP || protocol == Protocol::UDP);
+    assert(protocol[0]);
+    snprintf(this->protocol, sizeof(this->protocol), "%s", protocol);
     snprintf(this->hostname, sizeof(this->hostname), "%s", hostname);
 
-    if(use_ssl){
-        SslRWer *srwer = new SslRWer(hostname, port, protocol,
+    if(strcasecmp(this->protocol, "http") == 0){
+        rwer = new StreamRWer(hostname, port, Protocol::TCP,
+                              std::bind(&Host::Error, this, _1, _2),
+                              std::bind(&Host::connected, this));
+    }else if(strcasecmp(this->protocol, "https") == 0 ) {
+        SslRWer *srwer = new SslRWer(hostname, port, Protocol::TCP,
                                      std::bind(&Host::Error, this, _1, _2),
                                      std::bind(&Host::connected, this));
         if(use_http2){
             srwer->set_alpn(alpn_protos_string, sizeof(alpn_protos_string)-1);
         }
         rwer = srwer;
+    }else if(strcasecmp(this->protocol, "udp") == 0){
+        rwer = new PacketRWer(hostname, port, Protocol::UDP,
+                              std::bind(&Host::Error, this, _1, _2),
+                              std::bind(&Host::connected, this));
     }else{
-        if(protocol == Protocol::TCP){
-            rwer = new StreamRWer(hostname, port, protocol,
-                                  std::bind(&Host::Error, this, _1, _2),
-                                  std::bind(&Host::connected, this));
-        }else{
-            rwer = new PacketRWer(hostname, port, protocol,
-                                  std::bind(&Host::Error, this, _1, _2),
-                                  std::bind(&Host::connected, this));
-        }
+        LOGE("Unkonw protocol: %s\n", protocol);
     }
 }
 
@@ -149,7 +150,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     if (len <= 0) {
         LOGE("(%s): The guest's write buff is full (%s)\n",
              req->src.lock()->getsrc(req->index), req->hostname);
-        if(protocol == Protocol::UDP){
+        if(strcasecmp(protocol, "udp") == 0){
             return size;
         }
         rwer->setEvents(RW_EVENT::NONE);
@@ -169,19 +170,11 @@ void Host::ErrProc(){
 }
 
 void Host::Error(int ret, int code) {
-    if(ret == READ_ERR && code == 0){
+    if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0){
         http_flag |= HTTP_SERVER_CLOSE_F;
-        if(Http_Proc == &Host::AlwaysProc){
-            EndProc();
-        }else {
-            deleteLater(PEER_LOST_ERR);
-        }
-        return;
-    }
-    if(ret == SOCKET_ERR && code == 0){
         return deleteLater(NOERROR | DISCONNECT_FLAG);
     }
-    LOGE("Host error <%s> (%s:%d) %d/%d\n", protstr(protocol), hostname, port, ret, code);
+    LOGE("Host error <%s://%s:%d> %d/%d\n", protocol, hostname, port, ret, code);
     deleteLater(ret);
 }
 
@@ -232,33 +225,38 @@ void Host::writedcb(const void* index) {
 
 std::weak_ptr<Responser>
 Host::gethost(
+    const char* protocol,
     const char* hostname,
     uint16_t port,
-    Protocol protocol,
     HttpReqHeader* req,
     std::weak_ptr<Responser> responser_ptr)
 {
-    if(req->should_proxy && !proxy2.expired()){
+    if(req->should_proxy 
+        && strcasecmp(protocol, SPROT) == 0
+        && strcasecmp(hostname, SHOST) == 0
+        && port == SPORT
+        && !proxy2.expired()){
         return proxy2;
     }
-    if(protocol == Protocol::RUDP){
+    if(strcasecmp(protocol, "rudp") == 0){
         return (new Proxy2(new RudpRWer(hostname, port)))->init(nullptr);
     }
     if(!req->ismethod("CONNECT") &&  !req->ismethod("SEND") && !responser_ptr.expired()){
         auto host = std::dynamic_pointer_cast<Host>(responser_ptr.lock());
-        if(strcasecmp(host->hostname, hostname) == 0
-            && host->port == port
-            && host->protocol == protocol)
+        if(host != nullptr
+            && strcasecmp(host->protocol, protocol) == 0
+            && strcasecmp(host->hostname, hostname) == 0
+            && host->port == port)
         {
             return host;
         }
     }
-    return std::dynamic_pointer_cast<Responser>((new Host(protocol, hostname, port, req->should_proxy))->shared_from_this());
+    return std::dynamic_pointer_cast<Responser>((new Host(protocol, hostname, port))->shared_from_this());
 }
 
 
 void Host::dump_stat(Dumper dp, void* param) {
-    dp(param, "Host %p, <%s> (%s:%d): %s\n", this, protstr(protocol), hostname, port, isconnected?"[C]":"");
+    dp(param, "Host %p, <%s://%s:%d>: %s\n", this, protocol, hostname, port, isconnected?"[C]":"");
     if(req){
         dp(param, "    %s %s: %p, %p\n",
                 req->method, req->geturl().c_str(),

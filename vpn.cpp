@@ -28,7 +28,7 @@ char rewrite_auth[DOMAINLIMIT] = {0};
 const char *cafile =  nullptr;
 const char *index_file = nullptr;
 int autoindex = 0;
-uint32_t debug = DVPN;
+uint32_t debug = 0;
 uint32_t vpn_contiune;
 
 #define VPN_RESET 1
@@ -43,6 +43,7 @@ int vpn_start(const struct VpnConfig* vpn){
     setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
 #endif
     signal(SIGUSR1, dump_stat);
+    daemon_mode = vpn->daemon_mode;
     disable_ipv6 = vpn->disable_ipv6;
     ignore_cert_error = vpn->ignore_cert_error;
     if(setproxy(vpn->server)){
@@ -53,6 +54,10 @@ int vpn_start(const struct VpnConfig* vpn){
     reloadstrategy();
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
+    if (daemon_mode && daemon(1, 1) < 0) {
+        fprintf(stderr, "start daemon error:%s\n", strerror(errno));
+        return -1;
+    }
     efd = epoll_create(10000);
     if(efd < 0){
         LOGE("epoll_create: %s\n", strerror(errno));

@@ -343,10 +343,7 @@ void RudpRWer::defaultHE(RW_EVENT events) {
         errorCB(SOCKET_ERR, ECONNRESET);
         return;
     }
-    if(!!(events & RW_EVENT::READEOF)){
-        delEvents(RW_EVENT::READ);
-        errorCB(READ_ERR, 0);
-    }else if(!!(events & RW_EVENT::READ)){
+    if(!!(events & RW_EVENT::READ)){
         assert(!read_seqs.empty());
         Rudp_stats stats;
         int ret;
@@ -360,6 +357,10 @@ void RudpRWer::defaultHE(RW_EVENT events) {
             return;
         }
         finish_recv(&stats);
+    }
+    if(!!(events & RW_EVENT::READEOF)){
+        delEvents(RW_EVENT::READ);
+        errorCB(READ_ERR, 0);
     }
     if(!!(events & RW_EVENT::WRITE)){
         size_t writed = 0;

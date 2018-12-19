@@ -98,6 +98,9 @@ int setproxy(const char* proxy){
     if(SPORT == 0){
         SPORT = 443;
     }
+    if(SPROT[0] == 0){
+        strcpy(SPROT, "https");
+    }
     flushproxy2(true);
     return 0;
 }
@@ -107,10 +110,7 @@ int getproxy(char *buff, size_t buflen){
         buff[0] = 0;
         return 1;
     }else{
-        if(SPROT[0]){
-            return snprintf(buff, buflen, "%s://%s:%d", SPROT, SHOST, SPORT)+1;
-        }else{
-            return snprintf(buff, buflen, "%s:%d", SHOST, SPORT)+1;
-        }
+        assert(SPROT[0]);
+        return snprintf(buff, buflen, "%s://%s:%d", SPROT, SHOST, SPORT)+1;
     }
 }

@@ -98,11 +98,12 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
         }
         char fprotocol[DOMAINLIMIT];
         char fhost[DOMAINLIMIT];
-        Protocol fprot = Protocol::TCP;
         uint16_t fport = SPORT;
         switch(s){
         case Strategy::proxy:
-            req->should_proxy = true;
+            strcpy(fprotocol, SPROT);
+            strcpy(fhost, SHOST);
+            fport = SPORT;
             if(SPORT == 0){
                 HttpResHeader* res = new HttpResHeader(H400, sizeof(H400));
                 res->index = req->index;
@@ -114,23 +115,19 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
             if(strlen(rewrite_auth)){
                 req->set("Proxy-Authorization", std::string("Basic ")+rewrite_auth);
             }
-            strcpy(fprotocol, SPROT);
-            strcpy(fhost, SHOST);
-            fport = SPORT;
+            req->should_proxy = true;
             break;
         case Strategy::direct:
+            strcpy(fprotocol, req->protocol);
+            strcpy(fhost, req->hostname);
+            fport = req->port;
             if(req->ismethod("PING")){
                 LOG("[[%s]] %s\n", getstrategystring(s), log_buff);
                 return std::dynamic_pointer_cast<Responser>((new Ping(req))->shared_from_this());
             }else if(req->ismethod("SEND")){
-                fprot = Protocol::UDP;
-            }else{
-                fprot = Protocol::TCP;
+                strcpy(fprotocol, "udp");
             }
             req->del("Proxy-Authorization");
-            strcpy(fprotocol, req->protocol);
-            strcpy(fhost, req->hostname);
-            fport = req->port;
             break;
         case Strategy::forward:
             if(ext.empty()){
@@ -157,11 +154,11 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
                 return std::weak_ptr<Responser>();
             }
         }
-        if(fprotocol[0] && strcasecmp(fprotocol, "rudp") == 0){
-            fprot = Protocol::RUDP;
+        if(fprotocol[0] == 0){
+            strcpy(fprotocol, "http");
         }
         LOG("[[%s]] %s\n", getstrategystring(s), log_buff);
-        return Host::gethost(fhost, fport, fprot, req, responser_ptr);
+        return Host::gethost(fprotocol, fhost, fport, req, responser_ptr);
     }else if (req->ismethod("ADDS")) {
         const char *strategy = req->get("s");
         const char *ext = req->get("ext");

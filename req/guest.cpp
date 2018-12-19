@@ -137,8 +137,9 @@ void Guest::response(HttpResHeader* res) {
             res->del("Transfer-Encoding");
         }
     }else if(Status_flags & GUEST_SEND_F){
-        //should't response
-        assert(0);
+        //ignore response
+        delete res;
+        return;
     }else if(res->no_body()){
         Status_flags |= GUEST_RES_COMPLETED;
     }else if(res->get("Transfer-Encoding")){
@@ -206,12 +207,10 @@ void Guest::finish(uint32_t flags, void* index) {
        (Status_flags & GUEST_SEND_F) ||
        (Status_flags & GUEST_NOLENGTH_F))
     {
-        assert((flags & DISCONNECT_FLAG) == 0);
         http_flag |= HTTP_SERVER_CLOSE_F;
         if(rwer->wlength() == 0){
             rwer->Shutdown();
         }
-        return;
     } 
 
     if(Status_flags & GUEST_REQ_COMPLETED){
