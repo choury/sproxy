@@ -112,16 +112,16 @@ void getDnsConfig(struct DnsConfig* config){
         if(get == 3){
             break;
         }
-        if (inet_pton(AF_INET, dns[i], &config->server[get].addr_in.sin_addr) == 1) {
+        if (inet_pton(AF_INET, dns[i].c_str(), &config->server[get].addr_in.sin_addr) == 1) {
             config->server[get].addr_in.sin_family = AF_INET;
             config->server[get].addr_in.sin_port = htons(DNSPORT);
-            put++;
-        } else if (inet_pton(AF_INET6, dns[i], &config->server[get].addr_in6.sin6_addr) == 1) {
+            get++;
+        } else if (inet_pton(AF_INET6, dns[i].c_str(), &config->server[get].addr_in6.sin6_addr) == 1) {
             config->server[get].addr_in6.sin6_family = AF_INET6;
             config->server[get].addr_in6.sin6_port = htons(DNSPORT);
-            put++;
+            get++;
         } else {
-            LOGE("[DNS] %s is not a valid ip address\n", dns[i]);
+            LOGE("[DNS] %s is not a valid ip address\n", dns[i].c_str());
         }
     }
     config->namecount = get;
@@ -179,8 +179,8 @@ static int dnsinit() {
 }
 
 void flushdns(){
-    while(!srvs.empty()){
-        srvs.front()->deleteLater(0);
+    for(auto i: srvs){
+        i->deleteLater(NOERROR | DISCONNECT_FLAG);
     }
     srvs.clear();
     for(auto i = rcd_cache.begin(); i != rcd_cache.end(); i = rcd_cache.erase(i)){

@@ -116,7 +116,7 @@ void FdRWer::Dnscallback(void* param, const char*, std::list<sockaddr_un> addrs)
         rwer->addrs.push(i);
     }
     if(rwer->protocol == Protocol::ICMP){
-        int fd = IcmpSocket(&addrs.front(), rwer->port);
+        int fd = IcmpSocket(&addrs.front());
         if(fd < 0){
             return rwer->errorCB(CONNECT_FAILED, errno);
         }

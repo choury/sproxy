@@ -451,8 +451,8 @@ struct in_addr getMapped(struct in6_addr addr) {
 }
 
 
-void dump_trace(int signum) {
 #if Backtrace_FOUND
+void dump_trace(int signum) {
     void *stack_trace[100] = {0};
     char **stack_strings = NULL;
     int stack_depth = 0;
@@ -477,9 +477,7 @@ void dump_trace(int signum) {
     /* 获取函数名称时申请的内存需要自行释放 */
     free(stack_strings);
     stack_strings = NULL;
-#else
-    LOGE("stub dump_trace: %d\n", signum);
-#endif
     signal(signum, SIG_DFL);
     kill(getpid(), signum);
 }
+#endif

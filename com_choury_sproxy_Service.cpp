@@ -38,11 +38,13 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
 
     vpn.disable_ipv6 = 1;
     vpn.ignore_cert_error = 1;
+    vpn.daemon_mode = 0;
     strcpy(vpn.server, server_str);
     strcpy(vpn.secret, secret_str);
     jnienv->ReleaseStringUTFChars(server, server_str);
     jnienv->ReleaseStringUTFChars(secret, secret_str);
     vpn.fd = sockfd;
+
     jnienv->DeleteLocalRef(server);
     jnienv->DeleteLocalRef(secret);
 

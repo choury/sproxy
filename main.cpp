@@ -5,8 +5,6 @@
 #include "misc/strategy.h"
 #include "misc/util.h"
 
-#include <set>
-
 #include <unistd.h>
 #include <assert.h>
 #include <fcntl.h>
@@ -420,7 +418,9 @@ int main(int argc, char **argv) {
     main_argv = argv;
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
+#if Backtrace_FOUND
     signal(SIGABRT, dump_trace);
+#endif
     signal(SIGSEGV, dump_stat);
     signal(SIGUSR1, dump_stat);
 #ifndef NDEBUG
@@ -474,7 +474,6 @@ int main(int argc, char **argv) {
             new Http_server<Guest>(svsk_http);
         }
     }
-    srand(time(0));
     LOG("Accepting connections ...\n");
     while (1) {
         int c;

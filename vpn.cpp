@@ -38,9 +38,9 @@ uint32_t vpn_action = 0;
 int vpn_start(const struct VpnConfig* vpn){
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
-#ifndef __ANDROID__
-    signal(SIGABRT, dump_trace);
     setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
+#if Backtrace_FOUND
+    signal(SIGABRT, dump_trace);
 #endif
     signal(SIGUSR1, dump_stat);
     daemon_mode = vpn->daemon_mode;
@@ -54,7 +54,7 @@ int vpn_start(const struct VpnConfig* vpn){
     reloadstrategy();
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
-    if (daemon_mode && daemon(1, 1) < 0) {
+    if (daemon_mode && daemon(1, 0) < 0) {
         fprintf(stderr, "start daemon error:%s\n", strerror(errno));
         return -1;
     }
@@ -68,7 +68,6 @@ int vpn_start(const struct VpnConfig* vpn){
 
     new VPN_nanny(vpn->fd);
     vpn_contiune = 1;
-    srand(time(0));
     LOG("Accepting connections ...\n");
     while (vpn_contiune) {
         if(vpn_action & VPN_RESET){

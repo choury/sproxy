@@ -29,6 +29,7 @@ VpnKey::VpnKey(std::shared_ptr<const Ip> ip) {
     case IPPROTO_ICMP:
         protocol = Protocol::ICMP;
         src.addr_in.sin_port = htons(ip->icmp->getid());
+        dst.addr_in.sin_port = htons(ip->icmp->getid());
         break;
     case IPPROTO_ICMPV6:
         protocol = Protocol::ICMP;
@@ -92,8 +93,8 @@ VPN_nanny::VPN_nanny(int fd){
 
 VPN_nanny::~VPN_nanny(){
     for(auto& i: statusmap){
-        assert(!i.second.expired());
-        i.second.lock()->finish(VPN_AGED_ERR, 0);
+        if(!i.second.expired())
+            i.second.lock()->finish(VPN_AGED_ERR, 0);
     }
     statusmap.clear();
 }
