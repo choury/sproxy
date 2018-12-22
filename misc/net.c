@@ -178,6 +178,13 @@ int Connect(const union sockaddr_un* addr, int type) {
         return -1;
     }
     do{
+        int flags = fcntl(fd, F_GETFL, 0);
+        if (flags < 0) {
+            LOGE("fcntl error:%s\n", strerror(errno));
+            break;
+        }
+        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
         if(protectFd(fd) == 0){
             LOGE("protecd fd error:%s\n", strerror(errno));
             break;
@@ -197,7 +204,7 @@ int Connect(const union sockaddr_un* addr, int type) {
 
         socklen_t len = (addr->addr.sa_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
         if (connect(fd, &addr->addr, len) == -1 && errno != EINPROGRESS) {
-            LOGE("connecting error:%s\n", strerror(errno));
+            LOGE("connecting %s error:%s\n", getaddrportstring(addr), strerror(errno));
             break;
         }
         return fd;
