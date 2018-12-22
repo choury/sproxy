@@ -10,6 +10,8 @@ set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 CHECK_CXX_COMPILER_FLAG("-std=c++11" HAVE_CXX11)
 CHECK_CXX_COMPILER_FLAG("-std=c++14" HAVE_CXX14)
+CHECK_CXX_COMPILER_FLAG("-std=c++17" HAVE_CXX17)
+CHECK_CXX_COMPILER_FLAG("-std=c++2a" HAVE_CXX2a)
 
 if(NOT HAVE_CXX11)
     message(FATAL_ERROR "this project need c++11")
@@ -45,32 +47,29 @@ else()
     CHECK_CXX_COMPILER_FLAG("-fsanitize=address" HAVE_SAN_ADDR)
     unset(CMAKE_REQUIRED_FLAGS)
 
-if(LINUX)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=gold")
-endif()
     find_package(OpenSSL 1.0.2 REQUIRED)
+
+    If("${CMAKE_SYSTEM}" MATCHES "Linux")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=gold")
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=gold")
+    endif()
 endif()
 
 include_directories(${OPENSSL_INCLUDE_DIR})
 
 if(NOT APPLE)
     find_package(JSON-C)
-    if(NOT JSON-C_FOUND)
-        message(WARNING "json-c not found, disable webui")
-    else()
+    if(JSON-C_FOUND)
         set(BUILD_CGI TRUE)
+    else()
+        message(WARNING "json-c not found, disable webui")
     endif()
 endif()
 
 
 
 set(CMAKE_C_FLAGS "-Wall -Wextra -fPIC ${CMAKE_C_FLAGS}")
-
-if(HAVE_CXX14)
-    set(CMAKE_CXX_FLAGS "-std=c++14 -Wall -Wextra -fPIC ${CMAKE_CXX_FLAGS}")
-else()
-    set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -Wextra -fPIC ${CMAKE_CXX_FLAGS}")
-endif()
+set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -Wextra -fPIC ${CMAKE_CXX_FLAGS}")
 
 execute_process(COMMAND uname -r
     OUTPUT_VARIABLE KERNEL_NAME
@@ -94,6 +93,9 @@ else()
     set(CMAKE_CXX_FLAGS "-DENABLE_GZIP_TEST ${CMAKE_CXX_FLAGS}")
     set(ENABLE_GZIP_TEST TRUE)
 endif()
+
+find_package(Backtrace)
+configure_file(common.h.in ${PROJECT_SOURCE_DIR}/common.h ESCAPE_QUOTES)
 
 set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
@@ -124,7 +126,6 @@ add_subdirectory(req)
 add_subdirectory(res)
 
 set(SPROXY_LIBS  req res prot misc ${OPENSSL_LIBRARIES} dl)
-find_package(Backtrace)
 if(Backtrace_FOUND)
     include_directories(${Backtrace_INCLUDE_DIRS})
     set(SPROXY_LIBS ${SPROXY_LIBS} ${Backtrace_LIBRARIES})
@@ -135,8 +136,6 @@ if(ZLIB_FOUND)
 endif()
 
 include_directories(${PROJECT_SOURCE_DIR})
-
-configure_file(common.h.in ${PROJECT_SOURCE_DIR}/common.h ESCAPE_QUOTES)
 
 if(NOT ANDROID_NDK)
     add_executable(sproxy main.cpp base.cpp)
