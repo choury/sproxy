@@ -65,6 +65,9 @@ void Host::connected() {
             return deleteLater(PEER_LOST_ERR);
         }
     }
+    if(req == nullptr){ //requester has called finished yet.
+        return;
+    }
     if(req->ismethod("CONNECT")){
         if(!req->should_proxy){
             Http_Proc = &Host::AlwaysProc;
