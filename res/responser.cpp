@@ -66,15 +66,15 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
         req->ismethod("CONNECT") ||
         req->ismethod("HEAD") ||
         req->ismethod("DELETE") ||
+        req->ismethod("OPTIONS") ||
         req->ismethod("SEND") ||
         req->ismethod("PING"))
     {
         if(req->port == 0 && !req->ismethod("SEND") && !req->ismethod("PING")){
             req->port = HTTPPORT;
         }
-        std::string ext;
-        Strategy s = getstrategy(req->hostname, ext);
-        if(s == Strategy::block){
+        strategy stra = getstrategy(req->hostname);
+        if(stra.s == Strategy::block){
             LOG("[[block]] %s\n", log_buff);
             const char* header = "HTTP/1.1 403 Forbidden" CRLF "Content-Length:73" CRLF CRLF;
             HttpResHeader* res = new HttpResHeader(header, strlen(header));
@@ -84,7 +84,7 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
                             " for more information.\n", 73, req->index);
             return std::weak_ptr<Responser>();
         }
-        if(s == Strategy::local){
+        if(stra.s == Strategy::local){
             LOG("[[local]] %s\n", log_buff);
             return File::getfile(req);
         }
@@ -99,7 +99,7 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
         char fprotocol[DOMAINLIMIT];
         char fhost[DOMAINLIMIT];
         uint16_t fport = SPORT;
-        switch(s){
+        switch(stra.s){
         case Strategy::proxy:
             strcpy(fprotocol, SPROT);
             strcpy(fhost, SHOST);
@@ -122,7 +122,7 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
             strcpy(fhost, req->hostname);
             fport = req->port;
             if(req->ismethod("PING")){
-                LOG("[[%s]] %s\n", getstrategystring(s), log_buff);
+                LOG("[[%s]] %s\n", getstrategystring(stra.s), log_buff);
                 return std::dynamic_pointer_cast<Responser>((new Ping(req))->shared_from_this());
             }else if(req->ismethod("SEND")){
                 strcpy(fprotocol, "udp");
@@ -130,7 +130,7 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
             req->del("Proxy-Authorization");
             break;
         case Strategy::forward:
-            if(ext.empty()){
+            if(stra.ext.empty()){
                 HttpResHeader* res = new HttpResHeader(H500, sizeof(H500));
                 res->index = req->index;
                 requester->response(res);
@@ -145,19 +145,19 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
             requester->response(res);
             return std::weak_ptr<Responser>();}
         }
-        if(!ext.empty() && s != Strategy::direct){
-            if(spliturl(ext.c_str(), fprotocol, fhost, nullptr, &fport)){
+        if(!stra.ext.empty() && stra.s != Strategy::direct){
+            if(spliturl(stra.ext.c_str(), fprotocol, fhost, nullptr, &fport)){
                 HttpResHeader* res = new HttpResHeader(H500, sizeof(H500));
                 res->index = req->index;
                 requester->response(res);
-                LOGE("[[ext misformat]] %s -> %s\n", log_buff, ext.c_str());
+                LOGE("[[ext misformat]] %s -> %s\n", log_buff, stra.ext.c_str());
                 return std::weak_ptr<Responser>();
             }
         }
         if(fprotocol[0] == 0){
             strcpy(fprotocol, "http");
         }
-        LOG("[[%s]] %s\n", getstrategystring(s), log_buff);
+        LOG("[[%s]] %s\n", getstrategystring(stra.s), log_buff);
         return Host::gethost(fprotocol, fhost, fport, req, responser_ptr);
     }else if (req->ismethod("ADDS")) {
         const char *strategy = req->get("s");
@@ -174,13 +174,12 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
         }
         return std::weak_ptr<Responser>();
     } else if (req->ismethod("DELS")) {
-        std::string ext;
-        const char* strategy = getstrategystring(getstrategy(req->hostname, ext));
-        LOG("[[del %s]] %s %s\n", strategy, log_buff, ext.c_str());
+        strategy stra = getstrategy(req->hostname);
+        LOG("[[del %s]] %s %s\n", getstrategystring(stra.s), log_buff, stra.ext.c_str());
         if(delstrategy(req->hostname)){
             HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
-            res->set("Strategy", strategy);
-            res->set("Ext", ext);
+            res->set("Strategy", getstrategystring(stra.s));
+            res->set("Ext", stra.ext.c_str());
             res->index = req->index;
             requester->response(res);
         }else{
@@ -202,7 +201,8 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
     } else if (req->ismethod("TEST")){
         HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
         std::string ext;
-        res->set("Strategy", getstrategystring(getstrategy(req->hostname, ext)));
+        strategy stra = getstrategy(req->hostname);
+        res->set("Strategy", getstrategystring(stra.s));
         res->set("Ext", ext);
         res->index = req->index;
         requester->response(res);

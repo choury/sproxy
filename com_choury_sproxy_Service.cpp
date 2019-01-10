@@ -36,7 +36,7 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     const char *server_str = jnienv->GetStringUTFChars(server, 0);
     const char *secret_str = jnienv->GetStringUTFChars(secret, 0);
 
-    vpn.disable_ipv6 = 1;
+    vpn.disable_ipv6 = 0;
     vpn.ignore_cert_error = 1;
     vpn.daemon_mode = 0;
     strcpy(vpn.server, server_str);

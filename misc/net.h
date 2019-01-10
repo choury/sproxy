@@ -82,7 +82,7 @@ int Bind(int type, short port, const union sockaddr_un* addr);
 int IcmpSocket(const union sockaddr_un* addr);
 const char *getaddrstring(const union sockaddr_un *addr);
 const char *getaddrportstring(const union sockaddr_un *addr);
-const char* getlocalip ();
+union sockaddr_un* getlocalip ();
 
 
 #ifdef  __cplusplus

@@ -26,6 +26,7 @@ class Dns_srv:public Server{
 public:
     explicit Dns_srv(const sockaddr_un* server);
     virtual ~Dns_srv();
+    bool valid();
     void buffHE(const char* buffer, size_t len);
     int query(const char *host, int type, uint32_t id);
     virtual void dump_stat(Dumper dp, void* param) override;
@@ -108,7 +109,7 @@ extern std::vector<std::string> getDns();
 void getDnsConfig(struct DnsConfig* config){
     std::vector<std::string> dns = getDns();
     int get = 0;
-    for(int i = 0; i < dns.size(); i++ ){
+    for(size_t i = 0; i < dns.size(); i++ ){
         if(get == 3){
             break;
         }
@@ -167,13 +168,12 @@ static int dnsinit() {
     assert(srvs.empty());
     DnsConfig config;
     getDnsConfig(&config);
-    try {
-        for(int i =0;i< config.namecount; i++) {
-            LOG("[DNS] set dns server: %s\n", getaddrstring(&config.server[i]));
-            new Dns_srv(&config.server[i]);
+    for(int i =0;i< config.namecount; i++) {
+        LOG("[DNS] set dns server: %s\n", getaddrstring(&config.server[i]));
+        Dns_srv* ds = new Dns_srv(&config.server[i]);
+        if(!ds->valid()){
+            ds->deleteLater(PEER_LOST_ERR);
         }
-    }catch (...){
-
     }
     return srvs.size();
 }
@@ -399,7 +399,7 @@ Dns_srv::Dns_srv(const sockaddr_un* server){
     int fd = Connect(&addr, SOCK_DGRAM);
     if (fd == -1) {
         LOGE("[DNS] connecting  %s error:%s\n", getaddrstring(&addr), strerror(errno));
-        throw 0;
+        return;
     }
     rwer = new PacketRWer(fd, [this](int ret, int code){
         LOGE("DNS error: %d/%d\n", ret, code);
@@ -422,6 +422,10 @@ Dns_srv::~Dns_srv(){
             return;
         }
     }
+}
+
+bool Dns_srv::valid(){
+    return rwer != nullptr;
 }
 
 
@@ -566,7 +570,7 @@ static const unsigned char * getdomain(const DNS_HDR *hdr, const unsigned char *
     return p+1;
 }
 
-int putdomain(unsigned char *buf, const char *domain){
+static int putdomain(unsigned char *buf, const char *domain){
     unsigned char *p = buf+1;
     sprintf((char *)p, "%s", domain);
 

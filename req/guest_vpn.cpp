@@ -422,7 +422,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
         HttpReqHeader* req = new HttpReqHeader(buff, headlen, shared_from_this());
         req->index = &key;
         TcpStatus* tcpStatus = (TcpStatus*)malloc(sizeof(TcpStatus));
-        tcpStatus->send_seq = time(0);
+        tcpStatus->send_seq = getmtime();
         tcpStatus->send_acked = tcpStatus->send_seq;
         tcpStatus->want_seq = seq+1;
         tcpStatus->window = pac->tcp->getwindow();
@@ -531,7 +531,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
 
     tcpStatus->window = pac->tcp->getwindow();
     if(flag & TH_ACK){
-        if(ack > tcpStatus->send_acked){
+        if(after(ack, tcpStatus->send_acked)){
             tcpStatus->send_acked = ack;
         }
         switch(tcpStatus->status){

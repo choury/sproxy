@@ -157,7 +157,6 @@ ret:
 }
 
 void Http2Base::PushData(uint32_t id, const void* data, size_t size){
-    assert(size <= 0xffffff);
     size_t left = size;
     while(left > remoteframebodylimit){
         Http2_header *header=(Http2_header *)p_move(p_malloc(remoteframebodylimit), -(char)sizeof(Http2_header));

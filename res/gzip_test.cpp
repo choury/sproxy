@@ -109,7 +109,7 @@ void GzipTest::gzipreadHE(size_t len) {
         return;
     }
 
-    size_t chunk = req_ptr.lock()->bufleft(req_index);
+    ssize_t chunk = req_ptr.lock()->bufleft(req_index);
     if(chunk <= 0){
         rwer->delEvents(RW_EVENT::READ);
         return;
@@ -146,7 +146,7 @@ void GzipTest::rawreadHE(size_t len) {
         return;
     }
 
-    size_t chunk = req_ptr.lock()->bufleft(req_index);
+    ssize_t chunk = req_ptr.lock()->bufleft(req_index);
     if(chunk <= 0){
         rwer->delEvents(RW_EVENT::READ);
         return;

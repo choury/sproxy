@@ -11,7 +11,7 @@
 #include <signal.h>
 
 #define TUNADDR  "10.1.0.1"
-#define TUNADDR6 "fdab:cdef::1"
+#define TUNADDR6 "64:ff9B::10.1.0.1"
 
 const char* out_interface;
 

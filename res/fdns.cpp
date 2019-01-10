@@ -62,8 +62,8 @@ void FDns::Send(const void* buff, size_t size, void* index) {
             }
         }
         if(que.type == 1 || que.type == 28) {
-            std::string ignore;
-            if (getstrategy(que.host.c_str(), ignore) == Strategy::direct) {
+            strategy stra = getstrategy(que.host.c_str());
+            if (stra.s == Strategy::direct) {
                 query(que.host.c_str(), nullptr, nullptr);
             }
             if(que.type == 1){

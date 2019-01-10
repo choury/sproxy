@@ -281,32 +281,22 @@ const char *getaddrportstring(const union sockaddr_un *addr){
 
 #ifndef __ANDROID__
 #include <ifaddrs.h>
-const char *getlocalip ()
-{
+union sockaddr_un* getlocalip () {
     struct ifaddrs *ifap, *ifa;
-    static char ips [20][INET6_ADDRSTRLEN];
+    static union sockaddr_un ips[20];
     memset(ips, 0, sizeof(ips));
     getifaddrs (&ifap);
     int i = 0;
     for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
         if(ifa->ifa_addr == NULL)
             continue;
-        if(ifa->ifa_addr->sa_family == AF_INET6){
-            struct sockaddr_in6 *sa = (struct sockaddr_in6 *) ifa->ifa_addr;
-            inet_ntop(AF_INET6, &sa->sin6_addr, ips[i], sizeof(ips[0]));
-            i++;
-        }
-        if(ifa->ifa_addr->sa_family == AF_INET){
-            struct sockaddr_in *sa = (struct sockaddr_in *) ifa->ifa_addr;
-            inet_ntop(AF_INET, &sa->sin_addr, ips[i], sizeof(ips[0]));
-            i++;
-        }
+        memcpy(&ips[i++], ifa->ifa_addr, sizeof(struct sockaddr_in6));
     }
     freeifaddrs(ifap);
-    return (char *)ips;
+    return ips;
 }
 #else
-const char *getlocalip (){
+union sockaddr_un* getlocalip (){
     return NULL;
 }
 #endif

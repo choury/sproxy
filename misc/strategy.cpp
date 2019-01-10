@@ -36,258 +36,248 @@ static string reverse(string str){
     return result;
 }
 
+static strategy default_strategy;
 
-class Stra{
-    Strategy strategy = Strategy::none;
-    string ext;
-    map<string, Stra> domains;
-    map<uint64_t, Strategy> ip4s;
-    void insert(string host, Strategy strategy, string ext);
-    Strategy find(string host, string& ext);
-    bool remove(string host);
-    bool purge(Strategy strategy);
+class Ipv4Stra{
+    map<uint64_t, strategy> strategies;
 public:
-    void add(const char* host, Strategy strategy, string ext){
-        string domain = host;
-        auto mask_pos = domain.find_first_of("/");
-        string ip = domain.substr(0, mask_pos);
-        uint32_t ipv4 = ntohl(inet_addr(ip.c_str()));
-        if(ipv4 != INADDR_NONE){
-            uint32_t mask = 0xffffffff;
-            if(mask_pos != string::npos){
-#ifdef __ANDROID__
-                int prefix = atoi(domain.substr(mask_pos+1).c_str());
-#else
-                int prefix = stoi(domain.substr(mask_pos+1));
-#endif
-                mask =  (((uint64_t)1 << prefix) - 1) << (32 - prefix);
+    void insert(in_addr ip, uint32_t prefix, const strategy& s){
+        uint32_t prefix_mask =  (((uint64_t)1 << prefix) - 1) << (32 - prefix);
+        strategies[(uint64_t)(ntohl(ip.s_addr) & prefix_mask) << 32 | prefix_mask] = s;
+    }
+    strategy find(in_addr ip){
+        for(auto i: strategies){
+            uint32_t mask = i.first & 0xffffffff;
+            uint32_t net = i.first >> 32;
+            if((net & mask ) == (ntohl(ip.s_addr) & mask)){
+                return i.second;
             }
-            ip4s[(uint64_t)ipv4 << 32 | mask] = strategy;
-            return;
         }
-        if(host[0] == '_'){
-            this->strategy = strategy;
-            this->ext = ext;
-        }
-        return insert(reverse(host), strategy, ext);
+        return default_strategy;
     }
-    Strategy get(const char* host, string& ext){
-        uint32_t ipv4 = ntohl(inet_addr(host));
-        if(ipv4 != INADDR_NONE){
-            for(auto i: ip4s){
-                uint32_t mask = i.first & 0xffffffff;
-                uint32_t net = i.first >> 32;
-                if((net & mask ) == (ipv4 & mask)){
-                    ext = this->ext;
-                    return i.second;
-                }
+    bool remove(in_addr ip){
+        for(auto i = strategies.begin(); i!= strategies.end(); i++ ){
+            uint32_t mask = i->first & 0xffffffff;
+            uint32_t net = i->first >> 32;
+            if((net & mask ) == (ntohl(ip.s_addr) & mask)){
+                strategies.erase(i);
+                return true;
             }
-            return strategy;
         }
-        return find(reverse(host), ext);
+        return false;
     }
-    bool del(const char *host){
-        uint32_t ipv4 = ntohl(inet_addr(host));
-        if(ipv4 != INADDR_NONE){
-            for(auto i: ip4s){
-                uint32_t mask = i.first & 0xffffffff;
-                uint32_t net = i.first >> 32;
-                if((net & mask ) == (ipv4 & mask)){
-                    ip4s.erase(i.first);
-                    return true;
-                }
-            }
-            return false;
-        }
-        if(host[0] == '_'){
-            strategy = Strategy::direct;
-            ext.clear();
-        }
-        return remove(reverse(host));
+    void clear(){
+        strategies.clear();
     }
-    void clear();
-    void stats(int tab);
-    std::list<std::tuple<string, string, string>> dump();
-}sites;
-
-void Stra::insert(string host, Strategy strategy, string ext){
-    assert(strategy != Strategy::none);
-    auto pos = host.find_first_of(".");
-    if(pos == string::npos){
-        domains[host].strategy =  strategy;
-        domains[host].ext = ext;
-        domains[host].purge(strategy);
-        return;
-    }else{
-        domains[host.substr(0, pos)].insert(host.substr(pos+1), strategy, ext);
-    }
-}
-
-bool Stra::purge(Strategy strategy){
-    for(auto i= domains.begin();i != domains.end();){
-        if(i->second.purge(strategy)){
-            i = domains.erase(i);
-        }else{
-            i++;
-        }
-    }
-    return (domains.empty() &&
-        (this->strategy == strategy || this->strategy == Strategy::none));
-}
-
-Strategy Stra::find(string host, string& ext) {
-    if(host == ""){
-        ext = this->ext;
-        return strategy;
-    }
-    string subhost;
-    auto pos = host.find_first_of(".");
-    if(pos == string::npos){
-        subhost = "";
-    }else{
-        subhost = host.substr(pos+1);
-    }
-    Strategy s = Strategy::none;
-    if(domains.count(host.substr(0, pos)))
-        s= domains[host.substr(0, pos)].find(subhost, ext);
-    if(s != Strategy::none)
-        return s;
-    ext = this->ext;
-    return strategy;
-}
-
-void Stra::clear() {
-    ip4s.clear();
-    domains.clear();
-}
-
-
-bool Stra::remove(string host) {
-    auto pos = host.find_first_of(".");
-    if(pos == string::npos){
-        if(domains.count(host)){
-            if(domains[host].strategy == Strategy::none){
-                return false;
-            }
-            if(domains[host].domains.empty()){
-                domains.erase(host);
-            }else{
-                domains[host].strategy = Strategy::none;
-            }
-            return true;
-        }else{
-            return false;
-        }
-    }else{
-        string subhost = host.substr(pos+1);
-        if(domains.count(host.substr(0, pos))){
-            return domains[host.substr(0, pos)].remove(subhost);
-        }else{
-            return false;
-        }
-    }
-}
-
-void Stra::stats(int tab){
-    for(auto i: ip4s){
-        int prefix = 0;
-        uint32_t mask = i.first&0xffffffff;
-        while(mask){
-            prefix ++;
-            mask <<= 1;
-        }
-        uint32_t net = i.first >> 32;
-        LOG("%s/%d: %s\n", inet_ntoa(in_addr{htonl(net)}), prefix, getstrategystring(i.second));
-    }
-    char tabs[100]= {0};
-    for(int i = 0; i<tab; i++){
-        tabs[i]='\t';
-    }
-    if(domains.size()){
-        if(strategy != Strategy::none){
-            LOG("[%zu] %s\n", domains.size(), getstrategystring(strategy));
-        }else{
-            LOG("[%zu]\n", domains.size());
-        }
-        for(auto i: domains){
-            LOG("%s %s", tabs, i.first.c_str());
-            i.second.stats(tab+1);
-        }
-    }else{
-        LOG(" %s\n", getstrategystring(strategy));
-    }
-}
-
-
-std::list<std::tuple<string, string, string>> Stra::dump(){
-    std::list<std::tuple<string, string, string>>slist;
-    for(auto i: ip4s){
-        uint32_t net = i.first >> 32;
-        uint32_t mask = i.first&0xffffffff;
-        char ipv4_string[100];
-        if(mask != 0xffffffff){
+    void stats(int){
+        for(auto i: strategies){
             int prefix = 0;
+            uint32_t mask = i.first&0xffffffff;
             while(mask){
                 prefix ++;
                 mask <<= 1;
             }
-            sprintf(ipv4_string, "%s/%d", inet_ntoa(in_addr{htonl(net)}), prefix);
-        }else{
-            sprintf(ipv4_string, "%s", inet_ntoa(in_addr{htonl(net)}));
+            uint32_t net = i.first >> 32;
+            LOG("%s/%d: %s %s\n", 
+                inet_ntoa(in_addr{htonl(net)}), 
+                prefix, 
+                getstrategystring(i.second.s),
+                i.second.ext.c_str());
         }
-        slist.push_back(std::make_tuple(ipv4_string, getstrategystring(i.second), ""));
     }
-    if(domains.size()){
-        for(auto i: domains){
-            auto submap =  i.second.dump();
-            for(auto j:submap){
-                if(std::get<0>(j) != ""){
-                    slist.push_back(std::make_tuple(std::get<0>(j)+'.'+i.first,  std::get<1>(j), std::get<2>(j)));
-                }else{
-                    slist.push_back(std::make_tuple(i.first, std::get<1>(j), std::get<2>(j)));
+    void dump(std::list<std::pair<std::string, strategy>>& slist){
+        for(auto i: strategies){
+            int prefix = 0;
+            uint32_t mask = i.first&0xffffffff;
+            while(mask){
+                prefix ++;
+                mask <<= 1;
+            }
+            uint32_t net = i.first >> 32;
+            char ip_prefix[100];
+            snprintf(ip_prefix, 100, "%s/%d", inet_ntoa(in_addr{htonl(net)}), prefix);
+            slist.emplace_back(ip_prefix, i.second);
+        }
+    }
+}ipv4s;
+
+class DomainStra{
+    strategy my_strategy;
+    map<string, DomainStra> children;
+public:
+    void insert(string host, const strategy& stra){
+        assert(stra.s != Strategy::none);
+        auto pos = host.find_first_of(".");
+        if(pos == string::npos){
+            children[host].my_strategy = stra;
+            children[host].purge(stra);
+            return;
+        }else{
+            children[host.substr(0, pos)].insert(host.substr(pos+1), stra);
+        }
+    }
+    const strategy& find(string host){
+        if(host == ""){
+            return my_strategy;
+        }
+        string subhost;
+        auto pos = host.find_first_of(".");
+        if(pos == string::npos){
+            subhost = "";
+        }else{
+            subhost = host.substr(pos+1);
+        }
+        if(children.count(host.substr(0, pos)))
+            return children[host.substr(0, pos)].find(subhost);
+        else if(my_strategy.s != Strategy::none)
+            return my_strategy;
+        else
+            return default_strategy;
+    }
+    bool remove(string host){
+        auto pos = host.find_first_of(".");
+        if(pos == string::npos){
+            if(children.count(host)){
+                if(children[host].my_strategy.s == Strategy::none){
+                    return false;
                 }
+                if(children[host].children.empty()){
+                    children.erase(host);
+                }else{
+                    children[host].my_strategy.s = Strategy::none;
+                }
+                return true;
+            }else{
+                return false;
+            }
+        }else{
+            string subhost = host.substr(pos+1);
+            if(children.count(host.substr(0, pos))){
+                return children[host.substr(0, pos)].remove(subhost);
+            }else{
+                return false;
             }
         }
     }
-    if(strategy != Strategy::none){
-        slist.push_back(std::make_tuple("",  getstrategystring(strategy), ext));
+    bool purge(const strategy& stra){
+        for(auto i= children.begin();i != children.end();){
+            if(i->second.purge(stra)){
+                i = children.erase(i);
+            }else{
+                i++;
+            }
+        }
+        return (children.empty() && 
+            (memcmp(&my_strategy, &stra, sizeof(strategy)) == 0 || my_strategy.s == Strategy::none));
     }
-    return slist;
-}
+    void clear(){
+        children.clear();
+    }
+    void stats(int tab){
+        char tabs[100]= {0};
+        for(int i = 0; i<tab; i++){
+            tabs[i]='\t';
+        }
+        if(children.size()){
+            if(my_strategy.s != Strategy::none){
+                LOG("[%zu] %s %s\n", children.size(), getstrategystring(my_strategy.s), my_strategy.ext.c_str());
+            }else{
+                LOG("[%zu]\n", children.size());
+            }
+            for(auto i: children){
+                LOG("%s %s", tabs, i.first.c_str());
+                i.second.stats(tab+1);
+            }
+        }else{
+            LOG(" %s %s\n", getstrategystring(my_strategy.s), my_strategy.ext.c_str());
+        }
+    }
+    std::list<std::pair<string, strategy>> dump(){
+        std::list<std::pair<string, strategy>>slist;
+        for(auto i: children){
+            auto submap =  i.second.dump();
+            for(auto j:submap){
+                if(j.first != ""){
+                    slist.emplace_back(j.first+'.'+i.first,  j.second);
+                }else{
+                    slist.emplace_back(i.first, j.second);
+                }
+            }
+        }
+        return slist;
+    }
+}domains;
 
-static bool mergestrategy(const char* host, const char* strategy, string ext){
+static bool mergestrategy(const string& host, const string& strategy_str, string ext){
     Strategy s;
-    if(strcmp(strategy, "direct") == 0){
+    if(strategy_str == "direct"){
         s = Strategy::direct;
-    }else if(strcmp(strategy, "proxy") == 0){
+    }else if(strategy_str == "proxy"){
         s = Strategy::proxy;
-    }else if(strcmp(strategy, "local") == 0){
+    }else if(strategy_str == "local"){
         s = Strategy::local;
-    }else if(strcmp(strategy, "block") == 0){
+    }else if(strategy_str == "block"){
         s = Strategy::block;
-    }else if(strcmp(strategy, "forward") == 0){
+    }else if(strategy_str == "forward"){
         s = Strategy::forward;
     }else{
         return false;
     }
-    sites.add(host, s, ext);
-    return true;
+    strategy stra{s, ext};
+    if(host[0] == '_'){
+        default_strategy = stra;
+        return true;
+    }
+    auto mask_pos = host.find_first_of("/");
+    sockaddr_un addr;
+    if(mask_pos != string::npos){
+        string ip = host.substr(0, mask_pos);
+#ifdef __ANDROID__
+        int prefix = atoi(host.substr(mask_pos+1).c_str());
+#else
+        int prefix = stoi(host.substr(mask_pos+1));
+#endif
+        if (inet_pton(AF_INET, ip.c_str(), &addr.addr_in.sin_addr) == 1) {
+            ipv4s.insert(addr.addr_in.sin_addr, prefix, stra);
+            return true;
+        }
+        if (inet_pton(AF_INET6, ip.c_str(), &addr.addr_in6.sin6_addr) == 1) {
+            //TODO: xxx
+            return false;
+        }
+        return false;
+    }else if(inet_pton(AF_INET, host.c_str(), &addr.addr_in.sin_addr) == 1){
+        ipv4s.insert(addr.addr_in.sin_addr, 32, stra);
+        return true;
+    }else if(inet_pton(AF_INET6, host.c_str(), &addr.addr_in.sin_addr) == 1){
+        //TODO: xxx
+        return false;
+    } else{
+        domains.insert(reverse(host), stra);
+        return true;
+    }
 }
 
 std::string getExternalFilesDir();
 
 void reloadstrategy() {
-    sites.clear();
+    ipv4s.clear();
+    domains.clear();
 
     //default strategy
-    for(const char *ips=getlocalip(); ips && strlen(ips); ips+=INET6_ADDRSTRLEN){
-        sites.add(ips, Strategy::local, "");
+    for(auto ips=getlocalip(); ips->addr_in.sin_family ; ips++){
+        if(ips->addr.sa_family == AF_INET){
+            ipv4s.insert(ips->addr_in.sin_addr, 32, strategy{Strategy::local, ""});
+        }
+        if(ips->addr.sa_family == AF_INET6){
+            //TDDO: xxx
+        }
     }
     char hostname[HOST_NAME_MAX];
     gethostname(hostname, sizeof(hostname));
-    sites.add(hostname, Strategy::local, "");
-    sites.add("localhost", Strategy::local, "");
-    sites.add("_", Strategy::direct, "");
+    domains.insert(reverse(hostname), strategy{Strategy::local, ""});
+    domains.insert("localhost", strategy{Strategy::local, ""});
+    default_strategy = strategy{Strategy::direct, ""};
 
 #ifdef __ANDROID__
     ifstream sitesfile(getExternalFilesDir() + "/" + LISTFILE);
@@ -321,26 +311,25 @@ void reloadstrategy() {
 
     addauth("::ffff:127.0.0.1");
     addauth("::1");
-//    sites.stats(0);
+    ipv4s.stats(0);
+    domains.stats(0);
+    LOG("_ %s %s\n", getstrategystring(default_strategy.s), default_strategy.ext.c_str());
 }
 
 void savesites(){
 #ifndef __ANDROID__
     ofstream sitesfile(LISTFILE);
+    sitesfile <<"_ "<<getstrategystring(default_strategy.s)<<' '<<default_strategy.ext<< std::endl;
     auto list = getallstrategy();
     for (auto i:list) {
-        if(std::get<0>(i) == ""){
-            sitesfile <<"_ "<<std::get<1>(i)<<' '<<std::get<2>(i)<< std::endl;
-        }else{
-            sitesfile <<std::get<0>(i)<<' '<<std::get<1>(i)<<' '<<std::get<2>(i)<< std::endl;
-        }
+        sitesfile <<i.first<<' '<<getstrategystring(i.second.s)<<' '<<i.second.ext<< std::endl;
     }
     sitesfile.close();
 #endif
 }
 
 
-bool addstrategy(const char* host, const char* strategy, string ext) {
+bool addstrategy(const char* host, const char* strategy, const char* ext) {
     if(mergestrategy(host, strategy, ext)){
         savesites();
         return true;
@@ -349,22 +338,38 @@ bool addstrategy(const char* host, const char* strategy, string ext) {
 }
 
 bool delstrategy(const char* host) {
-    if(sites.del(host)){
-        savesites();
-        return true;
+    bool found  = false;
+    sockaddr_un addr;
+    if(host[0] == '_'){
+        default_strategy = strategy{Strategy::direct, ""};
+        found = true;
+    }else if (inet_pton(AF_INET, host, &addr.addr_in.sin_addr) == 1) {
+        found = ipv4s.remove(addr.addr_in.sin_addr);
+    }else if (inet_pton(AF_INET6, host, &addr.addr_in6.sin6_addr) == 1) {
+        //TODO
+        found = false;
     }else{
-        return false;
+        found = domains.remove(host);
     }
+    if(found){
+        savesites();
+    }
+    return found;
 }
 
-
-
-Strategy getstrategy(const char *host, string& ext){
-    return sites.get(host, ext);
+strategy getstrategy(const char *host){
+    sockaddr_un addr;
+    if (inet_pton(AF_INET, host, &addr.addr_in.sin_addr) == 1) {
+        return ipv4s.find(addr.addr_in.sin_addr);
+    }
+    if (inet_pton(AF_INET6, host, &addr.addr_in6.sin6_addr) == 1) {
+        //TODO
+        return default_strategy;
+    }
+    return domains.find(reverse(host));
 }
 
-const char* getstrategystring(Strategy s)
-{
+const char* getstrategystring(Strategy s) {
     switch(s){
     case Strategy::direct:
         return "direct";
@@ -382,8 +387,14 @@ const char* getstrategystring(Strategy s)
     return nullptr;
 }
 
-std::list<std::tuple<std::string, std::string, std::string>> getallstrategy(){
-    return sites.dump();
+std::list<std::pair<std::string, strategy>> getallstrategy(){
+    std::list<std::pair<std::string, strategy>> slist;
+    ipv4s.dump(slist);
+    auto domainlist = domains.dump();
+    for(auto i: domainlist){
+        slist.emplace_back(i.first, i.second);
+    }
+    return slist;
 }
 
 static std::set<string> authips;

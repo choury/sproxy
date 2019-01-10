@@ -173,12 +173,12 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
         }
         auto slist = getallstrategy();
         for(auto i: slist) {
-            auto host = std::get<0>(i);
+            auto host = i.first;
             if(host == ""){
                host = "_";
             }
-            auto strategy =  std::get<1>(i);
-            auto ext = std::get<2>(i);
+            string strategy =  getstrategystring(i.second.s);
+            auto ext = i.second.ext;
             //"host strategy ext\0"
             size_t value_len = sizeof(CGI_NameValue) + host.length() + strategy.length() + ext.length() + 3;
             CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + value_len);

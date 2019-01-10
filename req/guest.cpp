@@ -161,13 +161,14 @@ int32_t Guest::bufleft(void*){
 void Guest::Send(void *buff, size_t size, __attribute__ ((unused)) void* index) {
     assert((uint32_t)(long)index == 1);
     assert((http_flag & HTTP_SERVER_CLOSE_F) == 0);
-    size_t len = Min(bufleft(nullptr), size);
+    ssize_t len = Min(bufleft(nullptr), size);
+    assert(len >= 0);
     if(Status_flags & GUEST_CHUNK_F){
         char chunkbuf[100];
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)len);
         buff = p_move(buff, -chunklen);
         memcpy(buff, chunkbuf, chunklen);
-        rwer->buffer_insert(rwer->buffer_end(), write_block{buff, chunklen+len, 0});
+        rwer->buffer_insert(rwer->buffer_end(), write_block{buff, (size_t)chunklen+len, 0});
         rwer->buffer_insert(rwer->buffer_end(), write_block{p_strdup(CRLF), strlen(CRLF), 0});
     }else{
         rwer->buffer_insert(rwer->buffer_end(), write_block{buff, size, 0});

@@ -435,14 +435,14 @@ const char* getDeviceInfo(){
 
 struct in6_addr mapIpv4(struct in_addr addr) {
     struct in6_addr addr6;
-    memcpy(addr6.s6_addr, "\0\0\0\0\0\0\0\0\0\0\xff\xff", 12);
+    memcpy(addr6.s6_addr, "\0\x64\xff\x9b\0\0\0\0\0\0\0\0", 12);
     addr6.s6_addr32[3] = addr.s_addr;
     return addr6;
 }
 
 struct in_addr getMapped(struct in6_addr addr) {
     struct in_addr addr4;
-    if(memcmp(addr.s6_addr, "\0\0\0\0\0\0\0\0\0\0\xff\xff", 12) == 0){
+    if(memcmp(addr.s6_addr, "\0\x64\xff\x9b\0\0\0\0\0\0\0\0", 12) == 0){
         addr4.s_addr = addr.s6_addr32[3];
     }else{
         addr4.s_addr = INADDR_NONE;

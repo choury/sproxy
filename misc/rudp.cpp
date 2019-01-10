@@ -16,21 +16,6 @@
 
 #define RUDP_BUF_LEN (BUF_LEN*64)
 
-/*
- * * The next routines deal with comparing 32 bit unsigned ints
- * * and worry about wraparound (automatic with unsigned arithmetic).
- * */
-static inline int before(uint32_t seq1, uint32_t seq2)
-{
-    return (int32_t)(seq1-seq2) < 0;
-}
-
-static inline int noafter(uint32_t seq1, uint32_t seq2)
-{
-    return (int32_t)(seq1-seq2) <= 0;
-}
-#define after(seq2, seq1) before(seq1, seq2)
-#define nobefore(seq2, seq1) noafter(seq1, seq2)
 
 static uint8_t checksum8(uint8_t *addr, int len) {
     uint8_t sum = 0;
