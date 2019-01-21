@@ -20,7 +20,7 @@ class FDns: public Responser{
     virtual void deleteLater(uint32_t errcode) override;
 public:
     FDns();
-    ~FDns();
+    virtual ~FDns() override;
     virtual void* request(HttpReqHeader* req) override;
     virtual void Send(const void *buff, size_t size, void* index)override;
     static void ResponseCb(void* param, const char *buff, size_t size);

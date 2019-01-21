@@ -14,14 +14,14 @@
 typedef struct DNS_HDR {
     uint16_t id;            // 查询序列号
 
-#define  QR 0x8000          // 查询/应答 0/1
+#define  QR 0x8000u          // 查询/应答 0/1
 #define  OPCODE_STD 0       // 0:标准查询
 #define  OPCODE_STR 0x0800  // 1:反向查询
 #define  OPCODE_STA 0x1000  // 2:查询服务器状态
 #define  AA 0x0400          // 授权应答标志
 #define  TC 0x0200          // 截断标志
-#define  RD 0x0100          // 递归查询标志
-#define  RA 0x0080          // 允许递归标志
+#define  RD 0x0100u          // 递归查询标志
+#define  RA 0x0080u          // 允许递归标志
 
 // 0 没有错误。
 // 1 报文格式错误(Format error) - 服务器不能理解请求的报文。
@@ -38,7 +38,7 @@ typedef struct DNS_HDR {
 #define DNS_REFUSE        5
 
 // 6-15 保留值，暂时未使用。
-#define  RCODE_MASK 0x000F  // 应答码
+#define  RCODE_MASK 0x000fu  // 应答码
     uint16_t flag;
     uint16_t numq;               // 问题个数
     uint16_t numa;               // 应答资源个数

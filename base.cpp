@@ -4,16 +4,16 @@
 #include "prot/rwer.h"
 #include "prot/dns.h"
 
-#include <set>
+#include <map>
 #include <stdarg.h>
 #include <unistd.h>
 #include <assert.h>
 #include <signal.h>
 
-static std::set<std::shared_ptr<Server>> servers;
+static std::map<Server*, std::shared_ptr<Server>> servers;
 
 Server::Server(){
-    servers.insert(std::shared_ptr<Server>(this));
+    servers.emplace(this, std::shared_ptr<Server>(this));
 }
 
 Server::~Server() {
@@ -24,10 +24,10 @@ Server::~Server() {
 void Server::deleteLater(uint32_t) {
     if(rwer){
         rwer->Close([this](){
-            servers.erase(std::dynamic_pointer_cast<Server>(shared_from_this()));
+            servers.erase(this);
         });
     }else{
-        servers.erase(std::dynamic_pointer_cast<Server>(shared_from_this()));
+        servers.erase(this);
     }
 }
 
@@ -66,7 +66,7 @@ void dump_stat(Dumper dp, void* param){
     dp(param, "Proxy server: %s\n", buff);
     dp(param, "--------------------------------------\n");
     for(auto i: servers){
-        i->dump_stat(dp, param);
+        i.first->dump_stat(dp, param);
         dp(param, "--------------------------------------\n");
     }
     dump_dns(dp, param);

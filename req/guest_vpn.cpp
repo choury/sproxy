@@ -68,7 +68,7 @@ const char* VpnKey::getString(const char* sep) const{
     return str;
 }
 
-bool operator<(const VpnKey a, const VpnKey b) {
+bool operator<(VpnKey a, VpnKey b) {
     return memcmp(&a, &b, sizeof(VpnKey)) < 0;
 }
 
@@ -83,7 +83,7 @@ VPN_nanny::VPN_nanny(int fd){
         rwer->consume(data, len);
     });
     rwer->SetWriteCB([this](size_t){
-        for(auto i: statusmap){
+        for(const auto& i: statusmap){
             assert(!i.second.expired());
             auto vpn = i.second.lock();
             vpn->writed();
@@ -112,7 +112,7 @@ void VPN_nanny::buffHE(const char* buff, size_t buflen) {
             key = VpnKey(icmp_pac).reverse();
         }
 
-        if(statusmap.count(key) == 0 || statusmap[key].expired()){
+        if(statusmap.count(key) == 0){
             statusmap[key] = std::dynamic_pointer_cast<Guest_vpn>((new Guest_vpn(key, this))->shared_from_this());
         }
         assert(!statusmap[key].expired());
@@ -220,7 +220,8 @@ const char * Guest_vpn::getProg() const{
         std::getline(net6file, line); //drop the title line
         in6_addr dst;
         if(key.version() == 4){
-            dst = mapIpv4(key.dst.addr_in.sin_addr);
+            memcpy(dst.s6_addr, "\0\0\0\0\0\0\0\0\0\0\xff\xff", 12);
+            dst.s6_addr32[3] = key.dst.addr_in.sin_addr.s_addr;
         }else{
             dst = key.dst.addr_in6.sin6_addr;
         }
@@ -357,7 +358,6 @@ void Guest_vpn::response(HttpResHeader* res) {
         LOGD(DVPN, "ignore this response\n");
     }
     delete res;
-    return;
 }
 
 
@@ -430,7 +430,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
         tcpStatus->mss = pac->tcp->getmss();
         tcpStatus->recv_wscale = pac->tcp->getwindowscale();
         tcpStatus->status = TCP_SYN_RECV;
-        if(tcpStatus->options & (1<<TCPOPT_WINDOW)){
+        if(tcpStatus->options & (1u<<TCPOPT_WINDOW)){
             tcpStatus->send_wscale = VPN_TCP_WSCALE;
         }else{
             tcpStatus->send_wscale = 0;
@@ -441,7 +441,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
 
         res_ptr = distribute(req, std::weak_ptr<Responser>());
         if(!res_ptr.expired()){
-            res_index = res_ptr.lock()->request(std::move(req));
+            res_index = res_ptr.lock()->request(req);
         }else{
             delete req;
             deleteLater(PEER_LOST_ERR);
@@ -526,6 +526,10 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
             res_index = nullptr;
             add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 1000);
             return;
+        case TCP_TIME_WAIT:
+            return;
+        default:
+            LOGE("unexpected status: %d\n", tcpStatus->status);
         }
     }
 
@@ -552,6 +556,10 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
             }
             deleteLater(PEER_LOST_ERR);
             return;
+        case TCP_TIME_WAIT:
+            return;
+        default:
+            LOGE("unexpected status: %d\n", tcpStatus->status);
         }
     }
 }
@@ -592,7 +600,7 @@ void Guest_vpn::udpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
         }
         if(!responser_ptr.expired()){
             add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 60000);
-            void* responser_index = responser_ptr.lock()->request(std::move(req));
+            void* responser_index = responser_ptr.lock()->request(req);
             assert(responser_index);
             res_ptr = responser_ptr;
             res_index = responser_index;
@@ -637,7 +645,7 @@ void Guest_vpn::icmpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t
             res_ptr = distribute(req, std::weak_ptr<Responser>());
             if(!res_ptr.expired()){
                 add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 3000);
-                res_index = res_ptr.lock()->request(std::move(req));
+                res_index = res_ptr.lock()->request(req);
                 res_ptr.lock()->Send(packet + pac->gethdrlen(), len - pac->gethdrlen(), res_index);
             }else{
                 delete req;
@@ -705,7 +713,7 @@ void Guest_vpn::icmp6HE(std::shared_ptr<const Ip> pac, const char* packet, size_
             res_ptr = distribute(req, std::weak_ptr<Responser>());
             if(!res_ptr.expired()){
                 add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 3000);
-                res_index = res_ptr.lock()->request(std::move(req));
+                res_index = res_ptr.lock()->request(req);
                 res_ptr.lock()->Send(packet + pac->gethdrlen(), len - pac->gethdrlen(), res_index);
             }else{
                 delete req;
@@ -826,7 +834,6 @@ void Guest_vpn::Send(void* buff, size_t size, void* index) {
         return;
     }
     assert(0);
-    return;
 }
 
 

@@ -617,17 +617,17 @@ static void init_hfmtree() {
         uint16_t len = hfmnodes[i].len;
         struct node *curnode = &root;
         while(--len){
-            if(code&(1<<len)) {
-                if(curnode->right == NULL)
+            if(code&(1u<<len)) {
+                if(curnode->right == nullptr)
                     curnode->right = &hfmnodes[tail--];
                 curnode = curnode->right;
             }else{
-                if(curnode->left == NULL)
+                if(curnode->left == nullptr)
                     curnode->left = &hfmnodes[tail--];
                 curnode = curnode->left;
             }
         }
-        if(code & 1)
+        if(code & 1u)
             curnode->right = &hfmnodes[i];
         else
             curnode->left = &hfmnodes[i];
@@ -650,11 +650,11 @@ static std::string hfm_decode(const unsigned char *s, int len) {
     for(int i = 0; i < len; ++i){
         uint8_t c = s[i];
         for(int j = 8; j; --j) {
-            if(c & 0x80)
+            if(c & 0x80u)
                 curnode = curnode->right;
             else
                 curnode = curnode->left;
-            c <<= 1;
+            c <<= 1u;
             padding ++;
             
             if(unlikely(curnode->len)) {
@@ -688,27 +688,27 @@ static size_t hfm_encode(unsigned char *buf, const char *s, int len){
                 *buf++ = out;
                 count = 0;
             }
-            out<<=1;
-            out |= (code >> lenght) & 1; 
+            out<<=1u;
+            out |= (code >> lenght) & 1u;
             count++;
         }
         s++;
     }
     if(count){
-        out<<=8-count;
-        *buf++ = out | (0xff>>count);
+        out<<=8u-count;
+        *buf++ = out | (0xffu>>count);
     }
     return buf - buf_begin;
 }
 
 static size_t integer_decode(const unsigned char *s, int n, uint32_t *value) {
     assert(n<=8);
-    uint32_t prefix = ((1<<n)-1);
+    uint32_t prefix = ((1u<<n)-1u);
     if((s[0]& prefix) == prefix){
         *value = prefix;
         size_t i;
         for(i=1;s[i]&0x80;++i) {
-            *value += (s[i]&0x7f) << (i*7-7);
+            *value += (s[i]&0x7fu) << (i*7-7);
         }
         *value += s[i] << (i*7-7);
         return i+1;
@@ -721,14 +721,14 @@ static size_t integer_decode(const unsigned char *s, int n, uint32_t *value) {
 static size_t integer_encode(unsigned char *buff, int n, uint32_t value){
     assert(n<=8);
     unsigned char *buf_begin = buff;
-    uint32_t prefix = ((1<<n)-1);
+    uint32_t prefix = ((1u<<n)-1u);
     if(value < prefix) {
         *buff++ |= value;
     }else{
         *buff++ |= prefix;
         value -= prefix;
         while(value >= 128){
-            *buff++ = (value%128) | 0x80;
+            *buff++ = (value%128u) | 0x80u;
             value /= 128;
         }
         *buff++ = value;
@@ -857,7 +857,7 @@ void Hpack_index_table::set_dynamic_table_size_limit(size_t size){
 }
 
 void Hpack_index_table::evict_dynamic_table(){
-    while(dynamic_table_size > dynamic_table_size_limit && dynamic_table.size()){
+    while(dynamic_table_size > dynamic_table_size_limit && !dynamic_table.empty()){
         Hpack_index *index = dynamic_table[evicted_count];
         dynamic_table.erase(evicted_count);
         dynamic_map.erase(index->name+char(0)+index->value);

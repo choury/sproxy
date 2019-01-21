@@ -20,7 +20,7 @@ public:
     explicit SslRWer(const char* hostname, uint16_t port, Protocol protocol,
                        std::function<void(int ret, int code)> errorCB,
                        std::function<void(const sockaddr_un*)> connectCB = nullptr);
-    virtual ~SslRWer();
+    virtual ~SslRWer() override;
 
     virtual int saccept();
     virtual int sconnect();
@@ -28,7 +28,7 @@ public:
     virtual void shakehandHE(RW_EVENT events);
     void get_alpn(const unsigned char **s, unsigned int * len);
     int set_alpn(const unsigned char *s, unsigned int len);
-    void set_hostname_callback(void (* cb)(void));
+    void set_hostname_callback(void (* cb)());
 };
 
 #endif

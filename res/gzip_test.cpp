@@ -33,7 +33,7 @@ GzipTest::~GzipTest(){
 }
 
 static size_t parseSize(std::string size) {
-    if (size.size() == 0 || !isdigit(size[0])) {
+    if (size.empty() || !isdigit(size[0])) {
         return 0;
     }
     size_t num = stoull(size);
@@ -115,7 +115,7 @@ void GzipTest::gzipreadHE(size_t len) {
         return;
     }
 
-    unsigned char *out = (unsigned char *)p_malloc(chunk);
+    unsigned char* const out = (unsigned char *)p_malloc(chunk);
     strm.next_out = out;
     strm.avail_out = chunk;
     /* run deflate() on input until output buffer not full, finish
@@ -153,7 +153,7 @@ void GzipTest::rawreadHE(size_t len) {
     }
 
     len = Min(chunk, left);
-    unsigned char *out = (unsigned char *)p_malloc(len);
+    unsigned char* const out = (unsigned char *)p_malloc(len);
     req_ptr.lock()->Send(out, len, req_index);
     left -= len;
     if (left) {

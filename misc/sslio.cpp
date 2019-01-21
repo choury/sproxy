@@ -54,11 +54,11 @@ static int verify_host_callback(int ok, X509_STORE_CTX *ctx){
 SslRWer::SslRWer(int fd, SSL_CTX* ctx,
                  std::function<void(int ret, int code)> errorCB,
                  std::function<void(const sockaddr_un*)> connectCB):
-        StreamRWer(fd, errorCB)
+        StreamRWer(fd, std::move(errorCB))
 {
     ssl = SSL_new(ctx);
     SSL_set_fd(ssl, fd);
-    this->connectCB = connectCB;
+    this->connectCB = std::move(connectCB);
     setEvents(RW_EVENT::READWRITE);
     handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::shakehandHE;
 }
@@ -66,7 +66,7 @@ SslRWer::SslRWer(int fd, SSL_CTX* ctx,
 SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol,
                  std::function<void(int ret, int code)> errorCB,
                  std::function<void(const sockaddr_un*)> connectCB):
-        StreamRWer(hostname, port, protocol, errorCB, connectCB)
+        StreamRWer(hostname, port, protocol, std::move(errorCB), std::move(connectCB))
 {
     if(protocol == Protocol::TCP){
         ctx = SSL_CTX_new(SSLv23_client_method());
@@ -74,7 +74,7 @@ SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol,
         ctx = SSL_CTX_new(DTLS_client_method());
     }
 
-    if (ctx == NULL) {
+    if (ctx == nullptr) {
         LOGE("SSL_CTX_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
         throw 0;
     }
@@ -135,7 +135,7 @@ int SslRWer::get_error(int ret){
                 break;
             case SSL_ERROR_SSL:
                 ERR_print_errors_cb(ssl_err_cb, nullptr);
-                /* FALLTHRU */
+                /* FALLTHROUGH */
             default:
                 errno = EIO;
                 break;

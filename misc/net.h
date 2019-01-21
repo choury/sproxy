@@ -4,8 +4,8 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 
-#define HTTPSPORT 443
-#define HTTPPORT  80
+#define HTTPSPORT 443u
+#define HTTPPORT  80u
 #define CRLF      "\r\n"
 
 

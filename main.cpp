@@ -46,7 +46,11 @@ class Http_server: public Ep{
             int clsk;
             struct sockaddr_in6 myaddr;
             socklen_t temp = sizeof(myaddr);
+#ifdef SOCK_CLOEXEC
+            if ((clsk = accept4(getFd(), (struct sockaddr*)&myaddr, &temp, SOCK_CLOEXEC)) < 0) {
+#else
             if ((clsk = accept(getFd(), (struct sockaddr*)&myaddr, &temp)) < 0) {
+#endif
                 LOGE("accept error:%s\n", strerror(errno));
                 return;
             }
@@ -78,7 +82,11 @@ class Https_server: public Ep {
             int clsk;
             struct sockaddr_in6 myaddr;
             socklen_t temp = sizeof(myaddr);
+#ifdef SOCK_CLOEXEC
+            if ((clsk = accept4(getFd(), (struct sockaddr *)&myaddr, &temp, SOCK_CLOEXEC)) < 0) {
+#else
             if ((clsk = accept(getFd(), (struct sockaddr *)&myaddr, &temp)) < 0) {
+#endif
                 LOGE("accept error:%s\n", strerror(errno));
                 return;
             }
@@ -91,7 +99,7 @@ class Https_server: public Ep {
         }
     }
 public:
-    virtual ~Https_server(){
+    virtual ~Https_server() override{
         SSL_CTX_free(ctx);
     };
     Https_server(int fd, SSL_CTX *ctx): Ep(fd),ctx(ctx) {
@@ -162,31 +170,31 @@ void ssl_callback_ServerName(SSL *ssl){
 }
 
 static struct option long_options[] = {
-    {"autoindex",   no_argument,       0, 'i'},
-    {"cafile",      required_argument, 0,  0 },
-    {"cert",        required_argument, 0,  0 },
-    {"daemon",      no_argument,       0, 'D'},
-    {"disable-ipv6",no_argument,       0,  0 },
-    {"http1",       no_argument,       0, '1'},
-    {"help",        no_argument,       0, 'h'},
-    {"index",       required_argument, 0,  0 },
-    {"insecure",    no_argument,       0, 'k'},
-    {"key",         required_argument, 0,  0 },
-    {"port",        required_argument, 0, 'p'},
-    {"rewrite_auth",required_argument, 0, 'r'},
-    {"rudp",        no_argument,       0,  0 },
-    {"secret",      required_argument, 0, 's'},
-    {"sni",         no_argument,       0,  0 },
+    {"autoindex",   no_argument,       nullptr, 'i'},
+    {"cafile",      required_argument, nullptr,  0 },
+    {"cert",        required_argument, nullptr,  0 },
+    {"daemon",      no_argument,       nullptr, 'D'},
+    {"disable-ipv6",no_argument,       nullptr,  0 },
+    {"http1",       no_argument,       nullptr, '1'},
+    {"help",        no_argument,       nullptr, 'h'},
+    {"index",       required_argument, nullptr,  0 },
+    {"insecure",    no_argument,       nullptr, 'k'},
+    {"key",         required_argument, nullptr,  0 },
+    {"port",        required_argument, nullptr, 'p'},
+    {"rewrite_auth",required_argument, nullptr, 'r'},
+    {"rudp",        no_argument,       nullptr,  0 },
+    {"secret",      required_argument, nullptr, 's'},
+    {"sni",         no_argument,       nullptr,  0 },
 #ifndef NDEBUG
-    {"debug-event", no_argument,   0,  0 },
-    {"debug-dns",   no_argument,   0,  0 },
-    {"debug-http2", no_argument,   0,  0 },
-    {"debug-job",   no_argument,   0,  0 },
-    {"debug-hpack", no_argument,   0,  0 },
-    {"debug-rudp",  no_argument,   0,  0 },
-    {"debug-all",   no_argument,   0,  0 },
+    {"debug-event", no_argument,   nullptr,  0 },
+    {"debug-dns",   no_argument,   nullptr,  0 },
+    {"debug-http2", no_argument,   nullptr,  0 },
+    {"debug-job",   no_argument,   nullptr,  0 },
+    {"debug-hpack", no_argument,   nullptr,  0 },
+    {"debug-rudp",  no_argument,   nullptr,  0 },
+    {"debug-all",   no_argument,   nullptr,  0 },
 #endif
-    {0,         0,                 0,  0 }
+    {nullptr,       0,             nullptr,  0 }
 };
 
 const char *option_detail[] = {
@@ -294,7 +302,7 @@ SSL_CTX* initssl(int udp, const char *ca, const char *cert, const char *key){
 }
 
 static int parseConfig(int argc, char **argv){
-    while (1) {
+    while (true) {
         int option_index = 0;
         int c = getopt_long(argc, argv, "D1hikr:s:p:",
             long_options, &option_index);
@@ -436,7 +444,7 @@ int main(int argc, char **argv) {
         return -1;
     }
 #if __linux__
-    efd = epoll_create(10000);
+    efd = epoll_create1(EPOLL_CLOEXEC);
 #elif __APPLE__
     efd = kqueue();
 #else
@@ -475,7 +483,7 @@ int main(int argc, char **argv) {
         }
     }
     LOG("Accepting connections ...\n");
-    while (1) {
+    while (true) {
         int c;
 #if __linux__
         struct epoll_event events[200];
@@ -513,5 +521,4 @@ int main(int argc, char **argv) {
 #endif
         do_postjob();
     }
-    return 0;
 }

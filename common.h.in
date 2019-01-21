@@ -56,13 +56,13 @@ extern uint32_t debug;
 extern int autoindex;
 
 
-#define DEVENT    1
-#define DDNS      2
-#define DHTTP2    8
-#define DJOB      16
-#define DVPN      32
-#define DHPACK    64
-#define DRUDP     128
+#define DEVENT    1u
+#define DDNS      2u
+#define DHTTP2    8u
+#define DJOB      16u
+#define DVPN      32u
+#define DHPACK    64u
+#define DRUDP     128u
 
 #define DEVENT_STR  "[EVENT]"
 #define DDNS_STR    "[DNS]"
@@ -179,23 +179,23 @@ do {\
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
-#define NOERROR             0
-#define SOCKET_ERR          80
-#define CONNECT_FAILED      81
-#define CONNECT_TIMEOUT     82
-#define SSL_SHAKEHAND_ERR   83
-#define HEAD_TOO_LONG_ERR   84
-#define HTTP_PROTOCOL_ERR   85
-#define READ_ERR            86
-#define WRITE_ERR           87
-#define PEER_LOST_ERR       88
-#define IP_BLOCK_ERR        89
-#define TCP_RESET_ERR       90
-#define DNS_FAILED          91
-#define VPN_AGED_ERR        92
-#define SNI_HOST_ERR        93
-#define ERROR_MASK          0xff
-#define DISCONNECT_FLAG     (1<<31)
+#define NOERROR             0u
+#define SOCKET_ERR          80u
+#define CONNECT_FAILED      81u
+#define CONNECT_TIMEOUT     82u
+#define SSL_SHAKEHAND_ERR   83u
+#define HEAD_TOO_LONG_ERR   84u
+#define HTTP_PROTOCOL_ERR   85u
+#define READ_ERR            86u
+#define WRITE_ERR           87u
+#define PEER_LOST_ERR       88u
+#define IP_BLOCK_ERR        89u
+#define TCP_RESET_ERR       90u
+#define DNS_FAILED          91u
+#define VPN_AGED_ERR        92u
+#define SNI_HOST_ERR        93u
+#define ERROR_MASK          0xffu
+#define DISCONNECT_FLAG     (1u<<31u)
 
 typedef unsigned char uchar;
 typedef void (* Dumper)(void* param, const char* fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));

@@ -41,7 +41,7 @@ protected:
     virtual void queue_insert(std::list<write_block>::insert_iterator where, const write_block& wb) override;
 public:
     explicit Proxy2(RWer* rwer);
-    virtual ~Proxy2();
+    virtual ~Proxy2() override;
 
 
     virtual int32_t bufleft(void* index)override;

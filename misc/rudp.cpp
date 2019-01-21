@@ -214,12 +214,14 @@ void RudpRWer::handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats)
             before(seq + len , read_seqs.begin()->first + RUDP_BUF_LEN))
         {
             uint32_t start_pos = after(seq, full_pos)?seq:full_pos;
-            auto i = read_seqs.begin();
-            for(;i!=read_seqs.end();i++){
-                if(nobefore(i->first, start_pos))
-                    break;
+            {
+                auto i = read_seqs.begin();
+                for (; i != read_seqs.end(); i++) {
+                    if (nobefore(i->first, start_pos))
+                        break;
+                }
+                read_seqs.insert(i, std::make_pair(start_pos, seq + len));
             }
-            read_seqs.insert(i, std::make_pair(start_pos, seq+len));
 
             for(auto i= read_seqs.begin(); ;){
                 auto pre = i++;
@@ -335,7 +337,7 @@ void RudpRWer::defaultHE(RW_EVENT events) {
         unsigned char buff[RUDP_MTU];
         while((ret = read(getFd(), buff, RUDP_MTU)) > 0){
             Rudp_head *head = (Rudp_head *)buff;
-            handle_pkg(head, ret, &stats);
+            handle_pkg(head, (size_t)ret, &stats);
         }
         if(errno != EAGAIN){
             errorCB(READ_ERR, errno);
@@ -493,7 +495,7 @@ int RudpRWer::ack() {
     head->type = RUDP_TYPE_ACK;
     head->checksum = 0;
     uint32_t *gaps= (uint32_t *)(head+1);
-    decltype(seq) pre = seq;
+    decltype(seq) pre;
     while(1){
         pre = seq++;
         if(seq == read_seqs.end() ||

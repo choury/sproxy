@@ -16,11 +16,11 @@
 
 class RwObject: public std::enable_shared_from_this<RwObject>{
 public:
-    virtual ~RwObject(){}
+    virtual ~RwObject() = default;
 };
 
 struct write_block{
-    void* buff;
+    void* const buff;
     size_t len;
     size_t offset;
 };
@@ -65,11 +65,10 @@ class Ep{
     int fd;
 protected:
     RW_EVENT events = RW_EVENT::NONE;
-    uint32_t events_raw = 0;
     void setFd(int fd);
     int getFd();
 public:
-    Ep(int fd);
+    explicit Ep(int fd);
     virtual ~Ep();
     void setEvents(RW_EVENT events);
     void addEvents(RW_EVENT events);
@@ -95,7 +94,7 @@ protected:
     virtual void SendData();
     virtual void closeHE(uint32_t events);
 public:
-    RWer(std::function<void(int ret, int code)> errorCB,
+    explicit RWer(std::function<void(int ret, int code)> errorCB,
          std::function<void(const union sockaddr_un*)> connectCB = nullptr,
          int fd = -1);
     virtual void SetErrorCB(std::function<void(int ret, int code)> func);

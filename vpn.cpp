@@ -31,14 +31,14 @@ int autoindex = 0;
 uint32_t debug = 0;
 uint32_t vpn_contiune;
 
-#define VPN_RESET 1
-#define VPN_RELOAD 2
+#define VPN_RESET 1u
+#define VPN_RELOAD 2u
 uint32_t vpn_action = 0;
 
 int vpn_start(const struct VpnConfig* vpn){
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
-    setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
+    setvbuf(stdout, nullptr, _IOLBF, BUFSIZ);
 #if Backtrace_FOUND
     signal(SIGABRT, dump_trace);
 #endif
@@ -58,7 +58,7 @@ int vpn_start(const struct VpnConfig* vpn){
         fprintf(stderr, "start daemon error:%s\n", strerror(errno));
         return -1;
     }
-    efd = epoll_create(10000);
+    efd = epoll_create1(EPOLL_CLOEXEC);
     if(efd < 0){
         LOGE("epoll_create: %s\n", strerror(errno));
         return -1;

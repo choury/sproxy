@@ -70,7 +70,7 @@ const char* CBuffer::data(){
         char* buff = (char*)malloc(end_pos - begin_pos);
         size_t l = sizeof(content) - start;
         memcpy(buff, content + start, sizeof(content) - start);
-        memcpy((char *)buff + l, content, finish);
+        memcpy(buff + l, content, finish);
         return  buff;
     }
 }
@@ -86,7 +86,7 @@ char* CBuffer::end(){
     return content + (end_pos % sizeof(content));
 }
 
-FdRWer::FdRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(errorCB, nullptr, fd){
+FdRWer::FdRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(std::move(errorCB), nullptr, fd){
     setEvents(RW_EVENT::READ);
     handleEvent = (void (Ep::*)(RW_EVENT))&FdRWer::defaultHE;
 }
@@ -94,7 +94,7 @@ FdRWer::FdRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(erro
 FdRWer::FdRWer(const char* hostname, uint16_t port, Protocol protocol,
                std::function<void(int ret, int code)> errorCB,
                std::function<void(const sockaddr_un*)> connectCB):
-            RWer(errorCB, connectCB), port(port), protocol(protocol)
+            RWer(std::move(errorCB), std::move(connectCB)), port(port), protocol(protocol)
 {
     strcpy(this->hostname, hostname);
     query(hostname, FdRWer::Dnscallback, this);
@@ -213,7 +213,7 @@ void StreamRWer::defaultHE(RW_EVENT events) {
         while((left = rb.left())){
             int ret = Read(rb.end(), left);
             if(ret > 0){
-                rb.add(ret);
+                rb.add((size_t)ret);
                 continue;
             }
             if(ret == 0){
@@ -246,19 +246,6 @@ void StreamRWer::defaultHE(RW_EVENT events) {
     }
 }
 
-/*
-PacketRWer::PacketRWer(int fd, std::function<void (int, int)> errorCB):
-            FdRWer(fd, errorCB)
-{
-}
-
-PacketRWer::PacketRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void (int, int)> errorCB):
-            FdRWer(hostname, port, protocol, errorCB)
-{
-}
-
-*/
-
 size_t PacketRWer::rlength() {
     return rb.length();
 }
@@ -287,7 +274,7 @@ void PacketRWer::defaultHE(RW_EVENT events) {
         while((left = rb.left())){
             int ret = Read(rb.end(), left);
             if(ret > 0){
-                rb.add(ret);
+                rb.add((size_t)ret);
                 if(readCB){
                     readCB(rb.length());
                 }
@@ -389,7 +376,7 @@ void EventRWer::defaultHE(RW_EVENT events){
             int ret = read(getFd(), buff, sizeof(buff));
             if(ret > 0){
                 if(readCB){
-                    readCB(ret);
+                    readCB((size_t)ret);
                 }
                 continue;
             }

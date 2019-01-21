@@ -50,14 +50,14 @@ void add_prejob_real(function<int()> func, const char *func_name, const void *in
 #ifndef NDEBUG
     LOGD(DJOB, "add a pre job %s for %p\n", func_name, index);
 #endif
-    prejobs[job_n{func, index}] = func_name;
+    prejobs[job_n{std::move(func), index}] = func_name;
 }
 
 void add_postjob_real(function<int()> func, const char *func_name, const void *index){
 #ifndef NDEBUG
     LOGD(DJOB, "add a post job %s for %p\n", func_name, index);
 #endif
-    postjobs[job_n{func, index}] = func_name;
+    postjobs[job_n{std::move(func), index}] = func_name;
 }
 
 void del_delayjob_real(function<int()> func, __attribute__ ((unused)) const char *func_name, const void *index){
@@ -115,7 +115,7 @@ uint32_t do_delayjob(){
         }
     }
     uint32_t min_interval = 0xffffff7f;
-    for(auto i : delayjobs){
+    for(const auto& i : delayjobs){
         uint32_t left = i.second.delay_ms + i.second.last_done_ms - now;
         if(left < min_interval){
             min_interval = left;
@@ -149,22 +149,22 @@ void do_postjob(){
 }
 
 int check_delayjob(function<int()> func, const void* index){
-    return delayjobs.count(job_n{func, index});
+    return delayjobs.count(job_n{std::move(func), index});
 }
 
 void dump_job(Dumper dp, void* param){
     dp(param, "delay job queue:\n");
     uint32_t now = getmtime();
-    for(auto i : delayjobs){
+    for(const auto& i : delayjobs){
         uint32_t left = i.second.delay_ms + i.second.last_done_ms - now;
         dp(param, "\t%s(%p): %d/%d\n", i.second.func_name, i.first.index, left, i.second.delay_ms);
     }
     dp(param, "pre job queue:\n");
-    for(auto i: prejobs){
+    for(const auto& i: prejobs){
         dp(param, "\t%s(%p)\n", i.second, i.first.index);
     }
     dp(param, "post job queue:\n");
-    for(auto i: postjobs){
+    for(const auto& i: postjobs){
         dp(param, "\t%s(%p)\n", i.second, i.first.index);
     }
 }

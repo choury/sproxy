@@ -37,10 +37,6 @@ if(ANDROID_NDK)
 
     find_library(log-lib log)
     find_package(OpenSSL REQUIRED IMPORTED)
-
-    string(REGEX REPLACE "-[^-]+$" ""  ANDROID_TARGET ${ANDROID_TOOLCHAIN_NAME})
-    set(CMAKE_C_FLAGS "-isystem ${ANDROID_NDK}/sysroot/usr/include/${ANDROID_TARGET}")
-    set(CMAKE_CXX_FLAGS "-isystem ${ANDROID_NDK}/sysroot/usr/include/${ANDROID_TARGET}")
 else()
     CHECK_CXX_COMPILER_FLAG("-fsanitize=undefined" HAVE_SAN_UNDEF)
     set(CMAKE_REQUIRED_FLAGS "-fsanitize=address")
@@ -57,7 +53,7 @@ endif()
 
 include_directories(${OPENSSL_INCLUDE_DIR})
 
-if(NOT APPLE)
+if(NOT APPLE AND NOT ANDROID)
     find_package(JSON-C)
     if(JSON-C_FOUND)
         set(BUILD_CGI TRUE)

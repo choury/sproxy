@@ -30,7 +30,6 @@
 extern "C" {
 #endif
     
-#define SERVER_NAME_LEN 256
 #define TLS_HEADER_LEN 5
 #define TLS_HANDSHAKE_CONTENT_TYPE 0x16
 #define TLS_HANDSHAKE_TYPE_CLIENT_HELLO 0x01

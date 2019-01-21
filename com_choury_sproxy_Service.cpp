@@ -33,8 +33,8 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     jnienv->GetJavaVM(&jnijvm);
     jniobj = jnienv->NewGlobalRef(obj);
     LOG("native SproxyVpnService.start %d.\n", sockfd);
-    const char *server_str = jnienv->GetStringUTFChars(server, 0);
-    const char *secret_str = jnienv->GetStringUTFChars(secret, 0);
+    const char *server_str = jnienv->GetStringUTFChars(server, nullptr);
+    const char *secret_str = jnienv->GetStringUTFChars(secret, nullptr);
 
     vpn.disable_ipv6 = 0;
     vpn.ignore_cert_error = 1;
@@ -51,7 +51,7 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     jclass cls = jnienv->GetObjectClass(jniobj);
     jmethodID mid = jnienv->GetMethodID(cls, "getMyVersion", "()Ljava/lang/String;");
     jstring jversion = (jstring) jnienv->CallObjectMethod(jniobj, mid);
-    const char *jversion_str = jnienv->GetStringUTFChars(jversion, 0);
+    const char *jversion_str = jnienv->GetStringUTFChars(jversion, nullptr);
     strcpy(version, jversion_str);
     jnienv->ReleaseStringUTFChars(jversion, jversion_str);
     jnienv->DeleteLocalRef(jversion);
@@ -98,7 +98,7 @@ const char* getPackageName(int uid) {
         jclass cls = jnienv->GetObjectClass(jniobj);
         jmethodID mid = jnienv->GetMethodID(cls, "getPackageString", "(I)Ljava/lang/String;");
         jstring jname = (jstring) jnienv->CallObjectMethod(jniobj, mid, uid);
-        const char *jname_str = jnienv->GetStringUTFChars(jname, 0);
+        const char *jname_str = jnienv->GetStringUTFChars(jname, nullptr);
         strcpy(name, jname_str);
         jnienv->ReleaseStringUTFChars(jname, jname_str);
         jnienv->DeleteLocalRef(jname);
@@ -134,7 +134,7 @@ std::vector<std::string> getDns(){
             char property[PROP_NAME_MAX+1];
             sprintf(property, "net.dns%d", i++);
             if(__system_property_get(property, ipaddr)){
-                dns.push_back(ipaddr);
+                dns.emplace_back(ipaddr);
             }else{
                 break;
             }
@@ -148,8 +148,8 @@ std::vector<std::string> getDns(){
         int n = jnienv->GetArrayLength(jDns);
         for (int i = 0; i < n; i++) {
             jstring jdns = (jstring) jnienv->GetObjectArrayElement(jDns, i);
-            const char *jdns_str = jnienv->GetStringUTFChars(jdns, 0);
-            dns.push_back(jdns_str);
+            const char *jdns_str = jnienv->GetStringUTFChars(jdns, nullptr);
+            dns.emplace_back(jdns_str);
             jnienv->ReleaseStringUTFChars(jdns, jdns_str);
             jnienv->DeleteLocalRef(jdns);
         }
@@ -157,14 +157,14 @@ std::vector<std::string> getDns(){
         jnienv->DeleteLocalRef(cls);
     }
     if(dns.empty()){
-        dns.push_back("180.76.76.76");
-        dns.push_back("223.5.5.5");
+        dns.emplace_back("180.76.76.76");
+        dns.emplace_back("223.5.5.5");
     }
     return dns;
 }
 
 std::string getExternalFilesDir() {
-    if(extenalFilesDir != ""){
+    if(!extenalFilesDir.empty()){
         return extenalFilesDir;
     }
     JNIEnv *jnienv;
@@ -178,7 +178,7 @@ std::string getExternalFilesDir() {
     jmethodID getPath_mid = jnienv->GetMethodID(File_cls, "getPath", "()Ljava/lang/String;");
     jstring Path_obj = (jstring) jnienv->CallObjectMethod(File_obj, getPath_mid);
 
-    const char *path_str = jnienv->GetStringUTFChars(Path_obj, 0);
+    const char *path_str = jnienv->GetStringUTFChars(Path_obj, nullptr);
 
     extenalFilesDir = path_str;
     jnienv->ReleaseStringUTFChars(Path_obj, path_str);
@@ -189,7 +189,7 @@ std::string getExternalFilesDir() {
 }
 
 std::string getExternalCacheDir() {
-    if(extenalCacheDir != ""){
+    if(!extenalCacheDir.empty()){
         return extenalCacheDir;
     }
     JNIEnv *jnienv;
@@ -202,7 +202,7 @@ std::string getExternalCacheDir() {
     jmethodID getPath_mid = jnienv->GetMethodID(File_cls, "getPath", "()Ljava/lang/String;");
     jstring Path_obj = (jstring) jnienv->CallObjectMethod(File_obj, getPath_mid);
 
-    const char *path_str = jnienv->GetStringUTFChars(Path_obj, 0);
+    const char *path_str = jnienv->GetStringUTFChars(Path_obj, nullptr);
 
     extenalCacheDir = path_str;
     jnienv->ReleaseStringUTFChars(Path_obj, path_str);

@@ -14,7 +14,7 @@ protected:
     RWer* rwer = nullptr;
 public:
     explicit Server();
-    virtual ~Server();
+    virtual ~Server() override;
     virtual void deleteLater(uint32_t errcode);
     virtual void dump_stat(Dumper dp, void* param) = 0;
 };

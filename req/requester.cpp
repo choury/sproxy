@@ -14,6 +14,8 @@ Requester::Requester(const sockaddr_un* myaddr) {
             inet_ntop(AF_INET6, &myaddr->addr_in6.sin6_addr, sourceip, sizeof(sourceip));
             sourceport = ntohs(myaddr->addr_in6.sin6_port);
             break;
+        default:
+            abort();
         }
     }
 }

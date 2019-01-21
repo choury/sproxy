@@ -13,7 +13,7 @@ class GzipTest: public Responser{
     void*      req_index;
 public:
     GzipTest();
-	virtual ~GzipTest();
+	virtual ~GzipTest() override;
     virtual void* request(HttpReqHeader* req) override;
     virtual void gzipreadHE(size_t len);
     virtual void rawreadHE(size_t len);

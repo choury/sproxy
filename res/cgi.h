@@ -53,7 +53,7 @@ class Cgi:public Responser{
     bool HandleData(const CGI_Header* header, HttpReqHeader* req);
 public:
     explicit Cgi(const char* filename, int sv[2]);
-    virtual ~Cgi();
+    virtual ~Cgi() override;
 
     virtual int32_t bufleft(void * index) override;
     virtual void Send(void* buff, size_t size, void* index)override;
@@ -73,7 +73,7 @@ public:
     const char *path= nullptr;
     const char *domain = nullptr;
     uint32_t maxage = 0;
-    Cookie(){};
+    Cookie() = default;
     Cookie(const char *name, const char *value):name(name), value(value){}
     void set(const char* name, const char *value){
         this->name = name;

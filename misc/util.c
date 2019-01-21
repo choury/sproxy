@@ -120,17 +120,22 @@ int spliturl(const char* url, char *protocol, char* hostname, char* path , uint1
         strncpy(hostname, tmpaddr, addrsplit - tmpaddr + 1);
 
         if (addrsplit[1] == ':') {
-            if (sscanf(addrsplit + 2, "%hd", port) != 1)
+            long dport = strtol(addrsplit + 2, NULL, 10);
+            if(dport == 0 || dport >= 65535){
                 return -1;
+            }
+            *port = (uint16_t)dport;
         } else if (addrsplit[1] != 0) {
             return -1;
         }
     } else {
         if ((addrsplit = strpbrk(tmpaddr, ":"))) {
             strncpy(hostname, url, addrsplit - tmpaddr);
-
-            if (sscanf(addrsplit + 1, "%hd", port) != 1)
+            long dport = strtol(addrsplit + 1, NULL, 10);
+            if(dport == 0 || dport >= 65535){
                 return -1;
+            }
+            *port = (uint16_t)dport;
         } else {
             strcpy(hostname, tmpaddr);
         }
@@ -208,7 +213,7 @@ int URLDecode(char *des, const char *src, size_t len)
                 char ch1 = hex2num(src[i+1]);//高4位
                 char ch2 = hex2num(src[i+2]);//低4位
                 if ((ch1!='0') && (ch2!='0'))
-                    des[j++] = (char)((ch1<<4) | ch2);
+                    des[j++] = (ch1<<4) | ch2;
                 i += 2;
                 break;
             } else {
@@ -287,7 +292,7 @@ void* p_malloc(size_t size){
 }
 
 void* p_memdup(const void *ptr, size_t size){
-    void *dup = p_malloc(size);
+    void* const dup = p_malloc(size);
     assert(dup);
     if(dup && size){
         memcpy(dup, ptr, size);
@@ -307,7 +312,7 @@ char* p_avsprintf(size_t* size, const char* fmt, va_list ap){
     va_list cp;
     va_copy(cp, ap);
     size_t len = vsnprintf(NULL, 0, fmt, ap);
-    char* buff = p_malloc(len+1);
+    char* const buff = p_malloc(len+1);
     vsprintf(buff, fmt, cp);
     if(size){
         *size = len;
@@ -316,13 +321,13 @@ char* p_avsprintf(size_t* size, const char* fmt, va_list ap){
     return buff;
 }
 
-void *p_move(void *ptr, signed char len){
+void* p_move(void* ptr, signed char len){
     signed char prior = *((unsigned char*)ptr-1);
     prior += len;
     assert(prior >= 1);
-    ptr = (char *)ptr + len;
-    *((unsigned char *)ptr-1) = (unsigned char)prior;
-    return ptr; 
+    void* nptr = (char *)ptr + len;
+    *((unsigned char *)nptr-1) = (unsigned char)prior;
+    return nptr;
 }
 
 #ifndef __ANDROID__

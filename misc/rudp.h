@@ -61,8 +61,8 @@ class RudpRWer: public RWer {
     uint32_t data_time;
     uint32_t resend_time = 0;
     uint32_t tick_time;
-#define RUDP_SEND_TIMEOUT    1
-#define RUDP_RESET           2
+#define RUDP_SEND_TIMEOUT    1u
+#define RUDP_RESET           2u
     uint32_t flags = 0;
 
     void connected();
@@ -77,7 +77,7 @@ class RudpRWer: public RWer {
 public:
     RudpRWer(int fd, uint32_t id, Rudp_server* ord);
     RudpRWer(const char* host, uint16_t port);
-    ~RudpRWer();
+    virtual ~RudpRWer() override;
 
     int PushPkg(const Rudp_head* pkg, size_t len, const sockaddr_un* addr);
 
@@ -92,7 +92,7 @@ public:
 };
 
 
-bool operator<(const sockaddr_un a, const sockaddr_un b);
+bool operator<(sockaddr_un a, sockaddr_un b);
 
 class Rudp_server: public Ep {
     uint16_t port;

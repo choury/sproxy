@@ -7,11 +7,11 @@
 class HttpBase{
 protected:
     uint64_t http_expectlen;
-#define HTTP_IGNORE_BODY_F          1
-#define HTTP_STATUS_1XX            (1<<1)
-#define HTTP_CHUNK_END_F           (1<<2)
-#define HTTP_CLIENT_CLOSE_F        (1<<3)
-#define HTTP_SERVER_CLOSE_F        (1<<4)
+#define HTTP_IGNORE_BODY_F          1u
+#define HTTP_STATUS_1XX            (1u<<1u)
+#define HTTP_CHUNK_END_F           (1u<<2u)
+#define HTTP_CLIENT_CLOSE_F        (1u<<3u)
+#define HTTP_SERVER_CLOSE_F        (1u<<4u)
     uint32_t http_flag = 0;
     virtual size_t HeaderProc(const char* buffer, size_t len) = 0;
     size_t ChunkLProc(const char* buffer, size_t len);

@@ -91,7 +91,7 @@ Ep::Ep(int fd):fd(fd){
             LOGE("fcntl error:%s\n", strerror(errno));
             return;
         }
-        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+        fcntl(fd, F_SETFL, flags | O_NONBLOCK | FD_CLOEXEC);
     }
 }
 
@@ -178,11 +178,11 @@ void Ep::setEvents(RW_EVENT events) {
 }
 
 void Ep::addEvents(RW_EVENT events){
-    return setEvents(static_cast<RW_EVENT>(this->events | events));
+    return setEvents(this->events | events);
 }
 
 void Ep::delEvents(RW_EVENT events){
-    return setEvents(static_cast<RW_EVENT>(this->events & ~events));
+    return setEvents(this->events & ~events);
 }
 
 int Ep::checkSocket(const char* msg){
@@ -211,7 +211,7 @@ ssize_t  WBuffer::Write(std::function<ssize_t(const void*, size_t)> write_func){
     auto i = write_queue.begin();
     assert(i->buff);
     assert(i->offset < i->len);
-    ssize_t ret = write_func((char *)i->buff + i->offset, i->len - i->offset);
+    ssize_t ret = write_func((const char *)i->buff + i->offset, i->len - i->offset);
     if (ret > 0) {
         len -= ret;
         assert(ret + i->offset <= i->len);
@@ -247,7 +247,7 @@ WBuffer::~WBuffer() {
 
 RWer::RWer(std::function<void (int, int)> errorCB,
            std::function<void(const union sockaddr_un*)> connectCB,
-           int fd):Ep(fd), errorCB(errorCB), connectCB(connectCB) {
+           int fd):Ep(fd), errorCB(std::move(errorCB)), connectCB(std::move(connectCB)) {
 }
 
 void RWer::SendData(){
@@ -274,16 +274,16 @@ void RWer::SendData(){
 }
 
 void RWer::SetErrorCB(std::function<void(int ret, int code)> func){
-    errorCB = func;
+    errorCB = std::move(func);
 }
 
 void RWer::SetReadCB(std::function<void(size_t len)> func){
-    readCB = func;
+    readCB = std::move(func);
     TrigRead();
 }
 
 void RWer::SetWriteCB(std::function<void(size_t len)> func){
-    writeCB = func;
+    writeCB = std::move(func);
 }
 
 void RWer::closeHE(uint32_t) {
@@ -319,7 +319,7 @@ void RWer::TrigRead(){
 }
 
 void RWer::Close(std::function<void()> func) {
-    closeCB = func;
+    closeCB = std::move(func);
     if(getFd() >= 0){
         setEvents(RW_EVENT::WRITE);
         handleEvent = (void (Ep::*)(RW_EVENT))&RWer::closeHE;

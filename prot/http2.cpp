@@ -159,7 +159,7 @@ ret:
 void Http2Base::PushData(uint32_t id, const void* data, size_t size){
     size_t left = size;
     while(left > remoteframebodylimit){
-        Http2_header *header=(Http2_header *)p_move(p_malloc(remoteframebodylimit), -(char)sizeof(Http2_header));
+        Http2_header* const header=(Http2_header *)p_move(p_malloc(remoteframebodylimit), -(char)sizeof(Http2_header));
         memset(header, 0, sizeof(Http2_header));
         set32(header->id, id);
         set24(header->length, remoteframebodylimit);
@@ -168,7 +168,7 @@ void Http2Base::PushData(uint32_t id, const void* data, size_t size){
         data = (char*)data + remoteframebodylimit;
         left -= remoteframebodylimit;
     }
-    Http2_header *header=(Http2_header *)p_move(p_malloc(left), -(char)sizeof(Http2_header));
+    Http2_header* const header=(Http2_header *)p_move(p_malloc(left), -(char)sizeof(Http2_header));
     memset(header, 0, sizeof(Http2_header));
     set32(header->id, id);
     set24(header->length, left);
@@ -220,7 +220,7 @@ void Http2Base::SettingsProc(const Http2_header* header) {
                 request_table.set_dynamic_table_size_limit_max(value);
                 break;
             case SETTINGS_INITIAL_WINDOW_SIZE:
-                if(value >= (uint32_t)1<<31){
+                if(value >= (uint32_t)1<<31u){
                     LOGE("ERROR window overflow\n");
                     ErrProc(ERR_FLOW_CONTROL_ERROR);
                     return;
@@ -276,7 +276,7 @@ void Http2Base::EndProc(__attribute__ ((unused)) uint32_t id) {
 
 uint32_t Http2Base::ExpandWindowSize(uint32_t id, uint32_t size) {
     LOGD(DHTTP2, "will expand window size [%d]: %d\n", id, size);
-    Http2_header *header = (Http2_header *)p_malloc(sizeof(Http2_header)+sizeof(uint32_t));
+    Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header)+sizeof(uint32_t));
     memset(header, 0, sizeof(Http2_header));
     set32(header->id, id);
     set24(header->length, sizeof(uint32_t));
@@ -287,7 +287,7 @@ uint32_t Http2Base::ExpandWindowSize(uint32_t id, uint32_t size) {
 }
 
 void Http2Base::Ping(const void *buff) {
-    Http2_header *header = (Http2_header *)p_malloc(sizeof(Http2_header) + 8);
+    Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header) + 8);
     memset(header, 0, sizeof(Http2_header));
     header->type = PING_TYPE;
     set24(header->length, 8);
@@ -297,7 +297,7 @@ void Http2Base::Ping(const void *buff) {
 
 
 void Http2Base::Reset(uint32_t id, uint32_t code) {
-    Http2_header *header = (Http2_header *)p_malloc(sizeof(Http2_header)+sizeof(uint32_t));
+    Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header)+sizeof(uint32_t));
     memset(header, 0, sizeof(Http2_header));
     header->type = RST_STREAM_TYPE;
     set32(header->id, id);
@@ -312,7 +312,7 @@ void Http2Base::Goaway(uint32_t lastid, uint32_t code, char *message) {
     if(message){
         len += strlen(message)+1;
     }
-    Http2_header *header = (Http2_header *)p_malloc(sizeof(Http2_header)+len);
+    Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header)+len);
     memset(header, 0, sizeof(Http2_header));
     set24(header->length, len);
     header->type = GOAWAY_TYPE;
@@ -327,7 +327,7 @@ void Http2Base::Goaway(uint32_t lastid, uint32_t code, char *message) {
 
 
 void Http2Base::SendInitSetting() {
-    Http2_header *header = (Http2_header *)p_malloc(sizeof(Http2_header) + 2*sizeof(Setting_Frame));
+    Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header) + 2*sizeof(Setting_Frame));
     memset(header, 0, sizeof(Http2_header));
     Setting_Frame *sf = (Setting_Frame *)(header+1);
     set16(sf->identifier, SETTINGS_HEADER_TABLE_SIZE );
@@ -357,7 +357,7 @@ size_t Http2Responser::InitProc(const uchar* http2_buff, size_t len) {
     if(len < prelen) {
         return 0;
     }else{
-        if (memcmp(http2_buff, H2_PREFACE, strlen(H2_PREFACE))) {
+        if (memcmp(http2_buff, H2_PREFACE, strlen(H2_PREFACE)) != 0) {
             LOGE("ERROR get http2 perface: %*s\n", (int)prelen, http2_buff);
             ErrProc(ERR_PROTOCOL_ERROR);
             return 0;
@@ -401,13 +401,12 @@ void Http2Responser::HeadersProc(const Http2_header* header) {
     }
     (void)weigth;
     (void)streamdep;
-    return;
 }
 
 
 void Http2Requster::init() {
     queue_insert(queue_head(),
-                 write_block{p_memdup(H2_PREFACE, sizeof(H2_PREFACE)), sizeof(H2_PREFACE)-1, 0}
+                 write_block{p_strdup(H2_PREFACE), sizeof(H2_PREFACE)-1, 0}
                 );
     SendInitSetting(); 
 }
@@ -440,7 +439,7 @@ size_t Http2Requster::InitProc(const uchar* http2_buff, size_t len) {
 
 void Http2Requster::HeadersProc(const Http2_header* header) {
     uint32_t id = HTTP2_ID(header->id);
-    if(id >= sendid-1 || (id&1) == 0){
+    if(id >= sendid-1 || (id&1u) == 0){
         LOGE("ERROR header id: %d/%d\n", id, sendid);
         ErrProc(ERR_STREAM_CLOSED);
         return;
@@ -469,5 +468,4 @@ void Http2Requster::HeadersProc(const Http2_header* header) {
     }
     (void)weigth;
     (void)streamdep;
-    return;
 }

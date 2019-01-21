@@ -31,12 +31,12 @@ Cgi::Cgi(const char* fname, int sv[2]) {
         void *handle = dlopen(fname, RTLD_NOW);
         if(handle == nullptr) {
             LOGE("dlopen failed: %s\n", dlerror());
-            exit(-1);
+            exit(-CGI_RETURN_DLOPEN_FAILED);
         }
         cgifunc* func=(cgifunc *)dlsym(handle,"cgimain");
         if(func == nullptr) {
             LOGE("dlsym failed: %s\n", dlerror());
-            exit(-1);
+            exit(-CGI_RETURN_DLSYM_FAILED);
         }
         struct rlimit limits;
         if(getrlimit(RLIMIT_NOFILE, &limits)) {
@@ -154,7 +154,7 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
     uint8_t flag = 0;
     switch(ntohl(nv->name)) {
     case CGI_NAME_BUFFLEFT: {
-        CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + sizeof(uint32_t));
+        CGI_Header* const header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + sizeof(uint32_t));
         memcpy(header_back, header, sizeof(CGI_Header));
         header_back->flag = 0;
         header_back->contentLength = htons(sizeof(CGI_NameValue) + sizeof(uint32_t));
@@ -172,16 +172,16 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
             break;
         }
         auto slist = getallstrategy();
-        for(auto i: slist) {
+        for(const auto& i: slist) {
             auto host = i.first;
-            if(host == ""){
+            if(host.empty()){
                host = "_";
             }
             string strategy =  getstrategystring(i.second.s);
             auto ext = i.second.ext;
             //"host strategy ext\0"
             size_t value_len = sizeof(CGI_NameValue) + host.length() + strategy.length() + ext.length() + 3;
-            CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + value_len);
+            CGI_Header* const header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + value_len);
             memcpy(header_back, header, sizeof(CGI_Header));
             header_back->flag = 0;
             header_back->contentLength = htons(value_len);
@@ -202,7 +202,7 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
         char site[DOMAINLIMIT];
         char strategy[20];
         sscanf((char*)nv->value, "%s %s", site, strategy);
-        if(addstrategy(site, strategy, "") == false){
+        if(!addstrategy(site, strategy, "")){
             LOG("[CGI] addstrategy %s (%s)\n", site, strategy);
             flag = CGI_FLAG_ERROR;
         }
@@ -213,7 +213,7 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
             flag = CGI_FLAG_ERROR;
             break;
         }
-        if(delstrategy((char *)nv->value) == false){
+        if(!delstrategy((char *)nv->value)){
             LOG("[CGI] delstrategy %s\n", (char *)nv->value);
             flag = CGI_FLAG_ERROR;
         }
@@ -226,7 +226,7 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
         }
         char proxy[DOMAINLIMIT];
         int len = getproxy(proxy, sizeof(proxy));
-        CGI_Header* header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + len);
+        CGI_Header* const header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + len);
         memcpy(header_back, header, sizeof(CGI_Header));
         header_back->flag = 0;
         header_back->contentLength = htons(sizeof(CGI_NameValue) + len);
@@ -250,7 +250,7 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
         break;
     }
     case CGI_NAME_LOGIN:{
-        if(strcmp(auth_string, (char *)nv->value)){
+        if(strcmp(auth_string, (char *)nv->value) != 0){
             flag = CGI_FLAG_ERROR;
         }else{
             LOG("[CGI] %s login\n", req->src.lock()->getip());
@@ -261,7 +261,7 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
     default:
         break;
     }
-    CGI_Header* header_end = (CGI_Header*)p_malloc(sizeof(CGI_Header));
+    CGI_Header* const header_end = (CGI_Header*)p_malloc(sizeof(CGI_Header));
     memcpy(header_end, header, sizeof(CGI_Header));
     header_end->contentLength = 0;
     header_end->flag = flag | CGI_FLAG_END;
@@ -399,7 +399,7 @@ err:
 
 
 void flushcgi() {
-    for(auto i:cgimap) {
+    for(const auto& i:cgimap) {
         assert(!i.second.expired());
         i.second.lock()->deleteLater(PEER_LOST_ERR);
     }
@@ -442,10 +442,10 @@ std::map< string, string > getparamsmap(const char *param, size_t len) {
     URLDecode(paramsbuff, param, len);
     char *p=paramsbuff;
     if(*p) {
-        for (; ; p = NULL) {
+        for (; ; p = nullptr) {
             char *q = strtok(p, "&");
 
-            if (q == NULL)
+            if (q == nullptr)
                 break;
 
             char* sp = strpbrk(q, "=");

@@ -15,7 +15,7 @@ struct VpnKey{
     char version() const;
 };
 
-bool operator<(const VpnKey a, const VpnKey b);
+bool operator<(VpnKey a, VpnKey b);
 
 
 class Guest_vpn;
@@ -25,10 +25,10 @@ class VPN_nanny: public Server{
     void buffHE(const char* buff, size_t buflen);
 public:
     explicit VPN_nanny(int fd);
-    virtual ~VPN_nanny();
+    virtual ~VPN_nanny() override;
 
     template <class T>
-    void sendPkg(std::shared_ptr<Ip> pac, T* buff, size_t len){
+    void sendPkg(const std::shared_ptr<Ip>& pac, T* buff, size_t len){
         char* packet = pac->build_packet(buff, len);
         rwer->buffer_insert(rwer->buffer_end(), write_block{packet, len, 0});
     }
@@ -37,7 +37,7 @@ public:
     void cleanKey(const VpnKey& key);
 };
 
-#define VPN_TCP_WSCALE   4
+#define VPN_TCP_WSCALE   4u
 
 struct TcpStatus{
     uint32_t   send_seq;
@@ -77,7 +77,7 @@ class Guest_vpn:public Requester, virtual public RwObject{
     int tcp_ack();
 public:
     Guest_vpn(const VpnKey& key, VPN_nanny* nanny);
-    virtual ~Guest_vpn();
+    virtual ~Guest_vpn() override;
 
     void packetHE(std::shared_ptr<const Ip> pac, const char* packet, size_t len);
     void writed();

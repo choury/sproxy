@@ -49,7 +49,7 @@ public:
     FdRWer(const char* hostname, uint16_t port, Protocol protocol,
            std::function<void(int ret, int code)> errorCB,
            std::function<void(const sockaddr_un*)> connectCB = nullptr);
-    virtual ~FdRWer();
+    virtual ~FdRWer() override;
 
 };
 
@@ -90,8 +90,8 @@ protected:
     virtual ssize_t Write(const void* buff, size_t len) override;
     void closeHE(uint32_t) override;
 public:
-    EventRWer(std::function<void(int ret, int code)> errorCB);
-    ~EventRWer();
+    explicit EventRWer(std::function<void(int ret, int code)> errorCB);
+    ~EventRWer() override;
 
     virtual size_t rlength() override;
     virtual const char *data() override;

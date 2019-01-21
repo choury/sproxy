@@ -217,14 +217,22 @@ int Connect(const union sockaddr_un* addr, int type) {
 int IcmpSocket(const union sockaddr_un* addr){
     int fd = -1;
     if(addr->addr.sa_family == AF_INET){
+#ifdef SOCK_CLOEXEC
+        fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_ICMP);
+#else
         fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+#endif
         if(fd <= 0){
             LOGE("create icmp socket failed: %s\n", strerror(errno));
             return -1;
         }
     }
     if(addr->addr.sa_family == AF_INET6){
+#ifdef SOCK_CLOEXEC
+        fd = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_ICMPV6);
+#else
         fd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_ICMPV6);
+#endif
         if(fd <= 0){
             LOGE("create icmp6 socket failed: %s\n", strerror(errno));
             return -1;
@@ -297,7 +305,9 @@ union sockaddr_un* getlocalip () {
 }
 #else
 union sockaddr_un* getlocalip (){
-    return NULL;
+    static union sockaddr_un ip;
+    memset(&ip, 0, sizeof(ip));
+    return &ip;
 }
 #endif
 

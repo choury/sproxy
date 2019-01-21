@@ -29,7 +29,7 @@ int protectFd(int fd) {
 int set_if(struct ifreq* ifr){
     int err;
 
-    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    int fd = socket(AF_INET, SOCK_DGRAM|SOCK_CLOEXEC, 0);
     /* set ip of this end point of tunnel */
     ifr->ifr_addr.sa_family = AF_INET;
     struct sockaddr_in* addr = (struct sockaddr_in*)&ifr->ifr_addr;
@@ -116,7 +116,7 @@ int set_if(struct ifreq* ifr){
 int set_if6(struct ifreq* ifr){
     int err;
 
-    int fd = socket(AF_INET6, SOCK_DGRAM, 0);
+    int fd = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, 0);
     if ((err = ioctl(fd, SIOGIFINDEX, ifr)) < 0) {
         perror("ioctl (SIOGIFINDEX) failed");
         close(fd);
@@ -190,7 +190,7 @@ int tun_create(char *dev, int flags) {
     int fd, err;
 
     assert(dev != NULL);
-    if ((fd = open("/dev/net/tun", O_RDWR)) < 0) {
+    if ((fd = open("/dev/net/tun", O_RDWR|O_CLOEXEC)) < 0) {
         return fd;
     }
 

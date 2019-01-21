@@ -158,7 +158,7 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
             strcpy(fprotocol, "http");
         }
         LOG("[[%s]] %s\n", getstrategystring(stra.s), log_buff);
-        return Host::gethost(fprotocol, fhost, fport, req, responser_ptr);
+        return Host::gethost(fprotocol, fhost, fport, req, std::move(responser_ptr));
     }else if (req->ismethod("ADDS")) {
         const char *strategy = req->get("s");
         const char *ext = req->get("ext");
@@ -179,7 +179,7 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
         if(delstrategy(req->hostname)){
             HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
             res->set("Strategy", getstrategystring(stra.s));
-            res->set("Ext", stra.ext.c_str());
+            res->set("Ext", stra.ext);
             res->index = req->index;
             requester->response(res);
         }else{
@@ -200,10 +200,9 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
         }
     } else if (req->ismethod("TEST")){
         HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
-        std::string ext;
         strategy stra = getstrategy(req->hostname);
         res->set("Strategy", getstrategystring(stra.s));
-        res->set("Ext", ext);
+        res->set("Ext", stra.ext);
         res->index = req->index;
         requester->response(res);
     } else if(req->ismethod("FLUSH")){

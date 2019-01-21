@@ -33,7 +33,7 @@ class File:public Responser{
     virtual void* request(HttpReqHeader* req) override;
 public:
     explicit File(const char* fname, int fd, const struct stat* st);
-    ~File();
+    virtual ~File()override;
     virtual int32_t bufleft(void* index)override;
     virtual void Send(const void* buff, size_t size, void* index)override;
 

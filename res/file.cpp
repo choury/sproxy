@@ -44,10 +44,7 @@ static bool checkrange(Range& rg, size_t size) {
     if (rg.end < 0) {
         rg.end = size-1;
     }
-    if (rg.begin > rg.end) {
-        return false;
-    }
-    return true;
+    return rg.begin <= rg.end;
 }
 
 static void loadmine(){
@@ -67,7 +64,7 @@ static void loadmine(){
         if(!(ss>>type)){
             continue;
         }
-        if(type == "" || type[0] == '#'){
+        if(type.empty() || type[0] == '#'){
             continue;
         }
         std::string suffix;
@@ -131,7 +128,7 @@ void* File::request(HttpReqHeader* req) {
     status.req_index = req->index;
     status.head_only = req->ismethod("HEAD");
     status.responsed = false;
-    if (req->ranges.size()){
+    if (!req->ranges.empty()){
         status.rg = req->ranges[0];
     }else{
         status.rg.begin = -1;
@@ -229,7 +226,7 @@ void File::readHE(size_t len) {
             continue;
         }
         allfull = false;
-        char *buff = (char *)p_malloc(len);
+        char* const buff = (char *)p_malloc(len);
         len = pread(fd, buff, len, rg.begin);
         if(len <= 0){
             LOGE("file pread error: %s\n", strerror(errno));
@@ -275,7 +272,7 @@ void File::deleteLater(uint32_t errcode){
 
 void File::dump_stat(Dumper dp, void* param){
     dp(param, "File %p, %s, id=%d:\n", this, filename, req_id);
-    for(auto i: statusmap){
+    for(const auto& i: statusmap){
         assert(!i.second.req_ptr.expired());
         dp(param, "0x%x: (%zd-%zd) %p, %p\n",
                 i.first, i.second.rg.begin, i.second.rg.end,
@@ -403,7 +400,7 @@ std::weak_ptr<Responser> File::getfile(HttpReqHeader* req) {
                 return file;
             }
         }
-        int fd = open(filename, O_RDONLY);
+        int fd = open(filename, O_RDONLY | O_CLOEXEC);
         if(fd < 0){
             LOGE("open file failed %s: %s\n", filename, strerror(errno));
             res = new HttpResHeader(H500, sizeof(H500));

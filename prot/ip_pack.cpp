@@ -460,7 +460,7 @@ uint16_t Tcp::getoptions() const {
             continue;
         }
         assert(opt->kind<16);
-        options |= (1<<opt->kind);
+        options |= (1u<<opt->kind);
         len -= opt->length;
         opt = (tcp_opt*)((char *)opt+opt->length);
     }

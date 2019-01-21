@@ -43,9 +43,7 @@ Host::Host(const char* protocol, const char* hostname, uint16_t port): port(port
 }
 
 Host::~Host(){
-    if(req){
-        delete req;
-    }
+    delete req;
 }
 
 void Host::connected() {

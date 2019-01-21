@@ -16,7 +16,7 @@
 #define BUF_SIZE 1024
 
 #define DNSPORT     53
-#define DNSTIMEOUT  5000                // dns 超时时间(ms)
+#define DNSTIMEOUT  10000            // dns 超时时间(ms)
 
 
 static uint16_t id_cur = 1;
@@ -25,7 +25,7 @@ class Dns_srv:public Server{
     sockaddr_un addr;
 public:
     explicit Dns_srv(const sockaddr_un* server);
-    virtual ~Dns_srv();
+    virtual ~Dns_srv() override;
     bool valid();
     void buffHE(const char* buffer, size_t len);
     int query(const char *host, int type, uint32_t id);
@@ -48,10 +48,10 @@ struct Dns_Rcd{
 
 typedef struct Dns_Status {
     uint16_t times;
-#define QARECORD     0x1
-#define QAAAARECORD  0x2
-#define GARECORD     0x10
-#define GAAAARECORD  0x20
+#define QARECORD     0x1u
+#define QAAAARECORD  0x2u
+#define GARECORD     0x10u
+#define GAAAARECORD  0x20u
     uint16_t flags;
     char host[DOMAINLIMIT];
     std::list<Dns_Req> reqs;
@@ -88,9 +88,8 @@ int dns_expired() {
     }
     return 1;
 }
-*/
 
-int dns_expired(std::string host){
+int dns_expired(const std::string& host){
     time_t __attribute__((unused)) now = time(nullptr);
     auto i = rcd_cache.find(host);
     if(i != rcd_cache.end()){
@@ -101,6 +100,7 @@ int dns_expired(std::string host){
     }
     return 0;
 }
+*/
 
 int query_timeout(uint16_t id);
 
@@ -109,20 +109,20 @@ extern std::vector<std::string> getDns();
 void getDnsConfig(struct DnsConfig* config){
     std::vector<std::string> dns = getDns();
     int get = 0;
-    for(size_t i = 0; i < dns.size(); i++ ){
+    for(const auto& i: dns){
         if(get == 3){
             break;
         }
-        if (inet_pton(AF_INET, dns[i].c_str(), &config->server[get].addr_in.sin_addr) == 1) {
+        if (inet_pton(AF_INET, i.c_str(), &config->server[get].addr_in.sin_addr) == 1) {
             config->server[get].addr_in.sin_family = AF_INET;
             config->server[get].addr_in.sin_port = htons(DNSPORT);
             get++;
-        } else if (inet_pton(AF_INET6, dns[i].c_str(), &config->server[get].addr_in6.sin6_addr) == 1) {
+        } else if (inet_pton(AF_INET6, i.c_str(), &config->server[get].addr_in6.sin6_addr) == 1) {
             config->server[get].addr_in6.sin6_family = AF_INET6;
             config->server[get].addr_in6.sin6_port = htons(DNSPORT);
             get++;
         } else {
-            LOGE("[DNS] %s is not a valid ip address\n", dns[i].c_str());
+            LOGE("[DNS] %s is not a valid ip address\n", i.c_str());
         }
     }
     config->namecount = get;
@@ -183,15 +183,12 @@ void flushdns(){
         i->deleteLater(NOERROR | DISCONNECT_FLAG);
     }
     srvs.clear();
-    for(auto i = rcd_cache.begin(); i != rcd_cache.end(); i = rcd_cache.erase(i)){
-        assert(check_delayjob(std::bind(dns_expired, i->first), i->first.data()));
-        del_delayjob(std::bind(dns_expired, i->first), i->first.data());
-    }
+    rcd_cache.clear();
 }
 
 static void query(Dns_Status* dnsst){
-    assert(id_cur &1);
-    if(srvs.size() == 0) {
+    assert(id_cur &1u);
+    if(srvs.empty()) {
         dnsinit();
     }
     id_cur += 2;
@@ -247,7 +244,7 @@ static void query(Dns_Status* dnsst){
         dnsst = newst;
     }
 
-    if (srvs.size() == 0) {
+    if (srvs.empty()) {
         goto ret;
     }
 
@@ -275,7 +272,7 @@ ret:
 }
 
 
-void query(const char* host , DNSCBfunc func, void* param) {
+void query(const char* host, DNSCBfunc func, void* param) {
     if(querying_index.Get(host)){
         if(func){
             querying_index.Get(host)->data->reqs.push_back(Dns_Req{func, param});
@@ -306,10 +303,10 @@ void query_cancel(const char* host, DNSCBfunc func, void* param){
 }
 
 static void query(Dns_RawReq* dnsreq){
-    assert(id_cur &1);
-    while(srvs.size() == 0) {
+    assert(id_cur &1u);
+    while(srvs.empty()) {
         dnsinit();
-        if(srvs.size() == 0){
+        if(srvs.empty()){
             sleep(5);
         }
     }
@@ -339,7 +336,7 @@ int query_timeout(uint16_t id){
     if(querying_index.Get(id)){
         auto status = querying_index.Get(id)->data;
         querying_index.Delete(id);
-        if(status->rcd.addrs.empty() && status->times <= 5) {
+        if(status->rcd.addrs.empty() && status->times <= 3) {
             LOG("[DNS] %s: time out, retry...\n", status->host);
             query(status);
         }else{
@@ -354,7 +351,7 @@ int query_timeout(uint16_t id){
         auto req = querying_raw_id[id];
         querying_raw_id.erase(id);
 
-        if(req->times <= 5){
+        if(req->times <= 3){
             LOG("[DNS] %s: raw query time out, retry...\n", req->host);
             query(req);
         }else{
@@ -364,7 +361,7 @@ int query_timeout(uint16_t id){
         }
         return 0;
     }
-    assert("not found id in query_timeout");
+    assert(0);
     return 0;
 }
 
@@ -388,13 +385,15 @@ void RcdDown(const char *hostname, const sockaddr_un &addr) {
                     return;
                 }
                 break;
+            default:
+                assert(0);
             }
         }
     }
 }
 
 Dns_srv::Dns_srv(const sockaddr_un* server){
-    sockaddr_un addr;
+    //sockaddr_un addr;
     memcpy(&addr, server, sizeof(sockaddr_un));
     int fd = Connect(&addr, SOCK_DGRAM);
     if (fd == -1) {
@@ -443,7 +442,7 @@ void Dns_srv::buffHE(const char *buffer, size_t len) {
     }
 
     uint32_t flags=0;
-    if (id & 1) {
+    if (id & 1u) {
         flags |= GARECORD;
     } else {
         id--;
@@ -456,8 +455,6 @@ void Dns_srv::buffHE(const char *buffer, size_t len) {
                 rcd.addrs.push_back(i);
             }
             rcd_cache[dnsrcd.domain] = rcd;
-            auto i = rcd_cache.find(dnsrcd.domain);
-            add_delayjob(std::bind(dns_expired, i->first), i->first.data(), 10 * 1000);
         }
         LOG("[DNS] Get a unkown id:%d [%s]\n", id, dnsrcd.domain);
         return;
@@ -465,7 +462,7 @@ void Dns_srv::buffHE(const char *buffer, size_t len) {
     Dns_Status *dnsst = querying_index.Get(id)->data;
     dnsst->flags |= flags;
 
-    if(dnsrcd.addrs.size()){
+    if(!dnsrcd.addrs.empty()){
         for(auto i: dnsrcd.addrs){
             dnsst->rcd.addrs.push_back(i);
         }
@@ -478,9 +475,6 @@ void Dns_srv::buffHE(const char *buffer, size_t len) {
         querying_index.Delete(id);
         if (!dnsst->rcd.addrs.empty()) {
             rcd_cache[dnsst->host] = dnsst->rcd;
-
-            auto i = rcd_cache.find(dnsst->host);
-            add_delayjob(std::bind(dns_expired, i->first), i->first.data(), dnsst->rcd.ttl * 1000);
         }
         for(auto i: dnsst->reqs ){
             i.func(i.param, dnsst->host, dnsst->rcd.addrs);
@@ -490,7 +484,7 @@ void Dns_srv::buffHE(const char *buffer, size_t len) {
 }
 
 int Dns_srv::query(const char *host, int type, uint32_t id) {
-    unsigned char*  buf = (unsigned char*)p_malloc(BUF_SIZE);
+    unsigned char* const buf = (unsigned char*)p_malloc(BUF_SIZE);
     int len = Dns_Que(host, type, id).build(buf);
     rwer->buffer_insert(rwer->buffer_end(), write_block{buf, (size_t)len, 0});
     return id;
@@ -506,7 +500,7 @@ void dump_dns(Dumper dp, void* param){
        dp(param, "    %d: %s\n", i.first, i.second->data->host);
     }
     dp(param, "Dns cache:\n");
-    for(auto i: rcd_cache){
+    for(const auto& i: rcd_cache){
         dp(param, "    %s: %ld\n", i.first.c_str(), i.second.get_time + i.second.ttl - time(0));
         for(auto j: i.second.addrs){
             char ip[INET6_ADDRSTRLEN];
@@ -555,7 +549,7 @@ static const unsigned char * getdomain(const DNS_HDR *hdr, const unsigned char *
     const unsigned char* buf = (const unsigned char *)hdr;
     while (p < (unsigned char*)hdr + len && *p) {
         if (*p > 63) {
-            const unsigned char *q = buf+((*p & 0x3f) <<8) + *(p+1);
+            const unsigned char *q = buf+((*p & 0x3fu) <<8u) + *(p+1);
             getdomain(hdr, q, len, domain);
             return p+2;
         } else {
@@ -596,7 +590,7 @@ Dns_Que::Dns_Que(const std::string& host, uint16_t type, uint16_t id):host(host)
 static std::string reverse(std::string str){
     std::string::size_type split = 0;
     std::string result;
-    while((split = str.find_last_of(".")) != std::string::npos){
+    while((split = str.find_last_of('.')) != std::string::npos){
         result += str.substr(split+1) + '.';
         str = str.substr(0, split);
     }
@@ -630,7 +624,7 @@ Dns_Que::Dns_Que(const char* buff, size_t len) {
             ptr = ptr.substr(sizeof(IPV6_PTR_PREFIX) - 1);
             std::string ipstr;
             for(size_t i = 1; i<= ptr.length(); i++){
-                if(i&1){
+                if(i&1u){
                     ipstr += ptr[i-1];
                 }
                 if(i%8 == 0){

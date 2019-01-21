@@ -15,7 +15,7 @@ class Ping: public Responser{
     virtual void deleteLater(uint32_t errcode) override;
 public:
     Ping(const char *host, uint16_t id);
-    Ping(HttpReqHeader* req);
+    explicit Ping(HttpReqHeader* req);
     virtual void* request(HttpReqHeader* req) override;
     virtual void Send(void* buff, size_t size, void* index)override;
 

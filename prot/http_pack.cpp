@@ -130,14 +130,14 @@ HttpReqHeader::HttpReqHeader(const char* header, size_t len, std::weak_ptr<RwObj
         port = port?port:HTTPSPORT;
     }
 
-    for (char* str = strstr(httpheader, CRLF) + strlen(CRLF); ; str = NULL) {
+    for (char* str = strstr(httpheader, CRLF) + strlen(CRLF); ; str = nullptr) {
         char* p = strtok(str, CRLF);
 
-        if (p == NULL)
+        if (p == nullptr)
             break;
 
         char* sp = strpbrk(p, ":");
-        if (sp == NULL) {
+        if (sp == nullptr) {
             LOGE("wrong header format:%s\n", p);
             throw ERR_PROTOCOL_ERROR;
         }
@@ -289,7 +289,7 @@ std::string HttpReqHeader::geturl() const {
     }
     assert(path[0] == '/');
     if(path[1]){
-        pos += sprintf(pos, "%s", path);
+        sprintf(pos, "%s", path);
     }
     return url;
 }
@@ -331,13 +331,13 @@ char *HttpReqHeader::getstring(size_t &len) const{
         }
     }
 
-    for (auto i : headers) {
+    for (const auto& i : headers) {
         len += sprintf(buff + len, "%s: %s" CRLF,
                 toUpHeader(i.first).c_str(), i.second.c_str());
     }
     if(!cookies.empty()){
         string cookie_str;
-        for(auto i : cookies){
+        for(const auto& i : cookies){
             cookie_str += "; ";
             cookie_str += i;
         }
@@ -369,7 +369,7 @@ bool HttpReqHeader::no_body() const {
 
 
 Http2_header *HttpReqHeader::getframe(Hpack_index_table *index_table, uint32_t http_id) const{
-    Http2_header *header = (Http2_header *)p_malloc(BUF_LEN);
+    Http2_header* const header = (Http2_header *)p_malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F;
@@ -401,7 +401,7 @@ Http2_header *HttpReqHeader::getframe(Hpack_index_table *index_table, uint32_t h
 
 
 CGI_Header *HttpReqHeader::getcgi(uint32_t cgi_id) const{
-    CGI_Header *cgi = (CGI_Header *)p_malloc(BUF_LEN);
+    CGI_Header* const cgi = (CGI_Header *)p_malloc(BUF_LEN);
     cgi->type = CGI_REQUEST;
     cgi->flag = 0;
     cgi->requestId = htonl(cgi_id);
@@ -410,10 +410,10 @@ CGI_Header *HttpReqHeader::getcgi(uint32_t cgi_id) const{
     p = cgi_addnv(p, ":method", method);
     p = cgi_addnv(p, ":path", path);
     p = cgi_addnv(p, ":authority", hostname);
-    for(auto i: headers){
+    for(const auto& i: headers){
         p = cgi_addnv(p, i.first, i.second);
     }
-    for(auto i: cookies){
+    for(const auto& i: cookies){
         p = cgi_addnv(p, "cookie", i);
     }
     cgi->contentLength = htons(p - (char *)(cgi + 1));
@@ -433,7 +433,7 @@ std::map<std::string, std::string> HttpReqHeader::getparamsmap()const{
 
 std::map< string, string > HttpReqHeader::getcookies() const {
     std::map<string, string> cookie;
-    for(auto i:cookies){
+    for(const auto& i:cookies){
         const char *p = i.c_str();
         const char* sp = strpbrk(p, "=");
         if (sp) {
@@ -458,11 +458,11 @@ HttpResHeader::HttpResHeader(const char* header, size_t len) {
     for (char* str = strstr((char *)httpheader, CRLF)+strlen(CRLF); ; str = NULL) {
         char* p = strtok(str, CRLF);
 
-        if (p == NULL)
+        if (p == nullptr)
             break;
 
         char* sp = strpbrk(p, ":");
-        if (sp == NULL) {
+        if (sp == nullptr) {
             LOGE("wrong header format:%s\n", p);
             throw ERR_PROTOCOL_ERROR;
         }
@@ -477,7 +477,7 @@ HttpResHeader::HttpResHeader(const char* header, size_t len) {
 }
 
 HttpResHeader::HttpResHeader(std::multimap<string, string>&& headers) {
-    for(auto i: headers){
+    for(const auto& i: headers){
         if(i.first == "set-cookies"){
             cookies.insert(i.second);
         }else{
@@ -538,18 +538,18 @@ bool HttpResHeader::no_body() const {
 
 
 char * HttpResHeader::getstring(size_t &len) const{
-    char * buff = (char *)p_malloc(BUF_LEN);
+    char* const buff = (char *)p_malloc(BUF_LEN);
     len = 0;
     if(get("Content-Length") || get("Transfer-Encoding") || no_body()){
         len += sprintf(buff, "HTTP/1.1 %s" CRLF, status);
     }else {
         len += sprintf(buff, "HTTP/1.0 %s" CRLF, status);
     }
-    for (auto i : headers) {
+    for (const auto& i : headers) {
         len += sprintf(buff + len, "%s: %s" CRLF,
                 toUpHeader(i.first).c_str(), i.second.c_str());
     }
-    for (auto i : cookies) {
+    for (const auto& i : cookies) {
         len += sprintf(buff + len, "Set-Cookie: %s" CRLF, i.c_str());
     }
 
@@ -560,7 +560,7 @@ char * HttpResHeader::getstring(size_t &len) const{
 
 
 Http2_header *HttpResHeader::getframe(Hpack_index_table* index_table, uint32_t http_id) const{
-    Http2_header *header = (Http2_header *)p_malloc(BUF_LEN);
+    Http2_header* const header = (Http2_header *)p_malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
     header->type = HEADERS_TYPE;
     header->flags = END_HEADERS_F;
@@ -570,7 +570,7 @@ Http2_header *HttpResHeader::getframe(Hpack_index_table* index_table, uint32_t h
     char status_h2[100];
     sscanf(status,"%99s",status_h2);
     p += index_table->hpack_encode(p, ":status", status_h2);
-    for (auto i : cookies) {
+    for (const auto& i : cookies) {
         p += index_table->hpack_encode(p, "set-cookie", i.c_str());
     }
     p += index_table->hpack_encode(p, headers);
@@ -581,17 +581,17 @@ Http2_header *HttpResHeader::getframe(Hpack_index_table* index_table, uint32_t h
 }
 
 CGI_Header *HttpResHeader::getcgi(uint32_t cgi_id)const {
-    CGI_Header *cgi = (CGI_Header *)p_malloc(BUF_LEN);
+    CGI_Header* const cgi = (CGI_Header *)p_malloc(BUF_LEN);
     cgi->type = CGI_RESPONSE;
     cgi->flag = 0;
     cgi->requestId = htonl(cgi_id);
     
     char *p = (char *)(cgi + 1);
     p = cgi_addnv(p, ":status", status);
-    for(auto i: headers){
+    for(const auto& i: headers){
         p = cgi_addnv(p, i.first, i.second);
     }
-    for(auto i: cookies){
+    for(const auto& i: cookies){
         p = cgi_addnv(p, "set-cookie", i);
     }
     cgi->contentLength = htons(p - (char *)(cgi + 1));
@@ -636,7 +636,7 @@ bool HttpReqHeader::getrange() {
         start,testtail,first,testsecond,second
     }status= Status::start;
     ssize_t begin = -1,end = -1;
-    while (1){
+    while (true){
         switch (status){
         case Status::start:
             begin = end = -1;

@@ -26,7 +26,7 @@ protected:
     virtual void connected();
 public:
     explicit Host(const char* protocol, const char* hostname, uint16_t port);
-    virtual ~Host();
+    virtual ~Host() override;
     
     virtual int32_t bufleft(void*) override;
     virtual void Send(void* buff, size_t size, void* index)override;

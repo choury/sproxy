@@ -25,7 +25,7 @@ size_t HttpBase::ChunkLProc(const char* buffer, size_t len) {
 size_t HttpBase::ChunkBProc(const char* buffer, size_t len) {
     if (http_expectlen == 0) {
         if (len >= strlen(CRLF)){
-            if(memcmp(buffer, CRLF, strlen(CRLF))) {
+            if(memcmp(buffer, CRLF, strlen(CRLF)) != 0) {
                 ErrProc();
                 return 0;
             }

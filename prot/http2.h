@@ -13,23 +13,23 @@
 
 struct Http2_header {
     uint8_t length[3];
-#define DATA_TYPE           0
-#define HEADERS_TYPE        1
-#define PRIORITY_TYPE       2
-#define RST_STREAM_TYPE     3
-#define SETTINGS_TYPE       4
-#define PUSH_PROMISE_TYPE   5
-#define PING_TYPE           6
-#define GOAWAY_TYPE         7
-#define WINDOW_UPDATE_TYPE  8
-#define CONTINUATION        9
+#define DATA_TYPE           0u
+#define HEADERS_TYPE        1u
+#define PRIORITY_TYPE       2u
+#define RST_STREAM_TYPE     3u
+#define SETTINGS_TYPE       4u
+#define PUSH_PROMISE_TYPE   5u
+#define PING_TYPE           6u
+#define GOAWAY_TYPE         7u
+#define WINDOW_UPDATE_TYPE  8u
+#define CONTINUATION        9u
     uint8_t type;
-#define ACK_F               1
-#define END_STREAM_F        1
-#define END_SEGMENT_F       2
-#define END_HEADERS_F       4
-#define PADDED_F            8
-#define PRIORITY_F          0x20
+#define ACK_F               1u
+#define END_STREAM_F        1u
+#define END_SEGMENT_F       2u
+#define END_HEADERS_F       4u
+#define PADDED_F            8u
+#define PRIORITY_F          0x20u
     uint8_t flags;
     uint8_t id[4];
 }__attribute__((packed));
@@ -54,20 +54,20 @@ struct Goaway_Frame{
 }__attribute__((packed));
 
 
-#define ERR_NO_ERROR            0
-#define ERR_PROTOCOL_ERROR      1
-#define ERR_INTERNAL_ERROR      2
-#define ERR_FLOW_CONTROL_ERROR  3
-#define ERR_SETTINGS_TIMEOUT    4
-#define ERR_STREAM_CLOSED       5
-#define ERR_FRAME_SIZE_ERROR    6
-#define ERR_REFUSED_STREAM      7
-#define ERR_CANCEL              8
-#define ERR_COMPRESSION_ERROR   9
-#define ERR_CONNECT_ERROR       10
-#define ERR_ENHANCE_YOUR_CALM   11
-#define ERR_INADEQUATE_SECURITY 12
-#define ERR_HTTP_1_1_REQUIRED   13
+#define ERR_NO_ERROR            0u
+#define ERR_PROTOCOL_ERROR      1u
+#define ERR_INTERNAL_ERROR      2u
+#define ERR_FLOW_CONTROL_ERROR  3u
+#define ERR_SETTINGS_TIMEOUT    4u
+#define ERR_STREAM_CLOSED       5u
+#define ERR_FRAME_SIZE_ERROR    6u
+#define ERR_REFUSED_STREAM      7u
+#define ERR_CANCEL              8u
+#define ERR_COMPRESSION_ERROR   9u
+#define ERR_CONNECT_ERROR       10u
+#define ERR_ENHANCE_YOUR_CALM   11u
+#define ERR_INADEQUATE_SECURITY 12u
+#define ERR_HTTP_1_1_REQUIRED   13u
 
 
 #define FRAMEBODYLIMIT 16384
@@ -86,8 +86,8 @@ protected:
     
     int32_t remotewinsize = 65535; // 对端提供的窗口大小，发送时减小，收到对端update时增加
     int32_t localwinsize = 65535; // 发送给对端的窗口大小，接受时减小，给对端发送update时增加
-#define HTTP2_FLAG_INITED    1
-#define HTTP2_FLAG_GOAWAYED  2
+#define HTTP2_FLAG_INITED    1u
+#define HTTP2_FLAG_GOAWAYED  2u
     uint32_t http2_flag = 0;
     uint32_t recvid = 0;
     uint32_t sendid = 1;
@@ -149,8 +149,8 @@ protected:
 public:
 };
 
-#define STREAM_HEAD_ENDED   (1<<0)
-#define STREAM_WRITE_CLOSED (1<<1)
-#define STREAM_READ_CLOSED  (1<<2)
+#define STREAM_HEAD_ENDED   (1u<<0u)
+#define STREAM_WRITE_CLOSED (1u<<1u)
+#define STREAM_READ_CLOSED  (1u<<2u)
 
 #endif

@@ -43,6 +43,8 @@ static uint32_t getFip(const sockaddr_un& addr){
     case AF_INET6:
         fip = ntohl(getMapped(addr.addr_in6.sin6_addr).s_addr);
         break;
+    default:
+        assert(0);
     }
     return fip;
 }
@@ -79,14 +81,13 @@ void FDns::Send(const void* buff, size_t size, void* index) {
             return;
         }
         assert(!status.req_ptr.expired());
-        unsigned char * buff = (unsigned char *)p_malloc(BUF_LEN);
+        unsigned char* const buff = (unsigned char *)p_malloc(BUF_LEN);
         status.req_ptr.lock()->Send(buff, rr->build(&que, buff), status.req_index);
         status.req_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, status.req_index);
         statusmap.erase(id);
         delete rr;
         return;
     }
-    return;
 }
 
 void FDns::ResponseCb(void* param, const char* buff, size_t size) {
@@ -122,7 +123,7 @@ void FDns::deleteLater(uint32_t errcode) {
     if(!fdns.expired() && fdns.lock() == shared_from_this()){
         fdns = std::weak_ptr<FDns>();
     }
-    for(auto i: statusmap){
+    for(const auto& i: statusmap){
         assert(!i.second.req_ptr.expired());
         i.second.req_ptr.lock()->finish(errcode, i.second.req_index);
     }
@@ -133,7 +134,7 @@ void FDns::deleteLater(uint32_t errcode) {
 
 void FDns::dump_stat(Dumper dp, void* param) {
     dp(param, "FDns %p, id: %d:\n", this, req_id);
-    for(auto i: statusmap){
+    for(const auto& i: statusmap){
         dp(param, "0x%x: %p, %p\n", i.first, i.second.req_ptr.lock().get(), i.second.req_index);
     }
 }
@@ -160,7 +161,7 @@ std::string FDns::getRdns(const sockaddr_un& addr) {
 in_addr FDns::getInet(std::string hostname) {
     in_addr addr;
 
-    if(hostname.find_first_of(".") == std::string::npos){
+    if(hostname.find_first_of('.') == std::string::npos){
         addr.s_addr = inet_addr("10.1.0.1");
     }else if(fdns_records.Get(hostname)){
         addr.s_addr = htonl(fdns_records.Get(hostname)->t1);
@@ -173,5 +174,5 @@ in_addr FDns::getInet(std::string hostname) {
 }
 
 in6_addr FDns::getInet6(std::string hostname) {
-    return mapIpv4(getInet(hostname));
+    return mapIpv4(getInet(std::move(hostname)));
 }

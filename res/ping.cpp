@@ -56,7 +56,7 @@ void Ping::Send(void* buff, size_t size, __attribute__ ((unused)) void* index){
     if(iserror || seq == 0){
         return;
     }
-    char* packet;
+    char* packet = (char*)buff;
     switch(addr.addr.sa_family){
     case AF_INET:{
         Icmp icmp;
@@ -69,7 +69,7 @@ void Ping::Send(void* buff, size_t size, __attribute__ ((unused)) void* index){
         packet = icmp.build_packet(nullptr, buff, size);
         break;}
     default:
-        assert(0);
+        abort();
     }
     rwer->buffer_insert(rwer->buffer_end(), write_block{packet, size, 0});
 }

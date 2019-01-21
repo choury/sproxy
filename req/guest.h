@@ -10,15 +10,15 @@ class Guest:public Requester, public HttpResponser {
 protected:
     std::weak_ptr<Responser> responser_ptr;
     void*      responser_index = nullptr;
-#define GUEST_IDELE_F        0
-#define GUEST_PROCESSING_F   (1<<1)
-#define GUEST_CONNECT_F      (1<<2)
-#define GUEST_SEND_F         (1<<3)
-#define GUEST_CHUNK_F        (1<<4)
-#define GUEST_NOLENGTH_F     (1<<5)
-#define GUEST_REQ_COMPLETED  (1<<6)
-#define GUEST_RES_COMPLETED  (1<<7)
-#define GUEST_ERROR_F        (1<<8)
+#define GUEST_IDELE_F        0u
+#define GUEST_PROCESSING_F   (1u<<1u)
+#define GUEST_CONNECT_F      (1u<<2u)
+#define GUEST_SEND_F         (1u<<3u)
+#define GUEST_CHUNK_F        (1u<<4u)
+#define GUEST_NOLENGTH_F     (1u<<5u)
+#define GUEST_REQ_COMPLETED  (1u<<6u)
+#define GUEST_RES_COMPLETED  (1u<<7u)
+#define GUEST_ERROR_F        (1u<<8u)
     uint32_t Status_flags = GUEST_IDELE_F;
 
     void ReadHE(size_t len);
