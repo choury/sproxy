@@ -48,8 +48,8 @@ public:
     }
     strategy find(in_addr ip){
         for(const auto& i: strategies){
-            uint64_t mask = i.first & 0xffffffff;
-            uint64_t net = i.first >> 32u;
+            uint32_t mask = i.first & 0xffffffff;
+            uint32_t net = i.first >> 32u;
             if((net & mask ) == (ntohl(ip.s_addr) & mask)){
                 return i.second;
             }
@@ -58,8 +58,8 @@ public:
     }
     bool remove(in_addr ip){
         for(auto i = strategies.begin(); i!= strategies.end(); i++ ){
-            uint64_t mask = i->first & 0xffffffff;
-            uint64_t net = i->first >> 32u;
+            uint32_t mask = i->first & 0xffffffff;
+            uint32_t net = i->first >> 32u;
             if((net & mask ) == (ntohl(ip.s_addr) & mask)){
                 strategies.erase(i);
                 return true;
@@ -73,7 +73,7 @@ public:
     void stats(int){
         for(const auto& i: strategies){
             int prefix = 0;
-            uint64_t mask = i.first&0xffffffff;
+            uint32_t mask = i.first&0xffffffff;
             while(mask){
                 prefix ++;
                 mask <<= 1u;
@@ -89,7 +89,7 @@ public:
     void dump(std::list<std::pair<std::string, strategy>>& slist){
         for(auto i: strategies){
             int prefix = 0;
-            uint64_t mask = i.first&0xffffffff;
+            uint32_t mask = i.first&0xffffffff;
             while(mask){
                 prefix ++;
                 mask <<= 1u;
@@ -202,6 +202,9 @@ public:
                     slist.emplace_back(i.first, j.second);
                 }
             }
+        }
+        if(this->my_strategy.s != Strategy::none){
+            slist.emplace_back("", this->my_strategy);
         }
         return slist;
     }
@@ -348,7 +351,7 @@ bool delstrategy(const char* host) {
         //TODO
         found = false;
     }else{
-        found = domains.remove(host);
+        found = domains.remove(reverse(host));
     }
     if(found){
         savesites();

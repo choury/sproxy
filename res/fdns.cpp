@@ -44,7 +44,7 @@ static uint32_t getFip(const sockaddr_un& addr){
         fip = ntohl(getMapped(addr.addr_in6.sin6_addr).s_addr);
         break;
     default:
-        assert(0);
+        abort();
     }
     return fip;
 }

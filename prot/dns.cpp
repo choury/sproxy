@@ -361,7 +361,7 @@ int query_timeout(uint16_t id){
         }
         return 0;
     }
-    assert(0);
+    abort();
     return 0;
 }
 
@@ -386,7 +386,7 @@ void RcdDown(const char *hostname, const sockaddr_un &addr) {
                 }
                 break;
             default:
-                assert(0);
+                abort();
             }
         }
     }

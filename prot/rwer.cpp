@@ -84,15 +84,24 @@ RW_EVENT convertKevent(const struct kevent& event){
 }
 #endif
 
-Ep::Ep(int fd):fd(fd){
-    if(fd >= 0){
-        int flags = fcntl(fd, F_GETFL, 0);
-        if (flags < 0) {
-            LOGE("fcntl error:%s\n", strerror(errno));
-            return;
-        }
-        fcntl(fd, F_SETFL, flags | O_NONBLOCK | FD_CLOEXEC);
+static void setSocketOptions(int fd){
+    if(fd < 0){
+        return;
     }
+    int flags = fcntl(fd, F_GETFL, 0);
+    if(flags < 0){
+        LOGE("fcntl error: %s\n", strerror(errno));
+        return;
+    }
+    int ret = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    if(ret < 0){
+        LOGE("fcntl error: %s\n", strerror(errno));
+    }
+}
+
+Ep::Ep(int fd):fd(fd){
+    LOGD(DEVENT, "%p set fd: %d\n", this, fd);
+    setSocketOptions(fd);
 }
 
 Ep::~Ep(){
@@ -110,14 +119,8 @@ void Ep::setFd(int fd){
         events = RW_EVENT::NONE;
     }
     this->fd = fd;
-    if(fd >= 0){
-        int flags = fcntl(fd, F_GETFL, 0);
-        if (flags < 0) {
-            LOGE("fcntl error:%s\n", strerror(errno));
-            return;
-        }
-        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-    }
+    LOGD(DEVENT, "%p set fd: %d\n", this, fd);
+    setSocketOptions(fd);
 }
 
 int Ep::getFd(){

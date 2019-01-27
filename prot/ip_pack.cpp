@@ -895,7 +895,7 @@ Ip4::Ip4(uint8_t type, const sockaddr_un* src, const sockaddr_un* dst):
 
 
 char* Ip4::build_packet(void* data, size_t &len){
-    char* packet;
+    char* packet = nullptr;
     switch(type){
     case IPPROTO_ICMP:
         packet = icmp->build_packet(data, len);
@@ -907,7 +907,7 @@ char* Ip4::build_packet(void* data, size_t &len){
         packet = udp->build_packet(&hdr, data, len);
         break;
     default:
-        assert(0);
+        abort();
     }
     packet = (char *)p_move(packet, -(int)sizeof(ip));
     len += sizeof(ip);
@@ -1076,7 +1076,7 @@ void Ip6::print() const {
 
 
 char* Ip6::build_packet(void* data, size_t& len) {
-    char* packet;
+    char* packet = nullptr;
     switch(type){
     case IPPROTO_ICMPV6:
         packet = icmp6->build_packet(&hdr, data, len);
@@ -1088,7 +1088,7 @@ char* Ip6::build_packet(void* data, size_t& len) {
         packet = udp->build_packet(&hdr, data, len);
         break;
     default:
-        assert(0);
+        abort();
     }
     packet = (char *)p_move(packet, -(int)sizeof(ip6_hdr));
 

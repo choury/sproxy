@@ -55,7 +55,7 @@ char VpnKey::version() const {
     if(dst.addr.sa_family == AF_INET6){
         return 6;
     }
-    assert(0);
+    abort();
     return 0;
 }
 
@@ -833,7 +833,7 @@ void Guest_vpn::Send(void* buff, size_t size, void* index) {
         add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 5000);
         return;
     }
-    assert(0);
+    abort();
 }
 
 

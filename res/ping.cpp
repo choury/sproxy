@@ -32,7 +32,7 @@ Ping::Ping(const char* host, uint16_t id): id(id) {
             req_ptr.lock()->Send(data + sizeof(icmp6_hdr), len - sizeof(icmp6_hdr), req_index);
             break;
         default:
-            assert(0);
+            abort();
         }
         rwer->consume(data, len);
     });
