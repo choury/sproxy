@@ -89,11 +89,18 @@ char* CBuffer::end(){
 FdRWer::FdRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(std::move(errorCB), nullptr, fd){
     setEvents(RW_EVENT::READ);
     handleEvent = (void (Ep::*)(RW_EVENT))&FdRWer::defaultHE;
+    sockaddr_un addr;
+    socklen_t len = sizeof(addr);
+    if(getpeername(fd, (sockaddr *)&addr, &len)){
+        LOGE("getpeername error: %s", strerror(errno));
+        return;
+    }
+    addrs.push(addr);
 }
 
 FdRWer::FdRWer(const char* hostname, uint16_t port, Protocol protocol,
                std::function<void(int ret, int code)> errorCB,
-               std::function<void(const sockaddr_un*)> connectCB):
+               std::function<void(const sockaddr_un&)> connectCB):
             RWer(std::move(errorCB), std::move(connectCB)), port(port), protocol(protocol)
 {
     strcpy(this->hostname, hostname);
@@ -122,9 +129,7 @@ void FdRWer::Dnscallback(void* param, const char*, std::list<sockaddr_un> addrs)
         }
         rwer->setFd(fd);
         rwer->setEvents(RW_EVENT::READWRITE);
-        if(rwer->connectCB){
-            rwer->connectCB(addrs.empty()? nullptr: &addrs.front());
-        }
+        rwer->Connected(addrs.front());
         rwer->handleEvent = (void (Ep::*)(RW_EVENT))&FdRWer::defaultHE;
         return;
     }
@@ -147,7 +152,7 @@ void FdRWer::retryconnect(int error) {
 void FdRWer::connect() {
     int fd = Connect(&addrs.front(), (int)protocol);
     if (fd < 0) {
-        return add_postjob(std::bind(&FdRWer::con_failed, this), this);
+        return add_delayjob(std::bind(&FdRWer::con_failed, this), this, 0);
     }
     setFd(fd);
     setEvents(RW_EVENT::WRITE);
@@ -174,9 +179,7 @@ void FdRWer::waitconnectHE(RW_EVENT events) {
     }
     if (!!(events & RW_EVENT::WRITE)) {
         setEvents(RW_EVENT::READWRITE);
-        if(connectCB){
-            connectCB(addrs.empty()? nullptr: &addrs.front());
-        }
+        Connected(addrs.front());
         handleEvent = (void (Ep::*)(RW_EVENT))&FdRWer::defaultHE;
         del_delayjob(std::bind(&FdRWer::con_failed, this), this);
     }

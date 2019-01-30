@@ -65,7 +65,8 @@ RudpRWer::RudpRWer(int fd, uint32_t id, Rudp_server* ord):RWer(nullptr, nullptr,
     recv_pkgs = new TTL();
     read_buff = (unsigned char*)malloc(RUDP_BUF_LEN);
     write_buff = (unsigned char*)malloc(RUDP_BUF_LEN);
-    connected();
+    setEvents(RW_EVENT::READWRITE);
+    handleEvent = (void (Ep::*)(RW_EVENT))&RudpRWer::defaultHE;
 }
 
 RudpRWer::RudpRWer(const char* hostname, uint16_t port):RWer(nullptr), port(port){
@@ -76,11 +77,6 @@ RudpRWer::RudpRWer(const char* hostname, uint16_t port):RWer(nullptr), port(port
     recv_pkgs = new TTL();
     read_buff = (unsigned char*)malloc(RUDP_BUF_LEN);
     write_buff = (unsigned char*)malloc(RUDP_BUF_LEN);
-}
-
-void RudpRWer::connected(){
-    setEvents(RW_EVENT::READWRITE);
-    handleEvent = (void (Ep::*)(RW_EVENT))&RudpRWer::defaultHE;
 }
 
 void RudpRWer::Dnscallback(void* param, const char* hostname, std::list<sockaddr_un> addrs) {
@@ -95,7 +91,8 @@ void RudpRWer::Dnscallback(void* param, const char* hostname, std::list<sockaddr
         if(fd > 0){
             rwer->setFd(fd);
             memcpy(&rwer->addr, &i, sizeof(sockaddr_un));
-            rwer->connected();
+            rwer->setEvents(RW_EVENT::READWRITE);
+            rwer->handleEvent = (void (Ep::*)(RW_EVENT))&RudpRWer::defaultHE;
             return;
         }
     }
@@ -108,7 +105,6 @@ RudpRWer::~RudpRWer(){
     }
     del_delayjob(std::bind(&RudpRWer::send, this), this);
     del_delayjob(std::bind(&RudpRWer::ack, this), this);
-    del_postjob(std::bind(&RudpRWer::send, this), this);
     query_cancel(hostname, RudpRWer::Dnscallback, this);
     delete recv_pkgs;
     free(read_buff);
@@ -185,9 +181,7 @@ void RudpRWer::handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats)
     if(this->id == 0){
         this->id = id;
         LOG("[RUDP] get new id: %d\n", id);
-        if(connectCB){
-            connectCB(&addr);
-        }
+        Connected(addr);
     }
 
     bucket_limit = (bucket_limit*8 + ntohs(head->window)*2)/10;
@@ -367,8 +361,7 @@ void RudpRWer::defaultHE(RW_EVENT events) {
         if(writed){
             if(writeCB)
                 writeCB(writed);
-            add_postjob(std::bind(&RudpRWer::send, this), this);
-            del_delayjob(std::bind(&RudpRWer::send, this), this);
+            add_delayjob(std::bind(&RudpRWer::send, this), this, 0);
         }
         if(wbuff.length() == 0){
             delEvents(RW_EVENT::WRITE);

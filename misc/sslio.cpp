@@ -53,7 +53,7 @@ static int verify_host_callback(int ok, X509_STORE_CTX *ctx){
 
 SslRWer::SslRWer(int fd, SSL_CTX* ctx,
                  std::function<void(int ret, int code)> errorCB,
-                 std::function<void(const sockaddr_un*)> connectCB):
+                 std::function<void(const sockaddr_un&)> connectCB):
         StreamRWer(fd, std::move(errorCB))
 {
     ssl = SSL_new(ctx);
@@ -65,7 +65,7 @@ SslRWer::SslRWer(int fd, SSL_CTX* ctx,
 
 SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol,
                  std::function<void(int ret, int code)> errorCB,
-                 std::function<void(const sockaddr_un*)> connectCB):
+                 std::function<void(const sockaddr_un&)> connectCB):
         StreamRWer(hostname, port, protocol, std::move(errorCB), std::move(connectCB))
 {
     if(protocol == Protocol::TCP){
@@ -206,9 +206,7 @@ void SslRWer::shakehandHE(RW_EVENT events){
             }
             return;
         }
-        if(connectCB){
-            connectCB(addrs.empty()?nullptr : &addrs.front());
-        }
+        Connected(addrs.front());
         setEvents(RW_EVENT::READWRITE);
         handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::defaultHE;
         del_delayjob(std::bind(&SslRWer::con_failed, this), this);

@@ -83,19 +83,21 @@ using std::placeholders::_2;
 
 class RWer: public Ep{
 protected:
+    bool connected;
     WBuffer wbuff;
     std::function<void(int ret, int code)> errorCB = nullptr;
     std::function<void(size_t len)> readCB = nullptr;
     std::function<void(size_t len)> writeCB = nullptr;
-    std::function<void(const union sockaddr_un*)> connectCB = nullptr;
+    std::function<void(const union sockaddr_un&)> connectCB = nullptr;
     std::function<void()> closeCB = nullptr;
 
     virtual ssize_t Write(const void* buff, size_t len) = 0;
     virtual void SendData();
     virtual void closeHE(uint32_t events);
+    virtual void Connected(const union sockaddr_un&);
 public:
     explicit RWer(std::function<void(int ret, int code)> errorCB,
-         std::function<void(const union sockaddr_un*)> connectCB = nullptr,
+         std::function<void(const union sockaddr_un&)> connectCB = nullptr,
          int fd = -1);
     virtual void SetErrorCB(std::function<void(int ret, int code)> func);
     virtual void SetReadCB(std::function<void(size_t len)> func);

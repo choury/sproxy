@@ -494,7 +494,6 @@ int main(int argc, char **argv) {
             }
             continue;
         }
-        do_prejob();
         for (int i = 0; i < c; ++i) {
             LOGD(DEVENT, "handle event %s\n", events_string[int(convertEpoll(events[i].events))]);
             Ep *ep = (Ep *)events[i].data.ptr;
@@ -512,13 +511,19 @@ int main(int argc, char **argv) {
             }
             continue;
         }
-        do_prejob();
+        std::map<Ep*, RW_EVENT> events_merged;
         for(int i = 0; i < c; ++i){
             LOGD(DEVENT, "handle event %lu: %s\n", events[i].ident, events_string[int(convertKevent(events[i]))]);
             Ep *ep = (Ep*)events[i].udata;
-            (ep->*ep->handleEvent)(convertKevent(events[i]));
+            if(events_merged.count(ep)){
+                events_merged[ep] = events_merged[ep] | convertKevent(events[i]);
+            }else{
+                events_merged[ep] = convertKevent(events[i]);
+            }
+        }
+        for(const auto& i: events_merged){
+            (i.first->*i.first->handleEvent)(i.second);
         }
 #endif
-        do_postjob();
     }
 }

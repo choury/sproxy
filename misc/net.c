@@ -289,13 +289,14 @@ const char *getaddrportstring(const union sockaddr_un *addr){
 
 #ifndef __ANDROID__
 #include <ifaddrs.h>
+#define INTERFACE_MAX 50
 union sockaddr_un* getlocalip () {
     struct ifaddrs *ifap, *ifa;
-    static union sockaddr_un ips[20];
+    static union sockaddr_un ips[INTERFACE_MAX];
     memset(ips, 0, sizeof(ips));
     getifaddrs (&ifap);
     int i = 0;
-    for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
+    for (ifa = ifap; ifa && i < INTERFACE_MAX; ifa = ifa->ifa_next) {
         if(ifa->ifa_addr == NULL)
             continue;
         memcpy(&ips[i++], ifa->ifa_addr, sizeof(struct sockaddr_in6));

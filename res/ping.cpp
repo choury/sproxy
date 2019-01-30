@@ -17,9 +17,9 @@ Ping::Ping(const char* host, uint16_t id): id(id) {
         if(ret == READ_ERR || ret == WRITE_ERR){
             deleteLater(ret);
         }
-    },[this](const sockaddr_un* addr){
+    },[this](const sockaddr_un& addr){
         seq = 1;
-        this->addr = *addr;
+        this->addr = addr;
     });
     rwer->SetReadCB([this](int len){
         const char* data = rwer->data();

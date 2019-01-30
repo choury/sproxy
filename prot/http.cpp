@@ -7,11 +7,28 @@
 #include <stdlib.h>
 #include <cinttypes>
 
+static size_t hextoint(const char* str){
+    size_t size = 0;
+    for(; *str ; str++){
+        if(*str >= '0' && *str <= '9'){
+            size *= 16;
+            size += *str - '0';
+        }else if(*str >= 'a' && *str <= 'f'){
+            size *= 16;
+            size += *str - 'a' + 10;
+        }else{
+            break;
+        }
+    }
+    return size;
+}
+
+
 size_t HttpBase::ChunkLProc(const char* buffer, size_t len) {
     if (const char* headerend = strnstr(buffer, CRLF, len)) {
         headerend += strlen(CRLF);
         size_t headerlen = headerend - buffer;
-        sscanf(buffer, "%" SCNx64, &http_expectlen);
+        http_expectlen = hextoint(buffer);
         if (!http_expectlen) {
             http_flag |= HTTP_CHUNK_END_F;
         }

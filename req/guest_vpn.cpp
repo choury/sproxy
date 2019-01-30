@@ -474,7 +474,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
     TcpStatus* tcpStatus = (TcpStatus*)protocol_info;
     if(seq != tcpStatus->want_seq){
         LOGD(DVPN, "get keepalive pkt or unwanted pkt, reply ack(%u).\n", tcpStatus->want_seq);
-        add_postjob(std::bind(&Guest_vpn::tcp_ack, this), nullptr);
+        add_delayjob(std::bind(&Guest_vpn::tcp_ack, this), nullptr, 0);
         return;
     }
 
@@ -489,7 +489,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
             res_ptr.lock()->Send(data, datalen, res_index);
             tcpStatus->want_seq += datalen;
 
-            add_postjob(std::bind(&Guest_vpn::tcp_ack, this), nullptr);
+            add_delayjob(std::bind(&Guest_vpn::tcp_ack, this), nullptr, 0);
         }
     }
 
@@ -941,7 +941,7 @@ void Guest_vpn::deleteLater(uint32_t error){
     res_index = nullptr;
     nanny->cleanKey(key);
     del_delayjob(std::bind(&Guest_vpn::aged, this), nullptr);
-    del_postjob(std::bind(&Guest_vpn::tcp_ack, this), nullptr);
+    del_delayjob(std::bind(&Guest_vpn::tcp_ack, this), nullptr);
     return Peer::deleteLater(error);
 }
 

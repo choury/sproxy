@@ -249,8 +249,13 @@ WBuffer::~WBuffer() {
 }
 
 RWer::RWer(std::function<void (int, int)> errorCB,
-           std::function<void(const union sockaddr_un*)> connectCB,
+           std::function<void(const union sockaddr_un&)> connectCB,
            int fd):Ep(fd), errorCB(std::move(errorCB)), connectCB(std::move(connectCB)) {
+    if(fd >= 0){
+        connected = true;
+    }else{
+        connected = false;
+    }
 }
 
 void RWer::SendData(){
@@ -323,11 +328,22 @@ void RWer::TrigRead(){
 
 void RWer::Close(std::function<void()> func) {
     closeCB = std::move(func);
+    if(!connected){
+        closeCB();
+        return;
+    }
     if(getFd() >= 0){
         setEvents(RW_EVENT::WRITE);
         handleEvent = (void (Ep::*)(RW_EVENT))&RWer::closeHE;
     }else{
         closeCB();
+    }
+}
+
+void RWer::Connected(const union sockaddr_un& addr){
+    connected = true;
+    if(connectCB){
+        connectCB(addr);
     }
 }
 

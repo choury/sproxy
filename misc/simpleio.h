@@ -48,7 +48,7 @@ public:
     FdRWer(int fd, std::function<void(int ret, int code)> errorCB);
     FdRWer(const char* hostname, uint16_t port, Protocol protocol,
            std::function<void(int ret, int code)> errorCB,
-           std::function<void(const sockaddr_un*)> connectCB = nullptr);
+           std::function<void(const sockaddr_un&)> connectCB = nullptr);
     virtual ~FdRWer() override;
 
 };

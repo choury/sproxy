@@ -88,12 +88,10 @@ int vpn_start(const struct VpnConfig* vpn){
             }
             continue;
         }
-        do_prejob();
         for (int i = 0; i < c; ++i) {
             Ep *ep = (Ep *)events[i].data.ptr;
             (ep->*ep->handleEvent)(convertEpoll(events[i].events));
         }
-        do_postjob();
     }
     LOG("VPN exiting ...\n");
     releaseall();

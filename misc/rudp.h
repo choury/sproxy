@@ -65,7 +65,6 @@ class RudpRWer: public RWer {
 #define RUDP_RESET           2u
     uint32_t flags = 0;
 
-    void connected();
     void defaultHE(RW_EVENT events);
 
     int send();

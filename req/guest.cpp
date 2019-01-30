@@ -34,7 +34,7 @@ Guest::Guest(int fd,  const sockaddr_un *myaddr): Requester(myaddr) {
 
 Guest::Guest(int fd,  const sockaddr_un *myaddr, SSL_CTX* ctx): Requester(myaddr) {
     rwer = new SslRWer(fd, ctx, std::bind(&Guest::Error, this, _1, _2),
-    [this](const sockaddr_un*){
+    [this](const sockaddr_un&){
         SslRWer* srwer = dynamic_cast<SslRWer*>(rwer);
         const unsigned char *data;
         unsigned int len;
