@@ -28,7 +28,7 @@ using std::ofstream;
 static string reverse(string str){
     string::size_type split = 0;
     string result;
-    while((split = str.find_last_of(".")) != string::npos){
+    while((split = str.find_last_of('.')) != string::npos){
         result += str.substr(split+1) + '.';
         str = str.substr(0, split);
     }

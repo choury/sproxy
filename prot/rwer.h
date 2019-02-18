@@ -83,7 +83,6 @@ using std::placeholders::_2;
 
 class RWer: public Ep{
 protected:
-    bool connected;
     WBuffer wbuff;
     std::function<void(int ret, int code)> errorCB = nullptr;
     std::function<void(size_t len)> readCB = nullptr;

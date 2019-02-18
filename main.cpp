@@ -210,7 +210,7 @@ const char *option_detail[] = {
     "Private key file name (ssl)",
     "The port to listen, default is 80 but 443 for ssl/sni",
     "rewrite the auth info (user:password) to proxy server",
-    "RUDP modle (experiment, will be replaced by quic)",
+    "RUDP modle (experiment [buggy], will be replaced by quic)",
     "Set a user and passwd for proxy (user:password), default is none.",
     "Act as a sni proxy",
 #ifndef NDEBUG
