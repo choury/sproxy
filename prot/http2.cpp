@@ -358,7 +358,7 @@ size_t Http2Responser::InitProc(const uchar* http2_buff, size_t len) {
         return 0;
     }else{
         if (memcmp(http2_buff, H2_PREFACE, strlen(H2_PREFACE)) != 0) {
-            LOGE("ERROR get http2 perface: %*s\n", (int)prelen, http2_buff);
+            LOGE("ERROR get http2 perface: %.*s\n", (int)len, http2_buff);
             ErrProc(ERR_PROTOCOL_ERROR);
             return 0;
         }

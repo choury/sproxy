@@ -8,6 +8,28 @@
 #include <string.h>
 #include <unistd.h>
 
+const char *DEFAULT_CIPHER_LIST =
+#if OPENSSL_VERSION_NUMBER > 0x10101000L
+            "TLS13-AES-256-GCM-SHA384:"
+            "TLS13-CHACHA20-POLY1305-SHA256:"
+            "TLS13-AES-128-GCM-SHA256:"
+            "TLS13-AES-128-CCM-8-SHA256:"
+            "TLS13-AES-128-CCM-SHA256:"
+#endif
+            "ECDHE-RSA-AES128-GCM-SHA256:"
+            "ECDHE-RSA-CHACHA20-POLY1305:"
+            "ECDHE-ECDSA-AES128-GCM-SHA256:"
+            "ECDHE-ECDSA-CHACHA20-POLY1305:"
+            "ECDHE-RSA-AES256-GCM-SHA384:"
+            "ECDHE-ECDSA-AES256-GCM-SHA384:"
+            "DHE-RSA-AES128-GCM-SHA256:"
+            "DHE-DSS-AES128-GCM-SHA256:"
+            "ECDHE+AES128:"
+            "RSA+AES128:"
+            "ECDHE+AES256:"
+            "RSA+AES256:"
+            "!aNULL:!eNULL:!EXPORT:!DES:!RC4:!3DES:!MD5:!PSK";
+
 static int verify_host_callback(int ok, X509_STORE_CTX *ctx){
     char    buf[256];
     X509   *err_cert;
@@ -99,7 +121,7 @@ SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol,
 }
 
 static int ssl_err_cb(const char* str, size_t len, void* ){
-    LOGE("SSL error: %*s\n", (int)len, str);
+    LOGE("SSL error: %.*s\n", (int)len, str);
     return len;
 }
 

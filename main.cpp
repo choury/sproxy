@@ -251,7 +251,7 @@ SSL_CTX* initssl(int udp, const char *ca, const char *cert, const char *key){
         SSL_CTX_set_cookie_verify_cb(ctx, verify_cookie);
         SSL_CTX_set_options(ctx, SSL_OP_COOKIE_EXCHANGE);
     }else{
-        ctx = SSL_CTX_new(SSLv23_server_method());
+        ctx = SSL_CTX_new(TLS_server_method());
         if (ctx == nullptr) {
             ERR_print_errors_fp(stderr);
             return nullptr;
