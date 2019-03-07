@@ -3,9 +3,6 @@
 #Created:  2017/4/2
 
 
-include_directories(${PROJECT_SOURCE_DIR})
-include_directories(${JSON-C_INCLUDE_DIR})
-
 add_library(login SHARED login.cpp)
 target_link_libraries(login ${JSON-C_LIBRARIES})
 set_target_properties(login PROPERTIES OUTPUT_NAME "login")

@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <assert.h>
-#include <json-c/json.h>
+#include <json.h>
 
 int cgi_fd;
 
