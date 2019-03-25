@@ -115,4 +115,3 @@ endif()
 add_subdirectory(src)
 add_subdirectory(systemd)
 
-install(DIRECTORY DESTINATION "etc/sproxy")

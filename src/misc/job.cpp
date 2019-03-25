@@ -36,6 +36,7 @@ std::map<job_n, const char*, job_n_cmp> prejobs;
 std::map<job_n, const char*, job_n_cmp> postjobs;
 
 void add_delayjob_real(function<int()> func, const char *func_name, const void *index, uint32_t interval_ms){
+    assert(index);
 #ifndef NDEBUG
     if(delayjobs.count(job_n{func, index})){
         LOGD(DJOB, "update a delay job %s for %p by %d\n", func_name, index, interval_ms);
@@ -47,6 +48,7 @@ void add_delayjob_real(function<int()> func, const char *func_name, const void *
 }
 
 void add_prejob_real(function<int()> func, const char *func_name, const void *index){
+    assert(index);
 #ifndef NDEBUG
     LOGD(DJOB, "add a pre job %s for %p\n", func_name, index);
 #endif
@@ -54,6 +56,7 @@ void add_prejob_real(function<int()> func, const char *func_name, const void *in
 }
 
 void add_postjob_real(function<int()> func, const char *func_name, const void *index){
+    assert(index);
 #ifndef NDEBUG
     LOGD(DJOB, "add a post job %s for %p\n", func_name, index);
 #endif
@@ -61,6 +64,7 @@ void add_postjob_real(function<int()> func, const char *func_name, const void *i
 }
 
 void del_delayjob_real(function<int()> func, __attribute__ ((unused)) const char *func_name, const void *index){
+    assert(index);
 #ifndef NDEBUG
     if(delayjobs.count(job_n{func, index})){
         LOGD(DJOB, "del a delay job %s of %p\n", func_name, index);
@@ -72,6 +76,7 @@ void del_delayjob_real(function<int()> func, __attribute__ ((unused)) const char
 }
 
 void del_prejob_real(function<int()> func, __attribute__ ((unused)) const char *func_name, const void *index){
+    assert(index);
 #ifndef NDEBUG
     if(prejobs.count(job_n{func, index})){
         LOGD(DJOB, "del a prejob %s of %p\n", func_name, index);
@@ -83,6 +88,7 @@ void del_prejob_real(function<int()> func, __attribute__ ((unused)) const char *
 }
 
 void del_postjob_real(function<int()> func, __attribute__ ((unused)) const char *func_name, const void *index){
+    assert(index);
 #ifndef NDEBUG
     if(postjobs.count(job_n{func, index})){
         LOGD(DJOB, "del a postjob %s of %p\n", func_name, index);
@@ -149,6 +155,7 @@ void do_postjob(){
 }
 
 int check_delayjob(function<int()> func, const void* index){
+    assert(index);
     return delayjobs.count(job_n{std::move(func), index});
 }
 

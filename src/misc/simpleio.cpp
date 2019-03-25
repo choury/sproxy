@@ -92,7 +92,7 @@ FdRWer::FdRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(std:
     sockaddr_un addr;
     socklen_t len = sizeof(addr);
     if(getpeername(fd, (sockaddr *)&addr, &len)){
-        LOGE("getpeername error: %s", strerror(errno));
+        LOGE("getpeername error: %s\n", strerror(errno));
         return;
     }
     addrs.push(addr);

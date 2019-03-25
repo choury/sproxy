@@ -474,7 +474,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
     TcpStatus* tcpStatus = (TcpStatus*)protocol_info;
     if(seq != tcpStatus->want_seq){
         LOGD(DVPN, "get keepalive pkt or unwanted pkt, reply ack(%u).\n", tcpStatus->want_seq);
-        add_delayjob(std::bind(&Guest_vpn::tcp_ack, this), nullptr, 0);
+        add_delayjob(std::bind(&Guest_vpn::tcp_ack, this), this, 0);
         return;
     }
 
@@ -489,7 +489,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
             res_ptr.lock()->Send(data, datalen, res_index);
             tcpStatus->want_seq += datalen;
 
-            add_delayjob(std::bind(&Guest_vpn::tcp_ack, this), nullptr, 0);
+            add_delayjob(std::bind(&Guest_vpn::tcp_ack, this), this, 0);
         }
     }
 
@@ -524,7 +524,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
             }
             res_ptr = std::weak_ptr<Responser>();
             res_index = nullptr;
-            add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 1000);
+            add_delayjob(std::bind(&Guest_vpn::aged, this), this, 1000);
             return;
         case TCP_TIME_WAIT:
             return;
@@ -547,7 +547,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
             break;
         case TCP_CLOSING:
             tcpStatus->status = TCP_TIME_WAIT;
-            add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 1000);
+            add_delayjob(std::bind(&Guest_vpn::aged, this), this, 1000);
             break;
         case TCP_LAST_ACK:
             LOGD(DVPN, "clean closed connection\n");
@@ -569,7 +569,7 @@ void Guest_vpn::udpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
     size_t datalen = len - pac->gethdrlen();
     if(!res_ptr.expired()){
         LOGD(DVPN, "%s size: %zu\n", key.getString("->"), datalen);
-        add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 300000);
+        add_delayjob(std::bind(&Guest_vpn::aged, this), this, 300000);
         if(res_ptr.lock()->bufleft(res_index) <= 0){
             LOGE("responser buff is full, drop packet\n");
         }else{
@@ -599,7 +599,7 @@ void Guest_vpn::udpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
             responser_ptr = distribute(req, std::weak_ptr<Responser>());
         }
         if(!responser_ptr.expired()){
-            add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 60000);
+            add_delayjob(std::bind(&Guest_vpn::aged, this), this, 60000);
             void* responser_index = responser_ptr.lock()->request(req);
             assert(responser_index);
             res_ptr = responser_ptr;
@@ -618,7 +618,7 @@ void Guest_vpn::icmpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t
         if(!res_ptr.expired()){
             LOGD(DVPN, "%s (ping) (%u - %u) size: %zd\n",
                  key.getString("->"), pac->icmp->getid(), pac->icmp->getseq(), len - pac->gethdrlen());
-            add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 5000);
+            add_delayjob(std::bind(&Guest_vpn::aged, this), this, 5000);
             assert(res_ptr.lock()->bufleft(res_index)>0);
             IcmpStatus* icmpStatus = (IcmpStatus *)protocol_info;
             assert(icmpStatus->id == pac->icmp->getid());
@@ -644,7 +644,7 @@ void Guest_vpn::icmpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t
             this->protocol_info = icmpStatus;
             res_ptr = distribute(req, std::weak_ptr<Responser>());
             if(!res_ptr.expired()){
-                add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 3000);
+                add_delayjob(std::bind(&Guest_vpn::aged, this), this, 3000);
                 res_index = res_ptr.lock()->request(req);
                 res_ptr.lock()->Send(packet + pac->gethdrlen(), len - pac->gethdrlen(), res_index);
             }else{
@@ -686,7 +686,7 @@ void Guest_vpn::icmp6HE(std::shared_ptr<const Ip> pac, const char* packet, size_
         if(!res_ptr.expired()){
             LOGD(DVPN, "%s (ping6) (%u - %u) size: %zd\n",
                  key.getString("->"), pac->icmp6->getid(), pac->icmp6->getseq(), len - pac->gethdrlen());
-            add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 5000);
+            add_delayjob(std::bind(&Guest_vpn::aged, this), this, 5000);
             assert(res_ptr.lock()->bufleft(res_index)>0);
             IcmpStatus* icmpStatus = (IcmpStatus *)protocol_info;
             assert(icmpStatus->id == pac->icmp6->getid());
@@ -712,7 +712,7 @@ void Guest_vpn::icmp6HE(std::shared_ptr<const Ip> pac, const char* packet, size_
             this->protocol_info = icmpStatus;
             res_ptr = distribute(req, std::weak_ptr<Responser>());
             if(!res_ptr.expired()){
-                add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 3000);
+                add_delayjob(std::bind(&Guest_vpn::aged, this), this, 3000);
                 res_index = res_ptr.lock()->request(req);
                 res_ptr.lock()->Send(packet + pac->gethdrlen(), len - pac->gethdrlen(), res_index);
             }else{
@@ -801,7 +801,7 @@ void Guest_vpn::Send(void* buff, size_t size, void* index) {
         auto pac_return = MakeIp(IPPROTO_UDP, &key.dst, &key.src);
 
         nanny->sendPkg(pac_return, buff, size);
-        add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 300000);
+        add_delayjob(std::bind(&Guest_vpn::aged, this), this, 300000);
         return;
     }
     if(key.protocol == Protocol::ICMP){
@@ -830,7 +830,7 @@ void Guest_vpn::Send(void* buff, size_t size, void* index) {
 
             nanny->sendPkg(pac_return, buff, size);
         }
-        add_delayjob(std::bind(&Guest_vpn::aged, this), nullptr, 5000);
+        add_delayjob(std::bind(&Guest_vpn::aged, this), this, 5000);
         return;
     }
     abort();
@@ -940,8 +940,8 @@ void Guest_vpn::deleteLater(uint32_t error){
     res_ptr = std::weak_ptr<Responser>();
     res_index = nullptr;
     nanny->cleanKey(key);
-    del_delayjob(std::bind(&Guest_vpn::aged, this), nullptr);
-    del_delayjob(std::bind(&Guest_vpn::tcp_ack, this), nullptr);
+    del_delayjob(std::bind(&Guest_vpn::aged, this), this);
+    del_delayjob(std::bind(&Guest_vpn::tcp_ack, this), this);
     return Peer::deleteLater(error);
 }
 
@@ -956,6 +956,9 @@ const char * Guest_vpn::getsrc(const void* index){
 
 
 static const char* dump_vpnStatus(const VpnKey& key, void* protocol_info){
+    if(protocol_info == nullptr){
+        return "null";
+    }
     static char buff[URLLIMIT];
     switch(key.protocol){
     case TCP:{
