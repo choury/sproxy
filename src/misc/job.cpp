@@ -3,6 +3,7 @@
 #include "common.h"
 #include <map>
 #include <vector>
+#include <assert.h>
 
 using std::function;
 
