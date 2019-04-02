@@ -4,6 +4,7 @@
 #include "misc/strategy.h"
 #include "misc/simpleio.h"
 #include "misc/util.h"
+#include "misc/config.h"
 
 #include <sstream>
 
@@ -250,7 +251,7 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
         break;
     }
     case CGI_NAME_LOGIN:{
-        if(strcmp(auth_string, (char *)nv->value) != 0){
+        if(strcmp(opt.auth_string, (char *)nv->value) != 0){
             flag = CGI_FLAG_ERROR;
         }else{
             LOG("[CGI] %s login\n", req->src.lock()->getip());

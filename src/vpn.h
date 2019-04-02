@@ -2,6 +2,7 @@
 #define VPN_H__
 
 #include "common.h"
+#include "misc/config.h"
 
 #ifdef  __cplusplus
 extern "C" {
@@ -13,16 +14,7 @@ extern "C" {
 #define UINT32_MAX 0xFFFFFFFF
 #endif
 
-struct VpnConfig{
-    int fd;
-    int daemon_mode;
-    int ignore_cert_error;
-    int disable_ipv6;
-    char server[DOMAINLIMIT];
-    char secret[DOMAINLIMIT];
-};
-
-int vpn_start(const struct VpnConfig* vpn);
+int vpn_start(int fd);
 void vpn_stop();
 void vpn_reset();
 void vpn_reload();

@@ -3,6 +3,7 @@
 #include "req/requester.h"
 #include "misc/job.h"
 #include "misc/util.h"
+#include "misc/config.h"
 #include "misc/sslio.h"
 #include "misc/rudp.h"
 #include "misc/net.h"
@@ -29,7 +30,7 @@ Host::Host(const char* protocol, const char* hostname, uint16_t port): port(port
         SslRWer *srwer = new SslRWer(hostname, port, Protocol::TCP,
                                      std::bind(&Host::Error, this, _1, _2),
                                      std::bind(&Host::connected, this));
-        if(use_http2){
+        if(!opt.disable_http2){
             srwer->set_alpn(alpn_protos_string, sizeof(alpn_protos_string)-1);
         }
         rwer = srwer;
@@ -233,9 +234,9 @@ Host::gethost(
     std::weak_ptr<Responser> responser_ptr)
 {
     if(req->should_proxy 
-        && strcasecmp(protocol, SPROT) == 0
-        && strcasecmp(hostname, SHOST) == 0
-        && port == SPORT
+        && strcasecmp(protocol, opt.SPROT) == 0
+        && strcasecmp(hostname, opt.SHOST) == 0
+        && port == opt.SPORT
         && !proxy2.expired()){
         return proxy2;
     }

@@ -1,6 +1,7 @@
 #include "base.h"
 #include "misc/util.h"
 #include "misc/job.h"
+#include "misc/config.h"
 #include "prot/rwer.h"
 #include "prot/dns.h"
 
@@ -82,35 +83,6 @@ static void LogDump(void*, const char* fmt, ...) {
     va_end(ap);
 }
 
-void dump_stat(int sig){
+void dump_stat(){
     dump_stat(LogDump, nullptr);
-    if(sig != SIGUSR1){
-        signal(sig, SIG_DFL);
-        kill(getpid(), sig);
-    }
-}
-
-int setproxy(const char* proxy){
-    if(spliturl(proxy, SPROT, SHOST, nullptr, &SPORT)){
-        return -1;
-    }
-
-    if(SPORT == 0){
-        SPORT = 443;
-    }
-    if(SPROT[0] == 0){
-        strcpy(SPROT, "https");
-    }
-    flushproxy2(true);
-    return 0;
-}
-
-int getproxy(char *buff, size_t buflen){
-    if(SHOST[0] == 0) {
-        buff[0] = 0;
-        return 1;
-    }else{
-        assert(SPROT[0]);
-        return snprintf(buff, buflen, "%s://%s:%d", SPROT, SHOST, SPORT)+1;
-    }
 }

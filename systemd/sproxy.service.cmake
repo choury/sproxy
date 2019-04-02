@@ -1,12 +1,11 @@
 [Unit]
-Description=sproxy vpndemo on %I
+Description=sproxy for linux
 After=network.target
 
 [Service]
 Type=forking
 WorkingDirectory=-@CMAKE_INSTALL_PREFIX@/etc/sproxy
-Environment=LD_LIBRARY_PATH=@CMAKE_INSTALL_PREFIX@/lib
-ExecStart=@CMAKE_INSTALL_PREFIX@/sbin/vpndemo -D -I %I
+ExecStart=@CMAKE_INSTALL_PREFIX@/bin/sproxy -D
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 Restart=on-failure
@@ -14,4 +13,4 @@ RestartPreventExitStatus=SIGKILL
 
 [Install]
 WantedBy=multi-user.target
-Alias=sproxy-vpn.service
+Alias=sproxy.service

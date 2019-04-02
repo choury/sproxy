@@ -5,7 +5,6 @@
 #include "req/requester.h"
 
 #include <assert.h>
-#include <stdarg.h>
 
 
 Status::Status(){

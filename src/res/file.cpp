@@ -4,6 +4,7 @@
 #include "misc/simpleio.h"
 #include "misc/net.h"
 #include "misc/util.h"
+#include "misc/config.h"
 
 #ifdef ENABLE_GZIP_TEST
 #include "gzip_test.h"
@@ -316,7 +317,7 @@ std::weak_ptr<Responser> File::getfile(HttpReqHeader* req) {
         if(stat(filename, &st) < 0){
             LOGE("get file stat failed %s: %s\n", filename, strerror(errno));
             if(errno == ENOENT){
-                if(slash_end && !endwith(filename, "/") && autoindex){
+                if(slash_end && !endwith(filename, "/") && opt.autoindex){
                     index_not_found = true;
                     snprintf(filename, sizeof(filename), "./%s", req->filename.c_str());
                     continue;
@@ -336,11 +337,11 @@ std::weak_ptr<Responser> File::getfile(HttpReqHeader* req) {
                 res->set("Location", location);
                 break;
             }
-            if(!index_not_found && index_file){
-                snprintf(filename, sizeof(filename), "./%s%s", req->filename.c_str(), index_file);
+            if(!index_not_found && opt.index_file){
+                snprintf(filename, sizeof(filename), "./%s%s", req->filename.c_str(), opt.index_file);
                 continue;
             }
-            if(!autoindex){
+            if(!opt.autoindex){
                 res = new HttpResHeader(H403, sizeof(H403));
                 break;
             }

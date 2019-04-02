@@ -2,6 +2,7 @@
 #include "req/requester.h"
 #include "misc/job.h"
 #include "misc/util.h"
+#include "misc/config.h"
 
 #include <assert.h>
 
@@ -383,7 +384,7 @@ void Proxy2::flush() {
 }
 
 
-void flushproxy2(bool force) {
+void flushproxy2(int force) {
     if(force){
         proxy2 = std::weak_ptr<Proxy2>();
         return;

@@ -29,10 +29,7 @@ public:
     virtual void writedcb(const void* index);
 };
 
-void flushproxy2(bool force);
 void releaseall();
-int setproxy(const char* proxy);
-int getproxy(char *buff, size_t buflen);
 void dump_stat(Dumper dp, void* param);
 
 #endif

@@ -1,6 +1,7 @@
 #include "misc/sslio.h"
 #include "misc/job.h"
 #include "misc/net.h"
+#include "misc/config.h"
 
 #include <openssl/err.h>
 #include <assert.h>
@@ -66,7 +67,7 @@ static int verify_host_callback(int ok, X509_STORE_CTX *ctx){
         LOGE("unable to verify issuer= %s\n", buf);
     }
 
-    if (ignore_cert_error)
+    if (opt.ignore_cert_error)
         return 1;
     else
         return ok; 
@@ -101,9 +102,9 @@ SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol,
         throw 0;
     }
 #if __ANDROID__
-    if (SSL_CTX_load_verify_locations(ctx, cafile, "/etc/security/cacerts/") != 1)
+    if (SSL_CTX_load_verify_locations(ctx, opt.cafile, "/etc/security/cacerts/") != 1)
 #else
-    if (SSL_CTX_load_verify_locations(ctx, cafile, "/etc/ssl/certs/") != 1)
+    if (SSL_CTX_load_verify_locations(ctx, opt.cafile, "/etc/ssl/certs/") != 1)
 #endif
         LOGE("SSL_CTX_load_verify_locations: %s\n", ERR_error_string(ERR_get_error(), nullptr));
 

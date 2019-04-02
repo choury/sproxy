@@ -1,6 +1,7 @@
 #include "req/requester.h"
 #include "misc/strategy.h"
 #include "misc/util.h"
+#include "misc/config.h"
 #include "misc/net.h"
 #include "prot/dns.h"
 
@@ -18,7 +19,7 @@ static int check_header(HttpReqHeader* req){
     auto requester = req->src.lock();
     if (!checkauth(requester->getip()) &&
         req->get("Proxy-Authorization") &&
-        strcmp(auth_string, req->get("Proxy-Authorization")+6) == 0)
+        strcmp(opt.auth_string, req->get("Proxy-Authorization")+6) == 0)
     {
         addauth(requester->getip());
     }
@@ -98,13 +99,13 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
         }
         char fprotocol[DOMAINLIMIT];
         char fhost[DOMAINLIMIT];
-        uint16_t fport = SPORT;
+        uint16_t fport = opt.SPORT;
         switch(stra.s){
         case Strategy::proxy:
-            strcpy(fprotocol, SPROT);
-            strcpy(fhost, SHOST);
-            fport = SPORT;
-            if(SPORT == 0){
+            strcpy(fprotocol, opt.SPROT);
+            strcpy(fhost, opt.SHOST);
+            fport = opt.SPORT;
+            if(opt.SPORT == 0){
                 HttpResHeader* res = new HttpResHeader(H400, sizeof(H400));
                 res->index = req->index;
                 requester->response(res);
@@ -112,8 +113,8 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
                 return std::weak_ptr<Responser>();
             }
             req->del("via");
-            if(strlen(rewrite_auth)){
-                req->set("Proxy-Authorization", std::string("Basic ")+rewrite_auth);
+            if(strlen(opt.rewrite_auth)){
+                req->set("Proxy-Authorization", std::string("Basic ") + opt.rewrite_auth);
             }
             req->should_proxy = true;
             break;

@@ -13,13 +13,11 @@
 #define TUNADDR  "10.1.0.1"
 #define TUNADDR6 "64:ff9B::10.1.0.1"
 
-const char* out_interface;
-
 int protectFd(int fd) {
     struct ifreq ifr;
 
     memset(&ifr, 0, sizeof(ifr));
-    snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), out_interface);
+    snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), opt.interface);
     if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
         return 0;
     }
@@ -220,11 +218,7 @@ int tun_create(char *dev, int flags) {
 
 
 int main(int argc, char** argv) {
-    if(argc < 3){
-        fprintf(stderr, "usage: %s interface server [secret]\n", argv[0]);
-        return -1;
-    }
-    out_interface = argv[1];
+    parseConfig(argc, argv);
     char tun_name[IFNAMSIZ]= {0};
     int tun = tun_create(tun_name, IFF_TUN | IFF_NO_PI);
     if (tun < 0) {
@@ -232,18 +226,6 @@ int main(int argc, char** argv) {
         return 1;
     }
     fprintf(stderr, "TUN name is %s\n", tun_name);
-    struct VpnConfig vpn;
-    vpn.daemon_mode = 1;
-    vpn.disable_ipv6 = 1;
-    vpn.ignore_cert_error = 0;
-    vpn.secret[0] = 0;
-    strcpy(vpn.server, argv[2]);
-    signal(SIGUSR2, vpn_reload);
-    if(argc >= 4){
-        strcpy(vpn.secret, argv[3]);
-        printf("set secret to: %s\n", vpn.secret);
-    }
-    vpn.fd = tun;
-    vpn_start(&vpn);
+    vpn_start(tun);
     return 0;
 }

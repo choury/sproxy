@@ -3,4 +3,4 @@
 #Created:  2017/2/11
 
 
-add_library(misc job.cpp net.c tls.c util.c strategy.cpp simpleio.cpp sslio.cpp rudp.cpp)
+add_library(misc job.cpp net.c tls.c util.c strategy.cpp config.c simpleio.cpp sslio.cpp rudp.cpp)

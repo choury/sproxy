@@ -40,21 +40,7 @@ static inline int noafter(uint32_t seq1, uint32_t seq2)
 
 typedef enum{NONE, TCP=SOCK_STREAM, UDP=SOCK_DGRAM, ICMP, RUDP}Protocol;
 
-extern char **main_argv;
-extern char SPROT[];
-extern char SHOST[];
-extern uint16_t SPORT;
-extern int daemon_mode;
-extern int ignore_cert_error;
-extern int disable_ipv6;
-extern int use_http2;
-extern char auth_string[];
-extern char rewrite_auth[];
-extern const char *cafile;
-extern const char *index_file;
 extern uint32_t debug;
-extern int autoindex;
-
 
 #define DEVENT    1u
 #define DDNS      2u
@@ -208,14 +194,6 @@ union sockaddr_un{
     struct sockaddr_in addr_in;
     struct sockaddr_in6 addr_in6;
 };
-
-struct DnsConfig{
-    int namecount;
-    union sockaddr_un server[3];
-};
-
-void getDnsConfig(struct DnsConfig* config);
-
 
 #cmakedefine01 Backtrace_FOUND
 #if Backtrace_FOUND

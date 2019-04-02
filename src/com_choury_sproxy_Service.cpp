@@ -2,8 +2,6 @@
 #include "vpn.h"
 
 #include <unistd.h>
-#include <string.h>
-#include <stdarg.h>
 #include <fcntl.h>
 #include <iostream>
 #include <map>
@@ -12,11 +10,11 @@
 #include <fstream>
 #include <android/log.h>
 #include <sys/system_properties.h>
+#include <misc/util.h>
 
 static JavaVM *jnijvm;
 static jobject jniobj;
 //static jmethodID protecdMid;
-static VpnConfig vpn;
 static std::map<int, std::string> packages;
 static std::string extenalFilesDir;
 static std::string extenalCacheDir;
@@ -36,14 +34,11 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     const char *server_str = jnienv->GetStringUTFChars(server, nullptr);
     const char *secret_str = jnienv->GetStringUTFChars(secret, nullptr);
 
-    vpn.disable_ipv6 = 0;
-    vpn.ignore_cert_error = 1;
-    vpn.daemon_mode = 0;
-    strcpy(vpn.server, server_str);
-    strcpy(vpn.secret, secret_str);
+    opt.ignore_cert_error = 1;
+    setproxy(server_str);
+    Base64Encode(secret_str, strlen(secret_str), opt.auth_string);
     jnienv->ReleaseStringUTFChars(server, server_str);
     jnienv->ReleaseStringUTFChars(secret, secret_str);
-    vpn.fd = sockfd;
 
     jnienv->DeleteLocalRef(server);
     jnienv->DeleteLocalRef(secret);
@@ -58,9 +53,8 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
 
     jnienv->DeleteLocalRef(cls);
 
-    vpn_start(&vpn);
+    vpn_start(sockfd);
     jnienv->DeleteGlobalRef(jniobj);
-    jnienv = nullptr;
     jniobj = nullptr;
 }
 
@@ -187,6 +181,7 @@ std::string getExternalFilesDir() {
     jnienv->ReleaseStringUTFChars(Path_obj, path_str);
     jnienv->DeleteLocalRef(Path_obj);
     jnienv->DeleteLocalRef(File_obj);
+    jnienv->DeleteLocalRef(File_cls);
     jnienv->DeleteLocalRef(cls);
     return extenalFilesDir;
 }
@@ -211,6 +206,7 @@ std::string getExternalCacheDir() {
     jnienv->ReleaseStringUTFChars(Path_obj, path_str);
     jnienv->DeleteLocalRef(Path_obj);
     jnienv->DeleteLocalRef(File_obj);
+    jnienv->DeleteLocalRef(File_cls);
     jnienv->DeleteLocalRef(cls);
     return extenalCacheDir;
 }

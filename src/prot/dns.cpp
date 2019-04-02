@@ -3,6 +3,7 @@
 #include "misc/util.h"
 #include "misc/simpleio.h"
 #include "misc/index.h"
+#include "misc/config.h"
 #include "common.h"
 
 #include <unordered_map>
@@ -192,7 +193,7 @@ static void query(Dns_Status* dnsst){
         dnsinit();
     }
     id_cur += 2;
-    if(disable_ipv6){
+    if(opt.disable_ipv6){
         dnsst->flags = QAAAARECORD | GAAAARECORD;
     }else{
         dnsst->flags = 0;

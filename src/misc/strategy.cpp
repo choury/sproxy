@@ -1,5 +1,6 @@
 #include "strategy.h"
 #include "net.h"
+#include "config.h"
 #include "common.h"
 #include <map>
 #include <set>
@@ -409,7 +410,7 @@ void addauth(const char *ip) {
 }
 
 bool checkauth(const char *ip) {
-    if(strlen(auth_string) == 0)
+    if(strlen(opt.auth_string) == 0)
         return true;
-    return authips.count(ip);
+    return authips.count(ip) > 0;
 }

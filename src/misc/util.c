@@ -11,16 +11,8 @@
 #include <dirent.h>
 #include <libgen.h>
 #include <sys/utsname.h>
-#ifndef __APPLE__
-#include <sys/prctl.h>
-#else
-#include <pthread.h>
-#endif
-
 
 #define PRIOR_HEAD 80
-
-char **main_argv;
     
 #ifndef __APPLE__
 /**
@@ -330,41 +322,6 @@ void* p_move(void* ptr, signed char len){
     return nptr;
 }
 
-#ifndef __ANDROID__
-void vslog(int level, const char* fmt, va_list arg){
-    if(daemon_mode){
-        vsyslog(level, fmt, arg);
-    }else{
-        if(level <= LOG_ERR){
-            vfprintf(stderr, fmt, arg);
-        }else{
-            vfprintf(stdout, fmt, arg);
-        }
-    }
-}
-#endif
-
-void slog(int level, const char* fmt, ...){
-    va_list ap;
-    va_start(ap, fmt);
-    VLOG(level, fmt, ap);
-    va_end(ap);
-}
-
-void change_process_name(const char *name){
-#ifdef __APPLE__
-    pthread_setname_np(name);
-#else
-    prctl(PR_SET_NAME, name);
-#endif
-    size_t len  = 0;
-    int i;
-    for(i = 0;main_argv[i]; i++){
-        len += strlen(main_argv[i]) + 1;
-    }
-    memset(main_argv[0], 0, len);
-    strncpy(main_argv[0], name, len - 1);
-}
 
 const char* findprogram(ino_t inode){
     static char program[DOMAINLIMIT+1];
@@ -454,6 +411,19 @@ struct in_addr getMapped(struct in6_addr addr) {
     }
     return addr4;
 }
+
+uint64_t getutime(){
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec * 1000000ull + tv.tv_usec;
+}
+
+uint32_t getmtime(){
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+    return (tv.tv_sec * 1000ull + tv.tv_usec/1000)&0xFFFFFFFF;
+}
+
 
 
 #if Backtrace_FOUND

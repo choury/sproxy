@@ -23,20 +23,10 @@ int URLEncode(char *des,const char* src, size_t len);
 int URLDecode(char *des,const char* src, size_t len);
 void Base64Encode(const char* s, size_t len, char* dst);
 
-inline uint64_t getutime(){
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return tv.tv_sec * 1000000ull + tv.tv_usec;
-}
+uint64_t getutime();
+uint32_t getmtime();
 
-inline uint32_t getmtime(){
-    struct timeval tv;
-    gettimeofday(&tv, 0);
-    return (tv.tv_sec * 1000ull + tv.tv_usec/1000)&0xFFFFFFFF;
-}
-
-
-void dump_stat(int ignore);
+void dump_stat();
 void dump_trace(int ignore);
 
 void* memdup(const void* ptr, size_t size);
@@ -51,7 +41,6 @@ inline void* p_strdup(const char* str){
 void p_free(void* ptr);
 void* p_move(void* ptr, signed char len);
 char* p_avsprintf(size_t* size, const char* fmt, va_list ap);
-void change_process_name(const char *name);
 const char* findprogram(ino_t inode);
 const char* getDeviceInfo();
 struct in6_addr mapIpv4(struct in_addr addr);
