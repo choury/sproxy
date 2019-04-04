@@ -4,6 +4,7 @@
 #include "misc/strategy.h"
 #include "req/requester.h"
 
+#include <stdarg.h>
 #include <assert.h>
 
 

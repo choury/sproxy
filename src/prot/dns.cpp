@@ -232,7 +232,7 @@ static void query(Dns_Status* dnsst){
         for(auto i: dnsst->reqs){
             i.func(i.param, dnsst->host, rcd.addrs);
         }
-        if(rcd.get_time + rcd.ttl - time(nullptr) > 15){
+        if(rcd.get_time + rcd.ttl > time(nullptr) + 15u){
             delete dnsst;
             return;
         }
@@ -287,7 +287,7 @@ void query(const char* host, DNSCBfunc func, void* param) {
         dnsst->reqs.push_back(Dns_Req{func, param});
     }
 
-    snprintf(dnsst->host, sizeof(dnsst->host), "%s", host);
+    strncpy(dnsst->host, host, sizeof(dnsst->host));
     query(dnsst);
 }
 

@@ -20,12 +20,14 @@
 #endif
 
 #define LISTFILE "sites.list"
+#define GEN_TIP  "GENERATED"
 
 using std::string;
 using std::map;
 using std::ifstream;
 using std::ofstream;
 
+/*
 static string reverse(string str){
     string::size_type split = 0;
     string result;
@@ -36,8 +38,26 @@ static string reverse(string str){
     result += str;
     return result;
 }
+*/
 
-static strategy default_strategy;
+static string trimdomain(string host){
+    string domain;
+    auto pos = host.find_first_of('.');
+    if(pos != string::npos){
+        domain = host.substr(pos+1);
+    }
+    return domain;
+}
+
+static string joinhost(string host, string domain){
+    if(host.empty()){
+        return domain;
+    }
+    if(domain.empty()){
+        return host;
+    }
+    return host + '.' + domain;
+}
 
 class Ipv4Stra{
     map<uint64_t, strategy> strategies;
@@ -55,7 +75,7 @@ public:
                 return i.second;
             }
         }
-        return default_strategy;
+        return {Strategy::none, ""};
     }
     bool remove(in_addr ip){
         for(auto i = strategies.begin(); i!= strategies.end(); i++ ){
@@ -71,7 +91,7 @@ public:
     void clear(){
         strategies.clear();
     }
-    void stats(int){
+    void stats(){
         for(const auto& i: strategies){
             int prefix = 0;
             uint32_t mask = i.first&0xffffffff;
@@ -104,108 +124,46 @@ public:
 }ipv4s;
 
 class DomainStra{
-    strategy my_strategy;
-    map<string, DomainStra> children;
+    map<string, strategy> children;
 public:
     void insert(const string& host, const strategy& stra){
         assert(stra.s != Strategy::none);
-        auto pos = host.find_first_of('.');
-        if(pos == string::npos){
-            children[host].my_strategy = stra;
-            children[host].purge(stra);
-            return;
-        }else{
-            children[host.substr(0, pos)].insert(host.substr(pos+1), stra);
-        }
+        children[host] = stra;
     }
-    const strategy& find(const string& host){
-        if(host.empty()){
-            return my_strategy;
+    const strategy find(const string& host){
+        assert(!host.empty());
+        if(children.count(host)){
+            return children[host];
         }
-        string subhost;
-        auto pos = host.find_first_of('.');
-        if(pos == string::npos){
-            subhost = "";
-        }else{
-            subhost = host.substr(pos+1);
-        }
-        if(children.count(host.substr(0, pos)))
-            return children[host.substr(0, pos)].find(subhost);
-        else
-            return my_strategy;
+        string domain = host;
+        do{
+            domain = trimdomain(domain);
+            string wildhost = joinhost("*", domain);
+            if(children.count(wildhost)){
+                return children[wildhost];
+            }
+        }while(!domain.empty());
+        return {Strategy::none, ""};
     }
     bool remove(const string& host){
-        auto pos = host.find_first_of('.');
-        if(pos == string::npos){
-            if(children.count(host)){
-                if(children[host].my_strategy.s == Strategy::none){
-                    return false;
-                }
-                if(children[host].children.empty()){
-                    children.erase(host);
-                }else{
-                    children[host].my_strategy.s = Strategy::none;
-                }
-                return true;
-            }else{
-                return false;
-            }
-        }else{
-            string subhost = host.substr(pos+1);
-            if(children.count(host.substr(0, pos))){
-                return children[host.substr(0, pos)].remove(subhost);
-            }else{
-                return false;
-            }
-        }
-    }
-    bool purge(const strategy& stra){
-        for(auto i= children.begin();i != children.end();){
-            if(i->second.purge(stra)){
-                i = children.erase(i);
-            }else{
-                i++;
-            }
-        }
-        return (children.empty() && 
-            (memcmp(&my_strategy, &stra, sizeof(strategy)) == 0 || my_strategy.s == Strategy::none));
+        return children.erase(host) > 0;
     }
     void clear(){
         children.clear();
     }
-    void stats(int tab){
-        char tabs[100]= {0};
-        for(int i = 0; i<tab; i++){
-            tabs[i]='\t';
-        }
-        if(!children.empty()){
-            if(my_strategy.s != Strategy::none){
-                LOG("[%zu] %s %s\n", children.size(), getstrategystring(my_strategy.s), my_strategy.ext.c_str());
+    void stats(){
+        for(auto i: children){
+            if(i.second.ext.empty()){
+                LOG("%s %s\n", i.first.c_str(), getstrategystring(i.second.s));
             }else{
-                LOG("[%zu]\n", children.size());
+                LOG("%s %s[%s]\n", i.first.c_str(), getstrategystring(i.second.s), i.second.ext.c_str());
             }
-            for(auto i: children){
-                LOG("%s %s", tabs, i.first.c_str());
-                i.second.stats(tab+1);
-            }
-        }else{
-            LOG(" %s %s\n", getstrategystring(my_strategy.s), my_strategy.ext.c_str());
         }
     }
     std::list<std::pair<string, strategy>> dump(){
         std::list<std::pair<string, strategy>>slist;
         for(auto i: children){
-            auto submap =  i.second.dump();
-            for(auto j:submap){
-                if(!j.first.empty()){
-                    slist.emplace_back(j.first+'.'+i.first,  j.second);
-                }else{
-                    slist.emplace_back(i.first, j.second);
-                }
-            }
-        }
-        if(this->my_strategy.s != Strategy::none){
-            slist.emplace_back("", this->my_strategy);
+            slist.emplace_back(i);
         }
         return slist;
     }
@@ -227,10 +185,6 @@ static bool mergestrategy(const string& host, const string& strategy_str, string
         return false;
     }
     strategy stra{s, std::move(ext)};
-    if(host[0] == '_'){
-        default_strategy = stra;
-        return true;
-    }
     auto mask_pos = host.find_first_of('/');
     sockaddr_un addr;
     if(mask_pos != string::npos){
@@ -256,7 +210,7 @@ static bool mergestrategy(const string& host, const string& strategy_str, string
         //TODO: xxx
         return false;
     } else{
-        domains.insert(reverse(host), stra);
+        domains.insert(host, stra);
         return true;
     }
 }
@@ -270,7 +224,7 @@ void reloadstrategy() {
     //default strategy
     for(auto ips=getlocalip(); ips->addr_in.sin_family ; ips++){
         if(ips->addr.sa_family == AF_INET){
-            ipv4s.insert(ips->addr_in.sin_addr, 32, strategy{Strategy::local, ""});
+            ipv4s.insert(ips->addr_in.sin_addr, 32, strategy{Strategy::local, GEN_TIP});
         }
         if(ips->addr.sa_family == AF_INET6){
             //TDDO: xxx
@@ -278,10 +232,8 @@ void reloadstrategy() {
     }
     char hostname[HOST_NAME_MAX];
     gethostname(hostname, sizeof(hostname));
-    domains.insert(reverse(hostname), strategy{Strategy::local, ""});
-    domains.insert("localhost", strategy{Strategy::local, ""});
-    default_strategy = strategy{Strategy::direct, ""};
-
+    domains.insert(hostname, strategy{Strategy::local, GEN_TIP});
+    domains.insert("localhost", strategy{Strategy::local, GEN_TIP});
 #ifdef __ANDROID__
     ifstream sitesfile(getExternalFilesDir() + "/" + LISTFILE);
     LOG("load sites from: %s\n", getExternalFilesDir().c_str());
@@ -314,17 +266,18 @@ void reloadstrategy() {
 
     addauth("::ffff:127.0.0.1");
     addauth("::1");
-    //ipv4s.stats(0);
-    //domains.stats(0);
-    LOG("_ %s %s\n", getstrategystring(default_strategy.s), default_strategy.ext.c_str());
+    //ipv4s.stats();
+    //domains.stats();
 }
 
 void savesites(){
 #ifndef __ANDROID__
     ofstream sitesfile(LISTFILE);
-    sitesfile <<"_ "<<getstrategystring(default_strategy.s)<<' '<<default_strategy.ext<< std::endl;
     auto list = getallstrategy();
     for (auto i:list) {
+        if(i.second.ext == GEN_TIP){
+            continue;
+        }
         sitesfile <<i.first<<' '<<getstrategystring(i.second.s)<<' '<<i.second.ext<< std::endl;
     }
     sitesfile.close();
@@ -344,7 +297,6 @@ bool delstrategy(const char* host) {
     bool found  = false;
     sockaddr_un addr;
     if(host[0] == '_'){
-        default_strategy = strategy{Strategy::direct, ""};
         found = true;
     }else if (inet_pton(AF_INET, host, &addr.addr_in.sin_addr) == 1) {
         found = ipv4s.remove(addr.addr_in.sin_addr);
@@ -352,7 +304,7 @@ bool delstrategy(const char* host) {
         //TODO
         found = false;
     }else{
-        found = domains.remove(reverse(host));
+        found = domains.remove(host);
     }
     if(found){
         savesites();
@@ -368,10 +320,10 @@ strategy getstrategy(const char *host){
     }else if (inet_pton(AF_INET6, host, &addr.addr_in6.sin6_addr) == 1) {
         //TODO
     }else {
-        stra = domains.find(reverse(host));
+        stra = domains.find(host);
     }
     if(stra.s == Strategy::none){
-        stra = default_strategy;
+        stra = {Strategy::direct, ""};
     }
     return stra;
 }

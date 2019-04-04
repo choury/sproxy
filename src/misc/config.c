@@ -8,6 +8,7 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <errno.h>
+#include <unistd.h>
 #ifndef __APPLE__
 #include <sys/prctl.h>
 #else
