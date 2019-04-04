@@ -36,7 +36,7 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
 
     opt.ignore_cert_error = 1;
     setproxy(server_str);
-    Base64Encode(secret_str, strlen(secret_str), opt.auth_string);
+    Base64Encode(secret_str, strlen(secret_str), opt.rewrite_auth);
     jnienv->ReleaseStringUTFChars(server, server_str);
     jnienv->ReleaseStringUTFChars(secret, secret_str);
 

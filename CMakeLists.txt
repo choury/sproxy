@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 project(sproxy)
 
+INCLUDE(CheckCCompilerFlag)
 INCLUDE(CheckCXXCompilerFlag)
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
@@ -8,13 +9,15 @@ set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 #SET(BUILD_SHARED_LIBRARIES OFF)
 #SET(CMAKE_EXE_LINKER_FLAGS "-static")
 
+CHECK_C_COMPILER_FLAG("-std=gnu99" HAVE_C99)
 CHECK_CXX_COMPILER_FLAG("-std=c++11" HAVE_CXX11)
 CHECK_CXX_COMPILER_FLAG("-std=c++14" HAVE_CXX14)
 CHECK_CXX_COMPILER_FLAG("-std=c++17" HAVE_CXX17)
 CHECK_CXX_COMPILER_FLAG("-std=c++2a" HAVE_CXX2a)
 
-if(NOT HAVE_CXX11)
-    message(FATAL_ERROR "this project need c++11")
+
+if(NOT HAVE_CXX11 OR NOT HAVE_C99)
+    message(FATAL_ERROR "this project need c++11 and c99")
 endif()
 
 CHECK_CXX_SOURCE_COMPILES("
@@ -63,7 +66,7 @@ if(NOT APPLE AND NOT ANDROID)
     endif()
 endif()
 
-set(CMAKE_C_FLAGS "-Wall -Wextra -fPIC ${CMAKE_C_FLAGS}")
+set(CMAKE_C_FLAGS "-std=gnu99 -Wall -Wextra -fPIC ${CMAKE_C_FLAGS}")
 set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -Wextra -fPIC ${CMAKE_CXX_FLAGS}")
 
 execute_process(COMMAND uname -r
