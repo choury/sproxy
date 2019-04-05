@@ -14,12 +14,62 @@
 
 static JavaVM *jnijvm;
 static jobject jniobj;
-//static jmethodID protecdMid;
 static std::map<int, std::string> packages;
 static std::string extenalFilesDir;
 static std::string extenalCacheDir;
 char   version[DOMAINLIMIT];
 
+
+std::string getExternalFilesDir() {
+    if(!extenalFilesDir.empty()){
+        return extenalFilesDir;
+    }
+    JNIEnv *jnienv;
+    jnijvm->GetEnv((void **)&jnienv, JNI_VERSION_1_6);
+    // getExternalFilesDir() - java
+    jclass cls = jnienv->GetObjectClass(jniobj);
+    jmethodID mid = jnienv->GetMethodID(cls, "getExternalFilesDir",
+                                     "(Ljava/lang/String;)Ljava/io/File;");
+    jobject File_obj = jnienv->CallObjectMethod(jniobj, mid, NULL);
+    jclass File_cls = jnienv->FindClass("java/io/File");
+    jmethodID getPath_mid = jnienv->GetMethodID(File_cls, "getPath", "()Ljava/lang/String;");
+    jstring Path_obj = (jstring) jnienv->CallObjectMethod(File_obj, getPath_mid);
+
+    const char *path_str = jnienv->GetStringUTFChars(Path_obj, nullptr);
+
+    extenalFilesDir = path_str;
+    jnienv->ReleaseStringUTFChars(Path_obj, path_str);
+    jnienv->DeleteLocalRef(Path_obj);
+    jnienv->DeleteLocalRef(File_obj);
+    jnienv->DeleteLocalRef(File_cls);
+    jnienv->DeleteLocalRef(cls);
+    return extenalFilesDir;
+}
+
+std::string getExternalCacheDir() {
+    if(!extenalCacheDir.empty()){
+        return extenalCacheDir;
+    }
+    JNIEnv *jnienv;
+    jnijvm->GetEnv((void **)&jnienv, JNI_VERSION_1_6);
+    // getExternalCacheDir() - java
+    jclass cls = jnienv->GetObjectClass(jniobj);
+    jmethodID mid = jnienv->GetMethodID(cls, "getExternalCacheDir", "()Ljava/io/File;");
+    jobject File_obj = jnienv->CallObjectMethod(jniobj, mid);
+    jclass File_cls = jnienv->FindClass("java/io/File");
+    jmethodID getPath_mid = jnienv->GetMethodID(File_cls, "getPath", "()Ljava/lang/String;");
+    jstring Path_obj = (jstring) jnienv->CallObjectMethod(File_obj, getPath_mid);
+
+    const char *path_str = jnienv->GetStringUTFChars(Path_obj, nullptr);
+
+    extenalCacheDir = path_str;
+    jnienv->ReleaseStringUTFChars(Path_obj, path_str);
+    jnienv->DeleteLocalRef(Path_obj);
+    jnienv->DeleteLocalRef(File_obj);
+    jnienv->DeleteLocalRef(File_cls);
+    jnienv->DeleteLocalRef(cls);
+    return extenalCacheDir;
+}
 
 /*
  * Class:     com_choury_sproxy_SproxyVpnService
@@ -30,6 +80,11 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
         (JNIEnv *jnienv, jobject obj, jint sockfd, jstring server, jstring secret) {
     jnienv->GetJavaVM(&jnijvm);
     jniobj = jnienv->NewGlobalRef(obj);
+    std::string config_file = getExternalFilesDir() + "/sproxy.conf";
+    if(access(config_file.c_str(), R_OK) == 0){
+        LOG("read config from %s.\n", config_file.c_str());
+        parseConfigFile(config_file.c_str());
+    }
     LOG("native SproxyVpnService.start %d.\n", sockfd);
     const char *server_str = jnienv->GetStringUTFChars(server, nullptr);
     const char *secret_str = jnienv->GetStringUTFChars(secret, nullptr);
@@ -54,6 +109,8 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     jnienv->DeleteLocalRef(cls);
 
     vpn_start(sockfd);
+    extenalCacheDir.clear();
+    extenalFilesDir.clear();
     jnienv->DeleteGlobalRef(jniobj);
     jniobj = nullptr;
 }
@@ -160,56 +217,7 @@ std::vector<std::string> getDns(){
     return dns;
 }
 
-std::string getExternalFilesDir() {
-    if(!extenalFilesDir.empty()){
-        return extenalFilesDir;
-    }
-    JNIEnv *jnienv;
-    jnijvm->GetEnv((void **)&jnienv, JNI_VERSION_1_6);
-    // getExternalFilesDir() - java
-    jclass cls = jnienv->GetObjectClass(jniobj);
-    jmethodID mid = jnienv->GetMethodID(cls, "getExternalFilesDir",
-                                     "(Ljava/lang/String;)Ljava/io/File;");
-    jobject File_obj = jnienv->CallObjectMethod(jniobj, mid, NULL);
-    jclass File_cls = jnienv->FindClass("java/io/File");
-    jmethodID getPath_mid = jnienv->GetMethodID(File_cls, "getPath", "()Ljava/lang/String;");
-    jstring Path_obj = (jstring) jnienv->CallObjectMethod(File_obj, getPath_mid);
 
-    const char *path_str = jnienv->GetStringUTFChars(Path_obj, nullptr);
-
-    extenalFilesDir = path_str;
-    jnienv->ReleaseStringUTFChars(Path_obj, path_str);
-    jnienv->DeleteLocalRef(Path_obj);
-    jnienv->DeleteLocalRef(File_obj);
-    jnienv->DeleteLocalRef(File_cls);
-    jnienv->DeleteLocalRef(cls);
-    return extenalFilesDir;
-}
-
-std::string getExternalCacheDir() {
-    if(!extenalCacheDir.empty()){
-        return extenalCacheDir;
-    }
-    JNIEnv *jnienv;
-    jnijvm->GetEnv((void **)&jnienv, JNI_VERSION_1_6);
-    // getExternalCacheDir() - java
-    jclass cls = jnienv->GetObjectClass(jniobj);
-    jmethodID mid = jnienv->GetMethodID(cls, "getExternalCacheDir", "()Ljava/io/File;");
-    jobject File_obj = jnienv->CallObjectMethod(jniobj, mid);
-    jclass File_cls = jnienv->FindClass("java/io/File");
-    jmethodID getPath_mid = jnienv->GetMethodID(File_cls, "getPath", "()Ljava/lang/String;");
-    jstring Path_obj = (jstring) jnienv->CallObjectMethod(File_obj, getPath_mid);
-
-    const char *path_str = jnienv->GetStringUTFChars(Path_obj, nullptr);
-
-    extenalCacheDir = path_str;
-    jnienv->ReleaseStringUTFChars(Path_obj, path_str);
-    jnienv->DeleteLocalRef(Path_obj);
-    jnienv->DeleteLocalRef(File_obj);
-    jnienv->DeleteLocalRef(File_cls);
-    jnienv->DeleteLocalRef(cls);
-    return extenalCacheDir;
-}
 
 void android_vlog(int level, const char* fmt, va_list args){
     switch(level){

@@ -1,4 +1,5 @@
 #include "common.h"
+#include <stdbool.h>
 #ifdef  __cplusplus
 extern "C" {
 #endif
@@ -16,13 +17,13 @@ struct options{
     const char *key;
     const char *index_file;
     const char *interface;
-    int disable_ipv6;
-    int disable_http2;
-    int sni_mode;
-    int rudp_mode;
-    int daemon_mode;
-    int ignore_cert_error;
-    int autoindex;
+    bool disable_ipv6;
+    bool disable_http2;
+    bool sni_mode;
+    bool rudp_mode;
+    bool daemon_mode;
+    bool ignore_cert_error;
+    bool autoindex;
 
     uint16_t CPORT;
     uint16_t SPORT;
@@ -34,6 +35,7 @@ struct options{
 
 extern struct options opt;
 
+void parseConfigFile(const char* config_file);
 void parseConfig(int argc, char **argv);
 int setproxy(const char* proxy);
 int getproxy(char *buff, size_t buflen);

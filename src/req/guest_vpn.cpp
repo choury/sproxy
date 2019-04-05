@@ -146,7 +146,10 @@ Guest_vpn::Guest_vpn(const VpnKey& key, VPN_nanny* nanny):key(key), nanny(nanny)
 
 
 Guest_vpn::~Guest_vpn(){
+    del_delayjob(std::bind(&Guest_vpn::aged, this), this);
+    del_delayjob(std::bind(&Guest_vpn::tcp_ack, this), this);
     free(packet);
+    free(protocol_info);
 }
 
 
@@ -939,9 +942,9 @@ int Guest_vpn::aged(){
 void Guest_vpn::deleteLater(uint32_t error){
     res_ptr = std::weak_ptr<Responser>();
     res_index = nullptr;
+    free(protocol_info);
+    protocol_info = nullptr;
     nanny->cleanKey(key);
-    del_delayjob(std::bind(&Guest_vpn::aged, this), this);
-    del_delayjob(std::bind(&Guest_vpn::tcp_ack, this), this);
     return Peer::deleteLater(error);
 }
 

@@ -8,6 +8,7 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <errno.h>
+#include <limits.h>
 #include <unistd.h>
 #ifndef __APPLE__
 #include <sys/prctl.h>
@@ -23,13 +24,13 @@ struct options opt = {
     .key               = NULL,
     .index_file        = NULL,
     .interface         = NULL,
-    .disable_ipv6      = 0,
-    .disable_http2     = 0,
-    .sni_mode          = 0,
-    .rudp_mode         = 0,
-    .daemon_mode       = 0,
-    .ignore_cert_error = 0,
-    .autoindex         = 0,
+    .disable_ipv6      = false,
+    .disable_http2     = false,
+    .sni_mode          = false,
+    .rudp_mode         = false,
+    .daemon_mode       = false,
+    .ignore_cert_error = false,
+    .autoindex         = false,
 
     .CPORT          = 0,
     .SPORT          = 0,
@@ -41,10 +42,12 @@ struct options opt = {
 
 enum option_type{
     option_boolargs,
+    option_int64args,
     option_base64args,
     option_stringargs,
     option_extargs,
 };
+
 
 struct option_detail {
     const char*      name;
@@ -167,16 +170,31 @@ static void parseExtargs(const char* name, const char* args){
 
 static void parseArgs(const char* name, const char* args){
     printf("set option %s", name);
+#ifdef static_assert
+    static_assert(sizeof(long long) == 8, "require 64bit long long");
+#else
+    assert(sizeof(long long) == 8);
+#endif
     for(int i=0; option_detail[i].name; i++){
         if(strcmp(name, option_detail[i].name) == 0){
             switch(option_detail[i].type){
+            char* pos;
+            long long result;
             case option_boolargs:
-                printf(": true");
-                *(int*)option_detail[i].args = 1;
+                *(bool*)option_detail[i].args = !*(bool*)option_detail[i].args;
+                printf(": %s", *(bool*)option_detail[i].args?"true":"false");
                 break;
             case option_stringargs:
                 *(char**)option_detail[i].args = strdup(args);
                 printf(": %s", *(char**)option_detail[i].args);
+                break;
+            case option_int64args:
+                result = strtoll(args, &pos, 0);
+                if(result == LLONG_MAX || result == LLONG_MIN || args == pos) {
+                    fprintf(stderr, "wrong int format: %s\n", args);
+                }
+                *(long long*)option_detail[i].args = result;
+                printf(": %lld", *(long long*)option_detail[i].args);
                 break;
             case option_base64args:
                 Base64Encode(args, strlen(args), (char*)option_detail[i].args);
@@ -218,6 +236,26 @@ int getproxy(char *buff, size_t buflen){
     }
 }
 
+void parseConfigFile(const char* config_file){
+    FILE* conf = fopen(config_file, "r");
+    if(conf){
+        char line[1024];
+        while(fgets(line, sizeof(line), conf)){
+            char option[1024], args[1024];
+            int ret = sscanf(line, "%s %s", option, args);
+            if(ret <= 0){
+                fprintf(stderr, "config file parse failed: %s", line);
+                break;
+            }
+            if(option[0] == '#'){
+                continue;
+            }
+            parseArgs(option, args);
+        }
+        fclose(conf);
+    }
+}
+
 static const char* confs[] = {
     "/etc/sproxy/sproxy.conf",
     "/usr/local/etc/sproxy.conf",
@@ -225,35 +263,16 @@ static const char* confs[] = {
     NULL,
 };
 
-static void parseConfigFile(){
-    for(int i = 0; confs[i]; i++){
-        FILE* conf = fopen(confs[i], "r");
-        if(conf){
-            printf("read config file from: %s\n", confs[i]);
-            char line[1024];
-            while(fgets(line, sizeof(line), conf)){
-                char option[1024], args[1024];
-                int ret = sscanf(line, "%s %s", option, args);
-                if(ret <= 0){
-                    goto err;
-                }
-                if(option[0] == '#'){
-                    continue;
-                }
-                parseArgs(option, args);
-            }
-            fclose(conf);
-            return;
-err:
-            fclose(conf);
-            exit(1);
-        }
-    }
-}
-
 void parseConfig(int argc, char **argv){
     main_argv = argv;
-    parseConfigFile();
+    for(int i = 0; confs[i]; i++) {
+        if(access(confs[i], R_OK)){
+            continue;
+        }
+        printf("read config file from: %s\n", confs[i]);
+        parseConfigFile(confs[i]);
+        break;
+    }
     while (1) {
         int option_index = 0;
         int c = getopt_long(argc, argv, "D1hikr:s:p:I:", long_options, &option_index);
@@ -289,6 +308,18 @@ void parseConfig(int argc, char **argv){
         printf("server %s\n", proxy);
     }
 #ifndef __ANDROID__
+    if (strlen(opt.cafile) && access(opt.cafile, R_OK)){
+        fprintf(stderr, "access cafile failed: %s\n", strerror(errno));
+        exit(1);
+    }
+    if (strlen(opt.cert) && access(opt.cert, R_OK)){
+        fprintf(stderr, "access cert file failed: %s\n", strerror(errno));
+        exit(1);
+    }
+    if (strlen(opt.key) && access(opt.key, R_OK)){
+        fprintf(stderr, "access key file failed: %s\n", strerror(errno));
+        exit(1);
+    }
     if (opt.daemon_mode && daemon(1, 0) < 0) {
         fprintf(stderr, "start daemon error:%s\n", strerror(errno));
         exit(1);
