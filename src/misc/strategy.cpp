@@ -181,6 +181,8 @@ static bool mergestrategy(const string& host, const string& strategy_str, string
         s = Strategy::block;
     }else if(strategy_str == "forward"){
         s = Strategy::forward;
+    }else if(strategy_str == "rewrite"){
+        s = Strategy::rewrite;
     }else{
         return false;
     }
@@ -334,6 +336,8 @@ const char* getstrategystring(Strategy s) {
         return "direct";
     case Strategy::forward:
         return "forward";
+    case Strategy::rewrite:
+        return "rewrite";
     case Strategy::proxy:
         return "proxy";
     case Strategy::local:

@@ -8,6 +8,7 @@ enum class Strategy{
     none,
     direct,
     forward,
+    rewrite,
     proxy,
     local,
     block,

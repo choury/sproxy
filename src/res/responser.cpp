@@ -130,6 +130,8 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
             }
             req->del("Proxy-Authorization");
             break;
+        case Strategy::rewrite:
+            req->set("host", stra.ext);
         case Strategy::forward:
             if(stra.ext.empty()){
                 HttpResHeader* res = new HttpResHeader(H500, sizeof(H500));
@@ -138,7 +140,6 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
                 LOGE("[[destination not set]] %s\n", log_buff);
                 return std::weak_ptr<Responser>();
             }
-            req->set("Host", stra.ext);
             break;
         default:{
             LOG("[[BUG]] %s\n", log_buff);

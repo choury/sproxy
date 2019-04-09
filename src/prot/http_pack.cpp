@@ -55,7 +55,7 @@ static string toUpHeader(const string &s){
 
 
 void HttpHeader::set(const std::string& header, const string& value) {
-    headers.insert(std::make_pair(toLower(header), value));
+    headers[toLower(header)] = value;
 }
 
 #ifdef __ANDROID__
@@ -73,7 +73,7 @@ using std::to_string;
 
 
 void HttpHeader::set(const std::string& header, uint64_t value) {
-    headers.insert(std::make_pair(toLower(header), to_string(value)));
+    set(header, to_string(value));
 }
 
 void HttpHeader::append(const std::string& header, const string& value){

@@ -308,15 +308,15 @@ void parseConfig(int argc, char **argv){
         printf("server %s\n", proxy);
     }
 #ifndef __ANDROID__
-    if (strlen(opt.cafile) && access(opt.cafile, R_OK)){
+    if (opt.cafile && access(opt.cafile, R_OK)){
         fprintf(stderr, "access cafile failed: %s\n", strerror(errno));
         exit(1);
     }
-    if (strlen(opt.cert) && access(opt.cert, R_OK)){
+    if (opt.cert && access(opt.cert, R_OK)){
         fprintf(stderr, "access cert file failed: %s\n", strerror(errno));
         exit(1);
     }
-    if (strlen(opt.key) && access(opt.key, R_OK)){
+    if (opt.key && access(opt.key, R_OK)){
         fprintf(stderr, "access key file failed: %s\n", strerror(errno));
         exit(1);
     }
