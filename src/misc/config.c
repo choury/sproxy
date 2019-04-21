@@ -108,6 +108,7 @@ struct option_detail option_detail[] = {
     {"debug-dns", "\tdebug-dns", option_extargs, NULL},
     {"debug-http2", "debug-http2", option_extargs, NULL},
     {"debug-job", "\tdebug-job", option_extargs, NULL},
+    {"debug-vpn", "\tdebug-vpn", option_extargs, NULL},
     {"debug-hpack", "debug-hpack", option_extargs, NULL},
     {"debug-rudp", "debug-rudp",  option_extargs, NULL},
     {"debug-all", "\tdebug-all", option_extargs, NULL},
@@ -157,6 +158,8 @@ static void parseExtargs(const char* name, const char* args){
         debug |= DHTTP2;
     }else if(strcmp(name, "debug-job") == 0){
         debug |= DJOB;
+    }else if(strcmp(name, "debug-vpn") == 0){
+        debug |= DVPN;
     }else if(strcmp(name, "debug-hpack") == 0){
         debug |= DHPACK;
     }else if(strcmp(name, "debug-rudp") == 0){
@@ -237,7 +240,7 @@ int getproxy(char *buff, size_t buflen){
 }
 
 void parseConfigFile(const char* config_file){
-    FILE* conf = fopen(config_file, "r");
+    FILE* conf = fopen(config_file, "re");
     if(conf){
         char line[1024];
         while(fgets(line, sizeof(line), conf)){
