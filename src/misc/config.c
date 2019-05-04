@@ -1,5 +1,6 @@
 #include "config.h"
 #include "util.h"
+#include "strategy.h"
 
 #include <getopt.h>
 #include <stdio.h>
@@ -10,11 +11,13 @@
 #include <errno.h>
 #include <limits.h>
 #include <unistd.h>
+#include <signal.h>
 #ifndef __APPLE__
 #include <sys/prctl.h>
 #else
 #include <pthread.h>
 #endif
+#include <openssl/ssl.h>
 
 static char **main_argv;
 
@@ -80,6 +83,7 @@ static struct option long_options[] = {
     {"debug-job",    no_argument,   NULL,  0 },
     {"debug-hpack",  no_argument,   NULL,  0 },
     {"debug-rudp",   no_argument,   NULL,  0 },
+    {"debug-http",   no_argument,   NULL,  0 },
     {"debug-all",    no_argument,   NULL,  0 },
 #endif
     {NULL,       0,                NULL,  0 }
@@ -111,10 +115,26 @@ struct option_detail option_detail[] = {
     {"debug-vpn", "\tdebug-vpn", option_extargs, NULL},
     {"debug-hpack", "debug-hpack", option_extargs, NULL},
     {"debug-rudp", "debug-rudp",  option_extargs, NULL},
+    {"debug-http", "debug-http",  option_extargs, NULL},
     {"debug-all", "\tdebug-all", option_extargs, NULL},
 #endif
     {NULL, NULL, option_extargs, NULL},
 };
+
+void prepare(){
+    SSL_library_init();    // SSL初库始化
+    SSL_load_error_strings();  // 载入所有错误信息
+    signal(SIGPIPE, SIG_IGN);
+    signal(SIGCHLD, SIG_IGN);
+#if Backtrace_FOUND
+    signal(SIGABRT, dump_trace);
+#endif
+    signal(SIGHUP,  (sig_t)reloadstrategy);
+    signal(SIGUSR1, (sig_t)(void(*)())dump_stat);
+    reloadstrategy();
+    srandom(time(0));
+    setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
+}
 
 static void usage(const char * programe){
     printf("Usage: %s [host:port]\n" , programe);
@@ -164,6 +184,8 @@ static void parseExtargs(const char* name, const char* args){
         debug |= DHPACK;
     }else if(strcmp(name, "debug-rudp") == 0){
         debug |= DRUDP;
+    }else if(strcmp(name, "debug-http") == 0){
+        debug |= DHTTP;
     }else if(strcmp(name, "debug-all") == 0){
         debug = (uint32_t)(-1);
     }else{

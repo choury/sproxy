@@ -48,8 +48,8 @@ Host::~Host(){
 }
 
 void Host::connected() {
-    isconnected = true;
     SslRWer* swrer = dynamic_cast<SslRWer*>(rwer);
+    LOGD(DHTTP, "host %s:%d connected\n", hostname, port);
     if(swrer){
         const unsigned char *data;
         unsigned int len;
@@ -84,15 +84,17 @@ void Host::connected() {
     assert(rwer->wlength() == 0 || head->offset == 0);
     rwer->buffer_insert(head, write_block{buff, len, 0});
     rwer->SetReadCB([this](size_t len){
-        const char* data = this->rwer->data();
+        const char* data = this->rwer->rdata();
         size_t consumed = 0;
         size_t ret = 0;
         while((ret = (this->*Http_Proc)(data+consumed, len-consumed))){
             consumed += ret;
         }
+        LOGD(DHTTP, "host %s:%d read: len:%zu, consumed:%zu\n", hostname, port, len, consumed);
         this->rwer->consume(data, consumed);
     });
     rwer->SetWriteCB([this](size_t len){
+        LOGD(DHTTP, "host %s:%d writed: wlength:%zu\n", hostname, port, len);
         if(req && len){
             req->src.lock()->writedcb(req->index);
         }
@@ -103,11 +105,12 @@ void Host::connected() {
 }
 
 void* Host::request(HttpReqHeader* req) {
+    LOGD(DHTTP, "host request: %s\n", req->geturl().c_str());
     if(this->req){
         assert(req->src.lock() == this->req->src.lock());
         delete this->req;
     }
-    if(isconnected){
+    if(rwer->getStats() == RWerStats::Connected){
         size_t len;
         char* buff = req->getstring(len);
         rwer->buffer_insert(rwer->buffer_end(), write_block{buff, len, 0});
@@ -133,10 +136,12 @@ int32_t Host::bufleft(void*) {
 void Host::Send(void* buff, size_t size,  __attribute__ ((unused)) void* index) {
     assert((long)index == 1);
     assert((http_flag & HTTP_CLIENT_CLOSE_F) == 0);
+    LOGD(DHTTP, "host %s:%d Send: size:%zu, http_flag:%d\n", hostname, port, size, http_flag);
     rwer->buffer_insert(rwer->buffer_end(), write_block{buff, size, 0});
 }
 
 void Host::ResProc(HttpResHeader* res) {
+    LOGD(DHTTP, "host %s:%d ResProc: %s, http_flag:%d\n", hostname, port, res->status, http_flag);
     assert(!req->src.expired());
     if(req->ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY_F;
@@ -149,13 +154,14 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     assert(!req->src.expired());
     int len = req->src.lock()->bufleft(req->index);
 
+    LOGD(DHTTP, "host %s:%d DataProc: size:%zu, len:%d\n", hostname, port, size, len);
     if (len <= 0) {
         LOGE("(%s): The guest's write buff is full (%s)\n",
              req->src.lock()->getsrc(req->index), req->hostname);
         if(strcasecmp(protocol, "udp") == 0){
             return size;
         }
-        rwer->setEvents(RW_EVENT::NONE);
+        rwer->delEvents(RW_EVENT::READ);
         return -1;
     }
     req->src.lock()->Send(buff, Min(size, len), req->index);
@@ -163,6 +169,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 }
 
 void Host::EndProc() {
+    LOGD(DHTTP, "host %s:%d EndProc\n", hostname, port);
     assert(!req->src.expired());
     req->src.lock()->finish(NOERROR, req->index);
 }
@@ -182,6 +189,7 @@ void Host::Error(int ret, int code) {
 
 void Host::finish(uint32_t flags, void* index) {
     assert((long)index == 1);
+    LOGD(DHTTP, "host %s:%d finish: flags:%u, http_flag: %u\n", hostname, port, flags, http_flag);
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode || (flags & DISCONNECT_FLAG)){
         delete req;
@@ -219,6 +227,8 @@ void Host::deleteLater(uint32_t errcode){
 }
 
 void Host::writedcb(const void* index) {
+    LOGD(DHTTP, "host %s:%d writedcb: http_flag:%d, rlength:%zu, wlength:%zu, bufleft:%d\n", 
+        hostname, port, http_flag, rwer->rlength(), rwer->wlength(), req->src.lock()->bufleft(req->index));
     if((http_flag & HTTP_SERVER_CLOSE_F) == 0){
         Peer::writedcb(index);
     }
@@ -258,9 +268,12 @@ Host::gethost(
 
 
 void Host::dump_stat(Dumper dp, void* param) {
-    dp(param, "Host %p, <%s://%s:%d>: %s\n", this, protocol, hostname, port, isconnected?"[C]":"");
+    dp(param, "Host %p, <%s://%s:%d>\n", this, protocol, hostname, port);
+    dp(param, "  rwer: rlength:%zu, rleft:%zu, wlength:%zu, stats:%d, event:%s\n",
+            rwer->rlength(), rwer->rleft(), rwer->wlength(),
+            (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     if(req){
-        dp(param, "    %s %s: %p, %p\n",
+        dp(param, "request %s %s: %p, %p\n",
                 req->method, req->geturl().c_str(),
                 req->src.lock().get(), req->index);
     }

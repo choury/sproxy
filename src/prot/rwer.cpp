@@ -145,11 +145,13 @@ void Ep::setEvents(RW_EVENT events) {
         int ret = epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
         if (ret && errno == ENOENT) {
             ret = epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-            if(ret != 0){
+            if(ret){
                 LOGE("epoll_ctl add failed:%s\n", strerror(errno));
+                return;
             }
         }else if(ret){
             LOGE("epoll_ctl mod failed:%s\n", strerror(errno));
+            return;
         }
 #endif
 #ifdef __APPLE__
@@ -168,6 +170,7 @@ void Ep::setEvents(RW_EVENT events) {
         int ret = kevent(efd, event, count, NULL, 0, NULL);
         if(ret < 0){
             LOGE("kevent failed:%s\n", strerror(errno));
+            return;
         }
 #endif
 #ifndef NDEBUG
@@ -186,6 +189,10 @@ void Ep::addEvents(RW_EVENT events){
 
 void Ep::delEvents(RW_EVENT events){
     return setEvents(this->events & ~events);
+}
+
+RW_EVENT Ep::getEvents(){
+    return this->events;
 }
 
 int Ep::checkSocket(const char* msg){
@@ -282,14 +289,35 @@ void RWer::SetErrorCB(std::function<void(int ret, int code)> func){
 
 void RWer::SetReadCB(std::function<void(size_t len)> func){
     readCB = std::move(func);
-    TrigRead();
+    if(stats == RWerStats::Connected){
+        ReadOrError(RW_EVENT::READ);
+    }
 }
 
 void RWer::SetWriteCB(std::function<void(size_t len)> func){
     writeCB = std::move(func);
 }
 
-void RWer::closeHE(uint32_t) {
+void RWer::defaultHE(RW_EVENT events){
+    if (!!(events & RW_EVENT::ERROR)) {
+        errorCB(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
+        return;
+    }
+    if (!!(events & RW_EVENT::READ)){
+        if(ReadOrError(events)){
+            return;
+        }
+    }
+    if(!!(events & RW_EVENT::READEOF)){
+        delEvents(RW_EVENT::READ);
+        errorCB(READ_ERR, 0);
+    }
+    if (!!(events & RW_EVENT::WRITE)){
+        SendData();
+    }
+}
+
+void RWer::closeHE(RW_EVENT) {
     if(wbuff.length() == 0){
         closeCB();
         return;
@@ -298,7 +326,6 @@ void RWer::closeHE(uint32_t) {
 #ifndef WSL
     if ((wbuff.length() == 0) || (ret <= 0 && errno != EAGAIN)) {
         closeCB();
-        return;
     }
 #else
     if ((wbuff.length() == 0) || (ret <= 0)) {
@@ -314,13 +341,6 @@ bool RWer::supportReconnect(){
 void RWer::Reconnect() {
 }
 
-
-void RWer::TrigRead(){
-    if(rlength() && readCB){
-        readCB(rlength());
-    }
-}
-
 void RWer::Close(std::function<void()> func) {
     closeCB = std::move(func);
     if(getFd() >= 0){
@@ -332,12 +352,14 @@ void RWer::Close(std::function<void()> func) {
 }
 
 void RWer::Connected(const union sockaddr_un& addr){
+    stats = RWerStats::Connected;
     if(connectCB){
         connectCB(addr);
     }
 }
 
 void RWer::Shutdown() {
+    stats = RWerStats::Shutdown;
     shutdown(getFd(), SHUT_WR);
 }
 

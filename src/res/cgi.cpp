@@ -106,7 +106,7 @@ void Cgi::readHE(size_t len) {
         return;
     }
 begin:
-    const CGI_Header *header = (const CGI_Header *)rwer->data();
+    const CGI_Header *header = (const CGI_Header *)rwer->rdata();
     size_t size = ntohs(header->contentLength) + sizeof(CGI_Header);
     if(len < size){
         return;

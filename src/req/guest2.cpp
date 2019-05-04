@@ -15,7 +15,7 @@ void Guest2::init(RWer* rwer) {
     this->rwer = rwer;
     rwer->SetErrorCB(std::bind(&Guest2::Error, this, _1, _2));
     rwer->SetReadCB([this](size_t len){
-        const char* data = this->rwer->data();
+        const char* data = this->rwer->rdata();
         size_t consumed = 0;
         size_t ret = 0;
         while((ret = (this->*Http2_Proc)((uchar*)data+consumed, len-consumed))){
@@ -308,6 +308,9 @@ const char * Guest2::getsrc(const void* index){
 
 void Guest2::dump_stat(Dumper dp, void* param) {
     dp(param, "Guest2 %p %s:\n", this, getsrc(nullptr));
+    dp(param, "  rwer: rlength:%zu, rleft:%zu, wlength:%zu, stats:%d, event:%s\n",
+            rwer->rlength(), rwer->rleft(), rwer->wlength(),
+            (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     for(auto& i: statusmap){
         dp(param, "0x%x: %p, %p (%d/%d)\n",
                 i.first, i.second.res_ptr.lock().get(), i.second.res_index,

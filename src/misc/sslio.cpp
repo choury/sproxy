@@ -83,6 +83,7 @@ SslRWer::SslRWer(int fd, SSL_CTX* ctx,
     SSL_set_fd(ssl, fd);
     this->connectCB = std::move(connectCB);
     setEvents(RW_EVENT::READWRITE);
+    stats = RWerStats::SslAccepting;
     handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::shakehandHE;
 }
 
@@ -164,6 +165,9 @@ int SslRWer::get_error(int ret){
                 break;
         }
         ERR_clear_error();
+        if(ret == 0){
+            ret = -errno;
+        }
     }
     return ret;
 }
@@ -190,6 +194,7 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
     }
     if (!!(events & RW_EVENT::WRITE)) {
         setEvents(RW_EVENT::READWRITE);
+        stats = RWerStats::SslConnecting;
         if(protocol == Protocol::TCP){
             //ssl = SSL_new(ctx);
             SSL_set_fd(ssl, getFd());
@@ -233,6 +238,8 @@ void SslRWer::shakehandHE(RW_EVENT events){
         setEvents(RW_EVENT::READWRITE);
         handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::defaultHE;
         del_delayjob(std::bind(&SslRWer::con_failed, this), this);
+        //in case some data in ssl buffer
+        ReadOrError(events);
     }
 }
 

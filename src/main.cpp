@@ -2,14 +2,11 @@
 #include "misc/rudp.h"
 #include "misc/net.h"
 #include "misc/job.h"
-#include "misc/strategy.h"
-#include "misc/util.h"
 #include "misc/config.h"
 
 #include <unistd.h>
 #include <assert.h>
 #include <fcntl.h>
-#include <signal.h>
 #include <arpa/inet.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -221,18 +218,8 @@ SSL_CTX* initssl(int udp, const char *ca, const char *cert, const char *key){
 }
 
 int main(int argc, char **argv) {
+    prepare();
     parseConfig(argc, argv);
-    signal(SIGPIPE, SIG_IGN);
-    signal(SIGCHLD, SIG_IGN);
-#if Backtrace_FOUND
-    signal(SIGABRT, dump_trace);
-#endif
-    signal(SIGHUP,  (sig_t)reloadstrategy);
-    signal(SIGUSR1, (sig_t)(void(*)())dump_stat);
-    reloadstrategy();
-    SSL_library_init();    // SSL初库始化
-    SSL_load_error_strings();  // 载入所有错误信息
-    setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
     openlog("sproxy", LOG_PID | LOG_PERROR, LOG_LOCAL0);
 #if __linux__
     efd = epoll_create1(EPOLL_CLOEXEC);

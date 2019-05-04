@@ -73,6 +73,7 @@ public:
     void setEvents(RW_EVENT events);
     void addEvents(RW_EVENT events);
     void delEvents(RW_EVENT events);
+    RW_EVENT getEvents();
     int checkSocket(const char* msg);
     void (Ep::*handleEvent)(RW_EVENT events) = nullptr;
 };
@@ -81,8 +82,20 @@ public:
 using std::placeholders::_1;
 using std::placeholders::_2;
 
+enum class RWerStats{
+    Idle = 0,
+    Dnsquerying,
+    Connecting,
+    Connected,
+    SslAccepting,
+    SslConnecting,
+    ConnectionLost,
+    Shutdown,
+};
+
 class RWer: public Ep{
 protected:
+    RWerStats  stats = RWerStats::Idle;
     WBuffer wbuff;
     std::function<void(int ret, int code)> errorCB = nullptr;
     std::function<void(size_t len)> readCB = nullptr;
@@ -92,7 +105,8 @@ protected:
 
     virtual ssize_t Write(const void* buff, size_t len) = 0;
     virtual void SendData();
-    virtual void closeHE(uint32_t events);
+    virtual void defaultHE(RW_EVENT events);
+    virtual void closeHE(RW_EVENT events);
     virtual void Connected(const union sockaddr_un&);
 public:
     explicit RWer(std::function<void(int ret, int code)> errorCB,
@@ -104,13 +118,15 @@ public:
 
     virtual bool supportReconnect();
     virtual void Reconnect();
-    virtual void TrigRead();
+    virtual bool ReadOrError(RW_EVENT events) = 0;
     virtual void Close(std::function<void()> func);
     virtual void Shutdown();
+    RWerStats getStats(){return stats;}
 
     //for read buffer
     virtual size_t rlength() = 0;
-    virtual const char *data() = 0;
+    virtual size_t rleft() = 0;
+    virtual const char *rdata() = 0;
     virtual void consume(const char* data, size_t l) = 0;
 
     //for write buffer

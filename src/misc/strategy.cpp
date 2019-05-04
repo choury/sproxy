@@ -298,9 +298,7 @@ bool addstrategy(const char* host, const char* strategy, const char* ext) {
 bool delstrategy(const char* host) {
     bool found  = false;
     sockaddr_un addr;
-    if(host[0] == '_'){
-        found = true;
-    }else if (inet_pton(AF_INET, host, &addr.addr_in.sin_addr) == 1) {
+    if (inet_pton(AF_INET, host, &addr.addr_in.sin_addr) == 1) {
         found = ipv4s.remove(addr.addr_in.sin_addr);
     }else if (inet_pton(AF_INET6, host, &addr.addr_in6.sin6_addr) == 1) {
         //TODO

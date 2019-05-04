@@ -357,14 +357,24 @@ bool HttpReqHeader::no_body() const {
     {
         return true;
     }
+    if(ismethod("CONNECT") ||
+       ismethod("SEND"))
+    {
+        return false;
+    }
     if(get("content-length") &&
-       strcmp("0", get("content-length"))==0 &&
-       !ismethod("CONNECT") &&
-       !ismethod("SEND"))
+       strcmp("0", get("content-length"))==0)
     {
         return true;
     }
-    return false;
+    if (ismethod("POST") ||
+        ismethod("PUT") ||
+        ismethod("OPTIONS") ||
+        ismethod("PING"))
+    {
+        return false;
+    }
+    return true;
 }
 
 
@@ -532,7 +542,6 @@ bool HttpResHeader::no_body() const {
     {
         return true;
     }
-        
     return false;
 }
 

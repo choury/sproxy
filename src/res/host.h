@@ -7,7 +7,6 @@
 class Requester;
 
 class Host:public Responser, public HttpRequester {
-    bool isconnected = false;
 protected:
     char protocol[DOMAINLIMIT];
     char hostname[DOMAINLIMIT];

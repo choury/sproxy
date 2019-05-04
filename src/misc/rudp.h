@@ -65,12 +65,13 @@ class RudpRWer: public RWer {
 #define RUDP_RESET           2u
     uint32_t flags = 0;
 
-    void defaultHE(RW_EVENT events);
+    void defaultHE(RW_EVENT events) override;
 
     int send();
     int ack();
     uint32_t send_pkg(uint32_t seq, uint32_t window, size_t len);
     ssize_t Write(const void* buff, size_t len) override;
+    bool ReadOrError(RW_EVENT) override {return true;}
     void handle_pkg(const Rudp_head* head, size_t size, Rudp_stats* stats);
     void finish_recv(Rudp_stats* stats);
 public:
@@ -84,7 +85,8 @@ public:
     virtual void Reconnect() override;
     //for read buffer
     virtual size_t rlength() override;
-    virtual const char *data() override;
+    virtual size_t rleft() override;
+    virtual const char *rdata() override;
     virtual void consume(const char* data, size_t l) override;
 
     static void Dnscallback(void* param, const char*, std::list<sockaddr_un> addrs);

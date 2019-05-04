@@ -35,6 +35,7 @@ struct options{
 
 extern struct options opt;
 
+void prepare();
 void parseConfigFile(const char* config_file);
 void parseConfig(int argc, char **argv);
 int setproxy(const char* proxy);

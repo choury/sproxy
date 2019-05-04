@@ -406,7 +406,7 @@ Dns_srv::Dns_srv(const sockaddr_un* server){
         deleteLater(code);
     });
     rwer->SetReadCB([this](size_t len){
-        const char* data = rwer->data();
+        const char* data = rwer->rdata();
         buffHE(data, len);
         rwer->consume(data, len);
     });

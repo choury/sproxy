@@ -78,7 +78,7 @@ VPN_nanny::VPN_nanny(int fd){
         LOGE("VPN_nanny error: %d/%d\n", ret, code);
     });
     rwer->SetReadCB([this](size_t len){
-        const char* data = rwer->data();
+        const char* data = rwer->rdata();
         buffHE(data, len);
         rwer->consume(data, len);
     });

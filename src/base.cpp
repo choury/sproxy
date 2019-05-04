@@ -42,9 +42,9 @@ void Peer::Send(void* buff, size_t size, void* index) {
 }
 
 void Peer::writedcb(const void*) {
-    if(rwer){
+    if(rwer && rwer->getStats() == RWerStats::Connected){
         rwer->addEvents(RW_EVENT::READ);
-        rwer->TrigRead();
+        rwer->ReadOrError(RW_EVENT::READ);
     }
 }
 

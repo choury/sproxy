@@ -42,13 +42,14 @@ typedef enum{NONE, TCP=SOCK_STREAM, UDP=SOCK_DGRAM, ICMP, RUDP}Protocol;
 
 extern uint32_t debug;
 
-#define DEVENT    1u
-#define DDNS      2u
-#define DHTTP2    8u
-#define DJOB      16u
-#define DVPN      32u
-#define DHPACK    64u
-#define DRUDP     128u
+#define DEVENT    (1u<<0)
+#define DDNS      (1u<<1)
+#define DHTTP2    (1u<<2)
+#define DJOB      (1u<<3)
+#define DVPN      (1u<<4)
+#define DHPACK    (1u<<5)
+#define DRUDP     (1u<<6)
+#define DHTTP     (1u<<7)
 
 #define DEVENT_STR  "[EVENT]"
 #define DDNS_STR    "[DNS]"
@@ -57,6 +58,7 @@ extern uint32_t debug;
 #define DVPN_STR    "[VPN]"
 #define DHPACK_STR  "[HPACK]"
 #define DRUDP_STR   "[RUDP]"
+#define DHTTP_STR   "[HTTP]"
 
 #ifdef  __cplusplus
 extern "C" {

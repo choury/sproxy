@@ -1,14 +1,12 @@
 #include "vpn.h"
 #include "prot/dns.h"
-#include "misc/strategy.h"
-#include "misc/util.h"
 #include "misc/job.h"
+#include "misc/strategy.h"
 
 #include "req/guest_vpn.h"
 
 #include <string.h>
 #include <errno.h>
-#include <signal.h>
 #include <fcntl.h>
 #include <openssl/ssl.h>
 
@@ -21,17 +19,7 @@ uint32_t vpn_contiune;
 uint32_t vpn_action = 0;
 
 int vpn_start(int fd){
-    signal(SIGPIPE, SIG_IGN);
-    signal(SIGCHLD, SIG_IGN);
-    setvbuf(stdout, nullptr, _IOLBF, BUFSIZ);
-#if Backtrace_FOUND
-    signal(SIGABRT, dump_trace);
-#endif
-    signal(SIGHUP, (sig_t)reloadstrategy);
-    signal(SIGUSR1, (sig_t)(void(*)())dump_stat);
-    reloadstrategy();
-    SSL_library_init();    // SSL初库始化
-    SSL_load_error_strings();  // 载入所有错误信息
+    prepare();
     efd = epoll_create1(EPOLL_CLOEXEC);
     if(efd < 0){
         LOGE("epoll_create: %s\n", strerror(errno));

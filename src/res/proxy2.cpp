@@ -31,7 +31,7 @@ Proxy2::Proxy2(RWer* rwer) {
     }
     rwer->SetErrorCB(std::bind(&Proxy2::Error, this, _1, _2));
     rwer->SetReadCB([this](size_t len){
-        const char* data = this->rwer->data();
+        const char* data = this->rwer->rdata();
         size_t consumed = 0;
         size_t ret = 0;
         while((ret = (this->*Http2_Proc)((uchar*)data+consumed, len-consumed))){
@@ -369,6 +369,9 @@ void Proxy2::dump_stat(Dumper dp, void* param) {
     }else{
         dp(param, "Proxy2 %p, id:%d: %s\n", this, sendid, proxy2.lock() == shared_from_this()?"[M]":"");
     }
+    dp(param, "  rwer: rlength:%zu, rleft:%zu, wlength:%zu, stats:%d, event:%s\n",
+            rwer->rlength(), rwer->rleft(), rwer->wlength(),
+            (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     for(auto& i: statusmap){
         assert(!i.second.req_ptr.expired());
         dp(param, "0x%x: %p, %p (%d/%d)\n",

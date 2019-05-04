@@ -11,7 +11,7 @@ Guest_sni::Guest_sni(int fd, const sockaddr_un *myaddr):Guest(fd, myaddr){
     Http_Proc = &Guest_sni::AlwaysProc;
     rwer->SetReadCB([this](size_t len){
         char *hostname = nullptr;
-        const char *buffer = rwer->data();
+        const char *buffer = rwer->rdata();
         int ret = parse_tls_header(buffer, len, &hostname);
         if(ret > 0){
             char buff[HEADLENLIMIT];

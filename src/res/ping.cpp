@@ -8,9 +8,8 @@
 #include <errno.h>
 #include <assert.h>
 
-Ping::Ping(const char* host, uint16_t id): id(id) {
+Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
     strcpy(hostname, host);
-    assert(id);
     rwer = new PacketRWer(hostname, id, Protocol::ICMP, [this](int ret, int code){
         LOGE("Ping error: %d/%d\n", ret, code);
         iserror = true;
@@ -22,7 +21,7 @@ Ping::Ping(const char* host, uint16_t id): id(id) {
         this->addr = addr;
     });
     rwer->SetReadCB([this](int len){
-        const char* data = rwer->data();
+        const char* data = rwer->rdata();
         assert(!req_ptr.expired());
         switch(addr.addr.sa_family){
         case AF_INET:

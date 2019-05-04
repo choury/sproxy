@@ -66,11 +66,13 @@ RudpRWer::RudpRWer(int fd, uint32_t id, Rudp_server* ord):RWer(nullptr, nullptr,
     read_buff = (unsigned char*)malloc(RUDP_BUF_LEN);
     write_buff = (unsigned char*)malloc(RUDP_BUF_LEN);
     setEvents(RW_EVENT::READWRITE);
+    stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&RudpRWer::defaultHE;
 }
 
 RudpRWer::RudpRWer(const char* hostname, uint16_t port):RWer(nullptr), port(port){
     strcpy(this->hostname, hostname);
+    stats = RWerStats::Dnsquerying;
     query(hostname, RudpRWer::Dnscallback, this);
     read_seqs.push_back(std::make_pair(0,0));
     tick_time = data_time = ack_time = getmtime();
@@ -85,6 +87,7 @@ void RudpRWer::Dnscallback(void* param, const char* hostname, std::list<sockaddr
         LOGE("[RUDP] dns query failed: %s\n", hostname);
         return rwer->errorCB(DNS_FAILED, 0);
     }
+    rwer->stats = RWerStats::Connecting;
     for(auto& i: addrs){
         i.addr_in6.sin6_port = htons(rwer->port);
         int fd = Connect(&i, SOCK_DGRAM);
@@ -128,7 +131,11 @@ size_t RudpRWer::rlength(){
     return read_seqs.begin()->second - read_seqs.begin()->first;
 }
 
-const char *RudpRWer::data(){
+size_t RudpRWer::rleft(){
+    return read_seqs.begin()->first + RUDP_BUF_LEN - read_seqs.back().second;
+}
+
+const char *RudpRWer::rdata(){
     uint32_t size = read_seqs.begin()->second - read_seqs.begin()->first;
     uint32_t start_pos = read_seqs.begin()->first;
     uint32_t from = start_pos % RUDP_BUF_LEN;
