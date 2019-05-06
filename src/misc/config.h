@@ -20,7 +20,6 @@ struct options{
     bool disable_ipv6;
     bool disable_http2;
     bool sni_mode;
-    bool rudp_mode;
     bool daemon_mode;
     bool ignore_cert_error;
     bool autoindex;

@@ -5,7 +5,6 @@
 #include "misc/util.h"
 #include "misc/config.h"
 #include "misc/sslio.h"
-#include "misc/rudp.h"
 #include "misc/net.h"
 
 #include <string.h>
@@ -249,9 +248,6 @@ Host::gethost(
         && port == opt.SPORT
         && !proxy2.expired()){
         return proxy2;
-    }
-    if(strcasecmp(protocol, "rudp") == 0){
-        return (new Proxy2(new RudpRWer(hostname, port)))->init(nullptr);
     }
     if(!req->ismethod("CONNECT") &&  !req->ismethod("SEND") && !responser_ptr.expired()){
         auto host = std::dynamic_pointer_cast<Host>(responser_ptr.lock());

@@ -30,7 +30,6 @@ struct options opt = {
     .disable_ipv6      = false,
     .disable_http2     = false,
     .sni_mode          = false,
-    .rudp_mode         = false,
     .daemon_mode       = false,
     .ignore_cert_error = false,
     .autoindex         = false,
@@ -73,7 +72,6 @@ static struct option long_options[] = {
     {"key",          required_argument, NULL,  0 },
     {"port",         required_argument, NULL, 'p'},
     {"rewrite-auth", required_argument, NULL, 'r'},
-    {"rudp",         no_argument,       NULL,  0 },
     {"secret",       required_argument, NULL, 's'},
     {"sni",          no_argument,       NULL,  0 },
 #ifndef NDEBUG
@@ -82,7 +80,6 @@ static struct option long_options[] = {
     {"debug-http2",  no_argument,   NULL,  0 },
     {"debug-job",    no_argument,   NULL,  0 },
     {"debug-hpack",  no_argument,   NULL,  0 },
-    {"debug-rudp",   no_argument,   NULL,  0 },
     {"debug-http",   no_argument,   NULL,  0 },
     {"debug-all",    no_argument,   NULL,  0 },
 #endif
@@ -103,7 +100,6 @@ struct option_detail option_detail[] = {
     {"key", "Private key file name (ssl)", option_stringargs, &opt.key},
     {"port", "The port to listen, default is 80 but 443 for ssl/sni", option_extargs, &opt.CPORT},
     {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64args, opt.rewrite_auth},
-    {"rudp", "server as RUDP modle (experiment [buggy], will be replaced by quic)", option_boolargs, &opt.rudp_mode},
     {"secret", "Set a user and passwd for proxy (user:password), default is none.", option_base64args, opt.auth_string},
     {"sni", "Act as a sni proxy", option_boolargs, &opt.sni_mode},
     {"server", "default proxy server (can ONLY set in config file)", option_extargs, NULL},
@@ -114,7 +110,6 @@ struct option_detail option_detail[] = {
     {"debug-job", "\tdebug-job", option_extargs, NULL},
     {"debug-vpn", "\tdebug-vpn", option_extargs, NULL},
     {"debug-hpack", "debug-hpack", option_extargs, NULL},
-    {"debug-rudp", "debug-rudp",  option_extargs, NULL},
     {"debug-http", "debug-http",  option_extargs, NULL},
     {"debug-all", "\tdebug-all", option_extargs, NULL},
 #endif
@@ -182,8 +177,6 @@ static void parseExtargs(const char* name, const char* args){
         debug |= DVPN;
     }else if(strcmp(name, "debug-hpack") == 0){
         debug |= DHPACK;
-    }else if(strcmp(name, "debug-rudp") == 0){
-        debug |= DRUDP;
     }else if(strcmp(name, "debug-http") == 0){
         debug |= DHTTP;
     }else if(strcmp(name, "debug-all") == 0){
