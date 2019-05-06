@@ -1,5 +1,4 @@
 #include "req/guest_sni.h"
-#include "misc/rudp.h"
 #include "misc/net.h"
 #include "misc/job.h"
 #include "misc/config.h"
@@ -228,14 +227,7 @@ int main(int argc, char **argv) {
 #else
 #error "Only macOS and linux are supported"
 #endif
-    if(opt.rudp_mode){
-        int svsk_rudp;
-        opt.CPORT = opt.CPORT?opt.CPORT:443;
-        if((svsk_rudp = Listen(SOCK_DGRAM, opt.CPORT)) < 0){
-            return -1;
-        }
-        new Rudp_server(svsk_rudp, opt.CPORT);
-    }else if(opt.cert && opt.key){
+    if(opt.cert && opt.key){
         SSL_CTX * ctx = initssl(0, opt.cafile, opt.cert, opt.key);
         opt.CPORT = opt.CPORT?opt.CPORT:443;
         int svsk_https;
