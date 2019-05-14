@@ -132,6 +132,7 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
             break;
         case Strategy::rewrite:
             req->set("host", stra.ext);
+            /* FALLTHROUGH */
         case Strategy::forward:
             if(stra.ext.empty()){
                 HttpResHeader* res = new HttpResHeader(H500, sizeof(H500));

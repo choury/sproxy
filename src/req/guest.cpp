@@ -212,7 +212,6 @@ void Guest::finish(uint32_t flags, void* index) {
         return;
     }
     rwer->addEvents(RW_EVENT::READ);
-    Peer::Send((const void*)nullptr,0, index);
     if((Status_flags & GUEST_CONNECT_F) ||
        (Status_flags & GUEST_SEND_F) ||
        (Status_flags & GUEST_NOLENGTH_F))
@@ -221,7 +220,10 @@ void Guest::finish(uint32_t flags, void* index) {
         if(rwer->wlength() == 0){
             rwer->Shutdown();
         }
-    } 
+    }
+    if(Status_flags & GUEST_CHUNK_F){
+        Peer::Send((const void*)nullptr, 0, index);
+    }
     if(flags & DISCONNECT_FLAG){
         responser_ptr = std::weak_ptr<Responser>();
         responser_index = nullptr;
