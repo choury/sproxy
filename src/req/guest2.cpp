@@ -28,7 +28,8 @@ void Guest2::init(RWer* rwer) {
         add_delayjob(std::bind(&Guest2::connection_lost, this), this, 1800000);
     });
     rwer->SetWriteCB([this](size_t){
-        for(auto& i: statusmap){
+        auto statusmap_copy = statusmap;
+        for(auto& i: statusmap_copy){
             ResStatus& status = i.second;
             assert(!status.res_ptr.expired());
             if(status.remotewinsize > 0){
@@ -203,7 +204,8 @@ void Guest2::WindowUpdateProc(uint32_t id, uint32_t size) {
         remotewinsize += size;
         if(remotewinsize == (int32_t)size){
             LOGD(DHTTP2, "<guest2> get global window active all frame\n");
-            for(auto& i: statusmap){
+            auto statusmap_copy = statusmap;
+            for(auto& i: statusmap_copy){
                 ResStatus& status = i.second;
                 assert(!status.res_ptr.expired());
                 if(status.remotewinsize > 0){

@@ -196,7 +196,6 @@ void Host::finish(uint32_t flags, void* index) {
         deleteLater(flags);
         return;
     }
-    Peer::Send((const void*)nullptr, 0, index);
     if(Http_Proc == &Host::AlwaysProc){
         http_flag |= HTTP_CLIENT_CLOSE_F;
         if(rwer->wlength() == 0){
