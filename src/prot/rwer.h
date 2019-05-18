@@ -90,6 +90,7 @@ enum class RWerStats{
     SslAccepting,
     SslConnecting,
     ConnectionLost,
+    ReadEOF,
     Shutdown,
 };
 
@@ -97,20 +98,21 @@ class RWer: public Ep{
 protected:
     RWerStats  stats = RWerStats::Idle;
     WBuffer wbuff;
-    std::function<void(int ret, int code)> errorCB = nullptr;
-    std::function<void(size_t len)> readCB = nullptr;
-    std::function<void(size_t len)> writeCB = nullptr;
-    std::function<void(const union sockaddr_un&)> connectCB = nullptr;
-    std::function<void()> closeCB = nullptr;
+    std::function<void(size_t len)> readCB;
+    std::function<void(size_t len)> writeCB;
+    std::function<void(const union sockaddr_un&)> connectCB;
+    std::function<void(int ret, int code)> errorCB;
+    std::function<void()> closeCB;
 
     virtual ssize_t Write(const void* buff, size_t len) = 0;
     virtual void SendData();
+    virtual void ReadData() = 0;
     virtual void defaultHE(RW_EVENT events);
     virtual void closeHE(RW_EVENT events);
     virtual void Connected(const union sockaddr_un&);
 public:
     explicit RWer(std::function<void(int ret, int code)> errorCB,
-         std::function<void(const union sockaddr_un&)> connectCB = nullptr,
+         std::function<void(const union sockaddr_un&)> connectCB = nullptr, 
          int fd = -1);
     virtual void SetErrorCB(std::function<void(int ret, int code)> func);
     virtual void SetReadCB(std::function<void(size_t len)> func);
@@ -118,8 +120,8 @@ public:
 
     virtual bool supportReconnect();
     virtual void Reconnect();
-    virtual bool ReadOrError(RW_EVENT events) = 0;
     virtual void Close(std::function<void()> func);
+    virtual void EatReadData();
     virtual void Shutdown();
     RWerStats getStats(){return stats;}
 

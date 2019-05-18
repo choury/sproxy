@@ -135,9 +135,9 @@ void Ep::setEvents(RW_EVENT events) {
 #ifdef __linux__
         struct epoll_event event;
         event.data.ptr = this;
-        event.events = EPOLLHUP | EPOLLERR | EPOLLRDHUP;
+        event.events = EPOLLHUP | EPOLLERR;
         if(!!(events & RW_EVENT::READ)){
-            event.events |= EPOLLIN;
+            event.events |= EPOLLIN | EPOLLRDHUP;
         }
         if(!!(events & RW_EVENT::WRITE)){
             event.events |= EPOLLOUT;
@@ -255,9 +255,18 @@ WBuffer::~WBuffer() {
     clear(true);
 }
 
-RWer::RWer(std::function<void (int, int)> errorCB,
-           std::function<void(const union sockaddr_un&)> connectCB,
-           int fd):Ep(fd), errorCB(std::move(errorCB)), connectCB(std::move(connectCB)) {
+RWer::RWer(std::function<void (int, int)> errorCB, std::function<void(const union sockaddr_un&)> connectCB, int fd):
+           Ep(fd), connectCB(std::move(connectCB)), errorCB(std::move(errorCB))
+{
+    assert(this->errorCB != nullptr);
+    if(this->connectCB == nullptr){
+        this->connectCB = [](const union sockaddr_un&){};
+    }
+    readCB = [this](size_t len){
+        LOGE("discard data from stub readCB: %zd", len);
+        consume(rdata(), len);
+    };
+    writeCB = [](size_t){};
 }
 
 void RWer::SendData(){
@@ -275,7 +284,7 @@ void RWer::SendData(){
         errorCB(WRITE_ERR, errno);
         return;
     }
-    if(writed && writeCB){
+    if(writed){
         writeCB(writed);
     }
     if(wbuff.length() == 0){
@@ -289,9 +298,7 @@ void RWer::SetErrorCB(std::function<void(int ret, int code)> func){
 
 void RWer::SetReadCB(std::function<void(size_t len)> func){
     readCB = std::move(func);
-    if(stats == RWerStats::Connected){
-        ReadOrError(RW_EVENT::READ);
-    }
+    EatReadData();
 }
 
 void RWer::SetWriteCB(std::function<void(size_t len)> func){
@@ -303,17 +310,17 @@ void RWer::defaultHE(RW_EVENT events){
         errorCB(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
         return;
     }
-    if (!!(events & RW_EVENT::READ)){
-        if(ReadOrError(events)){
-            return;
-        }
-    }
-    if(!!(events & RW_EVENT::READEOF)){
-        delEvents(RW_EVENT::READ);
-        errorCB(READ_ERR, 0);
+    if (!!(events & RW_EVENT::READ) || !!(events & RW_EVENT::READEOF)){
+        ReadData();
     }
     if (!!(events & RW_EVENT::WRITE)){
         SendData();
+    }
+    if(stats == RWerStats::ReadEOF){
+        delEvents(RW_EVENT::READ);
+        if(rlength() == 0){
+            errorCB(READ_ERR, 0);
+        }
     }
 }
 
@@ -351,11 +358,29 @@ void RWer::Close(std::function<void()> func) {
     }
 }
 
+void RWer::EatReadData(){
+    switch(stats){
+    case RWerStats::Connected:
+        if(rlength()){
+            readCB(rlength());
+        }
+        addEvents(RW_EVENT::READ);
+        break;
+    case RWerStats::ReadEOF:
+        if(rlength()){
+            readCB(rlength());
+        }else{
+            errorCB(READ_ERR, 0);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 void RWer::Connected(const union sockaddr_un& addr){
     stats = RWerStats::Connected;
-    if(connectCB){
-        connectCB(addr);
-    }
+    connectCB(addr);
 }
 
 void RWer::Shutdown() {

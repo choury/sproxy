@@ -43,6 +43,7 @@ Host::Host(const char* protocol, const char* hostname, uint16_t port): port(port
 }
 
 Host::~Host(){
+    LOGD(DHTTP, "host destoryed: rx:%zu, tx:%zu", rx_bytes, tx_bytes);
     delete req;
 }
 
@@ -135,8 +136,9 @@ int32_t Host::bufleft(void*) {
 void Host::Send(void* buff, size_t size,  __attribute__ ((unused)) void* index) {
     assert((long)index == 1);
     assert((http_flag & HTTP_CLIENT_CLOSE_F) == 0);
-    LOGD(DHTTP, "host %s:%d Send: size:%zu, http_flag:%d\n", hostname, port, size, http_flag);
     rwer->buffer_insert(rwer->buffer_end(), write_block{buff, size, 0});
+    tx_bytes += size;
+    LOGD(DHTTP, "host %s:%d Send: size:%zu/%zu, http_flag:%d\n", hostname, port, size, tx_bytes, http_flag);
 }
 
 void Host::ResProc(HttpResHeader* res) {
@@ -152,8 +154,8 @@ void Host::ResProc(HttpResHeader* res) {
 ssize_t Host::DataProc(const void* buff, size_t size) {
     assert(!req->src.expired());
     int len = req->src.lock()->bufleft(req->index);
+    len = Min(len, size);
 
-    LOGD(DHTTP, "host %s:%d DataProc: size:%zu, len:%d\n", hostname, port, size, len);
     if (len <= 0) {
         LOGE("(%s): The guest's write buff is full (%s)\n",
              req->src.lock()->getsrc(req->index), req->hostname);
@@ -163,8 +165,10 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
         rwer->delEvents(RW_EVENT::READ);
         return -1;
     }
-    req->src.lock()->Send(buff, Min(size, len), req->index);
-    return Min(size, len);
+    req->src.lock()->Send(buff,  len, req->index);
+    rx_bytes += len;
+    LOGD(DHTTP, "host %s:%d DataProc: size:%zu, send:%d/%zu\n", hostname, port, size, len, rx_bytes);
+    return len;
 }
 
 void Host::EndProc() {

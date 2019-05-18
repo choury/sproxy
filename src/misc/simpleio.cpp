@@ -212,8 +212,7 @@ ssize_t StreamRWer::Read(void* buff, size_t len) {
     return read(getFd(), buff, len);
 }
 
-bool StreamRWer::ReadOrError(RW_EVENT events) {
-    bool closed = false;
+void StreamRWer::ReadData() {
     size_t left = 0;
     while((left = rb.left())){
         int ret = Read(rb.end(), left);
@@ -222,26 +221,21 @@ bool StreamRWer::ReadOrError(RW_EVENT events) {
             continue;
         }
         if(ret == 0){
-            delEvents(RW_EVENT::READ);
-            closed = true;
+            stats = RWerStats::ReadEOF;
             break;
         }
         if(errno == EAGAIN){
             break;
         }
         errorCB(READ_ERR, errno);
-        return true;
+        return;
     }
-    if(rb.length() && readCB){
+    if(rb.length()){
         readCB(rb.length());
-    }
-    if(closed && !(events & RW_EVENT::READEOF)){
-        errorCB(READ_ERR, 0);
     }
     if(rb.left() == 0){
         delEvents(RW_EVENT::READ);
     }
-    return false;
 }
 
 size_t PacketRWer::rlength() {
@@ -265,32 +259,28 @@ ssize_t PacketRWer::Read(void* buff, size_t len) {
 }
 
 
-bool PacketRWer::ReadOrError(RW_EVENT events) {
+void PacketRWer::ReadData() {
     size_t left = 0;
     while((left = rb.left())){
         int ret = Read(rb.end(), left);
         if(ret > 0){
             rb.add((size_t)ret);
-            if(readCB){
-                readCB(rb.length());
-            }
+            readCB(rb.length());
             continue;
         }
-        if(ret == 0 && !(events & RW_EVENT::READEOF)){
-            delEvents(RW_EVENT::READ);
-            errorCB(READ_ERR, 0);
+        if(ret == 0){
+            stats = RWerStats::ReadEOF;
             break;
         }
         if(errno == EAGAIN){
             break;
         }
         errorCB(READ_ERR, errno);
-        return true;
+        return;
     }
     if(rb.left() == 0){
         delEvents(RW_EVENT::READ);
     }
-    return false;
 }
 
 
@@ -360,27 +350,23 @@ void EventRWer::consume(const char*, size_t) {
 }
 
 
-bool EventRWer::ReadOrError(RW_EVENT events){
+void EventRWer::ReadData(){
     while(true){
         int ret = read(getFd(), buff, sizeof(buff));
         if(ret > 0){
-            if(readCB){
-                readCB((size_t)ret);
-            }
+            readCB((size_t)ret);
             continue;
         }
-        if(ret == 0 && !(events & RW_EVENT::READEOF)){
-            delEvents(RW_EVENT::READ);
-            errorCB(READ_ERR, 0);
+        if(ret == 0){
+            stats = RWerStats::ReadEOF;
             break;
         }
         if(errno == EAGAIN){
             break;
         }
         errorCB(READ_ERR, errno);
-        return true;
+        return;
     }
-    return false;
 }
 
 void EventRWer::closeHE(RW_EVENT) {

@@ -91,14 +91,16 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
         return -1;
     }
     int len = responser_ptr.lock()->bufleft(responser_index);
+    len = Min(len, size);
     if (len <= 0) {
         LOGE("(%s): The host's buff is full\n", getsrc(nullptr));
         rwer->delEvents(RW_EVENT::READ);
         return -1;
     }
-    LOGD(DHTTP, "guest DataProc %s: send:%lu\n", getsrc(nullptr), Min(size, len));
-    responser_ptr.lock()->Send(buff, Min(size, len), responser_index);
-    return Min(size, len);
+    responser_ptr.lock()->Send(buff, len, responser_index);
+    rx_bytes += len;
+    LOGD(DHTTP, "guest DataProc %s: size:%zu, send:%d/%zu\n", getsrc(nullptr), size, len, rx_bytes);
+    return len;
 }
 
 void Guest::EndProc() {
@@ -167,7 +169,6 @@ int32_t Guest::bufleft(void*){
 
 
 void Guest::Send(void *buff, size_t size, __attribute__ ((unused)) void* index) {
-    LOGD(DHTTP, "guest Send %s: size:%zu\n", getsrc(nullptr), size);
     assert((uint32_t)(long)index == 1);
     assert((http_flag & HTTP_SERVER_CLOSE_F) == 0);
     if(Status_flags & GUEST_CHUNK_F){
@@ -180,6 +181,8 @@ void Guest::Send(void *buff, size_t size, __attribute__ ((unused)) void* index) 
     }else{
         rwer->buffer_insert(rwer->buffer_end(), write_block{buff, size, 0});
     }
+    tx_bytes += size;
+    LOGD(DHTTP, "guest Send %s: size:%zu/%zu\n", getsrc(nullptr), size, tx_bytes);
 }
 
 void Guest::transfer(__attribute__ ((unused)) void* index, std::weak_ptr<Responser> res_ptr, void* res_index) {
