@@ -7,6 +7,8 @@
 #include <openssl/ssl.h>
 
 class Guest:public Requester, public HttpResponser {
+    size_t rx_bytes = 0;
+    size_t tx_bytes = 0;
 protected:
     std::weak_ptr<Responser> responser_ptr;
     void*      responser_index = nullptr;

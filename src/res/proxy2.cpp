@@ -138,7 +138,7 @@ void Proxy2::ResProc(HttpResHeader* res) {
 
 
 void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
-    if( len == 0)
+    if(len == 0)
         return;
     localwinsize -= len;
     if(statusmap.count(id)){

@@ -49,14 +49,13 @@ public:
            std::function<void(int ret, int code)> errorCB,
            std::function<void(const sockaddr_un&)> connectCB = nullptr);
     virtual ~FdRWer() override;
-
 };
 
 class StreamRWer: public FdRWer{
 protected:
     CBuffer rb;
     virtual ssize_t Read(void* buff, size_t len);
-    virtual bool ReadOrError(RW_EVENT events) override;
+    virtual void ReadData() override;
 public:
     using FdRWer::FdRWer;
 
@@ -71,7 +70,7 @@ class PacketRWer: public FdRWer{
 protected:
     RBuffer rb;
     virtual ssize_t Read(void* buff, size_t len);
-    virtual bool ReadOrError(RW_EVENT events) override;
+    virtual void ReadData() override;
 public:
     using FdRWer::FdRWer;
 
@@ -89,7 +88,7 @@ protected:
 #endif
     char buff[BUF_LEN];
     virtual ssize_t Write(const void* buff, size_t len) override;
-    virtual bool ReadOrError(RW_EVENT events) override;
+    virtual void ReadData() override;
     virtual void closeHE(RW_EVENT events) override;
 public:
     explicit EventRWer(std::function<void(int ret, int code)> errorCB);

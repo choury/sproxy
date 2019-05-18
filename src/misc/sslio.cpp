@@ -239,7 +239,7 @@ void SslRWer::shakehandHE(RW_EVENT events){
         handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::defaultHE;
         del_delayjob(std::bind(&SslRWer::con_failed, this), this);
         //in case some data in ssl buffer
-        ReadOrError(events);
+        ReadData();
     }
 }
 

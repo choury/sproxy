@@ -18,7 +18,6 @@ protected:
     size_t ChunkBProc(const char* buffer, size_t len);
     size_t FixLenProc(const char* buffer, size_t len);
     size_t AlwaysProc(const char* buffer, size_t len);
-    //return false means don't continue handle the left data.
     virtual void EndProc() = 0;
     virtual void ErrProc() = 0;
     virtual ssize_t DataProc(const void *buff, size_t size) = 0;

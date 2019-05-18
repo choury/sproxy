@@ -7,6 +7,8 @@
 class Requester;
 
 class Host:public Responser, public HttpRequester {
+    size_t rx_bytes = 0;
+    size_t tx_bytes = 0;
 protected:
     char protocol[DOMAINLIMIT];
     char hostname[DOMAINLIMIT];
