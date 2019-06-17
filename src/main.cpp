@@ -163,7 +163,7 @@ SSL_CTX* initssl(int udp, const char *ca, const char *cert, const char *key){
         SSL_CTX_set_options(ctx, SSL_OP_COOKIE_EXCHANGE);
     }else{
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
-        ctx = SSL_CTX_new(SSLv3_server_method());
+        ctx = SSL_CTX_new(SSLv23_server_method());
 #else
         ctx = SSL_CTX_new(TLS_server_method());
 #endif

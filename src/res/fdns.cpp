@@ -86,7 +86,6 @@ void FDns::Send(const void* buff, size_t size, void* index) {
         status.req_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, status.req_index);
         statusmap.erase(id);
         delete rr;
-        return;
     }
 }
 
@@ -105,7 +104,6 @@ void FDns::ResponseCb(void* param, const char* buff, size_t size) {
         fdns.lock()->statusmap.erase(id);
     }
 }
-
 
 void FDns::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;

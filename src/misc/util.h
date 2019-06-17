@@ -17,7 +17,6 @@ const char* strnstr(const char* s1, const char* s2, size_t len);
 #endif
 int startwith(const char *s1, const char *s2);
 int endwith(const char *s1, const char *s2);
-int spliturl(const char* url, char *protocol, char* host, char* path , uint16_t* port);
 
 int URLEncode(char *des,const char* src, size_t len);
 int URLDecode(char *des,const char* src, size_t len);
@@ -47,6 +46,10 @@ struct in6_addr mapIpv4(struct in_addr addr);
 struct in_addr getMapped(struct in6_addr addr);
 
 const char* protstr(Protocol p);
+
+int spliturl(const char* url, struct Destination* server, char* path);
+int dumpDestToBuffer(const struct Destination* server, char* buff, size_t buflen);
+const char* dumpDest(const struct Destination* server);
 #ifdef  __cplusplus
 }
 #endif

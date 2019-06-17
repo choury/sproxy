@@ -1,4 +1,5 @@
 #include "util.h"
+#include "net.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -54,87 +55,6 @@ int endwith(const char *s1, const char *s2) {
     return !memcmp(s1+l1-l2, s2, l2);
 }
 
-int spliturl(const char* url, char *protocol, char* hostname, char* path , uint16_t* port) {
-    const char* addrsplit;
-    int urllen = strlen(url);
-    int copylen;
-    memset(hostname, 0, DOMAINLIMIT);
-    *port = 0;
-    if (protocol){
-        protocol[0] = 0;
-    }
-    if (path) {
-        path[0] = 0;
-    }
-    if (url[0] == '/' && path) {
-        strcpy(path, url);
-        return 0;
-    }
-    
-    const char *tmp_pos = strstr(url, "://");
-    size_t protocol_len = 0;
-    if (tmp_pos == NULL) {
-        tmp_pos = url;
-    }else{
-        protocol_len = tmp_pos - url;
-        tmp_pos = url + 3;
-    }
-    if(protocol){
-        memcpy(protocol, url, protocol_len);
-        protocol[protocol_len] = 0;
-    }
-    url = tmp_pos + protocol_len;
-    
-    char tmpaddr[DOMAINLIMIT];
-    if ((addrsplit = strpbrk(url, "/"))) {
-        copylen = Min(url+urllen-addrsplit, (URLLIMIT-1));
-        if (path) {
-            memcpy(path, addrsplit, copylen);
-            path[copylen] = 0;
-        }
-        copylen = addrsplit - url < (DOMAINLIMIT - 1) ? addrsplit - url : (DOMAINLIMIT - 1);
-        strncpy(tmpaddr, url, copylen);
-        tmpaddr[copylen] = 0;
-    } else {
-        copylen = urllen < (DOMAINLIMIT - 1) ? urllen : (DOMAINLIMIT - 1);
-        strncpy(tmpaddr, url, copylen);
-        if (path) {
-            strcpy(path, "/");
-        }
-        tmpaddr[copylen] = 0;
-    }
-
-    if (tmpaddr[0] == '[') {                        // this is a ipv6 address
-        if (!(addrsplit = strpbrk(tmpaddr, "]"))) {
-            return -1;
-        }
-
-        strncpy(hostname, tmpaddr, addrsplit - tmpaddr + 1);
-
-        if (addrsplit[1] == ':') {
-            long dport = strtol(addrsplit + 2, NULL, 10);
-            if(dport == 0 || dport >= 65535){
-                return -1;
-            }
-            *port = (uint16_t)dport;
-        } else if (addrsplit[1] != 0) {
-            return -1;
-        }
-    } else {
-        if ((addrsplit = strpbrk(tmpaddr, ":"))) {
-            strncpy(hostname, url, addrsplit - tmpaddr);
-            long dport = strtol(addrsplit + 1, NULL, 10);
-            if(dport == 0 || dport >= 65535){
-                return -1;
-            }
-            *port = (uint16_t)dport;
-        } else {
-            strcpy(hostname, tmpaddr);
-        }
-    }
-
-    return 0;
-}
 
 static int hex2num(char c)
 {
@@ -456,3 +376,98 @@ void dump_trace(int signum) {
     kill(getpid(), signum);
 }
 #endif
+
+int spliturl(const char* url, struct Destination* server, char* path) {
+    if (url[0] == '/' && path) {
+        strcpy(path, url);
+        return 0;
+    }
+    const char* url_end = url + strlen(url);
+    // scan protocol by '://'
+    const char *scan_pos = strstr(url, "://");
+    size_t protocol_len = 0;
+    if (scan_pos) {
+        protocol_len = scan_pos - url;
+        scan_pos += 3;
+    }else{
+        scan_pos = url;
+    }
+    if(protocol_len){
+        strncpy(server->protocol, url, protocol_len);
+    }
+    url = scan_pos;
+    
+    const char* addrsplit;
+    char tmpaddr[DOMAINLIMIT];
+    // scan path by '/'
+    if ((addrsplit = strchr(url, '/'))) {
+        int copylen = Min(url_end-addrsplit, (URLLIMIT-1));
+        if (path) {
+            memcpy(path, addrsplit, copylen);
+            path[copylen] = 0;
+        }
+        copylen = Min(addrsplit - url,  sizeof(tmpaddr)-1);
+        memcpy(tmpaddr, url, copylen);
+        tmpaddr[copylen] = 0;
+    } else {
+        if (path) {
+            strcpy(path, "/");
+        }
+        strncpy(tmpaddr, url, sizeof(tmpaddr) - 1);
+    }
+
+    if (tmpaddr[0] == '[') {                        // this is a ipv6 address
+        if (!(addrsplit = strchr(tmpaddr, ']'))) {
+            return -1;
+        }
+
+        strncpy(server->hostname, tmpaddr, addrsplit - tmpaddr + 1);
+
+        if (addrsplit[1] == ':') {
+            long dport = strtol(addrsplit + 2, NULL, 10);
+            if(dport == 0 || dport >= 65535){
+                return -1;
+            }
+            server->port = (uint16_t)dport;
+        } else if (addrsplit[1] != 0) {
+            return -1;
+        }
+    } else {
+        if ((addrsplit = strchr(tmpaddr, ':'))) {
+            strncpy(server->hostname, tmpaddr, addrsplit - tmpaddr);
+            long dport = strtol(addrsplit + 1, NULL, 10);
+            if(dport == 0 || dport >= 65535){
+                return -1;
+            }
+            server->port = (uint16_t)dport;
+        } else {
+            strcpy(server->hostname, tmpaddr);
+        }
+    }
+    return 0;
+}
+
+int dumpDestToBuffer(const struct Destination* Server, char* buff, size_t buflen){
+    uint16_t port = Server->port;
+    if(strcasecmp(Server->protocol, "http") == 0 && port == HTTPPORT){
+        port = 0;
+    }
+    if(strcasecmp(Server->protocol, "https") ==0 && port == HTTPSPORT){
+        port = 0;
+    }
+    int pos = 0;
+    if(Server->protocol[0])
+        pos = snprintf(buff, buflen, "%s://%s", Server->protocol, Server->hostname);
+    else
+        pos = snprintf(buff, buflen, "%s", Server->hostname);
+    if(port)
+        pos += snprintf(buff + pos, buflen - pos, ":%d", port);
+    return pos;
+}
+
+const char* dumpDest(const struct Destination* Server){
+    static char buff[URLLIMIT];
+    dumpDestToBuffer(Server, buff, sizeof(buff));
+    return buff;
+}
+

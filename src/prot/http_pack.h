@@ -51,10 +51,8 @@ class HttpReqHeader: public HttpHeader{
 public:
     std::weak_ptr<Requester> src;
     char method[20];
-    char protocol[20];
+    struct Destination Dest;
     char path[URLLIMIT];
-    char hostname[DOMAINLIMIT] = {0};
-    uint16_t port = 0;
     std::string filename;
     std::vector<Range> ranges;
     bool should_proxy  = false;

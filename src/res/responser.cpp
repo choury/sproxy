@@ -9,6 +9,7 @@
 #include "file.h"
 #include "cgi.h"
 #include "ping.h"
+#include "proxy2.h"
 
 #include <map>
 #include <string.h>
@@ -54,7 +55,7 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
     snprintf(log_buff, sizeof(log_buff), "(%s): %s %s [%s]",
             requester->getsrc(req->index), req->method,
             req->geturl().c_str(), req->get("User-Agent"));
-    if(!req->hostname[0]){
+    if(!req->Dest.hostname[0]){
         LOG("[[bad request]] %s\n", log_buff);
         HttpResHeader* res = new HttpResHeader(H400, sizeof(H400));
         res->index = req->index;
@@ -71,10 +72,17 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
         req->ismethod("SEND") ||
         req->ismethod("PING"))
     {
-        if(req->port == 0 && !req->ismethod("SEND") && !req->ismethod("PING")){
-            req->port = HTTPPORT;
+        if(req->Dest.port == 0){
+            if(req->ismethod("SEND") || req->ismethod("CONNECT")){
+                LOG("[[no port]] %s\n", log_buff);
+                HttpResHeader* res = new HttpResHeader(H400, sizeof(H400));
+                res->index = req->index;
+                requester->response(res);
+                return std::weak_ptr<Responser>();
+            }
+            req->Dest.port = HTTPPORT;
         }
-        strategy stra = getstrategy(req->hostname);
+        strategy stra = getstrategy(req->Dest.hostname);
         if(stra.s == Strategy::block){
             LOG("[[block]] %s\n", log_buff);
             const char* header = "HTTP/1.1 403 Forbidden" CRLF "Content-Length:73" CRLF CRLF;
@@ -97,15 +105,11 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
             LOG("[[redirect back]] %s\n", log_buff);
             return std::weak_ptr<Responser>();
         }
-        char fprotocol[DOMAINLIMIT];
-        char fhost[DOMAINLIMIT];
-        uint16_t fport = opt.SPORT;
+        Destination dest;
         switch(stra.s){
         case Strategy::proxy:
-            strcpy(fprotocol, opt.SPROT);
-            strcpy(fhost, opt.SHOST);
-            fport = opt.SPORT;
-            if(opt.SPORT == 0){
+            memcpy(&dest, &opt.Server, sizeof(dest));
+            if(dest.port == 0){
                 HttpResHeader* res = new HttpResHeader(H400, sizeof(H400));
                 res->index = req->index;
                 requester->response(res);
@@ -116,18 +120,19 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
             if(strlen(opt.rewrite_auth)){
                 req->set("Proxy-Authorization", std::string("Basic ") + opt.rewrite_auth);
             }
+            req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
             req->should_proxy = true;
             break;
         case Strategy::direct:
-            strcpy(fprotocol, req->protocol);
-            strcpy(fhost, req->hostname);
-            fport = req->port;
-            if(req->ismethod("PING")){
+            memcpy(&dest, &req->Dest, sizeof(dest));
+            if(req->ismethod("CONNECT")){
+                strcpy(dest.protocol, "http");
+            }else if(req->ismethod("SEND")){
+                strcpy(dest.protocol, "udp");
+            }else if(req->ismethod("PING")){
                 LOG("[[%s]] %s\n", getstrategystring(stra.s), log_buff);
                 return std::dynamic_pointer_cast<Responser>((new Ping(req))->shared_from_this());
-            }else if(req->ismethod("SEND")){
-                strcpy(fprotocol, "udp");
-            }
+            } 
             req->del("Proxy-Authorization");
             break;
         case Strategy::rewrite:
@@ -141,6 +146,7 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
                 LOGE("[[destination not set]] %s\n", log_buff);
                 return std::weak_ptr<Responser>();
             }
+            dest.port = req->Dest.port;
             break;
         default:{
             LOG("[[BUG]] %s\n", log_buff);
@@ -150,7 +156,7 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
             return std::weak_ptr<Responser>();}
         }
         if(!stra.ext.empty() && stra.s != Strategy::direct){
-            if(spliturl(stra.ext.c_str(), fprotocol, fhost, nullptr, &fport)){
+            if(loadproxy(stra.ext.c_str(), &dest)){
                 HttpResHeader* res = new HttpResHeader(H500, sizeof(H500));
                 res->index = req->index;
                 requester->response(res);
@@ -158,11 +164,8 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
                 return std::weak_ptr<Responser>();
             }
         }
-        if(fprotocol[0] == 0){
-            strcpy(fprotocol, "http");
-        }
         LOG("[[%s]] %s\n", getstrategystring(stra.s), log_buff);
-        return Host::gethost(fprotocol, fhost, fport, req, std::move(responser_ptr));
+        return Host::gethost(&dest, req, std::move(responser_ptr));
     }else if (req->ismethod("ADDS")) {
         const char *strategy = req->get("s");
         const char *ext = req->get("ext");
@@ -178,9 +181,9 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
         }
         return std::weak_ptr<Responser>();
     } else if (req->ismethod("DELS")) {
-        strategy stra = getstrategy(req->hostname);
+        strategy stra = getstrategy(req->Dest.hostname);
         LOG("[[del %s]] %s %s\n", getstrategystring(stra.s), log_buff, stra.ext.c_str());
-        if(delstrategy(req->hostname)){
+        if(delstrategy(req->Dest.hostname)){
             HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
             res->set("Strategy", getstrategystring(stra.s));
             res->set("Ext", stra.ext);
@@ -193,34 +196,35 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
         }
         return std::weak_ptr<Responser>();
     } else if (req->ismethod("SWITCH")) {
-        if(setproxy(req->geturl().c_str())){
+        if(loadproxy(req->geturl().c_str(), &opt.Server)){
             HttpResHeader* res = new HttpResHeader(H400, sizeof(H400));
             res->index = req->index;
             requester->response(res);
         }else{
+            flushproxy2(1);
             HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
             res->index = req->index;
             requester->response(res);
         }
     } else if (req->ismethod("TEST")){
         HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
-        strategy stra = getstrategy(req->hostname);
+        strategy stra = getstrategy(req->Dest.hostname);
         res->set("Strategy", getstrategystring(stra.s));
         res->set("Ext", stra.ext);
         res->index = req->index;
         requester->response(res);
     } else if(req->ismethod("FLUSH")){
-        if(strcasecmp(req->hostname, "cgi") == 0){
+        if(strcasecmp(req->Dest.hostname, "cgi") == 0){
             flushcgi();
             HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
             res->index = req->index;
             requester->response(res);
-        }else if(strcasecmp(req->hostname, "strategy") == 0){
+        }else if(strcasecmp(req->Dest.hostname, "strategy") == 0){
             reloadstrategy();
             HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
             res->index = req->index;
             requester->response(res);
-        }else if(strcasecmp(req->hostname, "dns") == 0){
+        }else if(strcasecmp(req->Dest.hostname, "dns") == 0){
             flushdns();
             HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
             res->index = req->index;

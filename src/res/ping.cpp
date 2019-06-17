@@ -38,7 +38,7 @@ Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
 }
 
 
-Ping::Ping(HttpReqHeader* req):Ping(req->hostname, req->port) {
+Ping::Ping(HttpReqHeader* req):Ping(req->Dest.hostname, req->Dest.port) {
 }
 
 void* Ping::request(HttpReqHeader* req) {

@@ -1,4 +1,5 @@
 build/
+build-mac/
 test_dir/
 *~
 *.swp

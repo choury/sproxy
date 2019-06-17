@@ -1,5 +1,6 @@
 #include "cgi.h"
 #include "req/requester.h"
+#include "res/proxy2.h"
 #include "misc/net.h"
 #include "misc/strategy.h"
 #include "misc/simpleio.h"
@@ -226,7 +227,7 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
             break;
         }
         char proxy[DOMAINLIMIT];
-        int len = getproxy(proxy, sizeof(proxy));
+        int len = dumpDestToBuffer(&opt.Server, proxy, sizeof(proxy));
         CGI_Header* const header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + len);
         memcpy(header_back, header, sizeof(CGI_Header));
         header_back->flag = 0;
@@ -244,9 +245,11 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
             flag = CGI_FLAG_ERROR;
             break;
         }
-        if(setproxy((char *)nv->value)){
+        if(loadproxy((char *)nv->value, &opt.Server)){
             LOG("[CGI] switch %s\n", (char *)nv->value);
             flag = CGI_FLAG_ERROR;
+        }else{
+            flushproxy2(1);
         }
         break;
     }
