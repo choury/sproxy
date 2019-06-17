@@ -114,6 +114,7 @@ HttpReqHeader::HttpReqHeader(const char* header, size_t len, std::weak_ptr<RwObj
     assert(header);
     assert(!src.expired());
     assert(len < HEADLENLIMIT);
+    memset(&Dest, 0, sizeof(Dest));
     
     char httpheader[HEADLENLIMIT];
     memcpy(httpheader, header, len);
@@ -122,14 +123,10 @@ HttpReqHeader::HttpReqHeader(const char* header, size_t len, std::weak_ptr<RwObj
     sscanf(httpheader, "%19s%*[ ]%4095[^\r\n ]", method, url);
     toUpper(method);
 
-    if (spliturl(url, protocol, hostname, path, &port)) {
+    if (spliturl(url, &Dest, path)) {
         LOGE("wrong url format:%s\n", url);
         throw ERR_PROTOCOL_ERROR;
     }
-    if(strcasecmp(protocol, "https") == 0){
-        port = port?port:HTTPSPORT;
-    }
-
     for (char* str = strstr(httpheader, CRLF) + strlen(CRLF); ; str = nullptr) {
         char* p = strtok(str, CRLF);
 
@@ -155,8 +152,8 @@ HttpReqHeader::HttpReqHeader(const char* header, size_t len, std::weak_ptr<RwObj
     }
     
     
-    if (!hostname[0] && get("Host")) {
-        if(spliturl(get("Host"), nullptr, hostname, nullptr, &port))
+    if (!Dest.hostname[0] && get("Host")) {
+        if(spliturl(get("Host"), &Dest, nullptr))
         {
             LOGE("wrong host format:%s\n", get("Host"));
             throw ERR_PROTOCOL_ERROR;
@@ -174,6 +171,7 @@ HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers, std::
         LOGE("wrong http2 request\n");
         throw ERR_PROTOCOL_ERROR;
     }
+    memset(&Dest, 0, sizeof(Dest));
     for(auto i: headers){
         if(i.first == "cookie"){
             char cookiebuff[URLLIMIT];
@@ -190,9 +188,7 @@ HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers, std::
     }
     snprintf(method, sizeof(method), "%s", get(":method"));
     if(get(":scheme")){
-        snprintf(protocol, sizeof(protocol), "%s", get(":scheme"));
-    }else{
-        protocol[0] = 0;
+        snprintf(Dest.protocol, sizeof(Dest.protocol), "%s", get(":scheme"));
     }
     if(get(":path")){
         snprintf(path, sizeof(path), "%s", get(":path"));
@@ -204,7 +200,7 @@ HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers, std::
     }
     
     if (get(":authority")){
-        spliturl(get(":authority"), nullptr, hostname, nullptr, &port);
+        spliturl(get(":authority"), &Dest, nullptr);
         set("host", get(":authority"));
     }
     for (auto i = this->headers.begin(); i!= this->headers.end();) {
@@ -224,7 +220,7 @@ HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(std::weak_ptr<Reque
         throw ERR_PROTOCOL_ERROR;
     }
    
-    protocol[0] = 0;
+    memset(&Dest, 0, sizeof(Dest));
     char *p = (char *)(headers +1);
     uint32_t len = ntohs(headers->contentLength);
     while(uint32_t(p - (char *)(headers +1)) < len){
@@ -239,7 +235,7 @@ HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(std::weak_ptr<Reque
             continue;
         }
         if(name == ":authority"){
-            strcpy(hostname, value.c_str());
+            strcpy(Dest.hostname, value.c_str());
             continue;
         }
         if(name == "cookie"){
@@ -274,22 +270,10 @@ void HttpReqHeader::getfile() {
 
 std::string HttpReqHeader::geturl() const {
     char url[URLLIMIT]={0};
-    char *pos = url;
-    if(protocol[0]){
-        pos += sprintf(pos, "%s://%s", protocol, hostname);
-    }else{
-        pos += sprintf(pos, "%s", hostname);
-    }
-    if((port == 0) ||
-        (protocol[0] == 0 && port == HTTPPORT) ||
-        (strcasecmp(protocol, "http") == 0 && port == HTTPPORT) ||
-        (strcasecmp(protocol, "https") == 0 && port == HTTPSPORT)) {
-    }else{
-        pos += sprintf(pos, ":%d", port);
-    }
+    int pos = dumpDestToBuffer(&Dest, url, sizeof(url));
     assert(path[0] == '/');
     if(path[1]){
-        sprintf(pos, "%s", path);
+        snprintf(url + pos, sizeof(url) - pos, "%s", path);
     }
     return url;
 }
@@ -305,7 +289,7 @@ char *HttpReqHeader::getstring(size_t &len) const{
     if (ismethod("CONNECT")|| ismethod("SEND")){
         if(should_proxy){
             buff= (char *)p_malloc(BUF_LEN);
-            len += sprintf(buff, "%s %s:%d HTTP/1.1" CRLF, method, hostname, port);
+            len += sprintf(buff, "%s %s:%d HTTP/1.1" CRLF, method, Dest.hostname, Dest.port);
         }else{
             //本地请求，自己处理connect和send方法
             len = 0;
@@ -321,12 +305,12 @@ char *HttpReqHeader::getstring(size_t &len) const{
         }
     }
     
-    if(get("Host") == nullptr && hostname[0]){
-        if(port == HTTPPORT){
-            len += sprintf(buff + len, "Host: %s" CRLF, hostname);
+    if(get("Host") == nullptr && Dest.hostname[0]){
+        if(Dest.port == HTTPPORT){
+            len += sprintf(buff + len, "Host: %s" CRLF, Dest.hostname);
         }else{
             char host_buff[DOMAINLIMIT+20];
-            snprintf(host_buff, sizeof(host_buff), "%s:%d", hostname, port);
+            snprintf(host_buff, sizeof(host_buff), "%s:%d", Dest.hostname, Dest.port);
             len += sprintf(buff + len, "Host: %s" CRLF, host_buff);
         }
     }
@@ -391,12 +375,12 @@ Http2_header *HttpReqHeader::getframe(Hpack_index_table *index_table, uint32_t h
         p += index_table->hpack_encode(p, ":authority" ,get("host"));
     }else{
         char authority[URLLIMIT];
-        snprintf(authority, sizeof(authority), "%s:%d", hostname, port);
+        snprintf(authority, sizeof(authority), "%s:%d", Dest.hostname, Dest.port);
         p += index_table->hpack_encode(p, ":authority" ,authority);
     }
     
     if(!ismethod("CONNECT") && !ismethod("SEND") && !ismethod("PING")){
-        p += index_table->hpack_encode(p, ":scheme", protocol[0]?protocol:"http");
+        p += index_table->hpack_encode(p, ":scheme", Dest.protocol[0]?Dest.protocol:"http");
         p += index_table->hpack_encode(p, ":path", path);
     }
     for(auto i: cookies){
@@ -419,7 +403,7 @@ CGI_Header *HttpReqHeader::getcgi(uint32_t cgi_id) const{
     char *p = (char *)(cgi + 1);
     p = cgi_addnv(p, ":method", method);
     p = cgi_addnv(p, ":path", path);
-    p = cgi_addnv(p, ":authority", hostname);
+    p = cgi_addnv(p, ":authority", Dest.hostname);
     for(const auto& i: headers){
         p = cgi_addnv(p, i.first, i.second);
     }

@@ -16,6 +16,9 @@ static size_t hextoint(const char* str){
         }else if(*str >= 'a' && *str <= 'f'){
             size *= 16;
             size += *str - 'a' + 10;
+        }else if(*str >= 'A' && *str <= 'F'){
+            size *= 16;
+            size += *str - 'A' + 10;
         }else{
             break;
         }
@@ -43,6 +46,7 @@ size_t HttpBase::ChunkBProc(const char* buffer, size_t len) {
     if (http_expectlen == 0) {
         if (len >= strlen(CRLF)){
             if(memcmp(buffer, CRLF, strlen(CRLF)) != 0) {
+                LOGD(DHTTP, "buffer: %X %X\n", buffer[0], buffer[1]);
                 ErrProc();
                 return 0;
             }

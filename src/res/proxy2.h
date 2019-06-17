@@ -58,5 +58,6 @@ public:
 };
 
 extern std::weak_ptr<Proxy2> proxy2;
+void flushproxy2(int force);
 
 #endif

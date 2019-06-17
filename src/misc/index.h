@@ -32,8 +32,8 @@ template<class T1, class T2, class D>
 void Index2<T1, T2, D>::Add(const T1 t1, const T2 t2, const D data) {
     assert(idx1.count(t1) == 0 && idx2.count(t2) == 0);
     Container* c = new Container{t1, t2, data};
-    idx1.insert(std::make_pair(t1, c));
-    idx2.insert(std::make_pair(t2, c));
+    idx1.emplace(t1, c);
+    idx2.emplace(t2, c);
 }
 
 template<class T1, class T2, class D>

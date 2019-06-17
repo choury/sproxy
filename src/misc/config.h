@@ -1,3 +1,6 @@
+#ifndef CONFIG_H__
+#define CONFIG_H__
+
 #include "common.h"
 #include <stdbool.h>
 #ifdef  __cplusplus
@@ -25,9 +28,7 @@ struct options{
     bool autoindex;
 
     uint16_t CPORT;
-    uint16_t SPORT;
-    char SPROT[DOMAINLIMIT];
-    char SHOST[DOMAINLIMIT];
+    struct Destination Server;
     char auth_string[DOMAINLIMIT];
     char rewrite_auth[DOMAINLIMIT];
 };
@@ -37,10 +38,10 @@ extern struct options opt;
 void prepare();
 void parseConfigFile(const char* config_file);
 void parseConfig(int argc, char **argv);
-int setproxy(const char* proxy);
-int getproxy(char *buff, size_t buflen);
-void flushproxy2(int force);
+int loadproxy(const char* proxy, struct Destination* server);
 void change_process_name(const char *name);
 #ifdef __cplusplus
 }
+#endif
+
 #endif

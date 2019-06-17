@@ -1,6 +1,7 @@
 #include "config.h"
 #include "util.h"
 #include "strategy.h"
+#include "net.h"
 
 #include <getopt.h>
 #include <stdio.h>
@@ -35,9 +36,11 @@ struct options opt = {
     .autoindex         = false,
 
     .CPORT          = 0,
-    .SPORT          = 0,
-    .SPROT          = {0},
-    .SHOST          = {0},
+    .Server         = {
+        .protocol   = {0},
+        .hostname   = {0},
+        .port       = 0,
+    },
     .auth_string    = {0},
     .rewrite_auth   = {0},
 };
@@ -151,13 +154,11 @@ static void usage(const char * programe){
 
 static void parseExtargs(const char* name, const char* args){
     if(strcmp(name, "server") == 0){
-        if(setproxy(args)){
+        if(loadproxy(args, &opt.Server)){
             fprintf(stderr, "wrong server format: %s\n", args);
             exit(0);
         }
-        char proxy[DOMAINLIMIT];
-        getproxy(proxy, sizeof(proxy));
-        printf(": %s", proxy);
+        printf(": %s", dumpDest(&opt.Server));
     }else if(strcmp(name, "port") == 0){
         opt.CPORT = atoi(args);
         printf(": %d", opt.CPORT);
@@ -229,29 +230,27 @@ static void parseArgs(const char* name, const char* args){
     printf(": UNKNOWN\n");
 }
 
-int setproxy(const char* proxy){
-    if(spliturl(proxy, opt.SPROT, opt.SHOST, NULL, &opt.SPORT)){
+int loadproxy(const char* proxy, struct Destination* server){
+    memset(server, 0, sizeof(struct Destination));
+    if(spliturl(proxy, server, NULL)){
         return -1;
     }
-
-    if(opt.SPORT == 0){
-        opt.SPORT = 443;
+    if(server->protocol[0] == 0){
+        strcpy(server->protocol, "https");
     }
-    if(opt.SPROT[0] == 0){
-        strcpy(opt.SPROT, "https");
+    if(strcasecmp(server->protocol, "http") && strcasecmp(server->protocol, "https")){
+        LOGE("unkonw protocol for server: %s\n", server->protocol);
+        return -1;
     }
-    flushproxy2(1);
+    if(server->port == 0){
+        if(strcasecmp(server->protocol, "http") == 0){
+            server->port = HTTPPORT;
+        }
+        if(strcasecmp(server->protocol, "https") == 0){
+            server->port = HTTPSPORT;
+        }
+    }
     return 0;
-}
-
-int getproxy(char *buff, size_t buflen){
-    if(opt.SHOST[0] == 0) {
-        buff[0] = 0;
-        return 1;
-    }else{
-        assert(opt.SPROT[0]);
-        return snprintf(buff, buflen, "%s://%s:%d", opt.SPROT, opt.SHOST, opt.SPORT)+1;
-    }
 }
 
 void parseConfigFile(const char* config_file){
@@ -317,13 +316,11 @@ void parseConfig(int argc, char **argv){
     }
 
     if (optind < argc) {
-        if(setproxy(argv[optind])){
+        if(loadproxy(argv[optind], &opt.Server)){
             fprintf(stderr, "wrong server format: %s\n", argv[optind]);
             exit(1);
         }
-        char proxy[DOMAINLIMIT];
-        getproxy(proxy, sizeof(proxy));
-        printf("server %s\n", proxy);
+        printf("server %s\n", dumpDest(&opt.Server));
     }
 #ifndef __ANDROID__
     if (opt.cafile && access(opt.cafile, R_OK)){
