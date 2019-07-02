@@ -34,7 +34,7 @@ class handle{
                 res.set("Content-Type", "application/json");
                 Cookie cookie;
                 cookie.path = "/";
-                cookie.domain = req->hostname;
+                cookie.domain = req->Dest.hostname;
                 cookie.maxage = 3600;
                 for(auto i: params){
                     cookie.set(i.first.c_str(), i.second.c_str());

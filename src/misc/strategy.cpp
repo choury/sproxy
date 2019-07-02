@@ -19,7 +19,6 @@
 #define HOST_NAME_MAX  MAXHOSTNAMELEN
 #endif
 
-#define LISTFILE "sites.list"
 #define GEN_TIP  "GENERATED"
 
 using std::string;
@@ -236,12 +235,7 @@ void reloadstrategy() {
     gethostname(hostname, sizeof(hostname));
     domains.insert(hostname, strategy{Strategy::local, GEN_TIP});
     domains.insert("localhost", strategy{Strategy::local, GEN_TIP});
-#ifdef __ANDROID__
-    ifstream sitesfile(getExternalFilesDir() + "/" + LISTFILE);
-    LOG("load sites from: %s\n", getExternalFilesDir().c_str());
-#else
-    ifstream sitesfile(LISTFILE);
-#endif
+    ifstream sitesfile(opt.policy_file);
     if (sitesfile.good()) {
         int lineNum = 0;
         string line;
@@ -263,7 +257,7 @@ void reloadstrategy() {
 
         sitesfile.close();
     } else {
-        LOGE("There is no %s !\n", LISTFILE);
+        LOGE("read policy file %s failed!\n", opt.policy_file);
     }
 
     addauth("::ffff:127.0.0.1");
@@ -274,7 +268,7 @@ void reloadstrategy() {
 
 void savesites(){
 #ifndef __ANDROID__
-    ofstream sitesfile(LISTFILE);
+    ofstream sitesfile(opt.policy_file);
     auto list = getallstrategy();
     for (auto i:list) {
         if(i.second.ext == GEN_TIP){

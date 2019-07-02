@@ -122,6 +122,13 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
             }
             req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
             req->should_proxy = true;
+            if(!stra.ext.empty() && loadproxy(stra.ext.c_str(), &dest)){
+                HttpResHeader* res = new HttpResHeader(H500, sizeof(H500));
+                res->index = req->index;
+                requester->response(res);
+                LOGE("[[ext misformat]] %s -> %s\n", log_buff, stra.ext.c_str());
+                return std::weak_ptr<Responser>();
+            }
             break;
         case Strategy::direct:
             memcpy(&dest, &req->Dest, sizeof(dest));
@@ -146,7 +153,14 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
                 LOGE("[[destination not set]] %s\n", log_buff);
                 return std::weak_ptr<Responser>();
             }
-            dest.port = req->Dest.port;
+            memcpy(&dest, &req->Dest, sizeof(dest));
+            if(spliturl(stra.ext.c_str(), &dest, nullptr)){
+                HttpResHeader* res = new HttpResHeader(H500, sizeof(H500));
+                res->index = req->index;
+                requester->response(res);
+                LOGE("[[ext misformat]] %s -> %s\n", log_buff, stra.ext.c_str());
+                return std::weak_ptr<Responser>();
+            }
             break;
         default:{
             LOG("[[BUG]] %s\n", log_buff);
@@ -155,15 +169,7 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
             requester->response(res);
             return std::weak_ptr<Responser>();}
         }
-        if(!stra.ext.empty() && stra.s != Strategy::direct){
-            if(loadproxy(stra.ext.c_str(), &dest)){
-                HttpResHeader* res = new HttpResHeader(H500, sizeof(H500));
-                res->index = req->index;
-                requester->response(res);
-                LOGE("[[ext misformat]] %s -> %s\n", log_buff, stra.ext.c_str());
-                return std::weak_ptr<Responser>();
-            }
-        }
+
         LOG("[[%s]] %s\n", getstrategystring(stra.s), log_buff);
         return Host::gethost(&dest, req, std::move(responser_ptr));
     }else if (req->ismethod("ADDS")) {

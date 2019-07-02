@@ -65,6 +65,7 @@ static struct option long_options[] = {
     {"autoindex",    no_argument,       NULL, 'i'},
     {"cafile",       required_argument, NULL,  0 },
     {"cert",         required_argument, NULL,  0 },
+    {"config",       required_argument, NULL, 'c'},
     {"daemon",       no_argument,       NULL, 'D'},
     {"disable-ipv6", no_argument,       NULL,  0 },
     {"disable-http2",no_argument,       NULL, '1'},
@@ -74,7 +75,9 @@ static struct option long_options[] = {
     {"interface",    required_argument, NULL, 'I'},
     {"key",          required_argument, NULL,  0 },
     {"port",         required_argument, NULL, 'p'},
+    {"policy-file",  required_argument, NULL, 'P' },
     {"rewrite-auth", required_argument, NULL, 'r'},
+    {"root-dir",     required_argument, NULL,  0 },
     {"secret",       required_argument, NULL, 's'},
     {"sni",          no_argument,       NULL,  0 },
 #ifndef NDEBUG
@@ -89,10 +92,13 @@ static struct option long_options[] = {
     {NULL,       0,                NULL,  0 }
 };
 
+static const char* getopt_option = ":D1hikr:s:p:I:c:P:";
+
 struct option_detail option_detail[] = {
     {"autoindex", "Enables or disables the directory listing output", option_boolargs, &opt.autoindex},
     {"cafile", "CA certificate for server (ssl)", option_stringargs, &opt.cafile},
     {"cert", "Certificate file for server (ssl)", option_stringargs, &opt.cert},
+    {"config", "Configure file (default /etc/sproxy/sproxy.conf, /usr/local/etc/sproxy/sproxy.conf)", option_stringargs, &opt.config_file},
     {"daemon", "Run as daemon", option_boolargs, &opt.daemon_mode},
     {"disable-ipv6", "Disable ipv6 when querying dns", option_boolargs, &opt.disable_ipv6},
     {"disable-http2", "Use http/1.1 only", option_boolargs, &opt.disable_http2},
@@ -102,7 +108,9 @@ struct option_detail option_detail[] = {
     {"interface", "Out interface (use for vpn)", option_stringargs, &opt.interface},
     {"key", "Private key file name (ssl)", option_stringargs, &opt.key},
     {"port", "The port to listen, default is 80 but 443 for ssl/sni", option_extargs, &opt.CPORT},
+    {"policy-file", "The file of policy (sites.list as default)", option_stringargs, &opt.policy_file},
     {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64args, opt.rewrite_auth},
+    {"root-dir", "The work dir for http file server", option_stringargs, &opt.rootdir},
     {"secret", "Set a user and passwd for proxy (user:password), default is none.", option_base64args, opt.auth_string},
     {"sni", "Act as a sni proxy", option_boolargs, &opt.sni_mode},
     {"server", "default proxy server (can ONLY set in config file)", option_extargs, NULL},
@@ -253,7 +261,7 @@ int loadproxy(const char* proxy, struct Destination* server){
     return 0;
 }
 
-void parseConfigFile(const char* config_file){
+int parseConfigFile(const char* config_file){
     FILE* conf = fopen(config_file, "re");
     if(conf){
         char line[1024];
@@ -270,7 +278,9 @@ void parseConfigFile(const char* config_file){
             parseArgs(option, args);
         }
         fclose(conf);
+        return 0;
     }
+    return -errno;
 }
 
 static const char* confs[] = {
@@ -282,23 +292,45 @@ static const char* confs[] = {
 
 void parseConfig(int argc, char **argv){
     main_argv = argv;
-    for(int i = 0; confs[i]; i++) {
-        if(access(confs[i], R_OK)){
-            continue;
-        }
-        printf("read config file from: %s\n", confs[i]);
-        parseConfigFile(confs[i]);
-        break;
-    }
-    while (1) {
-        int option_index = 0;
-        int c = getopt_long(argc, argv, "D1hikr:s:p:I:", long_options, &option_index);
-        if (c == -1)
-            break;
-        if (c == '?' || c == ':'){
+    int c;
+    while((c = getopt_long(argc, argv, getopt_option, long_options, NULL)) != EOF){
+        switch(c){
+        case '?':
+            usage(argv[0]);
+            exit(0);
+        case ':':
             usage(argv[0]);
             exit(1);
+        case 'c':
+            opt.config_file = optarg;
+            break;
+        default:
+            break;
         }
+    }
+    if(opt.config_file){
+        printf("read config file from: %s\n", opt.config_file);
+        if(parseConfigFile(opt.config_file)){
+            fprintf(stderr, "parse config file failed: %s\n", strerror(errno));
+            exit(2);
+        }
+    }else{
+        for(int i = 0; confs[i]; i++) {
+            if(access(confs[i], R_OK)){
+                continue;
+            }
+            printf("read config file from: %s\n", confs[i]);
+            parseConfigFile(confs[i]);
+            break;
+        }
+    }
+    optind = 0;
+    while (1) {
+        int option_index = 0;
+        int c = getopt_long(argc, argv, getopt_option, long_options, &option_index);
+        if (c == -1)
+            break;
+        
         if( c != 0){
             for(int i=0; long_options[i].name; i++){
                 if(long_options[i].val == c){
@@ -321,6 +353,12 @@ void parseConfig(int argc, char **argv){
             exit(1);
         }
         printf("server %s\n", dumpDest(&opt.Server));
+    }
+    if(opt.policy_file == NULL){
+        opt.policy_file = "sites.list";
+    }
+    if(opt.rootdir == NULL){
+        opt.rootdir  = ".";
     }
 #ifndef __ANDROID__
     if (opt.cafile && access(opt.cafile, R_OK)){

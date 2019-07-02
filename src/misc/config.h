@@ -18,6 +18,9 @@ struct options{
     const char *cafile;
     const char *cert;
     const char *key;
+    const char *config_file;
+    const char *policy_file;
+    const char *rootdir;
     const char *index_file;
     const char *interface;
     bool disable_ipv6;
@@ -36,7 +39,7 @@ struct options{
 extern struct options opt;
 
 void prepare();
-void parseConfigFile(const char* config_file);
+int parseConfigFile(const char* config_file);
 void parseConfig(int argc, char **argv);
 int loadproxy(const char* proxy, struct Destination* server);
 void change_process_name(const char *name);

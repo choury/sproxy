@@ -393,7 +393,8 @@ int spliturl(const char* url, struct Destination* server, char* path) {
         scan_pos = url;
     }
     if(protocol_len){
-        strncpy(server->protocol, url, protocol_len);
+        memcpy(server->protocol, url, protocol_len);
+        server->protocol[protocol_len] = 0;
     }
     url = scan_pos;
     
@@ -420,8 +421,9 @@ int spliturl(const char* url, struct Destination* server, char* path) {
         if (!(addrsplit = strchr(tmpaddr, ']'))) {
             return -1;
         }
-
-        strncpy(server->hostname, tmpaddr, addrsplit - tmpaddr + 1);
+        int copylen = addrsplit - tmpaddr + 1;
+        memcpy(server->hostname, tmpaddr, copylen);
+        server->hostname[copylen] = 0;
 
         if (addrsplit[1] == ':') {
             long dport = strtol(addrsplit + 2, NULL, 10);
@@ -434,7 +436,8 @@ int spliturl(const char* url, struct Destination* server, char* path) {
         }
     } else {
         if ((addrsplit = strchr(tmpaddr, ':'))) {
-            strncpy(server->hostname, tmpaddr, addrsplit - tmpaddr);
+            memcpy(server->hostname, tmpaddr, addrsplit - tmpaddr);
+            server->hostname[addrsplit - tmpaddr] = 0;
             long dport = strtol(addrsplit + 1, NULL, 10);
             if(dport == 0 || dport >= 65535){
                 return -1;

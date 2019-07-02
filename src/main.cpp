@@ -217,8 +217,8 @@ SSL_CTX* initssl(int udp, const char *ca, const char *cert, const char *key){
 }
 
 int main(int argc, char **argv) {
-    prepare();
     parseConfig(argc, argv);
+    prepare();
     openlog("sproxy", LOG_PID | LOG_PERROR, LOG_LOCAL0);
 #if __linux__
     efd = epoll_create1(EPOLL_CLOEXEC);
