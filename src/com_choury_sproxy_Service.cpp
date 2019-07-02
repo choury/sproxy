@@ -18,6 +18,7 @@ static std::map<int, std::string> packages;
 static std::string extenalFilesDir;
 static std::string extenalCacheDir;
 char   version[DOMAINLIMIT];
+static char default_policy[PATH_MAX];
 
 
 std::string getExternalFilesDir() {
@@ -81,6 +82,9 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     jnienv->GetJavaVM(&jnijvm);
     jniobj = jnienv->NewGlobalRef(obj);
     std::string config_file = getExternalFilesDir() + "/sproxy.conf";
+    std::string sites_file = getExternalFilesDir() + "/sites.list";
+    strcpy(default_policy, sites_file.c_str());
+    opt.policy_file = default_policy;
     if(access(config_file.c_str(), R_OK) == 0){
         LOG("read config from %s.\n", config_file.c_str());
         parseConfigFile(config_file.c_str());
@@ -90,7 +94,7 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     const char *secret_str = jnienv->GetStringUTFChars(secret, nullptr);
 
     opt.ignore_cert_error = 1;
-    setproxy(server_str);
+    loadproxy(server_str, &opt.Server);
     Base64Encode(secret_str, strlen(secret_str), opt.rewrite_auth);
     jnienv->ReleaseStringUTFChars(server, server_str);
     jnienv->ReleaseStringUTFChars(secret, secret_str);
@@ -113,6 +117,7 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     extenalFilesDir.clear();
     jnienv->DeleteGlobalRef(jniobj);
     jniobj = nullptr;
+    jnijvm = nullptr;
 }
 
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(JNIEnv *, jobject){

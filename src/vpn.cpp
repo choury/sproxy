@@ -18,6 +18,8 @@ uint32_t vpn_contiune;
 #define VPN_RELOAD 2u
 uint32_t vpn_action = 0;
 
+void flushproxy2(int force);
+
 int vpn_start(int fd){
     prepare();
     efd = epoll_create1(EPOLL_CLOEXEC);
@@ -27,6 +29,7 @@ int vpn_start(int fd){
     }
     new VPN_nanny(fd);
     vpn_contiune = 1;
+    reloadstrategy();
     LOG("Accepting connections ...\n");
     while (vpn_contiune) {
         if(vpn_action & VPN_RESET){
