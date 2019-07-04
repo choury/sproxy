@@ -37,6 +37,13 @@ static int check_header(HttpReqHeader* req){
         requester->response(res);
         return 2;
     }
+    if(req->Dest.port == 0 && (req->ismethod("SEND") || req->ismethod("CONNECT"))){
+        HttpResHeader* res = new HttpResHeader(H400, sizeof(H400));
+        res->index = req->index;
+        requester->response(res);
+        return 3;
+    }
+
     req->del("Connection");
     if(req->get("Proxy-Connection")){
         req->set("Connection", req->get("Proxy-Connection"));
@@ -72,16 +79,6 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
         req->ismethod("SEND") ||
         req->ismethod("PING"))
     {
-        if(req->Dest.port == 0){
-            if(req->ismethod("SEND") || req->ismethod("CONNECT")){
-                LOG("[[no port]] %s\n", log_buff);
-                HttpResHeader* res = new HttpResHeader(H400, sizeof(H400));
-                res->index = req->index;
-                requester->response(res);
-                return std::weak_ptr<Responser>();
-            }
-            req->Dest.port = HTTPPORT;
-        }
         strategy stra = getstrategy(req->Dest.hostname);
         if(stra.s == Strategy::block){
             LOG("[[block]] %s\n", log_buff);
@@ -104,6 +101,9 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
         case 2:
             LOG("[[redirect back]] %s\n", log_buff);
             return std::weak_ptr<Responser>();
+        case 3:
+            LOG("[[no port]] %s\n", log_buff);
+            return std::weak_ptr<Responser>();
         }
         Destination dest;
         switch(stra.s){
@@ -120,7 +120,7 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
             if(strlen(opt.rewrite_auth)){
                 req->set("Proxy-Authorization", std::string("Basic ") + opt.rewrite_auth);
             }
-            req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
+            //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
             req->should_proxy = true;
             if(!stra.ext.empty() && loadproxy(stra.ext.c_str(), &dest)){
                 HttpResHeader* res = new HttpResHeader(H500, sizeof(H500));
@@ -132,11 +132,7 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
             break;
         case Strategy::direct:
             memcpy(&dest, &req->Dest, sizeof(dest));
-            if(req->ismethod("CONNECT")){
-                strcpy(dest.protocol, "http");
-            }else if(req->ismethod("SEND")){
-                strcpy(dest.protocol, "udp");
-            }else if(req->ismethod("PING")){
+            if(req->ismethod("PING")){
                 LOG("[[%s]] %s\n", getstrategystring(stra.s), log_buff);
                 return std::dynamic_pointer_cast<Responser>((new Ping(req))->shared_from_this());
             } 

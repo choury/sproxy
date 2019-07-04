@@ -140,6 +140,12 @@ void prepare(){
     reloadstrategy();
     srandom(time(0));
     setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
+#ifndef __ANDROID__
+    if (opt.daemon_mode && daemon(1, 0) < 0) {
+        fprintf(stderr, "start daemon error:%s\n", strerror(errno));
+        exit(1);
+    }
+#endif
 }
 
 static void usage(const char * programe){
@@ -371,10 +377,6 @@ void parseConfig(int argc, char **argv){
     }
     if (opt.key && access(opt.key, R_OK)){
         fprintf(stderr, "access key file failed: %s\n", strerror(errno));
-        exit(1);
-    }
-    if (opt.daemon_mode && daemon(1, 0) < 0) {
-        fprintf(stderr, "start daemon error:%s\n", strerror(errno));
         exit(1);
     }
 #endif
