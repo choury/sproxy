@@ -119,3 +119,5 @@ endif()
 add_subdirectory(src)
 add_subdirectory(systemd)
 
+install(DIRECTORY webui DESTINATION /var/lib/sproxy)
+

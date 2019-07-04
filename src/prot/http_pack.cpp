@@ -266,6 +266,16 @@ void HttpReqHeader::getfile() {
         URLDecode(buff, filepath.c_str(), filepath.length());
         filename = buff;
     }
+    if(!Dest.protocol[0]){
+        if(ismethod("SEND")){
+            strcpy(Dest.protocol, "udp");
+        }else{
+            strcpy(Dest.protocol, "http");
+        }
+    }
+    if(Dest.port == 0 && !ismethod("CONNECT") && !ismethod("SEND")){
+        Dest.port = HTTPPORT;
+    }
 }
 
 std::string HttpReqHeader::geturl() const {

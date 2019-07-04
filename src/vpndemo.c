@@ -9,6 +9,7 @@
 #include <net/route.h>
 #include <string.h>
 #include <signal.h>
+#include <errno.h>
 
 #define TUNADDR  "10.1.0.1"
 #define TUNADDR6 "64:ff9B::10.1.0.1"
@@ -219,11 +220,16 @@ int tun_create(char *dev, int flags) {
 
 int main(int argc, char** argv) {
     parseConfig(argc, argv);
+    if(opt.interface == NULL || strlen(opt.interface) == 0){
+        fprintf(stderr, "interface must be set for vpn\n");
+        return ENOENT;
+    }
     char tun_name[IFNAMSIZ]= {0};
     int tun = tun_create(tun_name, IFF_TUN | IFF_NO_PI);
     if (tun < 0) {
+        int e = errno;
         perror("tun_create");
-        return 1;
+        return e;
     }
     fprintf(stderr, "TUN name is %s\n", tun_name);
     vpn_start(tun);
