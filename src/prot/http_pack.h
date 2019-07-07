@@ -47,7 +47,7 @@ struct Range{
 };
 
 class HttpReqHeader: public HttpHeader{
-    void getfile();
+    void postparse();
 public:
     std::weak_ptr<Requester> src;
     char method[20];

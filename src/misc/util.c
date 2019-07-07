@@ -407,7 +407,7 @@ int spliturl(const char* url, struct Destination* server, char* path) {
             memcpy(path, addrsplit, copylen);
             path[copylen] = 0;
         }
-        copylen = Min(addrsplit - url,  sizeof(tmpaddr)-1);
+        copylen = Min((size_t)(addrsplit - url),  sizeof(tmpaddr)-1);
         memcpy(tmpaddr, url, copylen);
         tmpaddr[copylen] = 0;
     } else {

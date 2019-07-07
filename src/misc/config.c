@@ -26,6 +26,7 @@ struct options opt = {
     .cafile            = NULL,
     .cert              = NULL,
     .key               = NULL,
+    .rootdir           = NULL,
     .index_file        = NULL,
     .interface         = NULL,
     .disable_ipv6      = false,
@@ -110,7 +111,7 @@ struct option_detail option_detail[] = {
     {"port", "The port to listen, default is 80 but 443 for ssl/sni", option_extargs, &opt.CPORT},
     {"policy-file", "The file of policy (sites.list as default)", option_stringargs, &opt.policy_file},
     {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64args, opt.rewrite_auth},
-    {"root-dir", "The work dir for http file server", option_stringargs, &opt.rootdir},
+    {"root-dir", "The work dir for http file server (current dir if not set)", option_stringargs, &opt.rootdir},
     {"secret", "Set a user and passwd for proxy (user:password), default is none.", option_base64args, opt.auth_string},
     {"sni", "Act as a sni proxy", option_boolargs, &opt.sni_mode},
     {"server", "default proxy server (can ONLY set in config file)", option_extargs, NULL},
@@ -213,12 +214,17 @@ static void parseArgs(const char* name, const char* args){
             switch(option_detail[i].type){
             char* pos;
             long long result;
+            char** pargstr;
             case option_boolargs:
                 *(bool*)option_detail[i].args = !*(bool*)option_detail[i].args;
                 printf(": %s", *(bool*)option_detail[i].args?"true":"false");
                 break;
             case option_stringargs:
-                *(char**)option_detail[i].args = strdup(args);
+                pargstr = (char**)option_detail[i].args;
+                if(*pargstr){
+                    free(*pargstr);
+                }
+                *pargstr = strdup(args);
                 printf(": %s", *(char**)option_detail[i].args);
                 break;
             case option_int64args:
@@ -308,7 +314,7 @@ void parseConfig(int argc, char **argv){
             usage(argv[0]);
             exit(1);
         case 'c':
-            opt.config_file = optarg;
+            opt.config_file = strdup(optarg);
             break;
         default:
             break;
@@ -363,9 +369,12 @@ void parseConfig(int argc, char **argv){
     if(opt.policy_file == NULL){
         opt.policy_file = "sites.list";
     }
-    if(opt.rootdir == NULL){
-        opt.rootdir  = ".";
+    if(opt.rootdir && chdir(opt.rootdir)){
+        fprintf(stderr, "chdir failed: %s\n", strerror(errno));
     }
+    free((void*)opt.rootdir);
+    opt.rootdir = (char*)malloc(PATH_MAX);
+    getcwd((char*)opt.rootdir, PATH_MAX);
 #ifndef __ANDROID__
     if (opt.cafile && access(opt.cafile, R_OK)){
         fprintf(stderr, "access cafile failed: %s\n", strerror(errno));

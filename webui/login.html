@@ -1,8 +1,8 @@
 <!doctype html>
 <html>
-    <head>
-        <meta charset="UTF-8" />
-        <style>
+	<head>
+		<meta charset="UTF-8" />
+		<style>
 		  body{
 			  background-image:url(529192cd7fa4c.jpg);
 			  background-repeat:no-repeat;
@@ -12,52 +12,52 @@
 			  width:200px;
 			  height:150px;
 			  background-image:url(54301.jpg);
-			  margin:100px auto 10px; 
+			  margin:100px auto 10px;
 			  padding:15px;
 		  }
 		  #div2{
 			width:300px;
 			height:200px;
 			margin:auto;
-			padding:15px;  
+			padding:15px;
 			color:#F0C;
 		  }
 		</style>
-    </head>
-    <body>
-      <div id="div1">
-        <lable>User:</lable>
-        <input type="text" id="user">
-        <lable>Password:</lable>
-        <input type="password" id="password">
-        <p></p>
-        <input type="button" value="login" onClick="login()" id="input1">
-      </div>
-      <div id="div2">
-      <h3>&nbsp honey,l love you forever!</h3>
-      <img src="52001.jpg" width="300px" height="200px">
-      </div>
+	</head>
+	<body>
+	  <div id="div1">
+		<lable>User:</lable>
+		<input type="text" id="user">
+		<lable>Password:</lable>
+		<input type="password" id="password">
+		<p></p>
+		<input type="button" value="login" onClick="login()" id="input1">
+	  </div>
+	  <div id="div2">
+	  <h3>&nbsp honey,l love you forever!</h3>
+	  <img src="52001.jpg" width="300px" height="200px">
+	  </div>
 </body>
-    <script>
-    function login(){
+	<script>
+	function login(){
 		var user = document.getElementById("user").value;
 		var password = document.getElementById("password").value;
-        var key = btoa(user+":"+password);
-       	fetch("/cgi/liblogin.so", {
-  			method: "POST",
-  			headers: {
-    			"Content-Type": "application/x-www-form-urlencoded"
-  			},
-  			body: "key="+key
+		var key = btoa(user+":"+password);
+		fetch("/cgi/liblogin.do", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/x-www-form-urlencoded"
+			},
+			body: "key="+key
 		}).then(function(res) {
 			if(res.ok){
 				window.location="/webui/";
 			}else{
-    			alert("Oops! You are not authorized.");
-  			}
+				alert("Oops! You are not authorized.");
+			}
 		}, function(e) {
-  			alert("Error submitting form!");
-		}); 
-    }
-    </script>
+			alert("Error submitting form!");
+		});
+	}
+	</script>
 </html>

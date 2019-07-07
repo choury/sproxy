@@ -227,7 +227,8 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
             break;
         }
         char proxy[DOMAINLIMIT];
-        int len = dumpDestToBuffer(&opt.Server, proxy, sizeof(proxy));
+        // add one for '\0'
+        int len = dumpDestToBuffer(&opt.Server, proxy, sizeof(proxy))+1;
         CGI_Header* const header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + len);
         memcpy(header_back, header, sizeof(CGI_Header));
         header_back->flag = 0;
@@ -268,7 +269,7 @@ bool Cgi::HandleValue(const CGI_Header *header, HttpReqHeader* req){
     CGI_Header* const header_end = (CGI_Header*)p_malloc(sizeof(CGI_Header));
     memcpy(header_end, header, sizeof(CGI_Header));
     header_end->contentLength = 0;
-    header_end->flag = flag | CGI_FLAG_END;
+    header_end->flag = flag | CGI_FLAG_UNKONWNNAME | CGI_FLAG_END;
     rwer->buffer_insert(rwer->buffer_end(),
                         write_block{header_end, sizeof(CGI_Header), 0}
                        );
