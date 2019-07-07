@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 project(sproxy)
+set(CMAKE_MACOSX_RPATH 1)
 
 INCLUDE(CheckCCompilerFlag)
 INCLUDE(CheckCXXCompilerFlag)
@@ -57,7 +58,7 @@ endif()
 
 include_directories(${OPENSSL_INCLUDE_DIR})
 
-if(NOT APPLE AND NOT ANDROID)
+if(NOT ANDROID)
     find_package(JSON-C)
     if(JSON-C_FOUND)
         set(BUILD_CGI TRUE)

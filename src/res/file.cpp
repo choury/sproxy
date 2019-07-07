@@ -297,60 +297,72 @@ std::weak_ptr<Responser> File::getfile(HttpReqHeader* req) {
         req_ptr->response(res);
         return std::weak_ptr<Responser>();
     }
-    if(req->filename == "status"){
-        return std::dynamic_pointer_cast<Responser>((new Status())->shared_from_this());
-    }
-
-#ifdef ENABLE_GZIP_TEST
-    if(req->filename == "test"){
-        return std::dynamic_pointer_cast<Responser>((new GzipTest())->shared_from_this());
-    }
-#endif
-
     char filename[URLLIMIT];
     bool slash_end = req->filename.back() == '/';
     bool index_not_found = false;
-    snprintf(filename, sizeof(filename), "./%s", req->filename.c_str());
+    realpath(("./" + req->filename).c_str(), filename);
     HttpResHeader* res = nullptr;
     while(true){
+        if(!startwith(filename, opt.rootdir)){
+            LOGE("get file out of rootdir: %s\n", filename);
+            res = new HttpResHeader(H403, sizeof(H403));
+            goto ret;
+        }
+        if(std::string(opt.rootdir) + "/status" == filename){
+            return std::dynamic_pointer_cast<Responser>((new Status())->shared_from_this());
+        }
+#ifdef ENABLE_GZIP_TEST
+        if(std::string(opt.rootdir) + "/test"  == filename){
+            return std::dynamic_pointer_cast<Responser>((new GzipTest())->shared_from_this());
+        }
+#endif
+        char *suffix = strrchr(filename, '.');
+        if(suffix && strcmp(suffix, ".do") == 0){
+#if __APPLE__
+            strcpy(suffix, ".dylib");
+#elif __linux__
+            strcpy(suffix, ".so");
+#endif
+        }
         struct stat st;
         if(stat(filename, &st) < 0){
             LOGE("get file stat failed %s: %s\n", filename, strerror(errno));
             if(errno == ENOENT){
+                // filname is index file now, fallback to autoindex
                 if(slash_end && !endwith(filename, "/") && opt.autoindex){
                     index_not_found = true;
-                    snprintf(filename, sizeof(filename), "./%s", req->filename.c_str());
+                    realpath(("./" + req->filename).c_str(), filename);
                     continue;
                 }
                 res = new HttpResHeader(H404, sizeof(H404));
             }else{
                 res = new HttpResHeader(H500, sizeof(H500));
             }
-            break;
+            goto ret;
         }
 
         if(S_ISDIR(st.st_mode)){
             if(!slash_end){
-                res = new HttpResHeader(H301, sizeof(H301));
+                res = new HttpResHeader(H302, sizeof(H302));
                 char location[FILENAME_MAX];
                 snprintf(location, sizeof(location), "/%s/", req->filename.c_str());
                 res->set("Location", location);
-                break;
+                goto ret;
             }
             if(!index_not_found && opt.index_file){
-                snprintf(filename, sizeof(filename), "./%s%s", req->filename.c_str(), opt.index_file);
+                realpath(("./" + req->filename + opt.index_file).c_str(), filename);
                 continue;
             }
             if(!opt.autoindex){
                 res = new HttpResHeader(H403, sizeof(H403));
-                break;
+                goto ret;
             }
 
             DIR* dir = opendir(filename);
             if(dir == nullptr){
                 LOGE("open %s dir failed: %s\n", filename, strerror(errno));
                 res = new HttpResHeader(H500, sizeof(H500));
-                break;
+                goto ret;
             }
             res = new HttpResHeader(H200, sizeof(H200));
             res->set("Transfer-Encoding", "chunked");
@@ -387,10 +399,16 @@ std::weak_ptr<Responser> File::getfile(HttpReqHeader* req) {
         if(!S_ISREG(st.st_mode)){
             LOGE("access to no regular file %s\n", filename);
             res = new HttpResHeader(H403, sizeof(H403));
-            break;
+            goto ret;
         }
 #ifdef ENABLE_CGI
-        if(endwith(filename, ".so")){
+#if __APPLE__
+        if(suffix && strcmp(suffix, ".dylib") == 0){
+#elif __linux__
+        if(suffix && strcmp(suffix, ".so") == 0){
+#else
+        if(0){
+#endif
             return getcgi(req, filename);
         }
 #endif
@@ -405,10 +423,11 @@ std::weak_ptr<Responser> File::getfile(HttpReqHeader* req) {
         if(fd < 0){
             LOGE("open file failed %s: %s\n", filename, strerror(errno));
             res = new HttpResHeader(H500, sizeof(H500));
-            break;
+            goto ret;
         }
         return std::dynamic_pointer_cast<Responser>((new File(filename, fd, &st))->shared_from_this());
     }
+ret:
     assert(res);
     res->index = req->index;
     req_ptr->response(res);

@@ -14,4 +14,3 @@ RestartPreventExitStatus=SIGKILL
 
 [Install]
 WantedBy=multi-user.target
-Alias=sproxy-vpn.service

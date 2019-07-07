@@ -159,7 +159,7 @@ HttpReqHeader::HttpReqHeader(const char* header, size_t len, std::weak_ptr<RwObj
             throw ERR_PROTOCOL_ERROR;
         }
     }
-    getfile();
+    postparse();
 }
 
 
@@ -210,7 +210,7 @@ HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers, std::
             i++;
         }
     }
-    getfile();
+    postparse();
 }
 
 HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(std::weak_ptr<Requester>()) {
@@ -244,11 +244,11 @@ HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(std::weak_ptr<Reque
         }
         set(name, value);
     }
-    getfile();
+    postparse();
 }
 
 
-void HttpReqHeader::getfile() {
+void HttpReqHeader::postparse() {
     char *start = path;
     while (*start && *++start == '/');
     char *end=start;

@@ -15,8 +15,9 @@
 
 struct CGI_Header{
     uint8_t type;
-#define CGI_FLAG_ERROR       0x40
-#define CGI_FLAG_END        0x80
+#define CGI_FLAG_UNKONWNNAME     0x20
+#define CGI_FLAG_ERROR           0x40
+#define CGI_FLAG_END             0x80
     uint8_t flag;
     uint16_t contentLength; //最大65536 - 8 (实际是BUF_LEN - 8)
     uint32_t requestId;

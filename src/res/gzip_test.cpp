@@ -75,7 +75,11 @@ void *GzipTest::request(HttpReqHeader *req) {
     if (params.count("size")) {
         left = parseSize(params["size"]);
     } else {
-        left = 1024ll * 1024 * 1024 * 1024; //1T
+#if __LP64__
+        left = 1024ull * 1024 * 1024 * 1024; //1T
+#else
+        left = 2ull * 1024 * 1024 * 1024;    //4G
+#endif
     }
     const char *accept = req->get("Accept-Encoding");
     if (accept && strstr(accept, "gzip")) {

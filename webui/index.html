@@ -21,7 +21,7 @@ body{
     color:#F39;
 }
 button{
-    background-color:#FFF
+    background-color:#FFF;
     color:#C39;
 }
 #logo{
@@ -33,7 +33,7 @@ button{
 }
 #content{
     display:inline-block;
-    width:auto; */
+    width:auto;
     height:auto;
     padding:5px;
     background-color:#FCF;
@@ -64,7 +64,7 @@ button{
         <div id="content">
             <lable class='left'>Proxy: </lable>
             <p id='current_proxy' class='left'>
-            <form action='/cgi/libproxy.so' method='post' class='right'>
+            <form action='/cgi/libproxy.do' method='post' class='right'>
                 <input type="text" name="proxy">
                 <input type="submit" value="修改" onclick='setproxy(this.form.proxy.value)'>
             </form>
@@ -82,7 +82,7 @@ button{
                     <th>操作</th>
                 </tr>
                 <tr>
-                    <form id="form1" action='/cgi/libsites.so' method='post'><input type="hidden" name="method" value="put" /></form>
+                    <form id="form1" action='/cgi/libsites.do' method='post'><input type="hidden" name="method" value="put" /></form>
                     <td><input form="form1" type="text" name="site" id="tdw"/></td>
                     <td><select name="strategy" form="form1">
                             <option value="proxy">proxy</option>
@@ -97,7 +97,7 @@ button{
         </div>
         <script>
         var table = document.getElementById("list");
-        fetch('/cgi/libsites.so').then(
+        fetch('/cgi/libsites.do').then(
             function(response) {
                 if(response.status == 403) {
                     window.location="/webui/login.html";
@@ -137,7 +137,7 @@ button{
                             insertTd = insertTr.insertCell(2);
                             insertTd.style.textAlign="center";
                             insertTd.className='delate';
-                            insertTd.innerHTML = "<form action='/cgi/libsites.so?site="+key+"' method='post'><input type='hidden' name='method' value='delete'><input type='submit' value='删除'></form>";
+                            insertTd.innerHTML = "<form action='/cgi/libsites.do?site="+key+"' method='post'><input type='hidden' name='method' value='delete'><input type='submit' value='删除'></form>";
 
                         }
                     }
@@ -163,7 +163,7 @@ button{
             document.getElementById('current_proxy').innerHTML=proxy;
         }
         </script>
-        <script type="text/javascript" src="/cgi/libproxy.so"></script>
+        <script type="text/javascript" src="/cgi/libproxy.do"></script>
     </body>
 </html>
 

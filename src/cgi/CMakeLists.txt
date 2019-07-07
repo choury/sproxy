@@ -3,6 +3,9 @@
 #Created:  2017/4/2
 
 
+if(APPLE)
+    set(CMAKE_SHARED_LINKER_FLAGS "-undefined dynamic_lookup")
+endif()
 add_library(login SHARED login.cpp)
 target_link_libraries(login ${JSON-C_LIBRARIES})
 set_target_properties(login PROPERTIES OUTPUT_NAME "login")
