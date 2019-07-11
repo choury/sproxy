@@ -69,16 +69,7 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
         requester->response(res);
         return std::weak_ptr<Responser>();
     }
-    if (req->ismethod("GET") ||
-        req->ismethod("POST") ||
-        req->ismethod("PUT") ||
-        req->ismethod("CONNECT") ||
-        req->ismethod("HEAD") ||
-        req->ismethod("DELETE") ||
-        req->ismethod("OPTIONS") ||
-        req->ismethod("SEND") ||
-        req->ismethod("PING"))
-    {
+    if (req->http_method()) {
         strategy stra = getstrategy(req->Dest.hostname);
         if(stra.s == Strategy::block){
             LOG("[[block]] %s\n", log_buff);
@@ -172,6 +163,7 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
         const char *strategy = req->get("s");
         const char *ext = req->get("ext");
         LOG("[[add %s]] %s %s\n", strategy, log_buff, ext);
+        // use geturl here because we need mask like /20 for ip
         if(strategy && addstrategy(req->geturl().c_str(), strategy, ext ? ext:"")){
             HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
             res->index = req->index;
