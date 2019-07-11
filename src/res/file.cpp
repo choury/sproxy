@@ -48,6 +48,19 @@ static bool checkrange(Range& rg, size_t size) {
     return rg.begin <= rg.end;
 }
 
+static std::string pathjoin(const std::string& dirname, const std::string& basename){
+    bool endwithslash = endwith(dirname.c_str(), "/");
+    bool startwithslash = startwith(basename.c_str(), "/");
+
+    if(endwithslash && startwithslash){
+        return dirname + (basename.c_str()+1);
+    }else if(endwithslash || startwithslash){
+        return dirname + basename;
+    }else{
+        return dirname +'/'+ basename;
+    } 
+}
+
 static void loadmine(){
 #ifdef __APPLE__
     std::ifstream mimefile("/private/etc/apache2/mime.types");
@@ -308,11 +321,11 @@ std::weak_ptr<Responser> File::getfile(HttpReqHeader* req) {
             res = new HttpResHeader(H403, sizeof(H403));
             goto ret;
         }
-        if(std::string(opt.rootdir) + "/status" == filename){
+        if(filename == pathjoin(opt.rootdir, "status")){
             return std::dynamic_pointer_cast<Responser>((new Status())->shared_from_this());
         }
 #ifdef ENABLE_GZIP_TEST
-        if(std::string(opt.rootdir) + "/test"  == filename){
+        if(filename == pathjoin(opt.rootdir, "test")){
             return std::dynamic_pointer_cast<Responser>((new GzipTest())->shared_from_this());
         }
 #endif

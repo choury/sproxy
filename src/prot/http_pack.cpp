@@ -247,6 +247,17 @@ HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(std::weak_ptr<Reque
     postparse();
 }
 
+bool HttpReqHeader::http_method() const {
+    return ismethod("GET") ||
+        ismethod("POST") ||
+        ismethod("PUT") ||
+        ismethod("CONNECT") ||
+        ismethod("HEAD") ||
+        ismethod("DELETE") ||
+        ismethod("OPTIONS") ||
+        ismethod("SEND") ||
+        ismethod("PING");
+}
 
 void HttpReqHeader::postparse() {
     char *start = path;
@@ -265,6 +276,9 @@ void HttpReqHeader::postparse() {
         char buff[URLLIMIT * 3];
         URLDecode(buff, filepath.c_str(), filepath.length());
         filename = buff;
+    }
+    if(!http_method()){
+        return;
     }
     if(!Dest.protocol[0]){
         if(ismethod("SEND")){
