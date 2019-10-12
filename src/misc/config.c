@@ -93,6 +93,7 @@ static struct option long_options[] = {
     {NULL,       0,                NULL,  0 }
 };
 
+static bool daemonized = false;
 static const char* getopt_option = ":D1hikr:s:p:I:c:P:";
 
 struct option_detail option_detail[] = {
@@ -139,63 +140,79 @@ void prepare(){
     signal(SIGHUP,  (sig_t)reloadstrategy);
     signal(SIGUSR1, (sig_t)(void(*)())dump_stat);
     reloadstrategy();
-    srandom(time(0));
+    srandom(time(NULL));
     setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
 #ifndef __ANDROID__
-    if (opt.daemon_mode && daemon(1, 0) < 0) {
-        fprintf(stderr, "start daemon error:%s\n", strerror(errno));
-        exit(1);
+    if (opt.daemon_mode) {
+        if(daemon(1, 0) < 0) {
+            LOGE("start daemon error:%s\n", strerror(errno));
+            exit(1);
+        }else{
+            daemonized = true;
+        }
     }
 #endif
 }
 
 static void usage(const char * programe){
-    printf("Usage: %s [host:port]\n" , programe);
+    LOG("Usage: %s [host:port]\n" , programe);
     for(int i =0; option_detail[i].name;i++){
         int short_name = 0;
         for(int j=0; long_options[j].name; j++){
             if(strcmp(option_detail[i].name, long_options[j].name) == 0 && long_options[j].val){
-                printf("-%c, ", long_options[i].val);
+                LOG("-%c, ", long_options[i].val);
                 short_name = 1;
                 break;
             }
         }
         if(short_name == 0){
-            printf("    ");
+            LOG("    ");
         }
-        printf("--%s\t%s\n", option_detail[i].name, option_detail[i].details);
+        LOG("--%s\t%s\n", option_detail[i].name, option_detail[i].details);
     }
 }
 
 static void parseExtargs(const char* name, const char* args){
     if(strcmp(name, "server") == 0){
         if(loadproxy(args, &opt.Server)){
-            fprintf(stderr, "wrong server format: %s\n", args);
+            LOGE("wrong server format: %s\n", args);
             exit(0);
         }
-        printf(": %s", dumpDest(&opt.Server));
+        LOG("set option %s: %s\n", name, dumpDest(&opt.Server));
     }else if(strcmp(name, "port") == 0){
-        opt.CPORT = atoi(args);
-        printf(": %d", opt.CPORT);
+        int port = atoi(args);
+        if(port <= 0 || port >= 65535){
+            LOGE("wrong port: %s\n", args);
+            exit(0);
+        }
+        opt.CPORT = port;
+        LOG("set option %s: %d\n", name, opt.CPORT);
     }else if(strcmp(name, "help") == 0){
-        printf("\n");
         usage(main_argv[0]);
         exit(0);
     }else if(strcmp(name, "debug-event") == 0){
+        LOG("set option %s\n", name);
         debug |= DEVENT;
     }else if(strcmp(name, "debug-dns") == 0){
+        LOG("set option %s\n", name);
         debug |= DDNS;
     }else if(strcmp(name, "debug-http2") == 0){
+        LOG("set option %s\n", name);
         debug |= DHTTP2;
     }else if(strcmp(name, "debug-job") == 0){
+        LOG("set option %s\n", name);
         debug |= DJOB;
     }else if(strcmp(name, "debug-vpn") == 0){
+        LOG("set option %s\n", name);
         debug |= DVPN;
     }else if(strcmp(name, "debug-hpack") == 0){
+        LOG("set option %s\n", name);
         debug |= DHPACK;
     }else if(strcmp(name, "debug-http") == 0){
+        LOG("set option %s\n", name);
         debug |= DHTTP;
     }else if(strcmp(name, "debug-all") == 0){
+        LOG("set option %s\n", name);
         debug = (uint32_t)(-1);
     }else{
         assert(0);
@@ -203,7 +220,6 @@ static void parseExtargs(const char* name, const char* args){
 }
 
 static void parseArgs(const char* name, const char* args){
-    printf("set option %s", name);
 #ifdef static_assert
     static_assert(sizeof(long long) == 8, "require 64bit long long");
 #else
@@ -217,7 +233,7 @@ static void parseArgs(const char* name, const char* args){
             char** pargstr;
             case option_boolargs:
                 *(bool*)option_detail[i].args = !*(bool*)option_detail[i].args;
-                printf(": %s", *(bool*)option_detail[i].args?"true":"false");
+                LOG("set option %s: %s\n", name, *(bool*)option_detail[i].args?"true":"false");
                 break;
             case option_stringargs:
                 pargstr = (char**)option_detail[i].args;
@@ -225,29 +241,28 @@ static void parseArgs(const char* name, const char* args){
                     free(*pargstr);
                 }
                 *pargstr = strdup(args);
-                printf(": %s", *(char**)option_detail[i].args);
+                LOG("set option %s: %s\n", name, *(char**)option_detail[i].args);
                 break;
             case option_int64args:
                 result = strtoll(args, &pos, 0);
                 if(result == LLONG_MAX || result == LLONG_MIN || args == pos) {
-                    fprintf(stderr, "wrong int format: %s\n", args);
+                    LOGE("wrong int format: %s\n", args);
                 }
                 *(long long*)option_detail[i].args = result;
-                printf(": %lld", *(long long*)option_detail[i].args);
+                LOG("set option %s: %lld\n", name, *(long long*)option_detail[i].args);
                 break;
             case option_base64args:
                 Base64Encode(args, strlen(args), (char*)option_detail[i].args);
-                printf(": %s", (char*)option_detail[i].args);
+                LOG("set option %s: %s\n", name, (char*)option_detail[i].args);
                 break;
             case option_extargs:
                 parseExtargs(option_detail[i].name, args);
                 break;
             }
-            printf("\n");
             return;
         }
     }
-    printf(": UNKNOWN\n");
+    LOG("UNKNOWN option: %s\n", name);
 }
 
 int loadproxy(const char* proxy, struct Destination* server){
@@ -258,7 +273,7 @@ int loadproxy(const char* proxy, struct Destination* server){
     if(server->protocol[0] == 0){
         strcpy(server->protocol, "https");
     }
-    if(strcasecmp(server->protocol, "http") && strcasecmp(server->protocol, "https")){
+    if(strcasecmp(server->protocol, "http") !=0 && strcasecmp(server->protocol, "https") != 0){
         LOGE("unkonw protocol for server: %s\n", server->protocol);
         return -1;
     }
@@ -281,7 +296,7 @@ int parseConfigFile(const char* config_file){
             char option[1024], args[1024];
             int ret = sscanf(line, "%s %s", option, args);
             if(ret <= 0){
-                fprintf(stderr, "config file parse failed: %s", line);
+                LOGE("config file parse failed: %s", line);
                 break;
             }
             if(option[0] == '#'){
@@ -321,9 +336,9 @@ void parseConfig(int argc, char **argv){
         }
     }
     if(opt.config_file){
-        printf("read config file from: %s\n", opt.config_file);
+        LOG("read config file from: %s\n", opt.config_file);
         if(parseConfigFile(opt.config_file)){
-            fprintf(stderr, "parse config file failed: %s\n", strerror(errno));
+            LOGE("parse config file failed: %s\n", strerror(errno));
             exit(2);
         }
     }else{
@@ -331,7 +346,7 @@ void parseConfig(int argc, char **argv){
             if(access(confs[i], R_OK)){
                 continue;
             }
-            printf("read config file from: %s\n", confs[i]);
+            LOG("read config file from: %s\n", confs[i]);
             parseConfigFile(confs[i]);
             break;
         }
@@ -339,7 +354,7 @@ void parseConfig(int argc, char **argv){
     optind = 0;
     while (1) {
         int option_index = 0;
-        int c = getopt_long(argc, argv, getopt_option, long_options, &option_index);
+        c = getopt_long(argc, argv, getopt_option, long_options, &option_index);
         if (c == -1)
             break;
         
@@ -361,31 +376,31 @@ void parseConfig(int argc, char **argv){
 
     if (optind < argc) {
         if(loadproxy(argv[optind], &opt.Server)){
-            fprintf(stderr, "wrong server format: %s\n", argv[optind]);
+            LOGE("wrong server format: %s\n", argv[optind]);
             exit(1);
         }
-        printf("server %s\n", dumpDest(&opt.Server));
+        LOG("server %s\n", dumpDest(&opt.Server));
     }
     if(opt.policy_file == NULL){
         opt.policy_file = "sites.list";
     }
     if(opt.rootdir && chdir(opt.rootdir)){
-        fprintf(stderr, "chdir failed: %s\n", strerror(errno));
+        LOGE("chdir failed: %s\n", strerror(errno));
     }
     free((void*)opt.rootdir);
     opt.rootdir = (char*)malloc(PATH_MAX);
     getcwd((char*)opt.rootdir, PATH_MAX);
 #ifndef __ANDROID__
     if (opt.cafile && access(opt.cafile, R_OK)){
-        fprintf(stderr, "access cafile failed: %s\n", strerror(errno));
+        LOGE("access cafile failed: %s\n", strerror(errno));
         exit(1);
     }
     if (opt.cert && access(opt.cert, R_OK)){
-        fprintf(stderr, "access cert file failed: %s\n", strerror(errno));
+        LOGE("access cert file failed: %s\n", strerror(errno));
         exit(1);
     }
     if (opt.key && access(opt.key, R_OK)){
-        fprintf(stderr, "access key file failed: %s\n", strerror(errno));
+        LOGE("access key file failed: %s\n", strerror(errno));
         exit(1);
     }
 #endif
@@ -394,7 +409,7 @@ void parseConfig(int argc, char **argv){
 
 #ifndef __ANDROID__
 void vslog(int level, const char* fmt, va_list arg){
-    if(opt.daemon_mode){
+    if(daemonized){
         vsyslog(level, fmt, arg);
     }else{
         if(level <= LOG_ERR){
