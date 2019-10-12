@@ -206,6 +206,8 @@ struct Destination{
 #include <@Backtrace_HEADER@>
 #endif
 
+#define PREFIX "@CMAKE_INSTALL_PREFIX@"
+
 #ifdef  __cplusplus
 }
 #endif

@@ -1,6 +1,6 @@
 if(IS_DIRECTORY /lib/systemd/system)
     message(STATUS "Configured systemd unit" )
-    install(DIRECTORY DESTINATION "etc/sproxy")
+    install(DIRECTORY DESTINATION "/etc/sproxy")
     configure_file(${PROJECT_SOURCE_DIR}/systemd/sproxy-vpn@.service.cmake ${PROJECT_BINARY_DIR}/systemd/sproxy-vpn@.service)
     configure_file(${PROJECT_SOURCE_DIR}/systemd/sproxy@.service.cmake ${PROJECT_BINARY_DIR}/systemd/sproxy@.service)
     install(FILES ${PROJECT_BINARY_DIR}/systemd/sproxy-vpn@.service DESTINATION /lib/systemd/system)
