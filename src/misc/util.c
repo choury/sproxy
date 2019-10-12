@@ -248,7 +248,7 @@ const char* findprogram(ino_t inode){
 #ifdef __APPLE__
     sprintf(program, "Unkown pid(%llu)", inode);
 #else
-    sprintf(program, "Unkown pid(%ju)", inode);
+    sprintf(program, "Unkown pid(%lu)", inode);
 #endif
     int found = 0;
     DIR* dir = opendir("/proc");
@@ -260,7 +260,7 @@ const char* findprogram(ino_t inode){
 #ifdef __APPLE__
     sprintf(socklink, "socket:[%llu]", inode);
 #else
-    sprintf(socklink, "socket:[%ju]", inode);
+    sprintf(socklink, "socket:[%lu]", inode);
 #endif
     struct dirent *ptr;
     while((ptr = readdir(dir)) != NULL && found == 0)

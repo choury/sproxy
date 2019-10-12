@@ -111,9 +111,9 @@ protected:
     virtual void closeHE(RW_EVENT events);
     virtual void Connected(const union sockaddr_un&);
 public:
+    explicit RWer(int fd, std::function<void(int ret, int code)> errorCB);
     explicit RWer(std::function<void(int ret, int code)> errorCB,
-         std::function<void(const union sockaddr_un&)> connectCB = nullptr, 
-         int fd = -1);
+                  std::function<void(const union sockaddr_un&)> connectCB);
     virtual void SetErrorCB(std::function<void(int ret, int code)> func);
     virtual void SetReadCB(std::function<void(size_t len)> func);
     virtual void SetWriteCB(std::function<void(size_t len)> func);

@@ -84,7 +84,7 @@ RW_EVENT convertKevent(const struct kevent& event){
 }
 #endif
 
-static void setSocketOptions(int fd){
+static void setSocketUnblock(int fd){
     if(fd < 0){
         return;
     }
@@ -101,14 +101,13 @@ static void setSocketOptions(int fd){
 
 Ep::Ep(int fd):fd(fd){
     LOGD(DEVENT, "%p set fd: %d\n", this, fd);
-    setSocketOptions(fd);
+    setSocketUnblock(fd);
 }
 
 Ep::~Ep(){
     if(fd >= 0){
         LOGD(DEVENT, "closed %d\n", fd);
         close(fd);
-        fd = -1;
     }
 }
 
@@ -120,7 +119,7 @@ void Ep::setFd(int fd){
     }
     this->fd = fd;
     LOGD(DEVENT, "%p set fd: %d\n", this, fd);
-    setSocketOptions(fd);
+    setSocketUnblock(fd);
 }
 
 int Ep::getFd(){
@@ -213,24 +212,30 @@ std::list<write_block>::iterator WBuffer::end() {
 
 std::list<write_block>::iterator WBuffer::push(std::list<write_block>::insert_iterator i, const write_block& wb) {
     assert(wb.len);
+    assert(wb.buff);
     len += wb.len;
     return write_queue.emplace(i, wb);
 }
 
-ssize_t  WBuffer::Write(std::function<ssize_t(const void*, size_t)> write_func){
-    auto i = write_queue.begin();
-    assert(i->buff);
-    assert(i->offset < i->len);
-    ssize_t ret = write_func((const char *)i->buff + i->offset, i->len - i->offset);
+ssize_t WBuffer::Write(std::function<ssize_t(const void*, size_t)> write_func){
+    assert(len && write_queue.size());
+    auto wb = *write_queue.begin();
+    write_queue.pop_front();
+    assert(wb.buff);
+    assert(wb.offset < wb.len);
+    ssize_t ret = write_func((const char *)wb.buff + wb.offset, wb.len - wb.offset);
     if (ret > 0) {
+        assert(len >= ret);
         len -= ret;
-        assert(ret + i->offset <= i->len);
-        if ((size_t)ret + i->offset == i->len) {
-            p_free(i->buff);
-            write_queue.pop_front();
+        assert(ret + wb.offset <= wb.len);
+        if ((size_t)ret + wb.offset == wb.len) {
+            p_free(wb.buff);
         } else {
-            i->offset += ret;
+            wb.offset += ret;
+            write_queue.push_front(wb);
         }
+    }else{
+        write_queue.push_front(wb);
     }
     return ret;
 }
@@ -255,13 +260,23 @@ WBuffer::~WBuffer() {
     clear(true);
 }
 
-RWer::RWer(std::function<void (int, int)> errorCB, std::function<void(const union sockaddr_un&)> connectCB, int fd):
-           Ep(fd), connectCB(std::move(connectCB)), errorCB(std::move(errorCB))
+RWer::RWer(int fd, std::function<void(int ret, int code)> errorCB):
+    Ep(fd), errorCB(std::move(errorCB))
 {
     assert(this->errorCB != nullptr);
-    if(this->connectCB == nullptr){
-        this->connectCB = [](const union sockaddr_un&){};
-    }
+    readCB = [this](size_t len){
+        LOGE("discard data from stub readCB: %zd", len);
+        consume(rdata(), len);
+    };
+    writeCB = [](size_t){};
+}
+
+
+RWer::RWer(std::function<void (int, int)> errorCB, std::function<void(const union sockaddr_un&)> connectCB):
+           Ep(-1), connectCB(std::move(connectCB)), errorCB(std::move(errorCB))
+{
+    assert(this->errorCB != nullptr);
+    assert(this->connectCB != nullptr);
     readCB = [this](size_t len){
         LOGE("discard data from stub readCB: %zd", len);
         consume(rdata(), len);

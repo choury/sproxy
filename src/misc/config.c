@@ -138,7 +138,11 @@ void prepare(){
     signal(SIGABRT, dump_trace);
 #endif
     signal(SIGHUP,  (sig_t)reloadstrategy);
+#if __ANDROID__
+    signal(SIGUSR2, (sig_t)(void(*)())dump_stat);
+#else
     signal(SIGUSR1, (sig_t)(void(*)())dump_stat);
+#endif
     reloadstrategy();
     srandom(time(NULL));
     setvbuf(stdout, NULL, _IOLBF, BUFSIZ);

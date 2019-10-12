@@ -256,12 +256,12 @@ void Guest2::finish(uint32_t flags, void* index) {
     }
     ResStatus& status = statusmap[id];
     uint8_t errcode = flags & ERROR_MASK;
-    if(errcode == 0 ){
+    if(errcode == NOERROR ){
         if((status.res_flags & STREAM_WRITE_CLOSED) == 0){
             Peer::Send((const void*)nullptr, 0, index);
             status.res_flags |= STREAM_WRITE_CLOSED;
         }
-        if((flags & DISCONNECT_FLAG) && (status.res_flags & STREAM_READ_CLOSED)){
+        if(flags & DISCONNECT_FLAG){
             statusmap.erase(id);
             return;
         }
