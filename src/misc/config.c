@@ -316,7 +316,7 @@ int parseConfigFile(const char* config_file){
 
 static const char* confs[] = {
     "/etc/sproxy/sproxy.conf",
-    "/usr/local/etc/sproxy.conf",
+    PREFIX "/etc/sproxy.conf",
     "sproxy.conf",
     NULL,
 };

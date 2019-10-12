@@ -6,7 +6,7 @@ After=network.target
 Type=forking
 WorkingDirectory=-/var/lib/sproxy
 Environment=LD_LIBRARY_PATH=@CMAKE_INSTALL_PREFIX@/lib
-ExecStart=@CMAKE_INSTALL_PREFIX@/sbin/vpndemo -D -c @CMAKE_INSTALL_PREFIX@/etc/sproxy/%I.conf
+ExecStart=@CMAKE_INSTALL_PREFIX@/sbin/vpndemo -D -c /etc/sproxy/%I.conf
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 Restart=on-failure
