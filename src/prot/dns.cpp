@@ -33,7 +33,7 @@ public:
     virtual void dump_stat(Dumper dp, void* param) override;
 };
 
-std::vector<Dns_srv *> srvs;
+static std::vector<Dns_srv *> srvs;
 
 
 struct Dns_Req{
@@ -48,22 +48,22 @@ struct Dns_Rcd{
 };
 
 typedef struct Dns_Status {
+    char host[DOMAINLIMIT];
     uint16_t times;
 #define QARECORD     0x1u
 #define QAAAARECORD  0x2u
 #define GARECORD     0x10u
 #define GAAAARECORD  0x20u
     uint16_t flags;
-    char host[DOMAINLIMIT];
     std::list<Dns_Req> reqs;
     Dns_Rcd rcd;
 } Dns_Status;
 
 typedef struct Dns_RawReq {
     char host[DOMAINLIMIT];
+    uint16_t times;
     uint16_t type;
     uint16_t id;
-    uint16_t times;
     DNSRAWCB func;
     void *param;
 } Dns_RawReq;
@@ -430,8 +430,8 @@ bool Dns_srv::valid(){
 
 
 void Dns_srv::buffHE(const char *buffer, size_t len) {
-    Dns_Rr dnsrcd(buffer, len);
-    uint16_t id = dnsrcd.id;
+    Dns_Rr dnsrr(buffer, len);
+    uint16_t id = dnsrr.id;
 
     if(querying_raw_id.count(id)){
         del_delayjob(std::bind(query_timeout, id), (void *)(size_t)id);
@@ -450,28 +450,28 @@ void Dns_srv::buffHE(const char *buffer, size_t len) {
         flags |= GAAAARECORD;
     }
     if (querying_index.Get(id) == nullptr) {
-        if(!dnsrcd.addrs.empty()){
+        if(!dnsrr.addrs.empty()){
             Dns_Rcd rcd{{}, time(0), 10};
-            for(auto i: dnsrcd.addrs){
+            for(auto i: dnsrr.addrs){
                 rcd.addrs.push_back(i);
             }
-            rcd_cache[dnsrcd.domain] = rcd;
+            rcd_cache[dnsrr.domain] = rcd;
         }
-        LOG("[DNS] Get a unkown id:%d [%s]\n", id, dnsrcd.domain);
+        LOG("[DNS] Get a unkown id:%d [%s]\n", id, dnsrr.domain);
         return;
     }
     Dns_Status *dnsst = querying_index.Get(id)->data;
     dnsst->flags |= flags;
 
-    if(!dnsrcd.addrs.empty()){
-        for(auto i: dnsrcd.addrs){
+    if(!dnsrr.addrs.empty()){
+        for(auto i: dnsrr.addrs){
             dnsst->rcd.addrs.push_back(i);
         }
         dnsst->rcd.get_time = time(nullptr);
-        dnsst->rcd.ttl = dnsrcd.ttl;
+        dnsst->rcd.ttl = dnsrr.ttl;
     }
 
-    if ((dnsst->flags & GARECORD) &&(dnsst->flags & GAAAARECORD)) {
+    if ((dnsst->flags & GARECORD) && (dnsst->flags & GAAAARECORD)) {
         del_delayjob(std::bind(query_timeout, id), (void *)(size_t)id);
         querying_index.Delete(id);
         if (!dnsst->rcd.addrs.empty()) {
@@ -544,6 +544,7 @@ typedef struct DNS_RR {
     uint16_t classes;
     uint32_t TTL;                // 缓存时间
     uint16_t rdlength;           // rdata 长度
+    unsigned char rdata[0];
 } __attribute__((packed)) DNS_RR;
 
 static const unsigned char * getdomain(const DNS_HDR *hdr, const unsigned char *p, size_t len, char* domain) {
@@ -567,7 +568,7 @@ static const unsigned char * getdomain(const DNS_HDR *hdr, const unsigned char *
 
 static int putdomain(unsigned char *buf, const char *domain){
     unsigned char *p = buf+1;
-    sprintf((char *)p, "%s", domain);
+    strcpy((char*)p, domain);
 
     int i = 0;
     while(*p){
@@ -662,7 +663,7 @@ int Dns_Que::build(unsigned char* buf)const {
     que->classes = htons(1);
     que->type = htons(type);
 
-    return len+sizeof(DNS_QUE);
+    return len + sizeof(DNS_QUE);
 }
 
 Dns_Rr::Dns_Rr(const char* buff, size_t len) {
@@ -696,7 +697,7 @@ Dns_Rr::Dns_Rr(const char* buff, size_t len) {
         assert(ntohs(dnsrr->classes) == 1);
 
         uint32_t ttl = ntohl(dnsrr->TTL);
-        this->ttl = ttl > this->ttl? ttl:this->ttl;
+        this->ttl = std::max(ttl, this->ttl);
 
         p+= sizeof(DNS_RR);
 #ifndef NDEBUG
@@ -771,7 +772,7 @@ int Dns_Rr::build(const Dns_Que* query, unsigned char* buf)const {
             rr->type = htons(1);
             rr->TTL = htonl(ttl);
             rr->rdlength = htons(sizeof(in_addr));
-            memcpy(rr+1, &addr.addr_in.sin_addr, sizeof(in_addr));
+            memcpy(rr->rdata, &addr.addr_in.sin_addr, sizeof(in_addr));
             len += sizeof(DNS_RR) + sizeof(in_addr);
             dnshdr->numa ++;
         }
@@ -782,7 +783,7 @@ int Dns_Rr::build(const Dns_Que* query, unsigned char* buf)const {
             rr->type = htons(28);
             rr->TTL = htonl(ttl);
             rr->rdlength = htons(sizeof(in6_addr));
-            memcpy(rr+1, &addr.addr_in6.sin6_addr, sizeof(in6_addr));
+            memcpy(rr->rdata, &addr.addr_in6.sin6_addr, sizeof(in6_addr));
             len += sizeof(DNS_RR) + sizeof(in6_addr);
             dnshdr->numa ++;
         }
@@ -793,7 +794,7 @@ int Dns_Rr::build(const Dns_Que* query, unsigned char* buf)const {
         rr->classes = htons(1);
         rr->type = htons(12);
         rr->TTL = htonl(ttl);
-        int rdlength = putdomain((unsigned char *)(rr+1), domain);
+        int rdlength = putdomain(rr->rdata, domain);
         rr->rdlength = htons(rdlength);
         len += sizeof(DNS_RR) + rdlength;
         dnshdr->numa ++;

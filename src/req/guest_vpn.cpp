@@ -94,7 +94,7 @@ VPN_nanny::VPN_nanny(int fd){
 VPN_nanny::~VPN_nanny(){
     for(auto& i: statusmap){
         if(!i.second.expired())
-            i.second.lock()->finish(VPN_AGED_ERR, 0);
+            i.second.lock()->finish(VPN_AGED_ERR, nullptr);
     }
     statusmap.clear();
 }
