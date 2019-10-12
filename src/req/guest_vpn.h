@@ -21,7 +21,7 @@ bool operator<(VpnKey a, VpnKey b);
 class Guest_vpn;
 
 class VPN_nanny: public Server{
-    std::map<VpnKey, std::weak_ptr<Guest_vpn>> statusmap;
+    std::map<VpnKey, Guest_vpn*> statusmap;
     void buffHE(const char* buff, size_t buflen);
 public:
     explicit VPN_nanny(int fd);

@@ -86,10 +86,10 @@ char* CBuffer::end(){
     return content + (end_pos % sizeof(content));
 }
 
-FdRWer::FdRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(std::move(errorCB), nullptr, fd){
+NetRWer::NetRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(fd, std::move(errorCB)){
     setEvents(RW_EVENT::READ);
     stats = RWerStats::Connected;
-    handleEvent = (void (Ep::*)(RW_EVENT))&FdRWer::defaultHE;
+    handleEvent = (void (Ep::*)(RW_EVENT))&NetRWer::defaultHE;
     sockaddr_un addr;
     socklen_t len = sizeof(addr);
     if(getpeername(fd, (sockaddr *)&addr, &len)){
@@ -99,23 +99,23 @@ FdRWer::FdRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(std:
     addrs.push(addr);
 }
 
-FdRWer::FdRWer(const char* hostname, uint16_t port, Protocol protocol,
+NetRWer::NetRWer(const char* hostname, uint16_t port, Protocol protocol,
                std::function<void(int ret, int code)> errorCB,
                std::function<void(const sockaddr_un&)> connectCB):
             RWer(std::move(errorCB), std::move(connectCB)), port(port), protocol(protocol)
 {
     strcpy(this->hostname, hostname);
     stats = RWerStats::Dnsquerying;
-    query(hostname, FdRWer::Dnscallback, this);
+    query(hostname, NetRWer::Dnscallback, this);
 }
 
-FdRWer::~FdRWer() {
-    del_delayjob(std::bind(&FdRWer::con_failed, this), this);
-    query_cancel(hostname, FdRWer::Dnscallback, this);
+NetRWer::~NetRWer() {
+    del_delayjob(std::bind(&NetRWer::con_failed, this), this);
+    query_cancel(hostname, NetRWer::Dnscallback, this);
 }
 
-void FdRWer::Dnscallback(void* param, const char*, std::list<sockaddr_un> addrs) {
-    FdRWer* rwer = static_cast<FdRWer*>(param);
+void NetRWer::Dnscallback(void* param, std::list<sockaddr_un> addrs) {
+    NetRWer* rwer = static_cast<NetRWer*>(param);
     if (addrs.empty()) {
         return rwer->errorCB(DNS_FAILED, 0);
     }
@@ -132,14 +132,14 @@ void FdRWer::Dnscallback(void* param, const char*, std::list<sockaddr_un> addrs)
         rwer->setFd(fd);
         rwer->setEvents(RW_EVENT::READWRITE);
         rwer->Connected(addrs.front());
-        rwer->handleEvent = (void (Ep::*)(RW_EVENT))&FdRWer::defaultHE;
+        rwer->handleEvent = (void (Ep::*)(RW_EVENT))&NetRWer::defaultHE;
     }else{
         rwer->stats = RWerStats::Connecting;
         rwer->connect();
     }
 }
 
-void FdRWer::retryconnect(int error) {
+void NetRWer::retryconnect(int error) {
     setFd(-1);
     if(!addrs.empty()){
         RcdDown(hostname, addrs.front());
@@ -152,18 +152,18 @@ void FdRWer::retryconnect(int error) {
     connect();
 }
 
-void FdRWer::connect() {
+void NetRWer::connect() {
     int fd = Connect(&addrs.front(), (int)protocol);
     if (fd < 0) {
-        return add_delayjob(std::bind(&FdRWer::con_failed, this), this, 0);
+        return add_delayjob(std::bind(&NetRWer::con_failed, this), this, 0);
     }
     setFd(fd);
     setEvents(RW_EVENT::WRITE);
-    handleEvent = (void (Ep::*)(RW_EVENT))&FdRWer::waitconnectHE;
-    return add_delayjob(std::bind(&FdRWer::con_failed, this), this, 30000);
+    handleEvent = (void (Ep::*)(RW_EVENT))&NetRWer::waitconnectHE;
+    return add_delayjob(std::bind(&NetRWer::con_failed, this), this, 30000);
 }
 
-int FdRWer::con_failed() {
+int NetRWer::con_failed() {
     if(getFd() >= 0){
         LOGE("connect to %s timeout\n", hostname);
         retryconnect(CONNECT_TIMEOUT);
@@ -175,7 +175,7 @@ int FdRWer::con_failed() {
 }
 
 
-void FdRWer::waitconnectHE(RW_EVENT events) {
+void NetRWer::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR)) {
         checkSocket(__PRETTY_FUNCTION__);
         return retryconnect(CONNECT_FAILED);
@@ -183,12 +183,12 @@ void FdRWer::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::WRITE)) {
         setEvents(RW_EVENT::READWRITE);
         Connected(addrs.front());
-        handleEvent = (void (Ep::*)(RW_EVENT))&FdRWer::defaultHE;
-        del_delayjob(std::bind(&FdRWer::con_failed, this), this);
+        handleEvent = (void (Ep::*)(RW_EVENT))&NetRWer::defaultHE;
+        del_delayjob(std::bind(&NetRWer::con_failed, this), this);
     }
 }
 
-ssize_t FdRWer::Write(const void* buff, size_t len){
+ssize_t NetRWer::Write(const void* buff, size_t len){
     return write(getFd(), buff, len);
 }
 
@@ -285,7 +285,9 @@ void PacketRWer::ReadData() {
 
 
 #ifdef __linux__
-EventRWer::EventRWer(std::function<void(int ret, int code)> errorCB):RWer(errorCB) {
+EventRWer::EventRWer(std::function<void(int ret, int code)> errorCB):
+    RWer(errorCB, [](const union sockaddr_un&){})
+{
     int evfd = eventfd(1, O_NONBLOCK);
     if(evfd < 0){
         errorCB(SOCKET_ERR, errno);

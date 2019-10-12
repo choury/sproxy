@@ -42,13 +42,13 @@ typedef enum{NONE, TCP=SOCK_STREAM, UDP=SOCK_DGRAM, ICMP}Protocol;
 
 extern uint32_t debug;
 
-#define DEVENT    (1u<<0)
-#define DDNS      (1u<<1)
-#define DHTTP2    (1u<<2)
-#define DJOB      (1u<<3)
-#define DVPN      (1u<<4)
-#define DHPACK    (1u<<5)
-#define DHTTP     (1u<<7)
+#define DEVENT    (1U<<0)
+#define DDNS      (1U<<1)
+#define DHTTP2    (1U<<2)
+#define DJOB      (1U<<3)
+#define DVPN      (1U<<4)
+#define DHPACK    (1U<<5)
+#define DHTTP     (1U<<7)
 
 #define DEVENT_STR  "[EVENT]"
 #define DDNS_STR    "[DNS]"
@@ -165,23 +165,23 @@ do {\
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
-#define NOERROR             0u
-#define SOCKET_ERR          80u
-#define CONNECT_FAILED      81u
-#define CONNECT_TIMEOUT     82u
-#define SSL_SHAKEHAND_ERR   83u
-#define HEAD_TOO_LONG_ERR   84u
-#define HTTP_PROTOCOL_ERR   85u
-#define READ_ERR            86u
-#define WRITE_ERR           87u
-#define PEER_LOST_ERR       88u
-#define IP_BLOCK_ERR        89u
-#define TCP_RESET_ERR       90u
-#define DNS_FAILED          91u
-#define VPN_AGED_ERR        92u
-#define SNI_HOST_ERR        93u
-#define ERROR_MASK          0xffu
-#define DISCONNECT_FLAG     (1u<<31u)
+#define NOERROR             0U
+#define SOCKET_ERR          80U
+#define CONNECT_FAILED      81U
+#define CONNECT_TIMEOUT     82U
+#define SSL_SHAKEHAND_ERR   83U
+#define HEAD_TOO_LONG_ERR   84U
+#define HTTP_PROTOCOL_ERR   85U
+#define READ_ERR            86U
+#define WRITE_ERR           87U
+#define PEER_LOST_ERR       88U
+#define IP_BLOCK_ERR        89U
+#define TCP_RESET_ERR       90U
+#define DNS_FAILED          91U
+#define VPN_AGED_ERR        92U
+#define SNI_HOST_ERR        93U
+#define ERROR_MASK          0xff
+#define DISCONNECT_FLAG     (1U<<31U)
 
 typedef unsigned char uchar;
 typedef void (* Dumper)(void* param, const char* fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));

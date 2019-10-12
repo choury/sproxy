@@ -51,6 +51,14 @@ static uint32_t getFip(const sockaddr_un& addr){
 
 void FDns::Send(const void* buff, size_t size, void* index) {
     Dns_Que que((const char *)buff, size);
+    if(!que.valid){
+        char out[size*2];
+        for(size_t i = 0; i < size; i++){
+            sprintf(out+i*2, "%02X", ((unsigned char*)buff)[i]);
+        }
+        LOGE("invalid dns request [%zd]: %s\n", size, out);
+        return;
+    }
     LOGD(DDNS, "FQuery %s [%d]: %d\n", que.host.c_str(), que.id, que.type);
     uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id)){

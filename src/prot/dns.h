@@ -53,6 +53,7 @@ public:
     sockaddr_un ptr_addr;
     uint16_t type;
     uint16_t id;
+    bool valid = false;
     Dns_Que(const std::string& host, uint16_t type, uint16_t id);
     explicit Dns_Que(const char *buff, size_t len);
     int build(unsigned char *buf)const;
@@ -74,7 +75,7 @@ public:
 };
 
 
-typedef void (*DNSCBfunc)(void *, const char *hostname, std::list<sockaddr_un> addrs);
+typedef void (*DNSCBfunc)(void *, std::list<sockaddr_un> addrs);
 typedef void (*DNSRAWCB)(void *, const char *buff, size_t size);
 
 

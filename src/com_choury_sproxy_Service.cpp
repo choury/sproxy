@@ -21,7 +21,7 @@ char   version[DOMAINLIMIT];
 static char default_policy[PATH_MAX];
 
 
-std::string getExternalFilesDir() {
+static std::string getExternalFilesDir() {
     if(!extenalFilesDir.empty()){
         return extenalFilesDir;
     }
@@ -47,7 +47,7 @@ std::string getExternalFilesDir() {
     return extenalFilesDir;
 }
 
-std::string getExternalCacheDir() {
+static std::string getExternalCacheDir() {
     if(!extenalCacheDir.empty()){
         return extenalCacheDir;
     }
@@ -244,11 +244,13 @@ void android_vlog(int level, const char* fmt, va_list args){
     if(level != ANDROID_LOG_DEBUG) {
         __android_log_print(level, "SproxyClient", "%s", printbuff);
     }
-    std::string cachedir = getExternalCacheDir();
-    std::ofstream logfile(cachedir+"/vpn.log", std::ios::app);
-    auto now = time(nullptr);
-    logfile<<std::put_time(std::localtime(&now), "%F %T: ")<<printbuff;
-    logfile.close();
+    if(jnijvm) {
+        std::string cachedir = getExternalCacheDir();
+        std::ofstream logfile(cachedir + "/vpn.log", std::ios::app);
+        auto now = time(nullptr);
+        logfile << std::put_time(std::localtime(&now), "%F %T: ") << printbuff;
+        logfile.close();
+    }
 }
 
 void android_log(int level, const char* fmt, ...){

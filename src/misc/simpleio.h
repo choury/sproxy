@@ -30,7 +30,7 @@ public:
     char* end();
 };
 
-class FdRWer: public RWer{
+class NetRWer: public RWer{
 protected:
     uint16_t port = 0;
     Protocol protocol;
@@ -40,24 +40,24 @@ protected:
     void connect();
     void retryconnect(int error);
     int  con_failed();
-    static void Dnscallback(void* param, const char *hostname, std::list<sockaddr_un> addrs);
+    static void Dnscallback(void* param, std::list<sockaddr_un> addrs);
 
     virtual ssize_t Write(const void* buff, size_t len) override;
 public:
-    FdRWer(int fd, std::function<void(int ret, int code)> errorCB);
-    FdRWer(const char* hostname, uint16_t port, Protocol protocol,
+    NetRWer(int fd, std::function<void(int ret, int code)> errorCB);
+    NetRWer(const char* hostname, uint16_t port, Protocol protocol,
            std::function<void(int ret, int code)> errorCB,
            std::function<void(const sockaddr_un&)> connectCB = nullptr);
-    virtual ~FdRWer() override;
+    virtual ~NetRWer() override;
 };
 
-class StreamRWer: public FdRWer{
+class StreamRWer: public NetRWer{
 protected:
     CBuffer rb;
     virtual ssize_t Read(void* buff, size_t len);
     virtual void ReadData() override;
 public:
-    using FdRWer::FdRWer;
+    using NetRWer::NetRWer;
 
     //for read buffer
     virtual size_t rlength() override;
@@ -66,13 +66,13 @@ public:
     virtual void consume(const char*, size_t l) override;
 };
 
-class PacketRWer: public FdRWer{
+class PacketRWer: public NetRWer{
 protected:
     RBuffer rb;
     virtual ssize_t Read(void* buff, size_t len);
     virtual void ReadData() override;
 public:
-    using FdRWer::FdRWer;
+    using NetRWer::NetRWer;
 
     //for read buffer
     virtual size_t rlength() override;
