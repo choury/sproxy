@@ -113,13 +113,15 @@ void FDns::ResponseCb(void* param, const char* buff, size_t size) {
     }
 }
 
-void FDns::finish(uint32_t flags, void* index) {
+bool FDns::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode || (flags & DISCONNECT_FLAG)){
         statusmap.erase(id);
+        return false;
     }
+    return true;
 }
 
 void FDns::writedcb(const void*){

@@ -24,7 +24,7 @@ public:
     virtual int32_t bufleft(void* index) = 0;
     virtual void Send(const void *buff, size_t size, void* index);
     virtual void Send(void* buff, size_t size, void* index);
-    virtual void finish(uint32_t flags, void* info) = 0;
+    virtual bool finish(uint32_t flags, void* info) = 0;
 
     virtual void writedcb(const void* index);
 };

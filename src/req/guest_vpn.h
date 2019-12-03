@@ -87,7 +87,7 @@ public:
     virtual int32_t bufleft(void* index) override;
     virtual void Send(void* buff, size_t size, void* index) override;
 
-    virtual void finish(uint32_t flags, void* index) override;
+    virtual bool finish(uint32_t flags, void* index) override;
     virtual void deleteLater(uint32_t error) override;
     virtual const char *getsrc(const void* index) override;
     virtual void dump_stat(Dumper dp, void* param) override;

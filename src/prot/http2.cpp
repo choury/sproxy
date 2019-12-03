@@ -50,8 +50,13 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
                 case PRIORITY_TYPE:
                     break;
                 case SETTINGS_TYPE:
-                    if(id != 0 || length%6 != 0){
-                        LOGE("ERROR wrong setting frame : %d/%d\n", id, length);
+                    if(id != 0 && (http2_flag & HTTP2_SUPPORT_SHUTDOWN) == 0){
+                        LOGE("ERROR wrong setting id: %d\n", id);
+                        ErrProc(ERR_PROTOCOL_ERROR);
+                        return 0;
+                    }
+                    if(length%6 != 0){
+                        LOGE("ERROR wrong setting length: %d\n", length);
                         ErrProc(ERR_PROTOCOL_ERROR);
                         return 0;
                     }
@@ -173,7 +178,6 @@ void Http2Base::PushData(uint32_t id, const void* data, size_t size){
     set32(header->id, id);
     set24(header->length, left);
     if(size == 0) {
-        LOGD(DHTTP2, "<guest2> [%d]: set stream end\n", id);
         header->flags = END_STREAM_F;
     }else{
         memcpy(header+1, data, left);
@@ -210,6 +214,7 @@ int Http2Base::SendFrame(){
 #endif
 
 void Http2Base::SettingsProc(const Http2_header* header) {
+    uint32_t id = HTTP2_ID(header->id);
     const Setting_Frame *sf = (const Setting_Frame *)(header + 1);
     if((header->flags & ACK_F) == 0) {
         while((char *)sf-(char *)(header+1) < get24(header->length)){
@@ -238,8 +243,21 @@ void Http2Base::SettingsProc(const Http2_header* header) {
                 remoteframebodylimit = value;
                 LOGD(DHTTP2, "set frame body size limit: %d\n", remoteframebodylimit);
                 break;
+            case SETTINGS_ENABLE_PUSH:
+            case SETTINGS_MAX_CONCURRENT_STREAMS:
+            case SETTINGS_MAX_HEADER_LIST_SIZE:
+                LOG("Get a unimplemented setting(%d): %d\n", get16(sf->identifier), value);
+                break;
+            case SETTINGS_PEER_SHUTDOWN:
+                if(id == 0) {
+                    http2_flag |= HTTP2_SUPPORT_SHUTDOWN;
+                    LOGD(DHTTP2, "set shutdown enabled\n");
+                }else{
+                    ShutdownProc(id);
+                }
+                break;
             default:
-                LOG("Get a unkown setting(%d): %d\n", get16(sf->identifier), value);
+                LOG("Get a unknown setting(%d): %d\n", get16(sf->identifier), value);
                 break;
             }
             sf++;
@@ -274,6 +292,10 @@ void Http2Base::EndProc(__attribute__ ((unused)) uint32_t id) {
     LOGD(DHTTP2, "Stream end: %d\n", id);
 }
 
+void Http2Base::ShutdownProc(__attribute__ ((unused)) uint32_t id) {
+    LOGD(DHTTP2, "Stream shutdown: %d\n", id);
+}
+
 uint32_t Http2Base::ExpandWindowSize(uint32_t id, uint32_t size) {
     LOGD(DHTTP2, "will expand window size [%d]: %d\n", id, size);
     Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header)+sizeof(uint32_t));
@@ -306,6 +328,20 @@ void Http2Base::Reset(uint32_t id, uint32_t code) {
     PushFrame(header);
 }
 
+void Http2Base::Shutdown(uint32_t id) {
+    assert(http2_flag & HTTP2_SUPPORT_SHUTDOWN);
+    Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header) + sizeof(Setting_Frame));
+    memset(header, 0, sizeof(Http2_header));
+    set32(header->id, id);
+    set24(header->length, sizeof(Setting_Frame));
+    header->type = SETTINGS_TYPE;
+
+    Setting_Frame *sf = (Setting_Frame *)(header+1);
+    set16(sf->identifier, SETTINGS_PEER_SHUTDOWN);
+    set32(sf->value, 0);
+    PushFrame(header);
+}
+
 void Http2Base::Goaway(uint32_t lastid, uint32_t code, char *message) {
     http2_flag |= HTTP2_FLAG_GOAWAYED;
     size_t len = sizeof(Goaway_Frame);
@@ -327,7 +363,7 @@ void Http2Base::Goaway(uint32_t lastid, uint32_t code, char *message) {
 
 
 void Http2Base::SendInitSetting() {
-    Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header) + 2*sizeof(Setting_Frame));
+    Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header) + 3*sizeof(Setting_Frame));
     memset(header, 0, sizeof(Http2_header));
     Setting_Frame *sf = (Setting_Frame *)(header+1);
     set16(sf->identifier, SETTINGS_HEADER_TABLE_SIZE );
@@ -338,7 +374,11 @@ void Http2Base::SendInitSetting() {
     set32(sf->value, localframewindowsize);
     LOGD(DHTTP2, "send inital frame window size:%d\n", localframewindowsize);
 
-    set24(header->length, 2*sizeof(Setting_Frame));
+    sf++;
+    set16(sf->identifier, SETTINGS_PEER_SHUTDOWN);
+    set32(sf->value, 0);
+
+    set24(header->length, 3*sizeof(Setting_Frame));
     header->type = SETTINGS_TYPE;
     PushFrame(header);
 }

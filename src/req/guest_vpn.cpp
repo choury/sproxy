@@ -34,6 +34,7 @@ VpnKey::VpnKey(std::shared_ptr<const Ip> ip) {
     case IPPROTO_ICMPV6:
         protocol = Protocol::ICMP;
         src.addr_in.sin_port = htons(ip->icmp6->getid());
+        dst.addr_in.sin_port = htons(ip->icmp6->getid());
         break;
     default:
         protocol = Protocol::NONE;
@@ -510,9 +511,16 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
         nanny->sendPkg(pac_return, (const void*)nullptr, 0);
         switch(tcpStatus->status){
         case TCP_ESTABLISHED:
-            res_ptr.lock()->finish(NOERROR, res_index);
-            tcpStatus->status = TCP_CLOSE_WAIT;
-            return;
+            if(!res_ptr.lock()->finish(NOERROR, res_index)){
+				res_ptr = std::weak_ptr<Responser>();
+				res_index = nullptr;
+                tcpStatus->status = TCP_LAST_ACK;
+				abort();
+			}else{
+				tcpStatus->status = TCP_CLOSE_WAIT;
+				return;
+			}
+			break;
         case TCP_FIN_WAIT1:
             tcpStatus->status = TCP_CLOSING;
             if(!res_ptr.expired()){
@@ -843,14 +851,14 @@ void Guest_vpn::Send(void* buff, size_t size, void* index) {
 }
 
 
-void Guest_vpn::finish(uint32_t flags, void* index) {
+bool Guest_vpn::finish(uint32_t flags, void* index) {
     uint8_t errcode = flags & ERROR_MASK;
     LOGD(DVPN, "%s finish: %u\n", key.getString("<-"), errcode);
     if(errcode == VPN_AGED_ERR){
         if(!res_ptr.expired())
             res_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, res_index);
         deleteLater(errcode);
-        return;
+        return false;
     }
     assert(index == &key);
     if(key.protocol == Protocol::TCP){
@@ -877,8 +885,9 @@ void Guest_vpn::finish(uint32_t flags, void* index) {
             if(flags & DISCONNECT_FLAG){
                 res_ptr = std::weak_ptr<Responser>();
                 res_index = nullptr;
+				return false;
             }
-            return;
+            return true;
         }else if(errcode == CONNECT_TIMEOUT){
             std::shared_ptr<Ip> pac_return;
             if(key.version() == 4){
@@ -934,6 +943,7 @@ void Guest_vpn::finish(uint32_t flags, void* index) {
     if(errcode || (flags & DISCONNECT_FLAG)){
         deleteLater(errcode);
     }
+    return false;
 }
 
 int Guest_vpn::aged(){

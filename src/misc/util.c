@@ -279,7 +279,7 @@ const char* findprogram(ino_t inode){
         while((fdptr = readdir(fddir)) != NULL){
             char fname[50];
             //example:  /proc/1111/fd/222
-            sprintf(fname, "%s/%.20s", fddirname, fdptr->d_name);
+            sprintf(fname, "%.20s/%.20s", fddirname, fdptr->d_name);
             char linkname[URLLIMIT];
             int ret = readlink(fname, linkname, sizeof(linkname));
             if(ret > 0 && ret < 20 && memcmp(linkname, socklink, ret) == 0){
@@ -383,18 +383,18 @@ int spliturl(const char* url, struct Destination* server, char* path) {
         return 0;
     }
     const char* url_end = url + strlen(url);
-    // scan protocol by '://'
+    // scan schema by '://'
     const char *scan_pos = strstr(url, "://");
-    size_t protocol_len = 0;
+    size_t schema_len = 0;
     if (scan_pos) {
-        protocol_len = scan_pos - url;
+        schema_len = scan_pos - url;
         scan_pos += 3;
     }else{
         scan_pos = url;
     }
-    if(protocol_len){
-        memcpy(server->protocol, url, protocol_len);
-        server->protocol[protocol_len] = 0;
+    if(schema_len){
+        memcpy(server->schema, url, schema_len);
+        server->schema[schema_len] = 0;
     }
     url = scan_pos;
     
@@ -452,15 +452,15 @@ int spliturl(const char* url, struct Destination* server, char* path) {
 
 int dumpDestToBuffer(const struct Destination* Server, char* buff, size_t buflen){
     uint16_t port = Server->port;
-    if(strcasecmp(Server->protocol, "http") == 0 && port == HTTPPORT){
+    if(strcasecmp(Server->schema, "http") == 0 && port == HTTPPORT){
         port = 0;
     }
-    if(strcasecmp(Server->protocol, "https") ==0 && port == HTTPSPORT){
+    if(strcasecmp(Server->schema, "https") ==0 && port == HTTPSPORT){
         port = 0;
     }
     int pos = 0;
-    if(Server->protocol[0])
-        pos = snprintf(buff, buflen, "%s://%s", Server->protocol, Server->hostname);
+    if(Server->schema[0])
+        pos = snprintf(buff, buflen, "%s://%s", Server->schema, Server->hostname);
     else
         pos = snprintf(buff, buflen, "%s", Server->hostname);
     if(port)

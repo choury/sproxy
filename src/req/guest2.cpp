@@ -55,8 +55,7 @@ Guest2::~Guest2() {
 
 void Guest2::Error(int ret, int code){
     if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0){
-        deleteLater(NOERROR | DISCONNECT_FLAG);
-        return;
+        return deleteLater(PEER_LOST_ERR);
     }
     LOGE("guest2 error: %d/%d\n", ret, code);
     deleteLater(ret);
@@ -75,10 +74,19 @@ void Guest2::Send(const void* buff, size_t size, void* index){
     uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
-        assert((status.res_flags & STREAM_WRITE_CLOSED) == 0);
+        assert((status.res_flags & STREAM_WRITE_ENDED) == 0);
         status.remotewinsize -= size;
         assert(status.remotewinsize >= 0);
-        LOGD(DHTTP2, "<guest2> send data [%d]: %zu/%d\n", id, size, status.remotewinsize);
+        if(size == 0){
+            LOGD(DHTTP2, "<guest2> send data [%d]: EOF/%d\n", id, status.remotewinsize);
+            status.res_flags |= STREAM_WRITE_ENDED;
+            if(status.res_flags & STREAM_READ_ENDED){
+                status.res_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
+                statusmap.erase(id);
+            }
+        }else{
+            LOGD(DHTTP2, "<guest2> send data [%d]: %zu/%d\n", id, size, status.remotewinsize);
+        }
     }
     remotewinsize -= size;
     PushData(id, buff, size);
@@ -104,7 +112,7 @@ void Guest2::ReqProc(HttpReqHeader* req) {
         };
         statusmap[id].res_index = responser.lock()->request(req);
     }else{
-        finish(0, req->index);
+        Send((const void*)nullptr, 0, req->index);
         delete req;
     }
 }
@@ -115,7 +123,7 @@ void Guest2::DataProc(uint32_t id, const void* data, size_t len) {
     localwinsize -= len;
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
-        assert((status.res_flags & STREAM_READ_CLOSED) == 0);
+        assert((status.res_flags & STREAM_READ_ENDED) == 0);
         assert(!status.res_ptr.expired());
         auto responser = status.res_ptr.lock();
         if(len > (size_t)status.localwinsize){
@@ -138,12 +146,13 @@ void Guest2::EndProc(uint32_t id) {
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
         assert(!status.res_ptr.expired());
-        if(status.res_flags & STREAM_WRITE_CLOSED){
+        assert((status.res_flags & STREAM_WRITE_CLOSED) == 0);
+        if(status.res_flags & STREAM_WRITE_ENDED){
             status.res_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
             statusmap.erase(id);
         }else{
-            status.res_ptr.lock()->finish(NOERROR, status.res_index);
-            status.res_flags |= STREAM_READ_CLOSED;
+            status.res_flags |= STREAM_READ_ENDED;
+            status.res_ptr.lock()->Send((const void*)nullptr, 0, status.res_index);
         }
     }
 }
@@ -216,6 +225,17 @@ void Guest2::WindowUpdateProc(uint32_t id, uint32_t size) {
     }
 }
 
+void Guest2::ShutdownProc(uint32_t id) {
+    if(statusmap.count(id) == 0){
+        return;
+    }
+    LOGD(DHTTP2, "<guest2> get shutdown frame from frame %d\n", id);
+    ResStatus& status = statusmap[id];
+    if(!status.res_ptr.lock()->finish(NOERROR, status.res_index)){
+        Reset(id, PEER_LOST_ERR);
+        statusmap.erase(id);
+    }
+}
 
 void Guest2::GoawayProc(const Http2_header* header) {
     Goaway_Frame* goaway = (Goaway_Frame *)(header+1);
@@ -247,28 +267,27 @@ void Guest2::queue_insert(std::list<write_block>::insert_iterator where, const w
     rwer->buffer_insert(where, wb);
 }
 
-void Guest2::finish(uint32_t flags, void* index) {
+bool Guest2::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
-    if(statusmap.count(id) == 0){
-        LOGD(DHTTP2, "<guest2> finish not found id: %d\n", id);
-        Peer::Send((const void*)nullptr, 0, index);
-        return;
-    }
+    assert(statusmap.count(id));
     ResStatus& status = statusmap[id];
     uint8_t errcode = flags & ERROR_MASK;
-    if(errcode == NOERROR ){
-        if((status.res_flags & STREAM_WRITE_CLOSED) == 0){
-            Peer::Send((const void*)nullptr, 0, index);
-            status.res_flags |= STREAM_WRITE_CLOSED;
-        }
-        if(flags & DISCONNECT_FLAG){
-            statusmap.erase(id);
-            return;
-        }
-    }
-    if(errcode || (flags & DISCONNECT_FLAG)){
+    if(errcode || (flags & DISCONNECT_FLAG) || (flags & STREAM_READ_CLOSED)){
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
+        return false;
+    }
+    assert((status.res_flags & STREAM_WRITE_CLOSED) == 0);
+    status.res_flags |= STREAM_WRITE_CLOSED;
+    if(http2_flag & HTTP2_SUPPORT_SHUTDOWN) {
+        LOGD(DHTTP2, "<guest2> send shutdown frame: %d\n", id);
+        Shutdown(id);
+        return true;
+    }else{
+        LOGD(DHTTP2, "<guest2> send reset frame: %d\n", id);
+        Reset(id, ERR_CANCEL);
+        statusmap.erase(id);
+        return false;
     }
 }
 

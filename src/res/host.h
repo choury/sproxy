@@ -31,7 +31,7 @@ public:
     virtual int32_t bufleft(void*) override;
     virtual void Send(void* buff, size_t size, void* index)override;
 
-    virtual void finish(uint32_t flags, void* index)override;
+    virtual bool finish(uint32_t flags, void* index)override;
     virtual void writedcb(const void * index) override;
     virtual void dump_stat(Dumper dp, void* param) override;
     static std::weak_ptr<Responser> gethost(const Destination* dest, HttpReqHeader* req, std::weak_ptr<Responser> responser_ptr);

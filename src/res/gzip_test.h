@@ -20,7 +20,7 @@ public:
 
     virtual void Send(const void *buff, size_t size, void* index)override;
     virtual int32_t bufleft(void* index)override;
-    virtual void finish(uint32_t flags, void* index)override;
+    virtual bool finish(uint32_t flags, void* index)override;
     virtual void dump_stat(Dumper dp, void* param)override;
 };
 #endif

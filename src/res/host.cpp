@@ -16,14 +16,14 @@ static const unsigned char alpn_protos_string[] =
 
 Host::Host(const Destination* dest){
     assert(dest->port);
-    assert(dest->protocol[0]);
+    assert(dest->schema[0]);
     memcpy(&Server, dest, sizeof(Destination));
 
-    if(strcasecmp(dest->protocol, "http") == 0){
+    if(strcasecmp(dest->schema, "http") == 0){
         rwer = new StreamRWer(dest->hostname, dest->port, Protocol::TCP,
                               std::bind(&Host::Error, this, _1, _2),
                               std::bind(&Host::connected, this));
-    }else if(strcasecmp(dest->protocol, "https") == 0 ) {
+    }else if(strcasecmp(dest->schema, "https") == 0 ) {
         SslRWer *srwer = new SslRWer(dest->hostname, dest->port, Protocol::TCP,
                                      std::bind(&Host::Error, this, _1, _2),
                                      std::bind(&Host::connected, this));
@@ -31,17 +31,17 @@ Host::Host(const Destination* dest){
             srwer->set_alpn(alpn_protos_string, sizeof(alpn_protos_string)-1);
         }
         rwer = srwer;
-    }else if(strcasecmp(dest->protocol, "udp") == 0){
+    }else if(strcasecmp(dest->schema, "udp") == 0){
         rwer = new PacketRWer(dest->hostname, dest->port, Protocol::UDP,
                               std::bind(&Host::Error, this, _1, _2),
                               std::bind(&Host::connected, this));
     }else{
-        LOGE("Unkonw protocol: %s\n", dest->protocol);
+        LOGE("Unkonw schema: %s\n", dest->schema);
     }
 }
 
 Host::~Host(){
-    LOGD(DHTTP, "host destoryed: rx:%zu, tx:%zu", rx_bytes, tx_bytes);
+    LOGD(DHTTP, "host destoryed: rx:%zu, tx:%zu\n", rx_bytes, tx_bytes);
     delete req;
 }
 
@@ -96,7 +96,7 @@ void Host::connected() {
         if(req && len){
             req->src.lock()->writedcb(req->index);
         }
-        if(rwer->wlength() == 0 && (http_flag & HTTP_CLIENT_CLOSE_F)){
+        if(rwer->wlength() == 0 && (http_flag & HTTP_READ_CLOSE_F)){
             rwer->Shutdown();
         }
     });
@@ -133,10 +133,14 @@ int32_t Host::bufleft(void*) {
 
 void Host::Send(void* buff, size_t size,  __attribute__ ((unused)) void* index) {
     assert((long)index == 1);
-    assert((http_flag & HTTP_CLIENT_CLOSE_F) == 0);
+    assert((http_flag & HTTP_WRITE_CLOSE_F) == 0);
     rwer->buffer_insert(rwer->buffer_end(), write_block{buff, size, 0});
     tx_bytes += size;
-    LOGD(DHTTP, "host %s Send: size:%zu/%zu, http_flag:%d\n", dumpDest(&Server), size, tx_bytes, http_flag);
+	if(size == 0){
+		LOGD(DHTTP, "host %s Send: EOF/%zu, http_flag:%d\n", dumpDest(&Server), tx_bytes, http_flag);
+	}else{
+		LOGD(DHTTP, "host %s Send: size:%zu/%zu, http_flag:%d\n", dumpDest(&Server), size, tx_bytes, http_flag);
+	}
 }
 
 void Host::ResProc(HttpResHeader* res) {
@@ -157,7 +161,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     if (len <= 0) {
         LOGE("(%s): The guest's write buff is full (%s)\n",
              req->src.lock()->getsrc(req->index), Server.hostname);
-        if(strcasecmp(Server.protocol, "udp") == 0){
+        if(strcasecmp(Server.schema, "udp") == 0){
             return size;
         }
         rwer->delEvents(RW_EVENT::READ);
@@ -170,9 +174,9 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 }
 
 void Host::EndProc() {
-    LOGD(DHTTP, "host %s EndProc\n", dumpDest(&Server));
     assert(!req->src.expired());
-    req->src.lock()->finish(NOERROR, req->index);
+    LOGD(DHTTP, "host %s EndProc\n", dumpDest(&Server));
+    req->src.lock()->Send((const void*)nullptr, 0, req->index);
 }
 
 void Host::ErrProc(){
@@ -180,15 +184,30 @@ void Host::ErrProc(){
 }
 
 void Host::Error(int ret, int code) {
+    LOGD(DHTTP, "host Error %s: ret:%d, code:%d, http_flag:%u\n", dumpDest(&Server), ret, code, http_flag);
+    if(req == nullptr){
+        return deleteLater(ret | DISCONNECT_FLAG);
+    }
     if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0){
-        http_flag |= HTTP_SERVER_CLOSE_F;
-        return deleteLater(NOERROR | DISCONNECT_FLAG);
+        if(http_flag & HTTP_WRITE_CLOSE_F){
+            return;
+        }
+        http_flag |= HTTP_WRITE_CLOSE_F;
+        uint32_t flags = NOERROR;
+        if(http_flag & HTTP_READ_CLOSE_F){
+            flags |= DISCONNECT_FLAG;
+        }
+        if(!req->src.lock()->finish(flags, req->index)){
+            req = nullptr;
+			deleteLater(DISCONNECT_FLAG);
+		}
+		return;
     }
     LOGE("Host error <%s> %d/%d\n", dumpDest(&Server), ret, code);
     deleteLater(ret);
 }
 
-void Host::finish(uint32_t flags, void* index) {
+bool Host::finish(uint32_t flags, void* index) {
     assert((long)index == 1);
     LOGD(DHTTP, "host %s finish: flags:%u, http_flag: %u\n", dumpDest(&Server), flags, http_flag);
     uint8_t errcode = flags & ERROR_MASK;
@@ -196,14 +215,18 @@ void Host::finish(uint32_t flags, void* index) {
         delete req;
         req = nullptr;
         deleteLater(flags);
-        return;
+        return false;
     }
-    if(Http_Proc == &Host::AlwaysProc){
-        http_flag |= HTTP_CLIENT_CLOSE_F;
-        if(rwer->wlength() == 0){
-            rwer->Shutdown();
-        }
+    if(http_flag & HTTP_WRITE_CLOSE_F){
+        deleteLater(DISCONNECT_FLAG);
+        return false;
     }
+    rwer->addEvents(RW_EVENT::READ);
+    http_flag |= HTTP_READ_CLOSE_F;
+    if(rwer->wlength() == 0){
+        rwer->Shutdown();
+    }
+    return true;
 }
 
 void Host::deleteLater(uint32_t errcode){
@@ -229,7 +252,7 @@ void Host::deleteLater(uint32_t errcode){
 void Host::writedcb(const void* index) {
     LOGD(DHTTP, "host %s writedcb: http_flag:%d, rlength:%zu, wlength:%zu, bufleft:%d\n", 
         dumpDest(&Server), http_flag, rwer->rlength(), rwer->wlength(), req->src.lock()->bufleft(req->index));
-    if((http_flag & HTTP_SERVER_CLOSE_F) == 0){
+    if((http_flag & HTTP_WRITE_CLOSE_F) == 0){
         Peer::writedcb(index);
     }
 }

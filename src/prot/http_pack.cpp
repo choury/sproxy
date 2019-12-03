@@ -188,7 +188,7 @@ HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers, std::
     }
     snprintf(method, sizeof(method), "%s", get(":method"));
     if(get(":scheme")){
-        snprintf(Dest.protocol, sizeof(Dest.protocol), "%s", get(":scheme"));
+        snprintf(Dest.schema, sizeof(Dest.schema), "%s", get(":scheme"));
     }
     if(get(":path")){
         snprintf(path, sizeof(path), "%s", get(":path"));
@@ -280,11 +280,11 @@ void HttpReqHeader::postparse() {
     if(!http_method()){
         return;
     }
-    if(!Dest.protocol[0]){
+    if(!Dest.schema[0]){
         if(ismethod("SEND")){
-            strcpy(Dest.protocol, "udp");
+            strcpy(Dest.schema, "udp");
         }else{
-            strcpy(Dest.protocol, "http");
+            strcpy(Dest.schema, "http");
         }
     }
     if(Dest.port == 0 && !ismethod("CONNECT") && !ismethod("SEND")){
@@ -404,7 +404,7 @@ Http2_header *HttpReqHeader::getframe(Hpack_index_table *index_table, uint32_t h
     }
     
     if(!ismethod("CONNECT") && !ismethod("SEND") && !ismethod("PING")){
-        p += index_table->hpack_encode(p, ":scheme", Dest.protocol[0]?Dest.protocol:"http");
+        p += index_table->hpack_encode(p, ":scheme", Dest.schema[0]?Dest.schema:"http");
         p += index_table->hpack_encode(p, ":path", path);
     }
     for(auto i: cookies){

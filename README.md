@@ -1,6 +1,6 @@
 sproxy [![Build Status](https://travis-ci.org/choury/sproxy.svg?branch=master)](https://travis-ci.org/choury/sproxy)
 ======
-+ Linux Only!!
++ Support Linux and macOS
 + http proxy
 + http/http2 proxy over ssl
 
