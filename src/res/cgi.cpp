@@ -287,9 +287,13 @@ bool Cgi::HandleData(const CGI_Header* header, HttpReqHeader* req){
         return false;
     }
 
+    LOGD(DHTTP, "cgi[%s] handle data %zu\n", filename, size);
     req_ptr->Send((const char *)(header+1), size, req->index);
     if (header->flag & CGI_FLAG_END) {
         uint32_t cgi_id = ntohl(header->requestId);
+		if(size){
+			req_ptr->Send((const void*)nullptr, 0, req->index);
+		}
         req_ptr->finish(NOERROR | DISCONNECT_FLAG, req->index);
         statusmap.erase(cgi_id);
         delete req;
@@ -332,7 +336,7 @@ void Cgi::defaultHE(uint32_t events) {
 }
 #endif
 
-void Cgi::finish(uint32_t flags, void* index) {
+bool Cgi::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     Peer::Send((const void*)nullptr, 0, index);
@@ -340,7 +344,9 @@ void Cgi::finish(uint32_t flags, void* index) {
     if(errcode || (flags & DISCONNECT_FLAG)){
         delete statusmap[id];
         statusmap.erase(id);
+        return false;
     }
+    return true;
 }
 
 void Cgi::deleteLater(uint32_t errcode){

@@ -176,7 +176,7 @@ int NetRWer::con_failed() {
 
 
 void NetRWer::waitconnectHE(RW_EVENT events) {
-    if (!!(events & RW_EVENT::ERROR)) {
+    if (!!(events & RW_EVENT::ERROR) || !!(events & RW_EVENT::READEOF)) {
         checkSocket(__PRETTY_FUNCTION__);
         return retryconnect(CONNECT_FAILED);
     }
@@ -295,7 +295,8 @@ EventRWer::EventRWer(std::function<void(int ret, int code)> errorCB):
     }
     setFd(evfd);
 #else
-EventRWer::EventRWer(std::function<void(int ret, int code)> errorCB):RWer(errorCB), pairfd(-1){
+EventRWer::EventRWer(std::function<void(int ret, int code)> errorCB):
+    RWer(errorCB, [](const union sockaddr_un&){}), pairfd(-1){
     int pairs[2];
     int ret = socketpair(AF_UNIX, SOCK_STREAM, 0, pairs);
     if(ret){

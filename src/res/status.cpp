@@ -35,8 +35,8 @@ void* Status::request(HttpReqHeader* req){
         res->index = req->index;
         req_ptr->response(res);
         ::dump_stat(StatusDump, req);
+		req_ptr->Send((const void*)nullptr, 0, req->index);
     }
-    req_ptr->finish(NOERROR, req->index);
     return (void*)1;
 }
 
@@ -54,11 +54,13 @@ int32_t Status::bufleft(__attribute__ ((unused)) void* index){
     return 0;
 }
 
-void Status::finish(uint32_t flags, __attribute__ ((unused)) void* index){
+bool Status::finish(uint32_t flags, __attribute__ ((unused)) void* index){
     assert((long)index == 1);
     if(flags){
         deleteLater(flags);
+        return false;
     }
+    return true;
 }
 
 void Status::dump_stat(Dumper dp, void* param){

@@ -211,21 +211,23 @@ std::list<write_block>::iterator WBuffer::end() {
 }
 
 std::list<write_block>::iterator WBuffer::push(std::list<write_block>::insert_iterator i, const write_block& wb) {
-    assert(wb.len);
     assert(wb.buff);
     len += wb.len;
     return write_queue.emplace(i, wb);
 }
 
 ssize_t WBuffer::Write(std::function<ssize_t(const void*, size_t)> write_func){
-    assert(len && write_queue.size());
     auto wb = *write_queue.begin();
     write_queue.pop_front();
     assert(wb.buff);
+    if(wb.len == 0){
+        p_free(wb.buff);
+        return 0;
+    }
     assert(wb.offset < wb.len);
     ssize_t ret = write_func((const char *)wb.buff + wb.offset, wb.len - wb.offset);
     if (ret > 0) {
-        assert(len >= ret);
+        assert(len >= (size_t)ret);
         len -= ret;
         assert(ret + wb.offset <= wb.len);
         if ((size_t)ret + wb.offset == wb.len) {
@@ -288,8 +290,7 @@ void RWer::SendData(){
     size_t writed = 0;
     while(wbuff.length()){
         int ret = wbuff.Write(std::bind(&RWer::Write, this, _1, _2));
-        assert(ret != 0);
-        if(ret > 0){
+        if(ret >= 0){
             writed += ret;
             continue;
         }
@@ -414,7 +415,7 @@ std::list<write_block>::insert_iterator RWer::buffer_end() {
 std::list<write_block>::insert_iterator
 RWer::buffer_insert(std::list<write_block>::insert_iterator where, const write_block& wb) {
     assert(wb.offset <= wb.len);
-    if(wb.offset < wb.len){
+    if(wb.offset < wb.len || wb.len == 0){
         addEvents(RW_EVENT::WRITE);
         return wbuff.push(where, wb);
     }else{

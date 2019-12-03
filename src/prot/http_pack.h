@@ -127,7 +127,4 @@ static inline std::string& ltrim(std::string && s) {
     return s;
 }
 
-
-
-
 #endif

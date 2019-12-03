@@ -34,6 +34,7 @@ protected:
     virtual void ErrProc(int errcode)override;
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)override;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
+    virtual void ShutdownProc(uint32_t id)override;
 
 
     virtual std::list<write_block>::insert_iterator queue_head() override;
@@ -47,7 +48,7 @@ public:
     virtual int32_t bufleft(void* index)override;
     virtual void Send(const void *buff, size_t size, void* index)override;
     virtual void writedcb(const void* index)override;
-    virtual void finish(uint32_t flags, void* index)override;
+    virtual bool finish(uint32_t flags, void* index)override;
     
     virtual void* request(HttpReqHeader* req)override;
     

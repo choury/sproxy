@@ -43,6 +43,8 @@ struct Setting_Frame{
 #define SETTINGS_INITIAL_WINDOW_SIZE    4
 #define SETTINGS_MAX_FRAME_SIZE         5
 #define SETTINGS_MAX_HEADER_LIST_SIZE   6
+
+#define SETTINGS_PEER_SHUTDOWN          0x80
     uint8_t identifier[2];
     uint8_t value[4];
 }__attribute__((packed));
@@ -86,8 +88,9 @@ protected:
     
     int32_t remotewinsize = 65535; // 对端提供的窗口大小，发送时减小，收到对端update时增加
     int32_t localwinsize = 65535; // 发送给对端的窗口大小，接受时减小，给对端发送update时增加
-#define HTTP2_FLAG_INITED    1u
-#define HTTP2_FLAG_GOAWAYED  2u
+#define HTTP2_FLAG_INITED    (1u << 0)
+#define HTTP2_FLAG_GOAWAYED  (1u << 1)
+#define HTTP2_SUPPORT_SHUTDOWN (1u << 2)
     uint32_t http2_flag = 0;
     uint32_t recvid = 0;
     uint32_t sendid = 1;
@@ -103,10 +106,12 @@ protected:
     virtual void DataProc(uint32_t id, const void *data, size_t len)=0;
     virtual void RstProc(uint32_t id, uint32_t errcode);
     virtual void EndProc(uint32_t id);
+    virtual void ShutdownProc(uint32_t id);
     virtual void ErrProc(int errcode) = 0;
 
     void Ping(const void *buff);
     void Reset(uint32_t id, uint32_t code);
+    void Shutdown(uint32_t id);
     void Goaway(uint32_t lastid, uint32_t code, char* message = nullptr);
     void SendInitSetting();
     virtual void PushFrame(Http2_header* header);
@@ -150,7 +155,9 @@ public:
 };
 
 #define STREAM_HEAD_ENDED   (1u<<0u)
-#define STREAM_WRITE_CLOSED (1u<<1u)
-#define STREAM_READ_CLOSED  (1u<<2u)
+#define STREAM_WRITE_ENDED   (1u<<1u)
+#define STREAM_READ_ENDED   (1u<<2u)
+#define STREAM_READ_CLOSED   (1u<<3u)
+#define STREAM_WRITE_CLOSED  (1u<<4u)
 
 #endif

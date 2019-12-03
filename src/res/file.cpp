@@ -260,13 +260,15 @@ void File::readHE(size_t len) {
     }
 }
 
-void File::finish(uint32_t flags, void* index){
+bool File::finish(uint32_t flags, void* index){
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode || (flags & DISCONNECT_FLAG)){
         statusmap.erase(id);
+        return false;
     }
+    return true;
 }
 
 void File::deleteLater(uint32_t errcode){
@@ -405,6 +407,7 @@ std::weak_ptr<Responser> File::getfile(HttpReqHeader* req) {
             req_ptr->Send((const void*)buff,
                            sprintf(buff, "</pre><hr></body></html>"),
                            req->index);
+			req_ptr->Send((const void*)nullptr, 0, req->index);
             req_ptr->finish(NOERROR | DISCONNECT_FLAG, req->index);
             return std::weak_ptr<Responser>();
         }

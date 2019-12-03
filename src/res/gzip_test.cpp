@@ -108,6 +108,7 @@ void GzipTest::gzipreadHE(size_t len) {
     assert(!req_ptr.expired());
     if (left == 0) {
         (void)deflateEnd(&strm);
+		req_ptr.lock()->Send((const void*)nullptr, 0, req_index);
         req_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, req_index);
         deleteLater(NOERROR);
         return;
@@ -174,12 +175,14 @@ int32_t GzipTest::bufleft(__attribute__((unused)) void *index) {
     return 0;
 }
 
-void GzipTest::finish(uint32_t flags, __attribute__((unused)) void *index) {
+bool GzipTest::finish(uint32_t flags, __attribute__((unused)) void *index) {
     assert((long)index == 1);
     if (flags) {
         (void)deflateEnd(&strm);
         deleteLater(flags);
+        return false;
     }
+    return true;
 }
 
 void GzipTest::dump_stat(Dumper dp, void *param) {

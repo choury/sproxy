@@ -87,9 +87,10 @@ public:
         if(!reqended){
             return 0;
         }
-        if(req->ismethod("post")){
+        if(req->ismethod("POST")){
             return POST(header);
-        }else{
+        }
+        if(req->ismethod("GET")){
             return GET(header);
         }
         HttpResHeader res(H400, sizeof(H400));

@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <syslog.h>
 #include <arpa/inet.h>
 #ifdef __APPLE__
@@ -76,7 +77,8 @@ void vslog(int level, const char* fmt, va_list arg);
 #define  LOGE(...) \
 do{\
     char tmp[1024]; \
-    snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
+    int __ret = snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
+    if(__ret < 0) abort(); \
     slog(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
 }while(0)
 
@@ -86,7 +88,8 @@ uint32_t getmtime();
 do{\
     if(debug & mod) {\
         char tmp[1024]; \
-        snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
+        int __ret =snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
+        if(__ret < 0) abort(); \
         slog(LOG_DEBUG, "%05u:%s: %s", getmtime()%100000, mod##_STR, tmp); \
     }\
 }while(0)
@@ -196,7 +199,7 @@ union sockaddr_un{
 };
 
 struct Destination{
-    char protocol[DOMAINLIMIT];
+    char schema[DOMAINLIMIT];
     char hostname[DOMAINLIMIT];
     uint16_t port;
 };

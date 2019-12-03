@@ -81,13 +81,15 @@ void Ping::deleteLater(uint32_t errcode) {
     return Peer::deleteLater(errcode);
 }
 
-void Ping::finish(uint32_t flags, __attribute__ ((unused)) void* index) {
+bool Ping::finish(uint32_t flags, __attribute__ ((unused)) void* index) {
     assert(index == (void *)(long)id);
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode || (flags & DISCONNECT_FLAG)){
         req_ptr = std::shared_ptr<Requester>();
         deleteLater(PEER_LOST_ERR);
+        return false;
     }
+    return true;
 }
 
 int32_t Ping::bufleft(__attribute__ ((unused)) void* index) {

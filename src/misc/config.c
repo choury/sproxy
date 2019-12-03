@@ -38,7 +38,7 @@ struct options opt = {
 
     .CPORT          = 0,
     .Server         = {
-        .protocol   = {0},
+        .schema     = {0},
         .hostname   = {0},
         .port       = 0,
     },
@@ -274,18 +274,18 @@ int loadproxy(const char* proxy, struct Destination* server){
     if(spliturl(proxy, server, NULL)){
         return -1;
     }
-    if(server->protocol[0] == 0){
-        strcpy(server->protocol, "https");
+    if(server->schema[0] == 0){
+        strcpy(server->schema, "https");
     }
-    if(strcasecmp(server->protocol, "http") !=0 && strcasecmp(server->protocol, "https") != 0){
-        LOGE("unkonw protocol for server: %s\n", server->protocol);
+    if(strcasecmp(server->schema, "http") !=0 && strcasecmp(server->schema, "https") != 0){
+        LOGE("unkonw schema for server: %s\n", server->schema);
         return -1;
     }
     if(server->port == 0){
-        if(strcasecmp(server->protocol, "http") == 0){
+        if(strcasecmp(server->schema, "http") == 0){
             server->port = HTTPPORT;
         }
-        if(strcasecmp(server->protocol, "https") == 0){
+        if(strcasecmp(server->schema, "https") == 0){
             server->port = HTTPSPORT;
         }
     }
@@ -340,10 +340,12 @@ void parseConfig(int argc, char **argv){
         }
     }
     if(opt.config_file){
-        LOG("read config file from: %s\n", opt.config_file);
-        if(parseConfigFile(opt.config_file)){
-            LOGE("parse config file failed: %s\n", strerror(errno));
-            exit(2);
+        if(strlen(opt.config_file)) {
+            LOG("read config file from: %s\n", opt.config_file);
+            if (parseConfigFile(opt.config_file)) {
+                LOGE("parse config file failed: %s\n", strerror(errno));
+                exit(2);
+            }
         }
     }else{
         for(int i = 0; confs[i]; i++) {
