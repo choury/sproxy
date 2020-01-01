@@ -96,7 +96,7 @@ void Host::connected() {
         if(req && len){
             req->src.lock()->writedcb(req->index);
         }
-        if(rwer->wlength() == 0 && (http_flag & HTTP_READ_CLOSE_F)){
+        if(rwer->wlength() == 0 && (http_flag & HTTP_WRITE_CLOSE_F)){
             rwer->Shutdown();
         }
     });
@@ -155,6 +155,7 @@ void Host::ResProc(HttpResHeader* res) {
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
     assert(!req->src.expired());
+    assert((http_flag & HTTP_READ_CLOSE_F) == 0);
     int len = req->src.lock()->bufleft(req->index);
     len = Min(len, size);
 
@@ -189,12 +190,12 @@ void Host::Error(int ret, int code) {
         return deleteLater(ret | DISCONNECT_FLAG);
     }
     if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0){
-        if(http_flag & HTTP_WRITE_CLOSE_F){
+        if(http_flag & HTTP_READ_CLOSE_F){
             return;
         }
-        http_flag |= HTTP_WRITE_CLOSE_F;
+        http_flag |= HTTP_READ_CLOSE_F;
         uint32_t flags = NOERROR;
-        if(http_flag & HTTP_READ_CLOSE_F){
+        if(http_flag & HTTP_WRITE_CLOSE_F){
             flags |= DISCONNECT_FLAG;
         }
         if(!req->src.lock()->finish(flags, req->index)){
@@ -209,7 +210,7 @@ void Host::Error(int ret, int code) {
 
 bool Host::finish(uint32_t flags, void* index) {
     assert((long)index == 1);
-    LOGD(DHTTP, "host %s finish: flags:%u, http_flag: %u\n", dumpDest(&Server), flags, http_flag);
+    LOGD(DHTTP, "host %s finish: flags:%08x, http_flag: %u\n", dumpDest(&Server), flags, http_flag);
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode || (flags & DISCONNECT_FLAG)){
         delete req;
@@ -217,12 +218,12 @@ bool Host::finish(uint32_t flags, void* index) {
         deleteLater(flags);
         return false;
     }
-    if(http_flag & HTTP_WRITE_CLOSE_F){
+    if(http_flag & HTTP_READ_CLOSE_F){
         deleteLater(DISCONNECT_FLAG);
         return false;
     }
     rwer->addEvents(RW_EVENT::READ);
-    http_flag |= HTTP_READ_CLOSE_F;
+    http_flag |= HTTP_WRITE_CLOSE_F;
     if(rwer->wlength() == 0){
         rwer->Shutdown();
     }
@@ -252,7 +253,7 @@ void Host::deleteLater(uint32_t errcode){
 void Host::writedcb(const void* index) {
     LOGD(DHTTP, "host %s writedcb: http_flag:%d, rlength:%zu, wlength:%zu, bufleft:%d\n", 
         dumpDest(&Server), http_flag, rwer->rlength(), rwer->wlength(), req->src.lock()->bufleft(req->index));
-    if((http_flag & HTTP_WRITE_CLOSE_F) == 0){
+    if((http_flag & HTTP_READ_CLOSE_F) == 0){
         Peer::writedcb(index);
     }
 }

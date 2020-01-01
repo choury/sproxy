@@ -28,7 +28,7 @@ Guest::Guest(int fd,  const sockaddr_un *myaddr): Requester(myaddr) {
         if(!responser_ptr.expired() && len){
             responser_ptr.lock()->writedcb(responser_index);
         }
-        if(rwer->wlength() == 0 && (http_flag & HTTP_READ_CLOSE_F)){
+        if(rwer->wlength() == 0 && (http_flag & HTTP_WRITE_CLOSE_F)){
             rwer->Shutdown();
         }
     });
@@ -53,7 +53,7 @@ Guest::Guest(int fd,  const sockaddr_un *myaddr, SSL_CTX* ctx): Requester(myaddr
         if(!responser_ptr.expired() && len){
             responser_ptr.lock()->writedcb(responser_index);
         }
-        if(rwer->wlength() == 0 && (http_flag & HTTP_READ_CLOSE_F)){
+        if(rwer->wlength() == 0 && (http_flag & HTTP_WRITE_CLOSE_F)){
             rwer->Shutdown();
         }
     });
@@ -89,6 +89,7 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
         deleteLater(PEER_LOST_ERR);
         return -1;
     }
+    assert((http_flag & HTTP_READ_CLOSE_F) == 0);
     int len = responser_ptr.lock()->bufleft(responser_index);
     len = Min(len, size);
     if (len <= 0) {
@@ -122,12 +123,12 @@ void Guest::Error(int ret, int code) {
         return deleteLater(ret | DISCONNECT_FLAG);
     }
     if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0){
-        if(http_flag & HTTP_WRITE_CLOSE_F){
+        if(http_flag & HTTP_READ_CLOSE_F){
             return;
         }
-        http_flag |= HTTP_WRITE_CLOSE_F;
+        http_flag |= HTTP_READ_CLOSE_F;
         uint32_t flags = NOERROR;
-        if(http_flag & HTTP_READ_CLOSE_F){
+        if(http_flag & HTTP_WRITE_CLOSE_F){
             flags |= DISCONNECT_FLAG;
         }
         if(!responser_ptr.lock()->finish(flags, responser_index)){
@@ -213,7 +214,7 @@ void Guest::deleteLater(uint32_t errcode){
 }
 
 bool Guest::finish(uint32_t flags, void* index) {
-    LOGD(DHTTP, "guest finish %s: flags:%u, status:%u\n", getsrc(nullptr), flags, Status_flags);
+    LOGD(DHTTP, "guest finish %s: flags:%08x, status:%u\n", getsrc(nullptr), flags, Status_flags);
     assert((uint32_t)(long)index == 1);
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode || (flags & DISCONNECT_FLAG)){
@@ -222,12 +223,12 @@ bool Guest::finish(uint32_t flags, void* index) {
         deleteLater(flags);
         return false;
     }
-    if(http_flag & HTTP_WRITE_CLOSE_F){
+    if(http_flag & HTTP_READ_CLOSE_F){
         deleteLater(DISCONNECT_FLAG);
         return false;
     }
     rwer->addEvents(RW_EVENT::READ);
-    http_flag |= HTTP_READ_CLOSE_F;
+    http_flag |= HTTP_WRITE_CLOSE_F;
     if(rwer->wlength() == 0){
         rwer->Shutdown();
     }
@@ -236,7 +237,7 @@ bool Guest::finish(uint32_t flags, void* index) {
 
 void Guest::writedcb(const void* index) {
     LOGD(DHTTP, "guest writedcb %s: http_flag:%u, status:%u\n", getsrc(nullptr), http_flag, Status_flags);
-    if((http_flag & HTTP_WRITE_CLOSE_F) == 0){
+    if((http_flag & HTTP_READ_CLOSE_F) == 0){
         Peer::writedcb(index);
     }
 }

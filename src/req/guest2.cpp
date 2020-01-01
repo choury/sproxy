@@ -75,11 +75,12 @@ void Guest2::Send(const void* buff, size_t size, void* index){
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
         assert((status.res_flags & STREAM_WRITE_ENDED) == 0);
+        assert((status.res_flags & STREAM_WRITE_CLOSED) == 0);
         status.remotewinsize -= size;
         assert(status.remotewinsize >= 0);
         if(size == 0){
-            LOGD(DHTTP2, "<guest2> send data [%d]: EOF/%d\n", id, status.remotewinsize);
             status.res_flags |= STREAM_WRITE_ENDED;
+            LOGD(DHTTP2, "<guest2> send data [%d]: EOF/%d\n", id, status.remotewinsize);
             if(status.res_flags & STREAM_READ_ENDED){
                 status.res_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
                 statusmap.erase(id);
@@ -124,6 +125,7 @@ void Guest2::DataProc(uint32_t id, const void* data, size_t len) {
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
         assert((status.res_flags & STREAM_READ_ENDED) == 0);
+        assert((status.res_flags & STREAM_READ_CLOSED) == 0);
         assert(!status.res_ptr.expired());
         auto responser = status.res_ptr.lock();
         if(len > (size_t)status.localwinsize){
@@ -147,12 +149,13 @@ void Guest2::EndProc(uint32_t id) {
         ResStatus& status = statusmap[id];
         assert(!status.res_ptr.expired());
         assert((status.res_flags & STREAM_WRITE_CLOSED) == 0);
+        if((status.res_flags & STREAM_READ_ENDED) == 0) {
+            status.res_flags |= STREAM_READ_ENDED;
+            status.res_ptr.lock()->Send((const void *) nullptr, 0, status.res_index);
+        }
         if(status.res_flags & STREAM_WRITE_ENDED){
             status.res_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
             statusmap.erase(id);
-        }else{
-            status.res_flags |= STREAM_READ_ENDED;
-            status.res_ptr.lock()->Send((const void*)nullptr, 0, status.res_index);
         }
     }
 }
@@ -231,6 +234,7 @@ void Guest2::ShutdownProc(uint32_t id) {
     }
     LOGD(DHTTP2, "<guest2> get shutdown frame from frame %d\n", id);
     ResStatus& status = statusmap[id];
+    status.res_flags |= STREAM_READ_CLOSED;
     if(!status.res_ptr.lock()->finish(NOERROR, status.res_index)){
         Reset(id, PEER_LOST_ERR);
         statusmap.erase(id);
@@ -245,7 +249,7 @@ void Guest2::GoawayProc(const Http2_header* header) {
 }
 
 void Guest2::ErrProc(int errcode) {
-    LOGE("Guest2 http2 error:%d\n", errcode);
+    LOGE("Guest2 http2 error:%08x\n", errcode);
     deleteLater(errcode);
 }
 
@@ -269,7 +273,11 @@ void Guest2::queue_insert(std::list<write_block>::insert_iterator where, const w
 
 bool Guest2::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
-    assert(statusmap.count(id));
+	if(statusmap.count(id) == 0){
+        LOGD(DHTTP2, "<guest2> finish flags:%08x, id:%u, not found\n", flags, id);
+		return false;
+	}
+    LOGD(DHTTP2, "<guest2> finish flags:%08x, id:%u\n", flags, id);
     ResStatus& status = statusmap[id];
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode || (flags & DISCONNECT_FLAG) || (flags & STREAM_READ_CLOSED)){
