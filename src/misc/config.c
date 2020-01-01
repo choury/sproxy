@@ -88,6 +88,7 @@ static struct option long_options[] = {
     {"debug-job",    no_argument,   NULL,  0 },
     {"debug-hpack",  no_argument,   NULL,  0 },
     {"debug-http",   no_argument,   NULL,  0 },
+    {"debug-file",   no_argument,   NULL,  0 },
     {"debug-all",    no_argument,   NULL,  0 },
 #endif
     {NULL,       0,                NULL,  0 }
@@ -124,6 +125,7 @@ struct option_detail option_detail[] = {
     {"debug-vpn", "\tdebug-vpn", option_extargs, NULL},
     {"debug-hpack", "debug-hpack", option_extargs, NULL},
     {"debug-http", "debug-http",  option_extargs, NULL},
+    {"debug-file", "debug-file",  option_extargs, NULL},
     {"debug-all", "\tdebug-all", option_extargs, NULL},
 #endif
     {NULL, NULL, option_extargs, NULL},
@@ -215,6 +217,9 @@ static void parseExtargs(const char* name, const char* args){
     }else if(strcmp(name, "debug-http") == 0){
         LOG("set option %s\n", name);
         debug |= DHTTP;
+    }else if(strcmp(name, "debug-file") == 0){
+        LOG("set option %s\n", name);
+        debug |= DFILE;
     }else if(strcmp(name, "debug-all") == 0){
         LOG("set option %s\n", name);
         debug = (uint32_t)(-1);

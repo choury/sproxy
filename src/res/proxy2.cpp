@@ -96,13 +96,14 @@ void Proxy2::Send(const void* buff, size_t size, void* index) {
     ReqStatus& status = statusmap[id];
     assert(!status.req_ptr.expired());
     assert((status.req_flags & STREAM_WRITE_ENDED) == 0);
+    assert((status.req_flags & STREAM_WRITE_CLOSED) == 0);
     status.remotewinsize -= size;
     remotewinsize -= size;
     assert(status.remotewinsize >= 0);
     PushData(id, buff, size);
     if(size == 0){
-        LOGD(DHTTP2, "<Proxy2> send data [%d]: EOF/%d\n", id, status.remotewinsize);
         status.req_flags |= STREAM_WRITE_ENDED;
+        LOGD(DHTTP2, "<Proxy2> send data [%d]: EOF/%d\n", id, status.remotewinsize);
         if(status.req_flags & STREAM_READ_ENDED){
             status.req_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, status.req_index);
             statusmap.erase(id);
@@ -152,6 +153,7 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         assert((status.req_flags & STREAM_READ_ENDED) == 0);
+        assert((status.req_flags & STREAM_READ_CLOSED) == 0);
         assert(!status.req_ptr.expired());
         auto requester = status.req_ptr.lock();
         if(len > (size_t)status.localwinsize){
@@ -170,25 +172,26 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
     }
 }
 
-void Proxy2::EndProc(uint32_t id){
+void Proxy2::EndProc(uint32_t id) {
     LOGD(DHTTP2, "<proxy2> [%d]: end of stream\n", id);
     if(statusmap.count(id)) {
         ReqStatus &status = statusmap[id];
         assert(!status.req_ptr.expired());
         assert((status.req_flags & STREAM_WRITE_CLOSED) == 0);
-		if(status.req_flags & STREAM_WRITE_ENDED){
+        if((status.req_flags & STREAM_READ_ENDED) == 0) {
+            status.req_flags |= STREAM_READ_ENDED;
+            status.req_ptr.lock()->Send((const void *) nullptr, 0, status.req_index);
+        }
+        if(status.req_flags & STREAM_WRITE_ENDED){
             status.req_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, status.req_index);
             statusmap.erase(id);
-        }else{
-            status.req_flags |= STREAM_READ_ENDED;
-            status.req_ptr.lock()->Send((const void*)nullptr, 0, status.req_index);
         }
     }
 }
 
 
 void Proxy2::ErrProc(int errcode) {
-    LOGE("Proxy2 Http2 error: %d\n", errcode);
+    LOGE("Proxy2 Http2 error: %08x\n", errcode);
     deleteLater(errcode);
 }
 
@@ -259,6 +262,7 @@ void Proxy2::ShutdownProc(uint32_t id) {
     }
     LOGD(DHTTP2, "<proxy2> get shutdown frame from frame %d\n", id);
     ReqStatus& status = statusmap[id];
+    status.req_flags |= STREAM_READ_CLOSED;
     if(!status.req_ptr.lock()->finish(NOERROR, status.req_index)){
         Reset(id, PEER_LOST_ERR);
         statusmap.erase(id);
@@ -341,7 +345,7 @@ void Proxy2::queue_insert(std::list<write_block>::insert_iterator where, const w
 
 bool Proxy2::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
-    assert(statusmap.count(id));
+    LOGD(DHTTP2, "<proxy2> finish flags:%08x, id:%u\n", flags, id);
     ReqStatus& status = statusmap[id];
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode || (flags & DISCONNECT_FLAG) || (flags & STREAM_READ_CLOSED)){

@@ -35,6 +35,7 @@ Cgi::Cgi(const char* fname, int sv[2]) {
             LOGE("dlopen failed: %s\n", dlerror());
             exit(-CGI_RETURN_DLOPEN_FAILED);
         }
+        LOGD(DFILE, "<cgi> dlopen: %s\n", fname);
         cgifunc* func=(cgifunc *)dlsym(handle,"cgimain");
         if(func == nullptr) {
             LOGE("dlsym failed: %s\n", dlerror());
@@ -53,6 +54,7 @@ Cgi::Cgi(const char* fname, int sv[2]) {
         }
         signal(SIGPIPE, SIG_DFL);
         change_process_name(basename(filename));
+        LOGD(DFILE, "<cgi> [%s] jump to cgi main\n", basename(filename));
         exit(func(sv[1]));
     }
     // 父进程
@@ -91,6 +93,7 @@ int32_t Cgi::bufleft(void*) {
 
 void Cgi::Send(void *buff, size_t size, void* index) {
     uint32_t id = (uint32_t)(long)index;
+    LOGD(DFILE, "<cgi> [%s] stream %d send: %zd\n", basename(filename), id, size);
     assert(statusmap.count(id));
     size = size > CGI_LEN_MAX ? CGI_LEN_MAX : size;
     CGI_Header *header = (CGI_Header *)p_move(buff, -(char)sizeof(CGI_Header));
@@ -287,7 +290,7 @@ bool Cgi::HandleData(const CGI_Header* header, HttpReqHeader* req){
         return false;
     }
 
-    LOGD(DHTTP, "cgi[%s] handle data %zu\n", filename, size);
+    LOGD(DFILE, "<cgi> [%s] handle data %zu\n", basename(filename), size);
     req_ptr->Send((const char *)(header+1), size, req->index);
     if (header->flag & CGI_FLAG_END) {
         uint32_t cgi_id = ntohl(header->requestId);
@@ -338,6 +341,7 @@ void Cgi::defaultHE(uint32_t events) {
 
 bool Cgi::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
+    LOGD(DFILE, "<cgi> [%s] stream %d finished: %x\n", basename(filename), id, flags);
     assert(statusmap.count(id));
     Peer::Send((const void*)nullptr, 0, index);
     uint8_t errcode = flags & ERROR_MASK;
@@ -373,6 +377,7 @@ void* Cgi::request(HttpReqHeader* req) {
     rwer->buffer_insert(rwer->buffer_end(),
                         write_block{header, sizeof(CGI_Header) + ntohs(header->contentLength), 0}
                        );
+    LOGD(DFILE, "<cgi> [%s] new request: %d\n", basename(filename), cgi_id);
     return reinterpret_cast<void*>(cgi_id);
 }
 
