@@ -1,6 +1,8 @@
 #ifndef RWER_H__
 #define RWER_H__
 
+#include "misc/job.h"
+
 #include <memory>
 #include <list>
 #include <functional>
@@ -94,7 +96,7 @@ enum class RWerStats{
     Shutdown,
 };
 
-class RWer: public Ep{
+class RWer: public Ep, public job_handler{
 protected:
     RWerStats  stats = RWerStats::Idle;
     WBuffer wbuff;

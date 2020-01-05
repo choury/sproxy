@@ -1,14 +1,12 @@
 #include "guest2.h"
 #include "res/responser.h"
-#include "misc/job.h"
 #include "misc/util.h"
 
 #include <assert.h>
 
-int Guest2::connection_lost(){
+void Guest2::connection_lost(){
     LOGE("(%s): <guest2> Nothing got too long, so close it\n", getsrc(nullptr));
     deleteLater(PEER_LOST_ERR);
-    return 0;
 }
 
 void Guest2::init(RWer* rwer) {
@@ -25,7 +23,9 @@ void Guest2::init(RWer* rwer) {
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
         this->rwer->consume(data, consumed);
-        add_delayjob(std::bind(&Guest2::connection_lost, this), this, 1800000);
+        this->connection_lost_job = this->rwer->updatejob(
+                this->connection_lost_job,
+                std::bind(&Guest2::connection_lost, this), 1800000);
     });
     rwer->SetWriteCB([this](size_t){
         auto statusmap_copy = statusmap;
@@ -50,7 +50,6 @@ Guest2::Guest2::Guest2(const sockaddr_un* addr, RWer* rwer):Requester(addr) {
 
 
 Guest2::~Guest2() {
-    del_delayjob(std::bind(&Guest2::connection_lost, this), this);
 }
 
 void Guest2::Error(int ret, int code){
@@ -82,12 +81,17 @@ void Guest2::Send(const void* buff, size_t size, void* index){
             status.res_flags |= STREAM_WRITE_ENDED;
             LOGD(DHTTP2, "<guest2> send data [%d]: EOF/%d\n", id, status.remotewinsize);
             if(status.res_flags & STREAM_READ_ENDED){
-                status.res_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, status.res_index);
+                rwer->addjob(std::bind([](std::weak_ptr<Responser> res_ptr, void* index) {
+                    if(!res_ptr.expired()){
+                        res_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, index);
+                    }
+                }, status.res_ptr, status.res_index), 0, JOB_FLAGS_AUTORELEASE);
                 statusmap.erase(id);
             }
         }else{
             LOGD(DHTTP2, "<guest2> send data [%d]: %zu/%d\n", id, size, status.remotewinsize);
         }
+
     }
     remotewinsize -= size;
     PushData(id, buff, size);
@@ -235,7 +239,7 @@ void Guest2::ShutdownProc(uint32_t id) {
     LOGD(DHTTP2, "<guest2> get shutdown frame from frame %d\n", id);
     ResStatus& status = statusmap[id];
     status.res_flags |= STREAM_READ_CLOSED;
-    if(!status.res_ptr.lock()->finish(NOERROR, status.res_index)){
+    if(status.res_ptr.lock()->finish(NOERROR, status.res_index) & FINISH_RET_BREAK){
         Reset(id, PEER_LOST_ERR);
         statusmap.erase(id);
     }
@@ -249,7 +253,7 @@ void Guest2::GoawayProc(const Http2_header* header) {
 }
 
 void Guest2::ErrProc(int errcode) {
-    LOGE("Guest2 http2 error:%08x\n", errcode);
+    LOGE("Guest2 http2 error:0x%08x\n", errcode);
     deleteLater(errcode);
 }
 
@@ -271,31 +275,31 @@ void Guest2::queue_insert(std::list<write_block>::insert_iterator where, const w
     rwer->buffer_insert(where, wb);
 }
 
-bool Guest2::finish(uint32_t flags, void* index) {
+int Guest2::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
-	if(statusmap.count(id) == 0){
-        LOGD(DHTTP2, "<guest2> finish flags:%08x, id:%u, not found\n", flags, id);
-		return false;
-	}
-    LOGD(DHTTP2, "<guest2> finish flags:%08x, id:%u\n", flags, id);
+    if(statusmap.count(id) == 0){
+        LOGD(DHTTP2, "<guest2> finish flags:0x%08x, id:%u, not found\n", flags, id);
+        return FINISH_RET_BREAK;
+    }
+    LOGD(DHTTP2, "<guest2> finish flags:0x%08x, id:%u\n", flags, id);
     ResStatus& status = statusmap[id];
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode || (flags & DISCONNECT_FLAG) || (flags & STREAM_READ_CLOSED)){
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
-        return false;
+        return FINISH_RET_BREAK;
     }
     assert((status.res_flags & STREAM_WRITE_CLOSED) == 0);
     status.res_flags |= STREAM_WRITE_CLOSED;
     if(http2_flag & HTTP2_SUPPORT_SHUTDOWN) {
         LOGD(DHTTP2, "<guest2> send shutdown frame: %d\n", id);
         Shutdown(id);
-        return true;
+        return FINISH_RET_NOERROR;
     }else{
         LOGD(DHTTP2, "<guest2> send reset frame: %d\n", id);
         Reset(id, ERR_CANCEL);
         statusmap.erase(id);
-        return false;
+        return FINISH_RET_BREAK;
     }
 }
 

@@ -294,9 +294,9 @@ bool Cgi::HandleData(const CGI_Header* header, HttpReqHeader* req){
     req_ptr->Send((const char *)(header+1), size, req->index);
     if (header->flag & CGI_FLAG_END) {
         uint32_t cgi_id = ntohl(header->requestId);
-		if(size){
-			req_ptr->Send((const void*)nullptr, 0, req->index);
-		}
+        if(size){
+            req_ptr->Send((const void*)nullptr, 0, req->index);
+        }
         req_ptr->finish(NOERROR | DISCONNECT_FLAG, req->index);
         statusmap.erase(cgi_id);
         delete req;
@@ -339,18 +339,21 @@ void Cgi::defaultHE(uint32_t events) {
 }
 #endif
 
-bool Cgi::finish(uint32_t flags, void* index) {
+int Cgi::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
+    if(statusmap.count(id) == 0){
+        LOGD(DFILE, "<cgi> [%s] stream %d finished: %x, not found\n", basename(filename), id, flags);
+        return FINISH_RET_BREAK;
+    }
     LOGD(DFILE, "<cgi> [%s] stream %d finished: %x\n", basename(filename), id, flags);
-    assert(statusmap.count(id));
     Peer::Send((const void*)nullptr, 0, index);
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode || (flags & DISCONNECT_FLAG)){
         delete statusmap[id];
         statusmap.erase(id);
-        return false;
+        return FINISH_RET_BREAK;
     }
-    return true;
+    return FINISH_RET_NOERROR;
 }
 
 void Cgi::deleteLater(uint32_t errcode){
@@ -362,7 +365,7 @@ void Cgi::deleteLater(uint32_t errcode){
             res->index = i.second->index;
             i.second->src.lock()->response(res);
         }
-        i.second->src.lock()->finish(errcode, i.second->index);
+        i.second->src.lock()->finish(errcode | DISCONNECT_FLAG, i.second->index);
         delete i.second;
     }
     statusmap.clear();

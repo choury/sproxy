@@ -1,6 +1,5 @@
 #include "proxy2.h"
 #include "req/requester.h"
-#include "misc/job.h"
 #include "misc/util.h"
 #include "misc/config.h"
 
@@ -9,19 +8,17 @@
 std::weak_ptr<Proxy2> proxy2;
 
 
-int Proxy2::connection_lost(){
+void Proxy2::connection_lost(){
     LOGE("<proxy2> %p the ping timeout, so close it\n", this);
     deleteLater(PEER_LOST_ERR);
-    return 0;
 }
 
-int Proxy2::ping_check(){
+void Proxy2::ping_check(){
     char buff[8];
     set64(buff, getutime());
     Ping(buff);
     LOGD(DHTTP2, "<proxy2> ping: window size global: %d/%d\n", localwinsize, remotewinsize);
-    add_delayjob(std::bind(&Proxy2::connection_lost, this), this, 10000);
-    return 0;
+    connection_lost_job = rwer->updatejob( connection_lost_job, std::bind(&Proxy2::connection_lost, this), 10000);
 }
 
 Proxy2::Proxy2(RWer* rwer) {
@@ -42,7 +39,9 @@ Proxy2::Proxy2(RWer* rwer) {
         }
         this->rwer->consume(data, consumed);
 #ifndef __ANDROID__
-        add_delayjob(std::bind(&Proxy2::ping_check, this), this, 30000);
+        this->ping_check_job = this->rwer->updatejob(
+                this->ping_check_job,
+                std::bind(&Proxy2::ping_check, this), 30000);
 #else
         receive_time = getmtime();
 #endif
@@ -69,8 +68,6 @@ Proxy2::Proxy2(RWer* rwer) {
 
 
 Proxy2::~Proxy2() {
-    del_delayjob(std::bind(&Proxy2::ping_check, this), this);
-    del_delayjob(std::bind(&Proxy2::connection_lost, this), this);
 }
 
 void Proxy2::Error(int ret, int code) {
@@ -105,7 +102,11 @@ void Proxy2::Send(const void* buff, size_t size, void* index) {
         status.req_flags |= STREAM_WRITE_ENDED;
         LOGD(DHTTP2, "<Proxy2> send data [%d]: EOF/%d\n", id, status.remotewinsize);
         if(status.req_flags & STREAM_READ_ENDED){
-            status.req_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, status.req_index);
+            rwer->addjob(std::bind([](std::weak_ptr<Requester> req_ptr, void* index) {
+                if(!req_ptr.expired()){
+                    req_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, index);
+                }
+            }, status.req_ptr, status.req_index), 0, JOB_FLAGS_AUTORELEASE);
             statusmap.erase(id);
         }
     }else{
@@ -191,7 +192,7 @@ void Proxy2::EndProc(uint32_t id) {
 
 
 void Proxy2::ErrProc(int errcode) {
-    LOGE("Proxy2 Http2 error: %08x\n", errcode);
+    LOGE("Proxy2 Http2 error: 0x%08x\n", errcode);
     deleteLater(errcode);
 }
 
@@ -246,7 +247,7 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
 
 void Proxy2::PingProc(const Http2_header *header){
     if(header->flags & ACK_F){
-        del_delayjob(std::bind(&Proxy2::connection_lost, this), this);
+        rwer->deljob(&connection_lost_job);
         double diff = (getutime()-get64(header+1))/1000.0;
         LOG("<Proxy2> Get a ping time=%.3fms\n", diff);
         if(diff >= 5000){
@@ -263,7 +264,7 @@ void Proxy2::ShutdownProc(uint32_t id) {
     LOGD(DHTTP2, "<proxy2> get shutdown frame from frame %d\n", id);
     ReqStatus& status = statusmap[id];
     status.req_flags |= STREAM_READ_CLOSED;
-    if(!status.req_ptr.lock()->finish(NOERROR, status.req_index)){
+    if(status.req_ptr.lock()->finish(NOERROR, status.req_index) & FINISH_RET_BREAK){
         Reset(id, PEER_LOST_ERR);
         statusmap.erase(id);
     }
@@ -343,27 +344,27 @@ void Proxy2::queue_insert(std::list<write_block>::insert_iterator where, const w
 }
 
 
-bool Proxy2::finish(uint32_t flags, void* index) {
+int Proxy2::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
-    LOGD(DHTTP2, "<proxy2> finish flags:%08x, id:%u\n", flags, id);
+    LOGD(DHTTP2, "<proxy2> finish flags:0x%08x, id:%u\n", flags, id);
     ReqStatus& status = statusmap[id];
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode || (flags & DISCONNECT_FLAG) || (flags & STREAM_READ_CLOSED)){
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
-		return false;
+        return FINISH_RET_BREAK;
     }
     assert((status.req_flags & STREAM_WRITE_CLOSED) == 0);
-	status.req_flags |= STREAM_WRITE_CLOSED;
+    status.req_flags |= STREAM_WRITE_CLOSED;
     if(http2_flag & HTTP2_SUPPORT_SHUTDOWN) {
         LOGD(DHTTP2, "<proxy2> send shutdown frame: %d\n", id);
         Shutdown(id);
-        return true;
+        return FINISH_RET_NOERROR;
     }else{
         LOGD(DHTTP2, "<proxy2> send reset frame: %d\n", id);
         Reset(id, ERR_CANCEL);
         statusmap.erase(id);
-        return false;
+        return FINISH_RET_BREAK;
     }
 }
 

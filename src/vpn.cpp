@@ -1,6 +1,5 @@
 #include "vpn.h"
 #include "prot/dns.h"
-#include "misc/job.h"
 #include "misc/strategy.h"
 
 #include "req/guest_vpn.h"

@@ -17,10 +17,13 @@ class Proxy2:public Responser, public Http2Requster {
 #ifdef __ANDROID__
     uint32_t receive_time;
     uint32_t ping_time;
+#else
+    Job* ping_check_job = nullptr;
 #endif
+    Job* connection_lost_job = nullptr;
 protected:
-    int ping_check();
-    int connection_lost();
+    void ping_check();
+    void connection_lost();
     virtual void Error(int ret, int code);
     virtual void deleteLater(uint32_t errcode) override;
 
@@ -48,7 +51,7 @@ public:
     virtual int32_t bufleft(void* index)override;
     virtual void Send(const void *buff, size_t size, void* index)override;
     virtual void writedcb(const void* index)override;
-    virtual bool finish(uint32_t flags, void* index)override;
+    virtual int finish(uint32_t flags, void* index)override;
     
     virtual void* request(HttpReqHeader* req)override;
     

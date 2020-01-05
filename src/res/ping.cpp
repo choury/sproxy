@@ -75,21 +75,17 @@ void Ping::Send(void* buff, size_t size, __attribute__ ((unused)) void* index){
 
 void Ping::deleteLater(uint32_t errcode) {
     if(!req_ptr.expired()){
-        req_ptr.lock()->finish(errcode, req_index);
+        req_ptr.lock()->finish(errcode | DISCONNECT_FLAG, req_index);
         req_ptr = std::shared_ptr<Requester>();
     }
     return Peer::deleteLater(errcode);
 }
 
-bool Ping::finish(uint32_t flags, __attribute__ ((unused)) void* index) {
+int Ping::finish(uint32_t flags, __attribute__ ((unused)) void* index) {
     assert(index == (void *)(long)id);
-    uint8_t errcode = flags & ERROR_MASK;
-    if(errcode || (flags & DISCONNECT_FLAG)){
-        req_ptr = std::shared_ptr<Requester>();
-        deleteLater(PEER_LOST_ERR);
-        return false;
-    }
-    return true;
+    req_ptr = std::shared_ptr<Requester>();
+    deleteLater(flags);
+    return FINISH_RET_BREAK;
 }
 
 int32_t Ping::bufleft(__attribute__ ((unused)) void* index) {

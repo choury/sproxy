@@ -1,6 +1,5 @@
 #include "simpleio.h"
 #include "prot/dns.h"
-#include "job.h"
 
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -110,7 +109,6 @@ NetRWer::NetRWer(const char* hostname, uint16_t port, Protocol protocol,
 }
 
 NetRWer::~NetRWer() {
-    del_delayjob(std::bind(&NetRWer::con_failed, this), this);
     query_cancel(hostname, NetRWer::Dnscallback, this);
 }
 
@@ -155,15 +153,16 @@ void NetRWer::retryconnect(int error) {
 void NetRWer::connect() {
     int fd = Connect(&addrs.front(), (int)protocol);
     if (fd < 0) {
-        return add_delayjob(std::bind(&NetRWer::con_failed, this), this, 0);
+        con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::con_failed, this),  0);
+        return;
     }
     setFd(fd);
     setEvents(RW_EVENT::WRITE);
     handleEvent = (void (Ep::*)(RW_EVENT))&NetRWer::waitconnectHE;
-    return add_delayjob(std::bind(&NetRWer::con_failed, this), this, 30000);
+    con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::con_failed, this), 30000);
 }
 
-int NetRWer::con_failed() {
+void NetRWer::con_failed() {
     if(getFd() >= 0){
         LOGE("connect to %s timeout\n", hostname);
         retryconnect(CONNECT_TIMEOUT);
@@ -171,7 +170,6 @@ int NetRWer::con_failed() {
         LOGE("connect to %s error\n", hostname);
         retryconnect(CONNECT_FAILED);
     }
-    return 0;
 }
 
 
@@ -184,7 +182,7 @@ void NetRWer::waitconnectHE(RW_EVENT events) {
         setEvents(RW_EVENT::READWRITE);
         Connected(addrs.front());
         handleEvent = (void (Ep::*)(RW_EVENT))&NetRWer::defaultHE;
-        del_delayjob(std::bind(&NetRWer::con_failed, this), this);
+        deljob(&con_failed_job);
     }
 }
 

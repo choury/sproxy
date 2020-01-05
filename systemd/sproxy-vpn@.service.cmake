@@ -3,10 +3,11 @@ Description=sproxy vpndemo with config %I.conf
 After=network.target
 
 [Service]
-Type=forking
+Type=simple
+LimitCORE=infinity
 WorkingDirectory=-/var/lib/sproxy
 Environment=LD_LIBRARY_PATH=@CMAKE_INSTALL_PREFIX@/lib
-ExecStart=@CMAKE_INSTALL_PREFIX@/sbin/vpndemo -D -c /etc/sproxy/%I.conf
+ExecStart=@CMAKE_INSTALL_PREFIX@/sbin/vpndemo -c /etc/sproxy/%I.conf
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 Restart=on-failure

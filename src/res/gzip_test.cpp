@@ -175,14 +175,14 @@ int32_t GzipTest::bufleft(__attribute__((unused)) void *index) {
     return 0;
 }
 
-bool GzipTest::finish(uint32_t flags, __attribute__((unused)) void *index) {
+int GzipTest::finish(uint32_t flags, __attribute__((unused)) void *index) {
     assert((long)index == 1);
     if (flags) {
         (void)deflateEnd(&strm);
         deleteLater(flags);
-        return false;
+        return FINISH_RET_BREAK;
     }
-    return true;
+    return FINISH_RET_NOERROR;
 }
 
 void GzipTest::dump_stat(Dumper dp, void *param) {

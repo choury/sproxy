@@ -15,8 +15,9 @@ struct ResStatus{
 class Guest2: public Requester, public Http2Responser {
     std::map<uint32_t, ResStatus> statusmap;
     void init(RWer* rwer);
+    Job* connection_lost_job = nullptr;
 protected:
-    int connection_lost();
+    void connection_lost();
     virtual void deleteLater(uint32_t errcode) override;
     virtual void Error(int ret, int code);
 #ifndef NDEBUG
@@ -44,7 +45,7 @@ public:
     virtual int32_t bufleft(void* index)override;
     virtual void Send(const void* buff, size_t size, void* index)override;
     virtual void writedcb(const void* index)override;
-    virtual bool finish(uint32_t flags, void* index)override;
+    virtual int finish(uint32_t flags, void* index)override;
     
     virtual void response(HttpResHeader* res)override;
     virtual void transfer(void* index, std::weak_ptr<Responser> res_ptr, void* res_index)override;

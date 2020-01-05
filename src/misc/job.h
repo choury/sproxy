@@ -3,30 +3,24 @@
 
 #include <stdint.h>
 #include <functional>
+#include <list>
 
-void add_delayjob_real(std::function<int()> func, const char *func_name, const void *index, uint32_t interval_ms);
-//if return no zero, the job will be repeated
-#define add_delayjob(a, b, c) add_delayjob_real(a, #a, b, c)
-void del_delayjob_real(std::function<int()> func, const char *func_name, const void *index);
-#define del_delayjob(a, b) del_delayjob_real(a, #a, b)
-
-#if 0
-//if return no zero, the job will be repeated
-void add_prejob_real(std::function<int()> func, const char *func_name, const void *index);
-#define add_prejob(a, b) add_prejob_real(a, #a, b);
-void del_prejob_real(std::function<int()> func, const char *func_name, const void *index);
-#define del_prejob(a, b) del_prejob_real(a, #a, b);
-
-//if return no zero, the job will be repeated
-void add_postjob_real(std::function<int()> func, const char *func_name, const void *index);
-#define add_postjob(a, b) add_postjob_real(a, #a, b);
-void del_postjob_real(std::function<int()> func, const char *func_name, const void *index);
-#define del_postjob(a, b) del_postjob_real(a, #a, b);
-void do_prejob();
-void do_postjob();
-#endif
+struct Job;
+class job_handler{
+    std::list<Job*> jobs;
+public:
+#define JOB_FLAGS_AUTORELEASE (1u<<0u)
+    Job* addjob_with_name(std::function<void()> func, const char* func_name, uint32_t interval_ms, uint32_t flags);
+    Job* updatejob_with_name(Job* job, std::function<void()> func, const char* func_name, uint32_t interval_ms);
+#define addjob(func, interval_ms, flags) addjob_with_name(func, #func, interval_ms, flags)
+#define updatejob(job, func, interval_ms) updatejob_with_name(job, func, #func, interval_ms)
+    void deljob(Job** job);
+    ~job_handler();
+};
 
 uint32_t do_delayjob();
-int check_delayjob(std::function<int()> func, const void* index);
-
+extern job_handler static_job_handler;
+#define AddJob(func, interval_ms, flags) static_job_handler.addjob_with_name(func, #func, interval_ms, flags)
+#define DelJob(job) static_job_handler.deljob(job)
+#define UpdateJob(job, func, interval_ms) satic_job_handler.updatejob_with_name(job, func, #func, interval_ms)
 #endif

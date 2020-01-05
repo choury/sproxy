@@ -19,12 +19,15 @@ public:
     virtual void dump_stat(Dumper dp, void* param) = 0;
 };
 
+#define FINISH_RET_NOERROR 0
+#define FINISH_RET_BREAK   (1U<<0)
+
 class Peer:public Server{
 public:
     virtual int32_t bufleft(void* index) = 0;
     virtual void Send(const void *buff, size_t size, void* index);
     virtual void Send(void* buff, size_t size, void* index);
-    virtual bool finish(uint32_t flags, void* info) = 0;
+    virtual int finish(uint32_t flags, void* info) = 0;
 
     virtual void writedcb(const void* index);
 };

@@ -1,5 +1,4 @@
 #include "misc/sslio.h"
-#include "misc/job.h"
 #include "misc/net.h"
 #include "misc/config.h"
 
@@ -184,7 +183,6 @@ SslRWer::~SslRWer(){
     if(ctx){
         SSL_CTX_free(ctx);
     }
-    del_delayjob(std::bind(&SslRWer::con_failed, this), this);
 }
 
 void SslRWer::waitconnectHE(RW_EVENT events) {
@@ -215,7 +213,7 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
         SSL_set_verify(ssl, SSL_VERIFY_PEER, verify_host_callback);
 
         handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::shakehandHE;
-        add_delayjob(std::bind(&SslRWer::con_failed, this), this, 30000);
+        con_failed_job = updatejob(con_failed_job, std::bind(&SslRWer::con_failed, this), 30000);
     }
 }
 
@@ -237,7 +235,7 @@ void SslRWer::shakehandHE(RW_EVENT events){
         Connected(addrs.front());
         setEvents(RW_EVENT::READWRITE);
         handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::defaultHE;
-        del_delayjob(std::bind(&SslRWer::con_failed, this), this);
+        deljob(&con_failed_job);
         //in case some data in ssl buffer
         ReadData();
     }

@@ -73,8 +73,9 @@ class Guest_vpn:public Requester, virtual public RwObject{
     void udpHE(std::shared_ptr<const Ip> pac,const char* packet, size_t len);
     void icmpHE(std::shared_ptr<const Ip> pac,const char* packet, size_t len);
     void icmp6HE(std::shared_ptr<const Ip> pac,const char* packet, size_t len);
-    int aged();
-    int tcp_ack();
+    void tcp_ack();
+    void aged();
+    Job* aged_job = nullptr;
 public:
     Guest_vpn(const VpnKey& key, VPN_nanny* nanny);
     virtual ~Guest_vpn() override;
@@ -87,7 +88,7 @@ public:
     virtual int32_t bufleft(void* index) override;
     virtual void Send(void* buff, size_t size, void* index) override;
 
-    virtual bool finish(uint32_t flags, void* index) override;
+    virtual int finish(uint32_t flags, void* index) override;
     virtual void deleteLater(uint32_t error) override;
     virtual const char *getsrc(const void* index) override;
     virtual void dump_stat(Dumper dp, void* param) override;

@@ -375,14 +375,10 @@ bool HttpReqHeader::no_body() const {
     {
         return true;
     }
-    if (ismethod("POST") ||
-        ismethod("PUT") ||
-        ismethod("OPTIONS") ||
-        ismethod("PING"))
-    {
-        return false;
-    }
-    return true;
+    return !(ismethod("POST") ||
+             ismethod("PUT") ||
+             ismethod("OPTIONS") ||
+             ismethod("PING"));
 }
 
 
@@ -473,7 +469,7 @@ HttpResHeader::HttpResHeader(const char* header, size_t len) {
     memset(status, 0, sizeof(status));
     sscanf((char *)httpheader, "%*s%*[ ]%99[^\r\n]", status);
 
-    for (char* str = strstr((char *)httpheader, CRLF)+strlen(CRLF); ; str = NULL) {
+    for (char* str = strstr((char *)httpheader, CRLF)+strlen(CRLF); ; str = nullptr) {
         char* p = strtok(str, CRLF);
 
         if (p == nullptr)
@@ -544,13 +540,9 @@ bool HttpResHeader::no_body() const {
     {
        return true;
     }
-             
-    if(get("content-length") &&
-       memcmp("0", get("content-length"), 2)==0)
-    {
-        return true;
-    }
-    return false;
+
+    return get("content-length") &&
+           memcmp("0", get("content-length"), 2) == 0;
 }
 
 
@@ -597,7 +589,7 @@ Http2_header *HttpResHeader::getframe(Hpack_index_table* index_table, uint32_t h
     return header;
 }
 
-CGI_Header *HttpResHeader::getcgi(uint32_t cgi_id)const {
+CGI_Header *HttpResHeader::getcgi(uint32_t cgi_id) const{
     CGI_Header* const cgi = (CGI_Header *)p_malloc(BUF_LEN);
     cgi->type = CGI_RESPONSE;
     cgi->flag = 0;
