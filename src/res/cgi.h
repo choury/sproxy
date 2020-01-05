@@ -59,7 +59,7 @@ public:
     virtual int32_t bufleft(void * index) override;
     virtual void Send(void* buff, size_t size, void* index)override;
 
-    virtual bool finish(uint32_t flags, void* index)override;
+    virtual int finish(uint32_t flags, void* index)override;
     virtual void deleteLater(uint32_t errcode) override;
     virtual void* request(HttpReqHeader* req)override;
     virtual void dump_stat(Dumper dp, void* param) override;

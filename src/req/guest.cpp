@@ -2,7 +2,6 @@
 #include "guest2.h"
 #include "misc/net.h"
 #include "res/responser.h"
-#include "misc/job.h"
 #include "misc/util.h"
 #include "misc/sslio.h"
 
@@ -24,7 +23,7 @@ Guest::Guest(int fd,  const sockaddr_un *myaddr): Requester(myaddr) {
     rwer = new StreamRWer(fd, std::bind(&Guest::Error, this, _1, _2));
     rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
     rwer->SetWriteCB([this](size_t len){
-        LOGD(DHTTP, "guest writed %s: wlength:%zu, http_flag:%u\n", getsrc(nullptr), rwer->wlength(), http_flag);
+        LOGD(DHTTP, "guest writed %s: wlength:%zu, http_flag:0x%08x\n", getsrc(nullptr), rwer->wlength(), http_flag);
         if(!responser_ptr.expired() && len){
             responser_ptr.lock()->writedcb(responser_index);
         }
@@ -49,7 +48,7 @@ Guest::Guest(int fd,  const sockaddr_un *myaddr, SSL_CTX* ctx): Requester(myaddr
     });
     rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
     rwer->SetWriteCB([this](size_t len){
-        LOGD(DHTTP, "guest WriteCB %s: wlength:%zu, http_flag:%u\n", getsrc(nullptr), rwer->wlength(), http_flag);
+        LOGD(DHTTP, "guest WriteCB %s: wlength:%zu, http_flag:0x%08x\n", getsrc(nullptr), rwer->wlength(), http_flag);
         if(!responser_ptr.expired() && len){
             responser_ptr.lock()->writedcb(responser_index);
         }
@@ -60,17 +59,18 @@ Guest::Guest(int fd,  const sockaddr_un *myaddr, SSL_CTX* ctx): Requester(myaddr
 }
 
 void Guest::ReqProc(HttpReqHeader* req) {
-    LOGD(DHTTP, "guest ReqProc %s: Status:%u\n", getsrc(nullptr), Status_flags);
+    LOGD(DHTTP, "guest ReqProc %s: Status:0x%08x\n", getsrc(nullptr), Status_flags);
     assert((Status_flags & GUEST_CONNECT_F) == 0 && (Status_flags & GUEST_SEND_F) == 0);
-    assert((Status_flags == GUEST_IDELE_F) || (Status_flags & GUEST_REQ_COMPLETED));
+    assert((Status_flags == GUEST_NONE_F) || (Status_flags & GUEST_REQ_COMPLETED));
     req->index = (void *)1;
     auto res_ptr = distribute(req, responser_ptr);
     if(!res_ptr.expired()){
-        Status_flags = GUEST_IDELE_F;
         if(req->ismethod("CONNECT")){
-            Status_flags |= GUEST_CONNECT_F;
+            Status_flags = GUEST_CONNECT_F;
         }else if(req->ismethod("SEND")){
-            Status_flags |= GUEST_SEND_F;
+            Status_flags = GUEST_SEND_F;
+        }else{
+            Status_flags = GUEST_NONE_F;
         }
         void* res_index = res_ptr.lock()->request(req);
         if(!responser_ptr.expired() && (res_ptr.lock() != responser_ptr.lock() || res_index != responser_index)){
@@ -104,11 +104,11 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
 }
 
 void Guest::EndProc() {
-    LOGD(DHTTP, "guest EndProc %s: status:%u\n", getsrc(nullptr), Status_flags);
+    LOGD(DHTTP, "guest EndProc %s: status:0x%08x\n", getsrc(nullptr), Status_flags);
     rwer->addEvents(RW_EVENT::READ);
-	if(!responser_ptr.expired()){
-		responser_ptr.lock()->Send((const void*)nullptr, 0, responser_index);
-	}
+    if(!responser_ptr.expired()){
+        responser_ptr.lock()->Send((const void*)nullptr, 0, responser_index);
+    }
     Status_flags |= GUEST_REQ_COMPLETED;
 }
 
@@ -118,7 +118,7 @@ void Guest::ErrProc() {
 
 
 void Guest::Error(int ret, int code) {
-    LOGD(DHTTP, "guest Error %s: ret:%d, code:%d, http_flag:%u\n", getsrc(nullptr), ret, code, http_flag);
+    LOGD(DHTTP, "guest Error %s: ret:%d, code:%d, http_flag:0x%08x\n", getsrc(nullptr), ret, code, http_flag);
     if(responser_ptr.expired()){
         return deleteLater(ret | DISCONNECT_FLAG);
     }
@@ -131,14 +131,14 @@ void Guest::Error(int ret, int code) {
         if(http_flag & HTTP_WRITE_CLOSE_F){
             flags |= DISCONNECT_FLAG;
         }
-        if(!responser_ptr.lock()->finish(flags, responser_index)){
+        if(responser_ptr.lock()->finish(flags, responser_index) & FINISH_RET_BREAK){
             responser_ptr = std::weak_ptr<Responser>();
             deleteLater(DISCONNECT_FLAG);
         }
-		return;
+        return;
     }
-    if(Status_flags != GUEST_IDELE_F){
-        LOGE("Guest error %s: %d/%d/%u\n", getsrc(nullptr), ret, code, Status_flags);
+    if(Status_flags != GUEST_NONE_F){
+        LOGE("Guest error %s: %d/%d/0x%08x\n", getsrc(nullptr), ret, code, Status_flags);
     }
     deleteLater(ret);
 }
@@ -155,8 +155,6 @@ void Guest::response(HttpResHeader* res) {
         //ignore response
         delete res;
         return;
-    }else if(res->no_body()){
-        Status_flags |= GUEST_RES_COMPLETED;
     }else if(res->get("Transfer-Encoding")){
         Status_flags |= GUEST_CHUNK_F;
     }else if(res->get("Content-Length") == nullptr) {
@@ -187,11 +185,11 @@ void Guest::Send(void *buff, size_t size, __attribute__ ((unused)) void* index) 
         rwer->buffer_insert(rwer->buffer_end(), write_block{buff, size, 0});
     }
     tx_bytes += size;
-	if(size == 0){
-		LOGD(DHTTP, "guest Send %s: EOF/%zu\n", getsrc(nullptr), tx_bytes);
-	}else{
-		LOGD(DHTTP, "guest Send %s: size:%zu/%zu\n", getsrc(nullptr), size, tx_bytes);
-	}
+    if(size == 0){
+        LOGD(DHTTP, "guest Send %s: EOF/%zu\n", getsrc(nullptr), tx_bytes);
+    }else{
+        LOGD(DHTTP, "guest Send %s: size:%zu/%zu\n", getsrc(nullptr), size, tx_bytes);
+    }
 }
 
 void Guest::transfer(__attribute__ ((unused)) void* index, std::weak_ptr<Responser> res_ptr, void* res_index) {
@@ -213,30 +211,30 @@ void Guest::deleteLater(uint32_t errcode){
     Peer::deleteLater(errcode);
 }
 
-bool Guest::finish(uint32_t flags, void* index) {
-    LOGD(DHTTP, "guest finish %s: flags:%08x, status:%u\n", getsrc(nullptr), flags, Status_flags);
+int Guest::finish(uint32_t flags, void* index) {
+    LOGD(DHTTP, "guest finish %s: flags:0x%08x, status:0x%08x\n", getsrc(nullptr), flags, Status_flags);
     assert((uint32_t)(long)index == 1);
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode || (flags & DISCONNECT_FLAG)){
         responser_ptr = std::weak_ptr<Responser>();
         responser_index = nullptr;
         deleteLater(flags);
-        return false;
+        return FINISH_RET_BREAK;
     }
     if(http_flag & HTTP_READ_CLOSE_F){
         deleteLater(DISCONNECT_FLAG);
-        return false;
+        return FINISH_RET_BREAK;
     }
     rwer->addEvents(RW_EVENT::READ);
     http_flag |= HTTP_WRITE_CLOSE_F;
     if(rwer->wlength() == 0){
         rwer->Shutdown();
     }
-    return true;
+    return FINISH_RET_NOERROR;
 }
 
 void Guest::writedcb(const void* index) {
-    LOGD(DHTTP, "guest writedcb %s: http_flag:%u, status:%u\n", getsrc(nullptr), http_flag, Status_flags);
+    LOGD(DHTTP, "guest writedcb %s: http_flag:%u, status:0x%08x\n", getsrc(nullptr), http_flag, Status_flags);
     if((http_flag & HTTP_READ_CLOSE_F) == 0){
         Peer::writedcb(index);
     }

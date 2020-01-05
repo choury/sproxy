@@ -1,5 +1,4 @@
 #include "dns.h"
-#include "misc/job.h"
 #include "misc/util.h"
 #include "misc/simpleio.h"
 #include "misc/index.h"
@@ -57,6 +56,7 @@ typedef struct Dns_Status {
     uint16_t flags;
     std::list<Dns_Req> reqs;
     Dns_Rcd rcd;
+    Job* timeout_job;
 } Dns_Status;
 
 typedef struct Dns_RawReq {
@@ -66,6 +66,7 @@ typedef struct Dns_RawReq {
     uint16_t id;
     DNSRAWCB func;
     void *param;
+    Job* timeout_job;
 } Dns_RawReq;
 
 Index2<uint16_t, std::string, Dns_Status *> querying_index;
@@ -103,7 +104,7 @@ int dns_expired(const std::string& host){
 }
 */
 
-int query_timeout(uint16_t id);
+void query_timeout(uint16_t id);
 
 #ifdef __ANDROID__
 extern std::vector<std::string> getDns();
@@ -259,8 +260,8 @@ static void query(Dns_Status* dnsst){
     }
 ret:
     dnsst->times++;
+    dnsst->timeout_job = AddJob(std::bind(query_timeout, id_cur), DNSTIMEOUT, 0);
     querying_index.Add(id_cur, dnsst->host, dnsst);
-    add_delayjob(std::bind(query_timeout, id_cur), (void*)(size_t)id_cur, DNSTIMEOUT);
 }
 
 
@@ -311,8 +312,8 @@ static void query(Dns_RawReq* dnsreq){
     }
 ret:
     dnsreq->times++;
+    dnsreq->timeout_job = AddJob(std::bind(query_timeout, id_cur), DNSTIMEOUT, 0);
     querying_raw_id[id_cur] = dnsreq;
-    add_delayjob(std::bind(query_timeout, id_cur), (void *)(size_t)id_cur, DNSTIMEOUT);
 }
 
 void query(const char *host , uint16_t type, DNSRAWCB func, void *param) {
@@ -325,10 +326,11 @@ void query(const char *host , uint16_t type, DNSRAWCB func, void *param) {
     query(dnsreq);
 }
 
-int query_timeout(uint16_t id){
+void query_timeout(uint16_t id){
     if(querying_index.Get(id)){
         auto status = querying_index.Get(id)->data;
         querying_index.Delete(id);
+        DelJob(&status->timeout_job);
         if(status->rcd.addrs.empty() && status->times <= 3) {
             LOG("[DNS] %s: time out, retry...\n", status->host);
             query(status);
@@ -338,11 +340,12 @@ int query_timeout(uint16_t id){
             }
             delete status;
         }
-        return 0;
+        return;
     }
     if(querying_raw_id.count(id)){
         auto req = querying_raw_id[id];
         querying_raw_id.erase(id);
+        DelJob(&req->timeout_job);
 
         if(req->times <= 3){
             LOG("[DNS] %s: raw query time out, retry...\n", req->host);
@@ -352,10 +355,9 @@ int query_timeout(uint16_t id){
             req->func(req->param, nullptr, 0);
             delete req;
         }
-        return 0;
+        return;
     }
     abort();
-    return 0;
 }
 
 void RcdDown(const char *hostname, const sockaddr_un &addr) {
@@ -426,8 +428,8 @@ void Dns_srv::buffHE(const char *buffer, size_t len) {
     uint16_t id = dnsrr.id;
 
     if(querying_raw_id.count(id)){
-        del_delayjob(std::bind(query_timeout, id), (void *)(size_t)id);
         Dns_RawReq *dnsreq =  querying_raw_id[id];
+        DelJob(&dnsreq->timeout_job);
         querying_raw_id.erase(id);
         dnsreq->func(dnsreq->param, buffer, len);
         delete dnsreq;
@@ -464,7 +466,7 @@ void Dns_srv::buffHE(const char *buffer, size_t len) {
     }
 
     if ((dnsst->flags & GARECORD) && (dnsst->flags & GAAAARECORD)) {
-        del_delayjob(std::bind(query_timeout, id), (void *)(size_t)id);
+        DelJob(&dnsst->timeout_job);
         querying_index.Delete(id);
         if (!dnsst->rcd.addrs.empty()) {
             rcd_cache[dnsst->host] = dnsst->rcd;

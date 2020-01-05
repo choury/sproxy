@@ -260,15 +260,15 @@ void File::readHE(size_t len) {
     }
 }
 
-bool File::finish(uint32_t flags, void* index){
+int File::finish(uint32_t flags, void* index){
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode || (flags & DISCONNECT_FLAG)){
         statusmap.erase(id);
-        return false;
+        return FINISH_RET_BREAK;
     }
-    return true;
+    return FINISH_RET_NOERROR;
 }
 
 void File::deleteLater(uint32_t errcode){
@@ -280,7 +280,7 @@ void File::deleteLater(uint32_t errcode){
             res->index = i.second.req_index;
             i.second.req_ptr.lock()->response(res);
         }
-        i.second.req_ptr.lock()->finish(errcode, i.second.req_index);
+        i.second.req_ptr.lock()->finish(errcode | DISCONNECT_FLAG, i.second.req_index);
     }
     statusmap.clear();
     return Peer::deleteLater(errcode);

@@ -1,7 +1,6 @@
 #include "host.h"
 #include "proxy2.h"
 #include "req/requester.h"
-#include "misc/job.h"
 #include "misc/util.h"
 #include "misc/sslio.h"
 #include "misc/net.h"
@@ -136,11 +135,11 @@ void Host::Send(void* buff, size_t size,  __attribute__ ((unused)) void* index) 
     assert((http_flag & HTTP_WRITE_CLOSE_F) == 0);
     rwer->buffer_insert(rwer->buffer_end(), write_block{buff, size, 0});
     tx_bytes += size;
-	if(size == 0){
-		LOGD(DHTTP, "host %s Send: EOF/%zu, http_flag:%d\n", dumpDest(&Server), tx_bytes, http_flag);
-	}else{
-		LOGD(DHTTP, "host %s Send: size:%zu/%zu, http_flag:%d\n", dumpDest(&Server), size, tx_bytes, http_flag);
-	}
+    if(size == 0){
+        LOGD(DHTTP, "host %s Send: EOF/%zu, http_flag:%d\n", dumpDest(&Server), tx_bytes, http_flag);
+    }else{
+        LOGD(DHTTP, "host %s Send: size:%zu/%zu, http_flag:%d\n", dumpDest(&Server), size, tx_bytes, http_flag);
+    }
 }
 
 void Host::ResProc(HttpResHeader* res) {
@@ -185,7 +184,7 @@ void Host::ErrProc(){
 }
 
 void Host::Error(int ret, int code) {
-    LOGD(DHTTP, "host Error %s: ret:%d, code:%d, http_flag:%u\n", dumpDest(&Server), ret, code, http_flag);
+    LOGD(DHTTP, "host Error %s: ret:%d, code:%d, http_flag:0x%08x\n", dumpDest(&Server), ret, code, http_flag);
     if(req == nullptr){
         return deleteLater(ret | DISCONNECT_FLAG);
     }
@@ -198,36 +197,36 @@ void Host::Error(int ret, int code) {
         if(http_flag & HTTP_WRITE_CLOSE_F){
             flags |= DISCONNECT_FLAG;
         }
-        if(!req->src.lock()->finish(flags, req->index)){
+        if(req->src.lock()->finish(flags, req->index) & FINISH_RET_BREAK){
             req = nullptr;
-			deleteLater(DISCONNECT_FLAG);
-		}
-		return;
+            deleteLater(DISCONNECT_FLAG);
+        }
+        return;
     }
     LOGE("Host error <%s> %d/%d\n", dumpDest(&Server), ret, code);
     deleteLater(ret);
 }
 
-bool Host::finish(uint32_t flags, void* index) {
+int Host::finish(uint32_t flags, void* index) {
     assert((long)index == 1);
-    LOGD(DHTTP, "host %s finish: flags:%08x, http_flag: %u\n", dumpDest(&Server), flags, http_flag);
+    LOGD(DHTTP, "host %s finish: flags:0x%08x, http_flag: 0x%08x\n", dumpDest(&Server), flags, http_flag);
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode || (flags & DISCONNECT_FLAG)){
         delete req;
         req = nullptr;
         deleteLater(flags);
-        return false;
+        return FINISH_RET_BREAK;
     }
     if(http_flag & HTTP_READ_CLOSE_F){
         deleteLater(DISCONNECT_FLAG);
-        return false;
+        return FINISH_RET_BREAK;
     }
     rwer->addEvents(RW_EVENT::READ);
     http_flag |= HTTP_WRITE_CLOSE_F;
     if(rwer->wlength() == 0){
         rwer->Shutdown();
     }
-    return true;
+    return FINISH_RET_NOERROR;
 }
 
 void Host::deleteLater(uint32_t errcode){
@@ -251,7 +250,7 @@ void Host::deleteLater(uint32_t errcode){
 }
 
 void Host::writedcb(const void* index) {
-    LOGD(DHTTP, "host %s writedcb: http_flag:%d, rlength:%zu, wlength:%zu, bufleft:%d\n", 
+    LOGD(DHTTP, "host %s writedcb: http_flag:0x%08x, rlength:%zu, wlength:%zu, bufleft:%d\n",
         dumpDest(&Server), http_flag, rwer->rlength(), rwer->wlength(), req->src.lock()->bufleft(req->index));
     if((http_flag & HTTP_READ_CLOSE_F) == 0){
         Peer::writedcb(index);

@@ -91,7 +91,11 @@ void FDns::Send(const void* buff, size_t size, void* index) {
         assert(!status.req_ptr.expired());
         unsigned char* const buff = (unsigned char *)p_malloc(BUF_LEN);
         status.req_ptr.lock()->Send(buff, rr->build(&que, buff), status.req_index);
-        status.req_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, status.req_index);
+        rwer->addjob(std::bind([](std::weak_ptr<Requester> req_ptr, void* index) {
+            if(!req_ptr.expired()){
+                req_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, index);
+            }
+        }, status.req_ptr, status.req_index), 0, JOB_FLAGS_AUTORELEASE);
         statusmap.erase(id);
         delete rr;
     }
@@ -113,15 +117,15 @@ void FDns::ResponseCb(void* param, const char* buff, size_t size) {
     }
 }
 
-bool FDns::finish(uint32_t flags, void* index) {
+int FDns::finish(uint32_t flags, void* index) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     uint8_t errcode = flags & ERROR_MASK;
     if(errcode || (flags & DISCONNECT_FLAG)){
         statusmap.erase(id);
-        return false;
+        return FINISH_RET_BREAK;
     }
-    return true;
+    return FINISH_RET_NOERROR;
 }
 
 void FDns::writedcb(const void*){
@@ -133,7 +137,7 @@ void FDns::deleteLater(uint32_t errcode) {
     }
     for(const auto& i: statusmap){
         assert(!i.second.req_ptr.expired());
-        i.second.req_ptr.lock()->finish(errcode, i.second.req_index);
+        i.second.req_ptr.lock()->finish(errcode | DISCONNECT_FLAG, i.second.req_index);
     }
     statusmap.clear();
     return Peer::deleteLater(errcode);

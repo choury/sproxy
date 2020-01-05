@@ -3,9 +3,10 @@ Description=sproxy for linux witch config %I.conf
 After=network.target
 
 [Service]
-Type=forking
+Type=simple
+LimitCORE=infinity
 WorkingDirectory=-/var/lib/sproxy
-ExecStart=@CMAKE_INSTALL_PREFIX@/bin/sproxy -c /etc/sproxy/%I.conf -D
+ExecStart=@CMAKE_INSTALL_PREFIX@/bin/sproxy -c /etc/sproxy/%I.conf
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 Restart=on-failure

@@ -36,10 +36,11 @@ protected:
     Protocol protocol;
     char     hostname[DOMAINLIMIT] = {0};
     std::queue<sockaddr_un> addrs;
+    Job*     con_failed_job = nullptr;
     virtual void waitconnectHE(RW_EVENT events);
     void connect();
     void retryconnect(int error);
-    int  con_failed();
+    void con_failed();
     static void Dnscallback(void* param, std::list<sockaddr_un> addrs);
 
     virtual ssize_t Write(const void* buff, size_t len) override;

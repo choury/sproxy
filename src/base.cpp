@@ -33,7 +33,7 @@ void Server::deleteLater(uint32_t) {
 }
 
 void Peer::Send(const void* buff, size_t size, void* index) {
-    Send(p_memdup(buff, size), size, index);
+    return Send(p_memdup(buff, size), size, index);
 }
 
 void Peer::Send(void* buff, size_t size, void* index) {

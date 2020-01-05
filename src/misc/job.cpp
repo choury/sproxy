@@ -1,129 +1,121 @@
 #include "job.h"
 #include "util.h"
 #include "common.h"
-#include <map>
-#include <vector>
 #include <assert.h>
+#include <cxxabi.h>
+#include <string>
 
 using std::function;
+job_handler static_job_handler;
 
-struct job_n{
-    std::function<int ()> func;
-    const void *index;
-};
-
-struct job_v{
+struct Job{
     const char* func_name;
+    std::function<void()> func;
+    uint32_t flags;
     uint32_t delay_ms;
     uint32_t last_done_ms;
+    std::list<Job*>::iterator i;
+    job_handler* handler;
 };
 
+std::string demangle(const char* name) {
+    int status = -4; // some arbitrary value to eliminate the compiler warning
+    char* output = abi::__cxa_demangle(name, NULL, NULL, &status);
+    if(status == 0){
+        std::string  out = output;
+        free(output);
+        return out;
+    }else{
+        return name;
+    }
+}
 
-class job_n_cmp{
-public:
-    bool operator()(const struct job_n& a, const struct job_n& b) const{
-        auto afunc = a.func.target<int()>();
-        auto bfunc = a.func.target<int()>();
-        if(afunc == bfunc){
-            return a.index < b.index;
-        }else{
-            return afunc < bfunc;
+std::list<Job*> delayjobs;
+
+Job* job_handler::addjob_with_name(std::function<void()> func, const char *func_name, uint32_t interval_ms, uint32_t flags) {
+    LOGD(DJOB, "add a Job %s by %d\n", func_name, interval_ms);
+    Job* job = new Job{
+        func_name,
+        std::move(func),
+        flags,
+        interval_ms,
+        getmtime(),
+        delayjobs.end(),
+        this,
+    };
+    job->i = delayjobs.insert(delayjobs.end(), job);
+    jobs.push_back(job);
+    if(flags & JOB_FLAGS_AUTORELEASE){
+        return nullptr;
+    }
+    return job;
+}
+
+Job * job_handler::updatejob_with_name(Job *job, std::function<void()> func, const char *func_name, uint32_t interval_ms) {
+    if(job == nullptr){
+        return addjob_with_name(func, func_name, interval_ms, 0);
+    }
+    LOGD(DJOB, "update a Job %s by %d\n", func_name, interval_ms);
+    job->delay_ms = interval_ms;
+    job->last_done_ms = getmtime();
+    job->func_name = func_name;
+    if(job->i == delayjobs.end()){
+        job->i = delayjobs.insert(delayjobs.end(), job);
+    }
+    return job;
+}
+
+void job_handler::deljob(Job **job) {
+    if(*job == nullptr){
+        return;
+    }
+    LOGD(DJOB, "del a Job %s\n", (*job)->func_name);
+    if((*job)->i != delayjobs.end()) {
+        delayjobs.erase((*job)->i);
+    }
+    for(auto j = jobs.begin(); j != jobs.end(); j++ ){
+        if(*j == *job){
+            jobs.erase(j);
+            break;
         }
     }
-};
+    delete *job;
+    *job = nullptr;
+}
 
-std::map<job_n, job_v, job_n_cmp> delayjobs;
-std::map<job_n, const char*, job_n_cmp> prejobs;
-std::map<job_n, const char*, job_n_cmp> postjobs;
-
-void add_delayjob_real(function<int()> func, const char *func_name, const void *index, uint32_t interval_ms){
-    assert(index);
-#ifndef NDEBUG
-    if(delayjobs.count(job_n{func, index})){
-        LOGD(DJOB, "update a delay job %s for %p by %d\n", func_name, index, interval_ms);
-    }else{
-        LOGD(DJOB, "add a delay job %s for %p by %d\n", func_name, index, interval_ms);
+job_handler::~job_handler() {
+    for(auto j: jobs){
+        if(j->i != delayjobs.end()) {
+            delayjobs.erase(j->i);
+        }
+        LOGD(DJOB, "destroy a Job %s\n", j->func_name);
+        delete j;
     }
-#endif
-    delayjobs[job_n{func, index}] = job_v{func_name, interval_ms, getmtime()};
-}
-
-void add_prejob_real(function<int()> func, const char *func_name, const void *index){
-    assert(index);
-#ifndef NDEBUG
-    LOGD(DJOB, "add a pre job %s for %p\n", func_name, index);
-#endif
-    prejobs[job_n{std::move(func), index}] = func_name;
-}
-
-void add_postjob_real(function<int()> func, const char *func_name, const void *index){
-    assert(index);
-#ifndef NDEBUG
-    LOGD(DJOB, "add a post job %s for %p\n", func_name, index);
-#endif
-    postjobs[job_n{std::move(func), index}] = func_name;
-}
-
-void del_delayjob_real(function<int()> func, __attribute__ ((unused)) const char *func_name, const void *index){
-    assert(index);
-#ifndef NDEBUG
-    if(delayjobs.count(job_n{func, index})){
-        LOGD(DJOB, "del a delay job %s of %p\n", func_name, index);
-    }else{
-        LOGD(DJOB, "del a delay job %s of %p not found\n", func_name, index);
-    }
-#endif
-    delayjobs.erase(job_n{func, index});
-}
-
-void del_prejob_real(function<int()> func, __attribute__ ((unused)) const char *func_name, const void *index){
-    assert(index);
-#ifndef NDEBUG
-    if(prejobs.count(job_n{func, index})){
-        LOGD(DJOB, "del a prejob %s of %p\n", func_name, index);
-    }else{
-        LOGD(DJOB, "del a prejob %s of %p not found\n", func_name, index);
-    }
-#endif
-    prejobs.erase(job_n{func, index});
-}
-
-void del_postjob_real(function<int()> func, __attribute__ ((unused)) const char *func_name, const void *index){
-    assert(index);
-#ifndef NDEBUG
-    if(postjobs.count(job_n{func, index})){
-        LOGD(DJOB, "del a postjob %s of %p\n", func_name, index);
-    }else{
-        LOGD(DJOB, "del a postjob %s of %p not found\n", func_name, index);
-    }
-#endif
-    postjobs.erase(job_n{func, index});
 }
 
 uint32_t do_delayjob(){
     uint32_t now = getmtime();
-    std::map<job_n, job_v, job_n_cmp> job_todo;
-    for(auto i=delayjobs.begin(); i!= delayjobs.end();){
-        uint32_t diff = now - i->second.last_done_ms;
-        if(diff >= i->second.delay_ms){
-            LOGD(DJOB, "start delay job %s for %p diff %u\n",
-                 i->second.func_name, i->first.index, diff );
-            job_todo[i->first] = i->second;
-            i = delayjobs.erase(i);
+    std::list<Job*> jobs_todo;
+    for(auto j=delayjobs.begin(); j!= delayjobs.end();){
+        uint32_t diff = now - (*j)->last_done_ms;
+        if(diff >= (*j)->delay_ms){
+            LOGD(DJOB, "start Job %s diff %u\n", (*j)->func_name, diff);
+            (*j)->i = delayjobs.end();
+            jobs_todo.push_back(*j);
+            j = delayjobs.erase(j);
         }else{
-            i++ ;
+            j++ ;
         }
     }
-    for(auto i : job_todo){
-        if(i.first.func()){
-            i.second.last_done_ms = now;
-            delayjobs[i.first] = i.second;
-            LOGD(DJOB, "delay job %s readded\n", i.second.func_name);
+    for(auto j: jobs_todo){
+        j->func();
+        if(j->flags & JOB_FLAGS_AUTORELEASE){
+            j->handler->deljob(&j);
         }
     }
     uint32_t min_interval = 0xffffff7f;
-    for(const auto& i : delayjobs){
-        uint32_t left = i.second.delay_ms + i.second.last_done_ms - now;
+    for(auto j: delayjobs){
+        uint32_t left = j->delay_ms + j->last_done_ms - now;
         if(left < min_interval){
             min_interval = left;
         }
@@ -131,55 +123,12 @@ uint32_t do_delayjob(){
     return min_interval;
 }
 
-void do_prejob(){
-    for(auto i = prejobs.begin(); i!= prejobs.end();){
-        if(i->first.func() == 0){
-            LOGD(DJOB, "done prejob %s for %p\n", i->second, i->first.index);
-            i = prejobs.erase(i);
-        }else{
-            LOGD(DJOB, "done prejob %s for %p [R]\n", i->second, i->first.index);
-            i++;
-        }
-    }
-}
-
-void do_postjob(){
-    for(auto i = postjobs.begin(); i!= postjobs.end();){
-        if(i->first.func() == 0){
-            LOGD(DJOB, "done postjob %s for %p\n", i->second, i->first.index);
-            i = postjobs.erase(i);
-        }else{
-            LOGD(DJOB, "done postjob %s for %p [R]\n", i->second, i->first.index);
-            i++;
-        }
-    }
-}
-
-int check_delayjob(function<int()> func, const void* index){
-    assert(index);
-    return delayjobs.count(job_n{std::move(func), index});
-}
-
 void dump_job(Dumper dp, void* param){
-    dp(param, "delay job queue:\n");
+    dp(param, "Job queue:\n");
     uint32_t now = getmtime();
-    for(const auto& i : delayjobs){
-        uint32_t left = i.second.delay_ms + i.second.last_done_ms - now;
-        dp(param, "\t%s(%p): %d/%d\n", i.second.func_name, i.first.index, left, i.second.delay_ms);
-    }
-    dp(param, "pre job queue:\n");
-    for(const auto& i: prejobs){
-        dp(param, "\t%s(%p)\n", i.second, i.first.index);
-    }
-    dp(param, "post job queue:\n");
-    for(const auto& i: postjobs){
-        dp(param, "\t%s(%p)\n", i.second, i.first.index);
+    for(auto j: delayjobs){
+        uint32_t left = j->delay_ms + j->last_done_ms - now;
+        dp(param, "\t%s: %d/%d\n", j->func_name, left, j->delay_ms);
     }
 }
 
-void job_clear(){
-    LOGD(DJOB, "clear all jobs\n");
-    delayjobs.clear();
-    prejobs.clear();
-    postjobs.clear();
-}
