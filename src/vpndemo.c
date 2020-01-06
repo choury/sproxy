@@ -18,7 +18,7 @@ int protectFd(int fd) {
     struct ifreq ifr;
 
     memset(&ifr, 0, sizeof(ifr));
-    snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), opt.interface);
+    snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", opt.interface);
     if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
         return 0;
     }

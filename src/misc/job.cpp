@@ -16,7 +16,9 @@ struct Job{
     uint32_t last_done_ms;
     std::list<Job*>::iterator i;
     job_handler* handler;
+    ~Job(){}
 };
+
 
 std::string demangle(const char* name) {
     int status = -4; // some arbitrary value to eliminate the compiler warning
