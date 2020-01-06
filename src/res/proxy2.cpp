@@ -178,7 +178,7 @@ void Proxy2::EndProc(uint32_t id) {
     if(statusmap.count(id)) {
         ReqStatus &status = statusmap[id];
         assert(!status.req_ptr.expired());
-        assert((status.req_flags & STREAM_WRITE_CLOSED) == 0);
+        assert((status.req_flags & STREAM_READ_CLOSED) == 0);
         if((status.req_flags & STREAM_READ_ENDED) == 0) {
             status.req_flags |= STREAM_READ_ENDED;
             status.req_ptr.lock()->Send((const void *) nullptr, 0, status.req_index);
@@ -204,7 +204,7 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
             LOGE("(%s) <proxy2> [%d]: stream reseted: %d\n",
                  status.req_ptr.lock()->getsrc(status.req_index), id, errcode);
         }
-        status.req_ptr.lock()->finish(errcode?errcode:PEER_LOST_ERR, status.req_index);
+        status.req_ptr.lock()->finish(errcode | DISCONNECT_FLAG, status.req_index);
         statusmap.erase(id);
     }
 }
@@ -290,7 +290,7 @@ void* Proxy2::request(HttpReqHeader* req) {
 std::weak_ptr<Proxy2> Proxy2::init(HttpReqHeader* req) {
     if(req){
         assert(!req->src.expired() && req->index);
-		//we should clear all pending buffer in rwer later, so save it first
+        //we should clear all pending buffer in rwer later, so save it first
         std::queue<write_block> cached;
         for(auto i = rwer->buffer_head() ; i!= rwer->buffer_end(); i++){
             assert(i->offset == 0);
@@ -349,7 +349,7 @@ int Proxy2::finish(uint32_t flags, void* index) {
     LOGD(DHTTP2, "<proxy2> finish flags:0x%08x, id:%u\n", flags, id);
     ReqStatus& status = statusmap[id];
     uint8_t errcode = flags & ERROR_MASK;
-    if(errcode || (flags & DISCONNECT_FLAG) || (flags & STREAM_READ_CLOSED)){
+    if(errcode || (flags & DISCONNECT_FLAG) || (status.req_flags & STREAM_READ_CLOSED)){
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
         return FINISH_RET_BREAK;

@@ -152,7 +152,7 @@ void Guest2::EndProc(uint32_t id) {
     if(statusmap.count(id)){
         ResStatus& status = statusmap[id];
         assert(!status.res_ptr.expired());
-        assert((status.res_flags & STREAM_WRITE_CLOSED) == 0);
+        assert((status.res_flags & STREAM_READ_CLOSED) == 0);
         if((status.res_flags & STREAM_READ_ENDED) == 0) {
             status.res_flags |= STREAM_READ_ENDED;
             status.res_ptr.lock()->Send((const void *) nullptr, 0, status.res_index);
@@ -284,7 +284,7 @@ int Guest2::finish(uint32_t flags, void* index) {
     LOGD(DHTTP2, "<guest2> finish flags:0x%08x, id:%u\n", flags, id);
     ResStatus& status = statusmap[id];
     uint8_t errcode = flags & ERROR_MASK;
-    if(errcode || (flags & DISCONNECT_FLAG) || (flags & STREAM_READ_CLOSED)){
+    if(errcode || (flags & DISCONNECT_FLAG) || (status.res_flags & STREAM_READ_CLOSED)){
         Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
         statusmap.erase(id);
         return FINISH_RET_BREAK;
