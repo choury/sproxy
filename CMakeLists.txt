@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 2.8)
 project(sproxy)
 set(CMAKE_MACOSX_RPATH 1)
 
+if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+    set(LINUX TRUE)
+endif()
+
 INCLUDE(CheckCCompilerFlag)
 INCLUDE(CheckCXXCompilerFlag)
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
@@ -31,34 +35,24 @@ int main(){
     return 0;
 }" NO_CONST_ITERATOR_BUG)
 
+CHECK_CXX_COMPILER_FLAG("-fsanitize=undefined" HAVE_SAN_UNDEF)
+set(CMAKE_REQUIRED_FLAGS "-fsanitize=address")
+CHECK_CXX_COMPILER_FLAG("-fsanitize=address" HAVE_SAN_ADDR)
+unset(CMAKE_REQUIRED_FLAGS)
 
 
-if(ANDROID_NDK)
+if(ANDROID)
     set(OPENSSL_ROOT_DIR ${OPENSSL_ROOT}/${ANDROID_ABI})
     set(OPENSSL_INCLUDE_DIR ${OPENSSL_ROOT_DIR}/include)
     set(OPENSSL_LIBRARIES ${OPENSSL_ROOT_DIR}/lib)
     set(OPENSSL_CRYPTO_LIBRARY ${OPENSSL_LIBRARIES}/libcrypto.a)
     set(OPENSSL_SSL_LIBRARY ${OPENSSL_LIBRARIES}/libssl.a)
+    find_package(OpenSSL REQUIRED IMPORTED)
 
     find_library(log-lib log)
-    find_package(OpenSSL REQUIRED IMPORTED)
 else()
-    CHECK_CXX_COMPILER_FLAG("-fsanitize=undefined" HAVE_SAN_UNDEF)
-    set(CMAKE_REQUIRED_FLAGS "-fsanitize=address")
-    CHECK_CXX_COMPILER_FLAG("-fsanitize=address" HAVE_SAN_ADDR)
-    unset(CMAKE_REQUIRED_FLAGS)
-
     find_package(OpenSSL 1.0.2 REQUIRED)
 
-    If("${CMAKE_SYSTEM}" MATCHES "Linux")
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=gold")
-        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=gold")
-    endif()
-endif()
-
-include_directories(${OPENSSL_INCLUDE_DIR})
-
-if(NOT ANDROID)
     find_package(JSON-C)
     if(JSON-C_FOUND)
         set(BUILD_CGI TRUE)
@@ -67,6 +61,8 @@ if(NOT ANDROID)
         message(WARNING "json-c not found, disable webui")
     endif()
 endif()
+
+include_directories(${OPENSSL_INCLUDE_DIR})
 
 set(CMAKE_C_FLAGS "-std=gnu99 -Wall -Wextra -fPIC ${CMAKE_C_FLAGS}")
 set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -Wextra -fPIC ${CMAKE_CXX_FLAGS}")
@@ -87,11 +83,11 @@ if(NOT NO_CONST_ITERATOR_BUG)
 endif()
 
 find_package(ZLIB)
-if(NOT ZLIB_FOUND)
-    message(WARNING "zlib not found, disable gzip test")
-else()
+if(ZLIB_FOUND)
     set(CMAKE_CXX_FLAGS "-DENABLE_GZIP_TEST ${CMAKE_CXX_FLAGS}")
     set(ENABLE_GZIP_TEST TRUE)
+else()
+    message(WARNING "zlib not found, disable gzip test")
 endif()
 
 find_package(Backtrace)
@@ -115,6 +111,11 @@ endif()
 if (HAVE_SAN_UNDEF)
     set(CMAKE_C_FLAGS_DEBUG "-fsanitize=undefined ${CMAKE_C_FLAGS_DEBUG}")
     set(CMAKE_CXX_FLAGS_DEBUG "-fsanitize=undefined ${CMAKE_CXX_FLAGS_DEBUG}")
+endif()
+
+If(LINUX)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=gold")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=gold")
 endif()
 
 add_subdirectory(src)

@@ -110,9 +110,11 @@ uint32_t do_delayjob(){
         }
     }
     for(auto j: jobs_todo){
-        j->func();
         if(j->flags & JOB_FLAGS_AUTORELEASE){
+            j->func();
             j->handler->deljob(&j);
+        }else{
+            j->func();
         }
     }
     uint32_t min_interval = 0xffffff7f;

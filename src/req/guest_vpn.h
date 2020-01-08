@@ -67,15 +67,15 @@ class Guest_vpn:public Requester, virtual public RwObject{
     uint16_t    packet_len;
     void*       protocol_info;
     const char* generateUA() const;
-    const char *getProg() const;
+    const char* getProg() const;
 
+    void aged();
+    Job* aged_job = nullptr;
     void tcpHE(std::shared_ptr<const Ip> pac,const char* packet, size_t len);
     void udpHE(std::shared_ptr<const Ip> pac,const char* packet, size_t len);
     void icmpHE(std::shared_ptr<const Ip> pac,const char* packet, size_t len);
     void icmp6HE(std::shared_ptr<const Ip> pac,const char* packet, size_t len);
     void tcp_ack();
-    void aged();
-    Job* aged_job = nullptr;
 public:
     Guest_vpn(const VpnKey& key, VPN_nanny* nanny);
     virtual ~Guest_vpn() override;

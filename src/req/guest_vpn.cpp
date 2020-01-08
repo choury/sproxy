@@ -143,6 +143,7 @@ Guest_vpn::Guest_vpn(const VpnKey& key, VPN_nanny* nanny):key(key), nanny(nanny)
     packet = nullptr;
     packet_len = 0;
     protocol_info = nullptr;
+    rwer = new NullRWer();
 }
 
 
@@ -271,9 +272,9 @@ const char * Guest_vpn::getProg() const{
 const char* Guest_vpn::generateUA() const {
     static char UA[URLLIMIT];
 #ifndef __ANDROID__
-    sprintf(UA, "Sproxy/1.0 (%s) %s", getDeviceInfo(), getProg());
+    sprintf(UA, "Sproxy/1.0 (%s)", getDeviceInfo());
 #else
-    sprintf(UA, "Sproxy/%s (%s) %s", version, getDeviceName(), getProg());
+    sprintf(UA, "Sproxy/%s (%s)", version, getDeviceName());
 #endif
     return UA;
 }
@@ -305,7 +306,7 @@ void Guest_vpn::writed() {
 
 void Guest_vpn::response(HttpResHeader* res) {
     VpnKey& key  = *(VpnKey *)res->index;
-    LOGD(DVPN, "Get response (%s)\n", res->status);
+    LOGD(DVPN, "%s Get response (%s)\n", key.getString("-"), res->status);
     //创建回包
     if(memcmp(res->status, "200", 3) == 0){
         assert(!res_ptr.expired());
@@ -412,7 +413,8 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
 
         //create a http proxy request
         char buff[HEADLENLIMIT];
-        int headlen = sprintf(buff,   "CONNECT %s:%d" CRLF
+        int headlen = sprintf(buff,
+                        "CONNECT %s:%d" CRLF
                         "User-Agent: %s" CRLF
                         "Sproxy-vpn: %d" CRLF CRLF,
                 FDns::getRdns(pac->getdst()).c_str(),
@@ -508,15 +510,22 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
         switch(tcpStatus->status){
         case TCP_ESTABLISHED:
             if(res_ptr.lock()->finish(NOERROR, res_index) & FINISH_RET_BREAK){
+                LOGD(DVPN, "write fin packet for broken connection\n");
+                pac_return = MakeIp(IPPROTO_TCP, &key.dst, &key.src);
+                pac_return->tcp
+                    ->setseq(tcpStatus->send_seq++)
+                    ->setack(tcpStatus->want_seq)
+                    ->setwindow(bufleft(0) >> tcpStatus->send_wscale)
+                    ->setflag(TH_FIN | TH_ACK);
+
+                nanny->sendPkg(pac_return, (const void*)nullptr, 0);
                 res_ptr = std::weak_ptr<Responser>();
                 res_index = nullptr;
                 tcpStatus->status = TCP_LAST_ACK;
-                abort();
             }else{
                 tcpStatus->status = TCP_CLOSE_WAIT;
-                return;
             }
-            break;
+            return;
         case TCP_FIN_WAIT1:
             tcpStatus->status = TCP_CLOSING;
             if(!res_ptr.expired()){
@@ -587,7 +596,8 @@ void Guest_vpn::udpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
         LOGD(DVPN, "%s (N) size: %zu\n", key.getString("->"), datalen);
         //create a http proxy request
         char buff[HEADLENLIMIT];
-        int headlen = sprintf(buff,   "SEND %s:%d" CRLF
+        int headlen = sprintf(buff,
+                        "SEND %s:%d" CRLF
                         "User-Agent: %s" CRLF
                         "Sproxy_vpn: %d" CRLF CRLF,
                 FDns::getRdns(pac->getdst()).c_str(),
@@ -634,7 +644,8 @@ void Guest_vpn::icmpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t
             LOGD(DVPN, "%s (ping/N) (%u - %u) size: %zd\n",
                  key.getString("->"), pac->icmp->getid(), pac->icmp->getseq(), len - pac->gethdrlen());
             char buff[HEADLENLIMIT];
-            int headlen = sprintf(buff,   "PING %s:%d" CRLF
+            int headlen = sprintf(buff,
+                            "PING %s:%d" CRLF
                             "User-Agent: %s" CRLF
                             "Sproxy_vpn: %d" CRLF CRLF,
                     FDns::getRdns(pac->getdst()).c_str(),
@@ -704,7 +715,8 @@ void Guest_vpn::icmp6HE(std::shared_ptr<const Ip> pac, const char* packet, size_
             LOGD(DVPN, "%s (ping6/N) (%u - %u) size: %zd\n",
                  key.getString("->"), pac->icmp6->getid(), pac->icmp6->getseq(), len - pac->gethdrlen());
             char buff[HEADLENLIMIT];
-            int headlen = sprintf(buff,   "PING %s:%d" CRLF
+            int headlen = sprintf(buff,
+                            "PING %s:%d" CRLF
                             "User-Agent: %s" CRLF
                             "Sproxy_vpn: %d" CRLF CRLF,
                     FDns::getRdns(pac->getdst()).c_str(),
@@ -954,7 +966,6 @@ void Guest_vpn::deleteLater(uint32_t error){
     free(protocol_info);
     protocol_info = nullptr;
     nanny->cleanKey(key);
-    assert(rwer == nullptr);
     return Peer::deleteLater(error);
 }
 

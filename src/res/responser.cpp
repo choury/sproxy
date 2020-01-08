@@ -69,7 +69,7 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
         requester->response(res);
         return std::weak_ptr<Responser>();
     }
-    if (req->http_method()) {
+    if (req->normal_method()) {
         strategy stra = getstrategy(req->Dest.hostname);
         if(stra.s == Strategy::block){
             LOG("[[block]] %s\n", log_buff);
@@ -82,8 +82,12 @@ std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser>
             return std::weak_ptr<Responser>();
         }
         if(stra.s == Strategy::local){
-            LOG("[[local]] %s\n", log_buff);
-            return File::getfile(req);
+            if(req->http_method()){
+                LOG("[[local]] %s\n", log_buff);
+                return File::getfile(req);
+            }else{
+                stra.s = Strategy::direct;
+            }
         }
         switch(check_header(req)){
         case 1:

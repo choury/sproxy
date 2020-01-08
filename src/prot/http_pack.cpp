@@ -251,10 +251,14 @@ bool HttpReqHeader::http_method() const {
     return ismethod("GET") ||
         ismethod("POST") ||
         ismethod("PUT") ||
-        ismethod("CONNECT") ||
         ismethod("HEAD") ||
         ismethod("DELETE") ||
-        ismethod("OPTIONS") ||
+        ismethod("OPTIONS");
+}
+
+bool HttpReqHeader::normal_method() const {
+    return http_method() ||
+        ismethod("CONNECT") ||
         ismethod("SEND") ||
         ismethod("PING");
 }
@@ -277,7 +281,7 @@ void HttpReqHeader::postparse() {
         URLDecode(buff, filepath.c_str(), filepath.length());
         filename = buff;
     }
-    if(!http_method()){
+    if(!normal_method()){
         return;
     }
     if(!Dest.schema[0]){
