@@ -63,6 +63,7 @@ public:
     
     virtual bool no_body() const override;
     virtual bool http_method() const;
+    virtual bool normal_method() const;
     virtual char *getstring(size_t &len) const override;
     virtual Http2_header *getframe(Hpack_index_table *index_table, uint32_t http_id) const override;
     virtual CGI_Header *getcgi(uint32_t cgi_id) const override;

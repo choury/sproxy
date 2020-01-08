@@ -428,3 +428,34 @@ void RWer::Clear(bool freebuffer) {
     wbuff.clear(freebuffer);
 }
 
+NullRWer::NullRWer():RWer(-1, [](int, int){}) {
+}
+
+void NullRWer::consume(const char*, size_t) {
+    LOGE("NullRWer consume was called\n");
+    abort();
+}
+
+void NullRWer::ReadData() {
+}
+
+size_t NullRWer::rleft() {
+    return 0;
+}
+
+size_t NullRWer::rlength() {
+    return 0;
+}
+
+size_t NullRWer::wlength() {
+    return 0;
+}
+
+ssize_t NullRWer::Write(const void*, size_t len) {
+    LOG("discard everything write to NullRWer\n");
+    return len;
+}
+
+const char * NullRWer::rdata() {
+    return nullptr;
+}

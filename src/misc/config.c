@@ -86,6 +86,7 @@ static struct option long_options[] = {
     {"debug-dns",    no_argument,   NULL,  0 },
     {"debug-http2",  no_argument,   NULL,  0 },
     {"debug-job",    no_argument,   NULL,  0 },
+    {"debug-vpn",    no_argument,   NULL,  0 },
     {"debug-hpack",  no_argument,   NULL,  0 },
     {"debug-http",   no_argument,   NULL,  0 },
     {"debug-file",   no_argument,   NULL,  0 },
@@ -157,6 +158,8 @@ void prepare(){
             daemonized = true;
         }
     }
+#else
+    (void)daemonized;
 #endif
 }
 
@@ -332,9 +335,11 @@ void parseConfig(int argc, char **argv){
     while((c = getopt_long(argc, argv, getopt_option, long_options, NULL)) != EOF){
         switch(c){
         case '?':
+            LOG("unkown option: %s\n", argv[optind-1]);
             usage(argv[0]);
-            exit(0);
+            exit(1);
         case ':':
+            LOG("option %s need argument\n", argv[optind-1]);
             usage(argv[0]);
             exit(1);
         case 'c':

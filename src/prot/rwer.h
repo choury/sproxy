@@ -142,4 +142,16 @@ public:
     virtual void Clear(bool freebuffer);
 };
 
+class NullRWer: public RWer{
+public:
+    explicit NullRWer();
+    virtual ssize_t Write(const void *buff, size_t len) override;
+    virtual void ReadData() override;
+    virtual size_t rleft() override;
+    virtual size_t rlength() override;
+    virtual size_t wlength() override;
+    virtual const char * rdata() override;
+    virtual void consume(const char* data, size_t l) override;
+};
+
 #endif

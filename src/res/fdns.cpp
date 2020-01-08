@@ -15,6 +15,7 @@ FDns::FDns() {
         fake_ip = ntohl(inet_addr("10.1.0.1"));
         fdns_records.Add(fake_ip, "VPN", nullptr);
     }
+    rwer = new NullRWer();
 }
 
 FDns::~FDns() {
