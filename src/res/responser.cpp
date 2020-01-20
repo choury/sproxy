@@ -44,13 +44,17 @@ static int check_header(HttpReqHeader* req){
         return 3;
     }
 
-    req->del("Connection");
-    if(req->get("Proxy-Connection")){
-        req->set("Connection", req->get("Proxy-Connection"));
-        req->del("Proxy-Connection");
+    if(req->get("Upgrade") && strcmp(req->get("Upgrade"), "websocket") == 0){
+        //only allow websocket upgrade
+    }else{
+        req->del("Connection");
+        if(req->get("Proxy-Connection")){
+            req->set("Connection", req->get("Proxy-Connection"));
+        }
+        req->del("Upgrade");
     }
-    req->del("Upgrade");
     req->del("Public");
+    req->del("Proxy-Connection");
     req->append("Via", "HTTP/1.1 sproxy");
     return 0;
 }
