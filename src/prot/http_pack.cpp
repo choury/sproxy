@@ -363,6 +363,9 @@ char *HttpReqHeader::getstring(size_t &len) const{
 }
 
 bool HttpReqHeader::no_body() const {
+    if(get("Upgrade")){
+        return false;
+    }
     if(ismethod("GET") ||
        ismethod("DELETE") ||
        ismethod("HEAD"))
@@ -553,7 +556,7 @@ bool HttpResHeader::no_body() const {
 char * HttpResHeader::getstring(size_t &len) const{
     char* const buff = (char *)p_malloc(BUF_LEN);
     len = 0;
-    if(get("Content-Length") || get("Transfer-Encoding") || no_body()){
+    if(get("Content-Length") || get("Transfer-Encoding") || no_body() || get("Upgrade")){
         len += sprintf(buff, "HTTP/1.1 %s" CRLF, status);
     }else {
         len += sprintf(buff, "HTTP/1.0 %s" CRLF, status);

@@ -153,6 +153,12 @@ size_t HttpRequester::HeaderProc(const char* buffer, size_t len) {
                 Http_Proc = &HttpRequester::FixLenProc;
                 http_expectlen = strtoull(res->get("Content-Length"), nullptr, 10);
             }
+
+            if(res->get("Upgrade") && strcmp(res->get("Upgrade"), "websocket") == 0){
+                //treat websocket as raw tcp
+                http_flag &= ~HTTP_STATUS_1XX;
+                Http_Proc = &HttpRequester::AlwaysProc;
+            }
             ResProc(res);
             if (http_flag & HTTP_IGNORE_BODY_F) {
                 http_flag &= ~HTTP_IGNORE_BODY_F;
