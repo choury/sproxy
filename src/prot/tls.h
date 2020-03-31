@@ -25,6 +25,7 @@
  */
 #ifndef TLS_H__
 #define TLS_H__
+#include <openssl/ssl.h>
 
 #ifdef  __cplusplus
 extern "C" {
@@ -35,6 +36,9 @@ extern "C" {
 #define TLS_HANDSHAKE_TYPE_CLIENT_HELLO 0x01
 
 int parse_tls_header(const char *data, size_t data_len, char **hostname);
+int verify_host_callback(int ok, X509_STORE_CTX *ctx);
+int ssl_get_error(SSL* ssl, int ret);
+void keylog_write_line(const SSL *ssl, const char *line);
 
 #ifdef  __cplusplus
 }

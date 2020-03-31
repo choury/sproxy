@@ -49,11 +49,6 @@ void openefd(){
     }
 }
 
-void closeefd(){
-    close(efd);
-    efd = -1;
-}
-
 struct options opt = {
     .cafile            = NULL,
     .cert              = NULL,
@@ -132,6 +127,7 @@ static struct option long_options[] = {
     {"debug-http",    no_argument,   NULL,  0 },
     {"debug-file",    no_argument,   NULL,  0 },
     {"debug-net",     no_argument,   NULL,  0 },
+    {"debug-quic",    no_argument,   NULL,  0 },
     {"debug-all",     no_argument,   NULL,  0 },
 #endif
     {NULL,       0,                NULL,  0 }
@@ -181,6 +177,7 @@ static struct option_detail option_detail[] = {
     {"debug-http", "debug-http",  option_bitwise, &debug, (void*)DHTTP},
     {"debug-file", "debug-file",  option_bitwise, &debug, (void*)DFILE},
     {"debug-net", "\tdebug-net",  option_bitwise, &debug, (void*)DNET},
+    {"debug-quic", "debug-quic", option_bitwise, &debug,  (void*)DQUIC},
     {"debug-all", "\tdebug-all", option_bitwise, &debug, (void*)0xffffffff},
 #endif
     {NULL, NULL, option_bool, NULL, NULL},
@@ -370,7 +367,10 @@ int loadproxy(const char* proxy, struct Destination* server){
     if(server->schema[0] == 0){
         strcpy(server->schema, "https");
     }
-    if(strcasecmp(server->schema, "http") !=0 && strcasecmp(server->schema, "https") != 0){
+    if(strcasecmp(server->schema, "http") !=0 &&
+        strcasecmp(server->schema, "https") != 0 &&
+        strcasecmp(server->schema, "quic") != 0)
+    {
         LOGE("unkonw schema for server: %s\n", server->schema);
         return -1;
     }
@@ -380,6 +380,9 @@ int loadproxy(const char* proxy, struct Destination* server){
         }
         if(strcasecmp(server->schema, "https") == 0){
             server->port = HTTPSPORT;
+        }
+        if(strcasecmp(server->schema, "quic") == 0){
+            server->port = QUICPORT;
         }
     }
     return 0;

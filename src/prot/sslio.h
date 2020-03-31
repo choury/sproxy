@@ -9,11 +9,10 @@ class SslRWer: public StreamRWer {
 protected:
     SSL *ssl;
     SSL_CTX* ctx = nullptr;
-    int get_error(int ret);
 
+public:
     virtual ssize_t Read(void* buff, size_t len) override;
     virtual ssize_t Write(const void* buff, size_t len) override;
-public:
     explicit SslRWer(int fd, const sockaddr_storage* peer,
                      SSL_CTX* ctx,
                      std::function<void(int ret, int code)> errorCB,
@@ -29,7 +28,7 @@ public:
     virtual void shakehandHE(RW_EVENT events);
     void get_alpn(const unsigned char **s, unsigned int * len);
     int set_alpn(const unsigned char *s, unsigned int len);
-    void set_hostname_callback(void (* cb)());
+    void set_hostname_callback(int (* cb)(SSL *, int *, void*), void* arg);
 };
 
 #endif

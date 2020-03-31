@@ -34,7 +34,9 @@
 #include <errno.h>
 #include "tls.h"
 #include "common/common.h"
+#include "misc/config.h"
 
+#include <openssl/err.h>
 
 int parse_tls_header(const char *, size_t, char **);
 static int parse_extensions(const char *, size_t, char **);
@@ -217,4 +219,100 @@ parse_server_name_extension(const char *data, size_t data_len,
         return -5;
 
     return -2;
+}
+
+int verify_host_callback(int ok, X509_STORE_CTX *ctx){
+    char    buf[256];
+    X509   *err_cert;
+    int     err, depth;
+
+    err_cert = X509_STORE_CTX_get_current_cert(ctx);
+    err = X509_STORE_CTX_get_error(ctx);
+    depth = X509_STORE_CTX_get_error_depth(ctx);
+
+    X509_NAME_oneline(X509_get_subject_name(err_cert), buf, 256);
+
+    /*
+     * Catch a too long certificate chain. The depth limit set using
+     * SSL_CTX_set_verify_depth() is by purpose set to "limit+1" so
+     * that whenever the "depth>verify_depth" condition is met, we
+     * have violated the limit and want to log this error condition.
+     * We must do it here, because the CHAIN_TOO_LONG error would not
+     * be found explicitly; only errors introduced by cutting off the
+     * additional certificates would be logged.
+     */
+    if (!ok) {
+        LOGE("verify cert error:num=%d:%s:depth=%d:%s\n", err,
+             X509_verify_cert_error_string(err), depth, buf);
+    } else {
+//        LOG("cert depth=%d:%s\n", depth, buf);
+    }
+
+    /*
+     * At this point, err contains the last verification error. We can use
+     * it for something special
+     */
+    if (!ok && (err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT || err == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY)) {
+        X509_NAME_oneline(X509_get_issuer_name(err_cert), buf, 256);
+        LOGE("unable to verify issuer= %s\n", buf);
+    }
+
+    if (opt.ignore_cert_error)
+        return 1;
+    else
+        return ok;
+}
+
+static int ssl_err_cb(const char* str, size_t len, void* _){
+    LOGE("SSL error: %.*s\n", (int)len, str);
+    return len;
+}
+
+int ssl_get_error(SSL* ssl, int ret){
+    if(ret <= 0){
+        int error = SSL_get_error(ssl, ret);
+        switch (error) {
+        case SSL_ERROR_WANT_READ:
+        case SSL_ERROR_WANT_WRITE:
+            errno = EAGAIN;
+            break;
+        case SSL_ERROR_ZERO_RETURN:
+            ret = 0;
+            errno = 0;
+            break;
+        case SSL_ERROR_SYSCALL:
+            if(errno == 0){
+                LOGE("should not get zero errno, fix it\n");
+                errno = EIO;
+            }
+            break;
+        case SSL_ERROR_SSL:
+            ERR_print_errors_cb(ssl_err_cb, NULL);
+            /* FALLTHROUGH */
+        default:
+            errno = EIO;
+            break;
+        }
+        if(ret == 0){
+            ret = -errno;
+        }
+        ERR_clear_error();
+    }
+    return ret;
+}
+
+
+void keylog_write_line(const SSL *ssl, const char *line){
+    static const SSL* lssl = NULL;
+    const char* filename = getenv("SSLKEYLOGFILE");
+    if(filename == NULL){
+        return;
+    }
+    FILE* f = fopen(filename, lssl==ssl ? "a" : "w");
+    if(f == NULL){
+        return;
+    }
+    fprintf(f, "%s\n", line);
+    fclose(f);
+    lssl = ssl;
 }

@@ -39,7 +39,7 @@ static inline int noafter(uint32_t seq1, uint32_t seq2)
 
 #define BUF_LEN       16384
 
-typedef enum{NONE, TCP=SOCK_STREAM, UDP=SOCK_DGRAM, ICMP}Protocol;
+typedef enum{NONE, TCP=SOCK_STREAM, UDP=SOCK_DGRAM, ICMP, QUIC}Protocol;
 
 extern uint32_t debug;
 
@@ -52,6 +52,7 @@ extern uint32_t debug;
 #define DHTTP     (1U<<7u)
 #define DFILE     (1U<<8u)
 #define DNET      (1U<<9u)
+#define DQUIC     (1U<<10u)
 
 #define DEVENT_STR  "[EVENT]"
 #define DDNS_STR    "[DNS]"
@@ -62,6 +63,7 @@ extern uint32_t debug;
 #define DHTTP_STR   "[HTTP]"
 #define DFILE_STR   "[FILE]"
 #define DNET_STR    "[NET]"
+#define DQUIC_STR   "[QUIC]"
 
 #ifdef  __cplusplus
 extern "C" {

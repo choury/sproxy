@@ -3,6 +3,7 @@
 #include "misc/job.h"
 #include "misc/config.h"
 
+#include <errno.h>
 #include <unistd.h>
 #include <assert.h>
 #include <fcntl.h>
@@ -42,56 +43,29 @@ static int select_alpn_cb(SSL *ssl,
     return SSL_TLSEXT_ERR_ALERT_FATAL;
 }
 
-static int generate_cookie(SSL *ssl, unsigned char *cookie, unsigned int *cookie_len) {
-    struct sockaddr_in6 myaddr;
-    (void)BIO_dgram_get_peer(SSL_get_rbio(ssl), &myaddr);
-    char ip[46];
-    inet_ntop(AF_INET6, &myaddr.sin6_addr, ip, sizeof(ip));
-    *cookie_len = sprintf((char *)cookie, "[%s]:%d", ip, ntohs(myaddr.sin6_port));
-    return 1;
-}
-
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-static int verify_cookie(SSL *ssl, unsigned char *cookie, unsigned int cookie_len){
-#else
-static int verify_cookie(SSL *ssl, const unsigned char *cookie, unsigned int cookie_len){
-#endif
-    struct sockaddr_in6 myaddr;
-    (void)BIO_dgram_get_peer(SSL_get_rbio(ssl), &myaddr);
-    return strncmp((char *)cookie, storage_ntoa((sockaddr_storage *)&myaddr), cookie_len)==0;
-}
-
-void ssl_callback_ServerName(SSL *ssl){
+int ssl_callback_ServerName(SSL *ssl, int*, void*){
     const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
     if (servername) {
         //TODO: new sni mode
     }
+    return 0;
 }
 
-SSL_CTX* initssl(int udp, const char *ca, const char *cert, const char *key){
+SSL_CTX* initssl(int quic, const char *ca, const char *cert, const char *key){
     assert(cert && key);
 
     SSL_CTX *ctx = nullptr;
-    if(udp){
-        ctx = SSL_CTX_new(DTLS_server_method());
-
-        if (ctx == nullptr) {
-            ERR_print_errors_fp(stderr);
-            return nullptr;
-        }
-        SSL_CTX_set_cookie_generate_cb(ctx, generate_cookie);
-        SSL_CTX_set_cookie_verify_cb(ctx, verify_cookie);
-        SSL_CTX_set_options(ctx, SSL_OP_COOKIE_EXCHANGE);
-    }else{
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
-        ctx = SSL_CTX_new(SSLv23_server_method());
+    ctx = SSL_CTX_new(SSLv23_server_method());
 #else
-        ctx = SSL_CTX_new(TLS_server_method());
+    ctx = SSL_CTX_new(TLS_server_method());
 #endif
-        if (ctx == nullptr) {
-            ERR_print_errors_fp(stderr);
-            return nullptr;
-        }
+    if (ctx == nullptr) {
+        ERR_print_errors_fp(stderr);
+        return nullptr;
+    }
+    if(quic){
+        //TODO: quic
     }
 
     SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3); // 去除支持SSLv2 SSLv3

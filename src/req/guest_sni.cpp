@@ -1,11 +1,10 @@
 #include "guest_sni.h"
-#include "misc/tls.h"
+#include "prot/tls.h"
 #include "misc/util.h"
 #include "misc/net.h"
 
 #include <string.h>
 #include <stdlib.h>
-#include <assert.h>
 
 Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(fd, addr, ctx){
     Http_Proc = &Guest_sni::AlwaysProc;

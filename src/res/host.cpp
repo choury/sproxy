@@ -2,14 +2,18 @@
 #include "proxy2.h"
 #include "req/requester.h"
 #include "prot/sslio.h"
+#include "prot/quic/quicio.h"
 
 #include <string.h>
 #include <assert.h>
 #include <inttypes.h>
                     
-static const unsigned char alpn_protos_string[] =
+static const unsigned char alpn_protos_http12[] =
     "\x8http/1.1" \
     "\x2h2";
+
+static const unsigned char alpn_protos_http3[] =
+    "\x2h3";
 
 Host::Host(const Destination* dest){
     assert(dest->port);
@@ -24,13 +28,19 @@ Host::Host(const Destination* dest){
                                      std::bind(&Host::Error, this, _1, _2),
                                      std::bind(&Host::connected, this));
         if(!opt.disable_http2){
-            srwer->set_alpn(alpn_protos_string, sizeof(alpn_protos_string)-1);
+            srwer->set_alpn(alpn_protos_http12, sizeof(alpn_protos_http12)-1);
         }
         rwer = srwer;
-    }else if(strcasecmp(dest->schema, "udp") == 0){
+    }else if(strcasecmp(dest->schema, "udp") == 0) {
         rwer = new PacketRWer(dest->hostname, dest->port, Protocol::UDP,
                               std::bind(&Host::Error, this, _1, _2),
                               std::bind(&Host::connected, this));
+    }else if(strcasecmp(dest->schema, "quic") == 0){
+        QuicRWer *qrwer = new QuicRWer(dest->hostname, dest->port, Protocol::QUIC,
+                                     std::bind(&Host::Error, this, _1, _2),
+                                     std::bind(&Host::connected, this));
+        qrwer->set_alpn(alpn_protos_http3, sizeof(alpn_protos_http3)-1);
+        rwer = qrwer;
     }else{
         LOGF("Unkonw schema: %s\n", dest->schema);
     }

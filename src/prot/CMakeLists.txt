@@ -7,7 +7,8 @@ set(prot_src
         rwer.cpp
         netio.cpp
         sslio.cpp
-        ip_pack.cpp)
+        ip_pack.cpp
+        tls.c)
 
 if(BUILD_RPC)
     set(prot_src ${prot_src} rpc.cpp)
@@ -19,6 +20,7 @@ add_library(prot_base ${prot_src})
 add_subdirectory(dns)
 add_subdirectory(http)
 add_subdirectory(http2)
+add_subdirectory(quic)
 
 add_library(prot INTERFACE)
-target_link_libraries(prot INTERFACE prot_base dns http http2)
+target_link_libraries(prot INTERFACE prot_base dns http http2 quic)

@@ -195,6 +195,9 @@ const char * protstr(Protocol p) {
     if(p == ICMP){
         return "icmp";
     }
+    if(p == QUIC){
+        return "quic";
+    }
     return "unknown";
 }
 
