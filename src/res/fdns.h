@@ -7,32 +7,26 @@
 #include <map>
 
 struct FDnsStatus{
-    std::weak_ptr<Requester> req_ptr;
-    void*      req_index;
-    uint32_t   dns_id;
+    HttpReq*   req;
+    HttpRes*   res;
 };
 
 class FDns: public Responser{
-    std::map<int, FDnsStatus> statusmap;
-    uint32_t req_id = 1;
+    std::map<uint64_t, FDnsStatus> statusmap;
 
-    virtual void writedcb(const void* index) override;
+    void Send(uint32_t id, const void* buff, size_t size);
     virtual void deleteLater(uint32_t errcode) override;
+
+    static void RawCb(void* param, const char *buff, size_t size);
+    static void DnsCb(void* param, std::list<sockaddr_un> addrs);
 public:
     FDns();
     virtual ~FDns() override;
-    virtual void* request(HttpReqHeader* req) override;
-    virtual void Send(const void *buff, size_t size, void* index)override;
-    static void ResponseCb(void* param, const char *buff, size_t size);
-
-    virtual int32_t bufleft(void* index)override;
-    virtual int finish(uint32_t flags, void* index)override;
-
+    virtual void request(HttpReq* req, Requester*) override;
     virtual void dump_stat(Dumper dp, void* param) override;
-    static std::weak_ptr<FDns> getfdns();
-    static std::string getRdns(const sockaddr_un& addr);
-    static in_addr getInet(std::string hostname);
-    static in6_addr getInet6(std::string hostname);
+
+    static FDns* getfdns();
 };
 
+std::string getRdns(const sockaddr_un& addr);
 #endif

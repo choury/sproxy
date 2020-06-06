@@ -15,17 +15,12 @@ struct Http2_header;
 struct CGI_Header;
 class Requester;
 
-
-
 class HttpHeader{
 protected:
     std::map<std::string, std::string> headers;
 public:
+    uint64_t request_id = 0;
     std::set<std::string> cookies;
-    void* index = 0;
-#define HTTP_RESPONED_F             1
-
-    uint8_t flags = 0;
 
     void set(const std::string& header, const std::string& value);
     void set(const std::string& header, uint64_t value);
@@ -40,7 +35,6 @@ public:
     virtual ~HttpHeader(){}
 };
 
-
 struct Range{
     ssize_t begin;
     ssize_t end;
@@ -49,15 +43,14 @@ struct Range{
 class HttpReqHeader: public HttpHeader{
     void postparse();
 public:
-    std::weak_ptr<Requester> src;
     char method[20];
     struct Destination Dest;
     char path[URLLIMIT];
     std::string filename;
     std::vector<Range> ranges;
     bool should_proxy  = false;
-    explicit HttpReqHeader(const char* header, size_t len, std::weak_ptr<RwObject> src);
-    explicit HttpReqHeader(std::multimap<std::string, std::string>&& headers, std::weak_ptr<RwObject> src);
+    explicit HttpReqHeader(const char* header, size_t len);
+    explicit HttpReqHeader(std::multimap<std::string, std::string>&& headers);
     explicit HttpReqHeader(const CGI_Header *headers);
     bool ismethod(const char* method) const;
     
@@ -78,7 +71,7 @@ public:
 class HttpResHeader: public HttpHeader{
 public:
     char status[100];
-    explicit HttpResHeader(const char* header, size_t len);
+    explicit HttpResHeader(const char* header, size_t len = 0);
     explicit HttpResHeader(std::multimap<std::string, std::string>&& headers);
     explicit HttpResHeader(const CGI_Header *headers);
     
@@ -88,44 +81,84 @@ public:
     virtual CGI_Header *getcgi(uint32_t cgi_id) const override;
 };
 
-#if 0
-
-class HttpBody{
-    size_t content_size = 0;
+class Channel{
 public:
-    std::queue<write_block> data;
-    explicit HttpBody();
-    explicit HttpBody(const HttpBody &) = delete;
-    explicit HttpBody(HttpBody&& copy);
-    ~HttpBody();
-    
-    void push(const void *buff, size_t len);
-    void push(void *buff, size_t len);
-    void push(const write_block& wb);
-    write_block pop();
-    size_t& size();
+    typedef enum{
+        CHANNEL_SHUTDOWN,
+        CHANNEL_ABORT,
+        CHANNEL_CLOSED,
+    }signal;
+    typedef std::function<void(PRE_POINTER void* buf, size_t len)> recv_t;
+    typedef std::function<void(const void* buf, size_t len)> recv_const_t;
+    typedef std::function<int()> cap_t;
+    typedef std::function<void(signal)> handler_t;
+    typedef std::function<void()> more_data_t;
+private:
+    recv_t recv_cb;
+    recv_const_t recv_const_cb;
+    cap_t cap_cb;
+    handler_t handler;
+    more_data_t need_more;
+    bool eatData(PRE_POINTER void *buf, size_t size);
+    bool eatData(const void *buf, size_t size);
+protected:
+    const static int DATALEN = 65536;
+    uchar* data = nullptr;
+    size_t len = 0;
+    bool eof = false;
+public:
+    Channel(const Channel&) = delete;
+    const Channel& operator=(const Channel&) = delete;
+    ~Channel();
+    explicit Channel(more_data_t need_more);
+    int cap();
+    void send(PRE_POINTER void* buf, size_t len);
+    void send(const void* buf, size_t len);
+    void trigger(signal s);
+    void attach(recv_t recv_cb, cap_t cap_cb);
+    void attach(recv_const_t recv_cb, cap_t cap_cb);
+    void setHandler(handler_t handler);
+    void detach();
+    void more();
 };
 
-class HttpReq{
-    size_t header_sent = 0;
-    size_t header_len = 0;
+//These flags just defined for user, it will NOT be set by this class
+#define HTTP_CLOSED_F       (1u<<1u)   //cls
+#define HTTP_CHUNK_F        (1u<<2u)
+#define HTTP_NOLENGTH_F     (1u<<3u)
+#define HTTP_REQ_COMPLETED  (1u<<4u)   //qc
+#define HTTP_REQ_EOF        (1u<<5u)   //qe
+#define HTTP_RES_COMPLETED  (1u<<6u)   //sc
+#define HTTP_RES_EOF        (1u<<7u)   //se
+
+/* Requester alloc HttpReq and Responser alloc HttpRes,
+ * but they are all freed by requester.
+ * Peers send zero message(send0) for completed, and trigger shutdown for eof.
+ * Requester may trigger closed event for qc|sc requests.
+ * Peer should trigger closed (instead of shutdown) if received shutdown already.
+ * Trigger closed will reset connection if no `send0` message sent.
+ * Callback of body must callable if no closed message was sent or received.
+*/
+class HttpRes: public Channel{
 public:
-    void *header_buff = nullptr;
-    HttpReqHeader*  header;
-    HttpBody       body;
+    HttpResHeader* header;
+    HttpRes(const HttpRes &) = delete;
+    HttpRes(HttpResHeader* header, more_data_t more);
+    HttpRes(HttpResHeader* header);
+    HttpRes(HttpResHeader* header, const char* body);
+    ~HttpRes();
+};
+
+class HttpReq: public Channel{
+public:
+    typedef std::function<void(HttpRes*)> res_cb;
+    HttpReqHeader* header;
+    res_cb         response;
     HttpReq(const HttpReq&) = delete;
-    HttpReq(HttpReq&&);
-    explicit HttpReq(HttpReqHeader* header):header(header){};
+    HttpReq(HttpReqHeader* header, res_cb response, more_data_t more);
     ~HttpReq();
-    ssize_t  Write_string(std::function<ssize_t(const void*, size_t)> write_func);
-    size_t size();
 };
-#endif
 
-// trim from start
-static inline std::string& ltrim(std::string && s) {
-    s.erase(0, s.find_first_not_of(" "));
-    return s;
-}
+void HttpLog(const char* src, const HttpReq* req, const HttpRes* res);
 
 #endif

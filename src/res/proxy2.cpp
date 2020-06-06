@@ -1,12 +1,13 @@
 #include "proxy2.h"
 #include "req/requester.h"
 #include "misc/util.h"
+#include "misc/net.h"
 #include "misc/config.h"
 
 #include <assert.h>
+#include <inttypes.h>
 
-std::weak_ptr<Proxy2> proxy2;
-
+Proxy2* proxy2 = nullptr;
 
 void Proxy2::connection_lost(){
     LOGE("<proxy2> %p the ping timeout, so close it\n", this);
@@ -21,10 +22,18 @@ void Proxy2::ping_check(){
     connection_lost_job = rwer->updatejob( connection_lost_job, std::bind(&Proxy2::connection_lost, this), 10000);
 }
 
+bool Proxy2::wantmore(const ReqStatus& status) {
+    if((status.flags&HTTP_REQ_COMPLETED) || (status.flags&HTTP_REQ_EOF)){
+        return false;
+    }
+    return status.remotewinsize > 0;
+}
+
+
 Proxy2::Proxy2(RWer* rwer) {
     this->rwer = rwer;
-    if(proxy2.expired()){
-        proxy2 = std::dynamic_pointer_cast<Proxy2>(shared_from_this());
+    if(proxy2 == nullptr){
+        proxy2 = this;
     }
     rwer->SetErrorCB(std::bind(&Proxy2::Error, this, _1, _2));
     rwer->SetReadCB([this](size_t len){
@@ -45,18 +54,17 @@ Proxy2::Proxy2(RWer* rwer) {
 #else
         receive_time = getmtime();
 #endif
-        if(!proxy2.expired() && proxy2.lock() != shared_from_this() && statusmap.empty()){
+        if(proxy2 != this && statusmap.empty()){
             LOG("this is not the proxy2 and no clients, close it.\n");
-            deleteLater(PEER_LOST_ERR);
+            deleteLater(NOERROR);
         }
     });
     rwer->SetWriteCB([this](size_t){
         auto statusmap_copy = statusmap;
         for(auto& i: statusmap_copy){
             ReqStatus& status = i.second;
-            assert(!status.req_ptr.expired());
-            if(status.remotewinsize > 0){
-                status.req_ptr.lock()->writedcb(status.req_index);
+            if(wantmore(status)){
+                status.req->more();
             }
         }
     });
@@ -72,43 +80,30 @@ Proxy2::~Proxy2() {
 
 void Proxy2::Error(int ret, int code) {
     if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0){
-        return deleteLater(PEER_LOST_ERR);
+        return deleteLater(NOERROR);
     }
     LOGE("proxy2 error: %d/%d\n", ret, code);
     deleteLater(ret);
 }
 
 
-int32_t Proxy2::bufleft(void* index) {
+int Proxy2::bufleft(uint32_t id) {
     int32_t globalwindow = Min(1024*1024 - rwer->wlength(), this->remotewinsize);
-    if(index)
-        return Min(statusmap.at((uint32_t)(long)index).remotewinsize, globalwindow);
-    else
-        return globalwindow;
+    return Min(statusmap.at(id).remotewinsize, globalwindow);
 }
 
-void Proxy2::Send(const void* buff, size_t size, void* index) {
-    uint32_t id = (uint32_t)(long)index;
+void Proxy2::Send(uint32_t id ,const void* buff, size_t size) {
     assert(statusmap.count(id));
     ReqStatus& status = statusmap[id];
-    assert(!status.req_ptr.expired());
-    assert((status.req_flags & STREAM_WRITE_ENDED) == 0);
-    assert((status.req_flags & STREAM_WRITE_CLOSED) == 0);
+    assert((status.flags & HTTP_REQ_COMPLETED) == 0);
+    assert((status.flags & HTTP_REQ_EOF) == 0);
     status.remotewinsize -= size;
     remotewinsize -= size;
     assert(status.remotewinsize >= 0);
     PushData(id, buff, size);
     if(size == 0){
-        status.req_flags |= STREAM_WRITE_ENDED;
+        status.flags |= HTTP_REQ_COMPLETED;
         LOGD(DHTTP2, "<Proxy2> send data [%d]: EOF/%d\n", id, status.remotewinsize);
-        if(status.req_flags & STREAM_READ_ENDED){
-            rwer->addjob(std::bind([](std::weak_ptr<Requester> req_ptr, void* index) {
-                if(!req_ptr.expired()){
-                    req_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, index);
-                }
-            }, status.req_ptr, status.req_index), 0, JOB_FLAGS_AUTORELEASE);
-            statusmap.erase(id);
-        }
     }else{
         LOGD(DHTTP2, "<proxy2> send data [%d]: %zu/%d\n", id, size, status.remotewinsize);
     }
@@ -128,19 +123,23 @@ void Proxy2::PushFrame(Http2_header *header){
     return Http2Base::PushFrame(header);
 }
 
-void Proxy2::ResProc(HttpResHeader* res) {
-    uint32_t id = (uint32_t)(long)res->index;
+void Proxy2::ResProc(uint32_t id, HttpResHeader* header) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
-        if(!res->no_body() && !res->get("Content-Length"))
+        if(!header->no_body() && !header->get("Content-Length"))
         {
-            res->set("Transfer-Encoding", "chunked");
+            header->set("Transfer-Encoding", "chunked");
         }
-        res->index = status.req_index;  //change back to req's id
-        assert(!status.req_ptr.expired());
-        status.req_ptr.lock()->response(res);
+        status.res = new HttpRes(header, [this, &status, id]() mutable{
+            auto len = status.res->cap();
+            if(len > status.localwinsize && (len - status.localwinsize > FRAMEBODYLIMIT)) {
+                status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
+            }
+        });
+        status.req->response(status.res);
+
     }else{
-        delete res;
+        delete header;
         LOGD(DHTTP2, "<proxy2> ResProc not found id: %d\n", id);
         Reset(id, ERR_STREAM_CLOSED);
     }
@@ -153,19 +152,19 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
     localwinsize -= len;
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
-        assert((status.req_flags & STREAM_READ_ENDED) == 0);
-        assert((status.req_flags & STREAM_READ_CLOSED) == 0);
-        assert(!status.req_ptr.expired());
-        auto requester = status.req_ptr.lock();
+        assert((status.flags & HTTP_RES_COMPLETED) == 0);
+        assert((status.flags & HTTP_RES_EOF) == 0);
         if(len > (size_t)status.localwinsize){
-            Reset(id, ERR_FLOW_CONTROL_ERROR);
-            LOGE("(%s) :<proxy2> [%d] window size error %zu/%d\n",
-                requester->getsrc(status.req_index), id, len, status.localwinsize);
-            requester->finish(ERR_FLOW_CONTROL_ERROR, status.req_index);
-            statusmap.erase(id);
+            LOGE("(%" PRIu64 ") :<proxy2> [%d] window size error %zu/%d\n",
+                    status.req->header->request_id, id, len, status.localwinsize);
+            Clean(id, status, ERR_FLOW_CONTROL_ERROR);
             return;
         }
-        requester->Send(data, len, status.req_index);
+        if(status.res == nullptr){
+            //compact for legacy version.
+            ResProc(id, new HttpResHeader(H200));
+        }
+        status.res->send(data, len);
         status.localwinsize -= len;
     }else{
         LOGD(DHTTP2, "<proxy2> DataProc not found id: %d\n", id);
@@ -177,35 +176,44 @@ void Proxy2::EndProc(uint32_t id) {
     LOGD(DHTTP2, "<proxy2> [%d]: end of stream\n", id);
     if(statusmap.count(id)) {
         ReqStatus &status = statusmap[id];
-        assert(!status.req_ptr.expired());
-        assert((status.req_flags & STREAM_READ_CLOSED) == 0);
-        if((status.req_flags & STREAM_READ_ENDED) == 0) {
-            status.req_flags |= STREAM_READ_ENDED;
-            status.req_ptr.lock()->Send((const void *) nullptr, 0, status.req_index);
-        }
-        if(status.req_flags & STREAM_WRITE_ENDED){
-            status.req_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, status.req_index);
-            statusmap.erase(id);
-        }
+        assert((status.flags & HTTP_RES_EOF) == 0);
+        assert((status.flags & HTTP_RES_COMPLETED) == 0);
+        status.flags |= HTTP_RES_COMPLETED;
+        status.res->send((const void*)nullptr,0);
     }
 }
-
 
 void Proxy2::ErrProc(int errcode) {
     LOGE("Proxy2 Http2 error: 0x%08x\n", errcode);
     deleteLater(errcode);
 }
 
+void Proxy2::Clean(uint32_t id, ReqStatus& status, uint32_t errcode){
+    assert(statusmap[id].req == status.req);
+    if((status.flags&HTTP_REQ_COMPLETED) == 0 || (status.flags&HTTP_RES_COMPLETED) == 0){
+        Reset(id, errcode);
+    }
+
+    status.req->detach();
+    if(status.flags & HTTP_CLOSED_F){
+        //do nothing.
+    }else if(status.res){
+        status.res->trigger(errcode ? Channel::CHANNEL_ABORT : Channel::CHANNEL_CLOSED);
+    }else{
+        status.req->response(new HttpRes(new HttpResHeader(H500), "[[internal error]]"));
+    }
+    statusmap.erase(id);
+}
+
 void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
-        assert(!status.req_ptr.expired());
         if(errcode){
-            LOGE("(%s) <proxy2> [%d]: stream reseted: %d\n",
-                 status.req_ptr.lock()->getsrc(status.req_index), id, errcode);
+            LOGE("(%" PRIu64 ") <proxy2> [%d]: stream reseted: %d\n",
+                 status.req->header->request_id, id, errcode);
         }
-        status.req_ptr.lock()->finish(errcode | DISCONNECT_FLAG, status.req_index);
-        statusmap.erase(id);
+        status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
+        Clean(id, status, errcode);
     }
 }
 
@@ -215,12 +223,13 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
             ReqStatus& status = statusmap[id];
             LOGD(DHTTP2, "<proxy2> window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
             if((uint64_t)status.remotewinsize + size >= (uint64_t)1<<31){
-                Reset(id, ERR_FLOW_CONTROL_ERROR);
+                Clean(id, status, ERR_FLOW_CONTROL_ERROR);
                 return;
             }
             status.remotewinsize += size;
-            assert(!status.req_ptr.expired());
-            status.req_ptr.lock()->writedcb(status.req_index);
+            if(wantmore(status)){
+                status.req->more();
+            }
         }else{
             LOGD(DHTTP2, "<proxy2> window size updated [%d]: not found\n", id);
         }
@@ -236,9 +245,8 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
             auto statusmap_copy = statusmap;
             for(auto& i: statusmap_copy){
                 ReqStatus& status = i.second;
-                assert(!status.req_ptr.expired());
-                if(status.remotewinsize > 0){
-                    status.req_ptr.lock()->writedcb(status.req_index);
+                if(wantmore(status)){
+                    status.req->more();
                 }
             }
         }
@@ -263,57 +271,56 @@ void Proxy2::ShutdownProc(uint32_t id) {
     }
     LOGD(DHTTP2, "<proxy2> get shutdown frame from frame %d\n", id);
     ReqStatus& status = statusmap[id];
-    status.req_flags |= STREAM_READ_CLOSED;
-    if(status.req_ptr.lock()->finish(NOERROR, status.req_index) & FINISH_RET_BREAK){
-        Reset(id, PEER_LOST_ERR);
-        statusmap.erase(id);
+    status.flags |= HTTP_RES_EOF;
+    if(status.flags & HTTP_REQ_EOF){
+        Clean(id, status, ERR_STREAM_CLOSED);
+    }else {
+        status.res->trigger(Channel::CHANNEL_SHUTDOWN);
     }
 }
 
-void* Proxy2::request(HttpReqHeader* req) {
-    assert(!req->src.expired() && req->index);
+void Proxy2::request(HttpReq* req, Requester*) {
     uint32_t id = GetSendId();
+    assert((http2_flag & HTTP2_FLAG_GOAWAYED) == 0);
+    LOGD(DHTTP2, "proxy2 request: %s [%d]\n", req->header->geturl().c_str(), id);
     statusmap[id] = ReqStatus{
-       req->src,
-       req->index,
+       req,
+       nullptr,
        (int32_t)remoteframewindowsize,
        localframewindowsize,
        0,
     };
-    void *index =reinterpret_cast<void*>(id);  //change to proxy server's id
-    req->index = index;
-    PushFrame(req->getframe(&request_table, id));
-    delete req;
-    return index;
+    PushFrame(req->header->getframe(&request_table, id));
+    req->setHandler([this, id](Channel::signal s){
+        assert(statusmap.count(id));
+        ReqStatus& status = statusmap[id];
+        switch(s){
+        case Channel::CHANNEL_SHUTDOWN:
+            assert((status.flags & HTTP_RES_EOF) == 0);
+            status.flags |= HTTP_REQ_EOF;
+            if(http2_flag & HTTP2_SUPPORT_SHUTDOWN) {
+                LOGD(DHTTP2, "<proxy2> send shutdown frame: %d\n", id);
+                Shutdown(id);
+            }else{
+                LOGD(DHTTP2, "<proxy2> send reset frame: %d\n", id);
+                Clean(id, status, ERR_CANCEL);
+            }
+            break;
+        case Channel::CHANNEL_CLOSED:
+            status.flags |= HTTP_CLOSED_F;
+            return Clean(id, status, ERR_NO_ERROR);
+        case Channel::CHANNEL_ABORT:
+            status.flags |= HTTP_CLOSED_F;
+            return Clean(id, status, ERR_INTERNAL_ERROR);
+        }
+    });
+    req->attach((Channel::recv_const_t)std::bind(&Proxy2::Send, this, id, _1, _2),
+            std::bind(&Proxy2::bufleft, this, id));
 }
 
-std::weak_ptr<Proxy2> Proxy2::init(HttpReqHeader* req) {
-    if(req){
-        assert(!req->src.expired() && req->index);
-        //we should clear all pending buffer in rwer later, so save it first
-        std::queue<write_block> cached;
-        for(auto i = rwer->buffer_head() ; i!= rwer->buffer_end(); i++){
-            assert(i->offset == 0);
-            assert(i->buff);
-            cached.push(*i);
-        }
-        LOGD(DHTTP2, "<proxy2> resend %zd blocks from host\n", cached.size());
-        rwer->Clear(false);
-        Http2Requster::init();
-        auto  req_ptr = req->src.lock();
-        void*  req_index = req->index;
-        void* index = request(req);
-        req_ptr->transfer(req_index, std::dynamic_pointer_cast<Responser>(shared_from_this()), index);
-        while(!cached.empty()){
-            auto i = cached.front();
-            Send(i.buff, i.len, index);
-            cached.pop();
-        }
-    }else{
-        rwer->Clear(true);
-        Http2Requster::init();
-    }
-    return std::dynamic_pointer_cast<Proxy2>(shared_from_this());
+void Proxy2::init(HttpReq* req) {
+    Http2Requster::init();
+    request(req, nullptr);
 }
 
 
@@ -321,7 +328,7 @@ void Proxy2::GoawayProc(const Http2_header* header){
     Goaway_Frame* goaway = (Goaway_Frame *)(header+1);
     uint32_t errcode = get32(goaway->errcode);
     http2_flag |= HTTP2_FLAG_GOAWAYED;
-    return deleteLater(errcode | DISCONNECT_FLAG);
+    return deleteLater(errcode);
 }
 
 
@@ -343,89 +350,65 @@ void Proxy2::queue_insert(std::list<write_block>::insert_iterator where, const w
     rwer->buffer_insert(where, wb);
 }
 
-
-int Proxy2::finish(uint32_t flags, void* index) {
-    uint32_t id = (uint32_t)(long)index;
-    LOGD(DHTTP2, "<proxy2> finish flags:0x%08x, id:%u\n", flags, id);
-    ReqStatus& status = statusmap[id];
-    uint8_t errcode = flags & ERROR_MASK;
-    if(errcode || (flags & DISCONNECT_FLAG) || (status.req_flags & STREAM_READ_CLOSED)){
-        Reset(id, errcode>30?ERR_INTERNAL_ERROR:errcode);
-        statusmap.erase(id);
-        return FINISH_RET_BREAK;
-    }
-    assert((status.req_flags & STREAM_WRITE_CLOSED) == 0);
-    status.req_flags |= STREAM_WRITE_CLOSED;
-    if(http2_flag & HTTP2_SUPPORT_SHUTDOWN) {
-        LOGD(DHTTP2, "<proxy2> send shutdown frame: %d\n", id);
-        Shutdown(id);
-        return FINISH_RET_NOERROR;
-    }else{
-        LOGD(DHTTP2, "<proxy2> send reset frame: %d\n", id);
-        Reset(id, ERR_CANCEL);
-        statusmap.erase(id);
-        return FINISH_RET_BREAK;
-    }
-}
-
 void Proxy2::deleteLater(uint32_t errcode){
-    if(!proxy2.expired() && proxy2.lock() == shared_from_this()){
-        proxy2 = std::weak_ptr<Proxy2>();
+    if(proxy2 == this){
+        proxy2 = nullptr;
     }
-    for(auto& i: statusmap){
-        assert(!i.second.req_ptr.expired());
-        i.second.req_ptr.lock()->finish(errcode, i.second.req_index);
+    auto statusmapCopy = statusmap;
+    for(auto& i: statusmapCopy){
+        Clean(i.first, i.second, errcode);
     }
     statusmap.clear();
     if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){
         http2_flag |= HTTP2_FLAG_GOAWAYED;
         Goaway(-1, errcode);
     }
-    Peer::deleteLater(errcode);
+    Server::deleteLater(errcode);
 }
 
+/*
 void Proxy2::writedcb(const void* index){
     uint32_t id = (uint32_t)(long)index;
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
-        assert(!status.req_ptr.expired());
-        auto len = status.req_ptr.lock()->bufleft(status.req_index);
+        auto len = status.res->cap();
         if(len > status.localwinsize && (len - status.localwinsize > FRAMEBODYLIMIT)) {
             status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
         }
     }
 }
+*/
 
 void Proxy2::dump_stat(Dumper dp, void* param) {
-    if(proxy2.expired()){
-        dp(param, "Proxy2 %p, id:%d\n", this, sendid);
-    }else{
-        dp(param, "Proxy2 %p, id:%d: %s\n", this, sendid, proxy2.lock() == shared_from_this()?"[M]":"");
-    }
+    dp(param, "Proxy2 %p, id:%d: %s (%d/%d)\n",
+            this, sendid, proxy2 == this?"[M]":"",
+            this->remotewinsize, this->localwinsize);
     dp(param, "  rwer: rlength:%zu, rleft:%zu, wlength:%zu, stats:%d, event:%s\n",
             rwer->rlength(), rwer->rleft(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     for(auto& i: statusmap){
-        assert(!i.second.req_ptr.expired());
-        dp(param, "0x%x: %p, %p (%d/%d)\n",
-            i.first, i.second.req_ptr.lock().get(), i.second.req_index,
-            i.second.remotewinsize, i.second.localwinsize);
+        dp(param, "0x%x: [%" PRIu64 "] %s [%d] (%d/%d)\n",
+                i.first,
+                i.second.req->header->request_id,
+                i.second.req->header->geturl().c_str(),
+                i.second.flags,
+                i.second.remotewinsize, i.second.localwinsize);
     }
 }
 
 void Proxy2::flush() {
     if(!rwer->supportReconnect()){
-        proxy2 = std::weak_ptr<Proxy2>();
+        proxy2 = nullptr;
     }
 }
 
 
 void flushproxy2(int force) {
     if(force){
-        proxy2 = std::weak_ptr<Proxy2>();
+        proxy2 = nullptr;
         return;
     }
-    if(!proxy2.expired()){
-        proxy2.lock()->flush();
+    if(proxy2){
+        proxy2->flush();
     }
 }

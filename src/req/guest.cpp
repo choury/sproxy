@@ -7,6 +7,7 @@
 
 #include <string.h>
 #include <assert.h>
+#include <inttypes.h>
 
 void Guest::ReadHE(size_t len){
     const char* data = rwer->rdata();
@@ -15,22 +16,37 @@ void Guest::ReadHE(size_t len){
     while((ret = (this->*Http_Proc)(data+consumed, len-consumed))){
         consumed += ret;
     }
-    LOGD(DHTTP, "guest ReadHE %s: len:%zu, consumed:%zu\n", getsrc(nullptr), len, consumed);
+    LOGD(DHTTP, "guest %s read: len:%zu, consumed:%zu\n", getsrc(), len, consumed);
     rwer->consume(data, consumed);
+}
+
+void Guest::WriteHE(size_t len){
+    if(statuslist.empty()){
+        return;
+    }
+    GStatus& status = statuslist.front();
+    LOGD(DHTTP, "guest %s written: wlength:%zu, flags:0x%08x\n", getsrc(), rwer->wlength(), status.flags);
+    if(status.flags & HTTP_RES_EOF){
+        if(rwer->wlength() == 0){
+            rwer->Shutdown();
+        }
+        return;
+    }
+    if((status.flags&HTTP_REQ_COMPLETED) && (status.flags&HTTP_RES_COMPLETED)){
+        return deqReq();
+    }
+    if((status.flags & HTTP_RES_COMPLETED) || (status.flags & HTTP_RES_EOF)){
+        return;
+    }
+    if(len && status.res){
+        status.res->more();
+    }
 }
 
 Guest::Guest(int fd,  const sockaddr_un *myaddr): Requester(myaddr) {
     rwer = new StreamRWer(fd, std::bind(&Guest::Error, this, _1, _2));
     rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
-    rwer->SetWriteCB([this](size_t len){
-        LOGD(DHTTP, "guest writed %s: wlength:%zu, http_flag:0x%08x\n", getsrc(nullptr), rwer->wlength(), http_flag);
-        if(!responser_ptr.expired() && len){
-            responser_ptr.lock()->writedcb(responser_index);
-        }
-        if(rwer->wlength() == 0 && (http_flag & HTTP_WRITE_CLOSE_F)){
-            rwer->Shutdown();
-        }
-    });
+    rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));
 }
 
 Guest::Guest(int fd,  const sockaddr_un *myaddr, SSL_CTX* ctx): Requester(myaddr) {
@@ -43,138 +59,141 @@ Guest::Guest(int fd,  const sockaddr_un *myaddr, SSL_CTX* ctx): Requester(myaddr
         if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
             new Guest2(sourceip, sourceport, srwer);
             rwer = nullptr;
-            Peer::deleteLater(PEER_LOST_ERR);
+            assert(statuslist.empty());
+            return Server::deleteLater(NOERROR);
         }
     });
     rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
-    rwer->SetWriteCB([this](size_t len){
-        LOGD(DHTTP, "guest WriteCB %s: wlength:%zu, http_flag:0x%08x\n", getsrc(nullptr), rwer->wlength(), http_flag);
-        if(!responser_ptr.expired() && len){
-            responser_ptr.lock()->writedcb(responser_index);
-        }
-        if(rwer->wlength() == 0 && (http_flag & HTTP_WRITE_CLOSE_F)){
-            rwer->Shutdown();
-        }
-    });
+    rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));
 }
 
-void Guest::ReqProc(HttpReqHeader* req) {
-    LOGD(DHTTP, "guest ReqProc %s: Status:0x%08x\n", getsrc(nullptr), Status_flags);
-    assert((Status_flags & GUEST_CONNECT_F) == 0 && (Status_flags & GUEST_SEND_F) == 0);
-    assert((Status_flags == GUEST_NONE_F) || (Status_flags & GUEST_REQ_COMPLETED));
-    req->index = (void *)1;
-    auto res_ptr = distribute(req, responser_ptr);
-    if(!res_ptr.expired()){
-        if(req->ismethod("CONNECT")){
-            Status_flags = GUEST_CONNECT_F;
-        }else if(req->ismethod("SEND")){
-            Status_flags = GUEST_SEND_F;
-        }else{
-            Status_flags = GUEST_NONE_F;
-        }
-        void* res_index = res_ptr.lock()->request(req);
-        if(!responser_ptr.expired() && (res_ptr.lock() != responser_ptr.lock() || res_index != responser_index)){
-            responser_ptr.lock()->finish(PEER_LOST_ERR, responser_index);
-        }
-        responser_ptr = res_ptr;
-        responser_index = res_index;
-    }else{
-        delete req;
+void Guest::ReqProc(HttpReqHeader* header) {
+    LOGD(DHTTP, "guest ReqProc %" PRIu64 " %s\n", header->request_id, header->geturl().c_str());
+    HttpReq *req = new HttpReq(header,
+            std::bind(&Guest::response, this, nullptr, _1),
+            std::bind(&RWer::EatReadData, rwer));
+
+    statuslist.emplace_back(GStatus{req, nullptr, 0});
+    if(statuslist.size() == 1){
+        distribute(req, this);
+    }
+}
+
+void Guest::deqReq() {
+    GStatus& status = statuslist.front();
+    if((status.flags & HTTP_CLOSED_F) == 0) {
+        status.req->trigger(Channel::CHANNEL_CLOSED);
+    }
+    delete status.req;
+    delete status.res;
+    statuslist.pop_front();
+
+    if(!statuslist.empty()){
+        distribute(statuslist.front().req, this);
     }
 }
 
 ssize_t Guest::DataProc(const void *buff, size_t size) {
-    if (responser_ptr.expired() || (Status_flags & GUEST_ERROR_F)) {
-        LOGE("(%s): connecting to host lost or error ocured\n", getsrc(nullptr));
-        deleteLater(PEER_LOST_ERR);
-        return -1;
-    }
-    assert((http_flag & HTTP_READ_CLOSE_F) == 0);
-    int len = responser_ptr.lock()->bufleft(responser_index);
+    GStatus& status = statuslist.back();
+    assert((status.flags & HTTP_REQ_EOF) == 0);
+    assert((status.flags & HTTP_REQ_COMPLETED) == 0);
+    int len = status.req->cap();
     len = Min(len, size);
     if (len <= 0) {
-        LOGE("(%s): The host's buff is full\n", getsrc(nullptr));
+        LOGE("The host's buff is full (%" PRIu64 ")\n", status.req->header->request_id);
         rwer->delEvents(RW_EVENT::READ);
         return -1;
     }
-    responser_ptr.lock()->Send(buff, len, responser_index);
+    status.req->send(buff, len);
     rx_bytes += len;
-    LOGD(DHTTP, "guest DataProc %s: size:%zu, send:%d/%zu\n", getsrc(nullptr), size, len, rx_bytes);
+    LOGD(DHTTP, "guest DataProc %" PRIu64 ": size:%zu, send:%d/%zu\n", status.req->header->request_id, size, len, rx_bytes);
     return len;
 }
 
 void Guest::EndProc() {
-    LOGD(DHTTP, "guest EndProc %s: status:0x%08x\n", getsrc(nullptr), Status_flags);
+    GStatus& status = statuslist.back();
+    LOGD(DHTTP, "guest EndProc %" PRIu64 "\n", status.req->header->request_id);
     rwer->addEvents(RW_EVENT::READ);
-    if(!responser_ptr.expired()){
-        responser_ptr.lock()->Send((const void*)nullptr, 0, responser_index);
+    status.req->send((const void*)nullptr, 0);
+    if(status.flags & HTTP_RES_COMPLETED){
+        deqReq();
+    }else{
+        status.flags |= HTTP_REQ_COMPLETED;
     }
-    Status_flags |= GUEST_REQ_COMPLETED;
 }
 
 void Guest::ErrProc() {
     Error(HTTP_PROTOCOL_ERR, 0);
 }
 
-
 void Guest::Error(int ret, int code) {
-    LOGD(DHTTP, "guest Error %s: ret:%d, code:%d, http_flag:0x%08x\n", getsrc(nullptr), ret, code, http_flag);
-    if(responser_ptr.expired()){
-        return deleteLater(ret | DISCONNECT_FLAG);
+    if(statuslist.empty()){
+        return deleteLater(PEER_LOST_ERR);
     }
-    if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0){
-        if(http_flag & HTTP_READ_CLOSE_F){
-            return;
-        }
-        http_flag |= HTTP_READ_CLOSE_F;
-        uint32_t flags = NOERROR;
-        if(http_flag & HTTP_WRITE_CLOSE_F){
-            flags |= DISCONNECT_FLAG;
-        }
-        if(responser_ptr.lock()->finish(flags, responser_index) & FINISH_RET_BREAK){
-            responser_ptr = std::weak_ptr<Responser>();
-            deleteLater(DISCONNECT_FLAG);
+    GStatus& status = statuslist.back();
+    LOGD(DHTTP, "guest Error %" PRIu64 ": ret:%d, code:%d, http_flag:0x%08x\n",
+            status.req->header->request_id, ret, code, http_flag);
+    if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0 && (status.flags & HTTP_CLOSED_F) == 0){
+        //EOF
+        status.flags |= HTTP_REQ_EOF;
+        if(status.flags & HTTP_RES_EOF){
+            deleteLater(NOERROR);
+        }else{
+            status.req->trigger(Channel::CHANNEL_SHUTDOWN);
         }
         return;
     }
-    if(Status_flags != GUEST_NONE_F){
-        LOGE("Guest error %s: %d/%d/0x%08x\n", getsrc(nullptr), ret, code, Status_flags);
-    }
+    LOGE("Guest error <%s> %" PRIu64 " %d/%d\n",
+            getsrc(), status.req->header->request_id, ret, code);
     deleteLater(ret);
 }
 
-void Guest::response(HttpResHeader* res) {
-    assert((uint32_t)(long)res->index == 1);
-    LOGD(DHTTP, "guest response %s: %s\n", getsrc(nullptr), res->status);
-    if(Status_flags & GUEST_CONNECT_F){
-        if(memcmp(res->status, "200", 3) == 0){
-            strcpy(res->status, "200 Connection established");
-            res->del("Transfer-Encoding");
+void Guest::response(void*, HttpRes* res) {
+    GStatus& status = statuslist.front();
+    HttpLog(getsrc(), status.req, res);
+    status.res = res;
+    if(status.req->header->ismethod("CONNECT")){
+        if(memcmp(res->header->status, "200", 3) == 0){
+            strcpy(res->header->status, "200 Connection established");
+            res->header->del("Transfer-Encoding");
         }
-    }else if(Status_flags & GUEST_SEND_F){
-        //ignore response
-        delete res;
-        return;
-    }else if(res->get("Transfer-Encoding")){
-        Status_flags |= GUEST_CHUNK_F;
-    }else if(res->get("Content-Length") == nullptr) {
-        Status_flags |= GUEST_NOLENGTH_F;
+    }else if(res->header->get("Transfer-Encoding")){
+        status.flags |= HTTP_CHUNK_F;
+    }else if(res->header->get("Content-Length") == nullptr) {
+        status.flags |= HTTP_NOLENGTH_F;
     }
     size_t len;
-    char *buff=res->getstring(len);
+    char *buff = res->header->getstring(len);
     rwer->buffer_insert(rwer->buffer_end(), write_block{buff, len, 0});
-    delete res;
+    res->setHandler([this, &status](Channel::signal s){
+        LOGD(DHTTP, "guest signal %" PRIu64 ": %d\n", status.req->header->request_id, (int)s);
+        switch(s) {
+        case Channel::CHANNEL_SHUTDOWN:
+            assert((status.flags & HTTP_REQ_EOF) == 0);
+            status.flags |= HTTP_RES_EOF;
+            rwer->addEvents(RW_EVENT::READ);
+            if (rwer->wlength() == 0) {
+                rwer->Shutdown();
+            }
+            break;
+        case Channel::CHANNEL_CLOSED:
+        case Channel::CHANNEL_ABORT:
+            status.flags |= HTTP_CLOSED_F;
+            if ((status.flags & HTTP_REQ_COMPLETED) && (status.flags & HTTP_RES_COMPLETED)) {
+                //deque in write callback
+                return;
+            }
+            return deleteLater(PEER_LOST_ERR);
+        }
+    });
+    res->attach(std::bind(&Guest::Send, this, _1, _2), [this]{ return 1024*1024 - rwer->wlength(); });
 }
 
-int32_t Guest::bufleft(void*){
-    return 1024*1024 - rwer->wlength();
-}
-
-
-void Guest::Send(void *buff, size_t size, __attribute__ ((unused)) void* index) {
-    assert((uint32_t)(long)index == 1);
-    assert((http_flag & HTTP_WRITE_CLOSE_F) == 0);
-    if(Status_flags & GUEST_CHUNK_F){
+void Guest::Send(void *buff, size_t size) {
+    GStatus& status = statuslist.front();
+    assert((status.flags & HTTP_RES_EOF) == 0);
+    assert((status.flags & HTTP_RES_COMPLETED) == 0);
+    if(status.flags & HTTP_CHUNK_F){
         char chunkbuf[100];
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)size);
         buff = p_move(buff, -chunklen);
@@ -186,69 +205,48 @@ void Guest::Send(void *buff, size_t size, __attribute__ ((unused)) void* index) 
     }
     tx_bytes += size;
     if(size == 0){
-        LOGD(DHTTP, "guest Send %s: EOF/%zu\n", getsrc(nullptr), tx_bytes);
+        status.flags |= HTTP_RES_COMPLETED;
+        LOGD(DHTTP, "guest Send %" PRIu64 ": EOF/%zu\n", status.req->header->request_id, tx_bytes);
     }else{
-        LOGD(DHTTP, "guest Send %s: size:%zu/%zu\n", getsrc(nullptr), size, tx_bytes);
+        LOGD(DHTTP, "guest Send %" PRIu64 ": size:%zu/%zu\n", status.req->header->request_id, size, tx_bytes);
     }
-}
-
-void Guest::transfer(__attribute__ ((unused)) void* index, std::weak_ptr<Responser> res_ptr, void* res_index) {
-    LOGD(DHTTP, "guest transfer %s\n", getsrc(nullptr));
-    assert(index == responser_index);
-    responser_ptr = res_ptr;
-    responser_index = res_index;
 }
 
 void Guest::deleteLater(uint32_t errcode){
-    assert(errcode);
-    Status_flags |= GUEST_ERROR_F;
-    if(!responser_ptr.expired()){
-        assert(responser_index);
-        responser_ptr.lock()->finish(errcode, responser_index);
-        responser_ptr = std::weak_ptr<Responser>();
-        responser_index = nullptr;
+    for(auto& status: statuslist){
+        if((status.flags & HTTP_CLOSED_F) == 0){
+            status.req->trigger(Channel::CHANNEL_ABORT);
+        }
+        status.flags |= HTTP_CLOSED_F;
     }
-    Peer::deleteLater(errcode);
+    Server::deleteLater(errcode);
 }
 
-int Guest::finish(uint32_t flags, void* index) {
-    LOGD(DHTTP, "guest finish %s: flags:0x%08x, status:0x%08x\n", getsrc(nullptr), flags, Status_flags);
-    assert((uint32_t)(long)index == 1);
-    uint8_t errcode = flags & ERROR_MASK;
-    if(errcode || (flags & DISCONNECT_FLAG)){
-        responser_ptr = std::weak_ptr<Responser>();
-        responser_index = nullptr;
-        deleteLater(flags);
-        return FINISH_RET_BREAK;
+Guest::~Guest() {
+    for(auto& status: statuslist){
+        delete status.req;
+        delete status.res;
     }
-    if(http_flag & HTTP_READ_CLOSE_F){
-        deleteLater(DISCONNECT_FLAG);
-        return FINISH_RET_BREAK;
-    }
-    rwer->addEvents(RW_EVENT::READ);
-    http_flag |= HTTP_WRITE_CLOSE_F;
-    if(rwer->wlength() == 0){
-        rwer->Shutdown();
-    }
-    return FINISH_RET_NOERROR;
+    statuslist.clear();
 }
 
-void Guest::writedcb(const void* index) {
-    LOGD(DHTTP, "guest writedcb %s: http_flag:%u, status:0x%08x\n", getsrc(nullptr), http_flag, Status_flags);
-    if((http_flag & HTTP_READ_CLOSE_F) == 0){
-        Peer::writedcb(index);
-    }
-}
-
-const char* Guest::getsrc(const void *){
+const char* Guest::getsrc(){
     static char src[DOMAINLIMIT];
     sprintf(src, "[%s]:%d", sourceip, sourceport);
     return src;
 }
 
 void Guest::dump_stat(Dumper dp, void* param){
-    dp(param, "Guest %p, %s: responser:%p, index:%p\n", this, getsrc(nullptr), responser_ptr.lock().get(), responser_index);
+    dp(param, "Guest %p, %s\n", this, getsrc());
     dp(param, "  rwer: rlength:%zu, rleft:%zu, wlength:%zu, stats:%d, event:%s\n",
             rwer->rlength(), rwer->rleft(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
+    for(auto status : statuslist){
+        dp(param, "req [%" PRIu64 "]: %s %s [%d] [%s]\n",
+                status.req->header->request_id,
+                status.req->header->method,
+                status.req->header->geturl().c_str(),
+                status.flags,
+                status.req->header->get("User-Agent"));
+    }
 }

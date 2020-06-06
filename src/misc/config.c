@@ -76,7 +76,7 @@ static struct option long_options[] = {
     {"interface",    required_argument, NULL, 'I'},
     {"key",          required_argument, NULL,  0 },
     {"port",         required_argument, NULL, 'p'},
-    {"policy-file",  required_argument, NULL, 'P' },
+    {"policy-file",  required_argument, NULL, 'P'},
     {"rewrite-auth", required_argument, NULL, 'r'},
     {"root-dir",     required_argument, NULL,  0 },
     {"secret",       required_argument, NULL, 's'},
@@ -163,8 +163,8 @@ void prepare(){
 #endif
 }
 
-static void usage(const char * programe){
-    LOG("Usage: %s [host:port]\n" , programe);
+static void usage(const char * program){
+    LOG("Usage: %s [host:port]\n" , program);
     for(int i =0; option_detail[i].name;i++){
         int short_name = 0;
         for(int j=0; long_options[j].name; j++){

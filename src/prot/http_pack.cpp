@@ -1,16 +1,19 @@
 #include "http_pack.h"
 #include "http2.h"
 #include "res/cgi.h"
-#include "req/requester.h"
 #include "misc/net.h"
 #include "misc/util.h"
 
 #include <algorithm>
+#include <utility>
+#include <atomic>
 
 #include <assert.h>
+#include <inttypes.h>
 
 using std::string;
 
+static std::atomic<uint64_t> id_gen(10000);
 static char *cgi_addnv(char *p, const string &name, const string &value);
 static char *cgi_getnv(char *p, string &name, string &value);
 
@@ -25,18 +28,7 @@ static char* toUpper(char* s) {
     return s;
 }
 
-static char* toLower(char* s) {
-    char* p = s;
-
-    while (*p) {
-        *p = tolower(*p);
-        p++;
-    }
-
-    return s;
-}
-
-static string toLower(const string &s) {
+string toLower(const string &s) {
     string str = s;
     std::transform(str.begin(), str.end(), str.begin(), ::tolower);
     return str;
@@ -51,6 +43,12 @@ static string toUpHeader(const string &s){
         }
     }
     return str;
+}
+
+// trim from start
+static std::string& ltrim(std::string && s) {
+    s.erase(0, s.find_first_not_of(" "));
+    return s;
 }
 
 
@@ -108,14 +106,9 @@ std::set< string > HttpHeader::getall(const char *header) const{
 */
 
 
-HttpReqHeader::HttpReqHeader(const char* header, size_t len, std::weak_ptr<RwObject> src):
-                             src(std::dynamic_pointer_cast<Requester>(src.lock()))
-{
+HttpReqHeader::HttpReqHeader(const char* header, size_t len) {
     assert(header);
-    assert(!src.expired());
     assert(len < HEADLENLIMIT);
-    memset(&Dest, 0, sizeof(Dest));
-    
     char httpheader[HEADLENLIMIT];
     memcpy(httpheader, header, len);
     *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
@@ -123,6 +116,7 @@ HttpReqHeader::HttpReqHeader(const char* header, size_t len, std::weak_ptr<RwObj
     sscanf(httpheader, "%19s%*[ ]%4095[^\r\n ]", method, url);
     toUpper(method);
 
+    memset(&Dest, 0, sizeof(Dest));
     if (spliturl(url, &Dest, path)) {
         LOGE("wrong url format:%s\n", url);
         throw ERR_PROTOCOL_ERROR;
@@ -163,15 +157,11 @@ HttpReqHeader::HttpReqHeader(const char* header, size_t len, std::weak_ptr<RwObj
 }
 
 
-HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers, std::weak_ptr<RwObject> src):
-               src(std::dynamic_pointer_cast<Requester>(src.lock()))
-{
-    assert(!src.expired());
+HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers) {
     if(!headers.count(":method")){
         LOGE("wrong http2 request\n");
         throw ERR_PROTOCOL_ERROR;
     }
-    memset(&Dest, 0, sizeof(Dest));
     for(auto i: headers){
         if(i.first == "cookie"){
             char cookiebuff[URLLIMIT];
@@ -187,6 +177,12 @@ HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers, std::
         }
     }
     snprintf(method, sizeof(method), "%s", get(":method"));
+
+    memset(&Dest, 0, sizeof(Dest));
+    if (get(":authority")){
+        spliturl(get(":authority"), &Dest, nullptr);
+        set("host", get(":authority"));
+    }
     if(get(":scheme")){
         snprintf(Dest.schema, sizeof(Dest.schema), "%s", get(":scheme"));
     }
@@ -198,11 +194,7 @@ HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers, std::
     }else{
         strcpy(path, "/");
     }
-    
-    if (get(":authority")){
-        spliturl(get(":authority"), &Dest, nullptr);
-        set("host", get(":authority"));
-    }
+
     for (auto i = this->headers.begin(); i!= this->headers.end();) {
         if (i->first[0] == ':') {
             this->headers.erase(i++);
@@ -213,7 +205,7 @@ HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers, std::
     postparse();
 }
 
-HttpReqHeader::HttpReqHeader(const CGI_Header *headers): src(std::weak_ptr<Requester>()) {
+HttpReqHeader::HttpReqHeader(const CGI_Header *headers) {
     if(headers->type != CGI_REQUEST)
     {
         LOGE("wrong CGI header");
@@ -284,16 +276,13 @@ void HttpReqHeader::postparse() {
     if(!normal_method()){
         return;
     }
-    if(!Dest.schema[0]){
-        if(ismethod("SEND")){
-            strcpy(Dest.schema, "udp");
-        }else{
-            strcpy(Dest.schema, "http");
-        }
+    if(!Dest.schema[0] && ismethod("SEND")){
+        strcpy(Dest.schema, "udp");
     }
-    if(Dest.port == 0 && !ismethod("CONNECT") && !ismethod("SEND")){
+    if(Dest.port == 0 && !ismethod("CONNECT") && !ismethod("SEND") && !ismethod("PING")){
         Dest.port = HTTPPORT;
     }
+    request_id = id_gen++;
 }
 
 std::string HttpReqHeader::geturl() const {
@@ -366,25 +355,14 @@ bool HttpReqHeader::no_body() const {
     if(get("Upgrade")){
         return false;
     }
-    if(ismethod("GET") ||
-       ismethod("DELETE") ||
-       ismethod("HEAD"))
-    {
-        return true;
-    }
-    if(ismethod("CONNECT") ||
-       ismethod("SEND"))
-    {
+    if(get("Transfer-Encoding")){
         return false;
     }
-    if(get("content-length") &&
-       strcmp("0", get("content-length"))==0)
-    {
-        return true;
+    if(get("Content-Length")){
+        return strcmp("0", get("Content-Length")) == 0;
     }
-    return !(ismethod("POST") ||
-             ismethod("PUT") ||
-             ismethod("OPTIONS") ||
+    return !(ismethod("CONNECT") ||
+             ismethod("SEND") ||
              ismethod("PING"));
 }
 
@@ -470,6 +448,10 @@ std::map< string, string > HttpReqHeader::getcookies() const {
 
 HttpResHeader::HttpResHeader(const char* header, size_t len) {
     assert(header);
+    if(len == 0){
+        //add one for \0
+        len = strlen(header) + 1;
+    }
     char httpheader[HEADLENLIMIT];
     memcpy(httpheader, header, len);
     *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
@@ -719,113 +701,184 @@ bool HttpReqHeader::getrange() {
     }
 }
 
-#if 0
+Channel::Channel(more_data_t need_more): need_more(std::move(need_more)){
+}
 
-HttpBody::HttpBody() {
+Channel::~Channel() {
+    free(data);
+}
+
+int Channel::cap(){
+    if(cap_cb){
+        ssize_t ret = cap_cb() - len;
+        return Max(ret, 0);
+    }
+    return DATALEN - len;
 }
 
 
-HttpBody::HttpBody(HttpBody && copy){
-    while(copy.size()){
-       this->push(copy.pop());
+bool Channel::eatData(void *buf, size_t size) {
+    assert((int)size <= cap());
+    if(recv_cb){
+        recv_cb(buf, size);
+        return true;
+    }
+    if(recv_const_cb){
+        recv_const_cb(buf, size);
+        p_free(buf);
+        return true;
+    }
+    return false;
+}
+
+bool Channel::eatData(const void* buf, size_t size) {
+    assert((int)size <= cap());
+    if(recv_const_cb){
+        recv_const_cb(buf, size);
+        return true;
+    }
+    if(recv_cb){
+        recv_cb(p_memdup(buf, size), size);
+        return true;
+    }
+    if(size == 0){
+        eof = true;
+        return true;
+    }
+    return false;
+}
+
+
+
+void Channel::send(void *buf, size_t size) {
+    assert(!eof && size);
+    if(len){
+        goto innerCopy;
+    }
+    assert((int)size <= cap());
+    if(eatData(buf, size)){
+        return;
+    }
+    assert(data == nullptr);
+    data = (uchar*)malloc(DATALEN);
+innerCopy:
+    if(len + size > DATALEN){
+        abort();
+    }
+    memcpy(data+len, buf, size);
+    len += size;
+    p_free(buf);
+}
+
+void Channel::send(const void* buf, size_t size){
+    assert(!eof || !size);
+    if(len){
+        goto innerCopy;
+    }
+    assert((int)size <= cap());
+    if(eatData(buf, size)){
+        return;
+    }
+    assert(data == nullptr);
+    data = (uchar*)malloc(DATALEN);
+innerCopy:
+    if(len + size > DATALEN){
+        abort();
+    }
+    memcpy(data+len, buf, size);
+    len += size;
+}
+
+void Channel::trigger(Channel::signal s) {
+    if(handler)
+        handler(s);
+}
+
+void Channel::more(){
+    int left = cap();
+    if(left <= 0){
+        return;
+    }
+    if(len){
+        size_t l = Min(len, left);
+        eatData((const void *) data, l);
+        len -= l;
+        left -= l;
+        memmove(data, data + l, len);
+    }
+    if(len == 0){
+        if(eof){
+            eatData((const void *) nullptr, 0);
+        }else if(left > 0) {
+            need_more();
+        }
     }
 }
 
-void HttpBody::push(const void* buff, size_t len) {
-    return push(p_memdup(buff, len), len);
+void Channel::attach(recv_t recv_cb, cap_t cap_cb) {
+    this->recv_cb = std::move(recv_cb);
+    this->cap_cb = std::move(cap_cb);
+    more();
 }
 
-void HttpBody::push(void* buff, size_t len) {
-    assert(len);
-    content_size += len;
-    data.push(write_block{buff, len, 0});
+void Channel::attach(recv_const_t recv_cb, cap_t cap_cb) {
+    this->recv_const_cb = std::move(recv_cb);
+    this->cap_cb = std::move(cap_cb);
+    more();
 }
 
-void HttpBody::push(const write_block& wb) {
-    assert(wb.buff);
-    assert(wb.len);
-    content_size += (wb.len - wb.wlen);
-    return data.push(wb);
+void Channel::setHandler(handler_t handler) {
+    this->handler = std::move(handler);
 }
 
-
-
-write_block HttpBody::pop(){
-    assert(data.size());
-    auto ret = data.front();
-    data.pop();
-    content_size -= (ret.len - ret.wlen);
-    return ret;
+void Channel::detach() {
+    this->recv_cb = nullptr;
+    this->recv_const_cb = nullptr;
+    this->cap_cb = []{return 0;};
+    this->handler = nullptr;
 }
 
-size_t& HttpBody::size() {
-    assert(bool(content_size) ==  !data.empty() ||
-          (content_size == 0 && data.size() == 1 && data.back().wlen == data.back().len));
-    return content_size;
+HttpRes::HttpRes(HttpResHeader* header, more_data_t more): Channel(std::move(more)), header(header) {
 }
 
-HttpBody::~HttpBody() {
-    while(data.size()){
-       p_free(pop().buff);
+HttpRes::HttpRes(HttpResHeader *header): HttpRes(header, []{}) {
+}
+
+HttpRes::HttpRes(HttpResHeader *header, const char *body): HttpRes(header, []{
+})
+{
+    len = strlen(body);
+    if(len) {
+        data = (uchar *) malloc(DATALEN);
+        memcpy(data, body, len);
     }
+    eof = true;
+    header->set("Content-Length", len);
 }
 
-HttpReq::~HttpReq() {
-    p_free(header_buff);
+HttpRes::~HttpRes() {
     delete header;
 }
 
-HttpReq::HttpReq(HttpReq && copy):body(std::move(copy.body)){
-    header_buff = copy.header_buff;
-    header_len = copy.header_len;
-    header_sent = copy.header_sent;
-    header = copy.header;
+HttpReq::HttpReq(HttpReqHeader* header, HttpReq::res_cb response, more_data_t more):
+    Channel(std::move(more)), header(header), response(std::move(response))
+{
+}
 
-    copy.header_buff = nullptr;
-    copy.header = nullptr;
+HttpReq::~HttpReq() {
+    delete header;
 }
 
 
-ssize_t HttpReq::Write_string(std::function<ssize_t (const void *, size_t)> write_func){
-    if(header_buff == nullptr){
-        header_buff = header->getstring(header_len);
-    }
-    ssize_t writed = 0;
-    assert(header_sent <= header_len);
-    while(header_sent <  header_len){
-        ssize_t ret = write_func((char *)header_buff + header_sent, header_len - header_sent);
-        if(ret <= 0){
-            return ret;
-        }
-        header_sent += ret;
-        writed += ret;
-    }
-    while(body.size()){
-        write_block& wb = body.data.front();
-        ssize_t ret = write_func((char *)wb.buff + wb.wlen, wb.len - wb.wlen);
-        if (ret <= 0) {
-            return ret;
-        }
-
-        writed += true;
-        body.size() -= ret;
-        assert(ret + wb.wlen <= wb.len);
-        if ((size_t)ret + wb.wlen == wb.len) {
-            p_free(wb.buff);
-            body.data.pop();
-        } else {
-            wb.wlen += ret;
-            break;
-        }
-    }
-    return writed;
+void HttpLog(const char* src, const HttpReq* req, const HttpRes* res){
+    char status[100];
+    sscanf(res->header->status, "%s", status);
+    LOG("%s [%" PRIu64 "] %s %s [%s] %s [%s]\n", src,
+        req->header->request_id,
+        req->header->method,
+        req->header->geturl().c_str(),
+        req->header->get("Strategy"),
+        status,
+        req->header->get("User-Agent"));
 }
 
-size_t HttpReq::size(){
-    if(header_buff == nullptr){
-        return body.size() + BUF_LEN;
-    }else{
-        return body.size() + header_len - header_sent;
-    }
-}
-#endif

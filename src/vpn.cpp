@@ -55,8 +55,9 @@ int vpn_start(int fd){
         }
     }
     LOG("VPN exiting ...\n");
-    releaseall();
     flushdns();
+    flushproxy2(1);
+    releaseall();
     return 0;
 }
 

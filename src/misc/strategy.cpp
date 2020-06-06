@@ -39,6 +39,8 @@ static string reverse(string str){
 }
 */
 
+string toLower(const string &s);
+
 static string trimdomain(string host){
     string domain;
     auto pos = host.find_first_of('.');
@@ -127,14 +129,14 @@ class DomainStra{
 public:
     void insert(const string& host, const strategy& stra){
         assert(stra.s != Strategy::none);
-        children[host] = stra;
+        children[toLower(host)] = stra;
     }
     const strategy find(const string& host){
         assert(!host.empty());
-        if(children.count(host)){
-            return children[host];
+        string domain = toLower(host);
+        if(children.count(domain)){
+            return children[domain];
         }
-        string domain = host;
         do{
             domain = trimdomain(domain);
             string wildhost = joinhost("*", domain);
@@ -145,7 +147,7 @@ public:
         return {Strategy::none, ""};
     }
     bool remove(const string& host){
-        return children.erase(host) > 0;
+        return children.erase(toLower(host)) > 0;
     }
     void clear(){
         children.clear();
@@ -200,7 +202,7 @@ static bool mergestrategy(const string& host, const string& strategy_str, string
             return true;
         }
         if (inet_pton(AF_INET6, ip.c_str(), &addr.addr_in6.sin6_addr) == 1) {
-            //TODO: xxx
+            //TODO: ipv6
             return false;
         }
         return false;
@@ -208,7 +210,7 @@ static bool mergestrategy(const string& host, const string& strategy_str, string
         ipv4s.insert(addr.addr_in.sin_addr, 32, stra);
         return true;
     }else if(inet_pton(AF_INET6, host.c_str(), &addr.addr_in.sin_addr) == 1){
-        //TODO: xxx
+        //TODO: ipv6
         return false;
     } else{
         domains.insert(host, stra);
@@ -295,7 +297,7 @@ bool delstrategy(const char* host) {
     if (inet_pton(AF_INET, host, &addr.addr_in.sin_addr) == 1) {
         found = ipv4s.remove(addr.addr_in.sin_addr);
     }else if (inet_pton(AF_INET6, host, &addr.addr_in6.sin6_addr) == 1) {
-        //TODO
+        //TODO: ipv6
         found = false;
     }else{
         found = domains.remove(host);
@@ -312,7 +314,7 @@ strategy getstrategy(const char *host){
     if (inet_pton(AF_INET, host, &addr.addr_in.sin_addr) == 1) {
         stra = ipv4s.find(addr.addr_in.sin_addr);
     }else if (inet_pton(AF_INET6, host, &addr.addr_in6.sin6_addr) == 1) {
-        //TODO
+        //TODO: ipv6
     }else {
         stra = domains.find(host);
     }

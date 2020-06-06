@@ -33,7 +33,7 @@ class Http_server: public Ep{
                 return;
             }
 
-            SetTcpOptions(clsk);
+            SetTcpOptions(clsk, (const sockaddr_un*)&myaddr);
             new T(clsk, (const sockaddr_un*)&myaddr);
         } else {
             LOGE("unknown error\n");
@@ -69,7 +69,7 @@ class Https_server: public Ep {
                 return;
             }
 
-            SetTcpOptions(clsk);
+            SetTcpOptions(clsk, (const sockaddr_un*)&myaddr);
             new Guest(clsk, (const sockaddr_un*)&myaddr, ctx);
         } else {
             LOGE("unknown error\n");

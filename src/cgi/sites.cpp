@@ -21,7 +21,7 @@ class handle{
 
     int GET(const CGI_Header* header){
         if(header->flag & CGI_FLAG_END){
-            if(queryed == false){
+            if(!queryed){
                 cgi_query(cgi_fd, cgi_id, CGI_NAME_STRATEGYGET);
                 queryed = true;
                 sitelist = json_object_new_array();
@@ -65,7 +65,7 @@ class handle{
                 if(params.count("site") && params.count("strategy")){
                     char strategystring[DOMAINLIMIT+10];
                     int len = sprintf(strategystring, "%s %s", params["site"].c_str(), params["strategy"].c_str());
-                    cgi_set(cgi_fd, cgi_id, CGI_NAME_STRATEGYADD, strategystring, len+1);
+                    cgi_setvalue(cgi_fd, cgi_id, CGI_NAME_STRATEGYADD, strategystring, len+1);
                     queryed = true;
                     return 0;
                 }
@@ -84,7 +84,7 @@ class handle{
         if(header->flag & CGI_FLAG_END){
             if(queryed == false){
                 if(params.count("site")){
-                    cgi_set(cgi_fd, cgi_id, CGI_NAME_STRATEGYDEL, params["site"].c_str(), params["site"].size()+1);
+                    cgi_setvalue(cgi_fd, cgi_id, CGI_NAME_STRATEGYDEL, params["site"].c_str(), params["site"].size()+1);
                     queryed = true;
                     return 0;
                 }
@@ -120,7 +120,6 @@ public:
                 params.insert(param.begin(), param.end());
                 break;
             }
-
             default:
                 break;
         }
@@ -163,6 +162,11 @@ int cgimain(int fd){
         if(header->type == CGI_REQUEST){
             assert(cgimap.count(cgi_id) == 0);
             cgimap[cgi_id] =  handle{};
+        }
+
+        if(header->type == CGI_RESET){
+            cgimap.erase(cgi_id);
+            continue;
         }
 
         if(cgimap.count(cgi_id) && cgimap[cgi_id](header)){

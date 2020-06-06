@@ -10,6 +10,7 @@
 #define CGI_RESPONSE      2
 #define CGI_DATA          3
 #define CGI_VALUE         4
+#define CGI_RESET         5
 
 #define CGI_LEN_MAX       (BUF_LEN - sizeof(CGI_Header))
 
@@ -42,30 +43,32 @@ struct CGI_NameValue{
     uint8_t value[0];
 }__attribute__((packed));
 
+struct CgiStatus{
+    HttpReq* req;
+    HttpRes* res;
+    char sourceip[INET6_ADDRSTRLEN];
+};
 
 class Cgi:public Responser{
     char filename[URLLIMIT];
-    uint32_t curid = 1;
-    std::map<uint32_t, HttpReqHeader*> statusmap;
+    std::map<uint32_t, CgiStatus> statusmap;
     void evictMe();
     void readHE(size_t len);
-    bool HandleRes(const CGI_Header* header, HttpReqHeader* req);
-    bool HandleValue(const CGI_Header* header, HttpReqHeader* req);
-    bool HandleData(const CGI_Header* header, HttpReqHeader* req);
+    bool HandleRes(const CGI_Header* header, CgiStatus& status);
+    bool HandleValue(const CGI_Header* header, CgiStatus& status);
+    bool HandleData(const CGI_Header* header, CgiStatus& Status);
+    bool HandleReset(const CGI_Header* header, CgiStatus status);
+    void Send(uint32_t id, void *buff, size_t size);
 public:
     explicit Cgi(const char* filename, int sv[2]);
     virtual ~Cgi() override;
 
-    virtual int32_t bufleft(void * index) override;
-    virtual void Send(void* buff, size_t size, void* index)override;
-
-    virtual int finish(uint32_t flags, void* index)override;
     virtual void deleteLater(uint32_t errcode) override;
-    virtual void* request(HttpReqHeader* req)override;
+    virtual void request(HttpReq* req, Requester*)override;
     virtual void dump_stat(Dumper dp, void* param) override;
 };
 
-std::weak_ptr<Cgi> getcgi(HttpReqHeader* req, const char* filename);
+void getcgi(HttpReq* req, const char *filename, Requester *src);
 
 class Cookie{
 public:
@@ -95,7 +98,8 @@ cgifunc cgimain;
 int cgi_response(int fd, const HttpResHeader &req, uint32_t cgi_id);
 int cgi_write(int fd, uint32_t id, const void *buff, size_t len);
 int cgi_query(int fd, uint32_t id, int name);
-int cgi_set(int fd, uint32_t id, int name, const void* value, size_t len);
+int cgi_setvalue(int fd, uint32_t id, int name, const void* value, size_t len);
+int cgi_reset(int fd, uint32_t id);
 #ifdef  __cplusplus
 }
 #endif

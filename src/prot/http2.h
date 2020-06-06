@@ -137,11 +137,11 @@ public:
     ~Http2Base();
 };
 
-class Http2Responser:public Http2Base, virtual public RwObject{
+class Http2Responser:public Http2Base{
 protected:
     virtual size_t InitProc(const uchar* http2_buff, size_t len)override;
     virtual void HeadersProc(const Http2_header *header)override;
-    virtual void ReqProc(HttpReqHeader* req) = 0;
+    virtual void ReqProc(uint32_t id, HttpReqHeader* req) = 0;
 };
 
 
@@ -150,14 +150,8 @@ protected:
     void init();
     virtual size_t InitProc(const uchar* http2_buff, size_t len)override;
     virtual void HeadersProc(const Http2_header *header)override;
-    virtual void ResProc(HttpResHeader* res) = 0;
+    virtual void ResProc(uint32_t id, HttpResHeader* res) = 0;
 public:
 };
-
-#define STREAM_HEAD_ENDED   (1u<<0u)
-#define STREAM_WRITE_ENDED   (1u<<1u)
-#define STREAM_READ_ENDED   (1u<<2u)
-#define STREAM_READ_CLOSED   (1u<<3u)
-#define STREAM_WRITE_CLOSED  (1u<<4u)
 
 #endif
