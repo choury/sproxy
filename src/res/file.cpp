@@ -1,7 +1,6 @@
 #include "file.h"
 #include "status.h"
 #include "req/requester.h"
-#include "misc/simpleio.h"
 #include "misc/net.h"
 #include "misc/util.h"
 #include "misc/config.h"
@@ -22,13 +21,11 @@
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
-
+#include <inttypes.h>
 
 using std::vector;
 using std::pair;
 
-
-static std::map<std::string, std::weak_ptr<File>> filemap;
 static std::map<std::string, std::string> mimetype;
 
 static bool checkrange(Range& rg, size_t size) {
@@ -90,210 +87,127 @@ static void loadmine(){
 }
 
 File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
-    rwer = new EventRWer([this](int ret, int code){
+    rwer = new FullRWer([this](int ret, int code){
         LOGE("file error: %d/%d\n", ret, code);
+        status.res->trigger(Channel::CHANNEL_ABORT);
         deleteLater(ret);
     });
-    if(filemap.empty()){
+    if(mimetype.empty()){
         loadmine();
     }
     strcpy(filename, fname);
-    filemap[filename] = std::dynamic_pointer_cast<File>(shared_from_this());
+    memset(&status, 0, sizeof(status));
     suffix = strrchr(filename, '.');
     rwer->SetReadCB(std::bind(&File::readHE, this, _1));
 }
 
 
-bool File::checkvalid() {
-    struct stat nt;
-    if(stat(filename, &nt)){
-        valid = false;
-    }else{
-        valid = nt.st_mtime == st.st_mtime && nt.st_ino == st.st_ino;
-    }
-    if(!valid){
-        evictMe();
-        rwer->addEvents(RW_EVENT::READ);
-    }
-    return valid;
-}
-
-void File::evictMe(){
-    if(filemap.count(filename) == 0){
-        return;
-    }
-    if(!filemap[filename].expired() && filemap[filename].lock() != shared_from_this()){
-        return;
-    }
-    filemap.erase(filename);
-}
-
-int32_t File::bufleft(void*){
-    return 0;
-}
-
-//discard everything!
-void File::Send(const void*, size_t, void*) {
-}
-
-void* File::request(HttpReqHeader* req) {
-    FileStatus status;
-    status.req_ptr = req->src;
-    status.req_index = req->index;
-    status.head_only = req->ismethod("HEAD");
-    status.responsed = false;
-    if (!req->ranges.empty()){
-        status.rg = req->ranges[0];
+void File::request(HttpReq* req, Requester*) {
+    status.req = req;
+    if (!req->header->ranges.empty()){
+        status.rg = req->header->ranges[0];
     }else{
         status.rg.begin = -1;
         status.rg.end = - 1;
     }
-    if(req->get("If-Modified-Since")){
+    if(req->header->get("If-Modified-Since")){
         struct tm tp;
-        strptime(req->get("If-Modified-Since"), "%a, %d %b %Y %H:%M:%S GMT", &tp);
-        status.modified_since = timegm(&tp);
+        strptime(req->header->get("If-Modified-Since"), "%a, %d %b %Y %H:%M:%S GMT", &tp);
+        if(timegm(&tp) >= st.st_mtime){
+            HttpResHeader* header = new HttpResHeader(H304);
+            char buff[100];
+            strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
+            header->set("Last-Modified", buff);
+            HttpRes* res = new HttpRes(header, "");
+            req->response(res);
+            status.res->send((const void*)nullptr, 0);
+            res->trigger(Channel::CHANNEL_CLOSED);
+            return deleteLater(NOERROR);
+        }
+    }
+
+    if(status.rg.begin == -1 && status.rg.end == -1){
+        status.rg.begin = 0;
+        status.rg.end = st.st_size - 1;
+        HttpResHeader* header = new HttpResHeader(H200, sizeof(H200));
+        header->set("Content-Length", st.st_size);
+        char buff[100];
+        strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
+        header->set("Last-Modified", buff);
+        if(suffix && mimetype.count(suffix)){
+            header->set("Content-Type", mimetype.at(suffix));
+        }
+        status.res = new HttpRes(header, std::bind(&RWer::EatReadData, rwer));
+        req->response(status.res);
+    }else if(checkrange(status.rg, st.st_size)){
+        HttpResHeader* header = new HttpResHeader(H206, sizeof(H206));
+        char buff[100];
+        snprintf(buff, sizeof(buff), "bytes %zd-%zd/%jd",
+                 status.rg.begin, status.rg.end, (intmax_t)st.st_size);
+        header->set("Content-Range", buff);
+        header->set("Content-Length", status.rg.end - status.rg.begin +1);
+        if(suffix && mimetype.count(suffix)){
+            header->set("Content-Type", mimetype.at(suffix));
+        }
+        status.res = new HttpRes(header, std::bind(&RWer::EatReadData, rwer));
+        req->response(status.res);
     }else{
-        status.modified_since = 0;
+        HttpResHeader* header = new HttpResHeader(H416, sizeof(H416));
+        char buff[100];
+        snprintf(buff, sizeof(buff), "bytes */%jd", (intmax_t)st.st_size);
+        header->set("Content-Range", buff);
+        status.res = new HttpRes(header, "");
+        req->response(status.res);
+        status.res->send((const void*)nullptr, 0);
+        status.res->trigger(Channel::CHANNEL_CLOSED);
+        return deleteLater(NOERROR);
     }
-    statusmap[req_id] = status;
-    delete req;
-    rwer->addEvents(RW_EVENT::READ);
-    rwer->buffer_insert(rwer->buffer_end(), write_block{p_strdup("FILEFILE"), 8, 0});
-    return reinterpret_cast<void*>(req_id++);
+    if(status.req->header->ismethod("HEAD")){
+        status.res->send((const void*)nullptr, 0);
+        status.res->trigger(Channel::CHANNEL_CLOSED);
+        return deleteLater(NOERROR);
+    }
+    req->setHandler([this](Channel::signal s){
+        if(s == Channel::CHANNEL_SHUTDOWN){
+            status.res->trigger(Channel::CHANNEL_ABORT);
+        }
+        deleteLater(PEER_LOST_ERR);
+    });
 }
 
 
-void File::readHE(size_t len) {
-    rwer->consume(nullptr, len);
-    rwer->buffer_insert(rwer->buffer_end(), write_block{p_strdup("FILEFILE"), 8, 0});
-
-    bool allfull = true;
-    for(auto i = statusmap.begin();i!=statusmap.end();){
-        Range& rg = i->second.rg;
-        assert(!i->second.req_ptr.expired());
-        auto requester = i->second.req_ptr.lock();
-        if (!i->second.responsed){
-            if(i->second.modified_since >= st.st_mtime){
-                HttpResHeader* res = new HttpResHeader(H304, sizeof(H304));
-                char buff[100];
-                strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
-                res->set("Last-Modified", buff);
-                res->index = i->second.req_index;
-                requester->response(res);
-                requester->finish(NOERROR | DISCONNECT_FLAG, i->second.req_index);
-                i = statusmap.erase(i);
-                continue;
-            }
-            if(rg.begin == -1 && rg.end == -1){
-                rg.begin = 0;
-                rg.end = st.st_size - 1;
-                HttpResHeader* res = new HttpResHeader(H200, sizeof(H200));
-                res->set("Content-Length", st.st_size);
-                char buff[100];
-                strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
-                res->set("Last-Modified", buff);
-                if(suffix && mimetype.count(suffix)){
-                    res->set("Content-Type", mimetype.at(suffix));
-                }
-                res->index = i->second.req_index;
-                requester->response(res);
-            }else if(checkrange(rg, st.st_size)){
-                HttpResHeader* res = new HttpResHeader(H206, sizeof(H206));
-                char buff[100];
-                snprintf(buff, sizeof(buff), "bytes %zd-%zd/%jd",
-                         rg.begin, rg.end, (intmax_t)st.st_size);
-                res->set("Content-Range", buff);
-                size_t leftsize = rg.end - rg.begin+1;
-                res->set("Content-Length", leftsize);
-                if(suffix && mimetype.count(suffix)){
-                    res->set("Content-Type", mimetype.at(suffix));
-                }
-                res->index = i->second.req_index;
-                requester->response(res);
-            }else{
-                HttpResHeader* res = new HttpResHeader(H416, sizeof(H416));
-                char buff[100];
-                snprintf(buff, sizeof(buff), "bytes */%jd", (intmax_t)st.st_size);
-                res->set("Content-Range", buff);
-                res->index = i->second.req_index;
-                requester->response(res);
-                requester->finish(NOERROR | DISCONNECT_FLAG, i->second.req_index);
-                i = statusmap.erase(i);
-                continue;
-            }
-            if(i->second.head_only){
-                requester->finish(NOERROR | DISCONNECT_FLAG, i->second.req_index);
-                i = statusmap.erase(i);
-                continue;
-            }else{
-                i->second.responsed = true;
-            }
-        }
-        if (rg.begin > rg.end) {
-            requester->finish(NOERROR | DISCONNECT_FLAG, i->second.req_index);
-            i = statusmap.erase(i);
-            continue;
-        }
-        int len = Min(requester->bufleft(i->second.req_index), rg.end - rg.begin + 1);
-        if (len <= 0) {
-            i++;
-            continue;
-        }
-        allfull = false;
-        char* const buff = (char *)p_malloc(len);
-        len = pread(fd, buff, len, rg.begin);
-        if(len <= 0){
-            LOGE("file pread error: %s\n", strerror(errno));
-            deleteLater(READ_ERR);
-            return;
-        }
-        requester->Send(buff, len, i->second.req_index);
-        rg.begin += len;
-        i++;
+void File::readHE(size_t) {
+    Range& rg = status.rg;
+    LOGD(DFILE, "%s readHE %zd-%zd, flags: %d\n", filename, rg.begin, rg.end, status.flags);
+    if (rg.begin > rg.end) {
+        status.res->send((const void*)nullptr, 0);
+        status.res->trigger(Channel::CHANNEL_CLOSED);
+        deleteLater(NOERROR);
+        rwer->delEvents(RW_EVENT::READ);
+        return;
     }
-    if(allfull){
-        if(!valid && statusmap.empty()){
-            deleteLater(PEER_LOST_ERR);
-        }else{
-            rwer->delEvents(RW_EVENT::READ);
-        }
+    int len = Min(status.res->cap(), rg.end - rg.begin + 1);
+    if (len <= 0) {
+        rwer->delEvents(RW_EVENT::READ);
+        return;
     }
-}
-
-int File::finish(uint32_t flags, void* index){
-    uint32_t id = (uint32_t)(long)index;
-    assert(statusmap.count(id));
-    uint8_t errcode = flags & ERROR_MASK;
-    if(errcode || (flags & DISCONNECT_FLAG)){
-        statusmap.erase(id);
-        return FINISH_RET_BREAK;
+    char* buff = (char *)p_malloc(len);
+    len = pread(fd, buff, len, rg.begin);
+    if(len <= 0){
+        LOGE("file pread error: %s\n", strerror(errno));
+        status.res->trigger(Channel::CHANNEL_ABORT);
+        deleteLater(READ_ERR);
+        rwer->delEvents(RW_EVENT::READ);
+        return;
     }
-    return FINISH_RET_NOERROR;
-}
-
-void File::deleteLater(uint32_t errcode){
-    evictMe();
-    for(auto i:statusmap){
-        assert(!i.second.req_ptr.expired());
-        if(!i.second.responsed){
-            HttpResHeader* res = new HttpResHeader(H503, sizeof(H503));
-            res->index = i.second.req_index;
-            i.second.req_ptr.lock()->response(res);
-        }
-        i.second.req_ptr.lock()->finish(errcode | DISCONNECT_FLAG, i.second.req_index);
-    }
-    statusmap.clear();
-    return Peer::deleteLater(errcode);
+    status.res->send(buff, len);
+    rg.begin += len;
 }
 
 void File::dump_stat(Dumper dp, void* param){
-    dp(param, "File %p, %s, id=%d:\n", this, filename, req_id);
-    for(const auto& i: statusmap){
-        assert(!i.second.req_ptr.expired());
-        dp(param, "0x%x: (%zd-%zd) %p, %p\n",
-                i.first, i.second.rg.begin, i.second.rg.end,
-                i.second.req_ptr.lock().get(), i.second.req_index);
-    }
+    dp(param, "File %p, %s\n", this, filename);
+    dp(param, " [%" PRIu64 "]: (%zd-%zd)\n",
+            status.req->header->request_id, status.rg.begin, status.rg.end);
 }
 
 
@@ -303,32 +217,27 @@ File::~File() {
     }
 }
 
-std::weak_ptr<Responser> File::getfile(HttpReqHeader* req) {
-    assert(!req->src.expired());
-    auto req_ptr = req->src.lock();
-    if(!req->getrange()){
-        HttpResHeader* res = new HttpResHeader(H400, sizeof(H400));
-        res->index = req->index;
-        req_ptr->response(res);
-        return std::weak_ptr<Responser>();
+void File::getfile(HttpReq* req, Requester* src) {
+    if(!req->header->getrange()){
+        return req->response(new HttpRes(new HttpResHeader(H400), ""));
     }
     char filename[URLLIMIT];
-    bool slash_end = req->filename.back() == '/';
+    bool slash_end = req->header->filename.back() == '/';
     bool index_not_found = false;
-    realpath(("./" + req->filename).c_str(), filename);
-    HttpResHeader* res = nullptr;
+    (void)realpath(("./" + req->header->filename).c_str(), filename);
+    HttpResHeader* header = nullptr;
     while(true){
         if(!startwith(filename, opt.rootdir)){
             LOGE("get file out of rootdir: %s\n", filename);
-            res = new HttpResHeader(H403, sizeof(H403));
+            header = new HttpResHeader(H403, sizeof(H403));
             goto ret;
         }
         if(filename == pathjoin(opt.rootdir, "status")){
-            return std::dynamic_pointer_cast<Responser>((new Status())->shared_from_this());
+            return (new Status())->request(req, src);
         }
 #ifdef ENABLE_GZIP_TEST
         if(filename == pathjoin(opt.rootdir, "test")){
-            return std::dynamic_pointer_cast<Responser>((new GzipTest())->shared_from_this());
+            return (new GzipTest())->request(req, src);
         }
 #endif
         char *suffix = strrchr(filename, '.');
@@ -346,75 +255,71 @@ std::weak_ptr<Responser> File::getfile(HttpReqHeader* req) {
                 // filname is index file now, fallback to autoindex
                 if(slash_end && !endwith(filename, "/") && opt.autoindex){
                     index_not_found = true;
-                    realpath(("./" + req->filename).c_str(), filename);
+                    (void)realpath(("./" + req->header->filename).c_str(), filename);
                     continue;
                 }
-                res = new HttpResHeader(H404, sizeof(H404));
+                header = new HttpResHeader(H404, sizeof(H404));
             }else{
-                res = new HttpResHeader(H500, sizeof(H500));
+                header = new HttpResHeader(H500, sizeof(H500));
             }
             goto ret;
         }
 
         if(S_ISDIR(st.st_mode)){
             if(!slash_end){
-                res = new HttpResHeader(H302, sizeof(H302));
+                header = new HttpResHeader(H302, sizeof(H302));
                 char location[FILENAME_MAX];
-                snprintf(location, sizeof(location), "/%s/", req->filename.c_str());
-                res->set("Location", location);
+                snprintf(location, sizeof(location), "/%s/", req->header->filename.c_str());
+                header->set("Location", location);
                 goto ret;
             }
             if(!index_not_found && opt.index_file){
-                realpath(("./" + req->filename + opt.index_file).c_str(), filename);
+                (void)realpath(("./" + req->header->filename + opt.index_file).c_str(), filename);
                 continue;
             }
             if(!opt.autoindex){
-                res = new HttpResHeader(H403, sizeof(H403));
+                header = new HttpResHeader(H403, sizeof(H403));
                 goto ret;
             }
 
             DIR* dir = opendir(filename);
             if(dir == nullptr){
                 LOGE("open %s dir failed: %s\n", filename, strerror(errno));
-                res = new HttpResHeader(H500, sizeof(H500));
+                header = new HttpResHeader(H500, sizeof(H500));
                 goto ret;
             }
-            res = new HttpResHeader(H200, sizeof(H200));
-            res->set("Transfer-Encoding", "chunked");
-            res->index = req->index;
-            req_ptr->response(res);
+            header = new HttpResHeader(H200, sizeof(H200));
+            header->set("Transfer-Encoding", "chunked");
+            HttpRes* res = new HttpRes(header);
+            req->response(res);
             char buff[1024];
-            req_ptr->Send((const void*)buff,
-                           sprintf(buff, "<html>"
-                           "<head><title>Index of %s</title></head>"
-                           "<body><h1>Index of %s</h1><hr/><pre>",
-                           req->filename.c_str(), req->filename.c_str()),
-                           req->index);
+            res->send((const void*)buff,
+                    sprintf(buff, "<html>"
+                                  "<head><title>Index of %s</title></head>"
+                                  "<body><h1>Index of %s</h1><hr/><pre>",
+                                  req->header->filename.c_str(),
+                                  req->header->filename.c_str()));
             struct dirent *ptr;
             while((ptr = readdir(dir))){
                 if(ptr->d_type == DT_DIR){
-                    req_ptr->Send((const void*)buff,
-                                   sprintf(buff, "<a href='%s/'>%s/</a><br/>", ptr->d_name, ptr->d_name),
-                                   req->index);
+                    res->send((const void*)buff,
+                                   sprintf(buff, "<a href='%s/'>%s/</a><br/>", ptr->d_name, ptr->d_name));
                 }else{
-                    req_ptr->Send((const void*)buff,
-                                   sprintf(buff, "<a href='%s'>%s</a><br/>", ptr->d_name, ptr->d_name),
-                                   req->index);
+                    res->send((const void*)buff,
+                                   sprintf(buff, "<a href='%s'>%s</a><br/>", ptr->d_name, ptr->d_name));
 
                 }
             }
             closedir(dir);
-            req_ptr->Send((const void*)buff,
-                           sprintf(buff, "</pre><hr></body></html>"),
-                           req->index);
-			req_ptr->Send((const void*)nullptr, 0, req->index);
-            req_ptr->finish(NOERROR | DISCONNECT_FLAG, req->index);
-            return std::weak_ptr<Responser>();
+            res->send((const void*)buff, sprintf(buff, "</pre><hr></body></html>"));
+            res->send((const void*)nullptr, 0);
+            res->trigger(Channel::CHANNEL_CLOSED);
+            return;
         }
 
         if(!S_ISREG(st.st_mode)){
             LOGE("access to no regular file %s\n", filename);
-            res = new HttpResHeader(H403, sizeof(H403));
+            header = new HttpResHeader(H403, sizeof(H403));
             goto ret;
         }
 #ifdef ENABLE_CGI
@@ -425,27 +330,18 @@ std::weak_ptr<Responser> File::getfile(HttpReqHeader* req) {
 #else
         if(0){
 #endif
-            return getcgi(req, filename);
+            return getcgi(req, filename, src);
         }
 #endif
-
-        if(filemap.count(filename)){
-            auto file = filemap[filename];
-            if(!file.expired() && file.lock()->checkvalid()){
-                return file;
-            }
-        }
         int fd = open(filename, O_RDONLY | O_CLOEXEC);
         if(fd < 0){
             LOGE("open file failed %s: %s\n", filename, strerror(errno));
-            res = new HttpResHeader(H500, sizeof(H500));
+            header = new HttpResHeader(H500, sizeof(H500));
             goto ret;
         }
-        return std::dynamic_pointer_cast<Responser>((new File(filename, fd, &st))->shared_from_this());
+        return (new File(filename, fd, &st))->request(req, src);
     }
 ret:
-    assert(res);
-    res->index = req->index;
-    req_ptr->response(res);
-    return std::weak_ptr<Responser>();
+    assert(header);
+    return req->response(new HttpRes(header, ""));
 }

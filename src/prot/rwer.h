@@ -7,6 +7,7 @@
 #include <list>
 #include <functional>
 
+
 #ifndef insert_iterator
 #ifdef HAVE_CONST_ITERATOR_BUG
 #define insert_iterator iterator
@@ -14,12 +15,6 @@
 #define insert_iterator const_iterator
 #endif
 #endif
-
-
-class RwObject: public std::enable_shared_from_this<RwObject>{
-public:
-    virtual ~RwObject() = default;
-};
 
 struct write_block{
     void* const buff;
@@ -91,12 +86,16 @@ enum class RWerStats{
     Connected,
     SslAccepting,
     SslConnecting,
-    ConnectionLost,
     ReadEOF,
     Shutdown,
+    Error,
 };
 
 class RWer: public Ep, public job_handler{
+#define RWER_READING  1u
+#define RWER_SENDING  2u
+#define RWER_CLOSING  4u
+    uint32_t  flags = 0;
 protected:
     RWerStats  stats = RWerStats::Idle;
     WBuffer wbuff;
@@ -151,6 +150,24 @@ public:
     virtual size_t rlength() override;
     virtual size_t wlength() override;
     virtual const char * rdata() override;
+    virtual void consume(const char* data, size_t l) override;
+};
+
+class FullRWer: public RWer{
+protected:
+#ifndef __linux__
+    int pairfd = -1;
+#endif
+    virtual ssize_t Write(const void* buff, size_t len) override;
+    virtual void ReadData() override;
+    virtual void closeHE(RW_EVENT events) override;
+public:
+    explicit FullRWer(std::function<void(int ret, int code)> errorCB);
+    ~FullRWer() override;
+
+    virtual size_t rlength() override;
+    virtual size_t rleft() override;
+    virtual const char *rdata() override;
     virtual void consume(const char* data, size_t l) override;
 };
 

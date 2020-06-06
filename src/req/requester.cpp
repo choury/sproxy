@@ -28,3 +28,9 @@ Requester::Requester(const char* ip, uint16_t port):sourceport(port) {
 const char* Requester::getip(){
     return sourceip;
 }
+
+const char* Requester::getsrc() {
+    static char src[DOMAINLIMIT];
+    sprintf(src, "[%s]:%d", sourceip, sourceport);
+    return src;
+}

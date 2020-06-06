@@ -26,6 +26,12 @@ if(NOT HAVE_CXX11 OR NOT HAVE_C99)
     message(FATAL_ERROR "this project need c++11 and c99")
 endif()
 
+
+CHECK_CXX_COMPILER_FLAG("-fsanitize=undefined" HAVE_SAN_UNDEF)
+set(CMAKE_REQUIRED_FLAGS "-fsanitize=address")
+CHECK_CXX_COMPILER_FLAG("-fsanitize=address" HAVE_SAN_ADDR)
+unset(CMAKE_REQUIRED_FLAGS)
+
 CHECK_CXX_SOURCE_COMPILES("
 #include <list>
 using namespace std; 
@@ -34,12 +40,6 @@ int main(){
     a.insert(list<int>::const_iterator(a.begin()), 0);
     return 0;
 }" NO_CONST_ITERATOR_BUG)
-
-CHECK_CXX_COMPILER_FLAG("-fsanitize=undefined" HAVE_SAN_UNDEF)
-set(CMAKE_REQUIRED_FLAGS "-fsanitize=address")
-CHECK_CXX_COMPILER_FLAG("-fsanitize=address" HAVE_SAN_ADDR)
-unset(CMAKE_REQUIRED_FLAGS)
-
 
 if(ANDROID)
     set(OPENSSL_ROOT_DIR ${OPENSSL_ROOT}/${ANDROID_ABI})
@@ -52,7 +52,6 @@ if(ANDROID)
     find_library(log-lib log)
 else()
     find_package(OpenSSL 1.0.2 REQUIRED)
-
     find_package(JSON-C)
     if(JSON-C_FOUND)
         set(BUILD_CGI TRUE)
@@ -100,8 +99,8 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 set(CMAKE_C_FLAGS_RELWITHDEBINFO "-ggdb -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-ggdb -DNDEBUG")
 
-set(CMAKE_C_FLAGS_DEBUG "-ggdb -O0")
-set(CMAKE_CXX_FLAGS_DEBUG "-ggdb -O0")
+set(CMAKE_C_FLAGS_DEBUG "-ggdb -O0 -fno-omit-frame-pointer")
+set(CMAKE_CXX_FLAGS_DEBUG "-ggdb -O0 -fno-omit-frame-pointer")
 
 if (HAVE_SAN_ADDR)
     set(CMAKE_C_FLAGS_DEBUG "-fsanitize=address ${CMAKE_C_FLAGS_DEBUG}")
@@ -113,7 +112,7 @@ if (HAVE_SAN_UNDEF)
     set(CMAKE_CXX_FLAGS_DEBUG "-fsanitize=undefined ${CMAKE_CXX_FLAGS_DEBUG}")
 endif()
 
-If(LINUX)
+If(LINUX OR ANDROID)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=gold")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=gold")
 endif()

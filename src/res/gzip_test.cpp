@@ -1,19 +1,17 @@
 #include "gzip_test.h"
 #include "req/requester.h"
-#include "misc/simpleio.h"
 #include "misc/util.h"
 #include "misc/net.h"
 
 #include <stdio.h>
 #include <assert.h>
-#include <errno.h>
-#include <fcntl.h>
 
 static unsigned char in[16384];
 
 GzipTest::GzipTest() {
-    rwer = new EventRWer([this](int ret, int code) {
+    rwer = new FullRWer([this](int ret, int code) {
         LOGE("gzip_test error: %d/%d\n", ret, code);
+        res->trigger(Channel::CHANNEL_ABORT);
         deleteLater(ret);
     });
 
@@ -65,13 +63,19 @@ static size_t parseSize(std::string size) {
     return 0;
 }
 
-void *GzipTest::request(HttpReqHeader *req) {
-    HttpResHeader *res = new HttpResHeader(H200, sizeof(H200));
-    res->set("Content-Type", "application/octet-stream");
-    res->set("Pragma", "no-cache");
-    res->index = req->index;
+void GzipTest::request(HttpReq* req, Requester*) {
+    req->setHandler([this](Channel::signal s){
+        if(s == Channel::CHANNEL_SHUTDOWN){
+            res->trigger(Channel::CHANNEL_ABORT);
+        }
+        deleteLater(PEER_LOST_ERR);
+    });
+    this->req = req;
+    HttpResHeader *header = new HttpResHeader(H200, sizeof(H200));
+    header->set("Content-Type", "application/octet-stream");
+    header->set("Pragma", "no-cache");
 
-    auto params = req->getparamsmap();
+    auto params = req->header->getparamsmap();
     if (params.count("size")) {
         left = parseSize(params["size"]);
     } else {
@@ -81,40 +85,35 @@ void *GzipTest::request(HttpReqHeader *req) {
         left = 2ull * 1024 * 1024 * 1024;    //4G
 #endif
     }
-    const char *accept = req->get("Accept-Encoding");
+
+    const char *accept = req->header->get("Accept-Encoding");
     if (accept && strstr(accept, "gzip")) {
-        res->set("Transfer-Encoding", "chunked");
-        res->set("Content-Encoding", "gzip");
+        header->set("Transfer-Encoding", "chunked");
+        header->set("Content-Encoding", "gzip");
         rwer->SetReadCB(std::bind(&GzipTest::gzipreadHE, this, _1));
     } else {
-        res->set("Content-Length", left);
+        header->set("Content-Length", left);
         rwer->SetReadCB(std::bind(&GzipTest::rawreadHE, this, _1));
     }
-    req->src.lock()->response(res);
-    req_ptr = req->src;
-    req_index = req->index;
-    if (req->ismethod("HEAD")) {
+    if (req->header->ismethod("HEAD")) {
         left = 0;
-    }else{
-        rwer->buffer_insert(rwer->buffer_end(), write_block{p_memdup(&left, 8), 8, 0});
     }
-    return (void *)1;
+    this->res = new HttpRes(header, std::bind(&RWer::EatReadData, rwer));
+    req->response(this->res);
 }
 
-void GzipTest::gzipreadHE(size_t len) {
-    rwer->consume(nullptr, len);
-    rwer->buffer_insert(rwer->buffer_end(), write_block{p_memdup(&left, 8), 8, 0});
-
-    assert(!req_ptr.expired());
+void GzipTest::gzipreadHE(size_t) {
     if (left == 0) {
         (void)deflateEnd(&strm);
-		req_ptr.lock()->Send((const void*)nullptr, 0, req_index);
-        req_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, req_index);
+        res->send((const void*)nullptr, 0);
+        res->trigger(Channel::CHANNEL_CLOSED);
         deleteLater(NOERROR);
+        rwer->delEvents(RW_EVENT::READ);
         return;
     }
+    LOGD(DFILE, "gzip zip readHE\n");
 
-    ssize_t chunk = req_ptr.lock()->bufleft(req_index);
+    ssize_t chunk = res->cap();
     if(chunk <= 0){
         rwer->delEvents(RW_EVENT::READ);
         return;
@@ -133,25 +132,24 @@ void GzipTest::gzipreadHE(size_t len) {
         assert(ret != Z_STREAM_ERROR);  /* state not clobbered */
     } while (strm.avail_out && left);
 
-    req_ptr.lock()->Send(out, chunk - strm.avail_out, req_index);
+    res->send(out, chunk - strm.avail_out);
     if (strm.avail_out == 0) {
         rwer->delEvents(RW_EVENT::READ);
     }
 }
 
 void GzipTest::rawreadHE(size_t len) {
-    rwer->consume(nullptr, len);
-    rwer->buffer_insert(rwer->buffer_end(), write_block{p_memdup(&left, 8), 8, 0});
-
-    assert(!req_ptr.expired());
     if (left == 0) {
         (void)deflateEnd(&strm);
-        req_ptr.lock()->finish(NOERROR | DISCONNECT_FLAG, req_index);
+        res->send((const void*)nullptr, 0);
+        res->trigger(Channel::CHANNEL_CLOSED);
         deleteLater(NOERROR);
+        rwer->delEvents(RW_EVENT::READ);
         return;
     }
 
-    ssize_t chunk = req_ptr.lock()->bufleft(req_index);
+    LOGD(DFILE, "gzip raw readHE\n");
+    ssize_t chunk = res->cap();
     if(chunk <= 0){
         rwer->delEvents(RW_EVENT::READ);
         return;
@@ -159,30 +157,11 @@ void GzipTest::rawreadHE(size_t len) {
 
     len = Min(chunk, left);
     unsigned char* const out = (unsigned char *)p_malloc(len);
-    req_ptr.lock()->Send(out, len, req_index);
+    res->send(out, len);
     left -= len;
     if (left) {
         rwer->delEvents(RW_EVENT::READ);
     }
-}
-
-void GzipTest::Send(const void*, size_t , __attribute__((unused)) void *index) {
-    assert((long)index == 1);
-}
-
-int32_t GzipTest::bufleft(__attribute__((unused)) void *index) {
-    assert((long)index == 1);
-    return 0;
-}
-
-int GzipTest::finish(uint32_t flags, __attribute__((unused)) void *index) {
-    assert((long)index == 1);
-    if (flags) {
-        (void)deflateEnd(&strm);
-        deleteLater(flags);
-        return FINISH_RET_BREAK;
-    }
-    return FINISH_RET_NOERROR;
 }
 
 void GzipTest::dump_stat(Dumper dp, void *param) {

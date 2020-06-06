@@ -183,10 +183,9 @@ do {\
 #define IP_BLOCK_ERR        89U
 #define TCP_RESET_ERR       90U
 #define DNS_FAILED          91U
-#define VPN_AGED_ERR        92U
+#define CONNECT_AGED        92U
 #define SNI_HOST_ERR        93U
 #define ERROR_MASK          0xff
-#define DISCONNECT_FLAG     (1U<<31U)
 
 typedef unsigned char uchar;
 typedef void (* Dumper)(void* param, const char* fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));
@@ -206,10 +205,14 @@ struct Destination{
     uint16_t port;
 };
 
+#define PRE_POINTER
+
 #cmakedefine01 Backtrace_FOUND
 #if Backtrace_FOUND
 #include <@Backtrace_HEADER@>
 #endif
+
+#cmakedefine01 ZLIB_FOUND
 
 #define PREFIX "@CMAKE_INSTALL_PREFIX@"
 

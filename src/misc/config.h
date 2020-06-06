@@ -42,7 +42,6 @@ void prepare();
 int parseConfigFile(const char* config_file);
 void parseConfig(int argc, char **argv);
 int loadproxy(const char* proxy, struct Destination* server);
-void change_process_name(const char *name);
 #ifdef __cplusplus
 }
 #endif

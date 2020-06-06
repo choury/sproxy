@@ -446,10 +446,10 @@ char * Tcp::build_packet(const ip6_hdr* ip_hdr, void* data, size_t& len) {
 }
 
 
-uint16_t Tcp::getoptions() const {
+uint64_t Tcp::getoptions() const {
     tcp_opt* opt = (tcp_opt *)tcpopt;
     size_t len = tcpoptlen;
-    uint16_t options = 0;
+    uint64_t options = 0;
 
     while (len > 0 && opt) {
         if (opt->kind == TCPOPT_EOL)
@@ -459,7 +459,7 @@ uint16_t Tcp::getoptions() const {
             opt = (tcp_opt*)((char *)opt+1);
             continue;
         }
-        assert(opt->kind<16);
+        assert(opt->kind < 64);
         options |= (1u<<opt->kind);
         len -= opt->length;
         opt = (tcp_opt*)((char *)opt+opt->length);

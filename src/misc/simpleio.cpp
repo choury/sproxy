@@ -6,9 +6,6 @@
 #include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
-#ifdef __linux__
-#include <sys/eventfd.h>
-#endif
 
 size_t RBuffer::left(){
     return sizeof(content) - len;
@@ -76,6 +73,7 @@ const char* CBuffer::data(){
 
 void CBuffer::consume(const char* data, size_t l){
     begin_pos += l;
+    assert(begin_pos <= end_pos);
     if(data < content || data >= content + sizeof(content)){
         free((char*)data);
     }
@@ -115,6 +113,7 @@ NetRWer::~NetRWer() {
 void NetRWer::Dnscallback(void* param, std::list<sockaddr_un> addrs) {
     NetRWer* rwer = static_cast<NetRWer*>(param);
     if (addrs.empty()) {
+        rwer->stats = RWerStats::Error;
         return rwer->errorCB(DNS_FAILED, 0);
     }
 
@@ -122,18 +121,26 @@ void NetRWer::Dnscallback(void* param, std::list<sockaddr_un> addrs) {
         i.addr_in6.sin6_port = htons(rwer->port);
         rwer->addrs.push(i);
     }
-    if(rwer->protocol == Protocol::ICMP){
+    switch(rwer->protocol){
+    case Protocol::TCP:
+    case Protocol::UDP:
+        rwer->stats = RWerStats::Connecting;
+        rwer->connect();
+        break;
+    case Protocol::ICMP: {
         int fd = IcmpSocket(&addrs.front());
-        if(fd < 0){
+        if (fd < 0) {
+            rwer->stats = RWerStats::Error;
             return rwer->errorCB(CONNECT_FAILED, errno);
         }
         rwer->setFd(fd);
         rwer->setEvents(RW_EVENT::READWRITE);
         rwer->Connected(addrs.front());
-        rwer->handleEvent = (void (Ep::*)(RW_EVENT))&NetRWer::defaultHE;
-    }else{
-        rwer->stats = RWerStats::Connecting;
-        rwer->connect();
+        rwer->handleEvent = (void (Ep::*)(RW_EVENT)) &NetRWer::defaultHE;
+        break;
+    }
+    default:
+        abort();
     }
 }
 
@@ -144,6 +151,7 @@ void NetRWer::retryconnect(int error) {
         addrs.pop();
     }
     if(addrs.empty()){
+        stats = RWerStats::Error;
         errorCB(error, 0);
         return;
     }
@@ -225,6 +233,7 @@ void StreamRWer::ReadData() {
         if(errno == EAGAIN){
             break;
         }
+        stats = RWerStats::Error;
         errorCB(READ_ERR, errno);
         return;
     }
@@ -273,6 +282,7 @@ void PacketRWer::ReadData() {
         if(errno == EAGAIN){
             break;
         }
+        stats = RWerStats::Error;
         errorCB(READ_ERR, errno);
         return;
     }
@@ -282,94 +292,3 @@ void PacketRWer::ReadData() {
 }
 
 
-#ifdef __linux__
-EventRWer::EventRWer(std::function<void(int ret, int code)> errorCB):
-    RWer(errorCB, [](const union sockaddr_un&){})
-{
-    int evfd = eventfd(1, O_NONBLOCK);
-    if(evfd < 0){
-        errorCB(SOCKET_ERR, errno);
-        return;
-    }
-    setFd(evfd);
-#else
-EventRWer::EventRWer(std::function<void(int ret, int code)> errorCB):
-    RWer(errorCB, [](const union sockaddr_un&){}), pairfd(-1){
-    int pairs[2];
-    int ret = socketpair(AF_UNIX, SOCK_STREAM, 0, pairs);
-    if(ret){
-        errorCB(SOCKET_ERR, errno);
-        return;
-    }
-    pairfd = pairs[1];
-    int flags = fcntl(pairfd, F_GETFL, 0);
-    if (flags < 0) {
-        LOGE("fcntl error:%s\n", strerror(errno));
-        return;
-    }
-    fcntl(pairfd, F_SETFL, flags | O_NONBLOCK);
-    setFd(pairs[0]);
-#endif
-    setEvents(RW_EVENT::READ);
-    stats = RWerStats::Connected;
-    handleEvent = (void (Ep::*)(RW_EVENT))&EventRWer::defaultHE;
-}
-
-EventRWer::~EventRWer(){
-#ifndef __linux__
-    if(pairfd >= 0){
-        close(pairfd);
-    }
-#endif
-}
-
-ssize_t EventRWer::Write(const void* buff, size_t len) {
-#ifndef __linux__
-    return write(pairfd, buff, len);
-#else
-    return write(getFd(), buff, len);
-#endif
-}
-
-size_t EventRWer::rlength() {
-    size_t len = 0;
-    if(getFd() >= 0){
-        ioctl(getFd(), FIONREAD, &len);
-    }
-    return len;
-}
-
-size_t EventRWer::rleft(){
-    return sizeof(buff);
-}
-
-const char* EventRWer::rdata() {
-    return buff;
-}
-
-void EventRWer::consume(const char*, size_t) {
-}
-
-
-void EventRWer::ReadData(){
-    while(true){
-        int ret = read(getFd(), buff, sizeof(buff));
-        if(ret > 0){
-            readCB((size_t)ret);
-            continue;
-        }
-        if(ret == 0){
-            stats = RWerStats::ReadEOF;
-            break;
-        }
-        if(errno == EAGAIN){
-            break;
-        }
-        errorCB(READ_ERR, errno);
-        return;
-    }
-}
-
-void EventRWer::closeHE(RW_EVENT) {
-    closeCB();
-}

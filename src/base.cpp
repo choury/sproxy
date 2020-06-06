@@ -5,30 +5,31 @@
 #include "prot/rwer.h"
 #include "prot/dns.h"
 
-#include <map>
+#include <set>
 #include <stdarg.h>
 #include <unistd.h>
 #include <assert.h>
 #include <signal.h>
 
-static std::map<Server*, std::shared_ptr<Server>> servers;
+static std::set<Server*> servers;
 
 Server::Server(){
-    servers.emplace(this, std::shared_ptr<Server>(this));
+    servers.emplace(this);
 }
 
 Server::~Server() {
     delete rwer;
+    servers.erase(this);
 }
 
 
 void Server::deleteLater(uint32_t) {
     if(rwer){
         rwer->Close([this](){
-            servers.erase(this);
+            delete this;
         });
     }else{
-        servers.erase(this);
+        delete this;
     }
 }
 
@@ -49,6 +50,10 @@ void Peer::writedcb(const void*) {
 
 extern int efd;
 void releaseall() {
+    auto serversCopy = servers;
+    for(auto i: serversCopy){
+        delete i;
+    }
     servers.clear();
     if(efd){
         close(efd);
@@ -64,7 +69,7 @@ void dump_stat(Dumper dp, void* param){
     dp(param, "Proxy server: %s\n", dumpDest(&opt.Server));
     dp(param, "--------------------------------------\n");
     for(auto i: servers){
-        i.first->dump_stat(dp, param);
+        i->dump_stat(dp, param);
         dp(param, "--------------------------------------\n");
     }
     dump_dns(dp, param);

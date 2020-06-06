@@ -10,8 +10,8 @@ protected:
 #define HTTP_IGNORE_BODY_F          1u
 #define HTTP_STATUS_1XX            (1u<<1u)
 #define HTTP_CHUNK_END_F           (1u<<2u)
-#define HTTP_READ_CLOSE_F          (1u<<3u)
-#define HTTP_WRITE_CLOSE_F         (1u<<4u)
+//#define HTTP_READ_CLOSE_F          (1u<<3u)
+//#define HTTP_WRITE_CLOSE_F         (1u<<4u)
     uint32_t http_flag = 0;
     virtual size_t HeaderProc(const char* buffer, size_t len) = 0;
     size_t ChunkLProc(const char* buffer, size_t len);
@@ -26,7 +26,7 @@ public:
 };
 
 
-class HttpResponser:public HttpBase, virtual public RwObject{
+class HttpResponser:public HttpBase{
     virtual size_t HeaderProc(const char* buffer, size_t len)override final;
 protected:
     virtual void ReqProc(HttpReqHeader* req) = 0;

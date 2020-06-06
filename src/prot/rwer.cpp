@@ -8,6 +8,9 @@
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
+#ifdef __linux__
+#include <sys/eventfd.h>
+#endif
 
 const char *events_string[]= {
     "NULL",
@@ -154,7 +157,7 @@ void Ep::setEvents(RW_EVENT events) {
         }
 #endif
 #ifdef __APPLE__
-        struct kevent event[2];
+        struct kevent event[3];
         int count = 0;
         if(!!(events & RW_EVENT::READ)){
             EV_SET(&event[count++], fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, (void*)(intptr_t)this);
@@ -166,6 +169,7 @@ void Ep::setEvents(RW_EVENT events) {
         }else if(!!(this->events & RW_EVENT::WRITE)){
             EV_SET(&event[count++], fd, EVFILT_WRITE, EV_ADD | EV_DISABLE, 0, 0, (void*)(intptr_t)this);
         }
+        EV_SET(&event[count++], fd, EVFILT_EXCEPT, EV_ADD | EV_ENABLE | EV_CLEAR, 0, 0, (void*)(intptr_t)this);
         int ret = kevent(efd, event, count, NULL, 0, NULL);
         if(ret < 0){
             LOGE("kevent failed:%s\n", strerror(errno));
@@ -297,6 +301,7 @@ void RWer::SendData(){
         if(errno == EAGAIN){
             break;
         }
+        stats = RWerStats::Error;
         errorCB(WRITE_ERR, errno);
         return;
     }
@@ -322,15 +327,20 @@ void RWer::SetWriteCB(std::function<void(size_t len)> func){
 }
 
 void RWer::defaultHE(RW_EVENT events){
-    if (!!(events & RW_EVENT::ERROR)) {
+    if (!!(events & RW_EVENT::ERROR) || stats == RWerStats::Error) {
+        stats = RWerStats::Error;
         errorCB(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
         return;
     }
     if (!!(events & RW_EVENT::READ) || !!(events & RW_EVENT::READEOF)){
+        flags |= RWER_READING;
         ReadData();
+        flags &= ~RWER_READING;
     }
     if (!!(events & RW_EVENT::WRITE)){
+        flags |= RWER_SENDING;
         SendData();
+        flags &= ~RWER_SENDING;
     }
     if(stats == RWerStats::ReadEOF){
         delEvents(RW_EVENT::READ);
@@ -365,6 +375,7 @@ void RWer::Reconnect() {
 }
 
 void RWer::Close(std::function<void()> func) {
+    flags |= RWER_CLOSING;
     closeCB = std::move(func);
     if(getFd() >= 0){
         setEvents(RW_EVENT::READWRITE);
@@ -375,9 +386,12 @@ void RWer::Close(std::function<void()> func) {
 }
 
 void RWer::EatReadData(){
+    if(flags & RWER_READING){
+        return;
+    }
     switch(stats){
     case RWerStats::Connected:
-        if(rlength()){
+        if(rlength()) {
             readCB(rlength());
         }
         addEvents(RW_EVENT::READ);
@@ -459,3 +473,83 @@ ssize_t NullRWer::Write(const void*, size_t len) {
 const char * NullRWer::rdata() {
     return nullptr;
 }
+
+#ifdef __linux__
+FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB):
+    RWer(errorCB, [](const union sockaddr_un&){})
+{
+    int evfd = eventfd(1, O_NONBLOCK);
+    if(evfd < 0){
+        errorCB(SOCKET_ERR, errno);
+        return;
+    }
+    setFd(evfd);
+    write(evfd, "FULLEVENT", 8);
+#else
+FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB):
+    RWer(errorCB, [](const union sockaddr_un&){}), pairfd(-1){
+    int pairs[2];
+    int ret = socketpair(AF_UNIX, SOCK_STREAM, 0, pairs);
+    if(ret){
+        stats = RWerStats::Error;
+        errorCB(SOCKET_ERR, errno);
+        return;
+    }
+    pairfd = pairs[1];
+    int flags = fcntl(pairfd, F_GETFL, 0);
+    if (flags < 0) {
+        LOGE("fcntl error:%s\n", strerror(errno));
+        return;
+    }
+    fcntl(pairfd, F_SETFL, flags | O_NONBLOCK);
+    setFd(pairs[0]);
+    write(pairfd, "FULLEVENT", 8);
+#endif
+    setEvents(RW_EVENT::READ);
+    stats = RWerStats::Connected;
+    handleEvent = (void (Ep::*)(RW_EVENT))&FullRWer::defaultHE;
+}
+
+FullRWer::~FullRWer(){
+#ifndef __linux__
+    if(pairfd >= 0){
+        close(pairfd);
+    }
+#endif
+}
+
+ssize_t FullRWer::Write(const void* buff, size_t len) {
+#ifdef __linux__
+    return write(getFd(), buff, len);
+#else
+    return write(pairfd, buff, len);
+#endif
+}
+
+size_t FullRWer::rlength() {
+    return 0;
+}
+
+size_t FullRWer::rleft(){
+    return 0;
+}
+
+const char* FullRWer::rdata() {
+    return nullptr;
+}
+
+void FullRWer::consume(const char*, size_t) {
+}
+
+
+void FullRWer::ReadData(){
+    while(!!(events & RW_EVENT::READ)) {
+        readCB(1);
+    }
+    Write("FULLEVENT", 8);
+}
+
+void FullRWer::closeHE(RW_EVENT) {
+    closeCB();
+}
+

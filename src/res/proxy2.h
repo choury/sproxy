@@ -5,11 +5,11 @@
 #include "prot/http2.h"
 
 struct ReqStatus{
-    std::weak_ptr<Requester> req_ptr;
-    void*      req_index;
+    HttpReq* req;
+    HttpRes* res;
     int32_t remotewinsize; //对端提供的窗口大小，发送时减小，收到对端update时增加
     int32_t localwinsize; //发送给对端的窗口大小，接受时减小，给对端发送update时增加
-    uint32_t   req_flags;
+    uint32_t flags;
 };
 
 class Proxy2:public Responser, public Http2Requster {
@@ -29,7 +29,7 @@ protected:
 
     virtual void PingProc(const Http2_header *header)override;
     virtual void GoawayProc(const Http2_header * header) override;
-    virtual void ResProc(HttpResHeader* res)override;
+    virtual void ResProc(uint32_t id, HttpResHeader* res)override;
     virtual void PushFrame(Http2_header *header)override;
     virtual void DataProc(uint32_t id, const void *data, size_t len)override;
     virtual void EndProc(uint32_t id) override;
@@ -39,29 +39,27 @@ protected:
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
     virtual void ShutdownProc(uint32_t id)override;
 
+    int bufleft(uint32_t id);
+    void Send(uint32_t id ,const void* buff, size_t size);
+    void Clean(uint32_t id, ReqStatus& status, uint32_t errcode);
 
     virtual std::list<write_block>::insert_iterator queue_head() override;
     virtual std::list<write_block>::insert_iterator queue_end() override;
     virtual void queue_insert(std::list<write_block>::insert_iterator where, const write_block& wb) override;
+    bool wantmore(const ReqStatus& status);
 public:
     explicit Proxy2(RWer* rwer);
     virtual ~Proxy2() override;
 
+    virtual void request(HttpReq* req, Requester*)override;
 
-    virtual int32_t bufleft(void* index)override;
-    virtual void Send(const void *buff, size_t size, void* index)override;
-    virtual void writedcb(const void* index)override;
-    virtual int finish(uint32_t flags, void* index)override;
-    
-    virtual void* request(HttpReqHeader* req)override;
-    
     virtual void dump_stat(Dumper dp, void* param) override;
 
-    std::weak_ptr<Proxy2> init(HttpReqHeader* req);
+    void init(HttpReq* req);
     void flush();
 };
 
-extern std::weak_ptr<Proxy2> proxy2;
+extern Proxy2* proxy2;
 void flushproxy2(int force);
 
 #endif

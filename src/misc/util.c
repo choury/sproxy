@@ -417,7 +417,8 @@ int spliturl(const char* url, struct Destination* server, char* path) {
         strncpy(tmpaddr, url, sizeof(tmpaddr) - 1);
     }
 
-    if (tmpaddr[0] == '[') {                        // this is a ipv6 address
+    if (tmpaddr[0] == '[') {
+        // this is a ipv6 address
         if (!(addrsplit = strchr(tmpaddr, ']'))) {
             return -1;
         }

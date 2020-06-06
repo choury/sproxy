@@ -77,7 +77,7 @@ static std::string getExternalCacheDir() {
  * Method:    start
  * Signature: (ILjava/lang/String;)V
  */
-JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
+extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
         (JNIEnv *jnienv, jobject obj, jint sockfd, jstring server, jstring secret) {
     jnienv->GetJavaVM(&jnijvm);
     jniobj = jnienv->NewGlobalRef(obj);
@@ -120,17 +120,17 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     jnijvm = nullptr;
 }
 
-JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(JNIEnv *, jobject){
+extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(JNIEnv *, jobject){
     LOG("native SproxyVpnService.stop.\n");
     return vpn_stop();
 }
 
-JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reset(JNIEnv *, jobject){
+extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reset(JNIEnv *, jobject){
     LOG("native SproxyVpnService.reset.\n");
     return vpn_reset();
 }
 
-JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload(JNIEnv *, jobject){
+extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload(JNIEnv *, jobject){
     LOG("native SproxyVpnService.reload.\n");
     return vpn_reload();
 }

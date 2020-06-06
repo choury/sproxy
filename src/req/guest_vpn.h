@@ -41,11 +41,12 @@ public:
 
 struct TcpStatus{
     uint32_t   send_seq;
-    uint32_t   send_acked;
+    uint32_t   send_ack;
+    uint32_t   acked;
     uint32_t   want_seq;
     uint16_t   window;
     uint16_t   mss;
-    uint16_t   options;
+    uint64_t   options;
     uint8_t    recv_wscale;
     uint8_t    send_wscale;
     uint8_t    status;
@@ -56,16 +57,19 @@ struct IcmpStatus{
     uint16_t seq;
 };
 
+struct VpnStatus{
+    HttpReq* req;
+    HttpRes* res;
+    char*      packet;
+    uint16_t   packet_len;
+    void*      protocol_info;
+    uint32_t flags;
+};
 
-
-class Guest_vpn:public Requester, virtual public RwObject{
+class Guest_vpn:public Requester{
     VpnKey key;
+    VpnStatus  status;
     VPN_nanny* nanny;
-    std::weak_ptr<Responser>  res_ptr;
-    void*       res_index;
-    char*       packet;
-    uint16_t    packet_len;
-    void*       protocol_info;
     const char* generateUA() const;
     const char* getProg() const;
 
@@ -76,21 +80,20 @@ class Guest_vpn:public Requester, virtual public RwObject{
     void icmpHE(std::shared_ptr<const Ip> pac,const char* packet, size_t len);
     void icmp6HE(std::shared_ptr<const Ip> pac,const char* packet, size_t len);
     void tcp_ack();
+
+    void Send(const void* buff, size_t size);
+    int32_t bufleft();
+    void handle(Channel::signal s);
 public:
     Guest_vpn(const VpnKey& key, VPN_nanny* nanny);
     virtual ~Guest_vpn() override;
 
     void packetHE(std::shared_ptr<const Ip> pac, const char* packet, size_t len);
     void writed();
-    virtual void response(HttpResHeader* res) override;
-    virtual void transfer(void* index, std::weak_ptr<Responser> res_ptr, void* res_index) override;
+    virtual void response(void*, HttpRes* res) override;
 
-    virtual int32_t bufleft(void* index) override;
-    virtual void Send(void* buff, size_t size, void* index) override;
-
-    virtual int finish(uint32_t flags, void* index) override;
     virtual void deleteLater(uint32_t error) override;
-    virtual const char *getsrc(const void* index) override;
+    virtual const char *getsrc() override;
     virtual void dump_stat(Dumper dp, void* param) override;
 };
 

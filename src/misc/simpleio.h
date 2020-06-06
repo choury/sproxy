@@ -82,22 +82,5 @@ public:
     virtual void consume(const char*, size_t l) override;
 };
 
-class EventRWer: public RWer{
-protected:
-#ifndef __linux__
-    int pairfd = -1;
-#endif
-    char buff[BUF_LEN];
-    virtual ssize_t Write(const void* buff, size_t len) override;
-    virtual void ReadData() override;
-    virtual void closeHE(RW_EVENT events) override;
-public:
-    explicit EventRWer(std::function<void(int ret, int code)> errorCB);
-    ~EventRWer() override;
 
-    virtual size_t rlength() override;
-    virtual size_t rleft() override;
-    virtual const char *rdata() override;
-    virtual void consume(const char* data, size_t l) override;
-};
 #endif

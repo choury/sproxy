@@ -9,12 +9,12 @@
 
 #include <string.h>
 
-class Server: virtual public RwObject  {
+class Server{
 protected:
     RWer* rwer = nullptr;
 public:
     explicit Server();
-    virtual ~Server() override;
+    virtual ~Server();
     virtual void deleteLater(uint32_t errcode);
     virtual void dump_stat(Dumper dp, void* param) = 0;
 };

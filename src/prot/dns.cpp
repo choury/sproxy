@@ -182,7 +182,7 @@ static int dnsinit() {
 
 void flushdns(){
     for(auto i: srvs){
-        i->deleteLater(NOERROR | DISCONNECT_FLAG);
+        i->deleteLater(NOERROR);
     }
     srvs.clear();
     rcd_cache.clear();

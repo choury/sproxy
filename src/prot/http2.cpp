@@ -389,8 +389,7 @@ uint32_t Http2Base::GetSendId(){
     return id;
 }
 
-Http2Base::~Http2Base() {
-}
+Http2Base::~Http2Base() = default;
 
 size_t Http2Responser::InitProc(const uchar* http2_buff, size_t len) {
     size_t prelen = strlen(H2_PREFACE);
@@ -430,11 +429,10 @@ void Http2Responser::HeadersProc(const Http2_header* header) {
         weigth = *pos++;
     }
     try{
-        HttpReqHeader* req = new HttpReqHeader(response_table.hpack_decode(pos,
-                                                    get24(header->length) - padlen - (pos - (const unsigned char *)(header+1))),
-                                               shared_from_this());
-        req->index = reinterpret_cast<void*>(id);
-        ReqProc(req);
+        HttpReqHeader* req =
+                new HttpReqHeader(response_table.hpack_decode(pos,
+                        get24(header->length) - padlen - (pos - (const unsigned char *)(header+1))));
+        ReqProc(id, req);
     }catch(int error){
         ErrProc(error);
         return;
@@ -499,9 +497,7 @@ void Http2Requster::HeadersProc(const Http2_header* header) {
     try{
         HttpResHeader* res = new HttpResHeader(response_table.hpack_decode(pos,
                                                     get24(header->length) - padlen - (pos - (const unsigned char *)(header+1))));
-
-        res->index = reinterpret_cast<void*>(id);
-        ResProc(res);
+        ResProc(id, res);
     }catch(int error){
         ErrProc(error);
         return;

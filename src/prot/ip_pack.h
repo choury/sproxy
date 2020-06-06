@@ -133,7 +133,7 @@ public:
     uint16_t getdport() const;
     uint16_t getwindow() const;
     uint8_t  getflag() const;
-    uint16_t  getoptions() const;
+    uint64_t  getoptions() const;
     uint16_t getmss() const;
     int gettimestamp(uint32_t *tsval, uint32_t *tsecr) const;
     uint8_t getwindowscale() const;

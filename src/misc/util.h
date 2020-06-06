@@ -28,18 +28,18 @@ uint32_t getmtime();
 void dump_stat();
 void dump_trace(int ignore);
 
-void* memdup(const void* ptr, size_t size);
+PRE_POINTER void* memdup(const void* ptr, size_t size);
 
-void* p_malloc(size_t size);
-void* p_memdup(const void *ptr, size_t size);
+PRE_POINTER void* p_malloc(size_t size);
+PRE_POINTER void* p_memdup(const void *ptr, size_t size);
 
-inline void* p_strdup(const char* str){
+inline PRE_POINTER void* p_strdup(const char* str){
     return p_memdup(str, strlen(str)+1);
 }
 
-void p_free(void* ptr);
-void* p_move(void* ptr, signed char len);
-char* p_avsprintf(size_t* size, const char* fmt, va_list ap);
+void p_free(PRE_POINTER void* ptr);
+PRE_POINTER void* p_move(PRE_POINTER void* ptr, signed char len);
+PRE_POINTER char* p_avsprintf(size_t* size, const char* fmt, va_list ap);
 const char* findprogram(ino_t inode);
 const char* getDeviceInfo();
 struct in6_addr mapIpv4(struct in_addr addr);
@@ -50,6 +50,7 @@ const char* protstr(Protocol p);
 int spliturl(const char* url, struct Destination* server, char* path);
 int dumpDestToBuffer(const struct Destination* server, char* buff, size_t buflen);
 const char* dumpDest(const struct Destination* server);
+void change_process_name(const char *name);
 #ifdef  __cplusplus
 }
 #endif

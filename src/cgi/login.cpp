@@ -18,7 +18,7 @@ class handle{
     int POST(const CGI_Header* header){
         if(queryed == false){
             if(params.count("key")){
-                cgi_set(cgi_fd, cgi_id, CGI_NAME_LOGIN, params["key"].c_str(), params["key"].size()+1);
+                cgi_setvalue(cgi_fd, cgi_id, CGI_NAME_LOGIN, params["key"].c_str(), params["key"].size()+1);
                 queryed = true;
                 return 0;
             }
@@ -90,7 +90,10 @@ int cgimain(int fd){
             assert(cgimap.count(cgi_id) == 0);
             cgimap[cgi_id] =  handle{};
         }
-
+        if(header->type == CGI_RESET){
+            cgimap.erase(cgi_id);
+            continue;
+        }
         if(cgimap.count(cgi_id) && cgimap[cgi_id](header)){
             cgi_write(cgi_fd, cgi_id, "", 0);
             cgimap.erase(cgi_id);

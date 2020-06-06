@@ -6,11 +6,10 @@
 
 class Requester;
 
-class Responser:public Peer{
+class Responser:public Server{
 public:
-    virtual void* request(HttpReqHeader* req) = 0;
+    virtual void request(HttpReq* req, Requester* src) = 0;
 };
 
-std::weak_ptr<Responser> distribute(HttpReqHeader* req, std::weak_ptr<Responser> responser_ptr);
-
+void distribute(HttpReq* req, Requester* src);
 #endif

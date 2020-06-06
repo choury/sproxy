@@ -24,7 +24,8 @@ int Checksocket(int fd, const char *msg){
     return error;
 }
 
-void SetTcpOptions(int fd){
+void SetTcpOptions(int fd, const union sockaddr_un* ignore){
+    (void)ignore;
     //以下设置为TCP配置，非必须，所以不返回错误
     int keepAlive = 1; // 开启keepalive属性
     if(setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void *)&keepAlive, sizeof(keepAlive)) <0)
@@ -48,6 +49,24 @@ void SetTcpOptions(int fd){
     int enable = 1;
     if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(enable))<0)
         LOGE("TCP_NODELAY:%s\n", strerror(errno));
+}
+
+void SetUdpOptions(int fd, const union sockaddr_un* addr){
+    int enable = 1;
+#if defined(IP_RECVERR) && defined(IPV6_RECVERR)
+    if (addr->addr.sa_family == AF_INET) {
+        if (setsockopt(fd, IPPROTO_IP, IP_RECVERR, &enable, sizeof(enable)))
+            LOGE("IP_RECVERR:%s\n", strerror(errno));
+    }
+    if (addr->addr.sa_family == AF_INET6) {
+        if (setsockopt(fd, IPPROTO_IPV6, IPV6_RECVERR, &enable, sizeof(enable)))
+            LOGE("IPV6_RECVERR:%s\n", strerror(errno));
+    }
+#endif
+    if(addr->addr.sa_family == AF_INET && addr->addr_in.sin_addr.s_addr == htonl(INADDR_BROADCAST)){
+        if(setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable)) < 0)
+            LOGE("set broadcast:%s\n", strerror(errno));
+    }
 }
 
 int Listen(int type, short port) {
@@ -139,15 +158,9 @@ int Bind(int type, short port, const union sockaddr_un* addr){
         }
 
         if(type == SOCK_STREAM){
-            SetTcpOptions(fd);
+            SetTcpOptions(fd, addr);
         }else{
-            if(addr->addr.sa_family == AF_INET && addr->addr_in.sin_addr.s_addr == htonl(INADDR_BROADCAST)){
-                int enable=1;
-                if(setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable)) < 0){
-                    LOGE("set broadcast:%s\n", strerror(errno));
-                    break;
-                }
-            }
+            SetUdpOptions(fd, addr);
         }
 
         socklen_t len = (addr->addr.sa_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
@@ -182,20 +195,14 @@ int Connect(const union sockaddr_un* addr, int type) {
         }
 
         if(type == SOCK_STREAM){
-            SetTcpOptions(fd);
+            SetTcpOptions(fd, addr);
         }else{
-            if(addr->addr.sa_family == AF_INET && addr->addr_in.sin_addr.s_addr == htonl(INADDR_BROADCAST)){
-                int enable=1;
-                if(setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable)) < 0){
-                    LOGE("set broadcast:%s\n", strerror(errno));
-                    break;
-                }
-            }
+            SetUdpOptions(fd, addr);
         }
 
         socklen_t len = (addr->addr.sa_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
         if (connect(fd, &addr->addr, len) == -1 && errno != EINPROGRESS) {
-            LOGE("connecting %s error:%s\n", getaddrportstring(addr), strerror(errno));
+            LOGE("connecting %s error: %s\n", getaddrportstring(addr), strerror(errno));
             break;
         }
         return fd;
