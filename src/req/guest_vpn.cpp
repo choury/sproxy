@@ -307,10 +307,14 @@ void Guest_vpn::response(void*, HttpRes* res) {
     //创建回包
     if(memcmp(res->header->status, "200", 3) == 0){
         res->setHandler(std::bind(&Guest_vpn::handle, this, _1));
-        res->attach((Channel::recv_const_t)std::bind(&Guest_vpn::Send, this, _1, _2),
-                std::bind(&Guest_vpn::bufleft, this));
         if(key.protocol != Protocol::TCP){
+            res->attach(std::bind(&Guest_vpn::Send_notcp, this, _1, _2),
+                        std::bind(&Guest_vpn::bufleft, this));
             return;
+        }else{
+            res->attach((Channel::recv_const_t)std::bind(&Guest_vpn::Send_tcp, this, _1, _2),
+                        std::bind(&Guest_vpn::bufleft, this));
+
         }
         TcpStatus* tcpStatus = (TcpStatus *)status.protocol_info;
         tcpStatus->status = TCP_ESTABLISHED;
@@ -524,14 +528,18 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
             status.req->trigger(Channel::CHANNEL_SHUTDOWN);
             return;
         case TCP_FIN_WAIT1:
-            status.flags |= HTTP_CLOSED_F;
             tcpStatus->status = TCP_CLOSING;
-            status.req->trigger(Channel::CHANNEL_CLOSED);
+            if((status.flags & HTTP_CLOSED_F)  == 0) {
+                status.req->trigger(Channel::CHANNEL_CLOSED);
+            }
+            status.flags |= HTTP_CLOSED_F;
             break;
         case TCP_FIN_WAIT2:
-            status.flags |= HTTP_CLOSED_F;
             tcpStatus->status = TCP_TIME_WAIT;
-            status.req->trigger(Channel::CHANNEL_CLOSED);
+            if((status.flags & HTTP_CLOSED_F) == 0) {
+                status.req->trigger(Channel::CHANNEL_CLOSED);
+            }
+            status.flags |= HTTP_CLOSED_F;
             aged_job = rwer->updatejob(aged_job, std::bind(&Guest_vpn::aged, this), 1000);
             return;
         case TCP_TIME_WAIT:
@@ -737,35 +745,42 @@ int32_t Guest_vpn::bufleft() {
     return nanny->bufleft();
 }
 
-void Guest_vpn::Send(const void* buff, size_t size) {
-    if(size == 0){
+void Guest_vpn::Send_tcp(const void* buff, size_t size) {
+    if (size == 0) {
         status.flags |= HTTP_RES_COMPLETED;
         return;
     }
-    if(key.protocol == Protocol::TCP){
-        TcpStatus* tcpStatus = (TcpStatus*)status.protocol_info;
-        assert(tcpStatus);
-        assert((tcpStatus->window << tcpStatus->recv_wscale) - (tcpStatus->send_seq - tcpStatus->acked) >= size);
-        size_t sendlen = size;
-        if(size > tcpStatus->mss){
-            LOGD(DVPN, "(%s): mss smaller than send size (%zu/%u)!\n", getProg(), size, tcpStatus->mss);
-            sendlen = tcpStatus->mss;
-        }
-        LOGD(DVPN, "%s (%u - %u) size: %zu\n",
-             key.getString("<-"), tcpStatus->send_seq, tcpStatus->want_seq, sendlen);
-        auto pac_return = MakeIp(IPPROTO_TCP, &key.dst, &key.src);
-        pac_return->tcp
+    assert(key.protocol == Protocol::TCP);
+    TcpStatus *tcpStatus = (TcpStatus *) status.protocol_info;
+    assert(tcpStatus);
+    assert((tcpStatus->window << tcpStatus->recv_wscale) -
+           (tcpStatus->send_seq - tcpStatus->acked) >= size);
+    size_t sendlen = size;
+    if (size > tcpStatus->mss) {
+        LOGD(DVPN, "(%s): mss smaller than send size (%zu/%u)!\n", getProg(), size,
+             tcpStatus->mss);
+        sendlen = tcpStatus->mss;
+    }
+    LOGD(DVPN, "%s (%u - %u) size: %zu\n",
+         key.getString("<-"), tcpStatus->send_seq, tcpStatus->want_seq, sendlen);
+    auto pac_return = MakeIp(IPPROTO_TCP, &key.dst, &key.src);
+    pac_return->tcp
             ->setseq(tcpStatus->send_seq)
             ->setack(tcpStatus->want_seq)
             ->setwindow(status.req->cap() >> tcpStatus->send_wscale)
             ->setflag(TH_ACK | TH_PUSH);
 
-        nanny->sendPkg(pac_return, buff, sendlen);
-        tcpStatus->send_seq += sendlen;
-        tcpStatus->send_ack = tcpStatus->want_seq;
-        if(size > sendlen){
-            Send((const char*)buff+sendlen, size-sendlen);
-        }
+    nanny->sendPkg(pac_return, buff, sendlen);
+    tcpStatus->send_seq += sendlen;
+    tcpStatus->send_ack = tcpStatus->want_seq;
+    if (size > sendlen) {
+        Send_tcp((const char *) buff + sendlen, size - sendlen);
+    }
+}
+
+void Guest_vpn::Send_notcp(void* buff, size_t size) {
+    if(size == 0){
+        status.flags |= HTTP_RES_COMPLETED;
         return;
     }
     if(key.protocol == Protocol::UDP){
@@ -820,30 +835,33 @@ void Guest_vpn::deleteLater(uint32_t errcode) {
 
 void Guest_vpn::handle(Channel::signal s) {
     switch(s){
-    case Channel::CHANNEL_SHUTDOWN: {
+    case Channel::CHANNEL_CLOSED:
+        // release connection on last ack or aged
+        status.flags |= HTTP_CLOSED_F;
+    case Channel::CHANNEL_SHUTDOWN:
         status.flags |= HTTP_RES_EOF;
-        assert(key.protocol == Protocol::TCP);
-        TcpStatus *tcpStatus = (TcpStatus *) status.protocol_info;
-        LOGD(DVPN, "write fin packet\n");
-        auto pac_return = MakeIp(IPPROTO_TCP, &key.dst, &key.src);
-        pac_return->tcp
-                ->setseq(tcpStatus->send_seq++)
-                ->setack(tcpStatus->want_seq)
-                ->setwindow(bufleft() >> tcpStatus->send_wscale)
-                ->setflag(TH_FIN | TH_ACK);
+        if(key.protocol == Protocol::TCP) {
+            assert(key.protocol == Protocol::TCP);
+            TcpStatus *tcpStatus = (TcpStatus *) status.protocol_info;
+            LOGD(DVPN, "write fin packet\n");
+            auto pac_return = MakeIp(IPPROTO_TCP, &key.dst, &key.src);
+            pac_return->tcp
+                    ->setseq(tcpStatus->send_seq++)
+                    ->setack(tcpStatus->want_seq)
+                    ->setwindow(bufleft() >> tcpStatus->send_wscale)
+                    ->setflag(TH_FIN | TH_ACK);
 
-        nanny->sendPkg(pac_return, (const void *) nullptr, 0);
-        switch (tcpStatus->status) {
-            case TCP_ESTABLISHED:
-                tcpStatus->status = TCP_FIN_WAIT1;
-                break;
-            case TCP_CLOSE_WAIT:
-                tcpStatus->status = TCP_LAST_ACK;
-                break;
+            nanny->sendPkg(pac_return, (const void *) nullptr, 0);
+            switch (tcpStatus->status) {
+                case TCP_ESTABLISHED:
+                    tcpStatus->status = TCP_FIN_WAIT1;
+                    break;
+                case TCP_CLOSE_WAIT:
+                    tcpStatus->status = TCP_LAST_ACK;
+                    break;
+            }
         }
         break;
-    }
-    case Channel::CHANNEL_CLOSED:
     case Channel::CHANNEL_ABORT:
         if(key.protocol == Protocol::TCP){
             LOGD(DVPN, "write rst packet: %s\n",  key.getString("<-"));

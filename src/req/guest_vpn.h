@@ -81,7 +81,8 @@ class Guest_vpn:public Requester{
     void icmp6HE(std::shared_ptr<const Ip> pac,const char* packet, size_t len);
     void tcp_ack();
 
-    void Send(const void* buff, size_t size);
+    void Send_tcp(const void* buff, size_t size);
+    void Send_notcp(void* buff, size_t size);
     int32_t bufleft();
     void handle(Channel::signal s);
 public:
