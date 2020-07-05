@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8)
 
 include_directories(${PROJECT_SOURCE_DIR}/src)
 
-if(BUILD_CGI)
+if(BUILD_WEBUI)
     set(CMAKE_CXX_FLAGS "-DENABLE_CGI ${CMAKE_CXX_FLAGS}")
     add_subdirectory(cgi)
 endif()
