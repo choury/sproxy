@@ -26,7 +26,6 @@ struct Http2_header {
     uint8_t type;
 #define ACK_F               1u
 #define END_STREAM_F        1u
-#define END_SEGMENT_F       2u
 #define END_HEADERS_F       4u
 #define PADDED_F            8u
 #define PRIORITY_F          0x20u
@@ -88,9 +87,9 @@ protected:
     
     int32_t remotewinsize = 65535; // 对端提供的窗口大小，发送时减小，收到对端update时增加
     int32_t localwinsize = 65535; // 发送给对端的窗口大小，接受时减小，给对端发送update时增加
-#define HTTP2_FLAG_INITED    (1u << 0)
-#define HTTP2_FLAG_GOAWAYED  (1u << 1)
-#define HTTP2_SUPPORT_SHUTDOWN (1u << 2)
+#define HTTP2_FLAG_INITED    (1u << 0u)
+#define HTTP2_FLAG_GOAWAYED  (1u << 1u)
+#define HTTP2_SUPPORT_SHUTDOWN (1u << 2u)
     uint32_t http2_flag = 0;
     uint32_t recvid = 0;
     uint32_t sendid = 1;

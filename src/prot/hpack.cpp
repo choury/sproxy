@@ -964,9 +964,9 @@ int Hpack_index_table::hpack_encode(unsigned char* buf, const char* Name, const 
     return buf - buf_begin;
 }
 
-int Hpack_index_table::hpack_encode(unsigned char *buf, std::map<std::string, std::string> headers) {
+int Hpack_index_table::hpack_encode(unsigned char *buf, const std::map<std::string, std::string>& headers) {
     unsigned char *buf_begin = buf;
-    for(auto i:headers) {
+    for(const auto& i:headers) {
         if(i.first ==  "Host")
             continue;
         buf += hpack_encode(buf, i.first.c_str(), i.second.c_str());

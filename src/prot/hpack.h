@@ -28,7 +28,7 @@ public:
     void set_dynamic_table_size_limit_max(size_t size);
     std::multimap<std::string, std::string> hpack_decode(const unsigned char *s, int len);
     int hpack_encode(unsigned char *buf, const char *name, const char *value);
-    int hpack_encode(unsigned char *buf, std::map<std::string, std::string> headers);
+    int hpack_encode(unsigned char *buf, const std::map<std::string, std::string>& headers);
 };
 
 #endif

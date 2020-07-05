@@ -101,8 +101,12 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
                     }
                     WindowUpdateProc(id, value);
                     break;
+                case PUSH_PROMISE_TYPE:
+                case CONTINUATION:
+                    LOGE("unimplemented http2 frame:%d\n", header->type);
+                    break;
                 default:
-                    LOGE("unkown http2 frame:%d\n", header->type);
+                    LOGE("unknown http2 frame:%d\n", header->type);
                 }
             }catch(...){
                 Reset(id, ERR_INTERNAL_ERROR);
