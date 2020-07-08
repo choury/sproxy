@@ -126,6 +126,9 @@ void Host::request(HttpReq* req, Requester*) {
             assert(strcasecmp(Server.schema, "udp"));
             assert((status.flags & HTTP_RES_EOF) == 0);
             status.flags |= HTTP_REQ_EOF;
+            if(rwer->getStats() != RWerStats::Connected){
+                return;
+            }
             rwer->addEvents(RW_EVENT::READ);
             if (rwer->wlength() == 0) {
                 rwer->Shutdown();
@@ -141,7 +144,6 @@ void Host::request(HttpReq* req, Requester*) {
 }
 
 void Host::Send(void* buff, size_t size){
-    assert((status.flags & HTTP_REQ_EOF) == 0);
     assert((status.flags & HTTP_REQ_COMPLETED) == 0);
     rwer->buffer_insert(rwer->buffer_end(), write_block{buff, size, 0});
     tx_bytes += size;
