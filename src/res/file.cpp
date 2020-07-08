@@ -118,10 +118,7 @@ void File::request(HttpReq* req, Requester*) {
             char buff[100];
             strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
             header->set("Last-Modified", buff);
-            HttpRes* res = new HttpRes(header, "");
-            req->response(res);
-            status.res->send((const void*)nullptr, 0);
-            res->trigger(Channel::CHANNEL_CLOSED);
+            req->response(new HttpRes(header, ""));
             return deleteLater(NOERROR);
         }
     }
@@ -156,10 +153,7 @@ void File::request(HttpReq* req, Requester*) {
         char buff[100];
         snprintf(buff, sizeof(buff), "bytes */%jd", (intmax_t)st.st_size);
         header->set("Content-Range", buff);
-        status.res = new HttpRes(header, "");
-        req->response(status.res);
-        status.res->send((const void*)nullptr, 0);
-        status.res->trigger(Channel::CHANNEL_CLOSED);
+        req->response(new HttpRes(header, ""));
         return deleteLater(NOERROR);
     }
     if(status.req->header->ismethod("HEAD")){
