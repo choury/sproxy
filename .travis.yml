@@ -1,10 +1,9 @@
 language: cpp
-sudo: required
 dist: xenial
 before_install:
 - eval "${COMPILE}"
 
-matrix:
+jobs:
   include:
   - addons:
       apt:
@@ -336,7 +335,7 @@ matrix:
         packages:
         - openssl
         - json-c
-      update: true
+        update: true
     env:
     - BUILD_TYPE=Debug COMPILE="OPENSSL_ROOT_DIR=/usr/local/opt/openssl"
   - os: osx
@@ -346,7 +345,7 @@ matrix:
         packages:
         - openssl
         - json-c
-      update: true
+        update: true
     env:
     - BUILD_TYPE=Release COMPILE="OPENSSL_ROOT_DIR=/usr/local/opt/openssl"
   - os: osx
@@ -356,7 +355,7 @@ matrix:
         packages:
         - openssl
         - json-c
-      update: true
+        update: true
     env:
     - BUILD_TYPE=RelWithDebInfo COMPILE="OPENSSL_ROOT_DIR=/usr/local/opt/openssl"
   - os: osx
@@ -366,7 +365,7 @@ matrix:
         packages:
         - openssl
         - json-c
-      update: true
+        update: true
     env:
     - BUILD_TYPE=Debug COMPILE="OPENSSL_ROOT_DIR=/usr/local/opt/openssl"
   - os: osx
@@ -376,7 +375,7 @@ matrix:
         packages:
         - openssl
         - json-c
-      update: true
+        update: true
     env:
     - BUILD_TYPE=Release COMPILE="OPENSSL_ROOT_DIR=/usr/local/opt/openssl"
   - os: osx
@@ -386,7 +385,7 @@ matrix:
         packages:
         - openssl
         - json-c
-      update: true
+        update: true
     env:
     - BUILD_TYPE=RelWithDebInfo COMPILE="OPENSSL_ROOT_DIR=/usr/local/opt/openssl"
   - os: osx
@@ -396,7 +395,7 @@ matrix:
         packages:
         - openssl
         - json-c
-      update: true
+        update: true
     env:
     - BUILD_TYPE=Debug COMPILE="OPENSSL_ROOT_DIR=/usr/local/opt/openssl"
   - os: osx
@@ -406,7 +405,7 @@ matrix:
         packages:
         - openssl
         - json-c
-      update: true
+        update: true
     env:
     - BUILD_TYPE=Release COMPILE="OPENSSL_ROOT_DIR=/usr/local/opt/openssl"
   - os: osx
@@ -416,7 +415,37 @@ matrix:
         packages:
         - openssl
         - json-c
-      update: true
+        update: true
+    env:
+    - BUILD_TYPE=RelWithDebInfo COMPILE="OPENSSL_ROOT_DIR=/usr/local/opt/openssl"
+  - os: osx
+    osx_image: xcode11.6
+    addons:
+      homebrew:
+        packages:
+        - openssl
+        - json-c
+        update: true
+    env:
+    - BUILD_TYPE=Debug COMPILE="OPENSSL_ROOT_DIR=/usr/local/opt/openssl"
+  - os: osx
+    osx_image: xcode11.6
+    addons:
+      homebrew:
+        packages:
+        - openssl
+        - json-c
+        update: true
+    env:
+    - BUILD_TYPE=Release COMPILE="OPENSSL_ROOT_DIR=/usr/local/opt/openssl"
+  - os: osx
+    osx_image: xcode11.6
+    addons:
+      homebrew:
+        packages:
+        - openssl
+        - json-c
+        update: true
     env:
     - BUILD_TYPE=RelWithDebInfo COMPILE="OPENSSL_ROOT_DIR=/usr/local/opt/openssl"
 
