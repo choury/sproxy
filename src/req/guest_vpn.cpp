@@ -144,6 +144,7 @@ Guest_vpn::~Guest_vpn(){
     free(status.protocol_info);
 }
 
+#if 0
 const char * Guest_vpn::getProg() const{
     if(key.version() == 4){
         std::ifstream netfile;
@@ -258,6 +259,7 @@ const char * Guest_vpn::getProg() const{
                     ntohs(key.dst.addr_in6.sin6_port));
     return "Unkown inode";
 }
+#endif
 
 const char* Guest_vpn::generateUA() const {
     static char UA[URLLIMIT];
@@ -502,7 +504,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
     if(datalen > 0 && status.req){
         int buflen = status.req->cap();
         if(buflen <= 0){
-            LOGE("(%s): responser buff is full, drop packet %u\n", getProg(), seq);
+            LOGE("%s: responser buff is full, drop packet %u\n", key.getString("->"), seq);
             return;
         }else{
             const char* data = packet + pac->gethdrlen();
@@ -570,6 +572,8 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
             LOGD(DVPN, "clean closed connection\n");
             deleteLater(PEER_LOST_ERR);
             return;
+        case TCP_FIN_WAIT2:
+            //fall through
         case TCP_TIME_WAIT:
             return;
         default:
@@ -753,13 +757,11 @@ void Guest_vpn::Send_tcp(const void* buff, size_t size) {
     }
     assert(key.protocol == Protocol::TCP);
     TcpStatus *tcpStatus = (TcpStatus *) status.protocol_info;
-    assert(tcpStatus);
     assert((tcpStatus->window << tcpStatus->recv_wscale) -
            (tcpStatus->send_seq - tcpStatus->acked) >= size);
     size_t sendlen = size;
     if (size > tcpStatus->mss) {
-        LOGD(DVPN, "(%s): mss smaller than send size (%zu/%u)!\n", getProg(), size,
-             tcpStatus->mss);
+        LOGD(DVPN, "%s: mss smaller than send size (%zu/%u)!\n", key.getString("<-"), size, tcpStatus->mss);
         sendlen = tcpStatus->mss;
     }
     LOGD(DVPN, "%s (%u - %u) size: %zu\n",
