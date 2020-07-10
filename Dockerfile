@@ -15,4 +15,4 @@ RUN apt-get  update && \
 
 EXPOSE 80
 WORKDIR /var/lib/sproxy
-ENTRYPOINT ["/usr/local/bin/sproxy"]
+CMD ["/usr/local/bin/sproxy"]
