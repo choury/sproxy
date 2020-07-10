@@ -355,7 +355,7 @@ void Guest_vpn::response(void*, HttpRes* res) {
                 pac_return = MakeIp(IPPROTO_ICMP, &key.dst, &key.src);
                 pac_return->icmp
                     ->settype(ICMP_UNREACH)
-                    ->setcode(ICMP_UNREACH_PORT);
+                    ->setcode(ICMP_UNREACH_HOST);
             }else{
                 LOGD(DVPN, "write icmp6 unrach packet\n");
                 pac_return = MakeIp(IPPROTO_ICMPV6, &key.dst, &key.src);
@@ -366,26 +366,27 @@ void Guest_vpn::response(void*, HttpRes* res) {
             nanny->sendPkg(pac_return, (const void*)status.packet, status.packet_len);
         }
     }else if(res->header->status[0] == '5'){
-        if(status.packet == nullptr){
-            return;
-        }
-        std::shared_ptr<Ip> pac_return;
-        if(key.version() == 4){
-            LOGD(DVPN, "write icmp unreachable msg: %s\n", key.getString("<-"));
-            pac_return = MakeIp(IPPROTO_ICMP, &key.dst, &key.src);
-            pac_return->icmp
-                    ->settype(ICMP_UNREACH)
-                    ->setcode(ICMP_UNREACH_HOST);
+        if(key.protocol == Protocol::TCP || key.protocol == Protocol::UDP) {
+            std::shared_ptr<Ip> pac_return;
+            if (key.version() == 4) {
+                LOGD(DVPN, "write icmp unreachable msg: %s\n", key.getString("<-"));
+                pac_return = MakeIp(IPPROTO_ICMP, &key.dst, &key.src);
+                pac_return->icmp
+                        ->settype(ICMP_UNREACH)
+                        ->setcode(ICMP_UNREACH_PORT);
+            } else {
+                LOGD(DVPN, "write icmpv6 unreachable msg: %s\n", key.getString("<-"));
+                pac_return = MakeIp(IPPROTO_ICMPV6, &key.dst, &key.src);
+                pac_return->icmp6
+                        ->settype(ICMP6_DST_UNREACH)
+                        ->setcode(ICMP6_DST_UNREACH_ADDR);
+            }
+            nanny->sendPkg(pac_return, (const void *) status.packet, status.packet_len);
         }else{
-            LOGD(DVPN, "write icmpv6 unreachable msg: %s\n", key.getString("<-"));
-            pac_return = MakeIp(IPPROTO_ICMPV6, &key.dst, &key.src);
-            pac_return->icmp6
-                    ->settype(ICMP6_DST_UNREACH)
-                    ->setcode(ICMP6_DST_UNREACH_ADDR);
+            LOGD(DVPN, "clean this connection\n");
         }
-        nanny->sendPkg(pac_return, (const void*)status.packet, status.packet_len);
     }else{
-        LOGD(DVPN, "ignore this response\n");
+        LOGE("unknown response\n");
     }
     deleteLater(PEER_LOST_ERR);
 }
@@ -838,6 +839,7 @@ void Guest_vpn::handle(Channel::signal s) {
     case Channel::CHANNEL_CLOSED:
         // release connection on last ack or aged
         status.flags |= HTTP_CLOSED_F;
+        // Fall-through
     case Channel::CHANNEL_SHUTDOWN:
         status.flags |= HTTP_RES_EOF;
         if(key.protocol == Protocol::TCP) {

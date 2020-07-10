@@ -16,7 +16,7 @@ static in_addr getInet(std::string hostname) {
     in_addr addr;
 
     if(hostname.find_first_of('.') == std::string::npos){
-        addr.s_addr = inet_addr("10.1.0.1");
+        addr.s_addr = inet_addr(VPNADDR);
     }else if(fdns_records.Get(hostname)){
         addr.s_addr = htonl(fdns_records.Get(hostname)->t1);
     }else{
@@ -57,7 +57,7 @@ std::string getRdns(const sockaddr_un& addr) {
 
 FDns::FDns() {
     if(fake_ip == 0){
-        fake_ip = ntohl(inet_addr("10.1.0.1"));
+        fake_ip = ntohl(inet_addr(VPNADDR));
         fdns_records.Add(fake_ip, "VPN", nullptr);
     }
     rwer = new NullRWer();

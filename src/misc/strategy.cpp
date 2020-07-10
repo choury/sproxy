@@ -157,7 +157,7 @@ public:
             if(i.second.ext.empty()){
                 LOG("%s %s\n", i.first.c_str(), getstrategystring(i.second.s));
             }else{
-                LOG("%s %s[%s]\n", i.first.c_str(), getstrategystring(i.second.s), i.second.ext.c_str());
+                LOG("%s %s %s\n", i.first.c_str(), getstrategystring(i.second.s), i.second.ext.c_str());
             }
         }
     }
