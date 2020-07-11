@@ -133,10 +133,10 @@ void distribute(HttpReq* req, Requester* src){
         req->header->set("Strategy", strategy);
         // use geturl here because we need mask like /20 for ip
         if(strategy && addstrategy(req->header->geturl().c_str(), strategy, ext ? ext:"")){
-            res = new HttpRes(new HttpResHeader(H200), "[[ok]]");
+            res = new HttpRes(new HttpResHeader(H200), "[[ok]]\n");
             goto out;
         }else{
-            res = new HttpRes(new HttpResHeader(H400), "[[failed]]");
+            res = new HttpRes(new HttpResHeader(H400), "[[failed]]\n");
             goto out;
         }
     } else if (req->header->ismethod("DELS")) {
@@ -147,19 +147,19 @@ void distribute(HttpReq* req, Requester* src){
             HttpResHeader* header = new HttpResHeader(H200, sizeof(H200));
             header->set("Strategy", strategy);
             header->set("Ext", stra.ext);
-            res = new HttpRes(header, "[[ok]]");
+            res = new HttpRes(header, "[[ok]]\n");
             goto out;
         }else{
-            res = new HttpRes(new HttpResHeader(H404), "[[not found]]");
+            res = new HttpRes(new HttpResHeader(H404), "[[not found]]\n");
             goto out;
         }
     } else if (req->header->ismethod("SWITCH")) {
         if(loadproxy(req->header->geturl().c_str(), &opt.Server)){
-            res = new HttpRes(new HttpResHeader(H400), "[[failed]]");
+            res = new HttpRes(new HttpResHeader(H400), "[[failed]]\n");
             goto out;
         }else{
             flushproxy2(1);
-            res = new HttpRes(new HttpResHeader(H200), "[[ok]]");
+            res = new HttpRes(new HttpResHeader(H200), "[[ok]]\n");
             goto out;
         }
     } else if (req->header->ismethod("TEST")){
@@ -169,23 +169,23 @@ void distribute(HttpReq* req, Requester* src){
         HttpResHeader* header = new HttpResHeader(H200);
         header->set("Strategy", strategy);
         header->set("Ext", stra.ext);
-        res = new HttpRes(header, "[[ok]]");
+        res = new HttpRes(header, "[[ok]]\n");
         goto out;
     } else if(req->header->ismethod("FLUSH")){
         if(strcasecmp(req->header->Dest.hostname, "cgi") == 0){
             flushcgi();
-            res = new HttpRes(new HttpResHeader(H200), "[[ok]]");
+            res = new HttpRes(new HttpResHeader(H200), "[[ok]]\n");
             goto out;
         }else if(strcasecmp(req->header->Dest.hostname, "strategy") == 0){
             reloadstrategy();
-            res = new HttpRes(new HttpResHeader(H200), "[[ok]]");
+            res = new HttpRes(new HttpResHeader(H200), "[[ok]]\n");
             goto out;
         }else if(strcasecmp(req->header->Dest.hostname, "dns") == 0){
             flushdns();
-            res = new HttpRes(new HttpResHeader(H200), "[[ok]]");
+            res = new HttpRes(new HttpResHeader(H200), "[[ok]]\n");
             goto out;
         }else{
-            res = new HttpRes(new HttpResHeader(H400), "[[failed]]");
+            res = new HttpRes(new HttpResHeader(H400), "[[failed]]\n");
             goto out;
         }
     } else{
