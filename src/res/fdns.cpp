@@ -4,6 +4,7 @@
 #include "misc/strategy.h"
 #include "misc/util.h"
 #include "misc/index.h"
+#include "misc/config.h"
 
 #include <inttypes.h>
 
@@ -118,9 +119,11 @@ void FDns::Send(uint32_t id, const void* buff, size_t size) {
             if(req->que.type == 1){
                 in_addr addr = getInet(req->que.host);
                 rr = new Dns_Rr(req->que.host.c_str(), &addr);
-            }else{
+            }else if(!opt.disable_ipv6) {
                 in6_addr addr = getInet6(req->que.host);
                 rr = new Dns_Rr(req->que.host.c_str(), &addr);
+            }else{
+                rr = new Dns_Rr(req->que.host.c_str());
             }
         }
         if(rr == nullptr) {
@@ -144,9 +147,11 @@ void FDns::DnsCb(void *param, std::list<sockaddr_un> addrs) {
         }else if(req->que.type == 1){
             in_addr addr = getInet(req->que.host);
             rr = new Dns_Rr(req->que.host.c_str(), &addr);
-        }else{
+        }else if(!opt.disable_ipv6){
             in6_addr addr = getInet6(req->que.host);
             rr = new Dns_Rr(req->que.host.c_str(), &addr);
+        }else{
+            rr = new Dns_Rr(req->que.host.c_str());
         }
         unsigned char *const buff = (unsigned char *) p_malloc(BUF_LEN);
         status.res->send(buff, rr->build(&req->que, buff));

@@ -104,7 +104,7 @@ struct option_detail option_detail[] = {
     {"cert", "Certificate file for server (ssl)", option_stringargs, &opt.cert},
     {"config", "Configure file (default /etc/sproxy/sproxy.conf, /usr/local/etc/sproxy/sproxy.conf)", option_stringargs, &opt.config_file},
     {"daemon", "Run as daemon", option_boolargs, &opt.daemon_mode},
-    {"disable-ipv6", "Disable ipv6 when querying dns", option_boolargs, &opt.disable_ipv6},
+    {"disable-ipv6", "Disable ipv6 for dns or vpn", option_boolargs, &opt.disable_ipv6},
     {"disable-http2", "Use http/1.1 only", option_boolargs, &opt.disable_http2},
     {"help", "Print this usage", option_extargs, NULL},
     {"index", "Index file for path (when as a http(s) server)", option_stringargs, &opt.index_file},

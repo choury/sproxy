@@ -612,12 +612,12 @@ void Guest_vpn::udpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
         status.packet = (char *)memdup(packet, pac->gethdrlen());
         status.packet_len = (uint16_t)pac->gethdrlen();
         aged_job = rwer->updatejob(aged_job, std::bind(&Guest_vpn::aged, this), 60000);
+        status.req->send(data, datalen);
         if(pac->udp->getdport() == 53){
             FDns::getfdns()->request(status.req, this);
         }else{
             distribute(status.req, this);
         }
-        status.req->send(data, datalen);
     }
 }
 
@@ -651,8 +651,8 @@ void Guest_vpn::icmpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t
             icmpStatus->seq = pac->icmp->getseq();
             status.protocol_info = icmpStatus;
             status.req = new HttpReq(header, std::bind(&Guest_vpn::response, this, nullptr, _1), []{});
-            distribute(status.req, this);
             status.req->send(packet + pac->gethdrlen(), len - pac->gethdrlen());
+            distribute(status.req, this);
         }
     }break;
     case ICMP_UNREACH:{
@@ -710,8 +710,8 @@ void Guest_vpn::icmp6HE(std::shared_ptr<const Ip> pac, const char* packet, size_
             icmpStatus->seq = pac->icmp6->getseq();
             status.protocol_info = icmpStatus;
             status.req = new HttpReq(header, std::bind(&Guest_vpn::response, this, nullptr, _1), []{});
-            distribute(status.req, this);
             status.req->send(packet + pac->gethdrlen(), len - pac->gethdrlen());
+            distribute(status.req, this);
         }
     }break;
     case ICMP6_DST_UNREACH:{

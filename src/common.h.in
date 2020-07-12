@@ -12,7 +12,7 @@
 #include <sys/epoll.h>
 #endif
 
-#define VPNADDR  "0.0.0.1"
+#define VPNADDR  "198.18.0.1"
 #define VPNADDR6 "64:ff9B::" VPNADDR
 
 #define Min(x, y) ((int64_t)(x) < (int64_t)(y)?(x):(y))
