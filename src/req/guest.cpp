@@ -136,7 +136,10 @@ void Guest::Error(int ret, int code) {
     if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0 && (status.flags & HTTP_CLOSED_F) == 0){
         //EOF
         status.flags |= HTTP_REQ_EOF;
-        if(status.flags & HTTP_RES_EOF){
+        if((status.flags & HTTP_RES_EOF)
+            || status.req->header->ismethod("PING")
+            || status.req->header->ismethod("SEND"))
+        {
             deleteLater(NOERROR);
         }else{
             status.req->trigger(Channel::CHANNEL_SHUTDOWN);
@@ -215,7 +218,7 @@ void Guest::Send(void *buff, size_t size) {
 void Guest::deleteLater(uint32_t errcode){
     for(auto& status: statuslist){
         if((status.flags & HTTP_CLOSED_F) == 0){
-            status.req->trigger(Channel::CHANNEL_ABORT);
+            status.req->trigger(errcode ? Channel::CHANNEL_ABORT : Channel::CHANNEL_CLOSED);
         }
         status.flags |= HTTP_CLOSED_F;
     }
