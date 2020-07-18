@@ -132,8 +132,11 @@ void Proxy2::ResProc(uint32_t id, HttpResHeader* header) {
         }
         status.res = new HttpRes(header, [this, &status, id]() mutable{
             auto len = status.res->cap();
-            if(len > status.localwinsize && (len - status.localwinsize > FRAMEBODYLIMIT)) {
-                status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
+            if(len < status.localwinsize){
+                LOGE("http2 [%d] shrunken local window: %d/%d\n", id, len, status.localwinsize - len);
+            }
+            if(len > status.localwinsize && (len - status.localwinsize > 2*FRAMEBODYLIMIT)) {
+                status.localwinsize += ExpandWindowSize(id, len - status.localwinsize - FRAMEBODYLIMIT);
             }
         });
         status.req->response(status.res);

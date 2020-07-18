@@ -426,12 +426,10 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
     uint32_t seq = pac->tcp->getseq();
     uint32_t ack = pac->tcp->getack();
     uint8_t flag = pac->tcp->getflag();
-    
     size_t datalen = len - pac->gethdrlen();
-    
+
     LOGD(DVPN, "%s (%u - %u) flag: %d size:%zu\n",
          key.getString("->"), seq, ack, flag, datalen);
-
     if(flag & TH_SYN){
         if(status.req) {
             LOGD(DVPN, "drop dup syn packet\n");
@@ -500,6 +498,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
         return;
     }
 
+    tcpStatus->window = pac->tcp->getwindow();
     //下面处理数据
     if(datalen > 0 && status.req){
         int buflen = status.req->cap();
@@ -529,7 +528,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
         case TCP_ESTABLISHED:
             tcpStatus->status = TCP_CLOSE_WAIT;
             status.req->trigger(Channel::CHANNEL_SHUTDOWN);
-            return;
+            break;
         case TCP_FIN_WAIT1:
             tcpStatus->status = TCP_CLOSING;
             if((status.flags & HTTP_CLOSED_F)  == 0) {
@@ -546,13 +545,12 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
             aged_job = rwer->updatejob(aged_job, std::bind(&Guest_vpn::aged, this), 1000);
             return;
         case TCP_TIME_WAIT:
-            return;
+            break;
         default:
             LOGE("unexpected status: %d\n", tcpStatus->status);
         }
     }
 
-    tcpStatus->window = pac->tcp->getwindow();
     if(flag & TH_ACK){
         if(after(ack, tcpStatus->acked)){
             tcpStatus->acked = ack;
@@ -740,8 +738,8 @@ void Guest_vpn::icmp6HE(std::shared_ptr<const Ip> pac, const char* packet, size_
 int32_t Guest_vpn::bufleft() {
     if(key.protocol == Protocol::TCP){
         TcpStatus* tcpStatus = (TcpStatus*)status.protocol_info;
-        assert(tcpStatus->send_seq >= tcpStatus->acked);
-        return (int32_t)(tcpStatus->window << tcpStatus->recv_wscale) - (tcpStatus->send_seq - tcpStatus->acked);
+        assert(nobefore(tcpStatus->send_seq, tcpStatus->acked));
+        return (int32_t)(tcpStatus->window << tcpStatus->recv_wscale) - (int32_t)(tcpStatus->send_seq - tcpStatus->acked);
     }
     if(key.protocol == Protocol::ICMP){
         return BUF_LEN;
