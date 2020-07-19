@@ -228,7 +228,7 @@ static void query(Dns_Status* dnsst){
         return;
     }
 
-    if (rcd_cache.count(dnsst->host)) {
+    if (rcd_cache.count(dnsst->host) && !dnsst->reqs.empty()) {
         auto& rcd = rcd_cache[dnsst->host];
         for(auto i: dnsst->reqs){
             i.func(i.param, rcd.addrs);
@@ -498,19 +498,7 @@ void dump_dns(Dumper dp, void* param){
     for(const auto& i: rcd_cache){
         dp(param, "    %s: %ld\n", i.first.c_str(), i.second.get_time + i.second.ttl - time(0));
         for(auto j: i.second.addrs){
-            char ip[INET6_ADDRSTRLEN];
-            switch(j.addr.sa_family){
-            case AF_INET:
-                inet_ntop(j.addr.sa_family, &j.addr_in.sin_addr, ip, sizeof(ip));
-                break;
-            case AF_INET6:
-                inet_ntop(j.addr.sa_family, &j.addr_in6.sin6_addr, ip, sizeof(ip));
-                break;
-            default:
-                LOGE("Wrong ip address type: %d\n", j.addr.sa_family);
-                strcpy(ip, "UNKOWN");
-            }
-            dp(param, "        %s\n", ip);
+            dp(param, "        %s\n", getaddrstring(&j));
         }
     }
 }
