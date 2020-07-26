@@ -31,6 +31,9 @@ int vpn_start(int fd){
     LOG("Accepting connections ...\n");
     while (vpn_contiune) {
         if(vpn_action & VPN_RESET){
+            if(opt.ipv6_mode == Auto){
+                opt.ipv6_enabled = hasIpv6Address();
+            }
             flushdns();
             flushproxy2(0);
             vpn_action &= ~VPN_RESET;

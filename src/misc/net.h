@@ -3,6 +3,7 @@
 
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <stdbool.h>
 
 #define HTTPSPORT 443u
 #define HTTPPORT  80u
@@ -71,6 +72,7 @@ int IcmpSocket(const union sockaddr_un* addr);
 const char *getaddrstring(const union sockaddr_un *addr);
 const char *getaddrportstring(const union sockaddr_un *addr);
 union sockaddr_un* getlocalip ();
+bool hasIpv6Address();
 
 
 #ifdef  __cplusplus

@@ -208,7 +208,7 @@ int tun_create(char *dev, int flags) {
         return -1;
     }
 
-    if(opt.disable_ipv6){
+    if(!opt.ipv6_enabled){
         return fd;
     }
 

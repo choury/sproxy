@@ -14,6 +14,12 @@ struct DnsConfig{
 
 void getDnsConfig(struct DnsConfig* config);
 
+enum ipv6_mode{
+    Disable = 0,
+    Enable = 1,
+    Auto = 2,
+};
+
 struct options{
     const char *cafile;
     const char *cert;
@@ -23,17 +29,18 @@ struct options{
     const char *rootdir;
     const char *index_file;
     const char *interface;
-    bool disable_ipv6;
     bool disable_http2;
     bool sni_mode;
     bool daemon_mode;
     bool ignore_cert_error;
     bool autoindex;
+    bool ipv6_enabled;
 
-    uint16_t CPORT;
+    int64_t CPORT;
     struct Destination Server;
     char auth_string[DOMAINLIMIT];
     char rewrite_auth[DOMAINLIMIT];
+    enum ipv6_mode ipv6_mode;
 };
 
 extern struct options opt;

@@ -119,7 +119,7 @@ void FDns::Send(uint32_t id, const void* buff, size_t size) {
             if(req->que.type == 1){
                 in_addr addr = getInet(req->que.host);
                 rr = new Dns_Rr(req->que.host.c_str(), &addr);
-            }else if(!opt.disable_ipv6) {
+            }else if(opt.ipv6_enabled) {
                 in6_addr addr = getInet6(req->que.host);
                 rr = new Dns_Rr(req->que.host.c_str(), &addr);
             }else{
@@ -147,7 +147,7 @@ void FDns::DnsCb(void *param, std::list<sockaddr_un> addrs) {
         }else if(req->que.type == 1){
             in_addr addr = getInet(req->que.host);
             rr = new Dns_Rr(req->que.host.c_str(), &addr);
-        }else if(!opt.disable_ipv6){
+        }else if(opt.ipv6_enabled){
             in6_addr addr = getInet6(req->que.host);
             rr = new Dns_Rr(req->que.host.c_str(), &addr);
         }else{

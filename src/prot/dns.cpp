@@ -194,7 +194,7 @@ static void query(Dns_Status* dnsst){
         dnsinit();
     }
     id_cur += 2;
-    if(opt.disable_ipv6){
+    if(!opt.ipv6_enabled){
         dnsst->flags = QAAAARECORD | GAAAARECORD;
     }else{
         dnsst->flags = 0;

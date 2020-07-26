@@ -3,6 +3,8 @@
 
 #include "misc/job.h"
 
+#include <sys/types.h>
+
 #include <memory>
 #include <list>
 #include <functional>

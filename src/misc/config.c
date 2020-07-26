@@ -13,6 +13,7 @@
 #include <limits.h>
 #include <unistd.h>
 #include <signal.h>
+#include <inttypes.h>
 #ifndef __APPLE__
 #include <sys/prctl.h>
 #else
@@ -20,7 +21,9 @@
 #endif
 #include <openssl/ssl.h>
 
-static char **main_argv;
+static char** main_argv = NULL;
+static char* ipv6_options[] = {"disable", "enable", "auto", NULL};
+static char* server_string = NULL;
 
 struct options opt = {
     .cafile            = NULL,
@@ -29,12 +32,12 @@ struct options opt = {
     .rootdir           = NULL,
     .index_file        = NULL,
     .interface         = NULL,
-    .disable_ipv6      = false,
     .disable_http2     = false,
     .sni_mode          = false,
     .daemon_mode       = false,
     .ignore_cert_error = false,
     .autoindex         = false,
+    .ipv6_enabled      = true,
 
     .CPORT          = 0,
     .Server         = {
@@ -44,6 +47,7 @@ struct options opt = {
     },
     .auth_string    = {0},
     .rewrite_auth   = {0},
+    .ipv6_mode      = Auto,
 };
 
 enum option_type{
@@ -51,6 +55,8 @@ enum option_type{
     option_int64args,
     option_base64args,
     option_stringargs,
+    option_enum,
+    option_bitwise,
     option_extargs,
 };
 
@@ -59,7 +65,8 @@ struct option_detail {
     const char*      name;
     const char*      details;
     enum option_type type;
-    void*            args;
+    void*            result;
+    void*            value;
 };
 
 static struct option long_options[] = {
@@ -68,12 +75,12 @@ static struct option long_options[] = {
     {"cert",         required_argument, NULL,  0 },
     {"config",       required_argument, NULL, 'c'},
     {"daemon",       no_argument,       NULL, 'D'},
-    {"disable-ipv6", no_argument,       NULL,  0 },
     {"disable-http2",no_argument,       NULL, '1'},
     {"help",         no_argument,       NULL, 'h'},
     {"index",        required_argument, NULL,  0 },
     {"insecure",     no_argument,       NULL, 'k'},
     {"interface",    required_argument, NULL, 'I'},
+    {"ipv6",         required_argument, NULL,  0 },
     {"key",          required_argument, NULL,  0 },
     {"port",         required_argument, NULL, 'p'},
     {"policy-file",  required_argument, NULL, 'P'},
@@ -95,41 +102,40 @@ static struct option long_options[] = {
     {NULL,       0,                NULL,  0 }
 };
 
-static bool daemonized = false;
 static const char* getopt_option = ":D1hikr:s:p:I:c:P:";
 
-struct option_detail option_detail[] = {
-    {"autoindex", "Enables or disables the directory listing output", option_boolargs, &opt.autoindex},
-    {"cafile", "CA certificate for server (ssl)", option_stringargs, &opt.cafile},
-    {"cert", "Certificate file for server (ssl)", option_stringargs, &opt.cert},
-    {"config", "Configure file (default /etc/sproxy/sproxy.conf, /usr/local/etc/sproxy/sproxy.conf)", option_stringargs, &opt.config_file},
-    {"daemon", "Run as daemon", option_boolargs, &opt.daemon_mode},
-    {"disable-ipv6", "Disable ipv6 for dns or vpn", option_boolargs, &opt.disable_ipv6},
-    {"disable-http2", "Use http/1.1 only", option_boolargs, &opt.disable_http2},
-    {"help", "Print this usage", option_extargs, NULL},
-    {"index", "Index file for path (when as a http(s) server)", option_stringargs, &opt.index_file},
-    {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_boolargs, &opt.ignore_cert_error},
-    {"interface", "Out interface (use for vpn)", option_stringargs, &opt.interface},
-    {"key", "Private key file name (ssl)", option_stringargs, &opt.key},
-    {"port", "The port to listen, default is 80 but 443 for ssl/sni", option_extargs, &opt.CPORT},
-    {"policy-file", "The file of policy (sites.list as default)", option_stringargs, &opt.policy_file},
-    {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64args, opt.rewrite_auth},
-    {"root-dir", "The work dir for http file server (current dir if not set)", option_stringargs, &opt.rootdir},
-    {"secret", "Set a user and passwd for proxy (user:password), default is none.", option_base64args, opt.auth_string},
-    {"sni", "Act as a sni proxy", option_boolargs, &opt.sni_mode},
-    {"server", "default proxy server (can ONLY set in config file)", option_extargs, NULL},
+static struct option_detail option_detail[] = {
+    {"autoindex", "Enables the directory listing output (local server)", option_boolargs, &opt.autoindex, (void*)true},
+    {"cafile", "CA certificate for server (ssl)", option_stringargs, &opt.cafile, NULL},
+    {"cert", "Certificate file for server (ssl)", option_stringargs, &opt.cert, NULL},
+    {"config", "Configure file (default /etc/sproxy/sproxy.conf, /usr/local/etc/sproxy/sproxy.conf)", option_stringargs, &opt.config_file, NULL},
+    {"daemon", "Run as daemon", option_boolargs, &opt.daemon_mode, (void*)true},
+    {"disable-http2", "Use http/1.1 only", option_boolargs, &opt.disable_http2, (void*)true},
+    {"help", "Print this usage", option_extargs, NULL, NULL},
+    {"index", "Index file for path (local server)", option_stringargs, &opt.index_file, NULL},
+    {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_boolargs, &opt.ignore_cert_error, (void*)true},
+    {"interface", "Out interface (use for vpn)", option_stringargs, &opt.interface, NULL},
+    {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, ipv6_options},
+    {"key", "Private key file name (ssl)", option_stringargs, &opt.key, NULL},
+    {"port", "The port to listen, default is 80 but 443 for ssl/sni", option_int64args, &opt.CPORT, NULL},
+    {"policy-file", "The file of policy (sites.list as default)", option_stringargs, &opt.policy_file, NULL},
+    {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64args, opt.rewrite_auth, NULL},
+    {"root-dir", "The work dir (current dir if not set)", option_stringargs, &opt.rootdir, NULL},
+    {"secret", "Set a user and passwd for proxy (user:password), default is none.", option_base64args, opt.auth_string, NULL},
+    {"sni", "Act as a sni proxy", option_boolargs, &opt.sni_mode, (void*)true},
+    {"server", "default proxy server (can ONLY set in config file)", option_stringargs, &server_string, NULL},
 #ifndef NDEBUG
-    {"debug-event", "debug-event", option_extargs, NULL},
-    {"debug-dns", "\tdebug-dns", option_extargs, NULL},
-    {"debug-http2", "debug-http2", option_extargs, NULL},
-    {"debug-job", "\tdebug-job", option_extargs, NULL},
-    {"debug-vpn", "\tdebug-vpn", option_extargs, NULL},
-    {"debug-hpack", "debug-hpack", option_extargs, NULL},
-    {"debug-http", "debug-http",  option_extargs, NULL},
-    {"debug-file", "debug-file",  option_extargs, NULL},
-    {"debug-all", "\tdebug-all", option_extargs, NULL},
+    {"debug-event", "debug-event", option_bitwise, &debug, (void*)DEVENT},
+    {"debug-dns", "\tdebug-dns", option_bitwise, &debug, (void*)DDNS},
+    {"debug-http2", "debug-http2", option_bitwise, &debug, (void*)DHTTP2},
+    {"debug-job", "\tdebug-job", option_bitwise, &debug, (void*)DJOB},
+    {"debug-vpn", "\tdebug-vpn", option_bitwise, &debug, (void*)DVPN},
+    {"debug-hpack", "debug-hpack", option_bitwise, &debug, (void*)DHPACK},
+    {"debug-http", "debug-http",  option_bitwise, &debug, (void*)DHTTP},
+    {"debug-file", "debug-file",  option_bitwise, &debug, (void*)DFILE},
+    {"debug-all", "\tdebug-all", option_bitwise, &debug, (void*)0xffffffff},
 #endif
-    {NULL, NULL, option_extargs, NULL},
+    {NULL, NULL, option_extargs, NULL, NULL},
 };
 
 void prepare(){
@@ -154,27 +160,26 @@ void prepare(){
         if(daemon(1, 0) < 0) {
             LOGE("start daemon error:%s\n", strerror(errno));
             exit(1);
-        }else{
-            daemonized = true;
         }
     }
 #else
-    (void)daemonized;
+    opt.daemon_mode = false;
 #endif
 }
 
 static void usage(const char * program){
     LOG("Usage: %s [host:port]\n" , program);
-    for(int i =0; option_detail[i].name;i++){
-        int short_name = 0;
+    for(int i =0; option_detail[i].name; i++){
+        char short_name = 0;
         for(int j=0; long_options[j].name; j++){
             if(strcmp(option_detail[i].name, long_options[j].name) == 0 && long_options[j].val){
-                LOG("-%c, ", long_options[i].val);
-                short_name = 1;
+                short_name = (char)long_options[j].val;
                 break;
             }
         }
-        if(short_name == 0){
+        if(short_name){
+            LOG("-%c, ", short_name);
+        }else{
             LOG("    ");
         }
         LOG("--%s\t%s\n", option_detail[i].name, option_detail[i].details);
@@ -182,50 +187,10 @@ static void usage(const char * program){
 }
 
 static void parseExtargs(const char* name, const char* args){
-    if(strcmp(name, "server") == 0){
-        if(loadproxy(args, &opt.Server)){
-            LOGE("wrong server format: %s\n", args);
-            exit(0);
-        }
-        LOG("set option %s: %s\n", name, dumpDest(&opt.Server));
-    }else if(strcmp(name, "port") == 0){
-        int port = atoi(args);
-        if(port <= 0 || port >= 65535){
-            LOGE("wrong port: %s\n", args);
-            exit(0);
-        }
-        opt.CPORT = port;
-        LOG("set option %s: %d\n", name, opt.CPORT);
-    }else if(strcmp(name, "help") == 0){
+    (void)args;
+    if(strcmp(name, "help") == 0){
         usage(main_argv[0]);
         exit(0);
-    }else if(strcmp(name, "debug-event") == 0){
-        LOG("set option %s\n", name);
-        debug |= DEVENT;
-    }else if(strcmp(name, "debug-dns") == 0){
-        LOG("set option %s\n", name);
-        debug |= DDNS;
-    }else if(strcmp(name, "debug-http2") == 0){
-        LOG("set option %s\n", name);
-        debug |= DHTTP2;
-    }else if(strcmp(name, "debug-job") == 0){
-        LOG("set option %s\n", name);
-        debug |= DJOB;
-    }else if(strcmp(name, "debug-vpn") == 0){
-        LOG("set option %s\n", name);
-        debug |= DVPN;
-    }else if(strcmp(name, "debug-hpack") == 0){
-        LOG("set option %s\n", name);
-        debug |= DHPACK;
-    }else if(strcmp(name, "debug-http") == 0){
-        LOG("set option %s\n", name);
-        debug |= DHTTP;
-    }else if(strcmp(name, "debug-file") == 0){
-        LOG("set option %s\n", name);
-        debug |= DFILE;
-    }else if(strcmp(name, "debug-all") == 0){
-        LOG("set option %s\n", name);
-        debug = (uint32_t)(-1);
     }else{
         assert(0);
     }
@@ -244,28 +209,48 @@ static void parseArgs(const char* name, const char* args){
             long long result;
             char** pargstr;
             case option_boolargs:
-                *(bool*)option_detail[i].args = !*(bool*)option_detail[i].args;
-                LOG("set option %s: %s\n", name, *(bool*)option_detail[i].args?"true":"false");
+                *(bool*)option_detail[i].result = (bool)option_detail[i].value;
+                LOG("set option %s: %s\n", name, option_detail[i].result?"true":"false");
                 break;
             case option_stringargs:
-                pargstr = (char**)option_detail[i].args;
+                pargstr = (char**)option_detail[i].result;
                 if(*pargstr){
                     free(*pargstr);
                 }
                 *pargstr = strdup(args);
-                LOG("set option %s: %s\n", name, *(char**)option_detail[i].args);
+                LOG("set option %s: %s\n", name, *pargstr);
                 break;
             case option_int64args:
                 result = strtoll(args, &pos, 0);
                 if(result == LLONG_MAX || result == LLONG_MIN || args == pos) {
                     LOGE("wrong int format: %s\n", args);
                 }
-                *(long long*)option_detail[i].args = result;
-                LOG("set option %s: %lld\n", name, *(long long*)option_detail[i].args);
+                *(long long*)option_detail[i].result = result;
+                LOG("set option %s: %lld\n", name, *(long long*)option_detail[i].result);
                 break;
             case option_base64args:
-                Base64Encode(args, strlen(args), (char*)option_detail[i].args);
-                LOG("set option %s: %s\n", name, (char*)option_detail[i].args);
+                Base64Encode(args, strlen(args), (char*)option_detail[i].result);
+                LOG("set option %s: %s\n", name, (char*)option_detail[i].result);
+                break;
+            case option_bitwise:
+                *(uint32_t*)option_detail[i].result |= (uint32_t)(long long)option_detail[i].value;
+                LOG("set option %s: 0x%08X\n", name, (uint32_t)(long long)option_detail[i].value);
+                break;
+            case option_enum:
+                result = 0;
+                for(pargstr = (char**)option_detail[i].value; *pargstr; pargstr++ ){
+                    if(strcmp(args, *pargstr) == 0){
+                        *(int*)option_detail[i].result = result;
+                        break;
+                    }
+                    result++;
+                }
+                if(*pargstr == NULL){
+                    LOGE("unknown option %s for %s\n", args, name);
+                    exit(1);
+                }else{
+                    LOG("set option %s: %d\n", name, *(int*)option_detail[i].result);
+                }
                 break;
             case option_extargs:
                 parseExtargs(option_detail[i].name, args);
@@ -391,12 +376,22 @@ void parseConfig(int argc, char **argv){
     }
 
     if (optind < argc) {
-        if(loadproxy(argv[optind], &opt.Server)){
-            LOGE("wrong server format: %s\n", argv[optind]);
-            exit(1);
+        if(server_string){
+            free(server_string);
         }
-        LOG("server %s\n", dumpDest(&opt.Server));
+        server_string = strdup(argv[optind]);
     }
+
+    if(opt.CPORT < 0 || opt.CPORT >= 65535){
+        LOGE("wrong port: %" PRId64 "\n", opt.CPORT);
+        exit(1);
+    }
+    if(loadproxy(server_string, &opt.Server)){
+        LOGE("wrong server format: %s\n", server_string);
+        exit(1);
+    }
+    LOG("server %s\n", dumpDest(&opt.Server));
+
     if(opt.policy_file == NULL){
         opt.policy_file = "sites.list";
     }
@@ -406,6 +401,12 @@ void parseConfig(int argc, char **argv){
     free((void*)opt.rootdir);
     opt.rootdir = (char*)malloc(PATH_MAX);
     getcwd((char*)opt.rootdir, PATH_MAX);
+
+    if(opt.ipv6_mode == Auto){
+        opt.ipv6_enabled = hasIpv6Address();
+    }else{
+        opt.ipv6_enabled = opt.ipv6_mode;
+    }
 #ifndef __ANDROID__
     if (opt.cafile && access(opt.cafile, R_OK)){
         LOGE("access cafile failed: %s\n", strerror(errno));
@@ -425,7 +426,7 @@ void parseConfig(int argc, char **argv){
 
 #ifndef __ANDROID__
 void vslog(int level, const char* fmt, va_list arg){
-    if(daemonized){
+    if(opt.daemon_mode){
         vsyslog(level, fmt, arg);
     }else{
         if(level <= LOG_ERR){

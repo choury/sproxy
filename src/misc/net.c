@@ -4,7 +4,6 @@
 #include <errno.h>
 #include <string.h>
 #include <strings.h>
-//#include <stdlib.h>
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -285,14 +284,19 @@ const char *getaddrportstring(const union sockaddr_un *addr){
 }
 
 
-#ifndef __ANDROID__
+
 #include <ifaddrs.h>
+#if defined(ANDROID) && __ANDROID_API__ < 24
+int getifaddrs(struct ifaddrs** __list_ptr);
+void freeifaddrs(struct ifaddrs* __ptr);
+#endif
+
 #define INTERFACE_MAX 50
 union sockaddr_un* getlocalip () {
     struct ifaddrs *ifap, *ifa;
     static union sockaddr_un ips[INTERFACE_MAX];
     memset(ips, 0, sizeof(ips));
-    getifaddrs (&ifap);
+    getifaddrs(&ifap);
     int i = 0;
     for (ifa = ifap; ifa && i < INTERFACE_MAX; ifa = ifa->ifa_next) {
         if(ifa->ifa_addr == NULL)
@@ -302,11 +306,14 @@ union sockaddr_un* getlocalip () {
     freeifaddrs(ifap);
     return ips;
 }
-#else
-union sockaddr_un* getlocalip (){
-    static union sockaddr_un ip;
-    memset(&ip, 0, sizeof(ip));
-    return &ip;
+
+bool hasIpv6Address(){
+    union sockaddr_un* ips;
+    for(ips = getlocalip(); ips->addr_in.sin_family ; ips++){
+        if(ips->addr.sa_family == AF_INET6 && (ips->addr_in6.sin6_addr.s6_addr[0]&0x70) == 0x20){
+            return true;
+        }
+    }
+    return false;
 }
-#endif
 
