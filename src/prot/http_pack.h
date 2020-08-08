@@ -27,6 +27,7 @@ public:
     void append(const std::string& header, const std::string& value);
     void del(const std::string& header);
     const char* get(const std::string& header) const;
+    const std::map<std::string, std::string>& getall() const;
 
     virtual bool no_body() const = 0;
     virtual char *getstring(size_t &len) const = 0;

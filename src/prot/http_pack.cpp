@@ -94,17 +94,9 @@ const char* HttpHeader::get(const std::string& header) const{
     return nullptr;
 }
 
-/*
-std::set< string > HttpHeader::getall(const char *header) const{
-    std::set<string> sets;
-    for(auto i:headers) {
-        if(strcasecmp(i.first.c_str(),header)==0)
-            sets.insert(i.second);
-    }
-    return sets;
+const std::map<std::string, std::string>& HttpHeader::getall() const {
+    return headers;
 }
-*/
-
 
 HttpReqHeader::HttpReqHeader(const char* header, size_t len) {
     assert(header);

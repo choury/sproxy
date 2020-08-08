@@ -72,7 +72,7 @@ void distribute(HttpReq* req, Requester* src){
         }
         switch(check_header(req->header, src)){
             case 1:
-                res = new HttpRes(new HttpResHeader(H401), "[[Authorization needed]]\n");
+                res = new HttpRes(new HttpResHeader(H407), "[[Authorization needed]]\n");
                 goto out;
             case 2:
                 res = new HttpRes(new HttpResHeader(H508), "[[redirect back]]\n");
