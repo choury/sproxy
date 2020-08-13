@@ -148,6 +148,7 @@ void getDnsConfig(struct DnsConfig* config){
         char command[11], ipaddr[INET6_ADDRSTRLEN];
         sscanf(line, "%10s %45s", command, ipaddr);
         if (strcmp(command, "nameserver") == 0) {
+            memset(&config->server[get], 0, sizeof(union sockaddr_un));
             if (inet_pton(AF_INET, ipaddr, &config->server[get].addr_in.sin_addr) == 1) {
                 config->server[get].addr_in.sin_family = AF_INET;
                 config->server[get].addr_in.sin_port = htons(DNSPORT);
@@ -201,6 +202,7 @@ static void query(Dns_Status* dnsst){
     }
 
     sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
     if (inet_pton(AF_INET, dnsst->host, &addr.addr_in.sin_addr) == 1) {
         addr.addr_in.sin_family = AF_INET;
         dnsst->rcd.addrs.push_back(addr);
@@ -691,6 +693,7 @@ Dns_Rr::Dns_Rr(const char* buff, size_t len) {
         switch (ntohs(dnsrr->type)) {
             sockaddr_un ip;
         case 1:
+            memset(&ip, 0, sizeof(ip));
             ip.addr_in.sin_family = AF_INET;
             memcpy(&ip.addr_in.sin_addr, p, sizeof(in_addr));
             addrs.push_back(ip);
@@ -703,6 +706,7 @@ Dns_Rr::Dns_Rr(const char* buff, size_t len) {
             getdomain(dnshdr, p, len, domain);
             break;
         case 28:
+            memset(&ip, 0, sizeof(ip));
             ip.addr_in6.sin6_family = AF_INET6;
             memcpy(&ip.addr_in6.sin6_addr, p, sizeof(in6_addr));
             addrs.push_back(ip);
@@ -719,6 +723,7 @@ Dns_Rr::Dns_Rr(const char *domain, const in_addr* addr){
     strcpy(this->domain, domain);
     if(addr) {
         sockaddr_un ip;
+        memset(&ip, 0, sizeof(ip));
         ip.addr_in.sin_family = AF_INET;
         ip.addr_in.sin_addr = *addr;
         addrs.push_back(ip);
@@ -729,6 +734,7 @@ Dns_Rr::Dns_Rr(const char *domain, const in6_addr* addr){
     strcpy(this->domain, domain);
     if(addr) {
         sockaddr_un ip;
+        memset(&ip, 0, sizeof(ip));
         ip.addr_in.sin_family = AF_INET6;
         ip.addr_in6.sin6_addr = *addr;
         addrs.push_back(ip);

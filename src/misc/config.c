@@ -404,6 +404,7 @@ void parseConfig(int argc, char **argv){
 
     if(opt.ipv6_mode == Auto){
         opt.ipv6_enabled = hasIpv6Address();
+        LOG("auto detected ipv6: %s\n", opt.ipv6_enabled?"enable":"disable");
     }else{
         opt.ipv6_enabled = opt.ipv6_mode;
     }

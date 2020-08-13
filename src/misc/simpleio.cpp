@@ -88,6 +88,7 @@ NetRWer::NetRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(fd
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&NetRWer::defaultHE;
     sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
     socklen_t len = sizeof(addr);
     if(getpeername(fd, (sockaddr *)&addr, &len)){
         LOGE("getpeername error: %s\n", strerror(errno));

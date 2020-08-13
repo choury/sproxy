@@ -13,6 +13,8 @@ Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
     rwer = new PacketRWer(hostname, id, Protocol::ICMP, [this](int ret, int code){
         LOGE("Ping error: %d/%d\n", ret, code);
         iserror = true;
+        if(rwer)
+            rwer->setEvents(RW_EVENT::NONE);
     },[this](const sockaddr_un& addr){
         seq = 1;
         this->addr = addr;

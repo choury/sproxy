@@ -181,17 +181,17 @@ int Connect(const union sockaddr_un* addr, int type) {
         return -1;
     }
     do{
+        if(protectFd(fd) == 0){
+            LOGE("protecd fd error:%s\n", strerror(errno));
+            break;
+        }
+
         int flags = fcntl(fd, F_GETFL, 0);
         if (flags < 0) {
             LOGE("fcntl error:%s\n", strerror(errno));
             break;
         }
         fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
-        if(protectFd(fd) == 0){
-            LOGE("protecd fd error:%s\n", strerror(errno));
-            break;
-        }
 
         if(type == SOCK_STREAM){
             SetTcpOptions(fd, addr);
