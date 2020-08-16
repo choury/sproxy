@@ -376,9 +376,7 @@ void parseConfig(int argc, char **argv){
     }
 
     if (optind < argc) {
-        if(server_string){
-            free(server_string);
-        }
+        free(server_string);
         server_string = strdup(argv[optind]);
     }
 
@@ -386,7 +384,7 @@ void parseConfig(int argc, char **argv){
         LOGE("wrong port: %" PRId64 "\n", opt.CPORT);
         exit(1);
     }
-    if(loadproxy(server_string, &opt.Server)){
+    if(server_string && loadproxy(server_string, &opt.Server)){
         LOGE("wrong server format: %s\n", server_string);
         exit(1);
     }
