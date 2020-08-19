@@ -11,7 +11,9 @@ void Guest2::connection_lost(){
 }
 
 bool Guest2::wantmore(const ReqStatus& status) {
-    assert(status.res);
+    if(!status.res){
+        return false;
+    }
     if((status.flags&HTTP_RES_COMPLETED) || (status.flags&HTTP_RES_EOF)){
         return false;
     }

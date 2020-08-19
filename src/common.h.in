@@ -86,6 +86,12 @@ do{\
     slog(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
 }while(0)
 
+#define  LOGF(...) \
+do{\
+    LOGE(__VA_ARGS__); \
+    abort(); \
+}while(0)
+
 uint32_t getmtime();
 
 #define  LOGD(mod, ...)  \
