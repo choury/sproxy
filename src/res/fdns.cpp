@@ -29,7 +29,7 @@ static in_addr getInet(std::string hostname) {
 }
 
 static in6_addr getInet6(std::string hostname) {
-    return mapIpv4(getInet(std::move(hostname)));
+    return mapIpv4(getInet(std::move(hostname)), NAT64PREFIX);
 }
 
 static uint32_t getFip(const sockaddr_un& addr){
@@ -39,7 +39,7 @@ static uint32_t getFip(const sockaddr_un& addr){
             fip = ntohl(addr.addr_in.sin_addr.s_addr);
             break;
         case AF_INET6:
-            fip = ntohl(getMapped(addr.addr_in6.sin6_addr).s_addr);
+            fip = ntohl(getMapped(addr.addr_in6.sin6_addr, NAT64PREFIX).s_addr);
             break;
         default:
             abort();

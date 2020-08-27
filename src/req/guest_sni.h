@@ -7,7 +7,7 @@
 
 class Guest_sni: public Guest{
 public:
-    explicit Guest_sni(int fd, const sockaddr_un *myaddr);
+    explicit Guest_sni(int fd);
     virtual void response(void*, HttpRes* res)override;
 };
 

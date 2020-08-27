@@ -201,27 +201,8 @@ static void query(Dns_Status* dnsst){
         dnsst->flags = 0;
     }
 
-    sockaddr_un addr;
-    memset(&addr, 0, sizeof(addr));
-    if (inet_pton(AF_INET, dnsst->host, &addr.addr_in.sin_addr) == 1) {
-        addr.addr_in.sin_family = AF_INET;
-        dnsst->rcd.addrs.push_back(addr);
-        for(auto i: dnsst->reqs){
-            i.func(i.param, dnsst->rcd.addrs);
-        }
-        delete dnsst;
-        return;
-    }
-    if(dnsst->host[0] == '['){ //may be ipv6
-        char* end = strchr(dnsst->host, ']');
-        if(end){
-            *end = 0;
-            memmove(dnsst->host, dnsst->host+1, end - dnsst->host);
-        }
-    }
-
-    if (inet_pton(AF_INET6, dnsst->host, &addr.addr_in6.sin6_addr) == 1) {
-        addr.addr_in6.sin6_family = AF_INET6;
+    union sockaddr_un addr;
+    if(getsocketaddr(dnsst->host, 0, &addr) == 0){
         dnsst->rcd.addrs.push_back(addr);
         for(auto i: dnsst->reqs){
             i.func(i.param, dnsst->rcd.addrs);

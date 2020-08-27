@@ -55,7 +55,7 @@ Proxy2::Proxy2(RWer* rwer) {
         receive_time = getmtime();
 #endif
         if(proxy2 != this && statusmap.empty()){
-            LOG("this is not the proxy2 and no clients, close it.\n");
+            LOG("this is not the main proxy2 and no clients, close it.\n");
             deleteLater(NOERROR);
         }
     });
@@ -383,14 +383,16 @@ void Proxy2::writedcb(const void* index){
 */
 
 void Proxy2::dump_stat(Dumper dp, void* param) {
-    dp(param, "Proxy2 %p, id:%d: %s (%d/%d)\n",
-            this, sendid, proxy2 == this?"[M]":"",
+    dp(param, "Proxy2 %p%s id:%d <%s> (%s) (%d/%d)\n",
+            this, proxy2 == this?" [M]":"", sendid,
+            rwer->getDest(),
+            rwer->getPeer(),
             this->remotewinsize, this->localwinsize);
     dp(param, "  rwer: rlength:%zu, rleft:%zu, wlength:%zu, stats:%d, event:%s\n",
             rwer->rlength(), rwer->rleft(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     for(auto& i: statusmap){
-        dp(param, "0x%x: [%" PRIu64 "] %s [%d] (%d/%d)\n",
+        dp(param, "0x%x [%" PRIu64 "]: %s [%d] (%d/%d)\n",
                 i.first,
                 i.second.req->header->request_id,
                 i.second.req->header->geturl().c_str(),

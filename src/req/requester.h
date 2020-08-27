@@ -7,13 +7,10 @@
 class Responser;
 
 class Requester: public Server{
-protected:
     char sourceip[INET6_ADDRSTRLEN];
-    uint16_t  sourceport;
 public:
-    explicit Requester(const sockaddr_un *myaddr = nullptr);
-    explicit Requester(const char *ip, uint16_t port);
-    
+    explicit Requester(RWer* rwer);
+
     virtual const char *getsrc();
     virtual const char *getip();
     virtual void response(void* index, HttpRes* res) = 0;

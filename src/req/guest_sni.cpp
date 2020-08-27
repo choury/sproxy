@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <assert.h>
 
-Guest_sni::Guest_sni(int fd, const sockaddr_un *myaddr):Guest(fd, myaddr){
+Guest_sni::Guest_sni(int fd):Guest(fd){
     Http_Proc = &Guest_sni::AlwaysProc;
     rwer->SetReadCB([this](size_t len){
         char *hostname = nullptr;

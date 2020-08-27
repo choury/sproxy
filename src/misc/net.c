@@ -1,5 +1,6 @@
 #include "net.h"
 #include "common.h"
+#include "misc/util.h"
 
 #include <errno.h>
 #include <string.h>
@@ -258,6 +259,11 @@ ERR:
 const char *getaddrstring(const union sockaddr_un *addr){
     static char buff[100];
     if(addr->addr.sa_family == AF_INET6){
+        struct in_addr ip4 = getMapped(addr->addr_in6.sin6_addr, IPV4MAPIPV6);
+        if(ip4.s_addr != INADDR_NONE){
+            inet_ntop(AF_INET, &ip4, buff, sizeof(buff));
+            return buff;
+        }
         char ip[INET6_ADDRSTRLEN];
         inet_ntop(AF_INET6, &addr->addr_in6.sin6_addr, ip, sizeof(ip));
         sprintf(buff, "[%s]", ip);
@@ -271,16 +277,31 @@ const char *getaddrstring(const union sockaddr_un *addr){
 
 const char *getaddrportstring(const union sockaddr_un *addr){
     static char buff[100];
-    char ip[INET6_ADDRSTRLEN];
-    if(addr->addr.sa_family == AF_INET6){
-        inet_ntop(addr->addr.sa_family, &addr->addr_in6.sin6_addr, ip, sizeof(ip));
-        sprintf(buff, "[%s]:%d", ip, ntohs(addr->addr_in6.sin6_port));
-    }
-    if(addr->addr.sa_family == AF_INET){
-        inet_ntop(AF_INET, &addr->addr_in.sin_addr, ip, sizeof(ip));
-        sprintf(buff, "%s:%d", ip, ntohs(addr->addr_in.sin_port));
-    }
+    sprintf(buff, "%s:%d", getaddrstring(addr), ntohs(addr->addr_in.sin_port));
     return buff;
+}
+
+int getsocketaddr(const char* ip, uint16_t port, union sockaddr_un *addr){
+    memset(addr, 0, sizeof(union sockaddr_un));
+    addr->addr_in.sin_port = htons(port);
+    char host[INET6_ADDRSTRLEN] = {0};
+    if(ip[0] == '['){ //may be ipv6
+        strcpy(host, ip + 1);
+        *strchrnul(host, ']') = 0;
+    }else{
+        strcpy(host, ip);
+    }
+
+    if (inet_pton(AF_INET, host, &addr->addr_in.sin_addr) == 1) {
+        addr->addr_in.sin_family = AF_INET;
+        return 0;
+    }
+
+    if (inet_pton(AF_INET6, host, &addr->addr_in6.sin6_addr) == 1) {
+        addr->addr_in6.sin6_family = AF_INET6;
+        return 0;
+    }
+    return 1;
 }
 
 

@@ -9,15 +9,14 @@
 #include <assert.h>
 
 Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
-    strcpy(hostname, host);
-    rwer = new PacketRWer(hostname, id, Protocol::ICMP, [this](int ret, int code){
+    rwer = new PacketRWer(host, this->id, Protocol::ICMP, [this](int ret, int code){
         LOGE("Ping error: %d/%d\n", ret, code);
         iserror = true;
         if(rwer)
             rwer->setEvents(RW_EVENT::NONE);
     },[this](const sockaddr_un& addr){
         seq = 1;
-        this->addr = addr;
+        family = addr.addr.sa_family;
     });
     rwer->SetReadCB([this](int len){
         if(res == nullptr){
@@ -25,7 +24,7 @@ Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
             req->response(this->res);
         }
         const char* data = rwer->rdata();
-        switch(addr.addr.sa_family){
+        switch(family){
         case AF_INET:
             res->send(data + sizeof(icmphdr), len - sizeof(icmphdr));
             break;
@@ -60,7 +59,7 @@ void Ping::Send(void* buff, size_t size){
         return;
     }
     char* packet = (char*)buff;
-    switch(addr.addr.sa_family){
+    switch(family){
     case AF_INET:{
         Icmp icmp;
         icmp.settype(ICMP_ECHO)->setid(id)->setseq(seq++);
@@ -99,6 +98,6 @@ int32_t Ping::bufleft(__attribute__ ((unused)) void* index) {
  */
 
 void Ping::dump_stat(Dumper dp, void* param) {
-    dp(param, "ping %p, %s%s:(%d - %d) %lu\n",
-       this, iserror?"[E] ":"", hostname, id, seq, req->header->request_id);
+    dp(param, "ping %p%s, id:%lu, <%s> (%s) (%d - %d)\n",
+       this, iserror?" [E]":"", req->header->request_id, rwer->getDest(), rwer->getPeer(), id, seq);
 }

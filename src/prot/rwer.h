@@ -127,6 +127,8 @@ public:
     virtual void EatReadData();
     virtual void Shutdown();
     RWerStats getStats(){return stats;}
+    virtual const char* getPeer() {return "raw-rwer";}
+    virtual const char* getDest() {return getPeer();}
 
     //for read buffer
     virtual size_t rlength() = 0;
@@ -153,6 +155,7 @@ public:
     virtual size_t wlength() override;
     virtual const char * rdata() override;
     virtual void consume(const char* data, size_t l) override;
+    virtual const char* getPeer() override {return "null-rwer";}
 };
 
 class FullRWer: public RWer{
@@ -171,6 +174,7 @@ public:
     virtual size_t rleft() override;
     virtual const char *rdata() override;
     virtual void consume(const char* data, size_t l) override;
+    virtual const char* getPeer() override {return "full-rwer";}
 };
 
 #endif

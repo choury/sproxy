@@ -50,6 +50,8 @@ public:
            std::function<void(int ret, int code)> errorCB,
            std::function<void(const sockaddr_un&)> connectCB = nullptr);
     virtual ~NetRWer() override;
+    virtual const char* getPeer() override;
+    virtual const char* getDest() override;
 };
 
 class StreamRWer: public NetRWer{

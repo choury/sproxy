@@ -8,12 +8,19 @@
 #include <sys/types.h>
 #include <sys/time.h>
 
+#define NAT64PREFIX "\0\x64\xff\x9b\0\0\0\0\0\0\0\0"
+#define IPV4MAPIPV6 "\0\0\0\0\0\0\0\0\0\0\xff\xff"
+
+
 #ifdef  __cplusplus
 extern "C" {
 #endif
 
 #ifndef __APPLE__
 const char* strnstr(const char* s1, const char* s2, size_t len);
+#endif
+#if ! defined(_GNU_SOURCE) || defined(__APPLE__)
+char* strchrnul(const char *s, int c);
 #endif
 int startwith(const char *s1, const char *s2);
 int endwith(const char *s1, const char *s2);
@@ -42,8 +49,8 @@ PRE_POINTER void* p_move(PRE_POINTER void* ptr, signed char len);
 PRE_POINTER char* p_avsprintf(size_t* size, const char* fmt, va_list ap);
 const char* findprogram(ino_t inode);
 const char* getDeviceInfo();
-struct in6_addr mapIpv4(struct in_addr addr);
-struct in_addr getMapped(struct in6_addr addr);
+struct in6_addr mapIpv4(struct in_addr addr, const char* prefix);
+struct in_addr getMapped(struct in6_addr addr, const char* prefix);
 
 const char* protstr(Protocol p);
 

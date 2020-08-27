@@ -39,7 +39,7 @@ Host::Host(const Destination* dest){
 }
 
 Host::~Host(){
-    LOGD(DHTTP, "host %s destoryed: rx:%zu, tx:%zu\n", dumpDest(&Server), rx_bytes, tx_bytes);
+    LOGD(DHTTP, "host %s destoryed: rx:%zu, tx:%zu\n", rwer->getDest(), rx_bytes, tx_bytes);
 }
 
 void Host::reply(){
@@ -66,7 +66,7 @@ void Host::reply(){
 
 void Host::connected() {
     SslRWer* swrer = dynamic_cast<SslRWer*>(rwer);
-    LOGD(DHTTP, "host %s connected\n", dumpDest(&Server));
+    LOGD(DHTTP, "host %s connected\n", rwer->getDest());
     if(swrer){
         const unsigned char *data;
         unsigned int len;
@@ -90,11 +90,11 @@ void Host::connected() {
         while((ret = (this->*Http_Proc)(data+consumed, len-consumed))){
             consumed += ret;
         }
-        LOGD(DHTTP, "host %s read: len:%zu, consumed:%zu\n", dumpDest(&Server), len, consumed);
+        LOGD(DHTTP, "host %s read: len:%zu, consumed:%zu\n", rwer->getDest(), len, consumed);
         this->rwer->consume(data, consumed);
     });
     rwer->SetWriteCB([this](size_t len){
-        LOGD(DHTTP, "host %s written: wlength:%zu\n", dumpDest(&Server), len);
+        LOGD(DHTTP, "host %s written: wlength:%zu\n", rwer->getDest(), len);
         if(status.flags & HTTP_REQ_EOF) {
             if (rwer->wlength() == 0){
                 rwer->Shutdown();
@@ -217,7 +217,7 @@ void Host::Error(int ret, int code) {
         return;
     }
     LOGE("Host error <%s> %" PRIu64 " %d/%d\n",
-         dumpDest(&Server), status.req->header->request_id, ret, code);
+         rwer->getDest(), status.req->header->request_id, ret, code);
     deleteLater(ret);
 }
 
@@ -262,7 +262,7 @@ void Host::gethost(HttpReq *req, const Destination* dest, Requester* src) {
 }
 
 void Host::dump_stat(Dumper dp, void* param) {
-    dp(param, "Host %p, <%s>\n", this, dumpDest(&Server));
+    dp(param, "Host %p, <%s> (%s)\n", this, rwer->getDest(), rwer->getPeer());
     dp(param, "  rwer: rlength:%zu, rleft:%zu, wlength:%zu, stats:%d, event:%s\n",
             rwer->rlength(), rwer->rleft(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);

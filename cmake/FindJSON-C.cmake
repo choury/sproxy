@@ -26,5 +26,5 @@ set(JSON-C_LIBRARIES ${JSON-C_LIBRARY})
 # handle the QUIETLY and REQUIRED arguments and set JSONC_FOUND to TRUE if
 # all listed variables are TRUE
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(json-c DEFAULT_MSG JSON-C_INCLUDE_DIRS JSON-C_LIBRARIES)
+find_package_handle_standard_args(JSON-C DEFAULT_MSG JSON-C_INCLUDE_DIRS JSON-C_LIBRARIES)
 mark_as_advanced(JSON-C_INCLUDE_DIRS JSON-C_LIBRARIES)

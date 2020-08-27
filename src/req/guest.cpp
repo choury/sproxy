@@ -43,26 +43,28 @@ void Guest::WriteHE(size_t len){
     }
 }
 
-Guest::Guest(int fd,  const sockaddr_un *myaddr): Requester(myaddr) {
-    rwer = new StreamRWer(fd, std::bind(&Guest::Error, this, _1, _2));
+Guest::Guest(int fd):
+    Requester(new StreamRWer(fd, std::bind(&Guest::Error, this, _1, _2)))
+{
     rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
     rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));
 }
 
-Guest::Guest(int fd,  const sockaddr_un *myaddr, SSL_CTX* ctx): Requester(myaddr) {
-    rwer = new SslRWer(fd, ctx, std::bind(&Guest::Error, this, _1, _2),
+Guest::Guest(int fd, SSL_CTX* ctx):
+    Requester(new SslRWer(fd, ctx, std::bind(&Guest::Error, this, _1, _2),
     [this](const sockaddr_un&){
         SslRWer* srwer = dynamic_cast<SslRWer*>(rwer);
         const unsigned char *data;
         unsigned int len;
         srwer->get_alpn(&data, &len);
         if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
-            new Guest2(sourceip, sourceport, srwer);
+            new Guest2(srwer);
             rwer = nullptr;
             assert(statuslist.empty());
             return Server::deleteLater(NOERROR);
         }
-    });
+    }))
+{
     rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
     rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));
 }
@@ -231,12 +233,6 @@ Guest::~Guest() {
         delete status.res;
     }
     statuslist.clear();
-}
-
-const char* Guest::getsrc(){
-    static char src[DOMAINLIMIT];
-    sprintf(src, "[%s]:%d", sourceip, sourceport);
-    return src;
 }
 
 void Guest::dump_stat(Dumper dp, void* param){

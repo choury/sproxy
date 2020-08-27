@@ -39,6 +39,13 @@ const char* strnstr(const char* s1, const char* s2, size_t len)
 }
 #endif
 
+char* strchrnul (const char *s, int c) {
+    char *p = (char *) s;
+    while (*p && (*p != c))
+        ++p;
+    return p;
+}
+
 int startwith(const char *s1, const char *s2) {
     size_t l1 = strlen(s1);
     size_t l2 = strlen(s2);
@@ -315,16 +322,16 @@ const char* getDeviceInfo(){
 #define	s6_addr32   __u6_addr.__u6_addr32
 #endif
 
-struct in6_addr mapIpv4(struct in_addr addr) {
+struct in6_addr mapIpv4(struct in_addr addr, const char* prefix) {
     struct in6_addr addr6;
-    memcpy(addr6.s6_addr, "\0\x64\xff\x9b\0\0\0\0\0\0\0\0", 12);
+    memcpy(addr6.s6_addr, prefix, 12);
     addr6.s6_addr32[3] = addr.s_addr;
     return addr6;
 }
 
-struct in_addr getMapped(struct in6_addr addr) {
+struct in_addr getMapped(struct in6_addr addr, const char* prefix) {
     struct in_addr addr4;
-    if(memcmp(addr.s6_addr, "\0\x64\xff\x9b\0\0\0\0\0\0\0\0", 12) == 0){
+    if(memcmp(addr.s6_addr, prefix, 12) == 0){
         addr4.s_addr = addr.s6_addr32[3];
     }else{
         addr4.s_addr = INADDR_NONE;

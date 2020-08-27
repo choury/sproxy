@@ -1,5 +1,6 @@
 #include "simpleio.h"
 #include "prot/dns.h"
+#include "misc/util.h"
 
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -193,6 +194,22 @@ void NetRWer::waitconnectHE(RW_EVENT events) {
         handleEvent = (void (Ep::*)(RW_EVENT))&NetRWer::defaultHE;
         deljob(&con_failed_job);
     }
+}
+
+const char *NetRWer::getPeer() {
+    if(addrs.empty()){
+        return "net-rwer-null";
+    }
+    return getaddrportstring(&addrs.front());
+}
+
+const char *NetRWer::getDest(){
+    static char buff[300];
+    if(!hostname[0]){
+        return "net-rwer-null";
+    }
+    sprintf(buff, "%s://%s:%d", protstr(protocol), hostname, port);
+    return buff;
 }
 
 ssize_t NetRWer::Write(const void* buff, size_t len){

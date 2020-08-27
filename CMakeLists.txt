@@ -21,7 +21,6 @@ CHECK_CXX_COMPILER_FLAG("-std=c++14" HAVE_CXX14)
 CHECK_CXX_COMPILER_FLAG("-std=c++17" HAVE_CXX17)
 CHECK_CXX_COMPILER_FLAG("-std=c++2a" HAVE_CXX2a)
 
-
 if(NOT HAVE_CXX11 OR NOT HAVE_C99)
     message(FATAL_ERROR "this project need c++11 and c99")
 endif()
@@ -34,12 +33,23 @@ unset(CMAKE_REQUIRED_FLAGS)
 
 CHECK_CXX_SOURCE_COMPILES("
 #include <list>
-using namespace std; 
+using namespace std;
 int main(){
     list<int> a;
     a.insert(list<int>::const_iterator(a.begin()), 0);
     return 0;
 }" NO_CONST_ITERATOR_BUG)
+
+CHECK_CXX_SOURCE_COMPILES("
+#define _BSD_SOURCE
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
+int main(){
+    struct tcphdr t1 = {.th_sport = 0};
+    struct udphdr t2 = {.uh_sport = 0};
+    return 0;
+}" NO_GNU_SOURCE_BUG)
+
 
 if(ANDROID)
     set(OPENSSL_ROOT_DIR ${OPENSSL_ROOT}/${ANDROID_ABI})
@@ -79,6 +89,11 @@ endif()
 if(NOT NO_CONST_ITERATOR_BUG)
     message(WARNING "have const_iterator insert bug, see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=55817")
     set(CMAKE_CXX_FLAGS "-DHAVE_CONST_ITERATOR_BUG ${CMAKE_CXX_FLAGS}")
+endif()
+
+if(NOT NO_GNU_SOURCE_BUG)
+    message(WARNING "have libstdc++ gnu_source bug, see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=11196")
+    set(CMAKE_CXX_FLAGS "-DHAVE_GUN_SOURCE_BUG ${CMAKE_CXX_FLAGS}")
 endif()
 
 find_package(ZLIB)

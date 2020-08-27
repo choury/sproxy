@@ -29,14 +29,13 @@ protected:
     void Send(void* buff, size_t len);
     void deqReq();
 public:
-    explicit Guest(int fd, const sockaddr_un *myaddr);
-    explicit Guest(int fd, const sockaddr_un *myaddr, SSL_CTX* ctx);
+    explicit Guest(int fd);
+    explicit Guest(int fd, SSL_CTX* ctx);
     ~Guest();
 
 
     virtual void response(void*, HttpRes* res)override;
 
-    virtual const char* getsrc()override;
     virtual void dump_stat(Dumper dp, void* param) override;
 };
 

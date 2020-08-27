@@ -71,6 +71,7 @@ int Bind(int type, short port, const union sockaddr_un* addr);
 int IcmpSocket(const union sockaddr_un* addr);
 const char *getaddrstring(const union sockaddr_un *addr);
 const char *getaddrportstring(const union sockaddr_un *addr);
+int getsocketaddr(const char* ip, uint16_t port, union sockaddr_un *addr);
 union sockaddr_un* getlocalip ();
 bool hasIpv6Address();
 

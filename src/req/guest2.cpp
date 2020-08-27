@@ -21,8 +21,7 @@ bool Guest2::wantmore(const ReqStatus& status) {
 }
 
 
-void Guest2::init(RWer* rwer) {
-    this->rwer = rwer;
+Guest2::Guest2(RWer* rwer): Requester(rwer) {
     rwer->SetErrorCB(std::bind(&Guest2::Error, this, _1, _2));
     rwer->SetReadCB([this](size_t len){
         const char* data = this->rwer->rdata();
@@ -55,15 +54,6 @@ void Guest2::init(RWer* rwer) {
             }
         }
     });
-}
-
-
-Guest2::Guest2(const char* ip, uint16_t port, RWer* rwer): Requester(ip, port) {
-    init(rwer);
-}
-
-Guest2::Guest2::Guest2(const sockaddr_un* addr, RWer* rwer):Requester(addr) {
-    init(rwer);
 }
 
 
@@ -335,14 +325,14 @@ void Guest2::deleteLater(uint32_t errcode){
 
 
 void Guest2::dump_stat(Dumper dp, void* param) {
-    dp(param, "Guest2 %p, id:%d %s: (%d/%d)\n",
+    dp(param, "Guest2 %p, id:%d %s (%d/%d)\n",
             this, sendid, getsrc(),
             this->remotewinsize, this->localwinsize);
     dp(param, "  rwer: rlength:%zu, rleft:%zu, wlength:%zu, stats:%d, event:%s\n",
             rwer->rlength(), rwer->rleft(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     for(auto& i: statusmap){
-        dp(param, "0x%x: %" PRIu64 "%s %s, (%d/%d)\n",
+        dp(param, "0x%x [%" PRIu64 "]: %s %s (%d/%d)\n",
                 i.first, i.second.req->header->request_id,
                 i.second.req->header->method,
                 i.second.req->header->geturl().c_str(),

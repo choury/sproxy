@@ -7,11 +7,10 @@
 class Ping: public Responser{
     HttpReq*    req = nullptr;
     HttpRes*    res = nullptr;
-    char        hostname[DOMAINLIMIT];
     uint16_t    id = 0;
     uint16_t    seq = 0;
+    sa_family_t family = 0;
     bool        iserror = false;
-    sockaddr_un addr;
     void Send(void* buff, size_t size);
 public:
     Ping(const char *host, uint16_t id);

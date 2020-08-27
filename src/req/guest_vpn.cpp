@@ -131,9 +131,8 @@ void VPN_nanny::dump_stat(Dumper dp, void* param) {
     dp(param, "vpn_nanny %p (%zd):\n", this, rwer->wlength());
 }
 
-Guest_vpn::Guest_vpn(const VpnKey& key, VPN_nanny* nanny):key(key), nanny(nanny) {
+Guest_vpn::Guest_vpn(const VpnKey& key, VPN_nanny* nanny):Requester(new NullRWer), key(key), nanny(nanny) {
     memset(&status, 0, sizeof(status));
-    rwer = new NullRWer();
 }
 
 
@@ -917,5 +916,7 @@ static const char* dump_vpnStatus(const VpnKey& key, void* protocol_info){
 }
 
 void Guest_vpn::dump_stat(Dumper dp, void* param) {
-    dp(param, "Guest_vpn %p: %s %s\n", this, key.getString("-"), dump_vpnStatus(key, status.protocol_info));
+    dp(param, "Guest_vpn %p, [%" PRIu64 "] %s\n",
+        this,  status.req->header->request_id, key.getString("-"));
+    dp(param, "  flags: %d status: %s\n", status.flags, dump_vpnStatus(key, status.protocol_info));
 }
