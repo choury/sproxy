@@ -39,6 +39,7 @@ struct options opt = {
     .ignore_cert_error = false,
     .autoindex         = false,
     .ipv6_enabled      = true,
+    .alter_method      = false,
 
     .CPORT          = 0,
     .Server         = {
@@ -49,16 +50,57 @@ struct options opt = {
     .auth_string    = {0},
     .rewrite_auth   = {0},
     .ipv6_mode      = Auto,
+    .request_headers = {
+        .arg        = NULL,
+        .next       = NULL,
+    },
 };
 
 enum option_type{
-    option_boolargs,
-    option_int64args,
-    option_base64args,
-    option_stringargs,
+    option_bool,
+    option_int64,
+    option_base64,
+    option_string,
     option_enum,
     option_bitwise,
     option_extargs,
+    option_list,
+};
+
+static const char* getopt_option = ":D1hikr:s:p:I:c:P:";
+static struct option long_options[] = {
+    {"autoindex",     no_argument,       NULL, 'i'},
+    {"cafile",        required_argument, NULL,  0 },
+    {"cert",          required_argument, NULL,  0 },
+    {"config",        required_argument, NULL, 'c'},
+    {"daemon",        no_argument,       NULL, 'D'},
+    {"disable-http2", no_argument,       NULL, '1'},
+    {"help",          no_argument,       NULL, 'h'},
+    {"index",         required_argument, NULL,  0 },
+    {"insecure",      no_argument,       NULL, 'k'},
+    {"interface",     required_argument, NULL, 'I'},
+    {"ipv6",          required_argument, NULL,  0 },
+    {"key",           required_argument, NULL,  0 },
+    {"port",          required_argument, NULL, 'p'},
+    {"policy-file",   required_argument, NULL, 'P'},
+    {"rewrite-auth",  required_argument, NULL, 'r'},
+    {"root-dir",      required_argument, NULL,  0 },
+    {"secret",        required_argument, NULL, 's'},
+    {"sni",           no_argument,       NULL,  0 },
+    {"alter-method",  no_argument,       NULL,  0 },
+    {"request-header",required_argument, NULL, 0 },
+#ifndef NDEBUG
+    {"debug-event",   no_argument,   NULL,  0 },
+    {"debug-dns",     no_argument,   NULL,  0 },
+    {"debug-http2",   no_argument,   NULL,  0 },
+    {"debug-job",     no_argument,   NULL,  0 },
+    {"debug-vpn",     no_argument,   NULL,  0 },
+    {"debug-hpack",   no_argument,   NULL,  0 },
+    {"debug-http",    no_argument,   NULL,  0 },
+    {"debug-file",    no_argument,   NULL,  0 },
+    {"debug-all",     no_argument,   NULL,  0 },
+#endif
+    {NULL,       0,                NULL,  0 }
 };
 
 
@@ -70,61 +112,28 @@ struct option_detail {
     void*            value;
 };
 
-static struct option long_options[] = {
-    {"autoindex",    no_argument,       NULL, 'i'},
-    {"cafile",       required_argument, NULL,  0 },
-    {"cert",         required_argument, NULL,  0 },
-    {"config",       required_argument, NULL, 'c'},
-    {"daemon",       no_argument,       NULL, 'D'},
-    {"disable-http2",no_argument,       NULL, '1'},
-    {"help",         no_argument,       NULL, 'h'},
-    {"index",        required_argument, NULL,  0 },
-    {"insecure",     no_argument,       NULL, 'k'},
-    {"interface",    required_argument, NULL, 'I'},
-    {"ipv6",         required_argument, NULL,  0 },
-    {"key",          required_argument, NULL,  0 },
-    {"port",         required_argument, NULL, 'p'},
-    {"policy-file",  required_argument, NULL, 'P'},
-    {"rewrite-auth", required_argument, NULL, 'r'},
-    {"root-dir",     required_argument, NULL,  0 },
-    {"secret",       required_argument, NULL, 's'},
-    {"sni",          no_argument,       NULL,  0 },
-#ifndef NDEBUG
-    {"debug-event",  no_argument,   NULL,  0 },
-    {"debug-dns",    no_argument,   NULL,  0 },
-    {"debug-http2",  no_argument,   NULL,  0 },
-    {"debug-job",    no_argument,   NULL,  0 },
-    {"debug-vpn",    no_argument,   NULL,  0 },
-    {"debug-hpack",  no_argument,   NULL,  0 },
-    {"debug-http",   no_argument,   NULL,  0 },
-    {"debug-file",   no_argument,   NULL,  0 },
-    {"debug-all",    no_argument,   NULL,  0 },
-#endif
-    {NULL,       0,                NULL,  0 }
-};
-
-static const char* getopt_option = ":D1hikr:s:p:I:c:P:";
-
 static struct option_detail option_detail[] = {
-    {"autoindex", "Enables the directory listing output (local server)", option_boolargs, &opt.autoindex, (void*)true},
-    {"cafile", "CA certificate for server (ssl)", option_stringargs, &opt.cafile, NULL},
-    {"cert", "Certificate file for server (ssl)", option_stringargs, &opt.cert, NULL},
-    {"config", "Configure file (default /etc/sproxy/sproxy.conf, /usr/local/etc/sproxy/sproxy.conf)", option_stringargs, &opt.config_file, NULL},
-    {"daemon", "Run as daemon", option_boolargs, &opt.daemon_mode, (void*)true},
-    {"disable-http2", "Use http/1.1 only", option_boolargs, &opt.disable_http2, (void*)true},
+    {"autoindex", "Enables the directory listing output (local server)", option_bool, &opt.autoindex, (void*)true},
+    {"cafile", "CA certificate for server (ssl)", option_string, &opt.cafile, NULL},
+    {"cert", "Certificate file for server (ssl)", option_string, &opt.cert, NULL},
+    {"config", "Configure file (default /etc/sproxy/sproxy.conf, /usr/local/etc/sproxy/sproxy.conf)", option_string, &opt.config_file, NULL},
+    {"daemon", "Run as daemon", option_bool, &opt.daemon_mode, (void*)true},
+    {"disable-http2", "Use http/1.1 only", option_bool, &opt.disable_http2, (void*)true},
     {"help", "Print this usage", option_extargs, NULL, NULL},
-    {"index", "Index file for path (local server)", option_stringargs, &opt.index_file, NULL},
-    {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_boolargs, &opt.ignore_cert_error, (void*)true},
-    {"interface", "Out interface (use for vpn)", option_stringargs, &opt.interface, NULL},
+    {"index", "Index file for path (local server)", option_string, &opt.index_file, NULL},
+    {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_bool, &opt.ignore_cert_error, (void*)true},
+    {"interface", "Out interface (use for vpn)", option_string, &opt.interface, NULL},
     {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, ipv6_options},
-    {"key", "Private key file name (ssl)", option_stringargs, &opt.key, NULL},
-    {"port", "The port to listen, default is 80 but 443 for ssl/sni", option_int64args, &opt.CPORT, NULL},
-    {"policy-file", "The file of policy (sites.list as default)", option_stringargs, &opt.policy_file, NULL},
-    {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64args, opt.rewrite_auth, NULL},
-    {"root-dir", "The work dir (current dir if not set)", option_stringargs, &opt.rootdir, NULL},
-    {"secret", "Set a user and passwd for proxy (user:password), default is none.", option_base64args, opt.auth_string, NULL},
-    {"sni", "Act as a sni proxy", option_boolargs, &opt.sni_mode, (void*)true},
-    {"server", "default proxy server (can ONLY set in config file)", option_stringargs, &server_string, NULL},
+    {"key", "Private key file name (ssl)", option_string, &opt.key, NULL},
+    {"port", "The port to listen, default is 80 but 443 for ssl/sni", option_int64, &opt.CPORT, NULL},
+    {"policy-file", "The file of policy (sites.list as default)", option_string, &opt.policy_file, NULL},
+    {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64, opt.rewrite_auth, NULL},
+    {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
+    {"secret", "Set a user and passwd for proxy (user:password), default is none.", option_base64, opt.auth_string, NULL},
+    {"sni", "Act as a sni proxy", option_bool, &opt.sni_mode, (void*)true},
+    {"server", "default proxy server (can ONLY set in config file)", option_string, &server_string, NULL},
+    {"alter-method", "use Alter-Method to define real method (for obfuscation), http1 only", option_bool, &opt.alter_method, (void*)true},
+    {"request-header", "append the header (name:value) for plain http request", option_list, &opt.request_headers, NULL},
 #ifndef NDEBUG
     {"debug-event", "debug-event", option_bitwise, &debug, (void*)DEVENT},
     {"debug-dns", "\tdebug-dns", option_bitwise, &debug, (void*)DDNS},
@@ -217,11 +226,12 @@ static void parseArgs(const char* name, const char* args){
             char* pos;
             long long result;
             char** pargstr;
-            case option_boolargs:
+            struct arg_list* apos;
+            case option_bool:
                 *(bool*)option_detail[i].result = (bool)option_detail[i].value;
                 LOG("set option %s: %s\n", name, option_detail[i].result?"true":"false");
                 break;
-            case option_stringargs:
+            case option_string:
                 pargstr = (char**)option_detail[i].result;
                 if(*pargstr){
                     free(*pargstr);
@@ -229,7 +239,7 @@ static void parseArgs(const char* name, const char* args){
                 *pargstr = strdup(args);
                 LOG("set option %s: %s\n", name, *pargstr);
                 break;
-            case option_int64args:
+            case option_int64:
                 result = strtoll(args, &pos, 0);
                 if(result == LLONG_MAX || result == LLONG_MIN || args == pos) {
                     LOGE("wrong int format: %s\n", args);
@@ -237,7 +247,7 @@ static void parseArgs(const char* name, const char* args){
                 *(long long*)option_detail[i].result = result;
                 LOG("set option %s: %lld\n", name, *(long long*)option_detail[i].result);
                 break;
-            case option_base64args:
+            case option_base64:
                 Base64Encode(args, strlen(args), (char*)option_detail[i].result);
                 LOG("set option %s: %s\n", name, (char*)option_detail[i].result);
                 break;
@@ -260,6 +270,17 @@ static void parseArgs(const char* name, const char* args){
                 }else{
                     LOG("set option %s: %d\n", name, *(int*)option_detail[i].result);
                 }
+                break;
+            case option_list:
+                apos = (struct arg_list*)option_detail[i].result;
+                while(apos->next){
+                    apos = apos->next;
+                }
+                apos->next = malloc(sizeof(struct arg_list));
+                apos = apos->next;
+                apos->arg = strdup(args);
+                apos->next = NULL;
+                LOG("append option %s: %s\n", name, apos->arg);
                 break;
             case option_extargs:
                 parseExtargs(option_detail[i].name, args);
@@ -318,7 +339,7 @@ int parseConfigFile(const char* config_file){
 
 static const char* confs[] = {
     "/etc/sproxy/sproxy.conf",
-    PREFIX "/etc/sproxy.conf",
+    PREFIX "/etc/sproxy/sproxy.conf",
     "sproxy.conf",
     NULL,
 };
