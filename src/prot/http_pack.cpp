@@ -3,6 +3,7 @@
 #include "res/cgi.h"
 #include "misc/net.h"
 #include "misc/util.h"
+#include "misc/config.h"
 
 #include <algorithm>
 #include <utility>
@@ -10,6 +11,8 @@
 
 #include <assert.h>
 #include <inttypes.h>
+
+#define AlterMethod "Alter-Method"
 
 using std::string;
 
@@ -121,8 +124,8 @@ HttpReqHeader::HttpReqHeader(const char* header, size_t len) {
 
         char* sp = strpbrk(p, ":");
         if (sp == nullptr) {
-            LOGE("wrong header format:%s\n", p);
-            throw ERR_PROTOCOL_ERROR;
+            //tolerate malformed header here for obfuscation
+            break;
         }
         string name = toLower(string(p, sp-p));
         if(name == "cookie"){
@@ -265,6 +268,10 @@ void HttpReqHeader::postparse() {
         URLDecode(buff, filepath.c_str(), filepath.length());
         filename = buff;
     }
+    if(get(AlterMethod)){
+        strcpy(method, get(AlterMethod));
+        del(AlterMethod);
+    }
     if(!normal_method()){
         return;
     }
@@ -295,23 +302,32 @@ bool HttpReqHeader::ismethod(const char* method) const{
 char *HttpReqHeader::getstring(size_t &len) const{
     char *buff = nullptr;
     len = 0;
-    if (ismethod("CONNECT")|| ismethod("SEND")){
-        if(should_proxy){
+    if(!should_proxy && (ismethod("CONNECT")|| ismethod("SEND"))){
+        //本地请求，自己处理connect和send方法
+        return (char *)p_malloc(0);
+    }
+    std::list<string> AppendHeaders;
+    char method[20];
+    if(opt.alter_method){
+        strcpy(method, "GET");
+        AppendHeaders.push_back(string(AlterMethod)+": " + this->method);
+    }else{
+        strcpy(method, this->method);
+    }
+    for(auto p = opt.request_headers.next; p != nullptr; p = p->next){
+        AppendHeaders.push_back(p->arg);
+    }
+    if(should_proxy){
+        if (ismethod("CONNECT")|| ismethod("SEND")){
             buff= (char *)p_malloc(BUF_LEN);
             len += sprintf(buff, "%s %s:%d HTTP/1.1" CRLF, method, Dest.hostname, Dest.port);
         }else{
-            //本地请求，自己处理connect和send方法
-            len = 0;
-            return (char *)p_malloc(0);
-        }
-    }else{
-        if(should_proxy){
             buff= (char *)p_malloc(BUF_LEN);
             len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, geturl().c_str());
-        }else{
-            buff= (char *)p_malloc(BUF_LEN);
-            len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, path);
         }
+    }else{
+        buff= (char *)p_malloc(BUF_LEN);
+        len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, path);
     }
     
     if(get("Host") == nullptr && Dest.hostname[0]){
@@ -325,8 +341,7 @@ char *HttpReqHeader::getstring(size_t &len) const{
     }
 
     for (const auto& i : headers) {
-        len += sprintf(buff + len, "%s: %s" CRLF,
-                toUpHeader(i.first).c_str(), i.second.c_str());
+        len += sprintf(buff + len, "%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
     }
     if(!cookies.empty()){
         string cookie_str;
@@ -336,6 +351,10 @@ char *HttpReqHeader::getstring(size_t &len) const{
         }
         len += sprintf(buff + len, "Cookie: %s" CRLF, 
                 cookie_str.substr(2).c_str());
+    }
+
+    for(const auto& i: AppendHeaders){
+        len += sprintf(buff + len, "%s" CRLF, i.c_str());
     }
 
     len += sprintf(buff + len, CRLF);
@@ -380,10 +399,10 @@ Http2_header *HttpReqHeader::getframe(Hpack_index_table *index_table, uint32_t h
         p += index_table->hpack_encode(p, ":scheme", Dest.schema[0]?Dest.schema:"http");
         p += index_table->hpack_encode(p, ":path", path);
     }
-    for(auto i: cookies){
+    for(const auto& i: cookies){
         p += index_table->hpack_encode(p, "cookie", i.c_str());
     }
-    
+
     p += index_table->hpack_encode(p, headers);
     set24(header->length, p-(unsigned char *)(header + 1));
     assert(get24(header->length) < BUF_LEN);

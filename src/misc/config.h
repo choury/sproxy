@@ -20,6 +20,11 @@ enum ipv6_mode{
     Auto = 2,
 };
 
+struct arg_list{
+    const char* arg;
+    struct arg_list* next;
+};
+
 struct options{
     const char *cafile;
     const char *cert;
@@ -35,12 +40,14 @@ struct options{
     bool ignore_cert_error;
     bool autoindex;
     bool ipv6_enabled;
+    bool alter_method;
 
     int64_t CPORT;
     struct Destination Server;
     char auth_string[DOMAINLIMIT];
     char rewrite_auth[DOMAINLIMIT];
     enum ipv6_mode ipv6_mode;
+    struct arg_list request_headers;
 };
 
 extern struct options opt;
