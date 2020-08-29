@@ -30,10 +30,11 @@ Guest2::Guest2(RWer* rwer): Requester(rwer) {
         while((ret = (this->*Http2_Proc)((uchar*)data+consumed, len-consumed))){
             consumed += ret;
         }
+        assert(consumed <= len);
+        this->rwer->consume(data, consumed);
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
-        this->rwer->consume(data, consumed);
         this->connection_lost_job = this->rwer->updatejob(
                 this->connection_lost_job,
                 std::bind(&Guest2::connection_lost, this), 1800000);
@@ -282,7 +283,6 @@ void Guest2::ShutdownProc(uint32_t id) {
 void Guest2::GoawayProc(const Http2_header* header) {
     Goaway_Frame* goaway = (Goaway_Frame *)(header+1);
     uint32_t errcode = get32(goaway->errcode);
-    http2_flag |= HTTP2_FLAG_GOAWAYED;
     deleteLater(errcode);
 }
 
@@ -317,7 +317,6 @@ void Guest2::deleteLater(uint32_t errcode){
         i.second.flags |= HTTP_CLOSED_F;
     }
     if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){
-        http2_flag |= HTTP2_FLAG_GOAWAYED;
         Goaway(-1, errcode & ERROR_MASK);
     }
     return Server::deleteLater(errcode);

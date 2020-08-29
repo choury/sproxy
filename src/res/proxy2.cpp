@@ -43,10 +43,11 @@ Proxy2::Proxy2(RWer* rwer) {
         while((ret = (this->*Http2_Proc)((uchar*)data+consumed, len-consumed))){
             consumed += ret;
         }
+        assert(consumed <= len);
+        this->rwer->consume(data, consumed);
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
-        this->rwer->consume(data, consumed);
 #ifndef __ANDROID__
         this->ping_check_job = this->rwer->updatejob(
                 this->ping_check_job,
@@ -330,7 +331,6 @@ void Proxy2::init(HttpReq* req) {
 void Proxy2::GoawayProc(const Http2_header* header){
     Goaway_Frame* goaway = (Goaway_Frame *)(header+1);
     uint32_t errcode = get32(goaway->errcode);
-    http2_flag |= HTTP2_FLAG_GOAWAYED;
     return deleteLater(errcode);
 }
 
@@ -363,7 +363,6 @@ void Proxy2::deleteLater(uint32_t errcode){
     }
     statusmap.clear();
     if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){
-        http2_flag |= HTTP2_FLAG_GOAWAYED;
         Goaway(-1, errcode);
     }
     Server::deleteLater(errcode);

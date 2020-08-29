@@ -16,6 +16,7 @@ void Guest::ReadHE(size_t len){
     while((ret = (this->*Http_Proc)(data+consumed, len-consumed))){
         consumed += ret;
     }
+    assert(consumed <= len);
     LOGD(DHTTP, "guest %s read: len:%zu, consumed:%zu\n", getsrc(), len, consumed);
     rwer->consume(data, consumed);
 }

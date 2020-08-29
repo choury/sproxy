@@ -90,6 +90,7 @@ void Host::connected() {
         while((ret = (this->*Http_Proc)(data+consumed, len-consumed))){
             consumed += ret;
         }
+        assert(consumed <= len);
         LOGD(DHTTP, "host %s read: len:%zu, consumed:%zu\n", rwer->getDest(), len, consumed);
         this->rwer->consume(data, consumed);
     });

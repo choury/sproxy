@@ -38,9 +38,10 @@ char* RBuffer::end(){
 }
 
 size_t CBuffer::left(){
+    assert(begin_pos <= end_pos);
     uint32_t start = begin_pos % sizeof(content);
     uint32_t finish = end_pos % sizeof(content);
-    if(finish > start || (finish == start && begin_pos == end_pos)){
+    if((finish > start) || (begin_pos == end_pos)){
         return sizeof(content) - finish;
     }else{
         return start - finish;
@@ -59,14 +60,15 @@ void CBuffer::add(size_t l){
 };
 
 const char* CBuffer::data(){
+    assert(begin_pos <= end_pos);
     uint32_t start = begin_pos % sizeof(content);
     uint32_t finish = end_pos % sizeof(content);
-    if(finish > start || (finish == start && begin_pos == end_pos)){
+    if((finish > start) || (begin_pos == end_pos)){
         return content + start;
     }else{
         char* buff = (char*)malloc(end_pos - begin_pos);
         size_t l = sizeof(content) - start;
-        memcpy(buff, content + start, sizeof(content) - start);
+        memcpy(buff, content + start, l);
         memcpy(buff + l, content, finish);
         return  buff;
     }
