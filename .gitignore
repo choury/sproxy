@@ -1,6 +1,9 @@
 build/
 build-mac/
 test_dir/
+.idea/
+.vscode
+.kdev4
 *~
 *.swp
 *.out
