@@ -195,7 +195,7 @@ std::vector<std::string> getDns(){
             if(__system_property_get(property, ipaddr)){
                 dns.emplace_back(ipaddr);
             }else{
-                break;
+                goto ret;
             }
         }
     }else {
@@ -204,6 +204,10 @@ std::vector<std::string> getDns(){
         jclass cls = jnienv->GetObjectClass(jniobj);
         jmethodID mid = jnienv->GetMethodID(cls, "getDns", "()[Ljava/lang/String;");
         jobjectArray jDns = (jobjectArray) jnienv->CallObjectMethod(jniobj, mid);
+        if(jDns == nullptr){
+            jnienv->DeleteLocalRef(cls);
+            goto ret;
+        }
         int n = jnienv->GetArrayLength(jDns);
         for (int i = 0; i < n; i++) {
             jstring jdns = (jstring) jnienv->GetObjectArrayElement(jDns, i);
@@ -215,8 +219,9 @@ std::vector<std::string> getDns(){
         jnienv->DeleteLocalRef(jDns);
         jnienv->DeleteLocalRef(cls);
     }
+ret:
     if(dns.empty()){
-        dns.emplace_back("180.76.76.76");
+        dns.emplace_back("8.8.8.8");
         dns.emplace_back("223.5.5.5");
     }
     return dns;

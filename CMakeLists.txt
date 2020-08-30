@@ -73,8 +73,8 @@ endif()
 
 include_directories(${OPENSSL_INCLUDE_DIR})
 
-set(CMAKE_C_FLAGS "-std=gnu99 -Wall -Wextra -fPIC ${CMAKE_C_FLAGS}")
-set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -Wextra -fPIC ${CMAKE_CXX_FLAGS}")
+set(CMAKE_C_FLAGS "-std=gnu99 -Wall -Wextra -fPIC -fno-omit-frame-pointer ${CMAKE_C_FLAGS}")
+set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -Wextra -fPIC -fno-omit-frame-pointer ${CMAKE_CXX_FLAGS}")
 
 execute_process(COMMAND uname -r
     OUTPUT_VARIABLE KERNEL_NAME
@@ -128,8 +128,8 @@ if (HAVE_SAN_UNDEF)
 endif()
 
 If(LINUX OR ANDROID)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=gold")
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=gold")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=gold -Wl,--rosegment")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=gold -Wl,--rosegment")
 endif()
 
 add_subdirectory(src)
