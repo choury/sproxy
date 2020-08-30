@@ -286,18 +286,17 @@ int getsocketaddr(const char* ip, uint16_t port, union sockaddr_un *addr){
     addr->addr_in.sin_port = htons(port);
     char host[INET6_ADDRSTRLEN] = {0};
     if(ip[0] == '['){ //may be ipv6
-        strcpy(host, ip + 1);
+        strncpy(host, ip + 1, sizeof(host)-1);
         *strchrnul(host, ']') = 0;
-    }else{
-        strcpy(host, ip);
+        ip = host;
     }
 
-    if (inet_pton(AF_INET, host, &addr->addr_in.sin_addr) == 1) {
+    if (inet_pton(AF_INET, ip, &addr->addr_in.sin_addr) == 1) {
         addr->addr_in.sin_family = AF_INET;
         return 0;
     }
 
-    if (inet_pton(AF_INET6, host, &addr->addr_in6.sin6_addr) == 1) {
+    if (inet_pton(AF_INET6, ip, &addr->addr_in6.sin6_addr) == 1) {
         addr->addr_in6.sin6_family = AF_INET6;
         return 0;
     }
