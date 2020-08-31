@@ -320,14 +320,22 @@ int parseConfigFile(const char* config_file){
     if(conf){
         char line[1024];
         while(fgets(line, sizeof(line), conf)){
+            if(line[0] == '#'){
+                continue;
+            }
             char option[1024], args[1024];
-            int ret = sscanf(line, "%s %s", option, args);
+            int ret = sscanf(line, "%1023s%*[ \t]%1023[^\n]", option, args);
             if(ret <= 0){
                 LOGE("config file parse failed: %s", line);
                 break;
             }
-            if(option[0] == '#'){
-                continue;
+            size_t argsLen = strlen(args);
+            while((args[argsLen-1] == ' ' || args[argsLen-1] == '\t') && argsLen > 0){
+                args[--argsLen] = 0;
+            }
+            if(args[0] == '\"' && args[argsLen - 1] == '\"'){
+                args[argsLen - 1] = 0;
+                memmove(args, args+1, argsLen - 1);
             }
             parseArgs(option, args);
         }
