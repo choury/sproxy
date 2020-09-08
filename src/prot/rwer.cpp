@@ -377,7 +377,7 @@ void RWer::Reconnect() {
 void RWer::Close(std::function<void()> func) {
     flags |= RWER_CLOSING;
     closeCB = std::move(func);
-    if(getFd() >= 0){
+    if(getFd() >= 0 && stats != RWerStats::Connecting){
         setEvents(RW_EVENT::READWRITE);
         handleEvent = (void (Ep::*)(RW_EVENT))&RWer::closeHE;
     }else{

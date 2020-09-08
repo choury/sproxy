@@ -220,6 +220,7 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
 void SslRWer::shakehandHE(RW_EVENT events){
     if (!!(events & RW_EVENT::ERROR)) {
         errorCB(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
+        stats = RWerStats::Error;
         return;
     }
     if (!!(events & RW_EVENT::READ) || !!(events & RW_EVENT::WRITE)) {
@@ -229,6 +230,7 @@ void SslRWer::shakehandHE(RW_EVENT events){
                 int error = errno;
                 LOGE("(%s): ssl connect error:%s\n", hostname, strerror(error));
                 errorCB(SSL_SHAKEHAND_ERR, error);
+                stats = RWerStats::Error;
             }
             return;
         }

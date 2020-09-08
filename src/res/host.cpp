@@ -34,7 +34,7 @@ Host::Host(const Destination* dest){
                               std::bind(&Host::Error, this, _1, _2),
                               std::bind(&Host::connected, this));
     }else{
-        LOGE("Unkonw schema: %s\n", dest->schema);
+        LOGF("Unkonw schema: %s\n", dest->schema);
     }
 }
 

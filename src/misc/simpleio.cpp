@@ -38,7 +38,7 @@ char* RBuffer::end(){
 }
 
 size_t CBuffer::left(){
-    assert(begin_pos <= end_pos);
+    assert(noafter(begin_pos, end_pos));
     uint32_t start = begin_pos % sizeof(content);
     uint32_t finish = end_pos % sizeof(content);
     if((finish > start) || (begin_pos == end_pos)){
@@ -60,7 +60,7 @@ void CBuffer::add(size_t l){
 };
 
 const char* CBuffer::data(){
-    assert(begin_pos <= end_pos);
+    assert(noafter(begin_pos, end_pos));
     uint32_t start = begin_pos % sizeof(content);
     uint32_t finish = end_pos % sizeof(content);
     if((finish > start) || (begin_pos == end_pos)){
@@ -76,7 +76,7 @@ const char* CBuffer::data(){
 
 void CBuffer::consume(const char* data, size_t l){
     begin_pos += l;
-    assert(begin_pos <= end_pos);
+    assert(noafter(begin_pos, end_pos));
     if(data < content || data >= content + sizeof(content)){
         free((char*)data);
     }
@@ -125,10 +125,10 @@ void NetRWer::Dnscallback(void* param, std::list<sockaddr_un> addrs) {
         i.addr_in6.sin6_port = htons(rwer->port);
         rwer->addrs.push(i);
     }
+    rwer->stats = RWerStats::Connecting;
     switch(rwer->protocol){
     case Protocol::TCP:
     case Protocol::UDP:
-        rwer->stats = RWerStats::Connecting;
         rwer->connect();
         break;
     case Protocol::ICMP: {
@@ -144,7 +144,7 @@ void NetRWer::Dnscallback(void* param, std::list<sockaddr_un> addrs) {
         break;
     }
     default:
-        abort();
+        LOGF("Unknow protocol: %d\n", rwer->protocol);
     }
 }
 
