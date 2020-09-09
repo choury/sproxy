@@ -16,6 +16,7 @@
 #include <inttypes.h>
 #ifndef __APPLE__
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #else
 #include <pthread.h>
 #endif
@@ -165,6 +166,14 @@ void prepare(){
 #else
     opt.daemon_mode = false;
 #endif
+    struct rlimit limits = {
+        .rlim_cur = 1024,
+        .rlim_max = 1024,
+    };
+
+    if(setrlimit(RLIMIT_NOFILE, &limits)) {
+        LOGE("setrlimit failed: %s\n", strerror(errno));
+    }
 }
 
 static void usage(const char * program){
