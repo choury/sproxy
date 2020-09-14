@@ -124,10 +124,15 @@ void Guest2::ReqProc(uint32_t id, HttpReqHeader* header) {
     [this, &status, id] () mutable{
         auto len = status.req->cap();
         if(len < status.localwinsize){
-            LOGE("http2 [%d] shrunken local window: %d/%d\n", id, len, status.localwinsize - len);
-        }
-        if(len > status.localwinsize && (len - status.localwinsize > 2*FRAMEBODYLIMIT)){
-            status.localwinsize += ExpandWindowSize(id, len - status.localwinsize - FRAMEBODYLIMIT);
+            LOGE("http2 [%d] shrunken local window: %d/%d\n", id, len, status.localwinsize);
+        }else{
+            if(len - status.localwinsize > 2*FRAMEBODYLIMIT){
+                status.localwinsize += ExpandWindowSize(id, len - status.localwinsize - FRAMEBODYLIMIT);
+                return;
+            }
+            if(status.localwinsize < FRAMEBODYLIMIT && len > status.localwinsize){
+                status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
+            }
         }
     });
     distribute(status.req, this);

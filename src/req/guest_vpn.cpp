@@ -453,15 +453,15 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
         tcpStatus->acked = tcpStatus->send_seq;
         tcpStatus->send_ack = 0;
         tcpStatus->want_seq = seq+1;
-        //tcpStatus->window = pac->tcp->getwindow();
-        tcpStatus->window =  0;
+        tcpStatus->window = pac->tcp->getwindow();
         tcpStatus->options = pac->tcp->getoptions();
         tcpStatus->mss = pac->tcp->getmss();
-        tcpStatus->recv_wscale = pac->tcp->getwindowscale();
         tcpStatus->status = TCP_SYN_RECV;
         if(tcpStatus->options & (1u<<TCPOPT_WINDOW)){
+            tcpStatus->recv_wscale = pac->tcp->getwindowscale();
             tcpStatus->send_wscale = VPN_TCP_WSCALE;
         }else{
+            tcpStatus->recv_wscale = 0;
             tcpStatus->send_wscale = 0;
         }
         status.protocol_info = tcpStatus;
@@ -738,6 +738,9 @@ void Guest_vpn::icmp6HE(std::shared_ptr<const Ip> pac, const char* packet, size_
 int32_t Guest_vpn::bufleft() {
     if(key.protocol == Protocol::TCP){
         TcpStatus* tcpStatus = (TcpStatus*)status.protocol_info;
+        if(tcpStatus->status == TCP_SYN_RECV){
+            return 0;
+        }
         assert(nobefore(tcpStatus->send_seq, tcpStatus->acked));
         return (int32_t)(tcpStatus->window << tcpStatus->recv_wscale) - (int32_t)(tcpStatus->send_seq - tcpStatus->acked);
     }
@@ -903,12 +906,13 @@ static const char* dump_vpnStatus(const VpnKey& key, void* protocol_info){
     switch(key.protocol){
     case TCP:{
         TcpStatus* tcp = (TcpStatus*)protocol_info;
-        sprintf(buff, " [%d %d]", tcp->window, tcp->status);
+        sprintf(buff, " [window:%u, send_seq:%u, acked:%u, status:%u]",
+                tcp->window << tcp->recv_wscale, tcp->send_seq, tcp->acked, tcp->status);
         break;
     }
     case ICMP:{
         IcmpStatus* icmp = (IcmpStatus *)protocol_info;
-        sprintf(buff, " [%d %d]", icmp->id, icmp->seq);
+        sprintf(buff, " [id:%u, seq:%u]", icmp->id, icmp->seq);
     }
     default:
         break;
