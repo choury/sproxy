@@ -75,8 +75,7 @@ void Guest2::Error(int ret, int code){
 }
 
 int Guest2::bufleft(uint32_t id) {
-    int32_t globalwindow = Min(1024*1024 - rwer->wlength(), this->remotewinsize);
-    return Min(statusmap.at(id).remotewinsize, globalwindow);
+    return Min(statusmap.at(id).remotewinsize, this->remotewinsize);
 }
 
 void Guest2::Send(uint32_t id, const void* buff, size_t size){

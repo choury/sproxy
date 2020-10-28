@@ -89,8 +89,7 @@ void Proxy2::Error(int ret, int code) {
 
 
 int Proxy2::bufleft(uint32_t id) {
-    int32_t globalwindow = Min(1024*1024 - rwer->wlength(), this->remotewinsize);
-    return Min(statusmap.at(id).remotewinsize, globalwindow);
+    return Min(statusmap.at(id).remotewinsize, this->remotewinsize);
 }
 
 void Proxy2::Send(uint32_t id ,const void* buff, size_t size) {
@@ -134,7 +133,7 @@ void Proxy2::ResProc(uint32_t id, HttpResHeader* header) {
         status.res = new HttpRes(header, [this, &status, id]() mutable{
             auto len = status.res->cap();
             if(len < status.localwinsize){
-                LOGE("http2 [%d] shrunken local window: %d/%d\n", id, len, status.localwinsize - len);
+                LOGE("http2 [%d] shrunken local window: %d/%d\n", id, len, status.localwinsize);
             }else{
                 if((len - status.localwinsize > 2*FRAMEBODYLIMIT)) {
                     status.localwinsize += ExpandWindowSize(id, len - status.localwinsize - FRAMEBODYLIMIT);

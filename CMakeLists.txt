@@ -114,10 +114,10 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 set(CMAKE_C_FLAGS_RELWITHDEBINFO "-ggdb -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-ggdb -DNDEBUG")
 
-set(CMAKE_C_FLAGS_DEBUG "-ggdb -O0 -fno-omit-frame-pointer")
-set(CMAKE_CXX_FLAGS_DEBUG "-ggdb -O0 -fno-omit-frame-pointer")
+set(CMAKE_C_FLAGS_DEBUG "-ggdb -O0")
+set(CMAKE_CXX_FLAGS_DEBUG "-ggdb -O0")
 
-if (HAVE_SAN_ADDR)
+if (HAVE_SAN_ADDR AND NOT ANDROID)
     set(CMAKE_C_FLAGS_DEBUG "-fsanitize=address ${CMAKE_C_FLAGS_DEBUG}")
     set(CMAKE_CXX_FLAGS_DEBUG "-fsanitize=address ${CMAKE_CXX_FLAGS_DEBUG}")
 endif()

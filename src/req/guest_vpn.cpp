@@ -401,7 +401,7 @@ void Guest_vpn::tcp_ack() {
     if(tcpStatus->status != TCP_ESTABLISHED){
         return;
     }
-    assert(tcpStatus->send_ack <= tcpStatus->want_seq);
+    assert(nobefore(tcpStatus->send_ack, tcpStatus->want_seq));
     if(tcpStatus->send_ack == tcpStatus->want_seq){
         return;
     }
