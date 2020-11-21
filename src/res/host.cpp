@@ -172,7 +172,6 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     assert((status.flags & HTTP_RES_EOF) == 0);
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
     if(status.res == nullptr){
-        assert(strcasecmp(Server.schema, "udp") == 0);
         status.res = new HttpRes(new HttpResHeader(H200), std::bind(&RWer::EatReadData, rwer));
         status.req->response(status.res);
     }

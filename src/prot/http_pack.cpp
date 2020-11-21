@@ -762,7 +762,7 @@ bool Channel::eatData(const void* buf, size_t size) {
 
 
 void Channel::send(void *buf, size_t size) {
-    assert(!eof && size);
+    assert(!eof && !closed && size);
     if(len){
         goto innerCopy;
     }
@@ -782,7 +782,7 @@ innerCopy:
 }
 
 void Channel::send(const void* buf, size_t size){
-    assert(!eof || !size);
+    assert((!eof || !size) && !closed);
     if(len){
         goto innerCopy;
     }
@@ -801,8 +801,12 @@ innerCopy:
 }
 
 void Channel::trigger(Channel::signal s) {
-    if(handler)
+    if (s == CHANNEL_ABORT || s == CHANNEL_CLOSED){
+        closed = true;
+    }
+    if(handler){
         handler(s);
+    }
 }
 
 void Channel::more(){
@@ -818,10 +822,15 @@ void Channel::more(){
         memmove(data, data + l, len);
     }
     if(len == 0){
+        if(!eof && !closed && left > 0) {
+            need_more();
+            return;
+        }
         if(eof){
             eatData((const void *) nullptr, 0);
-        }else if(left > 0) {
-            need_more();
+        }
+        if(closed){
+            trigger(Channel::CHANNEL_CLOSED);
         }
     }
 }
@@ -855,15 +864,14 @@ HttpRes::HttpRes(HttpResHeader* header, more_data_t more): Channel(std::move(mor
 HttpRes::HttpRes(HttpResHeader *header): HttpRes(header, []{}) {
 }
 
-HttpRes::HttpRes(HttpResHeader *header, const char *body): HttpRes(header, []{
-})
-{
+HttpRes::HttpRes(HttpResHeader *header, const char *body): HttpRes(header, []{}) {
     len = strlen(body);
     if(len) {
         data = (uchar *) malloc(DATALEN);
         memcpy(data, body, len);
     }
     eof = true;
+    closed = true;
     header->set("Content-Length", len);
 }
 

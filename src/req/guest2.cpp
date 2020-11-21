@@ -74,10 +74,6 @@ void Guest2::Error(int ret, int code){
     deleteLater(ret);
 }
 
-int Guest2::bufleft(uint32_t id) {
-    return Min(statusmap.at(id).remotewinsize, this->remotewinsize);
-}
-
 void Guest2::Send(uint32_t id, const void* buff, size_t size){
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
@@ -182,8 +178,8 @@ void Guest2::response(void* index, HttpRes* res) {
     res->header->del("Connection");
     status.res = res;
     PushFrame(res->header->getframe(&request_table, id));
-    res->setHandler([this, id](Channel::signal s){
-        ReqStatus& status = statusmap[id];
+    res->setHandler([this, &status, id](Channel::signal s){
+        assert(statusmap.count(id));
         switch(s){
         case Channel::CHANNEL_SHUTDOWN:
             assert((status.flags & HTTP_REQ_EOF) == 0);
@@ -205,7 +201,7 @@ void Guest2::response(void* index, HttpRes* res) {
         }
     });
     res->attach((Channel::recv_const_t)std::bind(&Guest2::Send, this, id, _1, _2),
-                std::bind(&Guest2::bufleft, this, id));
+                [this, &status]{return Min(status.remotewinsize, this->remotewinsize);});
 }
 
 void Guest2::Clean(uint32_t id, ReqStatus &status, uint32_t errcode) {

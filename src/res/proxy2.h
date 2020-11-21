@@ -39,7 +39,6 @@ protected:
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
     virtual void ShutdownProc(uint32_t id)override;
 
-    int bufleft(uint32_t id);
     void Send(uint32_t id ,const void* buff, size_t size);
     void Clean(uint32_t id, ReqStatus& status, uint32_t errcode);
 

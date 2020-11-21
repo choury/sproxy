@@ -158,7 +158,9 @@ void Guest::response(void*, HttpRes* res) {
     GStatus& status = statuslist.front();
     HttpLog(getsrc(), status.req, res);
     status.res = res;
-    if(status.req->header->ismethod("CONNECT")){
+    if(status.req->header->ismethod("CONNECT") ||
+       status.req->header->ismethod("SEND"))
+    {
         if(memcmp(res->header->status, "200", 3) == 0){
             strcpy(res->header->status, "200 Connection established");
             res->header->del("Transfer-Encoding");

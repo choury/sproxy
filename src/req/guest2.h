@@ -37,7 +37,6 @@ protected:
     virtual std::list<write_block>::insert_iterator queue_end() override;
     virtual void queue_insert(std::list<write_block>::insert_iterator where, const write_block& wb) override;
 
-    int bufleft(uint32_t id);
     void Send(uint32_t id, const void* buff, size_t size);
     void Clean(uint32_t id, ReqStatus& status, uint32_t errcode);
     bool wantmore(const ReqStatus& status);

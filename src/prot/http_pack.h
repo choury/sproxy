@@ -103,10 +103,11 @@ private:
     bool eatData(PRE_POINTER void *buf, size_t size);
     bool eatData(const void *buf, size_t size);
 protected:
-    const static int DATALEN = 65536;
+    const static int DATALEN = 16384;
     uchar* data = nullptr;
     size_t len = 0;
     bool eof = false;
+    bool closed = false;
 public:
     Channel(const Channel&) = delete;
     const Channel& operator=(const Channel&) = delete;

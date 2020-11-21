@@ -87,11 +87,6 @@ void Proxy2::Error(int ret, int code) {
     deleteLater(ret);
 }
 
-
-int Proxy2::bufleft(uint32_t id) {
-    return Min(statusmap.at(id).remotewinsize, this->remotewinsize);
-}
-
 void Proxy2::Send(uint32_t id ,const void* buff, size_t size) {
     assert(statusmap.count(id));
     ReqStatus& status = statusmap[id];
@@ -298,10 +293,10 @@ void Proxy2::request(HttpReq* req, Requester*) {
        localframewindowsize,
        0,
     };
+    ReqStatus& status = statusmap[id];
     PushFrame(req->header->getframe(&request_table, id));
-    req->setHandler([this, id](Channel::signal s){
+    req->setHandler([this, &status, id](Channel::signal s){
         assert(statusmap.count(id));
-        ReqStatus& status = statusmap[id];
         switch(s){
         case Channel::CHANNEL_SHUTDOWN:
             assert((status.flags & HTTP_RES_EOF) == 0);
@@ -323,7 +318,7 @@ void Proxy2::request(HttpReq* req, Requester*) {
         }
     });
     req->attach((Channel::recv_const_t)std::bind(&Proxy2::Send, this, id, _1, _2),
-            std::bind(&Proxy2::bufleft, this, id));
+            [this, &status]{return Min(status.remotewinsize, this->remotewinsize);});
 }
 
 void Proxy2::init(HttpReq* req) {
