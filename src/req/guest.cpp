@@ -33,7 +33,7 @@ void Guest::WriteHE(size_t len){
         }
         return;
     }
-    if((status.flags&HTTP_REQ_COMPLETED) && (status.flags&HTTP_RES_COMPLETED)){
+    if((status.flags & HTTP_REQ_COMPLETED) && (status.flags & HTTP_RES_COMPLETED)){
         return deqReq();
     }
     if((status.flags & HTTP_RES_COMPLETED) || (status.flags & HTTP_RES_EOF)){

@@ -2,7 +2,7 @@
 #include "net.h"
 #include "config.h"
 #include "common.h"
-#include <map>
+#include "trie.h"
 #include <set>
 #include <fstream>
 
@@ -22,153 +22,14 @@
 #define GEN_TIP  "GENERATED"
 
 using std::string;
-using std::map;
 using std::ifstream;
 using std::ofstream;
 
-/*
-static string reverse(string str){
-    string::size_type split = 0;
-    string result;
-    while((split = str.find_last_of('.')) != string::npos){
-        result += str.substr(split+1) + '.';
-        str = str.substr(0, split);
-    }
-    result += str;
-    return result;
-}
-*/
+static Trie<string, strategy> domains;
+static Trie<char, strategy> ipv4s;
+static Trie<char, strategy> ipv6s;
 
 string toLower(const string &s);
-
-static string trimdomain(string host){
-    string domain;
-    auto pos = host.find_first_of('.');
-    if(pos != string::npos){
-        domain = host.substr(pos+1);
-    }
-    return domain;
-}
-
-static string joinhost(string host, string domain){
-    if(host.empty()){
-        return domain;
-    }
-    if(domain.empty()){
-        return host;
-    }
-    return host + '.' + domain;
-}
-
-class Ipv4Stra{
-    map<uint64_t, strategy> strategies;
-public:
-    void insert(in_addr ip, uint32_t prefix, const strategy& s){
-        assert(prefix <= 32);
-        uint64_t prefix_mask =  (((uint64_t)1 << prefix) - 1) << (32 - prefix);
-        strategies[((uint64_t)ntohl(ip.s_addr) & prefix_mask) << 32u | prefix_mask] = s;
-    }
-    strategy find(in_addr ip){
-        for(const auto& i: strategies){
-            uint32_t mask = i.first & 0xffffffff;
-            uint32_t net = i.first >> 32u;
-            if((net & mask ) == (ntohl(ip.s_addr) & mask)){
-                return i.second;
-            }
-        }
-        return {Strategy::none, ""};
-    }
-    bool remove(in_addr ip){
-        for(auto i = strategies.begin(); i!= strategies.end(); i++ ){
-            uint32_t mask = i->first & 0xffffffff;
-            uint32_t net = i->first >> 32u;
-            if((net & mask ) == (ntohl(ip.s_addr) & mask)){
-                strategies.erase(i);
-                return true;
-            }
-        }
-        return false;
-    }
-    void clear(){
-        strategies.clear();
-    }
-    void stats(){
-        for(const auto& i: strategies){
-            int prefix = 0;
-            uint32_t mask = i.first&0xffffffff;
-            while(mask){
-                prefix ++;
-                mask <<= 1u;
-            }
-            uint64_t net = i.first >> 32u;
-            LOG("%s/%d: %s %s\n", 
-                inet_ntoa(in_addr{htonl(net)}), 
-                prefix, 
-                getstrategystring(i.second.s),
-                i.second.ext.c_str());
-        }
-    }
-    void dump(std::list<std::pair<std::string, strategy>>& slist){
-        for(auto i: strategies){
-            int prefix = 0;
-            uint32_t mask = i.first&0xffffffff;
-            while(mask){
-                prefix ++;
-                mask <<= 1u;
-            }
-            uint64_t net = i.first >> 32u;
-            char ip_prefix[100];
-            snprintf(ip_prefix, 100, "%s/%d", inet_ntoa(in_addr{htonl(net)}), prefix);
-            slist.emplace_back(ip_prefix, i.second);
-        }
-    }
-}ipv4s;
-
-class DomainStra{
-    map<string, strategy> children;
-public:
-    void insert(const string& host, const strategy& stra){
-        assert(stra.s != Strategy::none);
-        children[toLower(host)] = stra;
-    }
-    const strategy find(const string& host){
-        assert(!host.empty());
-        string domain = toLower(host);
-        if(children.count(domain)){
-            return children[domain];
-        }
-        do{
-            domain = trimdomain(domain);
-            string wildhost = joinhost("*", domain);
-            if(children.count(wildhost)){
-                return children[wildhost];
-            }
-        }while(!domain.empty());
-        return {Strategy::none, ""};
-    }
-    bool remove(const string& host){
-        return children.erase(toLower(host)) > 0;
-    }
-    void clear(){
-        children.clear();
-    }
-    void stats(){
-        for(auto i: children){
-            if(i.second.ext.empty()){
-                LOG("%s %s\n", i.first.c_str(), getstrategystring(i.second.s));
-            }else{
-                LOG("%s %s %s\n", i.first.c_str(), getstrategystring(i.second.s), i.second.ext.c_str());
-            }
-        }
-    }
-    std::list<std::pair<string, strategy>> dump(){
-        std::list<std::pair<string, strategy>>slist;
-        for(auto i: children){
-            slist.emplace_back(i);
-        }
-        return slist;
-    }
-}domains;
 
 static bool mergestrategy(const string& host, const string& strategy_str, string ext){
     Strategy s;
@@ -198,22 +59,22 @@ static bool mergestrategy(const string& host, const string& strategy_str, string
         int prefix = stoi(host.substr(mask_pos+1));
 #endif
         if (inet_pton(AF_INET, ip.c_str(), &addr.addr_in.sin_addr) == 1) {
-            ipv4s.insert(addr.addr_in.sin_addr, (uint32_t)prefix, stra);
+            ipv4s.insert(split(addr.addr_in.sin_addr, (uint32_t)prefix), stra);
             return true;
         }
         if (inet_pton(AF_INET6, ip.c_str(), &addr.addr_in6.sin6_addr) == 1) {
-            //TODO: ipv6
-            return false;
+            ipv6s.insert(split(addr.addr_in6.sin6_addr, (uint32_t)prefix), stra);
+            return true;
         }
         return false;
     }else if(inet_pton(AF_INET, host.c_str(), &addr.addr_in.sin_addr) == 1){
-        ipv4s.insert(addr.addr_in.sin_addr, 32, stra);
+        ipv4s.insert(split(addr.addr_in.sin_addr), stra);
         return true;
-    }else if(inet_pton(AF_INET6, host.c_str(), &addr.addr_in.sin_addr) == 1){
-        //TODO: ipv6
+    }else if(inet_pton(AF_INET6, host.c_str(), &addr.addr_in6.sin6_addr) == 1){
+        ipv6s.insert(split(addr.addr_in6.sin6_addr), stra);
         return false;
     } else{
-        domains.insert(host, stra);
+        domains.insert(split(toLower(host)), stra);
         return true;
     }
 }
@@ -227,16 +88,16 @@ void reloadstrategy() {
     //default strategy
     for(auto ips=getlocalip(); ips->addr_in.sin_family ; ips++){
         if(ips->addr.sa_family == AF_INET){
-            ipv4s.insert(ips->addr_in.sin_addr, 32, strategy{Strategy::local, GEN_TIP});
+            ipv4s.insert(split(ips->addr_in.sin_addr), strategy{Strategy::local, GEN_TIP});
         }
         if(ips->addr.sa_family == AF_INET6){
-            //TDDO: xxx
+            ipv6s.insert(split(ips->addr_in6.sin6_addr), strategy{Strategy::local, GEN_TIP});
         }
     }
     char hostname[HOST_NAME_MAX];
     gethostname(hostname, sizeof(hostname));
-    domains.insert(hostname, strategy{Strategy::local, GEN_TIP});
-    domains.insert("localhost", strategy{Strategy::local, GEN_TIP});
+    domains.insert(split(hostname), strategy{Strategy::local, GEN_TIP});
+    domains.insert(split("localhost"), strategy{Strategy::local, GEN_TIP});
     ifstream sitesfile(opt.policy_file);
     if (sitesfile.good()) {
         int lineNum = 0;
@@ -264,8 +125,6 @@ void reloadstrategy() {
 
     addauth("::ffff:127.0.0.1");
     addauth("::1");
-    //ipv4s.stats();
-    //domains.stats();
 }
 
 void savesites(){
@@ -291,16 +150,29 @@ bool addstrategy(const char* host, const char* strategy, const char* ext) {
     return false;
 }
 
-bool delstrategy(const char* host) {
+bool delstrategy(const char* host_) {
     bool found  = false;
+    string host = host_;
+    auto mask_pos = host.find_first_of('/');
     sockaddr_un addr;
-    if (inet_pton(AF_INET, host, &addr.addr_in.sin_addr) == 1) {
-        found = ipv4s.remove(addr.addr_in.sin_addr);
-    }else if (inet_pton(AF_INET6, host, &addr.addr_in6.sin6_addr) == 1) {
-        //TODO: ipv6
-        found = false;
-    }else{
-        found = domains.remove(host);
+    if(mask_pos != string::npos){
+        string ip = host.substr(0, mask_pos);
+#ifdef __ANDROID__
+        int prefix = atoi(host.substr(mask_pos+1).c_str());
+#else
+        int prefix = stoi(host.substr(mask_pos+1));
+#endif
+        if (inet_pton(AF_INET, ip.c_str(), &addr.addr_in.sin_addr) == 1) {
+            ipv4s.remove(split(addr.addr_in.sin_addr, (uint32_t)prefix), found);
+        }else if (inet_pton(AF_INET6, ip.c_str(), &addr.addr_in6.sin6_addr) == 1) {
+            ipv6s.remove(split(addr.addr_in6.sin6_addr, (uint32_t)prefix), found);
+        }
+    }else if(inet_pton(AF_INET, host.c_str(), &addr.addr_in.sin_addr) == 1){
+        ipv4s.remove(split(addr.addr_in.sin_addr), found);
+    }else if(inet_pton(AF_INET6, host.c_str(), &addr.addr_in6.sin6_addr) == 1){
+        ipv6s.remove(split(addr.addr_in6.sin6_addr), found);
+    } else{
+        domains.remove(split(toLower(host)), found);
     }
     if(found){
         savesites();
@@ -308,20 +180,32 @@ bool delstrategy(const char* host) {
     return found;
 }
 
-strategy getstrategy(const char *host){
-    strategy stra{Strategy::none, ""};
+strategy getstrategy(const char *host_){
+    const TrieType<strategy> *v = nullptr;
+    string host = host_;
+    auto mask_pos = host.find_first_of('/');
     sockaddr_un addr;
-    if (inet_pton(AF_INET, host, &addr.addr_in.sin_addr) == 1) {
-        stra = ipv4s.find(addr.addr_in.sin_addr);
-    }else if (inet_pton(AF_INET6, host, &addr.addr_in6.sin6_addr) == 1) {
-        //TODO: ipv6
-    }else {
-        stra = domains.find(host);
+    if(mask_pos != string::npos){
+        string ip = host.substr(0, mask_pos);
+#ifdef __ANDROID__
+        int prefix = atoi(host.substr(mask_pos+1).c_str());
+#else
+        int prefix = stoi(host.substr(mask_pos+1));
+#endif
+        if (inet_pton(AF_INET, ip.c_str(), &addr.addr_in.sin_addr) == 1) {
+            v = ipv4s.find(split(addr.addr_in.sin_addr, (uint32_t)prefix));
+        }else if (inet_pton(AF_INET6, ip.c_str(), &addr.addr_in6.sin6_addr) == 1) {
+            v = ipv6s.find(split(addr.addr_in6.sin6_addr, (uint32_t)prefix));
+        }
+    }else if(inet_pton(AF_INET, host.c_str(), &addr.addr_in.sin_addr) == 1){
+        v = ipv4s.find(split(addr.addr_in.sin_addr));
+    }else if(inet_pton(AF_INET6, host.c_str(), &addr.addr_in6.sin6_addr) == 1){
+        v = ipv6s.find(split(addr.addr_in6.sin6_addr));
+    } else{
+        v = domains.find(split(toLower(host)));
     }
-    if(stra.s == Strategy::none){
-        stra = {Strategy::direct, ""};
-    }
-    return stra;
+    
+    return v? v->value : strategy{Strategy::direct, ""};
 }
 
 const char* getstrategystring(Strategy s) {
@@ -346,10 +230,20 @@ const char* getstrategystring(Strategy s) {
 
 std::list<std::pair<std::string, strategy>> getallstrategy(){
     std::list<std::pair<std::string, strategy>> slist;
-    ipv4s.dump(slist);
-    auto domainlist = domains.dump();
+    std::list<char> i4list;
+    auto ip4list = ipv4s.dump(i4list);
+    for(auto i: ip4list){
+        slist.emplace_back(join(AF_INET, i.first), i.second);
+    }
+    std::list<char> i6list;
+    auto ip6list = ipv6s.dump(i6list);
+    for(auto i: ip6list){
+        slist.emplace_back(join(AF_INET6, i.first), i.second);
+    }
+    std::list<string> hlist;
+    auto domainlist = domains.dump(hlist);
     for(auto i: domainlist){
-        slist.emplace_back(i.first, i.second);
+        slist.emplace_back(join(i.first), i.second);
     }
     return slist;
 }

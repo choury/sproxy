@@ -1,5 +1,4 @@
-build/
-build-mac/
+build*/
 test_dir/
 .idea/
 .vscode

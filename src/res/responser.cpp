@@ -55,6 +55,20 @@ static CheckResult check_header(HttpReqHeader* req, Requester* src){
     return CheckResult::Succeed;
 }
 
+static std::string getstraname(HttpReqHeader* header) {
+    if(header->Dest.hostname[0] != '['){
+        return header->geturl();
+    }
+    //for ipv6, we should drop '[]'
+    char name[URLLIMIT]={0};
+    int l = sprintf(name, "%s", header->Dest.hostname + 1);
+    if(header->path[1]){
+        sprintf(name + l - 1, "%s", header->path);
+    }else{
+        name[l - 1] = 0;
+    }
+    return name;
+}
 
 void distribute(HttpReq* req, Requester* src){
     HttpRes* res = nullptr;
@@ -138,10 +152,13 @@ void distribute(HttpReq* req, Requester* src){
         return Host::gethost(req, &dest, src);
     }else if (req->header->ismethod("ADDS")) {
         const char *strategy = req->header->get("s");
+        if(!strategy){
+            res = new HttpRes(new HttpResHeader(H400), "[[no strategy]]\n");
+            goto out;
+        }
         const char *ext = req->header->get("ext");
         req->header->set("Strategy", strategy);
-        // use geturl here because we need mask like /20 for ip
-        if(strategy && addstrategy(req->header->geturl().c_str(), strategy, ext ? ext:"")){
+        if(strategy && addstrategy(getstraname(req->header).c_str(), strategy, ext ? ext:"")){
             res = new HttpRes(new HttpResHeader(H200), "[[ok]]\n");
             goto out;
         }else{
@@ -149,10 +166,11 @@ void distribute(HttpReq* req, Requester* src){
             goto out;
         }
     } else if (req->header->ismethod("DELS")) {
-        strategy stra = getstrategy(req->header->Dest.hostname);
+        std::string host = getstraname(req->header);
+        strategy stra = getstrategy(host.c_str());
         const char *strategy = getstrategystring(stra.s);
         req->header->set("Strategy", strategy);
-        if(delstrategy(req->header->Dest.hostname)){
+        if(delstrategy(host.c_str())){
             HttpResHeader* header = new HttpResHeader(H200, sizeof(H200));
             header->set("Strategy", strategy);
             header->set("Ext", stra.ext);
@@ -172,7 +190,7 @@ void distribute(HttpReq* req, Requester* src){
             goto out;
         }
     } else if (req->header->ismethod("TEST")){
-        strategy stra = getstrategy(req->header->Dest.hostname);
+        strategy stra = getstrategy(getstraname(req->header).c_str());
         const char *strategy = getstrategystring(stra.s);
         req->header->set("Strategy", strategy);
         HttpResHeader* header = new HttpResHeader(H200);
