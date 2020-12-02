@@ -37,7 +37,7 @@ int set_if(struct ifreq* ifr){
         return err;
     }
 
-    inet_pton(AF_INET, "255.255.255.255", &addr->sin_addr);
+    inet_pton(AF_INET, VPNMASK, &addr->sin_addr);
     if((err = ioctl(fd, SIOCSIFNETMASK, ifr)) < 0) {
         perror("ioctl (SIOCSIFMASK) failed");
         close(fd);
@@ -70,6 +70,9 @@ int set_if(struct ifreq* ifr){
     struct rtentry route;
     memset(&route, 0, sizeof(route));
 
+    route.rt_flags = RTF_UP | RTF_GATEWAY;
+    route.rt_dev = ifr->ifr_name;
+
     addr = (struct sockaddr_in *)&route.rt_gateway;
     addr->sin_family = AF_INET;
     addr->sin_addr.s_addr = inet_addr(VPNADDR);
@@ -82,18 +85,17 @@ int set_if(struct ifreq* ifr){
     addr->sin_family = AF_INET;
     addr->sin_addr.s_addr = INADDR_ANY;
 
-    route.rt_flags = RTF_UP | RTF_GATEWAY;
-    route.rt_dev = ifr->ifr_name;
-
+/*
     if((err = ioctl(fd, SIOCADDRT, &route)) < 0){
         perror("ioctl (SIOCADDRT) failed");
         close(fd);
         return err;
     }
+    */
+
     struct DnsConfig config;
     getDnsConfig(&config);
-    int i;
-    for(i = 0; i < config.namecount; i++){
+    for(int i = 0; i < config.namecount; i++){
         if(config.server[i].addr_in.sin_family != AF_INET){
             continue;
         }
@@ -123,7 +125,7 @@ int set_if6(struct ifreq* ifr){
     /* set ip of this end point of tunnel */
     struct in6_ifreq ifr6;
     ifr6.ifr6_ifindex = ifr->ifr_ifindex;
-    ifr6.ifr6_prefixlen = 128;
+    ifr6.ifr6_prefixlen = 111;
     inet_pton(AF_INET6, VPNADDR6, &ifr6.ifr6_addr);
     if((err = ioctl(fd, SIOCSIFADDR, &ifr6)) < 0) {
         perror("ioctl (SIOCSIFADDR) failed");
@@ -152,22 +154,23 @@ int set_if6(struct ifreq* ifr){
     memset(&route, 0, sizeof(route));
 
     inet_pton(AF_INET6, VPNADDR6, &route.rtmsg_gateway);
-    route.rtmsg_dst = in6addr_any;
     //route.rtmsg_flags = RTF_UP | RTF_GATEWAY;
     route.rtmsg_flags = RTF_UP;
     route.rtmsg_metric = 1;
     route.rtmsg_ifindex = ifr6.ifr6_ifindex;
 
+/*
+    route.rtmsg_dst = in6addr_any;
     if((err = ioctl(fd, SIOCADDRT, &route)) < 0){
         perror("ioctl (SIOCADDRT) failed");
         close(fd);
         return err;
     }
+    */
 
     struct DnsConfig config;
     getDnsConfig(&config);
-    int i;
-    for(i = 0; i < config.namecount; i++){
+    for(int i = 0; i < config.namecount; i++){
         if(config.server[i].addr_in6.sin6_family != AF_INET6){
             continue;
         }
