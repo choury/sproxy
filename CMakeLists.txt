@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.12)
 project(sproxy)
 set(CMAKE_MACOSX_RPATH 1)
 
@@ -127,7 +127,7 @@ if (HAVE_SAN_UNDEF)
     set(CMAKE_CXX_FLAGS_DEBUG "-fsanitize=undefined ${CMAKE_CXX_FLAGS_DEBUG}")
 endif()
 
-If(LINUX OR ANDROID)
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR ANDROID)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=gold -Wl,--rosegment")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=gold -Wl,--rosegment")
 endif()
