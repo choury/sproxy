@@ -2,6 +2,7 @@
 
 #include "res/fdns.h"
 #include "misc/simpleio.h"
+#include "misc/config.h"
 #include "misc/util.h"
 
 #include <fstream>
@@ -264,7 +265,7 @@ const char * Guest_vpn::getProg() const{
 const char* Guest_vpn::generateUA() const {
     static char UA[URLLIMIT];
 #ifndef __ANDROID__
-    sprintf(UA, "Sproxy/1.0 (%s)", getDeviceInfo());
+    sprintf(UA, "Sproxy/%s (%s)", getVersion(), getDeviceInfo());
 #else
     sprintf(UA, "Sproxy/%s (%s)", version, getDeviceName());
 #endif
@@ -401,7 +402,7 @@ void Guest_vpn::tcp_ack() {
     if(tcpStatus->status != TCP_ESTABLISHED){
         return;
     }
-    assert(nobefore(tcpStatus->send_ack, tcpStatus->want_seq));
+    assert(noafter(tcpStatus->send_ack, tcpStatus->want_seq));
     if(tcpStatus->send_ack == tcpStatus->want_seq){
         return;
     }

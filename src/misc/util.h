@@ -48,7 +48,6 @@ void p_free(PRE_POINTER void* ptr);
 PRE_POINTER void* p_move(PRE_POINTER void* ptr, signed char len);
 PRE_POINTER char* p_avsprintf(size_t* size, const char* fmt, va_list ap);
 const char* findprogram(ino_t inode);
-const char* getDeviceInfo();
 struct in6_addr mapIpv4(struct in_addr addr, const char* prefix);
 struct in_addr getMapped(struct in6_addr addr, const char* prefix);
 

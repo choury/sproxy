@@ -2,6 +2,7 @@
 #include "util.h"
 #include "strategy.h"
 #include "net.h"
+#include "version.h"
 
 #include <getopt.h>
 #include <stdio.h>
@@ -14,6 +15,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <inttypes.h>
+#include <sys/utsname.h>
 #ifndef __APPLE__
 #include <sys/prctl.h>
 #include <sys/resource.h>
@@ -40,6 +42,7 @@ struct options opt = {
     .autoindex         = false,
     .ipv6_enabled      = true,
     .alter_method      = false,
+    .set_dns_route     = false,
 
     .CPORT          = 0,
     .Server         = {
@@ -63,11 +66,10 @@ enum option_type{
     option_string,
     option_enum,
     option_bitwise,
-    option_extargs,
     option_list,
 };
 
-static const char* getopt_option = ":D1hikr:s:p:I:c:P:";
+static const char* getopt_option = ":D1hikr:s:p:I:c:P:v";
 static struct option long_options[] = {
     {"autoindex",     no_argument,       NULL, 'i'},
     {"cafile",        required_argument, NULL,  0 },
@@ -86,9 +88,11 @@ static struct option long_options[] = {
     {"rewrite-auth",  required_argument, NULL, 'r'},
     {"root-dir",      required_argument, NULL,  0 },
     {"secret",        required_argument, NULL, 's'},
+    {"set-dns-route", no_argument,       NULL,  0 },
     {"sni",           no_argument,       NULL,  0 },
     {"alter-method",  no_argument,       NULL,  0 },
-    {"request-header",required_argument, NULL, 0 },
+    {"request-header",required_argument, NULL,  0 },
+    {"version",       no_argument,       NULL, 'v'},
 #ifndef NDEBUG
     {"debug-event",   no_argument,   NULL,  0 },
     {"debug-dns",     no_argument,   NULL,  0 },
@@ -119,7 +123,7 @@ static struct option_detail option_detail[] = {
     {"config", "Configure file (default /etc/sproxy/sproxy.conf, /usr/local/etc/sproxy/sproxy.conf)", option_string, &opt.config_file, NULL},
     {"daemon", "Run as daemon", option_bool, &opt.daemon_mode, (void*)true},
     {"disable-http2", "Use http/1.1 only", option_bool, &opt.disable_http2, (void*)true},
-    {"help", "Print this usage", option_extargs, NULL, NULL},
+    {"help", "Print this usage", option_bool, NULL, NULL},
     {"index", "Index file for path (local server)", option_string, &opt.index_file, NULL},
     {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_bool, &opt.ignore_cert_error, (void*)true},
     {"interface", "Out interface (use for vpn)", option_string, &opt.interface, NULL},
@@ -132,8 +136,10 @@ static struct option_detail option_detail[] = {
     {"secret", "Set a user and passwd for proxy (user:password), default is none.", option_base64, opt.auth_string, NULL},
     {"sni", "Act as a sni proxy", option_bool, &opt.sni_mode, (void*)true},
     {"server", "default proxy server (can ONLY set in config file)", option_string, &server_string, NULL},
+    {"set-dns-route", "set route for dns server (via VPN interface)", option_bool, &opt.set_dns_route, (void*)true},
     {"alter-method", "use Alter-Method to define real method (for obfuscation), http1 only", option_bool, &opt.alter_method, (void*)true},
     {"request-header", "append the header (name:value) for plain http request", option_list, &opt.request_headers, NULL},
+    {"version", "show the version of this programe", option_bool, NULL, NULL},
 #ifndef NDEBUG
     {"debug-event", "debug-event", option_bitwise, &debug, (void*)DEVENT},
     {"debug-dns", "\tdebug-dns", option_bitwise, &debug, (void*)DDNS},
@@ -145,7 +151,7 @@ static struct option_detail option_detail[] = {
     {"debug-file", "debug-file",  option_bitwise, &debug, (void*)DFILE},
     {"debug-all", "\tdebug-all", option_bitwise, &debug, (void*)0xffffffff},
 #endif
-    {NULL, NULL, option_extargs, NULL, NULL},
+    {NULL, NULL, option_bool, NULL, NULL},
 };
 
 void prepare(){
@@ -204,14 +210,31 @@ static void usage(const char * program){
     }
 }
 
-static void parseExtargs(const char* name, const char* args){
-    (void)args;
-    if(strcmp(name, "help") == 0){
-        usage(main_argv[0]);
-        exit(0);
-    }else{
-        assert(0);
+const char* getVersion() {
+    return VERSION;
+}
+
+const char* getBuildTime() {
+    return BUILDTIME;
+}
+
+const char* getDeviceInfo(){
+    static char infoString[DOMAINLIMIT+5] = {0};
+    if(strlen(infoString)){
+        return infoString;
     }
+    struct utsname info;
+    if(uname(&info)){
+        LOGE("uname failed: %s\n", strerror(errno));
+        return "Unkown platform";
+    }
+    snprintf(infoString, sizeof(infoString), "%s %s; %s %s", info.sysname, info.machine, info.nodename, info.release);
+    return infoString;
+}
+
+
+static void show_version(){
+    LOG("%s version: %s, build time: %s\n", main_argv[0], getVersion(), getBuildTime());
 }
 
 static void parseArgs(const char* name, const char* args){
@@ -281,9 +304,6 @@ static void parseArgs(const char* name, const char* args){
                 apos->arg = strdup(args);
                 apos->next = NULL;
                 LOG("append option %s: %s\n", name, apos->arg);
-                break;
-            case option_extargs:
-                parseExtargs(option_detail[i].name, args);
                 break;
             }
             return;
@@ -361,10 +381,16 @@ void parseConfig(int argc, char **argv){
             LOG("unkown option: %s\n", argv[optind-1]);
             usage(argv[0]);
             exit(1);
+        case 'h':
+            usage(argv[0]);
+            exit(0);
         case ':':
             LOG("option %s need argument\n", argv[optind-1]);
             usage(argv[0]);
             exit(1);
+        case 'v':
+            show_version();
+            exit(0);
         case 'c':
             opt.config_file = strdup(optarg);
             break;

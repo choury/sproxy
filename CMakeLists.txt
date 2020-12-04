@@ -25,6 +25,21 @@ if(NOT HAVE_CXX11 OR NOT HAVE_C99)
     message(FATAL_ERROR "this project need c++11 and c99")
 endif()
 
+set(VERSION "v0.0.0")
+string(TIMESTAMP NOW UTC)
+find_package(Git)
+if(Git_FOUND)
+    execute_process(COMMAND ${GIT_EXECUTABLE} describe --tag --dirty --long --always
+        OUTPUT_VARIABLE VERSION
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+endif()
+message("Set VERSION: ${VERSION}")
+#parse the version information into pieces.
+string(REGEX REPLACE "^v([0-9]+)\\..*" "\\1" PROJECT_VERSION_MAJOR "${VERSION}")
+string(REGEX REPLACE "^v[0-9]+\\.([0-9]+).*" "\\1" PROJECT_VERSION_MINOR "${VERSION}")
+string(REGEX REPLACE "^v[0-9]+\\.[0-9]+\\.([0-9]+).*" "\\1" PROJECT_VERSION_PATCH "${VERSION}")
 
 CHECK_CXX_COMPILER_FLAG("-fsanitize=undefined" HAVE_SAN_UNDEF)
 set(CMAKE_REQUIRED_FLAGS "-fsanitize=address")
@@ -104,9 +119,8 @@ else()
     message(WARNING "zlib not found, disable gzip test")
 endif()
 
+
 find_package(Backtrace)
-configure_file(${PROJECT_SOURCE_DIR}/src/common.h.in ${PROJECT_BINARY_DIR}/src/common.h ESCAPE_QUOTES)
-include_directories(${PROJECT_BINARY_DIR}/src)
 
 set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
@@ -141,3 +155,28 @@ else()
     install(DIRECTORY DESTINATION /var/lib/sproxy)
 endif()
 
+SET(CPACK_SET_DESTDIR "ON")
+set(CPACK_PACKAGE_NAME "${PROJECT_NAME}")
+set(CPACK_PACKAGE_VENDOR "choury")
+set(CPACK_PACKAGE_DESCRIPTION_FILE "${PROJECT_SOURCE_DIR}/README.md")
+set(CPACK_PACKAGE_VERSION_MAJOR "${PROJECT_VERSION_MAJOR}")
+set(CPACK_PACKAGE_VERSION_MINOR "${PROJECT_VERSION_MINOR}")
+set(CPACK_PACKAGE_VERSION_PATCH "${PROJECT_VERSION_PATCH}")
+set(CPACK_PACKAGE_CONTACT "choury zhouwei400@gmail.com")
+set(CPACK_SOURCE_GENERATOR "TGZ")
+set(CPACK_SOURCE_IGNORE_FILES "${PROJECT_BINARY_DIR};/.git/;.gitignore")
+
+set(CPACK_GENERATOR "ZIP;TGZ")
+if(CMAKE_SYSTEM_NAME MATCHES Linux)
+    list(APPEND CPACK_GENERATOR "DEB")
+    set(CPACK_DEBIAN_PACKAGE_SECTION "application")
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "openssl,libjson-c5,zlib")
+
+    list(APPEND CPACK_GENERATOR "RPM")
+    set(CPACK_RPM_PACKAGE_RELEASE "1")
+    set(CPACK_RPM_PACKAGE_LICENSE "GPL")
+    set(CPACK_RPM_PACKAGE_REQUIRES "openssl json-c zlib")
+endif()
+
+message(STATUS "CPack generators: ${CPACK_GENERATOR}")
+include(CPack)

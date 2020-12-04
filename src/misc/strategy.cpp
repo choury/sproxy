@@ -83,6 +83,7 @@ std::string getExternalFilesDir();
 
 void reloadstrategy() {
     ipv4s.clear();
+    ipv6s.clear();
     domains.clear();
 
     //default strategy

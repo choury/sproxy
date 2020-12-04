@@ -41,6 +41,7 @@ struct options{
     bool autoindex;
     bool ipv6_enabled;
     bool alter_method;
+    bool set_dns_route;
 
     int64_t CPORT;
     struct Destination Server;
@@ -56,6 +57,10 @@ void prepare();
 int parseConfigFile(const char* config_file);
 void parseConfig(int argc, char **argv);
 int loadproxy(const char* proxy, struct Destination* server);
+
+const char* getVersion();
+const char* getBuildTime();
+const char* getDeviceInfo();
 #ifdef __cplusplus
 }
 #endif

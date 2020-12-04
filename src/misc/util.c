@@ -11,7 +11,6 @@
 #include <signal.h>
 #include <dirent.h>
 #include <libgen.h>
-#include <sys/utsname.h>
 
 #define PRIOR_HEAD 80
     
@@ -302,20 +301,6 @@ const char* findprogram(ino_t inode){
     }
     closedir(dir);
     return program;
-}
-
-const char* getDeviceInfo(){
-    static char infoString[DOMAINLIMIT+5] = {0};
-    if(strlen(infoString)){
-        return infoString;
-    }
-    struct utsname info;
-    if(uname(&info)){
-        LOGE("uname failed: %s\n", strerror(errno));
-        return "Unkown platform";
-    }
-    snprintf(infoString, sizeof(infoString), "%s %s; %s %s", info.sysname, info.machine, info.nodename, info.release);
-    return infoString;
 }
 
 #ifndef s6_addr32
