@@ -301,8 +301,7 @@ void RWer::SendData(){
         if(errno == EAGAIN){
             break;
         }
-        stats = RWerStats::Error;
-        errorCB(WRITE_ERR, errno);
+        ErrorHE(WRITE_ERR, errno);
         return;
     }
     if(writed){
@@ -328,8 +327,7 @@ void RWer::SetWriteCB(std::function<void(size_t len)> func){
 
 void RWer::defaultHE(RW_EVENT events){
     if (!!(events & RW_EVENT::ERROR) || stats == RWerStats::Error) {
-        stats = RWerStats::Error;
-        errorCB(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
+        ErrorHE(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
         return;
     }
     if (!!(events & RW_EVENT::READ) || !!(events & RW_EVENT::READEOF)){
@@ -409,8 +407,15 @@ void RWer::EatReadData(){
 }
 
 void RWer::Connected(const union sockaddr_un& addr){
+    setEvents(RW_EVENT::READWRITE);
     stats = RWerStats::Connected;
+    handleEvent = (void (Ep::*)(RW_EVENT))&RWer::defaultHE;
     connectCB(addr);
+}
+
+void RWer::ErrorHE (int ret, int code) {
+    stats = RWerStats::Error;
+    errorCB(ret, code);
 }
 
 void RWer::Shutdown() {

@@ -157,6 +157,7 @@ void Guest::Error(int ret, int code) {
 void Guest::response(void*, HttpRes* res) {
     GStatus& status = statuslist.front();
     HttpLog(getsrc(), status.req, res);
+    assert(status.res == nullptr);
     status.res = res;
     if(status.req->header->ismethod("CONNECT") ||
        status.req->header->ismethod("SEND"))

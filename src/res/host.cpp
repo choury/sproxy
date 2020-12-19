@@ -39,7 +39,11 @@ Host::Host(const Destination* dest){
 }
 
 Host::~Host(){
-    LOGD(DHTTP, "host %s destoryed: rx:%zu, tx:%zu\n", rwer->getDest(), rx_bytes, tx_bytes);
+    if(rwer){
+        LOGD(DHTTP, "host %s destoryed: rx:%zu, tx:%zu\n", rwer->getDest(), rx_bytes, tx_bytes);
+    }else{
+        LOGD(DHTTP, "host null destoryed: rx:%zu, tx:%zu\n", rx_bytes, tx_bytes);
+    }
 }
 
 void Host::reply(){

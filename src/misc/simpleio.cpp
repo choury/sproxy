@@ -117,8 +117,7 @@ NetRWer::~NetRWer() {
 void NetRWer::Dnscallback(void* param, std::list<sockaddr_un> addrs) {
     NetRWer* rwer = static_cast<NetRWer*>(param);
     if (addrs.empty()) {
-        rwer->stats = RWerStats::Error;
-        return rwer->errorCB(DNS_FAILED, 0);
+        return rwer->ErrorHE(DNS_FAILED, 0);
     }
 
     for(auto& i: addrs){
@@ -134,13 +133,10 @@ void NetRWer::Dnscallback(void* param, std::list<sockaddr_un> addrs) {
     case Protocol::ICMP: {
         int fd = IcmpSocket(&addrs.front());
         if (fd < 0) {
-            rwer->stats = RWerStats::Error;
-            return rwer->errorCB(CONNECT_FAILED, errno);
+            return rwer->ErrorHE(CONNECT_FAILED, errno);
         }
         rwer->setFd(fd);
-        rwer->setEvents(RW_EVENT::READWRITE);
         rwer->Connected(addrs.front());
-        rwer->handleEvent = (void (Ep::*)(RW_EVENT)) &NetRWer::defaultHE;
         break;
     }
     default:
@@ -155,8 +151,7 @@ void NetRWer::retryconnect(int error) {
         addrs.pop();
     }
     if(addrs.empty()){
-        stats = RWerStats::Error;
-        errorCB(error, 0);
+        ErrorHE(error, 0);
         return;
     }
     connect();
@@ -191,9 +186,7 @@ void NetRWer::waitconnectHE(RW_EVENT events) {
         return retryconnect(CONNECT_FAILED);
     }
     if (!!(events & RW_EVENT::WRITE)) {
-        setEvents(RW_EVENT::READWRITE);
         Connected(addrs.front());
-        handleEvent = (void (Ep::*)(RW_EVENT))&NetRWer::defaultHE;
         deljob(&con_failed_job);
     }
 }
@@ -253,8 +246,7 @@ void StreamRWer::ReadData() {
         if(errno == EAGAIN){
             break;
         }
-        stats = RWerStats::Error;
-        errorCB(READ_ERR, errno);
+        ErrorHE(READ_ERR, errno);
         return;
     }
     if(rb.length()){
@@ -302,8 +294,7 @@ void PacketRWer::ReadData() {
         if(errno == EAGAIN){
             break;
         }
-        stats = RWerStats::Error;
-        errorCB(READ_ERR, errno);
+        ErrorHE(READ_ERR, errno);
         return;
     }
     if(rb.left() == 0){

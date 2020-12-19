@@ -94,11 +94,11 @@ enum class RWerStats{
 };
 
 class RWer: public Ep, public job_handler{
+protected:
 #define RWER_READING  1u
 #define RWER_SENDING  2u
 #define RWER_CLOSING  4u
     uint32_t  flags = 0;
-protected:
     RWerStats  stats = RWerStats::Idle;
     WBuffer wbuff;
     std::function<void(size_t len)> readCB;
@@ -113,6 +113,7 @@ protected:
     virtual void defaultHE(RW_EVENT events);
     virtual void closeHE(RW_EVENT events);
     virtual void Connected(const union sockaddr_un&);
+    virtual void ErrorHE(int ret, int code);
 public:
     explicit RWer(int fd, std::function<void(int ret, int code)> errorCB);
     explicit RWer(std::function<void(int ret, int code)> errorCB,

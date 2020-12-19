@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 2.8)
-
 add_custom_target(version COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${PROJECT_SOURCE_DIR}/src/version.h.in)
 
 configure_file(${PROJECT_SOURCE_DIR}/src/common.h.in ${PROJECT_BINARY_DIR}/src/common.h ESCAPE_QUOTES)
