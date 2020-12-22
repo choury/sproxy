@@ -6,9 +6,9 @@
 #include "misc/net.h"
 
 struct VpnKey{
-    sockaddr_un src;
-    sockaddr_un dst;
     Protocol    protocol;
+    sockaddr_storage src;
+    sockaddr_storage dst;
     explicit VpnKey(std::shared_ptr<const Ip> ip);
     const VpnKey& reverse();
     const char* getString(const char* sep) const;

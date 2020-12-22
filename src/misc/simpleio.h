@@ -35,20 +35,20 @@ protected:
     uint16_t port = 0;
     Protocol protocol;
     char     hostname[DOMAINLIMIT] = {0};
-    std::queue<sockaddr_un> addrs;
+    std::queue<sockaddr_storage> addrs;
     Job*     con_failed_job = nullptr;
     virtual void waitconnectHE(RW_EVENT events);
     void connect();
     void retryconnect(int error);
     void con_failed();
-    static void Dnscallback(void* param, std::list<sockaddr_un> addrs);
+    static void Dnscallback(void* param, std::list<sockaddr_storage> addrs);
 
     virtual ssize_t Write(const void* buff, size_t len) override;
 public:
     NetRWer(int fd, std::function<void(int ret, int code)> errorCB);
     NetRWer(const char* hostname, uint16_t port, Protocol protocol,
            std::function<void(int ret, int code)> errorCB,
-           std::function<void(const sockaddr_un&)> connectCB = nullptr);
+           std::function<void(const sockaddr_storage&)> connectCB = nullptr);
     virtual ~NetRWer() override;
     virtual const char* getPeer() override;
     virtual const char* getDest() override;

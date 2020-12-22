@@ -32,14 +32,14 @@ static in6_addr getInet6(std::string hostname) {
     return mapIpv4(getInet(std::move(hostname)), NAT64PREFIX);
 }
 
-static uint32_t getFip(const sockaddr_un& addr){
+static uint32_t getFip(const sockaddr_storage* addr){
     uint32_t fip = 0;
-    switch(addr.addr.sa_family){
+    switch(addr->ss_family){
         case AF_INET:
-            fip = ntohl(addr.addr_in.sin_addr.s_addr);
+            fip = ntohl(((sockaddr_in*)addr)->sin_addr.s_addr);
             break;
         case AF_INET6:
-            fip = ntohl(getMapped(addr.addr_in6.sin6_addr, NAT64PREFIX).s_addr);
+            fip = ntohl(getMapped(((sockaddr_in6*)addr)->sin6_addr, NAT64PREFIX).s_addr);
             break;
         default:
             abort();
@@ -47,8 +47,8 @@ static uint32_t getFip(const sockaddr_un& addr){
     return fip;
 }
 
-std::string getRdns(const sockaddr_un& addr) {
-    auto record = fdns_records.Get(getFip(addr));
+std::string getRdns(const sockaddr_storage& addr) {
+    auto record = fdns_records.Get(getFip(&addr));
     if(record){
         return record->t2;
     }else{
@@ -106,7 +106,7 @@ void FDns::Send(uint32_t id, const void* buff, size_t size) {
         LOGD(DDNS, "FQuery %s [%d]: %d\n", req->que.host.c_str(), req->que.id, req->que.type);
         Dns_Rr* rr = nullptr;
         if(req->que.type == 12){
-            auto record = fdns_records.Get(getFip(req->que.ptr_addr));
+            auto record = fdns_records.Get(getFip(&req->que.ptr_addr));
             if(record){
                 rr = new Dns_Rr(record->t2.c_str());
             }
@@ -137,7 +137,7 @@ void FDns::Send(uint32_t id, const void* buff, size_t size) {
     }
 }
 
-void FDns::DnsCb(void *param, std::list<sockaddr_un> addrs) {
+void FDns::DnsCb(void *param, std::list<sockaddr_storage> addrs) {
     FDns_req* req = (FDns_req*)param;
     if(fdns && fdns->statusmap.count(req->id)){
         FDnsStatus& status = fdns->statusmap[req->id];

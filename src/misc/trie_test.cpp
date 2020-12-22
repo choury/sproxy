@@ -2,21 +2,6 @@
 #include <arpa/inet.h>
 #include "trie.h"
 
-union sockaddr_un;
-
-extern "C" const char *getaddrstring(const sockaddr_un *addr_){
-    sockaddr* addr = (sockaddr*)addr_;
-    static char buff[100];
-    if(addr->sa_family == AF_INET6){
-        sockaddr_in6* ip6 = (sockaddr_in6*)addr;
-        inet_ntop(AF_INET6, &ip6->sin6_addr, buff, sizeof(buff));
-    }
-    if(addr->sa_family == AF_INET){
-        sockaddr_in* ip = (sockaddr_in*)addr;
-        inet_ntop(AF_INET, &ip->sin_addr, buff, sizeof(buff));
-    }
-    return buff;
-}
 
 int main(){
 #ifndef NDEBUG

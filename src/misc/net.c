@@ -24,7 +24,7 @@ int Checksocket(int fd, const char *msg){
     return error;
 }
 
-void SetTcpOptions(int fd, const union sockaddr_un* ignore){
+void SetTcpOptions(int fd, const struct sockaddr_storage* ignore){
     (void)ignore;
     //以下设置为TCP配置，非必须，所以不返回错误
     int keepAlive = 1; // 开启keepalive属性
@@ -51,19 +51,19 @@ void SetTcpOptions(int fd, const union sockaddr_un* ignore){
         LOGE("TCP_NODELAY:%s\n", strerror(errno));
 }
 
-void SetUdpOptions(int fd, const union sockaddr_un* addr){
+void SetUdpOptions(int fd, const struct sockaddr_storage* addr){
     int enable = 1;
 #if defined(IP_RECVERR) && defined(IPV6_RECVERR)
-    if (addr->addr.sa_family == AF_INET) {
+    if (addr->ss_family == AF_INET) {
         if (setsockopt(fd, IPPROTO_IP, IP_RECVERR, &enable, sizeof(enable)))
             LOGE("IP_RECVERR:%s\n", strerror(errno));
     }
-    if (addr->addr.sa_family == AF_INET6) {
+    if (addr->ss_family == AF_INET6) {
         if (setsockopt(fd, IPPROTO_IPV6, IPV6_RECVERR, &enable, sizeof(enable)))
             LOGE("IPV6_RECVERR:%s\n", strerror(errno));
     }
 #endif
-    if(addr->addr.sa_family == AF_INET && addr->addr_in.sin_addr.s_addr == htonl(INADDR_BROADCAST)){
+    if(addr->ss_family == AF_INET && ((struct sockaddr_in*)addr)->sin_addr.s_addr == htonl(INADDR_BROADCAST)){
         if(setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable)) < 0)
             LOGE("set broadcast:%s\n", strerror(errno));
     }
@@ -120,7 +120,7 @@ int Listen(int type, short port) {
     return -1;
 }
 
-int Bind(int type, short port, const union sockaddr_un* addr){
+int Bind(int type, short port, const struct sockaddr_storage* addr){
     int fd = socket(AF_INET6, type, 0);
     if (fd < 0) {
         LOGE("socket error:%s\n", strerror(errno));
@@ -163,8 +163,8 @@ int Bind(int type, short port, const union sockaddr_un* addr){
             SetUdpOptions(fd, addr);
         }
 
-        socklen_t len = (addr->addr.sa_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
-        if (connect(fd, &addr->addr, len) == -1 && errno != EINPROGRESS) {
+        socklen_t len = (addr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
+        if (connect(fd, (struct sockaddr*)addr, len) == -1 && errno != EINPROGRESS) {
             LOGE("connecting error:%s\n", strerror(errno));
             break;
         }
@@ -175,8 +175,8 @@ int Bind(int type, short port, const union sockaddr_un* addr){
 }
 
 
-int Connect(const union sockaddr_un* addr, int type) {
-    int fd =  socket(addr->addr.sa_family, type, 0);
+int Connect(const struct sockaddr_storage* addr, int type) {
+    int fd =  socket(addr->ss_family, type, 0);
     if (fd < 0) {
         LOGE("socket error:%s\n", strerror(errno));
         return -1;
@@ -200,9 +200,9 @@ int Connect(const union sockaddr_un* addr, int type) {
             SetUdpOptions(fd, addr);
         }
 
-        socklen_t len = (addr->addr.sa_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
-        if (connect(fd, &addr->addr, len) == -1 && errno != EINPROGRESS) {
-            LOGE("connecting %s error: %s\n", getaddrportstring(addr), strerror(errno));
+        socklen_t len = (addr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
+        if (connect(fd, (struct sockaddr*)addr, len) == -1 && errno != EINPROGRESS) {
+            LOGE("connecting %s error: %s\n", storage_ntoa(addr), strerror(errno));
             break;
         }
         return fd;
@@ -212,9 +212,9 @@ int Connect(const union sockaddr_un* addr, int type) {
 }
 
 
-int IcmpSocket(const union sockaddr_un* addr){
+int IcmpSocket(const struct sockaddr_storage* addr){
     int fd = -1;
-    if(addr->addr.sa_family == AF_INET){
+    if(addr->ss_family == AF_INET){
 #ifdef SOCK_CLOEXEC
         fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_ICMP);
 #else
@@ -225,7 +225,7 @@ int IcmpSocket(const union sockaddr_un* addr){
             return -1;
         }
     }
-    if(addr->addr.sa_family == AF_INET6){
+    if(addr->ss_family == AF_INET6){
 #ifdef SOCK_CLOEXEC
         fd = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_ICMPV6);
 #else
@@ -241,8 +241,8 @@ int IcmpSocket(const union sockaddr_un* addr){
         LOGE("protecd fd error:%s\n", strerror(errno));
         goto ERR;
     }
-    socklen_t len = (addr->addr.sa_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
-    if(connect(fd, &addr->addr, len)){
+    socklen_t len = (addr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
+    if(connect(fd, (struct sockaddr*)addr, len)){
         LOGE("connect failed: %s\n", strerror(errno));
         goto ERR;
     }
@@ -256,63 +256,70 @@ ERR:
     return -1;
 }
 
-const char *getaddrstring(const union sockaddr_un *addr){
+const char *getaddrstring(const struct sockaddr_storage *addr){
     static char buff[100];
-    if(addr->addr.sa_family == AF_INET6){
-        struct in_addr ip4 = getMapped(addr->addr_in6.sin6_addr, IPV4MAPIPV6);
+    struct sockaddr_in* addr4 = (struct sockaddr_in*)addr;
+    struct sockaddr_in6* addr6 = (struct sockaddr_in6*)addr;
+    if(addr->ss_family == AF_INET6){
+        struct in_addr ip4 = getMapped(addr6->sin6_addr, IPV4MAPIPV6);
         if(ip4.s_addr != INADDR_NONE){
             inet_ntop(AF_INET, &ip4, buff, sizeof(buff));
-            return buff;
+        }else {
+            char ip[INET6_ADDRSTRLEN];
+            inet_ntop(AF_INET6, &addr6->sin6_addr, ip, sizeof(ip));
+            sprintf(buff, "[%s]", ip);
         }
-        inet_ntop(AF_INET6, &addr->addr_in6.sin6_addr, buff, sizeof(buff));
-    }else if(addr->addr.sa_family == AF_INET){
-        inet_ntop(AF_INET, &addr->addr_in.sin_addr, buff, sizeof(buff));
+    }else if(addr->ss_family == AF_INET){
+        inet_ntop(AF_INET, &addr4->sin_addr, buff, sizeof(buff));
     }
     return buff;
 }
 
 
-const char *getaddrportstring(const union sockaddr_un *addr){
+const char *storage_ntoa(const struct sockaddr_storage *addr){
     static char buff[100];
     char ip[INET6_ADDRSTRLEN];
-    if(addr->addr.sa_family == AF_INET6){
-        struct in_addr ip4 = getMapped(addr->addr_in6.sin6_addr, IPV4MAPIPV6);
+    struct sockaddr_in* addr4 = (struct sockaddr_in*)addr;
+    struct sockaddr_in6* addr6 = (struct sockaddr_in6*)addr;
+    if(addr->ss_family == AF_INET6){
+        struct in_addr ip4 = getMapped(addr6->sin6_addr, IPV4MAPIPV6);
         if(ip4.s_addr != INADDR_NONE){
             inet_ntop(AF_INET, &ip4, ip, sizeof(ip));
-            sprintf(buff, "%s:%d", ip, ntohs(addr->addr_in.sin_port));
+            sprintf(buff, "%s:%d", ip, ntohs(addr4->sin_port));
         }else{
-            inet_ntop(AF_INET6, &addr->addr_in6.sin6_addr, ip, sizeof(ip));
-            sprintf(buff, "[%s]:%d", ip, ntohs(addr->addr_in.sin_port));
+            inet_ntop(AF_INET6, &addr6->sin6_addr, ip, sizeof(ip));
+            sprintf(buff, "[%s]:%d", ip, ntohs(addr4->sin_port));
         }
-    }else if(addr->addr.sa_family == AF_INET){
-        inet_ntop(AF_INET, &addr->addr_in.sin_addr, ip, sizeof(ip));
-        sprintf(buff, "%s:%d", ip, ntohs(addr->addr_in.sin_port));
+    }else if(addr->ss_family == AF_INET){
+        inet_ntop(AF_INET, &addr4->sin_addr, ip, sizeof(ip));
+        sprintf(buff, "%s:%d", ip, ntohs(addr4->sin_port));
     }
     return buff;
 }
 
-int getsocketaddr(const char* ip, uint16_t port, union sockaddr_un *addr){
-    memset(addr, 0, sizeof(union sockaddr_un));
-    addr->addr_in.sin_port = htons(port);
+int storage_aton(const char* ipstr, uint16_t port, struct sockaddr_storage* addr){
     char host[INET6_ADDRSTRLEN] = {0};
-    if(ip[0] == '['){ //may be ipv6
-        strncpy(host, ip + 1, sizeof(host)-1);
+    if(ipstr[0] == '['){ //may be ipv6 of format as [2001::1]
+        strncpy(host, ipstr + 1, sizeof(host)-1);
         *strchrnul(host, ']') = 0;
-        ip = host;
+        ipstr = host;
     }
 
-    if (inet_pton(AF_INET, ip, &addr->addr_in.sin_addr) == 1) {
-        addr->addr_in.sin_family = AF_INET;
-        return 0;
+    memset(addr, 0, sizeof(struct sockaddr_storage));
+    struct sockaddr_in* addr4 = (struct sockaddr_in*)addr;
+    if (inet_pton(AF_INET, ipstr, &addr4->sin_addr) == 1) {
+        addr4->sin_family = AF_INET;
+        addr4->sin_port = htons(port);
+        return 1;
     }
-
-    if (inet_pton(AF_INET6, ip, &addr->addr_in6.sin6_addr) == 1) {
-        addr->addr_in6.sin6_family = AF_INET6;
-        return 0;
+    struct sockaddr_in6* addr6 = (struct sockaddr_in6*)addr;
+    if (inet_pton(AF_INET6, ipstr, &addr6->sin6_addr) == 1) {
+        addr6->sin6_family = AF_INET;
+        addr6->sin6_port = htons(port);
+        return 1;
     }
-    return 1;
+    return 0;
 }
-
 
 
 #include <ifaddrs.h>
@@ -322,9 +329,9 @@ void freeifaddrs(struct ifaddrs* __ptr);
 #endif
 
 #define INTERFACE_MAX 50
-union sockaddr_un* getlocalip () {
+struct sockaddr_storage* getlocalip () {
     struct ifaddrs *ifap, *ifa;
-    static union sockaddr_un ips[INTERFACE_MAX];
+    static struct sockaddr_storage ips[INTERFACE_MAX];
     memset(ips, 0, sizeof(ips));
     getifaddrs(&ifap);
     int i = 0;
@@ -338,9 +345,10 @@ union sockaddr_un* getlocalip () {
 }
 
 bool hasIpv6Address(){
-    union sockaddr_un* ips;
-    for(ips = getlocalip(); ips->addr_in.sin_family ; ips++){
-        if(ips->addr.sa_family == AF_INET6 && (ips->addr_in6.sin6_addr.s6_addr[0]&0x70) == 0x20){
+    struct sockaddr_storage* ips;
+    for(ips = getlocalip(); ips->ss_family ; ips++){
+        struct sockaddr_in6* ip6 = (struct sockaddr_in6*)ips;
+        if(ips->ss_family == AF_INET6 && (ip6->sin6_addr.s6_addr[0]&0x70) == 0x20){
             return true;
         }
     }

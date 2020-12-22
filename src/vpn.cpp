@@ -10,7 +10,6 @@
 #include <openssl/ssl.h>
 
 int efd = 0;
-uint32_t debug = 0;
 uint32_t vpn_contiune;
 
 #define VPN_RESET 1u

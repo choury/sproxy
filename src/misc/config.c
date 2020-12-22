@@ -24,6 +24,7 @@
 #endif
 #include <openssl/ssl.h>
 
+uint32_t debug = DVPN;
 static char** main_argv = NULL;
 static char* ipv6_options[] = {"disable", "enable", "auto", NULL};
 static char* server_string = NULL;

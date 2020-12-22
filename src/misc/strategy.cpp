@@ -31,6 +31,48 @@ static Trie<char, strategy> ipv6s;
 
 string toLower(const string &s);
 
+static const Trie<char, strategy>* ipfind(const char* ipstr, int prefix = -1){
+    in_addr ip4;
+    in6_addr ip6;
+
+    if (inet_pton(AF_INET, ipstr, &ip4) == 1) {
+        return ipv4s.find(split(ip4, prefix));
+    }else if (inet_pton(AF_INET6, ipstr, &ip6) == 1) {
+        return ipv6s.find(split(ip6, prefix));
+    }
+    return nullptr;
+}
+
+bool ipinsert(const char* ipstr, strategy stra, int prefix = -1){
+    in_addr ip4;
+    in6_addr ip6;
+
+    if (inet_pton(AF_INET, ipstr, &ip4) == 1) {
+        ipv4s.insert(split(ip4, prefix), stra);
+        return true;
+    }
+    if (inet_pton(AF_INET6, ipstr, &ip6) == 1) {
+        ipv6s.insert(split(ip6, prefix), stra);
+        return true;
+    }
+    return false;
+}
+
+bool ipremove(const char* ipstr, bool& found, int prefix = -1) {
+    in_addr ip4;
+    in6_addr ip6;
+
+    if (inet_pton(AF_INET, ipstr, &ip4) == 1) {
+        ipv4s.remove(split(ip4, prefix), found);
+        return true;
+    }
+    if (inet_pton(AF_INET6, ipstr, &ip6) == 1) {
+        ipv6s.remove(split(ip6, prefix), found);
+        return true;
+    }
+    return false;
+}
+
 static bool mergestrategy(const string& host, const string& strategy_str, string ext){
     Strategy s;
     if(strategy_str == "direct"){
@@ -50,7 +92,6 @@ static bool mergestrategy(const string& host, const string& strategy_str, string
     }
     strategy stra{s, std::move(ext)};
     auto mask_pos = host.find_first_of('/');
-    sockaddr_un addr;
     if(mask_pos != string::npos){
         string ip = host.substr(0, mask_pos);
 #ifdef __ANDROID__
@@ -58,21 +99,9 @@ static bool mergestrategy(const string& host, const string& strategy_str, string
 #else
         int prefix = stoi(host.substr(mask_pos+1));
 #endif
-        if (inet_pton(AF_INET, ip.c_str(), &addr.addr_in.sin_addr) == 1) {
-            ipv4s.insert(split(addr.addr_in.sin_addr, (uint32_t)prefix), stra);
-            return true;
-        }
-        if (inet_pton(AF_INET6, ip.c_str(), &addr.addr_in6.sin6_addr) == 1) {
-            ipv6s.insert(split(addr.addr_in6.sin6_addr, (uint32_t)prefix), stra);
-            return true;
-        }
-        return false;
-    }else if(inet_pton(AF_INET, host.c_str(), &addr.addr_in.sin_addr) == 1){
-        ipv4s.insert(split(addr.addr_in.sin_addr), stra);
+        return ipinsert(ip.c_str(), stra, prefix);
+    }else if(ipinsert(host.c_str(), stra)){
         return true;
-    }else if(inet_pton(AF_INET6, host.c_str(), &addr.addr_in6.sin6_addr) == 1){
-        ipv6s.insert(split(addr.addr_in6.sin6_addr), stra);
-        return false;
     } else{
         domains.insert(split(toLower(host)), stra);
         return true;
@@ -87,12 +116,12 @@ void reloadstrategy() {
     domains.clear();
 
     //default strategy
-    for(auto ips=getlocalip(); ips->addr_in.sin_family ; ips++){
-        if(ips->addr.sa_family == AF_INET){
-            ipv4s.insert(split(ips->addr_in.sin_addr), strategy{Strategy::local, GEN_TIP});
+    for(auto ips=getlocalip(); ips->ss_family ; ips++){
+        if(ips->ss_family == AF_INET){
+            ipv4s.insert(split(ips), strategy{Strategy::local, GEN_TIP});
         }
-        if(ips->addr.sa_family == AF_INET6){
-            ipv6s.insert(split(ips->addr_in6.sin6_addr), strategy{Strategy::local, GEN_TIP});
+        if(ips->ss_family == AF_INET6){
+            ipv6s.insert(split(ips), strategy{Strategy::local, GEN_TIP});
         }
     }
     char hostname[HOST_NAME_MAX];
@@ -155,7 +184,6 @@ bool delstrategy(const char* host_) {
     bool found  = false;
     string host = host_;
     auto mask_pos = host.find_first_of('/');
-    sockaddr_un addr;
     if(mask_pos != string::npos){
         string ip = host.substr(0, mask_pos);
 #ifdef __ANDROID__
@@ -163,16 +191,8 @@ bool delstrategy(const char* host_) {
 #else
         int prefix = stoi(host.substr(mask_pos+1));
 #endif
-        if (inet_pton(AF_INET, ip.c_str(), &addr.addr_in.sin_addr) == 1) {
-            ipv4s.remove(split(addr.addr_in.sin_addr, (uint32_t)prefix), found);
-        }else if (inet_pton(AF_INET6, ip.c_str(), &addr.addr_in6.sin6_addr) == 1) {
-            ipv6s.remove(split(addr.addr_in6.sin6_addr, (uint32_t)prefix), found);
-        }
-    }else if(inet_pton(AF_INET, host.c_str(), &addr.addr_in.sin_addr) == 1){
-        ipv4s.remove(split(addr.addr_in.sin_addr), found);
-    }else if(inet_pton(AF_INET6, host.c_str(), &addr.addr_in6.sin6_addr) == 1){
-        ipv6s.remove(split(addr.addr_in6.sin6_addr), found);
-    } else{
+        ipremove(ip.c_str(), found, prefix);
+    }else if(!ipremove(host.c_str(), found)){
         domains.remove(split(toLower(host)), found);
     }
     if(found){
@@ -185,7 +205,6 @@ strategy getstrategy(const char *host_){
     const TrieType<strategy> *v = nullptr;
     string host = host_;
     auto mask_pos = host.find_first_of('/');
-    sockaddr_un addr;
     if(mask_pos != string::npos){
         string ip = host.substr(0, mask_pos);
 #ifdef __ANDROID__
@@ -193,19 +212,10 @@ strategy getstrategy(const char *host_){
 #else
         int prefix = stoi(host.substr(mask_pos+1));
 #endif
-        if (inet_pton(AF_INET, ip.c_str(), &addr.addr_in.sin_addr) == 1) {
-            v = ipv4s.find(split(addr.addr_in.sin_addr, (uint32_t)prefix));
-        }else if (inet_pton(AF_INET6, ip.c_str(), &addr.addr_in6.sin6_addr) == 1) {
-            v = ipv6s.find(split(addr.addr_in6.sin6_addr, (uint32_t)prefix));
-        }
-    }else if(inet_pton(AF_INET, host.c_str(), &addr.addr_in.sin_addr) == 1){
-        v = ipv4s.find(split(addr.addr_in.sin_addr));
-    }else if(inet_pton(AF_INET6, host.c_str(), &addr.addr_in6.sin6_addr) == 1){
-        v = ipv6s.find(split(addr.addr_in6.sin6_addr));
-    } else{
+        v = ipfind(ip.c_str(), prefix);
+    }else if((v = ipfind(host.c_str())) == nullptr){
         v = domains.find(split(toLower(host)));
     }
-    
     return v? v->value : strategy{Strategy::direct, ""};
 }
 

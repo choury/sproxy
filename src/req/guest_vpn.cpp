@@ -15,27 +15,29 @@
 
 VpnKey::VpnKey(std::shared_ptr<const Ip> ip) {
     src = ip->getsrc();
+    sockaddr_in* src_ = (sockaddr_in*)&src;
     dst = ip->getdst();
+    sockaddr_in* dst_ = (sockaddr_in*)&dst;
     switch(ip->gettype()){
     case IPPROTO_TCP:
         protocol = Protocol::TCP;
-        src.addr_in.sin_port = htons(ip->tcp->getsport());
-        dst.addr_in.sin_port = htons(ip->tcp->getdport());
+        src_->sin_port = htons(ip->tcp->getsport());
+        dst_->sin_port = htons(ip->tcp->getdport());
         break;
     case IPPROTO_UDP:
         protocol = Protocol::UDP;
-        src.addr_in.sin_port = htons(ip->udp->getsport());
-        dst.addr_in.sin_port = htons(ip->udp->getdport());
+        src_->sin_port = htons(ip->udp->getsport());
+        dst_->sin_port = htons(ip->udp->getdport());
         break;
     case IPPROTO_ICMP:
         protocol = Protocol::ICMP;
-        src.addr_in.sin_port = htons(ip->icmp->getid());
-        dst.addr_in.sin_port = htons(ip->icmp->getid());
+        src_->sin_port = htons(ip->icmp->getid());
+        dst_->sin_port = htons(ip->icmp->getid());
         break;
     case IPPROTO_ICMPV6:
         protocol = Protocol::ICMP;
-        src.addr_in.sin_port = htons(ip->icmp6->getid());
-        dst.addr_in.sin_port = htons(ip->icmp6->getid());
+        src_->sin_port = htons(ip->icmp6->getid());
+        dst_->sin_port = htons(ip->icmp6->getid());
         break;
     default:
         protocol = Protocol::NONE;
@@ -51,10 +53,10 @@ const VpnKey& VpnKey::reverse() {
 }
 
 char VpnKey::version() const {
-    if(dst.addr.sa_family == AF_INET){
+    if(dst.ss_family == AF_INET){
         return 4;
     }
-    if(dst.addr.sa_family == AF_INET6){
+    if(dst.ss_family == AF_INET6){
         return 6;
     }
     abort();
@@ -64,14 +66,20 @@ char VpnKey::version() const {
 
 const char* VpnKey::getString(const char* sep) const{
     static char str[URLLIMIT];
+    sockaddr_in* src_ = (sockaddr_in*)&src;
+    sockaddr_in* dst_ = (sockaddr_in*)&dst;
     snprintf(str, sizeof(str), "<%s> (%s:%d %s %s:%d)",
-             protstr(protocol), getRdns(src).c_str(), ntohs(src.addr_in.sin_port),
-             sep, getRdns(dst).c_str(), ntohs(dst.addr_in.sin_port));
+             protstr(protocol), getRdns(src).c_str(), ntohs(src_->sin_port),
+             sep, getRdns(dst).c_str(), ntohs(dst_->sin_port));
     return str;
 }
 
+bool operator<(sockaddr_storage a, sockaddr_storage b) {
+    return memcmp(&a, &b, sizeof(sockaddr_storage)) < 0;
+}
+
 bool operator<(VpnKey a, VpnKey b) {
-    return memcmp(&a, &b, sizeof(VpnKey)) < 0;
+    return std::tie(a.protocol, a.src, a.dst) < std::tie(b.protocol, b.src, b.dst);
 }
 
 
@@ -113,6 +121,7 @@ void VPN_nanny::buffHE(const char* buff, size_t buflen) {
         }
 
         if(statusmap.count(key) == 0){
+            LOGD(DVPN, "new key for %s\n", key.getString("->"));
             statusmap[key] = new Guest_vpn(key, this);
         }
         statusmap.at(key)->packetHE(pac, buff, buflen);
@@ -894,7 +903,8 @@ void Guest_vpn::aged(){
 
 const char * Guest_vpn::getsrc(){
     static char src[INET6_ADDRSTRLEN + 6];
-    snprintf(src, sizeof(src), "%s:%d", getRdns(key.src).c_str(), ntohs(key.src.addr_in.sin_port));
+    sockaddr_in* src_ = (sockaddr_in*)&key.src;
+    snprintf(src, sizeof(src), "%s:%d", getRdns(key.src).c_str(), ntohs(src_->sin_port));
     return src;
 }
 

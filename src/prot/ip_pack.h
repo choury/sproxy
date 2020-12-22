@@ -167,8 +167,8 @@ public:
     };
     virtual ~Ip();
 
-    virtual sockaddr_un getsrc() const = 0;
-    virtual sockaddr_un getdst() const = 0;
+    virtual sockaddr_storage getsrc() const = 0;
+    virtual sockaddr_storage getdst() const = 0;
     virtual void dump() const;
 
     virtual size_t gethdrlen() const;
@@ -178,24 +178,24 @@ public:
 };
 
 std::shared_ptr<Ip> MakeIp(const char* packet, size_t len);
-std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_un* src,  const sockaddr_un* dst);
+std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src,  const sockaddr_storage* dst);
 
 class Ip4: public Ip {
     ip hdr; //ip头
     Ip4(const char* packet, size_t len);
     Ip4(uint8_t type, uint16_t sport, uint16_t dport);
     Ip4(uint8_t type, const in_addr* src, uint16_t sport, const in_addr* dst, uint16_t dport);
-    Ip4(uint8_t type, const sockaddr_un* src,  const sockaddr_un* dst);
+    Ip4(uint8_t type, const sockaddr_storage* src,  const sockaddr_storage* dst);
     void print() const override;
 public:
     Ip4(const Ip4&) = delete;
-    sockaddr_un getsrc() const override;
-    sockaddr_un getdst() const override;
+    sockaddr_storage getsrc() const override;
+    sockaddr_storage getdst() const override;
 
     char* build_packet(void* data, size_t &len) override;
 
     friend std::shared_ptr<Ip> MakeIp(const char* packet, size_t len);
-    friend std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_un* src,  const sockaddr_un* dst);
+    friend std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src,  const sockaddr_storage* dst);
 };
 
 class Ip6: public Ip {
@@ -203,17 +203,17 @@ class Ip6: public Ip {
     Ip6(const char* packet, size_t len);
     Ip6(uint8_t type, uint16_t sport, uint16_t dport);
     Ip6(uint8_t type, const in6_addr* src, uint16_t sport, const in6_addr* dst, uint16_t dport);
-    Ip6(uint8_t type, const sockaddr_un* src,  const sockaddr_un* dst);
+    Ip6(uint8_t type, const sockaddr_storage* src,  const sockaddr_storage* dst);
     void print() const override;
 public:
     Ip6(const Ip6&) = delete;
-    sockaddr_un getsrc() const override;
-    sockaddr_un getdst() const override;
+    sockaddr_storage getsrc() const override;
+    sockaddr_storage getdst() const override;
 
     char* build_packet(void* data, size_t &len)override;
 
     friend std::shared_ptr<Ip> MakeIp(const char* packet, size_t len);
-    friend std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_un* src,  const sockaddr_un* dst);
+    friend std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src,  const sockaddr_storage* dst);
 };
 
 #endif //IP_PACKET_H_

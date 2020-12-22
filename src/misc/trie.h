@@ -117,8 +117,9 @@ public:
 
 
 std::list<std::string> split(std::string s);
-std::list<char> split(in_addr ip, uint32_t prefix = 32);
-std::list<char> split(in6_addr ip6, uint32_t prefix = 128);
+std::list<char> split(in_addr ip, int prefix = -1);
+std::list<char> split(in6_addr ip6, int prefix = -1);
+std::list<char> split(const sockaddr_storage* ip, int prefix = -1);
 std::string join(std::list<std::string> tokens);
 std::string join(int type, std::list<char> tokens);
 

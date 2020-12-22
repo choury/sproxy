@@ -18,7 +18,7 @@ class FDns: public Responser{
     virtual void deleteLater(uint32_t errcode) override;
 
     static void RawCb(void* param, const char *buff, size_t size);
-    static void DnsCb(void* param, std::list<sockaddr_un> addrs);
+    static void DnsCb(void* param, std::list<sockaddr_storage> addrs);
 public:
     FDns();
     virtual ~FDns() override;
@@ -28,5 +28,5 @@ public:
     static FDns* getfdns();
 };
 
-std::string getRdns(const sockaddr_un& addr);
+std::string getRdns(const sockaddr_storage& addr);
 #endif

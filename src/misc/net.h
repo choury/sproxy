@@ -61,18 +61,16 @@ extern "C" {
     
 extern const char *DEFAULT_CIPHER_LIST;
 
-union sockaddr_un;
-
 int Checksocket(int fd, const char* msg);
-void SetTcpOptions(int fd, const union sockaddr_un* addr);
+void SetTcpOptions(int fd, const struct sockaddr_storage* addr);
 int Listen(int type, short int port);
-int Connect(const union sockaddr_un*, int type);
-int Bind(int type, short port, const union sockaddr_un* addr);
-int IcmpSocket(const union sockaddr_un* addr);
-const char *getaddrstring(const union sockaddr_un *addr);
-const char *getaddrportstring(const union sockaddr_un *addr);
-int getsocketaddr(const char* ip, uint16_t port, union sockaddr_un *addr);
-union sockaddr_un* getlocalip ();
+int Connect(const struct sockaddr_storage*, int type);
+int Bind(int type, short port, const struct sockaddr_storage* addr);
+int IcmpSocket(const struct sockaddr_storage* addr);
+const char *getaddrstring(const struct sockaddr_storage* addr);
+const char *storage_ntoa(const struct sockaddr_storage* addr);
+int storage_aton(const char* ipstr, uint16_t port, struct sockaddr_storage* addr);
+struct sockaddr_storage* getlocalip ();
 bool hasIpv6Address();
 
 

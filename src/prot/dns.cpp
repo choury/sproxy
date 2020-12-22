@@ -22,9 +22,9 @@
 static uint16_t id_cur = 1;
 
 class Dns_srv:public Server{
-    sockaddr_un addr;
+    sockaddr_storage addr;
 public:
-    explicit Dns_srv(const sockaddr_un* server);
+    explicit Dns_srv(const sockaddr_storage* server);
     virtual ~Dns_srv() override;
     bool valid();
     void buffHE(const char* buffer, size_t len);
@@ -41,7 +41,7 @@ struct Dns_Req{
 };
 
 struct Dns_Rcd{
-    std::list<sockaddr_un> addrs;
+    std::list<sockaddr_storage> addrs;
     time_t get_time;
     uint32_t ttl;
 };
@@ -115,15 +115,9 @@ void getDnsConfig(struct DnsConfig* config){
         if(get == 3){
             break;
         }
-        if (inet_pton(AF_INET, i.c_str(), &config->server[get].addr_in.sin_addr) == 1) {
-            config->server[get].addr_in.sin_family = AF_INET;
-            config->server[get].addr_in.sin_port = htons(DNSPORT);
+        if(storage_aton(i.c_str(), DNSPORT, &config->server[get]) == 1){
             get++;
-        } else if (inet_pton(AF_INET6, i.c_str(), &config->server[get].addr_in6.sin6_addr) == 1) {
-            config->server[get].addr_in6.sin6_family = AF_INET6;
-            config->server[get].addr_in6.sin6_port = htons(DNSPORT);
-            get++;
-        } else {
+        }else{
             LOGE("[DNS] %s is not a valid ip address\n", i.c_str());
         }
     }
@@ -148,14 +142,7 @@ void getDnsConfig(struct DnsConfig* config){
         char command[11], ipaddr[INET6_ADDRSTRLEN];
         sscanf(line, "%10s %45s", command, ipaddr);
         if (strcmp(command, "nameserver") == 0) {
-            memset(&config->server[get], 0, sizeof(union sockaddr_un));
-            if (inet_pton(AF_INET, ipaddr, &config->server[get].addr_in.sin_addr) == 1) {
-                config->server[get].addr_in.sin_family = AF_INET;
-                config->server[get].addr_in.sin_port = htons(DNSPORT);
-                get++;
-            } else if (inet_pton(AF_INET6, ipaddr, &config->server[get].addr_in6.sin6_addr) == 1) {
-                config->server[get].addr_in6.sin6_family = AF_INET6;
-                config->server[get].addr_in6.sin6_port = htons(DNSPORT);
+            if(storage_aton(ipaddr, DNSPORT, &config->server[get]) == 1){
                 get++;
             } else {
                 LOGE("[DNS] %s is not a valid ip address\n", ipaddr);
@@ -201,8 +188,8 @@ static void query(Dns_Status* dnsst){
         dnsst->flags = 0;
     }
 
-    union sockaddr_un addr;
-    if(getsocketaddr(dnsst->host, 0, &addr) == 0){
+    sockaddr_storage addr;
+    if(storage_aton(dnsst->host, 0, &addr) == 1){
         dnsst->rcd.addrs.push_back(addr);
         for(auto i: dnsst->reqs){
             i.func(i.param, dnsst->rcd.addrs);
@@ -343,36 +330,39 @@ void query_timeout(uint16_t id){
     abort();
 }
 
-void RcdDown(const char *hostname, const sockaddr_un &addr) {
+void RcdDown(const char *hostname, const sockaddr_storage &addr) {
     LOG("[DNS] down for %s: %s\n", hostname, getaddrstring(&addr));
+    auto cmpfunc = [](const sockaddr_storage& a, const sockaddr_storage& b) -> bool {
+        if(a.ss_family != b.ss_family){
+            return false;
+        }
+        if(a.ss_family == AF_INET6){
+            const sockaddr_in6* a6 = (const sockaddr_in6*)&a;
+            const sockaddr_in6* b6 = (const sockaddr_in6*)&b;
+            return memcmp(&a6->sin6_addr, &b6->sin6_addr, sizeof(in6_addr)) == 0;
+        }
+        if(a.ss_family == AF_INET) {
+            const sockaddr_in* a4 = (const sockaddr_in*)&a;
+            const sockaddr_in* b4 = (const sockaddr_in*)&b;
+            return memcmp(&a4->sin_addr, &b4->sin_addr, sizeof(in_addr)) == 0;
+        }
+        return false;
+    };
     if (rcd_cache.count(hostname)) {
         auto& addrs  = rcd_cache[hostname].addrs;
         for (auto i = addrs.begin(); i != addrs.end(); ++i) {
-            switch (addr.addr.sa_family) {
-            case AF_INET:
-                if (memcmp(&addr.addr_in.sin_addr, &i->addr_in.sin_addr, sizeof(in_addr)) == 0) {
-                    addrs.erase(i);
-                    addrs.push_back(addr);
-                    return;
-                }
-                break;
-            case AF_INET6:
-                if (memcmp(&addr.addr_in6.sin6_addr, &i->addr_in6.sin6_addr, sizeof(in6_addr)) == 0) {
-                    addrs.erase(i);
-                    addrs.push_back(addr);
-                    return;
-                }
-                break;
-            default:
-                abort();
+            if(cmpfunc(addr, *i)){
+                addrs.erase(i);
+                addrs.push_back(addr);
+                return;
             }
         }
     }
 }
 
-Dns_srv::Dns_srv(const sockaddr_un* server){
-    //sockaddr_un addr;
-    memcpy(&addr, server, sizeof(sockaddr_un));
+Dns_srv::Dns_srv(const sockaddr_storage* server){
+    //sockaddr_storage addr;
+    memcpy(&addr, server, sizeof(sockaddr_storage));
     int fd = Connect(&addr, SOCK_DGRAM);
     if (fd == -1) {
         LOGE("[DNS] connecting  %s error:%s\n", getaddrstring(&addr), strerror(errno));
@@ -581,8 +571,7 @@ Dns_Que::Dns_Que(const char* buff, size_t len) {
         std::string ptr = reverse(host);
         if(startwith(ptr.c_str(), IPV4_PTR_PREFIX)){
             std::string ipstr = ptr.substr(sizeof(IPV4_PTR_PREFIX) - 1);
-            ptr_addr.addr.sa_family = AF_INET;
-            if(inet_pton(AF_INET, ipstr.c_str(), &ptr_addr.addr_in.sin_addr) != 1){
+            if(storage_aton(ipstr.c_str(), 0, &ptr_addr) != 1){
                 LOGE("[DNS] wrong ptr format: %s\n", host.c_str());
                 return;
             }
@@ -597,8 +586,7 @@ Dns_Que::Dns_Que(const char* buff, size_t len) {
                     ipstr += ':';
                 }
             }
-            ptr_addr.addr.sa_family = AF_INET6;
-            if(inet_pton(AF_INET6, ipstr.c_str(), &ptr_addr.addr_in6.sin6_addr) != 1){
+            if(storage_aton(ipstr.c_str(), 0, &ptr_addr) != 1){
                 LOGE("[DNS] wrong ptr format: %s\n", host.c_str());
                 return;
             }
@@ -672,28 +660,34 @@ Dns_Rr::Dns_Rr(const char* buff, size_t len) {
         char ipaddr[INET6_ADDRSTRLEN];
 #endif
         switch (ntohs(dnsrr->type)) {
-            sockaddr_un ip;
-        case 1:
+            sockaddr_storage ip;
+        case 1:{
             memset(&ip, 0, sizeof(ip));
-            ip.addr_in.sin_family = AF_INET;
-            memcpy(&ip.addr_in.sin_addr, p, sizeof(in_addr));
+            sockaddr_in* ip4 = (sockaddr_in*)&ip;
+            ip4->sin_family = AF_INET;
+            memcpy(&ip4->sin_addr, p, sizeof(in_addr));
             addrs.push_back(ip);
 #ifndef NDEBUG
             LOGD(DDNS, "%s ==> %s [%d]\n", domain, inet_ntop(AF_INET, p, ipaddr, sizeof(ipaddr)), ttl);
 #endif
             break;
+        }
         case 2:
         case 5:
             getdomain(dnshdr, p, len, domain);
             break;
-        case 28:
+        case 28:{
             memset(&ip, 0, sizeof(ip));
-            ip.addr_in6.sin6_family = AF_INET6;
-            memcpy(&ip.addr_in6.sin6_addr, p, sizeof(in6_addr));
+            sockaddr_in6* ip6 = (sockaddr_in6*)&ip;
+            ip6->sin6_family = AF_INET6;
+            memcpy(&ip6->sin6_addr, p, sizeof(in6_addr));
             addrs.push_back(ip);
 #ifndef NDEBUG
             LOGD(DDNS, "%s ==> %s [%d]\n", domain, inet_ntop(AF_INET6, p, ipaddr, sizeof(ipaddr)), ttl);
 #endif
+            break;
+        }
+        default:
             break;
         }
         p+= ntohs(dnsrr->rdlength);
@@ -703,10 +697,11 @@ Dns_Rr::Dns_Rr(const char* buff, size_t len) {
 Dns_Rr::Dns_Rr(const char *domain, const in_addr* addr){
     strcpy(this->domain, domain);
     if(addr) {
-        sockaddr_un ip;
+        sockaddr_storage ip;
         memset(&ip, 0, sizeof(ip));
-        ip.addr_in.sin_family = AF_INET;
-        ip.addr_in.sin_addr = *addr;
+        sockaddr_in* ip4 = (sockaddr_in*)&ip;
+        ip4->sin_family = AF_INET;
+        ip4->sin_addr = *addr;
         addrs.push_back(ip);
     }
 }
@@ -714,10 +709,11 @@ Dns_Rr::Dns_Rr(const char *domain, const in_addr* addr){
 Dns_Rr::Dns_Rr(const char *domain, const in6_addr* addr){
     strcpy(this->domain, domain);
     if(addr) {
-        sockaddr_un ip;
+        sockaddr_storage ip;
         memset(&ip, 0, sizeof(ip));
-        ip.addr_in.sin_family = AF_INET6;
-        ip.addr_in6.sin6_addr = *addr;
+        sockaddr_in6* ip6 = (sockaddr_in6*)&ip;
+        ip6->sin6_family = AF_INET6;
+        ip6->sin6_addr = *addr;
         addrs.push_back(ip);
     }
 }
@@ -737,25 +733,27 @@ int Dns_Rr::build(const Dns_Que* query, unsigned char* buf)const {
     dnshdr->numa2 = 0;
 
     for(auto addr : addrs) {
-        if(query->type == 1 && addr.addr_in.sin_family == AF_INET){
+        if(query->type == 1 && addr.ss_family == AF_INET){
             len += putdomain(buf+len, query->host.c_str());
             DNS_RR* rr= (DNS_RR*)(buf + len);
             rr->classes = htons(1);
             rr->type = htons(1);
             rr->TTL = htonl(ttl);
             rr->rdlength = htons(sizeof(in_addr));
-            memcpy(rr->rdata, &addr.addr_in.sin_addr, sizeof(in_addr));
+            sockaddr_in* addr4 = (sockaddr_in*)&addr;
+            memcpy(rr->rdata, &addr4->sin_addr, sizeof(in_addr));
             len += sizeof(DNS_RR) + sizeof(in_addr);
             dnshdr->numa ++;
         }
-        if(query->type == 28 && addr.addr_in.sin_family == AF_INET6){
+        if(query->type == 28 && addr.ss_family == AF_INET6){
             len += putdomain(buf+len, query->host.c_str());
             DNS_RR* rr= (DNS_RR*)(buf + len);
             rr->classes = htons(1);
             rr->type = htons(28);
             rr->TTL = htonl(ttl);
             rr->rdlength = htons(sizeof(in6_addr));
-            memcpy(rr->rdata, &addr.addr_in6.sin6_addr, sizeof(in6_addr));
+            sockaddr_in6* addr6 = (sockaddr_in6*)&addr;
+            memcpy(rr->rdata, &addr6->sin6_addr, sizeof(in6_addr));
             len += sizeof(DNS_RR) + sizeof(in6_addr);
             dnshdr->numa ++;
         }

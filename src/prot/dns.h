@@ -50,7 +50,7 @@ typedef struct DNS_HDR {
 class Dns_Que{
 public:
     std::string host;
-    sockaddr_un ptr_addr;
+    sockaddr_storage ptr_addr;
     uint16_t type;
     uint16_t id;
     bool valid = false;
@@ -63,7 +63,7 @@ public:
 class Dns_Rr{
 public:
     char domain[DOMAINLIMIT];
-    std::vector<sockaddr_un> addrs;
+    std::vector<sockaddr_storage> addrs;
     uint16_t  id = 0;
     uint32_t  ttl = 0;
     explicit Dns_Rr(const char* domain);
@@ -75,14 +75,14 @@ public:
 };
 
 
-typedef void (*DNSCBfunc)(void *, std::list<sockaddr_un> addrs);
+typedef void (*DNSCBfunc)(void *, std::list<sockaddr_storage> addrs);
 typedef void (*DNSRAWCB)(void *, const char *buff, size_t size);
 
 
 void query(const char* host, DNSCBfunc func, void* param);
 void query(const char* host, uint16_t type, DNSRAWCB func, void* parm);
 void query_cancel(const char* host, DNSCBfunc func, void* parm);
-void RcdDown(const char *hostname, const sockaddr_un &addr);
+void RcdDown(const char *hostname, const sockaddr_storage &addr);
 
 void flushdns();
 

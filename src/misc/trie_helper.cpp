@@ -30,11 +30,12 @@ std::string join(std::list<std::string> tokens) {
 }
 
 
-std::list<char> split(in_addr ip, uint32_t prefix = 32) {
-    assert(prefix <= 32);
+std::list<char> split(in_addr ip, int prefix = -1) {
+    prefix = prefix < 0 ? 32 : prefix;
+    assert(prefix <= 32 && prefix >= 0);
     std::list<char> ipbytes;
     uint32_t iph = ntohl(ip.s_addr);
-    for(uint32_t i = 0; i < prefix ; i++){
+    for(int i = 0; i < prefix ; i++){
         char bytes = (iph >> (31-i)) & 1;
         ipbytes.push_back(bytes + '0');
     }
@@ -43,6 +44,21 @@ std::list<char> split(in_addr ip, uint32_t prefix = 32) {
     }
     return ipbytes;
 }
+
+static const char *dumpip(const sockaddr_storage *addr_){
+    sockaddr* addr = (sockaddr*)addr_;
+    static char buff[100];
+    if(addr->sa_family == AF_INET6){
+        sockaddr_in6* ip6 = (sockaddr_in6*)addr;
+        inet_ntop(AF_INET6, &ip6->sin6_addr, buff, sizeof(buff));
+    }
+    if(addr->sa_family == AF_INET){
+        sockaddr_in* ip = (sockaddr_in*)addr;
+        inet_ntop(AF_INET, &ip->sin_addr, buff, sizeof(buff));
+    }
+    return buff;
+}
+
 
 std::string join(int type, std::list<char> tokens){
     int prefix = 0;
@@ -58,7 +74,7 @@ std::string join(int type, std::list<char> tokens){
             prefix ++; 
         }
         ip4.sin_addr.s_addr = ntohl(ipn);
-        std::string ip = getaddrstring((sockaddr_un*)&ip4);
+        std::string ip = dumpip((sockaddr_storage*)&ip4);
         if(prefix == 32){
             return ip;
         }else{
@@ -76,7 +92,7 @@ std::string join(int type, std::list<char> tokens){
             ip6.sin6_addr.s6_addr[prefix/8] |= (c-'0') << (7 - prefix%8);
             prefix ++; 
         }
-        std::string ip = getaddrstring((sockaddr_un*)&ip6);
+        std::string ip = dumpip((sockaddr_storage*)&ip6);
         if(prefix == 128){
             return ip;
         }else{
@@ -86,10 +102,11 @@ std::string join(int type, std::list<char> tokens){
     return "";
 }
 
-std::list<char> split(in6_addr ip6, uint32_t prefix = 128) {
-    assert(prefix <= 128);
+std::list<char> split(in6_addr ip6, int prefix = -1) {
+    prefix = prefix < 0 ? 128 : prefix;
+    assert(prefix <= 128 && prefix >= 0);
     std::list<char> ipbytes;
-    for(uint32_t i = 0; i < prefix; i++) {
+    for(int i = 0; i < prefix; i++) {
         char bytes = (ip6.s6_addr[i/8] >> (7 - i%8)) & 1;
         ipbytes.push_back(bytes + '0');
     }
@@ -97,4 +114,14 @@ std::list<char> split(in6_addr ip6, uint32_t prefix = 128) {
         ipbytes.push_back('*');
     }
     return ipbytes;
+}
+
+std::list<char> split(const sockaddr_storage* ip, int prefix){
+    if(ip->ss_family == AF_INET6){
+        sockaddr_in6* ip6 = (sockaddr_in6*)ip;
+        return split(ip6->sin6_addr, prefix<0?128:prefix);
+    }else{
+        sockaddr_in* ip4 = (sockaddr_in*)ip;
+        return split(ip4->sin_addr, prefix<0?32:prefix);
+    }
 }

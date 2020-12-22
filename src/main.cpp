@@ -11,7 +11,6 @@
 #include <openssl/err.h>
 
 int efd = 0;
-uint32_t debug = 0;
 
 template<class T>
 class Http_server: public Ep{
@@ -33,7 +32,7 @@ class Http_server: public Ep{
                 return;
             }
 
-            SetTcpOptions(clsk, (const sockaddr_un*)&myaddr);
+            SetTcpOptions(clsk, (const sockaddr_storage*)&myaddr);
             new T(clsk);
         } else {
             LOGE("unknown error\n");
@@ -69,7 +68,7 @@ class Https_server: public Ep {
                 return;
             }
 
-            SetTcpOptions(clsk, (const sockaddr_un*)&myaddr);
+            SetTcpOptions(clsk, (const sockaddr_storage*)&myaddr);
             new Guest(clsk, ctx);
         } else {
             LOGE("unknown error\n");
@@ -137,7 +136,7 @@ static int verify_cookie(SSL *ssl, const unsigned char *cookie, unsigned int coo
 #endif
     struct sockaddr_in6 myaddr;
     (void)BIO_dgram_get_peer(SSL_get_rbio(ssl), &myaddr);
-    return strncmp((char *)cookie, getaddrportstring((sockaddr_un *)&myaddr), cookie_len)==0;
+    return strncmp((char *)cookie, storage_ntoa((sockaddr_storage *)&myaddr), cookie_len)==0;
 }
 
 void ssl_callback_ServerName(SSL *ssl){

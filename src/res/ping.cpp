@@ -14,9 +14,9 @@ Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
         iserror = true;
         if(rwer)
             rwer->setEvents(RW_EVENT::NONE);
-    },[this](const sockaddr_un& addr){
+    },[this](const sockaddr_storage& addr){
         seq = 1;
-        family = addr.addr.sa_family;
+        family = addr.ss_family;
     });
     rwer->SetReadCB([this](int len){
         if(res == nullptr){

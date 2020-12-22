@@ -804,14 +804,14 @@ std::shared_ptr<Ip> MakeIp(const char* packet, size_t len) {
     throw 0;
 }
 
-std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_un* src, const sockaddr_un* dst) {
-    if(src->addr.sa_family == AF_INET){
+std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src, const sockaddr_storage* dst) {
+    if(src->ss_family == AF_INET){
         return std::shared_ptr<Ip4>(new Ip4(type, src, dst));
     }
-    if(src->addr.sa_family == AF_INET6){
+    if(src->ss_family == AF_INET6){
         return std::shared_ptr<Ip6>(new Ip6(type, src, dst));
     }
-    LOGE("Invalid sa_family: %u\n", src->addr.sa_family);
+    LOGE("Invalid sa_family: %u\n", src->ss_family);
     throw 0;
 }
 
@@ -887,9 +887,9 @@ Ip4::Ip4(uint8_t type, const in_addr* src, uint16_t sport, const in_addr* dst, u
     hdr.ip_dst = *dst;
 }
 
-Ip4::Ip4(uint8_t type, const sockaddr_un* src, const sockaddr_un* dst):
-    Ip4(type, &src->addr_in.sin_addr, ntohs(src->addr_in.sin_port),
-        &dst->addr_in.sin_addr, ntohs(dst->addr_in.sin_port))
+Ip4::Ip4(uint8_t type, const sockaddr_storage* src, const sockaddr_storage* dst):
+    Ip4(type, &((sockaddr_in*)src)->sin_addr, ntohs(((sockaddr_in*)src)->sin_port),
+        &((sockaddr_in*)dst)->sin_addr, ntohs(((sockaddr_in*)dst)->sin_port))
 {
 }
 
@@ -921,20 +921,22 @@ char* Ip4::build_packet(void* data, size_t &len){
 }
 
 
-sockaddr_un Ip4::getsrc() const {
-    sockaddr_un  addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.addr.sa_family = AF_INET;
-    addr.addr_in.sin_addr = hdr.ip_src;
-    return addr;
+sockaddr_storage Ip4::getsrc() const {
+    sockaddr_storage  addr_;
+    memset(&addr_, 0, sizeof(addr_));
+    sockaddr_in* addr = (sockaddr_in*)&addr_;
+    addr->sin_family = AF_INET;
+    addr->sin_addr = hdr.ip_src;
+    return addr_;
 }
 
-sockaddr_un Ip4::getdst() const {
-    sockaddr_un  addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.addr.sa_family = AF_INET;
-    addr.addr_in.sin_addr = hdr.ip_dst;
-    return addr;
+sockaddr_storage Ip4::getdst() const {
+    sockaddr_storage  addr_;
+    memset(&addr_, 0, sizeof(addr_));
+    sockaddr_in* addr = (sockaddr_in*)&addr_;
+    addr->sin_family = AF_INET;
+    addr->sin_addr = hdr.ip_dst;
+    return addr_;
 }
 
 
@@ -1030,26 +1032,28 @@ Ip6::Ip6(uint8_t type, const in6_addr* src, uint16_t sport, const in6_addr* dst,
 }
 
 
-Ip6::Ip6(uint8_t type, const sockaddr_un* src,  const sockaddr_un* dst):
-    Ip6(type, &src->addr_in6.sin6_addr, ntohs(src->addr_in6.sin6_port),
-        &dst->addr_in6.sin6_addr, ntohs(dst->addr_in6.sin6_port))
+Ip6::Ip6(uint8_t type, const sockaddr_storage* src,  const sockaddr_storage* dst):
+    Ip6(type, &((sockaddr_in6*)src)->sin6_addr, ntohs(((sockaddr_in6*)src)->sin6_port),
+        &((sockaddr_in6*)dst)->sin6_addr, ntohs(((sockaddr_in6*)dst)->sin6_port))
 {
 }
 
-sockaddr_un Ip6::getdst() const {
-    sockaddr_un addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.addr_in6.sin6_family = AF_INET6;
-    addr.addr_in6.sin6_addr = hdr.ip6_dst;
-    return addr;
+sockaddr_storage Ip6::getdst() const {
+    sockaddr_storage  addr_;
+    memset(&addr_, 0, sizeof(addr_));
+    sockaddr_in6* addr = (sockaddr_in6*)&addr_;
+    addr->sin6_family = AF_INET6;
+    addr->sin6_addr = hdr.ip6_dst;
+    return addr_;
 }
 
-sockaddr_un Ip6::getsrc() const {
-    sockaddr_un addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.addr_in6.sin6_family = AF_INET6;
-    addr.addr_in6.sin6_addr = hdr.ip6_src;
-    return addr;
+sockaddr_storage Ip6::getsrc() const {
+    sockaddr_storage  addr_;
+    memset(&addr_, 0, sizeof(addr_));
+    sockaddr_in6* addr = (sockaddr_in6*)&addr_;
+    addr->sin6_family = AF_INET6;
+    addr->sin6_addr = hdr.ip6_src;
+    return addr_;
 }
 
 void Ip6::print() const {

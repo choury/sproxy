@@ -4,6 +4,7 @@
 #include "misc/job.h"
 
 #include <sys/types.h>
+#include <sys/socket.h>
 
 #include <memory>
 #include <list>
@@ -103,7 +104,7 @@ protected:
     WBuffer wbuff;
     std::function<void(size_t len)> readCB;
     std::function<void(size_t len)> writeCB;
-    std::function<void(const union sockaddr_un&)> connectCB;
+    std::function<void(const sockaddr_storage&)> connectCB;
     std::function<void(int ret, int code)> errorCB;
     std::function<void()> closeCB;
 
@@ -112,12 +113,12 @@ protected:
     virtual void ReadData() = 0;
     virtual void defaultHE(RW_EVENT events);
     virtual void closeHE(RW_EVENT events);
-    virtual void Connected(const union sockaddr_un&);
+    virtual void Connected(const sockaddr_storage&);
     virtual void ErrorHE(int ret, int code);
 public:
     explicit RWer(int fd, std::function<void(int ret, int code)> errorCB);
     explicit RWer(std::function<void(int ret, int code)> errorCB,
-                  std::function<void(const union sockaddr_un&)> connectCB);
+                  std::function<void(const sockaddr_storage&)> connectCB);
     virtual void SetErrorCB(std::function<void(int ret, int code)> func);
     virtual void SetReadCB(std::function<void(size_t len)> func);
     virtual void SetWriteCB(std::function<void(size_t len)> func);

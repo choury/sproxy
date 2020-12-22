@@ -16,10 +16,10 @@ protected:
 public:
     explicit SslRWer(int fd, SSL_CTX* ctx,
                        std::function<void(int ret, int code)> errorCB,
-                       std::function<void(const sockaddr_un&)> connectCB = nullptr);
+                       std::function<void(const sockaddr_storage&)> connectCB = nullptr);
     explicit SslRWer(const char* hostname, uint16_t port, Protocol protocol,
                        std::function<void(int ret, int code)> errorCB,
-                       std::function<void(const sockaddr_un&)> connectCB = nullptr);
+                       std::function<void(const sockaddr_storage&)> connectCB = nullptr);
     virtual ~SslRWer() override;
 
     virtual int saccept();

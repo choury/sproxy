@@ -90,7 +90,7 @@ NetRWer::NetRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(fd
     setEvents(RW_EVENT::READ);
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&NetRWer::defaultHE;
-    sockaddr_un addr;
+    sockaddr_storage addr;
     memset(&addr, 0, sizeof(addr));
     socklen_t len = sizeof(addr);
     if(getpeername(fd, (sockaddr *)&addr, &len)){
@@ -102,7 +102,7 @@ NetRWer::NetRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(fd
 
 NetRWer::NetRWer(const char* hostname, uint16_t port, Protocol protocol,
                std::function<void(int ret, int code)> errorCB,
-               std::function<void(const sockaddr_un&)> connectCB):
+               std::function<void(const sockaddr_storage&)> connectCB):
             RWer(std::move(errorCB), std::move(connectCB)), port(port), protocol(protocol)
 {
     strcpy(this->hostname, hostname);
@@ -114,14 +114,15 @@ NetRWer::~NetRWer() {
     query_cancel(hostname, NetRWer::Dnscallback, this);
 }
 
-void NetRWer::Dnscallback(void* param, std::list<sockaddr_un> addrs) {
+void NetRWer::Dnscallback(void* param, std::list<sockaddr_storage> addrs) {
     NetRWer* rwer = static_cast<NetRWer*>(param);
     if (addrs.empty()) {
         return rwer->ErrorHE(DNS_FAILED, 0);
     }
 
     for(auto& i: addrs){
-        i.addr_in6.sin6_port = htons(rwer->port);
+        sockaddr_in6* addr6 = (sockaddr_in6*)&i;
+        addr6->sin6_port = htons(rwer->port);
         rwer->addrs.push(i);
     }
     rwer->stats = RWerStats::Connecting;
@@ -195,7 +196,7 @@ const char *NetRWer::getPeer() {
     if(addrs.empty()){
         return "net-rwer-null";
     }
-    return getaddrportstring(&addrs.front());
+    return storage_ntoa(&addrs.front());
 }
 
 const char *NetRWer::getDest(){

@@ -278,7 +278,7 @@ RWer::RWer(int fd, std::function<void(int ret, int code)> errorCB):
 }
 
 
-RWer::RWer(std::function<void (int, int)> errorCB, std::function<void(const union sockaddr_un&)> connectCB):
+RWer::RWer(std::function<void (int, int)> errorCB, std::function<void(const sockaddr_storage&)> connectCB):
            Ep(-1), connectCB(std::move(connectCB)), errorCB(std::move(errorCB))
 {
     assert(this->errorCB != nullptr);
@@ -406,7 +406,7 @@ void RWer::EatReadData(){
     }
 }
 
-void RWer::Connected(const union sockaddr_un& addr){
+void RWer::Connected(const sockaddr_storage& addr){
     setEvents(RW_EVENT::READWRITE);
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&RWer::defaultHE;
@@ -481,7 +481,7 @@ const char * NullRWer::rdata() {
 
 #ifdef __linux__
 FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB):
-    RWer(errorCB, [](const union sockaddr_un&){})
+    RWer(errorCB, [](const sockaddr_storage&){})
 {
     int evfd = eventfd(1, O_NONBLOCK);
     if(evfd < 0){
@@ -492,7 +492,7 @@ FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB):
     write(evfd, "FULLEVENT", 8);
 #else
 FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB):
-    RWer(errorCB, [](const union sockaddr_un&){}), pairfd(-1){
+    RWer(errorCB, [](const sockaddr_storage&){}), pairfd(-1){
     int pairs[2];
     int ret = socketpair(AF_UNIX, SOCK_STREAM, 0, pairs);
     if(ret){
