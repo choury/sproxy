@@ -9,7 +9,7 @@ extern "C" {
 
 struct DnsConfig{
     int namecount;
-    struct sockaddr_storage server[3];
+    struct sockaddr_storage server[20];
 };
 
 void getDnsConfig(struct DnsConfig* config);

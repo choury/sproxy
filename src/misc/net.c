@@ -314,7 +314,7 @@ int storage_aton(const char* ipstr, uint16_t port, struct sockaddr_storage* addr
     }
     struct sockaddr_in6* addr6 = (struct sockaddr_in6*)addr;
     if (inet_pton(AF_INET6, ipstr, &addr6->sin6_addr) == 1) {
-        addr6->sin6_family = AF_INET;
+        addr6->sin6_family = AF_INET6;
         addr6->sin6_port = htons(port);
         return 1;
     }

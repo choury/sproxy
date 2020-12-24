@@ -6,7 +6,7 @@
 #include "common.h"
 
 #include <unordered_map>
-#include <set>
+#include <sstream>
 
 #include <string.h>
 #include <errno.h>
@@ -112,9 +112,7 @@ void getDnsConfig(struct DnsConfig* config){
     std::vector<std::string> dns = getDns();
     int get = 0;
     for(const auto& i: dns){
-        if(get == 3){
-            break;
-        }
+        assert(get < sizeof(config->server)/sizeof(config->server[0]));
         if(storage_aton(i.c_str(), DNSPORT, &config->server[get]) == 1){
             get++;
         }else{
@@ -134,20 +132,25 @@ void getDnsConfig(struct DnsConfig* config){
         return;
     }
     int get = 0;
-    char line[100];
-    while (fscanf(res_file, "%99[^\n]\n", line)!= EOF) {
-        if(get == 3){
-            break;
+    char* line = nullptr;
+    size_t len = 0;
+    while(getline(&line, &len, res_file) >= 0){
+        std::istringstream iss(line);
+        std::string command;
+        iss >> command;
+        if (command != "nameserver"){
+            continue;
+        } 
+        std::string server;
+        iss >> server;
+        assert(get < sizeof(config->server)/sizeof(config->server[0]));
+        if(storage_aton(server.c_str(), DNSPORT, &config->server[get]) == 1){
+            get++;
+        } else {
+            LOGE("[DNS] %s is not a valid ip address\n", server.c_str());
         }
-        char command[11], ipaddr[INET6_ADDRSTRLEN];
-        sscanf(line, "%10s %45s", command, ipaddr);
-        if (strcmp(command, "nameserver") == 0) {
-            if(storage_aton(ipaddr, DNSPORT, &config->server[get]) == 1){
-                get++;
-            } else {
-                LOGE("[DNS] %s is not a valid ip address\n", ipaddr);
-            }
-        }
+        free(line);
+        line = nullptr;
     }
     fclose(res_file);
     config->namecount = get;

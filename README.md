@@ -1,4 +1,4 @@
-sproxy [![Build Status](https://travis-ci.org/choury/sproxy.svg?branch=master)](https://travis-ci.org/choury/sproxy)
+sproxy [![Build Status](https://api.travis-ci.com/choury/sproxy.svg?branch=master)](https://travis-ci.com/choury/sproxy)
 ======
 + Support Linux and macOS
 + http proxy
