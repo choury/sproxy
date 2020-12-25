@@ -1,18 +1,23 @@
-FROM debian:10
+FROM debian:10 as builder
 
-MAINTAINER choury zhouwei400@gmail.com
+LABEL maintainer="zhouwei400@gmail.com"
+
 
 COPY . /root/sproxy
 RUN apt-get  update && \
-    apt-get install -y --no-install-recommends  gcc g++ cmake make libssl-dev libz-dev && \
+    apt-get install -y --no-install-recommends  gcc g++ cmake make libssl-dev libz-dev git libjson-c-dev && \
     cd /root/sproxy && \
     cmake . && \
     make sproxy VERBOSE=1 && \
-    make install && \
-    apt-get autoremove -y --purge gcc g++ cmake make && \
-    apt-get clean && \
+    cpack -G DEB && \
     true
+
+FROM debian:10 as worker
+COPY --from=0 /root/sproxy/sproxy-*-Linux.deb .
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends openssl libjson-c3 zlib1g && \
+    dpkg -i sproxy-*-Linux.deb
 
 EXPOSE 80
 WORKDIR /var/lib/sproxy
-CMD ["/usr/local/bin/sproxy"]
+CMD ["sproxy"]

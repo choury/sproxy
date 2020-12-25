@@ -188,7 +188,7 @@ int tun_create(char *dev, int flags) {
         memset(&ifr, 0, sizeof(ifr));
         ifr.ifr_flags |= flags;
         if (*dev != '\0')
-            strncpy(ifr.ifr_name, dev, IFNAMSIZ);
+            strncpy(ifr.ifr_name, dev, IFNAMSIZ-1);
         if ((err = ioctl(fd, TUNSETIFF, (void *)&ifr)) < 0) {
             perror("ioctl");
             break;

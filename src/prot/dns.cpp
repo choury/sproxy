@@ -247,7 +247,7 @@ void query(const char* host, DNSCBfunc func, void* param) {
     }
     
     Dns_Status *dnsst = new Dns_Status;
-    strncpy(dnsst->host, host, sizeof(dnsst->host));
+    strncpy(dnsst->host, host, sizeof(dnsst->host)-1);
     dnsst->times = 0;
     if(func){
         dnsst->reqs.push_back(Dns_Req{func, param});
