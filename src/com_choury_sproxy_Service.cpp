@@ -83,8 +83,8 @@ extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     jniobj = jnienv->NewGlobalRef(obj);
     std::string config_file = getExternalFilesDir() + "/sproxy.conf";
     std::string sites_file = getExternalFilesDir() + "/sites.list";
-    strcpy(default_policy, sites_file.c_str());
-    opt.policy_file = default_policy;
+
+    opt.policy_read = fopen(sites_file.c_str(), "re");
     if(access(config_file.c_str(), R_OK) == 0){
         LOG("read config from %s.\n", config_file.c_str());
         parseConfigFile(config_file.c_str());

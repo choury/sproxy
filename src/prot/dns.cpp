@@ -3,6 +3,7 @@
 #include "misc/simpleio.h"
 #include "misc/index.h"
 #include "misc/config.h"
+#include "misc/defer.h"
 #include "common.h"
 
 #include <unordered_map>
@@ -112,7 +113,9 @@ void getDnsConfig(struct DnsConfig* config){
     std::vector<std::string> dns = getDns();
     int get = 0;
     for(const auto& i: dns){
-        assert(get < sizeof(config->server)/sizeof(config->server[0]));
+        if((size_t)get == sizeof(config->server)/sizeof(config->server[0])){
+            break;
+        }
         if(storage_aton(i.c_str(), DNSPORT, &config->server[get]) == 1){
             get++;
         }else{
@@ -135,6 +138,13 @@ void getDnsConfig(struct DnsConfig* config){
     char* line = nullptr;
     size_t len = 0;
     while(getline(&line, &len, res_file) >= 0){
+        defer([&line]{
+            free(line);
+            line = nullptr;
+        });
+        if((size_t)get >= sizeof(config->server)/sizeof(config->server[0])){
+            break;
+        }
         std::istringstream iss(line);
         std::string command;
         iss >> command;
@@ -143,14 +153,11 @@ void getDnsConfig(struct DnsConfig* config){
         } 
         std::string server;
         iss >> server;
-        assert(get < sizeof(config->server)/sizeof(config->server[0]));
         if(storage_aton(server.c_str(), DNSPORT, &config->server[get]) == 1){
             get++;
         } else {
             LOGE("[DNS] %s is not a valid ip address\n", server.c_str());
         }
-        free(line);
-        line = nullptr;
     }
     fclose(res_file);
     config->namecount = get;

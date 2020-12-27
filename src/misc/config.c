@@ -28,6 +28,7 @@ uint32_t debug = DVPN;
 static char** main_argv = NULL;
 static char* ipv6_options[] = {"disable", "enable", "auto", NULL};
 static char* server_string = NULL;
+static char* policy_file = NULL;
 
 struct options opt = {
     .cafile            = NULL,
@@ -45,6 +46,8 @@ struct options opt = {
     .alter_method      = false,
     .set_dns_route     = false,
 
+    .policy_read    = NULL,
+    .policy_write   = NULL,
     .CPORT          = 0,
     .Server         = {
         .schema     = {0},
@@ -131,7 +134,7 @@ static struct option_detail option_detail[] = {
     {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, ipv6_options},
     {"key", "Private key file name (ssl)", option_string, &opt.key, NULL},
     {"port", "The port to listen, default is 80 but 443 for ssl/sni", option_int64, &opt.CPORT, NULL},
-    {"policy-file", "The file of policy (sites.list as default)", option_string, &opt.policy_file, NULL},
+    {"policy-file", "The file of policy (/etc/sproxy/sites.list as default)", option_string, &policy_file, NULL},
     {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64, opt.rewrite_auth, NULL},
     {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
     {"secret", "Set a user and passwd for proxy (user:password), default is none.", option_base64, opt.auth_string, NULL},
@@ -455,8 +458,13 @@ void parseConfig(int argc, char **argv){
     }
     LOG("server %s\n", dumpDest(&opt.Server));
 
-    if(opt.policy_file == NULL){
-        opt.policy_file = "sites.list";
+    if(policy_file == NULL){
+        policy_file = PREFIX "/etc/sproxy/sites.list";
+    }
+    if((opt.policy_read = fopen(policy_file, "re")) == NULL){
+        LOGE("failed to open policy file: %s\n", strerror(errno));
+    }else if((opt.policy_write = fopen(policy_file, "r+e")) == NULL){
+        LOG("failed to open policy file for write: %s, it won't be updated\n", strerror(errno));
     }
     if(opt.rootdir && chdir(opt.rootdir)){
         LOGE("chdir failed: %s\n", strerror(errno));

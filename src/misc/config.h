@@ -30,7 +30,7 @@ struct options{
     const char *cert;
     const char *key;
     const char *config_file;
-    const char *policy_file;
+    //const char *policy_file;
     const char *rootdir;
     const char *index_file;
     const char *interface;
@@ -43,6 +43,8 @@ struct options{
     bool alter_method;
     bool set_dns_route;
 
+    FILE* policy_read;
+    FILE* policy_write;
     int64_t CPORT;
     struct Destination Server;
     char auth_string[DOMAINLIMIT];

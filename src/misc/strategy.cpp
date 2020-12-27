@@ -3,8 +3,9 @@
 #include "config.h"
 #include "common.h"
 #include "trie.h"
+#include "defer.h"
 #include <set>
-#include <fstream>
+#include <sstream>
 
 #include <string.h>
 #include <unistd.h>
@@ -22,8 +23,7 @@
 #define GEN_TIP  "GENERATED"
 
 using std::string;
-using std::ifstream;
-using std::ofstream;
+using std::stringstream;
 
 static Trie<string, strategy> domains;
 static Trie<char, strategy> ipv4s;
@@ -128,29 +128,26 @@ void reloadstrategy() {
     gethostname(hostname, sizeof(hostname));
     domains.insert(split(hostname), strategy{Strategy::local, GEN_TIP});
     domains.insert(split("localhost"), strategy{Strategy::local, GEN_TIP});
-    ifstream sitesfile(opt.policy_file);
-    if (sitesfile.good()) {
+    if (opt.policy_read && fseek(opt.policy_read, 0L, SEEK_SET) == 0){
         int lineNum = 0;
-        string line;
-        while (std::getline(sitesfile, line)) {
+        char* line = nullptr;
+        size_t len = 0;
+        while (getline(&line, &len, opt.policy_read) > 0) {
+            defer([&line]{
+                free(line);
+                line = nullptr;
+            });
             lineNum ++;
-            if(line[0] == '#'){
+            if(len == 0 || line[0] == '#'){
                 continue;
             }
-
-            char site[DOMAINLIMIT];
-            char strategy[20];
-            char ext[DOMAINLIMIT] = {0};
-            int ret = sscanf(line.c_str(), "%s %s %s", site, strategy, ext);
-
-            if(line.length() && (ret < 2 || !mergestrategy(site, strategy, ext))){
-                LOGE("Wrong config line %d:%s\n", lineNum, line.c_str());
+            stringstream ss(line);
+            string site, strategy, ext;
+            ss >> site >> strategy >> ext;
+            if(!mergestrategy(site, strategy, ext)){
+                LOGE("Wrong config line %d:%s\n", lineNum, line);
             }
         }
-
-        sitesfile.close();
-    } else {
-        LOGE("read policy file %s failed!\n", opt.policy_file);
     }
 
     addauth("::ffff:127.0.0.1");
@@ -159,15 +156,25 @@ void reloadstrategy() {
 
 void savesites(){
 #ifndef __ANDROID__
-    ofstream sitesfile(opt.policy_file);
+    if(!opt.policy_write || fseek(opt.policy_write, 0L, SEEK_SET)){
+        return;
+    }
     auto list = getallstrategy();
     for (auto i:list) {
         if(i.second.ext == GEN_TIP){
             continue;
         }
-        sitesfile <<i.first<<' '<<getstrategystring(i.second.s)<<' '<<i.second.ext<< std::endl;
+         
+        if(fprintf(opt.policy_write, 
+            "%s %s %s\n", i.first.c_str(), 
+            getstrategystring(i.second.s), 
+            i.second.ext.c_str()) <= 0)
+        {
+            LOGE("failed to update policy: %s\n", strerror(errno));
+        }
     }
-    sitesfile.close();
+    ftruncate(fileno(opt.policy_write), ftell(opt.policy_write));
+    fflush(opt.policy_write);
 #endif
 }
 
