@@ -168,6 +168,7 @@ void Host::ResProc(HttpResHeader* header) {
     if(status.req->header->ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY_F;
     }
+    assert(status.res == nullptr);
     status.res = new HttpRes(header, std::bind(&RWer::EatReadData, rwer));
     status.req->response(status.res);
 }
@@ -253,6 +254,7 @@ void Host::deleteLater(uint32_t errcode){
             status.req->response(new HttpRes(new HttpResHeader(H500), "[[internal error]]\n"));
         }
     }
+    status.flags |= HTTP_CLOSED_F;
     Server::deleteLater(errcode);
 }
 
