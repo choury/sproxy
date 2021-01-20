@@ -3,4 +3,4 @@
 #Created:  2017/2/11
 
 
-add_library(prot rwer.cpp ip_pack.cpp dns.cpp hpack.cpp http.cpp http2.cpp http_pack.cpp)
+add_library(prot rwer.cpp netio.cpp sslio.cpp ip_pack.cpp dns.cpp resolver.cpp hpack.cpp http.cpp http2.cpp http_pack.cpp)

@@ -459,8 +459,10 @@ uint64_t Tcp::getoptions() const {
             opt = (tcp_opt*)((char *)opt+1);
             continue;
         }
-        assert(opt->kind < 64);
-        options |= (1u<<opt->kind);
+        if(opt->kind < 64) {
+            // the option kind < 64 are allowed
+            options |= (1ull << opt->kind);
+        }
         len -= opt->length;
         opt = (tcp_opt*)((char *)opt+opt->length);
     }

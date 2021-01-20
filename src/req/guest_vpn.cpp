@@ -1,7 +1,7 @@
 #include "guest_vpn.h"
 
 #include "res/fdns.h"
-#include "misc/simpleio.h"
+#include "prot/netio.h"
 #include "misc/config.h"
 #include "misc/util.h"
 
@@ -276,7 +276,7 @@ const char* Guest_vpn::generateUA() const {
 #ifndef __ANDROID__
     sprintf(UA, "Sproxy/%s (%s)", getVersion(), getDeviceInfo());
 #else
-    sprintf(UA, "Sproxy/%s (%s)", version, getDeviceName());
+    sprintf(UA, "Sproxy/%s %s (%s)", getVersion(), version, getDeviceName());
 #endif
     return UA;
 }
@@ -580,6 +580,8 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
             LOGD(DVPN, "clean closed connection\n");
             deleteLater(PEER_LOST_ERR);
             return;
+        case TCP_CLOSE_WAIT:
+            //fall through
         case TCP_FIN_WAIT2:
             //fall through
         case TCP_TIME_WAIT:
@@ -875,6 +877,8 @@ void Guest_vpn::handle(Channel::signal s) {
                     tcpStatus->status = TCP_LAST_ACK;
                     break;
             }
+        }else{
+            aged_job = rwer->updatejob(aged_job, std::bind(&Guest_vpn::aged, this), 0);
         }
         break;
     case Channel::CHANNEL_ABORT:

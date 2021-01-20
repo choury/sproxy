@@ -1,8 +1,7 @@
 #include "host.h"
 #include "proxy2.h"
 #include "req/requester.h"
-#include "misc/util.h"
-#include "misc/sslio.h"
+#include "prot/sslio.h"
 #include "misc/net.h"
 
 #include <string.h>
@@ -209,8 +208,8 @@ void Host::ErrProc(){
 }
 
 void Host::Error(int ret, int code) {
-    LOGD(DHTTP, "host Error %" PRIu64 ": ret:%d, code:%d, http_flag:0x%08x\n",
-            status.req->header->request_id, ret, code, http_flag);
+    LOGD(DHTTP, "host Error <%s> ret:%d, code:%d, http_flag:0x%08x\n",
+            rwer->getDest(), ret, code, http_flag);
     if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0 && status.res){
         //EOF
         status.flags |= HTTP_RES_EOF;
@@ -221,8 +220,12 @@ void Host::Error(int ret, int code) {
         }
         return;
     }
-    LOGE("Host error <%s> %" PRIu64 " %d/%d\n",
-         rwer->getDest(), status.req->header->request_id, ret, code);
+    if(status.req) {
+        LOGE("Host error <%s> %" PRIu64 " %d/%d\n",
+             rwer->getDest(), status.req->header->request_id, ret, code);
+    }else{
+        LOGE("Host error <%s> %d/%d\n", rwer->getDest(), ret, code);
+    }
     deleteLater(ret);
 }
 

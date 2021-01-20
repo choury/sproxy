@@ -1,14 +1,11 @@
 #ifndef DNS_H__
 #define DNS_H__
 
-#include "base.h"
+#include "common.h"
 #include "misc/net.h"
 
-#include <list>
 #include <string>
-
-#include <unistd.h>
-#include <time.h>
+#include <vector>
 #include <netinet/in.h>
 
 typedef struct DNS_HDR {
@@ -47,43 +44,31 @@ typedef struct DNS_HDR {
 } __attribute__((packed)) DNS_HDR;
 
 
-class Dns_Que{
-public:
-    std::string host;
+struct Dns_Query{
+    char domain[DOMAINLIMIT];
     sockaddr_storage ptr_addr;
     uint16_t type;
     uint16_t id;
     bool valid = false;
-    Dns_Que(const std::string& host, uint16_t type, uint16_t id);
-    explicit Dns_Que(const char *buff, size_t len);
+    Dns_Query(const char* domain, uint16_t type, uint16_t id);
+    explicit Dns_Query(const char *buff, size_t len);
     int build(unsigned char *buf)const;
 };
 
 
-class Dns_Rr{
+class Dns_Result{
 public:
     char domain[DOMAINLIMIT];
     std::vector<sockaddr_storage> addrs;
+    uint16_t  type = 0;
     uint16_t  id = 0;
     uint32_t  ttl = 0;
-    explicit Dns_Rr(const char* domain);
-    explicit Dns_Rr(const char* domain, const in_addr* addr);
-    explicit Dns_Rr(const char* domain, const in6_addr* addr);
-    explicit Dns_Rr(const char* buff, size_t len);
-    int build(const Dns_Que* query, unsigned char *buf)const;
-    static int buildError(const Dns_Que* query, unsigned char errcode, unsigned char *buf);
+    explicit Dns_Result(const char* domain);
+    explicit Dns_Result(const char* domain, const in_addr* addr);
+    explicit Dns_Result(const char* domain, const in6_addr* addr);
+    explicit Dns_Result(const char* buff, size_t len);
+    int build(const Dns_Query* query, unsigned char *buf)const;
+    static int buildError(const Dns_Query* query, unsigned char errcode, unsigned char *buf);
 };
-
-
-typedef void (*DNSCBfunc)(void *, std::list<sockaddr_storage> addrs);
-typedef void (*DNSRAWCB)(void *, const char *buff, size_t size);
-
-
-void query(const char* host, DNSCBfunc func, void* param);
-void query(const char* host, uint16_t type, DNSRAWCB func, void* parm);
-void query_cancel(const char* host, DNSCBfunc func, void* parm);
-void RcdDown(const char *hostname, const sockaddr_storage &addr);
-
-void flushdns();
 
 #endif

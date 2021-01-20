@@ -1,7 +1,9 @@
-#include "simpleio.h"
-#include "prot/dns.h"
+#include "netio.h"
+#include "resolver.h"
 #include "misc/util.h"
+#include "misc/net.h"
 
+#include <unistd.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <assert.h>
@@ -107,11 +109,11 @@ NetRWer::NetRWer(const char* hostname, uint16_t port, Protocol protocol,
 {
     strcpy(this->hostname, hostname);
     stats = RWerStats::Dnsquerying;
-    query(hostname, NetRWer::Dnscallback, this);
+    connect();
 }
 
 NetRWer::~NetRWer() {
-    query_cancel(hostname, NetRWer::Dnscallback, this);
+    delete resolver;
 }
 
 void NetRWer::Dnscallback(void* param, std::list<sockaddr_storage> addrs) {
@@ -126,25 +128,10 @@ void NetRWer::Dnscallback(void* param, std::list<sockaddr_storage> addrs) {
         rwer->addrs.push(i);
     }
     rwer->stats = RWerStats::Connecting;
-    switch(rwer->protocol){
-    case Protocol::TCP:
-    case Protocol::UDP:
-        rwer->connect();
-        break;
-    case Protocol::ICMP: {
-        int fd = IcmpSocket(&addrs.front());
-        if (fd < 0) {
-            return rwer->ErrorHE(CONNECT_FAILED, errno);
-        }
-        rwer->setFd(fd);
-        rwer->Connected(addrs.front());
-        break;
-    }
-    default:
-        LOGF("Unknow protocol: %d\n", rwer->protocol);
-    }
+    rwer->connect();
 }
 
+/*
 void NetRWer::retryconnect(int error) {
     setFd(-1);
     if(!addrs.empty()){
@@ -157,19 +144,69 @@ void NetRWer::retryconnect(int error) {
     }
     connect();
 }
+ */
 
 void NetRWer::connect() {
-    int fd = Connect(&addrs.front(), (int)protocol);
-    if (fd < 0) {
-        con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::con_failed, this),  0);
+    if(retry-- <= 0) {
+        return ErrorHE(CONNECT_FAILED, 0);
+    }
+    if(stats == RWerStats::Dnsquerying) {
+        assert(addrs.empty());
+        // No address got before.
+        delete resolver;
+        resolver = query_host(hostname, NetRWer::Dnscallback, this);
+        if(resolver == nullptr) {
+            con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 0);
+        }else {
+            con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 5000);
+        }
         return;
     }
-    setFd(fd);
-    setEvents(RW_EVENT::WRITE);
-    handleEvent = (void (Ep::*)(RW_EVENT))&NetRWer::waitconnectHE;
-    con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::con_failed, this), 30000);
+    int fd = getFd();
+    if(fd >= 0) {
+        //connected failed for top addr
+        RcdDown(hostname, addrs.front());
+        addrs.pop();
+    }
+    if(addrs.empty()) {
+        //we have tried all addresses.
+        return ErrorHE(CONNECT_TIMEOUT, 0);
+    }
+
+    if(protocol == Protocol::TCP) {
+        fd = Connect(&addrs.front(), SOCK_STREAM);
+        if (fd < 0) {
+            con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 0);
+            return;
+        }
+        setFd(fd);
+        setEvents(RW_EVENT::WRITE);
+        handleEvent = (void (Ep::*)(RW_EVENT)) &NetRWer::waitconnectHE;
+        con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 10000);
+    }else if(protocol == Protocol::UDP) {
+        fd = Connect(&addrs.front(), SOCK_DGRAM);
+        if (fd < 0) {
+            con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 0);
+            return;
+        }
+        setFd(fd);
+        Connected(addrs.front());
+    }else if(protocol == Protocol::ICMP) {
+        fd = IcmpSocket(&addrs.front());
+        if (fd < 0) {
+            con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 0);
+            return;
+        }
+        setFd(fd);
+        Connected(addrs.front());
+    }else {
+        LOGF("Unknow protocol: %d\n", protocol);
+    }
+    delete resolver;
+    resolver = nullptr;
 }
 
+/*
 void NetRWer::con_failed() {
     if(getFd() >= 0){
         LOGE("connect to %s timeout\n", hostname);
@@ -179,12 +216,12 @@ void NetRWer::con_failed() {
         retryconnect(CONNECT_FAILED);
     }
 }
-
+ */
 
 void NetRWer::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR) || !!(events & RW_EVENT::READEOF)) {
         checkSocket(__PRETTY_FUNCTION__);
-        return retryconnect(CONNECT_FAILED);
+        return connect();
     }
     if (!!(events & RW_EVENT::WRITE)) {
         Connected(addrs.front());

@@ -1,4 +1,4 @@
-#include "misc/sslio.h"
+#include "sslio.h"
 #include "misc/net.h"
 #include "misc/config.h"
 
@@ -188,7 +188,7 @@ SslRWer::~SslRWer(){
 void SslRWer::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR)) {
         checkSocket(__PRETTY_FUNCTION__);
-        return retryconnect(CONNECT_FAILED);
+        return connect();
     }
     if (!!(events & RW_EVENT::WRITE)) {
         setEvents(RW_EVENT::READWRITE);
@@ -213,7 +213,7 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
         SSL_set_verify(ssl, SSL_VERIFY_PEER, verify_host_callback);
 
         handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::shakehandHE;
-        con_failed_job = updatejob(con_failed_job, std::bind(&SslRWer::con_failed, this), 30000);
+        con_failed_job = updatejob(con_failed_job, std::bind(&SslRWer::connect, this), 15000);
     }
 }
 

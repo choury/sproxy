@@ -2,8 +2,6 @@
 #include "util.h"
 #include "common.h"
 #include <assert.h>
-#include <cxxabi.h>
-#include <string>
 #include <set>
 
 using std::function;
@@ -20,19 +18,6 @@ struct Job{
     job_handler* handler;
     ~Job(){}
 };
-
-
-std::string demangle(const char* name) {
-    int status = -4; // some arbitrary value to eliminate the compiler warning
-    char* output = abi::__cxa_demangle(name, NULL, NULL, &status);
-    if(status == 0){
-        std::string  out = output;
-        free(output);
-        return out;
-    }else{
-        return name;
-    }
-}
 
 std::set<Job*> gjobs;
 
@@ -100,13 +85,13 @@ uint32_t do_delayjob(){
     for(auto j = gjobs.begin(); j != gjobs.end();){
         uint32_t diff = now - (*j)->last_done_ms;
         assert(((*j)->flags & JOB_DESTROIED) == 0);
-        if(diff >= (*j)->delay_ms){
-            LOGD(DJOB, "start Job %p %s diff %u\n", (*j), (*j)->func_name, diff);
-            jobs_todo.push_back(*j);
-            j = gjobs.erase(j);
-        }else{
-            j++ ;
+        if(diff < (*j)->delay_ms){
+            j++;
+            continue;
         }
+        LOGD(DJOB, "start Job %p %s diff %u\n", (*j), (*j)->func_name, diff);
+        jobs_todo.push_back(*j);
+        j = gjobs.erase(j);
     }
     for(auto j: jobs_todo){
         if(j->flags & JOB_FLAGS_AUTORELEASE){

@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 struct DnsConfig{
-    int namecount;
+    size_t namecount;
     struct sockaddr_storage server[20];
 };
 

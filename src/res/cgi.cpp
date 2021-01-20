@@ -1,9 +1,9 @@
 #include "cgi.h"
 #include "req/requester.h"
 #include "res/proxy2.h"
+#include "prot/netio.h"
 #include "misc/net.h"
 #include "misc/strategy.h"
-#include "misc/simpleio.h"
 #include "misc/util.h"
 #include "misc/config.h"
 

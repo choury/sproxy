@@ -1,7 +1,7 @@
 #include "ping.h"
 #include "prot/ip_pack.h"
+#include "prot/netio.h"
 #include "req/requester.h"
-#include "misc/simpleio.h"
 #include "misc/util.h"
 
 #include <string.h>

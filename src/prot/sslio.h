@@ -1,7 +1,7 @@
 #ifndef SSL_IO_H_
 #define SSL_IO_H_
 
-#include "simpleio.h"
+#include "netio.h"
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 

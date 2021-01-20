@@ -18,8 +18,6 @@ static std::map<int, std::string> packages;
 static std::string extenalFilesDir;
 static std::string extenalCacheDir;
 char   version[DOMAINLIMIT];
-static char default_policy[PATH_MAX];
-
 
 static std::string getExternalFilesDir() {
     if(!extenalFilesDir.empty()){
@@ -93,7 +91,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     const char *server_str = jnienv->GetStringUTFChars(server, nullptr);
     const char *secret_str = jnienv->GetStringUTFChars(secret, nullptr);
 
-    opt.ignore_cert_error = 1;
+    opt.ignore_cert_error = true;
     loadproxy(server_str, &opt.Server);
     Base64Encode(secret_str, strlen(secret_str), opt.rewrite_auth);
     jnienv->ReleaseStringUTFChars(server, server_str);
@@ -220,10 +218,6 @@ std::vector<std::string> getDns(){
         jnienv->DeleteLocalRef(cls);
     }
 ret:
-    if(dns.empty()){
-        dns.emplace_back("8.8.8.8");
-        dns.emplace_back("223.5.5.5");
-    }
     return dns;
 }
 

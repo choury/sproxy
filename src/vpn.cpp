@@ -1,5 +1,5 @@
 #include "vpn.h"
-#include "prot/dns.h"
+#include "prot/resolver.h"
 #include "misc/strategy.h"
 
 #include "req/guest_vpn.h"

@@ -3,7 +3,7 @@
 #include "misc/net.h"
 #include "res/responser.h"
 #include "misc/util.h"
-#include "misc/sslio.h"
+#include "prot/sslio.h"
 
 #include <string.h>
 #include <assert.h>

@@ -1,7 +1,8 @@
-#ifndef SIMPLEIO_H__
-#define SIMPLEIO_H__
-#include "prot/rwer.h"
+#ifndef NETIO_H__
+#define NETIO_H__
+#include "rwer.h"
 #include "common.h"
+#include "prot/resolver.h"
 
 #include <queue>
 
@@ -36,12 +37,12 @@ protected:
     Protocol protocol;
     char     hostname[DOMAINLIMIT] = {0};
     std::queue<sockaddr_storage> addrs;
+    int      retry = 3;
     Job*     con_failed_job = nullptr;
+    Resolver*  resolver = nullptr;
     virtual void waitconnectHE(RW_EVENT events);
-    void connect();
-    void retryconnect(int error);
-    void con_failed();
     static void Dnscallback(void* param, std::list<sockaddr_storage> addrs);
+    void connect();
 
     virtual ssize_t Write(const void* buff, size_t len) override;
 public:

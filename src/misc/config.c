@@ -24,7 +24,7 @@
 #endif
 #include <openssl/ssl.h>
 
-uint32_t debug = DVPN;
+uint32_t debug = 0;
 static char** main_argv = NULL;
 static char* ipv6_options[] = {"disable", "enable", "auto", NULL};
 static char* server_string = NULL;
@@ -479,7 +479,6 @@ void parseConfig(int argc, char **argv){
     }else{
         opt.ipv6_enabled = opt.ipv6_mode;
     }
-#ifndef __ANDROID__
     if (opt.cafile && access(opt.cafile, R_OK)){
         LOGE("access cafile failed: %s\n", strerror(errno));
         exit(1);
@@ -492,7 +491,6 @@ void parseConfig(int argc, char **argv){
         LOGE("access key file failed: %s\n", strerror(errno));
         exit(1);
     }
-#endif
 }
 
 
