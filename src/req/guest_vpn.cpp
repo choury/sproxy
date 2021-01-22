@@ -274,9 +274,9 @@ const char * Guest_vpn::getProg() const{
 const char* Guest_vpn::generateUA() const {
     static char UA[URLLIMIT];
 #ifndef __ANDROID__
-    sprintf(UA, "Sproxy/%s (%s)", getVersion(), getDeviceInfo());
+    sprintf(UA, "Sproxy/%s (Build %s) (%s)", getVersion(), getBuildTime(), getDeviceInfo());
 #else
-    sprintf(UA, "Sproxy/%s %s (%s)", getVersion(), version, getDeviceName());
+    sprintf(UA, "Sproxy/%s (Build %s) (%s) App/%s", getVersion(), getBuildTime(), getDeviceName(), appVersion);
 #endif
     return UA;
 }

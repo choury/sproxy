@@ -17,7 +17,7 @@ static jobject jniobj;
 static std::map<int, std::string> packages;
 static std::string extenalFilesDir;
 static std::string extenalCacheDir;
-char   version[DOMAINLIMIT];
+char   appVersion[DOMAINLIMIT];
 
 static std::string getExternalFilesDir() {
     if(!extenalFilesDir.empty()){
@@ -104,7 +104,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     jmethodID mid = jnienv->GetMethodID(cls, "getMyVersion", "()Ljava/lang/String;");
     jstring jversion = (jstring) jnienv->CallObjectMethod(jniobj, mid);
     const char *jversion_str = jnienv->GetStringUTFChars(jversion, nullptr);
-    strcpy(version, jversion_str);
+    strcpy(appVersion, jversion_str);
     jnienv->ReleaseStringUTFChars(jversion, jversion_str);
     jnienv->DeleteLocalRef(jversion);
 

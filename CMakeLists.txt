@@ -30,10 +30,15 @@ string(TIMESTAMP NOW UTC)
 find_package(Git)
 if(Git_FOUND)
     execute_process(COMMAND ${GIT_EXECUTABLE} describe --tag --dirty --long --always
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
         OUTPUT_VARIABLE VERSION
+        ERROR_VARIABLE GITERROR
+        RESULT_VARIABLE GITRET
         OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
     )
+    if(GITRET)
+        message(FATAL_ERROR "Git Return: ${GITRET}, Error: ${GITERROR}")
+    endif()
 endif()
 message("Set VERSION: ${VERSION}")
 #parse the version information into pieces.

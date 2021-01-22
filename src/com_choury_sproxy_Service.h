@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-extern char version[];
+extern char appVersion[];
 
 /*
  * Class:     com_choury_sproxy_SproxyVpnService
