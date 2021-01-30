@@ -3,6 +3,7 @@
 #include "strategy.h"
 #include "net.h"
 #include "version.h"
+#include "network_notify.h"
 
 #include <getopt.h>
 #include <stdio.h>
@@ -29,6 +30,7 @@ static char** main_argv = NULL;
 static char* ipv6_options[] = {"disable", "enable", "auto", NULL};
 static char* server_string = NULL;
 static char* policy_file = NULL;
+
 
 struct options opt = {
     .cafile            = NULL,
@@ -158,6 +160,15 @@ static struct option_detail option_detail[] = {
     {NULL, NULL, option_bool, NULL, NULL},
 };
 
+void network_changed(){
+    LOG("handle network changed\n");
+    if(opt.ipv6_mode == Auto){
+        opt.ipv6_enabled = hasIpv6Address();
+    }
+    flushdns();
+    flushproxy2(0);
+}
+
 void prepare(){
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
@@ -193,6 +204,7 @@ void prepare(){
     if(setrlimit(RLIMIT_NOFILE, &limits)) {
         LOGE("setrlimit failed: %s\n", strerror(errno));
     }
+    notify_network_change(network_changed);
 }
 
 static void usage(const char * program){

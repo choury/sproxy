@@ -1,8 +1,7 @@
 #include "vpn.h"
-#include "prot/resolver.h"
-#include "misc/strategy.h"
 
 #include "req/guest_vpn.h"
+#include "misc/strategy.h"
 
 #include <string.h>
 #include <errno.h>
@@ -16,7 +15,6 @@ uint32_t vpn_contiune;
 #define VPN_RELOAD 2u
 uint32_t vpn_action = 0;
 
-void flushproxy2(int force);
 
 int vpn_start(int fd){
     prepare();
@@ -30,11 +28,7 @@ int vpn_start(int fd){
     LOG("Accepting connections ...\n");
     while (vpn_contiune) {
         if(vpn_action & VPN_RESET){
-            if(opt.ipv6_mode == Auto){
-                opt.ipv6_enabled = hasIpv6Address();
-            }
-            flushdns();
-            flushproxy2(0);
+            network_changed();
             vpn_action &= ~VPN_RESET;
         }
         if(vpn_action & VPN_RELOAD){

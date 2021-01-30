@@ -27,6 +27,9 @@ class Trie: public TrieType<V> {
     bool isKey = false;
     std::map<T, Trie<T,V>*> children;
 public:
+    ~Trie(){
+        clear();
+    }
     void insert(std::list<T>&& token, V v){
         if(token.empty()){
             isKey = true;

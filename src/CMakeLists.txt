@@ -26,6 +26,10 @@ if(ZLIB_FOUND)
     set(SPROXY_LIBS ${SPROXY_LIBS} z)
 endif()
 
+if(APPLE)
+    set(SPROXY_LIBS ${SPROXY_LIBS} ${CORE_LIBRARY} ${SYSCONF_LIBRARY})
+endif()
+
 if(LINUX OR APPLE)
     add_executable(sproxy main.cpp base.cpp)
     set_target_properties(sproxy PROPERTIES OUTPUT_NAME "sproxy")

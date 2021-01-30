@@ -3,7 +3,6 @@
 #include "misc/util.h"
 #include "misc/config.h"
 #include "misc/net.h"
-#include "prot/resolver.h"
 
 #include "host.h"
 #include "file.h"

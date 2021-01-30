@@ -15,7 +15,6 @@
 #include <signal.h>
 #include <unistd.h>
 #include <sys/resource.h>
-#include <fcntl.h>
 #include <errno.h>
 #include <assert.h>
 #include <libgen.h>

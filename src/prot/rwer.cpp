@@ -443,9 +443,11 @@ RWer::buffer_insert(std::list<write_block>::insert_iterator where, const write_b
     }
 }
 
+/*
 void RWer::Clear(bool freebuffer) {
     wbuff.clear(freebuffer);
 }
+ */
 
 NullRWer::NullRWer():RWer(-1, [](int, int){}) {
 }
@@ -485,6 +487,7 @@ FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB):
 {
     int evfd = eventfd(1, O_NONBLOCK);
     if(evfd < 0){
+        stats = RWerStats::Error;
         errorCB(SOCKET_ERR, errno);
         return;
     }

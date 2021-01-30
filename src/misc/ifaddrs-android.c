@@ -1,6 +1,6 @@
 #include <ifaddrs.h>
 
-#if defined(ANDROID) && __ANDROID_API__ < 24
+#if __ANDROID_API__ < 24
 // Android (bionic) doesn't have getifaddrs(3)/freeifaddrs(3).
 // We fake it here, so getlocalip can use that API
 // with all the non-portable code being in this file.

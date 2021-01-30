@@ -91,6 +91,11 @@ else()
     endif()
 endif()
 
+if(APPLE)
+    find_library(CORE_LIBRARY CoreFoundation)
+    find_library(SYSCONF_LIBRARY SystemConfiguration)
+endif()
+
 include_directories(${OPENSSL_INCLUDE_DIR})
 
 set(CMAKE_C_FLAGS "-std=gnu99 -Wall -Wextra -fPIC -fno-omit-frame-pointer ${CMAKE_C_FLAGS}")

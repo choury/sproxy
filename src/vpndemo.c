@@ -88,7 +88,7 @@ int set_if(struct ifreq *ifr) {
 
         struct DnsConfig config;
         getDnsConfig(&config);
-        for (int i = 0; i < config.namecount; i++) {
+        for (size_t i = 0; i < config.namecount; i++) {
             if (config.server[i].ss_family != AF_INET) {
                 continue;
             }
@@ -157,7 +157,7 @@ int set_if6(struct ifreq *ifr) {
 
         struct DnsConfig config;
         getDnsConfig(&config);
-        for (int i = 0; i < config.namecount; i++) {
+        for (size_t i = 0; i < config.namecount; i++) {
             if (config.server[i].ss_family != AF_INET6) {
                 continue;
             }

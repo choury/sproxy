@@ -45,6 +45,5 @@ Resolver* query_host(const char* host, DNSCB func, void* param);
 Resolver* query_dns(const char* host, int type, DNSRAWCB func, void* param);
 void RcdDown(const char *hostname, const sockaddr_storage &addr);
 
-void flushdns();
 
 #endif

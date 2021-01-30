@@ -108,7 +108,7 @@ NetRWer::NetRWer(const char* hostname, uint16_t port, Protocol protocol,
             RWer(std::move(errorCB), std::move(connectCB)), port(port), protocol(protocol)
 {
     strcpy(this->hostname, hostname);
-    stats = RWerStats::Dnsquerying;
+    stats = RWerStats::Resolving;
     connect();
 }
 
@@ -150,10 +150,10 @@ void NetRWer::connect() {
     if(retry-- <= 0) {
         return ErrorHE(CONNECT_FAILED, 0);
     }
-    if(stats == RWerStats::Dnsquerying) {
+    delete resolver;
+    if(stats == RWerStats::Resolving) {
         assert(addrs.empty());
         // No address got before.
-        delete resolver;
         resolver = query_host(hostname, NetRWer::Dnscallback, this);
         if(resolver == nullptr) {
             con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 0);
@@ -161,6 +161,8 @@ void NetRWer::connect() {
             con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 5000);
         }
         return;
+    } else {
+        resolver = nullptr;
     }
     int fd = getFd();
     if(fd >= 0) {
@@ -183,7 +185,7 @@ void NetRWer::connect() {
         setEvents(RW_EVENT::WRITE);
         handleEvent = (void (Ep::*)(RW_EVENT)) &NetRWer::waitconnectHE;
         con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 10000);
-    }else if(protocol == Protocol::UDP) {
+    } else if(protocol == Protocol::UDP) {
         fd = Connect(&addrs.front(), SOCK_DGRAM);
         if (fd < 0) {
             con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 0);
@@ -191,7 +193,7 @@ void NetRWer::connect() {
         }
         setFd(fd);
         Connected(addrs.front());
-    }else if(protocol == Protocol::ICMP) {
+    } else if(protocol == Protocol::ICMP) {
         fd = IcmpSocket(&addrs.front());
         if (fd < 0) {
             con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 0);
@@ -199,11 +201,9 @@ void NetRWer::connect() {
         }
         setFd(fd);
         Connected(addrs.front());
-    }else {
+    } else {
         LOGF("Unknow protocol: %d\n", protocol);
     }
-    delete resolver;
-    resolver = nullptr;
 }
 
 /*

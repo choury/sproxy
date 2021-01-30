@@ -84,7 +84,7 @@ using std::placeholders::_2;
 
 enum class RWerStats{
     Idle = 0,
-    Dnsquerying,
+    Resolving,
     Connecting,
     Connected,
     SslAccepting,
@@ -99,9 +99,9 @@ protected:
 #define RWER_READING  1u
 #define RWER_SENDING  2u
 #define RWER_CLOSING  4u
-    uint32_t  flags = 0;
+    uint32_t   flags = 0;
     RWerStats  stats = RWerStats::Idle;
-    WBuffer wbuff;
+    WBuffer    wbuff;
     std::function<void(size_t len)> readCB;
     std::function<void(size_t len)> writeCB;
     std::function<void(const sockaddr_storage&)> connectCB;
@@ -144,7 +144,7 @@ public:
     virtual std::list<write_block>::insert_iterator buffer_end();
     virtual std::list<write_block>::insert_iterator
     buffer_insert(std::list<write_block>::insert_iterator where, const write_block& wb);
-    virtual void Clear(bool freebuffer);
+    //virtual void Clear(bool freebuffer);
 };
 
 class NullRWer: public RWer{

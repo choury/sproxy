@@ -2,6 +2,19 @@
 #Author:   choury
 #Created:  2017/2/11
 
+set(misc_src job.cpp net.c tls.c util.c strategy.cpp config.c trie_helper.cpp)
 
-add_library(misc job.cpp net.c tls.c util.c ifaddrs-android.c strategy.cpp config.c trie_helper.cpp)
+if(ANDROID)
+    set(misc_src ${misc_src} ifaddrs-android.c)
+endif()
+
+if(APPLE)
+    set(misc_src ${misc_src} network_notify_osx.c)
+elseif(LINUX)
+    set(misc_src ${misc_src} network_notify_linux.c)
+else()
+    set(misc_src ${misc_src} network_notify_none.c)
+endif()
+
+add_library(misc ${misc_src})
 add_executable(trie_test trie_test.cpp trie_helper.cpp)

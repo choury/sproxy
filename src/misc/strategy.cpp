@@ -73,6 +73,7 @@ bool ipremove(const char* ipstr, bool& found, int prefix = -1) {
     return false;
 }
 
+
 static bool mergestrategy(const string& host, const string& strategy_str, string ext){
     Strategy s;
     if(strategy_str == "direct"){
