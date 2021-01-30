@@ -16,7 +16,7 @@ add_subdirectory(prot)
 add_subdirectory(req)
 add_subdirectory(res)
 
-set(SPROXY_LIBS  req res prot misc ${OPENSSL_LIBRARIES} dl)
+set(SPROXY_LIBS  req res prot misc ${OPENSSL_LIBRARIES} dl Threads::Threads)
 if(Backtrace_FOUND)
     include_directories(${Backtrace_INCLUDE_DIRS})
     set(SPROXY_LIBS ${SPROXY_LIBS} ${Backtrace_LIBRARIES})
