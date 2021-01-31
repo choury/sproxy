@@ -83,11 +83,11 @@ void Guest2::Send(uint32_t id, const void* buff, size_t size){
         assert(status.remotewinsize >= 0);
         if(size == 0){
             status.flags |= HTTP_RES_COMPLETED;
-            LOGD(DHTTP2, "<guest2> %" PRIu64 " send data [%d]: EOF/%d\n",
+            LOGD(DHTTP2, "<guest2> %" PRIu32 " send data [%d]: EOF/%d\n",
                     status.req->header->request_id, id,
                     status.remotewinsize);
         }else{
-            LOGD(DHTTP2, "<guest2> %" PRIu64 " send data [%d]: %zu/%d\n",
+            LOGD(DHTTP2, "<guest2> %" PRIu32 " send data [%d]: %zu/%d\n",
                     status.req->header->request_id, id,
                     size, status.remotewinsize);
         }
@@ -97,7 +97,7 @@ void Guest2::Send(uint32_t id, const void* buff, size_t size){
 }
 
 void Guest2::ReqProc(uint32_t id, HttpReqHeader* header) {
-    LOGD(DHTTP2, "guest %" PRIu64 " [%s] ReqProc %s\n", header->request_id, getsrc(), header->geturl().c_str());
+    LOGD(DHTTP2, "guest %" PRIu32 " [%s] ReqProc %s\n", header->request_id, getsrc(), header->geturl().c_str());
     if(statusmap.count(id)){
         delete header;
         LOGD(DHTTP2, "<guest2> ReqProc dup id: %d\n", id);
@@ -331,7 +331,7 @@ void Guest2::dump_stat(Dumper dp, void* param) {
             rwer->rlength(), rwer->rleft(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     for(auto& i: statusmap){
-        dp(param, "0x%x [%" PRIu64 "]: %s %s (%d/%d)\n",
+        dp(param, "0x%x [%" PRIu32 "]: %s %s (%d/%d)\n",
                 i.first, i.second.req->header->request_id,
                 i.second.req->header->method,
                 i.second.req->header->geturl().c_str(),

@@ -75,7 +75,7 @@ void Host::connected() {
         unsigned int len;
         swrer->get_alpn(&data, &len);
         if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
-            LOG("host delegate %" PRIu64 " %s to proxy2\n",
+            LOG("host delegate %" PRIu32 " %s to proxy2\n",
                 status.req->header->request_id,
                 status.req->header->geturl().c_str());
             Proxy2 *proxy = new Proxy2(rwer);
@@ -116,7 +116,7 @@ void Host::connected() {
 }
 
 void Host::request(HttpReq* req, Requester*) {
-    LOGD(DHTTP, "host request %" PRIu64 ": %s\n",
+    LOGD(DHTTP, "host request %" PRIu32 ": %s\n",
          req->header->request_id,
          req->header->geturl().c_str());
     assert(status.flags == 0);
@@ -124,7 +124,7 @@ void Host::request(HttpReq* req, Requester*) {
     assert(status.res == nullptr);
     status.req = req;
     req->setHandler([this, req](Channel::signal s){
-        LOGD(DHTTP, "host signal %" PRIu64 ": %d\n", req->header->request_id, (int)s);
+        LOGD(DHTTP, "host signal %" PRIu32 ": %d\n", req->header->request_id, (int)s);
         switch(s){
         case Channel::CHANNEL_SHUTDOWN:
             assert(strcasecmp(Server.schema, "udp"));
@@ -153,16 +153,16 @@ void Host::Send(void* buff, size_t size){
     tx_bytes += size;
     if(size == 0){
         status.flags |= HTTP_REQ_COMPLETED;
-        LOGD(DHTTP, "host Send %" PRIu64 ": EOF/%zu, http_flag:%d\n",
+        LOGD(DHTTP, "host Send %" PRIu32 ": EOF/%zu, http_flag:%d\n",
              status.req->header->request_id, tx_bytes, http_flag);
     }else{
-        LOGD(DHTTP, "host Send %" PRIu64 ": size:%zu/%zu, http_flag:%d\n",
+        LOGD(DHTTP, "host Send %" PRIu32 ": size:%zu/%zu, http_flag:%d\n",
              status.req->header->request_id, size, tx_bytes, http_flag);
     }
 }
 
 void Host::ResProc(HttpResHeader* header) {
-    LOGD(DHTTP, "host ResProc %" PRIu64": %s, http_flag:%d\n",
+    LOGD(DHTTP, "host ResProc %" PRIu32": %s, http_flag:%d\n",
          status.req->header->request_id ,header->status, http_flag);
     if(status.req->header->ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY_F;
@@ -183,7 +183,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     len = Min(len, size);
 
     if (len <= 0) {
-        LOGE("The guest's write buff is full (%" PRIu64 ")\n", status.req->header->request_id);
+        LOGE("The guest's write buff is full (%" PRIu32 ")\n", status.req->header->request_id);
         if(strcasecmp(Server.schema, "udp") == 0){
             return size;
         }
@@ -192,13 +192,13 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     }
     status.res->send(buff, len);
     rx_bytes += len;
-    LOGD(DHTTP, "host DataProc %" PRIu64 ": size:%zu, send:%d/%zu\n",
+    LOGD(DHTTP, "host DataProc %" PRIu32 ": size:%zu, send:%d/%zu\n",
          status.req->header->request_id, size, len, rx_bytes);
     return len;
 }
 
 void Host::EndProc() {
-    LOGD(DHTTP, "host EndProc %" PRIu64 "\n", status.req->header->request_id);
+    LOGD(DHTTP, "host EndProc %" PRIu32 "\n", status.req->header->request_id);
     status.flags |= HTTP_RES_COMPLETED;
     status.res->send((const void*)nullptr, 0);
 }
@@ -221,7 +221,7 @@ void Host::Error(int ret, int code) {
         return;
     }
     if(status.req) {
-        LOGE("Host error <%s> %" PRIu64 " %d/%d\n",
+        LOGE("Host error <%s> %" PRIu32 " %d/%d\n",
              rwer->getDest(), status.req->header->request_id, ret, code);
     }else{
         LOGE("Host error <%s> %d/%d\n", rwer->getDest(), ret, code);
@@ -276,7 +276,7 @@ void Host::dump_stat(Dumper dp, void* param) {
             rwer->rlength(), rwer->rleft(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     if(status.req){
-        dp(param, "req [%" PRIu64 "]: %s [%d]\n",
+        dp(param, "req [%" PRIu32 "]: %s [%d]\n",
                 status.req->header->request_id,
                 status.req->header->geturl().c_str(),
                 status.flags);

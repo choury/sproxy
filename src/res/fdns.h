@@ -17,10 +17,10 @@ struct FDnsStatus{
 };
 
 class FDns: public Responser{
-    std::map<uint64_t, FDnsStatus> statusmap;
+    std::map<uint32_t, FDnsStatus> statusmap;
 
     void Send(uint32_t id, const void* buff, size_t size);
-    virtual void clean(FDnsStatus& status, uint64_t id);
+    virtual void clean(FDnsStatus& status, uint32_t id);
     virtual void deleteLater(uint32_t errcode) override;
 
     static void RawCb(void* param, const char *buff, size_t size);

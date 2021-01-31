@@ -15,7 +15,7 @@
 #include <assert.h>
 
 
-#define BUF_SIZE 1024
+#define BUF_SIZE 1500
 
 #define DNSPORT     53
 

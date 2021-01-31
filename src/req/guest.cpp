@@ -71,7 +71,7 @@ Guest::Guest(int fd, SSL_CTX* ctx):
 }
 
 void Guest::ReqProc(HttpReqHeader* header) {
-    LOGD(DHTTP, "guest ReqProc %" PRIu64 " %s\n", header->request_id, header->geturl().c_str());
+    LOGD(DHTTP, "guest ReqProc %" PRIu32 " %s\n", header->request_id, header->geturl().c_str());
     HttpReq *req = new HttpReq(header,
             std::bind(&Guest::response, this, nullptr, _1),
             std::bind(&RWer::EatReadData, rwer));
@@ -103,19 +103,19 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
     int len = status.req->cap();
     len = Min(len, size);
     if (len <= 0) {
-        LOGE("The host's buff is full (%" PRIu64 ")\n", status.req->header->request_id);
+        LOGE("The host's buff is full (%" PRIu32 ")\n", status.req->header->request_id);
         rwer->delEvents(RW_EVENT::READ);
         return -1;
     }
     status.req->send(buff, len);
     rx_bytes += len;
-    LOGD(DHTTP, "guest DataProc %" PRIu64 ": size:%zu, send:%d/%zu\n", status.req->header->request_id, size, len, rx_bytes);
+    LOGD(DHTTP, "guest DataProc %" PRIu32 ": size:%zu, send:%d/%zu\n", status.req->header->request_id, size, len, rx_bytes);
     return len;
 }
 
 void Guest::EndProc() {
     GStatus& status = statuslist.back();
-    LOGD(DHTTP, "guest EndProc %" PRIu64 "\n", status.req->header->request_id);
+    LOGD(DHTTP, "guest EndProc %" PRIu32 "\n", status.req->header->request_id);
     rwer->addEvents(RW_EVENT::READ);
     status.req->send((const void*)nullptr, 0);
     if(status.flags & HTTP_RES_COMPLETED){
@@ -134,7 +134,7 @@ void Guest::Error(int ret, int code) {
         return deleteLater(PEER_LOST_ERR);
     }
     GStatus& status = statuslist.back();
-    LOGD(DHTTP, "guest Error %" PRIu64 ": ret:%d, code:%d, http_flag:0x%08x\n",
+    LOGD(DHTTP, "guest Error %" PRIu32 ": ret:%d, code:%d, http_flag:0x%08x\n",
             status.req->header->request_id, ret, code, http_flag);
     if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0 && (status.flags & HTTP_CLOSED_F) == 0){
         //EOF
@@ -149,7 +149,7 @@ void Guest::Error(int ret, int code) {
         }
         return;
     }
-    LOGE("Guest error <%s> %" PRIu64 " %d/%d\n",
+    LOGE("Guest error <%s> %" PRIu32 " %d/%d\n",
             getsrc(), status.req->header->request_id, ret, code);
     deleteLater(ret);
 }
@@ -175,7 +175,7 @@ void Guest::response(void*, HttpRes* res) {
     char *buff = res->header->getstring(len);
     rwer->buffer_insert(rwer->buffer_end(), write_block{buff, len, 0});
     res->setHandler([this, &status](Channel::signal s){
-        LOGD(DHTTP, "guest signal %" PRIu64 ": %d\n", status.req->header->request_id, (int)s);
+        LOGD(DHTTP, "guest signal %" PRIu32 ": %d\n", status.req->header->request_id, (int)s);
         switch(s) {
         case Channel::CHANNEL_SHUTDOWN:
             assert((status.flags & HTTP_REQ_EOF) == 0);
@@ -215,9 +215,9 @@ void Guest::Send(void *buff, size_t size) {
     tx_bytes += size;
     if(size == 0){
         status.flags |= HTTP_RES_COMPLETED;
-        LOGD(DHTTP, "guest Send %" PRIu64 ": EOF/%zu\n", status.req->header->request_id, tx_bytes);
+        LOGD(DHTTP, "guest Send %" PRIu32 ": EOF/%zu\n", status.req->header->request_id, tx_bytes);
     }else{
-        LOGD(DHTTP, "guest Send %" PRIu64 ": size:%zu/%zu\n", status.req->header->request_id, size, tx_bytes);
+        LOGD(DHTTP, "guest Send %" PRIu32 ": size:%zu/%zu\n", status.req->header->request_id, size, tx_bytes);
     }
 }
 
@@ -245,7 +245,7 @@ void Guest::dump_stat(Dumper dp, void* param){
             rwer->rlength(), rwer->rleft(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     for(auto status : statuslist){
-        dp(param, "req [%" PRIu64 "]: %s %s [%d] [%s]\n",
+        dp(param, "req [%" PRIu32 "]: %s %s [%d] [%s]\n",
                 status.req->header->request_id,
                 status.req->header->method,
                 status.req->header->geturl().c_str(),
