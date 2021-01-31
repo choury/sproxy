@@ -213,7 +213,7 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
         SSL_set_verify(ssl, SSL_VERIFY_PEER, verify_host_callback);
 
         handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::shakehandHE;
-        con_failed_job = updatejob(con_failed_job, std::bind(&SslRWer::connect, this), 15000);
+        con_failed_job = updatejob(con_failed_job, std::bind(&SslRWer::connect, this), 5000);
     }
 }
 
@@ -229,14 +229,11 @@ void SslRWer::shakehandHE(RW_EVENT events){
             flags |= RWER_READING;
             ReadData();
             flags &= ~RWER_READING;
-        }else if (errno == EAGAIN) {
-            return;
-        }else{
+        }else if (errno != EAGAIN) {
             int error = errno;
             LOGE("(%s): ssl connect error:%s\n", hostname, strerror(error));
             ErrorHE(SSL_SHAKEHAND_ERR, error);
         }
-        deljob(&con_failed_job);
     }
 }
 

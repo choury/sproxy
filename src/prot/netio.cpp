@@ -88,7 +88,7 @@ char* CBuffer::end(){
     return content + (end_pos % sizeof(content));
 }
 
-NetRWer::NetRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(fd, std::move(errorCB)){
+NetRWer::NetRWer(int fd, std::function<void(int, int)> errorCB):RWer(fd, std::move(errorCB)){
     setEvents(RW_EVENT::READ);
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&NetRWer::defaultHE;
@@ -103,7 +103,7 @@ NetRWer::NetRWer(int fd, std::function<void(int ret, int code)> errorCB):RWer(fd
 }
 
 NetRWer::NetRWer(const char* hostname, uint16_t port, Protocol protocol,
-               std::function<void(int ret, int code)> errorCB,
+               std::function<void(int, int)> errorCB,
                std::function<void(const sockaddr_storage&)> connectCB):
             RWer(std::move(errorCB), std::move(connectCB)), port(port), protocol(protocol)
 {
@@ -131,22 +131,10 @@ void NetRWer::Dnscallback(void* param, std::list<sockaddr_storage> addrs) {
     rwer->connect();
 }
 
-/*
-void NetRWer::retryconnect(int error) {
-    setFd(-1);
-    if(!addrs.empty()){
-        RcdDown(hostname, addrs.front());
-        addrs.pop();
-    }
-    if(addrs.empty()){
-        ErrorHE(error, 0);
+void NetRWer::connect() {
+    if(stats != RWerStats::Resolving && stats != RWerStats::Connecting) {
         return;
     }
-    connect();
-}
- */
-
-void NetRWer::connect() {
     if(retry-- <= 0) {
         return ErrorHE(CONNECT_FAILED, 0);
     }
@@ -206,17 +194,10 @@ void NetRWer::connect() {
     }
 }
 
-/*
-void NetRWer::con_failed() {
-    if(getFd() >= 0){
-        LOGE("connect to %s timeout\n", hostname);
-        retryconnect(CONNECT_TIMEOUT);
-    }else{
-        LOGE("connect to %s error\n", hostname);
-        retryconnect(CONNECT_FAILED);
-    }
+void NetRWer::Connected(const sockaddr_storage& addr) {
+    deljob(&con_failed_job);
+    RWer::Connected(addr);
 }
- */
 
 void NetRWer::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR) || !!(events & RW_EVENT::READEOF)) {
@@ -225,7 +206,6 @@ void NetRWer::waitconnectHE(RW_EVENT events) {
     }
     if (!!(events & RW_EVENT::WRITE)) {
         Connected(addrs.front());
-        deljob(&con_failed_job);
     }
 }
 

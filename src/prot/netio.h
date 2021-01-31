@@ -43,6 +43,7 @@ protected:
     virtual void waitconnectHE(RW_EVENT events);
     static void Dnscallback(void* param, std::list<sockaddr_storage> addrs);
     void connect();
+    virtual void Connected(const sockaddr_storage&) override;
 
     virtual ssize_t Write(const void* buff, size_t len) override;
 public:
