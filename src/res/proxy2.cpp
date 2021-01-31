@@ -158,7 +158,7 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
         assert((status.flags & HTTP_RES_COMPLETED) == 0);
         assert((status.flags & HTTP_RES_EOF) == 0);
         if(len > (size_t)status.localwinsize){
-            LOGE("(%" PRIu64 ") :<proxy2> [%d] window size error %zu/%d\n",
+            LOGE("(%" PRIu32 ") :<proxy2> [%d] window size error %zu/%d\n",
                     status.req->header->request_id, id, len, status.localwinsize);
             Clean(id, status, ERR_FLOW_CONTROL_ERROR);
             return;
@@ -212,7 +212,7 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(errcode){
-            LOGE("(%" PRIu64 ") <proxy2> [%d]: stream reseted: %d\n",
+            LOGE("(%" PRIu32 ") <proxy2> [%d]: stream reseted: %d\n",
                  status.req->header->request_id, id, errcode);
         }
         status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
@@ -390,7 +390,7 @@ void Proxy2::dump_stat(Dumper dp, void* param) {
             rwer->rlength(), rwer->rleft(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     for(auto& i: statusmap){
-        dp(param, "0x%x [%" PRIu64 "]: %s [%d] (%d/%d)\n",
+        dp(param, "0x%x [%" PRIu32 "]: %s [%d] (%d/%d)\n",
                 i.first,
                 i.second.req->header->request_id,
                 i.second.req->header->geturl().c_str(),

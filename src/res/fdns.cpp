@@ -71,7 +71,7 @@ FDns::~FDns() {
     }
 }
 
-void FDns::clean(FDnsStatus& status, uint64_t id){
+void FDns::clean(FDnsStatus& status, uint32_t id){
     if(status.res){
         status.res->trigger(Channel::CHANNEL_CLOSED);
     }
@@ -204,7 +204,7 @@ void FDns::deleteLater(uint32_t errcode) {
 void FDns::dump_stat(Dumper dp, void* param) {
     dp(param, "FDns %p\n", this);
     for(const auto& i: statusmap){
-        dp(param, "%" PRIu64 ": %s\n",
+        dp(param, "%" PRIu32 ": %s\n",
                 i.second.req->header->request_id,
                 i.second.req->header->geturl().c_str());
     }

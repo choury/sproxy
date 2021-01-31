@@ -343,15 +343,11 @@ void dump_func(char* stack, int depth);
 
 void dump_trace(int signum) {
     void *stack_trace[100] = {0};
-    char **stack_strings = NULL;
-    int stack_depth = 0;
-    int i = 0;
-
     /* 获取栈中各层调用函数地址 */
-    stack_depth = backtrace(stack_trace, 100);
+    int stack_depth = backtrace(stack_trace, 100);
 
     /* 查找符号表将函数调用地址转换为函数名称 */
-    stack_strings = (char **)backtrace_symbols(stack_trace, stack_depth);
+    char** stack_strings = (char **)backtrace_symbols(stack_trace, stack_depth);
     if (NULL == stack_strings) {
         LOGE(" Memory is not enough while dump Stack Trace! \n");
         return;
@@ -359,7 +355,7 @@ void dump_trace(int signum) {
 
     /* 打印调用栈 */
     LOGE(" Stack Trace: \n");
-    for (i = 0; i < stack_depth; ++i) {
+    for (int i = 0; i < stack_depth; ++i) {
         dump_func(stack_strings[i], i);
     }
 

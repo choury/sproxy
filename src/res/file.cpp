@@ -200,7 +200,7 @@ void File::readHE(size_t) {
 
 void File::dump_stat(Dumper dp, void* param){
     dp(param, "File %p, %s\n", this, filename);
-    dp(param, " [%" PRIu64 "]: (%zd-%zd)\n",
+    dp(param, " [%" PRIu32 "]: (%zd-%zd)\n",
             status.req->header->request_id, status.rg.begin, status.rg.end);
 }
 

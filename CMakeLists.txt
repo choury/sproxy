@@ -103,6 +103,7 @@ include_directories(${OPENSSL_INCLUDE_DIR})
 
 set(CMAKE_C_FLAGS "-std=gnu99 -Wall -Wextra -fPIC -fno-omit-frame-pointer ${CMAKE_C_FLAGS}")
 set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -Wextra -fPIC -fno-omit-frame-pointer ${CMAKE_CXX_FLAGS}")
+set(CMAKE_EXE_LINKER_FLAGS "-rdynamic ${CMAKE_EXE_LINKER_FLAGS}")
 
 execute_process(COMMAND uname -r
     OUTPUT_VARIABLE KERNEL_NAME

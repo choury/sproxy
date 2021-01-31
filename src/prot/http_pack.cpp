@@ -206,7 +206,7 @@ HttpReqHeader::HttpReqHeader(const CGI_Header *headers) {
         LOGE("wrong CGI header");
         throw ERR_PROTOCOL_ERROR;
     }
-   
+    request_id = ntohl(headers->requestId);
     memset(&Dest, 0, sizeof(Dest));
     char *p = (char *)(headers +1);
     uint32_t len = ntohs(headers->contentLength);
@@ -281,7 +281,9 @@ void HttpReqHeader::postparse() {
     if(Dest.port == 0 && !ismethod("CONNECT") && !ismethod("SEND") && !ismethod("PING")){
         Dest.port = HTTPPORT;
     }
-    request_id = id_gen++;
+    if(request_id == 0) {
+        request_id = id_gen++;
+    }
 }
 
 std::string HttpReqHeader::geturl() const {
@@ -410,11 +412,11 @@ Http2_header *HttpReqHeader::getframe(Hpack_index_table *index_table, uint32_t h
 }
 
 
-CGI_Header *HttpReqHeader::getcgi(uint32_t cgi_id) const{
+CGI_Header *HttpReqHeader::getcgi() const{
     CGI_Header* const cgi = (CGI_Header *)p_malloc(BUF_LEN);
     cgi->type = CGI_REQUEST;
     cgi->flag = 0;
-    cgi->requestId = htonl(cgi_id);
+    cgi->requestId = htonl(request_id);
     
     char *p = (char *)(cgi + 1);
     p = cgi_addnv(p, ":method", method);
@@ -441,7 +443,7 @@ std::map<std::string, std::string> HttpReqHeader::getparamsmap()const{
 	return ::getparamsmap(getparamstring());
 }
 
-std::map< string, string > HttpReqHeader::getcookies() const {
+std::map<string, string> HttpReqHeader::getcookies() const {
     std::map<string, string> cookie;
     for(const auto& i:cookies){
         const char *p = i.c_str();
@@ -516,7 +518,7 @@ HttpResHeader::HttpResHeader(const CGI_Header* headers)
         LOGE("wrong CGI header");
         throw ERR_PROTOCOL_ERROR;
     }
-   
+    request_id = ntohl(headers->requestId);
     char *p = (char *)(headers +1);
     uint32_t len = ntohs(headers->contentLength);
     while(uint32_t(p - (char *)(headers +1)) < len){
@@ -589,11 +591,11 @@ Http2_header *HttpResHeader::getframe(Hpack_index_table* index_table, uint32_t h
     return header;
 }
 
-CGI_Header *HttpResHeader::getcgi(uint32_t cgi_id) const{
+CGI_Header *HttpResHeader::getcgi() const{
     CGI_Header* const cgi = (CGI_Header *)p_malloc(BUF_LEN);
     cgi->type = CGI_RESPONSE;
     cgi->flag = 0;
-    cgi->requestId = htonl(cgi_id);
+    cgi->requestId = htonl(request_id);
     
     char *p = (char *)(cgi + 1);
     p = cgi_addnv(p, ":status", status);
@@ -724,7 +726,7 @@ int Channel::cap(){
         ssize_t ret = cap_cb() - len;
         return Max(ret, 0);
     }
-    return DATALEN - len;
+    return DATALEN - (int)len;
 }
 
 
@@ -892,7 +894,7 @@ HttpReq::~HttpReq() {
 void HttpLog(const char* src, const HttpReq* req, const HttpRes* res){
     char status[100];
     sscanf(res->header->status, "%s", status);
-    LOG("%s [%" PRIu64 "] %s %s [%s] %s [%s]\n", src,
+    LOG("%s [%" PRIu32 "] %s %s [%s] %s [%s]\n", src,
         req->header->request_id,
         req->header->method,
         req->header->geturl().c_str(),

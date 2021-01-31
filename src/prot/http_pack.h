@@ -19,7 +19,7 @@ class HttpHeader{
 protected:
     std::map<std::string, std::string> headers;
 public:
-    uint64_t request_id = 0;
+    uint32_t request_id = 0;
     std::set<std::string> cookies;
 
     void set(const std::string& header, const std::string& value);
@@ -32,8 +32,8 @@ public:
     virtual bool no_body() const = 0;
     virtual char *getstring(size_t &len) const = 0;
     virtual Http2_header *getframe(Hpack_index_table *index_table, uint32_t http_id) const = 0;
-    virtual CGI_Header *getcgi(uint32_t cgi_id) const = 0;
-    virtual ~HttpHeader(){}
+    virtual CGI_Header *getcgi() const = 0;
+    virtual ~HttpHeader() = default;
 };
 
 struct Range{
@@ -60,7 +60,7 @@ public:
     virtual bool normal_method() const;
     virtual char *getstring(size_t &len) const override;
     virtual Http2_header *getframe(Hpack_index_table *index_table, uint32_t http_id) const override;
-    virtual CGI_Header *getcgi(uint32_t cgi_id) const override;
+    virtual CGI_Header *getcgi() const override;
     
     std::map<std::string, std::string> getcookies()const;
     std::map<std::string, std::string> getparamsmap()const;
@@ -79,7 +79,7 @@ public:
     virtual bool no_body() const override;
     virtual char *getstring(size_t &len) const override;
     virtual Http2_header *getframe(Hpack_index_table *index_table, uint32_t http_id) const override;
-    virtual CGI_Header *getcgi(uint32_t cgi_id) const override;
+    virtual CGI_Header *getcgi() const override;
 };
 
 class Channel{

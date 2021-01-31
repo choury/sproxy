@@ -7,6 +7,7 @@
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
+#include <inttypes.h>
 
 Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
     rwer = new PacketRWer(host, this->id, Protocol::ICMP, [this](int ret, int code){
@@ -98,6 +99,6 @@ int32_t Ping::bufleft(__attribute__ ((unused)) void* index) {
  */
 
 void Ping::dump_stat(Dumper dp, void* param) {
-    dp(param, "ping %p%s, id:%lu, <%s> (%s) (%d - %d)\n",
+    dp(param, "ping %p%s, id:%" PRIu32 ", <%s> (%s) (%d - %d)\n",
        this, iserror?" [E]":"", req->header->request_id, rwer->getDest(), rwer->getPeer(), id, seq);
 }

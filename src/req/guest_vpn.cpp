@@ -936,7 +936,7 @@ static const char* dump_vpnStatus(const VpnKey& key, void* protocol_info){
 }
 
 void Guest_vpn::dump_stat(Dumper dp, void* param) {
-    dp(param, "Guest_vpn %p, [%" PRIu64 "] %s\n",
+    dp(param, "Guest_vpn %p, [%" PRIu32 "] %s\n",
         this,  status.req->header->request_id, key.getString("-"));
     dp(param, "  flags: %d status: %s\n", status.flags, dump_vpnStatus(key, status.protocol_info));
 }
