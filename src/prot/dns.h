@@ -62,7 +62,7 @@ public:
     std::vector<sockaddr_storage> addrs;
     uint16_t  type = 0;
     uint16_t  id = 0;
-    uint32_t  ttl = 0;
+    uint32_t  ttl = 0xffffffff;
     explicit Dns_Result(const char* domain);
     explicit Dns_Result(const char* domain, const in_addr* addr);
     explicit Dns_Result(const char* domain, const in6_addr* addr);
