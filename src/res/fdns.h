@@ -8,19 +8,20 @@
 #include "prot/dns.h"
 #include <map>
 
+class FDns;
 struct FDnsStatus{
-    uint64_t   id;
-    HttpReq*   req;
-    HttpRes*   res;
-    Resolver*  resolver;
+    FDns*      fdns;
     Dns_Query* que;
+    Resolver*  resolver;
 };
 
 class FDns: public Responser{
-    std::map<uint32_t, FDnsStatus> statusmap;
+    HttpReq*   req;
+    HttpRes*   res;
+    std::map<uint32_t, FDnsStatus*> statusmap;
 
-    void Send(uint32_t id, const void* buff, size_t size);
-    virtual void clean(FDnsStatus& status, uint32_t id);
+    void Send(const void* buff, size_t size);
+    void clean(FDnsStatus* status);
     virtual void deleteLater(uint32_t errcode) override;
 
     static void RawCb(void* param, const char *buff, size_t size);
@@ -30,8 +31,6 @@ public:
     virtual ~FDns() override;
     virtual void request(HttpReq* req, Requester*) override;
     virtual void dump_stat(Dumper dp, void* param) override;
-
-    static FDns* getfdns();
 };
 
 std::string getRdns(const sockaddr_storage& addr);

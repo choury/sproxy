@@ -11,7 +11,6 @@
 
 static Index2<uint32_t, std::string, void*> fdns_records;
 
-static FDns* fdns = nullptr;
 static in_addr_t fake_ip = 0 ;
 
 static in_addr getInet(std::string hostname) {
@@ -66,135 +65,121 @@ FDns::FDns() {
 }
 
 FDns::~FDns() {
-    if(fdns && fdns == this){
-        fdns = nullptr;
-    }
 }
 
-void FDns::clean(FDnsStatus& status, uint32_t id){
-    if(status.res){
-        status.res->trigger(Channel::CHANNEL_CLOSED);
-    }
-    delete status.que;
-    delete status.resolver;
-    statusmap.erase(id);
+void FDns::clean(FDnsStatus* status){
+    statusmap.erase(status->que->id);
+    delete status->que;
+    delete status->resolver;
+    delete status;
 }
 
 void FDns::request(HttpReq* req, Requester*){
-    uint32_t id = req->header->request_id;
-    HttpRes* res = new HttpRes(new HttpResHeader(H200));
-    FDnsStatus status{id, req, res, nullptr, nullptr};
-    statusmap[id] = status;
+    this->req = req;
+    res = new HttpRes(new HttpResHeader(H200));
     req->response(res);
-    req->setHandler([this, id](Channel::signal s){
-        if(statusmap.count(id) == 0){
-            return;
-        }
-        FDnsStatus& status = statusmap[id];
+    req->setHandler([this](Channel::signal s){
         if(s == Channel::CHANNEL_SHUTDOWN){
-            status.res->trigger(Channel::CHANNEL_ABORT);
+            res->trigger(Channel::CHANNEL_ABORT);
         }
-        status.res = nullptr;
-        clean(status, id);
+        res = nullptr;
+        deleteLater(PEER_LOST_ERR);
     });
-    req->attach((Channel::recv_const_t)std::bind(&FDns::Send, this, id, _1, _2), []{return 512;});
+    req->attach((Channel::recv_const_t)std::bind(&FDns::Send, this, _1, _2), []{return 512;});
 }
 
-void FDns::Send(uint32_t id, const void* buff, size_t size) {
-    if(statusmap.count(id)){
-        FDnsStatus &status = statusmap[id];
-        status.que =  new Dns_Query((const char *)buff, size);
-        if(!status.que->valid){
-            char out[size*2];
-            for(size_t i = 0; i < size; i++){
-                sprintf(out+i*2, "%02X", ((unsigned char*)buff)[i]);
-            }
-            LOGE("invalid dns request [%zd]: %s\n", size, out);
-            return;
+void FDns::Send(const void* buff, size_t size) {
+    Dns_Query* que = new Dns_Query((const char *)buff, size);
+    if(!que->valid){
+        char out[size*2];
+        for(size_t i = 0; i < size; i++){
+            sprintf(out+i*2, "%02X", ((unsigned char*)buff)[i]);
         }
-        LOGD(DDNS, "FQuery %s [%d]: %d\n", status.que->domain, status.que->id, status.que->type);
-        Dns_Result* result = nullptr;
-        if(status.que->type == 12){
-            auto record = fdns_records.Get(getFip(&status.que->ptr_addr));
-            if(record){
-                result = new Dns_Result(record->t2.c_str());
-            }
-        }else if(status.que->type == 1 || status.que->type == 28) {
-            strategy stra = getstrategy(status.que->domain);
-            if (stra.s == Strategy::direct) {
-                status.resolver = query_host(status.que->domain, DnsCb, (void*)(long)id);
-                return;
-            }
-            if(status.que->type == 1){
-                in_addr addr = getInet(status.que->domain);
-                result = new Dns_Result(status.que->domain, &addr);
-            }else if(opt.ipv6_enabled) {
-                in6_addr addr = getInet6(status.que->domain);
-                result = new Dns_Result(status.que->domain, &addr);
-            }else{
-                result = new Dns_Result(status.que->domain);
-            }
-        }
-        if(result == nullptr) {
-            status.resolver = query_dns(status.que->domain, status.que->type, RawCb, (void*)(long)id);
-            return;
-        }
-        unsigned char *const sbuff = (unsigned char *) p_malloc(BUF_LEN);
-        status.res->send(sbuff, result->build(status.que, sbuff));
-        delete result;
-        clean(status, id);
+        LOGE("invalid dns request [%zd]: %s\n", size, out);
+        delete que;
+        return;
     }
+    LOGD(DDNS, "FQuery %s [%d]: %d\n", que->domain, que->id, que->type);
+    if(statusmap.count(que->id)) {
+        //drop dup request
+        delete que;
+        return;
+    }
+    FDnsStatus* status = new FDnsStatus{this, que, nullptr};
+    statusmap[que->id] = status;
+    Dns_Result* result = nullptr;
+    if(que->type == 12){
+        auto record = fdns_records.Get(getFip(&que->ptr_addr));
+        if(record){
+            result = new Dns_Result(record->t2.c_str());
+        }
+    }else if(que->type == 1 || que->type == 28) {
+        strategy stra = getstrategy(que->domain);
+        if (stra.s == Strategy::direct) {
+            status->resolver = query_host(que->domain, DnsCb, (void*)status);
+            return;
+        }
+        if(que->type == 1){
+            in_addr addr = getInet(status->que->domain);
+            result = new Dns_Result(status->que->domain, &addr);
+        }else if(opt.ipv6_enabled) {
+            in6_addr addr = getInet6(status->que->domain);
+            result = new Dns_Result(status->que->domain, &addr);
+        }else{
+            result = new Dns_Result(status->que->domain);
+        }
+    }
+    if(result == nullptr) {
+        status->resolver = query_dns(status->que->domain, status->que->type, RawCb, (void*)status);
+        return;
+    }
+    unsigned char *const sbuff = (unsigned char *) p_malloc(BUF_LEN);
+    res->send(sbuff, result->build(status->que, sbuff));
+    clean(status);
 }
 
 void FDns::DnsCb(void *param, std::list<sockaddr_storage> addrs) {
-    uint32_t id = (uint32_t)(long)param;
-    if(fdns && fdns->statusmap.count(id)){
-        FDnsStatus& status = fdns->statusmap[id];
-        Dns_Result* rr = nullptr;
-        if(addrs.empty()){
-            rr = new Dns_Result(status.que->domain);
-        }else if(status.que->type == 1){
-            in_addr addr = getInet(status.que->domain);
-            rr = new Dns_Result(status.que->domain, &addr);
-        }else if(opt.ipv6_enabled){
-            in6_addr addr = getInet6(status.que->domain);
-            rr = new Dns_Result(status.que->domain, &addr);
-        }else{
-            rr = new Dns_Result(status.que->domain);
-        }
-        unsigned char *const buff = (unsigned char *) p_malloc(BUF_LEN);
-        status.res->send(buff, rr->build(status.que, buff));
-        fdns->clean(status, id);
+    FDnsStatus* status = (FDnsStatus*)param;
+    FDns* fdns = status->fdns;
+    Dns_Result* rr = nullptr;
+    if(addrs.empty()){
+        rr = new Dns_Result(status->que->domain);
+    }else if(status->que->type == 1){
+        in_addr addr = getInet(status->que->domain);
+        rr = new Dns_Result(status->que->domain, &addr);
+    }else if(opt.ipv6_enabled){
+        in6_addr addr = getInet6(status->que->domain);
+        rr = new Dns_Result(status->que->domain, &addr);
+    }else{
+        rr = new Dns_Result(status->que->domain);
     }
+    unsigned char *const buff = (unsigned char *) p_malloc(BUF_LEN);
+    fdns->res->send(buff, rr->build(status->que, buff));
+    fdns->clean(status);
 }
 
 void FDns::RawCb(void* param, const char* buff, size_t size) {
-    uint32_t id = (uint32_t)(long)param;
-    if(fdns && fdns->statusmap.count(id)){
-        FDnsStatus& status = fdns->statusmap[id];
-        if(buff){
-            LOGD(DDNS, "[FQuery] raw response [%d]\n", status.que->id);
-            DNS_HDR *dnshdr = (DNS_HDR*)buff;
-            dnshdr->id = htons(status.que->id);
-            status.res->send(buff, size);
-        }else {
-            LOGD(DDNS, "[FQuery] raw response [%d] error\n", status.que->id);
-            Dns_Result rr(status.que->domain);
-            unsigned char *const sbuff = (unsigned char *) p_malloc(BUF_LEN);
-            status.res->send(sbuff, rr.buildError(status.que, DNS_SERVER_FAIL, sbuff));
-        }
-        fdns->clean(status, id);
+    FDnsStatus* status = (FDnsStatus*)param;
+    FDns* fdns = status->fdns;
+    if(buff){
+        LOGD(DDNS, "[FQuery] raw response [%d]\n", status->que->id);
+        DNS_HDR *dnshdr = (DNS_HDR*)buff;
+        dnshdr->id = htons(status->que->id);
+        fdns->res->send(buff, size);
+    }else {
+        LOGD(DDNS, "[FQuery] raw response [%d] error\n", status->que->id);
+        Dns_Result rr(status->que->domain);
+        unsigned char *const sbuff = (unsigned char *) p_malloc(BUF_LEN);
+        fdns->res->send(sbuff, rr.buildError(status->que, DNS_SERVER_FAIL, sbuff));
     }
+    fdns->clean(status);
 }
 
 void FDns::deleteLater(uint32_t errcode) {
-    if(fdns && fdns == this){
-        fdns = nullptr;
-    }
     for(const auto& i: statusmap){
-        delete i.second.que;
-        delete i.second.resolver;
-        i.second.res->trigger(Channel::CHANNEL_ABORT);
+        delete i.second->que;
+        delete i.second->resolver;
+        delete i.second;
     }
     statusmap.clear();
     return Server::deleteLater(errcode);
@@ -202,21 +187,11 @@ void FDns::deleteLater(uint32_t errcode) {
 
 
 void FDns::dump_stat(Dumper dp, void* param) {
-    dp(param, "FDns %p\n", this);
+    dp(param, "FDns %p [%" PRIu32 "]: %s\n", this,
+            req->header->request_id,
+            req->header->geturl().c_str());
     for(const auto& i: statusmap){
-        dp(param, "%" PRIu32 ": %s\n",
-                i.second.req->header->request_id,
-                i.second.req->header->geturl().c_str());
+        dp(param, "  %d: %s, type=%d\n",
+                i.first, i.second->que->domain, i.second->que->type);
     }
 }
-
-FDns* FDns::getfdns() {
-    if(!fdns){
-       fdns = new FDns();
-    }
-    return fdns;
-}
-
-
-
-

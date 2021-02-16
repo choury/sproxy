@@ -627,7 +627,7 @@ void Guest_vpn::udpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
         aged_job = rwer->updatejob(aged_job, std::bind(&Guest_vpn::aged, this), 60000);
         status.req->send(data, datalen);
         if(pac->udp->getdport() == 53){
-            FDns::getfdns()->request(status.req, this);
+            (new FDns())->request(status.req, this);
         }else{
             distribute(status.req, this);
         }
