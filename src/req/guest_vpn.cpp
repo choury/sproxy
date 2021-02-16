@@ -140,6 +140,9 @@ void VPN_nanny::cleanKey(const VpnKey& key) {
 
 void VPN_nanny::dump_stat(Dumper dp, void* param) {
     dp(param, "vpn_nanny %p (%zd):\n", this, rwer->wlength());
+    for(auto i: statusmap){
+        dp(param, "  %s: %p\n", i.first.getString("->"), i.second);
+    }
 }
 
 Guest_vpn::Guest_vpn(const VpnKey& key, VPN_nanny* nanny):Requester(new NullRWer), key(key), nanny(nanny) {

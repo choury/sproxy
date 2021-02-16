@@ -279,11 +279,15 @@ void RcdDown(const char *hostname, const sockaddr_storage &addr) {
 
 
 void dump_dns(Dumper dp, void* param){
+    dp(param, "Dns server:\n");
+    for(size_t i = 0; i < dnsConfig.namecount; i++) {
+        dp(param, "  %s\n", getaddrstring(&dnsConfig.server[i]));
+    }
     dp(param, "Dns cache:\n");
     for(const auto& i: rcd_cache){
-        dp(param, "    %s: %ld\n", i.first.c_str(), i.second.get_time + i.second.ttl - time(nullptr));
+        dp(param, "  %s: %ld\n", i.first.c_str(), i.second.get_time + i.second.ttl - time(nullptr));
         for(auto j: i.second.addrs){
-            dp(param, "        %s\n", getaddrstring(&j));
+            dp(param, "    %s\n", getaddrstring(&j));
         }
     }
 }
