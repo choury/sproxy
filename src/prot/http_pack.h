@@ -100,8 +100,7 @@ private:
     cap_t cap_cb;
     handler_t handler;
     more_data_t need_more;
-    bool eatData(PRE_POINTER void *buf, size_t size);
-    bool eatData(const void *buf, size_t size);
+    size_t eatData(const void *buf, size_t size);
 protected:
     const static int DATALEN = 16384;
     uchar* data = nullptr;
@@ -114,7 +113,6 @@ public:
     ~Channel();
     explicit Channel(more_data_t need_more);
     int cap();
-    void send(PRE_POINTER void* buf, size_t len);
     void send(const void* buf, size_t len);
     void trigger(signal s);
     void attach(recv_t recv_cb, cap_t cap_cb);
@@ -135,11 +133,11 @@ public:
 
 /* Requester alloc HttpReq and Responser alloc HttpRes,
  * but they are all freed by requester.
- * Peers send zero message(send0) for completed, and trigger shutdown for eof.
- * Requester may trigger closed event for qc|sc requests.
- * Peer should trigger closed (instead of shutdown) if received shutdown already.
- * Trigger closed will reset connection if no `send0` message sent.
- * Callback of body must callable if no closed message was sent or received.
+ * Peers send zero message(send0) for completed, and trigger `shutdown` for eof.
+ * Requester may trigger `closed` for qc|sc requests.
+ * Peer should trigger `closed` (instead of shutdown) if received `shutdown` already.
+ * Trigger `closed` will reset connection if no `send0` message sent.
+ * Callback of body must callable if no `closed` was sent or received.
 */
 class HttpRes: public Channel{
 public:

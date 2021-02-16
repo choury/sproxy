@@ -730,70 +730,40 @@ int Channel::cap(){
 }
 
 
-bool Channel::eatData(void *buf, size_t size) {
-    assert((int)size <= cap());
-    if(recv_cb){
-        recv_cb(buf, size);
-        return true;
-    }
-    if(recv_const_cb){
-        recv_const_cb(buf, size);
-        p_free(buf);
-        return true;
-    }
-    return false;
-}
-
-bool Channel::eatData(const void* buf, size_t size) {
-    assert((int)size <= cap());
-    if(recv_const_cb){
-        recv_const_cb(buf, size);
-        return true;
-    }
-    if(recv_cb){
-        recv_cb(p_memdup(buf, size), size);
-        return true;
-    }
+size_t Channel::eatData(const void* buf, size_t size) {
     if(size == 0){
         eof = true;
-        return true;
     }
-    return false;
-}
-
-
-
-void Channel::send(void *buf, size_t size) {
-    assert(!eof && !closed && size);
-    if(len){
-        goto innerCopy;
+    int rsize = std::min((int)size, cap());
+    if(rsize <= 0){
+        return 0;
     }
-    assert((int)size <= cap());
-    if(eatData(buf, size)){
-        return;
+    if(recv_const_cb){
+        recv_const_cb(buf, rsize);
+        return rsize;
     }
-    assert(data == nullptr);
-    data = (uchar*)malloc(DATALEN);
-innerCopy:
-    if(len + size > DATALEN){
-        abort();
+    if(recv_cb){
+        recv_cb(p_memdup(buf, rsize), rsize);
+        return rsize;
     }
-    memcpy(data+len, buf, size);
-    len += size;
-    p_free(buf);
+    return 0;
 }
 
 void Channel::send(const void* buf, size_t size){
     assert((!eof || !size) && !closed);
+    size_t rsize = 0;
     if(len){
         goto innerCopy;
     }
-    assert((int)size <= cap());
-    if(eatData(buf, size)){
+    rsize = eatData(buf, size);
+    if(rsize == size){
         return;
     }
-    assert(data == nullptr);
-    data = (uchar*)malloc(DATALEN);
+    size -= rsize;
+    buf = (const char*)buf + rsize;
+    if(data == nullptr) {
+        data = (uchar *) malloc(DATALEN);
+    }
 innerCopy:
     if(len + size > DATALEN){
         abort();
