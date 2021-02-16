@@ -18,8 +18,8 @@ static int  CreateIPAddressListChangeCallbackSCF(
 {
     int result = -1;
     SCDynamicStoreContext   context = {0, contextPtr, NULL, NULL, NULL};
-    CFStringRef pattern    = NULL;
-    CFArrayRef patternList = NULL;
+    CFStringRef patterns[2] = {NULL, NULL};
+    CFArrayRef patternList  = NULL;
 
     assert(callback   != NULL);
     assert(*storeRef  == NULL);
@@ -37,22 +37,33 @@ static int  CreateIPAddressListChangeCallbackSCF(
         LOGE("SCDynamicStoreCreate failed: %d\n", SCError());
         goto err;
     }
-    pattern = SCDynamicStoreKeyCreateNetworkServiceEntity(
+    patterns[0] = SCDynamicStoreKeyCreateNetworkServiceEntity(
             NULL,
             kSCDynamicStoreDomainState,
             kSCCompAnyRegex,
             kSCEntNetIPv4);
-    if (pattern == NULL) {
-        LOGE("SCDynamicStoreKeyCreateNetworkServiceEntity failed: %d\n", SCError());
+    if (patterns[0] == NULL) {
+        LOGE("SCDynamicStoreKeyCreateNetworkServiceEntity ipv4 failed: %d\n", SCError());
         goto err;
     }
+
+    patterns[1] = SCDynamicStoreKeyCreateNetworkServiceEntity(
+            NULL,
+            kSCDynamicStoreDomainState,
+            kSCCompAnyRegex,
+            kSCEntNetIPv6);
+    if (patterns[1] == NULL) {
+        LOGE("SCDynamicStoreKeyCreateNetworkServiceEntity ipv6 failed: %d\n", SCError());
+        goto err;
+    }
+
 
     // Create a pattern list containing just one pattern,
     // then tell SCF that we want to watch changes in keys
     // that match that pattern list, then create our run loop
     // source.
     patternList = CFArrayCreate(NULL,
-                                (const void **)&pattern, 1,
+                                (const void **)patterns, 2,
                                 &kCFTypeArrayCallBacks);
     if(patternList == NULL){
         LOGE("CFArrayCreate failed: %d\n", SCError());
@@ -80,8 +91,11 @@ err:
     }
 ret:
     // Clean up.
-    if(pattern){
-        CFRelease(pattern);
+    if(patterns[0]){
+        CFRelease(patterns[0]);
+    }
+    if(patterns[1]){
+        CFRelease(patterns[1]);
     }
     if(patternList){
         CFRelease(patternList);

@@ -54,6 +54,7 @@ extern uint32_t debug;
 #define DHPACK    (1U<<5u)
 #define DHTTP     (1U<<7u)
 #define DFILE     (1U<<8u)
+#define DNET      (1U<<9u)
 
 #define DEVENT_STR  "[EVENT]"
 #define DDNS_STR    "[DNS]"
@@ -63,6 +64,7 @@ extern uint32_t debug;
 #define DHPACK_STR  "[HPACK]"
 #define DHTTP_STR   "[HTTP]"
 #define DFILE_STR   "[FILE]"
+#define DNET_STR    "[NET]"
 
 #ifdef  __cplusplus
 extern "C" {

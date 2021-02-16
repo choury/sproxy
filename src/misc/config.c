@@ -108,6 +108,7 @@ static struct option long_options[] = {
     {"debug-hpack",   no_argument,   NULL,  0 },
     {"debug-http",    no_argument,   NULL,  0 },
     {"debug-file",    no_argument,   NULL,  0 },
+    {"debug-net",     no_argument,   NULL,  0 },
     {"debug-all",     no_argument,   NULL,  0 },
 #endif
     {NULL,       0,                NULL,  0 }
@@ -155,6 +156,7 @@ static struct option_detail option_detail[] = {
     {"debug-hpack", "debug-hpack", option_bitwise, &debug, (void*)DHPACK},
     {"debug-http", "debug-http",  option_bitwise, &debug, (void*)DHTTP},
     {"debug-file", "debug-file",  option_bitwise, &debug, (void*)DFILE},
+    {"debug-net", "\tdebug-net",  option_bitwise, &debug, (void*)DNET},
     {"debug-all", "\tdebug-all", option_bitwise, &debug, (void*)0xffffffff},
 #endif
     {NULL, NULL, option_bool, NULL, NULL},
