@@ -216,9 +216,8 @@ Dns_Result::Dns_Result(const char* buff, size_t len) {
     }
 }
 
-Dns_Result::Dns_Result(const char *domain, const in_addr* addr){
+Dns_Result::Dns_Result(const char *domain, const in_addr* addr): type(1), ttl(0){
     strcpy(this->domain, domain);
-    type = 1;
     if(addr) {
         sockaddr_storage ip;
         memset(&ip, 0, sizeof(ip));
@@ -229,9 +228,8 @@ Dns_Result::Dns_Result(const char *domain, const in_addr* addr){
     }
 }
 
-Dns_Result::Dns_Result(const char *domain, const in6_addr* addr){
+Dns_Result::Dns_Result(const char *domain, const in6_addr* addr): type(28), ttl(0){
     strcpy(this->domain, domain);
-    type = 28;
     if(addr) {
         sockaddr_storage ip;
         memset(&ip, 0, sizeof(ip));
@@ -243,7 +241,7 @@ Dns_Result::Dns_Result(const char *domain, const in6_addr* addr){
 }
 
 
-Dns_Result::Dns_Result(const char *domain) {
+Dns_Result::Dns_Result(const char *domain): ttl(0) {
     strcpy(this->domain, domain);
 }
 
