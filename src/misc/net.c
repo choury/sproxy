@@ -247,7 +247,9 @@ int IcmpSocket(const struct sockaddr_storage* addr){
         goto ERR;
     }
 
-    time_t time = 1;
+    struct timeval time;
+    time.tv_sec = 1;
+    time.tv_usec = 0;
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &time, sizeof(time));
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &time, sizeof(time));
     return fd;
