@@ -4,9 +4,6 @@
 #include "req/requester.h"
 #include "misc/util.h"
 
-#include <string.h>
-#include <errno.h>
-#include <assert.h>
 #include <inttypes.h>
 
 Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
@@ -76,27 +73,6 @@ void Ping::Send(void* buff, size_t size){
     }
     rwer->buffer_insert(rwer->buffer_end(), write_block{packet, size, 0});
 }
-
-/*
-void Ping::deleteLater(uint32_t errcode) {
-    if(req){
-        req->body->trigger(Channel::CHANNEL_CLOSED);
-        req = nullptr;
-    }
-    return Server::deleteLater(errcode);
-}
-
-int Ping::finish(uint32_t flags, __attribute__ ((unused)) void* index) {
-    assert(index == (void *)(long)id);
-    req_ptr = std::shared_ptr<Requester>();
-    deleteLater(flags);
-    return FINISH_RET_BREAK;
-}
-
-int32_t Ping::bufleft(__attribute__ ((unused)) void* index) {
-    assert(index == (void *)(long)id);
-}
- */
 
 void Ping::dump_stat(Dumper dp, void* param) {
     dp(param, "ping %p%s, id:%" PRIu32 ", <%s> (%s) (%d - %d)\n",

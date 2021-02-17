@@ -42,11 +42,6 @@ void Peer::Send(void* buff, size_t size, void* index) {
     p_free(buff);
 }
 
-void Peer::writedcb(const void*) {
-    if(rwer){
-        rwer->EatReadData();
-    }
-}
 
 extern int efd;
 void releaseall() {

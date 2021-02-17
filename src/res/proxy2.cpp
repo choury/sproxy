@@ -56,7 +56,7 @@ Proxy2::Proxy2(RWer* rwer) {
         receive_time = getmtime();
 #endif
         if(proxy2 != this && statusmap.empty()){
-            LOG("this is not the main proxy2 and no clients, close it.\n");
+            LOG("this %p is not the main proxy2 and no clients, close it.\n", this);
             deleteLater(NOERROR);
         }
     });
@@ -83,7 +83,7 @@ void Proxy2::Error(int ret, int code) {
     if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0){
         return deleteLater(NOERROR);
     }
-    LOGE("proxy2 error: %d/%d\n", ret, code);
+    LOGE("<proxy2> %p error: %d/%d\n", this, ret, code);
     deleteLater(ret);
 }
 
@@ -98,7 +98,7 @@ void Proxy2::Send(uint32_t id ,const void* buff, size_t size) {
     PushData(id, buff, size);
     if(size == 0){
         status.flags |= HTTP_REQ_COMPLETED;
-        LOGD(DHTTP2, "<Proxy2> send data [%d]: EOF/%d\n", id, status.remotewinsize);
+        LOGD(DHTTP2, "<proxy2> send data [%d]: EOF/%d\n", id, status.remotewinsize);
     }else{
         LOGD(DHTTP2, "<proxy2> send data [%d]: %zu/%d\n", id, size, status.remotewinsize);
     }
@@ -128,7 +128,9 @@ void Proxy2::ResProc(uint32_t id, HttpResHeader* header) {
         status.res = new HttpRes(header, [this, &status, id]() mutable{
             auto len = status.res->cap();
             if(len < status.localwinsize){
-                LOGE("http2 [%d] shrunken local window: %d/%d\n", id, len, status.localwinsize);
+                LOGE("(%" PRIu32 "): <proxy2> [%d] shrunken local window: %d/%d\n",
+                    status.req->header->request_id,
+                    id, len, status.localwinsize);
             }else{
                 if((len - status.localwinsize > 2*FRAMEBODYLIMIT)) {
                     status.localwinsize += ExpandWindowSize(id, len - status.localwinsize - FRAMEBODYLIMIT);
@@ -158,7 +160,7 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
         assert((status.flags & HTTP_RES_COMPLETED) == 0);
         assert((status.flags & HTTP_RES_EOF) == 0);
         if(len > (size_t)status.localwinsize){
-            LOGE("(%" PRIu32 ") :<proxy2> [%d] window size error %zu/%d\n",
+            LOGE("(%" PRIu32 "): <proxy2> [%d] window size error %zu/%d\n",
                     status.req->header->request_id, id, len, status.localwinsize);
             Clean(id, status, ERR_FLOW_CONTROL_ERROR);
             return;
@@ -187,7 +189,7 @@ void Proxy2::EndProc(uint32_t id) {
 }
 
 void Proxy2::ErrProc(int errcode) {
-    LOGE("Proxy2 Http2 error: 0x%08x\n", errcode);
+    LOGE("<proxy2> %p Http2 error: 0x%08x\n", this, errcode);
     deleteLater(errcode);
 }
 
@@ -212,7 +214,7 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(errcode){
-            LOGE("(%" PRIu32 ") <proxy2> [%d]: stream reseted: %d\n",
+            LOGE("(%" PRIu32 "): <proxy2> [%d]: stream reseted: %d\n",
                  status.req->header->request_id, id, errcode);
         }
         status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
@@ -260,9 +262,9 @@ void Proxy2::PingProc(const Http2_header *header){
     if(header->flags & ACK_F){
         rwer->deljob(&connection_lost_job);
         double diff = (getutime()-get64(header+1))/1000.0;
-        LOG("<Proxy2> Get a ping time=%.3fms\n", diff);
+        LOG("<proxy2> Get a ping time=%.3fms\n", diff);
         if(diff >= 5000){
-            LOGE("<Proxy2> The ping time too long!\n");
+            LOGE("<proxy2> The ping time too long!\n");
         }
     }
     Http2Base::PingProc(header);
@@ -366,19 +368,6 @@ void Proxy2::deleteLater(uint32_t errcode){
     }
     Server::deleteLater(errcode);
 }
-
-/*
-void Proxy2::writedcb(const void* index){
-    uint32_t id = (uint32_t)(long)index;
-    if(statusmap.count(id)){
-        ReqStatus& status = statusmap[id];
-        auto len = status.res->cap();
-        if(len > status.localwinsize && (len - status.localwinsize > FRAMEBODYLIMIT)) {
-            status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
-        }
-    }
-}
-*/
 
 void Proxy2::dump_stat(Dumper dp, void* param) {
     dp(param, "Proxy2 %p%s id:%d <%s> (%s) (%d/%d)\n",

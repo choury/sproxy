@@ -185,7 +185,6 @@ void FDns::deleteLater(uint32_t errcode) {
     return Server::deleteLater(errcode);
 }
 
-
 void FDns::dump_stat(Dumper dp, void* param) {
     dp(param, "FDns %p [%" PRIu32 "]: %s\n", this,
             req->header->request_id,

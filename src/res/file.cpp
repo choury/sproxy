@@ -169,7 +169,6 @@ void File::request(HttpReq* req, Requester*) {
     });
 }
 
-
 void File::readHE(size_t) {
     Range& rg = status.rg;
     LOGD(DFILE, "%s readHE %zd-%zd, flags: %d\n", filename, rg.begin, rg.end, status.flags);
@@ -203,7 +202,6 @@ void File::dump_stat(Dumper dp, void* param){
     dp(param, " [%" PRIu32 "]: (%zd-%zd)\n",
             status.req->header->request_id, status.rg.begin, status.rg.end);
 }
-
 
 File::~File() {
     if(fd > 0){

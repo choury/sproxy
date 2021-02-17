@@ -70,7 +70,7 @@ void Guest2::Error(int ret, int code){
     if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0){
         return deleteLater(NOERROR);
     }
-    LOGE("guest2 error: %d/%d\n", ret, code);
+    LOGE("(%s): <guest2> error: %d/%d\n", getsrc(), ret, code);
     deleteLater(ret);
 }
 
@@ -97,7 +97,7 @@ void Guest2::Send(uint32_t id, const void* buff, size_t size){
 }
 
 void Guest2::ReqProc(uint32_t id, HttpReqHeader* header) {
-    LOGD(DHTTP2, "guest %" PRIu32 " [%s] ReqProc %s\n", header->request_id, getsrc(), header->geturl().c_str());
+    LOGD(DHTTP2, "<guest2> %" PRIu32 " [%s] ReqProc %s\n", header->request_id, getsrc(), header->geturl().c_str());
     if(statusmap.count(id)){
         delete header;
         LOGD(DHTTP2, "<guest2> ReqProc dup id: %d\n", id);
@@ -119,7 +119,9 @@ void Guest2::ReqProc(uint32_t id, HttpReqHeader* header) {
     [this, &status, id] () mutable{
         auto len = status.req->cap();
         if(len < status.localwinsize){
-            LOGE("http2 [%d] shrunken local window: %d/%d\n", id, len, status.localwinsize);
+            LOGE("(%s)[%" PRIu32 "]: <guest2> [%d] shrunken local window: %d/%d\n",
+                getsrc(), status.req->header->request_id,
+                id, len, status.localwinsize);
         }else{
             if(len - status.localwinsize > 2*FRAMEBODYLIMIT){
                 status.localwinsize += ExpandWindowSize(id, len - status.localwinsize - FRAMEBODYLIMIT);
@@ -142,7 +144,9 @@ void Guest2::DataProc(uint32_t id, const void* data, size_t len) {
         assert((status.flags & HTTP_REQ_EOF) == 0);
         assert((status.flags & HTTP_REQ_COMPLETED) == 0);
         if(len > (size_t)status.localwinsize){
-            LOGE("(%s): <guest2> [%d] window size error %zu/%d\n", getsrc(), id, len, status.localwinsize);
+            LOGE("(%s)[%" PRIu32 "]: <guest2> [%d] window size error %zu/%d\n", 
+                getsrc(), status.req->header->request_id,
+                id, len, status.localwinsize);
             Clean(id, status, ERR_FLOW_CONTROL_ERROR);
             return;
         }
@@ -222,7 +226,9 @@ void Guest2::RstProc(uint32_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(errcode){
-            LOGE("(%s) <guest2> [%d]: stream  reseted: %d\n", getsrc(), id, errcode);
+            LOGE("(%s)[%" PRIu32 "]: <guest2> [%d]: stream  reseted: %d\n",
+                getsrc(), status.req->header->request_id,
+                id, errcode);
         }
         status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
         Clean(id, status, errcode);
@@ -287,7 +293,7 @@ void Guest2::GoawayProc(const Http2_header* header) {
 }
 
 void Guest2::ErrProc(int errcode) {
-    LOGE("Guest2 http2 error:0x%08x\n", errcode);
+    LOGE("(%s): Guest2 http2 error:0x%08x\n", getsrc(), errcode);
     deleteLater(errcode);
 }
 

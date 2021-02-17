@@ -82,7 +82,7 @@ void GzipTest::request(HttpReq* req, Requester*) {
 #if __LP64__
         left = 1024ull * 1024 * 1024 * 1024; //1T
 #else
-        left = 2ull * 1024 * 1024 * 1024;    //4G
+        left = 2ull * 1024 * 1024 * 1024;    //2G
 #endif
     }
 
