@@ -2,7 +2,7 @@
 #include "util.h"
 #include "strategy.h"
 #include "net.h"
-#include "version.h"
+#include "common/version.h"
 #include "network_notify.h"
 
 #include <getopt.h>
@@ -31,7 +31,6 @@ static char* ipv6_options[] = {"disable", "enable", "auto", NULL};
 static char* server_string = NULL;
 static char* policy_file = NULL;
 
-
 struct options opt = {
     .cafile            = NULL,
     .cert              = NULL,
@@ -39,6 +38,7 @@ struct options opt = {
     .rootdir           = NULL,
     .index_file        = NULL,
     .interface         = NULL,
+    .socket            = NULL,
     .disable_http2     = false,
     .sni_mode          = false,
     .daemon_mode       = false,
@@ -96,6 +96,7 @@ static struct option long_options[] = {
     {"secret",        required_argument, NULL, 's'},
     {"set-dns-route", no_argument,       NULL,  0 },
     {"sni",           no_argument,       NULL,  0 },
+    {"socket",        required_argument, NULL,  0 },
     {"alter-method",  no_argument,       NULL,  0 },
     {"request-header",required_argument, NULL,  0 },
     {"version",       no_argument,       NULL, 'v'},
@@ -127,7 +128,7 @@ static struct option_detail option_detail[] = {
     {"autoindex", "Enables the directory listing output (local server)", option_bool, &opt.autoindex, (void*)true},
     {"cafile", "CA certificate for server (ssl)", option_string, &opt.cafile, NULL},
     {"cert", "Certificate file for server (ssl)", option_string, &opt.cert, NULL},
-    {"config", "Configure file (default /etc/sproxy/sproxy.conf, /usr/local/etc/sproxy/sproxy.conf)", option_string, &opt.config_file, NULL},
+    {"config", "Configure file (default "PREFIX"/etc/sproxy/sproxy.conf and ./sproxy.conf)", option_string, &opt.config_file, NULL},
     {"daemon", "Run as daemon", option_bool, &opt.daemon_mode, (void*)true},
     {"disable-http2", "Use http/1.1 only", option_bool, &opt.disable_http2, (void*)true},
     {"help", "Print this usage", option_bool, NULL, NULL},
@@ -137,13 +138,14 @@ static struct option_detail option_detail[] = {
     {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, ipv6_options},
     {"key", "Private key file name (ssl)", option_string, &opt.key, NULL},
     {"port", "The port to listen, default is 80 but 443 for ssl/sni", option_int64, &opt.CPORT, NULL},
-    {"policy-file", "The file of policy (/etc/sproxy/sites.list as default)", option_string, &policy_file, NULL},
+    {"policy-file", "The file of policy ("PREFIX"/etc/sproxy/sites.list as default)", option_string, &policy_file, NULL},
     {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64, opt.rewrite_auth, NULL},
     {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
     {"secret", "Set a user and passwd for proxy (user:password), default is none.", option_base64, opt.auth_string, NULL},
     {"sni", "Act as a sni proxy", option_bool, &opt.sni_mode, (void*)true},
     {"server", "default proxy server (can ONLY set in config file)", option_string, &server_string, NULL},
     {"set-dns-route", "set route for dns server (via VPN interface)", option_bool, &opt.set_dns_route, (void*)true},
+    {"socket", "set listen socket path for cli (/var/run/sproxy.sock is default for root and /tmp/sproxy.sock for others)", option_string, &opt.socket, NULL},
     {"alter-method", "use Alter-Method to define real method (for obfuscation), http1 only", option_bool, &opt.alter_method, (void*)true},
     {"request-header", "append the header (name:value) for plain http request", option_list, &opt.request_headers, NULL},
     {"version", "show the version of this programe", option_bool, NULL, NULL},
@@ -501,6 +503,15 @@ void parseConfig(int argc, char **argv){
         LOGE("access key file failed: %s\n", strerror(errno));
         exit(1);
     }
+ #ifndef __ANDROID__
+    if (opt.socket == NULL){
+        if(getuid() == 0){
+            opt.socket = "/var/run/sproxy.sock";
+        }else{
+            opt.socket = "/tmp/sproxy.sock";
+        }
+    }
+ #endif
 }
 
 

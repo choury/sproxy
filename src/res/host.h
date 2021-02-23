@@ -26,7 +26,7 @@ protected:
     virtual void ResProc(HttpResHeader* res)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
     virtual void EndProc() override;
-    virtual void ErrProc()override;
+    virtual void ErrProc() override;
 
     virtual void request(HttpReq* req, Requester*) override;
     virtual void connected();

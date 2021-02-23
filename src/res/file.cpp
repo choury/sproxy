@@ -4,12 +4,10 @@
 #include "misc/net.h"
 #include "misc/util.h"
 #include "misc/config.h"
+#include "cgi.h"
 
 #ifdef ENABLE_GZIP_TEST
 #include "gzip_test.h"
-#endif
-#ifdef ENABLE_CGI
-#include "cgi.h"
 #endif
 
 #include <fstream>
@@ -316,7 +314,6 @@ void File::getfile(HttpReq* req, Requester* src) {
             header = new HttpResHeader(H403, sizeof(H403));
             goto ret;
         }
-#ifdef ENABLE_CGI
 #if __APPLE__
         if(suffix && strcmp(suffix, ".dylib") == 0){
 #elif __linux__
@@ -326,7 +323,6 @@ void File::getfile(HttpReq* req, Requester* src) {
 #endif
             return getcgi(req, filename, src);
         }
-#endif
         int fd = open(filename, O_RDONLY | O_CLOEXEC);
         if(fd < 0){
             LOGE("open file failed %s: %s\n", filename, strerror(errno));

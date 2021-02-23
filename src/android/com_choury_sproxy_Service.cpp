@@ -1,5 +1,5 @@
 #include "com_choury_sproxy_Service.h"
-#include "vpn.h"
+#include "server/vpn.h"
 
 #include <unistd.h>
 #include <fcntl.h>

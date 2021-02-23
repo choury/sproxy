@@ -34,7 +34,7 @@ static bool setNameAndFlagsByIndex(struct ifaddrs* addr, int interfaceIndex) {
     addr->ifa_name = (char*)calloc(1, strlen(name) + 1);
 
     // Get the flags.
-    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    int fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
     if (fd == -1) {
         return false;
     }
@@ -124,7 +124,7 @@ int getifaddrs(struct ifaddrs** result) {
     *result = NULL;
 
     // Create a netlink socket.
-    int fd = socket(AF_NETLINK, SOCK_DGRAM, NETLINK_ROUTE);
+    int fd = socket(AF_NETLINK, SOCK_DGRAM | SOCK_CLOEXEC, NETLINK_ROUTE);
     if (fd < 0) {
         return -1;
     }

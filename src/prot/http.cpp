@@ -26,7 +26,6 @@ static size_t hextoint(const char* str){
     return size;
 }
 
-
 size_t HttpBase::ChunkLProc(const char* buffer, size_t len) {
     if (const char* headerend = strnstr(buffer, CRLF, len)) {
         headerend += strlen(CRLF);

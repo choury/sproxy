@@ -76,7 +76,7 @@ void slog(int level, const char* fmt, ...) __attribute__ ((__format__ (__printf_
 void vslog(int level, const char* fmt, va_list arg);
 #define VLOG(...) vslog(__VA_ARGS__)
 #else
-#include "com_choury_sproxy_Service.h"
+#include "android/com_choury_sproxy_Service.h"
 #define VLOG(...) android_vlog(__VA_ARGS__);
 #endif
 
@@ -187,7 +187,7 @@ do {\
 #define CONNECT_TIMEOUT     82U
 #define SSL_SHAKEHAND_ERR   83U
 #define HEAD_TOO_LONG_ERR   84U
-#define HTTP_PROTOCOL_ERR   85U
+#define PROTOCOL_ERR        85U
 #define PEER_LOST_ERR       88U
 #define IP_BLOCK_ERR        89U
 #define TCP_RESET_ERR       90U
@@ -201,14 +201,6 @@ typedef void (* Dumper)(void* param, const char* fmt, ...) __attribute__ ((__for
 
 int protectFd(int sockfd);
 
-
-/*
-union sockaddr_un{
-    struct sockaddr addr;
-    struct sockaddr_in addr_in;
-    struct sockaddr_in6 addr_in6;
-};
-*/
 
 struct Destination{
     char schema[DOMAINLIMIT];

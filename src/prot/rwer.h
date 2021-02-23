@@ -31,7 +31,6 @@ class WBuffer {
 public:
     ~WBuffer();
     size_t length();
-    void clear(bool freebuffer);
     std::list<write_block>::iterator start();
     std::list<write_block>::iterator end();
     std::list<write_block>::iterator push(std::list<write_block>::insert_iterator i, const write_block& wb);
@@ -130,7 +129,6 @@ public:
     virtual void Shutdown();
     RWerStats getStats(){return stats;}
     virtual const char* getPeer() {return "raw-rwer";}
-    virtual const char* getDest() {return getPeer();}
 
     //for read buffer
     virtual size_t rlength() = 0;

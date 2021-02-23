@@ -370,9 +370,8 @@ void Proxy2::deleteLater(uint32_t errcode){
 }
 
 void Proxy2::dump_stat(Dumper dp, void* param) {
-    dp(param, "Proxy2 %p%s id:%d <%s> (%s) (%d/%d)\n",
+    dp(param, "Proxy2 %p%s id:%d (%s) (%d/%d)\n",
             this, proxy2 == this?" [M]":"", sendid,
-            rwer->getDest(),
             rwer->getPeer(),
             this->remotewinsize, this->localwinsize);
     dp(param, "  rwer: rlength:%zu, rleft:%zu, wlength:%zu, stats:%d, event:%s\n",

@@ -59,7 +59,7 @@ Cgi::Cgi(const char* fname, int sv[2]) {
     // 父进程
     close(sv[1]);   // 关闭管道的子进程端
     /* 现在可在fd[0]中读写数据 */
-    rwer = new StreamRWer(sv[0], [this](int ret, int code){
+    rwer = new StreamRWer(sv[0], nullptr, [this](int ret, int code){
         LOGE("[CGI] %s error: %d/%d\n", basename(filename), ret, code);
         deleteLater(ret);
     });
@@ -163,7 +163,7 @@ bool Cgi::HandleRes(const CGI_Header *cheader, CgiStatus& status){
 static void cgi_error(CGI_Header* header, uint32_t id, uint32_t error, uint8_t flag){
     header->type = CGI_ERROR;
     header->flag = flag;
-    header->contentLength = htons(sizeof(CGI_ERROR));
+    header->contentLength = htons(sizeof(CGI_Error));
     header->requestId = htonl(id);
     CGI_Error* cgi_error = (CGI_Error*)(header + 1);
     cgi_error->error = htonl(error);
@@ -182,8 +182,7 @@ bool Cgi::HandleValue(const CGI_Header *header, CgiStatus& status){
         nv_back->name = htonl(CGI_NAME_BUFFLEFT);
         set32(nv_back->value, htonl(status.req->cap()));
         rwer->buffer_insert(rwer->buffer_end(),
-                            write_block{header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength), 0}
-                           );
+                            write_block{header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength), 0});
         break;
     }
     case CGI_NAME_STRATEGYGET: {
@@ -209,8 +208,7 @@ bool Cgi::HandleValue(const CGI_Header *header, CgiStatus& status){
             nv_back->name = htonl(CGI_NAME_STRATEGYGET);
             sprintf((char *)nv_back->value, "%s %s %s", host.c_str(), strategy.c_str(), ext.c_str());
             rwer->buffer_insert(rwer->buffer_end(),
-                                write_block{header_back, sizeof(CGI_Header) + value_len, 0}
-                               );
+                                write_block{header_back, sizeof(CGI_Header) + value_len, 0});
         }
         break;
     }
@@ -255,8 +253,7 @@ bool Cgi::HandleValue(const CGI_Header *header, CgiStatus& status){
         nv_back->name = htonl(CGI_NAME_GETPROXY);
         memcpy(nv_back->value, proxy, len);
         rwer->buffer_insert(rwer->buffer_end(),
-                            write_block{header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength), 0}
-                           );
+                            write_block{header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength), 0});
         break;
     }
     case CGI_NAME_SETPROXY:{
@@ -352,7 +349,7 @@ void Cgi::request(HttpReq* req, Requester* src) {
         nullptr,
         "",
     };
-    strcpy(statusmap[id].sourceip, src->getip());
+    strcpy(statusmap[id].sourceip, src->getid());
     CGI_Header *header = req->header->getcgi();
     rwer->buffer_insert(rwer->buffer_end(),
                         write_block{header, sizeof(CGI_Header) + ntohs(header->contentLength), 0}

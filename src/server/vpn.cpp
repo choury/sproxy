@@ -23,7 +23,7 @@ int vpn_start(int fd){
         LOGE("epoll_create: %s\n", strerror(errno));
         return -1;
     }
-    new VPN_nanny(fd);
+    new Vpn_server(fd);
     vpn_contiune = 1;
     LOG("Accepting connections ...\n");
     while (vpn_contiune) {
@@ -51,7 +51,7 @@ int vpn_start(int fd){
     }
     LOG("VPN exiting ...\n");
     flushdns();
-    flushproxy2(1);
+    flushproxy2();
     releaseall();
     return 0;
 }

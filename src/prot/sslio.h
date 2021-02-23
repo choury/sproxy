@@ -14,12 +14,13 @@ protected:
     virtual ssize_t Read(void* buff, size_t len) override;
     virtual ssize_t Write(const void* buff, size_t len) override;
 public:
-    explicit SslRWer(int fd, SSL_CTX* ctx,
-                       std::function<void(int ret, int code)> errorCB,
-                       std::function<void(const sockaddr_storage&)> connectCB = nullptr);
+    explicit SslRWer(int fd, const sockaddr_storage* peer,
+                     SSL_CTX* ctx,
+                     std::function<void(int ret, int code)> errorCB,
+                     std::function<void(const sockaddr_storage&)> connectCB = nullptr);
     explicit SslRWer(const char* hostname, uint16_t port, Protocol protocol,
-                       std::function<void(int ret, int code)> errorCB,
-                       std::function<void(const sockaddr_storage&)> connectCB = nullptr);
+                     std::function<void(int ret, int code)> errorCB,
+                     std::function<void(const sockaddr_storage&)> connectCB = nullptr);
     virtual ~SslRWer() override;
 
     virtual int saccept();

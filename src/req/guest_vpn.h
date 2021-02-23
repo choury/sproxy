@@ -17,26 +17,6 @@ struct VpnKey{
 
 bool operator<(VpnKey a, VpnKey b);
 
-
-class Guest_vpn;
-
-class VPN_nanny: public Server{
-    std::map<VpnKey, Guest_vpn*> statusmap;
-    void buffHE(const char* buff, size_t buflen);
-public:
-    explicit VPN_nanny(int fd);
-    virtual ~VPN_nanny() override;
-
-    template <class T>
-    void sendPkg(const std::shared_ptr<Ip>& pac, T* buff, size_t len){
-        char* packet = pac->build_packet(buff, len);
-        rwer->buffer_insert(rwer->buffer_end(), write_block{packet, len, 0});
-    }
-    virtual int32_t bufleft();
-    virtual void dump_stat(Dumper dp, void* param) override;
-    void cleanKey(const VpnKey& key);
-};
-
 #define VPN_TCP_WSCALE   4u
 
 struct TcpStatus{
@@ -66,10 +46,11 @@ struct VpnStatus{
     uint32_t flags;
 };
 
+class Vpn_server;
 class Guest_vpn:public Requester{
     VpnKey key;
     VpnStatus  status;
-    VPN_nanny* nanny;
+    Vpn_server* server;
     const char* generateUA() const;
     const char* getProg() const;
 
@@ -86,7 +67,7 @@ class Guest_vpn:public Requester{
     int32_t bufleft();
     void handle(Channel::signal s);
 public:
-    Guest_vpn(const VpnKey& key, VPN_nanny* nanny);
+    Guest_vpn(const VpnKey& key, Vpn_server* server);
     virtual ~Guest_vpn() override;
 
     void packetHE(std::shared_ptr<const Ip> pac, const char* packet, size_t len);
@@ -96,6 +77,24 @@ public:
     virtual void deleteLater(uint32_t error) override;
     virtual const char *getsrc() override;
     virtual void dump_stat(Dumper dp, void* param) override;
+};
+
+
+class Vpn_server: public Ep{
+    RWer* rwer;
+    std::map<VpnKey, Guest_vpn*> statusmap;
+    void buffHE(const char* buff, size_t buflen);
+public:
+    explicit Vpn_server(int fd);
+    virtual ~Vpn_server() override;
+
+    template <class T>
+    void sendPkg(const std::shared_ptr<Ip>& pac, T* buff, size_t len){
+        char* packet = pac->build_packet(buff, len);
+        rwer->buffer_insert(rwer->buffer_end(), write_block{packet, len, 0});
+    }
+    virtual int32_t bufleft();
+    void cleanKey(const VpnKey& key);
 };
 
 #endif

@@ -4,11 +4,15 @@
 #include "misc/net.h"
 
 #include <unistd.h>
-#include <fcntl.h>
 #include <sys/ioctl.h>
 #include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
+
+#if __APPLE__
+#include <sys/ucred.h>
+#include <sys/un.h>
+#endif
 
 size_t RBuffer::left(){
     return sizeof(content) - len;
@@ -88,21 +92,30 @@ char* CBuffer::end(){
     return content + (end_pos % sizeof(content));
 }
 
-NetRWer::NetRWer(int fd, std::function<void(int, int)> errorCB):RWer(fd, std::move(errorCB)){
+SocketRWer::SocketRWer(int fd, const sockaddr_storage* peer, std::function<void(int, int)> errorCB):RWer(fd, std::move(errorCB)){
     setEvents(RW_EVENT::READ);
     stats = RWerStats::Connected;
-    handleEvent = (void (Ep::*)(RW_EVENT))&NetRWer::defaultHE;
+    handleEvent = (void (Ep::*)(RW_EVENT))&SocketRWer::defaultHE;
     sockaddr_storage addr;
-    memset(&addr, 0, sizeof(addr));
-    socklen_t len = sizeof(addr);
-    if(getpeername(fd, (sockaddr *)&addr, &len)){
-        LOGE("getpeername error: %s\n", strerror(errno));
-        return;
+    if(peer && peer->ss_family == AF_UNIX){
+        memset(&addr, 0, sizeof(addr));
+        socklen_t len = sizeof(addr);
+        if(getsockname(fd, (sockaddr *)&addr, &len)){
+            LOGE("getsockname error: %s\n", strerror(errno));
+            return;
+        }
+    }else{
+        memset(&addr, 0, sizeof(addr));
+        socklen_t len = sizeof(addr);
+        if(getpeername(fd, (sockaddr *)&addr, &len)){
+            LOGE("getpeername error: %s\n", strerror(errno));
+            return;
+        }
     }
     addrs.push(addr);
 }
 
-NetRWer::NetRWer(const char* hostname, uint16_t port, Protocol protocol,
+SocketRWer::SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
                std::function<void(int, int)> errorCB,
                std::function<void(const sockaddr_storage&)> connectCB):
             RWer(std::move(errorCB), std::move(connectCB)), port(port), protocol(protocol)
@@ -112,12 +125,12 @@ NetRWer::NetRWer(const char* hostname, uint16_t port, Protocol protocol,
     connect();
 }
 
-NetRWer::~NetRWer() {
+SocketRWer::~SocketRWer() {
     delete resolver;
 }
 
-void NetRWer::Dnscallback(void* param, std::list<sockaddr_storage> addrs) {
-    NetRWer* rwer = static_cast<NetRWer*>(param);
+void SocketRWer::Dnscallback(void* param, std::list<sockaddr_storage> addrs) {
+    SocketRWer* rwer = static_cast<SocketRWer*>(param);
     if (addrs.empty()) {
         return rwer->ErrorHE(DNS_FAILED, 0);
     }
@@ -131,7 +144,7 @@ void NetRWer::Dnscallback(void* param, std::list<sockaddr_storage> addrs) {
     rwer->connect();
 }
 
-void NetRWer::connect() {
+void SocketRWer::connect() {
     if(stats != RWerStats::Resolving && stats != RWerStats::Connecting) {
         return;
     }
@@ -142,11 +155,11 @@ void NetRWer::connect() {
     if(stats == RWerStats::Resolving) {
         assert(addrs.empty());
         // No address got before.
-        resolver = query_host(hostname, NetRWer::Dnscallback, this);
+        resolver = query_host(hostname, SocketRWer::Dnscallback, this);
         if(resolver == nullptr) {
-            con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 0);
+            con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 0);
         }else {
-            con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 5000);
+            con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 5000);
         }
         return;
     } else {
@@ -166,17 +179,17 @@ void NetRWer::connect() {
     if(protocol == Protocol::TCP) {
         fd = Connect(&addrs.front(), SOCK_STREAM);
         if (fd < 0) {
-            con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 0);
+            con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 0);
             return;
         }
         setFd(fd);
         setEvents(RW_EVENT::WRITE);
-        handleEvent = (void (Ep::*)(RW_EVENT)) &NetRWer::waitconnectHE;
-        con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 10000);
+        handleEvent = (void (Ep::*)(RW_EVENT)) &SocketRWer::waitconnectHE;
+        con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 10000);
     } else if(protocol == Protocol::UDP) {
         fd = Connect(&addrs.front(), SOCK_DGRAM);
         if (fd < 0) {
-            con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 0);
+            con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 0);
             return;
         }
         setFd(fd);
@@ -184,7 +197,7 @@ void NetRWer::connect() {
     } else if(protocol == Protocol::ICMP) {
         fd = IcmpSocket(&addrs.front());
         if (fd < 0) {
-            con_failed_job = updatejob(con_failed_job, std::bind(&NetRWer::connect, this), 0);
+            con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 0);
             return;
         }
         setFd(fd);
@@ -194,12 +207,12 @@ void NetRWer::connect() {
     }
 }
 
-void NetRWer::Connected(const sockaddr_storage& addr) {
+void SocketRWer::Connected(const sockaddr_storage& addr) {
     deljob(&con_failed_job);
     RWer::Connected(addr);
 }
 
-void NetRWer::waitconnectHE(RW_EVENT events) {
+void SocketRWer::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR) || !!(events & RW_EVENT::READEOF)) {
         checkSocket(__PRETTY_FUNCTION__);
         return connect();
@@ -209,23 +222,50 @@ void NetRWer::waitconnectHE(RW_EVENT events) {
     }
 }
 
-const char *NetRWer::getPeer() {
+const char *SocketRWer::getPeer() {
+    static char peer[300];
+    memset(peer, 0, sizeof(peer));
+    if(hostname[0]){
+        sprintf(peer, "<%s://%s:%d> ", protstr(protocol), hostname, port);
+    }
     if(addrs.empty()){
-        return "net-rwer-null";
+        sprintf(peer + strlen(peer), "null");
+        return peer;
     }
-    return storage_ntoa(&addrs.front());
+    auto addr = addrs.front();
+    sprintf(peer + strlen(peer), "%s", storage_ntoa(&addr));
+    if(addr.ss_family == AF_UNIX){
+#if defined(SO_PEERCRED)
+        struct ucred cred;
+        socklen_t len = sizeof(struct ucred);
+        if(getsockopt(getFd(), SOL_SOCKET, SO_PEERCRED, &cred, &len)){
+            LOGE("Failed to get cred: %s\n", strerror(errno));
+        }else{
+            sprintf(peer + strlen(peer), ",uid=%d", cred.uid);
+        }
+#elif defined(LOCAL_PEERCRED)
+        struct xucred cred;
+        socklen_t credLen = sizeof(cred);
+        if(getsockopt(getFd(), SOL_LOCAL, LOCAL_PEERCRED, &cred, &credLen)){
+            LOGE("Failed to get cred: %s\n", strerror(errno));
+        }else{
+            sprintf(peer + strlen(peer), ",uid=%d", cred.cr_uid);
+        }
+#endif
+#ifdef LOCAL_PEERPID
+        pid_t pid;
+        socklen_t pid_size = sizeof(pid);
+        if(getsockopt(getFd(), SOL_LOCAL, LOCAL_PEERPID, &pid, &pid_size)){
+            LOGE("failed to call LOCAL_PEERPID: %s\n", strerror(errno));
+        }else {
+            sprintf(peer + strlen(peer), ",pid=%d", pid);
+        }
+#endif
+    }
+    return peer;
 }
 
-const char *NetRWer::getDest(){
-    static char buff[300];
-    if(!hostname[0]){
-        return "net-rwer-null";
-    }
-    sprintf(buff, "%s://%s:%d", protstr(protocol), hostname, port);
-    return buff;
-}
-
-ssize_t NetRWer::Write(const void* buff, size_t len){
+ssize_t SocketRWer::Write(const void* buff, size_t len){
     return write(getFd(), buff, len);
 }
 

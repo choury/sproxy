@@ -1,7 +1,7 @@
 #ifndef CONFIG_H__
 #define CONFIG_H__
 
-#include "common.h"
+#include "common/common.h"
 #include <stdbool.h>
 #ifdef  __cplusplus
 extern "C" {
@@ -30,10 +30,10 @@ struct options{
     const char *cert;
     const char *key;
     const char *config_file;
-    //const char *policy_file;
     const char *rootdir;
     const char *index_file;
     const char *interface;
+    const char *socket;
     bool disable_http2;
     bool sni_mode;
     bool daemon_mode;

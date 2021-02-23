@@ -1,4 +1,4 @@
-#include "common.h"
+#include "common/common.h"
 #include "network_notify.h"
 
 #include <SystemConfiguration/SCNetworkReachability.h>
@@ -18,7 +18,7 @@ static int  CreateIPAddressListChangeCallbackSCF(
 {
     int result = -1;
     SCDynamicStoreContext   context = {0, contextPtr, NULL, NULL, NULL};
-    CFStringRef patterns[2] = {NULL, NULL};
+    CFStringRef patterns[3] = {NULL, NULL, NULL};
     CFArrayRef patternList  = NULL;
 
     assert(callback   != NULL);
@@ -37,23 +37,30 @@ static int  CreateIPAddressListChangeCallbackSCF(
         LOGE("SCDynamicStoreCreate failed: %d\n", SCError());
         goto err;
     }
-    patterns[0] = SCDynamicStoreKeyCreateNetworkServiceEntity(
+    patterns[0] = SCDynamicStoreKeyCreateNetworkGlobalEntity(
             NULL,
             kSCDynamicStoreDomainState,
-            kSCCompAnyRegex,
-            kSCEntNetIPv4);
+            kSCEntNetInterface);
     if (patterns[0] == NULL) {
-        LOGE("SCDynamicStoreKeyCreateNetworkServiceEntity ipv4 failed: %d\n", SCError());
+        LOGE("SCDynamicStoreKeyCreateNetworkGlobalEntity interface failed: %d\n", SCError());
         goto err;
     }
 
-    patterns[1] = SCDynamicStoreKeyCreateNetworkServiceEntity(
+    patterns[1] = SCDynamicStoreKeyCreateNetworkGlobalEntity(
             NULL,
             kSCDynamicStoreDomainState,
-            kSCCompAnyRegex,
-            kSCEntNetIPv6);
+            kSCEntNetIPv4);
     if (patterns[1] == NULL) {
-        LOGE("SCDynamicStoreKeyCreateNetworkServiceEntity ipv6 failed: %d\n", SCError());
+        LOGE("SCDynamicStoreKeyCreateNetworkGlobalEntity ipv4 failed: %d\n", SCError());
+        goto err;
+    }
+
+    patterns[2] = SCDynamicStoreKeyCreateNetworkGlobalEntity(
+            NULL,
+            kSCDynamicStoreDomainState,
+            kSCEntNetIPv6);
+    if (patterns[2] == NULL) {
+        LOGE("SCDynamicStoreKeyCreateNetworkGlobalEntity ipv6 failed: %d\n", SCError());
         goto err;
     }
 
@@ -63,7 +70,7 @@ static int  CreateIPAddressListChangeCallbackSCF(
     // that match that pattern list, then create our run loop
     // source.
     patternList = CFArrayCreate(NULL,
-                                (const void **)patterns, 2,
+                                (const void **)patterns, 3,
                                 &kCFTypeArrayCallBacks);
     if(patternList == NULL){
         LOGE("CFArrayCreate failed: %d\n", SCError());
@@ -95,6 +102,9 @@ ret:
         CFRelease(patterns[0]);
     }
     if(patterns[1]){
+        CFRelease(patterns[1]);
+    }
+    if(patterns[2]){
         CFRelease(patterns[1]);
     }
     if(patternList){

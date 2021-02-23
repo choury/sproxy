@@ -1,5 +1,5 @@
 #include "hpack.h"
-#include "common.h"
+#include "common/common.h"
 
 #include <string.h>
 #include <assert.h>

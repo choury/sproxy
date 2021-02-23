@@ -23,13 +23,13 @@ enum class CheckResult{
 };
 
 static CheckResult check_header(HttpReqHeader* req, Requester* src){
-    if (!checkauth(src->getip()) &&
+    if (!checkauth(src->getid()) &&
         req->get("Proxy-Authorization") &&
         strcmp(opt.auth_string, req->get("Proxy-Authorization")+6) == 0)
     {
-        addauth(src->getip());
+        addauth(src->getid());
     }
-    if (!checkauth(src->getip())){
+    if (!checkauth(src->getid())){
         return CheckResult::AuthFailed;
     }
     if(req->get("via") && strstr(req->get("via"), "sproxy")){

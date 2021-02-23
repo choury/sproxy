@@ -1,5 +1,5 @@
 #include "net.h"
-#include "common.h"
+#include "common/common.h"
 #include "misc/util.h"
 
 #include <errno.h>
@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <netinet/tcp.h>
-
+#include <sys/un.h>
 
 int Checksocket(int fd, const char *msg){
     int       error = 0;
@@ -69,8 +69,17 @@ void SetUdpOptions(int fd, const struct sockaddr_storage* addr){
     }
 }
 
-int Listen(int type, short port) {
+void SetUnixOptions(int fd, const struct sockaddr_storage* addr) {
+    (void)fd;
+    (void)addr;
+}
+
+int ListenNet(int type, short port) {
+#ifdef  SOCK_CLOEXEC
+    int fd = socket(AF_INET6, type | SOCK_CLOEXEC, 0);
+#else
     int fd = socket(AF_INET6, type, 0);
+#endif
     if (fd < 0) {
         LOGE("socket error:%s\n", strerror(errno));
         return -1;
@@ -120,6 +129,51 @@ int Listen(int type, short port) {
     return -1;
 }
 
+int ListenUnix(const char* path) {
+#ifdef SOCK_CLOEXEC
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+#else
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+#endif
+    if (fd < 0) {
+        LOGE("socket error:%s\n", strerror(errno));
+        return -1;
+    }
+    do{
+        if(protectFd(fd) == 0){
+            LOGE("protecd fd error:%s\n", strerror(errno));
+            break;
+        }
+#ifdef SO_PASSCRED
+        int flag = 1;
+        if (setsockopt(fd, SOL_SOCKET, SO_PASSCRED, &flag, sizeof(flag)) < 0) {
+            LOGE("setsockopt SO_PASSCRED:%s\n", strerror(errno));
+            break;
+        }
+#endif
+
+        struct sockaddr_un myaddr;
+        bzero(&myaddr, sizeof(myaddr));
+        myaddr.sun_family = AF_UNIX;
+        strcpy(myaddr.sun_path, path);
+        unlink(path);
+
+        if (bind(fd, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
+            LOGE("bind error:%s\n", strerror(errno));
+            break;
+        }
+
+        if (listen(fd, 10000) < 0) {
+            LOGE("listen error:%s\n", strerror(errno));
+            break;
+        }
+        return fd;
+    }while(0);
+    close(fd);
+    return -1;
+}
+
+/*
 int Bind(int type, short port, const struct sockaddr_storage* addr){
     int fd = socket(AF_INET6, type, 0);
     if (fd < 0) {
@@ -173,10 +227,14 @@ int Bind(int type, short port, const struct sockaddr_storage* addr){
     close(fd);
     return -1;
 }
-
+*/
 
 int Connect(const struct sockaddr_storage* addr, int type) {
+#ifdef SOCK_CLOEXEC
+    int fd =  socket(addr->ss_family, type | SOCK_CLOEXEC, 0);
+#else
     int fd =  socket(addr->ss_family, type, 0);
+#endif
     if (fd < 0) {
         LOGE("socket error:%s\n", strerror(errno));
         return -1;
@@ -194,10 +252,20 @@ int Connect(const struct sockaddr_storage* addr, int type) {
         }
         fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
-        if(type == SOCK_STREAM){
-            SetTcpOptions(fd, addr);
-        }else{
-            SetUdpOptions(fd, addr);
+        switch(addr->ss_family){
+        case AF_INET:
+        case AF_INET6:
+            if(type == SOCK_STREAM){
+                SetTcpOptions(fd, addr);
+            }else{
+                SetUdpOptions(fd, addr);
+            }
+            break;
+        case AF_UNIX:
+            SetUnixOptions(fd, addr);
+            break;
+        default:
+            LOGE("unkown family: %d\n", addr->ss_family);
         }
 
         socklen_t len = (addr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
@@ -259,9 +327,10 @@ ERR:
 }
 
 const char *getaddrstring(const struct sockaddr_storage *addr){
-    static char buff[100];
+    static char buff[108];
     struct sockaddr_in* addr4 = (struct sockaddr_in*)addr;
     struct sockaddr_in6* addr6 = (struct sockaddr_in6*)addr;
+    struct sockaddr_un* addrunix = (struct sockaddr_un*)addr;
     if(addr->ss_family == AF_INET6){
         struct in_addr ip4 = getMapped(addr6->sin6_addr, IPV4MAPIPV6);
         if(ip4.s_addr != INADDR_NONE){
@@ -273,16 +342,19 @@ const char *getaddrstring(const struct sockaddr_storage *addr){
         }
     }else if(addr->ss_family == AF_INET){
         inet_ntop(AF_INET, &addr4->sin_addr, buff, sizeof(buff));
+    }else if(addr->ss_family == AF_UNIX) {
+        sprintf(buff, "%s", addrunix->sun_path);
     }
     return buff;
 }
 
 
 const char *storage_ntoa(const struct sockaddr_storage *addr){
-    static char buff[100];
+    static char buff[108];
     char ip[INET6_ADDRSTRLEN];
     struct sockaddr_in* addr4 = (struct sockaddr_in*)addr;
     struct sockaddr_in6* addr6 = (struct sockaddr_in6*)addr;
+    struct sockaddr_un* addrunix = (struct sockaddr_un*)addr;
     if(addr->ss_family == AF_INET6){
         struct in_addr ip4 = getMapped(addr6->sin6_addr, IPV4MAPIPV6);
         if(ip4.s_addr != INADDR_NONE){
@@ -295,6 +367,8 @@ const char *storage_ntoa(const struct sockaddr_storage *addr){
     }else if(addr->ss_family == AF_INET){
         inet_ntop(AF_INET, &addr4->sin_addr, ip, sizeof(ip));
         sprintf(buff, "%s:%d", ip, ntohs(addr4->sin_port));
+    }else if(addr->ss_family == AF_UNIX) {
+        sprintf(buff, "%s", addrunix->sun_path);
     }
     return buff;
 }

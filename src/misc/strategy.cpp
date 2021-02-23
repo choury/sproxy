@@ -1,7 +1,7 @@
 #include "strategy.h"
 #include "net.h"
 #include "config.h"
-#include "common.h"
+#include "common/common.h"
 #include "trie.h"
 #include "defer.h"
 #include <set>
@@ -149,6 +149,7 @@ void reloadstrategy() {
                 LOGE("Wrong config line %d:%s\n", lineNum, line);
             }
         }
+        free(line);
     }
 
     addauth("::ffff:127.0.0.1");

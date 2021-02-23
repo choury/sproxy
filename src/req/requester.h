@@ -1,18 +1,20 @@
 #ifndef REQUESTER_H__
 #define REQUESTER_H__
 
-#include "base.h"
+#include "common/base.h"
 #include "prot/http_pack.h"
 
 class Responser;
 
 class Requester: public Server{
-    char sourceip[INET6_ADDRSTRLEN];
+    char source[INET6_ADDRSTRLEN];
+protected:
+    void init(RWer* rwer);
 public:
     explicit Requester(RWer* rwer);
 
     virtual const char *getsrc();
-    virtual const char *getip();
+    virtual const char *getid();
     virtual void response(void* index, HttpRes* res) = 0;
 };
 

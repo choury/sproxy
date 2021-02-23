@@ -75,6 +75,6 @@ void Ping::Send(void* buff, size_t size){
 }
 
 void Ping::dump_stat(Dumper dp, void* param) {
-    dp(param, "ping %p%s, id:%" PRIu32 ", <%s> (%s) (%d - %d)\n",
-       this, iserror?" [E]":"", req->header->request_id, rwer->getDest(), rwer->getPeer(), id, seq);
+    dp(param, "ping %p%s, id:%" PRIu32 ", (%s) (%d - %d)\n",
+       this, iserror?" [E]":"", req->header->request_id, rwer->getPeer(), id, seq);
 }

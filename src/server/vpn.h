@@ -1,7 +1,7 @@
 #ifndef VPN_H__
 #define VPN_H__
 
-#include "common.h"
+#include "common/common.h"
 #include "misc/config.h"
 
 #ifdef  __cplusplus
@@ -19,8 +19,9 @@ void vpn_stop();
 void vpn_reset();
 void vpn_reload();
 
-#endif
 
 #ifdef  __cplusplus
 }
+#endif
+
 #endif

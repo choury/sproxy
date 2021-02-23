@@ -63,9 +63,13 @@ extern const char *DEFAULT_CIPHER_LIST;
 
 int Checksocket(int fd, const char* msg);
 void SetTcpOptions(int fd, const struct sockaddr_storage* addr);
-int Listen(int type, short int port);
+void SetUdpOptions(int fd, const struct sockaddr_storage* addr);
+void SetUnixOptions(int fd, const struct sockaddr_storage* addr);
+
+int ListenNet(int type, short int port);
+int ListenUnix(const char* path);
+
 int Connect(const struct sockaddr_storage*, int type);
-//int Bind(int type, short port, const struct sockaddr_storage* addr);
 int IcmpSocket(const struct sockaddr_storage* addr);
 const char *getaddrstring(const struct sockaddr_storage* addr);
 const char *storage_ntoa(const struct sockaddr_storage* addr);

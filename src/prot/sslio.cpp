@@ -72,10 +72,11 @@ static int verify_host_callback(int ok, X509_STORE_CTX *ctx){
 }
 
 
-SslRWer::SslRWer(int fd, SSL_CTX* ctx,
+SslRWer::SslRWer(int fd, const sockaddr_storage* peer,
+                 SSL_CTX* ctx,
                  std::function<void(int ret, int code)> errorCB,
                  std::function<void(const sockaddr_storage&)> connectCB):
-        StreamRWer(fd, std::move(errorCB))
+        StreamRWer(fd, peer, std::move(errorCB))
 {
     ssl = SSL_new(ctx);
     SSL_set_fd(ssl, fd);
@@ -169,6 +170,7 @@ int SslRWer::get_error(int ret){
         if(ret == 0){
             ret = -errno;
         }
+        ERR_clear_error();
     }
     return ret;
 }

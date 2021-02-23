@@ -33,7 +33,7 @@
 #include <string.h> /* strncpy() */
 #include <errno.h>
 #include "tls.h"
-#include "common.h"
+#include "common/common.h"
 
 
 int parse_tls_header(const char *, size_t, char **);

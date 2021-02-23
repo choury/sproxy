@@ -97,7 +97,7 @@ void Guest2::Send(uint32_t id, const void* buff, size_t size){
 }
 
 void Guest2::ReqProc(uint32_t id, HttpReqHeader* header) {
-    LOGD(DHTTP2, "<guest2> %" PRIu32 " [%s] ReqProc %s\n", header->request_id, getsrc(), header->geturl().c_str());
+    LOGD(DHTTP2, "<guest2> %" PRIu32 " (%s) ReqProc %s\n", header->request_id, getsrc(), header->geturl().c_str());
     if(statusmap.count(id)){
         delete header;
         LOGD(DHTTP2, "<guest2> ReqProc dup id: %d\n", id);
@@ -330,7 +330,7 @@ void Guest2::deleteLater(uint32_t errcode){
 
 
 void Guest2::dump_stat(Dumper dp, void* param) {
-    dp(param, "Guest2 %p, id:%d %s (%d/%d)\n",
+    dp(param, "Guest2 %p, id:%d (%s) (%d/%d)\n",
             this, sendid, getsrc(),
             this->remotewinsize, this->localwinsize);
     dp(param, "  rwer: rlength:%zu, rleft:%zu, wlength:%zu, stats:%d, event:%s\n",

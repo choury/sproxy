@@ -3,13 +3,19 @@
 
 
 Requester::Requester(RWer* rwer) {
-    this->rwer = rwer;
-    strcpy(sourceip, rwer->getPeer());
-    *strchrnul(sourceip, ':') = 0;
+    if(rwer){
+        init(rwer);
+    }
 }
 
-const char* Requester::getip() {
-    return sourceip;
+void Requester::init(RWer* rwer) {
+    this->rwer = rwer;
+    strcpy(source, rwer->getPeer());
+    *strchrnul(source, ':') = 0;
+}
+
+const char* Requester::getid() {
+    return source;
 }
 
 const char* Requester::getsrc() {

@@ -1,4 +1,4 @@
-#include "common.h"
+#include "common/common.h"
 #include "network_notify.h"
 #include "net.h"
 
@@ -15,7 +15,7 @@
 #include <linux/rtnetlink.h>
 
 static void* worker(void *data) {
-    int fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+    int fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
     if (fd < -1){
         LOGE("failed to create netlink socket: %s\n", strerror(errno));
         return NULL;

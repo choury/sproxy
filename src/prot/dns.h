@@ -1,7 +1,7 @@
 #ifndef DNS_H__
 #define DNS_H__
 
-#include "common.h"
+#include "common/common.h"
 #include "misc/net.h"
 
 #include <string>

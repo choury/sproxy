@@ -39,7 +39,7 @@ Host::Host(const Destination* dest){
 
 Host::~Host(){
     if(rwer){
-        LOGD(DHTTP, "<host> %s destoryed: rx:%zu, tx:%zu\n", rwer->getDest(), rx_bytes, tx_bytes);
+        LOGD(DHTTP, "<host> (%s) destoryed: rx:%zu, tx:%zu\n", rwer->getPeer(), rx_bytes, tx_bytes);
     }else{
         LOGD(DHTTP, "<host> null destoryed: rx:%zu, tx:%zu\n", rx_bytes, tx_bytes);
     }
@@ -69,7 +69,7 @@ void Host::reply(){
 
 void Host::connected() {
     SslRWer* swrer = dynamic_cast<SslRWer*>(rwer);
-    LOGD(DHTTP, "<host> %s connected\n", rwer->getDest());
+    LOGD(DHTTP, "<host> (%s) connected\n", rwer->getPeer());
     if(swrer){
         const unsigned char *data;
         unsigned int len;
@@ -94,11 +94,11 @@ void Host::connected() {
             consumed += ret;
         }
         assert(consumed <= len);
-        LOGD(DHTTP, "<host> %s read: len:%zu, consumed:%zu\n", rwer->getDest(), len, consumed);
+        LOGD(DHTTP, "<host> (%s) read: len:%zu, consumed:%zu\n", rwer->getPeer(), len, consumed);
         this->rwer->consume(data, consumed);
     });
     rwer->SetWriteCB([this](size_t len){
-        LOGD(DHTTP, "<host> %s written: wlength:%zu\n", rwer->getDest(), len);
+        LOGD(DHTTP, "<host> (%s) written: wlength:%zu\n", rwer->getPeer(), len);
         if(status.flags & HTTP_REQ_EOF) {
             if (rwer->wlength() == 0){
                 rwer->Shutdown();
@@ -184,7 +184,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 
     if (len <= 0) {
         LOGE("(%s)[%" PRIu32 "]: <host> the guest's write buff is full (%s)\n", 
-            rwer->getDest(), status.req->header->request_id, 
+            rwer->getPeer(), status.req->header->request_id, 
             status.req->header->geturl().c_str());
         if(strcasecmp(Server.schema, "udp") == 0){
             return size;
@@ -206,12 +206,12 @@ void Host::EndProc() {
 }
 
 void Host::ErrProc(){
-    Error(HTTP_PROTOCOL_ERR, 0);
+    Error(PROTOCOL_ERR, 0);
 }
 
 void Host::Error(int ret, int code) {
-    LOGD(DHTTP, "<host> Error <%s> ret:%d, code:%d, http_flag:0x%08x\n",
-            rwer->getDest(), ret, code, http_flag);
+    LOGD(DHTTP, "<host> Error (%s) ret:%d, code:%d, http_flag:0x%08x\n",
+            rwer->getPeer(), ret, code, http_flag);
     if(ret == SOCKET_ERR && code == 0 && status.res){
         //EOF
         status.flags |= HTTP_RES_EOF;
@@ -224,10 +224,10 @@ void Host::Error(int ret, int code) {
     }
     if(status.req) {
         LOGE("(%s)[%" PRIu32 "]: <host> error (%s)  %d/%d\n",
-            rwer->getDest(), status.req->header->request_id, 
+            rwer->getPeer(), status.req->header->request_id, 
             status.req->header->geturl().c_str(), ret, code);
     }else{
-        LOGE("(%s) <host> error %d/%d\n", rwer->getDest(), ret, code);
+        LOGE("(%s) <host> error %d/%d\n", rwer->getPeer(), ret, code);
     }
     deleteLater(ret);
 }
@@ -272,7 +272,7 @@ void Host::gethost(HttpReq *req, const Destination* dest, Requester* src) {
 }
 
 void Host::dump_stat(Dumper dp, void* param) {
-    dp(param, "Host %p, <%s> (%s)\n", this, rwer->getDest(), rwer->getPeer());
+    dp(param, "Host %p, (%s)\n", this, rwer->getPeer());
     dp(param, "  rwer: rlength:%zu, rleft:%zu, wlength:%zu, stats:%d, event:%s\n",
             rwer->rlength(), rwer->rleft(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);

@@ -1,12 +1,12 @@
 #ifndef HTTP_H__
 #define HTTP_H__
 
+#include "common/base.h"
 #include "http_pack.h"
-#include "base.h"
 
 class HttpBase{
 protected:
-    uint64_t http_expectlen;
+    uint64_t http_expectlen = 0;
 #define HTTP_IGNORE_BODY_F          1u
 #define HTTP_STATUS_1XX            (1u<<1u)
 #define HTTP_CHUNK_END_F           (1u<<2u)

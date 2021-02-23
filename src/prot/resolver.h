@@ -1,7 +1,7 @@
 #ifndef RESOLVER_H__
 #define RESOLVER_H__
 
-#include "base.h"
+#include "common/base.h"
 
 #include <list>
 #include <string>
@@ -34,7 +34,6 @@ public:
     explicit Resolver(int fd, const char* host,
                       int type, std::function<void(const char*, size_t)>  rawcb);
     virtual ~Resolver() override;
-    void dump_stat(Dumper dp, void* param);
 };
 
 

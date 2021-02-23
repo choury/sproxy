@@ -2,8 +2,8 @@
 #include "resolver.h"
 #include "misc/config.h"
 #include "misc/defer.h"
-#include "base.h"
-#include "common.h"
+#include "common/base.h"
+#include "common/common.h"
 
 #include <unordered_map>
 #include <sstream>
@@ -114,10 +114,6 @@ Resolver::~Resolver(){
     DelJob(&reply);
 }
 
-void Resolver::dump_stat(Dumper dp, void* param){
-    dp(param, "Dns_srv %p %s to %s\n", this, host, getaddrstring(&addr));
-}
-
 #ifdef __ANDROID__
 extern std::vector<std::string> getDns();
 void getDnsConfig(struct DnsConfig* config){
@@ -181,6 +177,7 @@ void getDnsConfig(struct DnsConfig* config){
         LOG("[DNS] set dns server: %s\n", server.c_str());
         config->server[get++] = addr;
     }
+    free(line);
     fclose(res_file);
     config->namecount = get;
 }

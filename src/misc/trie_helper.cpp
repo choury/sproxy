@@ -1,10 +1,8 @@
 #include <string>
 #include <list>
-#include <netdb.h>
 #include <assert.h>
 #include <string.h>
 #include <arpa/inet.h>
-#include "net.h"
 
 std::list<std::string> split(std::string s){
     std::list<std::string> tokens;

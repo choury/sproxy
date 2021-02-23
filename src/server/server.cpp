@@ -1,5 +1,5 @@
 #include "req/guest_sni.h"
-#include "misc/net.h"
+#include "req/cli.h"
 #include "misc/job.h"
 #include "misc/config.h"
 
@@ -12,81 +12,6 @@
 
 int efd = 0;
 
-template<class T>
-class Http_server: public Ep{
-    virtual void defaultHE(RW_EVENT events){
-        if (!!(events & RW_EVENT::ERROR)) {
-            LOGE("Http server: %d\n", checkSocket(__PRETTY_FUNCTION__));
-            return;
-        }
-        if (!!(events & RW_EVENT::READ)) {
-            int clsk;
-            struct sockaddr_in6 myaddr;
-            socklen_t temp = sizeof(myaddr);
-#ifdef SOCK_CLOEXEC
-            if ((clsk = accept4(getFd(), (struct sockaddr*)&myaddr, &temp, SOCK_CLOEXEC)) < 0) {
-#else
-            if ((clsk = accept(getFd(), (struct sockaddr*)&myaddr, &temp)) < 0) {
-#endif
-                LOGE("accept error:%s\n", strerror(errno));
-                return;
-            }
-
-            SetTcpOptions(clsk, (const sockaddr_storage*)&myaddr);
-            new T(clsk);
-        } else {
-            LOGE("unknown error\n");
-        }
-    }
-public:
-    explicit Http_server(int fd):Ep(fd){
-        setEvents(RW_EVENT::READ);
-        handleEvent = (void (Ep::*)(RW_EVENT))&Http_server::defaultHE;
-    }
-    virtual void dump_stat(){
-        LOG("Http_server %p\n", this);
-    }
-};
-
-class Https_server: public Ep {
-    SSL_CTX *ctx;
-    virtual void defaultHE(RW_EVENT events) {
-        if (!!(events & RW_EVENT::ERROR)) {
-            LOGE("Https server: %d\n", checkSocket(__PRETTY_FUNCTION__));
-            return;
-        }
-        if (!!(events & RW_EVENT::READ)) {
-            int clsk;
-            struct sockaddr_in6 myaddr;
-            socklen_t temp = sizeof(myaddr);
-#ifdef SOCK_CLOEXEC
-            if ((clsk = accept4(getFd(), (struct sockaddr *)&myaddr, &temp, SOCK_CLOEXEC)) < 0) {
-#else
-            if ((clsk = accept(getFd(), (struct sockaddr *)&myaddr, &temp)) < 0) {
-#endif
-                LOGE("accept error:%s\n", strerror(errno));
-                return;
-            }
-
-            SetTcpOptions(clsk, (const sockaddr_storage*)&myaddr);
-            new Guest(clsk, ctx);
-        } else {
-            LOGE("unknown error\n");
-            return;
-        }
-    }
-public:
-    virtual ~Https_server() override{
-        SSL_CTX_free(ctx);
-    };
-    Https_server(int fd, SSL_CTX *ctx): Ep(fd),ctx(ctx) {
-        setEvents(RW_EVENT::READ);
-        handleEvent = (void (Ep::*)(RW_EVENT))&Https_server::defaultHE;
-    }
-    virtual void dump_stat(){
-        LOG("Https_server %p\n", this);
-    }
-};
 
 //do nothing, useful for vpn only
 int protectFd(int){
@@ -229,27 +154,34 @@ int main(int argc, char **argv) {
     if(opt.cert && opt.key){
         SSL_CTX * ctx = initssl(0, opt.cafile, opt.cert, opt.key);
         opt.CPORT = opt.CPORT?opt.CPORT:443;
-        int svsk_https;
-        if ((svsk_https = Listen(SOCK_STREAM, opt.CPORT)) < 0) {
+        int svsk_https = ListenNet(SOCK_STREAM, opt.CPORT);
+        if (svsk_https < 0) {
             return -1;
         }
-        new Https_server(svsk_https, ctx);
+        new Http_server<Guest>(svsk_https, ctx);
     }else{
         if(opt.sni_mode){
             opt.CPORT = opt.CPORT?opt.CPORT:443;
-            int svsk_sni;
-            if ((svsk_sni = Listen(SOCK_STREAM, 443)) < 0) {
+            int svsk_sni = ListenNet(SOCK_STREAM, 443);
+            if (svsk_sni < 0) {
                 return -1;
             }
-            new Http_server<Guest_sni>(svsk_sni);
+            new Http_server<Guest_sni>(svsk_sni, nullptr);
         }else{
             opt.CPORT = opt.CPORT?opt.CPORT:80;
-            int svsk_http;
-            if ((svsk_http = Listen(SOCK_STREAM, opt.CPORT)) < 0) {
+            int svsk_http = ListenNet(SOCK_STREAM, opt.CPORT);
+            if (svsk_http < 0) {
                 return -1;
             }
-            new Http_server<Guest>(svsk_http);
+            new Http_server<Guest>(svsk_http, nullptr);
         }
+    }
+    if(opt.socket){
+        int svsk_cli = ListenUnix(opt.socket);
+        if(svsk_cli < 0){
+            return -1;
+        }
+        new Cli_server(svsk_cli);
     }
     LOG("Accepting connections ...\n");
     while (true) {

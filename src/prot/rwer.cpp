@@ -1,5 +1,5 @@
 #include "rwer.h"
-#include "common.h"
+#include "common/common.h"
 #include "misc/util.h"
 #include "misc/net.h"
 
@@ -250,6 +250,7 @@ size_t WBuffer::length() {
     return len;
 }
 
+/*
 void WBuffer::clear(bool freebuffer){
     if(freebuffer){
         while(!write_queue.empty()){
@@ -261,9 +262,14 @@ void WBuffer::clear(bool freebuffer){
     }
     len = 0;
 }
+*/
 
 WBuffer::~WBuffer() {
-    clear(true);
+    while(!write_queue.empty()){
+        p_free(write_queue.begin()->buff);
+        write_queue.pop_front();
+    }
+    len = 0;
 }
 
 RWer::RWer(int fd, std::function<void(int ret, int code)> errorCB):
@@ -485,7 +491,7 @@ const char * NullRWer::rdata() {
 FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB):
     RWer(errorCB, [](const sockaddr_storage&){})
 {
-    int evfd = eventfd(1, O_NONBLOCK);
+    int evfd = eventfd(1, SOCK_CLOEXEC);
     if(evfd < 0){
         stats = RWerStats::Error;
         errorCB(SOCKET_ERR, errno);
@@ -497,12 +503,14 @@ FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB):
 FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB):
     RWer(errorCB, [](const sockaddr_storage&){}), pairfd(-1){
     int pairs[2];
-    int ret = socketpair(AF_UNIX, SOCK_STREAM, 0, pairs);
+    int ret = socketpair(AF_UNIX, SOCK_STREAM | O_CLOEXEC, 0, pairs);
     if(ret){
         stats = RWerStats::Error;
         errorCB(SOCKET_ERR, errno);
         return;
     }
+    setFd(pairs[0]);
+    // pairfd should set noblock manually
     pairfd = pairs[1];
     int flags = fcntl(pairfd, F_GETFL, 0);
     if (flags < 0) {
@@ -510,7 +518,6 @@ FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB):
         return;
     }
     fcntl(pairfd, F_SETFL, flags | O_NONBLOCK);
-    setFd(pairs[0]);
     write(pairfd, "FULLEVENT", 8);
 #endif
     setEvents(RW_EVENT::READ);

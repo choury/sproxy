@@ -1,6 +1,5 @@
 #include "guest.h"
 #include "guest2.h"
-#include "misc/net.h"
 #include "res/responser.h"
 #include "misc/util.h"
 #include "prot/sslio.h"
@@ -17,7 +16,7 @@ void Guest::ReadHE(size_t len){
         consumed += ret;
     }
     assert(consumed <= len);
-    LOGD(DHTTP, "<guest> %s read: len:%zu, consumed:%zu\n", getsrc(), len, consumed);
+    LOGD(DHTTP, "<guest> (%s) read: len:%zu, consumed:%zu\n", getsrc(), len, consumed);
     rwer->consume(data, consumed);
 }
 
@@ -26,7 +25,7 @@ void Guest::WriteHE(size_t len){
         return;
     }
     GStatus& status = statuslist.front();
-    LOGD(DHTTP, "<guest> %s written: wlength:%zu, flags:0x%08x\n", getsrc(), rwer->wlength(), status.flags);
+    LOGD(DHTTP, "<guest> (%s) written: wlength:%zu, flags:0x%08x\n", getsrc(), rwer->wlength(), status.flags);
     if(status.flags & HTTP_RES_EOF){
         if(rwer->wlength() == 0){
             rwer->Shutdown();
@@ -44,28 +43,26 @@ void Guest::WriteHE(size_t len){
     }
 }
 
-Guest::Guest(int fd):
-    Requester(new StreamRWer(fd, std::bind(&Guest::Error, this, _1, _2)))
-{
-    rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
-    rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));
-}
-
-Guest::Guest(int fd, SSL_CTX* ctx):
-    Requester(new SslRWer(fd, ctx, std::bind(&Guest::Error, this, _1, _2),
-    [this](const sockaddr_storage&){
-        SslRWer* srwer = dynamic_cast<SslRWer*>(rwer);
-        const unsigned char *data;
-        unsigned int len;
-        srwer->get_alpn(&data, &len);
-        if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
-            new Guest2(srwer);
-            rwer = nullptr;
-            assert(statuslist.empty());
-            return Server::deleteLater(NOERROR);
-        }
-    }))
-{
+Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(nullptr){
+    if(ctx){
+        init(new SslRWer(fd, addr, ctx, std::bind(&Guest::Error, this, _1, _2),
+            [this](const sockaddr_storage&){
+                SslRWer* srwer = dynamic_cast<SslRWer*>(rwer);
+                const unsigned char *data;
+                unsigned int len;
+                srwer->get_alpn(&data, &len);
+                if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
+                    new Guest2(srwer);
+                    rwer = nullptr;
+                    assert(statuslist.empty());
+                    return Server::deleteLater(NOERROR);
+                }
+            }
+        ));
+    }else{
+        init(new StreamRWer(fd, addr, std::bind(&Guest::Error, this, _1, _2)));
+    }
+    this->init(rwer);
     rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
     rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));
 }
@@ -128,7 +125,7 @@ void Guest::EndProc() {
 }
 
 void Guest::ErrProc() {
-    Error(HTTP_PROTOCOL_ERR, 0);
+    Error(PROTOCOL_ERR, 0);
 }
 
 void Guest::Error(int ret, int code) {
@@ -152,7 +149,7 @@ void Guest::Error(int ret, int code) {
         return;
     }
     LOGE("(%s)[%" PRIu32 "]: <guest> error (%s) %d/%d\n",
-            getsrc(),status.req->header->request_id,
+            getsrc(), status.req->header->request_id,
             status.req->header->geturl().c_str(), ret, code);
     deleteLater(ret);
 }
@@ -243,7 +240,7 @@ Guest::~Guest() {
 }
 
 void Guest::dump_stat(Dumper dp, void* param){
-    dp(param, "Guest %p, %s\n", this, getsrc());
+    dp(param, "Guest %p, (%s)\n", this, getsrc());
     dp(param, "  rwer: rlength:%zu, rleft:%zu, wlength:%zu, stats:%d, event:%s\n",
             rwer->rlength(), rwer->rleft(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);

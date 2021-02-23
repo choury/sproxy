@@ -1,7 +1,7 @@
 #ifndef NETIO_H__
 #define NETIO_H__
 #include "rwer.h"
-#include "common.h"
+#include "common/common.h"
 #include "prot/resolver.h"
 
 #include <queue>
@@ -31,7 +31,7 @@ public:
     char* end();
 };
 
-class NetRWer: public RWer{
+class SocketRWer: public RWer{
 protected:
     uint16_t port = 0;
     Protocol protocol;
@@ -47,22 +47,21 @@ protected:
 
     virtual ssize_t Write(const void* buff, size_t len) override;
 public:
-    NetRWer(int fd, std::function<void(int ret, int code)> errorCB);
-    NetRWer(const char* hostname, uint16_t port, Protocol protocol,
+    SocketRWer(int fd, const sockaddr_storage* peer, std::function<void(int ret, int code)> errorCB);
+    SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
            std::function<void(int ret, int code)> errorCB,
            std::function<void(const sockaddr_storage&)> connectCB = nullptr);
-    virtual ~NetRWer() override;
+    virtual ~SocketRWer() override;
     virtual const char* getPeer() override;
-    virtual const char* getDest() override;
 };
 
-class StreamRWer: public NetRWer{
+class StreamRWer: public SocketRWer{
 protected:
     CBuffer rb;
     virtual ssize_t Read(void* buff, size_t len);
     virtual void ReadData() override;
 public:
-    using NetRWer::NetRWer;
+    using SocketRWer::SocketRWer;
 
     //for read buffer
     virtual size_t rlength() override;
@@ -71,13 +70,13 @@ public:
     virtual void consume(const char*, size_t l) override;
 };
 
-class PacketRWer: public NetRWer{
+class PacketRWer: public SocketRWer{
 protected:
     RBuffer rb;
     virtual ssize_t Read(void* buff, size_t len);
     virtual void ReadData() override;
 public:
-    using NetRWer::NetRWer;
+    using SocketRWer::SocketRWer;
 
     //for read buffer
     virtual size_t rlength() override;
