@@ -16,9 +16,10 @@ static void StatusDump(void* param, const char* fmt, ...) {
     size_t len;
     va_list ap;
     va_start(ap, fmt);
-    char* buff = p_avsprintf(&len, fmt, ap);
+    char* buff = avsprintf(&len, fmt, ap);
     va_end(ap);
     res->send(buff, len);
+    free(buff);
 }
 
 void Status::request(HttpReq* req, Requester* src){

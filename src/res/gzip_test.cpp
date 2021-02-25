@@ -119,7 +119,7 @@ void GzipTest::gzipreadHE(size_t) {
         return;
     }
 
-    unsigned char* const out = (unsigned char *)p_malloc(chunk);
+    unsigned char * out = (unsigned char*)malloc(chunk);
     strm.next_out = out;
     strm.avail_out = chunk;
     /* run deflate() on input until output buffer not full, finish
@@ -133,6 +133,7 @@ void GzipTest::gzipreadHE(size_t) {
     } while (strm.avail_out && left);
 
     res->send(out, chunk - strm.avail_out);
+    free(out);
     if (strm.avail_out == 0) {
         rwer->delEvents(RW_EVENT::READ);
     }
@@ -156,8 +157,9 @@ void GzipTest::rawreadHE(size_t len) {
     }
 
     len = Min(chunk, left);
-    unsigned char* const out = (unsigned char *)p_malloc(len);
+    unsigned char* const out = (unsigned char *)malloc(len);
     res->send(out, len);
+    free(out);
     left -= len;
     if (left) {
         rwer->delEvents(RW_EVENT::READ);

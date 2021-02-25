@@ -133,7 +133,7 @@ void FDns::Send(const void* buff, size_t size) {
         status->resolver = query_dns(status->que->domain, status->que->type, RawCb, (void*)status);
         return;
     }
-    unsigned char *const sbuff = (unsigned char *) p_malloc(BUF_LEN);
+    unsigned char sbuff[BUF_LEN];
     res->send(sbuff, result->build(status->que, sbuff));
     clean(status);
 }
@@ -153,7 +153,7 @@ void FDns::DnsCb(void *param, std::list<sockaddr_storage> addrs) {
     }else{
         rr = new Dns_Result(status->que->domain);
     }
-    unsigned char *const buff = (unsigned char *) p_malloc(BUF_LEN);
+    unsigned char buff[BUF_LEN];
     fdns->res->send(buff, rr->build(status->que, buff));
     fdns->clean(status);
 }
@@ -169,7 +169,7 @@ void FDns::RawCb(void* param, const char* buff, size_t size) {
     }else {
         LOGD(DDNS, "[FQuery] raw response [%d] error\n", status->que->id);
         Dns_Result rr(status->que->domain);
-        unsigned char *const sbuff = (unsigned char *) p_malloc(BUF_LEN);
+        unsigned char sbuff[BUF_LEN];
         fdns->res->send(sbuff, rr.buildError(status->que, DNS_SERVER_FAIL, sbuff));
     }
     fdns->clean(status);

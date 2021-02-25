@@ -184,10 +184,11 @@ void File::readHE(size_t) {
         rwer->delEvents(RW_EVENT::READ);
         return;
     }
-    char* buff = (char *)p_malloc(len);
+    char* buff = (char *)malloc(len);
     len = pread(fd, buff, len, rg.begin);
     if(len <= 0){
         LOGE("file pread error: %s\n", strerror(errno));
+        free(buff);
         status.res->trigger(Channel::CHANNEL_ABORT);
         deleteLater(READ_ERR);
         rwer->delEvents(RW_EVENT::READ);
@@ -195,6 +196,7 @@ void File::readHE(size_t) {
     }
     status.res->send(buff, len);
     rg.begin += len;
+    free(buff);
 }
 
 void File::dump_stat(Dumper dp, void* param){

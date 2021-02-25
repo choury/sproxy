@@ -226,11 +226,11 @@ void p_free(void* ptr){
     return free((char *)ptr-prior);
 }
 
-char* p_avsprintf(size_t* size, const char* fmt, va_list ap){
+char* avsprintf(size_t* size, const char* fmt, va_list ap){
     va_list cp;
     va_copy(cp, ap);
     size_t len = vsnprintf(NULL, 0, fmt, ap);
-    char* const buff = p_malloc(len+1);
+    char* const buff = malloc(len+1);
     vsprintf(buff, fmt, cp);
     if(size){
         *size = len;

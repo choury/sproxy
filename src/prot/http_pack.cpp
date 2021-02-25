@@ -735,7 +735,7 @@ size_t Channel::eatData(const void* buf, size_t size) {
         eof = true;
     }
     int rsize = std::min((int)size, cap());
-    if(rsize <= 0){
+    if(rsize <= 0 && !eof){
         return 0;
     }
     if(recv_const_cb){
