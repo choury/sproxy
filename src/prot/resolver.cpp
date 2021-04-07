@@ -218,7 +218,7 @@ Resolver* query_host(const char* host, DNSCB func, void* param) {
 
     if (rcd_cache.count(host)) {
         auto& rcd = rcd_cache[host];
-        if(rcd.get_time + rcd.ttl > time(nullptr)){
+        if(rcd.get_time + (time_t)rcd.ttl > time(nullptr)){
             return new Resolver(host, std::bind(func, param, _1), rcd.addrs);
         }else{
             rcd_cache.erase(host);

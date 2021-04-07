@@ -16,9 +16,6 @@ extern "C" {
 
 int vpn_start(int fd);
 void vpn_stop();
-void vpn_reset();
-void vpn_reload();
-
 
 #ifdef  __cplusplus
 }

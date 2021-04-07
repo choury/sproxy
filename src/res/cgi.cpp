@@ -265,7 +265,7 @@ bool Cgi::HandleValue(const CGI_Header *header, CgiStatus& status){
             LOG("[CGI] switch %s\n", (char *)nv->value);
             error = CGI_ERROR_INTERNAL;
         }else{
-            flushproxy2(1);
+            flushproxy2();
         }
         break;
     }

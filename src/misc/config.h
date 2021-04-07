@@ -62,7 +62,7 @@ void parseConfig(int argc, char **argv);
 int loadproxy(const char* proxy, struct Destination* server);
 
 void flushdns();
-void flushproxy2(int force);
+void flushproxy2();
 
 const char* getVersion();
 const char* getBuildTime();

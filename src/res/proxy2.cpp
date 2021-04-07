@@ -394,11 +394,7 @@ void Proxy2::flush() {
 }
 
 
-void flushproxy2(int force) {
-    if(force){
-        proxy2 = nullptr;
-        return;
-    }
+void flushproxy2() {
     if(proxy2){
         proxy2->flush();
     }

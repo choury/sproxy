@@ -1,7 +1,5 @@
 #include "vpn.h"
-
 #include "req/guest_vpn.h"
-#include "misc/strategy.h"
 
 #include <string.h>
 #include <errno.h>
@@ -9,12 +7,7 @@
 #include <openssl/ssl.h>
 
 int efd = 0;
-uint32_t vpn_contiune;
-
-#define VPN_RESET 1u
-#define VPN_RELOAD 2u
-uint32_t vpn_action = 0;
-
+volatile uint32_t vpn_contiune = 1;
 
 int vpn_start(int fd){
     prepare();
@@ -24,17 +17,8 @@ int vpn_start(int fd){
         return -1;
     }
     new Vpn_server(fd);
-    vpn_contiune = 1;
     LOG("Accepting connections ...\n");
     while (vpn_contiune) {
-        if(vpn_action & VPN_RESET){
-            network_changed();
-            vpn_action &= ~VPN_RESET;
-        }
-        if(vpn_action & VPN_RELOAD){
-            reloadstrategy();
-            vpn_action &= ~VPN_RELOAD;
-        }
         int c;
         struct epoll_event events[200];
         if ((c = epoll_wait(efd, events, 200, do_delayjob())) <= 0) {
@@ -59,13 +43,4 @@ int vpn_start(int fd){
 
 void vpn_stop(){
     vpn_contiune = 0;
-}
-
-
-void vpn_reset(){
-    vpn_action |= VPN_RESET;
-}
-
-void vpn_reload(){
-    vpn_action |= VPN_RELOAD;
 }

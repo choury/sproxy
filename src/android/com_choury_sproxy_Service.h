@@ -23,8 +23,8 @@ JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start(JNIEnv *, j
  * Signature: ()V
  */
 JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(JNIEnv *, jobject);
-JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reset(JNIEnv *, jobject);
-JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload(JNIEnv *, jobject);
+JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_network_1notify(JNIEnv*, jobject);
+JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload_1strategy(JNIEnv *, jobject);
 
 
 void android_log(int level, const char* fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));

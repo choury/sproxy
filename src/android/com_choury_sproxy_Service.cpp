@@ -1,5 +1,6 @@
 #include "com_choury_sproxy_Service.h"
 #include "server/vpn.h"
+#include "misc/strategy.h"
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -123,14 +124,9 @@ extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(J
     return vpn_stop();
 }
 
-extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reset(JNIEnv *, jobject){
-    LOG("native SproxyVpnService.reset.\n");
-    return vpn_reset();
-}
-
-extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload(JNIEnv *, jobject){
-    LOG("native SproxyVpnService.reload.\n");
-    return vpn_reload();
+extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload_1strategy(JNIEnv *, jobject){
+    LOG("native SproxyVpnService.reload strategy.\n");
+    return reloadstrategy();
 }
 
 /*

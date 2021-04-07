@@ -184,7 +184,7 @@ void distribute(HttpReq* req, Requester* src){
             res = new HttpRes(new HttpResHeader(H400), "[[failed]]\n");
             goto out;
         }else{
-            flushproxy2(1);
+            flushproxy2();
             res = new HttpRes(new HttpResHeader(H200), "[[ok]]\n");
             goto out;
         }
