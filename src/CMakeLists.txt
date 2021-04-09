@@ -26,7 +26,7 @@ if(ZLIB_FOUND)
 endif()
 
 if(JSON-C_FOUND)
-    set(SPROXY_LIBS ${SPROXY_LIBS} ${JSON-C_LIBRARIES})
+    set(SPROXY_LIBS ${SPROXY_LIBS} ${JSON-C_LIBRARY})
 endif()
 
 if(APPLE)
@@ -41,11 +41,11 @@ if(LINUX OR APPLE)
     install(TARGETS sproxy RUNTIME DESTINATION bin)
 endif()
 
-if(BUILD_RPC)
+if(BUILD_CLIENT AND BUILD_RPC)
     add_executable(scli client/client.cpp prot/rpc.cpp)
     set_target_properties(scli PROPERTIES OUTPUT_NAME "scli")
     set_target_properties(scli PROPERTIES OUTPUT_NAME "scli")
-    target_link_libraries(scli ${JSON-C_LIBRARIES} readline)
+    target_link_libraries(scli ${JSON-C_LIBRARY} ${Readline_LIBRARY} Threads::Threads)
     add_dependencies(scli version)
 endif()
 

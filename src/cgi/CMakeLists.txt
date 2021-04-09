@@ -11,15 +11,12 @@ add_library(demo SHARED demo.cpp)
 set_target_properties(demo PROPERTIES OUTPUT_NAME "demo")
 
 add_library(login SHARED login.cpp)
-target_link_libraries(login ${JSON-C_LIBRARIES})
 set_target_properties(login PROPERTIES OUTPUT_NAME "login")
 
 add_library(sites SHARED sites.cpp)
-target_link_libraries(sites ${JSON-C_LIBRARIES})
 set_target_properties(sites PROPERTIES OUTPUT_NAME "sites")
 
 add_library(proxy SHARED proxy.cpp)
-target_link_libraries(proxy ${JSON-C_LIBRARIES})
 set_target_properties(proxy PROPERTIES OUTPUT_NAME "proxy")
 
 install(TARGETS login sites proxy LIBRARY DESTINATION /var/lib/sproxy/cgi)
