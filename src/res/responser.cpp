@@ -6,11 +6,8 @@
 
 #include "host.h"
 #include "file.h"
-#include "cgi.h"
 #include "ping.h"
-#include "proxy2.h"
 
-#include <map>
 #include <string.h>
 #include <assert.h>
 
@@ -149,71 +146,6 @@ void distribute(HttpReq* req, Requester* src){
             goto out;
         }
         return Host::gethost(req, &dest, src);
-    }else if (req->header->ismethod("ADDS")) {
-        const char *strategy = req->header->get("s");
-        if(!strategy){
-            res = new HttpRes(new HttpResHeader(H400), "[[no strategy]]\n");
-            goto out;
-        }
-        const char *ext = req->header->get("ext");
-        req->header->set("Strategy", strategy);
-        if(strategy && addstrategy(getstraname(req->header).c_str(), strategy, ext ? ext:"")){
-            res = new HttpRes(new HttpResHeader(H200), "[[ok]]\n");
-            goto out;
-        }else{
-            res = new HttpRes(new HttpResHeader(H400), "[[failed]]\n");
-            goto out;
-        }
-    } else if (req->header->ismethod("DELS")) {
-        std::string host = getstraname(req->header);
-        strategy stra = getstrategy(host.c_str());
-        const char *strategy = getstrategystring(stra.s);
-        req->header->set("Strategy", strategy);
-        if(delstrategy(host.c_str())){
-            HttpResHeader* header = new HttpResHeader(H200, sizeof(H200));
-            header->set("Strategy", strategy);
-            header->set("Ext", stra.ext);
-            res = new HttpRes(header, "[[ok]]\n");
-            goto out;
-        }else{
-            res = new HttpRes(new HttpResHeader(H404), "[[not found]]\n");
-            goto out;
-        }
-    } else if (req->header->ismethod("SWITCH")) {
-        if(loadproxy(req->header->geturl().c_str(), &opt.Server)){
-            res = new HttpRes(new HttpResHeader(H400), "[[failed]]\n");
-            goto out;
-        }else{
-            flushproxy2();
-            res = new HttpRes(new HttpResHeader(H200), "[[ok]]\n");
-            goto out;
-        }
-    } else if (req->header->ismethod("TEST")){
-        strategy stra = getstrategy(getstraname(req->header).c_str());
-        const char *strategy = getstrategystring(stra.s);
-        req->header->set("Strategy", strategy);
-        HttpResHeader* header = new HttpResHeader(H200);
-        header->set("Strategy", strategy);
-        header->set("Ext", stra.ext);
-        res = new HttpRes(header, "[[ok]]\n");
-        goto out;
-    } else if(req->header->ismethod("FLUSH")){
-        if(strcasecmp(req->header->Dest.hostname, "cgi") == 0){
-            flushcgi();
-            res = new HttpRes(new HttpResHeader(H200), "[[ok]]\n");
-            goto out;
-        }else if(strcasecmp(req->header->Dest.hostname, "strategy") == 0){
-            reloadstrategy();
-            res = new HttpRes(new HttpResHeader(H200), "[[ok]]\n");
-            goto out;
-        }else if(strcasecmp(req->header->Dest.hostname, "dns") == 0){
-            flushdns();
-            res = new HttpRes(new HttpResHeader(H200), "[[ok]]\n");
-            goto out;
-        }else{
-            res = new HttpRes(new HttpResHeader(H400), "[[failed]]\n");
-            goto out;
-        }
     } else{
         res = new HttpRes(new HttpResHeader(H405), "[[unsported method]]\n");
         goto out;
