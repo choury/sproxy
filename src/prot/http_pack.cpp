@@ -610,6 +610,10 @@ CGI_Header *HttpResHeader::getcgi() const{
     return cgi;
 }
 
+struct CGI_NVLenPair{
+    uint16_t nameLength;
+    uint16_t valueLength;
+}__attribute__((packed));
 
 static char *cgi_addnv(char *p, const string &name, const string &value) {
     CGI_NVLenPair *cgi_pairs = (CGI_NVLenPair *) p;

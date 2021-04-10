@@ -38,11 +38,23 @@ const char* strnstr(const char* s1, const char* s2, size_t len)
 }
 #endif
 
-char* strchrnul (const char *s, int c) {
+char* strchrnul (const char* s, int c) {
     char *p = (char *) s;
     while (*p && (*p != c))
         ++p;
     return p;
+}
+
+char* strlchrnul (const char* s, int c){
+    char *p = (char*)s;
+    while(*p)++p;
+    char *e = p;
+    while(p != s && (*p != c))
+        --p;
+    if(*p == c){
+        return p;
+    }
+    return e;
 }
 
 int startwith(const char *s1, const char *s2) {

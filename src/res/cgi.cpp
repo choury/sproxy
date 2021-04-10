@@ -51,6 +51,7 @@ Cgi::Cgi(const char* fname, int sv[2]) {
             }
             close(i);
         }
+        setenv("ADMIN_SOCK", opt.socket, 1);
         signal(SIGPIPE, SIG_DFL);
         change_process_name(basename(filename));
         LOGD(DFILE, "<cgi> [%s] jump to cgi main\n", basename(filename));
@@ -64,11 +65,6 @@ Cgi::Cgi(const char* fname, int sv[2]) {
         deleteLater(ret);
     });
     rwer->SetReadCB(std::bind(&Cgi::readHE, this, _1));
-    rwer->SetWriteCB([this](size_t){
-        for(auto i: statusmap) {
-            i.second.req->more();
-        }
-    });
     cgimap[filename] = this;
 }
 
@@ -126,9 +122,6 @@ begin:
         case CGI_DATA:
             consumed = HandleData(header, status);
             break;
-        case CGI_VALUE:
-            consumed = HandleValue(header, status);
-            break;
         case CGI_ERROR:
             consumed = HandleError(header, status);
             break;
@@ -160,142 +153,11 @@ bool Cgi::HandleRes(const CGI_Header *cheader, CgiStatus& status){
 }
 
 
-static void cgi_error(CGI_Header* header, uint32_t id, uint32_t error, uint8_t flag){
+static void cgi_error(CGI_Header* header, uint32_t id, uint8_t flag){
     header->type = CGI_ERROR;
     header->flag = flag;
-    header->contentLength = htons(sizeof(CGI_Error));
+    header->contentLength = 0;
     header->requestId = htonl(id);
-    CGI_Error* cgi_error = (CGI_Error*)(header + 1);
-    cgi_error->error = htonl(error);
-}
-
-bool Cgi::HandleValue(const CGI_Header *header, CgiStatus& status){
-    const CGI_NameValue *nv = (const CGI_NameValue *)(header+1);
-    uint32_t error = 0;
-    switch(ntohl(nv->name)) {
-    case CGI_NAME_BUFFLEFT: {
-        CGI_Header* const header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + sizeof(uint32_t));
-        memcpy(header_back, header, sizeof(CGI_Header));
-        header_back->flag = 0;
-        header_back->contentLength = htons(sizeof(CGI_NameValue) + sizeof(uint32_t));
-        CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
-        nv_back->name = htonl(CGI_NAME_BUFFLEFT);
-        set32(nv_back->value, htonl(status.req->cap()));
-        rwer->buffer_insert(rwer->buffer_end(),
-                            write_block{header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength), 0});
-        break;
-    }
-    case CGI_NAME_STRATEGYGET: {
-        if(!checkauth(status.sourceip)){
-            error = CGI_ERROR_NOAUTH;
-            break;
-        }
-        auto slist = getallstrategy();
-        for(const auto& i: slist) {
-            auto host = i.first;
-            if(host.empty()){
-               host = "_";
-            }
-            string strategy =  getstrategystring(i.second.s);
-            auto ext = i.second.ext;
-            //"host strategy ext\0"
-            size_t value_len = sizeof(CGI_NameValue) + host.length() + strategy.length() + ext.length() + 3;
-            CGI_Header* const header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + value_len);
-            memcpy(header_back, header, sizeof(CGI_Header));
-            header_back->flag = 0;
-            header_back->contentLength = htons(value_len);
-            CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
-            nv_back->name = htonl(CGI_NAME_STRATEGYGET);
-            sprintf((char *)nv_back->value, "%s %s %s", host.c_str(), strategy.c_str(), ext.c_str());
-            rwer->buffer_insert(rwer->buffer_end(),
-                                write_block{header_back, sizeof(CGI_Header) + value_len, 0});
-        }
-        break;
-    }
-    case CGI_NAME_STRATEGYADD:{
-        if(!checkauth(status.sourceip)){
-            error = CGI_ERROR_NOAUTH;
-            break;
-        }
-        char site[DOMAINLIMIT];
-        char strategy[20];
-        sscanf((char*)nv->value, "%s %s", site, strategy);
-        if(!addstrategy(site, strategy, "")){
-            LOG("[CGI] addstrategy %s (%s)\n", site, strategy);
-            error = CGI_ERROR_INTERNAL;
-        }
-        break;
-    }
-    case CGI_NAME_STRATEGYDEL:{
-        if(!checkauth(status.sourceip)){
-            error = CGI_ERROR_NOAUTH;
-            break;
-        }
-        if(!delstrategy((char *)nv->value)){
-            LOG("[CGI] delstrategy %s\n", (char *)nv->value);
-            error = CGI_ERROR_INTERNAL;
-        }
-        break;
-    }
-    case CGI_NAME_GETPROXY:{
-        if(!checkauth(status.sourceip)){
-            error = CGI_ERROR_NOAUTH;
-            break;
-        }
-        char proxy[DOMAINLIMIT];
-        // add one for '\0'
-        int len = dumpDestToBuffer(&opt.Server, proxy, sizeof(proxy))+1;
-        CGI_Header* const header_back = (CGI_Header*)p_malloc(sizeof(CGI_Header) + sizeof(CGI_NameValue) + len);
-        memcpy(header_back, header, sizeof(CGI_Header));
-        header_back->flag = 0;
-        header_back->contentLength = htons(sizeof(CGI_NameValue) + len);
-        CGI_NameValue* nv_back = (CGI_NameValue *)(header_back+1);
-        nv_back->name = htonl(CGI_NAME_GETPROXY);
-        memcpy(nv_back->value, proxy, len);
-        rwer->buffer_insert(rwer->buffer_end(),
-                            write_block{header_back, sizeof(CGI_Header) + ntohs(header_back->contentLength), 0});
-        break;
-    }
-    case CGI_NAME_SETPROXY:{
-        if(!checkauth(status.sourceip)){
-            error = CGI_ERROR_NOAUTH;
-            break;
-        }
-        if(loadproxy((char *)nv->value, &opt.Server)){
-            LOG("[CGI] switch %s\n", (char *)nv->value);
-            error = CGI_ERROR_INTERNAL;
-        }else{
-            flushproxy2();
-        }
-        break;
-    }
-    case CGI_NAME_LOGIN:{
-        if(strcmp(opt.auth_string, (char *)nv->value) != 0){
-            error = CGI_ERROR_NOAUTH;
-        }else{
-            LOG("[CGI] %s login\n", status.sourceip);
-            addauth(status.sourceip);
-        }
-        break;
-    }
-    default:
-        error = CGI_ERROR_UNKONWNNAME;
-        break;
-    }
-    if(error == 0) {
-        CGI_Header* const header_end = (CGI_Header*)p_malloc(sizeof(CGI_Header));
-        memcpy(header_end, header, sizeof(CGI_Header));
-        header_end->contentLength = 0;
-        header_end->flag = CGI_FLAG_END;
-        rwer->buffer_insert(rwer->buffer_end(),
-                            write_block{header_end, sizeof(CGI_Header), 0});
-    }else{
-        size_t reply_len = sizeof(CGI_Header) + sizeof(CGI_Error);
-        CGI_Header* header_end = (CGI_Header*)p_malloc(reply_len);
-        cgi_error(header_end, ntohl(header->requestId), error, 0);
-        rwer->buffer_insert(rwer->buffer_end(), write_block{header_end, reply_len, 0});
-    }
-    return true;
 }
 
 bool Cgi::HandleData(const CGI_Header* header, CgiStatus& status){
@@ -322,8 +184,7 @@ bool Cgi::HandleData(const CGI_Header* header, CgiStatus& status){
 
 bool Cgi::HandleError(const CGI_Header* header, CgiStatus& status){
     uint32_t id = ntohl(header->requestId);
-    CGI_Error* cgi_error = (CGI_Error*)(header+1);
-    LOG("<cgi> [%s] %" PRIu32 " error with %d\n", basename(filename), id, ntohl(cgi_error->error));
+    LOG("<cgi> [%s] %" PRIu32 " error with %d\n", basename(filename), id, header->flag);
     if(header->flag & CGI_FLAG_ABORT){
         Clean(id, status);
     }
@@ -347,9 +208,9 @@ void Cgi::request(HttpReq* req, Requester* src) {
     statusmap[id] = CgiStatus{
         req,
         nullptr,
-        "",
     };
-    strcpy(statusmap[id].sourceip, src->getid());
+    req->header->set("X-Real-IP", src->getid());
+    req->header->set("X-Authorized", checkauth(src->getid()));
     CGI_Header *header = req->header->getcgi();
     rwer->buffer_insert(rwer->buffer_end(),
                         write_block{header, sizeof(CGI_Header) + ntohs(header->contentLength), 0}
@@ -365,9 +226,9 @@ void Cgi::request(HttpReq* req, Requester* src) {
         }else {
             statusmap.erase(id);
         }
-        size_t len = sizeof(CGI_Header) + sizeof(CGI_Error);
+        size_t len = sizeof(CGI_Header);
         CGI_Header *header = (CGI_Header *)p_malloc(len);
-        cgi_error(header, id, CGI_ERROR_INTERNAL, CGI_FLAG_ABORT);
+        cgi_error(header, id, CGI_FLAG_ABORT);
         rwer->buffer_insert(rwer->buffer_end(), write_block{header, len, 0});
     });
     req->attach(std::bind(&Cgi::Send, this, id, _1, _2),
@@ -482,36 +343,8 @@ int cgi_send(int fd, uint32_t id, const void *buff, size_t len) {
     return len;
 }
 
-int cgi_query(int fd, uint32_t id, int name) {
-    char buff[sizeof(CGI_Header) + sizeof(CGI_NameValue)];
-    CGI_Header* header = (CGI_Header*)buff;
-    header->type = CGI_VALUE;
-    header->flag = CGI_FLAG_END;
-    header->contentLength = htons(sizeof(CGI_NameValue));
-    header->requestId = htonl(id);
-    CGI_NameValue *nv = (CGI_NameValue*)(header+1);
-    nv->name = htonl(name);
-    return write(fd, buff, sizeof(buff)) == (int)sizeof(buff) ? 0 : -1;
-}
-
-int cgi_setvalue(int fd, uint32_t id, int name, const void* value, size_t len) {
-    size_t size = sizeof(CGI_Header) + sizeof(CGI_NameValue) + len;
-    CGI_Header* header = (CGI_Header*)malloc(size);
-    header->type = CGI_VALUE;
-    header->flag = CGI_FLAG_END;
-    header->contentLength = htons(sizeof(CGI_NameValue) + len);
-    header->requestId = htonl(id);
-
-    CGI_NameValue *nv = (CGI_NameValue* )(header + 1);
-    nv->name = htonl(name);
-    memcpy(nv->value, value, len);
-    int ret = write(fd, header, size);
-    free(header);
-    return ret == (int)size ? 0 : -1;
-}
-
-int cgi_senderror(int fd, uint32_t id, uint32_t error, uint8_t flag){
-    char buff[sizeof(CGI_Header) + sizeof(CGI_Error)];
-    cgi_error((CGI_Header*)buff, id, error, flag);
+int cgi_senderror(int fd, uint32_t id, uint8_t flag){
+    char buff[sizeof(CGI_Header)];
+    cgi_error((CGI_Header*)buff, id, flag);
     return write(fd, buff, sizeof(buff)) == (int)sizeof(buff) ? 0 : -1;
 }

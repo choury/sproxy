@@ -1,4 +1,5 @@
 #include "res/cgi.h"
+#include "prot/rpc.h"
 
 class handler: public CgiHandler{
     void POST(const CGI_Header* header) override{
@@ -9,17 +10,17 @@ class handler: public CgiHandler{
         if((flag & HTTP_REQ_COMPLETED) == 0){
             return;
         }
-        if(header->type == CGI_VALUE){
-            HttpResHeader res(H204, sizeof(H204));
-            Response(res);
-            Finish();
+        if(params.count("key") == 0){
+            BadRequest();
             return;
         }
-        if(params.count("key")){
-            SetValue(CGI_NAME_LOGIN, params["key"].c_str(), params["key"].size()+1);
-            return;
+        SproxyClient c(getenv("ADMIN_SOCK"));
+        if(!c.Login(params["key"], req->get("X-Real-IP")).get_future().get()){
+            Response(HttpResHeader(H403));
+        }else{
+            Response(HttpResHeader(H204));
         }
-        BadRequest();
+        Finish();
     }
 public:
     handler(int fd, const CGI_Header* header):CgiHandler(fd, header){

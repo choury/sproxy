@@ -241,9 +241,10 @@ const char *SocketRWer::getPeer() {
         if(getsockopt(getFd(), SOL_SOCKET, SO_PEERCRED, &cred, &len)){
             LOGE("Failed to get cred: %s\n", strerror(errno));
         }else{
-            sprintf(peer + strlen(peer), ",uid=%d", cred.uid);
+            sprintf(peer + strlen(peer), ",uid=%d,pid=%d", cred.uid, cred.pid);
         }
-#elif defined(LOCAL_PEERCRED)
+#else
+#ifdef LOCAL_PEERCRED
         struct xucred cred;
         socklen_t credLen = sizeof(cred);
         if(getsockopt(getFd(), SOL_LOCAL, LOCAL_PEERCRED, &cred, &credLen)){
@@ -260,6 +261,7 @@ const char *SocketRWer::getPeer() {
         }else {
             sprintf(peer + strlen(peer), ",pid=%d", pid);
         }
+#endif
 #endif
     }
     return peer;

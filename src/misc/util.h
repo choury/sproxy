@@ -22,6 +22,7 @@ const char* strnstr(const char* s1, const char* s2, size_t len);
 #if ! defined(_GNU_SOURCE) || defined(__APPLE__) || defined(__ANDROID__)
 char* strchrnul(const char *s, int c);
 #endif
+char* strlchrnul (const char* s, int c);
 int startwith(const char *s1, const char *s2);
 int endwith(const char *s1, const char *s2);
 

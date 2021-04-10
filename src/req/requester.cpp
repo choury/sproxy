@@ -11,7 +11,7 @@ Requester::Requester(RWer* rwer) {
 void Requester::init(RWer* rwer) {
     this->rwer = rwer;
     strcpy(source, rwer->getPeer());
-    *strchrnul(source, ':') = 0;
+    *strlchrnul(source, ':') = 0;
 }
 
 const char* Requester::getid() {

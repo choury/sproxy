@@ -13,7 +13,6 @@
 #define CGI_REQUEST       1
 #define CGI_RESPONSE      2
 #define CGI_DATA          3
-#define CGI_VALUE         4
 #define CGI_ERROR         5
 
 #define CGI_LEN_MAX       (BUF_LEN - sizeof(CGI_Header))
@@ -27,36 +26,9 @@ struct CGI_Header{
     uint32_t requestId;
 }__attribute__((packed));
 
-struct CGI_NVLenPair{
-    uint16_t nameLength;
-    uint16_t valueLength;
-}__attribute__((packed));
-
-#define CGI_ERROR_NOAUTH           1
-#define CGI_ERROR_UNKONWNNAME      2
-#define CGI_ERROR_INTERNAL         3
-struct CGI_Error{
-    uint32_t error;
-}__attribute__((packed));
-
-
-#define CGI_NAME_BUFFLEFT     1
-#define CGI_NAME_STRATEGYGET  2
-#define CGI_NAME_STRATEGYADD  3
-#define CGI_NAME_STRATEGYDEL  4
-#define CGI_NAME_GETPROXY     5
-#define CGI_NAME_SETPROXY     6
-#define CGI_NAME_LOGIN        7
-
-struct CGI_NameValue{
-    uint32_t name;
-    uint8_t value[0];
-}__attribute__((packed));
-
 struct CgiStatus{
     HttpReq* req;
     HttpRes* res;
-    char sourceip[INET6_ADDRSTRLEN];
 };
 
 class Cgi:public Responser{
@@ -66,7 +38,6 @@ class Cgi:public Responser{
     void Clean(uint32_t id, CgiStatus& status);
     void readHE(size_t len);
     bool HandleRes(const CGI_Header* header, CgiStatus& status);
-    bool HandleValue(const CGI_Header* header, CgiStatus& status);
     bool HandleData(const CGI_Header* header, CgiStatus& Status);
     bool HandleError(const CGI_Header* header, CgiStatus& status);
     void Send(uint32_t id, void *buff, size_t size);
@@ -108,9 +79,7 @@ typedef int (cgifunc)(int fd);
 cgifunc cgimain;
 int cgi_response(int fd, const HttpResHeader &req);
 int cgi_send(int fd, uint32_t id, const void *buff, size_t len);
-int cgi_query(int fd, uint32_t id, int name);
-int cgi_setvalue(int fd, uint32_t id, int name, const void* value, size_t len);
-int cgi_senderror(int fd, uint32_t id, uint32_t error, uint8_t flag);
+int cgi_senderror(int fd, uint32_t id, uint8_t flag);
 #ifdef  __cplusplus
 }
 #endif
@@ -126,16 +95,14 @@ protected:
         if((flag & HTTP_REQ_COMPLETED) == 0) {
             return;
         }
-        HttpResHeader res(H405, sizeof(H405));
-        Response(res);
+        Response(HttpResHeader(H405, sizeof(H405)));
         Finish();
     }
     void BadRequest(){
         if((flag & HTTP_REQ_COMPLETED) == 0) {
             return;
         }
-        HttpResHeader res(H400, sizeof(H400));
-        Response(res);
+        Response(HttpResHeader(H400, sizeof(H400)));
         Finish();
     }
     virtual void ERROR(const CGI_Header* header){
@@ -143,24 +110,7 @@ protected:
             flag |= HTTP_REQ_EOF;
             return;
         }
-        CGI_Error* cgi_error = (CGI_Error*)(header+1);
-        switch(ntohl(cgi_error->error)){
-        case CGI_ERROR_NOAUTH:{
-            HttpResHeader res(H403, sizeof(H403));
-            Response(res);
-            break;
-        }
-        case CGI_ERROR_UNKONWNNAME:{
-            HttpResHeader res(H404, sizeof(H404));
-            Response(res);
-            break;
-        }
-        default:{
-            HttpResHeader res(H500, sizeof(H500));
-            Response(res);
-            break;
-        }
-        }
+        Response(HttpResHeader(H500, sizeof(H500)));
         Finish();
     }
     virtual void GET(const CGI_Header*){
@@ -180,7 +130,7 @@ protected:
             return;
         }
         if((flag & HTTP_RES_COMPLETED) == 0){
-            cgi_senderror(fd, req->request_id, CGI_ERROR_INTERNAL, CGI_FLAG_ABORT);
+            cgi_senderror(fd, req->request_id, CGI_FLAG_ABORT);
         }else{
             cgi_send(fd, req->request_id, "", 0);
         }
@@ -194,21 +144,19 @@ protected:
         res.request_id = req->request_id;
         cgi_response(fd, res);
     }
+    void Response(HttpResHeader&& res) {
+        Response(res);
+    }
+
     void Send(const char* buf, size_t len){
         cgi_send(fd, req->request_id, buf, len);
     }
-    void Query(int name) {
-        cgi_query(fd, req->request_id, name);
-    }
-    void SetValue(int name, const char* value, size_t len){
-        cgi_setvalue(fd, req->request_id, name, value, len);
-    }
-    void SendError(uint32_t error){
+    void Abort(){
         flag |= HTTP_RES_EOF;
         if(flag & HTTP_REQ_EOF) {
             return;
         }
-        cgi_senderror(fd, req->request_id, error, CGI_FLAG_ABORT);
+        cgi_senderror(fd, req->request_id, CGI_FLAG_ABORT);
     }
 public:
     CgiHandler(int fd, const CGI_Header* header):fd(fd){
@@ -229,7 +177,7 @@ public:
             ((header->type == CGI_REQUEST) || (header->type == CGI_DATA)))
         {
             LOGE("[CGI] %s %d get date after completed\n", name, req->request_id);
-            SendError(CGI_ERROR_INTERNAL);
+            Abort();
             return;
         }
         if((header->flag & CGI_FLAG_END) && (header->type == CGI_DATA)) {
@@ -273,7 +221,7 @@ int cgimain(int fd){       \
         if(cgimap.count(id) == 0){             \
             LOGD(DFILE, "<cgi> [%s] unknown id: %d\n", __FILE__, id);   \
             if(header->type != CGI_ERROR){     \
-                cgi_senderror(fd, id, CGI_ERROR_INTERNAL, CGI_FLAG_ABORT); \
+                cgi_senderror(fd, id, CGI_FLAG_ABORT); \
             }         \
             continue; \
         } \

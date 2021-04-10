@@ -503,7 +503,7 @@ FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB):
 FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB):
     RWer(errorCB, [](const sockaddr_storage&){}), pairfd(-1){
     int pairs[2];
-    int ret = socketpair(AF_UNIX, SOCK_STREAM | O_CLOEXEC, 0, pairs);
+    int ret = socketpair(AF_UNIX, SOCK_STREAM, 0, pairs);
     if(ret){
         stats = RWerStats::Error;
         errorCB(SOCKET_ERR, errno);

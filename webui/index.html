@@ -100,7 +100,7 @@ button{
         fetch('/cgi/libsites.do').then(
             function(response) {
                 if(response.status == 403) {
-                    window.location="/webui/login.html";
+                    window.location="./login.html";
                     return;
                 }
                 if(response.status !== 200) {

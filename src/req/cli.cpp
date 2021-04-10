@@ -94,7 +94,12 @@ void Cli::FlushStrategy() {
 }
 
 bool Cli::SetServer(const std::string &server) {
-    return loadproxy(server.c_str(), &opt.Server) == 0;
+    Destination proxy;
+    if(loadproxy(server.c_str(), &proxy) == 0){
+        memcpy(&opt.Server, &proxy, sizeof(proxy));
+        return true;
+    }
+    return false;
 }
 
 std::string Cli::GetServer() {
@@ -102,6 +107,9 @@ std::string Cli::GetServer() {
 }
 
 bool Cli::Login(const std::string &token, const std::string &source) {
+    if(checkauth(source.c_str())){
+        return true;
+    }
     if (strcmp(opt.auth_string, token.c_str()) != 0) {
         return false;
     }

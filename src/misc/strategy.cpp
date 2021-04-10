@@ -152,8 +152,8 @@ void reloadstrategy() {
         free(line);
     }
 
-    addauth("::ffff:127.0.0.1");
-    addauth("::1");
+    addauth("127.0.0.1");
+    addauth("[::1]");
 }
 
 void savesites(){

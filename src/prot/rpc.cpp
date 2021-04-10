@@ -372,13 +372,17 @@ SproxyClient::SproxyClient(const char* sock) {
         perror("connect error");
         exit(1);
     }
-    reader = std::thread([this]{
+    reader = std::thread([this] {
         size_t off = 0;
         while(true) {
             ssize_t ret = read(this->fd, buff + off, sizeof(buff) - off);
-            if(ret <= 0){
+            if(ret < 0){
                 perror("read from server");
                 exit((int)ret);
+            }
+            if(ret == 0){
+                //shutdown by destructor
+                break;
             }
             off += ret;
             ssize_t eaten = DefaultProc(buff, off);
@@ -394,6 +398,7 @@ SproxyClient::SproxyClient(const char* sock) {
     });
 }
 SproxyClient::~SproxyClient(){
+    shutdown(fd, SHUT_RDWR);
     reader.join();
     close(fd);
 }
