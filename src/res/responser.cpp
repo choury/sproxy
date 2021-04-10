@@ -51,21 +51,6 @@ static CheckResult check_header(HttpReqHeader* req, Requester* src){
     return CheckResult::Succeed;
 }
 
-static std::string getstraname(HttpReqHeader* header) {
-    if(header->Dest.hostname[0] != '['){
-        return header->geturl();
-    }
-    //for ipv6, we should drop '[]'
-    char name[URLLIMIT]={0};
-    int l = sprintf(name, "%s", header->Dest.hostname + 1);
-    if(header->path[1]){
-        sprintf(name + l - 1, "%s", header->path);
-    }else{
-        name[l - 1] = 0;
-    }
-    return name;
-}
-
 void distribute(HttpReq* req, Requester* src){
     HttpRes* res = nullptr;
     if(!req->header->Dest.hostname[0]){

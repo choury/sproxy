@@ -1,8 +1,11 @@
 #include "prot/rpc.h"
+#include "common/version.h"
 
 #include <iostream>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <getopt.h>
+#include <unistd.h>
 
 #define SKIP_CHAR(str)        ((*str)++)
 static std::string gettoken(const char** line){
@@ -62,8 +65,55 @@ constexpr hash_t operator "" _hash(const char* p, size_t) {
     return hash_compile_time(p);
 }
 
-int main() {
-    SproxyClient *c = new SproxyClient("/tmp/sproxy.sock");
+static struct option long_options[] = {
+        {"help",          no_argument,       nullptr, 'h'},
+        {"version",       no_argument,       nullptr, 'v'},
+        {"socket",        required_argument, nullptr, 's'},
+        {nullptr,         0,         nullptr,  0 },
+};
+
+void usage(const char* name) {
+    printf("Usage of %s:\n"
+           "-s/--socket string\n"
+           "      The socket of sproxy server listening\n", name);
+}
+
+static void show_version(const char* name){
+    printf("%s version: %s, build time: %s\n", name, VERSION, BUILDTIME);
+}
+
+int main(int argc, char** argv) {
+    const char* sock = nullptr;
+    for(int c = 0; c != EOF ; c = getopt_long(argc, argv, "s:hv", long_options, nullptr)){
+        switch(c){
+        case '?':
+            usage(argv[0]);
+            exit(1);
+        case 'h':
+            usage(argv[0]);
+            exit(0);
+        case 'v':
+            show_version(argv[0]);
+            exit(0);
+        case 's':
+            sock = optarg;
+            break;
+        }
+    }
+    if(sock == nullptr){
+        if(access("/var/run/sproxy.sock", R_OK|W_OK) == 0){
+            sock = "/var/run/sproxy.sock";
+        }
+        if(access("/tmp/sproxy.sock", R_OK|W_OK) == 0){
+            sock = "/tmp/sproxy.sock";
+        }
+        if(sock == nullptr){
+            fprintf(stderr, "no socket file found, should use -s to set it\n");
+            exit(2);
+        }
+    }
+    printf("connect to socket: %s\n", sock);
+    SproxyClient *c = new SproxyClient(sock);
     while(true) {
         char *input = readline("> ");
         if(!input){
