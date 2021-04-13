@@ -41,7 +41,7 @@ ssize_t RpcServer::DefaultProc(const char *buff, size_t len) {
 
     struct json_tokener *tok = json_tokener_new();
     json_object* jres = nullptr, *jmethod;
-    fprintf(stderr, "%.*s\n", (int)body_size, buff+4);
+    //fprintf(stderr, "%.*s\n", (int)body_size, buff+4);
     json_object* jreq = json_tokener_parse_ex(tok, buff + 4, body_size);
     if(jreq == nullptr) {
         ret = -EINVAL;
@@ -99,7 +99,7 @@ ssize_t RpcClient::DefaultProc(const char *buff, size_t len) {
         return 0;
     }
     len = 4 + body_size;
-    fprintf(stderr, "%.*s\n", (int)body_size, buff+4);
+    //fprintf(stderr, "%.*s\n", (int)body_size, buff+4);
 
     if((jres = json_tokener_parse_ex(tok, buff + 4, body_size)) == nullptr){
         jres = json_object_new_object();
