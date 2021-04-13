@@ -80,7 +80,7 @@ Proxy2::~Proxy2() {
 }
 
 void Proxy2::Error(int ret, int code) {
-    if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0){
+    if(ret == SOCKET_ERR && code == 0){
         return deleteLater(NOERROR);
     }
     LOGE("<proxy2> %p error: %d/%d\n", this, ret, code);

@@ -294,14 +294,14 @@ void RWer::SendData(){
     size_t writed = 0;
     while(wbuff.length()){
         int ret = wbuff.Write(std::bind(&RWer::Write, this, _1, _2));
-        if(ret >= 0){
+        if(ret > 0){
             writed += ret;
             continue;
         }
         if(errno == EAGAIN){
             break;
         }
-        ErrorHE(WRITE_ERR, errno);
+        ErrorHE(SOCKET_ERR, errno);
         return;
     }
     if(writed){
@@ -343,7 +343,7 @@ void RWer::defaultHE(RW_EVENT events){
     if(stats == RWerStats::ReadEOF){
         delEvents(RW_EVENT::READ);
         if(rlength() == 0){
-            errorCB(READ_ERR, 0);
+            errorCB(SOCKET_ERR, 0);
         }
     }
 }
@@ -398,7 +398,7 @@ void RWer::EatReadData(){
         if(rlength()){
             readCB(rlength());
         }else{
-            errorCB(READ_ERR, 0);
+            errorCB(SOCKET_ERR, 0);
         }
         break;
     default:

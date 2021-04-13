@@ -6,7 +6,6 @@
 #include <assert.h>
 #include <errno.h>
 #include <string.h>
-#include <unistd.h>
 
 const char *DEFAULT_CIPHER_LIST =
 #if OPENSSL_VERSION_NUMBER > 0x10101000L
@@ -155,6 +154,10 @@ int SslRWer::get_error(int ret){
                 errno = 0;
                 break;
             case SSL_ERROR_SYSCALL:
+                if(errno == 0){
+                    LOGE("should not get zero errno, fix it\n");
+                    errno = EIO;
+                }
                 break;
             case SSL_ERROR_SSL:
                 ERR_print_errors_cb(ssl_err_cb, nullptr);
@@ -163,7 +166,6 @@ int SslRWer::get_error(int ret){
                 errno = EIO;
                 break;
         }
-        ERR_clear_error();
         if(ret == 0){
             ret = -errno;
         }
@@ -171,9 +173,6 @@ int SslRWer::get_error(int ret){
     return ret;
 }
 
-int SslRWer::sconnect(){
-    return get_error(SSL_connect(ssl));
-}
 
 SslRWer::~SslRWer(){
     if(!SSL_in_init(ssl)){
@@ -238,14 +237,22 @@ void SslRWer::shakehandHE(RW_EVENT events){
 }
 
 int SslRWer::saccept(){
+    ERR_clear_error();
     return get_error(SSL_accept(ssl));
 }
 
+int SslRWer::sconnect(){
+    ERR_clear_error();
+    return get_error(SSL_connect(ssl));
+}
+
 ssize_t SslRWer::Read(void* buff, size_t len){
+    ERR_clear_error();
     return get_error(SSL_read(ssl, buff, len));
 }
 
 ssize_t SslRWer::Write(const void* buff, size_t len){
+    ERR_clear_error();
     return get_error(SSL_write(ssl, buff, len));
 }
 
@@ -254,6 +261,7 @@ void SslRWer::get_alpn(const unsigned char **s, unsigned int * len){
 }
 
 int SslRWer::set_alpn(const unsigned char *s, unsigned int len){
+    ERR_clear_error();
     return get_error(SSL_set_alpn_protos(ssl, s, len));
 }
 

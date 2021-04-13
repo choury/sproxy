@@ -212,7 +212,7 @@ void Host::ErrProc(){
 void Host::Error(int ret, int code) {
     LOGD(DHTTP, "<host> Error <%s> ret:%d, code:%d, http_flag:0x%08x\n",
             rwer->getDest(), ret, code, http_flag);
-    if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0 && status.res){
+    if(ret == SOCKET_ERR && code == 0 && status.res){
         //EOF
         status.flags |= HTTP_RES_EOF;
         if(status.flags & HTTP_REQ_EOF){
@@ -252,8 +252,6 @@ void Host::deleteLater(uint32_t errcode){
             status.req->response(new HttpRes(new HttpResHeader(H504), "[[connect timeout]]\n"));
             break;
         case SOCKET_ERR:
-        case READ_ERR:
-        case WRITE_ERR:
             status.req->response(new HttpRes(new HttpResHeader(H502), "[[socket error]]\n"));
             break;
         default:

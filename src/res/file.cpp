@@ -190,7 +190,7 @@ void File::readHE(size_t) {
         LOGE("file pread error: %s\n", strerror(errno));
         free(buff);
         status.res->trigger(Channel::CHANNEL_ABORT);
-        deleteLater(READ_ERR);
+        deleteLater(SOCKET_ERR);
         rwer->delEvents(RW_EVENT::READ);
         return;
     }

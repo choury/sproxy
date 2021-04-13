@@ -67,7 +67,7 @@ Guest2::~Guest2() {
 }
 
 void Guest2::Error(int ret, int code){
-    if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0){
+    if(ret == SOCKET_ERR && code == 0){
         return deleteLater(NOERROR);
     }
     LOGE("(%s): <guest2> error: %d/%d\n", getsrc(), ret, code);

@@ -138,7 +138,7 @@ void Guest::Error(int ret, int code) {
     GStatus& status = statuslist.back();
     LOGD(DHTTP, "<guest> Error %" PRIu32 ": ret:%d, code:%d, http_flag:0x%08x\n",
             status.req->header->request_id, ret, code, http_flag);
-    if((ret == READ_ERR || ret == SOCKET_ERR) && code == 0 && (status.flags & HTTP_CLOSED_F) == 0){
+    if(ret == SOCKET_ERR && code == 0 && (status.flags & HTTP_CLOSED_F) == 0){
         //EOF
         status.flags |= HTTP_REQ_EOF;
         if((status.flags & HTTP_RES_EOF)

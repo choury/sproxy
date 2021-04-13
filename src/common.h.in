@@ -188,8 +188,6 @@ do {\
 #define SSL_SHAKEHAND_ERR   83U
 #define HEAD_TOO_LONG_ERR   84U
 #define HTTP_PROTOCOL_ERR   85U
-#define READ_ERR            86U
-#define WRITE_ERR           87U
 #define PEER_LOST_ERR       88U
 #define IP_BLOCK_ERR        89U
 #define TCP_RESET_ERR       90U

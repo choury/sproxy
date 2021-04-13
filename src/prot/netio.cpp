@@ -264,7 +264,7 @@ void StreamRWer::ReadData() {
         if(errno == EAGAIN){
             break;
         }
-        ErrorHE(READ_ERR, errno);
+        ErrorHE(SOCKET_ERR, errno);
         return;
     }
     if(rb.length()){
@@ -312,7 +312,7 @@ void PacketRWer::ReadData() {
         if(errno == EAGAIN){
             break;
         }
-        ErrorHE(READ_ERR, errno);
+        ErrorHE(SOCKET_ERR, errno);
         return;
     }
     if(rb.left() == 0){
