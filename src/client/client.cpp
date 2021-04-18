@@ -45,7 +45,7 @@ static std::vector<std::string> split(const char* line){
     return tokens;
 }
 
-using hash_t = size_t;
+using hash_t = uint64_t;
 constexpr hash_t prime = 0x100000001B3ull;
 constexpr hash_t basis = 0xCBF29CE484222325ull;
 static hash_t hash_run_time(const std::string& str) {

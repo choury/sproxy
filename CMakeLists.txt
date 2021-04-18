@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
 project(sproxy)
+
+message(STATUS "Building for ${CMAKE_SYSTEM_PROCESSOR}")
 set(CMAKE_MACOSX_RPATH 1)
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
@@ -40,7 +42,7 @@ if(Git_FOUND)
         message(FATAL_ERROR "Git Return: ${GITRET}, Error: ${GITERROR}")
     endif()
 endif()
-message("Set VERSION: ${VERSION}")
+message(STATUS "Set VERSION: ${VERSION}")
 #parse the version information into pieces.
 string(REGEX REPLACE "^v([0-9]+)\\..*" "\\1" PROJECT_VERSION_MAJOR "${VERSION}")
 string(REGEX REPLACE "^v[0-9]+\\.([0-9]+).*" "\\1" PROJECT_VERSION_MINOR "${VERSION}")
@@ -73,6 +75,18 @@ int main(){
     return 0;
 }" NO_GNU_SOURCE_BUG)
 
+CHECK_CXX_SOURCE_COMPILES("
+#include <atomic>
+int main() {
+    std::atomic<int64_t> i(0);
+    i++;
+    return 0;
+}" HAVE_BUILTIN_ATOMIC)
+
+if (NOT HAVE_BUILTIN_ATOMIC)
+    message(STATUS "No built-in atomic, using libatomic.")
+    set(CMAKE_EXE_LINKER_FLAGS "-latomic ${CMAKE_EXE_LINKER_FLAGS}")
+endif()
 
 if(ANDROID)
     set(OPENSSL_ROOT_DIR ${OPENSSL_ROOT}/${ANDROID_ABI})
