@@ -53,7 +53,6 @@ protected:
 class SproxyClient:virtual public RpcClient {
     int fd = 0;
     std::thread reader;
-    char buff[16384];
 public:
     SproxyClient(const char* sock);
     virtual ~SproxyClient();

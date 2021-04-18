@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <string.h>
+#include <assert.h>
 #include <unistd.h>
 #include <sys/un.h>
 #include <sys/socket.h>
@@ -374,8 +375,11 @@ SproxyClient::SproxyClient(const char* sock) {
     }
     reader = std::thread([this] {
         size_t off = 0;
+        size_t buflen = 1024;
+        char* buff = new char[buflen];
         while(true) {
-            ssize_t ret = read(this->fd, buff + off, sizeof(buff) - off);
+            assert(buflen > off);
+            ssize_t ret = read(this->fd, buff + off, buflen - off);
             if(ret < 0){
                 perror("read from server");
                 exit((int)ret);
@@ -387,14 +391,20 @@ SproxyClient::SproxyClient(const char* sock) {
             off += ret;
             ssize_t eaten = DefaultProc(buff, off);
             if(eaten < 0){
-                return;
+                break;
             }
-            if(eaten == 0){
-                continue;
+            if(off == buflen && eaten == 0){
+                buflen <<= 1;
+                char* nbuff = new char[buflen];
+                memcpy(nbuff, buff, off);
+                delete []buff;
+                buff = nbuff;
+            }else {
+                memmove(buff, buff + eaten, off - eaten);
+                off -= eaten;
             }
-            memmove(buff, buff + eaten, off - eaten);
-            off -= eaten;
         }
+        delete []buff;
     });
 }
 SproxyClient::~SproxyClient(){
