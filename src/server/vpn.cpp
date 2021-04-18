@@ -1,5 +1,6 @@
 #include "vpn.h"
 #include "req/guest_vpn.h"
+#include "req/cli.h"
 
 #include <string.h>
 #include <errno.h>
@@ -17,6 +18,13 @@ int vpn_start(int fd){
         return -1;
     }
     new Vpn_server(fd);
+    if(opt.socket){
+        int svsk_cli = ListenUnix(opt.socket);
+        if(svsk_cli < 0){
+            return -1;
+        }
+        new Cli_server(svsk_cli);
+    }
     LOG("Accepting connections ...\n");
     while (vpn_contiune) {
         int c;
