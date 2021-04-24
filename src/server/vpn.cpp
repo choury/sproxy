@@ -1,23 +1,22 @@
 #include "vpn.h"
 #include "req/guest_vpn.h"
+#ifdef WITH_RPC
 #include "req/cli.h"
+#endif
 
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
 #include <fcntl.h>
+#include <sys/epoll.h>
 #include <openssl/ssl.h>
 
-int efd = 0;
 volatile uint32_t vpn_contiune = 1;
 
 int vpn_start(int fd){
     prepare();
-    efd = epoll_create1(EPOLL_CLOEXEC);
-    if(efd < 0){
-        LOGE("epoll_create: %s\n", strerror(errno));
-        return -1;
-    }
     new Vpn_server(fd);
+#ifdef WITH_RPC
     if(opt.socket){
         int svsk_cli = ListenUnix(opt.socket);
         if(svsk_cli < 0){
@@ -25,26 +24,20 @@ int vpn_start(int fd){
         }
         new Cli_server(svsk_cli);
     }
+#endif
     LOG("Accepting connections ...\n");
+    vpn_contiune = 1;
     while (vpn_contiune) {
-        int c;
-        struct epoll_event events[200];
-        if ((c = epoll_wait(efd, events, 200, do_delayjob())) <= 0) {
-            if (c != 0 && errno != EINTR) {
-                LOGE("epoll_wait %s\n", strerror(errno));
-                return 6;
-            }
-            continue;
-        }
-        for (int i = 0; i < c; ++i) {
-            Ep *ep = (Ep *)events[i].data.ptr;
-            (ep->*ep->handleEvent)(convertEpoll(events[i].events));
+        uint32_t msec = do_delayjob();
+        if(event_loop(msec) < 0){
+            break;
         }
     }
     LOG("VPN exiting ...\n");
     flushdns();
     flushproxy2();
     releaseall();
+    close(fd);
     return 0;
 }
 

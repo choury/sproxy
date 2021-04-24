@@ -2,14 +2,10 @@
 #include "misc/util.h"
 #include "misc/job.h"
 #include "misc/config.h"
-#include "prot/rwer.h"
-#include "prot/dns.h"
 
 #include <set>
 #include <stdarg.h>
 #include <unistd.h>
-#include <assert.h>
-#include <signal.h>
 
 static std::set<Server*> servers;
 
@@ -33,17 +29,12 @@ void Server::deleteLater(uint32_t) {
     }
 }
 
-extern int efd;
 void releaseall() {
     auto serversCopy = servers;
     for(auto i: serversCopy){
         delete i;
     }
     servers.clear();
-    if(efd){
-        close(efd);
-        efd = 0;
-    }
 }
 
 extern void dump_dns(Dumper dp, void* param);

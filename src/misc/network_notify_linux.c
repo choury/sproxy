@@ -15,6 +15,7 @@
 #include <linux/rtnetlink.h>
 
 static void* worker(void *data) {
+    int notify = (int)(long)data;
     int fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
     if (fd < -1){
         LOGE("failed to create netlink socket: %s\n", strerror(errno));
@@ -31,7 +32,6 @@ static void* worker(void *data) {
         LOGE("failed to bind nl_groups: %s\n", strerror(errno));
         goto ret;
     }
-    network_notify_callback cb = (network_notify_callback)data;
 
     int len = 0;
     char buffer[BUFSIZ];
@@ -83,7 +83,7 @@ retry:
         }
         if(changed){
             LOGD(DNET, "netlink_interface %s changed: %s\n",  name, getaddrstring(&addr));
-            cb();
+            write(notify, "1", 1);
         }
     }
     LOG("exiting netlink loop\n");
@@ -91,12 +91,13 @@ ret:
     if(fd >= 0){
         close(fd);
     }
+    close(notify);
     return NULL;
 }
 
-int notify_network_change(network_notify_callback cb){
+int notify_network_change(int notify){
     pthread_t tid;
-    if(pthread_create(&tid, NULL, worker, cb)){
+    if(pthread_create(&tid, NULL, worker, (void*)(long)notify)){
         LOGE("failed to create netlink thread: %s\n", strerror(errno));
         return -1;
     }

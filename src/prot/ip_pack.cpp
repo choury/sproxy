@@ -860,7 +860,7 @@ Ip4::Ip4(uint8_t type, uint16_t sport, uint16_t dport){
     hdr.ip_tos = 0;
     hdr.ip_len = 0;
     hdr.ip_id = htons(0); /* kernel will fill with random value if 0 */
-    hdr.ip_off = 0;
+    hdr.ip_off = htons(IP_DF);
     hdr.ip_ttl = 64;
     hdr.ip_p = type;
     hdr.ip_sum = 0;

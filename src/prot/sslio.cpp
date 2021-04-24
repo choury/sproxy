@@ -214,7 +214,7 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
         SSL_set_verify(ssl, SSL_VERIFY_PEER, verify_host_callback);
 
         handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::shakehandHE;
-        con_failed_job = updatejob(con_failed_job, std::bind(&SslRWer::connect, this), 5000);
+        con_failed_job = updatejob(con_failed_job, std::bind(&SslRWer::connect, this), 1000);
     }
 }
 

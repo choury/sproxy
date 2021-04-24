@@ -148,22 +148,21 @@ void SocketRWer::connect() {
     if(stats != RWerStats::Resolving && stats != RWerStats::Connecting) {
         return;
     }
-    if(retry-- <= 0) {
-        return ErrorHE(CONNECT_FAILED, 0);
-    }
     delete resolver;
+    resolver = nullptr;
     if(stats == RWerStats::Resolving) {
+        if(retry-- <= 0) {
+            return ErrorHE(DNS_FAILED, 0);
+        }
         assert(addrs.empty());
         // No address got before.
         resolver = query_host(hostname, SocketRWer::Dnscallback, this);
         if(resolver == nullptr) {
             con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 0);
         }else {
-            con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 5000);
+            con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 1000);
         }
         return;
-    } else {
-        resolver = nullptr;
     }
     int fd = getFd();
     if(fd >= 0) {
@@ -179,26 +178,23 @@ void SocketRWer::connect() {
     if(protocol == Protocol::TCP) {
         fd = Connect(&addrs.front(), SOCK_STREAM);
         if (fd < 0) {
-            con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 0);
-            return;
+            return ErrorHE(SOCKET_ERR, errno);
         }
         setFd(fd);
         setEvents(RW_EVENT::WRITE);
         handleEvent = (void (Ep::*)(RW_EVENT)) &SocketRWer::waitconnectHE;
-        con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 10000);
+        con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 500);
     } else if(protocol == Protocol::UDP) {
         fd = Connect(&addrs.front(), SOCK_DGRAM);
         if (fd < 0) {
-            con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 0);
-            return;
+            return ErrorHE(SOCKET_ERR, errno);
         }
         setFd(fd);
         Connected(addrs.front());
     } else if(protocol == Protocol::ICMP) {
         fd = IcmpSocket(&addrs.front());
         if (fd < 0) {
-            con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 0);
-            return;
+            return ErrorHE(SOCKET_ERR, errno);
         }
         setFd(fd);
         Connected(addrs.front());

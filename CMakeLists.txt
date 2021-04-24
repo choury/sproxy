@@ -183,6 +183,7 @@ add_subdirectory(src)
 add_subdirectory(systemd)
 
 if(BUILD_RPC)
+    add_compile_definitions(WITH_RPC)
     install(DIRECTORY webui DESTINATION /var/lib/sproxy)
 else()
     install(DIRECTORY DESTINATION /var/lib/sproxy)

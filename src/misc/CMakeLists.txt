@@ -2,7 +2,7 @@
 #Author:   choury
 #Created:  2017/2/11
 
-set(misc_src job.cpp net.c tls.c util.c strategy.cpp config.c trie_helper.cpp)
+set(misc_src job.cpp net.c tls.c util.c strategy.cpp config.c trie_helper.cpp network_nofity.cpp)
 
 if(ANDROID)
     set(misc_src ${misc_src} ifaddrs-android.c)

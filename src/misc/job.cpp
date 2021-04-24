@@ -7,6 +7,7 @@
 using std::function;
 job_handler static_job_handler;
 
+#define JOB_RUNNING   (1u<<15u)
 #define JOB_DESTROIED (1u<<16u)
 
 struct Job{
@@ -56,7 +57,6 @@ void job_handler::deljob(Job **job) {
     if(*job == nullptr){
         return;
     }
-    LOGD(DJOB, "del a Job %p %s\n", *job, (*job)->func_name);
     (*job)->flags |= JOB_DESTROIED;
     gjobs.erase(*job);
     for(auto j = jobs.begin(); j != jobs.end(); j++ ){
@@ -65,7 +65,12 @@ void job_handler::deljob(Job **job) {
             break;
         }
     }
-    delete *job;
+    if(((*job)->flags & JOB_RUNNING) == 0){
+        LOGD(DJOB, "del a Job %p %s\n", *job, (*job)->func_name);
+        delete *job;
+    }else{
+        LOGD(DJOB, "delay to del a Job %p %s\n", *job, (*job)->func_name);
+    }
     *job = nullptr;
 }
 
@@ -74,8 +79,12 @@ job_handler::~job_handler() {
         assert((j->flags & JOB_DESTROIED) == 0);
         gjobs.erase(j);
         j->flags |= JOB_DESTROIED;
-        LOGD(DJOB, "destroy a Job %p %s\n", j, j->func_name);
-        delete j;
+        if((j->flags & JOB_RUNNING) == 0) {
+            LOGD(DJOB, "destroy a Job %p %s\n", j, j->func_name);
+            delete j;
+        }else{
+            LOGD(DJOB, "delay to destroy a Job %p %s\n", j, j->func_name);
+        }
     }
 }
 
@@ -89,16 +98,26 @@ uint32_t do_delayjob(){
             j++;
             continue;
         }
-        LOGD(DJOB, "start Job %p %s diff %u\n", (*j), (*j)->func_name, diff);
+        LOGD(DJOB, "will start Job %p %s diff %u\n", (*j), (*j)->func_name, diff);
+        (*j)->flags |= JOB_RUNNING;
         jobs_todo.push_back(*j);
         j = gjobs.erase(j);
     }
     for(auto j: jobs_todo){
-        if(j->flags & JOB_FLAGS_AUTORELEASE){
-            j->func();
+        if(j->flags & JOB_DESTROIED){
+            LOGD(DJOB, "destroy a Job %p %s before do it\n", j, j->func_name);
+            delete j;
+            continue;
+        }
+        j->func();
+        if(j->flags & JOB_DESTROIED){
+            LOGD(DJOB, "destroy a Job %p %s after done\n", j, j->func_name);
+            delete j;
+            continue;
+        }
+        j->flags &= ~JOB_RUNNING;
+        if (j->flags & JOB_FLAGS_AUTORELEASE) {
             j->handler->deljob(&j);
-        }else{
-            j->func();
         }
     }
     uint32_t min_interval = 0xffffff7f;

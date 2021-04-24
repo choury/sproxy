@@ -113,13 +113,21 @@ ret:
     return result;
 }
 
+static int notify_ = -1;
 
-static void* worker(void* param){
-    network_notify_callback cb = (network_notify_callback)param;
+
+static void callback(){
+    if(notify_ >= 0){
+        write(notify_, "1", 1);
+    }
+}
+
+static void* worker(){
     void * contextPtr = NULL;
     SCDynamicStoreRef storeRef = NULL;
     CFRunLoopSourceRef sourceRef = NULL;
-    if (CreateIPAddressListChangeCallbackSCF((SCDynamicStoreCallBack)cb, contextPtr, &storeRef, &sourceRef) != noErr) {
+    if (CreateIPAddressListChangeCallbackSCF((SCDynamicStoreCallBack)callback, contextPtr, &storeRef, &sourceRef) != noErr) {
+        close(notify_);
         return (void*)-1;
     }
     CFRunLoopAddSource(CFRunLoopGetCurrent(), sourceRef, kCFRunLoopDefaultMode);
@@ -131,10 +139,12 @@ static void* worker(void* param){
     return NULL;
 }
 
-int notify_network_change(network_notify_callback cb){
+int notify_network_change(int notify){
+    notify_ = notify;
     pthread_t tid;
-    if(pthread_create(&tid, NULL, worker, cb)){
+    if(pthread_create(&tid, NULL, worker, NULL)){
         LOGE("failed to create CFRunLoop thread: %s\n", strerror(errno));
+        close(notify_);
         return -1;
     }
     return 0;

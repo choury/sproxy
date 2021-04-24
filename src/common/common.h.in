@@ -6,11 +6,6 @@
 #include <stdlib.h>
 #include <syslog.h>
 #include <arpa/inet.h>
-#ifdef __APPLE__
-#include <sys/event.h>
-#else
-#include <sys/epoll.h>
-#endif
 
 #define VPNADDR  "198.18.0.1"
 #define VPNMASK  "255.254.0.0"

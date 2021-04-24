@@ -2,8 +2,8 @@
 #define RWER_H__
 
 #include "misc/job.h"
+#include "prot/ep.h"
 
-#include <sys/types.h>
 #include <sys/socket.h>
 
 #include <memory>
@@ -35,46 +35,6 @@ public:
     std::list<write_block>::iterator end();
     std::list<write_block>::iterator push(std::list<write_block>::insert_iterator i, const write_block& wb);
     ssize_t  Write(std::function<ssize_t(const void*, size_t)> write_func);
-};
-
-enum class RW_EVENT{
-    NONE = 0,
-    READ = 1,
-    WRITE = 2,
-    READWRITE = READ | WRITE,
-    READEOF = 4,
-    ERROR = 8,
-};
-
-RW_EVENT operator&(RW_EVENT a, RW_EVENT b);
-RW_EVENT operator|(RW_EVENT a, RW_EVENT b);
-RW_EVENT operator~(RW_EVENT a);
-bool operator!(RW_EVENT a);
-extern const char *events_string[];
-
-#ifdef __linux__
-RW_EVENT convertEpoll(uint32_t events);
-#endif
-
-#ifdef  __APPLE__
-RW_EVENT convertKevent(const struct kevent& event);
-#endif
-
-class Ep{
-    int fd;
-protected:
-    RW_EVENT events = RW_EVENT::NONE;
-    void setFd(int fd);
-    int getFd();
-public:
-    explicit Ep(int fd);
-    virtual ~Ep();
-    void setEvents(RW_EVENT events);
-    void addEvents(RW_EVENT events);
-    void delEvents(RW_EVENT events);
-    RW_EVENT getEvents();
-    int checkSocket(const char* msg);
-    void (Ep::*handleEvent)(RW_EVENT events) = nullptr;
 };
 
 

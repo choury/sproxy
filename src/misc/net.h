@@ -62,8 +62,10 @@ extern "C" {
 extern const char *DEFAULT_CIPHER_LIST;
 
 int Checksocket(int fd, const char* msg);
+void SetSocketUnblock(int fd);
 void SetTcpOptions(int fd, const struct sockaddr_storage* addr);
 void SetUdpOptions(int fd, const struct sockaddr_storage* addr);
+void SetIcmpOptions(int fd, const struct sockaddr_storage* addr);
 void SetUnixOptions(int fd, const struct sockaddr_storage* addr);
 
 int ListenNet(int type, short int port);

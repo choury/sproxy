@@ -10,9 +10,6 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-int efd = 0;
-
-
 //do nothing, useful for vpn only
 int protectFd(int){
     return 1;
@@ -143,14 +140,6 @@ SSL_CTX* initssl(int udp, const char *ca, const char *cert, const char *key){
 int main(int argc, char **argv) {
     parseConfig(argc, argv);
     prepare();
-    openlog("sproxy", LOG_PID | LOG_PERROR, LOG_LOCAL0);
-#if __linux__
-    efd = epoll_create1(EPOLL_CLOEXEC);
-#elif __APPLE__
-    efd = kqueue();
-#else
-#error "Only macOS and linux are supported"
-#endif
     if(opt.cert && opt.key){
         SSL_CTX * ctx = initssl(0, opt.cafile, opt.cert, opt.key);
         opt.CPORT = opt.CPORT?opt.CPORT:443;
@@ -185,46 +174,9 @@ int main(int argc, char **argv) {
     }
     LOG("Accepting connections ...\n");
     while (true) {
-        int c;
-#if __linux__
-        struct epoll_event events[200];
-        if ((c = epoll_wait(efd, events, 200, do_delayjob())) <= 0) {
-            if (c != 0 && errno != EINTR) {
-                LOGE("epoll_wait: %s\n", strerror(errno));
-                return 6;
-            }
-            continue;
-        }
-        for (int i = 0; i < c; ++i) {
-            LOGD(DEVENT, "handle event %s\n", events_string[int(convertEpoll(events[i].events))]);
-            Ep *ep = (Ep *)events[i].data.ptr;
-            (ep->*ep->handleEvent)(convertEpoll(events[i].events));
-        }
-#endif
-#if __APPLE__
-        struct kevent events[200];
         uint32_t msec = do_delayjob();
-        struct timespec timeout{msec/1000, (msec%1000)*1000000};
-        if((c = kevent(efd, NULL, 0, events, 200, &timeout)) <= 0){
-            if (c != 0 && errno != EINTR) {
-                LOGE("kevent: %s\n", strerror(errno));
-                return 6;
-            }
-            continue;
+        if(event_loop(msec) < 0){
+            return 6;
         }
-        std::map<Ep*, RW_EVENT> events_merged;
-        for(int i = 0; i < c; ++i){
-            LOGD(DEVENT, "handle event %lu: %s\n", events[i].ident, events_string[int(convertKevent(events[i]))]);
-            Ep *ep = (Ep*)events[i].udata;
-            if(events_merged.count(ep)){
-                events_merged[ep] = events_merged[ep] | convertKevent(events[i]);
-            }else{
-                events_merged[ep] = convertKevent(events[i]);
-            }
-        }
-        for(const auto& i: events_merged){
-            (i.first->*i.first->handleEvent)(i.second);
-        }
-#endif
     }
 }

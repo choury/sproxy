@@ -3,6 +3,13 @@
 
 #include "common/common.h"
 #include <stdbool.h>
+
+#ifdef __APPLE__
+#include <sys/event.h>
+#else
+#include <sys/epoll.h>
+#endif
+
 #ifdef  __cplusplus
 extern "C" {
 #endif

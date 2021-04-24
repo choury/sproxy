@@ -170,7 +170,7 @@ void network_changed(){
         opt.ipv6_enabled = hasIpv6Address();
     }
     flushdns();
-    flushproxy2(0);
+    flushproxy2();
 }
 
 void prepare(){
@@ -192,6 +192,7 @@ void prepare(){
             LOGE("start daemon error:%s\n", strerror(errno));
             exit(1);
         }
+        openlog("sproxy", LOG_PID | LOG_PERROR, LOG_LOCAL0);
     }
 #else
     opt.daemon_mode = false;
@@ -204,7 +205,7 @@ void prepare(){
     if(setrlimit(RLIMIT_NOFILE, &limits)) {
         LOGE("setrlimit failed: %s\n", strerror(errno));
     }
-    notify_network_change(network_changed);
+    register_network_change_cb(network_changed);
 }
 
 static void usage(const char * program){

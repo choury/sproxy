@@ -24,6 +24,20 @@ int Checksocket(int fd, const char *msg){
     return error;
 }
 
+void SetSocketUnblock(int fd){
+    if(fd < 0){
+        return;
+    }
+    int flags = fcntl(fd, F_GETFL, 0);
+    if(flags < 0){
+        LOGF("fcntl error: %s\n", strerror(errno));
+    }
+    int ret = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    if(ret < 0){
+        LOGF("fcntl error: %s\n", strerror(errno));
+    }
+}
+
 void SetTcpOptions(int fd, const struct sockaddr_storage* ignore){
     (void)ignore;
     //以下设置为TCP配置，非必须，所以不返回错误
@@ -49,6 +63,8 @@ void SetTcpOptions(int fd, const struct sockaddr_storage* ignore){
     int enable = 1;
     if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(enable))<0)
         LOGE("TCP_NODELAY:%s\n", strerror(errno));
+
+    SetSocketUnblock(fd);
 }
 
 void SetUdpOptions(int fd, const struct sockaddr_storage* addr){
@@ -67,11 +83,26 @@ void SetUdpOptions(int fd, const struct sockaddr_storage* addr){
         if(setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable)) < 0)
             LOGE("set broadcast:%s\n", strerror(errno));
     }
+    SetSocketUnblock(fd);
+}
+
+void SetIcmpOptions(int fd, const struct sockaddr_storage* addr) {
+    (void)addr;
+    struct timeval time;
+    time.tv_sec = 1;
+    time.tv_usec = 0;
+    if(setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &time, sizeof(time)) < 0){
+        LOGE("set send timeout:%s\n", strerror(errno));
+    }
+    if(setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &time, sizeof(time)) < 0){
+        LOGE("set recv timeout:%s\n", strerror(errno));
+    }
+    SetSocketUnblock(fd);
 }
 
 void SetUnixOptions(int fd, const struct sockaddr_storage* addr) {
-    (void)fd;
     (void)addr;
+    SetSocketUnblock(fd);
 }
 
 int ListenNet(int type, short port) {
@@ -173,62 +204,6 @@ int ListenUnix(const char* path) {
     return -1;
 }
 
-/*
-int Bind(int type, short port, const struct sockaddr_storage* addr){
-    int fd = socket(AF_INET6, type, 0);
-    if (fd < 0) {
-        LOGE("socket error:%s\n", strerror(errno));
-        return -1;
-    }
-    do{
-        if(protectFd(fd) == 0) {
-            LOGE("protecd fd error:%s\n", strerror(errno));
-            break;
-        }
-        int flag = 1;
-        if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
-            LOGE("setsockopt SO_REUSEADDR:%s\n", strerror(errno));
-            break;
-        }
-        struct sockaddr_in6 myaddr;
-        bzero(&myaddr, sizeof(myaddr));
-        myaddr.sin6_family = AF_INET6;
-        myaddr.sin6_port = htons(port);
-        myaddr.sin6_addr = in6addr_any;
-
-        if (bind(fd, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
-            LOGE("bind error:%s\n", strerror(errno));
-            break;
-        }
-
-        if ((flag=fcntl(fd, F_GETFL)) == -1) {
-            LOGE("fcntl get error:%s\n", strerror(errno));
-            break;
-        }
-
-        if (fcntl(fd, F_SETFL, flag | O_NONBLOCK) == -1){
-            LOGE("fcntl set error:%s\n", strerror(errno));
-            break;
-        }
-
-        if(type == SOCK_STREAM){
-            SetTcpOptions(fd, addr);
-        }else{
-            SetUdpOptions(fd, addr);
-        }
-
-        socklen_t len = (addr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
-        if (connect(fd, (struct sockaddr*)addr, len) == -1 && errno != EINPROGRESS) {
-            LOGE("connecting error:%s\n", strerror(errno));
-            break;
-        }
-        return fd;
-    }while(0);
-    close(fd);
-    return -1;
-}
-*/
-
 int Connect(const struct sockaddr_storage* addr, int type) {
 #ifdef SOCK_CLOEXEC
     int fd =  socket(addr->ss_family, type | SOCK_CLOEXEC, 0);
@@ -244,13 +219,6 @@ int Connect(const struct sockaddr_storage* addr, int type) {
             LOGE("protecd fd error:%s\n", strerror(errno));
             break;
         }
-
-        int flags = fcntl(fd, F_GETFL, 0);
-        if (flags < 0) {
-            LOGE("fcntl error:%s\n", strerror(errno));
-            break;
-        }
-        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
         switch(addr->ss_family){
         case AF_INET:
@@ -278,7 +246,6 @@ int Connect(const struct sockaddr_storage* addr, int type) {
     close(fd);
     return -1;
 }
-
 
 int IcmpSocket(const struct sockaddr_storage* addr){
     int fd = -1;
@@ -309,17 +276,12 @@ int IcmpSocket(const struct sockaddr_storage* addr){
         LOGE("protecd fd error:%s\n", strerror(errno));
         goto ERR;
     }
+    SetIcmpOptions(fd, addr);
     socklen_t len = (addr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
     if(connect(fd, (struct sockaddr*)addr, len)){
         LOGE("connect failed: %s\n", strerror(errno));
         goto ERR;
     }
-
-    struct timeval time;
-    time.tv_sec = 1;
-    time.tv_usec = 0;
-    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &time, sizeof(time));
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &time, sizeof(time));
     return fd;
 ERR:
     close(fd);

@@ -4,203 +4,12 @@
 #include "misc/net.h"
 
 #include <unistd.h>
-#include <fcntl.h>
-#include <string.h>
 #include <assert.h>
 #include <errno.h>
+
 #ifdef __linux__
 #include <sys/eventfd.h>
 #endif
-
-const char *events_string[]= {
-    "NULL",
-    "READ",
-    "WRITE",
-    "READ|WRITE",
-    "READEOF",
-    "READEOF|READ",
-    "READEOF|WRITE",
-    "READEOF|READ|WRITE",
-    "ERROR",
-    "ERROR|READ",
-    "ERROR|WRITE",
-    "ERROR|READ|WRITE",
-    "ERROR|READEOF",
-    "ERROR|READEOF|READ",
-    "ERROR|READEOF|WRITE",
-    "ERROR|READEOF|READ|WRITE",
-};
-
-extern int efd;
-
-RW_EVENT operator&(RW_EVENT a, RW_EVENT b){
-    return RW_EVENT(int(a) & int(b));
-}
-
-RW_EVENT operator|(RW_EVENT a, RW_EVENT b){
-    return RW_EVENT(int(a) | int(b));
-}
-
-RW_EVENT operator~(RW_EVENT a){
-    return RW_EVENT(~static_cast<int>(a));
-}
-
-bool operator!(RW_EVENT a){
-    return a == RW_EVENT::NONE;
-}
-
-#ifdef __linux__
-RW_EVENT convertEpoll(uint32_t events){
-    RW_EVENT rwevents = RW_EVENT::NONE;
-    if((events & EPOLLHUP) || (events & EPOLLERR)){
-        rwevents = rwevents | RW_EVENT::ERROR;
-    }
-    if(events & EPOLLIN){
-        rwevents = rwevents | RW_EVENT::READ;
-    }
-    if(events & EPOLLRDHUP){
-        rwevents = rwevents | RW_EVENT::READEOF;
-    }
-    if(events & EPOLLOUT){
-        rwevents = rwevents | RW_EVENT::WRITE;
-    }
-    return rwevents;
-}
-#endif
-
-#ifdef __APPLE__
-RW_EVENT convertKevent(const struct kevent& event){
-    RW_EVENT rwevent = RW_EVENT::NONE;
-    if(event.flags & EV_ERROR){
-        rwevent = rwevent | RW_EVENT::ERROR;
-    }
-    if (event.flags & EV_EOF){
-        rwevent = rwevent | RW_EVENT::READEOF;
-    }
-    if (event.filter == EVFILT_READ){
-        rwevent = rwevent | RW_EVENT::READ;
-    }
-    if (event.filter == EVFILT_WRITE){
-        rwevent = rwevent | RW_EVENT::WRITE;
-    }
-    return rwevent;
-}
-#endif
-
-static void setSocketUnblock(int fd){
-    if(fd < 0){
-        return;
-    }
-    int flags = fcntl(fd, F_GETFL, 0);
-    if(flags < 0){
-        LOGE("fcntl error: %s\n", strerror(errno));
-        return;
-    }
-    int ret = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-    if(ret < 0){
-        LOGE("fcntl error: %s\n", strerror(errno));
-    }
-}
-
-Ep::Ep(int fd):fd(fd){
-    LOGD(DEVENT, "%p set fd: %d\n", this, fd);
-    setSocketUnblock(fd);
-}
-
-Ep::~Ep(){
-    if(fd >= 0){
-        LOGD(DEVENT, "closed %d\n", fd);
-        close(fd);
-    }
-}
-
-void Ep::setFd(int fd){
-    if(this->fd >= 0){
-        LOGD(DEVENT, "closed %d\n", fd);
-        close(this->fd);
-        events = RW_EVENT::NONE;
-    }
-    this->fd = fd;
-    LOGD(DEVENT, "%p set fd: %d\n", this, fd);
-    setSocketUnblock(fd);
-}
-
-int Ep::getFd(){
-    return fd;
-}
-
-void Ep::setEvents(RW_EVENT events) {
-    if(events == this->events){
-        return;
-    }
-    if (fd >= 0) {
-#ifdef __linux__
-        struct epoll_event event;
-        event.data.ptr = this;
-        event.events = EPOLLHUP | EPOLLERR;
-        if(!!(events & RW_EVENT::READ)){
-            event.events |= EPOLLIN | EPOLLRDHUP;
-        }
-        if(!!(events & RW_EVENT::WRITE)){
-            event.events |= EPOLLOUT;
-        }
-        int ret = epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
-        if (ret && errno == ENOENT) {
-            ret = epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
-            if(ret){
-                LOGE("epoll_ctl add failed:%s\n", strerror(errno));
-                return;
-            }
-        }else if(ret){
-            LOGE("epoll_ctl mod failed:%s\n", strerror(errno));
-            return;
-        }
-#endif
-#ifdef __APPLE__
-        struct kevent event[3];
-        int count = 0;
-        if(!!(events & RW_EVENT::READ)){
-            EV_SET(&event[count++], fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, (void*)(intptr_t)this);
-        }else if(!!(this->events & RW_EVENT::READ)){
-            EV_SET(&event[count++], fd, EVFILT_READ, EV_ADD | EV_DISABLE, 0, 0, (void*)(intptr_t)this);
-        }
-        if(!!(events & RW_EVENT::WRITE)){
-            EV_SET(&event[count++], fd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, (void*)(intptr_t)this);
-        }else if(!!(this->events & RW_EVENT::WRITE)){
-            EV_SET(&event[count++], fd, EVFILT_WRITE, EV_ADD | EV_DISABLE, 0, 0, (void*)(intptr_t)this);
-        }
-        EV_SET(&event[count++], fd, EVFILT_EXCEPT, EV_ADD | EV_ENABLE | EV_CLEAR, 0, 0, (void*)(intptr_t)this);
-        int ret = kevent(efd, event, count, NULL, 0, NULL);
-        if(ret < 0){
-            LOGE("kevent failed:%s\n", strerror(errno));
-            return;
-        }
-#endif
-#ifndef NDEBUG
-        if(events != this->events) {
-            assert(int(events) <= 3);
-            LOGD(DEVENT, "modify %d: %s --> %s\n", fd, events_string[int(this->events)], events_string[int(events)]);
-        }
-#endif
-        this->events = events;
-    }
-}
-
-void Ep::addEvents(RW_EVENT events){
-    return setEvents(this->events | events);
-}
-
-void Ep::delEvents(RW_EVENT events){
-    return setEvents(this->events & ~events);
-}
-
-RW_EVENT Ep::getEvents(){
-    return this->events;
-}
-
-int Ep::checkSocket(const char* msg){
-    return Checksocket(fd, msg);
-}
 
 size_t RWer::wlength() {
     return wbuff.length();
@@ -226,7 +35,7 @@ ssize_t WBuffer::Write(std::function<ssize_t(const void*, size_t)> write_func){
     assert(wb.buff);
     if(wb.len == 0){
         p_free(wb.buff);
-        return 0;
+        return Write(write_func);
     }
     assert(wb.offset < wb.len);
     ssize_t ret = write_func((const char *)wb.buff + wb.offset, wb.len - wb.offset);
@@ -512,12 +321,7 @@ FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB):
     setFd(pairs[0]);
     // pairfd should set noblock manually
     pairfd = pairs[1];
-    int flags = fcntl(pairfd, F_GETFL, 0);
-    if (flags < 0) {
-        LOGE("fcntl error:%s\n", strerror(errno));
-        return;
-    }
-    fcntl(pairfd, F_SETFL, flags | O_NONBLOCK);
+    SetSocketUnblock(pairfd);
     write(pairfd, "FULLEVENT", 8);
 #endif
     setEvents(RW_EVENT::READ);
