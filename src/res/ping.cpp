@@ -9,12 +9,11 @@
 Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
     rwer = new PacketRWer(host, this->id, Protocol::ICMP, [this](int ret, int code){
         LOGE("Ping error: %d/%d\n", ret, code);
-        iserror = true;
-        if(rwer)
-            rwer->setEvents(RW_EVENT::NONE);
+        rwer->setEvents(RW_EVENT::NONE);
+        req->detach();
     },[this](const sockaddr_storage& addr){
-        seq = 1;
         family = addr.ss_family;
+        req->attach(std::bind(&Ping::Send, this, _1, _2),[](){ return 1024*1024;});
     });
     rwer->SetReadCB([this](int len){
         if(res == nullptr){
@@ -48,15 +47,11 @@ void Ping::request(HttpReq* req, Requester*) {
         }
         deleteLater(PEER_LOST_ERR);
     });
-    req->attach(std::bind(&Ping::Send, this, _1, _2),[](){ return 1024*1024;});
 }
 
 
 void Ping::Send(void* buff, size_t size){
-    if(iserror || seq == 0){
-        return;
-    }
-    char* packet = (char*)buff;
+    char* packet;
     switch(family){
     case AF_INET:{
         Icmp icmp;
@@ -75,6 +70,6 @@ void Ping::Send(void* buff, size_t size){
 }
 
 void Ping::dump_stat(Dumper dp, void* param) {
-    dp(param, "ping %p%s, id:%" PRIu32 ", (%s) (%d - %d)\n",
-       this, iserror?" [E]":"", req->header->request_id, rwer->getPeer(), id, seq);
+    dp(param, "ping %p, id:%" PRIu32 ", (%s) (%d - %d)\n",
+       this, req->header->request_id, rwer->getPeer(), id, seq);
 }

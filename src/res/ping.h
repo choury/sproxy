@@ -8,9 +8,8 @@ class Ping: public Responser{
     HttpReq*    req = nullptr;
     HttpRes*    res = nullptr;
     uint16_t    id = 0;
-    uint16_t    seq = 0;
+    uint16_t    seq = 1;
     sa_family_t family = 0;
-    bool        iserror = false;
     void Send(void* buff, size_t size);
 public:
     Ping(const char *host, uint16_t id);

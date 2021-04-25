@@ -80,13 +80,13 @@ public:
 };
 
 
-class Vpn_server: public Ep{
-    RWer* rwer;
+class Vpn_server {
+    RWer* rwer = nullptr;
     std::map<VpnKey, Guest_vpn*> statusmap;
     void buffHE(const char* buff, size_t buflen);
 public:
     explicit Vpn_server(int fd);
-    virtual ~Vpn_server() override;
+    virtual ~Vpn_server();
 
     template <class T>
     void sendPkg(const std::shared_ptr<Ip>& pac, T* buff, size_t len){

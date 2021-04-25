@@ -11,11 +11,15 @@
 #include <string.h>
 #include <functional>
 
+
 class Notifier: public Ep {
     std::function<void(void)> cb;
 public:
-    explicit Notifier(int fd, std::function<void(void)> cb): Ep(fd), cb(std::move(cb)){
+    const int sender;
+    explicit Notifier(int pipefd[2], std::function<void(void)> cb):
+    Ep(pipefd[0]), cb(std::move(cb)), sender(pipefd[1]){
         setEvents(RW_EVENT::READ);
+        SetSocketUnblock(sender);
         handleEvent = (void (Ep::*)(RW_EVENT))&Notifier::defaultHE;
     }
 
@@ -36,16 +40,22 @@ public:
             return;
         }
     }
+    virtual ~Notifier(){
+        close(sender);
+    }
 };
 
+static Notifier* notifier = nullptr;
+
 int register_network_change_cb(network_notify_callback cb) {
-    int pipefd[2];
-    if(pipe(pipefd) < 0){
-        LOGE("pipe failed: %s\n", strerror(errno));
-        return -1;
+    if(notifier == nullptr){
+        int pipefd[2];
+        if(pipe(pipefd) < 0){
+            LOGE("pipe failed: %s\n", strerror(errno));
+            return -1;
+        }
+        notifier = new Notifier(pipefd, cb);
     }
-    new Notifier(pipefd[0], cb);
-    SetSocketUnblock(pipefd[1]);
-    notify_network_change(pipefd[1]);
+    notify_network_change(notifier->sender);
     return 0;
 }

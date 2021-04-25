@@ -83,7 +83,7 @@ bool operator<(VpnKey a, VpnKey b) {
 }
 
 
-Vpn_server::Vpn_server(int fd):Ep(fd){
+Vpn_server::Vpn_server(int fd) {
     rwer = new PacketRWer(fd, nullptr, [](int ret, int code){
         LOGE("vpn_server error: %d/%d\n", ret, code);
     });
@@ -101,6 +101,7 @@ Vpn_server::Vpn_server(int fd):Ep(fd){
 
 Vpn_server::~Vpn_server(){
     statusmap.clear();
+    delete rwer;
 }
 
 void Vpn_server::buffHE(const char* buff, size_t buflen) {

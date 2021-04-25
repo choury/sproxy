@@ -6,7 +6,7 @@
 #include "misc/config.h"
 #include "cgi.h"
 
-#ifdef ENABLE_GZIP_TEST
+#ifdef WITH_GZIP_TEST
 #include "gzip_test.h"
 #endif
 
@@ -227,7 +227,7 @@ void File::getfile(HttpReq* req, Requester* src) {
         if(filename == pathjoin(opt.rootdir, "status")){
             return (new Status())->request(req, src);
         }
-#ifdef ENABLE_GZIP_TEST
+#ifdef WITH_GZIP_TEST
         if(filename == pathjoin(opt.rootdir, "test")){
             return (new GzipTest())->request(req, src);
         }
