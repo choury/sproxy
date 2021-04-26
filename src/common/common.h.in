@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <syslog.h>
+#include <stdarg.h>
 #include <arpa/inet.h>
 
 #define VPNADDR  "198.18.0.1"

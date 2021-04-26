@@ -1,15 +1,13 @@
 #include "vpn.h"
+#include <string.h>
+#include <errno.h>
+#include <assert.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <linux/if_tun.h>
-#include <linux/ipv6.h>
-#include <assert.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
 #include <net/route.h>
-#include <string.h>
-#include <signal.h>
-#include <errno.h>
+#include <linux/if_tun.h>
 
 
 int protectFd(int fd) {
@@ -104,6 +102,13 @@ int set_if(struct ifreq *ifr) {
     close(fd);
     return err;
 }
+
+
+struct in6_ifreq {
+    struct in6_addr ifr6_addr;
+    __u32 ifr6_prefixlen;
+    unsigned int ifr6_ifindex;
+};
 
 int set_if6(struct ifreq *ifr) {
     int fd = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, 0);
