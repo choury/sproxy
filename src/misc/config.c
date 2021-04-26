@@ -292,8 +292,8 @@ static void parseArgs(const char* name, const char* args){
                 LOG("set option %s: %s\n", name, (char*)option_detail[i].result);
                 break;
             case option_bitwise:
-                *(uint32_t*)option_detail[i].result |= (uint32_t)(long long)option_detail[i].value;
-                LOG("set option %s: 0x%08X\n", name, (uint32_t)(long long)option_detail[i].value);
+                *(uint32_t*)option_detail[i].result |= (uint32_t)(intptr_t)option_detail[i].value;
+                LOG("set option %s: 0x%08X\n", name, (uint32_t)(intptr_t)option_detail[i].value);
                 break;
             case option_enum:
                 result = 0;

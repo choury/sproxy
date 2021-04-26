@@ -508,9 +508,8 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
     tcpStatus->window = pac->tcp->getwindow();
     //下面处理数据
     if(datalen > 0 && status.req){
-        int buflen = status.req->cap();
-        if(buflen <= 0){
-            LOGE("%s: responser buff is full, drop packet %u\n", key.getString("->"), seq);
+        if(status.req->cap() < (int)datalen){
+            LOGE("%s: responser buff is not enough, drop packet %u\n", key.getString("->"), seq);
             return;
         }else{
             const char* data = packet + pac->gethdrlen();
@@ -595,8 +594,8 @@ void Guest_vpn::udpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
     if(status.req){
         LOGD(DVPN, "%s size: %zu\n", key.getString("->"), datalen);
         aged_job = rwer->updatejob(aged_job, std::bind(&Guest_vpn::aged, this), 300000);
-        if(status.req->cap() <= 0){
-            LOGE("responser buff is full, drop packet\n");
+        if(status.req->cap() < (int)datalen){
+            LOGE("responser buff is not enough, drop packet\n");
         }else{
             status.req->send(data, datalen);
         }
