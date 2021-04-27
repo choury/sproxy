@@ -55,6 +55,11 @@ void Resolver::readHE(RW_EVENT events) {
         }
         if(addrcb) {
             Dns_Result result(buf, ret);
+            if(result.id == 0){
+                LOGE("invalid dns result\n");
+                addrcb({});
+                return;
+            }
             if(result.type == 1){
                 flags |= GETARES;
             }else if(result.type == 28){

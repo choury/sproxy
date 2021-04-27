@@ -12,7 +12,11 @@ Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
         rwer->setEvents(RW_EVENT::NONE);
         req->attach((Channel::recv_const_t)[](const void*, size_t){},[](){ return 1024*1024;});
     },[this](const sockaddr_storage& addr){
-        family = addr.ss_family;
+        const sockaddr_in6 *addr6 = (const sockaddr_in6*)&addr;
+        family = addr6->sin6_family;
+        if(addr6->sin6_port == 0){
+            israw = true;
+        }
         req->attach(std::bind(&Ping::Send, this, _1, _2),[](){ return 1024*1024;});
     });
     rwer->SetReadCB([this](int len){
@@ -23,10 +27,20 @@ Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
         const char* data = rwer->rdata();
         switch(family){
         case AF_INET:
-            res->send(data + sizeof(icmphdr), len - sizeof(icmphdr));
+            if(israw){
+                const ip* iphdr = (ip*)data;
+                size_t hlen = iphdr->ip_hl << 2;
+                res->send(data  + hlen + sizeof(icmphdr), len - hlen - sizeof(icmphdr));
+            }else {
+                res->send(data + sizeof(icmphdr), len - sizeof(icmphdr));
+            }
             break;
         case AF_INET6:
-            res->send(data + sizeof(icmp6_hdr), len - sizeof(icmp6_hdr));
+            if(israw){
+                res->send(data + sizeof(ip6_hdr) + sizeof(icmp6_hdr), len - sizeof(ip6_hdr) - sizeof(icmp6_hdr));
+            }else {
+                res->send(data + sizeof(icmp6_hdr), len - sizeof(icmp6_hdr));
+            }
             break;
         default:
             abort();

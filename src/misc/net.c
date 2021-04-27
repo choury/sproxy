@@ -79,24 +79,25 @@ void SetUdpOptions(int fd, const struct sockaddr_storage* addr){
             LOGE("IPV6_RECVERR:%s\n", strerror(errno));
     }
 #endif
-    if(addr->ss_family == AF_INET && ((struct sockaddr_in*)addr)->sin_addr.s_addr == htonl(INADDR_BROADCAST)){
-        if(setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable)) < 0)
-            LOGE("set broadcast:%s\n", strerror(errno));
-    }
+    if(setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable)) < 0)
+        LOGE("set broadcast:%s\n", strerror(errno));
     SetSocketUnblock(fd);
 }
 
 void SetIcmpOptions(int fd, const struct sockaddr_storage* addr) {
-    (void)addr;
-    struct timeval time;
-    time.tv_sec = 1;
-    time.tv_usec = 0;
-    if(setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &time, sizeof(time)) < 0){
-        LOGE("set send timeout:%s\n", strerror(errno));
+    int enable = 1;
+#if defined(IP_RECVERR) && defined(IPV6_RECVERR)
+    if (addr->ss_family == AF_INET) {
+        if (setsockopt(fd, IPPROTO_IP, IP_RECVERR, &enable, sizeof(enable)))
+            LOGE("IP_RECVERR:%s\n", strerror(errno));
     }
-    if(setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &time, sizeof(time)) < 0){
-        LOGE("set recv timeout:%s\n", strerror(errno));
+    if (addr->ss_family == AF_INET6) {
+        if (setsockopt(fd, IPPROTO_IPV6, IPV6_RECVERR, &enable, sizeof(enable)))
+            LOGE("IPV6_RECVERR:%s\n", strerror(errno));
     }
+#endif
+    if(setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable)) < 0)
+        LOGE("set broadcast:%s\n", strerror(errno));
     SetSocketUnblock(fd);
 }
 
@@ -247,25 +248,22 @@ int Connect(const struct sockaddr_storage* addr, int type) {
     return -1;
 }
 
-int IcmpSocket(const struct sockaddr_storage* addr){
+int IcmpSocket(const struct sockaddr_storage* addr, int raw){
     int fd = -1;
-    if(addr->ss_family == AF_INET){
+    int type = raw?SOCK_RAW:SOCK_DGRAM;
 #ifdef SOCK_CLOEXEC
-        fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_ICMP);
-#else
-        fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+    type |= SOCK_CLOEXEC;
 #endif
+
+    if(addr->ss_family == AF_INET){
+        fd = socket(AF_INET, type, IPPROTO_ICMP);
         if(fd <= 0){
             LOGE("create icmp socket failed: %s\n", strerror(errno));
             return -1;
         }
     }
     if(addr->ss_family == AF_INET6){
-#ifdef SOCK_CLOEXEC
-        fd = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_ICMPV6);
-#else
-        fd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_ICMPV6);
-#endif
+        fd = socket(AF_INET6, type, IPPROTO_ICMPV6);
         if(fd <= 0){
             LOGE("create icmp6 socket failed: %s\n", strerror(errno));
             return -1;

@@ -144,20 +144,21 @@ int Dns_Query::build(unsigned char* buf)const {
     return len + sizeof(DNS_QUE);
 }
 
-Dns_Result::Dns_Result(const char* buff, size_t len) {
+Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
     if(len < sizeof(DNS_HDR)){
         LOGE("[DNS] incompleted DNS response\n");
-        id = 0;
         return;
     }
     const DNS_HDR *dnshdr = (const DNS_HDR *)buff;
-    id = ntohs(dnshdr->id);
     uint16_t numq = ntohs(dnshdr->numq);
     uint16_t flag = ntohs(dnshdr->flag);
     const unsigned char *p = (const unsigned char *)(dnshdr +1);
     assert(numq && (flag & QR));
     for (int i = 0; i < numq; ++i) {
         p = (unsigned char *)getdomain(dnshdr, p, len, domain);
+        if((const char*)p + sizeof(DNS_QUE) - buff >= (int)len){
+            return;
+        }
         DNS_QUE* que = (DNS_QUE*)p;
         type = ntohs(que->type);
         p+= sizeof(DNS_QUE);
@@ -170,6 +171,9 @@ Dns_Result::Dns_Result(const char* buff, size_t len) {
     uint16_t numa = ntohs(dnshdr->numa);
     for(int i = 0; i < numa; ++i) {
         p = (unsigned char *)getdomain(dnshdr, p, len, domain);
+        if((const char*)p + sizeof(DNS_RR) - buff >= (int)len){
+            return;
+        }
         DNS_RR *dnsrr = (DNS_RR*)p;
         assert(ntohs(dnsrr->classes) == 1);
         uint32_t ttl = ntohl(dnsrr->TTL);
@@ -214,6 +218,7 @@ Dns_Result::Dns_Result(const char* buff, size_t len) {
         this->ttl = std::min(ttl, this->ttl);
         p+= ntohs(dnsrr->rdlength);
     }
+    id = ntohs(dnshdr->id);
 }
 
 Dns_Result::Dns_Result(const char *domain, const in_addr* addr): type(1), ttl(0){

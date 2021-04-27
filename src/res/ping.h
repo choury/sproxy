@@ -10,6 +10,7 @@ class Ping: public Responser{
     uint16_t    id = 0;
     uint16_t    seq = 1;
     sa_family_t family = 0;
+    bool        israw  = false;
     void Send(void* buff, size_t size);
 public:
     Ping(const char *host, uint16_t id);
