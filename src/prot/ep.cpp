@@ -190,7 +190,7 @@ void Ep::setEvents(RW_EVENT events) {
 #ifndef NDEBUG
         if(events != this->events) {
             assert(int(events) <= 3);
-            LOGD(DEVENT, "modify %d: %s --> %s\n", fd, events_string[int(this->events)], events_string[int(events)]);
+            LOGD(DEVENT, "modify event %d: %s --> %s\n", fd, events_string[int(this->events)], events_string[int(events)]);
         }
 #endif
         this->events = events;
@@ -225,8 +225,8 @@ int event_loop(uint32_t timeout_ms){
         return 0;
     }
     for (int i = 0; i < c; ++i) {
-        LOGD(DEVENT, "handle event %s\n", events_string[int(convertEpoll(events[i].events))]);
         Ep *ep = (Ep *)events[i].data.ptr;
+        LOGD(DEVENT, "handle event %d: %s\n", ep->getFd(), events_string[int(convertEpoll(events[i].events))]);
         (ep->*ep->handleEvent)(convertEpoll(events[i].events));
     }
     return 0;

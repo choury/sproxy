@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+int event_loop(uint32_t timeout_ms);
 enum class RW_EVENT{
     NONE = 0,
     READ = 1,
@@ -38,8 +39,7 @@ public:
     RW_EVENT getEvents();
     int checkSocket(const char* msg);
     void (Ep::*handleEvent)(RW_EVENT events) = nullptr;
+    friend int event_loop(uint32_t timeout_ms);
 };
 
-
-int event_loop(uint32_t timeout_ms);
 #endif //SPROXY_EP_H

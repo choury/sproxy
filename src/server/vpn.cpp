@@ -15,7 +15,6 @@ volatile uint32_t vpn_contiune = 1;
 
 int vpn_start(int fd){
     prepare();
-    Vpn_server s(fd);
 #ifdef WITH_RPC
     if(opt.socket){
         int svsk_cli = ListenUnix(opt.socket);
@@ -25,6 +24,7 @@ int vpn_start(int fd){
         new Cli_server(svsk_cli);
     }
 #endif
+    Vpn_server s(fd);
     LOG("Accepting connections ...\n");
     vpn_contiune = 1;
     while (vpn_contiune) {

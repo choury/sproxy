@@ -30,11 +30,11 @@ void SetSocketUnblock(int fd){
     }
     int flags = fcntl(fd, F_GETFL, 0);
     if(flags < 0){
-        LOGF("fcntl error: %s\n", strerror(errno));
+        LOGF("fcntl error %d: %s\n", fd, strerror(errno));
     }
     int ret = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
     if(ret < 0){
-        LOGF("fcntl error: %s\n", strerror(errno));
+        LOGF("fcntl error %d: %s\n", fd, strerror(errno));
     }
 }
 
@@ -217,8 +217,7 @@ int Connect(const struct sockaddr_storage* addr, int type) {
     }
     do{
         if(protectFd(fd) == 0){
-            LOGE("protecd fd error:%s\n", strerror(errno));
-            break;
+            LOGF("protecd fd %d error:%s\n", fd, strerror(errno));
         }
 
         switch(addr->ss_family){
@@ -234,7 +233,7 @@ int Connect(const struct sockaddr_storage* addr, int type) {
             SetUnixOptions(fd, addr);
             break;
         default:
-            LOGE("unkown family: %d\n", addr->ss_family);
+            LOGF("unkown family: %d\n", addr->ss_family);
         }
 
         socklen_t len = (addr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
