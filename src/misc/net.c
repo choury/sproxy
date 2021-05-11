@@ -68,6 +68,7 @@ void SetTcpOptions(int fd, const struct sockaddr_storage* ignore){
 }
 
 void SetUdpOptions(int fd, const struct sockaddr_storage* addr){
+    (void)addr;
     int enable = 1;
 #if defined(IP_RECVERR) && defined(IPV6_RECVERR)
     if (addr->ss_family == AF_INET) {
@@ -85,6 +86,7 @@ void SetUdpOptions(int fd, const struct sockaddr_storage* addr){
 }
 
 void SetIcmpOptions(int fd, const struct sockaddr_storage* addr) {
+    (void)addr;
     int enable = 1;
 #if defined(IP_RECVERR) && defined(IPV6_RECVERR)
     if (addr->ss_family == AF_INET) {
