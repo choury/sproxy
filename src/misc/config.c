@@ -31,6 +31,28 @@ static char* ipv6_options[] = {"disable", "enable", "auto", NULL};
 static char* server_string = NULL;
 static char* policy_file = NULL;
 
+int efd = -1;
+void openefd(){
+    if(efd >= 0){
+        LOGF("efd is not invalid\n");
+    }
+#if __linux__
+    efd = epoll_create1(EPOLL_CLOEXEC);
+#elif __APPLE__
+    efd = kqueue();
+#else
+#error "Only macOS and linux are supported"
+#endif
+    if(efd < 0){
+        LOGF("event fd create: %s\n", strerror(errno));
+    }
+}
+
+void closeefd(){
+    close(efd);
+    efd = -1;
+}
+
 struct options opt = {
     .cafile            = NULL,
     .cert              = NULL,
@@ -205,6 +227,7 @@ void prepare(){
     if(setrlimit(RLIMIT_NOFILE, &limits)) {
         LOGE("setrlimit failed: %s\n", strerror(errno));
     }
+    openefd();
     register_network_change_cb(network_changed);
 }
 
@@ -367,7 +390,7 @@ int parseConfigFile(const char* config_file){
                 break;
             }
             size_t argsLen = strlen(args);
-            while((args[argsLen-1] == ' ' || args[argsLen-1] == '\t') && argsLen > 0){
+            while(argsLen > 0 && (args[argsLen-1] == ' ' || args[argsLen-1] == '\t')){
                 args[--argsLen] = 0;
             }
             if(args[0] == '\"' && args[argsLen - 1] == '\"'){

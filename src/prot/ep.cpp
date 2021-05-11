@@ -19,25 +19,7 @@
 #include <sys/epoll.h>
 #endif
 
-int efd = -1;
-static void __attribute__((constructor)) openefd(){
-#if __linux__
-    efd = epoll_create1(EPOLL_CLOEXEC);
-#elif __APPLE__
-    efd = kqueue();
-#else
-#error "Only macOS and linux are supported"
-#endif
-    if(efd < 0){
-        LOGE("event fd create: %s\n", strerror(errno));
-        exit(2);
-    }
-}
-
-static void __attribute__((destructor)) closeefd(){
-    close(efd);
-    efd = -1;
-}
+extern int efd;
 
 const char *events_string[]= {
         "NULL",

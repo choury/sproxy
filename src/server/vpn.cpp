@@ -37,6 +37,7 @@ int vpn_start(int fd){
     flushdns();
     flushproxy2();
     releaseall();
+    closeefd();
     return 0;
 }
 

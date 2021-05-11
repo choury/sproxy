@@ -70,6 +70,7 @@ int loadproxy(const char* proxy, struct Destination* server);
 
 void flushdns();
 void flushproxy2();
+void closeefd();
 
 const char* getVersion();
 const char* getBuildTime();
