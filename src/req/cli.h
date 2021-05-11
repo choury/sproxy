@@ -37,6 +37,7 @@ public:
     virtual bool SetServer(const std::string& server) override;
     virtual std::string GetServer() override;
     virtual bool Login(const std::string& token, const std::string& source) override;
+    virtual std::string GetStatus() override;
 };
 
 class Cli_server: public Ep {

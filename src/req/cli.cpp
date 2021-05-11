@@ -132,3 +132,25 @@ bool Cli::Login(const std::string &token, const std::string &source) {
     addauth(source.c_str());
     return true;
 }
+
+static void sstream_dumper(void* param, const char* fmt, ...) {
+    std::string* ss = (std::string*)param;
+    va_list ap;
+    va_start(ap, fmt);
+
+    int size = vsnprintf(nullptr, 0, fmt, ap) + 1; // Extra space for '\0'
+    va_end(ap);
+
+    auto buf = (char*)malloc(size);
+    va_start(ap, fmt);
+    vsnprintf(buf, size, fmt, ap);
+    ss->append(std::string(buf, buf+size-1)); // We don't want the '\0' inside
+    free(buf);
+    va_end(ap);
+}
+
+std::string Cli::GetStatus() {
+    std::string ss;
+    ::dump_stat(sstream_dumper, &ss);
+    return ss;
+}

@@ -216,6 +216,11 @@ static void com_server(SproxyClient* c, const std::vector<std::string>&) {
     std::cout<<r.get_future().get()<<std::endl;
 }
 
+static void com_status(SproxyClient* c, const std::vector<std::string>&) {
+    auto r = c->GetStatus();
+    std::cout<<r.get_future().get()<<std::endl;
+}
+
 static void com_exit(SproxyClient*, const std::vector<std::string>&) {
     exit(0);
 }
@@ -231,6 +236,7 @@ COMMAND commands[] = {
         { "flush", com_flush, "<cgi|dns|strategy>", generator_flush},
         { "switch", com_switch, "<proxy>\tSet proxy server", nullptr},
         { "server", com_server, "\tGet proxy server", nullptr},
+        { "status", com_status, "\tShow status of server", nullptr},
         { "exit", com_exit, "\tQuit the program", nullptr},
         { "help", com_help, "\tDisplay this text", command_generator},
         {nullptr, nullptr, nullptr, nullptr},
