@@ -188,13 +188,16 @@ void RWer::Reconnect() {
 }
 
 void RWer::Close(std::function<void()> func) {
+    if(flags & RWER_CLOSING){
+        return;
+    }
     flags |= RWER_CLOSING;
     closeCB = std::move(func);
     if(getFd() >= 0 && stats != RWerStats::Connecting){
         setEvents(RW_EVENT::READWRITE);
         handleEvent = (void (Ep::*)(RW_EVENT))&RWer::closeHE;
     }else{
-        closeCB();
+        addjob(closeCB, 0, JOB_FLAGS_AUTORELEASE);
     }
 }
 
