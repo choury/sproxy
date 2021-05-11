@@ -146,7 +146,7 @@ int Dns_Query::build(unsigned char* buf)const {
 
 Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
     if(len < sizeof(DNS_HDR)){
-        LOGE("[DNS] incompleted DNS response\n");
+        LOGE("[DNS] incomplete DNS response\n");
         return;
     }
     const DNS_HDR *dnshdr = (const DNS_HDR *)buff;
@@ -156,7 +156,8 @@ Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
     assert(numq && (flag & QR));
     for (int i = 0; i < numq; ++i) {
         p = (unsigned char *)getdomain(dnshdr, p, len, domain);
-        if((const char*)p + sizeof(DNS_QUE) - buff >= (int)len){
+        if((const char*)p + sizeof(DNS_QUE) - buff > (int)len){
+            LOGE("[DNS] numq overflow\n");
             return;
         }
         DNS_QUE* que = (DNS_QUE*)p;
@@ -171,7 +172,8 @@ Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
     uint16_t numa = ntohs(dnshdr->numa);
     for(int i = 0; i < numa; ++i) {
         p = (unsigned char *)getdomain(dnshdr, p, len, domain);
-        if((const char*)p + sizeof(DNS_RR) - buff >= (int)len){
+        if((const char*)p + sizeof(DNS_RR) - buff > (int)len){
+            LOGE("[DNS] numa overflow\n");
             return;
         }
         DNS_RR *dnsrr = (DNS_RR*)p;
