@@ -34,10 +34,7 @@ int vpn_start(int fd){
         }
     }
     LOG("VPN exiting ...\n");
-    flushdns();
-    flushproxy2();
-    releaseall();
-    closeefd();
+    neglect();
     return 0;
 }
 

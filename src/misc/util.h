@@ -33,7 +33,6 @@ void Base64Encode(const char* s, size_t len, char* dst);
 uint64_t getutime();
 uint32_t getmtime();
 
-void dump_stat();
 void dump_trace(int ignore);
 
 PRE_POINTER void* memdup(const void* ptr, size_t size);

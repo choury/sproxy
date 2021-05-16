@@ -19,7 +19,16 @@ public:
     virtual void dump_stat(Dumper dp, void* param) = 0;
 };
 
-void releaseall();
-void dump_stat(Dumper dp, void* param);
+#ifdef  __cplusplus
+extern "C" {
+#endif
 
+void releaseall();
+void dump_stat();
+
+#ifdef  __cplusplus
+}
+#endif
+
+void dump_stat(Dumper dp, void *param);
 #endif

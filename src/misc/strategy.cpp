@@ -139,7 +139,7 @@ void reloadstrategy() {
                 line = nullptr;
             });
             lineNum ++;
-            if(len == 0 || line[0] == '#'){
+            if(len == 0 || line[0] == '#' || line[0] == '\n'){
                 continue;
             }
             stringstream ss(line);

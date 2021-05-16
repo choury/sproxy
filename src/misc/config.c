@@ -34,7 +34,7 @@ static char* policy_file = NULL;
 int efd = -1;
 void openefd(){
     if(efd >= 0){
-        LOGF("efd is not invalid\n");
+        return;
     }
 #if __linux__
     efd = epoll_create1(EPOLL_CLOEXEC);
@@ -195,6 +195,10 @@ void network_changed(){
     flushproxy2();
 }
 
+
+void releaseall();
+void dump_stat();
+
 void prepare(){
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
@@ -229,6 +233,12 @@ void prepare(){
     }
     openefd();
     register_network_change_cb(network_changed);
+}
+
+void neglect(){
+    flushdns();
+    flushproxy2();
+    releaseall();
 }
 
 static void usage(const char * program){
