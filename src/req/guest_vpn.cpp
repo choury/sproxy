@@ -335,8 +335,12 @@ void Guest_vpn::response(void*, HttpRes* res) {
             ->setack(tcpStatus->want_seq)
             ->setwindowscale(tcpStatus->send_wscale)
             ->setwindow(status.req->cap() >> tcpStatus->send_wscale)
-            ->setmss(BUF_LEN)
+            ->setmss(Min(tcpStatus->mss, BUF_LEN))
             ->setflag(TH_ACK | TH_SYN);
+
+        if(tcpStatus->options & (1<<TCPOPT_SACK_PERMITTED)){
+            pac_return->tcp->setsack(nullptr);
+        }
 
         tcpStatus->send_ack = tcpStatus->want_seq;
         server->sendPkg(pac_return, (const void*)nullptr, 0);

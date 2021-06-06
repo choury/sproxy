@@ -31,8 +31,6 @@ typedef struct pseudo_hdr6 {
     uint8_t proto;
 } __attribute__((packed)) pseudo_hdr6;
 
-
-
 typedef struct tcp_opt{
     uint8_t kind;
     uint8_t length;
@@ -43,19 +41,18 @@ typedef struct tcp_opt{
  * TCP timestamp struct
  */
 typedef struct tcp_timestamp {
-    char kind;
-    char length;
+    uint8_t kind;
+    uint8_t length;
     uint32_t tsval;
     uint32_t tsecr;
-    char padding[2];
 } __attribute__((packed)) tcp_timestamp;
 
 /*
  * TCP Maximum Segment Size
  */
 typedef struct tcp_mss {
-    char kind;
-    char length;
+    uint8_t kind;
+    uint8_t length;
     uint16_t mss;
 } __attribute__((packed)) tcp_mss;
 
@@ -63,9 +60,17 @@ typedef struct tcp_windowscale{
     uint8_t kind;
     uint8_t length;
     uint8_t scale;
-    uint8_t padding;
 } __attribute__((packed)) tcp_windowscale;
 
+struct tcp_sack_content {
+    uint32_t left;
+    uint32_t right;
+} __attribute__((packed));
+typedef struct tcp_sack{
+    uint8_t kind;
+    uint8_t length;
+    struct tcp_sack_content data[0];
+} __attribute__((packed)) tcp_sack;
 
 /**
   * calculate checksum in ip/tcp header
@@ -404,11 +409,45 @@ Tcp* Tcp::setwindowscale(uint8_t scale) {
     return this;
 }
 
+Tcp *Tcp::setsack(const struct Sack *sack) {
+    size_t count = 0;
+    const struct Sack* ps = sack;
+    while(ps){
+        count ++;
+        ps = sack->next;
+    }
+    size_t length = sizeof(tcp_sack) + count * sizeof(tcp_sack_content);
+    if (tcpopt) {
+        tcpopt = (char *)realloc(tcpopt, tcpoptlen + length);
+    } else{
+        assert(tcpoptlen == 0);
+        tcpopt = (char *) malloc(length);
+    }
+    struct tcp_sack* s = (tcp_sack*)(tcpopt + tcpoptlen);
+    memset(s, TCPOPT_NOP, length);
+    if(count == 0) {
+        s->kind = TCPOPT_SACK_PERMITTED;
+    }else{
+        s->kind = TCPOPT_SACK;
+    }
+    s->length = length;
+    for(int i = 0; sack != nullptr; i++){
+        s->data[i].left = sack->left;
+        s->data[i].right = sack->right;
+        sack = sack->next;
+    }
+
+    tcpoptlen += length;
+    return this;
+}
+
 
 char * Tcp::build_packet(const ip* ip_hdr, void* data, size_t& len) {
     if (tcpoptlen % 4) {
-        LOGE("TCP option length must be divisible by 4.\n");
-        return 0;
+        size_t length = UpTo(tcpoptlen, 4);
+        tcpopt = (char *)realloc(tcpopt, length);
+        memset(tcpopt + tcpoptlen, TCPOPT_NOP, length - tcpoptlen);
+        tcpoptlen = length;
     }
     assert(data);
 
@@ -427,8 +466,10 @@ char * Tcp::build_packet(const ip* ip_hdr, void* data, size_t& len) {
 
 char * Tcp::build_packet(const ip6_hdr* ip_hdr, void* data, size_t& len) {
     if (tcpoptlen % 4) {
-        LOGE("TCP option length must be divisible by 4.\n");
-        return 0;
+        size_t length = UpTo(tcpoptlen, 4);
+        tcpopt = (char *)realloc(tcpopt, length);
+        memset(tcpopt + tcpoptlen, TCPOPT_NOP, length - tcpoptlen);
+        tcpoptlen = length;
     }
     assert(data);
 
@@ -1093,7 +1134,8 @@ char* Ip6::build_packet(void* data, size_t& len) {
     case IPPROTO_UDP:
         packet = udp->build_packet(&hdr, data, len);
         break;
-    default:
+    }
+    if(packet == nullptr){
         abort();
     }
     packet = (char *)p_move(packet, -(int)sizeof(ip6_hdr));

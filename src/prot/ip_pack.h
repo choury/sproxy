@@ -106,6 +106,12 @@ public:
     uint16_t getseq()const;
 };
 
+struct Sack{
+    uint32_t left;
+    uint32_t right;
+    struct Sack* next;
+};
+
 class Tcp{
     tcphdr tcp_hdr; //tcp头
     char *tcpopt = nullptr; //tcp头选项
@@ -127,6 +133,7 @@ public:
     Tcp* setmss(uint16_t mss);
     Tcp* settimestamp(uint32_t tsval, uint32_t tsecr);
     Tcp* setwindowscale(uint8_t scale);
+    Tcp* setsack(const struct Sack* sack);
     uint32_t getack() const;
     uint32_t getseq() const;
     uint16_t getsport() const;
