@@ -248,9 +248,6 @@ void Host::deleteLater(uint32_t errcode){
         case CONNECT_FAILED:
             status.req->response(new HttpRes(new HttpResHeader(H503), "[[connect failed]]\n"));
             break;
-        case CONNECT_TIMEOUT:
-            status.req->response(new HttpRes(new HttpResHeader(H504), "[[connect timeout]]\n"));
-            break;
         case SOCKET_ERR:
             status.req->response(new HttpRes(new HttpResHeader(H502), "[[socket error]]\n"));
             break;

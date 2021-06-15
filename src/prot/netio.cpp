@@ -144,6 +144,16 @@ void SocketRWer::Dnscallback(void* param, std::list<sockaddr_storage> addrs) {
     rwer->connect();
 }
 
+void SocketRWer::connectFailed(int error) {
+    RcdDown(hostname, addrs.front());
+    addrs.pop();
+    if(addrs.empty()) {
+        //we have tried all addresses.
+        return ErrorHE(CONNECT_FAILED, error);
+    }
+    con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 0);
+}
+
 void SocketRWer::connect() {
     if(stats != RWerStats::Resolving && stats != RWerStats::Connecting) {
         return;
@@ -165,19 +175,14 @@ void SocketRWer::connect() {
         return;
     }
     if(getFd() >= 0) {
-        //connected failed for top addr
-        RcdDown(hostname, addrs.front());
-        addrs.pop();
+        //connected timeout for top addr
+        setFd(-1);
+        return connectFailed(ETIMEDOUT);
     }
-    if(addrs.empty()) {
-        //we have tried all addresses.
-        return ErrorHE(CONNECT_TIMEOUT, 0);
-    }
-
     if(protocol == Protocol::TCP) {
         int fd = Connect(&addrs.front(), SOCK_STREAM);
         if (fd < 0) {
-            return ErrorHE(SOCKET_ERR, errno);
+            return connectFailed(errno);
         }
         setFd(fd);
         setEvents(RW_EVENT::WRITE);
@@ -186,7 +191,7 @@ void SocketRWer::connect() {
     } else if(protocol == Protocol::UDP) {
         int fd = Connect(&addrs.front(), SOCK_DGRAM);
         if (fd < 0) {
-            return ErrorHE(SOCKET_ERR, errno);
+            return connectFailed(errno);
         }
         setFd(fd);
         Connected(addrs.front());
@@ -206,7 +211,7 @@ void SocketRWer::connect() {
             Connected(addr);
             return;
         }
-        return ErrorHE(SOCKET_ERR, errno);
+        return connectFailed(errno);
     } else {
         LOGF("Unknow protocol: %d\n", protocol);
     }
