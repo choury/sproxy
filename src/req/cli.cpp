@@ -123,14 +123,7 @@ std::string Cli::GetServer() {
 
 bool Cli::Login(const std::string &token, const std::string &source) {
     LOG("%s [%s] %s\n", rwer->getPeer(), __func__, source.c_str());
-    if(checkauth(source.c_str())){
-        return true;
-    }
-    if (strcmp(opt.auth_string, token.c_str()) != 0) {
-        return false;
-    }
-    addauth(source.c_str());
-    return true;
+    return checkauth(source.c_str(), token.c_str());
 }
 
 static void sstream_dumper(void* param, const char* fmt, ...) {

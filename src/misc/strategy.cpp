@@ -151,9 +151,6 @@ void reloadstrategy() {
         }
         free(line);
     }
-
-    addauth("127.0.0.1");
-    addauth("[::1]");
 }
 
 void savesites(){
@@ -268,13 +265,30 @@ std::list<std::pair<std::string, strategy>> getallstrategy(){
     return slist;
 }
 
-static std::set<string> authips;
-void addauth(const char *ip) {
-    authips.insert(ip);
+static std::set<string> secrets;
+static std::set<string> authips{"127.0.0.1", "[::1]"};
+
+void addsecret(const char* secret) {
+    secrets.emplace(secret);
 }
 
-bool checkauth(const char *ip) {
-    if(strlen(opt.auth_string) == 0)
+bool checkauth(const char *ip, const char* token) {
+    if(secrets.empty())
         return true;
-    return authips.count(ip) > 0;
+    if(authips.count(ip) > 0){
+        return true;
+    }
+    if(token == nullptr){
+        return false;
+    }
+    if(strncmp(token, "Basic ", 6) == 0){
+        token += 6;
+    }
+    for(const auto& secret : secrets){
+        if(secret == token){
+            authips.insert(ip);
+            return true;
+        }
+    }
+    return false;
 }

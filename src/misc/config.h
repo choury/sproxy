@@ -54,7 +54,6 @@ struct options{
     FILE* policy_write;
     int64_t CPORT;
     struct Destination Server;
-    char auth_string[DOMAINLIMIT];
     char rewrite_auth[DOMAINLIMIT];
     enum ipv6_mode ipv6_mode;
     struct arg_list request_headers;

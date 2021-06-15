@@ -30,6 +30,7 @@ static char** main_argv = NULL;
 static char* ipv6_options[] = {"disable", "enable", "auto", NULL};
 static char* server_string = NULL;
 static char* policy_file = NULL;
+static struct arg_list secrets = {NULL, NULL};
 
 int efd = -1;
 void openefd(){
@@ -78,7 +79,6 @@ struct options opt = {
         .hostname   = {0},
         .port       = 0,
     },
-    .auth_string    = {0},
     .rewrite_auth   = {0},
     .ipv6_mode      = Auto,
     .request_headers = {
@@ -163,14 +163,14 @@ static struct option_detail option_detail[] = {
     {"policy-file", "The file of policy ("PREFIX"/etc/sproxy/sites.list as default)", option_string, &policy_file, NULL},
     {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64, opt.rewrite_auth, NULL},
     {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
-    {"secret", "Set a user and passwd for proxy (user:password), default is none.", option_base64, opt.auth_string, NULL},
+    {"secret", "Set user and passwd for proxy (user:password), default is none.", option_list, &secrets, NULL},
     {"sni", "Act as a sni proxy", option_bool, &opt.sni_mode, (void*)true},
     {"server", "default proxy server (can ONLY set in config file)", option_string, &server_string, NULL},
     {"set-dns-route", "set route for dns server (via VPN interface)", option_bool, &opt.set_dns_route, (void*)true},
     {"socket", "set listen socket path for cli (/var/run/sproxy.sock is default for root and /tmp/sproxy.sock for others)", option_string, &opt.socket, NULL},
     {"alter-method", "use Alter-Method to define real method (for obfuscation), http1 only", option_bool, &opt.alter_method, (void*)true},
     {"request-header", "append the header (name:value) for plain http request", option_list, &opt.request_headers, NULL},
-    {"version", "show the version of this programe", option_bool, NULL, NULL},
+    {"version", "show the version of this programme", option_bool, NULL, NULL},
 #ifndef NDEBUG
     {"debug-event", "debug-event", option_bitwise, &debug, (void*)DEVENT},
     {"debug-dns", "\tdebug-dns", option_bitwise, &debug, (void*)DDNS},
@@ -536,6 +536,11 @@ void parseConfig(int argc, char **argv){
     if (opt.key && access(opt.key, R_OK)){
         LOGE("access key file failed: %s\n", strerror(errno));
         exit(1);
+    }
+    for(struct arg_list* p = secrets.next; p != NULL; p = p->next){
+        char secret_encode[DOMAINLIMIT];
+        Base64Encode(p->arg, strlen(p->arg), secret_encode);
+        addsecret(secret_encode);
     }
  #ifndef __ANDROID__
     if (opt.socket == NULL){

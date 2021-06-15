@@ -210,7 +210,8 @@ void Cgi::request(HttpReq* req, Requester* src) {
         nullptr,
     };
     req->header->set("X-Real-IP", src->getid());
-    req->header->set("X-Authorized", checkauth(src->getid()));
+    req->header->set("X-Authorized",
+                     checkauth(src->getid(), req->header->get("Authorization")));
     CGI_Header *header = req->header->getcgi();
     rwer->buffer_insert(rwer->buffer_end(),
                         write_block{header, sizeof(CGI_Header) + ntohs(header->contentLength), 0}

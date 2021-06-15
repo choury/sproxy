@@ -4,8 +4,8 @@
 #ifdef  __cplusplus
 extern "C" {
 #endif
-void addauth(const char * ip);
-bool checkauth(const char *ip);
+void addsecret(const char* secret);
+bool checkauth(const char* ip, const char* token);
 void reloadstrategy();
 bool addstrategy(const char *host, const char* s, const char* ext);
 bool delstrategy(const char *host);

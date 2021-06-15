@@ -23,7 +23,7 @@ static void StatusDump(void* param, const char* fmt, ...) {
 }
 
 void Status::request(HttpReq* req, Requester* src){
-    if(!checkauth(src->getid())){
+    if(!checkauth(src->getid(), req->header->get("Authorization"))){
         req->response(new HttpRes(new HttpResHeader(H401), ""));
     }else{
         HttpResHeader* header = new HttpResHeader(H200);
