@@ -31,17 +31,29 @@ static Trie<char, strategy> ipv6s;
 
 string toLower(const string &s);
 
+static std::string getrawip(const char* ipstr) {
+    if(ipstr[0] != '['){
+        return ipstr;
+    }
+    //for ipv6, we should drop '[]'
+    char name[URLLIMIT]={0};
+    int l = sprintf(name, "%s", ipstr + 1);
+    name[l - 1] = 0;
+    return name;
+}
+
 static const Trie<char, strategy>* ipfind(const char* ipstr, int prefix = -1){
     in_addr ip4;
     in6_addr ip6;
 
     if (inet_pton(AF_INET, ipstr, &ip4) == 1) {
         return ipv4s.find(split(ip4, prefix));
-    }else if (inet_pton(AF_INET6, ipstr, &ip6) == 1) {
+    }else if (inet_pton(AF_INET6, getrawip(ipstr).c_str(), &ip6) == 1) {
         return ipv6s.find(split(ip6, prefix));
     }
     return nullptr;
 }
+
 
 bool ipinsert(const char* ipstr, strategy stra, int prefix = -1){
     in_addr ip4;
@@ -51,7 +63,7 @@ bool ipinsert(const char* ipstr, strategy stra, int prefix = -1){
         ipv4s.insert(split(ip4, prefix), stra);
         return true;
     }
-    if (inet_pton(AF_INET6, ipstr, &ip6) == 1) {
+    if (inet_pton(AF_INET6, getrawip(ipstr).c_str(), &ip6) == 1) {
         ipv6s.insert(split(ip6, prefix), stra);
         return true;
     }
@@ -66,7 +78,7 @@ bool ipremove(const char* ipstr, bool& found, int prefix = -1) {
         ipv4s.remove(split(ip4, prefix), found);
         return true;
     }
-    if (inet_pton(AF_INET6, ipstr, &ip6) == 1) {
+    if (inet_pton(AF_INET6, getrawip(ipstr).c_str(), &ip6) == 1) {
         ipv6s.remove(split(ip6, prefix), found);
         return true;
     }
