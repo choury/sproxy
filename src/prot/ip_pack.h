@@ -7,6 +7,9 @@
 #include <netinet/ip6.h>
 #include <netinet/ip_icmp.h>
 #include <netinet/icmp6.h>
+#ifdef HAVE_GUN_SOURCE_BUG
+#define __FAVOR_BSD    1
+#endif
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 
