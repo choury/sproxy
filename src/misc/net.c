@@ -17,7 +17,7 @@ int Checksocket(int fd, const char *msg){
 
     if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&error, &errlen) != 0) {
         error = errno;
-        LOGE("%s:getsockopt error: %s\n", msg, strerror(error));
+        LOGE("%s:getsockopt error [%d]: %s\n", msg, fd, strerror(error));
     }else if(error){
         LOGE("%s:sock error: %s\n", msg, strerror(error));
     }

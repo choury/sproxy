@@ -62,7 +62,6 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
     }else{
         init(new StreamRWer(fd, addr, std::bind(&Guest::Error, this, _1, _2)));
     }
-    this->init(rwer);
     rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
     rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));
 }
@@ -129,6 +128,9 @@ void Guest::ErrProc() {
 }
 
 void Guest::Error(int ret, int code) {
+    if(ret == SSL_SHAKEHAND_ERR){
+        LOGE("(%s): <guest> ssl_accept error %d/%d\n", getsrc(), ret, code);
+    }
     if(statuslist.empty()){
         return deleteLater(PEER_LOST_ERR);
     }

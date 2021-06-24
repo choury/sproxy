@@ -82,10 +82,12 @@ bool operator<(VpnKey a, VpnKey b) {
     return std::tie(a.protocol, a.src, a.dst) < std::tie(b.protocol, b.src, b.dst);
 }
 
+extern "C" void vpn_stop();
 
 Vpn_server::Vpn_server(int fd) {
     rwer = new PacketRWer(fd, nullptr, [](int ret, int code){
         LOGE("vpn_server error: %d/%d\n", ret, code);
+        vpn_stop();
     });
     rwer->SetReadCB([this](size_t len){
         const char* data = rwer->rdata();

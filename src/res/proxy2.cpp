@@ -19,7 +19,7 @@ void Proxy2::ping_check(){
     set64(buff, getutime());
     Ping(buff);
     LOGD(DHTTP2, "<proxy2> ping: window size global: %d/%d\n", localwinsize, remotewinsize);
-    connection_lost_job = rwer->updatejob( connection_lost_job, std::bind(&Proxy2::connection_lost, this), 10000);
+    connection_lost_job = rwer->updatejob(connection_lost_job, std::bind(&Proxy2::connection_lost, this), 2000);
 }
 
 bool Proxy2::wantmore(const ReqStatus& status) {
@@ -37,6 +37,13 @@ Proxy2::Proxy2(RWer* rwer) {
     }
     rwer->SetErrorCB(std::bind(&Proxy2::Error, this, _1, _2));
     rwer->SetReadCB([this](size_t len){
+#ifndef __ANDROID__
+        this->ping_check_job = this->rwer->updatejob(
+                this->ping_check_job,
+                std::bind(&Proxy2::ping_check, this), 10000);
+#else
+        receive_time = getmtime();
+#endif
         const char* data = this->rwer->rdata();
         size_t consumed = 0;
         size_t ret = 0;
@@ -48,13 +55,7 @@ Proxy2::Proxy2(RWer* rwer) {
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
-#ifndef __ANDROID__
-        this->ping_check_job = this->rwer->updatejob(
-                this->ping_check_job,
-                std::bind(&Proxy2::ping_check, this), 30000);
-#else
-        receive_time = getmtime();
-#endif
+
         if(proxy2 != this && statusmap.empty()){
             LOG("this %p is not the main proxy2 and no clients, close it.\n", this);
             deleteLater(NOERROR);
@@ -108,8 +109,8 @@ void Proxy2::PushFrame(Http2_header *header){
 #ifdef __ANDROID__
     uint32_t now = getmtime();
     if(http2_flag & HTTP2_FLAG_INITED
-        && now - receive_time >=30000
-        && now - ping_time >=5000)
+        && now - receive_time > 10000
+        && now - ping_time > 3000)
     {
         ping_time = now;
         ping_check();
@@ -263,7 +264,7 @@ void Proxy2::PingProc(const Http2_header *header){
         rwer->deljob(&connection_lost_job);
         double diff = (getutime()-get64(header+1))/1000.0;
         LOG("<proxy2> Get a ping time=%.3fms\n", diff);
-        if(diff >= 5000){
+        if(diff >= 1000){
             LOGE("<proxy2> The ping time too long!\n");
         }
     }

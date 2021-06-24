@@ -113,7 +113,7 @@ void RWer::SendData(){
             writed += ret;
             continue;
         }
-        if(errno == EAGAIN){
+        if(errno == EAGAIN || errno == ENOBUFS){
             break;
         }
         ErrorHE(SOCKET_ERR, errno);
@@ -170,7 +170,7 @@ void RWer::closeHE(RW_EVENT) {
     }
     int ret = wbuff.Write(std::bind(&RWer::Write, this, _1, _2));
 #ifndef WSL
-    if ((wbuff.length() == 0) || (ret <= 0 && errno != EAGAIN)) {
+    if ((wbuff.length() == 0) || (ret <= 0 && errno != EAGAIN && errno != ENOBUFS)) {
         closeCB();
     }
 #else

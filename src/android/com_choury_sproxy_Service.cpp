@@ -217,8 +217,6 @@ ret:
     return dns;
 }
 
-
-
 void android_vlog(int level, const char* fmt, va_list args){
     switch(level){
     case LOG_INFO:
