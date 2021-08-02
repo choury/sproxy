@@ -1,5 +1,4 @@
 #include "status.h"
-#include "misc/net.h"
 #include "misc/util.h"
 #include "misc/strategy.h"
 #include "req/requester.h"

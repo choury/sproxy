@@ -2,7 +2,7 @@
 #define NETIO_H__
 #include "rwer.h"
 #include "common/common.h"
-#include "prot/resolver.h"
+#include "prot/dns/resolver.h"
 
 #include <queue>
 

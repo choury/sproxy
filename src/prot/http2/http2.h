@@ -1,7 +1,7 @@
 #ifndef HTTP2_H__
 #define HTTP2_H__
 
-#include "http_pack.h"
+#include "prot/http/http_pack.h"
 #include "hpack.h"
 
 #include <list>

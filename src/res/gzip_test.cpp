@@ -1,7 +1,6 @@
 #include "gzip_test.h"
 #include "req/requester.h"
 #include "misc/util.h"
-#include "misc/net.h"
 
 #include <stdio.h>
 #include <assert.h>

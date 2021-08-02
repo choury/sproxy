@@ -1,5 +1,5 @@
 #include "netio.h"
-#include "resolver.h"
+#include "dns/resolver.h"
 #include "misc/util.h"
 #include "misc/net.h"
 

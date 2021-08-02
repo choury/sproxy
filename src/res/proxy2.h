@@ -2,7 +2,7 @@
 #define PROXY2_H__
 
 #include "responser.h"
-#include "prot/http2.h"
+#include "prot/http2/http2.h"
 
 struct ReqStatus{
     HttpReq* req;

@@ -1,6 +1,4 @@
 #include "fdns.h"
-#include "prot/dns.h"
-#include "prot/resolver.h"
 #include "req/requester.h"
 #include "misc/strategy.h"
 #include "misc/util.h"

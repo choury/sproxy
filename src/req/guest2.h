@@ -2,7 +2,7 @@
 #define GUEST2_H__
 
 #include "requester.h"
-#include "prot/http2.h"
+#include "prot/http2/http2.h"
 
 struct ReqStatus{
     HttpReq* req;

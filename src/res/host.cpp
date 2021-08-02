@@ -2,7 +2,6 @@
 #include "proxy2.h"
 #include "req/requester.h"
 #include "prot/sslio.h"
-#include "misc/net.h"
 
 #include <string.h>
 #include <assert.h>

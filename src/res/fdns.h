@@ -4,8 +4,8 @@
 //fake dns
 
 #include "responser.h"
-#include "prot/resolver.h"
-#include "prot/dns.h"
+#include "prot/dns/resolver.h"
+#include "prot/dns/dns.h"
 #include <map>
 
 class FDns;

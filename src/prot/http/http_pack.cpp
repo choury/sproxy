@@ -1,7 +1,6 @@
 #include "http_pack.h"
-#include "http2.h"
+#include "prot/http2/http2.h"
 #include "res/cgi.h"
-#include "misc/net.h"
 #include "misc/util.h"
 #include "misc/config.h"
 

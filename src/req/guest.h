@@ -2,7 +2,7 @@
 #define GUEST_H__
 
 #include "requester.h"
-#include "prot/http.h"
+#include "prot/http/http.h"
 #include "misc/net.h"
 
 #include <errno.h>

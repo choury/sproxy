@@ -1,7 +1,6 @@
 #include "file.h"
 #include "status.h"
 #include "req/requester.h"
-#include "misc/net.h"
 #include "misc/util.h"
 #include "misc/config.h"
 #include "cgi.h"

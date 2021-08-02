@@ -14,6 +14,10 @@
 extern "C" {
 #endif
 
+
+#define HTTPSPORT 443u
+#define HTTPPORT  80u
+
 struct DnsConfig{
     size_t namecount;
     struct sockaddr_storage server[20];

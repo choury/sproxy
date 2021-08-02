@@ -1,7 +1,6 @@
 #include "proxy2.h"
 #include "req/requester.h"
 #include "misc/util.h"
-#include "misc/net.h"
 #include "misc/config.h"
 
 #include <assert.h>

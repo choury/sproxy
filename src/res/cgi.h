@@ -2,7 +2,7 @@
 #define CGI_H__
 
 #include "responser.h"
-#include "prot/http_pack.h"
+#include "prot/http/http_pack.h"
 #include "misc/net.h"
 
 #include <assert.h>
