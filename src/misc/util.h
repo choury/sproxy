@@ -35,17 +35,17 @@ uint32_t getmtime();
 
 void dump_trace(int ignore);
 
-PRE_POINTER void* memdup(const void* ptr, size_t size);
+void* memdup(const void* ptr, size_t size);
 
-PRE_POINTER void* p_malloc(size_t size);
-PRE_POINTER void* p_memdup(const void *ptr, size_t size);
+PREPTR void* p_malloc(size_t size);
+PREPTR void* p_memdup(const void *ptr, size_t size);
 
-inline PRE_POINTER void* p_strdup(const char* str){
+inline PREPTR void* p_strdup(const char* str){
     return p_memdup(str, strlen(str)+1);
 }
 
-void p_free(PRE_POINTER void* ptr);
-PRE_POINTER void* p_move(PRE_POINTER void* ptr, signed char len);
+void p_free(PREPTR void* ptr);
+PREPTR void* p_move(PREPTR void* ptr, signed char len);
 char* avsprintf(size_t* size, const char* fmt, va_list ap);
 const char* findprogram(ino_t inode);
 struct in6_addr mapIpv4(struct in_addr addr, const char* prefix);
@@ -56,6 +56,7 @@ const char* protstr(Protocol p);
 int spliturl(const char* url, struct Destination* server, char* path);
 int dumpDestToBuffer(const struct Destination* server, char* buff, size_t buflen);
 const char* dumpDest(const struct Destination* server);
+const char* dumpAuthority(const struct Destination* Server);
 void change_process_name(const char *name);
 #ifdef  __cplusplus
 }

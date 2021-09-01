@@ -12,7 +12,7 @@
 #include <openssl/evp.h>
 
 #define QUIC_VERSION_1 0x00000001
-
+#define QUIC_INITIAL_LIMIT 1200
 /*
 Long Header Packet Types
 Type	Name	Section
@@ -102,11 +102,11 @@ Type Value	Frame Type Name         Definition  	Pkts	Spec
 #define QUIC_FRAME_STOP_SENDING         0x05
 #define QUIC_FRAME_CRYPTO               0x06
 #define QUIC_FRAME_NEW_TOKEN            0x07
-#define QUIC_FRAME_STREAM_START         0x08
+#define QUIC_FRAME_STREAM_START_ID      0x08
+#define QUIC_FRAME_STREAM_END_ID        0x0f
 #define QUIC_FRAME_STREAM_OFF_F         0x04
 #define QUIC_FRAME_STREAM_LEN_F         0x02
 #define QUIC_FRAME_STREAM_FIN_F         0x01
-#define QUIC_FRAME_STREAM_END           0x0f
 #define QUIC_FRAME_MAX_DATA             0x10
 #define QUIC_FRAME_MAX_STREAM_DATA      0x11
 #define QUIC_FRAME_MAX_STREAMS_BI       0x12
@@ -156,8 +156,6 @@ struct quic_secret{
     char key[32];
 };
 
-
-
 int quic_generate_initial_key(int client, const char* id, uint8_t id_len, quic_secret* secret);
 int quic_secret_set_key(quic_secret* secret, const char* key, uint32_t cipher);
 
@@ -189,7 +187,7 @@ struct quic_ack{
 
 struct quic_new_id{
     uint64_t seq;
-    uint64_t prior;
+    uint64_t retired;
     uint8_t length;
     char* id;
     char token[16];
@@ -207,12 +205,28 @@ struct quic_close{
     char*    reason;
 };
 
-struct quic_padding{
-    uint64_t length;
+struct quic_reset{
+    uint64_t id;
+    uint64_t error;
+    uint64_t fsize;
+};
+
+struct quic_stop{
+    uint64_t id;
+    uint64_t error;
+};
+
+struct quic_max_stream_data {
+    uint64_t id;
+    uint64_t max;
+};
+
+struct quic_stream_blocked{
+    uint64_t id;
+    uint64_t size;
 };
 
 struct quic_stream{
-    uint8_t type;
     uint64_t id;
     uint64_t offset;
     uint64_t length;
@@ -222,13 +236,18 @@ struct quic_stream{
 struct quic_frame{
     uint64_t type;
     union {
-        struct quic_crypto crypto;
-        struct quic_ack    ack;
-        struct quic_close  close;
+        struct quic_crypto    crypto;
+        struct quic_ack       ack;
+        struct quic_close     close;
         struct quic_new_id    new_id;
         struct quic_new_token new_token;
         struct quic_stream    stream;
-        struct quic_padding   padding;
+        struct quic_reset     reset;
+        struct quic_stop      stop;
+        struct quic_max_stream_data max_stream_data;
+        struct quic_stream_blocked  stream_blocked;
+        char     path_data[64];
+        uint64_t extra;
     };
 };
 
@@ -249,31 +268,13 @@ struct quic_pkt_header{
     size_t pn_length = 0;
 };
 
-/*
-class quic_packet{
-    int decrypt_short_packet(unsigned const char* data, size_t len, unsigned char* buff);
-    int decrypt_long_packet(unsigned const char* data, unsigned char* buff);
-
-public:
-    const struct quic_secret* secret = nullptr;
-    struct quic_header header;
-    size_t header_len = 0;
-    size_t body_len = 0;
-    std::list<quic_frame*> frames;
-
-    int pack(char* header);
-    int unpack(const void* data, size_t len);
-    ~quic_packet();
-};
- */
-
 int unpack_meta(const void* data, size_t len, quic_meta* meta);
-std::vector<quic_frame*> decode_frame(const void* data, size_t len,
-                                      quic_pkt_header* header, const quic_secret* secret);
+std::vector<quic_frame*> decode_packet(const void* data, size_t len,
+                                       quic_pkt_header* header, const quic_secret* secret);
 
 
-int pack_frame(void* buff, const quic_frame* frame);
-int encode_packet(const void* data, size_t len,
+void* pack_frame(void* buff, const quic_frame* frame);
+char* encode_packet(const void* data, size_t len,
                   const quic_pkt_header* header, const quic_secret* secret,
                   char* body);
 

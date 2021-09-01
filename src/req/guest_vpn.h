@@ -91,7 +91,7 @@ public:
     template <class T>
     void sendPkg(const std::shared_ptr<Ip>& pac, T* buff, size_t len){
         char* packet = pac->build_packet(buff, len);
-        rwer->buffer_insert(rwer->buffer_end(), write_block{packet, len, 0});
+        rwer->buffer_insert(rwer->buffer_end(), buff_block{packet, len});
     }
     virtual int32_t bufleft();
     void cleanKey(const VpnKey& key);

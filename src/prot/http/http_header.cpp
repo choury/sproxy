@@ -1,58 +1,25 @@
-#include "http_pack.h"
-#include "prot/http2/http2.h"
-#include "res/cgi.h"
-#include "misc/util.h"
+#include "http_header.h"
 #include "misc/config.h"
+#include "misc/util.h"
 
 #include <algorithm>
-#include <utility>
 #include <atomic>
+#include <sstream>
+#include <list>
 
 #include <assert.h>
-#include <inttypes.h>
+#include <string.h>
 
-#define AlterMethod "Alter-Method"
 
 using std::string;
 
-static std::atomic<uint64_t> id_gen(10000);
-static char *cgi_addnv(char *p, const string &name, const string &value);
-static char *cgi_getnv(char *p, string &name, string &value);
+static std::atomic<uint64_t> id_gen(100000);
 
-static char* toUpper(char* s) {
-    char* p = s;
-
-    while (*p) {
-        *p = toupper(*p);
-        p++;
-    }
-
-    return s;
-}
-
-string toLower(const string &s) {
-    string str = s;
+std::string toLower(const std::string &s) {
+    std::string str = s;
     std::transform(str.begin(), str.end(), str.begin(), ::tolower);
     return str;
 }
-
-static string toUpHeader(const string &s){
-    string str = s;
-    str[0] = toupper(str[0]);
-    for(size_t i = 0; i < str.length(); i++){
-        if(str[i] == '-' && i != str.length() - 1){
-            str[i+1] = toupper(str[i+1]);
-        }
-    }
-    return str;
-}
-
-// trim from start
-static std::string& ltrim(std::string && s) {
-    s.erase(0, s.find_first_not_of(" "));
-    return s;
-}
-
 
 void HttpHeader::set(const std::string& header, const string& value) {
     headers[toLower(header)] = value;
@@ -100,6 +67,7 @@ const std::map<std::string, std::string>& HttpHeader::getall() const {
     return headers;
 }
 
+/*
 HttpReqHeader::HttpReqHeader(const char* header, size_t len) {
     assert(header);
     assert(len < HEADLENLIMIT);
@@ -113,7 +81,7 @@ HttpReqHeader::HttpReqHeader(const char* header, size_t len) {
     memset(&Dest, 0, sizeof(Dest));
     if (spliturl(url, &Dest, path)) {
         LOGE("wrong url format:%s\n", url);
-        throw ERR_PROTOCOL_ERROR;
+        throw PROTOCOL_ERR;
     }
     for (char* str = strstr(httpheader, CRLF) + strlen(CRLF); ; str = nullptr) {
         char* p = strtok(str, CRLF);
@@ -144,56 +112,7 @@ HttpReqHeader::HttpReqHeader(const char* header, size_t len) {
         if(spliturl(get("Host"), &Dest, nullptr))
         {
             LOGE("wrong host format:%s\n", get("Host"));
-            throw ERR_PROTOCOL_ERROR;
-        }
-    }
-    postparse();
-}
-
-
-HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers) {
-    if(!headers.count(":method")){
-        LOGE("wrong http2 request\n");
-        throw ERR_PROTOCOL_ERROR;
-    }
-    for(auto i: headers){
-        if(i.first == "cookie"){
-            char cookiebuff[URLLIMIT];
-            strcpy(cookiebuff, i.second.c_str()); 
-            char *cp=cookiebuff;
-            for(char *p = strsep(&cp, ";");p;
-                p = strsep(&cp, ";"))
-            {
-                cookies.insert(ltrim(string(p)));
-            }
-        }else{
-            set(i.first, i.second);
-        }
-    }
-    snprintf(method, sizeof(method), "%s", get(":method"));
-
-    memset(&Dest, 0, sizeof(Dest));
-    if (get(":authority")){
-        spliturl(get(":authority"), &Dest, nullptr);
-        set("host", get(":authority"));
-    }
-    if(get(":scheme")){
-        snprintf(Dest.schema, sizeof(Dest.schema), "%s", get(":scheme"));
-    }
-    if(get(":path")){
-        snprintf(path, sizeof(path), "%s", get(":path"));
-        if(!path[0]){
-            throw ERR_PROTOCOL_ERROR;
-        }
-    }else{
-        strcpy(path, "/");
-    }
-
-    for (auto i = this->headers.begin(); i!= this->headers.end();) {
-        if (i->first[0] == ':') {
-            this->headers.erase(i++);
-        } else {
-            i++;
+            throw PROTOCOL_ERR;
         }
     }
     postparse();
@@ -203,7 +122,7 @@ HttpReqHeader::HttpReqHeader(const CGI_Header *headers) {
     if(headers->type != CGI_REQUEST)
     {
         LOGE("wrong CGI header");
-        throw ERR_PROTOCOL_ERROR;
+        throw HTTP2_ERR_PROTOCOL_ERROR;
     }
     request_id = ntohl(headers->requestId);
     memset(&Dest, 0, sizeof(Dest));
@@ -229,6 +148,49 @@ HttpReqHeader::HttpReqHeader(const CGI_Header *headers) {
             continue;
         }
         set(name, value);
+    }
+    postparse();
+}
+ */
+
+
+HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers) {
+    for(const auto& i: headers){
+        if(toLower(i.first) == "cookie"){
+            char cookiebuff[URLLIMIT];
+            strcpy(cookiebuff, i.second.c_str()); 
+            char *cp=cookiebuff;
+            for(char *p = strsep(&cp, ";");p;
+                p = strsep(&cp, ";"))
+            {
+                cookies.insert(ltrim(string(p)));
+            }
+        }else{
+            set(i.first, i.second);
+        }
+    }
+
+    snprintf(method, sizeof(method), "%s", get(":method"));
+    memset(&Dest, 0, sizeof(Dest));
+    if (get(":authority")){
+        spliturl(get(":authority"), &Dest, nullptr);
+    }
+    if(get(":scheme")){
+        snprintf(Dest.scheme, sizeof(Dest.scheme), "%s", get(":scheme"));
+    }
+    if(get(":path")){
+        snprintf(path, sizeof(path), "%s", get(":path"));
+    }
+    if(!path[0]){
+        strcpy(path, "/");
+    }
+
+    for (auto i = this->headers.begin(); i!= this->headers.end();) {
+        if (i->first[0] == ':') {
+            this->headers.erase(i++);
+        } else {
+            i++;
+        }
     }
     postparse();
 }
@@ -274,8 +236,8 @@ void HttpReqHeader::postparse() {
     if(!normal_method()){
         return;
     }
-    if(!Dest.schema[0] && ismethod("SEND")){
-        strcpy(Dest.schema, "udp");
+    if(!Dest.scheme[0] && ismethod("SEND")){
+        strcpy(Dest.scheme, "udp");
     }
     if(Dest.port == 0 && !ismethod("CONNECT") && !ismethod("SEND") && !ismethod("PING")){
         Dest.port = HTTPPORT;
@@ -289,7 +251,7 @@ std::string HttpReqHeader::geturl() const {
     char url[URLLIMIT]={0};
     int pos = dumpDestToBuffer(&Dest, url, sizeof(url));
     assert(path[0] == '/');
-    if(path[1]){
+    if(!ismethod("CONNECT") || path[1] ){
         snprintf(url + pos, sizeof(url) - pos, "%s", path);
     }
     return url;
@@ -300,6 +262,7 @@ bool HttpReqHeader::ismethod(const char* method) const{
     return strcasecmp(this->method, method) == 0;
 }
 
+/*
 char *HttpReqHeader::getstring(size_t &len) const{
     char *buff = nullptr;
     len = 0;
@@ -363,48 +326,32 @@ char *HttpReqHeader::getstring(size_t &len) const{
     return buff;
 }
 
-bool HttpReqHeader::no_body() const {
-    if(get("Upgrade")){
-        return false;
-    }
-    if(get("Transfer-Encoding")){
-        return false;
-    }
-    if(get("Content-Length")){
-        return strcmp("0", get("Content-Length")) == 0;
-    }
-    return !(ismethod("CONNECT") ||
-             ismethod("SEND") ||
-             ismethod("PING"));
-}
-
-
-Http2_header *HttpReqHeader::getframe(Hpack_index_table *index_table, uint32_t http_id) const{
+Http2_header *HttpReqHeader::getframe(Hpack_encoder *hpack_encoder, uint32_t http_id) const{
     Http2_header* const header = (Http2_header *)p_malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
-    header->type = HEADERS_TYPE;
+    header->type = HTTP2_STREAM_HEADERS;
     header->flags = END_HEADERS_F;
     set32(header->id, http_id);
 
     unsigned char *p = (unsigned char *)(header + 1);
-    p += index_table->hpack_encode(p, ":method", method);
+    p += hpack_encoder->encode(p, ":method", method);
     if(get("host") && !ismethod("CONNECT") && !ismethod("SEND")){
-        p += index_table->hpack_encode(p, ":authority" ,get("host"));
+        p += hpack_encoder->encode(p, ":authority", get("host"));
     }else{
         char authority[URLLIMIT];
         snprintf(authority, sizeof(authority), "%s:%d", Dest.hostname, Dest.port);
-        p += index_table->hpack_encode(p, ":authority" ,authority);
+        p += hpack_encoder->encode(p, ":authority", authority);
     }
     
     if(!ismethod("CONNECT") && !ismethod("SEND") && !ismethod("PING")){
-        p += index_table->hpack_encode(p, ":scheme", Dest.schema[0]?Dest.schema:"http");
-        p += index_table->hpack_encode(p, ":path", path);
+        p += hpack_encoder->encode(p, ":scheme", Dest.scheme[0] ? Dest.scheme : "http");
+        p += hpack_encoder->encode(p, ":path", path);
     }
     for(const auto& i: cookies){
-        p += index_table->hpack_encode(p, "cookie", i.c_str());
+        p += hpack_encoder->encode(p, "cookie", i.c_str());
     }
 
-    p += index_table->hpack_encode(p, headers);
+    p += hpack_encoder->encode(p, headers);
     set24(header->length, p-(unsigned char *)(header + 1));
     assert(get24(header->length) < BUF_LEN);
     return header;
@@ -430,6 +377,48 @@ CGI_Header *HttpReqHeader::getcgi() const{
     cgi->contentLength = htons(p - (char *)(cgi + 1));
     assert(ntohs(cgi->contentLength) < BUF_LEN);
     return cgi;
+}
+ */
+
+bool HttpReqHeader::no_body() const {
+    if(get("Upgrade")){
+        return false;
+    }
+    if(get("Transfer-Encoding")){
+        return false;
+    }
+    if(get("Content-Length")){
+        return strcmp("0", get("Content-Length")) == 0;
+    }
+    return !(ismethod("CONNECT") ||
+    ismethod("SEND") ||
+    ismethod("PING"));
+}
+
+
+std::multimap<std::string, std::string> HttpReqHeader::Normalize() const {
+    std::multimap<std::string, std::string> normalization;
+    normalization.emplace(":method", method);
+    normalization.emplace(":authority", dumpAuthority(&Dest));
+
+    if(!ismethod("CONNECT") && !ismethod("SEND") && !ismethod("PING")){
+        normalization.emplace(":scheme", Dest.scheme[0] ? Dest.scheme : "http");
+        normalization.emplace(":path", path);
+    }
+    for(const auto& i: cookies){
+        normalization.emplace("cookie", i.c_str());
+    }
+
+    for(const auto& i: headers){
+        normalization.emplace(i.first, i.second);
+    }
+    //rfc7540#section.8.1.2.2 && http3
+    normalization.erase("connection");
+    normalization.erase("keep-alive");
+    normalization.erase("proxy-connection");
+    normalization.erase("transfer-encoding");
+    normalization.erase("upgrade");
+    return normalization;
 }
 
 const char *HttpReqHeader::getparamstring() const {
@@ -457,7 +446,7 @@ std::map<string, string> HttpReqHeader::getcookies() const {
 }
 
 
-
+/*
 HttpResHeader::HttpResHeader(const char* header, size_t len) {
     assert(header);
     if(len == 0){
@@ -479,7 +468,7 @@ HttpResHeader::HttpResHeader(const char* header, size_t len) {
         char* sp = strpbrk(p, ":");
         if (sp == nullptr) {
             LOGE("wrong header format:%s\n", p);
-            throw ERR_PROTOCOL_ERROR;
+            throw PROTOCOL_ERR;
         }
         string name = toLower(string(p, sp-p));
         string value = ltrim(string(sp + 1));
@@ -491,31 +480,12 @@ HttpResHeader::HttpResHeader(const char* header, size_t len) {
     }
 }
 
-HttpResHeader::HttpResHeader(std::multimap<string, string>&& headers) {
-    for(const auto& i: headers){
-        if(i.first == "set-cookies"){
-            cookies.insert(i.second);
-        }else{
-            set(i.first, i.second);
-        }
-    }
-
-    snprintf(status, sizeof(status), "%s", get(":status"));
-    for (auto i = this->headers.begin(); i!= this->headers.end();) {
-        if (i->first[0] == ':') {
-            this->headers.erase(i++);
-        } else {
-            i++;
-        }
-    }
-}
-
 HttpResHeader::HttpResHeader(const CGI_Header* headers)
 {
     if(headers->type != CGI_RESPONSE)
     {
         LOGE("wrong CGI header");
-        throw ERR_PROTOCOL_ERROR;
+        throw HTTP2_ERR_PROTOCOL_ERROR;
     }
     request_id = ntohl(headers->requestId);
     char *p = (char *)(headers +1);
@@ -534,6 +504,27 @@ HttpResHeader::HttpResHeader(const CGI_Header* headers)
         set(name, value);
    }
 }
+ */
+
+
+HttpResHeader::HttpResHeader(std::multimap<string, string>&& headers) {
+    for(const auto& i: headers){
+        if(toLower(i.first) == "set-cookie"){
+            cookies.insert(i.second);
+        }else{
+            set(i.first, i.second);
+        }
+    }
+
+    snprintf(status, sizeof(status), "%s", get(":status"));
+    for (auto i = this->headers.begin(); i!= this->headers.end();) {
+        if (i->first[0] == ':') {
+            this->headers.erase(i++);
+        } else {
+            i++;
+        }
+    }
+}
 
 bool HttpResHeader::no_body() const {
     if(memcmp(status, "204", 3) == 0||
@@ -546,8 +537,8 @@ bool HttpResHeader::no_body() const {
            memcmp("0", get("content-length"), 2) == 0;
 }
 
-
-char * HttpResHeader::getstring(size_t &len) const{
+/*
+char* HttpResHeader::getstring(size_t &len) const{
     char* const buff = (char *)p_malloc(BUF_LEN);
     len = 0;
     if(get("Content-Length") || get("Transfer-Encoding") || no_body() || get("Upgrade")){
@@ -568,22 +559,21 @@ char * HttpResHeader::getstring(size_t &len) const{
     return buff;
 }
 
-
-Http2_header *HttpResHeader::getframe(Hpack_index_table* index_table, uint32_t http_id) const{
+Http2_header *HttpResHeader::getframe(Hpack_encoder* hpack_encoder, uint32_t http_id) const{
     Http2_header* const header = (Http2_header *)p_malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
-    header->type = HEADERS_TYPE;
+    header->type = HTTP2_STREAM_HEADERS;
     header->flags = END_HEADERS_F;
     set32(header->id, http_id);
 
     unsigned char *p = (unsigned char *)(header + 1);
     char status_h2[100];
     sscanf(status,"%99s",status_h2);
-    p += index_table->hpack_encode(p, ":status", status_h2);
+    p += hpack_encoder->encode(p, ":status", status_h2);
     for (const auto& i : cookies) {
-        p += index_table->hpack_encode(p, "set-cookie", i.c_str());
+        p += hpack_encoder->encode(p, "set-cookie", i.c_str());
     }
-    p += index_table->hpack_encode(p, headers);
+    p += hpack_encoder->encode(p, headers);
     
     set24(header->length, p-(unsigned char *)(header + 1));
     assert(get24(header->length) < BUF_LEN);
@@ -608,32 +598,35 @@ CGI_Header *HttpResHeader::getcgi() const{
     assert(ntohs(cgi->contentLength) < BUF_LEN);
     return cgi;
 }
+*/
 
-struct CGI_NVLenPair{
-    uint16_t nameLength;
-    uint16_t valueLength;
-}__attribute__((packed));
-
-static char *cgi_addnv(char *p, const string &name, const string &value) {
-    CGI_NVLenPair *cgi_pairs = (CGI_NVLenPair *) p;
-    cgi_pairs->nameLength = htons(name.size());
-    cgi_pairs->valueLength = htons(value.size());
-    p = (char *)(cgi_pairs +1);
-    memcpy(p, name.c_str(), name.size());
-    p += name.size();
-    memcpy(p, value.c_str(), value.size());
-    return p + value.size();
+std::multimap<std::string, std::string> HttpResHeader::Normalize() const {
+    std::multimap<std::string, std::string> normalization;
+    char status_h2[100];
+    sscanf(status,"%99s",status_h2);
+    normalization.emplace(":status", status_h2);
+    for(const auto& i : cookies) {
+        normalization.emplace("set-cookie", i.c_str());
+    }
+    for(const auto& i : headers){
+        normalization.emplace(i.first, i.second);
+    }
+    return normalization;
 }
 
-static char *cgi_getnv(char* p, string& name, string& value) {
-    CGI_NVLenPair *cgi_pairs = (CGI_NVLenPair *)p;
-    uint32_t name_len = ntohs(cgi_pairs->nameLength);
-    uint32_t value_len = ntohs(cgi_pairs->valueLength);
-    p = (char *)(cgi_pairs + 1);
-    name = string(p, name_len);
-    p += name_len;
-    value = string(p, value_len);
-    return p + value_len;
+void HttpResHeader::addcookie(const Cookie &cookie) {
+    std::stringstream cookiestream;
+    cookiestream << cookie.name <<'='<<cookie.value;
+    if(cookie.path) {
+        cookiestream << "; path="<< cookie.path;
+    }
+    if(cookie.domain) {
+        cookiestream << "; domain="<< cookie.domain;
+    }
+    if(cookie.maxage) {
+        cookiestream << "; max-age="<< cookie.maxage;
+    }
+    cookies.insert(cookiestream.str());
 }
 
 
@@ -717,162 +710,33 @@ bool HttpReqHeader::getrange() {
     }
 }
 
-Channel::Channel(more_data_t need_more): need_more(std::move(need_more)){
-}
 
-Channel::~Channel() {
-    free(data);
-}
-
-int Channel::cap(){
-    if(cap_cb){
-        ssize_t ret = cap_cb() - len;
-        return Max(ret, 0);
-    }
-    return DATALEN - (int)len;
+std::map<string, string> getparamsmap(const char* param) {
+    return getparamsmap(param, strlen(param));
 }
 
 
-size_t Channel::eatData(const void* buf, size_t size) {
-    if(size == 0){
-        eof = true;
+std::map<string, string> getparamsmap(const char *param, size_t len) {
+    std::map<string, string> params;
+    if(len == 0) {
+        return params;
     }
-    int rsize = std::min((int)size, cap());
-    if(rsize <= 0 && !eof){
-        return 0;
-    }
-    if(recv_const_cb){
-        recv_const_cb(buf, rsize);
-        return rsize;
-    }
-    if(recv_cb){
-        recv_cb(p_memdup(buf, rsize), rsize);
-        return rsize;
-    }
-    return 0;
-}
+    char paramsbuff[URLLIMIT];
+    URLDecode(paramsbuff, param, len);
+    char *p=paramsbuff;
+    if(*p) {
+        for (; ; p = nullptr) {
+            char *q = strtok(p, "&");
+            if (q == nullptr)
+                break;
 
-void Channel::send(const void* buf, size_t size){
-    assert((!eof || !size) && !closed);
-    size_t rsize = 0;
-    if(len){
-        goto innerCopy;
-    }
-    rsize = eatData(buf, size);
-    if(rsize == size){
-        return;
-    }
-    size -= rsize;
-    buf = (const char*)buf + rsize;
-    if(data == nullptr) {
-        data = (uchar *) malloc(DATALEN);
-    }
-innerCopy:
-    if(len + size > DATALEN){
-        abort();
-    }
-    memcpy(data+len, buf, size);
-    len += size;
-}
-
-void Channel::trigger(Channel::signal s) {
-    if (s == CHANNEL_ABORT || s == CHANNEL_CLOSED){
-        closed = true;
-    }
-    if(handler){
-        handler(s);
-    }
-}
-
-void Channel::more(){
-    int left = cap();
-    if(left <= 0){
-        return;
-    }
-    if(len){
-        size_t l = Min(len, left);
-        eatData((const void *) data, l);
-        len -= l;
-        left -= l;
-        memmove(data, data + l, len);
-    }
-    if(len == 0){
-        if(!eof && !closed && left > 0) {
-            need_more();
-            return;
-        }
-        if(eof){
-            eatData((const void *) nullptr, 0);
-        }
-        if(closed){
-            trigger(Channel::CHANNEL_CLOSED);
+            char* sp = strpbrk(q, "=");
+            if (sp) {
+                params[string(q, sp - q)] = sp + 1;
+            } else {
+                params[q] = "";
+            }
         }
     }
+    return params;
 }
-
-void Channel::attach(recv_t recv_cb, cap_t cap_cb) {
-    this->recv_cb = std::move(recv_cb);
-    this->cap_cb = std::move(cap_cb);
-    more();
-}
-
-void Channel::attach(recv_const_t recv_cb, cap_t cap_cb) {
-    this->recv_const_cb = std::move(recv_cb);
-    this->cap_cb = std::move(cap_cb);
-    more();
-}
-
-void Channel::setHandler(handler_t handler) {
-    this->handler = std::move(handler);
-}
-
-void Channel::detach() {
-    this->recv_cb = nullptr;
-    this->recv_const_cb = nullptr;
-    this->cap_cb = []{return 0;};
-    this->handler = nullptr;
-}
-
-HttpRes::HttpRes(HttpResHeader* header, more_data_t more): Channel(std::move(more)), header(header) {
-}
-
-HttpRes::HttpRes(HttpResHeader *header): HttpRes(header, []{}) {
-}
-
-HttpRes::HttpRes(HttpResHeader *header, const char *body): HttpRes(header, []{}) {
-    len = strlen(body);
-    if(len) {
-        data = (uchar *) malloc(DATALEN);
-        memcpy(data, body, len);
-    }
-    eof = true;
-    closed = true;
-    header->set("Content-Length", len);
-}
-
-HttpRes::~HttpRes() {
-    delete header;
-}
-
-HttpReq::HttpReq(HttpReqHeader* header, HttpReq::res_cb response, more_data_t more):
-    Channel(std::move(more)), header(header), response(std::move(response))
-{
-}
-
-HttpReq::~HttpReq() {
-    delete header;
-}
-
-
-void HttpLog(const char* src, const HttpReq* req, const HttpRes* res){
-    char status[100];
-    sscanf(res->header->status, "%s", status);
-    LOG("%s [%" PRIu32 "] %s %s [%s] %s [%s]\n", src,
-        req->header->request_id,
-        req->header->method,
-        req->header->geturl().c_str(),
-        req->header->get("Strategy"),
-        status,
-        req->header->get("User-Agent"));
-}
-

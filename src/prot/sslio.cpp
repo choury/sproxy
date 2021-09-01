@@ -53,9 +53,9 @@ SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol,
     assert(protocol == Protocol::TCP);
     ctx = SSL_CTX_new(SSLv23_client_method());
     if (ctx == nullptr) {
-        LOGE("SSL_CTX_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
-        throw 0;
+        LOGF("SSL_CTX_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
     }
+    SSL_CTX_set_keylog_callback(ctx, keylog_write_line);
 #if __ANDROID__
     if (SSL_CTX_load_verify_locations(ctx, opt.cafile, "/etc/security/cacerts/") != 1)
 #else
@@ -68,8 +68,7 @@ SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol,
 
     ssl = SSL_new(ctx);
     if(ssl == nullptr){
-        LOGE("SSL_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
-        throw 0;
+        LOGF("SSL_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
     }
     SSL_set_options(ssl, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);  // 去除支持SSLv2 SSLv3
     SSL_set_read_ahead(ssl, 1);
@@ -108,7 +107,7 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
         SSL_set_verify(ssl, SSL_VERIFY_PEER, verify_host_callback);
 
         handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::shakehandHE;
-        con_failed_job = updatejob(con_failed_job, std::bind(&SslRWer::connect, this), 1000);
+        con_failed_job = updatejob(con_failed_job, std::bind(&SslRWer::connect, this), 2000);
     }
 }
 
@@ -149,7 +148,10 @@ ssize_t SslRWer::Read(void* buff, size_t len){
     return ssl_get_error(ssl, SSL_read(ssl, buff, len));
 }
 
-ssize_t SslRWer::Write(const void* buff, size_t len){
+ssize_t SslRWer::Write(const void* buff, size_t len, uint64_t){
+    if(len == 0){
+        return 0;
+    }
     ERR_clear_error();
     return ssl_get_error(ssl, SSL_write(ssl, buff, len));
 }

@@ -135,7 +135,8 @@ Icmp::Icmp() {
 Icmp::Icmp(const char* packet, size_t len){
     if(len < sizeof(icmp_hdr)){
         LOGE("Invalid ICMP header length: %zu bytes\n", len);
-        throw 0;
+        valid = false;
+        return;
     }
     memcpy(&icmp_hdr, packet, sizeof(icmp_hdr));
 }
@@ -212,7 +213,8 @@ Icmp6::Icmp6() {
 Icmp6::Icmp6(const char* packet, size_t len){
     if(len < sizeof(icmp_hdr)){
         LOGE("Invalid ICMPV6 header length: %zu bytes\n", len);
-        throw 0;
+        valid = false;
+        return;
     }
     memcpy(&icmp_hdr, packet, sizeof(icmp_hdr));
 }
@@ -286,11 +288,13 @@ Tcp::Tcp(const char* packet, size_t len){
     hdrlen = tcp_hdr.th_off * 4;
     if (hdrlen < 20) {
         LOGE("Invalid TCP header length: %u bytes\n", hdrlen);
-        throw 0;
+        valid = false;
+        return;
     }
     if( len < hdrlen){
         LOGE("Invalid TCP packet length: %zu bytes\n", len);
-        throw 0;
+        valid = false;
+        return;
     }
     tcpoptlen = hdrlen - sizeof(struct tcphdr);
     if(tcpoptlen){
@@ -691,14 +695,15 @@ int Tcp::getType() const{
 Udp::Udp(const char* packet, size_t len){
     if(len < sizeof(udphdr)){
         LOGE("Invalid UDP packet length: %zu bytes\n", len);
-        throw 0;
+        valid = false;
+        return;
     }
     /* define/compute udp header offset */
     memcpy(&udp_hdr, packet, sizeof(struct udphdr));
     uint16_t udplen = ntohs(udp_hdr.uh_ulen);
     if (udplen < 8) {
         LOGE("Invalid UDP length: %u bytes\n", udplen);
-        throw 0;
+        valid = false;
     }
 
 }
@@ -790,6 +795,23 @@ uint8_t Ip::gettype() const {
     return type;
 }
 
+bool Ip::isValid() {
+    if(!valid){
+        return false;
+    }
+    switch(type){
+    case IPPROTO_ICMP:
+        return icmp->valid;
+    case IPPROTO_ICMPV6:
+        return icmp6->valid;
+    case IPPROTO_TCP:
+        return tcp->valid;
+    case IPPROTO_UDP:
+        return udp->valid;
+    default:
+        return false;
+    }
+}
 
 void Ip::dump() const{
     print();
@@ -837,14 +859,20 @@ Ip::~Ip() {
 
 std::shared_ptr<Ip> MakeIp(const char* packet, size_t len) {
     const ip* hdr = (const ip*)packet;
+    Ip* ip = nullptr;
     if(hdr->ip_v == IPVERSION){
-        return std::shared_ptr<Ip4>(new Ip4(packet, len));
+        ip = new Ip4(packet, len);
+    }else if(hdr->ip_v == 6){
+        ip = new Ip6(packet, len);
+    }else {
+        LOGE("Invalid IP version: %u\n", hdr->ip_v);
+        return nullptr;
     }
-    if(hdr->ip_v == 6){
-        return std::shared_ptr<Ip6>(new Ip6(packet, len));
+    if(!ip->isValid()){
+        delete ip;
+        return nullptr;
     }
-    LOGE("Invalid IP version: %u\n", hdr->ip_v);
-    throw 0;
+    return std::shared_ptr<Ip>(ip);
 }
 
 std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src, const sockaddr_storage* dst) {
@@ -855,7 +883,7 @@ std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src, const sock
         return std::shared_ptr<Ip6>(new Ip6(type, src, dst));
     }
     LOGE("Invalid sa_family: %u\n", src->ss_family);
-    throw 0;
+    return nullptr;
 }
 
 
@@ -865,14 +893,16 @@ std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src, const sock
 Ip4::Ip4(const char *packet, size_t len){
     if(len < sizeof(struct ip)){
         LOGE("Invalid IP header length: %zu bytes\n", len);
-        throw 0;
+        valid = false;
+        return;
     }
     /* define/compute ip header offset */
     memcpy(&hdr, packet, sizeof(struct ip));
     hdrlen = hdr.ip_hl * 4;
     if (hdrlen < 20) {
         LOGE("Invalid IP header length: %u bytes\n", hdrlen);
-        throw 0;
+        valid = false;
+        return;
     }
     type = hdr.ip_p;
 
@@ -920,22 +950,21 @@ Ip4::Ip4(uint8_t type, uint16_t sport, uint16_t dport){
         hdr.ip_len = sizeof(ip) + sizeof(udphdr);
         break;
     default:
-        throw 0;
+        valid = false;
     }
 }
 
 Ip4::Ip4(uint8_t type, const in_addr* src, uint16_t sport, const in_addr* dst, uint16_t dport):
-    Ip4(type, sport, dport) {
+        Ip4(type, sport, dport) {
     hdr.ip_src = *src;
     hdr.ip_dst = *dst;
 }
 
 Ip4::Ip4(uint8_t type, const sockaddr_storage* src, const sockaddr_storage* dst):
-    Ip4(type, &((sockaddr_in*)src)->sin_addr, ntohs(((sockaddr_in*)src)->sin_port),
-        &((sockaddr_in*)dst)->sin_addr, ntohs(((sockaddr_in*)dst)->sin_port))
+        Ip4(type, &((sockaddr_in*)src)->sin_addr, ntohs(((sockaddr_in*)src)->sin_port),
+            &((sockaddr_in*)dst)->sin_addr, ntohs(((sockaddr_in*)dst)->sin_port))
 {
 }
-
 
 char* Ip4::build_packet(void* data, size_t &len){
     char* packet = nullptr;
@@ -949,7 +978,8 @@ char* Ip4::build_packet(void* data, size_t &len){
     case IPPROTO_UDP:
         packet = udp->build_packet(&hdr, data, len);
         break;
-    default:
+    }
+    if(packet == nullptr){
         abort();
     }
     packet = (char *)p_move(packet, -(int)sizeof(ip));
@@ -990,16 +1020,16 @@ void Ip4::print() const{
     char sip[INET_ADDRSTRLEN];
     char dip[INET_ADDRSTRLEN];
     LOGD(DVPN,"IP header: "
-    "From: %s, "
-    "To: %s, "
-    "Version: %d, "
-    "Length: %d, "
-    "Tos: %d, "
-    "Totol length: %d, "
-    "Pid: %d, "
-    "TTL: %d, "
-    "Proto: %d, "
-    "Checksum: %d\n",
+              "From: %s, "
+              "To: %s, "
+              "Version: %d, "
+              "Length: %d, "
+              "Tos: %d, "
+              "Totol length: %d, "
+              "Pid: %d, "
+              "TTL: %d, "
+              "Proto: %d, "
+              "Checksum: %d\n",
          inet_ntop(AF_INET, &hdr.ip_src, sip, sizeof(sip)),
          inet_ntop(AF_INET, &hdr.ip_dst, dip, sizeof(dip)),
          hdr.ip_v,
@@ -1015,7 +1045,8 @@ void Ip4::print() const{
 Ip6::Ip6(const char* packet, size_t len) {
     if(len < sizeof(struct ip6_hdr)){
         LOGE("Invalid IP6 header length: %zu bytes\n", len);
-        throw 0;
+        valid = false;
+        return;
     }
     /* define/compute ip header offset */
     memcpy(&hdr, packet, sizeof(struct ip6_hdr));
@@ -1064,20 +1095,20 @@ Ip6::Ip6(uint8_t type, uint16_t sport, uint16_t dport) {
         hdr.ip6_plen = htons(sizeof(udphdr));
         break;
     default:
-        throw 0;
+        valid = false;
     }
 }
 
 Ip6::Ip6(uint8_t type, const in6_addr* src, uint16_t sport, const in6_addr* dst, uint16_t dport):
-    Ip6(type, sport, dport) {
+        Ip6(type, sport, dport) {
     hdr.ip6_src = *src;
     hdr.ip6_dst = *dst;
 }
 
 
 Ip6::Ip6(uint8_t type, const sockaddr_storage* src,  const sockaddr_storage* dst):
-    Ip6(type, &((sockaddr_in6*)src)->sin6_addr, ntohs(((sockaddr_in6*)src)->sin6_port),
-        &((sockaddr_in6*)dst)->sin6_addr, ntohs(((sockaddr_in6*)dst)->sin6_port))
+        Ip6(type, &((sockaddr_in6*)src)->sin6_addr, ntohs(((sockaddr_in6*)src)->sin6_port),
+            &((sockaddr_in6*)dst)->sin6_addr, ntohs(((sockaddr_in6*)dst)->sin6_port))
 {
 }
 
@@ -1103,14 +1134,14 @@ void Ip6::print() const {
     char sip[INET6_ADDRSTRLEN];
     char dip[INET6_ADDRSTRLEN];
     LOGD(DVPN,"IP header: "
-    "From: %s, "
-    "To: %s, "
-    "Version: %d, "
-    "TC: %d, "
-    "Flow: %d, "
-    "payload length: %d, "
-    "type: %d, "
-    "TTL: %d\n",
+              "From: %s, "
+              "To: %s, "
+              "Version: %d, "
+              "TC: %d, "
+              "Flow: %d, "
+              "payload length: %d, "
+              "type: %d, "
+              "TTL: %d\n",
          inet_ntop(AF_INET6, &hdr.ip6_src, sip, sizeof(sip)),
          inet_ntop(AF_INET6, &hdr.ip6_dst, dip, sizeof(dip)),
          hdr.ip6_vfc >> 4,

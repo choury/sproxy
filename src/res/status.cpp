@@ -23,9 +23,9 @@ static void StatusDump(void* param, const char* fmt, ...) {
 
 void Status::request(HttpReq* req, Requester* src){
     if(!checkauth(src->getid(), req->header->get("Authorization"))){
-        req->response(new HttpRes(new HttpResHeader(H401), ""));
+        req->response(new HttpRes(UnpackHttpRes(H401), ""));
     }else{
-        HttpResHeader* header = new HttpResHeader(H200);
+        HttpResHeader* header = UnpackHttpRes(H200);
         header->set("Transfer-Encoding", "chunked");
         header->set("Content-Type", "text/plain; charset=utf8");
         HttpRes* res = new HttpRes(header);

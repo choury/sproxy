@@ -1,8 +1,9 @@
 #ifndef RWER_H__
 #define RWER_H__
 
-#include "misc/job.h"
 #include "prot/ep.h"
+#include "misc/job.h"
+#include "misc/util.h"
 
 #include <sys/socket.h>
 
@@ -19,102 +20,125 @@
 #endif
 #endif
 
-struct write_block{
-    void* const buff;
-    size_t len;
-    size_t offset;
+class buff_block{
+    bool delegate = false;
+public:
+    const PREPTR void* const buff = nullptr;
+    size_t len = 0;
+    size_t offset = 0;
+    uint64_t id = 0;
+    buff_block(const buff_block&) = delete;
+    explicit buff_block(void* const buff, size_t len, size_t offset = 0, uint64_t id = 0):
+        delegate(true), buff(buff), len(len), offset(offset), id(id)
+    {
+    }
+    explicit buff_block(const void* const buff, size_t len, size_t offset = 0, uint64_t id = 0):
+            buff(buff), len(len), offset(offset), id(id)
+    {
+    }
+    buff_block(buff_block&& wb) noexcept :
+        delegate(wb.delegate), buff(wb.buff), len(wb.len), offset(wb.offset), id(wb.id){
+        wb.delegate = false;
+        wb.len = 0;
+        wb.offset = 0;
+        wb.id = 0;
+    }
+    ~buff_block(){
+        if(delegate && buff){
+            p_free((PREPTR void*)buff);
+        }
+    }
 };
 
 class WBuffer {
-    std::list<write_block> write_queue;
+    std::list<buff_block> write_queue;
     size_t  len = 0;
 public:
     ~WBuffer();
     size_t length();
-    std::list<write_block>::iterator start();
-    std::list<write_block>::iterator end();
-    std::list<write_block>::iterator push(std::list<write_block>::insert_iterator i, const write_block& wb);
-    ssize_t  Write(std::function<ssize_t(const void*, size_t)> write_func);
+    std::list<buff_block>::iterator start();
+    std::list<buff_block>::iterator end();
+    std::list<buff_block>::iterator push(std::list<buff_block>::insert_iterator i, buff_block&& bb);
+    ssize_t  Write(std::function<ssize_t(const void*, size_t, uint64_t)> write_func);
 };
 
 
 using std::placeholders::_1;
 using std::placeholders::_2;
+using std::placeholders::_3;
 
 enum class RWerStats{
     Idle = 0,
     Resolving,
     Connecting,
-    Connected,
     SslAccepting,
     SslConnecting,
+    Connected,
     ReadEOF,
-    Shutdown,
     Error,
 };
 
 class RWer: public Ep, public job_handler{
 protected:
-#define RWER_READING  1u
-#define RWER_SENDING  2u
+#define RWER_READING  1u  // handling the read buffer
+#define RWER_SENDING  2u  // handling the write buffer
 #define RWER_CLOSING  4u
+#define RWER_SHUTDOWN 8u
     uint32_t   flags = 0;
     RWerStats  stats = RWerStats::Idle;
     WBuffer    wbuff;
-    std::function<void(size_t len)> readCB;
+    //std::function<void(size_t len, uint64_t id)> readCB;
+    std::function<void(buff_block&)> readCB;
     std::function<void(size_t len)> writeCB;
     std::function<void(const sockaddr_storage&)> connectCB;
     std::function<void(int ret, int code)> errorCB;
     std::function<void()> closeCB;
 
-    virtual ssize_t Write(const void* buff, size_t len) = 0;
+    virtual ssize_t Write(const void* buff, size_t len, uint64_t id) = 0;
     virtual void SendData();
     virtual void ReadData() = 0;
     virtual void defaultHE(RW_EVENT events);
     virtual void closeHE(RW_EVENT events);
     virtual void Connected(const sockaddr_storage&);
     virtual void ErrorHE(int ret, int code);
+    virtual void ConsumeRData() = 0;
 public:
     explicit RWer(int fd, std::function<void(int ret, int code)> errorCB);
     explicit RWer(std::function<void(int ret, int code)> errorCB,
                   std::function<void(const sockaddr_storage&)> connectCB);
     virtual void SetErrorCB(std::function<void(int ret, int code)> func);
-    virtual void SetReadCB(std::function<void(size_t len)> func);
+    virtual void SetReadCB(std::function<void(buff_block&)> func);
     virtual void SetWriteCB(std::function<void(size_t len)> func);
 
     virtual bool supportReconnect();
     virtual void Reconnect();
     virtual void Close(std::function<void()> func);
-    virtual void EatReadData();
+    void EatReadData();
     virtual void Shutdown();
     RWerStats getStats(){return stats;}
     virtual const char* getPeer() {return "raw-rwer";}
 
     //for read buffer
     virtual size_t rlength() = 0;
-    virtual size_t rleft() = 0;
-    virtual const char *rdata() = 0;
-    virtual void consume(const char* data, size_t l) = 0;
 
     //for write buffer
     virtual size_t wlength();
-    virtual std::list<write_block>::insert_iterator buffer_head();
-    virtual std::list<write_block>::insert_iterator buffer_end();
-    virtual std::list<write_block>::insert_iterator
-    buffer_insert(std::list<write_block>::insert_iterator where, const write_block& wb);
-    //virtual void Clear(bool freebuffer);
+    virtual ssize_t cap(uint64_t id);
+    virtual std::list<buff_block>::insert_iterator buffer_head();
+    virtual std::list<buff_block>::insert_iterator buffer_end();
+    virtual std::list<buff_block>::insert_iterator
+    buffer_insert(std::list<buff_block>::insert_iterator where, buff_block&& bb);
 };
 
 class NullRWer: public RWer{
 public:
     explicit NullRWer();
-    virtual ssize_t Write(const void *buff, size_t len) override;
+    virtual ssize_t Write(const void *buff, size_t len, uint64_t) override;
     virtual void ReadData() override;
-    virtual size_t rleft() override;
     virtual size_t rlength() override;
     virtual size_t wlength() override;
-    virtual const char * rdata() override;
-    virtual void consume(const char* data, size_t l) override;
+
+    virtual void ConsumeRData() override;
     virtual const char* getPeer() override {return "null-rwer";}
 };
 
@@ -123,7 +147,7 @@ protected:
 #ifndef __linux__
     int pairfd = -1;
 #endif
-    virtual ssize_t Write(const void* buff, size_t len) override;
+    virtual ssize_t Write(const void* buff, size_t len, uint64_t) override;
     virtual void ReadData() override;
     virtual void closeHE(RW_EVENT events) override;
 public:
@@ -131,9 +155,8 @@ public:
     ~FullRWer() override;
 
     virtual size_t rlength() override;
-    virtual size_t rleft() override;
-    virtual const char *rdata() override;
-    virtual void consume(const char* data, size_t l) override;
+    virtual ssize_t cap(uint64_t id) override;
+    virtual void ConsumeRData() override;
     virtual const char* getPeer() override {return "full-rwer";}
 };
 

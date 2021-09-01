@@ -8,16 +8,34 @@
 #include <assert.h>
 #include <inttypes.h>
 
-void Guest::ReadHE(size_t len){
-    const char* data = rwer->rdata();
-    size_t consumed = 0;
-    size_t ret = 0;
-    while((ret = (this->*Http_Proc)(data+consumed, len-consumed))){
-        consumed += ret;
+void Guest::ReadHE(buff_block& bb){
+    if(bb.len == 0){
+        //EOF
+        if(statuslist.empty()){
+            return deleteLater(NOERROR);
+        }
+        GStatus& status = statuslist.back();
+        if(status.flags & HTTP_CLOSED_F){
+            return deleteLater(NOERROR);
+        }
+        status.flags |= HTTP_REQ_EOF;
+        if((status.flags & HTTP_RES_EOF)
+        || status.req->header->ismethod("PING")
+        || status.req->header->ismethod("SEND"))
+        {
+            deleteLater(NOERROR);
+        }else{
+            status.req->trigger(Channel::CHANNEL_SHUTDOWN);
+        }
+        return;
     }
-    assert(consumed <= len);
-    LOGD(DHTTP, "<guest> (%s) read: len:%zu, consumed:%zu\n", getsrc(), len, consumed);
-    rwer->consume(data, consumed);
+    const char* data = (const char*)bb.buff;
+    size_t ret = 0;
+    while((bb.offset < bb.len) && (ret = (this->*Http_Proc)(data + bb.offset, bb.len-bb.offset))){
+        bb.offset += ret;
+    }
+    assert(bb.offset <= bb.len);
+    LOGD(DHTTP, "<guest> (%s) read: len:%zu, consumed:%zu\n", getsrc(), bb.len, bb.offset);
 }
 
 void Guest::WriteHE(size_t len){
@@ -25,7 +43,7 @@ void Guest::WriteHE(size_t len){
         return;
     }
     GStatus& status = statuslist.front();
-    LOGD(DHTTP, "<guest> (%s) written: wlength:%zu, flags:0x%08x\n", getsrc(), rwer->wlength(), status.flags);
+    LOGD(DHTTP, "<guest> (%s) written: wlength:%zu, flags:0x%08x\n", getsrc(), len, status.flags);
     if(status.flags & HTTP_RES_EOF){
         if(rwer->wlength() == 0){
             rwer->Shutdown();
@@ -38,7 +56,7 @@ void Guest::WriteHE(size_t len){
     if((status.flags & HTTP_RES_COMPLETED) || (status.flags & HTTP_RES_EOF)){
         return;
     }
-    if(len && status.res){
+    if(status.res){
         status.res->more();
     }
 }
@@ -135,24 +153,9 @@ void Guest::Error(int ret, int code) {
         return deleteLater(PEER_LOST_ERR);
     }
     GStatus& status = statuslist.back();
-    LOGD(DHTTP, "<guest> Error %" PRIu32 ": ret:%d, code:%d, http_flag:0x%08x\n",
-            status.req->header->request_id, ret, code, http_flag);
-    if(ret == SOCKET_ERR && code == 0 && (status.flags & HTTP_CLOSED_F) == 0){
-        //EOF
-        status.flags |= HTTP_REQ_EOF;
-        if((status.flags & HTTP_RES_EOF)
-            || status.req->header->ismethod("PING")
-            || status.req->header->ismethod("SEND"))
-        {
-            deleteLater(NOERROR);
-        }else{
-            status.req->trigger(Channel::CHANNEL_SHUTDOWN);
-        }
-        return;
-    }
-    LOGE("(%s)[%" PRIu32 "]: <guest> error (%s) %d/%d\n",
+    LOGE("(%s)[%" PRIu32 "]: <guest> error (%s) %d/%d http_flag:0x%x\n",
             getsrc(), status.req->header->request_id,
-            status.req->header->geturl().c_str(), ret, code);
+            status.req->header->geturl().c_str(), ret, code, http_flag);
     deleteLater(ret);
 }
 
@@ -173,9 +176,9 @@ void Guest::response(void*, HttpRes* res) {
     }else if(res->header->get("Content-Length") == nullptr) {
         status.flags |= HTTP_NOLENGTH_F;
     }
-    size_t len;
-    char *buff = res->header->getstring(len);
-    rwer->buffer_insert(rwer->buffer_end(), write_block{buff, len, 0});
+    void* buff = p_malloc(BUF_LEN);
+    size_t len = PackHttpRes(res->header, buff, BUF_LEN);
+    rwer->buffer_insert(rwer->buffer_end(), buff_block{buff, len});
     res->setHandler([this, &status](Channel::signal s){
         LOGD(DHTTP, "<guest> signal %" PRIu32 ": %d\n", status.req->header->request_id, (int)s);
         switch(s) {
@@ -197,7 +200,7 @@ void Guest::response(void*, HttpRes* res) {
             return deleteLater(PEER_LOST_ERR);
         }
     });
-    res->attach(std::bind(&Guest::Send, this, _1, _2), [this]{ return 1024*1024 - rwer->wlength(); });
+    res->attach(std::bind(&Guest::Send, this, _1, _2), [this]{ return  rwer->cap(0); });
 }
 
 void Guest::Send(void *buff, size_t size) {
@@ -209,10 +212,10 @@ void Guest::Send(void *buff, size_t size) {
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)size);
         buff = p_move(buff, -chunklen);
         memcpy(buff, chunkbuf, chunklen);
-        rwer->buffer_insert(rwer->buffer_end(), write_block{buff, (size_t)chunklen+size, 0});
-        rwer->buffer_insert(rwer->buffer_end(), write_block{p_strdup(CRLF), strlen(CRLF), 0});
+        rwer->buffer_insert(rwer->buffer_end(), buff_block{buff, (size_t)chunklen + size});
+        rwer->buffer_insert(rwer->buffer_end(), buff_block{p_strdup(CRLF), strlen(CRLF)});
     }else{
-        rwer->buffer_insert(rwer->buffer_end(), write_block{buff, size, 0});
+        rwer->buffer_insert(rwer->buffer_end(), buff_block{buff, size});
     }
     tx_bytes += size;
     if(size == 0){
@@ -243,8 +246,8 @@ Guest::~Guest() {
 
 void Guest::dump_stat(Dumper dp, void* param){
     dp(param, "Guest %p, (%s)\n", this, getsrc());
-    dp(param, "  rwer: rlength:%zu, rleft:%zu, wlength:%zu, stats:%d, event:%s\n",
-            rwer->rlength(), rwer->rleft(), rwer->wlength(),
+    dp(param, "  rwer: rlength:%zu, wlength:%zu, stats:%d, event:%s\n",
+            rwer->rlength(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     for(auto status : statuslist){
         dp(param, "req [%" PRIu32 "]: %s %s [%d] [%s]\n",

@@ -12,7 +12,7 @@ protected:
 
 public:
     virtual ssize_t Read(void* buff, size_t len) override;
-    virtual ssize_t Write(const void* buff, size_t len) override;
+    virtual ssize_t Write(const void* buff, size_t len, uint64_t) override;
     explicit SslRWer(int fd, const sockaddr_storage* peer,
                      SSL_CTX* ctx,
                      std::function<void(int ret, int code)> errorCB,

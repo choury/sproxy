@@ -17,8 +17,6 @@
 
 #define BUF_SIZE 1500
 
-#define DNSPORT     53
-
 static uint16_t id_cur = 1;
 static DnsConfig dnsConfig;
 

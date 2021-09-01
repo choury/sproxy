@@ -11,7 +11,7 @@
 
 class Cli:public Requester, public SproxyServer {
 protected:
-    void ReadHE(size_t len);
+    void ReadHE(buff_block& bb);
     void Error(int ret, int code);
 
     virtual void deleteLater(uint32_t errcode) override;

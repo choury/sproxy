@@ -111,7 +111,7 @@ void File::request(HttpReq* req, Requester*) {
         struct tm tp;
         strptime(req->header->get("If-Modified-Since"), "%a, %d %b %Y %H:%M:%S GMT", &tp);
         if(timegm(&tp) >= st.st_mtime){
-            HttpResHeader* header = new HttpResHeader(H304);
+            HttpResHeader* header = UnpackHttpRes(H304);
             char buff[100];
             strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
             header->set("Last-Modified", buff);
@@ -123,7 +123,7 @@ void File::request(HttpReq* req, Requester*) {
     if(status.rg.begin == -1 && status.rg.end == -1){
         status.rg.begin = 0;
         status.rg.end = st.st_size - 1;
-        HttpResHeader* header = new HttpResHeader(H200, sizeof(H200));
+        HttpResHeader* header = UnpackHttpRes(H200, sizeof(H200));
         header->set("Content-Length", st.st_size);
         char buff[100];
         strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
@@ -134,7 +134,7 @@ void File::request(HttpReq* req, Requester*) {
         status.res = new HttpRes(header, std::bind(&RWer::EatReadData, rwer));
         req->response(status.res);
     }else if(checkrange(status.rg, st.st_size)){
-        HttpResHeader* header = new HttpResHeader(H206, sizeof(H206));
+        HttpResHeader* header = UnpackHttpRes(H206, sizeof(H206));
         char buff[100];
         snprintf(buff, sizeof(buff), "bytes %zd-%zd/%jd",
                  status.rg.begin, status.rg.end, (intmax_t)st.st_size);
@@ -146,7 +146,7 @@ void File::request(HttpReq* req, Requester*) {
         status.res = new HttpRes(header, std::bind(&RWer::EatReadData, rwer));
         req->response(status.res);
     }else{
-        HttpResHeader* header = new HttpResHeader(H416, sizeof(H416));
+        HttpResHeader* header = UnpackHttpRes(H416, sizeof(H416));
         char buff[100];
         snprintf(buff, sizeof(buff), "bytes */%jd", (intmax_t)st.st_size);
         header->set("Content-Range", buff);
@@ -166,7 +166,7 @@ void File::request(HttpReq* req, Requester*) {
     });
 }
 
-void File::readHE(size_t) {
+void File::readHE(buff_block&) {
     Range& rg = status.rg;
     LOGD(DFILE, "%s readHE %zd-%zd, flags: %d\n", filename, rg.begin, rg.end, status.flags);
     if (rg.begin > rg.end) {
@@ -210,7 +210,7 @@ File::~File() {
 
 void File::getfile(HttpReq* req, Requester* src) {
     if(!req->header->getrange()){
-        return req->response(new HttpRes(new HttpResHeader(H400), ""));
+        return req->response(new HttpRes(UnpackHttpRes(H400), ""));
     }
     char filename[URLLIMIT];
     bool slash_end = req->header->filename.back() == '/';
@@ -220,7 +220,7 @@ void File::getfile(HttpReq* req, Requester* src) {
     while(true){
         if(!startwith(filename, opt.rootdir)){
             LOGE("get file out of rootdir: %s\n", filename);
-            header = new HttpResHeader(H403, sizeof(H403));
+            header = UnpackHttpRes(H403, sizeof(H403));
             goto ret;
         }
         if(filename == pathjoin(opt.rootdir, "status")){
@@ -249,16 +249,16 @@ void File::getfile(HttpReq* req, Requester* src) {
                     (void)realpath(("./" + req->header->filename).c_str(), filename);
                     continue;
                 }
-                header = new HttpResHeader(H404, sizeof(H404));
+                header = UnpackHttpRes(H404, sizeof(H404));
             }else{
-                header = new HttpResHeader(H500, sizeof(H500));
+                header = UnpackHttpRes(H500, sizeof(H500));
             }
             goto ret;
         }
 
         if(S_ISDIR(st.st_mode)){
             if(!slash_end){
-                header = new HttpResHeader(H302, sizeof(H302));
+                header = UnpackHttpRes(H302, sizeof(H302));
                 char location[FILENAME_MAX];
                 snprintf(location, sizeof(location), "/%s/", req->header->filename.c_str());
                 header->set("Location", location);
@@ -269,17 +269,17 @@ void File::getfile(HttpReq* req, Requester* src) {
                 continue;
             }
             if(!opt.autoindex){
-                header = new HttpResHeader(H403, sizeof(H403));
+                header = UnpackHttpRes(H403, sizeof(H403));
                 goto ret;
             }
 
             DIR* dir = opendir(filename);
             if(dir == nullptr){
                 LOGE("open %s dir failed: %s\n", filename, strerror(errno));
-                header = new HttpResHeader(H500, sizeof(H500));
+                header = UnpackHttpRes(H500, sizeof(H500));
                 goto ret;
             }
-            header = new HttpResHeader(H200, sizeof(H200));
+            header = UnpackHttpRes(H200, sizeof(H200));
             header->set("Transfer-Encoding", "chunked");
             HttpRes* res = new HttpRes(header);
             req->response(res);
@@ -310,7 +310,7 @@ void File::getfile(HttpReq* req, Requester* src) {
 
         if(!S_ISREG(st.st_mode)){
             LOGE("access to no regular file %s\n", filename);
-            header = new HttpResHeader(H403, sizeof(H403));
+            header = UnpackHttpRes(H403, sizeof(H403));
             goto ret;
         }
 #if __APPLE__
@@ -325,7 +325,7 @@ void File::getfile(HttpReq* req, Requester* src) {
         int fd = open(filename, O_RDONLY | O_CLOEXEC);
         if(fd < 0){
             LOGE("open file failed %s: %s\n", filename, strerror(errno));
-            header = new HttpResHeader(H500, sizeof(H500));
+            header = UnpackHttpRes(H500, sizeof(H500));
             goto ret;
         }
         return (new File(filename, fd, &st))->request(req, src);

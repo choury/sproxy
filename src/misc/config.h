@@ -17,6 +17,7 @@ extern "C" {
 
 #define HTTPSPORT 443u
 #define HTTPPORT  80u
+#define DNSPORT   53u
 #define QUICPORT  443u
 
 struct DnsConfig{

@@ -89,10 +89,9 @@ Vpn_server::Vpn_server(int fd) {
         LOGE("vpn_server error: %d/%d\n", ret, code);
         vpn_stop();
     });
-    rwer->SetReadCB([this](size_t len){
-        const char* data = rwer->rdata();
-        buffHE(data, len);
-        rwer->consume(data, len);
+    rwer->SetReadCB([this](buff_block& bb){
+        buffHE((const char*)bb.buff, bb.len);
+        bb.offset = bb.len;
     });
     rwer->SetWriteCB([this](size_t){
         for(const auto& i: statusmap){
@@ -108,29 +107,34 @@ Vpn_server::~Vpn_server(){
 
 void Vpn_server::buffHE(const char* buff, size_t buflen) {
     //先解析
-    try{
-        auto pac = MakeIp(buff, buflen);
-        //打印ip/tcp/udp头
-        //pac->dump();
-        VpnKey key(pac);
-
-        if(pac->gettype() == IPPROTO_ICMP && pac->icmp->gettype() ==  ICMP_UNREACH){
-            auto icmp_pac = MakeIp(buff + pac->gethdrlen(), buflen-pac->gethdrlen());
-            key = VpnKey(icmp_pac).reverse();
-        }
-        if(pac->gettype() == IPPROTO_ICMPV6 && pac->icmp6->gettype() == ICMP6_DST_UNREACH){
-            auto icmp6_pac = MakeIp(buff + pac->gethdrlen(), buflen-pac->gethdrlen());
-            key = VpnKey(icmp6_pac).reverse();
-        }
-
-        if(statusmap.count(key) == 0){
-            LOGD(DVPN, "new key for %s\n", key.getString("->"));
-            statusmap[key] = new Guest_vpn(key, this);
-        }
-        statusmap.at(key)->packetHE(pac, buff, buflen);
-    }catch(...){
+    auto pac = MakeIp(buff, buflen);
+    if(pac == nullptr){
         return;
     }
+    //打印ip/tcp/udp头
+    //pac->dump();
+    VpnKey key(pac);
+
+    if(pac->gettype() == IPPROTO_ICMP && pac->icmp->gettype() ==  ICMP_UNREACH){
+        auto icmp_pac = MakeIp(buff + pac->gethdrlen(), buflen-pac->gethdrlen());
+        if(icmp_pac == nullptr){
+            return;
+        }
+        key = VpnKey(icmp_pac).reverse();
+    }
+    if(pac->gettype() == IPPROTO_ICMPV6 && pac->icmp6->gettype() == ICMP6_DST_UNREACH){
+        auto icmp6_pac = MakeIp(buff + pac->gethdrlen(), buflen-pac->gethdrlen());
+        if(icmp6_pac == nullptr){
+            return;
+        }
+        key = VpnKey(icmp6_pac).reverse();
+    }
+
+    if(statusmap.count(key) == 0){
+        LOGD(DVPN, "new key for %s\n", key.getString("->"));
+        statusmap[key] = new Guest_vpn(key, this);
+    }
+    statusmap.at(key)->packetHE(pac, buff, buflen);
 }
 
 int32_t Vpn_server::bufleft() {
@@ -460,7 +464,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
                 generateUA(),
                 pac->tcp->getsport());
 
-        HttpReqHeader* header = new HttpReqHeader(buff, headlen);
+        HttpReqHeader* header = UnpackHttpReq(buff, headlen);
         TcpStatus* tcpStatus = (TcpStatus*)malloc(sizeof(TcpStatus));
         tcpStatus->send_seq = getmtime();
         tcpStatus->acked = tcpStatus->send_seq;
@@ -619,7 +623,7 @@ void Guest_vpn::udpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
                 pac->udp->getsport());
 
 
-        HttpReqHeader* header = new HttpReqHeader(buff, headlen);
+        HttpReqHeader* header = UnpackHttpReq(buff, headlen);
         status.req = new HttpReq(header, std::bind(&Guest_vpn::response, this, nullptr, _1), []{});
         status.packet = (char *)memdup(packet, pac->gethdrlen());
         status.packet_len = (uint16_t)pac->gethdrlen();
@@ -657,7 +661,7 @@ void Guest_vpn::icmpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t
                     pac->icmp->getid(),
                     generateUA(),
                     pac->icmp->getid());
-            HttpReqHeader* header = new HttpReqHeader(buff, headlen);
+            HttpReqHeader* header = UnpackHttpReq(buff, headlen);
             IcmpStatus *icmpStatus = (IcmpStatus*)malloc(sizeof(IcmpStatus));
             icmpStatus->id = pac->icmp->getid();
             icmpStatus->seq = pac->icmp->getseq();
@@ -715,7 +719,7 @@ void Guest_vpn::icmp6HE(std::shared_ptr<const Ip> pac, const char* packet, size_
                     pac->icmp6->getid(),
                     generateUA(),
                     pac->icmp6->getid());
-            HttpReqHeader* header = new HttpReqHeader(buff, headlen);
+            HttpReqHeader* header = UnpackHttpReq(buff, headlen);
 
             IcmpStatus *icmpStatus = (IcmpStatus*)malloc(sizeof(IcmpStatus));
             icmpStatus->id = pac->icmp6->getid();

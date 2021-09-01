@@ -1,11 +1,10 @@
 #include "http.h"
-#include "misc/net.h"
 #include "misc/util.h"
+#include "misc/config.h"
 
 #include <string.h>
-#include <assert.h>
 #include <stdlib.h>
-#include <cinttypes>
+#include <assert.h>
 
 static size_t hextoint(const char* str){
     size_t size = 0;
@@ -105,27 +104,26 @@ size_t HttpResponser::HeaderProc(const char* buffer, size_t len) {
     if (const char* headerend = strnstr(buffer, CRLF CRLF, len)) {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - buffer;
-        try {
-            HttpReqHeader* req = new HttpReqHeader(buffer, headerlen);
-            if(req->no_body()){
-                http_flag |= HTTP_IGNORE_BODY_F;
-            }else if (req->get("Content-Length") == nullptr ||
-                      req->ismethod("CONNECT"))
-            {
-                Http_Proc = &HttpResponser::AlwaysProc;
-            }else{
-                Http_Proc = &HttpResponser::FixLenProc;
-                http_expectlen = strtoull(req->get("Content-Length"), nullptr, 10);
-            }
-            ReqProc(req);
-            if(http_flag & HTTP_IGNORE_BODY_F){
-                EndProc();
-                http_flag &= ~HTTP_IGNORE_BODY_F;
-                Http_Proc = (size_t (HttpBase::*)(const char*, size_t))&HttpResponser::HeaderProc;
-            }
-        }catch(...) {
+        HttpReqHeader* req = UnpackHttpReq(buffer, headerlen);
+        if(req == nullptr){
             ErrProc();
             return 0;
+        }
+        if(req->no_body()){
+            http_flag |= HTTP_IGNORE_BODY_F;
+        }else if (req->get("Content-Length") == nullptr ||
+                  req->ismethod("CONNECT"))
+        {
+            Http_Proc = &HttpResponser::AlwaysProc;
+        }else{
+            Http_Proc = &HttpResponser::FixLenProc;
+            http_expectlen = strtoull(req->get("Content-Length"), nullptr, 10);
+        }
+        ReqProc(req);
+        if(http_flag & HTTP_IGNORE_BODY_F){
+            EndProc();
+            http_flag &= ~HTTP_IGNORE_BODY_F;
+            Http_Proc = (size_t (HttpBase::*)(const char*, size_t))&HttpResponser::HeaderProc;
         }
         return headerlen;
     } else {
@@ -138,41 +136,209 @@ size_t HttpRequester::HeaderProc(const char* buffer, size_t len) {
     if (const char* headerend = strnstr(buffer, CRLF CRLF, len)) {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - buffer;
-        try {
-            HttpResHeader* res = new HttpResHeader(buffer, headerlen);
-            if(res->no_body()){
-                http_flag |= HTTP_IGNORE_BODY_F;
-            }else if(res->status[0] == '1'){
-                http_flag |= HTTP_STATUS_1XX;
-            }else if(res->get("Transfer-Encoding")!= nullptr) {
-                Http_Proc = &HttpRequester::ChunkLProc;
-            }else if(res->get("Content-Length") == nullptr) {
-                Http_Proc = &HttpRequester::AlwaysProc;
-            }else{
-                Http_Proc = &HttpRequester::FixLenProc;
-                http_expectlen = strtoull(res->get("Content-Length"), nullptr, 10);
-            }
-
-            if(res->get("Upgrade") && strcmp(res->get("Upgrade"), "websocket") == 0){
-                //treat websocket as raw tcp
-                http_flag &= ~HTTP_STATUS_1XX;
-                Http_Proc = &HttpRequester::AlwaysProc;
-            }
-            ResProc(res);
-            if (http_flag & HTTP_IGNORE_BODY_F) {
-                http_flag &= ~HTTP_IGNORE_BODY_F;
-                Http_Proc = (size_t (HttpBase::*)(const char*, size_t))&HttpRequester::HeaderProc;
-                EndProc();
-            }else if(http_flag & HTTP_STATUS_1XX){
-                http_flag &= ~HTTP_STATUS_1XX;
-                Http_Proc = (size_t (HttpBase::*)(const char*, size_t))&HttpRequester::HeaderProc;
-            }
-        }catch(...) {
+        HttpResHeader* res = UnpackHttpRes(buffer, headerlen);
+        if(res == nullptr){
             ErrProc();
             return 0;
+        }
+        if(res->no_body()){
+            http_flag |= HTTP_IGNORE_BODY_F;
+        }else if(res->status[0] == '1'){
+            http_flag |= HTTP_STATUS_1XX;
+        }else if(res->get("Transfer-Encoding")!= nullptr) {
+            Http_Proc = &HttpRequester::ChunkLProc;
+        }else if(res->get("Content-Length") == nullptr) {
+            Http_Proc = &HttpRequester::AlwaysProc;
+        }else{
+            Http_Proc = &HttpRequester::FixLenProc;
+            http_expectlen = strtoull(res->get("Content-Length"), nullptr, 10);
+        }
+
+        if(res->get("Upgrade") && strcmp(res->get("Upgrade"), "websocket") == 0){
+            //treat websocket as raw tcp
+            http_flag &= ~HTTP_STATUS_1XX;
+            Http_Proc = &HttpRequester::AlwaysProc;
+        }
+        ResProc(res);
+        if (http_flag & HTTP_IGNORE_BODY_F) {
+            http_flag &= ~HTTP_IGNORE_BODY_F;
+            Http_Proc = (size_t (HttpBase::*)(const char*, size_t))&HttpRequester::HeaderProc;
+            EndProc();
+        }else if(http_flag & HTTP_STATUS_1XX){
+            http_flag &= ~HTTP_STATUS_1XX;
+            Http_Proc = (size_t (HttpBase::*)(const char*, size_t))&HttpRequester::HeaderProc;
         }
         return headerlen;
     } else {
         return 0;
     }
+}
+
+HttpReqHeader* UnpackHttpReq(const void* header, size_t len){
+    if(header == nullptr){
+        return nullptr;
+    }
+    if(len == 0) len = strlen((char*)header);
+    std::string httpheader((const char*)header, len);
+    *(strstr(&httpheader[0], CRLF CRLF) + strlen(CRLF)) = 0;
+
+    std::multimap<std::string, std::string> headers;
+    for (char* str = strstr(&httpheader[0], CRLF) + strlen(CRLF); ; str = nullptr) {
+        char* p = strtok(str, CRLF);
+
+        if (p == nullptr)
+            break;
+
+        char* sp = strpbrk(p, ":");
+        if (sp == nullptr) {
+            //tolerate malformed header here for obfuscation
+            break;
+        }
+        std::string name = std::string(p, sp-p);
+        headers.emplace(name, ltrim(std::string(sp + 1)));
+    }
+
+    char method[20] = {0};
+    std:: string url, path;
+    url.resize(URLLIMIT);
+    path.resize(URLLIMIT);
+    sscanf(httpheader.c_str(), "%19s%*[ ]%4095[^" CRLF " ]", method, &url[0]);
+    headers.emplace(":method", method);
+
+    Destination dest;
+    memset(&dest, 0, sizeof(dest));
+    if (spliturl(url.c_str(), &dest, &path[0])) {
+        LOGE("wrong url format:%s\n", url.c_str());
+        return nullptr;
+    }
+    headers.emplace(":path", path.c_str());
+    if(dest.scheme[0]){
+        headers.emplace(":scheme", dest.scheme);
+    }
+    if(dest.hostname[0]){
+        headers.emplace(":authority", dumpAuthority(&dest));
+    }else if(headers.count("Host")){
+        headers.emplace(":authority", headers.find("Host")->second);
+    }
+    headers.erase("Host");
+    return new HttpReqHeader(std::move(headers));
+}
+
+HttpResHeader* UnpackHttpRes(const void* header, size_t len) {
+    if(header == nullptr){
+        return nullptr;
+    }
+    if(len == 0) len = strlen((char*)header);
+    std::string httpheader((const char*)header, len);
+
+    *(strstr(&httpheader[0], CRLF CRLF) + strlen(CRLF)) = 0;
+
+    char status[100] = {0};
+    sscanf(httpheader.c_str(), "%*s%*[ ]%99[^\r\n]", status);
+
+    std::multimap<std::string, std::string> headers;
+    headers.emplace(":status", status);
+
+    for (char* str = strstr(&httpheader[0], CRLF)+strlen(CRLF); ; str = nullptr) {
+        char* p = strtok(str, CRLF);
+
+        if (p == nullptr)
+            break;
+
+        char* sp = strpbrk(p, ":");
+        if (sp == nullptr) {
+            LOGE("wrong header format:%s\n", p);
+            return nullptr;
+        }
+        std::string name = std::string(p, sp-p);
+        std::string value = ltrim(std::string(sp + 1));
+        headers.emplace(name, value);
+    }
+    return new HttpResHeader(std::move(headers));
+}
+
+static std::string toUpHeader(const std::string &s){
+    std::string str = s;
+    str[0] = toupper(str[0]);
+    for(size_t i = 0; i < str.length(); i++){
+        if(str[i] == '-' && i != str.length() - 1){
+            str[i+1] = toupper(str[i+1]);
+        }
+    }
+    return str;
+}
+
+size_t PackHttpReq(const HttpReqHeader *req, void* data, size_t size){
+    if(!req->should_proxy && (req->ismethod("CONNECT") || req->ismethod("SEND"))){
+        //本地请求，自己处理connect和send方法
+        return 0;
+    }
+    char *buff = (char*) data;
+    std::list<std::string> AppendHeaders;
+    char method[20];
+    if(opt.alter_method){
+        strcpy(method, "GET");
+        AppendHeaders.push_back(std::string(AlterMethod)+": " + req->method);
+    }else{
+        strcpy(method, req->method);
+    }
+    for(auto p = opt.request_headers.next; p != nullptr; p = p->next){
+        AppendHeaders.emplace_back(p->arg);
+    }
+    size_t len = 0;
+    if(req->should_proxy){
+        if (req->ismethod("CONNECT")|| req->ismethod("SEND")){
+            len += sprintf(buff, "%s %s:%d HTTP/1.1" CRLF, method, req->Dest.hostname, req->Dest.port);
+        }else{
+            len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, req->geturl().c_str());
+        }
+    }else{
+        len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, req->path);
+    }
+
+    if(req->get("Host") == nullptr && req->Dest.hostname[0]){
+        len += sprintf(buff + len, "Host: %s" CRLF, dumpAuthority(&req->Dest));
+    }
+
+    for (const auto& i : req->getall()) {
+        len += sprintf(buff + len, "%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
+    }
+    if(!req->cookies.empty()){
+        std::string cookie_str;
+        for(const auto& i : req->cookies){
+            cookie_str += "; ";
+            cookie_str += i;
+        }
+        len += sprintf(buff + len, "Cookie: %s" CRLF, cookie_str.substr(2).c_str());
+    }
+
+    for(const auto& i: AppendHeaders){
+        len += sprintf(buff + len, "%s" CRLF, i.c_str());
+    }
+
+    len += sprintf(buff + len, CRLF);
+    assert(len < size);
+    return len;
+}
+
+size_t PackHttpRes(const HttpResHeader *res, void* data, size_t size) {
+    char* const buff = (char *)data;
+    size_t len = 0;
+    if(res->get("Content-Length") || res->get("Transfer-Encoding")
+        || res->no_body() || res->get("Upgrade"))
+    {
+        len += sprintf(buff, "HTTP/1.1 %s" CRLF, res->status);
+    }else {
+        len += sprintf(buff, "HTTP/1.0 %s" CRLF, res->status);
+    }
+    for (const auto& i : res->getall()) {
+        len += sprintf(buff + len, "%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
+    }
+    for (const auto& i : res->cookies) {
+        len += sprintf(buff + len, "Set-Cookie: %s" CRLF, i.c_str());
+    }
+
+    len += sprintf(buff + len, CRLF);
+    assert(len < size);
+    return len;
 }

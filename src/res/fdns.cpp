@@ -16,8 +16,8 @@ static in_addr getInet(std::string hostname) {
 
     if(hostname.find_first_of('.') == std::string::npos){
         addr.s_addr = inet_addr(VPNADDR);
-    }else if(fdns_records.Get(hostname)){
-        addr.s_addr = htonl(fdns_records.Get(hostname)->t1);
+    }else if(fdns_records.Has(hostname)){
+        addr.s_addr = htonl(fdns_records.GetOne(hostname)->first.first);
     }else{
         fake_ip++;
         addr.s_addr= htonl(fake_ip);
@@ -46,11 +46,11 @@ static uint32_t getFip(const sockaddr_storage* addr){
 }
 
 std::string getRdns(const sockaddr_storage& addr) {
-    auto record = fdns_records.Get(getFip(&addr));
-    if(record){
-        return record->t2;
-    }else{
+    auto record = fdns_records.GetOne(getFip(&addr));
+    if(record == fdns_records.data().end()){
         return getaddrstring(&addr);
+    }else{
+        return record->first.second;
     }
 }
 
@@ -74,7 +74,7 @@ void FDns::clean(FDnsStatus* status){
 
 void FDns::request(HttpReq* req, Requester*){
     this->req = req;
-    res = new HttpRes(new HttpResHeader(H200));
+    res = new HttpRes(UnpackHttpRes(H200));
     req->response(res);
     req->setHandler([this](Channel::signal s){
         if(s == Channel::CHANNEL_SHUTDOWN){
@@ -107,9 +107,9 @@ void FDns::Send(const void* buff, size_t size) {
     statusmap[que->id] = status;
     Dns_Result* result = nullptr;
     if(que->type == 12){
-        auto record = fdns_records.Get(getFip(&que->ptr_addr));
-        if(record){
-            result = new Dns_Result(record->t2.c_str());
+        auto record = fdns_records.GetOne(getFip(&que->ptr_addr));
+        if(record != fdns_records.data().end()){
+            result = new Dns_Result(record->first.second.c_str());
         }
     }else if(que->type == 1 || que->type == 28) {
         strategy stra = getstrategy(que->domain);

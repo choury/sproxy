@@ -5,7 +5,7 @@
 set(quic_src
         quicio.cpp
         quic_pack.cpp
-        )
+        quic_pn.cpp quic_pn.h)
 
 add_library(quic ${quic_src})
 

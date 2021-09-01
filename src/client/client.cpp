@@ -337,17 +337,15 @@ int main(int argc, char** argv) {
             break;
         }
     }
+    if(sock == nullptr && access("/var/run/sproxy.sock", R_OK|W_OK) == 0){
+        sock = "/var/run/sproxy.sock";
+    }
+    if(sock == nullptr && access("/tmp/sproxy.sock", R_OK|W_OK) == 0){
+        sock = "/tmp/sproxy.sock";
+    }
     if(sock == nullptr){
-        if(access("/var/run/sproxy.sock", R_OK|W_OK) == 0){
-            sock = "/var/run/sproxy.sock";
-        }
-        if(access("/tmp/sproxy.sock", R_OK|W_OK) == 0){
-            sock = "/tmp/sproxy.sock";
-        }
-        if(sock == nullptr){
-            fprintf(stderr, "no socket file found, should use -s to set it\n");
-            exit(2);
-        }
+        fprintf(stderr, "no socket file found, should use -s to set it\n");
+        exit(2);
     }
     printf("connect to socket: %s\n", sock);
     SproxyClient *c = new SproxyClient(sock);

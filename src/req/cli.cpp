@@ -6,7 +6,9 @@
 #include "misc/config.h"
 #include "res/cgi.h"
 
-Cli::Cli(int fd, const sockaddr_storage* addr): Requester(new StreamRWer(fd, addr, std::bind(&Cli::Error, this, _1, _2))) {
+Cli::Cli(int fd, const sockaddr_storage* addr):
+        Requester(new StreamRWer(fd, addr, std::bind(&Cli::Error, this, _1, _2)))
+{
     rwer->SetReadCB(std::bind(&Cli::ReadHE, this, _1));
 }
 
@@ -14,17 +16,20 @@ Cli::~Cli(){
 }
 
 void Cli::send(const char *data, size_t len) {
-    rwer->buffer_insert(rwer->buffer_end(), write_block{p_memdup(data, len), len, 0});
+    rwer->buffer_insert(rwer->buffer_end(), buff_block{p_memdup(data, len), len});
 }
 
-void Cli::ReadHE(size_t len){
-    const char *data = rwer->rdata();
-    size_t consumed = 0;
+void Cli::ReadHE(buff_block& bb){
+    if(bb.len == 0){
+        //eof
+        deleteLater(NOERROR);
+        return;
+    }
     ssize_t ret = 0;
-    while(true){
-        ret = DefaultProc(data+consumed, len-consumed);
+    while(bb.offset < bb.len){
+        ret = DefaultProc((const char*)bb.buff + bb.offset, bb.len - bb.offset);
         if(ret > 0){
-            consumed += ret;
+            bb.offset += ret;
             continue;
         }
         if(ret == 0){
@@ -33,15 +38,9 @@ void Cli::ReadHE(size_t len){
         LOGE("<cli> rpc error: %s\n", strerror(-ret));
         return deleteLater(PROTOCOL_ERR);
     }
-    rwer->consume(data, consumed);
 }
 
 void Cli::Error(int ret, int code) {
-    if(ret == SOCKET_ERR && code == 0){
-        //eof
-        deleteLater(ret);
-        return;
-    }
     LOGE("<cli> socket error: %d/%d\n", ret, code);
     deleteLater(ret);
 }
@@ -52,8 +51,8 @@ void Cli::deleteLater(uint32_t errcode) {
 
 void Cli::dump_stat(Dumper dp, void* param) {
     dp(param, "Cli %p, (%s)\n", this, getsrc());
-    dp(param, "  rwer: rlength:%zu, rleft:%zu, wlength:%zu, stats:%d, event:%s\n",
-       rwer->rlength(), rwer->rleft(), rwer->wlength(),
+    dp(param, "  rwer: rlength:%zu, wlength:%zu, stats:%d, event:%s\n",
+       rwer->rlength(), rwer->wlength(),
        (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
 }
 

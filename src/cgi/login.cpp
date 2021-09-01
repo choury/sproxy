@@ -16,9 +16,9 @@ class handler: public CgiHandler{
         }
         SproxyClient c(getenv("ADMIN_SOCK"));
         if(!c.Login(params["key"], req->get("X-Real-IP")).get_future().get()){
-            Response(HttpResHeader(H403));
+            Response(UnpackHttpRes(H403));
         }else{
-            Response(HttpResHeader(H204));
+            Response(UnpackHttpRes(H204));
         }
         Finish();
     }

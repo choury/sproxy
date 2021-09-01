@@ -2,7 +2,7 @@
 #define FILE_H__
 
 #include "responser.h"
-#include "prot/http/http_pack.h"
+#include "prot/http/http_def.h"
 
 #include <sys/stat.h>
 
@@ -20,7 +20,7 @@ class File:public Responser{
     int  fd = 0;
     struct stat st;
     FileStatus status;
-    virtual void readHE(size_t len);
+    virtual void readHE(buff_block& bb);
     virtual void request(HttpReq* req, Requester*) override;
 public:
     explicit File(const char* fname, int fd, const struct stat* st);

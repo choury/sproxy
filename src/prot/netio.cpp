@@ -19,6 +19,7 @@ size_t RBuffer::left(){
 }
 
 size_t RBuffer::length(){
+    assert(len <= sizeof(content));
     return len;
 }
 
@@ -28,11 +29,24 @@ size_t RBuffer::add(size_t l){
     return l;
 }
 
+ssize_t RBuffer::put(const void *data, size_t size) {
+    if(len + size > sizeof(content)){
+        return -1;
+    }
+    memcpy(content + len, data, size);
+    len += size;
+    return (ssize_t)len;
+}
+
+size_t RBuffer::cap() {
+    return sizeof(content) - len;
+}
+
 const char* RBuffer::data(){
     return content;
 }
 
-size_t RBuffer::consume(const char*, size_t l) {
+size_t RBuffer::consume(size_t l) {
     assert(l <= len);
     len -= l;
     memmove(content, content+l, len);
@@ -44,10 +58,9 @@ char* RBuffer::end(){
 }
 
 size_t CBuffer::left(){
-    assert(noafter(begin_pos, end_pos));
-    uint32_t start = begin_pos % sizeof(content);
-    uint32_t finish = end_pos % sizeof(content);
-    if((finish > start) || (begin_pos == end_pos)){
+    uint32_t start = offset % sizeof(content);
+    uint32_t finish = (offset + len) % sizeof(content);
+    if(finish > start || len == 0){
         return sizeof(content) - finish;
     }else{
         return start - finish;
@@ -55,41 +68,64 @@ size_t CBuffer::left(){
 }
 
 size_t CBuffer::length(){
-    assert(end_pos - begin_pos <= sizeof(content));
-    return end_pos - begin_pos;
+    assert(len <= sizeof(content));
+    return len;
 }
 
+size_t CBuffer::cap() {
+    return sizeof(content) - len;
+}
 
 void CBuffer::add(size_t l){
-    assert(l <= left());
-    end_pos += l;
+    len += l;
+    assert(len <= sizeof(content));
 };
 
-const char* CBuffer::data(){
-    assert(noafter(begin_pos, end_pos));
-    uint32_t start = begin_pos % sizeof(content);
-    uint32_t finish = end_pos % sizeof(content);
-    if((finish > start) || (begin_pos == end_pos)){
-        return content + start;
+ssize_t CBuffer::put(const void *data, size_t size) {
+    if(len + size > sizeof(content)){
+        return -1;
+    }
+
+    uint32_t start = (offset + len) % sizeof(content);
+    uint32_t finish = (offset +  len + size) % sizeof(content);
+    if(finish > start){
+        memcpy(content + start, data, size);
     }else{
-        char* buff = (char*)malloc(end_pos - begin_pos);
+        size_t l = sizeof(content) - start;
+        memcpy(content + start, data, l);
+        memcpy(content, (const char*)data + l, finish);
+    }
+    len += size;
+    assert(len <= sizeof(content));
+    return (ssize_t)len;
+}
+
+size_t CBuffer::get(char* buff, size_t size){
+    assert(size != 0);
+    size = Min(len, size);
+
+    uint32_t start = offset % sizeof(content);
+    uint32_t finish = (offset + size) % sizeof(content);
+
+    if(finish > start){
+        memcpy(buff, content+ start , size);
+        return size;
+    }else{
         size_t l = sizeof(content) - start;
         memcpy(buff, content + start, l);
         memcpy(buff + l, content, finish);
-        return  buff;
+        return size;
     }
 }
 
-void CBuffer::consume(const char* data, size_t l){
-    begin_pos += l;
-    assert(noafter(begin_pos, end_pos));
-    if(data < content || data >= content + sizeof(content)){
-        free((char*)data);
-    }
+void CBuffer::consume(size_t l){
+    assert(l <= len);
+    offset += l;
+    len -= l;
 }
 
 char* CBuffer::end(){
-    return content + (end_pos % sizeof(content));
+    return content + ((offset + len) % sizeof(content));
 }
 
 SocketRWer::SocketRWer(int fd, const sockaddr_storage* peer, std::function<void(int, int)> errorCB):RWer(fd, std::move(errorCB)){
@@ -155,7 +191,10 @@ void SocketRWer::connectFailed(int error) {
 }
 
 void SocketRWer::connect() {
-    if(stats != RWerStats::Resolving && stats != RWerStats::Connecting) {
+    if(stats != RWerStats::Resolving
+       && stats != RWerStats::Connecting
+       && stats != RWerStats::SslConnecting)
+    {
         return;
     }
     delete resolver;
@@ -170,7 +209,7 @@ void SocketRWer::connect() {
         if(resolver == nullptr) {
             con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 0);
         }else {
-            con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 1000);
+            con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 5000);
         }
         return;
     }
@@ -286,7 +325,7 @@ const char *SocketRWer::getPeer() {
     return peer;
 }
 
-ssize_t SocketRWer::Write(const void* buff, size_t len){
+ssize_t SocketRWer::Write(const void* buff, size_t len, uint64_t){
     return write(getFd(), buff, len);
 }
 
@@ -294,16 +333,17 @@ size_t StreamRWer::rlength() {
     return rb.length();
 }
 
-size_t StreamRWer::rleft(){
-    return rb.left();
-}
-
-const char* StreamRWer::rdata() {
-    return rb.data();
-}
-
-void StreamRWer::consume(const char* data, size_t l) {
-    rb.consume(data, l);
+void StreamRWer::ConsumeRData() {
+    if(rb.length()){
+        char* buff = (char*)p_malloc(rb.length());
+        buff_block wb{buff, rb.get(buff, rb.length())};
+        readCB(wb);
+        rb.consume(wb.offset);
+    }
+    if(stats == RWerStats::ReadEOF){
+        buff_block wb{(void*)nullptr, 0};
+        readCB(wb);
+    }
 }
 
 ssize_t StreamRWer::Read(void* buff, size_t len) {
@@ -328,8 +368,9 @@ void StreamRWer::ReadData() {
         ErrorHE(SOCKET_ERR, errno);
         return;
     }
-    if(rb.length()){
-        readCB(rb.length());
+    // call consume after to avoid dup if eof.
+    if(rb.length() && (stats != RWerStats::ReadEOF)){
+        ConsumeRData();
     }
     if(rb.left() == 0){
         delEvents(RW_EVENT::READ);
@@ -340,22 +381,21 @@ size_t PacketRWer::rlength() {
     return rb.length();
 }
 
-size_t PacketRWer::rleft(){
-    return rb.left();
-}
-
-const char* PacketRWer::rdata() {
-    return rb.data();
-}
-
-void PacketRWer::consume(const char* data, size_t l) {
-    rb.consume(data, l);
-}
-
 ssize_t PacketRWer::Read(void* buff, size_t len) {
     return read(getFd(), buff, len);
 }
 
+void PacketRWer::ConsumeRData() {
+    if(rb.length()){
+        buff_block bb{rb.data(), rb.length()};
+        readCB(bb);
+        rb.consume(bb.offset);
+    }
+    if(stats == RWerStats::ReadEOF){
+        buff_block wb{(void*)nullptr, 0};
+        readCB(wb);
+    }
+}
 
 void PacketRWer::ReadData() {
     size_t left = 0;
@@ -363,7 +403,7 @@ void PacketRWer::ReadData() {
         int ret = Read(rb.end(), left);
         if(ret > 0){
             rb.add((size_t)ret);
-            readCB(rb.length());
+            ConsumeRData();
             continue;
         }
         if(ret == 0){
@@ -380,85 +420,3 @@ void PacketRWer::ReadData() {
         delEvents(RW_EVENT::READ);
     }
 }
-
-#include <cxxabi.h>
-extern "C" void dump_func(char* stack, int depth) {
-#ifdef __linux__
-    /*
-     * ./src/sproxy(_ZN6Status7requestEP7HttpReqP9Requester+0xa92) [0x5574eb16f4b2] 
-     * 通过'('找到函数名，然后通过'+'定位结束位置
-     */
-    char* begin_pos = nullptr;
-    char* offset_pos = nullptr;
-    for(char* p = stack; *p; p++){
-        if(*p == '(') {
-            begin_pos = p;
-        }
-        if(*p == '+' && begin_pos) {
-            offset_pos = p;
-        }
-    }
-    if(!begin_pos || !offset_pos){
-        LOGE(" [%d] %s \n", depth, stack);
-        return;
-    }
-    // 临时从'+'处截断，得到一个\0结束的字符串
-    *offset_pos = 0;
-    size_t size;
-    int status;
-    char* demangled = abi::__cxa_demangle(begin_pos+1, nullptr, &size, &status);
-    // 恢复原状
-    *offset_pos = '+';
-    if(status){
-        LOGE("[%d] %s \n", depth, stack);
-        return;
-    }
-    //从开始位置，即'('，截断，用demangled的函数替换掉
-    *begin_pos = 0;
-    LOGE("[%d] %s(%s%s\n", depth, stack, demangled, offset_pos);
-    free(demangled);
-#elif __APPLE__
-    (void)depth;
-    /*
-     * 4   sproxy   0x000000010d6b5e77 _ZN6Status7requestEP7HttpReqP9Requester + 823
-     * 查找第4个字段的开始和结束位置，作为函数名
-     */
-    char* begin_pos = nullptr;
-    char* end_pos = nullptr;
-    int field = 0;
-    for(char* p = stack; *p; field++){
-        if(field == 3){
-            begin_pos = p;
-        }
-        while(*p != ' ' && *p){
-            p++;
-        }
-        if(begin_pos){
-            end_pos = p;
-            break;
-        }
-        while(*p == ' '){
-            p++;
-        }
-    }
-
-    // 临时从后面的空格处截断，得到一个\0结束的字符串
-    *end_pos = 0;
-    size_t size;
-    int status;
-    char* demangled = abi::__cxa_demangle(begin_pos, nullptr, &size, &status);
-    // 恢复原状
-    *end_pos = ' ';
-    if(status){
-        LOGE("%s \n", stack);
-        return;
-    }
-    //从开始位置截断，用demangled的函数替换掉
-    *begin_pos = 0;
-    LOGE("%s%s%s\n", stack, demangled, end_pos);
-    free(demangled);
-#else
-    LOGE("[%d] %s \n", depth, stack);
-#endif
-}
-

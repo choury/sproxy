@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <assert.h>
 #include <errno.h>
+#include <inttypes.h>
 
 #ifdef __linux__
 #include <sys/eventfd.h>
@@ -15,42 +16,48 @@ size_t RWer::wlength() {
     return wbuff.length();
 }
 
-std::list<write_block>::iterator WBuffer::start() {
+ssize_t RWer::cap(uint64_t) {
+    return 4 * 1024 * 1024 - wbuff.length();
+}
+
+std::list<buff_block>::iterator WBuffer::start() {
     return write_queue.begin();
 }
 
-std::list<write_block>::iterator WBuffer::end() {
+std::list<buff_block>::iterator WBuffer::end() {
     return write_queue.end();
 }
 
-std::list<write_block>::iterator WBuffer::push(std::list<write_block>::insert_iterator i, const write_block& wb) {
-    assert(wb.buff);
-    len += wb.len;
-    return write_queue.emplace(i, wb);
+std::list<buff_block>::iterator WBuffer::push(std::list<buff_block>::insert_iterator i, buff_block&& bb) {
+    len += bb.len;
+    return write_queue.emplace(i, std::move(bb));
 }
 
-ssize_t WBuffer::Write(std::function<ssize_t(const void*, size_t)> write_func){
-    auto wb = *write_queue.begin();
-    write_queue.pop_front();
-    assert(wb.buff);
-    if(wb.len == 0){
-        p_free(wb.buff);
+ssize_t WBuffer::Write(std::function<ssize_t(const void*, size_t, uint64_t)> write_func){
+    if(write_queue.empty()){
+        return 0;
+    }
+    auto i = write_queue.begin();
+    if(i->len == 0){
+        ssize_t ret = write_func(nullptr, 0, i->id);
+        if(ret < 0){
+            return ret;
+        }
+        write_queue.pop_front();
         return Write(write_func);
     }
-    assert(wb.offset < wb.len);
-    ssize_t ret = write_func((const char *)wb.buff + wb.offset, wb.len - wb.offset);
+    assert(i->buff);
+    assert(i->offset < i->len);
+    ssize_t ret = write_func((const char*)i->buff + i->offset, i->len - i->offset, i->id);
     if (ret > 0) {
         assert(len >= (size_t)ret);
         len -= ret;
-        assert(ret + wb.offset <= wb.len);
-        if ((size_t)ret + wb.offset == wb.len) {
-            p_free(wb.buff);
+        assert(ret + i->offset <= i->len);
+        if ((size_t)ret + i->offset == i->len) {
+            write_queue.pop_front();
         } else {
-            wb.offset += ret;
-            write_queue.push_front(wb);
+            i->offset += ret;
         }
-    }else{
-        write_queue.push_front(wb);
     }
     return ret;
 }
@@ -59,23 +66,8 @@ size_t WBuffer::length() {
     return len;
 }
 
-/*
-void WBuffer::clear(bool freebuffer){
-    if(freebuffer){
-        while(!write_queue.empty()){
-            p_free(write_queue.begin()->buff);
-            write_queue.pop_front();
-        }
-    }else{
-        write_queue.clear();
-    }
-    len = 0;
-}
-*/
-
 WBuffer::~WBuffer() {
     while(!write_queue.empty()){
-        p_free(write_queue.begin()->buff);
         write_queue.pop_front();
     }
     len = 0;
@@ -85,9 +77,9 @@ RWer::RWer(int fd, std::function<void(int ret, int code)> errorCB):
     Ep(fd), errorCB(std::move(errorCB))
 {
     assert(this->errorCB != nullptr);
-    readCB = [this](size_t len){
-        LOGE("discard data from stub readCB: %zd", len);
-        consume(rdata(), len);
+    readCB = [](buff_block& bb){
+        LOGE("discard data from stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
+        bb.offset = bb.len;
     };
     writeCB = [](size_t){};
 }
@@ -98,18 +90,18 @@ RWer::RWer(std::function<void (int, int)> errorCB, std::function<void(const sock
 {
     assert(this->errorCB != nullptr);
     assert(this->connectCB != nullptr);
-    readCB = [this](size_t len){
-        LOGE("discard data from stub readCB: %zd", len);
-        consume(rdata(), len);
+    readCB = [](buff_block& bb){
+        LOGE("discard data from stub readCB: %zd [%" PRIu64 "]", bb.len, bb.id);
+        bb.offset = bb.len;
     };
     writeCB = [](size_t){};
 }
 
 void RWer::SendData(){
     size_t writed = 0;
-    while(wbuff.length()){
-        int ret = wbuff.Write(std::bind(&RWer::Write, this, _1, _2));
-        if(ret > 0){
+    while(wbuff.start() != wbuff.end()){
+        int ret = wbuff.Write(std::bind(&RWer::Write, this, _1, _2, _3));
+        if(ret >= 0){
             writed += ret;
             continue;
         }
@@ -122,7 +114,7 @@ void RWer::SendData(){
     if(writed){
         writeCB(writed);
     }
-    if(wbuff.length() == 0){
+    if(wbuff.start() == wbuff.end()){
         delEvents(RW_EVENT::WRITE);
     }
 }
@@ -131,7 +123,7 @@ void RWer::SetErrorCB(std::function<void(int ret, int code)> func){
     errorCB = std::move(func);
 }
 
-void RWer::SetReadCB(std::function<void(size_t len)> func){
+void RWer::SetReadCB(std::function<void(buff_block&)> func){
     readCB = std::move(func);
     EatReadData();
 }
@@ -157,24 +149,24 @@ void RWer::defaultHE(RW_EVENT events){
     }
     if(stats == RWerStats::ReadEOF){
         delEvents(RW_EVENT::READ);
-        if(rlength() == 0){
-            errorCB(SOCKET_ERR, 0);
-        }
+        flags |= RWER_READING;
+        ConsumeRData();
+        flags &= ~RWER_READING;
     }
 }
 
 void RWer::closeHE(RW_EVENT) {
-    if(wbuff.length() == 0){
+    if(wbuff.start() == wbuff.end() || (flags & RWER_SHUTDOWN)){
         closeCB();
         return;
     }
-    int ret = wbuff.Write(std::bind(&RWer::Write, this, _1, _2));
+    ssize_t ret = wbuff.Write(std::bind(&RWer::Write, this, _1, _2, _3));
 #ifndef WSL
-    if ((wbuff.length() == 0) || (ret <= 0 && errno != EAGAIN && errno != ENOBUFS)) {
+    if ((wbuff.start() == wbuff.end()) || (ret <= 0 && errno != EAGAIN && errno != ENOBUFS)) {
         closeCB();
     }
 #else
-    if ((wbuff.length() == 0) || (ret <= 0)) {
+    if ((wbuff.start() == wbuff.end()) || (ret <= 0)) {
         closeCB();
     }
 #endif
@@ -205,81 +197,67 @@ void RWer::EatReadData(){
     if(flags & RWER_READING){
         return;
     }
+    flags |= RWER_READING;
     switch(stats){
     case RWerStats::Connected:
         if(rlength()) {
-            readCB(rlength());
+            ConsumeRData();
         }
         addEvents(RW_EVENT::READ);
         break;
     case RWerStats::ReadEOF:
-        if(rlength()){
-            readCB(rlength());
-        }else{
-            errorCB(SOCKET_ERR, 0);
-        }
+        ConsumeRData();
         break;
     default:
         break;
     }
+    flags &= ~RWER_READING;
 }
 
 void RWer::Connected(const sockaddr_storage& addr){
+    if(stats == RWerStats::Connected){
+        return;
+    }
     setEvents(RW_EVENT::READWRITE);
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&RWer::defaultHE;
     connectCB(addr);
 }
 
-void RWer::ErrorHE (int ret, int code) {
+void RWer::ErrorHE(int ret, int code) {
     stats = RWerStats::Error;
     errorCB(ret, code);
 }
 
 void RWer::Shutdown() {
-    stats = RWerStats::Shutdown;
+    flags |= RWER_SHUTDOWN;
     shutdown(getFd(), SHUT_WR);
 }
 
-std::list<write_block>::insert_iterator RWer::buffer_head() {
+std::list<buff_block>::insert_iterator RWer::buffer_head() {
     return wbuff.start();
 }
 
-std::list<write_block>::insert_iterator RWer::buffer_end() {
+std::list<buff_block>::insert_iterator RWer::buffer_end() {
     return wbuff.end();
 }
 
-std::list<write_block>::insert_iterator
-RWer::buffer_insert(std::list<write_block>::insert_iterator where, const write_block& wb) {
-    assert(wb.offset <= wb.len);
-    if(wb.offset < wb.len || wb.len == 0){
+std::list<buff_block>::insert_iterator
+RWer::buffer_insert(std::list<buff_block>::insert_iterator where, buff_block&& bb) {
+    assert(bb.offset <= bb.len);
+    assert((flags & RWER_SHUTDOWN) == 0);
+    if(bb.offset < bb.len || bb.len == 0){
         addEvents(RW_EVENT::WRITE);
-        return wbuff.push(where, wb);
+        return wbuff.push(where, std::move(bb));
     }else{
-        p_free(wb.buff);
         return where;
     }
 }
 
-/*
-void RWer::Clear(bool freebuffer) {
-    wbuff.clear(freebuffer);
-}
- */
-
 NullRWer::NullRWer():RWer(-1, [](int, int){}) {
 }
 
-void NullRWer::consume(const char*, size_t) {
-    LOGE("NullRWer consume was called\n");
-    abort();
-}
-
 void NullRWer::ReadData() {
-}
-
-size_t NullRWer::rleft() {
-    return 0;
 }
 
 size_t NullRWer::rlength() {
@@ -290,13 +268,12 @@ size_t NullRWer::wlength() {
     return 0;
 }
 
-ssize_t NullRWer::Write(const void*, size_t len) {
-    LOG("discard everything write to NullRWer\n");
-    return len;
+void NullRWer::ConsumeRData() {
 }
 
-const char * NullRWer::rdata() {
-    return nullptr;
+ssize_t NullRWer::Write(const void*, size_t len, uint64_t) {
+    LOG("discard everything write to NullRWer\n");
+    return len;
 }
 
 #ifdef __linux__
@@ -340,7 +317,7 @@ FullRWer::~FullRWer(){
 #endif
 }
 
-ssize_t FullRWer::Write(const void* buff, size_t len) {
+ssize_t FullRWer::Write(const void* buff, size_t len, uint64_t) {
 #ifdef __linux__
     return write(getFd(), buff, len);
 #else
@@ -349,26 +326,23 @@ ssize_t FullRWer::Write(const void* buff, size_t len) {
 }
 
 size_t FullRWer::rlength() {
+    return 1;
+}
+
+ssize_t FullRWer::cap(uint64_t) {
     return 0;
 }
 
-size_t FullRWer::rleft(){
-    return 0;
+void FullRWer::ConsumeRData() {
+    buff_block wb{(void*)nullptr, 1};
+    readCB(wb);
 }
-
-const char* FullRWer::rdata() {
-    return nullptr;
-}
-
-void FullRWer::consume(const char*, size_t) {
-}
-
 
 void FullRWer::ReadData(){
     while(!!(events & RW_EVENT::READ)) {
-        readCB(1);
+        ConsumeRData();
     }
-    Write("FULLEVENT", 8);
+    Write("FULLEVENT", 8, 0);
 }
 
 void FullRWer::closeHE(RW_EVENT) {

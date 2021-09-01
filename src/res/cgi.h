@@ -2,7 +2,7 @@
 #define CGI_H__
 
 #include "responser.h"
-#include "prot/http/http_pack.h"
+#include "prot/http/http_def.h"
 #include "misc/net.h"
 
 #include <assert.h>
@@ -31,12 +31,19 @@ struct CgiStatus{
     HttpRes* res;
 };
 
+size_t PackCgiReq(const HttpReqHeader *req, void* data, size_t len);
+size_t PackCgiRes(const HttpResHeader *res, void* data, size_t len);
+
+HttpReqHeader* UnpackCgiReq(const void* header, size_t len);
+HttpResHeader* UnpackCgiRes(const void* header, size_t len);
+
+
 class Cgi:public Responser{
     char filename[URLLIMIT];
     std::map<uint32_t, CgiStatus> statusmap;
     void evictMe();
     void Clean(uint32_t id, CgiStatus& status);
-    void readHE(size_t len);
+    void readHE(buff_block& bb);
     bool HandleRes(const CGI_Header* header, CgiStatus& status);
     bool HandleData(const CGI_Header* header, CgiStatus& Status);
     bool HandleError(const CGI_Header* header, CgiStatus& status);
@@ -52,32 +59,15 @@ public:
 
 void getcgi(HttpReq* req, const char *filename, Requester *src);
 
-class Cookie{
-public:
-    const char *name = nullptr;
-    const char *value = nullptr;
-    const char *path= nullptr;
-    const char *domain = nullptr;
-    uint32_t maxage = 0;
-    Cookie() = default;
-    Cookie(const char *name, const char *value):name(name), value(value){}
-    void set(const char* name, const char *value){
-        this->name = name;
-        this->value = value;
-    }
-};
 
 void flushcgi();
 
-std::map<std::string, std::string> __attribute__((weak)) getparamsmap(const char *param, size_t len);
-std::map<std::string, std::string> __attribute__((weak)) getparamsmap(const char *param);
-void addcookie(HttpResHeader &res, const Cookie &cookie);
 #ifdef  __cplusplus
 extern "C" {
 #endif
 typedef int (cgifunc)(int fd);
 cgifunc cgimain;
-int cgi_response(int fd, const HttpResHeader &req);
+int cgi_response(int fd, const HttpResHeader* res);
 int cgi_send(int fd, uint32_t id, const void *buff, size_t len);
 int cgi_senderror(int fd, uint32_t id, uint8_t flag);
 #ifdef  __cplusplus
@@ -95,14 +85,14 @@ protected:
         if((flag & HTTP_REQ_COMPLETED) == 0) {
             return;
         }
-        Response(HttpResHeader(H405, sizeof(H405)));
+        Response(UnpackHttpRes(H405, sizeof(H405)));
         Finish();
     }
     void BadRequest(){
         if((flag & HTTP_REQ_COMPLETED) == 0) {
             return;
         }
-        Response(HttpResHeader(H400, sizeof(H400)));
+        Response(UnpackHttpRes(H400, sizeof(H400)));
         Finish();
     }
     virtual void ERROR(const CGI_Header* header){
@@ -110,7 +100,7 @@ protected:
             flag |= HTTP_REQ_EOF;
             return;
         }
-        Response(HttpResHeader(H500, sizeof(H500)));
+        Response(UnpackHttpRes(H500, sizeof(H500)));
         Finish();
     }
     virtual void GET(const CGI_Header*){
@@ -136,16 +126,15 @@ protected:
         }
         flag |= HTTP_RES_EOF;
     }
-    void Response(HttpResHeader& res){
+    void Response(HttpResHeader* res){
         if(flag & HTTP_RES_COMPLETED){
+            delete res;
             return;
         }
         flag |= HTTP_RES_COMPLETED;
-        res.request_id = req->request_id;
+        res->request_id = req->request_id;
         cgi_response(fd, res);
-    }
-    void Response(HttpResHeader&& res) {
-        Response(res);
+        delete res;
     }
 
     void Send(const char* buf, size_t len){
@@ -161,7 +150,9 @@ protected:
 public:
     CgiHandler(int fd, const CGI_Header* header):fd(fd){
         assert(header->type == CGI_REQUEST);
-        req = new HttpReqHeader(header);
+        uint32_t len = ntohs(header->contentLength);
+        req = UnpackCgiReq(header+1, len);
+        req->request_id = ntohl(header->requestId);
         auto param = req->getparamsmap();
         params.insert(param.begin(), param.end());
     }

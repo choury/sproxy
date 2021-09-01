@@ -33,9 +33,9 @@ protected:
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
     virtual void ShutdownProc(uint32_t id)override;
 
-    virtual std::list<write_block>::insert_iterator queue_head() override;
-    virtual std::list<write_block>::insert_iterator queue_end() override;
-    virtual void queue_insert(std::list<write_block>::insert_iterator where, const write_block& wb) override;
+    virtual std::list<buff_block>::insert_iterator queue_head() override;
+    virtual std::list<buff_block>::insert_iterator queue_end() override;
+    virtual void queue_insert(std::list<buff_block>::insert_iterator where, buff_block&& wb) override;
 
     void Send(uint32_t id, const void* buff, size_t size);
     void Clean(uint32_t id, ReqStatus& status, uint32_t errcode);

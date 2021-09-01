@@ -1,5 +1,6 @@
 #include "host.h"
 #include "proxy2.h"
+#include "proxy3.h"
 #include "req/requester.h"
 #include "prot/sslio.h"
 #include "prot/quic/quicio.h"
@@ -9,21 +10,21 @@
 #include <inttypes.h>
                     
 static const unsigned char alpn_protos_http12[] =
-    "\x8http/1.1" \
-    "\x2h2";
+    "\x08http/1.1" \
+    "\x02h2";
 
 static const unsigned char alpn_protos_http3[] =
-    "\x2h3";
+    "\x02h3";
 
 Host::Host(const Destination* dest){
     assert(dest->port);
     memcpy(&Server, dest, sizeof(Destination));
 
-    if(dest->schema[0] == 0 || strcasecmp(dest->schema, "http") == 0){
+    if(dest->scheme[0] == 0 || strcasecmp(dest->scheme, "http") == 0){
         rwer = new StreamRWer(dest->hostname, dest->port, Protocol::TCP,
                               std::bind(&Host::Error, this, _1, _2),
                               std::bind(&Host::connected, this));
-    }else if(strcasecmp(dest->schema, "https") == 0 ) {
+    }else if(strcasecmp(dest->scheme, "https") == 0 ) {
         SslRWer *srwer = new SslRWer(dest->hostname, dest->port, Protocol::TCP,
                                      std::bind(&Host::Error, this, _1, _2),
                                      std::bind(&Host::connected, this));
@@ -31,18 +32,18 @@ Host::Host(const Destination* dest){
             srwer->set_alpn(alpn_protos_http12, sizeof(alpn_protos_http12)-1);
         }
         rwer = srwer;
-    }else if(strcasecmp(dest->schema, "udp") == 0) {
+    }else if(strcasecmp(dest->scheme, "udp") == 0) {
         rwer = new PacketRWer(dest->hostname, dest->port, Protocol::UDP,
                               std::bind(&Host::Error, this, _1, _2),
                               std::bind(&Host::connected, this));
-    }else if(strcasecmp(dest->schema, "quic") == 0){
+    }else if(strcasecmp(dest->scheme, "quic") == 0){
         QuicRWer *qrwer = new QuicRWer(dest->hostname, dest->port, Protocol::QUIC,
                                      std::bind(&Host::Error, this, _1, _2),
                                      std::bind(&Host::connected, this));
         qrwer->set_alpn(alpn_protos_http3, sizeof(alpn_protos_http3)-1);
         rwer = qrwer;
     }else{
-        LOGF("Unkonw schema: %s\n", dest->schema);
+        LOGF("Unkonw scheme: %s\n", dest->scheme);
     }
 }
 
@@ -62,32 +63,32 @@ void Host::reply(){
     if(!req->header->should_proxy){
         if(req->header->ismethod("CONNECT")) {
             Http_Proc = &Host::AlwaysProc;
-            status.res = new HttpRes(new HttpResHeader(H200), std::bind(&RWer::EatReadData, rwer));
+            status.res = new HttpRes(UnpackHttpRes(H200), std::bind(&RWer::EatReadData, rwer));
             req->response(status.res);
         }else if(req->header->ismethod("SEND")){
             Http_Proc = &Host::AlwaysProc;
         }
     }
-    size_t len;
-    char* buff = req->header->getstring(len);
+    void* buff = p_malloc(BUF_LEN);
+    size_t len = PackHttpReq(req->header, buff, BUF_LEN);
     auto head = rwer->buffer_head();
     assert(rwer->wlength() == 0 || head->offset == 0);
-    rwer->buffer_insert(head, write_block{buff, len, 0});
-    req->attach(std::bind(&Host::Send, this, _1, _2), [this]{ return 1024*1024 - rwer->wlength(); });
+    rwer->buffer_insert(head, buff_block{buff, len});
+    req->attach(std::bind(&Host::Send, this, _1, _2), [this]{ return rwer->cap(0); });
 }
 
 void Host::connected() {
-    SslRWer* swrer = dynamic_cast<SslRWer*>(rwer);
     LOGD(DHTTP, "<host> (%s) connected\n", rwer->getPeer());
-    if(swrer){
+    SslRWer* srwer = dynamic_cast<SslRWer*>(rwer);
+    if(srwer){
         const unsigned char *data;
         unsigned int len;
-        swrer->get_alpn(&data, &len);
+        srwer->get_alpn(&data, &len);
         if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
             LOG("<host> delegate %" PRIu32 " %s to proxy2\n",
                 status.req->header->request_id,
                 status.req->header->geturl().c_str());
-            Proxy2 *proxy = new Proxy2(rwer);
+            Proxy2 *proxy = new Proxy2(srwer);
             rwer = nullptr;
 
             proxy->init(status.req);
@@ -95,16 +96,44 @@ void Host::connected() {
             return Server::deleteLater(NOERROR);
         }
     }
-    rwer->SetReadCB([this](size_t len){
-        const char* data = this->rwer->rdata();
-        size_t consumed = 0;
-        size_t ret = 0;
-        while((ret = (this->*Http_Proc)(data+consumed, len-consumed))){
-            consumed += ret;
+    QuicRWer* qrwer = dynamic_cast<QuicRWer*>(rwer);
+    if(qrwer){
+        const unsigned char *data;
+        unsigned int len;
+        qrwer->get_alpn(&data, &len);
+        if((data && strncasecmp((const char*)data, "h3", len) == 0)) {
+            LOG("<host> delegate %" PRIu32 " %s to proxy3\n",
+                status.req->header->request_id,
+                status.req->header->geturl().c_str());
+            Proxy3 *proxy = new Proxy3(qrwer);
+            rwer = nullptr;
+
+            proxy->init(status.req);
+            assert(status.res == nullptr);
+            return Server::deleteLater(NOERROR);
+        }else{
+            LOGE("(%s) <host> quic only support http3\n", rwer->getPeer());
+            return deleteLater(PROTOCOL_ERR);
         }
-        assert(consumed <= len);
-        LOGD(DHTTP, "<host> (%s) read: len:%zu, consumed:%zu\n", rwer->getPeer(), len, consumed);
-        this->rwer->consume(data, consumed);
+    }
+    rwer->SetReadCB([this](buff_block& bb){
+        if(bb.len == 0){
+            //EOF
+            status.flags |= HTTP_RES_EOF;
+            if((status.flags & HTTP_REQ_EOF) || status.res == nullptr){
+                deleteLater(NOERROR);
+            }else {
+                status.res->trigger(Channel::CHANNEL_SHUTDOWN);
+            }
+            return;
+        }
+        const char* data = (const char*)bb.buff;
+        size_t ret = 0;
+        while((bb.offset < bb.len) && (ret = (this->*Http_Proc)(data+bb.offset, bb.len-bb.offset))){
+            bb.offset += ret;
+        }
+        assert(bb.offset <= bb.len);
+        LOGD(DHTTP, "<host> (%s) read: len:%zu, consumed:%zu\n", rwer->getPeer(), bb.len, bb.offset);
     });
     rwer->SetWriteCB([this](size_t len){
         LOGD(DHTTP, "<host> (%s) written: wlength:%zu\n", rwer->getPeer(), len);
@@ -117,9 +146,7 @@ void Host::connected() {
         if((status.flags & HTTP_REQ_COMPLETED) || (status.flags & HTTP_REQ_EOF)){
             return;
         }
-        if(len){
-            status.req->more();
-        }
+        status.req->more();
     });
     reply();
 }
@@ -136,7 +163,7 @@ void Host::request(HttpReq* req, Requester*) {
         LOGD(DHTTP, "<host> signal %" PRIu32 ": %d\n", req->header->request_id, (int)s);
         switch(s){
         case Channel::CHANNEL_SHUTDOWN:
-            assert(strcasecmp(Server.schema, "udp"));
+            assert(strcasecmp(Server.scheme, "udp"));
             assert((status.flags & HTTP_RES_EOF) == 0);
             status.flags |= HTTP_REQ_EOF;
             if(rwer->getStats() != RWerStats::Connected){
@@ -158,20 +185,20 @@ void Host::request(HttpReq* req, Requester*) {
 
 void Host::Send(void* buff, size_t size){
     assert((status.flags & HTTP_REQ_COMPLETED) == 0);
-    rwer->buffer_insert(rwer->buffer_end(), write_block{buff, size, 0});
+    rwer->buffer_insert(rwer->buffer_end(), buff_block{buff, size});
     tx_bytes += size;
     if(size == 0){
         status.flags |= HTTP_REQ_COMPLETED;
-        LOGD(DHTTP, "<host> Send %" PRIu32 ": EOF/%zu, http_flag:%d\n",
+        LOGD(DHTTP, "<host> Send %" PRIu32 ": EOF/%zu, http_flag:0x%x\n",
              status.req->header->request_id, tx_bytes, http_flag);
     }else{
-        LOGD(DHTTP, "<host> Send %" PRIu32 ": size:%zu/%zu, http_flag:%d\n",
+        LOGD(DHTTP, "<host> Send %" PRIu32 ": size:%zu/%zu, http_flag:0x%x\n",
              status.req->header->request_id, size, tx_bytes, http_flag);
     }
 }
 
 void Host::ResProc(HttpResHeader* header) {
-    LOGD(DHTTP, "<host> ResProc %" PRIu32": %s, http_flag:%d\n",
+    LOGD(DHTTP, "<host> ResProc %" PRIu32": %s, http_flag:0x%x\n",
          status.req->header->request_id ,header->status, http_flag);
     if(status.req->header->ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY_F;
@@ -185,7 +212,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     assert((status.flags & HTTP_RES_EOF) == 0);
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
     if(status.res == nullptr){
-        status.res = new HttpRes(new HttpResHeader(H200), std::bind(&RWer::EatReadData, rwer));
+        status.res = new HttpRes(UnpackHttpRes(H200), std::bind(&RWer::EatReadData, rwer));
         status.req->response(status.res);
     }
     int len = status.res->cap();
@@ -195,7 +222,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
         LOGE("(%s)[%" PRIu32 "]: <host> the guest's write buff is full (%s)\n", 
             rwer->getPeer(), status.req->header->request_id, 
             status.req->header->geturl().c_str());
-        if(strcasecmp(Server.schema, "udp") == 0){
+        if(strcasecmp(Server.scheme, "udp") == 0){
             return size;
         }
         rwer->delEvents(RW_EVENT::READ);
@@ -219,24 +246,13 @@ void Host::ErrProc(){
 }
 
 void Host::Error(int ret, int code) {
-    LOGD(DHTTP, "<host> Error (%s) ret:%d, code:%d, http_flag:0x%08x\n",
-            rwer->getPeer(), ret, code, http_flag);
-    if(ret == SOCKET_ERR && code == 0 && status.res){
-        //EOF
-        status.flags |= HTTP_RES_EOF;
-        if(status.flags & HTTP_REQ_EOF){
-            deleteLater(NOERROR);
-        }else {
-            status.res->trigger(Channel::CHANNEL_SHUTDOWN);
-        }
-        return;
-    }
     if(status.req) {
-        LOGE("(%s)[%" PRIu32 "]: <host> error (%s)  %d/%d\n",
+        LOGE("(%s)[%" PRIu32 "]: <host> error (%s) %d/%d http_flag:0x%x\n",
             rwer->getPeer(), status.req->header->request_id, 
-            status.req->header->geturl().c_str(), ret, code);
+            status.req->header->geturl().c_str(), ret, code, http_flag);
     }else{
-        LOGE("(%s) <host> error %d/%d\n", rwer->getPeer(), ret, code);
+        LOGE("(%s) <host> error %d/%d http_flag:0x%x\n",
+             rwer->getPeer(), ret, code, http_flag);
     }
     deleteLater(ret);
 }
@@ -252,16 +268,16 @@ void Host::deleteLater(uint32_t errcode){
     }else {
         switch(errcode) {
         case DNS_FAILED:
-            status.req->response(new HttpRes(new HttpResHeader(H503), "[[dns failed]]\n"));
+            status.req->response(new HttpRes(UnpackHttpRes(H503), "[[dns failed]]\n"));
             break;
         case CONNECT_FAILED:
-            status.req->response(new HttpRes(new HttpResHeader(H503), "[[connect failed]]\n"));
+            status.req->response(new HttpRes(UnpackHttpRes(H503), "[[connect failed]]\n"));
             break;
         case SOCKET_ERR:
-            status.req->response(new HttpRes(new HttpResHeader(H502), "[[socket error]]\n"));
+            status.req->response(new HttpRes(UnpackHttpRes(H502), "[[socket error]]\n"));
             break;
         default:
-            status.req->response(new HttpRes(new HttpResHeader(H500), "[[internal error]]\n"));
+            status.req->response(new HttpRes(UnpackHttpRes(H500), "[[internal error]]\n"));
         }
     }
     status.flags |= HTTP_CLOSED_F;
@@ -269,8 +285,13 @@ void Host::deleteLater(uint32_t errcode){
 }
 
 void Host::gethost(HttpReq *req, const Destination* dest, Requester* src) {
-    if(req->header->should_proxy && memcmp(dest, &opt.Server, sizeof(Destination)) == 0 && proxy2){
-        return proxy2->request(req, src);
+    if(req->header->should_proxy && memcmp(dest, &opt.Server, sizeof(Destination)) == 0) {
+        if(proxy3){
+            return proxy3->request(req, src);
+        }
+        if(proxy2){
+            return proxy2->request(req, src);
+        }
     }
     if(req->header->ismethod("CONNECT") ||  req->header->ismethod("SEND")){
     }
@@ -279,8 +300,8 @@ void Host::gethost(HttpReq *req, const Destination* dest, Requester* src) {
 
 void Host::dump_stat(Dumper dp, void* param) {
     dp(param, "Host %p, (%s)\n", this, rwer->getPeer());
-    dp(param, "  rwer: rlength:%zu, rleft:%zu, wlength:%zu, stats:%d, event:%s\n",
-            rwer->rlength(), rwer->rleft(), rwer->wlength(),
+    dp(param, "  rwer: rlength:%zu, wlength:%zu, stats:%d, event:%s\n",
+            rwer->rlength(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     if(status.req){
         dp(param, "req [%" PRIu32 "]: %s [%d]\n",

@@ -2,7 +2,7 @@
 #define HTTP_H__
 
 #include "common/base.h"
-#include "http_pack.h"
+#include "http_header.h"
 
 class HttpBase{
 protected:

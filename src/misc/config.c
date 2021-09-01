@@ -70,7 +70,7 @@ struct options opt = {
     .policy_write   = NULL,
     .CPORT          = 0,
     .Server         = {
-        .schema     = {0},
+        .scheme     = {0},
         .hostname   = {0},
         .port       = 0,
     },
@@ -121,6 +121,7 @@ static struct option long_options[] = {
     {"debug-event",   no_argument,   NULL,  0 },
     {"debug-dns",     no_argument,   NULL,  0 },
     {"debug-http2",   no_argument,   NULL,  0 },
+    {"debug-http3",   no_argument,   NULL,  0 },
     {"debug-job",     no_argument,   NULL,  0 },
     {"debug-vpn",     no_argument,   NULL,  0 },
     {"debug-hpack",   no_argument,   NULL,  0 },
@@ -171,6 +172,7 @@ static struct option_detail option_detail[] = {
     {"debug-event", "debug-event", option_bitwise, &debug, (void*)DEVENT},
     {"debug-dns", "\tdebug-dns", option_bitwise, &debug, (void*)DDNS},
     {"debug-http2", "debug-http2", option_bitwise, &debug, (void*)DHTTP2},
+    {"debug-http3", "debug-http3", option_bitwise, &debug, (void*)DHTTP3},
     {"debug-job", "\tdebug-job", option_bitwise, &debug, (void*)DJOB},
     {"debug-vpn", "\tdebug-vpn", option_bitwise, &debug, (void*)DVPN},
     {"debug-hpack", "debug-hpack", option_bitwise, &debug, (void*)DHPACK},
@@ -234,7 +236,6 @@ void prepare(){
 
 void neglect(){
     flushdns();
-    flushproxy2();
     releaseall();
 }
 
@@ -364,24 +365,24 @@ int loadproxy(const char* proxy, struct Destination* server){
     if(spliturl(proxy, server, NULL)){
         return -1;
     }
-    if(server->schema[0] == 0){
-        strcpy(server->schema, "https");
+    if(server->scheme[0] == 0){
+        strcpy(server->scheme, "https");
     }
-    if(strcasecmp(server->schema, "http") !=0 &&
-        strcasecmp(server->schema, "https") != 0 &&
-        strcasecmp(server->schema, "quic") != 0)
+    if(strcasecmp(server->scheme, "http") != 0 &&
+       strcasecmp(server->scheme, "https") != 0 &&
+       strcasecmp(server->scheme, "quic") != 0)
     {
-        LOGE("unkonw schema for server: %s\n", server->schema);
+        LOGE("unkonw scheme for server: %s\n", server->scheme);
         return -1;
     }
     if(server->port == 0){
-        if(strcasecmp(server->schema, "http") == 0){
+        if(strcasecmp(server->scheme, "http") == 0){
             server->port = HTTPPORT;
         }
-        if(strcasecmp(server->schema, "https") == 0){
+        if(strcasecmp(server->scheme, "https") == 0){
             server->port = HTTPSPORT;
         }
-        if(strcasecmp(server->schema, "quic") == 0){
+        if(strcasecmp(server->scheme, "quic") == 0){
             server->port = QUICPORT;
         }
     }

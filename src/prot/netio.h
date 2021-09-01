@@ -8,27 +8,40 @@
 
 class RBuffer {
     char content[BUF_LEN*2];
-    uint16_t len = 0;
+    size_t len = 0;
 public:
+    //for put
     size_t left();
-    size_t length();
-    size_t add(size_t l);
-    const char* data();
-    size_t consume(const char*, size_t l);
     char* end();
+    size_t add(size_t l);
+    ssize_t put(const void* data, size_t size);
+
+    //for get
+    size_t length();
+    size_t cap();
+    const char* data();
+    size_t consume(size_t l);
 };
 
 class CBuffer {
     char content[BUF_LEN*2];
-    uint32_t begin_pos = 0;
-    uint32_t end_pos = 0;
+    uint64_t offset = 0;
+    size_t len = 0;
 public:
+    //for put
     size_t left();
-    size_t length();
-    void add(size_t l);
-    const char* data();
-    void consume(const char* data, size_t l);
     char* end();
+    void add(size_t l);
+    ssize_t put(const void* data, size_t size);
+    uint64_t Offset(){
+        return offset;
+    };
+
+    //for get
+    size_t length();
+    size_t cap();
+    size_t get(char* buff, size_t len);
+    void consume(size_t l);
 };
 
 class SocketRWer: public RWer{
@@ -47,7 +60,7 @@ protected:
     void connectFailed(int error);
     virtual void Connected(const sockaddr_storage&) override;
 
-    virtual ssize_t Write(const void* buff, size_t len) override;
+    virtual ssize_t Write(const void* buff, size_t len, uint64_t) override;
 public:
     SocketRWer(int fd, const sockaddr_storage* peer, std::function<void(int ret, int code)> errorCB);
     SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
@@ -62,14 +75,12 @@ protected:
     CBuffer rb;
     virtual ssize_t Read(void* buff, size_t len);
     virtual void ReadData() override;
+    virtual void ConsumeRData() override;
 public:
     using SocketRWer::SocketRWer;
 
     //for read buffer
     virtual size_t rlength() override;
-    virtual size_t rleft() override;
-    virtual const char *rdata() override;
-    virtual void consume(const char*, size_t l) override;
 };
 
 class PacketRWer: public SocketRWer{
@@ -77,14 +88,12 @@ protected:
     RBuffer rb;
     virtual ssize_t Read(void* buff, size_t len);
     virtual void ReadData() override;
+    virtual void ConsumeRData() override;
 public:
     using SocketRWer::SocketRWer;
 
     //for read buffer
     virtual size_t rlength() override;
-    virtual size_t rleft() override;
-    virtual const char *rdata() override;
-    virtual void consume(const char*, size_t l) override;
 };
 
 

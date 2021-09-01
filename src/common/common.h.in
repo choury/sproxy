@@ -53,6 +53,7 @@ extern uint32_t debug;
 #define DFILE     (1U<<8u)
 #define DNET      (1U<<9u)
 #define DQUIC     (1U<<10u)
+#define DHTTP3    (1U<<11u)
 
 #define DEVENT_STR  "[EVENT]"
 #define DDNS_STR    "[DNS]"
@@ -64,6 +65,7 @@ extern uint32_t debug;
 #define DFILE_STR   "[FILE]"
 #define DNET_STR    "[NET]"
 #define DQUIC_STR   "[QUIC]"
+#define DHTTP3_STR  "[HTTP3]"
 
 #ifdef  __cplusplus
 extern "C" {
@@ -201,12 +203,12 @@ int protectFd(int sockfd);
 
 
 struct Destination{
-    char schema[DOMAINLIMIT];
+    char scheme[DOMAINLIMIT];
     char hostname[DOMAINLIMIT];
     uint16_t port;
 };
 
-#define PRE_POINTER
+#define PREPTR
 
 #cmakedefine01 Backtrace_FOUND
 #if Backtrace_FOUND

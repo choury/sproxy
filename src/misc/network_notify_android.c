@@ -1,4 +1,3 @@
-
 #include "network_notify.h"
 #include "common/common.h"
 

@@ -7,7 +7,7 @@
 class handler: public CgiHandler{
     void GET(const CGI_Header*) override{
         if(strcmp(req->get("X-Authorized"), "1")) {
-            Response(HttpResHeader(H403, sizeof(H403)));
+            Response(UnpackHttpRes(H403, sizeof(H403)));
             Finish();
             return;
         }
@@ -25,15 +25,15 @@ class handler: public CgiHandler{
             json_object_object_add(jsite, site, json_object_new_string(strategy));
             json_object_array_add(jsites, jsite);
         }
-        HttpResHeader res(H200, sizeof(H200));
-        res.set("Content-Type", "application/json");
+        HttpResHeader* res = UnpackHttpRes(H200, sizeof(H200));
+        res->set("Content-Type", "application/json");
         Cookie cookie;
         cookie.path = "/";
         cookie.domain = req->Dest.hostname;
         cookie.maxage = 3600;
         for(auto i: params){
             cookie.set(i.first.c_str(), i.second.c_str());
-            addcookie(res, cookie);
+            res->addcookie(cookie);
         }
         Response(res);
         const char* jstring = json_object_get_string(jsites);
@@ -43,7 +43,7 @@ class handler: public CgiHandler{
     }
     void POST(const CGI_Header* header) override {
         if(strcmp(req->get("X-Authorized"), "1")) {
-            Response(HttpResHeader(H403, sizeof(H403)));
+            Response(UnpackHttpRes(H403, sizeof(H403)));
             Finish();
             return;
         }
@@ -64,7 +64,7 @@ class handler: public CgiHandler{
     }
     void PUT(const CGI_Header* header) override{
         if(strcmp(req->get("X-Authorized"), "1")) {
-            Response(HttpResHeader(H403, sizeof(H403)));
+            Response(UnpackHttpRes(H403, sizeof(H403)));
             Finish();
             return;
         }
@@ -84,14 +84,14 @@ class handler: public CgiHandler{
             BadRequest();
             return;
         }
-        HttpResHeader res(H303, sizeof(H303));
-        res.set("Location", req->get("Referer"));
+        HttpResHeader* res = UnpackHttpRes(H303, sizeof(H303));
+        res->set("Location", req->get("Referer"));
         Response(res);
         Finish();
     }
     void DELETE(const CGI_Header* header)override{
         if(strcmp(req->get("X-Authorized"), "1")) {
-            Response(HttpResHeader(H403, sizeof(H403)));
+            Response(UnpackHttpRes(H403, sizeof(H403)));
             Finish();
             return;
         }
@@ -111,8 +111,8 @@ class handler: public CgiHandler{
             BadRequest();
             return;
         }
-        HttpResHeader res(H303, sizeof(H303));
-        res.set("Location", req->get("Referer"));
+        HttpResHeader* res = UnpackHttpRes(H303, sizeof(H303));
+        res->set("Location", req->get("Referer"));
         Response(res);
         Finish();
     }

@@ -388,18 +388,18 @@ int spliturl(const char* url, struct Destination* server, char* path) {
         return 0;
     }
     const char* url_end = url + strlen(url);
-    // scan schema by '://'
+    // scan scheme by '://'
     const char *scan_pos = strstr(url, "://");
-    size_t schema_len = 0;
+    size_t scheme_len = 0;
     if (scan_pos) {
-        schema_len = scan_pos - url;
+        scheme_len = scan_pos - url;
         scan_pos += 3;
     }else{
         scan_pos = url;
     }
-    if(schema_len){
-        memcpy(server->schema, url, schema_len);
-        server->schema[schema_len] = 0;
+    if(scheme_len){
+        memcpy(server->scheme, url, scheme_len);
+        server->scheme[scheme_len] = 0;
     }
     url = scan_pos;
     
@@ -458,15 +458,15 @@ int spliturl(const char* url, struct Destination* server, char* path) {
 
 int dumpDestToBuffer(const struct Destination* Server, char* buff, size_t buflen){
     uint16_t port = Server->port;
-    if(strcasecmp(Server->schema, "http") == 0 && port == HTTPPORT){
+    if(strcasecmp(Server->scheme, "http") == 0 && port == HTTPPORT){
         port = 0;
     }
-    if(strcasecmp(Server->schema, "https") ==0 && port == HTTPSPORT){
+    if(strcasecmp(Server->scheme, "https") == 0 && port == HTTPSPORT){
         port = 0;
     }
     int pos = 0;
-    if(Server->schema[0])
-        pos = snprintf(buff, buflen, "%s://%s", Server->schema, Server->hostname);
+    if(Server->scheme[0])
+        pos = snprintf(buff, buflen, "%s://%s", Server->scheme, Server->hostname);
     else
         pos = snprintf(buff, buflen, "%s", Server->hostname);
     if(port)
@@ -478,5 +478,23 @@ const char* dumpDest(const struct Destination* Server){
     static char buff[URLLIMIT];
     dumpDestToBuffer(Server, buff, sizeof(buff));
     return buff;
+}
+
+
+const char* dumpAuthority(const struct Destination* Server){
+    static char buff[URLLIMIT];
+    uint16_t port = Server->port;
+    if(strcasecmp(Server->scheme, "http") == 0 && port == HTTPPORT){
+        port = 0;
+    }
+    if(strcasecmp(Server->scheme, "https") == 0 && port == HTTPSPORT){
+        port = 0;
+    }
+    if(port){
+        snprintf(buff, sizeof(buff), "%s:%d", Server->hostname, Server->port);
+        return buff;
+    }else{
+        return Server->hostname;
+    }
 }
 

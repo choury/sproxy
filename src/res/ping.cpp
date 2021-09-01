@@ -5,6 +5,7 @@
 #include "misc/util.h"
 
 #include <inttypes.h>
+#include <assert.h>
 
 Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
     rwer = new PacketRWer(host, this->id, Protocol::ICMP, [this](int ret, int code){
@@ -19,33 +20,34 @@ Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
         }
         req->attach(std::bind(&Ping::Send, this, _1, _2),[](){ return 1024*1024;});
     });
-    rwer->SetReadCB([this](int len){
+    rwer->SetReadCB([this](buff_block& bb){
         if(res == nullptr){
-            res = new HttpRes(new HttpResHeader(H200));
+            res = new HttpRes(UnpackHttpRes(H200));
             req->response(this->res);
         }
-        const char* data = rwer->rdata();
+        assert(bb.offset == 0);
+        const char* data = (const char*)bb.buff;
         switch(family){
         case AF_INET:
             if(israw){
                 const ip* iphdr = (ip*)data;
                 size_t hlen = iphdr->ip_hl << 2;
-                res->send(data  + hlen + sizeof(icmphdr), len - hlen - sizeof(icmphdr));
+                res->send(data  + hlen + sizeof(icmphdr), bb.len - hlen - sizeof(icmphdr));
             }else {
-                res->send(data + sizeof(icmphdr), len - sizeof(icmphdr));
+                res->send(data + sizeof(icmphdr), bb.len - sizeof(icmphdr));
             }
             break;
         case AF_INET6:
             if(israw){
-                res->send(data + sizeof(ip6_hdr) + sizeof(icmp6_hdr), len - sizeof(ip6_hdr) - sizeof(icmp6_hdr));
+                res->send(data + sizeof(ip6_hdr) + sizeof(icmp6_hdr), bb.len - sizeof(ip6_hdr) - sizeof(icmp6_hdr));
             }else {
-                res->send(data + sizeof(icmp6_hdr), len - sizeof(icmp6_hdr));
+                res->send(data + sizeof(icmp6_hdr), bb.len - sizeof(icmp6_hdr));
             }
             break;
         default:
             abort();
         }
-        rwer->consume(data, len);
+        bb.offset = bb.len;
     });
 }
 
@@ -80,7 +82,7 @@ void Ping::Send(void* buff, size_t size){
     default:
         abort();
     }
-    rwer->buffer_insert(rwer->buffer_end(), write_block{packet, size, 0});
+    rwer->buffer_insert(rwer->buffer_end(), buff_block{packet, size});
 }
 
 void Ping::dump_stat(Dumper dp, void* param) {

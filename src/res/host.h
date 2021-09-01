@@ -30,7 +30,7 @@ protected:
 
     virtual void request(HttpReq* req, Requester*) override;
     virtual void connected();
-    void Send(void* buff, size_t size);
+    void Send(PREPTR void* buff, size_t size);
     void reply();
 public:
     explicit Host(const Destination* dest);

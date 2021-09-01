@@ -4,7 +4,7 @@
 class handler: public CgiHandler{
     void GET(const CGI_Header*) override{
         if(strcmp(req->get("X-Authorized"), "1")) {
-            Response(HttpResHeader(H403, sizeof(H403)));
+            Response(UnpackHttpRes(H403, sizeof(H403)));
             Finish();
             return;
         }
@@ -12,8 +12,8 @@ class handler: public CgiHandler{
             return;
         }
         SproxyClient c(getenv("ADMIN_SOCK"));
-        HttpResHeader res(H200, sizeof(H200));
-        res.set("Content-Type", "application/json");
+        HttpResHeader* res = UnpackHttpRes(H200, sizeof(H200));
+        res->set("Content-Type", "application/json");
         Response(res);
         char callback[DOMAINLIMIT+sizeof("setproxy(\"\");")];
         auto server = c.GetServer().get_future().get();
@@ -22,7 +22,7 @@ class handler: public CgiHandler{
     }
     void POST(const CGI_Header* header) override{
         if(strcmp(req->get("X-Authorized"), "1")) {
-            Response(HttpResHeader(H403, sizeof(H403)));
+            Response(UnpackHttpRes(H403, sizeof(H403)));
             Finish();
             return;
         }
@@ -42,7 +42,7 @@ class handler: public CgiHandler{
             BadRequest();
             return;
         }
-        Response(HttpResHeader(H205));
+        Response(UnpackHttpRes(H205));
         Finish();
     }
 public:

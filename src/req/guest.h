@@ -20,7 +20,7 @@ class Guest:public Requester, public HttpResponser {
     size_t tx_bytes = 0;
 protected:
     std::list<GStatus> statuslist;
-    void ReadHE(size_t len);
+    void ReadHE(buff_block& bb);
     void WriteHE(size_t len);
     virtual void deleteLater(uint32_t errcode) override;
     virtual void Error(int ret, int code);

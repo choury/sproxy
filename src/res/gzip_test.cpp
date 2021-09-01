@@ -20,10 +20,8 @@ GzipTest::GzipTest() {
     strm.opaque = Z_NULL;
     int ret;
     if ((ret = deflateInit2(&strm, Z_BEST_SPEED, Z_DEFLATED, 16 + MAX_WBITS, 8, Z_DEFAULT_STRATEGY)) != Z_OK) {
-        LOGE("zlib init failed: %d\n", ret);
-        throw 0;
+        LOGF("zlib init failed: %d\n", ret);
     }
-
 }
 
 GzipTest::~GzipTest(){
@@ -70,7 +68,7 @@ void GzipTest::request(HttpReq* req, Requester*) {
         deleteLater(PEER_LOST_ERR);
     });
     this->req = req;
-    HttpResHeader *header = new HttpResHeader(H200, sizeof(H200));
+    HttpResHeader *header = UnpackHttpRes(H200, sizeof(H200));
     header->set("Content-Type", "application/octet-stream");
     header->set("Pragma", "no-cache");
 
@@ -101,7 +99,7 @@ void GzipTest::request(HttpReq* req, Requester*) {
     req->response(this->res);
 }
 
-void GzipTest::gzipreadHE(size_t) {
+void GzipTest::gzipreadHE(buff_block&) {
     if (left == 0) {
         (void)deflateEnd(&strm);
         res->send((const void*)nullptr, 0);
@@ -122,7 +120,7 @@ void GzipTest::gzipreadHE(size_t) {
     strm.next_out = out;
     strm.avail_out = chunk;
     /* run deflate() on input until output buffer not full, finish
-       compression if all of source has been read in */
+       compression if all of source Has been read in */
     do {
         strm.next_in = in;
         strm.avail_in = Min(sizeof(in), left);
@@ -138,7 +136,7 @@ void GzipTest::gzipreadHE(size_t) {
     }
 }
 
-void GzipTest::rawreadHE(size_t len) {
+void GzipTest::rawreadHE(buff_block&) {
     if (left == 0) {
         (void)deflateEnd(&strm);
         res->send((const void*)nullptr, 0);
@@ -155,7 +153,7 @@ void GzipTest::rawreadHE(size_t len) {
         return;
     }
 
-    len = Min(chunk, left);
+    size_t len = Min(chunk, left);
     unsigned char* const out = (unsigned char *)malloc(len);
     res->send(out, len);
     free(out);

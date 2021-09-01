@@ -264,8 +264,9 @@ int verify_host_callback(int ok, X509_STORE_CTX *ctx){
 }
 
 static int ssl_err_cb(const char* str, size_t len, void* _){
-    LOGE("SSL error: %.*s\n", (int)len, str);
-    return len;
+    (void)_;
+    LOGE("SSL error: %.*s", (int)len, str);
+    return (int)len;
 }
 
 int ssl_get_error(SSL* ssl, int ret){
@@ -282,8 +283,7 @@ int ssl_get_error(SSL* ssl, int ret){
             break;
         case SSL_ERROR_SYSCALL:
             if(errno == 0){
-                LOGE("should not get zero errno, fix it\n");
-                errno = EIO;
+                errno = EPIPE;
             }
             break;
         case SSL_ERROR_SSL:

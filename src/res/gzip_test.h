@@ -11,8 +11,8 @@ class GzipTest: public Responser{
     size_t left = 0;
     HttpReq* req = nullptr;
     HttpRes* res = nullptr;
-    virtual void gzipreadHE(size_t len);
-    virtual void rawreadHE(size_t len);
+    virtual void gzipreadHE(buff_block&);
+    virtual void rawreadHE(buff_block&);
 public:
     GzipTest();
 	virtual ~GzipTest() override;

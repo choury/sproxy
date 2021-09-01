@@ -2,7 +2,7 @@
 #define REQUESTER_H__
 
 #include "common/base.h"
-#include "prot/http/http_pack.h"
+#include "prot/http/http_def.h"
 
 class Responser;
 

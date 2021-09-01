@@ -23,15 +23,17 @@ bool Guest2::wantmore(const ReqStatus& status) {
 
 Guest2::Guest2(RWer* rwer): Requester(rwer) {
     rwer->SetErrorCB(std::bind(&Guest2::Error, this, _1, _2));
-    rwer->SetReadCB([this](size_t len){
-        const char* data = this->rwer->rdata();
-        size_t consumed = 0;
-        size_t ret = 0;
-        while((ret = (this->*Http2_Proc)((uchar*)data+consumed, len-consumed))){
-            consumed += ret;
+    rwer->SetReadCB([this](buff_block& bb){
+        if(bb.len == 0){
+            //EOF
+            return deleteLater(NOERROR);
         }
-        assert(consumed <= len);
-        this->rwer->consume(data, consumed);
+        const char* data = (const char*)bb.buff;
+        size_t ret = 0;
+        while((bb.offset < bb.len) && (ret = (this->*Http2_Proc)((uchar*)data+bb.offset, bb.len-bb.offset))){
+            bb.offset += ret;
+        }
+        assert(bb.offset <= bb.len);
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
@@ -67,9 +69,6 @@ Guest2::~Guest2() {
 }
 
 void Guest2::Error(int ret, int code){
-    if(ret == SOCKET_ERR && code == 0){
-        return deleteLater(NOERROR);
-    }
     LOGE("(%s): <guest2> error: %d/%d\n", getsrc(), ret, code);
     deleteLater(ret);
 }
@@ -101,7 +100,7 @@ void Guest2::ReqProc(uint32_t id, HttpReqHeader* header) {
     if(statusmap.count(id)){
         delete header;
         LOGD(DHTTP2, "<guest2> ReqProc dup id: %d\n", id);
-        Reset(id, ERR_STREAM_CLOSED);
+        Reset(id, HTTP2_ERR_STREAM_CLOSED);
         return;
     }
 
@@ -147,14 +146,14 @@ void Guest2::DataProc(uint32_t id, const void* data, size_t len) {
             LOGE("(%s)[%" PRIu32 "]: <guest2> [%d] window size error %zu/%d\n", 
                 getsrc(), status.req->header->request_id,
                 id, len, status.localwinsize);
-            Clean(id, status, ERR_FLOW_CONTROL_ERROR);
+            Clean(id, status, HTTP2_ERR_FLOW_CONTROL_ERROR);
             return;
         }
         status.req->send(data, len);
         status.localwinsize -= len;
     }else{
         LOGD(DHTTP2, "<guest2> DateProc not found id: %d\n", id);
-        Reset(id, ERR_STREAM_CLOSED);
+        Reset(id, HTTP2_ERR_STREAM_CLOSED);
     }
 }
 
@@ -181,7 +180,16 @@ void Guest2::response(void* index, HttpRes* res) {
     res->header->del("Transfer-Encoding");
     res->header->del("Connection");
     status.res = res;
-    PushFrame(res->header->getframe(&request_table, id));
+
+    Http2_header* const header = (Http2_header*)p_malloc(BUF_LEN);
+    memset(header, 0, sizeof(*header));
+    header->type = HTTP2_STREAM_HEADERS;
+    header->flags = END_HEADERS_F;
+    set32(header->id, id);
+    size_t len = hpack_encoder.PackHttp2Res(res->header, header + 1, BUF_LEN - sizeof(Http2_header));
+    set24(header->length, len);
+    PushFrame(header);
+
     res->setHandler([this, &status, id](Channel::signal s){
         assert(statusmap.count(id));
         switch(s){
@@ -193,7 +201,7 @@ void Guest2::response(void* index, HttpRes* res) {
                 Shutdown(id);
             }else{
                 LOGD(DHTTP2, "<guest2> send reset frame: %d\n", id);
-                Clean(id, status, ERR_CANCEL);
+                Clean(id, status, HTTP2_ERR_CANCEL);
             }
             break;
         case Channel::CHANNEL_CLOSED:
@@ -201,7 +209,7 @@ void Guest2::response(void* index, HttpRes* res) {
             return Clean(id, status, NOERROR);
         case Channel::CHANNEL_ABORT:
             status.flags |= HTTP_CLOSED_F;
-            return Clean(id, status, ERR_INTERNAL_ERROR);
+            return Clean(id, status, HTTP2_ERR_INTERNAL_ERROR);
         }
     });
     res->attach((Channel::recv_const_t)std::bind(&Guest2::Send, this, id, _1, _2),
@@ -242,7 +250,7 @@ void Guest2::WindowUpdateProc(uint32_t id, uint32_t size) {
             ReqStatus& status = statusmap[id];
             LOGD(DHTTP2, "<guest2> window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
             if((uint64_t)status.remotewinsize + size >= (uint64_t)1<<31u){
-                Clean(id, status, ERR_FLOW_CONTROL_ERROR);
+                Clean(id, status, HTTP2_ERR_FLOW_CONTROL_ERROR);
                 return;
             }
             status.remotewinsize += size;
@@ -255,7 +263,7 @@ void Guest2::WindowUpdateProc(uint32_t id, uint32_t size) {
     }else{
         LOGD(DHTTP2, "<guest2> window size updated global: %d+%d\n", remotewinsize, size);
         if((uint64_t)remotewinsize + size >= (uint64_t)1<<31u){
-            ErrProc(ERR_FLOW_CONTROL_ERROR);
+            ErrProc(HTTP2_ERR_FLOW_CONTROL_ERROR);
             return;
         }
         remotewinsize += size;
@@ -280,7 +288,7 @@ void Guest2::ShutdownProc(uint32_t id) {
     ReqStatus& status = statusmap[id];
     status.flags |= HTTP_REQ_EOF;
     if(status.flags & HTTP_RES_EOF){
-        Clean(id, status, ERR_STREAM_CLOSED);
+        Clean(id, status, HTTP2_ERR_STREAM_CLOSED);
     }else{
         status.req->trigger(Channel::CHANNEL_SHUTDOWN);
     }
@@ -294,6 +302,7 @@ void Guest2::GoawayProc(const Http2_header* header) {
 
 void Guest2::ErrProc(int errcode) {
     LOGE("(%s): Guest2 http2 error:0x%08x\n", getsrc(), errcode);
+    http2_flag |= HTTP2_FLAG_ERROR;
     deleteLater(errcode);
 }
 
@@ -303,16 +312,16 @@ void Guest2::AdjustInitalFrameWindowSize(ssize_t diff) {
     }
 }
 
-std::list<write_block>::insert_iterator Guest2::queue_head() {
+std::list<buff_block>::insert_iterator Guest2::queue_head() {
     return rwer->buffer_head();
 }
 
-std::list<write_block>::insert_iterator Guest2::queue_end() {
+std::list<buff_block>::insert_iterator Guest2::queue_end() {
     return rwer->buffer_end();
 }
 
-void Guest2::queue_insert(std::list<write_block>::insert_iterator where, const write_block& wb) {
-    rwer->buffer_insert(where, wb);
+void Guest2::queue_insert(std::list<buff_block>::insert_iterator where, buff_block&& wb) {
+    rwer->buffer_insert(where, std::move(wb));
 }
 
 void Guest2::deleteLater(uint32_t errcode){
@@ -333,8 +342,8 @@ void Guest2::dump_stat(Dumper dp, void* param) {
     dp(param, "Guest2 %p, id:%d (%s) (%d/%d)\n",
             this, sendid, getsrc(),
             this->remotewinsize, this->localwinsize);
-    dp(param, "  rwer: rlength:%zu, rleft:%zu, wlength:%zu, stats:%d, event:%s\n",
-            rwer->rlength(), rwer->rleft(), rwer->wlength(),
+    dp(param, "  rwer: rlength:%zu, wlength:%zu, stats:%d, event:%s\n",
+            rwer->rlength(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     for(auto& i: statusmap){
         dp(param, "0x%x [%" PRIu32 "]: %s %s (%d/%d)\n",

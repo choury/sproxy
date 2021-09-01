@@ -4,7 +4,9 @@
 
 set(http_src
         http.cpp
-        http_pack.cpp
+        http_header.cpp
+        http_def.cpp
+        http_code.c
         )
 
 add_library(http ${http_src})

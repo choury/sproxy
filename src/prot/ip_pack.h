@@ -74,6 +74,7 @@ struct icmphdr
 class Icmp{
     icmphdr icmp_hdr;
 public:
+    bool valid = true;
     Icmp();
     Icmp(const char* packet, size_t len);
     void print() const;
@@ -93,6 +94,7 @@ public:
 class Icmp6{
     icmp6_hdr icmp_hdr;
 public:
+    bool valid = true;
     Icmp6();
     Icmp6(const char* packet, size_t len);
     void print() const;
@@ -120,6 +122,7 @@ class Tcp{
     char *tcpopt = nullptr; //tcp头选项
     size_t tcpoptlen = 0; //tcp头选项长度
 public:
+    bool valid = true;
     uint8_t hdrlen = 0;
     Tcp(const char* packet, size_t len);
     Tcp(uint16_t sport, uint16_t dport);
@@ -153,6 +156,7 @@ public:
 class Udp{
     udphdr udp_hdr; //udp头
 public:
+    bool valid = true;
     Udp(const char* packet, size_t len);
     Udp(uint16_t sport, uint16_t dport);
     void print() const;
@@ -168,6 +172,7 @@ protected:
     uint8_t hdrlen = 0;
     uint8_t type;
     virtual void print() const = 0;
+    bool valid = true;
 public:
     union {
         Icmp* icmp = nullptr;
@@ -185,6 +190,7 @@ public:
     virtual uint8_t gettype() const;
     virtual char* build_packet(const void* data, size_t &len);
     virtual char* build_packet(void* data, size_t &len) = 0;
+    virtual bool isValid();
 };
 
 std::shared_ptr<Ip> MakeIp(const char* packet, size_t len);
