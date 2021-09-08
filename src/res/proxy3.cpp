@@ -115,10 +115,6 @@ void Proxy3::request(HttpReq* req, Requester*) {
     p += variable_encode(p, HTTP3_STREAM_HEADERS);
     p += variable_encode(p, len);
     PushFrame(id, buff, p - (char*)buff + len);
-    if(req->header->no_body()) {
-        PushFrame(id, nullptr, 0);
-    }
-
     ReqStatus& status = statusmap[id];
     req->setHandler([this, &status, id](Channel::signal s){
         assert(statusmap.count(id));
@@ -173,11 +169,12 @@ void Proxy3::Send(uint64_t id, const void* buff, size_t size) {
     ReqStatus& status = statusmap[id];
     assert((status.flags & HTTP_REQ_COMPLETED) == 0);
     assert((status.flags & HTTP_REQ_EOF) == 0);
-    PushData(id, buff, size);
     if(size == 0){
         status.flags |= HTTP_REQ_COMPLETED;
+        PushFrame(id, nullptr, 0);
         LOGD(DHTTP3, "<proxy3> send data [%" PRIu64 "]: EOF\n", id);
     }else{
+        PushData(id, buff, size);
         LOGD(DHTTP3, "<proxy3> send data [%" PRIu64 "]: %zu\n", id, size);
     }
 }

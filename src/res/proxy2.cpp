@@ -259,7 +259,7 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
 }
 
 void Proxy2::PingProc(const Http2_header *header){
-    if(header->flags & ACK_F){
+    if(header->flags & HTTP2_ACK_F){
         rwer->deljob(&connection_lost_job);
         double diff = (getutime()-get64(header+1))/1000.0;
         LOG("<proxy2> Get a ping time=%.3fms\n", diff);
@@ -300,7 +300,7 @@ void Proxy2::request(HttpReq* req, Requester*) {
     Http2_header* const header = (Http2_header *)p_malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
     header->type = HTTP2_STREAM_HEADERS;
-    header->flags = END_HEADERS_F;
+    header->flags = HTTP2_END_HEADERS_F;
     set32(header->id, id);
     size_t len = hpack_encoder.PackHttp2Req(req->header, header+1, BUF_LEN - sizeof(Http2_header));
     set24(header->length, len);

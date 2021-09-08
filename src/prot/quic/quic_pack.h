@@ -221,7 +221,7 @@ struct quic_max_stream_data {
     uint64_t max;
 };
 
-struct quic_stream_blocked{
+struct quic_stream_data_blocked{
     uint64_t id;
     uint64_t size;
 };
@@ -245,7 +245,7 @@ struct quic_frame{
         struct quic_reset     reset;
         struct quic_stop      stop;
         struct quic_max_stream_data max_stream_data;
-        struct quic_stream_blocked  stream_blocked;
+        struct quic_stream_data_blocked  stream_data_blocked;
         char     path_data[64];
         uint64_t extra;
     };

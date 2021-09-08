@@ -27,6 +27,7 @@ public:
     bool Has(uint64_t pn);
     // delete number before pn;
     void Erase(uint64_t pn);
+    void dump();
 };
 
 class pn_namespace{
@@ -42,6 +43,7 @@ public:
     std::list <quic_frame_pn> sendq;
     void PendAck();
     void HandleAck(const quic_ack* frame);
+    void clear();
     ~pn_namespace();
 };
 

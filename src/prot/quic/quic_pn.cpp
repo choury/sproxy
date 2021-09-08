@@ -81,11 +81,17 @@ void Chop::Erase(uint64_t pn) {
             i = items.erase(i);
             continue;
         }
-        if(pn < i->first){
+        if(pn <= i->first){
             return;
         }
         i->first = pn;
         return;
+    }
+}
+
+void Chop::dump() {
+    for(auto& i: items){
+        LOGD(DQUIC, "%d - %d\n", (int)i.first, (int)i.second);
     }
 }
 
@@ -135,6 +141,7 @@ void pn_namespace::HandleAck(const quic_ack *frame) {
             if(i->frame->type == QUIC_FRAME_ACK || i->frame->type == QUIC_FRAME_ACK_ECN){
                 LOGD(DQUIC, "clean pn before: %" PRIu64"\n", i->frame->ack.acknowledged);
                 pns.Erase(i->frame->ack.acknowledged);
+                pns.dump();
             }
             frame_release(i->frame);
             delete i->frame;
@@ -145,7 +152,7 @@ void pn_namespace::HandleAck(const quic_ack *frame) {
     }
 }
 
-pn_namespace::~pn_namespace() {
+void pn_namespace::clear() {
     for(auto i : pendq){
         frame_release(i);
         delete i;
@@ -156,4 +163,8 @@ pn_namespace::~pn_namespace() {
     }
     pendq.clear();
     sendq.clear();
+}
+
+pn_namespace::~pn_namespace() {
+    clear();
 }

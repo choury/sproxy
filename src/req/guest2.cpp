@@ -184,7 +184,7 @@ void Guest2::response(void* index, HttpRes* res) {
     Http2_header* const header = (Http2_header*)p_malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
     header->type = HTTP2_STREAM_HEADERS;
-    header->flags = END_HEADERS_F;
+    header->flags = HTTP2_END_HEADERS_F;
     set32(header->id, id);
     size_t len = hpack_encoder.PackHttp2Res(res->header, header + 1, BUF_LEN - sizeof(Http2_header));
     set24(header->length, len);

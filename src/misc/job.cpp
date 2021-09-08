@@ -98,7 +98,7 @@ uint32_t do_delayjob(){
             j++;
             continue;
         }
-        LOGD(DJOB, "will start Job %p %s diff %u\n", (*j), (*j)->func_name, diff);
+        LOGD(DJOB, "will do Job %p %s diff %u\n", (*j), (*j)->func_name, diff);
         (*j)->flags |= JOB_RUNNING;
         jobs_todo.push_back(*j);
         j = gjobs.erase(j);

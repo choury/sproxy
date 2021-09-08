@@ -25,11 +25,11 @@ struct Http2_header {
 #define HTTP2_STREAM_WINDOW_UPDATE  8u
 #define HTTP2_STREAM_CONTINUATION   9u
     uint8_t type;
-#define ACK_F               1u
-#define END_STREAM_F        1u
-#define END_HEADERS_F       4u
-#define PADDED_F            8u
-#define PRIORITY_F          0x20u
+#define HTTP2_ACK_F               1u
+#define HTTP2_END_STREAM_F        1u
+#define HTTP2_END_HEADERS_F       4u
+#define HTTP2_PADDED_F            8u
+#define HTTP2_PRIORITY_F          0x20u
     uint8_t flags;
     uint8_t id[4];
 }__attribute__((packed));

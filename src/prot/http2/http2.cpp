@@ -35,13 +35,13 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
             return 0;
         }
         DataProc(id, header+1, length);
-        if(header->flags & END_STREAM_F){
+        if(header->flags & HTTP2_END_STREAM_F){
             EndProc(id);
         }
         break;
     case HTTP2_STREAM_HEADERS:
         HeadersProc(header);
-        if(header->flags & END_STREAM_F){
+        if(header->flags & HTTP2_END_STREAM_F){
             EndProc(id);
         }
         break;
@@ -177,7 +177,7 @@ void Http2Base::PushData(uint32_t id, const void* data, size_t size){
     set32(header->id, id);
     set24(header->length, left);
     if(size == 0) {
-        header->flags = END_STREAM_F;
+        header->flags = HTTP2_END_STREAM_F;
     }else{
         memcpy(header+1, data, left);
     }
@@ -215,7 +215,7 @@ int Http2Base::SendFrame(){
 void Http2Base::SettingsProc(const Http2_header* header) {
     uint32_t id = HTTP2_ID(header->id);
     const Setting_Frame *sf = (const Setting_Frame *)(header + 1);
-    if((header->flags & ACK_F) == 0) {
+    if((header->flags & HTTP2_ACK_F) == 0) {
         while((char *)sf-(char *)(header+1) < get24(header->length)){
             uint32_t value = get32(sf->value);
             switch(get16(sf->identifier)){
@@ -263,7 +263,7 @@ void Http2Base::SettingsProc(const Http2_header* header) {
         }
         Http2_header *header_back = (Http2_header *)p_memdup(header, sizeof(Http2_header));
         set24(header_back->length, 0);
-        header_back->flags |= ACK_F;
+        header_back->flags |= HTTP2_ACK_F;
         PushFrame(header_back);
     }else if(get24(header->length) != 0){
         LOGE("ERROR setting ack with content\n");
@@ -272,9 +272,9 @@ void Http2Base::SettingsProc(const Http2_header* header) {
 }
 
 void Http2Base::PingProc(const Http2_header* header) {
-    if((header->flags & ACK_F) == 0) {
+    if((header->flags & HTTP2_ACK_F) == 0) {
         Http2_header *header_back = (Http2_header *)p_memdup(header, sizeof(Http2_header) + get24(header->length));
-        header_back->flags |= ACK_F;
+        header_back->flags |= HTTP2_ACK_F;
         PushFrame(header_back);
     }
 }
@@ -415,12 +415,12 @@ void Http2Responser::HeadersProc(const Http2_header* header) {
     recvid = id;
     const unsigned char *pos = (const unsigned char *)(header+1);
     uint8_t padlen = 0;
-    if(header->flags & PADDED_F) {
+    if(header->flags & HTTP2_PADDED_F) {
         padlen = *pos++;
     }
     uint32_t streamdep = 0;
     uint8_t weigth = 0;
-    if(header->flags & PRIORITY_F) {
+    if(header->flags & HTTP2_PRIORITY_F) {
         streamdep = get32(pos);
         pos += sizeof(streamdep);
         weigth = *pos++;
@@ -453,7 +453,7 @@ size_t Http2Requster::InitProc(const uchar* http2_buff, size_t len) {
     if(len < length){
         return 0;
     }
-    if(header->type == HTTP2_STREAM_SETTINGS && (header->flags & ACK_F) == 0){
+    if(header->type == HTTP2_STREAM_SETTINGS && (header->flags & HTTP2_ACK_F) == 0){
         SettingsProc(header);
         http2_flag |=  HTTP2_FLAG_INITED;
         Http2_Proc = &Http2Requster::DefaultProc;
@@ -475,12 +475,12 @@ void Http2Requster::HeadersProc(const Http2_header* header) {
     }
     const unsigned char *pos = (const unsigned char *)(header+1);
     uint8_t padlen = 0;
-    if(header->flags & PADDED_F) {
+    if(header->flags & HTTP2_PADDED_F) {
         padlen = *pos++;
     }
     uint32_t streamdep = 0;
     uint8_t weigth = 0;
-    if(header->flags & PRIORITY_F) {
+    if(header->flags & HTTP2_PRIORITY_F) {
         streamdep = get32(pos);
         pos += sizeof(streamdep);
         weigth = *pos++;

@@ -121,7 +121,8 @@ protected:
     struct QuicStreamStatus{
 #define STREAM_FLAG_FIN    0x01
 #define STREAM_FLAG_EOF    0x02
-#define STREAM_FLAG_RESET  0x04
+#define STREAM_FLAG_RESET_SENT  0x04
+#define STREAM_FLAG_RESET_RECVD 0x08
         uint32_t flags = 0;
         size_t   offset = 0;
         size_t   finSize = 0;
@@ -169,8 +170,10 @@ protected:
     void generateCid();
     size_t generateParams(char data[QUIC_INITIAL_LIMIT]);
     void dropkey(OSSL_ENCRYPTION_LEVEL level);
+    std::list<quic_packet*> nextPackets();
     PacketResult handleCryptoPacket(const quic_crypto* crypto, OSSL_ENCRYPTION_LEVEL level);
     PacketResult handleStreamPacket(uint64_t type, const quic_stream* stream);
+    PacketResult handleResetPacket(const quic_reset *stream);
     PacketResult handlePacketBeforeHandshake(const quic_packet *packet);
     PacketResult handlePacket(const quic_packet* packet);
     void handleRetryPacket(const quic_pkt_header* header);
@@ -183,6 +186,7 @@ protected:
     void keepAlive();
     Job* time_out = nullptr;
     void timedOut();
+    Job* close_job = nullptr;
 public:
     explicit QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
                      std::function<void(int ret, int code)> errorCB,
@@ -191,6 +195,9 @@ public:
     void Reset(uint64_t id, uint32_t code);
 
     virtual void waitconnectHE(RW_EVENT events) override;
+    virtual void closeHE(RW_EVENT events) override;
+    //virtual void Shutdown() override;
+    virtual void Close(std::function<void()> func) override;
 
 
     static int set_encryption_secrets(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,

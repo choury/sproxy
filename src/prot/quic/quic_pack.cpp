@@ -682,13 +682,13 @@ static const char* unpack_max_stream_data(const char* data, quic_max_stream_data
     return data;
 }
 
-static char* pack_stream_blocked(const quic_stream_blocked* blocked, char* data){
+static char* pack_stream_blocked(const quic_stream_data_blocked* blocked, char* data){
     data += variable_encode(data, blocked->id);
     data += variable_encode(data, blocked->size);
     return data;
 }
 
-static const char* unpack_stream_blocked(const char* data, quic_stream_blocked* blocked){
+static const char* unpack_stream_blocked(const char* data, quic_stream_data_blocked* blocked){
     data += variable_decode(data, &blocked->id);
     data += variable_decode(data, &blocked->size);
     return data;
@@ -727,7 +727,7 @@ void* pack_frame(void* buff, const quic_frame* frame) {
     case QUIC_FRAME_MAX_STREAM_DATA:
         return pack_max_stream_data(&frame->max_stream_data, (char*)buff + tlen);
     case QUIC_FRAME_STREAM_DATA_BLOCKED:
-        return pack_stream_blocked(&frame->stream_blocked, (char*)buff + tlen);
+        return pack_stream_blocked(&frame->stream_data_blocked, (char*)buff + tlen);
     case QUIC_FRAME_NEW_CONNECTION_ID:
         return pack_new_id_frame(&frame->new_id, (char*)buff + tlen);
     case QUIC_FRAME_PATH_CHALLENGE:
@@ -837,7 +837,7 @@ const char* unpack_frame(const char* data, size_t len, quic_frame* frame){
     case QUIC_FRAME_MAX_STREAM_DATA:
         return unpack_max_stream_data(pos, &frame->max_stream_data);
     case QUIC_FRAME_STREAM_DATA_BLOCKED:
-        return unpack_stream_blocked(pos, &frame->stream_blocked);
+        return unpack_stream_blocked(pos, &frame->stream_data_blocked);
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:
         return unpack_close_frame(frame->type, pos, &frame->close);
