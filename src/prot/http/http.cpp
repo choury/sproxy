@@ -72,21 +72,19 @@ size_t HttpBase::ChunkBProc(const char* buffer, size_t len) {
 }
 
 size_t HttpBase::FixLenProc(const char* buffer, size_t len) {
+    if (len == 0) {
+        return 0;
+    }
+    ssize_t ret = DataProc(buffer, Min(len, http_expectlen));
+    if (ret < 0) {
+        return 0;
+    }
+    http_expectlen -= ret;
     if (http_expectlen == 0) {
         Http_Proc = &HttpBase::HeaderProc;
         EndProc();
-        return HeaderProc(buffer, len);
-    } else {
-        if (len == 0) {
-            return 0;
-        }
-        ssize_t ret = DataProc(buffer, Min(len, http_expectlen));
-        if (ret < 0) {
-            return 0;
-        }
-        http_expectlen -= ret;
-        return ret;
     }
+    return ret;
 }
 
 size_t HttpBase::AlwaysProc(const char* buffer, size_t len) {
