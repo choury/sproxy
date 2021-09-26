@@ -12,20 +12,19 @@ class FDns;
 struct FDnsStatus{
     FDns*      fdns;
     Dns_Query* que;
-    Resolver*  resolver;
 };
 
 class FDns: public Responser{
     HttpReq*   req;
     HttpRes*   res;
-    std::map<uint32_t, FDnsStatus*> statusmap;
+    std::map<uint32_t, std::shared_ptr<FDnsStatus>> statusmap;
 
     void Send(const void* buff, size_t size);
-    void clean(FDnsStatus* status);
+    void clean(std::shared_ptr<FDnsStatus> status);
     virtual void deleteLater(uint32_t errcode) override;
 
-    static void RawCb(void* param, const char *buff, size_t size);
-    static void DnsCb(void* param, std::list<sockaddr_storage> addrs);
+    static void RawCb(std::weak_ptr<void> param, const char *buff, size_t size);
+    static void DnsCb(std::weak_ptr<void> param, int error, std::list<sockaddr_storage> addrs);
 public:
     FDns();
     virtual ~FDns() override;

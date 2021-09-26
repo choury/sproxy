@@ -78,7 +78,7 @@ enum class RWerStats{
     Error,
 };
 
-class RWer: public Ep, public job_handler{
+class RWer: public Ep, public job_handler, public std::enable_shared_from_this<RWer> {
 protected:
 #define RWER_READING  1u  // handling the read buffer
 #define RWER_SENDING  2u  // handling the write buffer

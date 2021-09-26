@@ -88,8 +88,7 @@ SslRWer::~SslRWer(){
 
 void SslRWer::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR)) {
-        checkSocket(__PRETTY_FUNCTION__);
-        return connect();
+        return connectFailed(checkSocket(__PRETTY_FUNCTION__ ));
     }
     if (!!(events & RW_EVENT::WRITE)) {
         setEvents(RW_EVENT::READWRITE);
@@ -107,14 +106,14 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
         SSL_set_verify(ssl, SSL_VERIFY_PEER, verify_host_callback);
 
         handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::shakehandHE;
-        con_failed_job = updatejob(con_failed_job, std::bind(&SslRWer::connect, this), 2000);
+        con_failed_job = updatejob(con_failed_job,
+                                   std::bind(&SslRWer::connectFailed, this, ETIMEDOUT), 2000);
     }
 }
 
 void SslRWer::shakehandHE(RW_EVENT events){
     if (!!(events & RW_EVENT::ERROR)) {
-        ErrorHE(SSL_SHAKEHAND_ERR, checkSocket(__PRETTY_FUNCTION__));
-        return;
+        return ErrorHE(SSL_SHAKEHAND_ERR, checkSocket(__PRETTY_FUNCTION__));
     }
     if (!!(events & RW_EVENT::READ) || !!(events & RW_EVENT::WRITE)) {
         if((ctx?sconnect():saccept()) == 1) {

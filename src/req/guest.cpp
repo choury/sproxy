@@ -63,9 +63,9 @@ void Guest::WriteHE(size_t len){
 
 Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(nullptr){
     if(ctx){
-        init(new SslRWer(fd, addr, ctx, std::bind(&Guest::Error, this, _1, _2),
+        init(std::make_shared<SslRWer>(fd, addr, ctx, std::bind(&Guest::Error, this, _1, _2),
             [this](const sockaddr_storage&){
-                SslRWer* srwer = dynamic_cast<SslRWer*>(rwer);
+                std::shared_ptr<SslRWer> srwer = std::dynamic_pointer_cast<SslRWer>(rwer);
                 const unsigned char *data;
                 unsigned int len;
                 srwer->get_alpn(&data, &len);
@@ -78,7 +78,7 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
             }
         ));
     }else{
-        init(new StreamRWer(fd, addr, std::bind(&Guest::Error, this, _1, _2)));
+        init(std::make_shared<StreamRWer>(fd, addr, std::bind(&Guest::Error, this, _1, _2)));
     }
     rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
     rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));

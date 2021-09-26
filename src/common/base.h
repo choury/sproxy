@@ -6,12 +6,13 @@
 #include <queue>
 #include <list>
 #include <functional>
+#include <memory>
 
 #include <string.h>
 
 class Server{
 protected:
-    RWer* rwer = nullptr;
+    std::shared_ptr<RWer> rwer;
 public:
     explicit Server();
     virtual ~Server();

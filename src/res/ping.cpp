@@ -8,7 +8,7 @@
 #include <assert.h>
 
 Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
-    rwer = new PacketRWer(host, this->id, Protocol::ICMP, [this](int ret, int code){
+    rwer = std::make_shared<PacketRWer>(host, this->id, Protocol::ICMP, [this](int ret, int code){
         LOGE("Ping error: %d/%d\n", ret, code);
         rwer->setEvents(RW_EVENT::NONE);
         req->attach((Channel::recv_const_t)[](const void*, size_t){},[](){ return 1024*1024;});

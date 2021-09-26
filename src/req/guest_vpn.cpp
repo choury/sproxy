@@ -145,7 +145,7 @@ void Vpn_server::cleanKey(const VpnKey& key) {
     statusmap.erase(key);
 }
 
-Guest_vpn::Guest_vpn(const VpnKey& key, Vpn_server* server):Requester(new NullRWer), key(key), server(server) {
+Guest_vpn::Guest_vpn(const VpnKey& key, Vpn_server* server):Requester(std::make_shared<NullRWer>()), key(key), server(server) {
     memset(&status, 0, sizeof(status));
 }
 

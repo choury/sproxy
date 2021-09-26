@@ -50,16 +50,14 @@ protected:
     Protocol protocol;
     char     hostname[DOMAINLIMIT] = {0};
     std::queue<sockaddr_storage> addrs;
-    int      retry = 3;
     Job*     con_failed_job = nullptr;
-    Resolver*  resolver = nullptr;
-    virtual void waitconnectHE(RW_EVENT events);
-    static void Dnscallback(void* param, std::list<sockaddr_storage> addrs);
+    void query();
     void connect();
-
     void connectFailed(int error);
-    virtual void Connected(const sockaddr_storage&) override;
+    static void Dnscallback(std::weak_ptr<void> param, int error, std::list<sockaddr_storage> addrs);
 
+    virtual void waitconnectHE(RW_EVENT events);
+    virtual void Connected(const sockaddr_storage&) override;
     virtual ssize_t Write(const void* buff, size_t len, uint64_t) override;
 public:
     SocketRWer(int fd, const sockaddr_storage* peer, std::function<void(int ret, int code)> errorCB);

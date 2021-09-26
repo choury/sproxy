@@ -9,9 +9,9 @@ class Responser;
 class Requester: public Server{
     char source[INET6_ADDRSTRLEN];
 protected:
-    void init(RWer* rwer);
+    void init(std::shared_ptr<RWer> rwer);
 public:
-    explicit Requester(RWer* rwer);
+    explicit Requester(std::shared_ptr<RWer> rwer);
 
     virtual const char *getsrc();
     virtual const char *getid();

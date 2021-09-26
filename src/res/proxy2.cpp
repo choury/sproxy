@@ -29,7 +29,7 @@ bool Proxy2::wantmore(const ReqStatus& status) {
 }
 
 
-Proxy2::Proxy2(SslRWer* rwer) {
+Proxy2::Proxy2(std::shared_ptr<SslRWer> rwer) {
     this->rwer = rwer;
     if(proxy2 == nullptr){
         proxy2 = this;

@@ -15,10 +15,8 @@ Server::Server(){
 }
 
 Server::~Server() {
-    delete rwer;
     servers.erase(this);
 }
-
 
 void Server::deleteLater(uint32_t) {
     if(rwer){

@@ -21,6 +21,7 @@ extern "C" {
 #define QUICPORT  443u
 
 struct DnsConfig{
+    int    timeout;
     size_t namecount;
     struct sockaddr_storage server[20];
 };

@@ -22,86 +22,12 @@ static DnsConfig dnsConfig;
 
 std::unordered_map<std::string, Dns_Rcd> rcd_cache;
 
-Resolver::Resolver(const char* host,
-                   const std::function<void(std::list<sockaddr_storage>)>& addrcb,
-                   const std::list<sockaddr_storage>& results):
-    Ep(-1)
-{
-    strcpy(this->host, host);
-    reply = AddJob(std::bind(addrcb, results), 0, 0);
-}
-
-void Resolver::readHE(RW_EVENT events) {
-    if(!!(events & RW_EVENT::ERROR)){
-        checkSocket("dns socket error");
-        if(rawcb) {
-            return rawcb(nullptr, 0);
-        }
-        if(addrcb) {
-            return addrcb({});
-        }
-    }
-    if(!!(events & RW_EVENT::READ)) {
-        char buf[BUF_SIZE];
-        int ret = read(getFd(), buf, sizeof(buf));
-        if(ret <= 0) {
-            LOGE("dns read error: %s\n", strerror(errno));
-            return;
-        }
-        if(rawcb) {
-            return rawcb(buf, ret);
-        }
-        if(addrcb) {
-            Dns_Result result(buf, ret);
-            if(result.id == 0){
-                LOGE("invalid dns result\n");
-                addrcb({});
-                return;
-            }
-            if(result.type == 1){
-                flags |= GETARES;
-            }else if(result.type == 28){
-                flags |= GETAAAARES;
-            }
-            if(!result.addrs.empty()){
-                rcd.get_time = time(nullptr);
-                rcd.ttl = result.ttl;
-                for(auto i: result.addrs){
-                    rcd.addrs.push_back(i);
-                }
-            }
-            if((flags & GETARES) && (flags & GETAAAARES)){
-                rcd_cache[host] = rcd;
-                addrcb(rcd.addrs);
-            }
-        }
-    }
-}
-
-
-Resolver::Resolver(int fd,
+HostResolver::HostResolver(int fd,
                    const char *host,
-                   int type,
-                   std::function<void(const char *, size_t)> rawcb):
-    Ep(fd), rawcb(std::move(rawcb))
+                   std::function<void(int, std::list<sockaddr_storage>, HostResolver*)> addrcb):
+    Ep(fd), cb(std::move(addrcb))
 {
     strcpy(this->host, host);
-    socklen_t socklen = sizeof(addr);
-    getpeername(fd, (sockaddr*)&addr, &socklen);
-    char buf[BUF_SIZE];
-    write(fd, buf, Dns_Query(host, type, id_cur++).build((unsigned char*)buf));
-    this->handleEvent = (void (Ep::*)(RW_EVENT))&Resolver::readHE;
-    setEvents(RW_EVENT::READ);
-}
-
-Resolver::Resolver(int fd,
-                   const char *host,
-                   std::function<void(std::list<sockaddr_storage>)> addrcb):
-    Ep(fd), addrcb(std::move(addrcb))
-{
-    strcpy(this->host, host);
-    socklen_t socklen = sizeof(addr);
-    getpeername(fd, (sockaddr*)&addr, &socklen);
     char buf[BUF_SIZE];
     write(fd, buf, Dns_Query(host, 1, id_cur++).build((unsigned char*)buf));
     if(opt.ipv6_enabled) {
@@ -109,11 +35,99 @@ Resolver::Resolver(int fd,
     }else {
         flags |= GETAAAARES;
     }
-    this->handleEvent = (void (Ep::*)(RW_EVENT))&Resolver::readHE;
+    this->handleEvent = (void (Ep::*)(RW_EVENT))&HostResolver::readHE;
     setEvents(RW_EVENT::READ);
+    reply = AddJob(std::bind(cb, DNS_TIMEOUT, rcd.addrs, this),
+                   dnsConfig.timeout * 1000, 0);
 }
 
-Resolver::~Resolver(){
+
+void HostResolver::readHE(RW_EVENT events) {
+    if(!!(events & RW_EVENT::ERROR)){
+        checkSocket("dns socket error");
+        flags |= GETERROR;
+        DelJob(&reply);
+        return cb(DNS_SERVER_FAIL, {}, this);
+    }
+    if(!!(events & RW_EVENT::READ)) {
+        int error = 0;
+        char buf[BUF_SIZE];
+        int ret = read(getFd(), buf, sizeof(buf));
+        if(ret <= 0) {
+            LOGE("dns read error: %s\n", strerror(errno));
+            error = DNS_SERVER_FAIL;
+            goto ret;
+        }
+        {
+            Dns_Result result(buf, ret);
+            error = result.error;
+            if(result.error){
+                LOGE("invalid dns result\n");
+                flags |= GETERROR;
+                goto ret;
+            }
+            rcd.get_time = time(nullptr);
+            rcd.ttl = result.ttl;
+            if(result.type == 1){
+                flags |= GETARES;
+                for(auto i: result.addrs){
+                    rcd.addrs.push_back(i);
+                }
+            }else if(result.type == 28){
+                flags |= GETAAAARES;
+                for(auto i: result.addrs){
+                    rcd.addrs.push_front(i);
+                }
+            }
+            if(!(flags & GETARES) || !(flags & GETAAAARES)) {
+                return;
+            }
+            rcd_cache[host] = rcd;
+        }
+ret:
+        DelJob(&reply);
+        return cb(error, rcd.addrs, this);
+    }
+}
+
+HostResolver::~HostResolver() {
+    DelJob(&reply);
+}
+
+
+RawResolver::RawResolver(int fd,
+                   const char *host,
+                   int type,
+                   std::function<void(const char *, size_t, RawResolver*)> rawcb):
+    Ep(fd), cb(std::move(rawcb))
+{
+    char buf[BUF_SIZE];
+    write(fd, buf, Dns_Query(host, type, id_cur++).build((unsigned char*)buf));
+    this->handleEvent = (void (Ep::*)(RW_EVENT))&RawResolver::readHE;
+    setEvents(RW_EVENT::READ);
+    reply = AddJob(std::bind(rawcb, nullptr, 0, this), dnsConfig.timeout * 1000, 0);
+}
+
+void RawResolver::readHE(RW_EVENT events) {
+    if(!!(events & RW_EVENT::ERROR)){
+        checkSocket("dns socket error");
+        DelJob(&reply);
+        return cb(nullptr, 0, this);
+    }
+    if(!!(events & RW_EVENT::READ)) {
+        DelJob(&reply);
+        char buf[BUF_SIZE];
+        int ret = read(getFd(), buf, sizeof(buf));
+        if(ret <= 0) {
+            LOGE("dns read error: %s\n", strerror(errno));
+            return cb(nullptr, 0, this);
+        }
+        return cb(buf, ret, this);
+    }
+}
+
+
+RawResolver::~RawResolver(){
     DelJob(&reply);
 }
 
@@ -139,6 +153,7 @@ void getDnsConfig(struct DnsConfig* config){
         config->server[get++] = addr;
     }
     config->namecount = get;
+    config->timeout = 5;
 }
 
 #else
@@ -183,6 +198,7 @@ void getDnsConfig(struct DnsConfig* config){
     free(line);
     fclose(res_file);
     config->namecount = get;
+    config->timeout = 5;
 }
 #endif
 
@@ -191,60 +207,93 @@ void flushdns(){
     getDnsConfig(&dnsConfig);
 }
 
-Resolver* query_host_real(const char* host,
-                          std::function<void(std::list<sockaddr_storage>)> addrcb)
-{
+static void query_host_real(int retries, const char* host, DNSCB func, std::weak_ptr<void> param){
+    if(retries >= 3){
+        AddJob(std::bind(func, param, DNS_SERVER_FAIL,
+                         std::list<sockaddr_storage>{}), 0, JOB_FLAGS_AUTORELEASE);
+        return;
+    }
     if(dnsConfig.namecount == 0) {
         getDnsConfig(&dnsConfig);
     }
-
     if (dnsConfig.namecount == 0) {
         LOGE("[DNS] can't get dns server\n");
-        return nullptr;
+        AddJob(std::bind(func, param, DNS_REFUSE,
+                         std::list<sockaddr_storage>{}), 0, JOB_FLAGS_AUTORELEASE);
+        return;
     }
 
-    sockaddr_storage addr = dnsConfig.server[rand() % dnsConfig.namecount];
+    sockaddr_storage addr = dnsConfig.server[retries % dnsConfig.namecount];
     int fd = Connect(&addr, SOCK_DGRAM);
     if (fd == -1) {
         LOGE("[DNS] connecting  %s error:%s\n", getaddrstring(&addr), strerror(errno));
-        return nullptr;
+        AddJob(std::bind(func, param, DNS_REFUSE,
+                         std::list<sockaddr_storage>{}), 0, JOB_FLAGS_AUTORELEASE);
+        return;
     }
-    return new Resolver(fd, host, std::move(addrcb));
+
+    auto addrcb = [](int retries, DNSCB func, std::weak_ptr<void> param,
+                          int error, std::list<sockaddr_storage> addrs, HostResolver* resolver)
+    {
+        defer([resolver]{delete resolver;});
+        if(error == 0){
+            func(param, error, std::move(addrs));
+            return;
+        }
+        if(error == DNS_TIMEOUT){
+            if(addrs.empty()){
+                query_host_real(retries+1, resolver->host, func, param);
+            }else{
+                func(param, 0, std::move(addrs));
+            }
+            return;
+        }
+        func(param, error, {});
+    };
+    new HostResolver(fd, host, std::bind(addrcb, retries, func, param, _1, _2, _3));
 }
 
-Resolver* query_host(const char* host, DNSCB func, void* param) {
+void query_host(const char* host, DNSCB func, std::weak_ptr<void> param) {
     sockaddr_storage addr{};
     if(storage_aton(host, 0, &addr) == 1){
         std::list<sockaddr_storage> addrs = {addr};
-        return new Resolver(host, std::bind(func, param, _1), addrs);
+        AddJob(std::bind(func, param, 0, addrs), 0, JOB_FLAGS_AUTORELEASE);
+        return;
     }
 
     if (rcd_cache.count(host)) {
         auto& rcd = rcd_cache[host];
         if(rcd.get_time + (time_t)rcd.ttl > time(nullptr)){
-            return new Resolver(host, std::bind(func, param, _1), rcd.addrs);
-        }else{
-            rcd_cache.erase(host);
+            AddJob(std::bind(func, param, 0, rcd.addrs), 0, JOB_FLAGS_AUTORELEASE);
+            return;
         }
+        rcd_cache.erase(host);
     }
-    return query_host_real(host, std::bind(func, param, _1));
+    return query_host_real(0, host, func, param);
 }
 
-Resolver* query_dns(const char* host, int type, DNSRAWCB func, void* param) {
+void query_dns(const char* host, int type, DNSRAWCB func, std::weak_ptr<void> param) {
     if(dnsConfig.namecount == 0) {
         getDnsConfig(&dnsConfig);
     }
     if (dnsConfig.namecount == 0) {
         LOGE("[DNS] can't get dns server\n");
-        return nullptr;
+        AddJob(std::bind(func, param, nullptr, 0), 0, JOB_FLAGS_AUTORELEASE);
+        return;
     }
     auto addr = dnsConfig.server[rand() % dnsConfig.namecount];
     int fd = Connect(&addr, SOCK_DGRAM);
     if (fd == -1) {
         LOGE("[DNS] connecting  %s error:%s\n", getaddrstring(&addr), strerror(errno));
-        return nullptr;
+        AddJob(std::bind(func, param, nullptr, 0), 0, JOB_FLAGS_AUTORELEASE);
+        return;
     }
-    return new Resolver(fd, host, type, std::bind(func, param, _1, _2));
+    auto rawcb = [](DNSRAWCB func, std::weak_ptr<void> param,
+            const char* data, size_t len, RawResolver* resolver){
+        delete resolver;
+        func(param, data, len);
+    };
+    new RawResolver(fd, host, type, std::bind(rawcb, func, param, _1, _2, _3));
 }
 
 void RcdDown(const char *hostname, const sockaddr_storage &addr) {

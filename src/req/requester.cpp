@@ -2,13 +2,13 @@
 #include "misc/util.h"
 
 
-Requester::Requester(RWer* rwer) {
+Requester::Requester(std::shared_ptr<RWer> rwer) {
     if(rwer){
         init(rwer);
     }
 }
 
-void Requester::init(RWer* rwer) {
+void Requester::init(std::shared_ptr<RWer> rwer) {
     this->rwer = rwer;
     strcpy(source, rwer->getPeer());
     *strlchrnul(source, ':') = 0;

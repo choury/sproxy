@@ -7,7 +7,7 @@
 #include "res/cgi.h"
 
 Cli::Cli(int fd, const sockaddr_storage* addr):
-        Requester(new StreamRWer(fd, addr, std::bind(&Cli::Error, this, _1, _2)))
+        Requester(std::make_shared<StreamRWer>(fd, addr, std::bind(&Cli::Error, this, _1, _2)))
 {
     rwer->SetReadCB(std::bind(&Cli::ReadHE, this, _1));
 }

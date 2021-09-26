@@ -146,6 +146,7 @@ int Dns_Query::build(unsigned char* buf)const {
 
 Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
     if(len < sizeof(DNS_HDR)){
+        error = DNS_FORMAT_ERROR;
         LOGE("[DNS] incomplete DNS response\n");
         return;
     }
@@ -157,6 +158,7 @@ Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
     for (int i = 0; i < numq; ++i) {
         p = (unsigned char *)getdomain(dnshdr, p, len, domain);
         if((const char*)p + sizeof(DNS_QUE) - buff > (int)len){
+            error = DNS_FORMAT_ERROR;
             LOGE("[DNS] numq overflow\n");
             return;
         }
@@ -166,13 +168,15 @@ Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
         LOGD(DDNS, "[%d] response for %s, type: %d:\n", id, domain, type);
     }
     if((flag & RCODE_MASK) !=0 ){
-        LOG("[DNS] ack error: %s: %u\n", domain, uint32_t(flag & RCODE_MASK));
+        error = flag & RCODE_MASK;
+        LOG("[DNS] ack error: %s: %u\n", domain, error);
         return;
     }
     uint16_t numa = ntohs(dnshdr->numa);
     for(int i = 0; i < numa; ++i) {
         p = (unsigned char *)getdomain(dnshdr, p, len, domain);
         if((const char*)p + sizeof(DNS_RR) - buff > (int)len){
+            error = DNS_FORMAT_ERROR;
             LOGE("[DNS] numa overflow\n");
             return;
         }

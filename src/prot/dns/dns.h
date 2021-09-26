@@ -33,8 +33,9 @@ typedef struct DNS_HDR {
 // 比如，服务器不希望对某些请求者给出应答，
 // 或者服务器不希望进行某些操作（比如区域传送zone transfer）。
 #define DNS_REFUSE        5
-
 // 6-15 保留值，暂时未使用。
+
+#define DNS_TIMEOUT      0xf0
 #define  RCODE_MASK 0x000fu  // 应答码
     uint16_t flag;
     uint16_t numq;               // 问题个数
@@ -60,6 +61,7 @@ class Dns_Result{
 public:
     char domain[DOMAINLIMIT];
     std::vector<sockaddr_storage> addrs;
+    uint16_t  error = 0;
     uint16_t  type = 0;
     uint16_t  id = 0;
     uint32_t  ttl = 0xffffffff;

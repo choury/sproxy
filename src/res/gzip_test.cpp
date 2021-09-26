@@ -8,7 +8,7 @@
 static unsigned char in[16384];
 
 GzipTest::GzipTest() {
-    rwer = new FullRWer([this](int ret, int code) {
+    rwer = std::make_shared<FullRWer>([this](int ret, int code) {
         LOGE("gzip_test error: %d/%d\n", ret, code);
         res->trigger(Channel::CHANNEL_ABORT);
         deleteLater(ret);

@@ -139,7 +139,7 @@ Cgi::Cgi(const char* fname, int sv[2]) {
     // 父进程
     close(sv[1]);   // 关闭管道的子进程端
     /* 现在可在fd[0]中读写数据 */
-    rwer = new StreamRWer(sv[0], nullptr, [this](int ret, int code){
+    rwer = std::make_shared<StreamRWer>(sv[0], nullptr, [this](int ret, int code){
         LOGE("[CGI] %s error: %d/%d\n", basename(filename), ret, code);
         deleteLater(ret);
     });

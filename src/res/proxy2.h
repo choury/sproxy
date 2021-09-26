@@ -49,7 +49,7 @@ protected:
     virtual void queue_insert(std::list<buff_block>::insert_iterator where, buff_block&& wb) override;
     bool wantmore(const ReqStatus& status);
 public:
-    explicit Proxy2(SslRWer* rwer);
+    explicit Proxy2(std::shared_ptr<SslRWer> rwer);
     virtual ~Proxy2() override;
 
     virtual void request(HttpReq* req, Requester*)override;

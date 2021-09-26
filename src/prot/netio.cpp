@@ -158,16 +158,25 @@ SocketRWer::SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
 {
     strcpy(this->hostname, hostname);
     stats = RWerStats::Resolving;
-    connect();
+    AddJob(std::bind(&SocketRWer::query, this), 0, JOB_FLAGS_AUTORELEASE);
 }
 
 SocketRWer::~SocketRWer() {
-    delete resolver;
 }
 
-void SocketRWer::Dnscallback(void* param, std::list<sockaddr_storage> addrs) {
-    SocketRWer* rwer = static_cast<SocketRWer*>(param);
-    if (addrs.empty()) {
+void SocketRWer::query() {
+    query_host(hostname, SocketRWer::Dnscallback, shared_from_this());
+}
+
+void SocketRWer::Dnscallback(std::weak_ptr<void> param, int error, std::list<sockaddr_storage> addrs) {
+    if(param.expired()){
+        return;
+    }
+    std::shared_ptr<SocketRWer> rwer = std::static_pointer_cast<SocketRWer>(param.lock());
+    if (error) {
+        return rwer->ErrorHE(DNS_FAILED, error);
+    }
+    if(addrs.empty()){
         return rwer->ErrorHE(DNS_FAILED, 0);
     }
 
@@ -183,40 +192,19 @@ void SocketRWer::Dnscallback(void* param, std::list<sockaddr_storage> addrs) {
 void SocketRWer::connectFailed(int error) {
     RcdDown(hostname, addrs.front());
     addrs.pop();
+    if(getFd() >= 0){
+        setFd(-1);
+    }
     if(addrs.empty()) {
         //we have tried all addresses.
         return ErrorHE(CONNECT_FAILED, error);
     }
-    con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 0);
+    this->connect();
 }
 
 void SocketRWer::connect() {
-    if(stats != RWerStats::Resolving
-       && stats != RWerStats::Connecting
-       && stats != RWerStats::SslConnecting)
-    {
+    if(stats != RWerStats::Connecting && stats != RWerStats::SslConnecting) {
         return;
-    }
-    delete resolver;
-    resolver = nullptr;
-    if(stats == RWerStats::Resolving) {
-        if(retry-- <= 0) {
-            return ErrorHE(DNS_FAILED, 0);
-        }
-        assert(addrs.empty());
-        // No address got before.
-        resolver = query_host(hostname, SocketRWer::Dnscallback, this);
-        if(resolver == nullptr) {
-            con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 0);
-        }else {
-            con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 5000);
-        }
-        return;
-    }
-    if(getFd() >= 0) {
-        //connected timeout for top addr
-        setFd(-1);
-        return connectFailed(ETIMEDOUT);
     }
     if(protocol == Protocol::TCP) {
         int fd = Connect(&addrs.front(), SOCK_STREAM);
@@ -226,7 +214,8 @@ void SocketRWer::connect() {
         setFd(fd);
         setEvents(RW_EVENT::WRITE);
         handleEvent = (void (Ep::*)(RW_EVENT)) &SocketRWer::waitconnectHE;
-        con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 500);
+        con_failed_job = updatejob(con_failed_job,
+                                   std::bind(&SocketRWer::connectFailed, this, ETIMEDOUT), 20000);
     } else if(protocol == Protocol::QUIC) {
         int fd = Connect(&addrs.front(), SOCK_DGRAM);
         if (fd < 0) {
@@ -235,7 +224,8 @@ void SocketRWer::connect() {
         setFd(fd);
         setEvents(RW_EVENT::WRITE);
         handleEvent = (void (Ep::*)(RW_EVENT)) &SocketRWer::waitconnectHE;
-        con_failed_job = updatejob(con_failed_job, std::bind(&SocketRWer::connect, this), 500);
+        con_failed_job = updatejob(con_failed_job,
+                                   std::bind(&SocketRWer::connectFailed, this, ETIMEDOUT), 20000);
     } else if(protocol == Protocol::UDP) {
         int fd = Connect(&addrs.front(), SOCK_DGRAM);
         if (fd < 0) {
@@ -272,8 +262,7 @@ void SocketRWer::Connected(const sockaddr_storage& addr) {
 
 void SocketRWer::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR) || !!(events & RW_EVENT::READEOF)) {
-        checkSocket(__PRETTY_FUNCTION__);
-        return connect();
+        return connectFailed(checkSocket(__PRETTY_FUNCTION__ ));
     }
     if (!!(events & RW_EVENT::WRITE)) {
         Connected(addrs.front());

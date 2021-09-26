@@ -41,7 +41,7 @@ protected:
     void Clean(uint32_t id, ReqStatus& status, uint32_t errcode);
     bool wantmore(const ReqStatus& status);
 public:
-    explicit Guest2(RWer* rwer);
+    explicit Guest2(std::shared_ptr<RWer> rwer);
     virtual ~Guest2();
     
     virtual void response(void* index, HttpRes* res)override;

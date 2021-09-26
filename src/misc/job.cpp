@@ -91,10 +91,10 @@ job_handler::~job_handler() {
 uint32_t do_delayjob(){
     uint32_t now = getmtime();
     std::list<Job*> jobs_todo;
-    for(auto j = gjobs.begin(); j != gjobs.end();){
+    for(auto j = gjobs.begin(); j != gjobs.end();) {
         uint32_t diff = now - (*j)->last_done_ms;
         assert(((*j)->flags & JOB_DESTROIED) == 0);
-        if(diff < (*j)->delay_ms){
+        if(diff < (*j)->delay_ms) {
             j++;
             continue;
         }
@@ -120,7 +120,7 @@ uint32_t do_delayjob(){
             j->handler->deljob(&j);
         }
     }
-    uint32_t min_interval = 0xffffff7f;
+    uint32_t min_interval = 0xffffffff;
     for(auto j: gjobs){
         uint32_t left = j->delay_ms + j->last_done_ms - now;
         if(left < min_interval){

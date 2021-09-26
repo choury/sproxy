@@ -21,11 +21,11 @@ Host::Host(const Destination* dest){
     memcpy(&Server, dest, sizeof(Destination));
 
     if(dest->scheme[0] == 0 || strcasecmp(dest->scheme, "http") == 0){
-        rwer = new StreamRWer(dest->hostname, dest->port, Protocol::TCP,
+        rwer = std::make_shared<StreamRWer>(dest->hostname, dest->port, Protocol::TCP,
                               std::bind(&Host::Error, this, _1, _2),
                               std::bind(&Host::connected, this));
     }else if(strcasecmp(dest->scheme, "https") == 0 ) {
-        SslRWer *srwer = new SslRWer(dest->hostname, dest->port, Protocol::TCP,
+        auto srwer = std::make_shared<SslRWer>(dest->hostname, dest->port, Protocol::TCP,
                                      std::bind(&Host::Error, this, _1, _2),
                                      std::bind(&Host::connected, this));
         if(!opt.disable_http2){
@@ -33,11 +33,11 @@ Host::Host(const Destination* dest){
         }
         rwer = srwer;
     }else if(strcasecmp(dest->scheme, "udp") == 0) {
-        rwer = new PacketRWer(dest->hostname, dest->port, Protocol::UDP,
+        rwer = std::make_shared<PacketRWer>(dest->hostname, dest->port, Protocol::UDP,
                               std::bind(&Host::Error, this, _1, _2),
                               std::bind(&Host::connected, this));
     }else if(strcasecmp(dest->scheme, "quic") == 0){
-        QuicRWer *qrwer = new QuicRWer(dest->hostname, dest->port, Protocol::QUIC,
+        auto qrwer = std::make_shared<QuicRWer>(dest->hostname, dest->port, Protocol::QUIC,
                                      std::bind(&Host::Error, this, _1, _2),
                                      std::bind(&Host::connected, this));
         qrwer->set_alpn(alpn_protos_http3, sizeof(alpn_protos_http3)-1);
@@ -79,7 +79,7 @@ void Host::reply(){
 
 void Host::connected() {
     LOGD(DHTTP, "<host> (%s) connected\n", rwer->getPeer());
-    SslRWer* srwer = dynamic_cast<SslRWer*>(rwer);
+    auto srwer = std::dynamic_pointer_cast<SslRWer>(rwer);
     if(srwer){
         const unsigned char *data;
         unsigned int len;
@@ -96,7 +96,7 @@ void Host::connected() {
             return Server::deleteLater(NOERROR);
         }
     }
-    QuicRWer* qrwer = dynamic_cast<QuicRWer*>(rwer);
+    auto qrwer = std::dynamic_pointer_cast<QuicRWer>(rwer);
     if(qrwer){
         const unsigned char *data;
         unsigned int len;

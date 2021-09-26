@@ -59,17 +59,15 @@ FDns::FDns() {
         fake_ip = ntohl(inet_addr(VPNADDR));
         fdns_records.Add(fake_ip, "VPN", nullptr);
     }
-    rwer = new NullRWer();
+    rwer = std::make_shared<NullRWer>();
 }
 
 FDns::~FDns() {
 }
 
-void FDns::clean(FDnsStatus* status){
-    statusmap.erase(status->que->id);
+void FDns::clean(std::shared_ptr<FDnsStatus> status){
     delete status->que;
-    delete status->resolver;
-    delete status;
+    statusmap.erase(status->que->id);
 }
 
 void FDns::request(HttpReq* req, Requester*){
@@ -103,7 +101,7 @@ void FDns::Send(const void* buff, size_t size) {
         delete que;
         return;
     }
-    FDnsStatus* status = new FDnsStatus{this, que, nullptr};
+    std::shared_ptr<FDnsStatus> status(new FDnsStatus{this, que});
     statusmap[que->id] = status;
     Dns_Result* result = nullptr;
     if(que->type == 12){
@@ -114,8 +112,7 @@ void FDns::Send(const void* buff, size_t size) {
     }else if(que->type == 1 || que->type == 28) {
         strategy stra = getstrategy(que->domain);
         if (stra.s == Strategy::direct) {
-            status->resolver = query_host(que->domain, DnsCb, (void*)status);
-            return;
+            return query_host(que->domain, DnsCb, status);
         }
         if(que->type == 1){
             in_addr addr = getInet(status->que->domain);
@@ -128,19 +125,21 @@ void FDns::Send(const void* buff, size_t size) {
         }
     }
     if(result == nullptr) {
-        status->resolver = query_dns(status->que->domain, status->que->type, RawCb, (void*)status);
-        return;
+        return query_dns(status->que->domain, status->que->type, RawCb, status);
     }
     unsigned char sbuff[BUF_LEN];
     res->send(sbuff, result->build(status->que, sbuff));
     clean(status);
 }
 
-void FDns::DnsCb(void *param, std::list<sockaddr_storage> addrs) {
-    FDnsStatus* status = (FDnsStatus*)param;
+void FDns::DnsCb(std::weak_ptr<void> param, int error, std::list<sockaddr_storage> addrs) {
+    if(param.expired()){
+        return;
+    }
+    auto status = std::static_pointer_cast<FDnsStatus>(param.lock());
     FDns* fdns = status->fdns;
     Dns_Result* rr = nullptr;
-    if(addrs.empty()){
+    if(error || addrs.empty()){
         rr = new Dns_Result(status->que->domain);
     }else if(status->que->type == 1){
         in_addr addr = getInet(status->que->domain);
@@ -152,12 +151,19 @@ void FDns::DnsCb(void *param, std::list<sockaddr_storage> addrs) {
         rr = new Dns_Result(status->que->domain);
     }
     unsigned char buff[BUF_LEN];
-    fdns->res->send(buff, rr->build(status->que, buff));
+    if(error) {
+        fdns->res->send(buff, rr->buildError(status->que, error, buff));
+    }else{
+        fdns->res->send(buff, rr->build(status->que, buff));
+    }
     fdns->clean(status);
 }
 
-void FDns::RawCb(void* param, const char* buff, size_t size) {
-    FDnsStatus* status = (FDnsStatus*)param;
+void FDns::RawCb(std::weak_ptr<void> param, const char* buff, size_t size) {
+    if(param.expired()){
+        return;
+    }
+    auto status = std::static_pointer_cast<FDnsStatus>(param.lock());
     FDns* fdns = status->fdns;
     if(buff){
         LOGD(DDNS, "[FQuery] raw response [%d]\n", status->que->id);
@@ -176,8 +182,6 @@ void FDns::RawCb(void* param, const char* buff, size_t size) {
 void FDns::deleteLater(uint32_t errcode) {
     for(const auto& i: statusmap){
         delete i.second->que;
-        delete i.second->resolver;
-        delete i.second;
     }
     statusmap.clear();
     return Server::deleteLater(errcode);

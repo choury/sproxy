@@ -84,7 +84,7 @@ static void loadmine(){
 }
 
 File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
-    rwer = new FullRWer([this](int ret, int code){
+    rwer = std::make_shared<FullRWer>([this](int ret, int code){
         LOGE("file error: %d/%d\n", ret, code);
         status.res->trigger(Channel::CHANNEL_ABORT);
         deleteLater(ret);

@@ -34,7 +34,7 @@ protected:
 
     bool wantmore(const ReqStatus& status);
 public:
-    explicit Proxy3(QuicRWer* rwer);
+    explicit Proxy3(std::shared_ptr<QuicRWer> rwer);
     virtual ~Proxy3() override;
 
     virtual void request(HttpReq* req, Requester*)override;

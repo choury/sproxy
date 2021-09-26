@@ -21,7 +21,7 @@ bool Guest2::wantmore(const ReqStatus& status) {
 }
 
 
-Guest2::Guest2(RWer* rwer): Requester(rwer) {
+Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
     rwer->SetErrorCB(std::bind(&Guest2::Error, this, _1, _2));
     rwer->SetReadCB([this](buff_block& bb){
         if(bb.len == 0){
