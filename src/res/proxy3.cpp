@@ -96,7 +96,7 @@ uint64_t Proxy3::CreateUbiStream() {
     return std::dynamic_pointer_cast<QuicRWer>(rwer)->CreateUbiStream();
 }
 
-void Proxy3::request(HttpReq* req, Requester*) {
+void Proxy3::request(std::shared_ptr<HttpReq> req, Requester*) {
     uint64_t id = maxDataId = std::dynamic_pointer_cast<QuicRWer>(rwer)->CreateBiStream();
     assert((http3_flag & HTTP3_FLAG_GOAWAYED) == 0);
     LOGD(DHTTP3, "proxy3 request: %s [%" PRIu64"]\n", req->header->geturl().c_str(), id);
@@ -143,7 +143,7 @@ void Proxy3::request(HttpReq* req, Requester*) {
 }
 
 
-void Proxy3::init(HttpReq* req) {
+void Proxy3::init(std::shared_ptr<HttpReq> req) {
     Init();
     request(req, nullptr);
 }
@@ -155,7 +155,7 @@ void Proxy3::ResProc(uint64_t id, HttpResHeader* header) {
         {
             header->set("Transfer-Encoding", "chunked");
         }
-        status.res = new HttpRes(header, []{});
+        status.res = std::make_shared<HttpRes>(header, []{});
         status.req->response(status.res);
     }else{
         delete header;
@@ -188,7 +188,7 @@ void Proxy3::RstProc(uint64_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(errcode){
-            LOGE("(%" PRIu32 "): <proxy2> [%" PRIu64 "]: stream reseted: %d\n",
+            LOGE("(%" PRIu32 "): <proxy3> [%" PRIu64 "]: stream reset: %d\n",
                  status.req->header->request_id, id, errcode);
         }
         status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
@@ -201,6 +201,9 @@ void Proxy3::ShutdownProc(uint64_t id){
 }
 
 bool Proxy3::wantmore(const Proxy3::ReqStatus& status) {
+    if(!status.req){
+        return false;
+    }
     return (status.flags&HTTP_REQ_COMPLETED) == 0 && (status.flags&HTTP_REQ_EOF) == 0;
 }
 
@@ -216,7 +219,7 @@ void Proxy3::Clean(uint64_t id, Proxy3::ReqStatus& status, uint32_t errcode) {
     }else if(status.res){
         status.res->trigger(errcode ? Channel::CHANNEL_ABORT : Channel::CHANNEL_CLOSED);
     }else{
-        status.req->response(new HttpRes(UnpackHttpRes(H500), "[[internal error]]"));
+        status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[internal error]]"));
     }
     statusmap.erase(id);
 }

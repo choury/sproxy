@@ -22,7 +22,7 @@ Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
     });
     rwer->SetReadCB([this](buff_block& bb){
         if(res == nullptr){
-            res = new HttpRes(UnpackHttpRes(H200));
+            res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
             req->response(this->res);
         }
         assert(bb.offset == 0);
@@ -55,12 +55,13 @@ Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
 Ping::Ping(HttpReqHeader* req):Ping(req->Dest.hostname, req->Dest.port) {
 }
 
-void Ping::request(HttpReq* req, Requester*) {
+void Ping::request(std::shared_ptr<HttpReq> req, Requester*) {
     this->req = req;
     req->setHandler([this](Channel::signal s){
         if(s == Channel::CHANNEL_SHUTDOWN){
             res->trigger(Channel::CHANNEL_ABORT);
         }
+        this->req = nullptr;
         deleteLater(PEER_LOST_ERR);
     });
 }

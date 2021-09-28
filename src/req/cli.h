@@ -20,7 +20,7 @@ public:
     explicit Cli(int fd, const sockaddr_storage* addr);
     ~Cli();
 
-    virtual void response(void*, HttpRes* res) override { delete res;};
+    virtual void response(void*, std::shared_ptr<HttpRes>) override {};
     virtual void dump_stat(Dumper dp, void* param) override;
 
 

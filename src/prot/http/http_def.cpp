@@ -65,6 +65,7 @@ innerCopy:
 void Channel::trigger(Channel::signal s) {
     if (s == CHANNEL_ABORT || s == CHANNEL_CLOSED){
         closed = true;
+        need_more = []{};
     }
     if(handler){
         handler(s);
@@ -151,7 +152,7 @@ HttpReq::~HttpReq() {
 }
 
 
-void HttpLog(const char* src, const HttpReq* req, const HttpRes* res){
+void HttpLog(const char* src, std::shared_ptr<const HttpReq> req, std::shared_ptr<const HttpRes> res){
     char status[100];
     sscanf(res->header->status, "%s", status);
     LOG("%s [%" PRIu32 "] %s %s [%s] %s [%s]\n", src,

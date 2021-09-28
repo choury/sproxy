@@ -4,6 +4,7 @@
 #include "http_header.h"
 
 #include <functional>
+#include <memory>
 
 class Channel{
 public:
@@ -54,8 +55,7 @@ public:
 #define HTTP_RES_COMPLETED  (1u<<6u)   //sc
 #define HTTP_RES_EOF        (1u<<7u)   //se
 
-/* Requester alloc HttpReq and Responser alloc HttpRes,
- * but they are all freed by requester.
+/* Requester alloc HttpReq and Responser alloc HttpRes.
  * Peers send zero message(send0) for completed (same as req and res),
  * but trigger `shutdown` for eof (used for vpn). Distinct send0 from eof,
  * because some implement will close connection if eof received.
@@ -76,7 +76,7 @@ public:
 
 class HttpReq: public Channel{
 public:
-    typedef std::function<void(HttpRes*)> res_cb;
+    typedef std::function<void(std::shared_ptr<HttpRes>)> res_cb;
     HttpReqHeader* header;
     res_cb         response;
     HttpReq(const HttpReq&) = delete;
@@ -84,6 +84,6 @@ public:
     ~HttpReq();
 };
 
-void HttpLog(const char* src, const HttpReq* req, const HttpRes* res);
+void HttpLog(const char* src, std::shared_ptr<const HttpReq> req, std::shared_ptr<const HttpRes> res);
 
 #endif

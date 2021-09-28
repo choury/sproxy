@@ -86,7 +86,7 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
 
 void Guest::ReqProc(HttpReqHeader* header) {
     LOGD(DHTTP, "<guest> ReqProc %" PRIu32 " %s\n", header->request_id, header->geturl().c_str());
-    HttpReq *req = new HttpReq(header,
+    auto req = std::make_shared<HttpReq>(header,
             std::bind(&Guest::response, this, nullptr, _1),
             std::bind(&RWer::EatReadData, rwer));
 
@@ -101,8 +101,6 @@ void Guest::deqReq() {
     if((status.flags & HTTP_CLOSED_F) == 0) {
         status.req->trigger(Channel::CHANNEL_CLOSED);
     }
-    delete status.req;
-    delete status.res;
     statuslist.pop_front();
 
     if(!statuslist.empty()){
@@ -159,7 +157,7 @@ void Guest::Error(int ret, int code) {
     deleteLater(ret);
 }
 
-void Guest::response(void*, HttpRes* res) {
+void Guest::response(void*, std::shared_ptr<HttpRes> res) {
     GStatus& status = statuslist.front();
     HttpLog(getsrc(), status.req, res);
     assert(status.res == nullptr);
@@ -194,8 +192,7 @@ void Guest::response(void*, HttpRes* res) {
         case Channel::CHANNEL_ABORT:
             status.flags |= HTTP_CLOSED_F;
             if ((status.flags & HTTP_REQ_COMPLETED) && (status.flags & HTTP_RES_COMPLETED)) {
-                //deque in write callback
-                return;
+                return deqReq();
             }
             return deleteLater(PEER_LOST_ERR);
         }
@@ -231,16 +228,14 @@ void Guest::deleteLater(uint32_t errcode){
         if((status.flags & HTTP_CLOSED_F) == 0){
             status.req->trigger(errcode ? Channel::CHANNEL_ABORT : Channel::CHANNEL_CLOSED);
         }
+        status.res = nullptr;
         status.flags |= HTTP_CLOSED_F;
     }
     Server::deleteLater(errcode);
 }
 
 Guest::~Guest() {
-    for(auto& status: statuslist){
-        delete status.req;
-        delete status.res;
-    }
+    // we can't do this in deleteLater, because EndProc may be called after it.
     statuslist.clear();
 }
 

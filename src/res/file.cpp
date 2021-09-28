@@ -99,7 +99,7 @@ File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
 }
 
 
-void File::request(HttpReq* req, Requester*) {
+void File::request(std::shared_ptr<HttpReq> req, Requester*) {
     status.req = req;
     if (!req->header->ranges.empty()){
         status.rg = req->header->ranges[0];
@@ -115,7 +115,7 @@ void File::request(HttpReq* req, Requester*) {
             char buff[100];
             strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
             header->set("Last-Modified", buff);
-            req->response(new HttpRes(header, ""));
+            req->response(std::make_shared<HttpRes>(header, ""));
             return deleteLater(NOERROR);
         }
     }
@@ -131,7 +131,7 @@ void File::request(HttpReq* req, Requester*) {
         if(suffix && mimetype.count(suffix)){
             header->set("Content-Type", mimetype.at(suffix));
         }
-        status.res = new HttpRes(header, std::bind(&RWer::EatReadData, rwer));
+        status.res = std::make_shared<HttpRes>(header, std::bind(&RWer::EatReadData, rwer));
         req->response(status.res);
     }else if(checkrange(status.rg, st.st_size)){
         HttpResHeader* header = UnpackHttpRes(H206, sizeof(H206));
@@ -143,14 +143,14 @@ void File::request(HttpReq* req, Requester*) {
         if(suffix && mimetype.count(suffix)){
             header->set("Content-Type", mimetype.at(suffix));
         }
-        status.res = new HttpRes(header, std::bind(&RWer::EatReadData, rwer));
+        status.res = std::make_shared<HttpRes>(header, std::bind(&RWer::EatReadData, rwer));
         req->response(status.res);
     }else{
         HttpResHeader* header = UnpackHttpRes(H416, sizeof(H416));
         char buff[100];
         snprintf(buff, sizeof(buff), "bytes */%jd", (intmax_t)st.st_size);
         header->set("Content-Range", buff);
-        req->response(new HttpRes(header, ""));
+        req->response(std::make_shared<HttpRes>(header, ""));
         return deleteLater(NOERROR);
     }
     if(status.req->header->ismethod("HEAD")){
@@ -196,6 +196,11 @@ void File::readHE(buff_block&) {
     free(buff);
 }
 
+void File::deleteLater(uint32_t error) {
+    status.req = nullptr;
+    Server::deleteLater(error);
+}
+
 void File::dump_stat(Dumper dp, void* param){
     dp(param, "File %p, %s\n", this, filename);
     dp(param, " [%" PRIu32 "]: (%zd-%zd)\n",
@@ -208,9 +213,9 @@ File::~File() {
     }
 }
 
-void File::getfile(HttpReq* req, Requester* src) {
+void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
     if(!req->header->getrange()){
-        return req->response(new HttpRes(UnpackHttpRes(H400), ""));
+        return req->response(std::make_shared<HttpRes>(UnpackHttpRes(H400), ""));
     }
     char filename[URLLIMIT];
     bool slash_end = req->header->filename.back() == '/';
@@ -281,7 +286,7 @@ void File::getfile(HttpReq* req, Requester* src) {
             }
             header = UnpackHttpRes(H200, sizeof(H200));
             header->set("Transfer-Encoding", "chunked");
-            HttpRes* res = new HttpRes(header);
+            auto res = std::make_shared<HttpRes>(header);
             req->response(res);
             char buff[1024];
             res->send((const void*)buff,
@@ -332,5 +337,5 @@ void File::getfile(HttpReq* req, Requester* src) {
     }
 ret:
     assert(header);
-    return req->response(new HttpRes(header, ""));
+    return req->response(std::make_shared<HttpRes>(header, ""));
 }

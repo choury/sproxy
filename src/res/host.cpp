@@ -59,11 +59,11 @@ void Host::reply(){
     if(rwer->getStats() != RWerStats::Connected){
         return;
     }
-    HttpReq* req = status.req;
+    auto req = status.req;
     if(!req->header->should_proxy){
         if(req->header->ismethod("CONNECT")) {
             Http_Proc = &Host::AlwaysProc;
-            status.res = new HttpRes(UnpackHttpRes(H200), std::bind(&RWer::EatReadData, rwer));
+            status.res = std::make_shared<HttpRes>(UnpackHttpRes(H200), std::bind(&RWer::EatReadData, rwer));
             req->response(status.res);
         }else if(req->header->ismethod("SEND")){
             Http_Proc = &Host::AlwaysProc;
@@ -151,7 +151,7 @@ void Host::connected() {
     reply();
 }
 
-void Host::request(HttpReq* req, Requester*) {
+void Host::request(std::shared_ptr<HttpReq> req, Requester*) {
     LOGD(DHTTP, "<host> request %" PRIu32 ": %s\n",
          req->header->request_id,
          req->header->geturl().c_str());
@@ -204,7 +204,7 @@ void Host::ResProc(HttpResHeader* header) {
         http_flag |= HTTP_IGNORE_BODY_F;
     }
     assert(status.res == nullptr);
-    status.res = new HttpRes(header, std::bind(&RWer::EatReadData, rwer));
+    status.res = std::make_shared<HttpRes>(header, std::bind(&RWer::EatReadData, rwer));
     status.req->response(status.res);
 }
 
@@ -212,7 +212,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     assert((status.flags & HTTP_RES_EOF) == 0);
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
     if(status.res == nullptr){
-        status.res = new HttpRes(UnpackHttpRes(H200), std::bind(&RWer::EatReadData, rwer));
+        status.res = std::make_shared<HttpRes>(UnpackHttpRes(H200), std::bind(&RWer::EatReadData, rwer));
         status.req->response(status.res);
     }
     int len = status.res->cap();
@@ -265,26 +265,27 @@ void Host::deleteLater(uint32_t errcode){
         //do nothing.
     }else if(status.res){
         status.res->trigger(errcode ? Channel::CHANNEL_ABORT : Channel::CHANNEL_CLOSED);
+        status.req = nullptr;
     }else {
         switch(errcode) {
         case DNS_FAILED:
-            status.req->response(new HttpRes(UnpackHttpRes(H503), "[[dns failed]]\n"));
+            status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H503), "[[dns failed]]\n"));
             break;
         case CONNECT_FAILED:
-            status.req->response(new HttpRes(UnpackHttpRes(H503), "[[connect failed]]\n"));
+            status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H503), "[[connect failed]]\n"));
             break;
         case SOCKET_ERR:
-            status.req->response(new HttpRes(UnpackHttpRes(H502), "[[socket error]]\n"));
+            status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H502), "[[socket error]]\n"));
             break;
         default:
-            status.req->response(new HttpRes(UnpackHttpRes(H500), "[[internal error]]\n"));
+            status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[internal error]]\n"));
         }
     }
     status.flags |= HTTP_CLOSED_F;
     Server::deleteLater(errcode);
 }
 
-void Host::gethost(HttpReq *req, const Destination* dest, Requester* src) {
+void Host::gethost(std::shared_ptr<HttpReq> req, const Destination* dest, Requester* src) {
     if(req->header->should_proxy && memcmp(dest, &opt.Server, sizeof(Destination)) == 0) {
         if(proxy3){
             return proxy3->request(req, src);

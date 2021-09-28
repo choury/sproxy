@@ -9,15 +9,16 @@
 class GzipTest: public Responser{
     z_stream strm;
     size_t left = 0;
-    HttpReq* req = nullptr;
-    HttpRes* res = nullptr;
+    std::shared_ptr<HttpReq> req;
+    std::shared_ptr<HttpRes> res;
     virtual void gzipreadHE(buff_block&);
     virtual void rawreadHE(buff_block&);
 public:
     GzipTest();
 	virtual ~GzipTest() override;
-    virtual void request(HttpReq* req, Requester*) override;
+    virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
 
+    virtual void deleteLater(uint32_t error) override;
     virtual void dump_stat(Dumper dp, void* param)override;
 };
 #endif

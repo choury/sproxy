@@ -157,7 +157,7 @@ void Cgi::evictMe(){
 void Cgi::Clean(uint32_t id, CgiStatus& status) {
     LOG("<cgi> [%s] %" PRIu32" abort\n", basename(filename), id);
     if(status.res == nullptr){
-        status.req->response(new HttpRes(UnpackHttpRes(H500), "[[cgi failed]]\n"));
+        status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[cgi failed]]\n"));
     }else {
         status.res->trigger(Channel::CHANNEL_ABORT);
     }
@@ -226,7 +226,7 @@ bool Cgi::HandleRes(const CGI_Header *cheader, CgiStatus& status){
     if (!header->no_body() && header->get("content-length") == nullptr) {
         header->set("transfer-encoding", "chunked");
     }
-    status.res = new HttpRes(header, std::bind(&RWer::EatReadData, rwer));
+    status.res = std::make_shared<HttpRes>(header, std::bind(&RWer::EatReadData, rwer));
     status.req->response(status.res);
     return true;
 }
@@ -281,7 +281,7 @@ void Cgi::deleteLater(uint32_t errcode){
 }
 
 
-void Cgi::request(HttpReq* req, Requester* src) {
+void Cgi::request(std::shared_ptr<HttpReq> req, Requester* src) {
     uint32_t id = req->header->request_id;
     LOGD(DFILE, "<cgi> [%s] new request: %" PRIu32 "\n", basename(filename), id);
     statusmap[id] = CgiStatus{
@@ -325,7 +325,7 @@ void Cgi::dump_stat(Dumper dp, void* param){
     }
 }
 
-void getcgi(HttpReq* req, const char* filename, Requester* src){
+void getcgi(std::shared_ptr<HttpReq> req, const char* filename, Requester* src){
     if(cgimap.count(filename)) {
         return cgimap[filename]->request(req, src);
     } else {
@@ -340,7 +340,7 @@ err:
             close(fds[0]);
             close(fds[1]);
         }
-        req->response(new HttpRes(UnpackHttpRes(H500), "[[create socket error]]"));
+        req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[create socket error]]"));
     }
 }
 

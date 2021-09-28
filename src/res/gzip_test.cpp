@@ -60,7 +60,7 @@ static size_t parseSize(std::string size) {
     return 0;
 }
 
-void GzipTest::request(HttpReq* req, Requester*) {
+void GzipTest::request(std::shared_ptr<HttpReq> req, Requester*) {
     req->setHandler([this](Channel::signal s){
         if(s == Channel::CHANNEL_SHUTDOWN){
             res->trigger(Channel::CHANNEL_ABORT);
@@ -95,7 +95,7 @@ void GzipTest::request(HttpReq* req, Requester*) {
     if (req->header->ismethod("HEAD")) {
         left = 0;
     }
-    this->res = new HttpRes(header, std::bind(&RWer::EatReadData, rwer));
+    this->res = std::make_shared<HttpRes>(header, std::bind(&RWer::EatReadData, rwer));
     req->response(this->res);
 }
 
@@ -161,6 +161,11 @@ void GzipTest::rawreadHE(buff_block&) {
     if (left) {
         rwer->delEvents(RW_EVENT::READ);
     }
+}
+
+void GzipTest::deleteLater(uint32_t error) {
+    req = nullptr;
+    Server::deleteLater(error);
 }
 
 void GzipTest::dump_stat(Dumper dp, void *param) {

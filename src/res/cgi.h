@@ -27,8 +27,8 @@ struct CGI_Header{
 }__attribute__((packed));
 
 struct CgiStatus{
-    HttpReq* req;
-    HttpRes* res;
+    std::shared_ptr<HttpReq> req;
+    std::shared_ptr<HttpRes> res;
 };
 
 size_t PackCgiReq(const HttpReqHeader *req, void* data, size_t len);
@@ -53,11 +53,11 @@ public:
     virtual ~Cgi() override;
 
     virtual void deleteLater(uint32_t errcode) override;
-    virtual void request(HttpReq* req, Requester*)override;
+    virtual void request(std::shared_ptr<HttpReq> req, Requester*)override;
     virtual void dump_stat(Dumper dp, void* param) override;
 };
 
-void getcgi(HttpReq* req, const char *filename, Requester *src);
+void getcgi(std::shared_ptr<HttpReq> req, const char *filename, Requester *src);
 
 
 void flushcgi();

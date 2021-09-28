@@ -25,5 +25,5 @@ Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(f
     });
 }
 
-void Guest_sni::response(void*, HttpRes*){
+void Guest_sni::response(void*, std::shared_ptr<HttpRes>){
 }

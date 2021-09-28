@@ -61,10 +61,6 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
 
 
 Guest2::~Guest2() {
-    for(auto i: statusmap){
-        delete i.second.req;
-        delete i.second.res;
-    }
     statusmap.clear();
 }
 
@@ -113,7 +109,7 @@ void Guest2::ReqProc(uint32_t id, HttpReqHeader* header) {
     };
     ReqStatus& status = statusmap[id];
 
-    status.req = new HttpReq(header,
+    status.req = std::make_shared<HttpReq>(header,
     std::bind(&Guest2::response, this, (void*)(long)id, _1),
     [this, &status, id] () mutable{
         auto len = status.req->cap();
@@ -171,7 +167,7 @@ void Guest2::EndProc(uint32_t id) {
 }
 
 
-void Guest2::response(void* index, HttpRes* res) {
+void Guest2::response(void* index, std::shared_ptr<HttpRes> res) {
     uint32_t id = (uint32_t)(long)index;
     assert(statusmap.count(id));
     ReqStatus& status = statusmap[id];
@@ -225,8 +221,6 @@ void Guest2::Clean(uint32_t id, ReqStatus &status, uint32_t errcode) {
     if((status.flags & HTTP_CLOSED_F) == 0){
         status.req->trigger(errcode ? Channel::CHANNEL_ABORT : Channel::CHANNEL_CLOSED);
     }
-    delete status.req;
-    delete status.res;
     statusmap.erase(id);
 }
 
@@ -331,6 +325,7 @@ void Guest2::deleteLater(uint32_t errcode){
         }
         i.second.flags |= HTTP_CLOSED_F;
     }
+    statusmap.clear();
     if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){
         Goaway(-1, errcode & ERROR_MASK);
     }

@@ -5,8 +5,8 @@
 #include "prot/http2/http2.h"
 
 struct ReqStatus{
-    HttpReq* req;
-    HttpRes* res;
+    std::shared_ptr<HttpReq> req;
+    std::shared_ptr<HttpRes> res;
     int32_t  remotewinsize; //对端提供的窗口大小，发送时减小，收到对端update时增加
     int32_t  localwinsize; //发送给对端的窗口大小，接受时减小，给对端发送update时增加
     uint32_t flags;
@@ -44,7 +44,7 @@ public:
     explicit Guest2(std::shared_ptr<RWer> rwer);
     virtual ~Guest2();
     
-    virtual void response(void* index, HttpRes* res)override;
+    virtual void response(void* index, std::shared_ptr<HttpRes> res)override;
 
     virtual void dump_stat(Dumper dp, void* param) override;
 

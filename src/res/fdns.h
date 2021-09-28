@@ -15,8 +15,8 @@ struct FDnsStatus{
 };
 
 class FDns: public Responser{
-    HttpReq*   req;
-    HttpRes*   res;
+    std::shared_ptr<HttpReq>   req;
+    std::shared_ptr<HttpRes>   res;
     std::map<uint32_t, std::shared_ptr<FDnsStatus>> statusmap;
 
     void Send(const void* buff, size_t size);
@@ -28,7 +28,7 @@ class FDns: public Responser{
 public:
     FDns();
     virtual ~FDns() override;
-    virtual void request(HttpReq* req, Requester*) override;
+    virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
     virtual void dump_stat(Dumper dp, void* param) override;
 };
 

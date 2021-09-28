@@ -70,15 +70,14 @@ void FDns::clean(std::shared_ptr<FDnsStatus> status){
     statusmap.erase(status->que->id);
 }
 
-void FDns::request(HttpReq* req, Requester*){
+void FDns::request(std::shared_ptr<HttpReq> req, Requester*){
     this->req = req;
-    res = new HttpRes(UnpackHttpRes(H200));
+    res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
     req->response(res);
     req->setHandler([this](Channel::signal s){
         if(s == Channel::CHANNEL_SHUTDOWN){
             res->trigger(Channel::CHANNEL_ABORT);
         }
-        res = nullptr;
         deleteLater(PEER_LOST_ERR);
     });
     req->attach((Channel::recv_const_t)std::bind(&FDns::Send, this, _1, _2), []{return 512;});

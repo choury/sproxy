@@ -22,6 +22,9 @@ void Proxy2::ping_check(){
 }
 
 bool Proxy2::wantmore(const ReqStatus& status) {
+    if(!status.req){
+        return false;
+    }
     if((status.flags&HTTP_REQ_COMPLETED) || (status.flags&HTTP_REQ_EOF)){
         return false;
     }
@@ -124,7 +127,7 @@ void Proxy2::ResProc(uint32_t id, HttpResHeader* header) {
         {
             header->set("Transfer-Encoding", "chunked");
         }
-        status.res = new HttpRes(header, [this, &status, id]() mutable{
+        status.res = std::make_shared<HttpRes>(header, [this, &status, id]() mutable{
             auto len = status.res->cap();
             if(len < status.localwinsize){
                 LOGE("(%" PRIu32 "): <proxy2> [%d] shrunken local window: %d/%d\n",
@@ -205,7 +208,7 @@ void Proxy2::Clean(uint32_t id, ReqStatus& status, uint32_t errcode){
     }else if(status.res){
         status.res->trigger(errcode ? Channel::CHANNEL_ABORT : Channel::CHANNEL_CLOSED);
     }else{
-        status.req->response(new HttpRes(UnpackHttpRes(H500), "[[internal error]]"));
+        status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[internal error]]"));
     }
     statusmap.erase(id);
 }
@@ -284,7 +287,7 @@ void Proxy2::ShutdownProc(uint32_t id) {
     }
 }
 
-void Proxy2::request(HttpReq* req, Requester*) {
+void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
     uint32_t id = GetSendId();
     assert((http2_flag & HTTP2_FLAG_GOAWAYED) == 0);
     LOGD(DHTTP2, "proxy2 request: %s [%d]\n", req->header->geturl().c_str(), id);
@@ -332,7 +335,7 @@ void Proxy2::request(HttpReq* req, Requester*) {
             [this, &status]{return Min(status.remotewinsize, this->remotewinsize);});
 }
 
-void Proxy2::init(HttpReq* req) {
+void Proxy2::init(std::shared_ptr<HttpReq> req) {
     Http2Requster::init();
     request(req, nullptr);
 }

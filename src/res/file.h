@@ -8,8 +8,8 @@
 
 
 struct FileStatus{
-    HttpReq* req;
-    HttpRes* res;
+    std::shared_ptr<HttpReq> req;
+    std::shared_ptr<HttpRes> res;
     Range rg;
     uint  flags;
 };
@@ -21,13 +21,14 @@ class File:public Responser{
     struct stat st;
     FileStatus status;
     virtual void readHE(buff_block& bb);
-    virtual void request(HttpReq* req, Requester*) override;
+    virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
 public:
     explicit File(const char* fname, int fd, const struct stat* st);
     virtual ~File()override;
 
+    virtual void deleteLater(uint32_t error) override;
     virtual void dump_stat(Dumper dp, void* param) override;
-    static void getfile(HttpReq* req, Requester* src);
+    static void getfile(std::shared_ptr<HttpReq> req, Requester* src);
 };
 
 #endif

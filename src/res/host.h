@@ -8,8 +8,8 @@
 class Requester;
 
 struct HStatus{
-    HttpReq* req;
-    HttpRes* res;
+    std::shared_ptr<HttpReq> req;
+    std::shared_ptr<HttpRes> res;
     uint     flags;
 };
 
@@ -28,7 +28,7 @@ protected:
     virtual void EndProc() override;
     virtual void ErrProc() override;
 
-    virtual void request(HttpReq* req, Requester*) override;
+    virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
     virtual void connected();
     void Send(PREPTR void* buff, size_t size);
     void reply();
@@ -37,7 +37,7 @@ public:
     virtual ~Host() override;
     
     virtual void dump_stat(Dumper dp, void* param) override;
-    static void gethost(HttpReq* req, const Destination* dest, Requester* src);
+    static void gethost(std::shared_ptr<HttpReq> req, const Destination* dest, Requester* src);
 };
 
 #endif

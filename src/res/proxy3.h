@@ -8,8 +8,8 @@
 
 class Proxy3:public Responser, public Http3Requster {
     struct ReqStatus{
-        HttpReq* req;
-        HttpRes* res;
+        std::shared_ptr<HttpReq> req;
+        std::shared_ptr<HttpRes> res;
         uint32_t flags;
     };
 
@@ -37,11 +37,11 @@ public:
     explicit Proxy3(std::shared_ptr<QuicRWer> rwer);
     virtual ~Proxy3() override;
 
-    virtual void request(HttpReq* req, Requester*)override;
+    virtual void request(std::shared_ptr<HttpReq> req, Requester*)override;
 
     virtual void dump_stat(Dumper dp, void* param) override;
 
-    void init(HttpReq* req);
+    void init(std::shared_ptr<HttpReq> req);
     void flush();
 };
 

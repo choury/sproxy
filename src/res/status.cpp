@@ -21,16 +21,16 @@ static void StatusDump(void* param, const char* fmt, ...) {
     free(buff);
 }
 
-void Status::request(HttpReq* req, Requester* src){
+void Status::request(std::shared_ptr<HttpReq> req, Requester* src){
     if(!checkauth(src->getid(), req->header->get("Authorization"))){
-        req->response(new HttpRes(UnpackHttpRes(H401), ""));
+        req->response(std::make_shared<HttpRes>(UnpackHttpRes(H401), ""));
     }else{
         HttpResHeader* header = UnpackHttpRes(H200);
         header->set("Transfer-Encoding", "chunked");
         header->set("Content-Type", "text/plain; charset=utf8");
-        HttpRes* res = new HttpRes(header);
+        auto res = std::make_shared<HttpRes>(header);
         req->response(res);
-        ::dump_stat(StatusDump, res);
+        ::dump_stat(StatusDump, res.get());
         res->send((const void*)nullptr, 0);
     }
     deleteLater(PEER_LOST_ERR);

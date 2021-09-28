@@ -10,8 +10,8 @@
 #include <openssl/ssl.h>
 
 struct GStatus{
-    HttpReq*  req;
-    HttpRes*  res;
+    std::shared_ptr<HttpReq>  req;
+    std::shared_ptr<HttpRes>  res;
     uint      flags;
 };
 
@@ -35,7 +35,7 @@ public:
     explicit Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx);
     ~Guest();
 
-    virtual void response(void*, HttpRes* res)override;
+    virtual void response(void*, std::shared_ptr<HttpRes> res)override;
     virtual void dump_stat(Dumper dp, void* param) override;
 };
 

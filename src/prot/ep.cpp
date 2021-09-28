@@ -59,7 +59,8 @@ bool operator!(RW_EVENT a){
 #ifdef __linux__
 static RW_EVENT convertEpoll(uint32_t events){
     RW_EVENT rwevents = RW_EVENT::NONE;
-    if((events & EPOLLHUP) || (events & EPOLLERR)){
+    //ingore EPOLLHUP
+    if(events & EPOLLERR){
         rwevents = rwevents | RW_EVENT::ERROR;
     }
     if(events & EPOLLIN){
@@ -102,14 +103,14 @@ Ep::Ep(int fd):fd(fd){
 
 Ep::~Ep(){
     if(fd >= 0){
-        LOGD(DEVENT, "closed %d\n", fd);
+        LOGD(DEVENT, "%p closed %d\n", this, fd);
         close(fd);
     }
 }
 
 void Ep::setFd(int fd){
     if(this->fd >= 0){
-        LOGD(DEVENT, "closed %d\n", fd);
+        LOGD(DEVENT, "%p closed %d\n", this, fd);
         close(this->fd);
         events = RW_EVENT::NONE;
     }

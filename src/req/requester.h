@@ -15,7 +15,7 @@ public:
 
     virtual const char *getsrc();
     virtual const char *getid();
-    virtual void response(void* index, HttpRes* res) = 0;
+    virtual void response(void* index, std::shared_ptr<HttpRes> res) = 0;
 };
 
 #endif

@@ -38,8 +38,8 @@ struct IcmpStatus{
 };
 
 struct VpnStatus{
-    HttpReq* req;
-    HttpRes* res;
+    std::shared_ptr<HttpReq> req;
+    std::shared_ptr<HttpRes> res;
     char*      packet;
     uint16_t   packet_len;
     void*      protocol_info;
@@ -72,7 +72,7 @@ public:
 
     void packetHE(std::shared_ptr<const Ip> pac, const char* packet, size_t len);
     void writed();
-    virtual void response(void*, HttpRes* res) override;
+    virtual void response(void*, std::shared_ptr<HttpRes> res) override;
 
     virtual void deleteLater(uint32_t error) override;
     virtual const char *getsrc() override;
@@ -81,7 +81,7 @@ public:
 
 
 class Vpn_server {
-    RWer* rwer = nullptr;
+    std::shared_ptr<RWer> rwer;
     std::map<VpnKey, Guest_vpn*> statusmap;
     void buffHE(const char* buff, size_t buflen);
 public:
@@ -89,7 +89,7 @@ public:
     virtual ~Vpn_server();
 
     template <class T>
-    void sendPkg(const std::shared_ptr<Ip>& pac, T* buff, size_t len){
+    void sendPkg(std::shared_ptr<Ip> pac, T* buff, size_t len){
         char* packet = pac->build_packet(buff, len);
         rwer->buffer_insert(rwer->buffer_end(), buff_block{packet, len});
     }

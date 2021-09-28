@@ -85,7 +85,7 @@ bool operator<(VpnKey a, VpnKey b) {
 extern "C" void vpn_stop();
 
 Vpn_server::Vpn_server(int fd) {
-    rwer = new PacketRWer(fd, nullptr, [](int ret, int code){
+    rwer = std::make_shared<PacketRWer>(fd, nullptr, [](int ret, int code){
         LOGE("vpn_server error: %d/%d\n", ret, code);
         vpn_stop();
     });
@@ -102,7 +102,6 @@ Vpn_server::Vpn_server(int fd) {
 
 Vpn_server::~Vpn_server(){
     statusmap.clear();
-    delete rwer;
 }
 
 void Vpn_server::buffHE(const char* buff, size_t buflen) {
@@ -151,8 +150,6 @@ Guest_vpn::Guest_vpn(const VpnKey& key, Vpn_server* server):Requester(std::make_
 
 
 Guest_vpn::~Guest_vpn(){
-    delete status.req;
-    delete status.res;
     free(status.packet);
     free(status.protocol_info);
 }
@@ -316,7 +313,7 @@ void Guest_vpn::writed() {
 }
 
 
-void Guest_vpn::response(void*, HttpRes* res) {
+void Guest_vpn::response(void*, std::shared_ptr<HttpRes> res) {
     status.res = res;
     HttpLog(getsrc(), status.req, res);
     //创建回包
@@ -485,7 +482,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
         status.packet = (char *)memdup(packet, pac->gethdrlen());
         status.packet_len = (uint16_t)pac->gethdrlen();
 
-        status.req = new HttpReq(header, std::bind(&Guest_vpn::response, this, nullptr, _1), [this]{tcp_ack();});
+        status.req = std::make_shared<HttpReq>(header, std::bind(&Guest_vpn::response, this, nullptr, _1), [this]{tcp_ack();});
         distribute(status.req, this);
         return;
     }
@@ -550,6 +547,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
             if((status.flags & HTTP_CLOSED_F)  == 0) {
                 status.req->trigger(Channel::CHANNEL_CLOSED);
             }
+            status.res = nullptr;
             status.flags |= HTTP_CLOSED_F;
             break;
         case TCP_FIN_WAIT2:
@@ -557,6 +555,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
             if((status.flags & HTTP_CLOSED_F) == 0) {
                 status.req->trigger(Channel::CHANNEL_CLOSED);
             }
+            status.res = nullptr;
             status.flags |= HTTP_CLOSED_F;
             aged_job = rwer->updatejob(aged_job, std::bind(&Guest_vpn::aged, this), 1000);
             return;
@@ -624,7 +623,7 @@ void Guest_vpn::udpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
 
 
         HttpReqHeader* header = UnpackHttpReq(buff, headlen);
-        status.req = new HttpReq(header, std::bind(&Guest_vpn::response, this, nullptr, _1), []{});
+        status.req = std::make_shared<HttpReq>(header, std::bind(&Guest_vpn::response, this, nullptr, _1), []{});
         status.packet = (char *)memdup(packet, pac->gethdrlen());
         status.packet_len = (uint16_t)pac->gethdrlen();
         aged_job = rwer->updatejob(aged_job, std::bind(&Guest_vpn::aged, this), 60000);
@@ -666,7 +665,7 @@ void Guest_vpn::icmpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t
             icmpStatus->id = pac->icmp->getid();
             icmpStatus->seq = pac->icmp->getseq();
             status.protocol_info = icmpStatus;
-            status.req = new HttpReq(header, std::bind(&Guest_vpn::response, this, nullptr, _1), []{});
+            status.req = std::make_shared<HttpReq>(header, std::bind(&Guest_vpn::response, this, nullptr, _1), []{});
             status.req->send(packet + pac->gethdrlen(), len - pac->gethdrlen());
             distribute(status.req, this);
         }
@@ -725,7 +724,7 @@ void Guest_vpn::icmp6HE(std::shared_ptr<const Ip> pac, const char* packet, size_
             icmpStatus->id = pac->icmp6->getid();
             icmpStatus->seq = pac->icmp6->getseq();
             status.protocol_info = icmpStatus;
-            status.req = new HttpReq(header, std::bind(&Guest_vpn::response, this, nullptr, _1), []{});
+            status.req = std::make_shared<HttpReq>(header, std::bind(&Guest_vpn::response, this, nullptr, _1), []{});
             status.req->send(packet + pac->gethdrlen(), len - pac->gethdrlen());
             distribute(status.req, this);
         }
@@ -850,6 +849,7 @@ void Guest_vpn::deleteLater(uint32_t errcode) {
     if ((status.flags & HTTP_CLOSED_F) == 0 && status.req) {
         status.req->trigger(errcode ? Channel::CHANNEL_ABORT : Channel::CHANNEL_CLOSED);
     }
+    status.res = nullptr;
     status.flags |= HTTP_CLOSED_F;
     server->cleanKey(key);
     Server::deleteLater(errcode);

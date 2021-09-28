@@ -8,8 +8,8 @@ class Requester;
 
 class Responser:public Server{
 public:
-    virtual void request(HttpReq* req, Requester* src) = 0;
+    virtual void request(std::shared_ptr<HttpReq> req, Requester* src) = 0;
 };
 
-void distribute(HttpReq* req, Requester* src);
+void distribute(std::shared_ptr<HttpReq> req, Requester* src);
 #endif

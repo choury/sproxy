@@ -5,8 +5,8 @@
 
 
 class Ping: public Responser{
-    HttpReq*    req = nullptr;
-    HttpRes*    res = nullptr;
+    std::shared_ptr<HttpReq>    req;
+    std::shared_ptr<HttpRes>    res;
     uint16_t    id = 0;
     uint16_t    seq = 1;
     sa_family_t family = 0;
@@ -15,7 +15,7 @@ class Ping: public Responser{
 public:
     Ping(const char *host, uint16_t id);
     explicit Ping(HttpReqHeader* req);
-    virtual void request(HttpReq* req, Requester*) override;
+    virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
     virtual void dump_stat(Dumper dp, void* param) override;
 };
 #endif
