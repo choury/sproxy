@@ -82,7 +82,7 @@ size_t variable_decode_len(const void* data_){
 //only used for initial key, so just use EVP_sha256
 static int HKDF_Extract(const char* cid, size_t clen, char* prk){
     size_t hashlen = EVP_MD_size(EVP_sha256());
-    EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, NULL);
+    EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr);
     if (EVP_PKEY_derive_init(pctx) <= 0)
         goto err;
     if (EVP_PKEY_CTX_hkdf_mode(pctx, EVP_PKEY_HKDEF_MODE_EXTRACT_ONLY) <= 0)
@@ -127,7 +127,7 @@ static int HKDF_Expand_Label(const EVP_MD* md, const char* prk, const char* info
     memcpy(label->content + pos, msg, msgLen);
     size_t hashlen = EVP_MD_size(md);
 
-    EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, NULL);
+    EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr);
     if (EVP_PKEY_derive_init(pctx) <= 0)
         goto err;
     if (EVP_PKEY_CTX_hkdf_mode(pctx, EVP_PKEY_HKDEF_MODE_EXPAND_ONLY) <= 0)
@@ -160,20 +160,20 @@ static int aead_encrypt(const EVP_CIPHER* cipher,
     int len, ciphertext_len;
 
     /* Create and initialise the context */
-    if(ctx == NULL)
+    if(ctx == nullptr)
         return -1;
     /* Initialise the encryption operation. */
-    if(EVP_EncryptInit_ex(ctx, cipher, NULL, NULL, NULL) != 1)
+    if(EVP_EncryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr) != 1)
         goto err;
 
     /* Initialise key and IV */
-    if(EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv) != 1)
+    if(EVP_EncryptInit_ex(ctx, nullptr, nullptr, key, iv) != 1)
         goto err;
     /*
      * Provide any AAD data. This can be called zero or more times as
      * required
      */
-    if(EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len) != 1)
+    if(EVP_EncryptUpdate(ctx, nullptr, &len, aad, aad_len) != 1)
         goto err;
     /*
      * Provide the message to be encrypted, and obtain the encrypted output.
@@ -213,22 +213,22 @@ static int aead_decrypt(const EVP_CIPHER* cipher,
     int len, plaintext_len;
 
     /* Create and initialise the context */
-    if(ctx == NULL)
+    if(ctx == nullptr)
         return -1;
 
     /* Initialise the decryption operation. */
-    if(!EVP_DecryptInit_ex(ctx, cipher, NULL, NULL, NULL))
+    if(!EVP_DecryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr))
         goto err;
 
     /* Initialise key and IV */
-    if(!EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv))
+    if(!EVP_DecryptInit_ex(ctx, nullptr, nullptr, key, iv))
         goto err;
 
     /*
      * Provide any AAD data. This can be called zero or more times as
      * required
      */
-    if(!EVP_DecryptUpdate(ctx, NULL, &len, aad, aad_len))
+    if(!EVP_DecryptUpdate(ctx, nullptr, &len, aad, aad_len))
         goto err;
 
     /*
@@ -268,9 +268,9 @@ static int hp_encode(const EVP_CIPHER* cipher,
 {
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     int len, outlen;
-    if(ctx == NULL)
+    if(ctx == nullptr)
         return -1;
-    if(EVP_EncryptInit_ex(ctx, cipher, NULL, key, NULL) != 1)
+    if(EVP_EncryptInit_ex(ctx, cipher, nullptr, key, nullptr) != 1)
         goto err;
 
     if(EVP_CIPHER_CTX_set_padding(ctx, 0) != 1)
@@ -330,8 +330,8 @@ int quic_generate_initial_key(int client, const char* id, uint8_t id_len, struct
 }
 
 int quic_secret_set_key(struct quic_secret* secret, const char* key, uint32_t cipher){
-    size_t hp_len = 0;
-    size_t key_len = 0;
+    size_t hp_len;
+    size_t key_len;
     switch (cipher) {
     case TLS1_3_CK_AES_128_GCM_SHA256:
         secret->hcipher = EVP_aes_128_ecb();
@@ -362,7 +362,7 @@ int quic_secret_set_key(struct quic_secret* secret, const char* key, uint32_t ci
         hp_len = 16;
         break;
     default:
-        LOGE("unknow cipher: %d\n", cipher);
+        LOGE("unknown cipher: %d\n", cipher);
         return -1;
     }
     if(HKDF_Expand_Label(secret->md, key, "quic key", "", secret->key, key_len) < 0){
@@ -384,29 +384,29 @@ static int pack_header(const struct quic_pkt_header* header, char* data, uint16_
     uint8_t pn_len = header->pn_length;
     assert(pn_len <= 4 && pn_len >=1);
     size_t p = 0;
-    if(header->meta.type == QUIC_PACKET_1RTT){
-        data[0] = 0x40 | header->meta.flags | (pn_len - 1);
-        memcpy(data + 1, header->meta.dcid.data(), header->meta.dcid.length());
-        p = 1 + header->meta.dcid.length();
+    if(header->type == QUIC_PACKET_1RTT){
+        data[0] = 0x40 | header->flags | (pn_len - 1);
+        memcpy(data + 1, header->dcid.data(), header->dcid.length());
+        p = 1 + header->dcid.length();
     }else{
-        data[0] = 0xc0 | header->meta.type | (pn_len - 1);
-        if(header->meta.version){
-            set32(data+1, header->meta.version);
+        data[0] = 0xc0 | header->type | (pn_len - 1);
+        if(header->version){
+            set32(data+1, header->version);
         }else{
             set32(data+1, QUIC_VERSION_1);
         }
         p = 5;
-        p += variable_encode(data + p, header->meta.dcid.length());
-        memcpy(data + p, header->meta.dcid.data(), header->meta.dcid.length());
-        p += header->meta.dcid.length();
-        p += variable_encode(data + p, header->meta.scid.length());
-        memcpy(data + p, header->meta.scid.data(), header->meta.scid.length());
-        p += header->meta.scid.length();
-        if(header->meta.type == QUIC_PACKET_INITIAL) {
-            p += variable_encode(data + p, header->meta.token.length());
-            if (!header->meta.token.empty()) {
-                memcpy(data + p, header->meta.token.data(), header->meta.token.length());
-                p += header->meta.token.length();
+        p += variable_encode(data + p, header->dcid.length());
+        memcpy(data + p, header->dcid.data(), header->dcid.length());
+        p += header->dcid.length();
+        p += variable_encode(data + p, header->scid.length());
+        memcpy(data + p, header->scid.data(), header->scid.length());
+        p += header->scid.length();
+        if(header->type == QUIC_PACKET_INITIAL) {
+            p += variable_encode(data + p, header->token.length());
+            if (!header->token.empty()) {
+                memcpy(data + p, header->token.data(), header->token.length());
+                p += header->token.length();
             }
         }
         p += variable_encode(data + p, data_len + pn_len);
@@ -462,12 +462,12 @@ char* encode_packet(const void* data_, size_t len,
     memset(mask, 0, 128);
     char* pos = body;
     if((body[0] & 0x80) == 0x80){ // long header
-        pos += 7 + header->meta.dcid.length() + header->meta.scid.length();
-        if(header->meta.type == QUIC_PACKET_INITIAL) {
+        pos += 7 + header->dcid.length() + header->scid.length();
+        if(header->type == QUIC_PACKET_INITIAL) {
             uint64_t token_len;
             pos += variable_decode(pos, &token_len);
-            assert(token_len == header->meta.token.length());
-            pos += header->meta.token.length();
+            assert(token_len == header->token.length());
+            pos += header->token.length();
         }
 
         uint64_t payload_len;
@@ -481,7 +481,7 @@ char* encode_packet(const void* data_, size_t len,
         }
         body[0] ^= mask[0] & 0x0f;
     }else{
-        pos += 1 + header->meta.dcid.length();
+        pos += 1 + header->dcid.length();
 
         if(hp_encode(secret->hcipher, (unsigned char*)secret->hp, (unsigned char*)pos + 4, 16, mask) < 0){
             LOGE("aes_encode failed\n");
@@ -743,7 +743,7 @@ void* pack_frame(void* buff, const quic_frame* frame) {
         {
             return pack_stream_frame(frame->type, &frame->stream, (char*)buff + tlen);
         }else {
-            LOGE("unknow frame: 0x%x\n", (int)frame->type);
+            LOGE("unknown frame: 0x%x\n", (int)frame->type);
             return nullptr;
         }
     }
@@ -786,6 +786,7 @@ int unpack_meta(const void* data_, size_t len, quic_meta* meta){
             }
             return (int) pos + (int) payload_len;
         }else{
+            //retry packet
             int token_len = len - pos - 16;
             if(token_len <= 0){
                 LOGE("too short retry packet\n");
@@ -855,18 +856,17 @@ const char* unpack_frame(const char* data, size_t len, quic_frame* frame){
         {
             return unpack_stream_frame(frame->type, pos, len, &frame->stream);
         }else {
-            LOGE("unknow frame: 0x%x\n", (int)frame->type);
+            LOGE("unknown frame: 0x%x\n", (int)frame->type);
             return nullptr;
         }
     }
 }
 
-std::vector<quic_frame*> decode_packet(const void* data_, size_t len,
+std::vector<const quic_frame*> decode_packet(const void* data_, size_t len,
                                        quic_pkt_header* header, const quic_secret* secret){
 
-    std::vector<quic_frame*> frames;
+    std::vector<const quic_frame*> frames;
     const unsigned char* data = (const unsigned char*)data_;
-    quic_meta& meta = header->meta;
     size_t pos = 0;
     unsigned char buff[1500];
 
@@ -874,8 +874,8 @@ std::vector<quic_frame*> decode_packet(const void* data_, size_t len,
     memset(mask, 0, 16);
     if(data[0]&0x80){
         //long packet
-        pos = 7  + meta.dcid.length() + meta.scid.length();
-        if(meta.type == QUIC_PACKET_INITIAL) {
+        pos = 7  + header->dcid.length() + header->scid.length();
+        if(header->type == QUIC_PACKET_INITIAL) {
             uint64_t token_len;
             pos += variable_decode(data + pos, &token_len);
             pos += token_len;
@@ -895,7 +895,7 @@ std::vector<quic_frame*> decode_packet(const void* data_, size_t len,
         buff[0] ^= mask[0]&0x0f;
     }else{
         //short packet
-        pos = 1 + meta.dcid.length();
+        pos = 1 + header->dcid.length();
 
         if(hp_encode(secret->hcipher, (unsigned char*)secret->hp, (unsigned char*)data+pos+4, 16, mask) < 0){
             LOGE("aes_encode failed\n");
@@ -923,7 +923,7 @@ std::vector<quic_frame*> decode_packet(const void* data_, size_t len,
         iv[11-i] ^= (header->pn>>(i*8))&0xff;
     }
 
-    int plantext_len = aead_decrypt(
+    int plaintext_len = aead_decrypt(
             secret->cipher,
             (unsigned char*)data + pos,
             len - pos,
@@ -932,11 +932,11 @@ std::vector<quic_frame*> decode_packet(const void* data_, size_t len,
             (unsigned char*)secret->key,
             (unsigned char*)iv,
             buff + pos);
-    if(plantext_len < 0){
+    if(plaintext_len < 0){
         LOGE("gcm_decrypt error\n");
         return frames;
     }
-    assert(plantext_len == (int)(len - pos -16));
+    assert(plaintext_len == (int)(len - pos - 16));
     while(pos < len - 16){
         quic_frame* frame = new quic_frame;
         frame->type = QUIC_FRAME_PADDING;
@@ -951,14 +951,13 @@ std::vector<quic_frame*> decode_packet(const void* data_, size_t len,
 error:
     for(auto frame: frames){
         frame_release(frame);
-        delete frame;
     }
     frames.clear();
     return frames;
 }
 
 
-void frame_release(quic_frame* frame){
+void frame_release(const quic_frame* frame){
     switch(frame->type) {
     case QUIC_FRAME_ACK:
     case QUIC_FRAME_ACK_ECN:
@@ -985,4 +984,5 @@ void frame_release(quic_frame* frame){
         }
         break;
     }
+    delete frame;
 }

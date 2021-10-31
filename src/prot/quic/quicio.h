@@ -15,11 +15,6 @@
 
 #define QUIC_CID_LEN     20
 
-enum class PacketResult{
-    ok,
-    skip,
-    error,
-};
 
 /*
        o
@@ -89,24 +84,23 @@ enum class PacketResult{
  */
 
 
-struct quic_packet{
-    quic_pkt_header header;
-    std::vector<quic_frame*> frames;
-};
-
 class QuicRWer: public SocketRWer {
 protected:
     SSL_CTX* ctx = nullptr;
     SSL *ssl = nullptr;
-    struct {
-        bool valid = false;
-        struct quic_secret   write_secret;
-        struct quic_secret   read_secret;
-        size_t crypto_offset = 0;
-        size_t crypto_want = 0;
-        pn_namespace* pnNs;
-    }context[4];
 
+    pn_namespace pNs[3];
+    struct quic_context{
+        OSSL_ENCRYPTION_LEVEL  level;
+        struct quic_secret     write_secret;
+        struct quic_secret     read_secret;
+        bool     valid = false;
+        size_t   crypto_offset = 0;
+        size_t   crypto_want = 0;
+        pn_namespace* pN;
+        //only crypto and stream frame will be buffered
+        std::multimap<uint64_t, const quic_frame*> recvq;
+    } contexts[4];
     struct cid{
         std::string id;
         char token[16];
@@ -116,7 +110,12 @@ protected:
     std::vector<cid> dcids;
     size_t dcid_id = 0;
     std::string initToken;
-    std::list <quic_packet*> recvq;
+    Rtt  rtt;
+    size_t pto_count = 0;
+    size_t bytes_in_flight = 0;
+
+    bool PeerCompletedAddressValidation();
+    void SetLossDetectionTimer();
 
     struct QuicStreamStatus{
 #define STREAM_FLAG_FIN    0x01
@@ -136,13 +135,8 @@ protected:
     uint64_t nextLocalBiId;
     uint64_t nextRemoteBiId;
     std::map <uint64_t, QuicStreamStatus> streammap;
-    using iterator = typename decltype(streammap)::iterator;
-    iterator OpenStream(uint64_t id);
-    bool IsLocal(uint64_t id);
-    bool IsBidirect(uint64_t id);
-    bool IsIdle(uint64_t id);
-    uint64_t max_idle_timeout = 120000;
 
+    uint64_t max_idle_timeout = 120000;
     uint64_t his_max_payload_size = 65527;
     uint64_t his_max_data = 0;
     uint64_t his_max_stream_data_bidi_local = 0;
@@ -150,7 +144,7 @@ protected:
     uint64_t his_max_stream_data_uni = 0;
     uint64_t his_max_streams_bidi = 0;
     uint64_t his_max_streams_uni = 0;
-    uint64_t his_max_ack_delay = 25;
+    uint64_t his_max_ack_delay = 0;
 
     uint64_t my_send_data = 0;
     uint64_t my_received_data = 0;
@@ -169,24 +163,44 @@ protected:
 
     void generateCid();
     size_t generateParams(char data[QUIC_INITIAL_LIMIT]);
+    quic_context* getContext(uint8_t type);
     void dropkey(OSSL_ENCRYPTION_LEVEL level);
-    std::list<quic_packet*> nextPackets();
-    PacketResult handleCryptoPacket(const quic_crypto* crypto, OSSL_ENCRYPTION_LEVEL level);
-    PacketResult handleStreamPacket(uint64_t type, const quic_stream* stream);
-    PacketResult handleResetPacket(const quic_reset *stream);
-    PacketResult handlePacketBeforeHandshake(const quic_packet *packet);
-    PacketResult handlePacket(const quic_packet* packet);
-    void handleRetryPacket(const quic_pkt_header* header);
 
-    int sendNsPacket(OSSL_ENCRYPTION_LEVEL level, pn_namespace* pnNs);
+    enum class FrameResult{
+        ok,
+        skip,
+        error,
+    };
+    FrameResult handleCryptoFrame(quic_context* context, const quic_crypto* crypto);
+    FrameResult handleStreamFrame(uint64_t type, const quic_stream* stream);
+    FrameResult handleResetFrame(const quic_reset *stream);
+    FrameResult handleHandshakeFrames(quic_context* context, const quic_frame* frame);
+    FrameResult handleFrames(quic_context* context, const quic_frame* frame);
+    void resendFrames(quic_context* context, quic_frame* frame);
+
+    void nextPackets(const std::function<int(const quic_pkt_header* header, std::vector<const quic_frame*>& frames)>& handler);
+    int handleHandshakePacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
+    int handleRetryPacket(const quic_pkt_header* header);
+    int handle1RttPacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
+    int handlePacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
+
+    using iterator = typename decltype(streammap)::iterator;
+    iterator OpenStream(uint64_t id);
+    bool IsLocal(uint64_t id);
+    bool IsBidirect(uint64_t id);
+    bool IsIdle(uint64_t id);
+
+    int sendNsPacket(OSSL_ENCRYPTION_LEVEL level, pn_namespace* pN);
     void sendPacket();
-    void PushFrame(pn_namespace* pnNs, quic_frame* frame);
+    void PushFrame(quic_context* context, quic_frame* frame);
     Job* packet_tx = nullptr;
-    Job* keep_alive = nullptr;
-    void keepAlive();
-    Job* time_out = nullptr;
-    void timedOut();
-    Job* close_job = nullptr;
+    Job* keepAlive_timer = nullptr;
+    void keepAlive_action();
+    Job* disconnect_timer = nullptr;
+    void disconnect_action();
+    Job* close_timer = nullptr;
+    Job* loss_timer = nullptr;
+    void loss_action(quic_context* context);
 public:
     explicit QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
                      std::function<void(int ret, int code)> errorCB,

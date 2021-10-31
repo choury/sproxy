@@ -261,15 +261,14 @@ struct quic_meta{
     std::string token;
 };
 
-struct quic_pkt_header{
-    quic_meta meta;
+struct quic_pkt_header: public quic_meta{
     uint64_t pn = 0;
     uint64_t pn_acked = 0;
     size_t pn_length = 0;
 };
 
 int unpack_meta(const void* data, size_t len, quic_meta* meta);
-std::vector<quic_frame*> decode_packet(const void* data, size_t len,
+std::vector<const quic_frame*> decode_packet(const void* data, size_t len,
                                        quic_pkt_header* header, const quic_secret* secret);
 
 
@@ -278,6 +277,6 @@ char* encode_packet(const void* data, size_t len,
                   const quic_pkt_header* header, const quic_secret* secret,
                   char* body);
 
-void frame_release(quic_frame* frame);
+void frame_release(const quic_frame* frame);
 
 #endif

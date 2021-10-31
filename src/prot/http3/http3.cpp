@@ -69,7 +69,7 @@ size_t Http3Base::Http3_Proc(const void* buff, size_t len, uint64_t id) {
             return 0;
         }
         pos += variable_decode(pos, &stream);
-        if(pos + variable_decode_len(pos) >= (uchar*)buff + len){
+        if(pos + variable_decode_len(pos) > (uchar*)buff + len){
             return 0;
         }
         pos += variable_decode(pos, &length);

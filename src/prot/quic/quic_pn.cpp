@@ -4,6 +4,7 @@
 
 #include "quic_pn.h"
 #include <inttypes.h>
+#include <assert.h>
 #include <misc/util.h>
 
 Chop::Chop(const quic_ack *frame) {
@@ -31,14 +32,20 @@ void Chop::refactor() {
 }
 
 void Chop::PushPn(uint64_t pn) {
+    auto now = getutime();
     if(items.empty()){
+        latest_time = now;
         items.emplace_back(pn, pn);
-        latest_time = getutime();
         return;
     }
     if(pn == items.back().second + 1){
+        latest_time = now;
         items.back().second++;
-        latest_time = getutime();
+        return;
+    }
+    if(pn > items.back().second){
+        latest_time = now;
+        items.emplace_back(pn, pn);
         return;
     }
     for(auto i = items.rbegin(); i != items.rend(); i++){
@@ -95,9 +102,10 @@ void Chop::dump() {
     }
 }
 
-void pn_namespace::PendAck() {
+uint64_t pn_namespace::PendAck() {
+    uint64_t now = getutime();
     if(!should_ack || latest_ack >= pns.items.back().second){
-        return;
+        return now;
     }
     should_ack = false;
     quic_frame *ack = new quic_frame;
@@ -118,51 +126,127 @@ void pn_namespace::PendAck() {
         ack->ack.ranges[index].length = i->second - i->first;
         index++;
     }
-    if(ack->ack.range_count && pendq.empty()){
+    if(ack->ack.range_count && pend_frames.empty()){
         //append ping if only ack
         quic_frame* ping = new quic_frame;
         ping->type = QUIC_FRAME_PING;
-        pendq.push_back(ping);
+        pend_frames.push_back(ping);
     }
     latest_ack = ack->ack.acknowledged;
 
-    LOGD(DQUIC, "< [%c] ack frame: %" PRIu64"[%" PRIu64"]\n",
-         name, ack->ack.acknowledged, (ack->ack.delay << 3)/1000);
-    pendq.push_front(ack);
+    LOGD(DQUIC, "< [%c] ack frame %" PRIu64": %.2fms\n",
+         name, ack->ack.acknowledged, (ack->ack.delay << 3)/1000.0);
+    pend_frames.push_front(ack);
+    return now;
 }
 
-void pn_namespace::HandleAck(const quic_ack *frame) {
-    if(frame->acknowledged > largest_ack){
-        largest_ack = frame->acknowledged;
+void pn_namespace::PnAcknowledged(quic_packet_pn &pn) {
+    for(auto frame: pn.frames) {
+        if (frame->type == QUIC_FRAME_ACK || frame->type == QUIC_FRAME_ACK_ECN) {
+            LOGD(DQUIC, "clean pN before: %" PRIu64"\n", frame->ack.acknowledged);
+            pns.Erase(frame->ack.acknowledged);
+        }
+        frame_release(frame);
     }
+}
+
+bool pn_namespace::HandleAck(const quic_ack *frame, Rtt* rtt,
+                             uint64_t max_delay_us, std::function<void(quic_frame*)> resendFrame)
+{
+    uint64_t now = getutime();
     Chop p(frame);
-    for(auto i = sendq.begin(); i != sendq.end();){
+    uint64_t ack_delay = frame->delay << ack_delay_exponent;
+    if(max_delay_us && (ack_delay > max_delay_us)){
+        ack_delay = max_delay_us;
+    }
+    largest_acked_packet = std::max(frame->acknowledged, largest_acked_packet);
+    bool newly_ack = false;
+    bool ack_elicited = false;
+    uint64_t send_time_of_largest_acked = 0;
+    for(auto i = sent_packets.begin(); i != sent_packets.end();){
+        if(frame->acknowledged == i->pn){
+            send_time_of_largest_acked = i->time_sent;
+        }
         if(p.Has(i->pn)){
-            if(i->frame->type == QUIC_FRAME_ACK || i->frame->type == QUIC_FRAME_ACK_ECN){
-                LOGD(DQUIC, "clean pn before: %" PRIu64"\n", i->frame->ack.acknowledged);
-                pns.Erase(i->frame->ack.acknowledged);
-                pns.dump();
+            newly_ack = true;
+            if(i->ack_eliciting){
+                ack_elicited = true;
             }
-            frame_release(i->frame);
-            delete i->frame;
-            i = sendq.erase(i);
-        }else{
+            PnAcknowledged(*i);
+            i = sent_packets.erase(i);
+        } else {
             i++;
         }
+    }
+    if(!newly_ack){
+        return false;
+    }
+    if(ack_elicited && send_time_of_largest_acked) {
+        rtt->latest_rtt = now - send_time_of_largest_acked;
+        if (rtt->latest_rtt < rtt->min_rtt) {
+            rtt->min_rtt = rtt->latest_rtt;
+        }
+        if (rtt->smoothed_rtt == 0) {
+            rtt->min_rtt = rtt->latest_rtt;
+            rtt->smoothed_rtt = rtt->latest_rtt;
+            rtt->rttvar = rtt->latest_rtt / 2;
+        }else {
+            if (rtt->latest_rtt >= rtt->min_rtt + ack_delay) {
+                rtt->latest_rtt = rtt->latest_rtt - ack_delay;
+            }
+            rtt->smoothed_rtt = (7 * rtt->smoothed_rtt + rtt->latest_rtt) / 8;
+            uint64_t rttvar_sample = rtt->smoothed_rtt > rtt->latest_rtt ?
+                                     rtt->smoothed_rtt - rtt->latest_rtt : rtt->latest_rtt - rtt->smoothed_rtt;
+            rtt->rttvar = (3 * rtt->rttvar + rttvar_sample) / 4;
+        }
+        LOGD(DQUIC, "smoothed_rtt: %.2fms, rttvar: %.2fms, latest_rtt: %.2fms\n",
+             rtt->smoothed_rtt/1000.0, rtt->rttvar/1000.0, rtt->latest_rtt/1000.0);
+    }
+    DetectLostPackets(rtt, resendFrame);
+    return true;
+}
+
+void pn_namespace::DetectLostPackets(Rtt* rtt, std::function<void(quic_frame*)> resendFrame) {
+    loss_time = UINT64_MAX;
+    assert(rtt->latest_rtt);
+    uint64_t now = getutime();
+    uint64_t timeThreshold = std::max(9 * std::max(rtt->smoothed_rtt, rtt->latest_rtt) / 8, (uint64_t)1000);
+    for(auto i = sent_packets.begin(); i != sent_packets.end();){
+        if(i->pn > largest_acked_packet){
+            i++;
+            continue;
+        }
+        if(largest_acked_packet - i->pn >= 3 || now - i->time_sent >= timeThreshold){
+            LOGD(DQUIC, "[%c] mark lost packet: [%" PRIu64"]\n", name, i->pn);
+            for(auto frame: i->frames){
+                resendFrame(frame);
+            }
+            i = sent_packets.erase(i);
+            continue;
+        }else if(i->time_sent + timeThreshold  < loss_time){
+            loss_time = i->time_sent + timeThreshold;
+        }
+        i++;
     }
 }
 
 void pn_namespace::clear() {
-    for(auto i : pendq){
+    for(auto i : pend_frames){
         frame_release(i);
-        delete i;
     }
-    for(auto i : sendq){
-        frame_release(i.frame);
-        delete i.frame;
+    for(const auto& i : sent_packets){
+        for(auto frame: i.frames) {
+            frame_release(frame);
+        }
     }
-    pendq.clear();
-    sendq.clear();
+    for(const auto& frame: lost_frames){
+        frame_release(frame);
+    }
+    pend_frames.clear();
+    lost_frames.clear();
+    sent_packets.clear();
+    loss_time = UINT64_MAX;
+    time_of_last_ack_eliciting_packet = 0;
 }
 
 pn_namespace::~pn_namespace() {
