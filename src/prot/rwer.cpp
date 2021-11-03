@@ -91,7 +91,7 @@ RWer::RWer(std::function<void (int, int)> errorCB, std::function<void(const sock
     assert(this->errorCB != nullptr);
     assert(this->connectCB != nullptr);
     readCB = [](buff_block& bb){
-        LOGE("discard data from stub readCB: %zd [%" PRIu64 "]", bb.len, bb.id);
+        LOGE("discard data from stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
         bb.offset = bb.len;
     };
     writeCB = [](size_t){};

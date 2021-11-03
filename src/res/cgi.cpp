@@ -134,7 +134,7 @@ Cgi::Cgi(const char* fname, int sv[2]) {
         signal(SIGPIPE, SIG_DFL);
         change_process_name(basename(filename));
         LOGD(DFILE, "<cgi> [%s] jump to cgi main\n", basename(filename));
-        exit(func(sv[1]));
+        exit(func(sv[1], basename(filename)));
     }
     // 父进程
     close(sv[1]);   // 关闭管道的子进程端
@@ -181,7 +181,7 @@ void Cgi::Send(uint32_t id, void *buff, size_t size) {
 
 
 void Cgi::readHE(buff_block& bb) {
-    while(bb.len - bb.offset > sizeof(CGI_Header)) {
+    while(bb.len - bb.offset >= sizeof(CGI_Header)) {
         const CGI_Header *header = (const CGI_Header *)((const char*)bb.buff + bb.offset);
         size_t size = ntohs(header->contentLength) + sizeof(CGI_Header);
         if(bb.len - bb.offset < size){
@@ -263,7 +263,7 @@ bool Cgi::HandleData(const CGI_Header* header, CgiStatus& status){
 
 bool Cgi::HandleError(const CGI_Header* header, CgiStatus& status){
     uint32_t id = ntohl(header->requestId);
-    LOG("<cgi> [%s] %" PRIu32 " error with %d\n", basename(filename), id, header->flag);
+    LOG("[CGI] %s %" PRIu32 " error with %d\n", basename(filename), id, header->flag);
     if(header->flag & CGI_FLAG_ABORT){
         Clean(id, status);
     }
@@ -299,7 +299,7 @@ void Cgi::request(std::shared_ptr<HttpReq> req, Requester* src) {
     header->contentLength = htons(PackCgiReq(req->header, header + 1, BUF_LEN - sizeof(CGI_Header)));
     rwer->buffer_insert(rwer->buffer_end(),
                         buff_block{header, sizeof(CGI_Header) + ntohs(header->contentLength)});
-    req->setHandler([this, id](Channel::signal s){
+    req->setHandler(std::bind([this](uint32_t id, Channel::signal s){
         if(statusmap.count(id) == 0) {
             LOGE("[CGI] %s stream %" PRIu32 " finished, not found\n", basename(filename), id);
             return;
@@ -314,13 +314,13 @@ void Cgi::request(std::shared_ptr<HttpReq> req, Requester* src) {
         CGI_Header *header = (CGI_Header *)p_malloc(len);
         cgi_error(header, id, CGI_FLAG_ABORT);
         rwer->buffer_insert(rwer->buffer_end(), buff_block{header, len});
-    });
+    }, id, _1));
     req->attach(std::bind(&Cgi::Send, this, id, _1, _2), [this]{ return rwer->cap(0);});
 }
 
 void Cgi::dump_stat(Dumper dp, void* param){
     dp(param, "Cgi %p %s:\n", this, filename);
-    for(auto i: statusmap){
+    for(const auto& i: statusmap){
         dp(param, "%" PRIu32": %s\n", i.first, i.second.req->header->geturl().c_str());
     }
 }

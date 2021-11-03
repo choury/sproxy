@@ -65,7 +65,7 @@ void flushcgi();
 #ifdef  __cplusplus
 extern "C" {
 #endif
-typedef int (cgifunc)(int fd);
+typedef int (cgifunc)(int fd, const char* name);
 cgifunc cgimain;
 int cgi_response(int fd, const HttpResHeader* res);
 int cgi_send(int fd, uint32_t id, const void *buff, size_t len);
@@ -78,6 +78,7 @@ int cgi_senderror(int fd, uint32_t id, uint8_t flag);
 class CgiHandler{
 protected:
     const int fd;
+    char name[FILENAME_MAX];
     uint32_t flag = 0;
     HttpReqHeader* req = nullptr;
     std::map<std::string, std::string> params;
@@ -119,6 +120,7 @@ protected:
         if((flag & HTTP_RES_EOF) || (flag & HTTP_REQ_EOF)){
             return;
         }
+        LOGD(DFILE, "<cgi> [%s] res finished: %d\n", name, req->request_id);
         if((flag & HTTP_RES_COMPLETED) == 0){
             cgi_senderror(fd, req->request_id, CGI_FLAG_ABORT);
         }else{
@@ -148,7 +150,8 @@ protected:
         cgi_senderror(fd, req->request_id, CGI_FLAG_ABORT);
     }
 public:
-    CgiHandler(int fd, const CGI_Header* header):fd(fd){
+    CgiHandler(int fd, const char*name, const CGI_Header* header):fd(fd){
+        strcpy(this->name, name);
         assert(header->type == CGI_REQUEST);
         uint32_t len = ntohs(header->contentLength);
         req = UnpackCgiReq(header+1, len);
@@ -160,7 +163,7 @@ public:
         Finish();
         delete req;
     }
-    void handle(const CGI_Header* header, const char* name){
+    void handle(const CGI_Header* header){
         if(header->type == CGI_ERROR){
             return ERROR(header);
         }
@@ -194,8 +197,8 @@ public:
 
 #define CGIMAIN(__handler) \
 static std::map<uint32_t, CgiHandler*> cgimap; \
-int cgimain(int fd){       \
-    LOGD(DFILE, "<cgi> [%s] cgimain start\n", __FILE__); \
+int cgimain(int fd, const char* name){       \
+    LOGD(DFILE, "<cgi> [%s] cgimain start\n", name); \
     ssize_t readlen; \
     char buff[CGI_LEN_MAX]; \
     while((readlen = read(fd, buff, sizeof(CGI_Header))) > 0){ \
@@ -203,21 +206,21 @@ int cgimain(int fd){       \
         int __attribute__((unused)) ret = read(fd, buff + readlen, ntohs(header->contentLength)); \
         assert(ret == ntohs(header->contentLength)); \
         uint32_t id = ntohl(header->requestId); \
-        LOGD(DFILE, "<cgi> [%s] get id: %d, type: %d\n", __FILE__, id, header->type); \
+        LOGD(DFILE, "<cgi> [%s] get id: %d, type: %d\n", name, id, header->type); \
         if(header->type == CGI_REQUEST){ \
             assert(cgimap.count(id) == 0);  \
-            LOGD(DFILE, "<cgi> [%s] new request: %d\n", __FILE__, id);   \
-            cgimap.emplace(id, new __handler(fd, header)); \
+            LOGD(DFILE, "<cgi> [%s] new request: %d\n", name, id);   \
+            cgimap.emplace(id, new __handler(fd, name, header)); \
         } \
         if(cgimap.count(id) == 0){             \
-            LOGD(DFILE, "<cgi> [%s] unknown id: %d\n", __FILE__, id);   \
+            LOGD(DFILE, "<cgi> [%s] unknown id: %d\n", name, id);   \
             if(header->type != CGI_ERROR){     \
                 cgi_senderror(fd, id, CGI_FLAG_ABORT); \
             }         \
             continue; \
         } \
         CgiHandler* h = cgimap[id]; \
-        h->handle(header, __FILE__); \
+        h->handle(header); \
         if(h->eof()){ \
             cgimap.erase(id); \
             delete h; \
@@ -227,7 +230,7 @@ int cgimain(int fd){       \
         delete i.second; \
     } \
     cgimap.clear(); \
-    LOGD(DFILE, "<cgi> [%s] cgimain exit\n", __FILE__); \
+    LOGD(DFILE, "<cgi> [%s] cgimain exit\n", name); \
     return 0; \
 } 
 

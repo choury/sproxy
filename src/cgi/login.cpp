@@ -23,7 +23,7 @@ class handler: public CgiHandler{
         Finish();
     }
 public:
-    handler(int fd, const CGI_Header* header):CgiHandler(fd, header){
+    handler(int fd, const char* name, const CGI_Header* header):CgiHandler(fd, name, header){
     }
 };
 

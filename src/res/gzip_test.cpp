@@ -100,6 +100,9 @@ void GzipTest::request(std::shared_ptr<HttpReq> req, Requester*) {
 }
 
 void GzipTest::gzipreadHE(buff_block&) {
+    if(res == nullptr){
+        return;
+    }
     if (left == 0) {
         (void)deflateEnd(&strm);
         res->send((const void*)nullptr, 0);
@@ -137,6 +140,9 @@ void GzipTest::gzipreadHE(buff_block&) {
 }
 
 void GzipTest::rawreadHE(buff_block&) {
+    if(res == nullptr){
+        return;
+    }
     if (left == 0) {
         (void)deflateEnd(&strm);
         res->send((const void*)nullptr, 0);

@@ -167,6 +167,9 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
 }
 
 void File::readHE(buff_block&) {
+    if(status.res == nullptr){
+        return;
+    }
     Range& rg = status.rg;
     LOGD(DFILE, "%s readHE %zd-%zd, flags: %d\n", filename, rg.begin, rg.end, status.flags);
     if (rg.begin > rg.end) {
