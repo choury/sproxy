@@ -177,43 +177,25 @@ const char *getDeviceName(){
 
 std::vector<std::string> getDns(){
     std::vector<std::string> dns;
-    char sdkVersion[PROP_VALUE_MAX];
-    __system_property_get("ro.build.version.sdk", sdkVersion);
-    int sdk = atoi(sdkVersion);
-    if(sdk <= 23){
-        char ipaddr[PROP_VALUE_MAX];
-        int i = 1;
-        while(true){
-            char property[PROP_NAME_MAX+1];
-            sprintf(property, "net.dns%d", i++);
-            if(__system_property_get(property, ipaddr)){
-                dns.emplace_back(ipaddr);
-            }else{
-                goto ret;
-            }
-        }
-    }else {
-        JNIEnv *jnienv;
-        jnijvm->GetEnv((void **) &jnienv, JNI_VERSION_1_6);
-        jclass cls = jnienv->GetObjectClass(jniobj);
-        jmethodID mid = jnienv->GetMethodID(cls, "getDns", "()[Ljava/lang/String;");
-        jobjectArray jDns = (jobjectArray) jnienv->CallObjectMethod(jniobj, mid);
-        if(jDns == nullptr){
-            jnienv->DeleteLocalRef(cls);
-            goto ret;
-        }
-        int n = jnienv->GetArrayLength(jDns);
-        for (int i = 0; i < n; i++) {
-            jstring jdns = (jstring) jnienv->GetObjectArrayElement(jDns, i);
-            const char *jdns_str = jnienv->GetStringUTFChars(jdns, nullptr);
-            dns.emplace_back(jdns_str);
-            jnienv->ReleaseStringUTFChars(jdns, jdns_str);
-            jnienv->DeleteLocalRef(jdns);
-        }
-        jnienv->DeleteLocalRef(jDns);
+    JNIEnv *jnienv;
+    jnijvm->GetEnv((void **) &jnienv, JNI_VERSION_1_6);
+    jclass cls = jnienv->GetObjectClass(jniobj);
+    jmethodID mid = jnienv->GetMethodID(cls, "getDns", "()[Ljava/lang/String;");
+    jobjectArray jDns = (jobjectArray) jnienv->CallObjectMethod(jniobj, mid);
+    if(jDns == nullptr){
         jnienv->DeleteLocalRef(cls);
+        return dns;
     }
-ret:
+    int n = jnienv->GetArrayLength(jDns);
+    for (int i = 0; i < n; i++) {
+        jstring jdns = (jstring) jnienv->GetObjectArrayElement(jDns, i);
+        const char *jdns_str = jnienv->GetStringUTFChars(jdns, nullptr);
+        dns.emplace_back(jdns_str);
+        jnienv->ReleaseStringUTFChars(jdns, jdns_str);
+        jnienv->DeleteLocalRef(jdns);
+    }
+    jnienv->DeleteLocalRef(jDns);
+    jnienv->DeleteLocalRef(cls);
     return dns;
 }
 

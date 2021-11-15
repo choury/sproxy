@@ -66,8 +66,8 @@ FDns::~FDns() {
 }
 
 void FDns::clean(std::shared_ptr<FDnsStatus> status){
-    delete status->que;
     statusmap.erase(status->que->id);
+    delete status->que;
 }
 
 void FDns::request(std::shared_ptr<HttpReq> req, Requester*){
