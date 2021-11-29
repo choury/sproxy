@@ -433,7 +433,7 @@ int spliturl(const char* url, struct Destination* server, char* path) {
 
         if (addrsplit[1] == ':') {
             long dport = strtol(addrsplit + 2, NULL, 10);
-            if(dport == 0 || dport >= 65535){
+            if(dport == 0 || dport > 65535){
                 return -1;
             }
             server->port = (uint16_t)dport;

@@ -86,11 +86,7 @@ void FDns::request(std::shared_ptr<HttpReq> req, Requester*){
 void FDns::Send(const void* buff, size_t size) {
     Dns_Query* que = new Dns_Query((const char *)buff, size);
     if(!que->valid){
-        char out[size*2];
-        for(size_t i = 0; i < size; i++){
-            sprintf(out+i*2, "%02X", ((unsigned char*)buff)[i]);
-        }
-        LOGE("invalid dns request [%zd]: %s\n", size, out);
+        LOGE("invalid dns request [%zd]\n", size);
         delete que;
         return;
     }

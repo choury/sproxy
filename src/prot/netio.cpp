@@ -190,6 +190,7 @@ void SocketRWer::Dnscallback(std::weak_ptr<void> param, int error, std::list<soc
 }
 
 void SocketRWer::connectFailed(int error) {
+    assert(!addrs.empty());
     RcdDown(hostname, addrs.front());
     addrs.pop();
     if(getFd() >= 0){
@@ -206,10 +207,13 @@ void SocketRWer::connect() {
     if(stats != RWerStats::Connecting && stats != RWerStats::SslConnecting) {
         return;
     }
+    assert(!addrs.empty());
     if(protocol == Protocol::TCP) {
         int fd = Connect(&addrs.front(), SOCK_STREAM);
         if (fd < 0) {
-            return connectFailed(errno);
+            con_failed_job = updatejob(con_failed_job,
+                                       std::bind(&SocketRWer::connectFailed, this, errno), 0);
+            return;
         }
         setFd(fd);
         setEvents(RW_EVENT::WRITE);
@@ -219,7 +223,9 @@ void SocketRWer::connect() {
     } else if(protocol == Protocol::QUIC) {
         int fd = Connect(&addrs.front(), SOCK_DGRAM);
         if (fd < 0) {
-            return connectFailed(errno);
+            con_failed_job = updatejob(con_failed_job,
+                                       std::bind(&SocketRWer::connectFailed, this, errno), 0);
+            return;
         }
         setFd(fd);
         setEvents(RW_EVENT::WRITE);
@@ -229,7 +235,9 @@ void SocketRWer::connect() {
     } else if(protocol == Protocol::UDP) {
         int fd = Connect(&addrs.front(), SOCK_DGRAM);
         if (fd < 0) {
-            return connectFailed(errno);
+            con_failed_job = updatejob(con_failed_job,
+                                       std::bind(&SocketRWer::connectFailed, this, errno), 0);
+            return;
         }
         setFd(fd);
         Connected(addrs.front());
@@ -249,7 +257,9 @@ void SocketRWer::connect() {
             Connected(addr);
             return;
         }
-        return connectFailed(errno);
+        con_failed_job = updatejob(con_failed_job,
+                                   std::bind(&SocketRWer::connectFailed, this, errno), 0);
+        return;
     } else {
         LOGF("Unknow protocol: %d\n", protocol);
     }
@@ -262,9 +272,13 @@ void SocketRWer::Connected(const sockaddr_storage& addr) {
 
 void SocketRWer::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR) || !!(events & RW_EVENT::READEOF)) {
-        return connectFailed(checkSocket(__PRETTY_FUNCTION__ ));
+        int error = checkSocket(__PRETTY_FUNCTION__ );
+        con_failed_job = updatejob(con_failed_job,
+                                   std::bind(&SocketRWer::connectFailed, this, error), 0);
+        return;
     }
     if (!!(events & RW_EVENT::WRITE)) {
+        assert(!addrs.empty());
         Connected(addrs.front());
     }
 }

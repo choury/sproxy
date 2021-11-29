@@ -45,6 +45,10 @@ HostResolver::HostResolver(int fd,
 void HostResolver::readHE(RW_EVENT events) {
     if(!!(events & RW_EVENT::ERROR)){
         checkSocket("dns socket error");
+        sockaddr_storage addr;
+        socklen_t len = sizeof(addr);
+        getpeername(getFd(), (sockaddr *)(&addr), &len);
+        LOGE("[DNS] addr: %s\n", getaddrstring(&addr));
         flags |= GETERROR;
         DelJob(&reply);
         return cb(DNS_SERVER_FAIL, {}, this);
@@ -290,7 +294,7 @@ void query_dns(const char* host, int type, DNSRAWCB func, std::weak_ptr<void> pa
     }
     auto rawcb = [](DNSRAWCB func, std::weak_ptr<void> param,
             const char* data, size_t len, RawResolver* resolver){
-        delete resolver;
+        defer([resolver]{delete resolver;});
         func(param, data, len);
     };
     new RawResolver(fd, host, type, std::bind(rawcb, func, param, _1, _2, _3));

@@ -50,9 +50,11 @@ protected:
     Protocol protocol;
     char     hostname[DOMAINLIMIT] = {0};
     std::queue<sockaddr_storage> addrs;
-    Job*     con_failed_job = nullptr;
     void query();
     void connect();
+    Job*     con_failed_job = nullptr;
+    // connectFailed should only be called with job con_failed_job,
+    // there's always an extra job somewhere if you invoke it directly.
     void connectFailed(int error);
     static void Dnscallback(std::weak_ptr<void> param, int error, std::list<sockaddr_storage> addrs);
 

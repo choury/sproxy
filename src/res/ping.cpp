@@ -10,8 +10,12 @@
 Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
     rwer = std::make_shared<PacketRWer>(host, this->id, Protocol::ICMP, [this](int ret, int code){
         LOGE("Ping error: %d/%d\n", ret, code);
+        if(res  == nullptr){
+            res = std::make_shared<HttpRes>(UnpackHttpRes(H500));
+            req->response(this->res);
+        }
         rwer->setEvents(RW_EVENT::NONE);
-        req->attach((Channel::recv_const_t)[](const void*, size_t){},[](){ return 1024*1024;});
+        //req->attach((Channel::recv_const_t)[](const void*, size_t){},[](){ return 1024*1024;});
     },[this](const sockaddr_storage& addr){
         const sockaddr_in6 *addr6 = (const sockaddr_in6*)&addr;
         family = addr6->sin6_family;
