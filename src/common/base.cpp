@@ -41,7 +41,7 @@ extern void dump_job(Dumper dp, void* param);
 
 void dump_stat(Dumper dp, void* param){
     dp(param, "======================================\n");
-    dp(param, "Proxy server: %s\n", dumpDest(&opt.Server));
+    dp(param, "Proxy server: %s, ipv6: %s\n", dumpDest(&opt.Server), opt.ipv6_enabled ? "enabled" : "disabled");
     dp(param, "--------------------------------------\n");
     for(auto i: servers){
         i->dump_stat(dp, param);

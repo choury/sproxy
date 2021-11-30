@@ -186,12 +186,12 @@ static struct option_detail option_detail[] = {
 };
 
 void network_changed(){
-    LOG("handle network changed\n");
     if(opt.ipv6_mode == Auto){
         opt.ipv6_enabled = hasIpv6Address();
     }
     flushdns();
     flushproxy2();
+    LOG("handled network changed, ipv6:%s\n", opt.ipv6_enabled?"enable":"disable");
 }
 
 
@@ -222,6 +222,12 @@ void prepare(){
 #else
     opt.daemon_mode = false;
 #endif
+    if(opt.ipv6_mode == Auto){
+        opt.ipv6_enabled = hasIpv6Address();
+        LOG("auto detected ipv6: %s\n", opt.ipv6_enabled?"enable":"disable");
+    }else{
+        opt.ipv6_enabled = opt.ipv6_mode;
+    }
     struct rlimit limits = {
         .rlim_cur = 1024,
         .rlim_max = 1024,
@@ -523,12 +529,7 @@ void parseConfig(int argc, char **argv){
     opt.rootdir = (char*)malloc(PATH_MAX);
     getcwd((char*)opt.rootdir, PATH_MAX);
 
-    if(opt.ipv6_mode == Auto){
-        opt.ipv6_enabled = hasIpv6Address();
-        LOG("auto detected ipv6: %s\n", opt.ipv6_enabled?"enable":"disable");
-    }else{
-        opt.ipv6_enabled = opt.ipv6_mode;
-    }
+
     if (opt.cafile && access(opt.cafile, R_OK)){
         LOGE("access cafile failed: %s\n", strerror(errno));
         exit(1);

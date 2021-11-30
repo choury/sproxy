@@ -382,13 +382,18 @@ struct sockaddr_storage* getlocalip () {
 }
 
 bool hasIpv6Address(){
-    struct sockaddr_storage* ips;
-    for(ips = getlocalip(); ips->ss_family ; ips++){
-        struct sockaddr_in6* ip6 = (struct sockaddr_in6*)ips;
-        if(ips->ss_family == AF_INET6 && (ip6->sin6_addr.s6_addr[0]&0x70) == 0x20){
-            return true;
-        }
+    struct sockaddr_storage ip;
+    memset(&ip, 0, sizeof(ip));
+    storage_aton("2001:4860::1", 1, &ip);
+    int fd = Connect(&ip, SOCK_STREAM);
+    if(fd < 0) return false;
+    socklen_t len = sizeof(ip);
+    if(getsockname(fd, (struct sockaddr*)&ip, &len) < 0){
+        LOGE("getsockname failed: %s\n", strerror(errno));
+        close(fd);
+        return false;
     }
-    return false;
+    close(fd);
+    struct sockaddr_in6* ip6 = (struct sockaddr_in6*)&ip;
+    return (ip6->sin6_addr.s6_addr[0]&0x70) == 0x20;
 }
-
