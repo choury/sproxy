@@ -153,7 +153,7 @@ static struct option_detail option_detail[] = {
     {"help", "Print this usage", option_bool, NULL, NULL},
     {"index", "Index file for path (local server)", option_string, &opt.index_file, NULL},
     {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_bool, &opt.ignore_cert_error, (void*)true},
-    {"interface", "Out interface (use for vpn)", option_string, &opt.interface, NULL},
+    {"interface", "Out interface (use for vpn), will skip bind if set to empty", option_string, &opt.interface, NULL},
     {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, ipv6_options},
     {"key", "Private key file name (ssl)", option_string, &opt.key, NULL},
     {"port", "The port to listen, default is 80 but 443 for ssl/sni", option_int64, &opt.CPORT, NULL},

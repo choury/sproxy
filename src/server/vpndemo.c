@@ -11,8 +11,10 @@
 
 
 int protectFd(int fd) {
+    if(strlen(opt.interface) == 0) {
+        return 1;
+    }
     struct ifreq ifr;
-
     memset(&ifr, 0, sizeof(ifr));
     snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", opt.interface);
     if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
@@ -222,10 +224,10 @@ int tun_create(char *dev, int flags) {
 
 int main(int argc, char** argv) {
     parseConfig(argc, argv);
-    if (opt.interface == NULL || strlen(opt.interface) == 0) {
+    if (opt.interface == NULL) {
         fprintf(stderr, "interface must be set for vpn\n");
         return ENOENT;
-    }
+        }
     char tun_name[IFNAMSIZ] = {0};
     int tun = tun_create(tun_name, IFF_TUN | IFF_NO_PI);
     if (tun < 0) {
