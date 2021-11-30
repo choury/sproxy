@@ -47,7 +47,7 @@ typedef void (*DNSRAWCB)(std::weak_ptr<void>, const char *buff, size_t size);
 
 void query_host(const char* host, DNSCB func, std::weak_ptr<void> param);
 void query_dns(const char* host, int type, DNSRAWCB func, std::weak_ptr<void> param);
-void RcdDown(const char *hostname, const sockaddr_storage &addr);
+void RcdBlock(const char *hostname, const sockaddr_storage &addr);
 
 
 #endif

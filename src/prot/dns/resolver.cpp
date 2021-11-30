@@ -6,6 +6,7 @@
 #include "common/common.h"
 
 #include <unordered_map>
+#include <unordered_set>
 #include <sstream>
 #include <utility>
 
@@ -21,6 +22,65 @@ static uint16_t id_cur = 1;
 static DnsConfig dnsConfig;
 
 std::unordered_map<std::string, Dns_Rcd> rcd_cache;
+
+bool operator==(const sockaddr_storage& a, const sockaddr_storage& b) {
+    if(a.ss_family != b.ss_family){
+        return false;
+    }
+    if(a.ss_family == AF_INET6){
+        const sockaddr_in6* a6 = (const sockaddr_in6*)&a;
+        const sockaddr_in6* b6 = (const sockaddr_in6*)&b;
+        return memcmp(&a6->sin6_addr, &b6->sin6_addr, sizeof(in6_addr)) == 0;
+    }
+    if(a.ss_family == AF_INET) {
+        const sockaddr_in* a4 = (const sockaddr_in*)&a;
+        const sockaddr_in* b4 = (const sockaddr_in*)&b;
+        return memcmp(&a4->sin_addr, &b4->sin_addr, sizeof(in_addr)) == 0;
+    }
+    return false;
+}
+
+// The specialized hash function for `unordered_map` keys
+struct hash_fn {
+    std::size_t operator() (const sockaddr_storage& a) const {
+        std::size_t h1 = std::hash<uint8_t>()(a.ss_family);
+        std::size_t h2 = 0;
+        if(a.ss_family == AF_INET6){
+#if __APPLE__
+            h2 ^= std::hash<uint32_t>()(((const sockaddr_in6*)&a)->sin6_addr.__u6_addr.__u6_addr32[0]);
+            h2 ^= std::hash<uint32_t>()(((const sockaddr_in6*)&a)->sin6_addr.__u6_addr.__u6_addr32[1])<<1;
+            h2 ^= std::hash<uint32_t>()(((const sockaddr_in6*)&a)->sin6_addr.__u6_addr.__u6_addr32[2])<<2;
+            h2 ^= std::hash<uint32_t>()(((const sockaddr_in6*)&a)->sin6_addr.__u6_addr.__u6_addr32[3])<<3;
+#else
+            h2 ^= std::hash<uint32_t>()(((const sockaddr_in6*)&a)->sin6_addr.s6_addr32[0]);
+            h2 ^= std::hash<uint32_t>()(((const sockaddr_in6*)&a)->sin6_addr.s6_addr32[1])<<1;
+            h2 ^= std::hash<uint32_t>()(((const sockaddr_in6*)&a)->sin6_addr.s6_addr32[2])<<2;
+            h2 ^= std::hash<uint32_t>()(((const sockaddr_in6*)&a)->sin6_addr.s6_addr32[3])<<3;
+#endif
+        } else {
+            h2 = std::hash<uint32_t>()(((const sockaddr_in*)&a)->sin_addr.s_addr);
+        }
+        return h2 ^ (h1 << 8);
+    }
+};
+
+std::unordered_map<std::string, std::unordered_set<sockaddr_storage, hash_fn>> rcd_blacklist;
+
+std::list<sockaddr_storage> rcdfilter(const std::string& host, const std::list<sockaddr_storage>& rcd_list) {
+    if (rcd_blacklist.count(host) == 0){
+        return rcd_list;
+    }
+    std::list<sockaddr_storage> ret;
+    const auto& blacklist = rcd_blacklist[host];
+    for(auto i = rcd_list.rbegin(); i != rcd_list.rend(); ++i){
+        if(blacklist.count(*i) == 0){
+            ret.push_front(*i);
+        }else {
+            ret.push_back(*i);
+        }
+    }
+    return ret;
+}
 
 HostResolver::HostResolver(int fd,
                    const char *host,
@@ -90,7 +150,7 @@ void HostResolver::readHE(RW_EVENT events) {
         }
 ret:
         DelJob(&reply);
-        return cb(error, rcd.addrs, this);
+        return cb(error,rcd.addrs, this);
     }
 }
 
@@ -208,6 +268,7 @@ void getDnsConfig(struct DnsConfig* config){
 
 void flushdns(){
     rcd_cache.clear();
+    rcd_blacklist.clear();
     getDnsConfig(&dnsConfig);
 }
 
@@ -241,14 +302,14 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::weak
     {
         defer([resolver]{delete resolver;});
         if(error == 0){
-            func(param, error, std::move(addrs));
+            func(param, error, rcdfilter(resolver->host, addrs));
             return;
         }
         if(error == DNS_TIMEOUT){
             if(addrs.empty()){
                 query_host_real(retries+1, resolver->host, func, param);
             }else{
-                func(param, 0, std::move(addrs));
+                func(param, 0, rcdfilter(resolver->host, addrs));
             }
             return;
         }
@@ -268,7 +329,7 @@ void query_host(const char* host, DNSCB func, std::weak_ptr<void> param) {
     if (rcd_cache.count(host)) {
         auto& rcd = rcd_cache[host];
         if(rcd.get_time + (time_t)rcd.ttl > time(nullptr)){
-            AddJob(std::bind(func, param, 0, rcd.addrs), 0, JOB_FLAGS_AUTORELEASE);
+            AddJob(std::bind(func, param, 0, rcdfilter(host, rcd.addrs)), 0, JOB_FLAGS_AUTORELEASE);
             return;
         }
         rcd_cache.erase(host);
@@ -300,34 +361,15 @@ void query_dns(const char* host, int type, DNSRAWCB func, std::weak_ptr<void> pa
     new RawResolver(fd, host, type, std::bind(rawcb, func, param, _1, _2, _3));
 }
 
-void RcdDown(const char *hostname, const sockaddr_storage &addr) {
+void RcdBlock(const char *hostname, const sockaddr_storage &addr) {
     LOG("[DNS] down for %s: %s\n", hostname, getaddrstring(&addr));
-    auto cmpfunc = [](const sockaddr_storage& a, const sockaddr_storage& b) -> bool {
-        if(a.ss_family != b.ss_family){
-            return false;
-        }
-        if(a.ss_family == AF_INET6){
-            const sockaddr_in6* a6 = (const sockaddr_in6*)&a;
-            const sockaddr_in6* b6 = (const sockaddr_in6*)&b;
-            return memcmp(&a6->sin6_addr, &b6->sin6_addr, sizeof(in6_addr)) == 0;
-        }
-        if(a.ss_family == AF_INET) {
-            const sockaddr_in* a4 = (const sockaddr_in*)&a;
-            const sockaddr_in* b4 = (const sockaddr_in*)&b;
-            return memcmp(&a4->sin_addr, &b4->sin_addr, sizeof(in_addr)) == 0;
-        }
-        return false;
-    };
-    if (rcd_cache.count(hostname)) {
-        auto& addrs  = rcd_cache[hostname].addrs;
-        for (auto i = addrs.begin(); i != addrs.end(); ++i) {
-            if(cmpfunc(addr, *i)){
-                addrs.erase(i);
-                addrs.push_back(addr);
-                return;
-            }
-        }
+    if(rcd_cache.count(hostname) == 0){
+        return;
     }
+    if(!rcd_blacklist.count(hostname)){
+        rcd_blacklist.emplace(hostname, std::unordered_set<sockaddr_storage, hash_fn>{});
+    }
+    rcd_blacklist[hostname].emplace(addr);
 }
 
 
@@ -339,7 +381,14 @@ void dump_dns(Dumper dp, void* param){
     dp(param, "Dns cache:\n");
     for(const auto& i: rcd_cache){
         dp(param, "  %s: %ld\n", i.first.c_str(), i.second.get_time + i.second.ttl - time(nullptr));
-        for(auto j: i.second.addrs){
+        for(const auto& j: rcdfilter(i.first, i.second.addrs)){
+            dp(param, "    %s\n", getaddrstring(&j));
+        }
+    }
+    dp(param, "Dns blacklist:\n");
+    for(const auto& i: rcd_blacklist){
+        dp(param, "  %s:\n", i.first.c_str());
+        for(const auto& j: i.second){
             dp(param, "    %s\n", getaddrstring(&j));
         }
     }

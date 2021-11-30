@@ -191,7 +191,7 @@ void SocketRWer::Dnscallback(std::weak_ptr<void> param, int error, std::list<soc
 
 void SocketRWer::connectFailed(int error) {
     assert(!addrs.empty());
-    RcdDown(hostname, addrs.front());
+    RcdBlock(hostname, addrs.front());
     addrs.pop();
     if(getFd() >= 0){
         setFd(-1);
@@ -219,7 +219,7 @@ void SocketRWer::connect() {
         setEvents(RW_EVENT::WRITE);
         handleEvent = (void (Ep::*)(RW_EVENT)) &SocketRWer::waitconnectHE;
         con_failed_job = updatejob(con_failed_job,
-                                   std::bind(&SocketRWer::connectFailed, this, ETIMEDOUT), 20000);
+                                   std::bind(&SocketRWer::connectFailed, this, ETIMEDOUT), 10000);
     } else if(protocol == Protocol::QUIC) {
         int fd = Connect(&addrs.front(), SOCK_DGRAM);
         if (fd < 0) {
@@ -231,7 +231,7 @@ void SocketRWer::connect() {
         setEvents(RW_EVENT::WRITE);
         handleEvent = (void (Ep::*)(RW_EVENT)) &SocketRWer::waitconnectHE;
         con_failed_job = updatejob(con_failed_job,
-                                   std::bind(&SocketRWer::connectFailed, this, ETIMEDOUT), 20000);
+                                   std::bind(&SocketRWer::connectFailed, this, ETIMEDOUT), 10000);
     } else if(protocol == Protocol::UDP) {
         int fd = Connect(&addrs.front(), SOCK_DGRAM);
         if (fd < 0) {
