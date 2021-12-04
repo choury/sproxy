@@ -11,8 +11,8 @@ static Index2<uint32_t, std::string, void*> fdns_records;
 
 static in_addr_t fake_ip = 0 ;
 
-static in_addr getInet(std::string hostname) {
-    in_addr addr;
+static in_addr getInet(const std::string& hostname) {
+    in_addr addr{};
 
     if(hostname.find_first_of('.') == std::string::npos){
         addr.s_addr = inet_addr(VPNADDR);
@@ -26,8 +26,8 @@ static in_addr getInet(std::string hostname) {
     return addr;
 }
 
-static in6_addr getInet6(std::string hostname) {
-    return mapIpv4(getInet(std::move(hostname)), NAT64PREFIX);
+static in6_addr getInet6(const std::string& hostname) {
+    return mapIpv4(getInet(hostname), NAT64PREFIX);
 }
 
 static uint32_t getFip(const sockaddr_storage* addr){

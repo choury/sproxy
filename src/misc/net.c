@@ -219,7 +219,8 @@ int Connect(const struct sockaddr_storage* addr, int type) {
     }
     do{
         if(protectFd(fd) == 0){
-            LOGF("protecd fd %d error:%s\n", fd, strerror(errno));
+            LOGE("protecd fd %d error:%s\n", fd, strerror(errno));
+            break;
         }
 
         switch(addr->ss_family){
