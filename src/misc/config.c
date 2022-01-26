@@ -57,6 +57,7 @@ struct options opt = {
     .index_file        = NULL,
     .interface         = NULL,
     .socket            = NULL,
+    .ua                = NULL,
     .disable_http2     = false,
     .sni_mode          = false,
     .daemon_mode       = false,
@@ -112,10 +113,12 @@ static struct option long_options[] = {
     {"root-dir",      required_argument, NULL,  0 },
     {"secret",        required_argument, NULL, 's'},
     {"set-dns-route", no_argument,       NULL,  0 },
+    {"skip-interface-binding", no_argument, NULL, 0},
     {"sni",           no_argument,       NULL,  0 },
     {"socket",        required_argument, NULL,  0 },
     {"alter-method",  no_argument,       NULL,  0 },
     {"request-header",required_argument, NULL,  0 },
+    {"ua",            required_argument, NULL,  0 },
     {"version",       no_argument,       NULL, 'v'},
 #ifndef NDEBUG
     {"debug-event",   no_argument,   NULL,  0 },
@@ -167,6 +170,7 @@ static struct option_detail option_detail[] = {
     {"socket", "set listen socket path for cli (/var/run/sproxy.sock is default for root and /tmp/sproxy.sock for others)", option_string, &opt.socket, NULL},
     {"alter-method", "use Alter-Method to define real method (for obfuscation), http1 only", option_bool, &opt.alter_method, (void*)true},
     {"request-header", "append the header (name:value) for plain http request", option_list, &opt.request_headers, NULL},
+    {"ua", "set user-agent for vpn auto request", option_string, &opt.ua, NULL},
     {"version", "show the version of this programme", option_bool, NULL, NULL},
 #ifndef NDEBUG
     {"debug-event", "debug-event", option_bitwise, &debug, (void*)DEVENT},
@@ -186,12 +190,12 @@ static struct option_detail option_detail[] = {
 };
 
 void network_changed(){
+    LOG("handle network changed\n");
     if(opt.ipv6_mode == Auto){
         opt.ipv6_enabled = hasIpv6Address();
     }
     flushdns();
     flushproxy2();
-    LOG("handled network changed, ipv6:%s\n", opt.ipv6_enabled?"enable":"disable");
 }
 
 
@@ -222,16 +226,13 @@ void prepare(){
 #else
     opt.daemon_mode = false;
 #endif
-    if(opt.ipv6_mode == Auto){
-        opt.ipv6_enabled = hasIpv6Address();
-        LOG("auto detected ipv6: %s\n", opt.ipv6_enabled?"enable":"disable");
+    struct rlimit limits;
+    if(getrlimit(RLIMIT_NOFILE, &limits)){
+        LOGE("getrlimit failed: %s\n", strerror(errno));
+        limits.rlim_cur = 1024;
     }else{
-        opt.ipv6_enabled = opt.ipv6_mode;
+        limits.rlim_cur = limits.rlim_max;
     }
-    struct rlimit limits = {
-        .rlim_cur = 1024,
-        .rlim_max = 1024,
-    };
 
     if(setrlimit(RLIMIT_NOFILE, &limits)) {
         LOGE("setrlimit failed: %s\n", strerror(errno));
@@ -529,7 +530,12 @@ void parseConfig(int argc, char **argv){
     opt.rootdir = (char*)malloc(PATH_MAX);
     getcwd((char*)opt.rootdir, PATH_MAX);
 
-
+    if(opt.ipv6_mode == Auto){
+        opt.ipv6_enabled = hasIpv6Address();
+        LOG("auto detected ipv6: %s\n", opt.ipv6_enabled?"enable":"disable");
+    }else{
+        opt.ipv6_enabled = opt.ipv6_mode;
+    }
     if (opt.cafile && access(opt.cafile, R_OK)){
         LOGE("access cafile failed: %s\n", strerror(errno));
         exit(1);

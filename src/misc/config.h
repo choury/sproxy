@@ -48,6 +48,7 @@ struct options{
     const char *index_file;
     const char *interface;
     const char *socket;
+    const char *ua;
     bool disable_http2;
     bool sni_mode;
     bool daemon_mode;

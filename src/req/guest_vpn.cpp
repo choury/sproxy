@@ -145,7 +145,6 @@ void Vpn_server::cleanKey(const VpnKey& key) {
 }
 
 Guest_vpn::Guest_vpn(const VpnKey& key, Vpn_server* server):Requester(std::make_shared<NullRWer>()), key(key), server(server) {
-    memset(&status, 0, sizeof(status));
 }
 
 
@@ -154,7 +153,8 @@ Guest_vpn::~Guest_vpn(){
     free(status.protocol_info);
 }
 
-#if 0
+#if __linux__  && !__ANDROID__
+#include <fstream>
 const char * Guest_vpn::getProg() const{
     if(key.version() == 4){
         std::ifstream netfile;
@@ -171,6 +171,9 @@ const char * Guest_vpn::getProg() const{
         default:
             return "<NONE>";
         }
+
+        sockaddr_in* src = (sockaddr_in*)&key.src;
+        sockaddr_in* dst = (sockaddr_in*)&key.dst;
         if(netfile.good()) {
             std::string line;
             std::getline(netfile, line); //drop the title line
@@ -181,29 +184,24 @@ const char * Guest_vpn::getProg() const{
                 ino_t inode = 0;
                 sscanf(line.c_str(), "%*d: %x:%x %x:%x %*x %*x:%*x %*d:%*x %*d %d %*d %lu",
                                     &srcip, &srcport, &dstip, &dstport, &uid, &inode);
-                if(key.src.addr_in.sin_port == htons(srcport) &&(
-                    key.protocol == Protocol::ICMP || key.protocol == Protocol::UDP ||
-                    (key.dst.addr_in.sin_addr.s_addr == dstip &&
-                    key.dst.addr_in.sin_port == htons(dstport))))
+                if(src->sin_port != htons(srcport)){
+                    continue;
+                }
+                // for udp and icmp, it usually no been bind
+                if((key.protocol != Protocol::TCP) ||
+                    (dst->sin_addr.s_addr == dstip && dst->sin_port == htons(dstport)))
                 {
-#ifndef __ANDROID__
                     return findprogram(inode);
-#else
-                    return getPackageName(uid);
-#endif
                 }
             }
 
             netfile.clear();
             netfile.seekg(0);
-            while (std::getline(netfile, line)) {
-                //LOGD(DVPN, "%s\n", line.c_str());
-            }
         }
         LOGD(DVPN, "Get src failed for %s %08X:%04X %08X:%04X\n",
                         protstr(key.protocol),
-                        key.src.addr_in.sin_addr.s_addr, ntohs(key.src.addr_in.sin_port),
-                        key.dst.addr_in.sin_addr.s_addr, ntohs(key.dst.addr_in.sin_port));
+                        src->sin_addr.s_addr, ntohs(src->sin_port),
+                        dst->sin_addr.s_addr, ntohs(dst->sin_port));
     }
     std::ifstream net6file;
     switch(key.protocol){
@@ -219,16 +217,21 @@ const char * Guest_vpn::getProg() const{
     default:
         return "<NONE>";
     }
+    sockaddr_in6* src = (sockaddr_in6*)&key.src;
+    sockaddr_in6* dst = (sockaddr_in6*)&key.dst;
+    in6_addr mysrcip, mydstip;
+    if(key.version() == 4){
+        memcpy(mysrcip.s6_addr, "\0\0\0\0\0\0\0\0\0\0\xff\xff", 12);
+        memcpy(mydstip.s6_addr, "\0\0\0\0\0\0\0\0\0\0\xff\xff", 12);
+        mysrcip.s6_addr32[3] = ((sockaddr_in*)&key.src)->sin_addr.s_addr;
+        mydstip.s6_addr32[3] = ((sockaddr_in*)&key.dst)->sin_addr.s_addr;
+    }else{
+        mysrcip = src->sin6_addr;
+        mydstip = dst->sin6_addr;
+    }
     if(net6file.good()) {
         std::string line;
         std::getline(net6file, line); //drop the title line
-        in6_addr dst;
-        if(key.version() == 4){
-            memcpy(dst.s6_addr, "\0\0\0\0\0\0\0\0\0\0\xff\xff", 12);
-            dst.s6_addr32[3] = key.dst.addr_in.sin_addr.s_addr;
-        }else{
-            dst = key.dst.addr_in6.sin6_addr;
-        }
         while (std::getline(net6file, line)) {
             unsigned int srcport, dstport;
             int uid = 0;
@@ -237,46 +240,40 @@ const char * Guest_vpn::getProg() const{
             sscanf(line.c_str(), "%*d: %8X%8X%8X%8X:%X %8X%8X%8X%8X:%X %*x %*x:%*x %*d:%*x %*d %d %*d %lu",
                                 srcip, srcip+1, srcip+2, srcip+3, &srcport,
                                 dstip, dstip+1, dstip+2, dstip+3, &dstport, &uid, &inode);
-            if(key.src.addr_in6.sin6_port == htons(srcport) &&(
-                key.protocol == Protocol::ICMP || key.protocol == Protocol::UDP ||
-                (memcmp(&dst, dstip, sizeof(dstip)) == 0 &&
-                key.dst.addr_in6.sin6_port == htons(dstport))))
+
+            if(src->sin6_port != htons(srcport)){
+                continue;
+            }
+            if((key.protocol != Protocol::TCP) ||
+                (memcmp(&mydstip, dstip, sizeof(dstip)) == 0 && dst->sin6_port == htons(dstport)))
             {
-#ifndef __ANDROID__
                 return findprogram(inode);
-#else
-                return getPackageName(uid);
-#endif
             }
         }
         net6file.clear();
         net6file.seekg(0);
-        while (std::getline(net6file, line)) {
-            //LOGD(DVPN, "%s\n", line.c_str());
-        }
     }
     LOGD(DVPN, "Get src failed for %s %08X%08X%08X%08X:%04X %08X%08X%08X%08X:%04X\n",
                     protstr(key.protocol),
-                    key.src.addr_in6.sin6_addr.s6_addr32[0],
-                    key.src.addr_in6.sin6_addr.s6_addr32[1],
-                    key.src.addr_in6.sin6_addr.s6_addr32[2],
-                    key.src.addr_in6.sin6_addr.s6_addr32[3],
-                    ntohs(key.src.addr_in6.sin6_port),
-                    key.dst.addr_in6.sin6_addr.s6_addr32[0],
-                    key.dst.addr_in6.sin6_addr.s6_addr32[1],
-                    key.dst.addr_in6.sin6_addr.s6_addr32[2],
-                    key.dst.addr_in6.sin6_addr.s6_addr32[3],
-                    ntohs(key.dst.addr_in6.sin6_port));
+                    mysrcip.s6_addr32[0], mysrcip.s6_addr32[1], mysrcip.s6_addr32[2], mysrcip.s6_addr32[3],
+                    ntohs(src->sin6_port),
+                    mydstip.s6_addr32[0], mydstip.s6_addr32[1], mydstip.s6_addr32[2], mydstip.s6_addr32[3],
+                    ntohs(dst->sin6_port));
     return "Unkown inode";
 }
 #endif
 
 const char* Guest_vpn::generateUA() const {
     static char UA[URLLIMIT];
-#ifndef __ANDROID__
-    sprintf(UA, "Sproxy/%s (Build %s) (%s)", getVersion(), getBuildTime(), getDeviceInfo());
-#else
+    if(opt.ua){
+        return opt.ua;
+    }
+#ifdef __ANDROID__
     sprintf(UA, "Sproxy/%s (Build %s) (%s) App/%s", getVersion(), getBuildTime(), getDeviceName(), appVersion);
+#elif __linux__
+    sprintf(UA, "Sproxy/%s (Build %s) (%s) %s", getVersion(), getBuildTime(), getDeviceInfo(), getProg());
+#else
+    sprintf(UA, "Sproxy/%s (Build %s) (%s)", getVersion(), getBuildTime(), getDeviceInfo());
 #endif
     return UA;
 }
@@ -315,7 +312,9 @@ void Guest_vpn::writed() {
 
 void Guest_vpn::response(void*, std::shared_ptr<HttpRes> res) {
     status.res = res;
-    HttpLog(getsrc(), status.req, res);
+    if((status.flags & VPN_DNSREQ_F) == 0){
+        HttpLog(getsrc(), status.req, res);
+    }
     //创建回包
     if(memcmp(res->header->status, "200", 3) == 0){
         res->setHandler(std::bind(&Guest_vpn::handle, this, _1));
@@ -326,7 +325,6 @@ void Guest_vpn::response(void*, std::shared_ptr<HttpRes> res) {
         }else{
             res->attach((Channel::recv_const_t)std::bind(&Guest_vpn::Send_tcp, this, _1, _2),
                         std::bind(&Guest_vpn::bufleft, this));
-
         }
         TcpStatus* tcpStatus = (TcpStatus *)status.protocol_info;
         tcpStatus->status = TCP_ESTABLISHED;
@@ -629,6 +627,7 @@ void Guest_vpn::udpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
         aged_job = rwer->updatejob(aged_job, std::bind(&Guest_vpn::aged, this), 60000);
         status.req->send(data, datalen);
         if(pac->udp->getdport() == 53){
+            status.flags |= VPN_DNSREQ_F;
             (new FDns())->request(status.req, this);
         }else{
             distribute(status.req, this);
@@ -672,9 +671,8 @@ void Guest_vpn::icmpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t
     }break;
     case ICMP_UNREACH:{
         auto icmp_pac = MakeIp(packet+pac->gethdrlen(), len-pac->gethdrlen());
-
         uint8_t type = icmp_pac->gettype();
-        
+
         LOGD(DVPN, "Get unreach icmp packet %s type: %d\n", key.getString("->"), type);
         if(type != IPPROTO_TCP && type != IPPROTO_UDP){
             LOGE("Get unreach icmp packet unkown protocol:%d\n", type);

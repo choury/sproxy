@@ -11,6 +11,9 @@
 
 
 int protectFd(int fd) {
+    if(opt.interface == NULL){
+        return 0;
+    }
     if(strlen(opt.interface) == 0) {
         return 1;
     }

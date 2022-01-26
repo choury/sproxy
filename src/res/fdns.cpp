@@ -90,7 +90,7 @@ void FDns::Send(const void* buff, size_t size) {
         delete que;
         return;
     }
-    LOGD(DDNS, "FQuery %s [%d]: %d\n", que->domain, que->id, que->type);
+    LOG("FQuery %s: %d\n", que->domain, que->type);
     if(statusmap.count(que->id)) {
         //drop dup request
         delete que;

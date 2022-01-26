@@ -37,19 +37,20 @@ struct IcmpStatus{
     uint16_t seq;
 };
 
+#define VPN_DNSREQ_F    (1u<<16u)
 struct VpnStatus{
     std::shared_ptr<HttpReq> req;
     std::shared_ptr<HttpRes> res;
     char*      packet;
     uint16_t   packet_len;
     void*      protocol_info;
-    uint32_t flags;
+    uint32_t   flags;
 };
 
 class Vpn_server;
 class Guest_vpn:public Requester{
     VpnKey key;
-    VpnStatus  status;
+    VpnStatus  status{};
     Vpn_server* server;
     const char* generateUA() const;
     const char* getProg() const;
