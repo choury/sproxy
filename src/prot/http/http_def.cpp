@@ -155,12 +155,12 @@ HttpReq::~HttpReq() {
 void HttpLog(const char* src, std::shared_ptr<const HttpReq> req, std::shared_ptr<const HttpRes> res){
     char status[100];
     sscanf(res->header->status, "%s", status);
-    LOG("%s [%" PRIu32 "] %s %s [%s] %s [%s]\n", src,
+    LOG("%s [%" PRIu32 "] %s %s [%s] %s %dms [%s]\n", src,
         req->header->request_id,
         req->header->method,
         req->header->geturl().c_str(),
         req->header->get("Strategy"),
-        status,
+        status, res->header->ctime - req->header->ctime,
         req->header->get("User-Agent"));
 }
 

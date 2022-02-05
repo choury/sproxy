@@ -181,33 +181,39 @@ Hpack::~Hpack()
     }
 }
 
-static size_t literal_decode_wrapper(const unsigned char* s, std::string& name, bool& failed){
-    uint64_t len;
-    integer_decode(s, 7, &len);
-    name.resize(len * 2);
-    int ret = literal_decode(s, 7, &name[0]);
-    if(ret < 0){
-        failed = true;
+static size_t literal_decode_wrapper(const unsigned char* s, size_t len, std::string& name){
+    uint64_t value;
+    if(integer_decode(s, len, 7, &value) == 0){
         return 0;
     }
-    //name.resize(ret);
+    name.resize(value * 2);
+    int ret = literal_decode(s, len, 7, &name[0]);
+    if(ret <= 0){
+        return ret;
+    }
     name = name.c_str();
     return ret;
 }
+
 
 static size_t literal_encode_wrapper(const std::string& name, unsigned char* result){
     return literal_encode(name.c_str(), 7, result);
 }
 
 std::multimap<std::string, std::string> Hpack_decoder::decode(const unsigned char* s, size_t len) {
-    size_t i = 0;
+    const uchar* pos = s;
     std::multimap<std::string, std::string> headers;
     bool noDynamic = false;
-    while(i < len) {
-        if(s[i] & 0x80) {
+    while(pos <  s + len) {
+        if(*pos & 0x80) {
             noDynamic = true;
             uint64_t index;
-            i += integer_decode(s+i, 7, &index);
+            size_t l = integer_decode(pos, len - (pos - s), 7, &index);
+            if(l == 0){
+                LOGE("incomplete integer found in hpack\n");
+                return std::multimap<std::string, std::string>{};
+            }
+            pos += l;
             if(index == 0){
                 LOGE("want to get value of index zero\n");
                 return std::multimap<std::string, std::string>{};
@@ -218,52 +224,79 @@ std::multimap<std::string, std::string> Hpack_decoder::decode(const unsigned cha
                 return std::multimap<std::string, std::string>{};
             }
             headers.insert(std::make_pair(value->name, value->value));
-        }else if(s[i] & 0x40) {
+        }else if(*pos & 0x40) {
             noDynamic = true;
             uint64_t index;
-            i += integer_decode(s+i, 6, &index);
+            size_t l = integer_decode(pos, len - (pos - s), 6, &index);
+            if(l == 0){
+                LOGE("incomplete integer found in hpack\n");
+                return std::multimap<std::string, std::string>{};
+            }
+            pos += l;
             std::string name, value;
-            bool failed = false;
             if(index) {
                 name = getvalue(index)->name;
             } else {
-                i += literal_decode_wrapper(s+i, name, failed);
+                l = literal_decode_wrapper(pos, len - (pos - s), name);
+                if(l <= 0){
+                    LOGE("failed to decode literal in hpack\n");
+                    return std::multimap<std::string, std::string>{};
+                }
+                pos += l;
             }
-            i += literal_decode_wrapper(s+i, value, failed);
-            if(failed){
+            l = literal_decode_wrapper(pos, len - (pos - s), value);
+            if(l <= 0){
+                LOGE("failed to decode literal in hpack\n");
                 return std::multimap<std::string, std::string>{};
             }
+            pos += l;
             headers.insert(std::make_pair(name, value));
             add_dynamic_table(name, value);
-        }else if(s[i] & 0x20) {
+        }else if(*pos & 0x20) {
             if(noDynamic){
                 LOGE("found update dynamic table limit after normal entry\n");
                 return std::multimap<std::string, std::string>{};
             }
             uint64_t size;
-            i += integer_decode(s+i, 5, &size);
+            size_t l = integer_decode(pos, len - (pos - s), 5, &size);
+            if(l == 0){
+                LOGE("incomplete integer found in hpack\n");
+                return std::multimap<std::string, std::string>{};
+            }
+            pos += l;
             if(!set_dynamic_table_size_limit(size)){
                 return std::multimap<std::string, std::string>{};
             }
         }else {
             noDynamic = true;
             uint64_t index;
-            i += integer_decode(s+i, 4, &index);
+            size_t l = integer_decode(pos, len - (pos - s), 4, &index);
+            if(l == 0){
+                LOGE("incomplete integer found in hpack\n");
+                return std::multimap<std::string, std::string>{};
+            }
+            pos += l;
             std::string name, value;
-            bool failed = true;
             if(index) {
                 name = getvalue(index)->name;
             } else {
-                i += literal_decode_wrapper(s+i, name, failed);
+                l = literal_decode_wrapper(pos, len - (pos - s), name);
+                if(l <= 0){
+                    LOGE("failed to decode literal in hpack\n");
+                    return std::multimap<std::string, std::string>{};
+                }
+                pos += l;
             }
-            i += literal_decode_wrapper(s+i, value, failed);
-            if(failed){
+            l = literal_decode_wrapper(pos, len - (pos - s), value);
+            if(l <= 0){
+                LOGE("failed to decode literal in hpack\n");
                 return std::multimap<std::string, std::string>{};
             }
+            pos += l;
             headers.insert(std::make_pair(name, value));
         }
-        if(i > len){
-            LOGE("may be overflow: %zu/%zu\n", i, len);
+        if(pos - s > (int)len){
+            LOGE("may be overflow: %zu/%zu\n", pos - s, len);
             return std::multimap<std::string, std::string>{};
         }
     }

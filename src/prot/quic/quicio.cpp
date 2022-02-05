@@ -20,6 +20,7 @@
  * server端实现
  * check retry packet tag
  * 连接迁移
+ * pmtu
  */
 
 #define QUIC_CIPHERS                                              \
@@ -47,17 +48,13 @@ static uint8_t getPacketType(OSSL_ENCRYPTION_LEVEL level) {
 void QuicRWer::dropkey(OSSL_ENCRYPTION_LEVEL level) {
     LOGD(DQUIC, "drop key for level: %d\n", level);
     assert(level != ssl_encryption_application);
-    if(!contexts[level].valid){
+    if(!contexts[level].hasKey){
         return;
     }
-    contexts[level].valid = false;
+    contexts[level].hasKey = false;
     memset(&contexts[level].read_secret, 0, sizeof(quic_secret));
     memset(&contexts[level].write_secret, 0, sizeof(quic_secret));
-    contexts->pN->clear();
-    contexts->pN->loss_time = UINT64_MAX;
-    contexts->pN->time_of_last_ack_eliciting_packet = 0;
-    pto_count = 0;
-    SetLossDetectionTimer();
+    qos.DropKey(level);
 }
 
 QuicRWer::quic_context* QuicRWer::getContext(uint8_t type) {
@@ -83,124 +80,14 @@ int QuicRWer::set_encryption_secrets(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
     assert(secret_len <= 32);
     quic_secret_set_key(&rwer->contexts[level].read_secret, (const char*)read_secret, SSL_CIPHER_get_id(SSL_get_current_cipher(ssl)));
     quic_secret_set_key(&rwer->contexts[level].write_secret, (const char*)write_secret, SSL_CIPHER_get_id(SSL_get_current_cipher(ssl)));
-    rwer->contexts[level].valid = true;
+    rwer->qos.GetKey(level);
+    rwer->contexts[level].hasKey = true;
     //drop init key
     rwer->dropkey(ssl_encryption_initial);
     return 1;
 }
 
-bool QuicRWer::PeerCompletedAddressValidation(){
-    // Assume clients validate the server's address implicitly.
-    if (ctx == nullptr) {
-        return true;
-    }
-    // Servers complete address validation when a
-    // protected packet is received.
-    return contexts[ssl_encryption_handshake].pN->largest_acked_packet > 0
-    || contexts[ssl_encryption_application].valid;
-}
-
-void QuicRWer::SetLossDetectionTimer(){
-    uint64_t now = getutime();
-    uint64_t timed_out = UINT64_MAX;
-    bool has_eliciting_packet = false;
-    quic_context* context = nullptr;
-    for(auto c: contexts){
-        if(!c.valid){
-            continue;
-        }
-        if(c.pN->loss_time < timed_out){
-            timed_out = c.pN->loss_time;
-            context = &c;
-        }
-        if(has_eliciting_packet){
-            continue;
-        }
-        for(const auto& packet: c.pN->sent_packets){
-           if(packet.ack_eliciting){
-               has_eliciting_packet = true;
-               break;
-           }
-        }
-    }
-    if(context){
-        loss_timer = updatejob(loss_timer, std::bind(&QuicRWer::loss_action, this, context),
-                                    (timed_out - now) / 1000);
-        return;
-    }
-    if(!has_eliciting_packet && PeerCompletedAddressValidation()){
-        deljob(&loss_timer);
-        return;
-    }
-    uint64_t pto = (rtt.smoothed_rtt + std::max(4 * rtt.rttvar, (uint64_t)1000) + his_max_ack_delay * 1000) << pto_count;
-    if(!has_eliciting_packet){
-        assert(!PeerCompletedAddressValidation());
-        if(contexts[ssl_encryption_handshake].valid) {
-            loss_timer = updatejob(loss_timer,
-                                   std::bind(&QuicRWer::loss_action, this, &contexts[ssl_encryption_handshake]),
-                               pto / 1000);
-        }else{
-            loss_timer = updatejob(loss_timer,
-                                   std::bind(&QuicRWer::loss_action, this, &contexts[ssl_encryption_initial]),
-                               pto / 1000);
-        }
-        return;
-    }
-    for(auto& c: contexts){
-        if(!c.valid){
-            continue;
-        }
-        bool has_eliciting_packet = false;
-        for(const auto& packet: c.pN->sent_packets){
-            if(packet.ack_eliciting){
-                has_eliciting_packet = true;
-                break;
-            }
-        }
-        if(!has_eliciting_packet){
-            continue;
-        }
-        if(c.pN->time_of_last_ack_eliciting_packet + pto < timed_out){
-            timed_out = c.pN->time_of_last_ack_eliciting_packet + pto;
-            context = &c;
-        }
-    }
-
-    loss_timer = updatejob(loss_timer,
-                           std::bind(&QuicRWer::loss_action, this, context),
-                       (timed_out - now) / 1000);
-}
-
-
-int QuicRWer::sendNsPacket(OSSL_ENCRYPTION_LEVEL level, pn_namespace* pN){
-    char buff[1500];
-    char* pos = buff;
-    uint64_t now = pN->PendAck();
-    bool ack_eliciting = false;
-    bool in_flight = false;
-    for(auto frame: pN->pend_frames) {
-        pos = (char*)pack_frame(pos, frame);
-        if(pos == nullptr){
-            ErrorHE(PROTOCOL_ERR, QUIC_INTERNAL_ERROR);
-            return -1;
-        }
-        if(frame->type == QUIC_FRAME_PADDING){
-            in_flight = true;
-        }else if(frame->type != QUIC_FRAME_ACK
-                 || frame->type != QUIC_FRAME_ACK_ECN
-                 || frame->type != QUIC_FRAME_CONNECTION_CLOSE
-                 || frame->type != QUIC_FRAME_CONNECTION_CLOSE_APP)
-        {
-            in_flight = true;
-            ack_eliciting = true;
-        }
-    }
-    if(pos == buff){
-        //there is no frame
-        return 0;
-    }
-    auto context = &contexts[level];
-
+int QuicRWer::send(OSSL_ENCRYPTION_LEVEL level, uint64_t number, uint64_t ack, const void *body, size_t len) {
     quic_pkt_header header;
     header.type = getPacketType(level);
     header.dcid = dcids[dcid_id].id;
@@ -208,51 +95,29 @@ int QuicRWer::sendNsPacket(OSSL_ENCRYPTION_LEVEL level, pn_namespace* pN){
     header.version = QUIC_VERSION_1;
     header.token = initToken;
 
-    header.pn = pN->current;
+    header.pn = number;
     header.pn_length = 4;
-    header.pn_acked = pN->largest_acked_packet;
-    const quic_secret* secret = &context->write_secret;
+    header.pn_acked = ack;
+    const quic_secret* secret = &contexts[level].write_secret;
 
-    char packet[1500];
-    pos = encode_packet(buff, pos - buff, &header, secret, packet);
+    char packet[max_datagram_size];
+    char* pos = encode_packet(body, len, &header, secret, packet);
     if(pos == nullptr){
         LOGE("QUIC failed to pack packet");
-        ErrorHE(PROTOCOL_ERR, QUIC_FRAME_ENCODING_ERROR);
-        return -1;
+        return -QUIC_FRAME_ENCODING_ERROR;
     }
     size_t packet_len = pos - packet;
     if(header.type == QUIC_PACKET_INITIAL && packet_len < QUIC_INITIAL_LIMIT){
         memset(pos, 0, packet + QUIC_INITIAL_LIMIT - pos);
         packet_len = QUIC_INITIAL_LIMIT;
     }
-    
+
     ssize_t ret = write(getFd(), packet, packet_len);
     if(ret < 0 && errno != EAGAIN){
-        ErrorHE(SOCKET_ERR, errno);
-        return -1;
+        LOGE("QUIC failed to send packet to fd: %s\n", strerror(errno));
+        return -QUIC_INTERNAL_ERROR;
     }
-    pN->sent_packets.push_back(quic_packet_pn{pN->current, ack_eliciting, in_flight, packet_len, now, pN->pend_frames});
-    pN->pend_frames.clear();
-    pN->current++;
-    if (in_flight) {
-        if (ack_eliciting) {
-            pN->time_of_last_ack_eliciting_packet = now;
-        }
-        bytes_in_flight += packet_len;
-        SetLossDetectionTimer();
-    }
-    return 0;
-}
-
-void QuicRWer::sendPacket(){
-    for(int i = 0; i < 4; i ++){
-        if(!contexts[i].valid){
-            continue;
-        }
-        if(sendNsPacket((OSSL_ENCRYPTION_LEVEL)i, contexts[i].pN) < 0){
-            return;
-        }
-    }
+    return packet_len;
 }
 
 int QuicRWer::add_handshake_data(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
@@ -266,10 +131,7 @@ int QuicRWer::add_handshake_data(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
     memcpy(frame->crypto.body, data, len);
     frame->crypto.offset = context->crypto_offset;
     frame->crypto.length = len;
-    LOGD(DQUIC, "< [%c] crypto frame: %" PRIu64" - %" PRIu64"\n", context->pN->name,
-         frame->crypto.offset, frame->crypto.offset+frame->crypto.length);
-
-    rwer->PushFrame(context, frame);
+    rwer->qos.PushFrame(level, frame);
     context->crypto_offset += len;
     return 1;
 }
@@ -283,7 +145,6 @@ int QuicRWer::send_alert(SSL *ssl, OSSL_ENCRYPTION_LEVEL level, uint8_t alert){
     if(rwer->stats == RWerStats::Error){
         return 1;
     }
-    quic_context* context = &rwer->contexts[level];
     quic_frame* frame = new quic_frame;
     frame->type = QUIC_FRAME_CONNECTION_CLOSE;
     frame->close.error = 0x100 + alert;
@@ -291,8 +152,8 @@ int QuicRWer::send_alert(SSL *ssl, OSSL_ENCRYPTION_LEVEL level, uint8_t alert){
     frame->close.reason_len = 0;
     frame->close.reason = nullptr;
 
-    LOGD(DQUIC, "[%c] cc ssl send_alert: %d\n", context->pN->name, alert);
-    rwer->PushFrame(context, frame);
+    LOGD(DQUIC, "[%d] cc ssl send_alert: %d\n", level, alert);
+    rwer->qos.PushFrame(level, frame);
     rwer->ErrorHE(PROTOCOL_ERR, QUIC_CRYPTO_ERROR);
     return 1;
 }
@@ -318,19 +179,13 @@ void QuicRWer::generateCid() {
     scids.push_back(scid);
     dcids.push_back(dcid);
 
-    contexts[0].valid = true;
+    contexts[0].hasKey = true;
     contexts[0].level = ssl_encryption_initial;
-    contexts[0].pN = &pNs[0];
-    contexts[0].pN->name = 'i';
-
-    contexts[2].level = ssl_encryption_handshake;
-    contexts[2].pN = &pNs[1];
-    contexts[2].pN->name = 'h';
-
-    contexts[1].pN = contexts[3].pN = &pNs[2];
-    contexts[1].pN->name = 'a';
     contexts[1].level = ssl_encryption_early_data;
+    contexts[2].level = ssl_encryption_handshake;
     contexts[3].level = ssl_encryption_application;
+
+    qos.GetKey(ssl_encryption_initial);
 }
 
 size_t QuicRWer::generateParams(char data[QUIC_INITIAL_LIMIT]) {
@@ -369,7 +224,10 @@ size_t QuicRWer::generateParams(char data[QUIC_INITIAL_LIMIT]) {
 QuicRWer::QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
                    std::function<void(int, int)> errorCB,
                    std::function<void(const sockaddr_storage&)> connectCB):
-        SocketRWer(hostname, port, protocol, std::move(errorCB), std::move(connectCB))
+        SocketRWer(hostname, port, protocol, std::move(errorCB), std::move(connectCB)),
+        qos(ctx != nullptr,
+           std::bind(&QuicRWer::send, this, _1, _2, _3, _4, _5),
+           std::bind(&QuicRWer::resendFrames, this, _1, _2))
 {
     assert(protocol == Protocol::QUIC);
     ctx = SSL_CTX_new(TLS_client_method());
@@ -423,10 +281,8 @@ QuicRWer::~QuicRWer(){
     if(ctx){
         SSL_CTX_free(ctx);
     }
-    deljob(&packet_tx);
     deljob(&keepAlive_timer);
     deljob(&close_timer);
-    deljob(&loss_timer);
     for(auto& context: contexts) {
         for (auto i: context.recvq) {
             frame_release(i.second);
@@ -434,24 +290,16 @@ QuicRWer::~QuicRWer(){
     }
 }
 
-void QuicRWer::PushFrame(quic_context* context, quic_frame* frame) {
-    auto& pN = context->pN;
-    assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
-    pN->pend_frames.push_back(frame);
-    packet_tx = updatejob(packet_tx, std::bind(&QuicRWer::sendPacket, this) , 0);
-    if(frame->type == QUIC_FRAME_CONNECTION_CLOSE || frame->type == QUIC_FRAME_CONNECTION_CLOSE_APP){
-        return;
-    }
-    keepAlive_timer = updatejob(keepAlive_timer, std::bind(&QuicRWer::keepAlive_action, this), 30000);
-}
-
 void QuicRWer::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR)) {
-        return connectFailed(checkSocket(__PRETTY_FUNCTION__ ));
+        int error  = checkSocket(__PRETTY_FUNCTION__);
+        con_failed_job = updatejob(con_failed_job,
+                                   std::bind(&QuicRWer::connectFailed, this, error), 0);
+        return;
     }
     if (!!(events & RW_EVENT::WRITE)) {
+        assert(!addrs.empty());
         stats = RWerStats::SslConnecting;
-
         X509_VERIFY_PARAM *param = SSL_get0_param(ssl);
 
         /* Enable automatic hostname checks */
@@ -471,7 +319,7 @@ void QuicRWer::waitconnectHE(RW_EVENT events) {
         setEvents(RW_EVENT::READ);
         handleEvent = (void (Ep::*)(RW_EVENT))&QuicRWer::defaultHE;
         con_failed_job = updatejob(con_failed_job,
-                                   std::bind(&QuicRWer::connectFailed, this, ETIMEDOUT), 20000);
+                                   std::bind(&QuicRWer::connectFailed, this, ETIMEDOUT), 2000);
     }
 }
 
@@ -544,7 +392,7 @@ QuicRWer::FrameResult QuicRWer::handleCryptoFrame(quic_context* context, const q
                     variable_decode(pos, &his_max_streams_uni);
                     break;
                 case quic_ack_delay_exponent:
-                    variable_decode(pos, &contexts[ssl_encryption_application].pN->ack_delay_exponent);
+                    variable_decode(pos, &qos.GetNamespace(ssl_encryption_application)->ack_delay_exponent);
                     break;
                 case quic_max_ack_delay:
                     variable_decode(pos, &his_max_ack_delay);
@@ -559,6 +407,7 @@ QuicRWer::FrameResult QuicRWer::handleCryptoFrame(quic_context* context, const q
                 }
                 pos += size;
             }
+            qos.his_max_ack_delay = his_max_ack_delay;
         }else if(errno != EAGAIN){
             int error = errno;
             LOGE("(%s): ssl connect error:%s\n", hostname, strerror(error));
@@ -652,6 +501,8 @@ QuicRWer::FrameResult QuicRWer::handleStreamFrame(uint64_t type, const quic_stre
     LOGD(DQUIC, "received data [%" PRIu64"] <%" PRIu64"/%" PRIu64"> <%" PRIu64"/%" PRIu64">%s\n",
          id, want, status.my_max_data, my_received_data, my_max_data,
          (type & QUIC_FRAME_STREAM_FIN_F)?" EOF":"");
+
+    ConsumeRData();
     return FrameResult::ok;
 }
 
@@ -685,42 +536,20 @@ QuicRWer::FrameResult QuicRWer::handleResetFrame(const quic_reset *stream) {
 }
 
 QuicRWer::FrameResult QuicRWer::handleHandshakeFrames(quic_context *context, const quic_frame *frame) {
-    auto pN = context->pN;
     //CRYPTO, ACK frames, or both. PING, PADDING, and CONNECTION_CLOSE frames
     switch (frame->type) {
     case QUIC_FRAME_PADDING:
-        return FrameResult::ok;
     case QUIC_FRAME_PING:
-        LOGD(DQUIC, "> [%c] ping frame\n", pN->name);
-        pN->should_ack = true;
-        return FrameResult::ok;
     case QUIC_FRAME_ACK:
     case QUIC_FRAME_ACK_ECN:
-        LOGD(DQUIC, "> [%c] ack frame %" PRIu64": %.2fms\n", pN->name,
-             frame->ack.acknowledged, (frame->ack.delay << pN->ack_delay_exponent) / 1000.0);
-
-        if (pN->HandleAck(&frame->ack, &rtt, 0, std::bind(&QuicRWer::resendFrames, this, context, _1))
-            && context->valid)
-        {
-            if(PeerCompletedAddressValidation()){
-                pto_count = 0;
-            }
-            SetLossDetectionTimer();
-        }
         return FrameResult::ok;
     case QUIC_FRAME_CRYPTO:
-        LOGD(DQUIC, "> [%c] crypto frame: %" PRIu64" - %" PRIu64"\n", pN->name,
-             frame->crypto.offset, frame->crypto.offset + frame->crypto.length);
-        pN->should_ack = true;
         return handleCryptoFrame(context, &frame->crypto);
     case QUIC_FRAME_CONNECTION_CLOSE:
-        LOGD(DQUIC, "> [%c] close frame: %" PRIu64 "\n", pN->name, frame->close.error);
-        LOGE("peer closed connection: %" PRIu64 "\n", frame->close.error);
         flags |= RWER_CLOSING;
         ErrorHE(SSL_SHAKEHAND_ERR, (int) frame->close.error);
         return FrameResult::error;
     default:
-        LOGE("[%c] unexpected frame: 0x%02x\n", pN->name, (int) frame->type);
         ErrorHE(SSL_SHAKEHAND_ERR, QUIC_PROTOCOL_VIOLATION);
         return FrameResult::error;
     }
@@ -733,9 +562,8 @@ int QuicRWer::handleHandshakePacket(const quic_pkt_header* header, std::vector<c
         assert(header->type == QUIC_PACKET_HANDSHAKE);
     }
     auto context = getContext(header->type);
-    context->pN->pns.PushPn(header->pn);
-    packet_tx = updatejob(packet_tx, std::bind(&QuicRWer::sendPacket, this) , 0);
     for(auto frame: frames){
+        qos.handleFrame(context->level, header->pn, frame);
         switch(handleHandshakeFrames(context, frame)){
         case FrameResult::ok:
             frame_release(frame);
@@ -752,7 +580,7 @@ int QuicRWer::handleHandshakePacket(const quic_pkt_header* header, std::vector<c
 }
 
 int QuicRWer::handleRetryPacket(const quic_pkt_header* header){
-    LOGD(DQUIC, "> [r] retry packet, token len: %zd\n", header->token.length());
+    LOGD(DQUIC, "> [R] retry packet, token len: %zd\n", header->token.length());
     if(!initToken.empty()){
         //A client MUST accept and process at most one Retry packet for each connection attempt.
         //After the client has received and processed an Initial or Retry packet from the server,
@@ -765,81 +593,52 @@ int QuicRWer::handleRetryPacket(const quic_pkt_header* header){
     auto& context = contexts[0];
     quic_generate_initial_key(1, dcids[0].id.data(), dcids[0].id.length(), &context.write_secret);
     quic_generate_initial_key(0, dcids[0].id.data(), dcids[0].id.length(), &context.read_secret);
-    for(auto& i: context.pN->sent_packets){
+    pn_namespace* pn = qos.GetNamespace(ssl_encryption_initial);
+    for(auto& i: pn->sent_packets){
         for(auto frame: i.frames){
-            PushFrame(&context, frame);
+            qos.PushFrame(pn, frame);
         }
     }
-    context.pN->sent_packets.clear();
+    pn->sent_packets.clear();
     con_failed_job = updatejob(con_failed_job, std::bind(&QuicRWer::connect, this), 20000);
     return 0;
 }
 
 QuicRWer::FrameResult QuicRWer::handleFrames(quic_context *context, const quic_frame *frame) {
-    auto pN = context->pN;
     switch (frame->type) {
-    case QUIC_FRAME_PADDING:
-        return FrameResult::ok;
     case QUIC_FRAME_CRYPTO:
-        LOGD(DQUIC, "> [a] crypto frame: %" PRIu64" - %" PRIu64"\n",
-             frame->crypto.offset, frame->crypto.offset+frame->crypto.length);
-        pN->should_ack = true;
         return handleCryptoFrame(context, &frame->crypto);
+    case QUIC_FRAME_PADDING:
     case QUIC_FRAME_ACK:
     case QUIC_FRAME_ACK_ECN:
-        LOGD(DQUIC, "> [a] ack frame %" PRIu64": %.2fms\n",
-             frame->ack.acknowledged, (frame->ack.delay << pN->ack_delay_exponent) / 1000.0);
-        if(pN->HandleAck(&frame->ack, &rtt, his_max_ack_delay * 1000, std::bind(&QuicRWer::resendFrames, this, context, _1))){
-            pto_count = 0;
-            SetLossDetectionTimer();
-        }
-        return FrameResult::ok;
     case QUIC_FRAME_PING:
-        LOGD(DQUIC, "> [a] ping frame\n");
-        pN->should_ack = true;
         return FrameResult::ok;
     case QUIC_FRAME_HANDSHAKE_DONE:
-        LOGD(DQUIC, "> [a] handshake_done frame\n");
-        pN->should_ack = true;
         dropkey(ssl_encryption_handshake);
         return FrameResult::ok;
     case QUIC_FRAME_MAX_DATA:
-        LOGD(DQUIC, "> [a] max data: %" PRIu64"\n", frame->extra);
-        pN->should_ack = true;
         if(frame->extra > his_max_data){
             his_max_data = frame->extra;
         }
         return FrameResult::ok;
     case QUIC_FRAME_DATA_BLOCKED:
-        LOGD(DQUIC, "> [a] blocked data size: %" PRIu64"\n", frame->extra);
         LOG("QUIC not implement data blocked frame, just ignore it\n");
-        pN->should_ack = true;
         return FrameResult::ok;
     case QUIC_FRAME_MAX_STREAMS_BI:
-        LOGD(DQUIC, "> [a] max stream_bi: %" PRIu64"\n", frame->extra);
-        pN->should_ack = true;
         if(frame->extra > his_max_streams_bidi){
             his_max_streams_bidi = frame->extra;
         }
         return FrameResult::ok;
     case QUIC_FRAME_MAX_STREAMS_UBI:
-        LOGD(DQUIC, "> [a] max stream_ubi: %" PRIu64"\n", frame->extra);
-        pN->should_ack = true;
         if(frame->extra > his_max_streams_uni){
             his_max_streams_uni = frame->extra;
         }
         return FrameResult::ok;
     case QUIC_FRAME_STOP_SENDING:
-        LOGD(DQUIC, "> [a] stop stream: %" PRIu64", error: %" PRIu64"\n",
-             frame->stop.id, frame->stop.error);
         OpenStream(frame->stop.id);
         LOG("QUIC not implement stop sending frame, just ignore it\n");
-        pN->should_ack = true;
         return FrameResult::ok;
     case QUIC_FRAME_MAX_STREAM_DATA: {
-        LOGD(DQUIC, "> [a] max stream data: %" PRIu64", size: %" PRIu64"\n",
-             frame->max_stream_data.id, frame->max_stream_data.max);
-        pN->should_ack = true;
         auto itr = OpenStream(frame->max_stream_data.id);
         if (itr == streammap.end()) {
             LOGD(DQUIC, "ignore not opened stream data\n");
@@ -851,38 +650,25 @@ QuicRWer::FrameResult QuicRWer::handleFrames(quic_context *context, const quic_f
         return FrameResult::ok;
     }
     case QUIC_FRAME_STREAM_DATA_BLOCKED:
-        LOGD(DQUIC, "> [a] blocked stream  data: %" PRIu64", size: %" PRIu64"\n",
-             frame->stream_data_blocked.id, frame->stream_data_blocked.size);
         OpenStream(frame->stream_data_blocked.id);
         LOG("QUIC not implement stream data blocked frame, just ignore it\n");
-        pN->should_ack = true;
         return FrameResult::ok;
     case QUIC_FRAME_RESET_STREAM:
-        LOGD(DQUIC, "> [a] reset stream: %" PRIu64", error: %" PRIu64"\n",
-             frame->reset.id, frame->reset.error);
-        pN->should_ack = true;
         return handleResetFrame(&frame->reset);
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:
-        LOGD(DQUIC, "> [a] close from code: %d, reason: %.*s\n",
-             (int)frame->close.error, (int)frame->close.reason_len, frame->close.reason);
         flags |= RWER_CLOSING;
         ErrorHE(PROTOCOL_ERR, (int)frame->close.error);
         return FrameResult::error;
     default:
         if(frame->type >= QUIC_FRAME_STREAM_START_ID && frame->type <= QUIC_FRAME_STREAM_END_ID){
-            LOGD(DQUIC, "> [a] data [%" PRIu64"]: %" PRIu64" - %" PRIu64"\n", frame->stream.id,
-                 frame->stream.offset, frame->stream.offset + frame->stream.length);
-            pN->should_ack = true;
             return handleStreamFrame(frame->type, &frame->stream);
-        }else{
-            LOGD(DQUIC, "> [a] ignore frame: 0x%02x\n", (int)frame->type);
         }
         return FrameResult::ok;
     }
 }
 
-void QuicRWer::resendFrames(quic_context *context,quic_frame *frame) {
+void QuicRWer::resendFrames(pn_namespace* pn,quic_frame *frame) {
     switch(frame->type){
     case QUIC_FRAME_PADDING:
     case QUIC_FRAME_ACK:
@@ -891,45 +677,39 @@ void QuicRWer::resendFrames(quic_context *context,quic_frame *frame) {
         frame_release(frame);
         break;
     case QUIC_FRAME_CRYPTO:
-        LOGD(DQUIC, "< [%c] crypto frame: %" PRIu64" - %" PRIu64"\n",
-             context->pN->name, frame->crypto.offset, frame->crypto.offset+frame->crypto.length);
-        PushFrame(context, frame);
+        qos.PushFrame(pn, frame);
         break;
     case QUIC_FRAME_HANDSHAKE_DONE:
-        LOGD(DQUIC, "< [%c] handshake done frame\n", context->pN->name);
-        PushFrame(context, frame);
+        qos.PushFrame(pn, frame);
         break;
     case QUIC_FRAME_RESET_STREAM:
     case QUIC_FRAME_STOP_SENDING:
         //FIXME: as rfc9000#13.3
-        PushFrame(context, frame);
+        qos.PushFrame(pn, frame);
         break;
     case QUIC_FRAME_MAX_DATA:
         frame->extra = my_max_data;
-        PushFrame(context, frame);
+        qos.PushFrame(pn, frame);
         break;
     case QUIC_FRAME_MAX_STREAM_DATA:
         //FIXME: as rfc9000#13.3
-        PushFrame(context, frame);
+        qos.PushFrame(pn, frame);
         break;
     default:
         if(frame->type >= QUIC_FRAME_STREAM_START_ID && frame->type <= QUIC_FRAME_STREAM_END_ID){
-            PushFrame(context, frame);
+            qos.PushFrame(pn, frame);
         }else {
             //FIXME: implement it
-            PushFrame(context, frame);
+            qos.PushFrame(pn, frame);
         }
     }
 }
 
 int QuicRWer::handle1RttPacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames) {
     auto context = &contexts[ssl_encryption_application];
-    if(!context->pN->should_ack) {
-        packet_tx  = updatejob(packet_tx, std::bind(&QuicRWer::sendPacket, this), 20);
-    }
     keepAlive_timer = updatejob(keepAlive_timer, std::bind(&QuicRWer::keepAlive_action, this), 30000);
-    context->pN->pns.PushPn(header->pn);
     for(auto frame : frames) {
+        qos.handleFrame(context->level, header->pn, frame);
         switch(handleFrames(context, frame)){
         case FrameResult::ok:
             frame_release(frame);
@@ -968,10 +748,6 @@ ssize_t QuicRWer::Write(const void *buff, size_t len, uint64_t id) {
     assert(streammap.count(id));
 
     auto& status = streammap[id];
-    LOGD(DQUIC, "< [a] data [%" PRIu64 "]: %zd - %zd <%" PRIu64"/%" PRIu64"\n>",
-         id, status.offset, status.offset + len,
-         status.my_max_data, status.his_max_data);
-
     quic_frame* frame = new quic_frame;
     frame->type = QUIC_FRAME_STREAM_START_ID | QUIC_FRAME_STREAM_LEN_F;
     if(status.offset) {
@@ -987,7 +763,7 @@ ssize_t QuicRWer::Write(const void *buff, size_t len, uint64_t id) {
     status.offset += len;
     frame->stream.data = new char[len];
     memcpy(frame->stream.data, buff, len);
-    PushFrame(&contexts[ssl_encryption_application], frame);
+    qos.PushFrame(ssl_encryption_application, frame);
     my_send_data += len;
 
     LOGD(DQUIC, "send data [%" PRIu64"]: <%zd/%" PRIu64"> <%" PRIu64"/%" PRIu64">\n",
@@ -1009,7 +785,7 @@ void QuicRWer::closeHE(RW_EVENT events) {
             frame_release(frame);
         }
         auto context = getContext(header->type);
-        if(!context->valid){
+        if(!context->hasKey){
             return 0;
         }
         quic_frame *frame = new quic_frame;
@@ -1018,15 +794,15 @@ void QuicRWer::closeHE(RW_EVENT events) {
         frame->close.frame_type = 0;
         frame->close.reason_len = 0;
         frame->close.reason = nullptr;
-        PushFrame(context, frame);
-        close_timer = updatejob(close_timer, closeCB, 3 * rtt.rttvar);
+        qos.PushFrame(context->level, frame);
+        close_timer = updatejob(close_timer, closeCB, 3 * qos.rtt.rttvar);
         return 0;
     });
 }
 
 void QuicRWer::Close(std::function<void()> func) {
     closeCB = std::move(func);
-    if(getFd() >= 0 && stats != RWerStats::Connecting) {
+    if(getFd() >= 0 && stats != RWerStats::Connecting && stats != RWerStats::Error) {
         close_timer = updatejob(close_timer, closeCB, max_idle_timeout);
         handleEvent = (void (Ep::*)(RW_EVENT))&QuicRWer::closeHE;
         setEvents(RW_EVENT::READ);
@@ -1040,7 +816,7 @@ void QuicRWer::Close(std::function<void()> func) {
         frame->close.frame_type = 0;
         frame->close.reason_len = 0;
         frame->close.reason = nullptr;
-        PushFrame(&contexts[ssl_encryption_application], frame);
+        qos.PushFrame(ssl_encryption_application, frame);
     }else{
         close_timer = updatejob(close_timer, closeCB, 0);
     }
@@ -1059,7 +835,7 @@ void QuicRWer::nextPackets(const std::function<
                 int(const quic_pkt_header* header, std::vector<const quic_frame*>& frames)
                 >& handler)
 {
-    char buff[1500];
+    char buff[max_datagram_size];
     while(true) {
         ssize_t ret = read(getFd(), buff, sizeof(buff));
         if (ret < 0 && errno == EAGAIN) {
@@ -1090,11 +866,11 @@ void QuicRWer::nextPackets(const std::function<
             std::vector<const quic_frame*> frames;
             if (header.type != QUIC_PACKET_RETRY) {
                 auto context = getContext(header.type);
-                if (!context->valid) {
+                if (!context->hasKey) {
                     LOG("quic key for level %d is invalid, discard it (%d).\n", context->level, body_len);
                     continue;
                 }
-                header.pn_acked = context->pN->largest_acked_packet;
+                header.pn_acked = qos.GetNamespace(context->level)->largest_acked_packet + 1;
                 frames = decode_packet(pos - body_len, body_len, &header, &context->read_secret);
                 if (frames.empty()) {
                     LOGE("QUIC packet unpack failed, discard it\n");
@@ -1112,7 +888,7 @@ void QuicRWer::nextPackets(const std::function<
 void QuicRWer::ReadData() {
     nextPackets(std::bind(&QuicRWer::handlePacket, this, _1, _2));
     for(auto& context : contexts) {
-        if(!context.valid){
+        if(!context.hasKey){
             continue;
         }
         for (auto i = context.recvq.begin(); i != context.recvq.end();) {
@@ -1148,14 +924,13 @@ void QuicRWer::Reset(uint64_t id, uint32_t code) {
     if((status.flags & STREAM_FLAG_FIN)){
         return;
     }
-    LOGD(DQUIC, "< [a] quic reset [%" PRIu64 "]: %" PRIu32"\n", id, code);
     status.flags |= STREAM_FLAG_RESET_SENT;
     quic_frame* frame = new quic_frame;
     frame->type = QUIC_FRAME_RESET_STREAM;
     frame->reset.id = id;
     frame->reset.error = code;
     frame->reset.fsize = status.offset;
-    PushFrame(&contexts[ssl_encryption_application], frame);
+    qos.PushFrame(ssl_encryption_application, frame);
 }
 
 size_t QuicRWer::rlength() {
@@ -1200,8 +975,8 @@ void QuicRWer::ConsumeRData() {
         char* buff = (char*)p_malloc(rb.length());
         buff_block wb{buff, rb.get(buff, rb.length()), 0, i->first};
         readCB(wb);
-        LOGD(DQUIC, "consume data [%" PRIu64"]: %" PRIu64" - %" PRIu64"\n",
-             i->first, rb.Offset(), rb.Offset() + wb.offset);
+        LOGD(DQUIC, "consume data [%" PRIu64"]: %" PRIu64" - %" PRIu64" [%zd]\n",
+             i->first, rb.Offset(), rb.Offset() + wb.offset, i->second.rb.length());
         rb.consume(wb.offset);
         rblen -= wb.offset;
 
@@ -1215,8 +990,7 @@ void QuicRWer::ConsumeRData() {
             quic_frame* frame = new quic_frame;
             frame->type = QUIC_FRAME_MAX_DATA;
             frame->extra = my_max_data;
-            LOGD(DQUIC,"< [a] frame max data: %" PRIu64"\n", my_max_data);
-            PushFrame(&contexts[ssl_encryption_application], frame);
+            qos.PushFrame(ssl_encryption_application, frame);
         }
         if(IsIdle(i->first)){
             LOGD(DQUIC, "clean idle stream: %" PRIu64"\n", i->first);
@@ -1238,12 +1012,11 @@ void QuicRWer::ConsumeRData() {
         };
         if(shouldSendMaxStreamData(i->second)){
             i->second.my_max_data =  rb.Offset() + rb.length() + rb.cap();
-            LOGD(DQUIC, "< [a] frame max stream data: %" PRIu64", size: %zd\n", i->first, (size_t)i->second.my_max_data);
             quic_frame* frame = new quic_frame;
             frame->type = QUIC_FRAME_MAX_STREAM_DATA;
             frame->max_stream_data.id = i->first;
             frame->max_stream_data.max = i->second.my_max_data;
-            PushFrame(&contexts[ssl_encryption_application], frame);
+            qos.PushFrame(ssl_encryption_application, frame);
         }
         i++;
     }
@@ -1278,46 +1051,9 @@ void QuicRWer::disconnect_action() {
 
 void QuicRWer::keepAlive_action() {
     auto context = &contexts[ssl_encryption_application];
-    if(!context->valid){
-        return;
-    }
+    assert(context->hasKey);
     if(flags & RWER_CLOSING){
         return;
     }
-    quic_frame* ping = new quic_frame;
-    ping->type = QUIC_FRAME_PING;
-    LOGD(DQUIC, "< [a] ping\n");
-    PushFrame(context, ping);
-}
-
-void QuicRWer::loss_action(quic_context *context) {
-#ifndef NDEBUG
-    uint64_t now = getutime();
-#endif
-    if(context->pN->loss_time < UINT64_MAX){
-        LOGD(DQUIC, "loss timer expired for [%c], loss_time: %.2fms\n",
-             context->pN->name, (now - context->pN->time_of_last_ack_eliciting_packet) / 1000.0);
-        context->pN->DetectLostPackets(&rtt, std::bind(&QuicRWer::resendFrames, this, context, _1));
-    }else {
-        LOGD(DQUIC, "pto expired for [%c], pto_time: %.2fms, pto_count: %zd\n",
-             context->pN->name, (now - context->pN->time_of_last_ack_eliciting_packet) / 1000.0, pto_count);
-        pto_count++;
-        bool has_eliciting_packet = false;
-        for (const auto &i: context->pN->sent_packets) {
-            LOGD(DQUIC, "[%c] mark lost packet: [%" PRIu64"]\n", context->pN->name, i.pn);
-            if (i.ack_eliciting) {
-                has_eliciting_packet = true;
-            }
-            for(auto frame: i.frames){
-                resendFrames(context, frame);
-            }
-        }
-        context->pN->sent_packets.clear();
-        if (!has_eliciting_packet) {
-            quic_frame* ping = new quic_frame;
-            ping->type = QUIC_FRAME_PING;
-            PushFrame(context, ping);
-        }
-    }
-    SetLossDetectionTimer();
+    qos.PushFrame(ssl_encryption_application, new quic_frame{QUIC_FRAME_PING, {}});
 }

@@ -128,16 +128,17 @@ Qpack::Qpack(std::function<void(void *, size_t)> sender, size_t dynamic_table_si
     }
 }
 
-static size_t literal_decode_wrapper(const unsigned char* s, int prefix, std::string& name, bool& failed){
-    uint64_t len;
-    integer_decode(s, prefix, &len);
-    name.resize(len * 2);
-    int ret = literal_decode(s, prefix, &name[0]);
-    if(ret < 0){
-        failed = true;
+static size_t literal_decode_wrapper(const unsigned char* s, size_t len, int prefix, std::string& name){
+    uint64_t value;
+    if(integer_decode(s, len, prefix, &value) == 0){
         return 0;
     }
-    name.resize(ret);
+    name.resize(value * 2);
+    int ret = literal_decode(s, len, prefix, &name[0]);
+    if(ret <= 0){
+        return ret;
+    }
+    name = name.c_str();
     return ret;
 }
 
@@ -149,33 +150,49 @@ int Qpack::push_ins(const void *ins, size_t len) {
             bool T = pos[0]&0x40;
             std::string name, value;
             uint64_t index;
-            pos += integer_decode(pos, 6, &index);
+            size_t l = integer_decode(pos, (uchar*)ins+len-pos, 6, &index);
+            if(l == 0){
+                return 0;
+            }
+            pos += l;
             if(T){
                 name = static_table[index][0];
             }else{
             }
-            bool failed = false;
-            if(pos += literal_decode_wrapper(pos, 7, value, failed), failed){
-                return -1;
+            l = literal_decode_wrapper(pos, (uchar*)ins+len-pos, 7, name);
+            if(l <= 0){
+                return (int)l;
             }
+            pos += l;
             LOGD(DHPACK, "add %s:%s\n", name.c_str(), value.c_str());
         }else if(pos[0]&0x40){
-            bool failed = false;
             std::string name, value;
-            if(pos += literal_decode_wrapper(pos, 5, name, failed), failed){
-                return -1;
+            size_t l = literal_decode_wrapper(pos, (uchar*)ins+len-pos, 5, name);
+            if(l <= 0){
+                return (int)l;
             }
-            if(pos += literal_decode_wrapper(pos, 7, value, failed), failed){
-                return -1;
+            pos += l;
+            l = literal_decode_wrapper(pos, (uchar*)ins+len-pos, 7, value);
+            if(l <= 0){
+                return (int)l;
             }
+            pos += l;
             LOGD(DHPACK, "add %s:%s\n", name.c_str(), value.c_str());
         }else if(pos[0]&0x20){
             uint64_t cap;
-            pos += integer_decode(pos, 5, &cap);
+            size_t l = integer_decode(pos, (uchar*)ins+len-pos, 5, &cap);
+            if(l == 0){
+                return 0;
+            }
+            pos += l;
             LOGD(DHPACK, "set cap: %d\n", (int)cap);
         }else{
             uint64_t index;
-            pos += integer_decode(pos, 5, &index);
+            size_t l = integer_decode(pos, (uchar*)ins+len-pos, 5, &index);
+            if(l == 0){
+                return 0;
+            }
+            pos += l;
             LOGD(DHPACK, "dup index: %d\n", (int)index);
         }
     }
@@ -211,56 +228,87 @@ std::multimap<std::string, std::string> Qpack_decoder::decode(const unsigned cha
 HttpResHeader *Qpack_decoder::UnpackHttp3Res(const void *data, size_t len) {
     uchar* pos = (uchar*)data;
     uint64_t reqid;
-    pos += integer_decode(pos, 8, &reqid);
+    size_t l = integer_decode(pos, (uchar*)data+len-pos, 8, &reqid);
+    if(l == 0){
+        return nullptr;
+    }
+    pos += l;
     uint64_t delta;
-    pos += integer_decode(pos, 7, &delta);
+    l = integer_decode(pos, (uchar*)data+len-pos, 7, &delta);
+    if(l == 0){
+        return nullptr;
+    }
+    pos += l;
     std::multimap<std::string, std::string> headers;
     while(pos < (uchar*)data + len){
         std::string name, value;
         if(pos[0] & 0x80){
             bool T = pos[0] & 0x40;
             uint64_t index;
-            pos += integer_decode(pos, 6, &index);
+            l = integer_decode(pos, (uchar*)data+len-pos, 6, &index);
+            if(l == 0){
+                return nullptr;
+            }
+            pos += l;
             if(T){
                 name = static_table[index][0];
                 value = static_table[index][1];
             }else{
                 abort();
             }
+            goto append;
         }else if(pos[0] & 0x40){
             bool N = pos[0] & 0x20;
             bool T = pos[0] & 0x10;
             uint64_t index;
-            pos += integer_decode(pos, 4, &index);
+            l = integer_decode(pos, (uchar*)data+len-pos, 4, &index);
+            if(l == 0){
+                return nullptr;
+            }
+            pos += l;
             if(T){
                 name = static_table[index][0];
             }else{
                 abort();
             }
-            bool failed = false;
-            if(pos += literal_decode_wrapper(pos, 7, value, failed), failed){
+            l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 7, value);
+            if(l <= 0){
                 return nullptr;
             }
+            pos += l;
+            goto append;
         }else if(pos[0] & 0x20){
             bool N = pos[0]&0x10;
-            bool failed = false;
-            if(pos += literal_decode_wrapper(pos, 3, name, failed), failed){
+            l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 3, name);
+            if(l <= 0){
                 return nullptr;
             }
-            if(pos += literal_decode_wrapper(pos, 7, value, failed), failed){
+            pos += l;
+            l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 7, value);
+            if(l <= 0){
                 return nullptr;
             }
+            pos += l;
+            goto append;
         }else if(pos[0] & 0x10){
             abort();
+            goto append;
         }else{
             bool N = pos[0]&0x80;
             uint64_t index;
-            pos += integer_decode(pos, 3, &index);
-            bool failed = false;
-            if(pos += literal_decode_wrapper(pos, 7, value, failed), failed){
+            l = integer_decode(pos, (uchar*)data+len-pos, 3, &index);
+            if(l == 0){
                 return nullptr;
             }
+            pos += l;
+            l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 7, value);
+            if(l <= 0){
+                return nullptr;
+            }
+            pos += l;
+            goto append;
         }
+append:
         headers.emplace(name, value);
     }
     return new HttpResHeader(std::move(headers));

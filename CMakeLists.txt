@@ -163,7 +163,7 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-ggdb -DNDEBUG")
 set(CMAKE_C_FLAGS_DEBUG "-ggdb -O0")
 set(CMAKE_CXX_FLAGS_DEBUG "-ggdb -O0")
 
-if (HAVE_SAN_ADDR)
+if (HAVE_SAN_ADDR AND NOT ANDROID)
     set(CMAKE_C_FLAGS_DEBUG "-fsanitize=address ${CMAKE_C_FLAGS_DEBUG}")
     set(CMAKE_CXX_FLAGS_DEBUG "-fsanitize=address ${CMAKE_CXX_FLAGS_DEBUG}")
 
@@ -171,7 +171,7 @@ if (HAVE_SAN_ADDR)
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=address")
 endif()
 
-if (HAVE_SAN_UNDEF)
+if (HAVE_SAN_UNDEF AND NOT ANDROID)
     set(CMAKE_C_FLAGS_DEBUG "-fsanitize=undefined ${CMAKE_C_FLAGS_DEBUG}")
     set(CMAKE_CXX_FLAGS_DEBUG "-fsanitize=undefined ${CMAKE_CXX_FLAGS_DEBUG}")
 

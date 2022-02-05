@@ -7,7 +7,7 @@
 
 #include "prot/netio.h"
 #include "quic_pack.h"
-#include "quic_pn.h"
+#include "quic_qos.h"
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 #include <list>
@@ -89,15 +89,14 @@ protected:
     SSL_CTX* ctx = nullptr;
     SSL *ssl = nullptr;
 
-    pn_namespace pNs[3];
+    QuicQos qos;
     struct quic_context{
         OSSL_ENCRYPTION_LEVEL  level;
         struct quic_secret     write_secret;
         struct quic_secret     read_secret;
-        bool     valid = false;
+        bool     hasKey = false;
         size_t   crypto_offset = 0;
         size_t   crypto_want = 0;
-        pn_namespace* pN;
         //only crypto and stream frame will be buffered
         std::multimap<uint64_t, const quic_frame*> recvq;
     } contexts[4];
@@ -110,13 +109,6 @@ protected:
     std::vector<cid> dcids;
     size_t dcid_id = 0;
     std::string initToken;
-    Rtt  rtt;
-    size_t pto_count = 0;
-    size_t bytes_in_flight = 0;
-
-    bool PeerCompletedAddressValidation();
-    void SetLossDetectionTimer();
-
     struct QuicStreamStatus{
 #define STREAM_FLAG_FIN    0x01
 #define STREAM_FLAG_EOF    0x02
@@ -148,7 +140,7 @@ protected:
 
     uint64_t my_send_data = 0;
     uint64_t my_received_data = 0;
-    uint64_t my_max_payload_size = 1280;
+    uint64_t my_max_payload_size = max_datagram_size;
     uint64_t my_max_data = 1024 * 1024;
     uint64_t my_max_stream_data_bidi_local = BUF_LEN;
     uint64_t my_max_stream_data_bidi_remote = BUF_LEN;
@@ -176,7 +168,6 @@ protected:
     FrameResult handleResetFrame(const quic_reset *stream);
     FrameResult handleHandshakeFrames(quic_context* context, const quic_frame* frame);
     FrameResult handleFrames(quic_context* context, const quic_frame* frame);
-    void resendFrames(quic_context* context, quic_frame* frame);
 
     void nextPackets(const std::function<int(const quic_pkt_header* header, std::vector<const quic_frame*>& frames)>& handler);
     int handleHandshakePacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
@@ -190,17 +181,13 @@ protected:
     bool IsBidirect(uint64_t id);
     bool IsIdle(uint64_t id);
 
-    int sendNsPacket(OSSL_ENCRYPTION_LEVEL level, pn_namespace* pN);
-    void sendPacket();
-    void PushFrame(quic_context* context, quic_frame* frame);
-    Job* packet_tx = nullptr;
+    int send(OSSL_ENCRYPTION_LEVEL level, uint64_t number, uint64_t ack, const void* body, size_t len);
+    void resendFrames(pn_namespace* pn, quic_frame* frame);
     Job* keepAlive_timer = nullptr;
     void keepAlive_action();
     Job* disconnect_timer = nullptr;
     void disconnect_action();
     Job* close_timer = nullptr;
-    Job* loss_timer = nullptr;
-    void loss_action(quic_context* context);
 public:
     explicit QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
                      std::function<void(int ret, int code)> errorCB,

@@ -69,6 +69,7 @@ protected:
     std::map<std::string, std::string> headers;
 public:
     uint32_t request_id = 0;
+    uint32_t ctime = 0;
     std::set<std::string> cookies;
 
     void set(const std::string& header, const std::string& value);
@@ -80,6 +81,7 @@ public:
 
     virtual bool no_body() const = 0;
     virtual std::multimap<std::string, std::string> Normalize() const = 0;
+    HttpHeader();
     virtual ~HttpHeader() = default;
 };
 

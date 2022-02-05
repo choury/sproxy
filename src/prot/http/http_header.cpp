@@ -21,6 +21,11 @@ std::string toLower(const std::string &s) {
     return str;
 }
 
+HttpHeader::HttpHeader() {
+    ctime = getmtime();
+}
+
+
 void HttpHeader::set(const std::string& header, const string& value) {
     headers[toLower(header)] = value;
 }
@@ -251,7 +256,8 @@ std::string HttpReqHeader::geturl() const {
     char url[URLLIMIT]={0};
     int pos = dumpDestToBuffer(&Dest, url, sizeof(url));
     assert(path[0] == '/');
-    if(!ismethod("CONNECT") || path[1] ){
+    if(http_method() && path[1] ){
+        //only http method use path
         snprintf(url + pos, sizeof(url) - pos, "%s", path);
     }
     return url;

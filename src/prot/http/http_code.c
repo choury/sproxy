@@ -614,13 +614,20 @@ size_t hfm_encode(const char *s, size_t len, unsigned char *result){
     return result - buf_begin;
 }
 
-int integer_decode(const unsigned char *s, int prefix, uint64_t *value) {
+int integer_decode(const unsigned char *s, size_t len, int prefix, uint64_t *value) {
     assert(prefix <= 8);
+    if(len == 0){
+        return 0;
+    }
     uint32_t mask = ((1u << prefix) - 1u);
     if((s[0] & mask) == mask){
         *value = mask;
         size_t i;
         for(i=1;s[i]&0x80;++i) {
+            if(i >= len){
+                //incomplete integer
+                return 0;
+            }
             *value += (s[i]&0x7fu) << (i*7-7);
         }
         *value += s[i] << (i*7-7);
@@ -650,23 +657,29 @@ size_t integer_encode(uint64_t value, int prefix, unsigned char *buff){
     return buff - buf_begin;
 }
 
-int literal_decode(const unsigned char *s, int prefix, char* result) {
+int literal_decode(const unsigned char *s, size_t len, int prefix, char* result) {
     assert(prefix >= 0 && prefix <= 7);
-    uint64_t len;
-    int i = integer_decode(s, prefix, &len);
-    if(len >= 0xffff){
-        LOGE("too long len: %d\n", (int)len);
+    uint64_t value;
+    int i = integer_decode(s, len, prefix, &value);
+    if(i == 0)
+        return 0;
+    if(i + value > len) {
+        //incomplete literal
+        return 0;
+    }
+    if(value >= 0xffff){
+        LOGE("too long value: %d\n", (int)value);
         return -1;
     }
     if(s[0] & (1<<prefix)) {
-        int ret = hfm_decode(s+i, len, result);
+        int ret = hfm_decode(s+i, value, result);
         if(ret < 0)return -1;
         result[ret] = 0;
     } else {
-        memcpy(result, s+i, len);
-        result[len] = 0;
+        memcpy(result, s+i, value);
+        result[value] = 0;
     }
-    return i + (int)len;
+    return i + (int)value;
 }
 
 size_t literal_encode(const char* s, int prefix, unsigned char *result){

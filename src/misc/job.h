@@ -22,5 +22,5 @@ uint32_t do_delayjob();
 extern job_handler static_job_handler;
 #define AddJob(func, interval_ms, flags) static_job_handler.addjob_with_name(func, #func, interval_ms, flags)
 #define DelJob(job) static_job_handler.deljob(job)
-#define UpdateJob(job, func, interval_ms) satic_job_handler.updatejob_with_name(job, func, #func, interval_ms)
+#define UpdateJob(job, func, interval_ms) static_job_handler.updatejob_with_name(job, func, #func, interval_ms)
 #endif

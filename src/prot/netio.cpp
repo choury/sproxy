@@ -165,7 +165,10 @@ SocketRWer::~SocketRWer() {
 }
 
 void SocketRWer::query() {
-    query_host(hostname, SocketRWer::Dnscallback, shared_from_this());
+    try{
+        query_host(hostname, SocketRWer::Dnscallback, shared_from_this());
+    }catch(...){
+    }
 }
 
 void SocketRWer::Dnscallback(std::weak_ptr<void> param, int error, std::list<sockaddr_storage> addrs) {

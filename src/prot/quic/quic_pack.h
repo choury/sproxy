@@ -277,6 +277,8 @@ char* encode_packet(const void* data, size_t len,
                   const quic_pkt_header* header, const quic_secret* secret,
                   char* body);
 
+bool is_ack_eliciting(const quic_frame* frame);
+void dumpFrame(const char* prefix, char name, const quic_frame* frame);
 void frame_release(const quic_frame* frame);
 
 #endif

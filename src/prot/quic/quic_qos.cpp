@@ -2,10 +2,24 @@
 // Created by 周威 on 2021/8/22.
 //
 
-#include "quic_pn.h"
+#include "quic_qos.h"
 #include <inttypes.h>
 #include <assert.h>
 #include <misc/util.h>
+
+static int get_packet_namespace(OSSL_ENCRYPTION_LEVEL level){
+    switch(level){
+    case ssl_encryption_initial:
+        return QUIC_PACKET_NAMESPACE_INITIAL;
+    case ssl_encryption_handshake:
+        return QUIC_PACKET_NAMESPACE_HANDSHAKE;
+    case ssl_encryption_early_data:
+    case ssl_encryption_application:
+        return QUIC_PAKCET_NAMESPACE_APP;
+    }
+    abort();
+}
+
 
 Chop::Chop(const quic_ack *frame) {
     items.emplace_front(frame->acknowledged - frame->first_range, frame->acknowledged);
@@ -31,7 +45,7 @@ void Chop::refactor() {
     }
 }
 
-void Chop::PushPn(uint64_t pn) {
+void Chop::Add(uint64_t pn) {
     auto now = getutime();
     if(items.empty()){
         latest_time = now;
@@ -102,24 +116,29 @@ void Chop::dump() {
     }
 }
 
+pn_namespace::pn_namespace(char name, std::function<int(uint64_t, uint64_t, const void *, size_t)> sent):
+        sent(sent), name(name) {
+}
+
 uint64_t pn_namespace::PendAck() {
     uint64_t now = getutime();
-    if(!should_ack || latest_ack >= pns.items.back().second){
+    if(!should_ack){
         return now;
     }
+    assert(!tracked_receipt_pns.items.empty());
     should_ack = false;
     quic_frame *ack = new quic_frame;
     memset(ack, 0, sizeof(quic_frame));
     ack->type = QUIC_FRAME_ACK;
-    ack->ack.acknowledged = pns.items.back().second;
-    ack->ack.delay = (getutime() - pns.latest_time) >> 3;
-    ack->ack.first_range = pns.items.back().second - pns.items.back().first;
-    ack->ack.range_count = pns.items.size() - 1;
+    ack->ack.acknowledged = tracked_receipt_pns.items.back().second;
+    ack->ack.delay = (getutime() - tracked_receipt_pns.latest_time) >> 3;
+    ack->ack.first_range = tracked_receipt_pns.items.back().second - tracked_receipt_pns.items.back().first;
+    ack->ack.range_count = tracked_receipt_pns.items.size() - 1;
     ack->ack.ranges = new quic_ack_range[ack->ack.range_count];
     int index = 0;
-    for(auto i = pns.items.rbegin(); i != pns.items.rend();){
+    for(auto i = tracked_receipt_pns.items.rbegin(); i != tracked_receipt_pns.items.rend();){
         auto j = i++;
-        if(i == pns.items.rend()){
+        if(i == tracked_receipt_pns.items.rend()){
             break;
         }
         ack->ack.ranges[index].gap = j->first - i->second - 2;
@@ -128,11 +147,8 @@ uint64_t pn_namespace::PendAck() {
     }
     if(ack->ack.range_count && pend_frames.empty()){
         //append ping if only ack
-        quic_frame* ping = new quic_frame;
-        ping->type = QUIC_FRAME_PING;
-        pend_frames.push_back(ping);
+        pend_frames.emplace_back(new quic_frame{QUIC_FRAME_PING, {}});
     }
-    latest_ack = ack->ack.acknowledged;
 
     LOGD(DQUIC, "< [%c] ack frame %" PRIu64": %.2fms\n",
          name, ack->ack.acknowledged, (ack->ack.delay << 3)/1000.0);
@@ -140,57 +156,92 @@ uint64_t pn_namespace::PendAck() {
     return now;
 }
 
-void pn_namespace::PnAcknowledged(quic_packet_pn &pn) {
-    for(auto frame: pn.frames) {
-        if (frame->type == QUIC_FRAME_ACK || frame->type == QUIC_FRAME_ACK_ECN) {
-            LOGD(DQUIC, "clean pN before: %" PRIu64"\n", frame->ack.acknowledged);
-            pns.Erase(frame->ack.acknowledged);
+int pn_namespace::sendPacket(){
+    char buff[max_datagram_size];
+    char* pos = buff;
+    uint64_t now = PendAck();
+    bool ack_eliciting = false;
+    bool in_flight = false;
+    for(auto frame: pend_frames) {
+        pos = (char*)pack_frame(pos, frame);
+        if(pos == nullptr){
+            return -QUIC_INTERNAL_ERROR;
         }
-        frame_release(frame);
+        ack_eliciting = is_ack_eliciting(frame);
+        in_flight = ack_eliciting || frame->type == QUIC_FRAME_PADDING;
     }
+    if(pos == buff){
+        //there is no frame
+        return 0;
+    }
+    int ret = sent(current_pn, largest_acked_packet+1, buff, pos - buff);
+    if(ret < 0){
+        return ret;
+    }
+
+    sent_packets.push_back(quic_packet_pn{
+            {current_pn, ack_eliciting, in_flight, (size_t)ret, now},
+            pend_frames});
+    pend_frames.clear();
+    current_pn++;
+    if(in_flight){
+        if(ack_eliciting){
+            time_of_last_ack_eliciting_packet = now;
+        }
+        return ret;
+    }
+    return 0;
 }
 
-bool pn_namespace::HandleAck(const quic_ack *frame, Rtt* rtt,
-                             uint64_t max_delay_us, std::function<void(quic_frame*)> resendFrame)
+
+std::list<quic_packet_meta> pn_namespace::DetectAndRemoveAckedPackets(
+        const quic_ack *ack, Rtt* rtt, uint64_t max_delay_us)
 {
+    if(largest_acked_packet == UINT64_MAX){
+        largest_acked_packet = ack->acknowledged;
+    }else if(largest_acked_packet < ack->acknowledged){
+        largest_acked_packet = ack->acknowledged;
+    }
+    std::list<quic_packet_meta> newly_acked_packets;
     uint64_t now = getutime();
-    Chop p(frame);
-    uint64_t ack_delay = frame->delay << ack_delay_exponent;
+    Chop p(ack);
+    uint64_t ack_delay = ack->delay << ack_delay_exponent;
     if(max_delay_us && (ack_delay > max_delay_us)){
         ack_delay = max_delay_us;
     }
-    largest_acked_packet = std::max(frame->acknowledged, largest_acked_packet);
-    bool newly_ack = false;
     bool ack_elicited = false;
-    uint64_t send_time_of_largest_acked = 0;
     for(auto i = sent_packets.begin(); i != sent_packets.end();){
-        if(frame->acknowledged == i->pn){
-            send_time_of_largest_acked = i->time_sent;
-        }
-        if(p.Has(i->pn)){
-            newly_ack = true;
-            if(i->ack_eliciting){
+        if(p.Has(i->meta.pn)){
+            newly_acked_packets.emplace_back(i->meta);
+            if(i->meta.ack_eliciting){
                 ack_elicited = true;
             }
-            PnAcknowledged(*i);
+            for(auto frame: i->frames) {
+                if (frame->type == QUIC_FRAME_ACK || frame->type == QUIC_FRAME_ACK_ECN) {
+                    LOGD(DQUIC, "clean pn from tracking before: %" PRIu64"\n", frame->ack.acknowledged);
+                    tracked_receipt_pns.Erase(frame->ack.acknowledged);
+                }
+                frame_release(frame);
+            }
             i = sent_packets.erase(i);
         } else {
             i++;
         }
     }
-    if(!newly_ack){
-        return false;
+    if(newly_acked_packets.empty()){
+        return newly_acked_packets;
     }
-    if(ack_elicited && send_time_of_largest_acked) {
-        rtt->latest_rtt = now - send_time_of_largest_acked;
-        if (rtt->latest_rtt < rtt->min_rtt) {
-            rtt->min_rtt = rtt->latest_rtt;
-        }
-        if (rtt->smoothed_rtt == 0) {
+    if(ack_elicited && newly_acked_packets.back().pn == ack->acknowledged){
+        rtt->latest_rtt = now - newly_acked_packets.back().sent_time;
+        if(rtt->first_rtt_sample == 0){
             rtt->min_rtt = rtt->latest_rtt;
             rtt->smoothed_rtt = rtt->latest_rtt;
             rtt->rttvar = rtt->latest_rtt / 2;
-        }else {
+            rtt->first_rtt_sample = now;
+        }else{
+            if (rtt->latest_rtt < rtt->min_rtt) {
+                rtt->min_rtt = rtt->latest_rtt;
+            }
             if (rtt->latest_rtt >= rtt->min_rtt + ack_delay) {
                 rtt->latest_rtt = rtt->latest_rtt - ack_delay;
             }
@@ -202,32 +253,32 @@ bool pn_namespace::HandleAck(const quic_ack *frame, Rtt* rtt,
         LOGD(DQUIC, "smoothed_rtt: %.2fms, rttvar: %.2fms, latest_rtt: %.2fms\n",
              rtt->smoothed_rtt/1000.0, rtt->rttvar/1000.0, rtt->latest_rtt/1000.0);
     }
-    DetectLostPackets(rtt, resendFrame);
-    return true;
+    return newly_acked_packets;
 }
 
-void pn_namespace::DetectLostPackets(Rtt* rtt, std::function<void(quic_frame*)> resendFrame) {
+std::list<quic_packet_pn> pn_namespace::DetectAndRemoveLostPackets(Rtt *rtt) {
+    assert(largest_acked_packet != UINT64_MAX);
     loss_time = UINT64_MAX;
+    std::list<quic_packet_pn> lost_packets;
     assert(rtt->latest_rtt);
     uint64_t now = getutime();
     uint64_t timeThreshold = std::max(9 * std::max(rtt->smoothed_rtt, rtt->latest_rtt) / 8, (uint64_t)1000);
     for(auto i = sent_packets.begin(); i != sent_packets.end();){
-        if(i->pn > largest_acked_packet){
+        if(i->meta.pn > largest_acked_packet){
             i++;
             continue;
         }
-        if(largest_acked_packet - i->pn >= 3 || now - i->time_sent >= timeThreshold){
-            LOGD(DQUIC, "[%c] mark lost packet: [%" PRIu64"]\n", name, i->pn);
-            for(auto frame: i->frames){
-                resendFrame(frame);
-            }
+        if(largest_acked_packet >= i->meta.pn + kPacketThreshold || now - i->meta.sent_time >= timeThreshold){
+            LOGD(DQUIC, "[%c] mark lost packet: [%" PRIu64"]\n", name, i->meta.pn);
+            lost_packets.emplace_back(*i);
             i = sent_packets.erase(i);
             continue;
-        }else if(i->time_sent + timeThreshold  < loss_time){
-            loss_time = i->time_sent + timeThreshold;
+        }else if(i->meta.sent_time + timeThreshold < loss_time){
+            loss_time = i->meta.sent_time + timeThreshold;
         }
         i++;
     }
+    return lost_packets;
 }
 
 void pn_namespace::clear() {
@@ -247,8 +298,319 @@ void pn_namespace::clear() {
     sent_packets.clear();
     loss_time = UINT64_MAX;
     time_of_last_ack_eliciting_packet = 0;
+    hasKey = false;
 }
 
 pn_namespace::~pn_namespace() {
     clear();
+}
+
+QuicQos::QuicQos(bool isServer,
+           std::function<int(OSSL_ENCRYPTION_LEVEL level, uint64_t number, uint64_t ack, const void* body, size_t len)> sent,
+           std::function<void(pn_namespace*, quic_frame*)> resendFrames):
+            isServer(isServer), resendFrames(resendFrames){
+    pns[QUIC_PACKET_NAMESPACE_INITIAL] = new pn_namespace('I', std::bind(sent, ssl_encryption_initial,
+            std::placeholders::_1,
+            std::placeholders::_2,
+            std::placeholders::_3,
+            std::placeholders::_4));
+    pns[QUIC_PACKET_NAMESPACE_HANDSHAKE] = new pn_namespace('H', std::bind(sent, ssl_encryption_handshake,
+            std::placeholders::_1,
+            std::placeholders::_2,
+            std::placeholders::_3,
+            std::placeholders::_4));
+    pns[QUIC_PAKCET_NAMESPACE_APP] = new pn_namespace('A', std::bind(sent, ssl_encryption_application,
+            std::placeholders::_1,
+            std::placeholders::_2,
+            std::placeholders::_3,
+            std::placeholders::_4));
+}
+
+
+QuicQos::~QuicQos() {
+    for(auto& pn : pns) {
+        delete pn;
+    }
+    DelJob(&loss_timer);
+    DelJob(&packet_tx);
+}
+
+pn_namespace* QuicQos::GetNamespace(OSSL_ENCRYPTION_LEVEL level) {
+    return pns[get_packet_namespace(level)];
+}
+
+void QuicQos::GetKey(OSSL_ENCRYPTION_LEVEL level) {
+    pns[get_packet_namespace(level)]->hasKey = true;
+}
+
+
+void QuicQos::DropKey(OSSL_ENCRYPTION_LEVEL level) {
+    auto pn = pns[get_packet_namespace(level)];
+    for(auto& p : pn->sent_packets) {
+        if(p.meta.in_flight) {
+            continue;
+        }
+        bytes_in_flight -= p.meta.sent_bytes;
+    }
+    pn->clear();
+    pto_count = 0;
+    SetLossDetectionTimer();
+}
+
+
+bool QuicQos::PeerCompletedAddressValidation() {
+    if(!isServer) {
+        return true;
+    }
+    return pns[QUIC_PACKET_NAMESPACE_HANDSHAKE]->largest_acked_packet != UINT64_MAX ||
+           pns[QUIC_PAKCET_NAMESPACE_APP]->hasKey;
+}
+
+void QuicQos::OnLossDetectionTimeout(pn_namespace* pn){
+    uint64_t now = getutime();
+    if(pn->loss_time < UINT64_MAX){
+        LOGD(DQUIC, "loss timer expired for [%c], loss_time: %.2fms\n",
+             pn->name, (now - pn->time_of_last_ack_eliciting_packet) / 1000.0);
+        auto lost_packets = pn->DetectAndRemoveLostPackets(&rtt);
+        assert(!lost_packets.empty());
+        OnPacketsLost(pn, lost_packets);
+    }else {
+        LOGD(DQUIC, "pto expired for [%c], pto_time: %.2fms, pto_count: %zd\n",
+             pn->name, (now - pn->time_of_last_ack_eliciting_packet) / 1000.0, pto_count);
+        pto_count++;
+        bool has_eliciting_packet = false;
+        for (const auto frame: pn->pend_frames) {
+            if(is_ack_eliciting(frame)){
+                has_eliciting_packet = true;
+                break;
+            }
+        }
+        if (!has_eliciting_packet) {
+            PushFrame(pn, new quic_frame{QUIC_FRAME_PING, {}});
+        }
+        packet_tx  = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this), 0);
+    }
+    SetLossDetectionTimer();
+}
+
+void QuicQos::SetLossDetectionTimer() {
+    uint64_t now = getutime();
+    uint64_t timed_out = UINT64_MAX;
+    bool has_eliciting_packet = false;
+    pn_namespace* pn = nullptr;
+    for(auto& p: pns){
+        if(p->loss_time < timed_out){
+            timed_out = p->loss_time;
+            pn = p;
+        }
+        if(has_eliciting_packet){
+            continue;
+        }
+        for(const auto& packet: p->sent_packets){
+            if(packet.meta.ack_eliciting){
+                has_eliciting_packet = true;
+                break;
+            }
+        }
+    }
+    if(pn){
+        loss_timer = UpdateJob(loss_timer, std::bind(&QuicQos::OnLossDetectionTimeout, this, pn),
+                               (timed_out - now) / 1000);
+        return;
+    }
+    if(!has_eliciting_packet && PeerCompletedAddressValidation()){
+        DelJob(&loss_timer);
+        return;
+    }
+    uint64_t pto = (rtt.smoothed_rtt + std::max(4 * rtt.rttvar, kGranularity) + his_max_ack_delay * 1000) << pto_count;
+    if(!has_eliciting_packet){
+        if(pns[QUIC_PACKET_NAMESPACE_HANDSHAKE]->hasKey) {
+            loss_timer = UpdateJob(loss_timer,
+                                   std::bind(&QuicQos::OnLossDetectionTimeout, this, pns[QUIC_PACKET_NAMESPACE_HANDSHAKE]),
+                                   pto / 1000);
+        }else{
+            loss_timer = UpdateJob(loss_timer,
+                                   std::bind(&QuicQos::OnLossDetectionTimeout, this, pns[QUIC_PACKET_NAMESPACE_INITIAL]),
+                                   pto / 1000);
+        }
+        return;
+    }
+    for(auto& p: pns){
+        if(!p->hasKey){
+            continue;
+        }
+        has_eliciting_packet = false;
+        for(const auto& packet: p->sent_packets){
+            if(packet.meta.ack_eliciting){
+                has_eliciting_packet = true;
+                break;
+            }
+        }
+        if(!has_eliciting_packet){
+            continue;
+        }
+        if(p->time_of_last_ack_eliciting_packet + pto < timed_out){
+            timed_out = p->time_of_last_ack_eliciting_packet + pto;
+            pn = p;
+        }
+    }
+    assert(pn);
+    loss_timer = UpdateJob(loss_timer, std::bind(&QuicQos::OnLossDetectionTimeout, this, pn), (timed_out - now) / 1000);
+}
+
+void QuicQos::sendPacket() {
+    for(auto &p: pns){
+        if(!p->hasKey){
+            continue;
+        }
+        int ret = p->sendPacket();
+        if (ret < 0){
+            return;
+        }
+        if(ret > 0) {
+            bytes_in_flight += ret;
+            SetLossDetectionTimer();
+        }
+    }
+}
+
+
+
+void QuicQos::OnCongestionEvent(uint64_t sent_time) {
+    // No reaction if already in a recovery period.
+    if (sent_time <= congestion_recovery_start_time){
+        return;
+    }
+    // Enter recovery period.
+    congestion_recovery_start_time = getutime();
+    ssthresh = congestion_window * kLossReductionFactor;
+    congestion_window = std::max(ssthresh, kMinimumWindow);
+    //TODO: A packet can be sent to speed up loss recovery.
+}
+
+void QuicQos::OnPacketsLost(pn_namespace* pn, const std::list<quic_packet_pn>& lost_packets) {
+    uint64_t sent_time_of_last_loss = 0;
+    // Remove lost packets from bytes_in_flight.
+    for(const auto& lost_packet: lost_packets) {
+        if (lost_packet.meta.in_flight) {
+            bytes_in_flight -= lost_packet.meta.sent_bytes;
+            sent_time_of_last_loss = std::max(sent_time_of_last_loss, lost_packet.meta.sent_time);
+        }
+        for(auto frame: lost_packet.frames){
+            resendFrames(pn, frame);
+        }
+    }
+    // Congestion event if in-flight packets were lost
+    if (sent_time_of_last_loss != 0) {
+        OnCongestionEvent(sent_time_of_last_loss);
+    }
+
+    // Reset the congestion window if the loss of these
+    // packets indicates persistent congestion.
+    // Only consider packets sent after getting an RTT sample.
+    if (rtt.first_rtt_sample == 0) {
+        return;
+    }
+    size_t persistent_lost_count = 0;
+    for(auto lost: lost_packets) {
+        if (lost.meta.sent_time <= rtt.first_rtt_sample) {
+            continue;
+        }
+        if (!lost.meta.ack_eliciting){
+            continue;
+        }
+        persistent_lost_count ++;
+    }
+    if(persistent_lost_count < 2){
+        return;
+    }
+    uint64_t persistent_duration = (rtt.smoothed_rtt + std::max(4*rtt.rttvar, kGranularity) + his_max_ack_delay) *
+                                   kPersistentCongestionThreshold;
+    if(getutime() - last_receipt_ack_time < persistent_duration){
+        return;
+    }
+    congestion_window = kMinimumWindow;
+    congestion_recovery_start_time = 0;
+}
+
+void QuicQos::OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets) {
+    for(auto meta: acked_packets){
+        if(!meta.in_flight){
+            continue;
+        }
+        // Remove from bytes_in_flight.
+        bytes_in_flight -= meta.sent_bytes;
+        // Do not increase congestion_window if application
+        // limited or flow control limited.
+        //TODO: check if it is application limited or flow control limited
+
+        // Do not increase congestion window in recovery period.
+        if(meta.sent_time <= congestion_recovery_start_time){
+            continue;
+        }
+        if (congestion_window < ssthresh) {
+            // Slow start.
+            congestion_window += meta.sent_bytes;
+        }else{
+            // Congestion avoidance.
+            congestion_window += max_datagram_size * meta.sent_bytes / congestion_window;
+        }
+    }
+}
+
+void QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t number, const quic_frame *frame) {
+    pn_namespace *pn = this->GetNamespace(level);
+    dumpFrame(">", pn->name, frame);
+    if(!pn->hasKey){
+        //key has dropped before handle it.
+        return;
+    }
+    pn->tracked_receipt_pns.Add(number);
+    if(level == ssl_encryption_initial || level == ssl_encryption_handshake){
+        packet_tx  = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this), 0);
+    }else if(!pn->should_ack) {
+        packet_tx  = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this), 20);
+    }
+    if(is_ack_eliciting(frame)){
+        pn->should_ack = true;
+    }
+    //FIXME:
+    // When a server is blocked by anti-amplification limits, receiving a datagram unblocks it,
+    // even if none of the packets in the datagram are successfully processed.
+    // In such a case, the PTO timer will need to be rearmed.
+
+    if(frame->type == QUIC_FRAME_ACK || frame->type == QUIC_FRAME_ACK_ECN){
+        last_receipt_ack_time = getutime();
+        auto acked = pn->DetectAndRemoveAckedPackets(&frame->ack, &rtt, his_max_ack_delay * 1000);
+        if(acked.empty()){
+            return;
+        }
+        if(frame->type == QUIC_FRAME_ACK_ECN && frame->ack.ecns.ecn_ce > pn->ecn_ce_counters) {
+            // If the ECN-CE counter reported by the peer has increased,
+            // this could be a new congestion event.
+            pn->ecn_ce_counters = frame->ack.ecns.ecn_ce;
+            uint64_t sent_time = acked.back().sent_time;
+            OnCongestionEvent(sent_time);
+        }
+        auto lost_packets = pn->DetectAndRemoveLostPackets(&rtt);
+        if (!lost_packets.empty()) {
+            OnPacketsLost(pn, lost_packets);
+        }
+        OnPacketsAcked(acked);
+        if(PeerCompletedAddressValidation()){
+            pto_count = 0;
+        }
+        SetLossDetectionTimer();
+    }
+}
+
+void QuicQos::PushFrame(pn_namespace *pn, quic_frame *frame) {
+    dumpFrame("<", pn->name, frame);
+    assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
+    pn->pend_frames.push_back(frame);
+    packet_tx = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this) , 0);
+}
+
+void QuicQos::PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame* frame) {
+    return PushFrame(GetNamespace(level), frame);
 }

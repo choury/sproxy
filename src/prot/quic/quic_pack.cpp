@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <inttypes.h>
 #include <openssl/kdf.h>
 #include <openssl/tls1.h>
 
@@ -9,19 +10,6 @@
 /* 0x38762cf7f55934b34d179ae6a4c80cadccbb7f0a */
 static const char* initial_salt = "\x38\x76\x2c\xf7\xf5\x59\x34\xb3\x4d\x17\x9a\xe6\xa4\xc8\x0c\xad\xcc\xbb\x7f\x0a";
 static const int initial_saltlen = 20;
-
-static void dumphex(const void* s_, size_t len){
-    const unsigned  char* s = (const unsigned  char*)s_;
-    for(size_t i = 0; i < len; i++){
-        printf("%02x", (unsigned char)(s[i]));
-        if(i%32==31){
-            printf("\n");
-        }else if(i%16 == 15){
-            printf(" ");
-        }
-    }
-    printf("\n");
-}
 
 size_t variable_encode_len(uint64_t value){
     if(value <= 63){
@@ -956,6 +944,107 @@ error:
     return frames;
 }
 
+bool is_ack_eliciting(const quic_frame* frame){
+    switch(frame->type){
+    case QUIC_FRAME_ACK:
+    case QUIC_FRAME_ACK_ECN:
+    case QUIC_FRAME_PADDING:
+    case QUIC_FRAME_CONNECTION_CLOSE:
+    case QUIC_FRAME_CONNECTION_CLOSE_APP:
+        return false;
+    default:
+        return true;
+    }
+}
+
+void dumpFrame(const char* prefix, char name, const quic_frame* frame) {
+    switch (frame->type) {
+    case QUIC_FRAME_PADDING:
+        LOGD(DQUIC, "%s [%c] padding frame: %" PRIu64"\n", prefix, name, frame->extra);
+        return;
+    case QUIC_FRAME_PING:
+        LOGD(DQUIC, "%s [%c] ping frame\n", prefix, name);
+        return;
+    case QUIC_FRAME_ACK:
+    case QUIC_FRAME_ACK_ECN:
+        LOGD(DQUIC, "%s [%c] ack frame %" PRIu64": %" PRIu64"\n", prefix, name,
+             frame->ack.acknowledged, frame->ack.delay);
+        return;
+    case QUIC_FRAME_RESET_STREAM:
+        LOGD(DQUIC, "%s [%c] reset stream: %" PRIu64", error: %" PRIu64"\n", prefix, name,
+             frame->reset.id, frame->reset.error);
+        return;
+    case QUIC_FRAME_STOP_SENDING:
+        LOGD(DQUIC, "%s [%c] stop stream: %" PRIu64", error: %" PRIu64"\n", prefix, name,
+             frame->stop.id, frame->stop.error);
+        return;
+    case QUIC_FRAME_CRYPTO:
+        LOGD(DQUIC, "%s [%c] crypto frame: %" PRIu64" - %" PRIu64"\n", prefix, name,
+             frame->crypto.offset, frame->crypto.offset + frame->crypto.length);
+        return;
+    case QUIC_FRAME_NEW_TOKEN:
+        LOGD(DQUIC, "%s [%c] new token: %.*s\n", prefix, name,
+             (int)frame->new_token.length, frame->new_token.token);
+        return;
+    /*skip stream frame here*/
+    case QUIC_FRAME_MAX_DATA:
+        LOGD(DQUIC, "%s [%c] max data: %" PRIu64"\n", prefix, name, frame->extra);
+        return;
+    case QUIC_FRAME_MAX_STREAM_DATA:
+        LOGD(DQUIC, "%s [%c] max stream data: %" PRIu64", size: %" PRIu64"\n", prefix, name,
+             frame->max_stream_data.id, frame->max_stream_data.max);
+        return;
+    case QUIC_FRAME_MAX_STREAMS_BI:
+        LOGD(DQUIC, "%s [%c] max stream_bi: %" PRIu64"\n", prefix, name, frame->extra);
+        return;
+    case QUIC_FRAME_MAX_STREAMS_UBI:
+        LOGD(DQUIC, "%s [%c] max stream_ubi: %" PRIu64"\n", prefix, name, frame->extra);
+        return;
+    case QUIC_FRAME_DATA_BLOCKED:
+        LOGD(DQUIC, "%s [%c] blocked data size: %" PRIu64"\n", prefix, name, frame->extra);
+        return;
+    case QUIC_FRAME_STREAM_DATA_BLOCKED:
+        LOGD(DQUIC, "%s [%c] blocked stream  data: %" PRIu64", size: %" PRIu64"\n", prefix, name,
+             frame->stream_data_blocked.id, frame->stream_data_blocked.size);
+        return;
+    case QUIC_FRAME_STREAMS_BLOCKED_BI:
+        LOGD(DQUIC, "%s [%c] blocked stream_bi: %" PRIu64"\n", prefix, name, frame->extra);
+        return;
+    case QUIC_FRAME_STREAMS_BLOCKED_UBI:
+        LOGD(DQUIC, "%s [%c] blocked stream_ubi: %" PRIu64"\n", prefix, name, frame->extra);
+        return;
+    case QUIC_FRAME_NEW_CONNECTION_ID:
+        LOGD(DQUIC, "%s [%c] new connection id seq:%" PRIu64", retired:%" PRIu64", id:%.*s, token:%.16s\n", prefix, name,
+             frame->new_id.seq, frame->new_id.retired, frame->new_id.length, frame->new_id.id, frame->new_id.token);
+        return;
+    case QUIC_FRAME_RETIRE_CONNECTION_ID:
+        LOGD(DQUIC, "%s [%c] retire connection id: %" PRIu64"\n", prefix, name, frame->extra);
+        return;
+    case QUIC_FRAME_PATH_CHALLENGE:
+        LOGD(DQUIC, "%s [%c] path challenge: %.64s\n", prefix, name, frame->path_data);
+        return;
+    case QUIC_FRAME_PATH_RESPONSE:
+        LOGD(DQUIC, "%s [%c] path response: %.64s\n", prefix, name, frame->path_data);
+        return;
+    case QUIC_FRAME_CONNECTION_CLOSE:
+    case QUIC_FRAME_CONNECTION_CLOSE_APP:
+        LOGD(DQUIC, "%s [%c] close frame: %" PRIu64 ": %.*s\n", prefix, name,
+             frame->close.error, (int)frame->close.reason_len, frame->close.reason);
+        return;
+    case QUIC_FRAME_HANDSHAKE_DONE:
+        LOGD(DQUIC, "%s [%c] handshake_done frame\n", prefix, name);
+        return;
+    default:
+        if (frame->type >= QUIC_FRAME_STREAM_START_ID && frame->type <= QUIC_FRAME_STREAM_END_ID) {
+            LOGD(DQUIC, "%s [%c] data [%" PRIu64"]: %" PRIu64" - %" PRIu64"\n", prefix, name,
+                 frame->stream.id, frame->stream.offset, frame->stream.offset + frame->stream.length);
+            return;
+        } else {
+            LOGD(DQUIC, "%s [%c] ignore frame: 0x%02x\n", prefix, name, (int) frame->type);
+        }
+        return;
+    }
+}
 
 void frame_release(const quic_frame* frame){
     switch(frame->type) {
