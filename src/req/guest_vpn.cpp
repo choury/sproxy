@@ -98,14 +98,19 @@ Vpn_server::Vpn_server(int fd) {
             i.second->writed();
         }
     });
+    if(opt.pcap_file) {
+        pcap = pcap_create(opt.pcap_file);
+    }
 }
 
 Vpn_server::~Vpn_server(){
     statusmap.clear();
+    pcap_close(pcap);
 }
 
 void Vpn_server::buffHE(const char* buff, size_t buflen) {
     //先解析
+    pcap_write_with_generated_ethhdr(pcap, buff, buflen);
     auto pac = MakeIp(buff, buflen);
     if(pac == nullptr){
         return;
@@ -153,9 +158,32 @@ Guest_vpn::~Guest_vpn(){
     free(status.protocol_info);
 }
 
-#if __linux__  && !__ANDROID__
+#if __linux__
 #include <fstream>
 const char * Guest_vpn::getProg() const{
+#if __ANDROID__
+    if(android_get_device_api_level() >= 29){
+        int protocol;
+        switch(key.protocol){
+        case Protocol::TCP:
+            protocol = IPPROTO_TCP;
+            break;
+        case Protocol::UDP:
+            protocol = IPPROTO_UDP;
+            break;
+        case Protocol::ICMP:
+            if(key.src.ss_family == AF_INET) {
+                protocol = IPPROTO_ICMP;
+            }else{
+                protocol = IPPROTO_ICMPV6;
+            }
+            break;
+        default:
+            return "<NONE>";
+        }
+        return getPackageNameFromAddr(protocol, &key.src, &key.dst);
+    }
+#endif
     if(key.version() == 4){
         std::ifstream netfile;
         switch(key.protocol){
@@ -184,14 +212,18 @@ const char * Guest_vpn::getProg() const{
                 ino_t inode = 0;
                 sscanf(line.c_str(), "%*d: %x:%x %x:%x %*x %*x:%*x %*d:%*x %*d %d %*d %lu",
                                     &srcip, &srcport, &dstip, &dstport, &uid, &inode);
-                if(src->sin_port != htons(srcport)){
+                if(src->sin_port != htons(srcport) || src->sin_addr.s_addr != srcip){
                     continue;
                 }
                 // for udp and icmp, it usually no been bind
                 if((key.protocol != Protocol::TCP) ||
                     (dst->sin_addr.s_addr == dstip && dst->sin_port == htons(dstport)))
                 {
+#if __ANDROID__
+                    return getPackageNameFromUid(uid);
+#else
                     return findprogram(inode);
+#endif
                 }
             }
 
@@ -247,7 +279,11 @@ const char * Guest_vpn::getProg() const{
             if((key.protocol != Protocol::TCP) ||
                 (memcmp(&mydstip, dstip, sizeof(dstip)) == 0 && dst->sin6_port == htons(dstport)))
             {
+#if __ANDROID__
+                return getPackageNameFromUid(uid);
+#else
                 return findprogram(inode);
+#endif
             }
         }
         net6file.clear();
@@ -259,7 +295,7 @@ const char * Guest_vpn::getProg() const{
                     ntohs(src->sin6_port),
                     mydstip.s6_addr32[0], mydstip.s6_addr32[1], mydstip.s6_addr32[2], mydstip.s6_addr32[3],
                     ntohs(dst->sin6_port));
-    return "Unkown inode";
+    return "<Unknown-inode>";
 }
 #endif
 
@@ -269,7 +305,7 @@ const char* Guest_vpn::generateUA() const {
         return opt.ua;
     }
 #ifdef __ANDROID__
-    sprintf(UA, "Sproxy/%s (Build %s) (%s) App/%s", getVersion(), getBuildTime(), getDeviceName(), appVersion);
+    sprintf(UA, "Sproxy/%s (Build %s) (%s) %s App/%s", getVersion(), getBuildTime(), getDeviceName(), getProg(), appVersion);
 #elif __linux__
     sprintf(UA, "Sproxy/%s (Build %s) (%s) %s", getVersion(), getBuildTime(), getDeviceInfo(), getProg());
 #else
@@ -331,11 +367,13 @@ void Guest_vpn::response(void*, std::shared_ptr<HttpRes> res) {
         LOGD(DVPN, "write syn ack packet %s (%u - %u).\n",
              key.getString("<-"), tcpStatus->send_seq, tcpStatus->want_seq);
         auto pac_return = MakeIp(IPPROTO_TCP, &key.dst, &key.src);
+        // rfc7323: The window field in a segment where the SYN bit is set (i.e., a <SYN>
+        // or <SYN,ACK>) MUST NOT be scaled
         pac_return->tcp
             ->setseq(tcpStatus->send_seq++)
             ->setack(tcpStatus->want_seq)
             ->setwindowscale(tcpStatus->send_wscale)
-            ->setwindow(status.req->cap() >> tcpStatus->send_wscale)
+            ->setwindow(status.req->cap())
             ->setmss(Min(tcpStatus->mss, BUF_LEN))
             ->setflag(TH_ACK | TH_SYN);
 

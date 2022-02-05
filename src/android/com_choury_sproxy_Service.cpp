@@ -15,7 +15,6 @@
 
 static JavaVM *jnijvm;
 static jobject jniobj;
-static std::map<int, std::string> packages;
 static std::string extenalFilesDir;
 static std::string extenalCacheDir;
 char   appVersion[DOMAINLIMIT];
@@ -82,8 +81,10 @@ extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     jniobj = jnienv->NewGlobalRef(obj);
     std::string config_file = getExternalFilesDir() + "/sproxy.conf";
     std::string sites_file = getExternalFilesDir() + "/sites.list";
+    std::string pcap_file = getExternalCacheDir() + "/vpn.pcap";
 
     opt.policy_read = fopen(sites_file.c_str(), "re");
+    //opt.pcap_file = pcap_file.c_str();
     if(access(config_file.c_str(), R_OK) == 0){
         LOG("read config from %s.\n", config_file.c_str());
         parseConfigFile(config_file.c_str());
@@ -141,22 +142,58 @@ int protectFd(int sockfd) {
     return  jnienv->CallBooleanMethod(jniobj, protecdMid, sockfd);
 }
 
-const char* getPackageName(int uid) {
+const char* getPackageNameFromUid(int uid) {
     static char name[DOMAINLIMIT];
-    if(packages.count(uid)){
-        strcpy(name, packages[uid].c_str());
-    }else {
-        JNIEnv *jnienv;
-        jnijvm->GetEnv((void **) &jnienv, JNI_VERSION_1_6);
-        jclass cls = jnienv->GetObjectClass(jniobj);
-        jmethodID mid = jnienv->GetMethodID(cls, "getPackageString", "(I)Ljava/lang/String;");
-        jstring jname = (jstring) jnienv->CallObjectMethod(jniobj, mid, uid);
-        const char *jname_str = jnienv->GetStringUTFChars(jname, nullptr);
-        strcpy(name, jname_str);
-        jnienv->ReleaseStringUTFChars(jname, jname_str);
-        jnienv->DeleteLocalRef(jname);
-        jnienv->DeleteLocalRef(cls);
+    JNIEnv *jnienv;
+    jnijvm->GetEnv((void **) &jnienv, JNI_VERSION_1_6);
+    jclass cls = jnienv->GetObjectClass(jniobj);
+    jmethodID mid = jnienv->GetMethodID(cls, "getPackageFromUid", "(I)Ljava/lang/String;");
+    jstring jname = (jstring) jnienv->CallObjectMethod(jniobj, mid, uid);
+    const char *jname_str = jnienv->GetStringUTFChars(jname, nullptr);
+    strcpy(name, jname_str);
+    jnienv->ReleaseStringUTFChars(jname, jname_str);
+    jnienv->DeleteLocalRef(jname);
+    jnienv->DeleteLocalRef(cls);
+    return name;
+}
+
+const char* getPackageNameFromAddr(int protocol, const struct sockaddr_storage* src, const struct sockaddr_storage* dst){
+    static char name[DOMAINLIMIT];
+    JNIEnv *jnienv;
+    jnijvm->GetEnv((void **) &jnienv, JNI_VERSION_1_6);
+    jclass cls = jnienv->GetObjectClass(jniobj);
+    jmethodID mid = jnienv->GetMethodID(cls, "getPackageFromAddr", "(I[BI[BI)Ljava/lang/String;");
+    jbyteArray sdata, ddata;
+    int sport = ntohs(((sockaddr_in*)src)->sin_port);
+    int dport = ntohs(((sockaddr_in*)dst)->sin_port);
+    jbyte sbuf[255], dbuf[255];
+    if(src->ss_family == AF_INET){
+        jsize len = sizeof(in_addr);
+        sdata = jnienv->NewByteArray(len);
+        ddata = jnienv->NewByteArray(len);
+        memcpy(sbuf, &((sockaddr_in*)src)->sin_addr, len);
+        memcpy(dbuf, &((sockaddr_in*)dst)->sin_addr, len);
+
+        jnienv->SetByteArrayRegion(sdata, 0, len, sbuf);
+        jnienv->SetByteArrayRegion(ddata, 0, len, dbuf);
+    }else{
+        jsize len = sizeof(in6_addr);
+        sdata = jnienv->NewByteArray(len);
+        ddata = jnienv->NewByteArray(len);
+        memcpy(sbuf, &((sockaddr_in6*)src)->sin6_addr, len);
+        memcpy(dbuf, &((sockaddr_in6*)dst)->sin6_addr, len);
+
+        jnienv->SetByteArrayRegion(sdata, 0, len, sbuf);
+        jnienv->SetByteArrayRegion(ddata, 0, len, dbuf);
     }
+    jstring jname = (jstring) jnienv->CallObjectMethod(jniobj, mid, protocol, sdata, sport, ddata, dport);
+    const char *jname_str = jnienv->GetStringUTFChars(jname, nullptr);
+    strcpy(name, jname_str);
+    jnienv->ReleaseStringUTFChars(jname, jname_str);
+    jnienv->DeleteLocalRef(sdata);
+    jnienv->DeleteLocalRef(ddata);
+    jnienv->DeleteLocalRef(jname);
+    jnienv->DeleteLocalRef(cls);
     return name;
 }
 

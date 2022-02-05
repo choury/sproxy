@@ -4,6 +4,7 @@
 #include "requester.h"
 #include "prot/ip_pack.h"
 #include "misc/net.h"
+#include "misc/pcap.h"
 
 struct VpnKey{
     Protocol    protocol;
@@ -17,7 +18,7 @@ struct VpnKey{
 
 bool operator<(VpnKey a, VpnKey b);
 
-#define VPN_TCP_WSCALE   4u
+#define VPN_TCP_WSCALE   9u
 
 struct TcpStatus{
     uint32_t   send_seq;
@@ -84,6 +85,7 @@ public:
 class Vpn_server {
     std::shared_ptr<RWer> rwer;
     std::map<VpnKey, Guest_vpn*> statusmap;
+    int pcap = -1;
     void buffHE(const char* buff, size_t buflen);
 public:
     explicit Vpn_server(int fd);
@@ -93,6 +95,7 @@ public:
     void sendPkg(std::shared_ptr<Ip> pac, T* buff, size_t len){
         char* packet = pac->build_packet(buff, len);
         rwer->buffer_insert(rwer->buffer_end(), buff_block{packet, len});
+        pcap_write_with_generated_ethhdr(pcap, packet, len);
     }
     virtual int32_t bufleft();
     void cleanKey(const VpnKey& key);

@@ -93,7 +93,6 @@ File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
         loadmine();
     }
     strcpy(filename, fname);
-    memset(&status, 0, sizeof(status));
     suffix = strrchr(filename, '.');
     rwer->SetReadCB(std::bind(&File::readHE, this, _1));
 }

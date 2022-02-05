@@ -49,6 +49,7 @@ struct options{
     const char *interface;
     const char *socket;
     const char *ua;
+    const char *pcap_file;
     bool disable_http2;
     bool sni_mode;
     bool daemon_mode;
