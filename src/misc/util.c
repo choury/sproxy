@@ -57,21 +57,6 @@ char* strlchrnul (const char* s, int c){
     return e;
 }
 
-int startwith(const char *s1, const char *s2) {
-    size_t l1 = strlen(s1);
-    size_t l2 = strlen(s2);
-    if(l1 < l2)
-        return 0;
-    return !memcmp(s1, s2, l2);
-}
-
-int endwith(const char *s1, const char *s2) {
-    size_t l1 = strlen(s1);
-    size_t l2 = strlen(s2);
-    if(l1 < l2)
-        return 0;
-    return !memcmp(s1+l1-l2, s2, l2);
-}
 
 
 static int hex2num(char c)
@@ -339,20 +324,6 @@ struct in_addr getMapped(struct in6_addr addr, const char* prefix) {
     return addr4;
 }
 
-uint64_t getutime(){
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return tv.tv_sec * 1000000ull + tv.tv_usec;
-}
-
-uint32_t getmtime(){
-    struct timeval tv;
-    gettimeofday(&tv, 0);
-    return (tv.tv_sec * 1000ull + tv.tv_usec/1000)&0xFFFFFFFF;
-}
-
-
-
 #if Backtrace_FOUND
 void dump_func(char* stack, int depth);
 
@@ -479,7 +450,6 @@ const char* dumpDest(const struct Destination* Server){
     dumpDestToBuffer(Server, buff, sizeof(buff));
     return buff;
 }
-
 
 const char* dumpAuthority(const struct Destination* Server){
     static char buff[URLLIMIT];

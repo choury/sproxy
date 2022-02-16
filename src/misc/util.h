@@ -6,7 +6,6 @@
 #include <stddef.h>
 #include <string.h>
 #include <sys/types.h>
-#include <sys/time.h>
 
 #define NAT64PREFIX "\0\x64\xff\x9b\0\0\0\0\0\0\0\0"
 #define IPV4MAPIPV6 "\0\0\0\0\0\0\0\0\0\0\xff\xff"
@@ -23,15 +22,11 @@ const char* strnstr(const char* s1, const char* s2, size_t len);
 char* strchrnul(const char *s, int c);
 #endif
 char* strlchrnul (const char* s, int c);
-int startwith(const char *s1, const char *s2);
-int endwith(const char *s1, const char *s2);
+
 
 int URLEncode(char *des,const char* src, size_t len);
 int URLDecode(char *des,const char* src, size_t len);
 void Base64Encode(const char* s, size_t len, char* dst);
-
-uint64_t getutime();
-uint32_t getmtime();
 
 void dump_trace(int ignore);
 

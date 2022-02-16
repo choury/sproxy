@@ -58,8 +58,8 @@ struct Dns_Query{
 
 
 class Dns_Result{
-public:
     char domain[DOMAINLIMIT];
+public:
     std::vector<sockaddr_storage> addrs;
     uint16_t  error = 0;
     uint16_t  type = 0;

@@ -28,9 +28,9 @@ typedef struct DNS_RR {
 } __attribute__((packed)) DNS_RR;
 
 static const unsigned char * getdomain(const DNS_HDR *hdr, const unsigned char *p, size_t len, char* domain) {
-    const unsigned char* buf = (const unsigned char *)hdr;
     while (p < (unsigned char*)hdr + len && *p) {
         if (*p > 63) {
+            const unsigned char* buf = (const unsigned char *)hdr;
             const unsigned char *q = buf+((*p & 0x3f) <<8U) + *(p+1);
             getdomain(hdr, q, len, domain);
             return p+2;
@@ -42,11 +42,19 @@ static const unsigned char * getdomain(const DNS_HDR *hdr, const unsigned char *
             p+= *p+1;
         }
     }
-    domain[-1] = 0;
+    if(p == (uchar*)(hdr + 1)){
+        domain[0] = 0;
+    }else{
+        domain[-1] = 0;
+    }
     return p+1;
 }
 
 static int putdomain(unsigned char *buf, const char *domain){
+    if(domain[0] == '.' || domain[0] == 0){
+        *buf = 0;
+        return 1;
+    }
     unsigned char *p = buf+1;
     strcpy((char*)p, domain);
 
@@ -61,8 +69,12 @@ static int putdomain(unsigned char *buf, const char *domain){
         p++;
     }
     *(p-i-1) = i;
-    return p-buf+1;
+    if(i == 0)
+        return p-buf;
+    else
+        return p-buf+1;
 }
+
 Dns_Query::Dns_Query(const char* domain, uint16_t type, uint16_t id):  type(type), id(id), valid(true) {
     strcpy(this->domain, domain);
 }
@@ -117,14 +129,14 @@ Dns_Query::Dns_Query(const char* buff, size_t len) {
             return;
         }
     }
-    if(strlen(domain) && id != 0){
+    if(id != 0){
         valid = true;
     }
 }
 
 
 
-int Dns_Query::build(unsigned char* buf)const {
+int Dns_Query::build(unsigned char* buf) const {
     DNS_HDR  *dnshdr = (DNS_HDR *)buf;
     dnshdr->id = htons(id);
     dnshdr->flag = htons(RD);

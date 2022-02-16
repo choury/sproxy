@@ -169,7 +169,7 @@ RawResolver::RawResolver(int fd,
     write(fd, buf, Dns_Query(host, type, id_cur++).build((unsigned char*)buf));
     this->handleEvent = (void (Ep::*)(RW_EVENT))&RawResolver::readHE;
     setEvents(RW_EVENT::READ);
-    reply = AddJob(std::bind(rawcb, nullptr, 0, this), dnsConfig.timeout * 1000, 0);
+    reply = AddJob(std::bind(cb, nullptr, 0, this), dnsConfig.timeout * 1000, 0);
 }
 
 void RawResolver::readHE(RW_EVENT events) {

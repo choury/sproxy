@@ -6,7 +6,9 @@
 #include <stdlib.h>
 #include <syslog.h>
 #include <stdarg.h>
+#include <string.h>
 #include <arpa/inet.h>
+#include <sys/time.h>
 
 #define VPNADDR  "198.18.0.1"
 #define VPNMASK  "255.254.0.0"
@@ -31,6 +33,23 @@ static inline int noafter(uint32_t seq1, uint32_t seq2)
 }
 #define after(seq2, seq1) before(seq1, seq2)
 #define nobefore(seq2, seq1) noafter(seq1, seq2)
+
+static inline int startwith(const char *s1, const char *s2) {
+    size_t l1 = strlen(s1);
+    size_t l2 = strlen(s2);
+    if(l1 < l2)
+        return 0;
+    return !memcmp(s1, s2, l2);
+}
+
+static inline int endwith(const char *s1, const char *s2) {
+    size_t l1 = strlen(s1);
+    size_t l2 = strlen(s2);
+    if(l1 < l2)
+        return 0;
+    return !memcmp(s1+l1-l2, s2, l2);
+}
+
 
 
 #define DOMAINLIMIT   256
@@ -96,7 +115,17 @@ do{\
     abort(); \
 }while(0)
 
-uint32_t getmtime();
+static inline uint64_t getutime(){
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec * 1000000ull + tv.tv_usec;
+}
+
+static inline uint32_t getmtime(){
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+    return (tv.tv_sec * 1000ull + tv.tv_usec/1000)&0xFFFFFFFF;
+}
 
 #define  LOGD(mod, ...)  \
 do{\

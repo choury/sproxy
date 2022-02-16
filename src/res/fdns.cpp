@@ -109,21 +109,24 @@ void FDns::Send(const void* buff, size_t size) {
         if (stra.s == Strategy::direct) {
             return query_host(que->domain, DnsCb, status);
         }
-        if(que->type == 1){
-            in_addr addr = getInet(status->que->domain);
-            result = new Dns_Result(status->que->domain, &addr);
+        if(que->domain[0] == 0){
+            //return empty response for root domain
+            result = new Dns_Result(que->domain);
+        }else if(que->type == 1){
+            in_addr addr = getInet(que->domain);
+            result = new Dns_Result(que->domain, &addr);
         }else if(opt.ipv6_enabled) {
-            in6_addr addr = getInet6(status->que->domain);
-            result = new Dns_Result(status->que->domain, &addr);
+            in6_addr addr = getInet6(que->domain);
+            result = new Dns_Result(que->domain, &addr);
         }else{
-            result = new Dns_Result(status->que->domain);
+            result = new Dns_Result(que->domain);
         }
     }
     if(result == nullptr) {
-        return query_dns(status->que->domain, status->que->type, RawCb, status);
+        return query_dns(que->domain, que->type, RawCb, status);
     }
     unsigned char sbuff[BUF_LEN];
-    res->send(sbuff, result->build(status->que, sbuff));
+    res->send(sbuff, result->build(que, sbuff));
     clean(status);
 }
 
@@ -132,24 +135,25 @@ void FDns::DnsCb(std::weak_ptr<void> param, int error, std::list<sockaddr_storag
         return;
     }
     auto status = std::static_pointer_cast<FDnsStatus>(param.lock());
+    Dns_Query* que = status->que;
     FDns* fdns = status->fdns;
     Dns_Result* rr = nullptr;
     if(error || addrs.empty()){
-        rr = new Dns_Result(status->que->domain);
-    }else if(status->que->type == 1){
-        in_addr addr = getInet(status->que->domain);
-        rr = new Dns_Result(status->que->domain, &addr);
+        rr = new Dns_Result(que->domain);
+    }else if(que->type == 1){
+        in_addr addr = getInet(que->domain);
+        rr = new Dns_Result(que->domain, &addr);
     }else if(opt.ipv6_enabled){
-        in6_addr addr = getInet6(status->que->domain);
-        rr = new Dns_Result(status->que->domain, &addr);
+        in6_addr addr = getInet6(que->domain);
+        rr = new Dns_Result(que->domain, &addr);
     }else{
-        rr = new Dns_Result(status->que->domain);
+        rr = new Dns_Result(que->domain);
     }
     unsigned char buff[BUF_LEN];
     if(error) {
-        fdns->res->send(buff, rr->buildError(status->que, error, buff));
+        fdns->res->send(buff, rr->buildError(que, error, buff));
     }else{
-        fdns->res->send(buff, rr->build(status->que, buff));
+        fdns->res->send(buff, rr->build(que, buff));
     }
     fdns->clean(status);
 }
@@ -159,17 +163,18 @@ void FDns::RawCb(std::weak_ptr<void> param, const char* buff, size_t size) {
         return;
     }
     auto status = std::static_pointer_cast<FDnsStatus>(param.lock());
+    Dns_Query* que = status->que;
     FDns* fdns = status->fdns;
     if(buff){
-        LOGD(DDNS, "[FQuery] raw response [%d]\n", status->que->id);
+        LOGD(DDNS, "[FQuery] raw response [%d]\n", que->id);
         DNS_HDR *dnshdr = (DNS_HDR*)buff;
-        dnshdr->id = htons(status->que->id);
+        dnshdr->id = htons(que->id);
         fdns->res->send(buff, size);
     }else {
-        LOGD(DDNS, "[FQuery] raw response [%d] error\n", status->que->id);
-        Dns_Result rr(status->que->domain);
+        LOGD(DDNS, "[FQuery] raw response [%d] error\n", que->id);
+        Dns_Result rr(que->domain);
         unsigned char sbuff[BUF_LEN];
-        fdns->res->send(sbuff, rr.buildError(status->que, DNS_SERVER_FAIL, sbuff));
+        fdns->res->send(sbuff, rr.buildError(que, DNS_SERVER_FAIL, sbuff));
     }
     fdns->clean(status);
 }

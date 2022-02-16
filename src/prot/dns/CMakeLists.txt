@@ -8,3 +8,5 @@ set(dns_src
         )
 
 add_library(dns ${dns_src})
+
+add_executable(dns_test dns_test.cpp dns.cpp)
