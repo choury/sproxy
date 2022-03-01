@@ -897,7 +897,7 @@ std::vector<const quic_frame*> decode_packet(const void* data_, size_t len,
     }
 
 
-    header->pn = header->pn_acked & (0xffffffffffffffff << (header->pn_length*8));
+    header->pn = header->pn_base & (0xffffffffffffffff << (header->pn_length*8));
     for(size_t i = 0; i < header->pn_length; i++){
         buff[pos+i] ^= mask[i+1];
         header->pn <<= 8;

@@ -55,14 +55,14 @@ public:
 #define HTTP_RES_COMPLETED  (1u<<6u)   //sc
 #define HTTP_RES_EOF        (1u<<7u)   //se
 
-/* Requester alloc HttpReq and Responser alloc HttpRes.
- * Peers send zero message(send0) for completed (same as req and res),
- * but trigger `shutdown` for eof (used for vpn). Distinct send0 from eof,
- * because some implement will close connection if eof received.
- * Requester may trigger `closed` for qc|sc requests.
- * Peer should trigger `closed` (instead of shutdown) if received `shutdown` already.
- * Trigger `closed` will reset connection if no `send0` message sent.
- * Callback of body must callable if no `closed` was sent or received.
+/* 1. Requester alloc HttpReq and Responser alloc HttpRes.
+ * 2. Peers send zero message(send0) for completed (same as req and res),
+ *    but trigger `shutdown` for eof (used for vpn). Distinct send0 from eof,
+ *    because some implement will close connection if eof received.
+ * 3. Requester may trigger `closed` for qc|sc requests.
+ * 4. Peer should trigger `closed` (instead of shutdown) if received `shutdown` already.
+ * 5. Trigger `abort` will reset connection if no `send0` message sent.
+ * 6. Callback of body must be callable if no `closed/abort` was sent or received.
 */
 class HttpRes: public Channel{
 public:

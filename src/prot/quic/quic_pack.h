@@ -263,7 +263,7 @@ struct quic_meta{
 
 struct quic_pkt_header: public quic_meta{
     uint64_t pn = 0;
-    uint64_t pn_acked = 0;
+    uint64_t pn_base = 0;
     size_t pn_length = 0;
 };
 

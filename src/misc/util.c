@@ -252,9 +252,9 @@ void* p_move(void* ptr, signed char len){
 const char* findprogram(ino_t inode){
     static char program[DOMAINLIMIT+1];
 #ifdef __APPLE__
-    sprintf(program, "Unkown pid(%llu)", inode);
+    sprintf(program, "Unkown-pid(%llu)", inode);
 #else
-    sprintf(program, "Unkown pid(%lu)", inode);
+    sprintf(program, "Unkown-pid(%lu)", inode);
 #endif
     int found = 0;
     DIR* dir = opendir("/proc");

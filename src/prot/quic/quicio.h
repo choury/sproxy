@@ -169,7 +169,7 @@ protected:
     FrameResult handleHandshakeFrames(quic_context* context, const quic_frame* frame);
     FrameResult handleFrames(quic_context* context, const quic_frame* frame);
 
-    void nextPackets(const std::function<int(const quic_pkt_header* header, std::vector<const quic_frame*>& frames)>& handler);
+    void walkPackets(const std::function<int(const quic_pkt_header* header, std::vector<const quic_frame*>& frames)>& handler);
     int handleHandshakePacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
     int handleRetryPacket(const quic_pkt_header* header);
     int handle1RttPacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
@@ -181,8 +181,8 @@ protected:
     bool IsBidirect(uint64_t id);
     bool IsIdle(uint64_t id);
 
-    int send(OSSL_ENCRYPTION_LEVEL level, uint64_t number, uint64_t ack, const void* body, size_t len);
-    void resendFrames(pn_namespace* pn, quic_frame* frame);
+    int send(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, const void* body, size_t len);
+    void resendFrames(pn_namespace* ns, quic_frame* frame);
     Job* keepAlive_timer = nullptr;
     void keepAlive_action();
     Job* disconnect_timer = nullptr;
