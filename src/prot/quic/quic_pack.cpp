@@ -483,6 +483,11 @@ char* encode_packet(const void* data_, size_t len,
     return body + header_len + ciphertext_len;
 }
 
+static size_t pack_crypto_frame_len(const struct quic_crypto* crypto){
+    return variable_encode_len(crypto->offset) + variable_encode_len(crypto->length) + crypto->length;
+
+}
+
 static char* pack_crypto_frame(const struct quic_crypto* crypto, char* data){
     data += variable_encode(data, crypto->offset);
     data += variable_encode(data, crypto->length);
@@ -498,7 +503,24 @@ static const char* unpack_crypto_frame(const char* data, struct quic_crypto* cry
     return data + crypto->length;
 }
 
-static char* pack_ack_frame(const struct quic_ack* ack, char* data){
+static size_t pack_ack_frame_len(uint64_t type, const struct quic_ack* ack) {
+    size_t len = variable_encode_len(ack->acknowledged)
+                 + variable_encode_len(ack->delay)
+                 + variable_encode_len(ack->range_count)
+                 + variable_encode_len(ack->first_range);
+    for(size_t i = 0; i < ack->range_count; i++){
+        len += variable_encode_len(ack->ranges[i].gap)
+               + variable_encode_len(ack->ranges[i].length);
+    }
+    if(type == QUIC_FRAME_ACK_ECN){
+        len += variable_encode_len(ack->ecns.ect0)
+               + variable_encode_len(ack->ecns.ect1)
+               + variable_encode_len(ack->ecns.ecn_ce);
+    }
+    return len;
+}
+
+static char* pack_ack_frame(uint64_t type, const struct quic_ack* ack, char* data){
     data += variable_encode(data, ack->acknowledged);
     data += variable_encode(data, ack->delay);
     data += variable_encode(data, ack->range_count);
@@ -507,13 +529,11 @@ static char* pack_ack_frame(const struct quic_ack* ack, char* data){
         data += variable_encode(data, ack->ranges[i].gap);
         data += variable_encode(data, ack->ranges[i].length);
     }
-    return data;
-}
-
-static char* pack_ack_ecn_frame(const struct quic_ack* ack, char* data){
-    data += variable_encode(data, ack->ecns.ect0);
-    data += variable_encode(data, ack->ecns.ect1);
-    data += variable_encode(data, ack->ecns.ecn_ce);
+    if(type == QUIC_FRAME_ACK_ECN){
+        data += variable_encode(data, ack->ecns.ect0);
+        data += variable_encode(data, ack->ecns.ect1);
+        data += variable_encode(data, ack->ecns.ecn_ce);
+    }
     return data;
 }
 
@@ -538,6 +558,16 @@ static const char* unpack_ack_frame(uint64_t type, const char* data, struct quic
         data += variable_decode(data, &ack->ecns.ecn_ce);
     }
     return data;
+}
+
+static size_t pack_close_frame_len(uint64_t type, const struct quic_close* close_frame){
+    size_t len = variable_encode_len(close_frame->error)
+            + variable_encode_len(close_frame->reason_len)
+            + close_frame->reason_len;
+    if(type == QUIC_FRAME_CONNECTION_CLOSE){
+        return len + variable_encode_len(close_frame->frame_type);
+    }
+    return len;
 }
 
 static char* pack_close_frame(uint64_t type, const struct quic_close* close_frame, char* data){
@@ -565,6 +595,12 @@ static const char* unpack_close_frame(uint64_t type, const char* data, struct qu
     return data + close_frame->reason_len;
 }
 
+static size_t pack_new_id_frame_len(const struct quic_new_id* new_id){
+    return variable_encode_len(new_id->seq)
+           + variable_encode_len(new_id->retired)
+           + 1 + new_id->length + sizeof(new_id->token);
+}
+
 static char* pack_new_id_frame(const struct quic_new_id* new_id, char* data){
     data += variable_encode(data, new_id->seq);
     data += variable_encode(data, new_id->retired);
@@ -588,6 +624,10 @@ static const char* unpack_new_id_frame(const char* data, struct quic_new_id* new
     return data + sizeof(new_id->token);
 }
 
+static size_t pack_new_token_frame_len(const quic_new_token* new_token){
+    return variable_encode_len(new_token->length) + new_token->length;
+}
+
 static char* pack_new_token_frame(const quic_new_token* new_token, char* data){
     data += variable_encode(data, new_token->length);
     memcpy(data, new_token->token, new_token->length);
@@ -599,6 +639,17 @@ static const char* unpack_new_token_frame(const char* data, struct quic_new_toke
     new_token->token = new char[new_token->length];
     memcpy(new_token->token, data, new_token->length);
     return data + new_token->length;
+}
+
+static size_t pack_stream_frame_len(uint64_t type, const quic_stream* stream){
+    size_t len = variable_encode_len(stream->id) + stream->length;
+    if(type & QUIC_FRAME_STREAM_OFF_F){
+        len += variable_encode_len(stream->offset);
+    }
+    if(type & QUIC_FRAME_STREAM_LEN_F){
+        len += variable_encode_len(stream->length);
+    }
+    return len;
 }
 
 static char* pack_stream_frame(uint64_t type, const quic_stream* stream, char *data){
@@ -632,6 +683,12 @@ static const char* unpack_stream_frame(uint64_t type, const char* data, int len,
     return data + stream->length;
 }
 
+static size_t pack_reset_frame_len(const quic_reset* reset){
+    return variable_encode_len(reset->id)
+    + variable_encode_len(reset->error)
+    + variable_encode_len(reset->fsize);
+}
+
 static char* pack_reset_frame(const quic_reset* reset, char* data){
     data += variable_encode(data, reset->id);
     data += variable_encode(data, reset->error);
@@ -646,6 +703,10 @@ static const char* unpack_reset_frame(const char* data, quic_reset* reset){
     return data;
 }
 
+static size_t pack_stop_frame_len(const quic_stop* stop) {
+    return variable_encode_len(stop->id) + variable_encode_len(stop->error);
+}
+
 static char* pack_stop_frame(const quic_stop* stop, char* data){
     data += variable_encode(data, stop->id);
     data += variable_encode(data, stop->error);
@@ -656,6 +717,10 @@ static const char* unpack_stop_frame(const char* data, quic_stop* stop){
     data += variable_decode(data, &stop->id);
     data += variable_decode(data, &stop->error);
     return data;
+}
+
+static size_t pack_max_stream_data_len(const quic_max_stream_data* stream_data){
+    return variable_encode_len(stream_data->id) + variable_encode_len(stream_data->max);
 }
 
 static char* pack_max_stream_data(const quic_max_stream_data* stream_data, char* data){
@@ -670,6 +735,10 @@ static const char* unpack_max_stream_data(const char* data, quic_max_stream_data
     return data;
 }
 
+static size_t pack_stream_blocked_len(const quic_stream_data_blocked* blocked) {
+    return variable_encode_len(blocked->id) + variable_encode_len(blocked->size);
+}
+
 static char* pack_stream_blocked(const quic_stream_data_blocked* blocked, char* data){
     data += variable_encode(data, blocked->id);
     data += variable_encode(data, blocked->size);
@@ -682,6 +751,57 @@ static const char* unpack_stream_blocked(const char* data, quic_stream_data_bloc
     return data;
 }
 
+size_t pack_frame_len(const quic_frame* frame){
+    size_t tlen = variable_encode_len(frame->type);
+    switch(frame->type){
+    case QUIC_FRAME_PADDING:
+        return frame->extra;
+    case QUIC_FRAME_CRYPTO:
+        return tlen + pack_crypto_frame_len(&frame->crypto);
+    case QUIC_FRAME_ACK:
+    case QUIC_FRAME_ACK_ECN:
+        return tlen + pack_ack_frame_len(frame->type, &frame->ack);
+    case QUIC_FRAME_PING:
+    case QUIC_FRAME_HANDSHAKE_DONE:
+        return tlen;
+    case QUIC_FRAME_RESET_STREAM:
+        return tlen + pack_reset_frame_len(&frame->reset);
+    case QUIC_FRAME_STOP_SENDING:
+        return tlen + pack_stop_frame_len(&frame->stop);
+    case QUIC_FRAME_NEW_TOKEN:
+        return tlen + pack_new_token_frame_len(&frame->new_token);
+    case QUIC_FRAME_MAX_DATA:
+    case QUIC_FRAME_MAX_STREAMS_BI:
+    case QUIC_FRAME_MAX_STREAMS_UBI:
+    case QUIC_FRAME_DATA_BLOCKED:
+    case QUIC_FRAME_STREAMS_BLOCKED_BI:
+    case QUIC_FRAME_STREAMS_BLOCKED_UBI:
+    case QUIC_FRAME_RETIRE_CONNECTION_ID:
+        return tlen + variable_encode_len(frame->extra);
+    case QUIC_FRAME_MAX_STREAM_DATA:
+        return tlen + pack_max_stream_data_len(&frame->max_stream_data);
+    case QUIC_FRAME_STREAM_DATA_BLOCKED:
+        return tlen + pack_stream_blocked_len(&frame->stream_data_blocked);
+    case QUIC_FRAME_NEW_CONNECTION_ID:
+        return tlen + pack_new_id_frame_len(&frame->new_id);
+    case QUIC_FRAME_PATH_CHALLENGE:
+    case QUIC_FRAME_PATH_RESPONSE:
+        return tlen + sizeof(frame->path_data);
+    case QUIC_FRAME_CONNECTION_CLOSE:
+    case QUIC_FRAME_CONNECTION_CLOSE_APP:
+        return tlen + pack_close_frame_len(frame->type, &frame->close);
+    default:
+        if((frame->type >= QUIC_FRAME_STREAM_START_ID)
+           &&(frame->type <= QUIC_FRAME_STREAM_END_ID))
+        {
+            return tlen + pack_stream_frame_len(frame->type, &frame->stream);
+        }else {
+            LOGE("unknown frame: 0x%x\n", (int)frame->type);
+            return 0;
+        }
+    }
+}
+
 void* pack_frame(void* buff, const quic_frame* frame) {
     size_t tlen = variable_encode(buff, frame->type);
     switch(frame->type){
@@ -692,9 +812,8 @@ void* pack_frame(void* buff, const quic_frame* frame) {
     case QUIC_FRAME_CRYPTO:
         return pack_crypto_frame(&frame->crypto, (char*)buff + tlen);
     case QUIC_FRAME_ACK:
-        return pack_ack_frame(&frame->ack, (char*)buff + tlen);
     case QUIC_FRAME_ACK_ECN:
-        return pack_ack_ecn_frame(&frame->ack, (char*)buff + tlen);
+        return pack_ack_frame(frame->type, &frame->ack, (char*)buff + tlen);
     case QUIC_FRAME_PING:
     case QUIC_FRAME_HANDSHAKE_DONE:
         return (char*) buff + tlen;

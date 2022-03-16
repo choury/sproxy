@@ -50,15 +50,16 @@ public:
     }
 };
 
+using buff_iterator = std::list<buff_block>::insert_iterator;
 class WBuffer {
     std::list<buff_block> write_queue;
     size_t  len = 0;
 public:
     ~WBuffer();
     size_t length();
-    std::list<buff_block>::iterator start();
-    std::list<buff_block>::iterator end();
-    std::list<buff_block>::iterator push(std::list<buff_block>::insert_iterator i, buff_block&& bb);
+    buff_iterator start();
+    buff_iterator end();
+    buff_iterator push(buff_iterator i, buff_block&& bb);
     ssize_t  Write(std::function<ssize_t(const void*, size_t, uint64_t)> write_func);
 };
 
@@ -131,10 +132,9 @@ public:
     //for write buffer
     virtual size_t wlength();
     virtual ssize_t cap(uint64_t id);
-    virtual std::list<buff_block>::insert_iterator buffer_head();
-    virtual std::list<buff_block>::insert_iterator buffer_end();
-    virtual std::list<buff_block>::insert_iterator
-    buffer_insert(std::list<buff_block>::insert_iterator where, buff_block&& bb);
+    virtual buff_iterator buffer_head();
+    virtual buff_iterator buffer_end();
+    virtual buff_iterator buffer_insert(buff_iterator where, buff_block&& bb);
 };
 
 class NullRWer: public RWer{

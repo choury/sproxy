@@ -13,9 +13,7 @@
 
 
 /*TODO:
- * 发端流量控制（stream/data）
  * Stateless Reset处理
- * 分包
  * 多地址，失败轮询重试
  * server端实现
  * check retry packet tag
@@ -227,7 +225,8 @@ QuicRWer::QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
         SocketRWer(hostname, port, protocol, std::move(errorCB), std::move(connectCB)),
         qos(ctx != nullptr,
            std::bind(&QuicRWer::send, this, _1, _2, _3, _4, _5),
-           std::bind(&QuicRWer::resendFrames, this, _1, _2))
+           std::bind(&QuicRWer::resendFrames, this, _1, _2),
+           std::bind(&QuicRWer::ErrorHE, this, PROTOCOL_ERR, _1))
 {
     assert(protocol == Protocol::QUIC);
     ctx = SSL_CTX_new(TLS_client_method());
@@ -346,7 +345,6 @@ QuicRWer::FrameResult QuicRWer::handleCryptoFrame(quic_context* context, const q
     }else {
         if(ssl_get_error(ssl, SSL_do_handshake(ssl)) == 1){
             LOGD(DQUIC, "SSL_do_handshake succeed\n");
-            Connected(addrs.front());
             size_t olen = 0;
             his_max_ack_delay = 25;
             const uint8_t* buff = nullptr;
@@ -411,6 +409,7 @@ QuicRWer::FrameResult QuicRWer::handleCryptoFrame(quic_context* context, const q
                 pos += size;
             }
             qos.SetMaxAckDelay(his_max_ack_delay);
+            Connected(addrs.front());
         }else if(errno != EAGAIN){
             int error = errno;
             LOGE("(%s): ssl connect error:%s\n", hostname, strerror(error));
@@ -479,7 +478,7 @@ QuicRWer::FrameResult QuicRWer::handleStreamFrame(uint64_t type, const quic_stre
 
     uint64_t want = status.rb.Offset() + status.rb.length();
     if(type & QUIC_FRAME_STREAM_FIN_F){
-        status.flags |= STREAM_FLAG_EOF;
+        status.flags |= STREAM_FLAG_FIN_RECVD;
         status.finSize = stream->offset + stream->length;
     }
     if(stream->offset + stream->length <= want){
@@ -519,7 +518,7 @@ QuicRWer::FrameResult QuicRWer::handleResetFrame(const quic_reset *stream) {
     auto& status = itr->second;
     uint64_t want = status.rb.Offset() + status.rb.length();
 
-    if((status.flags & STREAM_FLAG_EOF) && want == status.finSize){
+    if((status.flags & STREAM_FLAG_FIN_RECVD) && want == status.finSize){
         LOGD(DQUIC, "ignored reset [%" PRIu64"]: after fin\n", id);
         return FrameResult::ok;
     }
@@ -752,7 +751,7 @@ ssize_t QuicRWer::Write(const void *buff, size_t len, uint64_t id) {
     }
     if(len == 0){
         frame->type |= QUIC_FRAME_STREAM_FIN_F;
-        status.flags |= STREAM_FLAG_FIN;
+        status.flags |= STREAM_FLAG_FIN_SENT;
     }
     frame->stream.id = id;
     frame->stream.length = len;
@@ -918,7 +917,7 @@ void QuicRWer::Reset(uint64_t id, uint32_t code) {
         return;
     }
     auto& status = streammap[id];
-    if((status.flags & STREAM_FLAG_FIN)){
+    if((status.flags & STREAM_FLAG_FIN_SENT)){
         return;
     }
     status.flags |= STREAM_FLAG_RESET_SENT;
@@ -934,6 +933,19 @@ size_t QuicRWer::rlength() {
     return rblen;
 }
 
+ssize_t QuicRWer::cap(uint64_t id) {
+    if(streammap.count(id) == 0){
+        return 0;
+    }
+    auto& stream = streammap[id];
+    if(stream.flags & (STREAM_FLAG_FIN_SENT|STREAM_FLAG_RESET_SENT|STREAM_FLAG_RESET_RECVD)) {
+        return 0;
+    }
+    assert(stream.offset <= stream.his_max_data);
+    ssize_t streamdata = stream.his_max_data - stream.offset;
+    return std::min(qos.GetWindowSize(), streamdata);
+}
+
 bool QuicRWer::IsIdle(uint64_t id){
     if(streammap.count(id) == 0){
         return true;
@@ -941,13 +953,13 @@ bool QuicRWer::IsIdle(uint64_t id){
     auto status = streammap[id];
     bool send_closed = false;
     bool recv_closed = false;
-    if((status.flags & STREAM_FLAG_FIN) || (status.flags & STREAM_FLAG_RESET_SENT)){
+    if((status.flags & STREAM_FLAG_FIN_SENT) || (status.flags & STREAM_FLAG_RESET_SENT)){
         send_closed = true;
     }
     if(status.flags & STREAM_FLAG_RESET_RECVD){
         recv_closed = true;
     }
-    if((status.flags & STREAM_FLAG_EOF) && (status.rb.Offset() == status.finSize)){
+    if((status.flags & STREAM_FLAG_FIN_RECVD) && (status.rb.Offset() == status.finSize)){
         assert(status.rb.length() == 0);
         recv_closed = true;
     }
@@ -969,6 +981,7 @@ void QuicRWer::ConsumeRData() {
             continue;
         }
         auto& rb = i->second.rb;
+        assert(rblen >= rb.length());
         char* buff = (char*)p_malloc(rb.length());
         buff_block wb{buff, rb.get(buff, rb.length()), 0, i->first};
         readCB(wb);
@@ -977,7 +990,7 @@ void QuicRWer::ConsumeRData() {
         rb.consume(wb.offset);
         rblen -= wb.offset;
 
-        if(flags & STREAM_FLAG_EOF && i->second.finSize == rb.Offset()){
+        if(flags & STREAM_FLAG_FIN_RECVD && i->second.finSize == rb.Offset()){
             buff_block ewb{(const void*)nullptr, 0, 0, i->first};
             readCB(ewb);
         }
@@ -1002,7 +1015,7 @@ void QuicRWer::ConsumeRData() {
             if(status.my_max_data - offset >= BUF_LEN){
                 return false;
             }
-            if((status.flags & STREAM_FLAG_EOF) && status.my_max_data >= status.finSize){
+            if((status.flags & STREAM_FLAG_FIN_RECVD) && status.my_max_data >= status.finSize){
                 return false;
             }
             return true;

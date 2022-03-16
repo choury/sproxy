@@ -110,8 +110,8 @@ protected:
     size_t dcid_id = 0;
     std::string initToken;
     struct QuicStreamStatus{
-#define STREAM_FLAG_FIN    0x01
-#define STREAM_FLAG_EOF    0x02
+#define STREAM_FLAG_FIN_SENT    0x01   //sent fin to peer
+#define STREAM_FLAG_FIN_RECVD   0x02   //got fin from peer
 #define STREAM_FLAG_RESET_SENT  0x04
 #define STREAM_FLAG_RESET_RECVD 0x08
         uint32_t flags = 0;
@@ -151,6 +151,7 @@ protected:
     virtual void ReadData() override;
     virtual void ConsumeRData() override;
     virtual size_t rlength() override;
+    virtual ssize_t cap(uint64_t id) override;
     virtual ssize_t Write(const void* buff, size_t len, uint64_t id) override;
 
     void generateCid();

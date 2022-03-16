@@ -148,8 +148,8 @@ class pn_namespace{
     std::list <quic_frame*>    pend_frames;
     std::list <quic_packet_pn> sent_packets;
 
-    int sendPacket();
-    uint64_t PendAck();
+    int sendOnePacket(size_t window);
+    void PendAck();
     std::list<quic_packet_meta> DetectAndRemoveAckedPackets(const quic_ack* ack, Rtt* rtt, uint64_t max_delay_us);
     std::list<quic_packet_pn> DetectAndRemoveLostPackets(Rtt* rtt);
     void clear();
@@ -165,10 +165,9 @@ pn_namespace::pn_namespace(char name, std::function<int(uint64_t, uint64_t, cons
         sent(std::move(sent)), name(name) {
 }
 
-uint64_t pn_namespace::PendAck() {
-    uint64_t now = getutime();
+void pn_namespace::PendAck() {
     if(!should_ack){
-        return now;
+        return;
     }
     assert(!tracked_receipt_pns.items.empty());
     should_ack = false;
@@ -198,36 +197,46 @@ uint64_t pn_namespace::PendAck() {
     LOGD(DQUIC, "< [%c] ack frame %" PRIu64": %.2fms\n",
          name, ack->ack.acknowledged, (ack->ack.delay << 3)/1000.0);
     pend_frames.push_front(ack);
-    return now;
 }
 
-int pn_namespace::sendPacket(){
-    char buff[max_datagram_size];
-    char* pos = buff;
-    uint64_t now = PendAck();
+int pn_namespace::sendOnePacket(size_t window){
+    uint64_t now = getutime();
     bool ack_eliciting = false;
     bool in_flight = false;
-    for(auto frame: pend_frames) {
-        pos = (char*)pack_frame(pos, frame);
+
+    char buff[max_datagram_size];
+    char* pos = buff;
+    auto i = pend_frames.begin();
+    for(; i != pend_frames.end(); i++){
+        size_t offset = pos + pack_frame_len(*i) - buff;
+        if(offset > sizeof(buff) || offset > window){
+            break;
+        }
+        pos = (char*)pack_frame(pos, *i);
         if(pos == nullptr){
             return -QUIC_INTERNAL_ERROR;
         }
-        ack_eliciting = is_ack_eliciting(frame);
-        in_flight = ack_eliciting || frame->type == QUIC_FRAME_PADDING;
+        if(!ack_eliciting){
+            ack_eliciting = is_ack_eliciting(*i);
+        }
+        if(!in_flight){
+            in_flight = ack_eliciting || (*i)->type == QUIC_FRAME_PADDING;
+        }
     }
-    if(pos == buff){
-        //there is no frame
+    if(i == pend_frames.begin()){
+        //there is no frame sent
         return 0;
     }
     int ret = sent(current_pn, largest_acked_packet+1, buff, pos - buff);
     if(ret < 0){
         return ret;
     }
-
+    decltype(pend_frames) sent_frames;
+    sent_frames.splice(sent_frames.begin(), pend_frames, pend_frames.begin(), i);
     sent_packets.push_back(quic_packet_pn{
             {current_pn, ack_eliciting, in_flight, (size_t)ret, now},
-            pend_frames});
-    pend_frames.clear();
+            sent_frames});
+
     current_pn++;
     if(in_flight){
         if(ack_eliciting){
@@ -348,8 +357,9 @@ pn_namespace::~pn_namespace() {
 
 QuicQos::QuicQos(bool isServer,
            std::function<int(OSSL_ENCRYPTION_LEVEL, uint64_t, uint64_t, const void*, size_t)> sent,
-           std::function<void(pn_namespace*, quic_frame*)> resendFrames):
-            isServer(isServer), resendFrames(std::move(resendFrames)){
+           std::function<void(pn_namespace*, quic_frame*)> resendFrames,
+           std::function<void(int)> ErrorHE):
+            isServer(isServer), resendFrames(std::move(resendFrames)), ErrorHE(std::move(ErrorHE)){
     pns[QUIC_PACKET_NAMESPACE_INITIAL] = new pn_namespace('I', std::bind(sent, ssl_encryption_initial,
             std::placeholders::_1,
             std::placeholders::_2,
@@ -388,7 +398,7 @@ void QuicQos::KeyGot(OSSL_ENCRYPTION_LEVEL level) {
 void QuicQos::KeyLost(OSSL_ENCRYPTION_LEVEL level) {
     auto pn = pns[get_packet_namespace(level)];
     for(auto& p : pn->sent_packets) {
-        if(p.meta.in_flight) {
+        if(!p.meta.in_flight) {
             continue;
         }
         bytes_in_flight -= p.meta.sent_bytes;
@@ -515,18 +525,38 @@ void QuicQos::SetLossDetectionTimer() {
 }
 
 void QuicQos::sendPacket() {
+    bool has_pending_packet = false;
+    bool has_in_flight = false;
     for(auto &p: pns){
+        if(congestion_window - bytes_in_flight < 30) {
+            // we need 30 bytes to send a packet at least
+            LOGD(DQUIC, "congestion window reached, bytes_in_flight: %zd, congestion_window: %zd\n",
+                 bytes_in_flight, congestion_window);
+            has_packet_been_congested = true;
+            return;
+        }
         if(!p->hasKey){
             continue;
         }
-        int ret = p->sendPacket();
-        if (ret < 0){
-            return;
+        p->PendAck();
+        while(!p->pend_frames.empty()) {
+            int ret = p->sendOnePacket(congestion_window - bytes_in_flight);
+            if (ret < 0) {
+                return ErrorHE(-ret);
+            }
+            if (ret > 0) {
+                bytes_in_flight += ret;
+                has_in_flight = true;
+            }
         }
-        if(ret > 0) {
-            bytes_in_flight += ret;
-            SetLossDetectionTimer();
+        if(!p->pend_frames.empty()){
+            has_pending_packet = true;
+            break;
         }
+    }
+    has_packet_been_congested = has_pending_packet;
+    if(has_in_flight){
+        SetLossDetectionTimer();
     }
 }
 
@@ -612,6 +642,9 @@ void QuicQos::OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets) {
             congestion_window += max_datagram_size * meta.sent_bytes / congestion_window;
         }
     }
+    if(has_packet_been_congested && GetWindowSize() > 0){
+        packet_tx = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this) , 0);
+    }
 }
 
 void QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t number, const quic_frame *frame) {
@@ -683,4 +716,12 @@ void QuicQos::PushFrame(pn_namespace* ns, quic_frame *frame) {
 
 void QuicQos::PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame* frame) {
     return PushFrame(GetNamespace(level), frame);
+}
+
+ssize_t QuicQos::GetWindowSize() {
+    if(has_packet_been_congested) {
+        return 0;
+    }
+    // reserve 30 bytes for quic header
+    return congestion_window - bytes_in_flight - 30;
 }

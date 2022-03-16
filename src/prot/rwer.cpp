@@ -20,15 +20,15 @@ ssize_t RWer::cap(uint64_t) {
     return 4 * 1024 * 1024 - wbuff.length();
 }
 
-std::list<buff_block>::iterator WBuffer::start() {
+buff_iterator WBuffer::start() {
     return write_queue.begin();
 }
 
-std::list<buff_block>::iterator WBuffer::end() {
+buff_iterator WBuffer::end() {
     return write_queue.end();
 }
 
-std::list<buff_block>::iterator WBuffer::push(std::list<buff_block>::insert_iterator i, buff_block&& bb) {
+buff_iterator WBuffer::push(buff_iterator i, buff_block&& bb) {
     len += bb.len;
     return write_queue.emplace(i, std::move(bb));
 }
@@ -234,16 +234,15 @@ void RWer::Shutdown() {
     shutdown(getFd(), SHUT_WR);
 }
 
-std::list<buff_block>::insert_iterator RWer::buffer_head() {
+buff_iterator RWer::buffer_head() {
     return wbuff.start();
 }
 
-std::list<buff_block>::insert_iterator RWer::buffer_end() {
+buff_iterator RWer::buffer_end() {
     return wbuff.end();
 }
 
-std::list<buff_block>::insert_iterator
-RWer::buffer_insert(std::list<buff_block>::insert_iterator where, buff_block&& bb) {
+buff_iterator RWer::buffer_insert(buff_iterator where, buff_block&& bb) {
     assert(bb.offset <= bb.len);
     assert((flags & RWER_SHUTDOWN) == 0);
     if(bb.offset < bb.len || bb.len == 0){

@@ -72,6 +72,7 @@ class QuicQos {
     uint64_t ssthresh = UINT64_MAX;
     uint64_t last_receipt_ack_time = 0;
     uint64_t his_max_ack_delay = 0;
+    bool has_packet_been_congested = false;
 
     pn_namespace* pns[3];
     bool isServer = false;
@@ -80,6 +81,7 @@ class QuicQos {
     Job* packet_tx = nullptr;
     void sendPacket();
     std::function<void(pn_namespace*, quic_frame*)> resendFrames;
+    std::function<void(int error)> ErrorHE;
 
     bool PeerCompletedAddressValidation();
     void SetLossDetectionTimer();
@@ -91,7 +93,8 @@ public:
     Rtt    rtt;
     QuicQos(bool isServer,
            std::function<int(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, const void* body, size_t len)> sent,
-           std::function<void(pn_namespace*, quic_frame*)> resendFrames);
+           std::function<void(pn_namespace*, quic_frame*)> resendFrames,
+           std::function<void(int error)> ErrorHE);
     ~QuicQos();
     void KeyGot(OSSL_ENCRYPTION_LEVEL level);
     void KeyLost(OSSL_ENCRYPTION_LEVEL level);
@@ -105,6 +108,7 @@ public:
     void HandleRetry();
     void PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame* frame);;
     void PushFrame(pn_namespace* ns, quic_frame* frame);
+    ssize_t GetWindowSize();
 };
 
 #endif //SPROXY_QUIC_QOS_H

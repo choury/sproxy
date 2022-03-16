@@ -272,6 +272,7 @@ std::vector<const quic_frame*> decode_packet(const void* data, size_t len,
                                        quic_pkt_header* header, const quic_secret* secret);
 
 
+size_t pack_frame_len(const quic_frame* frame);
 void* pack_frame(void* buff, const quic_frame* frame);
 char* encode_packet(const void* data, size_t len,
                   const quic_pkt_header* header, const quic_secret* secret,
