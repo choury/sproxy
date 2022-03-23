@@ -14,7 +14,7 @@ void Guest::ReadHE(buff_block& bb){
         if(statuslist.empty()){
             return deleteLater(NOERROR);
         }
-        GStatus& status = statuslist.back();
+        ReqStatus& status = statuslist.back();
         if(status.flags & HTTP_CLOSED_F){
             return deleteLater(NOERROR);
         }
@@ -42,7 +42,7 @@ void Guest::WriteHE(size_t len){
     if(statuslist.empty()){
         return;
     }
-    GStatus& status = statuslist.front();
+    ReqStatus& status = statuslist.front();
     LOGD(DHTTP, "<guest> (%s) written: wlength:%zu, flags:0x%08x\n", getsrc(), len, status.flags);
     if(status.flags & HTTP_RES_EOF){
         if(rwer->wlength() == 0){
@@ -90,14 +90,14 @@ void Guest::ReqProc(HttpReqHeader* header) {
             std::bind(&Guest::response, this, nullptr, _1),
             std::bind(&RWer::EatReadData, rwer));
 
-    statuslist.emplace_back(GStatus{req, nullptr, 0});
+    statuslist.emplace_back(ReqStatus{req, nullptr, 0});
     if(statuslist.size() == 1){
         distribute(req, this);
     }
 }
 
 void Guest::deqReq() {
-    GStatus& status = statuslist.front();
+    ReqStatus& status = statuslist.front();
     if((status.flags & HTTP_CLOSED_F) == 0) {
         status.req->trigger(Channel::CHANNEL_CLOSED);
     }
@@ -109,7 +109,7 @@ void Guest::deqReq() {
 }
 
 ssize_t Guest::DataProc(const void *buff, size_t size) {
-    GStatus& status = statuslist.back();
+    ReqStatus& status = statuslist.back();
     assert((status.flags & HTTP_REQ_EOF) == 0);
     assert((status.flags & HTTP_REQ_COMPLETED) == 0);
     int len = status.req->cap();
@@ -128,7 +128,7 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
 }
 
 void Guest::EndProc() {
-    GStatus& status = statuslist.back();
+    ReqStatus& status = statuslist.back();
     LOGD(DHTTP, "<guest> EndProc %" PRIu32 "\n", status.req->header->request_id);
     rwer->addEvents(RW_EVENT::READ);
     status.req->send((const void*)nullptr, 0);
@@ -150,7 +150,7 @@ void Guest::Error(int ret, int code) {
     if(statuslist.empty()){
         return deleteLater(PEER_LOST_ERR);
     }
-    GStatus& status = statuslist.back();
+    ReqStatus& status = statuslist.back();
     LOGE("(%s)[%" PRIu32 "]: <guest> error (%s) %d/%d http_flag:0x%x\n",
             getsrc(), status.req->header->request_id,
             status.req->header->geturl().c_str(), ret, code, http_flag);
@@ -158,7 +158,7 @@ void Guest::Error(int ret, int code) {
 }
 
 void Guest::response(void*, std::shared_ptr<HttpRes> res) {
-    GStatus& status = statuslist.front();
+    ReqStatus& status = statuslist.front();
     HttpLog(getsrc(), status.req, res);
     assert(status.res == nullptr);
     status.res = res;
@@ -201,7 +201,7 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
 }
 
 void Guest::Send(void *buff, size_t size) {
-    GStatus& status = statuslist.front();
+    ReqStatus& status = statuslist.front();
     assert((status.flags & HTTP_RES_EOF) == 0);
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
     if(status.flags & HTTP_CHUNK_F){

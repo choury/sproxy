@@ -61,6 +61,7 @@ struct options opt = {
     .pcap_file         = NULL,
     .disable_http2     = false,
     .sni_mode          = false,
+    .quic_mode         = false,
     .daemon_mode       = false,
     .ignore_cert_error = false,
     .autoindex         = false,
@@ -94,7 +95,7 @@ enum option_type{
     option_list,
 };
 
-static const char* getopt_option = ":D1hikr:s:p:I:c:P:v";
+static const char* getopt_option = ":D1hikqr:s:p:I:c:P:v";
 static struct option long_options[] = {
     {"autoindex",     no_argument,       NULL, 'i'},
     {"cafile",        required_argument, NULL,  0 },
@@ -111,6 +112,7 @@ static struct option long_options[] = {
     {"pcap",          required_argument, NULL,  0 },
     {"port",          required_argument, NULL, 'p'},
     {"policy-file",   required_argument, NULL, 'P'},
+    {"quic",          no_argument,       NULL, 'q'},
     {"rewrite-auth",  required_argument, NULL, 'r'},
     {"root-dir",      required_argument, NULL,  0 },
     {"secret",        required_argument, NULL, 's'},
@@ -162,8 +164,9 @@ static struct option_detail option_detail[] = {
     {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, ipv6_options},
     {"key", "Private key file name (ssl)", option_string, &opt.key, NULL},
     {"pcap", "Save packets in pcap file for vpn (generated pseudo ethernet header)", option_string, &opt.pcap_file, NULL},
-    {"port", "The port to listen, default is 80 but 443 for ssl/sni", option_int64, &opt.CPORT, NULL},
+    {"port", "The port to listen, default is 80 but 443 for ssl/sni/quic", option_int64, &opt.CPORT, NULL},
     {"policy-file", "The file of policy ("PREFIX"/etc/sproxy/sites.list as default)", option_string, &policy_file, NULL},
+    {"quic", "Server for QUIC (experiment)", option_bool, &opt.quic_mode, (void*)true},
     {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64, opt.rewrite_auth, NULL},
     {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
     {"secret", "Set user and passwd for proxy (user:password), default is none.", option_list, &secrets, NULL},

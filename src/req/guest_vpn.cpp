@@ -74,7 +74,7 @@ const char* VpnKey::getString(const char* sep) const{
     return str;
 }
 
-bool operator<(sockaddr_storage a, sockaddr_storage b) {
+static bool operator<(sockaddr_storage a, sockaddr_storage b) {
     return memcmp(&a, &b, sizeof(sockaddr_storage)) < 0;
 }
 

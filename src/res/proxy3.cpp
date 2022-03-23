@@ -16,6 +16,9 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
         if(bb.len == 0){
             //fin
             uint64_t id = bb.id;
+            if(ctrlid_remote && id == ctrlid_remote){
+                return Error(PROTOCOL_ERR, HTTP3_ERR_CLOSED_CRITICAL_STREAM);
+            }
             if(!statusmap.count(id)){
                 return;
             }
@@ -43,7 +46,14 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
         auto statusmap_copy = statusmap;
         for(auto& i: statusmap_copy){
             ReqStatus& status = i.second;
-            if(wantmore(status)){
+            if(!status.req){
+                continue;
+            }
+            if (status.flags&HTTP_REQ_COMPLETED || status.flags&HTTP_REQ_EOF){
+                continue;
+            }
+            if(this->rwer->cap(i.first) > 9){
+                // reserve 9 bytes for http stream header
                 status.req->more();
             }
         }
@@ -64,8 +74,7 @@ void Proxy3::Error(int ret, int code) {
 }
 
 void Proxy3::Reset(uint64_t id, uint32_t code) {
-    std::shared_ptr<QuicRWer> qrwer = std::dynamic_pointer_cast<QuicRWer>(rwer);
-    qrwer->Reset(id, code);
+    return std::dynamic_pointer_cast<QuicRWer>(rwer)->Reset(id, code);
 }
 
 void Proxy3::DataProc(uint64_t id, const void* data, size_t len){
@@ -76,10 +85,6 @@ void Proxy3::DataProc(uint64_t id, const void* data, size_t len){
         ReqStatus& status = statusmap[id];
         assert((status.flags & HTTP_RES_COMPLETED) == 0);
         assert((status.flags & HTTP_RES_EOF) == 0);
-        if(status.res == nullptr){
-            //compact for legacy version.
-            ResProc(id, UnpackHttpRes(H200));
-        }
         status.res->send(data, len);
     }else{
         LOGD(DHTTP3, "<proxy3> DataProc not found id: %" PRIu64 "\n", id);
@@ -93,6 +98,7 @@ void Proxy3::GoawayProc(uint64_t id){
 }
 
 void Proxy3::PushFrame(uint64_t id, void* buff, size_t len) {
+    assert(len <= rwer->cap(id));
     rwer->buffer_insert(rwer->buffer_end(), buff_block{buff, len, 0, id});
 }
 
@@ -143,7 +149,7 @@ void Proxy3::request(std::shared_ptr<HttpReq> req, Requester*) {
         }
     });
     req->attach((Channel::recv_const_t)std::bind(&Proxy3::Send, this, id, _1, _2),
-                [this, id]{return rwer->cap(id);});
+                [this, id]{return rwer->cap(id) - 9;});
 }
 
 
@@ -202,13 +208,6 @@ void Proxy3::RstProc(uint64_t id, uint32_t errcode) {
 
 
 void Proxy3::ShutdownProc(uint64_t id){
-}
-
-bool Proxy3::wantmore(const Proxy3::ReqStatus& status) {
-    if(!status.req){
-        return false;
-    }
-    return (status.flags&HTTP_REQ_COMPLETED) == 0 && (status.flags&HTTP_REQ_EOF) == 0;
 }
 
 void Proxy3::Clean(uint64_t id, Proxy3::ReqStatus& status, uint32_t errcode) {

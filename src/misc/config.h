@@ -52,6 +52,7 @@ struct options{
     const char *pcap_file;
     bool disable_http2;
     bool sni_mode;
+    bool quic_mode;
     bool daemon_mode;
     bool ignore_cert_error;
     bool autoindex;

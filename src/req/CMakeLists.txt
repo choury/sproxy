@@ -3,7 +3,7 @@
 #Created:  2017/2/11
 
 
-set(req_src requester.cpp  guest.cpp guest_sni.cpp guest2.cpp)
+set(req_src requester.cpp  guest.cpp guest_sni.cpp guest2.cpp guest3.cpp)
 
 if(LINUX OR ANDROID)
     set(req_src ${req_src} guest_vpn.cpp)

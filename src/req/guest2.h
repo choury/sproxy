@@ -4,15 +4,15 @@
 #include "requester.h"
 #include "prot/http2/http2.h"
 
-struct ReqStatus{
-    std::shared_ptr<HttpReq> req;
-    std::shared_ptr<HttpRes> res;
-    int32_t  remotewinsize; //对端提供的窗口大小，发送时减小，收到对端update时增加
-    int32_t  localwinsize; //发送给对端的窗口大小，接受时减小，给对端发送update时增加
-    uint32_t flags;
-};
 
 class Guest2: public Requester, public Http2Responser {
+    struct ReqStatus{
+        std::shared_ptr<HttpReq> req;
+        std::shared_ptr<HttpRes> res;
+        int32_t  remotewinsize; //对端提供的窗口大小，发送时减小，收到对端update时增加
+        int32_t  localwinsize; //发送给对端的窗口大小，接受时减小，给对端发送update时增加
+        uint32_t flags;
+    };
     std::map<uint32_t, ReqStatus> statusmap;
     //void init(RWer* rwer);
     Job* connection_lost_job = nullptr;

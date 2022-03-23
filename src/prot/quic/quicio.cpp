@@ -15,18 +15,10 @@
 /*TODO:
  * Stateless Reset处理
  * 多地址，失败轮询重试
- * server端实现
  * check retry packet tag
  * 连接迁移
  * pmtu
  */
-
-#define QUIC_CIPHERS                                              \
-   "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:"               \
-   "TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_CCM_SHA256"
-
-#define QUIC_GROUPS "P-256:X25519:P-384:P-521"
-
 
 static uint8_t getPacketType(OSSL_ENCRYPTION_LEVEL level) {
     switch(level){
@@ -44,11 +36,11 @@ static uint8_t getPacketType(OSSL_ENCRYPTION_LEVEL level) {
 }
 
 void QuicRWer::dropkey(OSSL_ENCRYPTION_LEVEL level) {
-    LOGD(DQUIC, "drop key for level: %d\n", level);
     assert(level != ssl_encryption_application);
     if(!contexts[level].hasKey){
         return;
     }
+    LOGD(DQUIC, "drop key for level: %d\n", level);
     contexts[level].hasKey = false;
     memset(&contexts[level].read_secret, 0, sizeof(quic_secret));
     memset(&contexts[level].write_secret, 0, sizeof(quic_secret));
@@ -80,16 +72,39 @@ int QuicRWer::set_encryption_secrets(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
     quic_secret_set_key(&rwer->contexts[level].write_secret, (const char*)write_secret, SSL_CIPHER_get_id(SSL_get_current_cipher(ssl)));
     rwer->qos.KeyGot(level);
     rwer->contexts[level].hasKey = true;
-    //drop init key
-    rwer->dropkey(ssl_encryption_initial);
+    if(rwer->ctx) {
+        //drop init key if client mode
+        rwer->dropkey(ssl_encryption_initial);
+    }
     return 1;
 }
 
+size_t QuicRWer::envelopLen(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, size_t len){
+    (void)pn;
+    (void)ack;
+    switch(level){
+    case ssl_encryption_initial:
+        return 7 /*flags(1)+version(4)+dcid_len(1)+scid_len(1)*/
+            + dcids[dcid_idx].id.length() + scids[scid_idx].id.length()
+               + variable_encode_len(initToken.length()) + initToken.length()
+            + variable_encode_len(len) + 4 /*packet number*/ + 16/*crypto tag*/;
+    case ssl_encryption_early_data:
+    case ssl_encryption_handshake:
+        return 7 + dcids[dcid_idx].id.length() + scids[scid_idx].id.length()
+               + variable_encode_len(len) + 4 + 16;
+    case ssl_encryption_application:
+        return 1 + dcids[dcid_idx].id.length() + 4 + 16;
+    }
+}
+
 int QuicRWer::send(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, const void *body, size_t len) {
+    if(body == nullptr){
+        return envelopLen(level, pn, ack, len);
+    }
     quic_pkt_header header;
     header.type = getPacketType(level);
-    header.dcid = dcids[dcid_id].id;
-    header.scid = scids[scid_id].id;
+    header.dcid = dcids[dcid_idx].id;
+    header.scid = scids[scid_idx].id;
     header.version = QUIC_VERSION_1;
     header.token = initToken;
 
@@ -125,8 +140,10 @@ int QuicRWer::add_handshake_data(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
 
     quic_frame* frame = new quic_frame;
     frame->type = QUIC_FRAME_CRYPTO;
-    frame->crypto.body = new char[len];
-    memcpy(frame->crypto.body, data, len);
+    frame->crypto.buffer.ref = (uint32_t*)new char[len + sizeof(uint32_t)];
+    frame->crypto.buffer.data = (char*)(frame->crypto.buffer.ref + 1);
+    *frame->crypto.buffer.ref = 1;
+    memcpy(frame->crypto.buffer.data, data, len);
     frame->crypto.offset = context->crypto_offset;
     frame->crypto.length = len;
     rwer->qos.PushFrame(level, frame);
@@ -140,7 +157,7 @@ int QuicRWer::flush_flight(SSL *){
 
 int QuicRWer::send_alert(SSL *ssl, OSSL_ENCRYPTION_LEVEL level, uint8_t alert){
     QuicRWer* rwer = (QuicRWer*)SSL_get_app_data(ssl);
-    if(rwer->stats == RWerStats::Error){
+    if(rwer->stats == RWerStats::Error || (rwer->flags | RWER_CLOSING)){
         return 1;
     }
     quic_frame* frame = new quic_frame;
@@ -165,25 +182,32 @@ static SSL_QUIC_METHOD quic_method{
 
 void QuicRWer::generateCid() {
     cid dcid, scid;
-    dcid.id.resize(QUIC_CID_LEN);
-    scid.id.resize(QUIC_CID_LEN);
-    snprintf(&scid.id[0], scid.id.size(), "sproxy0000%d", rand());
-    snprintf(&dcid.id[0], dcid.id.size(), "sproxy0000%d", rand());
-    set32(&dcid.id[6], getutime());
+    scid.id.resize(QUIC_CID_LEN+1);
+    snprintf(&scid.id[0], scid.id.size(), "sproxy0000%010d", rand());
     set32(&scid.id[6], getutime());
-    quic_generate_initial_key(1, dcid.id.data(), dcid.id.length(), &contexts[0].write_secret);
-    quic_generate_initial_key(0, dcid.id.data(), dcid.id.length(), &contexts[0].read_secret);
+    scid.id.resize(QUIC_CID_LEN);
+
+    dcid.id.resize(QUIC_CID_LEN+1);
+    snprintf(&dcid.id[0], dcid.id.size(), "sproxy0000%010d", rand());
+    set32(&dcid.id[6], getutime());
+    dcid.id.resize(QUIC_CID_LEN);
 
     scids.push_back(scid);
     dcids.push_back(dcid);
 
-    contexts[0].hasKey = true;
+    if(ctx) {
+        //only client has init secret now.
+        quic_generate_initial_key(1, dcid.id.data(), dcid.id.length(), &contexts[0].write_secret);
+        quic_generate_initial_key(0, dcid.id.data(), dcid.id.length(), &contexts[0].read_secret);
+        qos.KeyGot(ssl_encryption_initial);
+        contexts[0].hasKey = true;
+    }
+
     contexts[0].level = ssl_encryption_initial;
     contexts[1].level = ssl_encryption_early_data;
     contexts[2].level = ssl_encryption_handshake;
     contexts[3].level = ssl_encryption_application;
 
-    qos.KeyGot(ssl_encryption_initial);
 }
 
 size_t QuicRWer::generateParams(char data[QUIC_INITIAL_LIMIT]) {
@@ -192,6 +216,12 @@ size_t QuicRWer::generateParams(char data[QUIC_INITIAL_LIMIT]) {
     pos += variable_encode(pos, scids[0].id.length());
     memcpy(pos, scids[0].id.data(), scids[0].id.length());
     pos += scids[0].id.length();
+    if(!originDcid.empty()) {
+        pos += variable_encode(pos, quic_original_destination_connection_id);
+        pos += variable_encode(pos, originDcid.length());
+        memcpy(pos, originDcid.data(), originDcid.length());
+        pos += originDcid.length();
+    }
     pos += variable_encode(pos, quic_max_idle_timeout);
     pos += variable_encode(pos, variable_encode_len(max_idle_timeout));
     pos += variable_encode(pos, max_idle_timeout);
@@ -216,6 +246,10 @@ size_t QuicRWer::generateParams(char data[QUIC_INITIAL_LIMIT]) {
     pos += variable_encode(pos, quic_initial_max_stream_data_uni);
     pos += variable_encode(pos, variable_encode_len(my_max_stream_data_uni));
     pos += variable_encode(pos, my_max_stream_data_uni);
+    if(ctx == nullptr) {
+        pos += variable_encode(pos, quic_disable_active_migration);
+        pos += variable_encode(pos, 0);
+    }
     return pos - data;
 }
 
@@ -223,8 +257,7 @@ QuicRWer::QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
                    std::function<void(int, int)> errorCB,
                    std::function<void(const sockaddr_storage&)> connectCB):
         SocketRWer(hostname, port, protocol, std::move(errorCB), std::move(connectCB)),
-        qos(ctx != nullptr,
-           std::bind(&QuicRWer::send, this, _1, _2, _3, _4, _5),
+        qos(false, std::bind(&QuicRWer::send, this, _1, _2, _3, _4, _5),
            std::bind(&QuicRWer::resendFrames, this, _1, _2),
            std::bind(&QuicRWer::ErrorHE, this, PROTOCOL_ERR, _1))
 {
@@ -262,14 +295,39 @@ QuicRWer::QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
     }
     SSL_set_app_data(ssl, this);
     generateCid();
-    char quic_params[QUIC_INITIAL_LIMIT];
-    SSL_set_quic_transport_params(ssl, (const uint8_t*)quic_params, generateParams(quic_params));
     SSL_set_connect_state(ssl);
     SSL_set_tlsext_host_name(ssl, hostname);
     nextLocalBiId   = 0;
     nextRemoteBiId  = 1;
     nextLocalUbiId  = 2;
     nextRemoteUbiId = 3;
+    walkHandler = std::bind(&QuicRWer::handlePacket, this, _1, _2);
+}
+
+QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx,
+                   std::function<void(int, int)> errorCB,
+                   std::function<void(const sockaddr_storage &)> connectCB):
+        SocketRWer(fd, peer, std::move(errorCB)),
+        qos(true, std::bind(&QuicRWer::send, this, _1, _2, _3, _4, _5),
+            std::bind(&QuicRWer::resendFrames, this, _1, _2),
+            std::bind(&QuicRWer::ErrorHE, this, PROTOCOL_ERR, _1))
+{
+    this->connectCB = std::move(connectCB);
+    ssl = SSL_new(ctx);
+    SSL_set_quic_method(ssl, &quic_method);
+    if(ssl == nullptr){
+        LOGF("SSL_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
+    }
+    SSL_set_app_data(ssl, this);
+    generateCid();
+    SSL_set_accept_state(ssl);
+    stats = RWerStats::SslAccepting;
+    nextLocalBiId   = 1;
+    nextRemoteBiId  = 0;
+    nextLocalUbiId  = 3;
+    nextRemoteUbiId = 2;
+    walkHandler = std::bind(&QuicRWer::handlePacket, this, _1, _2);
+    setEvents(RW_EVENT::READ);
 }
 
 QuicRWer::~QuicRWer(){
@@ -308,6 +366,8 @@ void QuicRWer::waitconnectHE(RW_EVENT events) {
         /* Configure a non-zero callback if desired */
         SSL_set_verify(ssl, SSL_VERIFY_PEER, verify_host_callback);
 
+        char quic_params[QUIC_INITIAL_LIMIT];
+        SSL_set_quic_transport_params(ssl, (const uint8_t*)quic_params, generateParams(quic_params));
         ssl_get_error(ssl, SSL_do_handshake(ssl));
         if (errno != EAGAIN) {
             int error = errno;
@@ -331,7 +391,7 @@ QuicRWer::FrameResult QuicRWer::handleCryptoFrame(quic_context* context, const q
         LOGD(DQUIC, "skip unwanted crypto frame [%zd]\n", context->crypto_want);
         return FrameResult::skip;
     }
-    uint8_t* start = (uint8_t*)crypto->body + (context->crypto_want - crypto->offset);
+    uint8_t* start = (uint8_t*)crypto->buffer.data + (context->crypto_want - crypto->offset);
     size_t len = crypto->offset + crypto->length - context->crypto_want;
     SSL_provide_quic_data(ssl, context->level, start, len);
     context->crypto_want = crypto->offset + crypto->length;
@@ -359,7 +419,7 @@ QuicRWer::FrameResult QuicRWer::handleCryptoFrame(quic_context* context, const q
                     break;
                 case quic_max_idle_timeout:
                     variable_decode(pos, &value);
-                    if(value < max_idle_timeout){
+                    if(value < max_idle_timeout && value > 0){
                         max_idle_timeout = value;
                     }
                     break;
@@ -403,12 +463,19 @@ QuicRWer::FrameResult QuicRWer::handleCryptoFrame(quic_context* context, const q
                 case quic_active_connection_id_limit:
                 case quic_initial_source_connection_id:
                 case quic_retry_source_connection_id:
+                    LOG("unimplemented params: %" PRIu64"\n", name);
+                    break;
                 default:
                     break;
                 }
                 pos += size;
             }
             qos.SetMaxAckDelay(his_max_ack_delay);
+            if(ctx == nullptr){
+                //send handshake done frame to client
+                qos.PushFrame(ssl_encryption_application, new quic_frame{QUIC_FRAME_HANDSHAKE_DONE, {}});
+                dropkey(ssl_encryption_handshake);
+            }
             Connected(addrs.front());
         }else if(errno != EAGAIN){
             int error = errno;
@@ -491,7 +558,7 @@ QuicRWer::FrameResult QuicRWer::handleStreamFrame(uint64_t type, const quic_stre
              id, stream->offset, want);
         return FrameResult::skip;
     }
-    const char* start = stream->data + (want - stream->offset);
+    const char* start = stream->buffer.data + (want - stream->offset);
     size_t len = stream->length + stream->offset - want;
     if(status.rb.put(start, len) < 0){
         ErrorHE(PROTOCOL_ERR, QUIC_FLOW_CONTROL_ERROR);
@@ -562,6 +629,7 @@ int QuicRWer::handleHandshakePacket(const quic_pkt_header* header, std::vector<c
         dcids[0].id = header->scid;
     }else{
         assert(header->type == QUIC_PACKET_HANDSHAKE);
+        dropkey(ssl_encryption_initial);
     }
     auto context = getContext(header->type);
     for(auto frame: frames){
@@ -605,16 +673,18 @@ QuicRWer::FrameResult QuicRWer::handleFrames(quic_context *context, const quic_f
     case QUIC_FRAME_CRYPTO:
         return handleCryptoFrame(context, &frame->crypto);
     case QUIC_FRAME_PADDING:
+    case QUIC_FRAME_PING:
     case QUIC_FRAME_ACK:
     case QUIC_FRAME_ACK_ECN:
-    case QUIC_FRAME_PING:
         return FrameResult::ok;
     case QUIC_FRAME_HANDSHAKE_DONE:
         dropkey(ssl_encryption_handshake);
         return FrameResult::ok;
     case QUIC_FRAME_MAX_DATA:
         if(frame->extra > his_max_data){
+            auto delta = frame->extra - his_max_data;
             his_max_data = frame->extra;
+            writeCB(delta);
         }
         return FrameResult::ok;
     case QUIC_FRAME_DATA_BLOCKED:
@@ -641,7 +711,9 @@ QuicRWer::FrameResult QuicRWer::handleFrames(quic_context *context, const quic_f
             return FrameResult::ok;
         }
         if (frame->max_stream_data.max > itr->second.his_max_data) {
+            auto delta = frame->max_stream_data.max - itr->second.his_max_data;
             itr->second.his_max_data = frame->max_stream_data.max;
+            writeCB(delta);
         }
         return FrameResult::ok;
     }
@@ -703,7 +775,9 @@ void QuicRWer::resendFrames(pn_namespace* ns, quic_frame *frame) {
 
 int QuicRWer::handle1RttPacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames) {
     auto context = &contexts[ssl_encryption_application];
-    keepAlive_timer = updatejob(keepAlive_timer, std::bind(&QuicRWer::keepAlive_action, this), 30000);
+    keepAlive_timer = updatejob(keepAlive_timer,
+                                std::bind(&QuicRWer::keepAlive_action, this),
+                                std::min(30000, (int)max_idle_timeout/2));
     for(auto frame : frames) {
         qos.handleFrame(context->level, header->pn, frame);
         switch(handleFrames(context, frame)){
@@ -741,6 +815,9 @@ int QuicRWer::handlePacket(const quic_pkt_header* header, std::vector<const quic
 }
 
 ssize_t QuicRWer::Write(const void *buff, size_t len, uint64_t id) {
+    if(stats == RWerStats::Error){
+        return 0;
+    }
     assert(streammap.count(id));
 
     auto& status = streammap[id];
@@ -757,10 +834,14 @@ ssize_t QuicRWer::Write(const void *buff, size_t len, uint64_t id) {
     frame->stream.length = len;
     frame->stream.offset =  status.offset;
     status.offset += len;
-    frame->stream.data = new char[len];
-    memcpy(frame->stream.data, buff, len);
+    frame->stream.buffer.ref = (uint32_t*)new char[len + sizeof(uint32_t)];
+    frame->stream.buffer.data = (char*)(frame->stream.buffer.ref + 1);
+    *frame->stream.buffer.ref = 1;
+    memcpy(frame->stream.buffer.data, buff, len);
     qos.PushFrame(ssl_encryption_application, frame);
     my_send_data += len;
+    assert(my_send_data <= his_max_data);
+    assert(status.offset <= status.his_max_data);
 
     LOGD(DQUIC, "send data [%" PRIu64"]: <%zd/%" PRIu64"> <%" PRIu64"/%" PRIu64">\n",
          id, status.offset, status.his_max_data, my_send_data, his_max_data);
@@ -771,11 +852,37 @@ ssize_t QuicRWer::Write(const void *buff, size_t len, uint64_t id) {
     return (int)len;
 }
 
+buff_iterator QuicRWer::buffer_insert(buff_iterator where, buff_block &&bb) {
+    Write((char*)bb.buff + bb.offset, bb.len - bb.offset, bb.id);
+    return where;
+}
+
 void QuicRWer::closeHE(RW_EVENT events) {
     if(!(events & RW_EVENT::READ)) {
         return;
     }
-    walkPackets([this](const quic_pkt_header* header, std::vector<const quic_frame*>& frames) -> int{
+    char buff[max_datagram_size];
+    while(true) {
+        ssize_t ret = read(getFd(), buff, sizeof(buff));
+        if (ret < 0 && errno == EAGAIN) {
+            return;
+        }
+        if (ret < 0) {
+            LOGE("read error when closing: %s\n", strerror(errno));
+            return closeCB();
+        }
+        walkPackets(buff, ret);
+    }
+}
+
+void QuicRWer::Close(std::function<void()> func) {
+    if(flags & RWER_CLOSING){
+        return;
+    }
+    flags |= RWER_CLOSING;
+
+    closeCB = std::move(func);
+    walkHandler= [this](const quic_pkt_header* header, std::vector<const quic_frame*>& frames) -> int{
         LOGD(DQUIC, "[%" PRIu64"] discard packet after cc: %d\n", header->pn, header->type);
         for(auto frame : frames){
             frame_release(frame);
@@ -793,19 +900,12 @@ void QuicRWer::closeHE(RW_EVENT events) {
         qos.PushFrame(context->level, frame);
         close_timer = updatejob(close_timer, closeCB, 3 * qos.rtt.rttvar);
         return 0;
-    });
-}
-
-void QuicRWer::Close(std::function<void()> func) {
-    closeCB = std::move(func);
-    if(getFd() >= 0 && stats != RWerStats::Connecting && stats != RWerStats::Error) {
+    };
+    if(getFd() >= 0 && stats == RWerStats::Connected) {
         close_timer = updatejob(close_timer, closeCB, max_idle_timeout);
         handleEvent = (void (Ep::*)(RW_EVENT))&QuicRWer::closeHE;
         setEvents(RW_EVENT::READ);
-        if(flags & RWER_CLOSING){
-            return;
-        }
-        flags |= RWER_CLOSING;
+
         quic_frame* frame = new quic_frame;
         frame->type = QUIC_FRAME_CONNECTION_CLOSE_APP;
         frame->close.error = QUIC_APPLICATION_ERROR;
@@ -827,62 +927,76 @@ int QuicRWer::set_alpn(const unsigned char *s, unsigned int len){
     return ssl_get_error(ssl, SSL_set_alpn_protos(ssl, s, len));
 }
 
-void QuicRWer::walkPackets(const std::function<
-                int(const quic_pkt_header* header, std::vector<const quic_frame*>& frames)
-                >& handler)
-{
-    char buff[max_datagram_size];
-    while(true) {
-        ssize_t ret = read(getFd(), buff, sizeof(buff));
-        if (ret < 0 && errno == EAGAIN) {
+void QuicRWer::walkPackets(const void* buff, size_t length) {
+    const char *pos = (const char*)buff;
+    while (length > 0) {
+        if (*pos == 0) {
+            pos++;
+            length--;
+            continue;
+        }
+        quic_pkt_header header;
+        header.dcid.resize(QUIC_CID_LEN);
+        int body_len = unpack_meta(pos, length, &header);
+        if (body_len < 0 || body_len > (int)length) {
+            LOGE("QUIC meta unpack failed, disacrd it\n");
             return;
         }
-        if(ret < 0) {
-            ErrorHE(SOCKET_ERR, errno);
+        if(ctx == nullptr && header.type == QUIC_PACKET_INITIAL && originDcid.empty()){
+            //Init something for server
+            originDcid = header.dcid;
+            quic_generate_initial_key(0, header.dcid.data(), header.dcid.length(), &contexts[0].write_secret);
+            quic_generate_initial_key(1, header.dcid.data(), header.dcid.length(), &contexts[0].read_secret);
+            qos.KeyGot(ssl_encryption_initial);
+            contexts[0].hasKey = true;
+
+            char quic_params[QUIC_INITIAL_LIMIT];
+            SSL_set_quic_transport_params(ssl, (const uint8_t*)quic_params, generateParams(quic_params));
+        }
+        if (header.dcid != scids[scid_idx].id && header.dcid != originDcid) {
+            LOG("QUIC discard unknown dcid: %s\n",
+                dumpHex(header.dcid.data(), header.dcid.length()).c_str());
             return;
         }
-        char *pos = buff;
-        while (pos - buff < ret) {
-            if (*pos == 0) {
-                pos++;
+        pos += body_len;
+        length -= body_len;
+        std::vector<const quic_frame*> frames;
+        if (header.type != QUIC_PACKET_RETRY) {
+            auto context = getContext(header.type);
+            if (!context->hasKey) {
+                LOG("quic key for level %d is invalid, discard it (%d).\n", context->level, body_len);
                 continue;
             }
-            quic_pkt_header header;
-            header.dcid = scids[scid_id].id;
-            int body_len = unpack_meta(pos, ret + buff - pos, &header);
-            if (body_len < 0) {
-                LOGE("QUIC meta unpack failed, disacrd it\n");
-                return;
+            header.pn_base = qos.GetLargestPn(context->level) + 1;
+            frames = decode_packet(pos - body_len, body_len, &header, &context->read_secret);
+            if (frames.empty()) {
+                LOGE("QUIC packet unpack failed, discard it\n");
+                continue;
             }
-            if (header.dcid != scids[scid_id].id) {
-                LOG("QUIC discard unknown dcid\n");
-                return;
-            }
-            pos += body_len;
-            std::vector<const quic_frame*> frames;
-            if (header.type != QUIC_PACKET_RETRY) {
-                auto context = getContext(header.type);
-                if (!context->hasKey) {
-                    LOG("quic key for level %d is invalid, discard it (%d).\n", context->level, body_len);
-                    continue;
-                }
-                header.pn_base = qos.GetLargestPn(context->level) + 1;
-                frames = decode_packet(pos - body_len, body_len, &header, &context->read_secret);
-                if (frames.empty()) {
-                    LOGE("QUIC packet unpack failed, discard it\n");
-                    continue;
-                }
-            }
-            //LOGD(DQUIC, "recv packet [%" PRIu64"] for type: 0x%02x\n", header.pn, header.type);
-            if(handler(&header, frames)) {
-                return;
-            }
+        }
+        LOGD(DQUIC, "%s -> %s [%" PRIu64"], type: 0x%02x, length: %d\n",
+             dumpHex(header.scid.data(), header.scid.length()).c_str(),
+             dumpHex(header.dcid.data(), header.dcid.length()).c_str(),
+             header.pn, header.type, body_len);
+        if(walkHandler(&header, frames)) {
+            return;
         }
     }
 }
 
 void QuicRWer::ReadData() {
-    walkPackets(std::bind(&QuicRWer::handlePacket, this, _1, _2));
+    char buff[max_datagram_size];
+    while(true){
+        ssize_t ret = read(getFd(), buff, sizeof(buff));
+        if (ret < 0 && errno == EAGAIN) {
+            break;
+        }
+        if (ret < 0) {
+            ErrorHE(SOCKET_ERR, errno);
+            return;
+        }
+        walkPackets(buff, ret);
+    }
     for(auto& context : contexts) {
         if(!context.hasKey){
             continue;
@@ -942,8 +1056,9 @@ ssize_t QuicRWer::cap(uint64_t id) {
         return 0;
     }
     assert(stream.offset <= stream.his_max_data);
-    ssize_t streamdata = stream.his_max_data - stream.offset;
-    return std::min(qos.GetWindowSize(), streamdata);
+    assert(my_send_data <= his_max_data);
+    assert(wlength() == 0);
+    return std::min(stream.his_max_data - stream.offset, his_max_data - my_send_data);
 }
 
 bool QuicRWer::IsIdle(uint64_t id){
@@ -1050,6 +1165,10 @@ uint64_t QuicRWer::CreateUbiStream() {
     stat.his_max_data = his_max_stream_data_uni;
     streammap.emplace(id, stat);
     return id;
+}
+
+std::string QuicRWer::GetDCID() {
+    return scids[dcid_idx].id;
 }
 
 void QuicRWer::disconnect_action() {

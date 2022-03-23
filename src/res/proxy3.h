@@ -31,8 +31,6 @@ protected:
 
     void Send(uint64_t id ,const void* buff, size_t size);
     void Clean(uint64_t id, ReqStatus& status, uint32_t errcode);
-
-    bool wantmore(const ReqStatus& status);
 public:
     explicit Proxy3(std::shared_ptr<QuicRWer> rwer);
     virtual ~Proxy3() override;

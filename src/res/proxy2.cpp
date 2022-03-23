@@ -172,7 +172,9 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
             return;
         }
         if(status.res == nullptr){
-            //compact for legacy version.
+            //compact for legacy version server.
+            //it does not send http header for udp,
+            //but guest_vpn need it, so we fake one here.
             ResProc(id, UnpackHttpRes(H200));
         }
         status.res->send(data, len);

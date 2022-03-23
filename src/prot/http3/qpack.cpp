@@ -199,8 +199,16 @@ int Qpack::push_ins(const void *ins, size_t len) {
     abort();
 }
 
-size_t Qpack_encoder::encode(unsigned char *buf, const char *name, const char *value) {
-    return 0;
+size_t Qpack_encoder::encode(unsigned char *buf, const std::string& name, const std::string& value) {
+    auto pos = buf;
+    pos[0] = 0x20;
+    pos += integer_encode(name.size(), 3, pos);
+    memcpy(pos, name.data(), name.size());
+    pos += name.size();
+    pos += integer_encode(value.size(), 7, pos);
+    memcpy(pos, value.data(), value.size());
+    pos += value.size();
+    return pos - buf;
 }
 
 size_t Qpack_encoder::PackHttp3Req(const HttpReqHeader *req, void *data, size_t len) {
@@ -208,38 +216,37 @@ size_t Qpack_encoder::PackHttp3Req(const HttpReqHeader *req, void *data, size_t 
     p += integer_encode(0, 8, p);
     p += integer_encode(0, 7, p);
     for(const auto& i : req->Normalize()){
-        p[0] = 0x20;
-        p += integer_encode(i.first.size(), 3, p);
-        memcpy(p, i.first.data(), i.first.size());
-        p += i.first.size();
-        p += integer_encode(i.second.size(), 7, p);
-        memcpy(p, i.second.data(), i.second.size());
-        p += i.second.size();
+        p += encode(p, i.first, i.second);
+    }
+    return p - (uchar*)data;
+}
+
+size_t Qpack_encoder::PackHttp3Res(const HttpResHeader *res, void *data, size_t len) {
+    uchar* p = (uchar*)data;
+    p += integer_encode(0, 8, p);
+    p += integer_encode(0, 7, p);
+    for(const auto& i : res->Normalize()){
+        p += encode(p, i.first, i.second);
     }
     return p - (uchar*)data;
 }
 
 
-std::multimap<std::string, std::string> Qpack_decoder::decode(const unsigned char *s, size_t len) {
+std::multimap<std::string, std::string> Qpack_decoder::decode(const unsigned char *data, size_t len) {
     std::multimap<std::string, std::string> headers;
-    return headers;
-}
-
-HttpResHeader *Qpack_decoder::UnpackHttp3Res(const void *data, size_t len) {
-    uchar* pos = (uchar*)data;
+    const uchar* pos = (uchar*)data;
     uint64_t reqid;
     size_t l = integer_decode(pos, (uchar*)data+len-pos, 8, &reqid);
     if(l == 0){
-        return nullptr;
+        return headers;
     }
     pos += l;
     uint64_t delta;
     l = integer_decode(pos, (uchar*)data+len-pos, 7, &delta);
     if(l == 0){
-        return nullptr;
+        return headers;
     }
     pos += l;
-    std::multimap<std::string, std::string> headers;
     while(pos < (uchar*)data + len){
         std::string name, value;
         if(pos[0] & 0x80){
@@ -247,7 +254,7 @@ HttpResHeader *Qpack_decoder::UnpackHttp3Res(const void *data, size_t len) {
             uint64_t index;
             l = integer_decode(pos, (uchar*)data+len-pos, 6, &index);
             if(l == 0){
-                return nullptr;
+                return headers;
             }
             pos += l;
             if(T){
@@ -263,7 +270,7 @@ HttpResHeader *Qpack_decoder::UnpackHttp3Res(const void *data, size_t len) {
             uint64_t index;
             l = integer_decode(pos, (uchar*)data+len-pos, 4, &index);
             if(l == 0){
-                return nullptr;
+                return headers;
             }
             pos += l;
             if(T){
@@ -273,7 +280,7 @@ HttpResHeader *Qpack_decoder::UnpackHttp3Res(const void *data, size_t len) {
             }
             l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 7, value);
             if(l <= 0){
-                return nullptr;
+                return headers;
             }
             pos += l;
             goto append;
@@ -281,12 +288,12 @@ HttpResHeader *Qpack_decoder::UnpackHttp3Res(const void *data, size_t len) {
             bool N = pos[0]&0x10;
             l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 3, name);
             if(l <= 0){
-                return nullptr;
+                return headers;
             }
             pos += l;
             l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 7, value);
             if(l <= 0){
-                return nullptr;
+                return headers;
             }
             pos += l;
             goto append;
@@ -298,12 +305,12 @@ HttpResHeader *Qpack_decoder::UnpackHttp3Res(const void *data, size_t len) {
             uint64_t index;
             l = integer_decode(pos, (uchar*)data+len-pos, 3, &index);
             if(l == 0){
-                return nullptr;
+                return headers;
             }
             pos += l;
             l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 7, value);
             if(l <= 0){
-                return nullptr;
+                return headers;
             }
             pos += l;
             goto append;
@@ -311,5 +318,21 @@ HttpResHeader *Qpack_decoder::UnpackHttp3Res(const void *data, size_t len) {
 append:
         headers.emplace(name, value);
     }
+    return headers;
+}
+
+HttpResHeader *Qpack_decoder::UnpackHttp3Res(const void *data, size_t len) {
+    std::multimap<std::string, std::string> headers = decode((const uchar*)data, len);
+    if(headers.empty()) {
+        return nullptr;
+    }
     return new HttpResHeader(std::move(headers));
+}
+
+HttpReqHeader *Qpack_decoder::UnpackHttp3Req(const void *data, size_t len) {
+    std::multimap<std::string, std::string> headers = decode((const uchar*)data, len);
+    if(headers.empty()) {
+        return nullptr;
+    }
+    return new HttpReqHeader(std::move(headers));
 }

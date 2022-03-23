@@ -15,7 +15,7 @@
 #include <map>
 #include <functional>
 
-const uint64_t max_datagram_size = 1372;
+const uint64_t max_datagram_size = 1400;
 const uint64_t kInitialWindow = 14720;
 const uint64_t kMinimumWindow = 2 * max_datagram_size;
 const uint64_t kPacketThreshold = 3;
@@ -108,7 +108,6 @@ public:
     void HandleRetry();
     void PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame* frame);;
     void PushFrame(pn_namespace* ns, quic_frame* frame);
-    ssize_t GetWindowSize();
 };
 
 #endif //SPROXY_QUIC_QOS_H

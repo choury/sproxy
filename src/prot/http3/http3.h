@@ -2,6 +2,8 @@
 // Created by 周威 on 2021/8/5.
 //
 
+// For http3 draft-34
+
 #ifndef SPROXY_HTTP3_H
 #define SPROXY_HTTP3_H
 
@@ -63,9 +65,10 @@ protected:
 #define HTTP3_FLAG_ERROR     (1u << 2u)
 #define HTTP3_SUPPORT_SHUTDOWN (1u << 3u)
     uint32_t http3_flag = 0;
-    uint64_t ctrlid_local, ctrlid_remote = (uint64_t)-1;
-    uint64_t qpackeid_local, qpackeid_remote = (uint64_t)-1;
-    uint64_t qpackdid_local, qpackdid_remote = (uint64_t)-1;
+    // these ids are ubi stream, can not be 0, so use it as not inited.
+    uint64_t ctrlid_local = 0, ctrlid_remote = 0;
+    uint64_t qpackeid_local = 0, qpackeid_remote = 0;
+    uint64_t qpackdid_local = 0, qpackdid_remote = 0;
 
 
     Qpack_encoder qpack_encoder;
@@ -101,5 +104,12 @@ public:
     Http3Requster();
 };
 
+class Http3Responser: public Http3Base {
+protected:
+    virtual void HeadersProc(uint64_t id, const uchar* header, size_t len) override;
+    virtual void ReqProc(uint64_t id, HttpReqHeader* res) = 0;
+public:
+    Http3Responser();
+};
 
 #endif //SPROXY_HTTP3_H

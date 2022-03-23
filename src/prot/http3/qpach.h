@@ -47,7 +47,7 @@ public:
 };
 
 class Qpack_encoder: public Qpack {
-    size_t encode(unsigned char *buf, const char *name, const char *value);
+    size_t encode(unsigned char *buf, const std::string& name, const std::string& value);
 public:
     explicit Qpack_encoder(std::function<void(PREPTR void* ins, size_t len)> sender,
                            size_t dynamic_table_size_limit_max = 0):

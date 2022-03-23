@@ -70,22 +70,21 @@ void Guest2::Error(int ret, int code){
 }
 
 void Guest2::Send(uint32_t id, const void* buff, size_t size){
-    if(statusmap.count(id)){
-        ReqStatus& status = statusmap[id];
-        assert((status.flags & HTTP_RES_COMPLETED) == 0);
-        assert((status.flags & HTTP_RES_EOF) == 0);
-        status.remotewinsize -= size;
-        assert(status.remotewinsize >= 0);
-        if(size == 0){
-            status.flags |= HTTP_RES_COMPLETED;
-            LOGD(DHTTP2, "<guest2> %" PRIu32 " send data [%d]: EOF/%d\n",
-                    status.req->header->request_id, id,
-                    status.remotewinsize);
-        }else{
-            LOGD(DHTTP2, "<guest2> %" PRIu32 " send data [%d]: %zu/%d\n",
-                    status.req->header->request_id, id,
-                    size, status.remotewinsize);
-        }
+    assert(statusmap.count(id));
+    ReqStatus& status = statusmap[id];
+    assert((status.flags & HTTP_RES_COMPLETED) == 0);
+    assert((status.flags & HTTP_RES_EOF) == 0);
+    status.remotewinsize -= size;
+    assert(status.remotewinsize >= 0);
+    if(size == 0){
+        status.flags |= HTTP_RES_COMPLETED;
+        LOGD(DHTTP2, "<guest2> %" PRIu32 " send data [%d]: EOF/%d\n",
+             status.req->header->request_id, id,
+             status.remotewinsize);
+    }else{
+        LOGD(DHTTP2, "<guest2> %" PRIu32 " send data [%d]: %zu/%d\n",
+             status.req->header->request_id, id,
+             size, status.remotewinsize);
     }
     remotewinsize -= size;
     PushData(id, buff, size);

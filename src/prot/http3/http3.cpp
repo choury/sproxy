@@ -16,7 +16,7 @@ Http3Base::Http3Base(): qpack_encoder([this](PREPTR void* ins, size_t len){
 
 size_t Http3Base::Http3_Proc(const void* buff, size_t len, uint64_t id) {
     const uchar* pos = (const uchar*)buff;
-    if(id == ctrlid_remote){
+    if(ctrlid_remote && id == ctrlid_remote){
         uint64_t stream, length;
         if(pos + variable_decode_len(pos) >= (uchar*)buff + len){
             return 0;
@@ -49,14 +49,14 @@ size_t Http3Base::Http3_Proc(const void* buff, size_t len, uint64_t id) {
             break;
         }
         pos += length;
-    }else if(id == qpackeid_remote){
+    }else if(qpackeid_remote && id == qpackeid_remote){
         int ret = qpack_encoder.push_ins(buff, len);
         if(ret < 0){
             ErrProc(HTTP3_ERR_QPACK_ENCODER_STREAM_ERROR);
             return 0;
         }
         pos += ret;
-    }else if(id == qpackdid_remote){
+    }else if(qpackdid_remote && id == qpackdid_remote){
         int ret = qpack_decoder.push_ins(buff, len);
         if(ret < 0){
             ErrProc(HTTP3_ERR_QPACK_DECODER_STREAM_ERROR);
@@ -100,15 +100,12 @@ size_t Http3Base::Http3_Proc(const void* buff, size_t len, uint64_t id) {
         pos += variable_decode(pos, &type);
         switch(type){
         case HTTP3_STREAM_TYPE_CONTROL:
-            assert(ctrlid_remote == (uint64_t)-1);
             ctrlid_remote = id;
             break;
         case HTTP3_STREAM_TYPE_QPACK_ENCODE:
-            assert(qpackeid_remote == (uint64_t)-1);
             qpackeid_remote = id;
             break;
         case HTTP3_STREAM_TYPE_QPACK_DECODE:
-            assert(qpackdid_remote == (uint64_t)-1);
             qpackdid_remote = id;
             break;
         default:
@@ -133,7 +130,8 @@ void Http3Base::Init() {
     qpackeid_local = CreateUbiStream();
     qpackdid_local = CreateUbiStream();
 
-    size_t len = 2 + variable_encode_len(1 + variable_encode_len(BUF_LEN)) + 1 + variable_encode_len(BUF_LEN);
+    size_t len = 2 + variable_encode_len(1 + variable_encode_len(BUF_LEN))
+            + 1 + variable_encode_len(BUF_LEN);
     char* buff = (char*)p_malloc(len);
     char* pos = buff;
     pos += variable_encode(pos, HTTP3_STREAM_TYPE_CONTROL);
@@ -152,7 +150,6 @@ void Http3Base::Init() {
     pos += variable_encode(pos, HTTP3_STREAM_TYPE_QPACK_DECODE);
     PushFrame(qpackdid_local, buff, pos - buff);
     http3_flag |= HTTP3_FLAG_INITED;
-
 }
 
 
@@ -199,7 +196,11 @@ void Http3Base::ShutdownProc(__attribute__ ((unused)) uint64_t id) {
 }
 
 void Http3Base::Goaway(uint64_t lastid){
-    char* frame = (char*)p_malloc(1 + 8 + 8); // enough for goway frame
+    if(ctrlid_local == 0){
+        //this connection is not inited.
+        return;
+    }
+    char* frame = (char*)p_malloc(1 + 1 + 8); // enough for goway frame
     char* pos = frame;
     pos += variable_encode(pos, HTTP3_STREAM_GOAWAY);
     pos += variable_encode(pos, variable_encode_len(lastid));
@@ -229,4 +230,16 @@ void Http3Requster::HeadersProc(uint64_t id, const uchar* header, size_t length)
 }
 
 Http3Requster::Http3Requster() {
+}
+
+void Http3Responser::HeadersProc(uint64_t id, const uchar *header, size_t length) {
+    HttpReqHeader* req = qpack_decoder.UnpackHttp3Req(header, length);
+    if(req == nullptr) {
+        ErrProc(HTTP3_ERR_QPACK_DECOMPRESSION_FAILED);
+        return;
+    }
+    ReqProc(id, req);
+}
+
+Http3Responser::Http3Responser() {
 }

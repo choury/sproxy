@@ -204,13 +204,41 @@ int pn_namespace::sendOnePacket(size_t window){
     bool ack_eliciting = false;
     bool in_flight = false;
 
+    size_t envelopLen = sent(current_pn, largest_acked_packet+1,
+                             nullptr, std::min((size_t)max_datagram_size, window));
+
     char buff[max_datagram_size];
     char* pos = buff;
     auto i = pend_frames.begin();
     for(; i != pend_frames.end(); i++){
-        size_t offset = pos + pack_frame_len(*i) - buff;
-        if(offset > sizeof(buff) || offset > window){
-            break;
+        ssize_t left = std::min((size_t)max_datagram_size, window) + buff - pos - envelopLen;
+        if(left < (int)pack_frame_len(*i)){
+            uint64_t type = (*i)->type;
+            if(type == QUIC_FRAME_CRYPTO && left >= 20){
+                // [n, m) -> [n, n + left - 20) + [n + left - 20, m)
+                quic_frame* frame = new quic_frame{type, {}};
+                frame->crypto.offset = (*i)->crypto.offset + left - 20;
+                frame->crypto.length = (*i)->crypto.length - left + 20;
+                frame->crypto.buffer.data = (*i)->crypto.buffer.data + left - 20;
+                frame->crypto.buffer.ref = (*i)->crypto.buffer.ref;
+                (*frame->crypto.buffer.ref)++;
+                pend_frames.insert(std::next(i), frame);
+                (*i)->crypto.length = left - 20;
+            }else if((type >= QUIC_FRAME_STREAM_START_ID && type <= QUIC_FRAME_STREAM_END_ID) && left >= 30){
+                // [n, m) -> [n, n + left - 30) + [n + left - 30, m)
+                quic_frame* frame = new quic_frame{type | QUIC_FRAME_STREAM_OFF_F, {}};
+                frame->stream.id = (*i)->stream.id;
+                frame->stream.offset = (*i)->stream.offset + left - 30;
+                frame->stream.length = (*i)->stream.length - left + 30;
+                frame->stream.buffer.data = (*i)->stream.buffer.data + left - 30;
+                frame->stream.buffer.ref = (*i)->stream.buffer.ref;
+                (*frame->stream.buffer.ref)++;
+                pend_frames.insert(std::next(i), frame);
+                (*i)->stream.length = left - 30;
+                (*i)->type &= ~QUIC_FRAME_STREAM_FIN_F;
+            }else{
+                break;
+            }
         }
         pos = (char*)pack_frame(pos, *i);
         if(pos == nullptr){
@@ -528,13 +556,6 @@ void QuicQos::sendPacket() {
     bool has_pending_packet = false;
     bool has_in_flight = false;
     for(auto &p: pns){
-        if(congestion_window - bytes_in_flight < 30) {
-            // we need 30 bytes to send a packet at least
-            LOGD(DQUIC, "congestion window reached, bytes_in_flight: %zd, congestion_window: %zd\n",
-                 bytes_in_flight, congestion_window);
-            has_packet_been_congested = true;
-            return;
-        }
         if(!p->hasKey){
             continue;
         }
@@ -543,6 +564,10 @@ void QuicQos::sendPacket() {
             int ret = p->sendOnePacket(congestion_window - bytes_in_flight);
             if (ret < 0) {
                 return ErrorHE(-ret);
+            }
+            if (ret == 0) {
+                //has no window
+                break;
             }
             if (ret > 0) {
                 bytes_in_flight += ret;
@@ -559,8 +584,6 @@ void QuicQos::sendPacket() {
         SetLossDetectionTimer();
     }
 }
-
-
 
 void QuicQos::OnCongestionEvent(uint64_t sent_time) {
     // No reaction if already in a recovery period.
@@ -637,12 +660,12 @@ void QuicQos::OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets) {
         if (congestion_window < ssthresh) {
             // Slow start.
             congestion_window += meta.sent_bytes;
-        }else{
+        } else {
             // Congestion avoidance.
             congestion_window += max_datagram_size * meta.sent_bytes / congestion_window;
         }
     }
-    if(has_packet_been_congested && GetWindowSize() > 0){
+    if(has_packet_been_congested && congestion_window > bytes_in_flight){
         packet_tx = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this) , 0);
     }
 }
@@ -674,10 +697,10 @@ void QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t number, const qu
         if(acked.empty()){
             return;
         }
-        if(frame->type == QUIC_FRAME_ACK_ECN && frame->ack.ecns.ecn_ce > ns->ecn_ce_counters) {
+        if(frame->type == QUIC_FRAME_ACK_ECN && frame->ack.ecn_ce > ns->ecn_ce_counters) {
             // If the ECN-CE counter reported by the peer has increased,
             // this could be a new congestion event.
-            ns->ecn_ce_counters = frame->ack.ecns.ecn_ce;
+            ns->ecn_ce_counters = frame->ack.ecn_ce;
             uint64_t sent_time = acked.back().sent_time;
             OnCongestionEvent(sent_time);
         }
@@ -716,12 +739,4 @@ void QuicQos::PushFrame(pn_namespace* ns, quic_frame *frame) {
 
 void QuicQos::PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame* frame) {
     return PushFrame(GetNamespace(level), frame);
-}
-
-ssize_t QuicQos::GetWindowSize() {
-    if(has_packet_been_congested) {
-        return 0;
-    }
-    // reserve 30 bytes for quic header
-    return congestion_window - bytes_in_flight - 30;
 }

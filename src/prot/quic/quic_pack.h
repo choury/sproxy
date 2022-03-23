@@ -159,21 +159,20 @@ struct quic_secret{
 int quic_generate_initial_key(int client, const char* id, uint8_t id_len, quic_secret* secret);
 int quic_secret_set_key(quic_secret* secret, const char* key, uint32_t cipher);
 
+struct ref_buffer{
+    uint32_t* ref;
+    char*     data;
+};
+
 struct quic_crypto{
     uint64_t offset;
     uint64_t length;
-    char*    body;
+    ref_buffer buffer;
 };
 
 struct quic_ack_range{
     uint64_t  gap = 0;
     uint64_t  length = 0;
-};
-
-struct quic_ecn_counts{
-    uint64_t ect0;
-    uint64_t ect1;
-    uint64_t ecn_ce;
 };
 
 struct quic_ack{
@@ -182,7 +181,9 @@ struct quic_ack{
     uint64_t  range_count;
     uint64_t  first_range;
     struct quic_ack_range* ranges;
-    struct quic_ecn_counts ecns;
+    uint64_t ecn_ect0;
+    uint64_t ecn_ect1;
+    uint64_t ecn_ce;
 };
 
 struct quic_new_id{
@@ -230,7 +231,7 @@ struct quic_stream{
     uint64_t id;
     uint64_t offset;
     uint64_t length;
-    char*    data;
+    ref_buffer buffer;
 };
 
 struct quic_frame{
@@ -278,6 +279,7 @@ char* encode_packet(const void* data, size_t len,
                   const quic_pkt_header* header, const quic_secret* secret,
                   char* body);
 
+std::string dumpHex(const void* data, size_t len);
 bool is_ack_eliciting(const quic_frame* frame);
 void dumpFrame(const char* prefix, char name, const quic_frame* frame);
 void frame_release(const quic_frame* frame);

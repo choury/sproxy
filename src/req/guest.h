@@ -9,17 +9,17 @@
 #include <netinet/in.h>
 #include <openssl/ssl.h>
 
-struct GStatus{
-    std::shared_ptr<HttpReq>  req;
-    std::shared_ptr<HttpRes>  res;
-    uint      flags;
-};
 
 class Guest:public Requester, public HttpResponser {
     size_t rx_bytes = 0;
     size_t tx_bytes = 0;
 protected:
-    std::list<GStatus> statuslist;
+    struct ReqStatus{
+        std::shared_ptr<HttpReq>  req;
+        std::shared_ptr<HttpRes>  res;
+        uint      flags;
+    };
+    std::list<ReqStatus> statuslist;
     void ReadHE(buff_block& bb);
     void WriteHE(size_t len);
     virtual void deleteLater(uint32_t errcode) override;

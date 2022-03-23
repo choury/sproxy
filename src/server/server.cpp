@@ -1,4 +1,5 @@
 #include "req/guest_sni.h"
+#include "req/guest3.h"
 #include "req/cli.h"
 #include "misc/job.h"
 #include "misc/config.h"
@@ -29,6 +30,11 @@ static int select_alpn_cb(SSL *ssl,
         proset.insert(std::string((const char *)p, len));
         p += len;
     }
+    if (opt.quic_mode && proset.count("h3")){
+        *out = (unsigned  char*)"h3";
+        *outlen = strlen((char *)*out);
+        return SSL_TLSEXT_ERR_OK;
+    }
     if (!opt.disable_http2 && proset.count("h2")) {
         *out = (unsigned char *)"h2";
         *outlen = strlen((char *)*out);
@@ -51,7 +57,7 @@ int ssl_callback_ServerName(SSL *ssl, int*, void*){
     return 0;
 }
 
-SSL_CTX* initssl(int quic, const char *ca, const char *cert, const char *key){
+static SSL_CTX* initssl(int quic, const char *ca, const char *cert, const char *key){
     assert(cert && key);
 
     SSL_CTX *ctx = nullptr;
@@ -65,17 +71,20 @@ SSL_CTX* initssl(int quic, const char *ca, const char *cert, const char *key){
         return nullptr;
     }
     if(quic){
-        //TODO: quic
+        SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION);
+        SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION);
+        SSL_CTX_set_ciphersuites(ctx, QUIC_CIPHERS);
+        SSL_CTX_set1_groups_list(ctx, QUIC_GROUPS);
+    }else {
+        SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3); // 去除支持SSLv2 SSLv3
+        SSL_CTX_set_cipher_list(ctx, DEFAULT_CIPHER_LIST);
+        SSL_CTX_set_mode(ctx, SSL_MODE_AUTO_RETRY);
     }
-
-    SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3); // 去除支持SSLv2 SSLv3
     SSL_CTX_set_options(ctx, SSL_OP_NO_COMPRESSION);
     SSL_CTX_set_options(ctx, SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
     SSL_CTX_set_options(ctx, SSL_OP_SINGLE_ECDH_USE);
     SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET);
     SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
-    SSL_CTX_set_cipher_list(ctx, DEFAULT_CIPHER_LIST);
-    SSL_CTX_set_mode(ctx, SSL_MODE_AUTO_RETRY);
     SSL_CTX_set_mode(ctx, SSL_MODE_RELEASE_BUFFERS);
 
     /*
@@ -115,23 +124,31 @@ int main(int argc, char **argv) {
     parseConfig(argc, argv);
     prepare();
     if(opt.cert && opt.key){
-        SSL_CTX * ctx = initssl(0, opt.cafile, opt.cert, opt.key);
-        opt.CPORT = opt.CPORT?opt.CPORT:443;
-        int svsk_https = ListenNet(SOCK_STREAM, opt.CPORT);
-        if (svsk_https < 0) {
-            return -1;
+        SSL_CTX * ctx = initssl(opt.quic_mode, opt.cafile, opt.cert, opt.key);
+        opt.CPORT = opt.CPORT ?: 443;
+        if(opt.quic_mode){
+            int svsk_quic = ListenNet(SOCK_DGRAM, opt.CPORT);
+            if(svsk_quic <  0) {
+                return -1;
+            }
+            new Quic_server(svsk_quic, ctx);
+        }else {
+            int svsk_https = ListenNet(SOCK_STREAM, opt.CPORT);
+            if (svsk_https < 0) {
+                return -1;
+            }
+            new Http_server<Guest>(svsk_https, ctx);
         }
-        new Http_server<Guest>(svsk_https, ctx);
     }else{
-        if(opt.sni_mode){
-            opt.CPORT = opt.CPORT?opt.CPORT:443;
-            int svsk_sni = ListenNet(SOCK_STREAM, 443);
+        if(opt.sni_mode) {
+            opt.CPORT = opt.CPORT ?: 443;
+            int svsk_sni = ListenNet(SOCK_STREAM, opt.CPORT);
             if (svsk_sni < 0) {
                 return -1;
             }
             new Http_server<Guest_sni>(svsk_sni, nullptr);
         }else{
-            opt.CPORT = opt.CPORT?opt.CPORT:80;
+            opt.CPORT = opt.CPORT ?: 80;
             int svsk_http = ListenNet(SOCK_STREAM, opt.CPORT);
             if (svsk_http < 0) {
                 return -1;

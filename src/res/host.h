@@ -7,19 +7,18 @@
 
 class Requester;
 
-struct HStatus{
-    std::shared_ptr<HttpReq> req;
-    std::shared_ptr<HttpRes> res;
-    uint     flags;
-};
 
 class Host:public Responser, public HttpRequester {
+    struct ReqStatus{
+        std::shared_ptr<HttpReq> req;
+        std::shared_ptr<HttpRes> res;
+        uint     flags;
+    } status{};
+
+    struct Destination Server;
     size_t rx_bytes = 0;
     size_t tx_bytes = 0;
 protected:
-    struct Destination Server;
-    HStatus status{};
-
     virtual void deleteLater(uint32_t errcode) override;
     virtual void Error(int ret, int code);
     

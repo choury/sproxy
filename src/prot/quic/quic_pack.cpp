@@ -491,15 +491,17 @@ static size_t pack_crypto_frame_len(const struct quic_crypto* crypto){
 static char* pack_crypto_frame(const struct quic_crypto* crypto, char* data){
     data += variable_encode(data, crypto->offset);
     data += variable_encode(data, crypto->length);
-    memcpy(data, crypto->body, crypto->length);
+    memcpy(data, crypto->buffer.data, crypto->length);
     return data + crypto->length;
 }
 
 static const char* unpack_crypto_frame(const char* data, struct quic_crypto* crypto){
     data += variable_decode(data, &crypto->offset);
     data += variable_decode(data, &crypto->length);
-    crypto->body = new char[crypto->length];
-    memcpy(crypto->body, data, crypto->length);
+    crypto->buffer.ref = (uint32_t*)new char[crypto->length + sizeof(crypto->buffer.ref)];
+    *crypto->buffer.ref = 1;
+    crypto->buffer.data = (char*)(crypto->buffer.ref + 1);
+    memcpy(crypto->buffer.data, data, crypto->length);
     return data + crypto->length;
 }
 
@@ -513,9 +515,9 @@ static size_t pack_ack_frame_len(uint64_t type, const struct quic_ack* ack) {
                + variable_encode_len(ack->ranges[i].length);
     }
     if(type == QUIC_FRAME_ACK_ECN){
-        len += variable_encode_len(ack->ecns.ect0)
-               + variable_encode_len(ack->ecns.ect1)
-               + variable_encode_len(ack->ecns.ecn_ce);
+        len += variable_encode_len(ack->ecn_ect0)
+               + variable_encode_len(ack->ecn_ect1)
+               + variable_encode_len(ack->ecn_ce);
     }
     return len;
 }
@@ -530,9 +532,9 @@ static char* pack_ack_frame(uint64_t type, const struct quic_ack* ack, char* dat
         data += variable_encode(data, ack->ranges[i].length);
     }
     if(type == QUIC_FRAME_ACK_ECN){
-        data += variable_encode(data, ack->ecns.ect0);
-        data += variable_encode(data, ack->ecns.ect1);
-        data += variable_encode(data, ack->ecns.ecn_ce);
+        data += variable_encode(data, ack->ecn_ect0);
+        data += variable_encode(data, ack->ecn_ect1);
+        data += variable_encode(data, ack->ecn_ce);
     }
     return data;
 }
@@ -553,9 +555,13 @@ static const char* unpack_ack_frame(uint64_t type, const char* data, struct quic
         ack->ranges = nullptr;
     }
     if(type == QUIC_FRAME_ACK_ECN){
-        data += variable_decode(data, &ack->ecns.ect0);
-        data += variable_decode(data, &ack->ecns.ect1);
-        data += variable_decode(data, &ack->ecns.ecn_ce);
+        data += variable_decode(data, &ack->ecn_ect0);
+        data += variable_decode(data, &ack->ecn_ect1);
+        data += variable_decode(data, &ack->ecn_ce);
+    }else{
+        ack->ecn_ect0 = 0;
+        ack->ecn_ect1 = 0;
+        ack->ecn_ce = 0;
     }
     return data;
 }
@@ -662,11 +668,12 @@ static char* pack_stream_frame(uint64_t type, const quic_stream* stream, char *d
     if(type & QUIC_FRAME_STREAM_LEN_F){
         data += variable_encode(data, stream->length);
     }
-    memcpy(data, stream->data, stream->length);
+    memcpy(data, stream->buffer.data, stream->length);
     return data + stream->length;
 }
 
 static const char* unpack_stream_frame(uint64_t type, const char* data, int len, quic_stream* stream) {
+    const char* end = data + len;
     data += variable_decode(data, &stream->id);
     if(type & QUIC_FRAME_STREAM_OFF_F){
         data += variable_decode(data, &stream->offset);
@@ -676,10 +683,13 @@ static const char* unpack_stream_frame(uint64_t type, const char* data, int len,
     if(type & QUIC_FRAME_STREAM_LEN_F){
         data += variable_decode(data, &stream->length);
     }else{
-        stream->length = len - (data - data);
+        stream->length = end - data;
     }
-    stream->data = new char[stream->length];
-    memcpy(stream->data, data, stream->length);
+
+    stream->buffer.ref = (uint32_t*)new char[stream->length + sizeof(stream->buffer.ref)];
+    *stream->buffer.ref = 1;
+    stream->buffer.data = (char*)(stream->buffer.ref + 1);
+    memcpy(stream->buffer.data, data, stream->length);
     return data + stream->length;
 }
 
@@ -863,6 +873,10 @@ int unpack_meta(const void* data_, size_t len, quic_meta* meta){
         meta->type = data[0] & 0x30;
         size_t pos = 1;
         meta->version = get32(data + pos);
+        if(meta->version != QUIC_VERSION_1){
+            LOGE("unsupported version: %u\n", meta->version);
+            return -1;
+        }
         pos += 4;
 
         meta->dcid.resize(data[pos]);
@@ -1016,12 +1030,13 @@ std::vector<const quic_frame*> decode_packet(const void* data_, size_t len,
     }
 
 
-    header->pn = header->pn_base & (0xffffffffffffffff << (header->pn_length*8));
+    header->pn = 0;
     for(size_t i = 0; i < header->pn_length; i++){
         buff[pos+i] ^= mask[i+1];
         header->pn <<= 8;
         header->pn +=  buff[pos+i];
     }
+    header->pn += header->pn_base & (0xffffffffffffffff << (header->pn_length*8));
     pos += header->pn_length;
 
     char iv[12];
@@ -1102,8 +1117,8 @@ void dumpFrame(const char* prefix, char name, const quic_frame* frame) {
              frame->crypto.offset, frame->crypto.offset + frame->crypto.length);
         return;
     case QUIC_FRAME_NEW_TOKEN:
-        LOGD(DQUIC, "%s [%c] new token: %.*s\n", prefix, name,
-             (int)frame->new_token.length, frame->new_token.token);
+        LOGD(DQUIC, "%s [%c] new token: %s\n", prefix, name,
+             dumpHex(frame->new_token.token, frame->new_token.length).c_str());
         return;
     /*skip stream frame here*/
     case QUIC_FRAME_MAX_DATA:
@@ -1133,17 +1148,21 @@ void dumpFrame(const char* prefix, char name, const quic_frame* frame) {
         LOGD(DQUIC, "%s [%c] blocked stream_ubi: %" PRIu64"\n", prefix, name, frame->extra);
         return;
     case QUIC_FRAME_NEW_CONNECTION_ID:
-        LOGD(DQUIC, "%s [%c] new connection id seq:%" PRIu64", retired:%" PRIu64", id:%.*s, token:%.16s\n", prefix, name,
-             frame->new_id.seq, frame->new_id.retired, frame->new_id.length, frame->new_id.id, frame->new_id.token);
+        LOGD(DQUIC, "%s [%c] new connection id seq:%" PRIu64", retired:%" PRIu64", id:%s, token:%s\n", prefix, name,
+             frame->new_id.seq, frame->new_id.retired,
+             dumpHex(frame->new_id.id, frame->new_id.length).c_str(),
+             dumpHex(frame->new_id.token, 16).c_str());
         return;
     case QUIC_FRAME_RETIRE_CONNECTION_ID:
         LOGD(DQUIC, "%s [%c] retire connection id: %" PRIu64"\n", prefix, name, frame->extra);
         return;
     case QUIC_FRAME_PATH_CHALLENGE:
-        LOGD(DQUIC, "%s [%c] path challenge: %.64s\n", prefix, name, frame->path_data);
+        LOGD(DQUIC, "%s [%c] path challenge: %s\n", prefix, name,
+             dumpHex(frame->path_data, 64).c_str());
         return;
     case QUIC_FRAME_PATH_RESPONSE:
-        LOGD(DQUIC, "%s [%c] path response: %.64s\n", prefix, name, frame->path_data);
+        LOGD(DQUIC, "%s [%c] path response: %s\n", prefix, name,
+            dumpHex(frame->path_data, 64).c_str());
         return;
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:
@@ -1172,7 +1191,9 @@ void frame_release(const quic_frame* frame){
         delete []frame->ack.ranges;
         break;
     case QUIC_FRAME_CRYPTO:
-        delete []frame->crypto.body;
+        if(--(*frame->crypto.buffer.ref) == 0) {
+            delete[]frame->crypto.buffer.ref;
+        }
         break;
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:
@@ -1188,9 +1209,25 @@ void frame_release(const quic_frame* frame){
         if((frame->type >= QUIC_FRAME_STREAM_START_ID)
            &&(frame->type <= QUIC_FRAME_STREAM_END_ID))
         {
-            delete []frame->stream.data;
+            if(--(*frame->stream.buffer.ref) == 0) {
+                delete []frame->stream.buffer.ref;
+            }
         }
         break;
     }
     delete frame;
 }
+
+std::string dumpHex(const void* data, size_t len){
+    if(len == 0){
+        return "";
+    }
+    std::string s = "0x";
+    for(size_t i = 0; i < len; i++) {
+        char buf[3];
+        sprintf(buf, "%02x", ((uint8_t*)data)[i]);
+        s += buf;
+    }
+    return s;
+}
+

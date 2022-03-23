@@ -13,6 +13,12 @@
 #include <list>
 #include <map>
 
+#define QUIC_CIPHERS                                              \
+   "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:"               \
+   "TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_CCM_SHA256"
+
+#define QUIC_GROUPS "P-256:X25519:P-384:P-521"
+
 #define QUIC_CID_LEN     20
 
 
@@ -105,10 +111,11 @@ protected:
         char token[16];
     };
     std::vector<cid> scids;
-    size_t scid_id = 0;
+    size_t scid_idx = 0;
     std::vector<cid> dcids;
-    size_t dcid_id = 0;
+    size_t dcid_idx = 0;
     std::string initToken;
+    std::string originDcid;
     struct QuicStreamStatus{
 #define STREAM_FLAG_FIN_SENT    0x01   //sent fin to peer
 #define STREAM_FLAG_FIN_RECVD   0x02   //got fin from peer
@@ -170,7 +177,7 @@ protected:
     FrameResult handleHandshakeFrames(quic_context* context, const quic_frame* frame);
     FrameResult handleFrames(quic_context* context, const quic_frame* frame);
 
-    void walkPackets(const std::function<int(const quic_pkt_header* header, std::vector<const quic_frame*>& frames)>& handler);
+    std::function<int(const quic_pkt_header* header, std::vector<const quic_frame*>& frames)> walkHandler;
     int handleHandshakePacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
     int handleRetryPacket(const quic_pkt_header* header);
     int handle1RttPacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
@@ -182,6 +189,7 @@ protected:
     bool IsBidirect(uint64_t id);
     bool IsIdle(uint64_t id);
 
+    size_t envelopLen(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, size_t len);
     int send(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, const void* body, size_t len);
     void resendFrames(pn_namespace* ns, quic_frame* frame);
     Job* keepAlive_timer = nullptr;
@@ -193,14 +201,18 @@ public:
     explicit QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
                      std::function<void(int ret, int code)> errorCB,
                      std::function<void(const sockaddr_storage&)> connectCB = nullptr);
+    explicit QuicRWer(int fd, const sockaddr_storage* peer, SSL_CTX* ctx,
+                     std::function<void(int ret, int code)> errorCB,
+                     std::function<void(const sockaddr_storage&)> connectCB = nullptr);
     virtual ~QuicRWer() override;
-    void Reset(uint64_t id, uint32_t code);
+    virtual buff_iterator buffer_insert(buff_iterator where, buff_block&& bb) override;
 
     virtual void waitconnectHE(RW_EVENT events) override;
     virtual void closeHE(RW_EVENT events) override;
     //virtual void Shutdown() override;
     virtual void Close(std::function<void()> func) override;
 
+    void Reset(uint64_t id, uint32_t code);
 
     static int set_encryption_secrets(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
                                       const uint8_t *read_secret,
@@ -209,6 +221,8 @@ public:
                                   const uint8_t *data, size_t len);
     static int flush_flight(SSL *ssl);
     static int send_alert(SSL *ssl, OSSL_ENCRYPTION_LEVEL level, uint8_t alert);
+    void walkPackets(const void* buff, size_t length);
+    std::string GetDCID();
 
     void get_alpn(const unsigned char **s, unsigned int * len);
     int set_alpn(const unsigned char *s, unsigned int len);
