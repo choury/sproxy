@@ -155,6 +155,9 @@ protected:
     uint64_t my_max_streams_bidi = 100;
     uint64_t my_max_streams_uni = 10;
 
+    virtual void waitconnectHE(RW_EVENT events) override;
+    virtual void closeHE(RW_EVENT events) override;
+
     virtual void ReadData() override;
     virtual void ConsumeRData() override;
     virtual size_t rlength() override;
@@ -197,6 +200,8 @@ protected:
     Job* disconnect_timer = nullptr;
     void disconnect_action();
     Job* close_timer = nullptr;
+
+    std::function<void(uint64_t id, uint32_t error)> resetHandler = nullptr;
 public:
     explicit QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
                      std::function<void(int ret, int code)> errorCB,
@@ -207,11 +212,10 @@ public:
     virtual ~QuicRWer() override;
     virtual buff_iterator buffer_insert(buff_iterator where, buff_block&& bb) override;
 
-    virtual void waitconnectHE(RW_EVENT events) override;
-    virtual void closeHE(RW_EVENT events) override;
     //virtual void Shutdown() override;
     virtual void Close(std::function<void()> func) override;
 
+    void setResetHandler(std::function<void(uint64_t id, uint32_t error)> func);
     void Reset(uint64_t id, uint32_t code);
 
     static int set_encryption_secrets(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
@@ -221,6 +225,7 @@ public:
                                   const uint8_t *data, size_t len);
     static int flush_flight(SSL *ssl);
     static int send_alert(SSL *ssl, OSSL_ENCRYPTION_LEVEL level, uint8_t alert);
+
     void walkPackets(const void* buff, size_t length);
     std::string GetDCID();
 

@@ -57,7 +57,6 @@ public:
     virtual void dump_stat(Dumper dp, void* param) override;
 
     void init(std::shared_ptr<HttpReq> req);
-    void flush();
 };
 
 extern Proxy2* proxy2;

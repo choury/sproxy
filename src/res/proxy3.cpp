@@ -58,6 +58,7 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
             }
         }
     });
+    rwer->setResetHandler(std::bind(&Proxy3::RstProc, this, _1, _2));
 }
 
 Proxy3::~Proxy3() {
@@ -257,8 +258,4 @@ void Proxy3::dump_stat(Dumper dp, void* param) {
            i.second.req->header->geturl().c_str(),
            i.second.flags);
     }
-}
-
-void Proxy3::flush() {
-    rwer->Reconnect();
 }

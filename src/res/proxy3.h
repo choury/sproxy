@@ -23,13 +23,13 @@ protected:
     virtual void ResProc(uint64_t id, HttpResHeader* res)override;
     virtual void PushFrame(uint64_t id, PREPTR void* buff, size_t len)override;
     virtual void DataProc(uint64_t id, const void *data, size_t len)override;
-    virtual void RstProc(uint64_t id, uint32_t errcode)override;
     virtual void ErrProc(int errcode)override;
     virtual void Reset(uint64_t id, uint32_t code)override;
     virtual void ShutdownProc(uint64_t id)override;
     virtual uint64_t CreateUbiStream() override;
 
     void Send(uint64_t id ,const void* buff, size_t size);
+    void RstProc(uint64_t id, uint32_t errcode);
     void Clean(uint64_t id, ReqStatus& status, uint32_t errcode);
 public:
     explicit Proxy3(std::shared_ptr<QuicRWer> rwer);
@@ -40,7 +40,6 @@ public:
     virtual void dump_stat(Dumper dp, void* param) override;
 
     void init(std::shared_ptr<HttpReq> req);
-    void flush();
 };
 
 extern Proxy3* proxy3;

@@ -118,8 +118,6 @@ public:
     virtual void SetReadCB(std::function<void(buff_block&)> func);
     virtual void SetWriteCB(std::function<void(size_t len)> func);
 
-    virtual bool supportReconnect();
-    virtual void Reconnect();
     virtual void Close(std::function<void()> func);
     void EatReadData();
     virtual void Shutdown();

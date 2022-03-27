@@ -79,7 +79,6 @@ protected:
     virtual void SettingsProc(const uchar *header, size_t len);
     virtual void GoawayProc(uint64_t id);
     virtual void DataProc(uint64_t id, const void *data, size_t len) = 0;
-    virtual void RstProc(uint64_t id, uint32_t errcode);
     virtual void ShutdownProc(uint64_t id);
     virtual void ErrProc(int errcode) = 0;
     virtual void Reset(uint64_t id, uint32_t code) = 0;

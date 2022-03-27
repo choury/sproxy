@@ -405,15 +405,8 @@ void Proxy2::dump_stat(Dumper dp, void* param) {
     }
 }
 
-void Proxy2::flush() {
-    if(!rwer->supportReconnect()){
-        proxy2 = nullptr;
-    }
-}
-
-
 void flushproxy2() {
     if(proxy2){
-        proxy2->flush();
+        proxy2 = nullptr;
     }
 }

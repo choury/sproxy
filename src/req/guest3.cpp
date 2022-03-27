@@ -4,6 +4,7 @@
 
 #include "guest3.h"
 #include "res/responser.h"
+#include <assert.h>
 #include <inttypes.h>
 
 Guest3::Guest3(int fd, sockaddr_storage *addr, SSL_CTX *ctx):
@@ -17,6 +18,7 @@ Guest3::Guest3(int fd, sockaddr_storage *addr, SSL_CTX *ctx):
             LOGE("unknown protocol: %.*s\n", len, data);
             return Server::deleteLater(PROTOCOL_ERR);
         }
+        qrwer->setResetHandler(std::bind(&Guest3::RstProc, this, _1, _2));
         Init();
     }))
 {

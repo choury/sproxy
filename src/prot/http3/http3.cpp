@@ -187,10 +187,6 @@ void Http3Base::GoawayProc(__attribute__ ((unused)) uint64_t id) {
     LOGD(DHTTP3, "Get a Goaway frame: %" PRIu64"\n", id);
 }
 
-void Http3Base::RstProc(__attribute__ ((unused)) uint64_t id, __attribute__ ((unused)) uint32_t errcode) {
-    LOGD(DHTTP3, "Get a reset frame [%" PRIu64"]: %d\n", id, errcode);
-}
-
 void Http3Base::ShutdownProc(__attribute__ ((unused)) uint64_t id) {
     LOGD(DHTTP3, "Stream shutdown: %" PRIu64"\n", id);
 }

@@ -172,13 +172,6 @@ void RWer::closeHE(RW_EVENT) {
 #endif
 }
 
-bool RWer::supportReconnect(){
-    return false;
-}
-
-void RWer::Reconnect() {
-}
-
 void RWer::Close(std::function<void()> func) {
     if(flags & RWER_CLOSING){
         return;
@@ -189,6 +182,7 @@ void RWer::Close(std::function<void()> func) {
         setEvents(RW_EVENT::READWRITE);
         handleEvent = (void (Ep::*)(RW_EVENT))&RWer::closeHE;
     }else{
+        // when connecting, the socket is not writable, so we close it immediately
         addjob(closeCB, 0, JOB_FLAGS_AUTORELEASE);
     }
 }

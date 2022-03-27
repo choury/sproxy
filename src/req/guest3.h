@@ -30,13 +30,13 @@ protected:
     virtual void ReqProc(uint64_t id, HttpReqHeader* res)override;
     virtual void PushFrame(uint64_t id, PREPTR void* buff, size_t len)override;
     virtual void DataProc(uint64_t id, const void *data, size_t len)override;
-    virtual void RstProc(uint64_t id, uint32_t errcode)override;
     virtual void ErrProc(int errcode)override;
     virtual void Reset(uint64_t id, uint32_t code)override;
     virtual void ShutdownProc(uint64_t id)override;
     virtual uint64_t CreateUbiStream() override;
 
     void Send(uint64_t id ,const void* buff, size_t size);
+    void RstProc(uint64_t id, uint32_t errcode);
     void Clean(uint64_t id, ReqStatus& status, uint32_t errcode);
 public:
     explicit Guest3(int fd, sockaddr_storage* addr, SSL_CTX* ctx);
@@ -74,13 +74,22 @@ class Quic_server: public Ep {
                 LOGE("QUIC meta unpack failed, disacrd it\n");
                 return;
             }
-            if(guests.count(header.dcid) == 0) {
+            if(guests.count(header.dcid) ) {
+                auto qrwer = guests[header.dcid];
+                if(qrwer.expired()){
+                    //TODO:: send CONNECTION_REFUSED
+                    LOGE("QUIC server get expired packet: %s\n", header.dcid.c_str());
+                    return;
+                }
+                LOGD(DQUIC, "duplicated packet: %s, may be migration?\n", header.dcid.c_str());
+                qrwer.lock()->walkPackets(buff, ret);
+            }else if(header.type == QUIC_PACKET_INITIAL){
                 int clsk = ListenNet(SOCK_DGRAM, opt.CPORT);
-                if(clsk < 0){
+                if (clsk < 0) {
                     LOGE("ListenNet failed: %s\n", strerror(errno));
                     return;
                 }
-                if(::connect(clsk, (sockaddr*)&myaddr, temp) < 0){
+                if (::connect(clsk, (sockaddr *) &myaddr, temp) < 0) {
                     LOGE("connect failed: %s\n", strerror(errno));
                     return;
                 }
@@ -91,15 +100,8 @@ class Quic_server: public Ep {
                 rwer.lock()->walkPackets(buff, ret);
                 guests[rwer.lock()->GetDCID()] = rwer;
                 guests[header.dcid] = rwer;
-            }else{
-                auto qrwer = guests[header.dcid];
-                if(qrwer.expired()){
-                    //TODO:: send CONNECTION_REFUSED
-                    LOGE("QUIC server get expired packet: %s\n", header.dcid.c_str());
-                    return;
-                }
-                LOGD(DQUIC, "duplicated packet: %s, may be migration?\n", header.dcid.c_str());
-                qrwer.lock()->walkPackets(buff, ret);
+            }else if(header.type == QUIC_PACKET_1RTT){
+                //TODO: send stateless reset
             }
         } else {
             LOGE("unknown error\n");

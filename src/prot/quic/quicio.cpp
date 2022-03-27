@@ -120,7 +120,7 @@ int QuicRWer::send(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, const
         return -QUIC_FRAME_ENCODING_ERROR;
     }
     size_t packet_len = pos - packet;
-    if(header.type == QUIC_PACKET_INITIAL && packet_len < QUIC_INITIAL_LIMIT){
+    if(header.type == QUIC_PACKET_INITIAL && packet_len < QUIC_INITIAL_LIMIT && ctx){
         memset(pos, 0, packet + QUIC_INITIAL_LIMIT - pos);
         packet_len = QUIC_INITIAL_LIMIT;
     }
@@ -475,6 +475,9 @@ QuicRWer::FrameResult QuicRWer::handleCryptoFrame(quic_context* context, const q
                 //send handshake done frame to client
                 qos.PushFrame(ssl_encryption_application, new quic_frame{QUIC_FRAME_HANDSHAKE_DONE, {}});
                 dropkey(ssl_encryption_handshake);
+            }else{
+                //discard token from retry packet.
+                initToken.clear();
             }
             Connected(addrs.front());
         }else if(errno != EAGAIN){
@@ -547,7 +550,13 @@ QuicRWer::FrameResult QuicRWer::handleStreamFrame(uint64_t type, const quic_stre
     if(type & QUIC_FRAME_STREAM_FIN_F){
         status.flags |= STREAM_FLAG_FIN_RECVD;
         status.finSize = stream->offset + stream->length;
+
+        if(std::max(stream->offset + stream->length, want) > status.finSize) {
+            ErrorHE(PROTOCOL_ERR, QUIC_FINAL_SIZE_ERROR);
+            return FrameResult::error;
+        }
     }
+
     if(stream->offset + stream->length <= want){
         LOGD(DQUIC, "ignore dup data [%" PRIu64"]: %" PRIu64"/%" PRIu64"\n",
              id, stream->offset + stream->length, want);
@@ -592,15 +601,20 @@ QuicRWer::FrameResult QuicRWer::handleResetFrame(const quic_reset *stream) {
     if(status.flags & STREAM_FLAG_RESET_RECVD) {
         return FrameResult::ok;
     }
-    //TODO: remove data from rb
-    status.flags |= STREAM_FLAG_RESET_RECVD;
-    status.finSize = stream->fsize;
 
     if(want > status.finSize){
         ErrorHE(PROTOCOL_ERR, QUIC_FINAL_SIZE_ERROR);
         return FrameResult::error;
     }
+
+    //TODO: remove data from rb
+    status.flags |= STREAM_FLAG_RESET_RECVD;
+    status.finSize = stream->fsize;
     my_received_data += status.finSize - want;
+
+    if(resetHandler){
+        resetHandler(id, stream->error);
+    }
     return FrameResult::ok;
 }
 
@@ -728,6 +742,21 @@ QuicRWer::FrameResult QuicRWer::handleFrames(quic_context *context, const quic_f
         flags |= RWER_CLOSING;
         ErrorHE(PROTOCOL_ERR, (int)frame->close.error);
         return FrameResult::error;
+    case QUIC_FRAME_NEW_TOKEN:
+        if(ctx == nullptr){
+            LOGE("Get new token from client\n");
+            ErrorHE(PROTOCOL_ERR, QUIC_PROTOCOL_VIOLATION);
+            return FrameResult::error;
+        }else {
+            initToken = frame->new_token.token;
+            return FrameResult::ok;
+        }
+    case QUIC_FRAME_NEW_CONNECTION_ID:
+        if(frame->new_id.retired > frame->new_id.seq){
+            ErrorHE(PROTOCOL_ERR, QUIC_FRAME_ENCODING_ERROR);
+            return FrameResult::error;
+        }
+        return FrameResult::ok;
     default:
         if(frame->type >= QUIC_FRAME_STREAM_START_ID && frame->type <= QUIC_FRAME_STREAM_END_ID){
             return handleStreamFrame(frame->type, &frame->stream);
@@ -902,6 +931,8 @@ void QuicRWer::Close(std::function<void()> func) {
         return 0;
     };
     if(getFd() >= 0 && stats == RWerStats::Connected) {
+        //we only send CLOSE_CONNECTION_APP frame after handshake now
+        //TODO: but it should also be send before handshake
         close_timer = updatejob(close_timer, closeCB, max_idle_timeout);
         handleEvent = (void (Ep::*)(RW_EVENT))&QuicRWer::closeHE;
         setEvents(RW_EVENT::READ);
@@ -1026,6 +1057,10 @@ void QuicRWer::ReadData() {
     }
 }
 
+void QuicRWer::setResetHandler(std::function<void(uint64_t, uint32_t)> func) {
+    resetHandler = func;
+}
+
 void QuicRWer::Reset(uint64_t id, uint32_t code) {
     if(streammap.count(id) == 0){
         return;
@@ -1068,11 +1103,12 @@ bool QuicRWer::IsIdle(uint64_t id){
     auto status = streammap[id];
     bool send_closed = false;
     bool recv_closed = false;
-    if((status.flags & STREAM_FLAG_FIN_SENT) || (status.flags & STREAM_FLAG_RESET_SENT)){
+    if((status.flags & STREAM_FLAG_RESET_RECVD) || (status.flags & STREAM_FLAG_RESET_SENT)){
         send_closed = true;
-    }
-    if(status.flags & STREAM_FLAG_RESET_RECVD){
         recv_closed = true;
+    }
+    if(status.flags & STREAM_FLAG_FIN_SENT){
+        send_closed = true;
     }
     if((status.flags & STREAM_FLAG_FIN_RECVD) && (status.rb.Offset() == status.finSize)){
         assert(status.rb.length() == 0);
@@ -1095,6 +1131,12 @@ void QuicRWer::ConsumeRData() {
             i++;
             continue;
         }
+        if(IsIdle(i->first)){
+            LOGD(DQUIC, "clean idle stream: %" PRIu64"\n", i->first);
+            i = streammap.erase(i);
+            continue;
+        }
+
         auto& rb = i->second.rb;
         assert(rblen >= rb.length());
         char* buff = (char*)p_malloc(rb.length());
@@ -1110,18 +1152,6 @@ void QuicRWer::ConsumeRData() {
             readCB(ewb);
         }
 
-        if(my_max_data - my_received_data <= 50 *1024 *1024){
-            my_max_data += 50 *1024 *1024;
-            quic_frame* frame = new quic_frame;
-            frame->type = QUIC_FRAME_MAX_DATA;
-            frame->extra = my_max_data;
-            qos.PushFrame(ssl_encryption_application, frame);
-        }
-        if(IsIdle(i->first)){
-            LOGD(DQUIC, "clean idle stream: %" PRIu64"\n", i->first);
-            i = streammap.erase(i);
-            continue;
-        }
         auto shouldSendMaxStreamData = [](QuicStreamStatus& status) -> bool {
             uint64_t offset = status.rb.Offset() + status.rb.length();
             if(offset + status.rb.cap() - status.my_max_data < BUF_LEN){
@@ -1144,6 +1174,13 @@ void QuicRWer::ConsumeRData() {
             qos.PushFrame(ssl_encryption_application, frame);
         }
         i++;
+    }
+    if(my_max_data - my_received_data <= 50 *1024 *1024){
+        my_max_data += 50 *1024 *1024;
+        quic_frame* frame = new quic_frame;
+        frame->type = QUIC_FRAME_MAX_DATA;
+        frame->extra = my_max_data;
+        qos.PushFrame(ssl_encryption_application, frame);
     }
 }
 
