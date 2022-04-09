@@ -158,14 +158,12 @@ SocketRWer::SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
 {
     strcpy(this->hostname, hostname);
     stats = RWerStats::Resolving;
-    AddJob(std::bind(&SocketRWer::query, this), 0, JOB_FLAGS_AUTORELEASE);
+    addjob([this]{
+        query_host(this->hostname, SocketRWer::Dnscallback, shared_from_this());
+    }, 0, JOB_FLAGS_AUTORELEASE);
 }
 
 SocketRWer::~SocketRWer() {
-}
-
-void SocketRWer::query() {
-    query_host(hostname, SocketRWer::Dnscallback, shared_from_this());
 }
 
 void SocketRWer::Dnscallback(std::weak_ptr<void> param, int error, std::list<sockaddr_storage> addrs) {

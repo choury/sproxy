@@ -50,7 +50,6 @@ protected:
     Protocol protocol;
     char     hostname[DOMAINLIMIT] = {0};
     std::queue<sockaddr_storage> addrs;
-    void query();
     void connect();
     Job*     con_failed_job = nullptr;
     // connectFailed should only be called with job con_failed_job,
