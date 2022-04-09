@@ -816,7 +816,6 @@ void* pack_frame(void* buff, const quic_frame* frame) {
     size_t tlen = variable_encode(buff, frame->type);
     switch(frame->type){
     case QUIC_FRAME_PADDING:
-        //padding frame must the last frame
         memset(buff, 0, frame->extra);
         return (char*)buff + frame->extra;
     case QUIC_FRAME_CRYPTO:
@@ -933,9 +932,16 @@ const char* unpack_frame(const char* data, size_t len, quic_frame* frame){
     const char* pos = data + variable_decode(data, &frame->type);
     switch (frame->type) {
     case QUIC_FRAME_PADDING:
-        //padding all the left
-        frame->extra = len;
-        return data + len;
+        frame->extra = 1;
+        while(pos < data + len){
+            if(*pos == 0){
+                pos++;
+                frame->extra++;
+            }else{
+                break;
+            }
+        }
+        return data + frame->extra;
     case QUIC_FRAME_CRYPTO:
         return unpack_crypto_frame(pos, &frame->crypto);
     case QUIC_FRAME_ACK:

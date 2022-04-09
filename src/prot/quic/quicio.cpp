@@ -388,7 +388,7 @@ QuicRWer::FrameResult QuicRWer::handleCryptoFrame(quic_context* context, const q
         return FrameResult::ok;
     }
     if(crypto->offset > context->crypto_want) {
-        LOGD(DQUIC, "skip unwanted crypto frame [%zd]\n", context->crypto_want);
+        LOGD(DQUIC, "skip unwanted crypto frame [%zd/%" PRIu64"]\n", context->crypto_want, crypto->offset);
         return FrameResult::skip;
     }
     uint8_t* start = (uint8_t*)crypto->buffer.data + (context->crypto_want - crypto->offset);
@@ -905,11 +905,6 @@ void QuicRWer::closeHE(RW_EVENT events) {
 }
 
 void QuicRWer::Close(std::function<void()> func) {
-    if(flags & RWER_CLOSING){
-        return;
-    }
-    flags |= RWER_CLOSING;
-
     closeCB = std::move(func);
     walkHandler= [this](const quic_pkt_header* header, std::vector<const quic_frame*>& frames) -> int{
         LOGD(DQUIC, "[%" PRIu64"] discard packet after cc: %d\n", header->pn, header->type);
@@ -936,6 +931,12 @@ void QuicRWer::Close(std::function<void()> func) {
         close_timer = updatejob(close_timer, closeCB, max_idle_timeout);
         handleEvent = (void (Ep::*)(RW_EVENT))&QuicRWer::closeHE;
         setEvents(RW_EVENT::READ);
+        // RWER_CLOSING in quic means we have send or recv CLOSE_CONNECTION_APP frame
+        // so we will not send CLOSE_CONNECTION_APP frame again
+        if(flags & RWER_CLOSING){
+            return;
+        }
+        flags |= RWER_CLOSING;
 
         quic_frame* frame = new quic_frame;
         frame->type = QUIC_FRAME_CONNECTION_CLOSE_APP;
@@ -1015,6 +1016,34 @@ void QuicRWer::walkPackets(const void* buff, size_t length) {
     }
 }
 
+void QuicRWer::reorderData(){
+    for(auto& context : contexts) {
+        if(!context.hasKey){
+            continue;
+        }
+retry:
+        for (auto i = context.recvq.begin(); i != context.recvq.end();) {
+            FrameResult ret = FrameResult::ok;
+            if (context.level != ssl_encryption_application) {
+                ret = handleHandshakeFrames(&context, i->second);
+            } else {
+                ret = handleFrames(&context, i->second);
+            }
+            switch (ret) {
+            case FrameResult::ok:
+                frame_release(i->second);
+                i = context.recvq.erase(i);
+                goto retry;
+            case FrameResult::skip:
+                i++;
+                break;
+            case FrameResult::error:
+                return;
+            }
+        }
+    }
+}
+
 void QuicRWer::ReadData() {
     char buff[max_datagram_size];
     while(true){
@@ -1028,31 +1057,9 @@ void QuicRWer::ReadData() {
         }
         walkPackets(buff, ret);
     }
-    for(auto& context : contexts) {
-        if(!context.hasKey){
-            continue;
-        }
-        for (auto i = context.recvq.begin(); i != context.recvq.end();) {
-            FrameResult ret = FrameResult::ok;
-            if (context.level != ssl_encryption_application) {
-                ret = handleHandshakeFrames(&context, i->second);
-            } else {
-                ret = handleFrames(&context, i->second);
-            }
-            switch (ret) {
-            case FrameResult::ok:
-                frame_release(i->second);
-                i = context.recvq.erase(i);
-                break;
-            case FrameResult::skip:
-                i++;
-                break;
-            case FrameResult::error:
-                return;
-            }
-        }
-    }
+    reorderData();
     if(rlength()){
+        // provider ordered stream data to application
         ConsumeRData();
     }
 }

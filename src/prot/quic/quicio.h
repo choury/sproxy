@@ -227,6 +227,7 @@ public:
     static int send_alert(SSL *ssl, OSSL_ENCRYPTION_LEVEL level, uint8_t alert);
 
     void walkPackets(const void* buff, size_t length);
+    void reorderData();
     std::string GetDCID();
 
     void get_alpn(const unsigned char **s, unsigned int * len);

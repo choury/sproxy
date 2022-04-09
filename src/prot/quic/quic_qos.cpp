@@ -342,7 +342,9 @@ std::list<quic_packet_pn> pn_namespace::DetectAndRemoveLostPackets(Rtt *rtt) {
     assert(largest_acked_packet != UINT64_MAX);
     loss_time = UINT64_MAX;
     std::list<quic_packet_pn> lost_packets;
-    assert(rtt->latest_rtt);
+    if(rtt->latest_rtt == 0){
+        return lost_packets;
+    }
     uint64_t now = getutime();
     uint64_t timeThreshold = std::max(9 * std::max(rtt->smoothed_rtt, rtt->latest_rtt) / 8, (uint64_t)1000);
     for(auto i = sent_packets.begin(); i != sent_packets.end();){
