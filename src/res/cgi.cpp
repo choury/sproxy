@@ -181,6 +181,10 @@ void Cgi::Send(uint32_t id, void *buff, size_t size) {
 
 
 void Cgi::readHE(buff_block& bb) {
+    if(bb.len == 0){
+        LOGE("[CGI] %s closed pipe\n", basename(filename));
+        return deleteLater(PROTOCOL_ERR);
+    }
     while(bb.len - bb.offset >= sizeof(CGI_Header)) {
         const CGI_Header *header = (const CGI_Header *)((const char*)bb.buff + bb.offset);
         size_t size = ntohs(header->contentLength) + sizeof(CGI_Header);

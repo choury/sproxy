@@ -18,16 +18,24 @@
 #define Max(x, y) ((int64_t)(x) > (int64_t)(y)?(x):(y))
 #define UpTo(x, y) ((int64_t)(((x) + (y) - 1)/(y)) * (y))
 
+#ifdef _MSC_VER_ // for MSVC
+#define forceinline __forceinline
+#elif defined __GNUC__ // for gcc on Linux/Apple OS X
+#define forceinline __inline__ __attribute__((always_inline))
+#else
+#define forceinline inline
+#endif
+
 /*
  * * The next routines deal with comparing 32 bit unsigned ints
  * * and worry about wraparound (automatic with unsigned arithmetic).
  * */
-static inline int before(uint32_t seq1, uint32_t seq2)
+forceinline int before(uint32_t seq1, uint32_t seq2)
 {
     return (int32_t)(seq1-seq2) < 0;
 }
 
-static inline int noafter(uint32_t seq1, uint32_t seq2)
+forceinline int noafter(uint32_t seq1, uint32_t seq2)
 {
     return (int32_t)(seq1-seq2) <= 0;
 }
@@ -115,13 +123,13 @@ do{\
     abort(); \
 }while(0)
 
-static inline uint64_t getutime(){
+forceinline uint64_t getutime(){
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return tv.tv_sec * 1000000ull + tv.tv_usec;
 }
 
-static inline uint32_t getmtime(){
+forceinline uint32_t getmtime(){
     struct timeval tv;
     gettimeofday(&tv, 0);
     return (tv.tv_sec * 1000ull + tv.tv_usec/1000)&0xFFFFFFFF;
@@ -237,6 +245,7 @@ struct Destination{
     uint16_t port;
 };
 
+#define STRATEGY "Strategy"
 #define PREPTR
 
 #cmakedefine01 Backtrace_FOUND

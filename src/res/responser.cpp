@@ -65,7 +65,7 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
                 stra.s = Strategy::direct;
             }
         }
-        req->header->set("Strategy", getstrategystring(stra.s));
+        req->header->set(STRATEGY, getstrategystring(stra.s));
         switch(check_header(req->header, src)){
         case CheckResult::Succeed:
             break;
