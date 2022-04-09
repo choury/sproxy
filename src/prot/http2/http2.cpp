@@ -101,6 +101,7 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
     case HTTP2_STREAM_PRIORITY:
     case HTTP2_STREAM_PUSH_PROMISE:
     case HTTP2_STREAM_CONTINUATION:
+    case HTTP2_STREAM_ALTSVC:
         LOGE("unimplemented http2 frame:%d\n", header->type);
         break;
     default:
@@ -436,13 +437,26 @@ void Http2Responser::HeadersProc(const Http2_header* header) {
     (void)streamdep;
 }
 
+void Http2Responser::AltSvc(uint32_t id, const char *origin, const char *value) {
+    size_t originlen = strlen(origin);
+    size_t valuelen = strlen(value);
+    Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header) + 2 + originlen + valuelen);
+    memset(header, 0, sizeof(Http2_header));
+    header->type = HTTP2_STREAM_ALTSVC;
+    set32(header->id, id);
+    set24(header->length, 2 + originlen + valuelen);
+    set16(header+1, originlen);
+    char* pos = (char *)(header+1) + 2;
+    memcpy(pos, origin, originlen);
+    pos += originlen;
+    memcpy(pos, value, valuelen);
+    PushFrame(header);
+}
 
 void Http2Requster::init() {
     queue_insert(queue_head(), buff_block{p_strdup(HTTP2_PREFACE), sizeof(HTTP2_PREFACE) - 1});
     SendInitSetting(); 
 }
-
-
 
 size_t Http2Requster::InitProc(const uchar* http2_buff, size_t len) {
     const Http2_header *header = (const Http2_header *)http2_buff;

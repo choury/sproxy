@@ -17,7 +17,6 @@ struct Job{
     uint32_t delay_ms;
     uint32_t last_done_ms;
     job_handler* handler;
-    ~Job(){}
 };
 
 std::set<Job*> gjobs;

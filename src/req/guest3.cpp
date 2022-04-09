@@ -256,7 +256,7 @@ void Guest3::dump_stat(Dumper dp, void* param) {
        rwer->rlength(), rwer->wlength(),
        (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     for(auto& i: statusmap){
-        dp(param, "0x%x [%" PRIu32 "]: %s %s\n",
+        dp(param, "0x%lx [%" PRIu32 "]: %s %s\n",
            i.first, i.second.req->header->request_id,
            i.second.req->header->method,
            i.second.req->header->geturl().c_str());

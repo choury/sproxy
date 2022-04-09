@@ -2,6 +2,7 @@
 #include "guest2.h"
 #include "res/responser.h"
 #include "misc/util.h"
+#include "misc/config.h"
 #include "prot/sslio.h"
 
 #include <string.h>
@@ -173,6 +174,9 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
         status.flags |= HTTP_CHUNK_F;
     }else if(res->header->get("Content-Length") == nullptr) {
         status.flags |= HTTP_NOLENGTH_F;
+    }
+    if(!status.req->header->should_proxy && opt.alt_svc){
+        res->header->set("Alt-Svc", opt.alt_svc);
     }
     void* buff = p_malloc(BUF_LEN);
     size_t len = PackHttpRes(res->header, buff, BUF_LEN);

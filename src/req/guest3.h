@@ -97,7 +97,9 @@ class Quic_server: public Ep {
 
                 auto guest = new Guest3(clsk, &myaddr, ctx);
                 std::weak_ptr<QuicRWer> rwer = guest->getQuicRWer();
+                //we should not handle stream frame here, so ConsumeRData is not needed.
                 rwer.lock()->walkPackets(buff, ret);
+                rwer.lock()->reorderData();
                 guests[rwer.lock()->GetDCID()] = rwer;
                 guests[header.dcid] = rwer;
             }else if(header.type == QUIC_PACKET_1RTT){

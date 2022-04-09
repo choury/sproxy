@@ -59,6 +59,7 @@ struct options opt = {
     .socket            = NULL,
     .ua                = NULL,
     .pcap_file         = NULL,
+    .alt_svc           = NULL,
     .disable_http2     = false,
     .sni_mode          = false,
     .quic_mode         = false,
@@ -98,6 +99,7 @@ enum option_type{
 static const char* getopt_option = ":D1hikqr:s:p:I:c:P:v";
 static struct option long_options[] = {
     {"autoindex",     no_argument,       NULL, 'i'},
+    {"alt-svc",       required_argument, NULL, 0},
     {"cafile",        required_argument, NULL,  0 },
     {"cert",          required_argument, NULL,  0 },
     {"config",        required_argument, NULL, 'c'},
@@ -152,6 +154,7 @@ struct option_detail {
 
 static struct option_detail option_detail[] = {
     {"autoindex", "Enables the directory listing output (local server)", option_bool, &opt.autoindex, (void*)true},
+    {"alt-svc", "Add alt-svc header to response or send ALTSVC frame", option_string, &opt.alt_svc, NULL},
     {"cafile", "CA certificate for server (ssl)", option_string, &opt.cafile, NULL},
     {"cert", "Certificate file for server (ssl)", option_string, &opt.cert, NULL},
     {"config", "Configure file (default "PREFIX"/etc/sproxy/sproxy.conf and ./sproxy.conf)", option_string, &opt.config_file, NULL},

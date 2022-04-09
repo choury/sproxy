@@ -1,6 +1,7 @@
 #include "guest2.h"
 #include "res/responser.h"
 #include "misc/util.h"
+#include "misc/config.h"
 
 #include <assert.h>
 #include <inttypes.h>
@@ -176,6 +177,7 @@ void Guest2::response(void* index, std::shared_ptr<HttpRes> res) {
     res->header->del("Connection");
     status.res = res;
 
+
     Http2_header* const header = (Http2_header*)p_malloc(BUF_LEN);
     memset(header, 0, sizeof(*header));
     header->type = HTTP2_STREAM_HEADERS;
@@ -184,6 +186,10 @@ void Guest2::response(void* index, std::shared_ptr<HttpRes> res) {
     size_t len = hpack_encoder.PackHttp2Res(res->header, header + 1, BUF_LEN - sizeof(Http2_header));
     set24(header->length, len);
     PushFrame(header);
+
+    if(!status.req->header->should_proxy && opt.alt_svc){
+        AltSvc(id, "", opt.alt_svc);
+    }
 
     res->setHandler([this, &status, id](Channel::signal s){
         assert(statusmap.count(id));

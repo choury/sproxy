@@ -24,6 +24,7 @@ struct Http2_header {
 #define HTTP2_STREAM_GOAWAY         7u
 #define HTTP2_STREAM_WINDOW_UPDATE  8u
 #define HTTP2_STREAM_CONTINUATION   9u
+#define HTTP2_STREAM_ALTSVC         10u
     uint8_t type;
 #define HTTP2_ACK_F               1u
 #define HTTP2_END_STREAM_F        1u
@@ -54,7 +55,6 @@ struct Goaway_Frame{
     uint8_t errcode[4];
     uint8_t data[0];
 }__attribute__((packed));
-
 
 #define HTTP2_ERR_NO_ERROR            0u
 #define HTTP2_ERR_PROTOCOL_ERROR      1u
@@ -143,6 +143,7 @@ protected:
     virtual size_t InitProc(const uchar* http2_buff, size_t len)override;
     virtual void HeadersProc(const Http2_header *header)override;
     virtual void ReqProc(uint32_t id, HttpReqHeader* req) = 0;
+    virtual void AltSvc(uint32_t id, const char* origin, const char* value);
 };
 
 

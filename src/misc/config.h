@@ -50,6 +50,7 @@ struct options{
     const char *socket;
     const char *ua;
     const char *pcap_file;
+    const char *alt_svc;
     bool disable_http2;
     bool sni_mode;
     bool quic_mode;
