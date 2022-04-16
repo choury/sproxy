@@ -62,7 +62,7 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
 }
 
 Proxy3::~Proxy3() {
-    //we do this, because deleteLater will not invoked when vpn_stop
+    //we do this, because deleteLater will not be invoked when vpn_stop
     if(proxy3 == this){
         proxy3 = nullptr;
     }

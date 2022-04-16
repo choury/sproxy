@@ -248,7 +248,7 @@ void Guest2::WindowUpdateProc(uint32_t id, uint32_t size) {
         if(statusmap.count(id)){
             ReqStatus& status = statusmap[id];
             LOGD(DHTTP2, "<guest2> window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
-            if((uint64_t)status.remotewinsize + size >= (uint64_t)1<<31u){
+            if((uint64_t)status.remotewinsize + size >= (uint64_t)1<<31U){
                 Clean(id, status, HTTP2_ERR_FLOW_CONTROL_ERROR);
                 return;
             }
@@ -261,7 +261,7 @@ void Guest2::WindowUpdateProc(uint32_t id, uint32_t size) {
         }
     }else{
         LOGD(DHTTP2, "<guest2> window size updated global: %d+%d\n", remotewinsize, size);
-        if((uint64_t)remotewinsize + size >= (uint64_t)1<<31u){
+        if((uint64_t)remotewinsize + size >= (uint64_t)1<<31U){
             ErrProc(HTTP2_ERR_FLOW_CONTROL_ERROR);
             return;
         }

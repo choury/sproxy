@@ -77,7 +77,7 @@ void GzipTest::request(std::shared_ptr<HttpReq> req, Requester*) {
         left = parseSize(params["size"]);
     } else {
 #if __LP64__
-        left = 1024ull * 1024 * 1024 * 1024; //1T
+        left = 1024ULL * 1024 * 1024 * 1024; //1T
 #else
         left = 2ull * 1024 * 1024 * 1024;    //2G
 #endif
@@ -123,7 +123,7 @@ void GzipTest::gzipreadHE(buff_block&) {
     strm.next_out = out;
     strm.avail_out = chunk;
     /* run deflate() on input until output buffer not full, finish
-       compression if all of source Has been read in */
+       compression if all source Has been read in */
     do {
         strm.next_in = in;
         strm.avail_in = Min(sizeof(in), left);

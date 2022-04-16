@@ -90,7 +90,7 @@ HttpResHeader* UnpackCgiRes(const void *header, size_t len) {
 size_t PackCgiReq(const HttpReqHeader *req, void *data, size_t len) {
     char* p = (char*)data;
     for(const auto& i : req->Normalize()){
-        p = cgi_addnv(p, i.first.c_str(), i.second.c_str());
+        p = cgi_addnv(p, i.first, i.second);
     }
     assert(p - (char*)data <= (int)len);
     return p - (char*)data;
@@ -99,7 +99,7 @@ size_t PackCgiReq(const HttpReqHeader *req, void *data, size_t len) {
 size_t PackCgiRes(const HttpResHeader *res, void *data, size_t len) {
     char *p = (char *)data;
     for(const auto& i : res->Normalize()){
-        p = cgi_addnv(p, i.first.c_str(), i.second.c_str());
+        p = cgi_addnv(p, i.first, i.second);
     }
     assert(p - (char*)data <= (int)len);
     return p - (char*)data;
@@ -332,20 +332,19 @@ void Cgi::dump_stat(Dumper dp, void* param){
 void getcgi(std::shared_ptr<HttpReq> req, const char* filename, Requester* src){
     if(cgimap.count(filename)) {
         return cgimap[filename]->request(req, src);
-    } else {
-        int fds[2] = {0, 0};
-        if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds)) {  // 创建管道
-            LOGE("[CGI] %s socketpair failed: %s\n", filename, strerror(errno));
-            goto err;
-        }
-        return (new Cgi(filename, fds))->request(req, src);
-err:
-        if(fds[0]){
-            close(fds[0]);
-            close(fds[1]);
-        }
-        req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[create socket error]]"));
     }
+    int fds[2] = {0, 0};
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds)) {  // 创建管道
+        LOGE("[CGI] %s socketpair failed: %s\n", filename, strerror(errno));
+        goto err;
+    }
+    return (new Cgi(filename, fds))->request(req, src);
+err:
+    if(fds[0]){
+        close(fds[0]);
+        close(fds[1]);
+    }
+    req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[create socket error]]"));
 }
 
 

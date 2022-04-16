@@ -248,7 +248,7 @@ void Guest::dump_stat(Dumper dp, void* param){
     dp(param, "  rwer: rlength:%zu, wlength:%zu, stats:%d, event:%s\n",
             rwer->rlength(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
-    for(auto status : statuslist){
+    for(const auto& status : statuslist){
         dp(param, "req [%" PRIu32 "]: %s %s [%d] [%s]\n",
                 status.req->header->request_id,
                 status.req->header->method,

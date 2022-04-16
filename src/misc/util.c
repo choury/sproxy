@@ -394,7 +394,7 @@ int spliturl(const char* url, struct Destination* server, char* path) {
     }
 
     if (tmpaddr[0] == '[') {
-        // this is a ipv6 address
+        // this is an ipv6 address
         if (!(addrsplit = strchr(tmpaddr, ']'))) {
             return -1;
         }
@@ -463,8 +463,7 @@ const char* dumpAuthority(const struct Destination* Server){
     if(port){
         snprintf(buff, sizeof(buff), "%s:%d", Server->hostname, Server->port);
         return buff;
-    }else{
-        return Server->hostname;
     }
+    return Server->hostname;
 }
 

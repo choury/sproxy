@@ -82,7 +82,7 @@ Proxy2::Proxy2(std::shared_ptr<SslRWer> rwer) {
 
 
 Proxy2::~Proxy2() {
-    //we do this, because deleteLater will not invoked when vpn_stop
+    //we do this, because deleteLater will not be invoked when vpn_stop
     if(proxy2 == this){
         proxy2 = nullptr;
     }

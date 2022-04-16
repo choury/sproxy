@@ -111,10 +111,9 @@ void Host::connected() {
             proxy->init(status.req);
             assert(status.res == nullptr);
             return Server::deleteLater(NOERROR);
-        }else{
-            LOGE("(%s) <host> quic only support http3\n", rwer->getPeer());
-            return deleteLater(PROTOCOL_ERR);
         }
+        LOGE("(%s) <host> quic only support http3\n", rwer->getPeer());
+        return deleteLater(PROTOCOL_ERR);
     }
     rwer->SetReadCB([this](buff_block& bb){
         if(bb.len == 0){

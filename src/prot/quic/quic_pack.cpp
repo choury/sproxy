@@ -404,10 +404,10 @@ static int pack_header(const struct quic_pkt_header* header, char* data, uint16_
         data[p] = header->pn & 0xff;
         break;
     case 2:
-        set16(data +p , header->pn & 0xffff)
+        set16(data +p , header->pn & 0xffff);
         break;
     case 3:
-        set24(data + p, header->pn & 0xffffff)
+        set24(data + p, header->pn & 0xffffff);
         break;
     case 4:
         set32(data + p, header->pn & 0xffffffff);

@@ -116,7 +116,7 @@ protected:
     virtual void DELETE(const CGI_Header*){
         NotImplemented();
     }
-    virtual void Finish(){
+    void Finish(){
         if((flag & HTTP_RES_EOF) || (flag & HTTP_REQ_EOF)){
             return;
         }

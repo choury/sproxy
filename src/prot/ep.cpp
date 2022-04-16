@@ -110,7 +110,7 @@ Ep::~Ep(){
 
 void Ep::setFd(int fd){
     if(this->fd >= 0){
-        LOGD(DEVENT, "%p closed %d\n", this, fd);
+        LOGD(DEVENT, "%p closed %d\n", this, this->fd);
         close(this->fd);
         events = RW_EVENT::NONE;
     }

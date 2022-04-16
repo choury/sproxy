@@ -257,10 +257,7 @@ int verify_host_callback(int ok, X509_STORE_CTX *ctx){
         LOGE("unable to verify issuer= %s\n", buf);
     }
 
-    if (opt.ignore_cert_error)
-        return 1;
-    else
-        return ok;
+    return opt.ignore_cert_error ? 1 : ok;
 }
 
 static int ssl_err_cb(const char* str, size_t len, void* _){

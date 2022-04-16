@@ -48,7 +48,8 @@ static const Trie<char, strategy>* ipfind(const char* ipstr, int prefix = -1){
 
     if (inet_pton(AF_INET, ipstr, &ip4) == 1) {
         return ipv4s.find(split(ip4, prefix));
-    }else if (inet_pton(AF_INET6, getrawip(ipstr).c_str(), &ip6) == 1) {
+    }
+    if (inet_pton(AF_INET6, getrawip(ipstr).c_str(), &ip6) == 1) {
         return ipv6s.find(split(ip6, prefix));
     }
     return nullptr;
@@ -171,7 +172,7 @@ void savesites(){
         return;
     }
     auto list = getallstrategy();
-    for (auto i:list) {
+    for (const auto& i:list) {
         if(i.second.ext == GEN_TIP){
             continue;
         }
@@ -261,17 +262,17 @@ std::list<std::pair<std::string, strategy>> getallstrategy(){
     std::list<std::pair<std::string, strategy>> slist;
     std::list<char> i4list;
     auto ip4list = ipv4s.dump(i4list);
-    for(auto i: ip4list){
+    for(const auto& i: ip4list){
         slist.emplace_back(join(AF_INET, i.first), i.second);
     }
     std::list<char> i6list;
     auto ip6list = ipv6s.dump(i6list);
-    for(auto i: ip6list){
+    for(const auto& i: ip6list){
         slist.emplace_back(join(AF_INET6, i.first), i.second);
     }
     std::list<string> hlist;
     auto domainlist = domains.dump(hlist);
-    for(auto i: domainlist){
+    for(const auto& i: domainlist){
         slist.emplace_back(join(i.first), i.second);
     }
     return slist;

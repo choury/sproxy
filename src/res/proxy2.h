@@ -47,7 +47,7 @@ protected:
     virtual std::list<buff_block>::insert_iterator queue_head() override;
     virtual std::list<buff_block>::insert_iterator queue_end() override;
     virtual void queue_insert(std::list<buff_block>::insert_iterator where, buff_block&& wb) override;
-    bool wantmore(const ReqStatus& status);
+    static bool wantmore(const ReqStatus& status);
 public:
     explicit Proxy2(std::shared_ptr<SslRWer> rwer);
     virtual ~Proxy2() override;

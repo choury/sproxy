@@ -27,7 +27,7 @@ public:
 class RpcClient: public RpcBase{
     std::queue<std::function<void(json_object *)>> responser;
 protected:
-    virtual void call(const std::string method, json_object* body, std::function<void(json_object *)> response);
+    virtual void call(const std::string& method, json_object* body, std::function<void(json_object *)> response);
 public:
     virtual ssize_t DefaultProc(const char *buff, size_t len) override;
 };
@@ -55,7 +55,7 @@ class SproxyClient:virtual public RpcClient {
     int fd = 0;
     std::thread reader;
 public:
-    SproxyClient(const char* sock);
+    explicit SproxyClient(const char* sock);
     virtual ~SproxyClient();
     virtual void send(const char* data, size_t len) override;
 

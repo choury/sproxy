@@ -931,7 +931,7 @@ void QuicRWer::Close(std::function<void()> func) {
         close_timer = updatejob(close_timer, closeCB, max_idle_timeout);
         handleEvent = (void (Ep::*)(RW_EVENT))&QuicRWer::closeHE;
         setEvents(RW_EVENT::READ);
-        // RWER_CLOSING in quic means we have send or recv CLOSE_CONNECTION_APP frame
+        // RWER_CLOSING in quic means we have sent or recv CLOSE_CONNECTION_APP frame,
         // so we will not send CLOSE_CONNECTION_APP frame again
         if(flags & RWER_CLOSING){
             return;
@@ -1124,11 +1124,11 @@ bool QuicRWer::IsIdle(uint64_t id){
 
     if(IsBidirect(id)){
         return send_closed && recv_closed;
-    }else if(IsLocal(id)){
-        return send_closed;
-    }else{
-        return recv_closed;
     }
+    if(IsLocal(id)){
+        return send_closed;
+    }
+    return recv_closed;
 }
 
 void QuicRWer::ConsumeRData() {

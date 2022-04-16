@@ -62,9 +62,8 @@ size_t CBuffer::left(){
     uint32_t finish = (offset + len) % sizeof(content);
     if(finish > start || len == 0){
         return sizeof(content) - finish;
-    }else{
-        return start - finish;
     }
+    return start - finish;
 }
 
 size_t CBuffer::length(){
@@ -79,7 +78,7 @@ size_t CBuffer::cap() {
 void CBuffer::add(size_t l){
     len += l;
     assert(len <= sizeof(content));
-};
+}
 
 ssize_t CBuffer::put(const void *data, size_t size) {
     if(len + size > sizeof(content)){
@@ -110,12 +109,11 @@ size_t CBuffer::get(char* buff, size_t size){
     if(finish > start){
         memcpy(buff, content+ start , size);
         return size;
-    }else{
-        size_t l = sizeof(content) - start;
-        memcpy(buff, content + start, l);
-        memcpy(buff + l, content, finish);
-        return size;
     }
+    size_t l = sizeof(content) - start;
+    memcpy(buff, content + start, l);
+    memcpy(buff + l, content, finish);
+    return size;
 }
 
 void CBuffer::consume(size_t l){

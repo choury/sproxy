@@ -242,9 +242,9 @@ buff_iterator RWer::buffer_insert(buff_iterator where, buff_block&& bb) {
     if(bb.offset < bb.len || bb.len == 0){
         addEvents(RW_EVENT::WRITE);
         return wbuff.push(where, std::move(bb));
-    }else{
-        return where;
     }
+    return where;
+
 }
 
 NullRWer::NullRWer():RWer(-1, [](int, int){}) {

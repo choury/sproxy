@@ -35,9 +35,9 @@ size_t Http3Base::Http3_Proc(const void* buff, size_t len, uint64_t id) {
             SettingsProc(pos, length);
             break;
         case HTTP3_STREAM_GOAWAY:{
-            uint64_t id;
-            variable_decode(pos, &id);
-            GoawayProc(id);
+            uint64_t lastid;
+            variable_decode(pos, &lastid);
+            GoawayProc(lastid);
             break;
         }
         case HTTP3_STREAM_DATA:
@@ -177,7 +177,7 @@ void Http3Base::SettingsProc(const uchar* header, size_t len) {
                 return;
             }else{
                 LOGD(DHTTP3, "Get unknown settings: %" PRIu64"\n", id);
-            };
+            }
             break;
         }
     }

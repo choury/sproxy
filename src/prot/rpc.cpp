@@ -117,7 +117,7 @@ out:
     return len;
 }
 
-void RpcClient::call(const std::string method, json_object* body, std::function<void(json_object *)> response) {
+void RpcClient::call(const std::string& method, json_object* body, std::function<void(json_object *)> response) {
     json_object_object_add(body, "method", json_object_new_string(method.c_str()));
     responser.push(response);
     sendJson(body);

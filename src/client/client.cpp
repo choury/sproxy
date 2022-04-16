@@ -297,7 +297,7 @@ static char *command_generator (const char* text, int state) {
    or NULL if there aren't any. */
 static char **sproxy_completion (const char* text, int start, int ) {
     /* If this word is at the start of the line, then it is a command
-    to complete.  Otherwise it is the name of a file in the current
+    to complete.  Otherwise, it is the name of a file in the current
     directory. */
     if (start == 0)
         return rl_completion_matches(text, command_generator);

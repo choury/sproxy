@@ -96,7 +96,7 @@ public:
             std::cout<<std::endl;
         }
         for(auto& i: children){
-            for(int i=0; i < tab; i++){
+            for(int j=0; j < tab; j++){
                 std::cout<<"  ";
             }
             std::cout<<i.first<<": ";

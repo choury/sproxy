@@ -71,9 +71,8 @@ std::string Cli::TestStrategy(const std::string &host) {
     auto stra = getstrategy(host.c_str());
     if(stra.ext.empty()){
         return getstrategystring(stra.s);
-    }else{
-        return std::string(getstrategystring(stra.s)) + " " + stra.ext;
     }
+    return std::string(getstrategystring(stra.s)) + " " + stra.ext;
 }
 
 std::vector<std::string> Cli::ListStrategy() {

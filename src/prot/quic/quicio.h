@@ -189,7 +189,7 @@ protected:
     using iterator = typename decltype(streammap)::iterator;
     iterator OpenStream(uint64_t id);
     bool IsLocal(uint64_t id);
-    bool IsBidirect(uint64_t id);
+    static bool IsBidirect(uint64_t id);
     bool IsIdle(uint64_t id);
 
     size_t envelopLen(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, size_t len);
