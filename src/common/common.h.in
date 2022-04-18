@@ -12,6 +12,7 @@
 
 #define VPNADDR  "198.18.0.1"
 #define VPNMASK  "255.254.0.0"
+#define VPNEND   "198.19.255.255"
 #define VPNADDR6 "64:ff9B::" VPNADDR
 
 #define Min(x, y) ((int64_t)(x) < (int64_t)(y)?(x):(y))

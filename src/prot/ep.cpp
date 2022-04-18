@@ -111,6 +111,15 @@ Ep::~Ep(){
 void Ep::setFd(int fd){
     if(this->fd >= 0){
         LOGD(DEVENT, "%p closed %d\n", this, this->fd);
+#if __linux__
+        epoll_ctl(efd, EPOLL_CTL_DEL, this->fd, nullptr);
+#endif
+#if __APPLE__
+        struct kevent event[2];
+        EV_SET(&event[0], this->fd, EVFILT_READ, EV_DELETE, 0, 0, nullptr);
+        EV_SET(&event[1], this->fd, EVFILT_WRITE, EV_DELETE, 0, 0, nullptr);
+        kevent(efd, event, 2, nullptr, 0, nullptr);
+#endif
         close(this->fd);
         events = RW_EVENT::NONE;
     }

@@ -9,7 +9,7 @@
 
 static Index2<uint32_t, std::string, void*> fdns_records;
 
-static in_addr_t fake_ip = 0 ;
+static in_addr_t fake_ip = ntohl(inet_addr(VPNADDR));
 
 static in_addr getInet(const std::string& hostname) {
     in_addr addr{};
@@ -46,19 +46,22 @@ static uint32_t getFip(const sockaddr_storage* addr){
 }
 
 std::string getRdns(const sockaddr_storage& addr) {
-    auto record = fdns_records.GetOne(getFip(&addr));
-    if(record == fdns_records.data().end()){
-        return getaddrstring(&addr);
-    }else{
+    auto fip = getFip(&addr);
+    auto record = fdns_records.GetOne(fip);
+    if(record != fdns_records.data().end()){
         return record->first.second;
     }
+    if(fip > fake_ip && fip < ntohl(inet_addr(VPNEND))) {
+        //this is a fake ip, but we has no record, just block it.
+        return "fake_ip";
+    }
+    if(fip == ntohl(inet_addr(VPNADDR))){
+        return "VPN";
+    }
+    return getaddrstring(&addr);
 }
 
 FDns::FDns() {
-    if(fake_ip == 0){
-        fake_ip = ntohl(inet_addr(VPNADDR));
-        fdns_records.Add(fake_ip, "VPN", nullptr);
-    }
     rwer = std::make_shared<NullRWer>();
 }
 

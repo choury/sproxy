@@ -362,7 +362,12 @@ void query_dns(const char* host, int type, DNSRAWCB func, std::weak_ptr<void> pa
 }
 
 void RcdBlock(const char *hostname, const sockaddr_storage &addr) {
-    LOG("[DNS] down for %s: %s\n", hostname, getaddrstring(&addr));
+    const char* addrstring = getaddrstring(&addr);
+    if(strcmp(hostname, addrstring) == 0){
+        //we shouldn't block raw ip
+        return;
+    }
+    LOG("[DNS] down for %s: %s\n", hostname, addrstring);
     if(rcd_cache.count(hostname) == 0){
         return;
     }

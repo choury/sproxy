@@ -1,6 +1,7 @@
 #include "com_choury_sproxy_Service.h"
 #include "server/vpn.h"
 #include "misc/strategy.h"
+#include "misc/net.h"
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -10,6 +11,7 @@
 #include <iomanip>
 #include <fstream>
 #include <android/log.h>
+#include <android/file_descriptor_jni.h>
 #include <sys/system_properties.h>
 #include <misc/util.h>
 
@@ -94,6 +96,12 @@ extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     const char *secret_str = jnienv->GetStringUTFChars(secret, nullptr);
 
     opt.ignore_cert_error = true;
+    if(opt.ipv6_mode == Auto){
+        opt.ipv6_enabled = hasIpv6Address();
+    }else{
+        opt.ipv6_enabled = opt.ipv6_mode;
+    }
+    LOG("ipv6: %s.\n", opt.ipv6_enabled?"enabled":"disabled");
     loadproxy(server_str, &opt.Server);
     Base64Encode(secret_str, strlen(secret_str), opt.rewrite_auth);
     jnienv->ReleaseStringUTFChars(server, server_str);
@@ -139,6 +147,9 @@ int protectFd(int sockfd) {
     jnijvm->GetEnv((void **)&jnienv, JNI_VERSION_1_6);
     jclass cls = jnienv->GetObjectClass(jniobj);
     jmethodID protecdMid = jnienv->GetMethodID(cls, "protect", "(I)Z");
+    if(android_get_device_api_level() >= 31) {
+        //jobject jfd = AFileDescriptor_create(jnienv);
+    }
     return  jnienv->CallBooleanMethod(jniobj, protecdMid, sockfd);
 }
 

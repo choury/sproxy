@@ -142,6 +142,7 @@ void reloadstrategy() {
     gethostname(hostname, sizeof(hostname));
     domains.insert(split(hostname), strategy{Strategy::local, GEN_TIP});
     domains.insert(split("localhost"), strategy{Strategy::local, GEN_TIP});
+    domains.insert(split("fake_ip"), strategy{Strategy::block, GEN_TIP});
     if (opt.policy_read && fseek(opt.policy_read, 0L, SEEK_SET) == 0){
         int lineNum = 0;
         char* line = nullptr;
