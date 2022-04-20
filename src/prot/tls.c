@@ -37,6 +37,7 @@
 #include "misc/config.h"
 
 #include <openssl/err.h>
+#include <openssl/pem.h>
 
 int parse_tls_header(const char *, size_t, char **);
 static int parse_extensions(const char *, size_t, char **);
@@ -312,4 +313,63 @@ void keylog_write_line(const SSL *ssl, const char *line){
     fprintf(f, "%s\n", line);
     fclose(f);
     lssl = ssl;
+}
+
+int sign_data(const char* priv_key_file, const void* buff, int buff_len, char** sig, unsigned int* sig_len){
+    FILE * f = fopen(priv_key_file, "r");
+    EVP_PKEY *key = PEM_read_PrivateKey(f,NULL,NULL,NULL);
+    fclose(f);
+
+    *sig_len = EVP_PKEY_size(key);
+    *sig = malloc(*sig_len);
+    EVP_MD_CTX* ctx = EVP_MD_CTX_create();
+    if(EVP_SignInit(ctx, EVP_sha256()) != 1){
+        LOGE("EVP_SignInit failed");
+        goto error;
+    }
+    if(EVP_SignUpdate(ctx, buff, buff_len) != 1){
+        LOGE("EVP_SignUpdate failed");
+        goto error;
+    }
+    if(EVP_SignFinal(ctx, (unsigned char*)*sig, sig_len, key) != 1){
+        LOGE("EVP_SignFinal failed");
+        goto error;
+    }
+
+    EVP_PKEY_free(key);
+    EVP_MD_CTX_free(ctx);
+    return 0;
+error:
+    EVP_PKEY_free(key);
+    EVP_MD_CTX_free(ctx);
+    free(*sig);
+    *sig = NULL;
+    return -1;
+}
+
+int verify_data(const char* pub_key_file, const void* buff, size_t buff_len, const void* sig, size_t sig_len){
+    FILE * f = fopen(pub_key_file, "r");
+    EVP_PKEY *ec_key = PEM_read_PUBKEY(f,NULL,NULL,NULL);
+    fclose(f);
+
+    EVP_MD_CTX* ctx = EVP_MD_CTX_create();
+    if(EVP_VerifyInit(ctx, EVP_sha256()) != 1){
+        LOGE("EVP_VerifyInit failed");
+        goto error;
+    }
+    if(EVP_VerifyUpdate(ctx, buff, buff_len) != 1){
+        LOGE("EVP_VerifyUpdate failed");
+        goto error;
+    }
+    if(EVP_VerifyFinal(ctx, (unsigned char*)sig, sig_len, ec_key) != 1){
+        LOGE("EVP_VerifyFinal failed");
+        goto error;
+    }
+    EVP_MD_CTX_free(ctx);
+    EVP_PKEY_free(ec_key);
+    return 0;
+error:
+    EVP_MD_CTX_free(ctx);
+    EVP_PKEY_free(ec_key);
+    return -1;
 }

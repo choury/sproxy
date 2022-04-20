@@ -7,8 +7,8 @@
 #include <assert.h>
 #include <inttypes.h>
 
-Guest3::Guest3(int fd, sockaddr_storage *addr, SSL_CTX *ctx):
-    Requester(std::make_shared<QuicRWer>(fd, addr, ctx, std::bind(&Guest3::Error, this, _1, _2),
+Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic_mgr):
+    Requester(std::make_shared<QuicRWer>(fd, addr, ctx, quic_mgr, std::bind(&Guest3::Error, this, _1, _2),
     [this](const sockaddr_storage&){
         std::shared_ptr<QuicRWer> qrwer = std::dynamic_pointer_cast<QuicRWer>(rwer);
         const unsigned char *data;
@@ -75,6 +75,11 @@ Guest3::~Guest3() {
     statusmap.clear();
 }
 
+void Guest3::AddInitData(const void *buff, size_t len) {
+    auto qrwer = std::dynamic_pointer_cast<QuicRWer>(rwer);
+    qrwer->walkPackets(buff, len);
+    qrwer->reorderData();
+}
 
 void Guest3::Error(int ret, int code){
     LOGE("(%s): <guest3> error: %d/%d\n", getsrc(), ret, code);
@@ -246,9 +251,6 @@ void Guest3::deleteLater(uint32_t errcode){
     return Server::deleteLater(errcode);
 }
 
-std::shared_ptr<QuicRWer> Guest3::getQuicRWer() {
-    return std::dynamic_pointer_cast<QuicRWer>(rwer);
-}
 
 void Guest3::dump_stat(Dumper dp, void* param) {
     dp(param, "Guest3 %p, id:%" PRIu64" (%s)\n", this, maxDataId, getsrc());

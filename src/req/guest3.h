@@ -7,7 +7,7 @@
 
 #include "requester.h"
 #include "prot/http3/http3.h"
-#include "prot/quic/quicio.h"
+#include "prot/quic/quic_mgr.h"
 #include "misc/net.h"
 #include "misc/config.h"
 
@@ -39,19 +39,19 @@ protected:
     void RstProc(uint64_t id, uint32_t errcode);
     void Clean(uint64_t id, ReqStatus& status, uint32_t errcode);
 public:
-    explicit Guest3(int fd, sockaddr_storage* addr, SSL_CTX* ctx);
+    explicit Guest3(int fd, const sockaddr_storage* addr, SSL_CTX* ctx, QuicMgr* quicMgr);
     virtual ~Guest3() override;
 
+    void AddInitData(const void* buff, size_t len);
     virtual void response(void* index, std::shared_ptr<HttpRes> res) override;
 
     virtual void dump_stat(Dumper dp, void* param) override;
-    std::shared_ptr<QuicRWer> getQuicRWer();
 };
 
 class Quic_server: public Ep {
     SSL_CTX *ctx = nullptr;
+    QuicMgr quicMgr;
 
-    std::map<std::string, std::weak_ptr<QuicRWer>> guests;
     virtual void defaultHE(RW_EVENT events) {
         if (!!(events & RW_EVENT::ERROR)) {
             LOGE("Http server: %d\n", checkSocket(__PRETTY_FUNCTION__));
@@ -67,44 +67,7 @@ class Quic_server: public Ep {
                 LOGE("recvfrom error: %s\n", strerror(errno));
                 return;
             }
-            quic_pkt_header header;
-            header.dcid.resize(QUIC_CID_LEN);
-            int body_len = unpack_meta(buff, ret, &header);
-            if (body_len < 0 || body_len > (int)ret) {
-                LOGE("QUIC meta unpack failed, disacrd it\n");
-                return;
-            }
-            if(guests.count(header.dcid) ) {
-                auto qrwer = guests[header.dcid];
-                if(qrwer.expired()){
-                    //TODO:: send CONNECTION_REFUSED
-                    LOGE("QUIC server get expired packet: %s\n", header.dcid.c_str());
-                    return;
-                }
-                LOGD(DQUIC, "duplicated packet: %s, may be migration?\n", header.dcid.c_str());
-                qrwer.lock()->walkPackets(buff, ret);
-            }else if(header.type == QUIC_PACKET_INITIAL){
-                int clsk = ListenNet(SOCK_DGRAM, opt.CPORT);
-                if (clsk < 0) {
-                    LOGE("ListenNet failed: %s\n", strerror(errno));
-                    return;
-                }
-                if (::connect(clsk, (sockaddr *) &myaddr, temp) < 0) {
-                    LOGE("connect failed: %s\n", strerror(errno));
-                    return;
-                }
-                SetUdpOptions(clsk, &myaddr);
-
-                auto guest = new Guest3(clsk, &myaddr, ctx);
-                std::weak_ptr<QuicRWer> rwer = guest->getQuicRWer();
-                //we should not handle stream frame here, so ConsumeRData is not needed.
-                rwer.lock()->walkPackets(buff, ret);
-                rwer.lock()->reorderData();
-                guests[rwer.lock()->GetDCID()] = rwer;
-                guests[header.dcid] = rwer;
-            }else if(header.type == QUIC_PACKET_1RTT){
-                //TODO: send stateless reset
-            }
+            quicMgr.PushDate(getFd(), &myaddr, ctx, buff, ret);
         } else {
             LOGE("unknown error\n");
             return;

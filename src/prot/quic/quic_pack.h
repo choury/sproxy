@@ -13,6 +13,7 @@
 
 #define QUIC_VERSION_1 0x00000001
 #define QUIC_INITIAL_LIMIT 1200
+#define QUIC_TOKEN_LEN   16
 /*
 Long Header Packet Types
 Type	Name	Section
@@ -283,5 +284,7 @@ std::string dumpHex(const void* data, size_t len);
 bool is_ack_eliciting(const quic_frame* frame);
 void dumpFrame(const char* prefix, char name, const quic_frame* frame);
 void frame_release(const quic_frame* frame);
+
+std::string sign_cid(std::string id);
 
 #endif

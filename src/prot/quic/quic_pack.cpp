@@ -1,4 +1,6 @@
 #include "quic_pack.h"
+#include "prot/tls.h"
+#include "misc/config.h"
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -1235,5 +1237,18 @@ std::string dumpHex(const void* data, size_t len){
         s += buf;
     }
     return s;
+}
+
+std::string sign_cid(std::string id) {
+    char* token = nullptr;
+    unsigned int sign_len;
+    if(sign_data(opt.key, id.c_str(), id.length(), &token, &sign_len)){
+        LOGE("QUIC failed to sign cid");
+        return "";
+    }
+    assert(sign_len >= QUIC_TOKEN_LEN);
+    auto result =  std::string(token, QUIC_TOKEN_LEN);
+    free(token);
+    return result;
 }
 

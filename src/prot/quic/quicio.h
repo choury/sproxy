@@ -21,7 +21,6 @@
 
 #define QUIC_CID_LEN     20
 
-
 /*
        o
        | Create Stream (Sending)
@@ -89,11 +88,13 @@
    +-------+                   +-------+
  */
 
+class QuicMgr;
 
 class QuicRWer: public SocketRWer {
 protected:
-    SSL_CTX* ctx = nullptr;
+    SSL_CTX* ctx = nullptr;  // server will be null
     SSL *ssl = nullptr;
+    QuicMgr* mgr = nullptr;
 
     QuicQos qos;
     struct quic_context{
@@ -110,10 +111,11 @@ protected:
         std::string id;
         char token[16];
     };
-    std::vector<cid> scids;
-    size_t scid_idx = 0;
-    std::vector<cid> dcids;
-    size_t dcid_idx = 0;
+    std::vector<std::string> myids;
+    size_t myid_idx = 0;
+    std::vector<std::string> hisids;
+    std::vector<std::string> histoken;
+    size_t hisid_idx = 0;
     std::string initToken;
     std::string originDcid;
     struct QuicStreamStatus{
@@ -206,7 +208,7 @@ public:
     explicit QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
                      std::function<void(int ret, int code)> errorCB,
                      std::function<void(const sockaddr_storage&)> connectCB = nullptr);
-    explicit QuicRWer(int fd, const sockaddr_storage* peer, SSL_CTX* ctx,
+    explicit QuicRWer(int fd, const sockaddr_storage* peer, SSL_CTX* ctx, QuicMgr* mgr,
                      std::function<void(int ret, int code)> errorCB,
                      std::function<void(const sockaddr_storage&)> connectCB = nullptr);
     virtual ~QuicRWer() override;
@@ -228,7 +230,6 @@ public:
 
     void walkPackets(const void* buff, size_t length);
     void reorderData();
-    std::string GetDCID();
 
     void get_alpn(const unsigned char **s, unsigned int * len);
     int set_alpn(const unsigned char *s, unsigned int len);
