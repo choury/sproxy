@@ -127,7 +127,11 @@ void SslRWer::shakehandHE(RW_EVENT events){
             ReadData();
             flags &= ~RWER_READING;
         }else if(errno ==  EAGAIN){
-            setEvents(RW_EVENT::READWRITE);
+            if(SSL_want_write(ssl)){
+                setEvents(RW_EVENT::READWRITE);
+            }else{
+                setEvents(RW_EVENT::READ);
+            }
         }else{
             int error = errno;
             LOGE("(%s): ssl %s error:%s\n", hostname, ctx?"connect":"accept", strerror(error));
@@ -157,6 +161,11 @@ ssize_t SslRWer::Write(const void* buff, size_t len, uint64_t){
     }
     ERR_clear_error();
     return ssl_get_error(ssl, SSL_write(ssl, buff, len));
+}
+
+void SslRWer::Shutdown() {
+    flags |= RWER_SHUTDOWN;
+    SSL_shutdown(ssl);
 }
 
 void SslRWer::get_alpn(const unsigned char **s, unsigned int * len){

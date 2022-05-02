@@ -19,7 +19,7 @@ class FDns: public Responser{
     std::shared_ptr<HttpRes>   res;
     std::map<uint32_t, std::shared_ptr<FDnsStatus>> statusmap;
 
-    void Send(const void* buff, size_t size);
+    void Recv(Buffer&& bb);
     void clean(std::shared_ptr<FDnsStatus> status);
     virtual void deleteLater(uint32_t errcode) override;
 

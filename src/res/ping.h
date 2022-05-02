@@ -11,10 +11,10 @@ class Ping: public Responser{
     uint16_t    seq = 1;
     sa_family_t family = 0;
     bool        israw  = false;
-    void Send(void* buff, size_t size);
+    void Recv(Buffer&& bb);
 public:
     Ping(const char *host, uint16_t id);
-    explicit Ping(HttpReqHeader* req);
+    explicit Ping(std::shared_ptr<HttpReqHeader> req);
     virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
     virtual void dump_stat(Dumper dp, void* param) override;
 };

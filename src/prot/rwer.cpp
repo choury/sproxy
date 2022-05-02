@@ -20,66 +20,13 @@ ssize_t RWer::cap(uint64_t) {
     return 4 * 1024 * 1024 - wbuff.length();
 }
 
-buff_iterator WBuffer::start() {
-    return write_queue.begin();
-}
-
-buff_iterator WBuffer::end() {
-    return write_queue.end();
-}
-
-buff_iterator WBuffer::push(buff_iterator i, buff_block&& bb) {
-    len += bb.len;
-    return write_queue.emplace(i, std::move(bb));
-}
-
-ssize_t WBuffer::Write(std::function<ssize_t(const void*, size_t, uint64_t)> write_func){
-    if(write_queue.empty()){
-        return 0;
-    }
-    auto i = write_queue.begin();
-    if(i->len == 0){
-        ssize_t ret = write_func(nullptr, 0, i->id);
-        if(ret < 0){
-            return ret;
-        }
-        write_queue.pop_front();
-        return Write(write_func);
-    }
-    assert(i->buff);
-    assert(i->offset < i->len);
-    ssize_t ret = write_func((const char*)i->buff + i->offset, i->len - i->offset, i->id);
-    if (ret > 0) {
-        assert(len >= (size_t)ret);
-        len -= ret;
-        assert(ret + i->offset <= i->len);
-        if ((size_t)ret + i->offset == i->len) {
-            write_queue.pop_front();
-        } else {
-            i->offset += ret;
-        }
-    }
-    return ret;
-}
-
-size_t WBuffer::length() {
-    return len;
-}
-
-WBuffer::~WBuffer() {
-    while(!write_queue.empty()){
-        write_queue.pop_front();
-    }
-    len = 0;
-}
-
 RWer::RWer(int fd, std::function<void(int ret, int code)> errorCB):
     Ep(fd), errorCB(std::move(errorCB))
 {
     assert(this->errorCB != nullptr);
-    readCB = [](buff_block& bb){
+    readCB = [](Buffer& bb){
         LOGE("discard data from stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
-        bb.offset = bb.len;
+        bb.trunc(bb.len);
     };
     writeCB = [](size_t){};
 }
@@ -90,9 +37,9 @@ RWer::RWer(std::function<void (int, int)> errorCB, std::function<void(const sock
 {
     assert(this->errorCB != nullptr);
     assert(this->connectCB != nullptr);
-    readCB = [](buff_block& bb){
+    readCB = [](Buffer& bb){
         LOGE("discard data from stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
-        bb.offset = bb.len;
+        bb.trunc(bb.len);
     };
     writeCB = [](size_t){};
 }
@@ -123,7 +70,7 @@ void RWer::SetErrorCB(std::function<void(int ret, int code)> func){
     errorCB = std::move(func);
 }
 
-void RWer::SetReadCB(std::function<void(buff_block&)> func){
+void RWer::SetReadCB(std::function<void(Buffer&)> func){
     readCB = std::move(func);
     EatReadData();
 }
@@ -156,7 +103,7 @@ void RWer::defaultHE(RW_EVENT events){
 }
 
 void RWer::closeHE(RW_EVENT) {
-    if(wbuff.start() == wbuff.end() || (flags & RWER_SHUTDOWN)){
+    if(wbuff.start() == wbuff.end()){
         closeCB();
         return;
     }
@@ -223,10 +170,6 @@ void RWer::ErrorHE(int ret, int code) {
     errorCB(ret, code);
 }
 
-void RWer::Shutdown() {
-    flags |= RWER_SHUTDOWN;
-    shutdown(getFd(), SHUT_WR);
-}
 
 buff_iterator RWer::buffer_head() {
     return wbuff.start();
@@ -236,15 +179,10 @@ buff_iterator RWer::buffer_end() {
     return wbuff.end();
 }
 
-buff_iterator RWer::buffer_insert(buff_iterator where, buff_block&& bb) {
-    assert(bb.offset <= bb.len);
+buff_iterator RWer::buffer_insert(buff_iterator where, Buffer&& bb) {
     assert((flags & RWER_SHUTDOWN) == 0);
-    if(bb.offset < bb.len || bb.len == 0){
-        addEvents(RW_EVENT::WRITE);
-        return wbuff.push(where, std::move(bb));
-    }
-    return where;
-
+    addEvents(RW_EVENT::WRITE);
+    return wbuff.push(where, std::move(bb));
 }
 
 NullRWer::NullRWer():RWer(-1, [](int, int){}) {
@@ -327,7 +265,7 @@ ssize_t FullRWer::cap(uint64_t) {
 }
 
 void FullRWer::ConsumeRData() {
-    buff_block wb{(void*)nullptr, 1};
+    Buffer wb{1};
     readCB(wb);
 }
 

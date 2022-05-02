@@ -195,37 +195,6 @@ void* memdup(const void* ptr, size_t size){
    return dup;
 }
 
-
-void* p_malloc(size_t size){
-    unsigned char *ptr = malloc(size + PRIOR_HEAD);
-    if(ptr == NULL){
-        int err = errno;
-        LOGE("malloc failed[%zu]: %s\n", size, strerror(errno));
-        errno = err;
-        return NULL;
-    }
-    ptr += PRIOR_HEAD;
-    *(ptr-1) = PRIOR_HEAD;
-    return ptr;
-}
-
-void* p_memdup(const void *ptr, size_t size){
-    void* const dup = p_malloc(size);
-    assert(dup);
-    if(dup && size){
-        memcpy(dup, ptr, size);
-    }
-    return dup;
-}
-
-
-void p_free(void* ptr){
-    if(ptr == NULL)
-        return;
-    unsigned char prior = *((unsigned char*)ptr-1);
-    return free((char *)ptr-prior);
-}
-
 char* avsprintf(size_t* size, const char* fmt, va_list ap){
     va_list cp;
     va_copy(cp, ap);
@@ -238,16 +207,6 @@ char* avsprintf(size_t* size, const char* fmt, va_list ap){
     va_end(cp);
     return buff;
 }
-
-void* p_move(void* ptr, signed char len){
-    signed char prior = *((unsigned char*)ptr-1);
-    prior += len;
-    assert(prior >= 1);
-    void* nptr = (char *)ptr + len;
-    *((unsigned char *)nptr-1) = (unsigned char)prior;
-    return nptr;
-}
-
 
 const char* findprogram(ino_t inode){
     static char program[DOMAINLIMIT+1];

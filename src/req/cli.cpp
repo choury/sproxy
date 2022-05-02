@@ -4,6 +4,8 @@
 
 #include "misc/strategy.h"
 #include "misc/config.h"
+#include "res/proxy2.h"
+#include "res/proxy3.h"
 #include "res/cgi.h"
 
 Cli::Cli(int fd, const sockaddr_storage* addr):
@@ -16,20 +18,20 @@ Cli::~Cli(){
 }
 
 void Cli::send(const char *data, size_t len) {
-    rwer->buffer_insert(rwer->buffer_end(), buff_block{p_memdup(data, len), len});
+    rwer->buffer_insert(rwer->buffer_end(), Buffer{data, len});
 }
 
-void Cli::ReadHE(buff_block& bb){
+void Cli::ReadHE(Buffer& bb){
     if(bb.len == 0){
         //eof
         deleteLater(NOERROR);
         return;
     }
     ssize_t ret = 0;
-    while(bb.offset < bb.len){
-        ret = DefaultProc((const char*)bb.buff + bb.offset, bb.len - bb.offset);
+    while(bb.len > 0){
+        ret = DefaultProc((const char*) bb.data(), bb.len);
         if(ret > 0){
-            bb.offset += ret;
+            bb.trunc(ret);
             continue;
         }
         if(ret == 0){
@@ -109,6 +111,8 @@ bool Cli::SetServer(const std::string &server) {
     Destination proxy;
     if(loadproxy(server.c_str(), &proxy) == 0){
         memcpy(&opt.Server, &proxy, sizeof(proxy));
+        proxy2 = nullptr;
+        proxy3 = nullptr;
         return true;
     }
     return false;

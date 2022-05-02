@@ -4,163 +4,122 @@
 #include <assert.h>
 #include <inttypes.h>
 
+ChannelMessage::ChannelMessage(Signal signal):
+    type(CHANNEL_MSG_SIGNAL), header(nullptr), data(nullptr), signal(signal){
+}
+
+ChannelMessage::ChannelMessage(Buffer&& data):
+    type(CHANNEL_MSG_DATA), header(nullptr), data(std::move(data)), signal(CHANNEL_SHUTDOWN){
+}
+
+ChannelMessage::ChannelMessage(std::shared_ptr<HttpHeader> header):
+    type(CHANNEL_MSG_HEADER), header(header), data(nullptr), signal(CHANNEL_SHUTDOWN){
+}
+
+ChannelMessage::ChannelMessage(ChannelMessage&& other):
+    type(other.type), header(std::move(other.header)), data(std::move(other.data)), signal(other.signal) {
+}
+
+
 Channel::Channel(more_data_t need_more): need_more(std::move(need_more)){
 }
 
 Channel::~Channel() {
-    free(data);
 }
 
-int Channel::cap(){
-    if(cap_cb){
-        ssize_t ret = cap_cb() - len;
-        return Max(ret, 0);
-    }
-    return DATALEN - (int)len;
-}
-
-
-size_t Channel::eatData(const void* buf, size_t size) {
-    if(size == 0){
-        eof = true;
-    }
-    int rsize = std::min((int)size, cap());
-    if(rsize <= 0 && !eof){
-        return 0;
-    }
-    if(recv_const_cb){
-        recv_const_cb(buf, rsize);
-        return rsize;
-    }
-    if(recv_cb){
-        recv_cb(p_memdup(buf, rsize), rsize);
-        return rsize;
-    }
-    return 0;
-}
-
-void Channel::send(const void* buf, size_t size){
-    assert((!eof || !size) && !closed);
-    size_t rsize = 0;
-    if(len){
-        goto innerCopy;
-    }
-    rsize = eatData(buf, size);
-    if(rsize == size){
-        return;
-    }
-    size -= rsize;
-    buf = (const char*)buf + rsize;
-    if(data == nullptr) {
-        data = (uchar *) malloc(DATALEN);
-    }
-innerCopy:
-    if(len + size > DATALEN){
-        abort();
-    }
-    memcpy(data+len, buf, size);
-    len += size;
-}
-
-void Channel::trigger(Channel::signal s) {
-    if (s == CHANNEL_ABORT || s == CHANNEL_CLOSED){
-        closed = true;
-        need_more = []{};
-    }
-    if(handler){
-        handler(s);
-    }
-}
-
-void Channel::more(){
-    int left = cap();
-    if(left <= 0){
-        return;
-    }
-    if(len){
-        size_t l = Min(len, left);
-        eatData((const void *) data, l);
-        len -= l;
-        left -= l;
-        memmove(data, data + l, len);
-    }
-    if(len == 0){
-        if(!eof && !closed && left > 0) {
-            need_more();
+void Channel::eatMessage() {
+    while(true){
+        if(!handler || message_queue.empty()){
             return;
         }
-        if(eof){
-            eatData((const void *) nullptr, 0);
+        int ret = handler(message_queue.front());
+        message_queue.pop();
+        if(ret){
+            continue;
         }
-        if(closed){
-            trigger(Channel::CHANNEL_CLOSED);
-        }
+        return;
     }
 }
 
-void Channel::attach(recv_t recv_cb, cap_t cap_cb) {
-    this->recv_cb = std::move(recv_cb);
-    this->cap_cb = std::move(cap_cb);
-    more();
+void Channel::send(ChannelMessage&& message) {
+    message_queue.emplace(std::move(message));
+    return eatMessage();
 }
 
-void Channel::attach(recv_const_t recv_cb, cap_t cap_cb) {
-    this->recv_const_cb = std::move(recv_cb);
-    this->cap_cb = std::move(cap_cb);
-    more();
+void Channel::send(std::shared_ptr<HttpHeader> header) {
+    send(ChannelMessage(header));
 }
 
-void Channel::setHandler(handler_t handler) {
-    this->handler = std::move(handler);
+
+void Channel::send(Buffer&& bb) {
+    send(ChannelMessage(std::move(bb)));
+}
+
+void Channel::send(std::nullptr_t) {
+    send(ChannelMessage(Buffer{nullptr}));
+}
+
+void Channel::send(const void *data, size_t len) {
+    send(ChannelMessage(Buffer{data, len}));
+}
+
+void Channel::send(ChannelMessage::Signal s) {
+    send(ChannelMessage(s));
+}
+
+
+void Channel::attach(handler_t handler, cap_t cap) {
+    this->handler = handler;
+    cap_cb = cap;
+    return eatMessage();
 }
 
 void Channel::detach() {
-    this->recv_cb = nullptr;
-    this->recv_const_cb = nullptr;
-    this->cap_cb = []{return 0;};
     this->handler = nullptr;
+    this->cap_cb = []{return 0;};
 }
 
-HttpRes::HttpRes(HttpResHeader* header, more_data_t more): Channel(std::move(more)), header(header) {
+HttpRes::HttpRes(std::shared_ptr<HttpResHeader> header, more_data_t more):
+    Channel(std::move(more))
+{
+    send(header);
 }
 
-HttpRes::HttpRes(HttpResHeader *header): HttpRes(header, []{}) {
+HttpRes::HttpRes(std::shared_ptr<HttpResHeader> header): HttpRes(header, []{}) {
 }
 
-HttpRes::HttpRes(HttpResHeader *header, const char *body): HttpRes(header, []{}) {
-    len = strlen(body);
-    if(len) {
-        data = (uchar *) malloc(DATALEN);
-        memcpy(data, body, len);
-    }
-    eof = true;
-    closed = true;
+HttpRes::HttpRes(std::shared_ptr<HttpResHeader> header, const char *body):
+    Channel([]{})
+{
+    int len = strlen(body);
     header->set("Content-Length", len);
+    send(header);
+    if(len) {
+        send(body, len);
+    }
+    send(nullptr);
+    send(ChannelMessage::CHANNEL_CLOSED);
 }
 
 HttpRes::~HttpRes() {
-    delete header;
 }
 
-HttpReq::HttpReq(HttpReqHeader* header, HttpReq::res_cb response, more_data_t more):
+HttpReq::HttpReq(std::shared_ptr<HttpReqHeader> header, HttpReq::res_cb response, more_data_t more):
     Channel(std::move(more)), header(header), response(std::move(response))
 {
+    send(header);
 }
 
 HttpReq::~HttpReq() {
-    delete header;
 }
 
 
-void HttpLog(const char* src, std::shared_ptr<const HttpReq> req, std::shared_ptr<const HttpRes> res){
+void HttpLog(const char* src, std::shared_ptr<const HttpReqHeader> req, std::shared_ptr<const HttpResHeader> res){
     char status[100];
-    sscanf(res->header->status, "%s", status);
+    sscanf(res->status, "%s", status);
     LOG("%s [%" PRIu32 "] %s %s [%s] %s %dms [%s]\n", src,
-        req->header->request_id,
-        req->header->method,
-        req->header->geturl().c_str(),
-        req->header->get("Strategy"),
-        status, res->header->ctime - req->header->ctime,
-        req->header->get("User-Agent"));
+        req->request_id, req->method, req->geturl().c_str(),
+        req->get("Strategy"), status, res->ctime - req->ctime,
+        req->get("User-Agent"));
 }
 

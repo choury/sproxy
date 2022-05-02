@@ -27,15 +27,16 @@ protected:
     virtual void deleteLater(uint32_t errcode) override;
 
     virtual void GoawayProc(uint64_t id) override;
-    virtual void ReqProc(uint64_t id, HttpReqHeader* res)override;
-    virtual void PushFrame(uint64_t id, PREPTR void* buff, size_t len)override;
+    virtual void ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> res)override;
+    virtual void PushFrame(Buffer&& bb)override;
     virtual void DataProc(uint64_t id, const void *data, size_t len)override;
     virtual void ErrProc(int errcode)override;
     virtual void Reset(uint64_t id, uint32_t code)override;
     virtual void ShutdownProc(uint64_t id)override;
     virtual uint64_t CreateUbiStream() override;
 
-    void Send(uint64_t id ,const void* buff, size_t size);
+    void Recv(Buffer&& bb);
+    void Handle(uint64_t id, ChannelMessage::Signal s);
     void RstProc(uint64_t id, uint32_t errcode);
     void Clean(uint64_t id, ReqStatus& status, uint32_t errcode);
 public:

@@ -185,8 +185,7 @@ HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers) {
     }
     if(get(":path")){
         snprintf(path, sizeof(path), "%s", get(":path"));
-    }
-    if(!path[0]){
+    }else{
         strcpy(path, "/");
     }
 

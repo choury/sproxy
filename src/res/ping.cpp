@@ -7,7 +7,7 @@
 #include <inttypes.h>
 #include <assert.h>
 
-Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
+Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
     rwer = std::make_shared<PacketRWer>(host, this->id, Protocol::ICMP, [this](int ret, int code){
         LOGE("Ping error: %d/%d\n", ret, code);
         if(res  == nullptr){
@@ -22,72 +22,82 @@ Ping::Ping(const char* host, uint16_t id): id(id?id:random()&0xffff) {
         if(addr6->sin6_port == 0){
             israw = true;
         }
-        req->attach(std::bind(&Ping::Send, this, _1, _2),[](){ return 1024*1024;});
+        req->attach([this](ChannelMessage& message){
+            switch(message.type){
+            case ChannelMessage::CHANNEL_MSG_HEADER:
+                LOGD(DHTTP, "<PING> ignore header for req\n");
+                return 1;
+            case ChannelMessage::CHANNEL_MSG_DATA:
+                Recv(std::move(message.data));
+                return 1;
+            case ChannelMessage::CHANNEL_MSG_SIGNAL:
+                this->req = nullptr;
+                deleteLater(PEER_LOST_ERR);
+                return 0;
+            }
+            return 0;
+        }, []{return 1024*1024;});
     });
-    rwer->SetReadCB([this](buff_block& bb){
+    rwer->SetReadCB([this](Buffer& bb){
         if(res == nullptr){
             res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
             req->response(this->res);
         }
-        assert(bb.offset == 0);
-        const char* data = (const char*)bb.buff;
         switch(family){
         case AF_INET:
             if(israw){
-                const ip* iphdr = (ip*)data;
+                const ip* iphdr = (ip*) bb.data();
                 size_t hlen = iphdr->ip_hl << 2;
-                res->send(data  + hlen + sizeof(icmphdr), bb.len - hlen - sizeof(icmphdr));
+                bb.trunc(sizeof(icmphdr) + hlen);
+                res->send(std::move(bb));
             }else {
-                res->send(data + sizeof(icmphdr), bb.len - sizeof(icmphdr));
+                bb.trunc(sizeof(icmphdr));
+                res->send(std::move(bb));
             }
             break;
         case AF_INET6:
             if(israw){
-                res->send(data + sizeof(ip6_hdr) + sizeof(icmp6_hdr), bb.len - sizeof(ip6_hdr) - sizeof(icmp6_hdr));
+                bb.trunc(sizeof(ip6_hdr) + sizeof(icmp6_hdr));
+                res->send(std::move(bb));
             }else {
-                res->send(data + sizeof(icmp6_hdr), bb.len - sizeof(icmp6_hdr));
+                bb.trunc(sizeof(icmp6_hdr));
+                res->send(std::move(bb));
             }
             break;
         default:
             abort();
         }
-        bb.offset = bb.len;
     });
 }
 
 
-Ping::Ping(HttpReqHeader* req):Ping(req->Dest.hostname, req->Dest.port) {
+Ping::Ping(std::shared_ptr<HttpReqHeader> req):
+    Ping(req->Dest.hostname, req->Dest.port)
+{
 }
 
 void Ping::request(std::shared_ptr<HttpReq> req, Requester*) {
     this->req = req;
-    req->setHandler([this](Channel::signal s){
-        if(s == Channel::CHANNEL_SHUTDOWN){
-            res->trigger(Channel::CHANNEL_ABORT);
-        }
-        this->req = nullptr;
-        deleteLater(PEER_LOST_ERR);
-    });
 }
 
 
-void Ping::Send(void* buff, size_t size){
-    char* packet;
+void Ping::Recv(Buffer&& bb){
+    LOGD(DHTTP, "<PING> [%d] recv %zu bytes\n", id, bb.len);
     switch(family){
     case AF_INET:{
         Icmp icmp;
         icmp.settype(ICMP_ECHO)->setid(id)->setseq(seq++);
-        packet = icmp.build_packet(buff, size);
+        icmp.build_packet(bb);
         break;}
     case AF_INET6:{
         Icmp6 icmp;
         icmp.settype(ICMP6_ECHO_REQUEST)->setid(id)->setseq(seq++);
-        packet = icmp.build_packet(nullptr, buff, size);
+        icmp.build_packet(nullptr, bb);
         break;}
     default:
         abort();
     }
-    rwer->buffer_insert(rwer->buffer_end(), buff_block{packet, size});
+    rwer->buffer_insert(rwer->buffer_end(), std::move(bb));
 }
 
 void Ping::dump_stat(Dumper dp, void* param) {

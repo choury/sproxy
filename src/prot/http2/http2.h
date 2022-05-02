@@ -2,7 +2,7 @@
 #define HTTP2_H__
 
 #include "prot/http/http_header.h"
-#include "prot/rwer.h"
+#include "misc/buffer.h"
 #include "hpack.h"
 
 #include <list>
@@ -99,7 +99,7 @@ protected:
     Hpack_decoder hpack_decoder;
     virtual size_t InitProc(const uchar* http2_buff, size_t len) = 0;
     size_t DefaultProc(const uchar* http2_buff, size_t len);
-    
+
     virtual void HeadersProc(const Http2_header *header) = 0;
     virtual void SettingsProc(const Http2_header *header);
     virtual void PingProc(const Http2_header *header);
@@ -115,8 +115,8 @@ protected:
     void Shutdown(uint32_t id);
     void Goaway(uint32_t lastid, uint32_t code, char* message = nullptr);
     void SendInitSetting();
-    virtual void PushFrame(Http2_header* header);
-    virtual void PushData(uint32_t id, const void* data, size_t size);
+    virtual void PushFrame(Buffer&& bb);
+    virtual void PushData(Buffer&& bb);
 
     virtual uint32_t ExpandWindowSize(uint32_t id, uint32_t size);
     virtual void WindowUpdateProc(uint32_t id, uint32_t size) = 0;
@@ -124,16 +124,9 @@ protected:
     size_t (Http2Base::*Http2_Proc)(const uchar* http2_buff, size_t len)=&Http2Base::InitProc;
     uint32_t GetSendId();
 
-#ifndef insert_iterator
-#ifdef HAVE_CONST_ITERATOR_BUG
-#define insert_iterator iterator
-#else
-#define insert_iterator const_iterator
-#endif
-#endif
-    virtual std::list<buff_block>::insert_iterator queue_head() = 0;
-    virtual std::list<buff_block>::insert_iterator queue_end() = 0;
-    virtual void queue_insert(std::list<buff_block>::insert_iterator where, buff_block&& wb) = 0;
+    virtual buff_iterator queue_head() = 0;
+    virtual buff_iterator queue_end() = 0;
+    virtual void queue_insert(buff_iterator where, Buffer&& wb) = 0;
 public:
     ~Http2Base() = default;
 };
@@ -142,7 +135,7 @@ class Http2Responser:public Http2Base{
 protected:
     virtual size_t InitProc(const uchar* http2_buff, size_t len)override;
     virtual void HeadersProc(const Http2_header *header)override;
-    virtual void ReqProc(uint32_t id, HttpReqHeader* req) = 0;
+    virtual void ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> req) = 0;
     virtual void AltSvc(uint32_t id, const char* origin, const char* value);
 };
 
@@ -152,7 +145,7 @@ protected:
     void init();
     virtual size_t InitProc(const uchar* http2_buff, size_t len)override;
     virtual void HeadersProc(const Http2_header *header)override;
-    virtual void ResProc(uint32_t id, HttpResHeader* res) = 0;
+    virtual void ResProc(uint32_t id, std::shared_ptr<HttpResHeader> res) = 0;
 public:
 };
 

@@ -114,10 +114,11 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
 }
 
 /* ping 帧永远插到最前面*/
-void Http2Base::PushFrame(Http2_header *header){
+void Http2Base::PushFrame(Buffer&& bb){
+    const Http2_header* header = (const Http2_header*)bb.data();
     uint32_t id = HTTP2_ID(header->id);
     LOGD(DHTTP2, "push a frame [%d]:%d, size:%d, flags: %d\n", id, header->type, get24(header->length), header->flags);
-    std::list<buff_block>::insert_iterator i;
+    buff_iterator i;
     if((http2_flag & HTTP2_FLAG_INITED) == 0){
         i = queue_end();
         goto ret;
@@ -125,10 +126,10 @@ void Http2Base::PushFrame(Http2_header *header){
     switch(header->type){
     case HTTP2_STREAM_PING:
         for(i = queue_head(); i!= queue_end() ; i++){
-            if(i->offset){
+            const Http2_header* check = (const Http2_header*) i->data();
+            if(get24(check->length) + sizeof(Http2_header) != i->len ){
                 continue;
             }
-            const Http2_header* check = (const Http2_header*)i->buff;
             if(check->type != HTTP2_STREAM_PING){
                 break;
             }
@@ -138,11 +139,14 @@ void Http2Base::PushFrame(Http2_header *header){
         auto j = queue_end();
         do{
             i = j--;
-            if(j == queue_head() || j->offset){
+            if(j == queue_head()){
+                break;
+            }
+            const Http2_header* check = (const Http2_header*) j->data();
+            if(get24(check->length) + sizeof(Http2_header) != i->len ){
                 break;
             }
 
-            const Http2_header* check = (const Http2_header*)j->buff;
             if(check->type != HTTP2_STREAM_DATA)
                 break;
             uint32_t jid = HTTP2_ID(check->id);
@@ -156,33 +160,29 @@ void Http2Base::PushFrame(Http2_header *header){
         break;
     }
 ret:
-    size_t length = sizeof(Http2_header) + get24(header->length);
-    assert(i == queue_end() || i == queue_head() || i->offset == 0);
-    queue_insert(i, buff_block{header, length});
+    queue_insert(i, std::move(bb));
 }
 
-void Http2Base::PushData(uint32_t id, const void* data, size_t size){
-    size_t left = size;
-    while(left > remoteframebodylimit){
-        Http2_header* const header=(Http2_header *)p_move(p_malloc(remoteframebodylimit), -(char)sizeof(Http2_header));
+void Http2Base::PushData(Buffer&& bb){
+    while(bb.len > remoteframebodylimit){
+        auto buff = std::make_shared<Block>(bb.data(), remoteframebodylimit);
+        Http2_header* const header=(Http2_header *) buff->trunc(-(char) sizeof(Http2_header));
         memset(header, 0, sizeof(Http2_header));
-        set32(header->id, id);
+        set32(header->id, bb.id);
         set24(header->length, remoteframebodylimit);
-        memcpy(header+1, data, remoteframebodylimit);
-        PushFrame(header);
-        data = (char*)data + remoteframebodylimit;
-        left -= remoteframebodylimit;
+        PushFrame(Buffer{buff, remoteframebodylimit + sizeof(Http2_header)});
+        bb.trunc(remoteframebodylimit);
     }
-    Http2_header* const header=(Http2_header *)p_move(p_malloc(left), -(char)sizeof(Http2_header));
+
+    size_t size = bb.len;
+    Http2_header* const header=(Http2_header *)bb.trunc(-(char) sizeof(Http2_header));
     memset(header, 0, sizeof(Http2_header));
-    set32(header->id, id);
-    set24(header->length, left);
+    set32(header->id, bb.id);
+    set24(header->length, size);
     if(size == 0) {
         header->flags = HTTP2_END_STREAM_F;
-    }else{
-        memcpy(header+1, data, left);
     }
-    PushFrame(header);
+    PushFrame(std::move(bb));
 }
 
 
@@ -262,10 +262,11 @@ void Http2Base::SettingsProc(const Http2_header* header) {
             }
             sf++;
         }
-        Http2_header *header_back = (Http2_header *)p_memdup(header, sizeof(Http2_header));
+        auto buff = std::make_shared<Block>(header, sizeof(Http2_header));
+        Http2_header *header_back =  (Http2_header*) buff->data();
         set24(header_back->length, 0);
         header_back->flags |= HTTP2_ACK_F;
-        PushFrame(header_back);
+        PushFrame(Buffer{buff, sizeof(Http2_header)});
     }else if(get24(header->length) != 0){
         LOGE("ERROR setting ack with content\n");
         ErrProc(HTTP2_ERR_FRAME_SIZE_ERROR);
@@ -274,9 +275,11 @@ void Http2Base::SettingsProc(const Http2_header* header) {
 
 void Http2Base::PingProc(const Http2_header* header) {
     if((header->flags & HTTP2_ACK_F) == 0) {
-        Http2_header *header_back = (Http2_header *)p_memdup(header, sizeof(Http2_header) + get24(header->length));
+        size_t len = sizeof(Http2_header) + get24(header->length);
+        auto buff = std::make_shared<Block>(header, len);
+        Http2_header *header_back =  (Http2_header*)buff->data();
         header_back->flags |= HTTP2_ACK_F;
-        PushFrame(header_back);
+        PushFrame(Buffer{buff, len});
     }
 }
 
@@ -298,39 +301,43 @@ void Http2Base::ShutdownProc(__attribute__ ((unused)) uint32_t id) {
 
 uint32_t Http2Base::ExpandWindowSize(uint32_t id, uint32_t size) {
     LOGD(DHTTP2, "will expand window size [%d]: %d\n", id, size);
-    Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header)+sizeof(uint32_t));
+    auto buff = std::make_shared<Block>(sizeof(Http2_header) + sizeof(uint32_t));
+    Http2_header* const header = (Http2_header *) buff->data();
     memset(header, 0, sizeof(Http2_header));
     set32(header->id, id);
     set24(header->length, sizeof(uint32_t));
     header->type = HTTP2_STREAM_WINDOW_UPDATE;
     set32(header+1, size);
-    PushFrame(header);
+    PushFrame(Buffer{buff, sizeof(uint32_t) + sizeof(Http2_header)});
     return size;
 }
 
-void Http2Base::Ping(const void *buff) {
-    Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header) + 8);
+void Http2Base::Ping(const void *data) {
+    auto buff = std::make_shared<Block>(sizeof(Http2_header) + 8);
+    Http2_header* const header = (Http2_header *) buff->data();
     memset(header, 0, sizeof(Http2_header));
     header->type = HTTP2_STREAM_PING;
     set24(header->length, 8);
-    memcpy(header+1, buff, 8);
-    PushFrame(header);
+    memcpy(header+1, data, 8);
+    PushFrame(Buffer{buff, 8 + sizeof(Http2_header)});
 }
 
 
 void Http2Base::Reset(uint32_t id, uint32_t code) {
-    Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header)+sizeof(uint32_t));
+    auto buff = std::make_shared<Block>(sizeof(Http2_header) + sizeof(uint32_t));
+    Http2_header* const header = (Http2_header *) buff->data();
     memset(header, 0, sizeof(Http2_header));
     header->type = HTTP2_STREAM_RESET;
     set32(header->id, id);
     set24(header->length, sizeof(uint32_t));
     set32(header+1, code);
-    PushFrame(header);
+    PushFrame(Buffer{buff, sizeof(uint32_t) + sizeof(Http2_header)});
 }
 
 void Http2Base::Shutdown(uint32_t id) {
     assert(http2_flag & HTTP2_SUPPORT_SHUTDOWN);
-    Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header) + sizeof(Setting_Frame));
+    auto buff = std::make_shared<Block>(sizeof(Http2_header) + sizeof(Setting_Frame));
+    Http2_header* const header = (Http2_header *) buff->data();
     memset(header, 0, sizeof(Http2_header));
     set32(header->id, id);
     set24(header->length, sizeof(Setting_Frame));
@@ -339,7 +346,7 @@ void Http2Base::Shutdown(uint32_t id) {
     Setting_Frame *sf = (Setting_Frame *)(header+1);
     set16(sf->identifier, HTTP2_SETTING_PEER_SHUTDOWN);
     set32(sf->value, 0);
-    PushFrame(header);
+    PushFrame(Buffer{buff, sizeof(Setting_Frame) + sizeof(Http2_header)});
 }
 
 void Http2Base::Goaway(uint32_t lastid, uint32_t code, char *message) {
@@ -348,7 +355,8 @@ void Http2Base::Goaway(uint32_t lastid, uint32_t code, char *message) {
     if(message){
         len += strlen(message)+1;
     }
-    Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header)+len);
+    auto buff = std::make_shared<Block>(sizeof(Http2_header) + len);
+    Http2_header* const header = (Http2_header *) buff->data();
     memset(header, 0, sizeof(Http2_header));
     set24(header->length, len);
     header->type = HTTP2_STREAM_GOAWAY;
@@ -358,12 +366,13 @@ void Http2Base::Goaway(uint32_t lastid, uint32_t code, char *message) {
     if(message){
         strcpy((char *)goaway->data, message);
     }
-    PushFrame(header);
+    PushFrame(Buffer{buff, len + sizeof(Http2_header)});
 }
 
 
 void Http2Base::SendInitSetting() {
-    Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header) + 3*sizeof(Setting_Frame));
+    auto buff = std::make_shared<Block>(sizeof(Http2_header) + 3 * sizeof(Setting_Frame));
+    Http2_header* const header = (Http2_header *) buff->data();
     memset(header, 0, sizeof(Http2_header));
     Setting_Frame *sf = (Setting_Frame *)(header+1);
     set16(sf->identifier, HTTP2_SETTING_HEADER_TABLE_SIZE );
@@ -380,7 +389,7 @@ void Http2Base::SendInitSetting() {
 
     set24(header->length, 3*sizeof(Setting_Frame));
     header->type = HTTP2_STREAM_SETTINGS;
-    PushFrame(header);
+    PushFrame(Buffer{buff, 3 * sizeof(Setting_Frame) + sizeof(Http2_header)});
 }
 
 uint32_t Http2Base::GetSendId(){
@@ -427,7 +436,7 @@ void Http2Responser::HeadersProc(const Http2_header* header) {
         weigth = *pos++;
     }
     size_t len = get24(header->length) - padlen - (pos - (const unsigned char *) (header + 1));
-    HttpReqHeader* req = hpack_decoder.UnpackHttp2Req(pos, len);
+    std::shared_ptr<HttpReqHeader> req = hpack_decoder.UnpackHttp2Req(pos, len);
     if(req == nullptr){
         ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
         return;
@@ -440,21 +449,24 @@ void Http2Responser::HeadersProc(const Http2_header* header) {
 void Http2Responser::AltSvc(uint32_t id, const char *origin, const char *value) {
     size_t originlen = strlen(origin);
     size_t valuelen = strlen(value);
-    Http2_header* const header = (Http2_header *)p_malloc(sizeof(Http2_header) + 2 + originlen + valuelen);
+    size_t len = 2 + originlen + valuelen;
+    auto buff = std::make_shared<Block>(sizeof(Http2_header) + len);
+    Http2_header* const header = (Http2_header *) buff->data();
     memset(header, 0, sizeof(Http2_header));
     header->type = HTTP2_STREAM_ALTSVC;
     set32(header->id, id);
-    set24(header->length, 2 + originlen + valuelen);
+    set24(header->length, len);
     set16(header+1, originlen);
     char* pos = (char *)(header+1) + 2;
     memcpy(pos, origin, originlen);
     pos += originlen;
     memcpy(pos, value, valuelen);
-    PushFrame(header);
+    PushFrame(Buffer{buff, len + sizeof(Http2_header)});
 }
 
 void Http2Requster::init() {
-    queue_insert(queue_head(), buff_block{p_strdup(HTTP2_PREFACE), sizeof(HTTP2_PREFACE) - 1});
+    queue_insert(queue_head(),
+                 Buffer{HTTP2_PREFACE, sizeof(HTTP2_PREFACE) - 1});
     SendInitSetting(); 
 }
 
@@ -500,7 +512,7 @@ void Http2Requster::HeadersProc(const Http2_header* header) {
         weigth = *pos++;
     }
     size_t len = get24(header->length) - padlen - (pos - (const unsigned char *) (header + 1));
-    HttpResHeader* res = hpack_decoder.UnpackHttp2Res(pos, len);
+    std::shared_ptr<HttpResHeader> res = hpack_decoder.UnpackHttp2Res(pos, len);
     if(res == nullptr){
         ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
         return;

@@ -12,7 +12,7 @@ class handler: public CgiHandler{
             return;
         }
         SproxyClient c(getenv("ADMIN_SOCK"));
-        HttpResHeader* res = UnpackHttpRes(H200, sizeof(H200));
+        std::shared_ptr<HttpResHeader> res = UnpackHttpRes(H200, sizeof(H200));
         res->set("Content-Type", "application/json");
         Response(res);
         char callback[DOMAINLIMIT+sizeof("setproxy(\"\");")];

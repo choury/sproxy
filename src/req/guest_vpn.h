@@ -5,6 +5,7 @@
 #include "prot/ip_pack.h"
 #include "misc/net.h"
 #include "misc/pcap.h"
+#include "misc/buffer.h"
 
 struct VpnKey{
     Protocol    protocol;
@@ -64,10 +65,10 @@ class Guest_vpn:public Requester{
     void icmp6HE(std::shared_ptr<const Ip> pac,const char* packet, size_t len);
     void tcp_ack();
 
-    void Send_tcp(const void* buff, size_t size);
-    void Send_notcp(void* buff, size_t size);
+    void Recv_tcp(Buffer&& bb);
+    void Recv_notcp(Buffer&& bb);
     int32_t bufleft();
-    void handle(Channel::signal s);
+    void handle(ChannelMessage::Signal s);
 public:
     Guest_vpn(const VpnKey& key, Vpn_server* server);
     virtual ~Guest_vpn() override;
@@ -91,11 +92,17 @@ public:
     explicit Vpn_server(int fd);
     virtual ~Vpn_server();
 
-    template <class T>
-    void sendPkg(std::shared_ptr<Ip> pac, T* buff, size_t len){
-        char* packet = pac->build_packet(buff, len);
-        rwer->buffer_insert(rwer->buffer_end(), buff_block{packet, len});
-        pcap_write_with_generated_ethhdr(pcap, packet, len);
+    void sendPkg(std::shared_ptr<Ip> pac, Buffer&& bb){
+        pac->build_packet(bb);
+        pcap_write_with_generated_ethhdr(pcap, bb.data(), bb.len);
+        rwer->buffer_insert(rwer->buffer_end(), std::move(bb));
+    }
+
+    void sendPkg(std::shared_ptr<Ip> pac, const void* buff, size_t len){
+        sendPkg(pac, Buffer{buff, len});
+    }
+    void sendPkg(std::shared_ptr<Ip> pac, std::nullptr_t){
+        sendPkg(pac, Buffer{nullptr});
     }
     virtual int32_t bufleft();
     void cleanKey(const VpnKey& key);

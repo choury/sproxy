@@ -7,6 +7,6 @@ set(dns_src
         resolver.cpp
         )
 
-add_library(dns ${dns_src})
+target_sources(prot PRIVATE ${dns_src})
 
 add_executable(dns_test dns_test.cpp dns.cpp)

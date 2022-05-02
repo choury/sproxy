@@ -31,11 +31,11 @@ struct CgiStatus{
     std::shared_ptr<HttpRes> res;
 };
 
-size_t PackCgiReq(const HttpReqHeader *req, void* data, size_t len);
-size_t PackCgiRes(const HttpResHeader *res, void* data, size_t len);
+size_t PackCgiReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t len);
+size_t PackCgiRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t len);
 
-HttpReqHeader* UnpackCgiReq(const void* header, size_t len);
-HttpResHeader* UnpackCgiRes(const void* header, size_t len);
+std::shared_ptr<HttpReqHeader> UnpackCgiReq(const void* header, size_t len);
+std::shared_ptr<HttpResHeader> UnpackCgiRes(const void* header, size_t len);
 
 
 class Cgi:public Responser{
@@ -43,11 +43,12 @@ class Cgi:public Responser{
     std::map<uint32_t, CgiStatus> statusmap;
     void evictMe();
     void Clean(uint32_t id, CgiStatus& status);
-    void readHE(buff_block& bb);
+    void readHE(Buffer& bb);
     bool HandleRes(const CGI_Header* header, CgiStatus& status);
     bool HandleData(const CGI_Header* header, CgiStatus& Status);
     bool HandleError(const CGI_Header* header, CgiStatus& status);
-    void Send(uint32_t id, void *buff, size_t size);
+    void Recv(Buffer&& bb);
+    void Handle(uint32_t id, ChannelMessage::Signal s);
 public:
     explicit Cgi(const char* filename, int sv[2]);
     virtual ~Cgi() override;
@@ -67,7 +68,7 @@ extern "C" {
 #endif
 typedef int (cgifunc)(int fd, const char* name);
 cgifunc cgimain;
-int cgi_response(int fd, const HttpResHeader* res);
+int cgi_response(int fd, std::shared_ptr<const HttpResHeader> res);
 int cgi_send(int fd, uint32_t id, const void *buff, size_t len);
 int cgi_senderror(int fd, uint32_t id, uint8_t flag);
 #ifdef  __cplusplus
@@ -80,7 +81,7 @@ protected:
     const int fd;
     char name[FILENAME_MAX];
     uint32_t flag = 0;
-    HttpReqHeader* req = nullptr;
+    std::shared_ptr<HttpReqHeader> req;
     std::map<std::string, std::string> params;
     void NotImplemented(){
         if((flag & HTTP_REQ_COMPLETED) == 0) {
@@ -128,15 +129,13 @@ protected:
         }
         flag |= HTTP_RES_EOF;
     }
-    void Response(HttpResHeader* res){
+    void Response(std::shared_ptr<HttpResHeader> res){
         if(flag & HTTP_RES_COMPLETED){
-            delete res;
             return;
         }
         flag |= HTTP_RES_COMPLETED;
         res->request_id = req->request_id;
         cgi_response(fd, res);
-        delete res;
     }
 
     void Send(const char* buf, size_t len){
@@ -161,7 +160,6 @@ public:
     }
     virtual ~CgiHandler(){
         Finish();
-        delete req;
     }
     void handle(const CGI_Header* header){
         if(header->type == CGI_ERROR){

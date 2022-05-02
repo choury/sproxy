@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.13)
+cmake_policy(VERSION 3.13)
 project(sproxy)
 
 message(STATUS "Building for ${CMAKE_SYSTEM_PROCESSOR}")
@@ -193,6 +194,7 @@ endif()
 
 add_subdirectory(src)
 add_subdirectory(systemd)
+add_subdirectory(test)
 
 #SET(CPACK_SET_DESTDIR "ON")
 set(CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION "/usr/sbin;/var;/var/lib;/lib;/lib/systemd;/lib/systemd/system")

@@ -8,7 +8,7 @@ set(quic_src
         quic_pack.cpp
         quic_qos.cpp)
 
-add_library(quic ${quic_src})
+target_sources(prot PRIVATE ${quic_src})
 
 
 if(NOT ANDROID AND false)

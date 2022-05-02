@@ -9,4 +9,4 @@ set(http_src
         http_code.c
         )
 
-add_library(http ${http_src})
+target_sources(prot PRIVATE ${http_src})

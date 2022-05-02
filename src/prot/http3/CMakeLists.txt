@@ -7,4 +7,4 @@ set(http3_src
         qpack.cpp
         )
 
-add_library(http3 ${http3_src})
+target_sources(prot PRIVATE ${http3_src})

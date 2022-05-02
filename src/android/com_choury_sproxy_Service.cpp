@@ -91,6 +91,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
         LOG("read config from %s.\n", config_file.c_str());
         parseConfigFile(config_file.c_str());
     }
+    debug |= DJOB;
     LOG("native SproxyVpnService.start %d.\n", sockfd);
     const char *server_str = jnienv->GetStringUTFChars(server, nullptr);
     const char *secret_str = jnienv->GetStringUTFChars(secret, nullptr);

@@ -3,7 +3,7 @@
 
 #include "prot/ep.h"
 #include "misc/job.h"
-#include "misc/util.h"
+#include "misc/buffer.h"
 
 #include <sys/socket.h>
 
@@ -11,57 +11,6 @@
 #include <list>
 #include <functional>
 
-
-#ifndef insert_iterator
-#ifdef HAVE_CONST_ITERATOR_BUG
-#define insert_iterator iterator
-#else
-#define insert_iterator const_iterator
-#endif
-#endif
-
-class buff_block{
-    bool delegate = false;
-public:
-    const PREPTR void* const buff = nullptr;
-    size_t len = 0;
-    size_t offset = 0;
-    uint64_t id = 0;
-    buff_block(const buff_block&) = delete;
-    explicit buff_block(void* const buff, size_t len, size_t offset = 0, uint64_t id = 0):
-        delegate(true), buff(buff), len(len), offset(offset), id(id)
-    {
-    }
-    explicit buff_block(const void* const buff, size_t len, size_t offset = 0, uint64_t id = 0):
-            buff(buff), len(len), offset(offset), id(id)
-    {
-    }
-    buff_block(buff_block&& wb) noexcept :
-        delegate(wb.delegate), buff(wb.buff), len(wb.len), offset(wb.offset), id(wb.id){
-        wb.delegate = false;
-        wb.len = 0;
-        wb.offset = 0;
-        wb.id = 0;
-    }
-    ~buff_block(){
-        if(delegate && buff){
-            p_free((PREPTR void*)buff);
-        }
-    }
-};
-
-using buff_iterator = std::list<buff_block>::insert_iterator;
-class WBuffer {
-    std::list<buff_block> write_queue;
-    size_t  len = 0;
-public:
-    ~WBuffer();
-    size_t length();
-    buff_iterator start();
-    buff_iterator end();
-    buff_iterator push(buff_iterator i, buff_block&& bb);
-    ssize_t  Write(std::function<ssize_t(const void*, size_t, uint64_t)> write_func);
-};
 
 
 using std::placeholders::_1;
@@ -91,12 +40,13 @@ protected:
 #define RWER_READING  1u  // handling the read buffer
 #define RWER_SENDING  2u  // handling the write buffer
 #define RWER_CLOSING  4u
-#define RWER_SHUTDOWN 8u
+#define RWER_SHUTDOWN 8u  // shutdown by me (sent fin to peer)
+#define RWER_EOFRECVD 16u // shutdown by peer (handled by me)
     uint32_t   flags = 0;
     RWerStats  stats = RWerStats::Idle;
     WBuffer    wbuff;
     //std::function<void(size_t len, uint64_t id)> readCB;
-    std::function<void(buff_block&)> readCB;
+    std::function<void(Buffer&)> readCB;
     std::function<void(size_t len)> writeCB;
     std::function<void(const sockaddr_storage&)> connectCB;
     std::function<void(int ret, int code)> errorCB;
@@ -115,12 +65,11 @@ public:
     explicit RWer(std::function<void(int ret, int code)> errorCB,
                   std::function<void(const sockaddr_storage&)> connectCB);
     virtual void SetErrorCB(std::function<void(int ret, int code)> func);
-    virtual void SetReadCB(std::function<void(buff_block&)> func);
+    virtual void SetReadCB(std::function<void(Buffer&)> func);
     virtual void SetWriteCB(std::function<void(size_t len)> func);
 
     virtual void Close(std::function<void()> func);
     void EatReadData();
-    virtual void Shutdown();
     RWerStats getStats(){return stats;}
     virtual const char* getPeer() {return "raw-rwer";}
 
@@ -132,7 +81,7 @@ public:
     virtual ssize_t cap(uint64_t id);
     virtual buff_iterator buffer_head();
     virtual buff_iterator buffer_end();
-    virtual buff_iterator buffer_insert(buff_iterator where, buff_block&& bb);
+    virtual buff_iterator buffer_insert(buff_iterator where, Buffer&& bb);
 };
 
 class NullRWer: public RWer{

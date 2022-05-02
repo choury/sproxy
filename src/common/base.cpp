@@ -21,9 +21,11 @@ Server::~Server() {
 void Server::deleteLater(uint32_t) {
     if(rwer){
         rwer->Close([this](){
+            assert(servers.count(this));
             delete this;
         });
     }else{
+        assert(servers.count(this));
         delete this;
     }
 }

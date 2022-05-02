@@ -14,118 +14,6 @@
 #include <sys/un.h>
 #endif
 
-size_t RBuffer::left(){
-    return sizeof(content) - len;
-}
-
-size_t RBuffer::length(){
-    assert(len <= sizeof(content));
-    return len;
-}
-
-size_t RBuffer::add(size_t l){
-    assert(len + l <= sizeof(content));
-    len += l;
-    return l;
-}
-
-ssize_t RBuffer::put(const void *data, size_t size) {
-    if(len + size > sizeof(content)){
-        return -1;
-    }
-    memcpy(content + len, data, size);
-    len += size;
-    return (ssize_t)len;
-}
-
-size_t RBuffer::cap() {
-    return sizeof(content) - len;
-}
-
-const char* RBuffer::data(){
-    return content;
-}
-
-size_t RBuffer::consume(size_t l) {
-    assert(l <= len);
-    len -= l;
-    memmove(content, content+l, len);
-    return l;
-}
-
-char* RBuffer::end(){
-    return content+len;
-}
-
-size_t CBuffer::left(){
-    uint32_t start = offset % sizeof(content);
-    uint32_t finish = (offset + len) % sizeof(content);
-    if(finish > start || len == 0){
-        return sizeof(content) - finish;
-    }
-    return start - finish;
-}
-
-size_t CBuffer::length(){
-    assert(len <= sizeof(content));
-    return len;
-}
-
-size_t CBuffer::cap() {
-    return sizeof(content) - len;
-}
-
-void CBuffer::add(size_t l){
-    len += l;
-    assert(len <= sizeof(content));
-}
-
-ssize_t CBuffer::put(const void *data, size_t size) {
-    if(len + size > sizeof(content)){
-        return -1;
-    }
-
-    uint32_t start = (offset + len) % sizeof(content);
-    uint32_t finish = (offset +  len + size) % sizeof(content);
-    if(finish > start){
-        memcpy(content + start, data, size);
-    }else{
-        size_t l = sizeof(content) - start;
-        memcpy(content + start, data, l);
-        memcpy(content, (const char*)data + l, finish);
-    }
-    len += size;
-    assert(len <= sizeof(content));
-    return (ssize_t)len;
-}
-
-size_t CBuffer::get(char* buff, size_t size){
-    assert(size != 0);
-    size = Min(len, size);
-
-    uint32_t start = offset % sizeof(content);
-    uint32_t finish = (offset + size) % sizeof(content);
-
-    if(finish > start){
-        memcpy(buff, content+ start , size);
-        return size;
-    }
-    size_t l = sizeof(content) - start;
-    memcpy(buff, content + start, l);
-    memcpy(buff + l, content, finish);
-    return size;
-}
-
-void CBuffer::consume(size_t l){
-    assert(l <= len);
-    offset += l;
-    len -= l;
-}
-
-char* CBuffer::end(){
-    return content + ((offset + len) % sizeof(content));
-}
-
 SocketRWer::SocketRWer(int fd, const sockaddr_storage* peer, std::function<void(int, int)> errorCB):RWer(fd, std::move(errorCB)){
     setEvents(RW_EVENT::READ);
     stats = RWerStats::Connected;
@@ -279,6 +167,13 @@ void SocketRWer::waitconnectHE(RW_EVENT events) {
     }
 }
 
+void SocketRWer::Shutdown() {
+    flags |= RWER_SHUTDOWN;
+    if(getFd() >= 0) {
+        shutdown(getFd(), SHUT_WR);
+    }
+}
+
 const char *SocketRWer::getPeer() {
     static char peer[300];
     memset(peer, 0, sizeof(peer));
@@ -334,14 +229,16 @@ size_t StreamRWer::rlength() {
 
 void StreamRWer::ConsumeRData() {
     if(rb.length()){
-        char* buff = (char*)p_malloc(rb.length());
-        buff_block wb{buff, rb.get(buff, rb.length())};
+        auto buff = std::make_shared<Block>(rb.length());
+        Buffer wb{buff, rb.get((char*) buff->data(), rb.length())};
+        size_t len = wb.len;
         readCB(wb);
-        rb.consume(wb.offset);
+        rb.consume(len - wb.len);
     }
-    if(stats == RWerStats::ReadEOF){
-        buff_block wb{(void*)nullptr, 0};
+    if(stats == RWerStats::ReadEOF && rb.length() == 0 && (flags & RWER_EOFRECVD) == 0){
+        Buffer wb{nullptr, 0};
         readCB(wb);
+        flags |= RWER_EOFRECVD;
     }
 }
 
@@ -358,7 +255,9 @@ void StreamRWer::ReadData() {
             continue;
         }
         if(ret == 0){
+            // Eof will send to handler after rb are consumed
             stats = RWerStats::ReadEOF;
+            delEvents(RW_EVENT::READ);
             break;
         }
         if(errno == EAGAIN){
@@ -367,8 +266,7 @@ void StreamRWer::ReadData() {
         ErrorHE(SOCKET_ERR, errno);
         return;
     }
-    // call consume after to avoid dup if eof.
-    if(rb.length() && (stats != RWerStats::ReadEOF)){
+    if(rb.length()){
         ConsumeRData();
     }
     if(rb.left() == 0){
@@ -386,13 +284,15 @@ ssize_t PacketRWer::Read(void* buff, size_t len) {
 
 void PacketRWer::ConsumeRData() {
     if(rb.length()){
-        buff_block bb{rb.data(), rb.length()};
+        Buffer bb{rb.data(), rb.length()};
+        size_t len = bb.len;
         readCB(bb);
-        rb.consume(bb.offset);
+        rb.consume(len - bb.len);
     }
-    if(stats == RWerStats::ReadEOF){
-        buff_block wb{(void*)nullptr, 0};
+    if(stats == RWerStats::ReadEOF && rb.length() == 0 && (flags & RWER_EOFRECVD) == 0){
+        Buffer wb{nullptr};
         readCB(wb);
+        flags |= RWER_EOFRECVD;
     }
 }
 
@@ -406,6 +306,7 @@ void PacketRWer::ReadData() {
             continue;
         }
         if(ret == 0){
+            delEvents(RW_EVENT::READ);
             stats = RWerStats::ReadEOF;
             break;
         }

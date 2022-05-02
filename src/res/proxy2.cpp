@@ -38,7 +38,7 @@ Proxy2::Proxy2(std::shared_ptr<SslRWer> rwer) {
         proxy2 = this;
     }
     rwer->SetErrorCB(std::bind(&Proxy2::Error, this, _1, _2));
-    rwer->SetReadCB([this](buff_block& bb){
+    rwer->SetReadCB([this](Buffer& bb){
         if(bb.len == 0){
             //EOF
             return deleteLater(NOERROR);
@@ -50,12 +50,10 @@ Proxy2::Proxy2(std::shared_ptr<SslRWer> rwer) {
 #else
         receive_time = getmtime();
 #endif
-        const char* data = (const char*)bb.buff;
         size_t ret = 0;
-        while((bb.offset < bb.len) && (ret = (this->*Http2_Proc)((uchar*)data + bb.offset, bb.len-bb.offset))){
-            bb.offset += ret;
+        while((bb.len > 0) && (ret = (this->*Http2_Proc)((uchar*) bb.data(), bb.len))){
+            bb.trunc(ret);
         }
-        assert(bb.offset <= bb.len);
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
@@ -93,24 +91,48 @@ void Proxy2::Error(int ret, int code) {
     deleteLater(ret);
 }
 
-void Proxy2::Send(uint32_t id ,const void* buff, size_t size) {
-    assert(statusmap.count(id));
-    ReqStatus& status = statusmap[id];
+void Proxy2::Recv(Buffer&& bb) {
+    assert(statusmap.count(bb.id));
+    ReqStatus& status = statusmap[bb.id];
     assert((status.flags & HTTP_REQ_COMPLETED) == 0);
     assert((status.flags & HTTP_REQ_EOF) == 0);
-    status.remotewinsize -= size;
-    remotewinsize -= size;
+    status.remotewinsize -= bb.len;
+    remotewinsize -= bb.len;
     assert(status.remotewinsize >= 0);
-    PushData(id, buff, size);
-    if(size == 0){
+    if(bb.len == 0){
         status.flags |= HTTP_REQ_COMPLETED;
-        LOGD(DHTTP2, "<proxy2> send data [%d]: EOF/%d\n", id, status.remotewinsize);
+        LOGD(DHTTP2, "<proxy2> recv data [%d]: EOF/%d\n", (int)bb.id, status.remotewinsize);
     }else{
-        LOGD(DHTTP2, "<proxy2> send data [%d]: %zu/%d\n", id, size, status.remotewinsize);
+        LOGD(DHTTP2, "<proxy2> recv data [%d]: %zu/%d\n", (int)bb.id, bb.len, status.remotewinsize);
+    }
+    PushData(std::move(bb));
+}
+
+void Proxy2::Handle(uint32_t id, ChannelMessage::Signal s) {
+    assert(statusmap.count(id));
+    ReqStatus& status = statusmap[id];
+    switch(s){
+    case ChannelMessage::CHANNEL_SHUTDOWN:
+        assert((status.flags & HTTP_RES_EOF) == 0);
+        status.flags |= HTTP_REQ_EOF;
+        if(http2_flag & HTTP2_SUPPORT_SHUTDOWN) {
+            LOGD(DHTTP2, "<proxy2> send shutdown frame: %d\n", id);
+            Shutdown(id);
+        }else{
+            LOGD(DHTTP2, "<proxy2> send reset frame: %d\n", id);
+            Clean(id, status, HTTP2_ERR_NO_ERROR);
+        }
+        break;
+    case ChannelMessage::CHANNEL_CLOSED:
+        status.flags |= HTTP_CLOSED_F;
+        return Clean(id, status, HTTP2_ERR_NO_ERROR);
+    case ChannelMessage::CHANNEL_ABORT:
+        status.flags |= HTTP_CLOSED_F;
+        return Clean(id, status, HTTP2_ERR_INTERNAL_ERROR);
     }
 }
 
-void Proxy2::PushFrame(Http2_header *header){
+void Proxy2::PushFrame(Buffer&& bb){
 #ifdef __ANDROID__
     uint32_t now = getmtime();
     if(http2_flag & HTTP2_FLAG_INITED
@@ -121,15 +143,19 @@ void Proxy2::PushFrame(Http2_header *header){
         ping_check();
     }
 #endif
-    return Http2Base::PushFrame(header);
+    return Http2Base::PushFrame(std::move(bb));
 }
 
-void Proxy2::ResProc(uint32_t id, HttpResHeader* header) {
+void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(!header->no_body() && !header->get("Content-Length"))
         {
             header->set("Transfer-Encoding", "chunked");
+        }
+        if(status.res){
+            status.res->send(header);
+            return;
         }
         status.res = std::make_shared<HttpRes>(header, [this, &status, id]() mutable{
             auto len = status.res->cap();
@@ -148,9 +174,7 @@ void Proxy2::ResProc(uint32_t id, HttpResHeader* header) {
             }
         });
         status.req->response(status.res);
-
     }else{
-        delete header;
         LOGD(DHTTP2, "<proxy2> ResProc not found id: %d\n", id);
         Reset(id, HTTP2_ERR_STREAM_CLOSED);
     }
@@ -192,7 +216,7 @@ void Proxy2::EndProc(uint32_t id) {
         assert((status.flags & HTTP_RES_EOF) == 0);
         assert((status.flags & HTTP_RES_COMPLETED) == 0);
         status.flags |= HTTP_RES_COMPLETED;
-        status.res->send((const void*)nullptr,0);
+        status.res->send(nullptr);
     }
 }
 
@@ -212,7 +236,7 @@ void Proxy2::Clean(uint32_t id, ReqStatus& status, uint32_t errcode){
     if(status.flags & HTTP_CLOSED_F){
         //do nothing.
     }else if(status.res){
-        status.res->trigger(errcode ? Channel::CHANNEL_ABORT : Channel::CHANNEL_CLOSED);
+        status.res->send(errcode ? ChannelMessage::CHANNEL_ABORT : ChannelMessage::CHANNEL_CLOSED);
     }else{
         status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[internal error]]"));
     }
@@ -289,14 +313,14 @@ void Proxy2::ShutdownProc(uint32_t id) {
     if(status.flags & HTTP_REQ_EOF){
         Clean(id, status, HTTP2_ERR_STREAM_CLOSED);
     }else {
-        status.res->trigger(Channel::CHANNEL_SHUTDOWN);
+        status.res->send(ChannelMessage::CHANNEL_SHUTDOWN);
     }
 }
 
 void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
     uint32_t id = GetSendId();
     assert((http2_flag & HTTP2_FLAG_GOAWAYED) == 0);
-    LOGD(DHTTP2, "proxy2 request: %s [%d]\n", req->header->geturl().c_str(), id);
+    LOGD(DHTTP2, "<proxy2> request: %s [%d]\n", req->header->geturl().c_str(), id);
     statusmap[id] = ReqStatus{
        req,
        nullptr,
@@ -306,39 +330,31 @@ void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
     };
     ReqStatus& status = statusmap[id];
 
-    Http2_header* const header = (Http2_header *)p_malloc(BUF_LEN);
+    auto buff = std::make_shared<Block>(BUF_LEN);
+    Http2_header* const header = (Http2_header *)buff->data();
     memset(header, 0, sizeof(*header));
     header->type = HTTP2_STREAM_HEADERS;
     header->flags = HTTP2_END_HEADERS_F;
     set32(header->id, id);
     size_t len = hpack_encoder.PackHttp2Req(req->header, header+1, BUF_LEN - sizeof(Http2_header));
     set24(header->length, len);
-    PushFrame(header);
+    PushFrame(Buffer{buff, len + sizeof(Http2_header)});
 
-    req->setHandler([this, &status, id](Channel::signal s){
-        assert(statusmap.count(id));
-        switch(s){
-        case Channel::CHANNEL_SHUTDOWN:
-            assert((status.flags & HTTP_RES_EOF) == 0);
-            status.flags |= HTTP_REQ_EOF;
-            if(http2_flag & HTTP2_SUPPORT_SHUTDOWN) {
-                LOGD(DHTTP2, "<proxy2> send shutdown frame: %d\n", id);
-                Shutdown(id);
-            }else{
-                LOGD(DHTTP2, "<proxy2> send reset frame: %d\n", id);
-                Clean(id, status, HTTP2_ERR_CANCEL);
-            }
-            break;
-        case Channel::CHANNEL_CLOSED:
-            status.flags |= HTTP_CLOSED_F;
-            return Clean(id, status, HTTP2_ERR_NO_ERROR);
-        case Channel::CHANNEL_ABORT:
-            status.flags |= HTTP_CLOSED_F;
-            return Clean(id, status, HTTP2_ERR_INTERNAL_ERROR);
+    req->attach([this, id](ChannelMessage& msg){
+        switch(msg.type){
+        case ChannelMessage::CHANNEL_MSG_HEADER:
+            LOGD(DHTTP2, "<proxy2> ignore header for req\n");
+            return 1;
+        case ChannelMessage::CHANNEL_MSG_DATA:
+            msg.data.id = id;
+            Recv(std::move(msg.data));
+            return 1;
+        case ChannelMessage::CHANNEL_MSG_SIGNAL:
+            Handle(id, msg.signal);
+            return 0;
         }
-    });
-    req->attach((Channel::recv_const_t)std::bind(&Proxy2::Send, this, id, _1, _2),
-            [this, &status]{return Min(status.remotewinsize, this->remotewinsize);});
+        return 0;
+    }, [this, &status]{return Min(status.remotewinsize, this->remotewinsize);});
 }
 
 void Proxy2::init(std::shared_ptr<HttpReq> req) {
@@ -360,15 +376,15 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
     }
 }
 
-std::list<buff_block>::insert_iterator Proxy2::queue_head() {
+std::list<Buffer>::insert_iterator Proxy2::queue_head() {
     return rwer->buffer_head();
 }
 
-std::list<buff_block>::insert_iterator Proxy2::queue_end() {
+std::list<Buffer>::insert_iterator Proxy2::queue_end() {
     return rwer->buffer_end();
 }
 
-void Proxy2::queue_insert(std::list<buff_block>::insert_iterator where, buff_block&& wb) {
+void Proxy2::queue_insert(std::list<Buffer>::insert_iterator where, Buffer&& wb) {
     rwer->buffer_insert(where, std::move(wb));
 }
 

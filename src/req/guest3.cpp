@@ -22,7 +22,7 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
         Init();
     }))
 {
-    rwer->SetReadCB([this](buff_block& bb){
+    rwer->SetReadCB([this](Buffer& bb){
         if(bb.len == 0){
             //fin
             uint64_t id = bb.id;
@@ -35,19 +35,17 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
             LOGD(DHTTP3, "<guest3> [%" PRIu64 "]: end of stream\n", id);
             ReqStatus& status = statusmap[id];
             assert((status.flags & HTTP_REQ_EOF) == 0);
-            status.req->send((const void*)nullptr, 0);
+            status.req->send(nullptr);
             status.flags |= HTTP_REQ_COMPLETED;
             if(status.flags & HTTP_RES_COMPLETED) {
                 Clean(id, status, NOERROR);
             }
             return;
         }
-        const char* data = (const char*)bb.buff;
         size_t ret = 0;
-        while((bb.offset < bb.len) && (ret = Http3_Proc((uchar*)data + bb.offset, bb.len-bb.offset, bb.id))){
-            bb.offset += ret;
+        while((bb.len > 0) && (ret = Http3_Proc((uchar*) bb.data(), bb.len, bb.id))){
+            bb.trunc(ret);
         }
-        assert(bb.offset <= bb.len);
     });
     rwer->SetWriteCB([this](size_t){
         auto statusmap_copy = statusmap;
@@ -86,27 +84,50 @@ void Guest3::Error(int ret, int code){
     deleteLater(ret);
 }
 
-void Guest3::Send(uint64_t id, const void* buff, size_t size){
-    assert(statusmap.count(id));
-    ReqStatus& status = statusmap[id];
+void Guest3::Recv(Buffer&& bb){
+    assert(statusmap.count(bb.id));
+    ReqStatus& status = statusmap[bb.id];
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
     assert((status.flags & HTTP_RES_EOF) == 0);
-    if(size == 0){
+    if(bb.len == 0){
         status.flags |= HTTP_RES_COMPLETED;
-        PushFrame(id, nullptr, 0);
-        LOGD(DHTTP3, "<guest3> %" PRIu32" send data [%" PRIu64"]: EOF\n",
-             status.req->header->request_id, id);
+        LOGD(DHTTP3, "<guest3> %" PRIu32" recv data [%" PRIu64"]: EOF\n",
+             status.req->header->request_id, bb.id);
+        PushFrame({nullptr, bb.id});
     }else{
-        PushData(id, buff, size);
-        LOGD(DHTTP3, "<guest3> %" PRIu32 " send data [%" PRIu64"]: %zu\n",
-             status.req->header->request_id, id, size);
+        LOGD(DHTTP3, "<guest3> %" PRIu32 " recv data [%" PRIu64"]: %zu\n",
+             status.req->header->request_id, bb.id, bb.len);
+        PushData(std::move(bb));
     }
 }
 
-void Guest3::ReqProc(uint64_t id, HttpReqHeader* header) {
+void Guest3::Handle(uint64_t id, ChannelMessage::Signal s) {
+    assert(statusmap.count(id));
+    ReqStatus& status = statusmap[id];
+    switch(s){
+    case ChannelMessage::CHANNEL_SHUTDOWN:
+        assert((status.flags & HTTP_REQ_EOF) == 0);
+        status.flags |= HTTP_RES_EOF;
+        if(http3_flag & HTTP3_SUPPORT_SHUTDOWN) {
+            LOGD(DHTTP3, "<guest3> send shutdown frame: %" PRIu64"\n", id);
+            Shutdown(id);
+        }else{
+            LOGD(DHTTP3, "<guest3> send reset frame: %" PRIu64"\n", id);
+            Clean(id, status, HTTP3_ERR_REQUEST_CANCELLED);
+        }
+        break;
+    case ChannelMessage::CHANNEL_CLOSED:
+        status.flags |= HTTP_CLOSED_F;
+        return Clean(id, status, NOERROR);
+    case ChannelMessage::CHANNEL_ABORT:
+        status.flags |= HTTP_CLOSED_F;
+        return Clean(id, status, HTTP3_ERR_INTERNAL_ERROR);
+    }
+}
+
+void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     LOGD(DHTTP3, "<guest3> %" PRIu32 " (%s) ReqProc %s\n", header->request_id, getsrc(), header->geturl().c_str());
     if(statusmap.count(id)){
-        delete header;
         LOGD(DHTTP3, "<guest3> ReqProc dup id: %" PRIu64"\n", id);
         Reset(id, HTTP3_ERR_STREAM_CREATION_ERROR);
         return;
@@ -143,46 +164,38 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
     uint64_t id = (uint64_t)index;
     assert(statusmap.count(id));
     ReqStatus& status = statusmap[id];
-    LOGD(DHTTP3, "<guest3> get response [%" PRIu64"]: %s\n", id, res->header->status);
-    HttpLog(getsrc(), status.req, res);
-    res->header->del("Transfer-Encoding");
-    res->header->del("Connection");
+    assert(status.res == nullptr);
     status.res = res;
+    res->attach([this, id](ChannelMessage& msg){
+        switch(msg.type){
+        case ChannelMessage::CHANNEL_MSG_HEADER: {
+            assert(statusmap.count(id));
+            ReqStatus &status = statusmap[id];
+            auto header = std::dynamic_pointer_cast<HttpResHeader>(msg.header);
+            LOGD(DHTTP3, "<guest3> get response [%" PRIu64"]: %s\n", id, header->status);
+            HttpLog(getsrc(), status.req->header, header);
+            header->del("Transfer-Encoding");
+            header->del("Connection");
 
-    void* buff = p_malloc(BUF_LEN);
-    memset(buff, 0, BUF_LEN);
-    size_t len = qpack_encoder.PackHttp3Res(res->header, buff, BUF_LEN);
-    size_t pre = variable_encode_len(HTTP3_STREAM_HEADERS) + variable_encode_len(len);
-    buff =  p_move(buff, -(char)pre);
-    char* p = (char*)buff;
-    p += variable_encode(p, HTTP3_STREAM_HEADERS);
-    p += variable_encode(p, len);
-    PushFrame(id, buff, p - (char*)buff + len);
-
-    res->setHandler([this, &status, id](Channel::signal s){
-        assert(statusmap.count(id));
-        switch(s){
-        case Channel::CHANNEL_SHUTDOWN:
-            assert((status.flags & HTTP_REQ_EOF) == 0);
-            status.flags |= HTTP_RES_EOF;
-            if(http3_flag & HTTP3_SUPPORT_SHUTDOWN) {
-                LOGD(DHTTP3, "<guest3> send shutdown frame: %" PRIu64"\n", id);
-                Shutdown(id);
-            }else{
-                LOGD(DHTTP3, "<guest3> send reset frame: %" PRIu64"\n", id);
-                Clean(id, status, HTTP3_ERR_REQUEST_CANCELLED);
-            }
-            break;
-        case Channel::CHANNEL_CLOSED:
-            status.flags |= HTTP_CLOSED_F;
-            return Clean(id, status, NOERROR);
-        case Channel::CHANNEL_ABORT:
-            status.flags |= HTTP_CLOSED_F;
-            return Clean(id, status, HTTP3_ERR_INTERNAL_ERROR);
+            auto buff = std::make_shared<Block>(BUF_LEN);
+            size_t len = qpack_encoder.PackHttp3Res(header, buff->data(), BUF_LEN);
+            size_t pre = variable_encode_len(HTTP3_STREAM_HEADERS) + variable_encode_len(len);
+            char *p = (char *) buff->trunc(-pre);
+            p += variable_encode(p, HTTP3_STREAM_HEADERS);
+            p += variable_encode(p, len);
+            PushFrame({buff, len + pre, id});
+            return 1;
         }
-    });
-    res->attach((Channel::recv_const_t)std::bind(&Guest3::Send, this, id, _1, _2),
-                [this, id]{return rwer->cap(id) - 9;});
+        case ChannelMessage::CHANNEL_MSG_DATA:
+            msg.data.id = id;
+            Recv(std::move(msg.data));
+            return 1;
+        case ChannelMessage::CHANNEL_MSG_SIGNAL:
+            Handle(id, msg.signal);
+            return 0;
+        }
+        return 0;
+    }, [this, id]{return rwer->cap(id) - 9;});
 }
 
 void Guest3::Clean(uint64_t id, ReqStatus &status, uint32_t errcode) {
@@ -192,7 +205,7 @@ void Guest3::Clean(uint64_t id, ReqStatus &status, uint32_t errcode) {
         Reset(id, errcode);
     }
     if((status.flags & HTTP_CLOSED_F) == 0){
-        status.req->trigger(errcode ? Channel::CHANNEL_ABORT : Channel::CHANNEL_CLOSED);
+        status.req->send(errcode ? ChannelMessage::CHANNEL_ABORT : ChannelMessage::CHANNEL_CLOSED);
     }
     statusmap.erase(id);
 }
@@ -218,9 +231,9 @@ void Guest3::GoawayProc(uint64_t id) {
     return deleteLater(NOERROR);
 }
 
-void Guest3::PushFrame(uint64_t id, void* buff, size_t len) {
-    assert((int)len <= rwer->cap(id));
-    rwer->buffer_insert(rwer->buffer_end(), buff_block{buff, len, 0, id});
+void Guest3::PushFrame(Buffer&& bb) {
+    assert((int)bb.len <= rwer->cap(bb.id));
+    rwer->buffer_insert(rwer->buffer_end(), std::move(bb));
 }
 
 uint64_t Guest3::CreateUbiStream() {
@@ -240,7 +253,7 @@ void Guest3::ErrProc(int errcode) {
 void Guest3::deleteLater(uint32_t errcode){
     for(auto& i: statusmap){
         if((i.second.flags & HTTP_CLOSED_F) == 0) {
-            i.second.req->trigger(errcode ? Channel::CHANNEL_ABORT : Channel::CHANNEL_CLOSED);
+            i.second.req->send(errcode ? ChannelMessage::CHANNEL_ABORT : ChannelMessage::CHANNEL_CLOSED);
         }
         i.second.flags |= HTTP_CLOSED_F;
     }

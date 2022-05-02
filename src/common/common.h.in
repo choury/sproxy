@@ -247,7 +247,6 @@ struct Destination{
 };
 
 #define STRATEGY "Strategy"
-#define PREPTR
 
 #cmakedefine01 Backtrace_FOUND
 #if Backtrace_FOUND

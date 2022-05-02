@@ -10,7 +10,7 @@ static unsigned char in[16384];
 GzipTest::GzipTest() {
     rwer = std::make_shared<FullRWer>([this](int ret, int code) {
         LOGE("gzip_test error: %d/%d\n", ret, code);
-        res->trigger(Channel::CHANNEL_ABORT);
+        res->send(ChannelMessage::CHANNEL_ABORT);
         deleteLater(ret);
     });
 
@@ -61,14 +61,18 @@ static size_t parseSize(std::string size) {
 }
 
 void GzipTest::request(std::shared_ptr<HttpReq> req, Requester*) {
-    req->setHandler([this](Channel::signal s){
-        if(s == Channel::CHANNEL_SHUTDOWN){
-            res->trigger(Channel::CHANNEL_ABORT);
+    req->attach([this](ChannelMessage& msg){
+        if(msg.type != ChannelMessage::CHANNEL_MSG_SIGNAL){
+            return 1;
+        }
+        if(msg.signal == ChannelMessage::CHANNEL_SHUTDOWN){
+            res->send(ChannelMessage::CHANNEL_ABORT);
         }
         deleteLater(PEER_LOST_ERR);
-    });
+        return 0;
+    }, []{return 0;});
     this->req = req;
-    HttpResHeader *header = UnpackHttpRes(H200, sizeof(H200));
+    std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H200, sizeof(H200));
     header->set("Content-Type", "application/octet-stream");
     header->set("Pragma", "no-cache");
 
@@ -99,14 +103,14 @@ void GzipTest::request(std::shared_ptr<HttpReq> req, Requester*) {
     req->response(this->res);
 }
 
-void GzipTest::gzipreadHE(buff_block&) {
+void GzipTest::gzipreadHE(Buffer&) {
     if(res == nullptr){
         return;
     }
     if (left == 0) {
         (void)deflateEnd(&strm);
-        res->send((const void*)nullptr, 0);
-        res->trigger(Channel::CHANNEL_CLOSED);
+        res->send(nullptr);
+        res->send(ChannelMessage::CHANNEL_CLOSED);
         deleteLater(NOERROR);
         rwer->delEvents(RW_EVENT::READ);
         return;
@@ -119,8 +123,8 @@ void GzipTest::gzipreadHE(buff_block&) {
         return;
     }
 
-    unsigned char * out = (unsigned char*)malloc(chunk);
-    strm.next_out = out;
+    auto buff = std::make_shared<Block>(chunk);
+    strm.next_out = (unsigned char*)buff->data();
     strm.avail_out = chunk;
     /* run deflate() on input until output buffer not full, finish
        compression if all source Has been read in */
@@ -132,21 +136,20 @@ void GzipTest::gzipreadHE(buff_block&) {
         assert(ret != Z_STREAM_ERROR);  /* state not clobbered */
     } while (strm.avail_out && left);
 
-    res->send(out, chunk - strm.avail_out);
-    free(out);
+    res->send({buff, chunk - (size_t)strm.avail_out});
     if (strm.avail_out == 0) {
         rwer->delEvents(RW_EVENT::READ);
     }
 }
 
-void GzipTest::rawreadHE(buff_block&) {
+void GzipTest::rawreadHE(Buffer&) {
     if(res == nullptr){
         return;
     }
     if (left == 0) {
         (void)deflateEnd(&strm);
-        res->send((const void*)nullptr, 0);
-        res->trigger(Channel::CHANNEL_CLOSED);
+        res->send(nullptr);
+        res->send(ChannelMessage::CHANNEL_CLOSED);
         deleteLater(NOERROR);
         rwer->delEvents(RW_EVENT::READ);
         return;
@@ -160,9 +163,7 @@ void GzipTest::rawreadHE(buff_block&) {
     }
 
     size_t len = Min(chunk, left);
-    unsigned char* const out = (unsigned char *)malloc(len);
-    res->send(out, len);
-    free(out);
+    res->send(Buffer{len});
     left -= len;
     if (left) {
         rwer->delEvents(RW_EVENT::READ);

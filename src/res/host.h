@@ -12,7 +12,7 @@ class Host:public Responser, public HttpRequester {
     struct ReqStatus{
         std::shared_ptr<HttpReq> req;
         std::shared_ptr<HttpRes> res;
-        uint     flags;
+        uint     flags = 0;
     } status{};
 
     struct Destination Server;
@@ -22,14 +22,15 @@ protected:
     virtual void deleteLater(uint32_t errcode) override;
     virtual void Error(int ret, int code);
     
-    virtual void ResProc(HttpResHeader* res)override;
+    virtual void ResProc(std::shared_ptr<HttpResHeader> res)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
     virtual void EndProc() override;
     virtual void ErrProc() override;
 
     virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
     virtual void connected();
-    void Send(PREPTR void* buff, size_t size);
+    void Recv(Buffer&& bb);
+    void Handle(ChannelMessage::Signal s);
     void reply();
 public:
     explicit Host(const Destination* dest);

@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
             new Http_server<Guest>(svsk_http, nullptr);
         }
     }
-    if(opt.socket){
+    if(opt.socket && strlen(opt.socket) > 0){
         int svsk_cli = ListenUnix(opt.socket);
         if(svsk_cli < 0){
             return -1;

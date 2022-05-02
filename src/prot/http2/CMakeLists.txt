@@ -7,4 +7,4 @@ set(http2_src
         hpack.cpp
         )
 
-add_library(http2 ${http2_src})
+target_sources(prot PRIVATE ${http2_src})

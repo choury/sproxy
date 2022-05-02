@@ -1,6 +1,6 @@
 #include "ip_pack.h"
 #include "common/common.h"
-#include "misc/util.h"
+#include "misc/buffer.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -93,38 +93,40 @@ static uint16_t checksum16(uint8_t *addr, int len) {
 }
 
 
-static uint16_t ip_checksum(const ip* ip_hdr, uint8_t protocol, void* data, size_t len){
+static uint16_t ip_checksum(const ip* ip_hdr, uint8_t protocol, Buffer& bb){
     if(ip_hdr == nullptr){
         return 0;
     }
 
+    size_t len = bb.len;
     /* pseudo header used for checksumming */
-    pseudo_hdr *phdr = (struct pseudo_hdr *)p_move(data, -(char)sizeof(pseudo_hdr));
+    pseudo_hdr *phdr = (struct pseudo_hdr *)bb.trunc(-(int)sizeof(pseudo_hdr));
     phdr->src = ip_hdr->ip_src;
     phdr->dst = ip_hdr->ip_dst;
     phdr->mbz = 0;
     phdr->proto = protocol;
     phdr->len = htons(len);
     /* tcp checksum */
-    uint16_t cksum = checksum16((uint8_t*)phdr, len  + sizeof(pseudo_hdr));
-    p_move(phdr, sizeof(pseudo_hdr));
+    uint16_t cksum = checksum16((uint8_t*)phdr, bb.len);
+    bb.trunc(sizeof(pseudo_hdr));
     return htons(cksum);
 }
 
-static uint16_t ip6_checksum(const ip6_hdr* ip_hdr, uint8_t protocol, void* data, size_t len){
+static uint16_t ip6_checksum(const ip6_hdr* ip_hdr, uint8_t protocol, Buffer& bb){
     if(ip_hdr == nullptr){
         return 0;
     }
+    size_t len = bb.len;
     /* pseudo header used for checksumming */
-    pseudo_hdr6 *phdr = (struct pseudo_hdr6 *)p_move(data, -(char)sizeof(pseudo_hdr6));
+    pseudo_hdr6 *phdr = (struct pseudo_hdr6 *)bb.trunc(-(char) sizeof(pseudo_hdr6));;
     phdr->src = ip_hdr->ip6_src;
     phdr->dst = ip_hdr->ip6_dst;
     memset(phdr->zero, 0, sizeof(phdr->zero));
     phdr->proto = protocol;
     phdr->len = htonl(len);
     /* tcp checksum */
-    uint16_t cksum = checksum16((uint8_t*)phdr, len  + sizeof(pseudo_hdr6));
-    p_move(phdr, sizeof(pseudo_hdr6));
+    uint16_t cksum = checksum16((uint8_t*)phdr, bb.len);
+    bb.trunc(sizeof(pseudo_hdr6));
     return htons(cksum);
 }
 
@@ -196,14 +198,11 @@ uint16_t Icmp::getseq() const {
     return ntohs(icmp_hdr.un.echo.sequence);
 }
 
-char* Icmp::build_packet(void* data, size_t& len) {
-    assert(data);
-    len = len + sizeof(icmp_hdr);
-    char* packet = (char *)p_move(data, -(char)sizeof(icmp_hdr));
+void Icmp::build_packet(Buffer& bb) {
+    char* packet = (char *)bb.trunc(-(char) sizeof(icmp_hdr));
     icmp_hdr.checksum = 0;
     memcpy(packet, &icmp_hdr, sizeof(icmp_hdr));
-    ((icmp *)packet)->icmp_cksum = htons(checksum16((uint8_t*) packet, len));
-    return packet;
+    ((icmp *)packet)->icmp_cksum = htons(checksum16((uint8_t*) packet, bb.len));
 }
 
 Icmp6::Icmp6() {
@@ -273,14 +272,11 @@ uint16_t Icmp6::getseq() const {
     return ntohs(icmp_hdr.icmp6_seq);
 }
 
-char* Icmp6::build_packet(const ip6_hdr* ip_hdr, void* data, size_t& len) {
-    assert(data);
-    len = len + sizeof(icmp6_hdr);
-    char* packet = (char *)p_move(data, -(char)sizeof(icmp_hdr));
+void Icmp6::build_packet(const ip6_hdr* ip_hdr, Buffer& bb) {
+    char* packet = (char *) bb.trunc(-(char) sizeof(icmp_hdr));
     icmp_hdr.icmp6_cksum = 0;
     memcpy(packet, &icmp_hdr, sizeof(icmp_hdr));
-    ((icmp6_hdr *)packet)->icmp6_cksum = ip6_checksum(ip_hdr, IPPROTO_ICMPV6, packet, len);
-    return packet;
+    ((icmp6_hdr *)packet)->icmp6_cksum = ip6_checksum(ip_hdr, IPPROTO_ICMPV6, bb);
 }
 
 Tcp::Tcp(const char* packet, size_t len){
@@ -446,48 +442,41 @@ Tcp *Tcp::setsack(const struct Sack *sack) {
 }
 
 
-char * Tcp::build_packet(const ip* ip_hdr, void* data, size_t& len) {
+void Tcp::build_packet(const ip* ip_hdr, Buffer& bb) {
     if (tcpoptlen % 4) {
         size_t length = UpTo(tcpoptlen, 4);
         tcpopt = (char *)realloc(tcpopt, length);
         memset(tcpopt + tcpoptlen, TCPOPT_NOP, length - tcpoptlen);
         tcpoptlen = length;
     }
-    assert(data);
 
-    len = sizeof(tcphdr) + tcpoptlen + len;
     tcp_hdr.th_off = (sizeof(tcphdr) + tcpoptlen) >> 2;
     tcp_hdr.th_sum = 0;
 
-    char* packet = (char *) p_move(data, -(char)(sizeof(tcphdr)+tcpoptlen));
+    char* packet = (char *) bb.trunc(-(char) (sizeof(tcphdr) + tcpoptlen));
     memcpy(packet, &tcp_hdr, sizeof(tcphdr));
     if (tcpoptlen > 0)
         memcpy(packet + sizeof(tcphdr), tcpopt, tcpoptlen); //copy tcp header option to packet
 
-    ((tcphdr *)packet)->th_sum = ip_checksum(ip_hdr, IPPROTO_TCP, packet, len);
-    return packet;
+    ((tcphdr *)packet)->th_sum = ip_checksum(ip_hdr, IPPROTO_TCP, bb);
 }
 
-char * Tcp::build_packet(const ip6_hdr* ip_hdr, void* data, size_t& len) {
+void Tcp::build_packet(const ip6_hdr* ip_hdr, Buffer& bb) {
     if (tcpoptlen % 4) {
         size_t length = UpTo(tcpoptlen, 4);
         tcpopt = (char *)realloc(tcpopt, length);
         memset(tcpopt + tcpoptlen, TCPOPT_NOP, length - tcpoptlen);
         tcpoptlen = length;
     }
-    assert(data);
-
-    len = sizeof(tcphdr) + tcpoptlen + len;
     tcp_hdr.th_off = (sizeof(tcphdr) + tcpoptlen) >> 2;
     tcp_hdr.th_sum = 0;
 
-    char* packet = (char *) p_move(data, -(char)(sizeof(tcphdr)+tcpoptlen));
+    char* packet = (char *) bb.trunc(-(char) (sizeof(tcphdr) + tcpoptlen));
     memcpy(packet, &tcp_hdr, sizeof(tcphdr));
     if (tcpoptlen > 0)
         memcpy(packet + sizeof(tcphdr), tcpopt, tcpoptlen); //copy tcp header option to packet
 
-    ((tcphdr *)packet)->th_sum = ip6_checksum(ip_hdr, IPPROTO_TCP, packet, len);
-    return packet;
+    ((tcphdr *)packet)->th_sum = ip6_checksum(ip_hdr, IPPROTO_TCP, bb);
 }
 
 
@@ -717,36 +706,26 @@ Udp::Udp(uint16_t sport, uint16_t dport) {
 }
 
 
-char* Udp::build_packet(const ip* ip_hdr, void* data, size_t& len) {
-    assert(data);
-    
-    len =  sizeof(udphdr) + len;
-
-    udp_hdr.uh_ulen = htons(len);
+void Udp::build_packet(const ip* ip_hdr, Buffer& bb) {
+    udp_hdr.uh_ulen = htons(bb.len + sizeof(udphdr));
     udp_hdr.uh_sum = 0;
-    char* packet = (char *)p_move(data, -(char)sizeof(udphdr));
+    char* packet = (char *) bb.trunc(-(char) sizeof(udphdr));
     memcpy(packet, &udp_hdr, sizeof(udphdr));
 
 #ifdef UDP_CHECKSUM
-    ((udphdr *)packet)->uh_sum = ip_checksum(ip_hdr, IPPROTO_UDP, packet, len);
+    ((udphdr *)packet)->uh_sum = ip_checksum(ip_hdr, IPPROTO_UDP, bb);
 #endif
-    return packet;
 }
 
-char * Udp::build_packet(const ip6_hdr* ip_hdr, void* data, size_t& len) {
-    assert(data);
-
-    len =  sizeof(udphdr) + len;
-
-    udp_hdr.uh_ulen = htons(len);
+void Udp::build_packet(const ip6_hdr* ip_hdr, Buffer& bb) {
+    udp_hdr.uh_ulen = htons(bb.len + sizeof(udphdr));
     udp_hdr.uh_sum = 0;
-    char* packet = (char *)p_move(data, -(char)sizeof(udphdr));
+    char* packet = (char *) bb.trunc(-(char) sizeof(udphdr));
     memcpy(packet, &udp_hdr, sizeof(udphdr));
 
 #ifdef UDP_CHECKSUM
-    ((udphdr *)packet)->uh_sum = ip6_checksum(ip_hdr, IPPROTO_UDP, packet, len);
+    ((udphdr *)packet)->uh_sum = ip6_checksum(ip_hdr, IPPROTO_UDP, bb);
 #endif
-    return packet;
 }
 
 
@@ -831,10 +810,6 @@ void Ip::dump() const{
     default:
         break;
     }
-}
-
-char* Ip::build_packet(const void* data, size_t &len){
-    return build_packet(p_memdup(data, len), len);
 }
 
 Ip::~Ip() {
@@ -966,31 +941,25 @@ Ip4::Ip4(uint8_t type, const sockaddr_storage* src, const sockaddr_storage* dst)
 {
 }
 
-char* Ip4::build_packet(void* data, size_t &len){
-    char* packet = nullptr;
+void Ip4::build_packet(Buffer& bb){
     switch(type){
     case IPPROTO_ICMP:
-        packet = icmp->build_packet(data, len);
+        icmp->build_packet(bb);
         break;
     case IPPROTO_TCP:
-        packet = tcp->build_packet(&hdr, data, len);
+        tcp->build_packet(&hdr, bb);
         break;
     case IPPROTO_UDP:
-        packet = udp->build_packet(&hdr, data, len);
+        udp->build_packet(&hdr, bb);
         break;
     }
-    if(packet == nullptr){
-        abort();
-    }
-    packet = (char *)p_move(packet, -(int)sizeof(ip));
-    len += sizeof(ip);
+    char* packet = (char *) bb.trunc(-(int) sizeof(ip));
 
-    hdr.ip_len = htons(len);
+    hdr.ip_len = htons(bb.len);
     hdr.ip_sum = 0;
     memcpy(packet, &hdr, sizeof(ip));
 
     ((ip*)packet)->ip_sum = htons(checksum16((uint8_t*)packet, sizeof(struct ip)));
-    return packet;
 }
 
 
@@ -1153,28 +1122,22 @@ void Ip6::print() const {
 }
 
 
-char* Ip6::build_packet(void* data, size_t& len) {
-    char* packet = nullptr;
+void Ip6::build_packet(Buffer& bb) {
     switch(type){
     case IPPROTO_ICMPV6:
-        packet = icmp6->build_packet(&hdr, data, len);
+        icmp6->build_packet(&hdr, bb);
         break;
     case IPPROTO_TCP:
-        packet = tcp->build_packet(&hdr, data, len);
+        tcp->build_packet(&hdr, bb);
         break;
     case IPPROTO_UDP:
-        packet = udp->build_packet(&hdr, data, len);
+        udp->build_packet(&hdr, bb);
         break;
     }
-    if(packet == nullptr){
-        abort();
-    }
-    packet = (char *)p_move(packet, -(int)sizeof(ip6_hdr));
-
+    size_t len = bb.len;
+    char* packet = (char *)bb.trunc(-(int) sizeof(ip6_hdr));
     hdr.ip6_plen = htons(len);
     memcpy(packet, &hdr, sizeof(ip6_hdr));
-    len += sizeof(ip6_hdr);
-    return packet;
 }
 
 

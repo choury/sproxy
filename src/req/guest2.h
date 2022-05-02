@@ -24,7 +24,7 @@ protected:
     virtual void PingProc(const Http2_header *header)override;
 #endif
     virtual void GoawayProc(const Http2_header *header)override;
-    virtual void ReqProc(uint32_t id, HttpReqHeader* req)override;
+    virtual void ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> req)override;
     virtual void DataProc(uint32_t id, const void* data, size_t len)override;
     virtual void EndProc(uint32_t id) override;
     virtual void RstProc(uint32_t id, uint32_t errcode)override;
@@ -33,11 +33,12 @@ protected:
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
     virtual void ShutdownProc(uint32_t id)override;
 
-    virtual std::list<buff_block>::insert_iterator queue_head() override;
-    virtual std::list<buff_block>::insert_iterator queue_end() override;
-    virtual void queue_insert(std::list<buff_block>::insert_iterator where, buff_block&& wb) override;
+    virtual std::list<Buffer>::insert_iterator queue_head() override;
+    virtual std::list<Buffer>::insert_iterator queue_end() override;
+    virtual void queue_insert(std::list<Buffer>::insert_iterator where, Buffer&& wb) override;
 
-    void Send(uint32_t id, const void* buff, size_t size);
+    void Recv(Buffer&& bb);
+    void Handle(uint32_t id, ChannelMessage::Signal signal);
     void Clean(uint32_t id, ReqStatus& status, uint32_t errcode);
     static bool wantmore(const ReqStatus& status);
 public:

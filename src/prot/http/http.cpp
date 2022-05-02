@@ -102,7 +102,7 @@ size_t HttpResponser::HeaderProc(const char* buffer, size_t len) {
     if (const char* headerend = strnstr(buffer, CRLF CRLF, len)) {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - buffer;
-        HttpReqHeader* req = UnpackHttpReq(buffer, headerlen);
+        std::shared_ptr<HttpReqHeader> req = UnpackHttpReq(buffer, headerlen);
         if(req == nullptr){
             ErrProc();
             return 0;
@@ -134,7 +134,7 @@ size_t HttpRequester::HeaderProc(const char* buffer, size_t len) {
     if (const char* headerend = strnstr(buffer, CRLF CRLF, len)) {
         headerend += strlen(CRLF CRLF);
         size_t headerlen = headerend - buffer;
-        HttpResHeader* res = UnpackHttpRes(buffer, headerlen);
+        std::shared_ptr<HttpResHeader> res = UnpackHttpRes(buffer, headerlen);
         if(res == nullptr){
             ErrProc();
             return 0;
@@ -172,7 +172,7 @@ size_t HttpRequester::HeaderProc(const char* buffer, size_t len) {
     }
 }
 
-HttpReqHeader* UnpackHttpReq(const void* header, size_t len){
+std::shared_ptr<HttpReqHeader> UnpackHttpReq(const void* header, size_t len){
     if(header == nullptr){
         return nullptr;
     }
@@ -219,10 +219,10 @@ HttpReqHeader* UnpackHttpReq(const void* header, size_t len){
         headers.emplace(":authority", headers.find("Host")->second);
     }
     headers.erase("Host");
-    return new HttpReqHeader(std::move(headers));
+    return std::make_shared<HttpReqHeader>(std::move(headers));
 }
 
-HttpResHeader* UnpackHttpRes(const void* header, size_t len) {
+std::shared_ptr<HttpResHeader> UnpackHttpRes(const void* header, size_t len) {
     if(header == nullptr){
         return nullptr;
     }
@@ -252,7 +252,7 @@ HttpResHeader* UnpackHttpRes(const void* header, size_t len) {
         std::string value = ltrim(std::string(sp + 1));
         headers.emplace(name, value);
     }
-    return new HttpResHeader(std::move(headers));
+    return std::make_shared<HttpResHeader>(std::move(headers));
 }
 
 static std::string toUpHeader(const std::string &s){
@@ -266,7 +266,7 @@ static std::string toUpHeader(const std::string &s){
     return str;
 }
 
-size_t PackHttpReq(const HttpReqHeader *req, void* data, size_t size){
+size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t size){
     if(!req->should_proxy && (req->ismethod("CONNECT") || req->ismethod("SEND"))){
         //本地请求，自己处理connect和send方法
         return 0;
@@ -319,7 +319,7 @@ size_t PackHttpReq(const HttpReqHeader *req, void* data, size_t size){
     return len;
 }
 
-size_t PackHttpRes(const HttpResHeader *res, void* data, size_t size) {
+size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t size) {
     char* const buff = (char *)data;
     size_t len = 0;
     if(res->get("Content-Length") || res->get("Transfer-Encoding")

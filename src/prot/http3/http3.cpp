@@ -7,10 +7,12 @@
 #include <inttypes.h>
 #include <assert.h>
 
-Http3Base::Http3Base(): qpack_encoder([this](PREPTR void* ins, size_t len){
-    return PushFrame(qpackeid_local, ins, len);
-}), qpack_decoder([this](PREPTR void* ins, size_t len){
-    return PushFrame(qpackdid_local, ins, len);
+Http3Base::Http3Base(): qpack_encoder([this](Buffer&& bb){
+    bb.id = qpackeid_local;
+    return PushFrame(std::move(bb));
+}), qpack_decoder([this](Buffer&& bb){
+    bb.id = qpackdid_local;
+    return PushFrame(std::move(bb));
 }) {
 }
 
@@ -132,23 +134,25 @@ void Http3Base::Init() {
 
     size_t len = 2 + variable_encode_len(1 + variable_encode_len(BUF_LEN))
             + 1 + variable_encode_len(BUF_LEN);
-    char* buff = (char*)p_malloc(len);
-    char* pos = buff;
+    auto buff = std::make_shared<Block>(len);
+    char* pos = (char*)buff->data();
     pos += variable_encode(pos, HTTP3_STREAM_TYPE_CONTROL);
     pos += variable_encode(pos, HTTP3_STREAM_SETTINGS);
     pos += variable_encode(pos, 1 + variable_encode_len(BUF_LEN));
     pos += variable_encode(pos, HTTP3_SETTING_MAX_FIELD_SECTION_SIZE);
     pos += variable_encode(pos, BUF_LEN);
-    assert(pos - buff == (int)len);
-    PushFrame(ctrlid_local, buff, len);
+    assert(pos - (char*)buff->data() == (int)len);
+    PushFrame({buff, len, ctrlid_local});
 
-    pos = buff = (char*)p_malloc(variable_encode_len(HTTP3_STREAM_TYPE_QPACK_ENCODE));
+    buff = std::make_shared<Block>(variable_encode_len(HTTP3_STREAM_TYPE_QPACK_ENCODE));
+    pos = (char*)buff->data();
     pos += variable_encode(pos, HTTP3_STREAM_TYPE_QPACK_ENCODE);
-    PushFrame(qpackeid_local, buff, pos - buff);
+    PushFrame({buff, size_t(pos - (char*)buff->data()), qpackeid_local});
 
-    pos = buff = (char*)p_malloc(variable_encode_len(HTTP3_STREAM_TYPE_QPACK_DECODE));
+    buff = std::make_shared<Block>(variable_encode_len(HTTP3_STREAM_TYPE_QPACK_ENCODE));
+    pos = (char*)buff->data();
     pos += variable_encode(pos, HTTP3_STREAM_TYPE_QPACK_DECODE);
-    PushFrame(qpackdid_local, buff, pos - buff);
+    PushFrame({buff, size_t(pos - (char*)buff->data()), qpackdid_local});
     http3_flag |= HTTP3_FLAG_INITED;
 }
 
@@ -196,28 +200,27 @@ void Http3Base::Goaway(uint64_t lastid){
         //this connection is not inited.
         return;
     }
-    char* frame = (char*)p_malloc(1 + 1 + 8); // enough for goway frame
-    char* pos = frame;
+    auto buff = std::make_shared<Block>(1 + 1 + 8); // enough for goway frame
+    char* pos = (char*)buff->data();
     pos += variable_encode(pos, HTTP3_STREAM_GOAWAY);
     pos += variable_encode(pos, variable_encode_len(lastid));
     pos += variable_encode(pos , lastid);
-    PushFrame(ctrlid_local, frame, pos - frame);
+    PushFrame({buff, size_t(pos - (char*)buff->data()), ctrlid_local});
 }
 
 void Http3Base::Shutdown(uint64_t id) {
 }
 
-void Http3Base::PushData(uint64_t id, const void* data, size_t size) {
-    char* frame = (char*)p_malloc(1 + variable_encode_len(size) + size);
-    char* pos = frame;
+void Http3Base::PushData(Buffer&& bb) {
+    size_t size = bb.len;
+    char* pos = (char*) bb.trunc(-(1 + (int) variable_encode_len(size)));
     pos += variable_encode(pos, HTTP3_STREAM_DATA);
     pos += variable_encode(pos, size);
-    memcpy(pos, data, size);
-    PushFrame(id, frame, pos + size - frame);
+    PushFrame(std::move(bb));
 }
 
 void Http3Requster::HeadersProc(uint64_t id, const uchar* header, size_t length) {
-    HttpResHeader* res = qpack_decoder.UnpackHttp3Res(header, length);
+    std::shared_ptr<HttpResHeader> res = qpack_decoder.UnpackHttp3Res(header, length);
     if(res == nullptr){
         ErrProc(HTTP3_ERR_QPACK_DECOMPRESSION_FAILED);
         return;
@@ -229,7 +232,7 @@ Http3Requster::Http3Requster() {
 }
 
 void Http3Responser::HeadersProc(uint64_t id, const uchar *header, size_t length) {
-    HttpReqHeader* req = qpack_decoder.UnpackHttp3Req(header, length);
+    std::shared_ptr<HttpReqHeader> req = qpack_decoder.UnpackHttp3Req(header, length);
     if(req == nullptr) {
         ErrProc(HTTP3_ERR_QPACK_DECOMPRESSION_FAILED);
         return;

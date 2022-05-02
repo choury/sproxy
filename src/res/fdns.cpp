@@ -77,23 +77,33 @@ void FDns::request(std::shared_ptr<HttpReq> req, Requester*){
     this->req = req;
     res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
     req->response(res);
-    req->setHandler([this](Channel::signal s){
-        if(s == Channel::CHANNEL_SHUTDOWN){
-            res->trigger(Channel::CHANNEL_ABORT);
+    req->attach([this](ChannelMessage& msg){
+        switch(msg.type){
+        case ChannelMessage::CHANNEL_MSG_HEADER:
+            LOGD(DDNS, "<FDNS> ignore header for req\n");
+            return 1;
+        case ChannelMessage::CHANNEL_MSG_DATA:
+            Recv(std::move(msg.data));
+            return 1;
+        case ChannelMessage::CHANNEL_MSG_SIGNAL:
+            if(msg.signal == ChannelMessage::CHANNEL_SHUTDOWN){
+                res->send(ChannelMessage::CHANNEL_ABORT);
+            }
+            deleteLater(PEER_LOST_ERR);
+            return 0;
         }
-        deleteLater(PEER_LOST_ERR);
-    });
-    req->attach((Channel::recv_const_t)std::bind(&FDns::Send, this, _1, _2), []{return 512;});
+        return 0;
+    }, []{return 512;});
 }
 
-void FDns::Send(const void* buff, size_t size) {
-    Dns_Query* que = new Dns_Query((const char *)buff, size);
+void FDns::Recv(Buffer&& bb) {
+    Dns_Query* que = new Dns_Query((const char *)bb.data(), bb.len);
     if(!que->valid){
-        LOGE("invalid dns request [%zd]\n", size);
+        LOGE("invalid dns request [%zd]\n", bb.len);
         delete que;
         return;
     }
-    LOG("FQuery %s: %d\n", que->domain, que->type);
+    LOG("[FDNS] Query %s: %d\n", que->domain, que->type);
     if(statusmap.count(que->id)) {
         //drop dup request
         delete que;
@@ -128,8 +138,8 @@ void FDns::Send(const void* buff, size_t size) {
     if(result == nullptr) {
         return query_dns(que->domain, que->type, RawCb, status);
     }
-    unsigned char sbuff[BUF_LEN];
-    res->send(sbuff, result->build(que, sbuff));
+    auto buff = std::make_shared<Block>(BUF_LEN);
+    res->send({buff, (size_t)result->build(que, (uchar*)buff->data())});
     clean(status);
 }
 
@@ -152,11 +162,11 @@ void FDns::DnsCb(std::weak_ptr<void> param, int error, std::list<sockaddr_storag
     }else{
         rr = new Dns_Result(que->domain);
     }
-    unsigned char buff[BUF_LEN];
+    std::shared_ptr<Block> buff = std::make_shared<Block>(BUF_LEN);
     if(error) {
-        fdns->res->send(buff, rr->buildError(que, error, buff));
+        fdns->res->send({buff, (size_t)rr->buildError(que, error, (uchar*)buff->data())});
     }else{
-        fdns->res->send(buff, rr->build(que, buff));
+        fdns->res->send({buff, (size_t)rr->build(que, (uchar*)buff->data())});
     }
     fdns->clean(status);
 }
@@ -169,15 +179,15 @@ void FDns::RawCb(std::weak_ptr<void> param, const char* buff, size_t size) {
     Dns_Query* que = status->que;
     FDns* fdns = status->fdns;
     if(buff){
-        LOGD(DDNS, "[FQuery] raw response [%d]\n", que->id);
+        LOGD(DDNS, "<FDNS> Query raw response [%d]\n", que->id);
         DNS_HDR *dnshdr = (DNS_HDR*)buff;
         dnshdr->id = htons(que->id);
         fdns->res->send(buff, size);
     }else {
-        LOGD(DDNS, "[FQuery] raw response [%d] error\n", que->id);
+        LOGD(DDNS, "<FDNS> Query raw response [%d] error\n", que->id);
         Dns_Result rr(que->domain);
         unsigned char sbuff[BUF_LEN];
-        fdns->res->send(sbuff, rr.buildError(que, DNS_SERVER_FAIL, sbuff));
+        fdns->res->send(sbuff, (size_t)rr.buildError(que, DNS_SERVER_FAIL, sbuff));
     }
     fdns->clean(status);
 }

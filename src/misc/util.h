@@ -31,16 +31,6 @@ void Base64Encode(const char* s, size_t len, char* dst);
 void dump_trace(int ignore);
 
 void* memdup(const void* ptr, size_t size);
-
-PREPTR void* p_malloc(size_t size);
-PREPTR void* p_memdup(const void *ptr, size_t size);
-
-inline PREPTR void* p_strdup(const char* str){
-    return p_memdup(str, strlen(str)+1);
-}
-
-void p_free(PREPTR void* ptr);
-PREPTR void* p_move(PREPTR void* ptr, signed char len);
 char* avsprintf(size_t* size, const char* fmt, va_list ap);
 const char* findprogram(ino_t inode);
 struct in6_addr mapIpv4(struct in_addr addr, const char* prefix);

@@ -1113,8 +1113,8 @@ void dumpFrame(const char* prefix, char name, const quic_frame* frame) {
              frame->ack.acknowledged, frame->ack.delay);
         return;
     case QUIC_FRAME_RESET_STREAM:
-        LOGD(DQUIC, "%s [%c] reset stream: %" PRIu64", error: %" PRIu64"\n", prefix, name,
-             frame->reset.id, frame->reset.error);
+        LOGD(DQUIC, "%s [%c] reset stream: %" PRIu64", error: %" PRIu64", finSize: %" PRIu64"\n", prefix, name,
+             frame->reset.id, frame->reset.error, frame->reset.fsize);
         return;
     case QUIC_FRAME_STOP_SENDING:
         LOGD(DQUIC, "%s [%c] stop stream: %" PRIu64", error: %" PRIu64"\n", prefix, name,

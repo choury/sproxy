@@ -187,6 +187,7 @@ protected:
     int handleRetryPacket(const quic_pkt_header* header);
     int handle1RttPacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
     int handlePacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
+    bool checkStatelessReset(const void* may_be_token);
 
     using iterator = typename decltype(streammap)::iterator;
     iterator OpenStream(uint64_t id);
@@ -212,7 +213,7 @@ public:
                      std::function<void(int ret, int code)> errorCB,
                      std::function<void(const sockaddr_storage&)> connectCB = nullptr);
     virtual ~QuicRWer() override;
-    virtual buff_iterator buffer_insert(buff_iterator where, buff_block&& bb) override;
+    virtual buff_iterator buffer_insert(buff_iterator where, Buffer&& bb) override;
 
     //virtual void Shutdown() override;
     virtual void Close(std::function<void()> func) override;

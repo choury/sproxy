@@ -4,7 +4,7 @@
 
 #ifndef SPROXY_QPACH_H
 #define SPROXY_QPACH_H
-#include "common/common.h"
+#include "misc/buffer.h"
 #include "prot/http/http_header.h"
 #include "prot/http/http_code.h"
 
@@ -27,11 +27,10 @@ class Qpack{
     size_t dynamic_table_size_limit_max = 0;
     size_t dynamic_table_size_limit = 0;
     size_t dynamic_table_size = 0;
-    std::function<void(PREPTR void* ins, size_t len)> sender;
     bool set_dynamic_table_size(size_t limit);
+    std::function<void(Buffer&&)> sender;
 public:
-    explicit Qpack(std::function<void(PREPTR void* ins, size_t len)> sender,
-                   size_t dynamic_table_size_limit_max);
+    explicit Qpack(decltype(sender) sender, size_t dynamic_table_size_limit_max);
     int push_ins(const void* ins, size_t len);
     void set_dynamic_table_size_max(size_t max);
 };
@@ -39,21 +38,19 @@ public:
 class Qpack_decoder: public Qpack {
     std::multimap<std::string, std::string> decode(const unsigned char *s, size_t len);
 public:
-    explicit Qpack_decoder(std::function<void(PREPTR void* ins, size_t len)> sender,
-                           size_t dynamic_table_size_limit_max = 0):
+    explicit Qpack_decoder(std::function<void(Buffer&&)> sender, size_t dynamic_table_size_limit_max = 0):
         Qpack(std::move(sender), dynamic_table_size_limit_max){};
-    HttpReqHeader* UnpackHttp3Req(const void* data, size_t len);
-    HttpResHeader* UnpackHttp3Res(const void* data, size_t len);
+    std::shared_ptr<HttpReqHeader> UnpackHttp3Req(const void* data, size_t len);
+    std::shared_ptr<HttpResHeader> UnpackHttp3Res(const void* data, size_t len);
 };
 
 class Qpack_encoder: public Qpack {
     size_t encode(unsigned char *buf, const std::string& name, const std::string& value);
 public:
-    explicit Qpack_encoder(std::function<void(PREPTR void* ins, size_t len)> sender,
-                           size_t dynamic_table_size_limit_max = 0):
+    explicit Qpack_encoder(std::function<void(Buffer&&)> sender, size_t dynamic_table_size_limit_max = 0):
         Qpack(std::move(sender), dynamic_table_size_limit_max){};
-    size_t PackHttp3Req(const HttpReqHeader* req, void* data, size_t len);
-    size_t PackHttp3Res(const HttpResHeader* res, void* data, size_t len);
+    size_t PackHttp3Req(std::shared_ptr<const HttpReqHeader> req, void* data, size_t len);
+    size_t PackHttp3Res(std::shared_ptr<const HttpResHeader> res, void* data, size_t len);
 };
 
 #endif //SPROXY_QPACH_H

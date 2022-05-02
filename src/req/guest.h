@@ -20,16 +20,17 @@ protected:
         uint      flags;
     };
     std::list<ReqStatus> statuslist;
-    void ReadHE(buff_block& bb);
+    void ReadHE(Buffer& bb);
     void WriteHE(size_t len);
     virtual void deleteLater(uint32_t errcode) override;
     virtual void Error(int ret, int code);
     
-    virtual void ReqProc(HttpReqHeader* req)override;
+    virtual void ReqProc(std::shared_ptr<HttpReqHeader> req)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
     virtual void EndProc() override;
     virtual void ErrProc() override;
-    void Send(void* buff, size_t len);
+    void Recv(Buffer&& bb);
+    void Handle(ChannelMessage::Signal s);
     void deqReq();
 public:
     explicit Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx);

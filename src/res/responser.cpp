@@ -18,7 +18,7 @@ enum class CheckResult{
     NoPort,
 };
 
-static CheckResult check_header(HttpReqHeader* req, Requester* src){
+static CheckResult check_header(std::shared_ptr<HttpReqHeader> req, Requester* src){
     if (!checkauth(src->getid(), req->get("Proxy-Authorization"))){
         return CheckResult::AuthFailed;
     }
@@ -45,28 +45,29 @@ static CheckResult check_header(HttpReqHeader* req, Requester* src){
 }
 
 void distribute(std::shared_ptr<HttpReq> req, Requester* src){
+    auto header = req->header;
     std::shared_ptr<HttpRes> res;
-    if(!req->header->Dest.hostname[0]){
+    if(!header->Dest.hostname[0]){
         res = std::make_shared<HttpRes>(UnpackHttpRes(H400), "[[host not set]]\n");
         goto out;
     }
-    if (req->header->normal_method()) {
-        strategy stra = getstrategy(req->header->Dest.hostname);
-        req->header->set("Strategy", getstrategystring(stra.s));
+    if (header->normal_method()) {
+        strategy stra = getstrategy(header->Dest.hostname);
+        header->set("Strategy", getstrategystring(stra.s));
         if(stra.s == Strategy::block){
             res = std::make_shared<HttpRes>(UnpackHttpRes(H403),
                               "This site is blocked, please contact administrator for more information.\n");
             goto out;
         }
         if(stra.s == Strategy::local){
-            if(req->header->http_method()){
+            if(header->http_method()){
                 return File::getfile(req, src);
             }else{
                 stra.s = Strategy::direct;
             }
         }
-        req->header->set(STRATEGY, getstrategystring(stra.s));
-        switch(check_header(req->header, src)){
+        header->set(STRATEGY, getstrategystring(stra.s));
+        switch(check_header(header, src)){
         case CheckResult::Succeed:
             break;
         case CheckResult::AuthFailed:
@@ -87,33 +88,33 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
                 res = std::make_shared<HttpRes>(UnpackHttpRes(H400), "[[server not set]]\n");
                 goto out;
             }
-            req->header->del("via");
+            header->del("via");
             if(strlen(opt.rewrite_auth)){
-                req->header->set("Proxy-Authorization", std::string("Basic ") + opt.rewrite_auth);
+                header->set("Proxy-Authorization", std::string("Basic ") + opt.rewrite_auth);
             }
             //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
-            req->header->should_proxy = true;
+            header->should_proxy = true;
             if(!stra.ext.empty() && loadproxy(stra.ext.c_str(), &dest)){
                 res = std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[ext misformat]]\n");
                 goto out;
             }
             break;
         case Strategy::direct:
-            memcpy(&dest, &req->header->Dest, sizeof(dest));
-            if(req->header->ismethod("PING")){
-                return (new Ping(req->header))->request(req, src);
+            memcpy(&dest, &header->Dest, sizeof(dest));
+            if(header->ismethod("PING")){
+                return (new Ping(header))->request(req, src);
             }
-            req->header->del("Proxy-Authorization");
+            header->del("Proxy-Authorization");
             break;
         case Strategy::rewrite:
-            req->header->set("host", stra.ext);
+            header->set("host", stra.ext);
             /* FALLTHROUGH */
         case Strategy::forward:
             if(stra.ext.empty()){
                 res = std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[destination not set]]\n");
                 goto out;
             }
-            memcpy(&dest, &req->header->Dest, sizeof(dest));
+            memcpy(&dest, &header->Dest, sizeof(dest));
             if(spliturl(stra.ext.c_str(), &dest, nullptr)){
                 res = std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[ext misformat]]\n");
                 goto out;

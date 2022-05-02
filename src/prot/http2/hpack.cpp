@@ -304,7 +304,7 @@ std::multimap<std::string, std::string> Hpack_decoder::decode(const unsigned cha
     return headers;
 }
 
-HttpReqHeader *Hpack_decoder::UnpackHttp2Req(const void *header, size_t len) {
+std::shared_ptr<HttpReqHeader> Hpack_decoder::UnpackHttp2Req(const void *header, size_t len) {
     auto headers = decode((const unsigned char*)header, len);
     if(headers.empty()){
         return nullptr;
@@ -313,10 +313,10 @@ HttpReqHeader *Hpack_decoder::UnpackHttp2Req(const void *header, size_t len) {
         LOGE("wrong frame http request, no method\n");
         return nullptr;
     }
-    return new HttpReqHeader(std::move(headers));
+    return std::make_shared<HttpReqHeader>(std::move(headers));
 }
 
-HttpResHeader *Hpack_decoder::UnpackHttp2Res(const void *header, size_t len) {
+std::shared_ptr<HttpResHeader> Hpack_decoder::UnpackHttp2Res(const void *header, size_t len) {
     auto headers = decode((const unsigned char*)header, len);
     if(headers.empty()){
         return nullptr;
@@ -325,7 +325,7 @@ HttpResHeader *Hpack_decoder::UnpackHttp2Res(const void *header, size_t len) {
         LOGE("wrong frame http response, no status\n");
         return nullptr;
     }
-    return new HttpResHeader(std::move(headers));
+    return std::make_shared<HttpResHeader>(std::move(headers));
 }
 
 size_t Hpack_encoder::encode(unsigned char* buf, const char* name, const char* value) {
@@ -349,7 +349,7 @@ size_t Hpack_encoder::encode(unsigned char* buf, const char* name, const char* v
     return buf - buf_begin;
 }
 
-size_t Hpack_encoder::PackHttp2Req(const HttpReqHeader *req, void *data, size_t len) {
+size_t Hpack_encoder::PackHttp2Req(std::shared_ptr<const HttpReqHeader> req, void *data, size_t len) {
     uchar* p = (uchar*)data;
     for(const auto& i : req->Normalize()){
         p += encode(p, i.first.c_str(), i.second.c_str());
@@ -358,7 +358,7 @@ size_t Hpack_encoder::PackHttp2Req(const HttpReqHeader *req, void *data, size_t 
     return p - (uchar*)data;
 }
 
-size_t Hpack_encoder::PackHttp2Res(const HttpResHeader *res, void *data, size_t len) {
+size_t Hpack_encoder::PackHttp2Res(std::shared_ptr<const HttpResHeader> res, void *data, size_t len) {
     uchar *p = (uchar *)data;
     for(const auto& i : res->Normalize()){
         p += encode(p, i.first.c_str(), i.second.c_str());

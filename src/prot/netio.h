@@ -6,43 +6,6 @@
 
 #include <queue>
 
-class RBuffer {
-    char content[BUF_LEN*2];
-    size_t len = 0;
-public:
-    //for put
-    size_t left();
-    char* end();
-    size_t add(size_t l);
-    ssize_t put(const void* data, size_t size);
-
-    //for get
-    size_t length();
-    size_t cap();
-    const char* data();
-    size_t consume(size_t l);
-};
-
-class CBuffer {
-    char content[BUF_LEN*2];
-    uint64_t offset = 0;
-    size_t len = 0;
-public:
-    //for put
-    size_t left();
-    char* end();
-    void add(size_t l);
-    ssize_t put(const void* data, size_t size);
-    uint64_t Offset(){
-        return offset;
-    };
-
-    //for get
-    size_t length();
-    size_t cap();
-    size_t get(char* buff, size_t len);
-    void consume(size_t l);
-};
 
 class SocketRWer: public RWer{
 protected:
@@ -66,6 +29,7 @@ public:
            std::function<void(int ret, int code)> errorCB,
            std::function<void(const sockaddr_storage&)> connectCB = nullptr);
     virtual ~SocketRWer() override;
+    virtual void Shutdown();
     virtual const char* getPeer() override;
 };
 

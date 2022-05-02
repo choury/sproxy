@@ -238,13 +238,11 @@ void prepare(){
     struct rlimit limits;
     if(getrlimit(RLIMIT_NOFILE, &limits)){
         LOGE("getrlimit failed: %s\n", strerror(errno));
-        limits.rlim_cur = 1024;
-    }else{
-        limits.rlim_cur = limits.rlim_max;
-    }
-
-    if(setrlimit(RLIMIT_NOFILE, &limits)) {
-        LOGE("setrlimit failed: %s\n", strerror(errno));
+    }else if(limits.rlim_cur < 16384){
+        limits.rlim_cur = Min(limits.rlim_max, 16384);
+        if(setrlimit(RLIMIT_NOFILE, &limits)) {
+            LOGE("setrlimit failed: %s\n", strerror(errno));
+        }
     }
     openefd();
     register_network_change_cb(network_changed);

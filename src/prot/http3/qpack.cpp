@@ -119,7 +119,7 @@ static void init_static_map(){
 static bool qpack_inited = false;
 
 
-Qpack::Qpack(std::function<void(void *, size_t)> sender, size_t dynamic_table_size_limit_max):
+Qpack::Qpack(std::function<void(Buffer&&)> sender, size_t dynamic_table_size_limit_max):
     dynamic_table_size_limit_max(dynamic_table_size_limit_max), sender(std::move(sender))
 {
     if(unlikely(!qpack_inited)){
@@ -201,17 +201,18 @@ int Qpack::push_ins(const void *ins, size_t len) {
 
 size_t Qpack_encoder::encode(unsigned char *buf, const std::string& name, const std::string& value) {
     auto pos = buf;
-    pos[0] = 0x20;
+    *pos = 0x20; //  literal field line with literal name with N and H cleared
     pos += integer_encode(name.size(), 3, pos);
     memcpy(pos, name.data(), name.size());
     pos += name.size();
+    *pos = 0x00; //clear Huffman flag
     pos += integer_encode(value.size(), 7, pos);
     memcpy(pos, value.data(), value.size());
     pos += value.size();
     return pos - buf;
 }
 
-size_t Qpack_encoder::PackHttp3Req(const HttpReqHeader *req, void *data, size_t len) {
+size_t Qpack_encoder::PackHttp3Req(std::shared_ptr<const HttpReqHeader> req, void *data, size_t len) {
     uchar* p = (uchar*)data;
     p += integer_encode(0, 8, p);
     p += integer_encode(0, 7, p);
@@ -221,9 +222,10 @@ size_t Qpack_encoder::PackHttp3Req(const HttpReqHeader *req, void *data, size_t 
     return p - (uchar*)data;
 }
 
-size_t Qpack_encoder::PackHttp3Res(const HttpResHeader *res, void *data, size_t len) {
+size_t Qpack_encoder::PackHttp3Res(std::shared_ptr<const HttpResHeader> res, void *data, size_t len) {
     uchar* p = (uchar*)data;
     p += integer_encode(0, 8, p);
+    *p = 0x00; // clear S bit
     p += integer_encode(0, 7, p);
     for(const auto& i : res->Normalize()){
         p += encode(p, i.first, i.second);
@@ -321,18 +323,18 @@ append:
     return headers;
 }
 
-HttpResHeader *Qpack_decoder::UnpackHttp3Res(const void *data, size_t len) {
+std::shared_ptr<HttpResHeader> Qpack_decoder::UnpackHttp3Res(const void *data, size_t len) {
     std::multimap<std::string, std::string> headers = decode((const uchar*)data, len);
     if(headers.empty()) {
         return nullptr;
     }
-    return new HttpResHeader(std::move(headers));
+    return std::make_shared<HttpResHeader>(std::move(headers));
 }
 
-HttpReqHeader *Qpack_decoder::UnpackHttp3Req(const void *data, size_t len) {
+std::shared_ptr<HttpReqHeader> Qpack_decoder::UnpackHttp3Req(const void *data, size_t len) {
     std::multimap<std::string, std::string> headers = decode((const uchar*)data, len);
     if(headers.empty()) {
         return nullptr;
     }
-    return new HttpReqHeader(std::move(headers));
+    return std::make_shared<HttpReqHeader>(std::move(headers));
 }

@@ -195,6 +195,7 @@ void QuicRWer::generateCid() {
 
     myids.push_back(myid);
     hisids.push_back(hisid);
+    histoken.push_back("");
 
     if(ctx) {
         //only client has init secret now.
@@ -356,6 +357,9 @@ QuicRWer::~QuicRWer(){
             frame_release(i.second);
         }
     }
+    if(mgr == nullptr){
+        return;
+    }
     for(auto id: myids){
         mgr->rwers.erase(id);
     }
@@ -439,6 +443,8 @@ QuicRWer::FrameResult QuicRWer::handleCryptoFrame(quic_context* context, const q
                     }
                     break;
                 case quic_stateless_reset_token:
+                    assert(size == QUIC_TOKEN_LEN);
+                    histoken[0] = std::string((char*)pos, QUIC_TOKEN_LEN);
                     break;
                 case quic_max_udp_payload_size:
                     variable_decode(pos, &value);
@@ -609,7 +615,7 @@ QuicRWer::FrameResult QuicRWer::handleResetFrame(const quic_reset *stream) {
     auto& status = itr->second;
     uint64_t want = status.rb.Offset() + status.rb.length();
 
-    if((status.flags & STREAM_FLAG_FIN_RECVD) && want == status.finSize){
+    if((status.flags & STREAM_FLAG_FIN_RECVD) && want == stream->fsize){
         LOGD(DQUIC, "ignored reset [%" PRIu64"]: after fin\n", id);
         return FrameResult::ok;
     }
@@ -617,7 +623,7 @@ QuicRWer::FrameResult QuicRWer::handleResetFrame(const quic_reset *stream) {
         return FrameResult::ok;
     }
 
-    if(want > status.finSize){
+    if(want > stream->fsize){
         ErrorHE(PROTOCOL_ERR, QUIC_FINAL_SIZE_ERROR);
         return FrameResult::error;
     }
@@ -801,7 +807,9 @@ QuicRWer::FrameResult QuicRWer::handleFrames(quic_context *context, const quic_f
             ErrorHE(PROTOCOL_ERR, QUIC_PROTOCOL_VIOLATION);
             return FrameResult::error;
         }
-        mgr->rwers.erase(myids[frame->extra]);
+        if(mgr) {
+            mgr->rwers.erase(myids[frame->extra]);
+        }
         return FrameResult::ok;
     default:
         if(frame->type >= QUIC_FRAME_STREAM_START_ID && frame->type <= QUIC_FRAME_STREAM_END_ID){
@@ -927,8 +935,8 @@ ssize_t QuicRWer::Write(const void *buff, size_t len, uint64_t id) {
     return (int)len;
 }
 
-buff_iterator QuicRWer::buffer_insert(buff_iterator where, buff_block &&bb) {
-    Write((char*)bb.buff + bb.offset, bb.len - bb.offset, bb.id);
+buff_iterator QuicRWer::buffer_insert(buff_iterator where, Buffer&& bb) {
+    Write((char*)bb.data(), bb.len, bb.id);
     return where;
 }
 
@@ -1005,6 +1013,20 @@ int QuicRWer::set_alpn(const unsigned char *s, unsigned int len){
     return ssl_get_error(ssl, SSL_set_alpn_protos(ssl, s, len));
 }
 
+bool QuicRWer::checkStatelessReset(const void *may_be_token) {
+    assert(hisids.size() == 1 || hisids.size() == histoken.size());
+    for(auto i = hisid_idx; i < hisids.size(); i++){
+        if(histoken[i].empty()){
+            continue;
+        }
+        assert(histoken[i].length() == QUIC_TOKEN_LEN);
+        if(memcmp(histoken[i].data(), may_be_token, QUIC_TOKEN_LEN) == 0){
+            return true;
+        }
+    }
+    return false;
+}
+
 void QuicRWer::walkPackets(const void* buff, size_t length) {
     const char *pos = (const char*)buff;
     while (length > 0) {
@@ -1033,6 +1055,11 @@ void QuicRWer::walkPackets(const void* buff, size_t length) {
             SSL_set_quic_transport_params(ssl, (const uint8_t*)quic_params, generateParams(quic_params));
         }
         if (header.dcid != myids[myid_idx] && header.dcid != originDcid) {
+            if(checkStatelessReset((char*)buff + body_len - QUIC_TOKEN_LEN)){
+                LOGE("QUIC stateless reset with unkwnon dcid\n");
+                ErrorHE(PROTOCOL_ERR, QUIC_CONNECTION_REFUSED);
+                return;
+            }
             LOG("QUIC discard unknown dcid: %s\n",
                 dumpHex(header.dcid.data(), header.dcid.length()).c_str());
             return;
@@ -1050,17 +1077,10 @@ void QuicRWer::walkPackets(const void* buff, size_t length) {
             frames = decode_packet(pos - body_len, body_len, &header, &context->read_secret);
             if (frames.empty()) {
                 LOGD(DQUIC, "QUIC packet unpack failed, check stateless reset\n");
-                assert(hisids.size() == 1 || hisids.size() == histoken.size());
-                for(auto i = hisid_idx; i < hisids.size(); i++){
-                    if(histoken[i].empty()){
-                        continue;
-                    }
-                    assert(histoken[i].length() == QUIC_TOKEN_LEN);
-                    if(memcmp(histoken[i].data(), (char*)buff + body_len - QUIC_TOKEN_LEN, QUIC_TOKEN_LEN) == 0){
-                        LOGE("QUIC stateless reset\n");
-                        ErrorHE(PROTOCOL_ERR, QUIC_CONNECTION_REFUSED);
-                        return;
-                    }
+                if(checkStatelessReset((char*)buff + body_len - QUIC_TOKEN_LEN)){
+                    LOGE("QUIC stateless reset\n");
+                    ErrorHE(PROTOCOL_ERR, QUIC_CONNECTION_REFUSED);
+                    return;
                 }
                 LOGE("QUIC packet unpack failed, discard it\n");
                 return;
@@ -1122,7 +1142,7 @@ void QuicRWer::ReadData() {
     }
     reorderData();
     if(rlength()){
-        // provider ordered stream data to application
+        // 提供排序好的数据给应用层
         ConsumeRData();
     }
 }
@@ -1209,16 +1229,21 @@ void QuicRWer::ConsumeRData() {
 
         auto& rb = i->second.rb;
         assert(rblen >= rb.length());
-        char* buff = (char*)p_malloc(rb.length());
-        buff_block wb{buff, rb.get(buff, rb.length()), 0, i->first};
+        auto buff = std::make_shared<Block>(rb.length());
+        Buffer wb{buff, rb.get((char*) buff->data(), rb.length()), i->first};
         readCB(wb);
+        size_t eaten  = rb.length() - wb.len;
         LOGD(DQUIC, "consume data [%" PRIu64"]: %" PRIu64" - %" PRIu64" [%zd]\n",
-             i->first, rb.Offset(), rb.Offset() + wb.offset, i->second.rb.length());
-        rb.consume(wb.offset);
-        rblen -= wb.offset;
+             i->first, rb.Offset(), rb.Offset() + eaten, i->second.rb.length());
+        rb.consume(eaten);
+        rblen -= eaten;
 
         if(flags & STREAM_FLAG_FIN_RECVD && i->second.finSize == rb.Offset()){
-            buff_block ewb{(const void*)nullptr, 0, 0, i->first};
+            //在QuicRWer中，我们不用 ReadEOF状态，因为它是对整个连接的，而不是对某个stream的
+            //在read buffer处理完了的时候发给应用层，后面的循环会跳过rb.length() = 0 的stream
+            //因此这个消息只会被发送一次
+            assert(rb.length() == 0);
+            Buffer ewb{nullptr, i->first};
             readCB(ewb);
         }
 

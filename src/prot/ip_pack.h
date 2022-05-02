@@ -71,6 +71,7 @@ struct icmphdr
 
 #endif
 
+class Buffer;
 class Icmp{
     icmphdr icmp_hdr;
 public:
@@ -78,7 +79,7 @@ public:
     Icmp();
     Icmp(const char* packet, size_t len);
     void print() const;
-    char* build_packet(void* data, size_t &len);
+    void build_packet(Buffer& bb);
 
     Icmp* settype(uint8_t type);
     Icmp* setcode(uint8_t code);
@@ -98,7 +99,7 @@ public:
     Icmp6();
     Icmp6(const char* packet, size_t len);
     void print() const;
-    char* build_packet(const ip6_hdr* iphdr, void* data, size_t &len);
+    void build_packet(const ip6_hdr* iphdr, Buffer& bb);
 
     Icmp6* settype(uint8_t type);
     Icmp6* setcode(uint8_t code);
@@ -128,8 +129,8 @@ public:
     Tcp(uint16_t sport, uint16_t dport);
     Tcp(const Tcp&) = delete;
     void print() const;
-    char* build_packet(const ip* ip_hdr, void* data, size_t &len);
-    char* build_packet(const ip6_hdr* ip_hdr, void* data, size_t &len);
+    void build_packet(const ip* ip_hdr, Buffer& bb);
+    void build_packet(const ip6_hdr* ip_hdr, Buffer& bb);
 
 
     Tcp* setack(uint32_t ack);
@@ -160,8 +161,8 @@ public:
     Udp(const char* packet, size_t len);
     Udp(uint16_t sport, uint16_t dport);
     void print() const;
-    char* build_packet(const ip* ip_hdr, void* data, size_t &len);
-    char* build_packet(const ip6_hdr* ip_hdr, void* data, size_t &len);
+    void build_packet(const ip* ip_hdr, Buffer& bb);
+    void build_packet(const ip6_hdr* ip_hdr, Buffer& bb);
 
     uint16_t getsport() const;
     uint16_t getdport() const;
@@ -188,8 +189,7 @@ public:
 
     virtual size_t gethdrlen() const;
     virtual uint8_t gettype() const;
-    virtual char* build_packet(const void* data, size_t &len);
-    virtual char* build_packet(void* data, size_t &len) = 0;
+    virtual void build_packet(Buffer& bb) = 0;
     virtual bool isValid();
 };
 
@@ -208,7 +208,7 @@ public:
     sockaddr_storage getsrc() const override;
     sockaddr_storage getdst() const override;
 
-    char* build_packet(void* data, size_t &len) override;
+    void build_packet(Buffer& bb) override;
 
     friend std::shared_ptr<Ip> MakeIp(const char* packet, size_t len);
     friend std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src,  const sockaddr_storage* dst);
@@ -226,7 +226,7 @@ public:
     sockaddr_storage getsrc() const override;
     sockaddr_storage getdst() const override;
 
-    char* build_packet(void* data, size_t &len)override;
+    void build_packet(Buffer& bb)override;
 
     friend std::shared_ptr<Ip> MakeIp(const char* packet, size_t len);
     friend std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src,  const sockaddr_storage* dst);

@@ -25,7 +25,7 @@ class handler: public CgiHandler{
             json_object_object_add(jsite, site, json_object_new_string(strategy));
             json_object_array_add(jsites, jsite);
         }
-        HttpResHeader* res = UnpackHttpRes(H200, sizeof(H200));
+        std::shared_ptr<HttpResHeader> res = UnpackHttpRes(H200, sizeof(H200));
         res->set("Content-Type", "application/json");
         Cookie cookie;
         cookie.path = "/";
@@ -84,7 +84,7 @@ class handler: public CgiHandler{
             BadRequest();
             return;
         }
-        HttpResHeader* res = UnpackHttpRes(H303, sizeof(H303));
+        std::shared_ptr<HttpResHeader> res = UnpackHttpRes(H303, sizeof(H303));
         res->set("Location", req->get("Referer"));
         Response(res);
         Finish();
@@ -111,7 +111,7 @@ class handler: public CgiHandler{
             BadRequest();
             return;
         }
-        HttpResHeader* res = UnpackHttpRes(H303, sizeof(H303));
+        std::shared_ptr<HttpResHeader> res = UnpackHttpRes(H303, sizeof(H303));
         res->set("Location", req->get("Referer"));
         Response(res);
         Finish();

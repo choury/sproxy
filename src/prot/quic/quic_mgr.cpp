@@ -43,6 +43,12 @@ void QuicMgr::PushDate(int fd, const sockaddr_storage* addr, SSL_CTX *ctx, const
         char stateless[41];
         stateless[0] = 0x43;
         memcpy(stateless + sizeof(stateless) - QUIC_TOKEN_LEN, token.data(), QUIC_TOKEN_LEN);
-        sendto(fd, stateless, sizeof(stateless), MSG_DONTWAIT, (sockaddr *)addr, sizeof(sockaddr_storage));
+
+        socklen_t len = (addr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
+        if(sendto(fd, stateless, sizeof(stateless), 0, (sockaddr *)addr, len) < 0){
+            LOGE("sendto failed: %s\n", strerror(errno));
+            return;
+        }
+        LOGD(DQUIC, "send stateless reset for %s\n", dumpHex(header.dcid.c_str(), header.dcid.size()).c_str());
     }
 }

@@ -8,7 +8,7 @@
 #include <string.h>
 #include <assert.h>
 #include <inttypes.h>
-                    
+
 static const unsigned char alpn_protos_http12[] =
     "\x08http/1.1" \
     "\x02h2";
@@ -60,6 +60,20 @@ void Host::reply(){
         return;
     }
     auto req = status.req;
+    req->attach([this](ChannelMessage& msg){
+        switch(msg.type){
+            case ChannelMessage::CHANNEL_MSG_HEADER:
+                LOGD(DHTTP, "<host> ignore header for req\n");
+                return 1;
+            case ChannelMessage::CHANNEL_MSG_DATA:
+                Recv(std::move(msg.data));
+                return 1;
+            case ChannelMessage::CHANNEL_MSG_SIGNAL:
+                Handle(msg.signal);
+                return 0;
+        }
+        return 0;
+    }, [this]{ return rwer->cap(0); });
     if(!req->header->should_proxy){
         if(req->header->ismethod("CONNECT")) {
             Http_Proc = &Host::AlwaysProc;
@@ -69,12 +83,10 @@ void Host::reply(){
             Http_Proc = &Host::AlwaysProc;
         }
     }
-    void* buff = p_malloc(BUF_LEN);
-    size_t len = PackHttpReq(req->header, buff, BUF_LEN);
+    auto buff = std::make_shared<Block>(BUF_LEN);
+    size_t len = PackHttpReq(req->header, buff->data(), BUF_LEN);
     auto head = rwer->buffer_head();
-    assert(rwer->wlength() == 0 || head->offset == 0);
-    rwer->buffer_insert(head, buff_block{buff, len});
-    req->attach(std::bind(&Host::Send, this, _1, _2), [this]{ return rwer->cap(0); });
+    rwer->buffer_insert(head, Buffer{buff, len});
 }
 
 void Host::connected() {
@@ -115,39 +127,60 @@ void Host::connected() {
         LOGE("(%s) <host> quic only support http3\n", rwer->getPeer());
         return deleteLater(PROTOCOL_ERR);
     }
-    rwer->SetReadCB([this](buff_block& bb){
+    rwer->SetReadCB([this](Buffer& bb){
+        LOGD(DHTTP, "<host> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
         if(bb.len == 0){
             //EOF
+            assert((status.flags & HTTP_RES_EOF) == 0);
             status.flags |= HTTP_RES_EOF;
             if((status.flags & HTTP_REQ_EOF) || status.res == nullptr){
                 deleteLater(NOERROR);
             }else {
-                status.res->trigger(Channel::CHANNEL_SHUTDOWN);
+                status.res->send(ChannelMessage::CHANNEL_SHUTDOWN);
             }
             return;
         }
-        const char* data = (const char*)bb.buff;
         size_t ret = 0;
-        while((bb.offset < bb.len) && (ret = (this->*Http_Proc)(data+bb.offset, bb.len-bb.offset))){
-            bb.offset += ret;
+        while((bb.len >  0) && (ret = (this->*Http_Proc)((const char*) bb.data(), bb.len))){
+            bb.trunc(ret);
         }
-        assert(bb.offset <= bb.len);
-        LOGD(DHTTP, "<host> (%s) read: len:%zu, consumed:%zu\n", rwer->getPeer(), bb.len, bb.offset);
     });
     rwer->SetWriteCB([this](size_t len){
         LOGD(DHTTP, "<host> (%s) written: wlength:%zu\n", rwer->getPeer(), len);
         if(status.flags & HTTP_REQ_EOF) {
             if (rwer->wlength() == 0){
-                rwer->Shutdown();
+                std::dynamic_pointer_cast<SocketRWer>(rwer)->Shutdown();
             }
             return;
         }
-        if((status.flags & HTTP_REQ_COMPLETED) || (status.flags & HTTP_REQ_EOF)){
+        if(status.flags & HTTP_REQ_COMPLETED){
             return;
         }
         status.req->more();
     });
     reply();
+}
+
+void Host::Handle(ChannelMessage::Signal s){
+    LOGD(DHTTP, "<host> signal %" PRIu32 ": %d\n", status.req->header->request_id, (int)s);
+    switch(s){
+    case ChannelMessage::CHANNEL_SHUTDOWN:
+        assert(strcasecmp(Server.scheme, "udp"));
+        assert((status.flags & HTTP_RES_EOF) == 0);
+        status.flags |= HTTP_REQ_EOF;
+        if(rwer->getStats() != RWerStats::Connected){
+            return;
+        }
+        rwer->addEvents(RW_EVENT::READ);
+        if (rwer->wlength() == 0) {
+            std::dynamic_pointer_cast<SocketRWer>(rwer)->Shutdown();
+        }
+        break;
+    case ChannelMessage::CHANNEL_CLOSED:
+    case ChannelMessage::CHANNEL_ABORT:
+        status.flags |= HTTP_CLOSED_F;
+        return deleteLater(PEER_LOST_ERR);
+    }
 }
 
 void Host::request(std::shared_ptr<HttpReq> req, Requester*) {
@@ -158,53 +191,35 @@ void Host::request(std::shared_ptr<HttpReq> req, Requester*) {
     assert(status.req == nullptr);
     assert(status.res == nullptr);
     status.req = req;
-    req->setHandler([this, req](Channel::signal s){
-        LOGD(DHTTP, "<host> signal %" PRIu32 ": %d\n", req->header->request_id, (int)s);
-        switch(s){
-        case Channel::CHANNEL_SHUTDOWN:
-            assert(strcasecmp(Server.scheme, "udp"));
-            assert((status.flags & HTTP_RES_EOF) == 0);
-            status.flags |= HTTP_REQ_EOF;
-            if(rwer->getStats() != RWerStats::Connected){
-                return;
-            }
-            rwer->addEvents(RW_EVENT::READ);
-            if (rwer->wlength() == 0) {
-                rwer->Shutdown();
-            }
-            break;
-        case Channel::CHANNEL_CLOSED:
-        case Channel::CHANNEL_ABORT:
-            status.flags |= HTTP_CLOSED_F;
-            return deleteLater(PEER_LOST_ERR);
-        }
-    });
     reply();
 }
 
-void Host::Send(void* buff, size_t size){
+void Host::Recv(Buffer&& bb){
     assert((status.flags & HTTP_REQ_COMPLETED) == 0);
-    rwer->buffer_insert(rwer->buffer_end(), buff_block{buff, size});
-    tx_bytes += size;
-    if(size == 0){
+    tx_bytes += bb.len;
+    if(bb.len == 0){
         status.flags |= HTTP_REQ_COMPLETED;
-        LOGD(DHTTP, "<host> Send %" PRIu32 ": EOF/%zu, http_flag:0x%x\n",
+        LOGD(DHTTP, "<host> recv %" PRIu32 ": EOF/%zu, http_flag:0x%x\n",
              status.req->header->request_id, tx_bytes, http_flag);
     }else{
-        LOGD(DHTTP, "<host> Send %" PRIu32 ": size:%zu/%zu, http_flag:0x%x\n",
-             status.req->header->request_id, size, tx_bytes, http_flag);
+        LOGD(DHTTP, "<host> recv %" PRIu32 ": size:%zu/%zu, http_flag:0x%x\n",
+             status.req->header->request_id, bb.len, tx_bytes, http_flag);
     }
+    rwer->buffer_insert(rwer->buffer_end(), std::move(bb));
 }
 
-void Host::ResProc(HttpResHeader* header) {
+void Host::ResProc(std::shared_ptr<HttpResHeader> header) {
     LOGD(DHTTP, "<host> ResProc %" PRIu32": %s, http_flag:0x%x\n",
          status.req->header->request_id ,header->status, http_flag);
     if(status.req->header->ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY_F;
     }
-    assert(status.res == nullptr);
-    status.res = std::make_shared<HttpRes>(header, std::bind(&RWer::EatReadData, rwer));
-    status.req->response(status.res);
+    if(status.res){
+        status.res->send(header);
+    }else{
+        status.res = std::make_shared<HttpRes>(header, std::bind(&RWer::EatReadData, rwer));
+        status.req->response(status.res);
+    }
 }
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
@@ -227,7 +242,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
         rwer->delEvents(RW_EVENT::READ);
         return -1;
     }
-    status.res->send(buff, len);
+    status.res->send(buff, (size_t)len);
     rx_bytes += len;
     LOGD(DHTTP, "<host> DataProc %" PRIu32 ": size:%zu, send:%d/%zu\n",
          status.req->header->request_id, size, len, rx_bytes);
@@ -237,7 +252,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
 void Host::EndProc() {
     LOGD(DHTTP, "<host> EndProc %" PRIu32 "\n", status.req->header->request_id);
     status.flags |= HTTP_RES_COMPLETED;
-    status.res->send((const void*)nullptr, 0);
+    status.res->send(nullptr);
 }
 
 void Host::ErrProc(){
@@ -263,7 +278,7 @@ void Host::deleteLater(uint32_t errcode){
     if(status.flags & HTTP_CLOSED_F){
         //do nothing.
     }else if(status.res){
-        status.res->trigger(errcode ? Channel::CHANNEL_ABORT : Channel::CHANNEL_CLOSED);
+        status.res->send(errcode ? ChannelMessage::CHANNEL_ABORT : ChannelMessage::CHANNEL_CLOSED);
         status.req = nullptr;
     }else {
         switch(errcode) {

@@ -29,13 +29,13 @@ public:
 class HttpResponser:public HttpBase{
     virtual size_t HeaderProc(const char* buffer, size_t len)override final;
 protected:
-    virtual void ReqProc(HttpReqHeader* req) = 0;
+    virtual void ReqProc(std::shared_ptr<HttpReqHeader> req) = 0;
 };
 
 class HttpRequester:public HttpBase{
     virtual size_t HeaderProc(const char* buffer, size_t len)override final;
 protected:
-    virtual void ResProc(HttpResHeader* res) = 0;
+    virtual void ResProc(std::shared_ptr<HttpResHeader> res) = 0;
 };
 
 #endif

@@ -7,6 +7,7 @@
 #include <set>
 #include <vector>
 #include <string>
+#include <memory>
 
 #define CRLF      "\r\n"
 
@@ -145,8 +146,8 @@ std::map<std::string, std::string> __attribute__((weak)) getparamsmap(const char
 std::map<std::string, std::string> __attribute__((weak)) getparamsmap(const char *param);
 
 
-HttpReqHeader* UnpackHttpReq(const void* header, size_t len = 0);
-HttpResHeader* UnpackHttpRes(const void* header, size_t len = 0);
-size_t PackHttpReq(const HttpReqHeader *req, void* data, size_t len);
-size_t PackHttpRes(const HttpResHeader *res, void* data, size_t len);
+std::shared_ptr<HttpReqHeader> UnpackHttpReq(const void* header, size_t len = 0);
+std::shared_ptr<HttpResHeader> UnpackHttpRes(const void* header, size_t len = 0);
+size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t len);
+size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t len);
 #endif

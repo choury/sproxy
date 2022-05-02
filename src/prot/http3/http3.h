@@ -86,8 +86,8 @@ protected:
     void Goaway(uint64_t lastid);
     void Shutdown(uint64_t id);
     virtual uint64_t CreateUbiStream() = 0;
-    virtual void PushFrame(uint64_t id, PREPTR void* header, size_t len) = 0;
-    virtual void PushData(uint64_t id, const void* data, size_t size);
+    virtual void PushFrame(Buffer&& bb) = 0;
+    virtual void PushData(Buffer&& bb);
 
 public:
     Http3Base();
@@ -98,7 +98,7 @@ public:
 class Http3Requster:public Http3Base{
 protected:
     virtual void HeadersProc(uint64_t id, const uchar* header, size_t len) override;
-    virtual void ResProc(uint64_t id, HttpResHeader* res) = 0;
+    virtual void ResProc(uint64_t id, std::shared_ptr<HttpResHeader> res) = 0;
 public:
     Http3Requster();
 };
@@ -106,7 +106,7 @@ public:
 class Http3Responser: public Http3Base {
 protected:
     virtual void HeadersProc(uint64_t id, const uchar* header, size_t len) override;
-    virtual void ReqProc(uint64_t id, HttpReqHeader* res) = 0;
+    virtual void ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> res) = 0;
 public:
     Http3Responser();
 };

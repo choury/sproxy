@@ -20,7 +20,7 @@ class File:public Responser{
     int  fd = 0;
     struct stat st;
     FileStatus status{};
-    virtual void readHE(buff_block& bb);
+    virtual void readHE(Buffer& bb);
     virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
 public:
     explicit File(const char* fname, int fd, const struct stat* st);

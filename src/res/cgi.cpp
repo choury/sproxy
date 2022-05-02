@@ -63,7 +63,7 @@ static std::multimap<std::string, std::string> decode(const unsigned char *s, si
     return headers;
 }
 
-HttpReqHeader* UnpackCgiReq(const void *header, size_t len) {
+std::shared_ptr<HttpReqHeader> UnpackCgiReq(const void *header, size_t len) {
     auto headers = decode((const unsigned char*)header, len);
     if(headers.empty()){
         return nullptr;
@@ -72,10 +72,10 @@ HttpReqHeader* UnpackCgiReq(const void *header, size_t len) {
         LOGE("wrong frame http request, no method\n");
         return nullptr;
     }
-    return new HttpReqHeader(std::move(headers));
+    return std::make_shared<HttpReqHeader>(std::move(headers));
 }
 
-HttpResHeader* UnpackCgiRes(const void *header, size_t len) {
+std::shared_ptr<HttpResHeader> UnpackCgiRes(const void *header, size_t len) {
     auto headers = decode((const unsigned char*)header, len);
     if(headers.empty()){
         return nullptr;
@@ -84,10 +84,10 @@ HttpResHeader* UnpackCgiRes(const void *header, size_t len) {
         LOGE("wrong frame http response, no status\n");
         return nullptr;
     }
-    return new HttpResHeader(std::move(headers));
+    return std::make_shared<HttpResHeader>(std::move(headers));
 }
 
-size_t PackCgiReq(const HttpReqHeader *req, void *data, size_t len) {
+size_t PackCgiReq(std::shared_ptr<const HttpReqHeader> req, void *data, size_t len) {
     char* p = (char*)data;
     for(const auto& i : req->Normalize()){
         p = cgi_addnv(p, i.first, i.second);
@@ -96,7 +96,7 @@ size_t PackCgiReq(const HttpReqHeader *req, void *data, size_t len) {
     return p - (char*)data;
 }
 
-size_t PackCgiRes(const HttpResHeader *res, void *data, size_t len) {
+size_t PackCgiRes(std::shared_ptr<const HttpResHeader> res, void *data, size_t len) {
     char *p = (char *)data;
     for(const auto& i : res->Normalize()){
         p = cgi_addnv(p, i.first, i.second);
@@ -124,6 +124,7 @@ Cgi::Cgi(const char* fname, int sv[2]) {
             LOGE("[CGI] %s getrlimit failed: %s\n", fname, strerror(errno));
             exit(-1);
         }
+        LOGD(DFILE, "<cgi> max fd: %d\n", (int)limits.rlim_cur);
         for(int i = 3; i< (int)limits.rlim_cur; i++){
             if(i == sv[1]){
                 continue;
@@ -159,7 +160,7 @@ void Cgi::Clean(uint32_t id, CgiStatus& status) {
     if(status.res == nullptr){
         status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[cgi failed]]\n"));
     }else {
-        status.res->trigger(Channel::CHANNEL_ABORT);
+        status.res->send(ChannelMessage::CHANNEL_ABORT);
     }
     statusmap.erase(id);
 }
@@ -167,28 +168,28 @@ void Cgi::Clean(uint32_t id, CgiStatus& status) {
 Cgi::~Cgi() {
 }
 
-void Cgi::Send(uint32_t id, void *buff, size_t size) {
-    LOGD(DFILE, "<cgi> [%s] stream %" PRIu32 " send: %zd\n", basename(filename), id, size);
-    assert(statusmap.count(id));
-    size = size > CGI_LEN_MAX ? CGI_LEN_MAX : size;
-    CGI_Header *header = (CGI_Header *)p_move(buff, -(char)sizeof(CGI_Header));
+void Cgi::Recv(Buffer&& bb) {
+    LOGD(DFILE, "<cgi> [%s] stream %" PRIu32 " recv: %zd\n", basename(filename), (int)bb.id, bb.len);
+    assert(statusmap.count(bb.id));
+    size_t size = bb.len > CGI_LEN_MAX ? CGI_LEN_MAX : bb.len;
+    CGI_Header *header = (CGI_Header *) bb.trunc(-(char) sizeof(CGI_Header));
     header->type = CGI_DATA;
     header->flag = size ? 0: CGI_FLAG_END;
-    header->requestId = htonl(id);
+    header->requestId = htonl(bb.id);
     header->contentLength = htons(size);
-    rwer->buffer_insert(rwer->buffer_end(), buff_block{header, size + sizeof(CGI_Header)});
+    rwer->buffer_insert(rwer->buffer_end(), std::move(bb));
 }
 
 
-void Cgi::readHE(buff_block& bb) {
+void Cgi::readHE(Buffer& bb) {
     if(bb.len == 0){
         LOGE("[CGI] %s closed pipe\n", basename(filename));
         return deleteLater(PROTOCOL_ERR);
     }
-    while(bb.len - bb.offset >= sizeof(CGI_Header)) {
-        const CGI_Header *header = (const CGI_Header *)((const char*)bb.buff + bb.offset);
+    while(bb.len >= sizeof(CGI_Header)) {
+        const CGI_Header *header = (const CGI_Header *) bb.data();
         size_t size = ntohs(header->contentLength) + sizeof(CGI_Header);
-        if(bb.len - bb.offset < size){
+        if(bb.len  < size){
             return;
         }
         uint32_t id = ntohl(header->requestId);
@@ -217,13 +218,13 @@ void Cgi::readHE(buff_block& bb) {
         if(!consumed){
             return;
         }
-        bb.offset += size;
+        bb.trunc(size);
     }
 }
 
 bool Cgi::HandleRes(const CGI_Header *cheader, CgiStatus& status){
     uint32_t len = ntohs(cheader->contentLength);
-    HttpResHeader* header = UnpackCgiRes(cheader + 1, len);
+    std::shared_ptr<HttpResHeader> header = UnpackCgiRes(cheader + 1, len);
     header->request_id = ntohl(cheader->requestId);
 
     LOGD(DFILE, "<cgi> [%s] res %" PRIu32 ": %s\n", basename(filename), header->request_id, header->status);
@@ -253,13 +254,13 @@ bool Cgi::HandleData(const CGI_Header* header, CgiStatus& status){
     }
 
     LOGD(DFILE, "<cgi> [%s] handle %d data %zu\n", basename(filename), htonl(header->requestId), size);
-    status.res->send((const char *)(header+1), size);
+    status.res->send((header+1), size);
     if (header->flag & CGI_FLAG_END) {
         uint32_t id = ntohl(header->requestId);
         if(size){
-            status.res->send((const void *)nullptr, 0);
+            status.res->send(nullptr);
         }
-        status.res->trigger(Channel::CHANNEL_CLOSED);
+        status.res->send(ChannelMessage::CHANNEL_CLOSED);
         statusmap.erase(id);
     }
     return true;
@@ -284,6 +285,24 @@ void Cgi::deleteLater(uint32_t errcode){
     return Server::deleteLater(errcode);
 }
 
+void Cgi::Handle(uint32_t id, ChannelMessage::Signal s ) {
+    if(statusmap.count(id) == 0) {
+        LOGE("[CGI] %s stream %" PRIu32 " finished, not found\n", basename(filename), id);
+        return;
+    }
+    LOGD(DFILE, "<cgi> [%s] stream %" PRIu32" finished\n", basename(filename), id);
+    if(s == ChannelMessage::CHANNEL_SHUTDOWN) {
+        Clean(id, statusmap[id]);
+    }else {
+        statusmap.erase(id);
+    }
+    auto buff = std::make_shared<Block>(sizeof(CGI_Header));
+    CGI_Header *header = (CGI_Header *)buff->data();
+    cgi_error(header, id, CGI_FLAG_ABORT);
+    rwer->buffer_insert(rwer->buffer_end(), Buffer{buff, sizeof(CGI_Header)});
+}
+
+
 
 void Cgi::request(std::shared_ptr<HttpReq> req, Requester* src) {
     uint32_t id = req->header->request_id;
@@ -293,33 +312,30 @@ void Cgi::request(std::shared_ptr<HttpReq> req, Requester* src) {
         nullptr,
     };
     req->header->set("X-Real-IP", src->getid());
-    req->header->set("X-Authorized",
-                     checkauth(src->getid(), req->header->get("Authorization")));
+    req->header->set("X-Authorized", checkauth(src->getid(), req->header->get("Authorization")));
 
-    CGI_Header* const header = (CGI_Header *)p_malloc(BUF_LEN);
+    auto buff = std::make_shared<Block>(BUF_LEN);
+    CGI_Header* const header = (CGI_Header *)buff->data();
     header->type = CGI_REQUEST;
     header->flag = 0;
     header->requestId = htonl(req->header->request_id);
     header->contentLength = htons(PackCgiReq(req->header, header + 1, BUF_LEN - sizeof(CGI_Header)));
-    rwer->buffer_insert(rwer->buffer_end(),
-                        buff_block{header, sizeof(CGI_Header) + ntohs(header->contentLength)});
-    req->setHandler(std::bind([this](uint32_t id, Channel::signal s){
-        if(statusmap.count(id) == 0) {
-            LOGE("[CGI] %s stream %" PRIu32 " finished, not found\n", basename(filename), id);
-            return;
+    rwer->buffer_insert(rwer->buffer_end(), Buffer{buff, sizeof(CGI_Header) + ntohs(header->contentLength)});
+    req->attach([this, id](ChannelMessage& msg){
+        switch(msg.type){
+        case ChannelMessage::CHANNEL_MSG_HEADER:
+            LOGD(DFILE, "<CGI> ignore header for req\n");
+            return 1;
+        case ChannelMessage::CHANNEL_MSG_DATA:
+            msg.data.id = id;
+            Recv(std::move(msg.data));
+            return 1;
+        case ChannelMessage::CHANNEL_MSG_SIGNAL:
+            Handle(id, msg.signal);
+            return 0;
         }
-        LOGD(DFILE, "<cgi> [%s] stream %" PRIu32" finished\n", basename(filename), id);
-        if(s == Channel::CHANNEL_SHUTDOWN) {
-            Clean(id, statusmap[id]);
-        }else {
-            statusmap.erase(id);
-        }
-        size_t len = sizeof(CGI_Header);
-        CGI_Header *header = (CGI_Header *)p_malloc(len);
-        cgi_error(header, id, CGI_FLAG_ABORT);
-        rwer->buffer_insert(rwer->buffer_end(), buff_block{header, len});
-    }, id, _1));
-    req->attach(std::bind(&Cgi::Send, this, id, _1, _2), [this]{ return rwer->cap(0);});
+        return 0;
+    }, [this]{ return rwer->cap(0);});
 }
 
 void Cgi::dump_stat(Dumper dp, void* param){
@@ -354,14 +370,14 @@ void flushcgi() {
     }
 }
 
-int cgi_response(int fd, const HttpResHeader* res) {
-    CGI_Header* const header = (CGI_Header *)p_malloc(BUF_LEN);
+int cgi_response(int fd, std::shared_ptr<const HttpResHeader> res) {
+    CGI_Header* const header = (CGI_Header *)malloc(BUF_LEN);
     header->type = CGI_RESPONSE;
     header->flag = 0;
     header->requestId = htonl(res->request_id);
     header->contentLength = htons(PackCgiRes(res, header + 1, BUF_LEN - sizeof(CGI_Header)));
     int ret = write(fd, header, sizeof(CGI_Header) + ntohs(header->contentLength));
-    p_free(header);
+    free(header);
     return ret;
 }
 

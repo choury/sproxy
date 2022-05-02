@@ -12,7 +12,7 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
         proxy3 = this;
     }
     rwer->SetErrorCB(std::bind(&Proxy3::Error, this, _1, _2));
-    rwer->SetReadCB([this](buff_block& bb){
+    rwer->SetReadCB([this](Buffer& bb){
         if(bb.len == 0){
             //fin
             uint64_t id = bb.id;
@@ -27,16 +27,14 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
             assert((status.flags & HTTP_RES_EOF) == 0);
             assert((status.flags & HTTP_RES_COMPLETED) == 0);
             status.flags |= HTTP_RES_COMPLETED;
-            status.res->send((const void*)nullptr,0);
+            status.res->send(nullptr);
             return;
         }
 
-        const char* data = (const char*)bb.buff;
         size_t ret = 0;
-        while((bb.offset < bb.len) && (ret = Http3_Proc((uchar*)data + bb.offset, bb.len-bb.offset, bb.id))){
-            bb.offset += ret;
+        while((bb.len > 0) && (ret = Http3_Proc((uchar*) bb.data(), bb.len, bb.id))){
+            bb.trunc(ret);
         }
-        assert(bb.offset <= bb.len);
         if(proxy3 != this && statusmap.empty()){
             LOG("this %p is not the main proxy3 and no clients, close it.\n", this);
             deleteLater(NOERROR);
@@ -98,9 +96,9 @@ void Proxy3::GoawayProc(uint64_t id){
     return deleteLater(NOERROR);
 }
 
-void Proxy3::PushFrame(uint64_t id, void* buff, size_t len) {
-    assert(len <= rwer->cap(id));
-    rwer->buffer_insert(rwer->buffer_end(), buff_block{buff, len, 0, id});
+void Proxy3::PushFrame(Buffer&& bb) {
+    assert((int)bb.len <= rwer->cap(bb.id));
+    rwer->buffer_insert(rwer->buffer_end(), std::move(bb));
 }
 
 uint64_t Proxy3::CreateUbiStream() {
@@ -110,47 +108,36 @@ uint64_t Proxy3::CreateUbiStream() {
 void Proxy3::request(std::shared_ptr<HttpReq> req, Requester*) {
     uint64_t id = maxDataId = std::dynamic_pointer_cast<QuicRWer>(rwer)->CreateBiStream();
     assert((http3_flag & HTTP3_FLAG_GOAWAYED) == 0);
-    LOGD(DHTTP3, "proxy3 request: %s [%" PRIu64"]\n", req->header->geturl().c_str(), id);
+    LOGD(DHTTP3, "<proxy3> request: %s [%" PRIu64"]\n", req->header->geturl().c_str(), id);
     statusmap[id] = ReqStatus{
         req,
         nullptr,
         0,
         };
 
-    void* buff = p_malloc(BUF_LEN);
-    memset(buff, 0, BUF_LEN);
-    size_t len = qpack_encoder.PackHttp3Req(req->header, buff, BUF_LEN);
+    auto buff = std::make_shared<Block>(BUF_LEN);
+    memset(buff->data(), 0, BUF_LEN);
+    size_t len = qpack_encoder.PackHttp3Req(req->header, buff->data(), BUF_LEN);
     size_t pre = variable_encode_len(HTTP3_STREAM_HEADERS) + variable_encode_len(len);
-    buff =  p_move(buff, -(char)pre);
-    char* p = (char*)buff;
+    char* p = (char*) buff->trunc(-(char) pre);
     p += variable_encode(p, HTTP3_STREAM_HEADERS);
     p += variable_encode(p, len);
-    PushFrame(id, buff, p - (char*)buff + len);
-    ReqStatus& status = statusmap[id];
-    req->setHandler([this, &status, id](Channel::signal s){
-        assert(statusmap.count(id));
-        switch(s){
-        case Channel::CHANNEL_SHUTDOWN:
-            assert((status.flags & HTTP_RES_EOF) == 0);
-            status.flags |= HTTP_REQ_EOF;
-            if(http3_flag & HTTP3_SUPPORT_SHUTDOWN) {
-                LOGD(DHTTP3, "<proxy3> send shutdown frame: %" PRIu64"\n", id);
-                Shutdown(id);
-            }else{
-                LOGD(DHTTP3, "<proxy3> send reset frame: %" PRIu64"\n", id);
-                Clean(id, status, HTTP3_ERR_REQUEST_CANCELLED);
-            }
-            break;
-        case Channel::CHANNEL_CLOSED:
-            status.flags |= HTTP_CLOSED_F;
-            return Clean(id, status, HTTP3_ERR_NO_ERROR);
-        case Channel::CHANNEL_ABORT:
-            status.flags |= HTTP_CLOSED_F;
-            return Clean(id, status, HTTP3_ERR_CONNECT_ERROR);
+    PushFrame({buff, pre + len, id});
+    req->attach([this, id](ChannelMessage& msg){
+        switch(msg.type){
+        case ChannelMessage::CHANNEL_MSG_HEADER:
+            LOGD(DHTTP3, "<proxy3> ignore header for req\n");
+            return 1;
+        case ChannelMessage::CHANNEL_MSG_DATA:
+            msg.data.id = id;
+            Recv(std::move(msg.data));
+            return 1;
+        case ChannelMessage::CHANNEL_MSG_SIGNAL:
+            Handle(id, msg.signal);
+            return 0;
         }
-    });
-    req->attach((Channel::recv_const_t)std::bind(&Proxy3::Send, this, id, _1, _2),
-                [this, id]{return rwer->cap(id) - 9;});
+        return 0;
+    }, [this, id]{return rwer->cap(id) - 9;});
 }
 
 
@@ -159,34 +146,61 @@ void Proxy3::init(std::shared_ptr<HttpReq> req) {
     request(req, nullptr);
 }
 
-void Proxy3::ResProc(uint64_t id, HttpResHeader* header) {
+void Proxy3::ResProc(uint64_t id, std::shared_ptr<HttpResHeader> header) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(!header->no_body() && !header->get("Content-Length"))
         {
             header->set("Transfer-Encoding", "chunked");
         }
-        status.res = std::make_shared<HttpRes>(header, []{});
-        status.req->response(status.res);
+        if(status.res){
+            status.res->send(header);
+        }else{
+            status.res = std::make_shared<HttpRes>(header, []{});
+            status.req->response(status.res);
+        }
     }else{
-        delete header;
         LOGD(DHTTP3, "<proxy3> ResProc not found id: %" PRIu64"\n", id);
         Reset(id, HTTP3_ERR_STREAM_CREATION_ERROR);
     }
 }
 
-void Proxy3::Send(uint64_t id, const void* buff, size_t size) {
-    assert(statusmap.count(id));
-    ReqStatus& status = statusmap[id];
+void Proxy3::Recv(Buffer&& bb) {
+    assert(statusmap.count(bb.id));
+    ReqStatus& status = statusmap[bb.id];
     assert((status.flags & HTTP_REQ_COMPLETED) == 0);
     assert((status.flags & HTTP_REQ_EOF) == 0);
-    if(size == 0){
+    if(bb.len == 0){
         status.flags |= HTTP_REQ_COMPLETED;
-        PushFrame(id, nullptr, 0);
-        LOGD(DHTTP3, "<proxy3> send data [%" PRIu64 "]: EOF\n", id);
+        LOGD(DHTTP3, "<proxy3> recv data [%" PRIu64 "]: EOF\n", bb.id);
+        PushFrame({nullptr, bb.id});
     }else{
-        PushData(id, buff, size);
-        LOGD(DHTTP3, "<proxy3> send data [%" PRIu64 "]: %zu\n", id, size);
+        LOGD(DHTTP3, "<proxy3> recv data [%" PRIu64 "]: %zu\n", bb.id, bb.len);
+        PushData(std::move(bb));
+    }
+}
+
+void Proxy3::Handle(uint64_t id, ChannelMessage::Signal s) {
+    assert(statusmap.count(id));
+    ReqStatus& status = statusmap[id];
+    switch(s){
+    case ChannelMessage::CHANNEL_SHUTDOWN:
+        assert((status.flags & HTTP_RES_EOF) == 0);
+        status.flags |= HTTP_REQ_EOF;
+        if(http3_flag & HTTP3_SUPPORT_SHUTDOWN) {
+            LOGD(DHTTP3, "<proxy3> send shutdown frame: %" PRIu64"\n", id);
+            Shutdown(id);
+        }else{
+            LOGD(DHTTP3, "<proxy3> send reset frame: %" PRIu64"\n", id);
+            Clean(id, status, HTTP3_ERR_REQUEST_CANCELLED);
+        }
+        break;
+    case ChannelMessage::CHANNEL_CLOSED:
+        status.flags |= HTTP_CLOSED_F;
+        return Clean(id, status, HTTP3_ERR_NO_ERROR);
+    case ChannelMessage::CHANNEL_ABORT:
+        status.flags |= HTTP_CLOSED_F;
+        return Clean(id, status, HTTP3_ERR_CONNECT_ERROR);
     }
 }
 
@@ -221,7 +235,7 @@ void Proxy3::Clean(uint64_t id, Proxy3::ReqStatus& status, uint32_t errcode) {
     if(status.flags & HTTP_CLOSED_F){
         //do nothing.
     }else if(status.res){
-        status.res->trigger(errcode ? Channel::CHANNEL_ABORT : Channel::CHANNEL_CLOSED);
+        status.res->send(errcode ? ChannelMessage::CHANNEL_ABORT : ChannelMessage::CHANNEL_CLOSED);
     }else{
         status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[internal error]]"));
     }

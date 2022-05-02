@@ -86,7 +86,7 @@ static void loadmine(){
 File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
     rwer = std::make_shared<FullRWer>([this](int ret, int code){
         LOGE("file error: %d/%d\n", ret, code);
-        status.res->trigger(Channel::CHANNEL_ABORT);
+        status.res->send(ChannelMessage::CHANNEL_ABORT);
         deleteLater(ret);
     });
     if(mimetype.empty()){
@@ -110,7 +110,7 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
         struct tm tp;
         strptime(req->header->get("If-Modified-Since"), "%a, %d %b %Y %H:%M:%S GMT", &tp);
         if(timegm(&tp) >= st.st_mtime){
-            HttpResHeader* header = UnpackHttpRes(H304);
+            std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H304);
             char buff[100];
             strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
             header->set("Last-Modified", buff);
@@ -122,7 +122,7 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
     if(status.rg.begin == -1 && status.rg.end == -1){
         status.rg.begin = 0;
         status.rg.end = st.st_size - 1;
-        HttpResHeader* header = UnpackHttpRes(H200, sizeof(H200));
+        std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H200, sizeof(H200));
         header->set("Content-Length", st.st_size);
         char buff[100];
         strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
@@ -133,7 +133,7 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
         status.res = std::make_shared<HttpRes>(header, std::bind(&RWer::EatReadData, rwer));
         req->response(status.res);
     }else if(checkrange(status.rg, st.st_size)){
-        HttpResHeader* header = UnpackHttpRes(H206, sizeof(H206));
+        std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H206, sizeof(H206));
         char buff[100];
         snprintf(buff, sizeof(buff), "bytes %zd-%zd/%jd",
                  status.rg.begin, status.rg.end, (intmax_t)st.st_size);
@@ -145,7 +145,7 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
         status.res = std::make_shared<HttpRes>(header, std::bind(&RWer::EatReadData, rwer));
         req->response(status.res);
     }else{
-        HttpResHeader* header = UnpackHttpRes(H416, sizeof(H416));
+        std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H416, sizeof(H416));
         char buff[100];
         snprintf(buff, sizeof(buff), "bytes */%jd", (intmax_t)st.st_size);
         header->set("Content-Range", buff);
@@ -153,27 +153,31 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
         return deleteLater(NOERROR);
     }
     if(status.req->header->ismethod("HEAD")){
-        status.res->send((const void*)nullptr, 0);
-        status.res->trigger(Channel::CHANNEL_CLOSED);
+        status.res->send(nullptr);
+        status.res->send(ChannelMessage::CHANNEL_CLOSED);
         return deleteLater(NOERROR);
     }
-    req->setHandler([this](Channel::signal s){
-        if(s == Channel::CHANNEL_SHUTDOWN){
-            status.res->trigger(Channel::CHANNEL_ABORT);
+    req->attach([this](ChannelMessage& msg){
+        if(msg.type != ChannelMessage::CHANNEL_MSG_SIGNAL){
+            return 1;
+        }
+        if(msg.signal == ChannelMessage::CHANNEL_SHUTDOWN){
+            status.res->send(ChannelMessage::CHANNEL_ABORT);
         }
         deleteLater(PEER_LOST_ERR);
-    });
+        return 0;
+    }, []{return 0;});
 }
 
-void File::readHE(buff_block&) {
+void File::readHE(Buffer&) {
     if(status.res == nullptr){
         return;
     }
     Range& rg = status.rg;
     LOGD(DFILE, "%s readHE %zd-%zd, flags: %d\n", filename, rg.begin, rg.end, status.flags);
     if (rg.begin > rg.end) {
-        status.res->send((const void*)nullptr, 0);
-        status.res->trigger(Channel::CHANNEL_CLOSED);
+        status.res->send(nullptr);
+        status.res->send(ChannelMessage::CHANNEL_CLOSED);
         deleteLater(NOERROR);
         rwer->delEvents(RW_EVENT::READ);
         return;
@@ -183,19 +187,17 @@ void File::readHE(buff_block&) {
         rwer->delEvents(RW_EVENT::READ);
         return;
     }
-    char* buff = (char *)malloc(len);
-    len = pread(fd, buff, len, rg.begin);
+    auto buff = std::make_shared<Block>(len);
+    len = pread(fd, buff->data(), len, rg.begin);
     if(len <= 0){
         LOGE("file pread error: %s\n", strerror(errno));
-        free(buff);
-        status.res->trigger(Channel::CHANNEL_ABORT);
+        status.res->send(ChannelMessage::CHANNEL_ABORT);
         deleteLater(SOCKET_ERR);
         rwer->delEvents(RW_EVENT::READ);
         return;
     }
-    status.res->send(buff, len);
+    status.res->send({buff, (size_t)len});
     rg.begin += len;
-    free(buff);
 }
 
 void File::deleteLater(uint32_t error) {
@@ -223,7 +225,7 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
     bool slash_end = req->header->filename.back() == '/';
     bool index_not_found = false;
     (void)realpath(("./" + req->header->filename).c_str(), filename);
-    HttpResHeader* header = nullptr;
+    std::shared_ptr<HttpResHeader> header = nullptr;
     while(true){
         if(!startwith(filename, opt.rootdir)){
             LOGE("get file out of rootdir: %s\n", filename);
@@ -291,27 +293,24 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
             auto res = std::make_shared<HttpRes>(header);
             req->response(res);
             char buff[1024];
-            res->send((const void*)buff,
-                    sprintf(buff, "<html>"
-                                  "<head><title>Index of %s</title></head>"
-                                  "<body><h1>Index of %s</h1><hr/><pre>",
-                                  req->header->filename.c_str(),
-                                  req->header->filename.c_str()));
+            res->send(buff,(size_t)sprintf(buff, "<html>"
+                            "<head><title>Index of %s</title></head>"
+                            "<body><h1>Index of %s</h1><hr/><pre>",
+                            req->header->filename.c_str(),
+                            req->header->filename.c_str()));
             struct dirent *ptr;
             while((ptr = readdir(dir))){
                 if(ptr->d_type == DT_DIR){
-                    res->send((const void*)buff,
-                                   sprintf(buff, "<a href='%s/'>%s/</a><br/>", ptr->d_name, ptr->d_name));
+                    res->send(buff, (size_t)sprintf(buff, "<a href='%s/'>%s/</a><br/>", ptr->d_name, ptr->d_name));
                 }else{
-                    res->send((const void*)buff,
-                                   sprintf(buff, "<a href='%s'>%s</a><br/>", ptr->d_name, ptr->d_name));
+                    res->send(buff, (size_t)sprintf(buff, "<a href='%s'>%s</a><br/>", ptr->d_name, ptr->d_name));
 
                 }
             }
             closedir(dir);
-            res->send((const void*)buff, sprintf(buff, "</pre><hr></body></html>"));
-            res->send((const void*)nullptr, 0);
-            res->trigger(Channel::CHANNEL_CLOSED);
+            res->send(buff, (size_t)sprintf(buff, "</pre><hr></body></html>"));
+            res->send(nullptr);
+            res->send(ChannelMessage::CHANNEL_CLOSED);
             return;
         }
 
