@@ -72,7 +72,7 @@ void RWer::SetErrorCB(std::function<void(int ret, int code)> func){
 
 void RWer::SetReadCB(std::function<void(Buffer&)> func){
     readCB = std::move(func);
-    EatReadData();
+    Unblock();
 }
 
 void RWer::SetWriteCB(std::function<void(size_t len)> func){
@@ -134,7 +134,7 @@ void RWer::Close(std::function<void()> func) {
     }
 }
 
-void RWer::EatReadData(){
+void RWer::Unblock(){
     if(flags & RWER_READING){
         return;
     }
@@ -181,8 +181,15 @@ buff_iterator RWer::buffer_end() {
 
 buff_iterator RWer::buffer_insert(buff_iterator where, Buffer&& bb) {
     assert((flags & RWER_SHUTDOWN) == 0);
+    if(bb.len == 0){
+        flags |= RWER_SHUTDOWN;
+    }
     addEvents(RW_EVENT::WRITE);
     return wbuff.push(where, std::move(bb));
+}
+
+bool RWer::idle(uint64_t) {
+    return (flags & RWER_SHUTDOWN) && (flags & RWER_EOFDELIVED);
 }
 
 NullRWer::NullRWer():RWer(-1, [](int, int){}) {

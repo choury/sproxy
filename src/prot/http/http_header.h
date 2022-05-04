@@ -81,6 +81,7 @@ public:
     const std::map<std::string, std::string>& getall() const;
 
     virtual bool no_body() const = 0;
+    virtual bool no_end() const = 0;
     virtual std::multimap<std::string, std::string> Normalize() const = 0;
     HttpHeader();
     virtual ~HttpHeader() = default;
@@ -102,11 +103,12 @@ public:
     bool should_proxy  = false;
     explicit HttpReqHeader(std::multimap<std::string, std::string>&& headers);
     bool ismethod(const char* method) const;
+    bool http_method() const;
+    bool valid_method() const;
 
     virtual std::multimap<std::string, std::string> Normalize() const override;
     virtual bool no_body() const override;
-    virtual bool http_method() const;
-    virtual bool normal_method() const;
+    virtual bool no_end() const override;
 
     std::map<std::string, std::string> getcookies()const;
     std::map<std::string, std::string> getparamsmap()const;
@@ -138,6 +140,7 @@ public:
     explicit HttpResHeader(std::multimap<std::string, std::string>&& headers);
     virtual std::multimap<std::string, std::string> Normalize() const override;
     virtual bool no_body() const override;
+    virtual bool no_end() const override;
     void addcookie(const Cookie &cookie);
 };
 

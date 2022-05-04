@@ -191,10 +191,6 @@ void Http3Base::GoawayProc(__attribute__ ((unused)) uint64_t id) {
     LOGD(DHTTP3, "Get a Goaway frame: %" PRIu64"\n", id);
 }
 
-void Http3Base::ShutdownProc(__attribute__ ((unused)) uint64_t id) {
-    LOGD(DHTTP3, "Stream shutdown: %" PRIu64"\n", id);
-}
-
 void Http3Base::Goaway(uint64_t lastid){
     if(ctrlid_local == 0){
         //this connection is not inited.
@@ -206,9 +202,6 @@ void Http3Base::Goaway(uint64_t lastid){
     pos += variable_encode(pos, variable_encode_len(lastid));
     pos += variable_encode(pos , lastid);
     PushFrame({buff, size_t(pos - (char*)buff->data()), ctrlid_local});
-}
-
-void Http3Base::Shutdown(uint64_t id) {
 }
 
 void Http3Base::PushData(Buffer&& bb) {

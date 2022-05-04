@@ -15,9 +15,7 @@ struct ChannelMessage{
         CHANNEL_MSG_SIGNAL,
     }Type;
     typedef enum{
-        CHANNEL_SHUTDOWN,
         CHANNEL_ABORT,
-        CHANNEL_CLOSED,
     }Signal;
     Type type;
     std::shared_ptr<HttpHeader> header;
@@ -66,12 +64,10 @@ public:
 
 //These flags just defined for user, it will NOT be set by this class
 #define HTTP_CLOSED_F       (1u<<1u)   //cls
-#define HTTP_CHUNK_F        (1u<<2u)
-#define HTTP_NOLENGTH_F     (1u<<3u)
-#define HTTP_REQ_COMPLETED  (1u<<4u)   //qc
-#define HTTP_REQ_EOF        (1u<<5u)   //qe
-#define HTTP_RES_COMPLETED  (1u<<6u)   //sc
-#define HTTP_RES_EOF        (1u<<7u)   //se
+#define HTTP_CHUNK_F        (1u<<2u)   //http1 only
+#define HTTP_NOEND_F        (1u<<3u)   //http1 only
+#define HTTP_REQ_COMPLETED  (1u<<5u)   //qc
+#define HTTP_RES_COMPLETED  (1u<<7u)   //sc
 
 /* 1. Requester alloc HttpReq and Responser alloc HttpRes.
  * 2. Peers send zero message(send0) for end flag of single req or res,

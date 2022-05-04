@@ -32,13 +32,12 @@ protected:
     virtual void DataProc(uint64_t id, const void *data, size_t len)override;
     virtual void ErrProc(int errcode)override;
     virtual void Reset(uint64_t id, uint32_t code)override;
-    virtual void ShutdownProc(uint64_t id)override;
     virtual uint64_t CreateUbiStream() override;
 
     void Recv(Buffer&& bb);
     void Handle(uint64_t id, ChannelMessage::Signal s);
     void RstProc(uint64_t id, uint32_t errcode);
-    void Clean(uint64_t id, ReqStatus& status, uint32_t errcode);
+    void Clean(uint64_t id, uint32_t errcode);
 public:
     explicit Guest3(int fd, const sockaddr_storage* addr, SSL_CTX* ctx, QuicMgr* quicMgr);
     virtual ~Guest3() override;

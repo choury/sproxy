@@ -51,7 +51,7 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
         res = std::make_shared<HttpRes>(UnpackHttpRes(H400), "[[host not set]]\n");
         goto out;
     }
-    if (header->normal_method()) {
+    if (header->valid_method()) {
         strategy stra = getstrategy(header->Dest.hostname);
         header->set("Strategy", getstrategystring(stra.s));
         if(stra.s == Strategy::block){

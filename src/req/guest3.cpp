@@ -23,6 +23,7 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
     }))
 {
     rwer->SetReadCB([this](Buffer& bb){
+        LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", getsrc(), bb.id, bb.len);
         if(bb.len == 0){
             //fin
             uint64_t id = bb.id;
@@ -34,11 +35,10 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
             }
             LOGD(DHTTP3, "<guest3> [%" PRIu64 "]: end of stream\n", id);
             ReqStatus& status = statusmap[id];
-            assert((status.flags & HTTP_REQ_EOF) == 0);
             status.req->send(nullptr);
             status.flags |= HTTP_REQ_COMPLETED;
             if(status.flags & HTTP_RES_COMPLETED) {
-                Clean(id, status, NOERROR);
+                Clean(id, NOERROR);
             }
             return;
         }
@@ -54,11 +54,7 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
             if(status.res == nullptr){
                 continue;
             }
-            if((status.flags&HTTP_REQ_COMPLETED) && (status.flags&HTTP_RES_COMPLETED)){
-                Clean(i.first, i.second, NOERROR);
-                continue;
-            }
-            if((status.flags & HTTP_RES_COMPLETED) || (status.flags & HTTP_RES_EOF)){
+            if((status.flags & HTTP_RES_COMPLETED)){
                 continue;
             }
             if(this->rwer->cap(i.first) >= 9){
@@ -70,6 +66,12 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
 }
 
 Guest3::~Guest3() {
+    for(auto& i: statusmap){
+        if((i.second.flags & HTTP_CLOSED_F) == 0) {
+            i.second.req->send(ChannelMessage::CHANNEL_ABORT);
+        }
+        i.second.flags |= HTTP_CLOSED_F;
+    }
     statusmap.clear();
 }
 
@@ -88,13 +90,20 @@ void Guest3::Recv(Buffer&& bb){
     assert(statusmap.count(bb.id));
     ReqStatus& status = statusmap[bb.id];
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
-    assert((status.flags & HTTP_RES_EOF) == 0);
     if(bb.len == 0){
-        status.flags |= HTTP_RES_COMPLETED;
         LOGD(DHTTP3, "<guest3> %" PRIu32" recv data [%" PRIu64"]: EOF\n",
              status.req->header->request_id, bb.id);
         PushFrame({nullptr, bb.id});
+        status.flags |= HTTP_RES_COMPLETED;
+        if(status.flags & HTTP_REQ_COMPLETED) {
+            rwer->addjob(std::bind(&Guest3::Clean, this, bb.id, NOERROR), 0, JOB_FLAGS_AUTORELEASE);
+        }
     }else{
+        if(status.req->header->ismethod("HEAD")){
+            LOGD(DHTTP3, "<guest3> %" PRIu32" recv data [%" PRIu64"]: HEAD req discard body\n",
+                 status.req->header->request_id, bb.id);
+            return;
+        }
         LOGD(DHTTP3, "<guest3> %" PRIu32 " recv data [%" PRIu64"]: %zu\n",
              status.req->header->request_id, bb.id, bb.len);
         PushData(std::move(bb));
@@ -104,24 +113,12 @@ void Guest3::Recv(Buffer&& bb){
 void Guest3::Handle(uint64_t id, ChannelMessage::Signal s) {
     assert(statusmap.count(id));
     ReqStatus& status = statusmap[id];
+    LOGD(DHTTP3, "<guest3> signal [%d] %" PRIu32 ": %d\n",
+         (int)id, status.req->header->request_id, (int)s);
     switch(s){
-    case ChannelMessage::CHANNEL_SHUTDOWN:
-        assert((status.flags & HTTP_REQ_EOF) == 0);
-        status.flags |= HTTP_RES_EOF;
-        if(http3_flag & HTTP3_SUPPORT_SHUTDOWN) {
-            LOGD(DHTTP3, "<guest3> send shutdown frame: %" PRIu64"\n", id);
-            Shutdown(id);
-        }else{
-            LOGD(DHTTP3, "<guest3> send reset frame: %" PRIu64"\n", id);
-            Clean(id, status, HTTP3_ERR_REQUEST_CANCELLED);
-        }
-        break;
-    case ChannelMessage::CHANNEL_CLOSED:
-        status.flags |= HTTP_CLOSED_F;
-        return Clean(id, status, NOERROR);
     case ChannelMessage::CHANNEL_ABORT:
         status.flags |= HTTP_CLOSED_F;
-        return Clean(id, status, HTTP3_ERR_INTERNAL_ERROR);
+        return Clean(id, HTTP3_ERR_INTERNAL_ERROR);
     }
 }
 
@@ -142,7 +139,7 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
 
     status.req = std::make_shared<HttpReq>(header,
               std::bind(&Guest3::response, this, (void*)id, _1),
-                 std::bind(&RWer::EatReadData, rwer));
+                 [this]{ rwer->Unblock();});
     distribute(status.req, this);
 }
 
@@ -151,7 +148,6 @@ void Guest3::DataProc(uint64_t id, const void* data, size_t len) {
         return;
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
-        assert((status.flags & HTTP_REQ_EOF) == 0);
         assert((status.flags & HTTP_REQ_COMPLETED) == 0);
         status.req->send(data, len);
     }else{
@@ -198,14 +194,20 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
     }, [this, id]{return rwer->cap(id) - 9;});
 }
 
-void Guest3::Clean(uint64_t id, ReqStatus &status, uint32_t errcode) {
-    assert(statusmap[id].req == status.req);
+void Guest3::Clean(uint64_t id, uint32_t errcode) {
+    if(statusmap.count(id) == 0){
+        return;
+    }
 
+    ReqStatus& status = statusmap[id];
     if((status.flags&HTTP_REQ_COMPLETED) == 0 || (status.flags&HTTP_RES_COMPLETED) == 0){
         Reset(id, errcode);
     }
     if((status.flags & HTTP_CLOSED_F) == 0){
-        status.req->send(errcode ? ChannelMessage::CHANNEL_ABORT : ChannelMessage::CHANNEL_CLOSED);
+        status.req->send(ChannelMessage::CHANNEL_ABORT);
+    }
+    if(status.res){
+        status.res->detach();
     }
     statusmap.erase(id);
 }
@@ -219,11 +221,8 @@ void Guest3::RstProc(uint64_t id, uint32_t errcode) {
                  id, errcode);
         }
         status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
-        Clean(id, status, errcode);
+        Clean(id, errcode);
     }
-}
-
-void Guest3::ShutdownProc(uint64_t id) {
 }
 
 void Guest3::GoawayProc(uint64_t id) {
@@ -251,13 +250,6 @@ void Guest3::ErrProc(int errcode) {
 }
 
 void Guest3::deleteLater(uint32_t errcode){
-    for(auto& i: statusmap){
-        if((i.second.flags & HTTP_CLOSED_F) == 0) {
-            i.second.req->send(errcode ? ChannelMessage::CHANNEL_ABORT : ChannelMessage::CHANNEL_CLOSED);
-        }
-        i.second.flags |= HTTP_CLOSED_F;
-    }
-    statusmap.clear();
     if((http3_flag & HTTP3_FLAG_GOAWAYED) == 0){
         Goaway(maxDataId);
     }
@@ -271,10 +263,11 @@ void Guest3::dump_stat(Dumper dp, void* param) {
        rwer->rlength(), rwer->wlength(),
        (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     for(auto& i: statusmap){
-        dp(param, "0x%lx [%" PRIu32 "]: %s %s\n",
+        dp(param, "0x%lx [%" PRIu32 "]: %s %s, flags:0x%08x\n",
            i.first, i.second.req->header->request_id,
            i.second.req->header->method,
-           i.second.req->header->geturl().c_str());
+           i.second.req->header->geturl().c_str(),
+           i.second.flags);
     }
 }
 

@@ -208,7 +208,7 @@ bool HttpReqHeader::http_method() const {
         ismethod("OPTIONS");
 }
 
-bool HttpReqHeader::normal_method() const {
+bool HttpReqHeader::valid_method() const {
     return http_method() ||
         ismethod("CONNECT") ||
         ismethod("SEND") ||
@@ -237,7 +237,7 @@ void HttpReqHeader::postparse() {
         strcpy(method, get(AlterMethod));
         del(AlterMethod);
     }
-    if(!normal_method()){
+    if(!valid_method()){
         return;
     }
     if(!Dest.scheme[0] && ismethod("SEND")){
@@ -400,6 +400,18 @@ bool HttpReqHeader::no_body() const {
     ismethod("PING"));
 }
 
+bool HttpReqHeader::no_end() const {
+    if(no_body()){
+        return false;
+    }
+    if(get("Transfer-Encoding")){
+        return false;
+    }
+    if(get("Content-Length")){
+        return false;
+    }
+    return true;
+}
 
 std::multimap<std::string, std::string> HttpReqHeader::Normalize() const {
     std::multimap<std::string, std::string> normalization;
@@ -540,6 +552,22 @@ bool HttpResHeader::no_body() const {
 
     return get("content-length") &&
            memcmp("0", get("content-length"), 2) == 0;
+}
+
+bool HttpResHeader::no_end() const {
+    if(no_body()){
+        return false;
+    }
+    if(get("transfer-encoding")){
+        return false;
+    }
+    if(get("content-length")){
+        return false;
+    }
+    if(status[0] == '1' && memcmp(status, "101", 3) != 0){
+        return false;
+    }
+    return true;
 }
 
 /*

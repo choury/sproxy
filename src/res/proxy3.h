@@ -25,7 +25,6 @@ protected:
     virtual void DataProc(uint64_t id, const void *data, size_t len)override;
     virtual void ErrProc(int errcode)override;
     virtual void Reset(uint64_t id, uint32_t code)override;
-    virtual void ShutdownProc(uint64_t id)override;
     virtual uint64_t CreateUbiStream() override;
 
     void Recv(Buffer&& bb);

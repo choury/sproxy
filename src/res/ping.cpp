@@ -25,13 +25,13 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
         req->attach([this](ChannelMessage& message){
             switch(message.type){
             case ChannelMessage::CHANNEL_MSG_HEADER:
-                LOGD(DHTTP, "<PING> ignore header for req\n");
+                LOGD(DVPN, "<ping> ignore header for req\n");
                 return 1;
             case ChannelMessage::CHANNEL_MSG_DATA:
                 Recv(std::move(message.data));
                 return 1;
             case ChannelMessage::CHANNEL_MSG_SIGNAL:
-                this->req = nullptr;
+                req->detach();
                 deleteLater(PEER_LOST_ERR);
                 return 0;
             }
@@ -82,7 +82,10 @@ void Ping::request(std::shared_ptr<HttpReq> req, Requester*) {
 
 
 void Ping::Recv(Buffer&& bb){
-    LOGD(DHTTP, "<PING> [%d] recv %zu bytes\n", id, bb.len);
+    LOGD(DVPN, "<ping> [%d] recv %zu bytes\n", id, bb.len);
+    if(bb.len == 0){
+        return;
+    }
     switch(family){
     case AF_INET:{
         Icmp icmp;

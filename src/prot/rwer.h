@@ -37,11 +37,11 @@ enum class RWerStats{
 
 class RWer: public Ep, public job_handler, public std::enable_shared_from_this<RWer> {
 protected:
-#define RWER_READING  1u  // handling the read buffer
-#define RWER_SENDING  2u  // handling the write buffer
-#define RWER_CLOSING  4u
-#define RWER_SHUTDOWN 8u  // shutdown by me (sent fin to peer)
-#define RWER_EOFRECVD 16u // shutdown by peer (handled by me)
+#define RWER_READING    0x01  // handling the read buffer
+#define RWER_SENDING    0x02  // handling the write buffer
+#define RWER_CLOSING    0x04  // closing the connection
+#define RWER_SHUTDOWN   0x10  // shutdown by me (sent fin to peer)
+#define RWER_EOFDELIVED 0x20  // shutdown by peer (handled by me)
     uint32_t   flags = 0;
     RWerStats  stats = RWerStats::Idle;
     WBuffer    wbuff;
@@ -69,7 +69,7 @@ public:
     virtual void SetWriteCB(std::function<void(size_t len)> func);
 
     virtual void Close(std::function<void()> func);
-    void EatReadData();
+    void Unblock();
     RWerStats getStats(){return stats;}
     virtual const char* getPeer() {return "raw-rwer";}
 
@@ -82,6 +82,8 @@ public:
     virtual buff_iterator buffer_head();
     virtual buff_iterator buffer_end();
     virtual buff_iterator buffer_insert(buff_iterator where, Buffer&& bb);
+
+    virtual bool idle(uint64_t id);
 };
 
 class NullRWer: public RWer{

@@ -142,7 +142,7 @@ do{\
         char tmp[1024]; \
         int __ret =snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
         if(__ret < 0) abort(); \
-        slog(LOG_DEBUG, "%05u:%s: %s", getmtime()%100000, mod##_STR, tmp); \
+        slog(LOG_DEBUG, "%06u:%s: %s", getmtime()%1000000u, mod##_STR, tmp); \
     }\
 }while(0)
 

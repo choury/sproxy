@@ -99,7 +99,7 @@ protected:
     }
     virtual void ERROR(const CGI_Header* header){
         if(header->flag & CGI_FLAG_ABORT){
-            flag |= HTTP_REQ_EOF;
+            flag |= HTTP_CLOSED_F;
             return;
         }
         Response(UnpackHttpRes(H500, sizeof(H500)));
@@ -118,7 +118,7 @@ protected:
         NotImplemented();
     }
     void Finish(){
-        if((flag & HTTP_RES_EOF) || (flag & HTTP_REQ_EOF)){
+        if(flag & HTTP_CLOSED_F){
             return;
         }
         LOGD(DFILE, "<cgi> [%s] res finished: %d\n", name, req->request_id);
@@ -127,7 +127,7 @@ protected:
         }else{
             cgi_send(fd, req->request_id, "", 0);
         }
-        flag |= HTTP_RES_EOF;
+        flag |= HTTP_CLOSED_F;
     }
     void Response(std::shared_ptr<HttpResHeader> res){
         if(flag & HTTP_RES_COMPLETED){
@@ -142,10 +142,10 @@ protected:
         cgi_send(fd, req->request_id, buf, len);
     }
     void Abort(){
-        flag |= HTTP_RES_EOF;
-        if(flag & HTTP_REQ_EOF) {
+        if(flag & HTTP_CLOSED_F) {
             return;
         }
+        flag |= HTTP_CLOSED_F;
         cgi_senderror(fd, req->request_id, CGI_FLAG_ABORT);
     }
 public:
@@ -188,7 +188,7 @@ public:
         NotImplemented();
     }
     bool eof() const{
-        return (flag & HTTP_RES_EOF) || (flag & HTTP_REQ_EOF);
+        return (flag & HTTP_CLOSED_F);
     }
 };
 

@@ -24,7 +24,6 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
             }
             ReqStatus& status = statusmap[id];
             LOGD(DHTTP3, "<proxy3> [%" PRIu64 "]: end of stream\n", id);
-            assert((status.flags & HTTP_RES_EOF) == 0);
             assert((status.flags & HTTP_RES_COMPLETED) == 0);
             status.flags |= HTTP_RES_COMPLETED;
             status.res->send(nullptr);
@@ -47,7 +46,7 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
             if(!status.req){
                 continue;
             }
-            if (status.flags&HTTP_REQ_COMPLETED || status.flags&HTTP_REQ_EOF){
+            if (status.flags&HTTP_REQ_COMPLETED){
                 continue;
             }
             if(this->rwer->cap(i.first) > 9){
@@ -83,7 +82,6 @@ void Proxy3::DataProc(uint64_t id, const void* data, size_t len){
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         assert((status.flags & HTTP_RES_COMPLETED) == 0);
-        assert((status.flags & HTTP_RES_EOF) == 0);
         status.res->send(data, len);
     }else{
         LOGD(DHTTP3, "<proxy3> DataProc not found id: %" PRIu64 "\n", id);
@@ -169,7 +167,6 @@ void Proxy3::Recv(Buffer&& bb) {
     assert(statusmap.count(bb.id));
     ReqStatus& status = statusmap[bb.id];
     assert((status.flags & HTTP_REQ_COMPLETED) == 0);
-    assert((status.flags & HTTP_REQ_EOF) == 0);
     if(bb.len == 0){
         status.flags |= HTTP_REQ_COMPLETED;
         LOGD(DHTTP3, "<proxy3> recv data [%" PRIu64 "]: EOF\n", bb.id);
@@ -183,21 +180,9 @@ void Proxy3::Recv(Buffer&& bb) {
 void Proxy3::Handle(uint64_t id, ChannelMessage::Signal s) {
     assert(statusmap.count(id));
     ReqStatus& status = statusmap[id];
+    LOGD(DHTTP3, "<proxy3> signal [%d] %" PRIu32 ": %d\n",
+         (int)id, status.req->header->request_id, (int)s);
     switch(s){
-    case ChannelMessage::CHANNEL_SHUTDOWN:
-        assert((status.flags & HTTP_RES_EOF) == 0);
-        status.flags |= HTTP_REQ_EOF;
-        if(http3_flag & HTTP3_SUPPORT_SHUTDOWN) {
-            LOGD(DHTTP3, "<proxy3> send shutdown frame: %" PRIu64"\n", id);
-            Shutdown(id);
-        }else{
-            LOGD(DHTTP3, "<proxy3> send reset frame: %" PRIu64"\n", id);
-            Clean(id, status, HTTP3_ERR_REQUEST_CANCELLED);
-        }
-        break;
-    case ChannelMessage::CHANNEL_CLOSED:
-        status.flags |= HTTP_CLOSED_F;
-        return Clean(id, status, HTTP3_ERR_NO_ERROR);
     case ChannelMessage::CHANNEL_ABORT:
         status.flags |= HTTP_CLOSED_F;
         return Clean(id, status, HTTP3_ERR_CONNECT_ERROR);
@@ -221,10 +206,6 @@ void Proxy3::RstProc(uint64_t id, uint32_t errcode) {
     }
 }
 
-
-void Proxy3::ShutdownProc(uint64_t id){
-}
-
 void Proxy3::Clean(uint64_t id, Proxy3::ReqStatus& status, uint32_t errcode) {
     assert(statusmap[id].req == status.req);
     if((status.flags&HTTP_REQ_COMPLETED) == 0 || (status.flags&HTTP_RES_COMPLETED) == 0){
@@ -235,7 +216,7 @@ void Proxy3::Clean(uint64_t id, Proxy3::ReqStatus& status, uint32_t errcode) {
     if(status.flags & HTTP_CLOSED_F){
         //do nothing.
     }else if(status.res){
-        status.res->send(errcode ? ChannelMessage::CHANNEL_ABORT : ChannelMessage::CHANNEL_CLOSED);
+        status.res->send(ChannelMessage::CHANNEL_ABORT);
     }else{
         status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[internal error]]"));
     }
@@ -266,7 +247,7 @@ void Proxy3::dump_stat(Dumper dp, void* param) {
        rwer->rlength(), rwer->wlength(),
        (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     for(auto& i: statusmap){
-        dp(param, "0x%lx [%" PRIu32 "]: %s [%d]\n",
+        dp(param, "0x%lx [%" PRIu32 "]: %s, flags:0x%08x\n",
            i.first,
            i.second.req->header->request_id,
            i.second.req->header->geturl().c_str(),

@@ -29,7 +29,6 @@ public:
            std::function<void(int ret, int code)> errorCB,
            std::function<void(const sockaddr_storage&)> connectCB = nullptr);
     virtual ~SocketRWer() override;
-    virtual void Shutdown();
     virtual const char* getPeer() override;
 };
 

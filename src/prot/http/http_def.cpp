@@ -9,11 +9,11 @@ ChannelMessage::ChannelMessage(Signal signal):
 }
 
 ChannelMessage::ChannelMessage(Buffer&& data):
-    type(CHANNEL_MSG_DATA), header(nullptr), data(std::move(data)), signal(CHANNEL_SHUTDOWN){
+    type(CHANNEL_MSG_DATA), header(nullptr), data(std::move(data)), signal(CHANNEL_ABORT){
 }
 
 ChannelMessage::ChannelMessage(std::shared_ptr<HttpHeader> header):
-    type(CHANNEL_MSG_HEADER), header(header), data(nullptr), signal(CHANNEL_SHUTDOWN){
+    type(CHANNEL_MSG_HEADER), header(header), data(nullptr), signal(CHANNEL_ABORT){
 }
 
 ChannelMessage::ChannelMessage(ChannelMessage&& other):
@@ -98,7 +98,6 @@ HttpRes::HttpRes(std::shared_ptr<HttpResHeader> header, const char *body):
         send(body, len);
     }
     send(nullptr);
-    send(ChannelMessage::CHANNEL_CLOSED);
 }
 
 HttpRes::~HttpRes() {

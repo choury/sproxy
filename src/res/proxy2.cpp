@@ -25,7 +25,7 @@ bool Proxy2::wantmore(const ReqStatus& status) {
     if(!status.req){
         return false;
     }
-    if((status.flags&HTTP_REQ_COMPLETED) || (status.flags&HTTP_REQ_EOF)){
+    if((status.flags&HTTP_REQ_COMPLETED)){
         return false;
     }
     return status.remotewinsize > 0;
@@ -95,7 +95,6 @@ void Proxy2::Recv(Buffer&& bb) {
     assert(statusmap.count(bb.id));
     ReqStatus& status = statusmap[bb.id];
     assert((status.flags & HTTP_REQ_COMPLETED) == 0);
-    assert((status.flags & HTTP_REQ_EOF) == 0);
     status.remotewinsize -= bb.len;
     remotewinsize -= bb.len;
     assert(status.remotewinsize >= 0);
@@ -111,21 +110,9 @@ void Proxy2::Recv(Buffer&& bb) {
 void Proxy2::Handle(uint32_t id, ChannelMessage::Signal s) {
     assert(statusmap.count(id));
     ReqStatus& status = statusmap[id];
+    LOGD(DHTTP2, "<proxy2> signal [%d] %" PRIu32 ": %d\n",
+         (int)id, status.req->header->request_id, (int)s);
     switch(s){
-    case ChannelMessage::CHANNEL_SHUTDOWN:
-        assert((status.flags & HTTP_RES_EOF) == 0);
-        status.flags |= HTTP_REQ_EOF;
-        if(http2_flag & HTTP2_SUPPORT_SHUTDOWN) {
-            LOGD(DHTTP2, "<proxy2> send shutdown frame: %d\n", id);
-            Shutdown(id);
-        }else{
-            LOGD(DHTTP2, "<proxy2> send reset frame: %d\n", id);
-            Clean(id, status, HTTP2_ERR_NO_ERROR);
-        }
-        break;
-    case ChannelMessage::CHANNEL_CLOSED:
-        status.flags |= HTTP_CLOSED_F;
-        return Clean(id, status, HTTP2_ERR_NO_ERROR);
     case ChannelMessage::CHANNEL_ABORT:
         status.flags |= HTTP_CLOSED_F;
         return Clean(id, status, HTTP2_ERR_INTERNAL_ERROR);
@@ -188,7 +175,6 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         assert((status.flags & HTTP_RES_COMPLETED) == 0);
-        assert((status.flags & HTTP_RES_EOF) == 0);
         if(len > (size_t)status.localwinsize){
             LOGE("(%" PRIu32 "): <proxy2> [%d] window size error %zu/%d\n",
                     status.req->header->request_id, id, len, status.localwinsize);
@@ -213,7 +199,6 @@ void Proxy2::EndProc(uint32_t id) {
     LOGD(DHTTP2, "<proxy2> [%d]: end of stream\n", id);
     if(statusmap.count(id)) {
         ReqStatus &status = statusmap[id];
-        assert((status.flags & HTTP_RES_EOF) == 0);
         assert((status.flags & HTTP_RES_COMPLETED) == 0);
         status.flags |= HTTP_RES_COMPLETED;
         status.res->send(nullptr);
@@ -236,7 +221,7 @@ void Proxy2::Clean(uint32_t id, ReqStatus& status, uint32_t errcode){
     if(status.flags & HTTP_CLOSED_F){
         //do nothing.
     }else if(status.res){
-        status.res->send(errcode ? ChannelMessage::CHANNEL_ABORT : ChannelMessage::CHANNEL_CLOSED);
+        status.res->send(ChannelMessage::CHANNEL_ABORT);
     }else{
         status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[internal error]]"));
     }
@@ -301,20 +286,6 @@ void Proxy2::PingProc(const Http2_header *header){
         }
     }
     Http2Base::PingProc(header);
-}
-
-void Proxy2::ShutdownProc(uint32_t id) {
-    if(statusmap.count(id) == 0){
-        return;
-    }
-    LOGD(DHTTP2, "<proxy2> get shutdown frame from frame %d\n", id);
-    ReqStatus& status = statusmap[id];
-    status.flags |= HTTP_RES_EOF;
-    if(status.flags & HTTP_REQ_EOF){
-        Clean(id, status, HTTP2_ERR_STREAM_CLOSED);
-    }else {
-        status.res->send(ChannelMessage::CHANNEL_SHUTDOWN);
-    }
 }
 
 void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
@@ -412,12 +383,12 @@ void Proxy2::dump_stat(Dumper dp, void* param) {
             rwer->rlength(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     for(auto& i: statusmap){
-        dp(param, "0x%x [%" PRIu32 "]: %s [%d] (%d/%d)\n",
+        dp(param, "0x%x [%" PRIu32 "]: %s (%d/%d), flags:0x%08x\n",
                 i.first,
                 i.second.req->header->request_id,
                 i.second.req->header->geturl().c_str(),
-                i.second.flags,
-                i.second.remotewinsize, i.second.localwinsize);
+                i.second.remotewinsize, i.second.localwinsize,
+                i.second.flags);
     }
 }
 

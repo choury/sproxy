@@ -10,8 +10,7 @@ Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(f
     Http_Proc = &Guest_sni::AlwaysProc;
     rwer->SetReadCB([this](Buffer& bb){
         char *hostname = nullptr;
-        const char *buffer = (const char*) bb.data();
-        int ret = parse_tls_header(buffer, bb.len, &hostname);
+        int ret = parse_tls_header((char*)bb.data(), bb.len, &hostname);
         if(ret > 0){
             char buff[HEADLENLIMIT];
             int len = sprintf(buff, "CONNECT %s:%d" CRLF CRLF, hostname, 443);

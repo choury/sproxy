@@ -109,13 +109,13 @@ size_t HttpResponser::HeaderProc(const char* buffer, size_t len) {
         }
         if(req->no_body()){
             http_flag |= HTTP_IGNORE_BODY_F;
-        }else if (req->get("Content-Length") == nullptr ||
-                  req->ismethod("CONNECT"))
-        {
-            Http_Proc = &HttpResponser::AlwaysProc;
-        }else{
+        }else if(req->get("Transfer-Encoding")!= nullptr) {
+            Http_Proc = &HttpResponser::ChunkLProc;
+        }else if (req->get("Content-Length") != nullptr){
             Http_Proc = &HttpResponser::FixLenProc;
             http_expectlen = strtoull(req->get("Content-Length"), nullptr, 10);
+        }else {
+            Http_Proc = &HttpResponser::AlwaysProc;
         }
         ReqProc(req);
         if(http_flag & HTTP_IGNORE_BODY_F){
@@ -141,7 +141,7 @@ size_t HttpRequester::HeaderProc(const char* buffer, size_t len) {
         }
         if(res->no_body()){
             http_flag |= HTTP_IGNORE_BODY_F;
-        }else if(res->status[0] == '1'){
+        }else if(res->status[0] == '1') {
             http_flag |= HTTP_STATUS_1XX;
         }else if(res->get("Transfer-Encoding")!= nullptr) {
             Http_Proc = &HttpRequester::ChunkLProc;
@@ -152,8 +152,8 @@ size_t HttpRequester::HeaderProc(const char* buffer, size_t len) {
             http_expectlen = strtoull(res->get("Content-Length"), nullptr, 10);
         }
 
-        if(res->get("Upgrade") && strcmp(res->get("Upgrade"), "websocket") == 0){
-            //treat websocket as raw tcp
+        if(memcmp(res->status, "101", 3) == 0){
+            //treat Switching Protocols as raw tcp
             http_flag &= ~HTTP_STATUS_1XX;
             Http_Proc = &HttpRequester::AlwaysProc;
         }

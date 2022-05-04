@@ -193,7 +193,7 @@ int ListenUnix(const char* path) {
         unlink(path);
 
         if (bind(fd, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
-            LOGE("bind error:%s\n", strerror(errno));
+            LOGE("bind error %s:%s\n", path, strerror(errno));
             break;
         }
 

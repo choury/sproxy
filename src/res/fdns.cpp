@@ -86,9 +86,6 @@ void FDns::request(std::shared_ptr<HttpReq> req, Requester*){
             Recv(std::move(msg.data));
             return 1;
         case ChannelMessage::CHANNEL_MSG_SIGNAL:
-            if(msg.signal == ChannelMessage::CHANNEL_SHUTDOWN){
-                res->send(ChannelMessage::CHANNEL_ABORT);
-            }
             deleteLater(PEER_LOST_ERR);
             return 0;
         }
@@ -193,6 +190,7 @@ void FDns::RawCb(std::weak_ptr<void> param, const char* buff, size_t size) {
 }
 
 void FDns::deleteLater(uint32_t errcode) {
+    req->detach();
     for(const auto& i: statusmap){
         delete i.second->que;
     }

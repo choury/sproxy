@@ -119,10 +119,12 @@ protected:
     std::string initToken;
     std::string originDcid;
     struct QuicStreamStatus{
-#define STREAM_FLAG_FIN_SENT    0x01   //sent fin to peer
-#define STREAM_FLAG_FIN_RECVD   0x02   //got fin from peer
-#define STREAM_FLAG_RESET_SENT  0x04
-#define STREAM_FLAG_RESET_RECVD 0x08
+#define STREAM_FLAG_FIN_SENT    0x01   //已经发送了fin标记
+#define STREAM_FLAG_FIN_RECVD   0x02   //收到对方发送的fin标记
+#define STREAM_FLAG_FIN_DELIVED 0x04   //fin标记已经发送给应用层了
+#define STREAM_FLAG_RESET_SENT    0x10
+#define STREAM_FLAG_RESET_RECVD   0x20
+#define STREAM_FLAG_RESET_DELIVED 0x40
         uint32_t flags = 0;
         size_t   offset = 0;
         size_t   finSize = 0;
@@ -193,7 +195,6 @@ protected:
     iterator OpenStream(uint64_t id);
     bool IsLocal(uint64_t id);
     static bool IsBidirect(uint64_t id);
-    bool IsIdle(uint64_t id);
 
     size_t envelopLen(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, size_t len);
     int send(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, const void* body, size_t len);
@@ -232,6 +233,7 @@ public:
     void walkPackets(const void* buff, size_t length);
     void reorderData();
 
+    virtual bool idle(uint64_t id) override;
     void get_alpn(const unsigned char **s, unsigned int * len);
     int set_alpn(const unsigned char *s, unsigned int len);
     uint64_t CreateBiStream();

@@ -85,7 +85,11 @@ class handler: public CgiHandler{
             return;
         }
         std::shared_ptr<HttpResHeader> res = UnpackHttpRes(H303, sizeof(H303));
-        res->set("Location", req->get("Referer"));
+        if(req->get("Referer") != nullptr){
+            res->set("Location", req->get("Referer"));
+        }else{
+            res->set("Location", "/");
+        }
         Response(res);
         Finish();
     }
@@ -112,7 +116,11 @@ class handler: public CgiHandler{
             return;
         }
         std::shared_ptr<HttpResHeader> res = UnpackHttpRes(H303, sizeof(H303));
-        res->set("Location", req->get("Referer"));
+        if(req->get("Referer") != nullptr){
+            res->set("Location", req->get("Referer"));
+        }else{
+            res->set("Location", "/");
+        }
         Response(res);
         Finish();
     }

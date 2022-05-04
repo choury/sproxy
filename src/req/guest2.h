@@ -31,7 +31,6 @@ protected:
     virtual void ErrProc(int errcode)override;
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)override;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
-    virtual void ShutdownProc(uint32_t id)override;
 
     virtual std::list<Buffer>::insert_iterator queue_head() override;
     virtual std::list<Buffer>::insert_iterator queue_end() override;
@@ -39,7 +38,7 @@ protected:
 
     void Recv(Buffer&& bb);
     void Handle(uint32_t id, ChannelMessage::Signal signal);
-    void Clean(uint32_t id, ReqStatus& status, uint32_t errcode);
+    void Clean(uint32_t id, uint32_t errcode);
     static bool wantmore(const ReqStatus& status);
 public:
     explicit Guest2(std::shared_ptr<RWer> rwer);

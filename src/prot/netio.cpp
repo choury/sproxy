@@ -167,13 +167,6 @@ void SocketRWer::waitconnectHE(RW_EVENT events) {
     }
 }
 
-void SocketRWer::Shutdown() {
-    flags |= RWER_SHUTDOWN;
-    if(getFd() >= 0) {
-        shutdown(getFd(), SHUT_WR);
-    }
-}
-
 const char *SocketRWer::getPeer() {
     static char peer[300];
     memset(peer, 0, sizeof(peer));
@@ -220,6 +213,11 @@ const char *SocketRWer::getPeer() {
 }
 
 ssize_t SocketRWer::Write(const void* buff, size_t len, uint64_t){
+    if(len == 0){
+        assert(flags & RWER_SHUTDOWN);
+        shutdown(getFd(), SHUT_WR);
+        return 0;
+    }
     return write(getFd(), buff, len);
 }
 
@@ -235,10 +233,10 @@ void StreamRWer::ConsumeRData() {
         readCB(wb);
         rb.consume(len - wb.len);
     }
-    if(stats == RWerStats::ReadEOF && rb.length() == 0 && (flags & RWER_EOFRECVD) == 0){
+    if(stats == RWerStats::ReadEOF && rb.length() == 0 && (flags & RWER_EOFDELIVED) == 0){
         Buffer wb{nullptr, 0};
         readCB(wb);
-        flags |= RWER_EOFRECVD;
+        flags |= RWER_EOFDELIVED;
     }
 }
 
@@ -289,10 +287,10 @@ void PacketRWer::ConsumeRData() {
         readCB(bb);
         rb.consume(len - bb.len);
     }
-    if(stats == RWerStats::ReadEOF && rb.length() == 0 && (flags & RWER_EOFRECVD) == 0){
+    if(stats == RWerStats::ReadEOF && rb.length() == 0 && (flags & RWER_EOFDELIVED) == 0){
         Buffer wb{nullptr};
         readCB(wb);
-        flags |= RWER_EOFRECVD;
+        flags |= RWER_EOFDELIVED;
     }
 }
 

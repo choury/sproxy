@@ -157,6 +157,7 @@ void Cgi::evictMe(){
 
 void Cgi::Clean(uint32_t id, CgiStatus& status) {
     LOG("<cgi> [%s] %" PRIu32" abort\n", basename(filename), id);
+    status.req->detach();
     if(status.res == nullptr){
         status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[cgi failed]]\n"));
     }else {
@@ -166,6 +167,11 @@ void Cgi::Clean(uint32_t id, CgiStatus& status) {
 }
 
 Cgi::~Cgi() {
+    auto statusmapCopy = statusmap;
+    for(auto i: statusmapCopy) {
+        Clean(i.first, i.second);
+    }
+    statusmap.clear();
 }
 
 void Cgi::Recv(Buffer&& bb) {
@@ -231,7 +237,7 @@ bool Cgi::HandleRes(const CGI_Header *cheader, CgiStatus& status){
     if (!header->no_body() && header->get("content-length") == nullptr) {
         header->set("transfer-encoding", "chunked");
     }
-    status.res = std::make_shared<HttpRes>(header, std::bind(&RWer::EatReadData, rwer));
+    status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock();});
     status.req->response(status.res);
     return true;
 }
@@ -254,14 +260,13 @@ bool Cgi::HandleData(const CGI_Header* header, CgiStatus& status){
     }
 
     LOGD(DFILE, "<cgi> [%s] handle %d data %zu\n", basename(filename), htonl(header->requestId), size);
-    status.res->send((header+1), size);
+    if(size > 0) {
+        status.res->send((header + 1), size);
+    }
     if (header->flag & CGI_FLAG_END) {
         uint32_t id = ntohl(header->requestId);
-        if(size){
-            status.res->send(nullptr);
-        }
-        status.res->send(ChannelMessage::CHANNEL_CLOSED);
-        statusmap.erase(id);
+        status.res->send(nullptr);
+        Clean(id, status);
     }
     return true;
 }
@@ -277,25 +282,16 @@ bool Cgi::HandleError(const CGI_Header* header, CgiStatus& status){
 
 void Cgi::deleteLater(uint32_t errcode){
     evictMe();
-    auto statusmapCopy = statusmap;
-    for(auto i: statusmapCopy) {
-        Clean(i.first, i.second);
-    }
-    statusmap.clear();
     return Server::deleteLater(errcode);
 }
 
-void Cgi::Handle(uint32_t id, ChannelMessage::Signal s ) {
+void Cgi::Handle(uint32_t id, ChannelMessage::Signal) {
     if(statusmap.count(id) == 0) {
         LOGE("[CGI] %s stream %" PRIu32 " finished, not found\n", basename(filename), id);
         return;
     }
     LOGD(DFILE, "<cgi> [%s] stream %" PRIu32" finished\n", basename(filename), id);
-    if(s == ChannelMessage::CHANNEL_SHUTDOWN) {
-        Clean(id, statusmap[id]);
-    }else {
-        statusmap.erase(id);
-    }
+    statusmap.erase(id);
     auto buff = std::make_shared<Block>(sizeof(CGI_Header));
     CGI_Header *header = (CGI_Header *)buff->data();
     cgi_error(header, id, CGI_FLAG_ABORT);
@@ -341,7 +337,8 @@ void Cgi::request(std::shared_ptr<HttpReq> req, Requester* src) {
 void Cgi::dump_stat(Dumper dp, void* param){
     dp(param, "Cgi %p %s:\n", this, filename);
     for(const auto& i: statusmap){
-        dp(param, "%" PRIu32": %s\n", i.first, i.second.req->header->geturl().c_str());
+        dp(param, "%" PRIu32": %s\n",
+           i.first, i.second.req->header->geturl().c_str());
     }
 }
 

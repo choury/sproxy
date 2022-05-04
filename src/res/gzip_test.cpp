@@ -65,9 +65,6 @@ void GzipTest::request(std::shared_ptr<HttpReq> req, Requester*) {
         if(msg.type != ChannelMessage::CHANNEL_MSG_SIGNAL){
             return 1;
         }
-        if(msg.signal == ChannelMessage::CHANNEL_SHUTDOWN){
-            res->send(ChannelMessage::CHANNEL_ABORT);
-        }
         deleteLater(PEER_LOST_ERR);
         return 0;
     }, []{return 0;});
@@ -99,7 +96,7 @@ void GzipTest::request(std::shared_ptr<HttpReq> req, Requester*) {
     if (req->header->ismethod("HEAD")) {
         left = 0;
     }
-    this->res = std::make_shared<HttpRes>(header, std::bind(&RWer::EatReadData, rwer));
+    this->res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock();});
     req->response(this->res);
 }
 
@@ -110,7 +107,6 @@ void GzipTest::gzipreadHE(Buffer&) {
     if (left == 0) {
         (void)deflateEnd(&strm);
         res->send(nullptr);
-        res->send(ChannelMessage::CHANNEL_CLOSED);
         deleteLater(NOERROR);
         rwer->delEvents(RW_EVENT::READ);
         return;
@@ -149,7 +145,6 @@ void GzipTest::rawreadHE(Buffer&) {
     if (left == 0) {
         (void)deflateEnd(&strm);
         res->send(nullptr);
-        res->send(ChannelMessage::CHANNEL_CLOSED);
         deleteLater(NOERROR);
         rwer->delEvents(RW_EVENT::READ);
         return;
@@ -171,7 +166,7 @@ void GzipTest::rawreadHE(Buffer&) {
 }
 
 void GzipTest::deleteLater(uint32_t error) {
-    req = nullptr;
+    req->detach();
     Server::deleteLater(error);
 }
 

@@ -130,7 +130,7 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
         if(suffix && mimetype.count(suffix)){
             header->set("Content-Type", mimetype.at(suffix));
         }
-        status.res = std::make_shared<HttpRes>(header, std::bind(&RWer::EatReadData, rwer));
+        status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock();});
         req->response(status.res);
     }else if(checkrange(status.rg, st.st_size)){
         std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H206, sizeof(H206));
@@ -142,7 +142,7 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
         if(suffix && mimetype.count(suffix)){
             header->set("Content-Type", mimetype.at(suffix));
         }
-        status.res = std::make_shared<HttpRes>(header, std::bind(&RWer::EatReadData, rwer));
+        status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock();});
         req->response(status.res);
     }else{
         std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H416, sizeof(H416));
@@ -154,15 +154,11 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
     }
     if(status.req->header->ismethod("HEAD")){
         status.res->send(nullptr);
-        status.res->send(ChannelMessage::CHANNEL_CLOSED);
         return deleteLater(NOERROR);
     }
     req->attach([this](ChannelMessage& msg){
         if(msg.type != ChannelMessage::CHANNEL_MSG_SIGNAL){
             return 1;
-        }
-        if(msg.signal == ChannelMessage::CHANNEL_SHUTDOWN){
-            status.res->send(ChannelMessage::CHANNEL_ABORT);
         }
         deleteLater(PEER_LOST_ERR);
         return 0;
@@ -177,7 +173,6 @@ void File::readHE(Buffer&) {
     LOGD(DFILE, "%s readHE %zd-%zd, flags: %d\n", filename, rg.begin, rg.end, status.flags);
     if (rg.begin > rg.end) {
         status.res->send(nullptr);
-        status.res->send(ChannelMessage::CHANNEL_CLOSED);
         deleteLater(NOERROR);
         rwer->delEvents(RW_EVENT::READ);
         return;
@@ -201,17 +196,19 @@ void File::readHE(Buffer&) {
 }
 
 void File::deleteLater(uint32_t error) {
-    status.req = nullptr;
+    status.req->detach();
     Server::deleteLater(error);
 }
 
 void File::dump_stat(Dumper dp, void* param){
     dp(param, "File %p, %s\n", this, filename);
-    dp(param, " [%" PRIu32 "]: (%zd-%zd)\n",
-            status.req->header->request_id, status.rg.begin, status.rg.end);
+    dp(param, " [%" PRIu32 "]: (%zd-%zd), flags:0x%08x\n",
+            status.req->header->request_id,
+            status.rg.begin, status.rg.end, status.flags);
 }
 
 File::~File() {
+    status.req = nullptr;
     if(fd > 0){
         close(fd);
     }
@@ -310,7 +307,6 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
             closedir(dir);
             res->send(buff, (size_t)sprintf(buff, "</pre><hr></body></html>"));
             res->send(nullptr);
-            res->send(ChannelMessage::CHANNEL_CLOSED);
             return;
         }
 

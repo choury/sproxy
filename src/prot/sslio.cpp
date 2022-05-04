@@ -157,15 +157,12 @@ ssize_t SslRWer::Read(void* buff, size_t len){
 
 ssize_t SslRWer::Write(const void* buff, size_t len, uint64_t){
     if(len == 0){
+        assert(flags & RWER_SHUTDOWN);
+        SSL_shutdown(ssl);
         return 0;
     }
     ERR_clear_error();
     return ssl_get_error(ssl, SSL_write(ssl, buff, len));
-}
-
-void SslRWer::Shutdown() {
-    flags |= RWER_SHUTDOWN;
-    SSL_shutdown(ssl);
 }
 
 void SslRWer::get_alpn(const unsigned char **s, unsigned int * len){

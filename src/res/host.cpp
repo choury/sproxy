@@ -60,6 +60,26 @@ void Host::reply(){
         return;
     }
     auto req = status.req;
+    if(!req->header->should_proxy){
+        if(req->header->ismethod("CONNECT")) {
+            Http_Proc = &Host::AlwaysProc;
+            status.res = std::make_shared<HttpRes>(UnpackHttpRes(H200), [this]{ rwer->Unblock();});
+            req->response(status.res);
+            goto attach;
+        }else if(req->header->ismethod("SEND")){
+            Http_Proc = &Host::AlwaysProc;
+            //SEND的头部会在发送第一个包时发送
+            goto attach;
+        }
+    }
+    {
+        auto buff = std::make_shared<Block>(BUF_LEN);
+        size_t len = PackHttpReq(req->header, buff->data(), BUF_LEN);
+        auto head = rwer->buffer_head();
+        rwer->buffer_insert(head, Buffer{buff, len});
+    }
+
+attach:
     req->attach([this](ChannelMessage& msg){
         switch(msg.type){
             case ChannelMessage::CHANNEL_MSG_HEADER:
@@ -74,19 +94,6 @@ void Host::reply(){
         }
         return 0;
     }, [this]{ return rwer->cap(0); });
-    if(!req->header->should_proxy){
-        if(req->header->ismethod("CONNECT")) {
-            Http_Proc = &Host::AlwaysProc;
-            status.res = std::make_shared<HttpRes>(UnpackHttpRes(H200), std::bind(&RWer::EatReadData, rwer));
-            req->response(status.res);
-        }else if(req->header->ismethod("SEND")){
-            Http_Proc = &Host::AlwaysProc;
-        }
-    }
-    auto buff = std::make_shared<Block>(BUF_LEN);
-    size_t len = PackHttpReq(req->header, buff->data(), BUF_LEN);
-    auto head = rwer->buffer_head();
-    rwer->buffer_insert(head, Buffer{buff, len});
 }
 
 void Host::connected() {
@@ -131,28 +138,22 @@ void Host::connected() {
         LOGD(DHTTP, "<host> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
         if(bb.len == 0){
             //EOF
-            assert((status.flags & HTTP_RES_EOF) == 0);
-            status.flags |= HTTP_RES_EOF;
-            if((status.flags & HTTP_REQ_EOF) || status.res == nullptr){
-                deleteLater(NOERROR);
-            }else {
-                status.res->send(ChannelMessage::CHANNEL_SHUTDOWN);
+            if(Http_Proc == &Host::AlwaysProc){
+                //对于AlwayProc的响应，读到EOF视为响应结束
+                status.flags |= HTTP_RES_COMPLETED;
+                status.res->send(nullptr);
+                return;
             }
+            deleteLater(NOERROR);
             return;
         }
         size_t ret = 0;
-        while((bb.len >  0) && (ret = (this->*Http_Proc)((const char*) bb.data(), bb.len))){
+        while((bb.len >  0) && (ret = (this->*Http_Proc)((const char*)bb.data(), bb.len))){
             bb.trunc(ret);
         }
     });
     rwer->SetWriteCB([this](size_t len){
         LOGD(DHTTP, "<host> (%s) written: wlength:%zu\n", rwer->getPeer(), len);
-        if(status.flags & HTTP_REQ_EOF) {
-            if (rwer->wlength() == 0){
-                std::dynamic_pointer_cast<SocketRWer>(rwer)->Shutdown();
-            }
-            return;
-        }
         if(status.flags & HTTP_REQ_COMPLETED){
             return;
         }
@@ -164,19 +165,6 @@ void Host::connected() {
 void Host::Handle(ChannelMessage::Signal s){
     LOGD(DHTTP, "<host> signal %" PRIu32 ": %d\n", status.req->header->request_id, (int)s);
     switch(s){
-    case ChannelMessage::CHANNEL_SHUTDOWN:
-        assert(strcasecmp(Server.scheme, "udp"));
-        assert((status.flags & HTTP_RES_EOF) == 0);
-        status.flags |= HTTP_REQ_EOF;
-        if(rwer->getStats() != RWerStats::Connected){
-            return;
-        }
-        rwer->addEvents(RW_EVENT::READ);
-        if (rwer->wlength() == 0) {
-            std::dynamic_pointer_cast<SocketRWer>(rwer)->Shutdown();
-        }
-        break;
-    case ChannelMessage::CHANNEL_CLOSED:
     case ChannelMessage::CHANNEL_ABORT:
         status.flags |= HTTP_CLOSED_F;
         return deleteLater(PEER_LOST_ERR);
@@ -191,20 +179,31 @@ void Host::request(std::shared_ptr<HttpReq> req, Requester*) {
     assert(status.req == nullptr);
     assert(status.res == nullptr);
     status.req = req;
+    if(req->header->no_end()){
+        status.flags |= HTTP_NOEND_F;
+    }
     reply();
 }
 
 void Host::Recv(Buffer&& bb){
     assert((status.flags & HTTP_REQ_COMPLETED) == 0);
-    tx_bytes += bb.len;
     if(bb.len == 0){
         status.flags |= HTTP_REQ_COMPLETED;
         LOGD(DHTTP, "<host> recv %" PRIu32 ": EOF/%zu, http_flag:0x%x\n",
              status.req->header->request_id, tx_bytes, http_flag);
-    }else{
-        LOGD(DHTTP, "<host> recv %" PRIu32 ": size:%zu/%zu, http_flag:0x%x\n",
-             status.req->header->request_id, bb.len, tx_bytes, http_flag);
+        if(status.flags & HTTP_NOEND_F){
+            //如果是这种，只能通过关闭连接的方式来结束请求
+            rwer->buffer_insert(rwer->buffer_end(), {nullptr});
+        }else{
+            //TODO: chunked
+            //其他情况，可以不发送结束符
+        }
+        return;
     }
+
+    tx_bytes += bb.len;
+    LOGD(DHTTP, "<host> recv %" PRIu32 ": size:%zu/%zu, http_flag:0x%x\n",
+         status.req->header->request_id, bb.len, tx_bytes, http_flag);
     rwer->buffer_insert(rwer->buffer_end(), std::move(bb));
 }
 
@@ -217,16 +216,15 @@ void Host::ResProc(std::shared_ptr<HttpResHeader> header) {
     if(status.res){
         status.res->send(header);
     }else{
-        status.res = std::make_shared<HttpRes>(header, std::bind(&RWer::EatReadData, rwer));
+        status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock();});
         status.req->response(status.res);
     }
 }
 
 ssize_t Host::DataProc(const void* buff, size_t size) {
-    assert((status.flags & HTTP_RES_EOF) == 0);
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
     if(status.res == nullptr){
-        status.res = std::make_shared<HttpRes>(UnpackHttpRes(H200), std::bind(&RWer::EatReadData, rwer));
+        status.res = std::make_shared<HttpRes>(UnpackHttpRes(H200), [this]{ rwer->Unblock();});
         status.req->response(status.res);
     }
     int len = status.res->cap();
@@ -278,8 +276,7 @@ void Host::deleteLater(uint32_t errcode){
     if(status.flags & HTTP_CLOSED_F){
         //do nothing.
     }else if(status.res){
-        status.res->send(errcode ? ChannelMessage::CHANNEL_ABORT : ChannelMessage::CHANNEL_CLOSED);
-        status.req = nullptr;
+        status.res->send(ChannelMessage::CHANNEL_ABORT);
     }else {
         switch(errcode) {
         case DNS_FAILED:
@@ -319,7 +316,7 @@ void Host::dump_stat(Dumper dp, void* param) {
             rwer->rlength(), rwer->wlength(),
             (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     if(status.req){
-        dp(param, "req [%" PRIu32 "]: %s [%d]\n",
+        dp(param, "req [%" PRIu32 "]: %s, flags:0x%08x\n",
                 status.req->header->request_id,
                 status.req->header->geturl().c_str(),
                 status.flags);

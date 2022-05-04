@@ -39,7 +39,6 @@ protected:
     virtual void ErrProc(int errcode)override;
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)override;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
-    virtual void ShutdownProc(uint32_t id)override;
 
     void Recv(Buffer&& bb);
     void Handle(uint32_t id, ChannelMessage::Signal s);

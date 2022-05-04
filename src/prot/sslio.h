@@ -26,7 +26,6 @@ public:
     virtual int sconnect();
     virtual void waitconnectHE(RW_EVENT events) override;
     virtual void shakehandHE(RW_EVENT events);
-    virtual void Shutdown() override;
     void get_alpn(const unsigned char **s, unsigned int * len);
     int set_alpn(const unsigned char *s, unsigned int len);
     void set_hostname_callback(int (* cb)(SSL *, int *, void*), void* arg);

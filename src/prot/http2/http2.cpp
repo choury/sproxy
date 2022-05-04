@@ -46,7 +46,7 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
         }
         break;
     case HTTP2_STREAM_SETTINGS:
-        if(id != 0 && (http2_flag & HTTP2_SUPPORT_SHUTDOWN) == 0){
+        if(id != 0){
             LOGE("ERROR wrong setting id: %d\n", id);
             ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
             return 0;
@@ -214,7 +214,6 @@ int Http2Base::SendFrame(){
 #endif
 
 void Http2Base::SettingsProc(const Http2_header* header) {
-    uint32_t id = HTTP2_ID(header->id);
     const Setting_Frame *sf = (const Setting_Frame *)(header + 1);
     if((header->flags & HTTP2_ACK_F) == 0) {
         while((char *)sf-(char *)(header+1) < get24(header->length)){
@@ -247,14 +246,6 @@ void Http2Base::SettingsProc(const Http2_header* header) {
             case HTTP2_SETTING_MAX_CONCURRENT_STREAMS:
             case HTTP2_SETTING_MAX_HEADER_LIST_SIZE:
                 LOG("Get a unimplemented setting(%d): %d\n", get16(sf->identifier), value);
-                break;
-            case HTTP2_SETTING_PEER_SHUTDOWN:
-                if(id == 0) {
-                    http2_flag |= HTTP2_SUPPORT_SHUTDOWN;
-                    LOGD(DHTTP2, "set shutdown enabled\n");
-                }else{
-                    ShutdownProc(id);
-                }
                 break;
             default:
                 LOG("Get a unknown setting(%d): %d\n", get16(sf->identifier), value);
@@ -295,10 +286,6 @@ void Http2Base::EndProc(__attribute__ ((unused)) uint32_t id) {
     LOGD(DHTTP2, "Stream end: %d\n", id);
 }
 
-void Http2Base::ShutdownProc(__attribute__ ((unused)) uint32_t id) {
-    LOGD(DHTTP2, "Stream shutdown: %d\n", id);
-}
-
 uint32_t Http2Base::ExpandWindowSize(uint32_t id, uint32_t size) {
     LOGD(DHTTP2, "will expand window size [%d]: %d\n", id, size);
     auto buff = std::make_shared<Block>(sizeof(Http2_header) + sizeof(uint32_t));
@@ -334,21 +321,6 @@ void Http2Base::Reset(uint32_t id, uint32_t code) {
     PushFrame(Buffer{buff, sizeof(uint32_t) + sizeof(Http2_header)});
 }
 
-void Http2Base::Shutdown(uint32_t id) {
-    assert(http2_flag & HTTP2_SUPPORT_SHUTDOWN);
-    auto buff = std::make_shared<Block>(sizeof(Http2_header) + sizeof(Setting_Frame));
-    Http2_header* const header = (Http2_header *) buff->data();
-    memset(header, 0, sizeof(Http2_header));
-    set32(header->id, id);
-    set24(header->length, sizeof(Setting_Frame));
-    header->type = HTTP2_STREAM_SETTINGS;
-
-    Setting_Frame *sf = (Setting_Frame *)(header+1);
-    set16(sf->identifier, HTTP2_SETTING_PEER_SHUTDOWN);
-    set32(sf->value, 0);
-    PushFrame(Buffer{buff, sizeof(Setting_Frame) + sizeof(Http2_header)});
-}
-
 void Http2Base::Goaway(uint32_t lastid, uint32_t code, char *message) {
     http2_flag |= HTTP2_FLAG_GOAWAYED;
     size_t len = sizeof(Goaway_Frame);
@@ -371,25 +343,23 @@ void Http2Base::Goaway(uint32_t lastid, uint32_t code, char *message) {
 
 
 void Http2Base::SendInitSetting() {
-    auto buff = std::make_shared<Block>(sizeof(Http2_header) + 3 * sizeof(Setting_Frame));
+    auto buff = std::make_shared<Block>(sizeof(Http2_header) + 2 * sizeof(Setting_Frame));
     Http2_header* const header = (Http2_header *) buff->data();
     memset(header, 0, sizeof(Http2_header));
+    set24(header->length, 2*sizeof(Setting_Frame));
+    header->type = HTTP2_STREAM_SETTINGS;
+
     Setting_Frame *sf = (Setting_Frame *)(header+1);
     set16(sf->identifier, HTTP2_SETTING_HEADER_TABLE_SIZE );
     set32(sf->value, 65536);
     hpack_decoder.set_dynamic_table_size_limit_max(get32(sf->value));
+
     sf++;
     set16(sf->identifier, HTTP2_SETTING_INITIAL_WINDOW_SIZE);
     set32(sf->value, localframewindowsize);
     LOGD(DHTTP2, "send inital frame window size:%d\n", localframewindowsize);
 
-    sf++;
-    set16(sf->identifier, HTTP2_SETTING_PEER_SHUTDOWN);
-    set32(sf->value, 0);
-
-    set24(header->length, 3*sizeof(Setting_Frame));
-    header->type = HTTP2_STREAM_SETTINGS;
-    PushFrame(Buffer{buff, 3 * sizeof(Setting_Frame) + sizeof(Http2_header)});
+    PushFrame(Buffer{buff, 2 * sizeof(Setting_Frame) + sizeof(Http2_header)});
 }
 
 uint32_t Http2Base::GetSendId(){

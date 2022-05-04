@@ -47,10 +47,6 @@ void Cli::Error(int ret, int code) {
     deleteLater(ret);
 }
 
-void Cli::deleteLater(uint32_t errcode) {
-    Requester::deleteLater(errcode);
-}
-
 void Cli::dump_stat(Dumper dp, void* param) {
     dp(param, "Cli %p, (%s)\n", this, getsrc());
     dp(param, "  rwer: rlength:%zu, wlength:%zu, stats:%d, event:%s\n",

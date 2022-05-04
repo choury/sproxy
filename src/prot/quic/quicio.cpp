@@ -928,7 +928,7 @@ ssize_t QuicRWer::Write(const void *buff, size_t len, uint64_t id) {
 
     LOGD(DQUIC, "send data [%" PRIu64"]: <%zd/%" PRIu64"> <%" PRIu64"/%" PRIu64">\n",
          id, status.offset, status.his_max_data, my_send_data, his_max_data);
-    if(IsIdle(id)){
+    if(idle(id)){
         LOGD(DQUIC, "clean idle stream: %" PRIu64"\n", id);
         streammap.erase(id);
     }
@@ -1141,10 +1141,8 @@ void QuicRWer::ReadData() {
         walkPackets(buff, ret);
     }
     reorderData();
-    if(rlength()){
-        // 提供排序好的数据给应用层
-        ConsumeRData();
-    }
+    // 提供排序好的数据给应用层
+    ConsumeRData();
 }
 
 void QuicRWer::setResetHandler(std::function<void(uint64_t, uint32_t)> func) {
@@ -1186,7 +1184,7 @@ ssize_t QuicRWer::cap(uint64_t id) {
     return std::min(stream.his_max_data - stream.offset, his_max_data - my_send_data);
 }
 
-bool QuicRWer::IsIdle(uint64_t id){
+bool QuicRWer::idle(uint64_t id){
     if(streammap.count(id) == 0){
         return true;
     }
@@ -1200,7 +1198,7 @@ bool QuicRWer::IsIdle(uint64_t id){
     if(status.flags & STREAM_FLAG_FIN_SENT){
         send_closed = true;
     }
-    if((status.flags & STREAM_FLAG_FIN_RECVD) && (status.rb.Offset() == status.finSize)){
+    if(status.flags & STREAM_FLAG_FIN_DELIVED){
         assert(status.rb.length() == 0);
         recv_closed = true;
     }
@@ -1217,34 +1215,38 @@ bool QuicRWer::IsIdle(uint64_t id){
 void QuicRWer::ConsumeRData() {
     for(auto i = streammap.begin(); i != streammap.end();){
         auto& flags = i->second.flags;
-        if(i->second.rb.length() == 0){
+        if(flags & STREAM_FLAG_FIN_DELIVED){
+            assert((flags & STREAM_FLAG_FIN_SENT) == 0);
             i++;
             continue;
         }
-        if(IsIdle(i->first)){
-            LOGD(DQUIC, "clean idle stream: %" PRIu64"\n", i->first);
-            i = streammap.erase(i);
+        //如果收到了FIN，即使缓冲区为空，仍然会把FIN发送给应用层
+        if(i->second.rb.length() == 0 && (flags & STREAM_FLAG_FIN_RECVD) == 0 ){
+            i++;
             continue;
         }
 
         auto& rb = i->second.rb;
         assert(rblen >= rb.length());
-        auto buff = std::make_shared<Block>(rb.length());
-        Buffer wb{buff, rb.get((char*) buff->data(), rb.length()), i->first};
-        readCB(wb);
-        size_t eaten  = rb.length() - wb.len;
-        LOGD(DQUIC, "consume data [%" PRIu64"]: %" PRIu64" - %" PRIu64" [%zd]\n",
-             i->first, rb.Offset(), rb.Offset() + eaten, i->second.rb.length());
-        rb.consume(eaten);
-        rblen -= eaten;
+        if(rb.length() > 0){
+            auto buff = std::make_shared<Block>(rb.length());
+            Buffer wb{buff, rb.get((char*) buff->data(), rb.length()), i->first};
+            readCB(wb);
+            size_t eaten  = rb.length() - wb.len;
+            LOGD(DQUIC, "consume data [%" PRIu64"]: %" PRIu64" - %" PRIu64", left: %zd\n",
+                 i->first, rb.Offset(), rb.Offset() + eaten, rb.length() - eaten);
+            rb.consume(eaten);
+            rblen -= eaten;
+        }
 
-        if(flags & STREAM_FLAG_FIN_RECVD && i->second.finSize == rb.Offset()){
+        if((flags & STREAM_FLAG_FIN_RECVD) && rb.length() == 0){
+            assert((flags & STREAM_FLAG_FIN_DELIVED) == 0);
             //在QuicRWer中，我们不用 ReadEOF状态，因为它是对整个连接的，而不是对某个stream的
-            //在read buffer处理完了的时候发给应用层，后面的循环会跳过rb.length() = 0 的stream
-            //因此这个消息只会被发送一次
-            assert(rb.length() == 0);
+            assert(i->second.finSize == rb.Offset());
             Buffer ewb{nullptr, i->first};
             readCB(ewb);
+            LOGD(DQUIC, "consume EOF [%" PRIu64"]: %" PRIu64"\n", i->first, rb.Offset());
+            i->second.flags |= STREAM_FLAG_FIN_DELIVED;
         }
 
         auto shouldSendMaxStreamData = [](QuicStreamStatus& status) -> bool {
@@ -1268,7 +1270,12 @@ void QuicRWer::ConsumeRData() {
             frame->max_stream_data.max = i->second.my_max_data;
             qos.PushFrame(ssl_encryption_application, frame);
         }
-        i++;
+        if(idle(i->first)){
+            LOGD(DQUIC, "clean idle stream: %" PRIu64"\n", i->first);
+            i = streammap.erase(i);
+        }else{
+            i++;
+        }
     }
     if(my_max_data - my_received_data <= 50 *1024 *1024){
         my_max_data += 50 *1024 *1024;

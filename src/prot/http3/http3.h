@@ -63,7 +63,6 @@ protected:
 #define HTTP3_FLAG_INITED    (1u << 0u)
 #define HTTP3_FLAG_GOAWAYED  (1u << 1u)
 #define HTTP3_FLAG_ERROR     (1u << 2u)
-#define HTTP3_SUPPORT_SHUTDOWN (1u << 3u)
     uint32_t http3_flag = 0;
     // these ids are ubi stream, can not be 0, so use it as not inited.
     uint64_t ctrlid_local = 0, ctrlid_remote = 0;
@@ -79,12 +78,10 @@ protected:
     virtual void SettingsProc(const uchar *header, size_t len);
     virtual void GoawayProc(uint64_t id);
     virtual void DataProc(uint64_t id, const void *data, size_t len) = 0;
-    virtual void ShutdownProc(uint64_t id);
     virtual void ErrProc(int errcode) = 0;
     virtual void Reset(uint64_t id, uint32_t code) = 0;
 
     void Goaway(uint64_t lastid);
-    void Shutdown(uint64_t id);
     virtual uint64_t CreateUbiStream() = 0;
     virtual void PushFrame(Buffer&& bb) = 0;
     virtual void PushData(Buffer&& bb);

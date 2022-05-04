@@ -337,7 +337,7 @@ void Guest_vpn::writed() {
     if(key.protocol == Protocol::TCP){
         return;
     }
-    if((status.flags&HTTP_RES_COMPLETED) || (status.flags&HTTP_RES_EOF)){
+    if(status.flags&HTTP_RES_COMPLETED){
         return;
     }
     if(status.res){
@@ -578,7 +578,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
 
     if(flag & TH_FIN){ //fin包，回ack包
         LOGD(DVPN, "get fin, send ack back\n");
-        status.flags &= HTTP_REQ_EOF;
+        status.flags |= HTTP_REQ_COMPLETED;
         tcpStatus->want_seq++;
         //创建回包
         pac_return->tcp
@@ -591,23 +591,23 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
         switch(tcpStatus->status){
         case TCP_ESTABLISHED:
             tcpStatus->status = TCP_CLOSE_WAIT;
-            status.req->send(ChannelMessage::CHANNEL_SHUTDOWN);
+            status.req->send(nullptr);
             break;
         case TCP_FIN_WAIT1:
             tcpStatus->status = TCP_CLOSING;
             if((status.flags & HTTP_CLOSED_F)  == 0) {
-                status.req->send(ChannelMessage::CHANNEL_CLOSED);
+                status.req->send(ChannelMessage::CHANNEL_ABORT);
             }
-            status.res = nullptr;
             status.flags |= HTTP_CLOSED_F;
+            status.res->detach();
             break;
         case TCP_FIN_WAIT2:
             tcpStatus->status = TCP_TIME_WAIT;
             if((status.flags & HTTP_CLOSED_F) == 0) {
-                status.req->send(ChannelMessage::CHANNEL_CLOSED);
+                status.req->send(ChannelMessage::CHANNEL_ABORT);
             }
-            status.res = nullptr;
             status.flags |= HTTP_CLOSED_F;
+            status.res->detach();
             aged_job = rwer->updatejob(aged_job, std::bind(&Guest_vpn::aged, this), 1000);
             return;
         case TCP_TIME_WAIT:
@@ -821,12 +821,29 @@ int32_t Guest_vpn::bufleft() {
 }
 
 void Guest_vpn::Recv_tcp(Buffer&& bb) {
-    if (bb.len == 0) {
-        status.flags |= HTTP_RES_COMPLETED;
-        return;
-    }
     assert(key.protocol == Protocol::TCP);
     TcpStatus *tcpStatus = (TcpStatus *) status.protocol_info;
+    if (bb.len == 0) {
+        status.flags |= HTTP_RES_COMPLETED;
+        LOGD(DVPN, "write fin packet\n");
+        auto pac_return = MakeIp(IPPROTO_TCP, &key.dst, &key.src);
+        pac_return->tcp
+                ->setseq(tcpStatus->send_seq++)
+                ->setack(tcpStatus->want_seq)
+                ->setwindow(bufleft() >> tcpStatus->send_wscale)
+                ->setflag(TH_FIN | TH_ACK);
+
+        server->sendPkg(pac_return, nullptr);
+        switch (tcpStatus->status) {
+            case TCP_ESTABLISHED:
+                tcpStatus->status = TCP_FIN_WAIT1;
+                break;
+            case TCP_CLOSE_WAIT:
+                tcpStatus->status = TCP_LAST_ACK;
+                break;
+        }
+        return;
+    }
     assert((tcpStatus->window << tcpStatus->recv_wscale) -
            (tcpStatus->send_seq - tcpStatus->acked) >= bb.len);
     size_t sendlen = bb.len;
@@ -857,6 +874,7 @@ void Guest_vpn::Recv_tcp(Buffer&& bb) {
 void Guest_vpn::Recv_notcp(Buffer&& bb) {
     if(bb.len == 0){
         status.flags |= HTTP_RES_COMPLETED;
+        aged_job = rwer->updatejob(aged_job, std::bind(&Guest_vpn::aged, this), 0);
         return;
     }
     if(key.protocol == Protocol::UDP){
@@ -901,10 +919,12 @@ void Guest_vpn::Recv_notcp(Buffer&& bb) {
 
 void Guest_vpn::deleteLater(uint32_t errcode) {
     LOGD(DVPN, "%s deleteLater: %u\n", key.getString("<-"), errcode);
-    if ((status.flags & HTTP_CLOSED_F) == 0 && status.req) {
-        status.req->send(errcode ? ChannelMessage::CHANNEL_ABORT : ChannelMessage::CHANNEL_CLOSED);
+    if(status.res) {
+        status.res->detach();
     }
-    status.res = nullptr;
+    if ((status.flags & HTTP_CLOSED_F) == 0 && status.req) {
+        status.req->send(ChannelMessage::CHANNEL_ABORT);
+    }
     status.flags |= HTTP_CLOSED_F;
     server->cleanKey(key);
     Server::deleteLater(errcode);
@@ -912,37 +932,6 @@ void Guest_vpn::deleteLater(uint32_t errcode) {
 
 void Guest_vpn::handle(ChannelMessage::Signal s) {
     switch(s){
-    case ChannelMessage::CHANNEL_CLOSED:
-        // release connection on last ack or aged
-        status.flags |= HTTP_CLOSED_F;
-        // Fall-through
-    case ChannelMessage::CHANNEL_SHUTDOWN:
-        status.flags |= HTTP_RES_EOF;
-        if(key.protocol == Protocol::TCP) {
-            assert(key.protocol == Protocol::TCP);
-            TcpStatus *tcpStatus = (TcpStatus *) status.protocol_info;
-            LOGD(DVPN, "write fin packet\n");
-            auto pac_return = MakeIp(IPPROTO_TCP, &key.dst, &key.src);
-            pac_return->tcp
-                    ->setseq(tcpStatus->send_seq++)
-                    ->setack(tcpStatus->want_seq)
-                    ->setwindow(bufleft() >> tcpStatus->send_wscale)
-                    ->setflag(TH_FIN | TH_ACK);
-
-            server->sendPkg(pac_return, nullptr);
-            switch (tcpStatus->status) {
-                case TCP_ESTABLISHED:
-                    tcpStatus->status = TCP_FIN_WAIT1;
-                    break;
-                case TCP_CLOSE_WAIT:
-                    tcpStatus->status = TCP_LAST_ACK;
-                    break;
-            }
-        }else{
-            aged_job = rwer->updatejob(aged_job, std::bind(&Guest_vpn::aged, this), 0);
-        }
-        status.res = nullptr;
-        break;
     case ChannelMessage::CHANNEL_ABORT:
         if(key.protocol == Protocol::TCP){
             LOGD(DVPN, "write rst packet: %s\n",  key.getString("<-"));
@@ -964,7 +953,7 @@ void Guest_vpn::handle(ChannelMessage::Signal s) {
 
 void Guest_vpn::aged(){
     LOGD(DVPN, "%s aged.\n", key.getString("-"));
-    deleteLater(PEER_LOST_ERR);
+    deleteLater(CONNECT_AGED);
 }
 
 const char * Guest_vpn::getsrc(){
