@@ -6,7 +6,7 @@ configure_file(${PROJECT_SOURCE_DIR}/src/common/version.h.in ${PROJECT_BINARY_DI
 include_directories(${PROJECT_BINARY_DIR}/src)
 include_directories(${PROJECT_SOURCE_DIR}/src)
 
-if(BUILD_RPC)
+if(HAVE_RPC)
     add_subdirectory(cgi)
 endif()
 
@@ -41,7 +41,7 @@ if(LINUX OR APPLE)
     install(TARGETS sproxy RUNTIME DESTINATION bin)
 endif()
 
-if(BUILD_CLIENT AND BUILD_RPC)
+if(HAVE_CLIENT)
     add_executable(scli client/client.cpp prot/rpc.cpp)
     set_target_properties(scli PROPERTIES OUTPUT_NAME "scli")
     target_link_libraries(scli ${JSON-C_LIBRARY} ${Readline_LIBRARY} Threads::Threads)

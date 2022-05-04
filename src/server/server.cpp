@@ -1,5 +1,7 @@
 #include "req/guest_sni.h"
+#ifdef WITH_QUIC
 #include "req/guest3.h"
+#endif
 #include "req/cli.h"
 #include "misc/job.h"
 #include "misc/config.h"
@@ -70,12 +72,17 @@ static SSL_CTX* initssl(int quic, const char *ca, const char *cert, const char *
         ERR_print_errors_fp(stderr);
         return nullptr;
     }
+#ifdef WITH_QUIC
     if(quic){
         SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION);
         SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION);
         SSL_CTX_set_ciphersuites(ctx, QUIC_CIPHERS);
         SSL_CTX_set1_groups_list(ctx, QUIC_GROUPS);
     }else {
+#else
+    (void)quic;
+    {
+#endif
         SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3); // 去除支持SSLv2 SSLv3
         SSL_CTX_set_cipher_list(ctx, DEFAULT_CIPHER_LIST);
         SSL_CTX_set_mode(ctx, SSL_MODE_AUTO_RETRY);
@@ -126,6 +133,7 @@ int main(int argc, char **argv) {
     if(opt.cert && opt.key){
         SSL_CTX * ctx = initssl(opt.quic_mode, opt.cafile, opt.cert, opt.key);
         opt.CPORT = opt.CPORT ?: 443;
+#ifdef WITH_QUIC
         if(opt.quic_mode){
             int svsk_quic = ListenNet(SOCK_DGRAM, opt.CPORT);
             if(svsk_quic <  0) {
@@ -133,6 +141,10 @@ int main(int argc, char **argv) {
             }
             new Quic_server(svsk_quic, ctx);
         }else {
+#else
+        assert(opt.quic_mode == 0);
+        {
+#endif
             int svsk_https = ListenNet(SOCK_STREAM, opt.CPORT);
             if (svsk_https < 0) {
                 return -1;

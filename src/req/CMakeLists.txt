@@ -3,14 +3,18 @@
 #Created:  2017/2/11
 
 
-set(req_src requester.cpp  guest.cpp guest_sni.cpp guest2.cpp guest3.cpp)
+set(req_src requester.cpp  guest.cpp guest_sni.cpp guest2.cpp)
 
-if(LINUX OR ANDROID)
+if(HAVE_VPN)
     set(req_src ${req_src} guest_vpn.cpp)
 endif()
 
-if(NOT ANDROID)
+if(HAVE_RPC)
     set(req_src ${req_src} cli.cpp)
+endif()
+
+if(HAVE_QUIC)
+    set(req_src ${req_src} guest3.cpp)
 endif()
 
 add_library(req  ${req_src})

@@ -1,9 +1,11 @@
 #include "host.h"
 #include "proxy2.h"
-#include "proxy3.h"
 #include "req/requester.h"
 #include "prot/sslio.h"
+#ifdef WITH_QUIC
+#include "proxy3.h"
 #include "prot/quic/quicio.h"
+#endif
 
 #include <string.h>
 #include <assert.h>
@@ -13,7 +15,7 @@ static const unsigned char alpn_protos_http12[] =
     "\x08http/1.1" \
     "\x02h2";
 
-static const unsigned char alpn_protos_http3[] =
+__attribute__((unused)) static const unsigned char alpn_protos_http3[] =
     "\x02h3";
 
 Host::Host(const Destination* dest){
@@ -36,12 +38,14 @@ Host::Host(const Destination* dest){
         rwer = std::make_shared<PacketRWer>(dest->hostname, dest->port, Protocol::UDP,
                               std::bind(&Host::Error, this, _1, _2),
                               std::bind(&Host::connected, this));
+#ifdef WITH_QUIC
     }else if(strcasecmp(dest->scheme, "quic") == 0){
         auto qrwer = std::make_shared<QuicRWer>(dest->hostname, dest->port, Protocol::QUIC,
                                      std::bind(&Host::Error, this, _1, _2),
                                      std::bind(&Host::connected, this));
         qrwer->set_alpn(alpn_protos_http3, sizeof(alpn_protos_http3)-1);
         rwer = qrwer;
+#endif
     }else{
         LOGF("Unkonw scheme: %s\n", dest->scheme);
     }
@@ -115,6 +119,7 @@ void Host::connected() {
             return Server::deleteLater(NOERROR);
         }
     }
+#ifdef WITH_QUIC
     auto qrwer = std::dynamic_pointer_cast<QuicRWer>(rwer);
     if(qrwer){
         const unsigned char *data;
@@ -134,6 +139,7 @@ void Host::connected() {
         LOGE("(%s) <host> quic only support http3\n", rwer->getPeer());
         return deleteLater(PROTOCOL_ERR);
     }
+#endif
     rwer->SetReadCB([this](Buffer& bb){
         LOGD(DHTTP, "<host> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
         if(bb.len == 0){
@@ -298,9 +304,11 @@ void Host::deleteLater(uint32_t errcode){
 
 void Host::gethost(std::shared_ptr<HttpReq> req, const Destination* dest, Requester* src) {
     if(req->header->should_proxy && memcmp(dest, &opt.Server, sizeof(Destination)) == 0) {
+#ifdef WITH_QUIC
         if(proxy3){
             return proxy3->request(req, src);
         }
+#endif
         if(proxy2){
             return proxy2->request(req, src);
         }

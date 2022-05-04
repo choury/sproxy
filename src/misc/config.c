@@ -169,7 +169,9 @@ static struct option_detail option_detail[] = {
     {"pcap", "Save packets in pcap file for vpn (generated pseudo ethernet header)", option_string, &opt.pcap_file, NULL},
     {"port", "The port to listen, default is 80 but 443 for ssl/sni/quic", option_int64, &opt.CPORT, NULL},
     {"policy-file", "The file of policy ("PREFIX"/etc/sproxy/sites.list as default)", option_string, &policy_file, NULL},
+#ifdef WITH_QUIC
     {"quic", "Server for QUIC (experiment)", option_bool, &opt.quic_mode, (void*)true},
+#endif
     {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64, opt.rewrite_auth, NULL},
     {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
     {"secret", "Set user and passwd for proxy (user:password), default is none.", option_list, &secrets, NULL},
@@ -371,7 +373,7 @@ static void parseArgs(const char* name, const char* args){
             return;
         }
     }
-    LOG("UNKNOWN option: %s\n", name);
+    LOGF("UNKNOWN option: %s\n", name);
 }
 
 int loadproxy(const char* proxy, struct Destination* server){
@@ -382,9 +384,13 @@ int loadproxy(const char* proxy, struct Destination* server){
     if(server->scheme[0] == 0){
         strcpy(server->scheme, "https");
     }
-    if(strcasecmp(server->scheme, "http") != 0 &&
-       strcasecmp(server->scheme, "https") != 0 &&
-       strcasecmp(server->scheme, "quic") != 0)
+    if(strcasecmp(server->scheme, "http") != 0
+       && strcasecmp(server->scheme, "https") != 0
+#ifdef WITH_QUIC
+       && strcasecmp(server->scheme, "quic") != 0)
+#else
+       )
+#endif
     {
         LOGE("unkonw scheme for server: %s\n", server->scheme);
         return -1;
