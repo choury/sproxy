@@ -1,0 +1,4 @@
+HTTP/1.0 200 Ok
+Server: sproxy_test
+
+this is test response for sproxy_test

@@ -1,0 +1,43 @@
+GET http://360.cn HTTP/1.1
+User-agent: test.sh
+
+GET http://qq.com HTTP/1.1
+User-agent: test.sh
+
+GET http://www.baidu.com HTTP/1.1
+Host: baidu.com
+User-agent: test.sh
+
+HEAD http://360.cn HTTP/1.1
+User-agent: test.sh
+
+POST http://echo.opera.com HTTP/1.1
+Host: echo.opera.com
+User-agent: test.sh
+Content-Length: 13
+Content-Type: application/x-www-form-urlencoded
+
+test=pipelineGET http://www.baidu.com HTTP/1.1
+Host: www.baidu.com
+User-agent: aaa
+
+HEAD qq.com HTTP/1.1
+User-agent: test.sh
+
+GET www.baidu.com HTTP/1.1
+Host: www.baidu.com
+Accept-Encoding: deflate, gzip
+User-agent: test.sh
+
+GET http://www.google.cn/generate_204 HTTP/1.1
+Host: www.google.cn
+User-agent: android
+
+GET http://www.google.cn/generate_204_2 HTTP/1.1
+Host: www.google.cn
+User-agent: android
+
+GET http://www.google.cn/generate_204_3 HTTP/1.1
+Host: www.google.cn
+User-agent: android
+

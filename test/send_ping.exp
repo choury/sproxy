@@ -1,0 +1,16 @@
+connect 127.0.0.1 PORT
+send ping www.baidu.com\r\n\r\n
+send abcd\n
+read head
+read line
+send 1234\n
+read line
+close
+echo \n
+connect 127.0.0.1 PORT
+send send test.localhost.choury.com:4444\r\n\r\n
+send abcd
+read head
+read line
+send dddb\n
+exit

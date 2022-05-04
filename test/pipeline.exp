@@ -1,0 +1,13 @@
+connect 127.0.0.1 PORT
+sendfile pipeline.in
+read http
+read http
+read http
+read head
+read http
+read http
+read head
+read http
+read head
+read http
+read http

@@ -1,5 +1,6 @@
 build*/
-test_dir/
+cmake-build-*/
+test/
 .idea/
 .vscode
 .kdev4

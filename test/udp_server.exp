@@ -1,0 +1,5 @@
+listen udp 4444
+read packet
+send sproxy\n
+read packet
+close

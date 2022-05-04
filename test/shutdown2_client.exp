@@ -1,0 +1,5 @@
+connect 127.0.0.1 PORT
+send CONNECT test.localhost.choury.com:4444\r\n\r\n
+read eof
+sendfile sites.list
+shutdown
