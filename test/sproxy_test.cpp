@@ -118,6 +118,21 @@ string decode(const string& str){
     return ret;
 }
 
+void SetSocketUnblock(int fd){
+    if(fd < 0){
+        return;
+    }
+    int flags = fcntl(fd, F_GETFL, 0);
+    if(flags < 0){
+        fprintf(stderr, "fcntl error %d: %s\n", fd, strerror(errno));
+    }
+    int ret = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    if(ret < 0){
+        fprintf(stderr, "fcntl error %d: %s\n", fd, strerror(errno));
+    }
+}
+
+
 int main(int argc , char *argv[]) {
     string line;
     int sockfd = 0;
@@ -153,6 +168,12 @@ int main(int argc , char *argv[]) {
                 cerr<<"Fail to connect to <"<<addr<<":"<<port<<">: "<<strerror(errno)<<endl;
                 return -2;
             }
+        }else if(cmd == "reset"){
+            struct linger sl;
+            sl.l_onoff = 1;		/* non-zero value enables linger option in kernel */
+            sl.l_linger = 0;	/* timeout interval in seconds */
+            setsockopt(sockfd, SOL_SOCKET, SO_LINGER, &sl, sizeof(sl));
+            close(sockfd);
         }else if(cmd == "listen") {
             string prot;
             int port;

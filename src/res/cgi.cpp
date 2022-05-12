@@ -133,6 +133,7 @@ Cgi::Cgi(const char* fname, int sv[2]) {
         }
         setenv("ADMIN_SOCK", opt.socket, 1);
         signal(SIGPIPE, SIG_DFL);
+        signal(SIGUSR1, SIG_IGN);
         change_process_name(basename(filename));
         LOGD(DFILE, "<cgi> [%s] jump to cgi main\n", basename(filename));
         exit(func(sv[1], basename(filename)));

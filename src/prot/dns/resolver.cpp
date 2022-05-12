@@ -272,7 +272,7 @@ void flushdns(){
     getDnsConfig(&dnsConfig);
 }
 
-static void query_host_real(int retries, const char* host, DNSCB func, std::weak_ptr<void> param){
+static void query_host_real(int retries, const char* host, DNSCB func, std::shared_ptr<void> param){
     if(retries >= 3){
         AddJob(std::bind(func, param, DNS_SERVER_FAIL,
                          std::list<sockaddr_storage>{}), 0, JOB_FLAGS_AUTORELEASE);
@@ -297,7 +297,7 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::weak
         return;
     }
 
-    auto addrcb = [](int retries, DNSCB func, std::weak_ptr<void> param,
+    auto addrcb = [](int retries, DNSCB func, std::shared_ptr<void> param,
                           int error, std::list<sockaddr_storage> addrs, HostResolver* resolver)
     {
         defer([resolver]{delete resolver;});
@@ -318,7 +318,7 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::weak
     new HostResolver(fd, host, std::bind(addrcb, retries, func, param, _1, _2, _3));
 }
 
-void query_host(const char* host, DNSCB func, std::weak_ptr<void> param) {
+void query_host(const char* host, DNSCB func, std::shared_ptr<void> param) {
     sockaddr_storage addr{};
     if(storage_aton(host, 0, &addr) == 1){
         std::list<sockaddr_storage> addrs = {addr};
@@ -337,7 +337,7 @@ void query_host(const char* host, DNSCB func, std::weak_ptr<void> param) {
     return query_host_real(0, host, func, param);
 }
 
-void query_dns(const char* host, int type, DNSRAWCB func, std::weak_ptr<void> param) {
+void query_dns(const char* host, int type, DNSRAWCB func, std::shared_ptr<void> param) {
     if(dnsConfig.namecount == 0) {
         getDnsConfig(&dnsConfig);
     }
@@ -353,7 +353,7 @@ void query_dns(const char* host, int type, DNSRAWCB func, std::weak_ptr<void> pa
         AddJob(std::bind(func, param, nullptr, 0), 0, JOB_FLAGS_AUTORELEASE);
         return;
     }
-    auto rawcb = [](DNSRAWCB func, std::weak_ptr<void> param,
+    auto rawcb = [](DNSRAWCB func, std::shared_ptr<void> param,
             const char* data, size_t len, RawResolver* resolver){
         defer([resolver]{delete resolver;});
         func(param, data, len);

@@ -15,7 +15,6 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
             req->response(this->res);
         }
         rwer->setEvents(RW_EVENT::NONE);
-        //req->attach((Channel::recv_const_t)[](const void*, size_t){},[](){ return 1024*1024;});
     },[this](const sockaddr_storage& addr){
         const sockaddr_in6 *addr6 = (const sockaddr_in6*)&addr;
         family = addr6->sin6_family;
@@ -31,7 +30,8 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
                 Recv(std::move(message.data));
                 return 1;
             case ChannelMessage::CHANNEL_MSG_SIGNAL:
-                req->detach();
+                LOGD(DVPN, "<ping> [%d] get signal from req: %d\n", this->id, message.signal);
+                this->req->detach();
                 deleteLater(PEER_LOST_ERR);
                 return 0;
             }

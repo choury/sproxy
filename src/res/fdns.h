@@ -23,8 +23,8 @@ class FDns: public Responser{
     void clean(std::shared_ptr<FDnsStatus> status);
     virtual void deleteLater(uint32_t errcode) override;
 
-    static void RawCb(std::weak_ptr<void> param, const char *buff, size_t size);
-    static void DnsCb(std::weak_ptr<void> param, int error, std::list<sockaddr_storage> addrs);
+    static void RawCb(std::shared_ptr<void> param, const char *buff, size_t size);
+    static void DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_storage> addrs);
 public:
     FDns();
     virtual ~FDns() override;

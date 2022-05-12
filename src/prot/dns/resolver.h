@@ -42,11 +42,11 @@ public:
 };
 
 
-typedef void (*DNSCB)(std::weak_ptr<void>, int error, std::list<sockaddr_storage> addrs);
-typedef void (*DNSRAWCB)(std::weak_ptr<void>, const char *buff, size_t size);
+typedef void (*DNSCB)(std::shared_ptr<void>, int error, std::list<sockaddr_storage> addrs);
+typedef void (*DNSRAWCB)(std::shared_ptr<void>, const char *buff, size_t size);
 
-void query_host(const char* host, DNSCB func, std::weak_ptr<void> param);
-void query_dns(const char* host, int type, DNSRAWCB func, std::weak_ptr<void> param);
+void query_host(const char* host, DNSCB func, std::shared_ptr<void> param);
+void query_dns(const char* host, int type, DNSRAWCB func, std::shared_ptr<void> param);
 void RcdBlock(const char *hostname, const sockaddr_storage &addr);
 
 

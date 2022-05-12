@@ -61,13 +61,6 @@ static size_t parseSize(std::string size) {
 }
 
 void GzipTest::request(std::shared_ptr<HttpReq> req, Requester*) {
-    req->attach([this](ChannelMessage& msg){
-        if(msg.type != ChannelMessage::CHANNEL_MSG_SIGNAL){
-            return 1;
-        }
-        deleteLater(PEER_LOST_ERR);
-        return 0;
-    }, []{return 0;});
     this->req = req;
     std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H200, sizeof(H200));
     header->set("Content-Type", "application/octet-stream");
@@ -98,6 +91,13 @@ void GzipTest::request(std::shared_ptr<HttpReq> req, Requester*) {
     }
     this->res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock();});
     req->response(this->res);
+    req->attach([this](ChannelMessage& msg){
+        if(msg.type != ChannelMessage::CHANNEL_MSG_SIGNAL){
+            return 1;
+        }
+        deleteLater(PEER_LOST_ERR);
+        return 0;
+    }, []{return 0;});
 }
 
 void GzipTest::gzipreadHE(Buffer&) {

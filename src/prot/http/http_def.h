@@ -46,15 +46,15 @@ protected:
 public:
     Channel(const Channel&) = delete;
     const Channel& operator=(const Channel&) = delete;
-    ~Channel();
+    virtual ~Channel();
     explicit Channel(more_data_t need_more);
     int cap() { return cap_cb(); }
-    void send(ChannelMessage&& message);
-    void send(const void* data, size_t len);
-    void send(Buffer&& bb);
-    void send(std::nullptr_t _);
-    void send(std::shared_ptr<HttpHeader> header);
-    void send(ChannelMessage::Signal s);
+    virtual void send(ChannelMessage&& message);
+    virtual void send(const void* data, size_t len);
+    virtual void send(Buffer&& bb);
+    virtual void send(std::nullptr_t _);
+    virtual void send(std::shared_ptr<HttpHeader> header);
+    virtual void send(ChannelMessage::Signal s);
     void attach(handler_t handler, cap_t cap);
     void detach();
     void more(){
@@ -72,11 +72,8 @@ public:
 /* 1. Requester alloc HttpReq and Responser alloc HttpRes.
  * 2. Peers send zero message(send0) for end flag of single req or res,
  *    it will be transfor to HTTP2_END_STREAM_F in http2 or STREAM_FIN_F in QUIC,
- *    but trigger `shutdown` for eof (recv fin of tcp).
- *    Distinct send0 from eof, because some implement will close connection if eof received.
- * 3. Requester may trigger `closed` for qc|sc requests.
- * 4. Peer should trigger `closed` (instead of shutdown) if received `shutdown` already.
- * 5. Trigger `abort` will reset connection if no `send0` message sent.
+ * 3. Requester may trigger `closed(abort)` for qc|sc requests.
+ * 5. Trigger `abort` will reset connection if no completed message sent.
  * 6. Callback of body must be callable if no `closed/abort` was sent or received.
 */
 
@@ -96,6 +93,8 @@ public:
     res_cb         response;
     HttpReq(const HttpReq&) = delete;
     HttpReq(std::shared_ptr<HttpReqHeader> header, res_cb response, more_data_t more);
+    using Channel::send;
+    virtual void send(ChannelMessage::Signal s) override;
     ~HttpReq();
 };
 

@@ -45,6 +45,9 @@ SocketRWer::SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
     strcpy(this->hostname, hostname);
     stats = RWerStats::Resolving;
     addjob([this]{
+        //这里使用job,因为shared_from_this不能在构造函数里面用
+        //因为使用了shared_ptr，所以不存在对象已经被释放了的情况
+        //但是返回时RWer有可能已经被Close了，DnsCallback需要处理这种情况
         query_host(this->hostname, SocketRWer::Dnscallback, shared_from_this());
     }, 0, JOB_FLAGS_AUTORELEASE);
 }
@@ -52,11 +55,11 @@ SocketRWer::SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
 SocketRWer::~SocketRWer() {
 }
 
-void SocketRWer::Dnscallback(std::weak_ptr<void> param, int error, std::list<sockaddr_storage> addrs) {
-    if(param.expired()){
+void SocketRWer::Dnscallback(std::shared_ptr<void> param, int error, std::list<sockaddr_storage> addrs) {
+    std::shared_ptr<SocketRWer> rwer = std::static_pointer_cast<SocketRWer>(param);
+    if(rwer->flags & RWER_CLOSING){
         return;
     }
-    std::shared_ptr<SocketRWer> rwer = std::static_pointer_cast<SocketRWer>(param.lock());
     if (error) {
         return rwer->ErrorHE(DNS_FAILED, error);
     }

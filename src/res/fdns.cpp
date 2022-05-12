@@ -140,11 +140,8 @@ void FDns::Recv(Buffer&& bb) {
     clean(status);
 }
 
-void FDns::DnsCb(std::weak_ptr<void> param, int error, std::list<sockaddr_storage> addrs) {
-    if(param.expired()){
-        return;
-    }
-    auto status = std::static_pointer_cast<FDnsStatus>(param.lock());
+void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_storage> addrs) {
+    auto status = std::static_pointer_cast<FDnsStatus>(param);
     Dns_Query* que = status->que;
     FDns* fdns = status->fdns;
     Dns_Result* rr = nullptr;
@@ -168,11 +165,8 @@ void FDns::DnsCb(std::weak_ptr<void> param, int error, std::list<sockaddr_storag
     fdns->clean(status);
 }
 
-void FDns::RawCb(std::weak_ptr<void> param, const char* buff, size_t size) {
-    if(param.expired()){
-        return;
-    }
-    auto status = std::static_pointer_cast<FDnsStatus>(param.lock());
+void FDns::RawCb(std::shared_ptr<void> param, const char* buff, size_t size) {
+    auto status = std::static_pointer_cast<FDnsStatus>(param);
     Dns_Query* que = status->que;
     FDns* fdns = status->fdns;
     if(buff){

@@ -63,6 +63,8 @@ void Host::reply(){
     if(rwer->getStats() != RWerStats::Connected){
         return;
     }
+    // 对于request来说，必须先调用response再调用attach，或者就直接在attach的回调中response
+    // 因为attach的时候有可能触发了错误，此时response就会有问题，比如连接已经被shutdown了
     auto req = status.req;
     if(!req->header->should_proxy){
         if(req->header->ismethod("CONNECT")) {
@@ -82,7 +84,6 @@ void Host::reply(){
         auto head = rwer->buffer_head();
         rwer->buffer_insert(head, Buffer{buff, len});
     }
-
 attach:
     req->attach([this](ChannelMessage& msg){
         switch(msg.type){

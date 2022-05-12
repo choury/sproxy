@@ -18,7 +18,7 @@ protected:
     // connectFailed should only be called with job con_failed_job,
     // there's always an extra job somewhere if you invoke it directly.
     void connectFailed(int error);
-    static void Dnscallback(std::weak_ptr<void> param, int error, std::list<sockaddr_storage> addrs);
+    static void Dnscallback(std::shared_ptr<void> param, int error, std::list<sockaddr_storage> addrs);
 
     virtual void waitconnectHE(RW_EVENT events);
     virtual void Connected(const sockaddr_storage&) override;

@@ -112,6 +112,14 @@ HttpReq::HttpReq(std::shared_ptr<HttpReqHeader> header, HttpReq::res_cb response
 HttpReq::~HttpReq() {
 }
 
+void HttpReq::send(ChannelMessage::Signal s) {
+    if(s == ChannelMessage::CHANNEL_ABORT){
+        response = [](std::shared_ptr<HttpRes>){};
+    }
+    Channel::send(s);
+}
+
+
 
 void HttpLog(const char* src, std::shared_ptr<const HttpReqHeader> req, std::shared_ptr<const HttpResHeader> res){
     char status[100];

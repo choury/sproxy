@@ -184,6 +184,7 @@ function cleanup {
     kill %4
     kill %5
     kill %6
+    killall sproxy_test
 }
 
 trap cleanup EXIT
