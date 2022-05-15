@@ -7,6 +7,9 @@
 #include <assert.h>
 #include <errno.h>
 #include <string.h>
+#if __ANDROID__
+extern std::string getExternalFilesDir();
+#endif
 
 const char *DEFAULT_CIPHER_LIST =
 #if OPENSSL_VERSION_NUMBER > 0x10101000L
@@ -57,9 +60,9 @@ SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol,
     }
     SSL_CTX_set_keylog_callback(ctx, keylog_write_line);
 #if __ANDROID__
-    if (SSL_CTX_load_verify_locations(ctx, opt.cafile, "/etc/security/cacerts/") != 1)
+    if (SSL_CTX_load_verify_locations(ctx, (getExternalFilesDir() + CABUNDLE).c_str(), "/etc/security/cacerts/") != 1)
 #else
-    if (SSL_CTX_load_verify_locations(ctx, opt.cafile, "/etc/ssl/certs/") != 1)
+    if (SSL_CTX_load_verify_locations(ctx, CABUNDLE, "/etc/ssl/certs/") != 1)
 #endif
         LOGE("SSL_CTX_load_verify_locations: %s\n", ERR_error_string(ERR_get_error(), nullptr));
 

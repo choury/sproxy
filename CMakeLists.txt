@@ -92,7 +92,7 @@ if (NOT HAVE_BUILTIN_ATOMIC)
     set(CMAKE_EXE_LINKER_FLAGS "-latomic ${CMAKE_EXE_LINKER_FLAGS}")
 endif()
 
-set(HAVE_VPN TRUE)
+set(HAVE_VPN TRUE CACHE BOOL "Have VPN")
 if(ANDROID)
     set(OPENSSL_ROOT_DIR ${OPENSSL_ROOT}/${ANDROID_ABI})
     set(OPENSSL_INCLUDE_DIR ${OPENSSL_ROOT_DIR}/include)
@@ -102,8 +102,10 @@ if(ANDROID)
     find_package(OpenSSL 1.0.2 REQUIRED)
 
     find_library(log-lib log)
+    # download ca-bundle.crt from https://curl.se/ca/cacert.pem
+    set(SPROXY_CA_BUNDLE "/cacert.pem" CACHE STRING "CA bundle")
 else()
-    set(HAVE_RPC TRUE)
+    set(HAVE_RPC TRUE CACHE BOOL "Have RPC")
     find_package(JSON-C REQUIRED)
     include_directories(${JSON-C_INCLUDE_DIR})
 
@@ -111,15 +113,34 @@ else()
 
     find_package(Readline)
     if(READLINE_FOUND)
-        set(HAVE_CLIENT TRUE)
+        set(HAVE_CLIENT TRUE CACHE BOOL "Have Client")
         include_directories(${Readline_INCLUDE_DIR})
     else()
         message(WARNING "readline not found, disable client")
     endif()
+    set(SEARCH_CA_BUNDLE_PATHS
+            /etc/ssl/certs/ca-certificates.crt
+            /etc/pki/tls/certs/ca-bundle.crt
+            /etc/ssl/ca-bundle.pem
+            /etc/ssl/cert.pem
+            /etc/pki/tls/cacert.pem
+            /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+            /etc/pki/tls/cacert.pem
+            /usr/share/ssl/certs/ca-bundle.crt
+            /usr/local/etc/openssl/cert.pem
+            /usr/local/share/certs/ca-root-nss.crt)
+
+    foreach(SEARCH_CA_BUNDLE_PATH ${SEARCH_CA_BUNDLE_PATHS})
+        if(EXISTS "${SEARCH_CA_BUNDLE_PATH}")
+            message(STATUS "Found CA bundle: ${SEARCH_CA_BUNDLE_PATH}")
+            set(SPROXY_CA_BUNDLE "${SEARCH_CA_BUNDLE_PATH}" CACHE STRING "CA bundle")
+            break()
+        endif()
+    endforeach()
 endif()
 
 if(APPLE)
-    set(HAVE_VPN FALSE)
+    set(HAVE_VPN FALSE CACHE BOOL "Have VPN" FORCE)
     find_library(CORE_LIBRARY CoreFoundation)
     find_library(SYSCONF_LIBRARY SystemConfiguration)
 endif()
@@ -158,7 +179,7 @@ endif()
 
 find_package(ZLIB)
 if(ZLIB_FOUND)
-    set(HAVE_ZLIB TRUE)
+    set(HAVE_ZLIB TRUE CACHE BOOL "Have ZLIB")
     add_definitions(-DWITH_GZIP_TEST)
 else()
     message(WARNING "zlib not found, disable gzip test")

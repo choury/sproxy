@@ -253,9 +253,8 @@ struct Destination{
 #include <@Backtrace_HEADER@>
 #endif
 
-#cmakedefine01 ZLIB_FOUND
-
 #define PREFIX "@CMAKE_INSTALL_PREFIX@"
+#define CABUNDLE "@SPROXY_CA_BUNDLE@"
 
 #ifdef  __cplusplus
 }

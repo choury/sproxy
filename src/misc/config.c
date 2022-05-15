@@ -414,7 +414,7 @@ int parseConfigFile(const char* config_file){
     if(conf){
         char line[1024];
         while(fgets(line, sizeof(line), conf)){
-            if(line[0] == '#'){
+            if(line[0] == '#' || line[0] == '\n'){
                 continue;
             }
             char option[1024], args[1024];
