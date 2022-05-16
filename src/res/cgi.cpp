@@ -93,6 +93,7 @@ size_t PackCgiReq(std::shared_ptr<const HttpReqHeader> req, void *data, size_t l
         p = cgi_addnv(p, i.first, i.second);
     }
     assert(p - (char*)data <= (int)len);
+    (void)len;
     return p - (char*)data;
 }
 
@@ -102,6 +103,7 @@ size_t PackCgiRes(std::shared_ptr<const HttpResHeader> res, void *data, size_t l
         p = cgi_addnv(p, i.first, i.second);
     }
     assert(p - (char*)data <= (int)len);
+    (void)len;
     return p - (char*)data;
 }
 
