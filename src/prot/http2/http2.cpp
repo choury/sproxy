@@ -28,23 +28,74 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
     LOGD(DHTTP2, "get a frame [%d]:%d, size:%d, flags:%d\n", id, header->type, length, header->flags);
     switch(header->type) {
         uint32_t value;
-    case HTTP2_STREAM_DATA:
-        if(id == 0 || (id > recvid && id >= sendid-1)){
+    case HTTP2_STREAM_DATA: {
+        if (id == 0 || (id > recvid && id >= sendid - 1)) {
             LOGE("ERROR wrong data id: %d/%d/%d\n", id, recvid, sendid);
             ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
             return 0;
         }
-        DataProc(id, header+1, length);
-        if(header->flags & HTTP2_END_STREAM_F){
+        char* pos = (char*)(header + 1);
+        uint8_t padlen = 0;
+        if (header->flags & HTTP2_PADDED_F) {
+            padlen = *pos++;
+            length --;
+        }
+        if(padlen > length){
+            LOGE("ERROR padlen exceed length: %d/%d\n", padlen, length);
+            ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
+            return 0;
+        }
+        DataProc(id, pos, length - padlen);
+        if (header->flags & HTTP2_END_STREAM_F) {
             EndProc(id);
         }
         break;
-    case HTTP2_STREAM_HEADERS:
-        HeadersProc(header);
-        if(header->flags & HTTP2_END_STREAM_F){
-            EndProc(id);
+    }
+    case HTTP2_STREAM_HEADERS: {
+        const char *pos = (const char *) (header + 1);
+        uint8_t padlen = 0;
+        if (header->flags & HTTP2_PADDED_F) {
+            padlen = *pos++;
+            length--;
         }
+        uint32_t streamdep = 0;
+        uint8_t weigth = 0;
+        if (header->flags & HTTP2_PRIORITY_F) {
+            streamdep = get32(pos);
+            if(streamdep == id){
+                LOGE("ERROR streamdep equal id: %d/%d\n", streamdep, id);
+                ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
+                return 0;
+            }
+            pos += sizeof(streamdep);
+            weigth = *pos++;
+            length -= 5;
+        }
+        if(padlen > length){
+            LOGE("ERROR padlen exceed length: %d/%d\n", padlen, length);
+            ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
+            return 0;
+        }
+        if(header_buffer->id != 0){
+            LOGE("ERROR get another header id: %d/%d\n", (int)header_buffer->id, id);
+            ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
+            return 0;
+        }
+        header_buffer->id = id;
+        header_buffer->truncate(length - padlen);
+        memcpy(header_buffer->data(), pos, length - padlen);
+        if (header->flags & HTTP2_END_STREAM_F) {
+            http2_flag |= HTTP2_FLAG_END;
+        }
+        if(header->flags & HTTP2_END_HEADERS_F){
+            HeadersProc();
+            if(http2_flag & HTTP2_FLAG_END){
+                EndProc(id);
+            }
+        }
+        (void)weigth;
         break;
+    }
     case HTTP2_STREAM_SETTINGS:
         if(id != 0){
             LOGE("ERROR wrong setting id: %d\n", id);
@@ -71,7 +122,6 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
         GoawayProc(header);
         break;
     case HTTP2_STREAM_RESET:
-        value = get32(header+1);
         if(length != 4){
             LOGE("ERROR rst frame: %d/%d\n", id, length);
             ErrProc(HTTP2_ERR_FRAME_SIZE_ERROR);
@@ -82,15 +132,16 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
             ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
             return 0;
         }
+        value = get32(header+1);
         RstProc(id, value);
         break;
     case HTTP2_STREAM_WINDOW_UPDATE:
-        value = get32(header+1);
         if(length != 4){
             LOGE("ERROR window update frame: %d/%d\n", id, length);
             ErrProc(HTTP2_ERR_FRAME_SIZE_ERROR);
             return 0;
         }
+        value = get32(header+1);
         if(value == 0 || (id > recvid && id >= sendid-1)){
             LOGE("ERROR window update frame: value=%d id=%d/%d/%d\n", value, id, sendid, recvid);
             ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
@@ -98,14 +149,57 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
         }
         WindowUpdateProc(id, value);
         break;
-    case HTTP2_STREAM_PRIORITY:
+    case HTTP2_STREAM_CONTINUATION: {
+        if (header_buffer->id != id) {
+            LOGE("ERROR get another header id: %d/%d\n", (int) header_buffer->id, id);
+            ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
+            return 0;
+        }
+        size_t origin = header_buffer->truncate(header_buffer->len + length);
+        memcpy((char *) header_buffer->data() + origin, header + 1, length);
+        if (header->flags & HTTP2_END_HEADERS_F) {
+            HeadersProc();
+            if (http2_flag & HTTP2_FLAG_END) {
+                EndProc(id);
+            }
+        }
+        break;
+    }
+    case HTTP2_STREAM_PRIORITY: {
+        if(length != 5){
+            LOGE("ERROR priority frame: %d/%d\n", id, length);
+            ErrProc(HTTP2_ERR_FRAME_SIZE_ERROR);
+            return 0;
+        }
+        if (id == 0) {
+            LOGE("ERROR priority frame with frame 0: %d/%d\n", id, length);
+            ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
+            return 0;
+        }
+        if(header_buffer->id != 0){
+            LOGE("ERROR priority frame between header, id: %d/%d\n", (int) header_buffer->id, id);
+            ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
+            return 0;
+        }
+        uint32_t streamdep = get32(header + 1);
+        if (streamdep == id) {
+            LOGE("ERROR streamdep equal id: %d/%d\n", streamdep, id);
+            ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
+            return 0;
+        }
+        break;
+    }
     case HTTP2_STREAM_PUSH_PROMISE:
-    case HTTP2_STREAM_CONTINUATION:
     case HTTP2_STREAM_ALTSVC:
         LOGE("unimplemented http2 frame:%d\n", header->type);
         break;
     default:
         LOGE("unknown http2 frame:%d\n", header->type);
+        if(header_buffer->id != 0){
+            LOGE("ERROR get unknown frame between header, id: %d/%d\n", (int)header_buffer->id, id);
+            ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
+            return 0;
+        }
     }
     if(http2_flag & HTTP2_FLAG_ERROR){
         return 0;
@@ -166,16 +260,16 @@ ret:
 void Http2Base::PushData(Buffer&& bb){
     while(bb.len > remoteframebodylimit){
         auto buff = std::make_shared<Block>(bb.data(), remoteframebodylimit);
-        Http2_header* const header=(Http2_header *) buff->trunc(-(char) sizeof(Http2_header));
+        Http2_header* const header=(Http2_header *) buff->reserve(-(char) sizeof(Http2_header));
         memset(header, 0, sizeof(Http2_header));
         set32(header->id, bb.id);
         set24(header->length, remoteframebodylimit);
         PushFrame(Buffer{buff, remoteframebodylimit + sizeof(Http2_header)});
-        bb.trunc(remoteframebodylimit);
+        bb.reserve(remoteframebodylimit);
     }
 
     size_t size = bb.len;
-    Http2_header* const header=(Http2_header *)bb.trunc(-(char) sizeof(Http2_header));
+    Http2_header* const header=(Http2_header *) bb.reserve(-(char) sizeof(Http2_header));
     memset(header, 0, sizeof(Http2_header));
     set32(header->id, bb.id);
     set24(header->length, size);
@@ -243,6 +337,15 @@ void Http2Base::SettingsProc(const Http2_header* header) {
                 LOGD(DHTTP2, "set frame body size limit: %d\n", remoteframebodylimit);
                 break;
             case HTTP2_SETTING_ENABLE_PUSH:
+                if(value != 0 && value != 1){
+                    LOGE("ERROR enable push value:%d\n", value);
+                    ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
+                    return;
+                }
+                if(value == 1){
+                    http2_flag |= HTTP2_FLAG_ENABLE_PUSH;
+                }
+                break;
             case HTTP2_SETTING_MAX_CONCURRENT_STREAMS:
             case HTTP2_SETTING_MAX_HEADER_LIST_SIZE:
                 LOG("Get a unimplemented setting(%d): %d\n", get16(sf->identifier), value);
@@ -350,7 +453,7 @@ void Http2Base::SendInitSetting() {
     header->type = HTTP2_STREAM_SETTINGS;
 
     Setting_Frame *sf = (Setting_Frame *)(header+1);
-    set16(sf->identifier, HTTP2_SETTING_HEADER_TABLE_SIZE );
+    set16(sf->identifier, HTTP2_SETTING_HEADER_TABLE_SIZE);
     set32(sf->value, 65536);
     hpack_decoder.set_dynamic_table_size_limit_max(get32(sf->value));
 
@@ -362,12 +465,11 @@ void Http2Base::SendInitSetting() {
     PushFrame(Buffer{buff, 2 * sizeof(Setting_Frame) + sizeof(Http2_header)});
 }
 
-uint32_t Http2Base::GetSendId(){
+uint32_t Http2Base::OpenStream(){
     uint32_t id = sendid;
     sendid += 2;
     return id;
 }
-
 
 size_t Http2Responser::InitProc(const uchar* http2_buff, size_t len) {
     size_t prelen = strlen(HTTP2_PREFACE);
@@ -385,35 +487,22 @@ size_t Http2Responser::InitProc(const uchar* http2_buff, size_t len) {
     return prelen + DefaultProc(http2_buff+prelen, len-prelen);
 }
 
-void Http2Responser::HeadersProc(const Http2_header* header) {
-    uint32_t id = HTTP2_ID(header->id);
+void Http2Responser::HeadersProc() {
+    uint32_t id = header_buffer->id;
     if(id <= recvid || (id&1) == 0){
         LOGE("ERROR header id: %d/%d\n", id, recvid);
         ErrProc(HTTP2_ERR_STREAM_CLOSED);
         return;
     }
     recvid = id;
-    const unsigned char *pos = (const unsigned char *)(header+1);
-    uint8_t padlen = 0;
-    if(header->flags & HTTP2_PADDED_F) {
-        padlen = *pos++;
-    }
-    uint32_t streamdep = 0;
-    uint8_t weigth = 0;
-    if(header->flags & HTTP2_PRIORITY_F) {
-        streamdep = get32(pos);
-        pos += sizeof(streamdep);
-        weigth = *pos++;
-    }
-    size_t len = get24(header->length) - padlen - (pos - (const unsigned char *) (header + 1));
-    std::shared_ptr<HttpReqHeader> req = hpack_decoder.UnpackHttp2Req(pos, len);
+    std::shared_ptr<HttpReqHeader> req = hpack_decoder.UnpackHttp2Req(header_buffer->data(), header_buffer->len);
     if(req == nullptr){
         ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
         return;
     }
     ReqProc(id, req);
-    (void)weigth;
-    (void)streamdep;
+    header_buffer->truncate(0);
+    header_buffer->id = 0;
 }
 
 void Http2Responser::AltSvc(uint32_t id, const char *origin, const char *value) {
@@ -462,32 +551,20 @@ size_t Http2Requster::InitProc(const uchar* http2_buff, size_t len) {
 }
 
 
-void Http2Requster::HeadersProc(const Http2_header* header) {
-    uint32_t id = HTTP2_ID(header->id);
+void Http2Requster::HeadersProc() {
+    uint32_t id = header_buffer->id;
     if(id >= sendid-1 || (id&1u) == 0){
         LOGE("ERROR header id: %d/%d\n", id, sendid);
         ErrProc(HTTP2_ERR_STREAM_CLOSED);
         return;
     }
-    const unsigned char *pos = (const unsigned char *)(header+1);
-    uint8_t padlen = 0;
-    if(header->flags & HTTP2_PADDED_F) {
-        padlen = *pos++;
-    }
-    uint32_t streamdep = 0;
-    uint8_t weigth = 0;
-    if(header->flags & HTTP2_PRIORITY_F) {
-        streamdep = get32(pos);
-        pos += sizeof(streamdep);
-        weigth = *pos++;
-    }
-    size_t len = get24(header->length) - padlen - (pos - (const unsigned char *) (header + 1));
-    std::shared_ptr<HttpResHeader> res = hpack_decoder.UnpackHttp2Res(pos, len);
+    recvid = id;
+    std::shared_ptr<HttpResHeader> res = hpack_decoder.UnpackHttp2Res(header_buffer->data(), header_buffer->len);
     if(res == nullptr){
         ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
         return;
     }
     ResProc(id, res);
-    (void)weigth;
-    (void)streamdep;
+    header_buffer->truncate(0);
+    header_buffer->id = 0;
 }

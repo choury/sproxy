@@ -52,7 +52,7 @@ Proxy2::Proxy2(std::shared_ptr<SslRWer> rwer) {
 #endif
         size_t ret = 0;
         while((bb.len > 0) && (ret = (this->*Http2_Proc)((uchar*) bb.data(), bb.len))){
-            bb.trunc(ret);
+            bb.reserve(ret);
         }
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
@@ -174,7 +174,11 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
     localwinsize -= len;
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
-        assert((status.flags & HTTP_RES_COMPLETED) == 0);
+        if(status.flags & HTTP_RES_COMPLETED){
+            LOGD(DHTTP2, "<proxy2> DataProc after closed, id: %d\n", id);
+            Clean(id, status, HTTP2_ERR_STREAM_CLOSED);
+            return;
+        }
         if(len > (size_t)status.localwinsize){
             LOGE("(%" PRIu32 "): <proxy2> [%d] window size error %zu/%d\n",
                     status.req->header->request_id, id, len, status.localwinsize);
@@ -289,7 +293,7 @@ void Proxy2::PingProc(const Http2_header *header){
 }
 
 void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
-    uint32_t id = GetSendId();
+    uint32_t id = OpenStream();
     assert((http2_flag & HTTP2_FLAG_GOAWAYED) == 0);
     LOGD(DHTTP2, "<proxy2> request: %s [%d]\n", req->header->geturl().c_str(), id);
     statusmap[id] = ReqStatus{
@@ -369,7 +373,7 @@ void Proxy2::deleteLater(uint32_t errcode){
     }
     statusmap.clear();
     if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){
-        Goaway(-1, errcode);
+        Goaway(recvid, errcode);
     }
     Server::deleteLater(errcode);
 }

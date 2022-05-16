@@ -158,7 +158,7 @@ void GzipTest::rawreadHE(Buffer&) {
     }
 
     size_t len = Min(chunk, left);
-    res->send(Buffer{len});
+    res->send(Buffer{std::make_shared<Block>(len), len});
     left -= len;
     if (left) {
         rwer->delEvents(RW_EVENT::READ);

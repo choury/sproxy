@@ -181,7 +181,7 @@ Hpack::~Hpack()
     }
 }
 
-static size_t literal_decode_wrapper(const unsigned char* s, size_t len, std::string& name){
+static int literal_decode_wrapper(const unsigned char* s, size_t len, std::string& name){
     uint64_t value;
     if(integer_decode(s, len, 7, &value) == 0){
         return 0;
@@ -208,7 +208,7 @@ std::multimap<std::string, std::string> Hpack_decoder::decode(const unsigned cha
         if(*pos & 0x80) {
             noDynamic = true;
             uint64_t index;
-            size_t l = integer_decode(pos, len - (pos - s), 7, &index);
+            int l = integer_decode(pos, len - (pos - s), 7, &index);
             if(l == 0){
                 LOGE("incomplete integer found in hpack\n");
                 return std::multimap<std::string, std::string>{};
@@ -227,22 +227,25 @@ std::multimap<std::string, std::string> Hpack_decoder::decode(const unsigned cha
         }else if(*pos & 0x40) {
             noDynamic = true;
             uint64_t index;
-            size_t l = integer_decode(pos, len - (pos - s), 6, &index);
+            int l = integer_decode(pos, len - (pos - s), 6, &index);
             if(l == 0){
                 LOGE("incomplete integer found in hpack\n");
                 return std::multimap<std::string, std::string>{};
             }
             pos += l;
             std::string name, value;
-            if(index) {
-                name = getvalue(index)->name;
-            } else {
+            if(index == 0) {
                 l = literal_decode_wrapper(pos, len - (pos - s), name);
                 if(l <= 0){
                     LOGE("failed to decode literal in hpack\n");
                     return std::multimap<std::string, std::string>{};
                 }
                 pos += l;
+            } else if (getvalue(index)){
+                name = getvalue(index)->name;
+            } else {
+                LOGE("get null index from %d\n", (int)index);
+                return std::multimap<std::string, std::string>{};
             }
             l = literal_decode_wrapper(pos, len - (pos - s), value);
             if(l <= 0){
@@ -258,7 +261,7 @@ std::multimap<std::string, std::string> Hpack_decoder::decode(const unsigned cha
                 return std::multimap<std::string, std::string>{};
             }
             uint64_t size;
-            size_t l = integer_decode(pos, len - (pos - s), 5, &size);
+            int l = integer_decode(pos, len - (pos - s), 5, &size);
             if(l == 0){
                 LOGE("incomplete integer found in hpack\n");
                 return std::multimap<std::string, std::string>{};
@@ -270,22 +273,25 @@ std::multimap<std::string, std::string> Hpack_decoder::decode(const unsigned cha
         }else {
             noDynamic = true;
             uint64_t index;
-            size_t l = integer_decode(pos, len - (pos - s), 4, &index);
+            int l = integer_decode(pos, len - (pos - s), 4, &index);
             if(l == 0){
                 LOGE("incomplete integer found in hpack\n");
                 return std::multimap<std::string, std::string>{};
             }
             pos += l;
             std::string name, value;
-            if(index) {
-                name = getvalue(index)->name;
-            } else {
+            if(index == 0) {
                 l = literal_decode_wrapper(pos, len - (pos - s), name);
                 if(l <= 0){
                     LOGE("failed to decode literal in hpack\n");
                     return std::multimap<std::string, std::string>{};
                 }
                 pos += l;
+            } else if (getvalue(index)){
+                name = getvalue(index)->name;
+            } else {
+                LOGE("get null index from %d\n", (int)index);
+                return std::multimap<std::string, std::string>{};
             }
             l = literal_decode_wrapper(pos, len - (pos - s), value);
             if(l <= 0){
@@ -309,9 +315,19 @@ std::shared_ptr<HttpReqHeader> Hpack_decoder::UnpackHttp2Req(const void *header,
     if(headers.empty()){
         return nullptr;
     }
+    if(headers.count(":path") && headers.find(":path")->second.empty()){
+        LOGE("empty path is not allowed\n");
+        return nullptr;
+    }
     if(!headers.count(":method")){
         LOGE("wrong frame http request, no method\n");
         return nullptr;
+    }
+    for(auto &header : headers){
+        if(header.first[0] == ':' && headers.count(header.first) > 1) {
+            LOGE("wrong frame http request, duplicate pseudo-header\n");
+            return nullptr;
+        }
     }
     return std::make_shared<HttpReqHeader>(std::move(headers));
 }
@@ -324,6 +340,12 @@ std::shared_ptr<HttpResHeader> Hpack_decoder::UnpackHttp2Res(const void *header,
     if(!headers.count(":status")){
         LOGE("wrong frame http response, no status\n");
         return nullptr;
+    }
+    for(auto &header : headers){
+        if(header.first[0] == ':' && headers.count(header.first) > 1) {
+            LOGE("wrong frame http request, duplicate pseudo-header\n");
+            return nullptr;
+        }
     }
     return std::make_shared<HttpResHeader>(std::move(headers));
 }

@@ -91,7 +91,7 @@ Vpn_server::Vpn_server(int fd) {
     });
     rwer->SetReadCB([this](Buffer& bb){
         buffHE((const char*)bb.data(), bb.len);
-        bb.trunc(bb.len);
+        bb.reserve(bb.len);
     });
     rwer->SetWriteCB([this](size_t){
         for(const auto& i: statusmap){
@@ -864,7 +864,7 @@ void Guest_vpn::Recv_tcp(Buffer&& bb) {
     tcpStatus->send_ack = tcpStatus->want_seq;
     if (bb.len > sendlen) {
         server->sendPkg(pac_return, (const char*)bb.data(), sendlen);
-        bb.trunc(sendlen);
+        bb.reserve(sendlen);
         Recv_tcp(std::move(bb));
     }else{
         server->sendPkg(pac_return, std::move(bb));

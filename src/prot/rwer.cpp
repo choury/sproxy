@@ -26,7 +26,7 @@ RWer::RWer(int fd, std::function<void(int ret, int code)> errorCB):
     assert(this->errorCB != nullptr);
     readCB = [](Buffer& bb){
         LOGE("discard data from stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
-        bb.trunc(bb.len);
+        bb.reserve(bb.len);
     };
     writeCB = [](size_t){};
 }
@@ -39,7 +39,7 @@ RWer::RWer(std::function<void (int, int)> errorCB, std::function<void(const sock
     assert(this->connectCB != nullptr);
     readCB = [](Buffer& bb){
         LOGE("discard data from stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
-        bb.trunc(bb.len);
+        bb.reserve(bb.len);
     };
     writeCB = [](size_t){};
 }
@@ -88,6 +88,9 @@ void RWer::defaultHE(RW_EVENT events){
         flags |= RWER_READING;
         ReadData();
         flags &= ~RWER_READING;
+    }
+    if(flags & RWER_CLOSING){
+        return;
     }
     if (!!(events & RW_EVENT::WRITE)){
         flags |= RWER_SENDING;
@@ -272,7 +275,7 @@ ssize_t FullRWer::cap(uint64_t) {
 }
 
 void FullRWer::ConsumeRData() {
-    Buffer wb{1};
+    Buffer wb{nullptr};
     readCB(wb);
 }
 

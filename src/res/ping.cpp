@@ -48,19 +48,19 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
             if(israw){
                 const ip* iphdr = (ip*) bb.data();
                 size_t hlen = iphdr->ip_hl << 2;
-                bb.trunc(sizeof(icmphdr) + hlen);
+                bb.reserve(sizeof(icmphdr) + hlen);
                 res->send(std::move(bb));
             }else {
-                bb.trunc(sizeof(icmphdr));
+                bb.reserve(sizeof(icmphdr));
                 res->send(std::move(bb));
             }
             break;
         case AF_INET6:
             if(israw){
-                bb.trunc(sizeof(ip6_hdr) + sizeof(icmp6_hdr));
+                bb.reserve(sizeof(ip6_hdr) + sizeof(icmp6_hdr));
                 res->send(std::move(bb));
             }else {
-                bb.trunc(sizeof(icmp6_hdr));
+                bb.reserve(sizeof(icmp6_hdr));
                 res->send(std::move(bb));
             }
             break;

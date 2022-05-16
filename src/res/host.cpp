@@ -156,7 +156,7 @@ void Host::connected() {
         }
         size_t ret = 0;
         while((bb.len >  0) && (ret = (this->*Http_Proc)((const char*)bb.data(), bb.len))){
-            bb.trunc(ret);
+            bb.reserve(ret);
         }
     });
     rwer->SetWriteCB([this](size_t len){

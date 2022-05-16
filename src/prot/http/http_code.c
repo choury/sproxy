@@ -9,7 +9,7 @@
 
 static struct node {
     struct node* left,* right;
-    const uint16_t  info;
+    uint16_t  info;
     const uint16_t  len;
     const unsigned long long code;
 } hfmnodes[512]= {
@@ -539,12 +539,16 @@ __attribute__((constructor, unused)) static void init_hfmtree() {
         struct node *curnode = &root;
         while(--len){
             if(code&(1u<<len)) {
-                if(curnode->right == NULL)
+                if(curnode->right == NULL) {
                     curnode->right = &hfmnodes[tail--];
+                    curnode->right->info = (curnode->info << 1)| 1;
+                }
                 curnode = curnode->right;
             }else{
-                if(curnode->left == NULL)
+                if(curnode->left == NULL) {
                     curnode->left = &hfmnodes[tail--];
+                    curnode->left->info = (curnode->info << 1);
+                }
                 curnode = curnode->left;
             }
         }
@@ -581,8 +585,8 @@ int hfm_decode(const unsigned char *s, size_t len, char* result) {
             }
         }
     }
-    if(padding >= 8){
-        LOGE("the padding len in pack packet is more than 7\n");
+    if(padding > 7 || curnode->info != (1<<padding)-1) {
+        LOGE("the padding in pack packet is not corresponding, padding: %d, info: 0x%x\n", padding, curnode->info);
         return -1;
     }
     return n;

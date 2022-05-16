@@ -179,7 +179,7 @@ void Cgi::Recv(Buffer&& bb) {
     LOGD(DFILE, "<cgi> [%s] stream %" PRIu32 " recv: %zd\n", basename(filename), (int)bb.id, bb.len);
     assert(statusmap.count(bb.id));
     size_t size = bb.len > CGI_LEN_MAX ? CGI_LEN_MAX : bb.len;
-    CGI_Header *header = (CGI_Header *) bb.trunc(-(char) sizeof(CGI_Header));
+    CGI_Header *header = (CGI_Header *) bb.reserve(-(char) sizeof(CGI_Header));
     header->type = CGI_DATA;
     header->flag = size ? 0: CGI_FLAG_END;
     header->requestId = htonl(bb.id);
@@ -225,7 +225,7 @@ void Cgi::readHE(Buffer& bb) {
         if(!consumed){
             return;
         }
-        bb.trunc(size);
+        bb.reserve(size);
     }
 }
 

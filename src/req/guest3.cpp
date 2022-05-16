@@ -44,7 +44,7 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
         }
         size_t ret = 0;
         while((bb.len > 0) && (ret = Http3_Proc((uchar*) bb.data(), bb.len, bb.id))){
-            bb.trunc(ret);
+            bb.reserve(ret);
         }
     });
     rwer->SetWriteCB([this](size_t){
@@ -148,7 +148,11 @@ void Guest3::DataProc(uint64_t id, const void* data, size_t len) {
         return;
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
-        assert((status.flags & HTTP_REQ_COMPLETED) == 0);
+        if(status.flags & HTTP_REQ_COMPLETED){
+            LOGD(DHTTP3, "<guest3> DateProc after closed, id: %" PRIu64"\n", id);
+            Clean(id, HTTP3_ERR_STREAM_CREATION_ERROR);
+            return;
+        }
         status.req->send(data, len);
     }else{
         LOGD(DHTTP3, "<guest3> DateProc not found id: %" PRIu64"\n", id);
@@ -176,7 +180,7 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
             auto buff = std::make_shared<Block>(BUF_LEN);
             size_t len = qpack_encoder.PackHttp3Res(header, buff->data(), BUF_LEN);
             size_t pre = variable_encode_len(HTTP3_STREAM_HEADERS) + variable_encode_len(len);
-            char *p = (char *) buff->trunc(-pre);
+            char *p = (char *) buff->reserve(-pre);
             p += variable_encode(p, HTTP3_STREAM_HEADERS);
             p += variable_encode(p, len);
             PushFrame({buff, len + pre, id});

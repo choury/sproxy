@@ -32,7 +32,7 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
 
         size_t ret = 0;
         while((bb.len > 0) && (ret = Http3_Proc((uchar*) bb.data(), bb.len, bb.id))){
-            bb.trunc(ret);
+            bb.reserve(ret);
         }
         if(proxy3 != this && statusmap.empty()){
             LOG("this %p is not the main proxy3 and no clients, close it.\n", this);
@@ -81,7 +81,11 @@ void Proxy3::DataProc(uint64_t id, const void* data, size_t len){
     }
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
-        assert((status.flags & HTTP_RES_COMPLETED) == 0);
+        if(status.flags & HTTP_RES_COMPLETED) {
+            LOGD(DHTTP3, "<proxy3> DataProc after closed, id:%d\n", (int)id);
+            Clean(id, status, HTTP3_ERR_STREAM_CREATION_ERROR);
+            return;
+        }
         status.res->send(data, len);
     }else{
         LOGD(DHTTP3, "<proxy3> DataProc not found id: %" PRIu64 "\n", id);
@@ -117,7 +121,7 @@ void Proxy3::request(std::shared_ptr<HttpReq> req, Requester*) {
     memset(buff->data(), 0, BUF_LEN);
     size_t len = qpack_encoder.PackHttp3Req(req->header, buff->data(), BUF_LEN);
     size_t pre = variable_encode_len(HTTP3_STREAM_HEADERS) + variable_encode_len(len);
-    char* p = (char*) buff->trunc(-(char) pre);
+    char* p = (char*) buff->reserve(-(char) pre);
     p += variable_encode(p, HTTP3_STREAM_HEADERS);
     p += variable_encode(p, len);
     PushFrame({buff, pre + len, id});

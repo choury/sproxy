@@ -33,7 +33,7 @@ void Cli::ReadHE(Buffer& bb){
     while(bb.len > 0){
         ret = DefaultProc((const char*) bb.data(), bb.len);
         if(ret > 0){
-            bb.trunc(ret);
+            bb.reserve(ret);
             continue;
         }
         if(ret == 0){

@@ -128,7 +128,7 @@ Qpack::Qpack(std::function<void(Buffer&&)> sender, size_t dynamic_table_size_lim
     }
 }
 
-static size_t literal_decode_wrapper(const unsigned char* s, size_t len, int prefix, std::string& name){
+static int literal_decode_wrapper(const unsigned char* s, size_t len, int prefix, std::string& name){
     uint64_t value;
     if(integer_decode(s, len, prefix, &value) == 0){
         return 0;
@@ -238,7 +238,7 @@ std::multimap<std::string, std::string> Qpack_decoder::decode(const unsigned cha
     std::multimap<std::string, std::string> headers;
     const uchar* pos = (uchar*)data;
     uint64_t reqid;
-    size_t l = integer_decode(pos, (uchar*)data+len-pos, 8, &reqid);
+    int l = integer_decode(pos, (uchar*)data+len-pos, 8, &reqid);
     if(l == 0){
         return headers;
     }
