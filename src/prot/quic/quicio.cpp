@@ -1314,8 +1314,7 @@ void QuicRWer::disconnect_action() {
 }
 
 void QuicRWer::keepAlive_action() {
-    auto context = &contexts[ssl_encryption_application];
-    assert(context->hasKey);
+    assert(contexts[ssl_encryption_application].hasKey);
     if(flags & RWER_CLOSING){
         return;
     }

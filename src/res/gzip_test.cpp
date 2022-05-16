@@ -130,6 +130,7 @@ void GzipTest::gzipreadHE(Buffer&) {
         left -= strm.avail_in;
         int ret = deflate(&strm, left ? Z_NO_FLUSH : Z_FINISH);   /* no bad return value */
         assert(ret != Z_STREAM_ERROR);  /* state not clobbered */
+        (void)ret;
     } while (strm.avail_out && left);
 
     res->send({buff, chunk - (size_t)strm.avail_out});

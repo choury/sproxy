@@ -377,6 +377,7 @@ size_t Hpack_encoder::PackHttp2Req(std::shared_ptr<const HttpReqHeader> req, voi
         p += encode(p, i.first.c_str(), i.second.c_str());
     }
     assert(p - (uchar*)data <= (int)len);
+    (void)len;
     return p - (uchar*)data;
 }
 
@@ -386,5 +387,6 @@ size_t Hpack_encoder::PackHttp2Res(std::shared_ptr<const HttpResHeader> res, voi
         p += encode(p, i.first.c_str(), i.second.c_str());
     }
     assert(p - (uchar*)data <= (int)len);
+    (void)len;
     return p - (uchar*)data;
 }

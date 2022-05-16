@@ -316,6 +316,7 @@ size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t 
 
     len += sprintf(buff + len, CRLF);
     assert(len < size);
+    (void)size;
     return len;
 }
 
@@ -338,5 +339,6 @@ size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t 
 
     len += sprintf(buff + len, CRLF);
     assert(len < size);
+    (void)size;
     return len;
 }
