@@ -21,7 +21,7 @@
 
 /*
  * 这个类维护一个缓冲区，但是申请的时候会多申请一个固定长度的头部（作为预留部分）
- * 可以通过move操作来移动当前数据的位置，如果参数为正，则向后移动（增加预留），如果为负，则向前移动
+ * 可以通过reserve操作来移动当前数据的位置，如果参数为正，则向后移动（增加预留），如果为负，则向前移动
  */
 class Block{
     void* base;
@@ -45,7 +45,7 @@ public:
     };
 
     Block(const Block&) = delete;
-    void* trunc(int len){
+    void* reserve(int len){
         assert( off >= -len);
         off += len;
         return (char*)base + off;
@@ -65,14 +65,19 @@ class Buffer{
 public:
     uint64_t id = 0;
     size_t len = 0;
+    size_t cap = 0;
     Buffer(const Buffer&) = delete;
     Buffer(size_t len, uint64_t id = 0);
     Buffer(const void* ptr, size_t len, uint64_t id = 0);
     Buffer(std::shared_ptr<Block> ptr, size_t len, uint64_t id = 0);
     Buffer(std::nullptr_t, uint64_t id = 0);
     Buffer(Buffer&& b);
-    void* trunc(int off);
+    // 增加/减少预留空间 off 为正增加，为负减少
+    void* reserve(int off);
+    // 从末尾截断/扩展数据, 返回截断前的长度
+    size_t truncate(size_t left);
     void* data() const;
+    void* end() const;
 };
 
 

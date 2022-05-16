@@ -6,19 +6,19 @@
 
 
 Buffer::Buffer(size_t len, uint64_t id):
-        ptr(std::make_shared<Block>(len)), id(id)
+        ptr(std::make_shared<Block>(len)), id(id), len(0), cap(len)
 {
     assert(this->ptr != nullptr);
 }
 
 Buffer::Buffer(const void* ptr, size_t len, uint64_t id):
-        ptr(std::make_shared<Block>(ptr, len)), id(id), len(len)
+        ptr(std::make_shared<Block>(ptr, len)), id(id), len(len), cap(len)
 {
     assert(this->ptr != nullptr);
 }
 
 Buffer::Buffer(std::shared_ptr<Block> ptr, size_t len, uint64_t id):
-        ptr(ptr), id(id), len(len)
+        ptr(ptr), id(id), len(len), cap(len)
 {
     assert(this->ptr != nullptr);
 }
@@ -31,20 +31,35 @@ Buffer::Buffer(Buffer&& b){
     ptr = b.ptr;
     id = b.id;
     len = b.len;
+    cap = b.len;
     b.ptr = nullptr;
-    b.len = 0;
     b.id = 0;
+    b.cap = 0;
+    b.len = 0;
 }
 
-void* Buffer::trunc(int off){
+void* Buffer::reserve(int off){
     if(ptr == nullptr){
         assert(len == 0);
         ptr = std::make_shared<Block>(0);
     }
     assert((int)len >= off);
     len -= off;
-    return ptr->trunc(off);
+    return ptr->reserve(off);
 }
+
+size_t Buffer::truncate(size_t left) {
+    size_t origin = len;
+    if(left > cap){
+        auto new_ptr = std::make_shared<Block>(left);
+        memcpy(new_ptr->data(), ptr->data(), len);
+        ptr = new_ptr;
+        cap = left;
+    }
+    len = left;
+    return origin;
+}
+
 void* Buffer::data() const{
     if(ptr == nullptr){
         return nullptr;
@@ -52,6 +67,12 @@ void* Buffer::data() const{
     return ptr->data();
 }
 
+void* Buffer::end() const {
+    if(ptr == nullptr){
+        return nullptr;
+    }
+    return (char*)ptr->data() + len;
+}
 
 buff_iterator WBuffer::start() {
     return write_queue.begin();
@@ -83,7 +104,7 @@ ssize_t WBuffer::Write(std::function<ssize_t(const void*, size_t, uint64_t)> wri
     if (ret > 0) {
         assert(len >= (size_t)ret && (size_t)ret <= i->len);
         len -= ret;
-        i->trunc(ret);
+        i->reserve(ret);
         if (i->len == 0) {
             write_queue.pop_front();
         }

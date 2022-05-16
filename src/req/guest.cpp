@@ -33,7 +33,7 @@ void Guest::ReadHE(Buffer& bb){
     }
     size_t ret = 0;
     while(bb.len > 0 && (ret = (this->*Http_Proc)((char*)bb.data(), bb.len))){
-        bb.trunc(ret);
+        bb.reserve(ret);
     }
 }
 
@@ -222,7 +222,7 @@ void Guest::Recv(Buffer&& bb) {
     if(status.flags & HTTP_CHUNK_F){
         char chunkbuf[100];
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)bb.len);
-        bb.trunc(-chunklen);
+        bb.reserve(-chunklen);
         memcpy(bb.data(), chunkbuf, chunklen);
         rwer->buffer_insert(rwer->buffer_end(), std::move(bb));
         rwer->buffer_insert(rwer->buffer_end(), Buffer{CRLF, 2});

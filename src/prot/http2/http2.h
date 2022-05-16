@@ -70,7 +70,7 @@ struct Goaway_Frame{
 #define HTTP2_ERR_HTTP_1_1_REQUIRED   13u
 
 
-#define FRAMEBODYLIMIT 16384
+#define FRAMEBODYLIMIT BUF_LEN
 #define localframewindowsize  FRAMEBODYLIMIT
 
 struct Http2_frame{
@@ -86,18 +86,22 @@ protected:
     
     int32_t remotewinsize = 65535; // 对端提供的窗口大小，发送时减小，收到对端update时增加
     int32_t localwinsize = 65535; // 发送给对端的窗口大小，接受时减小，给对端发送update时增加
-#define HTTP2_FLAG_INITED    (1u << 0u)
-#define HTTP2_FLAG_GOAWAYED  (1u << 1u)
-#define HTTP2_FLAG_ERROR     (1u << 2u)
+#define HTTP2_FLAG_INITED      (1u << 0u)
+#define HTTP2_FLAG_GOAWAYED    (1u << 1u)
+#define HTTP2_FLAG_ENABLE_PUSH (1u << 2u)
+#define HTTP2_FLAG_END         (1u << 3u)
+#define HTTP2_FLAG_ERROR       (1u << 8u)
     uint32_t http2_flag = 0;
     uint32_t recvid = 0;
     uint32_t sendid = 1;
     Hpack_encoder hpack_encoder;
     Hpack_decoder hpack_decoder;
+    std::shared_ptr<Buffer> header_buffer = std::make_shared<Buffer>(BUF_LEN);
     virtual size_t InitProc(const uchar* http2_buff, size_t len) = 0;
     size_t DefaultProc(const uchar* http2_buff, size_t len);
 
-    virtual void HeadersProc(const Http2_header *header) = 0;
+    // 处理header的所有信息都保存在header_buffer中
+    virtual void HeadersProc() = 0;
     virtual void SettingsProc(const Http2_header *header);
     virtual void PingProc(const Http2_header *header);
     virtual void GoawayProc(const Http2_header *header);
@@ -117,7 +121,7 @@ protected:
     virtual void WindowUpdateProc(uint32_t id, uint32_t size) = 0;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff) = 0;
     size_t (Http2Base::*Http2_Proc)(const uchar* http2_buff, size_t len)=&Http2Base::InitProc;
-    uint32_t GetSendId();
+    uint32_t OpenStream();
 
     virtual buff_iterator queue_head() = 0;
     virtual buff_iterator queue_end() = 0;
@@ -129,7 +133,7 @@ public:
 class Http2Responser:public Http2Base{
 protected:
     virtual size_t InitProc(const uchar* http2_buff, size_t len)override;
-    virtual void HeadersProc(const Http2_header *header)override;
+    virtual void HeadersProc()override;
     virtual void ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> req) = 0;
     virtual void AltSvc(uint32_t id, const char* origin, const char* value);
 };
@@ -139,7 +143,7 @@ class Http2Requster:public Http2Base{
 protected:
     void init();
     virtual size_t InitProc(const uchar* http2_buff, size_t len)override;
-    virtual void HeadersProc(const Http2_header *header)override;
+    virtual void HeadersProc()override;
     virtual void ResProc(uint32_t id, std::shared_ptr<HttpResHeader> res) = 0;
 public:
 };

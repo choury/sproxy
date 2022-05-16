@@ -206,7 +206,7 @@ void Http3Base::Goaway(uint64_t lastid){
 
 void Http3Base::PushData(Buffer&& bb) {
     size_t size = bb.len;
-    char* pos = (char*) bb.trunc(-(1 + (int) variable_encode_len(size)));
+    char* pos = (char*) bb.reserve(-(1 + (int) variable_encode_len(size)));
     pos += variable_encode(pos, HTTP3_STREAM_DATA);
     pos += variable_encode(pos, size);
     PushFrame(std::move(bb));
