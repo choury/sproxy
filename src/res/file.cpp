@@ -5,7 +5,7 @@
 #include "misc/config.h"
 #include "cgi.h"
 
-#ifdef WITH_GZIP_TEST
+#ifdef HAVE_ZLIB
 #include "gzip_test.h"
 #endif
 
@@ -232,7 +232,7 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
         if(filename == pathjoin(opt.rootdir, "status")){
             return (new Status())->request(req, src);
         }
-#ifdef WITH_GZIP_TEST
+#ifdef HAVE_ZLIB
         if(filename == pathjoin(opt.rootdir, "test")){
             return (new GzipTest())->request(req, src);
         }

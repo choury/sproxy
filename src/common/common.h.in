@@ -252,6 +252,11 @@ struct Destination{
 #if Backtrace_FOUND
 #include <@Backtrace_HEADER@>
 #endif
+#cmakedefine HAVE_VPN
+#cmakedefine HAVE_CLIENT
+#cmakedefine HAVE_ZLIB
+#cmakedefine HAVE_RPC
+#cmakedefine HAVE_QUIC
 
 #define PREFIX "@CMAKE_INSTALL_PREFIX@"
 #define CABUNDLE "@SPROXY_CA_BUNDLE@"

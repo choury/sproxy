@@ -5,7 +5,7 @@
 #include "misc/strategy.h"
 #include "misc/config.h"
 #include "res/proxy2.h"
-#ifdef WITH_QUIC
+#ifdef HAVE_QUIC
 #include "res/proxy3.h"
 #endif
 #include "res/cgi.h"
@@ -110,7 +110,7 @@ bool Cli::SetServer(const std::string &server) {
     if(loadproxy(server.c_str(), &proxy) == 0){
         memcpy(&opt.Server, &proxy, sizeof(proxy));
         proxy2 = nullptr;
-#ifdef WITH_QUIC
+#ifdef HAVE_QUIC
         proxy3 = nullptr;
 #endif
         return true;

@@ -1,6 +1,6 @@
 #include "vpn.h"
 #include "req/guest_vpn.h"
-#ifdef WITH_RPC
+#ifdef HAVE_RPC
 #include "req/cli.h"
 #endif
 
@@ -15,7 +15,7 @@ volatile uint32_t vpn_contiune = 1;
 
 int vpn_start(int fd){
     prepare();
-#ifdef WITH_RPC
+#ifdef HAVE_RPC
     if(opt.socket){
         int svsk_cli = ListenUnix(opt.socket);
         if(svsk_cli < 0){

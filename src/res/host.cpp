@@ -2,7 +2,7 @@
 #include "proxy2.h"
 #include "req/requester.h"
 #include "prot/sslio.h"
-#ifdef WITH_QUIC
+#ifdef HAVE_QUIC
 #include "proxy3.h"
 #include "prot/quic/quicio.h"
 #endif
@@ -38,7 +38,7 @@ Host::Host(const Destination* dest){
         rwer = std::make_shared<PacketRWer>(dest->hostname, dest->port, Protocol::UDP,
                               std::bind(&Host::Error, this, _1, _2),
                               std::bind(&Host::connected, this));
-#ifdef WITH_QUIC
+#ifdef HAVE_QUIC
     }else if(strcasecmp(dest->scheme, "quic") == 0){
         auto qrwer = std::make_shared<QuicRWer>(dest->hostname, dest->port, Protocol::QUIC,
                                      std::bind(&Host::Error, this, _1, _2),
@@ -120,7 +120,7 @@ void Host::connected() {
             return Server::deleteLater(NOERROR);
         }
     }
-#ifdef WITH_QUIC
+#ifdef HAVE_QUIC
     auto qrwer = std::dynamic_pointer_cast<QuicRWer>(rwer);
     if(qrwer){
         const unsigned char *data;
@@ -305,7 +305,7 @@ void Host::deleteLater(uint32_t errcode){
 
 void Host::gethost(std::shared_ptr<HttpReq> req, const Destination* dest, Requester* src) {
     if(req->header->should_proxy && memcmp(dest, &opt.Server, sizeof(Destination)) == 0) {
-#ifdef WITH_QUIC
+#ifdef HAVE_QUIC
         if(proxy3){
             return proxy3->request(req, src);
         }

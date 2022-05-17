@@ -1,5 +1,5 @@
 #include "req/guest_sni.h"
-#ifdef WITH_QUIC
+#ifdef HAVE_QUIC
 #include "req/guest3.h"
 #endif
 #include "req/cli.h"
@@ -72,7 +72,7 @@ static SSL_CTX* initssl(int quic, const char *ca, const char *cert, const char *
         ERR_print_errors_fp(stderr);
         return nullptr;
     }
-#ifdef WITH_QUIC
+#ifdef HAVE_QUIC
     if(quic){
         SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION);
         SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION);
@@ -133,7 +133,7 @@ int main(int argc, char **argv) {
     if(opt.cert && opt.key){
         SSL_CTX * ctx = initssl(opt.quic_mode, opt.cafile, opt.cert, opt.key);
         opt.CPORT = opt.CPORT ?: 443;
-#ifdef WITH_QUIC
+#ifdef HAVE_QUIC
         if(opt.quic_mode){
             int svsk_quic = ListenNet(SOCK_DGRAM, opt.CPORT);
             if(svsk_quic <  0) {
