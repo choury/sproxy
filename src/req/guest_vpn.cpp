@@ -558,6 +558,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
     TcpStatus* tcpStatus = (TcpStatus*)status.protocol_info;
     if(seq != tcpStatus->want_seq){
         LOGD(DVPN, "get keepalive pkt or unwanted pkt, reply ack(%u).\n", tcpStatus->want_seq);
+        tcpStatus->send_ack = tcpStatus->want_seq - 1; //to force send tcp ack
         rwer->addjob(std::bind(&Guest_vpn::tcp_ack, this), 0, JOB_FLAGS_AUTORELEASE);
         return;
     }
