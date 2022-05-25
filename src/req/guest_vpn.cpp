@@ -301,15 +301,35 @@ const char * Guest_vpn::getProg() const{
 
 const char* Guest_vpn::generateUA() const {
     static char UA[URLLIMIT];
+    sockaddr_in* src_ = (sockaddr_in*)&key.src;
     if(opt.ua){
-        return opt.ua;
+        sprintf(UA, "%s Sproxy/%s VPN/%d",
+                opt.ua,
+                getVersion(),
+                htons(src_->sin_port));
+        return UA;
     }
 #ifdef __ANDROID__
-    sprintf(UA, "Sproxy/%s (Build %s) (%s) %s App/%s", getVersion(), getBuildTime(), getDeviceName(), getProg(), appVersion);
+    sprintf(UA, "Sproxy/%s (Build %s) (%s) VPN/%d %s App/%s",
+            getVersion(),
+            getBuildTime(),
+            getDeviceName(),
+            htons(src_->sin_port),
+            getProg(),
+            appVersion);
 #elif __linux__
-    sprintf(UA, "Sproxy/%s (Build %s) (%s) %s", getVersion(), getBuildTime(), getDeviceInfo(), getProg());
+    sprintf(UA, "Sproxy/%s (Build %s) (%s) VPN/%d %s",
+            getVersion(),
+            getBuildTime(),
+            getDeviceInfo(),
+            htons(src_->sin_port),
+            getProg());
 #else
-    sprintf(UA, "Sproxy/%s (Build %s) (%s)", getVersion(), getBuildTime(), getDeviceInfo());
+    sprintf(UA, "Sproxy/%s (Build %s) (%s) VPN/%d",
+            getVersion(),
+            getBuildTime(),
+            getDeviceInfo()
+            htons(src_->sin_port));
 #endif
     return UA;
 }
@@ -589,10 +609,10 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
             ->setflag(TH_ACK);
 
         server->sendPkg(pac_return, nullptr);
+        status.req->send(nullptr);
         switch(tcpStatus->status){
         case TCP_ESTABLISHED:
             tcpStatus->status = TCP_CLOSE_WAIT;
-            status.req->send(nullptr);
             break;
         case TCP_FIN_WAIT1:
             tcpStatus->status = TCP_CLOSING;
