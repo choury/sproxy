@@ -137,12 +137,37 @@ static void com_adds(SproxyClient* c, const std::vector<std::string>& args){
 }
 
 
-static char *generator_adds(const char* text, int state){
+static char *generator_strategy(const char* text, int state){
     static const char *strategies[] = {"local", "proxy", "rewrite", "direct", "forward", "block"};
     static const int nb_elements = (sizeof(strategies)/sizeof(strategies[0]));
     COMPLETION_SKELETON(strategies, nb_elements);
 }
 
+static void com_debug(SproxyClient* c, const std::vector<std::string>& args){
+    if(args.size() < 3){
+        std::cout << "debug require 2 params at least" << std::endl;
+        return;
+    }
+    bool enable;
+    if(args[1] == "enable"){
+        enable = true;
+    }else if(args[1] == "disable"){
+        enable = false;
+    }else {
+        std::cout << "debug only support enable and disable" << std::endl;
+        return;
+    }
+    auto r = c->Debug(args[2], enable);
+    if (!r.get_future().get()) {
+        std::cout << "failed" << std::endl;
+    }
+}
+
+static char *generator_enable(const char* text, int state){
+    static const char *switches[] = {"enable", "disable"};
+    static const int nb_elements = (sizeof(switches)/sizeof(switches[0]));
+    COMPLETION_SKELETON(switches, nb_elements);
+}
 
 static void com_dels(SproxyClient* c, const std::vector<std::string>& args){
     if (args.size() < 2) {
@@ -229,8 +254,9 @@ static void com_help(SproxyClient*, const std::vector<std::string>& args);
 static char *command_generator (const char* text, int state);
 
 COMMAND commands[] = {
-        { "adds", com_adds, "<strategy> <host> [ext]\tAdd strategy for host", generator_adds},
+        { "adds", com_adds, "<strategy> <host> [ext]\tAdd strategy for host", generator_strategy},
         { "dels", com_dels, "<host>\tDelete strategy for host", nullptr},
+        { "debug", com_debug, "enable|disable module", generator_enable},
         { "test", com_test, "<host>\tTest strategy for host", nullptr},
         { "sites", com_sites, "\tGet strategy lists", nullptr},
         { "flush", com_flush, "<cgi|dns|strategy>", generator_flush},

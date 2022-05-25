@@ -85,24 +85,19 @@ extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     std::string sites_file = getExternalFilesDir() + "/sites.list";
     std::string pcap_file = getExternalCacheDir() + "/vpn.pcap";
 
-    opt.policy_read = fopen(sites_file.c_str(), "re");
-    //opt.pcap_file = pcap_file.c_str();
     if(access(config_file.c_str(), R_OK) == 0){
         LOG("read config from %s.\n", config_file.c_str());
         parseConfigFile(config_file.c_str());
     }
-    LOG("native SproxyVpnService.start %d.\n", sockfd);
+    opt.policy_read = fopen(sites_file.c_str(), "re");
+    //opt.pcap_file = pcap_file.c_str();
     const char *server_str = jnienv->GetStringUTFChars(server, nullptr);
     const char *secret_str = jnienv->GetStringUTFChars(secret, nullptr);
-
-    if(opt.ipv6_mode == Auto){
-        opt.ipv6_enabled = hasIpv6Address();
-    }else{
-        opt.ipv6_enabled = opt.ipv6_mode;
-    }
-    LOG("ipv6: %s.\n", opt.ipv6_enabled?"enabled":"disabled");
     loadproxy(server_str, &opt.Server);
     Base64Encode(secret_str, strlen(secret_str), opt.rewrite_auth);
+    postConfig();
+    LOG("native SproxyVpnService.start %d.\n", sockfd);
+
     jnienv->ReleaseStringUTFChars(server, server_str);
     jnienv->ReleaseStringUTFChars(secret, secret_str);
 

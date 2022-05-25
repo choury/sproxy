@@ -14,7 +14,6 @@
 volatile uint32_t vpn_contiune = 1;
 
 int vpn_start(int fd){
-    prepare();
 #ifdef HAVE_RPC
     if(opt.socket){
         int svsk_cli = ListenUnix(opt.socket);

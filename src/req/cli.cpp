@@ -145,7 +145,14 @@ static void sstream_dumper(void* param, const char* fmt, ...) {
 }
 
 std::string Cli::GetStatus() {
+    LOG("%s [%s]\n", rwer->getPeer(), __func__);
     std::string ss;
     ::dump_stat(sstream_dumper, &ss);
     return ss;
 }
+
+bool Cli::Debug(const std::string& module, bool enable) {
+    LOG("%s [%s] %s %s\n", rwer->getPeer(), __func__, enable?"enable":"disable", module.c_str());
+    return debugon(module.c_str(), enable);
+}
+

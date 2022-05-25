@@ -129,7 +129,6 @@ static SSL_CTX* initssl(int quic, const char *ca, const char *cert, const char *
 
 int main(int argc, char **argv) {
     parseConfig(argc, argv);
-    prepare();
     if(opt.cert && opt.key){
         SSL_CTX * ctx = initssl(opt.quic_mode, opt.cafile, opt.cert, opt.key);
         opt.CPORT = opt.CPORT ?: 443;

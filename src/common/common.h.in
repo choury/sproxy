@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <syslog.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <string.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
@@ -69,31 +70,29 @@ static inline int endwith(const char *s1, const char *s2) {
 
 typedef enum{NONE, TCP=SOCK_STREAM, UDP=SOCK_DGRAM, ICMP, QUIC}Protocol;
 
-extern uint32_t debug;
 
-#define DEVENT    (1U<<0u)
-#define DDNS      (1U<<1u)
-#define DHTTP2    (1U<<2u)
-#define DJOB      (1U<<3u)
-#define DVPN      (1U<<4u)
-#define DHPACK    (1U<<5u)
-#define DHTTP     (1U<<7u)
-#define DFILE     (1U<<8u)
-#define DNET      (1U<<9u)
-#define DQUIC     (1U<<10u)
-#define DHTTP3    (1U<<11u)
+enum debug_module {
+    DNONE  = 0,
+    DEVENT = 1,
+    DDNS   = 2,
+    DHTTP2 = 3,
+    DJOB   = 4,
+    DVPN   = 5,
+    DHPACK = 6,
+    DHTTP  = 7,
+    DFILE  = 8,
+    DNET   = 9,
+    DQUIC  = 10,
+    DHTTP3 = 11,
+};
 
-#define DEVENT_STR  "[EVENT]"
-#define DDNS_STR    "[DNS]"
-#define DHTTP2_STR  "[HTTP2]"
-#define DJOB_STR    "[JOB]"
-#define DVPN_STR    "[VPN]"
-#define DHPACK_STR  "[HPACK]"
-#define DHTTP_STR   "[HTTP]"
-#define DFILE_STR   "[FILE]"
-#define DNET_STR    "[NET]"
-#define DQUIC_STR   "[QUIC]"
-#define DHTTP3_STR  "[HTTP3]"
+struct debug_flags_map {
+    const char *name;
+    bool enabled;
+};
+
+//defined in config.c, must add new module here
+extern struct debug_flags_map debug[];
 
 #ifdef  __cplusplus
 extern "C" {
@@ -138,11 +137,11 @@ forceinline uint32_t getmtime(){
 
 #define  LOGD(mod, ...)  \
 do{\
-    if(debug & mod) {\
+    if(debug[mod].enabled) {\
         char tmp[1024]; \
         int __ret =snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
         if(__ret < 0) abort(); \
-        slog(LOG_DEBUG, "%06u:%s: %s", getmtime()%1000000u, mod##_STR, tmp); \
+        slog(LOG_DEBUG, "%06u:[%s]: %s", getmtime()%1000000u, debug[mod].name, tmp); \
     }\
 }while(0)
 

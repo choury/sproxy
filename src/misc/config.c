@@ -25,12 +25,12 @@
 #endif
 #include <openssl/ssl.h>
 
-uint32_t debug = 0;
 static char** main_argv = NULL;
 static char* ipv6_options[] = {"disable", "enable", "auto", NULL};
 static char* server_string = NULL;
 static char* policy_file = NULL;
 static struct arg_list secrets = {NULL, NULL};
+static struct arg_list debug_list = {NULL, NULL};
 
 int efd = -1;
 void openefd(){
@@ -127,18 +127,7 @@ static struct option long_options[] = {
     {"ua",            required_argument, NULL,  0 },
     {"version",       no_argument,       NULL, 'v'},
 #ifndef NDEBUG
-    {"debug-event",   no_argument,   NULL,  0 },
-    {"debug-dns",     no_argument,   NULL,  0 },
-    {"debug-http2",   no_argument,   NULL,  0 },
-    {"debug-http3",   no_argument,   NULL,  0 },
-    {"debug-job",     no_argument,   NULL,  0 },
-    {"debug-vpn",     no_argument,   NULL,  0 },
-    {"debug-hpack",   no_argument,   NULL,  0 },
-    {"debug-http",    no_argument,   NULL,  0 },
-    {"debug-file",    no_argument,   NULL,  0 },
-    {"debug-net",     no_argument,   NULL,  0 },
-    {"debug-quic",    no_argument,   NULL,  0 },
-    {"debug-all",     no_argument,   NULL,  0 },
+    {"debug",         required_argument,   NULL,  0 },
 #endif
     {NULL,       0,                NULL,  0 }
 };
@@ -184,18 +173,7 @@ static struct option_detail option_detail[] = {
     {"ua", "set user-agent for vpn auto request", option_string, &opt.ua, NULL},
     {"version", "show the version of this programme", option_bool, NULL, NULL},
 #ifndef NDEBUG
-    {"debug-event", "debug-event", option_bitwise, &debug, (void*)DEVENT},
-    {"debug-dns", "\tdebug-dns", option_bitwise, &debug, (void*)DDNS},
-    {"debug-http2", "debug-http2", option_bitwise, &debug, (void*)DHTTP2},
-    {"debug-http3", "debug-http3", option_bitwise, &debug, (void*)DHTTP3},
-    {"debug-job", "\tdebug-job", option_bitwise, &debug, (void*)DJOB},
-    {"debug-vpn", "\tdebug-vpn", option_bitwise, &debug, (void*)DVPN},
-    {"debug-hpack", "debug-hpack", option_bitwise, &debug, (void*)DHPACK},
-    {"debug-http", "debug-http",  option_bitwise, &debug, (void*)DHTTP},
-    {"debug-file", "debug-file",  option_bitwise, &debug, (void*)DFILE},
-    {"debug-net", "\tdebug-net",  option_bitwise, &debug, (void*)DNET},
-    {"debug-quic", "debug-quic", option_bitwise, &debug,  (void*)DQUIC},
-    {"debug-all", "\tdebug-all", option_bitwise, &debug, (void*)0xffffffff},
+    {"debug", "set debug output for module", option_list, &debug_list, NULL},
 #endif
     {NULL, NULL, option_bool, NULL, NULL},
 };
@@ -212,43 +190,6 @@ void network_changed(){
 
 void releaseall();
 void dump_stat();
-
-void prepare(){
-    SSL_library_init();    // SSL初库始化
-    SSL_load_error_strings();  // 载入所有错误信息
-    signal(SIGPIPE, SIG_IGN);
-    signal(SIGCHLD, SIG_IGN);
-#if Backtrace_FOUND
-    signal(SIGABRT, dump_trace);
-#endif
-    signal(SIGHUP,  (sig_t)reloadstrategy);
-    signal(SIGUSR1, (sig_t)(void(*)())dump_stat);
-    reloadstrategy();
-    srandom(time(NULL));
-    setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
-#ifndef __ANDROID__
-    if (opt.daemon_mode) {
-        if(daemon(1, 0) < 0) {
-            LOGE("start daemon error:%s\n", strerror(errno));
-            exit(1);
-        }
-        openlog("sproxy", LOG_PID | LOG_PERROR, LOG_LOCAL0);
-    }
-#else
-    opt.daemon_mode = false;
-#endif
-    struct rlimit limits;
-    if(getrlimit(RLIMIT_NOFILE, &limits)){
-        LOGE("getrlimit failed: %s\n", strerror(errno));
-    }else if(limits.rlim_cur < 16384){
-        limits.rlim_cur = Min(limits.rlim_max, 16384);
-        if(setrlimit(RLIMIT_NOFILE, &limits)) {
-            LOGE("setrlimit failed: %s\n", strerror(errno));
-        }
-    }
-    openefd();
-    register_network_change_cb(network_changed);
-}
 
 void neglect(){
     flushdns();
@@ -446,6 +387,107 @@ static const char* confs[] = {
     NULL,
 };
 
+void postConfig(){
+    if(opt.CPORT < 0 || opt.CPORT >= 65535){
+        LOGE("wrong port: %" PRId64 "\n", opt.CPORT);
+        exit(1);
+    }
+    if(server_string && loadproxy(server_string, &opt.Server)){
+        LOGE("wrong server format: %s\n", server_string);
+        exit(1);
+    }
+    LOG("server %s\n", dumpDest(&opt.Server));
+
+    if(policy_file == NULL){
+        policy_file = PREFIX "/etc/sproxy/sites.list";
+    }
+    if((opt.policy_read == NULL) && (opt.policy_read = fopen(policy_file, "re")) == NULL){
+        LOGE("failed to open policy file: %s\n", strerror(errno));
+    }else if((opt.policy_write = NULL) && (opt.policy_write = fopen(policy_file, "r+e")) == NULL){
+        LOG("failed to open policy file for write: %s, it won't be updated\n", strerror(errno));
+    }
+    if(opt.rootdir && chdir(opt.rootdir)){
+        LOGE("chdir failed: %s\n", strerror(errno));
+    }
+    free((void*)opt.rootdir);
+    opt.rootdir = (char*)malloc(PATH_MAX);
+    getcwd((char*)opt.rootdir, PATH_MAX);
+
+    if(opt.ipv6_mode == Auto){
+        opt.ipv6_enabled = hasIpv6Address();
+        LOG("auto detected ipv6: %s\n", opt.ipv6_enabled?"enable":"disable");
+    }else{
+        opt.ipv6_enabled = opt.ipv6_mode;
+    }
+    if (opt.cafile && access(opt.cafile, R_OK)){
+        LOGE("access cafile failed: %s\n", strerror(errno));
+        exit(1);
+    }
+    if (opt.cert && access(opt.cert, R_OK)){
+        LOGE("access cert file failed: %s\n", strerror(errno));
+        exit(1);
+    }
+    if (opt.key && access(opt.key, R_OK)){
+        LOGE("access key file failed: %s\n", strerror(errno));
+        exit(1);
+    }
+    for(struct arg_list* p = secrets.next; p != NULL; p = p->next){
+        char secret_encode[DOMAINLIMIT];
+        Base64Encode(p->arg, strlen(p->arg), secret_encode);
+        addsecret(secret_encode);
+    }
+    for(struct arg_list* p = debug_list.next; p != NULL; p = p->next){
+        if(!debugon(p->arg, true)){
+            LOGE("set debug on %s failed\n", p->arg);
+            exit(1);
+        }
+    }
+#ifndef __ANDROID__
+    if (opt.socket == NULL){
+        if(getuid() == 0){
+            opt.socket = "/var/run/sproxy.sock";
+        }else{
+            opt.socket = "/tmp/sproxy.sock";
+        }
+    }
+#endif
+
+    SSL_library_init();    // SSL初库始化
+    SSL_load_error_strings();  // 载入所有错误信息
+    signal(SIGPIPE, SIG_IGN);
+    signal(SIGCHLD, SIG_IGN);
+#if Backtrace_FOUND
+    signal(SIGABRT, dump_trace);
+#endif
+    signal(SIGHUP,  (sig_t)reloadstrategy);
+    signal(SIGUSR1, (sig_t)(void(*)())dump_stat);
+    reloadstrategy();
+    srandom(time(NULL));
+    setvbuf(stdout, NULL, _IOLBF, BUFSIZ);
+#ifndef __ANDROID__
+    if (opt.daemon_mode) {
+        if(daemon(1, 0) < 0) {
+            LOGE("start daemon error:%s\n", strerror(errno));
+            exit(1);
+        }
+        openlog("sproxy", LOG_PID | LOG_PERROR, LOG_LOCAL0);
+    }
+#else
+    opt.daemon_mode = false;
+#endif
+    struct rlimit limits;
+    if(getrlimit(RLIMIT_NOFILE, &limits)){
+        LOGE("getrlimit failed: %s\n", strerror(errno));
+    }else if(limits.rlim_cur < 16384){
+        limits.rlim_cur = Min(limits.rlim_max, 16384);
+        if(setrlimit(RLIMIT_NOFILE, &limits)) {
+            LOGE("setrlimit failed: %s\n", strerror(errno));
+        }
+    }
+    openefd();
+    register_network_change_cb(network_changed);
+}
+
 void parseConfig(int argc, char **argv){
     main_argv = argv;
     int c;
@@ -517,64 +559,39 @@ void parseConfig(int argc, char **argv){
         free(server_string);
         server_string = strdup(argv[optind]);
     }
+    postConfig();
+}
 
-    if(opt.CPORT < 0 || opt.CPORT >= 65535){
-        LOGE("wrong port: %" PRId64 "\n", opt.CPORT);
-        exit(1);
-    }
-    if(server_string && loadproxy(server_string, &opt.Server)){
-        LOGE("wrong server format: %s\n", server_string);
-        exit(1);
-    }
-    LOG("server %s\n", dumpDest(&opt.Server));
+struct debug_flags_map debug[] = {
+        {"", false},
+        {"EVENT", false},
+        {"DNS", false},
+        {"HTTP2", false},
+        {"JOB", false},
+        {"VPN", false},
+        {"HPACK", false},
+        {"HTTP", false},
+        {"FILE", false},
+        {"NET", false},
+        {"QUIC", false},
+        {"HTTP3", false},
+        {NULL, false},
+};
 
-    if(policy_file == NULL){
-        policy_file = PREFIX "/etc/sproxy/sites.list";
+bool debugon(const char* module, bool enable){
+    if(strcasecmp(module, "all") == 0) {
+        for (int i = 0; debug[i].name != NULL; i++) {
+            debug[i].enabled = enable;
+        }
+        return true;
     }
-    if((opt.policy_read = fopen(policy_file, "re")) == NULL){
-        LOGE("failed to open policy file: %s\n", strerror(errno));
-    }else if((opt.policy_write = fopen(policy_file, "r+e")) == NULL){
-        LOG("failed to open policy file for write: %s, it won't be updated\n", strerror(errno));
-    }
-    if(opt.rootdir && chdir(opt.rootdir)){
-        LOGE("chdir failed: %s\n", strerror(errno));
-    }
-    free((void*)opt.rootdir);
-    opt.rootdir = (char*)malloc(PATH_MAX);
-    getcwd((char*)opt.rootdir, PATH_MAX);
-
-    if(opt.ipv6_mode == Auto){
-        opt.ipv6_enabled = hasIpv6Address();
-        LOG("auto detected ipv6: %s\n", opt.ipv6_enabled?"enable":"disable");
-    }else{
-        opt.ipv6_enabled = opt.ipv6_mode;
-    }
-    if (opt.cafile && access(opt.cafile, R_OK)){
-        LOGE("access cafile failed: %s\n", strerror(errno));
-        exit(1);
-    }
-    if (opt.cert && access(opt.cert, R_OK)){
-        LOGE("access cert file failed: %s\n", strerror(errno));
-        exit(1);
-    }
-    if (opt.key && access(opt.key, R_OK)){
-        LOGE("access key file failed: %s\n", strerror(errno));
-        exit(1);
-    }
-    for(struct arg_list* p = secrets.next; p != NULL; p = p->next){
-        char secret_encode[DOMAINLIMIT];
-        Base64Encode(p->arg, strlen(p->arg), secret_encode);
-        addsecret(secret_encode);
-    }
- #ifndef __ANDROID__
-    if (opt.socket == NULL){
-        if(getuid() == 0){
-            opt.socket = "/var/run/sproxy.sock";
-        }else{
-            opt.socket = "/tmp/sproxy.sock";
+    for(int i=0; debug[i].name; i++){
+        if(strcasecmp(debug[i].name, module) == 0){
+            debug[i].enabled = enable;
+            return true;
         }
     }
- #endif
+    return false;
 }
 
 

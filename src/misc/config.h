@@ -72,13 +72,14 @@ struct options{
 
 extern struct options opt;
 
-void prepare();
 void neglect();
 
 void network_changed();
 int parseConfigFile(const char* config_file);
 void parseConfig(int argc, char **argv);
+void postConfig();
 int loadproxy(const char* proxy, struct Destination* server);
+bool debugon(const char* module, bool enable);
 
 void flushdns();
 void flushproxy2();

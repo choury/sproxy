@@ -120,7 +120,7 @@ openssl x509 -req -days 365 -in localhost.csr  -CA ca.crt -CAkey ca.key -set_ser
 
 EOF
 
-buildpath=`realpath "$1/src"`
+buildpath=$(realpath "$1/src")
 
 ln -f -s "$buildpath/sproxy" .
 ln -f -s "$buildpath/scli" .
@@ -140,7 +140,7 @@ root-dir .
 policy-file sites.list
 index libproxy.do
 insecure
-debug-all
+debug all
 EOF
 
 ./sproxy -c https.conf --socket server_ssl.sock  >server_ssl.log 2>&1  &
@@ -152,7 +152,7 @@ root-dir .
 policy-file sites.list
 index libproxy.do
 insecure
-debug-all
+debug all
 EOF
 
 ./sproxy -c http.conf  --socket server_http.sock > server_http.log 2>&1 &
@@ -169,7 +169,7 @@ cat > client.conf << EOF
 root-dir .
 policy-file /dev/null
 insecure
-debug-all
+debug all
 EOF
 
 ./sproxy -c client.conf -p 3334  https://$HOSTNAME:4443 --disable-http2 --socket client_h1.sock > client_h1.log 2>&1 &

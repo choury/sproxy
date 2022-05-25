@@ -1,7 +1,5 @@
 #include "dns.h"
 
-
-
 static char test_dns_1[] = "\x95\x3a\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x05\x73\x74\x61"
                            "\x74\x73\x05\x6a\x70\x75\x73\x68\x02\x63\x6e\x00\x00\x1c\x00\x01";
 
@@ -67,7 +65,22 @@ dns_test build_tests[] = {
         {test_dns_6, sizeof(test_dns_6)-1, "", 0x5c43, 1},
 };
 
-uint32_t debug = DDNS;
+struct debug_flags_map debug[]{
+        {},
+        {},
+        {"dns", true},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+};
 
 int main() {
     for(auto t : query_tests){

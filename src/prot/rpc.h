@@ -49,6 +49,7 @@ protected:
     virtual std::string GetServer() = 0;
     virtual bool Login(const std::string& token, const std::string& source) = 0;
     virtual std::string GetStatus() = 0;
+    virtual bool Debug(const std::string& module, bool enable) = 0;
 };
 
 class SproxyClient:virtual public RpcClient {
@@ -72,6 +73,7 @@ public:
     std::promise<std::string>  GetServer();
     std::promise<bool> Login(const std::string& token, const std::string& source);
     std::promise<std::string> GetStatus();
+    std::promise<bool> Debug(const std::string& module, bool enable);
 };
 
 #endif

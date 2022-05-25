@@ -155,7 +155,12 @@ cmake_pop_check_state()
 
 set(CMAKE_C_FLAGS "-std=gnu99 -Wall -Wextra -fPIC -fno-omit-frame-pointer ${CMAKE_C_FLAGS}")
 set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -Wextra -fPIC -fno-omit-frame-pointer ${CMAKE_CXX_FLAGS}")
-set(CMAKE_EXE_LINKER_FLAGS "-rdynamic ${CMAKE_EXE_LINKER_FLAGS}")
+
+if(APPLE)
+    set(CMAKE_EXE_LINKER_FLAGS "-Wl,-export_dynamic ${CMAKE_EXE_LINKER_FLAGS}")
+else()
+    set(CMAKE_EXE_LINKER_FLAGS "-rdynamic ${CMAKE_EXE_LINKER_FLAGS}")
+endif()
 
 execute_process(COMMAND uname -r
     OUTPUT_VARIABLE KERNEL_NAME

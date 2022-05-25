@@ -228,17 +228,17 @@ int tun_create(char *dev, int flags) {
 int main(int argc, char** argv) {
     parseConfig(argc, argv);
     if (opt.interface == NULL) {
-        fprintf(stderr, "interface must be set for vpn\n");
+        LOGE("interface must be set for vpn\n");
         return ENOENT;
-        }
+    }
     char tun_name[IFNAMSIZ] = {0};
     int tun = tun_create(tun_name, IFF_TUN | IFF_NO_PI);
     if (tun < 0) {
         int e = errno;
-        perror("tun_create");
+        LOGE("tun_create: %s\n", strerror(e));
         return e;
     }
-    fprintf(stderr, "TUN name is %s\n", tun_name);
+    LOG("TUN name is %s\n", tun_name);
     vpn_start(tun);
     return 0;
 }
