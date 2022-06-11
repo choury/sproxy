@@ -130,9 +130,11 @@ int ListenNet(int type, short port) {
         }
 
 #ifdef SO_REUSEPORT
-        if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) < 0) {
-            LOGE("setsockopt SO_REUSEPORT:%s\n", strerror(errno));
-            break;
+        if(type == SOCK_STREAM) {
+            if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) < 0) {
+                LOGE("setsockopt SO_REUSEPORT:%s\n", strerror(errno));
+                break;
+            }
         }
 #endif
         struct sockaddr_in6 myaddr;

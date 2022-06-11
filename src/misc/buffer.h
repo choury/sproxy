@@ -143,4 +143,46 @@ public:
 };
 
 
+#define MAX_BUF_LEN (1024*1024)
+class EBuffer {
+    char* content;
+    size_t size = BUF_LEN * 2;
+    uint64_t offset = 0;
+    size_t len = 0;
+    void expand(size_t newsize);
+public:
+    EBuffer() {
+        content = new char[size];
+    }
+    EBuffer(EBuffer&& copy):
+            content(copy.content),
+            size(copy.size),
+            offset(copy.offset),
+            len(copy.len)
+    {
+        content = copy.content;
+        copy.content = nullptr;
+        copy.size = 0;
+        copy.len = 0;
+    }
+    ~EBuffer(){
+        delete []content;
+    }
+    //for put
+    size_t left();
+    char* end();
+    void add(size_t l);
+    ssize_t put(const void* data, size_t size);
+    uint64_t Offset(){
+        return offset;
+    };
+
+    //for get
+    size_t length();
+    size_t cap();
+    size_t get(char* buff, size_t len);
+    void consume(size_t l);
+};
+
+
 #endif //SPROXY_BUFFER_H

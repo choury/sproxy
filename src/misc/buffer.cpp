@@ -234,3 +234,90 @@ void CBuffer::consume(size_t l){
 char* CBuffer::end(){
     return content + ((offset + len) % sizeof(content));
 }
+
+size_t EBuffer::left(){
+    uint32_t start = offset % size;
+    uint32_t finish = (offset + len) % size;
+    if(finish > start || len == 0){
+        return size - finish;
+    }
+    return start - finish;
+}
+
+size_t EBuffer::length(){
+    assert(len <= size);
+    return len;
+}
+
+size_t EBuffer::cap() {
+    return size - len;
+}
+
+void EBuffer::add(size_t l){
+    len += l;
+    assert(len <= size);
+}
+
+void EBuffer::expand(size_t newsize) {
+    char *buf = new char[len];
+    size_t datalen = get(buf, len);
+    assert(datalen < MAX_BUF_LEN);
+
+    delete[] content;
+    content = new char[newsize];
+    size = newsize;
+    len = 0;
+
+    put(buf, datalen);
+    delete[] buf;
+}
+
+ssize_t EBuffer::put(const void *data, size_t sizeofdata) {
+    size_t result = len + sizeofdata;
+    if(result > MAX_BUF_LEN){
+        return -1;
+    }
+    if(result > size/2){
+        expand(size * 2);
+    }
+
+    uint32_t start = (offset + len) % size;
+    uint32_t finish = (offset +  result) % size;
+    if(finish > start){
+        memcpy(content + start, data, sizeofdata);
+    }else{
+        size_t l = size - start;
+        memcpy(content + start, data, l);
+        memcpy(content, (const char*)data + l, finish);
+    }
+    len = result;
+    assert(len <= size);
+    return result;
+}
+
+size_t EBuffer::get(char* buff, size_t sizeofbuff){
+    assert(sizeofbuff != 0);
+    sizeofbuff = Min(len, sizeofbuff);
+
+    uint32_t start = offset % size;
+    uint32_t finish = (offset + sizeofbuff) % size;
+
+    if(finish > start){
+        memcpy(buff, content + start , sizeofbuff);
+        return sizeofbuff;
+    }
+    size_t l = size - start;
+    memcpy(buff, content + start, l);
+    memcpy(buff + l, content, finish);
+    return sizeofbuff;
+}
+
+void EBuffer::consume(size_t l){
+    assert(l <= len);
+    offset += l;
+    len -= l;
+}
+
+char* EBuffer::end(){
+    return content + ((offset + len) % size);
+}
