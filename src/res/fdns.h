@@ -8,19 +8,17 @@
 #include "prot/dns/dns.h"
 #include <map>
 
-class FDns;
 struct FDnsStatus{
-    FDns*      fdns;
-    Dns_Query* que;
-};
-
-class FDns: public Responser{
     std::shared_ptr<HttpReq>   req;
     std::shared_ptr<HttpRes>   res;
-    std::map<uint32_t, std::shared_ptr<FDnsStatus>> statusmap;
+    std::shared_ptr<Dns_Query> que;
+};
+
+
+class FDns: public Responser{
+    std::shared_ptr<FDnsStatus> status;
 
     void Recv(Buffer&& bb);
-    void clean(std::shared_ptr<FDnsStatus> status);
     virtual void deleteLater(uint32_t errcode) override;
 
     static void RawCb(std::shared_ptr<void> param, const char *buff, size_t size);

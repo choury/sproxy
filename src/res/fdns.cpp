@@ -11,6 +11,7 @@ static Index2<uint32_t, std::string, void*> fdns_records;
 
 static in_addr_t fake_ip = ntohl(inet_addr(VPNADDR));
 
+
 static in_addr getInet(const std::string& hostname) {
     in_addr addr{};
 
@@ -63,20 +64,16 @@ std::string getRdns(const sockaddr_storage& addr) {
 
 FDns::FDns() {
     rwer = std::make_shared<NullRWer>();
+    status = std::make_shared<FDnsStatus>();
 }
 
 FDns::~FDns() {
 }
 
-void FDns::clean(std::shared_ptr<FDnsStatus> status){
-    statusmap.erase(status->que->id);
-    delete status->que;
-}
-
 void FDns::request(std::shared_ptr<HttpReq> req, Requester*){
-    this->req = req;
-    res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
-    req->response(res);
+    status->req = req;
+    status->res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
+    req->response(status->res);
     req->attach([this](ChannelMessage& msg){
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:
@@ -94,20 +91,13 @@ void FDns::request(std::shared_ptr<HttpReq> req, Requester*){
 }
 
 void FDns::Recv(Buffer&& bb) {
-    Dns_Query* que = new Dns_Query((const char *)bb.data(), bb.len);
+    auto que = std::make_shared<Dns_Query>((const char *)bb.data(), bb.len);
     if(!que->valid){
         LOGE("invalid dns request [%zd]\n", bb.len);
-        delete que;
         return;
     }
+    status->que = que;
     LOG("[FDNS] Query %s: %d\n", que->domain, que->type);
-    if(statusmap.count(que->id)) {
-        //drop dup request
-        delete que;
-        return;
-    }
-    std::shared_ptr<FDnsStatus> status(new FDnsStatus{this, que});
-    statusmap[que->id] = status;
     Dns_Result* result = nullptr;
     if(que->type == 12){
         auto record = fdns_records.GetOne(getFip(&que->ptr_addr));
@@ -136,14 +126,12 @@ void FDns::Recv(Buffer&& bb) {
         return query_dns(que->domain, que->type, RawCb, status);
     }
     auto buff = std::make_shared<Block>(BUF_LEN);
-    res->send({buff, (size_t)result->build(que, (uchar*)buff->data())});
-    clean(status);
+    status->res->send({buff, (size_t)result->build(que.get(), (uchar*)buff->data())});
 }
 
 void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_storage> addrs) {
     auto status = std::static_pointer_cast<FDnsStatus>(param);
-    Dns_Query* que = status->que;
-    FDns* fdns = status->fdns;
+    std::shared_ptr<Dns_Query> que = status->que;
     Dns_Result* rr = nullptr;
     if(error || addrs.empty()){
         rr = new Dns_Result(que->domain);
@@ -158,46 +146,43 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_stor
     }
     std::shared_ptr<Block> buff = std::make_shared<Block>(BUF_LEN);
     if(error) {
-        fdns->res->send({buff, (size_t)rr->buildError(que, error, (uchar*)buff->data())});
+        status->res->send({buff, (size_t)rr->buildError(que.get(), error, (uchar*)buff->data())});
     }else{
-        fdns->res->send({buff, (size_t)rr->build(que, (uchar*)buff->data())});
+        status->res->send({buff, (size_t)rr->build(que.get(), (uchar*)buff->data())});
     }
-    fdns->clean(status);
 }
 
 void FDns::RawCb(std::shared_ptr<void> param, const char* buff, size_t size) {
     auto status = std::static_pointer_cast<FDnsStatus>(param);
-    Dns_Query* que = status->que;
-    FDns* fdns = status->fdns;
+    std::shared_ptr<Dns_Query> que = status->que;
     if(buff){
         LOGD(DDNS, "<FDNS> Query raw response [%d]\n", que->id);
         DNS_HDR *dnshdr = (DNS_HDR*)buff;
         dnshdr->id = htons(que->id);
-        fdns->res->send(buff, size);
+        status->res->send(buff, size);
     }else {
         LOGD(DDNS, "<FDNS> Query raw response [%d] error\n", que->id);
         Dns_Result rr(que->domain);
         unsigned char sbuff[BUF_LEN];
-        fdns->res->send(sbuff, (size_t)rr.buildError(que, DNS_SERVER_FAIL, sbuff));
+        status->res->send(sbuff, (size_t)rr.buildError(que.get(), DNS_SERVER_FAIL, sbuff));
     }
-    fdns->clean(status);
 }
 
 void FDns::deleteLater(uint32_t errcode) {
-    req->detach();
-    for(const auto& i: statusmap){
-        delete i.second->que;
-    }
-    statusmap.clear();
+    status->req->detach();
     return Server::deleteLater(errcode);
 }
 
 void FDns::dump_stat(Dumper dp, void* param) {
-    dp(param, "FDns %p [%" PRIu32 "]: %s\n", this,
-            req->header->request_id,
-            req->header->geturl().c_str());
-    for(const auto& i: statusmap){
-        dp(param, "  %d: %s, type=%d\n",
-                i.first, i.second->que->domain, i.second->que->type);
+    if(status->que == nullptr){
+        dp(param, "FDns %p [%" PRIu32 "]: %s\n, error\n", this,
+                status->req->header->request_id,
+                status->req->header->geturl().c_str());
+        return;
     }
+    dp(param, "FDns %p [%" PRIu32 "]: %s\n, %s, type=%d\n", this,
+            status->req->header->request_id,
+            status->req->header->geturl().c_str(),
+            status->que->domain,
+            status->que->type);
 }
