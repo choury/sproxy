@@ -34,10 +34,6 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
         while((bb.len > 0) && (ret = Http3_Proc((uchar*) bb.data(), bb.len, bb.id))){
             bb.reserve(ret);
         }
-        if(proxy3 != this && statusmap.empty()){
-            LOG("this %p is not the main proxy3 and no clients, close it.\n", this);
-            deleteLater(NOERROR);
-        }
     });
     rwer->SetWriteCB([this](size_t){
         auto statusmap_copy = statusmap;
@@ -225,10 +221,15 @@ void Proxy3::Clean(uint64_t id, Proxy3::ReqStatus& status, uint32_t errcode) {
         status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[internal error]]"));
     }
     statusmap.erase(id);
+    if((http3_flag & HTTP3_FLAG_CLEANNING) == 0 && proxy3 != this && statusmap.empty()){
+        LOG("this %p is not the main proxy3 and no clients, close it.\n", this);
+        deleteLater(NOERROR);
+    }
 }
 
 
 void Proxy3::deleteLater(uint32_t errcode) {
+    http3_flag |= HTTP3_FLAG_CLEANNING;
     if(proxy3 == this){
         proxy3 = nullptr;
     }
@@ -236,7 +237,7 @@ void Proxy3::deleteLater(uint32_t errcode) {
     for(auto& i: statusmapCopy){
         Clean(i.first, i.second, errcode);
     }
-    statusmap.clear();
+    assert(statusmap.empty());
     if((http3_flag & HTTP3_FLAG_GOAWAYED) == 0){
         Goaway(maxDataId);
     }

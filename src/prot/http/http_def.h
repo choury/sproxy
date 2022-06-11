@@ -66,8 +66,8 @@ public:
 #define HTTP_CLOSED_F       (1u<<1u)   //cls
 #define HTTP_CHUNK_F        (1u<<2u)   //http1 only
 #define HTTP_NOEND_F        (1u<<3u)   //http1 only
-#define HTTP_REQ_COMPLETED  (1u<<5u)   //qc
-#define HTTP_RES_COMPLETED  (1u<<7u)   //sc
+#define HTTP_REQ_COMPLETED  (1u<<4u)   //qc
+#define HTTP_RES_COMPLETED  (1u<<5u)   //sc
 
 /* 1. Requester alloc HttpReq and Responser alloc HttpRes.
  * 2. Peers send zero message(send0) for end flag of single req or res,

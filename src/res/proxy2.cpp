@@ -57,11 +57,6 @@ Proxy2::Proxy2(std::shared_ptr<SslRWer> rwer) {
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
-
-        if(proxy2 != this && statusmap.empty()){
-            LOG("this %p is not the main proxy2 and no clients, close it.\n", this);
-            deleteLater(NOERROR);
-        }
     });
     rwer->SetWriteCB([this](size_t){
         auto statusmap_copy = statusmap;
@@ -230,6 +225,10 @@ void Proxy2::Clean(uint32_t id, ReqStatus& status, uint32_t errcode){
         status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[internal error]]"));
     }
     statusmap.erase(id);
+    if((http2_flag & HTTP2_FLAG_CLEANING) == 0 && proxy2 != this && statusmap.empty()){
+        LOG("this %p is not the main proxy2 and no clients, close it.\n", this);
+        deleteLater(NOERROR);
+    }
 }
 
 void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
@@ -364,6 +363,7 @@ void Proxy2::queue_insert(std::list<Buffer>::insert_iterator where, Buffer&& wb)
 }
 
 void Proxy2::deleteLater(uint32_t errcode){
+    http2_flag |= HTTP2_FLAG_CLEANING;
     if(proxy2 == this){
         proxy2 = nullptr;
     }
@@ -371,7 +371,7 @@ void Proxy2::deleteLater(uint32_t errcode){
     for(auto& i: statusmapCopy){
         Clean(i.first, i.second, errcode);
     }
-    statusmap.clear();
+    assert(statusmap.empty());
     if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){
         Goaway(recvid, errcode);
     }

@@ -90,7 +90,8 @@ protected:
 #define HTTP2_FLAG_GOAWAYED    (1u << 1u)
 #define HTTP2_FLAG_ENABLE_PUSH (1u << 2u)
 #define HTTP2_FLAG_END         (1u << 3u)
-#define HTTP2_FLAG_ERROR       (1u << 8u)
+#define HTTP2_FLAG_ERROR       (1u << 4u)
+#define HTTP2_FLAG_CLEANING    (1u << 5u)
     uint32_t http2_flag = 0;
     uint32_t recvid = 0;
     uint32_t sendid = 1;

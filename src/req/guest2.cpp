@@ -328,6 +328,7 @@ void Guest2::queue_insert(std::list<Buffer>::insert_iterator where, Buffer&& wb)
 }
 
 void Guest2::deleteLater(uint32_t errcode){
+    http2_flag |= HTTP2_FLAG_CLEANING;
     if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){
         Goaway(recvid, errcode & ERROR_MASK);
     }

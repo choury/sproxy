@@ -63,6 +63,7 @@ protected:
 #define HTTP3_FLAG_INITED    (1u << 0u)
 #define HTTP3_FLAG_GOAWAYED  (1u << 1u)
 #define HTTP3_FLAG_ERROR     (1u << 2u)
+#define HTTP3_FLAG_CLEANNING (1u << 3u)
     uint32_t http3_flag = 0;
     // these ids are ubi stream, can not be 0, so use it as not inited.
     uint64_t ctrlid_local = 0, ctrlid_remote = 0;

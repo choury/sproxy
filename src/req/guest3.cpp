@@ -254,6 +254,7 @@ void Guest3::ErrProc(int errcode) {
 }
 
 void Guest3::deleteLater(uint32_t errcode){
+    http3_flag |= HTTP3_FLAG_CLEANNING;
     if((http3_flag & HTTP3_FLAG_GOAWAYED) == 0){
         Goaway(maxDataId);
     }
