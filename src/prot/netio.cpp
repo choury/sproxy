@@ -270,7 +270,7 @@ void StreamRWer::ReadData() {
     if(rb.length()){
         ConsumeRData();
     }
-    if(rb.left() == 0){
+    if(rb.cap() == 0){
         delEvents(RW_EVENT::READ);
     }
 }
@@ -317,7 +317,7 @@ void PacketRWer::ReadData() {
         ErrorHE(SOCKET_ERR, errno);
         return;
     }
-    if(rb.left() == 0){
+    if(rb.cap() == 0){
         delEvents(RW_EVENT::READ);
     }
 }

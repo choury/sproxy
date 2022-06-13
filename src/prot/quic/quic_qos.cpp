@@ -265,6 +265,7 @@ int pn_namespace::sendOnePacket(size_t window){
             {current_pn, ack_eliciting, in_flight, (size_t)ret, now},
             sent_frames});
 
+    assert(!sent_packets.back().frames.empty());
     current_pn++;
     if(in_flight){
         if(ack_eliciting){
@@ -292,7 +293,9 @@ std::list<quic_packet_meta> pn_namespace::DetectAndRemoveAckedPackets(
         ack_delay = max_delay_us;
     }
     bool ack_elicited = false;
+    uint64_t latest_acked_pn = 0;
     for(auto i = sent_packets.begin(); i != sent_packets.end();){
+        assert(i->frames.size() > 0);
         if(p.Has(i->meta.pn)){
             newly_acked_packets.emplace_back(i->meta);
             if(i->meta.ack_eliciting){
@@ -300,8 +303,7 @@ std::list<quic_packet_meta> pn_namespace::DetectAndRemoveAckedPackets(
             }
             for(auto frame: i->frames) {
                 if (frame->type == QUIC_FRAME_ACK || frame->type == QUIC_FRAME_ACK_ECN) {
-                    LOGD(DQUIC, "clean pn from tracking before: %" PRIu64"\n", frame->ack.acknowledged);
-                    tracked_receipt_pns.EraseBefore(frame->ack.acknowledged);
+                    latest_acked_pn = frame->ack.acknowledged;
                 }
                 frame_release(frame);
             }
@@ -309,6 +311,12 @@ std::list<quic_packet_meta> pn_namespace::DetectAndRemoveAckedPackets(
         } else {
             i++;
         }
+    }
+    if(latest_acked_pn) {
+        //对方已经确认了我们发送的ack,那么就意味着他们已经知晓我们发送的ack之前的pn信息
+        //我们以后发送ack就可以不发送在这之前的pn信息了
+        LOGD(DQUIC, "clean pn from tracking before: %" PRIu64"\n", latest_acked_pn);
+        tracked_receipt_pns.EraseBefore(latest_acked_pn);
     }
     if(newly_acked_packets.empty()){
         return newly_acked_packets;
@@ -348,11 +356,12 @@ std::list<quic_packet_pn> pn_namespace::DetectAndRemoveLostPackets(Rtt *rtt) {
     uint64_t now = getutime();
     uint64_t timeThreshold = std::max(9 * std::max(rtt->smoothed_rtt, rtt->latest_rtt) / 8, (uint64_t)1000);
     for(auto i = sent_packets.begin(); i != sent_packets.end();){
+        assert(i->frames.size() > 0);
         if(i->meta.pn > largest_acked_packet){
             i++;
             continue;
         }
-        if(largest_acked_packet >= i->meta.pn + kPacketThreshold || now - i->meta.sent_time >= timeThreshold){
+        if(largest_acked_packet - i->meta.pn >= kPacketThreshold || now - i->meta.sent_time >= timeThreshold){
             LOGD(DQUIC, "[%c] mark lost packet: [%" PRIu64"]\n", name, i->meta.pn);
             lost_packets.emplace_back(*i);
             i = sent_packets.erase(i);
@@ -369,8 +378,9 @@ void pn_namespace::clear() {
     for(auto i : pend_frames){
         frame_release(i);
     }
-    for(const auto& i : sent_packets){
-        for(auto frame: i.frames) {
+    for(const auto& packet : sent_packets){
+        assert(packet.frames.size() > 0);
+        for(auto frame: packet.frames) {
             frame_release(frame);
         }
     }
@@ -427,11 +437,12 @@ void QuicQos::KeyGot(OSSL_ENCRYPTION_LEVEL level) {
 
 void QuicQos::KeyLost(OSSL_ENCRYPTION_LEVEL level) {
     auto pn = pns[get_packet_namespace(level)];
-    for(auto& p : pn->sent_packets) {
-        if(!p.meta.in_flight) {
+    for(auto& packet : pn->sent_packets) {
+        assert(packet.frames.size() > 0);
+        if(!packet.meta.in_flight) {
             continue;
         }
-        bytes_in_flight -= p.meta.sent_bytes;
+        bytes_in_flight -= packet.meta.sent_bytes;
     }
     pn->clear();
     pto_count = 0;
@@ -468,9 +479,14 @@ void QuicQos::OnLossDetectionTimeout(pn_namespace* ns){
         LOGD(DQUIC, "loss timer expired for [%c], loss_time: %.2fms\n",
              ns->name, (now - ns->time_of_last_ack_eliciting_packet) / 1000.0);
         auto lost_packets = ns->DetectAndRemoveLostPackets(&rtt);
-        assert(!lost_packets.empty());
-        OnPacketsLost(ns, lost_packets);
+        //虽然rfc上说这里lost_packets不可能为空，但是实际上rtt是一直在变化的，这就导致两次算出来的loss_time不一致，
+        //这样的话，当loss_time触发时，rtt可能已经变长，而据此算出的timeThreshold就会变大，此时之前触发loss的包
+        //在这个周期内就会获取不到，因此可能出现lost_packets为空的情况
+        if(!lost_packets.empty()) {
+            OnPacketsLost(ns, lost_packets);
+        }
     }else {
+        //pto超时触发之前必定已经触发了loss_time，因此这里并不需要做丢包处理，只需要发探测包（ping）
         LOGD(DQUIC, "pto expired for [%c], pto_time: %.2fms, pto_count: %zd\n",
              ns->name, (now - ns->time_of_last_ack_eliciting_packet) / 1000.0, pto_count);
         pto_count++;
@@ -503,6 +519,7 @@ void QuicQos::SetLossDetectionTimer() {
             continue;
         }
         for(const auto& packet: p->sent_packets){
+            assert(packet.frames.size() > 0);
             if(packet.meta.ack_eliciting){
                 has_eliciting_packet = true;
                 break;
@@ -511,7 +528,7 @@ void QuicQos::SetLossDetectionTimer() {
     }
     if(ns){
         loss_timer = UpdateJob(loss_timer, std::bind(&QuicQos::OnLossDetectionTimeout, this, ns),
-                               (timed_out - now) / 1000);
+                               (timed_out - now - 1) / 1000 + 1);
         return;
     }
     if(!has_eliciting_packet && PeerCompletedAddressValidation()){
@@ -537,6 +554,7 @@ void QuicQos::SetLossDetectionTimer() {
         }
         has_eliciting_packet = false;
         for(const auto& packet: p->sent_packets){
+            assert(packet.frames.size() > 0);
             if(packet.meta.ack_eliciting){
                 has_eliciting_packet = true;
                 break;
@@ -551,7 +569,8 @@ void QuicQos::SetLossDetectionTimer() {
         }
     }
     assert(ns);
-    loss_timer = UpdateJob(loss_timer, std::bind(&QuicQos::OnLossDetectionTimeout, this, ns), (timed_out - now) / 1000);
+    loss_timer = UpdateJob(loss_timer, std::bind(&QuicQos::OnLossDetectionTimeout, this, ns),
+                           (timed_out - now - 1) / 1000 + 1);
 }
 
 void QuicQos::sendPacket() {
@@ -724,8 +743,9 @@ void QuicQos::HandleRetry() {
     ns->current_pn = 0;
     ns->time_of_last_ack_eliciting_packet = 0;
 
-    for(auto& i: ns->sent_packets){
-        for(auto frame: i.frames){
+    for(auto& packet: ns->sent_packets){
+        assert(packet.frames.size() > 0);
+        for(auto frame: packet.frames){
             PushFrame(ns, frame);
         }
     }

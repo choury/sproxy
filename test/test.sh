@@ -22,32 +22,36 @@ function test_client(){
     curl -f -s -x http://$HOSTNAME:$1 http://taobao.com -L > /dev/null
     [ $? -ne 0 ] && echo "client test 6 failed" && exit 1
 
-#test for 100 continue
+    echo test for 100 continue
     curl -f -s -x http://$HOSTNAME:$1 http://echo.opera.com -F 'name=@test1k' > /dev/null
     [ $? -ne 0 ] && echo "client test 7 failed" && exit 1
-#test for http1.0
+
+    echo test for http1.0
     ./sproxy_test < http1.0_server.exp &
     sleep 3
-    curl -f -s -x http://$HOSTNAME:$1 http://test.localhost.choury.com:4444 > /dev/null
+    curl -f -s -x http://$HOSTNAME:$1 http://test.localhost.choury.com:4445 > /dev/null
     [ $? -ne 0 ] && echo "client test 8 failed" && exit 1
-#test for shutdown
+
+    echo test for shutdown1
     ./sproxy_test < shutdown1_server.exp &
     sleep 3
     cat shutdown1_client.exp | sed "s/PORT/$1/" | ./sproxy_test
     [ $? -ne 0 ] && echo "client test 9 failed" && exit 1
 
 
+    echo test for shutdown2
     ./sproxy_test < shutdown2_server.exp &
     sleep 3
     cat shutdown2_client.exp | sed "s/PORT/$1/" | ./sproxy_test
     [ $? -ne 0 ] && echo "client test 10 failed" && exit 1
-#test for send and ping
+
+    echo test for send and ping
     ./sproxy_test < udp_server.exp &
     sleep 3
     cat send_ping.exp | sed "s/PORT/$1/" | ./sproxy_test
     [ $? -ne 0 ] && echo "send ping test failed" && exit 1
 
-#test pipeline
+    echo test pipeline
     curl -f -s  http://localhost:$1/cgi/libsites.do -XDELETE  -d 'site=*'
     [ $? -ne 0 ] && echo "delete site failed" && exit 1
     curl -f -s  http://localhost:$1/cgi/libsites.do -XPUT  -d 'site=360.cn&strategy=block'

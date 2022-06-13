@@ -130,7 +130,7 @@ protected:
         size_t   finSize = 0;
         uint64_t my_max_data = 0;
         uint64_t his_max_data = 0;
-        CBuffer  rb;
+        EBuffer  rb;
     };
     size_t   rblen = 0;
     uint64_t nextLocalUbiId;
@@ -138,6 +138,7 @@ protected:
     uint64_t nextLocalBiId;
     uint64_t nextRemoteBiId;
     std::map <uint64_t, QuicStreamStatus> streammap;
+    std::list<quic_frame*> fullq;
 
     uint64_t max_idle_timeout = 120000;
     uint64_t his_max_payload_size = 65527;
@@ -149,7 +150,7 @@ protected:
     uint64_t his_max_streams_uni = 0;
     uint64_t his_max_ack_delay = 0;
 
-    uint64_t my_send_data = 0;
+    uint64_t my_sent_data = 0;
     uint64_t my_received_data = 0;
     uint64_t my_max_payload_size = max_datagram_size;
     uint64_t my_max_data = 1024 * 1024;
@@ -193,6 +194,7 @@ protected:
 
     using iterator = typename decltype(streammap)::iterator;
     iterator OpenStream(uint64_t id);
+    void CleanStream(uint64_t id);
     bool IsLocal(uint64_t id);
     static bool IsBidirect(uint64_t id);
 

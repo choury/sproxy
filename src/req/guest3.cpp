@@ -48,8 +48,7 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
         }
     });
     rwer->SetWriteCB([this](size_t){
-        auto statusmap_copy = statusmap;
-        for(auto& i: statusmap_copy){
+        for(auto& i: statusmap){
             ReqStatus& status = i.second;
             if(status.res == nullptr){
                 continue;
@@ -57,8 +56,8 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
             if((status.flags & HTTP_RES_COMPLETED)){
                 continue;
             }
-            if(this->rwer->cap(i.first) >= 9){
-                // reserve 9 bytes for http stream header
+            if(this->rwer->cap(i.first) >= 64){
+                // reserve 64 bytes for http stream header
                 status.res->more();
             }
         }
@@ -195,7 +194,10 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
             return 0;
         }
         return 0;
-    }, [this, id]{return rwer->cap(id) - 9;});
+        //这里是没办法准确计算cap的，因为rwer返回的可用量http3这里写的时候会再加头部数据
+        //所以如果对端缓存了这个值(比如proxy2的localwindow),那么它每写一次数据
+        //这个值就会小一点，最终就localwindow就会比实际cap大挺多,多出来的数据会放入quic的fullq队列中
+    }, [this, id]{return rwer->cap(id);});
 }
 
 void Guest3::Clean(uint64_t id, uint32_t errcode) {
@@ -235,7 +237,6 @@ void Guest3::GoawayProc(uint64_t id) {
 }
 
 void Guest3::PushFrame(Buffer&& bb) {
-    assert((int)bb.len <= rwer->cap(bb.id));
     rwer->buffer_insert(rwer->buffer_end(), std::move(bb));
 }
 

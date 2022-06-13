@@ -42,8 +42,7 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
                 std::bind(&Guest2::connection_lost, this), 1800000);
     });
     rwer->SetWriteCB([this](size_t){
-        auto statusmap_copy = statusmap;
-        for(auto& i: statusmap_copy){
+        for(auto& i: statusmap){
             ReqStatus& status = i.second;
             if(wantmore(status)){
                 status.res->more();

@@ -1,4 +1,4 @@
 connect 127.0.0.1 PORT
-send CONNECT test.localhost.choury.com:4444\r\n\r\n
+send CONNECT test.localhost.choury.com:4445\r\n\r\n
 shutdown
 read eof

@@ -129,8 +129,8 @@ int ListenNet(int type, short port) {
             break;
         }
 
-#ifdef SO_REUSEPORT
-        if(type == SOCK_STREAM) {
+#ifdef __APPLE__
+        if(type == SOCK_DGRAM) {
             if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) < 0) {
                 LOGE("setsockopt SO_REUSEPORT:%s\n", strerror(errno));
                 break;

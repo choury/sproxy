@@ -59,8 +59,7 @@ Proxy2::Proxy2(std::shared_ptr<SslRWer> rwer) {
         }
     });
     rwer->SetWriteCB([this](size_t){
-        auto statusmap_copy = statusmap;
-        for(auto& i: statusmap_copy){
+        for(auto& i: statusmap){
             ReqStatus& status = i.second;
             if(wantmore(status)){
                 status.req->more();

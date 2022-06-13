@@ -854,6 +854,7 @@ void Guest_vpn::Recv_tcp(Buffer&& bb) {
                 ->setwindow(bufleft() >> tcpStatus->send_wscale)
                 ->setflag(TH_FIN | TH_ACK);
 
+        LOGD(DVPN, "%s (%u - %u)\n", key.getString("<-"), tcpStatus->send_seq, tcpStatus->want_seq);
         server->sendPkg(pac_return, nullptr);
         switch (tcpStatus->status) {
             case TCP_ESTABLISHED:
@@ -1010,5 +1011,5 @@ static const char* dump_vpnStatus(const VpnKey& key, void* protocol_info){
 void Guest_vpn::dump_stat(Dumper dp, void* param) {
     dp(param, "Guest_vpn %p, [%" PRIu32 "] %s\n",
         this,  status.req->header->request_id, key.getString("-"));
-    dp(param, "  flags: %d status: %s\n", status.flags, dump_vpnStatus(key, status.protocol_info));
+    dp(param, "  flags:0x%08x info: %s\n", status.flags, dump_vpnStatus(key, status.protocol_info));
 }
