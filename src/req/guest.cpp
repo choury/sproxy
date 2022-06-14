@@ -37,12 +37,12 @@ void Guest::ReadHE(Buffer& bb){
     }
 }
 
-void Guest::WriteHE(size_t len){
+void Guest::WriteHE(uint64_t){
     if(statuslist.empty()){
         return;
     }
     ReqStatus& status = statuslist.front();
-    LOGD(DHTTP, "<guest> (%s) written: wlength:%zu, flags:0x%08x\n", getsrc(), len, status.flags);
+    LOGD(DHTTP, "<guest> (%s) written, flags:0x%08x\n", getsrc(), status.flags);
     if(status.flags & HTTP_RES_COMPLETED){
         return;
     }

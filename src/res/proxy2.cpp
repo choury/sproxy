@@ -58,12 +58,13 @@ Proxy2::Proxy2(std::shared_ptr<SslRWer> rwer) {
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
     });
-    rwer->SetWriteCB([this](size_t){
-        for(auto& i: statusmap){
-            ReqStatus& status = i.second;
-            if(wantmore(status)){
-                status.req->more();
-            }
+    rwer->SetWriteCB([this](uint64_t id){
+        if(statusmap.count(id) == 0){
+            return;
+        }
+        ReqStatus& status = statusmap[id];
+        if(wantmore(status)){
+            status.req->more();
         }
     });
 #ifdef __ANDROID__

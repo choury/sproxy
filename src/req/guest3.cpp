@@ -47,19 +47,20 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
             bb.reserve(ret);
         }
     });
-    rwer->SetWriteCB([this](size_t){
-        for(auto& i: statusmap){
-            ReqStatus& status = i.second;
-            if(status.res == nullptr){
-                continue;
-            }
-            if((status.flags & HTTP_RES_COMPLETED)){
-                continue;
-            }
-            if(this->rwer->cap(i.first) >= 64){
-                // reserve 64 bytes for http stream header
-                status.res->more();
-            }
+    rwer->SetWriteCB([this](uint64_t id){
+        if(statusmap.count(id) == 0){
+            return;
+        }
+        ReqStatus& status = statusmap[id];
+        if(status.res == nullptr){
+            return;
+        }
+        if((status.flags & HTTP_RES_COMPLETED)){
+            return;
+        }
+        if(this->rwer->cap(id) >= 64){
+            // reserve 64 bytes for http stream header
+            status.res->more();
         }
     });
 }
@@ -103,8 +104,8 @@ void Guest3::Recv(Buffer&& bb){
                  status.req->header->request_id, bb.id);
             return;
         }
-        LOGD(DHTTP3, "<guest3> %" PRIu32 " recv data [%" PRIu64"]: %zu\n",
-             status.req->header->request_id, bb.id, bb.len);
+        LOGD(DHTTP3, "<guest3> %" PRIu32 " recv data [%" PRIu64"]: %zu, cap: %d\n",
+             status.req->header->request_id, bb.id, bb.len, (int)rwer->cap(bb.id));
         PushData(std::move(bb));
     }
 }
@@ -196,8 +197,9 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
         return 0;
         //这里是没办法准确计算cap的，因为rwer返回的可用量http3这里写的时候会再加头部数据
         //所以如果对端缓存了这个值(比如proxy2的localwindow),那么它每写一次数据
-        //这个值就会小一点，最终就localwindow就会比实际cap大挺多,多出来的数据会放入quic的fullq队列中
-    }, [this, id]{return rwer->cap(id);});
+        //这个值就会小一点，最终就localwindow就会比实际cap大挺多,我们预留一点buffer,
+        //如果还是不够，多出来的数据会放入quic的fullq队列中
+    }, [this, id]{return rwer->cap(id)*97/100 - 9;});
 }
 
 void Guest3::Clean(uint64_t id, uint32_t errcode) {

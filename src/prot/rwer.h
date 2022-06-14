@@ -47,7 +47,7 @@ protected:
     WBuffer    wbuff;
     //std::function<void(size_t len, uint64_t id)> readCB;
     std::function<void(Buffer&)> readCB;
-    std::function<void(size_t len)> writeCB;
+    std::function<void(uint64_t id)> writeCB;
     std::function<void(const sockaddr_storage&)> connectCB;
     std::function<void(int ret, int code)> errorCB;
     std::function<void()> closeCB;
@@ -66,7 +66,7 @@ public:
                   std::function<void(const sockaddr_storage&)> connectCB);
     virtual void SetErrorCB(std::function<void(int ret, int code)> func);
     virtual void SetReadCB(std::function<void(Buffer&)> func);
-    virtual void SetWriteCB(std::function<void(size_t len)> func);
+    virtual void SetWriteCB(std::function<void(uint64_t id)> func);
 
     virtual void Close(std::function<void()> func);
     void Unblock();

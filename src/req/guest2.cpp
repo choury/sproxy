@@ -41,12 +41,13 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
                 this->connection_lost_job,
                 std::bind(&Guest2::connection_lost, this), 1800000);
     });
-    rwer->SetWriteCB([this](size_t){
-        for(auto& i: statusmap){
-            ReqStatus& status = i.second;
-            if(wantmore(status)){
-                status.res->more();
-            }
+    rwer->SetWriteCB([this](uint64_t id){
+        if(statusmap.count(id) == 0){
+            return;
+        }
+        ReqStatus& status = statusmap[id];
+        if(wantmore(status)){
+            status.res->more();
         }
     });
 }

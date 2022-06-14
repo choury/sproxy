@@ -11,6 +11,8 @@
 #include <assert.h>
 #include <inttypes.h>
 
+#include <set>
+
 #if __ANDROID__
 extern std::string getExternalFilesDir();
 #endif
@@ -787,9 +789,11 @@ QuicRWer::FrameResult QuicRWer::handleFrames(quic_context *context, const quic_f
         }
         status.his_max_data = new_max_data;
         if(new_max_data >= status.offset) {
-            writeCB(new_max_data - status.offset);
+            //这里如果max_data大于offset的话，那么fullq里面就应该不存在这个流的包了
             if(idle(itr->first)){
                 CleanStream(itr->first);
+            }else{
+                writeCB(itr->first);
             }
         }
         return FrameResult::ok;
@@ -1013,7 +1017,7 @@ ssize_t QuicRWer::Write(const void *buff, size_t len, uint64_t id) {
     if(idle(id)){
         CleanStream(id);
     }else{
-        writeCB(len);
+        writeCB(id);
     }
     return (int)len;
 }
@@ -1263,7 +1267,8 @@ ssize_t QuicRWer::cap(uint64_t id) {
     }
     assert(my_sent_data <= his_max_data);
     assert(wlength() == 0);
-    return std::min((int)stream.his_max_data - (int)stream.offset, (int)his_max_data - (int)my_sent_data);
+    return std::min((long long)stream.his_max_data - (long long)stream.offset,
+                    (long long)his_max_data - (long long)my_sent_data);
 }
 
 bool QuicRWer::idle(uint64_t id){

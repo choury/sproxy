@@ -159,8 +159,8 @@ void Host::connected() {
             bb.reserve(ret);
         }
     });
-    rwer->SetWriteCB([this](size_t len){
-        LOGD(DHTTP, "<host> (%s) written: wlength:%zu\n", rwer->getPeer(), len);
+    rwer->SetWriteCB([this](uint64_t){
+        LOGD(DHTTP, "<host> (%s) written, flags:0x%08x\n", rwer->getPeer(), status.flags);
         if(status.flags & HTTP_REQ_COMPLETED){
             return;
         }

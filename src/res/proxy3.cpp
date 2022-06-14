@@ -35,19 +35,20 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
             bb.reserve(ret);
         }
     });
-    rwer->SetWriteCB([this](size_t){
-        for(auto& i: statusmap){
-            ReqStatus& status = i.second;
-            if(!status.req){
-                continue;
-            }
-            if (status.flags&HTTP_REQ_COMPLETED){
-                continue;
-            }
-            if(this->rwer->cap(i.first) > 64){
-                // reserve 64 bytes for http stream header
-                status.req->more();
-            }
+    rwer->SetWriteCB([this](uint64_t id){
+        if(statusmap.count(id) == 0){
+            return;
+        }
+        ReqStatus& status = statusmap[id];
+        if(!status.req){
+            return;
+        }
+        if (status.flags&HTTP_REQ_COMPLETED){
+            return;
+        }
+        if(this->rwer->cap(id) > 64){
+            // reserve 64 bytes for http stream header
+            status.req->more();
         }
     });
     rwer->setResetHandler(std::bind(&Proxy3::RstProc, this, _1, _2));
@@ -134,7 +135,7 @@ void Proxy3::request(std::shared_ptr<HttpReq> req, Requester*) {
         }
         return 0;
         //详情见guest3.cpp
-    }, [this, id]{return rwer->cap(id);});
+    }, [this, id]{return rwer->cap(id)*97/100 - 9;});
 }
 
 

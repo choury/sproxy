@@ -21,7 +21,7 @@ protected:
     };
     std::list<ReqStatus> statuslist;
     void ReadHE(Buffer& bb);
-    void WriteHE(size_t len);
+    void WriteHE(uint64_t id);
     virtual void Error(int ret, int code);
     
     virtual void ReqProc(std::shared_ptr<HttpReqHeader> req)override;

@@ -1,12 +1,12 @@
 #include "rwer.h"
 #include "common/common.h"
-#include "misc/util.h"
 #include "misc/net.h"
 
 #include <unistd.h>
 #include <assert.h>
 #include <errno.h>
 #include <inttypes.h>
+#include <set>
 
 #ifdef __linux__
 #include <sys/eventfd.h>
@@ -45,11 +45,16 @@ RWer::RWer(std::function<void (int, int)> errorCB, std::function<void(const sock
 }
 
 void RWer::SendData(){
-    size_t writed = 0;
+    std::set<uint64_t> writed_list;
     while(wbuff.start() != wbuff.end()){
-        int ret = wbuff.Write(std::bind(&RWer::Write, this, _1, _2, _3));
+        int ret = wbuff.Write(std::bind([this, &writed_list] (const void* buff, size_t len, uint64_t id) mutable {
+            auto ret =  Write(buff, len, id);
+            if(ret >= 0){
+                writed_list.insert(id);
+            }
+            return ret;
+        }, _1, _2, _3));
         if(ret >= 0){
-            writed += ret;
             continue;
         }
         if(errno == EAGAIN || errno == ENOBUFS){
@@ -58,8 +63,8 @@ void RWer::SendData(){
         ErrorHE(SOCKET_ERR, errno);
         return;
     }
-    if(writed){
-        writeCB(writed);
+    for(auto id: writed_list){
+        writeCB(id);
     }
     if(wbuff.start() == wbuff.end()){
         delEvents(RW_EVENT::WRITE);
@@ -75,7 +80,7 @@ void RWer::SetReadCB(std::function<void(Buffer&)> func){
     Unblock();
 }
 
-void RWer::SetWriteCB(std::function<void(size_t len)> func){
+void RWer::SetWriteCB(std::function<void(uint64_t id)> func){
     writeCB = std::move(func);
 }
 
