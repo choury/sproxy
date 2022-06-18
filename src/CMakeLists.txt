@@ -6,7 +6,7 @@ configure_file(${PROJECT_SOURCE_DIR}/src/common/version.h.in ${PROJECT_BINARY_DI
 include_directories(${PROJECT_BINARY_DIR}/src)
 include_directories(${PROJECT_SOURCE_DIR}/src)
 
-if(HAVE_RPC)
+if(NOT ANDROID)
     add_subdirectory(cgi)
 endif()
 

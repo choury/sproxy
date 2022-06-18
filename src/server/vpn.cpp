@@ -1,8 +1,6 @@
 #include "vpn.h"
 #include "req/guest_vpn.h"
-#ifdef HAVE_RPC
 #include "req/cli.h"
-#endif
 
 #include <string.h>
 #include <errno.h>
@@ -14,15 +12,18 @@
 volatile uint32_t vpn_contiune = 1;
 
 int vpn_start(int fd){
-#ifdef HAVE_RPC
-    if(opt.socket){
-        int svsk_cli = ListenUnix(opt.socket);
+    if(opt.admin && strlen(opt.admin) > 0){
+        int svsk_cli = -1;
+        if(strncmp(opt.admin, "tcp:", 4) == 0){
+            svsk_cli = ListenNet(SOCK_STREAM, atoi(opt.admin+4));
+        }else{
+            svsk_cli = ListenUnix(opt.admin);
+        }
         if(svsk_cli < 0){
             return -1;
         }
         new Cli_server(svsk_cli);
     }
-#endif
     Vpn_server s(fd);
     LOG("Accepting connections ...\n");
     vpn_contiune = 1;

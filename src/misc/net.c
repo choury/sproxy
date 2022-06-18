@@ -176,10 +176,6 @@ int ListenUnix(const char* path) {
         return -1;
     }
     do{
-        if(protectFd(fd) == 0){
-            LOGE("protecd fd error:%s\n", strerror(errno));
-            break;
-        }
 #ifdef SO_PASSCRED
         int flag = 1;
         if (setsockopt(fd, SOL_SOCKET, SO_PASSCRED, &flag, sizeof(flag)) < 0) {
@@ -191,10 +187,15 @@ int ListenUnix(const char* path) {
         struct sockaddr_un myaddr;
         bzero(&myaddr, sizeof(myaddr));
         myaddr.sun_family = AF_UNIX;
-        strcpy(myaddr.sun_path, path);
-        unlink(path);
+        if(path[0] == '@'){
+            myaddr.sun_path[0] = '\0';
+        }else{
+            unlink(path);
+            myaddr.sun_path[0] = path[0];
+        }
+        char* end = stpcpy(myaddr.sun_path+1, path+1);
 
-        if (bind(fd, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
+        if (bind(fd, (struct sockaddr*)&myaddr, end - (char*)&myaddr) < 0) {
             LOGE("bind error %s:%s\n", path, strerror(errno));
             break;
         }

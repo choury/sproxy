@@ -8,11 +8,8 @@ set(prot_src
         netio.cpp
         sslio.cpp
         ip_pack.cpp
-        tls.c)
-
-if(HAVE_RPC)
-    set(prot_src ${prot_src} rpc.cpp)
-endif()
+        tls.c
+        rpc.cpp)
 
 add_library(prot ${prot_src})
 

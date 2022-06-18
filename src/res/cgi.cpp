@@ -133,7 +133,7 @@ Cgi::Cgi(const char* fname, int sv[2]) {
             }
             close(i);
         }
-        setenv("ADMIN_SOCK", opt.socket, 1);
+        setenv("ADMIN_SOCK", opt.admin, 1);
         signal(SIGPIPE, SIG_DFL);
         signal(SIGUSR1, SIG_IGN);
         change_process_name(basename(filename));

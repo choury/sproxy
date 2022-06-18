@@ -93,24 +93,21 @@ if (NOT HAVE_BUILTIN_ATOMIC)
 endif()
 
 set(HAVE_VPN TRUE CACHE BOOL "Have VPN")
+set(HAVE_RPC TRUE CACHE BOOL "Have RPC")
 if(ANDROID)
-    set(OPENSSL_ROOT_DIR ${OPENSSL_ROOT}/${ANDROID_ABI})
-    set(OPENSSL_INCLUDE_DIR ${OPENSSL_ROOT_DIR}/include)
-    set(OPENSSL_LIBRARIES ${OPENSSL_ROOT_DIR}/lib)
+    set(THIRDPATY_ROOT_DIR ${THIRDPATY_ROOT}/${ANDROID_ABI})
+    set(JSON-C_INCLUDE_DIR ${THIRDPATY_ROOT_DIR}/include/json-c)
+    set(JSON-C_LIBRARY ${THIRDPATY_ROOT_DIR}/lib/libjson-c.a)
+
+    set(OPENSSL_INCLUDE_DIR ${THIRDPATY_ROOT_DIR}/include)
+    set(OPENSSL_LIBRARIES ${THIRDPATY_ROOT_DIR}/lib)
     set(OPENSSL_CRYPTO_LIBRARY ${OPENSSL_LIBRARIES}/libcrypto.a)
     set(OPENSSL_SSL_LIBRARY ${OPENSSL_LIBRARIES}/libssl.a)
-    find_package(OpenSSL 1.0.2 REQUIRED)
 
     find_library(log-lib log)
     # download ca-bundle.crt from https://curl.se/ca/cacert.pem
     set(SPROXY_CA_BUNDLE "/cacert.pem" CACHE STRING "CA bundle")
 else()
-    set(HAVE_RPC TRUE CACHE BOOL "Have RPC")
-    find_package(JSON-C REQUIRED)
-    include_directories(${JSON-C_INCLUDE_DIR})
-
-    find_package(OpenSSL 1.0.2 REQUIRED)
-
     find_package(Readline)
     if(READLINE_FOUND)
         set(HAVE_CLIENT TRUE CACHE BOOL "Have Client")
@@ -145,6 +142,9 @@ if(APPLE)
     find_library(SYSCONF_LIBRARY SystemConfiguration)
 endif()
 
+find_package(JSON-C REQUIRED)
+include_directories(${JSON-C_INCLUDE_DIR})
+find_package(OpenSSL 1.0.2 REQUIRED)
 include_directories(${OPENSSL_INCLUDE_DIR})
 
 cmake_push_check_state()

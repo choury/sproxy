@@ -100,7 +100,7 @@ static SSL_CTX* initssl(int quic, const char *ca, const char *cert, const char *
     EC_KEY_free(ecdh);
     */
     SSL_CTX_set_ecdh_auto(ctx, 1);
-    
+
     if (ca && SSL_CTX_load_verify_locations(ctx, ca, NULL) != 1)
         ERR_print_errors_fp(stderr);
 
@@ -167,8 +167,13 @@ int main(int argc, char **argv) {
             new Http_server<Guest>(svsk_http, nullptr);
         }
     }
-    if(opt.socket && strlen(opt.socket) > 0){
-        int svsk_cli = ListenUnix(opt.socket);
+    if(opt.admin && strlen(opt.admin) > 0){
+        int svsk_cli = -1;
+        if(strncmp(opt.admin, "tcp:", 4) == 0){
+            svsk_cli = ListenNet(SOCK_STREAM, atoi(opt.admin+4));
+        }else{
+            svsk_cli = ListenUnix(opt.admin);
+        }
         if(svsk_cli < 0){
             return -1;
         }

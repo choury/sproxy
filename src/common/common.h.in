@@ -254,7 +254,6 @@ struct Destination{
 #cmakedefine HAVE_VPN
 #cmakedefine HAVE_CLIENT
 #cmakedefine HAVE_ZLIB
-#cmakedefine HAVE_RPC
 #cmakedefine HAVE_QUIC
 
 #define PREFIX "@CMAKE_INSTALL_PREFIX@"

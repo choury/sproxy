@@ -40,6 +40,7 @@ struct arg_list{
 };
 
 struct options{
+    const char *admin;
     const char *cafile;
     const char *cert;
     const char *key;
@@ -47,7 +48,6 @@ struct options{
     const char *rootdir;
     const char *index_file;
     const char *interface;
-    const char *socket;
     const char *ua;
     const char *pcap_file;
     const char *alt_svc;

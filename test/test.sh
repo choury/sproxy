@@ -147,8 +147,8 @@ insecure
 debug all
 EOF
 
-./sproxy -c https.conf --socket server_ssl.sock  >server_ssl.log 2>&1  &
-./sproxy -c https.conf --socket server_quic.sock  --quic >server_quic.log  2>&1 &
+./sproxy -c https.conf --admin server_ssl.sock  >server_ssl.log 2>&1  &
+./sproxy -c https.conf --admin server_quic.sock  --quic >server_quic.log  2>&1 &
 
 cat > http.conf << EOF
 port 4444
@@ -159,7 +159,7 @@ insecure
 debug all
 EOF
 
-./sproxy -c http.conf  --socket server_http.sock > server_http.log 2>&1 &
+./sproxy -c http.conf  --admin server_http.sock > server_http.log 2>&1 &
 sleep 5
 
 echo "test server"
@@ -176,9 +176,9 @@ insecure
 debug all
 EOF
 
-./sproxy -c client.conf -p 3334  https://$HOSTNAME:4443 --disable-http2 --socket client_h1.sock > client_h1.log 2>&1 &
-./sproxy -c client.conf -p 3335  https://$HOSTNAME:4443 --socket client_h2.sock > client_h2.log 2>&1 &
-./sproxy -c client.conf -p 3336  quic://$HOSTNAME:4443 --socket client_h3.sock > client_h3.log 2>&1 &
+./sproxy -c client.conf -p 3334  https://$HOSTNAME:4443 --disable-http2 --admin client_h1.sock > client_h1.log 2>&1 &
+./sproxy -c client.conf -p 3335  https://$HOSTNAME:4443 --admin client_h2.sock > client_h2.log 2>&1 &
+./sproxy -c client.conf -p 3336  quic://$HOSTNAME:4443 --admin client_h3.sock > client_h3.log 2>&1 &
 sleep 5
 
 function cleanup {

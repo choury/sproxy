@@ -332,7 +332,7 @@ int spliturl(const char* url, struct Destination* server, char* path) {
         server->scheme[scheme_len] = 0;
     }
     url = scan_pos;
-    
+
     const char* addrsplit;
     char tmpaddr[DOMAINLIMIT];
     // scan path by '/'

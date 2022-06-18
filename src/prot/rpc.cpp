@@ -8,6 +8,8 @@
 #include <sys/socket.h>
 
 #include <thread>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 void RpcBase::sendJson(json_object *content) {
     const char* body = json_object_get_string(content);
@@ -406,17 +408,91 @@ std::promise<bool> SproxyClient::Debug(const std::string& module, bool enable) {
     return promise;
 }
 
+static int storage_pton(const char* addrstr, struct sockaddr_storage* addr) {
+    memset(addr, 0, sizeof(struct sockaddr_storage));
+    char host[INET6_ADDRSTRLEN] = {0};
+    const char* addrsplit;
+    if (addrstr[0] == '[') {
+        // this may be an ipv6 address
+        if (!(addrsplit = strchr(addrstr, ']'))) {
+            return 0;
+        }
+        if(addrsplit[1] != ':'){
+            return 0;
+        }
+        long dport = strtol(addrsplit + 2, NULL, 10);
+        if(dport == 0 || dport > 65535){
+            return 0;
+        }
+        int copylen = addrsplit - addrstr - 1;
+        if((size_t)copylen >= sizeof(host)){
+            return 0;
+        }
+        memcpy(host, addrstr+1, copylen);
+        host[copylen] = 0;
+        struct sockaddr_in6* addr6 = (struct sockaddr_in6*)addr;
+        if (inet_pton(AF_INET6, host, &addr6->sin6_addr) != 1) {
+            return 0;
+        }
+        addr6->sin6_family = AF_INET6;
+        addr6->sin6_port = htons(dport);
+        return 1;
+    } else if ((addrsplit = strchr(addrstr, ':'))) {
+        long dport = strtol(addrsplit + 1, NULL, 10);
+        if(dport == 0 || dport > 65535){
+            return 0;
+        }
+        int copylen = addrsplit - addrstr;
+        if((size_t)copylen >= sizeof(host)){
+            return 0;
+        }
+        memcpy(host, addrstr, copylen);
+        host[copylen] = 0;
+        struct sockaddr_in* addr4 = (struct sockaddr_in*)addr;
+        if (inet_pton(AF_INET, host, &addr4->sin_addr) != 1) {
+            return 0;
+        }
+        addr4->sin_family = AF_INET;
+        addr4->sin_port = htons(dport);
+        return 1;
+    }
+    return 0;
+}
+
 
 SproxyClient::SproxyClient(const char* sock) {
-    fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    struct sockaddr_storage addr{};
+    socklen_t socklen = sizeof(addr);
+    if(strncmp(sock, "tcp:", 4) == 0){
+        if(storage_pton(sock+4, &addr) != 1){
+            fprintf(stderr, "parse addr failed\n");
+            exit(1);
+        }
+        if(addr.ss_family == AF_INET6){
+            fd = socket(AF_INET6, SOCK_STREAM, 0);
+            socklen = sizeof(sockaddr_in6);
+        }else{
+            fd = socket(AF_INET, SOCK_STREAM, 0);
+            socklen = sizeof(sockaddr_in);
+        }
+    }else{
+        struct sockaddr_un* addrun = (struct sockaddr_un*)&addr;
+        fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        addrun->sun_family = AF_UNIX;
+        if(sock[0] == '@') {
+            addrun->sun_path[0] = '\0';
+        }else{
+            addrun->sun_path[0] = sock[0];
+        }
+        char* end = stpcpy(addrun->sun_path+1, sock+1);
+        socklen = end - (char*)&addr;
+    }
     if (fd < 0){
         perror("client socket error");
         exit(1);
     }
-    struct  sockaddr_un addr{};
-    addr.sun_family = AF_UNIX;
-    strcpy(addr.sun_path, sock);
-    if (connect(fd, (struct sockaddr *)&addr, sizeof(sockaddr_un)) < 0){
+
+    if (connect(fd, (struct sockaddr *)&addr, socklen) < 0){
         perror("connect error");
         exit(1);
     }

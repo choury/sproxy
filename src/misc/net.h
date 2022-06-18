@@ -8,7 +8,7 @@
 #ifdef  __cplusplus
 extern "C" {
 #endif
-    
+
 extern const char *DEFAULT_CIPHER_LIST;
 
 int Checksocket(int fd, const char* msg);

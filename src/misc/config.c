@@ -50,13 +50,13 @@ void openefd(){
 }
 
 struct options opt = {
+    .admin             = NULL,
     .cafile            = NULL,
     .cert              = NULL,
     .key               = NULL,
     .rootdir           = NULL,
     .index_file        = NULL,
     .interface         = NULL,
-    .socket            = NULL,
     .ua                = NULL,
     .pcap_file         = NULL,
     .alt_svc           = NULL,
@@ -98,6 +98,7 @@ enum option_type{
 
 static const char* getopt_option = ":D1hikqr:s:p:I:c:P:v";
 static struct option long_options[] = {
+    {"admin",         required_argument, NULL,  0 },
     {"autoindex",     no_argument,       NULL, 'i'},
     {"alt-svc",       required_argument, NULL, 0},
     {"cafile",        required_argument, NULL,  0 },
@@ -121,7 +122,6 @@ static struct option long_options[] = {
     {"set-dns-route", no_argument,       NULL,  0 },
     {"skip-interface-binding", no_argument, NULL, 0},
     {"sni",           no_argument,       NULL,  0 },
-    {"socket",        required_argument, NULL,  0 },
     {"alter-method",  no_argument,       NULL,  0 },
     {"request-header",required_argument, NULL,  0 },
     {"ua",            required_argument, NULL,  0 },
@@ -142,6 +142,7 @@ struct option_detail {
 };
 
 static struct option_detail option_detail[] = {
+    {"admin", "set admin socket path for cli (/var/run/sproxy.sock is default for root and /tmp/sproxy.sock for others)", option_string, &opt.admin, NULL},
     {"autoindex", "Enables the directory listing output (local server)", option_bool, &opt.autoindex, (void*)true},
     {"alt-svc", "Add alt-svc header to response or send ALTSVC frame", option_string, &opt.alt_svc, NULL},
     {"cafile", "CA certificate for server (ssl)", option_string, &opt.cafile, NULL},
@@ -167,7 +168,6 @@ static struct option_detail option_detail[] = {
     {"sni", "Act as a sni proxy", option_bool, &opt.sni_mode, (void*)true},
     {"server", "default proxy server (can ONLY set in config file)", option_string, &server_string, NULL},
     {"set-dns-route", "set route for dns server (via VPN interface)", option_bool, &opt.set_dns_route, (void*)true},
-    {"socket", "set listen socket path for cli (/var/run/sproxy.sock is default for root and /tmp/sproxy.sock for others)", option_string, &opt.socket, NULL},
     {"alter-method", "use Alter-Method to define real method (for obfuscation), http1 only", option_bool, &opt.alter_method, (void*)true},
     {"request-header", "append the header (name:value) for plain http request", option_list, &opt.request_headers, NULL},
     {"ua", "set user-agent for vpn auto request", option_string, &opt.ua, NULL},
@@ -443,11 +443,11 @@ void postConfig(){
         }
     }
 #ifndef __ANDROID__
-    if (opt.socket == NULL){
+    if (opt.admin == NULL){
         if(getuid() == 0){
-            opt.socket = "/var/run/sproxy.sock";
+            opt.admin = "/var/run/sproxy.sock";
         }else{
-            opt.socket = "/tmp/sproxy.sock";
+            opt.admin = "/tmp/sproxy.sock";
         }
     }
 #endif
@@ -538,7 +538,7 @@ void parseConfig(int argc, char **argv){
         c = getopt_long(argc, argv, getopt_option, long_options, &option_index);
         if (c == -1)
             break;
-        
+
         if( c != 0){
             for(int i=0; long_options[i].name; i++){
                 if(long_options[i].val == c){
