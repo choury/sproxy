@@ -135,6 +135,7 @@ int QuicRWer::send(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, const
         LOGE("QUIC failed to send packet to fd: %s\n", strerror(errno));
         return -QUIC_INTERNAL_ERROR;
     }
+    my_sent_data_total += ret;
     return packet_len;
 }
 
@@ -586,6 +587,10 @@ QuicRWer::FrameResult QuicRWer::handleStreamFrame(uint64_t type, const quic_stre
         return FrameResult::ok;
     }
     auto& status = itr->second;
+    if(status.flags & STREAM_FLAG_RESET_RECVD){
+        // discard all data after reset
+        return FrameResult::ok;
+    }
 
     uint64_t want = status.rb.Offset() + status.rb.length();
     if(type & QUIC_FRAME_STREAM_FIN_F){
@@ -640,6 +645,7 @@ QuicRWer::FrameResult QuicRWer::handleResetFrame(const quic_reset *stream) {
         return FrameResult::ok;
     }
     if(status.flags & STREAM_FLAG_RESET_RECVD) {
+        //duplicate reset, may be retransmissions
         return FrameResult::ok;
     }
 
@@ -648,13 +654,16 @@ QuicRWer::FrameResult QuicRWer::handleResetFrame(const quic_reset *stream) {
         return FrameResult::error;
     }
 
-    status.flags |= STREAM_FLAG_RESET_RECVD;
+    status.flags |= STREAM_FLAG_FIN_RECVD | STREAM_FLAG_RESET_RECVD;
     status.finSize = stream->fsize;
     my_received_data += status.finSize - want;
     status.rb.consume(status.rb.length());
 
-    if(resetHandler){
-        resetHandler(id, stream->error);
+    if((status.flags & STREAM_FLAG_RESET_DELIVED) == 0) {
+        status.flags |= STREAM_FLAG_RESET_DELIVED;
+        if (resetHandler) {
+            resetHandler(id, stream->error);
+        }
     }
     return FrameResult::ok;
 }
@@ -760,10 +769,29 @@ QuicRWer::FrameResult QuicRWer::handleFrames(quic_context *context, const quic_f
             his_max_streams_uni = frame->extra;
         }
         return FrameResult::ok;
-    case QUIC_FRAME_STOP_SENDING:
-        OpenStream(frame->stop.id);
-        LOG("QUIC not implement stop sending frame, just ignore it\n");
+    case QUIC_FRAME_STOP_SENDING: {
+        auto itr = OpenStream(frame->stop.id);
+        if(itr == streammap.end()){
+            return FrameResult::ok;
+        }
+        auto& status = itr->second;
+        if((status.flags & STREAM_FLAG_FIN_SENT) == 0){
+            status.flags |= STREAM_FLAG_FIN_SENT;
+            quic_frame* reset = new quic_frame;
+            reset->type = QUIC_FRAME_RESET_STREAM;
+            reset->reset.id = frame->stop.id;
+            reset->reset.fsize = status.offset;
+            reset->reset.error = frame->stop.error;
+            qos.PushFrame(ssl_encryption_application, reset);
+        }
+        if((status.flags & STREAM_FLAG_RESET_DELIVED) == 0){
+            status.flags |= STREAM_FLAG_RESET_DELIVED;
+            if(resetHandler){
+                resetHandler(frame->stop.id, frame->stop.error);
+            }
+        }
         return FrameResult::ok;
+    }
     case QUIC_FRAME_MAX_STREAM_DATA: {
         auto itr = OpenStream(frame->max_stream_data.id);
         if (itr == streammap.end()) {
@@ -981,6 +1009,7 @@ ssize_t QuicRWer::Write(const void *buff, size_t len, uint64_t id) {
     assert(streammap.count(id));
 
     auto& status = streammap[id];
+    assert((status.flags & STREAM_FLAG_FIN_SENT) == 0);
     quic_frame* frame = new quic_frame;
     frame->type = QUIC_FRAME_STREAM_START_ID | QUIC_FRAME_STREAM_LEN_F;
     if(status.offset) {
@@ -1225,6 +1254,7 @@ void QuicRWer::ReadData() {
             ErrorHE(SOCKET_ERR, errno);
             return;
         }
+        my_received_data_total += ret;
         walkPackets(buff, ret);
     }
     reorderData();
@@ -1241,16 +1271,23 @@ void QuicRWer::Reset(uint64_t id, uint32_t code) {
         return;
     }
     auto& status = streammap[id];
-    if((status.flags & STREAM_FLAG_FIN_SENT)){
-        return;
+    if((status.flags & STREAM_FLAG_FIN_SENT) == 0){
+        status.flags |= STREAM_FLAG_FIN_SENT;
+        quic_frame* frame = new quic_frame;
+        frame->type = QUIC_FRAME_RESET_STREAM;
+        frame->reset.id = id;
+        frame->reset.error = code;
+        frame->reset.fsize = status.offset;
+        qos.PushFrame(ssl_encryption_application, frame);
     }
-    status.flags |= STREAM_FLAG_RESET_SENT;
-    quic_frame* frame = new quic_frame;
-    frame->type = QUIC_FRAME_RESET_STREAM;
-    frame->reset.id = id;
-    frame->reset.error = code;
-    frame->reset.fsize = status.offset;
-    qos.PushFrame(ssl_encryption_application, frame);
+    if((status.flags & STREAM_FLAG_STOP_SENT) ==0){
+        status.flags |= STREAM_FLAG_STOP_SENT;
+        quic_frame* frame = new quic_frame;
+        frame->type = QUIC_FRAME_STOP_SENDING;
+        frame->stop.id = id;
+        frame->stop.error = code;
+        qos.PushFrame(ssl_encryption_application, frame);
+    }
 }
 
 size_t QuicRWer::rlength() {
@@ -1262,7 +1299,7 @@ ssize_t QuicRWer::cap(uint64_t id) {
         return 0;
     }
     auto& stream = streammap[id];
-    if(stream.flags & (STREAM_FLAG_FIN_SENT|STREAM_FLAG_RESET_SENT|STREAM_FLAG_RESET_RECVD)) {
+    if(stream.flags & STREAM_FLAG_FIN_SENT) {
         return 0;
     }
     assert(my_sent_data <= his_max_data);
@@ -1275,17 +1312,15 @@ bool QuicRWer::idle(uint64_t id){
     if(streammap.count(id) == 0){
         return true;
     }
+    //这里收到reset也不认为是idle，因为即使收到reset，也不代表本端不会继续发送数据
     auto& status = streammap[id];
     bool send_closed = false;
     bool recv_closed = false;
-    if((status.flags & STREAM_FLAG_RESET_RECVD) || (status.flags & STREAM_FLAG_RESET_SENT)){
-        send_closed = true;
-        recv_closed = true;
-    }
     if(status.flags & STREAM_FLAG_FIN_SENT){
         send_closed = true;
     }
-    if(status.flags & STREAM_FLAG_FIN_DELIVED){
+    if(status.flags & (STREAM_FLAG_FIN_DELIVED | STREAM_FLAG_RESET_DELIVED)){
+        assert(status.flags & STREAM_FLAG_FIN_RECVD);
         assert(status.rb.length() == 0);
         recv_closed = true;
     }
@@ -1340,11 +1375,14 @@ void QuicRWer::ConsumeRData() {
         }
 
         auto shouldSendMaxStreamData = [](QuicStreamStatus& status) -> bool {
-            uint64_t offset = status.rb.Offset() + status.rb.length();
-            if(offset + status.rb.cap() - status.my_max_data < BUF_LEN){
+            if((status.flags & STREAM_FLAG_FIN_RECVD) && status.my_max_data >= status.finSize){
                 return false;
             }
-            if((status.flags & STREAM_FLAG_FIN_RECVD) && status.my_max_data >= status.finSize){
+            uint64_t offset = status.rb.Offset() + status.rb.length();
+            if(status.my_max_data - offset < BUF_LEN/2 && offset + status.rb.cap() > status.my_max_data){
+                return true;
+            }
+            if(offset + status.rb.cap() - status.my_max_data < BUF_LEN){
                 return false;
             }
             return true;

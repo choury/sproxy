@@ -119,11 +119,11 @@ protected:
     std::string initToken;
     std::string originDcid;
     struct QuicStreamStatus{
-#define STREAM_FLAG_FIN_SENT    0x01   //已经发送了fin标记
+#define STREAM_FLAG_FIN_SENT    0x01   //已经发送了finsize(stream 或者 reset)
 #define STREAM_FLAG_FIN_RECVD   0x02   //收到对方发送的fin标记
 #define STREAM_FLAG_FIN_DELIVED 0x04   //fin标记已经发送给应用层了
-#define STREAM_FLAG_RESET_SENT    0x10
-#define STREAM_FLAG_RESET_RECVD   0x20
+#define STREAM_FLAG_STOP_SENT     0x10
+#define STREAM_FLAG_RESET_RECVD   0x20  //打了这个标记意味者后续数据不会再上送到应用层
 #define STREAM_FLAG_RESET_DELIVED 0x40
         uint32_t flags = 0;
         size_t   offset = 0;
@@ -151,9 +151,11 @@ protected:
     uint64_t his_max_ack_delay = 0;
 
     uint64_t my_sent_data = 0;
+    uint64_t my_sent_data_total = 0;
     uint64_t my_received_data = 0;
+    uint64_t my_received_data_total = 0;
     uint64_t my_max_payload_size = max_datagram_size;
-    uint64_t my_max_data = 1024 * 1024;
+    uint64_t my_max_data = MAX_BUF_LEN;
     uint64_t my_max_stream_data_bidi_local = BUF_LEN;
     uint64_t my_max_stream_data_bidi_remote = BUF_LEN;
     uint64_t my_max_stream_data_uni = BUF_LEN;

@@ -133,14 +133,11 @@ void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
             LOGE("(%s)[%" PRIu32 "]: <guest2> [%d] shrunken local window: %d/%d\n",
                 getsrc(), status.req->header->request_id,
                 id, len, status.localwinsize);
-        }else{
-            if(len - status.localwinsize > 2*FRAMEBODYLIMIT){
-                status.localwinsize += ExpandWindowSize(id, len - status.localwinsize - FRAMEBODYLIMIT);
-                return;
-            }
-            if(status.localwinsize < FRAMEBODYLIMIT && len > status.localwinsize){
-                status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
-            }
+        }else if(len == status.localwinsize) {
+            return;
+        }else if(len - status.localwinsize > FRAMEBODYLIMIT || status.localwinsize <= FRAMEBODYLIMIT/2){
+            LOGD(DHTTP2, "<guest2> [%d] increased local window: %d -> %d\n", id, status.localwinsize, len);
+            status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
         }
     });
     distribute(status.req, this);

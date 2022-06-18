@@ -129,37 +129,34 @@ void Proxy2::PushFrame(Buffer&& bb){
 }
 
 void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
-    if(statusmap.count(id)){
-        ReqStatus& status = statusmap[id];
-        if(!header->no_body() && !header->get("Content-Length"))
-        {
-            header->set("Transfer-Encoding", "chunked");
-        }
-        if(status.res){
-            status.res->send(header);
-            return;
-        }
-        status.res = std::make_shared<HttpRes>(header, [this, &status, id]() mutable{
-            auto len = status.res->cap();
-            if(len < status.localwinsize){
-                LOGE("(%" PRIu32 "): <proxy2> [%d] shrunken local window: %d/%d\n",
-                    status.req->header->request_id,
-                    id, len, status.localwinsize);
-            }else{
-                if((len - status.localwinsize > 2*FRAMEBODYLIMIT)) {
-                    status.localwinsize += ExpandWindowSize(id, len - status.localwinsize - FRAMEBODYLIMIT);
-                    return;
-                }
-                if(status.localwinsize < FRAMEBODYLIMIT && len > status.localwinsize){
-                    status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
-                }
-            }
-        });
-        status.req->response(status.res);
-    }else{
+    if(statusmap.count(id) == 0) {
         LOGD(DHTTP2, "<proxy2> ResProc not found id: %d\n", id);
         Reset(id, HTTP2_ERR_STREAM_CLOSED);
+        return;
     }
+    ReqStatus& status = statusmap[id];
+    if(!header->no_body() && !header->get("Content-Length"))
+    {
+        header->set("Transfer-Encoding", "chunked");
+    }
+    if(status.res){
+        status.res->send(header);
+        return;
+    }
+    status.res = std::make_shared<HttpRes>(header, [this, &status, id]() mutable{
+        auto len = status.res->cap();
+        if(len < status.localwinsize){
+            LOGE("(%" PRIu32 "): <proxy2> [%d] shrunken local window: %d/%d\n",
+                status.req->header->request_id,
+                id, len, status.localwinsize);
+        }else if(len == status.localwinsize) {
+            return;
+        }else if(len - status.localwinsize > FRAMEBODYLIMIT || status.localwinsize <= FRAMEBODYLIMIT/2){
+            LOGD(DHTTP2, "<proxy2> [%d] increased local window: %d -> %d\n", id, status.localwinsize, len);
+            status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
+        }
+    });
+    status.req->response(status.res);
 }
 
 
