@@ -143,7 +143,6 @@ public:
 };
 
 
-#define MAX_BUF_LEN (1024*1024)
 class EBuffer {
     char* content;
     size_t size = BUF_LEN * 2;

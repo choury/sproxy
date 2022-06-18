@@ -142,7 +142,7 @@ void Vpn_server::buffHE(const char* buff, size_t buflen) {
 }
 
 int32_t Vpn_server::bufleft() {
-    return 4*1024*1024 - rwer->wlength();
+    return MAX_BUF_LEN - rwer->wlength();
 }
 
 void Vpn_server::cleanKey(const VpnKey& key) {

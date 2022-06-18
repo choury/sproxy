@@ -17,7 +17,7 @@ size_t RWer::wlength() {
 }
 
 ssize_t RWer::cap(uint64_t) {
-    return 4 * 1024 * 1024 - wbuff.length();
+    return MAX_BUF_LEN - wbuff.length();
 }
 
 RWer::RWer(int fd, std::function<void(int ret, int code)> errorCB):

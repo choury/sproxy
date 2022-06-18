@@ -36,7 +36,7 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
                 return 0;
             }
             return 0;
-        }, []{return 1024*1024;});
+        }, []{return BUF_LEN;});
     });
     rwer->SetReadCB([this](Buffer& bb){
         if(res == nullptr){

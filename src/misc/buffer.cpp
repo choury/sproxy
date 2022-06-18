@@ -277,8 +277,8 @@ ssize_t EBuffer::put(const void *data, size_t sizeofdata) {
     if(result > MAX_BUF_LEN){
         return -1;
     }
-    if(result > size/2){
-        expand(size * 2);
+    if(result > size/2 && size < MAX_BUF_LEN){
+        expand(std::min(size * 2, (size_t)MAX_BUF_LEN));
     }
 
     uint32_t start = (offset + len) % size;
