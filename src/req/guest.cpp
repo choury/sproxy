@@ -257,15 +257,13 @@ Guest::~Guest() {
 
 void Guest::dump_stat(Dumper dp, void* param){
     dp(param, "Guest %p, (%s)\n", this, getsrc());
-    dp(param, "  rwer: rlength:%zu, wlength:%zu, stats:%d, event:%s\n",
-            rwer->rlength(), rwer->wlength(),
-            (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     for(const auto& status : statuslist){
-        dp(param, "req [%" PRIu32 "]: %s %s, flags:0x%08x [%s]\n",
+        dp(param, "  [%" PRIu32 "]: %s %s, flags: 0x%08x [%s]\n",
                 status.req->header->request_id,
                 status.req->header->method,
                 status.req->header->geturl().c_str(),
                 status.flags,
                 status.req->header->get("User-Agent"));
     }
+    rwer->dump_status(dp, param);
 }

@@ -248,14 +248,12 @@ void Proxy3::dump_stat(Dumper dp, void* param) {
     dp(param, "Proxy3 %p%s id:%" PRIu64" (%s)\n",
        this, proxy3 == this?" [M]":"", maxDataId,
        rwer->getPeer());
-    dp(param, "  rwer: rlength:%zu, wlength:%zu, stats:%d, event:%s\n",
-       rwer->rlength(), rwer->wlength(),
-       (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     for(auto& i: statusmap){
-        dp(param, "0x%lx [%" PRIu32 "]: %s, flags:0x%08x\n",
+        dp(param, "  0x%lx [%" PRIu32 "]: %s, flags: 0x%08x\n",
            i.first,
            i.second.req->header->request_id,
            i.second.req->header->geturl().c_str(),
            i.second.flags);
     }
+    rwer->dump_status(dp, param);
 }

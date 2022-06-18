@@ -240,6 +240,8 @@ public:
     int set_alpn(const unsigned char *s, unsigned int len);
     uint64_t CreateBiStream();
     uint64_t CreateUbiStream();
+
+    virtual void dump_status(Dumper dp, void* param) override;
 };
 
 #endif //SPROXY_QUICIO_H

@@ -20,9 +20,6 @@ public:
     ~Cli();
 
     virtual void response(void*, std::shared_ptr<HttpRes>) override {};
-    virtual void dump_stat(Dumper dp, void* param) override;
-
-
 
     virtual bool AddStrategy(const std::string& host, const std::string& strategy, const std::string& ext) override;
     virtual bool DelStrategy(const std::string& host) override;
@@ -38,6 +35,8 @@ public:
     virtual bool Login(const std::string& token, const std::string& source) override;
     virtual std::string GetStatus() override;
     virtual bool Debug(const std::string& module, bool enable) override;
+
+    virtual void dump_stat(Dumper dp, void* param) override;
 };
 
 class Cli_server: public Ep {

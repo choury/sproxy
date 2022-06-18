@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <assert.h>
+#include <inttypes.h>
 
 static unsigned char in[16384];
 
@@ -173,4 +174,5 @@ void GzipTest::deleteLater(uint32_t error) {
 
 void GzipTest::dump_stat(Dumper dp, void *param) {
     dp(param, "gzip_test: %p left=%zu\n", this, left);
+    dp(param, "  [%" PRIu32 "]: %s\n", req->header->request_id, req->header->geturl().c_str());
 }

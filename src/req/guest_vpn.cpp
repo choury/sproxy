@@ -994,13 +994,13 @@ static const char* dump_vpnStatus(const VpnKey& key, void* protocol_info){
     switch(key.protocol){
     case TCP:{
         TcpStatus* tcp = (TcpStatus*)protocol_info;
-        sprintf(buff, " [window:%u, send_seq:%u, acked:%u, status:%u]",
+        sprintf(buff, " [window: %u, send_seq: %u, acked: %u, status: %u]",
                 tcp->window << tcp->recv_wscale, tcp->send_seq, tcp->acked, tcp->status);
         break;
     }
     case ICMP:{
         IcmpStatus* icmp = (IcmpStatus *)protocol_info;
-        sprintf(buff, " [id:%u, seq:%u]", icmp->id, icmp->seq);
+        sprintf(buff, " [id: %u, seq: %u]", icmp->id, icmp->seq);
     }
     default:
         break;
@@ -1011,5 +1011,5 @@ static const char* dump_vpnStatus(const VpnKey& key, void* protocol_info){
 void Guest_vpn::dump_stat(Dumper dp, void* param) {
     dp(param, "Guest_vpn %p, [%" PRIu32 "] %s\n",
         this,  status.req->header->request_id, key.getString("-"));
-    dp(param, "  flags:0x%08x info: %s\n", status.flags, dump_vpnStatus(key, status.protocol_info));
+    dp(param, "  flags: 0x%08x info: %s\n", status.flags, dump_vpnStatus(key, status.protocol_info));
 }

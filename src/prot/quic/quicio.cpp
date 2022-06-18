@@ -1407,3 +1407,21 @@ void QuicRWer::keepAlive_action() {
     }
     qos.PushFrame(ssl_encryption_application, new quic_frame{QUIC_FRAME_PING, {}});
 }
+
+void QuicRWer::dump_status(Dumper dp, void *param) {
+    dp(param, "QuicRWer: %s -> %s, read: %zd/%zd, write: %zd/%zd\n my_window: %zd, his_window: %zd rlen: %zd, fullq: %zd\n",
+       dumpHex(myids[myid_idx].c_str(), myids[myid_idx].length()).c_str(),
+       dumpHex(hisids[hisid_idx].c_str(), myids[myid_idx].length()).c_str(),
+       my_received_data, my_received_data_total,
+       my_sent_data, my_sent_data_total,
+       my_max_data - my_received_data,
+       his_max_data - my_sent_data,
+       rblen, fullq.size());
+    for(auto& status: streammap){
+        dp(param, "  0x%lx: rlen: %zd, rcap: %zd, my_window: %zd, his_window: %lld, flags: 0x%08x\n",
+           status.first, status.second.rb.length(), status.second.rb.cap(),
+           status.second.my_max_data - status.second.rb.Offset() - status.second.rb.length(),
+           (long long)status.second.his_max_data - (long long)status.second.offset,
+           status.second.flags);
+    }
+}

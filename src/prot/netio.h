@@ -30,6 +30,7 @@ public:
            std::function<void(const sockaddr_storage&)> connectCB = nullptr);
     virtual ~SocketRWer() override;
     virtual const char* getPeer() override;
+    virtual void dump_status(Dumper dp, void* param) override;
 };
 
 class StreamRWer: public SocketRWer{

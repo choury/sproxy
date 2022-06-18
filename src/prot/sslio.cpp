@@ -183,3 +183,9 @@ void SslRWer::set_hostname_callback(int (* cb)(SSL *, int *, void*), void* arg){
     SSL_CTX_set_tlsext_servername_callback(ctx, cb);
     SSL_CTX_set_tlsext_servername_arg(ctx, arg);
 }
+
+void SslRWer::dump_status(Dumper dp, void *param) {
+    dp(param, "SslRWer: rlen: %zu, wlen: %zu, stats: %d, event: %s, %s\n",
+       rlength(), wlength(), (int)getStats(),
+       events_string[(int)getEvents()], SSL_state_string_long(ssl));
+}

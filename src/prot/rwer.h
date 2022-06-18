@@ -84,6 +84,7 @@ public:
     virtual buff_iterator buffer_insert(buff_iterator where, Buffer&& bb);
 
     virtual bool idle(uint64_t id);
+    virtual void dump_status(Dumper dp, void* param) = 0;
 };
 
 class NullRWer: public RWer{
@@ -96,6 +97,7 @@ public:
 
     virtual void ConsumeRData() override;
     virtual const char* getPeer() override {return "null-rwer";}
+    virtual void dump_status(Dumper dp, void* param) override {dp(param, "NullRWer");}
 };
 
 class FullRWer: public RWer{
@@ -114,6 +116,7 @@ public:
     virtual ssize_t cap(uint64_t id) override;
     virtual void ConsumeRData() override;
     virtual const char* getPeer() override {return "full-rwer";}
+    virtual void dump_status(Dumper dp, void* param) override {dp(param, "FullRWer");}
 };
 
 #endif

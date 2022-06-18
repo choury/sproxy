@@ -337,20 +337,18 @@ void Guest2::deleteLater(uint32_t errcode){
 
 
 void Guest2::dump_stat(Dumper dp, void* param) {
-    dp(param, "Guest2 %p, id:%d (%s) (%d/%d)\n",
+    dp(param, "Guest2 %p, id: %d (%s) my_window: %d, his_window: %d\n",
             this, sendid, getsrc(),
-            this->remotewinsize, this->localwinsize);
-    dp(param, "  rwer: rlength:%zu, wlength:%zu, stats:%d, event:%s\n",
-            rwer->rlength(), rwer->wlength(),
-            (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
+            this->localwinsize, this->remotewinsize);
     for(auto& i: statusmap){
-        dp(param, "0x%x [%" PRIu32 "]: %s %s (%d/%d), flags:0x%08x\n",
+        dp(param, "  0x%x [%" PRIu32 "]: %s %s my_window: %d, his_window: %d, flags: 0x%08x\n",
                 i.first, i.second.req->header->request_id,
                 i.second.req->header->method,
                 i.second.req->header->geturl().c_str(),
-                i.second.remotewinsize, i.second.localwinsize,
+                i.second.localwinsize, i.second.remotewinsize,
                 i.second.flags);
     }
+    rwer->dump_status(dp, param);
 }
 
 

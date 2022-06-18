@@ -340,7 +340,7 @@ void Cgi::request(std::shared_ptr<HttpReq> req, Requester* src) {
 void Cgi::dump_stat(Dumper dp, void* param){
     dp(param, "Cgi %p %s:\n", this, filename);
     for(const auto& i: statusmap){
-        dp(param, "%" PRIu32": %s\n",
+        dp(param, "  [%" PRIu32"]: %s\n",
            i.first, i.second.req->header->geturl().c_str());
     }
 }

@@ -202,7 +202,7 @@ void File::deleteLater(uint32_t error) {
 
 void File::dump_stat(Dumper dp, void* param){
     dp(param, "File %p, %s\n", this, filename);
-    dp(param, " [%" PRIu32 "]: (%zd-%zd), flags:0x%08x\n",
+    dp(param, "  [%" PRIu32 "]: (%zd-%zd), flags: 0x%08x\n",
             status.req->header->request_id,
             status.rg.begin, status.rg.end, status.flags);
 }

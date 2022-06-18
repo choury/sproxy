@@ -321,13 +321,11 @@ void Host::gethost(std::shared_ptr<HttpReq> req, const Destination* dest, Reques
 
 void Host::dump_stat(Dumper dp, void* param) {
     dp(param, "Host %p, (%s)\n", this, rwer->getPeer());
-    dp(param, "  rwer: rlength:%zu, wlength:%zu, stats:%d, event:%s\n",
-            rwer->rlength(), rwer->wlength(),
-            (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
     if(status.req){
-        dp(param, "req [%" PRIu32 "]: %s, flags:0x%08x\n",
+        dp(param, "  [%" PRIu32 "]: %s, flags: 0x%08x\n",
                 status.req->header->request_id,
                 status.req->header->geturl().c_str(),
                 status.flags);
     }
+    rwer->dump_status(dp, param);
 }

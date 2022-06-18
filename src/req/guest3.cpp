@@ -266,17 +266,15 @@ void Guest3::deleteLater(uint32_t errcode){
 
 
 void Guest3::dump_stat(Dumper dp, void* param) {
-    dp(param, "Guest3 %p, id:%" PRIu64" (%s)\n", this, maxDataId, getsrc());
-    dp(param, "  rwer: rlength:%zu, wlength:%zu, stats:%d, event:%s\n",
-       rwer->rlength(), rwer->wlength(),
-       (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
+    dp(param, "Guest3 %p, id: %" PRIu64" (%s)\n", this, maxDataId, getsrc());
     for(auto& i: statusmap){
-        dp(param, "0x%lx [%" PRIu32 "]: %s %s, flags:0x%08x\n",
+        dp(param, "  0x%lx [%" PRIu32 "]: %s %s, flags: 0x%08x\n",
            i.first, i.second.req->header->request_id,
            i.second.req->header->method,
            i.second.req->header->geturl().c_str(),
            i.second.flags);
     }
+    rwer->dump_status(dp, param);
 }
 
 

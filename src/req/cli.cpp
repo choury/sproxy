@@ -49,12 +49,6 @@ void Cli::Error(int ret, int code) {
     deleteLater(ret);
 }
 
-void Cli::dump_stat(Dumper dp, void* param) {
-    dp(param, "Cli %p, (%s)\n", this, getsrc());
-    dp(param, "  rwer: rlength:%zu, wlength:%zu, stats:%d, event:%s\n",
-       rwer->rlength(), rwer->wlength(),
-       (int)rwer->getStats(), events_string[(int)rwer->getEvents()]);
-}
 
 bool Cli::AddStrategy(const std::string &host, const std::string &strategy, const std::string &ext) {
     LOG("%s [%s] %s %s %s\n", rwer->getPeer(), __func__, host.c_str(), strategy.c_str(), ext.c_str());
@@ -156,3 +150,7 @@ bool Cli::Debug(const std::string& module, bool enable) {
     return debugon(module.c_str(), enable);
 }
 
+void Cli::dump_stat(Dumper dp, void* param) {
+    dp(param, "Cli %p, (%s)\n", this, getsrc());
+    rwer->dump_status(dp, param);
+}
