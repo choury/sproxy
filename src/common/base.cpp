@@ -66,7 +66,7 @@ void dump_stat(){
     dump_stat(LogDump, nullptr);
 }
 
-extern "C" void dump_func(char* stack, int depth) {
+extern "C" void demangle_func(char* stack, int depth) {
 #ifdef __linux__
     /*
      * ./src/sproxy(_ZN6Status7requestEP7HttpReqP9Requester+0xa92) [0x5574eb16f4b2]

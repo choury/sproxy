@@ -284,7 +284,7 @@ struct in_addr getMapped(struct in6_addr addr, const char* prefix) {
 }
 
 #if Backtrace_FOUND
-void dump_func(char* stack, int depth);
+void demangle_func(char* stack, int depth);
 
 void dump_trace(int signum) {
     void *stack_trace[100] = {0};
@@ -301,7 +301,7 @@ void dump_trace(int signum) {
     /* 打印调用栈 */
     LOGE(" Stack Trace: \n");
     for (int i = 0; i < stack_depth; ++i) {
-        dump_func(stack_strings[i], i);
+        demangle_func(stack_strings[i], i);
     }
 
     /* 获取函数名称时申请的内存需要自行释放 */
