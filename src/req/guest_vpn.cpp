@@ -703,7 +703,7 @@ void Guest_vpn::udpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
         status.req->send(data, datalen);
         if(pac->udp->getdport() == 53){
             status.flags |= VPN_DNSREQ_F;
-            (new FDns())->request(status.req, this);
+            FDns::GetInstance()->request(status.req, this);
         }else{
             distribute(status.req, this);
         }

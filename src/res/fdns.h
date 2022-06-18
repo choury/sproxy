@@ -16,16 +16,15 @@ struct FDnsStatus{
 
 
 class FDns: public Responser{
-    std::shared_ptr<FDnsStatus> status;
+    std::map<uint32_t, FDnsStatus> statusmap;
 
     void Recv(Buffer&& bb);
-    virtual void deleteLater(uint32_t errcode) override;
-
     static void RawCb(std::shared_ptr<void> param, const char *buff, size_t size);
     static void DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_storage> addrs);
 public:
     FDns();
     virtual ~FDns() override;
+    static FDns* GetInstance();
     virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
     virtual void dump_stat(Dumper dp, void* param) override;
 };

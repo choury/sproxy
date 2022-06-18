@@ -7,8 +7,8 @@
 
 #include <inttypes.h>
 
+static FDns* fdns = nullptr;
 static Index2<uint32_t, std::string, void*> fdns_records;
-
 static in_addr_t fake_ip = ntohl(inet_addr(VPNADDR));
 
 
@@ -64,26 +64,43 @@ std::string getRdns(const sockaddr_storage& addr) {
 
 FDns::FDns() {
     rwer = std::make_shared<NullRWer>();
-    status = std::make_shared<FDnsStatus>();
 }
 
 FDns::~FDns() {
+    if(fdns == this){
+        fdns = nullptr;
+    }
+}
+
+FDns *FDns::GetInstance() {
+    if(fdns == nullptr){
+        fdns = new FDns;
+    }
+    return fdns;
 }
 
 void FDns::request(std::shared_ptr<HttpReq> req, Requester*){
-    status->req = req;
-    status->res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
-    req->response(status->res);
-    req->attach([this](ChannelMessage& msg){
+    auto res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
+    auto id = req->header->request_id;
+    statusmap[id] = FDnsStatus{
+        .req = req,
+        .res = res
+    };
+    req->response(res);
+    req->attach([this, id](ChannelMessage& msg){
+        assert(statusmap.count(id));
+        FDnsStatus& status = statusmap[id];
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:
             LOGD(DDNS, "<FDNS> ignore header for req\n");
             return 1;
         case ChannelMessage::CHANNEL_MSG_DATA:
+            msg.data.id = id;
             Recv(std::move(msg.data));
             return 1;
         case ChannelMessage::CHANNEL_MSG_SIGNAL:
-            deleteLater(PEER_LOST_ERR);
+            status.req->detach();
+            statusmap.erase(id);
             return 0;
         }
         return 0;
@@ -91,12 +108,16 @@ void FDns::request(std::shared_ptr<HttpReq> req, Requester*){
 }
 
 void FDns::Recv(Buffer&& bb) {
+    assert(statusmap.count(bb.id));
+    FDnsStatus& status = statusmap[bb.id];
     auto que = std::make_shared<Dns_Query>((const char *)bb.data(), bb.len);
     if(!que->valid){
         LOGE("invalid dns request [%zd]\n", bb.len);
+        status.res->send(ChannelMessage::Signal::CHANNEL_ABORT);
+        statusmap.erase(bb.id);
         return;
     }
-    status->que = que;
+    status.que = que;
     LOG("[FDNS] Query %s: %d\n", que->domain, que->type);
     Dns_Result* result = nullptr;
     if(que->type == 12){
@@ -107,7 +128,7 @@ void FDns::Recv(Buffer&& bb) {
     }else if(que->type == 1 || que->type == 28) {
         strategy stra = getstrategy(que->domain);
         if (stra.s == Strategy::direct) {
-            return query_host(que->domain, DnsCb, status);
+            return query_host(que->domain, DnsCb, std::make_shared<uint64_t>(bb.id));
         }
         if(que->domain[0] == 0){
             //return empty response for root domain
@@ -123,15 +144,20 @@ void FDns::Recv(Buffer&& bb) {
         }
     }
     if(result == nullptr) {
-        return query_dns(que->domain, que->type, RawCb, status);
+        return query_dns(que->domain, que->type, RawCb, std::make_shared<uint64_t>(bb.id));
     }
     auto buff = std::make_shared<Block>(BUF_LEN);
-    status->res->send({buff, (size_t)result->build(que.get(), (uchar*)buff->data())});
+    status.res->send({buff, (size_t)result->build(que.get(), (uchar*)buff->data())});
+    status.res->send(nullptr);
 }
 
 void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_storage> addrs) {
-    auto status = std::static_pointer_cast<FDnsStatus>(param);
-    std::shared_ptr<Dns_Query> que = status->que;
+    auto id = *std::static_pointer_cast<uint64_t>(param).get();
+    if(fdns->statusmap.count(id) == 0){
+        return;
+    }
+    FDnsStatus& status = fdns->statusmap[id];
+    std::shared_ptr<Dns_Query> que = status.que;
     Dns_Result* rr = nullptr;
     if(error || addrs.empty()){
         rr = new Dns_Result(que->domain);
@@ -146,43 +172,44 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_stor
     }
     std::shared_ptr<Block> buff = std::make_shared<Block>(BUF_LEN);
     if(error) {
-        status->res->send({buff, (size_t)rr->buildError(que.get(), error, (uchar*)buff->data())});
+        status.res->send({buff, (size_t)rr->buildError(que.get(), error, (uchar*)buff->data())});
     }else{
-        status->res->send({buff, (size_t)rr->build(que.get(), (uchar*)buff->data())});
+        status.res->send({buff, (size_t)rr->build(que.get(), (uchar*)buff->data())});
     }
+    status.res->send(nullptr);
 }
 
 void FDns::RawCb(std::shared_ptr<void> param, const char* buff, size_t size) {
-    auto status = std::static_pointer_cast<FDnsStatus>(param);
-    std::shared_ptr<Dns_Query> que = status->que;
+    auto id = *std::static_pointer_cast<uint64_t>(param).get();
+    if(fdns->statusmap.count(id) == 0){
+        return;
+    }
+    FDnsStatus& status = fdns->statusmap[id];
+    std::shared_ptr<Dns_Query> que = status.que;
     if(buff){
         LOGD(DDNS, "<FDNS> Query raw response [%d]\n", que->id);
         DNS_HDR *dnshdr = (DNS_HDR*)buff;
         dnshdr->id = htons(que->id);
-        status->res->send(buff, size);
+        status.res->send(buff, size);
     }else {
         LOGD(DDNS, "<FDNS> Query raw response [%d] error\n", que->id);
         Dns_Result rr(que->domain);
         unsigned char sbuff[BUF_LEN];
-        status->res->send(sbuff, (size_t)rr.buildError(que.get(), DNS_SERVER_FAIL, sbuff));
+        status.res->send(sbuff, (size_t)rr.buildError(que.get(), DNS_SERVER_FAIL, sbuff));
     }
-}
-
-void FDns::deleteLater(uint32_t errcode) {
-    status->req->detach();
-    return Server::deleteLater(errcode);
+    status.res->send(nullptr);
 }
 
 void FDns::dump_stat(Dumper dp, void* param) {
-    if(status->que == nullptr){
-        dp(param, "FDns %p [%" PRIu32 "]: %s\n, error\n", this,
-                status->req->header->request_id,
-                status->req->header->geturl().c_str());
-        return;
+    dp(param, "FDns %p\n");
+    for(const auto& i : statusmap) {
+        const FDnsStatus& status = i.second;
+        if (status.que == nullptr) {
+            dp(param, "  [%" PRIu32 "]: %s, error\n", i.first, status.req->header->geturl().c_str());
+            return;
+        }
+        dp(param, "  [%" PRIu32 "]: %s, %s, id=%d, type=%d\n",
+                i.first, status.req->header->geturl().c_str(),
+                status.que->domain, status.que->id, status.que->type);
     }
-    dp(param, "FDns %p [%" PRIu32 "]: %s\n, %s, type=%d\n", this,
-            status->req->header->request_id,
-            status->req->header->geturl().c_str(),
-            status->que->domain,
-            status->que->type);
 }
