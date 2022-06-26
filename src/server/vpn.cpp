@@ -12,6 +12,7 @@
 volatile uint32_t vpn_contiune = 1;
 
 int vpn_start(int fd){
+    Cli_server* cli = nullptr;
     if(opt.admin && strlen(opt.admin) > 0){
         int svsk_cli = -1;
         if(strncmp(opt.admin, "tcp:", 4) == 0){
@@ -22,7 +23,7 @@ int vpn_start(int fd){
         if(svsk_cli < 0){
             return -1;
         }
-        new Cli_server(svsk_cli);
+        cli = new Cli_server(svsk_cli);
     }
     Vpn_server s(fd);
     LOG("Accepting connections ...\n");
@@ -35,6 +36,7 @@ int vpn_start(int fd){
     }
     LOG("VPN exiting ...\n");
     neglect();
+    delete cli;
     return 0;
 }
 

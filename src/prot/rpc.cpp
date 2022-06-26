@@ -11,13 +11,15 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-void RpcBase::sendJson(json_object *content) {
+bool RpcBase::sendJson(json_object *content) {
     const char* body = json_object_get_string(content);
     size_t len = strlen(body);
+    if(len > 0xffff){
+        return false;
+    }
     char prefix[5];
     sprintf(prefix, "%04zx", len);
-    send(prefix, 4);
-    send(body, len);
+    return send(prefix, 4) && send(body, len);
 }
 
 ssize_t RpcServer::DefaultProc(const char *buff, size_t len) {
@@ -110,8 +112,7 @@ ssize_t RpcClient::DefaultProc(const char *buff, size_t len) {
     }
 out:
     if(!responser.empty()){
-        auto resp = responser.front();
-        resp(jres);
+        responser.front()(jres);
         responser.pop();
     }
     json_object_put(jres);
@@ -121,8 +122,14 @@ out:
 
 void RpcClient::call(const std::string& method, json_object* body, std::function<void(json_object *)> response) {
     json_object_object_add(body, "method", json_object_new_string(method.c_str()));
-    responser.push(response);
-    sendJson(body);
+    if(!sendJson(body)){
+        json_object* jres = json_object_new_object();
+        json_object_object_add(jres, "error", json_object_new_string("send failed"));
+        response(jres);
+        json_object_put(jres);
+    } else {
+        responser.push(response);
+    }
 }
 
 json_object * SproxyServer::call(std::string method, json_object* content) {
@@ -500,15 +507,20 @@ SproxyClient::SproxyClient(const char* sock) {
         size_t off = 0;
         size_t buflen = 1024;
         char* buff = new char[buflen];
+        json_object* jres = json_object_new_object();
         while(true) {
             assert(buflen > off);
             ssize_t ret = read(this->fd, buff + off, buflen - off);
             if(ret < 0){
                 perror("read from server");
-                exit((int)ret);
+                json_object_object_add(jres, "error",
+                                       json_object_new_string("socket error"));
+                break;
             }
             if(ret == 0){
-                //shutdown by destructor
+                fprintf(stderr, "socket closed\n");
+                json_object_object_add(jres, "error",
+                                       json_object_new_string("socket shutdown"));
                 break;
             }
             off += ret;
@@ -527,14 +539,24 @@ SproxyClient::SproxyClient(const char* sock) {
                 off -= eaten;
             }
         }
+        while(!responser.empty()){
+            responser.front()(jres);
+            responser.pop();
+        }
         delete []buff;
+        close(fd);
+        fd = -1;
     });
 }
 SproxyClient::~SproxyClient(){
-    shutdown(fd, SHUT_RDWR);
+    if(fd >= 0){
+        shutdown(fd, SHUT_RDWR);
+    }
     reader.join();
-    close(fd);
 }
-void SproxyClient::send(const char* data, size_t len){
-    write(fd, data, len);
+bool SproxyClient::send(const char* data, size_t len) {
+    if(fd < 0) {
+        return false;
+    }
+    return write(fd, data, len) > 0;
 }

@@ -11,8 +11,8 @@
 
 class RpcBase{
 protected:
-    void sendJson(json_object *content);
-    virtual void send(const char* data, size_t len) = 0;
+    bool sendJson(json_object *content);
+    virtual bool send(const char* data, size_t len) = 0;
 public:
     virtual ssize_t DefaultProc(const char *buff, size_t len) = 0;
 };
@@ -25,8 +25,8 @@ public:
 };
 
 class RpcClient: public RpcBase{
-    std::queue<std::function<void(json_object *)>> responser;
 protected:
+    std::queue<std::function<void(json_object *)>> responser;
     virtual void call(const std::string& method, json_object* body, std::function<void(json_object *)> response);
 public:
     virtual ssize_t DefaultProc(const char *buff, size_t len) override;
@@ -58,7 +58,7 @@ class SproxyClient:virtual public RpcClient {
 public:
     explicit SproxyClient(const char* sock);
     virtual ~SproxyClient();
-    virtual void send(const char* data, size_t len) override;
+    virtual bool send(const char* data, size_t len) override;
 
     std::promise<bool>  AddStrategy(const std::string& host, const std::string& strategy, const std::string& ext);
     std::promise<bool>  DelStrategy(const std::string& host);

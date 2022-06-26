@@ -333,7 +333,11 @@ const char *storage_ntoa(const struct sockaddr_storage *addr){
         inet_ntop(AF_INET, &addr4->sin_addr, ip, sizeof(ip));
         sprintf(buff, "%s:%d", ip, ntohs(addr4->sin_port));
     }else if(addr->ss_family == AF_UNIX) {
-        sprintf(buff, "%s", addrunix->sun_path);
+        if(addrunix->sun_path[0] == '\0'){
+            sprintf(buff, "@%s", addrunix->sun_path+1);
+        }else {
+            sprintf(buff, "%s", addrunix->sun_path);
+        }
     }
     return buff;
 }

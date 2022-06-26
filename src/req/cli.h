@@ -14,7 +14,7 @@ protected:
     void ReadHE(Buffer& bb);
     void Error(int ret, int code);
 
-    virtual void send(const char* data, size_t len) override;
+    virtual bool send(const char* data, size_t len) override;
 public:
     explicit Cli(int fd, const sockaddr_storage* addr);
     ~Cli();

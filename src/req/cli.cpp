@@ -19,8 +19,9 @@ Cli::Cli(int fd, const sockaddr_storage* addr):
 Cli::~Cli(){
 }
 
-void Cli::send(const char *data, size_t len) {
+bool Cli::send(const char *data, size_t len) {
     rwer->buffer_insert(rwer->buffer_end(), Buffer{data, len});
+    return true;
 }
 
 void Cli::ReadHE(Buffer& bb){
@@ -39,13 +40,13 @@ void Cli::ReadHE(Buffer& bb){
         if(ret == 0){
             break;
         }
-        LOGE("<cli> rpc error: %s\n", strerror(-ret));
+        LOGE("(%s) <cli> rpc error: %s\n", rwer->getPeer(), strerror(-ret));
         return deleteLater(PROTOCOL_ERR);
     }
 }
 
 void Cli::Error(int ret, int code) {
-    LOGE("<cli> socket error: %d/%d\n", ret, code);
+    LOGE("(%s) <cli> socket error: %d/%d\n", rwer->getPeer(), ret, code);
     deleteLater(ret);
 }
 
