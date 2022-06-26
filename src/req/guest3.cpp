@@ -15,7 +15,7 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
         unsigned int len;
         qrwer->get_alpn(&data, &len);
         if ((data && strncasecmp((const char*)data, "h3", len) != 0)) {
-            LOGE("unknown protocol: %.*s\n", len, data);
+            LOGE("(%s) unknown protocol: %.*s\n", getsrc(), len, data);
             return Server::deleteLater(PROTOCOL_ERR);
         }
         qrwer->setResetHandler(std::bind(&Guest3::RstProc, this, _1, _2));
@@ -224,9 +224,8 @@ void Guest3::RstProc(uint64_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(errcode){
-            LOGE("(%s)[%" PRIu32 "]: <guest3> [%" PRIu64"]: stream  reseted: %d\n",
-                 getsrc(), status.req->header->request_id,
-                 id, errcode);
+            LOGE("[%" PRIu32 "]: <guest3> (%" PRIu64"): stream  reseted: %d\n",
+                 status.req->header->request_id, id, errcode);
         }
         status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
         Clean(id, errcode);

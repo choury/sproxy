@@ -383,13 +383,7 @@ void dump_dns(Dumper dp, void* param){
     for(size_t i = 0; i < dnsConfig.namecount; i++) {
         dp(param, "  %s\n", getaddrstring(&dnsConfig.server[i]));
     }
-    dp(param, "Dns cache:\n");
-    for(const auto& i: rcd_cache){
-        dp(param, "  %s: %ld\n", i.first.c_str(), i.second.get_time + i.second.ttl - time(nullptr));
-        for(const auto& j: rcdfilter(i.first, i.second.addrs)){
-            dp(param, "    %s\n", getaddrstring(&j));
-        }
-    }
+    dp(param, "Dns cache size: %zd\n", rcd_cache.size());
     dp(param, "Dns blacklist:\n");
     for(const auto& i: rcd_blacklist){
         dp(param, "  %s:\n", i.first.c_str());

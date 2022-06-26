@@ -112,9 +112,8 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
     int len = status.req->cap();
     len = Min(len, size);
     if (len <= 0) {
-        LOGE("(%s)[%" PRIu32 "]: <guest> the host's buff is full (%s)\n", 
-            getsrc(), status.req->header->request_id,
-            status.req->header->geturl().c_str());
+        LOGE("[%" PRIu32 "]: <guest> the host's buff is full (%s)\n",
+            status.req->header->request_id, status.req->header->geturl().c_str());
         rwer->delEvents(RW_EVENT::READ);
         return -1;
     }
@@ -147,9 +146,8 @@ void Guest::Error(int ret, int code) {
         return deleteLater(PEER_LOST_ERR);
     }
     ReqStatus& status = statuslist.back();
-    LOGE("(%s)[%" PRIu32 "]: <guest> error (%s) %d/%d http_flag:0x%x\n",
-            getsrc(), status.req->header->request_id,
-            status.req->header->geturl().c_str(), ret, code, http_flag);
+    LOGE("[%" PRIu32 "]: <guest> error (%s) %d/%d http_flag:0x%x\n",
+         status.req->header->request_id, status.req->header->geturl().c_str(), ret, code, http_flag);
     deleteLater(ret);
 }
 

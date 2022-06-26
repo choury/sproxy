@@ -994,8 +994,9 @@ static const char* dump_vpnStatus(const VpnKey& key, void* protocol_info){
     switch(key.protocol){
     case TCP:{
         TcpStatus* tcp = (TcpStatus*)protocol_info;
-        sprintf(buff, " [window: %u, send_seq: %u, acked: %u, status: %u]",
-                tcp->window << tcp->recv_wscale, tcp->send_seq, tcp->acked, tcp->status);
+        int left = (tcp->window << tcp->recv_wscale) - (tcp->send_seq - tcp->acked);
+        sprintf(buff, " [window: %u, left: %d, send_seq: %u, acked: %u, status: %u]",
+                tcp->window << tcp->recv_wscale, left, tcp->send_seq, tcp->acked, tcp->status);
         break;
     }
     case ICMP:{

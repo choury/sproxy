@@ -201,7 +201,7 @@ void FDns::RawCb(std::shared_ptr<void> param, const char* buff, size_t size) {
 }
 
 void FDns::dump_stat(Dumper dp, void* param) {
-    dp(param, "FDns %p\n");
+    dp(param, "FDns: %p\n", this);
     for(const auto& i : statusmap) {
         const FDnsStatus& status = i.second;
         if (status.que == nullptr) {

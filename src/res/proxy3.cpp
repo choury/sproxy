@@ -62,7 +62,7 @@ Proxy3::~Proxy3() {
 }
 
 void Proxy3::Error(int ret, int code) {
-    LOGE("<proxy3> %p error: %d/%d\n", this, ret, code);
+    LOGE("(%s) <proxy3> error: %d/%d\n", rwer->getPeer(), ret, code);
     http3_flag |= HTTP3_FLAG_ERROR;
     deleteLater(ret);
 }
@@ -190,7 +190,7 @@ void Proxy3::Handle(uint64_t id, ChannelMessage::Signal s) {
 }
 
 void Proxy3::ErrProc(int errcode) {
-    LOGE("<proxy3> %p Http3 error: 0x%08x\n", this, errcode);
+    LOGE("(%s) <proxy3> Http3 error: 0x%08x\n", rwer->getPeer(), errcode);
     deleteLater(errcode);
 }
 
@@ -198,7 +198,7 @@ void Proxy3::RstProc(uint64_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(errcode){
-            LOGE("(%" PRIu32 "): <proxy3> [%" PRIu64 "]: stream reset: %d\n",
+            LOGE("[%" PRIu32 "]: <proxy3> (%" PRIu64 "): stream reset: %d\n",
                  status.req->header->request_id, id, errcode);
         }
         status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back

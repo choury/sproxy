@@ -130,13 +130,12 @@ void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
     [this, &status, id] () mutable{
         auto len = status.req->cap();
         if(len < status.localwinsize){
-            LOGE("(%s)[%" PRIu32 "]: <guest2> [%d] shrunken local window: %d/%d\n",
-                getsrc(), status.req->header->request_id,
-                id, len, status.localwinsize);
+            LOGE("[%" PRIu32 "]: <guest2> (%d) shrunken local window: %d/%d\n",
+                status.req->header->request_id, id, len, status.localwinsize);
         }else if(len == status.localwinsize) {
             return;
         }else if(len - status.localwinsize > FRAMEBODYLIMIT || status.localwinsize <= FRAMEBODYLIMIT/2){
-            LOGD(DHTTP2, "<guest2> [%d] increased local window: %d -> %d\n", id, status.localwinsize, len);
+            LOGD(DHTTP2, "<guest2> (%d) increased local window: %d -> %d\n", id, status.localwinsize, len);
             status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
         }
     });
@@ -155,9 +154,8 @@ void Guest2::DataProc(uint32_t id, const void* data, size_t len) {
             return;
         }
         if(len > (size_t)status.localwinsize){
-            LOGE("(%s)[%" PRIu32 "]: <guest2> [%d] window size error %zu/%d\n", 
-                getsrc(), status.req->header->request_id,
-                id, len, status.localwinsize);
+            LOGE("[%" PRIu32 "]: <guest2> (%d) window size error %zu/%d\n",
+                status.req->header->request_id, id, len, status.localwinsize);
             Clean(id, HTTP2_ERR_FLOW_CONTROL_ERROR);
             return;
         }
@@ -248,9 +246,8 @@ void Guest2::RstProc(uint32_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(errcode){
-            LOGE("(%s)[%" PRIu32 "]: <guest2> [%d]: stream  reseted: %d\n",
-                getsrc(), status.req->header->request_id,
-                id, errcode);
+            LOGE("[%" PRIu32 "]: <guest2> (%d): stream  reseted: %d\n",
+                status.req->header->request_id, id, errcode);
         }
         status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
         Clean(id, errcode);

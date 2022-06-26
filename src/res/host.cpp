@@ -238,8 +238,8 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
     len = Min(len, size);
 
     if (len <= 0) {
-        LOGE("(%s)[%" PRIu32 "]: <host> the guest's write buff is full (%s)\n", 
-            rwer->getPeer(), status.req->header->request_id, 
+        LOGE("[%" PRIu32 "]: <host> the guest's write buff is full (%s)\n",
+            status.req->header->request_id,
             status.req->header->geturl().c_str());
         if(strcasecmp(Server.scheme, "udp") == 0){
             return size;
@@ -266,8 +266,8 @@ void Host::ErrProc(){
 
 void Host::Error(int ret, int code) {
     if(status.req) {
-        LOGE("(%s)[%" PRIu32 "]: <host> error (%s) %d/%d http_flag:0x%x\n",
-            rwer->getPeer(), status.req->header->request_id, 
+        LOGE("[%" PRIu32 "]: <host> error (%s) %d/%d http_flag:0x%x\n",
+            status.req->header->request_id,
             status.req->header->geturl().c_str(), ret, code, http_flag);
     }else{
         LOGE("(%s) <host> error %d/%d http_flag:0x%x\n",

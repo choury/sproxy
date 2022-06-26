@@ -9,7 +9,7 @@
 
 Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
     rwer = std::make_shared<PacketRWer>(host, this->id, Protocol::ICMP, [this](int ret, int code){
-        LOGE("Ping error: %d/%d\n", ret, code);
+        LOGE("(%s) Ping error: %d/%d\n", rwer->getPeer(), ret, code);
         if(res  == nullptr){
             res = std::make_shared<HttpRes>(UnpackHttpRes(H500));
             req->response(this->res);

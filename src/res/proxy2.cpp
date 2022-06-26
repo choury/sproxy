@@ -9,7 +9,7 @@
 Proxy2* proxy2 = nullptr;
 
 void Proxy2::connection_lost(){
-    LOGE("<proxy2> %p the ping timeout, so close it\n", this);
+    LOGE("(%s) <proxy2> the ping timeout, so close it\n", rwer->getPeer());
     deleteLater(PEER_LOST_ERR);
 }
 
@@ -82,7 +82,7 @@ Proxy2::~Proxy2() {
 }
 
 void Proxy2::Error(int ret, int code) {
-    LOGE("<proxy2> %p error: %d/%d\n", this, ret, code);
+    LOGE("(%s) <proxy2> error: %d/%d\n", rwer->getPeer(), ret, code);
     deleteLater(ret);
 }
 
@@ -146,7 +146,7 @@ void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
     status.res = std::make_shared<HttpRes>(header, [this, &status, id]() mutable{
         auto len = status.res->cap();
         if(len < status.localwinsize){
-            LOGE("(%" PRIu32 "): <proxy2> [%d] shrunken local window: %d/%d\n",
+            LOGE("[%" PRIu32 "]: <proxy2> (%d) shrunken local window: %d/%d\n",
                 status.req->header->request_id,
                 id, len, status.localwinsize);
         }else if(len == status.localwinsize) {
@@ -172,7 +172,7 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
             return;
         }
         if(len > (size_t)status.localwinsize){
-            LOGE("(%" PRIu32 "): <proxy2> [%d] window size error %zu/%d\n",
+            LOGE("[%" PRIu32 "]: <proxy2> (%d) window size error %zu/%d\n",
                     status.req->header->request_id, id, len, status.localwinsize);
             Clean(id, status, HTTP2_ERR_FLOW_CONTROL_ERROR);
             return;
@@ -202,7 +202,7 @@ void Proxy2::EndProc(uint32_t id) {
 }
 
 void Proxy2::ErrProc(int errcode) {
-    LOGE("<proxy2> %p Http2 error: 0x%08x\n", this, errcode);
+    LOGE("(%s) <proxy2> Http2 error: 0x%08x\n", rwer->getPeer(), errcode);
     http2_flag |= HTTP2_FLAG_ERROR;
     deleteLater(errcode);
 }
@@ -232,7 +232,7 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(errcode){
-            LOGE("(%" PRIu32 "): <proxy2> [%d]: stream reseted: %d\n",
+            LOGE("[%" PRIu32 "]: <proxy2> (%d): stream reseted: %d\n",
                  status.req->header->request_id, id, errcode);
         }
         status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
@@ -282,7 +282,7 @@ void Proxy2::PingProc(const Http2_header *header){
         double diff = (getutime()-get64(header+1))/1000.0;
         LOG("<proxy2> Get a ping time=%.3fms\n", diff);
         if(diff >= 1000){
-            LOGE("<proxy2> The ping time too long!\n");
+            LOGE("(%s) <proxy2> The ping time too long!\n", rwer->getPeer());
         }
     }
     Http2Base::PingProc(header);
