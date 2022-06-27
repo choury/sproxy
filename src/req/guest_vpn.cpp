@@ -658,6 +658,7 @@ void Guest_vpn::tcpHE(std::shared_ptr<const Ip> pac, const char* packet, size_t 
             deleteLater(PEER_LOST_ERR);
             return;
         case TCP_CLOSE_WAIT:
+            status.res->more();
             //fall through
         case TCP_FIN_WAIT2:
             //fall through

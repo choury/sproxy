@@ -71,22 +71,28 @@ void Proxy3::Reset(uint64_t id, uint32_t code) {
     return std::dynamic_pointer_cast<QuicRWer>(rwer)->Reset(id, code);
 }
 
-void Proxy3::DataProc(uint64_t id, const void* data, size_t len){
+bool Proxy3::DataProc(uint64_t id, const void* data, size_t len){
     if(len == 0){
-        return;
+        return true;
     }
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(status.flags & HTTP_RES_COMPLETED) {
             LOGD(DHTTP3, "<proxy3> DataProc after closed, id:%d\n", (int)id);
             Clean(id, status, HTTP3_ERR_STREAM_CREATION_ERROR);
-            return;
+            return true;
+        }
+        if(status.res->cap() < (int)len){
+            LOGE("[%" PRIu32 "]: <proxy3> (%" PRIu64") the guest's write buff is full (%s)\n",
+                 status.req->header->request_id, id, status.req->header->geturl().c_str());
+            return false;
         }
         status.res->send(data, len);
     }else{
         LOGD(DHTTP3, "<proxy3> DataProc not found id: %" PRIu64 "\n", id);
         Reset(id, HTTP3_ERR_STREAM_CREATION_ERROR);
     }
+    return true;
 }
 
 void Proxy3::GoawayProc(uint64_t id){
@@ -154,7 +160,7 @@ void Proxy3::ResProc(uint64_t id, std::shared_ptr<HttpResHeader> header) {
         if(status.res){
             status.res->send(header);
         }else{
-            status.res = std::make_shared<HttpRes>(header, []{});
+            status.res = std::make_shared<HttpRes>(header, [this]{rwer->Unblock();});
             status.req->response(status.res);
         }
     }else{

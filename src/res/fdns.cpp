@@ -84,7 +84,8 @@ void FDns::request(std::shared_ptr<HttpReq> req, Requester*){
     auto id = req->header->request_id;
     statusmap[id] = FDnsStatus{
         .req = req,
-        .res = res
+        .res = res,
+        .que = nullptr,
     };
     req->response(res);
     req->attach([this, id](ChannelMessage& msg){

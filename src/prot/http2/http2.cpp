@@ -45,6 +45,8 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
             ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
             return 0;
         }
+        //这里我们假定对端一定能接受所有数据，因为我们的窗口大小是根据对端的cap进行设置的
+        //所以DataProc这个函数不需要一个返回值，我们也不考虑对端主动shrunk自己的cap的情况
         DataProc(id, pos, length - padlen);
         if (header->flags & HTTP2_END_STREAM_F) {
             EndProc(id);

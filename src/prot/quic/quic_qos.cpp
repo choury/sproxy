@@ -194,8 +194,7 @@ void pn_namespace::PendAck() {
         pend_frames.emplace_back(new quic_frame{QUIC_FRAME_PING, {}});
     }
 
-    LOGD(DQUIC, "< [%c] ack frame %" PRIu64": %.2fms\n",
-         name, ack->ack.acknowledged, (ack->ack.delay << 3)/1000.0);
+    dumpFrame("<", name, ack);
     pend_frames.push_front(ack);
 }
 
@@ -759,6 +758,17 @@ void QuicQos::PushFrame(pn_namespace* ns, quic_frame *frame) {
     packet_tx = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this) , 0);
 }
 
+void QuicQos::FrontFrame(pn_namespace* ns, quic_frame *frame) {
+    dumpFrame("<", ns->name, frame);
+    assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
+    ns->pend_frames.push_front(frame);
+    packet_tx = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this) , 0);
+}
+
 void QuicQos::PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame* frame) {
     return PushFrame(GetNamespace(level), frame);
+}
+
+void QuicQos::SendNow() {
+    packet_tx = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this) , 0);
 }

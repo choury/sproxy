@@ -108,6 +108,8 @@ public:
     void HandleRetry();
     void PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame* frame);;
     void PushFrame(pn_namespace* ns, quic_frame* frame);
+    void FrontFrame(pn_namespace* ns, quic_frame* frame);
+    void SendNow();
 };
 
 #endif //SPROXY_QUIC_QOS_H

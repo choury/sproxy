@@ -1110,12 +1110,14 @@ void dumpFrame(const char* prefix, char name, const quic_frame* frame) {
     case QUIC_FRAME_ACK:
     case QUIC_FRAME_ACK_ECN: {
         const quic_ack* ack = &frame->ack;
+        uint64_t pos = ack->acknowledged - ack->first_range;
         LOGD(DQUIC, "%s [%c] ack frame %" PRIu64" - %" PRIu64", delay: %" PRIu64"\n", prefix, name,
-             ack->acknowledged - ack->first_range, ack->acknowledged, frame->ack.delay);
-        uint64_t pos = ack->acknowledged;
+             pos, ack->acknowledged, frame->ack.delay);
         for(size_t i = 0; i < ack->range_count; i++){
+            pos -= 2;
             LOGD(DQUIC, "\trange: %" PRIu64" - %" PRIu64"\n",
-                 pos - ack->ranges[i].gap - 2,  pos - ack->ranges[i].gap - ack->ranges[i].length);
+                 pos - ack->ranges[i].gap - ack->ranges[i].length, pos - ack->ranges[i].gap);
+            pos -= ack->ranges[i].gap + ack->ranges[i].length;
         }
         return;
     }

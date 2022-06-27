@@ -90,6 +90,13 @@
 
 class QuicMgr;
 
+class Recvq{
+public:
+    std::list<const quic_frame*> data;
+    ~Recvq();
+    void insert(const quic_frame* frame);
+};
+
 class QuicRWer: public SocketRWer {
 protected:
     SSL_CTX* ctx = nullptr;  // server will be null
@@ -105,7 +112,7 @@ protected:
         size_t   crypto_offset = 0;
         size_t   crypto_want = 0;
         //only crypto and stream frame will be buffered
-        std::multimap<uint64_t, const quic_frame*> recvq;
+        Recvq    recvq;
     } contexts[4];
     struct cid{
         std::string id;
@@ -126,7 +133,8 @@ protected:
 #define STREAM_FLAG_RESET_RECVD   0x20  //打了这个标记意味者后续数据不会再上送到应用层
 #define STREAM_FLAG_RESET_DELIVED 0x40
         uint32_t flags = 0;
-        size_t   offset = 0;
+        size_t   my_offset = 0;
+        size_t   his_offset = 0;
         size_t   finSize = 0;
         uint64_t my_max_data = 0;
         uint64_t his_max_data = 0;

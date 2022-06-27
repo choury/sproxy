@@ -143,21 +143,27 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     distribute(status.req, this);
 }
 
-void Guest3::DataProc(uint64_t id, const void* data, size_t len) {
+bool Guest3::DataProc(uint64_t id, const void* data, size_t len) {
     if(len == 0)
-        return;
+        return true;
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(status.flags & HTTP_REQ_COMPLETED){
             LOGD(DHTTP3, "<guest3> DateProc after closed, id: %" PRIu64"\n", id);
             Clean(id, HTTP3_ERR_STREAM_CREATION_ERROR);
-            return;
+            return true;
+        }
+        if(status.req->cap() < (int)len){
+            LOGE("[%" PRIu32 "]: <guest3> (%" PRIu64")the host's buff is full (%s)\n",
+                 status.req->header->request_id, id, status.req->header->geturl().c_str());
+            return false;
         }
         status.req->send(data, len);
     }else{
         LOGD(DHTTP3, "<guest3> DateProc not found id: %" PRIu64"\n", id);
         Reset(id, HTTP3_ERR_STREAM_CREATION_ERROR);
     }
+    return true;
 }
 
 void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {

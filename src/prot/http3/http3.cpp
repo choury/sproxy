@@ -83,7 +83,9 @@ size_t Http3Base::Http3_Proc(const void* buff, size_t len, uint64_t id) {
             HeadersProc(id, pos, length);
             break;
         case HTTP3_STREAM_DATA:
-            DataProc(id, pos, length);
+            if(!DataProc(id, pos, length)){
+                return 0;
+            }
             break;
         case HTTP3_STREAM_CANCEL_PUSH:
         case HTTP3_STREAM_MAX_PUSH_ID:
@@ -94,7 +96,7 @@ size_t Http3Base::Http3_Proc(const void* buff, size_t len, uint64_t id) {
             break;
         }
         pos += length;
-    }else{
+    } else {
         uint64_t type;
         if(pos + variable_decode_len(pos) > (uchar*)buff + len){
             return 0;
