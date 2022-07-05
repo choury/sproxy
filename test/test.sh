@@ -11,7 +11,7 @@ function test_client(){
     [ $? -ne 0 ] && echo "client test 1 failed" && exit 1
     curl -f -s -x http://$HOSTNAME:$1 http://taobao.com > /dev/null
     [ $? -ne 0 ] && echo "client test 2 failed" && exit 1
-    curl -f -s -x http://$HOSTNAME:$1 https://www.qq.com > /dev/null
+    curl -f -s -x http://$HOSTNAME:$1 https://www.qq.com -A "Mozilla/5.0" > /dev/null
     [ $? -ne 0 ] && echo "client test 3 failed" && exit 1
 
     curl -f -s -x http://$HOSTNAME:$1 http://qq.com -XPOST -d "foo=bar" > /dev/null
@@ -85,7 +85,7 @@ function test_https(){
     [ $? -ne 0 ] && echo "https test 10 failed"
     curl -f -s --http1.1 https://$HOSTNAME:$1/ -H "Host: www.qq.com" -k > /dev/null
     [ $? -ne 0 ] && echo "https test 11 failed" && exit 1
-    curl -f -s --http2 https://$HOSTNAME:$1/ -H "Host: www.qq.com:443" -k > /dev/null
+    curl -f -s --http2 https://$HOSTNAME:$1/ -H "Host: www.qq.com:443" -A "Mozilla/5.0" -k > /dev/null
     [ $? -ne 0 ] && echo "https test 12 failed" && exit 1
     echo ""
 }
