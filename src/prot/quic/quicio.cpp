@@ -712,13 +712,13 @@ QuicRWer::FrameResult QuicRWer::handleResetFrame(const quic_reset *stream) {
     status.flags |= STREAM_FLAG_FIN_RECVD | STREAM_FLAG_RESET_RECVD;
     status.finSize = stream->fsize;
     my_received_data += status.finSize - want;
-    status.rb.consume(status.rb.length());
 
     if((status.flags & STREAM_FLAG_RESET_DELIVED) == 0) {
         status.flags |= STREAM_FLAG_RESET_DELIVED;
         if (resetHandler) {
             resetHandler(id, stream->error);
         }
+        status.rb.consume(status.rb.length());
     }
     return FrameResult::ok;
 }
@@ -844,6 +844,7 @@ QuicRWer::FrameResult QuicRWer::handleFrames(quic_context *context, const quic_f
             if(resetHandler){
                 resetHandler(frame->stop.id, frame->stop.error);
             }
+            status.rb.consume(status.rb.length());
         }
         return FrameResult::ok;
     }
@@ -1419,10 +1420,8 @@ void QuicRWer::ConsumeRData() {
         auto& rb = status.rb;
         assert(rblen >= rb.length());
         if(rb.length() > 0){
-            auto buff = std::make_shared<Block>(rb.length());
-            Buffer wb{buff, rb.get((char*) buff->data(), rb.length()), i.first};
-            readCB(wb);
-            size_t eaten  = rb.length() - wb.len;
+            Buffer bb = rb.get();
+            size_t eaten = rb.length() - readCB(i.first, bb.data(), bb.len);
             LOGD(DQUIC, "consume data [%" PRIu64"]: %" PRIu64" - %" PRIu64", left: %zd\n",
                  i.first, rb.Offset(), rb.Offset() + eaten, rb.length() - eaten);
             rb.consume(eaten);
@@ -1433,8 +1432,7 @@ void QuicRWer::ConsumeRData() {
             assert((status.flags & STREAM_FLAG_FIN_DELIVED) == 0);
             //在QuicRWer中，我们不用 ReadEOF状态，因为它是对整个连接的，而不是对某个stream的
             assert(status.finSize == rb.Offset());
-            Buffer ewb{nullptr, i.first};
-            readCB(ewb);
+            readCB(i.first, nullptr, 0);
             LOGD(DQUIC, "consume EOF [%" PRIu64"]: %" PRIu64"\n", i.first, rb.Offset());
             status.flags |= STREAM_FLAG_FIN_DELIVED;
         }

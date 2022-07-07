@@ -59,16 +59,17 @@ public:
 };
 
 //本质上是Block的封装，但是多了长度和id信息
-//至于为啥有的时候需要直接使用Block类，因为Block类构造的时候指定的长度并不一定是需要的长度
+//至于为啥有的时候需要直接使用Block类，因为Block类构造的时候指定的长度并不一定等于数据长度
 class Buffer{
-    std::shared_ptr<Block> ptr;
+    std::shared_ptr<Block> ptr = nullptr;
+    const void* content = nullptr;
 public:
     uint64_t id = 0;
     size_t len = 0;
     size_t cap = 0;
     Buffer(const Buffer&) = delete;
     Buffer(size_t len, uint64_t id = 0);
-    Buffer(const void* ptr, size_t len, uint64_t id = 0);
+    Buffer(const void* content, size_t len, uint64_t id = 0);
     Buffer(std::shared_ptr<Block> ptr, size_t len, uint64_t id = 0);
     Buffer(std::nullptr_t, uint64_t id = 0);
     Buffer(Buffer&& b);
@@ -76,7 +77,8 @@ public:
     void* reserve(int off);
     // 从末尾截断/扩展数据, 返回截断前的长度
     size_t truncate(size_t left);
-    void* data() const;
+    const void* data() const;
+    void* mutable_data();
     void* end() const;
 };
 
@@ -103,7 +105,7 @@ public:
     ssize_t  Write(std::function<ssize_t(const void*, size_t, uint64_t)> write_func);
 };
 
-
+#if 0
 class RBuffer {
     char content[BUF_LEN*2];
     size_t len = 0;
@@ -120,16 +122,20 @@ public:
     const char* data();
     size_t consume(size_t l);
 };
+#endif
 
+//CBuffer 是一个环形buffer
 class CBuffer {
     char content[BUF_LEN*2];
     uint64_t offset = 0;
     size_t len = 0;
 public:
     //for put
+    char* end(); 
+    //left返回的是可以在end() 返回的指针后面可以直接写入的数据长度
     size_t left();
-    char* end();
-    void add(size_t l);
+    void append(size_t l);
+    //put类似与先调用end()获取指针写数据后，再调用append调整长度
     ssize_t put(const void* data, size_t size);
     uint64_t Offset(){
         return offset;
@@ -138,17 +144,18 @@ public:
     //for get
     size_t length();
     size_t cap();
-    size_t get(char* buff, size_t len);
+    Buffer get();
     void consume(size_t l);
 };
 
-
+//EBuffer也是一个环形buffer,只不过数据快写满的话，它会动态扩容
 class EBuffer {
     char* content;
     size_t size = BUF_LEN * 2;
     uint64_t offset = 0;
     size_t len = 0;
     void expand(size_t newsize);
+    static uint64_t put(void* dst, uint64_t pos, size_t size, const void* data, size_t dsize);
 public:
     EBuffer() {
         content = new char[size];
@@ -170,7 +177,7 @@ public:
     //for put
     size_t left();
     char* end();
-    void add(size_t l);
+    void append(size_t l);
     ssize_t put(const void* data, size_t size);
     uint64_t Offset(){
         return offset;
@@ -179,7 +186,7 @@ public:
     //for get
     size_t length();
     size_t cap();
-    size_t get(char* buff, size_t len);
+    Buffer get();
     void consume(size_t l);
 };
 

@@ -38,10 +38,12 @@ Proxy2::Proxy2(std::shared_ptr<SslRWer> rwer) {
         proxy2 = this;
     }
     rwer->SetErrorCB(std::bind(&Proxy2::Error, this, _1, _2));
-    rwer->SetReadCB([this](Buffer& bb){
-        if(bb.len == 0){
+    rwer->SetReadCB([this](uint64_t, const void* data, size_t len) -> size_t {
+        LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu\n", this->rwer->getPeer(), len);
+        if(len == 0){
             //EOF
-            return deleteLater(NOERROR);
+            deleteLater(NOERROR);
+            return 0;
         }
 #ifndef __ANDROID__
         this->ping_check_job = this->rwer->updatejob(
@@ -51,12 +53,14 @@ Proxy2::Proxy2(std::shared_ptr<SslRWer> rwer) {
         receive_time = getmtime();
 #endif
         size_t ret = 0;
-        while((bb.len > 0) && (ret = (this->*Http2_Proc)((uchar*) bb.data(), bb.len))){
-            bb.reserve(ret);
+        while((len > 0) && (ret = (this->*Http2_Proc)((const uchar*)data, len))){
+            len -= ret;
+            data = (const char*)data + ret;
         }
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
+        return len;
     });
     rwer->SetWriteCB([this](uint64_t id){
         if(statusmap.count(id) == 0){

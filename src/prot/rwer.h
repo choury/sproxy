@@ -45,8 +45,8 @@ protected:
     uint32_t   flags = 0;
     RWerStats  stats = RWerStats::Idle;
     WBuffer    wbuff;
-    //std::function<void(size_t len, uint64_t id)> readCB;
-    std::function<void(Buffer&)> readCB;
+    //返回值是剩余未处理的数据长度，返回0表示数据处理完毕，返回len表示数据完全没有被消费
+    std::function<size_t(uint64_t id, const void* data, size_t len)> readCB;
     std::function<void(uint64_t id)> writeCB;
     std::function<void(const sockaddr_storage&)> connectCB;
     std::function<void(int ret, int code)> errorCB;
@@ -65,7 +65,7 @@ public:
     explicit RWer(std::function<void(int ret, int code)> errorCB,
                   std::function<void(const sockaddr_storage&)> connectCB);
     virtual void SetErrorCB(std::function<void(int ret, int code)> func);
-    virtual void SetReadCB(std::function<void(Buffer&)> func);
+    virtual void SetReadCB(std::function<size_t(uint64_t id, const void* data, size_t len)> func);
     virtual void SetWriteCB(std::function<void(uint64_t id)> func);
 
     virtual void Close(std::function<void()> func);

@@ -22,16 +22,16 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
         Init();
     }))
 {
-    rwer->SetReadCB([this](Buffer& bb){
-        LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", getsrc(), bb.id, bb.len);
-        if(bb.len == 0){
+    rwer->SetReadCB([this](uint64_t id, const void* data, size_t len) -> size_t {
+        LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", getsrc(), id, len);
+        if(len == 0){
             //fin
-            uint64_t id = bb.id;
             if(ctrlid_remote && id == ctrlid_remote){
-                return Error(PROTOCOL_ERR, HTTP3_ERR_CLOSED_CRITICAL_STREAM);
+                Error(PROTOCOL_ERR, HTTP3_ERR_CLOSED_CRITICAL_STREAM);
+                return 0;
             }
             if(!statusmap.count(id)){
-                return;
+                return 0;
             }
             LOGD(DHTTP3, "<guest3> [%" PRIu64 "]: end of stream\n", id);
             ReqStatus& status = statusmap[id];
@@ -40,12 +40,14 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
             if(status.flags & HTTP_RES_COMPLETED) {
                 Clean(id, NOERROR);
             }
-            return;
+            return 0;
         }
         size_t ret = 0;
-        while((bb.len > 0) && (ret = Http3_Proc((uchar*) bb.data(), bb.len, bb.id))){
-            bb.reserve(ret);
+        while((len > 0) && (ret = Http3_Proc((const uchar*)data, len, id))){
+            len -= ret;
+            data = (const char*)data + ret;
         }
+        return len;
     });
     rwer->SetWriteCB([this](uint64_t id){
         if(statusmap.count(id) == 0){

@@ -38,15 +38,16 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
             return 0;
         }, []{return BUF_LEN;});
     });
-    rwer->SetReadCB([this](Buffer& bb){
+    rwer->SetReadCB([this](uint64_t, const void* data, size_t len) -> size_t{
         if(res == nullptr){
             res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
             req->response(this->res);
         }
+        Buffer bb{(char*)data, len};
         switch(family){
         case AF_INET:
             if(israw){
-                const ip* iphdr = (ip*) bb.data();
+                const ip* iphdr = (ip*)data;
                 size_t hlen = iphdr->ip_hl << 2;
                 bb.reserve(sizeof(icmphdr) + hlen);
                 res->send(std::move(bb));
@@ -67,6 +68,7 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
         default:
             abort();
         }
+        return 0;
     });
 }
 

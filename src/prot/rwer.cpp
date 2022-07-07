@@ -24,9 +24,9 @@ RWer::RWer(int fd, std::function<void(int ret, int code)> errorCB):
     Ep(fd), errorCB(std::move(errorCB))
 {
     assert(this->errorCB != nullptr);
-    readCB = [](Buffer& bb){
-        LOGE("discard data from stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
-        bb.reserve(bb.len);
+    readCB = [](uint64_t id, const void*, size_t len) -> size_t {
+        LOGE("discard data from stub readCB: %zd [%" PRIu64 "]\n", len, id);
+        return 0;
     };
     writeCB = [](size_t){};
 }
@@ -37,9 +37,9 @@ RWer::RWer(std::function<void (int, int)> errorCB, std::function<void(const sock
 {
     assert(this->errorCB != nullptr);
     assert(this->connectCB != nullptr);
-    readCB = [](Buffer& bb){
-        LOGE("discard data from stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
-        bb.reserve(bb.len);
+    readCB = [](uint64_t id, const void*, size_t len) -> size_t {
+        LOGE("discard data from stub readCB: %zd [%" PRIu64 "]\n", len, id);
+        return 0;
     };
     writeCB = [](size_t){};
 }
@@ -75,7 +75,7 @@ void RWer::SetErrorCB(std::function<void(int ret, int code)> func){
     errorCB = std::move(func);
 }
 
-void RWer::SetReadCB(std::function<void(Buffer&)> func){
+void RWer::SetReadCB(std::function<size_t(uint64_t id, const void* data, size_t len)> func){
     readCB = std::move(func);
     Unblock();
 }
@@ -94,6 +94,12 @@ void RWer::defaultHE(RW_EVENT events){
         ReadData();
         flags &= ~RWER_READING;
     }
+    if(stats == RWerStats::ReadEOF){
+        delEvents(RW_EVENT::READ);
+        flags |= RWER_READING;
+        ConsumeRData();
+        flags &= ~RWER_READING;
+    }
     if(flags & RWER_CLOSING){
         return;
     }
@@ -101,12 +107,6 @@ void RWer::defaultHE(RW_EVENT events){
         flags |= RWER_SENDING;
         SendData();
         flags &= ~RWER_SENDING;
-    }
-    if(stats == RWerStats::ReadEOF){
-        delEvents(RW_EVENT::READ);
-        flags |= RWER_READING;
-        ConsumeRData();
-        flags &= ~RWER_READING;
     }
 }
 
@@ -280,8 +280,7 @@ ssize_t FullRWer::cap(uint64_t) {
 }
 
 void FullRWer::ConsumeRData() {
-    Buffer wb{nullptr};
-    readCB(wb);
+    readCB(0, nullptr, 0);
 }
 
 void FullRWer::ReadData(){

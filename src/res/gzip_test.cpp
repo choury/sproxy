@@ -82,10 +82,10 @@ void GzipTest::request(std::shared_ptr<HttpReq> req, Requester*) {
     if (accept && strstr(accept, "gzip")) {
         header->set("Transfer-Encoding", "chunked");
         header->set("Content-Encoding", "gzip");
-        rwer->SetReadCB(std::bind(&GzipTest::gzipreadHE, this, _1));
+        rwer->SetReadCB(std::bind(&GzipTest::gzipreadHE, this, _1, _2, _3));
     } else {
         header->set("Content-Length", left);
-        rwer->SetReadCB(std::bind(&GzipTest::rawreadHE, this, _1));
+        rwer->SetReadCB(std::bind(&GzipTest::rawreadHE, this, _1, _2, _3));
     }
     if (req->header->ismethod("HEAD")) {
         left = 0;
@@ -101,23 +101,23 @@ void GzipTest::request(std::shared_ptr<HttpReq> req, Requester*) {
     }, []{return 0;});
 }
 
-void GzipTest::gzipreadHE(Buffer&) {
+size_t GzipTest::gzipreadHE(uint64_t, const void*, size_t) {
     if(res == nullptr){
-        return;
+        return 0;
     }
     if (left == 0) {
         (void)deflateEnd(&strm);
         res->send(nullptr);
         deleteLater(NOERROR);
         rwer->delEvents(RW_EVENT::READ);
-        return;
+        return 0;
     }
     LOGD(DFILE, "gzip zip readHE\n");
 
     ssize_t chunk = res->cap();
     if(chunk <= 0){
         rwer->delEvents(RW_EVENT::READ);
-        return;
+        return 0;
     }
 
     auto buff = std::make_shared<Block>(chunk);
@@ -138,25 +138,26 @@ void GzipTest::gzipreadHE(Buffer&) {
     if (strm.avail_out == 0) {
         rwer->delEvents(RW_EVENT::READ);
     }
+    return 0;
 }
 
-void GzipTest::rawreadHE(Buffer&) {
+size_t GzipTest::rawreadHE(uint64_t, const void*, size_t) {
     if(res == nullptr){
-        return;
+        return 0;
     }
     if (left == 0) {
         (void)deflateEnd(&strm);
         res->send(nullptr);
         deleteLater(NOERROR);
         rwer->delEvents(RW_EVENT::READ);
-        return;
+        return 0;
     }
 
     LOGD(DFILE, "gzip raw readHE\n");
     ssize_t chunk = res->cap();
     if(chunk <= 0){
         rwer->delEvents(RW_EVENT::READ);
-        return;
+        return 0;
     }
 
     size_t len = Min(chunk, left);
@@ -165,6 +166,7 @@ void GzipTest::rawreadHE(Buffer&) {
     if (left) {
         rwer->delEvents(RW_EVENT::READ);
     }
+    return 0;
 }
 
 void GzipTest::deleteLater(uint32_t error) {

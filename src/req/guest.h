@@ -20,7 +20,7 @@ protected:
         uint      flags;
     };
     std::list<ReqStatus> statuslist;
-    void ReadHE(Buffer& bb);
+    size_t ReadHE(uint64_t id, const void* data, size_t len);
     void WriteHE(uint64_t id);
     virtual void Error(int ret, int code);
     

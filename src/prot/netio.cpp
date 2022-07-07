@@ -235,15 +235,12 @@ size_t StreamRWer::rlength() {
 
 void StreamRWer::ConsumeRData() {
     if(rb.length()){
-        auto buff = std::make_shared<Block>(rb.length());
-        Buffer wb{buff, rb.get((char*) buff->data(), rb.length())};
-        size_t len = wb.len;
-        readCB(wb);
-        rb.consume(len - wb.len);
+        Buffer wb = rb.get();
+        size_t left = readCB(0, wb.data(), wb.len);
+        rb.consume(wb.len - left);
     }
     if(stats == RWerStats::ReadEOF && rb.length() == 0 && (flags & RWER_EOFDELIVED) == 0){
-        Buffer wb{nullptr, 0};
-        readCB(wb);
+        readCB(0, nullptr, 0);
         flags |= RWER_EOFDELIVED;
     }
 }
@@ -257,13 +254,12 @@ void StreamRWer::ReadData() {
     while((left = rb.left())){
         int ret = Read(rb.end(), left);
         if(ret > 0){
-            rb.add((size_t)ret);
+            rb.append((size_t) ret);
             continue;
         }
         if(ret == 0){
             // Eof will send to handler after rb are consumed
             stats = RWerStats::ReadEOF;
-            delEvents(RW_EVENT::READ);
             break;
         }
         if(errno == EAGAIN){
@@ -281,7 +277,7 @@ void StreamRWer::ReadData() {
 }
 
 size_t PacketRWer::rlength() {
-    return rb.length();
+    return rlen;
 }
 
 ssize_t PacketRWer::Read(void* buff, size_t len) {
@@ -289,30 +285,26 @@ ssize_t PacketRWer::Read(void* buff, size_t len) {
 }
 
 void PacketRWer::ConsumeRData() {
-    if(rb.length()){
-        Buffer bb{rb.data(), rb.length()};
-        size_t len = bb.len;
-        readCB(bb);
-        rb.consume(len - bb.len);
+    if(rlen > 0){
+        size_t left = readCB(0, rb, rlen);
+        rlen = left;
+        assert(rlen == 0);
     }
-    if(stats == RWerStats::ReadEOF && rb.length() == 0 && (flags & RWER_EOFDELIVED) == 0){
-        Buffer wb{nullptr};
-        readCB(wb);
+    if(stats == RWerStats::ReadEOF && (flags & RWER_EOFDELIVED) == 0){
+        readCB(0, nullptr, 0);
         flags |= RWER_EOFDELIVED;
     }
 }
 
 void PacketRWer::ReadData() {
-    size_t left = 0;
-    while((left = rb.left())){
-        int ret = Read(rb.end(), left);
+    while(true){
+        int ret = Read(rb, sizeof(rb));
         if(ret > 0){
-            rb.add((size_t)ret);
+            rlen = ret;
             ConsumeRData();
             continue;
         }
         if(ret == 0){
-            delEvents(RW_EVENT::READ);
             stats = RWerStats::ReadEOF;
             break;
         }
@@ -321,8 +313,5 @@ void PacketRWer::ReadData() {
         }
         ErrorHE(SOCKET_ERR, errno);
         return;
-    }
-    if(rb.cap() == 0){
-        delEvents(RW_EVENT::READ);
     }
 }

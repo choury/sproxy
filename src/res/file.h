@@ -14,13 +14,13 @@ struct FileStatus{
     uint  flags;
 };
 
-class File:public Responser{
+class File: public Responser{
     char filename[URLLIMIT];
     char *suffix = nullptr;
     int  fd = 0;
     struct stat st;
     FileStatus status{};
-    virtual void readHE(Buffer& bb);
+    size_t readHE(uint64_t id, const void* data, size_t len);
     virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
 public:
     explicit File(const char* fname, int fd, const struct stat* st);

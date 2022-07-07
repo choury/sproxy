@@ -24,15 +24,17 @@ bool Guest2::wantmore(const ReqStatus& status) {
 
 Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
     rwer->SetErrorCB(std::bind(&Guest2::Error, this, _1, _2));
-    rwer->SetReadCB([this](Buffer& bb){
-        LOGD(DHTTP2, "<guest2> (%s) read: len:%zu\n", getsrc(), bb.len);
-        if(bb.len == 0){
+    rwer->SetReadCB([this](uint64_t, const void* data, size_t len) -> size_t {
+        LOGD(DHTTP2, "<guest2> (%s) read: len:%zu\n", getsrc(), len);
+        if(len == 0){
             //EOF
-            return deleteLater(NOERROR);
+            deleteLater(NOERROR);
+            return 0;
         }
         size_t ret = 0;
-        while((bb.len >  0) && (ret = (this->*Http2_Proc)((const uchar*) bb.data(), bb.len))){
-            bb.reserve(ret);
+        while((len > 0) && (ret = (this->*Http2_Proc)((const uchar*)data, len))){
+            len -= ret;
+            data = (const uchar*) data + ret;
         }
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
@@ -40,6 +42,7 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
         this->connection_lost_job = this->rwer->updatejob(
                 this->connection_lost_job,
                 std::bind(&Guest2::connection_lost, this), 1800000);
+        return len;
     });
     rwer->SetWriteCB([this](uint64_t id){
         if(statusmap.count(id) == 0){

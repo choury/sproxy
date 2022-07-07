@@ -11,8 +11,8 @@ class GzipTest: public Responser{
     size_t left = 0;
     std::shared_ptr<HttpReq> req;
     std::shared_ptr<HttpRes> res;
-    virtual void gzipreadHE(Buffer&);
-    virtual void rawreadHE(Buffer&);
+    size_t gzipreadHE(uint64_t id, const void* data, size_t len);
+    size_t rawreadHE(uint64_t id, const void* data, size_t len);
 public:
     GzipTest();
 	virtual ~GzipTest() override;

@@ -22,10 +22,10 @@ bool operator<(VpnKey a, VpnKey b);
 #define VPN_TCP_WSCALE   9u
 
 struct TcpStatus{
-    uint32_t   send_seq;
-    uint32_t   send_ack;
-    uint32_t   acked;
-    uint32_t   want_seq;
+    uint32_t   sent_seq;
+    uint32_t   sent_ack;
+    uint32_t   recv_ack;
+    uint32_t   want_seq; //收到的对方 seq+1，可以直接当作ack
     uint16_t   window;
     uint16_t   mss;
     uint64_t   options;

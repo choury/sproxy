@@ -94,7 +94,7 @@ File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
     }
     strcpy(filename, fname);
     suffix = strrchr(filename, '.');
-    rwer->SetReadCB(std::bind(&File::readHE, this, _1));
+    rwer->SetReadCB(std::bind(&File::readHE, this, _1, _2, _3));
 }
 
 
@@ -165,9 +165,9 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
     }, []{return 0;});
 }
 
-void File::readHE(Buffer&) {
+size_t File::readHE(uint64_t, const void* , size_t) {
     if(status.res == nullptr){
-        return;
+        return 0;
     }
     Range& rg = status.rg;
     LOGD(DFILE, "%s readHE %zd-%zd, flags: %d\n", filename, rg.begin, rg.end, status.flags);
@@ -175,12 +175,12 @@ void File::readHE(Buffer&) {
         status.res->send(nullptr);
         deleteLater(NOERROR);
         rwer->delEvents(RW_EVENT::READ);
-        return;
+        return 0;
     }
     int len = Min(status.res->cap(), rg.end - rg.begin + 1);
     if (len <= 0) {
         rwer->delEvents(RW_EVENT::READ);
-        return;
+        return 0;
     }
     auto buff = std::make_shared<Block>(len);
     len = pread(fd, buff->data(), len, rg.begin);
@@ -189,10 +189,11 @@ void File::readHE(Buffer&) {
         status.res->send(ChannelMessage::CHANNEL_ABORT);
         deleteLater(SOCKET_ERR);
         rwer->delEvents(RW_EVENT::READ);
-        return;
+        return 0;
     }
     status.res->send({buff, (size_t)len});
     rg.begin += len;
+    return 0;
 }
 
 void File::deleteLater(uint32_t error) {

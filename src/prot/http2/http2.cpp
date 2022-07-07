@@ -85,7 +85,7 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
         }
         header_buffer->id = id;
         header_buffer->truncate(length - padlen);
-        memcpy(header_buffer->data(), pos, length - padlen);
+        memcpy(header_buffer->mutable_data(), pos, length - padlen);
         if (header->flags & HTTP2_END_STREAM_F) {
             http2_flag |= HTTP2_FLAG_END;
         }

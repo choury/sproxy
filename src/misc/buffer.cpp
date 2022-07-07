@@ -11,10 +11,11 @@ Buffer::Buffer(size_t len, uint64_t id):
     assert(this->ptr != nullptr);
 }
 
-Buffer::Buffer(const void* ptr, size_t len, uint64_t id):
-        ptr(std::make_shared<Block>(ptr, len)), id(id), len(len), cap(len)
+
+Buffer::Buffer(const void* content, size_t len, uint64_t id):
+        ptr(nullptr), content(content), id(id), len(len), cap(len)
 {
-    assert(this->ptr != nullptr);
+    assert(content != nullptr);
 }
 
 Buffer::Buffer(std::shared_ptr<Block> ptr, size_t len, uint64_t id):
@@ -27,21 +28,24 @@ Buffer::Buffer(std::nullptr_t, uint64_t id): id(id){
 }
 
 Buffer::Buffer(Buffer&& b){
-    assert(b.ptr != nullptr || b.len == 0);
-    ptr = b.ptr;
+    assert(b.ptr != nullptr || b.content != nullptr || b.len == 0);
     id = b.id;
     len = b.len;
     cap = b.len;
-    b.ptr = nullptr;
-    b.id = 0;
-    b.cap = 0;
-    b.len = 0;
+    if(b.ptr != nullptr){
+        ptr = b.ptr;
+        b.ptr = nullptr;
+        b.id = 0;
+        b.cap = 0;
+        b.len = 0;
+    } else {
+        content = b.content;
+    }
 }
 
 void* Buffer::reserve(int off){
     if(ptr == nullptr){
-        assert(len == 0);
-        ptr = std::make_shared<Block>(0);
+        ptr = std::make_shared<Block>(content, len);
     }
     assert((int)len >= off);
     len -= off;
@@ -50,19 +54,34 @@ void* Buffer::reserve(int off){
 
 size_t Buffer::truncate(size_t left) {
     size_t origin = len;
-    if(left > cap){
+    if (left <= cap) {
+        len = left;
+        return origin;
+    }
+    if(ptr) {
         auto new_ptr = std::make_shared<Block>(left);
         memcpy(new_ptr->data(), ptr->data(), len);
         ptr = new_ptr;
+        cap = left;
+    }else {
+        ptr = std::make_shared<Block>(left);
+        memcpy(ptr->data(), content, len);
         cap = left;
     }
     len = left;
     return origin;
 }
 
-void* Buffer::data() const{
+const void* Buffer::data() const{
     if(ptr == nullptr){
-        return nullptr;
+        return content;
+    }
+    return ptr->data();
+}
+
+void* Buffer::mutable_data() {
+    if(ptr == nullptr){
+        ptr = std::make_shared<Block>(content, len);
     }
     return ptr->data();
 }
@@ -123,6 +142,7 @@ WBuffer::~WBuffer() {
     len = 0;
 }
 
+#if 0
 size_t RBuffer::left(){
     return sizeof(content) - len;
 }
@@ -165,6 +185,7 @@ size_t RBuffer::consume(size_t l) {
 char* RBuffer::end(){
     return content+len;
 }
+#endif
 
 size_t CBuffer::left(){
     uint32_t start = offset % sizeof(content);
@@ -184,7 +205,7 @@ size_t CBuffer::cap() {
     return sizeof(content) - len;
 }
 
-void CBuffer::add(size_t l){
+void CBuffer::append(size_t l){
     len += l;
     assert(len <= sizeof(content));
 }
@@ -208,21 +229,19 @@ ssize_t CBuffer::put(const void *data, size_t size) {
     return (ssize_t)len;
 }
 
-size_t CBuffer::get(char* buff, size_t size){
-    assert(size != 0);
-    size = Min(len, size);
-
+Buffer CBuffer::get(){
     uint32_t start = offset % sizeof(content);
-    uint32_t finish = (offset + size) % sizeof(content);
+    uint32_t finish = (offset + len) % sizeof(content);
 
     if(finish > start){
-        memcpy(buff, content+ start , size);
-        return size;
+        return Buffer{content + start, len};
     }
+    Buffer bb{len};
     size_t l = sizeof(content) - start;
-    memcpy(buff, content + start, l);
-    memcpy(buff + l, content, finish);
-    return size;
+    memcpy(bb.mutable_data(), content + start, l);
+    memcpy((char*)bb.mutable_data() + l, content, finish);
+    bb.truncate(len);
+    return bb;
 }
 
 void CBuffer::consume(size_t l){
@@ -253,23 +272,44 @@ size_t EBuffer::cap() {
     return size - len;
 }
 
-void EBuffer::add(size_t l){
+void EBuffer::append(size_t l){
     len += l;
     assert(len <= size);
 }
 
 void EBuffer::expand(size_t newsize) {
-    char *buf = new char[len];
-    size_t datalen = get(buf, len);
-    assert(datalen < MAX_BUF_LEN);
+    uint32_t start = offset % size;
+    uint32_t finish = (offset + len) % size;
+
+    char *newcontent = new char[newsize];
+    if(finish > start){
+        put(newcontent, offset, newsize, content + start, len);
+    }else if(len > 0){
+        size_t l = size - start;
+        put(newcontent, offset, newsize, content + start, l);
+        put(newcontent, offset + l, newsize, content, finish);
+    }
 
     delete[] content;
-    content = new char[newsize];
+    content = newcontent;
     size = newsize;
-    len = 0;
+}
 
-    put(buf, datalen);
-    delete[] buf;
+uint64_t EBuffer::put(void* dst, uint64_t pos, size_t size, const void* data, size_t dsize){
+    if(dsize == 0){
+        return pos;
+    }
+    assert(dsize <= size);
+    uint32_t start = pos  % size;
+    uint32_t finish = (pos +  dsize) % size;
+    if(finish > start){
+        memcpy((char*)dst + start, data, dsize);
+    }else{
+        size_t l = size - start;
+        memcpy((char*)dst + start, data, l);
+        memcpy(dst, (const char*)data + l, finish);
+    }
+    return pos + dsize;
 }
 
 ssize_t EBuffer::put(const void *data, size_t sizeofdata) {
@@ -280,36 +320,25 @@ ssize_t EBuffer::put(const void *data, size_t sizeofdata) {
     if(result > size/2 && size < MAX_BUF_LEN){
         expand(std::min(size * 2, (size_t)MAX_BUF_LEN));
     }
-
-    uint32_t start = (offset + len) % size;
-    uint32_t finish = (offset +  result) % size;
-    if(finish > start){
-        memcpy(content + start, data, sizeofdata);
-    }else{
-        size_t l = size - start;
-        memcpy(content + start, data, l);
-        memcpy(content, (const char*)data + l, finish);
-    }
+    put(content, offset + len, size, data, sizeofdata);
     len = result;
     assert(len <= size);
     return result;
 }
 
-size_t EBuffer::get(char* buff, size_t sizeofbuff){
-    assert(sizeofbuff != 0);
-    sizeofbuff = Min(len, sizeofbuff);
-
+Buffer EBuffer::get(){
     uint32_t start = offset % size;
-    uint32_t finish = (offset + sizeofbuff) % size;
+    uint32_t finish = (offset + len) % size;
 
     if(finish > start){
-        memcpy(buff, content + start , sizeofbuff);
-        return sizeofbuff;
+        return Buffer{content + start, len};
     }
+    Buffer bb{len};
     size_t l = size - start;
-    memcpy(buff, content + start, l);
-    memcpy(buff + l, content, finish);
-    return sizeofbuff;
+    memcpy(bb.mutable_data(), content + start, l);
+    memcpy((char*)bb.mutable_data() + l, content, finish);
+    bb.truncate(len);
+    return bb;
 }
 
 void EBuffer::consume(size_t l){

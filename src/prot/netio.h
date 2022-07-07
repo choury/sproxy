@@ -48,7 +48,8 @@ public:
 
 class PacketRWer: public SocketRWer{
 protected:
-    RBuffer rb;
+    char rb[BUF_LEN * 2];
+    size_t rlen = 0;
     virtual ssize_t Read(void* buff, size_t len);
     virtual void ReadData() override;
     virtual void ConsumeRData() override;

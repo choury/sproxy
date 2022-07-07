@@ -543,6 +543,7 @@ SproxyClient::SproxyClient(const char* sock) {
             responser.front()(jres);
             responser.pop();
         }
+        json_object_put(jres);
         delete []buff;
         close(fd);
         fd = -1;

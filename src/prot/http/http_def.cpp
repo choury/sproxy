@@ -60,7 +60,7 @@ void Channel::send(std::nullptr_t) {
 }
 
 void Channel::send(const void *data, size_t len) {
-    send(ChannelMessage(Buffer{data, len}));
+    send(ChannelMessage(Buffer{std::make_shared<Block>(data, len), len}));
 }
 
 void Channel::send(ChannelMessage::Signal s) {

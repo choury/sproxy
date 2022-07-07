@@ -197,7 +197,7 @@ std::shared_ptr<HttpReqHeader> UnpackHttpReq(const void* header, size_t len){
     }
 
     char method[20] = {0};
-    std:: string url, path;
+    std::string url, path;
     url.resize(URLLIMIT);
     path.resize(URLLIMIT);
     sscanf(httpheader.c_str(), "%19s%*[ ]%4095[^" CRLF " ]", method, &url[0]);

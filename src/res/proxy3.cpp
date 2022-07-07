@@ -12,28 +12,31 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
         proxy3 = this;
     }
     rwer->SetErrorCB(std::bind(&Proxy3::Error, this, _1, _2));
-    rwer->SetReadCB([this](Buffer& bb){
-        if(bb.len == 0){
+    rwer->SetReadCB([this](uint64_t id, const void* data, size_t len) -> size_t {
+        LOGD(DHTTP3, "<proxy3> (%s) read [%" PRIu64"]: len:%zu\n", this->rwer->getPeer(), id, len);
+        if(len == 0){
             //fin
-            uint64_t id = bb.id;
             if(ctrlid_remote && id == ctrlid_remote){
-                return Error(PROTOCOL_ERR, HTTP3_ERR_CLOSED_CRITICAL_STREAM);
+                Error(PROTOCOL_ERR, HTTP3_ERR_CLOSED_CRITICAL_STREAM);
+                return 0;
             }
             if(!statusmap.count(id)){
-                return;
+                return 0;
             }
             ReqStatus& status = statusmap[id];
             LOGD(DHTTP3, "<proxy3> [%" PRIu64 "]: end of stream\n", id);
             assert((status.flags & HTTP_RES_COMPLETED) == 0);
             status.flags |= HTTP_RES_COMPLETED;
             status.res->send(nullptr);
-            return;
+            return 0;
         }
 
         size_t ret = 0;
-        while((bb.len > 0) && (ret = Http3_Proc((uchar*) bb.data(), bb.len, bb.id))){
-            bb.reserve(ret);
+        while((len > 0) && (ret = Http3_Proc((const uchar*)data, len, id))){
+            len -= ret;
+            data = (const char*)data + ret;
         }
+        return len;
     });
     rwer->SetWriteCB([this](uint64_t id){
         if(statusmap.count(id) == 0){

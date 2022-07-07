@@ -9,13 +9,14 @@
 #include <assert.h>
 #include <inttypes.h>
 
-void Guest::ReadHE(Buffer& bb){
-    LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", getsrc(), bb.len);
-    if(bb.len == 0){
+size_t Guest::ReadHE(uint64_t, const void* data, size_t len){
+    LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", getsrc(), len);
+    if(len == 0){
         //EOF
         if(statuslist.empty()){
             //clearly close
-            return deleteLater(NOERROR);
+            deleteLater(NOERROR);
+            return 0;
         }
         ReqStatus& status = statuslist.back();
         if(Http_Proc == &Guest::AlwaysProc){
@@ -24,17 +25,19 @@ void Guest::ReadHE(Buffer& bb){
             status.req->send(nullptr);
             status.flags |= HTTP_REQ_COMPLETED;
             if(status.flags & HTTP_RES_COMPLETED){
-                return deleteLater(NOERROR);
+                deleteLater(NOERROR);
             }
-            return;
+            return 0;
         }
         deleteLater(NOERROR);
-        return;
+        return 0;
     }
     size_t ret = 0;
-    while(bb.len > 0 && (ret = (this->*Http_Proc)((char*)bb.data(), bb.len))){
-        bb.reserve(ret);
+    while(len > 0 && (ret = (this->*Http_Proc)((char*)data, len))){
+        len -= ret;
+        data = (const char*)data + ret;
     }
+    return len;
 }
 
 void Guest::WriteHE(uint64_t){
@@ -70,7 +73,7 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
     }else{
         init(std::make_shared<StreamRWer>(fd, addr, std::bind(&Guest::Error, this, _1, _2)));
     }
-    rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
+    rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1, _2, _3));
     rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));
 }
 
@@ -221,7 +224,7 @@ void Guest::Recv(Buffer&& bb) {
         char chunkbuf[100];
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)bb.len);
         bb.reserve(-chunklen);
-        memcpy(bb.data(), chunkbuf, chunklen);
+        memcpy(bb.mutable_data(), chunkbuf, chunklen);
         rwer->buffer_insert(rwer->buffer_end(), std::move(bb));
         rwer->buffer_insert(rwer->buffer_end(), Buffer{CRLF, 2});
     }else{

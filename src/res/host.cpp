@@ -141,23 +141,25 @@ void Host::connected() {
         return deleteLater(PROTOCOL_ERR);
     }
 #endif
-    rwer->SetReadCB([this](Buffer& bb){
-        LOGD(DHTTP, "<host> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
-        if(bb.len == 0){
+    rwer->SetReadCB([this](uint64_t, const void *data, size_t len) -> size_t {
+        LOGD(DHTTP, "<host> (%s) read: len:%zu\n", rwer->getPeer(), len);
+        if(len == 0){
             //EOF
             if(Http_Proc == &Host::AlwaysProc){
                 //对于AlwayProc的响应，读到EOF视为响应结束
                 status.flags |= HTTP_RES_COMPLETED;
                 status.res->send(nullptr);
-                return;
+                return 0;
             }
             deleteLater(NOERROR);
-            return;
+            return 0;
         }
         size_t ret = 0;
-        while((bb.len >  0) && (ret = (this->*Http_Proc)((const char*)bb.data(), bb.len))){
-            bb.reserve(ret);
+        while((len >  0) && (ret = (this->*Http_Proc)((const char*)data, len))){
+            len -= ret;
+            data = (const char*)data + ret;
         }
+        return len;
     });
     rwer->SetWriteCB([this](uint64_t){
         LOGD(DHTTP, "<host> (%s) written, flags:0x%08x\n", rwer->getPeer(), status.flags);

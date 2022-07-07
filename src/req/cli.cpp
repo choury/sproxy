@@ -13,36 +13,39 @@
 Cli::Cli(int fd, const sockaddr_storage* addr):
         Requester(std::make_shared<StreamRWer>(fd, addr, std::bind(&Cli::Error, this, _1, _2)))
 {
-    rwer->SetReadCB(std::bind(&Cli::ReadHE, this, _1));
+    rwer->SetReadCB(std::bind(&Cli::ReadHE, this, _1, _2, _3));
 }
 
 Cli::~Cli(){
 }
 
 bool Cli::send(const char *data, size_t len) {
-    rwer->buffer_insert(rwer->buffer_end(), Buffer{data, len});
+    rwer->buffer_insert(rwer->buffer_end(), Buffer{std::make_shared<Block>(data, len), len});
     return true;
 }
 
-void Cli::ReadHE(Buffer& bb){
-    if(bb.len == 0){
+size_t Cli::ReadHE(uint64_t, const void* data, size_t len) {
+    if(len == 0){
         //eof
         deleteLater(NOERROR);
-        return;
+        return 0;
     }
     ssize_t ret = 0;
-    while(bb.len > 0){
-        ret = DefaultProc((const char*) bb.data(), bb.len);
+    while(len > 0){
+        ret = DefaultProc((const char*) data, len);
         if(ret > 0){
-            bb.reserve(ret);
+            len -= ret;
+            data = (const char*) data + ret;
             continue;
         }
         if(ret == 0){
             break;
         }
         LOGE("(%s) <cli> rpc error: %s\n", rwer->getPeer(), strerror(-ret));
-        return deleteLater(PROTOCOL_ERR);
+        deleteLater(PROTOCOL_ERR);
+        break;
     }
+    return len;
 }
 
 void Cli::Error(int ret, int code) {

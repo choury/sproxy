@@ -147,7 +147,7 @@ Cgi::Cgi(const char* fname, int sv[2]) {
         LOGE("[CGI] %s error: %d/%d\n", basename(filename), ret, code);
         deleteLater(ret);
     });
-    rwer->SetReadCB(std::bind(&Cgi::readHE, this, _1));
+    rwer->SetReadCB(std::bind(&Cgi::readHE, this, _1, _2, _3));
     cgimap[filename] = this;
 }
 
@@ -190,16 +190,17 @@ void Cgi::Recv(Buffer&& bb) {
 }
 
 
-void Cgi::readHE(Buffer& bb) {
-    if(bb.len == 0){
+size_t Cgi::readHE(uint64_t, const void* data, size_t len) {
+    if(len == 0){
         LOGE("[CGI] %s closed pipe\n", basename(filename));
-        return deleteLater(PROTOCOL_ERR);
+        deleteLater(PROTOCOL_ERR);
+        return 0;
     }
-    while(bb.len >= sizeof(CGI_Header)) {
-        const CGI_Header *header = (const CGI_Header *) bb.data();
+    while(len >= sizeof(CGI_Header)) {
+        const CGI_Header *header = (const CGI_Header *)data;
         size_t size = ntohs(header->contentLength) + sizeof(CGI_Header);
-        if(bb.len  < size){
-            return;
+        if(len  < size){
+            return len;
         }
         uint32_t id = ntohl(header->requestId);
         bool consumed = false;
@@ -225,10 +226,12 @@ void Cgi::readHE(Buffer& bb) {
             consumed = true;
         }
         if(!consumed){
-            return;
+            return len;
         }
-        bb.reserve(size);
+        len -= size;
+        data = (const char *)data + size;
     }
+    return len;
 }
 
 bool Cgi::HandleRes(const CGI_Header *cheader, CgiStatus& status){
