@@ -69,7 +69,7 @@ public:
     virtual void SetWriteCB(std::function<void(uint64_t id)> func);
 
     virtual void Close(std::function<void()> func);
-    void Unblock();
+    virtual void Unblock(uint64_t id);
     RWerStats getStats(){return stats;}
     virtual const char* getPeer() {return "raw-rwer";}
 

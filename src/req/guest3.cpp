@@ -141,7 +141,7 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
 
     status.req = std::make_shared<HttpReq>(header,
               std::bind(&Guest3::response, this, (void*)id, _1),
-                 [this]{ rwer->Unblock();});
+                 [this, id]{ rwer->Unblock(id);});
     distribute(status.req, this);
 }
 

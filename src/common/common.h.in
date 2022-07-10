@@ -223,6 +223,7 @@ do {\
 #define NOERROR             0U
 #define SOCKET_ERR          80U
 #define CONNECT_FAILED      81U
+#define ICMP_UNREACH_ERR    82U
 #define SSL_SHAKEHAND_ERR   83U
 #define HEAD_TOO_LONG_ERR   84U
 #define PROTOCOL_ERR        85U

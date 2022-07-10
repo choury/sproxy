@@ -77,7 +77,7 @@ void RWer::SetErrorCB(std::function<void(int ret, int code)> func){
 
 void RWer::SetReadCB(std::function<size_t(uint64_t id, const void* data, size_t len)> func){
     readCB = std::move(func);
-    Unblock();
+    Unblock(0);
 }
 
 void RWer::SetWriteCB(std::function<void(uint64_t id)> func){
@@ -142,7 +142,7 @@ void RWer::Close(std::function<void()> func) {
     }
 }
 
-void RWer::Unblock(){
+void RWer::Unblock(uint64_t){
     if(flags & RWER_READING){
         return;
     }

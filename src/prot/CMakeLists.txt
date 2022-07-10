@@ -7,7 +7,6 @@ set(prot_src
         rwer.cpp
         netio.cpp
         sslio.cpp
-        ip_pack.cpp
         tls.c
         rpc.cpp)
 
@@ -17,6 +16,7 @@ add_library(prot ${prot_src})
 add_subdirectory(dns)
 add_subdirectory(http)
 add_subdirectory(http2)
+add_subdirectory(tcpip)
 if(HAVE_QUIC)
     add_subdirectory(quic)
     add_subdirectory(http3)

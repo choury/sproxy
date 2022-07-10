@@ -163,7 +163,7 @@ void Proxy3::ResProc(uint64_t id, std::shared_ptr<HttpResHeader> header) {
         if(status.res){
             status.res->send(header);
         }else{
-            status.res = std::make_shared<HttpRes>(header, [this]{rwer->Unblock();});
+            status.res = std::make_shared<HttpRes>(header, [this, id]{rwer->Unblock(id);});
             status.req->response(status.res);
         }
     }else{

@@ -147,6 +147,7 @@ public:
     uint16_t getdport() const;
     uint16_t getwindow() const;
     uint8_t  getflag() const;
+    const char* getflags() const;
     uint64_t  getoptions() const;
     uint16_t getmss() const;
     int gettimestamp(uint32_t *tsval, uint32_t *tsecr) const;
@@ -193,7 +194,7 @@ public:
     virtual bool isValid();
 };
 
-std::shared_ptr<Ip> MakeIp(const char* packet, size_t len);
+std::shared_ptr<Ip> MakeIp(const void* packet, size_t len);
 std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src,  const sockaddr_storage* dst);
 
 class Ip4: public Ip {
@@ -210,7 +211,7 @@ public:
 
     void build_packet(Buffer& bb) override;
 
-    friend std::shared_ptr<Ip> MakeIp(const char* packet, size_t len);
+    friend std::shared_ptr<Ip> MakeIp(const void* packet, size_t len);
     friend std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src,  const sockaddr_storage* dst);
 };
 
@@ -228,7 +229,7 @@ public:
 
     void build_packet(Buffer& bb)override;
 
-    friend std::shared_ptr<Ip> MakeIp(const char* packet, size_t len);
+    friend std::shared_ptr<Ip> MakeIp(const void* packet, size_t len);
     friend std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src,  const sockaddr_storage* dst);
 };
 

@@ -81,7 +81,7 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
     LOGD(DHTTP, "<guest> ReqProc %" PRIu32 " %s\n", header->request_id, header->geturl().c_str());
     auto req = std::make_shared<HttpReq>(header,
             std::bind(&Guest::response, this, nullptr, _1),
-            [this]{ rwer->Unblock();});
+            [this]{ rwer->Unblock(0);});
 
     statuslist.emplace_back(ReqStatus{req, nullptr, 0});
     if(statuslist.size() == 1){

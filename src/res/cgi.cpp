@@ -243,7 +243,7 @@ bool Cgi::HandleRes(const CGI_Header *cheader, CgiStatus& status){
     if (!header->no_body() && header->get("content-length") == nullptr) {
         header->set("transfer-encoding", "chunked");
     }
-    status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock();});
+    status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock(0);});
     status.req->response(status.res);
     return true;
 }

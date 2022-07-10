@@ -90,7 +90,7 @@ void GzipTest::request(std::shared_ptr<HttpReq> req, Requester*) {
     if (req->header->ismethod("HEAD")) {
         left = 0;
     }
-    this->res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock();});
+    this->res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock(0);});
     req->response(this->res);
     req->attach([this](ChannelMessage& msg){
         if(msg.type != ChannelMessage::CHANNEL_MSG_SIGNAL){

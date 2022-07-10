@@ -43,13 +43,21 @@ Buffer::Buffer(Buffer&& b){
     }
 }
 
-void* Buffer::reserve(int off){
-    if(ptr == nullptr){
+const void* Buffer::reserve(int off){
+    if(off == 0) {
+        return data();
+    }
+    if(ptr == nullptr && off < 0){
         ptr = std::make_shared<Block>(content, len);
     }
-    assert((int)len >= off);
+    assert(off <= (int)len);
     len -= off;
-    return ptr->reserve(off);
+    if(ptr){
+        return ptr->reserve(off);
+    } else {
+        content = (char*)content + off;
+        return content;
+    }
 }
 
 size_t Buffer::truncate(size_t left) {

@@ -217,7 +217,7 @@ protected:
     void disconnect_action();
     Job* close_timer = nullptr;
 
-    std::function<void(uint64_t id, uint32_t error)> resetHandler = nullptr;
+    std::function<void(uint64_t id, uint32_t error)> resetHandler = [](uint64_t, uint32_t){};
 public:
     explicit QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
                      std::function<void(int ret, int code)> errorCB,

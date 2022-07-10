@@ -130,7 +130,7 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
         if(suffix && mimetype.count(suffix)){
             header->set("Content-Type", mimetype.at(suffix));
         }
-        status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock();});
+        status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock(0);});
         req->response(status.res);
     }else if(checkrange(status.rg, st.st_size)){
         std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H206, sizeof(H206));
@@ -142,7 +142,7 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
         if(suffix && mimetype.count(suffix)){
             header->set("Content-Type", mimetype.at(suffix));
         }
-        status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock();});
+        status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock(0);});
         req->response(status.res);
     }else{
         std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H416, sizeof(H416));

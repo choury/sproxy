@@ -47,19 +47,21 @@ static uint32_t getFip(const sockaddr_storage* addr){
 }
 
 std::string getRdns(const sockaddr_storage& addr) {
+    std::string host;
     auto fip = getFip(&addr);
     auto record = fdns_records.GetOne(fip);
     if(record != fdns_records.data().end()){
-        return record->first.second;
-    }
-    if(fip > fake_ip && fip < ntohl(inet_addr(VPNEND))) {
+        host = record->first.second;
+    }else if(fip > fake_ip && fip < ntohl(inet_addr(VPNEND))) {
         //this is a fake ip, but we has no record, just block it.
-        return "fake_ip";
+        host = "fake_ip";
+    }else if(fip == ntohl(inet_addr(VPNADDR))){
+        host = "VPN";
+    }else {
+        return storage_ntoa(&addr);
     }
-    if(fip == ntohl(inet_addr(VPNADDR))){
-        return "VPN";
-    }
-    return getaddrstring(&addr);
+    uint16_t port = ntohs(((const sockaddr_in*)&addr)->sin_port);
+    return host + ":" + std::to_string(port);
 }
 
 FDns::FDns() {
@@ -83,14 +85,13 @@ void FDns::request(std::shared_ptr<HttpReq> req, Requester*){
     auto res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
     auto id = req->header->request_id;
     statusmap[id] = FDnsStatus{
-        .req = req,
-        .res = res,
-        .que = nullptr,
+            .req = req,
+            .res = res,
+            .que = nullptr,
     };
     req->response(res);
     req->attach([this, id](ChannelMessage& msg){
-        assert(statusmap.count(id));
-        FDnsStatus& status = statusmap[id];
+        FDnsStatus& status = statusmap.at(id);
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:
             LOGD(DDNS, "<FDNS> ignore header for req\n");
@@ -109,13 +110,11 @@ void FDns::request(std::shared_ptr<HttpReq> req, Requester*){
 }
 
 void FDns::Recv(Buffer&& bb) {
-    assert(statusmap.count(bb.id));
-    FDnsStatus& status = statusmap[bb.id];
+    FDnsStatus& status = statusmap.at(bb.id);
     auto que = std::make_shared<Dns_Query>((const char *)bb.data(), bb.len);
     if(!que->valid){
         LOGE("invalid dns request [%zd]\n", bb.len);
-        status.res->send(ChannelMessage::Signal::CHANNEL_ABORT);
-        statusmap.erase(bb.id);
+        status.res->send(nullptr);
         return;
     }
     status.que = que;
@@ -157,7 +156,7 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_stor
     if(fdns->statusmap.count(id) == 0){
         return;
     }
-    FDnsStatus& status = fdns->statusmap[id];
+    FDnsStatus& status = fdns->statusmap.at(id);
     std::shared_ptr<Dns_Query> que = status.que;
     Dns_Result* rr = nullptr;
     if(error || addrs.empty()){

@@ -715,9 +715,7 @@ QuicRWer::FrameResult QuicRWer::handleResetFrame(const quic_reset *stream) {
 
     if((status.flags & STREAM_FLAG_RESET_DELIVED) == 0) {
         status.flags |= STREAM_FLAG_RESET_DELIVED;
-        if (resetHandler) {
-            resetHandler(id, stream->error);
-        }
+        resetHandler(id, stream->error);
         status.rb.consume(status.rb.length());
     }
     return FrameResult::ok;
@@ -841,9 +839,7 @@ QuicRWer::FrameResult QuicRWer::handleFrames(quic_context *context, const quic_f
         }
         if((status.flags & STREAM_FLAG_RESET_DELIVED) == 0){
             status.flags |= STREAM_FLAG_RESET_DELIVED;
-            if(resetHandler){
-                resetHandler(frame->stop.id, frame->stop.error);
-            }
+            resetHandler(frame->stop.id, frame->stop.error);
             status.rb.consume(status.rb.length());
         }
         return FrameResult::ok;
@@ -1322,7 +1318,7 @@ void QuicRWer::ReadData() {
 }
 
 void QuicRWer::setResetHandler(std::function<void(uint64_t, uint32_t)> func) {
-    resetHandler = func;
+    resetHandler = std::move(func);
 }
 
 void QuicRWer::Reset(uint64_t id, uint32_t code) {
