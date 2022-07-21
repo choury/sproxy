@@ -15,13 +15,14 @@ protected:
     std::queue<sockaddr_storage> addrs;
     void connect();
     Job*     con_failed_job = nullptr;
+    std::function<void(const sockaddr_storage&)> connectCB;
     // connectFailed should only be called with job con_failed_job,
     // there's always an extra job somewhere if you invoke it directly.
     void connectFailed(int error);
+    void connected(const sockaddr_storage& addr);
     static void Dnscallback(std::shared_ptr<void> param, int error, std::list<sockaddr_storage> addrs);
 
     virtual void waitconnectHE(RW_EVENT events);
-    virtual void Connected(const sockaddr_storage&) override;
     virtual ssize_t Write(const void* buff, size_t len, uint64_t) override;
 public:
     SocketRWer(int fd, const sockaddr_storage* peer, std::function<void(int ret, int code)> errorCB);

@@ -48,22 +48,20 @@ protected:
     //返回值是剩余未处理的数据长度，返回0表示数据处理完毕，返回len表示数据完全没有被消费
     std::function<size_t(uint64_t id, const void* data, size_t len)> readCB;
     std::function<void(uint64_t id)> writeCB;
-    std::function<void(const sockaddr_storage&)> connectCB;
     std::function<void(int ret, int code)> errorCB;
     std::function<void()> closeCB;
 
     virtual ssize_t Write(const void* buff, size_t len, uint64_t id) = 0;
     virtual void SendData();
+    //返回 > 0 表示继续读，返回 0 表示读完毕，返回 < 0 表示读错误
     virtual void ReadData() = 0;
     virtual void defaultHE(RW_EVENT events);
     virtual void closeHE(RW_EVENT events);
-    virtual void Connected(const sockaddr_storage&);
     virtual void ErrorHE(int ret, int code);
     virtual void ConsumeRData() = 0;
 public:
     explicit RWer(int fd, std::function<void(int ret, int code)> errorCB);
-    explicit RWer(std::function<void(int ret, int code)> errorCB,
-                  std::function<void(const sockaddr_storage&)> connectCB);
+    explicit RWer(std::function<void(int ret, int code)> errorCB);
     virtual void SetErrorCB(std::function<void(int ret, int code)> func);
     virtual void SetReadCB(std::function<size_t(uint64_t id, const void* data, size_t len)> func);
     virtual void SetWriteCB(std::function<void(uint64_t id)> func);
@@ -77,7 +75,6 @@ public:
     virtual size_t rlength() = 0;
 
     //for write buffer
-    virtual size_t wlength();
     virtual ssize_t cap(uint64_t id);
     virtual buff_iterator buffer_head();
     virtual buff_iterator buffer_end();
@@ -93,7 +90,6 @@ public:
     virtual ssize_t Write(const void *buff, size_t len, uint64_t) override;
     virtual void ReadData() override;
     virtual size_t rlength() override;
-    virtual size_t wlength() override;
 
     virtual void ConsumeRData() override;
     virtual const char* getPeer() override {return "null-rwer";}

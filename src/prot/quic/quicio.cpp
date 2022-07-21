@@ -556,7 +556,7 @@ QuicRWer::FrameResult QuicRWer::handleCryptoFrame(quic_context* context, const q
                 //discard token from retry packet.
                 initToken.clear();
             }
-            Connected(addrs.front());
+            connected(addrs.front());
         }else if(errno != EAGAIN){
             int error = errno;
             LOGE("(%s): ssl connect error:%s\n", hostname, strerror(error));
@@ -1313,8 +1313,6 @@ void QuicRWer::ReadData() {
         walkPackets(buff, ret);
     }
     reorderData();
-    // 提供排序好的数据给应用层
-    ConsumeRData();
 }
 
 void QuicRWer::setResetHandler(std::function<void(uint64_t, uint32_t)> func) {
@@ -1358,7 +1356,7 @@ ssize_t QuicRWer::cap(uint64_t id) {
         return 0;
     }
     assert(my_sent_data <= his_max_data);
-    assert(wlength() == 0);
+    assert(wbuff.length() == 0);
     return std::min((long long)stream.his_max_data - (long long)stream.my_offset,
                     (long long)his_max_data - (long long)my_sent_data);
 }

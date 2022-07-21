@@ -124,11 +124,9 @@ void SslRWer::shakehandHE(RW_EVENT events){
     }
     if (!!(events & RW_EVENT::READ) || !!(events & RW_EVENT::WRITE)) {
         if((ctx?sconnect():saccept()) == 1) {
-            Connected(addrs.front());
+            connected(addrs.front());
             //in case some data in ssl buffer
-            flags |= RWER_READING;
-            ReadData();
-            flags &= ~RWER_READING;
+            Unblock(0);
         }else if(errno ==  EAGAIN){
             if(SSL_want_write(ssl)){
                 setEvents(RW_EVENT::READWRITE);
@@ -186,6 +184,6 @@ void SslRWer::set_hostname_callback(int (* cb)(SSL *, int *, void*), void* arg){
 
 void SslRWer::dump_status(Dumper dp, void *param) {
     dp(param, "SslRWer: rlen: %zu, wlen: %zu, stats: %d, event: %s, %s\n",
-       rlength(), wlength(), (int)getStats(),
+       rlength(), wbuff.length(), (int)getStats(),
        events_string[(int)getEvents()], SSL_state_string_long(ssl));
 }

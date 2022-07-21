@@ -55,6 +55,7 @@ public:
     virtual void send(std::nullptr_t _);
     virtual void send(std::shared_ptr<HttpHeader> header);
     virtual void send(ChannelMessage::Signal s);
+    //处理消息的时候，禁止调用send发回CHANNEL_MSG_SIGNAL，这样会导致Channel本身被销毁
     void attach(handler_t handler, cap_t cap);
     void detach();
     void more(){

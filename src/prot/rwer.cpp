@@ -12,10 +12,6 @@
 #include <sys/eventfd.h>
 #endif
 
-size_t RWer::wlength() {
-    return wbuff.length();
-}
-
 ssize_t RWer::cap(uint64_t) {
     return MAX_BUF_LEN - wbuff.length();
 }
@@ -32,11 +28,9 @@ RWer::RWer(int fd, std::function<void(int ret, int code)> errorCB):
 }
 
 
-RWer::RWer(std::function<void (int, int)> errorCB, std::function<void(const sockaddr_storage&)> connectCB):
-           Ep(-1), connectCB(std::move(connectCB)), errorCB(std::move(errorCB))
+RWer::RWer(std::function<void (int, int)> errorCB): Ep(-1), errorCB(std::move(errorCB))
 {
     assert(this->errorCB != nullptr);
-    assert(this->connectCB != nullptr);
     readCB = [](uint64_t id, const void*, size_t len) -> size_t {
         LOGE("discard data from stub readCB: %zd [%" PRIu64 "]\n", len, id);
         return 0;
@@ -92,15 +86,12 @@ void RWer::defaultHE(RW_EVENT events){
     if (!!(events & RW_EVENT::READ) || !!(events & RW_EVENT::READEOF)){
         flags |= RWER_READING;
         ReadData();
+        if(rlength() > 0 || (stats == RWerStats::ReadEOF && (flags & RWER_EOFDELIVED) == 0)) {
+            ConsumeRData();
+        }
         flags &= ~RWER_READING;
     }
-    if(stats == RWerStats::ReadEOF){
-        delEvents(RW_EVENT::READ);
-        flags |= RWER_READING;
-        ConsumeRData();
-        flags &= ~RWER_READING;
-    }
-    if(flags & RWER_CLOSING){
+    if((flags & RWER_CLOSING) || stats == RWerStats::Error){
         return;
     }
     if (!!(events & RW_EVENT::WRITE)){
@@ -149,28 +140,21 @@ void RWer::Unblock(uint64_t){
     flags |= RWER_READING;
     switch(stats){
     case RWerStats::Connected:
-        if(rlength()) {
+        if(rlength() > 0) {
             ConsumeRData();
         }
         addEvents(RW_EVENT::READ);
         break;
     case RWerStats::ReadEOF:
+        if(flags & RWER_EOFDELIVED){
+            break;
+        }
         ConsumeRData();
         break;
     default:
         break;
     }
     flags &= ~RWER_READING;
-}
-
-void RWer::Connected(const sockaddr_storage& addr){
-    if(stats == RWerStats::Connected){
-        return;
-    }
-    setEvents(RW_EVENT::READWRITE);
-    stats = RWerStats::Connected;
-    handleEvent = (void (Ep::*)(RW_EVENT))&RWer::defaultHE;
-    connectCB(addr);
 }
 
 void RWer::ErrorHE(int ret, int code) {
@@ -210,10 +194,6 @@ size_t NullRWer::rlength() {
     return 0;
 }
 
-size_t NullRWer::wlength() {
-    return 0;
-}
-
 void NullRWer::ConsumeRData() {
 }
 
@@ -223,9 +203,7 @@ ssize_t NullRWer::Write(const void*, size_t len, uint64_t) {
 }
 
 #ifdef __linux__
-FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB):
-    RWer(errorCB, [](const sockaddr_storage&){})
-{
+FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB): RWer(errorCB) {
     int evfd = eventfd(1, SOCK_CLOEXEC);
     if(evfd < 0){
         stats = RWerStats::Error;
@@ -235,8 +213,7 @@ FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB):
     setFd(evfd);
     write(evfd, "FULLEVENT", 8);
 #else
-FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB):
-    RWer(errorCB, [](const sockaddr_storage&){}), pairfd(-1){
+FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB): RWer(errorCB), pairfd(-1){
     int pairs[2];
     int ret = socketpair(AF_UNIX, SOCK_STREAM, 0, pairs);
     if(ret){
@@ -276,7 +253,7 @@ size_t FullRWer::rlength() {
 }
 
 ssize_t FullRWer::cap(uint64_t) {
-    return 0;
+    return 1;
 }
 
 void FullRWer::ConsumeRData() {
@@ -284,10 +261,6 @@ void FullRWer::ConsumeRData() {
 }
 
 void FullRWer::ReadData(){
-    while(!!(events & RW_EVENT::READ)) {
-        ConsumeRData();
-    }
-    Write("FULLEVENT", 8, 0);
 }
 
 void FullRWer::closeHE(RW_EVENT) {

@@ -116,19 +116,20 @@ TunRWer::~TunRWer(){
 }
 
 void TunRWer::ReadData() {
-    int ret;
-    while((ret = read(getFd(), rbuff, sizeof(rbuff)))){
-        if(ret <= 0){
-            if(errno != EAGAIN) {
-                ErrorHE(SOCKET_ERR, errno);
-            }
+    int ret = 0;
+    while(ret = read(getFd(), rbuff, sizeof(rbuff)), ret > 0) {
+        if(ret <= 0 && errno == EAGAIN) {
+            return;
+        }
+        if(ret <= 0) {
+            ErrorHE(SOCKET_ERR, errno);
             return;
         }
         size_t len = ret;
         pcap_write_with_generated_ethhdr(pcap, rbuff, len);
         auto pac = MakeIp(rbuff, ret);
         if(pac == nullptr){
-            return;
+            continue;
         }
         debugString(pac, len - pac->gethdrlen());
         VpnKey key(pac);
@@ -139,32 +140,36 @@ void TunRWer::ReadData() {
             if(type ==  ICMP_UNREACH) {
                 auto icmp_pac = MakeIp(rbuff + pac->gethdrlen(), len-pac->gethdrlen());
                 if(icmp_pac == nullptr){
-                    return;
+                    continue;
                 }
                 transIcmp = true;
                 key = VpnKey(icmp_pac).reverse();
+                LOGD(DVPN, "get icmp unreach for: <%s> %s - %s\n",
+                     protstr(key.protocol), getRdns(key.src).c_str(), getRdns(key.dst).c_str());
             }else if(!ICMP_PING(type)) {
                 LOGD(DVPN, "ignore icmp type: %d\n", type);
-                return;
+                continue;
             }
         }else if(pac->gettype() == IPPROTO_ICMPV6) {
             uint16_t type = pac->icmp6->gettype();
             if(type == ICMP6_DST_UNREACH){
                 auto icmp6_pac = MakeIp(rbuff + pac->gethdrlen(), len-pac->gethdrlen());
                 if(icmp6_pac == nullptr){
-                    return;
+                    continue;
                 }
                 transIcmp = true;
                 key = VpnKey(icmp6_pac).reverse();
+                LOGD(DVPN, "get icmp6 unreach for: <%s> %s - %s\n",
+                     protstr(key.protocol), getRdns(key.src).c_str(), getRdns(key.dst).c_str());
             }else if(!ICMP6_PING(type)) {
-                LOGD(DVPN, "ignore icmp type: %d\n", type);
-                return;
+                LOGD(DVPN, "ignore icmp6 type: %d\n", type);
+                continue;
             }
         }
         std::shared_ptr<IpStatus> status;
         if(!statusmap.Has(key)){
             if(transIcmp) {
-                return;
+                continue;
             }
             switch(key.protocol){
             case Protocol::TCP:{
@@ -196,9 +201,9 @@ void TunRWer::ReadData() {
             }
             case Protocol::NONE:
                 LOGD(DVPN, "ignore unknow protocol: %d\n", pac->gettype());
-                return;
+                continue;
             default:
-                return;
+                continue;
             }
             status->protocol = key.protocol;
             status->src = pac->getsrc();
@@ -209,7 +214,7 @@ void TunRWer::ReadData() {
                 uint64_t id = statusmap.GetOne(key)->first.first;
                 resetHanlder(id, ICMP_UNREACH_ERR);
                 statusmap.Delete(id);
-                return;
+                continue;
             }
             status = statusmap.GetOne(key)->second;
         }
