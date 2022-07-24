@@ -310,6 +310,7 @@ Tcp::Tcp(uint16_t sport, uint16_t dport){
     tcp_hdr.th_dport = htons(dport);
 
     tcp_hdr.th_off = 5;
+    hdrlen = sizeof(tcp_hdr);
 }
 
 Tcp::~Tcp() {
@@ -350,9 +351,6 @@ Tcp * Tcp::setflag(uint8_t flag) {
  * so inspect current TCP option length (tcpopt_len)
  */
 Tcp* Tcp::settimestamp(uint32_t tsval, uint32_t tsecr) {
-    if(tsval == 0){
-        tsval = time(0);
-    }
     if (tcpopt) {
         tcpopt = (char *) realloc(tcpopt, tcpoptlen + sizeof(tcp_timestamp));
     } else{
@@ -453,11 +451,11 @@ void Tcp::build_packet(const ip* ip_hdr, Buffer& bb) {
         memset(tcpopt + tcpoptlen, TCPOPT_NOP, length - tcpoptlen);
         tcpoptlen = length;
     }
-
-    tcp_hdr.th_off = (sizeof(tcphdr) + tcpoptlen) >> 2;
+    hdrlen = sizeof(tcphdr) + tcpoptlen;
+    tcp_hdr.th_off = hdrlen >> 2;
     tcp_hdr.th_sum = 0;
 
-    char* packet = (char *) bb.reserve(-(char) (sizeof(tcphdr) + tcpoptlen));
+    char* packet = (char *) bb.reserve(-(char) (hdrlen));
     memcpy(packet, &tcp_hdr, sizeof(tcphdr));
     if (tcpoptlen > 0)
         memcpy(packet + sizeof(tcphdr), tcpopt, tcpoptlen); //copy tcp header option to packet
@@ -472,10 +470,11 @@ void Tcp::build_packet(const ip6_hdr* ip_hdr, Buffer& bb) {
         memset(tcpopt + tcpoptlen, TCPOPT_NOP, length - tcpoptlen);
         tcpoptlen = length;
     }
-    tcp_hdr.th_off = (sizeof(tcphdr) + tcpoptlen) >> 2;
+    hdrlen = sizeof(tcphdr) + tcpoptlen;
+    tcp_hdr.th_off = hdrlen >> 2;
     tcp_hdr.th_sum = 0;
 
-    char* packet = (char *) bb.reserve(-(char) (sizeof(tcphdr) + tcpoptlen));
+    char* packet = (char *) bb.reserve(-(char) (hdrlen));
     memcpy(packet, &tcp_hdr, sizeof(tcphdr));
     if (tcpoptlen > 0)
         memcpy(packet + sizeof(tcphdr), tcpopt, tcpoptlen); //copy tcp header option to packet
@@ -559,8 +558,6 @@ int Tcp::gettimestamp(uint32_t *tsval, uint32_t *tsecr) const{
         len -= opt->length;
         opt = (tcp_opt*)((char *)opt+opt->length);
     }
-    *tsval = 0;
-    *tsecr = 0;
     return 0;
 }
 
@@ -584,6 +581,49 @@ uint8_t Tcp::getwindowscale() const{
         opt = (tcp_opt*)((char *)opt+opt->length);
     }
     return 0;
+}
+
+void Tcp::getsack(struct Sack** sack) const {
+    if(sack == nullptr) {
+        return;
+    }
+    sack_release(sack);
+    tcp_opt* opt = (tcp_opt *)tcpopt;
+    size_t len = tcpoptlen;
+
+    auto s = std::ref(*sack);
+    while (len > 0 && opt) {
+        if (opt->kind == TCPOPT_EOL)
+            break;
+        if(opt->kind == TCPOPT_NOP){
+            len --;
+            opt = (tcp_opt*)((char *)opt+1);
+            continue;
+        }
+        if (opt->kind == TCPOPT_SACK) {
+            s.get() = (struct Sack*)malloc(sizeof(struct Sack));
+            struct tcp_sack *sack_opt = (tcp_sack *)opt;
+            s.get()->left = ntohl(sack_opt->data->left);
+            s.get()->right = ntohl(sack_opt->data->right);
+            s.get()->next = nullptr;
+            s = std::ref(s.get()->next);
+        }
+        len -= opt->length;
+        opt = (tcp_opt*)((char *)opt+opt->length);
+    }
+}
+
+void sack_release(Sack** sack){
+    if(sack == nullptr) {
+        return;
+    }
+    Sack* s = *sack;
+    while(s != nullptr){
+        Sack* next = s->next;
+        free(s);
+        s = next;
+    }
+    *sack = nullptr;
 }
 
 uint32_t Tcp::getseq() const {
@@ -916,6 +956,7 @@ Ip4::Ip4(uint8_t type, uint16_t sport, uint16_t dport){
     hdr.ip_p = type;
     hdr.ip_sum = 0;
     this->type = type;
+    this->hdrlen = sizeof(ip);
     switch(type){
     case IPPROTO_ICMP:
         icmp = new Icmp();
@@ -1077,6 +1118,7 @@ Ip6::Ip6(uint8_t type, uint16_t sport, uint16_t dport) {
     hdr.ip6_nxt = type;
     hdr.ip6_hlim = 64;
     this->type = type;
+    this->hdrlen = sizeof(ip6_hdr);
     switch(type){
     case IPPROTO_ICMPV6:
         icmp6 = new Icmp6();

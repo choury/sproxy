@@ -12,8 +12,9 @@ class IpBase{
 protected:
     virtual void ErrProc(std::shared_ptr<const Ip> pac, uint32_t code) = 0;
     virtual void ReqProc(std::shared_ptr<const Ip> pac) = 0;
-    virtual bool DataProc(std::shared_ptr<const Ip> pac, const void* data, size_t len) = 0;
-    virtual void sendPkg(std::shared_ptr<Ip> pac, Buffer&& bb) = 0;
+    virtual size_t DataProc(std::shared_ptr<const Ip> pac, const void* data, size_t len) = 0;
+    virtual void AckProc(std::shared_ptr<const Ip> pac) = 0;
+    virtual void sendPkg(std::shared_ptr<const Ip> pac, const void* data, size_t len) = 0;
 public:
     void Unreach(std::shared_ptr<IpStatus> status, uint8_t code);
     ssize_t Cap(std::shared_ptr<IpStatus>) {

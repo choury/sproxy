@@ -29,5 +29,6 @@ void IpBase::Unreach(std::shared_ptr<IpStatus> status, uint8_t code) {
     }
     Buffer bb{status->packet_hdr, status->packet_hdr_len};
     status->packet_hdr = nullptr;
-    sendPkg(pac, std::move(bb));
+    pac->build_packet(bb);
+    sendPkg(pac, bb.data(), bb.len);
 }

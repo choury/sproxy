@@ -118,6 +118,8 @@ struct Sack{
     struct Sack* next;
 };
 
+void sack_release(Sack** sack);
+
 class Tcp{
     tcphdr tcp_hdr; //tcp头
     char *tcpopt = nullptr; //tcp头选项
@@ -152,6 +154,7 @@ public:
     uint16_t getmss() const;
     int gettimestamp(uint32_t *tsval, uint32_t *tsecr) const;
     uint8_t getwindowscale() const;
+    void getsack(struct Sack** sack) const;
     ~Tcp();
 };
 

@@ -11,7 +11,7 @@
 struct FDnsStatus{
     std::shared_ptr<HttpReq>   req;
     std::shared_ptr<HttpRes>   res;
-    std::shared_ptr<Dns_Query> que;
+    std::map<uint16_t, std::shared_ptr<Dns_Query>> quemap;
 };
 
 

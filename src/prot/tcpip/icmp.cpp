@@ -19,17 +19,26 @@ void IcmpHE::DefaultProc(std::shared_ptr<IpStatus> status_, std::shared_ptr<cons
     status->aged_job =status->jobHandler.updatejob_with_name(status->aged_job, [this, pac]{
         ErrProc(pac, CONNECT_AGED);
     }, "icmp_aged_job", 30000);
-    DataProc(pac, packet + pac->gethdrlen(), datalen);
+    if(datalen > 0) {
+        DataProc(pac, packet + pac->gethdrlen(), datalen);
+    }
 }
 
 
 void IcmpHE::SendData(std::shared_ptr<IpStatus> status_, Buffer&& bb) {
     std::shared_ptr<IcmpStatus> status = std::static_pointer_cast<IcmpStatus>(status_);
-    auto rpac = MakeIp(status_->packet_hdr->data(), status_->packet_hdr_len);
+    auto rpac = MakeIp(status->packet_hdr->data(), status->packet_hdr_len);
     if(bb.len == 0){
-        ErrProc(rpac, NOERROR);
+        status->aged_job = status->jobHandler.updatejob_with_name(status->aged_job, [this, rpac]{
+            ErrProc(rpac, CONNECT_AGED);
+        }, "icmp_aged_job", 0);
         return;
+    } else {
+        status->aged_job = status->jobHandler.updatejob_with_name(status->aged_job, [this, rpac]{
+            ErrProc(rpac, CONNECT_AGED);
+        }, "icmp_aged_job", 30000);
     }
+
     std::shared_ptr<Ip> pac;
     if(status->src.ss_family == AF_INET){
         pac = MakeIp(IPPROTO_ICMP, &status->dst, &status->src);
@@ -46,8 +55,9 @@ void IcmpHE::SendData(std::shared_ptr<IpStatus> status_, Buffer&& bb) {
             ->setid(status->id)
             ->setseq(status->seq);
     }
-    status->aged_job = status->jobHandler.updatejob_with_name(status->aged_job, [this, rpac]{
-        ErrProc(rpac, CONNECT_AGED);
-    }, "icmp_aged_job", 30000);
-    sendPkg(pac, std::move(bb));
+    pac->build_packet(bb);
+    sendPkg(pac, bb.data(), bb.len);
+    status->ack_job = status->jobHandler.updatejob_with_name(status->ack_job, [this, rpac]{
+        AckProc(rpac);
+    }, "icmp_ack_job", 0);
 }

@@ -94,6 +94,9 @@ static std::string reverse(std::string str){
 #define IPV6_PTR_PREFIX "arpa.ip6."
 
 Dns_Query::Dns_Query(const char* buff, size_t len) {
+    if(len < sizeof(DNS_HDR)){
+        return;
+    }
     const DNS_HDR *dnshdr = (const DNS_HDR*)buff;
 
     id = ntohs(dnshdr->id);
@@ -171,17 +174,17 @@ Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
         p = (unsigned char *)getdomain(dnshdr, p, len, domain);
         if((const char*)p + sizeof(DNS_QUE) - buff > (int)len){
             error = DNS_FORMAT_ERROR;
-            LOGE("[DNS] numq overflow\n");
+            LOGE("[DNS] <%d> numq overflow\n", ntohs(dnshdr->id));
             return;
         }
         DNS_QUE* que = (DNS_QUE*)p;
         type = ntohs(que->type);
         p+= sizeof(DNS_QUE);
-        LOGD(DDNS, "[%d] response for %s, type: %d:\n", id, domain, type);
+        LOGD(DDNS, "[%d] response for %s, type: %d:\n", ntohs(dnshdr->id), domain, type);
     }
     if((flag & RCODE_MASK) !=0 ){
         error = flag & RCODE_MASK;
-        LOG("[DNS] ack error: %s: %u\n", domain, error);
+        LOG("[DNS] <%d> ack error: %s: %u\n", ntohs(dnshdr->id), domain, error);
         return;
     }
     uint16_t numa = ntohs(dnshdr->numa);
@@ -189,7 +192,7 @@ Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
         p = (unsigned char *)getdomain(dnshdr, p, len, domain);
         if((const char*)p + sizeof(DNS_RR) - buff > (int)len){
             error = DNS_FORMAT_ERROR;
-            LOGE("[DNS] numa overflow\n");
+            LOGE("[DNS] <%d> numa overflow\n", ntohs(dnshdr->id));
             return;
         }
         DNS_RR *dnsrr = (DNS_RR*)p;

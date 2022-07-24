@@ -9,7 +9,7 @@ struct VpnStatus{
     std::shared_ptr<const Ip> pac;
     std::shared_ptr<HttpReq> req;
     std::shared_ptr<HttpRes> res;
-    uint32_t   flags;
+    uint32_t   flags = 0;
 };
 
 class Guest_vpn: public Requester {

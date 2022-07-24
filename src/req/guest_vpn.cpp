@@ -23,18 +23,19 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
         }
         auto& status = statusmap[id];
         assert((status.flags & HTTP_REQ_COMPLETED) == 0);
-        if(status.req->cap() < (int)len){
+
+        if(len == 0) {
+            status.req->send(nullptr);
+            status.flags |= HTTP_REQ_COMPLETED;
+            if(status.flags & HTTP_RES_COMPLETED) {
+                rwer->addjob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
+            }
+        } else if(status.req->cap() < (int)len){
             LOGE("[%" PRIu32 "]: <guest_vpn> the host's buff is full, drop packet (%s)\n",
                  status.req->header->request_id, status.req->header->geturl().c_str());
             return len;
         }else{
             status.req->send(data, len);
-        }
-        if(len == 0) {
-            status.flags |= HTTP_REQ_COMPLETED;
-            if(status.flags & HTTP_RES_COMPLETED) {
-                Clean(id, status);
-            }
         }
         return 0;
     });
@@ -66,6 +67,9 @@ Guest_vpn::~Guest_vpn(){
 static const char* getProg(std::shared_ptr<const Ip> pac) {
     auto src_ = pac->getsrc();
     auto dst_ = pac->getdst();
+    if(getRdns(src_) != "VPN") {
+        return "NOT-LOCAL";
+    }
 #if __ANDROID__
     if(android_get_device_api_level() >= 29){
         return getPackageNameFromAddr(pac->gettype(), &src_, &dst_);
@@ -186,38 +190,34 @@ static const char* getProg(std::shared_ptr<const Ip> pac) {
 }
 #endif
 
-static const char* generateUA(std::shared_ptr<const Ip> pac) {
+static const char* generateUA(std::shared_ptr<const Ip> pac, uint32_t request_id) {
     static char UA[URLLIMIT];
-    auto src_ = pac->getsrc();
-    sockaddr_in* src = (sockaddr_in*)&src_;
     if(opt.ua){
-        sprintf(UA, "%s Sproxy/%s VPN/%d",
-                opt.ua,
-                getVersion(),
-                htons(src->sin_port));
+        sprintf(UA, "%s Sproxy/%s VPN/%u",
+                opt.ua, getVersion(), request_id);
         return UA;
     }
 #ifdef __ANDROID__
-    sprintf(UA, "Sproxy/%s (Build %s) (%s) VPN/%d %s App/%s",
+    sprintf(UA, "Sproxy/%s (Build %s) (%s) VPN/%u %s App/%s",
             getVersion(),
             getBuildTime(),
             getDeviceName(),
-            htons(src->sin_port),
+            request_id,
             getProg(pac),
             appVersion);
 #elif __linux__
-    sprintf(UA, "Sproxy/%s (Build %s) (%s) VPN/%d %s",
+    sprintf(UA, "Sproxy/%s (Build %s) (%s) VPN/%u %s",
             getVersion(),
             getBuildTime(),
             getDeviceInfo(),
-            htons(src->sin_port),
+            request_id,
             getProg(pac));
 #else
-    sprintf(UA, "Sproxy/%s (Build %s) (%s) VPN/%d",
+    sprintf(UA, "Sproxy/%s (Build %s) (%s) VPN/%u",
             getVersion(),
             getBuildTime(),
-            getDeviceInfo()
-            htons(src->sin_port));
+            getDeviceInfo(),
+            request_id);
 #endif
     return UA;
 }
@@ -234,6 +234,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:{
             auto header = std::dynamic_pointer_cast<HttpResHeader>(msg.header);
+            LOGD(DVPN, "<guest_vpn> get response [%" PRIu64"]: %s\n", id, header->status);
             if((status.flags & VPN_DNSREQ_F) == 0){
                 auto src = status.pac->getsrc();
                 HttpLog(storage_ntoa(&src), status.req->header, header);
@@ -250,12 +251,25 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
             }else{
                 LOGE("unknown response\n");
             }
-            Clean(id, status);
+            rwer->addjob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
             return 0;
         }
         case ChannelMessage::CHANNEL_MSG_DATA:
+            assert((status.flags & HTTP_RES_COMPLETED) == 0);
             msg.data.id = id;
-            rwer->buffer_insert(rwer->buffer_end(), std::move(msg.data));
+            if (msg.data.len == 0) {
+                LOGD(DVPN, "<guest_vpn> %" PRIu32 " recv data [%" PRIu64"]: EOF\n",
+                     status.req->header->request_id, id);
+                rwer->buffer_insert(rwer->buffer_end(), {nullptr, id});
+                status.flags |= HTTP_RES_COMPLETED;
+                if(status.flags & HTTP_REQ_COMPLETED) {
+                    rwer->addjob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
+                }
+            }else{
+                LOGD(DVPN, "<guest_vpn> %" PRIu32 " recv data [%" PRIu64"]: %zu, cap: %d\n",
+                     status.req->header->request_id, id, msg.data.len, (int)rwer->cap(id));
+                rwer->buffer_insert(rwer->buffer_end(), std::move(msg.data));
+            }
             return 1;
         case ChannelMessage::CHANNEL_MSG_SIGNAL:
             handle(id, msg.signal);
@@ -274,13 +288,11 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     switch(pac->gettype()){
     case IPPROTO_TCP:{
         //create a http proxy request
-        int headlen = sprintf(buff,
-                        "CONNECT %s" CRLF
-                        "User-Agent: %s" CRLF CRLF,
-                getRdns(pac->getdst()).c_str(),
-                generateUA(pac));
+        int headlen = sprintf(buff, "CONNECT %s" CRLF CRLF,
+                              getRdns(pac->getdst()).c_str());
 
         std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
+        header->set("User-Agent", generateUA(pac, header->request_id));
         status.req = std::make_shared<HttpReq>(header, 
                         std::bind(&Guest_vpn::response, this, (void*)id, _1), 
                         [this, id]{rwer->Unblock(id);});
@@ -289,13 +301,11 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     }
     case IPPROTO_UDP:{
         //create a http proxy request
-        int headlen = sprintf(buff,
-                        "SEND %s" CRLF
-                        "User-Agent: %s" CRLF CRLF,
-                getRdns(pac->getdst()).c_str(),
-                generateUA(pac));
+        int headlen = sprintf(buff, "SEND %s" CRLF CRLF,
+                              getRdns(pac->getdst()).c_str());
 
         std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
+        header->set("User-Agent", generateUA(pac, header->request_id));
         status.req = std::make_shared<HttpReq>(header, 
                         std::bind(&Guest_vpn::response, this, (void*)id, _1), 
                         [this, id]{rwer->Unblock(id);});
@@ -309,12 +319,10 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     }
     case IPPROTO_ICMP:{
         assert(pac->icmp->gettype() == ICMP_ECHO);
-        int headlen = sprintf(buff,
-                        "PING %s" CRLF
-                        "User-Agent: %s" CRLF CRLF,
-                getRdns(pac->getdst()).c_str(),
-                generateUA(pac));
+        int headlen = sprintf(buff, "PING %s" CRLF CRLF,
+                              getRdns(pac->getdst()).c_str());
         std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
+        header->set("User-Agent", generateUA(pac, header->request_id));
         status.req = std::make_shared<HttpReq>(header,
                                                 std::bind(&Guest_vpn::response, this, (void*)id, _1),
                                                 [this, id]{rwer->Unblock(id);});
@@ -323,12 +331,10 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     }
     case IPPROTO_ICMPV6:{
         assert(pac->icmp6->gettype() == ICMP6_ECHO_REQUEST);
-        int headlen = sprintf(buff,
-                        "PING %s" CRLF
-                        "User-Agent: %s" CRLF CRLF,
-                getRdns(pac->getdst()).c_str(),
-                generateUA(pac));
+        int headlen = sprintf(buff, "PING %s" CRLF CRLF,
+                              getRdns(pac->getdst()).c_str());
         std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
+        header->set("User-Agent", generateUA(pac, header->request_id));
         status.req = std::make_shared<HttpReq>(header,
                                                 std::bind(&Guest_vpn::response, this, (void*)id, _1),
                                                 [this, id]{rwer->Unblock(id);});
@@ -343,6 +349,8 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
 
 void Guest_vpn::handle(uint64_t id, ChannelMessage::Signal s) {
     auto& status = statusmap.at(id);
+    LOGD(DVPN, "<guest_vpn> signal [%d] %" PRIu32 ": %d\n",
+         (int)id, status.req->header->request_id, (int)s);
     std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
     switch(s){
     case ChannelMessage::CHANNEL_ABORT:
@@ -364,7 +372,7 @@ void Guest_vpn::Clean(uint64_t id, VpnStatus& status) {
 }
 
 void Guest_vpn::dump_stat(Dumper dp, void *param) {
-    dp(param, "Guest_vpn %p\n", this);
+    dp(param, "Guest_vpn %p, session: %zd\n", this, statusmap.size());
     for(auto& i: statusmap){
         dp(param, "  0x%lx [%" PRIu32 "]: %s %s, flags: 0x%08x\n",
            i.first, i.second.req->header->request_id,

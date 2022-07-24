@@ -15,6 +15,7 @@ public:
 struct UdpStatus: public IpStatus{
     size_t readlen  = 0;
     Job*   aged_job = nullptr;
+    Job*   ack_job = nullptr;
 };
 
 #endif

@@ -12,10 +12,9 @@ struct VpnKey{
     sockaddr_storage dst;
     explicit VpnKey(std::shared_ptr<const Ip> ip);
     const VpnKey& reverse();
-    char version() const;
 };
 
-bool operator<(VpnKey a, VpnKey b);
+bool operator<(const VpnKey& a, const VpnKey& b);
 
 class TunRWer: public RWer, protected TcpHE, protected UdpHE, protected IcmpHE {
     char rbuff[BUF_LEN];
@@ -24,12 +23,12 @@ class TunRWer: public RWer, protected TcpHE, protected UdpHE, protected IcmpHE {
     Index2<uint64_t, VpnKey, std::shared_ptr<IpStatus>> statusmap;
     uint64_t GetId(std::shared_ptr<const Ip> pac);
     std::shared_ptr<IpStatus> GetStatus(uint64_t id);
-    virtual void sendPkg(std::shared_ptr<Ip> pac, Buffer&& bb) override;
+    virtual void sendPkg(std::shared_ptr<const Ip> pac, const void* data, size_t len) override;
     virtual void ErrProc(std::shared_ptr<const Ip> pac, uint32_t code) override;
     virtual void ReqProc(std::shared_ptr<const Ip> pac) override;
-    virtual bool DataProc(std::shared_ptr<const Ip> pac, const void* data, size_t len) override;
+    virtual size_t DataProc(std::shared_ptr<const Ip> pac, const void* data, size_t len) override;
 
-    virtual void TcpAckProc(std::shared_ptr<const Ip> pac) override;
+    virtual void AckProc(std::shared_ptr<const Ip> pac) override;
     virtual ssize_t Write(const void* buff, size_t len, uint64_t id) override;
 protected:
     std::function<void(uint64_t, std::shared_ptr<const Ip>)> reqProc;

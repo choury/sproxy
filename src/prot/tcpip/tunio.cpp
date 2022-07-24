@@ -6,6 +6,7 @@
 #include "res/fdns.h"
 
 #include <errno.h>
+#include <inttypes.h>
 
 VpnKey::VpnKey(std::shared_ptr<const Ip> ip) {
     src = ip->getsrc();
@@ -36,23 +37,11 @@ const VpnKey& VpnKey::reverse() {
     return *this;
 }
 
-char VpnKey::version() const {
-    if(dst.ss_family == AF_INET){
-        return 4;
-    }
-    if(dst.ss_family == AF_INET6){
-        return 6;
-    }
-    abort();
-    return 0;
-}
-
-
-static bool operator<(sockaddr_storage a, sockaddr_storage b) {
+static bool operator<(const sockaddr_storage& a, const sockaddr_storage& b) {
     return memcmp(&a, &b, sizeof(sockaddr_storage)) < 0;
 }
 
-bool operator<(VpnKey a, VpnKey b) {
+bool operator<(const VpnKey& a, const VpnKey& b) {
     return std::tie(a.protocol, a.src, a.dst) < std::tie(b.protocol, b.src, b.dst);
 }
 
@@ -75,17 +64,23 @@ void debugString(std::shared_ptr<const Ip> pac, size_t len) {
             LOGD(DVPN, "<ping> (%s -> %s) (%u) size:%zu\n",
                 getRdns(pac->getsrc()).c_str(), getRdns(pac->getdst()).c_str(),
                 pac->icmp->getseq(), len);
-            return;
+        } else {
+            LOGD(DVPN, "<icmp> (%s -> %s) (%u) size:%zu\n",
+                 getRdns(pac->getsrc()).c_str(), getRdns(pac->getdst()).c_str(),
+                 pac->icmp->gettype(), len);
         }
-        break;
+        return;
     case IPPROTO_ICMPV6:
         if(ICMP6_PING(pac->icmp6->gettype())) {
             LOGD(DVPN, "<ping6> (%s -> %s) (%u) size:%zu\n",
                 getRdns(pac->getsrc()).c_str(), getRdns(pac->getdst()).c_str(),
                 pac->icmp6->getseq(), len);
-            return;
+        }else {
+            LOGD(DVPN, "<icmp6> (%s -> %s) (%u) size:%zu\n",
+                 getRdns(pac->getsrc()).c_str(), getRdns(pac->getdst()).c_str(),
+                 pac->icmp6->gettype(), len);
         }
-        break;
+        return;
     default:
         break;
     }
@@ -231,14 +226,16 @@ ssize_t TunRWer::Write(const void*, size_t, uint64_t) {
     return -1;
 }
 
-void TunRWer::sendPkg(std::shared_ptr<Ip> pac, Buffer&& bb) {
-    debugString(pac, bb.len);
-    pac->build_packet(bb);
-    pcap_write_with_generated_ethhdr(pcap, bb.data(), bb.len);
-    write(getFd(), bb.data(), bb.len);
+void TunRWer::sendPkg(std::shared_ptr<const Ip> pac, const void* data, size_t len) {
+    debugString(pac, len - pac->gethdrlen());
+    pcap_write_with_generated_ethhdr(pcap, data, len);
+    write(getFd(), data, len);
 }
 
 buff_iterator TunRWer::buffer_insert(buff_iterator where, Buffer&& bb) {
+    if(!statusmap.Has(bb.id)){
+        return where;
+    }
     auto status = GetStatus(bb.id);
     (this->*status->Write)(status, std::move(bb));
     return where;
@@ -254,14 +251,24 @@ void TunRWer::ErrProc(std::shared_ptr<const Ip> pac, uint32_t code) {
     uint64_t id = GetId(pac);
     resetHanlder(id, code);
     statusmap.Delete(id);
+    LOGD(DVPN, "tunio: delete id: 0x%" PRIx64", due to err: %d\n", id, (int)code);
 }
 
-bool TunRWer::DataProc(std::shared_ptr<const Ip> pac, const void* data, size_t len) {
-    return readCB(GetId(pac), data, len) == 0;
+size_t TunRWer::DataProc(std::shared_ptr<const Ip> pac, const void* data, size_t len) {
+    if(!statusmap.Has(VpnKey(pac))){
+        return 0;
+    }
+    return len - readCB(GetId(pac), data, len);
 }
 
-void TunRWer::TcpAckProc(std::shared_ptr<const Ip> pac) {
-    return writeCB(GetId(pac));
+void TunRWer::AckProc(std::shared_ptr<const Ip> pac) {
+    if(!statusmap.Has(VpnKey(pac))) {
+        return;
+    }
+    auto itr = statusmap.GetOne(VpnKey(pac));
+    if((this->*(itr->second)->Cap)(itr->second) >= 0) {
+        return writeCB(itr->first.first);
+    }
 }
 
 void TunRWer::sendMsg(uint64_t id, uint32_t msg) {
@@ -273,19 +280,18 @@ void TunRWer::sendMsg(uint64_t id, uint32_t msg) {
         }
         break;
     case TUN_MSG_BLOCK:
+        LOGD(DVPN, "tunio: delete id: 0x%" PRIx64", due to block\n", id);
         if(status->protocol == Protocol::TCP) {
             SendRst(std::static_pointer_cast<TcpStatus>(status));
-            statusmap.Delete(id);
         } else {
             (this->*status->Unreach)(status, IP_ADDR_UNREACH);
-            //这里必须要延后清理，是因为新请求可能会被立即阻断，但是这个请求的body还没有被处理，
-            //还会继续调用DataProc，而不想在那边再去判断这种情况
-            addjob([&]{statusmap.Delete(id);}, 0, JOB_FLAGS_AUTORELEASE);
         }
+        statusmap.Delete(id);
         break;
     case TUN_MSG_UNREACH:
+        LOGD(DVPN, "tunio: delete id: 0x%" PRIx64", due to unreach\n", id);
         (this->*status->Unreach)(status, IP_PORT_UNREACH);
-        addjob([&]{statusmap.Delete(id);}, 0, JOB_FLAGS_AUTORELEASE);
+        statusmap.Delete(id);
         break;
     }
 }
@@ -303,13 +309,46 @@ bool TunRWer::idle(uint64_t id) {
     return !statusmap.Has(id);
 }
 
+static void dumpConnection(Dumper dp, void* param,
+                           const std::pair<const std::pair<uint64_t, VpnKey>, std::shared_ptr<IpStatus>>& value) {
+    auto& status_ = value.second;
+    switch(status_->protocol) {
+    case Protocol::TCP: {
+        auto status = std::static_pointer_cast<TcpStatus>(status_);
+        dp(param, "  0x%lx: <tcp> %s -> %s, srtt=%zd, state=%d, wlist: %zd, rlen: %zd\n",
+           value.first.first,
+           std::string(storage_ntoa(&status->src)).c_str(),
+           std::string(storage_ntoa(&status->dst)).c_str(),
+           (size_t) status->srtt, status->state,
+           status->sent_list.size(), status->rbuf.length());
+        break;
+    }
+    case Protocol::UDP: {
+        auto status = std::static_pointer_cast<UdpStatus>(status_);
+        dp(param, "  0x%lx: <udp> %s -> %s, readlen=%zd\n",
+           value.first.first,
+           std::string(storage_ntoa(&status->src)).c_str(),
+           std::string(storage_ntoa(&status->dst)).c_str(),
+           status->readlen);
+        break;
+    }
+    case Protocol::ICMP: {
+        auto status = std::static_pointer_cast<IcmpStatus>(status_);
+        dp(param, "  0x%lx: <icmp> %s -> %s, id=%d, seq=%d\n",
+           value.first.first,
+           std::string(storage_ntoa(&status->src)).c_str(),
+           std::string(storage_ntoa(&status->dst)).c_str(),
+           status->id, status->seq);
+        break;
+    }
+    default:
+        break;
+    }
+}
+
 void TunRWer::dump_status(Dumper dp, void *param) {
-    dp(param, "TunRwer: %p\n", this);
+    dp(param, "TunRwer: %p, session: %zd\n", this, statusmap.size());
     for(const auto& status : statusmap.data()) {
-        const auto& key = status.first.second;
-        dp(param, "  0x%lx: <%s> %s -> %s\n", status.first.first,
-           protstr(key.protocol),
-           std::string(storage_ntoa(&key.src)).c_str(),
-           std::string(storage_ntoa(&key.dst)).c_str());
+        dumpConnection(dp, param, status);
     }
 }
