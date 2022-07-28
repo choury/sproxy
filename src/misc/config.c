@@ -403,7 +403,7 @@ void postConfig(){
     }
     if((opt.policy_read == NULL) && (opt.policy_read = fopen(policy_file, "re")) == NULL){
         LOGE("failed to open policy file: %s\n", strerror(errno));
-    }else if((opt.policy_write = NULL) && (opt.policy_write = fopen(policy_file, "r+e")) == NULL){
+    }else if((opt.policy_write == NULL) && (opt.policy_write = fopen(policy_file, "r+e")) == NULL){
         LOG("failed to open policy file for write: %s, it won't be updated\n", strerror(errno));
     }
     if(opt.rootdir && chdir(opt.rootdir)){
