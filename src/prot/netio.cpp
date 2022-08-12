@@ -222,8 +222,8 @@ const char *SocketRWer::getPeer() {
 }
 
 void SocketRWer::dump_status(Dumper dp, void *param) {
-    dp(param, "SocketRWer: rlen: %zu, wlen: %zu, stats: %d, event: %s\n",
-       rlength(), wbuff.length(), (int)getStats(), events_string[(int)getEvents()]);
+    dp(param, "SocketRWer <%d> (%s): rlen: %zu, wlen: %zu, stats: %d, event: %s\n",
+       getFd(), getPeer(), rlength(), wbuff.length(), (int)getStats(), events_string[(int)getEvents()]);
 }
 
 ssize_t SocketRWer::Write(const void* buff, size_t len, uint64_t){

@@ -7,7 +7,7 @@
 #include <inttypes.h>
 
 void Guest2::connection_lost(){
-    LOGE("(%s): <guest2> Nothing got too long, so close it\n", getsrc());
+    LOGE("(%s): <guest2> Nothing got too long, so close it\n", rwer->getPeer());
     deleteLater(PEER_LOST_ERR);
 }
 
@@ -25,7 +25,7 @@ bool Guest2::wantmore(const ReqStatus& status) {
 Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
     rwer->SetErrorCB(std::bind(&Guest2::Error, this, _1, _2));
     rwer->SetReadCB([this](uint64_t, const void* data, size_t len) -> size_t {
-        LOGD(DHTTP2, "<guest2> (%s) read: len:%zu\n", getsrc(), len);
+        LOGD(DHTTP2, "<guest2> (%s) read: len:%zu\n", this->rwer->getPeer(), len);
         if(len == 0){
             //EOF
             deleteLater(NOERROR);
@@ -66,7 +66,7 @@ Guest2::~Guest2() {
 }
 
 void Guest2::Error(int ret, int code){
-    LOGE("(%s): <guest2> error: %d/%d\n", getsrc(), ret, code);
+    LOGE("(%s): <guest2> error: %d/%d\n", rwer->getPeer(), ret, code);
     deleteLater(ret);
 }
 
@@ -112,7 +112,8 @@ void Guest2::Handle(uint32_t id, ChannelMessage::Signal s){
 }
 
 void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
-    LOGD(DHTTP2, "<guest2> %" PRIu32 " (%s) ReqProc %s\n", header->request_id, getsrc(), header->geturl().c_str());
+    LOGD(DHTTP2, "<guest2> %" PRIu32 " (%s) ReqProc %s\n",
+         header->request_id, rwer->getPeer(), header->geturl().c_str());
     if(statusmap.count(id)){
         LOGD(DHTTP2, "<guest2> ReqProc dup id: %d\n", id);
         Reset(id, HTTP2_ERR_STREAM_CLOSED);
@@ -197,7 +198,7 @@ void Guest2::response(void* index, std::shared_ptr<HttpRes> res) {
         case ChannelMessage::CHANNEL_MSG_HEADER:{
             auto header = std::dynamic_pointer_cast<HttpResHeader>(msg.header);
             LOGD(DHTTP2, "<guest2> get response [%d]: %s\n", id, header->status);
-            HttpLog(getsrc(), status.req->header, header);
+            HttpLog(rwer->getPeer(), status.req->header, header);
             header->del("Transfer-Encoding");
             header->del("Connection");
 
@@ -301,7 +302,7 @@ void Guest2::GoawayProc(const Http2_header* header) {
 }
 
 void Guest2::ErrProc(int errcode) {
-    LOGE("(%s): Guest2 http2 error:0x%08x\n", getsrc(), errcode);
+    LOGE("(%s): Guest2 http2 error:0x%08x\n", rwer->getPeer(), errcode);
     http2_flag |= HTTP2_FLAG_ERROR;
     deleteLater(errcode);
 }
@@ -334,15 +335,15 @@ void Guest2::deleteLater(uint32_t errcode){
 
 
 void Guest2::dump_stat(Dumper dp, void* param) {
-    dp(param, "Guest2 %p, id: %d (%s) my_window: %d, his_window: %d\n",
-            this, sendid, getsrc(),
-            this->localwinsize, this->remotewinsize);
+    dp(param, "Guest2 %p, id: %d my_window: %d, his_window: %d\n",
+            this, sendid, this->localwinsize, this->remotewinsize);
     for(auto& i: statusmap){
-        dp(param, "  0x%x [%" PRIu32 "]: %s %s my_window: %d, his_window: %d, flags: 0x%08x\n",
+        dp(param, "  0x%x [%" PRIu32 "]: %s %s my_window: %d, his_window: %d, time: %dms, flags: 0x%08x\n",
                 i.first, i.second.req->header->request_id,
                 i.second.req->header->method,
                 i.second.req->header->geturl().c_str(),
                 i.second.localwinsize, i.second.remotewinsize,
+                getmtime() - i.second.req->header->ctime,
                 i.second.flags);
     }
     rwer->dump_status(dp, param);

@@ -218,15 +218,10 @@ void FDns::dump_stat(Dumper dp, void* param) {
     dp(param, "FDns: %p\n", this);
     for(const auto& i : statusmap) {
         const FDnsStatus& status = i.second;
-        if (status.quemap.empty()) {
-            dp(param, "  [%" PRIu32 "]: %s, error\n", i.first, status.req->header->geturl().c_str());
-            return;
-        }
+        dp(param, "  [%" PRIu32 "]: %s\n", i.first, status.req->header->geturl().c_str());
         for(auto p : status.quemap) {
             auto que = p.second;
-            dp(param, "  [%" PRIu32 "]: %s, %s, id=%d, type=%d\n",
-               i.first, status.req->header->geturl().c_str(),
-               que->domain, que->id, que->type);
+            dp(param, "    %s, id=%d, type=%d\n", que->domain, que->id, que->type);
         }
     }
 }

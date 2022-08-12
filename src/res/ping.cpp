@@ -106,7 +106,7 @@ void Ping::Recv(Buffer&& bb){
 }
 
 void Ping::dump_stat(Dumper dp, void* param) {
-    dp(param, "ping %p, [%" PRIu32"], (%s) id: %d, seq: %d\n",
-       this, req->header->request_id, rwer->getPeer(), id, seq);
+    dp(param, "ping %p, [%" PRIu32"], id: %d, seq: %d\n",
+       this, req->header->request_id, id, seq);
     rwer->dump_status(dp, param);
 }

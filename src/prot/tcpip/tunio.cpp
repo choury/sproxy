@@ -347,7 +347,7 @@ static void dumpConnection(Dumper dp, void* param,
 }
 
 void TunRWer::dump_status(Dumper dp, void *param) {
-    dp(param, "TunRwer: %p, session: %zd\n", this, statusmap.size());
+    dp(param, "TunRwer <%d>: %p, session: %zd\n", getFd(), this, statusmap.size());
     for(const auto& status : statusmap.data()) {
         dumpConnection(dp, param, status);
     }

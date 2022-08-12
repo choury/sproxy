@@ -67,7 +67,7 @@ Guest_vpn::~Guest_vpn(){
 static const char* getProg(std::shared_ptr<const Ip> pac) {
     auto src_ = pac->getsrc();
     auto dst_ = pac->getdst();
-    if(getRdns(src_) != "VPN") {
+    if(!startwith(getRdns(src_).c_str(), "VPN")) {
         return "NOT-LOCAL";
     }
 #if __ANDROID__
@@ -266,8 +266,8 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
                     rwer->addjob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
                 }
             }else{
-                LOGD(DVPN, "<guest_vpn> %" PRIu32 " recv data [%" PRIu64"]: %zu, cap: %d\n",
-                     status.req->header->request_id, id, msg.data.len, (int)rwer->cap(id));
+                LOGD(DVPN, "<guest_vpn> %" PRIu32 " recv data [%" PRIu64"]: %zu\n",
+                     status.req->header->request_id, id, msg.data.len);
                 rwer->buffer_insert(rwer->buffer_end(), std::move(msg.data));
             }
             return 1;
@@ -374,10 +374,11 @@ void Guest_vpn::Clean(uint64_t id, VpnStatus& status) {
 void Guest_vpn::dump_stat(Dumper dp, void *param) {
     dp(param, "Guest_vpn %p, session: %zd\n", this, statusmap.size());
     for(auto& i: statusmap){
-        dp(param, "  0x%lx [%" PRIu32 "]: %s %s, flags: 0x%08x\n",
+        dp(param, "  0x%lx [%" PRIu32 "]: %s %s, time: %dms, flags: 0x%08x\n",
            i.first, i.second.req->header->request_id,
            i.second.req->header->method,
            i.second.req->header->geturl().c_str(),
+           getmtime() - i.second.req->header->ctime,
            i.second.flags);
     }
     rwer->dump_status(dp, param);

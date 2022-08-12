@@ -10,7 +10,7 @@
 #include <inttypes.h>
 
 size_t Guest::ReadHE(uint64_t, const void* data, size_t len){
-    LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", getsrc(), len);
+    LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", rwer->getPeer(), len);
     if(len == 0){
         //EOF
         if(statuslist.empty()){
@@ -45,7 +45,7 @@ void Guest::WriteHE(uint64_t){
         return;
     }
     ReqStatus& status = statuslist.front();
-    LOGD(DHTTP, "<guest> (%s) written, flags:0x%08x\n", getsrc(), status.flags);
+    LOGD(DHTTP, "<guest> (%s) written, flags:0x%08x\n", rwer->getPeer(), status.flags);
     if(status.flags & HTTP_RES_COMPLETED){
         return;
     }
@@ -143,7 +143,7 @@ void Guest::ErrProc() {
 
 void Guest::Error(int ret, int code) {
     if(ret == SSL_SHAKEHAND_ERR){
-        LOGE("(%s): <guest> ssl_accept error %d/%d\n", getsrc(), ret, code);
+        LOGE("(%s): <guest> ssl_accept error %d/%d\n", rwer->getPeer(), ret, code);
     }
     if(statuslist.empty()){
         return deleteLater(PEER_LOST_ERR);
@@ -163,7 +163,7 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER: {
             auto header = std::dynamic_pointer_cast<HttpResHeader>(msg.header);
-            HttpLog(getsrc(), status.req->header, header);
+            HttpLog(rwer->getPeer(), status.req->header, header);
             if (status.req->header->ismethod("CONNECT") ||
                 status.req->header->ismethod("SEND")) {
                 if (memcmp(header->status, "200", 3) == 0) {
@@ -257,12 +257,13 @@ Guest::~Guest() {
 }
 
 void Guest::dump_stat(Dumper dp, void* param){
-    dp(param, "Guest %p, (%s)\n", this, getsrc());
+    dp(param, "Guest %p, tx:%zd, rx:%zd\n", this, tx_bytes, rx_bytes);
     for(const auto& status : statuslist){
-        dp(param, "  [%" PRIu32 "]: %s %s, flags: 0x%08x [%s]\n",
+        dp(param, "  [%" PRIu32 "]: %s %s, time: %dms, flags: 0x%08x [%s]\n",
                 status.req->header->request_id,
                 status.req->header->method,
                 status.req->header->geturl().c_str(),
+                getmtime() - status.req->header->ctime,
                 status.flags,
                 status.req->header->get("User-Agent"));
     }

@@ -380,8 +380,8 @@ void Proxy2::deleteLater(uint32_t errcode){
 }
 
 void Proxy2::dump_stat(Dumper dp, void* param) {
-    dp(param, "Proxy2 %p%s id: %d (%s), my_window: %d, his_window: %d\n",
-            this, proxy2 == this?" [M]":"", sendid, rwer->getPeer(),
+    dp(param, "Proxy2 %p%s id: %d, my_window: %d, his_window: %d\n",
+            this, proxy2 == this?" [M]":"", sendid,
             this->localwinsize, this->remotewinsize);
     for(auto& i: statusmap){
         dp(param, "  0x%x [%" PRIu32 "]: %s, my_window: %d, his_window: %d, flags: 0x%08x\n",

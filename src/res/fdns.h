@@ -8,14 +8,12 @@
 #include "prot/dns/dns.h"
 #include <map>
 
-struct FDnsStatus{
-    std::shared_ptr<HttpReq>   req;
-    std::shared_ptr<HttpRes>   res;
-    std::map<uint16_t, std::shared_ptr<Dns_Query>> quemap;
-};
-
-
 class FDns: public Responser{
+    struct FDnsStatus{
+        std::shared_ptr<HttpReq>   req;
+        std::shared_ptr<HttpRes>   res;
+        std::map<uint16_t, std::shared_ptr<Dns_Query>> quemap;
+    };
     std::map<uint32_t, FDnsStatus> statusmap;
 
     void Recv(Buffer&& bb);

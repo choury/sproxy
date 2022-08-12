@@ -1504,7 +1504,8 @@ void QuicRWer::keepAlive_action() {
 }
 
 void QuicRWer::dump_status(Dumper dp, void *param) {
-    dp(param, "QuicRWer: %s -> %s, read: %zd/%zd, write: %zd/%zd\n my_window: %zd, his_window: %zd rlen: %zd, fullq: %zd\n",
+    dp(param, "QuicRWer <%d> (%s): %s -> %s\nread: %zd/%zd, write: %zd/%zd my_window: %zd, his_window: %zd rlen: %zd, fullq: %zd\n",
+       getFd(), getPeer(),
        dumpHex(myids[myid_idx].c_str(), myids[myid_idx].length()).c_str(),
        dumpHex(hisids[hisid_idx].c_str(), myids[myid_idx].length()).c_str(),
        my_received_data, my_received_data_total,

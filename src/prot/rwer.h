@@ -93,7 +93,9 @@ public:
 
     virtual void ConsumeRData() override;
     virtual const char* getPeer() override {return "null-rwer";}
-    virtual void dump_status(Dumper dp, void* param) override {dp(param, "NullRWer");}
+    virtual void dump_status(Dumper dp, void* param) override {
+        dp(param, "NullRWer <%d>\n", getFd());
+    }
 };
 
 class FullRWer: public RWer{
@@ -112,7 +114,9 @@ public:
     virtual ssize_t cap(uint64_t id) override;
     virtual void ConsumeRData() override;
     virtual const char* getPeer() override {return "full-rwer";}
-    virtual void dump_status(Dumper dp, void* param) override {dp(param, "FullRWer");}
+    virtual void dump_status(Dumper dp, void* param) override {
+        dp(param, "FullRWer <%d>\n", getFd());
+    }
 };
 
 #endif

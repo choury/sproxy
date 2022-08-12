@@ -346,6 +346,7 @@ void Cgi::dump_stat(Dumper dp, void* param){
         dp(param, "  [%" PRIu32"]: %s\n",
            i.first, i.second.req->header->geturl().c_str());
     }
+    rwer->dump_status(dp, param);
 }
 
 void getcgi(std::shared_ptr<HttpReq> req, const char* filename, Requester* src){

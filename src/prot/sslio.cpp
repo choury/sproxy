@@ -183,7 +183,7 @@ void SslRWer::set_hostname_callback(int (* cb)(SSL *, int *, void*), void* arg){
 }
 
 void SslRWer::dump_status(Dumper dp, void *param) {
-    dp(param, "SslRWer: rlen: %zu, wlen: %zu, stats: %d, event: %s, %s\n",
-       rlength(), wbuff.length(), (int)getStats(),
-       events_string[(int)getEvents()], SSL_state_string_long(ssl));
+    dp(param, "SslRWer <%d> (%s): %s\nrlen: %zu, wlen: %zu, stats: %d, event: %s\n",
+       getFd(), getPeer(), SSL_state_string_long(ssl),
+       rlength(), wbuff.length(), (int)getStats(), events_string[(int)getEvents()]);
 }

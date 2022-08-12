@@ -5,14 +5,15 @@
 #include "prot/tcpip/ip_pack.h"
 
 #define VPN_DNSREQ_F    (1u<<16u)
-struct VpnStatus{
-    std::shared_ptr<const Ip> pac;
-    std::shared_ptr<HttpReq> req;
-    std::shared_ptr<HttpRes> res;
-    uint32_t   flags = 0;
-};
 
 class Guest_vpn: public Requester {
+    struct VpnStatus{
+        std::shared_ptr<const Ip> pac;
+        std::shared_ptr<HttpReq> req;
+        std::shared_ptr<HttpRes> res;
+        uint32_t   flags = 0;
+    };
+
     std::map<uint64_t, VpnStatus> statusmap;
     void handle(uint64_t id, ChannelMessage::Signal s);
     void ReqProc(uint64_t id, std::shared_ptr<const Ip> pac);

@@ -36,7 +36,7 @@ void Guest_sni::response(void*, std::shared_ptr<HttpRes> res){
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER: {
             auto header = std::dynamic_pointer_cast<HttpResHeader>(msg.header);
-            HttpLog(getsrc(), status.req->header, header);
+            HttpLog(rwer->getPeer(), status.req->header, header);
             rwer->Unblock(0);
             return 1;
         }

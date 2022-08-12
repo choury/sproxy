@@ -13,7 +13,6 @@ protected:
 public:
     explicit Requester(std::shared_ptr<RWer> rwer);
 
-    virtual const char *getsrc();
     virtual const char *getid();
     virtual void response(void* index, std::shared_ptr<HttpRes> res) = 0;
 };
