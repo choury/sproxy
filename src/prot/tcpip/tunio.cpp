@@ -221,6 +221,26 @@ void TunRWer::ReadData() {
     }
 }
 
+//只有TCP有读缓冲，所以对其他情况都返回0
+size_t TunRWer::rlength(uint64_t id) {
+    if(!statusmap.Has(id)) {
+        return 0;
+    }
+    auto status = GetStatus(id);
+    if (status->protocol == Protocol::TCP) {
+        return 1;
+    }
+    return 0;
+}
+
+void TunRWer::ConsumeRData(uint64_t id) {
+    assert(statusmap.Has(id));
+    auto status = GetStatus(id);
+    if (status->protocol == Protocol::TCP) {
+        consumeData(status);
+    }
+}
+
 ssize_t TunRWer::Write(const void*, size_t, uint64_t) {
     errno = EINVAL;
     return -1;

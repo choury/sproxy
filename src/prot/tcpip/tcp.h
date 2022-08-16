@@ -36,6 +36,7 @@ public:
     void SendSyn(std::shared_ptr<TcpStatus> status);
     void SendRst(std::shared_ptr<TcpStatus> status);
     ssize_t Cap(std::shared_ptr<IpStatus> status);
+    void consumeData(std::shared_ptr<IpStatus> status);
 };
 
 struct tcp_sent{
@@ -53,6 +54,9 @@ struct TcpStatus: public IpStatus{
     uint8_t    send_wscale;
     uint16_t   window;
     uint16_t   mss;
+#define TCP_FIN_RECVD     1
+#define TCP_FIN_DELIVERED 2
+    uint32_t   flags = 0;
     uint32_t   sent_seq; //下一个发送的报文的序列号，意思是上一个发送的序列号是sent_seq-1
     uint32_t   sent_ack;
     uint32_t   recv_ack;

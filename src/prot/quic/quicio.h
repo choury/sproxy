@@ -174,8 +174,9 @@ protected:
     virtual void closeHE(RW_EVENT events) override;
 
     virtual void ReadData() override;
-    virtual void ConsumeRData() override;
-    virtual size_t rlength() override;
+    void consumeData(uint64_t id, QuicStreamStatus& status);
+    virtual void ConsumeRData(uint64_t id) override;
+    virtual size_t rlength(uint64_t id) override;
     virtual ssize_t cap(uint64_t id) override;
     virtual ssize_t Write(const void* buff, size_t len, uint64_t id) override;
 

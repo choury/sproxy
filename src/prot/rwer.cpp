@@ -86,9 +86,6 @@ void RWer::defaultHE(RW_EVENT events){
     if (!!(events & RW_EVENT::READ) || !!(events & RW_EVENT::READEOF)){
         flags |= RWER_READING;
         ReadData();
-        if(rlength() > 0 || (stats == RWerStats::ReadEOF && (flags & RWER_EOFDELIVED) == 0)) {
-            ConsumeRData();
-        }
         flags &= ~RWER_READING;
     }
     if((flags & RWER_CLOSING) || stats == RWerStats::Error){
@@ -133,15 +130,15 @@ void RWer::Close(std::function<void()> func) {
     }
 }
 
-void RWer::Unblock(uint64_t){
+void RWer::Unblock(uint64_t id){
     if(flags & RWER_READING){
         return;
     }
     flags |= RWER_READING;
     switch(stats){
     case RWerStats::Connected:
-        if(rlength() > 0) {
-            ConsumeRData();
+        if(rlength(id) > 0) {
+            ConsumeRData(id);
         }
         addEvents(RW_EVENT::READ);
         break;
@@ -149,7 +146,7 @@ void RWer::Unblock(uint64_t){
         if(flags & RWER_EOFDELIVED){
             break;
         }
-        ConsumeRData();
+        ConsumeRData(id);
         break;
     default:
         break;
@@ -190,11 +187,11 @@ NullRWer::NullRWer():RWer(-1, [](int, int){}) {
 void NullRWer::ReadData() {
 }
 
-size_t NullRWer::rlength() {
+size_t NullRWer::rlength(uint64_t) {
     return 0;
 }
 
-void NullRWer::ConsumeRData() {
+void NullRWer::ConsumeRData(uint64_t) {
 }
 
 ssize_t NullRWer::Write(const void*, size_t len, uint64_t) {
@@ -248,7 +245,7 @@ ssize_t FullRWer::Write(const void* buff, size_t len, uint64_t) {
 #endif
 }
 
-size_t FullRWer::rlength() {
+size_t FullRWer::rlength(uint64_t) {
     return 1;
 }
 
@@ -256,11 +253,12 @@ ssize_t FullRWer::cap(uint64_t) {
     return 1;
 }
 
-void FullRWer::ConsumeRData() {
+void FullRWer::ConsumeRData(uint64_t) {
     readCB(0, nullptr, 0);
 }
 
 void FullRWer::ReadData(){
+    ConsumeRData(0);
 }
 
 void FullRWer::closeHE(RW_EVENT) {

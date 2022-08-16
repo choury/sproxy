@@ -243,10 +243,8 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
                 trwer->sendMsg(id, TUN_MSG_SYN);
                 return 1;
             }else if(header->status[0] == '4'){
-                status.flags |= HTTP_CLOSED_F;
                 trwer->sendMsg(id, TUN_MSG_BLOCK);
             }else if(header->status[0] == '5'){
-                status.flags |= HTTP_CLOSED_F;
                 trwer->sendMsg(id, TUN_MSG_UNREACH);
             }else{
                 LOGE("unknown response\n");

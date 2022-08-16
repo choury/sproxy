@@ -681,7 +681,7 @@ QuicRWer::FrameResult QuicRWer::handleStreamFrame(uint64_t type, const quic_stre
          id, want, status.my_max_data, my_received_data, my_max_data,
          (type & QUIC_FRAME_STREAM_FIN_F)?" EOF":"");
 
-    //ConsumeRData();
+    //这里不调用consume的原因是我们希望把数据合并后一起上送，减少调用次数
     return FrameResult::ok;
 }
 
@@ -1313,6 +1313,7 @@ void QuicRWer::ReadData() {
         walkPackets(buff, ret);
     }
     reorderData();
+    ConsumeRData(0);
 }
 
 void QuicRWer::setResetHandler(std::function<void(uint64_t, uint32_t)> func) {
@@ -1343,8 +1344,14 @@ void QuicRWer::Reset(uint64_t id, uint32_t code) {
     }
 }
 
-size_t QuicRWer::rlength() {
-    return rblen;
+size_t QuicRWer::rlength(uint64_t id) {
+    if(id == 0) {
+        return rblen;
+    }
+    if(streammap.count(id) == 0){
+        return 0;
+    }
+    return streammap[id].rb.length();
 }
 
 ssize_t QuicRWer::cap(uint64_t id) {
@@ -1393,72 +1400,72 @@ bool QuicRWer::idle(uint64_t id){
     return recv_closed;
 }
 
-void QuicRWer::ConsumeRData() {
-    std::list<uint64_t> to_clean;
-    for(auto& i: streammap){
-        auto& status = i.second;
-        if(idle(i.first)){
-            to_clean.push_back(i.first);
-            continue;
-        }
-        if(status.flags & (STREAM_FLAG_FIN_DELIVED | STREAM_FLAG_RESET_RECVD)){
-            assert((status.flags & STREAM_FLAG_FIN_SENT) == 0);
-            continue;
-        }
-        if((status.flags & STREAM_FLAG_FIN_RECVD) && status.finSize == status.rb.Offset()){
-            //如果收到了FIN，即使缓冲区为空，仍需要把FIN发送给应用层
-            assert(status.rb.length() == 0);
-        }else if(status.rb.length() == 0){
-            continue;
-        }
-        auto& rb = status.rb;
-        assert(rblen >= rb.length());
-        if(rb.length() > 0){
-            Buffer bb = rb.get();
-            size_t eaten = rb.length() - readCB(i.first, bb.data(), bb.len);
-            LOGD(DQUIC, "consume data [%" PRIu64"]: %" PRIu64" - %" PRIu64", left: %zd\n",
-                 i.first, rb.Offset(), rb.Offset() + eaten, rb.length() - eaten);
-            rb.consume(eaten);
-            rblen -= eaten;
-        }
+void QuicRWer::consumeData(uint64_t id, QuicRWer::QuicStreamStatus &status) {
+    if(status.flags & (STREAM_FLAG_FIN_DELIVED | STREAM_FLAG_RESET_RECVD)){
+        return;
+    }
+    auto& rb = status.rb;
+    assert(rblen >= rb.length());
+    if(rb.length() > 0){
+        Buffer bb = rb.get();
+        size_t eaten = rb.length() - readCB(id, bb.data(), bb.len);
+        LOGD(DQUIC, "consume data [%" PRIu64"]: %" PRIu64" - %" PRIu64", left: %zd\n",
+             id, rb.Offset(), rb.Offset() + eaten, rb.length() - eaten);
+        rb.consume(eaten);
+        rblen -= eaten;
+    }
 
-        if((status.flags & STREAM_FLAG_FIN_RECVD) && rb.length() == 0){
-            assert((status.flags & STREAM_FLAG_FIN_DELIVED) == 0);
-            //在QuicRWer中，我们不用 ReadEOF状态，因为它是对整个连接的，而不是对某个stream的
-            assert(status.finSize == rb.Offset());
-            readCB(i.first, nullptr, 0);
-            LOGD(DQUIC, "consume EOF [%" PRIu64"]: %" PRIu64"\n", i.first, rb.Offset());
-            status.flags |= STREAM_FLAG_FIN_DELIVED;
-        }
+    if((status.flags & STREAM_FLAG_FIN_RECVD) && rb.length() == 0){
+        assert((status.flags & STREAM_FLAG_FIN_DELIVED) == 0);
+        //在QuicRWer中，我们不用 ReadEOF状态，因为它是对整个连接的，而不是对某个stream的
+        assert(status.finSize == rb.Offset());
+        readCB(id, nullptr, 0);
+        LOGD(DQUIC, "consume EOF [%" PRIu64"]: %" PRIu64"\n", id, rb.Offset());
+        status.flags |= STREAM_FLAG_FIN_DELIVED;
+    }
 
-        auto shouldSendMaxStreamData = [](QuicStreamStatus& status) -> bool {
-            if((status.flags & STREAM_FLAG_FIN_RECVD) && status.my_max_data >= status.finSize){
-                return false;
-            }
-            uint64_t offset = status.rb.Offset() + status.rb.length();
-            if(status.my_max_data - offset < BUF_LEN/2 && offset + status.rb.cap() > status.my_max_data){
-                return true;
-            }
-            if(offset + status.rb.cap() - status.my_max_data < BUF_LEN){
-                return false;
-            }
+    auto shouldSendMaxStreamData = [](QuicStreamStatus& status) -> bool {
+        if((status.flags & STREAM_FLAG_FIN_RECVD) && status.my_max_data >= status.finSize){
+            return false;
+        }
+        uint64_t offset = status.rb.Offset() + status.rb.length();
+        if(status.my_max_data - offset < BUF_LEN/2 && offset + status.rb.cap() > status.my_max_data){
             return true;
-        };
-        if(shouldSendMaxStreamData(status)){
-            status.my_max_data =  rb.Offset() + rb.length() + rb.cap();
-            quic_frame* frame = new quic_frame;
-            frame->type = QUIC_FRAME_MAX_STREAM_DATA;
-            frame->max_stream_data.id = i.first;
-            frame->max_stream_data.max = status.my_max_data;
-            qos.PushFrame(ssl_encryption_application, frame);
         }
-        if(idle(i.first)){
-            to_clean.push_back(i.first);
+        if(offset + status.rb.cap() - status.my_max_data < BUF_LEN){
+            return false;
+        }
+        return true;
+    };
+    if(shouldSendMaxStreamData(status)){
+        status.my_max_data =  rb.Offset() + rb.length() + rb.cap();
+        quic_frame* frame = new quic_frame;
+        frame->type = QUIC_FRAME_MAX_STREAM_DATA;
+        frame->max_stream_data.id = id;
+        frame->max_stream_data.max = status.my_max_data;
+        qos.PushFrame(ssl_encryption_application, frame);
+    }
+}
+
+void QuicRWer::ConsumeRData(uint64_t id) {
+    std::list<uint64_t> to_clean;
+    if(id == 0) {
+        for (auto &i: streammap) {
+            auto &status = i.second;
+            consumeData(i.first, status);
+            if (idle(i.first)) {
+                to_clean.push_back(i.first);
+            }
+        }
+    } else if(streammap.count(id)){
+        consumeData(id, streammap[id]);
+        if (idle(id)) {
+            to_clean.push_back(id);
         }
     }
-    if(my_max_data - my_received_data <= 50 *1024 *1024){
-        my_max_data += 50 *1024 *1024;
-        quic_frame* frame = new quic_frame;
+    if (my_max_data - my_received_data <= 50 * 1024 * 1024) {
+        my_max_data += 50 * 1024 * 1024;
+        quic_frame *frame = new quic_frame;
         frame->type = QUIC_FRAME_MAX_DATA;
         frame->extra = my_max_data;
         qos.PushFrame(ssl_encryption_application, frame);

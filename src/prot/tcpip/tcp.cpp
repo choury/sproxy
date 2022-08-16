@@ -68,6 +68,13 @@ ssize_t TcpHE::Cap(std::shared_ptr<IpStatus> status_) {
                     - (ssize_t)(status->sent_seq - status->recv_ack);
 }
 
+void TcpHE::consumeData(std::shared_ptr<IpStatus> status_) {
+    std::shared_ptr<TcpStatus> status = std::static_pointer_cast<TcpStatus>(status_);
+    if(status->rbuf.length() > 0 || (status->flags & TCP_FIN_RECVD)){
+        SendAck(status);
+    }
+}
+
 static size_t bufleft(std::shared_ptr<TcpStatus> status) {
     return status->rbuf.cap();
 }
@@ -287,7 +294,7 @@ void TcpHE::DefaultProc(std::shared_ptr<IpStatus> status_, std::shared_ptr<const
             }else{
                 break;
             }
-        }
+}
         assert(rtt != UINT32_MAX);
         if(status->srtt == 0) {
             status->srtt = rtt;
@@ -296,7 +303,7 @@ void TcpHE::DefaultProc(std::shared_ptr<IpStatus> status_, std::shared_ptr<const
             status->rttval = (3 * status->rttval + labs((long) status->srtt - (long)rtt)) / 4;
             status->srtt = (7 * status->srtt + rtt) / 8;
         }
-        status->rto = std::max(status->srtt + 4 * status->rttval, (uint32_t)20);
+        status->rto = std::max(status->srtt + 4 * status->rttval, (uint32_t)40);
         LOGD(DVPN, "tcp rtt: %d, srtt: %d, rttval: %d, rto: %d\n", rtt, status->srtt, status->rttval, status->rto);
         if(status->sent_list.empty()) {
             status->jobHandler.deljob(&status->rto_job);
@@ -310,6 +317,7 @@ left:
     status->window = pac->tcp->getwindow();
     if(flag & TH_FIN){ //fin包，回ack包
         status->want_seq++;
+        status->flags |= TCP_FIN_RECVD;
         switch(status->state){
         case TCP_CLOSE_WAIT:
             LOG("%s get dup fin, send rst back\n", storage_ntoa(&status->src));
@@ -330,7 +338,6 @@ left:
         }
         status->ack_job = status->jobHandler.updatejob(status->ack_job,
                                                        std::bind(&TcpHE::SendAck, this, GetWeak(status)), 0);
-        DataProc(pac, nullptr, 0);
         return;
     }
 
@@ -350,11 +357,6 @@ left:
         status->ack_job = status->jobHandler.updatejob(status->ack_job,
                                                        std::bind(&TcpHE::SendAck, this, GetWeak(status)), 0);
     }
-    if(status->rbuf.length()){
-        auto bb = status->rbuf.get();
-        size_t len = DataProc(pac, bb.data(), bb.len);
-        status->rbuf.consume(len);
-    }
 }
 
 void TcpHE::SendAck(std::weak_ptr<TcpStatus> status_) {
@@ -363,6 +365,20 @@ void TcpHE::SendAck(std::weak_ptr<TcpStatus> status_) {
     }
     auto status = status_.lock();
     assert(noafter(status->sent_ack, status->want_seq));
+    if(status->flags & TCP_FIN_DELIVERED) {
+        assert(status->rbuf.length() == 0);
+    }else{
+        auto pac = MakeIp(IPPROTO_TCP, &status->src, &status->dst);
+        if(status->rbuf.length() > 0) {
+            auto bb = status->rbuf.get();
+            size_t len = DataProc(pac, bb.data(), bb.len);
+            status->rbuf.consume(len);
+        }
+        if((status->flags & TCP_FIN_RECVD) && status->rbuf.length() == 0){
+            DataProc(pac, nullptr, 0);
+            status->flags |= TCP_FIN_DELIVERED;
+        }
+    }
     if(status->state == TCP_CLOSE) {
         status->jobHandler.deljob(&status->ack_job);
         return;

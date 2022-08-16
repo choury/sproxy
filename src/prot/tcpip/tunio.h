@@ -40,8 +40,8 @@ public:
     virtual ~TunRWer() override;
     virtual buff_iterator buffer_insert(buff_iterator where, Buffer&& bb) override;
     virtual void ReadData() override;
-    virtual void ConsumeRData() override {};
-    virtual size_t rlength() override {return 0;};
+    virtual void ConsumeRData(uint64_t id) override;
+    virtual size_t rlength(uint64_t id) override;
     virtual ssize_t cap(uint64_t id) override;
     virtual bool idle(uint64_t id) override;
     virtual const char* getPeer() override {return "tun-rwer";}

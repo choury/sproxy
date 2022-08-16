@@ -223,7 +223,7 @@ const char *SocketRWer::getPeer() {
 
 void SocketRWer::dump_status(Dumper dp, void *param) {
     dp(param, "SocketRWer <%d> (%s): rlen: %zu, wlen: %zu, stats: %d, event: %s\n",
-       getFd(), getPeer(), rlength(), wbuff.length(), (int)getStats(), events_string[(int)getEvents()]);
+       getFd(), getPeer(), rlength(0), wbuff.length(), (int)getStats(), events_string[(int)getEvents()]);
 }
 
 ssize_t SocketRWer::Write(const void* buff, size_t len, uint64_t){
@@ -235,11 +235,11 @@ ssize_t SocketRWer::Write(const void* buff, size_t len, uint64_t){
     return write(getFd(), buff, len);
 }
 
-size_t StreamRWer::rlength() {
+size_t StreamRWer::rlength(uint64_t) {
     return rb.length();
 }
 
-void StreamRWer::ConsumeRData() {
+void StreamRWer::ConsumeRData(uint64_t) {
     if(rb.length()){
         Buffer wb = rb.get();
         size_t left = readCB(0, wb.data(), wb.len);
@@ -259,60 +259,49 @@ ssize_t StreamRWer::Read(void* buff, size_t len) {
 }
 
 void StreamRWer::ReadData() {
-    size_t left = 0;
-    while((left = rb.left())){
-        int ret = Read(rb.end(), left);
-        if(ret > 0){
-            rb.append((size_t) ret);
-            continue;
-        }
-        if(ret == 0){
-            // Eof will send to handler after rb are consumed
-            stats = RWerStats::ReadEOF;
-            delEvents(RW_EVENT::READ);
-            return;
-        }
-        if(errno == EAGAIN){
-            return;
-        }
+    size_t left = rb.left();
+    if(left == 0){
+        return;
+    }
+    int ret = Read(rb.end(), left);
+    if(ret > 0){
+        rb.append((size_t) ret);
+    }else if(ret == 0){
+        stats = RWerStats::ReadEOF;
+        delEvents(RW_EVENT::READ);
+    }else if(errno != EAGAIN){
         ErrorHE(SOCKET_ERR, errno);
         return;
     }
+    ConsumeRData(0);
 }
 
-size_t PacketRWer::rlength() {
-    return rlen;
+size_t PacketRWer::rlength(uint64_t) {
+    return 0;
 }
 
 ssize_t PacketRWer::Read(void* buff, size_t len) {
     return read(getFd(), buff, len);
 }
 
-void PacketRWer::ConsumeRData() {
-    if(rlen > 0){
-        size_t left = readCB(0, rb, rlen);
-        rlen = left;
-        assert(rlen == 0);
-    }
-    if(stats == RWerStats::ReadEOF && (flags & RWER_EOFDELIVED) == 0){
-        readCB(0, nullptr, 0);
-        flags |= RWER_EOFDELIVED;
-    }
+void PacketRWer::ConsumeRData(uint64_t) {
 }
 
 void PacketRWer::ReadData() {
-    int ret = Read(rb, sizeof(rb));
-    if(ret > 0){
-        rlen = ret;
+    while(true) {
+        int ret = Read(rb, sizeof(rb));
+        if (ret > 0) {
+            readCB(0, rb, ret);
+            continue;
+        }
+        if (ret == 0) {
+            stats = RWerStats::ReadEOF;
+            delEvents(RW_EVENT::READ);
+            readCB(0, nullptr, 0);
+            flags |= RWER_EOFDELIVED;
+        }else if (errno != EAGAIN) {
+            ErrorHE(SOCKET_ERR, errno);
+        }
         return;
     }
-    if(ret == 0){
-        stats = RWerStats::ReadEOF;
-        delEvents(RW_EVENT::READ);
-        return;
-    }
-    if(errno == EAGAIN){
-        return;
-    }
-    ErrorHE(SOCKET_ERR, errno);
 }

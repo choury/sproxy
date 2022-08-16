@@ -39,26 +39,25 @@ protected:
     CBuffer rb;
     virtual ssize_t Read(void* buff, size_t len);
     virtual void ReadData() override;
-    virtual void ConsumeRData() override;
+    virtual void ConsumeRData(uint64_t id) override;
 public:
     using SocketRWer::SocketRWer;
 
     //for read buffer
-    virtual size_t rlength() override;
+    virtual size_t rlength(uint64_t id) override;
 };
 
 class PacketRWer: public SocketRWer{
 protected:
-    char rb[BUF_LEN * 2];
-    size_t rlen = 0;
+    char rb[BUF_LEN];
     virtual ssize_t Read(void* buff, size_t len);
     virtual void ReadData() override;
-    virtual void ConsumeRData() override;
+    virtual void ConsumeRData(uint64_t id) override;
 public:
     using SocketRWer::SocketRWer;
 
     //for read buffer
-    virtual size_t rlength() override;
+    virtual size_t rlength(uint64_t id) override;
 };
 
 
