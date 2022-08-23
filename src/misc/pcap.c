@@ -1,6 +1,6 @@
 #include "common/common.h"
 #include "pcap.h"
-#include "util.h"
+#include "config.h"
 
 #include <unistd.h>
 #include <string.h>
@@ -68,12 +68,13 @@ int pcap_write_with_generated_ethhdr(int fd, const void *data, size_t len){
         return -1;
     }
 
+    size_t write_len = Min(len, opt.pcap_len);
     uint64_t utime = getutime();
     pcap_pkt_hdr_t phdr = {
             .ts_sec = htonl(utime/1000000),
             .ts_usec = htonl(utime%1000000),
             .orig_len = htonl(len + sizeof(ethhdr)),
-            .incl_len = htonl(len + sizeof(ethhdr)),
+            .incl_len = htonl(write_len + sizeof(ethhdr)),
     };
     if(write(fd, &phdr, sizeof(phdr)) < 0){
         LOGE("failed to write pcap packet header: %s\n", strerror(errno));
@@ -83,7 +84,7 @@ int pcap_write_with_generated_ethhdr(int fd, const void *data, size_t len){
         LOGE("failed to write ether header: %s\n", strerror(errno));
         return -1;
     }
-    return write(fd, data, len);
+    return write(fd, data, write_len);
 }
 
 

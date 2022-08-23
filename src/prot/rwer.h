@@ -48,7 +48,6 @@ protected:
     //返回值是剩余未处理的数据长度，返回0表示数据处理完毕，返回len表示数据完全没有被消费
     std::function<size_t(uint64_t id, const void* data, size_t len)> readCB;
     std::function<void(uint64_t id)> writeCB;
-    std::function<void(const sockaddr_storage&)> connectCB;
     std::function<void(int ret, int code)> errorCB;
     std::function<void()> closeCB;
 
@@ -57,27 +56,25 @@ protected:
     virtual void ReadData() = 0;
     virtual void defaultHE(RW_EVENT events);
     virtual void closeHE(RW_EVENT events);
-    virtual void Connected(const sockaddr_storage&);
     virtual void ErrorHE(int ret, int code);
-    virtual void ConsumeRData() = 0;
+    //ConsumeRData只会在Unblock中被调用，ReadData逻辑，需要各实现自行处理readCB回调
+    virtual void ConsumeRData(uint64_t id) = 0;
 public:
     explicit RWer(int fd, std::function<void(int ret, int code)> errorCB);
-    explicit RWer(std::function<void(int ret, int code)> errorCB,
-                  std::function<void(const sockaddr_storage&)> connectCB);
+    explicit RWer(std::function<void(int ret, int code)> errorCB);
     virtual void SetErrorCB(std::function<void(int ret, int code)> func);
     virtual void SetReadCB(std::function<size_t(uint64_t id, const void* data, size_t len)> func);
     virtual void SetWriteCB(std::function<void(uint64_t id)> func);
 
     virtual void Close(std::function<void()> func);
-    void Unblock();
+    virtual void Unblock(uint64_t id);
     RWerStats getStats(){return stats;}
     virtual const char* getPeer() {return "raw-rwer";}
 
     //for read buffer
-    virtual size_t rlength() = 0;
+    virtual size_t rlength(uint64_t id) = 0;
 
     //for write buffer
-    virtual size_t wlength();
     virtual ssize_t cap(uint64_t id);
     virtual buff_iterator buffer_head();
     virtual buff_iterator buffer_end();
@@ -92,12 +89,13 @@ public:
     explicit NullRWer();
     virtual ssize_t Write(const void *buff, size_t len, uint64_t) override;
     virtual void ReadData() override;
-    virtual size_t rlength() override;
-    virtual size_t wlength() override;
+    virtual size_t rlength(uint64_t id) override;
 
-    virtual void ConsumeRData() override;
+    virtual void ConsumeRData(uint64_t) override;
     virtual const char* getPeer() override {return "null-rwer";}
-    virtual void dump_status(Dumper dp, void* param) override {dp(param, "NullRWer");}
+    virtual void dump_status(Dumper dp, void* param) override {
+        dp(param, "NullRWer <%d>\n", getFd());
+    }
 };
 
 class FullRWer: public RWer{
@@ -112,11 +110,13 @@ public:
     explicit FullRWer(std::function<void(int ret, int code)> errorCB);
     ~FullRWer() override;
 
-    virtual size_t rlength() override;
+    virtual size_t rlength(uint64_t id) override;
     virtual ssize_t cap(uint64_t id) override;
-    virtual void ConsumeRData() override;
+    virtual void ConsumeRData(uint64_t) override;
     virtual const char* getPeer() override {return "full-rwer";}
-    virtual void dump_status(Dumper dp, void* param) override {dp(param, "FullRWer");}
+    virtual void dump_status(Dumper dp, void* param) override {
+        dp(param, "FullRWer <%d>\n", getFd());
+    }
 };
 
 #endif

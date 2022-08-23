@@ -32,8 +32,9 @@ void Channel::eatMessage() {
         if(!handler || message_queue.empty()){
             return;
         }
-        int ret = handler(message_queue.front());
+        ChannelMessage msg(std::move(message_queue.front()));
         message_queue.pop();
+        int ret = handler(msg);
         if(ret){
             continue;
         }

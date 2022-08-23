@@ -90,6 +90,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
         parseConfigFile(config_file.c_str());
     }
     opt.policy_read = fopen(sites_file.c_str(), "re");
+    opt.pcap_len = 200;
     //opt.pcap_file = pcap_file.c_str();
     const char *server_str = jnienv->GetStringUTFChars(server, nullptr);
     const char *secret_str = jnienv->GetStringUTFChars(secret, nullptr);

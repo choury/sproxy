@@ -15,7 +15,7 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
         unsigned int len;
         qrwer->get_alpn(&data, &len);
         if ((data && strncasecmp((const char*)data, "h3", len) != 0)) {
-            LOGE("(%s) unknown protocol: %.*s\n", getsrc(), len, data);
+            LOGE("(%s) unknown protocol: %.*s\n", rwer->getPeer(), len, data);
             return Server::deleteLater(PROTOCOL_ERR);
         }
         qrwer->setResetHandler(std::bind(&Guest3::RstProc, this, _1, _2));
@@ -23,7 +23,7 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
     }))
 {
     rwer->SetReadCB([this](uint64_t id, const void* data, size_t len) -> size_t {
-        LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", getsrc(), id, len);
+        LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", this->rwer->getPeer(), id, len);
         if(len == 0){
             //fin
             if(ctrlid_remote && id == ctrlid_remote){
@@ -84,7 +84,7 @@ void Guest3::AddInitData(const void *buff, size_t len) {
 }
 
 void Guest3::Error(int ret, int code){
-    LOGE("(%s): <guest3> error: %d/%d\n", getsrc(), ret, code);
+    LOGE("(%s): <guest3> error: %d/%d\n", rwer->getPeer(), ret, code);
     deleteLater(ret);
 }
 
@@ -125,7 +125,8 @@ void Guest3::Handle(uint64_t id, ChannelMessage::Signal s) {
 }
 
 void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
-    LOGD(DHTTP3, "<guest3> %" PRIu32 " (%s) ReqProc %s\n", header->request_id, getsrc(), header->geturl().c_str());
+    LOGD(DHTTP3, "<guest3> %" PRIu32 " (%s) ReqProc %s\n",
+         header->request_id, rwer->getPeer(), header->geturl().c_str());
     if(statusmap.count(id)){
         LOGD(DHTTP3, "<guest3> ReqProc dup id: %" PRIu64"\n", id);
         Reset(id, HTTP3_ERR_STREAM_CREATION_ERROR);
@@ -141,7 +142,7 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
 
     status.req = std::make_shared<HttpReq>(header,
               std::bind(&Guest3::response, this, (void*)id, _1),
-                 [this]{ rwer->Unblock();});
+                 [this, id]{ rwer->Unblock(id);});
     distribute(status.req, this);
 }
 
@@ -181,7 +182,7 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
             ReqStatus &status = statusmap[id];
             auto header = std::dynamic_pointer_cast<HttpResHeader>(msg.header);
             LOGD(DHTTP3, "<guest3> get response [%" PRIu64"]: %s\n", id, header->status);
-            HttpLog(getsrc(), status.req->header, header);
+            HttpLog(rwer->getPeer(), status.req->header, header);
             header->del("Transfer-Encoding");
             header->del("Connection");
 
@@ -258,7 +259,7 @@ void Guest3::Reset(uint64_t id, uint32_t code) {
 }
 
 void Guest3::ErrProc(int errcode) {
-    LOGE("(%s): Guest3 http3 error:0x%08x\n", getsrc(), errcode);
+    LOGE("(%s): Guest3 http3 error:0x%08x\n", rwer->getPeer(), errcode);
     http3_flag |= HTTP3_FLAG_ERROR;
     deleteLater(errcode);
 }
@@ -273,12 +274,17 @@ void Guest3::deleteLater(uint32_t errcode){
 
 
 void Guest3::dump_stat(Dumper dp, void* param) {
-    dp(param, "Guest3 %p, id: %" PRIu64" (%s)\n", this, maxDataId, getsrc());
+    dp(param, "Guest3 %p, data id: %" PRIx64"\n"
+            "local ctr:%" PRIx64", remote ctr:%" PRIx64", "
+            "local eqpack:%" PRIx64", remote eqpack:%" PRIx64", local dqpack:%" PRIx64", remote dqpack:%" PRIx64"\n",
+            this, maxDataId, ctrlid_local, ctrlid_remote,
+            qpackeid_local, qpackeid_remote, qpackdid_local, qpackdid_remote);
     for(auto& i: statusmap){
-        dp(param, "  0x%lx [%" PRIu32 "]: %s %s, flags: 0x%08x\n",
+        dp(param, "  0x%lx [%" PRIu32 "]: %s %s, time: %dms, flags: 0x%08x\n",
            i.first, i.second.req->header->request_id,
            i.second.req->header->method,
            i.second.req->header->geturl().c_str(),
+           getmtime() - i.second.req->header->ctime,
            i.second.flags);
     }
     rwer->dump_status(dp, param);

@@ -69,7 +69,7 @@ void Host::reply(){
     if(!req->header->should_proxy){
         if(req->header->ismethod("CONNECT")) {
             Http_Proc = &Host::AlwaysProc;
-            status.res = std::make_shared<HttpRes>(UnpackHttpRes(H200), [this]{ rwer->Unblock();});
+            status.res = std::make_shared<HttpRes>(UnpackHttpRes(H200), [this]{ rwer->Unblock(0);});
             req->response(status.res);
             goto attach;
         }else if(req->header->ismethod("SEND")){
@@ -225,7 +225,7 @@ void Host::ResProc(std::shared_ptr<HttpResHeader> header) {
     if(status.res){
         status.res->send(header);
     }else{
-        status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock();});
+        status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock(0);});
         status.req->response(status.res);
     }
 }
@@ -233,7 +233,7 @@ void Host::ResProc(std::shared_ptr<HttpResHeader> header) {
 ssize_t Host::DataProc(const void* buff, size_t size) {
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
     if(status.res == nullptr){
-        status.res = std::make_shared<HttpRes>(UnpackHttpRes(H200), [this]{ rwer->Unblock();});
+        status.res = std::make_shared<HttpRes>(UnpackHttpRes(H200), [this]{ rwer->Unblock(0);});
         status.req->response(status.res);
     }
     int len = status.res->cap();
@@ -322,7 +322,7 @@ void Host::gethost(std::shared_ptr<HttpReq> req, const Destination* dest, Reques
 }
 
 void Host::dump_stat(Dumper dp, void* param) {
-    dp(param, "Host %p, (%s)\n", this, rwer->getPeer());
+    dp(param, "Host %p, rx: %zd, tx: %zd\n", this, rx_bytes, tx_bytes);
     if(status.req){
         dp(param, "  [%" PRIu32 "]: %s, flags: 0x%08x\n",
                 status.req->header->request_id,

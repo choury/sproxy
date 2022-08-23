@@ -89,6 +89,7 @@ struct options opt = {
 enum option_type{
     option_bool,
     option_int64,
+    option_uint64,
     option_base64,
     option_string,
     option_enum,
@@ -113,6 +114,7 @@ static struct option long_options[] = {
     {"ipv6",          required_argument, NULL,  0 },
     {"key",           required_argument, NULL,  0 },
     {"pcap",          required_argument, NULL,  0 },
+    {"pcap_len",      required_argument, NULL,  0 },
     {"port",          required_argument, NULL, 'p'},
     {"policy-file",   required_argument, NULL, 'P'},
     {"quic",          no_argument,       NULL, 'q'},
@@ -157,7 +159,8 @@ static struct option_detail option_detail[] = {
     {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, ipv6_options},
     {"key", "Private key file name (ssl)", option_string, &opt.key, NULL},
     {"pcap", "Save packets in pcap file for vpn (generated pseudo ethernet header)", option_string, &opt.pcap_file, NULL},
-    {"port", "The port to listen, default is 80 but 443 for ssl/sni/quic", option_int64, &opt.CPORT, NULL},
+    {"pcap_len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
+    {"port", "The port to listen, default is 80 but 443 for ssl/sni/quic", option_uint64, &opt.CPORT, NULL},
     {"policy-file", "The file of policy ("PREFIX"/etc/sproxy/sites.list as default)", option_string, &policy_file, NULL},
 #ifdef HAVE_QUIC
     {"quic", "Server for QUIC (experiment)", option_bool, &opt.quic_mode, (void*)true},
@@ -252,7 +255,8 @@ static void parseArgs(const char* name, const char* args){
         if(strcmp(name, option_detail[i].name) == 0){
             switch(option_detail[i].type){
             char* pos;
-            long long result;
+            int64_t iresult;
+            uint64_t uresult;
             char** pargstr;
             struct arg_list* apos;
             case option_bool:
@@ -268,12 +272,20 @@ static void parseArgs(const char* name, const char* args){
                 LOG("set option %s: %s\n", name, *pargstr);
                 break;
             case option_int64:
-                result = strtoll(args, &pos, 0);
-                if(result == LLONG_MAX || result == LLONG_MIN || args == pos) {
+                iresult = strtoll(args, &pos, 0);
+                if(iresult == LLONG_MAX || iresult == LLONG_MIN || args == pos) {
                     LOGE("wrong int format: %s\n", args);
                 }
-                *(long long*)option_detail[i].result = result;
-                LOG("set option %s: %lld\n", name, *(long long*)option_detail[i].result);
+                *(int64_t*)option_detail[i].result = iresult;
+                LOG("set option %s: %" PRIi64"\n", name, *(int64_t*)option_detail[i].result);
+                break;
+            case option_uint64:
+                uresult = strtoull(args, &pos, 0);
+                if(uresult == ULLONG_MAX || args == pos) {
+                    LOGE("wrong uint format: %s\n", args);
+                }
+                *(uint64_t*)option_detail[i].result = uresult;
+                LOG("set option %s: %" PRIu64"\n", name, *(uint64_t*)option_detail[i].result);
                 break;
             case option_base64:
                 Base64Encode(args, strlen(args), (char*)option_detail[i].result);
@@ -284,13 +296,13 @@ static void parseArgs(const char* name, const char* args){
                 LOG("set option %s: 0x%08X\n", name, (uint32_t)(intptr_t)option_detail[i].value);
                 break;
             case option_enum:
-                result = 0;
+                uresult = 0;
                 for(pargstr = (char**)option_detail[i].value; *pargstr; pargstr++ ){
                     if(strcmp(args, *pargstr) == 0){
-                        *(int*)option_detail[i].result = result;
+                        *(int*)option_detail[i].result = uresult;
                         break;
                     }
-                    result++;
+                    uresult++;
                 }
                 if(*pargstr == NULL){
                     LOGE("unknown option %s for %s\n", args, name);
@@ -388,7 +400,7 @@ static const char* confs[] = {
 };
 
 void postConfig(){
-    if(opt.CPORT < 0 || opt.CPORT >= 65535){
+    if(opt.CPORT >= 65535){
         LOGE("wrong port: %" PRId64 "\n", opt.CPORT);
         exit(1);
     }

@@ -17,7 +17,3 @@ void Requester::init(std::shared_ptr<RWer> rwer) {
 const char* Requester::getid() {
     return source;
 }
-
-const char* Requester::getsrc() {
-    return rwer->getPeer();
-}

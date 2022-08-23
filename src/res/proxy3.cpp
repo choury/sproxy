@@ -163,7 +163,7 @@ void Proxy3::ResProc(uint64_t id, std::shared_ptr<HttpResHeader> header) {
         if(status.res){
             status.res->send(header);
         }else{
-            status.res = std::make_shared<HttpRes>(header, [this]{rwer->Unblock();});
+            status.res = std::make_shared<HttpRes>(header, [this, id]{rwer->Unblock(id);});
             status.req->response(status.res);
         }
     }else{
@@ -254,9 +254,11 @@ void Proxy3::deleteLater(uint32_t errcode) {
 }
 
 void Proxy3::dump_stat(Dumper dp, void* param) {
-    dp(param, "Proxy3 %p%s id:%" PRIu64" (%s)\n",
-       this, proxy3 == this?" [M]":"", maxDataId,
-       rwer->getPeer());
+    dp(param, "Proxy3 %p%s data id:%" PRIx64", "
+            "local ctr:%" PRIx64", remote ctr:%" PRIx64", "
+            "local eqpack:%" PRIx64", remote eqpack:%" PRIx64", local dqpack:%" PRIx64", remote dqpack:%" PRIx64"\n",
+            this, proxy3 == this?" [M]":"", maxDataId, ctrlid_local, ctrlid_remote,
+            qpackeid_local, qpackeid_remote, qpackdid_local, qpackdid_remote);
     for(auto& i: statusmap){
         dp(param, "  0x%lx [%" PRIu32 "]: %s, flags: 0x%08x\n",
            i.first,

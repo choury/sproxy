@@ -11,35 +11,34 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+typedef unsigned char uchar;
+#define get32(a) (((uchar*)(a))[0]<<24 | ((uchar*)(a))[1]<<16 | ((uchar*)(a))[2]<<8 | ((uchar*)(a))[3])
+#define set32(a, x) \
+do {\
+    ((uchar*)(a))[0] = ((x)>>24) & 0xff;\
+    ((uchar*)(a))[1] = ((x)>>16) & 0xff;\
+    ((uchar*)(a))[2] = ((x)>>8) & 0xff;\
+    ((uchar*)(a))[3] = (x) & 0xff;\
+}while(0)
+
+
 bool RpcBase::sendJson(json_object *content) {
     const char* body = json_object_get_string(content);
     size_t len = strlen(body);
-    if(len > 0xffff){
+    if(len > UINT32_MAX){
         return false;
     }
-    char prefix[5];
-    sprintf(prefix, "%04zx", len);
+    char prefix[4];
+    set32(prefix, len);
     return send(prefix, 4) && send(body, len);
 }
 
 ssize_t RpcServer::DefaultProc(const char *buff, size_t len) {
-    if(len <= 4){
+    if(len <= 6){ //合法的json至少有两字节: "{}"
         return 0;
     }
-    size_t body_size = 0;
-    for(int i = 0; i < 4; i++){
-        body_size *= 16;
-        if(buff[i] >= 'a' && buff[i] <= 'f'){
-            body_size += buff[i] - 'a' + 10;
-            continue;
-        }
-        if(buff[i] >= '0' && buff[i] <= '9'){
-            body_size += buff[i] - '0';
-            continue;
-        }
-        return -EINVAL;
-    }
-    if(body_size > len + 4){
+    size_t body_size = get32(buff);
+    if(body_size + 4 > len){
         return 0;
     }
     ssize_t ret = 4 + body_size;
@@ -78,46 +77,28 @@ out:
 
 
 ssize_t RpcClient::DefaultProc(const char *buff, size_t len) {
-    if(len <= 4){
+    if(len <= 6){
         return 0;
     }
-    size_t body_size = 0;
+    size_t body_size = get32(buff);
+    if(body_size + 4 > len){
+        return 0;
+    }
     struct json_tokener *tok = json_tokener_new();
     json_object* jres = nullptr;
-    for(int i = 0; i < 4; i++){
-        body_size *= 16;
-        if(buff[i] >= 'a' && buff[i] <= 'f'){
-            body_size += buff[i] - 'a' + 10;
-            continue;
-        }
-        if(buff[i] >= '0' && buff[i] <= '9'){
-            body_size += buff[i] - '0';
-            continue;
-        }
-        jres = json_object_new_object();
-        json_object_object_add(jres, "error", json_object_new_string("can't parse body length"));
-        goto out;
-    }
-
-    if(body_size > len + 4){
-        json_tokener_free(tok);
-        return 0;
-    }
-    len = 4 + body_size;
     //fprintf(stderr, "%.*s\n", (int)body_size, buff+4);
 
     if((jres = json_tokener_parse_ex(tok, buff + 4, body_size)) == nullptr){
         jres = json_object_new_object();
         json_object_object_add(jres, "error", json_object_new_string(json_tokener_error_desc(json_tokener_get_error(tok))));
     }
-out:
     if(!responser.empty()){
         responser.front()(jres);
         responser.pop();
     }
     json_object_put(jres);
     json_tokener_free(tok);
-    return len;
+    return body_size + 4;
 }
 
 void RpcClient::call(const std::string& method, json_object* body, std::function<void(json_object *)> response) {

@@ -58,8 +58,10 @@ public:
     }
 };
 
-//本质上是Block的封装，但是多了长度和id信息
-//至于为啥有的时候需要直接使用Block类，因为Block类构造的时候指定的长度并不一定等于数据长度
+//封装了Block，但是多了长度和id信息
+//并且可以管理const 类型的buffer，只有当遇到下面几种情况时才会复制buffer
+//reserve的参数为负数，truncate 需要扩展空间，调用mutable_data() 或者end()
+//因此每次调用返回的指针地址不可cache
 class Buffer{
     std::shared_ptr<Block> ptr = nullptr;
     const void* content = nullptr;
@@ -74,7 +76,7 @@ public:
     Buffer(std::nullptr_t, uint64_t id = 0);
     Buffer(Buffer&& b);
     // 增加/减少预留空间 off 为正增加，为负减少
-    void* reserve(int off);
+    const void* reserve(int off);
     // 从末尾截断/扩展数据, 返回截断前的长度
     size_t truncate(size_t left);
     const void* data() const;

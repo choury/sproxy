@@ -26,10 +26,6 @@ struct CGI_Header{
     uint32_t requestId;
 }__attribute__((packed));
 
-struct CgiStatus{
-    std::shared_ptr<HttpReq> req;
-    std::shared_ptr<HttpRes> res;
-};
 
 size_t PackCgiReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t len);
 size_t PackCgiRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t len);
@@ -39,6 +35,11 @@ std::shared_ptr<HttpResHeader> UnpackCgiRes(const void* header, size_t len);
 
 
 class Cgi:public Responser{
+    struct CgiStatus{
+        std::shared_ptr<HttpReq> req;
+        std::shared_ptr<HttpRes> res;
+    };
+
     char filename[URLLIMIT];
     std::map<uint32_t, CgiStatus> statusmap;
     void evictMe();

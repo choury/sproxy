@@ -130,7 +130,7 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
         if(suffix && mimetype.count(suffix)){
             header->set("Content-Type", mimetype.at(suffix));
         }
-        status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock();});
+        status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock(0);});
         req->response(status.res);
     }else if(checkrange(status.rg, st.st_size)){
         std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H206, sizeof(H206));
@@ -142,7 +142,7 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
         if(suffix && mimetype.count(suffix)){
             header->set("Content-Type", mimetype.at(suffix));
         }
-        status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock();});
+        status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock(0);});
         req->response(status.res);
     }else{
         std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H416, sizeof(H416));
@@ -202,7 +202,7 @@ void File::deleteLater(uint32_t error) {
 }
 
 void File::dump_stat(Dumper dp, void* param){
-    dp(param, "File %p, %s\n", this, filename);
+    dp(param, "File %p, %s, fd=%d\n", this, filename, fd);
     dp(param, "  [%" PRIu32 "]: (%zd-%zd), flags: 0x%08x\n",
             status.req->header->request_id,
             status.rg.begin, status.rg.end, status.flags);

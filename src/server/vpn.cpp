@@ -25,7 +25,7 @@ int vpn_start(int fd){
         }
         cli = new Cli_server(svsk_cli);
     }
-    Vpn_server s(fd);
+    Guest_vpn vpn(fd);
     LOG("Accepting connections ...\n");
     vpn_contiune = 1;
     while (vpn_contiune) {

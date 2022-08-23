@@ -243,7 +243,7 @@ bool Cgi::HandleRes(const CGI_Header *cheader, CgiStatus& status){
     if (!header->no_body() && header->get("content-length") == nullptr) {
         header->set("transfer-encoding", "chunked");
     }
-    status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock();});
+    status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock(0);});
     status.req->response(status.res);
     return true;
 }
@@ -346,6 +346,7 @@ void Cgi::dump_stat(Dumper dp, void* param){
         dp(param, "  [%" PRIu32"]: %s\n",
            i.first, i.second.req->header->geturl().c_str());
     }
+    rwer->dump_status(dp, param);
 }
 
 void getcgi(std::shared_ptr<HttpReq> req, const char* filename, Requester* src){

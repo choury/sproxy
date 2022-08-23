@@ -155,6 +155,6 @@ bool Cli::Debug(const std::string& module, bool enable) {
 }
 
 void Cli::dump_stat(Dumper dp, void* param) {
-    dp(param, "Cli %p, (%s)\n", this, getsrc());
+    dp(param, "Cli %p\n", this);
     rwer->dump_status(dp, param);
 }

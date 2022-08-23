@@ -59,8 +59,7 @@ bool operator!(RW_EVENT a){
 #ifdef __linux__
 static RW_EVENT convertEpoll(uint32_t events){
     RW_EVENT rwevents = RW_EVENT::NONE;
-    //ingore EPOLLHUP
-    if(events & EPOLLERR){
+    if((events & EPOLLERR) || (events & EPOLLHUP)){
         rwevents = rwevents | RW_EVENT::ERROR;
     }
     if(events & EPOLLIN){
