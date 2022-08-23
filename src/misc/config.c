@@ -423,7 +423,7 @@ void postConfig(){
     }
     free((void*)opt.rootdir);
     opt.rootdir = (char*)malloc(PATH_MAX);
-    getcwd((char*)opt.rootdir, PATH_MAX);
+    (void)!getcwd((char*)opt.rootdir, PATH_MAX);
 
     if(opt.ipv6_mode == Auto){
         opt.ipv6_enabled = hasIpv6Address();

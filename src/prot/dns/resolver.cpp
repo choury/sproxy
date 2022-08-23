@@ -89,9 +89,9 @@ HostResolver::HostResolver(int fd,
 {
     strcpy(this->host, host);
     char buf[BUF_SIZE];
-    write(fd, buf, Dns_Query(host, 1, id_cur++).build((unsigned char*)buf));
+    (void)!write(fd, buf, Dns_Query(host, 1, id_cur++).build((unsigned char*)buf));
     if(opt.ipv6_enabled) {
-        write(fd, buf, Dns_Query(host, 28, id_cur++).build((unsigned char*)buf));
+        (void)!write(fd, buf, Dns_Query(host, 28, id_cur++).build((unsigned char*)buf));
     }else {
         flags |= GETAAAARES;
     }
@@ -166,7 +166,7 @@ RawResolver::RawResolver(int fd,
     Ep(fd), cb(std::move(rawcb))
 {
     char buf[BUF_SIZE];
-    write(fd, buf, Dns_Query(host, type, id_cur++).build((unsigned char*)buf));
+    (void)!write(fd, buf, Dns_Query(host, type, id_cur++).build((unsigned char*)buf));
     this->handleEvent = (void (Ep::*)(RW_EVENT))&RawResolver::readHE;
     setEvents(RW_EVENT::READ);
     reply = AddJob(std::bind(cb, nullptr, 0, this), dnsConfig.timeout * 1000, 0);

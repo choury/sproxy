@@ -83,7 +83,7 @@ retry:
         }
         if(changed){
             LOGD(DNET, "netlink_interface %s changed: %s\n",  name, getaddrstring(&addr));
-            write(notify, "1", 1);
+            (void)!write(notify, "1", 1);
         }
     }
     LOG("exiting netlink loop\n");

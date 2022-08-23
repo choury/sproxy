@@ -186,7 +186,7 @@ void savesites(){
             LOGE("failed to update policy: %s\n", strerror(errno));
         }
     }
-    ftruncate(fileno(opt.policy_write), ftell(opt.policy_write));
+    (void)!ftruncate(fileno(opt.policy_write), ftell(opt.policy_write));
     fflush(opt.policy_write);
 #endif
 }

@@ -208,7 +208,7 @@ FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB): RWer(errorCB
         return;
     }
     setFd(evfd);
-    write(evfd, "FULLEVENT", 8);
+    (void)!write(evfd, "FULLEVENT", 8);
 #else
 FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB): RWer(errorCB), pairfd(-1){
     int pairs[2];
@@ -222,7 +222,7 @@ FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB): RWer(errorCB
     // pairfd should set noblock manually
     pairfd = pairs[1];
     SetSocketUnblock(pairfd);
-    write(pairfd, "FULLEVENT", 8);
+    (void)!write(pairfd, "FULLEVENT", 8);
 #endif
     setEvents(RW_EVENT::READ);
     stats = RWerStats::Connected;
