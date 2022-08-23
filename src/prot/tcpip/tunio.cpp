@@ -249,7 +249,7 @@ ssize_t TunRWer::Write(const void*, size_t, uint64_t) {
 void TunRWer::sendPkg(std::shared_ptr<const Ip> pac, const void* data, size_t len) {
     debugString(pac, len - pac->gethdrlen());
     pcap_write_with_generated_ethhdr(pcap, data, len);
-    write(getFd(), data, len);
+    (void)!write(getFd(), data, len);
 }
 
 buff_iterator TunRWer::buffer_insert(buff_iterator where, Buffer&& bb) {

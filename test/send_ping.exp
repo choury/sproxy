@@ -1,5 +1,5 @@
 connect 127.0.0.1 PORT
-send ping www.baidu.com\r\n\r\n
+send ping icmp.localhost.choury.com\r\n\r\n
 send abcd\n
 read head
 read line
