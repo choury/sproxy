@@ -14,7 +14,7 @@ jobs:
     strategy:
       matrix:
         # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
-        build_type: [Release, Debug, RelWithDebInfo]
+        build_type: [Release, Debug]
         os: [ubuntu-22.04, ubuntu-20.04]
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
     # You can convert this to a matrix build if you need cross-platform coverage.
@@ -59,7 +59,7 @@ jobs:
     strategy:
       matrix:
         # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
-        build_type: [Release, Debug, RelWithDebInfo]
+        build_type: [Release, Debug]
         os: [macos-11, macos-12 ]
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
     # You can convert this to a matrix build if you need cross-platform coverage.
