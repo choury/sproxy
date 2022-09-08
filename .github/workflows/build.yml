@@ -23,15 +23,21 @@ jobs:
     runs-on: ${{matrix.os}}
 
     steps:
+    - name: 'build and install openssl'
+      run: |
+        git clone --depth=1 -b OpenSSL_1_1_1q+quic https://github.com/quictls/openssl.git
+        cd openssl
+        ./config no-ui-console no-tests no-md4 no-rc2 no-rc4  no-shared  no-ssl2 no-ssl3 no-comp no-hw no-engine --prefix=$HOME/openssl
+        make install_dev
     - uses: actions/checkout@v3
       with:
         fetch-depth: 0
     - name: install pkg
-      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends  libssl-dev libz-dev libjson-c-dev
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libz-dev libjson-c-dev
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
-      run: ${{matrix.env}} cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
+      run: ${{matrix.env}} cmake -B ${{github.workspace}}/build -DOPENSSL_ROOT_DIR=$HOME/openssl -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
 
     - name: build
       # Build your program with the given configuration
@@ -48,7 +54,6 @@ jobs:
     - if: matrix.build_type == 'Debug'
       name: test
       run: cd ${{github.workspace}}/test && ./test.sh ../build/
-      continue-on-error: true
       timeout-minutes: 5
     - if: matrix.build_type == 'Debug'
       name: Upload test log
@@ -68,15 +73,21 @@ jobs:
     runs-on: ${{matrix.os}}
 
     steps:
+    - name: 'build and install openssl'
+      run: |
+        git clone --depth=1 -b OpenSSL_1_1_1q+quic https://github.com/quictls/openssl.git
+        cd openssl
+        ./config no-ui-console no-tests no-md4 no-rc2 no-rc4  no-shared  no-ssl2 no-ssl3 no-comp no-hw no-engine --prefix=$HOME/openssl
+        make install_dev
     - uses: actions/checkout@v3
       with:
         fetch-depth: 0
     - name: install pkg
-      run: brew install openssl json-c coreutils
+      run: brew install json-c coreutils
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
-      run: cmake -B ${{github.workspace}}/build -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
+      run: cmake -B ${{github.workspace}}/build -DOPENSSL_ROOT_DIR=$HOME/openssl -DCMAKE_BUILD_TYPE=${{matrix.build_type}}
 
     - name: build
       # Build your program with the given configuration
@@ -93,7 +104,6 @@ jobs:
     - if: matrix.build_type == 'Debug'
       name: test
       run: cd ${{github.workspace}}/test && ./test.sh ../build/
-      continue-on-error: true
       timeout-minutes: 5
     - if: matrix.build_type == 'Debug'
       name: Upload test log
