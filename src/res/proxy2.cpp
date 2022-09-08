@@ -14,6 +14,10 @@ void Proxy2::connection_lost(){
 }
 
 void Proxy2::ping_check(){
+    if(proxy2 != this && statusmap.empty()){
+        LOG("this %p is not the main proxy2 and no clients, close it.\n", this);
+        return deleteLater(NOERROR);
+    }
     char buff[8];
     set64(buff, getutime());
     Ping(buff);
@@ -226,10 +230,6 @@ void Proxy2::Clean(uint32_t id, ReqStatus& status, uint32_t errcode){
         status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[internal error]]"));
     }
     statusmap.erase(id);
-    if((http2_flag & HTTP2_FLAG_CLEANING) == 0 && proxy2 != this && statusmap.empty()){
-        LOG("this %p is not the main proxy2 and no clients, close it.\n", this);
-        deleteLater(NOERROR);
-    }
 }
 
 void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
@@ -364,7 +364,6 @@ void Proxy2::queue_insert(std::list<Buffer>::insert_iterator where, Buffer&& wb)
 }
 
 void Proxy2::deleteLater(uint32_t errcode){
-    http2_flag |= HTTP2_FLAG_CLEANING;
     if(proxy2 == this){
         proxy2 = nullptr;
     }
