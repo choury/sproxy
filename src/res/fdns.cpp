@@ -225,3 +225,13 @@ void FDns::dump_stat(Dumper dp, void* param) {
         }
     }
 }
+
+void FDns::dump_usage(Dumper dp, void *param) {
+    size_t usage = 0;
+    for(const auto& i : statusmap) {
+        usage += sizeof(i.first) + sizeof(i.second) + i.second.res->mem_usage();
+        const FDnsStatus& status = i.second;
+        usage += status.quemap.size() * (sizeof(uint16_t) + sizeof(Dns_Query));
+    }
+    dp(param, "FDns %p: %zd, reqmap: %zd\n", this, sizeof(*this), usage);
+}

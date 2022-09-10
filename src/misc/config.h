@@ -72,6 +72,7 @@ struct options{
 };
 
 extern struct options opt;
+extern volatile uint32_t will_contiune;
 
 void neglect();
 

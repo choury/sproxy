@@ -30,6 +30,9 @@ public:
     explicit Hpack(size_t dynamic_table_size_limit_max);
     ~Hpack();
     void set_dynamic_table_size_limit_max(size_t size);
+    size_t get_dynamic_table_size(){
+        return dynamic_table_size;
+    };
 };
 
 class Hpack_decoder: public Hpack {

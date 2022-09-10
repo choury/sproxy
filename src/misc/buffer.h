@@ -144,8 +144,8 @@ public:
     };
 
     //for get
-    size_t length();
-    size_t cap();
+    size_t length() const;
+    size_t cap() const;
     Buffer get();
     void consume(size_t l);
 };
@@ -186,8 +186,8 @@ public:
     };
 
     //for get
-    size_t length();
-    size_t cap();
+    size_t length() const;
+    size_t cap() const;
     Buffer get();
     void consume(size_t l);
 };

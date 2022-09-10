@@ -46,6 +46,7 @@ public:
     virtual bool idle(uint64_t id) override;
     virtual const char* getPeer() override {return "tun-rwer";}
     virtual void dump_status(Dumper dp, void* param) override;
+    virtual size_t mem_usage() override;
 
 #define TUN_MSG_SYN     1   //send syn for tcp, none for others
 #define TUN_MSG_BLOCK   2   //send rst for tcp, UNREACH_HOST/UNREACH_ADDR for udp

@@ -253,6 +253,7 @@ public:
     uint64_t CreateUbiStream();
 
     virtual void dump_status(Dumper dp, void* param) override;
+    virtual size_t mem_usage() override;
 };
 
 #endif //SPROXY_QUICIO_H

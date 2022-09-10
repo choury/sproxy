@@ -204,12 +204,12 @@ size_t CBuffer::left(){
     return start - finish;
 }
 
-size_t CBuffer::length(){
+size_t CBuffer::length() const{
     assert(len <= sizeof(content));
     return len;
 }
 
-size_t CBuffer::cap() {
+size_t CBuffer::cap() const{
     return sizeof(content) - len;
 }
 
@@ -271,12 +271,12 @@ size_t EBuffer::left(){
     return start - finish;
 }
 
-size_t EBuffer::length(){
+size_t EBuffer::length() const {
     assert(len <= size);
     return len;
 }
 
-size_t EBuffer::cap() {
+size_t EBuffer::cap() const{
     return size - len;
 }
 

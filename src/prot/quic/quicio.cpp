@@ -1528,3 +1528,34 @@ void QuicRWer::dump_status(Dumper dp, void *param) {
            status.second.flags);
     }
 }
+
+size_t QuicRWer::mem_usage() {
+    size_t usage = sizeof(*this) + sizeof(QuicMgr) + qos.mem_usage();
+    for(const auto& context : contexts){
+        for(const auto& frame : context.recvq.data){
+            usage += frame_size(frame);
+        }
+    }
+    usage += myids.size() * sizeof(std::string);
+    for(const auto& id: myids) {
+        usage += id.length();
+    }
+    usage += hisids.size() * sizeof(std::string);
+    for(const auto& id: hisids) {
+        usage += id.length();
+    }
+    usage += histoken.size() * sizeof(std::string);
+    for(const auto& token: histoken) {
+        usage += token.length();
+    }
+    usage += initToken.length() + originDcid.length();
+    for(const auto& i : streammap) {
+        usage += sizeof(i.first) + sizeof(i.second);
+        usage += i.second.rb.cap() + i.second.rb.length();
+    }
+    usage += fullq.size() * sizeof(quic_frame*);
+    for(const auto& frame: fullq) {
+        usage += frame_size(frame);
+    }
+    return usage;
+}

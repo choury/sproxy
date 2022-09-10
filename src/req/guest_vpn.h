@@ -23,6 +23,7 @@ public:
     virtual void response(void* index, std::shared_ptr<HttpRes> res) override;
     virtual ~Guest_vpn();
     virtual void dump_stat(Dumper dp, void* param) override;
+    virtual void dump_usage(Dumper dp, void* param) override;
 };
 
 #endif

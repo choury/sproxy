@@ -33,6 +33,9 @@ public:
     explicit Qpack(decltype(sender) sender, size_t dynamic_table_size_limit_max);
     int push_ins(const void* ins, size_t len);
     void set_dynamic_table_size_max(size_t max);
+    size_t get_dynamic_table_size() {
+        return dynamic_table_size;
+    }
 };
 
 class Qpack_decoder: public Qpack {

@@ -1201,6 +1201,37 @@ void dumpFrame(const char* prefix, char name, const quic_frame* frame) {
     }
 }
 
+size_t frame_size(const quic_frame* frame) {
+    size_t usage = sizeof(quic_frame);
+    switch(frame->type){
+    case QUIC_FRAME_ACK:
+    case QUIC_FRAME_ACK_ECN:
+        usage +=  sizeof(quic_ack_range) * frame->ack.range_count;
+        break;
+    case QUIC_FRAME_CRYPTO:
+        usage += frame->crypto.length;
+        break;
+    case QUIC_FRAME_CONNECTION_CLOSE:
+    case QUIC_FRAME_CONNECTION_CLOSE_APP:
+        usage += frame->close.reason_len;
+        break;
+    case QUIC_FRAME_NEW_CONNECTION_ID:
+        usage += frame->new_id.length;
+        break;
+    case QUIC_FRAME_NEW_TOKEN:
+        usage += frame->new_token.length;
+        break;
+    default:
+        if((frame->type >= QUIC_FRAME_STREAM_START_ID)
+           &&(frame->type <= QUIC_FRAME_STREAM_END_ID))
+        {
+            usage += frame->stream.length;
+        }
+        break;
+    }
+    return usage;
+}
+
 void frame_release(const quic_frame* frame){
     switch(frame->type) {
     case QUIC_FRAME_ACK:

@@ -381,3 +381,14 @@ void Guest_vpn::dump_stat(Dumper dp, void *param) {
     }
     rwer->dump_status(dp, param);
 }
+
+void Guest_vpn::dump_usage(Dumper dp, void *param) {
+    size_t req_usage  = 0;
+    for(const auto& i: statusmap) {
+        req_usage += sizeof(i.first) + sizeof(i.second);
+        req_usage += i.second.req->mem_usage() + sizeof(Ip6);
+    }
+    dp(param, "Guest_vpn %p: %zd, reqmap: %zd, rwer: %zd\n",
+       this, sizeof(*this),
+       req_usage, rwer->mem_usage());
+}

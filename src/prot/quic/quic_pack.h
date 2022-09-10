@@ -283,6 +283,7 @@ char* encode_packet(const void* data, size_t len,
 std::string dumpHex(const void* data, size_t len);
 bool is_ack_eliciting(const quic_frame* frame);
 void dumpFrame(const char* prefix, char name, const quic_frame* frame);
+size_t frame_size(const quic_frame* frame);
 void frame_release(const quic_frame* frame);
 
 std::string sign_cid(std::string id);

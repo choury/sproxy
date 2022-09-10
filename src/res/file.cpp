@@ -97,6 +97,12 @@ File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
     rwer->SetReadCB(std::bind(&File::readHE, this, _1, _2, _3));
 }
 
+File::~File() {
+    status.req = nullptr;
+    if(fd > 0){
+        close(fd);
+    }
+}
 
 void File::request(std::shared_ptr<HttpReq> req, Requester*) {
     status.req = req;
@@ -208,10 +214,11 @@ void File::dump_stat(Dumper dp, void* param){
             status.rg.begin, status.rg.end, status.flags);
 }
 
-File::~File() {
-    status.req = nullptr;
-    if(fd > 0){
-        close(fd);
+void File::dump_usage(Dumper dp, void *param) {
+    if(status.res) {
+        dp(param, "File %p: %zd, res: %zd\n", this, sizeof(*this), status.res->mem_usage());
+    } else {
+        dp(param, "File %p: %zd\n", this, sizeof(*this));
     }
 }
 

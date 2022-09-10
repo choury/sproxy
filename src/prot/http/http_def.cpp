@@ -33,7 +33,7 @@ void Channel::eatMessage() {
             return;
         }
         ChannelMessage msg(std::move(message_queue.front()));
-        message_queue.pop();
+        message_queue.pop_front();
         int ret = handler(msg);
         if(ret){
             continue;
@@ -43,7 +43,7 @@ void Channel::eatMessage() {
 }
 
 void Channel::send(ChannelMessage&& message) {
-    message_queue.emplace(std::move(message));
+    message_queue.emplace_back(std::move(message));
     return eatMessage();
 }
 
@@ -78,6 +78,23 @@ void Channel::attach(handler_t handler, cap_t cap) {
 void Channel::detach() {
     this->handler = nullptr;
     this->cap_cb = []{return 0;};
+}
+
+size_t Channel::mem_usage() {
+    size_t usage = message_queue.size() * sizeof(ChannelMessage);
+    for(const auto& msg : message_queue){
+        switch(msg.type) {
+        case ChannelMessage::CHANNEL_MSG_HEADER:
+            usage += msg.header->mem_usage();
+            break;
+        case ChannelMessage::CHANNEL_MSG_DATA:
+            usage += msg.data.cap;
+            break;
+        default:
+            break;
+        }
+    }
+    return usage;
 }
 
 HttpRes::HttpRes(std::shared_ptr<HttpResHeader> header, more_data_t more):

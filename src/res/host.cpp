@@ -331,3 +331,12 @@ void Host::dump_stat(Dumper dp, void* param) {
     }
     rwer->dump_status(dp, param);
 }
+
+void Host::dump_usage(Dumper dp, void *param) {
+    if(status.res) {
+        dp(param, "Host %p: %zd, res: %zd, rwer: %zd\n", this, sizeof(*this), status.res->mem_usage(),
+           rwer->mem_usage());
+    }else {
+        dp(param, "Host %p: %zd, rwer: %zd\n", this, sizeof(*this), rwer->mem_usage());
+    }
+}

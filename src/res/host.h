@@ -37,6 +37,7 @@ public:
     virtual ~Host() override;
     
     virtual void dump_stat(Dumper dp, void* param) override;
+    virtual void dump_usage(Dumper dp, void* param) override;
     static void gethost(std::shared_ptr<HttpReq> req, const Destination* dest, Requester* src);
 };
 

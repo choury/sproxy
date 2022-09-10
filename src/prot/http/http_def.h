@@ -6,7 +6,7 @@
 
 #include <functional>
 #include <memory>
-#include <queue>
+#include <list>
 
 struct ChannelMessage{
     typedef enum{
@@ -42,7 +42,7 @@ private:
     more_data_t need_more;
     void eatMessage();
 protected:
-    std::queue<ChannelMessage> message_queue;
+    std::list<ChannelMessage> message_queue;
 public:
     Channel(const Channel&) = delete;
     const Channel& operator=(const Channel&) = delete;
@@ -61,6 +61,7 @@ public:
     void more(){
         need_more?need_more():void();
     }
+    virtual size_t mem_usage();
 };
 
 //These flags just defined for user, it will NOT be set by this class
@@ -85,6 +86,9 @@ public:
     HttpRes(std::shared_ptr<HttpResHeader> header);
     HttpRes(std::shared_ptr<HttpResHeader> header, const char* body);
     ~HttpRes();
+    virtual size_t mem_usage() override {
+        return Channel::mem_usage() + sizeof(*this);
+    }
 };
 
 class HttpReq: public Channel{
@@ -97,6 +101,9 @@ public:
     using Channel::send;
     virtual void send(ChannelMessage::Signal s) override;
     ~HttpReq();
+    virtual size_t mem_usage() override {
+        return Channel::mem_usage() + header->mem_usage();
+    }
 };
 
 void HttpLog(const char* src, std::shared_ptr<const HttpReqHeader> req, std::shared_ptr<const HttpResHeader> res);

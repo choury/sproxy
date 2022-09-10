@@ -186,7 +186,10 @@ json_object * SproxyServer::call(std::string method, json_object* content) {
         }
         auto ok = Debug(json_object_get_string(jmodule), json_object_get_boolean(jenable));
         json_object_object_add(jres, "ok", json_object_new_boolean(ok));
-    }else{
+    }else if(method == "GetMemUsage") {
+        auto server = GetMemUsage();
+        json_object_object_add(jres, "mem_usage", json_object_new_string(server.c_str()));
+    }else {
         json_object_object_add(jres, "error", json_object_new_string("no such method"));
     }
     return jres;
@@ -373,6 +376,22 @@ std::promise<std::string> SproxyClient::GetStatus() {
         }
         json_object* jstatus = json_object_object_get(content, "status");
         promise.set_value(json_object_get_string(jstatus));
+    });
+    json_object_put(body);
+    return promise;
+}
+
+std::promise<std::string> SproxyClient::GetMemUsage() {
+    json_object* body = json_object_new_object();
+    std::promise<std::string> promise;
+    call(__func__, body,[&promise](json_object* content){
+        json_object* jerror = json_object_object_get(content, "error");
+        if(jerror){
+            promise.set_exception(std::make_exception_ptr(std::string(json_object_get_string(jerror))));
+            return;
+        }
+        json_object* jusage = json_object_object_get(content, "mem_usage");
+        promise.set_value(json_object_get_string(jusage));
     });
     json_object_put(body);
     return promise;

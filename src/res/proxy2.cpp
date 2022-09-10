@@ -393,6 +393,19 @@ void Proxy2::dump_stat(Dumper dp, void* param) {
     rwer->dump_status(dp, param);
 }
 
+void Proxy2::dump_usage(Dumper dp, void *param) {
+    size_t res_usage  = 0;
+    for(const auto& i: statusmap) {
+        res_usage += sizeof(i.first) + sizeof(i.second);
+        if(i.second.res) {
+            res_usage += i.second.res->mem_usage();
+        }
+    }
+    dp(param, "Proxy2 %p: %zd, resmap: %zd, rwer: %zd\n",
+       this, sizeof(*this) + header_buffer->cap + hpack_decoder.get_dynamic_table_size() + hpack_encoder.get_dynamic_table_size(),
+       res_usage, rwer->mem_usage());
+}
+
 void flushproxy2() {
     if(proxy2){
         proxy2 = nullptr;

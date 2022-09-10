@@ -85,6 +85,7 @@ public:
     virtual std::multimap<std::string, std::string> Normalize() const = 0;
     HttpHeader();
     virtual ~HttpHeader() = default;
+    virtual size_t mem_usage();
 };
 
 struct Range{
@@ -115,6 +116,7 @@ public:
     const char* getparamstring()const;
     bool getrange();
     std::string geturl() const;
+    virtual size_t mem_usage() override;
 };
 
 
@@ -142,6 +144,9 @@ public:
     virtual bool no_body() const override;
     virtual bool no_end() const override;
     void addcookie(const Cookie &cookie);
+    virtual size_t mem_usage() override {
+        return HttpHeader::mem_usage() + sizeof(*this);
+    }
 };
 
 

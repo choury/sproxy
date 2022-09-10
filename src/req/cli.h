@@ -34,9 +34,11 @@ public:
     virtual std::string GetServer() override;
     virtual bool Login(const std::string& token, const std::string& source) override;
     virtual std::string GetStatus() override;
+    virtual std::string GetMemUsage() override;
     virtual bool Debug(const std::string& module, bool enable) override;
 
     virtual void dump_stat(Dumper dp, void* param) override;
+    virtual void dump_usage(Dumper dp, void* param) override;
 };
 
 class Cli_server: public Ep {
