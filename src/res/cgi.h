@@ -57,6 +57,7 @@ public:
     virtual void deleteLater(uint32_t errcode) override;
     virtual void request(std::shared_ptr<HttpReq> req, Requester*)override;
     virtual void dump_stat(Dumper dp, void* param) override;
+    virtual void dump_usage(Dumper dp, void* param) override;
 };
 
 void getcgi(std::shared_ptr<HttpReq> req, const char *filename, Requester *src);

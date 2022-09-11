@@ -772,3 +772,21 @@ void QuicQos::PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame* frame) {
 void QuicQos::SendNow() {
     packet_tx = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this) , 0);
 }
+
+size_t QuicQos::mem_usage() {
+    size_t usage = sizeof(pns)/sizeof(pns[1]) * sizeof(pn_namespace);
+    for(const auto pn : pns){
+        usage += pn->tracked_receipt_pns.items.size() * 2 * sizeof(uint64_t);
+        usage += pn->sent_packets.size() * sizeof(quic_packet_pn);
+        for(const auto& packet: pn->sent_packets) {
+            for(const auto& frame : packet.frames) {
+                usage += frame_size(frame);
+            }
+        }
+        usage += pn->pend_frames.size() * sizeof(quic_frame*);
+        for(const auto& frame: pn->pend_frames) {
+            usage += frame_size(frame);
+        }
+    }
+    return usage;
+}

@@ -269,3 +269,12 @@ void Guest::dump_stat(Dumper dp, void* param){
     }
     rwer->dump_status(dp, param);
 }
+
+void Guest::dump_usage(Dumper dp, void *param) {
+    size_t req_usage  = statuslist.size() * sizeof(ReqStatus);
+    for(const auto& status: statuslist) {
+        req_usage += status.req->mem_usage();
+    }
+    dp(param, "Guest %p: %zd, reqlist: %zd, rwer: %zd\n",
+       this, sizeof(*this), req_usage, rwer->mem_usage());
+}

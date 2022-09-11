@@ -37,5 +37,9 @@ void Status::request(std::shared_ptr<HttpReq> req, Requester* src){
 }
 
 void Status::dump_stat(Dumper dp, void* param){
-    dp(param, "status: %p\n", this);
+    dp(param, "Status: %p\n", this);
+}
+
+void Status::dump_usage(Dumper dp, void *param) {
+    dp(param, "Status %p: %zd\n", this, sizeof(*this));
 }

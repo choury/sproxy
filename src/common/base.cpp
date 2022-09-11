@@ -2,6 +2,7 @@
 #include "misc/util.h"
 #include "misc/job.h"
 #include "misc/config.h"
+#include "misc/strategy.h"
 
 #include <set>
 #include <stdarg.h>
@@ -54,6 +55,21 @@ void dump_stat(Dumper dp, void* param){
     dump_job(dp, param);
     dp(param, "======================================\n");
 }
+
+void dump_usage(Dumper dp, void* param){
+    dp(param, "======================================\n");
+    for(auto i: servers){
+        i->dump_usage(dp, param);
+        dp(param, "--------------------------------------\n");
+    }
+    size_t strag_usage = 0;
+    for(const auto& i : getallstrategy() ) {
+        strag_usage += i.first.length() + sizeof(i.second);
+    }
+    dp(param, "strategy: %zd\n", strag_usage);
+    dp(param, "======================================\n");
+}
+
 
 static void LogDump(void*, const char* fmt, ...) {
     va_list ap;

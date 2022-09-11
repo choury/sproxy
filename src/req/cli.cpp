@@ -149,6 +149,14 @@ std::string Cli::GetStatus() {
     return ss;
 }
 
+std::string Cli::GetMemUsage() {
+    LOG("%s [%s]\n", rwer->getPeer(), __func__);
+    std::string ss;
+    ::dump_usage(sstream_dumper, &ss);
+    return ss;
+}
+
+
 bool Cli::Debug(const std::string& module, bool enable) {
     LOG("%s [%s] %s %s\n", rwer->getPeer(), __func__, enable?"enable":"disable", module.c_str());
     return debugon(module.c_str(), enable);
@@ -157,4 +165,8 @@ bool Cli::Debug(const std::string& module, bool enable) {
 void Cli::dump_stat(Dumper dp, void* param) {
     dp(param, "Cli %p\n", this);
     rwer->dump_status(dp, param);
+}
+
+void Cli::dump_usage(Dumper dp, void *param) {
+    dp(param, "Cli %p: %zd, rwer: %zd\n", this, sizeof(*this), rwer->mem_usage());
 }

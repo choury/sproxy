@@ -32,6 +32,7 @@ static char* policy_file = NULL;
 static struct arg_list secrets = {NULL, NULL};
 static struct arg_list debug_list = {NULL, NULL};
 
+volatile uint32_t will_contiune = 1;
 int efd = -1;
 void openefd(){
     if(efd >= 0){
@@ -399,6 +400,11 @@ static const char* confs[] = {
     NULL,
 };
 
+void exit_loop() {
+    LOG("will exit soon...\n");
+    will_contiune = 0;
+}
+
 void postConfig(){
     if(opt.CPORT >= 65535){
         LOGE("wrong port: %" PRId64 "\n", opt.CPORT);
@@ -473,6 +479,7 @@ void postConfig(){
 #endif
     signal(SIGHUP,  (sig_t)reloadstrategy);
     signal(SIGUSR1, (sig_t)(void(*)())dump_stat);
+    signal(SIGUSR2, (sig_t)exit_loop);
     reloadstrategy();
     srandom(time(NULL));
     setvbuf(stdout, NULL, _IOLBF, BUFSIZ);

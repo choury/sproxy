@@ -72,6 +72,19 @@ const std::map<std::string, std::string>& HttpHeader::getall() const {
     return headers;
 }
 
+size_t HttpHeader::mem_usage() {
+    size_t usage = headers.size() * sizeof(std::string) * 2;
+    for(const auto& i : headers) {
+        usage += i.first.length();
+        usage += i.second.length();
+    }
+    usage += cookies.size() * sizeof(std::string);
+    for(const auto& cookie: cookies) {
+        usage += cookie.length();
+    }
+    return usage;
+}
+
 /*
 HttpReqHeader::HttpReqHeader(const char* header, size_t len) {
     assert(header);
@@ -462,6 +475,9 @@ std::map<string, string> HttpReqHeader::getcookies() const {
     return cookie;
 }
 
+size_t HttpReqHeader::mem_usage() {
+    return HttpHeader::mem_usage() + sizeof(*this) + ranges.size() * sizeof(Range);
+}
 
 /*
 HttpResHeader::HttpResHeader(const char* header, size_t len) {

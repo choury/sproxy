@@ -348,6 +348,17 @@ void Guest2::dump_stat(Dumper dp, void* param) {
     rwer->dump_status(dp, param);
 }
 
+void Guest2::dump_usage(Dumper dp, void *param) {
+    size_t req_usage  = 0;
+    for(const auto& i: statusmap) {
+        req_usage += sizeof(i.first) + sizeof(i.second);
+        req_usage += i.second.req->mem_usage();
+    }
+    dp(param, "Guest2 %p: %zd, reqmap: %zd, rwer: %zd\n",
+       this, sizeof(*this) + header_buffer->cap + hpack_decoder.get_dynamic_table_size() + hpack_encoder.get_dynamic_table_size(),
+       req_usage, rwer->mem_usage());
+}
+
 
 #ifndef NDEBUG
 void Guest2::PingProc(const Http2_header *header){

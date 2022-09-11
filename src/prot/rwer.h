@@ -82,6 +82,7 @@ public:
 
     virtual bool idle(uint64_t id);
     virtual void dump_status(Dumper dp, void* param) = 0;
+    virtual size_t mem_usage() = 0;
 };
 
 class NullRWer: public RWer{
@@ -95,6 +96,9 @@ public:
     virtual const char* getPeer() override {return "null-rwer";}
     virtual void dump_status(Dumper dp, void* param) override {
         dp(param, "NullRWer <%d>\n", getFd());
+    }
+    virtual size_t mem_usage() override{
+        return sizeof(*this);
     }
 };
 
@@ -116,6 +120,9 @@ public:
     virtual const char* getPeer() override {return "full-rwer";}
     virtual void dump_status(Dumper dp, void* param) override {
         dp(param, "FullRWer <%d>\n", getFd());
+    }
+    virtual size_t mem_usage() override{
+        return sizeof(*this);
     }
 };
 

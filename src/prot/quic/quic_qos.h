@@ -110,6 +110,8 @@ public:
     void PushFrame(pn_namespace* ns, quic_frame* frame);
     void FrontFrame(pn_namespace* ns, quic_frame* frame);
     void SendNow();
+
+    size_t mem_usage();
 };
 
 #endif //SPROXY_QUIC_QOS_H

@@ -106,7 +106,15 @@ void Ping::Recv(Buffer&& bb){
 }
 
 void Ping::dump_stat(Dumper dp, void* param) {
-    dp(param, "ping %p, [%" PRIu32"], id: %d, seq: %d\n",
+    dp(param, "Ping %p, [%" PRIu32"], id: %d, seq: %d\n",
        this, req->header->request_id, id, seq);
     rwer->dump_status(dp, param);
+}
+
+void Ping::dump_usage(Dumper dp, void *param) {
+    if(res) {
+        dp(param, "Ping %p: %zd, res: %zd, rwer: %zd\n", this, sizeof(*this), res->mem_usage(), rwer->mem_usage());
+    } else {
+        dp(param, "Ping %p: %zd, rwer: %zd\n", this, sizeof(*this), rwer->mem_usage());
+    }
 }

@@ -9,8 +9,6 @@
 #include <sys/epoll.h>
 #include <openssl/ssl.h>
 
-volatile uint32_t vpn_contiune = 1;
-
 int vpn_start(int fd){
     Cli_server* cli = nullptr;
     if(opt.admin && strlen(opt.admin) > 0){
@@ -25,10 +23,10 @@ int vpn_start(int fd){
         }
         cli = new Cli_server(svsk_cli);
     }
-    Guest_vpn vpn(fd);
+    new Guest_vpn(fd);
     LOG("Accepting connections ...\n");
-    vpn_contiune = 1;
-    while (vpn_contiune) {
+    will_contiune = 1;
+    while (will_contiune) {
         uint32_t msec = do_delayjob();
         if(event_loop(msec) < 0){
             break;
@@ -42,5 +40,5 @@ int vpn_start(int fd){
 
 
 void vpn_stop(){
-    vpn_contiune = 0;
+    will_contiune = 0;
 }

@@ -167,6 +167,7 @@ int main(int argc, char **argv) {
             new Http_server<Guest>(svsk_http, nullptr);
         }
     }
+    Cli_server* cli = nullptr;
     if(opt.admin && strlen(opt.admin) > 0){
         int svsk_cli = -1;
         if(strncmp(opt.admin, "tcp:", 4) == 0){
@@ -177,13 +178,16 @@ int main(int argc, char **argv) {
         if(svsk_cli < 0){
             return -1;
         }
-        new Cli_server(svsk_cli);
+        cli = new Cli_server(svsk_cli);
     }
     LOG("Accepting connections ...\n");
-    while (true) {
+    while (will_contiune) {
         uint32_t msec = do_delayjob();
         if(event_loop(msec) < 0){
             return 6;
         }
     }
+    LOG("Sproxy exiting ...\n");
+    neglect();
+    delete cli;
 }

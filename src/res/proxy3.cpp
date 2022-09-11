@@ -268,3 +268,16 @@ void Proxy3::dump_stat(Dumper dp, void* param) {
     }
     rwer->dump_status(dp, param);
 }
+
+void Proxy3::dump_usage(Dumper dp, void *param) {
+    size_t res_usage  = 0;
+    for(const auto& i: statusmap) {
+        res_usage += sizeof(i.first) + sizeof(i.second);
+        if(i.second.res) {
+            res_usage += i.second.res->mem_usage();
+        }
+    }
+    dp(param, "Proxy3 %p: %zd, resmap: %zd, rwer: %zd\n",
+       this, sizeof(*this) + qpack_encoder.get_dynamic_table_size() + qpack_decoder.get_dynamic_table_size(),
+       res_usage, rwer->mem_usage());
+}

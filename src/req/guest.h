@@ -37,6 +37,7 @@ public:
 
     virtual void response(void*, std::shared_ptr<HttpRes> res)override;
     virtual void dump_stat(Dumper dp, void* param) override;
+    virtual void dump_usage(Dumper dp, void* param) override;
 };
 
 template<class T>

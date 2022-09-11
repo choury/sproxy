@@ -349,6 +349,19 @@ void Cgi::dump_stat(Dumper dp, void* param){
     rwer->dump_status(dp, param);
 }
 
+void Cgi::dump_usage(Dumper dp, void *param) {
+    size_t res_usage  = 0;
+    for(const auto& i: statusmap) {
+        res_usage += sizeof(i.first) + sizeof(i.second);
+        if(i.second.res) {
+            res_usage += i.second.res->mem_usage();
+        }
+    }
+    dp(param, "Cgi %p: %zd, resmap: %zd, rwer: %zd\n",
+       this, sizeof(*this),
+       res_usage, rwer->mem_usage());
+}
+
 void getcgi(std::shared_ptr<HttpReq> req, const char* filename, Requester* src){
     if(cgimap.count(filename)) {
         return cgimap[filename]->request(req, src);

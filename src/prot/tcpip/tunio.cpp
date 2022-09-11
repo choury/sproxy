@@ -372,3 +372,40 @@ void TunRWer::dump_status(Dumper dp, void *param) {
         dumpConnection(dp, param, status);
     }
 }
+
+size_t TunRWer::mem_usage() {
+    size_t usage = sizeof(*this);
+    for(const auto& i : statusmap.data()){
+        usage += sizeof(i.first) * 2 + sizeof(i.second);
+        switch(i.second->protocol) {
+        case Protocol::TCP: {
+            auto status = std::static_pointer_cast<TcpStatus>(i.second);
+            usage += sizeof(TcpStatus) + status->rbuf.cap() + status->rbuf.length();
+            usage += status->sent_list.size() * sizeof(tcp_sent);
+            for(const auto& sent : status->sent_list) {
+                usage += sizeof(Ip6);
+                usage += sent.bb.cap;
+            }
+            Sack* sack = status->sack;
+            while(sack) {
+                usage += sizeof(Sack);
+                sack = sack->next;
+            }
+            break;
+        }
+        case Protocol::UDP: {
+            auto status = std::static_pointer_cast<UdpStatus>(i.second);
+            usage += sizeof(UdpStatus);
+            break;
+        }
+        case Protocol::ICMP: {
+            auto status = std::static_pointer_cast<IcmpStatus>(i.second);
+            usage += sizeof(IcmpStatus);
+            break;
+        }
+        default:
+            break;
+        }
+    }
+    return usage;
+}

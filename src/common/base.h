@@ -18,6 +18,7 @@ public:
     virtual ~Server();
     virtual void deleteLater(uint32_t errcode);
     virtual void dump_stat(Dumper dp, void* param) = 0;
+    virtual void dump_usage(Dumper dp, void* param) = 0;
 };
 
 #ifdef  __cplusplus
@@ -32,4 +33,5 @@ void dump_stat();
 #endif
 
 void dump_stat(Dumper dp, void *param);
+void dump_usage(Dumper dp, void* param);
 #endif

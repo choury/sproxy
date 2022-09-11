@@ -31,6 +31,9 @@ public:
     int set_alpn(const unsigned char *s, unsigned int len);
     void set_hostname_callback(int (* cb)(SSL *, int *, void*), void* arg);
     virtual void dump_status(Dumper dp, void* param) override;
+    virtual size_t mem_usage() override {
+        return sizeof(*this) + (rb.cap() + rb.length()) + wbuff.length();
+    }
 };
 
 #endif

@@ -45,6 +45,9 @@ public:
 
     //for read buffer
     virtual size_t rlength(uint64_t id) override;
+    virtual size_t mem_usage() override {
+        return sizeof(*this) + (rb.cap() + rb.length()) + wbuff.length();
+    }
 };
 
 class PacketRWer: public SocketRWer{
@@ -58,6 +61,9 @@ public:
 
     //for read buffer
     virtual size_t rlength(uint64_t id) override;
+    virtual size_t mem_usage() override {
+        return sizeof(*this) + wbuff.length();
+    }
 };
 
 
