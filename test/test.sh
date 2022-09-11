@@ -199,15 +199,24 @@ test_client 3335
 test_client 3336
 sleep 5
 
+
+printf "sites" | ./scli -s client_h1.sock
+printf "sites" | ./scli -s client_h2.sock
+printf "sites" | ./scli -s client_h3.sock
+
 kill -SIGUSR1 %1
 kill -SIGUSR1 %2
 kill -SIGUSR1 %3
 kill -SIGUSR1 %4
 kill -SIGUSR1 %5
 kill -SIGUSR1 %6
+sleep 5
 
-printf "sites" | ./scli -s client_h1.sock
-printf "sites" | ./scli -s client_h2.sock
-printf "sites" | ./scli -s client_h3.sock
+kill -SIGUSR2 %1
+kill -SIGUSR2 %2
+kill -SIGUSR2 %3
+kill -SIGUSR2 %4
+kill -SIGUSR2 %5
+kill -SIGUSR2 %6
+
 sleep 30
-

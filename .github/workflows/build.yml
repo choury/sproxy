@@ -54,7 +54,7 @@ jobs:
     - if: matrix.build_type == 'Debug'
       name: test
       run: cd ${{github.workspace}}/test && ./test.sh ../build/
-      timeout-minutes: 5
+      timeout-minutes: 10
     - if: matrix.build_type == 'Debug'
       name: Upload test log
       uses: actions/upload-artifact@v3
@@ -104,7 +104,7 @@ jobs:
     - if: matrix.build_type == 'Debug'
       name: test
       run: cd ${{github.workspace}}/test && ./test.sh ../build/
-      timeout-minutes: 5
+      timeout-minutes: 10
     - if: matrix.build_type == 'Debug'
       name: Upload test log
       uses: actions/upload-artifact@v3
