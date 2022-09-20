@@ -149,7 +149,7 @@ include_directories(${OPENSSL_INCLUDE_DIR})
 
 cmake_push_check_state()
 set(CMAKE_REQUIRED_INCLUDES   "${OPENSSL_INCLUDE_DIR}")
-set(CMAKE_REQUIRED_LIBRARIES  "${OPENSSL_LIBRARIES}" dl pthread)
+set(CMAKE_REQUIRED_LIBRARIES  "${OPENSSL_LIBRARIES}" ${CMAKE_THREAD_LIBS_INIT} dl)
 CHECK_SYMBOL_EXISTS(SSL_set_quic_method "openssl/ssl.h" HAVE_QUIC)
 cmake_pop_check_state()
 

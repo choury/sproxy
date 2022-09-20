@@ -62,7 +62,7 @@ int set_if(struct ifreq *ifr) {
             break;
         }
 
-        ifr->ifr_mtu = VPN_MTU;
+        ifr->ifr_mtu = BUF_LEN;
         if ((err = ioctl(fd, SIOCSIFMTU, ifr)) < 0) {
             perror("ioctl (SIOCSIFMTU) failed");
             break;

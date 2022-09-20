@@ -8,8 +8,6 @@
 extern "C" {
 #endif
 
-#define VPN_MTU  (BUF_LEN+20)
-
 #ifndef UINT32_MAX
 #define UINT32_MAX 0xFFFFFFFF
 #endif
