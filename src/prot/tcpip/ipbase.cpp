@@ -1,6 +1,6 @@
 #include "ipbase.h"
 
-void IpBase::Unreach(std::shared_ptr<IpStatus> status, uint8_t code) {
+void Unreach(std::shared_ptr<IpStatus> status, uint8_t code) {
     std::shared_ptr<Ip> pac;
     if (status->src.ss_family == AF_INET) {
         LOGD(DVPN, "write icmp unreach packet\n");
@@ -30,5 +30,5 @@ void IpBase::Unreach(std::shared_ptr<IpStatus> status, uint8_t code) {
     Buffer bb{status->packet_hdr, status->packet_hdr_len};
     status->packet_hdr = nullptr;
     pac->build_packet(bb);
-    sendPkg(pac, bb.data(), bb.len);
+    status->sendCB(pac, bb.data(), bb.len);
 }

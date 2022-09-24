@@ -3,11 +3,8 @@
 #include "ipbase.h"
 
 struct IcmpStatus;
-class IcmpHE: virtual public IpBase {
-public:
-    void DefaultProc(std::shared_ptr<IpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
-    void SendData(std::shared_ptr<IpStatus> status, Buffer&& bb);
-};
+void IcmpProc(std::shared_ptr<IcmpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
+void SendData(std::shared_ptr<IcmpStatus> status, Buffer&& bb);
 
 struct IcmpStatus: public IpStatus {
     uint16_t id = 0;

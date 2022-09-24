@@ -168,30 +168,30 @@ void TunRWer::ReadData() {
             }
             switch(key.protocol){
             case Protocol::TCP:{
-                TcpStatus* tstatus = new TcpStatus();
-                tstatus->InProc = reinterpret_cast<InProc_t>(&TcpHE::SynProc);
-                tstatus->Write = reinterpret_cast<Write_t>(&TcpHE::SendData);
-                tstatus->Unreach = reinterpret_cast<Unreach_t>(&TcpHE::Unreach);
-                tstatus->Cap = reinterpret_cast<Cap_t>(&TcpHE::Cap);
-                status = std::shared_ptr<IpStatus>(tstatus);
+                auto tstatus = std::make_shared<TcpStatus>();
+                tstatus->PkgProc = std::bind(SynProc, tstatus, _1, _2, _3);
+                tstatus->SendPkg = std::bind((void(*)(std::shared_ptr<TcpStatus>, Buffer&&))::SendData, tstatus, _1);
+                tstatus->UnReach = std::bind((void (*)(std::shared_ptr<TcpStatus>, uint8_t)) UnReach, tstatus, _1);
+                tstatus->Cap = std::bind((ssize_t(*)(std::shared_ptr<TcpStatus>))Cap, tstatus);
+                status = tstatus;
                 break;
             }
             case Protocol::UDP:{
-                UdpStatus* ustatus = new UdpStatus();
-                ustatus->InProc = reinterpret_cast<InProc_t>(&UdpHE::DefaultProc);
-                ustatus->Write = reinterpret_cast<Write_t>(&UdpHE::SendData);
-                ustatus->Unreach = reinterpret_cast<Unreach_t>(&UdpHE::Unreach);
-                ustatus->Cap = reinterpret_cast<Cap_t>(&UdpHE::Cap);
-                status = std::shared_ptr<IpStatus>(ustatus);
+                auto ustatus = std::make_shared<UdpStatus>();
+                ustatus->PkgProc = std::bind(UdpProc, ustatus, _1, _2, _3);
+                ustatus->SendPkg = std::bind((void(*)(std::shared_ptr<UdpStatus>, Buffer&&))::SendData, ustatus, _1);
+                ustatus->UnReach = std::bind((void(*)(std::shared_ptr<IpStatus>, uint8_t))Unreach, ustatus, _1);
+                ustatus->Cap = std::bind((ssize_t(*)(std::shared_ptr<IpStatus>))Cap, ustatus);
+                status = ustatus;
                 break;
             }
             case Protocol::ICMP:{
-                IcmpStatus* istatus = new IcmpStatus();
-                istatus->InProc = reinterpret_cast<InProc_t>(&IcmpHE::DefaultProc);
-                istatus->Write = reinterpret_cast<Write_t>(&IcmpHE::SendData);
-                istatus->Unreach = reinterpret_cast<Unreach_t>(&IcmpHE::Unreach);
-                istatus->Cap = reinterpret_cast<Cap_t>(&IcmpHE::Cap);
-                status = std::shared_ptr<IpStatus>(istatus);
+                auto istatus = std::make_shared<IcmpStatus>();
+                istatus->PkgProc = std::bind(IcmpProc, istatus, _1, _2, _3);
+                istatus->SendPkg = std::bind((void(*)(std::shared_ptr<IcmpStatus>, Buffer&&))::SendData, istatus, _1);
+                istatus->UnReach = std::bind((void(*)(std::shared_ptr<IpStatus>, uint8_t))Unreach, istatus, _1);
+                istatus->Cap = std::bind((ssize_t(*)(std::shared_ptr<IpStatus>))Cap, istatus);
+                status = istatus;
                 break;
             }
             case Protocol::NONE:
@@ -200,6 +200,11 @@ void TunRWer::ReadData() {
             default:
                 continue;
             }
+            status->reqCB = std::bind(&TunRWer::ReqProc, this, _1);
+            status->dataCB = std::bind(&TunRWer::DataProc, this, _1, _2, _3);
+            status->ackCB = std::bind(&TunRWer::AckProc, this, _1);
+            status->errCB = std::bind(&TunRWer::ErrProc, this, _1, _2);
+            status->sendCB = std::bind(&TunRWer::SendPkg, this, _1, _2, _3);
             status->protocol = key.protocol;
             status->src = pac->getsrc();
             status->dst = pac->getdst();
@@ -208,7 +213,7 @@ void TunRWer::ReadData() {
             if(transIcmp){
                 uint64_t id = statusmap.GetOne(key)->first.first;
                 resetHanlder(id, ICMP_UNREACH_ERR);
-                statusmap.Delete(id);
+                Clean(id);
                 continue;
             }
             status = statusmap.GetOne(key)->second;
@@ -217,7 +222,7 @@ void TunRWer::ReadData() {
             status->packet_hdr_len = pac->gethdrlen();
             status->packet_hdr = std::make_shared<Block>(rbuff, status->packet_hdr_len);
         }
-        (this->*status->InProc)(status, pac, rbuff, len);
+        status->PkgProc(pac, rbuff, len);
     }
 }
 
@@ -237,7 +242,7 @@ void TunRWer::ConsumeRData(uint64_t id) {
     assert(statusmap.Has(id));
     auto status = GetStatus(id);
     if (status->protocol == Protocol::TCP) {
-        consumeData(status);
+        consumeData(std::static_pointer_cast<TcpStatus>(status));
     }
 }
 
@@ -246,7 +251,7 @@ ssize_t TunRWer::Write(const void*, size_t, uint64_t) {
     return -1;
 }
 
-void TunRWer::sendPkg(std::shared_ptr<const Ip> pac, const void* data, size_t len) {
+void TunRWer::SendPkg(std::shared_ptr<const Ip> pac, const void* data, size_t len) {
     debugString(pac, len - pac->gethdrlen());
     pcap_write_with_generated_ethhdr(pcap, data, len);
     (void)!write(getFd(), data, len);
@@ -257,7 +262,7 @@ buff_iterator TunRWer::buffer_insert(buff_iterator where, Buffer&& bb) {
         return where;
     }
     auto status = GetStatus(bb.id);
-    (this->*status->Write)(status, std::move(bb));
+    status->SendPkg(std::move(bb));
     return where;
 }
 
@@ -267,10 +272,19 @@ void TunRWer::ReqProc(std::shared_ptr<const Ip> pac) {
     }
 }
 
+void TunRWer::Clean(uint64_t id) {
+    auto status = GetStatus(id);
+    status->PkgProc = nullptr;
+    status->SendPkg = nullptr;
+    status->UnReach = nullptr;
+    status->Cap = nullptr;
+    statusmap.Delete(id);
+}
+
 void TunRWer::ErrProc(std::shared_ptr<const Ip> pac, uint32_t code) {
     uint64_t id = GetId(pac);
     resetHanlder(id, code);
-    statusmap.Delete(id);
+    Clean(id);
     LOGD(DVPN, "tunio: delete id: 0x%" PRIx64", due to err: %d\n", id, (int)code);
 }
 
@@ -286,7 +300,7 @@ void TunRWer::AckProc(std::shared_ptr<const Ip> pac) {
         return;
     }
     auto itr = statusmap.GetOne(VpnKey(pac));
-    if((this->*(itr->second)->Cap)(itr->second) >= 0) {
+    if(itr->second->Cap() >= 0) {
         return writeCB(itr->first.first);
     }
 }
@@ -304,14 +318,14 @@ void TunRWer::sendMsg(uint64_t id, uint32_t msg) {
         if(status->protocol == Protocol::TCP) {
             SendRst(std::static_pointer_cast<TcpStatus>(status));
         } else {
-            (this->*status->Unreach)(status, IP_ADDR_UNREACH);
+            status->UnReach(IP_ADDR_UNREACH);
         }
-        statusmap.Delete(id);
+        Clean(id);
         break;
     case TUN_MSG_UNREACH:
         LOGD(DVPN, "tunio: delete id: 0x%" PRIx64", due to unreach\n", id);
-        (this->*status->Unreach)(status, IP_PORT_UNREACH);
-        statusmap.Delete(id);
+        status->UnReach(IP_PORT_UNREACH);
+        Clean(id);
         break;
     }
 }
@@ -322,7 +336,7 @@ void TunRWer::setResetHandler(std::function<void (uint64_t, uint32_t)> func) {
 
 ssize_t TunRWer::cap(uint64_t id) {
     auto status = GetStatus(id);
-    return (this->*status->Cap)(status);
+    return status->Cap();
 }
 
 bool TunRWer::idle(uint64_t id) {

@@ -5,11 +5,8 @@
 
 struct UdpStatus;
 
-class UdpHE: virtual public IpBase {
-public:
-    void DefaultProc(std::shared_ptr<IpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
-    void SendData(std::shared_ptr<IpStatus> status, Buffer&& bb);
-};
+void UdpProc(std::shared_ptr<UdpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
+void SendData(std::shared_ptr<UdpStatus> status, Buffer&& bb);
 
 
 struct UdpStatus: public IpStatus{

@@ -56,10 +56,12 @@
 
 #define TCP_WSCALE   9u
 
+void SendAck(std::weak_ptr<TcpStatus> status);
+void CloseProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
+void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
 #define GetWeak(ptr) std::weak_ptr<std::remove_reference<decltype(*(ptr))>::type>(ptr)
 
-ssize_t TcpHE::Cap(std::shared_ptr<IpStatus> status_) {
-    std::shared_ptr<TcpStatus> status = std::static_pointer_cast<TcpStatus>(status_);
+ssize_t Cap(std::shared_ptr<TcpStatus> status) {
     if(status->state != TCP_ESTABLISHED && status->state != TCP_CLOSE_WAIT){
         return 0;
     }
@@ -68,8 +70,7 @@ ssize_t TcpHE::Cap(std::shared_ptr<IpStatus> status_) {
                     - (ssize_t)(status->sent_seq - status->recv_ack);
 }
 
-void TcpHE::consumeData(std::shared_ptr<IpStatus> status_) {
-    std::shared_ptr<TcpStatus> status = std::static_pointer_cast<TcpStatus>(status_);
+void consumeData(std::shared_ptr<TcpStatus> status) {
     if(status->rbuf.length() > 0 || (status->flags & TCP_FIN_RECVD)){
         SendAck(status);
     }
@@ -79,7 +80,7 @@ static size_t bufleft(std::shared_ptr<TcpStatus> status) {
     return status->rbuf.cap();
 }
 
-void TcpHE::Resent(std::weak_ptr<TcpStatus> status_) {
+void Resent(std::weak_ptr<TcpStatus> status_) {
     if(status_.expired()){
         return;
     }
@@ -98,7 +99,7 @@ void TcpHE::Resent(std::weak_ptr<TcpStatus> status_) {
                 ->setack(status->want_seq)
                 ->setwindow(bufleft(status) >> status->send_wscale);
         it->pac->build_packet(it->bb);
-        sendPkg(it->pac, it->bb.data(), it->bb.len);
+        status->sendCB(it->pac, it->bb.data(), it->bb.len);
         it->bb.reserve(it->pac->gethdrlen());
     }else {
         for(auto& it : status->sent_list){
@@ -108,7 +109,7 @@ void TcpHE::Resent(std::weak_ptr<TcpStatus> status_) {
                         ->setack(status->want_seq)
                         ->setwindow(bufleft(status) >> status->send_wscale);
                 it.pac->build_packet(it.bb);
-                sendPkg(it.pac, it.bb.data(), it.bb.len);
+                status->sendCB(it.pac, it.bb.data(), it.bb.len);
                 it.bb.reserve(it.pac->gethdrlen());
             }else {
                 break;
@@ -117,13 +118,13 @@ void TcpHE::Resent(std::weak_ptr<TcpStatus> status_) {
         sack_release(&status->sack);
     }
     status->rto_job = status->jobHandler.updatejob(status->rto_job,
-                                                   std::bind(&TcpHE::Resent, this, status_),
+                                                   std::bind(&Resent, status_),
                                                    status->rto);
 }
 
-void TcpHE::PendPkg(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, Buffer&& bb) {
+void PendPkg(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, Buffer&& bb) {
     pac->build_packet(bb);
-    sendPkg(pac, bb.data(), bb.len);
+    status->sendCB(pac, bb.data(), bb.len);
     bb.reserve(pac->gethdrlen());
     uint8_t flags = pac->tcp->getflag();
     if((flags & TH_RST) || (flags == TH_ACK && bb.len == 0)) {
@@ -131,23 +132,21 @@ void TcpHE::PendPkg(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, 
     }
     if(status->sent_list.empty()) {
         status->rto_job = status->jobHandler.updatejob(status->rto_job,
-                                                       std::bind(&TcpHE::Resent, this, GetWeak(status)),
+                                                       std::bind(&Resent, GetWeak(status)),
                                                        status->rto);
     }
     status->sent_list.emplace_back(tcp_sent{pac, getmtime(), std::move(bb)});
 }
 
 // LISTEN or SYN-RECEIVED
-void TcpHE::SynProc(std::shared_ptr<IpStatus> status_, std::shared_ptr<const Ip> pac, const char*, size_t) {
-    std::shared_ptr<TcpStatus> status = std::static_pointer_cast<TcpStatus>(status_);
+void SynProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char*, size_t) {
     assert(status->state == TCP_LISTEN || status->state == TCP_SYN_RECV);
     uint32_t seq = pac->tcp->getseq();
     uint8_t flag = pac->tcp->getflag();
 
     if(flag & TH_RST) {
         status->state = TCP_CLOSE;
-        status->InProc = reinterpret_cast<InProc_t>(&TcpHE::CloseProc);
-        ErrProc(pac, TCP_RESET_ERR);
+        status->errCB(pac, TCP_RESET_ERR);
         return;
     }
     if((flag & TH_SYN) == 0 || (flag & TH_ACK) != 0) {
@@ -155,7 +154,7 @@ void TcpHE::SynProc(std::shared_ptr<IpStatus> status_, std::shared_ptr<const Ip>
         status->sent_seq = pac->tcp->getack();
         status->want_seq = seq + 1;
         SendRst(status);
-        ErrProc(pac, TCP_RESET_ERR);
+        status->errCB(pac, TCP_RESET_ERR);
         return;
     }
     if(status->state == TCP_SYN_RECV) {
@@ -181,11 +180,11 @@ void TcpHE::SynProc(std::shared_ptr<IpStatus> status_, std::shared_ptr<const Ip>
     }
     // 因为syn包中的wscale不生效，所以这里做下修正，为了bufleft不用特殊处理这种情况
     status->window >>= status->recv_wscale;
-    ReqProc(pac);
+    status->reqCB(pac);
 }
 
 // SYN-RECEIVED --> ESTANBLISHED
-void TcpHE::SendSyn(std::shared_ptr<TcpStatus> status) {
+void SendSyn(std::shared_ptr<TcpStatus> status) {
     assert(status->state == TCP_SYN_RECV);
     // tcp 创建回包 (syn + ack)
     auto pac = MakeIp(IPPROTO_TCP, &status->dst, &status->src);
@@ -205,23 +204,21 @@ void TcpHE::SendSyn(std::shared_ptr<TcpStatus> status) {
 
     status->sent_ack = status->want_seq;
     status->state = TCP_ESTABLISHED;
-    status->InProc = reinterpret_cast<InProc_t>(&TcpHE::DefaultProc);
+    status->PkgProc = std::bind(&DefaultProc, status, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
 
     PendPkg(status, pac, nullptr);
 }
 
-void TcpHE::Unreach(std::shared_ptr<IpStatus> status_, uint8_t code) {
-    std::shared_ptr<TcpStatus> status = std::static_pointer_cast<TcpStatus>(status_);
+void UnReach(std::shared_ptr<TcpStatus> status, uint8_t code) {
     assert(status->state == TCP_SYN_RECV);
-    IpBase::Unreach(status_, code);
+    Unreach(std::dynamic_pointer_cast<IpStatus>(status), code);
     status->state = TCP_CLOSE;
-    status->InProc = reinterpret_cast<InProc_t>(&TcpHE::CloseProc);
+    status->PkgProc = [](std::shared_ptr<const Ip>, const char*, size_t){};
 }
 
 // ESTABLISHED or CLOSE-WAIT or FIN-WAIT1 or FIN-WAIT2
 // 只有这个函数会从对端接收数据(data)
-void TcpHE::DefaultProc(std::shared_ptr<IpStatus> status_, std::shared_ptr<const Ip> pac, const char* packet, size_t len) {
-    std::shared_ptr<TcpStatus> status = std::static_pointer_cast<TcpStatus>(status_);
+void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len) {
     assert(status->state == TCP_ESTABLISHED ||
            status->state == TCP_CLOSE_WAIT ||
            status->state == TCP_FIN_WAIT1 ||
@@ -232,8 +229,7 @@ void TcpHE::DefaultProc(std::shared_ptr<IpStatus> status_, std::shared_ptr<const
 
     if(flag & TH_RST){//rst包，不用回包，直接断开
         status->state = TCP_CLOSE;
-        status->InProc = reinterpret_cast<InProc_t>(&TcpHE::CloseProc);
-        ErrProc(pac, TCP_RESET_ERR);
+        status->errCB(pac, TCP_RESET_ERR);
         return;
     }
 
@@ -241,7 +237,7 @@ void TcpHE::DefaultProc(std::shared_ptr<IpStatus> status_, std::shared_ptr<const
         LOG("%s get keepalive pkt or unwanted pkt, reply ack(%u).\n", storage_ntoa(&status->src), status->want_seq);
         status->sent_ack = status->want_seq - 1; //to force send tcp ack
         status->ack_job = status->jobHandler.updatejob(status->ack_job,
-                                                       std::bind(&TcpHE::SendAck, this, GetWeak(status)), 0);
+                                                       std::bind(&SendAck, GetWeak(status)), 0);
         return;
     }
 
@@ -249,7 +245,7 @@ void TcpHE::DefaultProc(std::shared_ptr<IpStatus> status_, std::shared_ptr<const
         if(after(ack, status->sent_seq)) {
             LOG("%s get ack from unsent seq (%d/%d), rst it\n", storage_ntoa(&status->src), ack, status->sent_seq);
             SendRst(status);
-            ErrProc(pac, TCP_RESET_ERR);
+            status->errCB(pac, TCP_RESET_ERR);
             return;
         }
 
@@ -260,7 +256,7 @@ void TcpHE::DefaultProc(std::shared_ptr<IpStatus> status_, std::shared_ptr<const
             status->dupack ++;
             if(status->dupack >= 3) {
                 status->rto_job = status->jobHandler.updatejob(status->rto_job,
-                                                               std::bind(&TcpHE::Resent, this, GetWeak(status)), 0);
+                                                               std::bind(&Resent, GetWeak(status)), 0);
                 if(status->options & (1 << TCPOPT_SACK_PERMITTED)) {
                     pac->tcp->getsack(&status->sack);
                 }
@@ -270,7 +266,7 @@ void TcpHE::DefaultProc(std::shared_ptr<IpStatus> status_, std::shared_ptr<const
         status->dupack = 0;
         sack_release(&status->sack);
         status->recv_ack = ack;
-        AckProc(pac);
+        status->ackCB(pac);
         if(status->state == TCP_FIN_WAIT1 && ack == status->sent_seq){
             status->state = TCP_FIN_WAIT2;
         }
@@ -309,7 +305,7 @@ void TcpHE::DefaultProc(std::shared_ptr<IpStatus> status_, std::shared_ptr<const
             status->jobHandler.deljob(&status->rto_job);
         }else{
             status->rto_job = status->jobHandler.updatejob(status->rto_job,
-                                                           std::bind(&TcpHE::Resent, this, GetWeak(status)),
+                                                           std::bind(&Resent, GetWeak(status)),
                                                            status->rto);
         }
     }
@@ -322,22 +318,22 @@ left:
         case TCP_CLOSE_WAIT:
             LOG("%s get dup fin, send rst back\n", storage_ntoa(&status->src));
             SendRst(status);
-            ErrProc(pac, TCP_RESET_ERR);
+            status->errCB(pac, TCP_RESET_ERR);
             return;
         case TCP_ESTABLISHED:
             status->state = TCP_CLOSE_WAIT;
             break;
         case TCP_FIN_WAIT1:
             status->state = TCP_CLOSING;
-            status->InProc = reinterpret_cast<InProc_t>(&TcpHE::CloseProc);
+            status->PkgProc = std::bind(&CloseProc, status, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
             break;
         case TCP_FIN_WAIT2:
             status->state = TCP_TIME_WAIT;
-            status->InProc = reinterpret_cast<InProc_t>(&TcpHE::CloseProc);
+            status->PkgProc = std::bind(&CloseProc, status, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
             break;
         }
         status->ack_job = status->jobHandler.updatejob(status->ack_job,
-                                                       std::bind(&TcpHE::SendAck, this, GetWeak(status)), 0);
+                                                       std::bind(&SendAck, GetWeak(status)), 0);
         return;
     }
 
@@ -346,7 +342,7 @@ left:
         LOG("%s get pkt oversize of window (%zu/%zu), rst it\n",
             storage_ntoa(&status->src), datalen,  status->rbuf.cap());
         SendRst(status);
-        ErrProc(pac, TCP_RESET_ERR);
+        status->errCB(pac, TCP_RESET_ERR);
         return;
     }
     if(datalen > 0) {
@@ -355,11 +351,11 @@ left:
         status->rbuf.put(data, datalen);
         status->want_seq += datalen;
         status->ack_job = status->jobHandler.updatejob(status->ack_job,
-                                                       std::bind(&TcpHE::SendAck, this, GetWeak(status)), 0);
+                                                       std::bind(&SendAck, GetWeak(status)), 0);
     }
 }
 
-void TcpHE::SendAck(std::weak_ptr<TcpStatus> status_) {
+void SendAck(std::weak_ptr<TcpStatus> status_) {
     if(status_.expired()){
         return;
     }
@@ -371,11 +367,11 @@ void TcpHE::SendAck(std::weak_ptr<TcpStatus> status_) {
         auto pac = MakeIp(IPPROTO_TCP, &status->src, &status->dst);
         if(status->rbuf.length() > 0) {
             auto bb = status->rbuf.get();
-            size_t len = DataProc(pac, bb.data(), bb.len);
+            size_t len = status->dataCB(pac, bb.data(), bb.len);
             status->rbuf.consume(len);
         }
         if((status->flags & TCP_FIN_RECVD) && status->rbuf.length() == 0){
-            DataProc(pac, nullptr, 0);
+            status->dataCB(pac, nullptr, 0);
             status->flags |= TCP_FIN_DELIVERED;
         }
     }
@@ -400,13 +396,12 @@ void TcpHE::SendAck(std::weak_ptr<TcpStatus> status_) {
     PendPkg(status, pac, nullptr);
     if(status->state == TCP_TIME_WAIT){
         status->state = TCP_CLOSE;
-        status->InProc = reinterpret_cast<InProc_t>(&TcpHE::CloseProc);
-        ErrProc(MakeIp(IPPROTO_TCP, &status->src, &status->dst), NOERROR);
+        status->PkgProc = [](std::shared_ptr<const Ip>, const char*, size_t){};
+        status->errCB(MakeIp(IPPROTO_TCP, &status->src, &status->dst), NOERROR);
     }
 }
 
-void TcpHE::SendData(std::shared_ptr<IpStatus> status_, Buffer&& bb) {
-    std::shared_ptr<TcpStatus> status = std::static_pointer_cast<TcpStatus>(status_);
+void SendData(std::shared_ptr<TcpStatus> status, Buffer&& bb) {
     assert(status->state == TCP_ESTABLISHED || status->state == TCP_CLOSE_WAIT);
     if (bb.len == 0) {
         auto pac = MakeIp(IPPROTO_TCP, &status->dst, &status->src);
@@ -425,7 +420,7 @@ void TcpHE::SendData(std::shared_ptr<IpStatus> status_, Buffer&& bb) {
             break;
         case TCP_CLOSE_WAIT:
             status->state = TCP_LAST_ACK;
-            status->InProc = reinterpret_cast<InProc_t>(&TcpHE::CloseProc);
+            status->PkgProc = std::bind(&CloseProc, status, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
             break;
         }
         return;
@@ -460,7 +455,7 @@ void TcpHE::SendData(std::shared_ptr<IpStatus> status_, Buffer&& bb) {
     }
 }
 
-void TcpHE::SendRst(std::shared_ptr<TcpStatus> status) {
+void SendRst(std::shared_ptr<TcpStatus> status) {
     status->state = TCP_CLOSE;
     auto pac = MakeIp(IPPROTO_TCP, &status->dst, &status->src);
     pac->tcp
@@ -470,13 +465,12 @@ void TcpHE::SendRst(std::shared_ptr<TcpStatus> status) {
         ->setflag(TH_RST | TH_ACK);
 
     PendPkg(status, pac, nullptr);
-    status->InProc = reinterpret_cast<InProc_t>(&TcpHE::CloseProc);
 }
 
 // LAST_ACK or CLOSING
-void TcpHE::CloseProc(std::shared_ptr<IpStatus> status_, std::shared_ptr<const Ip> pac, const char*, size_t) {
-    std::shared_ptr<TcpStatus> status = std::static_pointer_cast<TcpStatus>(status_);
+void CloseProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char*, size_t) {
     if(status->state == TCP_CLOSE){
+        status->PkgProc = [](std::shared_ptr<const Ip>, const char*, size_t){};
         return;
     }
     assert(status->state == TCP_LAST_ACK || status->state == TCP_CLOSING || status->state == TCP_TIME_WAIT);
@@ -486,25 +480,25 @@ void TcpHE::CloseProc(std::shared_ptr<IpStatus> status_, std::shared_ptr<const I
 
     if(flag & TH_RST) {
         status->state = TCP_CLOSE;
-        ErrProc(pac, TCP_RESET_ERR);
+        status->errCB(pac, TCP_RESET_ERR);
         return;
     }
     if(seq != status->want_seq){
         status->sent_ack = status->want_seq - 1; //to force send tcp ack
         status->ack_job = status->jobHandler.updatejob(status->ack_job,
-                                                       std::bind(&TcpHE::SendAck, this, GetWeak(status)), 0);
+                                                       std::bind(&SendAck, GetWeak(status)), 0);
         return;
     }
 
     if(flag & TH_ACK){
         if(ack == status->sent_seq) {
             status->state = TCP_CLOSE;
-            ErrProc(pac, NOERROR);
+            status->errCB(pac, NOERROR);
             return;
         }
     } else {
         SendRst(status);
-        ErrProc(pac, NOERROR);
+        status->errCB(pac, NOERROR);
         return;
     }
 }

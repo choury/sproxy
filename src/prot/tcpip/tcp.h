@@ -21,23 +21,14 @@
 #endif
 
 struct TcpStatus;
-class TcpHE: virtual public IpBase {
-protected:
-    void Resent(std::weak_ptr<TcpStatus> status);
-    virtual void PendPkg(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac,  Buffer&& bb);
-    void SendAck(std::weak_ptr<TcpStatus> status);
-public:
-    void SynProc(std::shared_ptr<IpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
-    void DefaultProc(std::shared_ptr<IpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
-    void CloseProc(std::shared_ptr<IpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
-    void SendData(std::shared_ptr<IpStatus> status, Buffer&& bb);
-    void Unreach(std::shared_ptr<IpStatus>, uint8_t code);
+void SynProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
+void SendData(std::shared_ptr<TcpStatus> status, Buffer&& bb);
+void UnReach(std::shared_ptr<TcpStatus> status, uint8_t code);
 
-    void SendSyn(std::shared_ptr<TcpStatus> status);
-    void SendRst(std::shared_ptr<TcpStatus> status);
-    ssize_t Cap(std::shared_ptr<IpStatus> status);
-    void consumeData(std::shared_ptr<IpStatus> status);
-};
+void SendSyn(std::shared_ptr<TcpStatus> status);
+void SendRst(std::shared_ptr<TcpStatus> status);
+ssize_t Cap(std::shared_ptr<TcpStatus> status);
+void consumeData(std::shared_ptr<TcpStatus> status);
 
 struct tcp_sent{
     std::shared_ptr<Ip> pac;

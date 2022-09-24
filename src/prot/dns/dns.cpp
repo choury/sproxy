@@ -102,8 +102,10 @@ Dns_Query::Dns_Query(const char* buff, size_t len) {
     id = ntohs(dnshdr->id);
     const unsigned char *p = getdomain(dnshdr, (const unsigned char *)(dnshdr+1), len, domain);
     const DNS_QUE *que = (const DNS_QUE*)p;
+    if(ntohs(que->classes) != 1) {
+        return;
+    }
     type = ntohs(que->type);
-    assert(ntohs(que->classes) == 1);
     if(type == 12){
         std::string ptr = reverse(domain);
         if(startwith(ptr.c_str(), IPV4_PTR_PREFIX)){
