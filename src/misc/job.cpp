@@ -45,6 +45,7 @@ Job* job_handler::updatejob_with_name(Job *job, std::function<void()> func, cons
     }
     assert((job->flags & JOB_DESTROIED) == 0);
     LOGD(DJOB, "update a Job %p %s by %d\n", job, func_name, interval_ms);
+    job->func = std::move(func);
     job->delay_ms = interval_ms;
     job->last_done_ms = getmtime();
     job->func_name = func_name;

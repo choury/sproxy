@@ -56,9 +56,9 @@
 
 #define TCP_WSCALE   9u
 
-void SendAck(std::weak_ptr<TcpStatus> status);
-void CloseProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
-void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
+static void SendAck(std::weak_ptr<TcpStatus> status);
+static void CloseProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
+static void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
 #define GetWeak(ptr) std::weak_ptr<std::remove_reference<decltype(*(ptr))>::type>(ptr)
 
 ssize_t Cap(std::shared_ptr<TcpStatus> status) {
@@ -213,7 +213,6 @@ void UnReach(std::shared_ptr<TcpStatus> status, uint8_t code) {
     assert(status->state == TCP_SYN_RECV);
     Unreach(std::dynamic_pointer_cast<IpStatus>(status), code);
     status->state = TCP_CLOSE;
-    status->PkgProc = [](std::shared_ptr<const Ip>, const char*, size_t){};
 }
 
 // ESTABLISHED or CLOSE-WAIT or FIN-WAIT1 or FIN-WAIT2
@@ -290,7 +289,7 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
             }else{
                 break;
             }
-}
+        }
         assert(rtt != UINT32_MAX);
         if(status->srtt == 0) {
             status->srtt = rtt;
@@ -299,7 +298,7 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
             status->rttval = (3 * status->rttval + labs((long) status->srtt - (long)rtt)) / 4;
             status->srtt = (7 * status->srtt + rtt) / 8;
         }
-        status->rto = std::max(status->srtt + 4 * status->rttval, (uint32_t)40);
+        status->rto = std::max(status->srtt + 4 * status->rttval, (uint32_t)50);
         LOGD(DVPN, "tcp rtt: %d, srtt: %d, rttval: %d, rto: %d\n", rtt, status->srtt, status->rttval, status->rto);
         if(status->sent_list.empty()) {
             status->jobHandler.deljob(&status->rto_job);
@@ -396,7 +395,6 @@ void SendAck(std::weak_ptr<TcpStatus> status_) {
     PendPkg(status, pac, nullptr);
     if(status->state == TCP_TIME_WAIT){
         status->state = TCP_CLOSE;
-        status->PkgProc = [](std::shared_ptr<const Ip>, const char*, size_t){};
         status->errCB(MakeIp(IPPROTO_TCP, &status->src, &status->dst), NOERROR);
     }
 }
@@ -469,10 +467,6 @@ void SendRst(std::shared_ptr<TcpStatus> status) {
 
 // LAST_ACK or CLOSING
 void CloseProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char*, size_t) {
-    if(status->state == TCP_CLOSE){
-        status->PkgProc = [](std::shared_ptr<const Ip>, const char*, size_t){};
-        return;
-    }
     assert(status->state == TCP_LAST_ACK || status->state == TCP_CLOSING || status->state == TCP_TIME_WAIT);
     uint32_t ack = pac->tcp->getack();
     uint32_t seq = pac->tcp->getseq();
@@ -492,6 +486,7 @@ void CloseProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac,
 
     if(flag & TH_ACK){
         if(ack == status->sent_seq) {
+            status->sent_list.clear();
             status->state = TCP_CLOSE;
             status->errCB(pac, NOERROR);
             return;
@@ -502,5 +497,3 @@ void CloseProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac,
         return;
     }
 }
-
-

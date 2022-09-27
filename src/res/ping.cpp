@@ -10,16 +10,12 @@
 Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
     rwer = std::make_shared<PacketRWer>(host, this->id, Protocol::ICMP, [this](int ret, int code){
         LOGE("(%s) Ping error: %d/%d\n", rwer->getPeer(), ret, code);
-        if(res  == nullptr){
-            res = std::make_shared<HttpRes>(UnpackHttpRes(H500));
-            req->response(this->res);
-        }
-        rwer->setEvents(RW_EVENT::NONE);
+        deleteLater(ret);
     },[this](const sockaddr_storage& addr){
         const sockaddr_in6 *addr6 = (const sockaddr_in6*)&addr;
         family = addr6->sin6_family;
         if(addr6->sin6_port == 0){
-            israw = true;
+            flags |= PING_IS_RAW_SOCK;
         }
         req->attach([this](ChannelMessage& message){
             switch(message.type){
@@ -31,7 +27,7 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
                 return 1;
             case ChannelMessage::CHANNEL_MSG_SIGNAL:
                 LOGD(DVPN, "<ping> [%d] get signal from req: %d\n", this->id, message.signal);
-                this->req->detach();
+                flags |= PING_IS_CLOSED_F;
                 deleteLater(PEER_LOST_ERR);
                 return 0;
             }
@@ -46,7 +42,7 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
         Buffer bb{(char*)data, len};
         switch(family){
         case AF_INET:
-            if(israw){
+            if(flags & PING_IS_RAW_SOCK){
                 const ip* iphdr = (ip*)data;
                 size_t hlen = iphdr->ip_hl << 2;
                 bb.reserve(sizeof(icmphdr) + hlen);
@@ -57,7 +53,7 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
             }
             break;
         case AF_INET6:
-            if(israw){
+            if(flags & PING_IS_RAW_SOCK){
                 bb.reserve(sizeof(ip6_hdr) + sizeof(icmp6_hdr));
                 res->send(std::move(bb));
             }else {
@@ -103,6 +99,33 @@ void Ping::Recv(Buffer&& bb){
         abort();
     }
     rwer->buffer_insert(rwer->buffer_end(), std::move(bb));
+}
+
+void Ping::deleteLater(uint32_t errcode) {
+    if(req){
+        req->detach();
+    }
+    if(flags & PING_IS_CLOSED_F){
+        //do nothing.
+    }else if(res){
+        res->send(ChannelMessage::CHANNEL_ABORT);
+    }else {
+        switch(errcode) {
+        case DNS_FAILED:
+            req->response(std::make_shared<HttpRes>(UnpackHttpRes(H503), "[[dns failed]]\n"));
+            break;
+        case CONNECT_FAILED:
+            req->response(std::make_shared<HttpRes>(UnpackHttpRes(H503), "[[connect failed]]\n"));
+            break;
+        case SOCKET_ERR:
+            req->response(std::make_shared<HttpRes>(UnpackHttpRes(H502), "[[socket error]]\n"));
+            break;
+        default:
+            req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[internal error]]\n"));
+        }
+    }
+    flags |= PING_IS_CLOSED_F;
+    Server::deleteLater(errcode);
 }
 
 void Ping::dump_stat(Dumper dp, void* param) {

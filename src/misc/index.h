@@ -24,7 +24,7 @@ public:
         return containers;
     }
     size_t size() const;
-    //void clear();
+    void clear();
 };
 
 template<class T1, class T2, class D>
@@ -134,7 +134,6 @@ size_t Index2<T1, T2, D>::size() const {
     return containers.size();
 }
 
-/*
 template<class T1, class T2, class D>
 void Index2<T1, T2, D>::clear(){
     assert(idx1.size() == idx2.size());
@@ -142,6 +141,5 @@ void Index2<T1, T2, D>::clear(){
     idx2.clear();
     containers.clear();
 }
- */
 
 #endif

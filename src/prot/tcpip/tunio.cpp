@@ -107,6 +107,13 @@ TunRWer::TunRWer(int fd, std::function<void(uint64_t, std::shared_ptr<const Ip>)
 };
 
 TunRWer::~TunRWer(){
+    for(auto& itr : statusmap.data()){
+        itr.second->PkgProc = nullptr;
+        itr.second->SendPkg = nullptr;
+        itr.second->UnReach = nullptr;
+        itr.second->Cap = nullptr;
+    }
+    statusmap.clear();
     pcap_close(pcap);
 }
 
