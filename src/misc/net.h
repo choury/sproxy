@@ -18,7 +18,7 @@ void SetUdpOptions(int fd, const struct sockaddr_storage* addr);
 void SetIcmpOptions(int fd, const struct sockaddr_storage* addr);
 void SetUnixOptions(int fd, const struct sockaddr_storage* addr);
 
-int ListenNet(int type, short int port);
+int ListenNet(int type, const char* ipstr, short int port);
 int ListenUnix(const char* path);
 
 int Connect(const struct sockaddr_storage*, int type);

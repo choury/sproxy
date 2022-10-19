@@ -3,18 +3,14 @@
 #include "req/cli.h"
 
 #include <string.h>
-#include <errno.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <sys/epoll.h>
-#include <openssl/ssl.h>
 
 int vpn_start(int fd){
     Cli_server* cli = nullptr;
     if(opt.admin && strlen(opt.admin) > 0){
         int svsk_cli = -1;
         if(strncmp(opt.admin, "tcp:", 4) == 0){
-            svsk_cli = ListenNet(SOCK_STREAM, atoi(opt.admin+4));
+            svsk_cli = ListenNet(SOCK_STREAM, "[::]", atoi(opt.admin+4));
         }else{
             svsk_cli = ListenUnix(opt.admin);
         }

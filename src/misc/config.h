@@ -63,7 +63,8 @@ struct options{
 
     FILE* policy_read;
     FILE* policy_write;
-    uint64_t CPORT;
+    const char* CHOST;
+    uint64_t    CPORT;
     uint64_t pcap_len;
     struct Destination Server;
     char rewrite_auth[DOMAINLIMIT];

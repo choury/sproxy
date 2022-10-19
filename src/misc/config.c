@@ -73,6 +73,7 @@ struct options opt = {
 
     .policy_read    = NULL,
     .policy_write   = NULL,
+    .CHOST          = NULL,
     .CPORT          = 0,
     .Server         = {
         .scheme     = {0},
@@ -103,6 +104,7 @@ static struct option long_options[] = {
     {"admin",         required_argument, NULL,  0 },
     {"autoindex",     no_argument,       NULL, 'i'},
     {"alt-svc",       required_argument, NULL, 0},
+    {"bind",          required_argument, NULL, 'b'},
     {"cafile",        required_argument, NULL,  0 },
     {"cert",          required_argument, NULL,  0 },
     {"config",        required_argument, NULL, 'c'},
@@ -148,6 +150,7 @@ static struct option_detail option_detail[] = {
     {"admin", "set admin socket path for cli (/var/run/sproxy.sock is default for root and /tmp/sproxy.sock for others)", option_string, &opt.admin, NULL},
     {"autoindex", "Enables the directory listing output (local server)", option_bool, &opt.autoindex, (void*)true},
     {"alt-svc", "Add alt-svc header to response or send ALTSVC frame", option_string, &opt.alt_svc, NULL},
+    {"bind", "The ip address to bind, default is [::]", option_string, &opt.CHOST, NULL},
     {"cafile", "CA certificate for server (ssl)", option_string, &opt.cafile, NULL},
     {"cert", "Certificate file for server (ssl)", option_string, &opt.cert, NULL},
     {"config", "Configure file (default "PREFIX"/etc/sproxy/sproxy.conf and ./sproxy.conf)", option_string, &opt.config_file, NULL},
@@ -410,6 +413,12 @@ void postConfig(){
         LOGE("wrong port: %" PRId64 "\n", opt.CPORT);
         exit(1);
     }
+    if((opt.cert && opt.key) || opt.sni_mode){ //ssl, quic or sni
+        opt.CPORT = opt.CPORT ?: 443;
+    } else {
+        opt.CPORT = opt.CPORT ?: 80;
+    }
+    opt.CHOST = opt.CHOST ?: "[::]";
     if(server_string && loadproxy(server_string, &opt.Server)){
         LOGE("wrong server format: %s\n", server_string);
         exit(1);

@@ -108,11 +108,16 @@ void SetUnixOptions(int fd, const struct sockaddr_storage* addr) {
     SetSocketUnblock(fd);
 }
 
-int ListenNet(int type, short port) {
+int ListenNet(int type, const char* ipstr, short port) {
+    struct sockaddr_storage addr;
+    if(storage_aton(ipstr, port, &addr) == 0) {
+        errno = EINVAL;
+        return -1;
+    }
 #ifdef  SOCK_CLOEXEC
-    int fd = socket(AF_INET6, type | SOCK_CLOEXEC, 0);
+    int fd = socket(addr.ss_family, type | SOCK_CLOEXEC, 0);
 #else
-    int fd = socket(AF_INET6, type, 0);
+    int fd = socket(addr.ss_family, type, 0);
 #endif
     if (fd < 0) {
         LOGE("socket error:%s\n", strerror(errno));
@@ -137,13 +142,8 @@ int ListenNet(int type, short port) {
             }
         }
 #endif
-        struct sockaddr_in6 myaddr;
-        bzero(&myaddr, sizeof(myaddr));
-        myaddr.sin6_family = AF_INET6;
-        myaddr.sin6_port = htons(port);
-        myaddr.sin6_addr = in6addr_any;
-
-        if (bind(fd, (struct sockaddr*)&myaddr, sizeof(myaddr)) < 0) {
+        socklen_t len = (addr.ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
+        if (bind(fd, (struct sockaddr*)&addr, len) < 0) {
             LOGE("bind error:%s\n", strerror(errno));
             break;
         }

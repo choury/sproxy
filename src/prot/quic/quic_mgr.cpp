@@ -17,7 +17,7 @@ void QuicMgr::PushDate(int fd, const sockaddr_storage* addr, SSL_CTX *ctx, const
         LOGD(DQUIC, "duplicated packet: %s vs %s, may be migration?\n", storage_ntoa(addr), r->second->getPeer());
         r->second->walkPackets(buff, len);
     }else if(header.type == QUIC_PACKET_INITIAL){
-        int clsk = ListenNet(SOCK_DGRAM, opt.CPORT);
+        int clsk = ListenNet(SOCK_DGRAM, opt.CHOST, opt.CPORT);
         if (clsk < 0) {
             LOGE("ListenNet failed: %s\n", strerror(errno));
             return;
