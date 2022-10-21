@@ -5,6 +5,7 @@
 #include <json.h>
 
 class handler: public CgiHandler{
+    static SproxyClient* c;
     void GET(const CGI_Header*) override{
         if(strcmp(req->get("X-Authorized"), "1")) {
             Response(UnpackHttpRes(H403, sizeof(H403)));
@@ -14,8 +15,7 @@ class handler: public CgiHandler{
         if((flag & HTTP_REQ_COMPLETED) == 0){
             return;
         }
-        SproxyClient c(getenv("ADMIN_SOCK"));
-        auto slist = c.ListStrategy().get_future().get();
+        auto slist = c->ListStrategy().get_future().get();
         json_object* jsites = json_object_new_array();
         for(auto item: slist) {
             char site[DOMAINLIMIT];
@@ -126,9 +126,11 @@ class handler: public CgiHandler{
     }
 public:
     handler(int fd, const char* name, const CGI_Header* header):CgiHandler(fd, name, header){
-    }
-    ~handler(){
+        if(c == nullptr) {
+            c = new SproxyClient(getenv("ADMIN_SOCK"));
+        }
     }
 };
 
+SproxyClient* handler::c = nullptr;
 CGIMAIN(handler);

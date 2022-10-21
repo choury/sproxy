@@ -2,6 +2,7 @@
 #include "prot/rpc.h"
 
 class handler: public CgiHandler{
+    static SproxyClient* c;
     void POST(const CGI_Header* header) override{
         if(header->type == CGI_DATA){
             auto param = getparamsmap((char *)(header+1), ntohs(header->contentLength));
@@ -14,8 +15,7 @@ class handler: public CgiHandler{
             BadRequest();
             return;
         }
-        SproxyClient c(getenv("ADMIN_SOCK"));
-        if(!c.Login(params["key"], req->get("X-Real-IP")).get_future().get()){
+        if(!c->Login(params["key"], req->get("X-Real-IP")).get_future().get()){
             Response(UnpackHttpRes(H403));
         }else{
             Response(UnpackHttpRes(H204));
@@ -24,7 +24,12 @@ class handler: public CgiHandler{
     }
 public:
     handler(int fd, const char* name, const CGI_Header* header):CgiHandler(fd, name, header){
+        if(c == nullptr) {
+            c = new SproxyClient(getenv("ADMIN_SOCK"));
+        }
     }
 };
+
+SproxyClient* handler::c = nullptr;
 
 CGIMAIN(handler);

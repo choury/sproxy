@@ -2,6 +2,7 @@
 #include "prot/rpc.h"
 
 class handler: public CgiHandler{
+    static SproxyClient* c;
     void GET(const CGI_Header*) override{
         if(strcmp(req->get("X-Authorized"), "1")) {
             Response(UnpackHttpRes(H403, sizeof(H403)));
@@ -11,12 +12,11 @@ class handler: public CgiHandler{
         if((flag & HTTP_REQ_COMPLETED) == 0){
             return;
         }
-        SproxyClient c(getenv("ADMIN_SOCK"));
         std::shared_ptr<HttpResHeader> res = UnpackHttpRes(H200, sizeof(H200));
         res->set("Content-Type", "application/json");
         Response(res);
         char callback[DOMAINLIMIT+sizeof("setproxy(\"\");")];
-        auto server = c.GetServer().get_future().get();
+        auto server = c->GetServer().get_future().get();
         Send(callback, sprintf(callback, "setproxy(\"%s\");", server.c_str()));
         Finish();
     }
@@ -37,8 +37,7 @@ class handler: public CgiHandler{
             BadRequest();
             return;
         }
-        SproxyClient c(getenv("ADMIN_SOCK"));
-        if(!c.SetServer(params["proxy"]).get_future().get()){
+        if(!c->SetServer(params["proxy"]).get_future().get()){
             BadRequest();
             return;
         }
@@ -47,7 +46,11 @@ class handler: public CgiHandler{
     }
 public:
     handler(int fd, const char* name, const CGI_Header* header):CgiHandler(fd, name, header){
+        if(c == nullptr) {
+            c = new SproxyClient(getenv("ADMIN_SOCK"));
+        }
     }
 };
 
+SproxyClient* handler::c = nullptr;
 CGIMAIN(handler);

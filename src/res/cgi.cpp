@@ -159,7 +159,6 @@ void Cgi::evictMe(){
 }
 
 void Cgi::Clean(uint32_t id, CgiStatus& status) {
-    LOG("<cgi> [%s] %" PRIu32" abort\n", basename(filename), id);
     status.req->detach();
     if(status.res == nullptr){
         status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[cgi failed]]\n"));
@@ -167,6 +166,7 @@ void Cgi::Clean(uint32_t id, CgiStatus& status) {
         status.res->send(ChannelMessage::CHANNEL_ABORT);
     }
     statusmap.erase(id);
+    LOGD(DFILE, "<cgi> [%s] %" PRIu32" cleaned\n", basename(filename), id);
 }
 
 Cgi::~Cgi() {
