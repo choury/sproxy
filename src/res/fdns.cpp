@@ -7,6 +7,9 @@
 
 #include <inttypes.h>
 
+#define IN_IS_ADDR_LOOPBACK(a)      ((((long int) (ntohl((a)->s_addr))) & 0xff000000) == 0x7f000000)
+
+
 static FDns* fdns = nullptr;
 static Index2<uint32_t, std::string, void*> fdns_records;
 static in_addr_t fake_ip = ntohl(inet_addr(VPNADDR));
@@ -158,6 +161,17 @@ void FDns::Recv(Buffer&& bb) {
     delete result;
 }
 
+static bool isLoopBack(const sockaddr_storage* addr) {
+    if(addr->ss_family == AF_INET) {
+        const sockaddr_in* addr4 = (const sockaddr_in*)addr;
+        return IN_IS_ADDR_LOOPBACK(&addr4->sin_addr);
+    }else if(addr->ss_family == AF_INET6) {
+        const sockaddr_in6* addr6 = (const sockaddr_in6*)addr;
+        return IN6_IS_ADDR_LOOPBACK(&addr6->sin6_addr);
+    }
+    return false;
+}
+
 void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_storage> addrs) {
     auto index = *std::static_pointer_cast<uint64_t>(param);
     uint32_t reqid = index >> 32;
@@ -168,22 +182,32 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_stor
     std::shared_ptr<Dns_Query> que = status.quemap.at(index & 0xffff);
     assert(que->id == (index & 0xffff));
     LOGD(DDNS, "fdns cb [%" PRIu32"], id:%d, size:%zd, error: %d\n", reqid, que->id, addrs.size(), error);
-    Dns_Result* result = nullptr;
-    if(error || addrs.empty()){
-        result = new Dns_Result(que->domain);
-    }else if(que->type == 1){
-        in_addr addr = getInet(que->domain);
-        result = new Dns_Result(que->domain, &addr);
-    }else if(opt.ipv6_enabled){
-        in6_addr addr = getInet6(que->domain);
-        result = new Dns_Result(que->domain, &addr);
-    }else{
-        result = new Dns_Result(que->domain);
-    }
+    Dns_Result* result = new Dns_Result(que->domain);
     std::shared_ptr<Block> buff = std::make_shared<Block>(BUF_LEN);
     if(error) {
-        status.res->send({buff, (size_t)result->buildError(que.get(), error, (uchar*)buff->data())});
-    }else{
+        status.res->send({buff, (size_t) result->buildError(que.get(), error, (uchar *) buff->data())});
+    } else {
+        for(const auto& addr : addrs) {
+            if(isLoopBack(&addr)) {
+                result->addrs.emplace_back(addr);
+            }
+        }
+        if(result->addrs.size() != addrs.size()) {
+            sockaddr_storage ip;
+            memset(&ip, 0, sizeof(ip));
+            if (que->type == 1) {
+                in_addr addr = getInet(que->domain);
+                sockaddr_in* ip4 = (sockaddr_in*)&ip;
+                ip4->sin_family = AF_INET;
+                ip4->sin_addr = addr;
+            } else if (opt.ipv6_enabled) {
+                in6_addr addr = getInet6(que->domain);
+                sockaddr_in6* ip6 = (sockaddr_in6*)&ip;
+                ip6->sin6_family = AF_INET6;
+                ip6->sin6_addr = addr;
+            }
+            result->addrs.push_back(ip);
+        }
         status.res->send({buff, (size_t)result->build(que.get(), (uchar*)buff->data())});
     }
     status.quemap.erase(que->id);

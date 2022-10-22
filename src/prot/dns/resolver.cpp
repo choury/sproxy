@@ -135,11 +135,13 @@ void HostResolver::readHE(RW_EVENT events) {
             if(result.type == 1){
                 flags |= GETARES;
                 for(auto i: result.addrs){
+                    assert(i.ss_family == AF_INET);
                     rcd.addrs.push_back(i);
                 }
             }else if(result.type == 28){
                 flags |= GETAAAARES;
                 for(auto i: result.addrs){
+                    assert(i.ss_family == AF_INET6);
                     rcd.addrs.push_front(i);
                 }
             }
