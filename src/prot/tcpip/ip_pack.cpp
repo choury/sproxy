@@ -925,6 +925,11 @@ Ip4::Ip4(const char *packet, size_t len){
         return;
     }
     type = hdr.ip_p;
+    if(hdr.ip_off & IP_MF) {
+        LOGE("ip fragment not implement now\n");
+        valid = false;
+        return;
+    }
 
     /* determine protocol */
     switch (type) {
@@ -1103,8 +1108,13 @@ Ip6::Ip6(const char* packet, size_t len) {
             hdrlen = (const char*)ext_hdr - packet;
             udp = new Udp((const char*)ext_hdr, packet+len-(char*)ext_hdr);
             break;
+        case IPPROTO_FRAGMENT:
+            LOGE("ip fragment not implement now\n");
+            valid = false;
+            return;
         }
         if(icmp6){
+            //jus pick some one to check if handled
             break;
         }
         type = ext_hdr->ip6e_nxt;
