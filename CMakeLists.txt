@@ -55,10 +55,12 @@ message(STATUS "Set VERSION: ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.$
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-CHECK_CXX_COMPILER_FLAG("-fsanitize=undefined" HAVE_SAN_UNDEF)
-set(CMAKE_REQUIRED_FLAGS "-fsanitize=address")
-CHECK_CXX_COMPILER_FLAG("-fsanitize=address" HAVE_SAN_ADDR)
-unset(CMAKE_REQUIRED_FLAGS)
+if(${CMAKE_BUILD_TYPE} MATCHES "Debug")
+    CHECK_CXX_COMPILER_FLAG("-fsanitize=undefined" HAVE_SAN_UNDEF)
+    set(CMAKE_REQUIRED_FLAGS "-fsanitize=address")
+    CHECK_CXX_COMPILER_FLAG("-fsanitize=address" HAVE_SAN_ADDR)
+    unset(CMAKE_REQUIRED_FLAGS)
+endif()
 
 CHECK_CXX_SOURCE_COMPILES("
 #include <list>
@@ -202,16 +204,16 @@ if (HAVE_SAN_ADDR AND NOT ANDROID)
     set(CMAKE_C_FLAGS_DEBUG "-fsanitize=address ${CMAKE_C_FLAGS_DEBUG}")
     set(CMAKE_CXX_FLAGS_DEBUG "-fsanitize=address ${CMAKE_CXX_FLAGS_DEBUG}")
 
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=address")
+    set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} -fsanitize=address")
+    set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} -fsanitize=address")
 endif()
 
 if (HAVE_SAN_UNDEF AND NOT ANDROID)
     set(CMAKE_C_FLAGS_DEBUG "-fsanitize=undefined ${CMAKE_C_FLAGS_DEBUG}")
     set(CMAKE_CXX_FLAGS_DEBUG "-fsanitize=undefined ${CMAKE_CXX_FLAGS_DEBUG}")
 
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=undefined")
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=address")
+    set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} -fsanitize=undefined")
+    set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} -fsanitize=address")
 endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
