@@ -233,7 +233,7 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
     }
 
     if(seq != status->want_seq){
-        LOG("%s get keepalive pkt or unwanted pkt, reply ack(%u).\n", storage_ntoa(&status->src), status->want_seq);
+        LOG("%s get keepalive pkt or unwanted pkt, reply ack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
         status->sent_ack = status->want_seq - 1; //to force send tcp ack
         status->ack_job = status->jobHandler.updatejob(status->ack_job,
                                                        std::bind(&SendAck, GetWeak(status)), 0);
@@ -242,7 +242,7 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
 
     if(flag & TH_ACK){
         if(after(ack, status->sent_seq)) {
-            LOG("%s get ack from unsent seq (%d/%d), rst it\n", storage_ntoa(&status->src), ack, status->sent_seq);
+            LOG("%s get ack from unsent seq (%u/%u), rst it\n", storage_ntoa(&status->src), ack, status->sent_seq);
             SendRst(status);
             status->errCB(pac, TCP_RESET_ERR);
             return;

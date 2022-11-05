@@ -259,19 +259,23 @@ ssize_t StreamRWer::Read(void* buff, size_t len) {
 }
 
 void StreamRWer::ReadData() {
-    size_t left = rb.left();
-    if(left == 0){
-        return;
-    }
-    int ret = Read(rb.end(), left);
-    if(ret > 0){
-        rb.append((size_t) ret);
-    }else if(ret == 0){
-        stats = RWerStats::ReadEOF;
-        delEvents(RW_EVENT::READ);
-    }else if(errno != EAGAIN){
-        ErrorHE(SOCKET_ERR, errno);
-        return;
+    while(true) {
+        size_t left = rb.left();
+        if (left == 0) {
+            break;
+        }
+        int ret = Read(rb.end(), left);
+        if (ret > 0) {
+            rb.append((size_t) ret);
+            continue;
+        } else if (ret == 0) {
+            stats = RWerStats::ReadEOF;
+            delEvents(RW_EVENT::READ);
+        } else if (errno != EAGAIN) {
+            ErrorHE(SOCKET_ERR, errno);
+            return;
+        }
+        break;
     }
     ConsumeRData(0);
 }

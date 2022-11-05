@@ -141,12 +141,6 @@ void SslRWer::shakehandHE(RW_EVENT events){
     }
 }
 
-void SslRWer::ReadData() {
-    do{
-        StreamRWer::ReadData();
-    }while(rb.left() > 0 && SSL_has_pending(ssl) && stats == RWerStats::Connected);
-}
-
 int SslRWer::saccept(){
     ERR_clear_error();
     return ssl_get_error(ssl, SSL_accept(ssl));

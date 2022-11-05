@@ -93,6 +93,7 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
             HeadersProc();
             if(http2_flag & HTTP2_FLAG_END){
                 EndProc(id);
+                http2_flag &= ~HTTP2_FLAG_END;
             }
         }
         (void)weigth;
@@ -163,6 +164,7 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
             HeadersProc();
             if (http2_flag & HTTP2_FLAG_END) {
                 EndProc(id);
+                http2_flag &= ~HTTP2_FLAG_END;
             }
         }
         break;

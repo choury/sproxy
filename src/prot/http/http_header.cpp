@@ -660,6 +660,12 @@ std::multimap<std::string, std::string> HttpResHeader::Normalize() const {
     for(const auto& i : headers){
         normalization.emplace(i.first, i.second);
     }
+    //rfc7540#section.8.1.2.2 && http3
+    normalization.erase("connection");
+    normalization.erase("keep-alive");
+    normalization.erase("proxy-connection");
+    normalization.erase("transfer-encoding");
+    normalization.erase("upgrade");
     return normalization;
 }
 
