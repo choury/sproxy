@@ -51,7 +51,7 @@ protected:
     std::function<void(int ret, int code)> errorCB;
     std::function<void()> closeCB;
 
-    virtual ssize_t Write(const void* buff, size_t len, uint64_t id) = 0;
+    //virtual ssize_t Write(const void* buff, size_t len, uint64_t id);
     virtual void SendData();
     virtual void ReadData() = 0;
     virtual void defaultHE(RW_EVENT events);
@@ -76,9 +76,7 @@ public:
 
     //for write buffer
     virtual ssize_t cap(uint64_t id);
-    virtual buff_iterator buffer_head();
-    virtual buff_iterator buffer_end();
-    virtual buff_iterator buffer_insert(buff_iterator where, Buffer&& bb);
+    virtual void buffer_insert(Buffer&& bb);
 
     virtual bool idle(uint64_t id);
     virtual void dump_status(Dumper dp, void* param) = 0;
@@ -88,7 +86,7 @@ public:
 class NullRWer: public RWer{
 public:
     explicit NullRWer();
-    virtual ssize_t Write(const void *buff, size_t len, uint64_t) override;
+    //virtual ssize_t Write(const void *buff, size_t len, uint64_t) override;
     virtual void ReadData() override;
     virtual size_t rlength(uint64_t id) override;
 
@@ -107,7 +105,7 @@ protected:
 #ifndef __linux__
     int pairfd = -1;
 #endif
-    virtual ssize_t Write(const void* buff, size_t len, uint64_t) override;
+    //virtual ssize_t Write(const void* buff, size_t len, uint64_t) override;
     virtual void ReadData() override;
     virtual void closeHE(RW_EVENT events) override;
 public:

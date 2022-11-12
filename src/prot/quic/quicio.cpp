@@ -1056,6 +1056,7 @@ int QuicRWer::handlePacket(const quic_pkt_header* header, std::vector<const quic
     }
 }
 
+/*
 ssize_t QuicRWer::Write(const void *buff, size_t len, uint64_t id) {
     if(stats == RWerStats::Error){
         return 0;
@@ -1104,10 +1105,55 @@ ssize_t QuicRWer::Write(const void *buff, size_t len, uint64_t id) {
     }
     return (int)len;
 }
+ */
 
-buff_iterator QuicRWer::buffer_insert(buff_iterator where, Buffer&& bb) {
-    Write((char*)bb.data(), bb.len, bb.id);
-    return where;
+void QuicRWer::buffer_insert(Buffer&& bb) {
+    if(stats == RWerStats::Error){
+        return;
+    }
+    uint64_t id = bb.id;
+    assert(streammap.count(id));
+
+    auto& status = streammap[id];
+    assert((status.flags & STREAM_FLAG_FIN_SENT) == 0);
+    quic_frame* frame = new quic_frame;
+    frame->type = QUIC_FRAME_STREAM_START_ID | QUIC_FRAME_STREAM_LEN_F;
+    if(status.my_offset) {
+        frame->type |= QUIC_FRAME_STREAM_OFF_F;
+    }
+    if(bb.len == 0){
+        frame->type |= QUIC_FRAME_STREAM_FIN_F;
+        status.flags |= STREAM_FLAG_FIN_SENT;
+    }
+    frame->stream.id = id;
+    frame->stream.length = bb.len;
+    frame->stream.offset =  status.my_offset;
+    frame->stream.buffer.ref = (uint32_t*)new char[bb.len + sizeof(uint32_t)];
+    frame->stream.buffer.data = (char*)(frame->stream.buffer.ref + 1);
+    *frame->stream.buffer.ref = 1;
+    memcpy(frame->stream.buffer.data, bb.data(), bb.len);
+    my_sent_data += bb.len;
+    assert(my_sent_data <= his_max_data);
+
+    status.my_offset += bb.len;
+    if(status.my_offset > status.his_max_data){
+        quic_frame* block = new quic_frame{QUIC_FRAME_STREAM_DATA_BLOCKED, {}};
+        block->stream_data_blocked.id = id;
+        block->stream_data_blocked.size = status.my_offset;
+        qos.PushFrame(ssl_encryption_application, block);
+        fullq.push_back(frame);
+        LOGD(DQUIC, "push data [%" PRIu64"] to fullq: <%zd/%" PRIu64"> <%" PRIu64"/%" PRIu64">\n",
+             id, status.my_offset, status.his_max_data, my_sent_data, his_max_data);
+        return;
+    }
+    qos.PushFrame(ssl_encryption_application, frame);
+    LOGD(DQUIC, "send data [%" PRIu64"]: <%zd/%" PRIu64"> <%" PRIu64"/%" PRIu64">\n",
+         id, status.my_offset, status.his_max_data, my_sent_data, his_max_data);
+    if(idle(id)){
+        CleanStream(id);
+    }else{
+        writeCB(id);
+    }
 }
 
 void QuicRWer::closeHE(RW_EVENT events) {

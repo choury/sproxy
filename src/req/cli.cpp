@@ -20,7 +20,7 @@ Cli::~Cli(){
 }
 
 bool Cli::send(const char *data, size_t len) {
-    rwer->buffer_insert(rwer->buffer_end(), Buffer{std::make_shared<Block>(data, len), len});
+    rwer->buffer_insert(Buffer{std::make_shared<Block>(data, len), len});
     return true;
 }
 

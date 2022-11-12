@@ -211,6 +211,7 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
     return get24(header->length) + sizeof(Http2_header);
 }
 
+#if 0
 /* ping 帧永远插到最前面*/
 void Http2Base::PushFrame(Buffer&& bb){
     const Http2_header* header = (const Http2_header*)bb.data();
@@ -260,6 +261,7 @@ void Http2Base::PushFrame(Buffer&& bb){
 ret:
     queue_insert(i, std::move(bb));
 }
+#endif
 
 void Http2Base::PushData(Buffer&& bb){
     while(bb.len > remoteframebodylimit){
@@ -528,8 +530,7 @@ void Http2Responser::AltSvc(uint32_t id, const char *origin, const char *value) 
 }
 
 void Http2Requster::init() {
-    queue_insert(queue_head(),
-                 Buffer{HTTP2_PREFACE, sizeof(HTTP2_PREFACE) - 1});
+    PushFrame(Buffer{HTTP2_PREFACE, sizeof(HTTP2_PREFACE) - 1});
     SendInitSetting(); 
 }
 

@@ -226,6 +226,7 @@ void SocketRWer::dump_status(Dumper dp, void *param) {
        getFd(), getPeer(), rlength(0), wbuff.length(), (int)getStats(), events_string[(int)getEvents()]);
 }
 
+/*
 ssize_t SocketRWer::Write(const void* buff, size_t len, uint64_t){
     if(len == 0){
         assert(flags & RWER_SHUTDOWN);
@@ -234,6 +235,7 @@ ssize_t SocketRWer::Write(const void* buff, size_t len, uint64_t){
     }
     return write(getFd(), buff, len);
 }
+ */
 
 size_t StreamRWer::rlength(uint64_t) {
     return rb.length();
@@ -254,9 +256,11 @@ void StreamRWer::ConsumeRData(uint64_t) {
     }
 }
 
+/*
 ssize_t StreamRWer::Read(void* buff, size_t len) {
     return read(getFd(), buff, len);
 }
+ */
 
 void StreamRWer::ReadData() {
     while(true) {
@@ -264,18 +268,19 @@ void StreamRWer::ReadData() {
         if (left == 0) {
             break;
         }
-        int ret = Read(rb.end(), left);
+        ssize_t ret = read(getFd(), rb.end(), left);
         if (ret > 0) {
             rb.append((size_t) ret);
             continue;
         } else if (ret == 0) {
             stats = RWerStats::ReadEOF;
             delEvents(RW_EVENT::READ);
-        } else if (errno != EAGAIN) {
-            ErrorHE(SOCKET_ERR, errno);
-            return;
+            break;
+        } else if (errno == EAGAIN) {
+            break;
         }
-        break;
+        ErrorHE(SOCKET_ERR, errno);
+        return;
     }
     ConsumeRData(0);
 }
@@ -284,16 +289,18 @@ size_t PacketRWer::rlength(uint64_t) {
     return 0;
 }
 
+/*
 ssize_t PacketRWer::Read(void* buff, size_t len) {
     return read(getFd(), buff, len);
 }
+ */
 
 void PacketRWer::ConsumeRData(uint64_t) {
 }
 
 void PacketRWer::ReadData() {
     while(true) {
-        int ret = Read(rb, sizeof(rb));
+        ssize_t ret = read(getFd(), rb, sizeof(rb));
         if (ret > 0) {
             readCB(0, rb, ret);
             continue;

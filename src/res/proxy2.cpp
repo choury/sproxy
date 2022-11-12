@@ -133,7 +133,7 @@ void Proxy2::PushFrame(Buffer&& bb){
         ping_check();
     }
 #endif
-    return Http2Base::PushFrame(std::move(bb));
+    rwer->buffer_insert(std::move(bb));
 }
 
 void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
@@ -349,18 +349,6 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
     for(auto& i: statusmap){
         i.second.remotewinsize += diff;
     }
-}
-
-std::list<Buffer>::insert_iterator Proxy2::queue_head() {
-    return rwer->buffer_head();
-}
-
-std::list<Buffer>::insert_iterator Proxy2::queue_end() {
-    return rwer->buffer_end();
-}
-
-void Proxy2::queue_insert(std::list<Buffer>::insert_iterator where, Buffer&& wb) {
-    rwer->buffer_insert(where, std::move(wb));
 }
 
 void Proxy2::deleteLater(uint32_t errcode){

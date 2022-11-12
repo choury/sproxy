@@ -31,10 +31,7 @@ protected:
     virtual void ErrProc(int errcode)override;
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)override;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
-
-    virtual std::list<Buffer>::insert_iterator queue_head() override;
-    virtual std::list<Buffer>::insert_iterator queue_end() override;
-    virtual void queue_insert(std::list<Buffer>::insert_iterator where, Buffer&& wb) override;
+    virtual void PushFrame(Buffer&& wb) override;
 
     void Recv(Buffer&& bb);
     void Handle(uint32_t id, ChannelMessage::Signal signal);

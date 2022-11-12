@@ -44,9 +44,6 @@ protected:
     void Handle(uint32_t id, ChannelMessage::Signal s);
     void Clean(uint32_t id, ReqStatus& status, uint32_t errcode);
 
-    virtual buff_iterator queue_head() override;
-    virtual buff_iterator queue_end() override;
-    virtual void queue_insert(std::list<Buffer>::insert_iterator where, Buffer&& wb) override;
     static bool wantmore(const ReqStatus& status);
 public:
     explicit Proxy2(std::shared_ptr<SslRWer> rwer);

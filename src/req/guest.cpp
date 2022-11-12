@@ -181,7 +181,7 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
             }
             auto buff = std::make_shared<Block>(BUF_LEN);
             size_t len = PackHttpRes(header, buff->data(), BUF_LEN);
-            rwer->buffer_insert(rwer->buffer_end(), Buffer{buff, len});
+            rwer->buffer_insert(Buffer{buff, len});
             return 1;
         }
         case ChannelMessage::CHANNEL_MSG_DATA:
@@ -204,9 +204,9 @@ void Guest::Recv(Buffer&& bb) {
         if(status.flags & HTTP_NOEND_F){
             assert(statuslist.size() == 1);
             //对于没有长度字段的响应，直接关闭连接来结束
-            rwer->buffer_insert(rwer->buffer_end(), {nullptr});
+            rwer->buffer_insert({nullptr});
         }else if(status.flags & HTTP_CHUNK_F){
-            rwer->buffer_insert(rwer->buffer_end(), {"0" CRLF CRLF, 5});
+            rwer->buffer_insert({"0" CRLF CRLF, 5});
         }
         //如果既不是没有长度的请求，也非chunked，则无需发送额外数据来标记结束
         if(status.flags & HTTP_REQ_COMPLETED) {
@@ -225,10 +225,10 @@ void Guest::Recv(Buffer&& bb) {
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)bb.len);
         bb.reserve(-chunklen);
         memcpy(bb.mutable_data(), chunkbuf, chunklen);
-        rwer->buffer_insert(rwer->buffer_end(), std::move(bb));
-        rwer->buffer_insert(rwer->buffer_end(), Buffer{CRLF, 2});
+        rwer->buffer_insert(std::move(bb));
+        rwer->buffer_insert(Buffer{CRLF, 2});
     }else{
-        rwer->buffer_insert(rwer->buffer_end(), std::move(bb));
+        rwer->buffer_insert(std::move(bb));
     }
 }
 

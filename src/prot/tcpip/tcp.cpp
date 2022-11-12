@@ -233,7 +233,11 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
     }
 
     if(seq != status->want_seq){
-        LOG("%s get keepalive pkt or unwanted pkt, reply ack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
+        if(seq == status->want_seq - 1) {
+            LOGD(DVPN, "%s get keep-alive pkt, reply ack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
+        } else {
+            LOG("%s get unwanted pkt, reply ack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
+        }
         status->sent_ack = status->want_seq - 1; //to force send tcp ack
         status->ack_job = status->jobHandler.updatejob(status->ack_job,
                                                        std::bind(&SendAck, GetWeak(status)), 0);
@@ -298,7 +302,7 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
             status->rttval = (3 * status->rttval + labs((long) status->srtt - (long)rtt)) / 4;
             status->srtt = (7 * status->srtt + rtt) / 8;
         }
-        status->rto = std::max(status->srtt + 4 * status->rttval, (uint32_t)50);
+        status->rto = std::max(status->srtt + 4 * status->rttval, (uint32_t)100);
         LOGD(DVPN, "tcp rtt: %d, srtt: %d, rttval: %d, rto: %d\n", rtt, status->srtt, status->rttval, status->rto);
         if(status->sent_list.empty()) {
             status->jobHandler.deljob(&status->rto_job);

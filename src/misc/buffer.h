@@ -44,6 +44,9 @@ public:
         p.base = nullptr;
     };
 
+    off_t tell(){
+        return off;
+    }
     Block(const Block&) = delete;
     void* reserve(int len){
         assert( off >= -len);

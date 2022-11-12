@@ -6,7 +6,7 @@
 
 
 Buffer::Buffer(size_t len, uint64_t id):
-        ptr(std::make_shared<Block>(len)), id(id), len(0), cap(len)
+        ptr(std::make_shared<Block>(len)), id(id), len(0), cap(len + PRIOR_HEAD)
 {
     assert(this->ptr != nullptr);
 }
@@ -19,7 +19,7 @@ Buffer::Buffer(const void* content, size_t len, uint64_t id):
 }
 
 Buffer::Buffer(std::shared_ptr<Block> ptr, size_t len, uint64_t id):
-        ptr(ptr), id(id), len(len), cap(len)
+        ptr(ptr), id(id), len(len), cap(len + ptr->tell())
 {
     assert(this->ptr != nullptr);
 }
@@ -62,20 +62,23 @@ const void* Buffer::reserve(int off){
 
 size_t Buffer::truncate(size_t left) {
     size_t origin = len;
-    if (left <= cap) {
-        len = left;
-        return origin;
-    }
     if(ptr) {
+        if(left + ptr->tell() <= cap) {
+            len = left;
+            return origin;
+        }
         auto new_ptr = std::make_shared<Block>(left);
         memcpy(new_ptr->data(), ptr->data(), len);
         ptr = new_ptr;
-        cap = left;
     }else {
+        if(left <= cap) {
+            len = left;
+            return origin;
+        }
         ptr = std::make_shared<Block>(left);
         memcpy(ptr->data(), content, len);
-        cap = left;
     }
+    cap = left + ptr->tell();
     len = left;
     return origin;
 }

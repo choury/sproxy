@@ -295,6 +295,8 @@ int ssl_get_error(SSL* ssl, int ret){
             ret = -errno;
         }
         ERR_clear_error();
+    } else {
+        errno = 0;
     }
     return ret;
 }

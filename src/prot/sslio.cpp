@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <string.h>
+#include <unistd.h>
 #if __ANDROID__
 extern std::string getExternalFilesDir();
 #endif
@@ -46,6 +47,11 @@ SslRWer::SslRWer(int fd, const sockaddr_storage* peer,
     setEvents(RW_EVENT::READWRITE);
     stats = RWerStats::SslAccepting;
     handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::shakehandHE;
+    SSL_set_accept_state(ssl);
+
+    BIO_set_mem_eof_return(in_bio, -1);
+    BIO_set_mem_eof_return(out_bio, -1);
+    SSL_set_bio(ssl, in_bio, out_bio);
 }
 
 SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol,
@@ -77,12 +83,13 @@ SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol,
     SSL_set_read_ahead(ssl, 1);
     SSL_set_connect_state(ssl);
     SSL_set_tlsext_host_name(ssl, hostname);
+
+    BIO_set_mem_eof_return(in_bio, -1);
+    BIO_set_mem_eof_return(out_bio, -1);
+    SSL_set_bio(ssl, in_bio, out_bio);
 }
 
 SslRWer::~SslRWer(){
-    if(!SSL_in_init(ssl)){
-        SSL_shutdown(ssl);
-    }
     SSL_free(ssl);
     if(ctx){
         SSL_CTX_free(ctx);
@@ -101,7 +108,7 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
         setEvents(RW_EVENT::READWRITE);
         stats = RWerStats::SslConnecting;
         //ssl = SSL_new(ctx);
-        SSL_set_fd(ssl, getFd());
+        //SSL_set_fd(ssl, getFd());
 
         X509_VERIFY_PARAM *param = SSL_get0_param(ssl);
 
@@ -118,44 +125,123 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
     }
 }
 
+int SslRWer::fill_in_bio() {
+    char buff[BUF_LEN];
+    ssize_t ret = read(getFd(), buff, sizeof(buff));
+    if(ret > 0) {
+        BIO_write(in_bio, buff, ret);
+    } else if (ret == 0) {
+        stats = RWerStats::ReadEOF;
+        delEvents(RW_EVENT::READ);
+        return 0;
+    } else if (errno != EAGAIN) {
+        ErrorHE(SOCKET_ERR, errno);
+        return -1;
+    }
+    return 1;
+}
+
+int SslRWer::sink_out_bio() {
+    while(BIO_ctrl_pending(out_bio)) {
+        char buff[BUF_LEN];
+        int ret = BIO_read(out_bio, buff, sizeof(buff));
+        if (ret > 0) {
+            wbuff.push(wbuff.end(), Buffer{std::make_shared<Block>(buff, ret), (size_t)ret});
+        }
+    }
+    return 1;
+}
+
 void SslRWer::shakehandHE(RW_EVENT events){
     if (!!(events & RW_EVENT::ERROR)) {
         return ErrorHE(SSL_SHAKEHAND_ERR, checkSocket(__PRETTY_FUNCTION__));
     }
-    if (!!(events & RW_EVENT::READ) || !!(events & RW_EVENT::WRITE)) {
-        if((ctx?sconnect():saccept()) == 1) {
-            connected(addrs.front());
-            //in case some data in ssl buffer
-            ReadData();
-        }else if(errno ==  EAGAIN){
-            if(SSL_want_write(ssl)){
-                setEvents(RW_EVENT::READWRITE);
-            }else{
-                setEvents(RW_EVENT::READ);
-            }
-        }else{
-            int error = errno;
-            LOGE("(%s): ssl %s error:%s\n", hostname, ctx?"connect":"accept", strerror(error));
-            ErrorHE(SSL_SHAKEHAND_ERR, error);
-        }
+    if(!!(events & RW_EVENT::READ)) {
+        if(fill_in_bio() <= 0) return;
     }
+    if(do_handshake() == 1){
+    }else if(errno == EAGAIN){
+        if(SSL_want_write(ssl)){
+            setEvents(RW_EVENT::READWRITE);
+        }else{
+            setEvents(RW_EVENT::READ);
+        }
+    }else{
+        int error = errno;
+        LOGE("(%s): ssl %s error:%s\n", hostname, ctx?"connect":"accept", strerror(error));
+        ErrorHE(SSL_SHAKEHAND_ERR, error);
+        return;
+    }
+
+    sink_out_bio();
+    if(SSL_is_init_finished(ssl)) {
+        connected(addrs.front());
+        //in case some data in ssl buffer
+        ReadData();
+    }
+    SendData();
 }
 
-int SslRWer::saccept(){
+int SslRWer::do_handshake() {
     ERR_clear_error();
-    return ssl_get_error(ssl, SSL_accept(ssl));
+    return ssl_get_error(ssl, SSL_do_handshake(ssl));
 }
 
-int SslRWer::sconnect(){
-    ERR_clear_error();
-    return ssl_get_error(ssl, SSL_connect(ssl));
-}
-
+/*
 ssize_t SslRWer::Read(void* buff, size_t len){
     ERR_clear_error();
     return ssl_get_error(ssl, SSL_read(ssl, buff, len));
 }
+ */
 
+void SslRWer::ReadData() {
+    if(fill_in_bio() <= 0) return;
+    while(true) {
+        size_t left = rb.left();
+        if (left == 0) {
+            break;
+        }
+        ERR_clear_error();
+        ssize_t ret = ssl_get_error(ssl, SSL_read(ssl, rb.end(), left));
+        if (ret > 0) {
+            rb.append((size_t) ret);
+            continue;
+        }else if(ret == 0) {
+            stats = RWerStats::ReadEOF;
+            delEvents(RW_EVENT::READ);
+            break;
+        }else if(errno == EAGAIN) {
+            break;
+        }
+        ErrorHE(SSL_SHAKEHAND_ERR, errno);
+        return;
+    }
+    ConsumeRData(0);
+}
+
+void SslRWer::buffer_insert(Buffer &&bb) {
+    if(stats == RWerStats::Error) {
+        return;
+    }
+    addEvents(RW_EVENT::WRITE);
+    if(bb.len == 0) {
+        SSL_shutdown(ssl);
+    }else {
+        ERR_clear_error();
+        while(bb.len > 0) {
+            ssize_t ret = ssl_get_error(ssl, SSL_write(ssl, bb.data(), bb.len));
+            if(ret > 0) {
+                bb.reserve(ret);
+                continue;
+            }
+            ErrorHE(SSL_SHAKEHAND_ERR, errno);
+            return;
+        }
+    }
+    sink_out_bio();
+}
+
+/*
 ssize_t SslRWer::Write(const void* buff, size_t len, uint64_t){
     if(len == 0){
         assert(flags & RWER_SHUTDOWN);
@@ -165,6 +251,7 @@ ssize_t SslRWer::Write(const void* buff, size_t len, uint64_t){
     ERR_clear_error();
     return ssl_get_error(ssl, SSL_write(ssl, buff, len));
 }
+ */
 
 void SslRWer::get_alpn(const unsigned char **s, unsigned int * len){
     SSL_get0_alpn_selected(ssl, s, len);

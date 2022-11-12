@@ -81,8 +81,7 @@ void Host::reply(){
     {
         auto buff = std::make_shared<Block>(BUF_LEN);
         size_t len = PackHttpReq(req->header, buff->data(), BUF_LEN);
-        auto head = rwer->buffer_head();
-        rwer->buffer_insert(head, Buffer{buff, len});
+        rwer->buffer_insert(Buffer{buff, len});
     }
 attach:
     req->attach([this](ChannelMessage& msg){
@@ -202,7 +201,7 @@ void Host::Recv(Buffer&& bb){
              status.req->header->request_id, tx_bytes, http_flag);
         if(status.flags & HTTP_NOEND_F){
             //如果是这种，只能通过关闭连接的方式来结束请求
-            rwer->buffer_insert(rwer->buffer_end(), {nullptr});
+            rwer->buffer_insert({nullptr});
         }else{
             //TODO: chunked
             //其他情况，可以不发送结束符
@@ -213,7 +212,7 @@ void Host::Recv(Buffer&& bb){
     tx_bytes += bb.len;
     LOGD(DHTTP, "<host> recv %" PRIu32 ": size:%zu/%zu, http_flag:0x%x\n",
          status.req->header->request_id, bb.len, tx_bytes, http_flag);
-    rwer->buffer_insert(rwer->buffer_end(), std::move(bb));
+    rwer->buffer_insert(std::move(bb));
 }
 
 void Host::ResProc(std::shared_ptr<HttpResHeader> header) {

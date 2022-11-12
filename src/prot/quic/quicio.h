@@ -178,7 +178,7 @@ protected:
     virtual void ConsumeRData(uint64_t id) override;
     virtual size_t rlength(uint64_t id) override;
     virtual ssize_t cap(uint64_t id) override;
-    virtual ssize_t Write(const void* buff, size_t len, uint64_t id) override;
+    //virtual ssize_t Write(const void* buff, size_t len, uint64_t id) override;
 
     void generateCid();
     size_t generateParams(char data[QUIC_INITIAL_LIMIT]);
@@ -227,7 +227,7 @@ public:
                      std::function<void(int ret, int code)> errorCB,
                      std::function<void(const sockaddr_storage&)> connectCB = nullptr);
     virtual ~QuicRWer() override;
-    virtual buff_iterator buffer_insert(buff_iterator where, Buffer&& bb) override;
+    virtual void buffer_insert(Buffer&& bb) override;
 
     //virtual void Shutdown() override;
     virtual void Close(std::function<void()> func) override;

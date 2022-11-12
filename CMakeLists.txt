@@ -197,8 +197,8 @@ find_package(Backtrace)
 set(CMAKE_C_FLAGS_RELEASE "-O2 -g -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O2 -g -DNDEBUG")
 
-set(CMAKE_C_FLAGS_DEBUG "-Og -ggdb3")
-set(CMAKE_CXX_FLAGS_DEBUG "-Og -ggdb3")
+set(CMAKE_C_FLAGS_DEBUG "-O0 -ggdb3")
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb3")
 
 if (HAVE_SAN_ADDR AND NOT ANDROID)
     set(CMAKE_C_FLAGS_DEBUG "-fsanitize=address ${CMAKE_C_FLAGS_DEBUG}")

@@ -9,10 +9,15 @@ class SslRWer: public StreamRWer {
 protected:
     SSL *ssl;
     SSL_CTX* ctx = nullptr;
-
+    BIO* in_bio = BIO_new(BIO_s_mem());
+    BIO* out_bio = BIO_new(BIO_s_mem());
+    int fill_in_bio();
+    int sink_out_bio();
 public:
-    virtual ssize_t Read(void* buff, size_t len) override;
-    virtual ssize_t Write(const void* buff, size_t len, uint64_t) override;
+    virtual void ReadData() override;
+    virtual void buffer_insert(Buffer&& bb) override;
+    //virtual ssize_t Read(void* buff, size_t len) override;
+    //virtual ssize_t Write(const void* buff, size_t len, uint64_t) override;
     explicit SslRWer(int fd, const sockaddr_storage* peer,
                      SSL_CTX* ctx,
                      std::function<void(int ret, int code)> errorCB,
@@ -22,8 +27,7 @@ public:
                      std::function<void(const sockaddr_storage&)> connectCB = nullptr);
     virtual ~SslRWer() override;
 
-    virtual int saccept();
-    virtual int sconnect();
+    virtual int do_handshake();
     virtual void waitconnectHE(RW_EVENT events) override;
     virtual void shakehandHE(RW_EVENT events);
     void get_alpn(const unsigned char **s, unsigned int * len);

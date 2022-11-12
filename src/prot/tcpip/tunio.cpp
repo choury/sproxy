@@ -253,24 +253,18 @@ void TunRWer::ConsumeRData(uint64_t id) {
     }
 }
 
-ssize_t TunRWer::Write(const void*, size_t, uint64_t) {
-    errno = EINVAL;
-    return -1;
-}
-
 void TunRWer::SendPkg(std::shared_ptr<const Ip> pac, const void* data, size_t len) {
     debugString(pac, len - pac->gethdrlen());
     pcap_write_with_generated_ethhdr(pcap, data, len);
     (void)!write(getFd(), data, len);
 }
 
-buff_iterator TunRWer::buffer_insert(buff_iterator where, Buffer&& bb) {
+void TunRWer::buffer_insert(Buffer&& bb) {
     if(!statusmap.Has(bb.id)){
-        return where;
+        return;
     }
     auto status = GetStatus(bb.id);
     status->SendPkg(std::move(bb));
-    return where;
 }
 
 void TunRWer::ReqProc(std::shared_ptr<const Ip> pac) {

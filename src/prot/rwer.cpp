@@ -41,8 +41,13 @@ RWer::RWer(std::function<void (int, int)> errorCB): Ep(-1), errorCB(std::move(er
 void RWer::SendData(){
     std::set<uint64_t> writed_list;
     while(wbuff.start() != wbuff.end()){
-        int ret = wbuff.Write(std::bind([this, &writed_list] (const void* buff, size_t len, uint64_t id) mutable {
-            auto ret =  Write(buff, len, id);
+        int ret = wbuff.Write(std::bind([this, &writed_list] (const void* buff, size_t len, uint64_t id) mutable -> ssize_t {
+            if(len == 0) {
+                assert(flags & RWER_SHUTDOWN);
+                shutdown(getFd(), SHUT_WR);
+                return 0;
+            }
+            auto ret =  write(getFd(), buff, len);
             if(ret >= 0){
                 writed_list.insert(id);
             }
@@ -103,7 +108,14 @@ void RWer::closeHE(RW_EVENT) {
         closeCB();
         return;
     }
-    ssize_t ret = wbuff.Write(std::bind(&RWer::Write, this, _1, _2, _3));
+    ssize_t ret = wbuff.Write([this](const void* buff, size_t len, uint64_t) -> ssize_t {
+        if(len == 0) {
+            assert(flags & RWER_SHUTDOWN);
+            shutdown(getFd(), SHUT_WR);
+            return 0;
+        }
+        return write(getFd(), buff, len);
+    });
 #ifndef WSL
     if ((wbuff.start() == wbuff.end()) || (ret <= 0 && errno != EAGAIN && errno != ENOBUFS)) {
         closeCB();
@@ -160,21 +172,13 @@ void RWer::ErrorHE(int ret, int code) {
 }
 
 
-buff_iterator RWer::buffer_head() {
-    return wbuff.start();
-}
-
-buff_iterator RWer::buffer_end() {
-    return wbuff.end();
-}
-
-buff_iterator RWer::buffer_insert(buff_iterator where, Buffer&& bb) {
+void RWer::buffer_insert(Buffer&& bb) {
     assert((flags & RWER_SHUTDOWN) == 0);
     if(bb.len == 0){
         flags |= RWER_SHUTDOWN;
     }
     addEvents(RW_EVENT::WRITE);
-    return wbuff.push(where, std::move(bb));
+    wbuff.push(wbuff.end(), std::move(bb));
 }
 
 bool RWer::idle(uint64_t) {
@@ -194,10 +198,12 @@ size_t NullRWer::rlength(uint64_t) {
 void NullRWer::ConsumeRData(uint64_t) {
 }
 
+/*
 ssize_t NullRWer::Write(const void*, size_t len, uint64_t) {
     LOG("discard everything write to NullRWer\n");
     return len;
 }
+ */
 
 #ifdef __linux__
 FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB): RWer(errorCB) {
@@ -237,6 +243,7 @@ FullRWer::~FullRWer(){
 #endif
 }
 
+/*
 ssize_t FullRWer::Write(const void* buff, size_t len, uint64_t) {
 #ifdef __linux__
     return write(getFd(), buff, len);
@@ -244,6 +251,7 @@ ssize_t FullRWer::Write(const void* buff, size_t len, uint64_t) {
     return write(pairfd, buff, len);
 #endif
 }
+ */
 
 size_t FullRWer::rlength(uint64_t) {
     return 1;

@@ -30,7 +30,7 @@ class TunRWer: public RWer{
     size_t DataProc(std::shared_ptr<const Ip> pac, const void* data, size_t len);
     void AckProc(std::shared_ptr<const Ip> pac);
 
-    virtual ssize_t Write(const void* buff, size_t len, uint64_t id) override;
+    //virtual ssize_t Write(const void* buff, size_t len, uint64_t id) override;
 protected:
     std::function<void(uint64_t, std::shared_ptr<const Ip>)> reqProc;
     std::function<void(uint64_t, uint32_t)> resetHanlder = [](uint64_t, uint32_t){};
@@ -39,7 +39,7 @@ public:
                      std::function<void(uint64_t, std::shared_ptr<const Ip>)> reqProc,
                      std::function<void(int ret, int code)> errorCB);
     virtual ~TunRWer() override;
-    virtual buff_iterator buffer_insert(buff_iterator where, Buffer&& bb) override;
+    virtual void buffer_insert(Buffer&& bb) override;
     virtual void ReadData() override;
     virtual void ConsumeRData(uint64_t id) override;
     virtual size_t rlength(uint64_t id) override;

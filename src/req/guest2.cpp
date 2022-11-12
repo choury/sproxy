@@ -313,16 +313,8 @@ void Guest2::AdjustInitalFrameWindowSize(ssize_t diff) {
     }
 }
 
-std::list<Buffer>::insert_iterator Guest2::queue_head() {
-    return rwer->buffer_head();
-}
-
-std::list<Buffer>::insert_iterator Guest2::queue_end() {
-    return rwer->buffer_end();
-}
-
-void Guest2::queue_insert(std::list<Buffer>::insert_iterator where, Buffer&& wb) {
-    rwer->buffer_insert(where, std::move(wb));
+void Guest2::PushFrame(Buffer&& wb) {
+    rwer->buffer_insert(std::move(wb));
 }
 
 void Guest2::deleteLater(uint32_t errcode){

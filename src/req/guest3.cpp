@@ -247,7 +247,7 @@ void Guest3::GoawayProc(uint64_t id) {
 }
 
 void Guest3::PushFrame(Buffer&& bb) {
-    rwer->buffer_insert(rwer->buffer_end(), std::move(bb));
+    rwer->buffer_insert(std::move(bb));
 }
 
 uint64_t Guest3::CreateUbiStream() {

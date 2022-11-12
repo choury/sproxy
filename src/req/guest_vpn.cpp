@@ -258,7 +258,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
             if (msg.data.len == 0) {
                 LOGD(DVPN, "<guest_vpn> %" PRIu32 " recv data [%" PRIu64"]: EOF\n",
                      status.req->header->request_id, id);
-                rwer->buffer_insert(rwer->buffer_end(), {nullptr, id});
+                rwer->buffer_insert({nullptr, id});
                 status.flags |= HTTP_RES_COMPLETED;
                 if(status.flags & HTTP_REQ_COMPLETED) {
                     rwer->addjob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
@@ -266,7 +266,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
             }else{
                 LOGD(DVPN, "<guest_vpn> %" PRIu32 " recv data [%" PRIu64"]: %zu\n",
                      status.req->header->request_id, id, msg.data.len);
-                rwer->buffer_insert(rwer->buffer_end(), std::move(msg.data));
+                rwer->buffer_insert(std::move(msg.data));
             }
             return 1;
         case ChannelMessage::CHANNEL_MSG_SIGNAL:

@@ -114,7 +114,7 @@ protected:
     void Reset(uint32_t id, uint32_t code);
     void Goaway(uint32_t lastid, uint32_t code, char* message = nullptr);
     void SendInitSetting();
-    virtual void PushFrame(Buffer&& bb);
+    virtual void PushFrame(Buffer&& bb) = 0;
     virtual void PushData(Buffer&& bb);
 
     virtual uint32_t ExpandWindowSize(uint32_t id, uint32_t size);
@@ -122,10 +122,6 @@ protected:
     virtual void AdjustInitalFrameWindowSize(ssize_t diff) = 0;
     size_t (Http2Base::*Http2_Proc)(const uchar* http2_buff, size_t len)=&Http2Base::InitProc;
     uint32_t OpenStream();
-
-    virtual buff_iterator queue_head() = 0;
-    virtual buff_iterator queue_end() = 0;
-    virtual void queue_insert(buff_iterator where, Buffer&& wb) = 0;
 public:
     ~Http2Base() = default;
 };

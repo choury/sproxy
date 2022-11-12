@@ -104,7 +104,7 @@ void Proxy3::GoawayProc(uint64_t id){
 }
 
 void Proxy3::PushFrame(Buffer&& bb) {
-    rwer->buffer_insert(rwer->buffer_end(), std::move(bb));
+    rwer->buffer_insert(std::move(bb));
 }
 
 uint64_t Proxy3::CreateUbiStream() {
