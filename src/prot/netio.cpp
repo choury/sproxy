@@ -271,6 +271,7 @@ void StreamRWer::ReadData() {
         ssize_t ret = read(getFd(), rb.end(), left);
         if (ret > 0) {
             rb.append((size_t) ret);
+            ConsumeRData(0);
             continue;
         } else if (ret == 0) {
             stats = RWerStats::ReadEOF;

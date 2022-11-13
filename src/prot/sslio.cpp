@@ -127,26 +127,30 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
 
 int SslRWer::fill_in_bio() {
     char buff[BUF_LEN];
-    ssize_t ret = read(getFd(), buff, sizeof(buff));
-    if(ret > 0) {
-        BIO_write(in_bio, buff, ret);
-    } else if (ret == 0) {
-        stats = RWerStats::ReadEOF;
-        delEvents(RW_EVENT::READ);
-        return 0;
-    } else if (errno != EAGAIN) {
+    while(true) {
+        ssize_t ret = read(getFd(), buff, sizeof(buff));
+        if (ret > 0) {
+            BIO_write(in_bio, buff, ret);
+            continue;
+        } else if (ret == 0) {
+            stats = RWerStats::ReadEOF;
+            delEvents(RW_EVENT::READ);
+            break;
+        } else if (errno == EAGAIN) {
+            break;
+        }
         ErrorHE(SOCKET_ERR, errno);
         return -1;
     }
     return 1;
 }
 
-int SslRWer::sink_out_bio() {
+int SslRWer::sink_out_bio(uint64_t id) {
     while(BIO_ctrl_pending(out_bio)) {
         char buff[BUF_LEN];
         int ret = BIO_read(out_bio, buff, sizeof(buff));
         if (ret > 0) {
-            wbuff.push(wbuff.end(), Buffer{std::make_shared<Block>(buff, ret), (size_t)ret});
+            wbuff.push(wbuff.end(), Buffer{std::make_shared<Block>(buff, ret), (size_t)ret, id});
         }
     }
     return 1;
@@ -173,7 +177,7 @@ void SslRWer::shakehandHE(RW_EVENT events){
         return;
     }
 
-    sink_out_bio();
+    sink_out_bio(0);
     if(SSL_is_init_finished(ssl)) {
         connected(addrs.front());
         //in case some data in ssl buffer
@@ -205,6 +209,7 @@ void SslRWer::ReadData() {
         ssize_t ret = ssl_get_error(ssl, SSL_read(ssl, rb.end(), left));
         if (ret > 0) {
             rb.append((size_t) ret);
+            ConsumeRData(0);
             continue;
         }else if(ret == 0) {
             stats = RWerStats::ReadEOF;
@@ -238,7 +243,7 @@ void SslRWer::buffer_insert(Buffer &&bb) {
             return;
         }
     }
-    sink_out_bio();
+    sink_out_bio(bb.id);
 }
 
 /*
