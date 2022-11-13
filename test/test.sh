@@ -4,32 +4,32 @@ set -x
 HOSTNAME=localhost.choury.com
 
 function test_client(){
-    curl -f -s http://localhost:$1/cgi/libsites.do -d 'method=put&site=*&strategy=proxy'
+    curl -f -v http://localhost:$1/cgi/libsites.do -d 'method=put&site=*&strategy=proxy' 2>> curl.log
     [ $? -ne 0 ] && echo "prepare for failed" && exit 1
 
-    curl -f -s -x http://$HOSTNAME:$1 http://qq.com > /dev/null
+    curl -f -v -x http://$HOSTNAME:$1 http://qq.com > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "client test 1 failed" && exit 1
-    curl -f -s -x http://$HOSTNAME:$1 http://taobao.com > /dev/null
+    curl -f -v -x http://$HOSTNAME:$1 http://taobao.com > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "client test 2 failed" && exit 1
-    curl -f -s -x http://$HOSTNAME:$1 https://www.qq.com -A "Mozilla/5.0" > /dev/null
+    curl -f -v -x http://$HOSTNAME:$1 https://www.qq.com -A "Mozilla/5.0" > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "client test 3 failed" && exit 1
 
-    curl -f -s -x http://$HOSTNAME:$1 http://qq.com -XPOST -d "foo=bar" > /dev/null
+    curl -f -v -x http://$HOSTNAME:$1 http://qq.com -XPOST -d "foo=bar" > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "client test 4 failed" && exit 1
 
-    curl -f -s -x http://$HOSTNAME:$1 http://taobao.com -I > /dev/null
+    curl -f -v -x http://$HOSTNAME:$1 http://taobao.com -I > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "client test 5 failed" && exit 1
-    curl -f -s -x http://$HOSTNAME:$1 http://taobao.com -L > /dev/null
+    curl -f -v -x http://$HOSTNAME:$1 http://taobao.com -L > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "client test 6 failed" && exit 1
 
     echo test for 100 continue
-    curl -f -s -x http://$HOSTNAME:$1 http://echo.opera.com -F 'name=@test1k' > /dev/null
+    curl -f -v -x http://$HOSTNAME:$1 http://echo.opera.com -F 'name=@test1k' > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "client test 7 failed" && exit 1
 
     echo test for http1.0
     ./sproxy_test < http1.0_server.exp &
     sleep 3
-    curl -f -s -x http://$HOSTNAME:$1 http://test.localhost.choury.com:4445 > /dev/null
+    curl -f -v -x http://$HOSTNAME:$1 http://test.localhost.choury.com:4445 > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "client test 8 failed" && exit 1
 
     echo test for shutdown1
@@ -52,56 +52,56 @@ function test_client(){
     [ $? -ne 0 ] && echo "send ping test failed" && exit 1
 
     echo test pipeline
-    curl -f -s  http://localhost:$1/cgi/libsites.do -XDELETE  -d 'site=*'
+    curl -f -v  http://localhost:$1/cgi/libsites.do -XDELETE  -d 'site=*' 2>> curl.log
     [ $? -ne 0 ] && echo "delete site failed" && exit 1
-    curl -f -s  http://localhost:$1/cgi/libsites.do -XPUT  -d 'site=360.cn&strategy=block'
+    curl -f -v  http://localhost:$1/cgi/libsites.do -XPUT  -d 'site=360.cn&strategy=block' 2>> curl.log
     [ $? -ne 0 ] && echo "add block site failed" && exit 1
-    curl -f -s  http://localhost:$1/cgi/libsites.do -XPUT  -d 'site=qq.com&strategy=proxy'
+    curl -f -v  http://localhost:$1/cgi/libsites.do -XPUT  -d 'site=qq.com&strategy=proxy' 2>> curl.log
     [ $? -ne 0 ] && echo "add proxy site failed" && exit 1
     cat pipeline.exp | sed "s/PORT/$1/" | ./sproxy_test > pipeline-$1.log
     [ $? -ne 0 ] && echo "pipeline test failed" && exit 1
 }
 
 function test_https(){
-    curl -f -s --http1.1 https://$HOSTNAME:$1/sites.list  -k
+    curl -f -v --http1.1 https://$HOSTNAME:$1/sites.list  -k 2>> curl.log
     [ $? -ne 0 ] && echo "https test 1 failed" && exit 1
-    curl -f -s --http2 https://$HOSTNAME:$1/sites.list  -k
+    curl -f -v --http2 https://$HOSTNAME:$1/sites.list  -k 2>> curl.log
     [ $? -ne 0 ] && echo "https test 2 failed" && exit 1
-    curl -f -s --http1.1 https://$HOSTNAME:$1/noexist  -k
+    curl -f -v --http1.1 https://$HOSTNAME:$1/noexist  -k 2>> curl.log
     [ $? -ne 22 ] && echo "https test 3 failed" && exit 1
-    curl -f -s --http2 https://$HOSTNAME:$1/noexist  -k
+    curl -f -v --http2 https://$HOSTNAME:$1/noexist  -k  2>> curl.log
     [ $? -ne 22 ] && echo "https test 4 failed" && exit 1
-    curl -f -s --http1.1 https://$HOSTNAME:$1/noexist.do  -k
+    curl -f -v --http1.1 https://$HOSTNAME:$1/noexist.do  -k 2>> curl.log
     [ $? -ne 22 ] && echo "https test 5 failed" && exit 1
-    curl -f -s --http2 https://$HOSTNAME:$1/noexist.do  -k
+    curl -f -v --http2 https://$HOSTNAME:$1/noexist.do  -k 2>> curl.log
     [ $? -ne 22 ] && echo "https test 6 failed" && exit 1
-    curl -f -s --http1.1 https://$HOSTNAME:$1/cgi/libproxy.do?a=b  -k
+    curl -f -v --http1.1 https://$HOSTNAME:$1/cgi/libproxy.do?a=b  -k 2>> curl.log
     [ $? -ne 0 ] && echo "https test 7 failed"
-    curl -f -s --http2 https://$HOSTNAME:$1/cgi/libproxy.do?a=b  -k
+    curl -f -v --http2 https://$HOSTNAME:$1/cgi/libproxy.do?a=b  -k 2>> curl.log
     [ $? -ne 0 ] && echo "https test 8 failed"
-    curl -f -s -L --http1.1 https://$HOSTNAME:$1/cgi  -k
+    curl -f -v -L --http1.1 https://$HOSTNAME:$1/cgi  -k 2>> curl.log
     [ $? -ne 0 ] && echo "https test 9 failed"
-    curl -f -s -L --http2 https://$HOSTNAME:$1/cgi  -k
+    curl -f -v -L --http2 https://$HOSTNAME:$1/cgi  -k 2>> curl.log
     [ $? -ne 0 ] && echo "https test 10 failed"
-    curl -f -s --http1.1 https://$HOSTNAME:$1/ -H "Host: www.qq.com" -k > /dev/null
+    curl -f -v --http1.1 https://$HOSTNAME:$1/ -H "Host: www.qq.com" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "https test 11 failed" && exit 1
-    curl -f -s --http2 https://$HOSTNAME:$1/ -H "Host: www.qq.com:443" -A "Mozilla/5.0" -k > /dev/null
+    curl -f -v --http2 https://$HOSTNAME:$1/ -H "Host: www.qq.com:443" -A "Mozilla/5.0" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "https test 12 failed" && exit 1
     echo ""
 }
 
 function test_http(){
-    curl -f -s http://$HOSTNAME:$1/sites.list  -k
+    curl -f -v http://$HOSTNAME:$1/sites.list  -k 2>> curl.log
     [ $? -ne 0 ] && echo "https test 1 failed" && exit 1
-    curl -f -s http://$HOSTNAME:$1/noexist  -k
+    curl -f -v http://$HOSTNAME:$1/noexist  -k 2>> curl.log
     [ $? -ne 22 ] && echo "https test 2 failed" && exit 1
-    curl -f -s http://$HOSTNAME:$1/noexist.do  -k
+    curl -f -v http://$HOSTNAME:$1/noexist.do  -k 2>> curl.log
     [ $? -ne 22 ] && echo "https test 3 failed" && exit 1
-    curl -f -s http://$HOSTNAME:$1/cgi/libproxy.do?a=b  -k
+    curl -f -v http://$HOSTNAME:$1/cgi/libproxy.do?a=b  -k 2>> curl.log
     [ $? -ne 0 ] && echo "https test 4 failed"
-    curl -f -s -L http://$HOSTNAME:$1/cgi  -k
+    curl -f -v -L http://$HOSTNAME:$1/cgi  -k 2>> curl.log
     [ $? -ne 0 ] && echo "https test 5 failed"
-    curl -f -s http://$HOSTNAME:$1/ -H "Host: www.qq.com" -k > /dev/null
+    curl -f -v http://$HOSTNAME:$1/ -H "Host: www.qq.com" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "https test 6 failed" && exit 1
     echo ""
 }
@@ -161,6 +161,8 @@ EOF
 
 ./sproxy -c http.conf  --admin server_http.sock > server_http.log 2>&1 &
 sleep 5
+
+> curl.log
 
 echo "test server"
 test_https 4443

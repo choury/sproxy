@@ -55,7 +55,7 @@ jobs:
       name: test
       run: cd ${{github.workspace}}/test && ./test.sh ../build/
       timeout-minutes: 10
-    - if: matrix.build_type == 'Debug'
+    - if: matrix.build_type == 'Debug' && ${{ always() }}
       name: Upload test log
       uses: actions/upload-artifact@v3
       with:
@@ -105,7 +105,7 @@ jobs:
       name: test
       run: cd ${{github.workspace}}/test && ./test.sh ../build/
       timeout-minutes: 10
-    - if: matrix.build_type == 'Debug'
+    - if: matrix.build_type == 'Debug' && ${{ always() }}
       name: Upload test log
       uses: actions/upload-artifact@v3
       with:

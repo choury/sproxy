@@ -12,7 +12,7 @@ protected:
     BIO* in_bio = BIO_new(BIO_s_mem());
     BIO* out_bio = BIO_new(BIO_s_mem());
     int fill_in_bio();
-    int sink_out_bio();
+    int sink_out_bio(uint64_t id);
 public:
     virtual void ReadData() override;
     virtual void buffer_insert(Buffer&& bb) override;
