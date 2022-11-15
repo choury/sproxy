@@ -227,11 +227,12 @@ strategy getstrategy(const char *host_){
     auto mask_pos = host.find_first_of('/');
     if(mask_pos != string::npos){
         string ip = host.substr(0, mask_pos);
-#ifdef __ANDROID__
-        int prefix = atoi(host.substr(mask_pos+1).c_str());
-#else
-        int prefix = stoi(host.substr(mask_pos+1));
-#endif
+        string prefix_str = host.substr(mask_pos+1);
+        char* pos = nullptr;
+        int prefix = (int)strtol(prefix_str.c_str(), &pos, 10);
+        if(*pos != '\0'  || prefix < 0 || prefix > 128) {
+            return strategy{Strategy::block, ""};
+        }
         v = ipfind(ip.c_str(), prefix);
     }else if((v = ipfind(host.c_str())) == nullptr){
         v = domains.find(split(toLower(host)));

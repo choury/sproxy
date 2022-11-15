@@ -93,6 +93,19 @@ static std::string reverse(std::string str){
 #define IPV4_PTR_PREFIX "arpa.in-addr."
 #define IPV6_PTR_PREFIX "arpa.ip6."
 
+static bool is_valid(const char* domain) {
+    while(*domain) {
+        if((*domain >= 'a' && *domain <= 'z') ||
+        (*domain >= 'A' && *domain <= 'Z') ||
+        (*domain >= '0' && *domain <= '9') || *domain == '-' || *domain == '.'){
+            domain++;
+            continue;
+        }
+        return false;
+    }
+    return true;
+}
+
 Dns_Query::Dns_Query(const char* buff, size_t len) {
     if(len < sizeof(DNS_HDR)){
         return;
@@ -101,6 +114,9 @@ Dns_Query::Dns_Query(const char* buff, size_t len) {
 
     id = ntohs(dnshdr->id);
     const unsigned char *p = getdomain(dnshdr, (const unsigned char *)(dnshdr+1), len, domain);
+    if(!is_valid(domain)) {
+        return;
+    }
     const DNS_QUE *que = (const DNS_QUE*)p;
     if(ntohs(que->classes) != 1) {
         return;
