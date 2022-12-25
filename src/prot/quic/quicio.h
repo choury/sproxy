@@ -210,7 +210,8 @@ protected:
     static bool IsBidirect(uint64_t id);
 
     size_t envelopLen(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, size_t len);
-    int send(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, const void* body, size_t len);
+    int send(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack,
+             const void* body, size_t len, const std::set<uint64_t>& streams);
     void resendFrames(pn_namespace* ns, quic_frame* frame);
     Job* keepAlive_timer = nullptr;
     void keepAlive_action();

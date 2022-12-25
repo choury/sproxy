@@ -130,7 +130,8 @@ size_t QuicRWer::envelopLen(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t a
     return 0;
 }
 
-int QuicRWer::send(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, const void *body, size_t len) {
+int QuicRWer::send(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack,
+                   const void *body, size_t len, const std::set<uint64_t>& streams) {
     if(body == nullptr){
         return envelopLen(level, pn, ack, len);
     }
@@ -174,6 +175,12 @@ int QuicRWer::send(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, const
         return -QUIC_INTERNAL_ERROR;
     }
     my_sent_data_total += ret;
+    for (auto stream: streams) {
+        if(idle(stream)) {
+            continue;
+        }
+        writeCB(stream);
+    }
     return packet_len;
 }
 
@@ -311,7 +318,7 @@ QuicRWer::QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
                    std::function<void(int, int)> errorCB,
                    std::function<void(const sockaddr_storage&)> connectCB):
         SocketRWer(hostname, port, protocol, std::move(errorCB), std::move(connectCB)),
-        qos(false, std::bind(&QuicRWer::send, this, _1, _2, _3, _4, _5),
+        qos(false, std::bind(&QuicRWer::send, this, _1, _2, _3, _4, _5, _6),
            std::bind(&QuicRWer::resendFrames, this, _1, _2),
            std::bind(&QuicRWer::ErrorHE, this, PROTOCOL_ERR, _1))
 {
@@ -362,7 +369,7 @@ QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, QuicMgr* 
                    std::function<void(int, int)> errorCB,
                    std::function<void(const sockaddr_storage &)> connectCB):
         SocketRWer(fd, peer, std::move(errorCB)), mgr(mgr),
-        qos(true, std::bind(&QuicRWer::send, this, _1, _2, _3, _4, _5),
+        qos(true, std::bind(&QuicRWer::send, this, _1, _2, _3, _4, _5, _6),
             std::bind(&QuicRWer::resendFrames, this, _1, _2),
             std::bind(&QuicRWer::ErrorHE, this, PROTOCOL_ERR, _1))
 {
@@ -714,8 +721,8 @@ QuicRWer::FrameResult QuicRWer::handleResetFrame(const quic_reset *stream) {
     my_received_data += status.finSize - want;
 
     if((status.flags & STREAM_FLAG_RESET_DELIVED) == 0) {
-        status.flags |= STREAM_FLAG_RESET_DELIVED;
         resetHandler(id, stream->error);
+        status.flags |= STREAM_FLAG_RESET_DELIVED;
         status.rb.consume(status.rb.length());
     }
     return FrameResult::ok;
@@ -1005,10 +1012,10 @@ void QuicRWer::resendFrames(pn_namespace* ns, quic_frame *frame) {
     }
     default:
         if(frame->type >= QUIC_FRAME_STREAM_START_ID && frame->type <= QUIC_FRAME_STREAM_END_ID){
-            qos.FrontFrame(ns, frame);
+            qos.PushFrame(ns, frame);
         }else {
             //FIXME: implement other frame type resend logic
-            qos.FrontFrame(ns, frame);
+            qos.PushFrame(ns, frame);
         }
     }
 }
@@ -1151,8 +1158,6 @@ void QuicRWer::buffer_insert(Buffer&& bb) {
          id, status.my_offset, status.his_max_data, my_sent_data, his_max_data);
     if(idle(id)){
         CleanStream(id);
-    }else{
-        writeCB(id);
     }
 }
 
@@ -1313,13 +1318,12 @@ void QuicRWer::walkPackets(const void* buff, size_t length) {
 }
 
 void QuicRWer::reorderData(){
-    if(stats == RWerStats::Error){
-        return;
-    }
     for(auto& context : contexts) {
         if(!context.hasKey){
             continue;
         }
+retry:
+        bool skip_all = true;
         for (auto i = context.recvq.data.begin(); i != context.recvq.data.end();) {
             FrameResult ret = FrameResult::ok;
             if (context.level != ssl_encryption_application) {
@@ -1332,15 +1336,18 @@ void QuicRWer::reorderData(){
             case FrameResult::ok:
                 frame_release(*i);
                 i = context.recvq.data.erase(i);
+                skip_all = false;
                 continue;
             case FrameResult::skip:
-                goto theEnd;
+                i++;
+                continue;
             case FrameResult::error:
                 return;
             }
         }
-theEnd:
-        continue;
+        if(!skip_all) {
+            goto retry;
+        }
     }
 }
 
@@ -1426,7 +1433,6 @@ bool QuicRWer::idle(uint64_t id){
         send_closed = true;
     }
     if(status.flags & (STREAM_FLAG_FIN_DELIVED | STREAM_FLAG_RESET_DELIVED)){
-        assert(status.flags & STREAM_FLAG_FIN_RECVD);
         assert(status.rb.length() == 0);
         recv_closed = true;
     }
@@ -1461,24 +1467,28 @@ void QuicRWer::consumeData(uint64_t id, QuicRWer::QuicStreamStatus &status) {
         rblen -= eaten;
     }
 
-    if((status.flags & STREAM_FLAG_FIN_RECVD) && rb.length() == 0){
+    if((status.flags & STREAM_FLAG_FIN_RECVD) &&
+       (rb.Offset() == status.finSize || status.flags & STREAM_FLAG_RESET_RECVD))
+    {
         assert((status.flags & STREAM_FLAG_FIN_DELIVED) == 0);
         //在QuicRWer中，我们不用 ReadEOF状态，因为它是对整个连接的，而不是对某个stream的
-        assert(status.finSize == rb.Offset());
         readCB(id, nullptr, 0);
         LOGD(DQUIC, "consume EOF [%" PRIu64"]: %" PRIu64"\n", id, rb.Offset());
         status.flags |= STREAM_FLAG_FIN_DELIVED;
     }
 
+    if(stats == RWerStats::Error || (!IsBidirect(id) && IsLocal(id))) {
+        return;
+    }
     auto shouldSendMaxStreamData = [](QuicStreamStatus& status) -> bool {
         if((status.flags & STREAM_FLAG_FIN_RECVD) && status.my_max_data >= status.finSize){
             return false;
         }
-        uint64_t offset = status.rb.Offset() + status.rb.length();
-        if(status.my_max_data - offset < BUF_LEN/2 && offset + status.rb.cap() > status.my_max_data){
+        uint64_t rcap = status.rb.Offset() + status.rb.length() + status.rb.cap();
+        if(status.my_max_data - status.his_offset < BUF_LEN/2 && rcap > status.my_max_data){
             return true;
         }
-        if(offset + status.rb.cap() - status.my_max_data < BUF_LEN){
+        if(rcap - status.my_max_data < BUF_LEN){
             return false;
         }
         return true;
@@ -1566,12 +1576,12 @@ void QuicRWer::dump_status(Dumper dp, void *param) {
        my_max_data - my_received_data,
        his_max_data - my_sent_data,
        rblen, fullq.size());
-    for(auto& status: streammap){
-        dp(param, "  0x%lx: rlen: %zd, rcap: %zd, my_window: %zd, his_window: %zd, flags: 0x%08x\n",
-           status.first, status.second.rb.length(), status.second.rb.cap(),
-           status.second.my_max_data - status.second.his_offset,
-           status.second.his_max_data - status.second.my_offset,
-           status.second.flags);
+    for(auto& entry: streammap){
+        auto& status = entry.second;
+        dp(param, "  0x%lx: rlen: %zd-%zd, rcap: %zd, my_window: %zd, his_window: %zd, flags: 0x%08x\n",
+           entry.first, status.rb.Offset(), status.rb.Offset() + status.rb.length(),
+           status.rb.cap() + status.rb.length() + status.rb.Offset() - status.my_max_data,
+           status.my_max_data - status.his_offset, status.his_max_data - status.my_offset, status.flags);
     }
 }
 

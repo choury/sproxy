@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <misc/util.h>
 
+
 static int get_packet_namespace(OSSL_ENCRYPTION_LEVEL level){
     switch(level){
     case ssl_encryption_initial:
@@ -134,7 +135,8 @@ void Chop::dump() {
 
 
 class pn_namespace{
-    std::function<int(uint64_t number, uint64_t ack, const void* body, size_t len)> sent;
+    typedef std::function<int(uint64_t number, uint64_t ack, const void* body, size_t len, const std::set<uint64_t>& streams)> send_func;
+    send_func sent;
     uint64_t current_pn     = 0;
     bool     hasKey = false;
     char     name;
@@ -154,14 +156,14 @@ class pn_namespace{
     std::list<quic_packet_pn> DetectAndRemoveLostPackets(Rtt* rtt);
     void clear();
 public:
-    pn_namespace(char name, std::function<int(uint64_t pn, uint64_t ack, const void* body, size_t len)> sent);
+    pn_namespace(char name, send_func sent);
     ~pn_namespace();
 
     friend class QuicQos;
 };
 
 
-pn_namespace::pn_namespace(char name, std::function<int(uint64_t, uint64_t, const void *, size_t)> sent):
+pn_namespace::pn_namespace(char name, send_func sent):
         sent(std::move(sent)), name(name) {
 }
 
@@ -203,13 +205,14 @@ int pn_namespace::sendOnePacket(size_t window){
     bool ack_eliciting = false;
     bool in_flight = false;
 
-    size_t envelopLen = sent(current_pn, largest_acked_packet+1,
-                             nullptr, std::min((size_t)max_datagram_size, window));
+    size_t envelopLen = sent(current_pn, largest_acked_packet+1, nullptr,
+                             std::min((size_t)max_datagram_size, window), {});
 
+    std::set<uint64_t> streams;
     char buff[max_datagram_size];
     char* pos = buff;
     auto i = pend_frames.begin();
-    for(; i != pend_frames.end(); i++){
+    for(; i != pend_frames.end(); i++) {
         ssize_t left = std::min((size_t)max_datagram_size, window) + buff - pos - envelopLen;
         if(left < (int)pack_frame_len(*i)){
             uint64_t type = (*i)->type;
@@ -224,6 +227,7 @@ int pn_namespace::sendOnePacket(size_t window){
                 pend_frames.insert(std::next(i), frame);
                 (*i)->crypto.length = left - 20;
             }else if((type >= QUIC_FRAME_STREAM_START_ID && type <= QUIC_FRAME_STREAM_END_ID) && left >= 30){
+                streams.emplace((*i)->stream.id);
                 // [n, m) -> [n, n + left - 30) + [n + left - 30, m)
                 quic_frame* frame = new quic_frame{type | QUIC_FRAME_STREAM_OFF_F, {}};
                 frame->stream.id = (*i)->stream.id;
@@ -243,18 +247,14 @@ int pn_namespace::sendOnePacket(size_t window){
         if(pos == nullptr){
             return -QUIC_INTERNAL_ERROR;
         }
-        if(!ack_eliciting){
-            ack_eliciting = is_ack_eliciting(*i);
-        }
-        if(!in_flight){
-            in_flight = ack_eliciting || (*i)->type == QUIC_FRAME_PADDING;
-        }
+        ack_eliciting = ack_eliciting || is_ack_eliciting(*i);
+        in_flight = in_flight || ack_eliciting || (*i)->type == QUIC_FRAME_PADDING;
     }
     if(i == pend_frames.begin()){
         //there is no frame sent
         return 0;
     }
-    int ret = sent(current_pn, largest_acked_packet+1, buff, pos - buff);
+    int ret = sent(current_pn, largest_acked_packet+1, buff, pos - buff, streams);
     if(ret < 0){
         return ret;
     }
@@ -262,7 +262,7 @@ int pn_namespace::sendOnePacket(size_t window){
     sent_frames.splice(sent_frames.begin(), pend_frames, pend_frames.begin(), i);
     sent_packets.push_back(quic_packet_pn{
             {current_pn, ack_eliciting, in_flight, (size_t)ret, now},
-            sent_frames});
+            std::move(sent_frames)});
 
     assert(!sent_packets.back().frames.empty());
     current_pn++;
@@ -394,8 +394,7 @@ pn_namespace::~pn_namespace() {
     clear();
 }
 
-QuicQos::QuicQos(bool isServer,
-           std::function<int(OSSL_ENCRYPTION_LEVEL, uint64_t, uint64_t, const void*, size_t)> sent,
+QuicQos::QuicQos(bool isServer, send_func sent,
            std::function<void(pn_namespace*, quic_frame*)> resendFrames,
            std::function<void(int)> ErrorHE):
             isServer(isServer), resendFrames(std::move(resendFrames)), ErrorHE(std::move(ErrorHE)){
@@ -403,17 +402,20 @@ QuicQos::QuicQos(bool isServer,
             std::placeholders::_1,
             std::placeholders::_2,
             std::placeholders::_3,
-            std::placeholders::_4));
+            std::placeholders::_4,
+            std::placeholders::_5));
     pns[QUIC_PACKET_NAMESPACE_HANDSHAKE] = new pn_namespace('H', std::bind(sent, ssl_encryption_handshake,
             std::placeholders::_1,
             std::placeholders::_2,
             std::placeholders::_3,
-            std::placeholders::_4));
+            std::placeholders::_4,
+            std::placeholders::_5));
     pns[QUIC_PAKCET_NAMESPACE_APP] = new pn_namespace('A', std::bind(sent, ssl_encryption_application,
             std::placeholders::_1,
             std::placeholders::_2,
             std::placeholders::_3,
-            std::placeholders::_4));
+            std::placeholders::_4,
+            std::placeholders::_5));
 }
 
 
@@ -489,16 +491,7 @@ void QuicQos::OnLossDetectionTimeout(pn_namespace* ns){
         LOGD(DQUIC, "pto expired for [%c], pto_time: %.2fms, pto_count: %zd\n",
              ns->name, (now - ns->time_of_last_ack_eliciting_packet) / 1000.0, pto_count);
         pto_count++;
-        bool has_eliciting_packet = false;
-        for (const auto frame: ns->pend_frames) {
-            if(is_ack_eliciting(frame)){
-                has_eliciting_packet = true;
-                break;
-            }
-        }
-        if (!has_eliciting_packet) {
-            PushFrame(ns, new quic_frame{QUIC_FRAME_PING, {}});
-        }
+        FrontFrame(ns, new quic_frame{QUIC_FRAME_PING, {}});
         packet_tx  = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this), 0);
     }
     SetLossDetectionTimer();
@@ -580,7 +573,18 @@ void QuicQos::sendPacket() {
             continue;
         }
         p->PendAck();
-        while(!p->pend_frames.empty()) {
+        if(p->pend_frames.empty()) {
+            continue;
+        }
+        if(pto_count > 0) {
+            //如果在丢包探测阶段，只发送一个包
+            int ret = p->sendOnePacket(max_datagram_size);
+            if (ret < 0) {
+                return ErrorHE(-ret);
+            }
+            bytes_in_flight += ret;
+            return;
+        }else while(!p->pend_frames.empty() && congestion_window > bytes_in_flight) {
             int ret = p->sendOnePacket(congestion_window - bytes_in_flight);
             if (ret < 0) {
                 return ErrorHE(-ret);
@@ -589,10 +593,8 @@ void QuicQos::sendPacket() {
                 //has no window
                 break;
             }
-            if (ret > 0) {
-                bytes_in_flight += ret;
-                has_in_flight = true;
-            }
+            bytes_in_flight += ret;
+            has_in_flight = true;
         }
         if(!p->pend_frames.empty()){
             has_pending_packet = true;
@@ -700,7 +702,7 @@ void QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t number, const qu
     ns->tracked_receipt_pns.Add(number);
     if(level == ssl_encryption_initial || level == ssl_encryption_handshake){
         packet_tx  = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this), 0);
-    }else if(!ns->should_ack) {
+    }else if(!ns->should_ack && congestion_window > bytes_in_flight) {
         packet_tx  = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this), 20);
     }
     if(is_ack_eliciting(frame)){
@@ -755,14 +757,18 @@ void QuicQos::PushFrame(pn_namespace* ns, quic_frame *frame) {
     dumpFrame("<", ns->name, frame);
     assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
     ns->pend_frames.push_back(frame);
-    packet_tx = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this) , 0);
+    if(congestion_window > bytes_in_flight){
+        packet_tx = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this) , 0);
+    }
 }
 
 void QuicQos::FrontFrame(pn_namespace* ns, quic_frame *frame) {
     dumpFrame("<", ns->name, frame);
     assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
     ns->pend_frames.push_front(frame);
-    packet_tx = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this) , 0);
+    if(congestion_window > bytes_in_flight){
+        packet_tx = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this) , 0);
+    }
 }
 
 void QuicQos::PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame* frame) {

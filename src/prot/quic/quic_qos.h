@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <list>
 #include <map>
+#include <set>
 #include <functional>
 
 const uint64_t max_datagram_size = 1400;
@@ -91,8 +92,9 @@ class QuicQos {
     pn_namespace* GetNamespace(OSSL_ENCRYPTION_LEVEL level);
 public:
     Rtt    rtt;
-    QuicQos(bool isServer,
-           std::function<int(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, const void* body, size_t len)> sent,
+    typedef std::function<int(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack,
+            const void* body, size_t len, const std::set<uint64_t>& streams)>  send_func;
+    QuicQos(bool isServer, send_func sent,
            std::function<void(pn_namespace*, quic_frame*)> resendFrames,
            std::function<void(int error)> ErrorHE);
     ~QuicQos();

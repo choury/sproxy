@@ -98,8 +98,8 @@ static SSL_CTX* initssl(int quic, const char *ca, const char *cert, const char *
     EC_KEY *ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
     SSL_CTX_set_tmp_ecdh(ctx, ecdh);
     EC_KEY_free(ecdh);
-    */
     SSL_CTX_set_ecdh_auto(ctx, 1);
+    */
 
     if (ca && SSL_CTX_load_verify_locations(ctx, ca, NULL) != 1)
         ERR_print_errors_fp(stderr);

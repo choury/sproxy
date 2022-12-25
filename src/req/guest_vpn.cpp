@@ -249,6 +249,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
             }else{
                 LOGE("unknown response\n");
             }
+            status.res->detach();
             rwer->addjob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
             return 0;
         }
