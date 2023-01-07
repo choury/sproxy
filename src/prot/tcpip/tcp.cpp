@@ -195,7 +195,7 @@ void SendSyn(std::shared_ptr<TcpStatus> status) {
         ->setack(status->want_seq)
         ->setwindowscale(status->send_wscale)
         ->setwindow(bufleft(status))
-        ->setmss(Min(status->mss, BUF_LEN))
+        ->setmss(std::min(status->mss, (uint16_t)BUF_LEN))
         ->setflag(TH_ACK | TH_SYN);
 
     if (status->options & (1 << TCPOPT_SACK_PERMITTED)) {

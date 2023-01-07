@@ -8,6 +8,7 @@ set(prot_src
         netio.cpp
         sslio.cpp
         tls.c
+        multimsg.c
         rpc.cpp)
 
 add_library(prot ${prot_src})

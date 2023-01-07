@@ -337,12 +337,12 @@ int spliturl(const char* url, struct Destination* server, char* path) {
     char tmpaddr[DOMAINLIMIT];
     // scan path by '/'
     if ((addrsplit = strchr(url, '/'))) {
-        int copylen = Min(url_end-addrsplit, (URLLIMIT-1));
+        int copylen = MIN(url_end-addrsplit, (URLLIMIT-1));
         if (path) {
             memcpy(path, addrsplit, copylen);
             path[copylen] = 0;
         }
-        copylen = Min((size_t)(addrsplit - url),  sizeof(tmpaddr)-1);
+        copylen = MIN((size_t)(addrsplit - url),  sizeof(tmpaddr)-1);
         memcpy(tmpaddr, url, copylen);
         tmpaddr[copylen] = 0;
     } else {

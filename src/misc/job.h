@@ -18,6 +18,7 @@ public:
     ~job_handler();
 };
 
+uint32_t JobPending(const Job* job);
 uint32_t do_delayjob();
 extern job_handler static_job_handler;
 #define AddJob(func, interval_ms, flags) static_job_handler.addjob_with_name(func, #func, interval_ms, flags)

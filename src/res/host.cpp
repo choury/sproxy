@@ -236,7 +236,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
         status.req->response(status.res);
     }
     int len = status.res->cap();
-    len = Min(len, size);
+    len = std::min(len, (int)size);
 
     if (len <= 0) {
         LOGE("[%" PRIu32 "]: <host> the guest's write buff is full (%s)\n",

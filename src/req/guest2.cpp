@@ -226,7 +226,7 @@ void Guest2::response(void* index, std::shared_ptr<HttpRes> res) {
             return 0;
         }
         return 0;
-    }, [this, &status]{return Min(status.remotewinsize, this->remotewinsize);});
+    }, [this, &status]{return std::min(status.remotewinsize, this->remotewinsize);});
 }
 
 void Guest2::Clean(uint32_t id, uint32_t errcode) {

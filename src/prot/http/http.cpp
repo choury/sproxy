@@ -62,7 +62,7 @@ size_t HttpBase::ChunkBProc(const char* buffer, size_t len) {
         if (len == 0) {
             return 0;
         }
-        ssize_t ret = DataProc(buffer, Min(len, http_expectlen));
+        ssize_t ret = DataProc(buffer, std::min(len, (size_t)http_expectlen));
         if (ret < 0) {
             return 0;
         }
@@ -75,7 +75,7 @@ size_t HttpBase::FixLenProc(const char* buffer, size_t len) {
     if (len == 0) {
         return 0;
     }
-    ssize_t ret = DataProc(buffer, Min(len, http_expectlen));
+    ssize_t ret = DataProc(buffer, std::min(len, (size_t)http_expectlen));
     if (ret < 0) {
         return 0;
     }

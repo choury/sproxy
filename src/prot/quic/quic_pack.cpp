@@ -421,7 +421,7 @@ static int pack_header(const struct quic_pkt_header* header, char* data, uint16_
 }
 
 
-char* encode_packet(const void* data_, size_t len,
+size_t encode_packet(const void* data_, size_t len,
                   const quic_pkt_header* header, const quic_secret* secret,
                   char* body){
 
@@ -445,7 +445,7 @@ char* encode_packet(const void* data_, size_t len,
             (unsigned char*)body + header_len);
     if(ciphertext_len < 0){
         LOGE("gcm_encrypt error\n");
-        return nullptr;
+        return 0;
     }
 
     unsigned char mask[128];
@@ -467,7 +467,7 @@ char* encode_packet(const void* data_, size_t len,
         int mask_len = hp_encode(secret->hcipher, (unsigned char*)secret->hp, (unsigned char*)pos + 4, 16, mask);
         if(mask_len < 0){
             LOGE("aes_encode failed\n");
-            return nullptr;
+            return 0;
         }
         body[0] ^= mask[0] & 0x0f;
     }else{
@@ -475,14 +475,14 @@ char* encode_packet(const void* data_, size_t len,
 
         if(hp_encode(secret->hcipher, (unsigned char*)secret->hp, (unsigned char*)pos + 4, 16, mask) < 0){
             LOGE("aes_encode failed\n");
-            return nullptr;
+            return 0;
         }
         body[0] ^= mask[0] & 0x1f;
     }
     for(size_t i = 0; i < pn_length; i++){
         pos[i] ^= mask[i + 1];
     }
-    return body + header_len + ciphertext_len;
+    return header_len + ciphertext_len;
 }
 
 static size_t pack_crypto_frame_len(const struct quic_crypto* crypto){
@@ -585,7 +585,9 @@ static char* pack_close_frame(uint64_t type, const struct quic_close* close_fram
         data += variable_encode(data, close_frame->frame_type);
     }
     data += variable_encode(data, close_frame->reason_len);
-    memcpy(data, close_frame->reason, close_frame->reason_len);
+    if(close_frame->reason_len > 0) {
+        memcpy(data, close_frame->reason, close_frame->reason_len);
+    }
     return data + close_frame->reason_len;
 }
 

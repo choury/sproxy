@@ -21,6 +21,15 @@ struct Job{
 
 std::set<Job*> gjobs;
 
+uint32_t JobPending(const Job* job) {
+    if(job == nullptr || gjobs.count(const_cast<Job*>(job)) == 0) {
+        return 0;
+    }
+    uint32_t next_do = job->delay_ms + job->last_done_ms;
+    uint32_t now = getmtime();
+    return  next_do > now ? next_do - now : 1;
+}
+
 Job* job_handler::addjob_with_name(std::function<void()> func, const char *func_name, uint32_t interval_ms, uint32_t flags) {
     Job* job = new Job{
             func_name,

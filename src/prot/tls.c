@@ -96,7 +96,7 @@ int parse_tls_header(const char *data, size_t data_len, char **hostname) {
     /* TLS record length */
     size_t len = ((unsigned char)data[3] << 8) +
         (unsigned char)data[4] + TLS_HEADER_LEN;
-    data_len = Min(data_len, len);
+    data_len = MIN(data_len, len);
 
     /* Check we received entire TLS record length */
     if (data_len < len)

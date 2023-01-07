@@ -127,7 +127,7 @@ size_t GzipTest::gzipreadHE(uint64_t, const void*, size_t) {
        compression if all source Has been read in */
     do {
         strm.next_in = in;
-        strm.avail_in = Min(sizeof(in), left);
+        strm.avail_in = std::min(sizeof(in), left);
         left -= strm.avail_in;
         int ret = deflate(&strm, left ? Z_NO_FLUSH : Z_FINISH);   /* no bad return value */
         assert(ret != Z_STREAM_ERROR);  /* state not clobbered */
@@ -160,7 +160,7 @@ size_t GzipTest::rawreadHE(uint64_t, const void*, size_t) {
         return 0;
     }
 
-    size_t len = Min(chunk, left);
+    size_t len = std::min((size_t)chunk, left);
     res->send(Buffer{std::make_shared<Block>(len), len});
     left -= len;
     if (left) {

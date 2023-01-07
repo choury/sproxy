@@ -507,7 +507,7 @@ void postConfig(){
     if(getrlimit(RLIMIT_NOFILE, &limits)){
         LOGE("getrlimit failed: %s\n", strerror(errno));
     }else if(limits.rlim_cur < 16384){
-        limits.rlim_cur = Min(limits.rlim_max, 16384);
+        limits.rlim_cur = MIN(limits.rlim_max, 16384);
         if(setrlimit(RLIMIT_NOFILE, &limits)) {
             LOGE("setrlimit failed: %s\n", strerror(errno));
         }

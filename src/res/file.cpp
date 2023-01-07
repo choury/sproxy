@@ -183,7 +183,7 @@ size_t File::readHE(uint64_t, const void* , size_t) {
         rwer->delEvents(RW_EVENT::READ);
         return 0;
     }
-    int len = Min(status.res->cap(), rg.end - rg.begin + 1);
+    int len = std::min((long)status.res->cap(), rg.end - rg.begin + 1);
     if (len <= 0) {
         rwer->delEvents(RW_EVENT::READ);
         return 0;

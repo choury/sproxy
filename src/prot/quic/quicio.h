@@ -102,6 +102,7 @@ protected:
     SSL_CTX* ctx = nullptr;  // server will be null
     SSL *ssl = nullptr;
     QuicMgr* mgr = nullptr;
+    size_t sndbuf = 0;
 
     QuicQos qos;
     struct quic_context{
@@ -210,8 +211,14 @@ protected:
     static bool IsBidirect(uint64_t id);
 
     size_t envelopLen(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, size_t len);
+    /*
     int send(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack,
              const void* body, size_t len, const std::set<uint64_t>& streams);
+             */
+    size_t envelop(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, const char *in, size_t len, void *out);
+    std::list<quic_packet_pn> send(OSSL_ENCRYPTION_LEVEL level,
+                                   uint64_t pn, uint64_t ack,
+                                   std::list<quic_frame*>& pend_frames, size_t window);
     void resendFrames(pn_namespace* ns, quic_frame* frame);
     Job* keepAlive_timer = nullptr;
     void keepAlive_action();

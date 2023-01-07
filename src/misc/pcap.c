@@ -68,7 +68,7 @@ int pcap_write_with_generated_ethhdr(int fd, const void *data, size_t len){
         return -1;
     }
 
-    size_t write_len = Min(len, opt.pcap_len);
+    size_t write_len = MIN(len, opt.pcap_len);
     uint64_t utime = getutime();
     pcap_pkt_hdr_t phdr = {
             .ts_sec = htonl(utime/1000000),

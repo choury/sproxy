@@ -329,7 +329,7 @@ void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
             return 0;
         }
         return 0;
-    }, [this, &status]{return Min(status.remotewinsize, this->remotewinsize);});
+    }, [this, &status]{return std::min(status.remotewinsize, this->remotewinsize);});
 }
 
 void Proxy2::init(std::shared_ptr<HttpReq> req) {

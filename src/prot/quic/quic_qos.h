@@ -92,8 +92,13 @@ class QuicQos {
     pn_namespace* GetNamespace(OSSL_ENCRYPTION_LEVEL level);
 public:
     Rtt    rtt;
+    /*
     typedef std::function<int(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack,
             const void* body, size_t len, const std::set<uint64_t>& streams)>  send_func;
+            */
+    typedef std::function<std::list<quic_packet_pn>(OSSL_ENCRYPTION_LEVEL level,
+                                           uint64_t pn, uint64_t ack,
+                                           std::list<quic_frame*>& pend_frames, size_t window)> send_func;
     QuicQos(bool isServer, send_func sent,
            std::function<void(pn_namespace*, quic_frame*)> resendFrames,
            std::function<void(int error)> ErrorHE);

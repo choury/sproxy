@@ -6,10 +6,12 @@
 #include "quic_pack.h"
 #include "misc/util.h"
 #include "prot/tls.h"
+#include "prot/multimsg.h"
 #include <openssl/err.h>
 #include <unistd.h>
 #include <assert.h>
 #include <inttypes.h>
+#include <sys/ioctl.h>
 
 #include <set>
 
@@ -130,6 +132,7 @@ size_t QuicRWer::envelopLen(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t a
     return 0;
 }
 
+/*
 int QuicRWer::send(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack,
                    const void *body, size_t len, const std::set<uint64_t>& streams) {
     if(body == nullptr){
@@ -182,6 +185,152 @@ int QuicRWer::send(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack,
         writeCB(stream);
     }
     return packet_len;
+}
+ */
+
+size_t QuicRWer::envelop(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, const char* in, size_t len, void* out) {
+    quic_pkt_header header;
+    header.type = getPacketType(level);
+    header.dcid = hisids[hisid_idx];
+    header.scid = myids[myid_idx];
+    header.version = QUIC_VERSION_1;
+    header.token = initToken;
+
+    header.pn = pn;
+    header.pn_length = 4;
+    header.pn_base = ack;
+    const quic_secret* secret = &contexts[level].write_secret;
+
+    size_t packet_len = encode_packet(in, len, &header, secret, (char*)out);
+    if(packet_len == 0){
+        return 0;
+    }
+    if(header.type == QUIC_PACKET_INITIAL && packet_len < QUIC_INITIAL_LIMIT && ctx){
+        memset((char*)out + packet_len, 0, QUIC_INITIAL_LIMIT - packet_len);
+        packet_len = QUIC_INITIAL_LIMIT;
+    }
+    if(header.type == QUIC_PACKET_1RTT){
+        LOGD(DQUIC, " <- %s [%" PRIu64"], type: 0x%02x, length: %d\n",
+             dumpHex(header.scid.data(), header.scid.length()).c_str(),
+             header.pn, header.type, (int) packet_len);
+    }else {
+        LOGD(DQUIC, "%s <- %s [%" PRIu64"], type: 0x%02x, length: %d\n",
+             dumpHex(header.dcid.data(), header.dcid.length()).c_str(),
+             dumpHex(header.scid.data(), header.scid.length()).c_str(),
+             header.pn, header.type, (int) packet_len);
+    }
+    return packet_len;
+}
+
+std::list<quic_packet_pn> QuicRWer::send(OSSL_ENCRYPTION_LEVEL level,
+                                          uint64_t pn, uint64_t ack,
+                                          std::list<quic_frame*>& pend_frames, size_t window)
+{
+    size_t envLen = envelopLen(level, pn, ack, std::min((size_t)max_datagram_size, window));
+    assert(window > envLen);
+
+    size_t outq = 0;
+    if(ioctl(getFd(), TIOCOUTQ, &outq) < 0){
+        LOGE("ioctl failed: %s\n", strerror(errno));
+    }
+    size_t max_iov = std::min((size_t)100, (sndbuf - outq)/(size_t)max_datagram_size/2);
+    std::set<uint64_t> streams;
+    std::list<quic_packet_pn> sent_packets;
+    sent_packets.push_back(quic_packet_pn{{pn++, false, false, envLen, 0}, {}});
+    do {
+        auto& packet = sent_packets.back();
+        quic_frame* frame = pend_frames.front();
+        ssize_t left = std::min((size_t)max_datagram_size,  window) - packet.meta.sent_bytes;
+        if(left < (int)pack_frame_len(frame)){
+            uint64_t type = frame->type;
+            if (type == QUIC_FRAME_CRYPTO && left >= 20){
+                // [n, m) -> [n, n + left - 20) + [n + left - 20, m)
+                quic_frame* fframe = new quic_frame{type, {}};
+                fframe->crypto.offset = frame->crypto.offset + left - 20;
+                fframe->crypto.length = frame->crypto.length - left + 20;
+                fframe->crypto.buffer.data = frame->crypto.buffer.data + left - 20;
+                fframe->crypto.buffer.ref = frame->crypto.buffer.ref;
+                (*fframe->crypto.buffer.ref)++;
+                pend_frames.insert(std::next(pend_frames.begin()), fframe);
+                frame->crypto.length = left - 20;
+            } else if ((type >= QUIC_FRAME_STREAM_START_ID && type <= QUIC_FRAME_STREAM_END_ID) && left >= 30) {
+                streams.emplace(frame->stream.id);
+                // [n, m) -> [n, n + left - 30) + [n + left - 30, m)
+                quic_frame *fframe = new quic_frame{type | QUIC_FRAME_STREAM_OFF_F, {}};
+                fframe->stream.id = frame->stream.id;
+                fframe->stream.offset = frame->stream.offset + left - 30;
+                fframe->stream.length = frame->stream.length - left + 30;
+                fframe->stream.buffer.data = frame->stream.buffer.data + left - 30;
+                fframe->stream.buffer.ref = frame->stream.buffer.ref;
+                (*fframe->stream.buffer.ref)++;
+                pend_frames.insert(std::next(pend_frames.begin()), fframe);
+                frame->stream.length = left - 30;
+                frame->type &= ~QUIC_FRAME_STREAM_FIN_F;
+            }else if(window < max_datagram_size/2) {
+                break;
+            } else {
+                assert(!packet.frames.empty());
+                window -= packet.meta.sent_bytes;
+                sent_packets.push_back(quic_packet_pn{{pn++, false, false, envLen, 0}, {}});
+                continue;
+            }
+        }
+        packet.meta.ack_eliciting |=  is_ack_eliciting(frame);
+        packet.meta.in_flight |=  packet.meta.ack_eliciting || frame->type == QUIC_FRAME_PADDING;
+        packet.meta.sent_bytes += pack_frame_len(frame);
+        packet.frames.push_back(frame);
+        pend_frames.pop_front();
+        assert(packet.meta.sent_bytes <= (long)max_datagram_size);
+    }while(!pend_frames.empty() && sent_packets.size() < max_iov);
+    Block blk(sent_packets.size() * max_datagram_size);
+    char* start = (char*)blk.data();
+    std::vector<iovec> iov;
+    for(auto& packet: sent_packets) {
+        if(packet.frames.empty()) {
+            assert(packet.meta.pn == sent_packets.back().meta.pn);
+            sent_packets.pop_back();
+            break;
+        }
+        char buffer[max_datagram_size];
+        char* pos = buffer;
+        for(const auto& frame : packet.frames) {
+            pos = (char*)pack_frame(pos, frame);
+            if(pos == nullptr){
+                LOGE("QUIC failed to pack frame");
+                return {};
+            }
+        }
+        size_t packet_len = envelop(level, packet.meta.pn, ack, buffer, pos - buffer, start);
+        if(packet_len == 0){
+            LOGE("QUIC failed to pack packet");
+            return {};
+        }
+        packet.meta.sent_time = getutime();
+        //这里sent_bytes 是有可能和packet_len 不同的，因为envLen是按照max_datagram_len作为长度预估的，可能会更大
+        packet.meta.sent_bytes = packet_len;
+        assert(packet_len == packet.meta.sent_bytes);
+        iov.push_back({start, packet_len});
+        start += packet_len;
+    }
+
+    int ret = writem(getFd(), iov.data(), iov.size());
+    if (ret < 0) {
+        LOGE("QUIC writem failed: %s\n", strerror(errno));
+        return {};
+    }
+    if((size_t)ret < iov.size()) {
+        LOGE("sent packet: %d/%zd, sndbuf: %zd, sendq: %zd\n", ret, iov.size(), sndbuf, outq);
+    } else {
+        LOGD(DQUIC, "sent packet: %d/%zd, sndbuf: %zd, sendq: %zd\n", ret, iov.size(), sndbuf, outq);
+    }
+    my_sent_data_total += start - (char*)blk.data();
+    for (auto stream: streams) {
+        if(idle(stream)) {
+            continue;
+        }
+        writeCB(stream);
+    }
+    return sent_packets;
 }
 
 int QuicRWer::add_handshake_data(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
@@ -318,7 +467,7 @@ QuicRWer::QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
                    std::function<void(int, int)> errorCB,
                    std::function<void(const sockaddr_storage&)> connectCB):
         SocketRWer(hostname, port, protocol, std::move(errorCB), std::move(connectCB)),
-        qos(false, std::bind(&QuicRWer::send, this, _1, _2, _3, _4, _5, _6),
+        qos(false, std::bind(&QuicRWer::send, this, _1, _2, _3, _4, _5),
            std::bind(&QuicRWer::resendFrames, this, _1, _2),
            std::bind(&QuicRWer::ErrorHE, this, PROTOCOL_ERR, _1))
 {
@@ -369,7 +518,7 @@ QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, QuicMgr* 
                    std::function<void(int, int)> errorCB,
                    std::function<void(const sockaddr_storage &)> connectCB):
         SocketRWer(fd, peer, std::move(errorCB)), mgr(mgr),
-        qos(true, std::bind(&QuicRWer::send, this, _1, _2, _3, _4, _5, _6),
+        qos(true, std::bind(&QuicRWer::send, this, _1, _2, _3, _4, _5),
             std::bind(&QuicRWer::resendFrames, this, _1, _2),
             std::bind(&QuicRWer::ErrorHE, this, PROTOCOL_ERR, _1))
 {
@@ -390,6 +539,11 @@ QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, QuicMgr* 
     walkHandler = std::bind(&QuicRWer::handlePacket, this, _1, _2);
     setEvents(RW_EVENT::READ);
     mgr->rwers.emplace(myids[0], this);
+
+    socklen_t len = sizeof(sndbuf);
+    if(getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, &len) < 0){
+        LOGF("failed to get sndbuf: %s\n", strerror(errno));
+    }
 }
 
 QuicRWer::~QuicRWer(){
@@ -420,6 +574,10 @@ void QuicRWer::waitconnectHE(RW_EVENT events) {
     }
     if (!!(events & RW_EVENT::WRITE)) {
         assert(!addrs.empty());
+        socklen_t len = sizeof(sndbuf);
+        if(getsockopt(getFd(), SOL_SOCKET, SO_SNDBUF, &sndbuf, &len) < 0){
+            LOGF("failed to get sndbuf: %s\n", strerror(errno));
+        }
         stats = RWerStats::SslConnecting;
         X509_VERIFY_PARAM *param = SSL_get0_param(ssl);
 
@@ -1138,9 +1296,11 @@ void QuicRWer::buffer_insert(Buffer&& bb) {
     frame->stream.buffer.ref = (uint32_t*)new char[bb.len + sizeof(uint32_t)];
     frame->stream.buffer.data = (char*)(frame->stream.buffer.ref + 1);
     *frame->stream.buffer.ref = 1;
-    memcpy(frame->stream.buffer.data, bb.data(), bb.len);
-    my_sent_data += bb.len;
-    assert(my_sent_data <= his_max_data);
+    if(bb.len > 0) {
+        memcpy(frame->stream.buffer.data, bb.data(), bb.len);
+        my_sent_data += bb.len;
+        assert(my_sent_data <= his_max_data);
+    }
 
     status.my_offset += bb.len;
     if(status.my_offset > status.his_max_data){
@@ -1352,18 +1512,24 @@ retry:
 }
 
 void QuicRWer::ReadData() {
-    char buff[max_datagram_size];
-    while(true){
-        ssize_t ret = read(getFd(), buff, sizeof(buff));
-        if (ret < 0 && errno == EAGAIN) {
-            break;
-        }
-        if (ret < 0) {
-            ErrorHE(SOCKET_ERR, errno);
-            return;
-        }
-        my_received_data_total += ret;
-        walkPackets(buff, ret);
+    Block blk(IOV_MAX*max_datagram_size);
+    std::vector<iovec> iov;
+    iov.resize(IOV_MAX);
+    for(size_t i = 0; i < iov.size(); i++) {
+        iov[i].iov_base = (char*)blk.data() + i * max_datagram_size;
+        iov[i].iov_len = max_datagram_size;
+    }
+    ssize_t ret = readm(getFd(), iov.data(), iov.size());
+    if (ret < 0 && errno == EAGAIN) {
+        return;
+    }
+    if (ret < 0) {
+        ErrorHE(SOCKET_ERR, errno);
+        return;
+    }
+    for(size_t i = 0; i < (size_t)ret; i++) {
+        my_received_data_total += iov[i].iov_len;
+        walkPackets(iov[i].iov_base, iov[i].iov_len);
     }
     reorderData();
     ConsumeRData(0);

@@ -113,7 +113,7 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
     ReqStatus& status = statuslist.back();
     assert((status.flags & HTTP_REQ_COMPLETED) == 0);
     int len = status.req->cap();
-    len = Min(len, size);
+    len = std::min(len, (int)size);
     if (len <= 0) {
         LOGE("[%" PRIu32 "]: <guest> the host's buff is full (%s)\n",
             status.req->header->request_id, status.req->header->geturl().c_str());
