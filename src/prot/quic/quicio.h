@@ -98,9 +98,9 @@ protected:
     SSL_CTX* ctx = nullptr;  // server will be null
     SSL *ssl = nullptr;
     QuicMgr* mgr = nullptr;
-    size_t sndbuf = 0;
+    size_t sndbuf = 1024*512;
 
-    QuicQos qos;
+    QuicQos* qos;
     struct quic_context{
         OSSL_ENCRYPTION_LEVEL  level;
         struct quic_secret     write_secret;
