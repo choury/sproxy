@@ -180,14 +180,14 @@ const char *SocketRWer::getPeer() {
     static char peer[300];
     memset(peer, 0, sizeof(peer));
     if(hostname[0]){
-        sprintf(peer, "<%s://%s:%d> ", protstr(protocol), hostname, port);
+        snprintf(peer, sizeof(peer), "<%s://%s:%d> ", protstr(protocol), hostname, port);
     }
     if(addrs.empty()){
-        sprintf(peer + strlen(peer), "null");
+        snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), "null");
         return peer;
     }
     auto addr = addrs.front();
-    sprintf(peer + strlen(peer), "%s", storage_ntoa(&addr));
+    snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), "%s", storage_ntoa(&addr));
     if(addr.ss_family == AF_UNIX){
 #if defined(SO_PEERCRED)
         struct ucred cred;
@@ -204,7 +204,7 @@ const char *SocketRWer::getPeer() {
         if(getsockopt(getFd(), SOL_LOCAL, LOCAL_PEERCRED, &cred, &credLen)){
             LOGE("Failed to get cred: %s\n", strerror(errno));
         }else{
-            sprintf(peer + strlen(peer), ",uid=%d", cred.cr_uid);
+            snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), ",uid=%d", cred.cr_uid);
         }
 #endif
 #ifdef LOCAL_PEERPID
@@ -213,7 +213,7 @@ const char *SocketRWer::getPeer() {
         if(getsockopt(getFd(), SOL_LOCAL, LOCAL_PEERPID, &pid, &pid_size)){
             LOGE("failed to call LOCAL_PEERPID: %s\n", strerror(errno));
         }else {
-            sprintf(peer + strlen(peer), ",pid=%d", pid);
+            snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), ",pid=%d", pid);
         }
 #endif
 #endif

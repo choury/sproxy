@@ -303,12 +303,12 @@ const char *getaddrstring(const struct sockaddr_storage *addr){
         }else {
             char ip[INET6_ADDRSTRLEN];
             inet_ntop(AF_INET6, &addr6->sin6_addr, ip, sizeof(ip));
-            sprintf(buff, "[%s]", ip);
+            snprintf(buff, sizeof(buff), "[%s]", ip);
         }
     }else if(addr->ss_family == AF_INET){
         inet_ntop(AF_INET, &addr4->sin_addr, buff, sizeof(buff));
     }else if(addr->ss_family == AF_UNIX) {
-        sprintf(buff, "%s", addrunix->sun_path);
+        snprintf(buff, sizeof(buff), "%s", addrunix->sun_path);
     }
     return buff;
 }
@@ -324,19 +324,19 @@ const char *storage_ntoa(const struct sockaddr_storage *addr){
         struct in_addr ip4 = getMapped(addr6->sin6_addr, IPV4MAPIPV6);
         if(ip4.s_addr != INADDR_NONE){
             inet_ntop(AF_INET, &ip4, ip, sizeof(ip));
-            sprintf(buff, "%s:%d", ip, ntohs(addr4->sin_port));
+            snprintf(buff, sizeof(buff), "%s:%d", ip, ntohs(addr4->sin_port));
         }else{
             inet_ntop(AF_INET6, &addr6->sin6_addr, ip, sizeof(ip));
-            sprintf(buff, "[%s]:%d", ip, ntohs(addr4->sin_port));
+            snprintf(buff, sizeof(buff), "[%s]:%d", ip, ntohs(addr4->sin_port));
         }
     }else if(addr->ss_family == AF_INET){
         inet_ntop(AF_INET, &addr4->sin_addr, ip, sizeof(ip));
-        sprintf(buff, "%s:%d", ip, ntohs(addr4->sin_port));
+        snprintf(buff, sizeof(buff), "%s:%d", ip, ntohs(addr4->sin_port));
     }else if(addr->ss_family == AF_UNIX) {
         if(addrunix->sun_path[0] == '\0'){
-            sprintf(buff, "@%s", addrunix->sun_path+1);
+            snprintf(buff, sizeof(buff), "@%s", addrunix->sun_path+1);
         }else {
-            sprintf(buff, "%s", addrunix->sun_path);
+            snprintf(buff, sizeof(buff), "%s", addrunix->sun_path);
         }
     }
     return buff;

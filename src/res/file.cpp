@@ -183,7 +183,7 @@ size_t File::readHE(uint64_t, const void* , size_t) {
         rwer->delEvents(RW_EVENT::READ);
         return 0;
     }
-    int len = std::min((long)status.res->cap(), rg.end - rg.begin + 1);
+    int len = std::min((long)status.res->cap(), rg.end - rg.begin + 1l);
     if (len <= 0) {
         rwer->delEvents(RW_EVENT::READ);
         return 0;
@@ -298,7 +298,8 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
             auto res = std::make_shared<HttpRes>(header);
             req->response(res);
             char buff[1024];
-            res->send(buff,(size_t)sprintf(buff, "<html>"
+            res->send(buff,(size_t)snprintf(buff, sizeof(buff),
+                            "<html>"
                             "<head><title>Index of %s</title></head>"
                             "<body><h1>Index of %s</h1><hr/><pre>",
                             req->header->filename.c_str(),
@@ -306,14 +307,14 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
             struct dirent *ptr;
             while((ptr = readdir(dir))){
                 if(ptr->d_type == DT_DIR){
-                    res->send(buff, (size_t)sprintf(buff, "<a href='%s/'>%s/</a><br/>", ptr->d_name, ptr->d_name));
+                    res->send(buff, (size_t)snprintf(buff, sizeof(buff), "<a href='%s/'>%s/</a><br/>", ptr->d_name, ptr->d_name));
                 }else{
-                    res->send(buff, (size_t)sprintf(buff, "<a href='%s'>%s</a><br/>", ptr->d_name, ptr->d_name));
+                    res->send(buff, (size_t)snprintf(buff, sizeof(buff), "<a href='%s'>%s</a><br/>", ptr->d_name, ptr->d_name));
 
                 }
             }
             closedir(dir);
-            res->send(buff, (size_t)sprintf(buff, "</pre><hr></body></html>"));
+            res->send(buff, (size_t)snprintf(buff, sizeof(buff), "</pre><hr></body></html>"));
             res->send(nullptr);
             return;
         }

@@ -1274,9 +1274,9 @@ std::string dumpHex(const void* data, size_t len){
     }
     std::string s = "0x";
     for(size_t i = 0; i < len; i++) {
-        char buf[3];
-        sprintf(buf, "%02x", ((uint8_t*)data)[i]);
-        s += buf;
+        const char hex_digits[] = "0123456789abcdef";
+        s += hex_digits[((uint8_t*)data)[i] >> 4];
+        s += hex_digits[((uint8_t*)data)[i] & 0x0F];
     }
     return s;
 }

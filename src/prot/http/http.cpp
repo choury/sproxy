@@ -286,20 +286,20 @@ size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t 
     size_t len = 0;
     if(req->should_proxy){
         if (req->ismethod("CONNECT")|| req->ismethod("SEND")){
-            len += sprintf(buff, "%s %s:%d HTTP/1.1" CRLF, method, req->Dest.hostname, req->Dest.port);
+            len += snprintf(buff, size, "%s %s:%d HTTP/1.1" CRLF, method, req->Dest.hostname, req->Dest.port);
         }else{
-            len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, req->geturl().c_str());
+            len += snprintf(buff, size, "%s %s HTTP/1.1" CRLF, method, req->geturl().c_str());
         }
     }else{
-        len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, req->path);
+        len += snprintf(buff, size, "%s %s HTTP/1.1" CRLF, method, req->path);
     }
 
     if(req->get("Host") == nullptr && req->Dest.hostname[0]){
-        len += sprintf(buff + len, "Host: %s" CRLF, dumpAuthority(&req->Dest));
+        len += snprintf(buff + len, size-len, "Host: %s" CRLF, dumpAuthority(&req->Dest));
     }
 
     for (const auto& i : req->getall()) {
-        len += sprintf(buff + len, "%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
+        len += snprintf(buff + len, size-len, "%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
     }
     if(!req->cookies.empty()){
         std::string cookie_str;
@@ -307,16 +307,15 @@ size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t 
             cookie_str += "; ";
             cookie_str += i;
         }
-        len += sprintf(buff + len, "Cookie: %s" CRLF, cookie_str.substr(2).c_str());
+        len += snprintf(buff + len, size-len, "Cookie: %s" CRLF, cookie_str.substr(2).c_str());
     }
 
     for(const auto& i: AppendHeaders){
-        len += sprintf(buff + len, "%s" CRLF, i.c_str());
+        len += snprintf(buff + len, size-len, "%s" CRLF, i.c_str());
     }
 
-    len += sprintf(buff + len, CRLF);
+    len += snprintf(buff + len, size-len, CRLF);
     assert(len < size);
-    (void)size;
     return len;
 }
 
@@ -326,19 +325,18 @@ size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t 
     if(res->get("Content-Length") || res->get("Transfer-Encoding")
         || res->no_body() || res->get("Upgrade"))
     {
-        len += sprintf(buff, "HTTP/1.1 %s" CRLF, res->status);
+        len += snprintf(buff, size, "HTTP/1.1 %s" CRLF, res->status);
     }else {
-        len += sprintf(buff, "HTTP/1.0 %s" CRLF, res->status);
+        len += snprintf(buff, size, "HTTP/1.0 %s" CRLF, res->status);
     }
     for (const auto& i : res->getall()) {
-        len += sprintf(buff + len, "%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
+        len += snprintf(buff + len, size-len, "%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
     }
     for (const auto& i : res->cookies) {
-        len += sprintf(buff + len, "Set-Cookie: %s" CRLF, i.c_str());
+        len += snprintf(buff + len, size-len, "Set-Cookie: %s" CRLF, i.c_str());
     }
 
-    len += sprintf(buff + len, CRLF);
+    len += snprintf(buff + len, size-len, CRLF);
     assert(len < size);
-    (void)size;
     return len;
 }

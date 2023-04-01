@@ -13,7 +13,7 @@ Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(f
         int ret = parse_tls_header((char*)data, len, &hostname);
         if(ret > 0){
             char buff[HEADLENLIMIT];
-            int slen = sprintf(buff, "CONNECT %s:%d" CRLF CRLF, hostname, (int)opt.CPORT);
+            int slen = snprintf(buff, sizeof(buff), "CONNECT %s:%d" CRLF CRLF, hostname, (int)opt.CPORT);
             std::shared_ptr<HttpReqHeader> req = UnpackHttpReq(buff, slen);
             ReqProc(req);
             rwer->SetReadCB(std::bind(&Guest_sni::ReadHE, this, _1, _2, _3));

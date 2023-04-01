@@ -17,7 +17,7 @@ class handler: public CgiHandler{
         Response(res);
         char callback[DOMAINLIMIT+sizeof("setproxy(\"\");")];
         auto server = c->GetServer().get_future().get();
-        Send(callback, sprintf(callback, "setproxy(\"%s\");", server.c_str()));
+        Send(callback, snprintf(callback, sizeof(callback), "setproxy(\"%s\");", server.c_str()));
         Finish();
     }
     void POST(const CGI_Header* header) override{

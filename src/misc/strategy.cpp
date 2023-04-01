@@ -37,7 +37,7 @@ static std::string getrawip(const char* ipstr) {
     }
     //for ipv6, we should drop '[]'
     char name[URLLIMIT]={0};
-    int l = sprintf(name, "%s", ipstr + 1);
+    int l = snprintf(name, sizeof(name), "%s", ipstr + 1);
     name[l - 1] = 0;
     return name;
 }

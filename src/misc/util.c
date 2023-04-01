@@ -70,8 +70,7 @@ static int hex2num(char c)
 }
 
 
-int URLEncode(char *des, const char* src, size_t len)
-{
+int URLEncode(char *des, const char* src, size_t len) {
     int j = 0;//for result index
     int strSize;
 
@@ -93,8 +92,10 @@ int URLEncode(char *des, const char* src, size_t len)
         } else if (ch == '.' || ch == '-' || ch == '_' || ch == '*') {
             des[j++] = ch;
         } else {
-            sprintf(des+j, "%%%02X", (unsigned char)ch);
-            j += 3;
+            const char hex_digits[] = "0123456789ABCDEF";
+            des[j++] = '%';
+            des[j++] = hex_digits[(ch >> 4) & 0x0F];
+            des[j++] = hex_digits[ch & 0x0F];
         }
     }
 
@@ -200,7 +201,7 @@ char* avsprintf(size_t* size, const char* fmt, va_list ap){
     va_copy(cp, ap);
     size_t len = vsnprintf(NULL, 0, fmt, ap);
     char* const buff = malloc(len+1);
-    vsprintf(buff, fmt, cp);
+    vsnprintf(buff, len+1, fmt, cp);
     if(size){
         *size = len;
     }
@@ -211,9 +212,9 @@ char* avsprintf(size_t* size, const char* fmt, va_list ap){
 const char* findprogram(ino_t inode){
     static char program[DOMAINLIMIT+1];
 #ifdef __APPLE__
-    sprintf(program, "Unkown-pid(%llu)", inode);
+    snprintf(program, sizeof(program), "Unkown-pid(%llu)", inode);
 #else
-    sprintf(program, "Unkown-pid(%lu)", inode);
+    snprintf(program, sizeof(program), "Unkown-pid(%lu)", inode);
 #endif
     int found = 0;
     DIR* dir = opendir("/proc");
@@ -223,9 +224,9 @@ const char* findprogram(ino_t inode){
     }
     char socklink[20];
 #ifdef __APPLE__
-    sprintf(socklink, "socket:[%llu]", inode);
+    snprintf(socklink, sizeof(socklink), "socket:[%llu]", inode);
 #else
-    sprintf(socklink, "socket:[%lu]", inode);
+    snprintf(socklink, sizeof(socklink), "socket:[%lu]", inode);
 #endif
     struct dirent *ptr;
     while((ptr = readdir(dir)) != NULL && found == 0)
@@ -235,7 +236,7 @@ const char* findprogram(ino_t inode){
         if(ptr->d_type != DT_DIR) continue;
 
         char fddirname[30];
-        sprintf(fddirname, "/proc/%.20s/fd", ptr->d_name);
+        snprintf(fddirname, sizeof(fddirname), "/proc/%.20s/fd", ptr->d_name);
         DIR *fddir = opendir(fddirname);
         if(fddir == NULL){
             continue;
@@ -244,11 +245,11 @@ const char* findprogram(ino_t inode){
         while((fdptr = readdir(fddir)) != NULL){
             char fname[50];
             //example:  /proc/1111/fd/222
-            sprintf(fname, "%.20s/%.20s", fddirname, fdptr->d_name);
+            snprintf(fname, sizeof(fname), "%.20s/%.20s", fddirname, fdptr->d_name);
             char linkname[URLLIMIT];
             int ret = readlink(fname, linkname, sizeof(linkname));
             if(ret > 0 && ret < 20 && memcmp(linkname, socklink, ret) == 0){
-                sprintf(fname, "/proc/%.20s/exe", ptr->d_name);
+                snprintf(fname, sizeof(fname), "/proc/%.20s/exe", ptr->d_name);
                 ret = readlink(fname, linkname, sizeof(linkname)),
                 linkname[ret] = 0;
                 snprintf(program, sizeof(program), "%s/%s", basename(linkname), ptr->d_name);
