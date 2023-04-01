@@ -190,7 +190,7 @@ function cleanup {
     kill %4
     kill %5
     kill %6
-    killall sproxy_test
+    killall sproxy_test || true
 }
 
 trap cleanup EXIT
