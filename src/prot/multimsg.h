@@ -7,6 +7,10 @@
 
 #include <sys/uio.h>
 
+#ifndef IOV_MAX
+#define IOV_MAX UIO_MAXIOV
+#endif
+
 #ifdef  __cplusplus
 extern "C" {
 #endif

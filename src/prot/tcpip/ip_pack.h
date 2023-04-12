@@ -77,6 +77,7 @@ class Icmp{
 public:
     bool valid = true;
     Icmp();
+    Icmp(const Icmp* icmp);
     Icmp(const char* packet, size_t len);
     void print() const;
     void build_packet(Buffer& bb);
@@ -97,6 +98,7 @@ class Icmp6{
 public:
     bool valid = true;
     Icmp6();
+    Icmp6(const Icmp6* icmp6);
     Icmp6(const char* packet, size_t len);
     void print() const;
     void build_packet(const ip6_hdr* iphdr, Buffer& bb);
@@ -127,6 +129,7 @@ class Tcp{
 public:
     bool valid = true;
     uint8_t hdrlen = 0;
+    Tcp(const Tcp* tcp);
     Tcp(const char* packet, size_t len);
     Tcp(uint16_t sport, uint16_t dport);
     Tcp(const Tcp&) = delete;
@@ -139,6 +142,7 @@ public:
     Tcp* setseq(uint32_t seq);
     Tcp* setwindow(uint32_t window);
     Tcp* setflag(uint8_t flag);
+    Tcp* addflag(uint8_t flag);
     Tcp* setmss(uint16_t mss);
     Tcp* settimestamp(uint32_t tsval, uint32_t tsecr);
     Tcp* setwindowscale(uint8_t scale);
@@ -162,6 +166,7 @@ class Udp{
     udphdr udp_hdr; //udp头
 public:
     bool valid = true;
+    Udp(const Udp* udp);
     Udp(const char* packet, size_t len);
     Udp(uint16_t sport, uint16_t dport);
     void print() const;
@@ -197,11 +202,13 @@ public:
     virtual bool isValid();
 };
 
+std::shared_ptr<Ip> MakeIp(std::shared_ptr<const Ip> ip);
 std::shared_ptr<Ip> MakeIp(const void* packet, size_t len);
 std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src,  const sockaddr_storage* dst);
 
 class Ip4: public Ip {
     ip hdr; //ip头
+    Ip4(const Ip4* ip4);
     Ip4(const char* packet, size_t len);
     Ip4(uint8_t type, uint16_t sport, uint16_t dport);
     Ip4(uint8_t type, const in_addr* src, uint16_t sport, const in_addr* dst, uint16_t dport);
@@ -214,12 +221,14 @@ public:
 
     void build_packet(Buffer& bb) override;
 
+    friend std::shared_ptr<Ip> MakeIp(std::shared_ptr<const Ip> ip);
     friend std::shared_ptr<Ip> MakeIp(const void* packet, size_t len);
     friend std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src,  const sockaddr_storage* dst);
 };
 
 class Ip6: public Ip {
     ip6_hdr hdr; //ip头
+    Ip6(const Ip6* ip6);
     Ip6(const char* packet, size_t len);
     Ip6(uint8_t type, uint16_t sport, uint16_t dport);
     Ip6(uint8_t type, const in6_addr* src, uint16_t sport, const in6_addr* dst, uint16_t dport);
@@ -232,6 +241,7 @@ public:
 
     void build_packet(Buffer& bb)override;
 
+    friend std::shared_ptr<Ip> MakeIp(std::shared_ptr<const Ip> ip);
     friend std::shared_ptr<Ip> MakeIp(const void* packet, size_t len);
     friend std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src,  const sockaddr_storage* dst);
 };

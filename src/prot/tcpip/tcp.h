@@ -32,7 +32,8 @@ void consumeData(std::shared_ptr<TcpStatus> status);
 
 struct tcp_sent{
     std::shared_ptr<Ip> pac;
-    uint32_t when;
+    uint32_t first_sent;
+    uint32_t last_sent;
     Buffer   bb;
 };
 
@@ -56,6 +57,7 @@ struct TcpStatus: public IpStatus{
     uint32_t   srtt = 0;
     uint32_t   rttval = 0;
     uint32_t   rto = 1000;
+    uint32_t   rto_factor = 1;
     uint32_t   dupack = 0;
     CBuffer    rbuf;
     std::list<tcp_sent> sent_list;

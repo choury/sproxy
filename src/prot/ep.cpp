@@ -127,7 +127,7 @@ void Ep::setFd(int fd){
     SetSocketUnblock(fd);
 }
 
-int Ep::getFd(){
+int Ep::getFd() const {
     return fd;
 }
 
@@ -200,7 +200,7 @@ RW_EVENT Ep::getEvents(){
     return this->events;
 }
 
-int Ep::checkSocket(const char* msg){
+int Ep::checkSocket(const char* msg) const{
     return Checksocket(fd, msg);
 }
 

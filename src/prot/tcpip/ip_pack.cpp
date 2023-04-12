@@ -134,6 +134,11 @@ Icmp::Icmp() {
     memset(&icmp_hdr, 0, sizeof(icmp_hdr));
 }
 
+Icmp::Icmp(const Icmp *icmp) {
+    memcpy(&icmp_hdr, &icmp->icmp_hdr, sizeof(icmp_hdr));
+    valid = icmp->valid;
+}
+
 Icmp::Icmp(const char* packet, size_t len){
     if(len < sizeof(icmp_hdr)){
         LOGE("Invalid ICMP header length: %zu bytes\n", len);
@@ -211,6 +216,11 @@ Icmp6::Icmp6() {
     memset(&icmp_hdr, 0 ,sizeof(icmp_hdr));
 }
 
+Icmp6::Icmp6(const Icmp6 *icmp6) {
+    memcpy(&icmp_hdr, &icmp6->icmp_hdr, sizeof(icmp_hdr));
+    valid = icmp6->valid;
+}
+
 Icmp6::Icmp6(const char* packet, size_t len){
     if(len < sizeof(icmp_hdr)){
         LOGE("Invalid ICMPV6 header length: %zu bytes\n", len);
@@ -283,6 +293,17 @@ void Icmp6::build_packet(const ip6_hdr* ip_hdr, Buffer& bb) {
     ((icmp6_hdr *)packet)->icmp6_cksum = ip6_checksum(ip_hdr, IPPROTO_ICMPV6, bb);
 }
 
+Tcp::Tcp(const Tcp *tcp) {
+    memcpy(&tcp_hdr, &tcp->tcp_hdr, sizeof(tcp_hdr));
+    valid = tcp->valid;
+    hdrlen = tcp->hdrlen;
+    tcpoptlen = tcp->tcpoptlen;
+    if(tcpoptlen){
+        tcpopt = (char *)malloc(tcpoptlen);
+        memcpy(tcpopt, tcp->tcpopt, tcpoptlen);
+    }
+}
+
 Tcp::Tcp(const char* packet, size_t len){
     memcpy(&tcp_hdr, packet, sizeof(struct tcphdr));
     hdrlen = tcp_hdr.th_off * 4;
@@ -319,18 +340,18 @@ Tcp::~Tcp() {
 
 
 
-Tcp * Tcp::setseq(uint32_t seq) {
+Tcp* Tcp::setseq(uint32_t seq) {
     tcp_hdr.th_seq = htonl(seq);
     return this;
 }
 
 
-Tcp * Tcp::setack(uint32_t ack) {
+Tcp* Tcp::setack(uint32_t ack) {
     tcp_hdr.th_ack = htonl(ack);
     return this;
 }
 
-Tcp * Tcp::setwindow(uint32_t window) {
+Tcp* Tcp::setwindow(uint32_t window) {
     if(window > TCP_MAXWIN){
         tcp_hdr.th_win = htons(TCP_MAXWIN);
     }else{
@@ -339,8 +360,13 @@ Tcp * Tcp::setwindow(uint32_t window) {
     return this;
 }
 
-Tcp * Tcp::setflag(uint8_t flag) {
+Tcp* Tcp::setflag(uint8_t flag) {
     ((uint8_t *)&tcp_hdr)[13] = flag;
+    return this;
+}
+
+Tcp* Tcp::addflag(uint8_t flag) {
+    ((uint8_t *)&tcp_hdr)[13] |= flag;
     return this;
 }
 
@@ -591,7 +617,6 @@ void Tcp::getsack(struct Sack** sack) const {
     tcp_opt* opt = (tcp_opt *)tcpopt;
     size_t len = tcpoptlen;
 
-    auto s = std::ref(*sack);
     while (len > 0 && opt) {
         if (opt->kind == TCPOPT_EOL)
             break;
@@ -601,12 +626,22 @@ void Tcp::getsack(struct Sack** sack) const {
             continue;
         }
         if (opt->kind == TCPOPT_SACK) {
-            s.get() = (struct Sack*)malloc(sizeof(struct Sack));
-            struct tcp_sack *sack_opt = (tcp_sack *)opt;
-            s.get()->left = ntohl(sack_opt->data->left);
-            s.get()->right = ntohl(sack_opt->data->right);
-            s.get()->next = nullptr;
-            s = std::ref(s.get()->next);
+            uint32_t* sack_array = (uint32_t*)opt->data;
+            for(int i = 0; i < (opt->length-2)/8; i++){
+                Sack* ns = (struct Sack*)malloc(sizeof(struct Sack));
+                ns->left = ntohl(sack_array[i * 2]);
+                ns->right = ntohl(sack_array[i * 2 + 1]);
+                ns->next = nullptr;
+                auto s = sack;
+                while(*s) {
+                    if((*s)->left >= ns->left) {
+                        break;
+                    }
+                    s = &(*s)->next;
+                }
+                ns->next = *s;
+                *s = ns;
+            }
         }
         len -= opt->length;
         opt = (tcp_opt*)((char *)opt+opt->length);
@@ -724,6 +759,11 @@ void Tcp::print() const{
         len -= opt->length;
         opt = (tcp_opt*)((char *)opt+opt->length);
     }
+}
+
+Udp::Udp(const Udp *udp) {
+    memcpy(&udp_hdr, &udp->udp_hdr, sizeof(udphdr));
+    valid = udp->valid;
 }
 
 Udp::Udp(const char* packet, size_t len){
@@ -876,6 +916,17 @@ Ip::~Ip() {
     }
 }
 
+std::shared_ptr<Ip> MakeIp(std::shared_ptr<const Ip> ip) {
+    std::shared_ptr<const Ip4> ip4 = std::dynamic_pointer_cast<const Ip4>(ip);
+    if(ip4) {
+        return std::shared_ptr<Ip>(new Ip4(ip4.get()));
+    }
+    std::shared_ptr<const Ip6> ip6 = std::dynamic_pointer_cast<const Ip6>(ip);
+    if(ip6) {
+        return std::shared_ptr<Ip>(new Ip6(ip6.get()));
+    }
+    return nullptr;
+}
 
 std::shared_ptr<Ip> MakeIp(const void* packet, size_t len) {
     const ip* hdr = (const ip*)packet;
@@ -906,6 +957,27 @@ std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src, const sock
     return nullptr;
 }
 
+
+Ip4::Ip4(const Ip4 *ip4) {
+    memcpy(&hdr, &ip4->hdr, sizeof(struct ip));
+    type = ip4->type;
+    hdrlen = ip4->hdrlen;
+    valid = ip4->valid;
+    switch(type){
+    case IPPROTO_ICMP:
+        icmp = new Icmp(ip4->icmp);
+        break;
+    case IPPROTO_TCP:
+        tcp = new Tcp(ip4->tcp);
+        break;
+    case IPPROTO_UDP:
+        udp = new Udp(ip4->udp);
+        break;
+    default:
+        valid = false;
+        break;
+    }
+}
 
 /**
  * 解析packet，不能带L2的头，ip头+tcp/udp头+data
@@ -1119,6 +1191,26 @@ Ip6::Ip6(const char* packet, size_t len) {
         }
         type = ext_hdr->ip6e_nxt;
         ext_hdr = (ip6_ext*)((char*)(ext_hdr + 1)+ext_hdr->ip6e_len);
+    }
+}
+
+Ip6::Ip6(const Ip6 *ip6) {
+    memcpy(&hdr, &ip6->hdr, sizeof(hdr));
+    type = ip6->type;
+    hdrlen = ip6->hdrlen;
+    valid = ip6->valid;
+    switch(type){
+    case IPPROTO_ICMPV6:
+        icmp6 = new Icmp6(ip6->icmp6);
+        break;
+    case IPPROTO_TCP:
+        tcp = new Tcp(ip6->tcp);
+        break;
+    case IPPROTO_UDP:
+        udp = new Udp(ip6->udp);
+        break;
+    default:
+        valid = false;
     }
 }
 

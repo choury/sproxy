@@ -29,7 +29,7 @@ class Ep{
 protected:
     RW_EVENT events = RW_EVENT::NONE;
     void setFd(int fd);
-    int getFd();
+    int getFd() const;
 public:
     explicit Ep(int fd);
     virtual ~Ep();
@@ -37,7 +37,7 @@ public:
     void addEvents(RW_EVENT events);
     void delEvents(RW_EVENT events);
     RW_EVENT getEvents();
-    int checkSocket(const char* msg);
+    int checkSocket(const char* msg) const;
     void (Ep::*handleEvent)(RW_EVENT events) = nullptr;
     friend int event_loop(uint32_t timeout_ms);
 };

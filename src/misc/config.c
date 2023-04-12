@@ -86,6 +86,7 @@ struct options opt = {
         .arg        = NULL,
         .next       = NULL,
     },
+    .pcap_len       = INT32_MAX,
 };
 
 enum option_type{

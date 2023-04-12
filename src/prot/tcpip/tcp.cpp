@@ -1,8 +1,11 @@
 #include "common/common.h"
 #include "tcp.h"
 #include "misc/net.h"
+#include "misc/config.h"
 
 #include <stdlib.h>
+
+#include <string>
 
 /*
 
@@ -80,6 +83,37 @@ static size_t bufleft(std::shared_ptr<TcpStatus> status) {
     return status->rbuf.cap();
 }
 
+class pkgLogger{
+    const char* msg;
+    uint32_t left = 0;
+    uint32_t right = 0;
+    size_t count = 0;
+public:
+    pkgLogger(const char* msg): msg(msg) {
+    }
+    void add(uint32_t seq, uint32_t len) {
+        count++;
+        if(left == 0) {
+            left = seq;
+            right = seq + len;
+            return;
+        }
+        if(right == seq){
+            right = seq + len;
+            return;
+        }
+        LOGD(DVPN, "%s %u - %u (%zd)\n", msg, left, right, count);
+        left = 0;
+        right = 0;
+        count = 0;
+    }
+    ~pkgLogger() {
+        if(count) {
+            LOGD(DVPN, "%s %u - %u (%zd)\n", msg, left, right, count);
+        }
+    }
+};
+
 void Resent(std::weak_ptr<TcpStatus> status_) {
     if(status_.expired()){
         return;
@@ -87,39 +121,71 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
     auto status = status_.lock();
     assert(!status->sent_list.empty());
     if(status->dupack >= 3) {
-        LOG("%s getdupack: %d, resent packet\n", storage_ntoa(&status->src), status->dupack);
+        LOGD(DVPN, "%s getdupack: %d, resent packet\n", storage_ntoa(&status->src), status->dupack);
         status->dupack = 0;
     }else {
-        LOG("%s rto timeout: %d, resent packet\n", storage_ntoa(&status->src), status->rto);
-        status->rto = std::min(status->rto * 2, (uint32_t) 1000);
+        LOG("%s rto timeout: %d[%d], rtt: %d, resent packet\n",
+            storage_ntoa(&status->src), status->rto, status->rto_factor, status->srtt);
+        status->rto_factor++;
     }
+    auto now = getmtime();
+    pkgLogger logger("resent");
     if(status->sack == nullptr) {
-        auto it = status->sent_list.begin();
-        it->pac->tcp
-                ->setack(status->want_seq)
-                ->setwindow(bufleft(status) >> status->send_wscale);
-        it->pac->build_packet(it->bb);
-        status->sendCB(it->pac, it->bb.data(), it->bb.len);
-        it->bb.reserve(it->pac->gethdrlen());
-    }else {
         for(auto& it : status->sent_list){
+            //至少需要发送一个包
+            logger.add(it.pac->tcp->getseq(), it.bb.len);
+            it.pac->tcp
+                    ->setack(status->want_seq)
+                    ->setwindow(bufleft(status) >> status->send_wscale);
+            it.pac->build_packet(it.bb);
+            it.last_sent = now;
+            status->sendCB(it.pac, it.bb.data(), it.bb.len);
+            it.bb.reserve(it.pac->gethdrlen());
+            if(it.last_sent + status->rto * status->rto_factor > now) {
+                break;
+            }
+        }
+    }else {
+        uint32_t right_edge = status->recv_ack;
+        Sack* sack = status->sack;
+        if(debug[DVPN].enabled){
+            Sack* s = status->sack;
+            std::string str = "sack " + std::to_string(status->recv_ack);
+            while(s) {
+                str += " [" + std::to_string(s->left) + " - " + std::to_string(s->right) + "]";
+                s = s->next;
+            }
+            LOGD(DVPN, "%s\n", str.c_str());
+        }
+        for(auto& it : status->sent_list) {
+            if (it.last_sent != it.first_sent && now - it.last_sent < status->srtt)
+                continue;
             auto seq = it.pac->tcp->getseq();
-            if(before(seq, status->sack->left)) {
+            while(noafter(sack->left, seq)) { //sack->left <= seq
+                right_edge = sack->right;
+                sack = sack->next;
+                if(sack == nullptr) {
+                    goto ret;
+                }
+            }
+            // right_edge <= seq < sack->left
+            if(noafter(right_edge, seq) && before(seq, sack->left)) {
+                logger.add(seq, it.bb.len);
                 it.pac->tcp
                         ->setack(status->want_seq)
                         ->setwindow(bufleft(status) >> status->send_wscale);
                 it.pac->build_packet(it.bb);
+                it.last_sent = now;
                 status->sendCB(it.pac, it.bb.data(), it.bb.len);
                 it.bb.reserve(it.pac->gethdrlen());
-            }else {
-                break;
             }
         }
+ret:
         sack_release(&status->sack);
     }
     status->rto_job = status->jobHandler.updatejob(status->rto_job,
                                                    std::bind(&Resent, status_),
-                                                   status->rto);
+                                                   std::max(status->rto * status->rto_factor, (uint32_t) 1000));
 }
 
 void PendPkg(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, Buffer&& bb) {
@@ -131,11 +197,13 @@ void PendPkg(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, Buffer&
         return;
     }
     if(status->sent_list.empty()) {
+        //说明之前没有开启rto重传，就在这里开启
         status->rto_job = status->jobHandler.updatejob(status->rto_job,
                                                        std::bind(&Resent, GetWeak(status)),
-                                                       status->rto);
+                                                       std::max(status->rto * status->rto_factor, (uint32_t) 1000));
     }
-    status->sent_list.emplace_back(tcp_sent{pac, getmtime(), std::move(bb)});
+    auto now = getmtime();
+    status->sent_list.emplace_back(tcp_sent{pac, now, now, std::move(bb)});
 }
 
 // LISTEN or SYN-RECEIVED
@@ -255,25 +323,25 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
         if(status->sent_list.empty() || before(ack, status->recv_ack)) {
             goto left;
         }
+        if(status->options & (1 << TCPOPT_SACK_PERMITTED)) {
+            pac->tcp->getsack(&status->sack);
+        }
         if(ack == status->recv_ack) {
             status->dupack ++;
             if(status->dupack >= 3) {
                 status->rto_job = status->jobHandler.updatejob(status->rto_job,
                                                                std::bind(&Resent, GetWeak(status)), 0);
-                if(status->options & (1 << TCPOPT_SACK_PERMITTED)) {
-                    pac->tcp->getsack(&status->sack);
-                }
             }
             goto left;
         }
+        status->rto_factor = 1;
         status->dupack = 0;
-        sack_release(&status->sack);
         status->recv_ack = ack;
         status->ackCB(pac);
         if(status->state == TCP_FIN_WAIT1 && ack == status->sent_seq){
             status->state = TCP_FIN_WAIT2;
         }
-        uint32_t rtt = UINT32_MAX;
+        uint32_t minrtt = UINT32_MAX;
         uint32_t now = getmtime();
         while(!status->sent_list.empty()){
             auto& front = status->sent_list.front();
@@ -283,10 +351,9 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
             if(flags & (TH_SYN | TH_FIN)){
                 end_seq ++;
             }
-            if(before(start_seq,  ack)) {
-                if(now - front.when < rtt) {
-                    rtt = now - front.when;
-                }
+            uint32_t rtt = now - front.first_sent;
+            if(before(start_seq,  ack) && rtt < minrtt && rtt < status->rto) {
+                minrtt = now - front.first_sent;
             }
             if(noafter(end_seq, ack)) {
                 status->sent_list.pop_front();
@@ -294,22 +361,24 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
                 break;
             }
         }
-        assert(rtt != UINT32_MAX);
-        if(status->srtt == 0) {
-            status->srtt = rtt;
-            status->rttval = rtt/2;
-        }else {
-            status->rttval = (3 * status->rttval + labs((long) status->srtt - (long)rtt)) / 4;
-            status->srtt = (7 * status->srtt + rtt) / 8;
+        if(minrtt != UINT32_MAX) {
+            if (status->srtt == 0) {
+                status->srtt = minrtt;
+                status->rttval = minrtt / 2;
+            } else {
+                status->rttval = (3 * status->rttval + labs((long) status->srtt - (long) minrtt)) / 4;
+                status->srtt = (7 * status->srtt + minrtt) / 8;
+            }
+            status->rto = std::max(status->srtt + 4 * status->rttval, (uint32_t) 100);
+            LOGD(DVPN, "tcp rtt: %d, srtt: %d, rttval: %d, rto[%d]: %d\n",
+                 minrtt, status->srtt, status->rttval, status->rto, (int)status->rto_factor);
         }
-        status->rto = std::max(status->srtt + 4 * status->rttval, (uint32_t)100);
-        LOGD(DVPN, "tcp rtt: %d, srtt: %d, rttval: %d, rto: %d\n", rtt, status->srtt, status->rttval, status->rto);
         if(status->sent_list.empty()) {
             status->jobHandler.deljob(&status->rto_job);
         }else{
             status->rto_job = status->jobHandler.updatejob(status->rto_job,
                                                            std::bind(&Resent, GetWeak(status)),
-                                                           status->rto);
+                                                           std::max(status->rto * status->rto_factor, (uint32_t)1000));
         }
     }
 left:
