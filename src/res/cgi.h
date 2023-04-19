@@ -41,6 +41,7 @@ class Cgi:public Responser{
     };
 
     char filename[URLLIMIT];
+    pid_t pid;
     std::map<uint32_t, CgiStatus> statusmap;
     void evictMe();
     void Clean(uint32_t id, CgiStatus& status);
@@ -51,7 +52,7 @@ class Cgi:public Responser{
     void Recv(Buffer&& bb);
     void Handle(uint32_t id, ChannelMessage::Signal s);
 public:
-    explicit Cgi(const char* filename, int sv[2]);
+    explicit Cgi(const char* filename, int svs[2], int cvs[2]);
     virtual ~Cgi() override;
 
     virtual void deleteLater(uint32_t errcode) override;
@@ -68,7 +69,7 @@ void flushcgi();
 #ifdef  __cplusplus
 extern "C" {
 #endif
-typedef int (cgifunc)(int fd, const char* name);
+typedef int (cgifunc)(int sfd, int cfd, const char* name);
 cgifunc cgimain;
 int cgi_response(int fd, std::shared_ptr<const HttpResHeader> res);
 int cgi_send(int fd, uint32_t id, const void *buff, size_t len);
@@ -80,7 +81,8 @@ int cgi_senderror(int fd, uint32_t id, uint8_t flag);
 
 class CgiHandler{
 protected:
-    const int fd;
+    const int sfd;
+    const int cfd;
     char name[FILENAME_MAX];
     uint32_t flag = 0;
     std::shared_ptr<HttpReqHeader> req;
@@ -125,9 +127,9 @@ protected:
         }
         LOGD(DFILE, "<cgi> [%s] res finished: %d\n", name, req->request_id);
         if((flag & HTTP_RES_COMPLETED) == 0){
-            cgi_senderror(fd, req->request_id, CGI_FLAG_ABORT);
+            cgi_senderror(sfd, req->request_id, CGI_FLAG_ABORT);
         }else{
-            cgi_send(fd, req->request_id, "", 0);
+            cgi_send(sfd, req->request_id, "", 0);
         }
         flag |= HTTP_CLOSED_F;
     }
@@ -137,21 +139,21 @@ protected:
         }
         flag |= HTTP_RES_COMPLETED;
         res->request_id = req->request_id;
-        cgi_response(fd, res);
+        cgi_response(sfd, res);
     }
 
     void Send(const char* buf, size_t len){
-        cgi_send(fd, req->request_id, buf, len);
+        cgi_send(sfd, req->request_id, buf, len);
     }
     void Abort(){
         if(flag & HTTP_CLOSED_F) {
             return;
         }
         flag |= HTTP_CLOSED_F;
-        cgi_senderror(fd, req->request_id, CGI_FLAG_ABORT);
+        cgi_senderror(sfd, req->request_id, CGI_FLAG_ABORT);
     }
 public:
-    CgiHandler(int fd, const char*name, const CGI_Header* header):fd(fd){
+    CgiHandler(int sfd, int cfd, const char*name, const CGI_Header* header):sfd(sfd), cfd(cfd){
         strcpy(this->name, name);
         assert(header->type == CGI_REQUEST);
         uint32_t len = ntohs(header->contentLength);
@@ -197,25 +199,25 @@ public:
 
 #define CGIMAIN(__handler) \
 static std::map<uint32_t, CgiHandler*> cgimap; \
-int cgimain(int fd, const char* name){       \
+int cgimain(int sfd, int cfd, const char* name){       \
     LOGD(DFILE, "<cgi> [%s] cgimain start\n", name); \
     ssize_t readlen; \
     char buff[CGI_LEN_MAX]; \
-    while((readlen = read(fd, buff, sizeof(CGI_Header))) > 0){ \
+    while((readlen = read(sfd, buff, sizeof(CGI_Header))) > 0){ \
         CGI_Header *header = (CGI_Header *)buff; \
-        int __attribute__((unused)) ret = read(fd, buff + readlen, ntohs(header->contentLength)); \
+        int __attribute__((unused)) ret = read(sfd, buff + readlen, ntohs(header->contentLength)); \
         assert(ret == ntohs(header->contentLength)); \
         uint32_t id = ntohl(header->requestId); \
         LOGD(DFILE, "<cgi> [%s] get id: %d, type: %d\n", name, id, header->type); \
         if(header->type == CGI_REQUEST){ \
             assert(cgimap.count(id) == 0);  \
             LOGD(DFILE, "<cgi> [%s] new request: %d\n", name, id);   \
-            cgimap.emplace(id, new __handler(fd, name, header)); \
+            cgimap.emplace(id, new __handler(sfd, cfd, name, header)); \
         } \
         if(cgimap.count(id) == 0){             \
             LOGD(DFILE, "<cgi> [%s] unknown id: %d\n", name, id);   \
             if(header->type != CGI_ERROR){     \
-                cgi_senderror(fd, id, CGI_FLAG_ABORT); \
+                cgi_senderror(sfd, id, CGI_FLAG_ABORT); \
             }         \
             continue; \
         } \

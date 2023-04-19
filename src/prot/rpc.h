@@ -56,7 +56,9 @@ protected:
 class SproxyClient:virtual public RpcClient {
     int fd = 0;
     std::thread reader;
+    void callback();
 public:
+    explicit SproxyClient(int fd);
     explicit SproxyClient(const char* sock);
     virtual ~SproxyClient();
     virtual bool send(const char* data, size_t len) override;

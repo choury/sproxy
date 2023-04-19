@@ -5,7 +5,7 @@
 #include "misc/strategy.h"
 #include "misc/util.h"
 #include "misc/config.h"
-
+#include "req/cli.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -107,9 +107,11 @@ size_t PackCgiRes(std::shared_ptr<const HttpResHeader> res, void *data, size_t l
     return p - (char*)data;
 }
 
-Cgi::Cgi(const char* fname, int sv[2]) {
+Cgi::Cgi(const char* fname, int svs[2], int cvs[2]) {
     snprintf(filename, sizeof(filename), "%s", fname);
-    if (fork() == 0) { // 子进程
+    new Cli(cvs[0], nullptr); //cvs[0] 由cli管理，不需要close
+    pid = fork();
+    if (pid == 0) { // 子进程
         void *handle = dlopen(fname, RTLD_NOW);
         if(handle == nullptr) {
             LOGE("[CGI] %s dlopen failed: %s\n", fname, dlerror());
@@ -128,22 +130,22 @@ Cgi::Cgi(const char* fname, int sv[2]) {
         }
         LOGD(DFILE, "<cgi> max fd: %d\n", (int)limits.rlim_cur);
         for(int i = 3; i< (int)limits.rlim_cur; i++){
-            if(i == sv[1]){
+            if(i == svs[1] || i == cvs[1]){
                 continue;
             }
             close(i);
         }
-        setenv("ADMIN_SOCK", opt.admin, 1);
         signal(SIGPIPE, SIG_DFL);
         signal(SIGUSR1, SIG_IGN);
         change_process_name(basename(filename));
         LOGD(DFILE, "<cgi> [%s] jump to cgi main\n", basename(filename));
-        exit(func(sv[1], basename(filename)));
+        exit(func(svs[1], cvs[1], basename(filename)));
     }
     // 父进程
-    close(sv[1]);   // 关闭管道的子进程端
+    close(svs[1]);   // 关闭管道的子进程端
+    close(cvs[1]);
     /* 现在可在fd[0]中读写数据 */
-    rwer = std::make_shared<StreamRWer>(sv[0], nullptr, [this](int ret, int code){
+    rwer = std::make_shared<StreamRWer>(svs[0], nullptr, [this](int ret, int code){
         LOGE("[CGI] %s error: %d/%d\n", basename(filename), ret, code);
         deleteLater(ret);
     });
@@ -341,7 +343,7 @@ void Cgi::request(std::shared_ptr<HttpReq> req, Requester* src) {
 }
 
 void Cgi::dump_stat(Dumper dp, void* param){
-    dp(param, "Cgi %p %s:\n", this, filename);
+    dp(param, "Cgi %p [%d] %s\n", this, pid, filename);
     for(const auto& i: statusmap){
         dp(param, "  [%" PRIu32"]: %s\n",
            i.first, i.second.req->header->geturl().c_str());
@@ -366,16 +368,25 @@ void getcgi(std::shared_ptr<HttpReq> req, const char* filename, Requester* src){
     if(cgimap.count(filename)) {
         return cgimap[filename]->request(req, src);
     }
-    int fds[2] = {0, 0};
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds)) {  // 创建管道
-        LOGE("[CGI] %s socketpair failed: %s\n", filename, strerror(errno));
+    int svs[2] = {0, 0};
+    int cvs[2] = {0, 0};
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, svs)) {  // 创建管道
+        LOGE("[CGI] %s create server socketpair failed: %s\n", filename, strerror(errno));
         goto err;
     }
-    return (new Cgi(filename, fds))->request(req, src);
+    if(socketpair(AF_UNIX, SOCK_STREAM, 0, cvs)) {
+        LOGE("[CGI] %s create cli socketpair failed: %s\n", filename, strerror(errno));
+        goto err;
+    }
+    return (new Cgi(filename, svs, cvs))->request(req, src);
 err:
-    if(fds[0]){
-        close(fds[0]);
-        close(fds[1]);
+    if(svs[0]){
+        close(svs[0]);
+        close(svs[1]);
+    }
+    if(cvs[0]){
+        close(cvs[0]);
+        close(cvs[1]);
     }
     req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[create socket error]]"));
 }

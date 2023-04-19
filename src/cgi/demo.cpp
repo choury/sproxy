@@ -13,7 +13,8 @@ class handler: public CgiHandler {
         Finish();
     }
 public:
-    handler(int fd, const char* name, const CGI_Header* header):CgiHandler(fd, name, header){
+    handler(int sfd, int cfd, const char* name, const CGI_Header* header):CgiHandler(sfd, -1, name, header){
+        close(cfd);
     }
 };
 

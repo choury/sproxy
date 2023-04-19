@@ -45,9 +45,9 @@ class handler: public CgiHandler{
         Finish();
     }
 public:
-    handler(int fd, const char* name, const CGI_Header* header):CgiHandler(fd, name, header){
+    handler(int sfd, int cfd, const char* name, const CGI_Header* header):CgiHandler(sfd, cfd, name, header){
         if(c == nullptr) {
-            c = new SproxyClient(getenv("ADMIN_SOCK"));
+            c = new SproxyClient(cfd);
         }
     }
 };

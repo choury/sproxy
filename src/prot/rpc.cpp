@@ -466,6 +466,55 @@ static int storage_pton(const char* addrstr, struct sockaddr_storage* addr) {
     return 0;
 }
 
+void SproxyClient::callback() {
+    size_t off = 0;
+    size_t buflen = 1024;
+    char* buff = new char[buflen];
+    json_object* jres = json_object_new_object();
+    while(true) {
+        assert(buflen > off);
+        ssize_t ret = read(this->fd, buff + off, buflen - off);
+        if(ret < 0){
+            perror("read from server");
+            json_object_object_add(jres, "error",
+                                   json_object_new_string("socket error"));
+            break;
+        }
+        if(ret == 0){
+            fprintf(stderr, "socket closed\n");
+            json_object_object_add(jres, "error",
+                                   json_object_new_string("socket shutdown"));
+            break;
+        }
+        off += ret;
+        ssize_t eaten = DefaultProc(buff, off);
+        if(eaten < 0){
+            break;
+        }
+        if(off == buflen && eaten == 0){
+            buflen <<= 1;
+            char* nbuff = new char[buflen];
+            memcpy(nbuff, buff, off);
+            delete []buff;
+            buff = nbuff;
+        }else {
+            memmove(buff, buff + eaten, off - eaten);
+            off -= eaten;
+        }
+    }
+    while(!responser.empty()){
+        responser.front()(jres);
+        responser.pop();
+    }
+    json_object_put(jres);
+    delete []buff;
+    close(this->fd);
+    this->fd = -1;
+}
+
+SproxyClient::SproxyClient(int fd): fd(fd) {
+    reader = std::thread(std::bind(&SproxyClient::callback, this));
+}
 
 SproxyClient::SproxyClient(const char* sock) {
     struct sockaddr_storage addr{};
@@ -503,52 +552,9 @@ SproxyClient::SproxyClient(const char* sock) {
         perror("connect error");
         exit(1);
     }
-    reader = std::thread([this] {
-        size_t off = 0;
-        size_t buflen = 1024;
-        char* buff = new char[buflen];
-        json_object* jres = json_object_new_object();
-        while(true) {
-            assert(buflen > off);
-            ssize_t ret = read(this->fd, buff + off, buflen - off);
-            if(ret < 0){
-                perror("read from server");
-                json_object_object_add(jres, "error",
-                                       json_object_new_string("socket error"));
-                break;
-            }
-            if(ret == 0){
-                fprintf(stderr, "socket closed\n");
-                json_object_object_add(jres, "error",
-                                       json_object_new_string("socket shutdown"));
-                break;
-            }
-            off += ret;
-            ssize_t eaten = DefaultProc(buff, off);
-            if(eaten < 0){
-                break;
-            }
-            if(off == buflen && eaten == 0){
-                buflen <<= 1;
-                char* nbuff = new char[buflen];
-                memcpy(nbuff, buff, off);
-                delete []buff;
-                buff = nbuff;
-            }else {
-                memmove(buff, buff + eaten, off - eaten);
-                off -= eaten;
-            }
-        }
-        while(!responser.empty()){
-            responser.front()(jres);
-            responser.pop();
-        }
-        json_object_put(jres);
-        delete []buff;
-        close(fd);
-        fd = -1;
-    });
+    reader = std::thread(std::bind(&SproxyClient::callback, this));
 }
+
 SproxyClient::~SproxyClient(){
     if(fd >= 0){
         shutdown(fd, SHUT_RDWR);
