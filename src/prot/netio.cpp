@@ -177,10 +177,17 @@ void SocketRWer::waitconnectHE(RW_EVENT events) {
 }
 
 const char *SocketRWer::getPeer() {
-    static char peer[300];
+    static char peer[1024];
     memset(peer, 0, sizeof(peer));
     if(hostname[0]){
-        snprintf(peer, sizeof(peer), "<%s://%s:%d> ", protstr(protocol), hostname, port);
+        sockaddr_storage myaddr;
+        socklen_t addr_len = sizeof(myaddr);
+        if(getsockname(getFd(), (sockaddr*)&myaddr, &addr_len)){
+            LOGE("failed to getsockname: %s\n", strerror(errno));
+        } else {
+            snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), "%s -> ", storage_ntoa(&myaddr));
+        }
+        snprintf(peer + strlen(peer), sizeof(peer), "<%s://%s:%d> ", protstr(protocol), hostname, port);
     }
     if(addrs.empty()){
         snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), "null");
@@ -212,7 +219,7 @@ const char *SocketRWer::getPeer() {
         socklen_t pid_size = sizeof(pid);
         if(getsockopt(getFd(), SOL_LOCAL, LOCAL_PEERPID, &pid, &pid_size)){
             LOGE("failed to call LOCAL_PEERPID: %s\n", strerror(errno));
-        }else {
+        } else {
             snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), ",pid=%d", pid);
         }
 #endif
