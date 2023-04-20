@@ -115,15 +115,20 @@ public:
 };
 
 void Resent(std::weak_ptr<TcpStatus> status_) {
-    if(status_.expired()){
+    if (status_.expired()) {
         return;
     }
     auto status = status_.lock();
     assert(!status->sent_list.empty());
-    if(status->dupack >= 3) {
+    if (status->dupack >= 3) {
         LOGD(DVPN, "%s getdupack: %d, resent packet\n", storage_ntoa(&status->src), status->dupack);
         status->dupack = 0;
-    }else {
+    } else if (status->rto_factor > 30){
+        LOGE("%s timeout: %d, reset connection\n", storage_ntoa(&status->src), status->rto_factor);
+        SendRst(status);
+        status->errCB(MakeIp(IPPROTO_TCP, &status->src, &status->dst), CONNECT_AGED);
+        return;
+    } else {
         LOG("%s rto timeout: %d[%d], rtt: %d, resent packet\n",
             storage_ntoa(&status->src), status->rto, status->rto_factor, status->srtt);
         status->rto_factor++;
@@ -180,9 +185,8 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
                 it.bb.reserve(it.pac->gethdrlen());
             }
         }
-ret:
-        sack_release(&status->sack);
     }
+ret:
     status->rto_job = status->jobHandler.updatejob(status->rto_job,
                                                    std::bind(&Resent, status_),
                                                    std::max(status->rto * status->rto_factor, (uint32_t) 1000));
