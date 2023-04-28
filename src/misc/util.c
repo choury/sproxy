@@ -65,7 +65,7 @@ static int hex2num(char c)
     if (c>='a' && c<='z') return c - 'a' + 10;
     if (c>='A' && c<='Z') return c - 'A' + 10;
 
-    LOGE("hex2num: unexpected char: %c", c);
+    LOGE("hex2num: unexpected char: %c\n", c);
     return '0';
 }
 
@@ -125,6 +125,11 @@ int URLDecode(char *des, const char *src, size_t len)
             des[j++] = ' ';
             break;
         case '%':
+            if(src[i+1] == '%') {
+                des[j++] = '%';
+                i++;
+                break;
+            }
             if (i+2<strSize) {
                 char ch1 = hex2num(src[i+1]);//高4位
                 char ch2 = hex2num(src[i+2]);//低4位
@@ -314,10 +319,19 @@ void dump_trace(int signum) {
 #endif
 
 int spliturl(const char* url, struct Destination* server, char* path) {
+    if (url == NULL) {
+        return -1; // Invalid input
+    }
+
     if (url[0] == '/' && path) {
         strcpy(path, url);
         return 0;
     }
+
+    if (!server) {
+        return -1;
+    }
+
     const char* url_end = url + strlen(url);
     // scan scheme by '://'
     const char *scan_pos = strstr(url, "://");
@@ -325,7 +339,7 @@ int spliturl(const char* url, struct Destination* server, char* path) {
     if (scan_pos) {
         scheme_len = scan_pos - url;
         scan_pos += 3;
-    }else{
+    } else {
         scan_pos = url;
     }
     if(scheme_len){
@@ -333,7 +347,6 @@ int spliturl(const char* url, struct Destination* server, char* path) {
         server->scheme[scheme_len] = 0;
     }
     url = scan_pos;
-
     const char* addrsplit;
     char tmpaddr[DOMAINLIMIT];
     // scan path by '/'
@@ -356,28 +369,30 @@ int spliturl(const char* url, struct Destination* server, char* path) {
     if (tmpaddr[0] == '[') {
         // this is an ipv6 address
         if (!(addrsplit = strchr(tmpaddr, ']'))) {
-            return -1;
+            return -2; // Invalid IPv6 address format
         }
         int copylen = addrsplit - tmpaddr + 1;
         memcpy(server->hostname, tmpaddr, copylen);
         server->hostname[copylen] = 0;
 
         if (addrsplit[1] == ':') {
-            long dport = strtol(addrsplit + 2, NULL, 10);
-            if(dport == 0 || dport > 65535){
-                return -1;
+            char *endptr;
+            long dport = strtol(addrsplit + 2, &endptr, 10);
+            if (*endptr != '\0' || dport <= 0 || dport > 65535){
+                return -3; // Invalid port number
             }
             server->port = (uint16_t)dport;
         } else if (addrsplit[1] != 0) {
-            return -1;
+            return -2; // Invalid IPv6 address format
         }
     } else {
         if ((addrsplit = strchr(tmpaddr, ':'))) {
             memcpy(server->hostname, tmpaddr, addrsplit - tmpaddr);
             server->hostname[addrsplit - tmpaddr] = 0;
-            long dport = strtol(addrsplit + 1, NULL, 10);
-            if(dport == 0 || dport > 65535){
-                return -1;
+            char *endptr;
+            long dport = strtol(addrsplit + 1, &endptr, 10);
+            if (*endptr != '\0' || dport <= 0 || dport > 65535) {
+                return -3; // Invalid port number
             }
             server->port = (uint16_t)dport;
         } else {

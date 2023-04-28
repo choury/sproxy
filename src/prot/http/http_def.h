@@ -30,7 +30,7 @@ struct ChannelMessage{
 class Channel{
 public:
     typedef std::function<int()> cap_t;
-    typedef std::function<void()> more_data_t;
+    typedef std::function<void()> pull_t;
 
     //返回0表示不能再接收数据了
     //返回非0表示可以继续接收数据
@@ -39,15 +39,15 @@ public:
 private:
     cap_t cap_cb = []{return BUF_LEN;}; //这里需要buffer一些数据，不然vpn那边体验会很差，依赖重传
     handler_t handler;
-    more_data_t need_more;
-    void eatMessage();
+    pull_t pull_cb;
+    void poll();
 protected:
     std::list<ChannelMessage> message_queue;
 public:
     Channel(const Channel&) = delete;
     const Channel& operator=(const Channel&) = delete;
     virtual ~Channel();
-    explicit Channel(more_data_t need_more);
+    explicit Channel(pull_t pull_cb);
     int cap() { return cap_cb(); }
     virtual void send(ChannelMessage&& message);
     virtual void send(const void* data, size_t len);
@@ -58,8 +58,8 @@ public:
     //处理消息的时候，禁止调用send发回CHANNEL_MSG_SIGNAL，这样会导致Channel本身被销毁
     void attach(handler_t handler, cap_t cap);
     void detach();
-    void more(){
-        need_more?need_more():void();
+    void pull(){
+        pull_cb ? pull_cb() : void();
     }
     virtual size_t mem_usage();
 };
@@ -82,7 +82,7 @@ public:
 class HttpRes: public Channel{
 public:
     HttpRes(const HttpRes &) = delete;
-    HttpRes(std::shared_ptr<HttpResHeader> header, more_data_t more);
+    HttpRes(std::shared_ptr<HttpResHeader> header, pull_t pull_cb);
     HttpRes(std::shared_ptr<HttpResHeader> header);
     HttpRes(std::shared_ptr<HttpResHeader> header, const char* body);
     ~HttpRes();
@@ -97,7 +97,7 @@ public:
     typedef std::function<void(std::shared_ptr<HttpRes>)> res_cb;
     res_cb         response;
     HttpReq(const HttpReq&) = delete;
-    HttpReq(std::shared_ptr<HttpReqHeader> header, res_cb response, more_data_t more);
+    HttpReq(std::shared_ptr<HttpReqHeader> header, res_cb response, pull_t pull_cb);
     using Channel::send;
     virtual void send(ChannelMessage::Signal s) override;
     ~HttpReq();

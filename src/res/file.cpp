@@ -229,7 +229,11 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
     char filename[URLLIMIT];
     bool slash_end = req->header->filename.back() == '/';
     bool index_not_found = false;
-    (void)!realpath(("./" + req->header->filename).c_str(), filename);
+    std::string fullpath = "./" + req->header->filename;
+    if(realpath(fullpath.c_str(), filename) == nullptr){
+        LOGE("get file realpath error: %s\n", strerror(errno));
+        return req->response(std::make_shared<HttpRes>(UnpackHttpRes(H404), ""));
+    }
     std::shared_ptr<HttpResHeader> header = nullptr;
     while(true){
         if(!startwith(filename, opt.rootdir)){
@@ -273,7 +277,7 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
         if(S_ISDIR(st.st_mode)){
             if(!slash_end){
                 header = UnpackHttpRes(H302, sizeof(H302));
-                char location[FILENAME_MAX];
+                char location[URLLIMIT];
                 snprintf(location, sizeof(location), "/%s/", req->header->filename.c_str());
                 header->set("Location", location);
                 goto ret;

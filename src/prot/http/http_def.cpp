@@ -21,13 +21,13 @@ ChannelMessage::ChannelMessage(ChannelMessage&& other):
 }
 
 
-Channel::Channel(more_data_t need_more): need_more(std::move(need_more)){
+Channel::Channel(pull_t pull_cb): pull_cb(std::move(pull_cb)){
 }
 
 Channel::~Channel() {
 }
 
-void Channel::eatMessage() {
+void Channel::poll() {
     while(true){
         if(!handler || message_queue.empty()){
             return;
@@ -44,13 +44,12 @@ void Channel::eatMessage() {
 
 void Channel::send(ChannelMessage&& message) {
     message_queue.emplace_back(std::move(message));
-    return eatMessage();
+    return poll();
 }
 
 void Channel::send(std::shared_ptr<HttpHeader> header) {
     send(ChannelMessage(header));
 }
-
 
 void Channel::send(Buffer&& bb) {
     send(ChannelMessage(std::move(bb)));
@@ -68,11 +67,10 @@ void Channel::send(ChannelMessage::Signal s) {
     send(ChannelMessage(s));
 }
 
-
 void Channel::attach(handler_t handler, cap_t cap) {
     this->handler = handler;
     cap_cb = cap;
-    return eatMessage();
+    return poll();
 }
 
 void Channel::detach() {
@@ -97,8 +95,8 @@ size_t Channel::mem_usage() {
     return usage;
 }
 
-HttpRes::HttpRes(std::shared_ptr<HttpResHeader> header, more_data_t more):
-    Channel(std::move(more))
+HttpRes::HttpRes(std::shared_ptr<HttpResHeader> header, pull_t pull_cb):
+    Channel(std::move(pull_cb))
 {
     send(header);
 }
@@ -121,8 +119,8 @@ HttpRes::HttpRes(std::shared_ptr<HttpResHeader> header, const char *body):
 HttpRes::~HttpRes() {
 }
 
-HttpReq::HttpReq(std::shared_ptr<HttpReqHeader> header, HttpReq::res_cb response, more_data_t more):
-    Channel(std::move(more)), header(header), response(std::move(response))
+HttpReq::HttpReq(std::shared_ptr<HttpReqHeader> header, HttpReq::res_cb response, pull_t pull_cb):
+    Channel(std::move(pull_cb)), header(header), response(std::move(response))
 {
     send(header);
 }
@@ -137,8 +135,6 @@ void HttpReq::send(ChannelMessage::Signal s) {
     Channel::send(s);
 }
 
-
-
 void HttpLog(const char* src, std::shared_ptr<const HttpReqHeader> req, std::shared_ptr<const HttpResHeader> res){
     char status[100];
     sscanf(res->status, "%s", status);
@@ -147,4 +143,3 @@ void HttpLog(const char* src, std::shared_ptr<const HttpReqHeader> req, std::sha
         req->get("Strategy"), status, res->ctime - req->ctime,
         req->get("User-Agent"));
 }
-

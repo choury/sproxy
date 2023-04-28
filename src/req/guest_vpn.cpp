@@ -48,7 +48,7 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
             return;
         }
         if((status.flags & HTTP_RES_COMPLETED) == 0){
-            status.res->more();
+            status.res->pull();
         }
     });
     std::dynamic_pointer_cast<TunRWer>(rwer)->setResetHandler([this](uint64_t id, uint32_t){

@@ -50,7 +50,7 @@ void Guest::WriteHE(uint64_t){
         return;
     }
     if(status.res){
-        status.res->more();
+        status.res->pull();
     }
 }
 

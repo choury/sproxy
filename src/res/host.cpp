@@ -165,7 +165,7 @@ void Host::connected() {
         if(status.flags & HTTP_REQ_COMPLETED){
             return;
         }
-        status.req->more();
+        status.req->pull();
     });
     reply();
 }

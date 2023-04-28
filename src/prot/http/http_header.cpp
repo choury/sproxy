@@ -256,11 +256,16 @@ void HttpReqHeader::postparse() {
     if(!Dest.scheme[0] && ismethod("SEND")){
         strcpy(Dest.scheme, "udp");
     }
-    if(Dest.port == 0 && !ismethod("CONNECT") && !ismethod("SEND") && !ismethod("PING")){
-        Dest.port = HTTPPORT;
-    }
     if(request_id == 0) {
         request_id = id_gen++;
+    }
+    if(Dest.port) {
+        return;
+    }
+    if(strcasecmp(Dest.scheme, "https") == 0) {
+        Dest.port = HTTPSPORT;
+    }else if(!ismethod("CONNECT") && !ismethod("SEND") && !ismethod("PING")){
+        Dest.port = HTTPPORT;
     }
 }
 

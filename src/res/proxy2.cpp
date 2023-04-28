@@ -72,7 +72,7 @@ Proxy2::Proxy2(std::shared_ptr<SslRWer> rwer) {
         }
         ReqStatus& status = statusmap[id];
         if(wantmore(status)){
-            status.req->more();
+            status.req->pull();
         }
     });
 #ifdef __ANDROID__
@@ -255,7 +255,7 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
             }
             status.remotewinsize += size;
             if(wantmore(status)){
-                status.req->more();
+                status.req->pull();
             }
         }else{
             LOGD(DHTTP2, "<proxy2> window size updated [%d]: not found\n", id);
@@ -273,7 +273,7 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
             for(auto& i: statusmap_copy){
                 ReqStatus& status = i.second;
                 if(wantmore(status)){
-                    status.req->more();
+                    status.req->pull();
                 }
             }
         }

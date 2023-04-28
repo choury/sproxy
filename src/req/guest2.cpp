@@ -50,7 +50,7 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
         }
         ReqStatus& status = statusmap[id];
         if(wantmore(status)){
-            status.res->more();
+            status.res->pull();
         }
     });
 }
@@ -270,7 +270,7 @@ void Guest2::WindowUpdateProc(uint32_t id, uint32_t size) {
             }
             status.remotewinsize += size;
             if(wantmore(status)){
-                status.res->more();
+                status.res->pull();
             }
         }else{
             LOGD(DHTTP2, "<guest2> window size updated [%d]: not found\n", id);
@@ -288,7 +288,7 @@ void Guest2::WindowUpdateProc(uint32_t id, uint32_t size) {
             for(auto& i: statusmap_copy){
                 ReqStatus& status = i.second;
                 if(wantmore(status)){
-                    status.res->more();
+                    status.res->pull();
                 }
             }
         }

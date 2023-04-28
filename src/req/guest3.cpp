@@ -62,7 +62,7 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
         }
         if(this->rwer->cap(id) >= 64){
             // reserve 64 bytes for http stream header
-            status.res->more();
+            status.res->pull();
         }
     });
 }

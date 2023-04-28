@@ -51,7 +51,7 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
         }
         if(this->rwer->cap(id) > 64){
             // reserve 64 bytes for http stream header
-            status.req->more();
+            status.req->pull();
         }
     });
     rwer->setResetHandler(std::bind(&Proxy3::RstProc, this, _1, _2));
