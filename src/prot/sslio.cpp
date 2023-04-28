@@ -142,7 +142,7 @@ int SslRWer::fill_in_bio() {
         ErrorHE(SOCKET_ERR, errno);
         return -1;
     }
-    return 1;
+    return BIO_ctrl_pending(in_bio);
 }
 
 int SslRWer::sink_out_bio(uint64_t id) {
@@ -157,7 +157,7 @@ int SslRWer::sink_out_bio(uint64_t id) {
 }
 
 void SslRWer::shakehandHE(RW_EVENT events){
-    if (!!(events & RW_EVENT::ERROR)) {
+    if (!!(events & RW_EVENT::ERROR) || !!(events & RW_EVENT::READEOF)) {
         return ErrorHE(SSL_SHAKEHAND_ERR, checkSocket(__PRETTY_FUNCTION__));
     }
     if(!!(events & RW_EVENT::READ)) {
