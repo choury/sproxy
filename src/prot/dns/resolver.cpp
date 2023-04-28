@@ -82,9 +82,7 @@ std::list<sockaddr_storage> rcdfilter(const std::string& host, const std::list<s
     return ret;
 }
 
-HostResolver::HostResolver(int fd,
-                   const char *host,
-                   std::function<void(int, std::list<sockaddr_storage>, HostResolver*)> addrcb):
+HostResolver::HostResolver(int fd, const char *host, std::function<void(int, HostResolver*)> addrcb):
     Ep(fd), cb(std::move(addrcb))
 {
     strcpy(this->host, host);
@@ -97,8 +95,7 @@ HostResolver::HostResolver(int fd,
     }
     this->handleEvent = (void (Ep::*)(RW_EVENT))&HostResolver::readHE;
     setEvents(RW_EVENT::READ);
-    reply = AddJob(std::bind(cb, DNS_TIMEOUT, rcd.addrs, this),
-                   dnsConfig.timeout * 1000, 0);
+    reply = AddJob(std::bind(cb, DNS_TIMEOUT, this), dnsConfig.timeout * 1000, 0);
 }
 
 
@@ -111,7 +108,7 @@ void HostResolver::readHE(RW_EVENT events) {
         LOGE("[DNS] addr: %s\n", getaddrstring(&addr));
         flags |= GETERROR;
         DelJob(&reply);
-        return cb(DNS_SERVER_FAIL, {}, this);
+        return cb(DNS_SERVER_FAIL, this);
     }
     if(!!(events & RW_EVENT::READ)) {
         int error = 0;
@@ -152,7 +149,7 @@ void HostResolver::readHE(RW_EVENT events) {
         }
 ret:
         DelJob(&reply);
-        return cb(error,rcd.addrs, this);
+        return cb(error, this);
     }
 }
 
@@ -299,25 +296,24 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
         return;
     }
 
-    auto addrcb = [](int retries, DNSCB func, std::shared_ptr<void> param,
-                          int error, std::list<sockaddr_storage> addrs, HostResolver* resolver)
+    auto addrcb = [](int retries, DNSCB func, std::shared_ptr<void> param, int error, HostResolver* resolver)
     {
         defer([resolver]{delete resolver;});
         if(error == 0){
-            func(param, error, rcdfilter(resolver->host, addrs));
+            func(param, error, rcdfilter(resolver->host, resolver->rcd.addrs));
             return;
         }
         if(error == DNS_TIMEOUT){
-            if(addrs.empty()){
+            if(resolver->rcd.addrs.empty()){
                 query_host_real(retries+1, resolver->host, func, param);
             }else{
-                func(param, 0, rcdfilter(resolver->host, addrs));
+                func(param, 0, rcdfilter(resolver->host, resolver->rcd.addrs));
             }
             return;
         }
         func(param, error, {});
     };
-    new HostResolver(fd, host, std::bind(addrcb, retries, func, param, _1, _2, _3));
+    new HostResolver(fd, host, std::bind(addrcb, retries, func, param, _1, _2));
 }
 
 void query_host(const char* host, DNSCB func, std::shared_ptr<void> param) {

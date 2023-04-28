@@ -31,13 +31,12 @@ class HostResolver: public Ep{
 #define GETAAAARES 2
 #define GETERROR   4
     uint32_t flags = 0;
-    Dns_Rcd  rcd;
-    std::function<void(int, std::list<sockaddr_storage>, HostResolver*)> cb = nullptr;
+    std::function<void(int, HostResolver*)> cb = nullptr;
     void readHE(RW_EVENT events);
 public:
     char host[DOMAINLIMIT];
-    explicit HostResolver(int fd, const char* host,
-                      std::function<void(int, std::list<sockaddr_storage>, HostResolver*)>  addrcb);
+    Dns_Rcd  rcd;
+    explicit HostResolver(int fd, const char* host, std::function<void(int, HostResolver*)> addrcb);
     virtual ~HostResolver() override;
 };
 
