@@ -595,6 +595,7 @@ struct debug_flags_map debug[] = {
         {"", false},
         {"EVENT", false},
         {"DNS", false},
+        {"SSL", false},
         {"HTTP2", false},
         {"JOB", false},
         {"VPN", false},

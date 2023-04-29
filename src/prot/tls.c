@@ -246,7 +246,7 @@ int verify_host_callback(int ok, X509_STORE_CTX *ctx){
         LOGE("verify cert error:num=%d:%s:depth=%d:%s\n", err,
              X509_verify_cert_error_string(err), depth, buf);
     } else {
-//        LOG("cert depth=%d:%s\n", depth, buf);
+        LOGD(DSSL, "cert depth=%d:%s\n", depth, buf);
     }
 
     /*

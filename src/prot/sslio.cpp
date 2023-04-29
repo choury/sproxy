@@ -104,6 +104,7 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
         return;
     }
     if (!!(events & RW_EVENT::WRITE)) {
+        LOGD(DSSL, "connected from fd, start handshark\n");
         assert(!addrs.empty());
         setEvents(RW_EVENT::READWRITE);
         stats = RWerStats::SslConnecting;
@@ -129,6 +130,7 @@ int SslRWer::fill_in_bio() {
     char buff[BUF_LEN];
     while(true) {
         ssize_t ret = read(getFd(), buff, sizeof(buff));
+        LOGD(DSSL, "read %d bytes from fd\n", (int)ret);
         if (ret > 0) {
             BIO_write(in_bio, buff, ret);
             continue;
@@ -149,6 +151,7 @@ int SslRWer::sink_out_bio(uint64_t id) {
     while(BIO_ctrl_pending(out_bio)) {
         char buff[BUF_LEN];
         int ret = BIO_read(out_bio, buff, sizeof(buff));
+        LOGD(DSSL, "send %d bytes to fd\n", (int)ret);
         if (ret > 0) {
             wbuff.push(wbuff.end(), Buffer{std::make_shared<Block>(buff, ret), (size_t)ret, id});
         }
@@ -164,6 +167,7 @@ void SslRWer::shakehandHE(RW_EVENT events){
         if(fill_in_bio() <= 0) return;
     }
     if(do_handshake() == 1){
+        LOGD(DSSL, "ssl handshake success\n");
     }else if(errno == EAGAIN){
         if(SSL_want_write(ssl)){
             setEvents(RW_EVENT::READWRITE);
@@ -199,7 +203,7 @@ ssize_t SslRWer::Read(void* buff, size_t len){
  */
 
 void SslRWer::ReadData() {
-    if(fill_in_bio() <= 0) return;
+    if(fill_in_bio() < 0) return;
     while(true) {
         size_t left = rb.left();
         if (left == 0) {
@@ -207,6 +211,7 @@ void SslRWer::ReadData() {
         }
         ERR_clear_error();
         ssize_t ret = ssl_get_error(ssl, SSL_read(ssl, rb.end(), left));
+        LOGD(DSSL, "SSL_read %d bytes\n", (int)ret);
         if (ret > 0) {
             rb.append((size_t) ret);
             ConsumeRData(0);
@@ -235,6 +240,7 @@ void SslRWer::buffer_insert(Buffer &&bb) {
         ERR_clear_error();
         while(bb.len > 0) {
             ssize_t ret = ssl_get_error(ssl, SSL_write(ssl, bb.data(), bb.len));
+            LOGD(DSSL, "SSL_write %d bytes\n", (int)ret);
             if(ret > 0) {
                 bb.reserve(ret);
                 continue;
