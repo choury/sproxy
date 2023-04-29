@@ -20,6 +20,14 @@
 #include <assert.h>
 #include <inttypes.h>
 
+#ifdef __linux__
+#define LIBSUFFIX ".so"
+#endif
+#ifdef __APPLE__
+#define LIBSUFFIX ".dylib"
+#endif
+
+
 using std::vector;
 using std::pair;
 
@@ -53,6 +61,45 @@ static std::string pathjoin(const std::string& dirname, const std::string& basen
     }else{
         return dirname +'/'+ basename;
     } 
+}
+
+template <class... T>
+static std::string pathjoin(const std::string&a, const std::string& b, const T&... left){
+    return pathjoin(a, pathjoin(b, left...));
+}
+
+// pathjoin for vector, 返回绝对路径
+static std::string pathjoin(const std::vector<std::string>& path){
+    std::string ret = "/";
+    for(auto& p : path){
+        ret = pathjoin(ret, p);
+    }
+    return ret;
+}
+
+static std::string absolute(const std::string &path) {
+    // 获取当前工作目录
+    char current_dir[PATH_MAX];
+    if (getcwd(current_dir, sizeof(current_dir)) == nullptr) {
+        LOGE("error getting current working directory %s\n", strerror(errno));
+        return "";
+    }
+    std::string input_path = std::string(current_dir) + '/' + path;
+
+    std::vector<std::string> path_parts;
+    std::istringstream iss(input_path);
+    std::string part;
+    while (std::getline(iss, part, '/')) {
+        if (part == "..") {
+            if (!path_parts.empty()) {
+                path_parts.pop_back();
+            }
+        } else if (!part.empty() && part != ".") {
+            path_parts.push_back(part);
+        }
+    }
+
+    return pathjoin(path_parts);
 }
 
 static void loadmine(){
@@ -222,6 +269,7 @@ void File::dump_usage(Dumper dp, void *param) {
     }
 }
 
+
 void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
     if(!req->header->getrange()){
         return req->response(std::make_shared<HttpRes>(UnpackHttpRes(H400), ""));
@@ -229,11 +277,7 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
     char filename[URLLIMIT];
     bool slash_end = req->header->filename.back() == '/';
     bool index_not_found = false;
-    std::string fullpath = "./" + req->header->filename;
-    if(realpath(fullpath.c_str(), filename) == nullptr){
-        LOGE("get file realpath error: %s\n", strerror(errno));
-        return req->response(std::make_shared<HttpRes>(UnpackHttpRes(H404), ""));
-    }
+    strncpy(filename, absolute(req->header->filename).c_str(), sizeof(filename));
     std::shared_ptr<HttpResHeader> header = nullptr;
     while(true){
         if(!startwith(filename, opt.rootdir)){
@@ -251,11 +295,7 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
 #endif
         char *suffix = strrchr(filename, '.');
         if(suffix && strcmp(suffix, ".do") == 0){
-#if __APPLE__
-            strcpy(suffix, ".dylib");
-#elif __linux__
-            strcpy(suffix, ".so");
-#endif
+            strcpy(suffix, LIBSUFFIX);
         }
         struct stat st;
         if(stat(filename, &st) < 0){
@@ -264,7 +304,8 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
                 // filname is index file now, fallback to autoindex
                 if(slash_end && !endwith(filename, "/") && opt.autoindex){
                     index_not_found = true;
-                    (void)!realpath(("./" + req->header->filename).c_str(), filename);
+                    //(void)!realpath(("./" + req->header->filename).c_str(), filename);
+                    strncpy(filename, absolute(req->header->filename).c_str(), sizeof(filename));
                     continue;
                 }
                 header = UnpackHttpRes(H404, sizeof(H404));
@@ -283,7 +324,8 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
                 goto ret;
             }
             if(!index_not_found && opt.index_file){
-                (void)!realpath(("./" + req->header->filename + opt.index_file).c_str(), filename);
+                //(void)!realpath(("./" + req->header->filename + opt.index_file).c_str(), filename);
+                strncpy(filename, absolute(req->header->filename + opt.index_file).c_str(), sizeof(filename));
                 continue;
             }
             if(!opt.autoindex){
@@ -328,13 +370,7 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
             header = UnpackHttpRes(H403, sizeof(H403));
             goto ret;
         }
-#if __APPLE__
-        if(suffix && strcmp(suffix, ".dylib") == 0){
-#elif __linux__
-        if(suffix && strcmp(suffix, ".so") == 0){
-#else
-        if(0){
-#endif
+        if(suffix && strcmp(suffix, LIBSUFFIX) == 0){
             return getcgi(req, filename, src);
         }
         int fd = open(filename, O_RDONLY | O_CLOEXEC);
