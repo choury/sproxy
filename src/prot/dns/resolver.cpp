@@ -303,15 +303,11 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
             func(param, error, rcdfilter(resolver->host, resolver->rcd.addrs));
             return;
         }
-        if(error == DNS_TIMEOUT){
-            if(resolver->rcd.addrs.empty()){
-                query_host_real(retries+1, resolver->host, func, param);
-            }else{
-                func(param, 0, rcdfilter(resolver->host, resolver->rcd.addrs));
-            }
-            return;
+        if(resolver->rcd.addrs.empty()){
+            query_host_real(retries+1, resolver->host, func, param);
+        }else{
+            func(param, 0, rcdfilter(resolver->host, resolver->rcd.addrs));
         }
-        func(param, error, {});
     };
     new HostResolver(fd, host, std::bind(addrcb, retries, func, param, _1, _2));
 }
