@@ -13,6 +13,7 @@ typedef struct DNS_QUE {
 // 13: HINFO
 // 15: MX
 // 28: AAAA
+// 33: SRV
 // 252: AXFR
 // 255: ANY
     uint16_t type;
@@ -95,9 +96,11 @@ static std::string reverse(std::string str){
 
 static bool is_valid(const char* domain) {
     while(*domain) {
+        //'_' is only for srv
         if((*domain >= 'a' && *domain <= 'z') ||
         (*domain >= 'A' && *domain <= 'Z') ||
-        (*domain >= '0' && *domain <= '9') || *domain == '-' || *domain == '.'){
+        (*domain >= '0' && *domain <= '9') ||
+        *domain == '-' || *domain == '_' || *domain == '.' ){
             domain++;
             continue;
         }

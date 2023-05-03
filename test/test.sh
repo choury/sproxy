@@ -222,3 +222,6 @@ kill -SIGUSR2 %5
 kill -SIGUSR2 %6
 
 sleep 30
+
+$buildpath/prot/dns/dns_test
+$buildpath/misc/trie_test

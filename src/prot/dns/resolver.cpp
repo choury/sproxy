@@ -300,7 +300,7 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
     {
         defer([resolver]{delete resolver;});
         if(error == 0){
-            func(param, error, rcdfilter(resolver->host, resolver->rcd.addrs));
+            func(param, 0, rcdfilter(resolver->host, resolver->rcd.addrs));
             return;
         }
         if(resolver->rcd.addrs.empty()){

@@ -30,6 +30,12 @@ static char test_dns_9[] = "\x66\x57\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\xc0
 static char test_dns_10[] ="\x66\x58\x01\x00\x00\x01\x00\x00\x00\x00\x00\x01\xc0\x12\x00\x01"
                            "\x00\x01\x07""example\x03""com\x00\x00\x01\x00\x01\x00\x00\x00\x00\x00\x04\x00\x00\x00\x00";
 
+static char test_dns_11[] = "\x43\x21\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+                           "\x04""test\x07""example\x03""com\x00\x00\x0f\x00\x01";
+
+static char test_dns_12[] = "\x56\x78\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+                           "\x04""_sip\x04""_tcp\x07""example\x03""com\x00\x00\x21\x00\x01";
+
 struct dns_test{
     const char *query;
     size_t query_len;
@@ -49,6 +55,8 @@ dns_test query_tests[] = {
         {test_dns_8, sizeof(test_dns_8)-1, "example.com", 0x6656, 1},
         {test_dns_9, sizeof(test_dns_9)-1, "example.com", 0x6657, 1},
         {test_dns_10, sizeof(test_dns_10)-1, "example.com", 0x6658, 1},
+        {test_dns_11, sizeof(test_dns_11)-1, "test.example.com", 0x4321, 15},
+        {test_dns_12, sizeof(test_dns_12)-1, "_sip._tcp.example.com", 0x5678, 33},
 };
 
 dns_test build_tests[] = {
