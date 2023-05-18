@@ -8,10 +8,12 @@
 #include <assert.h>
 
 Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
-    rwer = std::make_shared<PacketRWer>(host, this->id, Protocol::ICMP, [this](int ret, int code){
+    auto qrwer = std::make_shared<PacketRWer>(host, this->id, Protocol::ICMP, [this](int ret, int code){
         LOGE("(%s) Ping error: %d/%d\n", rwer->getPeer(), ret, code);
         deleteLater(ret);
-    },[this](const sockaddr_storage& addr){
+    });
+    rwer = qrwer;
+    qrwer->SetConnectCB([this](const sockaddr_storage& addr){
         const sockaddr_in6 *addr6 = (const sockaddr_in6*)&addr;
         family = addr6->sin6_family;
         if(addr6->sin6_port == 0){

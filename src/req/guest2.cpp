@@ -63,6 +63,7 @@ Guest2::~Guest2() {
         i.second.flags |= HTTP_CLOSED_F;
     }
     statusmap.clear();
+    rwer->deljob(&connection_lost_job);
 }
 
 void Guest2::Error(int ret, int code){

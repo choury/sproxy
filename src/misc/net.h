@@ -9,8 +9,6 @@
 extern "C" {
 #endif
 
-extern const char *DEFAULT_CIPHER_LIST;
-
 int Checksocket(int fd, const char* msg);
 void SetSocketUnblock(int fd);
 void SetTcpOptions(int fd, const struct sockaddr_storage* addr);

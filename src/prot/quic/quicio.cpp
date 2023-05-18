@@ -464,9 +464,8 @@ size_t QuicRWer::generateParams(char data[QUIC_INITIAL_LIMIT]) {
 }
 
 QuicRWer::QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
-                   std::function<void(int, int)> errorCB,
-                   std::function<void(const sockaddr_storage&)> connectCB):
-        SocketRWer(hostname, port, protocol, std::move(errorCB), std::move(connectCB)),
+                   std::function<void(int, int)> errorCB):
+        SocketRWer(hostname, port, protocol, std::move(errorCB)),
         qos(false, std::bind(&QuicRWer::send, this, _1, _2, _3, _4, _5),
            std::bind(&QuicRWer::resendFrames, this, _1, _2),
            std::bind(&QuicRWer::ErrorHE, this, PROTOCOL_ERR, _1))
@@ -515,14 +514,12 @@ QuicRWer::QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
 }
 
 QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, QuicMgr* mgr,
-                   std::function<void(int, int)> errorCB,
-                   std::function<void(const sockaddr_storage &)> connectCB):
+                   std::function<void(int, int)> errorCB):
         SocketRWer(fd, peer, std::move(errorCB)), mgr(mgr),
         qos(true, std::bind(&QuicRWer::send, this, _1, _2, _3, _4, _5),
             std::bind(&QuicRWer::resendFrames, this, _1, _2),
             std::bind(&QuicRWer::ErrorHE, this, PROTOCOL_ERR, _1))
 {
-    this->connectCB = std::move(connectCB);
     ssl = SSL_new(ctx);
     SSL_set_quic_method(ssl, &quic_method);
     if(ssl == nullptr){

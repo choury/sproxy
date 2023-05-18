@@ -38,9 +38,8 @@ SocketRWer::SocketRWer(int fd, const sockaddr_storage* peer, std::function<void(
 }
 
 SocketRWer::SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
-               std::function<void(int, int)> errorCB,
-               std::function<void(const sockaddr_storage&)> connectCB):
-            RWer(std::move(errorCB)), port(port), protocol(protocol), connectCB(std::move(connectCB))
+               std::function<void(int, int)> errorCB):
+            RWer(std::move(errorCB)), port(port), protocol(protocol)
 {
     strcpy(this->hostname, hostname);
     stats = RWerStats::Resolving;
@@ -161,6 +160,15 @@ void SocketRWer::connected(const sockaddr_storage& addr) {
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&SocketRWer::defaultHE;
     connectCB(addr);
+    connectCB =  [](const sockaddr_storage&){};
+}
+
+void SocketRWer::SetConnectCB(std::function<void(const sockaddr_storage&)> cb) {
+    if(stats == RWerStats::Connected){
+        connectCB(addrs.front());
+    } else {
+        connectCB = std::move(cb);
+    }
 }
 
 void SocketRWer::waitconnectHE(RW_EVENT events) {
@@ -187,14 +195,14 @@ const char *SocketRWer::getPeer() {
         } else {
             snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), "%s -> ", storage_ntoa(&myaddr));
         }
-        snprintf(peer + strlen(peer), sizeof(peer), "<%s://%s:%d> ", protstr(protocol), hostname, port);
+        snprintf(peer + strlen(peer), sizeof(peer), "<%s://%s:%d>", protstr(protocol), hostname, port);
     }
     if(addrs.empty()){
-        snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), "null");
+        snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), " null");
         return peer;
     }
     auto addr = addrs.front();
-    snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), "%s", storage_ntoa(&addr));
+    snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), " %s", storage_ntoa(&addr));
     if(addr.ss_family == AF_UNIX){
 #if defined(SO_PEERCRED)
         struct ucred cred;

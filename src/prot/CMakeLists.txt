@@ -7,6 +7,7 @@ set(prot_src
         rwer.cpp
         netio.cpp
         sslio.cpp
+        memio.cpp
         tls.c
         multimsg.c
         rpc.cpp)

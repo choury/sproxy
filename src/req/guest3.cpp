@@ -8,9 +8,11 @@
 #include <inttypes.h>
 
 Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic_mgr):
-    Requester(std::make_shared<QuicRWer>(fd, addr, ctx, quic_mgr, std::bind(&Guest3::Error, this, _1, _2),
-    [this](const sockaddr_storage&){
-        std::shared_ptr<QuicRWer> qrwer = std::dynamic_pointer_cast<QuicRWer>(rwer);
+    Requester(nullptr)
+{
+    auto qrwer = std::make_shared<QuicRWer>(fd, addr, ctx, quic_mgr, std::bind(&Guest3::Error, this, _1, _2));
+    init(qrwer);
+    qrwer->SetConnectCB([this, qrwer](const sockaddr_storage&){
         const unsigned char *data;
         unsigned int len;
         qrwer->get_alpn(&data, &len);
@@ -20,8 +22,7 @@ Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic
         }
         qrwer->setResetHandler(std::bind(&Guest3::RstProc, this, _1, _2));
         Init();
-    }))
-{
+    });
     rwer->SetReadCB([this](uint64_t id, const void* data, size_t len) -> size_t {
         LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", this->rwer->getPeer(), id, len);
         if(len == 0){

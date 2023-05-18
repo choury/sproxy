@@ -53,6 +53,7 @@ void openefd(){
 struct options opt = {
     .admin             = NULL,
     .cafile            = NULL,
+    .cakey             = NULL,
     .cert              = NULL,
     .key               = NULL,
     .rootdir           = NULL,
@@ -107,6 +108,7 @@ static struct option long_options[] = {
     {"alt-svc",       required_argument, NULL, 0},
     {"bind",          required_argument, NULL, 'b'},
     {"cafile",        required_argument, NULL,  0 },
+    {"cakey",         required_argument, NULL,  0 },
     {"cert",          required_argument, NULL,  0 },
     {"config",        required_argument, NULL, 'c'},
     {"daemon",        no_argument,       NULL, 'D'},
@@ -153,6 +155,7 @@ static struct option_detail option_detail[] = {
     {"alt-svc", "Add alt-svc header to response or send ALTSVC frame", option_string, &opt.alt_svc, NULL},
     {"bind", "The ip address to bind, default is [::]", option_string, &opt.CHOST, NULL},
     {"cafile", "CA certificate for server (ssl)", option_string, &opt.cafile, NULL},
+    {"cakey", "CA key for server (sni and vpn)", option_string, &opt.cakey, NULL},
     {"cert", "Certificate file for server (ssl)", option_string, &opt.cert, NULL},
     {"config", "Configure file (default "PREFIX"/etc/sproxy/sproxy.conf and ./sproxy.conf)", option_string, &opt.config_file, NULL},
     {"daemon", "Run as daemon", option_bool, &opt.daemon_mode, (void*)true},

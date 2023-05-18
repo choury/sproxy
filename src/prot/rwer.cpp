@@ -38,21 +38,19 @@ RWer::RWer(std::function<void (int, int)> errorCB): Ep(-1), errorCB(std::move(er
     writeCB = [](size_t){};
 }
 
+ssize_t RWer::Write(const Buffer& bb) {
+    if(bb.len == 0) {
+        assert(flags & RWER_SHUTDOWN);
+        shutdown(getFd(), SHUT_WR);
+        return 0;
+    }
+    return write(getFd(), bb.data(), bb.len);
+}
+
 void RWer::SendData(){
     std::set<uint64_t> writed_list;
     while(wbuff.start() != wbuff.end()){
-        int ret = wbuff.Write(std::bind([this, &writed_list] (const void* buff, size_t len, uint64_t id) mutable -> ssize_t {
-            if(len == 0) {
-                assert(flags & RWER_SHUTDOWN);
-                shutdown(getFd(), SHUT_WR);
-                return 0;
-            }
-            auto ret =  write(getFd(), buff, len);
-            if(ret >= 0){
-                writed_list.insert(id);
-            }
-            return ret;
-        }, _1, _2, _3));
+        int ret = wbuff.Write(std::bind(&RWer::Write, this, _1), writed_list);
         if(ret >= 0){
             continue;
         }
@@ -104,27 +102,25 @@ void RWer::defaultHE(RW_EVENT events){
 }
 
 void RWer::closeHE(RW_EVENT) {
-    if(wbuff.start() == wbuff.end()){
-        closeCB();
-        return;
-    }
-    ssize_t ret = wbuff.Write([this](const void* buff, size_t len, uint64_t) -> ssize_t {
-        if(len == 0) {
-            assert(flags & RWER_SHUTDOWN);
-            shutdown(getFd(), SHUT_WR);
-            return 0;
-        }
-        return write(getFd(), buff, len);
-    });
+    std::set<uint64_t> writed_list;
+    ssize_t ret = wbuff.Write(std::bind(&RWer::Write, this, _1), writed_list);
 #ifndef WSL
     if ((wbuff.start() == wbuff.end()) || (ret <= 0 && errno != EAGAIN && errno != ENOBUFS)) {
+        handleEvent = (void(Ep::*)(RW_EVENT))&RWer::IdleHE;
+        setEvents(RW_EVENT::NONE);
         closeCB();
     }
 #else
     if ((wbuff.start() == wbuff.end()) || (ret <= 0)) {
+        handleEvent = (void(Ep::*)(RW_EVENT))&RWer::IdleHE;
+        setEvents(RW_EVENT::NONE);
         closeCB();
     }
 #endif
+}
+
+void RWer::IdleHE(RW_EVENT) {
+    setEvents(RW_EVENT::NONE);
 }
 
 void RWer::Close(std::function<void()> func) {

@@ -117,24 +117,26 @@ buff_iterator WBuffer::push(buff_iterator i, Buffer&& bb) {
     return write_queue.emplace(i, std::move(bb));
 }
 
-ssize_t WBuffer::Write(std::function<ssize_t(const void*, size_t, uint64_t)> write_func){
+ssize_t WBuffer::Write(std::function<ssize_t(const Buffer& bb)> write_func, std::set<uint64_t>& writed_list){
     if(write_queue.empty()){
         return 0;
     }
     auto i = write_queue.begin();
     if(i->len == 0){
-        ssize_t ret = write_func(nullptr, 0, i->id);
+        ssize_t ret = write_func({nullptr, i->id});
         if(ret < 0){
             return ret;
         }
+        writed_list.insert(i->id);
         write_queue.pop_front();
         return 0;
     }
-    ssize_t ret = write_func((const char*)i->data(), i->len, i->id);
+    ssize_t ret = write_func({i->data(), i->len, i->id});
     if (ret > 0) {
         assert(len >= (size_t)ret && (size_t)ret <= i->len);
         len -= ret;
         i->reserve(ret);
+        writed_list.insert(i->id);
         if (i->len == 0) {
             write_queue.pop_front();
         }

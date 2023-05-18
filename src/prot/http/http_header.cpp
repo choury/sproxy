@@ -259,14 +259,24 @@ void HttpReqHeader::postparse() {
     if(request_id == 0) {
         request_id = id_gen++;
     }
-    if(Dest.port) {
-        return;
+
+    if(!Dest.scheme[0]){
+        strcpy(Dest.scheme, "http");
+    }
+}
+
+uint16_t HttpReqHeader::getDport() const {
+    if(Dest.port || ismethod("CONNECT") || ismethod("SEND") || ismethod("PING")){
+        //这些方法必须指定端口，否则无法解析
+        return Dest.port;
+    }
+    if(strcasecmp(Dest.scheme, "http") == 0) {
+        return HTTPPORT;
     }
     if(strcasecmp(Dest.scheme, "https") == 0) {
-        Dest.port = HTTPSPORT;
-    }else if(!ismethod("CONNECT") && !ismethod("SEND") && !ismethod("PING")){
-        Dest.port = HTTPPORT;
+        return HTTPSPORT;
     }
+    return HTTPPORT;
 }
 
 std::string HttpReqHeader::geturl() const {

@@ -35,6 +35,13 @@ extern "C" {
 #define TLS_HANDSHAKE_CONTENT_TYPE 0x16
 #define TLS_HANDSHAKE_TYPE_CLIENT_HELLO 0x01
 
+#define QUIC_CIPHERS                                              \
+   "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:"               \
+   "TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_CCM_SHA256"
+
+#define QUIC_GROUPS "P-256:X25519:P-384:P-521"
+
+
 int parse_tls_header(const char *data, size_t data_len, char **hostname);
 int verify_host_callback(int ok, X509_STORE_CTX *ctx);
 int ssl_get_error(SSL* ssl, int ret);
@@ -42,6 +49,7 @@ void keylog_write_line(const SSL *ssl, const char *line);
 
 int sign_data(const char* priv_key_file, const void* buff, int buff_len, char** sig, unsigned int* sig_len);
 int verify_data(const char* pub_key_file, const void* buff, size_t buff_len, const void* sig, size_t sig_len);
+SSL_CTX* initssl(int quic, const char** alpn_list);
 #ifdef  __cplusplus
 }
 #endif

@@ -193,7 +193,9 @@ public:
     virtual ~Ip();
 
     virtual sockaddr_storage getsrc() const = 0;
+    virtual uint16_t getsport() const = 0;
     virtual sockaddr_storage getdst() const = 0;
+    virtual uint16_t getdport() const = 0;
     virtual void dump() const;
 
     virtual size_t gethdrlen() const;
@@ -217,7 +219,9 @@ class Ip4: public Ip {
 public:
     Ip4(const Ip4&) = delete;
     sockaddr_storage getsrc() const override;
+    uint16_t getsport() const override;
     sockaddr_storage getdst() const override;
+    uint16_t getdport() const override;
 
     void build_packet(Buffer& bb) override;
 
@@ -237,7 +241,9 @@ class Ip6: public Ip {
 public:
     Ip6(const Ip6&) = delete;
     sockaddr_storage getsrc() const override;
+    uint16_t getsport() const override;
     sockaddr_storage getdst() const override;
+    uint16_t getdport() const override;
 
     void build_packet(Buffer& bb)override;
 

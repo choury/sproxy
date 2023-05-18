@@ -123,7 +123,7 @@ void HostResolver::readHE(RW_EVENT events) {
             Dns_Result result(buf, ret);
             error = result.error;
             if(result.error){
-                LOGE("invalid dns result\n");
+                LOGE("(%s) dns result error: %d\n", host, result.error);
                 flags |= GETERROR;
                 goto ret;
             }
@@ -303,11 +303,15 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
             func(param, 0, rcdfilter(resolver->host, resolver->rcd.addrs));
             return;
         }
-        if(resolver->rcd.addrs.empty()){
-            query_host_real(retries+1, resolver->host, func, param);
-        }else{
+        if (!resolver->rcd.addrs.empty()) {
             func(param, 0, rcdfilter(resolver->host, resolver->rcd.addrs));
+            return;
         }
+        if(error == DNS_NAME_ERROR) {
+            func(param, error, {});
+            return;
+        }
+        query_host_real(retries + 1, resolver->host, func, param);
     };
     new HostResolver(fd, host, std::bind(addrcb, retries, func, param, _1, _2));
 }

@@ -56,20 +56,22 @@ void Guest::WriteHE(uint64_t){
 
 Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(nullptr){
     if(ctx){
-        init(std::make_shared<SslRWer>(fd, addr, ctx, std::bind(&Guest::Error, this, _1, _2),
-            [this](const sockaddr_storage&){
-                std::shared_ptr<SslRWer> srwer = std::dynamic_pointer_cast<SslRWer>(rwer);
-                const unsigned char *data;
-                unsigned int len;
-                srwer->get_alpn(&data, &len);
-                if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
-                    new Guest2(srwer);
-                    rwer = nullptr;
-                    assert(statuslist.empty());
-                    return Server::deleteLater(NOERROR);
-                }
+        auto srwer = std::make_shared<SslRWer<StreamRWer>>(ctx, fd, addr, std::bind(&Guest::Error, this, _1, _2));
+        init(srwer);
+
+        srwer->SetConnectCB([this](const sockaddr_storage&){
+            //不要捕获rwer,否则不能正常释放shared_ptr
+            auto srwer = std::dynamic_pointer_cast<SslRWer<StreamRWer>>(this->rwer);
+            const unsigned char *data;
+            unsigned int len;
+            srwer->get_alpn(&data, &len);
+            if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
+                new Guest2(srwer);
+                rwer = nullptr;
+                assert(statuslist.empty());
+                return Server::deleteLater(NOERROR);
             }
-        ));
+        });
     }else{
         init(std::make_shared<StreamRWer>(fd, addr, std::bind(&Guest::Error, this, _1, _2)));
     }
@@ -77,7 +79,32 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
     rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));
 }
 
+Guest::Guest(std::shared_ptr<RWer> rwer): Requester(rwer){
+    auto srwer = std::dynamic_pointer_cast<SslRWer<MemRWer>>(rwer);
+    if(srwer) {
+        srwer->SetConnectCB([this](const sockaddr_storage&){
+            auto srwer = std::dynamic_pointer_cast<SslRWer<MemRWer>>(this->rwer);
+            const unsigned char *data;
+            unsigned int len;
+            srwer->get_alpn(&data, &len);
+            if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
+                new Guest2(srwer);
+                this->rwer = nullptr;
+                assert(statuslist.empty());
+                return Server::deleteLater(NOERROR);
+            }
+        });
+        srwer->SetErrorCB(std::bind(&Guest::Error, this, _1, _2));
+        forceTls = true;
+    }
+    rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1, _2, _3));
+    rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));
+}
+
 void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
+    if(forceTls) {
+        strcpy(header->Dest.scheme, "https");
+    }
     LOGD(DHTTP, "<guest> ReqProc %" PRIu32 " %s\n", header->request_id, header->geturl().c_str());
     auto req = std::make_shared<HttpReq>(header,
             std::bind(&Guest::response, this, nullptr, _1),

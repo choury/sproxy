@@ -101,6 +101,7 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
             break;
         case Strategy::direct:
             memcpy(&dest, &header->Dest, sizeof(dest));
+            dest.port = header->getDport();
             if(header->ismethod("PING")){
                 return (new Ping(header))->request(req, src);
             }

@@ -106,6 +106,7 @@ public:
     bool ismethod(const char* method) const;
     bool http_method() const;
     bool valid_method() const;
+    uint16_t getDport() const;
 
     virtual std::multimap<std::string, std::string> Normalize() const override;
     virtual bool no_body() const override;

@@ -10,7 +10,7 @@ Requester::Requester(std::shared_ptr<RWer> rwer) {
 
 void Requester::init(std::shared_ptr<RWer> rwer) {
     this->rwer = rwer;
-    strcpy(source, rwer->getPeer());
+    strncpy(source, rwer->getPeer(), sizeof(source));
     *strlchrnul(source, ':') = 0;
 }
 

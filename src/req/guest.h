@@ -13,6 +13,7 @@
 class Guest:public Requester, public HttpResponser {
     size_t rx_bytes = 0;
     size_t tx_bytes = 0;
+    bool forceTls = false;
 protected:
     struct ReqStatus{
         std::shared_ptr<HttpReq>  req;
@@ -23,7 +24,7 @@ protected:
     size_t ReadHE(uint64_t id, const void* data, size_t len);
     void WriteHE(uint64_t id);
     virtual void Error(int ret, int code);
-    
+
     virtual void ReqProc(std::shared_ptr<HttpReqHeader> req)override;
     virtual ssize_t DataProc(const void *buff, size_t size)override;
     virtual void EndProc() override;
@@ -33,6 +34,7 @@ protected:
     void deqReq();
 public:
     explicit Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx);
+    explicit Guest(std::shared_ptr<RWer> rwer);
     ~Guest();
 
     virtual void response(void*, std::shared_ptr<HttpRes> res)override;

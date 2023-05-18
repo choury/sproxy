@@ -83,7 +83,7 @@ function test_https(){
     [ $? -ne 0 ] && echo "https test 9 failed"
     curl -f -v -L --http2 https://$HOSTNAME:$1/cgi  -k 2>> curl.log
     [ $? -ne 0 ] && echo "https test 10 failed"
-    curl -f -v --http1.1 https://$HOSTNAME:$1/ -H "Host: www.qq.com" -k > /dev/null 2>> curl.log
+    curl -f -v --http1.1 https://$HOSTNAME:$1/ -H "Host: www.qq.com" -A "Mozilla/5.0" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "https test 11 failed" && exit 1
     curl -f -v --http2 https://$HOSTNAME:$1/ -H "Host: www.qq.com:443" -A "Mozilla/5.0" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "https test 12 failed" && exit 1

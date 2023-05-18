@@ -15,7 +15,7 @@ protected:
     std::queue<sockaddr_storage> addrs;
     void connect();
     Job*     con_failed_job = nullptr;
-    std::function<void(const sockaddr_storage&)> connectCB;
+    std::function<void(const sockaddr_storage&)> connectCB = [](const sockaddr_storage&){};
     // connectFailed should only be called with job con_failed_job,
     // there's always an extra job somewhere if you invoke it directly.
     void connectFailed(int error);
@@ -27,8 +27,8 @@ protected:
 public:
     SocketRWer(int fd, const sockaddr_storage* peer, std::function<void(int ret, int code)> errorCB);
     SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
-           std::function<void(int ret, int code)> errorCB,
-           std::function<void(const sockaddr_storage&)> connectCB = nullptr);
+           std::function<void(int ret, int code)> errorCB);
+    virtual void SetConnectCB(std::function<void(const sockaddr_storage&)> connectCB);
     virtual ~SocketRWer() override;
     virtual const char* getPeer() override;
     virtual void dump_status(Dumper dp, void* param) override;

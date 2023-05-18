@@ -51,11 +51,12 @@ protected:
     std::function<void(int ret, int code)> errorCB;
     std::function<void()> closeCB;
 
-    //virtual ssize_t Write(const void* buff, size_t len, uint64_t id);
+    virtual ssize_t Write(const Buffer& bb);
     virtual void SendData();
     virtual void ReadData() = 0;
     virtual void defaultHE(RW_EVENT events);
     virtual void closeHE(RW_EVENT events);
+    virtual void IdleHE(RW_EVENT events);
     virtual void ErrorHE(int ret, int code);
     //ConsumeRData只会在Unblock中被调用，ReadData逻辑，需要各实现自行处理readCB回调
     virtual void ConsumeRData(uint64_t id) = 0;

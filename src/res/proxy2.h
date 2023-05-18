@@ -46,7 +46,7 @@ protected:
 
     static bool wantmore(const ReqStatus& status);
 public:
-    explicit Proxy2(std::shared_ptr<SslRWer> rwer);
+    explicit Proxy2(std::shared_ptr<RWer> rwer);
     virtual ~Proxy2() override;
 
     virtual void request(std::shared_ptr<HttpReq> req, Requester*)override;

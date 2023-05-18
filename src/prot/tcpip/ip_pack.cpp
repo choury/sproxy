@@ -1092,18 +1092,20 @@ sockaddr_storage Ip4::getsrc() const {
     sockaddr_in* addr = (sockaddr_in*)&addr_;
     addr->sin_family = AF_INET;
     addr->sin_addr = hdr.ip_src;
-    switch(type){
-    case IPPROTO_ICMP:
-        addr->sin_port = htons(icmp->getid());
-        break;
-    case IPPROTO_TCP:
-        addr->sin_port = htons(tcp->getsport());
-        break;
-    case IPPROTO_UDP:
-        addr->sin_port = htons(udp->getsport());
-        break;
-    }
+    addr->sin_port = htons(getsport());
     return addr_;
+}
+
+uint16_t Ip4::getsport() const {
+    switch(type) {
+    case IPPROTO_ICMP:
+        return icmp->getid();
+    case IPPROTO_TCP:
+        return tcp->getsport();
+    case IPPROTO_UDP:
+        return udp->getsport();
+    }
+    return 0;
 }
 
 sockaddr_storage Ip4::getdst() const {
@@ -1112,18 +1114,20 @@ sockaddr_storage Ip4::getdst() const {
     sockaddr_in* addr = (sockaddr_in*)&addr_;
     addr->sin_family = AF_INET;
     addr->sin_addr = hdr.ip_dst;
-    switch(type){
-    case IPPROTO_ICMP:
-        addr->sin_port = htons(icmp->getid());
-        break;
-    case IPPROTO_TCP:
-        addr->sin_port = htons(tcp->getdport());
-        break;
-    case IPPROTO_UDP:
-        addr->sin_port = htons(udp->getdport());
-        break;
-    }
+    addr->sin_port = htons(getdport());
     return addr_;
+}
+
+uint16_t Ip4::getdport() const {
+    switch(type) {
+    case IPPROTO_ICMP:
+        return icmp->getid();
+    case IPPROTO_TCP:
+        return tcp->getdport();
+    case IPPROTO_UDP:
+        return udp->getdport();
+    }
+    return 0;
 }
 
 
@@ -1258,18 +1262,20 @@ sockaddr_storage Ip6::getdst() const {
     sockaddr_in6* addr = (sockaddr_in6*)&addr_;
     addr->sin6_family = AF_INET6;
     addr->sin6_addr = hdr.ip6_dst;
+    addr->sin6_port = htons(getdport());
+    return addr_;
+}
+
+uint16_t Ip6::getdport() const {
     switch(type){
     case IPPROTO_ICMPV6:
-        addr->sin6_port = htons(icmp6->getid());
-        break;
+        return icmp6->getid();
     case IPPROTO_TCP:
-        addr->sin6_port = htons(tcp->getdport());
-        break;
+        return tcp->getdport();
     case IPPROTO_UDP:
-        addr->sin6_port = htons(udp->getdport());
-        break;
+        return udp->getdport();
     }
-    return addr_;
+    return 0;
 }
 
 sockaddr_storage Ip6::getsrc() const {
@@ -1278,18 +1284,20 @@ sockaddr_storage Ip6::getsrc() const {
     sockaddr_in6* addr = (sockaddr_in6*)&addr_;
     addr->sin6_family = AF_INET6;
     addr->sin6_addr = hdr.ip6_src;
+    addr->sin6_port = htons(getsport());
+    return addr_;
+}
+
+uint16_t Ip6::getsport() const {
     switch(type){
     case IPPROTO_ICMPV6:
-        addr->sin6_port = htons(icmp6->getid());
-        break;
+        return icmp6->getid();
     case IPPROTO_TCP:
-        addr->sin6_port = htons(tcp->getsport());
-        break;
+        return tcp->getsport();
     case IPPROTO_UDP:
-        addr->sin6_port = htons(udp->getsport());
-        break;
+        return udp->getsport();
     }
-    return addr_;
+    return 0;
 }
 
 void Ip6::print() const {

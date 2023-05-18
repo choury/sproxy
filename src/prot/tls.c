@@ -32,12 +32,35 @@
 #include <stdlib.h>
 #include <string.h> /* strncpy() */
 #include <errno.h>
+#include <assert.h>
 #include "tls.h"
 #include "common/common.h"
 #include "misc/config.h"
 
 #include <openssl/err.h>
 #include <openssl/pem.h>
+
+const char *DEFAULT_CIPHER_LIST =
+#if OPENSSL_VERSION_NUMBER > 0x10101000L
+            "TLS13-AES-256-GCM-SHA384:"
+            "TLS13-CHACHA20-POLY1305-SHA256:"
+            "TLS13-AES-128-GCM-SHA256:"
+            "TLS13-AES-128-CCM-8-SHA256:"
+            "TLS13-AES-128-CCM-SHA256:"
+#endif
+            "ECDHE-RSA-AES128-GCM-SHA256:"
+            "ECDHE-RSA-CHACHA20-POLY1305:"
+            "ECDHE-ECDSA-AES128-GCM-SHA256:"
+            "ECDHE-ECDSA-CHACHA20-POLY1305:"
+            "ECDHE-RSA-AES256-GCM-SHA384:"
+            "ECDHE-ECDSA-AES256-GCM-SHA384:"
+            "DHE-RSA-AES128-GCM-SHA256:"
+            "DHE-DSS-AES128-GCM-SHA256:"
+            "ECDHE+AES128:"
+            "RSA+AES128:"
+            "ECDHE+AES256:"
+            "RSA+AES256:"
+            "!aNULL:!eNULL:!EXPORT:!DES:!RC4:!3DES:!MD5:!PSK";
 
 int parse_tls_header(const char *, size_t, char **);
 static int parse_extensions(const char *, size_t, char **);
@@ -374,4 +397,94 @@ error:
     EVP_MD_CTX_free(ctx);
     EVP_PKEY_free(ec_key);
     return -1;
+}
+
+static int select_alpn_cb(SSL *ssl,
+                          const unsigned char **out, unsigned char *outlen,
+                          const unsigned char *in, unsigned int inlen, void *arg)
+{
+    (void)ssl;
+    const char **priorities = (const char **)arg;
+    for (size_t i = 0; priorities[i] != NULL; i++) {
+        const unsigned char *p = in;
+        LOGD(DSSL, "check alpn: %s\n", priorities[i]);
+        while ((size_t)(p-in) < inlen) {
+            uint8_t len = *p++;
+            if (len == strlen(priorities[i]) && strncmp((const char *)p, priorities[i], len) == 0) {
+                LOGD(DSSL, "alpn pick %s\n", priorities[i]);
+                *out = (unsigned char *)priorities[i];
+                *outlen = strlen((char *)*out);
+                return SSL_TLSEXT_ERR_OK;
+            }
+            p += len;
+        }
+    }
+    LOGE("Can't select a protocol\n");
+    return SSL_TLSEXT_ERR_ALERT_FATAL;
+}
+
+SSL_CTX* initssl(int quic, const char** alpn_list){
+    SSL_CTX *ctx = NULL;
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+    ctx = SSL_CTX_new(SSLv23_server_method());
+#else
+    ctx = SSL_CTX_new(TLS_server_method());
+#endif
+    if (ctx == NULL) {
+        ERR_print_errors_fp(stderr);
+        return NULL;
+    }
+#ifdef HAVE_QUIC
+    if(quic){
+        SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION);
+        SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION);
+        SSL_CTX_set_ciphersuites(ctx, QUIC_CIPHERS);
+        SSL_CTX_set1_groups_list(ctx, QUIC_GROUPS);
+    }else {
+#else
+    (void)quic;
+    {
+#endif
+        SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3); // 去除支持SSLv2 SSLv3
+        SSL_CTX_set_cipher_list(ctx, DEFAULT_CIPHER_LIST);
+        SSL_CTX_set_mode(ctx, SSL_MODE_AUTO_RETRY);
+    }
+    SSL_CTX_set_options(ctx, SSL_OP_NO_COMPRESSION);
+    SSL_CTX_set_options(ctx, SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION);
+    SSL_CTX_set_options(ctx, SSL_OP_SINGLE_ECDH_USE);
+    SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET);
+    SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
+    SSL_CTX_set_mode(ctx, SSL_MODE_RELEASE_BUFFERS);
+
+    /*
+    EC_KEY *ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
+    SSL_CTX_set_tmp_ecdh(ctx, ecdh);
+    EC_KEY_free(ecdh);
+    SSL_CTX_set_ecdh_auto(ctx, 1);
+    */
+
+    if (opt.cafile && SSL_CTX_load_verify_locations(ctx, opt.cafile, NULL) != 1)
+        ERR_print_errors_fp(stderr);
+
+    if (SSL_CTX_set_default_verify_paths(ctx) != 1)
+        ERR_print_errors_fp(stderr);
+
+    //加载证书和私钥
+    if (SSL_CTX_use_certificate_file(ctx, opt.cert, SSL_FILETYPE_PEM) != 1) {
+        ERR_print_errors_fp(stderr);
+    }
+
+    if (SSL_CTX_use_PrivateKey_file(ctx, opt.key, SSL_FILETYPE_PEM) != 1) {
+        ERR_print_errors_fp(stderr);
+    }
+
+    if (SSL_CTX_check_private_key(ctx) != 1) {
+        ERR_print_errors_fp(stderr);
+    }
+
+    SSL_CTX_set_verify_depth(ctx, 10);
+    //SSL_CTX_set_tlsext_servername_callback(ctx, ssl_callback_ServerName);
+    SSL_CTX_set_alpn_select_cb(ctx, select_alpn_cb, alpn_list);
+    SSL_CTX_set_read_ahead(ctx, 1);
+    return ctx;
 }

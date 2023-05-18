@@ -8,6 +8,7 @@
 #include "common/common.h"
 
 #include <list>
+#include <set>
 #include <functional>
 #include <memory>
 
@@ -107,7 +108,7 @@ public:
     buff_iterator start();
     buff_iterator end();
     buff_iterator push(buff_iterator i, Buffer&& bb);
-    ssize_t  Write(std::function<ssize_t(const void*, size_t, uint64_t)> write_func);
+    ssize_t  Write(std::function<ssize_t(const Buffer&)> write_func, std::set<uint64_t>& writed_list);
 };
 
 #if 0

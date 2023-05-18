@@ -42,6 +42,7 @@ struct arg_list{
 struct options{
     const char *admin;
     const char *cafile;
+    const char *cakey;
     const char *cert;
     const char *key;
     const char *config_file;

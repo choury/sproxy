@@ -23,28 +23,30 @@ Host::Host(const Destination* dest){
     memcpy(&Server, dest, sizeof(Destination));
 
     if(dest->scheme[0] == 0 || strcasecmp(dest->scheme, "http") == 0){
-        rwer = std::make_shared<StreamRWer>(dest->hostname, dest->port, Protocol::TCP,
-                              std::bind(&Host::Error, this, _1, _2),
-                              std::bind(&Host::connected, this));
+        auto srwer = std::make_shared<StreamRWer>(dest->hostname, dest->port, Protocol::TCP,
+                              std::bind(&Host::Error, this, _1, _2));
+        rwer = srwer;
+        srwer->SetConnectCB(std::bind(&Host::connected, this));
     }else if(strcasecmp(dest->scheme, "https") == 0 ) {
-        auto srwer = std::make_shared<SslRWer>(dest->hostname, dest->port, Protocol::TCP,
-                                     std::bind(&Host::Error, this, _1, _2),
-                                     std::bind(&Host::connected, this));
+        auto srwer = std::make_shared<SslRWer<StreamRWer>>(dest->hostname, dest->port, Protocol::TCP,
+                                     std::bind(&Host::Error, this, _1, _2));
         if(!opt.disable_http2){
             srwer->set_alpn(alpn_protos_http12, sizeof(alpn_protos_http12)-1);
         }
         rwer = srwer;
+        srwer->SetConnectCB(std::bind(&Host::connected, this));
     }else if(strcasecmp(dest->scheme, "udp") == 0) {
-        rwer = std::make_shared<PacketRWer>(dest->hostname, dest->port, Protocol::UDP,
-                              std::bind(&Host::Error, this, _1, _2),
-                              std::bind(&Host::connected, this));
+        auto prwer = std::make_shared<PacketRWer>(dest->hostname, dest->port, Protocol::UDP,
+                              std::bind(&Host::Error, this, _1, _2));
+        rwer = prwer;
+        prwer->SetConnectCB(std::bind(&Host::connected, this));
 #ifdef HAVE_QUIC
     }else if(strcasecmp(dest->scheme, "quic") == 0){
         auto qrwer = std::make_shared<QuicRWer>(dest->hostname, dest->port, Protocol::QUIC,
-                                     std::bind(&Host::Error, this, _1, _2),
-                                     std::bind(&Host::connected, this));
+                                     std::bind(&Host::Error, this, _1, _2));
         qrwer->set_alpn(alpn_protos_http3, sizeof(alpn_protos_http3)-1);
         rwer = qrwer;
+        qrwer->SetConnectCB(std::bind(&Host::connected, this));
 #endif
     }else{
         LOGF("Unkonw scheme: %s\n", dest->scheme);
@@ -102,7 +104,7 @@ attach:
 
 void Host::connected() {
     LOGD(DHTTP, "<host> (%s) connected\n", rwer->getPeer());
-    auto srwer = std::dynamic_pointer_cast<SslRWer>(rwer);
+    auto srwer = std::dynamic_pointer_cast<SslRWer<StreamRWer>>(rwer);
     if(srwer){
         const unsigned char *data;
         unsigned int len;

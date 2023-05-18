@@ -13,11 +13,6 @@
 #include <list>
 #include <map>
 
-#define QUIC_CIPHERS                                              \
-   "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:"               \
-   "TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_CCM_SHA256"
-
-#define QUIC_GROUPS "P-256:X25519:P-384:P-521"
 
 #define QUIC_CID_LEN     20
 
@@ -229,11 +224,9 @@ protected:
     std::function<void(uint64_t id, uint32_t error)> resetHandler = [](uint64_t, uint32_t){};
 public:
     explicit QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
-                     std::function<void(int ret, int code)> errorCB,
-                     std::function<void(const sockaddr_storage&)> connectCB = nullptr);
+                     std::function<void(int ret, int code)> errorCB);
     explicit QuicRWer(int fd, const sockaddr_storage* peer, SSL_CTX* ctx, QuicMgr* mgr,
-                     std::function<void(int ret, int code)> errorCB,
-                     std::function<void(const sockaddr_storage&)> connectCB = nullptr);
+                     std::function<void(int ret, int code)> errorCB);
     virtual ~QuicRWer() override;
     virtual void buffer_insert(Buffer&& bb) override;
 
