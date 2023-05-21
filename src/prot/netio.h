@@ -24,6 +24,7 @@ protected:
 
     virtual void waitconnectHE(RW_EVENT events);
     //virtual ssize_t Write(const void* buff, size_t len, uint64_t) override;
+    virtual bool IsConnected();
 public:
     SocketRWer(int fd, const sockaddr_storage* peer, std::function<void(int ret, int code)> errorCB);
     SocketRWer(const char* hostname, uint16_t port, Protocol protocol,

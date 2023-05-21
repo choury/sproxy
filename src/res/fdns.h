@@ -29,4 +29,5 @@ public:
 };
 
 std::string getRdns(const sockaddr_storage& addr);
+std::string getRdnsWithPort(const sockaddr_storage& addr);
 #endif

@@ -4,6 +4,7 @@
 #include "net.h"
 #include "common/version.h"
 #include "network_notify.h"
+#include "cert_manager.h"
 
 #include <getopt.h>
 #include <stdio.h>
@@ -454,12 +455,20 @@ void postConfig(){
         LOGE("access cafile failed: %s\n", strerror(errno));
         exit(1);
     }
+    if (opt.cakey && access(opt.cakey, R_OK)) {
+        LOGE("access cakey failed: %s\n", strerror(errno));
+        exit(1);
+    }
     if (opt.cert && access(opt.cert, R_OK)){
         LOGE("access cert file failed: %s\n", strerror(errno));
         exit(1);
     }
     if (opt.key && access(opt.key, R_OK)){
         LOGE("access key file failed: %s\n", strerror(errno));
+        exit(1);
+    }
+    if (opt.cafile && opt.cakey && load_ca(opt.cafile, opt.cakey)) {
+        LOGE("failed to load cafile or cakey\n");
         exit(1);
     }
     for(struct arg_list* p = secrets.next; p != NULL; p = p->next){

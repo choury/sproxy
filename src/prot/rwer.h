@@ -28,11 +28,17 @@ enum class RWerStats{
     Idle = 0,
     Resolving,
     Connecting,
-    SslAccepting,
-    SslConnecting,
     Connected,
     ReadEOF,
     Error,
+};
+
+enum class SslStats{
+    Idel = 0,
+    SslAccepting,
+    SslConnecting,
+    Established,
+    SslEOF,
 };
 
 class RWer: public Ep, public job_handler, public std::enable_shared_from_this<RWer> {

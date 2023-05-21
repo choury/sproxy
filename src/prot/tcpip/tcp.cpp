@@ -387,32 +387,6 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
     }
 left:
     status->window = pac->tcp->getwindow();
-    if(flag & TH_FIN){ //fin包，回ack包
-        status->want_seq++;
-        status->flags |= TCP_FIN_RECVD;
-        switch(status->state){
-        case TCP_CLOSE_WAIT:
-            LOG("%s get dup fin, send rst back\n", storage_ntoa(&status->src));
-            SendRst(status);
-            status->errCB(pac, TCP_RESET_ERR);
-            return;
-        case TCP_ESTABLISHED:
-            status->state = TCP_CLOSE_WAIT;
-            break;
-        case TCP_FIN_WAIT1:
-            status->state = TCP_CLOSING;
-            status->PkgProc = std::bind(&CloseProc, status, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
-            break;
-        case TCP_FIN_WAIT2:
-            status->state = TCP_TIME_WAIT;
-            status->PkgProc = std::bind(&CloseProc, status, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
-            break;
-        }
-        status->ack_job = status->jobHandler.updatejob(status->ack_job,
-                                                       std::bind(&SendAck, GetWeak(status)), 0);
-        return;
-    }
-
     size_t datalen = len - pac->gethdrlen();
     if(datalen > status->rbuf.cap()) {
         LOG("%s get pkt oversize of window (%zu/%zu), rst it\n",
@@ -426,6 +400,30 @@ left:
         const char *data = packet + pac->gethdrlen();
         status->rbuf.put(data, datalen);
         status->want_seq += datalen;
+        status->ack_job = status->jobHandler.updatejob(status->ack_job,
+                                                       std::bind(&SendAck, GetWeak(status)), 0);
+    }
+    if(flag & TH_FIN){ //fin包，回ack包
+        status->want_seq++;
+        status->flags |= TCP_FIN_RECVD;
+        switch(status->state){
+            case TCP_CLOSE_WAIT:
+                LOG("%s get dup fin, send rst back\n", storage_ntoa(&status->src));
+                SendRst(status);
+                status->errCB(pac, TCP_RESET_ERR);
+                return;
+            case TCP_ESTABLISHED:
+                status->state = TCP_CLOSE_WAIT;
+                break;
+            case TCP_FIN_WAIT1:
+                status->state = TCP_CLOSING;
+                status->PkgProc = std::bind(&CloseProc, status, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+                break;
+            case TCP_FIN_WAIT2:
+                status->state = TCP_TIME_WAIT;
+                status->PkgProc = std::bind(&CloseProc, status, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+                break;
+        }
         status->ack_job = status->jobHandler.updatejob(status->ack_job,
                                                        std::bind(&SendAck, GetWeak(status)), 0);
     }

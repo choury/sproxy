@@ -12,6 +12,9 @@ protected:
     void connected(const sockaddr_storage& addr);
     virtual void closeHE(RW_EVENT events) override;
     virtual ssize_t Write(const Buffer& bb) override;
+    virtual bool IsConnected() {
+        return true;
+    }
 public:
     explicit MemRWer(const char* pname, std::function<int(Buffer&&)> cb);
     ~MemRWer() override;

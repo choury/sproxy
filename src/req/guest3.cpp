@@ -239,6 +239,8 @@ void Guest3::RstProc(uint64_t id, uint32_t errcode) {
         }
         status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
         Clean(id, errcode);
+    } else {
+        LOGD(DHTTP3, "reset for no exist id: %" PRIu64"\n", id);
     }
 }
 

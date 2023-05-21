@@ -94,6 +94,7 @@ public:
 
 class QuicRWer: public SocketRWer {
 protected:
+    SslStats sslStats = SslStats::Idel;
     SSL_CTX* ctx = nullptr;  // server will be null
     SSL *ssl = nullptr;
     QuicMgr* mgr = nullptr;
@@ -175,6 +176,7 @@ protected:
     virtual size_t rlength(uint64_t id) override;
     virtual ssize_t cap(uint64_t id) override;
     //virtual ssize_t Write(const void* buff, size_t len, uint64_t id) override;
+    virtual bool IsConnected() override;
 
     void generateCid();
     size_t generateParams(char data[QUIC_INITIAL_LIMIT]);

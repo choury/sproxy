@@ -34,18 +34,10 @@ static std::vector<const char*>& get_alpn_list() {
     return alpn_list;
 }
 
-int ssl_callback_ServerName(SSL *ssl, int*, void*){
-    const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
-    if (servername) {
-        //TODO: new sni mode
-    }
-    return 0;
-}
-
 int main(int argc, char **argv) {
     parseConfig(argc, argv);
     if(opt.cert && opt.key){
-        SSL_CTX * ctx = initssl(opt.quic_mode, get_alpn_list().data());
+        SSL_CTX * ctx = initssl(opt.quic_mode, get_alpn_list().data(), nullptr);
 #ifdef HAVE_QUIC
         if(opt.quic_mode){
             int svsk_quic = ListenNet(SOCK_DGRAM, opt.CHOST, opt.CPORT);

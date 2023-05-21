@@ -90,7 +90,7 @@ void SocketRWer::connectFailed(int error) {
 }
 
 void SocketRWer::connect() {
-    if(stats != RWerStats::Connecting && stats != RWerStats::SslConnecting) {
+    if(stats != RWerStats::Connecting) {
         return;
     }
     assert(!addrs.empty());
@@ -153,19 +153,20 @@ void SocketRWer::connect() {
 
 void SocketRWer::connected(const sockaddr_storage& addr) {
     deljob(&con_failed_job);
-    if(stats == RWerStats::Connected){
-        return;
-    }
     setEvents(RW_EVENT::READWRITE);
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&SocketRWer::defaultHE;
     connectCB(addr);
-    connectCB =  [](const sockaddr_storage&){};
+    connectCB = [](const sockaddr_storage&){};
+}
+
+bool SocketRWer::IsConnected(){
+    return stats == RWerStats::Connected;
 }
 
 void SocketRWer::SetConnectCB(std::function<void(const sockaddr_storage&)> cb) {
-    if(stats == RWerStats::Connected){
-        connectCB(addrs.front());
+    if(IsConnected()){
+        cb(addrs.front());
     } else {
         connectCB = std::move(cb);
     }

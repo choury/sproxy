@@ -52,32 +52,32 @@ void debugString(std::shared_ptr<const Ip> pac, size_t len) {
     switch(pac->gettype()){
     case IPPROTO_TCP:
         LOGD(DVPN, "<tcp> (%s -> %s) (%u - %u) flag: %s size:%zu\n",
-            getRdns(pac->getsrc()).c_str(), getRdns(pac->getdst()).c_str(),
-            pac->tcp->getseq(), pac->tcp->getack(), pac->tcp->getflags(), len);
+             getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(),
+             pac->tcp->getseq(), pac->tcp->getack(), pac->tcp->getflags(), len);
         return;
     case IPPROTO_UDP:
         LOGD(DVPN, "<udp> (%s -> %s) size:%zu\n",
-            getRdns(pac->getsrc()).c_str(), getRdns(pac->getdst()).c_str(), len);
+             getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(), len);
         return;
     case IPPROTO_ICMP:
         if(ICMP_PING(pac->icmp->gettype())){
             LOGD(DVPN, "<ping> (%s -> %s) (%u) size:%zu\n",
-                getRdns(pac->getsrc()).c_str(), getRdns(pac->getdst()).c_str(),
-                pac->icmp->getseq(), len);
+                 getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(),
+                 pac->icmp->getseq(), len);
         } else {
             LOGD(DVPN, "<icmp> (%s -> %s) (%u) size:%zu\n",
-                 getRdns(pac->getsrc()).c_str(), getRdns(pac->getdst()).c_str(),
+                 getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(),
                  pac->icmp->gettype(), len);
         }
         return;
     case IPPROTO_ICMPV6:
         if(ICMP6_PING(pac->icmp6->gettype())) {
             LOGD(DVPN, "<ping6> (%s -> %s) (%u) size:%zu\n",
-                getRdns(pac->getsrc()).c_str(), getRdns(pac->getdst()).c_str(),
-                pac->icmp6->getseq(), len);
+                 getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(),
+                 pac->icmp6->getseq(), len);
         }else {
             LOGD(DVPN, "<icmp6> (%s -> %s) (%u) size:%zu\n",
-                 getRdns(pac->getsrc()).c_str(), getRdns(pac->getdst()).c_str(),
+                 getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(),
                  pac->icmp6->gettype(), len);
         }
         return;
@@ -147,7 +147,7 @@ void TunRWer::ReadData() {
                 transIcmp = true;
                 key = VpnKey(icmp_pac).reverse();
                 LOGD(DVPN, "get icmp unreach for: <%s> %s - %s\n",
-                     protstr(key.protocol), getRdns(key.src).c_str(), getRdns(key.dst).c_str());
+                     protstr(key.protocol), getRdnsWithPort(key.src).c_str(), getRdnsWithPort(key.dst).c_str());
             }else if(!ICMP_PING(type)) {
                 LOGD(DVPN, "ignore icmp type: %d\n", type);
                 continue;
@@ -162,7 +162,7 @@ void TunRWer::ReadData() {
                 transIcmp = true;
                 key = VpnKey(icmp6_pac).reverse();
                 LOGD(DVPN, "get icmp6 unreach for: <%s> %s - %s\n",
-                     protstr(key.protocol), getRdns(key.src).c_str(), getRdns(key.dst).c_str());
+                     protstr(key.protocol), getRdnsWithPort(key.src).c_str(), getRdnsWithPort(key.dst).c_str());
             }else if(!ICMP6_PING(type)) {
                 LOGD(DVPN, "ignore icmp6 type: %d\n", type);
                 continue;

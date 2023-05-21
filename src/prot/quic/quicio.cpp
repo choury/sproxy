@@ -528,7 +528,7 @@ QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, QuicMgr* 
     SSL_set_app_data(ssl, this);
     generateCid();
     SSL_set_accept_state(ssl);
-    stats = RWerStats::SslAccepting;
+    sslStats = SslStats::SslAccepting;
     nextLocalBiId   = 1;
     nextRemoteBiId  = 0;
     nextLocalUbiId  = 3;
@@ -575,7 +575,7 @@ void QuicRWer::waitconnectHE(RW_EVENT events) {
         if(getsockopt(getFd(), SOL_SOCKET, SO_SNDBUF, &sndbuf, &len) < 0){
             LOGF("failed to get sndbuf: %s\n", strerror(errno));
         }
-        stats = RWerStats::SslConnecting;
+        sslStats = SslStats::SslConnecting;
         X509_VERIFY_PARAM *param = SSL_get0_param(ssl);
 
         /* Enable automatic hostname checks */
@@ -590,7 +590,7 @@ void QuicRWer::waitconnectHE(RW_EVENT events) {
         ssl_get_error(ssl, SSL_do_handshake(ssl));
         if (errno != EAGAIN) {
             int error = errno;
-            LOGE("(%s): ssl connect error:%s\n", hostname, strerror(error));
+            LOGE("(%s): quic connect error:%s\n", hostname, strerror(error));
             ErrorHE(SSL_SHAKEHAND_ERR, error);
             return;
         }
@@ -617,7 +617,7 @@ QuicRWer::FrameResult QuicRWer::handleCryptoFrame(quic_context* context, const q
     if(context->level == ssl_encryption_application){
         if(ssl_get_error(ssl, SSL_process_quic_post_handshake(ssl)) != 1){
             int error = errno;
-            LOGE("(%s): ssl connect error:%s\n", hostname, strerror(error));
+            LOGE("(%s): quic process post handshake error:%s\n", hostname, strerror(error));
             ErrorHE(PROTOCOL_ERR, error);
             return FrameResult::error;
         }
@@ -718,6 +718,7 @@ QuicRWer::FrameResult QuicRWer::handleCryptoFrame(quic_context* context, const q
                 //discard token from retry packet.
                 initToken.clear();
             }
+            sslStats = SslStats::Established;
             connected(addrs.front());
         }else if(errno != EAGAIN){
             int error = errno;
@@ -876,6 +877,7 @@ QuicRWer::FrameResult QuicRWer::handleResetFrame(const quic_reset *stream) {
     my_received_data += status.finSize - want;
 
     if((status.flags & STREAM_FLAG_RESET_DELIVED) == 0) {
+        LOGD(DQUIC, "reset stream for %" PRIu64"\n", id);
         resetHandler(id, stream->error);
         status.flags |= STREAM_FLAG_RESET_DELIVED;
         status.rb.consume(status.rb.length());
@@ -1357,7 +1359,7 @@ void QuicRWer::Close(std::function<void()> func) {
         close_timer = updatejob(close_timer, closeCB, 3 * qos.rtt.rttvar);
         return 0;
     };
-    if(getFd() >= 0 && stats == RWerStats::Connected) {
+    if(getFd() >= 0 && sslStats == SslStats::Established) {
         //we only send CLOSE_CONNECTION_APP frame after handshake now
         //TODO: but it should also be send before handshake
         close_timer = updatejob(close_timer, closeCB, max_idle_timeout);
@@ -1583,6 +1585,11 @@ ssize_t QuicRWer::cap(uint64_t id) {
     return std::min((long long)stream.his_max_data - (long long)stream.my_offset,
                     (long long)his_max_data - (long long)my_sent_data);
 }
+
+bool QuicRWer::IsConnected() {
+    return sslStats == SslStats::Established;
+}
+
 
 bool QuicRWer::idle(uint64_t id){
     if(streammap.count(id) == 0){

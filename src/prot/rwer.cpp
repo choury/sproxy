@@ -129,10 +129,11 @@ void RWer::Close(std::function<void()> func) {
     }
     flags |= RWER_CLOSING;
     closeCB = std::move(func);
-    if(getFd() >= 0 && stats != RWerStats::Connecting){
+    if(getFd() >= 0 && (stats == RWerStats::Connected || stats == RWerStats::ReadEOF || stats == RWerStats::Error)){
         setEvents(RW_EVENT::READWRITE);
         handleEvent = (void (Ep::*)(RW_EVENT))&RWer::closeHE;
     }else{
+        handleEvent = (void (Ep::*)(RW_EVENT))&RWer::IdleHE;
         // when connecting, the socket is not writable, so we close it immediately
         addjob(closeCB, 0, JOB_FLAGS_AUTORELEASE);
     }

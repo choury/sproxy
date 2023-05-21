@@ -17,19 +17,21 @@ ssize_t MemRWer::cap(uint64_t) {
     return rb.left();
 }
 
-void MemRWer::SetConnectCB(std::function<void (const sockaddr_storage &)> connectCB){
-    this->connectCB = std::move(connectCB);
+void MemRWer::SetConnectCB(std::function<void (const sockaddr_storage &)> cb){
+    if(IsConnected()) {
+        cb({});
+    } else {
+        connectCB = std::move(cb);
+    }
 }
 
 
 void MemRWer::connected(const sockaddr_storage& addr) {
-    if(stats == RWerStats::Connected){
-        return;
-    }
     setEvents(RW_EVENT::READWRITE);
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&MemRWer::defaultHE;
     connectCB(addr);
+    connectCB = [](const sockaddr_storage&){};
 }
 
 

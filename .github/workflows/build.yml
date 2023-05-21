@@ -61,6 +61,7 @@ jobs:
       with:
         name: test-log-${{matrix.os}}
         path: test/*.log
+        if-no-files-found: ignore
   build-macos:
     strategy:
       matrix:
@@ -111,4 +112,5 @@ jobs:
       with:
         name: test-log-${{matrix.os}}
         path: test/*.log
+        if-no-files-found: ignore
 

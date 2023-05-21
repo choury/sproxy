@@ -12,10 +12,12 @@
 template<class T>
 class SslRWerBase: public T {
 protected:
+    SslStats sslStats = SslStats::Idel;
     SSL *ssl = nullptr;
     SSL_CTX* ctx = nullptr;
     BIO* in_bio = BIO_new(BIO_s_mem());
     BIO* out_bio = BIO_new(BIO_s_mem());
+    std::string server;
 
     virtual int fill_in_bio(){
         return BIO_ctrl_pending(in_bio);
@@ -29,12 +31,14 @@ protected:
     template <typename U>
     static std::false_type test_addrs(...);
 
+    virtual bool IsConnected() override;
+
 public:
     template <typename... Args>
     explicit SslRWerBase(SSL_CTX* ctx, Args&&... args): T(std::forward<Args>(args)...) {
         ssl = SSL_new(ctx);
         this->setEvents(RW_EVENT::READWRITE);
-        this->stats = RWerStats::SslAccepting;
+        this->sslStats = SslStats::SslAccepting;
         this->handleEvent = (void (Ep::*)(RW_EVENT))&SslRWerBase::shakehandHE;
         SSL_set_accept_state(ssl);
 
@@ -65,6 +69,7 @@ public:
     void get_alpn(const unsigned char **s, unsigned int * len);
     int set_alpn(const unsigned char *s, unsigned int len);
     void set_hostname_callback(int (* cb)(SSL *, int *, void*), void* arg);
+    void set_server_name(const std::string& arg);
     virtual void dump_status(Dumper dp, void* param) override;
     virtual size_t mem_usage() override {
         BUF_MEM *in_mem, *out_mem;
@@ -116,12 +121,14 @@ public:
         BIO_set_mem_eof_return(in_bio, -1);
         BIO_set_mem_eof_return(out_bio, -1);
         SSL_set_bio(ssl, in_bio, out_bio);
+        set_server_name(hostname);
     }
     virtual void waitconnectHE(RW_EVENT events) override;
 };
 
 template<>
 class SslRWer<MemRWer>: public SslRWerBase<MemRWer> {
+    virtual int fill_in_bio() override;
 public:
     SslRWer(SSL_CTX* ctx, const char* pname, std::function<int(Buffer&&)> cb):
             SslRWerBase<MemRWer>(ctx, pname, cb)

@@ -152,7 +152,9 @@ void Host::connected() {
                 status.res->send(nullptr);
                 return 0;
             }
-            deleteLater(NOERROR);
+            if((status.flags & HTTP_RES_COMPLETED) == 0){
+                deleteLater(PEER_LOST_ERR);
+            }
             return 0;
         }
         size_t ret = 0;

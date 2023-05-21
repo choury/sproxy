@@ -29,7 +29,12 @@ size_t Guest::ReadHE(uint64_t, const void* data, size_t len){
             }
             return 0;
         }
-        deleteLater(NOERROR);
+        for(const auto& st : statuslist) {
+            if ((st.flags & HTTP_REQ_COMPLETED) == 0) {
+                deleteLater(PEER_LOST_ERR);
+                break;
+            }
+        }
         return 0;
     }
     size_t ret = 0;

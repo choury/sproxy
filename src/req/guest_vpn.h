@@ -9,6 +9,7 @@
 
 class Guest_vpn: public Requester {
     struct VpnStatus{
+        std::string host;
         std::shared_ptr<const Ip> pac;
         std::shared_ptr<HttpReq> req;
         std::shared_ptr<HttpRes> res;

@@ -48,23 +48,24 @@ static uint32_t getFip(const sockaddr_storage* addr){
     }
     return fip;
 }
-
 std::string getRdns(const sockaddr_storage& addr) {
-    std::string host;
     auto fip = getFip(&addr);
     auto record = fdns_records.GetOne(fip);
     if(record != fdns_records.data().end()){
-        host = record->first.second;
+        return record->first.second;
     }else if(fip > fake_ip && fip < ntohl(inet_addr(VPNEND))) {
         //this is a fake ip, but we has no record, just block it.
-        host = "fake_ip";
+        return "fake_ip";
     }else if(fip == ntohl(inet_addr(VPNADDR))){
-        host = "VPN";
+        return "VPN";
     }else {
-        return storage_ntoa(&addr);
+        return getaddrstring(&addr);
     }
+}
+
+std::string getRdnsWithPort(const sockaddr_storage& addr) {
     uint16_t port = ntohs(((const sockaddr_in*)&addr)->sin_port);
-    return host + ":" + std::to_string(port);
+    return getRdns(addr) + ":" + std::to_string(port);
 }
 
 FDns::FDns() {
@@ -119,7 +120,7 @@ void FDns::Recv(Buffer&& bb) {
     FDnsStatus& status = statusmap.at(bb.id);
     auto que = std::make_shared<Dns_Query>((const char *)bb.data(), bb.len);
     if(!que->valid){
-        LOGE("invalid dns request [%" PRIu64"], len: %zd\n", bb.id, bb.len);
+        LOGD(DDNS, "invalid dns request [%" PRIu64"], len: %zd\n", bb.id, bb.len);
         return;
     }
     if(status.quemap.count(que->id)) {

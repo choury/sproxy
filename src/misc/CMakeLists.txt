@@ -2,7 +2,7 @@
 #Author:   choury
 #Created:  2017/2/11
 
-set(misc_src job.cpp net.c util.c strategy.cpp config.c trie_helper.cpp network_nofity.cpp pcap.c buffer.cpp)
+set(misc_src job.cpp net.c util.c strategy.cpp config.c trie_helper.cpp network_nofity.cpp pcap.c buffer.cpp cert_manager.cpp)
 
 if(APPLE)
     set(misc_src ${misc_src} network_notify_osx.c)

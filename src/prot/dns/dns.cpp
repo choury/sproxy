@@ -130,7 +130,7 @@ Dns_Query::Dns_Query(const char* buff, size_t len) {
         if(startwith(ptr.c_str(), IPV4_PTR_PREFIX)){
             std::string ipstr = ptr.substr(sizeof(IPV4_PTR_PREFIX) - 1);
             if(storage_aton(ipstr.c_str(), 0, &ptr_addr) != 1){
-                LOGE("[DNS] wrong ptr format: %s\n", domain);
+                LOGD(DDNS, "[DNS] wrong ptr format: %s\n", domain);
                 return;
             }
         }else if(startwith(ptr.c_str(), IPV6_PTR_PREFIX)){
@@ -145,11 +145,11 @@ Dns_Query::Dns_Query(const char* buff, size_t len) {
                 }
             }
             if(storage_aton(ipstr.c_str(), 0, &ptr_addr) != 1){
-                LOGE("[DNS] wrong ptr format: %s\n", domain);
+                LOGD(DDNS, "[DNS] wrong ptr format: %s\n", domain);
                 return;
             }
         }else{
-            LOGE("unkown ptr request: %s\n", domain);
+            LOGD(DDNS, "unkown ptr request: %s\n", domain);
             return;
         }
     }

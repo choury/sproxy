@@ -27,10 +27,11 @@ void SslRWer<StreamRWer>::waitconnectHE(RW_EVENT events) {
         return;
     }
     if (!!(events & RW_EVENT::WRITE)) {
-        LOGD(DSSL, "connected from fd, start handshark\n");
+        LOGD(DSSL, "[%s] connected from fd, start handshark\n", server.c_str());
         assert(!this->addrs.empty());
         this->setEvents(RW_EVENT::READWRITE);
-        this->stats = RWerStats::SslConnecting;
+        this->stats = RWerStats::Connected;
+        this->sslStats = SslStats::SslConnecting;
         //ssl = SSL_new(ctx);
         //SSL_set_fd(ssl, getFd());
 
@@ -55,7 +56,7 @@ int SslRWerBase<T>::sink_out_bio(uint64_t id) {
     while(BIO_ctrl_pending(out_bio)) {
         char buff[BUF_LEN];
         int ret = BIO_read(out_bio, buff, sizeof(buff));
-        LOGD(DSSL, "send %d bytes to fd\n", (int)ret);
+        LOGD(DSSL, "[%s] send %d bytes to fd\n", server.c_str(), (int)ret);
         if (ret > 0) {
             this->wbuff.push(this->wbuff.end(), Buffer{std::make_shared<Block>(buff, ret), (size_t)ret, id});
         }
@@ -68,29 +69,35 @@ void SslRWerBase<T>::shakehandHE(RW_EVENT events){
     if (!!(events & RW_EVENT::ERROR) || !!(events & RW_EVENT::READEOF)) {
         return this->ErrorHE(SSL_SHAKEHAND_ERR, this->checkSocket(__PRETTY_FUNCTION__));
     }
-    if(this->stats != RWerStats::SslAccepting && this->stats != RWerStats::SslConnecting) {
+    if(sslStats != SslStats::SslAccepting && sslStats != SslStats::SslConnecting) {
+        LOGE("[%s] wrong ssl stats: %d\n", server.c_str(), (int)this->sslStats);
         return this->ErrorHE(SSL_SHAKEHAND_ERR, EINVAL);
     }
     if(!!(events & RW_EVENT::READ)) {
-        if(fill_in_bio() <= 0) return;
+        fill_in_bio();
     }
     if(do_handshake() == 1){
-        LOGD(DSSL, "ssl handshake success\n");
+        sslStats = SslStats::Established;
+        LOGD(DSSL, "[%s] ssl handshake success\n", server.c_str());
     }else if(errno == EAGAIN){
+        if(this->stats != RWerStats::Connected) {
+            LOGE("[%s]: ssl handshake EAGAIN with wrong stats: %d\n", server.c_str(), (int)this->stats);
+            this->ErrorHE(SSL_SHAKEHAND_ERR, PEER_LOST_ERR);
+            return;
+        }
         if(SSL_want_write(ssl)){
             this->setEvents(RW_EVENT::READWRITE);
-        }else{
-            this->setEvents(RW_EVENT::READ);
         }
     }else{
         int error = errno;
-        LOGE("(%s): ssl %s error:%s\n", this->getPeer(), ctx?"connect":"accept", strerror(error));
+        sink_out_bio(0);
+        LOGE("[%s]: ssl %s error:%s\n", server.c_str(), ctx?"connect":"accept", strerror(error));
         this->ErrorHE(SSL_SHAKEHAND_ERR, error);
         return;
     }
 
     sink_out_bio(0);
-    if(SSL_is_init_finished(ssl)) {
+    if(sslStats == SslStats::Established) {
         call_connected();
         //in case some data in ssl buffer
         ReadData();
@@ -113,7 +120,7 @@ ssize_t SslRWer::Read(void* buff, size_t len){
 
 template<class T>
 void SslRWerBase<T>::ReadData() {
-    if(fill_in_bio() < 0) return;
+    fill_in_bio();
     while(true) {
         size_t left = this->rb.left();
         if (left == 0) {
@@ -121,13 +128,14 @@ void SslRWerBase<T>::ReadData() {
         }
         ERR_clear_error();
         ssize_t ret = ssl_get_error(ssl, SSL_read(ssl, this->rb.end(), left));
-        LOGD(DSSL, "SSL_read %d bytes\n", (int)ret);
+        LOGD(DSSL, "[%s] SSL_read %d bytes\n", server.c_str(), (int)ret);
         if (ret > 0) {
             this->rb.append((size_t) ret);
             this->ConsumeRData(0);
             continue;
         }else if(ret == 0) {
             this->stats = RWerStats::ReadEOF;
+            this->sslStats = SslStats::SslEOF;
             this->delEvents(RW_EVENT::READ);
             break;
         }else if(errno == EAGAIN && this->stats == RWerStats::Connected) {
@@ -152,7 +160,7 @@ void SslRWerBase<T>::buffer_insert(Buffer &&bb) {
         ERR_clear_error();
         while(bb.len > 0) {
             ssize_t ret = ssl_get_error(ssl, SSL_write(ssl, bb.data(), bb.len));
-            LOGD(DSSL, "SSL_write %d bytes\n", (int)ret);
+            LOGD(DSSL, "[%s] SSL_write %d bytes\n", server.c_str(), (int)ret);
             if(ret > 0) {
                 bb.reserve(ret);
                 continue;
@@ -163,6 +171,12 @@ void SslRWerBase<T>::buffer_insert(Buffer &&bb) {
     }
     sink_out_bio(bb.id);
 }
+
+template<class T>
+bool SslRWerBase<T>::IsConnected() {
+    return sslStats == SslStats::Established;
+}
+
 
 /*
 ssize_t SslRWer::Write(const void* buff, size_t len, uint64_t){
@@ -196,18 +210,25 @@ void SslRWerBase<T>::set_hostname_callback(int (* cb)(SSL *, int *, void*), void
 }
 
 template<class T>
+void SslRWerBase<T>::set_server_name(const std::string& arg) {
+    server = arg;
+    SSL_set_app_data(ssl, server.c_str());
+}
+
+template<class T>
 void SslRWerBase<T>::dump_status(Dumper dp, void *param) {
-    dp(param, "SslRWer <%d> (%s): %s\nrlen: %zu, wlen: %zu, stats: %d, event: %s\n",
-       this->getFd(), this->getPeer(), SSL_state_string_long(ssl),
+    dp(param, "SslRWer <%d> (%s -> %s): %s\nrlen: %zu, wlen: %zu, stats: %d, sslStats: %d, event: %s\n",
+       this->getFd(), this->getPeer(), server.c_str(), SSL_state_string_long(ssl),
        this->rlength(0), this->wbuff.length(),
-       (int)this->getStats(), events_string[(int)this->getEvents()]);
+       (int)this->getStats(), (int)this->sslStats,
+       events_string[(int)this->getEvents()]);
 }
 
 int SslRWer<StreamRWer>::fill_in_bio() {
     char buff[BUF_LEN];
     while(true) {
         ssize_t ret = read(this->getFd(), buff, sizeof(buff));
-        LOGD(DSSL, "read %d bytes from fd\n", (int)ret);
+        LOGD(DSSL, "[%s] read %d bytes from fd\n", server.c_str(), (int)ret);
         if (ret > 0) {
             BIO_write(in_bio, buff, ret);
             continue;
@@ -220,6 +241,14 @@ int SslRWer<StreamRWer>::fill_in_bio() {
         }
         ErrorHE(SOCKET_ERR, errno);
         return -1;
+    }
+    return BIO_ctrl_pending(in_bio);
+}
+
+
+int SslRWer<MemRWer>::fill_in_bio() {
+    if(stats == RWerStats::ReadEOF || sslStats == SslStats::SslEOF) {
+        delEvents(RW_EVENT::READ);
     }
     return BIO_ctrl_pending(in_bio);
 }

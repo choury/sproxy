@@ -250,18 +250,19 @@ void HttpReqHeader::postparse() {
         strcpy(method, get(AlterMethod));
         del(AlterMethod);
     }
-    if(!valid_method()){
-        return;
-    }
-    if(!Dest.scheme[0] && ismethod("SEND")){
-        strcpy(Dest.scheme, "udp");
-    }
     if(request_id == 0) {
         request_id = id_gen++;
     }
-
-    if(!Dest.scheme[0]){
+    if(!valid_method()){
+        return;
+    }
+    if(Dest.scheme[0]) {
+        return;
+    }
+    if(http_method()){
         strcpy(Dest.scheme, "http");
+    }else if(ismethod("SEND")){
+        strcpy(Dest.scheme, "udp");
     }
 }
 

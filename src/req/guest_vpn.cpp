@@ -44,14 +44,14 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
         }
         if(status.rwer) {
             if(status.rwer->cap(0) < (int)len) {
-                LOGE("[%" PRIu64 "]: <guest_vpn> the guest's buff is full, drop packet\n", id);
+                LOG("[%" PRIu64 "]: <guest_vpn> the guest's buff is full, drop packet: %s\n", id, status.host.c_str());
                 return len;
             }
             status.rwer->push({data, len});
         }
         if(status.req){
             if(status.req->cap() < (int)len){
-                LOGE("[%" PRIu32 "]: <guest_vpn> the host's buff is full, drop packet (%s)\n",
+                LOG("[%" PRIu32 "]: <guest_vpn> the host's buff is full, drop packet (%s)\n",
                     status.req->header->request_id, status.req->header->geturl().c_str());
                 return len;
             }
@@ -338,6 +338,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     assert(statusmap.count(id) == 0);
     statusmap.emplace(id, VpnStatus{});
     auto& status = statusmap[id];
+    status.host = getRdns(pac->getdst());
     status.pac = pac;
     char buff[HEADLENLIMIT];
     switch(pac->gettype()){
@@ -350,16 +351,18 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             trwer->sendMsg(id, TUN_MSG_SYN);
         } else if(opt.cakey && dport == HTTPSPORT) {
-            auto ctx = initssl(0, tcp_alpn_list().data());
-            status.rwer = std::make_shared<SslRWer<MemRWer>>(ctx, storage_ntoa(&src),
+            auto ctx = initssl(0, tcp_alpn_list().data(), status.host.c_str());
+            auto wrwer = std::make_shared<SslRWer<MemRWer>>(ctx, storage_ntoa(&src),
                                                              std::bind(&Guest_vpn::mread, this, id, _1));
-            new Guest(status.rwer);
+            wrwer->set_server_name(status.host);
+            status.rwer = wrwer;
+            new Guest(wrwer);
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             trwer->sendMsg(id, TUN_MSG_SYN);
         } else {
             //create a http proxy request
             int headlen = sprintf(buff, "CONNECT %s" CRLF CRLF,
-                                getRdns(pac->getdst()).c_str());
+                                getRdnsWithPort(pac->getdst()).c_str());
 
             std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
             header->set("User-Agent", generateUA(pac, header->request_id));
@@ -373,7 +376,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     case IPPROTO_UDP:{
         //create a http proxy request
         int headlen = sprintf(buff, "SEND %s" CRLF CRLF,
-                              getRdns(pac->getdst()).c_str());
+                              getRdnsWithPort(pac->getdst()).c_str());
 
         std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
         header->set("User-Agent", generateUA(pac, header->request_id));
@@ -391,7 +394,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     case IPPROTO_ICMP:{
         assert(pac->icmp->gettype() == ICMP_ECHO);
         int headlen = sprintf(buff, "PING %s" CRLF CRLF,
-                              getRdns(pac->getdst()).c_str());
+                              getRdnsWithPort(pac->getdst()).c_str());
         std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
         header->set("User-Agent", generateUA(pac, header->request_id));
         status.req = std::make_shared<HttpReq>(header,
@@ -403,7 +406,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     case IPPROTO_ICMPV6:{
         assert(pac->icmp6->gettype() == ICMP6_ECHO_REQUEST);
         int headlen = sprintf(buff, "PING %s" CRLF CRLF,
-                              getRdns(pac->getdst()).c_str());
+                              getRdnsWithPort(pac->getdst()).c_str());
         std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
         header->set("User-Agent", generateUA(pac, header->request_id));
         status.req = std::make_shared<HttpReq>(header,

@@ -36,6 +36,7 @@
 #include "tls.h"
 #include "common/common.h"
 #include "misc/config.h"
+#include "misc/cert_manager.h"
 
 #include <openssl/err.h>
 #include <openssl/pem.h>
@@ -284,9 +285,9 @@ int verify_host_callback(int ok, X509_STORE_CTX *ctx){
     return opt.ignore_cert_error ? 1 : ok;
 }
 
-static int ssl_err_cb(const char* str, size_t len, void* _){
-    (void)_;
-    LOGE("SSL error: %.*s", (int)len, str);
+static int ssl_err_cb(const char* str, size_t len, void* arg){
+    SSL* ssl = (SSL*)arg;
+    LOGE("SSL error <%s> : %.*s", (const char*)SSL_get_app_data(ssl), (int)len, str);
     return (int)len;
 }
 
@@ -308,7 +309,7 @@ int ssl_get_error(SSL* ssl, int ret){
             }
             break;
         case SSL_ERROR_SSL:
-            ERR_print_errors_cb(ssl_err_cb, NULL);
+            ERR_print_errors_cb(ssl_err_cb, ssl);
             /* FALLTHROUGH */
         default:
             errno = EIO;
@@ -405,25 +406,77 @@ static int select_alpn_cb(SSL *ssl,
 {
     (void)ssl;
     const char **priorities = (const char **)arg;
-    for (size_t i = 0; priorities[i] != NULL; i++) {
-        const unsigned char *p = in;
-        LOGD(DSSL, "check alpn: %s\n", priorities[i]);
-        while ((size_t)(p-in) < inlen) {
-            uint8_t len = *p++;
-            if (len == strlen(priorities[i]) && strncmp((const char *)p, priorities[i], len) == 0) {
+    const unsigned char *p = in;
+    while ((size_t)(p-in) < inlen) {
+        uint8_t len = *p++;
+        LOGD(DSSL, "check alpn: %.*s\n", len, p);
+        for (size_t i = 0; priorities[i] != NULL; i++) {
+            if (len == strlen(priorities[i]) && strncmp((const char *) p, priorities[i], len) == 0) {
                 LOGD(DSSL, "alpn pick %s\n", priorities[i]);
-                *out = (unsigned char *)priorities[i];
-                *outlen = strlen((char *)*out);
+                *out = (unsigned char *) priorities[i];
+                *outlen = strlen((char *) *out);
                 return SSL_TLSEXT_ERR_OK;
             }
-            p += len;
         }
+        p += len;
     }
     LOGE("Can't select a protocol\n");
     return SSL_TLSEXT_ERR_ALERT_FATAL;
 }
 
-SSL_CTX* initssl(int quic, const char** alpn_list){
+static int ssl_callback_ClientHello(SSL *ssl, int* al, void* arg){
+    (void)al;
+    if(SSL_get_certificate(ssl)){
+        return SSL_CLIENT_HELLO_SUCCESS;
+    }
+    const char* host = (const char*)arg;
+    const unsigned char *servername;
+    size_t servername_len;
+    if(SSL_client_hello_get0_ext(ssl, TLSEXT_TYPE_server_name, &servername, &servername_len) == 1) {
+        LOGD(DSSL, "sni ext found for %s\n", host);
+        return SSL_CLIENT_HELLO_SUCCESS;
+    }
+    if(!opt.cafile || !opt.cakey) {
+        LOGD(DSSL, "no ca file found for sni: %s\n", host);
+        return SSL_CLIENT_HELLO_ERROR;
+    }
+    EVP_PKEY *key;
+    X509* cert;
+    if (generate_signed_key_pair(host, &key, &cert) == 0) {
+        SSL_use_cert_and_key(ssl, cert, key, NULL, 1);
+        return SSL_CLIENT_HELLO_SUCCESS;
+    }
+    LOGD(DSSL, "generate cert for %s failed\n", host);
+    return SSL_CLIENT_HELLO_ERROR;
+}
+
+static int ssl_callback_ServerName(SSL *ssl, int* al, void* arg){
+    (void)al;
+    (void)arg;
+    if(SSL_get_certificate(ssl)){
+        return SSL_TLSEXT_ERR_OK;
+    }
+    const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+    if(servername == NULL) {
+        LOGD(DSSL, "no servername found for sni\n");
+        return SSL_TLSEXT_ERR_ALERT_FATAL;
+    }
+    if(!opt.cafile || !opt.cakey) {
+        LOGD(DSSL, "no ca file found for sni: %s\n", servername);
+        return SSL_TLSEXT_ERR_ALERT_FATAL;
+    }
+    EVP_PKEY *key;
+    X509* cert;
+    if (generate_signed_key_pair(servername, &key, &cert) == 0) {
+        SSL_use_cert_and_key(ssl, cert, key, NULL, 1);
+        return SSL_TLSEXT_ERR_OK;
+    }
+    LOGD(DSSL, "generate cert for %s failed\n", servername);
+    return SSL_TLSEXT_ERR_ALERT_FATAL;
+}
+
+
+SSL_CTX* initssl(int quic, const char** alpn_list, const char* host){
     SSL_CTX *ctx = NULL;
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
     ctx = SSL_CTX_new(SSLv23_server_method());
@@ -469,21 +522,24 @@ SSL_CTX* initssl(int quic, const char** alpn_list){
     if (SSL_CTX_set_default_verify_paths(ctx) != 1)
         ERR_print_errors_fp(stderr);
 
-    //加载证书和私钥
-    if (SSL_CTX_use_certificate_file(ctx, opt.cert, SSL_FILETYPE_PEM) != 1) {
-        ERR_print_errors_fp(stderr);
-    }
+    if (opt.cert && opt.key) {
+        //加载证书和私钥
+        if (SSL_CTX_use_certificate_file(ctx, opt.cert, SSL_FILETYPE_PEM) != 1) {
+            ERR_print_errors_fp(stderr);
+        }
 
-    if (SSL_CTX_use_PrivateKey_file(ctx, opt.key, SSL_FILETYPE_PEM) != 1) {
-        ERR_print_errors_fp(stderr);
-    }
-
-    if (SSL_CTX_check_private_key(ctx) != 1) {
-        ERR_print_errors_fp(stderr);
+        if (SSL_CTX_use_PrivateKey_file(ctx, opt.key, SSL_FILETYPE_PEM) != 1) {
+            ERR_print_errors_fp(stderr);
+        }
+        if (SSL_CTX_check_private_key(ctx) != 1) {
+            ERR_print_errors_fp(stderr);
+        }
     }
 
     SSL_CTX_set_verify_depth(ctx, 10);
-    //SSL_CTX_set_tlsext_servername_callback(ctx, ssl_callback_ServerName);
+    // 设置 ClientHello 回调函数
+    SSL_CTX_set_client_hello_cb(ctx, ssl_callback_ClientHello, (void*)host);
+    SSL_CTX_set_tlsext_servername_callback(ctx, ssl_callback_ServerName);
     SSL_CTX_set_alpn_select_cb(ctx, select_alpn_cb, alpn_list);
     SSL_CTX_set_read_ahead(ctx, 1);
     return ctx;
