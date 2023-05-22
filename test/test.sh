@@ -106,6 +106,11 @@ function test_http(){
     echo ""
 }
 
+function wait_port() {
+    while ! nc -z localhost $1; do
+        sleep 1
+    done
+}
 
 
 << EOF
@@ -160,7 +165,9 @@ debug all
 EOF
 
 ./sproxy -c http.conf  --admin server_http.sock > server_http.log 2>&1 &
-sleep 5
+wait_port 4443
+wait_port 4444
+
 
 > curl.log
 
@@ -181,7 +188,10 @@ EOF
 ./sproxy -c client.conf -p 3334  https://$HOSTNAME:4443 --disable-http2 --admin client_h1.sock > client_h1.log 2>&1 &
 ./sproxy -c client.conf -p 3335  https://$HOSTNAME:4443 --admin client_h2.sock > client_h2.log 2>&1 &
 ./sproxy -c client.conf -p 3336  quic://$HOSTNAME:4443 --admin client_h3.sock > client_h3.log 2>&1 &
-sleep 5
+wait_port 3334
+wait_port 3335
+wait_port 3336
+
 
 function cleanup {
     kill %1

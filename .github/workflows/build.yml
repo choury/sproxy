@@ -25,7 +25,7 @@ jobs:
     steps:
     - name: 'build and install openssl'
       run: |
-        git clone --depth=1 -b OpenSSL_1_1_1q+quic https://github.com/quictls/openssl.git
+        git clone --depth=1 -b OpenSSL_1_1_1t+quic https://github.com/quictls/openssl.git
         cd openssl
         ./config no-ui-console no-tests no-md4 no-rc2 no-rc4  no-shared  no-ssl2 no-ssl3 no-comp no-hw no-engine --prefix=$HOME/openssl
         make install_dev
@@ -76,7 +76,7 @@ jobs:
     steps:
     - name: 'build and install openssl'
       run: |
-        git clone --depth=1 -b OpenSSL_1_1_1q+quic https://github.com/quictls/openssl.git
+        git clone --depth=1 -b OpenSSL_1_1_1t+quic https://github.com/quictls/openssl.git
         cd openssl
         ./config no-ui-console no-tests no-md4 no-rc2 no-rc4  no-shared  no-ssl2 no-ssl3 no-comp no-hw no-engine --prefix=$HOME/openssl
         make install_dev
