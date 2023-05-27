@@ -341,23 +341,28 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     status.host = getRdns(pac->getdst());
     status.pac = pac;
     char buff[HEADLENLIMIT];
+    uint16_t dport = pac->getdport();
+    auto src = pac->getsrc();
     switch(pac->gettype()){
     case IPPROTO_TCP:{
-        uint16_t dport = pac->getdport();
-        auto src = pac->getsrc();
         if(dport == HTTPPORT) {
             status.rwer = std::make_shared<MemRWer>(storage_ntoa(&src), std::bind(&Guest_vpn::mread, this, id, _1));
             new Guest(status.rwer);
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             trwer->sendMsg(id, TUN_MSG_SYN);
-        } else if(opt.cakey && dport == HTTPSPORT) {
-            auto ctx = initssl(0, tcp_alpn_list().data(), status.host.c_str());
-            auto wrwer = std::make_shared<SslRWer<MemRWer>>(ctx, storage_ntoa(&src),
-                                                             std::bind(&Guest_vpn::mread, this, id, _1));
-            wrwer->set_server_name(status.host);
-            status.rwer = wrwer;
-            new Guest(wrwer);
+        } else if(dport == HTTPSPORT) {
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
+            if(opt.cakey) {
+                auto ctx = initssl(0, tcp_alpn_list().data(), status.host.c_str());
+                auto wrwer = std::make_shared<SslRWer<MemRWer>>(ctx, storage_ntoa(&src),
+                                                                std::bind(&Guest_vpn::mread, this, id, _1));
+                wrwer->set_server_name(status.host);
+                status.rwer = wrwer;
+                new Guest(wrwer);
+            } else {
+                status.rwer = std::make_shared<MemRWer>(storage_ntoa(&src), std::bind(&Guest_vpn::mread, this, id, _1));
+                new Guest_sni(status.rwer, generateUA(pac, 0));
+            }
             trwer->sendMsg(id, TUN_MSG_SYN);
         } else {
             //create a http proxy request
@@ -374,19 +379,21 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
         break;
     }
     case IPPROTO_UDP:{
-        //create a http proxy request
-        int headlen = sprintf(buff, "SEND %s" CRLF CRLF,
-                              getRdnsWithPort(pac->getdst()).c_str());
-
-        std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
-        header->set("User-Agent", generateUA(pac, header->request_id));
-        status.req = std::make_shared<HttpReq>(header, 
-                        std::bind(&Guest_vpn::response, this, (void*)id, _1), 
-                        [this, id]{rwer->Unblock(id);});
-        if(pac->udp->getdport() == 53){
+        if(dport == DNSPORT) {
             status.flags |= VPN_DNSREQ_F;
-            FDns::GetInstance()->request(status.req, this);
-        }else{
+            auto mrwer = std::make_shared<PMemRWer>(storage_ntoa(&src), std::bind(&Guest_vpn::mread, this, id, _1));
+            FDns::GetInstance()->query(mrwer);
+            status.rwer = mrwer;
+        } else {
+            //create a http proxy request
+            int headlen = sprintf(buff, "SEND %s" CRLF CRLF,
+                                  getRdnsWithPort(pac->getdst()).c_str());
+
+            std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
+            header->set("User-Agent", generateUA(pac, header->request_id));
+            status.req = std::make_shared<HttpReq>(header,
+                                                   std::bind(&Guest_vpn::response, this, (void*)id, _1),
+                                                   [this, id]{rwer->Unblock(id);});
             distribute(status.req, this);
         }
         break;

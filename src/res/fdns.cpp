@@ -85,6 +85,7 @@ FDns *FDns::GetInstance() {
     return fdns;
 }
 
+#if 0
 void FDns::request(std::shared_ptr<HttpReq> req, Requester*){
     auto res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
     auto reqid = req->header->request_id;
@@ -112,11 +113,25 @@ void FDns::request(std::shared_ptr<HttpReq> req, Requester*){
         return 0;
     }, []{return 512;});
 }
+#endif
+
+void FDns::query(std::shared_ptr<MemRWer> rwer) {
+    uint32_t id = curid++;
+    statusmap[id] = FDnsStatus{
+        .rwer = rwer,
+        .quemap = {},
+    };
+    rwer->SetReadCB([this, id](uint64_t, const void* data, size_t len) -> size_t{
+        if(len == 0){
+            this->rwer->addjob_with_name([this, id]{statusmap.erase(id);}, "fdns clean", 0, JOB_FLAGS_AUTORELEASE);
+            return 0;
+        }
+        Recv(Buffer{data, len, id});
+        return 0;
+    });
+}
 
 void FDns::Recv(Buffer&& bb) {
-    if(bb.len == 0){
-        return;
-    }
     FDnsStatus& status = statusmap.at(bb.id);
     auto que = std::make_shared<Dns_Query>((const char *)bb.data(), bb.len);
     if(!que->valid){
@@ -158,7 +173,7 @@ void FDns::Recv(Buffer&& bb) {
         return query_dns(que->domain, que->type, RawCb, std::make_shared<uint64_t>(index));
     }
     auto buff = std::make_shared<Block>(BUF_LEN);
-    status.res->send({buff, (size_t)result->build(que.get(), (uchar*)buff->data())});
+    status.rwer->buffer_insert({buff, (size_t)result->build(que.get(), (uchar*)buff->data())});
     delete result;
 }
 
@@ -186,7 +201,7 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_stor
     Dns_Result* result = new Dns_Result(que->domain);
     std::shared_ptr<Block> buff = std::make_shared<Block>(BUF_LEN);
     if(error) {
-        status.res->send({buff, (size_t) result->buildError(que.get(), error, (uchar *) buff->data())});
+        status.rwer->buffer_insert({buff, (size_t) result->buildError(que.get(), error, (uchar *) buff->data())});
     } else {
         for(const auto& addr : addrs) {
             if(isLoopBack(&addr)) {
@@ -209,7 +224,7 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_stor
             }
             result->addrs.push_back(ip);
         }
-        status.res->send({buff, (size_t)result->build(que.get(), (uchar*)buff->data())});
+        status.rwer->buffer_insert({buff, (size_t)result->build(que.get(), (uchar*)buff->data())});
     }
     status.quemap.erase(que->id);
     delete result;
@@ -225,25 +240,26 @@ void FDns::RawCb(std::shared_ptr<void> param, const char* buff, size_t size) {
     FDnsStatus& status = fdns->statusmap[reqid];
     std::shared_ptr<Dns_Query> que = status.quemap.at(id & 0xffff);
     assert(que->id == (id & 0xffff));
+    auto blk = std::make_shared<Block>(BUF_LEN);
     if(buff){
         LOGD(DDNS, "<FDNS> Query raw response [%d]\n", que->id);
-        DNS_HDR *dnshdr = (DNS_HDR*)buff;
+        memcpy(blk->data(), buff, size);
+        DNS_HDR *dnshdr = (DNS_HDR*)blk->data();
         dnshdr->id = htons(que->id);
-        status.res->send(buff, size);
+        status.rwer->buffer_insert({blk, size});
     }else {
         LOGD(DDNS, "<FDNS> Query raw response [%d] error\n", que->id);
         Dns_Result rr(que->domain);
-        unsigned char sbuff[BUF_LEN];
-        status.res->send(sbuff, (size_t)rr.buildError(que.get(), DNS_SERVER_FAIL, sbuff));
+        status.rwer->buffer_insert({blk, (size_t)rr.buildError(que.get(), DNS_SERVER_FAIL, (unsigned char*)blk->data())});
     }
     status.quemap.erase(que->id);
 }
 
 void FDns::dump_stat(Dumper dp, void* param) {
-    dp(param, "FDns: %p\n", this);
+    dp(param, "FDns: %p, curid: %d\n", this, curid);
     for(const auto& i : statusmap) {
         const FDnsStatus& status = i.second;
-        dp(param, "  [%" PRIu32 "]: %s\n", i.first, status.req->header->geturl().c_str());
+        dp(param, "  [%" PRIu32 "]: %s\n", i.first, status.rwer->getPeer());
         for(auto p : status.quemap) {
             auto que = p.second;
             dp(param, "    %s, id=%d, type=%d\n", que->domain, que->id, que->type);
@@ -254,7 +270,7 @@ void FDns::dump_stat(Dumper dp, void* param) {
 void FDns::dump_usage(Dumper dp, void *param) {
     size_t usage = 0;
     for(const auto& i : statusmap) {
-        usage += sizeof(i.first) + sizeof(i.second) + i.second.res->mem_usage();
+        usage += sizeof(i.first) + sizeof(i.second) + i.second.rwer->mem_usage();
         const FDnsStatus& status = i.second;
         usage += status.quemap.size() * (sizeof(uint16_t) + sizeof(Dns_Query));
     }

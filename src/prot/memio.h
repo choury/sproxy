@@ -36,4 +36,11 @@ public:
     }
 };
 
+class PMemRWer: public MemRWer {
+public:
+    using MemRWer::MemRWer;
+    virtual void push(const Buffer& bb) override;
+    virtual void ConsumeRData(uint64_t) override {}
+};
+
 #endif

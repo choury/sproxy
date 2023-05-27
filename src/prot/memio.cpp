@@ -73,3 +73,14 @@ void MemRWer::closeHE(RW_EVENT event) {
     }
     RWer::closeHE(event);
 }
+
+void PMemRWer::push(const Buffer &bb) {
+    assert(stats != RWerStats::ReadEOF);
+    if(bb.len == 0){
+        stats = RWerStats::ReadEOF;
+        readCB(nullptr);
+        flags |= RWER_EOFDELIVED;
+    } else {
+        readCB(bb);
+    }
+}
