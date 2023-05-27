@@ -196,7 +196,7 @@ void network_changed(){
         opt.ipv6_enabled = hasIpv6Address();
     }
     flushdns();
-    flushproxy2();
+    flushconnect();
 }
 
 

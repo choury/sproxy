@@ -6,18 +6,12 @@
 #include <assert.h>
 #include <inttypes.h>
 
-Proxy2* proxy2 = nullptr;
-
 void Proxy2::connection_lost(){
     LOGE("(%s) <proxy2> the ping timeout, so close it\n", rwer->getPeer());
     deleteLater(PEER_LOST_ERR);
 }
 
 void Proxy2::ping_check(){
-    if(proxy2 != this && statusmap.empty()){
-        LOG("this %p is not the main proxy2 and no clients, close it.\n", this);
-        return deleteLater(NOERROR);
-    }
     char buff[8];
     set64(buff, getutime());
     Ping(buff);
@@ -38,9 +32,6 @@ bool Proxy2::wantmore(const ReqStatus& status) {
 
 Proxy2::Proxy2(std::shared_ptr<RWer> rwer) {
     this->rwer = rwer;
-    if(proxy2 == nullptr){
-        proxy2 = this;
-    }
     rwer->SetErrorCB(std::bind(&Proxy2::Error, this, _1, _2));
     rwer->SetReadCB([this](uint64_t, const void* data, size_t len) -> size_t {
         LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu\n", this->rwer->getPeer(), len);
@@ -84,9 +75,7 @@ Proxy2::Proxy2(std::shared_ptr<RWer> rwer) {
 
 Proxy2::~Proxy2() {
     //we do this, because deleteLater will not be invoked when vpn_stop
-    if(proxy2 == this){
-        proxy2 = nullptr;
-    }
+    responsers.erase(this);
 }
 
 void Proxy2::Error(int ret, int code) {
@@ -97,7 +86,9 @@ void Proxy2::Error(int ret, int code) {
 void Proxy2::Recv(Buffer&& bb) {
     assert(statusmap.count(bb.id));
     ReqStatus& status = statusmap[bb.id];
-    assert((status.flags & HTTP_REQ_COMPLETED) == 0);
+    if(status.flags & HTTP_REQ_COMPLETED) {
+        return;
+    }
     status.remotewinsize -= bb.len;
     remotewinsize -= bb.len;
     assert(status.remotewinsize >= 0);
@@ -123,6 +114,12 @@ void Proxy2::Handle(uint32_t id, ChannelMessage::Signal s) {
 }
 
 void Proxy2::PushFrame(Buffer&& bb){
+    if(debug[DHTTP2].enabled){
+        const Http2_header *header = (const Http2_header *)bb.data();
+        uint32_t length = get24(header->length);
+        uint32_t id = HTTP2_ID(header->id);
+        LOGD(DHTTP2, "<proxy2> send a frame [%d]:%d, size:%d, flags:%d\n", id, header->type, length, header->flags);
+    }
 #ifdef __ANDROID__
     uint32_t now = getmtime();
     if(http2_flag & HTTP2_FLAG_INITED
@@ -137,6 +134,7 @@ void Proxy2::PushFrame(Buffer&& bb){
 }
 
 void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
+    idle_timeout = this->rwer->updatejob(idle_timeout,std::bind(&Proxy2::deleteLater, this, CONNECT_AGED), 300000);
     if(statusmap.count(id) == 0) {
         LOGD(DHTTP2, "<proxy2> ResProc not found id: %d\n", id);
         Reset(id, HTTP2_ERR_STREAM_CLOSED);
@@ -169,6 +167,7 @@ void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
 
 
 void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
+    idle_timeout = this->rwer->updatejob(idle_timeout,std::bind(&Proxy2::deleteLater, this, CONNECT_AGED), 300000);
     if(len == 0)
         return;
     localwinsize -= len;
@@ -310,12 +309,17 @@ void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
     memset(header, 0, sizeof(*header));
     header->type = HTTP2_STREAM_HEADERS;
     header->flags = HTTP2_END_HEADERS_F;
+    if(req->header->no_body()) {
+        header->flags |= HTTP2_END_STREAM_F;
+        status.flags |= HTTP_REQ_COMPLETED;
+    }
     set32(header->id, id);
     size_t len = hpack_encoder.PackHttp2Req(req->header, header+1, BUF_LEN - sizeof(Http2_header));
     set24(header->length, len);
     PushFrame(Buffer{buff, len + sizeof(Http2_header)});
 
     req->attach([this, id](ChannelMessage& msg){
+        idle_timeout = this->rwer->updatejob(idle_timeout,std::bind(&Proxy2::deleteLater, this, CONNECT_AGED), 300000);
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:
             LOGD(DHTTP2, "<proxy2> ignore header for req\n");
@@ -352,9 +356,8 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
 }
 
 void Proxy2::deleteLater(uint32_t errcode){
-    if(proxy2 == this){
-        proxy2 = nullptr;
-    }
+    responsers.erase(this);
+    rwer->deljob(&idle_timeout);
     auto statusmapCopy = statusmap;
     for(auto& i: statusmapCopy){
         Clean(i.first, i.second, errcode);
@@ -367,9 +370,8 @@ void Proxy2::deleteLater(uint32_t errcode){
 }
 
 void Proxy2::dump_stat(Dumper dp, void* param) {
-    dp(param, "Proxy2 %p%s id: %d, my_window: %d, his_window: %d\n",
-            this, proxy2 == this?" [M]":"", sendid,
-            this->localwinsize, this->remotewinsize);
+    dp(param, "Proxy2 %p id: %d, my_window: %d, his_window: %d\n",
+            this, sendid, this->localwinsize, this->remotewinsize);
     for(auto& i: statusmap){
         dp(param, "  0x%x [%" PRIu32 "]: %s, my_window: %d, his_window: %d, flags: 0x%08x\n",
                 i.first,
@@ -392,10 +394,4 @@ void Proxy2::dump_usage(Dumper dp, void *param) {
     dp(param, "Proxy2 %p: %zd, resmap: %zd, rwer: %zd\n",
        this, sizeof(*this) + header_buffer->cap + hpack_decoder.get_dynamic_table_size() + hpack_encoder.get_dynamic_table_size(),
        res_usage, rwer->mem_usage());
-}
-
-void flushproxy2() {
-    if(proxy2){
-        proxy2 = nullptr;
-    }
 }

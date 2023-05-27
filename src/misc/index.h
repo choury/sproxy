@@ -142,4 +142,63 @@ void Index2<T1, T2, D>::clear(){
     containers.clear();
 }
 
+template <class T1, class T2>
+class bimap{
+    std::map<T1, T2> map1;
+    std::map<T2, T1> map2;
+public:
+    void add(const T1& t1, const T2& t2) {
+        map1.emplace(t1, t2);
+        map2.emplace(t2, t1);
+        assert(map1.size() == map2.size());
+    }
+    T2& at(const T1& t1) {
+        assert(map1.size() == map2.size());
+        if(map1.count(t1) == 0) {
+            abort();
+        }
+        return map1[t1];
+    }
+    T1& at(const T2& t2) {
+        assert(map2.size() == map2.size());
+        if(map2.count(t2) == 0) {
+            abort();
+        }
+        return map2[t2];
+    }
+    bool has(const T1 t1) const {
+        assert(map1.size() == map2.size());
+        return map1.count(t1);
+    }
+    bool has(const T2 t2) const {
+        assert(map1.size() == map2.size());
+        return map2.count(t2);
+    }
+    void erase(const T1 t1) {
+        if(map1.count(t1) == 0){
+            return;
+        }
+        map2.erase(map1[t1]);
+        map1.erase(t1);
+        assert(map1.size() == map2.size());
+    }
+    void erase(const T2 t2) {
+        if(map2.count(t2) == 0){
+            return;
+        }
+        map1.erase(map2[t2]);
+        map2.erase(t2);
+        assert(map1.size() == map2.size());
+    }
+    size_t size() const {
+        assert(map1.size() == map2.size());
+        return map1.size();
+    }
+    void clear() {
+        assert(map1.size() == map2.size());
+        map1.clear();
+        map2.clear();
+    }
+};
+
 #endif

@@ -15,6 +15,7 @@ class Proxy3:public Responser, public Http3Requster {
 
     std::map<uint64_t, ReqStatus> statusmap;
     uint64_t maxDataId = 0;
+    Job* idle_timeout = nullptr;
 protected:
     virtual void Error(int ret, int code);
     virtual void deleteLater(uint32_t errcode) override;
@@ -43,5 +44,4 @@ public:
     void init(std::shared_ptr<HttpReq> req);
 };
 
-extern Proxy3* proxy3;
 #endif

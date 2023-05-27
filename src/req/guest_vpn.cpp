@@ -44,15 +44,15 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
         }
         if(status.rwer) {
             if(status.rwer->cap(0) < (int)len) {
-                LOG("[%" PRIu64 "]: <guest_vpn> the guest's buff is full, drop packet: %s\n", id, status.host.c_str());
+                LOG("[%" PRIu64 "]: <guest_vpn> the guest's buff is full, drop packet [%zd]: %s\n", id, len, status.host.c_str());
                 return len;
             }
             status.rwer->push({data, len});
         }
         if(status.req){
             if(status.req->cap() < (int)len){
-                LOG("[%" PRIu32 "]: <guest_vpn> the host's buff is full, drop packet (%s)\n",
-                    status.req->header->request_id, status.req->header->geturl().c_str());
+                LOG("[%" PRIu32 "]: <guest_vpn> the host's buff is full, drop packet [%zd] (%s)\n",
+                    status.req->header->request_id, len, status.req->header->geturl().c_str());
                 return len;
             }
             status.req->send(data, len);

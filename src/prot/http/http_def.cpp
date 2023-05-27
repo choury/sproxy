@@ -74,6 +74,7 @@ void Channel::attach(handler_t handler, cap_t cap) {
 }
 
 void Channel::detach() {
+    this->pull_cb = nullptr;
     this->handler = nullptr;
     this->cap_cb = []{return 0;};
 }

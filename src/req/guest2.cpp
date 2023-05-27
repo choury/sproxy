@@ -315,6 +315,12 @@ void Guest2::AdjustInitalFrameWindowSize(ssize_t diff) {
 }
 
 void Guest2::PushFrame(Buffer&& wb) {
+    if(debug[DHTTP2].enabled){
+        const Http2_header *header = (const Http2_header *)wb.data();
+        uint32_t length = get24(header->length);
+        uint32_t id = HTTP2_ID(header->id);
+        LOGD(DHTTP2, "<guest2> send a frame [%d]:%d, size:%d, flags:%d\n", id, header->type, length, header->flags);
+    }
     rwer->buffer_insert(std::move(wb));
 }
 

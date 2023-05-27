@@ -86,7 +86,7 @@ int loadproxy(const char* proxy, struct Destination* server);
 bool debugon(const char* module, bool enable);
 
 void flushdns();
-void flushproxy2();
+void flushconnect();
 
 const char* getVersion();
 const char* getBuildTime();

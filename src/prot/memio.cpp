@@ -14,7 +14,7 @@ size_t MemRWer::rlength(uint64_t) {
 }
 
 ssize_t MemRWer::cap(uint64_t) {
-    return rb.left();
+    return rb.cap();
 }
 
 void MemRWer::SetConnectCB(std::function<void (const sockaddr_storage &)> cb){
@@ -51,7 +51,7 @@ void MemRWer::ConsumeRData(uint64_t) {
         rb.consume(wb.len - left);
     }
     delEvents(RW_EVENT::READ);
-    if(stats == RWerStats::ReadEOF && rb.length() == 0 && (flags & RWER_EOFDELIVED) == 0){
+    if(stats == RWerStats::ReadEOF && (flags & RWER_EOFDELIVED) == 0){
         readCB(0, nullptr, 0);
         flags |= RWER_EOFDELIVED;
     }

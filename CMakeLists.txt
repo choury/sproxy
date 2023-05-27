@@ -251,7 +251,7 @@ set(CPACK_GENERATOR "ZIP;TGZ")
 if(CMAKE_SYSTEM_NAME MATCHES Linux)
     list(APPEND CPACK_GENERATOR "DEB")
     set(CPACK_DEBIAN_PACKAGE_SECTION "application")
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "openssl(>=1.0.2),libjson-c3,zlib1g")
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "openssl(>=1.0.2),libjson-c5,zlib1g")
 
     list(APPEND CPACK_GENERATOR "RPM")
     set(CPACK_RPM_PACKAGE_RELEASE "1")

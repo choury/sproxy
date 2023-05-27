@@ -59,8 +59,7 @@
 #define AlterMethod "Alter-Method"
 
 
-// trim from start
-static inline std::string& ltrim(std::string && s) {
+static inline std::string ltrim(std::string s) {
     s.erase(0, s.find_first_not_of(" "));
     return s;
 }

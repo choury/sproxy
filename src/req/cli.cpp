@@ -107,10 +107,6 @@ bool Cli::SetServer(const std::string &server) {
     Destination proxy;
     if(loadproxy(server.c_str(), &proxy) == 0){
         memcpy(&opt.Server, &proxy, sizeof(proxy));
-        proxy2 = nullptr;
-#ifdef HAVE_QUIC
-        proxy3 = nullptr;
-#endif
         return true;
     }
     return false;

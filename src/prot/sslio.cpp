@@ -156,6 +156,7 @@ void SslRWerBase<T>::buffer_insert(Buffer &&bb) {
     this->addEvents(RW_EVENT::WRITE);
     if(bb.len == 0) {
         SSL_shutdown(ssl);
+        this->flags |= RWER_SHUTDOWN;
     }else {
         ERR_clear_error();
         while(bb.len > 0) {

@@ -23,6 +23,7 @@ class Proxy2:public Responser, public Http2Requster {
     Job* ping_check_job = nullptr;
 #endif
     Job* connection_lost_job = nullptr;
+    Job* idle_timeout = nullptr;
 protected:
     void ping_check();
     void connection_lost();
@@ -57,5 +58,4 @@ public:
     void init(std::shared_ptr<HttpReq> req);
 };
 
-extern Proxy2* proxy2;
 #endif

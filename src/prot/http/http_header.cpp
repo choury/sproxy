@@ -175,13 +175,12 @@ HttpReqHeader::HttpReqHeader(const CGI_Header *headers) {
 HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers) {
     for(const auto& i: headers){
         if(toLower(i.first) == "cookie"){
-            char cookiebuff[URLLIMIT];
-            strcpy(cookiebuff, i.second.c_str()); 
-            char *cp=cookiebuff;
-            for(char *p = strsep(&cp, ";");p;
-                p = strsep(&cp, ";"))
-            {
-                cookies.insert(ltrim(string(p)));
+            std::string cookiebuff = i.second;
+            std::istringstream iss(cookiebuff);
+            std::string token;
+
+            while (std::getline(iss, token, ';')) {
+                cookies.insert(ltrim(token));
             }
         }else{
             set(i.first, i.second);

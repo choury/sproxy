@@ -11,6 +11,7 @@
 #include <assert.h>
 
 
+bimap<std::string, Responser*> responsers;
 enum class CheckResult{
     Succeed,
     AuthFailed,
@@ -125,7 +126,7 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
             res = std::make_shared<HttpRes>(UnpackHttpRes(H503), "[[BUG]]\n");
             goto out;
         }
-        return Host::gethost(req, &dest, src);
+        return Host::distribute(req, &dest, src);
     } else{
         res = std::make_shared<HttpRes>(UnpackHttpRes(H405), "[[unsported method]]\n");
         goto out;

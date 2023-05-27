@@ -2,6 +2,7 @@
 #include "proxy2.h"
 #include "req/requester.h"
 #include "prot/sslio.h"
+#include "misc/util.h"
 #ifdef HAVE_QUIC
 #include "proxy3.h"
 #include "prot/quic/quicio.h"
@@ -103,7 +104,13 @@ attach:
 }
 
 void Host::connected() {
-    LOGD(DHTTP, "<host> (%s) connected\n", rwer->getPeer());
+    assert(status.res == nullptr);
+    std::string key = dumpDest(&Server);
+    LOGD(DHTTP, "<host> %s (%s) connected\n", rwer->getPeer(), key.c_str());
+    if(responsers.has(key)) {
+        responsers.at(key)->request(status.req, nullptr);
+        return Server::deleteLater(NOERROR);
+    }
     auto srwer = std::dynamic_pointer_cast<SslRWer<StreamRWer>>(rwer);
     if(srwer){
         const unsigned char *data;
@@ -111,13 +118,12 @@ void Host::connected() {
         srwer->get_alpn(&data, &len);
         if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
             LOG("<host> delegate %" PRIu32 " %s to proxy2\n",
-                status.req->header->request_id,
-                status.req->header->geturl().c_str());
+                status.req->header->request_id, status.req->header->geturl().c_str());
             Proxy2 *proxy = new Proxy2(srwer);
             rwer = nullptr;
 
             proxy->init(status.req);
-            assert(status.res == nullptr);
+            responsers.add(key, proxy);
             return Server::deleteLater(NOERROR);
         }
     }
@@ -129,13 +135,12 @@ void Host::connected() {
         qrwer->get_alpn(&data, &len);
         if((data && strncasecmp((const char*)data, "h3", len) == 0)) {
             LOG("<host> delegate %" PRIu32 " %s to proxy3\n",
-                status.req->header->request_id,
-                status.req->header->geturl().c_str());
+                status.req->header->request_id, status.req->header->geturl().c_str());
             Proxy3 *proxy = new Proxy3(qrwer);
             rwer = nullptr;
 
             proxy->init(status.req);
-            assert(status.res == nullptr);
+            responsers.add(key, proxy);
             return Server::deleteLater(NOERROR);
         }
         LOGE("(%s) <host> quic only support http3\n", rwer->getPeer());
@@ -308,20 +313,12 @@ void Host::deleteLater(uint32_t errcode){
     Server::deleteLater(errcode);
 }
 
-void Host::gethost(std::shared_ptr<HttpReq> req, const Destination* dest, Requester* src) {
-    if(req->header->should_proxy && memcmp(dest, &opt.Server, sizeof(Destination)) == 0) {
-#ifdef HAVE_QUIC
-        if(proxy3){
-            return proxy3->request(req, src);
-        }
-#endif
-        if(proxy2){
-            return proxy2->request(req, src);
-        }
+void Host::distribute(std::shared_ptr<HttpReq> req, const Destination* dest, Requester* src) {
+    std::string key = dumpDest(dest);
+    if(responsers.has(key)) {
+        return responsers.at(key)->request(req, src);
     }
-    if(req->header->ismethod("CONNECT") ||  req->header->ismethod("SEND")){
-    }
-    (new Host(dest))->request(req, src);
+    return (new Host(dest))->request(req, src);
 }
 
 void Host::dump_stat(Dumper dp, void* param) {
@@ -342,4 +339,8 @@ void Host::dump_usage(Dumper dp, void *param) {
     }else {
         dp(param, "Host %p: %zd, rwer: %zd\n", this, sizeof(*this), rwer->mem_usage());
     }
+}
+
+void flushconnect() {
+    responsers.clear();
 }

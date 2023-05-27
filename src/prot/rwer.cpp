@@ -32,8 +32,8 @@ RWer::RWer(std::function<void (int, int)> errorCB): Ep(-1), errorCB(std::move(er
 {
     assert(this->errorCB != nullptr);
     readCB = [](uint64_t id, const void*, size_t len) -> size_t {
-        LOGE("discard data from stub readCB: %zd [%" PRIu64 "]\n", len, id);
-        return 0;
+        LOGE("send data to stub readCB: %zd [%" PRIu64 "]\n", len, id);
+        return len;
     };
     writeCB = [](size_t){};
 }
