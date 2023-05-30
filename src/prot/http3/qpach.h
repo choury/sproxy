@@ -29,6 +29,8 @@ class Qpack{
     size_t dynamic_table_size = 0;
     bool set_dynamic_table_size(size_t limit);
     std::function<void(Buffer&&)> sender;
+protected:
+    uint32_t getid(const std::string& name, const std::string& value = "") const;
 public:
     explicit Qpack(decltype(sender) sender, size_t dynamic_table_size_limit_max);
     int push_ins(const void* ins, size_t len);

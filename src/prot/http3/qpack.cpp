@@ -118,6 +118,19 @@ static void init_static_map(){
 
 static bool qpack_inited = false;
 
+uint32_t Qpack::getid(const std::string& name, const std::string& value) const {
+    std::string key = name+char(0)+value;
+    uint32_t id = 0;
+    if(static_map.count(key)) {
+        id = static_map[key];
+    } else {
+        return UINT32_MAX;
+    }
+    LOGD(DHPACK, "get qpack %s:[%s] id: %d\n", name.c_str(), value.c_str(), id);
+    return id;
+}
+
+
 
 Qpack::Qpack(std::function<void(Buffer&&)> sender, size_t dynamic_table_size_limit_max):
     dynamic_table_size_limit_max(dynamic_table_size_limit_max), sender(std::move(sender))
@@ -147,6 +160,7 @@ int Qpack::push_ins(const void *ins, size_t len) {
     const uchar* pos = (const uchar*)ins;
     while(pos < (uchar*)ins + len){
         if(pos[0] & 0x80){
+            //将一个键值对加入动态表，key是索引，value是字面量
             bool T = pos[0]&0x40;
             std::string name, value;
             uint64_t index;
@@ -166,6 +180,7 @@ int Qpack::push_ins(const void *ins, size_t len) {
             pos += l;
             LOGD(DHPACK, "add %s:%s\n", name.c_str(), value.c_str());
         }else if(pos[0]&0x40){
+            //将一个键值对加入动态表，key和value都是是字面量
             std::string name, value;
             size_t l = literal_decode_wrapper(pos, (uchar*)ins+len-pos, 5, name);
             if(l <= 0){
@@ -179,6 +194,7 @@ int Qpack::push_ins(const void *ins, size_t len) {
             pos += l;
             LOGD(DHPACK, "add %s:%s\n", name.c_str(), value.c_str());
         }else if(pos[0]&0x20){
+            //设置动态表大小
             uint64_t cap;
             size_t l = integer_decode(pos, (uchar*)ins+len-pos, 5, &cap);
             if(l == 0){
@@ -187,6 +203,7 @@ int Qpack::push_ins(const void *ins, size_t len) {
             pos += l;
             LOGD(DHPACK, "set cap: %d\n", (int)cap);
         }else{
+            //复制动态表中的索引处内容
             uint64_t index;
             size_t l = integer_decode(pos, (uchar*)ins+len-pos, 5, &index);
             if(l == 0){
@@ -201,7 +218,23 @@ int Qpack::push_ins(const void *ins, size_t len) {
 
 size_t Qpack_encoder::encode(unsigned char *buf, const std::string& name, const std::string& value) {
     auto pos = buf;
-    *pos = 0x20; //  literal field line with literal name with N and H cleared
+    uint32_t id = getid(name, value);
+    if(id != UINT32_MAX){
+        *pos = 0xC0; //  indexed field line with static name with T set
+        pos += integer_encode(id, 6, pos);
+        return pos - buf;
+    }
+    id = getid(name);
+    if(id != UINT32_MAX) {
+        *pos = 0x50; //  indexed name with static name with T set and N cleared
+        pos += integer_encode(id, 4, pos);
+        *pos = 0x00; //clear Huffman flag
+        pos += integer_encode(value.size(), 7, pos);
+        memcpy(pos, value.data(), value.size());
+        pos += value.size();
+        return pos - buf;
+    }
+    *pos = 0x20; //  literal field line with literal name and value with N and H cleared
     pos += integer_encode(name.size(), 3, pos);
     memcpy(pos, name.data(), name.size());
     pos += name.size();
@@ -212,9 +245,10 @@ size_t Qpack_encoder::encode(unsigned char *buf, const std::string& name, const 
     return pos - buf;
 }
 
-size_t Qpack_encoder::PackHttp3Req(std::shared_ptr<const HttpReqHeader> req, void *data, size_t len) {
+size_t Qpack_encoder::PackHttp3Req(std::shared_ptr<const HttpReqHeader> req, void *data, __attribute__ ((unused)) size_t len) {
     uchar* p = (uchar*)data;
     p += integer_encode(0, 8, p);
+    *p = 0x00; // clear S bit
     p += integer_encode(0, 7, p);
     for(const auto& i : req->Normalize()){
         p += encode(p, i.first, i.second);
@@ -222,7 +256,7 @@ size_t Qpack_encoder::PackHttp3Req(std::shared_ptr<const HttpReqHeader> req, voi
     return p - (uchar*)data;
 }
 
-size_t Qpack_encoder::PackHttp3Res(std::shared_ptr<const HttpResHeader> res, void *data, size_t len) {
+size_t Qpack_encoder::PackHttp3Res(std::shared_ptr<const HttpResHeader> res, void *data, __attribute__ ((unused)) size_t len) {
     uchar* p = (uchar*)data;
     p += integer_encode(0, 8, p);
     *p = 0x00; // clear S bit
@@ -237,13 +271,14 @@ size_t Qpack_encoder::PackHttp3Res(std::shared_ptr<const HttpResHeader> res, voi
 std::multimap<std::string, std::string> Qpack_decoder::decode(const unsigned char *data, size_t len) {
     std::multimap<std::string, std::string> headers;
     const uchar* pos = (uchar*)data;
-    uint64_t reqid;
-    int l = integer_decode(pos, (uchar*)data+len-pos, 8, &reqid);
+    uint64_t ric;
+    int l = integer_decode(pos, (uchar*)data+len-pos, 8, &ric);
     if(l == 0){
         return headers;
     }
     pos += l;
     uint64_t delta;
+    // 最高位是delta的符号位，不过我们不支持动态表，所以没有读
     l = integer_decode(pos, (uchar*)data+len-pos, 7, &delta);
     if(l == 0){
         return headers;
@@ -251,8 +286,10 @@ std::multimap<std::string, std::string> Qpack_decoder::decode(const unsigned cha
     pos += l;
     while(pos < (uchar*)data + len){
         std::string name, value;
-        if(pos[0] & 0x80){
-            bool T = pos[0] & 0x40;
+        if(pos[0] & 0x80){  
+            // 如果以1开头，表示这是一个索引
+            // 第2位是T，表示这否是一个静态索引
+            bool T = pos[0] & 0x40; 
             uint64_t index;
             l = integer_decode(pos, (uchar*)data+len-pos, 6, &index);
             if(l == 0){
@@ -262,12 +299,15 @@ std::multimap<std::string, std::string> Qpack_decoder::decode(const unsigned cha
             if(T){
                 name = static_table[index][0];
                 value = static_table[index][1];
-            }else{
+            }else{ //当前不支持动态索引，因为我们将MAX_FIELD_SECTION_SIZE设置成了0
                 abort();
             }
             goto append;
-        }else if(pos[0] & 0x40){
-            bool N = pos[0] & 0x20;
+        }else if(pos[0] & 0x40){ 
+            // 如果以01开头，表示key是索引，value是字面量
+            // 第3位是N，表明该条目是否需要插入动态表
+            // 第4位是T，表面该条目是否是静态索引
+            //bool N = pos[0] & 0x20;
             bool T = pos[0] & 0x10;
             uint64_t index;
             l = integer_decode(pos, (uchar*)data+len-pos, 4, &index);
@@ -287,7 +327,9 @@ std::multimap<std::string, std::string> Qpack_decoder::decode(const unsigned cha
             pos += l;
             goto append;
         }else if(pos[0] & 0x20){
-            bool N = pos[0]&0x10;
+            //如果以001开头，表示key和value都是字面量
+            //第4位是N，表明该条目是否需要插入动态表
+            //bool N = pos[0]&0x10;
             l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 3, name);
             if(l <= 0){
                 return headers;
@@ -300,10 +342,14 @@ std::multimap<std::string, std::string> Qpack_decoder::decode(const unsigned cha
             pos += l;
             goto append;
         }else if(pos[0] & 0x10){
+            //如果以0001开头，表示是一个基于base位置的动态表索引，暂时不支持
             abort();
             goto append;
         }else{
-            bool N = pos[0]&0x80;
+            //如果以0000开头，表示key是基于base位置的动态表索引，value是字面量
+            //第5位是N，表明该条目是否需要插入动态表
+            //当前也不支持
+            //bool N = pos[0]&0x80;
             uint64_t index;
             l = integer_decode(pos, (uchar*)data+len-pos, 3, &index);
             if(l == 0){
@@ -315,6 +361,7 @@ std::multimap<std::string, std::string> Qpack_decoder::decode(const unsigned cha
                 return headers;
             }
             pos += l;
+            abort();
             goto append;
         }
 append:
