@@ -20,24 +20,10 @@ int protectFd(int){
     return 1;
 }
 
-static std::vector<const char*>& get_alpn_list() {
-    static std::vector<const char*> alpn_list;
-    alpn_list.clear();
-    if(opt.quic_mode) {
-        alpn_list.push_back("h3");
-    }
-    if(!opt.disable_http2) {
-        alpn_list.push_back("h2");
-    }
-    alpn_list.push_back("http/1.1");
-    alpn_list.push_back(nullptr);
-    return alpn_list;
-}
-
 int main(int argc, char **argv) {
     parseConfig(argc, argv);
-    if(opt.cert && opt.key){
-        SSL_CTX * ctx = initssl(opt.quic_mode, get_alpn_list().data(), nullptr);
+    if(opt.cert && opt.key) {
+        SSL_CTX * ctx = initssl(opt.quic_mode, nullptr);
 #ifdef HAVE_QUIC
         if(opt.quic_mode){
             int svsk_quic = ListenNet(SOCK_DGRAM, opt.CHOST, opt.CPORT);

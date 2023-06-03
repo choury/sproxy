@@ -285,10 +285,18 @@ int SslRWer<MemRWer>::fill_in_bio() {
     if(stats == RWerStats::ReadEOF || sslStats == SslStats::SslEOF) {
         delEvents(RW_EVENT::READ);
     }
-    return BIO_ctrl_pending(in_bio);
+    int rlen = BIO_ctrl_pending(in_bio);
+    if(rlen == 0) {
+        delEvents(RW_EVENT::READ);
+    }
+    return rlen;
 }
 
-void SslRWer<MemRWer>::push(Buffer &&bb) {
+void SslRWer<MemRWer>::push(const Buffer& bb) {
+    if(stats == RWerStats::ReadEOF) {
+        //shutdown by ssl, discard all data after that
+        return;
+    }
     if(bb.len == 0){
         stats = RWerStats::ReadEOF;
     } else {

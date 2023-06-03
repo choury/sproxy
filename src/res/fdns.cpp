@@ -162,18 +162,17 @@ void FDns::Recv(Buffer&& bb) {
         }else if(que->type == 1){
             in_addr addr = getInet(que->domain);
             result = new Dns_Result(que->domain, &addr);
-        }else if(opt.ipv6_enabled) {
+        }else if(que->type == 28) {
             in6_addr addr = getInet6(que->domain);
             result = new Dns_Result(que->domain, &addr);
-        }else{
-            result = new Dns_Result(que->domain);
         }
     }
     if(result == nullptr) {
         return query_dns(que->domain, que->type, RawCb, std::make_shared<uint64_t>(index));
     }
-    auto buff = std::make_shared<Block>(BUF_LEN);
-    status.rwer->buffer_insert({buff, (size_t)result->build(que.get(), (uchar*)buff->data())});
+    Buffer buff{BUF_LEN};
+    buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data()));
+    status.rwer->buffer_insert(std::move(buff));
     delete result;
 }
 
@@ -199,9 +198,10 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_stor
     assert(que->id == (index & 0xffff));
     LOGD(DDNS, "fdns cb [%" PRIu32"], id:%d, size:%zd, error: %d\n", reqid, que->id, addrs.size(), error);
     Dns_Result* result = new Dns_Result(que->domain);
-    std::shared_ptr<Block> buff = std::make_shared<Block>(BUF_LEN);
+    Buffer buff{BUF_LEN};
     if(error) {
-        status.rwer->buffer_insert({buff, (size_t) result->buildError(que.get(), error, (uchar *) buff->data())});
+        buff.truncate(result->buildError(que.get(), error, (uchar*)buff.mutable_data()));
+        status.rwer->buffer_insert(std::move(buff));
     } else {
         for(const auto& addr : addrs) {
             if(isLoopBack(&addr)) {
@@ -216,7 +216,8 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_stor
                 sockaddr_in* ip4 = (sockaddr_in*)&ip;
                 ip4->sin_family = AF_INET;
                 ip4->sin_addr = addr;
-            } else if (opt.ipv6_enabled) {
+            } 
+            if (que->type == 28) {
                 in6_addr addr = getInet6(que->domain);
                 sockaddr_in6* ip6 = (sockaddr_in6*)&ip;
                 ip6->sin6_family = AF_INET6;
@@ -224,13 +225,14 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_stor
             }
             result->addrs.push_back(ip);
         }
-        status.rwer->buffer_insert({buff, (size_t)result->build(que.get(), (uchar*)buff->data())});
+        buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data()));
+        status.rwer->buffer_insert(std::move(buff));
     }
     status.quemap.erase(que->id);
     delete result;
 }
 
-void FDns::RawCb(std::shared_ptr<void> param, const char* buff, size_t size) {
+void FDns::RawCb(std::shared_ptr<void> param, const char* data, size_t size) {
     auto id = *std::static_pointer_cast<uint64_t>(param);
     uint32_t reqid = id >> 32;
     if(fdns->statusmap.count(reqid) == 0){
@@ -240,17 +242,19 @@ void FDns::RawCb(std::shared_ptr<void> param, const char* buff, size_t size) {
     FDnsStatus& status = fdns->statusmap[reqid];
     std::shared_ptr<Dns_Query> que = status.quemap.at(id & 0xffff);
     assert(que->id == (id & 0xffff));
-    auto blk = std::make_shared<Block>(BUF_LEN);
-    if(buff){
+    Buffer buff{BUF_LEN};
+    if(data){
         LOGD(DDNS, "<FDNS> Query raw response [%d]\n", que->id);
-        memcpy(blk->data(), buff, size);
-        DNS_HDR *dnshdr = (DNS_HDR*)blk->data();
+        memcpy(buff.mutable_data(), data, size);
+        DNS_HDR *dnshdr = (DNS_HDR*)buff.mutable_data();
         dnshdr->id = htons(que->id);
-        status.rwer->buffer_insert({blk, size});
+        buff.truncate(size);
+        status.rwer->buffer_insert(std::move(buff));
     }else {
         LOGD(DDNS, "<FDNS> Query raw response [%d] error\n", que->id);
         Dns_Result rr(que->domain);
-        status.rwer->buffer_insert({blk, (size_t)rr.buildError(que.get(), DNS_SERVER_FAIL, (unsigned char*)blk->data())});
+        buff.truncate(rr.buildError(que.get(), DNS_SERVER_FAIL, (unsigned char*)buff.mutable_data()));
+        status.rwer->buffer_insert(std::move(buff));
     }
     status.quemap.erase(que->id);
 }

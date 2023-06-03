@@ -82,9 +82,9 @@ void Host::reply(){
         }
     }
     {
-        auto buff = std::make_shared<Block>(BUF_LEN);
-        size_t len = PackHttpReq(req->header, buff->data(), BUF_LEN);
-        rwer->buffer_insert(Buffer{buff, len});
+        Buffer buff{BUF_LEN};
+        buff.truncate(PackHttpReq(req->header, buff.mutable_data(), BUF_LEN));
+        rwer->buffer_insert(std::move(buff));
     }
 attach:
     req->attach([this](ChannelMessage& msg){
@@ -210,7 +210,7 @@ void Host::Recv(Buffer&& bb){
              status.req->header->request_id, tx_bytes, http_flag);
         if(status.flags & HTTP_NOEND_F){
             //如果是这种，只能通过关闭连接的方式来结束请求
-            rwer->buffer_insert({nullptr});
+            rwer->buffer_insert(nullptr);
         }else{
             //TODO: chunked
             //其他情况，可以不发送结束符

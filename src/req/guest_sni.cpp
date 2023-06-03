@@ -4,8 +4,10 @@
 #include "misc/net.h"
 #include "misc/config.h"
 #include "misc/defer.h"
+#include "res/responser.h"
 
 #include <stdlib.h>
+#include <inttypes.h>
 #include <sstream>
 
 Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(fd, addr, ctx){
@@ -31,9 +33,14 @@ size_t Guest_sni::sniffer(uint64_t, const void* data, size_t len) {
     if(ret > 0){
         char buff[HEADLENLIMIT];
         int slen = snprintf(buff, sizeof(buff), "CONNECT %s:%d" CRLF CRLF, hostname, 443);
-        std::shared_ptr<HttpReqHeader> req = UnpackHttpReq(buff, slen);
-        req->set("User-Agent", user_agent + " SEQ/" + std::to_string(req->request_id));
-        ReqProc(req);
+        std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, slen);
+        header->set("User-Agent", user_agent + " SEQ/" + std::to_string(header->request_id));
+        LOGD(DHTTP, "<guest_sni> ReqProc %" PRIu32 " %s\n", header->request_id, header->geturl().c_str());
+        auto req = std::make_shared<HttpReq>(header,std::bind(&Guest_sni::response, this, nullptr, _1),
+                                             [this]{ rwer->Unblock(0);});
+
+        statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, 0});
+        distribute(req, this);
         rwer->SetReadCB(std::bind(&Guest_sni::ReadHE, this, _1, _2, _3));
     }else if(ret != -1){
         deleteLater(SNI_HOST_ERR);

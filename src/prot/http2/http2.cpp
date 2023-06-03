@@ -159,7 +159,7 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
             return 0;
         }
         size_t origin = header_buffer->truncate(header_buffer->len + length);
-        memcpy((char *) header_buffer->data() + origin, header + 1, length);
+        memcpy((char*)header_buffer->mutable_data() + origin, header + 1, length);
         if (header->flags & HTTP2_END_HEADERS_F) {
             HeadersProc();
             if (http2_flag & HTTP2_FLAG_END) {

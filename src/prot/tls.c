@@ -400,6 +400,11 @@ error:
     return -1;
 }
 
+
+static const char* h3_alpn[] = {"h3", NULL};
+static const char* h2_alpn[] = {"h2", "http/1.1", NULL};
+static const char* h1_alpn[] = {"http/1.1", NULL};
+
 static int select_alpn_cb(SSL *ssl,
                           const unsigned char **out, unsigned char *outlen,
                           const unsigned char *in, unsigned int inlen, void *arg)
@@ -476,7 +481,15 @@ static int ssl_callback_ServerName(SSL *ssl, int* al, void* arg){
 }
 
 
-SSL_CTX* initssl(int quic, const char** alpn_list, const char* host){
+SSL_CTX* initssl(int quic, const char* host){
+    const char** alpn_list = NULL;
+    if(quic) {
+        alpn_list = h3_alpn;
+    }else if(!opt.disable_http2) {
+        alpn_list = h2_alpn;
+    }else {
+        alpn_list = h1_alpn;
+    }
     SSL_CTX *ctx = NULL;
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
     ctx = SSL_CTX_new(SSLv23_server_method());

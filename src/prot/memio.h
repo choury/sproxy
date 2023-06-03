@@ -19,7 +19,8 @@ public:
     explicit MemRWer(const char* pname, std::function<int(Buffer&&)> cb);
     ~MemRWer() override;
 
-    virtual void push(Buffer&& bb);
+    virtual void push(const Buffer& bb);
+    virtual void detach();
     void SetConnectCB(std::function<void(const sockaddr_storage&)> connectCB);
     virtual size_t rlength(uint64_t id) override;
     virtual ssize_t cap(uint64_t id) override;

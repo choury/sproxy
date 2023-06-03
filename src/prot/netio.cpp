@@ -257,10 +257,10 @@ size_t StreamRWer::rlength(uint64_t) {
     return rb.length();
 }
 
-void StreamRWer::ConsumeRData(uint64_t) {
+void StreamRWer::ConsumeRData(uint64_t id) {
     if(rb.length()){
         Buffer wb = rb.get();
-        size_t left = readCB(0, wb.data(), wb.len);
+        size_t left = readCB(id, wb.data(), wb.len);
         rb.consume(wb.len - left);
     }
     if(rb.cap() == 0){

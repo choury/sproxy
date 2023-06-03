@@ -173,6 +173,9 @@ void RWer::buffer_insert(Buffer&& bb) {
     assert((flags & RWER_SHUTDOWN) == 0);
     if(bb.len == 0){
         flags |= RWER_SHUTDOWN;
+    } else {
+        //copy const data
+        bb.mutable_data();
     }
     addEvents(RW_EVENT::WRITE);
     wbuff.push(wbuff.end(), std::move(bb));

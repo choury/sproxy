@@ -300,10 +300,11 @@ void Cgi::Handle(uint32_t id, ChannelMessage::Signal) {
     }
     LOGD(DFILE, "<cgi> [%s] stream %" PRIu32" finished\n", basename(filename), id);
     statusmap.erase(id);
-    auto buff = std::make_shared<Block>(sizeof(CGI_Header));
-    CGI_Header *header = (CGI_Header *)buff->data();
+    Buffer buff{sizeof(CGI_Header)};
+    CGI_Header *header = (CGI_Header *)buff.mutable_data();
     cgi_error(header, id, CGI_FLAG_ABORT);
-    rwer->buffer_insert(Buffer{buff, sizeof(CGI_Header)});
+    buff.truncate(sizeof(CGI_Header));
+    rwer->buffer_insert(std::move(buff));
 }
 
 
@@ -318,13 +319,14 @@ void Cgi::request(std::shared_ptr<HttpReq> req, Requester* src) {
     req->header->set("X-Real-IP", src->getid());
     req->header->set("X-Authorized", checkauth(src->getid(), req->header->get("Authorization")));
 
-    auto buff = std::make_shared<Block>(BUF_LEN);
-    CGI_Header* const header = (CGI_Header *)buff->data();
+    Buffer buff{BUF_LEN};
+    CGI_Header* const header = (CGI_Header *)buff.mutable_data();
     header->type = CGI_REQUEST;
     header->flag = 0;
     header->requestId = htonl(req->header->request_id);
     header->contentLength = htons(PackCgiReq(req->header, header + 1, BUF_LEN - sizeof(CGI_Header)));
-    rwer->buffer_insert(Buffer{buff, sizeof(CGI_Header) + ntohs(header->contentLength)});
+    buff.truncate(sizeof(CGI_Header) + ntohs(header->contentLength));
+    rwer->buffer_insert(std::move(buff));
     req->attach([this, id](ChannelMessage& msg){
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:

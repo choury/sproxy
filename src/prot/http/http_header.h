@@ -56,6 +56,8 @@
 
 #define H508        "HTTP/1.1 508 Loop Detected" CRLF CRLF
 
+#define HCONNECT    "HTTP/1.1 200 Connection establishe" CRLF CRLF
+
 #define AlterMethod "Alter-Method"
 
 

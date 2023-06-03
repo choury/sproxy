@@ -101,7 +101,7 @@ public:
     SslRWer(SSL_CTX* ctx, const char* pname, std::function<int(Buffer&&)> cb):
             SslRWerBase<MemRWer>(ctx, pname, cb)
     {}
-    virtual void push(Buffer&& bb) override;
+    virtual void push(const Buffer& bb) override;
 };
 
 

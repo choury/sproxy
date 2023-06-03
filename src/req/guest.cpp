@@ -22,7 +22,12 @@ size_t Guest::ReadHE(uint64_t, const void* data, size_t len){
         if(Http_Proc == &Guest::AlwaysProc){
             assert(statuslist.size() == 1);
             //对于AlwaysProc，收到EOF视为请求结束
-            status.req->send(nullptr);
+            if(status.req) {
+                status.req->send(nullptr);
+            }
+            if(status.rwer) {
+                status.rwer->push(nullptr);
+            }
             status.flags |= HTTP_REQ_COMPLETED;
             if(status.flags & HTTP_RES_COMPLETED){
                 deleteLater(NOERROR);
@@ -41,6 +46,31 @@ size_t Guest::ReadHE(uint64_t, const void* data, size_t len){
     while(len > 0 && (ret = (this->*Http_Proc)((char*)data, len))){
         len -= ret;
         data = (const char*)data + ret;
+    }
+    return len;
+}
+
+int Guest::mread(std::shared_ptr<HttpReqHeader>, Buffer&& bb) {
+    LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
+    assert(statuslist.size() == 1);
+    if(rwer->cap(0) <= 0) {
+        errno = EAGAIN;
+        return -1;
+    }
+    auto& status = statuslist.front();
+    if (bb.len == 0) {
+        rwer->buffer_insert(nullptr);
+        status.flags |= HTTP_RES_COMPLETED;
+        if(status.flags & HTTP_REQ_COMPLETED) {
+            deleteLater(NOERROR);
+        }
+        return 0;
+    }
+    size_t len = std::min(bb.len, (size_t)rwer->cap(0));
+    if(len == bb.len) {
+        rwer->buffer_insert(std::move(bb));
+    }else {
+        rwer->buffer_insert(Buffer{bb.data(), len});
     }
     return len;
 }
@@ -107,6 +137,21 @@ Guest::Guest(std::shared_ptr<RWer> rwer): Requester(rwer){
 }
 
 void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
+    if(header->ismethod("CONNECT") && header->Dest.port == HTTPPORT) {
+        auto mrwer = std::make_shared<MemRWer>(header->Dest.hostname, std::bind(&Guest::mread, this, header,  _1));
+        statuslist.emplace_back(ReqStatus{nullptr, nullptr, mrwer, HTTP_NOEND_F});
+        rwer->buffer_insert({HCONNECT, strlen(HCONNECT)});
+        new Guest(mrwer);
+        return;
+    }
+    if(opt.cakey && header->ismethod("CONNECT") && header->Dest.port == HTTPSPORT) {
+        auto ctx = initssl(0, header->Dest.hostname);
+        auto srwer = std::make_shared<SslRWer<MemRWer>>(ctx, header->Dest.hostname, std::bind(&Guest::mread, this, header,  _1));
+        statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
+        rwer->buffer_insert({HCONNECT, strlen(HCONNECT)});
+        new Guest(srwer);
+        return;
+    }
     if(forceTls) {
         strcpy(header->Dest.scheme, "https");
     }
@@ -115,7 +160,7 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
             std::bind(&Guest::response, this, nullptr, _1),
             [this]{ rwer->Unblock(0);});
 
-    statuslist.emplace_back(ReqStatus{req, nullptr, 0});
+    statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, 0});
     if(statuslist.size() == 1){
         distribute(req, this);
     }
@@ -129,6 +174,8 @@ void Guest::deqReq() {
         return;
     }
     ReqStatus& status = statuslist.front();
+    //转送的请求不会走到这里，因为他们直接调用deletaLater销毁
+    assert(status.rwer == nullptr && status.req);
     if((status.flags & HTTP_CLOSED_F) == 0) {
         status.req->send(ChannelMessage::CHANNEL_ABORT);
     }
@@ -144,22 +191,38 @@ void Guest::deqReq() {
 ssize_t Guest::DataProc(const void *buff, size_t size) {
     ReqStatus& status = statuslist.back();
     assert((status.flags & HTTP_REQ_COMPLETED) == 0);
-    int len = status.req->cap();
-    len = std::min(len, (int)size);
+    int len = size;
+    if(status.req) {
+        len = std::min(len, (int)status.req->cap());
+    }
+    if(status.rwer) {
+        len = std::min(len, (int)status.rwer->cap(0));
+    }
     if (len <= 0) {
         LOGE("[%" PRIu32 "]: <guest> the host's buff is full (%s)\n",
             status.req->header->request_id, status.req->header->geturl().c_str());
         rwer->delEvents(RW_EVENT::READ);
         return -1;
     }
-    status.req->send(buff, (size_t)len);
+    if(status.req) {
+        status.req->send(buff, (size_t)len);
+    }
+    if(status.rwer) {
+        status.rwer->push({buff, (size_t)len});
+    }
     rx_bytes += len;
-    LOGD(DHTTP, "<guest> DataProc %" PRIu32 ": size:%zu, send:%d/%zu\n", status.req->header->request_id, size, len, rx_bytes);
+    if(status.req){
+        LOGD(DHTTP, "<guest> DataProc %" PRIu32 ": size:%zu, send:%d/%zu\n", status.req->header->request_id, size, len, rx_bytes);
+    }
+    if(status.rwer) {
+        LOGD(DHTTP, "<guest> DataProc %s: size:%zu, send:%d/%zu\n", status.rwer->getPeer(), size, len, rx_bytes);
+    }
     return len;
 }
 
 void Guest::EndProc() {
     ReqStatus& status = statuslist.back();
+    assert(status.req);
     LOGD(DHTTP, "<guest> EndProc %" PRIu32 "\n", status.req->header->request_id);
     rwer->addEvents(RW_EVENT::READ);
     status.req->send(nullptr);
@@ -181,14 +244,16 @@ void Guest::Error(int ret, int code) {
         return deleteLater(PEER_LOST_ERR);
     }
     ReqStatus& status = statuslist.back();
-    LOGE("[%" PRIu32 "]: <guest> error (%s) %d/%d http_flag:0x%x\n",
-         status.req->header->request_id, status.req->header->geturl().c_str(), ret, code, http_flag);
+    if(status.req) {
+        LOGE("[%" PRIu32 "]: <guest> error (%s) %d/%d http_flag:0x%x\n",
+            status.req->header->request_id, status.req->header->geturl().c_str(), ret, code, http_flag);
+    }
     deleteLater(ret);
 }
 
 void Guest::response(void*, std::shared_ptr<HttpRes> res) {
     ReqStatus& status = statuslist.front();
-    assert(status.res == nullptr);
+    assert(status.res == nullptr && status.req);
     status.res = res;
     res->attach([this, &status](ChannelMessage& msg){
         assert(!statuslist.empty());
@@ -211,9 +276,9 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
             if (!status.req->header->should_proxy && opt.alt_svc) {
                 header->set("Alt-Svc", opt.alt_svc);
             }
-            auto buff = std::make_shared<Block>(BUF_LEN);
-            size_t len = PackHttpRes(header, buff->data(), BUF_LEN);
-            rwer->buffer_insert(Buffer{buff, len});
+            Buffer buff{BUF_LEN};
+            buff.truncate(PackHttpRes(header, buff.mutable_data(), BUF_LEN));
+            rwer->buffer_insert(std::move(buff));
             return 1;
         }
         case ChannelMessage::CHANNEL_MSG_DATA:
@@ -236,7 +301,7 @@ void Guest::Recv(Buffer&& bb) {
         if(status.flags & HTTP_NOEND_F){
             assert(statuslist.size() == 1);
             //对于没有长度字段的响应，直接关闭连接来结束
-            rwer->buffer_insert({nullptr});
+            rwer->buffer_insert(nullptr);
         }else if(status.flags & HTTP_CHUNK_F){
             rwer->buffer_insert({"0" CRLF CRLF, 5});
         }
@@ -280,10 +345,17 @@ void Guest::Handle(ChannelMessage::Signal s) {
 Guest::~Guest() {
     // we can't do this in deleteLater, because EndProc may be called after it.
     for(auto& status: statuslist){
-        if((status.flags & HTTP_CLOSED_F) == 0){
-            status.req->send(ChannelMessage::CHANNEL_ABORT);
+        if(status.flags & HTTP_CLOSED_F){
+            continue;
         }
         status.flags |= HTTP_CLOSED_F;
+        if(status.req) {
+            status.req->send(ChannelMessage::CHANNEL_ABORT);
+        }
+        if(status.rwer) {
+            status.rwer->push(nullptr);
+            status.rwer->detach();
+        }
     }
     statuslist.clear();
 }
@@ -291,13 +363,18 @@ Guest::~Guest() {
 void Guest::dump_stat(Dumper dp, void* param){
     dp(param, "Guest %p, tx:%zd, rx:%zd\n", this, tx_bytes, rx_bytes);
     for(const auto& status : statuslist){
-        dp(param, "  [%" PRIu32 "]: %s %s, time: %dms, flags: 0x%08x [%s]\n",
-                status.req->header->request_id,
-                status.req->header->method,
-                status.req->header->geturl().c_str(),
-                getmtime() - status.req->header->ctime,
-                status.flags,
-                status.req->header->get("User-Agent"));
+        if(status.req) {
+            dp(param, "  [%" PRIu32 "]: %s %s, time: %dms, flags: 0x%08x [%s]\n",
+                    status.req->header->request_id,
+                    status.req->header->method,
+                    status.req->header->geturl().c_str(),
+                    getmtime() - status.req->header->ctime,
+                    status.flags,
+                    status.req->header->get("User-Agent"));
+        }
+        if(status.rwer) {
+            dp(param, "  [MemRWer]: %s, flags: 0x%08x\n", status.rwer->getPeer(), status.flags);
+        }
     }
     rwer->dump_status(dp, param);
 }
@@ -305,6 +382,9 @@ void Guest::dump_stat(Dumper dp, void* param){
 void Guest::dump_usage(Dumper dp, void *param) {
     size_t req_usage  = statuslist.size() * sizeof(ReqStatus);
     for(const auto& status: statuslist) {
+        if(status.req == nullptr) {
+            continue;
+        }
         req_usage += status.req->mem_usage();
     }
     dp(param, "Guest %p: %zd, reqlist: %zd, rwer: %zd\n",
