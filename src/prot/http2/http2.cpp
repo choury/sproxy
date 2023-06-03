@@ -265,12 +265,13 @@ ret:
 
 void Http2Base::PushData(Buffer&& bb){
     while(bb.len > remoteframebodylimit){
-        auto buff = std::make_shared<Block>(bb.data(), remoteframebodylimit);
-        Http2_header* const header=(Http2_header *) buff->reserve(-(char) sizeof(Http2_header));
+        Buffer buff{bb.data(), remoteframebodylimit, bb.id};
+        buff.reserve(-(char) sizeof(Http2_header));
+        Http2_header* const header=(Http2_header *)buff.mutable_data();
         memset(header, 0, sizeof(Http2_header));
         set32(header->id, bb.id);
         set24(header->length, remoteframebodylimit);
-        PushFrame(Buffer{buff, remoteframebodylimit + sizeof(Http2_header)});
+        PushFrame(std::move(buff));
         bb.reserve(remoteframebodylimit);
     }
 

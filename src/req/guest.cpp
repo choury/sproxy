@@ -9,9 +9,9 @@
 #include <assert.h>
 #include <inttypes.h>
 
-size_t Guest::ReadHE(uint64_t, const void* data, size_t len){
-    LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", rwer->getPeer(), len);
-    if(len == 0){
+size_t Guest::ReadHE(const Buffer& bb){
+    LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
+    if(bb.len == 0){
         //EOF
         if(statuslist.empty()){
             //clearly close
@@ -43,9 +43,11 @@ size_t Guest::ReadHE(uint64_t, const void* data, size_t len){
         return 0;
     }
     size_t ret = 0;
-    while(len > 0 && (ret = (this->*Http_Proc)((char*)data, len))){
+    size_t len = bb.len;
+    const char* data = (const char*)bb.data();
+    while(len > 0 && (ret = (this->*Http_Proc)(data, len))){
         len -= ret;
-        data = (const char*)data + ret;
+        data += ret;
     }
     return len;
 }
@@ -66,12 +68,9 @@ int Guest::mread(std::shared_ptr<HttpReqHeader>, Buffer&& bb) {
         }
         return 0;
     }
-    size_t len = std::min(bb.len, (size_t)rwer->cap(0));
-    if(len == bb.len) {
-        rwer->buffer_insert(std::move(bb));
-    }else {
-        rwer->buffer_insert(Buffer{bb.data(), len});
-    }
+    int len = std::min(bb.len, (size_t)rwer->cap(0));
+    bb.truncate(len);
+    rwer->buffer_insert(std::move(bb));
     return len;
 }
 
@@ -110,7 +109,7 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
     }else{
         init(std::make_shared<StreamRWer>(fd, addr, std::bind(&Guest::Error, this, _1, _2)));
     }
-    rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1, _2, _3));
+    rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
     rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));
 }
 
@@ -132,7 +131,7 @@ Guest::Guest(std::shared_ptr<RWer> rwer): Requester(rwer){
         srwer->SetErrorCB(std::bind(&Guest::Error, this, _1, _2));
         forceTls = true;
     }
-    rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1, _2, _3));
+    rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
     rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));
 }
 

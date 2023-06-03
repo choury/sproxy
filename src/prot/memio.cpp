@@ -53,12 +53,13 @@ void MemRWer::detach() {
 void MemRWer::ConsumeRData(uint64_t id) {
     if(rb.length()){
         Buffer wb = rb.get();
-        size_t left = readCB(id, wb.data(), wb.len);
+        wb.id = id;
+        size_t left = readCB(wb);
         rb.consume(wb.len - left);
     }
     delEvents(RW_EVENT::READ);
     if(stats == RWerStats::ReadEOF && (flags & RWER_EOFDELIVED) == 0){
-        readCB(0, nullptr, 0);
+        readCB(nullptr);
         flags |= RWER_EOFDELIVED;
     }
 }

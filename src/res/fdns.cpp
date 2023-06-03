@@ -121,30 +121,31 @@ void FDns::query(std::shared_ptr<MemRWer> rwer) {
         .rwer = rwer,
         .quemap = {},
     };
-    rwer->SetReadCB([this, id](uint64_t, const void* data, size_t len) -> size_t{
-        if(len == 0){
+    rwer->SetReadCB([this, id](const Buffer& bb) -> size_t{
+        if(bb.len == 0){
             this->rwer->addjob_with_name([this, id]{statusmap.erase(id);}, "fdns clean", 0, JOB_FLAGS_AUTORELEASE);
             return 0;
         }
-        Recv(Buffer{data, len, id});
+        Recv(bb.data(), bb.len, id);
         return 0;
     });
 }
 
-void FDns::Recv(Buffer&& bb) {
-    FDnsStatus& status = statusmap.at(bb.id);
-    auto que = std::make_shared<Dns_Query>((const char *)bb.data(), bb.len);
+void FDns::Recv(const void* data, size_t len, uint32_t id_) {
+    FDnsStatus& status = statusmap.at(id_);
+    uint64_t id = id_;
+    auto que = std::make_shared<Dns_Query>((const char *)data, len);
     if(!que->valid){
-        LOGD(DDNS, "invalid dns request [%" PRIu64"], len: %zd\n", bb.id, bb.len);
+        LOGD(DDNS, "invalid dns request [%" PRIu64"], len: %zd\n", id, len);
         return;
     }
     if(status.quemap.count(que->id)) {
-        LOG("<FDNS> [%" PRIu64"] Drop dup query %s, id:%d, type:%d\n", bb.id, que->domain, que->id, que->type);
+        LOG("<FDNS> [%" PRIu64"] Drop dup query %s, id:%d, type:%d\n", id, que->domain, que->id, que->type);
         return;
     }
     status.quemap.emplace(que->id, que);
-    LOG("<FDNS> [%" PRIu64"] Query %s, id:%d, type:%d\n", bb.id, que->domain, que->id, que->type);
-    uint64_t index = bb.id << 32 | que->id;
+    LOG("<FDNS> [%" PRIu64"] Query %s, id:%d, type:%d\n", id, que->domain, que->id, que->type);
+    uint64_t index = id << 32 | que->id;
     Dns_Result* result = nullptr;
     if(que->type == 12){
         auto record = fdns_records.GetOne(getFip(&que->ptr_addr));

@@ -11,7 +11,7 @@
 
 class Cli:public Requester, public SproxyServer {
 protected:
-    size_t ReadHE(uint64_t id, const void* data, size_t len);
+    size_t ReadHE(const Buffer& bb);
     void Error(int ret, int code);
 
     virtual bool send(const char* data, size_t len) override;

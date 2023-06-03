@@ -23,7 +23,7 @@ protected:
         uint      flags;
     };
     std::list<ReqStatus> statuslist;
-    size_t ReadHE(uint64_t id, const void* data, size_t len);
+    size_t ReadHE(const Buffer& bb);
     int mread(std::shared_ptr<HttpReqHeader> header, Buffer&& bb);
     void WriteHE(uint64_t id);
     virtual void Error(int ret, int code);

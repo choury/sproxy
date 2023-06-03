@@ -36,31 +36,31 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
             return 0;
         }, []{return BUF_LEN;});
     });
-    rwer->SetReadCB([this](uint64_t, const void* data, size_t len) -> size_t{
+    rwer->SetReadCB([this](const Buffer& bb) -> size_t{
         if(res == nullptr){
             res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
             req->response(this->res);
         }
-        Buffer bb{(char*)data, len};
+        Buffer buff{bb.data(), bb.len};
         switch(family){
         case AF_INET:
             if(flags & PING_IS_RAW_SOCK){
-                const ip* iphdr = (ip*)data;
+                const ip* iphdr = (ip*)buff.mutable_data();
                 size_t hlen = iphdr->ip_hl << 2;
-                bb.reserve(sizeof(icmphdr) + hlen);
-                res->send(std::move(bb));
+                buff.reserve(sizeof(icmphdr) + hlen);
+                res->send(std::move(buff));
             }else {
-                bb.reserve(sizeof(icmphdr));
-                res->send(std::move(bb));
+                buff.reserve(sizeof(icmphdr));
+                res->send(std::move(buff));
             }
             break;
         case AF_INET6:
             if(flags & PING_IS_RAW_SOCK){
-                bb.reserve(sizeof(ip6_hdr) + sizeof(icmp6_hdr));
-                res->send(std::move(bb));
+                buff.reserve(sizeof(ip6_hdr) + sizeof(icmp6_hdr));
+                res->send(std::move(buff));
             }else {
-                bb.reserve(sizeof(icmp6_hdr));
-                res->send(std::move(bb));
+                buff.reserve(sizeof(icmp6_hdr));
+                res->send(std::move(buff));
             }
             break;
         default:

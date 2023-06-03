@@ -260,14 +260,15 @@ size_t StreamRWer::rlength(uint64_t) {
 void StreamRWer::ConsumeRData(uint64_t id) {
     if(rb.length()){
         Buffer wb = rb.get();
-        size_t left = readCB(id, wb.data(), wb.len);
+        wb.id = id;
+        size_t left = readCB(wb);
         rb.consume(wb.len - left);
     }
     if(rb.cap() == 0){
         delEvents(RW_EVENT::READ);
     }
     if(stats == RWerStats::ReadEOF && (flags & RWER_EOFDELIVED) == 0){
-        readCB(0, nullptr, 0);
+        readCB({nullptr, id});
         flags |= RWER_EOFDELIVED;
     }
 }
@@ -319,13 +320,13 @@ void PacketRWer::ReadData() {
     while(true) {
         ssize_t ret = read(getFd(), rb, sizeof(rb));
         if (ret > 0) {
-            readCB(0, rb, ret);
+            readCB({rb, (size_t)ret});
             continue;
         }
         if (ret == 0) {
             stats = RWerStats::ReadEOF;
             delEvents(RW_EVENT::READ);
-            readCB(0, nullptr, 0);
+            readCB(nullptr);
             flags |= RWER_EOFDELIVED;
         }else if (errno != EAGAIN) {
             ErrorHE(SOCKET_ERR, errno);

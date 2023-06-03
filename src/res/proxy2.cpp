@@ -33,9 +33,9 @@ bool Proxy2::wantmore(const ReqStatus& status) {
 Proxy2::Proxy2(std::shared_ptr<RWer> rwer) {
     this->rwer = rwer;
     rwer->SetErrorCB(std::bind(&Proxy2::Error, this, _1, _2));
-    rwer->SetReadCB([this](uint64_t, const void* data, size_t len) -> size_t {
-        LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu\n", this->rwer->getPeer(), len);
-        if(len == 0){
+    rwer->SetReadCB([this](const Buffer& bb) -> size_t {
+        LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu\n", this->rwer->getPeer(), bb.len);
+        if(bb.len == 0){
             //EOF
             deleteLater(NOERROR);
             return 0;
@@ -48,9 +48,11 @@ Proxy2::Proxy2(std::shared_ptr<RWer> rwer) {
         receive_time = getmtime();
 #endif
         size_t ret = 0;
-        while((len > 0) && (ret = (this->*Http2_Proc)((const uchar*)data, len))){
+        size_t len = bb.len;
+        const uchar* data = (const uchar*)bb.data();
+        while((len > 0) && (ret = (this->*Http2_Proc)(data, len))){
             len -= ret;
-            data = (const char*)data + ret;
+            data += ret;
         }
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);

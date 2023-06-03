@@ -149,7 +149,7 @@ Cgi::Cgi(const char* fname, int svs[2], int cvs[2]) {
         LOGE("[CGI] %s error: %d/%d\n", basename(filename), ret, code);
         deleteLater(ret);
     });
-    rwer->SetReadCB(std::bind(&Cgi::readHE, this, _1, _2, _3));
+    rwer->SetReadCB(std::bind(&Cgi::readHE, this, _1));
     cgimap[filename] = this;
 }
 
@@ -192,12 +192,14 @@ void Cgi::Recv(Buffer&& bb) {
 }
 
 
-size_t Cgi::readHE(uint64_t, const void* data, size_t len) {
-    if(len == 0){
+size_t Cgi::readHE(const Buffer& bb) {
+    if(bb.len == 0){
         LOGE("[CGI] %s closed pipe\n", basename(filename));
         deleteLater(PROTOCOL_ERR);
         return 0;
     }
+    size_t len = bb.len;
+    const char* data = (const char*)bb.data();
     while(len >= sizeof(CGI_Header)) {
         const CGI_Header *header = (const CGI_Header *)data;
         size_t size = ntohs(header->contentLength) + sizeof(CGI_Header);
@@ -231,7 +233,7 @@ size_t Cgi::readHE(uint64_t, const void* data, size_t len) {
             return len;
         }
         len -= size;
-        data = (const char *)data + size;
+        data += size;
     }
     return len;
 }

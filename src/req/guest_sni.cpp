@@ -12,7 +12,7 @@
 
 Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(fd, addr, ctx){
     assert(ctx == nullptr);
-    rwer->SetReadCB(std::bind(&Guest_sni::sniffer, this, _1, _2, _3));
+    rwer->SetReadCB(std::bind(&Guest_sni::sniffer, this, _1));
     Http_Proc = &Guest_sni::AlwaysProc;
     std::stringstream ss;
     ss << "Sproxy/" << getVersion()
@@ -22,14 +22,14 @@ Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(f
 }
 
 Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, const std::string& ua):Guest(rwer), user_agent(ua) {
-    rwer->SetReadCB(std::bind(&Guest_sni::sniffer, this, _1, _2, _3));
+    rwer->SetReadCB(std::bind(&Guest_sni::sniffer, this, _1));
     Http_Proc = &Guest_sni::AlwaysProc;
 }
 
-size_t Guest_sni::sniffer(uint64_t, const void* data, size_t len) {
+size_t Guest_sni::sniffer(const Buffer& bb) {
     char *hostname = nullptr;
     defer(free, hostname);
-    int ret = parse_tls_header((char*)data, len, &hostname);
+    int ret = parse_tls_header((const char*)bb.data(), bb.len, &hostname);
     if(ret > 0){
         char buff[HEADLENLIMIT];
         int slen = snprintf(buff, sizeof(buff), "CONNECT %s:%d" CRLF CRLF, hostname, 443);
@@ -41,11 +41,11 @@ size_t Guest_sni::sniffer(uint64_t, const void* data, size_t len) {
 
         statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, 0});
         distribute(req, this);
-        rwer->SetReadCB(std::bind(&Guest_sni::ReadHE, this, _1, _2, _3));
+        rwer->SetReadCB(std::bind(&Guest_sni::ReadHE, this, _1));
     }else if(ret != -1){
         deleteLater(SNI_HOST_ERR);
     }
-    return len;
+    return bb.len;
 }
 
 void Guest_sni::response(void*, std::shared_ptr<HttpRes> res){
