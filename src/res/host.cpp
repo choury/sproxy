@@ -82,9 +82,9 @@ void Host::reply(){
         }
     }
     {
-        auto buff = std::make_shared<Block>(BUF_LEN);
-        size_t len = PackHttpReq(req->header, buff->data(), BUF_LEN);
-        rwer->buffer_insert(Buffer{buff, len});
+        Buffer buff{BUF_LEN};
+        buff.truncate(PackHttpReq(req->header, buff.mutable_data(), BUF_LEN));
+        rwer->buffer_insert(std::move(buff));
     }
 attach:
     req->attach([this](ChannelMessage& msg){
@@ -147,9 +147,9 @@ void Host::connected() {
         return deleteLater(PROTOCOL_ERR);
     }
 #endif
-    rwer->SetReadCB([this](uint64_t, const void *data, size_t len) -> size_t {
-        LOGD(DHTTP, "<host> (%s) read: len:%zu\n", rwer->getPeer(), len);
-        if(len == 0){
+    rwer->SetReadCB([this](const Buffer& bb) -> size_t {
+        LOGD(DHTTP, "<host> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
+        if(bb.len == 0){
             //EOF
             if(Http_Proc == &Host::AlwaysProc){
                 //对于AlwayProc的响应，读到EOF视为响应结束
@@ -163,9 +163,11 @@ void Host::connected() {
             return 0;
         }
         size_t ret = 0;
-        while((len >  0) && (ret = (this->*Http_Proc)((const char*)data, len))){
+        size_t len = bb.len;
+        const char *data = (const char*)bb.data();
+        while((len >  0) && (ret = (this->*Http_Proc)(data, len))){
             len -= ret;
-            data = (const char*)data + ret;
+            data += ret;
         }
         return len;
     });
@@ -210,7 +212,7 @@ void Host::Recv(Buffer&& bb){
              status.req->header->request_id, tx_bytes, http_flag);
         if(status.flags & HTTP_NOEND_F){
             //如果是这种，只能通过关闭连接的方式来结束请求
-            rwer->buffer_insert({nullptr});
+            rwer->buffer_insert(nullptr);
         }else{
             //TODO: chunked
             //其他情况，可以不发送结束符

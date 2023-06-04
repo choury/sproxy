@@ -116,7 +116,9 @@ uint32_t Hpack::getid(const std::string& name, const std::string& value) const{
         auto i = dynamic_table.GetOne(key);
         id = static_table_count + dynamic_table.size() + evicted_count - i->first.first;
     }
-    LOGD(DHPACK, "get hpack %s:[%s] id: %d\n", name.c_str(), value.c_str(), id);
+    if(id) {
+        LOGD(DHPACK, "get hpack %s:[%s] id: %d\n", name.c_str(), value.c_str(), id);
+    }
     return id;
 }
 

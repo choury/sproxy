@@ -134,8 +134,13 @@ void Http3Base::Init() {
     qpackeid_local = CreateUbiStream();
     qpackdid_local = CreateUbiStream();
 
-    size_t len = 2 + variable_encode_len(1 + variable_encode_len(BUF_LEN))
-            + 1 + variable_encode_len(BUF_LEN);
+    size_t len = 2  // type + id
+            + variable_encode_len(1 + variable_encode_len(BUF_LEN)) // len of MAX_FIELD_SECTION_SIZE
+            + 1 // MAX_FIELD_SECTION_SIZE
+            + variable_encode_len(BUF_LEN)   // value of MAX_FIELD_SECTION_SIZE
+            + variable_encode_len(1 + variable_encode_len(0)) // len of QPACK_MAX_TABLE_CAPACITY
+            + 1 // QPACK_MAX_TABLE_CAPACITY
+            + variable_encode_len(0); // value of QPACK_MAX_TABLE_CAPACITY
     auto buff = std::make_shared<Block>(len);
     char* pos = (char*)buff->data();
     pos += variable_encode(pos, HTTP3_STREAM_TYPE_CONTROL);
@@ -143,6 +148,9 @@ void Http3Base::Init() {
     pos += variable_encode(pos, 1 + variable_encode_len(BUF_LEN));
     pos += variable_encode(pos, HTTP3_SETTING_MAX_FIELD_SECTION_SIZE);
     pos += variable_encode(pos, BUF_LEN);
+    pos += variable_encode(pos, 1 + variable_encode_len(0));
+    pos += variable_encode(pos, HTTP3_SETTING_QPACK_MAX_TABLE_CAPACITY);
+    pos += variable_encode(pos, 0);
     assert(pos - (char*)buff->data() == (int)len);
     PushFrame({buff, len, ctrlid_local});
 

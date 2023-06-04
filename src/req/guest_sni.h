@@ -7,7 +7,7 @@
 
 class Guest_sni: public Guest{
     std::string user_agent;
-    size_t sniffer(uint64_t, const void* data, size_t len);
+    size_t sniffer(const Buffer& bb);
 public:
     // 这里必须要保留一个ctx的指针，是因为这个类在HttpServer中作为模版参数，需要和Guest的构造函数保持一致
     explicit Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx);

@@ -20,9 +20,9 @@ RWer::RWer(int fd, std::function<void(int ret, int code)> errorCB):
     Ep(fd), errorCB(std::move(errorCB))
 {
     assert(this->errorCB != nullptr);
-    readCB = [](uint64_t id, const void*, size_t len) -> size_t {
-        LOGE("discard data from stub readCB: %zd [%" PRIu64 "]\n", len, id);
-        return 0;
+    readCB = [](const Buffer& bb) -> size_t {
+        LOGE("send data to stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
+        return bb.len;
     };
     writeCB = [](size_t){};
 }
@@ -31,9 +31,9 @@ RWer::RWer(int fd, std::function<void(int ret, int code)> errorCB):
 RWer::RWer(std::function<void (int, int)> errorCB): Ep(-1), errorCB(std::move(errorCB))
 {
     assert(this->errorCB != nullptr);
-    readCB = [](uint64_t id, const void*, size_t len) -> size_t {
-        LOGE("send data to stub readCB: %zd [%" PRIu64 "]\n", len, id);
-        return len;
+    readCB = [](const Buffer& bb) -> size_t {
+        LOGE("send data to stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
+        return bb.len;
     };
     writeCB = [](size_t){};
 }
@@ -72,7 +72,7 @@ void RWer::SetErrorCB(std::function<void(int ret, int code)> func){
     errorCB = std::move(func);
 }
 
-void RWer::SetReadCB(std::function<size_t(uint64_t id, const void* data, size_t len)> func){
+void RWer::SetReadCB(std::function<size_t(const Buffer& bb)> func){
     readCB = std::move(func);
     Unblock(0);
 }
@@ -173,6 +173,9 @@ void RWer::buffer_insert(Buffer&& bb) {
     assert((flags & RWER_SHUTDOWN) == 0);
     if(bb.len == 0){
         flags |= RWER_SHUTDOWN;
+    } else {
+        //copy const data
+        bb.mutable_data();
     }
     addEvents(RW_EVENT::WRITE);
     wbuff.push(wbuff.end(), std::move(bb));
@@ -195,12 +198,10 @@ size_t NullRWer::rlength(uint64_t) {
 void NullRWer::ConsumeRData(uint64_t) {
 }
 
-/*
-ssize_t NullRWer::Write(const void*, size_t len, uint64_t) {
-    LOG("discard everything write to NullRWer\n");
-    return len;
+ssize_t NullRWer::Write(const Buffer& bb) {
+    LOG("discard everything write to NullRWer, size: %zd\n", bb.len);
+    return bb.len;
 }
- */
 
 #ifdef __linux__
 FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB): RWer(errorCB) {
@@ -240,26 +241,20 @@ FullRWer::~FullRWer(){
 #endif
 }
 
-/*
-ssize_t FullRWer::Write(const void* buff, size_t len, uint64_t) {
-#ifdef __linux__
-    return write(getFd(), buff, len);
-#else
-    return write(pairfd, buff, len);
-#endif
+ssize_t FullRWer::Write(const Buffer&) {
+    return 0;
 }
- */
 
 size_t FullRWer::rlength(uint64_t) {
-    return 1;
+    return SIZE_MAX;
 }
 
 ssize_t FullRWer::cap(uint64_t) {
-    return 1;
+    return SIZE_MAX;
 }
 
-void FullRWer::ConsumeRData(uint64_t) {
-    readCB(0, nullptr, 0);
+void FullRWer::ConsumeRData(uint64_t id) {
+    readCB({nullptr, id});
 }
 
 void FullRWer::ReadData(){

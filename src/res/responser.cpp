@@ -7,6 +7,7 @@
 #include "file.h"
 #include "ping.h"
 
+#include <regex>
 #include <string.h>
 #include <assert.h>
 

@@ -149,7 +149,7 @@ Cgi::Cgi(const char* fname, int svs[2], int cvs[2]) {
         LOGE("[CGI] %s error: %d/%d\n", basename(filename), ret, code);
         deleteLater(ret);
     });
-    rwer->SetReadCB(std::bind(&Cgi::readHE, this, _1, _2, _3));
+    rwer->SetReadCB(std::bind(&Cgi::readHE, this, _1));
     cgimap[filename] = this;
 }
 
@@ -192,12 +192,14 @@ void Cgi::Recv(Buffer&& bb) {
 }
 
 
-size_t Cgi::readHE(uint64_t, const void* data, size_t len) {
-    if(len == 0){
+size_t Cgi::readHE(const Buffer& bb) {
+    if(bb.len == 0){
         LOGE("[CGI] %s closed pipe\n", basename(filename));
         deleteLater(PROTOCOL_ERR);
         return 0;
     }
+    size_t len = bb.len;
+    const char* data = (const char*)bb.data();
     while(len >= sizeof(CGI_Header)) {
         const CGI_Header *header = (const CGI_Header *)data;
         size_t size = ntohs(header->contentLength) + sizeof(CGI_Header);
@@ -231,7 +233,7 @@ size_t Cgi::readHE(uint64_t, const void* data, size_t len) {
             return len;
         }
         len -= size;
-        data = (const char *)data + size;
+        data += size;
     }
     return len;
 }
@@ -300,10 +302,11 @@ void Cgi::Handle(uint32_t id, ChannelMessage::Signal) {
     }
     LOGD(DFILE, "<cgi> [%s] stream %" PRIu32" finished\n", basename(filename), id);
     statusmap.erase(id);
-    auto buff = std::make_shared<Block>(sizeof(CGI_Header));
-    CGI_Header *header = (CGI_Header *)buff->data();
+    Buffer buff{sizeof(CGI_Header)};
+    CGI_Header *header = (CGI_Header *)buff.mutable_data();
     cgi_error(header, id, CGI_FLAG_ABORT);
-    rwer->buffer_insert(Buffer{buff, sizeof(CGI_Header)});
+    buff.truncate(sizeof(CGI_Header));
+    rwer->buffer_insert(std::move(buff));
 }
 
 
@@ -318,13 +321,14 @@ void Cgi::request(std::shared_ptr<HttpReq> req, Requester* src) {
     req->header->set("X-Real-IP", src->getid());
     req->header->set("X-Authorized", checkauth(src->getid(), req->header->get("Authorization")));
 
-    auto buff = std::make_shared<Block>(BUF_LEN);
-    CGI_Header* const header = (CGI_Header *)buff->data();
+    Buffer buff{BUF_LEN};
+    CGI_Header* const header = (CGI_Header *)buff.mutable_data();
     header->type = CGI_REQUEST;
     header->flag = 0;
     header->requestId = htonl(req->header->request_id);
     header->contentLength = htons(PackCgiReq(req->header, header + 1, BUF_LEN - sizeof(CGI_Header)));
-    rwer->buffer_insert(Buffer{buff, sizeof(CGI_Header) + ntohs(header->contentLength)});
+    buff.truncate(sizeof(CGI_Header) + ntohs(header->contentLength));
+    rwer->buffer_insert(std::move(buff));
     req->attach([this, id](ChannelMessage& msg){
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:

@@ -45,7 +45,7 @@ class Cgi:public Responser{
     std::map<uint32_t, CgiStatus> statusmap;
     void evictMe();
     void Clean(uint32_t id, CgiStatus& status);
-    size_t readHE(uint64_t id, const void* data, size_t len);
+    size_t readHE(const Buffer& bb);
     bool HandleRes(const CGI_Header* header, CgiStatus& status);
     bool HandleData(const CGI_Header* header, CgiStatus& Status);
     bool HandleError(const CGI_Header* header, CgiStatus& status);

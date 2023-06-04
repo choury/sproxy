@@ -22,40 +22,41 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
             vpn_stop();
         }
     ));
-    rwer->SetReadCB([this](uint64_t id, const void* data, size_t len) -> size_t {
-        if(statusmap.count(id) == 0){
+    rwer->SetReadCB([this](const Buffer& bb) -> size_t {
+        if(statusmap.count(bb.id) == 0){
             return 0;
         }
-        auto& status = statusmap[id];
+        auto& status = statusmap[bb.id];
         assert((status.flags & HTTP_REQ_COMPLETED) == 0);
+        LOGD(DVPN, " <guest_vpn> [%" PRIu64 "] read %zd bytes\n", bb.id, bb.len);
 
-        if(len == 0) {
+        if(bb.len == 0) {
             if(status.req){
                 status.req->send(nullptr);
             }
             if(status.rwer) {
-                status.rwer->push({nullptr, id});
+                status.rwer->push({nullptr, bb.id});
             }
             status.flags |= HTTP_REQ_COMPLETED;
             if(status.flags & HTTP_RES_COMPLETED) {
-                rwer->addjob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
+                rwer->addjob(std::bind(&Guest_vpn::Clean, this, bb.id, status), 0, JOB_FLAGS_AUTORELEASE);
             }
             return 0;
         }
         if(status.rwer) {
-            if(status.rwer->cap(0) < (int)len) {
-                LOG("[%" PRIu64 "]: <guest_vpn> the guest's buff is full, drop packet [%zd]: %s\n", id, len, status.host.c_str());
-                return len;
+            if(status.rwer->cap(0) < (int)bb.len) {
+                LOG("[%" PRIu64 "]: <guest_vpn> the guest's buff is full, drop packet [%zd]: %s\n", bb.id, bb.len, status.host.c_str());
+                return bb.len;
             }
-            status.rwer->push({data, len});
+            status.rwer->push({bb.data(), bb.len});
         }
         if(status.req){
-            if(status.req->cap() < (int)len){
+            if(status.req->cap() < (int)bb.len){
                 LOG("[%" PRIu32 "]: <guest_vpn> the host's buff is full, drop packet [%zd] (%s)\n",
-                    status.req->header->request_id, len, status.req->header->geturl().c_str());
-                return len;
+                    status.req->header->request_id, bb.len, status.req->header->geturl().c_str());
+                return bb.len;
             }
-            status.req->send(data, len);
+            status.req->send(bb.data(), bb.len);
         }
         return 0;
     });
@@ -271,7 +272,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
             assert((status.flags & HTTP_RES_COMPLETED) == 0);
             msg.data.id = id;
             if (msg.data.len == 0) {
-                LOGD(DVPN, "<guest_vpn> %" PRIu32 " recv data [%" PRIu64"]: EOF\n",
+                LOGD(DVPN, "<guest_vpn> [%" PRIu32 "] recv data (%" PRIu64"): EOF\n",
                      status.req->header->request_id, id);
                 rwer->buffer_insert({nullptr, id});
                 status.flags |= HTTP_RES_COMPLETED;
@@ -279,7 +280,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
                     rwer->addjob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
                 }
             }else{
-                LOGD(DVPN, "<guest_vpn> %" PRIu32 " recv data [%" PRIu64"]: %zu\n",
+                LOGD(DVPN, "<guest_vpn> [%" PRIu32 "] recv data (%" PRIu64"): %zu\n",
                      status.req->header->request_id, id, msg.data.len);
                 rwer->buffer_insert(std::move(msg.data));
             }
@@ -304,7 +305,7 @@ int Guest_vpn::mread(uint64_t id, Buffer && bb) {
     auto& status = statusmap.at(id);
     std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
     if (bb.len == 0) {
-        LOGD(DVPN, "<guest_vpn> recv data [%" PRIu64"]: EOF\n", id);
+        LOGD(DVPN, "<guest_vpn> [%" PRIu64"] recv data: EOF\n", id);
         rwer->buffer_insert({nullptr, id});
         status.flags |= HTTP_RES_COMPLETED;
         if(status.flags & HTTP_REQ_COMPLETED) {
@@ -313,25 +314,11 @@ int Guest_vpn::mread(uint64_t id, Buffer && bb) {
         return 0;
     }
     size_t len = std::min(bb.len, (size_t)rwer->cap(id));
-    LOGD(DVPN, "<guest_vpn> recv data [%" PRIu64"]: %zu, handle: %zu\n", id, bb.len, len);
+    LOGD(DVPN, "<guest_vpn> [%" PRIu64"] recv data: %zu, handle: %zu\n", id, bb.len, len);
     bb.id = id;
-    if(len == bb.len) {
-        rwer->buffer_insert(std::move(bb));
-    }else {
-        rwer->buffer_insert(Buffer{bb.data(), len, id});
-    }
+    bb.truncate(len);
+    rwer->buffer_insert(std::move(bb));
     return len;
-}
-
-static std::vector<const char*>& tcp_alpn_list() {
-    static std::vector<const char*> alpn_list;
-    alpn_list.clear();
-    if(!opt.disable_http2) {
-        alpn_list.push_back("h2");
-    }
-    alpn_list.push_back("http/1.1");
-    alpn_list.push_back(nullptr);
-    return alpn_list;
 }
 
 void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
@@ -341,23 +328,28 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     status.host = getRdns(pac->getdst());
     status.pac = pac;
     char buff[HEADLENLIMIT];
+    uint16_t dport = pac->getdport();
+    auto src = pac->getsrc();
     switch(pac->gettype()){
     case IPPROTO_TCP:{
-        uint16_t dport = pac->getdport();
-        auto src = pac->getsrc();
         if(dport == HTTPPORT) {
             status.rwer = std::make_shared<MemRWer>(storage_ntoa(&src), std::bind(&Guest_vpn::mread, this, id, _1));
             new Guest(status.rwer);
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             trwer->sendMsg(id, TUN_MSG_SYN);
-        } else if(opt.cakey && dport == HTTPSPORT) {
-            auto ctx = initssl(0, tcp_alpn_list().data(), status.host.c_str());
-            auto wrwer = std::make_shared<SslRWer<MemRWer>>(ctx, storage_ntoa(&src),
-                                                             std::bind(&Guest_vpn::mread, this, id, _1));
-            wrwer->set_server_name(status.host);
-            status.rwer = wrwer;
-            new Guest(wrwer);
+        } else if(dport == HTTPSPORT) {
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
+            if(opt.cakey) {
+                auto ctx = initssl(0, status.host.c_str());
+                auto wrwer = std::make_shared<SslRWer<MemRWer>>(ctx, storage_ntoa(&src),
+                                                                std::bind(&Guest_vpn::mread, this, id, _1));
+                wrwer->set_server_name(status.host);
+                status.rwer = wrwer;
+                new Guest(wrwer);
+            } else {
+                status.rwer = std::make_shared<MemRWer>(storage_ntoa(&src), std::bind(&Guest_vpn::mread, this, id, _1));
+                new Guest_sni(status.rwer, generateUA(pac, 0));
+            }
             trwer->sendMsg(id, TUN_MSG_SYN);
         } else {
             //create a http proxy request
@@ -374,19 +366,21 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
         break;
     }
     case IPPROTO_UDP:{
-        //create a http proxy request
-        int headlen = sprintf(buff, "SEND %s" CRLF CRLF,
-                              getRdnsWithPort(pac->getdst()).c_str());
-
-        std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
-        header->set("User-Agent", generateUA(pac, header->request_id));
-        status.req = std::make_shared<HttpReq>(header, 
-                        std::bind(&Guest_vpn::response, this, (void*)id, _1), 
-                        [this, id]{rwer->Unblock(id);});
-        if(pac->udp->getdport() == 53){
+        if(dport == DNSPORT) {
             status.flags |= VPN_DNSREQ_F;
-            FDns::GetInstance()->request(status.req, this);
-        }else{
+            auto mrwer = std::make_shared<PMemRWer>(storage_ntoa(&src), std::bind(&Guest_vpn::mread, this, id, _1));
+            FDns::GetInstance()->query(mrwer);
+            status.rwer = mrwer;
+        } else {
+            //create a http proxy request
+            int headlen = sprintf(buff, "SEND %s" CRLF CRLF,
+                                  getRdnsWithPort(pac->getdst()).c_str());
+
+            std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
+            header->set("User-Agent", generateUA(pac, header->request_id));
+            status.req = std::make_shared<HttpReq>(header,
+                                                   std::bind(&Guest_vpn::response, this, (void*)id, _1),
+                                                   [this, id]{rwer->Unblock(id);});
             distribute(status.req, this);
         }
         break;
@@ -436,9 +430,10 @@ void Guest_vpn::handle(uint64_t id, ChannelMessage::Signal s) {
 }
 
 void Guest_vpn::Clean(uint64_t id, VpnStatus& status) {
-    if(status.rwer) {
+    if(status.rwer && (status.flags & HTTP_REQ_COMPLETED) == 0) {
         status.rwer->push({nullptr, id});
-    }else if((status.flags & HTTP_CLOSED_F) == 0){
+    }
+    if(status.req && (status.flags & HTTP_CLOSED_F) == 0){
         status.req->send(ChannelMessage::CHANNEL_ABORT);
     }
     if(status.res){

@@ -1630,7 +1630,8 @@ void QuicRWer::consumeData(uint64_t id, QuicRWer::QuicStreamStatus &status) {
     assert(rblen >= rb.length());
     if(rb.length() > 0){
         Buffer bb = rb.get();
-        size_t eaten = rb.length() - readCB(id, bb.data(), bb.len);
+        bb.id = id;
+        size_t eaten = rb.length() - readCB(bb);
         LOGD(DQUIC, "consume data [%" PRIu64"]: %" PRIu64" - %" PRIu64", left: %zd\n",
              id, rb.Offset(), rb.Offset() + eaten, rb.length() - eaten);
         rb.consume(eaten);
@@ -1642,7 +1643,7 @@ void QuicRWer::consumeData(uint64_t id, QuicRWer::QuicStreamStatus &status) {
     {
         assert((status.flags & STREAM_FLAG_FIN_DELIVED) == 0);
         //在QuicRWer中，我们不用 ReadEOF状态，因为它是对整个连接的，而不是对某个stream的
-        readCB(id, nullptr, 0);
+        readCB({nullptr, id});
         LOGD(DQUIC, "consume EOF [%" PRIu64"]: %" PRIu64"\n", id, rb.Offset());
         status.flags |= STREAM_FLAG_FIN_DELIVED;
     }

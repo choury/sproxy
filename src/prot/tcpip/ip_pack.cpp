@@ -1065,6 +1065,7 @@ Ip4::Ip4(uint8_t type, const sockaddr_storage* src, const sockaddr_storage* dst)
 }
 
 void Ip4::build_packet(Buffer& bb){
+    bb.mutable_data(); //copy const data to mutable
     switch(type){
     case IPPROTO_ICMP:
         icmp->build_packet(bb);
@@ -1324,6 +1325,7 @@ void Ip6::print() const {
 
 
 void Ip6::build_packet(Buffer& bb) {
+    bb.mutable_data(); //copy const data to mutable
     switch(type){
     case IPPROTO_ICMPV6:
         icmp6->build_packet(&hdr, bb);

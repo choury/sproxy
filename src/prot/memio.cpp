@@ -35,7 +35,8 @@ void MemRWer::connected(const sockaddr_storage& addr) {
 }
 
 
-void MemRWer::push(Buffer&& bb) {
+void MemRWer::push(const Buffer& bb) {
+    assert(stats != RWerStats::ReadEOF);
     if(bb.len == 0){
         stats = RWerStats::ReadEOF;
     } else {
@@ -44,22 +45,28 @@ void MemRWer::push(Buffer&& bb) {
     addEvents(RW_EVENT::READ);
 }
 
-void MemRWer::ConsumeRData(uint64_t) {
+void MemRWer::detach() {
+    cb = [](Buffer&& bb){ return bb.len;};
+}
+
+
+void MemRWer::ConsumeRData(uint64_t id) {
     if(rb.length()){
         Buffer wb = rb.get();
-        size_t left = readCB(0, wb.data(), wb.len);
+        wb.id = id;
+        size_t left = readCB(wb);
         rb.consume(wb.len - left);
     }
     delEvents(RW_EVENT::READ);
     if(stats == RWerStats::ReadEOF && (flags & RWER_EOFDELIVED) == 0){
-        readCB(0, nullptr, 0);
+        readCB(nullptr);
         flags |= RWER_EOFDELIVED;
     }
 }
 
 ssize_t MemRWer::Write(const Buffer &bb) {
     if(bb.len) {
-        return cb(Buffer{bb.data(), bb.len, bb.id});
+        return cb(Buffer{std::make_shared<Block>(bb.data(), bb.len), bb.len, bb.id});
     }else{
         flags |= RWER_SHUTDOWN;
         return cb(Buffer{nullptr, bb.id});
@@ -72,4 +79,15 @@ void MemRWer::closeHE(RW_EVENT event) {
         wbuff.push(wbuff.end(), {nullptr});
     }
     RWer::closeHE(event);
+}
+
+void PMemRWer::push(const Buffer &bb) {
+    assert(stats != RWerStats::ReadEOF);
+    if(bb.len == 0){
+        stats = RWerStats::ReadEOF;
+        readCB(nullptr);
+        flags |= RWER_EOFDELIVED;
+    } else {
+        readCB(bb);
+    }
 }

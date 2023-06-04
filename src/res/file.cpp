@@ -141,7 +141,7 @@ File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
     }
     strcpy(filename, fname);
     suffix = strrchr(filename, '.');
-    rwer->SetReadCB(std::bind(&File::readHE, this, _1, _2, _3));
+    rwer->SetReadCB(std::bind(&File::readHE, this, _1));
 }
 
 File::~File() {
@@ -218,7 +218,7 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
     }, []{return 0;});
 }
 
-size_t File::readHE(uint64_t, const void* , size_t) {
+size_t File::readHE(const Buffer&) {
     if(status.res == nullptr){
         return 0;
     }

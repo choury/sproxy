@@ -6,24 +6,28 @@
 #include "responser.h"
 #include "prot/dns/resolver.h"
 #include "prot/dns/dns.h"
+#include "prot/memio.h"
 #include <map>
 
 class FDns: public Responser{
     struct FDnsStatus{
-        std::shared_ptr<HttpReq>   req;
-        std::shared_ptr<HttpRes>   res;
+        std::shared_ptr<MemRWer>   rwer;
+        //std::shared_ptr<HttpReq>   req;
+        //std::shared_ptr<HttpRes>   res;
         std::map<uint16_t, std::shared_ptr<Dns_Query>> quemap;
     };
+    uint32_t curid = 0;
     std::map<uint32_t, FDnsStatus> statusmap;
 
-    void Recv(Buffer&& bb);
+    void Recv(const void* data, size_t len, uint32_t id);
     static void RawCb(std::shared_ptr<void> param, const char *buff, size_t size);
     static void DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_storage> addrs);
 public:
     FDns();
     virtual ~FDns() override;
     static FDns* GetInstance();
-    virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
+    virtual void request(std::shared_ptr<HttpReq>, Requester*) override {};
+    void query(std::shared_ptr<MemRWer> rwer);
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
 };

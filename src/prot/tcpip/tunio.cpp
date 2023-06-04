@@ -293,7 +293,12 @@ size_t TunRWer::DataProc(std::shared_ptr<const Ip> pac, const void* data, size_t
     if(!statusmap.Has(VpnKey(pac))){
         return 0;
     }
-    return len - readCB(GetId(pac), data, len);
+    if(len == 0) {
+        assert(data == nullptr);
+        readCB({nullptr, GetId(pac)});
+        return 0;
+    }
+    return len - readCB({data, len, GetId(pac)});
 }
 
 void TunRWer::AckProc(std::shared_ptr<const Ip> pac) {

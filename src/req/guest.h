@@ -3,6 +3,7 @@
 
 #include "requester.h"
 #include "prot/http/http.h"
+#include "prot/memio.h"
 #include "misc/net.h"
 
 #include <errno.h>
@@ -18,10 +19,12 @@ protected:
     struct ReqStatus{
         std::shared_ptr<HttpReq>  req;
         std::shared_ptr<HttpRes>  res;
+        std::shared_ptr<MemRWer>  rwer;
         uint      flags;
     };
     std::list<ReqStatus> statuslist;
-    size_t ReadHE(uint64_t id, const void* data, size_t len);
+    size_t ReadHE(const Buffer& bb);
+    int mread(std::shared_ptr<HttpReqHeader> header, Buffer&& bb);
     void WriteHE(uint64_t id);
     virtual void Error(int ret, int code);
 

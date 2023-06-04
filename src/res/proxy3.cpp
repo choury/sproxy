@@ -7,19 +7,19 @@
 Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
     this->rwer = rwer;
     rwer->SetErrorCB(std::bind(&Proxy3::Error, this, _1, _2));
-    rwer->SetReadCB([this](uint64_t id, const void* data, size_t len) -> size_t {
-        LOGD(DHTTP3, "<proxy3> (%s) read [%" PRIu64"]: len:%zu\n", this->rwer->getPeer(), id, len);
-        if(len == 0){
+    rwer->SetReadCB([this](const Buffer& bb) -> size_t {
+        LOGD(DHTTP3, "<proxy3> (%s) read [%" PRIu64"]: len:%zu\n", this->rwer->getPeer(), bb.id, bb.len);
+        if(bb.len == 0){
             //fin
-            if(ctrlid_remote && id == ctrlid_remote){
+            if(ctrlid_remote && bb.id == ctrlid_remote){
                 Error(PROTOCOL_ERR, HTTP3_ERR_CLOSED_CRITICAL_STREAM);
                 return 0;
             }
-            if(!statusmap.count(id)){
+            if(!statusmap.count(bb.id)){
                 return 0;
             }
-            ReqStatus& status = statusmap[id];
-            LOGD(DHTTP3, "<proxy3> [%" PRIu64 "]: end of stream\n", id);
+            ReqStatus& status = statusmap[bb.id];
+            LOGD(DHTTP3, "<proxy3> [%" PRIu64 "]: end of stream\n", bb.id);
             assert((status.flags & HTTP_RES_COMPLETED) == 0);
             status.flags |= HTTP_RES_COMPLETED;
             status.res->send(nullptr);
@@ -27,9 +27,11 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
         }
 
         size_t ret = 0;
-        while((len > 0) && (ret = Http3_Proc((const uchar*)data, len, id))){
+        size_t len = bb.len;
+        const char* data = (const char*)bb.data();
+        while((len > 0) && (ret = Http3_Proc(data, len, bb.id))){
             len -= ret;
-            data = (const char*)data + ret;
+            data += ret;
         }
         return len;
     });
