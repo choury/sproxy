@@ -1284,7 +1284,7 @@ std::string dumpHex(const void* data, size_t len){
 std::string sign_cid(std::string id) {
     char* token = nullptr;
     unsigned int sign_len;
-    if(sign_data(opt.key, id.c_str(), id.length(), &token, &sign_len)){
+    if(sign_data(opt.cert.key, id.c_str(), id.length(), &token, &sign_len)){
         LOGE("QUIC failed to sign cid");
         return "";
     }

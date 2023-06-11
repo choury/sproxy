@@ -11,7 +11,8 @@
 extern "C" {
 #endif
 
-int load_ca(const char *ca_crt_path, const char *ca_key_path);
+struct cert_pair;
+int load_cert_key(const char *ca_crt_path, const char *ca_key_path, struct cert_pair* cert);
 int generate_signed_key_pair(const char* domain, EVP_PKEY **key, X509 **crt);
 
 #ifdef __cplusplus

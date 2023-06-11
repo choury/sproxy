@@ -22,7 +22,7 @@ int protectFd(int){
 
 int main(int argc, char **argv) {
     parseConfig(argc, argv);
-    if(opt.cert && opt.key) {
+    if(opt.cert.crt && opt.cert.key) {
         SSL_CTX * ctx = initssl(opt.quic_mode, nullptr);
 #ifdef HAVE_QUIC
         if(opt.quic_mode){

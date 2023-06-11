@@ -55,8 +55,16 @@ struct options opt = {
     .admin             = NULL,
     .cafile            = NULL,
     .cakey             = NULL,
-    .cert              = NULL,
-    .key               = NULL,
+    .ca                = {
+        .crt = NULL,
+        .key = NULL,
+    },
+    .certfile          = NULL,
+    .keyfile           = NULL,
+    .cert              = {
+        .crt = NULL,
+        .key = NULL,
+    },
     .rootdir           = NULL,
     .index_file        = NULL,
     .interface         = NULL,
@@ -157,7 +165,7 @@ static struct option_detail option_detail[] = {
     {"bind", "The ip address to bind, default is [::]", option_string, &opt.CHOST, NULL},
     {"cafile", "CA certificate for server (ssl)", option_string, &opt.cafile, NULL},
     {"cakey", "CA key for server (sni and vpn)", option_string, &opt.cakey, NULL},
-    {"cert", "Certificate file for server (ssl)", option_string, &opt.cert, NULL},
+    {"cert", "Certificate file for server (ssl)", option_string, &opt.certfile, NULL},
     {"config", "Configure file (default "PREFIX"/etc/sproxy/sproxy.conf and ./sproxy.conf)", option_string, &opt.config_file, NULL},
     {"daemon", "Run as daemon", option_bool, &opt.daemon_mode, (void*)true},
     {"disable-http2", "Use http/1.1 only", option_bool, &opt.disable_http2, (void*)true},
@@ -166,7 +174,7 @@ static struct option_detail option_detail[] = {
     {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_bool, &opt.ignore_cert_error, (void*)true},
     {"interface", "Out interface (use for vpn), will skip bind if set to empty", option_string, &opt.interface, NULL},
     {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, ipv6_options},
-    {"key", "Private key file name (ssl)", option_string, &opt.key, NULL},
+    {"key", "Private key file name (ssl)", option_string, &opt.keyfile, NULL},
     {"pcap", "Save packets in pcap file for vpn (generated pseudo ethernet header)", option_string, &opt.pcap_file, NULL},
     {"pcap_len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
     {"port", "The port to listen, default is 80 but 443 for ssl/sni/quic", option_uint64, &opt.CPORT, NULL},
@@ -206,6 +214,14 @@ void dump_stat();
 void neglect(){
     flushdns();
     releaseall();
+    X509_free(opt.ca.crt);
+    opt.ca.crt = NULL;
+    EVP_PKEY_free(opt.ca.key);
+    opt.ca.key = NULL;
+    X509_free(opt.cert.crt);
+    opt.cert.crt = NULL;
+    EVP_PKEY_free(opt.cert.key);
+    opt.cert.key = NULL;
 }
 
 static void usage(const char * program){
@@ -373,32 +389,38 @@ int loadproxy(const char* proxy, struct Destination* server){
 
 int parseConfigFile(const char* config_file){
     FILE* conf = fopen(config_file, "re");
-    if(conf){
-        char line[1024];
-        while(fgets(line, sizeof(line), conf)){
-            if(line[0] == '#' || line[0] == '\n'){
-                continue;
-            }
-            char option[1024], args[1024];
-            int ret = sscanf(line, "%1023s%*[ \t]%1023[^\n]", option, args);
-            if(ret <= 0){
-                LOGE("config file parse failed: %s", line);
-                break;
-            }
-            size_t argsLen = strlen(args);
-            while(argsLen > 0 && (args[argsLen-1] == ' ' || args[argsLen-1] == '\t')){
-                args[--argsLen] = 0;
-            }
-            if(args[0] == '\"' && args[argsLen - 1] == '\"'){
-                args[argsLen - 1] = 0;
-                memmove(args, args+1, argsLen - 1);
-            }
-            parseArgs(option, args);
-        }
-        fclose(conf);
-        return 0;
+    if(conf == NULL) {
+        return -errno;
     }
-    return -errno;
+    char* line = NULL;
+    size_t len = 0;
+    while(getline(&line, &len, conf) >= 0){
+        // Trim leading spaces
+        char* start = line;
+        while(*start == ' ' || *start == '\t') start++;
+        // Ignore comments and empty lines
+        if(*start == '#' || *start == '\n'){
+            continue;
+        }
+        char option[1024], args[1024];
+        int ret = sscanf(start, "%1023s%*[ \t]%1023[^\n]", option, args);
+        if(ret <= 0){
+            LOGE("config file parse failed: %s", start);
+            break;
+        }
+        size_t argsLen = strlen(args);
+        while(argsLen > 0 && (args[argsLen-1] == ' ' || args[argsLen-1] == '\t')){
+            args[--argsLen] = 0;
+        }
+        if(args[0] == '\"' && args[argsLen - 1] == '\"'){
+            args[argsLen - 1] = 0;
+            memmove(args, args+1, argsLen - 1);
+        }
+        parseArgs(option, args);
+    }
+    free(line);
+    fclose(conf);
+    return 0;
 }
 
 static const char* confs[] = {
@@ -418,7 +440,7 @@ void postConfig(){
         LOGE("wrong port: %" PRId64 "\n", opt.CPORT);
         exit(1);
     }
-    if((opt.cert && opt.key) || opt.sni_mode){ //ssl, quic or sni
+    if(opt.certfile || opt.keyfile || opt.sni_mode){ //ssl, quic or sni
         opt.CPORT = opt.CPORT ?: 443;
     } else {
         opt.CPORT = opt.CPORT ?: 80;
@@ -455,20 +477,12 @@ void postConfig(){
         LOGE("access cafile failed: %s\n", strerror(errno));
         exit(1);
     }
-    if (opt.cakey && access(opt.cakey, R_OK)) {
-        LOGE("access cakey failed: %s\n", strerror(errno));
-        exit(1);
-    }
-    if (opt.cert && access(opt.cert, R_OK)){
-        LOGE("access cert file failed: %s\n", strerror(errno));
-        exit(1);
-    }
-    if (opt.key && access(opt.key, R_OK)){
-        LOGE("access key file failed: %s\n", strerror(errno));
-        exit(1);
-    }
-    if (opt.cafile && opt.cakey && load_ca(opt.cafile, opt.cakey)) {
+    if (opt.cafile && opt.cakey && load_cert_key(opt.cafile, opt.cakey, &opt.ca)) {
         LOGE("failed to load cafile or cakey\n");
+        exit(1);
+    }
+    if ((opt.certfile || opt.keyfile) && load_cert_key(opt.certfile, opt.keyfile, &opt.cert)) {
+        LOGE("access cert file failed: %s\n", strerror(errno));
         exit(1);
     }
     for(struct arg_list* p = secrets.next; p != NULL; p = p->next){

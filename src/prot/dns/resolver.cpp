@@ -232,10 +232,6 @@ void getDnsConfig(struct DnsConfig* config){
     char* line = nullptr;
     size_t len = 0;
     while(getline(&line, &len, res_file) >= 0){
-        defer([&line]{
-            free(line);
-            line = nullptr;
-        });
         if((size_t)get >= sizeof(config->server)/sizeof(config->server[0])){
             break;
         }

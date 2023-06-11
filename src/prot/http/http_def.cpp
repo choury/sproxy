@@ -138,9 +138,9 @@ void HttpReq::send(ChannelMessage::Signal s) {
 
 void HttpLog(const char* src, std::shared_ptr<const HttpReqHeader> req, std::shared_ptr<const HttpResHeader> res){
     char status[100];
-    sscanf(res->status, "%s", status);
+    sscanf(res->status, "%s", status); //get the first word of status (status code)
     LOG("%s [%" PRIu32 "] %s %s [%s] %s %dms [%s]\n", src,
         req->request_id, req->method, req->geturl().c_str(),
-        req->get("Strategy"), status, res->ctime - req->ctime,
+        req->get(STRATEGY), status, res->ctime - req->ctime,
         req->get("User-Agent"));
 }

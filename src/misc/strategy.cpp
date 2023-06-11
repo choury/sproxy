@@ -42,7 +42,7 @@ static std::string getrawip(const char* ipstr) {
     return name;
 }
 
-static const Trie<char, strategy>* ipfind(const char* ipstr, int prefix = -1){
+static const TrieType<strategy>* ipfind(const char* ipstr, int prefix = -1){
     in_addr ip4;
     in6_addr ip6;
 
@@ -104,7 +104,7 @@ static bool mergestrategy(const string& host, const string& strategy_str, string
     }else{
         return false;
     }
-    strategy stra{s, std::move(ext)};
+    strategy stra{s, ext};
     auto mask_pos = host.find_first_of('/');
     if(mask_pos != string::npos){
         string ip = host.substr(0, mask_pos);
@@ -116,7 +116,10 @@ static bool mergestrategy(const string& host, const string& strategy_str, string
         return ipinsert(ip.c_str(), stra, prefix);
     }else if(ipinsert(host.c_str(), stra)){
         return true;
-    } else{
+    } else if(stra.s == Strategy::block){
+        domains.insert(split(toLower(host)), stra, ext);
+        return true;
+    } else {
         domains.insert(split(toLower(host)), stra);
         return true;
     }
@@ -148,10 +151,6 @@ void reloadstrategy() {
         char* line = nullptr;
         size_t len = 0;
         while (getline(&line, &len, opt.policy_read) > 0) {
-            defer([&line]{
-                free(line);
-                line = nullptr;
-            });
             lineNum ++;
             if(len == 0 || line[0] == '#' || line[0] == '\n'){
                 continue;
@@ -221,7 +220,7 @@ bool delstrategy(const char* host_) {
     return found;
 }
 
-strategy getstrategy(const char *host_){
+strategy getstrategy(const char *host_, const char* path){
     const TrieType<strategy> *v = nullptr;
     string host = host_;
     auto mask_pos = host.find_first_of('/');
@@ -235,9 +234,19 @@ strategy getstrategy(const char *host_){
         }
         v = ipfind(ip.c_str(), prefix);
     }else if((v = ipfind(host.c_str())) == nullptr){
-        v = domains.find(split(toLower(host)));
+        v = domains.find(split(toLower(host)), path);
     }
     return v? v->value : strategy{Strategy::direct, ""};
+}
+
+bool mayBeBlocked(const char* host) {
+    auto strategies = domains.findAll(split(toLower(host)));
+    for(auto& s: strategies){
+        if(s->value.s == Strategy::block){
+            return true;
+        }
+    }
+    return false;
 }
 
 const char* getstrategystring(Strategy s) {

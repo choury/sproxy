@@ -1,5 +1,6 @@
 #include "cert_manager.h"
 #include "common/common.h"
+#include "misc/config.h"
 #include "defer.h"
 #include "net.h"
 
@@ -8,20 +9,14 @@
 #include <assert.h>
 
 
-struct cert_pair{
-    X509     *crt;
-    EVP_PKEY *key;
-};
-
-static cert_pair ca{nullptr, nullptr};
 static std::map<std::string, cert_pair> certs;
 
-int load_ca(const char *ca_crt_path, const char *ca_key_path) {
-    assert(ca.crt == nullptr && ca.key == nullptr);
+int load_cert_key(const char *crt_path, const char *key_path, struct cert_pair* cert) {
     BIO* cbio = BIO_new(BIO_s_file());
     defer(BIO_free_all, cbio);
-    if (!BIO_read_filename(cbio, ca_crt_path)) return -1;
-    if((ca.crt = PEM_read_bio_X509(cbio, NULL, NULL, NULL)) == nullptr) {
+    if (!BIO_read_filename(cbio, crt_path)) return -1;
+    X509* crt = PEM_read_bio_X509(cbio, NULL, NULL, NULL);
+    if(crt == nullptr) {
         LOGE("Error reading cert file: %s\n", ERR_error_string(ERR_get_error(), NULL));
         return -1;
     }
@@ -29,11 +24,22 @@ int load_ca(const char *ca_crt_path, const char *ca_key_path) {
     /* Load CA private key. */
     BIO* kbio = BIO_new(BIO_s_file());
     defer(BIO_free_all, kbio);
-    if (!BIO_read_filename(kbio, ca_key_path)) return -1;
-    if((ca.key = PEM_read_bio_PrivateKey(kbio, NULL, NULL, NULL)) == nullptr){
+    if (!BIO_read_filename(kbio, key_path)) return -1;
+    EVP_PKEY* key = PEM_read_bio_PrivateKey(kbio, NULL, NULL, NULL);
+    if(key == nullptr){
         LOGE("Error reading private key: %s\n", ERR_error_string(ERR_get_error(), NULL));
+        X509_free(crt);
         return -1;
     }
+    LOG("loaded cert from %s and %s\n", crt_path, key_path);
+    if(cert->crt) {
+        X509_free(cert->crt);
+    }
+    if(cert->key) {
+        EVP_PKEY_free(cert->key);
+    }
+    cert->crt = crt;
+    cert->key = key;
     return 0;
 }
 
@@ -115,7 +121,7 @@ int generate_signed_key_pair(const char* domain, EVP_PKEY **key, X509 **crt) {
     ASN1_INTEGER_set(X509_get_serialNumber(*crt), (random()<<32)|random());
     X509_set_version(*crt, 2); /* Set version to X509v3 */
     /* Set issuer to CA's subject. */
-    X509_set_issuer_name(*crt, X509_get_subject_name(ca.crt));
+    X509_set_issuer_name(*crt, X509_get_subject_name(opt.ca.crt));
 
     /* Set validity of certificate to 2 month. */
     X509_gmtime_adj(X509_get_notBefore(*crt), (long)-24*3600);
@@ -123,7 +129,43 @@ int generate_signed_key_pair(const char* domain, EVP_PKEY **key, X509 **crt) {
     {
         X509V3_CTX ctx;
         X509V3_set_ctx_nodb(&ctx);
-        X509V3_set_ctx(&ctx, ca.crt, *crt, req, NULL, 0);
+        X509V3_set_ctx(&ctx, opt.ca.crt, *crt, req, NULL, 0);
+
+        // Create and add the Basic Constraints extension
+        X509_EXTENSION* bc_ext = X509V3_EXT_conf_nid(NULL, &ctx, NID_basic_constraints, "critical,CA:FALSE");
+        defer(X509_EXTENSION_free, bc_ext);
+        if (!X509_add_ext(*crt, bc_ext, -1)) {
+            goto err;
+        }
+
+        // Create and add the Key Usage extension
+        X509_EXTENSION* ku_ext = X509V3_EXT_conf_nid(NULL, &ctx, NID_key_usage, "critical,digitalSignature,keyEncipherment");
+        defer(X509_EXTENSION_free, ku_ext);
+        if (!X509_add_ext(*crt, ku_ext, -1)) {
+            goto err;
+        }
+
+        // Create and add the Extended Key Usage extension
+        X509_EXTENSION* eku_ext = X509V3_EXT_conf_nid(NULL, &ctx, NID_ext_key_usage, "serverAuth");
+        defer(X509_EXTENSION_free, eku_ext);
+        if (!X509_add_ext(*crt, eku_ext, -1)) {
+            goto err;
+        }
+
+        // Create and add the Subject Key Identifier extension
+        X509_EXTENSION* ski_ext = X509V3_EXT_conf_nid(NULL, &ctx, NID_subject_key_identifier, "hash");
+        defer(X509_EXTENSION_free, ski_ext);
+        if (!X509_add_ext(*crt, ski_ext, -1)) {
+            goto err;
+        }
+
+        // Create and add the Authority Key Identifier extension
+        X509_EXTENSION* aki_ext = X509V3_EXT_conf_nid(NULL, &ctx, NID_authority_key_identifier, "keyid:always");
+        defer(X509_EXTENSION_free, aki_ext);
+        if (!X509_add_ext(*crt, aki_ext, -1)) {
+            goto err;
+        }
+
         std::string san;
         struct sockaddr_storage _ignore;
         if(storage_aton(domain, 0, &_ignore) == 1) {
@@ -132,12 +174,12 @@ int generate_signed_key_pair(const char* domain, EVP_PKEY **key, X509 **crt) {
             san += "DNS:";
         }
         san += domain;
-        X509_EXTENSION* ext = X509V3_EXT_conf_nid(NULL, &ctx, NID_subject_alt_name, san.c_str());
-        if (!ext) {
+        X509_EXTENSION* an_ext = X509V3_EXT_conf_nid(NULL, &ctx, NID_subject_alt_name, san.c_str());
+        if (!an_ext) {
             goto err;
         }
-        defer(X509_EXTENSION_free, ext);
-        if (!X509_add_ext(*crt, ext, -1)) {
+        defer(X509_EXTENSION_free, an_ext);
+        if (!X509_add_ext(*crt, an_ext, -1)) {
             goto err;
         }
     }
@@ -151,7 +193,7 @@ int generate_signed_key_pair(const char* domain, EVP_PKEY **key, X509 **crt) {
     }
 
     /* Now perform the actual signing with the CA. */
-    if (X509_sign(*crt, ca.key, EVP_sha256()) == 0) goto err;
+    if (X509_sign(*crt, opt.ca.key, EVP_sha256()) == 0) goto err;
     X509_REQ_free(req);
     certs.emplace(std::make_pair(domain, cert_pair{*crt, *key}));
     return 0;

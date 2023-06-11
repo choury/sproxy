@@ -10,13 +10,15 @@ int main(){
     t1.insert(split("sproxy.choury.com"), (void*)1);
     t1.insert(split("test.choury.com"), (void*)2);
     t1.insert(split("*.com"), (void*)3);
+    t1.insert(split("test.choury.com"), (void*)4, "test.*");
     t1.dump(0);
 
     assert(t1.find(split("abc.choury.com"))->value == (void*)3);
     assert(t1.find(split("test.choury.com"))->value == (void*)2);
+    assert(t1.find(split("test.choury.com"), "test1")->value == (void*)4);
     assert(t1.find(split("abc.test.net")) == nullptr);
     assert(t1.find(split("choury.com"))->value == (void*)3);
-    
+
     bool found;
     t1.remove(split("choury.com"), found);
     assert(found == false);
@@ -36,12 +38,19 @@ int main(){
     t2.insert(split("sproxy.choury.com"), (void*)1);
     t2.insert(split("test.choury.com"), (void*)2);
     t2.insert(split("*.choury.com"), (void*)3);
+    t2.insert(split("test.choury.com"),(void*)4, "abc|xyz");
     t2.dump(0);
 
     assert(t2.find(split("choury.com")) == nullptr);
+    assert(t2.findAll(split("choury.com")).size() == 0);
     assert(t2.find(split("test.choury.com"))->value == (void*)2);
+    assert(t2.find(split("test.choury.com"), "xyz")->value == (void*)4);
+    assert(t2.findAll(split("test.choury.com")).size() == 2);
+
     assert(t2.find(split("t4.choury.com"))->value == (void*)3);
-    assert(t2.find(split("ddd.test.choury.com"))->value == (void*)3);
+    assert(t2.find(split("t4.choury.com"), "abc")->value == (void*)3);
+    assert(t2.find(split("ddd.test.choury.com"), "001")->value == (void*)3);
+    assert(t2.findAll(split("ddd.test.choury.com")).size() == 1);
     assert(t2.find(split("test.com")) == nullptr);
 
 

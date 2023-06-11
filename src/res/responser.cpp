@@ -54,8 +54,8 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
         goto out;
     }
     if (header->valid_method()) {
-        strategy stra = getstrategy(header->Dest.hostname);
-        header->set("Strategy", getstrategystring(stra.s));
+        strategy stra = getstrategy(header->Dest.hostname, header->path);
+        header->set(STRATEGY, getstrategystring(stra.s));
         if(stra.s == Strategy::block){
             res = std::make_shared<HttpRes>(UnpackHttpRes(H403),
                               "This site is blocked, please contact administrator for more information.\n");
@@ -68,7 +68,6 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
                 stra.s = Strategy::direct;
             }
         }
-        header->set(STRATEGY, getstrategystring(stra.s));
         switch(check_header(header, src)){
         case CheckResult::Succeed:
             break;

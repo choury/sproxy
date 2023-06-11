@@ -341,11 +341,7 @@ void keylog_write_line(const SSL *ssl, const char *line){
     lssl = ssl;
 }
 
-int sign_data(const char* priv_key_file, const void* buff, int buff_len, char** sig, unsigned int* sig_len){
-    FILE * f = fopen(priv_key_file, "r");
-    EVP_PKEY *key = PEM_read_PrivateKey(f,NULL,NULL,NULL);
-    fclose(f);
-
+int sign_data(EVP_PKEY* key, const void* buff, int buff_len, char** sig, unsigned int* sig_len){
     *sig_len = EVP_PKEY_size(key);
     *sig = malloc(*sig_len);
     EVP_MD_CTX* ctx = EVP_MD_CTX_create();
@@ -441,7 +437,7 @@ static int ssl_callback_ClientHello(SSL *ssl, int* al, void* arg){
         LOGD(DSSL, "sni ext found for %s\n", host);
         return SSL_CLIENT_HELLO_SUCCESS;
     }
-    if(!opt.cafile || !opt.cakey) {
+    if(!opt.ca.crt || !opt.ca.key) {
         LOGD(DSSL, "no ca file found for sni: %s\n", host);
         return SSL_CLIENT_HELLO_ERROR;
     }
@@ -466,7 +462,7 @@ static int ssl_callback_ServerName(SSL *ssl, int* al, void* arg){
         LOGD(DSSL, "no servername found for sni\n");
         return SSL_TLSEXT_ERR_ALERT_FATAL;
     }
-    if(!opt.cafile || !opt.cakey) {
+    if(!opt.ca.crt || !opt.ca.key) {
         LOGD(DSSL, "no ca file found for sni: %s\n", servername);
         return SSL_TLSEXT_ERR_ALERT_FATAL;
     }
@@ -535,13 +531,13 @@ SSL_CTX* initssl(int quic, const char* host){
     if (SSL_CTX_set_default_verify_paths(ctx) != 1)
         ERR_print_errors_fp(stderr);
 
-    if (opt.cert && opt.key) {
+    if (opt.cert.crt && (!host || X509_check_host(opt.cert.crt, host, 0, X509_CHECK_FLAG_ALWAYS_CHECK_SUBJECT, NULL) == 1)) {
         //加载证书和私钥
-        if (SSL_CTX_use_certificate_file(ctx, opt.cert, SSL_FILETYPE_PEM) != 1) {
+        if (SSL_CTX_use_certificate(ctx, opt.cert.crt) != 1) {
             ERR_print_errors_fp(stderr);
         }
 
-        if (SSL_CTX_use_PrivateKey_file(ctx, opt.key, SSL_FILETYPE_PEM) != 1) {
+        if (SSL_CTX_use_PrivateKey(ctx, opt.cert.key) != 1) {
             ERR_print_errors_fp(stderr);
         }
         if (SSL_CTX_check_private_key(ctx) != 1) {

@@ -32,7 +32,8 @@ struct strategy{
     std::string ext;
 };
 
-struct strategy getstrategy(const char *host);
+struct strategy getstrategy(const char* host, const char* path = "");
+bool mayBeBlocked(const char* host);
 const char* getstrategystring(Strategy s);
 
 

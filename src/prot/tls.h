@@ -46,7 +46,7 @@ int verify_host_callback(int ok, X509_STORE_CTX *ctx);
 int ssl_get_error(SSL* ssl, int ret);
 void keylog_write_line(const SSL *ssl, const char *line);
 
-int sign_data(const char* priv_key_file, const void* buff, int buff_len, char** sig, unsigned int* sig_len);
+int sign_data(EVP_PKEY* key, const void* buff, int buff_len, char** sig, unsigned int* sig_len);
 int verify_data(const char* pub_key_file, const void* buff, size_t buff_len, const void* sig, size_t sig_len);
 SSL_CTX* initssl(int quic, const char* host);
 #ifdef  __cplusplus

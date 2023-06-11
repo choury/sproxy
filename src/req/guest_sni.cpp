@@ -49,6 +49,7 @@ size_t Guest_sni::sniffer(const Buffer& bb) {
 }
 
 void Guest_sni::response(void*, std::shared_ptr<HttpRes> res){
+    assert(statuslist.size() == 1);
     ReqStatus& status = statuslist.front();
     assert(status.res == nullptr);
     status.res = res;
@@ -59,8 +60,13 @@ void Guest_sni::response(void*, std::shared_ptr<HttpRes> res){
         case ChannelMessage::CHANNEL_MSG_HEADER: {
             auto header = std::dynamic_pointer_cast<HttpResHeader>(msg.header);
             HttpLog(rwer->getPeer(), status.req->header, header);
-            rwer->Unblock(0);
-            return 1;
+            if(memcmp(header->status, "200", 3) == 0){
+                rwer->Unblock(0);
+                return 1;
+            }else {
+                deleteLater(PEER_LOST_ERR);
+                return 0;
+            }
         }
         case ChannelMessage::CHANNEL_MSG_DATA:
             Recv(std::move(msg.data));

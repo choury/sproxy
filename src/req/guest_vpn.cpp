@@ -7,6 +7,7 @@
 #include "prot/tcpip/tunio.h"
 #include "misc/config.h"
 #include "misc/util.h"
+#include "misc/strategy.h"
 
 #include <fstream>
 #include <sstream>
@@ -338,8 +339,8 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             trwer->sendMsg(id, TUN_MSG_SYN);
         } else if(dport == HTTPSPORT) {
-            std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
-            if(opt.cakey) {
+            auto stra = getstrategy(status.host.c_str());
+            if(stra.s == Strategy::local || (opt.ca.key && mayBeBlocked(status.host.c_str()))) {
                 auto ctx = initssl(0, status.host.c_str());
                 auto wrwer = std::make_shared<SslRWer<MemRWer>>(ctx, storage_ntoa(&src),
                                                                 std::bind(&Guest_vpn::mread, this, id, _1));
@@ -350,6 +351,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                 status.rwer = std::make_shared<MemRWer>(storage_ntoa(&src), std::bind(&Guest_vpn::mread, this, id, _1));
                 new Guest_sni(status.rwer, generateUA(pac, 0));
             }
+            std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             trwer->sendMsg(id, TUN_MSG_SYN);
         } else {
             //create a http proxy request

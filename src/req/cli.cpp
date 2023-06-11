@@ -68,7 +68,10 @@ bool Cli::DelStrategy(const std::string &host) {
 
 std::string Cli::TestStrategy(const std::string &host) {
     LOG("%s [%s] %s\n", rwer->getPeer(), __func__, host.c_str());
-    auto stra = getstrategy(host.c_str());
+    Destination dest;
+    char path[URLLIMIT];
+    spliturl(host.c_str(), &dest, path);
+    auto stra = getstrategy(dest.hostname, path);
     if(stra.ext.empty()){
         return getstrategystring(stra.s);
     }

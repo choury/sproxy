@@ -91,3 +91,7 @@ void PMemRWer::push(const Buffer &bb) {
         readCB(bb);
     }
 }
+
+void PMemRWer::ConsumeRData(uint64_t) {
+    delEvents(RW_EVENT::READ);
+}

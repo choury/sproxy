@@ -3,6 +3,7 @@
 
 #include "common/common.h"
 #include <stdbool.h>
+#include <openssl/ssl.h>
 
 #ifdef __APPLE__
 #include <sys/event.h>
@@ -39,12 +40,19 @@ struct arg_list{
     struct arg_list* next;
 };
 
+struct cert_pair{
+    X509     *crt;
+    EVP_PKEY *key;
+};
+
 struct options{
     const char *admin;
     const char *cafile;
     const char *cakey;
-    const char *cert;
-    const char *key;
+    struct cert_pair ca;
+    const char *certfile;
+    const char *keyfile;
+    struct cert_pair cert;
     const char *config_file;
     const char *rootdir;
     const char *index_file;

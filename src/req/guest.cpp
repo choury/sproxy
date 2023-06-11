@@ -3,6 +3,7 @@
 #include "res/responser.h"
 #include "misc/util.h"
 #include "misc/config.h"
+#include "misc/strategy.h"
 #include "prot/sslio.h"
 
 #include <string.h>
@@ -128,9 +129,9 @@ Guest::Guest(std::shared_ptr<RWer> rwer): Requester(rwer){
                 return Server::deleteLater(NOERROR);
             }
         });
-        srwer->SetErrorCB(std::bind(&Guest::Error, this, _1, _2));
         forceTls = true;
     }
+    rwer->SetErrorCB(std::bind(&Guest::Error, this, _1, _2));
     rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
     rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));
 }
@@ -143,13 +144,17 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
         new Guest(mrwer);
         return;
     }
-    if(opt.cakey && header->ismethod("CONNECT") && header->Dest.port == HTTPSPORT) {
-        auto ctx = initssl(0, header->Dest.hostname);
-        auto srwer = std::make_shared<SslRWer<MemRWer>>(ctx, header->Dest.hostname, std::bind(&Guest::mread, this, header,  _1));
-        statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
-        rwer->buffer_insert({HCONNECT, strlen(HCONNECT)});
-        new Guest(srwer);
-        return;
+    if(header->ismethod("CONNECT") && header->Dest.port == HTTPSPORT) {
+        auto Stra = getstrategy(header->Dest.hostname);
+        if (Stra.s == Strategy::local || (opt.ca.key &&  mayBeBlocked(header->Dest.hostname))) {
+            auto ctx = initssl(0, header->Dest.hostname);
+            auto srwer = std::make_shared<SslRWer<MemRWer>>(ctx, header->Dest.hostname,
+                                                            std::bind(&Guest::mread, this, header, _1));
+            statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
+            rwer->buffer_insert({HCONNECT, strlen(HCONNECT)});
+            new Guest(srwer);
+            return;
+        }
     }
     if(forceTls) {
         strcpy(header->Dest.scheme, "https");
@@ -274,6 +279,9 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
             }
             if (!status.req->header->should_proxy && opt.alt_svc) {
                 header->set("Alt-Svc", opt.alt_svc);
+            }
+            if(forceTls) {
+                header->del("Strict-Transport-Security");
             }
             Buffer buff{BUF_LEN};
             buff.truncate(PackHttpRes(header, buff.mutable_data(), BUF_LEN));
