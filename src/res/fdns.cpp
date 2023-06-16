@@ -123,7 +123,7 @@ void FDns::query(std::shared_ptr<MemRWer> rwer) {
     };
     rwer->SetReadCB([this, id](const Buffer& bb) -> size_t{
         if(bb.len == 0){
-            this->rwer->addjob_with_name([this, id]{statusmap.erase(id);}, "fdns clean", 0, JOB_FLAGS_AUTORELEASE);
+            statusmap.erase(id);
             return 0;
         }
         Recv(bb.data(), bb.len, id);
@@ -143,7 +143,6 @@ void FDns::Recv(const void* data, size_t len, uint32_t id_) {
         LOG("<FDNS> [%" PRIu64"] Drop dup query %s, id:%d, type:%d\n", id, que->domain, que->id, que->type);
         return;
     }
-    status.quemap.emplace(que->id, que);
     LOG("<FDNS> [%" PRIu64"] Query %s, id:%d, type:%d\n", id, que->domain, que->id, que->type);
     uint64_t index = id << 32 | que->id;
     Dns_Result* result = nullptr;
@@ -153,22 +152,28 @@ void FDns::Recv(const void* data, size_t len, uint32_t id_) {
             result = new Dns_Result(record->first.second.c_str());
         }
     }else if(que->type == 1 || que->type == 28) {
-        strategy stra = getstrategy(que->domain);
-        if (stra.s == Strategy::direct) {
-            return query_host(que->domain, DnsCb, std::make_shared<uint64_t>(index));
-        }
-        if(que->domain[0] == 0){
-            //return empty response for root domain
+        if(que->type == 28 && !opt.ipv6_enabled) {
+            //return empty response for ipv6
             result = new Dns_Result(que->domain);
-        }else if(que->type == 1){
-            in_addr addr = getInet(que->domain);
-            result = new Dns_Result(que->domain, &addr);
-        }else if(que->type == 28) {
-            in6_addr addr = getInet6(que->domain);
-            result = new Dns_Result(que->domain, &addr);
+        } else {
+            strategy stra = getstrategy(que->domain);
+            if (stra.s == Strategy::direct) {
+                status.quemap.emplace(que->id, que);
+                return query_host(que->domain, DnsCb, std::make_shared<uint64_t>(index));
+            } else if (que->domain[0] == 0) {
+                //return empty response for root domain
+                result = new Dns_Result(que->domain);
+            } else if (que->type == 1) {
+                in_addr addr = getInet(que->domain);
+                result = new Dns_Result(que->domain, &addr);
+            } else if (que->type == 28) {
+                in6_addr addr = getInet6(que->domain);
+                result = new Dns_Result(que->domain, &addr);
+            }
         }
     }
     if(result == nullptr) {
+        status.quemap.emplace(que->id, que);
         return query_dns(que->domain, que->type, RawCb, std::make_shared<uint64_t>(index));
     }
     Buffer buff{BUF_LEN};

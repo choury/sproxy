@@ -75,7 +75,7 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
     });
     std::dynamic_pointer_cast<TunRWer>(rwer)->setResetHandler([this](uint64_t id, uint32_t){
         if(statusmap.count(id)) {
-            Clean(id, statusmap[id]);
+            rwer->addjob(std::bind(&Guest_vpn::Clean, this, id, statusmap[id]), 0, JOB_FLAGS_AUTORELEASE);
         }
     });
 }
@@ -349,7 +349,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                 new Guest(wrwer);
             } else {
                 status.rwer = std::make_shared<MemRWer>(storage_ntoa(&src), std::bind(&Guest_vpn::mread, this, id, _1));
-                new Guest_sni(status.rwer, generateUA(pac, 0));
+                new Guest_sni(status.rwer, status.host, generateUA(pac, 0));
             }
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             trwer->sendMsg(id, TUN_MSG_SYN);

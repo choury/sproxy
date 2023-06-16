@@ -218,7 +218,7 @@ void SslRWerBase<T>::set_server_name(const std::string& arg) {
 
 template<class T>
 void SslRWerBase<T>::dump_status(Dumper dp, void *param) {
-    dp(param, "SslRWer <%d> (%s -> %s): %s\nrlen: %zu, wlen: %zu, stats: %d, sslStats: %d, event: %s\n",
+    dp(param, "SslRWer <%d> (%s => %s): %s\nrlen: %zu, wlen: %zu, stats: %d, sslStats: %d, event: %s\n",
        this->getFd(), this->getPeer(), server.c_str(), SSL_state_string_long(ssl),
        this->rlength(0), this->wbuff.length(),
        (int)this->getStats(), (int)this->sslStats,

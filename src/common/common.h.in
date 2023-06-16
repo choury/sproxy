@@ -16,6 +16,9 @@
 #define VPNEND   "198.19.255.255"
 #define VPNADDR6 "64:ff9B::" VPNADDR
 
+#define STRINGIZE_DETAIL(x) #x
+#define STRINGIZE(x) STRINGIZE_DETAIL(x)
+
 #define MIN(x, y) ((int64_t)(x) < (int64_t)(y)?(x):(y))
 #define MAX(x, y) ((int64_t)(x) > (int64_t)(y)?(x):(y))
 #define UpTo(x, y) ((int64_t)(((x) + (y) - 1)/(y)) * (y))
@@ -116,7 +119,7 @@ do{\
     char tmp[1024]; \
     int __ret = snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
     if(__ret < 0) abort(); \
-    slog(LOG_ERR, "%s[%d]: %s", __PRETTY_FUNCTION__, __LINE__, tmp);\
+    slog(LOG_ERR, "%s[" STRINGIZE(__LINE__) "]: %s", __PRETTY_FUNCTION__, tmp);\
 }while(0)
 
 #define  LOGF(...) \

@@ -3,14 +3,14 @@
 
 void UdpProc(std::shared_ptr<UdpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len) {
     if(status->aged_job == nullptr) {
+        status->isDns = pac->getdport() == 53;
         status->reqCB(pac);
-        status->aged_job = status->jobHandler.updatejob_with_name(status->aged_job,
-                                                                  std::bind(status->errCB, pac, CONNECT_AGED),
-                                                                  "udp_aged_job", 30000);
+        status->aged_job = status->jobHandler.addjob_with_name(std::bind(status->errCB, pac, CONNECT_AGED),
+                                                               "udp_aged_job", status->isDns?5000:30000, 0);
     }else {
         status->aged_job = status->jobHandler.updatejob_with_name(status->aged_job,
                                                                   std::bind(status->errCB, pac, CONNECT_AGED),
-                                                                  "udp_aged_job", 120000);
+                                                                  "udp_aged_job", status->isDns?5000:120000);
     }
     size_t datalen = len - pac->gethdrlen();
     status->readlen += datalen;
@@ -30,7 +30,7 @@ void SendData(std::shared_ptr<UdpStatus> status, Buffer&& bb) {
     } else {
         status->aged_job = status->jobHandler.updatejob_with_name(status->aged_job,
                                                                   std::bind(status->errCB, rpac, CONNECT_AGED),
-                                                                  "udp_aged_job", 120000);
+                                                                  "udp_aged_job", status->isDns?5000:120000);
     }
 
     auto pac = MakeIp(IPPROTO_UDP, &status->dst, &status->src);
