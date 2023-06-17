@@ -56,11 +56,8 @@ size_t Guest::ReadHE(const Buffer& bb){
 int Guest::mread(std::shared_ptr<HttpReqHeader>, Buffer&& bb) {
     LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
     assert(statuslist.size() == 1);
-    if(rwer->cap(0) <= 0) {
-        errno = EAGAIN;
-        return -1;
-    }
     auto& status = statuslist.front();
+    assert((status.flags & HTTP_RES_COMPLETED) == 0);
     if (bb.len == 0) {
         rwer->buffer_insert(nullptr);
         status.flags |= HTTP_RES_COMPLETED;
@@ -69,7 +66,12 @@ int Guest::mread(std::shared_ptr<HttpReqHeader>, Buffer&& bb) {
         }
         return 0;
     }
-    int len = std::min(bb.len, (size_t)rwer->cap(0));
+    int cap = rwer->cap(0);
+    if(cap <= 0) {
+        errno = EAGAIN;
+        return -1;
+    }
+    int len = std::min(bb.len, (size_t)cap);
     bb.truncate(len);
     rwer->buffer_insert(std::move(bb));
     return len;

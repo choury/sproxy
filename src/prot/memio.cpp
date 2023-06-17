@@ -58,7 +58,7 @@ void MemRWer::ConsumeRData(uint64_t id) {
         rb.consume(wb.len - left);
     }
     delEvents(RW_EVENT::READ);
-    if(stats == RWerStats::ReadEOF && (flags & RWER_EOFDELIVED) == 0){
+    if(IsEOF() && (flags & RWER_EOFDELIVED) == 0){
         readCB(nullptr);
         flags |= RWER_EOFDELIVED;
     }

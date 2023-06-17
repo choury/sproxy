@@ -123,6 +123,10 @@ void RWer::IdleHE(RW_EVENT) {
     setEvents(RW_EVENT::NONE);
 }
 
+bool RWer::IsEOF() {
+    return stats == RWerStats::ReadEOF;
+}
+
 void RWer::Close(std::function<void()> func) {
     if(flags & RWER_CLOSING){
         return;

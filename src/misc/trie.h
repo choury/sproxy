@@ -125,6 +125,12 @@ public:
             delete child.second;
         }
         children.clear();
+        for(auto regexChild: regexChildren) {
+            regexChild.second->clear();
+            delete regexChild.second;
+        }
+        this->isEndpoint = false;
+        regexChildren.clear();
     }
 #ifndef NDEBUG
     void dump(int tab) const{

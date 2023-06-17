@@ -299,11 +299,8 @@ int Guest_vpn::mread(uint64_t id, Buffer && bb) {
         errno = EPIPE;
         return -1;
     }
-    if(rwer->cap(id) <= 0) {
-        errno = EAGAIN;
-        return -1;
-    }
     auto& status = statusmap.at(id);
+    assert((status.flags & HTTP_RES_COMPLETED) == 0);
     std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
     if (bb.len == 0) {
         LOGD(DVPN, "<guest_vpn> [%" PRIu64"] recv data: EOF\n", id);
@@ -314,7 +311,12 @@ int Guest_vpn::mread(uint64_t id, Buffer && bb) {
         }
         return 0;
     }
-    size_t len = std::min(bb.len, (size_t)rwer->cap(id));
+    int cap = rwer->cap(id);
+    if(cap <= 0) {
+        errno = EAGAIN;
+        return -1;
+    }
+    size_t len = std::min(bb.len, (size_t)cap);
     LOGD(DVPN, "<guest_vpn> [%" PRIu64"] recv data: %zu, handle: %zu\n", id, bb.len, len);
     bb.id = id;
     bb.truncate(len);

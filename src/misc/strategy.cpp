@@ -125,8 +125,6 @@ static bool mergestrategy(const string& host, const string& strategy_str, string
     }
 }
 
-std::string getExternalFilesDir();
-
 void reloadstrategy() {
     ipv4s.clear();
     ipv6s.clear();

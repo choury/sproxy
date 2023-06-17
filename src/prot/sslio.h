@@ -32,7 +32,7 @@ protected:
     static std::false_type test_addrs(...);
 
     virtual bool IsConnected() override;
-
+    virtual bool IsEOF() override;
 public:
     template <typename... Args>
     explicit SslRWerBase(SSL_CTX* ctx, Args&&... args): T(std::forward<Args>(args)...) {

@@ -407,19 +407,19 @@ static int select_alpn_cb(SSL *ssl,
 {
     (void)ssl;
     const char **priorities = (const char **)arg;
-    const unsigned char *p = in;
-    while ((size_t)(p-in) < inlen) {
-        uint8_t len = *p++;
-        LOGD(DSSL, "check alpn: %.*s\n", len, p);
-        for (size_t i = 0; priorities[i] != NULL; i++) {
+    for (size_t i = 0; priorities[i] != NULL; i++) {
+        const unsigned char *p = in;
+        while ((size_t)(p-in) < inlen) {
+            uint8_t len = *p++;
+            LOGD(DSSL, "check alpn: %.*s\n", len, p);
             if (len == strlen(priorities[i]) && strncmp((const char *) p, priorities[i], len) == 0) {
                 LOGD(DSSL, "alpn pick %s\n", priorities[i]);
                 *out = (unsigned char *) priorities[i];
                 *outlen = strlen((char *) *out);
                 return SSL_TLSEXT_ERR_OK;
             }
+            p += len;
         }
-        p += len;
     }
     LOGE("Can't select a protocol\n");
     return SSL_TLSEXT_ERR_ALERT_FATAL;

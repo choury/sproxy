@@ -121,7 +121,7 @@ ssize_t SslRWer::Read(void* buff, size_t len){
 template<class T>
 void SslRWerBase<T>::ReadData() {
     fill_in_bio();
-    while(true) {
+    while(sslStats == SslStats::Established) {
         size_t left = this->rb.left();
         if (left == 0) {
             break;
@@ -134,7 +134,6 @@ void SslRWerBase<T>::ReadData() {
             this->ConsumeRData(0);
             continue;
         }else if(ret == 0) {
-            this->stats = RWerStats::ReadEOF;
             this->sslStats = SslStats::SslEOF;
             this->delEvents(RW_EVENT::READ);
             break;
@@ -176,6 +175,11 @@ void SslRWerBase<T>::buffer_insert(Buffer &&bb) {
 template<class T>
 bool SslRWerBase<T>::IsConnected() {
     return sslStats == SslStats::Established;
+}
+
+template<class T>
+bool SslRWerBase<T>::IsEOF() {
+    return sslStats == SslStats::SslEOF;
 }
 
 
@@ -260,6 +264,7 @@ SslRWer<StreamRWer>::SslRWer(const char* hostname, uint16_t port, Protocol proto
 }
 
 int SslRWer<StreamRWer>::fill_in_bio() {
+    assert(stats == RWerStats::Connected);
     char buff[BUF_LEN];
     while(true) {
         ssize_t ret = read(this->getFd(), buff, sizeof(buff));
@@ -293,7 +298,7 @@ int SslRWer<MemRWer>::fill_in_bio() {
 }
 
 void SslRWer<MemRWer>::push(const Buffer& bb) {
-    if(stats == RWerStats::ReadEOF) {
+    if(IsEOF()) {
         //shutdown by ssl, discard all data after that
         return;
     }

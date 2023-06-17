@@ -260,6 +260,7 @@ size_t StreamRWer::rlength(uint64_t) {
 void StreamRWer::ConsumeRData(uint64_t id) {
     if(rb.length()){
         Buffer wb = rb.get();
+        assert(wb.len != 0);
         wb.id = id;
         size_t left = readCB(wb);
         rb.consume(wb.len - left);
@@ -267,7 +268,7 @@ void StreamRWer::ConsumeRData(uint64_t id) {
     if(rb.cap() == 0){
         delEvents(RW_EVENT::READ);
     }
-    if(stats == RWerStats::ReadEOF && (flags & RWER_EOFDELIVED) == 0){
+    if(IsEOF() && (flags & RWER_EOFDELIVED) == 0){
         readCB({nullptr, id});
         flags |= RWER_EOFDELIVED;
     }
