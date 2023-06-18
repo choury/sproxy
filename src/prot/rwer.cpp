@@ -139,7 +139,7 @@ void RWer::Close(std::function<void()> func) {
     }else{
         handleEvent = (void (Ep::*)(RW_EVENT))&RWer::IdleHE;
         // when connecting, the socket is not writable, so we close it immediately
-        addjob(closeCB, 0, JOB_FLAGS_AUTORELEASE);
+        closeCB();
     }
 }
 

@@ -338,13 +338,14 @@ void Guest2::dump_stat(Dumper dp, void* param) {
     dp(param, "Guest2 %p, id: %d my_window: %d, his_window: %d\n",
             this, sendid, this->localwinsize, this->remotewinsize);
     for(auto& i: statusmap){
-        dp(param, "  0x%x [%" PRIu32 "]: %s %s my_window: %d, his_window: %d, time: %dms, flags: 0x%08x\n",
+        dp(param, "  0x%x [%" PRIu32 "]: %s %s my_window: %d, his_window: %d, time: %dms, flags: 0x%08x [%s]\n",
                 i.first, i.second.req->header->request_id,
                 i.second.req->header->method,
                 i.second.req->header->geturl().c_str(),
                 i.second.localwinsize, i.second.remotewinsize,
                 getmtime() - i.second.req->header->ctime,
-                i.second.flags);
+                i.second.flags,
+                i.second.req->header->get("User-Agent"));
     }
     rwer->dump_status(dp, param);
 }

@@ -20,6 +20,7 @@
 #endif
 
 extern int efd;
+static std::map<Ep*, RW_EVENT> pending_events;
 
 const char *events_string[]= {
         "NULL",
@@ -101,6 +102,10 @@ Ep::Ep(int fd):fd(fd){
 }
 
 Ep::~Ep(){
+    if(pending_events.count(this)) {
+        LOGD(DEVENT, "%p remove pending_events\n", this);
+        pending_events[this] = RW_EVENT::NONE;
+    }
     if(fd >= 0){
         LOGD(DEVENT, "%p closed %d\n", this, fd);
         close(fd);
@@ -215,12 +220,12 @@ int event_loop(uint32_t timeout_ms){
         }
         return 0;
     }
-    for (int i = 0; i < c; ++i) {
+    for(int i = 0; i < c; ++i){
         Ep *ep = (Ep *)events[i].data.ptr;
-        LOGD(DEVENT, "handle event %d: %s\n", ep->getFd(), events_string[int(convertEpoll(events[i].events))]);
-        (ep->*ep->handleEvent)(convertEpoll(events[i].events));
+        RW_EVENT event = convertEpoll(events[i].events);
+        LOGD(DEVENT, "pending event %d: %s\n", ep->getFd(), events_string[int(event)]);
+        pending_events[ep] = event;
     }
-    return 0;
 #endif
 #if __APPLE__
     struct kevent events[200];
@@ -232,21 +237,26 @@ int event_loop(uint32_t timeout_ms){
         }
         return 0;
     }
-    std::map<Ep*, RW_EVENT> events_merged;
     for(int i = 0; i < c; ++i){
-        LOGD(DEVENT, "handle event %lu: %s\n", events[i].ident, events_string[int(convertKevent(events[i]))]);
         Ep *ep = (Ep*)events[i].udata;
-        if(events_merged.count(ep)){
-            events_merged[ep] = events_merged[ep] | convertKevent(events[i]);
+        RW_EVENT event = convertKevent(events[i]);
+        LOGD(DEVENT, "pending event %d: %s\n", ep->getFd(), events_string[int(event)]);
+        if(pending_events.count(ep)){
+            pending_events[ep] = pending_events[ep] | event;
         }else{
-            events_merged[ep] = convertKevent(events[i]);
+            pending_events[ep] = event;
         }
     }
-    for(const auto& i: events_merged){
-        (i.first->*i.first->handleEvent)(i.second);
-    }
-    return 0;
 #endif
-    return -1;
+    for(const auto& i: pending_events){
+        if(i.second == RW_EVENT::NONE){
+            continue;
+        }
+        Ep *ep = i.first;
+        LOGD(DEVENT, "handle event %d: %s\n", ep->getFd(), events_string[int(i.second)]);
+        (ep->*ep->handleEvent)(i.second);
+    }
+    pending_events.clear();
+    return 0;
 }
 

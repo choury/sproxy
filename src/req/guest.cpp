@@ -106,7 +106,7 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
                 new Guest2(srwer);
                 rwer = nullptr;
                 assert(statuslist.empty());
-                return Server::deleteLater(NOERROR);
+                return deleteLater(NOERROR);
             }
         });
     }else{
@@ -128,7 +128,7 @@ Guest::Guest(std::shared_ptr<RWer> rwer): Requester(rwer){
                 new Guest2(srwer);
                 this->rwer = nullptr;
                 assert(statuslist.empty());
-                return Server::deleteLater(NOERROR);
+                return deleteLater(NOERROR);
             }
         });
         forceTls = true;
@@ -351,8 +351,7 @@ void Guest::Handle(ChannelMessage::Signal s) {
     }
 }
 
-Guest::~Guest() {
-    // we can't do this in deleteLater, because EndProc may be called after it.
+void Guest::deleteLater(uint32_t errcode) {
     for(auto& status: statuslist){
         if(status.flags & HTTP_CLOSED_F){
             continue;
@@ -361,12 +360,22 @@ Guest::~Guest() {
         if(status.req) {
             status.req->send(ChannelMessage::CHANNEL_ABORT);
         }
+        if(status.res) {
+            status.res->detach();
+        }
         if(status.rwer) {
             status.rwer->push(nullptr);
             status.rwer->detach();
         }
     }
     statuslist.clear();
+    Server::deleteLater(errcode);
+}
+
+Guest::~Guest() {
+    if(rwer) {
+        LOGD(DHTTP, "<guest> (%s) destoryed: rx:%zu, tx:%zu\n", rwer->getPeer(), rx_bytes, tx_bytes);
+    }
 }
 
 void Guest::dump_stat(Dumper dp, void* param){

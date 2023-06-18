@@ -1380,7 +1380,7 @@ void QuicRWer::Close(std::function<void()> func) {
         frame->close.reason = nullptr;
         qos.PushFrame(ssl_encryption_application, frame);
     }else{
-        addjob(closeCB, 0, JOB_FLAGS_AUTORELEASE);
+        closeCB();
     }
 }
 

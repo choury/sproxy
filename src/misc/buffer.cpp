@@ -15,7 +15,7 @@ Buffer::Buffer(size_t len, uint64_t id):
 Buffer::Buffer(const void* content, size_t len, uint64_t id):
         ptr(nullptr), content(content), id(id), len(len), cap(len)
 {
-    assert(content != nullptr);
+    assert(content != nullptr && len != 0);
 }
 
 Buffer::Buffer(std::shared_ptr<Block> ptr, size_t len, uint64_t id):

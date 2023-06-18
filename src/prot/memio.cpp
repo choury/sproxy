@@ -68,7 +68,7 @@ ssize_t MemRWer::Write(const Buffer &bb) {
     if(bb.len) {
         return cb(Buffer{std::make_shared<Block>(bb.data(), bb.len), bb.len, bb.id});
     }else{
-        flags |= RWER_SHUTDOWN;
+        assert(flags & RWER_SHUTDOWN);
         return cb(Buffer{nullptr, bb.id});
     }
 }

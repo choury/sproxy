@@ -40,7 +40,7 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
             }
             status.flags |= HTTP_REQ_COMPLETED;
             if(status.flags & HTTP_RES_COMPLETED) {
-                rwer->addjob(std::bind(&Guest_vpn::Clean, this, bb.id, status), 0, JOB_FLAGS_AUTORELEASE);
+                Clean(bb.id, status);
             }
             return 0;
         }
@@ -75,7 +75,10 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
     });
     std::dynamic_pointer_cast<TunRWer>(rwer)->setResetHandler([this](uint64_t id, uint32_t){
         if(statusmap.count(id)) {
-            rwer->addjob(std::bind(&Guest_vpn::Clean, this, id, statusmap[id]), 0, JOB_FLAGS_AUTORELEASE);
+            auto& status = statusmap[id];
+            LOGD(DVPN, " <guest_vpn> [%" PRIu64 "] reset\n", id);
+            status.flags |= TUN_CLOSED_F;
+            Clean(id, status);
         }
     });
 }
@@ -210,9 +213,13 @@ static const char* getProg(std::shared_ptr<const Ip> pac) {
                     ntohs(dst->sin6_port));
     return "<Unknown-inode>";
 }
+#else
+static const char* getProg(std::shared_ptr<const Ip>) {
+    return "<Unknown>";
+}
 #endif
 
-static std::string generateUA(std::shared_ptr<const Ip> pac, uint32_t request_id) {
+static std::string generateUA(const std::string& prog, uint32_t request_id) {
     std::stringstream UA;
     if(opt.ua){
         UA << opt.ua << " Sproxy/" << getVersion();
@@ -220,16 +227,12 @@ static std::string generateUA(std::shared_ptr<const Ip> pac, uint32_t request_id
 #ifdef __ANDROID__
         UA << "Sproxy/" << getVersion()
            << " (Build " << getBuildTime() << ") "
-           <<"(" << getDeviceName() << ") " << getProg(pac)
+           <<"(" << getDeviceName() << ") " << prog
            << " App/" << appVersion;
-#elif __linux__
-        UA << "Sproxy/" << getVersion()
-           << " (Build " << getBuildTime() << ") "
-           <<"(" << getDeviceInfo() << ") " << getProg(pac);
 #else
         UA << "Sproxy/" << getVersion()
            << " (Build " << getBuildTime() << ") "
-           <<"(" << getDeviceInfo() << ")";
+           <<"(" << getDeviceInfo() << ") " << prog;
 #endif
     }
 
@@ -260,8 +263,10 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
                 return 1;
             }else if(header->status[0] == '4'){
                 trwer->sendMsg(id, TUN_MSG_BLOCK);
+                status.flags |= TUN_CLOSED_F;
             }else if(header->status[0] == '5'){
                 trwer->sendMsg(id, TUN_MSG_UNREACH);
+                status.flags |= TUN_CLOSED_F;
             }else{
                 LOGE("unknown response\n");
             }
@@ -329,6 +334,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     statusmap.emplace(id, VpnStatus{});
     auto& status = statusmap[id];
     status.host = getRdns(pac->getdst());
+    status.prog = getProg(pac);
     status.pac = pac;
     char buff[HEADLENLIMIT];
     uint16_t dport = pac->getdport();
@@ -351,7 +357,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                 new Guest(wrwer);
             } else {
                 status.rwer = std::make_shared<MemRWer>(storage_ntoa(&src), std::bind(&Guest_vpn::mread, this, id, _1));
-                new Guest_sni(status.rwer, status.host, generateUA(pac, 0));
+                new Guest_sni(status.rwer, status.host, generateUA(status.prog, 0));
             }
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             trwer->sendMsg(id, TUN_MSG_SYN);
@@ -361,7 +367,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                                 getRdnsWithPort(pac->getdst()).c_str());
 
             std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
-            header->set("User-Agent", generateUA(pac, header->request_id));
+            header->set("User-Agent", generateUA(status.prog, header->request_id));
             status.req = std::make_shared<HttpReq>(header, 
                             std::bind(&Guest_vpn::response, this, (void*)id, _1), 
                             [this, id]{rwer->Unblock(id);});
@@ -381,7 +387,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                                   getRdnsWithPort(pac->getdst()).c_str());
 
             std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
-            header->set("User-Agent", generateUA(pac, header->request_id));
+            header->set("User-Agent", generateUA(status.prog, header->request_id));
             status.req = std::make_shared<HttpReq>(header,
                                                    std::bind(&Guest_vpn::response, this, (void*)id, _1),
                                                    [this, id]{rwer->Unblock(id);});
@@ -394,7 +400,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
         int headlen = sprintf(buff, "PING %s" CRLF CRLF,
                               getRdnsWithPort(pac->getdst()).c_str());
         std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
-        header->set("User-Agent", generateUA(pac, header->request_id));
+        header->set("User-Agent", generateUA(status.prog, header->request_id));
         status.req = std::make_shared<HttpReq>(header,
                                                 std::bind(&Guest_vpn::response, this, (void*)id, _1),
                                                 [this, id]{rwer->Unblock(id);});
@@ -406,7 +412,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
         int headlen = sprintf(buff, "PING %s" CRLF CRLF,
                               getRdnsWithPort(pac->getdst()).c_str());
         std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
-        header->set("User-Agent", generateUA(pac, header->request_id));
+        header->set("User-Agent", generateUA(status.prog, header->request_id));
         status.req = std::make_shared<HttpReq>(header,
                                                 std::bind(&Guest_vpn::response, this, (void*)id, _1),
                                                 [this, id]{rwer->Unblock(id);});
@@ -426,7 +432,7 @@ void Guest_vpn::handle(uint64_t id, ChannelMessage::Signal s) {
     std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
     switch(s){
     case ChannelMessage::CHANNEL_ABORT:
-        status.flags |= HTTP_CLOSED_F;
+        status.flags |= HTTP_CLOSED_F | TUN_CLOSED_F;
         trwer->sendMsg(id, TUN_MSG_BLOCK);
         Clean(id, status);
         break;
@@ -436,6 +442,7 @@ void Guest_vpn::handle(uint64_t id, ChannelMessage::Signal s) {
 void Guest_vpn::Clean(uint64_t id, VpnStatus& status) {
     if(status.rwer && (status.flags & HTTP_REQ_COMPLETED) == 0) {
         status.rwer->push({nullptr, id});
+        status.rwer->detach();
     }
     if(status.req && (status.flags & HTTP_CLOSED_F) == 0){
         status.req->send(ChannelMessage::CHANNEL_ABORT);
@@ -450,17 +457,17 @@ void Guest_vpn::dump_stat(Dumper dp, void *param) {
     dp(param, "Guest_vpn %p, session: %zd\n", this, statusmap.size());
     for(auto& i: statusmap){
         if(i.second.req) {
-            dp(param, "  0x%lx [%" PRIu32 "]: %s %s, time: %dms, flags: 0x%08x\n",
+            dp(param, "  0x%lx [%" PRIu32 "]: %s %s, time: %dms, flags: 0x%08x [%s]\n",
                 i.first, i.second.req->header->request_id,
                 i.second.req->header->method,
                 i.second.req->header->geturl().c_str(),
                 getmtime() - i.second.req->header->ctime,
-                i.second.flags);
+                i.second.flags, i.second.prog.c_str());
         }
         if(i.second.rwer) {
             auto src = i.second.pac->getsrc();
-            dp(param, "  0x%lx [MemRWer]: %s, flags: 0x%08x\n",
-                i.first, storage_ntoa(&src), i.second.flags);
+            dp(param, "  0x%lx [MemRWer]: %s, flags: 0x%08x [%s]\n",
+                i.first, storage_ntoa(&src), i.second.flags, i.second.prog.c_str());
 
         }
     }

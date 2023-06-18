@@ -138,6 +138,7 @@ mkdir -p cgi
 ln -f -s "$buildpath"/cgi/libproxy.* cgi/
 ln -f -s "$buildpath"/cgi/libsites.* cgi/
 dd if=/dev/zero of=test1k bs=1024 count=1
+export ASAN_OPTIONS=malloc_context_size=50
 
 echo "$HOSTNAME local" > sites.list
 cat > https.conf << EOF

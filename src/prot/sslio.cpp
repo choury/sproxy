@@ -74,7 +74,7 @@ void SslRWerBase<T>::shakehandHE(RW_EVENT events){
         return this->ErrorHE(SSL_SHAKEHAND_ERR, EINVAL);
     }
     if(!!(events & RW_EVENT::READ)) {
-        fill_in_bio();
+        if(fill_in_bio() < 0) return;
     }
     if(do_handshake() == 1){
         sslStats = SslStats::Established;
@@ -120,7 +120,7 @@ ssize_t SslRWer::Read(void* buff, size_t len){
 
 template<class T>
 void SslRWerBase<T>::ReadData() {
-    fill_in_bio();
+    if(fill_in_bio() < 0) return;
     while(sslStats == SslStats::Established) {
         size_t left = this->rb.left();
         if (left == 0) {
@@ -149,13 +149,14 @@ void SslRWerBase<T>::ReadData() {
 
 template<class T>
 void SslRWerBase<T>::buffer_insert(Buffer &&bb) {
+    assert((this->flags & RWER_SHUTDOWN) == 0);
     if(this->stats == RWerStats::Error) {
         return;
     }
     this->addEvents(RW_EVENT::WRITE);
     if(bb.len == 0) {
-        SSL_shutdown(ssl);
         this->flags |= RWER_SHUTDOWN;
+        SSL_shutdown(ssl);
     }else {
         ERR_clear_error();
         while(bb.len > 0) {

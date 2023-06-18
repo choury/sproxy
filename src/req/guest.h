@@ -26,6 +26,7 @@ protected:
     size_t ReadHE(const Buffer& bb);
     int mread(std::shared_ptr<HttpReqHeader> header, Buffer&& bb);
     void WriteHE(uint64_t id);
+    virtual void deleteLater(uint32_t errcode) override;
     virtual void Error(int ret, int code);
 
     virtual void ReqProc(std::shared_ptr<HttpReqHeader> req)override;

@@ -6,10 +6,12 @@
 #include "prot/memio.h"
 
 #define VPN_DNSREQ_F    (1u<<16u)
+#define TUN_CLOSED_F    (1u<<17u)
 
 class Guest_vpn: public Requester {
     struct VpnStatus{
         std::string host;
+        std::string prog;
         std::shared_ptr<const Ip> pac;
         std::shared_ptr<HttpReq> req;
         std::shared_ptr<HttpRes> res;
