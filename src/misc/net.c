@@ -345,7 +345,7 @@ const char *storage_ntoa(const struct sockaddr_storage *addr){
 int storage_aton(const char* ipstr, uint16_t port, struct sockaddr_storage* addr){
     char host[INET6_ADDRSTRLEN] = {0};
     if(ipstr[0] == '['){ //may be ipv6 of format as [2001::1]
-        strncpy(host, ipstr + 1, sizeof(host)-1);
+        snprintf(host, sizeof(host), "%s", ipstr+1);
         *strchrnul(host, ']') = 0;
         ipstr = host;
     }

@@ -363,7 +363,7 @@ int spliturl(const char* url, struct Destination* server, char* path) {
         if (path) {
             strcpy(path, "/");
         }
-        strncpy(tmpaddr, url, sizeof(tmpaddr) - 1);
+        snprintf(tmpaddr, sizeof(tmpaddr), "%s", url);
     }
 
     if (tmpaddr[0] == '[') {

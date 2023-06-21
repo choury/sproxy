@@ -3,7 +3,7 @@
 MemRWer::MemRWer(const char* pname, std::function<int(Buffer&&)> cb):
     FullRWer([](int, int){}), cb(cb)
 {
-    strncpy(peer, pname, sizeof(peer));
+    snprintf(peer, sizeof(peer), "%s", pname);
 }
 
 MemRWer::~MemRWer() {

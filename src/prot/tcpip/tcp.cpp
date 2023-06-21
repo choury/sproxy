@@ -305,11 +305,20 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
     }
 
     if(seq != status->want_seq){
-        if(seq == status->want_seq - 1) {
-            LOGD(DVPN, "%s get keep-alive pkt, reply ack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
-        } else {
-            LOG("%s get unwanted pkt, reply ack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
+        //判断是否是重传的syn报文
+        if ((flag & TH_SYN) && (flag & TH_ACK) == 0) {
+            if((seq != status->want_seq - 1) || (flag & TH_ACK)) {
+                //序列号不对，回复rst
+                LOGD(DVPN, "%s get syn packet with wrong seq(%u/%u), reply rst.\n", storage_ntoa(&status->src), seq, status->want_seq);
+                SendRst(status);
+                status->errCB(pac, TCP_RESET_ERR);
+            } else {
+                LOGD(DVPN, "%s get dup syn packet, reply synack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
+                status->rto_job = status->jobHandler.updatejob(status->rto_job, std::bind(&Resent, GetWeak(status)), 0);
+            }
+            return;
         }
+        LOG("%s get unwanted/keep-alive pkt, reply ack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
         status->sent_ack = status->want_seq - 1; //to force send tcp ack
         status->ack_job = status->jobHandler.updatejob(status->ack_job,
                                                        std::bind(&SendAck, GetWeak(status)), 0);

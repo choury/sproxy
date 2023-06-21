@@ -277,7 +277,7 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
     char filename[URLLIMIT];
     bool slash_end = req->header->filename.back() == '/';
     bool index_not_found = false;
-    strncpy(filename, absolute(req->header->filename).c_str(), sizeof(filename));
+    snprintf(filename, sizeof(filename), "%s", absolute(req->header->filename).c_str());
     std::shared_ptr<HttpResHeader> header = nullptr;
     while(true){
         if(!startwith(filename, opt.rootdir)){
@@ -305,7 +305,7 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
                 if(slash_end && !endwith(filename, "/") && opt.autoindex){
                     index_not_found = true;
                     //(void)!realpath(("./" + req->header->filename).c_str(), filename);
-                    strncpy(filename, absolute(req->header->filename).c_str(), sizeof(filename));
+                    snprintf(filename, sizeof(filename), "%s", absolute(req->header->filename).c_str());
                     continue;
                 }
                 header = UnpackHttpRes(H404, sizeof(H404));
@@ -325,7 +325,7 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
             }
             if(!index_not_found && opt.index_file){
                 //(void)!realpath(("./" + req->header->filename + opt.index_file).c_str(), filename);
-                strncpy(filename, absolute(req->header->filename + opt.index_file).c_str(), sizeof(filename));
+                snprintf(filename, sizeof(filename), "%s", absolute(req->header->filename + opt.index_file).c_str());
                 continue;
             }
             if(!opt.autoindex){

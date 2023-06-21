@@ -684,5 +684,5 @@ void change_process_name(const char *name){
         len += strlen(main_argv[i]) + 1;
     }
     memset(main_argv[0], 0, len);
-    strncpy(main_argv[0], name, len - 1);
+    snprintf(main_argv[0], len, "%s", name);
 }
