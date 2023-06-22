@@ -474,7 +474,7 @@ void postConfig(){
         opt.ipv6_enabled = opt.ipv6_mode;
     }
     if (opt.cafile && access(opt.cafile, R_OK)){
-        LOGE("access cafile failed: %s\n", strerror(errno));
+        LOGE("access cafile %s failed: %s\n", opt.cafile, strerror(errno));
         exit(1);
     }
     if (opt.cafile && opt.cakey && load_cert_key(opt.cafile, opt.cakey, &opt.ca)) {
@@ -483,6 +483,10 @@ void postConfig(){
     }
     if ((opt.certfile || opt.keyfile) && load_cert_key(opt.certfile, opt.keyfile, &opt.cert)) {
         LOGE("access cert file failed: %s\n", strerror(errno));
+        exit(1);
+    }
+    if (opt.quic_mode && (opt.cert.crt == NULL || opt.cert.key == NULL)) {
+        LOGE("quic mode require cert and key file\n");
         exit(1);
     }
     for(struct arg_list* p = secrets.next; p != NULL; p = p->next){

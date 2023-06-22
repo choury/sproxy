@@ -134,24 +134,18 @@ void Http3Base::Init() {
     qpackeid_local = CreateUbiStream();
     qpackdid_local = CreateUbiStream();
 
-    size_t len = 2  // type + id
-            + variable_encode_len(1 + variable_encode_len(BUF_LEN)) // len of MAX_FIELD_SECTION_SIZE
-            + 1 // MAX_FIELD_SECTION_SIZE
-            + variable_encode_len(BUF_LEN)   // value of MAX_FIELD_SECTION_SIZE
-            + variable_encode_len(1 + variable_encode_len(0)) // len of QPACK_MAX_TABLE_CAPACITY
-            + 1 // QPACK_MAX_TABLE_CAPACITY
-            + variable_encode_len(0); // value of QPACK_MAX_TABLE_CAPACITY
-    auto buff = std::make_shared<Block>(len);
+    auto buff = std::make_shared<Block>(BUF_LEN);
     char* pos = (char*)buff->data();
-    pos += variable_encode(pos, HTTP3_STREAM_TYPE_CONTROL);
-    pos += variable_encode(pos, HTTP3_STREAM_SETTINGS);
-    pos += variable_encode(pos, 1 + variable_encode_len(BUF_LEN));
     pos += variable_encode(pos, HTTP3_SETTING_MAX_FIELD_SECTION_SIZE);
     pos += variable_encode(pos, BUF_LEN);
-    pos += variable_encode(pos, 1 + variable_encode_len(0));
     pos += variable_encode(pos, HTTP3_SETTING_QPACK_MAX_TABLE_CAPACITY);
     pos += variable_encode(pos, 0);
-    assert(pos - (char*)buff->data() == (int)len);
+    size_t len = pos - (char*)buff->data();
+    buff->reserve(-variable_encode_len(len) - 2); // type + id + length
+    pos = (char*)buff->data();
+    pos += variable_encode(pos, HTTP3_STREAM_TYPE_CONTROL);
+    pos += variable_encode(pos, HTTP3_STREAM_SETTINGS);
+    pos += variable_encode(pos, len);
     PushFrame({buff, len, ctrlid_local});
 
     buff = std::make_shared<Block>(variable_encode_len(HTTP3_STREAM_TYPE_QPACK_ENCODE));

@@ -448,11 +448,7 @@ QuicQos::QuicQos(bool isServer, send_func sent,
 
 
 QuicQos::~QuicQos() {
-    for(auto& pn : pns) {
-        delete pn;
-    }
-    DelJob(&loss_timer);
-    DelJob(&packet_tx);
+    DrainAll();
 }
 
 pn_namespace* QuicQos::GetNamespace(OSSL_ENCRYPTION_LEVEL level) {
@@ -813,6 +809,16 @@ void QuicQos::PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame* frame) {
 void QuicQos::SendNow() {
     packet_tx = UpdateJob(packet_tx, std::bind(&QuicQos::sendPacket, this) , 0);
 }
+
+void QuicQos::DrainAll(){
+    for(auto& pn : pns) {
+        delete pn;
+        pn = nullptr;
+    }
+    DelJob(&loss_timer);
+    DelJob(&packet_tx);
+}
+
 
 size_t QuicQos::mem_usage() {
     size_t usage = sizeof(pns)/sizeof(pns[1]) * sizeof(pn_namespace);

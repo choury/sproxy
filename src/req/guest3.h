@@ -55,7 +55,7 @@ class Quic_server: public Ep {
 
     virtual void defaultHE(RW_EVENT events) {
         if (!!(events & RW_EVENT::ERROR)) {
-            LOGE("Http server: %d\n", checkSocket(__PRETTY_FUNCTION__));
+            LOGE("Quic server: %d\n", checkSocket(__PRETTY_FUNCTION__));
             return;
         }
         if (!!(events & RW_EVENT::READ)) {
@@ -76,11 +76,10 @@ class Quic_server: public Ep {
     }
 public:
     virtual ~Quic_server() override{
-        if(ctx){
-            SSL_CTX_free(ctx);
-        }
+        SSL_CTX_free(ctx);
     };
     Quic_server(int fd, SSL_CTX *ctx): Ep(fd),ctx(ctx) {
+        assert(ctx);
         setEvents(RW_EVENT::READ);
         handleEvent = (void (Ep::*)(RW_EVENT))&Quic_server::defaultHE;
     }

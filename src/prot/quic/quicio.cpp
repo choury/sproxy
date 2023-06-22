@@ -229,11 +229,19 @@ std::list<quic_packet_pn> QuicRWer::send(OSSL_ENCRYPTION_LEVEL level,
     size_t envLen = envelopLen(level, pn, ack, std::min((size_t)max_datagram_size, window));
     assert(window > envLen);
 
+#if __linux__
     size_t outq = 0;
     if(ioctl(getFd(), TIOCOUTQ, &outq) < 0){
         LOGE("ioctl failed: %s\n", strerror(errno));
     }
-    size_t max_iov = std::min((size_t)100, (sndbuf - outq)/(size_t)max_datagram_size/2);
+#elif __APPLE__
+    size_t outq = 0;
+    socklen_t outq_len = sizeof(outq);
+    if (getsockopt(getFd(), SOL_SOCKET, SO_NWRITE, &outq, &outq_len) < 0) {
+        LOGE("getsockopt failed: %s\n", strerror(errno));
+    }
+#endif
+    size_t max_iov = std::min((size_t)100, (sndbuf - outq)/(size_t)max_datagram_size);
     std::set<uint64_t> streams;
     std::list<quic_packet_pn> sent_packets;
     sent_packets.push_back(quic_packet_pn{{pn++, false, false, envLen, 0}, {}});
@@ -318,12 +326,13 @@ std::list<quic_packet_pn> QuicRWer::send(OSSL_ENCRYPTION_LEVEL level,
         LOGE("QUIC writem failed: %s\n", strerror(errno));
         return {};
     }
+    size_t sentlen = start - (char*)blk.data();
     if((size_t)ret < iov.size()) {
-        LOGE("sent packet: %d/%zd, sndbuf: %zd, sendq: %zd\n", ret, iov.size(), sndbuf, outq);
+        LOGE("sent packet: %d/%zd, sent size: %zd buffer: %zd/%zd\n", ret, iov.size(), sentlen, outq, sndbuf);
     } else {
-        LOGD(DQUIC, "sent packet: %d/%zd, sndbuf: %zd, sendq: %zd\n", ret, iov.size(), sndbuf, outq);
+        LOGD(DQUIC, "sent packet: %d/%zd, sent size: %zd buffer: %zd/%zd\n", ret, iov.size(), sentlen, outq, sndbuf);
     }
-    my_sent_data_total += start - (char*)blk.data();
+    my_sent_data_total += sentlen;
     for (auto stream: streams) {
         if(idle(stream)) {
             continue;
@@ -521,6 +530,8 @@ QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, QuicMgr* 
             std::bind(&QuicRWer::ErrorHE, this, PROTOCOL_ERR, _1))
 {
     ssl = SSL_new(ctx);
+    X509_up_ref(SSL_CTX_get0_certificate(ctx));
+    EVP_PKEY_up_ref(SSL_CTX_get0_privatekey(ctx));
     SSL_set_quic_method(ssl, &quic_method);
     if(ssl == nullptr){
         LOGF("SSL_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
@@ -529,10 +540,10 @@ QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, QuicMgr* 
     generateCid();
     SSL_set_accept_state(ssl);
     sslStats = SslStats::SslAccepting;
-    nextLocalBiId   = 1;
     nextRemoteBiId  = 0;
-    nextLocalUbiId  = 3;
+    nextLocalBiId   = 1;
     nextRemoteUbiId = 2;
+    nextLocalUbiId  = 3;
     walkHandler = std::bind(&QuicRWer::handlePacket, this, _1, _2);
     setEvents(RW_EVENT::READ);
     mgr->rwers.emplace(myids[0], this);
@@ -896,6 +907,7 @@ QuicRWer::FrameResult QuicRWer::handleHandshakeFrames(quic_context *context, con
     case QUIC_FRAME_CRYPTO:
         return handleCryptoFrame(context, &frame->crypto);
     case QUIC_FRAME_CONNECTION_CLOSE:
+        qos.DrainAll();
         flags |= RWER_CLOSING;
         ErrorHE(SSL_SHAKEHAND_ERR, (int) frame->close.error);
         return FrameResult::error;
@@ -1064,6 +1076,7 @@ QuicRWer::FrameResult QuicRWer::handleFrames(quic_context *context, const quic_f
         return handleResetFrame(&frame->reset);
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:
+        qos.DrainAll();
         flags |= RWER_CLOSING;
         ErrorHE(PROTOCOL_ERR, (int)frame->close.error);
         return FrameResult::error;
@@ -1530,8 +1543,10 @@ void QuicRWer::ReadData() {
         my_received_data_total += iov[i].iov_len;
         walkPackets(iov[i].iov_base, iov[i].iov_len);
     }
-    reorderData();
-    ConsumeRData(0);
+    if((flags & RWER_CLOSING) == 0) {
+        reorderData();
+        ConsumeRData(0);
+    }
 }
 
 void QuicRWer::setResetHandler(std::function<void(uint64_t, uint32_t)> func) {

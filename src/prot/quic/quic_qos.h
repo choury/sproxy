@@ -117,6 +117,7 @@ public:
     void PushFrame(pn_namespace* ns, quic_frame* frame);
     void FrontFrame(pn_namespace* ns, quic_frame* frame);
     void SendNow();
+    void DrainAll();
 
     size_t mem_usage();
 };
