@@ -42,13 +42,11 @@
 #include <openssl/pem.h>
 
 const char *DEFAULT_CIPHER_LIST =
-#if OPENSSL_VERSION_NUMBER > 0x10101000L
             "TLS13-AES-256-GCM-SHA384:"
             "TLS13-CHACHA20-POLY1305-SHA256:"
             "TLS13-AES-128-GCM-SHA256:"
             "TLS13-AES-128-CCM-8-SHA256:"
             "TLS13-AES-128-CCM-SHA256:"
-#endif
             "ECDHE-RSA-AES128-GCM-SHA256:"
             "ECDHE-RSA-CHACHA20-POLY1305:"
             "ECDHE-ECDSA-AES128-GCM-SHA256:"
@@ -486,12 +484,7 @@ SSL_CTX* initssl(int quic, const char* host){
     }else {
         alpn_list = h1_alpn;
     }
-    SSL_CTX *ctx = NULL;
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-    ctx = SSL_CTX_new(SSLv23_server_method());
-#else
-    ctx = SSL_CTX_new(TLS_server_method());
-#endif
+    SSL_CTX *ctx = SSL_CTX_new(TLS_server_method());
     if (ctx == NULL) {
         ERR_print_errors_fp(stderr);
         return NULL;
