@@ -29,6 +29,7 @@ size_t Http3Base::Http3_Proc(const void* buff, size_t len, uint64_t id) {
         }
         pos += variable_decode(pos, &length);
         if(pos + length > (uchar*)buff + len){
+            LOGE("http3 frame error: type %d, length %d, buff len %d\n", (int)stream, (int)length, (int)len);
             ErrProc(HTTP3_ERR_FRAME_ERROR);
             return 0;
         }
@@ -141,12 +142,11 @@ void Http3Base::Init() {
     pos += variable_encode(pos, HTTP3_SETTING_QPACK_MAX_TABLE_CAPACITY);
     pos += variable_encode(pos, 0);
     size_t len = pos - (char*)buff->data();
-    buff->reserve(-variable_encode_len(len) - 2); // type + id + length
-    pos = (char*)buff->data();
+    pos = (char*)buff->reserve(-variable_encode_len(len) - 3); // type + id + length
     pos += variable_encode(pos, HTTP3_STREAM_TYPE_CONTROL);
     pos += variable_encode(pos, HTTP3_STREAM_SETTINGS);
     pos += variable_encode(pos, len);
-    PushFrame({buff, len, ctrlid_local});
+    PushFrame({buff, len+3, ctrlid_local});
 
     buff = std::make_shared<Block>(variable_encode_len(HTTP3_STREAM_TYPE_QPACK_ENCODE));
     pos = (char*)buff->data();

@@ -141,7 +141,7 @@ void Proxy3::request(std::shared_ptr<HttpReq> req, Requester*) {
         }
         return 0;
         //详情见guest3.cpp
-    }, [this, id]{return rwer->cap(id)*97/100 - 9;});
+    }, [this, id]{return rwer->cap(id) - 9;});
 }
 
 

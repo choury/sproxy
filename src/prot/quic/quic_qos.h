@@ -74,6 +74,7 @@ class QuicQos {
     uint64_t last_receipt_ack_time = 0;
     uint64_t his_max_ack_delay = 0;
     bool has_packet_been_congested = false;
+    bool has_drain_all = false;
 
     pn_namespace* pns[3];
     bool isServer = false;
@@ -82,7 +83,6 @@ class QuicQos {
     Job* packet_tx = nullptr;
     void sendPacket();
     std::function<void(pn_namespace*, quic_frame*)> resendFrames;
-    std::function<void(int error)> ErrorHE;
 
     bool PeerCompletedAddressValidation();
     void SetLossDetectionTimer();
@@ -100,9 +100,9 @@ public:
                                            uint64_t pn, uint64_t ack,
                                            std::list<quic_frame*>& pend_frames, size_t window)> send_func;
     QuicQos(bool isServer, send_func sent,
-           std::function<void(pn_namespace*, quic_frame*)> resendFrames,
-           std::function<void(int error)> ErrorHE);
+           std::function<void(pn_namespace*, quic_frame*)> resendFrames);
     ~QuicQos();
+    ssize_t windowLeft();
     void KeyGot(OSSL_ENCRYPTION_LEVEL level);
     void KeyLost(OSSL_ENCRYPTION_LEVEL level);
     //set ack_delay_exponent for app level

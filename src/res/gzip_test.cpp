@@ -112,9 +112,9 @@ size_t GzipTest::gzipreadHE(const Buffer&) {
         rwer->delEvents(RW_EVENT::READ);
         return 0;
     }
-    LOGD(DFILE, "gzip zip readHE\n");
 
     ssize_t chunk = res->cap();
+    LOGD(DFILE, "gzip zip readHE, chunk: %d\n", (int)chunk);
     if(chunk <= 0){
         rwer->delEvents(RW_EVENT::READ);
         return 0;
@@ -153,8 +153,8 @@ size_t GzipTest::rawreadHE(const Buffer&) {
         return 0;
     }
 
-    LOGD(DFILE, "gzip raw readHE\n");
     ssize_t chunk = res->cap();
+    LOGD(DFILE, "gzip raw readHE, chunk: %d\n", (int)chunk);
     if(chunk <= 0){
         rwer->delEvents(RW_EVENT::READ);
         return 0;

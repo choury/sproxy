@@ -203,43 +203,57 @@ static int aead_decrypt(const EVP_CIPHER* cipher,
     int len, plaintext_len;
 
     /* Create and initialise the context */
-    if(ctx == nullptr)
+    if(ctx == nullptr) {
+        LOGE("EVP_CIPHER_CTX_new failed\n");
         return -1;
+    }
 
     /* Initialise the decryption operation. */
-    if(!EVP_DecryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr))
+    if(!EVP_DecryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr)) {
+        LOGE("EVP_DecryptInit_ex failed\n");
         goto err;
+    }
 
     /* Initialise key and IV */
-    if(!EVP_DecryptInit_ex(ctx, nullptr, nullptr, key, iv))
+    if(!EVP_DecryptInit_ex(ctx, nullptr, nullptr, key, iv)) {
+        LOGE("EVP_DecryptInit_ex failed\n");
         goto err;
+    }
 
     /*
      * Provide any AAD data. This can be called zero or more times as
      * required
      */
-    if(!EVP_DecryptUpdate(ctx, nullptr, &len, aad, aad_len))
+    if(!EVP_DecryptUpdate(ctx, nullptr, &len, aad, aad_len)) {
+        LOGE("EVP_DecryptUpdate failed\n");
         goto err;
+    }
 
     /*
      * Provide the message to be decrypted, and obtain the plaintext output.
      * EVP_DecryptUpdate can be called multiple times if necessary
      */
-    if(!EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len - 16))
+    if(!EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len - 16)) {
+        LOGE("EVP_DecryptUpdate failed\n");
         goto err;
+    }
 
     plaintext_len = len;
 
     /* Set expected tag value. Works in OpenSSL 1.0.1d and later */
-    if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, ciphertext + ciphertext_len - 16))
+    if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, ciphertext + ciphertext_len - 16)) {
+        LOGE("EVP_CIPHER_CTX_ctrl failed\n");
         goto err;
+    }
 
     /*
      * Finalise the decryption. A positive return value indicates success,
      * anything else is a failure - the plaintext is not trustworthy.
      */
-    if(EVP_DecryptFinal_ex(ctx, plaintext + len, &len) <= 0)
+    if(EVP_DecryptFinal_ex(ctx, plaintext + len, &len) <= 0) {
+        LOGE("EVP_DecryptFinal_ex failed\n");
         goto err;
+    }
 
     /* Clean up */
     EVP_CIPHER_CTX_free(ctx);
@@ -871,6 +885,10 @@ void* pack_frame(void* buff, const quic_frame* frame) {
 
 int unpack_meta(const void* data_, size_t len, quic_meta* meta){
     const unsigned char* data = (const unsigned char*)data_;
+    if((data[0]&0x40) == 0){
+        LOGE("unsupported quic version: 0x%02x\n", data[0]);
+        return -1;
+    }
     if(data[0]&0x80){
         //long packet
         meta->type = data[0] & 0x30;
@@ -1065,7 +1083,7 @@ std::vector<const quic_frame*> decode_packet(const void* data_, size_t len,
             (unsigned char*)iv,
             buff + pos);
     if(plaintext_len < 0){
-        LOGE("gcm_decrypt error\n");
+        LOGE("gcm_decrypt error: pn: %d, len: %zd\n", (int)header->pn, len);
         return frames;
     }
     assert(plaintext_len == (int)(len - pos - 16));

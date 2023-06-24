@@ -289,7 +289,7 @@ int pn_namespace::sendOnePacket(size_t window){
 int pn_namespace::sendPacket(size_t window) {
     auto packets = sent(current_pn, largest_acked_packet + 1, pend_frames, window);
     if(packets.empty()) {
-        return -QUIC_INTERNAL_ERROR;
+        return 0;
     }
     current_pn = packets.back().meta.pn + 1;
 
@@ -426,9 +426,8 @@ pn_namespace::~pn_namespace() {
 }
 
 QuicQos::QuicQos(bool isServer, send_func sent,
-           std::function<void(pn_namespace*, quic_frame*)> resendFrames,
-           std::function<void(int)> ErrorHE):
-            isServer(isServer), resendFrames(std::move(resendFrames)), ErrorHE(std::move(ErrorHE)){
+           std::function<void(pn_namespace*, quic_frame*)> resendFrames):
+            isServer(isServer), resendFrames(std::move(resendFrames)){
     pns[QUIC_PACKET_NAMESPACE_INITIAL] = new pn_namespace('I', std::bind(sent, ssl_encryption_initial,
             std::placeholders::_1,
             std::placeholders::_2,
@@ -449,6 +448,10 @@ QuicQos::QuicQos(bool isServer, send_func sent,
 
 QuicQos::~QuicQos() {
     DrainAll();
+}
+
+ssize_t QuicQos::windowLeft() {
+    return (int)congestion_window - (int)bytes_in_flight;
 }
 
 pn_namespace* QuicQos::GetNamespace(OSSL_ENCRYPTION_LEVEL level) {
@@ -604,18 +607,10 @@ void QuicQos::sendPacket() {
              pto_count, congestion_window, bytes_in_flight, ssthresh);
         if(pto_count > 0) {
             //如果在丢包探测阶段，只发送一个包
-            int ret = p->sendPacket(max_datagram_size);
-            if (ret < 0) {
-                return ErrorHE(-ret);
-            }
-            bytes_in_flight += ret;
+            bytes_in_flight += p->sendPacket(max_datagram_size);
             return;
         }else if(!p->pend_frames.empty() && congestion_window > bytes_in_flight + max_datagram_size) {
-            int ret = p->sendPacket(congestion_window - bytes_in_flight);
-            if (ret < 0) {
-                return ErrorHE(-ret);
-            }
-            bytes_in_flight += ret;
+            bytes_in_flight += p->sendPacket(congestion_window - bytes_in_flight);
             has_in_flight = true;
         }
         if(!p->pend_frames.empty()){
@@ -785,6 +780,10 @@ void QuicQos::HandleRetry() {
 }
 
 void QuicQos::PushFrame(pn_namespace* ns, quic_frame *frame) {
+    if(has_drain_all) {
+        dumpFrame("<", 'X', frame);
+        return;
+    }
     dumpFrame("<", ns->name, frame);
     assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
     ns->pend_frames.push_back(frame);
@@ -811,6 +810,7 @@ void QuicQos::SendNow() {
 }
 
 void QuicQos::DrainAll(){
+    has_drain_all = true;
     for(auto& pn : pns) {
         delete pn;
         pn = nullptr;

@@ -211,7 +211,7 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
         //所以如果对端缓存了这个值(比如proxy2的localwindow),那么它每写一次数据
         //这个值就会小一点，最终就localwindow就会比实际cap大挺多,我们预留一点buffer,
         //如果还是不够，多出来的数据会放入quic的fullq队列中
-    }, [this, id]{return rwer->cap(id)*97/100 - 9;});
+    }, [this, id]{return rwer->cap(id) - 9;});
 }
 
 void Guest3::Clean(uint64_t id, uint32_t errcode) {
