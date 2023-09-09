@@ -1,7 +1,7 @@
 #include "memio.h"
 
-MemRWer::MemRWer(const char* pname, std::function<int(Buffer&&)> cb):
-    FullRWer([](int, int){}), cb(cb)
+MemRWer::MemRWer(const char* pname, std::function<int(Buffer&&)> read_cb, std::function<ssize_t()> cap_cb):
+    FullRWer([](int, int){}), read_cb(std::move(read_cb)), cap_cb(std::move(cap_cb))
 {
     snprintf(peer, sizeof(peer), "%s", pname);
 }
@@ -14,7 +14,7 @@ size_t MemRWer::rlength(uint64_t) {
 }
 
 ssize_t MemRWer::cap(uint64_t) {
-    return rb.cap();
+    return cap_cb();
 }
 
 void MemRWer::SetConnectCB(std::function<void (const sockaddr_storage &)> cb){
@@ -45,8 +45,16 @@ void MemRWer::push(const Buffer& bb) {
     addEvents(RW_EVENT::READ);
 }
 
+void MemRWer::injection(int error, int code) {
+    if (flags & RWER_CLOSING){
+        return;
+    }
+    return ErrorHE(error, code);
+}
+
 void MemRWer::detach() {
-    cb = [](Buffer&& bb){ return bb.len;};
+    read_cb = [](Buffer&& bb){ return bb.len;};
+    cap_cb = []{return 0;};
 }
 
 
@@ -66,10 +74,10 @@ void MemRWer::ConsumeRData(uint64_t id) {
 
 ssize_t MemRWer::Write(const Buffer &bb) {
     if(bb.len) {
-        return cb(Buffer{std::make_shared<Block>(bb.data(), bb.len), bb.len, bb.id});
+        return read_cb(Buffer{std::make_shared<Block>(bb.data(), bb.len), bb.len, bb.id});
     }else{
         assert(flags & RWER_SHUTDOWN);
-        return cb(Buffer{nullptr, bb.id});
+        return read_cb(Buffer{nullptr, bb.id});
     }
 }
 

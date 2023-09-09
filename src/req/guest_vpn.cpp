@@ -306,7 +306,7 @@ int Guest_vpn::mread(uint64_t id, Buffer && bb) {
     }
     auto& status = statusmap.at(id);
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
-    std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
+    //std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
     if (bb.len == 0) {
         LOGD(DVPN, "<guest_vpn> [%" PRIu64"] recv data: EOF\n", id);
         rwer->buffer_insert({nullptr, id});
@@ -342,7 +342,9 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     switch(pac->gettype()){
     case IPPROTO_TCP:{
         if(dport == HTTPPORT) {
-            status.rwer = std::make_shared<MemRWer>(storage_ntoa(&src), std::bind(&Guest_vpn::mread, this, id, _1));
+            status.rwer = std::make_shared<MemRWer>(storage_ntoa(&src),
+                                                    std::bind(&Guest_vpn::mread, this, id, _1),
+                                                    [this, id]{return rwer->cap(id);});
             new Guest(status.rwer);
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             trwer->sendMsg(id, TUN_MSG_SYN);
@@ -351,12 +353,15 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
             if(stra.s == Strategy::local || (opt.ca.key && mayBeBlocked(status.host.c_str()))) {
                 auto ctx = initssl(0, status.host.c_str());
                 auto wrwer = std::make_shared<SslRWer<MemRWer>>(ctx, storage_ntoa(&src),
-                                                                std::bind(&Guest_vpn::mread, this, id, _1));
+                                                                std::bind(&Guest_vpn::mread, this, id, _1),
+                                                                [this, id]{return rwer->cap(id);});
                 wrwer->set_server_name(status.host);
                 status.rwer = wrwer;
                 new Guest(wrwer);
             } else {
-                status.rwer = std::make_shared<MemRWer>(storage_ntoa(&src), std::bind(&Guest_vpn::mread, this, id, _1));
+                status.rwer = std::make_shared<MemRWer>(storage_ntoa(&src),
+                                                        std::bind(&Guest_vpn::mread, this, id, _1),
+                                                        [this, id]{return rwer->cap(id);});
                 new Guest_sni(status.rwer, status.host, generateUA(status.prog, 0));
             }
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
@@ -378,7 +383,9 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     case IPPROTO_UDP:{
         if(dport == DNSPORT) {
             status.flags |= VPN_DNSREQ_F;
-            auto mrwer = std::make_shared<PMemRWer>(storage_ntoa(&src), std::bind(&Guest_vpn::mread, this, id, _1));
+            auto mrwer = std::make_shared<PMemRWer>(storage_ntoa(&src),
+                                                    std::bind(&Guest_vpn::mread, this, id, _1),
+                                                    [this, id]{return rwer->cap(id);});
             FDns::GetInstance()->query(mrwer);
             status.rwer = mrwer;
         } else {
@@ -440,14 +447,19 @@ void Guest_vpn::handle(uint64_t id, ChannelMessage::Signal s) {
 }
 
 void Guest_vpn::Clean(uint64_t id, VpnStatus& status) {
-    if(status.rwer && (status.flags & HTTP_REQ_COMPLETED) == 0) {
-        status.rwer->push({nullptr, id});
+    if(status.rwer) {
+        if ((status.flags & HTTP_REQ_COMPLETED) == 0 && (status.flags & HTTP_RES_COMPLETED)){
+            status.rwer->push({nullptr});
+        }else {
+            status.rwer->injection(PEER_LOST_ERR, 0);
+        }
         status.rwer->detach();
     }
     if(status.req && (status.flags & HTTP_CLOSED_F) == 0){
         status.req->send(ChannelMessage::CHANNEL_ABORT);
     }
-    if(status.res){
+
+    if(status.res) {
         status.res->detach();
     }
     statusmap.erase(id);

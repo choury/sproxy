@@ -82,7 +82,7 @@ void RWer::SetWriteCB(std::function<void(uint64_t id)> func){
 }
 
 void RWer::defaultHE(RW_EVENT events){
-    if (!!(events & RW_EVENT::ERROR) || stats == RWerStats::Error) {
+    if (!!(events & RW_EVENT::ERROR)) {
         ErrorHE(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
         return;
     }

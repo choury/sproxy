@@ -7,7 +7,8 @@ class MemRWer: public FullRWer{
 protected:
     char peer[128];
     CBuffer rb;
-    std::function<int(Buffer&&)> cb;
+    std::function<int(Buffer&&)> read_cb;
+    std::function<ssize_t()> cap_cb;
     std::function<void(const sockaddr_storage&)> connectCB = [](const sockaddr_storage&){};
     void connected(const sockaddr_storage& addr);
     virtual void closeHE(RW_EVENT events) override;
@@ -16,10 +17,11 @@ protected:
         return true;
     }
 public:
-    explicit MemRWer(const char* pname, std::function<int(Buffer&&)> cb);
+    explicit MemRWer(const char* pname, std::function<int(Buffer&&)> read_cb, std::function<ssize_t()> cap_cb);
     ~MemRWer() override;
 
     virtual void push(const Buffer& bb);
+    virtual void injection(int error, int code);
     virtual void detach();
     void SetConnectCB(std::function<void(const sockaddr_storage&)> connectCB);
     virtual size_t rlength(uint64_t id) override;

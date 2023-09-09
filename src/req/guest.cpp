@@ -140,7 +140,9 @@ Guest::Guest(std::shared_ptr<RWer> rwer): Requester(rwer){
 
 void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
     if(header->ismethod("CONNECT") && header->Dest.port == HTTPPORT) {
-        auto mrwer = std::make_shared<MemRWer>(header->Dest.hostname, std::bind(&Guest::mread, this, header,  _1));
+        auto mrwer = std::make_shared<MemRWer>(header->Dest.hostname,
+                                               std::bind(&Guest::mread, this, header,  _1),
+                                               [this]{ return  rwer->cap(0);});
         statuslist.emplace_back(ReqStatus{nullptr, nullptr, mrwer, HTTP_NOEND_F});
         rwer->buffer_insert({HCONNECT, strlen(HCONNECT)});
         new Guest(mrwer);
@@ -151,7 +153,8 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
         if (Stra.s == Strategy::local || (opt.ca.key &&  mayBeBlocked(header->Dest.hostname))) {
             auto ctx = initssl(0, header->Dest.hostname);
             auto srwer = std::make_shared<SslRWer<MemRWer>>(ctx, header->Dest.hostname,
-                                                            std::bind(&Guest::mread, this, header, _1));
+                                                            std::bind(&Guest::mread, this, header, _1),
+                                                            [this]{ return  rwer->cap(0);});
             statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
             rwer->buffer_insert({HCONNECT, strlen(HCONNECT)});
             new Guest(srwer);
@@ -318,6 +321,11 @@ void Guest::Recv(Buffer&& bb) {
         if(status.flags & HTTP_REQ_COMPLETED) {
             rwer->addjob(std::bind(&Guest::deqReq, this), 0, JOB_FLAGS_AUTORELEASE);
         }
+        if(status.rwer && status.req && (status.flags & HTTP_CLOSED_F) == 0) {
+            status.flags |= HTTP_CLOSED_F;
+            status.req->send(ChannelMessage::CHANNEL_ABORT);
+            return deleteLater(PEER_LOST_ERR);
+        }
         return;
     }
     if(status.req->header->ismethod("HEAD")){
@@ -364,7 +372,11 @@ void Guest::deleteLater(uint32_t errcode) {
             status.res->detach();
         }
         if(status.rwer) {
-            status.rwer->push(nullptr);
+            if ((status.flags & HTTP_REQ_COMPLETED) == 0 && (status.flags & HTTP_RES_COMPLETED)){
+                status.rwer->push({nullptr});
+            }else {
+                status.rwer->injection(PEER_LOST_ERR, 0);
+            }
             status.rwer->detach();
         }
     }

@@ -129,6 +129,9 @@ void FDns::query(std::shared_ptr<MemRWer> rwer) {
         Recv(bb.data(), bb.len, id);
         return 0;
     });
+    rwer->SetErrorCB([this, id](int, int) {
+        statusmap.erase(id);
+    });
 }
 
 void FDns::Recv(const void* data, size_t len, uint32_t id_) {
