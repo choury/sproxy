@@ -4,7 +4,7 @@
 #include <assert.h>
 #include <set>
 
-using std::function;
+std::set<Job*> gjobs;
 job_handler static_job_handler;
 
 #define JOB_RUNNING   (1u<<15u)
@@ -19,7 +19,6 @@ struct Job{
     job_handler* handler;
 };
 
-std::set<Job*> gjobs;
 
 uint32_t JobPending(const Job* job) {
     if(job == nullptr || gjobs.count(const_cast<Job*>(job)) == 0) {
