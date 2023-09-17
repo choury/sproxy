@@ -83,7 +83,7 @@
    +-------+                   +-------+
  */
 
-class QuicMgr;
+class Quic_server;
 
 class Recvq{
 public:
@@ -97,7 +97,7 @@ protected:
     SslStats sslStats = SslStats::Idel;
     SSL_CTX* ctx = nullptr;  // server will be null
     SSL *ssl = nullptr;
-    QuicMgr* mgr = nullptr;
+    Quic_server* server = nullptr;
     size_t sndbuf = 0;
 
     QuicQos qos;
@@ -226,9 +226,9 @@ protected:
     std::function<void(uint64_t id, uint32_t error)> resetHandler = [](uint64_t, uint32_t){};
 public:
     explicit QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
-                     std::function<void(int ret, int code)> errorCB);
-    explicit QuicRWer(int fd, const sockaddr_storage* peer, SSL_CTX* ctx, QuicMgr* mgr,
-                     std::function<void(int ret, int code)> errorCB);
+                      std::function<void(int ret, int code)> errorCB);
+    explicit QuicRWer(int fd, const sockaddr_storage* peer, SSL_CTX* ctx, Quic_server* server);
+
     virtual ~QuicRWer() override;
     virtual void buffer_insert(Buffer&& bb) override;
 

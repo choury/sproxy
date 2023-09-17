@@ -7,11 +7,9 @@
 #include <assert.h>
 #include <inttypes.h>
 
-Guest3::Guest3(int fd, const sockaddr_storage *addr, SSL_CTX *ctx, QuicMgr* quic_mgr):
-    Requester(nullptr)
+Guest3::Guest3(std::shared_ptr<QuicRWer> qrwer): Requester(qrwer)
 {
-    auto qrwer = std::make_shared<QuicRWer>(fd, addr, ctx, quic_mgr, std::bind(&Guest3::Error, this, _1, _2));
-    init(qrwer);
+    qrwer->SetErrorCB(std::bind(&Guest3::Error, this, _1, _2));
     qrwer->SetConnectCB([this, qrwer](const sockaddr_storage&){
         const unsigned char *data;
         unsigned int len;

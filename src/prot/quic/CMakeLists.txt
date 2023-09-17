@@ -4,7 +4,7 @@
 
 set(quic_src
         quicio.cpp
-        quic_mgr.cpp
+        quic_server.cpp
         quic_pack.cpp
         quic_qos.cpp)
 

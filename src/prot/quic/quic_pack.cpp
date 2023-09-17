@@ -1303,7 +1303,7 @@ std::string sign_cid(std::string id) {
     char* token = nullptr;
     unsigned int sign_len;
     if(sign_data(opt.cert.key, id.c_str(), id.length(), &token, &sign_len)){
-        LOGE("QUIC failed to sign cid");
+        LOGE("QUIC failed to sign cid\n");
         return "";
     }
     assert(sign_len >= QUIC_TOKEN_LEN);

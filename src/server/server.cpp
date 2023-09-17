@@ -1,6 +1,6 @@
 #include "req/guest_sni.h"
 #ifdef HAVE_QUIC
-#include "req/guest3.h"
+#include "prot/quic/quic_server.h"
 #endif
 #include "req/cli.h"
 #include "misc/job.h"

@@ -344,23 +344,21 @@ int sign_data(EVP_PKEY* key, const void* buff, int buff_len, char** sig, unsigne
     *sig = malloc(*sig_len);
     EVP_MD_CTX* ctx = EVP_MD_CTX_create();
     if(EVP_SignInit(ctx, EVP_sha256()) != 1){
-        LOGE("EVP_SignInit failed");
+        LOGE("EVP_SignInit failed\n");
         goto error;
     }
     if(EVP_SignUpdate(ctx, buff, buff_len) != 1){
-        LOGE("EVP_SignUpdate failed");
+        LOGE("EVP_SignUpdate failed\n");
         goto error;
     }
     if(EVP_SignFinal(ctx, (unsigned char*)*sig, sig_len, key) != 1){
-        LOGE("EVP_SignFinal failed");
+        LOGE("EVP_SignFinal failed\n");
         goto error;
     }
 
-    EVP_PKEY_free(key);
     EVP_MD_CTX_free(ctx);
     return 0;
 error:
-    EVP_PKEY_free(key);
     EVP_MD_CTX_free(ctx);
     free(*sig);
     *sig = NULL;

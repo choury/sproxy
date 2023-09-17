@@ -2,7 +2,7 @@
 // Created by 周威 on 2021/6/20.
 //
 #include "quicio.h"
-#include "quic_mgr.h"
+#include "quic_server.h"
 #include "quic_pack.h"
 #include "misc/util.h"
 #include "prot/tls.h"
@@ -531,15 +531,12 @@ QuicRWer::QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
     walkHandler = std::bind(&QuicRWer::handlePacket, this, _1, _2);
 }
 
-QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, QuicMgr* mgr,
-                   std::function<void(int, int)> errorCB):
-        SocketRWer(fd, peer, std::move(errorCB)), mgr(mgr),
+QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, Quic_server* server):
+        SocketRWer(fd, peer, [](int, int){}), server(server),
         qos(true, std::bind(&QuicRWer::send, this, _1, _2, _3, _4, _5),
             std::bind(&QuicRWer::resendFrames, this, _1, _2))
 {
     ssl = SSL_new(ctx);
-    X509_up_ref(SSL_CTX_get0_certificate(ctx));
-    EVP_PKEY_up_ref(SSL_CTX_get0_privatekey(ctx));
     SSL_set_quic_method(ssl, &quic_method);
     if(ssl == nullptr){
         LOGF("SSL_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
@@ -554,7 +551,7 @@ QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, QuicMgr* 
     nextLocalUbiId  = 3;
     walkHandler = std::bind(&QuicRWer::handlePacket, this, _1, _2);
     setEvents(RW_EVENT::READ);
-    mgr->rwers.emplace(myids[0], this);
+    server->rwers.emplace(myids[0], this);
 
     socklen_t len = sizeof(sndbuf);
     if(getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, &len) < 0){
@@ -572,13 +569,13 @@ QuicRWer::~QuicRWer(){
     }
     deljob(&keepAlive_timer);
     deljob(&close_timer);
-    if(mgr == nullptr){
+    if(server == nullptr){
         return;
     }
     for(auto id: myids){
-        mgr->rwers.erase(id);
+        server->rwers.erase(id);
     }
-    mgr->rwers.erase(originDcid);
+    server->rwers.erase(originDcid);
 }
 
 void QuicRWer::waitconnectHE(RW_EVENT events) {
@@ -1118,8 +1115,8 @@ QuicRWer::FrameResult QuicRWer::handleFrames(quic_context *context, const quic_f
             ErrorHE(PROTOCOL_ERR, QUIC_PROTOCOL_VIOLATION);
             return FrameResult::error;
         }
-        if(mgr) {
-            mgr->rwers.erase(myids[frame->extra]);
+        if(server) {
+            server->rwers.erase(myids[frame->extra]);
         }
         return FrameResult::ok;
     default:
@@ -1456,7 +1453,7 @@ void QuicRWer::walkPackets(const void* buff, size_t length) {
             quic_generate_initial_key(1, header.dcid.data(), header.dcid.length(), &contexts[0].read_secret);
             qos.KeyGot(ssl_encryption_initial);
             contexts[0].hasKey = true;
-            mgr->rwers.emplace(originDcid, this);
+            server->rwers.emplace(originDcid, this);
 
             char quic_params[QUIC_INITIAL_LIMIT];
             SSL_set_quic_transport_params(ssl, (const uint8_t*)quic_params, generateParams(quic_params));
@@ -1790,7 +1787,7 @@ void QuicRWer::dump_status(Dumper dp, void *param) {
 }
 
 size_t QuicRWer::mem_usage() {
-    size_t usage = sizeof(*this) + sizeof(QuicMgr) + qos.mem_usage();
+    size_t usage = sizeof(*this) + sizeof(Quic_server) + qos.mem_usage();
     for(const auto& context : contexts){
         for(const auto& frame : context.recvq.data){
             usage += frame_size(frame);

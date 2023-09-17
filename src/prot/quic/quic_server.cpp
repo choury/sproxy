@@ -1,10 +1,32 @@
 //
 // Created by 周威 on 2022/4/18.
 //
-#include "quic_mgr.h"
+#include "quic_server.h"
 #include "req/guest3.h"
 
-void QuicMgr::PushDate(int fd, const sockaddr_storage* addr, SSL_CTX *ctx, const void *buff, size_t len) {
+void Quic_server::defaultHE(RW_EVENT events) {
+    if (!!(events & RW_EVENT::ERROR)) {
+        LOGE("Quic server: %d\n", checkSocket(__PRETTY_FUNCTION__));
+        return;
+    }
+    if (!!(events & RW_EVENT::READ)) {
+        struct sockaddr_storage myaddr;
+        socklen_t temp = sizeof(myaddr);
+        memset(&myaddr, 0, temp);
+        char buff[max_datagram_size];
+        ssize_t ret = recvfrom(getFd(), buff, sizeof(buff), 0, (sockaddr*)&myaddr, &temp);
+        if(ret < 0){
+            LOGE("recvfrom error: %s\n", strerror(errno));
+            return;
+        }
+        PushDate(getFd(), &myaddr, buff, ret);
+    } else {
+        LOGE("unknown error\n");
+        return;
+    }
+}
+
+void Quic_server::PushDate(int fd, const sockaddr_storage* addr, const void *buff, size_t len) {
     quic_pkt_header header;
     header.dcid.resize(QUIC_CID_LEN);
     int body_len = unpack_meta(buff, len, &header);
@@ -28,8 +50,8 @@ void QuicMgr::PushDate(int fd, const sockaddr_storage* addr, SSL_CTX *ctx, const
             return;
         }
         SetUdpOptions(clsk, addr);
-
-        auto guest = new Guest3(clsk, addr, ctx, this);
+        auto qrwer = std::make_shared<QuicRWer>(clsk, addr, ctx, this);
+        auto guest = new Guest3(qrwer);
         guest->AddInitData(buff, len);
     }else if(header.type == QUIC_PACKET_1RTT){
         if(len < 42){

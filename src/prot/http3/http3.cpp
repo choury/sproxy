@@ -142,7 +142,7 @@ void Http3Base::Init() {
     pos += variable_encode(pos, HTTP3_SETTING_QPACK_MAX_TABLE_CAPACITY);
     pos += variable_encode(pos, 0);
     size_t len = pos - (char*)buff->data();
-    pos = (char*)buff->reserve(-variable_encode_len(len) - 3); // type + id + length
+    pos = (char*)buff->reserve(-3); // type + id + length
     pos += variable_encode(pos, HTTP3_STREAM_TYPE_CONTROL);
     pos += variable_encode(pos, HTTP3_STREAM_SETTINGS);
     pos += variable_encode(pos, len);

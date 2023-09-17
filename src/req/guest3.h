@@ -6,8 +6,8 @@
 #define SPROXY_GUEST3_H
 
 #include "requester.h"
+#include "prot/quic/quicio.h"
 #include "prot/http3/http3.h"
-#include "prot/quic/quic_mgr.h"
 #include "misc/net.h"
 #include "misc/config.h"
 
@@ -39,7 +39,8 @@ protected:
     void RstProc(uint64_t id, uint32_t errcode);
     void Clean(uint64_t id, uint32_t errcode);
 public:
-    explicit Guest3(int fd, const sockaddr_storage* addr, SSL_CTX* ctx, QuicMgr* quicMgr);
+    //explicit Guest3(int fd, const sockaddr_storage* addr, SSL_CTX* ctx, QuicMgr* quicMgr);
+    explicit Guest3(std::shared_ptr<QuicRWer> rwer);
     virtual ~Guest3() override;
 
     void AddInitData(const void* buff, size_t len);
@@ -47,42 +48,6 @@ public:
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
-};
-
-class Quic_server: public Ep {
-    SSL_CTX *ctx = nullptr;
-    QuicMgr quicMgr;
-
-    virtual void defaultHE(RW_EVENT events) {
-        if (!!(events & RW_EVENT::ERROR)) {
-            LOGE("Quic server: %d\n", checkSocket(__PRETTY_FUNCTION__));
-            return;
-        }
-        if (!!(events & RW_EVENT::READ)) {
-            struct sockaddr_storage myaddr;
-            socklen_t temp = sizeof(myaddr);
-            memset(&myaddr, 0, temp);
-            char buff[max_datagram_size];
-            ssize_t ret = recvfrom(getFd(), buff, sizeof(buff), 0, (sockaddr*)&myaddr, &temp);
-            if(ret < 0){
-                LOGE("recvfrom error: %s\n", strerror(errno));
-                return;
-            }
-            quicMgr.PushDate(getFd(), &myaddr, ctx, buff, ret);
-        } else {
-            LOGE("unknown error\n");
-            return;
-        }
-    }
-public:
-    virtual ~Quic_server() override{
-        SSL_CTX_free(ctx);
-    };
-    Quic_server(int fd, SSL_CTX *ctx): Ep(fd),ctx(ctx) {
-        assert(ctx);
-        setEvents(RW_EVENT::READ);
-        handleEvent = (void (Ep::*)(RW_EVENT))&Quic_server::defaultHE;
-    }
 };
 
 #endif //SPROXY_GUEST3_H
