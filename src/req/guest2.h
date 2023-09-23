@@ -15,7 +15,7 @@ class Guest2: public Requester, public Http2Responser {
     };
     std::map<uint32_t, ReqStatus> statusmap;
     //void init(RWer* rwer);
-    Job* connection_lost_job = nullptr;
+    Job connection_lost_job = nullptr;
 protected:
     void connection_lost();
     virtual void deleteLater(uint32_t errcode) override;

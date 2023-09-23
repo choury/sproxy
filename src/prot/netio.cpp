@@ -43,7 +43,7 @@ SocketRWer::SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
 {
     strcpy(this->hostname, hostname);
     stats = RWerStats::Resolving;
-    addjob([this]{
+    AddJob([this]{
         //这里使用job,因为shared_from_this不能在构造函数里面用
         //因为使用了shared_ptr，所以不存在对象已经被释放了的情况
         //但是返回时RWer有可能已经被Close了，DnsCallback需要处理这种情况
@@ -97,31 +97,31 @@ void SocketRWer::connect() {
     if(protocol == Protocol::TCP) {
         int fd = Connect(&addrs.front(), SOCK_STREAM);
         if (fd < 0) {
-            con_failed_job = updatejob(con_failed_job,
+            con_failed_job = UpdateJob(std::move(con_failed_job),
                                        std::bind(&SocketRWer::connectFailed, this, errno), 0);
             return;
         }
         setFd(fd);
         setEvents(RW_EVENT::WRITE);
         handleEvent = (void (Ep::*)(RW_EVENT)) &SocketRWer::waitconnectHE;
-        con_failed_job = updatejob(con_failed_job,
+        con_failed_job = UpdateJob(std::move(con_failed_job),
                                    std::bind(&SocketRWer::connectFailed, this, ETIMEDOUT), 10000);
     } else if(protocol == Protocol::QUIC) {
         int fd = Connect(&addrs.front(), SOCK_DGRAM);
         if (fd < 0) {
-            con_failed_job = updatejob(con_failed_job,
+            con_failed_job = UpdateJob(std::move(con_failed_job),
                                        std::bind(&SocketRWer::connectFailed, this, errno), 0);
             return;
         }
         setFd(fd);
         setEvents(RW_EVENT::WRITE);
         handleEvent = (void (Ep::*)(RW_EVENT)) &SocketRWer::waitconnectHE;
-        con_failed_job = updatejob(con_failed_job,
+        con_failed_job = UpdateJob(std::move(con_failed_job),
                                    std::bind(&SocketRWer::connectFailed, this, ETIMEDOUT), 10000);
     } else if(protocol == Protocol::UDP) {
         int fd = Connect(&addrs.front(), SOCK_DGRAM);
         if (fd < 0) {
-            con_failed_job = updatejob(con_failed_job,
+            con_failed_job = UpdateJob(std::move(con_failed_job),
                                        std::bind(&SocketRWer::connectFailed, this, errno), 0);
             return;
         }
@@ -143,7 +143,7 @@ void SocketRWer::connect() {
             connected(addr);
             return;
         }
-        con_failed_job = updatejob(con_failed_job,
+        con_failed_job = UpdateJob(std::move(con_failed_job),
                                    std::bind(&SocketRWer::connectFailed, this, errno), 0);
         return;
     } else {
@@ -152,7 +152,7 @@ void SocketRWer::connect() {
 }
 
 void SocketRWer::connected(const sockaddr_storage& addr) {
-    deljob(&con_failed_job);
+    con_failed_job.reset(nullptr);
     setEvents(RW_EVENT::READWRITE);
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&SocketRWer::defaultHE;
@@ -175,7 +175,7 @@ void SocketRWer::SetConnectCB(std::function<void(const sockaddr_storage&)> cb) {
 void SocketRWer::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR) || !!(events & RW_EVENT::READEOF)) {
         int error = checkSocket(__PRETTY_FUNCTION__ );
-        con_failed_job = updatejob(con_failed_job,
+        con_failed_job = UpdateJob(std::move(con_failed_job),
                                    std::bind(&SocketRWer::connectFailed, this, error), 0);
         return;
     }

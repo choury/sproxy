@@ -187,9 +187,9 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
         }
     }
 ret:
-    status->rto_job = status->jobHandler.updatejob(status->rto_job,
-                                                   std::bind(&Resent, status_),
-                                                   std::max(status->rto * status->rto_factor, (uint32_t) 1000));
+    status->rto_job = UpdateJob(std::move(status->rto_job),
+                                std::bind(&Resent, status_),
+                                std::max(status->rto * status->rto_factor, (uint32_t) 1000));
 }
 
 void PendPkg(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, Buffer&& bb) {
@@ -202,9 +202,9 @@ void PendPkg(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, Buffer&
     }
     if(status->sent_list.empty()) {
         //说明之前没有开启rto重传，就在这里开启
-        status->rto_job = status->jobHandler.updatejob(status->rto_job,
-                                                       std::bind(&Resent, GetWeak(status)),
-                                                       std::max(status->rto * status->rto_factor, (uint32_t) 1000));
+        status->rto_job = UpdateJob(std::move(status->rto_job),
+                                    std::bind(&Resent, GetWeak(status)),
+                                    std::max(status->rto * status->rto_factor, (uint32_t) 1000));
     }
     auto now = getmtime();
     status->sent_list.emplace_back(tcp_sent{pac, now, now, std::move(bb)});
@@ -314,14 +314,13 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
                 status->errCB(pac, TCP_RESET_ERR);
             } else {
                 LOGD(DVPN, "%s get dup syn packet, reply synack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
-                status->rto_job = status->jobHandler.updatejob(status->rto_job, std::bind(&Resent, GetWeak(status)), 0);
+                status->rto_job = UpdateJob(std::move(status->rto_job), std::bind(&Resent, GetWeak(status)), 0);
             }
             return;
         }
         LOG("%s get unwanted/keep-alive pkt, reply ack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
         status->sent_ack = status->want_seq - 1; //to force send tcp ack
-        status->ack_job = status->jobHandler.updatejob(status->ack_job,
-                                                       std::bind(&SendAck, GetWeak(status)), 0);
+        status->ack_job = UpdateJob(std::move(status->ack_job), std::bind(&SendAck, GetWeak(status)), 0);
         return;
     }
 
@@ -342,8 +341,7 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
         if(ack == status->recv_ack) {
             status->dupack ++;
             if(status->dupack >= 3) {
-                status->rto_job = status->jobHandler.updatejob(status->rto_job,
-                                                               std::bind(&Resent, GetWeak(status)), 0);
+                status->rto_job = UpdateJob(std::move(status->rto_job), std::bind(&Resent, GetWeak(status)), 0);
             }
             goto left;
         }
@@ -387,11 +385,11 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
                  minrtt, status->srtt, status->rttval, status->rto, (int)status->rto_factor);
         }
         if(status->sent_list.empty()) {
-            status->jobHandler.deljob(&status->rto_job);
+            status->rto_job.reset(nullptr);
         }else{
-            status->rto_job = status->jobHandler.updatejob(status->rto_job,
-                                                           std::bind(&Resent, GetWeak(status)),
-                                                           std::max(status->rto * status->rto_factor, (uint32_t)1000));
+            status->rto_job = UpdateJob(std::move(status->rto_job),
+                                        std::bind(&Resent, GetWeak(status)),
+                                        std::max(status->rto * status->rto_factor, (uint32_t)1000));
         }
     }
 left:
@@ -409,8 +407,7 @@ left:
         const char *data = packet + pac->gethdrlen();
         status->rbuf.put(data, datalen);
         status->want_seq += datalen;
-        status->ack_job = status->jobHandler.updatejob(status->ack_job,
-                                                       std::bind(&SendAck, GetWeak(status)), 0);
+        status->ack_job = UpdateJob(std::move(status->ack_job), std::bind(&SendAck, GetWeak(status)), 0);
     }
     if(flag & TH_FIN){ //fin包，回ack包
         status->want_seq++;
@@ -433,8 +430,7 @@ left:
                 status->PkgProc = std::bind(&CloseProc, status, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
                 break;
         }
-        status->ack_job = status->jobHandler.updatejob(status->ack_job,
-                                                       std::bind(&SendAck, GetWeak(status)), 0);
+        status->ack_job = UpdateJob(std::move(status->ack_job), std::bind(&SendAck, GetWeak(status)), 0);
     }
 }
 
@@ -459,7 +455,7 @@ void SendAck(std::weak_ptr<TcpStatus> status_) {
         }
     }
     if(status->state == TCP_CLOSE) {
-        status->jobHandler.deljob(&status->ack_job);
+        status->ack_job.reset(nullptr);
         return;
     }
     if(status->sent_ack == status->want_seq){
@@ -563,8 +559,7 @@ void CloseProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac,
     }
     if(seq != status->want_seq){
         status->sent_ack = status->want_seq - 1; //to force send tcp ack
-        status->ack_job = status->jobHandler.updatejob(status->ack_job,
-                                                       std::bind(&SendAck, GetWeak(status)), 0);
+        status->ack_job = UpdateJob(std::move(status->ack_job), std::bind(&SendAck, GetWeak(status)), 0);
         return;
     }
 

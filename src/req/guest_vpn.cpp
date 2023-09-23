@@ -271,7 +271,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
                 LOGE("unknown response\n");
             }
             status.res->detach();
-            rwer->addjob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
+            AddJob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
             return 0;
         }
         case ChannelMessage::CHANNEL_MSG_DATA:
@@ -283,7 +283,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
                 rwer->buffer_insert({nullptr, id});
                 status.flags |= HTTP_RES_COMPLETED;
                 if(status.flags & HTTP_REQ_COMPLETED) {
-                    rwer->addjob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
+                    AddJob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
                 }
             }else{
                 LOGD(DVPN, "<guest_vpn> [%" PRIu32 "] recv data (%" PRIu64"): %zu\n",
@@ -312,7 +312,7 @@ int Guest_vpn::mread(uint64_t id, Buffer && bb) {
         rwer->buffer_insert({nullptr, id});
         status.flags |= HTTP_RES_COMPLETED;
         if(status.flags & HTTP_REQ_COMPLETED) {
-            rwer->addjob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
+            AddJob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
         }
         return 0;
     }

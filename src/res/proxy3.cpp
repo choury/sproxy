@@ -70,7 +70,8 @@ void Proxy3::Reset(uint64_t id, uint32_t code) {
 }
 
 bool Proxy3::DataProc(uint64_t id, const void* data, size_t len){
-    idle_timeout = this->rwer->updatejob(idle_timeout,std::bind(&Proxy3::deleteLater, this, CONNECT_AGED), 300000);
+    idle_timeout = UpdateJob(std::move(idle_timeout),
+                             std::bind(&Proxy3::deleteLater, this, CONNECT_AGED), 300000);
     if(len == 0){
         return true;
     }
@@ -126,7 +127,8 @@ void Proxy3::request(std::shared_ptr<HttpReq> req, Requester*) {
     p += variable_encode(p, len);
     PushFrame({buff, pre + len, id});
     req->attach([this, id](ChannelMessage& msg){
-        idle_timeout = this->rwer->updatejob(idle_timeout,std::bind(&Proxy3::deleteLater, this, CONNECT_AGED), 300000);
+        idle_timeout = UpdateJob(std::move(idle_timeout),
+                                 std::bind(&Proxy3::deleteLater, this, CONNECT_AGED), 300000);
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:
             LOGD(DHTTP3, "<proxy3> ignore header for req\n");
@@ -151,7 +153,8 @@ void Proxy3::init(std::shared_ptr<HttpReq> req) {
 }
 
 void Proxy3::ResProc(uint64_t id, std::shared_ptr<HttpResHeader> header) {
-    idle_timeout = this->rwer->updatejob(idle_timeout,std::bind(&Proxy3::deleteLater, this, CONNECT_AGED), 300000);
+    idle_timeout = UpdateJob(std::move(idle_timeout),
+                             std::bind(&Proxy3::deleteLater, this, CONNECT_AGED), 300000);
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(!header->no_body() && !header->get("Content-Length"))
@@ -233,7 +236,7 @@ void Proxy3::Clean(uint64_t id, Proxy3::ReqStatus& status, uint32_t errcode) {
 
 void Proxy3::deleteLater(uint32_t errcode) {
     http3_flag |= HTTP3_FLAG_CLEANNING;
-    rwer->deljob(&idle_timeout);
+    idle_timeout.reset(nullptr);
     responsers.erase(this);
     auto statusmapCopy = statusmap;
     for(auto& i: statusmapCopy){

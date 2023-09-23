@@ -78,9 +78,9 @@ class QuicQos {
 
     pn_namespace* pns[3];
     bool isServer = false;
-    Job* loss_timer = nullptr;
+    Job loss_timer = nullptr;
     void OnLossDetectionTimeout(pn_namespace* ns);
-    Job* packet_tx = nullptr;
+    Job packet_tx = nullptr;
     void sendPacket();
     std::function<void(pn_namespace*, quic_frame*)> resendFrames;
 

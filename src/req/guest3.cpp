@@ -99,7 +99,7 @@ void Guest3::Recv(Buffer&& bb){
         PushFrame({nullptr, bb.id});
         status.flags |= HTTP_RES_COMPLETED;
         if(status.flags & HTTP_REQ_COMPLETED) {
-            rwer->addjob(std::bind(&Guest3::Clean, this, bb.id, NOERROR), 0, JOB_FLAGS_AUTORELEASE);
+            AddJob(std::bind(&Guest3::Clean, this, bb.id, NOERROR), 0, JOB_FLAGS_AUTORELEASE);
         }
     }else{
         if(status.req->header->ismethod("HEAD")){

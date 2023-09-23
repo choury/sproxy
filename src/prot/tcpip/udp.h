@@ -12,8 +12,8 @@ void SendData(std::shared_ptr<UdpStatus> status, Buffer&& bb);
 struct UdpStatus: public IpStatus{
     size_t readlen  = 0;
     bool   isDns = false;
-    Job*   aged_job = nullptr;
-    Job*   ack_job = nullptr;
+    Job   aged_job = nullptr;
+    Job   ack_job = nullptr;
 };
 
 #endif

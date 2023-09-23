@@ -41,8 +41,8 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
-        this->connection_lost_job = this->rwer->updatejob(
-                this->connection_lost_job,
+        this->connection_lost_job = UpdateJob(
+                std::move(this->connection_lost_job),
                 std::bind(&Guest2::connection_lost, this), 1800000);
         return len;
     });
@@ -65,7 +65,6 @@ Guest2::~Guest2() {
         i.second.flags |= HTTP_CLOSED_F;
     }
     statusmap.clear();
-    rwer->deljob(&connection_lost_job);
 }
 
 void Guest2::Error(int ret, int code){
@@ -87,7 +86,7 @@ void Guest2::Recv(Buffer&& bb){
         PushData({nullptr, bb.id});
         status.flags |= HTTP_RES_COMPLETED;
         if(status.flags & HTTP_REQ_COMPLETED){
-            rwer->addjob(std::bind(&Guest2::Clean, this, bb.id, NOERROR), 0, JOB_FLAGS_AUTORELEASE);
+            AddJob(std::bind(&Guest2::Clean, this, bb.id, NOERROR), 0, JOB_FLAGS_AUTORELEASE);
         }
     }else{
         if(status.req->header->ismethod("HEAD")){

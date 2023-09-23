@@ -319,7 +319,7 @@ void Guest::Recv(Buffer&& bb) {
         }
         //如果既不是没有长度的请求，也非chunked，则无需发送额外数据来标记结束
         if(status.flags & HTTP_REQ_COMPLETED) {
-            rwer->addjob(std::bind(&Guest::deqReq, this), 0, JOB_FLAGS_AUTORELEASE);
+            AddJob(std::bind(&Guest::deqReq, this), 0, JOB_FLAGS_AUTORELEASE);
         }
         if(status.rwer && status.req && (status.flags & HTTP_CLOSED_F) == 0) {
             status.flags |= HTTP_CLOSED_F;

@@ -22,8 +22,8 @@ SslRWerBase<T>::~SslRWerBase(){
 void SslRWer<StreamRWer>::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR)) {
         int error = this->checkSocket(__PRETTY_FUNCTION__ );
-        this->con_failed_job = this->updatejob(this->con_failed_job,
-                                   std::bind(&SslRWer::connectFailed, this, error), 0);
+        this->con_failed_job = UpdateJob(std::move(this->con_failed_job),
+                                         std::bind(&SslRWer::connectFailed, this, error), 0);
         return;
     }
     if (!!(events & RW_EVENT::WRITE)) {
@@ -45,8 +45,8 @@ void SslRWer<StreamRWer>::waitconnectHE(RW_EVENT events) {
         SSL_set_verify(ssl, SSL_VERIFY_PEER, verify_host_callback);
 
         this->handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::shakehandHE;
-        this->con_failed_job = this->updatejob(this->con_failed_job,
-                                   std::bind(&SslRWer::connectFailed, this, ETIMEDOUT), 2000);
+        this->con_failed_job = UpdateJob(std::move(this->con_failed_job),
+                                         std::bind(&SslRWer::connectFailed, this, ETIMEDOUT), 2000);
     }
 }
 

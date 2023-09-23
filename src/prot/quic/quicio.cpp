@@ -567,8 +567,6 @@ QuicRWer::~QuicRWer(){
     if(ctx){
         SSL_CTX_free(ctx);
     }
-    deljob(&keepAlive_timer);
-    deljob(&close_timer);
     if(server == nullptr){
         return;
     }
@@ -581,7 +579,7 @@ QuicRWer::~QuicRWer(){
 void QuicRWer::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR)) {
         int error  = checkSocket(__PRETTY_FUNCTION__);
-        con_failed_job = updatejob(con_failed_job,
+        con_failed_job = UpdateJob(std::move(con_failed_job),
                                    std::bind(&QuicRWer::connectFailed, this, error), 0);
         return;
     }
@@ -612,7 +610,7 @@ void QuicRWer::waitconnectHE(RW_EVENT events) {
         }
         setEvents(RW_EVENT::READ);
         handleEvent = (void (Ep::*)(RW_EVENT))&QuicRWer::defaultHE;
-        con_failed_job = updatejob(con_failed_job,
+        con_failed_job = UpdateJob(std::move(con_failed_job),
                                    std::bind(&QuicRWer::connectFailed, this, ETIMEDOUT), 2000);
     }
 }
@@ -962,7 +960,7 @@ int QuicRWer::handleRetryPacket(const quic_pkt_header* header){
     quic_generate_initial_key(1, hisids[0].data(), hisids[0].length(), &context.write_secret);
     quic_generate_initial_key(0, hisids[0].data(), hisids[0].length(), &context.read_secret);
     qos.HandleRetry();
-    con_failed_job = updatejob(con_failed_job, std::bind(&QuicRWer::connect, this), 20000);
+    con_failed_job = UpdateJob(std::move(con_failed_job), std::bind(&QuicRWer::connect, this), 20000);
     return 0;
 }
 
@@ -1197,7 +1195,7 @@ void QuicRWer::resendFrames(pn_namespace* ns, quic_frame *frame) {
 
 int QuicRWer::handle1RttPacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames) {
     auto context = &contexts[ssl_encryption_application];
-    keepAlive_timer = updatejob(keepAlive_timer,
+    keepAlive_timer = UpdateJob(std::move(keepAlive_timer),
                                 std::bind(&QuicRWer::keepAlive_action, this),
                                 std::min(30000, (int)max_idle_timeout/2));
     for(auto frame : frames) {
@@ -1220,7 +1218,8 @@ int QuicRWer::handle1RttPacket(const quic_pkt_header* header, std::vector<const 
 }
 
 int QuicRWer::handlePacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames) {
-    disconnect_timer = updatejob(disconnect_timer, std::bind(&QuicRWer::disconnect_action, this), max_idle_timeout);
+    disconnect_timer = UpdateJob(std::move(disconnect_timer),
+                                 std::bind(&QuicRWer::disconnect_action, this), max_idle_timeout);
     switch(header->type){
     case QUIC_PACKET_INITIAL:
     case QUIC_PACKET_HANDSHAKE:
@@ -1380,13 +1379,13 @@ void QuicRWer::Close(std::function<void()> func) {
         frame->close.reason_len = 0;
         frame->close.reason = nullptr;
         qos.PushFrame(context->level, frame);
-        close_timer = updatejob(close_timer, closeCB, 3 * qos.rtt.rttvar);
+        close_timer = UpdateJob(std::move(close_timer), closeCB, 3 * qos.rtt.rttvar);
         return 0;
     };
     if(getFd() >= 0 && sslStats == SslStats::Established) {
         //we only send CLOSE_CONNECTION_APP frame after handshake now
         //TODO: but it should also be send before handshake
-        close_timer = updatejob(close_timer, closeCB, max_idle_timeout);
+        close_timer = UpdateJob(std::move(close_timer), closeCB, max_idle_timeout);
         handleEvent = (void (Ep::*)(RW_EVENT))&QuicRWer::closeHE;
         setEvents(RW_EVENT::READ);
         // RWER_CLOSING in quic means we have sent or recv CLOSE_CONNECTION_APP frame,

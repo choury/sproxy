@@ -31,7 +31,6 @@ struct IpStatus{
     sockaddr_storage src;
     sockaddr_storage dst;
     std::shared_ptr<Block> packet_hdr;
-    job_handler jobHandler;
     uint16_t    packet_hdr_len;
 };
 

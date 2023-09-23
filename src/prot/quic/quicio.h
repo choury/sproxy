@@ -217,11 +217,11 @@ protected:
                                    uint64_t pn, uint64_t ack,
                                    std::list<quic_frame*>& pend_frames, size_t window);
     void resendFrames(pn_namespace* ns, quic_frame* frame);
-    Job* keepAlive_timer = nullptr;
+    Job keepAlive_timer = nullptr;
     void keepAlive_action();
-    Job* disconnect_timer = nullptr;
+    Job disconnect_timer = nullptr;
     void disconnect_action();
-    Job* close_timer = nullptr;
+    Job close_timer = nullptr;
 
     std::function<void(uint64_t id, uint32_t error)> resetHandler = [](uint64_t, uint32_t){};
 public:
