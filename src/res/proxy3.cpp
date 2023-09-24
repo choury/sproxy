@@ -66,7 +66,7 @@ void Proxy3::Error(int ret, int code) {
 }
 
 void Proxy3::Reset(uint64_t id, uint32_t code) {
-    return std::dynamic_pointer_cast<QuicRWer>(rwer)->Reset(id, code);
+    return std::dynamic_pointer_cast<QuicRWer>(rwer)->reset(id, code);
 }
 
 bool Proxy3::DataProc(uint64_t id, const void* data, size_t len){
@@ -105,11 +105,11 @@ void Proxy3::PushFrame(Buffer&& bb) {
 }
 
 uint64_t Proxy3::CreateUbiStream() {
-    return std::dynamic_pointer_cast<QuicRWer>(rwer)->CreateUbiStream();
+    return std::dynamic_pointer_cast<QuicRWer>(rwer)->createUbiStream();
 }
 
 void Proxy3::request(std::shared_ptr<HttpReq> req, Requester*) {
-    uint64_t id = maxDataId = std::dynamic_pointer_cast<QuicRWer>(rwer)->CreateBiStream();
+    uint64_t id = maxDataId = std::dynamic_pointer_cast<QuicRWer>(rwer)->createBiStream();
     assert((http3_flag & HTTP3_FLAG_GOAWAYED) == 0);
     LOGD(DHTTP3, "<proxy3> request: %s [%" PRIu64"]\n", req->header->geturl().c_str(), id);
     statusmap[id] = ReqStatus{

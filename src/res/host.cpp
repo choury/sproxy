@@ -45,7 +45,7 @@ Host::Host(const Destination* dest){
     }else if(strcasecmp(dest->scheme, "quic") == 0){
         auto qrwer = std::make_shared<QuicRWer>(dest->hostname, dest->port, Protocol::QUIC,
                                      std::bind(&Host::Error, this, _1, _2));
-        qrwer->set_alpn(alpn_protos_http3, sizeof(alpn_protos_http3)-1);
+        qrwer->setAlpn(alpn_protos_http3, sizeof(alpn_protos_http3) - 1);
         rwer = qrwer;
         qrwer->SetConnectCB(std::bind(&Host::connected, this));
 #endif
@@ -132,7 +132,7 @@ void Host::connected() {
     if(qrwer){
         const unsigned char *data;
         unsigned int len;
-        qrwer->get_alpn(&data, &len);
+        qrwer->getAlpn(&data, &len);
         if((data && strncasecmp((const char*)data, "h3", len) == 0)) {
             LOG("<host> delegate %" PRIu32 " %s to proxy3\n",
                 status.req->header->request_id, status.req->header->geturl().c_str());

@@ -13,7 +13,7 @@ Guest3::Guest3(std::shared_ptr<QuicRWer> qrwer): Requester(qrwer)
     qrwer->SetConnectCB([this, qrwer](const sockaddr_storage&){
         const unsigned char *data;
         unsigned int len;
-        qrwer->get_alpn(&data, &len);
+        qrwer->getAlpn(&data, &len);
         if ((data && strncasecmp((const char*)data, "h3", len) != 0)) {
             LOGE("(%s) unknown protocol: %.*s\n", rwer->getPeer(), len, data);
             return Server::deleteLater(PROTOCOL_ERR);
@@ -80,8 +80,8 @@ Guest3::~Guest3() {
 
 void Guest3::AddInitData(const void *buff, size_t len) {
     auto qrwer = std::dynamic_pointer_cast<QuicRWer>(rwer);
-    qrwer->walkPackets(buff, len);
-    qrwer->reorderData();
+    iovec iov{(void*)buff, len};
+    qrwer->walkPackets(&iov, 1);
 }
 
 void Guest3::Error(int ret, int code){
@@ -254,11 +254,11 @@ void Guest3::PushFrame(Buffer&& bb) {
 }
 
 uint64_t Guest3::CreateUbiStream() {
-    return std::dynamic_pointer_cast<QuicRWer>(rwer)->CreateUbiStream();
+    return std::dynamic_pointer_cast<QuicRWer>(rwer)->createUbiStream();
 }
 
 void Guest3::Reset(uint64_t id, uint32_t code) {
-    return std::dynamic_pointer_cast<QuicRWer>(rwer)->Reset(id, code);
+    return std::dynamic_pointer_cast<QuicRWer>(rwer)->reset(id, code);
 }
 
 void Guest3::ErrProc(int errcode) {

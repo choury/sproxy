@@ -37,7 +37,8 @@ void Quic_server::PushDate(int fd, const sockaddr_storage* addr, const void *buf
     auto r = rwers.find(header.dcid);
     if(r != rwers.end()){
         LOGD(DQUIC, "duplicated packet: %s vs %s, may be migration?\n", storage_ntoa(addr), r->second->getPeer());
-        r->second->walkPackets(buff, len);
+        iovec iov{(void*)buff, len};
+        r->second->walkPackets(&iov, 1);
     }else if(header.type == QUIC_PACKET_INITIAL){
         int clsk = ListenNet(SOCK_DGRAM, opt.CHOST, opt.CPORT);
         if (clsk < 0) {

@@ -70,6 +70,8 @@ Initial QUIC Transport Error Codes Entries
 #define QUIC_AEAD_LIMIT_REACHED        0x0f
 #define QUIC_NO_VIABLE_PATH            0x10
 #define QUIC_CRYPTO_ERROR              0x0100
+#define QUIC_CRYPTO_ERROR_END          0x01ff
+#define QUIC_CONNECTION_CLOSED         0xffff
 
 /*
 Type Value	Frame Type Name         Definition  	Pkts	Spec

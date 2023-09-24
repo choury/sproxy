@@ -92,13 +92,12 @@ public:
     void insert(const quic_frame* frame);
 };
 
-class QuicRWer: public SocketRWer {
+class QuicBase {
 protected:
     SslStats sslStats = SslStats::Idel;
     SSL_CTX* ctx = nullptr;  // server will be null
     SSL *ssl = nullptr;
-    Quic_server* server = nullptr;
-    size_t sndbuf = 0;
+    bool isClosing = false;
 
     QuicQos qos;
     struct quic_context{
@@ -167,19 +166,14 @@ protected:
     uint64_t my_max_streams_bidi = 100;
     uint64_t my_max_streams_uni = 10;
 
-    virtual void waitconnectHE(RW_EVENT events) override;
-    virtual void closeHE(RW_EVENT events) override;
-
-    virtual void ReadData() override;
-    void consumeData(uint64_t id, QuicStreamStatus& status);
-    virtual void ConsumeRData(uint64_t id) override;
-    virtual size_t rlength(uint64_t id) override;
-    virtual ssize_t cap(uint64_t id) override;
-    //virtual ssize_t Write(const void* buff, size_t len, uint64_t id) override;
-    virtual bool IsConnected() override;
+    void sinkData(uint64_t id, QuicStreamStatus& status);
+    void sinkData(uint64_t id);
+    void reorderData();
+    void walkPacket(const void* buff, size_t length);
 
     void generateCid();
     size_t generateParams(char data[QUIC_INITIAL_LIMIT]);
+    void getParams(const uint8_t* data, size_t len);
     quic_context* getContext(uint8_t type);
     void dropkey(OSSL_ENCRYPTION_LEVEL level);
 
@@ -188,55 +182,53 @@ protected:
         skip,
         error,
     };
-    FrameResult handleCryptoFrame(quic_context* context, const quic_crypto* crypto);
-    FrameResult handleStreamFrame(uint64_t type, const quic_stream* stream);
-    FrameResult handleResetFrame(const quic_reset *stream);
-    FrameResult handleHandshakeFrames(quic_context* context, const quic_frame* frame);
-    FrameResult handleFrames(quic_context* context, const quic_frame* frame);
+    virtual FrameResult handleCryptoFrame(quic_context* context, const quic_crypto* crypto);
+    virtual FrameResult handleStreamFrame(uint64_t type, const quic_stream* stream);
+    virtual FrameResult handleResetFrame(const quic_reset *stream);
+    virtual FrameResult handleHandshakeFrames(quic_context* context, const quic_frame* frame);
+    virtual FrameResult handleFrames(quic_context* context, const quic_frame* frame);
 
     std::function<int(const quic_pkt_header* header, std::vector<const quic_frame*>& frames)> walkHandler;
-    int handleHandshakePacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
-    int handleRetryPacket(const quic_pkt_header* header);
-    int handle1RttPacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
-    int handlePacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
+    virtual int handleHandshakePacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
+    virtual int handleRetryPacket(const quic_pkt_header* header);
+    virtual int handle1RttPacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
+    virtual int handlePacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
     bool checkStatelessReset(const void* may_be_token);
 
     using iterator = typename decltype(streammap)::iterator;
-    iterator OpenStream(uint64_t id);
-    void CleanStream(uint64_t id);
-    bool IsLocal(uint64_t id);
-    static bool IsBidirect(uint64_t id);
+    iterator openStream(uint64_t id);
+    void cleanStream(uint64_t id);
+    bool isLocal(uint64_t id);
+    static bool isBidirect(uint64_t id);
 
     size_t envelopLen(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, size_t len);
-    /*
-    int send(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack,
-             const void* body, size_t len, const std::set<uint64_t>& streams);
-             */
     size_t envelop(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, const char *in, size_t len, void *out);
     std::list<quic_packet_pn> send(OSSL_ENCRYPTION_LEVEL level,
                                    uint64_t pn, uint64_t ack,
                                    std::list<quic_frame*>& pend_frames, size_t window);
     void resendFrames(pn_namespace* ns, quic_frame* frame);
+
+
     Job keepAlive_timer = nullptr;
     void keepAlive_action();
     Job disconnect_timer = nullptr;
     void disconnect_action();
     Job close_timer = nullptr;
 
-    std::function<void(uint64_t id, uint32_t error)> resetHandler = [](uint64_t, uint32_t){};
+    virtual size_t getWritableSize() = 0;
+    virtual ssize_t writem(const struct iovec *iov, int iovcnt) = 0;
+    virtual void onError(int type, int code) = 0;
+    virtual size_t onRead(const Buffer& bb) = 0;
+    virtual void onWrite(uint64_t id) = 0;
+    virtual void onReset(uint64_t id, uint32_t error) = 0;
+    virtual void onConnected() = 0;
+    virtual void onCidChange(const std::string& /*cid*/, bool /*retired*/) {}
 public:
-    explicit QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
-                      std::function<void(int ret, int code)> errorCB);
-    explicit QuicRWer(int fd, const sockaddr_storage* peer, SSL_CTX* ctx, Quic_server* server);
+    explicit QuicBase(const char* hostname);
+    explicit QuicBase(SSL_CTX* ctx);
 
-    virtual ~QuicRWer() override;
-    virtual void buffer_insert(Buffer&& bb) override;
+    ~QuicBase();
 
-    //virtual void Shutdown() override;
-    virtual void Close(std::function<void()> func) override;
-
-    void setResetHandler(std::function<void(uint64_t id, uint32_t error)> func);
-    void Reset(uint64_t id, uint32_t code);
 
     static int set_encryption_secrets(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
                                       const uint8_t *read_secret,
@@ -246,14 +238,58 @@ public:
     static int flush_flight(SSL *ssl);
     static int send_alert(SSL *ssl, OSSL_ENCRYPTION_LEVEL level, uint8_t alert);
 
-    void walkPackets(const void* buff, size_t length);
-    void reorderData();
+    int doSslConnect(const char* hostname);
+    void walkPackets(const iovec* iov, int iovcnt);
+    void sendData(Buffer&& bb);
+    void reset(uint64_t id, uint32_t code);
+    void close();
 
-    virtual bool idle(uint64_t id) override;
-    void get_alpn(const unsigned char **s, unsigned int * len);
-    int set_alpn(const unsigned char *s, unsigned int len);
-    uint64_t CreateBiStream();
-    uint64_t CreateUbiStream();
+    bool idle(uint64_t id);
+    ssize_t window(uint64_t id);
+    void getAlpn(const unsigned char **s, unsigned int * len);
+    int setAlpn(const unsigned char *s, unsigned int len);
+    uint64_t createBiStream();
+    uint64_t createUbiStream();
+};
+
+class QuicRWer: public QuicBase, public SocketRWer {
+protected:
+    Quic_server* server = nullptr;
+    size_t sndbuf = 0;
+
+    virtual size_t getWritableSize()  override;
+    virtual ssize_t writem(const struct iovec *iov, int iovcnt) override;
+    virtual void onConnected() override;
+    virtual void onError(int type, int code) override;
+    virtual size_t onRead(const Buffer& bb) override;
+    virtual void onWrite(uint64_t id) override;
+    virtual void onReset(uint64_t id, uint32_t error) override;
+    virtual void onCidChange(const std::string& cid, bool retired) override;
+    virtual int handleRetryPacket(const quic_pkt_header* header) override;
+
+    virtual void waitconnectHE(RW_EVENT events) override;
+    virtual void closeHE(RW_EVENT events) override;
+    virtual void ReadData() override;
+    virtual void ConsumeRData(uint64_t id) override;
+    virtual size_t rlength(uint64_t id) override;
+    virtual bool IsConnected() override;
+
+    std::function<void(uint64_t id, uint32_t error)> resetHandler = [](uint64_t, uint32_t){};
+public:
+    explicit QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
+             std::function<void(int, int)> errorCB);
+    explicit QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, Quic_server* server);
+    void setResetHandler(std::function<void(uint64_t id, uint32_t error)> func);
+    virtual void buffer_insert(Buffer&& bb) override;
+    virtual void Close(std::function<void()> func) override;
+    virtual bool idle(uint64_t id) override {
+        return QuicBase::idle(id);
+    }
+    virtual ssize_t cap(uint64_t id) override {
+        return window(id);
+    }
+
+    ~QuicRWer();
 
     virtual void dump_status(Dumper dp, void* param) override;
     virtual size_t mem_usage() override;
