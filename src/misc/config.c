@@ -87,6 +87,7 @@ struct options opt = {
     .CPORT          = 0,
     .Server         = {
         .scheme     = {0},
+        .protocol   = {0},
         .hostname   = {0},
         .port       = 0,
     },
@@ -359,30 +360,33 @@ int loadproxy(const char* proxy, struct Destination* server){
     if(spliturl(proxy, server, NULL)){
         return -1;
     }
-    if(server->scheme[0] == 0){
+    const char* scheme = server->scheme;
+    if(scheme[0] == 0){
         strcpy(server->scheme, "https");
-    }
-    if(strcasecmp(server->scheme, "http") != 0
-       && strcasecmp(server->scheme, "https") != 0
+        strcpy(server->protocol, "ssl");
+    }else if(strcasecmp(scheme, "http") == 0 || strcasecmp(scheme, "tcp") == 0) {
+        strcpy(server->scheme, "http");
+        strcpy(server->protocol, "tcp");
+    }else if(strcasecmp(scheme, "https") == 0 || strcasecmp(scheme, "ssl") == 0) {
+        strcpy(server->scheme, "https");
+        strcpy(server->protocol, "ssl");
 #ifdef HAVE_QUIC
-       && strcasecmp(server->scheme, "quic") != 0)
-#else
-       )
+    }else if(strcasecmp(scheme, "quic") == 0) {
+        strcpy(server->scheme, "https");
+        strcpy(server->protocol, "quic");
 #endif
-    {
-        LOGE("unkonw scheme for server: %s\n", server->scheme);
+    }else{
+        LOGE("unkonw scheme for server: %s\n", scheme);
         return -1;
     }
-    if(server->port == 0){
-        if(strcasecmp(server->scheme, "http") == 0){
-            server->port = HTTPPORT;
-        }
-        if(strcasecmp(server->scheme, "https") == 0){
-            server->port = HTTPSPORT;
-        }
-        if(strcasecmp(server->scheme, "quic") == 0){
-            server->port = QUICPORT;
-        }
+    if(server->port != 0) {
+        return 0;
+    }
+    if(strcasecmp(server->scheme, "http") == 0){
+        server->port = HTTPPORT;
+    }
+    if(strcasecmp(server->scheme, "https") == 0){
+        server->port = HTTPSPORT;
     }
     return 0;
 }

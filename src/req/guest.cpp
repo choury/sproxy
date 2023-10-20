@@ -131,7 +131,7 @@ Guest::Guest(std::shared_ptr<RWer> rwer): Requester(rwer){
                 return deleteLater(NOERROR);
             }
         });
-        forceTls = true;
+        mitmProxy = true;
     }
     rwer->SetErrorCB(std::bind(&Guest::Error, this, _1, _2));
     rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
@@ -161,8 +161,10 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
             return;
         }
     }
-    if(forceTls) {
+    if(mitmProxy) {
+        assert(header->http_method());
         strcpy(header->Dest.scheme, "https");
+        strcpy(header->Dest.protocol, "ssl");
     }
     LOGD(DHTTP, "<guest> ReqProc %" PRIu32 " %s\n", header->request_id, header->geturl().c_str());
     auto req = std::make_shared<HttpReq>(header,
@@ -282,11 +284,8 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
             if(header->no_end()) {
                 status.flags |= HTTP_NOEND_F;
             }
-            if (!status.req->header->should_proxy && opt.alt_svc) {
+            if (opt.alt_svc) {
                 header->set("Alt-Svc", opt.alt_svc);
-            }
-            if(forceTls) {
-                header->del("Strict-Transport-Security");
             }
             Buffer buff{BUF_LEN};
             buff.truncate(PackHttpRes(header, buff.mutable_data(), BUF_LEN));

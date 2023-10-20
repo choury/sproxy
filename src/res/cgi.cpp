@@ -52,8 +52,8 @@ static const char *cgi_getnv(const char* p, string& name, string& value) {
     return p + value_len;
 }
 
-static std::multimap<std::string, std::string> decode(const unsigned char *s, size_t len) {
-    std::multimap<std::string, std::string> headers;
+static HeaderMap decode(const unsigned char *s, size_t len) {
+    HeaderMap headers;
     const char* p = (const char*)s;
     while(uint32_t(p - (const char*)s) < len){
         string name, value;

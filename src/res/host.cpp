@@ -21,14 +21,15 @@ __attribute__((unused)) static const unsigned char alpn_protos_http3[] =
 
 Host::Host(const Destination* dest){
     assert(dest->port);
+    assert(dest->protocol[0]);
     memcpy(&Server, dest, sizeof(Destination));
 
-    if(dest->scheme[0] == 0 || strcasecmp(dest->scheme, "http") == 0){
+    if(strcasecmp(dest->protocol, "tcp") == 0){
         auto srwer = std::make_shared<StreamRWer>(dest->hostname, dest->port, Protocol::TCP,
                               std::bind(&Host::Error, this, _1, _2));
         rwer = srwer;
         srwer->SetConnectCB(std::bind(&Host::connected, this));
-    }else if(strcasecmp(dest->scheme, "https") == 0 ) {
+    }else if(strcasecmp(dest->protocol, "ssl") == 0 ) {
         auto srwer = std::make_shared<SslRWer<StreamRWer>>(dest->hostname, dest->port, Protocol::TCP,
                                      std::bind(&Host::Error, this, _1, _2));
         if(!opt.disable_http2){
@@ -36,13 +37,13 @@ Host::Host(const Destination* dest){
         }
         rwer = srwer;
         srwer->SetConnectCB(std::bind(&Host::connected, this));
-    }else if(strcasecmp(dest->scheme, "udp") == 0) {
+    }else if(strcasecmp(dest->protocol, "udp") == 0) {
         auto prwer = std::make_shared<PacketRWer>(dest->hostname, dest->port, Protocol::UDP,
                               std::bind(&Host::Error, this, _1, _2));
         rwer = prwer;
         prwer->SetConnectCB(std::bind(&Host::connected, this));
 #ifdef HAVE_QUIC
-    }else if(strcasecmp(dest->scheme, "quic") == 0){
+    }else if(strcasecmp(dest->protocol, "quic") == 0){
         auto qrwer = std::make_shared<QuicRWer>(dest->hostname, dest->port, Protocol::QUIC,
                                      std::bind(&Host::Error, this, _1, _2));
         qrwer->setAlpn(alpn_protos_http3, sizeof(alpn_protos_http3) - 1);
@@ -50,7 +51,7 @@ Host::Host(const Destination* dest){
         qrwer->SetConnectCB(std::bind(&Host::connected, this));
 #endif
     }else{
-        LOGF("Unkonw scheme: %s\n", dest->scheme);
+        LOGF("Unkonw protocol: %s\n", dest->protocol);
     }
 }
 
@@ -69,7 +70,7 @@ void Host::reply(){
     // 对于request来说，必须先调用response再调用attach，或者就直接在attach的回调中response
     // 因为attach的时候有可能触发了错误，此时response就会有问题，比如连接已经被shutdown了
     auto req = status.req;
-    if(!req->header->should_proxy){
+    if(!req->header->chain_proxy){
         if(req->header->ismethod("CONNECT")) {
             Http_Proc = &Host::AlwaysProc;
             status.res = std::make_shared<HttpRes>(UnpackHttpRes(H200), [this]{ rwer->Unblock(0);});
@@ -253,7 +254,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
         LOGE("[%" PRIu32 "]: <host> the guest's write buff is full (%s)\n",
             status.req->header->request_id,
             status.req->header->geturl().c_str());
-        if(strcasecmp(Server.scheme, "udp") == 0){
+        if(strcasecmp(Server.protocol, "udp") == 0){
             return size;
         }
         rwer->delEvents(RW_EVENT::READ);

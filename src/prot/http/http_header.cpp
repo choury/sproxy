@@ -172,7 +172,7 @@ HttpReqHeader::HttpReqHeader(const CGI_Header *headers) {
  */
 
 
-HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers) {
+HttpReqHeader::HttpReqHeader(HeaderMap&& headers) {
     for(const auto& i: headers){
         if(toLower(i.first) == "cookie"){
             std::string cookiebuff = i.second;
@@ -195,6 +195,9 @@ HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers) {
     if(get(":scheme")){
         snprintf(Dest.scheme, sizeof(Dest.scheme), "%s", get(":scheme"));
     }
+    if(get(":protocol")){
+        snprintf(Dest.protocol, sizeof(Dest.protocol), "%s", get(":protocol"));
+    }
     if(get(":path")){
         snprintf(path, sizeof(path), "%s", get(":path"));
     }else{
@@ -203,7 +206,7 @@ HttpReqHeader::HttpReqHeader(std::multimap<std::string, string>&& headers) {
 
     for (auto i = this->headers.begin(); i!= this->headers.end();) {
         if (i->first[0] == ':') {
-            this->headers.erase(i++);
+            i = this->headers.erase(i);
         } else {
             i++;
         }
@@ -252,16 +255,26 @@ void HttpReqHeader::postparse() {
     if(request_id == 0) {
         request_id = id_gen++;
     }
-    if(!valid_method()){
-        return;
-    }
-    if(Dest.scheme[0]) {
-        return;
-    }
     if(http_method()){
-        strcpy(Dest.scheme, "http");
+        if(!Dest.scheme[0]) {
+            strcpy(Dest.scheme, "http");
+        }
+        if(Dest.protocol[0]){
+            //do nothing
+        }else if(strcasecmp(Dest.scheme, "https") == 0) {
+            strcpy(Dest.protocol, "ssl");
+        }else {
+            strcpy(Dest.protocol, "tcp");
+        }
+    }else if(ismethod("CONNECT")){
+        Dest.scheme[0] = 0;
+        strcpy(Dest.protocol, "tcp");
     }else if(ismethod("SEND")){
-        strcpy(Dest.scheme, "udp");
+        Dest.scheme[0] = 0;
+        strcpy(Dest.protocol, "udp");
+    }else if(ismethod("PING")) {
+        Dest.scheme[0] = 0;
+        strcpy(Dest.protocol, "icmp");
     }
 }
 
@@ -445,6 +458,9 @@ std::multimap<std::string, std::string> HttpReqHeader::Normalize() const {
     std::multimap<std::string, std::string> normalization;
     normalization.emplace(":method", method);
     normalization.emplace(":authority", dumpAuthority(&Dest));
+    if(chain_proxy) {
+        normalization.emplace(":protocol", Dest.protocol);
+    }
 
     if(!ismethod("CONNECT") && !ismethod("SEND") && !ismethod("PING")){
         normalization.emplace(":scheme", Dest.scheme[0] ? Dest.scheme : "http");
@@ -555,7 +571,7 @@ HttpResHeader::HttpResHeader(const CGI_Header* headers)
  */
 
 
-HttpResHeader::HttpResHeader(std::multimap<string, string>&& headers) {
+HttpResHeader::HttpResHeader(HeaderMap&& headers) {
     for(const auto& i: headers){
         if(toLower(i.first) == "set-cookie"){
             cookies.insert(i.second);

@@ -268,8 +268,8 @@ size_t Qpack_encoder::PackHttp3Res(std::shared_ptr<const HttpResHeader> res, voi
 }
 
 
-std::multimap<std::string, std::string> Qpack_decoder::decode(const unsigned char *data, size_t len) {
-    std::multimap<std::string, std::string> headers;
+HeaderMap Qpack_decoder::decode(const unsigned char *data, size_t len) {
+    HeaderMap headers;
     const uchar* pos = (uchar*)data;
     uint64_t ric;
     int l = integer_decode(pos, (uchar*)data+len-pos, 8, &ric);
@@ -293,14 +293,14 @@ std::multimap<std::string, std::string> Qpack_decoder::decode(const unsigned cha
             uint64_t index;
             l = integer_decode(pos, (uchar*)data+len-pos, 6, &index);
             if(l == 0){
-                return headers;
+                return decltype(headers){};
             }
             pos += l;
             if(T){
                 name = static_table[index][0];
                 value = static_table[index][1];
             }else{ //当前不支持动态索引，因为我们将MAX_FIELD_SECTION_SIZE设置成了0
-                abort();
+                return decltype(headers){};
             }
             goto append;
         }else if(pos[0] & 0x40){ 
@@ -312,17 +312,17 @@ std::multimap<std::string, std::string> Qpack_decoder::decode(const unsigned cha
             uint64_t index;
             l = integer_decode(pos, (uchar*)data+len-pos, 4, &index);
             if(l == 0){
-                return headers;
+                return decltype(headers){};
             }
             pos += l;
             if(T){
                 name = static_table[index][0];
             }else{
-                abort();
+                return decltype(headers){};
             }
             l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 7, value);
             if(l <= 0){
-                return headers;
+                return decltype(headers){};
             }
             pos += l;
             goto append;
@@ -332,19 +332,18 @@ std::multimap<std::string, std::string> Qpack_decoder::decode(const unsigned cha
             //bool N = pos[0]&0x10;
             l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 3, name);
             if(l <= 0){
-                return headers;
+                return decltype(headers){};
             }
             pos += l;
             l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 7, value);
             if(l <= 0){
-                return headers;
+                return decltype(headers){};
             }
             pos += l;
             goto append;
         }else if(pos[0] & 0x10){
             //如果以0001开头，表示是一个基于base位置的动态表索引，暂时不支持
-            abort();
-            goto append;
+            return decltype(headers){};
         }else{
             //如果以0000开头，表示key是基于base位置的动态表索引，value是字面量
             //第5位是N，表明该条目是否需要插入动态表
@@ -353,16 +352,15 @@ std::multimap<std::string, std::string> Qpack_decoder::decode(const unsigned cha
             uint64_t index;
             l = integer_decode(pos, (uchar*)data+len-pos, 3, &index);
             if(l == 0){
-                return headers;
+                return decltype(headers){};
             }
             pos += l;
             l = literal_decode_wrapper(pos, (uchar*)data+len-pos, 7, value);
             if(l <= 0){
-                return headers;
+                return decltype(headers){};
             }
             pos += l;
-            abort();
-            goto append;
+            return decltype(headers){};
         }
 append:
         headers.emplace(name, value);
@@ -371,7 +369,7 @@ append:
 }
 
 std::shared_ptr<HttpResHeader> Qpack_decoder::UnpackHttp3Res(const void *data, size_t len) {
-    std::multimap<std::string, std::string> headers = decode((const uchar*)data, len);
+    auto headers = decode((const uchar*)data, len);
     if(headers.empty()) {
         return nullptr;
     }
@@ -379,7 +377,7 @@ std::shared_ptr<HttpResHeader> Qpack_decoder::UnpackHttp3Res(const void *data, s
 }
 
 std::shared_ptr<HttpReqHeader> Qpack_decoder::UnpackHttp3Req(const void *data, size_t len) {
-    std::multimap<std::string, std::string> headers = decode((const uchar*)data, len);
+    auto headers = decode((const uchar*)data, len);
     if(headers.empty()) {
         return nullptr;
     }

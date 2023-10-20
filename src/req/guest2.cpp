@@ -214,7 +214,7 @@ void Guest2::response(void* index, std::shared_ptr<HttpRes> res) {
             set24(h2header->length, len);
             PushFrame(Buffer{buff, len + sizeof(Http2_header)});
 
-            if(!status.req->header->should_proxy && opt.alt_svc){
+            if(opt.alt_svc){
                 AltSvc(id, "", opt.alt_svc);
             }
             return 1;

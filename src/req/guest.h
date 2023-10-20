@@ -14,7 +14,7 @@
 class Guest:public Requester, public HttpResponser {
     size_t rx_bytes = 0;
     size_t tx_bytes = 0;
-    bool forceTls = false;
+    bool mitmProxy = false;
 protected:
     struct ReqStatus{
         std::shared_ptr<HttpReq>  req;

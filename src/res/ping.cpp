@@ -89,12 +89,12 @@ void Ping::Recv(Buffer&& bb){
     switch(family){
     case AF_INET:{
         Icmp icmp;
-        icmp.settype(ICMP_ECHO)->setid(id)->setseq(seq++);
+        icmp.settype(ICMP_ECHO)->setid(id+1)->setseq(seq++);
         icmp.build_packet(bb);
         break;}
     case AF_INET6:{
         Icmp6 icmp;
-        icmp.settype(ICMP6_ECHO_REQUEST)->setid(id)->setseq(seq++);
+        icmp.settype(ICMP6_ECHO_REQUEST)->setid(id+1)->setseq(seq++);
         icmp.build_packet(nullptr, bb);
         break;}
     default:

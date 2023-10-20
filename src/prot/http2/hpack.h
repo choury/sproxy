@@ -36,7 +36,7 @@ public:
 };
 
 class Hpack_decoder: public Hpack {
-    std::multimap< std::string, std::string > decode(const unsigned char* s, size_t len);
+    HeaderMap decode(const unsigned char* s, size_t len);
 public:
     explicit Hpack_decoder(size_t dynamic_table_size_limit_max = 4096): Hpack(dynamic_table_size_limit_max){}
     std::shared_ptr<HttpReqHeader> UnpackHttp2Req(const void* header, size_t len);

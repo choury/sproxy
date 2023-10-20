@@ -94,7 +94,7 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
                 header->set("Proxy-Authorization", std::string("Basic ") + opt.rewrite_auth);
             }
             //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
-            header->should_proxy = true;
+            header->chain_proxy = true;
             if(!stra.ext.empty() && loadproxy(stra.ext.c_str(), &dest)){
                 res = std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[ext misformat]]\n");
                 goto out;
@@ -108,6 +108,7 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
             }
             header->del("Proxy-Authorization");
             break;
+        //rewrite 和 forward的唯一区别就是rewrite会修改host为目标地址
         case Strategy::rewrite:
             header->set("host", stra.ext);
             /* FALLTHROUGH */

@@ -41,7 +41,7 @@ public:
 };
 
 class Qpack_decoder: public Qpack {
-    std::multimap<std::string, std::string> decode(const unsigned char *s, size_t len);
+    HeaderMap decode(const unsigned char *s, size_t len);
 public:
     explicit Qpack_decoder(std::function<void(Buffer&&)> sender, size_t dynamic_table_size_limit_max = 0):
         Qpack(std::move(sender), dynamic_table_size_limit_max){};

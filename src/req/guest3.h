@@ -22,6 +22,7 @@ class Guest3: public Requester, public Http3Responser {
 
     std::map<uint64_t, ReqStatus> statusmap;
     uint64_t maxDataId = 0;
+    bool mitmProxy = false;
 protected:
     virtual void Error(int ret, int code);
     virtual void deleteLater(uint32_t errcode) override;

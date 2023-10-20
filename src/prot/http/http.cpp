@@ -180,7 +180,7 @@ std::shared_ptr<HttpReqHeader> UnpackHttpReq(const void* header, size_t len){
     std::string httpheader((const char*)header, len);
     *(strstr(&httpheader[0], CRLF CRLF) + strlen(CRLF)) = 0;
 
-    std::multimap<std::string, std::string> headers;
+    HeaderMap headers;
     for (char* str = strstr(&httpheader[0], CRLF) + strlen(CRLF); ; str = nullptr) {
         char* p = strtok(str, CRLF);
 
@@ -219,6 +219,10 @@ std::shared_ptr<HttpReqHeader> UnpackHttpReq(const void* header, size_t len){
         headers.emplace(":authority", headers.find("Host")->second);
     }
     headers.erase("Host");
+    if (headers.count("Protocol")) {
+        headers.emplace(":protocol", headers.find("Protocol")->second);
+        headers.erase("Protocol");
+    }
     return std::make_shared<HttpReqHeader>(std::move(headers));
 }
 
@@ -234,7 +238,7 @@ std::shared_ptr<HttpResHeader> UnpackHttpRes(const void* header, size_t len) {
     char status[100] = {0};
     sscanf(httpheader.c_str(), "%*s%*[ ]%99[^\r\n]", status);
 
-    std::multimap<std::string, std::string> headers;
+    HeaderMap headers;
     headers.emplace(":status", status);
 
     for (char* str = strstr(&httpheader[0], CRLF)+strlen(CRLF); ; str = nullptr) {
@@ -267,10 +271,6 @@ static std::string toUpHeader(const std::string &s){
 }
 
 size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t size){
-    if(!req->should_proxy && (req->ismethod("CONNECT") || req->ismethod("SEND"))){
-        //本地请求，自己处理connect和send方法
-        return 0;
-    }
     char *buff = (char*) data;
     std::list<std::string> AppendHeaders;
     char method[20];
@@ -284,12 +284,11 @@ size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t 
         AppendHeaders.emplace_back(p->arg);
     }
     size_t len = 0;
-    if(req->should_proxy){
-        if (req->ismethod("CONNECT")|| req->ismethod("SEND")){
-            len += snprintf(buff, size, "%s %s:%d HTTP/1.1" CRLF, method, req->Dest.hostname, req->Dest.port);
-        }else{
-            len += snprintf(buff, size, "%s %s HTTP/1.1" CRLF, method, req->geturl().c_str());
-        }
+    if (req->ismethod("CONNECT")|| req->ismethod("SEND")){
+        assert(req->chain_proxy);
+        len += snprintf(buff, size, "%s %s:%d HTTP/1.1" CRLF, method, req->Dest.hostname, req->Dest.port);
+    }else if(req->chain_proxy){
+        len += snprintf(buff, size, "%s %s HTTP/1.1" CRLF, method, req->geturl().c_str());
     }else{
         len += snprintf(buff, size, "%s %s HTTP/1.1" CRLF, method, req->path);
     }
@@ -297,7 +296,9 @@ size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t 
     if(req->get("Host") == nullptr && req->Dest.hostname[0]){
         len += snprintf(buff + len, size-len, "Host: %s" CRLF, dumpAuthority(&req->Dest));
     }
-
+    if(req->chain_proxy) {
+        len += snprintf(buff + len, size - len, "Protocol: %s" CRLF, req->Dest.protocol);
+    }
     for (const auto& i : req->getall()) {
         len += snprintf(buff + len, size-len, "%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
     }

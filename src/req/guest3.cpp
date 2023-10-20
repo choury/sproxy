@@ -186,6 +186,9 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
             HttpLog(rwer->getPeer(), status.req->header, header);
             header->del("Transfer-Encoding");
             header->del("Connection");
+            if(mitmProxy) {
+                header->del("Strict-Transport-Security");
+            }
 
             auto buff = std::make_shared<Block>(BUF_LEN);
             size_t len = qpack_encoder.PackHttp3Res(header, buff->data(), BUF_LEN);
