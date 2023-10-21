@@ -101,13 +101,13 @@ QuicBase::quic_context* QuicBase::getContext(uint8_t type) {
 int QuicBase::set_encryption_secrets(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
                                      const uint8_t *read_secret,
                                      const uint8_t *write_secret, size_t secret_len) {
-    LOGD(DQUIC, "set_secret: level %d, len: %zd\n", level, secret_len );
+    uint32_t cipher = SSL_CIPHER_get_id(SSL_get_current_cipher(ssl));
+    LOGD(DQUIC, "set_secret: level %d, len: %zd, cipher: 0x%X\n",
+         level, secret_len, cipher);
     QuicBase* rwer = (QuicBase*)SSL_get_app_data(ssl);
-    assert(secret_len <= 32);
-    quic_secret_set_key(&rwer->contexts[level].read_secret,
-                        (const char*)read_secret, SSL_CIPHER_get_id(SSL_get_current_cipher(ssl)));
-    quic_secret_set_key(&rwer->contexts[level].write_secret,
-                        (const char*)write_secret, SSL_CIPHER_get_id(SSL_get_current_cipher(ssl)));
+    //assert(secret_len <= 32);
+    quic_secret_set_key(&rwer->contexts[level].read_secret, (const char*)read_secret, cipher);
+    quic_secret_set_key(&rwer->contexts[level].write_secret, (const char*)write_secret, cipher);
     rwer->qos.KeyGot(level);
     rwer->contexts[level].hasKey = true;
     if(rwer->ctx) {
@@ -175,22 +175,22 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
                                          uint64_t pn, uint64_t ack,
                                          std::list<quic_frame*>& pend_frames, size_t window)
 {
-    size_t envLen = envelopLen(level, pn, ack, std::min((size_t)max_datagram_size, window));
+    size_t envLen = envelopLen(level, pn, ack, std::min((size_t)his_max_payload_size, window));
     assert(window > envLen);
 
     size_t bufleft = getWritableSize();
-    if(max_datagram_size > bufleft){
-        LOGD(DQUIC, "bufleft is too small: %zd\n", bufleft);
+    if(his_max_payload_size > bufleft){
+        LOGD(DQUIC, "bufleft is too small: %zd vs %zd\n", bufleft, (size_t)his_max_payload_size);
         return {};
     }
-    size_t max_iov = std::min((size_t)100, bufleft/(size_t)max_datagram_size);
+    size_t max_iov = std::min((size_t)100, bufleft/(size_t)his_max_payload_size);
     std::set<uint64_t> streams;
     std::list<quic_packet_pn> sent_packets;
     sent_packets.push_back(quic_packet_pn{{pn++, false, false, envLen, 0}, {}});
     do {
         auto& packet = sent_packets.back();
         quic_frame* frame = pend_frames.front();
-        ssize_t left = std::min((size_t)max_datagram_size,  window) - packet.meta.sent_bytes;
+        ssize_t left = std::min((size_t)his_max_payload_size,  window) - packet.meta.sent_bytes;
         if(left < (int)pack_frame_len(frame)){
             uint64_t type = frame->type;
             if (type == QUIC_FRAME_CRYPTO && left >= 20){
@@ -216,7 +216,7 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
                 pend_frames.insert(std::next(pend_frames.begin()), fframe);
                 frame->stream.length = left - 30;
                 frame->type &= ~QUIC_FRAME_STREAM_FIN_F;
-            }else if(window < max_datagram_size/2) {
+            }else if(window < his_max_payload_size/2) {
                 break;
             } else {
                 assert(!packet.frames.empty());
@@ -230,9 +230,9 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
         packet.meta.sent_bytes += pack_frame_len(frame);
         packet.frames.push_back(frame);
         pend_frames.pop_front();
-        assert(packet.meta.sent_bytes <= (long)max_datagram_size);
+        assert(packet.meta.sent_bytes <= (size_t)his_max_payload_size);
     }while(!pend_frames.empty() && sent_packets.size() < max_iov);
-    Block blk(sent_packets.size() * max_datagram_size);
+    Block blk(sent_packets.size() * his_max_payload_size);
     char* start = (char*)blk.data();
     std::vector<iovec> iov;
     for(auto& packet: sent_packets) {
@@ -241,7 +241,7 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
             sent_packets.pop_back();
             break;
         }
-        char buffer[max_datagram_size];
+        char buffer[his_max_payload_size];
         char* pos = buffer;
         for(const auto& frame : packet.frames) {
             pos = (char*)pack_frame(pos, frame);
@@ -339,12 +339,12 @@ void QuicBase::generateCid() {
     std::uniform_int_distribution<uint64_t> dis(0x1000000000, 0xFFFFFFFFFF);
     std::string hisid, myid;
     myid.resize(QUIC_CID_LEN + 1);
-    snprintf(&myid[0], myid.size(), "sproxy0000%010llx", dis(rng));
+    snprintf(&myid[0], myid.size(), "sproxy0000%010" PRIx64, dis(rng));
     set32(&myid[6], getutime());
     myid.resize(QUIC_CID_LEN);
 
     hisid.resize(QUIC_CID_LEN + 1);
-    snprintf(&hisid[0], hisid.size(), "sproxy0000%010llx", dis(rng));
+    snprintf(&hisid[0], hisid.size(), "sproxy0000%010" PRIx64, dis(rng));
     set32(&hisid[6], getutime());
     hisid.resize(QUIC_CID_LEN);
 
@@ -800,7 +800,7 @@ QuicBase::FrameResult QuicBase::handleResetFrame(const quic_reset *stream) {
 
     if((status.flags & STREAM_FLAG_RESET_DELIVED) == 0) {
         LOGD(DQUIC, "reset stream for %" PRIu64"\n", id);
-        onReset(id, stream->error);
+        resetHandler(id, stream->error);
         status.flags |= STREAM_FLAG_RESET_DELIVED;
         status.rb.consume(status.rb.length());
     }
@@ -925,7 +925,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
         }
         if((status.flags & STREAM_FLAG_RESET_DELIVED) == 0){
             status.flags |= STREAM_FLAG_RESET_DELIVED;
-            onReset(frame->stop.id, frame->stop.error);
+            resetHandler(frame->stop.id, frame->stop.error);
             status.rb.consume(status.rb.length());
         }
         return FrameResult::ok;
@@ -1066,7 +1066,7 @@ void QuicBase::resendFrames(pn_namespace* ns, quic_frame *frame) {
         break;
     }
     case QUIC_FRAME_DATA_BLOCKED:
-        if(my_sent_data + max_datagram_size*10 < his_max_data){
+        if(my_sent_data + my_max_payload_size*10 < his_max_data){
             frame_release(frame);
             break;
         }
@@ -1169,13 +1169,13 @@ void QuicBase::sendData(Buffer&& bb) {
         my_sent_data += bb.len;
         assert(my_sent_data <= his_max_data);
     }
-    if(status.my_offset + max_datagram_size >= status.his_max_data) {
+    if(status.my_offset + my_max_payload_size >= status.his_max_data) {
         quic_frame* block = new quic_frame{QUIC_FRAME_STREAM_DATA_BLOCKED, {}};
         block->stream_data_blocked.id = id;
         block->stream_data_blocked.size = status.his_max_data;
         qos.PushFrame(ssl_encryption_application, block);
     }
-    if(my_sent_data + 10 * max_datagram_size >= his_max_data) {
+    if(my_sent_data + 10 * my_max_payload_size >= his_max_data) {
         quic_frame* block = new quic_frame{QUIC_FRAME_MAX_DATA, {}};
         block->extra = his_max_data;
         qos.PushFrame(ssl_encryption_application, block);
@@ -1407,6 +1407,9 @@ void QuicBase::reset(uint64_t id, uint32_t code) {
     }
 }
 
+void QuicBase::setResetHandler(std::function<void(uint64_t, uint32_t)> func) {
+    resetHandler = std::move(func);
+}
 
 ssize_t QuicBase::window(uint64_t id) {
     if(streammap.count(id) == 0){
@@ -1423,6 +1426,15 @@ ssize_t QuicBase::window(uint64_t id) {
     return std::min({streamcap, globalcap, window});
 }
 
+size_t QuicBase::rlength(uint64_t id) {
+    if(id == 0) {
+        return rblen;
+    }
+    if(streammap.count(id) == 0){
+        return 0;
+    }
+    return streammap[id].rb.length();
+}
 
 bool QuicBase::idle(uint64_t id){
     if(streammap.count(id) == 0){
@@ -1570,6 +1582,57 @@ void QuicBase::keepAlive_action() {
     qos.PushFrame(ssl_encryption_application, new quic_frame{QUIC_FRAME_PING, {}});
 }
 
+void QuicBase::dump(Dumper dp, const std::string& session, void* param) {
+    dp(param, "Quic (%s): %s -> %s\nread: %zd/%zd, write: %zd/%zd my_window: %zd, his_window: %zd rlen: %zd, fullq: %zd\n",
+       session.c_str(),
+       dumpHex(myids[myid_idx].c_str(), myids[myid_idx].length()).c_str(),
+       dumpHex(hisids[hisid_idx].c_str(), hisids[hisid_idx].length()).c_str(),
+       my_received_data, my_received_data_total,
+       my_sent_data, my_sent_data_total,
+       my_max_data - my_received_data,
+       his_max_data - my_sent_data,
+       rblen, fullq.size());
+    for(auto& entry: streammap){
+        auto& status = entry.second;
+        dp(param, "  0x%lx: rlen: %zd-%zd, rcap: %zd, my_window: %zd, his_window: %zd, flags: 0x%08x\n",
+           entry.first, status.rb.Offset(), status.rb.Offset() + status.rb.length(),
+           status.rb.cap() + status.rb.length() + status.rb.Offset() - status.my_max_data,
+           status.my_max_data - status.his_offset, status.his_max_data - status.my_offset, status.flags);
+    }
+}
+
+size_t QuicBase::mem_usage() {
+    size_t usage = sizeof(*this) + qos.mem_usage();
+    for(const auto& context : contexts){
+        for(const auto& frame : context.recvq.data){
+            usage += frame_size(frame);
+        }
+    }
+    usage += myids.size() * sizeof(std::string);
+    for(const auto& id: myids) {
+        usage += id.capacity();
+    }
+    usage += hisids.size() * sizeof(std::string);
+    for(const auto& id: hisids) {
+        usage += id.capacity();
+    }
+    usage += histoken.size() * sizeof(std::string);
+    for(const auto& token: histoken) {
+        usage += token.capacity();
+    }
+    usage += initToken.length() + originDcid.length();
+    for(const auto& i : streammap) {
+        usage += sizeof(i.first) + sizeof(i.second);
+        usage += i.second.rb.cap() + i.second.rb.length();
+    }
+    usage += fullq.size() * sizeof(quic_frame*);
+    for(const auto& frame: fullq) {
+        usage += frame_size(frame);
+    }
+    return usage;
+}
+
+
 QuicRWer::QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
                    std::function<void(int, int)> errorCB):
         QuicBase(hostname), SocketRWer(hostname, port, protocol, std::move(errorCB))
@@ -1626,9 +1689,6 @@ void QuicRWer::onWrite(uint64_t id) {
     writeCB(id);
 }
 
-void QuicRWer::onReset(uint64_t id, uint32_t error) {
-    resetHandler(id, error);
-}
 
 void QuicRWer::onCidChange(const std::string &cid, bool retired) {
     if (retired) {
@@ -1676,11 +1736,6 @@ void QuicRWer::ReadData() {
     walkPackets(iov.data(), ret);
 }
 
-void QuicRWer::setResetHandler(std::function<void(uint64_t, uint32_t)> func) {
-    resetHandler = std::move(func);
-}
-
-
 void QuicRWer::buffer_insert(Buffer&& bb) {
     if(stats == RWerStats::Error){
         return;
@@ -1697,13 +1752,7 @@ void QuicRWer::ConsumeRData(uint64_t id) {
 
 
 size_t QuicRWer::rlength(uint64_t id) {
-    if(id == 0) {
-        return rblen;
-    }
-    if(streammap.count(id) == 0){
-        return 0;
-    }
-    return streammap[id].rb.length();
+    return QuicBase::rlength(id);
 }
 
 void QuicRWer::waitconnectHE(RW_EVENT events) {
@@ -1766,51 +1815,85 @@ QuicRWer::~QuicRWer() {
 }
 
 void QuicRWer::dump_status(Dumper dp, void *param) {
-    dp(param, "QuicRWer <%d> (%s): %s -> %s\nread: %zd/%zd, write: %zd/%zd my_window: %zd, his_window: %zd rlen: %zd, fullq: %zd\n",
-       getFd(), getPeer(),
-       dumpHex(myids[myid_idx].c_str(), myids[myid_idx].length()).c_str(),
-       dumpHex(hisids[hisid_idx].c_str(), hisids[hisid_idx].length()).c_str(),
-       my_received_data, my_received_data_total,
-       my_sent_data, my_sent_data_total,
-       my_max_data - my_received_data,
-       his_max_data - my_sent_data,
-       rblen, fullq.size());
-    for(auto& entry: streammap){
-        auto& status = entry.second;
-        dp(param, "  0x%lx: rlen: %zd-%zd, rcap: %zd, my_window: %zd, his_window: %zd, flags: 0x%08x\n",
-           entry.first, status.rb.Offset(), status.rb.Offset() + status.rb.length(),
-           status.rb.cap() + status.rb.length() + status.rb.Offset() - status.my_max_data,
-           status.my_max_data - status.his_offset, status.his_max_data - status.my_offset, status.flags);
-    }
+    char session[128];
+    snprintf(session, sizeof(session), "%s [%d]", getPeer(), getFd());
+    return dump(dp, session, param);
 }
 
 size_t QuicRWer::mem_usage() {
-    size_t usage = sizeof(*this) + sizeof(Quic_server) + qos.mem_usage();
-    for(const auto& context : contexts){
-        for(const auto& frame : context.recvq.data){
-            usage += frame_size(frame);
+    return QuicBase::mem_usage() + sizeof(*this);
+}
+
+QuicMer::QuicMer(SSL_CTX *ctx, const char *pname,
+                 std::function<int(Buffer &&)> read_cb, std::function<ssize_t()> cap_cb):
+        QuicBase(ctx), MemRWer(pname, std::move(read_cb), std::move(cap_cb))
+{
+}
+
+size_t QuicMer::getWritableSize() {
+    return cap_cb();
+}
+
+ssize_t QuicMer::writem(const struct iovec *iov, int iovcnt) {
+    for (int i = 0; i < iovcnt; i++) {
+        if(read_cb(Buffer{iov[i].iov_base, (size_t)iov[i].iov_len}) < 0){
+            return i;
         }
     }
-    usage += myids.size() * sizeof(std::string);
-    for(const auto& id: myids) {
-        usage += id.length();
-    }
-    usage += hisids.size() * sizeof(std::string);
-    for(const auto& id: hisids) {
-        usage += id.length();
-    }
-    usage += histoken.size() * sizeof(std::string);
-    for(const auto& token: histoken) {
-        usage += token.length();
-    }
-    usage += initToken.length() + originDcid.length();
-    for(const auto& i : streammap) {
-        usage += sizeof(i.first) + sizeof(i.second);
-        usage += i.second.rb.cap() + i.second.rb.length();
-    }
-    usage += fullq.size() * sizeof(quic_frame*);
-    for(const auto& frame: fullq) {
-        usage += frame_size(frame);
-    }
-    return usage;
+    return iovcnt;
 }
+
+void QuicMer::onConnected() {
+    connected({});
+}
+
+void QuicMer::onError(int type, int code) {
+    if (type == PROTOCOL_ERR && code == QUIC_CONNECTION_CLOSED) {
+        closeCB();
+    } else {
+        errorCB(type, code);
+    }
+}
+
+size_t QuicMer::onRead(const Buffer &bb) {
+    return readCB(bb);
+}
+
+void QuicMer::onWrite(uint64_t id) {
+    return writeCB(id);
+}
+
+void QuicMer::defaultHE(RW_EVENT events) {
+    if (!!(events & RW_EVENT::ERROR)) {
+        ErrorHE(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
+        return;
+    }
+    setEvents(RW_EVENT::NONE);
+}
+
+void QuicMer::push(const Buffer &bb) {
+    walkPacket(bb.data(), bb.len);
+    if(!isClosing) {
+        reorderData();
+        sinkData(0);
+    }
+}
+
+void QuicMer::buffer_insert(Buffer &&bb) {
+    if(stats == RWerStats::Error){
+        return;
+    }
+    sendData(std::move(bb));
+}
+
+bool QuicMer::IsConnected() {
+    return sslStats == SslStats::Established;
+}
+
+void QuicMer::ConsumeRData(uint64_t id) {
+    if (stats == RWerStats::Error) {
+        return;
+    }
+    sinkData(id);
+}
+

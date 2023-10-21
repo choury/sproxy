@@ -15,7 +15,15 @@ add_subdirectory(misc)
 add_subdirectory(req)
 add_subdirectory(res)
 
-set(SPROXY_LIBS  req res prot misc ${OPENSSL_LIBRARIES} dl Threads::Threads)
+if(APPLE)
+    set(SPROXY_LIBS prot req res misc ${OPENSSL_LIBRARIES} dl Threads::Threads)
+else()
+    set(SPROXY_LIBS
+        -Wl,--start-group
+        prot req res misc
+        -Wl,--end-group
+        ${OPENSSL_LIBRARIES} dl Threads::Threads)
+endif()
 if(Backtrace_FOUND)
     include_directories(${Backtrace_INCLUDE_DIRS})
     set(SPROXY_LIBS ${SPROXY_LIBS} ${Backtrace_LIBRARIES})

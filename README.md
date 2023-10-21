@@ -13,5 +13,6 @@ build
 TODO
 ======
 - [ ] 支持动态生成pac文件
-- [x] 写一个客户端，用来做些运维操作
-- [ ] 支持quic协议(doing)
+- [x] 支持quic协议
+- [ ] 支持http3的sni功能
+- [ ] 支持quic bbr 拥塞算法

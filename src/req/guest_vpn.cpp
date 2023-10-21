@@ -1,6 +1,7 @@
 #include "guest_vpn.h"
 #include "guest.h"
 #include "guest_sni.h"
+#include "guest3.h"
 #include "res/fdns.h"
 #include "prot/tls.h"
 #include "prot/sslio.h"
@@ -388,6 +389,12 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                                                     [this, id]{return rwer->cap(id);});
             FDns::GetInstance()->query(mrwer);
             status.rwer = mrwer;
+        } else if (dport == HTTPSPORT) {
+            auto ctx = initssl(1, status.host.c_str());
+            auto wrwer = std::make_shared<QuicMer>(ctx, storage_ntoa(&src),
+                                                   std::bind(&Guest_vpn::mread, this, id, _1), [this, id]{return rwer->cap(id);});
+            status.rwer = wrwer;
+            new Guest3(wrwer);
         } else {
             //create a http proxy request
             int headlen = sprintf(buff, "CONNECT %s" CRLF "Protocol: udp" CRLF CRLF,

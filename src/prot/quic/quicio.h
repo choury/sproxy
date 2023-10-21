@@ -6,6 +6,7 @@
 #define SPROXY_QUICIO_H
 
 #include "prot/netio.h"
+#include "prot/memio.h"
 #include "quic_pack.h"
 #include "quic_qos.h"
 #include <openssl/ssl.h>
@@ -145,7 +146,7 @@ protected:
     std::list<quic_frame*> fullq;
 
     uint64_t max_idle_timeout = 120000;
-    uint64_t his_max_payload_size = 65527;
+    uint64_t his_max_payload_size = 1200;
     uint64_t his_max_data = 0;
     uint64_t his_max_stream_data_bidi_local = 0;
     uint64_t his_max_stream_data_bidi_remote = 0;
@@ -158,7 +159,7 @@ protected:
     uint64_t my_sent_data_total = 0;
     uint64_t my_received_data = 0;
     uint64_t my_received_data_total = 0;
-    uint64_t my_max_payload_size = max_datagram_size;
+    uint64_t my_max_payload_size = 1400;
     uint64_t my_max_data = MAX_BUF_LEN;
     uint64_t my_max_stream_data_bidi_local = BUF_LEN;
     uint64_t my_max_stream_data_bidi_remote = BUF_LEN;
@@ -215,12 +216,13 @@ protected:
     void disconnect_action();
     Job close_timer = nullptr;
 
+    std::function<void(uint64_t id, uint32_t error)> resetHandler = [](uint64_t, uint32_t){};
+
     virtual size_t getWritableSize() = 0;
     virtual ssize_t writem(const struct iovec *iov, int iovcnt) = 0;
     virtual void onError(int type, int code) = 0;
     virtual size_t onRead(const Buffer& bb) = 0;
     virtual void onWrite(uint64_t id) = 0;
-    virtual void onReset(uint64_t id, uint32_t error) = 0;
     virtual void onConnected() = 0;
     virtual void onCidChange(const std::string& /*cid*/, bool /*retired*/) {}
 public:
@@ -242,14 +244,18 @@ public:
     void walkPackets(const iovec* iov, int iovcnt);
     void sendData(Buffer&& bb);
     void reset(uint64_t id, uint32_t code);
+    void setResetHandler(std::function<void(uint64_t id, uint32_t error)> func);
     void close();
 
     bool idle(uint64_t id);
     ssize_t window(uint64_t id);
+    size_t rlength(uint64_t id);
     void getAlpn(const unsigned char **s, unsigned int * len);
     int setAlpn(const unsigned char *s, unsigned int len);
     uint64_t createBiStream();
     uint64_t createUbiStream();
+    void dump(Dumper dp,const std::string& session, void* param);
+    size_t mem_usage();
 };
 
 class QuicRWer: public QuicBase, public SocketRWer {
@@ -263,7 +269,6 @@ protected:
     virtual void onError(int type, int code) override;
     virtual size_t onRead(const Buffer& bb) override;
     virtual void onWrite(uint64_t id) override;
-    virtual void onReset(uint64_t id, uint32_t error) override;
     virtual void onCidChange(const std::string& cid, bool retired) override;
     virtual int handleRetryPacket(const quic_pkt_header* header) override;
 
@@ -274,12 +279,10 @@ protected:
     virtual size_t rlength(uint64_t id) override;
     virtual bool IsConnected() override;
 
-    std::function<void(uint64_t id, uint32_t error)> resetHandler = [](uint64_t, uint32_t){};
 public:
     explicit QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
              std::function<void(int, int)> errorCB);
     explicit QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, Quic_server* server);
-    void setResetHandler(std::function<void(uint64_t id, uint32_t error)> func);
     virtual void buffer_insert(Buffer&& bb) override;
     virtual void Close(std::function<void()> func) override;
     virtual bool idle(uint64_t id) override {
@@ -293,6 +296,27 @@ public:
 
     virtual void dump_status(Dumper dp, void* param) override;
     virtual size_t mem_usage() override;
+};
+
+class QuicMer: public QuicBase, public MemRWer {
+protected:
+    virtual size_t getWritableSize()  override;
+    virtual ssize_t writem(const struct iovec *iov, int iovcnt) override;
+    virtual void onConnected() override;
+    virtual void onError(int type, int code) override;
+    virtual size_t onRead(const Buffer& bb) override;
+    virtual void onWrite(uint64_t id) override;
+
+
+    virtual void defaultHE(RW_EVENT events) override;
+    virtual void push(const Buffer& bb) override;
+    virtual void buffer_insert(Buffer&& bb) override;
+    virtual bool IsConnected() override;
+    virtual void ConsumeRData(uint64_t) override;
+public:
+    explicit QuicMer(SSL_CTX *ctx, const char* pname,
+                     std::function<int(Buffer&&)> read_cb, std::function<ssize_t()> cap_cb);
+
 };
 
 #endif //SPROXY_QUICIO_H

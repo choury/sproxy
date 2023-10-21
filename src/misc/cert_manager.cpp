@@ -118,7 +118,7 @@ int generate_signed_key_pair(const char* domain, EVP_PKEY **key, X509 **crt) {
     /* Sign with the CA. */
     if((*crt = X509_new()) == nullptr) goto err;
 
-    ASN1_INTEGER_set(X509_get_serialNumber(*crt), (random()<<32)|random());
+    ASN1_INTEGER_set(X509_get_serialNumber(*crt), (random()<<31)|random());
     X509_set_version(*crt, 2); /* Set version to X509v3 */
     /* Set issuer to CA's subject. */
     X509_set_issuer_name(*crt, X509_get_subject_name(opt.ca.crt));

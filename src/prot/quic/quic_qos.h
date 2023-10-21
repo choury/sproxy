@@ -16,7 +16,7 @@
 #include <set>
 #include <functional>
 
-const uint64_t max_datagram_size = 1400;
+const uint64_t max_datagram_size = 1500;
 const uint64_t kInitialWindow = 14720;
 const uint64_t kMinimumWindow = 2 * max_datagram_size;
 const uint64_t kPacketThreshold = 3;
