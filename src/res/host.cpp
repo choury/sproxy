@@ -37,11 +37,6 @@ Host::Host(const Destination* dest){
         }
         rwer = srwer;
         srwer->SetConnectCB(std::bind(&Host::connected, this));
-    }else if(strcmp(dest->protocol, "udp") == 0) {
-        auto prwer = std::make_shared<PacketRWer>(dest->hostname, dest->port, Protocol::UDP,
-                              std::bind(&Host::Error, this, _1, _2));
-        rwer = prwer;
-        prwer->SetConnectCB(std::bind(&Host::connected, this));
 #ifdef HAVE_QUIC
     }else if(strcmp(dest->protocol, "quic") == 0){
         auto qrwer = std::make_shared<QuicRWer>(dest->hostname, dest->port, Protocol::QUIC,
@@ -73,11 +68,9 @@ void Host::reply(){
     if(!header->chain_proxy){
         if(header->ismethod("CONNECT")) {
             Http_Proc = &Host::AlwaysProc;
-            //udp的头部会在发送第一个包时发送
-            if(strcmp(header->Dest.protocol, "tcp") == 0) {
-                status.res = std::make_shared<HttpRes>(UnpackHttpRes(H200), [this] { rwer->Unblock(0); });
-                status.req->response(status.res);
-            }
+            assert(strcmp(header->Dest.protocol, "tcp") == 0);
+            status.res = std::make_shared<HttpRes>(UnpackHttpRes(H200), [this] { rwer->Unblock(0); });
+            status.req->response(status.res);
             goto attach;
         }
     }
@@ -253,9 +246,6 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
         LOGE("[%" PRIu32 "]: <host> the guest's write buff is full (%s)\n",
             status.req->header->request_id,
             status.req->header->geturl().c_str());
-        if(strcmp(Server.protocol, "udp") == 0){
-            return size;
-        }
         rwer->delEvents(RW_EVENT::READ);
         return -1;
     }

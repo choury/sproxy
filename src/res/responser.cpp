@@ -6,6 +6,7 @@
 #include "host.h"
 #include "file.h"
 #include "ping.h"
+#include "uhost.h"
 
 #include <regex>
 #include <string.h>
@@ -105,6 +106,9 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
             dest.port = header->getDport();
             if(strcmp(header->Dest.protocol, "icmp") == 0){
                 return (new Ping(header))->request(req, src);
+            }
+            if(strcmp(header->Dest.protocol, "udp") == 0) {
+                return (new Uhost(header))->request(req, src);
             }
             header->del("Proxy-Authorization");
             break;
