@@ -131,8 +131,11 @@ void Ping::deleteLater(uint32_t errcode) {
 }
 
 void Ping::dump_stat(Dumper dp, void* param) {
-    dp(param, "Ping %p, [%" PRIu32"], id: %d, seq: %d\n",
-       this, req->header->request_id, id, seq);
+    dp(param, "Ping %p, [%" PRIu32"]: %s %s, id: %d, seq: %d\n",
+       this, req->header->request_id,
+       req->header->method,
+       dumpAuthority(&req->header->Dest),
+       id, seq);
     rwer->dump_status(dp, param);
 }
 

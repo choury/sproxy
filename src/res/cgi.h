@@ -180,13 +180,13 @@ public:
             flag |= HTTP_REQ_COMPLETED;
             LOGD(DFILE, "<cgi> [%s] req completed: %d\n", name, req->request_id);
         }
-        if(req->ismethod("get")){
+        if(req->ismethod("GET")){
             return GET(header);
-        }else if(req->ismethod("post")){
+        }else if(req->ismethod("POST")){
             return POST(header);
-        }else if(req->ismethod("delete")){
+        }else if(req->ismethod("DELETE")){
             return DELETE(header);
-        }else if(req->ismethod("put")) {
+        }else if(req->ismethod("PUT")) {
             return PUT(header);
         }
         NotImplemented();

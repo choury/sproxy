@@ -58,13 +58,6 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
 }
 
 Guest2::~Guest2() {
-    for(auto& i: statusmap){
-        if((i.second.flags & HTTP_CLOSED_F) == 0) {
-            i.second.req->send(ChannelMessage::CHANNEL_ABORT);
-        }
-        i.second.flags |= HTTP_CLOSED_F;
-    }
-    statusmap.clear();
 }
 
 void Guest2::Error(int ret, int code){
@@ -329,6 +322,13 @@ void Guest2::deleteLater(uint32_t errcode){
     if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){
         Goaway(recvid, errcode & ERROR_MASK);
     }
+    for(auto& i: statusmap){
+        if((i.second.flags & HTTP_CLOSED_F) == 0) {
+            i.second.req->send(ChannelMessage::CHANNEL_ABORT);
+        }
+        i.second.flags |= HTTP_CLOSED_F;
+    }
+    statusmap.clear();
     return Server::deleteLater(errcode);
 }
 

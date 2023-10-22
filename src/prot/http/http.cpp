@@ -284,7 +284,7 @@ size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t 
         AppendHeaders.emplace_back(p->arg);
     }
     size_t len = 0;
-    if (req->ismethod("CONNECT")|| req->ismethod("SEND")){
+    if (req->ismethod("CONNECT")){
         assert(req->chain_proxy);
         len += snprintf(buff, size, "%s %s:%d HTTP/1.1" CRLF, method, req->Dest.hostname, req->Dest.port);
     }else if(req->chain_proxy){

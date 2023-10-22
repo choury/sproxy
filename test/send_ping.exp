@@ -1,16 +1,34 @@
 connect 127.0.0.1 PORT
-send ping icmp.localhost.choury.com\r\n\r\n
+send PING icmp.localhost.choury.com:1234\r\n\r\n
 send abcd\n
 read head
 read line
+close
+echo \n
+
+connect 127.0.0.1 PORT
+send CONNECT icmp.localhost.choury.com:1234\r\nProtocol: icmp\r\n\r\n
 send 1234\n
+read head
+read line
+send abcd\n
 read line
 close
 echo \n
+
+
 connect 127.0.0.1 PORT
-send send test.localhost.choury.com:4444\r\n\r\n
+send SEND test.localhost.choury.com:4444\r\n\r\n
 send abcd
 read head
 read line
+echo \n
+
+connect 127.0.0.1 PORT
+send CONNECT test.localhost.choury.com:4445\r\nProtocol: udp\r\n\r\n
 send dddb\n
+read head
+read line
+send abcd
+read line
 exit

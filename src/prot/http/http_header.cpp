@@ -85,93 +85,6 @@ size_t HttpHeader::mem_usage() {
     return usage;
 }
 
-/*
-HttpReqHeader::HttpReqHeader(const char* header, size_t len) {
-    assert(header);
-    assert(len < HEADLENLIMIT);
-    char httpheader[HEADLENLIMIT];
-    memcpy(httpheader, header, len);
-    *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
-    char url[URLLIMIT] = {0};
-    sscanf(httpheader, "%19s%*[ ]%4095[^\r\n ]", method, url);
-    toUpper(method);
-
-    memset(&Dest, 0, sizeof(Dest));
-    if (spliturl(url, &Dest, path)) {
-        LOGE("wrong url format:%s\n", url);
-        throw PROTOCOL_ERR;
-    }
-    for (char* str = strstr(httpheader, CRLF) + strlen(CRLF); ; str = nullptr) {
-        char* p = strtok(str, CRLF);
-
-        if (p == nullptr)
-            break;
-
-        char* sp = strpbrk(p, ":");
-        if (sp == nullptr) {
-            //tolerate malformed header here for obfuscation
-            break;
-        }
-        string name = toLower(string(p, sp-p));
-        if(name == "cookie"){
-            char *cp = sp +1;
-            for(char *p = strsep(&cp, ";");p;
-                p = strsep(&cp, ";"))
-            {
-                cookies.insert(ltrim(string(p)));
-            }
-        }else{
-            set(name, ltrim(string(sp + 1)));
-        }
-    }
-    
-    
-    if (!Dest.hostname[0] && get("Host")) {
-        if(spliturl(get("Host"), &Dest, nullptr))
-        {
-            LOGE("wrong host format:%s\n", get("Host"));
-            throw PROTOCOL_ERR;
-        }
-    }
-    postparse();
-}
-
-HttpReqHeader::HttpReqHeader(const CGI_Header *headers) {
-    if(headers->type != CGI_REQUEST)
-    {
-        LOGE("wrong CGI header");
-        throw HTTP2_ERR_PROTOCOL_ERROR;
-    }
-    request_id = ntohl(headers->requestId);
-    memset(&Dest, 0, sizeof(Dest));
-    char *p = (char *)(headers +1);
-    uint32_t len = ntohs(headers->contentLength);
-    while(uint32_t(p - (char *)(headers +1)) < len){
-        string name, value;
-        p = cgi_getnv(p, name, value);
-        if(name == ":method"){
-            strcpy(method, value.c_str());
-            continue;
-        }
-        if(name == ":path"){
-            strcpy(path, value.c_str());
-            continue;
-        }
-        if(name == ":authority"){
-            strcpy(Dest.hostname, value.c_str());
-            continue;
-        }
-        if(name == "cookie"){
-            cookies.insert(value);
-            continue;
-        }
-        set(name, value);
-    }
-    postparse();
-}
- */
-
-
 HttpReqHeader::HttpReqHeader(HeaderMap&& headers) {
     for(const auto& i: headers){
         if(toLower(i.first) == "cookie"){
@@ -224,10 +137,7 @@ bool HttpReqHeader::http_method() const {
 }
 
 bool HttpReqHeader::valid_method() const {
-    return http_method() ||
-        ismethod("CONNECT") ||
-        ismethod("SEND") ||
-        ismethod("PING");
+    return http_method() || ismethod("CONNECT");
 }
 
 void HttpReqHeader::postparse() {
@@ -268,18 +178,23 @@ void HttpReqHeader::postparse() {
         }
     }else if(ismethod("CONNECT")){
         Dest.scheme[0] = 0;
-        strcpy(Dest.protocol, "tcp");
+        if(!Dest.protocol[0]) {
+            strcpy(Dest.protocol, "tcp");
+        }
+    // keep SEND and Ping method for compatibility
     }else if(ismethod("SEND")){
+        strcpy(method, "CONNECT");
         Dest.scheme[0] = 0;
         strcpy(Dest.protocol, "udp");
     }else if(ismethod("PING")) {
+        strcpy(method, "CONNECT");
         Dest.scheme[0] = 0;
         strcpy(Dest.protocol, "icmp");
     }
 }
 
 uint16_t HttpReqHeader::getDport() const {
-    if(Dest.port || ismethod("CONNECT") || ismethod("SEND") || ismethod("PING")){
+    if(Dest.port || ismethod("CONNECT")){
         //这些方法必须指定端口，否则无法解析
         return Dest.port;
     }
@@ -305,126 +220,8 @@ std::string HttpReqHeader::geturl() const {
 
 
 bool HttpReqHeader::ismethod(const char* method) const{
-    return strcasecmp(this->method, method) == 0;
+    return strcmp(this->method, method) == 0;
 }
-
-/*
-char *HttpReqHeader::getstring(size_t &len) const{
-    char *buff = nullptr;
-    len = 0;
-    if(!should_proxy && (ismethod("CONNECT")|| ismethod("SEND"))){
-        //本地请求，自己处理connect和send方法
-        return (char *)p_malloc(0);
-    }
-    std::list<string> AppendHeaders;
-    char method[20];
-    if(opt.alter_method){
-        strcpy(method, "GET");
-        AppendHeaders.push_back(string(AlterMethod)+": " + this->method);
-    }else{
-        strcpy(method, this->method);
-    }
-    for(auto p = opt.request_headers.next; p != nullptr; p = p->next){
-        AppendHeaders.push_back(p->arg);
-    }
-    if(should_proxy){
-        if (ismethod("CONNECT")|| ismethod("SEND")){
-            buff= (char *)p_malloc(BUF_LEN);
-            len += sprintf(buff, "%s %s:%d HTTP/1.1" CRLF, method, Dest.hostname, Dest.port);
-        }else{
-            buff= (char *)p_malloc(BUF_LEN);
-            len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, geturl().c_str());
-        }
-    }else{
-        buff= (char *)p_malloc(BUF_LEN);
-        len += sprintf(buff, "%s %s HTTP/1.1" CRLF, method, path);
-    }
-    
-    if(get("Host") == nullptr && Dest.hostname[0]){
-        if(Dest.port == HTTPPORT){
-            len += sprintf(buff + len, "Host: %s" CRLF, Dest.hostname);
-        }else{
-            char host_buff[DOMAINLIMIT+20];
-            snprintf(host_buff, sizeof(host_buff), "%s:%d", Dest.hostname, Dest.port);
-            len += sprintf(buff + len, "Host: %s" CRLF, host_buff);
-        }
-    }
-
-    for (const auto& i : headers) {
-        len += sprintf(buff + len, "%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
-    }
-    if(!cookies.empty()){
-        string cookie_str;
-        for(const auto& i : cookies){
-            cookie_str += "; ";
-            cookie_str += i;
-        }
-        len += sprintf(buff + len, "Cookie: %s" CRLF, 
-                cookie_str.substr(2).c_str());
-    }
-
-    for(const auto& i: AppendHeaders){
-        len += sprintf(buff + len, "%s" CRLF, i.c_str());
-    }
-
-    len += sprintf(buff + len, CRLF);
-    assert(len < BUF_LEN);
-    return buff;
-}
-
-Http2_header *HttpReqHeader::getframe(Hpack_encoder *hpack_encoder, uint32_t http_id) const{
-    Http2_header* const header = (Http2_header *)p_malloc(BUF_LEN);
-    memset(header, 0, sizeof(*header));
-    header->type = HTTP2_STREAM_HEADERS;
-    header->flags = END_HEADERS_F;
-    set32(header->id, http_id);
-
-    unsigned char *p = (unsigned char *)(header + 1);
-    p += hpack_encoder->encode(p, ":method", method);
-    if(get("host") && !ismethod("CONNECT") && !ismethod("SEND")){
-        p += hpack_encoder->encode(p, ":authority", get("host"));
-    }else{
-        char authority[URLLIMIT];
-        snprintf(authority, sizeof(authority), "%s:%d", Dest.hostname, Dest.port);
-        p += hpack_encoder->encode(p, ":authority", authority);
-    }
-    
-    if(!ismethod("CONNECT") && !ismethod("SEND") && !ismethod("PING")){
-        p += hpack_encoder->encode(p, ":scheme", Dest.scheme[0] ? Dest.scheme : "http");
-        p += hpack_encoder->encode(p, ":path", path);
-    }
-    for(const auto& i: cookies){
-        p += hpack_encoder->encode(p, "cookie", i.c_str());
-    }
-
-    p += hpack_encoder->encode(p, headers);
-    set24(header->length, p-(unsigned char *)(header + 1));
-    assert(get24(header->length) < BUF_LEN);
-    return header;
-}
-
-
-CGI_Header *HttpReqHeader::getcgi() const{
-    CGI_Header* const cgi = (CGI_Header *)p_malloc(BUF_LEN);
-    cgi->type = CGI_REQUEST;
-    cgi->flag = 0;
-    cgi->requestId = htonl(request_id);
-    
-    char *p = (char *)(cgi + 1);
-    p = cgi_addnv(p, ":method", method);
-    p = cgi_addnv(p, ":path", path);
-    p = cgi_addnv(p, ":authority", Dest.hostname);
-    for(const auto& i: headers){
-        p = cgi_addnv(p, i.first, i.second);
-    }
-    for(const auto& i: cookies){
-        p = cgi_addnv(p, "cookie", i);
-    }
-    cgi->contentLength = htons(p - (char *)(cgi + 1));
-    assert(ntohs(cgi->contentLength) < BUF_LEN);
-    return cgi;
-}
- */
 
 bool HttpReqHeader::no_body() const {
     if(get("Upgrade")){
@@ -436,9 +233,7 @@ bool HttpReqHeader::no_body() const {
     if(get("Content-Length")){
         return strcmp("0", get("Content-Length")) == 0;
     }
-    return !(ismethod("CONNECT") ||
-    ismethod("SEND") ||
-    ismethod("PING"));
+    return !ismethod("CONNECT");
 }
 
 bool HttpReqHeader::no_end() const {
@@ -462,7 +257,7 @@ std::multimap<std::string, std::string> HttpReqHeader::Normalize() const {
         normalization.emplace(":protocol", Dest.protocol);
     }
 
-    if(!ismethod("CONNECT") && !ismethod("SEND") && !ismethod("PING")){
+    if(!ismethod("CONNECT")){
         normalization.emplace(":scheme", Dest.scheme[0] ? Dest.scheme : "http");
         normalization.emplace(":path", path);
     }
@@ -510,67 +305,6 @@ size_t HttpReqHeader::mem_usage() {
     return HttpHeader::mem_usage() + sizeof(*this) + ranges.size() * sizeof(Range);
 }
 
-/*
-HttpResHeader::HttpResHeader(const char* header, size_t len) {
-    assert(header);
-    if(len == 0){
-        //add one for \0
-        len = strlen(header) + 1;
-    }
-    char httpheader[HEADLENLIMIT];
-    memcpy(httpheader, header, len);
-    *(strstr((char *)httpheader, CRLF CRLF) + strlen(CRLF)) = 0;
-    memset(status, 0, sizeof(status));
-    sscanf((char *)httpheader, "%*s%*[ ]%99[^\r\n]", status);
-
-    for (char* str = strstr((char *)httpheader, CRLF)+strlen(CRLF); ; str = nullptr) {
-        char* p = strtok(str, CRLF);
-
-        if (p == nullptr)
-            break;
-
-        char* sp = strpbrk(p, ":");
-        if (sp == nullptr) {
-            LOGE("wrong header format:%s\n", p);
-            throw PROTOCOL_ERR;
-        }
-        string name = toLower(string(p, sp-p));
-        string value = ltrim(string(sp + 1));
-        if(name == "set-cookie"){
-            cookies.insert(value);
-        }else{
-            set(name, value);
-        }
-    }
-}
-
-HttpResHeader::HttpResHeader(const CGI_Header* headers)
-{
-    if(headers->type != CGI_RESPONSE)
-    {
-        LOGE("wrong CGI header");
-        throw HTTP2_ERR_PROTOCOL_ERROR;
-    }
-    request_id = ntohl(headers->requestId);
-    char *p = (char *)(headers +1);
-    uint32_t len = ntohs(headers->contentLength);
-    while(uint32_t(p - (char *)(headers +1)) < len){
-        string name, value;
-        p = cgi_getnv(p, name, value);
-        if(name == ":status"){
-            strcpy(status, value.c_str());
-            continue;
-        }
-        if(name == "set-cookie"){
-            cookies.insert(value);
-            continue;
-        }
-        set(name, value);
-   }
-}
- */
-
-
 HttpResHeader::HttpResHeader(HeaderMap&& headers) {
     for(const auto& i: headers){
         if(toLower(i.first) == "set-cookie"){
@@ -616,69 +350,6 @@ bool HttpResHeader::no_end() const {
     }
     return true;
 }
-
-/*
-char* HttpResHeader::getstring(size_t &len) const{
-    char* const buff = (char *)p_malloc(BUF_LEN);
-    len = 0;
-    if(get("Content-Length") || get("Transfer-Encoding") || no_body() || get("Upgrade")){
-        len += sprintf(buff, "HTTP/1.1 %s" CRLF, status);
-    }else {
-        len += sprintf(buff, "HTTP/1.0 %s" CRLF, status);
-    }
-    for (const auto& i : headers) {
-        len += sprintf(buff + len, "%s: %s" CRLF,
-                toUpHeader(i.first).c_str(), i.second.c_str());
-    }
-    for (const auto& i : cookies) {
-        len += sprintf(buff + len, "Set-Cookie: %s" CRLF, i.c_str());
-    }
-
-    len += sprintf(buff + len, CRLF);
-    assert(len < BUF_LEN);
-    return buff;
-}
-
-Http2_header *HttpResHeader::getframe(Hpack_encoder* hpack_encoder, uint32_t http_id) const{
-    Http2_header* const header = (Http2_header *)p_malloc(BUF_LEN);
-    memset(header, 0, sizeof(*header));
-    header->type = HTTP2_STREAM_HEADERS;
-    header->flags = END_HEADERS_F;
-    set32(header->id, http_id);
-
-    unsigned char *p = (unsigned char *)(header + 1);
-    char status_h2[100];
-    sscanf(status,"%99s",status_h2);
-    p += hpack_encoder->encode(p, ":status", status_h2);
-    for (const auto& i : cookies) {
-        p += hpack_encoder->encode(p, "set-cookie", i.c_str());
-    }
-    p += hpack_encoder->encode(p, headers);
-    
-    set24(header->length, p-(unsigned char *)(header + 1));
-    assert(get24(header->length) < BUF_LEN);
-    return header;
-}
-
-CGI_Header *HttpResHeader::getcgi() const{
-    CGI_Header* const cgi = (CGI_Header *)p_malloc(BUF_LEN);
-    cgi->type = CGI_RESPONSE;
-    cgi->flag = 0;
-    cgi->requestId = htonl(request_id);
-    
-    char *p = (char *)(cgi + 1);
-    p = cgi_addnv(p, ":status", status);
-    for(const auto& i: headers){
-        p = cgi_addnv(p, i.first, i.second);
-    }
-    for(const auto& i: cookies){
-        p = cgi_addnv(p, "set-cookie", i);
-    }
-    cgi->contentLength = htons(p - (char *)(cgi + 1));
-    assert(ntohs(cgi->contentLength) < BUF_LEN);
-    return cgi;
-}
-*/
 
 std::multimap<std::string, std::string> HttpResHeader::Normalize() const {
     std::multimap<std::string, std::string> normalization;

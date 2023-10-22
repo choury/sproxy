@@ -69,13 +69,6 @@ Guest3::Guest3(std::shared_ptr<QuicRWer> qrwer): Requester(qrwer)
 }
 
 Guest3::~Guest3() {
-    for(auto& i: statusmap){
-        if((i.second.flags & HTTP_CLOSED_F) == 0) {
-            i.second.req->send(ChannelMessage::CHANNEL_ABORT);
-        }
-        i.second.flags |= HTTP_CLOSED_F;
-    }
-    statusmap.clear();
 }
 
 void Guest3::AddInitData(const void *buff, size_t len) {
@@ -275,6 +268,13 @@ void Guest3::deleteLater(uint32_t errcode){
     if((http3_flag & HTTP3_FLAG_GOAWAYED) == 0){
         Goaway(maxDataId);
     }
+    for(auto& i: statusmap){
+        if((i.second.flags & HTTP_CLOSED_F) == 0) {
+            i.second.req->send(ChannelMessage::CHANNEL_ABORT);
+        }
+        i.second.flags |= HTTP_CLOSED_F;
+    }
+    statusmap.clear();
     return Server::deleteLater(errcode);
 }
 

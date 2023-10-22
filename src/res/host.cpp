@@ -24,12 +24,12 @@ Host::Host(const Destination* dest){
     assert(dest->protocol[0]);
     memcpy(&Server, dest, sizeof(Destination));
 
-    if(strcasecmp(dest->protocol, "tcp") == 0){
+    if(strcmp(dest->protocol, "tcp") == 0){
         auto srwer = std::make_shared<StreamRWer>(dest->hostname, dest->port, Protocol::TCP,
                               std::bind(&Host::Error, this, _1, _2));
         rwer = srwer;
         srwer->SetConnectCB(std::bind(&Host::connected, this));
-    }else if(strcasecmp(dest->protocol, "ssl") == 0 ) {
+    }else if(strcmp(dest->protocol, "ssl") == 0 ) {
         auto srwer = std::make_shared<SslRWer<StreamRWer>>(dest->hostname, dest->port, Protocol::TCP,
                                      std::bind(&Host::Error, this, _1, _2));
         if(!opt.disable_http2){
@@ -37,13 +37,13 @@ Host::Host(const Destination* dest){
         }
         rwer = srwer;
         srwer->SetConnectCB(std::bind(&Host::connected, this));
-    }else if(strcasecmp(dest->protocol, "udp") == 0) {
+    }else if(strcmp(dest->protocol, "udp") == 0) {
         auto prwer = std::make_shared<PacketRWer>(dest->hostname, dest->port, Protocol::UDP,
                               std::bind(&Host::Error, this, _1, _2));
         rwer = prwer;
         prwer->SetConnectCB(std::bind(&Host::connected, this));
 #ifdef HAVE_QUIC
-    }else if(strcasecmp(dest->protocol, "quic") == 0){
+    }else if(strcmp(dest->protocol, "quic") == 0){
         auto qrwer = std::make_shared<QuicRWer>(dest->hostname, dest->port, Protocol::QUIC,
                                      std::bind(&Host::Error, this, _1, _2));
         qrwer->setAlpn(alpn_protos_http3, sizeof(alpn_protos_http3) - 1);
@@ -69,26 +69,25 @@ void Host::reply(){
     }
     // 对于request来说，必须先调用response再调用attach，或者就直接在attach的回调中response
     // 因为attach的时候有可能触发了错误，此时response就会有问题，比如连接已经被shutdown了
-    auto req = status.req;
-    if(!req->header->chain_proxy){
-        if(req->header->ismethod("CONNECT")) {
+    auto header = status.req->header;
+    if(!header->chain_proxy){
+        if(header->ismethod("CONNECT")) {
             Http_Proc = &Host::AlwaysProc;
-            status.res = std::make_shared<HttpRes>(UnpackHttpRes(H200), [this]{ rwer->Unblock(0);});
-            req->response(status.res);
-            goto attach;
-        }else if(req->header->ismethod("SEND")){
-            Http_Proc = &Host::AlwaysProc;
-            //SEND的头部会在发送第一个包时发送
+            //udp的头部会在发送第一个包时发送
+            if(strcmp(header->Dest.protocol, "tcp") == 0) {
+                status.res = std::make_shared<HttpRes>(UnpackHttpRes(H200), [this] { rwer->Unblock(0); });
+                status.req->response(status.res);
+            }
             goto attach;
         }
     }
     {
         Buffer buff{BUF_LEN};
-        buff.truncate(PackHttpReq(req->header, buff.mutable_data(), BUF_LEN));
+        buff.truncate(PackHttpReq(header, buff.mutable_data(), BUF_LEN));
         rwer->buffer_insert(std::move(buff));
     }
 attach:
-    req->attach([this](ChannelMessage& msg){
+    status.req->attach([this](ChannelMessage& msg){
         switch(msg.type){
             case ChannelMessage::CHANNEL_MSG_HEADER:
                 LOGD(DHTTP, "<host> ignore header for req\n");
@@ -254,7 +253,7 @@ ssize_t Host::DataProc(const void* buff, size_t size) {
         LOGE("[%" PRIu32 "]: <host> the guest's write buff is full (%s)\n",
             status.req->header->request_id,
             status.req->header->geturl().c_str());
-        if(strcasecmp(Server.protocol, "udp") == 0){
+        if(strcmp(Server.protocol, "udp") == 0){
             return size;
         }
         rwer->delEvents(RW_EVENT::READ);
@@ -327,8 +326,9 @@ void Host::distribute(std::shared_ptr<HttpReq> req, const Destination* dest, Req
 void Host::dump_stat(Dumper dp, void* param) {
     dp(param, "Host %p, rx: %zd, tx: %zd\n", this, rx_bytes, tx_bytes);
     if(status.req){
-        dp(param, "  [%" PRIu32 "]: %s, flags: 0x%08x\n",
+        dp(param, "  [%" PRIu32 "]: %s %s, flags: 0x%08x\n",
                 status.req->header->request_id,
+                status.req->header->method,
                 status.req->header->geturl().c_str(),
                 status.flags);
     }

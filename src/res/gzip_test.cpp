@@ -176,7 +176,10 @@ void GzipTest::deleteLater(uint32_t error) {
 
 void GzipTest::dump_stat(Dumper dp, void *param) {
     dp(param, "GzipTest: %p left=%zu\n", this, left);
-    dp(param, "  [%" PRIu32 "]: %s\n", req->header->request_id, req->header->geturl().c_str());
+    dp(param, "  [%" PRIu32 "]: %s %s\n",
+       req->header->request_id,
+       req->header->method,
+       req->header->geturl().c_str());
 }
 
 void GzipTest::dump_usage(Dumper dp, void *param) {

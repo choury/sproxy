@@ -390,7 +390,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
             status.rwer = mrwer;
         } else {
             //create a http proxy request
-            int headlen = sprintf(buff, "SEND %s" CRLF CRLF,
+            int headlen = sprintf(buff, "CONNECT %s" CRLF "Protocol: udp" CRLF CRLF,
                                   getRdnsWithPort(pac->getdst()).c_str());
 
             std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
@@ -404,7 +404,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     }
     case IPPROTO_ICMP:{
         assert(pac->icmp->gettype() == ICMP_ECHO);
-        int headlen = sprintf(buff, "PING %s" CRLF CRLF,
+        int headlen = sprintf(buff, "CONNECT %s" CRLF "Protocol: icmp" CRLF CRLF,
                               getRdnsWithPort(pac->getdst()).c_str());
         std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
         header->set("User-Agent", generateUA(status.prog, header->request_id));
@@ -416,7 +416,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     }
     case IPPROTO_ICMPV6:{
         assert(pac->icmp6->gettype() == ICMP6_ECHO_REQUEST);
-        int headlen = sprintf(buff, "PING %s" CRLF CRLF,
+        int headlen = sprintf(buff, "CONNECT %s" CRLF "Protocol: icmp" CRLF CRLF,
                               getRdnsWithPort(pac->getdst()).c_str());
         std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
         header->set("User-Agent", generateUA(status.prog, header->request_id));

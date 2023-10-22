@@ -272,8 +272,7 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
         case ChannelMessage::CHANNEL_MSG_HEADER: {
             auto header = std::dynamic_pointer_cast<HttpResHeader>(msg.header);
             HttpLog(rwer->getPeer(), status.req->header, header);
-            if (status.req->header->ismethod("CONNECT") ||
-                status.req->header->ismethod("SEND")) {
+            if (status.req->header->ismethod("CONNECT")) {
                 if (memcmp(header->status, "200", 3) == 0) {
                     strcpy(header->status, "200 Connection established");
                     header->del("Transfer-Encoding");

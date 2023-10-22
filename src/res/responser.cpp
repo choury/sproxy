@@ -27,7 +27,7 @@ static CheckResult check_header(std::shared_ptr<HttpReqHeader> req, Requester* s
     if(req->get("via") && strstr(req->get("via"), "sproxy")){
         return CheckResult::LoopBack;
     }
-    if(req->Dest.port == 0 && (req->ismethod("SEND") || req->ismethod("CONNECT"))){
+    if(req->Dest.port == 0 && req->ismethod("CONNECT")){
         return CheckResult::NoPort;
     }
 
@@ -103,7 +103,7 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
         case Strategy::direct:
             memcpy(&dest, &header->Dest, sizeof(dest));
             dest.port = header->getDport();
-            if(header->ismethod("PING")){
+            if(strcmp(header->Dest.protocol, "icmp") == 0){
                 return (new Ping(header))->request(req, src);
             }
             header->del("Proxy-Authorization");

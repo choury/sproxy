@@ -379,9 +379,10 @@ void Proxy2::dump_stat(Dumper dp, void* param) {
     dp(param, "Proxy2 %p id: %d, my_window: %d, his_window: %d\n",
             this, sendid, this->localwinsize, this->remotewinsize);
     for(auto& i: statusmap){
-        dp(param, "  0x%x [%" PRIu32 "]: %s, my_window: %d, his_window: %d, flags: 0x%08x\n",
+        dp(param, "  0x%x [%" PRIu32 "]: %s %s, my_window: %d, his_window: %d, flags: 0x%08x\n",
                 i.first,
                 i.second.req->header->request_id,
+                i.second.req->header->method,
                 i.second.req->header->geturl().c_str(),
                 i.second.localwinsize, i.second.remotewinsize,
                 i.second.flags);

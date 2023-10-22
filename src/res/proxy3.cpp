@@ -256,9 +256,10 @@ void Proxy3::dump_stat(Dumper dp, void* param) {
             this, maxDataId, ctrlid_local, ctrlid_remote,
             qpackeid_local, qpackeid_remote, qpackdid_local, qpackdid_remote);
     for(auto& i: statusmap){
-        dp(param, "  0x%lx [%" PRIu32 "]: %s, flags: 0x%08x\n",
+        dp(param, "  0x%lx [%" PRIu32 "]: %s %s, flags: 0x%08x\n",
            i.first,
            i.second.req->header->request_id,
+           i.second.req->header->method,
            i.second.req->header->geturl().c_str(),
            i.second.flags);
     }
