@@ -14,5 +14,5 @@ TODO
 ======
 - [ ] 支持动态生成pac文件
 - [x] 支持quic协议
-- [ ] 支持http3的sni功能
+- [x] 支持http3的sni功能
 - [ ] 支持quic bbr 拥塞算法

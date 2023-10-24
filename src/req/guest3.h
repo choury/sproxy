@@ -36,6 +36,7 @@ protected:
     virtual uint64_t CreateUbiStream() override;
 
     void init();
+    void connected();
     void Recv(Buffer&& bb);
     void Handle(uint64_t id, ChannelMessage::Signal s);
     void RstProc(uint64_t id, uint32_t errcode);

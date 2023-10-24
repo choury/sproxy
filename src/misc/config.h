@@ -29,7 +29,7 @@ struct DnsConfig{
 
 void getDnsConfig(struct DnsConfig* config);
 
-enum ipv6_mode{
+enum auto_mode{
     Disable = 0,
     Enable = 1,
     Auto = 2,
@@ -77,7 +77,8 @@ struct options{
     uint64_t pcap_len;
     struct Destination Server;
     char rewrite_auth[DOMAINLIMIT];
-    enum ipv6_mode ipv6_mode;
+    enum auto_mode ipv6_mode;
+    enum auto_mode mitm_mode;
     struct arg_list request_headers;
 };
 

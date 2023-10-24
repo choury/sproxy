@@ -1897,3 +1897,12 @@ void QuicMer::ConsumeRData(uint64_t id) {
     sinkData(id);
 }
 
+void QuicMer::dump_status(Dumper dp, void *param) {
+    char session[128];
+    snprintf(session, sizeof(session), "%s [%d]", getPeer(), getFd());
+    return dump(dp, session, param);
+}
+
+size_t QuicMer::mem_usage() {
+    return QuicBase::mem_usage() + sizeof(*this);
+}

@@ -250,7 +250,7 @@ void Proxy3::deleteLater(uint32_t errcode) {
 }
 
 void Proxy3::dump_stat(Dumper dp, void* param) {
-    dp(param, "Proxy3 %p data id:%" PRIx64", "
+    dp(param, "Proxy3 %p data id:%" PRIx64"\n"
             "local ctr:%" PRIx64", remote ctr:%" PRIx64", "
             "local eqpack:%" PRIx64", remote eqpack:%" PRIx64", local dqpack:%" PRIx64", remote dqpack:%" PRIx64"\n",
             this, maxDataId, ctrlid_local, ctrlid_remote,

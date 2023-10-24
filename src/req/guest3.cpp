@@ -56,33 +56,30 @@ void Guest3::init() {
     });
 }
 
+void Guest3::connected() {
+    std::shared_ptr<QuicBase> qrwer = std::dynamic_pointer_cast<QuicBase>(rwer);
+    const unsigned char *data;
+    unsigned int len;
+    qrwer->getAlpn(&data, &len);
+    if ((data && strncasecmp((const char*)data, "h3", len) != 0)) {
+        LOGE("(%s) unknown protocol: %.*s\n", rwer->getPeer(), len, data);
+        return Server::deleteLater(PROTOCOL_ERR);
+    }
+    qrwer->setResetHandler(std::bind(&Guest3::RstProc, this, _1, _2));
+    Init();
+}
+
 Guest3::Guest3(std::shared_ptr<QuicRWer> qrwer): Requester(qrwer) {
     init();
     qrwer->SetConnectCB([this, qrwer](const sockaddr_storage&){
-        const unsigned char *data;
-        unsigned int len;
-        qrwer->getAlpn(&data, &len);
-        if ((data && strncasecmp((const char*)data, "h3", len) != 0)) {
-            LOGE("(%s) unknown protocol: %.*s\n", rwer->getPeer(), len, data);
-            return Server::deleteLater(PROTOCOL_ERR);
-        }
-        qrwer->setResetHandler(std::bind(&Guest3::RstProc, this, _1, _2));
-        Init();
+        connected();
     });
 }
 
 Guest3::Guest3(std::shared_ptr<QuicMer> qrwer): Requester(qrwer) {
     init();
     qrwer->SetConnectCB([this, qrwer](const sockaddr_storage&){
-        const unsigned char *data;
-        unsigned int len;
-        qrwer->getAlpn(&data, &len);
-        if ((data && strncasecmp((const char*)data, "h3", len) != 0)) {
-            LOGE("(%s) unknown protocol: %.*s\n", rwer->getPeer(), len, data);
-            return Server::deleteLater(PROTOCOL_ERR);
-        }
-        qrwer->setResetHandler(std::bind(&Guest3::RstProc, this, _1, _2));
-        Init();
+        connected();
     });
     mitmProxy = true;
 }

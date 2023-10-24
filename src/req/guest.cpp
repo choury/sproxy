@@ -149,8 +149,9 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
         return;
     }
     if(header->ismethod("CONNECT") && header->Dest.port == HTTPSPORT) {
-        auto Stra = getstrategy(header->Dest.hostname);
-        if (Stra.s == Strategy::local || (opt.ca.key &&  mayBeBlocked(header->Dest.hostname))) {
+        bool shouldMitm = (opt.mitm_mode == Enable) ||
+                (opt.mitm_mode == Auto && opt.ca.key && mayBeBlocked(header->Dest.hostname));
+        if (shouldMitm || getstrategy(header->Dest.hostname).s == Strategy::local) {
             auto ctx = initssl(0, header->Dest.hostname);
             auto srwer = std::make_shared<SslRWer<MemRWer>>(ctx, header->Dest.hostname,
                                                             std::bind(&Guest::mread, this, header, _1),
@@ -338,7 +339,7 @@ void Guest::Recv(Buffer&& bb) {
         bb.reserve(-chunklen);
         memcpy(bb.mutable_data(), chunkbuf, chunklen);
         rwer->buffer_insert(std::move(bb));
-        rwer->buffer_insert(Buffer{CRLF, 2});
+        rwer->buffer_insert({CRLF, 2});
     }else{
         rwer->buffer_insert(std::move(bb));
     }

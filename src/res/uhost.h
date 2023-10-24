@@ -10,9 +10,12 @@ class Uhost: public Responser{
     char hostname[DOMAINLIMIT];
     uint16_t port;
     bool is_closing = false;
+    size_t rx_bytes = 0;
+    size_t tx_bytes = 0;
 public:
     Uhost(const char *host, uint16_t id);
     explicit Uhost(std::shared_ptr<HttpReqHeader> req);
+    ~Uhost() override;
     virtual void deleteLater(uint32_t errcode) override;
     virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
     virtual void dump_stat(Dumper dp, void* param) override;

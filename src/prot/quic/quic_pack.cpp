@@ -889,7 +889,7 @@ int unpack_meta(const void* data_, size_t len, quic_meta* meta){
         size_t pos = 1;
         meta->version = get32(data + pos);
         if(meta->version != QUIC_VERSION_1){
-            LOGE("unsupported version: %u\n", meta->version);
+            LOGE("unsupported version: 0x%X\n", meta->version);
             return -1;
         }
         pos += 4;

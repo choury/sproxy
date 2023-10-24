@@ -26,6 +26,7 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
                 if (bb.len == 0) {
                     return 0;
                 }
+                tx_bytes += bb.len;
                 rwer->buffer_insert(std::move(bb));
                 return 1;
             }
@@ -39,11 +40,13 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
         }, []{return BUF_LEN;});
     });
     rwer->SetReadCB([this](const Buffer& bb) -> size_t{
+        LOGD(DHTTP, "<uhost> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
         if(res == nullptr){
             res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
             req->response(this->res);
         }
-        res->send(Buffer{bb.data(), bb.len});
+        rx_bytes += bb.len;
+        res->send(bb.clone());
         return 0;
     });
 }
@@ -51,6 +54,14 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
 Uhost::Uhost(std::shared_ptr<HttpReqHeader> req):
     Uhost(req->Dest.hostname, req->Dest.port)
 {
+}
+
+Uhost::~Uhost() {
+    if(rwer){
+        LOGD(DHTTP, "<uhost> (%s) destoryed: rx:%zu, tx:%zu\n", rwer->getPeer(), rx_bytes, tx_bytes);
+    }else{
+        LOGD(DHTTP, "<uhost> null destoryed: rx:%zu, tx:%zu\n", rx_bytes, tx_bytes);
+    }
 }
 
 void Uhost::request(std::shared_ptr<HttpReq> req, Requester*) {
@@ -88,9 +99,9 @@ void Uhost::deleteLater(uint32_t errcode) {
 }
 
 void Uhost::dump_stat(Dumper dp, void* param) {
-    dp(param, "Uhost %p, [%" PRIu32"]: %s %s, host: %s, port: %d\n",
-       this, req->header->request_id,
-       req->header->method,
+    dp(param, "Uhost %p, tx:%zd, rx: %zd\n  [%" PRIu32"]: %s %s, host: %s, port: %d\n",
+       this, tx_bytes, rx_bytes,
+       req->header->request_id, req->header->method,
        dumpAuthority(&req->header->Dest),
        hostname, port);
     rwer->dump_status(dp, param);

@@ -149,6 +149,11 @@ void HttpLog(const char* src, std::shared_ptr<const HttpReqHeader> req, std::sha
         for(auto header : res->getall()){
             LOG("%s: %s\n", header.first.c_str(), header.second.c_str());
         }
+    } else if(req->ismethod("CONNECT")) {
+        LOG("%s [%" PRIu32 "] CONNECT %s [%s] %s %dms [%s]\n", src,
+            req->request_id, dumpDest(&req->Dest),
+            req->get(STRATEGY), status, res->ctime - req->ctime,
+            req->get("User-Agent"));
     } else {
         LOG("%s [%" PRIu32 "] %s %s [%s] %s %dms [%s]\n", src,
             req->request_id, req->method, req->geturl().c_str(),

@@ -104,6 +104,13 @@ void* Buffer::end() const {
     return (char*)ptr->data() + len;
 }
 
+Buffer Buffer::clone() const {
+    if(ptr == nullptr){
+        return Buffer{std::make_shared<Block>(content, len), len, id};
+    }
+    return Buffer{std::make_shared<Block>(ptr->data(), len), len, id};
+}
+
 buff_iterator WBuffer::start() {
     return write_queue.begin();
 }

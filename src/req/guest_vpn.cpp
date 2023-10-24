@@ -340,6 +340,8 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     char buff[HEADLENLIMIT];
     uint16_t dport = pac->getdport();
     auto src = pac->getsrc();
+    bool shouldMitm = (opt.mitm_mode == Enable) ||
+                      (opt.mitm_mode == Auto && opt.ca.key && mayBeBlocked(status.host.c_str()));
     switch(pac->gettype()){
     case IPPROTO_TCP:{
         if(dport == HTTPPORT) {
@@ -350,8 +352,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             trwer->sendMsg(id, TUN_MSG_SYN);
         } else if(dport == HTTPSPORT) {
-            auto stra = getstrategy(status.host.c_str());
-            if(stra.s == Strategy::local || (opt.ca.key && mayBeBlocked(status.host.c_str()))) {
+            if(shouldMitm || getstrategy(status.host.c_str()).s == Strategy::local) {
                 auto ctx = initssl(0, status.host.c_str());
                 auto wrwer = std::make_shared<SslRWer<MemRWer>>(ctx, storage_ntoa(&src),
                                                                 std::bind(&Guest_vpn::mread, this, id, _1),
@@ -390,11 +391,19 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
             FDns::GetInstance()->query(mrwer);
             status.rwer = mrwer;
         } else if (dport == HTTPSPORT) {
-            auto ctx = initssl(1, status.host.c_str());
-            auto wrwer = std::make_shared<QuicMer>(ctx, storage_ntoa(&src),
-                                                   std::bind(&Guest_vpn::mread, this, id, _1), [this, id]{return rwer->cap(id);});
-            status.rwer = wrwer;
-            new Guest3(wrwer);
+            if(shouldMitm || getstrategy(status.host.c_str()).s == Strategy::local) {
+                auto ctx = initssl(1, status.host.c_str());
+                auto wrwer = std::make_shared<QuicMer>(ctx, storage_ntoa(&src),
+                                                       std::bind(&Guest_vpn::mread, this, id, _1),
+                                                       [this, id] { return rwer->cap(id); });
+                status.rwer = wrwer;
+                new Guest3(wrwer);
+            } else {
+                status.rwer = std::make_shared<PMemRWer>(storage_ntoa(&src),
+                                                        std::bind(&Guest_vpn::mread, this, id, _1),
+                                                        [this, id]{return rwer->cap(id);});
+                new Guest_sni(status.rwer, status.host, generateUA(status.prog, 0));
+            }
         } else {
             //create a http proxy request
             int headlen = sprintf(buff, "CONNECT %s" CRLF "Protocol: udp" CRLF CRLF,

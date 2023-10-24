@@ -316,7 +316,9 @@ protected:
 public:
     explicit QuicMer(SSL_CTX *ctx, const char* pname,
                      std::function<int(Buffer&&)> read_cb, std::function<ssize_t()> cap_cb);
-
+    
+    virtual void dump_status(Dumper dp, void* param) override;
+    virtual size_t mem_usage() override;
 };
 
 #endif //SPROXY_QUICIO_H
