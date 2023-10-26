@@ -1,7 +1,9 @@
 #include "guest_vpn.h"
 #include "guest.h"
 #include "guest_sni.h"
+#ifdef HAVE_QUIC
 #include "guest3.h"
+#endif
 #include "res/fdns.h"
 #include "prot/tls.h"
 #include "prot/sslio.h"
@@ -390,6 +392,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                                                     [this, id]{return rwer->cap(id);});
             FDns::GetInstance()->query(mrwer);
             status.rwer = mrwer;
+#ifdef HAVE_QUIC
         } else if (dport == HTTPSPORT) {
             if(shouldMitm || getstrategy(status.host.c_str()).s == Strategy::local) {
                 auto ctx = initssl(1, status.host.c_str());
@@ -404,6 +407,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                                                         [this, id]{return rwer->cap(id);});
                 new Guest_sni(status.rwer, status.host, generateUA(status.prog, 0));
             }
+#endif
         } else {
             //create a http proxy request
             int headlen = sprintf(buff, "CONNECT %s" CRLF "Protocol: udp" CRLF CRLF,

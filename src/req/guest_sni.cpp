@@ -65,6 +65,7 @@ size_t Guest_sni::sniffer(const Buffer& bb) {
 }
 
 size_t Guest_sni::sniffer_quic(const Buffer& bb) {
+#ifdef HAVE_QUIC
     quic_pkt_header header;
     int body_len = unpack_meta(bb.data(), bb.len, &header);
     if (body_len < 0 || body_len > (int)bb.len) {
@@ -125,6 +126,7 @@ size_t Guest_sni::sniffer_quic(const Buffer& bb) {
         req->send(bb.clone());
     }
     rwer->SetReadCB(std::bind(&Guest_sni::ReadHE, this, _1));
+#endif
     return bb.len;
 }
 

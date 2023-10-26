@@ -345,6 +345,8 @@ void keylog_write_line(const SSL *ssl, const char *line){
     lssl = ssl;
 }
 
+#ifdef HAVE_QUIC
+
 int sign_data(EVP_PKEY* key, const void* buff, int buff_len, char** sig, unsigned int* sig_len){
     *sig_len = EVP_PKEY_size(key);
     *sig = malloc(*sig_len);
@@ -397,6 +399,8 @@ error:
     EVP_PKEY_free(ec_key);
     return -1;
 }
+
+#endif
 
 
 static const char* h3_alpn[] = {"h3", NULL};

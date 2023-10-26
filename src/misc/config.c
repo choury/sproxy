@@ -135,7 +135,9 @@ static struct option long_options[] = {
     {"pcap_len",      required_argument, NULL,  0 },
     {"port",          required_argument, NULL, 'p'},
     {"policy-file",   required_argument, NULL, 'P'},
+#ifdef HAVE_QUIC
     {"quic",          no_argument,       NULL, 'q'},
+#endif
     {"rewrite-auth",  required_argument, NULL, 'r'},
     {"root-dir",      required_argument, NULL,  0 },
     {"secret",        required_argument, NULL, 's'},

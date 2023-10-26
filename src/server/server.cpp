@@ -43,6 +43,7 @@ int main(int argc, char **argv) {
             new Http_server<Guest>(svsk_https, ctx);
         }
     }else{
+#ifdef HAVE_QUIC
         if(opt.quic_mode && opt.sni_mode) {
             int svsk_sni = ListenNet(SOCK_DGRAM, opt.CHOST, opt.CPORT);
             if (svsk_sni < 0) {
@@ -50,6 +51,9 @@ int main(int argc, char **argv) {
             }
             new Quic_sniServer(svsk_sni);
         }else if(opt.sni_mode) {
+#else
+        if(opt.sni_mode) {
+#endif
             int svsk_sni = ListenNet(SOCK_STREAM, opt.CHOST, opt.CPORT);
             if (svsk_sni < 0) {
                 return -1;
