@@ -52,8 +52,8 @@ static const char *cgi_getnv(const char* p, string& name, string& value) {
     return p + value_len;
 }
 
-static std::multimap<std::string, std::string> decode(const unsigned char *s, size_t len) {
-    std::multimap<std::string, std::string> headers;
+static HeaderMap decode(const unsigned char *s, size_t len) {
+    HeaderMap headers;
     const char* p = (const char*)s;
     while(uint32_t(p - (const char*)s) < len){
         string name, value;
@@ -349,8 +349,10 @@ void Cgi::request(std::shared_ptr<HttpReq> req, Requester* src) {
 void Cgi::dump_stat(Dumper dp, void* param){
     dp(param, "Cgi %p [%d] %s\n", this, pid, filename);
     for(const auto& i: statusmap){
-        dp(param, "  [%" PRIu32"]: %s\n",
-           i.first, i.second.req->header->geturl().c_str());
+        dp(param, "  [%" PRIu32"]: %s %s\n",
+           i.first,
+           i.second.req->header->method,
+           i.second.req->header->geturl().c_str());
     }
     rwer->dump_status(dp, param);
 }

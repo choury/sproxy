@@ -27,7 +27,7 @@
 #include <openssl/ssl.h>
 
 static char** main_argv = NULL;
-static char* ipv6_options[] = {"disable", "enable", "auto", NULL};
+static char* auto_options[] = {"disable", "enable", "auto", NULL};
 static char* server_string = NULL;
 static char* policy_file = NULL;
 static struct arg_list secrets = {NULL, NULL};
@@ -87,11 +87,13 @@ struct options opt = {
     .CPORT          = 0,
     .Server         = {
         .scheme     = {0},
+        .protocol   = {0},
         .hostname   = {0},
         .port       = 0,
     },
     .rewrite_auth   = {0},
     .ipv6_mode      = Auto,
+    .mitm_mode      = Auto,
     .request_headers = {
         .arg        = NULL,
         .next       = NULL,
@@ -123,6 +125,7 @@ static struct option long_options[] = {
     {"daemon",        no_argument,       NULL, 'D'},
     {"disable-http2", no_argument,       NULL, '1'},
     {"help",          no_argument,       NULL, 'h'},
+    {"mitm",          required_argument, NULL,  0 },
     {"index",         required_argument, NULL,  0 },
     {"insecure",      no_argument,       NULL, 'k'},
     {"interface",     required_argument, NULL, 'I'},
@@ -170,10 +173,11 @@ static struct option_detail option_detail[] = {
     {"daemon", "Run as daemon", option_bool, &opt.daemon_mode, (void*)true},
     {"disable-http2", "Use http/1.1 only", option_bool, &opt.disable_http2, (void*)true},
     {"help", "Print this usage", option_bool, NULL, NULL},
+    {"mitm", "Mitm mode for https request ([auto], enable, disable), require cakey", option_enum, &opt.mitm_mode, auto_options},
     {"index", "Index file for path (local server)", option_string, &opt.index_file, NULL},
     {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_bool, &opt.ignore_cert_error, (void*)true},
     {"interface", "Out interface (use for vpn), will skip bind if set to empty", option_string, &opt.interface, NULL},
-    {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, ipv6_options},
+    {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, auto_options},
     {"key", "Private key file name (ssl)", option_string, &opt.keyfile, NULL},
     {"pcap", "Save packets in pcap file for vpn (generated pseudo ethernet header)", option_string, &opt.pcap_file, NULL},
     {"pcap_len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
@@ -359,30 +363,33 @@ int loadproxy(const char* proxy, struct Destination* server){
     if(spliturl(proxy, server, NULL)){
         return -1;
     }
-    if(server->scheme[0] == 0){
+    const char* scheme = server->scheme;
+    if(scheme[0] == 0){
         strcpy(server->scheme, "https");
-    }
-    if(strcasecmp(server->scheme, "http") != 0
-       && strcasecmp(server->scheme, "https") != 0
+        strcpy(server->protocol, "ssl");
+    }else if(strcasecmp(scheme, "http") == 0 || strcasecmp(scheme, "tcp") == 0) {
+        strcpy(server->scheme, "http");
+        strcpy(server->protocol, "tcp");
+    }else if(strcasecmp(scheme, "https") == 0 || strcasecmp(scheme, "ssl") == 0) {
+        strcpy(server->scheme, "https");
+        strcpy(server->protocol, "ssl");
 #ifdef HAVE_QUIC
-       && strcasecmp(server->scheme, "quic") != 0)
-#else
-       )
+    }else if(strcasecmp(scheme, "quic") == 0) {
+        strcpy(server->scheme, "https");
+        strcpy(server->protocol, "quic");
 #endif
-    {
-        LOGE("unkonw scheme for server: %s\n", server->scheme);
+    }else{
+        LOGE("unkonw scheme for server: %s\n", scheme);
         return -1;
     }
-    if(server->port == 0){
-        if(strcasecmp(server->scheme, "http") == 0){
-            server->port = HTTPPORT;
-        }
-        if(strcasecmp(server->scheme, "https") == 0){
-            server->port = HTTPSPORT;
-        }
-        if(strcasecmp(server->scheme, "quic") == 0){
-            server->port = QUICPORT;
-        }
+    if(server->port != 0) {
+        return 0;
+    }
+    if(strcasecmp(server->scheme, "http") == 0){
+        server->port = HTTPPORT;
+    }
+    if(strcasecmp(server->scheme, "https") == 0){
+        server->port = HTTPSPORT;
     }
     return 0;
 }
@@ -473,20 +480,30 @@ void postConfig(){
     }else{
         opt.ipv6_enabled = opt.ipv6_mode;
     }
-    if (opt.cafile && access(opt.cafile, R_OK)){
+    if (opt.cafile && access(opt.cafile, R_OK)) {
         LOGE("access cafile %s failed: %s\n", opt.cafile, strerror(errno));
         exit(1);
     }
-    if (opt.cafile && opt.cakey && load_cert_key(opt.cafile, opt.cakey, &opt.ca)) {
-        LOGE("failed to load cafile or cakey\n");
+    if (opt.sni_mode && opt.mitm_mode == Enable) {
+        LOGE("sni and mitm can't be set at the same time\n");
         exit(1);
     }
-    if ((opt.certfile || opt.keyfile) && load_cert_key(opt.certfile, opt.keyfile, &opt.cert)) {
-        LOGE("access cert file failed: %s\n", strerror(errno));
-        exit(1);
+    if(!opt.sni_mode) {
+        if (opt.cafile && opt.cakey && load_cert_key(opt.cafile, opt.cakey, &opt.ca)) {
+            LOGE("failed to load cafile or cakey\n");
+            exit(1);
+        }
+        if ((opt.certfile || opt.keyfile) && load_cert_key(opt.certfile, opt.keyfile, &opt.cert)) {
+            LOGE("access cert file failed: %s\n", strerror(errno));
+            exit(1);
+        }
+        if (opt.quic_mode && (opt.cert.crt == NULL || opt.cert.key == NULL)) {
+            LOGE("quic mode require cert and key file\n");
+            exit(1);
+        }
     }
-    if (opt.quic_mode && (opt.cert.crt == NULL || opt.cert.key == NULL)) {
-        LOGE("quic mode require cert and key file\n");
+    if (opt.mitm_mode == Enable && opt.ca.key == NULL) {
+        LOGE("mitm mode require cakey\n");
         exit(1);
     }
     for(struct arg_list* p = secrets.next; p != NULL; p = p->next){

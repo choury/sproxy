@@ -66,11 +66,12 @@ void Proxy3::Error(int ret, int code) {
 }
 
 void Proxy3::Reset(uint64_t id, uint32_t code) {
-    return std::dynamic_pointer_cast<QuicRWer>(rwer)->Reset(id, code);
+    return std::dynamic_pointer_cast<QuicRWer>(rwer)->reset(id, code);
 }
 
 bool Proxy3::DataProc(uint64_t id, const void* data, size_t len){
-    idle_timeout = this->rwer->updatejob(idle_timeout,std::bind(&Proxy3::deleteLater, this, CONNECT_AGED), 300000);
+    idle_timeout = UpdateJob(std::move(idle_timeout),
+                             std::bind(&Proxy3::deleteLater, this, CONNECT_AGED), 300000);
     if(len == 0){
         return true;
     }
@@ -104,11 +105,11 @@ void Proxy3::PushFrame(Buffer&& bb) {
 }
 
 uint64_t Proxy3::CreateUbiStream() {
-    return std::dynamic_pointer_cast<QuicRWer>(rwer)->CreateUbiStream();
+    return std::dynamic_pointer_cast<QuicRWer>(rwer)->createUbiStream();
 }
 
 void Proxy3::request(std::shared_ptr<HttpReq> req, Requester*) {
-    uint64_t id = maxDataId = std::dynamic_pointer_cast<QuicRWer>(rwer)->CreateBiStream();
+    uint64_t id = maxDataId = std::dynamic_pointer_cast<QuicRWer>(rwer)->createBiStream();
     assert((http3_flag & HTTP3_FLAG_GOAWAYED) == 0);
     LOGD(DHTTP3, "<proxy3> request: %s [%" PRIu64"]\n", req->header->geturl().c_str(), id);
     statusmap[id] = ReqStatus{
@@ -126,7 +127,8 @@ void Proxy3::request(std::shared_ptr<HttpReq> req, Requester*) {
     p += variable_encode(p, len);
     PushFrame({buff, pre + len, id});
     req->attach([this, id](ChannelMessage& msg){
-        idle_timeout = this->rwer->updatejob(idle_timeout,std::bind(&Proxy3::deleteLater, this, CONNECT_AGED), 300000);
+        idle_timeout = UpdateJob(std::move(idle_timeout),
+                                 std::bind(&Proxy3::deleteLater, this, CONNECT_AGED), 300000);
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:
             LOGD(DHTTP3, "<proxy3> ignore header for req\n");
@@ -151,7 +153,8 @@ void Proxy3::init(std::shared_ptr<HttpReq> req) {
 }
 
 void Proxy3::ResProc(uint64_t id, std::shared_ptr<HttpResHeader> header) {
-    idle_timeout = this->rwer->updatejob(idle_timeout,std::bind(&Proxy3::deleteLater, this, CONNECT_AGED), 300000);
+    idle_timeout = UpdateJob(std::move(idle_timeout),
+                             std::bind(&Proxy3::deleteLater, this, CONNECT_AGED), 300000);
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(!header->no_body() && !header->get("Content-Length"))
@@ -233,7 +236,7 @@ void Proxy3::Clean(uint64_t id, Proxy3::ReqStatus& status, uint32_t errcode) {
 
 void Proxy3::deleteLater(uint32_t errcode) {
     http3_flag |= HTTP3_FLAG_CLEANNING;
-    rwer->deljob(&idle_timeout);
+    idle_timeout.reset(nullptr);
     responsers.erase(this);
     auto statusmapCopy = statusmap;
     for(auto& i: statusmapCopy){
@@ -247,15 +250,16 @@ void Proxy3::deleteLater(uint32_t errcode) {
 }
 
 void Proxy3::dump_stat(Dumper dp, void* param) {
-    dp(param, "Proxy3 %p data id:%" PRIx64", "
+    dp(param, "Proxy3 %p data id:%" PRIx64"\n"
             "local ctr:%" PRIx64", remote ctr:%" PRIx64", "
             "local eqpack:%" PRIx64", remote eqpack:%" PRIx64", local dqpack:%" PRIx64", remote dqpack:%" PRIx64"\n",
             this, maxDataId, ctrlid_local, ctrlid_remote,
             qpackeid_local, qpackeid_remote, qpackdid_local, qpackdid_remote);
     for(auto& i: statusmap){
-        dp(param, "  0x%lx [%" PRIu32 "]: %s, flags: 0x%08x\n",
+        dp(param, "  0x%lx [%" PRIu32 "]: %s %s, flags: 0x%08x\n",
            i.first,
            i.second.req->header->request_id,
+           i.second.req->header->method,
            i.second.req->header->geturl().c_str(),
            i.second.flags);
     }

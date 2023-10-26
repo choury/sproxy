@@ -422,7 +422,16 @@ int dumpDestToBuffer(const struct Destination* Server, char* buff, size_t buflen
 
 const char* dumpDest(const struct Destination* Server){
     static char buff[URLLIMIT];
-    dumpDestToBuffer(Server, buff, sizeof(buff));
+    uint16_t port = Server->port;
+    if(strcasecmp(Server->scheme, "http") == 0 && port == HTTPPORT){
+        port = 0;
+    }
+    if(strcasecmp(Server->scheme, "https") == 0 && port == HTTPSPORT){
+        port = 0;
+    }
+    int pos = snprintf(buff, sizeof(buff), "%s://%s", Server->protocol, Server->hostname);
+    if(port)
+        snprintf(buff + pos, sizeof(buff) - pos, ":%d", port);
     return buff;
 }
 

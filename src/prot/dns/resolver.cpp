@@ -107,7 +107,7 @@ void HostResolver::readHE(RW_EVENT events) {
         getpeername(getFd(), (sockaddr *)(&addr), &len);
         LOGE("[DNS] addr: %s\n", getaddrstring(&addr));
         flags |= GETERROR;
-        DelJob(&reply);
+        reply.reset(nullptr);
         return cb(DNS_SERVER_FAIL, this);
     }
     if(!!(events & RW_EVENT::READ)) {
@@ -148,13 +148,12 @@ void HostResolver::readHE(RW_EVENT events) {
             rcd_cache[host] = rcd;
         }
 ret:
-        DelJob(&reply);
+        reply.reset(nullptr);
         return cb(error, this);
     }
 }
 
 HostResolver::~HostResolver() {
-    DelJob(&reply);
 }
 
 
@@ -174,11 +173,11 @@ RawResolver::RawResolver(int fd,
 void RawResolver::readHE(RW_EVENT events) {
     if(!!(events & RW_EVENT::ERROR)){
         checkSocket("dns socket error");
-        DelJob(&reply);
+        reply.reset(nullptr);
         return cb(nullptr, 0, this);
     }
     if(!!(events & RW_EVENT::READ)) {
-        DelJob(&reply);
+        reply.reset(nullptr);
         char buf[BUF_SIZE];
         int ret = read(getFd(), buf, sizeof(buf));
         if(ret <= 0) {
@@ -191,7 +190,6 @@ void RawResolver::readHE(RW_EVENT events) {
 
 
 RawResolver::~RawResolver(){
-    DelJob(&reply);
 }
 
 #ifdef __ANDROID__

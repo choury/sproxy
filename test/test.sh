@@ -108,6 +108,7 @@ function test_http(){
 
 function wait_port() {
     while ! nc -z localhost $1; do
+        ps aux | grep sproxy | grep -v grep
         sleep 1
     done
 }
@@ -143,7 +144,6 @@ export ASAN_OPTIONS=malloc_context_size=50
 echo "$HOSTNAME local" > sites.list
 cat > https.conf << EOF
 port 4443
-cafile ca.crt
 cert localhost.crt
 key localhost.key 
 root-dir .
@@ -155,6 +155,7 @@ EOF
 
 ./sproxy -c https.conf --admin server_ssl.sock  >server_ssl.log 2>&1  &
 ./sproxy -c https.conf --admin server_quic.sock  --quic >server_quic.log  2>&1 &
+wait_port 4443
 
 cat > http.conf << EOF
 port 4444
@@ -166,7 +167,6 @@ debug all
 EOF
 
 ./sproxy -c http.conf  --admin server_http.sock > server_http.log 2>&1 &
-wait_port 4443
 wait_port 4444
 
 

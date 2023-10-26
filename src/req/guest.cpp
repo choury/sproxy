@@ -131,7 +131,7 @@ Guest::Guest(std::shared_ptr<RWer> rwer): Requester(rwer){
                 return deleteLater(NOERROR);
             }
         });
-        forceTls = true;
+        mitmProxy = true;
     }
     rwer->SetErrorCB(std::bind(&Guest::Error, this, _1, _2));
     rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
@@ -149,8 +149,9 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
         return;
     }
     if(header->ismethod("CONNECT") && header->Dest.port == HTTPSPORT) {
-        auto Stra = getstrategy(header->Dest.hostname);
-        if (Stra.s == Strategy::local || (opt.ca.key &&  mayBeBlocked(header->Dest.hostname))) {
+        bool shouldMitm = (opt.mitm_mode == Enable) ||
+                (opt.mitm_mode == Auto && opt.ca.key && mayBeBlocked(header->Dest.hostname));
+        if (shouldMitm || getstrategy(header->Dest.hostname).s == Strategy::local) {
             auto ctx = initssl(0, header->Dest.hostname);
             auto srwer = std::make_shared<SslRWer<MemRWer>>(ctx, header->Dest.hostname,
                                                             std::bind(&Guest::mread, this, header, _1),
@@ -161,8 +162,10 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
             return;
         }
     }
-    if(forceTls) {
+    if(mitmProxy) {
+        assert(header->http_method());
         strcpy(header->Dest.scheme, "https");
+        strcpy(header->Dest.protocol, "ssl");
     }
     LOGD(DHTTP, "<guest> ReqProc %" PRIu32 " %s\n", header->request_id, header->geturl().c_str());
     auto req = std::make_shared<HttpReq>(header,
@@ -270,8 +273,7 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
         case ChannelMessage::CHANNEL_MSG_HEADER: {
             auto header = std::dynamic_pointer_cast<HttpResHeader>(msg.header);
             HttpLog(rwer->getPeer(), status.req->header, header);
-            if (status.req->header->ismethod("CONNECT") ||
-                status.req->header->ismethod("SEND")) {
+            if (status.req->header->ismethod("CONNECT")) {
                 if (memcmp(header->status, "200", 3) == 0) {
                     strcpy(header->status, "200 Connection established");
                     header->del("Transfer-Encoding");
@@ -282,11 +284,8 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
             if(header->no_end()) {
                 status.flags |= HTTP_NOEND_F;
             }
-            if (!status.req->header->should_proxy && opt.alt_svc) {
+            if (opt.alt_svc) {
                 header->set("Alt-Svc", opt.alt_svc);
-            }
-            if(forceTls) {
-                header->del("Strict-Transport-Security");
             }
             Buffer buff{BUF_LEN};
             buff.truncate(PackHttpRes(header, buff.mutable_data(), BUF_LEN));
@@ -319,7 +318,7 @@ void Guest::Recv(Buffer&& bb) {
         }
         //如果既不是没有长度的请求，也非chunked，则无需发送额外数据来标记结束
         if(status.flags & HTTP_REQ_COMPLETED) {
-            rwer->addjob(std::bind(&Guest::deqReq, this), 0, JOB_FLAGS_AUTORELEASE);
+            AddJob(std::bind(&Guest::deqReq, this), 0, JOB_FLAGS_AUTORELEASE);
         }
         if(status.rwer && status.req && (status.flags & HTTP_CLOSED_F) == 0) {
             status.flags |= HTTP_CLOSED_F;
@@ -340,7 +339,7 @@ void Guest::Recv(Buffer&& bb) {
         bb.reserve(-chunklen);
         memcpy(bb.mutable_data(), chunkbuf, chunklen);
         rwer->buffer_insert(std::move(bb));
-        rwer->buffer_insert(Buffer{CRLF, 2});
+        rwer->buffer_insert({CRLF, 2});
     }else{
         rwer->buffer_insert(std::move(bb));
     }

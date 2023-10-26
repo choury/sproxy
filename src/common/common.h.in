@@ -247,6 +247,7 @@ int protectFd(int sockfd);
 
 struct Destination{
     char scheme[DOMAINLIMIT];
+    char protocol[DOMAINLIMIT];
     char hostname[DOMAINLIMIT];
     uint16_t port;
 };

@@ -8,6 +8,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <algorithm>
 
 #define CRLF      "\r\n"
 
@@ -94,6 +95,18 @@ struct Range{
     ssize_t end;
 };
 
+struct CaseInsensitiveCompare {
+    bool operator()(const std::string& a, const std::string& b) const {
+        std::string lowerA(a);
+        std::string lowerB(b);
+        std::transform(a.begin(), a.end(), lowerA.begin(), ::tolower);
+        std::transform(b.begin(), b.end(), lowerB.begin(), ::tolower);
+        return lowerA < lowerB;
+    }
+};
+
+typedef std::multimap<std::string, std::string, CaseInsensitiveCompare> HeaderMap;
+
 class HttpReqHeader: public HttpHeader{
     void postparse();
 public:
@@ -102,8 +115,8 @@ public:
     char path[URLLIMIT];
     std::string filename;
     std::vector<Range> ranges;
-    bool should_proxy  = false;
-    explicit HttpReqHeader(std::multimap<std::string, std::string>&& headers);
+    bool chain_proxy  = false;
+    explicit HttpReqHeader(HeaderMap&& headers);
     bool ismethod(const char* method) const;
     bool http_method() const;
     bool valid_method() const;
@@ -141,7 +154,7 @@ public:
 class HttpResHeader: public HttpHeader{
 public:
     char status[100];
-    explicit HttpResHeader(std::multimap<std::string, std::string>&& headers);
+    explicit HttpResHeader(HeaderMap&& headers);
     virtual std::multimap<std::string, std::string> Normalize() const override;
     virtual bool no_body() const override;
     virtual bool no_end() const override;

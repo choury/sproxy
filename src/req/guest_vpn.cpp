@@ -1,6 +1,7 @@
 #include "guest_vpn.h"
 #include "guest.h"
 #include "guest_sni.h"
+#include "guest3.h"
 #include "res/fdns.h"
 #include "prot/tls.h"
 #include "prot/sslio.h"
@@ -271,7 +272,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
                 LOGE("unknown response\n");
             }
             status.res->detach();
-            rwer->addjob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
+            AddJob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
             return 0;
         }
         case ChannelMessage::CHANNEL_MSG_DATA:
@@ -283,7 +284,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
                 rwer->buffer_insert({nullptr, id});
                 status.flags |= HTTP_RES_COMPLETED;
                 if(status.flags & HTTP_REQ_COMPLETED) {
-                    rwer->addjob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
+                    AddJob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
                 }
             }else{
                 LOGD(DVPN, "<guest_vpn> [%" PRIu32 "] recv data (%" PRIu64"): %zu\n",
@@ -312,7 +313,7 @@ int Guest_vpn::mread(uint64_t id, Buffer && bb) {
         rwer->buffer_insert({nullptr, id});
         status.flags |= HTTP_RES_COMPLETED;
         if(status.flags & HTTP_REQ_COMPLETED) {
-            rwer->addjob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
+            AddJob(std::bind(&Guest_vpn::Clean, this, id, status), 0, JOB_FLAGS_AUTORELEASE);
         }
         return 0;
     }
@@ -339,6 +340,8 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     char buff[HEADLENLIMIT];
     uint16_t dport = pac->getdport();
     auto src = pac->getsrc();
+    bool shouldMitm = (opt.mitm_mode == Enable) ||
+                      (opt.mitm_mode == Auto && opt.ca.key && mayBeBlocked(status.host.c_str()));
     switch(pac->gettype()){
     case IPPROTO_TCP:{
         if(dport == HTTPPORT) {
@@ -349,8 +352,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             trwer->sendMsg(id, TUN_MSG_SYN);
         } else if(dport == HTTPSPORT) {
-            auto stra = getstrategy(status.host.c_str());
-            if(stra.s == Strategy::local || (opt.ca.key && mayBeBlocked(status.host.c_str()))) {
+            if(shouldMitm || getstrategy(status.host.c_str()).s == Strategy::local) {
                 auto ctx = initssl(0, status.host.c_str());
                 auto wrwer = std::make_shared<SslRWer<MemRWer>>(ctx, storage_ntoa(&src),
                                                                 std::bind(&Guest_vpn::mread, this, id, _1),
@@ -388,9 +390,23 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                                                     [this, id]{return rwer->cap(id);});
             FDns::GetInstance()->query(mrwer);
             status.rwer = mrwer;
+        } else if (dport == HTTPSPORT) {
+            if(shouldMitm || getstrategy(status.host.c_str()).s == Strategy::local) {
+                auto ctx = initssl(1, status.host.c_str());
+                auto wrwer = std::make_shared<QuicMer>(ctx, storage_ntoa(&src),
+                                                       std::bind(&Guest_vpn::mread, this, id, _1),
+                                                       [this, id] { return rwer->cap(id); });
+                status.rwer = wrwer;
+                new Guest3(wrwer);
+            } else {
+                status.rwer = std::make_shared<PMemRWer>(storage_ntoa(&src),
+                                                        std::bind(&Guest_vpn::mread, this, id, _1),
+                                                        [this, id]{return rwer->cap(id);});
+                new Guest_sni(status.rwer, status.host, generateUA(status.prog, 0));
+            }
         } else {
             //create a http proxy request
-            int headlen = sprintf(buff, "SEND %s" CRLF CRLF,
+            int headlen = sprintf(buff, "CONNECT %s" CRLF "Protocol: udp" CRLF CRLF,
                                   getRdnsWithPort(pac->getdst()).c_str());
 
             std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
@@ -404,7 +420,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     }
     case IPPROTO_ICMP:{
         assert(pac->icmp->gettype() == ICMP_ECHO);
-        int headlen = sprintf(buff, "PING %s" CRLF CRLF,
+        int headlen = sprintf(buff, "CONNECT %s" CRLF "Protocol: icmp" CRLF CRLF,
                               getRdnsWithPort(pac->getdst()).c_str());
         std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
         header->set("User-Agent", generateUA(status.prog, header->request_id));
@@ -416,7 +432,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     }
     case IPPROTO_ICMPV6:{
         assert(pac->icmp6->gettype() == ICMP6_ECHO_REQUEST);
-        int headlen = sprintf(buff, "PING %s" CRLF CRLF,
+        int headlen = sprintf(buff, "CONNECT %s" CRLF "Protocol: icmp" CRLF CRLF,
                               getRdnsWithPort(pac->getdst()).c_str());
         std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
         header->set("User-Agent", generateUA(status.prog, header->request_id));

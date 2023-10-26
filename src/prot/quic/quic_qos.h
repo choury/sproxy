@@ -16,7 +16,7 @@
 #include <set>
 #include <functional>
 
-const uint64_t max_datagram_size = 1400;
+const uint64_t max_datagram_size = 1500;
 const uint64_t kInitialWindow = 14720;
 const uint64_t kMinimumWindow = 2 * max_datagram_size;
 const uint64_t kPacketThreshold = 3;
@@ -78,9 +78,9 @@ class QuicQos {
 
     pn_namespace* pns[3];
     bool isServer = false;
-    Job* loss_timer = nullptr;
+    Job loss_timer = nullptr;
     void OnLossDetectionTimeout(pn_namespace* ns);
-    Job* packet_tx = nullptr;
+    Job packet_tx = nullptr;
     void sendPacket();
     std::function<void(pn_namespace*, quic_frame*)> resendFrames;
 

@@ -10,7 +10,7 @@
 
 
 class RawResolver: public Ep{
-    Job* reply = nullptr;
+    Job reply = nullptr;
     std::function<void(const char*, size_t, RawResolver*)> cb = nullptr;
     void readHE(RW_EVENT events);
 public:
@@ -26,7 +26,7 @@ struct Dns_Rcd{
 };
 
 class HostResolver: public Ep{
-    Job*  reply = nullptr;
+    Job  reply = nullptr;
 #define GETARES    1
 #define GETAAAARES 2
 #define GETERROR   4

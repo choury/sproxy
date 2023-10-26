@@ -7,20 +7,8 @@
 #include <assert.h>
 #include <inttypes.h>
 
-Guest3::Guest3(std::shared_ptr<QuicRWer> qrwer): Requester(qrwer)
-{
-    qrwer->SetErrorCB(std::bind(&Guest3::Error, this, _1, _2));
-    qrwer->SetConnectCB([this, qrwer](const sockaddr_storage&){
-        const unsigned char *data;
-        unsigned int len;
-        qrwer->get_alpn(&data, &len);
-        if ((data && strncasecmp((const char*)data, "h3", len) != 0)) {
-            LOGE("(%s) unknown protocol: %.*s\n", rwer->getPeer(), len, data);
-            return Server::deleteLater(PROTOCOL_ERR);
-        }
-        qrwer->setResetHandler(std::bind(&Guest3::RstProc, this, _1, _2));
-        Init();
-    });
+void Guest3::init() {
+    rwer->SetErrorCB(std::bind(&Guest3::Error, this, _1, _2));
     rwer->SetReadCB([this](const Buffer& bb) -> size_t {
         LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", this->rwer->getPeer(), bb.id, bb.len);
         if(bb.len == 0){
@@ -68,20 +56,41 @@ Guest3::Guest3(std::shared_ptr<QuicRWer> qrwer): Requester(qrwer)
     });
 }
 
-Guest3::~Guest3() {
-    for(auto& i: statusmap){
-        if((i.second.flags & HTTP_CLOSED_F) == 0) {
-            i.second.req->send(ChannelMessage::CHANNEL_ABORT);
-        }
-        i.second.flags |= HTTP_CLOSED_F;
+void Guest3::connected() {
+    std::shared_ptr<QuicBase> qrwer = std::dynamic_pointer_cast<QuicBase>(rwer);
+    const unsigned char *data;
+    unsigned int len;
+    qrwer->getAlpn(&data, &len);
+    if ((data && strncasecmp((const char*)data, "h3", len) != 0)) {
+        LOGE("(%s) unknown protocol: %.*s\n", rwer->getPeer(), len, data);
+        return Server::deleteLater(PROTOCOL_ERR);
     }
-    statusmap.clear();
+    qrwer->setResetHandler(std::bind(&Guest3::RstProc, this, _1, _2));
+    Init();
+}
+
+Guest3::Guest3(std::shared_ptr<QuicRWer> qrwer): Requester(qrwer) {
+    init();
+    qrwer->SetConnectCB([this, qrwer](const sockaddr_storage&){
+        connected();
+    });
+}
+
+Guest3::Guest3(std::shared_ptr<QuicMer> qrwer): Requester(qrwer) {
+    init();
+    qrwer->SetConnectCB([this, qrwer](const sockaddr_storage&){
+        connected();
+    });
+    mitmProxy = true;
+}
+
+Guest3::~Guest3() {
 }
 
 void Guest3::AddInitData(const void *buff, size_t len) {
-    auto qrwer = std::dynamic_pointer_cast<QuicRWer>(rwer);
-    qrwer->walkPackets(buff, len);
-    qrwer->reorderData();
+    auto qrwer = std::dynamic_pointer_cast<QuicBase>(rwer);
+    iovec iov{(void*)buff, len};
+    qrwer->walkPackets(&iov, 1);
 }
 
 void Guest3::Error(int ret, int code){
@@ -99,7 +108,7 @@ void Guest3::Recv(Buffer&& bb){
         PushFrame({nullptr, bb.id});
         status.flags |= HTTP_RES_COMPLETED;
         if(status.flags & HTTP_REQ_COMPLETED) {
-            rwer->addjob(std::bind(&Guest3::Clean, this, bb.id, NOERROR), 0, JOB_FLAGS_AUTORELEASE);
+            AddJob(std::bind(&Guest3::Clean, this, bb.id, NOERROR), 0, JOB_FLAGS_AUTORELEASE);
         }
     }else{
         if(status.req->header->ismethod("HEAD")){
@@ -132,6 +141,9 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
         LOGD(DHTTP3, "<guest3> ReqProc dup id: %" PRIu64"\n", id);
         Reset(id, HTTP3_ERR_STREAM_CREATION_ERROR);
         return;
+    }
+    if (mitmProxy) {
+        strcpy(header->Dest.protocol, "quic");
     }
 
     statusmap[id] = ReqStatus{
@@ -186,6 +198,9 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
             HttpLog(rwer->getPeer(), status.req->header, header);
             header->del("Transfer-Encoding");
             header->del("Connection");
+            if(mitmProxy) {
+                header->del("Strict-Transport-Security");
+            }
 
             auto buff = std::make_shared<Block>(BUF_LEN);
             size_t len = qpack_encoder.PackHttp3Res(header, buff->data(), BUF_LEN);
@@ -254,11 +269,11 @@ void Guest3::PushFrame(Buffer&& bb) {
 }
 
 uint64_t Guest3::CreateUbiStream() {
-    return std::dynamic_pointer_cast<QuicRWer>(rwer)->CreateUbiStream();
+    return std::dynamic_pointer_cast<QuicBase>(rwer)->createUbiStream();
 }
 
 void Guest3::Reset(uint64_t id, uint32_t code) {
-    return std::dynamic_pointer_cast<QuicRWer>(rwer)->Reset(id, code);
+    return std::dynamic_pointer_cast<QuicBase>(rwer)->reset(id, code);
 }
 
 void Guest3::ErrProc(int errcode) {
@@ -272,6 +287,13 @@ void Guest3::deleteLater(uint32_t errcode){
     if((http3_flag & HTTP3_FLAG_GOAWAYED) == 0){
         Goaway(maxDataId);
     }
+    for(auto& i: statusmap){
+        if((i.second.flags & HTTP_CLOSED_F) == 0) {
+            i.second.req->send(ChannelMessage::CHANNEL_ABORT);
+        }
+        i.second.flags |= HTTP_CLOSED_F;
+    }
+    statusmap.clear();
     return Server::deleteLater(errcode);
 }
 

@@ -61,10 +61,12 @@ const char *DEFAULT_CIPHER_LIST =
             "RSA+AES256:"
             "!aNULL:!eNULL:!EXPORT:!DES:!RC4:!3DES:!MD5:!PSK";
 
-int parse_tls_header(const char *, size_t, char **);
+#define TLS_HEADER_LEN 5
+#define TLS_HANDSHAKE_CONTENT_TYPE 0x16
+#define TLS_HANDSHAKE_TYPE_CLIENT_HELLO 0x01
+
 static int parse_extensions(const char *, size_t, char **);
 static int parse_server_name_extension(const char *, size_t, char **);
-
 
 
 /* Parse a TLS packet for the Server Name Indication extension in the client
@@ -127,10 +129,14 @@ int parse_tls_header(const char *data, size_t data_len, char **hostname) {
     /*
      * Handshake
      */
-    size_t pos = TLS_HEADER_LEN;
-    if (pos + 1 > data_len) {
+    if (TLS_HEADER_LEN + 1 > data_len) {
         return -5;
     }
+    return parse_client_hello(data + TLS_HEADER_LEN, data_len - TLS_HEADER_LEN, hostname);
+}
+
+int parse_client_hello(const char*data, size_t data_len, char** hostname) {
+    size_t pos = 0;
     if (data[pos] != TLS_HANDSHAKE_TYPE_CLIENT_HELLO) {
         LOGE("Not a client hello\n");
         return -5;
@@ -148,7 +154,7 @@ int parse_tls_header(const char *data, size_t data_len, char **hostname) {
     /* Session ID */
     if (pos + 1 > data_len)
         return -5;
-    len = (unsigned char)data[pos];
+    size_t len = (unsigned char)data[pos];
     pos += 1 + len;
 
     /* Cipher Suites */
@@ -163,7 +169,7 @@ int parse_tls_header(const char *data, size_t data_len, char **hostname) {
     len = (unsigned char)data[pos];
     pos += 1 + len;
 
-    if (pos == data_len && tls_version_major == 3 && tls_version_minor == 0) {
+    if (pos == data_len /*&& tls_version_major == 3 && tls_version_minor == 0*/) {
         LOGE("Received SSL 3.0 handshake without extensions\n");
         return -2;
     }

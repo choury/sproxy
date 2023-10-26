@@ -15,9 +15,9 @@ void IcmpProc(std::shared_ptr<IcmpStatus> status, std::shared_ptr<const Ip> pac,
         status->seq = pac->icmp6->getseq();
     }
     size_t datalen = len - pac->gethdrlen();
-    status->aged_job =status->jobHandler.updatejob_with_name(status->aged_job,
-                                                             std::bind(status->errCB, pac, CONNECT_AGED),
-                                                             "icmp_aged_job", 30000);
+    status->aged_job = updatejob_with_name(std::move(status->aged_job),
+                                           std::bind(status->errCB, pac, CONNECT_AGED),
+                                           "icmp_aged_job", 30000);
     if(datalen > 0) {
         status->dataCB(pac, packet + pac->gethdrlen(), datalen);
     }
@@ -27,14 +27,14 @@ void IcmpProc(std::shared_ptr<IcmpStatus> status, std::shared_ptr<const Ip> pac,
 void SendData(std::shared_ptr<IcmpStatus> status, Buffer&& bb) {
     auto rpac = MakeIp(status->packet_hdr->data(), status->packet_hdr_len);
     if(bb.len == 0){
-        status->aged_job = status->jobHandler.updatejob_with_name(status->aged_job,
-                                                                  std::bind(status->errCB, rpac, CONNECT_AGED),
-                                                                  "icmp_aged_job", 0);
+        status->aged_job = updatejob_with_name(std::move(status->aged_job),
+                                               std::bind(status->errCB, rpac, CONNECT_AGED),
+                                               "icmp_aged_job", 0);
         return;
     } else {
-        status->aged_job = status->jobHandler.updatejob_with_name(status->aged_job,
-                                                                  std::bind(status->errCB, rpac, CONNECT_AGED)
-                                                                  , "icmp_aged_job", 30000);
+        status->aged_job = updatejob_with_name(std::move(status->aged_job),
+                                               std::bind(status->errCB, rpac, CONNECT_AGED),
+                                               "icmp_aged_job", 30000);
     }
 
     std::shared_ptr<Ip> pac;
@@ -55,7 +55,7 @@ void SendData(std::shared_ptr<IcmpStatus> status, Buffer&& bb) {
     }
     pac->build_packet(bb);
     status->sendCB(pac, bb.data(), bb.len);
-    status->ack_job = status->jobHandler.updatejob_with_name(status->ack_job,
-                                                             std::bind(status->ackCB, rpac),
-                                                             "icmp_ack_job", 0);
+    status->ack_job = updatejob_with_name(std::move(status->ack_job),
+                                          std::bind(status->ackCB, rpac),
+                                          "icmp_ack_job", 0);
 }

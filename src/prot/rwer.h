@@ -41,7 +41,7 @@ enum class SslStats{
     SslEOF,
 };
 
-class RWer: public Ep, public job_handler, public std::enable_shared_from_this<RWer> {
+class RWer: public Ep, public std::enable_shared_from_this<RWer> {
 protected:
 #define RWER_READING    0x01  // handling the read buffer
 #define RWER_SENDING    0x02  // handling the write buffer

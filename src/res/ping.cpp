@@ -89,12 +89,12 @@ void Ping::Recv(Buffer&& bb){
     switch(family){
     case AF_INET:{
         Icmp icmp;
-        icmp.settype(ICMP_ECHO)->setid(id)->setseq(seq++);
+        icmp.settype(ICMP_ECHO)->setid(id+1)->setseq(seq++);
         icmp.build_packet(bb);
         break;}
     case AF_INET6:{
         Icmp6 icmp;
-        icmp.settype(ICMP6_ECHO_REQUEST)->setid(id)->setseq(seq++);
+        icmp.settype(ICMP6_ECHO_REQUEST)->setid(id+1)->setseq(seq++);
         icmp.build_packet(nullptr, bb);
         break;}
     default:
@@ -131,8 +131,11 @@ void Ping::deleteLater(uint32_t errcode) {
 }
 
 void Ping::dump_stat(Dumper dp, void* param) {
-    dp(param, "Ping %p, [%" PRIu32"], id: %d, seq: %d\n",
-       this, req->header->request_id, id, seq);
+    dp(param, "Ping %p, [%" PRIu32"]: %s %s, id: %d, seq: %d\n",
+       this, req->header->request_id,
+       req->header->method,
+       dumpAuthority(&req->header->Dest),
+       id, seq);
     rwer->dump_status(dp, param);
 }
 

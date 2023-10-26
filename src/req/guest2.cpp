@@ -41,8 +41,8 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
-        this->connection_lost_job = this->rwer->updatejob(
-                this->connection_lost_job,
+        this->connection_lost_job = UpdateJob(
+                std::move(this->connection_lost_job),
                 std::bind(&Guest2::connection_lost, this), 1800000);
         return len;
     });
@@ -58,14 +58,6 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
 }
 
 Guest2::~Guest2() {
-    for(auto& i: statusmap){
-        if((i.second.flags & HTTP_CLOSED_F) == 0) {
-            i.second.req->send(ChannelMessage::CHANNEL_ABORT);
-        }
-        i.second.flags |= HTTP_CLOSED_F;
-    }
-    statusmap.clear();
-    rwer->deljob(&connection_lost_job);
 }
 
 void Guest2::Error(int ret, int code){
@@ -87,7 +79,7 @@ void Guest2::Recv(Buffer&& bb){
         PushData({nullptr, bb.id});
         status.flags |= HTTP_RES_COMPLETED;
         if(status.flags & HTTP_REQ_COMPLETED){
-            rwer->addjob(std::bind(&Guest2::Clean, this, bb.id, NOERROR), 0, JOB_FLAGS_AUTORELEASE);
+            AddJob(std::bind(&Guest2::Clean, this, bb.id, NOERROR), 0, JOB_FLAGS_AUTORELEASE);
         }
     }else{
         if(status.req->header->ismethod("HEAD")){
@@ -215,7 +207,7 @@ void Guest2::response(void* index, std::shared_ptr<HttpRes> res) {
             set24(h2header->length, len);
             PushFrame(Buffer{buff, len + sizeof(Http2_header)});
 
-            if(!status.req->header->should_proxy && opt.alt_svc){
+            if(opt.alt_svc){
                 AltSvc(id, "", opt.alt_svc);
             }
             return 1;
@@ -330,6 +322,13 @@ void Guest2::deleteLater(uint32_t errcode){
     if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){
         Goaway(recvid, errcode & ERROR_MASK);
     }
+    for(auto& i: statusmap){
+        if((i.second.flags & HTTP_CLOSED_F) == 0) {
+            i.second.req->send(ChannelMessage::CHANNEL_ABORT);
+        }
+        i.second.flags |= HTTP_CLOSED_F;
+    }
+    statusmap.clear();
     return Server::deleteLater(errcode);
 }
 

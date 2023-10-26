@@ -62,8 +62,8 @@ struct TcpStatus: public IpStatus{
     CBuffer    rbuf;
     std::list<tcp_sent> sent_list;
     Sack       *sack = nullptr;
-    Job*       ack_job = nullptr;
-    Job*       rto_job = nullptr;
+    Job        ack_job = nullptr;
+    Job        rto_job = nullptr;
 };
 
 

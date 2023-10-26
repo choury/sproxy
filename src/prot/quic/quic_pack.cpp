@@ -341,34 +341,28 @@ int quic_secret_set_key(struct quic_secret* secret, const char* key, uint32_t ci
         secret->hcipher = EVP_aes_128_ecb();
         secret->cipher = EVP_aes_128_gcm();
         secret->md = EVP_sha256();
-        key_len = 16;
-        hp_len = 16;
         break;
     case TLS1_3_CK_AES_256_GCM_SHA384:
         secret->hcipher = EVP_aes_256_ecb();
         secret->cipher = EVP_aes_256_gcm();
         secret->md = EVP_sha384();
-        key_len = 32;
-        hp_len = 16;
         break;
     case TLS1_3_CK_CHACHA20_POLY1305_SHA256:
         secret->hcipher = EVP_chacha20();
         secret->cipher = EVP_chacha20_poly1305();
         secret->md = EVP_sha256();
-        key_len = 32;
-        hp_len = 32;
         break;
     case TLS1_3_CK_AES_128_CCM_SHA256:
         secret->hcipher = EVP_aes_128_ecb();
         secret->cipher = EVP_aes_128_ccm();
         secret->md = EVP_sha256();
-        key_len = 16;
-        hp_len = 16;
         break;
     default:
-        LOGE("unknown cipher: %d\n", cipher);
+        LOGE("unknown cipher: 0x%X\n", cipher);
         return -1;
     }
+    hp_len = EVP_CIPHER_key_length(secret->hcipher);
+    key_len = EVP_CIPHER_key_length(secret->cipher);
     if(HKDF_Expand_Label(secret->md, key, "quic key", "", secret->key, key_len) < 0){
         LOGE("quic key failed\n");
         return -1;
@@ -895,7 +889,7 @@ int unpack_meta(const void* data_, size_t len, quic_meta* meta){
         size_t pos = 1;
         meta->version = get32(data + pos);
         if(meta->version != QUIC_VERSION_1){
-            LOGE("unsupported version: %u\n", meta->version);
+            LOGE("unsupported version: 0x%X\n", meta->version);
             return -1;
         }
         pos += 4;
@@ -923,7 +917,8 @@ int unpack_meta(const void* data_, size_t len, quic_meta* meta){
             uint64_t payload_len;
             pos += variable_decode(data + pos, &payload_len);
             if (pos + payload_len > len) {
-                LOGE("too short packet\n");
+                LOGE("too short packet, type:%x, payload: %zd, len: %zd\n",
+                     meta->type, pos + (size_t)payload_len, len);
                 return -1;
             }
             return (int) pos + (int) payload_len;
@@ -931,7 +926,7 @@ int unpack_meta(const void* data_, size_t len, quic_meta* meta){
             //retry packet
             int token_len = len - pos - 16;
             if(token_len <= 0){
-                LOGE("too short retry packet\n");
+                LOGE("too short retry packet, len: %zd, pos: %zd\n", len, pos);
                 return -1;
             }
             meta->token.resize(token_len);
@@ -942,7 +937,7 @@ int unpack_meta(const void* data_, size_t len, quic_meta* meta){
         //short packet
         meta->type = QUIC_PACKET_1RTT;
         if(len <= meta->dcid.length() + 1){
-            LOGE("too short packet\n");
+            LOGE("too short packet, len:%zd, id len: %zd\n", len, meta->dcid.length());
             return -1;
         }
         memcpy(&meta->dcid[0], data+1, meta->dcid.length());
@@ -1017,7 +1012,7 @@ std::vector<const quic_frame*> decode_packet(const void* data_, size_t len,
     std::vector<const quic_frame*> frames;
     const unsigned char* data = (const unsigned char*)data_;
     size_t pos = 0;
-    unsigned char buff[1500];
+    unsigned char buff[len];
 
     unsigned char mask[16];
     memset(mask, 0, 16);

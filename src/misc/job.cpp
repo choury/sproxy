@@ -5,24 +5,36 @@
 #include <set>
 
 using std::function;
-job_handler static_job_handler;
 
 #define JOB_RUNNING   (1u<<15u)
 #define JOB_DESTROIED (1u<<16u)
 
-struct Job{
+
+struct job{
     const char* func_name;
     std::function<void()> func;
     uint32_t flags;
     uint32_t delay_ms;
     uint32_t last_done_ms;
-    job_handler* handler;
 };
 
-std::set<Job*> gjobs;
+std::set<job*> gjobs;
+void jobDeleter::operator()(job *job) {
+    if (job == nullptr) {
+        return;
+    }
+    job->flags |= JOB_DESTROIED;
+    gjobs.erase(job);
+    if ((job->flags & JOB_RUNNING) == 0) {
+        LOGD(DJOB, "del a Job %p %s\n", job, job->func_name);
+        delete job;
+    } else {
+        LOGD(DJOB, "delay to del a Job %p %s\n", job, job->func_name);
+    }
+}
 
-uint32_t JobPending(const Job* job) {
-    if(job == nullptr || gjobs.count(const_cast<Job*>(job)) == 0) {
+uint32_t JobPending(Job& job) {
+    if(job == nullptr || gjobs.count(job.get()) == 0) {
         return 0;
     }
     uint32_t next_do = job->delay_ms + job->last_done_ms;
@@ -30,76 +42,41 @@ uint32_t JobPending(const Job* job) {
     return  next_do > now ? next_do - now : 1;
 }
 
-Job* job_handler::addjob_with_name(std::function<void()> func, const char *func_name, uint32_t interval_ms, uint32_t flags) {
-    Job* job = new Job{
+
+Job addjob_with_name(std::function<void()> func, const char *func_name, uint32_t interval_ms, uint32_t flags) {
+    job* j = new job{
             func_name,
             std::move(func),
             flags,
             interval_ms,
             getmtime(),
-            this,
     };
-    LOGD(DJOB, "add a Job %p %s by %d\n", job, func_name, interval_ms);
-    gjobs.insert(job);
-    jobs.push_back(job);
+    LOGD(DJOB, "add a Job %p %s by %d\n", j, func_name, interval_ms);
+    gjobs.insert(j);
     if(flags & JOB_FLAGS_AUTORELEASE){
         return nullptr;
     }
-    return job;
+    return Job(j);
 }
 
-Job* job_handler::updatejob_with_name(Job *job, std::function<void()> func, const char *func_name, uint32_t interval_ms) {
+Job updatejob_with_name(Job job, std::function<void()> func, const char *func_name, uint32_t interval_ms) {
     if(job == nullptr){
         return addjob_with_name(func, func_name, interval_ms, 0);
     }
     assert((job->flags & JOB_DESTROIED) == 0);
-    LOGD(DJOB, "update a Job %p %s by %d\n", job, func_name, interval_ms);
+    LOGD(DJOB, "update a Job %p %s by %d\n", job.get(), func_name, interval_ms);
     job->func = std::move(func);
     job->delay_ms = interval_ms;
     job->last_done_ms = getmtime();
     job->func_name = func_name;
-    gjobs.insert(job);
+    gjobs.insert(job.get());
     return job;
 }
 
-void job_handler::deljob(Job **job) {
-    if(*job == nullptr){
-        return;
-    }
-    (*job)->flags |= JOB_DESTROIED;
-    gjobs.erase(*job);
-    for(auto j = jobs.begin(); j != jobs.end(); j++ ){
-        if(*j == *job){
-            jobs.erase(j);
-            break;
-        }
-    }
-    if(((*job)->flags & JOB_RUNNING) == 0){
-        LOGD(DJOB, "del a Job %p %s\n", *job, (*job)->func_name);
-        delete *job;
-    }else{
-        LOGD(DJOB, "delay to del a Job %p %s\n", *job, (*job)->func_name);
-    }
-    *job = nullptr;
-}
-
-job_handler::~job_handler() {
-    for(auto j: jobs){
-        assert((j->flags & JOB_DESTROIED) == 0);
-        gjobs.erase(j);
-        j->flags |= JOB_DESTROIED;
-        if((j->flags & JOB_RUNNING) == 0) {
-            LOGD(DJOB, "destroy a Job %p %s\n", j, j->func_name);
-            delete j;
-        }else{
-            LOGD(DJOB, "delay to destroy a Job %p %s\n", j, j->func_name);
-        }
-    }
-}
 
 uint32_t do_delayjob(){
     uint32_t now = getmtime();
-    std::list<Job*> jobs_todo;
+    std::list<job*> jobs_todo;
     for(auto j = gjobs.begin(); j != gjobs.end();) {
         uint32_t diff = now - (*j)->last_done_ms;
         assert(((*j)->flags & JOB_DESTROIED) == 0);
@@ -126,7 +103,7 @@ uint32_t do_delayjob(){
         }
         j->flags &= ~JOB_RUNNING;
         if (j->flags & JOB_FLAGS_AUTORELEASE) {
-            j->handler->deljob(&j);
+            jobDeleter()(j);
         }
     }
     uint32_t min_interval = 0xffffffff;
@@ -147,4 +124,3 @@ void dump_job(Dumper dp, void* param){
         dp(param, "  %p %s: %d/%d\n", j, j->func_name, left, j->delay_ms);
     }
 }
-

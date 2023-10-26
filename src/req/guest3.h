@@ -22,6 +22,7 @@ class Guest3: public Requester, public Http3Responser {
 
     std::map<uint64_t, ReqStatus> statusmap;
     uint64_t maxDataId = 0;
+    bool mitmProxy = false;
 protected:
     virtual void Error(int ret, int code);
     virtual void deleteLater(uint32_t errcode) override;
@@ -34,6 +35,8 @@ protected:
     virtual void Reset(uint64_t id, uint32_t code)override;
     virtual uint64_t CreateUbiStream() override;
 
+    void init();
+    void connected();
     void Recv(Buffer&& bb);
     void Handle(uint64_t id, ChannelMessage::Signal s);
     void RstProc(uint64_t id, uint32_t errcode);
@@ -41,6 +44,7 @@ protected:
 public:
     //explicit Guest3(int fd, const sockaddr_storage* addr, SSL_CTX* ctx, QuicMgr* quicMgr);
     explicit Guest3(std::shared_ptr<QuicRWer> rwer);
+    explicit Guest3(std::shared_ptr<QuicMer> rwer);
     virtual ~Guest3() override;
 
     void AddInitData(const void* buff, size_t len);

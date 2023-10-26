@@ -139,8 +139,25 @@ void HttpReq::send(ChannelMessage::Signal s) {
 void HttpLog(const char* src, std::shared_ptr<const HttpReqHeader> req, std::shared_ptr<const HttpResHeader> res){
     char status[100];
     sscanf(res->status, "%s", status); //get the first word of status (status code)
-    LOG("%s [%" PRIu32 "] %s %s [%s] %s %dms [%s]\n", src,
-        req->request_id, req->method, req->geturl().c_str(),
-        req->get(STRATEGY), status, res->ctime - req->ctime,
-        req->get("User-Agent"));
+    if(debug[DHTTP].enabled){
+        LOG("%s [%" PRIu32 "] %s %s [%s]\n", src,
+            req->request_id, req->method, req->geturl().c_str(), req->Dest.protocol);
+        for(auto header : req->getall()){
+            LOG("%s: %s\n", header.first.c_str(), header.second.c_str());
+        }
+        LOG("\nResponse: %s %dms\n" , status, res->ctime - req->ctime);
+        for(auto header : res->getall()){
+            LOG("%s: %s\n", header.first.c_str(), header.second.c_str());
+        }
+    } else if(req->ismethod("CONNECT")) {
+        LOG("%s [%" PRIu32 "] CONNECT %s [%s] %s %dms [%s]\n", src,
+            req->request_id, dumpDest(&req->Dest),
+            req->get(STRATEGY), status, res->ctime - req->ctime,
+            req->get("User-Agent"));
+    } else {
+        LOG("%s [%" PRIu32 "] %s %s [%s] %s %dms [%s]\n", src,
+            req->request_id, req->method, req->geturl().c_str(),
+            req->get(STRATEGY), status, res->ctime - req->ctime,
+            req->get("User-Agent"));
+    }
 }

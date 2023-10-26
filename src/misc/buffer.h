@@ -86,6 +86,7 @@ public:
     const void* data() const;
     void* mutable_data();
     void* end() const;
+    Buffer clone() const;
 };
 
 

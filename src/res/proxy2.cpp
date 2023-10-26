@@ -16,7 +16,8 @@ void Proxy2::ping_check(){
     set64(buff, getutime());
     Ping(buff);
     LOGD(DHTTP2, "<proxy2> ping: window size global: %d/%d\n", localwinsize, remotewinsize);
-    connection_lost_job = rwer->updatejob(connection_lost_job, std::bind(&Proxy2::connection_lost, this), 2000);
+    connection_lost_job = UpdateJob(std::move(connection_lost_job),
+                                    std::bind(&Proxy2::connection_lost, this), 2000);
 }
 
 bool Proxy2::wantmore(const ReqStatus& status) {
@@ -41,8 +42,8 @@ Proxy2::Proxy2(std::shared_ptr<RWer> rwer) {
             return 0;
         }
 #ifndef __ANDROID__
-        this->ping_check_job = this->rwer->updatejob(
-                this->ping_check_job,
+        this->ping_check_job = UpdateJob(
+                std::move(this->ping_check_job),
                 std::bind(&Proxy2::ping_check, this), 10000);
 #else
         receive_time = getmtime();
@@ -136,7 +137,8 @@ void Proxy2::PushFrame(Buffer&& bb){
 }
 
 void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
-    idle_timeout = this->rwer->updatejob(idle_timeout,std::bind(&Proxy2::deleteLater, this, CONNECT_AGED), 300000);
+    idle_timeout = UpdateJob(std::move(idle_timeout),
+                             std::bind(&Proxy2::deleteLater, this, CONNECT_AGED), 300000);
     if(statusmap.count(id) == 0) {
         LOGD(DHTTP2, "<proxy2> ResProc not found id: %d\n", id);
         Reset(id, HTTP2_ERR_STREAM_CLOSED);
@@ -169,7 +171,8 @@ void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
 
 
 void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
-    idle_timeout = this->rwer->updatejob(idle_timeout,std::bind(&Proxy2::deleteLater, this, CONNECT_AGED), 300000);
+    idle_timeout = UpdateJob(std::move(idle_timeout),
+                             std::bind(&Proxy2::deleteLater, this, CONNECT_AGED), 300000);
     if(len == 0)
         return;
     localwinsize -= len;
@@ -283,7 +286,7 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
 
 void Proxy2::PingProc(const Http2_header *header){
     if(header->flags & HTTP2_ACK_F){
-        rwer->deljob(&connection_lost_job);
+        connection_lost_job.reset(nullptr);
         double diff = (getutime()-get64(header+1))/1000.0;
         LOG("<proxy2> Get a ping time=%.3fms\n", diff);
         if(diff >= 1000){
@@ -321,7 +324,8 @@ void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
     PushFrame(Buffer{buff, len + sizeof(Http2_header)});
 
     req->attach([this, id](ChannelMessage& msg){
-        idle_timeout = this->rwer->updatejob(idle_timeout,std::bind(&Proxy2::deleteLater, this, CONNECT_AGED), 300000);
+        idle_timeout = UpdateJob(std::move(idle_timeout),
+                                 std::bind(&Proxy2::deleteLater, this, CONNECT_AGED), 300000);
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:
             LOGD(DHTTP2, "<proxy2> ignore header for req\n");
@@ -359,7 +363,7 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
 
 void Proxy2::deleteLater(uint32_t errcode){
     responsers.erase(this);
-    rwer->deljob(&idle_timeout);
+    idle_timeout.reset(nullptr);
     auto statusmapCopy = statusmap;
     for(auto& i: statusmapCopy){
         Clean(i.first, i.second, errcode);
@@ -375,9 +379,10 @@ void Proxy2::dump_stat(Dumper dp, void* param) {
     dp(param, "Proxy2 %p id: %d, my_window: %d, his_window: %d\n",
             this, sendid, this->localwinsize, this->remotewinsize);
     for(auto& i: statusmap){
-        dp(param, "  0x%x [%" PRIu32 "]: %s, my_window: %d, his_window: %d, flags: 0x%08x\n",
+        dp(param, "  0x%x [%" PRIu32 "]: %s %s, my_window: %d, his_window: %d, flags: 0x%08x\n",
                 i.first,
                 i.second.req->header->request_id,
+                i.second.req->header->method,
                 i.second.req->header->geturl().c_str(),
                 i.second.localwinsize, i.second.remotewinsize,
                 i.second.flags);

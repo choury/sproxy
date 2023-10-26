@@ -16,18 +16,13 @@ static in_addr_t fake_ip = ntohl(inet_addr(VPNADDR));
 
 
 static in_addr getInet(const std::string& hostname) {
-    in_addr addr{};
-
     if(hostname.find_first_of('.') == std::string::npos){
-        addr.s_addr = inet_addr(VPNADDR);
-    }else if(fdns_records.Has(hostname)){
-        addr.s_addr = htonl(fdns_records.GetOne(hostname)->first.first);
-    }else{
+        return  in_addr{inet_addr(VPNADDR)};
+    }else if(!fdns_records.Has(hostname)){
         fake_ip++;
-        addr.s_addr= htonl(fake_ip);
         fdns_records.Add(fake_ip, hostname, nullptr);
     }
-    return addr;
+    return in_addr{htonl(fdns_records.GetOne(hostname)->first.first)};
 }
 
 static in6_addr getInet6(const std::string& hostname) {
@@ -205,7 +200,8 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_stor
     FDnsStatus& status = fdns->statusmap.at(reqid);
     std::shared_ptr<Dns_Query> que = status.quemap.at(index & 0xffff);
     assert(que->id == (index & 0xffff));
-    LOGD(DDNS, "fdns cb [%" PRIu32"], id:%d, size:%zd, error: %d\n", reqid, que->id, addrs.size(), error);
+    LOGD(DDNS, "fdns cb [%" PRIu32"] %s, id:%d, size:%zd, error: %d\n",
+         reqid, que->domain, que->id, addrs.size(), error);
     Dns_Result* result = new Dns_Result(que->domain);
     Buffer buff{BUF_LEN};
     if(error) {
@@ -221,16 +217,14 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_stor
             sockaddr_storage ip;
             memset(&ip, 0, sizeof(ip));
             if (que->type == 1) {
-                in_addr addr = getInet(que->domain);
                 sockaddr_in* ip4 = (sockaddr_in*)&ip;
                 ip4->sin_family = AF_INET;
-                ip4->sin_addr = addr;
-            } 
+                ip4->sin_addr = getInet(que->domain);
+            }
             if (que->type == 28) {
-                in6_addr addr = getInet6(que->domain);
                 sockaddr_in6* ip6 = (sockaddr_in6*)&ip;
                 ip6->sin6_family = AF_INET6;
-                ip6->sin6_addr = addr;
+                ip6->sin6_addr = getInet6(que->domain);
             }
             result->addrs.push_back(ip);
         }

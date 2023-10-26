@@ -6,6 +6,7 @@
 #include "host.h"
 #include "file.h"
 #include "ping.h"
+#include "uhost.h"
 
 #include <regex>
 #include <string.h>
@@ -27,7 +28,7 @@ static CheckResult check_header(std::shared_ptr<HttpReqHeader> req, Requester* s
     if(req->get("via") && strstr(req->get("via"), "sproxy")){
         return CheckResult::LoopBack;
     }
-    if(req->Dest.port == 0 && (req->ismethod("SEND") || req->ismethod("CONNECT"))){
+    if(req->Dest.port == 0 && req->ismethod("CONNECT")){
         return CheckResult::NoPort;
     }
 
@@ -94,7 +95,7 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
                 header->set("Proxy-Authorization", std::string("Basic ") + opt.rewrite_auth);
             }
             //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
-            header->should_proxy = true;
+            header->chain_proxy = true;
             if(!stra.ext.empty() && loadproxy(stra.ext.c_str(), &dest)){
                 res = std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[ext misformat]]\n");
                 goto out;
@@ -103,11 +104,15 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
         case Strategy::direct:
             memcpy(&dest, &header->Dest, sizeof(dest));
             dest.port = header->getDport();
-            if(header->ismethod("PING")){
+            if(strcmp(header->Dest.protocol, "icmp") == 0){
                 return (new Ping(header))->request(req, src);
+            }
+            if(strcmp(header->Dest.protocol, "udp") == 0) {
+                return (new Uhost(header))->request(req, src);
             }
             header->del("Proxy-Authorization");
             break;
+        //rewrite 和 forward的唯一区别就是rewrite会修改host为目标地址
         case Strategy::rewrite:
             header->set("host", stra.ext);
             /* FALLTHROUGH */

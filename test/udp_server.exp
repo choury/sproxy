@@ -1,5 +1,11 @@
 listen udp 4444
 read packet
-send sproxy\n
+send sproxy001\n
+close
+
+listen udp 4445
 read packet
+send sproxy002\n
+read packet
+send sproxy003\n
 close
