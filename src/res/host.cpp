@@ -46,7 +46,7 @@ Host::Host(const Destination* dest){
         qrwer->SetConnectCB(std::bind(&Host::connected, this));
 #endif
     }else{
-        LOGF("Unkonw protocol: %s\n", dest->protocol);
+        LOGE("Unknown protocol: %s\n", dest->protocol);
     }
 }
 
@@ -184,6 +184,10 @@ void Host::Handle(ChannelMessage::Signal s){
 }
 
 void Host::request(std::shared_ptr<HttpReq> req, Requester*) {
+    if(rwer == nullptr) {
+        req->response(std::make_shared<HttpRes>(UnpackHttpRes(H400), "[[Unknown protocol]]\n"));
+        return Server::deleteLater(PROTOCOL_ERR);
+    }
     LOGD(DHTTP, "<host> request %" PRIu32 ": %s\n",
          req->header->request_id,
          req->header->geturl().c_str());
