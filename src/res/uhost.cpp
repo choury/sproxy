@@ -37,7 +37,7 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
                 return 0;
             }
             return 0;
-        }, []{return BUF_LEN;});
+        }, [this]{return rwer->cap(0);});
     });
     rwer->SetReadCB([this](const Buffer& bb) -> size_t{
         LOGD(DHTTP, "<uhost> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
@@ -45,9 +45,22 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
             res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
             req->response(this->res);
         }
-        rx_bytes += bb.len;
-        res->send(bb.clone());
+        int len = res->cap();
+        if (len < (int)bb.len) {
+            LOGE("[%" PRIu32 "]: <uhost> the res buff is full (%d vs %d) [%s], drop it\n",
+                 req->header->request_id,
+                 len, (int)bb.len,
+                 req->header->geturl().c_str());
+            rx_dropped += bb.len;
+        } else {
+            rx_bytes += bb.len;
+            res->send(bb.clone());
+        }
         return 0;
+    });
+    rwer->SetWriteCB([this](uint64_t){
+        LOGD(DHTTP, "<uhost> (%s) written\n", rwer->getPeer());
+        req->pull();
     });
 }
 
@@ -58,9 +71,11 @@ Uhost::Uhost(std::shared_ptr<HttpReqHeader> req):
 
 Uhost::~Uhost() {
     if(rwer){
-        LOGD(DHTTP, "<uhost> (%s) destoryed: rx:%zu, tx:%zu\n", rwer->getPeer(), rx_bytes, tx_bytes);
+        LOGD(DHTTP, "<uhost> (%s) destoryed: rx:%zu, tx:%zu, drop: %zu\n",
+             rwer->getPeer(), rx_bytes, tx_bytes, rx_dropped);
     }else{
-        LOGD(DHTTP, "<uhost> null destoryed: rx:%zu, tx:%zu\n", rx_bytes, tx_bytes);
+        LOGD(DHTTP, "<uhost> null destoryed: rx:%zu, tx:%zu, drop: %zu\n",
+             rx_bytes, tx_bytes, rx_dropped);
     }
 }
 
@@ -99,8 +114,8 @@ void Uhost::deleteLater(uint32_t errcode) {
 }
 
 void Uhost::dump_stat(Dumper dp, void* param) {
-    dp(param, "Uhost %p, tx:%zd, rx: %zd\n  [%" PRIu32"]: %s %s, host: %s, port: %d\n",
-       this, tx_bytes, rx_bytes,
+    dp(param, "Uhost %p, tx:%zd, rx: %zd, drop: %zd\n  [%" PRIu32"]: %s %s, host: %s, port: %d\n",
+       this, tx_bytes, rx_bytes, rx_dropped,
        req->header->request_id, req->header->method,
        dumpAuthority(&req->header->Dest),
        hostname, port);

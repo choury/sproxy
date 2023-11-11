@@ -327,6 +327,9 @@ void Guest2::deleteLater(uint32_t errcode){
             i.second.req->send(ChannelMessage::CHANNEL_ABORT);
         }
         i.second.flags |= HTTP_CLOSED_F;
+        if(i.second.res){
+            i.second.res->detach();
+        }
     }
     statusmap.clear();
     return Server::deleteLater(errcode);
