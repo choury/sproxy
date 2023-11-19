@@ -684,8 +684,7 @@ static char* pack_stream_frame(uint64_t type, const quic_stream* stream, char *d
     return data + stream->length;
 }
 
-static const char* unpack_stream_frame(uint64_t type, const char* data, int len, quic_stream* stream) {
-    const char* end = data + len;
+static const char* unpack_stream_frame(uint64_t type, const char* data, const char* end, quic_stream* stream) {
     data += variable_decode(data, &stream->id);
     if(type & QUIC_FRAME_STREAM_OFF_F){
         data += variable_decode(data, &stream->offset);
@@ -998,7 +997,7 @@ const char* unpack_frame(const char* data, size_t len, quic_frame* frame){
         if((frame->type >= QUIC_FRAME_STREAM_START_ID)
            &&(frame->type <= QUIC_FRAME_STREAM_END_ID))
         {
-            return unpack_stream_frame(frame->type, pos, len, &frame->stream);
+            return unpack_stream_frame(frame->type, pos, data + len, &frame->stream);
         }else {
             LOGE("unknown frame: 0x%x\n", (int)frame->type);
             return nullptr;
@@ -1086,7 +1085,7 @@ std::vector<const quic_frame*> decode_packet(const void* data_, size_t len,
         quic_frame* frame = new quic_frame;
         frame->type = QUIC_FRAME_PADDING;
         frames.push_back(frame);
-        const char* ret = unpack_frame((const char*)buff + pos, len - pos, frame);
+        const char* ret = unpack_frame((const char*)buff + pos, len - pos - 16, frame);
         if(ret == nullptr){
             goto error;
         }
@@ -1297,8 +1296,8 @@ std::string dumpHex(const void* data, size_t len){
 std::string sign_cid(std::string id) {
     char* token = nullptr;
     unsigned int sign_len;
-    if(sign_data(opt.cert.key, id.c_str(), id.length(), &token, &sign_len)){
-        LOGE("QUIC failed to sign cid\n");
+    if(sign_data(opt.cert.key ?: opt.ca.key, id.c_str(), id.length(), &token, &sign_len)){
+        LOGE("QUIC failed to sign cid: %s\n", dumpHex(id.c_str(), id.length()).c_str());
         return "";
     }
     assert(sign_len >= QUIC_TOKEN_LEN);

@@ -1872,6 +1872,9 @@ void QuicMer::defaultHE(RW_EVENT events) {
 }
 
 void QuicMer::push(const Buffer &bb) {
+    if(flags & RWER_CLOSING){
+        return;
+    }
     walkPacket(bb.data(), bb.len);
     if(!isClosing) {
         reorderData();

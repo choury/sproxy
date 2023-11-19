@@ -31,10 +31,7 @@ RWer::RWer(int fd, std::function<void(int ret, int code)> errorCB):
 RWer::RWer(std::function<void (int, int)> errorCB): Ep(-1), errorCB(std::move(errorCB))
 {
     assert(this->errorCB != nullptr);
-    readCB = [](const Buffer& bb) -> size_t {
-        LOGE("send data to stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
-        return bb.len;
-    };
+    readCB = [](const Buffer& bb){return bb.len;};
     writeCB = [](size_t){};
 }
 

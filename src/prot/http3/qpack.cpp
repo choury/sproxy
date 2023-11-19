@@ -202,6 +202,7 @@ int Qpack::push_ins(const void *ins, size_t len) {
             }
             pos += l;
             LOGD(DHPACK, "set cap: %d\n", (int)cap);
+            return pos - (const uchar*)ins;
         }else{
             //复制动态表中的索引处内容
             uint64_t index;
