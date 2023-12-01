@@ -165,7 +165,7 @@ void Cgi::Clean(uint32_t id, CgiStatus& status) {
     if(status.res == nullptr){
         status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[cgi failed]]\n"));
     }else {
-        status.res->send(ChannelMessage::CHANNEL_ABORT);
+        status.res->send(CHANNEL_ABORT);
     }
     statusmap.erase(id);
     LOGD(DFILE, "<cgi> [%s] %" PRIu32" cleaned\n", basename(filename), id);
@@ -295,7 +295,7 @@ void Cgi::deleteLater(uint32_t errcode){
     return Server::deleteLater(errcode);
 }
 
-void Cgi::Handle(uint32_t id, ChannelMessage::Signal) {
+void Cgi::Handle(uint32_t id, Signal) {
     if(statusmap.count(id) == 0) {
         LOGE("[CGI] %s stream %" PRIu32 " finished, not found\n", basename(filename), id);
         return;
@@ -334,12 +334,14 @@ void Cgi::request(std::shared_ptr<HttpReq> req, Requester* src) {
         case ChannelMessage::CHANNEL_MSG_HEADER:
             LOGD(DFILE, "<CGI> ignore header for req\n");
             return 1;
-        case ChannelMessage::CHANNEL_MSG_DATA:
-            msg.data.id = id;
-            Recv(std::move(msg.data));
+        case ChannelMessage::CHANNEL_MSG_DATA: {
+            Buffer bb = std::move(std::get<Buffer>(msg.data));
+            bb.id = id;
+            Recv(std::move(bb));
             return 1;
+        }
         case ChannelMessage::CHANNEL_MSG_SIGNAL:
-            Handle(id, msg.signal);
+            Handle(id, std::get<Signal>(msg.data));
             return 0;
         }
         return 0;

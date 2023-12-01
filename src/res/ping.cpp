@@ -25,10 +25,11 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
                 LOGD(DVPN, "<ping> ignore header for req\n");
                 return 1;
             case ChannelMessage::CHANNEL_MSG_DATA:
-                Recv(std::move(message.data));
+                Recv(std::move(std::get<Buffer>(message.data)));
                 return 1;
             case ChannelMessage::CHANNEL_MSG_SIGNAL:
-                LOGD(DVPN, "<ping> [%d] get signal from req: %d\n", this->id, message.signal);
+                LOGD(DVPN, "<ping> [%d] get signal from req: %d\n",
+                     this->id, std::get<Signal>(message.data));
                 flags |= PING_IS_CLOSED_F;
                 deleteLater(PEER_LOST_ERR);
                 return 0;
@@ -36,31 +37,30 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
             return 0;
         }, []{return BUF_LEN;});
     });
-    rwer->SetReadCB([this](const Buffer& bb) -> size_t{
+    rwer->SetReadCB([this](Buffer bb) -> size_t{
         if(res == nullptr){
             res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
             req->response(this->res);
         }
-        Buffer buff{bb.data(), bb.len};
         switch(family){
         case AF_INET:
             if(flags & PING_IS_RAW_SOCK){
-                const ip* iphdr = (ip*)buff.mutable_data();
+                const ip* iphdr = (ip*)bb.mutable_data();
                 size_t hlen = iphdr->ip_hl << 2;
-                buff.reserve(sizeof(icmphdr) + hlen);
-                res->send(std::move(buff));
+                bb.reserve(sizeof(icmphdr) + hlen);
+                res->send(std::move(bb));
             }else {
-                buff.reserve(sizeof(icmphdr));
-                res->send(std::move(buff));
+                bb.reserve(sizeof(icmphdr));
+                res->send(std::move(bb));
             }
             break;
         case AF_INET6:
             if(flags & PING_IS_RAW_SOCK){
-                buff.reserve(sizeof(ip6_hdr) + sizeof(icmp6_hdr));
-                res->send(std::move(buff));
+                bb.reserve(sizeof(ip6_hdr) + sizeof(icmp6_hdr));
+                res->send(std::move(bb));
             }else {
-                buff.reserve(sizeof(icmp6_hdr));
-                res->send(std::move(buff));
+                bb.reserve(sizeof(icmp6_hdr));
+                res->send(std::move(bb));
             }
             break;
         default:
@@ -110,7 +110,7 @@ void Ping::deleteLater(uint32_t errcode) {
     if(flags & PING_IS_CLOSED_F){
         //do nothing.
     }else if(res){
-        res->send(ChannelMessage::CHANNEL_ABORT);
+        res->send(CHANNEL_ABORT);
     }else {
         switch(errcode) {
         case DNS_FAILED:

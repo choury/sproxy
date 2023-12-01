@@ -4,23 +4,6 @@
 #include <assert.h>
 #include <inttypes.h>
 
-ChannelMessage::ChannelMessage(Signal signal):
-    type(CHANNEL_MSG_SIGNAL), header(nullptr), data(nullptr), signal(signal){
-}
-
-ChannelMessage::ChannelMessage(Buffer&& data):
-    type(CHANNEL_MSG_DATA), header(nullptr), data(std::move(data)), signal(CHANNEL_ABORT){
-}
-
-ChannelMessage::ChannelMessage(std::shared_ptr<HttpHeader> header):
-    type(CHANNEL_MSG_HEADER), header(header), data(nullptr), signal(CHANNEL_ABORT){
-}
-
-ChannelMessage::ChannelMessage(ChannelMessage&& other):
-    type(other.type), header(std::move(other.header)), data(std::move(other.data)), signal(other.signal) {
-}
-
-
 Channel::Channel(pull_t pull_cb): pull_cb(std::move(pull_cb)){
 }
 
@@ -48,7 +31,7 @@ void Channel::send(ChannelMessage&& message) {
 }
 
 void Channel::send(std::shared_ptr<HttpHeader> header) {
-    send(ChannelMessage(header));
+    send(ChannelMessage(std::move(header)));
 }
 
 void Channel::send(Buffer&& bb) {
@@ -63,13 +46,13 @@ void Channel::send(const void *data, size_t len) {
     send(ChannelMessage(Buffer{std::make_shared<Block>(data, len), len}));
 }
 
-void Channel::send(ChannelMessage::Signal s) {
+void Channel::send(Signal s) {
     send(ChannelMessage(s));
 }
 
 void Channel::attach(handler_t handler, cap_t cap) {
-    this->handler = handler;
-    cap_cb = cap;
+    this->handler = std::move(handler);
+    cap_cb = std::move(cap);
     return poll();
 }
 
@@ -84,10 +67,10 @@ size_t Channel::mem_usage() {
     for(const auto& msg : message_queue){
         switch(msg.type) {
         case ChannelMessage::CHANNEL_MSG_HEADER:
-            usage += msg.header->mem_usage();
+            usage += std::get<std::shared_ptr<HttpHeader>>(msg.data)->mem_usage();
             break;
         case ChannelMessage::CHANNEL_MSG_DATA:
-            usage += msg.data.cap;
+            usage += std::get<Buffer>(msg.data).cap;
             break;
         default:
             break;
@@ -102,7 +85,7 @@ HttpRes::HttpRes(std::shared_ptr<HttpResHeader> header, pull_t pull_cb):
     send(header);
 }
 
-HttpRes::HttpRes(std::shared_ptr<HttpResHeader> header): HttpRes(header, []{}) {
+HttpRes::HttpRes(std::shared_ptr<HttpResHeader> header): HttpRes(std::move(header), []{}) {
 }
 
 HttpRes::HttpRes(std::shared_ptr<HttpResHeader> header, const char *body):
@@ -129,9 +112,9 @@ HttpReq::HttpReq(std::shared_ptr<HttpReqHeader> header, HttpReq::res_cb response
 HttpReq::~HttpReq() {
 }
 
-void HttpReq::send(ChannelMessage::Signal s) {
-    if(s == ChannelMessage::CHANNEL_ABORT){
-        response = [](std::shared_ptr<HttpRes>){};
+void HttpReq::send(Signal s) {
+    if(s == CHANNEL_ABORT){
+        response = [](const std::shared_ptr<HttpRes>&){};
     }
     Channel::send(s);
 }
@@ -142,11 +125,11 @@ void HttpLog(const char* src, std::shared_ptr<const HttpReqHeader> req, std::sha
     if(debug[DHTTP].enabled){
         LOG("%s [%" PRIu32 "] %s %s [%s]\n", src,
             req->request_id, req->method, req->geturl().c_str(), req->Dest.protocol);
-        for(auto header : req->getall()){
+        for(const auto& header : req->getall()){
             LOG("%s: %s\n", header.first.c_str(), header.second.c_str());
         }
         LOG("\nResponse: %s %dms\n" , status, res->ctime - req->ctime);
-        for(auto header : res->getall()){
+        for(const auto& header : res->getall()){
             LOG("%s: %s\n", header.first.c_str(), header.second.c_str());
         }
     } else if(req->ismethod("CONNECT")) {

@@ -298,7 +298,7 @@ int SslRWer<MemRWer>::fill_in_bio() {
     return rlen;
 }
 
-void SslRWer<MemRWer>::push(const Buffer& bb) {
+void SslRWer<MemRWer>::push_data(const Buffer& bb) {
     if(IsEOF()) {
         //shutdown by ssl, discard all data after that
         return;

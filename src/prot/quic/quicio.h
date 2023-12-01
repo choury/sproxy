@@ -309,14 +309,16 @@ protected:
 
 
     virtual void defaultHE(RW_EVENT events) override;
-    virtual void push(const Buffer& bb) override;
+    virtual void push_data(const Buffer& bb) override;
     virtual void buffer_insert(Buffer&& bb) override;
     virtual bool IsConnected() override;
     virtual void ConsumeRData(uint64_t) override;
 public:
     explicit QuicMer(SSL_CTX *ctx, const char* pname,
-                     std::function<int(Buffer&&)> read_cb, std::function<ssize_t()> cap_cb);
-    
+                     std::function<int(std::variant<Buffer, Signal>)> read_cb,
+                     std::function<ssize_t()> cap_cb);
+
+    virtual void Close(std::function<void()> func) override;
     virtual void dump_status(Dumper dp, void* param) override;
     virtual size_t mem_usage() override;
 };

@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <memory>
+#include <variant>
 #include <list>
 
 struct ChannelMessage{
@@ -14,17 +15,12 @@ struct ChannelMessage{
         CHANNEL_MSG_DATA,
         CHANNEL_MSG_SIGNAL,
     }Type;
-    typedef enum{
-        CHANNEL_ABORT,
-    }Signal;
+
     Type type;
-    std::shared_ptr<HttpHeader> header;
-    Buffer data;
-    Signal signal;
-    ChannelMessage(Buffer&& data);
-    ChannelMessage(std::shared_ptr<HttpHeader> header);
-    ChannelMessage(Signal signal);
-    ChannelMessage(ChannelMessage &&other);
+    std::variant<Buffer, std::shared_ptr<HttpHeader>, Signal> data;
+    explicit ChannelMessage(Buffer&& data): type(CHANNEL_MSG_DATA), data(std::move(data)){};
+    explicit ChannelMessage(std::shared_ptr<HttpHeader> header): type(CHANNEL_MSG_HEADER), data(header){};
+    explicit ChannelMessage(Signal signal): type(CHANNEL_MSG_SIGNAL), data(signal) {};
 };
 
 class Channel{
@@ -54,7 +50,7 @@ public:
     virtual void send(Buffer&& bb);
     virtual void send(std::nullptr_t _);
     virtual void send(std::shared_ptr<HttpHeader> header);
-    virtual void send(ChannelMessage::Signal s);
+    virtual void send(Signal s);
     //处理消息的时候，禁止调用send发回CHANNEL_MSG_SIGNAL，这样会导致Channel本身被销毁
     void attach(handler_t handler, cap_t cap);
     void detach();
@@ -99,7 +95,7 @@ public:
     HttpReq(const HttpReq&) = delete;
     HttpReq(std::shared_ptr<HttpReqHeader> header, res_cb response, pull_t pull_cb);
     using Channel::send;
-    virtual void send(ChannelMessage::Signal s) override;
+    virtual void send(Signal s) override;
     ~HttpReq();
     virtual size_t mem_usage() override {
         return Channel::mem_usage() + header->mem_usage();

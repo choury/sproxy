@@ -25,40 +25,39 @@
  * 可以通过reserve操作来移动当前数据的位置，如果参数为正，则向后移动（增加预留），如果为负，则向前移动
  */
 class Block{
-    void* base;
+    std::unique_ptr<void, void(*)(void*)> base;
     off_t off;
 public:
+    Block(const Block&) = delete;
+    Block& operator=(const Block&) = delete;
+
     explicit Block(size_t size, off_t prior = PRIOR_HEAD):
-        base(malloc(size + prior)), off (prior){
+        base(malloc(size + prior), free), off(prior){
     }
     explicit Block(const void* ptr, size_t size, off_t prior = PRIOR_HEAD):
-        base(malloc(size + prior)), off(prior)
+        base(malloc(size + prior), free), off(prior)
     {
         if(size == 0){
             return;
         }
-        memcpy((char*)base+off, ptr, size);
+        memcpy((char*)base.get() + off, ptr, size);
     }
-    Block(Block&& p){
-        base = p.base;
+    Block(Block&& p): base(std::move(p.base)){
         off = p.off;
-        p.base = nullptr;
+        p.off = 0;
     };
 
-    off_t tell(){
+    off_t tell() const{
         return off;
     }
-    Block(const Block&) = delete;
+
     void* reserve(int len){
         assert( off >= -len);
         off += len;
-        return (char*)base + off;
+        return (char*)base.get() + off;
     }
     void* data() const{
-        return (char*)base + off;
-    }
-    ~Block(){
-        free(base);
+        return (char*)base.get() + off;
     }
 };
 
@@ -73,20 +72,18 @@ public:
     uint64_t id = 0;
     size_t len = 0;
     size_t cap = 0;
-    Buffer(const Buffer&) = delete;
-    Buffer(size_t len, uint64_t id = 0);
-    Buffer(const void* content, size_t len, uint64_t id = 0);
-    Buffer(std::shared_ptr<Block> ptr, size_t len, uint64_t id = 0);
+    Buffer(size_t cap, uint64_t id = 0);
+    Buffer(const void* data, size_t len, uint64_t id = 0);
+    Buffer(std::shared_ptr<Block> data, size_t len, uint64_t id = 0);
     Buffer(std::nullptr_t, uint64_t id = 0);
     Buffer(Buffer&& b);
+    Buffer(const Buffer&) = default;
     // 增加/减少预留空间 off 为正增加，为负减少
     const void* reserve(int off);
     // 从末尾截断/扩展数据, 返回截断前的长度
     size_t truncate(size_t left);
     const void* data() const;
     void* mutable_data();
-    void* end() const;
-    Buffer clone() const;
 };
 
 

@@ -79,7 +79,7 @@ void Guest2::Recv(Buffer&& bb){
         PushData({nullptr, bb.id});
         status.flags |= HTTP_RES_COMPLETED;
         if(status.flags & HTTP_REQ_COMPLETED){
-            AddJob(std::bind(&Guest2::Clean, this, bb.id, NOERROR), 0, JOB_FLAGS_AUTORELEASE);
+            status.cleanJob = AddJob(std::bind(&Guest2::Clean, this, bb.id, NOERROR), 0, 0);
         }
     }else{
         if(status.req->header->ismethod("HEAD")){
@@ -94,13 +94,13 @@ void Guest2::Recv(Buffer&& bb){
     }
 }
 
-void Guest2::Handle(uint32_t id, ChannelMessage::Signal s){
+void Guest2::Handle(uint32_t id, Signal s){
     assert(statusmap.count(id));
     ReqStatus& status = statusmap[id];
     LOGD(DHTTP2, "<guest2> signal [%d] %" PRIu32 ": %d\n",
          (int)id, status.req->header->request_id, (int)s);
     switch(s){
-    case ChannelMessage::CHANNEL_ABORT:
+    case CHANNEL_ABORT:
         status.flags |= HTTP_CLOSED_F;
         return Clean(id, HTTP2_ERR_INTERNAL_ERROR);
     }
@@ -120,7 +120,6 @@ void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
         nullptr,
         (int32_t)remoteframewindowsize,
         localframewindowsize,
-        0,
     };
     ReqStatus& status = statusmap[id];
 
@@ -191,7 +190,7 @@ void Guest2::response(void* index, std::shared_ptr<HttpRes> res) {
         ReqStatus& status = statusmap[id];
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:{
-            auto header = std::dynamic_pointer_cast<HttpResHeader>(msg.header);
+            auto header = std::dynamic_pointer_cast<HttpResHeader>(std::get<std::shared_ptr<HttpHeader>>(msg.data));
             LOGD(DHTTP2, "<guest2> get response [%d]: %s\n", id, header->status);
             HttpLog(rwer->getPeer(), status.req->header, header);
             header->del("Transfer-Encoding");
@@ -212,12 +211,14 @@ void Guest2::response(void* index, std::shared_ptr<HttpRes> res) {
             }
             return 1;
         }
-        case ChannelMessage::CHANNEL_MSG_DATA:
-            msg.data.id = id;
-            Recv(std::move(msg.data));
+        case ChannelMessage::CHANNEL_MSG_DATA: {
+            Buffer bb = std::move(std::get<Buffer>(msg.data));
+            bb.id = id;
+            Recv(std::move(bb));
             return 1;
+        }
         case ChannelMessage::CHANNEL_MSG_SIGNAL:
-            Handle(id, msg.signal);
+            Handle(id, std::get<Signal>(msg.data));
             return 0;
         }
         return 0;
@@ -233,7 +234,7 @@ void Guest2::Clean(uint32_t id, uint32_t errcode) {
         Reset(id, errcode);
     }
     if((status.flags & HTTP_CLOSED_F) == 0){
-        status.req->send(ChannelMessage::CHANNEL_ABORT);
+        status.req->send(CHANNEL_ABORT);
     }
     if(status.res){
         status.res->detach();
@@ -279,8 +280,7 @@ void Guest2::WindowUpdateProc(uint32_t id, uint32_t size) {
         remotewinsize += size;
         if(remotewinsize == (int32_t)size){
             LOGD(DHTTP2, "<guest2> get global window active all frame\n");
-            auto statusmap_copy = statusmap;
-            for(auto& i: statusmap_copy){
+            for(auto& i: statusmap){
                 ReqStatus& status = i.second;
                 if(wantmore(status)){
                     status.res->pull();
@@ -308,14 +308,14 @@ void Guest2::AdjustInitalFrameWindowSize(ssize_t diff) {
     }
 }
 
-void Guest2::PushFrame(Buffer&& wb) {
+void Guest2::PushFrame(Buffer&& bb) {
     if(debug[DHTTP2].enabled){
-        const Http2_header *header = (const Http2_header *)wb.data();
+        const Http2_header *header = (const Http2_header *)bb.data();
         uint32_t length = get24(header->length);
         uint32_t id = HTTP2_ID(header->id);
         LOGD(DHTTP2, "<guest2> send a frame [%d]:%d, size:%d, flags:%d\n", id, header->type, length, header->flags);
     }
-    rwer->buffer_insert(std::move(wb));
+    rwer->buffer_insert(std::move(bb));
 }
 
 void Guest2::deleteLater(uint32_t errcode){
@@ -324,7 +324,7 @@ void Guest2::deleteLater(uint32_t errcode){
     }
     for(auto& i: statusmap){
         if((i.second.flags & HTTP_CLOSED_F) == 0) {
-            i.second.req->send(ChannelMessage::CHANNEL_ABORT);
+            i.second.req->send(CHANNEL_ABORT);
         }
         i.second.flags |= HTTP_CLOSED_F;
         if(i.second.res){

@@ -1,6 +1,7 @@
 #include "memio.h"
 
-MemRWer::MemRWer(const char* pname, std::function<int(Buffer&&)> read_cb, std::function<ssize_t()> cap_cb):
+MemRWer::MemRWer(const char* pname, std::function<int(std::variant<Buffer, Signal>)> read_cb,
+                 std::function<ssize_t()> cap_cb):
     FullRWer([](int, int){}), read_cb(std::move(read_cb)), cap_cb(std::move(cap_cb))
 {
     snprintf(peer, sizeof(peer), "%s", pname);
@@ -25,6 +26,17 @@ void MemRWer::SetConnectCB(std::function<void (const sockaddr_storage &)> cb){
     }
 }
 
+void MemRWer::Close(std::function<void()> func) {
+    if (getFd() >= 0) {
+        RWer::Close([this, func] {
+            read_cb(CHANNEL_ABORT);
+            func();
+        });
+    } else {
+        // 已经收到了源端的ABORT信号
+        func();
+    }
+}
 
 void MemRWer::connected(const sockaddr_storage& addr) {
     setEvents(RW_EVENT::READWRITE);
@@ -34,8 +46,7 @@ void MemRWer::connected(const sockaddr_storage& addr) {
     connectCB = [](const sockaddr_storage&){};
 }
 
-
-void MemRWer::push(const Buffer& bb) {
+void MemRWer::push_data(const Buffer &bb) {
     assert(stats != RWerStats::ReadEOF);
     if(bb.len == 0){
         stats = RWerStats::ReadEOF;
@@ -45,15 +56,35 @@ void MemRWer::push(const Buffer& bb) {
     addEvents(RW_EVENT::READ);
 }
 
-void MemRWer::injection(int error, int code) {
+void MemRWer::push_signal(Signal s) {
     if (flags & RWER_CLOSING){
         return;
     }
-    return ErrorHE(error, code);
+    switch(s){
+    case CHANNEL_ABORT:
+        setFd(-1);
+        return ErrorHE(PROTOCOL_ERR, PEER_LOST_ERR);
+    }
+}
+
+void MemRWer::push(std::variant<Buffer, Signal> data) {
+    std::visit([this](auto&& arg) {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, Signal>) {
+            push_signal(arg);
+        } else if constexpr (std::is_same_v<T, Buffer>) {
+            push_data(arg);
+        }
+    }, data);
 }
 
 void MemRWer::detach() {
-    read_cb = [](Buffer&& bb){ return bb.len;};
+    read_cb = [](std::variant<Buffer, Signal> data) -> int{
+        if(auto bb = std::get_if<Buffer>(&data)) {
+            return (int)bb->len;
+        }
+        return 0;
+    };
     cap_cb = []{return 0;};
 }
 
@@ -82,14 +113,14 @@ ssize_t MemRWer::Write(const Buffer &bb) {
 }
 
 void MemRWer::closeHE(RW_EVENT event) {
-    if((flags & RWER_SHUTDOWN) == 0){
+    if((flags & RWER_SHUTDOWN) == 0 && (stats == RWerStats::ReadEOF || stats == RWerStats::Connected)){
         flags |= RWER_SHUTDOWN;
         wbuff.push(wbuff.end(), {nullptr});
     }
     RWer::closeHE(event);
 }
 
-void PMemRWer::push(const Buffer &bb) {
+void PMemRWer::push_data(const Buffer &bb) {
     assert(stats != RWerStats::ReadEOF);
     if(flags & RWER_CLOSING){
         return;

@@ -16,16 +16,16 @@ class Guest:public Requester, public HttpResponser {
 protected:
     size_t rx_bytes = 0;
     size_t tx_bytes = 0;
-protected:
     struct ReqStatus{
         std::shared_ptr<HttpReq>  req;
         std::shared_ptr<HttpRes>  res;
         std::shared_ptr<MemRWer>  rwer;
-        uint      flags;
+        uint      flags = 0;
+        Job       cleanJob = nullptr;
     };
     std::list<ReqStatus> statuslist;
     size_t ReadHE(const Buffer& bb);
-    int mread(std::shared_ptr<HttpReqHeader> header, Buffer&& bb);
+    int mread(std::shared_ptr<HttpReqHeader> header, std::variant<Buffer, Signal> data);
     void WriteHE(uint64_t id);
     virtual void deleteLater(uint32_t errcode) override;
     virtual void Error(int ret, int code);
@@ -35,7 +35,7 @@ protected:
     virtual void EndProc() override;
     virtual void ErrProc() override;
     void Recv(Buffer&& bb);
-    void Handle(ChannelMessage::Signal s);
+    void Handle(Signal s);
     void deqReq();
 public:
     explicit Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx);

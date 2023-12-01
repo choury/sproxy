@@ -298,7 +298,7 @@ size_t TunRWer::DataProc(std::shared_ptr<const Ip> pac, const void* data, size_t
         readCB({nullptr, GetId(pac)});
         return 0;
     }
-    return len - readCB({data, len, GetId(pac)});
+    return len - readCB({std::make_shared<Block>(data, len), len, GetId(pac)});
 }
 
 void TunRWer::AckProc(std::shared_ptr<const Ip> pac) {

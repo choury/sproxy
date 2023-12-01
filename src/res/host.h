@@ -30,7 +30,7 @@ protected:
     virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
     virtual void connected();
     void Recv(Buffer&& bb);
-    void Handle(ChannelMessage::Signal s);
+    void Handle(Signal s);
     void reply();
 public:
     explicit Host(const Destination* dest);

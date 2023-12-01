@@ -5,21 +5,21 @@
 #include "common/common.h"
 
 
-Buffer::Buffer(size_t len, uint64_t id):
-        ptr(std::make_shared<Block>(len)), id(id), len(0), cap(len + PRIOR_HEAD)
+Buffer::Buffer(size_t cap, uint64_t id):
+        ptr(std::make_shared<Block>(cap)), id(id), len(0), cap(cap + PRIOR_HEAD)
 {
     assert(this->ptr != nullptr);
 }
 
 
-Buffer::Buffer(const void* content, size_t len, uint64_t id):
-        ptr(nullptr), content(content), id(id), len(len), cap(len)
+Buffer::Buffer(const void* data, size_t len, uint64_t id):
+        ptr(nullptr), content(data), id(id), len(len), cap(len)
 {
     assert(content != nullptr && len != 0);
 }
 
-Buffer::Buffer(std::shared_ptr<Block> ptr, size_t len, uint64_t id):
-        ptr(ptr), id(id), len(len), cap(len + ptr->tell())
+Buffer::Buffer(std::shared_ptr<Block> data, size_t len, uint64_t id):
+        ptr(std::move(data)), id(id), len(len), cap(len + ptr->tell())
 {
     assert(this->ptr != nullptr);
 }
@@ -31,10 +31,9 @@ Buffer::Buffer(Buffer&& b){
     assert(b.ptr != nullptr || b.content != nullptr || b.len == 0);
     id = b.id;
     len = b.len;
-    cap = b.len;
+    cap = b.cap;
     if(b.ptr != nullptr){
-        ptr = b.ptr;
-        b.ptr = nullptr;
+        ptr = std::move(b.ptr);
         b.id = 0;
         b.cap = 0;
         b.len = 0;
@@ -49,14 +48,19 @@ const void* Buffer::reserve(int off){
     }
     if(ptr == nullptr && off < 0){
         ptr = std::make_shared<Block>(content, len);
+        content = nullptr;
     }
     assert(off <= (int)len);
     len -= off;
-    if(ptr){
-        return ptr->reserve(off);
-    } else {
+    if (content) {
         content = (char*)content + off;
         return content;
+    }
+    if(ptr.use_count() > 1){
+        ptr = std::make_shared<Block>(ptr->reserve(off), len);
+        return ptr->data();
+    } else {
+        return ptr->reserve(off);
     }
 }
 
@@ -68,7 +72,7 @@ size_t Buffer::truncate(size_t left) {
             return origin;
         }
         auto new_ptr = std::make_shared<Block>(left);
-        memcpy(new_ptr->data(), ptr->data(), len);
+        memcpy(new_ptr->data(), ptr->data(), std::min(len, left));
         ptr = new_ptr;
     }else {
         if(left <= cap) {
@@ -76,7 +80,8 @@ size_t Buffer::truncate(size_t left) {
             return origin;
         }
         ptr = std::make_shared<Block>(left);
-        memcpy(ptr->data(), content, len);
+        memcpy(ptr->data(), content, std::min(len, left));
+        content = nullptr;
     }
     cap = left + ptr->tell();
     len = left;
@@ -94,21 +99,10 @@ void* Buffer::mutable_data() {
     if(ptr == nullptr){
         ptr = std::make_shared<Block>(content, len);
     }
+    if(ptr.use_count() > 1) {
+        ptr = std::make_shared<Block>(ptr->data(), len);
+    }
     return ptr->data();
-}
-
-void* Buffer::end() const {
-    if(ptr == nullptr){
-        return nullptr;
-    }
-    return (char*)ptr->data() + len;
-}
-
-Buffer Buffer::clone() const {
-    if(ptr == nullptr){
-        return Buffer{std::make_shared<Block>(content, len), len, id};
-    }
-    return Buffer{std::make_shared<Block>(ptr->data(), len), len, id};
 }
 
 buff_iterator WBuffer::start() {

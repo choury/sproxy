@@ -52,7 +52,7 @@ protected:
     RWerStats  stats = RWerStats::Idle;
     WBuffer    wbuff;
     //返回值是剩余未处理的数据长度，返回0表示数据处理完毕，返回len表示数据完全没有被消费
-    std::function<size_t(const Buffer& bb)> readCB;
+    std::function<size_t(Buffer bb)> readCB;
     std::function<void(uint64_t id)> writeCB;
     std::function<void(int ret, int code)> errorCB;
     std::function<void()> closeCB;
@@ -73,7 +73,7 @@ public:
     explicit RWer(int fd, std::function<void(int ret, int code)> errorCB);
     explicit RWer(std::function<void(int ret, int code)> errorCB);
     virtual void SetErrorCB(std::function<void(int ret, int code)> func);
-    virtual void SetReadCB(std::function<size_t(const Buffer& bb)> func);
+    virtual void SetReadCB(std::function<size_t(Buffer bb)> func);
     virtual void SetWriteCB(std::function<void(uint64_t id)> func);
 
     virtual void Close(std::function<void()> func);

@@ -53,28 +53,36 @@ size_t Guest::ReadHE(const Buffer& bb){
     return len;
 }
 
-int Guest::mread(std::shared_ptr<HttpReqHeader>, Buffer&& bb) {
-    LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
-    assert(statuslist.size() == 1);
-    auto& status = statuslist.front();
-    assert((status.flags & HTTP_RES_COMPLETED) == 0);
-    if (bb.len == 0) {
-        rwer->buffer_insert(nullptr);
-        status.flags |= HTTP_RES_COMPLETED;
-        if(status.flags & HTTP_REQ_COMPLETED) {
-            deleteLater(NOERROR);
+int Guest::mread(std::shared_ptr<HttpReqHeader>, std::variant<Buffer, Signal> data) {
+    return std::visit([this](auto&& arg) -> int {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, int>) {
+            Handle(arg);
+        } else if constexpr (std::is_same_v<T, Buffer>) {
+            LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", rwer->getPeer(), arg.len);
+            assert(statuslist.size() == 1);
+            auto& status = statuslist.front();
+            assert((status.flags & HTTP_RES_COMPLETED) == 0);
+            if (arg.len == 0) {
+                rwer->buffer_insert(nullptr);
+                status.flags |= HTTP_RES_COMPLETED;
+                if(status.flags & HTTP_REQ_COMPLETED) {
+                    deleteLater(NOERROR);
+                }
+                return 0;
+            }
+            int cap = rwer->cap(0);
+            if(cap <= 0) {
+                errno = EAGAIN;
+                return -1;
+            }
+            int len = std::min(arg.len, (size_t)cap);
+            arg.truncate(len);
+            rwer->buffer_insert(std::move(arg));
+            return len;
         }
         return 0;
-    }
-    int cap = rwer->cap(0);
-    if(cap <= 0) {
-        errno = EAGAIN;
-        return -1;
-    }
-    int len = std::min(bb.len, (size_t)cap);
-    bb.truncate(len);
-    rwer->buffer_insert(std::move(bb));
-    return len;
+    }, data);
 }
 
 void Guest::WriteHE(uint64_t){
@@ -162,8 +170,7 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
             return;
         }
     }
-    if(mitmProxy) {
-        assert(header->http_method());
+    if(mitmProxy && header->http_method()) {
         strcpy(header->Dest.scheme, "https");
         strcpy(header->Dest.protocol, "ssl");
     }
@@ -172,7 +179,7 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
             std::bind(&Guest::response, this, nullptr, _1),
             [this]{ rwer->Unblock(0);});
 
-    statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, 0});
+    statuslist.emplace_back(ReqStatus{req, nullptr, nullptr});
     if(statuslist.size() == 1){
         distribute(req, this);
     }
@@ -189,7 +196,7 @@ void Guest::deqReq() {
     //转送的请求不会走到这里，因为他们直接调用deletaLater销毁
     assert(status.rwer == nullptr && status.req);
     if((status.flags & HTTP_CLOSED_F) == 0) {
-        status.req->send(ChannelMessage::CHANNEL_ABORT);
+        status.req->send(CHANNEL_ABORT);
     }
     if(status.res){
         status.res->detach();
@@ -220,7 +227,7 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
         status.req->send(buff, (size_t)len);
     }
     if(status.rwer) {
-        status.rwer->push({buff, (size_t)len});
+        status.rwer->push(Buffer{buff, (size_t)len});
     }
     rx_bytes += len;
     if(status.req){
@@ -271,7 +278,7 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
         assert(!statuslist.empty());
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER: {
-            auto header = std::dynamic_pointer_cast<HttpResHeader>(msg.header);
+            auto header = std::dynamic_pointer_cast<HttpResHeader>(std::get<std::shared_ptr<HttpHeader>>(msg.data));
             HttpLog(rwer->getPeer(), status.req->header, header);
             if (status.req->header->ismethod("CONNECT")) {
                 if (memcmp(header->status, "200", 3) == 0) {
@@ -293,10 +300,10 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
             return 1;
         }
         case ChannelMessage::CHANNEL_MSG_DATA:
-            Recv(std::move(msg.data));
+            Recv(std::move(std::get<Buffer>(msg.data)));
             return 1;
         case ChannelMessage::CHANNEL_MSG_SIGNAL:
-            Handle(msg.signal);
+            Handle(std::get<Signal>(msg.data));
             return 0;
         }
         return 0;
@@ -318,11 +325,11 @@ void Guest::Recv(Buffer&& bb) {
         }
         //如果既不是没有长度的请求，也非chunked，则无需发送额外数据来标记结束
         if(status.flags & HTTP_REQ_COMPLETED) {
-            AddJob(std::bind(&Guest::deqReq, this), 0, JOB_FLAGS_AUTORELEASE);
+            status.cleanJob = AddJob(std::bind(&Guest::deqReq, this), 0, 0);
         }
         if(status.rwer && status.req && (status.flags & HTTP_CLOSED_F) == 0) {
             status.flags |= HTTP_CLOSED_F;
-            status.req->send(ChannelMessage::CHANNEL_ABORT);
+            status.req->send(CHANNEL_ABORT);
             return deleteLater(PEER_LOST_ERR);
         }
         return;
@@ -345,13 +352,14 @@ void Guest::Recv(Buffer&& bb) {
     }
 }
 
-void Guest::Handle(ChannelMessage::Signal s) {
+void Guest::Handle(Signal s) {
     ReqStatus& status = statuslist.front();
     LOGD(DHTTP, "<guest> signal %" PRIu32 ": %d\n", status.req->header->request_id, (int)s);
     switch(s) {
-    case ChannelMessage::CHANNEL_ABORT:
+    case CHANNEL_ABORT:
         status.flags |= HTTP_CLOSED_F;
         if ((status.flags & HTTP_REQ_COMPLETED) && (status.flags & HTTP_RES_COMPLETED)) {
+            //如果是已经干净结束的请求，那么直接清理掉就可以了，链接可以继续使用
             return deqReq();
         }
         return deleteLater(PROTOCOL_ERR);
@@ -365,17 +373,13 @@ void Guest::deleteLater(uint32_t errcode) {
         }
         status.flags |= HTTP_CLOSED_F;
         if(status.req) {
-            status.req->send(ChannelMessage::CHANNEL_ABORT);
+            status.req->send(CHANNEL_ABORT);
         }
         if(status.res) {
             status.res->detach();
         }
         if(status.rwer) {
-            if ((status.flags & HTTP_REQ_COMPLETED) == 0 && (status.flags & HTTP_RES_COMPLETED)){
-                status.rwer->push({nullptr});
-            }else {
-                status.rwer->injection(PEER_LOST_ERR, 0);
-            }
+            status.rwer->push(CHANNEL_ABORT);
             status.rwer->detach();
         }
     }

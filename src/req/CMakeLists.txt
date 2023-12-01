@@ -3,11 +3,7 @@
 #Created:  2017/2/11
 
 
-set(req_src requester.cpp  guest.cpp guest_sni.cpp guest2.cpp cli.cpp)
-
-if(HAVE_VPN)
-    set(req_src ${req_src} guest_vpn.cpp)
-endif()
+set(req_src requester.cpp  guest.cpp guest_sni.cpp guest2.cpp guest_vpn.cpp cli.cpp)
 
 if(HAVE_QUIC)
     set(req_src ${req_src} guest3.cpp)

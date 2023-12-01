@@ -69,7 +69,7 @@ void RWer::SetErrorCB(std::function<void(int ret, int code)> func){
     errorCB = std::move(func);
 }
 
-void RWer::SetReadCB(std::function<size_t(const Buffer& bb)> func){
+void RWer::SetReadCB(std::function<size_t(Buffer bb)> func){
     readCB = std::move(func);
     Unblock(0);
 }
@@ -174,15 +174,15 @@ void RWer::buffer_insert(Buffer&& bb) {
     assert((flags & RWER_SHUTDOWN) == 0);
     if(bb.len == 0){
         flags |= RWER_SHUTDOWN;
-    } else {
-        //copy const data
-        bb.mutable_data();
     }
     addEvents(RW_EVENT::WRITE);
     wbuff.push(wbuff.end(), std::move(bb));
 }
 
 bool RWer::idle(uint64_t) {
+    if (getFd() < 0) {
+        return true;
+    }
     return (flags & RWER_SHUTDOWN) && (flags & RWER_EOFDELIVED);
 }
 

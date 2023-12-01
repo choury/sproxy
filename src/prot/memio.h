@@ -2,12 +2,13 @@
 #define MEMIO_H__
 
 #include "rwer.h"
+#include <variant>
 
 class MemRWer: public FullRWer{
 protected:
     char peer[128];
     CBuffer rb;
-    std::function<int(Buffer&&)> read_cb;
+    std::function<int(std::variant<Buffer, Signal>)> read_cb;
     std::function<ssize_t()> cap_cb;
     std::function<void(const sockaddr_storage&)> connectCB = [](const sockaddr_storage&){};
     void connected(const sockaddr_storage& addr);
@@ -16,14 +17,20 @@ protected:
     virtual bool IsConnected() {
         return true;
     }
+
+    virtual void push_data(const Buffer& bb);
+    virtual void push_signal(Signal s);
 public:
-    explicit MemRWer(const char* pname, std::function<int(Buffer&&)> read_cb, std::function<ssize_t()> cap_cb);
+    explicit MemRWer(const char* pname,
+                     std::function<int(std::variant<Buffer, Signal>)> read_cb,
+                     std::function<ssize_t()> cap_cb);
     ~MemRWer() override;
 
-    virtual void push(const Buffer& bb);
-    virtual void injection(int error, int code);
+    virtual void push(std::variant<Buffer, Signal> data);
     virtual void detach();
+
     void SetConnectCB(std::function<void(const sockaddr_storage&)> connectCB);
+    virtual void Close(std::function<void()> func) override;
     virtual size_t rlength(uint64_t id) override;
     virtual ssize_t cap(uint64_t id) override;
     virtual void ConsumeRData(uint64_t) override;
@@ -42,7 +49,7 @@ public:
 class PMemRWer: public MemRWer {
 public:
     using MemRWer::MemRWer;
-    virtual void push(const Buffer& bb) override;
+    virtual void push_data(const Buffer& bb) override;
     virtual void ConsumeRData(uint64_t) override;
 };
 

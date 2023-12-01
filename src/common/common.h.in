@@ -73,7 +73,7 @@ static inline int endwith(const char *s1, const char *s2) {
 #define MAX_BUF_LEN   (4 * 1024 * 1024)
 
 typedef enum{NONE, TCP=SOCK_STREAM, UDP=SOCK_DGRAM, ICMP, QUIC}Protocol;
-
+typedef enum{CHANNEL_ABORT}Signal;
 
 enum debug_module {
     DNONE  = 0,

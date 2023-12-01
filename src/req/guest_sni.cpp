@@ -58,13 +58,13 @@ size_t Guest_sni::sniffer(const Buffer& bb) {
     auto req = std::make_shared<HttpReq>(header,std::bind(&Guest_sni::response, this, nullptr, _1),
                                          [this]{ rwer->Unblock(0);});
 
-    statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, 0});
+    statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, 0, nullptr});
     distribute(req, this);
     rwer->SetReadCB(std::bind(&Guest_sni::ReadHE, this, _1));
     return bb.len;
 }
 
-size_t Guest_sni::sniffer_quic(const Buffer& bb) {
+size_t Guest_sni::sniffer_quic(Buffer bb) {
 #ifdef HAVE_QUIC
     quic_pkt_header header;
     int body_len = unpack_meta(bb.data(), bb.len, &header);
@@ -120,10 +120,10 @@ size_t Guest_sni::sniffer_quic(const Buffer& bb) {
         auto req = std::make_shared<HttpReq>(header,std::bind(&Guest_sni::response, this, nullptr, _1),
                                             [this]{ rwer->Unblock(0);});
 
-        statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, 0});
+        statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, 0, nullptr});
         distribute(req, this);
         rx_bytes += bb.len;
-        req->send(bb.clone());
+        req->send(std::move(bb));
     }
     rwer->SetReadCB(std::bind(&Guest_sni::ReadHE, this, _1));
 #endif
@@ -140,7 +140,7 @@ void Guest_sni::response(void*, std::shared_ptr<HttpRes> res){
         assert(!statuslist.empty());
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER: {
-            auto header = std::dynamic_pointer_cast<HttpResHeader>(msg.header);
+            auto header = std::dynamic_pointer_cast<HttpResHeader>(std::get<std::shared_ptr<HttpHeader>>(msg.data));
             HttpLog(rwer->getPeer(), status.req->header, header);
             if(memcmp(header->status, "200", 3) == 0){
                 rwer->Unblock(0);
@@ -151,10 +151,10 @@ void Guest_sni::response(void*, std::shared_ptr<HttpRes> res){
             }
         }
         case ChannelMessage::CHANNEL_MSG_DATA:
-            Recv(std::move(msg.data));
+            Recv(std::move(std::get<Buffer>(msg.data)));
             return 1;
         case ChannelMessage::CHANNEL_MSG_SIGNAL:
-            Handle(msg.signal);
+            Handle(std::get<Signal>(msg.data));
             return 0;
         }
         return 0;

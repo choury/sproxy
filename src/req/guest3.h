@@ -17,7 +17,8 @@ class Guest3: public Requester, public Http3Responser {
     struct ReqStatus{
         std::shared_ptr<HttpReq> req;
         std::shared_ptr<HttpRes> res;
-        uint32_t flags;
+        uint32_t flags = 0;
+        Job      cleanJob = nullptr;
     };
 
     std::map<uint64_t, ReqStatus> statusmap;
@@ -38,7 +39,7 @@ protected:
     void init();
     void connected();
     void Recv(Buffer&& bb);
-    void Handle(uint64_t id, ChannelMessage::Signal s);
+    void Handle(uint64_t id, Signal s);
     void RstProc(uint64_t id, uint32_t errcode);
     void Clean(uint64_t id, uint32_t errcode);
 public:

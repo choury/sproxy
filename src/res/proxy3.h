@@ -29,7 +29,7 @@ protected:
     virtual uint64_t CreateUbiStream() override;
 
     void Recv(Buffer&& bb);
-    void Handle(uint64_t id, ChannelMessage::Signal s);
+    void Handle(uint64_t id, Signal s);
     void RstProc(uint64_t id, uint32_t errcode);
     void Clean(uint64_t id, ReqStatus& status, uint32_t errcode);
 public:

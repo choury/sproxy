@@ -86,10 +86,10 @@ attach:
                 LOGD(DHTTP, "<host> ignore header for req\n");
                 return 1;
             case ChannelMessage::CHANNEL_MSG_DATA:
-                Recv(std::move(msg.data));
+                Recv(std::move(std::get<Buffer>(msg.data)));
                 return 1;
             case ChannelMessage::CHANNEL_MSG_SIGNAL:
-                Handle(msg.signal);
+                Handle(std::get<Signal>(msg.data));
                 return 0;
         }
         return 0;
@@ -174,10 +174,10 @@ void Host::connected() {
     reply();
 }
 
-void Host::Handle(ChannelMessage::Signal s){
+void Host::Handle(Signal s){
     LOGD(DHTTP, "<host> signal %" PRIu32 ": %d\n", status.req->header->request_id, (int)s);
     switch(s){
-    case ChannelMessage::CHANNEL_ABORT:
+    case CHANNEL_ABORT:
         status.flags |= HTTP_CLOSED_F;
         return deleteLater(PEER_LOST_ERR);
     }
@@ -289,7 +289,7 @@ void Host::deleteLater(uint32_t errcode){
     if(status.flags & HTTP_CLOSED_F){
         //do nothing.
     }else if(status.res){
-        status.res->send(ChannelMessage::CHANNEL_ABORT);
+        status.res->send(CHANNEL_ABORT);
     }else {
         switch(errcode) {
         case DNS_FAILED:

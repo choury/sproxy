@@ -42,7 +42,7 @@ protected:
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
 
     void Recv(Buffer&& bb);
-    void Handle(uint32_t id, ChannelMessage::Signal s);
+    void Handle(uint32_t id, Signal s);
     void Clean(uint32_t id, ReqStatus& status, uint32_t errcode);
 
     static bool wantmore(const ReqStatus& status);

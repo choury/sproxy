@@ -17,13 +17,14 @@ class Guest_vpn: public Requester {
         std::shared_ptr<HttpRes> res;
         std::shared_ptr<MemRWer> rwer; //rwer 和 req/res 二者只会有一个
         uint32_t   flags = 0;
+        Job        cleanJob = nullptr;
     };
 
     std::map<uint64_t, VpnStatus> statusmap;
-    void handle(uint64_t id, ChannelMessage::Signal s);
+    void handle(uint64_t id, Signal s);
     void ReqProc(uint64_t id, std::shared_ptr<const Ip> pac);
-    void Clean(uint64_t id, VpnStatus& status);
-    int mread(uint64_t id, Buffer&& bb);
+    void Clean(uint64_t id);
+    int mread(uint64_t id, std::variant<Buffer, Signal> data);
 public:
     explicit Guest_vpn(int fd);
     virtual void response(void* index, std::shared_ptr<HttpRes> res) override;

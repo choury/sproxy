@@ -108,7 +108,7 @@ void Guest3::Recv(Buffer&& bb){
         PushFrame({nullptr, bb.id});
         status.flags |= HTTP_RES_COMPLETED;
         if(status.flags & HTTP_REQ_COMPLETED) {
-            AddJob(std::bind(&Guest3::Clean, this, bb.id, NOERROR), 0, JOB_FLAGS_AUTORELEASE);
+            status.cleanJob = AddJob(std::bind(&Guest3::Clean, this, bb.id, NOERROR), 0, 0);
         }
     }else{
         if(status.req->header->ismethod("HEAD")){
@@ -122,13 +122,13 @@ void Guest3::Recv(Buffer&& bb){
     }
 }
 
-void Guest3::Handle(uint64_t id, ChannelMessage::Signal s) {
+void Guest3::Handle(uint64_t id, Signal s) {
     assert(statusmap.count(id));
     ReqStatus& status = statusmap[id];
     LOGD(DHTTP3, "<guest3> signal [%d] %" PRIu32 ": %d\n",
          (int)id, status.req->header->request_id, (int)s);
     switch(s){
-    case ChannelMessage::CHANNEL_ABORT:
+    case CHANNEL_ABORT:
         status.flags |= HTTP_CLOSED_F;
         return Clean(id, HTTP3_ERR_INTERNAL_ERROR);
     }
@@ -149,7 +149,6 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     statusmap[id] = ReqStatus{
             nullptr,
             nullptr,
-            0,
     };
     ReqStatus& status = statusmap[id];
 
@@ -193,7 +192,7 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
         case ChannelMessage::CHANNEL_MSG_HEADER: {
             assert(statusmap.count(id));
             ReqStatus &status = statusmap[id];
-            auto header = std::dynamic_pointer_cast<HttpResHeader>(msg.header);
+            auto header = std::dynamic_pointer_cast<HttpResHeader>(std::get<std::shared_ptr<HttpHeader>>(msg.data));
             LOGD(DHTTP3, "<guest3> get response [%" PRIu64"]: %s\n", id, header->status);
             HttpLog(rwer->getPeer(), status.req->header, header);
             header->del("Transfer-Encoding");
@@ -211,12 +210,14 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
             PushFrame({buff, len + pre, id});
             return 1;
         }
-        case ChannelMessage::CHANNEL_MSG_DATA:
-            msg.data.id = id;
-            Recv(std::move(msg.data));
+        case ChannelMessage::CHANNEL_MSG_DATA: {
+            Buffer bb = std::move(std::get<Buffer>(msg.data));
+            bb.id = id;
+            Recv(std::move(bb));
             return 1;
+        }
         case ChannelMessage::CHANNEL_MSG_SIGNAL:
-            Handle(id, msg.signal);
+            Handle(id, std::get<Signal>(msg.data));
             return 0;
         }
         return 0;
@@ -237,7 +238,7 @@ void Guest3::Clean(uint64_t id, uint32_t errcode) {
         Reset(id, errcode);
     }
     if((status.flags & HTTP_CLOSED_F) == 0){
-        status.req->send(ChannelMessage::CHANNEL_ABORT);
+        status.req->send(CHANNEL_ABORT);
     }
     if(status.res){
         status.res->detach();
@@ -289,7 +290,7 @@ void Guest3::deleteLater(uint32_t errcode){
     }
     for(auto& i: statusmap){
         if((i.second.flags & HTTP_CLOSED_F) == 0) {
-            i.second.req->send(ChannelMessage::CHANNEL_ABORT);
+            i.second.req->send(CHANNEL_ABORT);
         }
         i.second.flags |= HTTP_CLOSED_F;
         if(i.second.res){

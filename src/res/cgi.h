@@ -50,7 +50,7 @@ class Cgi:public Responser{
     bool HandleData(const CGI_Header* header, CgiStatus& Status);
     bool HandleError(const CGI_Header* header, CgiStatus& status);
     void Recv(Buffer&& bb);
-    void Handle(uint32_t id, ChannelMessage::Signal s);
+    void Handle(uint32_t id, Signal s);
 public:
     explicit Cgi(const char* filename, int svs[2], int cvs[2]);
     virtual ~Cgi() override;

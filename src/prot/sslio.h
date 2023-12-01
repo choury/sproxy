@@ -98,10 +98,11 @@ template<>
 class SslRWer<MemRWer>: public SslRWerBase<MemRWer> {
     virtual int fill_in_bio() override;
 public:
-    SslRWer(SSL_CTX* ctx, const char* pname, std::function<int(Buffer&&)> read_cb, std::function<ssize_t()> cap_cb):
-            SslRWerBase<MemRWer>(ctx, pname, read_cb, cap_cb)
+    SslRWer(SSL_CTX* ctx, const char* pname, std::function<int(std::variant<Buffer, Signal>)> read_cb,
+            std::function<ssize_t()> cap_cb):
+      SslRWerBase<MemRWer>(ctx, pname, read_cb, cap_cb)
     {}
-    virtual void push(const Buffer& bb) override;
+    virtual void push_data(const Buffer& bb) override;
 };
 
 

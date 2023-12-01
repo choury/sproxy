@@ -11,7 +11,8 @@ class Guest2: public Requester, public Http2Responser {
         std::shared_ptr<HttpRes> res;
         int32_t  remotewinsize; //对端提供的窗口大小，发送时减小，收到对端update时增加
         int32_t  localwinsize; //发送给对端的窗口大小，接受时减小，给对端发送update时增加
-        uint32_t flags;
+        uint32_t flags = 0;
+        Job      cleanJob = nullptr;
     };
     std::map<uint32_t, ReqStatus> statusmap;
     //void init(RWer* rwer);
@@ -34,7 +35,7 @@ protected:
     virtual void PushFrame(Buffer&& wb) override;
 
     void Recv(Buffer&& bb);
-    void Handle(uint32_t id, ChannelMessage::Signal signal);
+    void Handle(uint32_t id, Signal signal);
     void Clean(uint32_t id, uint32_t errcode);
     static bool wantmore(const ReqStatus& status);
 public:

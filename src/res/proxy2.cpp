@@ -104,13 +104,13 @@ void Proxy2::Recv(Buffer&& bb) {
     PushData(std::move(bb));
 }
 
-void Proxy2::Handle(uint32_t id, ChannelMessage::Signal s) {
+void Proxy2::Handle(uint32_t id, Signal s) {
     assert(statusmap.count(id));
     ReqStatus& status = statusmap[id];
     LOGD(DHTTP2, "<proxy2> signal [%d] %" PRIu32 ": %d\n",
          (int)id, status.req->header->request_id, (int)s);
     switch(s){
-    case ChannelMessage::CHANNEL_ABORT:
+    case CHANNEL_ABORT:
         status.flags |= HTTP_CLOSED_F;
         return Clean(id, status, HTTP2_ERR_INTERNAL_ERROR);
     }
@@ -229,7 +229,7 @@ void Proxy2::Clean(uint32_t id, ReqStatus& status, uint32_t errcode){
     if(status.flags & HTTP_CLOSED_F){
         //do nothing.
     }else if(status.res){
-        status.res->send(ChannelMessage::CHANNEL_ABORT);
+        status.res->send(CHANNEL_ABORT);
     }else{
         status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[internal error]]"));
     }
@@ -330,12 +330,14 @@ void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
         case ChannelMessage::CHANNEL_MSG_HEADER:
             LOGD(DHTTP2, "<proxy2> ignore header for req\n");
             return 1;
-        case ChannelMessage::CHANNEL_MSG_DATA:
-            msg.data.id = id;
-            Recv(std::move(msg.data));
+        case ChannelMessage::CHANNEL_MSG_DATA: {
+            Buffer bb = std::move(std::get<Buffer>(msg.data));
+            bb.id = id;
+            Recv(std::move(bb));
             return 1;
+        }
         case ChannelMessage::CHANNEL_MSG_SIGNAL:
-            Handle(id, msg.signal);
+            Handle(id, std::get<Signal>(msg.data));
             return 0;
         }
         return 0;

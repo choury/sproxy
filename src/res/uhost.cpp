@@ -21,7 +21,7 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
                 LOGD(DHTTP, "<uhost> [%d] ignore header for req\n", (int)req->header->request_id);
                 return 1;
             case ChannelMessage::CHANNEL_MSG_DATA: {
-                auto &bb = message.data;
+                auto &bb = std::get<Buffer>(message.data);
                 LOGD(DHTTP, "<uhost> Recv %d: %zu bytes\n", (int)req->header->request_id, bb.len);
                 if (bb.len == 0) {
                     return 0;
@@ -31,7 +31,8 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
                 return 1;
             }
             case ChannelMessage::CHANNEL_MSG_SIGNAL:
-                LOGD(DHTTP, "<uhost> signal %d: %d\n", (int)req->header->request_id, message.signal);
+                LOGD(DHTTP, "<uhost> signal %d: %d\n",
+                     (int)req->header->request_id, std::get<Signal>(message.data));
                 is_closing = true;
                 deleteLater(PEER_LOST_ERR);
                 return 0;
@@ -39,7 +40,7 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
             return 0;
         }, [this]{return rwer->cap(0);});
     });
-    rwer->SetReadCB([this](const Buffer& bb) -> size_t{
+    rwer->SetReadCB([this](Buffer bb) -> size_t{
         LOGD(DHTTP, "<uhost> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
         if(res == nullptr){
             res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
@@ -54,7 +55,7 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
             rx_dropped += bb.len;
         } else {
             rx_bytes += bb.len;
-            res->send(bb.clone());
+            res->send(std::move(bb));
         }
         return 0;
     });
@@ -93,7 +94,7 @@ void Uhost::deleteLater(uint32_t errcode) {
     if(is_closing){
         //do nothing
     }else if(res){
-        res->send(ChannelMessage::CHANNEL_ABORT);
+        res->send(CHANNEL_ABORT);
     }else {
         switch(errcode) {
         case DNS_FAILED:

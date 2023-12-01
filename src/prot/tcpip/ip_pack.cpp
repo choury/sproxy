@@ -206,7 +206,8 @@ uint16_t Icmp::getseq() const {
 }
 
 void Icmp::build_packet(Buffer& bb) {
-    char* packet = (char *) bb.reserve(-(char) sizeof(icmp_hdr));
+    bb.reserve(-(char) sizeof(icmp_hdr));
+    char* packet = (char *)bb.mutable_data();
     icmp_hdr.checksum = 0;
     memcpy(packet, &icmp_hdr, sizeof(icmp_hdr));
     ((icmp *)packet)->icmp_cksum = htons(checksum16((uint8_t*) packet, bb.len));
@@ -287,7 +288,8 @@ uint16_t Icmp6::getseq() const {
 }
 
 void Icmp6::build_packet(const ip6_hdr* ip_hdr, Buffer& bb) {
-    char* packet = (char *) bb.reserve(-(char) sizeof(icmp_hdr));
+    bb.reserve(-(char) sizeof(icmp_hdr));
+    char* packet = (char *) bb.mutable_data();
     icmp_hdr.icmp6_cksum = 0;
     memcpy(packet, &icmp_hdr, sizeof(icmp_hdr));
     ((icmp6_hdr *)packet)->icmp6_cksum = ip6_checksum(ip_hdr, IPPROTO_ICMPV6, bb);
@@ -481,7 +483,8 @@ void Tcp::build_packet(const ip* ip_hdr, Buffer& bb) {
     tcp_hdr.th_off = hdrlen >> 2;
     tcp_hdr.th_sum = 0;
 
-    char* packet = (char *) bb.reserve(-(char) (hdrlen));
+    bb.reserve(-(char) (hdrlen));
+    char* packet = (char *) bb.mutable_data();
     memcpy(packet, &tcp_hdr, sizeof(tcphdr));
     if (tcpoptlen > 0)
         memcpy(packet + sizeof(tcphdr), tcpopt, tcpoptlen); //copy tcp header option to packet
@@ -500,7 +503,8 @@ void Tcp::build_packet(const ip6_hdr* ip_hdr, Buffer& bb) {
     tcp_hdr.th_off = hdrlen >> 2;
     tcp_hdr.th_sum = 0;
 
-    char* packet = (char *) bb.reserve(-(char) (hdrlen));
+    bb.reserve(-(char) (hdrlen));
+    char* packet = (char *) bb.mutable_data();
     memcpy(packet, &tcp_hdr, sizeof(tcphdr));
     if (tcpoptlen > 0)
         memcpy(packet + sizeof(tcphdr), tcpopt, tcpoptlen); //copy tcp header option to packet
@@ -794,7 +798,9 @@ Udp::Udp(uint16_t sport, uint16_t dport) {
 void Udp::build_packet(const ip* ip_hdr, Buffer& bb) {
     udp_hdr.uh_ulen = htons(bb.len + sizeof(udphdr));
     udp_hdr.uh_sum = 0;
-    char* packet = (char *) bb.reserve(-(char) sizeof(udphdr));
+
+    bb.reserve(-(char) sizeof(udphdr));
+    char* packet = (char *) bb.mutable_data();
     memcpy(packet, &udp_hdr, sizeof(udphdr));
 
 #ifdef UDP_CHECKSUM
@@ -805,7 +811,9 @@ void Udp::build_packet(const ip* ip_hdr, Buffer& bb) {
 void Udp::build_packet(const ip6_hdr* ip_hdr, Buffer& bb) {
     udp_hdr.uh_ulen = htons(bb.len + sizeof(udphdr));
     udp_hdr.uh_sum = 0;
-    char* packet = (char *) bb.reserve(-(char) sizeof(udphdr));
+
+    bb.reserve(-(char) sizeof(udphdr));
+    char* packet = (char *)bb.mutable_data();
     memcpy(packet, &udp_hdr, sizeof(udphdr));
 
 #ifdef UDP_CHECKSUM
@@ -1065,7 +1073,6 @@ Ip4::Ip4(uint8_t type, const sockaddr_storage* src, const sockaddr_storage* dst)
 }
 
 void Ip4::build_packet(Buffer& bb){
-    bb.mutable_data(); //copy const data to mutable
     switch(type){
     case IPPROTO_ICMP:
         icmp->build_packet(bb);
@@ -1325,7 +1332,6 @@ void Ip6::print() const {
 
 
 void Ip6::build_packet(Buffer& bb) {
-    bb.mutable_data(); //copy const data to mutable
     switch(type){
     case IPPROTO_ICMPV6:
         icmp6->build_packet(&hdr, bb);

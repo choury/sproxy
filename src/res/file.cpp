@@ -133,7 +133,7 @@ static void loadmine(){
 File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
     rwer = std::make_shared<FullRWer>([this](int ret, int code){
         LOGE("file error: %d/%d\n", ret, code);
-        status.res->send(ChannelMessage::CHANNEL_ABORT);
+        status.res->send(CHANNEL_ABORT);
         deleteLater(ret);
     });
     if(mimetype.empty()){
@@ -239,12 +239,12 @@ size_t File::readHE(const Buffer&) {
     len = pread(fd, buff->data(), len, rg.begin);
     if(len <= 0){
         LOGE("file pread error: %s\n", strerror(errno));
-        status.res->send(ChannelMessage::CHANNEL_ABORT);
+        status.res->send(CHANNEL_ABORT);
         deleteLater(SOCKET_ERR);
         rwer->delEvents(RW_EVENT::READ);
         return 0;
     }
-    status.res->send({buff, (size_t)len});
+    status.res->send({std::move(buff), (size_t)len});
     rg.begin += len;
     return 0;
 }

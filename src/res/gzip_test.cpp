@@ -11,7 +11,7 @@ static unsigned char in[16384];
 GzipTest::GzipTest() {
     rwer = std::make_shared<FullRWer>([this](int ret, int code) {
         LOGE("gzip_test error: %d/%d\n", ret, code);
-        res->send(ChannelMessage::CHANNEL_ABORT);
+        res->send(CHANNEL_ABORT);
         deleteLater(ret);
     });
 
@@ -134,7 +134,7 @@ size_t GzipTest::gzipreadHE(const Buffer&) {
         (void)ret;
     } while (strm.avail_out && left);
 
-    res->send({buff, chunk - (size_t)strm.avail_out});
+    res->send({std::move(buff), chunk - (size_t)strm.avail_out});
     if (strm.avail_out == 0) {
         rwer->delEvents(RW_EVENT::READ);
     }

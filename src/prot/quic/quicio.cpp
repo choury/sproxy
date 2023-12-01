@@ -1217,18 +1217,18 @@ void QuicBase::close() {
                                 3 * qos.rtt.rttvar);
         return 0;
     };
+    // RWER_CLOSING in quic means we have sent or recv CLOSE_CONNECTION_APP frame,
+    // so we will not send CLOSE_CONNECTION_APP frame again
+    if(isClosing){
+        return;
+    }
+    isClosing = true;
     if(sslStats == SslStats::Established) {
         //we only send CLOSE_CONNECTION_APP frame after handshake now
         //TODO: but it should also be send before handshake
         close_timer = UpdateJob(std::move(close_timer),
                                 std::bind(&QuicBase::onError, this, PROTOCOL_ERR, QUIC_CONNECTION_CLOSED),
                                 max_idle_timeout);
-        // RWER_CLOSING in quic means we have sent or recv CLOSE_CONNECTION_APP frame,
-        // so we will not send CLOSE_CONNECTION_APP frame again
-        if(isClosing){
-            return;
-        }
-        isClosing = true;
 
         quic_frame* frame = new quic_frame;
         frame->type = QUIC_FRAME_CONNECTION_CLOSE_APP;
@@ -1238,7 +1238,8 @@ void QuicBase::close() {
         frame->close.reason = nullptr;
         qos.PushFrame(ssl_encryption_application, frame);
     }else{
-        onError(PROTOCOL_ERR, QUIC_CONNECTION_CLOSED);
+        close_timer = UpdateJob(std::move(close_timer),
+                                std::bind(&QuicBase::onError, this, PROTOCOL_ERR, QUIC_CONNECTION_CLOSED), 0);
     }
 }
 
@@ -1709,6 +1710,7 @@ void QuicRWer::onError(int type, int code) {
     if (type == PROTOCOL_ERR && code == QUIC_CONNECTION_CLOSED) {
         closeCB();
     } else {
+        stats = RWerStats::Error;
         errorCB(type, code);
     }
 }
@@ -1775,14 +1777,17 @@ void QuicRWer::waitconnectHE(RW_EVENT events) {
 }
 
 void QuicRWer::Close(std::function<void()> func) {
+    if (flags & RWER_CLOSING) {
+        return;
+    }
+    flags |= RWER_CLOSING;
     closeCB = std::move(func);
-    flags |= RWER_READING;
     if(getFd() >= 0) {
         handleEvent = (void (Ep::*)(RW_EVENT))&QuicRWer::closeHE;
         setEvents(RW_EVENT::READ);
         close();
     } else {
-        closeCB();
+        return onError(PROTOCOL_ERR, QUIC_NO_ERROR);
     }
 }
 
@@ -1798,7 +1803,7 @@ void QuicRWer::closeHE(RW_EVENT events) {
         }
         if (ret < 0) {
             LOGE("read error when closing %d: %s\n", getFd(), strerror(errno));
-            return closeCB();
+            return onError(PROTOCOL_ERR, QUIC_NO_ERROR);
         }
         walkPacket(buff, ret);
     }
@@ -1825,7 +1830,7 @@ size_t QuicRWer::mem_usage() {
 }
 
 QuicMer::QuicMer(SSL_CTX *ctx, const char *pname,
-                 std::function<int(Buffer &&)> read_cb, std::function<ssize_t()> cap_cb):
+                 std::function<int(std::variant<Buffer, Signal>)> read_cb, std::function<ssize_t()> cap_cb):
         QuicBase(ctx), MemRWer(pname, std::move(read_cb), std::move(cap_cb))
 {
 }
@@ -1851,6 +1856,7 @@ void QuicMer::onError(int type, int code) {
     if (type == PROTOCOL_ERR && code == QUIC_CONNECTION_CLOSED) {
         closeCB();
     } else {
+        stats = RWerStats::Error;
         errorCB(type, code);
     }
 }
@@ -1871,7 +1877,7 @@ void QuicMer::defaultHE(RW_EVENT events) {
     setEvents(RW_EVENT::NONE);
 }
 
-void QuicMer::push(const Buffer &bb) {
+void QuicMer::push_data(const Buffer& bb) {
     if(flags & RWER_CLOSING){
         return;
     }
@@ -1882,7 +1888,7 @@ void QuicMer::push(const Buffer &bb) {
     }
 }
 
-void QuicMer::buffer_insert(Buffer &&bb) {
+void QuicMer::buffer_insert(Buffer&& bb) {
     if(stats == RWerStats::Error){
         return;
     }
@@ -1898,6 +1904,25 @@ void QuicMer::ConsumeRData(uint64_t id) {
         return;
     }
     sinkData(id);
+}
+
+void QuicMer::Close(std::function<void()> func) {
+    if (flags & RWER_CLOSING) {
+        return;
+    }
+    flags |= RWER_CLOSING;
+    if(getFd() >= 0) {
+        closeCB = [this, func] {
+            read_cb(CHANNEL_ABORT);
+            func();
+        };
+        handleEvent = (void (Ep::*)(RW_EVENT)) &QuicMer::closeHE;
+        setEvents(RW_EVENT::READ);
+        close();
+    } else {
+        //只有一种情况会走到这里，就是对端发送了ABORT信号断开了连接
+        func();
+    }
 }
 
 void QuicMer::dump_status(Dumper dp, void *param) {

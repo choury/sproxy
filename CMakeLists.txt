@@ -22,12 +22,11 @@ set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 #SET(CMAKE_EXE_LINKER_FLAGS "-static")
 
 CHECK_C_COMPILER_FLAG("-std=gnu99" HAVE_C99)
-CHECK_CXX_COMPILER_FLAG("-std=c++14" HAVE_CXX14)
 CHECK_CXX_COMPILER_FLAG("-std=c++17" HAVE_CXX17)
 CHECK_CXX_COMPILER_FLAG("-std=c++2a" HAVE_CXX2a)
 
-if(NOT HAVE_CXX14 OR NOT HAVE_C99)
-    message(FATAL_ERROR "this project need c++14 and c99")
+if(NOT HAVE_CXX17 OR NOT HAVE_C99)
+    message(FATAL_ERROR "this project need c++17 and c99")
 endif()
 
 set(VERSION "v0.0.0")
@@ -155,7 +154,7 @@ CHECK_SYMBOL_EXISTS(SSL_set_quic_method "openssl/ssl.h" HAVE_QUIC)
 cmake_pop_check_state()
 
 set(CMAKE_C_FLAGS "-std=gnu99 -Wall -Wextra -fPIC -fno-omit-frame-pointer ${CMAKE_C_FLAGS}")
-set(CMAKE_CXX_FLAGS "-std=c++14 -Wall -Wextra -fPIC -fno-omit-frame-pointer ${CMAKE_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS "-std=c++17 -Wall -Wextra -fPIC -fno-omit-frame-pointer ${CMAKE_CXX_FLAGS}")
 
 if(APPLE)
     set(CMAKE_EXE_LINKER_FLAGS "-Wl,-export_dynamic ${CMAKE_EXE_LINKER_FLAGS}")
