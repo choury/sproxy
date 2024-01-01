@@ -170,7 +170,7 @@ void RWer::ErrorHE(int ret, int code) {
 }
 
 
-void RWer::buffer_insert(Buffer&& bb) {
+void RWer::Send(Buffer&& bb) {
     assert((flags & RWER_SHUTDOWN) == 0);
     if(bb.len == 0){
         flags |= RWER_SHUTDOWN;

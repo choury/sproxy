@@ -48,7 +48,7 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
             return 0;
         }
         if(status.rwer) {
-            if(status.rwer->cap(0) < (int)bb.len) {
+            if(status.rwer->bufsize() < bb.len) {
                 LOG("[%" PRIu64 "]: <guest_vpn> the guest's buff is full, drop packet [%zd]: %s\n", bb.id, bb.len, status.host.c_str());
                 return bb.len;
             }
@@ -284,7 +284,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
             if (bb.len == 0) {
                 LOGD(DVPN, "<guest_vpn> [%" PRIu32 "] recv data (%" PRIu64"): EOF\n",
                      status.req->header->request_id, id);
-                rwer->buffer_insert({nullptr, id});
+                rwer->Send({nullptr, id});
                 status.flags |= HTTP_RES_COMPLETED;
                 if (status.flags & HTTP_REQ_COMPLETED) {
                     status.cleanJob = AddJob(std::bind(&Guest_vpn::Clean, this, id), 0, 0);
@@ -292,7 +292,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
             } else {
                 LOGD(DVPN, "<guest_vpn> [%" PRIu32 "] recv data (%" PRIu64"): %zu\n",
                      status.req->header->request_id, id, bb.len);
-                rwer->buffer_insert(std::move(bb));
+                rwer->Send(std::move(bb));
             }
             return 1;
         }
@@ -319,7 +319,7 @@ int Guest_vpn::mread(uint64_t id, std::variant<Buffer, Signal> data) {
             //std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             if (arg.len == 0) {
                 LOGD(DVPN, "<guest_vpn> [%" PRIu64"] recv data: EOF\n", id);
-                rwer->buffer_insert({nullptr, id});
+                rwer->Send({nullptr, id});
                 status.flags |= HTTP_RES_COMPLETED;
                 if(status.flags & HTTP_REQ_COMPLETED) {
                     status.cleanJob = AddJob(std::bind(&Guest_vpn::Clean, this, id), 0, 0);
@@ -335,7 +335,7 @@ int Guest_vpn::mread(uint64_t id, std::variant<Buffer, Signal> data) {
             LOGD(DVPN, "<guest_vpn> [%" PRIu64"] recv data: %zu, handle: %zu\n", id, arg.len, len);
             arg.id = id;
             arg.truncate(len);
-            rwer->buffer_insert(std::move(arg));
+        rwer->Send(std::move(arg));
             return (int)len;
         }
         return 0;
@@ -366,9 +366,9 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
         } else if(dport == HTTPSPORT) {
             if(shouldMitm || getstrategy(status.host.c_str()).s == Strategy::local) {
                 auto ctx = initssl(0, status.host.c_str());
-                auto wrwer = std::make_shared<SslRWer<MemRWer>>(ctx, storage_ntoa(&src),
-                                                                std::bind(&Guest_vpn::mread, this, id, _1),
-                                                                [this, id]{return rwer->cap(id);});
+                auto wrwer = std::make_shared<SslMer>(ctx, storage_ntoa(&src),
+                                                      std::bind(&Guest_vpn::mread, this, id, _1),
+                                                      [this, id]{return rwer->cap(id);});
                 wrwer->set_server_name(status.host);
                 status.rwer = wrwer;
                 new Guest(wrwer);
@@ -464,8 +464,13 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
 
 void Guest_vpn::handle(uint64_t id, Signal s) {
     auto& status = statusmap.at(id);
-    LOGD(DVPN, "<guest_vpn> signal [%d] %" PRIu32 ": %d\n",
-         (int)id, status.req->header->request_id, (int)s);
+    if (status.req) {
+        LOGD(DVPN, "<guest_vpn> signal [%d] %" PRIu32 ": %d\n",
+             (int) id, status.req->header->request_id, (int) s);
+    } else if(status.rwer) {
+        LOGD(DVPN, "<guest_vpn> signal [%d] %s: %d\n",
+             (int) id, status.rwer->getPeer(), (int) s);
+    }
     std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
     switch(s){
     case CHANNEL_ABORT:

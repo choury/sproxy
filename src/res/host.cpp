@@ -30,7 +30,7 @@ Host::Host(const Destination* dest){
         rwer = srwer;
         srwer->SetConnectCB(std::bind(&Host::connected, this));
     }else if(strcmp(dest->protocol, "ssl") == 0 ) {
-        auto srwer = std::make_shared<SslRWer<StreamRWer>>(dest->hostname, dest->port, Protocol::TCP,
+        auto srwer = std::make_shared<SslRWer>(dest->hostname, dest->port, Protocol::TCP,
                                      std::bind(&Host::Error, this, _1, _2));
         if(!opt.disable_http2){
             srwer->set_alpn(alpn_protos_http12, sizeof(alpn_protos_http12)-1);
@@ -77,7 +77,7 @@ void Host::reply(){
     {
         Buffer buff{BUF_LEN};
         buff.truncate(PackHttpReq(header, buff.mutable_data(), BUF_LEN));
-        rwer->buffer_insert(std::move(buff));
+        rwer->Send(std::move(buff));
     }
 attach:
     status.req->attach([this](ChannelMessage& msg){
@@ -104,7 +104,7 @@ void Host::connected() {
         responsers.at(key)->request(status.req, nullptr);
         return Server::deleteLater(NOERROR);
     }
-    auto srwer = std::dynamic_pointer_cast<SslRWer<StreamRWer>>(rwer);
+    auto srwer = std::dynamic_pointer_cast<SslRWer>(rwer);
     if(srwer){
         const unsigned char *data;
         unsigned int len;
@@ -209,7 +209,7 @@ void Host::Recv(Buffer&& bb){
              status.req->header->request_id, tx_bytes, http_flag);
         if(status.flags & HTTP_NOEND_F){
             //如果是这种，只能通过关闭连接的方式来结束请求
-            rwer->buffer_insert(nullptr);
+            rwer->Send(nullptr);
         }else{
             //TODO: chunked
             //其他情况，可以不发送结束符
@@ -220,7 +220,7 @@ void Host::Recv(Buffer&& bb){
     tx_bytes += bb.len;
     LOGD(DHTTP, "<host> recv %" PRIu32 ": size:%zu/%zu, http_flag:0x%x\n",
          status.req->header->request_id, bb.len, tx_bytes, http_flag);
-    rwer->buffer_insert(std::move(bb));
+    rwer->Send(std::move(bb));
 }
 
 void Host::ResProc(std::shared_ptr<HttpResHeader> header) {

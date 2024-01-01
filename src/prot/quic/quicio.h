@@ -283,7 +283,7 @@ public:
     explicit QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
              std::function<void(int, int)> errorCB);
     explicit QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, Quic_server* server);
-    virtual void buffer_insert(Buffer&& bb) override;
+    virtual void Send(Buffer&& bb) override;
     virtual void Close(std::function<void()> func) override;
     virtual bool idle(uint64_t id) override {
         return QuicBase::idle(id);
@@ -310,7 +310,7 @@ protected:
 
     virtual void defaultHE(RW_EVENT events) override;
     virtual void push_data(const Buffer& bb) override;
-    virtual void buffer_insert(Buffer&& bb) override;
+    virtual void Send(Buffer&& bb) override;
     virtual bool IsConnected() override;
     virtual void ConsumeRData(uint64_t) override;
 public:

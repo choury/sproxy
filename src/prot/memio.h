@@ -17,6 +17,7 @@ protected:
     virtual bool IsConnected() {
         return true;
     }
+    virtual size_t rlength(uint64_t id) override;
 
     virtual void push_data(const Buffer& bb);
     virtual void push_signal(Signal s);
@@ -26,12 +27,14 @@ public:
                      std::function<ssize_t()> cap_cb);
     ~MemRWer() override;
 
+    virtual size_t bufsize() {
+        return rb.cap();
+    }
     virtual void push(std::variant<Buffer, Signal> data);
     virtual void detach();
 
     void SetConnectCB(std::function<void(const sockaddr_storage&)> connectCB);
     virtual void Close(std::function<void()> func) override;
-    virtual size_t rlength(uint64_t id) override;
     virtual ssize_t cap(uint64_t id) override;
     virtual void ConsumeRData(uint64_t) override;
     virtual const char* getPeer() override {
@@ -49,6 +52,10 @@ public:
 class PMemRWer: public MemRWer {
 public:
     using MemRWer::MemRWer;
+
+    virtual size_t bufsize() override{
+        return BUF_LEN;
+    }
     virtual void push_data(const Buffer& bb) override;
     virtual void ConsumeRData(uint64_t) override;
 };

@@ -188,7 +188,7 @@ void Cgi::Recv(Buffer&& bb) {
     header->flag = size ? 0: CGI_FLAG_END;
     header->requestId = htonl(bb.id);
     header->contentLength = htons(size);
-    rwer->buffer_insert(std::move(bb));
+    rwer->Send(std::move(bb));
 }
 
 
@@ -306,7 +306,7 @@ void Cgi::Handle(uint32_t id, Signal) {
     CGI_Header *header = (CGI_Header *)buff.mutable_data();
     cgi_error(header, id, CGI_FLAG_ABORT);
     buff.truncate(sizeof(CGI_Header));
-    rwer->buffer_insert(std::move(buff));
+    rwer->Send(std::move(buff));
 }
 
 
@@ -328,7 +328,7 @@ void Cgi::request(std::shared_ptr<HttpReq> req, Requester* src) {
     header->requestId = htonl(req->header->request_id);
     header->contentLength = htons(PackCgiReq(req->header, header + 1, BUF_LEN - sizeof(CGI_Header)));
     buff.truncate(sizeof(CGI_Header) + ntohs(header->contentLength));
-    rwer->buffer_insert(std::move(buff));
+    rwer->Send(std::move(buff));
     req->attach([this, id](ChannelMessage& msg){
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:

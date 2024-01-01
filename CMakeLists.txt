@@ -53,7 +53,7 @@ message(STATUS "Set VERSION: ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.$
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-if(${CMAKE_BUILD_TYPE} MATCHES "Debug")
+if(${CMAKE_BUILD_TYPE} MATCHES "Debug" AND NOT ANDROID)
     CHECK_CXX_COMPILER_FLAG("-fsanitize=undefined" HAVE_SAN_UNDEF)
     set(CMAKE_REQUIRED_FLAGS "-fsanitize=address")
     CHECK_CXX_COMPILER_FLAG("-fsanitize=address" HAVE_SAN_ADDR)
@@ -142,7 +142,8 @@ if(APPLE)
     find_library(SYSCONF_LIBRARY SystemConfiguration)
 endif()
 
-find_package(JSON-C REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(JSON-C REQUIRED json-c)
 include_directories(${JSON-C_INCLUDE_DIR})
 find_package(OpenSSL 1.1.1 REQUIRED)
 include_directories(${OPENSSL_INCLUDE_DIR})

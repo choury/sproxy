@@ -39,7 +39,7 @@ public:
                      std::function<void(uint64_t, std::shared_ptr<const Ip>)> reqProc,
                      std::function<void(int ret, int code)> errorCB);
     virtual ~TunRWer() override;
-    virtual void buffer_insert(Buffer&& bb) override;
+    virtual void Send(Buffer&& bb) override;
     virtual void ReadData() override;
     virtual void ConsumeRData(uint64_t id) override;
     virtual size_t rlength(uint64_t id) override;

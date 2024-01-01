@@ -64,6 +64,9 @@ protected:
     virtual void closeHE(RW_EVENT events);
     virtual void IdleHE(RW_EVENT events);
     virtual void ErrorHE(int ret, int code);
+
+    //for read buffer
+    virtual size_t rlength(uint64_t id) = 0;
     //ConsumeRData只会在Unblock中被调用，ReadData逻辑，需要各实现自行处理readCB回调
     virtual void ConsumeRData(uint64_t id) = 0;
     virtual bool IsEOF();
@@ -81,12 +84,9 @@ public:
     RWerStats getStats(){return stats;}
     virtual const char* getPeer() {return "raw-rwer";}
 
-    //for read buffer
-    virtual size_t rlength(uint64_t id) = 0;
-
     //for write buffer
     virtual ssize_t cap(uint64_t id);
-    virtual void buffer_insert(Buffer&& bb);
+    virtual void Send(Buffer&& bb);
 
     virtual bool idle(uint64_t id);
     virtual void dump_status(Dumper dp, void* param) = 0;

@@ -133,7 +133,7 @@ void Proxy2::PushFrame(Buffer&& bb){
         ping_check();
     }
 #endif
-    rwer->buffer_insert(std::move(bb));
+    rwer->Send(std::move(bb));
 }
 
 void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {

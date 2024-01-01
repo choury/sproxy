@@ -259,7 +259,7 @@ void TunRWer::SendPkg(std::shared_ptr<const Ip> pac, const void* data, size_t le
     (void)!write(getFd(), data, len);
 }
 
-void TunRWer::buffer_insert(Buffer&& bb) {
+void TunRWer::Send(Buffer&& bb) {
     if(!statusmap.Has(bb.id)){
         return;
     }

@@ -176,7 +176,7 @@ void FDns::Recv(const void* data, size_t len, uint32_t id_) {
     }
     Buffer buff{BUF_LEN};
     buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data()));
-    status.rwer->buffer_insert(std::move(buff));
+    status.rwer->Send(std::move(buff));
     delete result;
 }
 
@@ -206,7 +206,7 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_stor
     Buffer buff{BUF_LEN};
     if(error) {
         buff.truncate(result->buildError(que.get(), error, (uchar*)buff.mutable_data()));
-        status.rwer->buffer_insert(std::move(buff));
+        status.rwer->Send(std::move(buff));
     } else {
         for(const auto& addr : addrs) {
             if(isLoopBack(&addr)) {
@@ -229,7 +229,7 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_stor
             result->addrs.push_back(ip);
         }
         buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data()));
-        status.rwer->buffer_insert(std::move(buff));
+        status.rwer->Send(std::move(buff));
     }
     status.quemap.erase(que->id);
     delete result;
@@ -252,12 +252,12 @@ void FDns::RawCb(std::shared_ptr<void> param, const char* data, size_t size) {
         DNS_HDR *dnshdr = (DNS_HDR*)buff.mutable_data();
         dnshdr->id = htons(que->id);
         buff.truncate(size);
-        status.rwer->buffer_insert(std::move(buff));
+        status.rwer->Send(std::move(buff));
     }else {
         LOGD(DDNS, "<FDNS> Query raw response [%d] error\n", que->id);
         Dns_Result rr(que->domain);
         buff.truncate(rr.buildError(que.get(), DNS_SERVER_FAIL, (unsigned char*)buff.mutable_data()));
-        status.rwer->buffer_insert(std::move(buff));
+        status.rwer->Send(std::move(buff));
     }
     status.quemap.erase(que->id);
 }

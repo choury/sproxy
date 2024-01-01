@@ -1738,7 +1738,7 @@ void QuicRWer::ReadData() {
     walkPackets(iov.data(), ret);
 }
 
-void QuicRWer::buffer_insert(Buffer&& bb) {
+void QuicRWer::Send(Buffer&& bb) {
     if(stats == RWerStats::Error){
         return;
     }
@@ -1888,7 +1888,7 @@ void QuicMer::push_data(const Buffer& bb) {
     }
 }
 
-void QuicMer::buffer_insert(Buffer&& bb) {
+void QuicMer::Send(Buffer&& bb) {
     if(stats == RWerStats::Error){
         return;
     }

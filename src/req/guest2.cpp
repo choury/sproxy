@@ -315,7 +315,7 @@ void Guest2::PushFrame(Buffer&& bb) {
         uint32_t id = HTTP2_ID(header->id);
         LOGD(DHTTP2, "<guest2> send a frame [%d]:%d, size:%d, flags:%d\n", id, header->type, length, header->flags);
     }
-    rwer->buffer_insert(std::move(bb));
+    rwer->Send(std::move(bb));
 }
 
 void Guest2::deleteLater(uint32_t errcode){

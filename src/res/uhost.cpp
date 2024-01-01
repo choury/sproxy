@@ -27,7 +27,7 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
                     return 0;
                 }
                 tx_bytes += bb.len;
-                rwer->buffer_insert(std::move(bb));
+                rwer->Send(std::move(bb));
                 return 1;
             }
             case ChannelMessage::CHANNEL_MSG_SIGNAL:

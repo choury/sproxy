@@ -248,11 +248,15 @@ int event_loop(uint32_t timeout_ms){
         }
     }
 #endif
-    for(const auto& i: pending_events){
+    for(auto& i: pending_events){
+        Ep *ep = i.first;
         if(i.second == RW_EVENT::NONE){
             continue;
         }
-        Ep *ep = i.first;
+        if(!!(i.second & RW_EVENT::READEOF) && !(ep->events & RW_EVENT::READ)){
+            i.second = i.second & ~RW_EVENT::READEOF;
+            LOGD(DEVENT, "filter READEOF without listen READ: %d\n", ep->getFd());
+        }
         LOGD(DEVENT, "handle event %d: %s\n", ep->getFd(), events_string[int(i.second)]);
         (ep->*ep->handleEvent)(i.second);
     }

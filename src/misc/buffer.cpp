@@ -226,7 +226,7 @@ void CBuffer::append(size_t l){
 
 ssize_t CBuffer::put(const void *data, size_t size) {
     if(len + size > sizeof(content)){
-        return -1;
+        abort();
     }
 
     uint32_t start = (offset + len) % sizeof(content);

@@ -100,7 +100,7 @@ void Ping::Recv(Buffer&& bb){
     default:
         abort();
     }
-    rwer->buffer_insert(std::move(bb));
+    rwer->Send(std::move(bb));
 }
 
 void Ping::deleteLater(uint32_t errcode) {

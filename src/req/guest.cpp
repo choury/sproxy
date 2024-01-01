@@ -64,7 +64,7 @@ int Guest::mread(std::shared_ptr<HttpReqHeader>, std::variant<Buffer, Signal> da
             auto& status = statuslist.front();
             assert((status.flags & HTTP_RES_COMPLETED) == 0);
             if (arg.len == 0) {
-                rwer->buffer_insert(nullptr);
+                rwer->Send(nullptr);
                 status.flags |= HTTP_RES_COMPLETED;
                 if(status.flags & HTTP_REQ_COMPLETED) {
                     deleteLater(NOERROR);
@@ -78,7 +78,7 @@ int Guest::mread(std::shared_ptr<HttpReqHeader>, std::variant<Buffer, Signal> da
             }
             int len = std::min(arg.len, (size_t)cap);
             arg.truncate(len);
-            rwer->buffer_insert(std::move(arg));
+            rwer->Send(std::move(arg));
             return len;
         }
         return 0;
@@ -101,12 +101,13 @@ void Guest::WriteHE(uint64_t){
 
 Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(nullptr){
     if(ctx){
-        auto srwer = std::make_shared<SslRWer<StreamRWer>>(ctx, fd, addr, std::bind(&Guest::Error, this, _1, _2));
+        auto srwer = std::make_shared<SslRWer>(ctx, fd, addr, std::bind(&Guest::Error, this, _1, _2));
         init(srwer);
 
         srwer->SetConnectCB([this](const sockaddr_storage&){
             //不要捕获rwer,否则不能正常释放shared_ptr
-            auto srwer = std::dynamic_pointer_cast<SslRWer<StreamRWer>>(this->rwer);
+            LOGD(DHTTP, "<guest> %s connected\n", rwer->getPeer());
+            auto srwer = std::dynamic_pointer_cast<SslRWer>(this->rwer);
             const unsigned char *data;
             unsigned int len;
             srwer->get_alpn(&data, &len);
@@ -124,11 +125,12 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
     rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));
 }
 
-Guest::Guest(std::shared_ptr<RWer> rwer): Requester(rwer){
-    auto srwer = std::dynamic_pointer_cast<SslRWer<MemRWer>>(rwer);
+Guest::Guest(std::shared_ptr<RWer> rwer_): Requester(rwer_){
+    auto srwer = std::dynamic_pointer_cast<SslMer>(rwer);
     if(srwer) {
         srwer->SetConnectCB([this](const sockaddr_storage&){
-            auto srwer = std::dynamic_pointer_cast<SslRWer<MemRWer>>(this->rwer);
+            LOGD(DHTTP, "<guest> %s connected\n", rwer->getPeer());
+            auto srwer = std::dynamic_pointer_cast<SslMer>(this->rwer);
             const unsigned char *data;
             unsigned int len;
             srwer->get_alpn(&data, &len);
@@ -152,7 +154,7 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
                                                std::bind(&Guest::mread, this, header,  _1),
                                                [this]{ return  rwer->cap(0);});
         statuslist.emplace_back(ReqStatus{nullptr, nullptr, mrwer, HTTP_NOEND_F});
-        rwer->buffer_insert({HCONNECT, strlen(HCONNECT)});
+        rwer->Send({HCONNECT, strlen(HCONNECT)});
         new Guest(mrwer);
         return;
     }
@@ -161,11 +163,11 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
                 (opt.mitm_mode == Auto && opt.ca.key && mayBeBlocked(header->Dest.hostname));
         if (shouldMitm || getstrategy(header->Dest.hostname).s == Strategy::local) {
             auto ctx = initssl(0, header->Dest.hostname);
-            auto srwer = std::make_shared<SslRWer<MemRWer>>(ctx, header->Dest.hostname,
+            auto srwer = std::make_shared<SslMer>(ctx, header->Dest.hostname,
                                                             std::bind(&Guest::mread, this, header, _1),
                                                             [this]{ return  rwer->cap(0);});
             statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
-            rwer->buffer_insert({HCONNECT, strlen(HCONNECT)});
+            rwer->Send({HCONNECT, strlen(HCONNECT)});
             new Guest(srwer);
             return;
         }
@@ -215,7 +217,7 @@ ssize_t Guest::DataProc(const void *buff, size_t size) {
         len = std::min(len, (int)status.req->cap());
     }
     if(status.rwer) {
-        len = std::min(len, (int)status.rwer->cap(0));
+        len = std::min(len, (int)status.rwer->bufsize());
     }
     if (len <= 0) {
         LOGE("[%" PRIu32 "]: <guest> the host's buff is full (%s)\n",
@@ -296,7 +298,7 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
             }
             Buffer buff{BUF_LEN};
             buff.truncate(PackHttpRes(header, buff.mutable_data(), BUF_LEN));
-            rwer->buffer_insert(std::move(buff));
+            rwer->Send(std::move(buff));
             return 1;
         }
         case ChannelMessage::CHANNEL_MSG_DATA:
@@ -319,9 +321,9 @@ void Guest::Recv(Buffer&& bb) {
         if(status.flags & HTTP_NOEND_F){
             assert(statuslist.size() == 1);
             //对于没有长度字段的响应，直接关闭连接来结束
-            rwer->buffer_insert(nullptr);
+            rwer->Send(nullptr);
         }else if(status.flags & HTTP_CHUNK_F){
-            rwer->buffer_insert({"0" CRLF CRLF, 5});
+            rwer->Send({"0" CRLF CRLF, 5});
         }
         //如果既不是没有长度的请求，也非chunked，则无需发送额外数据来标记结束
         if(status.flags & HTTP_REQ_COMPLETED) {
@@ -345,10 +347,10 @@ void Guest::Recv(Buffer&& bb) {
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)bb.len);
         bb.reserve(-chunklen);
         memcpy(bb.mutable_data(), chunkbuf, chunklen);
-        rwer->buffer_insert(std::move(bb));
-        rwer->buffer_insert({CRLF, 2});
+        rwer->Send(std::move(bb));
+        rwer->Send({CRLF, 2});
     }else{
-        rwer->buffer_insert(std::move(bb));
+        rwer->Send(std::move(bb));
     }
 }
 
