@@ -257,7 +257,7 @@ int event_loop(uint32_t timeout_ms){
             i.second = i.second & ~RW_EVENT::READEOF;
             LOGD(DEVENT, "filter READEOF without listen READ: %d\n", ep->getFd());
         }
-        LOGD(DEVENT, "handle event %d: %s\n", ep->getFd(), events_string[int(i.second)]);
+        LOGD(DEVENT, "handle event %p, %d: %s\n", ep, ep->getFd(), events_string[int(i.second)]);
         (ep->*ep->handleEvent)(i.second);
     }
     pending_events.clear();

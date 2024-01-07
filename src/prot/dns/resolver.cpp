@@ -93,7 +93,7 @@ HostResolver::HostResolver(int fd, const char *host, std::function<void(int, Hos
     }else {
         flags |= GETAAAARES;
     }
-    this->handleEvent = (void (Ep::*)(RW_EVENT))&HostResolver::readHE;
+    handleEvent = (void (Ep::*)(RW_EVENT))&HostResolver::readHE;
     setEvents(RW_EVENT::READ);
     reply = AddJob(std::bind(cb, DNS_TIMEOUT, this), dnsConfig.timeout * 1000, 0);
 }
@@ -165,7 +165,7 @@ RawResolver::RawResolver(int fd,
 {
     char buf[BUF_SIZE];
     (void)!write(fd, buf, Dns_Query(host, type, id_cur++).build((unsigned char*)buf));
-    this->handleEvent = (void (Ep::*)(RW_EVENT))&RawResolver::readHE;
+    handleEvent = (void (Ep::*)(RW_EVENT))&RawResolver::readHE;
     setEvents(RW_EVENT::READ);
     reply = AddJob(std::bind(cb, nullptr, 0, this), dnsConfig.timeout * 1000, 0);
 }

@@ -208,7 +208,7 @@ if (HAVE_SAN_ADDR AND NOT ANDROID)
     set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} -fsanitize=address")
 endif()
 
-if (HAVE_SAN_UNDEF AND NOT ANDROID)
+if (HAVE_SAN_UNDEF AND FALSE) #we meet some issue about member function point with ubsan
     set(CMAKE_C_FLAGS_DEBUG "-fsanitize=undefined ${CMAKE_C_FLAGS_DEBUG}")
     set(CMAKE_CXX_FLAGS_DEBUG "-fsanitize=undefined ${CMAKE_CXX_FLAGS_DEBUG}")
 

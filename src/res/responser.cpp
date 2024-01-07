@@ -122,6 +122,7 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
                 goto out;
             }
             memcpy(&dest, &header->Dest, sizeof(dest));
+            strcpy(dest.protocol, "tcp"); // rewrite and forward only support tcp
             if(spliturl(stra.ext.c_str(), &dest, nullptr)){
                 res = std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[ext misformat]]\n");
                 goto out;
