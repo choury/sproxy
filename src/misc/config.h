@@ -97,8 +97,6 @@ bool debugon(const char* module, bool enable);
 void flushdns();
 void flushconnect();
 
-const char* getVersion();
-const char* getBuildTime();
 const char* getDeviceInfo();
 #ifdef __cplusplus
 }

@@ -249,14 +249,6 @@ static void usage(const char * program){
     }
 }
 
-const char* getVersion() {
-    return VERSION;
-}
-
-const char* getBuildTime() {
-    return BUILDTIME;
-}
-
 const char* getDeviceInfo(){
     static char infoString[DOMAINLIMIT+5] = {0};
     if(strlen(infoString)){
@@ -270,7 +262,6 @@ const char* getDeviceInfo(){
     snprintf(infoString, sizeof(infoString), "%s %s; %s %s", info.sysname, info.machine, info.nodename, info.release);
     return infoString;
 }
-
 
 static void show_version(){
     LOG("%s version: %s, build time: %s\n", main_argv[0], getVersion(), getBuildTime());

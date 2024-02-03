@@ -141,8 +141,8 @@ json_object * SproxyServer::call(std::string method, json_object* content) {
         }
         auto strategy = TestStrategy(json_object_get_string(jhost));
         json_object_object_add(jres, "strategy", json_object_new_string(strategy.c_str()));
-    }else if(method == "ListStrategy") {
-        auto lists = ListStrategy();
+    }else if(method == "DumpStrategy") {
+        auto lists = DumpStrategy();
         json_object* jlist = json_object_new_array();
         for(const auto& strategy : lists){
             json_object_array_add(jlist, json_object_new_string(strategy.c_str()));
@@ -165,9 +165,15 @@ json_object * SproxyServer::call(std::string method, json_object* content) {
     }else if(method == "GetServer") {
         auto server = GetServer();
         json_object_object_add(jres, "server", json_object_new_string(server.c_str()));
-    }else if(method == "GetStatus") {
-        auto server = GetStatus();
+    }else if(method == "DumpStatus") {
+        auto server = DumpStatus();
         json_object_object_add(jres, "status", json_object_new_string(server.c_str()));
+    }else if(method == "DumpMemUsage") {
+        auto server = DumpMemUsage();
+        json_object_object_add(jres, "mem_usage", json_object_new_string(server.c_str()));
+    }else if(method == "DumpDns") {
+        auto server = DumpDns();
+        json_object_object_add(jres, "dns_status", json_object_new_string(server.c_str()));
     }else if(method == "Login") {
         json_object* jtoken = json_object_object_get(content, "token");
         json_object* jsource = json_object_object_get(content, "source");
@@ -186,9 +192,6 @@ json_object * SproxyServer::call(std::string method, json_object* content) {
         }
         auto ok = Debug(json_object_get_string(jmodule), json_object_get_boolean(jenable));
         json_object_object_add(jres, "ok", json_object_new_boolean(ok));
-    }else if(method == "GetMemUsage") {
-        auto server = GetMemUsage();
-        json_object_object_add(jres, "mem_usage", json_object_new_string(server.c_str()));
     }else {
         json_object_object_add(jres, "error", json_object_new_string("no such method"));
     }
@@ -248,7 +251,7 @@ std::promise<std::string> SproxyClient::TestStrategy(const std::string &host) {
     return promise;
 }
 
-std::promise<std::vector<std::string>> SproxyClient::ListStrategy() {
+std::promise<std::vector<std::string>> SproxyClient::DumpStrategy() {
     json_object* body = json_object_new_object();
     std::promise<std::vector<std::string>> promise;
     call(__func__, body,[&promise](json_object* content){
@@ -365,7 +368,7 @@ std::promise<bool> SproxyClient::Login(const std::string &token, const std::stri
     return promise;
 }
 
-std::promise<std::string> SproxyClient::GetStatus() {
+std::promise<std::string> SproxyClient::DumpStatus() {
     json_object* body = json_object_new_object();
     std::promise<std::string> promise;
     call(__func__, body,[&promise](json_object* content){
@@ -381,7 +384,23 @@ std::promise<std::string> SproxyClient::GetStatus() {
     return promise;
 }
 
-std::promise<std::string> SproxyClient::GetMemUsage() {
+std::promise<std::string> SproxyClient::DumpDns() {
+    json_object* body = json_object_new_object();
+    std::promise<std::string> promise;
+    call(__func__, body,[&promise](json_object* content){
+        json_object* jerror = json_object_object_get(content, "error");
+        if(jerror){
+            promise.set_exception(std::make_exception_ptr(std::string(json_object_get_string(jerror))));
+            return;
+        }
+        json_object* jstatus = json_object_object_get(content, "dns_status");
+        promise.set_value(json_object_get_string(jstatus));
+    });
+    json_object_put(body);
+    return promise;
+}
+
+std::promise<std::string> SproxyClient::DumpMemUsage() {
     json_object* body = json_object_new_object();
     std::promise<std::string> promise;
     call(__func__, body,[&promise](json_object* content){

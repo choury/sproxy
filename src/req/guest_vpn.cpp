@@ -11,6 +11,7 @@
 #include "misc/config.h"
 #include "misc/util.h"
 #include "misc/strategy.h"
+#include "common/version.h"
 
 #include <fstream>
 #include <sstream>

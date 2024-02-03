@@ -1,5 +1,3 @@
-add_custom_target(version COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${PROJECT_SOURCE_DIR}/src/common/version.h.in)
-
 configure_file(${PROJECT_SOURCE_DIR}/src/common/common.h.in ${PROJECT_BINARY_DIR}/src/common/common.h ESCAPE_QUOTES)
 configure_file(${PROJECT_SOURCE_DIR}/src/common/version.h.in ${PROJECT_BINARY_DIR}/src/common/version.h ESCAPE_QUOTES)
 
@@ -45,7 +43,6 @@ if(LINUX OR APPLE)
     add_executable(sproxy server/server.cpp common/base.cpp)
     set_target_properties(sproxy PROPERTIES OUTPUT_NAME "sproxy")
     target_link_libraries(sproxy ${SPROXY_LIBS})
-    add_dependencies(sproxy version)
     install(TARGETS sproxy RUNTIME DESTINATION bin)
 endif()
 
@@ -53,7 +50,6 @@ if(HAVE_CLIENT)
     add_executable(scli client/client.cpp prot/rpc.cpp)
     set_target_properties(scli PROPERTIES OUTPUT_NAME "scli")
     target_link_libraries(scli ${JSON-C_LIBRARIES} ${Readline_LIBRARY} Threads::Threads)
-    add_dependencies(scli version)
     install(TARGETS scli RUNTIME DESTINATION bin)
 endif()
 
@@ -64,7 +60,6 @@ if(LINUX)
 
     add_executable(vpn server/vpndemo.c)
     set_target_properties(vpn PROPERTIES OUTPUT_NAME "vpndemo")
-    add_dependencies(vpn version)
     target_link_libraries(vpn vpn_share)
 
     install(TARGETS vpn_share LIBRARY DESTINATION lib${LIBSUFFIX})

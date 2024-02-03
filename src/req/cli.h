@@ -23,7 +23,7 @@ public:
 
     virtual bool AddStrategy(const std::string& host, const std::string& strategy, const std::string& ext) override;
     virtual bool DelStrategy(const std::string& host) override;
-    virtual std::vector<std::string> ListStrategy() override;
+    virtual std::vector<std::string> DumpStrategy() override;
     virtual std::string TestStrategy(const std::string& host) override;
 
     virtual void FlushCgi() override;
@@ -33,8 +33,9 @@ public:
     virtual bool SetServer(const std::string& server) override;
     virtual std::string GetServer() override;
     virtual bool Login(const std::string& token, const std::string& source) override;
-    virtual std::string GetStatus() override;
-    virtual std::string GetMemUsage() override;
+    virtual std::string DumpStatus() override;
+    virtual std::string DumpDns() override;
+    virtual std::string DumpMemUsage() override;
     virtual bool Debug(const std::string& module, bool enable) override;
 
     virtual void dump_stat(Dumper dp, void* param) override;

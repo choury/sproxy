@@ -189,11 +189,38 @@ static void com_test(SproxyClient* c, const std::vector<std::string>& args) {
     std::cout<<r.get_future().get()<<std::endl;
 }
 
-static void com_sites(SproxyClient* c, const std::vector<std::string>&) {
-    auto r = c->ListStrategy();
-    auto sites = r.get_future().get();
-    for(const auto& item: sites){
-        std::cout << item << std::endl;
+static void com_dump(SproxyClient* c, const std::vector<std::string>& args) {
+    if (args.size() < 2) {
+        std::cout << "flush require 1 param at least" << std::endl;
+        return;
+    }
+    switch(hash_run_time(args[1])){
+        case "status"_hash: {
+            auto r = c->DumpStatus();
+            std::cout << r.get_future().get() << std::endl;
+            break;
+        }
+        case "dns"_hash: {
+            auto r = c->DumpDns();
+            std::cout << r.get_future().get() << std::endl;
+            break;
+        }
+        case "sites"_hash: {
+            auto r = c->DumpStrategy();
+            auto sites = r.get_future().get();
+            for (const auto &item: sites) {
+                std::cout << item << std::endl;
+            }
+            break;
+        }
+        case "usage"_hash: {
+            auto r = c->DumpMemUsage();
+            std::cout << r.get_future().get() << std::endl;
+            break;
+        }
+        default:
+            std::cout << "don't know how to flush "<<args[1]<<std::endl;
+            break;
     }
 }
 
@@ -224,6 +251,12 @@ static char *generator_flush(const char* text, int state){
     COMPLETION_SKELETON(flush_cmds, nb_elements);
 }
 
+static char* generator_dump(const char* text, int state) {
+    static const char *dump_cmds[] = {"status", "dns", "sites", "usage"};
+    static const int nb_elements = (sizeof(dump_cmds)/sizeof(dump_cmds[0]));
+    COMPLETION_SKELETON(dump_cmds, nb_elements);
+}
+
 static void com_switch(SproxyClient* c, const std::vector<std::string>& args) {
     if (args.size() < 2) {
         std::cout << "switch require 1 param at least" << std::endl;
@@ -233,22 +266,6 @@ static void com_switch(SproxyClient* c, const std::vector<std::string>& args) {
     if (!r.get_future().get()) {
         std::cout << "failed" << std::endl;
     }
-}
-
-
-static void com_server(SproxyClient* c, const std::vector<std::string>&) {
-    auto r = c->GetServer();
-    std::cout<<r.get_future().get()<<std::endl;
-}
-
-static void com_status(SproxyClient* c, const std::vector<std::string>&) {
-    auto r = c->GetStatus();
-    std::cout<<r.get_future().get()<<std::endl;
-}
-
-static void com_usage(SproxyClient* c, const std::vector<std::string>&) {
-    auto r = c->GetMemUsage();
-    std::cout<<r.get_future().get()<<std::endl;
 }
 
 static void com_exit(SproxyClient*, const std::vector<std::string>&) {
@@ -263,12 +280,9 @@ COMMAND commands[] = {
         { "dels", com_dels, "<host>\tDelete strategy for host", nullptr},
         { "debug", com_debug, "enable|disable module", generator_enable},
         { "test", com_test, "<host>\tTest strategy for host", nullptr},
-        { "sites", com_sites, "\tGet strategy lists", nullptr},
         { "flush", com_flush, "<cgi|dns|strategy>", generator_flush},
         { "switch", com_switch, "<proxy>\tSet proxy server", nullptr},
-        { "server", com_server, "\tGet proxy server", nullptr},
-        { "status", com_status, "\tShow status of server", nullptr},
-        { "usage", com_usage, "\tShow mem usage", nullptr},
+        { "dump", com_dump, "<status|dns|sites|usage>", generator_dump},
         { "exit", com_exit, "\tQuit the program", nullptr},
         { "help", com_help, "\tDisplay this text", command_generator},
         {nullptr, nullptr, nullptr, nullptr},

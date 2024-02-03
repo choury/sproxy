@@ -1,2 +1,30 @@
+#ifndef VERSION_H__
+#define VERSION_H__
+
+#include <time.h>
 #define VERSION "@VERSION@"
-#define BUILDTIME "@NOW@"
+#define BUILDTIME __DATE__ " " __TIME__
+
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
+
+inline static const char* getVersion() {
+    return VERSION;
+}
+
+inline static const char* getBuildTime() {
+    struct tm tm;
+    strptime(BUILDTIME, "%b %d %Y %H:%M:%S", &tm);
+
+    static char formattedTime[128];
+    strftime(formattedTime, sizeof(formattedTime), "%Y/%m/%d %H:%M:%S", &tm);
+    return formattedTime;
+}
+
+#if defined(__cplusplus)
+}
+#endif
+
+#endif // VERSION_H__

@@ -39,7 +39,6 @@ void releaseall() {
     servers.clear();
 }
 
-extern void dump_dns(Dumper dp, void* param);
 extern void dump_job(Dumper dp, void* param);
 
 void dump_stat(Dumper dp, void* param){
@@ -50,8 +49,6 @@ void dump_stat(Dumper dp, void* param){
         i->dump_stat(dp, param);
         dp(param, "--------------------------------------\n");
     }
-    dump_dns(dp, param);
-    dp(param, "--------------------------------------\n");
     dump_job(dp, param);
     dp(param, "======================================\n");
 }

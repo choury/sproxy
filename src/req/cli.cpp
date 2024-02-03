@@ -78,7 +78,7 @@ std::string Cli::TestStrategy(const std::string &host) {
     return std::string(getstrategystring(stra.s)) + " " + stra.ext;
 }
 
-std::vector<std::string> Cli::ListStrategy() {
+std::vector<std::string> Cli::DumpStrategy() {
     LOG("%s [%s]\n", rwer->getPeer(), __func__);
     std::vector<std::string> lists;
     auto slist = getallstrategy();
@@ -143,14 +143,21 @@ static void sstream_dumper(void* param, const char* fmt, ...) {
     va_end(ap);
 }
 
-std::string Cli::GetStatus() {
+std::string Cli::DumpStatus() {
     LOG("%s [%s]\n", rwer->getPeer(), __func__);
     std::string ss;
     ::dump_stat(sstream_dumper, &ss);
     return ss;
 }
 
-std::string Cli::GetMemUsage() {
+std::string Cli::DumpDns() {
+    LOG("%s [%s]\n", rwer->getPeer(), __func__);
+    std::string ss;
+    ::dump_dns(sstream_dumper, &ss);
+    return ss;
+}
+
+std::string Cli::DumpMemUsage() {
     LOG("%s [%s]\n", rwer->getPeer(), __func__);
     std::string ss;
     ::dump_usage(sstream_dumper, &ss);

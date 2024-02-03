@@ -15,7 +15,7 @@ class handler: public CgiHandler{
         if((flag & HTTP_REQ_COMPLETED) == 0){
             return;
         }
-        auto slist = c->ListStrategy().get_future().get();
+        auto slist = c->DumpStrategy().get_future().get();
         json_object* jsites = json_object_new_array();
         for(auto item: slist) {
             char site[DOMAINLIMIT];

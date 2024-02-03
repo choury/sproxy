@@ -30,7 +30,6 @@ if(NOT HAVE_CXX17 OR NOT HAVE_C99)
 endif()
 
 set(VERSION "v0.0.0")
-string(TIMESTAMP NOW "%Y/%m/%d %H:%M:%S")
 find_package(Git)
 if(Git_FOUND)
     execute_process(COMMAND ${GIT_EXECUTABLE} describe --tag --dirty --long --always

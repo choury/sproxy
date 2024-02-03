@@ -6,6 +6,7 @@
 #include "misc/config.h"
 #include "misc/defer.h"
 #include "res/responser.h"
+#include "common/version.h"
 
 #include <stdlib.h>
 #include <inttypes.h>

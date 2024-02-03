@@ -38,7 +38,7 @@ protected:
 
     virtual bool AddStrategy(const std::string& host, const std::string& strategy, const std::string& ext) = 0;
     virtual bool DelStrategy(const std::string& host) = 0;
-    virtual std::vector<std::string> ListStrategy() = 0;
+    virtual std::vector<std::string> DumpStrategy() = 0;
     virtual std::string TestStrategy(const std::string& host) = 0;
 
     virtual void FlushCgi() = 0;
@@ -46,11 +46,13 @@ protected:
     virtual void FlushStrategy() = 0;
 
     virtual bool SetServer(const std::string& server) = 0;
-    virtual std::string GetServer() = 0;
     virtual bool Login(const std::string& token, const std::string& source) = 0;
-    virtual std::string GetStatus() = 0;
-    virtual std::string GetMemUsage() = 0;
     virtual bool Debug(const std::string& module, bool enable) = 0;
+
+    virtual std::string GetServer() = 0;
+    virtual std::string DumpStatus() = 0;
+    virtual std::string DumpDns() = 0;
+    virtual std::string DumpMemUsage() = 0;
 };
 
 class SproxyClient:virtual public RpcClient {
@@ -65,7 +67,7 @@ public:
 
     std::promise<bool>  AddStrategy(const std::string& host, const std::string& strategy, const std::string& ext);
     std::promise<bool>  DelStrategy(const std::string& host);
-    std::promise<std::vector<std::string>> ListStrategy();
+    std::promise<std::vector<std::string>> DumpStrategy();
     std::promise<std::string> TestStrategy(const std::string& host);
 
     std::promise<void> FlushCgi();
@@ -74,9 +76,10 @@ public:
 
     std::promise<bool>  SetServer(const std::string& server);
     std::promise<std::string>  GetServer();
+    std::promise<std::string> DumpStatus();
+    std::promise<std::string> DumpDns();
+    std::promise<std::string> DumpMemUsage();
     std::promise<bool> Login(const std::string& token, const std::string& source);
-    std::promise<std::string> GetStatus();
-    std::promise<std::string> GetMemUsage();
     std::promise<bool> Debug(const std::string& module, bool enable);
 };
 
