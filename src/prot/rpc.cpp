@@ -48,7 +48,8 @@ ssize_t RpcServer::DefaultProc(const char *buff, size_t len) {
     //fprintf(stderr, "%.*s\n", (int)body_size, buff+4);
     json_object* jreq = json_tokener_parse_ex(tok, buff + 4, body_size);
     if(jreq == nullptr) {
-        ret = -EINVAL;
+        jres = json_object_new_object();
+        json_object_object_add(jres, "error", json_object_new_string(json_tokener_error_desc(json_tokener_get_error(tok))));
         goto out;
     }
     jmethod = json_object_object_get(jreq, "method");
@@ -95,6 +96,8 @@ ssize_t RpcClient::DefaultProc(const char *buff, size_t len) {
     if(!responser.empty()){
         responser.front()(jres);
         responser.pop();
+    } else {
+        fprintf(stderr, "no response callback\n");
     }
     json_object_put(jres);
     json_tokener_free(tok);
@@ -103,13 +106,13 @@ ssize_t RpcClient::DefaultProc(const char *buff, size_t len) {
 
 void RpcClient::call(const std::string& method, json_object* body, std::function<void(json_object *)> response) {
     json_object_object_add(body, "method", json_object_new_string(method.c_str()));
+    responser.push(response);
     if(!sendJson(body)){
+        responser.pop();
         json_object* jres = json_object_new_object();
         json_object_object_add(jres, "error", json_object_new_string("send failed"));
         response(jres);
         json_object_put(jres);
-    } else {
-        responser.push(response);
     }
 }
 

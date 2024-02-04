@@ -195,32 +195,32 @@ static void com_dump(SproxyClient* c, const std::vector<std::string>& args) {
         return;
     }
     switch(hash_run_time(args[1])){
-        case "status"_hash: {
-            auto r = c->DumpStatus();
-            std::cout << r.get_future().get() << std::endl;
-            break;
+    case "status"_hash: {
+        auto r = c->DumpStatus();
+        std::cout << r.get_future().get() << std::endl;
+        break;
+    }
+    case "dns"_hash: {
+        auto r = c->DumpDns();
+        std::cout << r.get_future().get() << std::endl;
+        break;
+    }
+    case "sites"_hash: {
+        auto r = c->DumpStrategy();
+        auto sites = r.get_future().get();
+        for (const auto &item: sites) {
+            std::cout << item << std::endl;
         }
-        case "dns"_hash: {
-            auto r = c->DumpDns();
-            std::cout << r.get_future().get() << std::endl;
-            break;
-        }
-        case "sites"_hash: {
-            auto r = c->DumpStrategy();
-            auto sites = r.get_future().get();
-            for (const auto &item: sites) {
-                std::cout << item << std::endl;
-            }
-            break;
-        }
-        case "usage"_hash: {
-            auto r = c->DumpMemUsage();
-            std::cout << r.get_future().get() << std::endl;
-            break;
-        }
-        default:
-            std::cout << "don't know how to flush "<<args[1]<<std::endl;
-            break;
+        break;
+    }
+    case "usage"_hash: {
+        auto r = c->DumpMemUsage();
+        std::cout << r.get_future().get() << std::endl;
+        break;
+    }
+    default:
+        std::cout << "don't know how to dump "<<args[1]<<std::endl;
+        break;
     }
 }
 
@@ -401,6 +401,7 @@ int main(int argc, char** argv) {
 
     /* Tell the completer that we want a crack first. */
     rl_attempted_completion_function = sproxy_completion;
+    using_history();
     while(true) {
         char *input = readline("> ");
         if(!input){
@@ -411,7 +412,10 @@ int main(int argc, char** argv) {
             free(input);
             continue;
         }
-        add_history(input);
+        HIST_ENTRY *last_entry = history_get(history_length);
+        if (last_entry == nullptr || strcmp(last_entry->line, input)){
+            add_history(input);
+        }
         free(input);
         try {
             bool executed = false;
