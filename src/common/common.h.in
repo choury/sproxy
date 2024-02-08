@@ -237,6 +237,7 @@ do {\
 #define DNS_FAILED          91U
 #define CONNECT_AGED        92U
 #define SNI_HOST_ERR        93U
+#define CLI_KILLED          94U
 #define ERROR_MASK          0xff
 
 typedef unsigned char uchar;

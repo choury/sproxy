@@ -37,6 +37,7 @@ public:
     virtual std::string DumpDns() override;
     virtual std::string DumpMemUsage() override;
     virtual bool Debug(const std::string& module, bool enable) override;
+    virtual bool killCon(const std::string& address) override;
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;

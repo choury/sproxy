@@ -39,6 +39,16 @@ void releaseall() {
     servers.clear();
 }
 
+bool kill_server(Server* s, uint32_t errcode) {
+    if(servers.count(s)){
+        LOGE("kill server: %p\n", s);
+        s->deleteLater(errcode);
+        return true;
+    }
+    LOGE("failed to find server: %p to kill\n", s);
+    return false;
+}
+
 extern void dump_job(Dumper dp, void* param);
 
 void dump_stat(Dumper dp, void* param){

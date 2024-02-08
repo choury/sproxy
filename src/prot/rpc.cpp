@@ -195,7 +195,15 @@ json_object * SproxyServer::call(std::string method, json_object* content) {
         }
         auto ok = Debug(json_object_get_string(jmodule), json_object_get_boolean(jenable));
         json_object_object_add(jres, "ok", json_object_new_boolean(ok));
-    }else {
+    }else if(method == "killCon") {
+        json_object* jaddress = json_object_object_get(content, "address");
+        if(!jaddress){
+            json_object_object_add(jres, "error", json_object_new_string("require some params"));
+            return jres;
+        }
+        auto ok = killCon(json_object_get_string(jaddress));
+        json_object_object_add(jres, "ok", json_object_new_boolean(ok));
+    }else{
         json_object_object_add(jres, "error", json_object_new_string("no such method"));
     }
     return jres;
@@ -436,6 +444,24 @@ std::promise<bool> SproxyClient::Debug(const std::string& module, bool enable) {
     json_object_put(body);
     return promise;
 }
+
+std::promise<bool> SproxyClient::killCon(const std::string& address) {
+    json_object* body = json_object_new_object();
+    json_object_object_add(body, "address", json_object_new_string(address.c_str()));
+    std::promise<bool> promise;
+    call(__func__, body,[&promise](json_object* content){
+        json_object* jerror = json_object_object_get(content, "error");
+        if(jerror){
+            promise.set_exception(std::make_exception_ptr(std::string(json_object_get_string(jerror))));
+            return;
+        }
+        json_object* jok = json_object_object_get(content, "ok");
+        promise.set_value(json_object_get_boolean(jok));
+    });
+    json_object_put(body);
+    return promise;
+}
+
 
 static int storage_pton(const char* addrstr, struct sockaddr_storage* addr) {
     memset(addr, 0, sizeof(struct sockaddr_storage));

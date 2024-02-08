@@ -163,6 +163,17 @@ static void com_debug(SproxyClient* c, const std::vector<std::string>& args){
     }
 }
 
+static void com_kill(SproxyClient* c, const std::vector<std::string>& args){
+    if(args.size() < 2){
+        std::cout << "kill require a params at least" << std::endl;
+        return;
+    }
+    auto r = c->killCon(args[1]);
+    if (!r.get_future().get()) {
+        std::cout << "failed" << std::endl;
+    }
+}
+
 static char *generator_enable(const char* text, int state){
     static const char *switches[] = {"enable", "disable"};
     static const int nb_elements = (sizeof(switches)/sizeof(switches[0]));
@@ -283,6 +294,7 @@ COMMAND commands[] = {
         { "flush", com_flush, "<cgi|dns|strategy>", generator_flush},
         { "switch", com_switch, "<proxy>\tSet proxy server", nullptr},
         { "dump", com_dump, "<status|dns|sites|usage>", generator_dump},
+        { "kill", com_kill, "\tKill connection", nullptr},
         { "exit", com_exit, "\tQuit the program", nullptr},
         { "help", com_help, "\tDisplay this text", command_generator},
         {nullptr, nullptr, nullptr, nullptr},

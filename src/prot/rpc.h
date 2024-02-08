@@ -48,6 +48,7 @@ protected:
     virtual bool SetServer(const std::string& server) = 0;
     virtual bool Login(const std::string& token, const std::string& source) = 0;
     virtual bool Debug(const std::string& module, bool enable) = 0;
+    virtual bool killCon(const std::string& address) = 0;
 
     virtual std::string GetServer() = 0;
     virtual std::string DumpStatus() = 0;
@@ -81,6 +82,7 @@ public:
     std::promise<std::string> DumpMemUsage();
     std::promise<bool> Login(const std::string& token, const std::string& source);
     std::promise<bool> Debug(const std::string& module, bool enable);
+    std::promise<bool> killCon(const std::string& address);
 };
 
 #endif

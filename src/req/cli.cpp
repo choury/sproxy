@@ -170,6 +170,16 @@ bool Cli::Debug(const std::string& module, bool enable) {
     return debugon(module.c_str(), enable);
 }
 
+bool Cli::killCon(const std::string &address) {
+    LOG("%s [%s] %s\n", rwer->getPeer(), __func__, address.c_str());
+    char *endptr;
+    uint64_t num = strtoull(address.c_str(), &endptr, 16);
+    if (*endptr != '\0') {
+        return false;
+    }
+    return kill_server(reinterpret_cast<Server*>(num), CLI_KILLED);
+}
+
 void Cli::dump_stat(Dumper dp, void* param) {
     dp(param, "Cli %p\n", this);
     rwer->dump_status(dp, param);
