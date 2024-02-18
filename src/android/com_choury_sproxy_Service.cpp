@@ -243,19 +243,23 @@ std::vector<std::string> getDns(){
 }
 
 void android_vlog(int level, const char* fmt, va_list args){
+    char prefix;
     switch(level){
     case LOG_INFO:
         level = ANDROID_LOG_INFO;
+        prefix = 'I';
         break;
     case LOG_ERR:
         level = ANDROID_LOG_ERROR;
+        prefix = 'E';
         break;
     case LOG_DEBUG:
         level = ANDROID_LOG_DEBUG;
+        prefix = 'D';
         break;
     default:
         level = ANDROID_LOG_DEFAULT;
-
+        prefix = 'V';
     }
     char printbuff[1024];
     vsnprintf(printbuff, sizeof(printbuff), fmt, args);
@@ -266,7 +270,7 @@ void android_vlog(int level, const char* fmt, va_list args){
         std::string cachedir = getExternalCacheDir();
         std::ofstream logfile(cachedir + "/vpn.log", std::ios::app);
         auto now = time(nullptr);
-        logfile << std::put_time(std::localtime(&now), "%F %T: ") << printbuff;
+        logfile << prefix << "/" <<std::put_time(std::localtime(&now), "%F %T: ") << printbuff;
         logfile.close();
     }
 }

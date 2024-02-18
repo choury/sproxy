@@ -265,10 +265,15 @@ void Guest::Error(int ret, int code) {
         return deleteLater(PEER_LOST_ERR);
     }
     ReqStatus& status = statuslist.back();
-    if(status.req) {
-        LOGE("[%" PRIu32 "]: <guest> error (%s) %d/%d http_flag:0x%x\n",
-            status.req->header->request_id, status.req->header->geturl().c_str(), ret, code, http_flag);
+    if (status.req == nullptr) {
+        return deleteLater(ret);
     }
+    if(ret == PROTOCOL_ERR && code == PEER_LOST_ERR && strcmp(status.req->header->Dest.protocol, "udp") == 0){
+        return deleteLater(PEER_LOST_ERR);
+    }
+    LOGE("[%" PRIu32 "]: <guest> error (%s) %d/%d flags:0x%x http_flag:0x%x\n",
+        status.req->header->request_id, status.req->header->geturl().c_str(),
+        ret, code, status.flags, http_flag);
     deleteLater(ret);
 }
 

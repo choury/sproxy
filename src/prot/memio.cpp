@@ -60,6 +60,7 @@ void MemRWer::push_signal(Signal s) {
     if (flags & RWER_CLOSING){
         return;
     }
+    ConsumeRData(0);
     switch(s){
     case CHANNEL_ABORT:
         setFd(-1);

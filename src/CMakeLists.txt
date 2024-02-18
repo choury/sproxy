@@ -31,14 +31,11 @@ if(ZLIB_FOUND)
     set(SPROXY_LIBS ${SPROXY_LIBS} z)
 endif()
 
-if(JSON-C_FOUND)
-    set(SPROXY_LIBS ${SPROXY_LIBS} ${JSON-C_LIBRARIES})
-endif()
-
 if(APPLE)
     set(SPROXY_LIBS ${SPROXY_LIBS} ${CORE_LIBRARY} ${SYSCONF_LIBRARY})
 endif()
 
+set(SPROXY_LIBS ${SPROXY_LIBS} ${JSON-C_LIBRARIES})
 if(LINUX OR APPLE)
     add_executable(sproxy server/server.cpp common/base.cpp)
     set_target_properties(sproxy PROPERTIES OUTPUT_NAME "sproxy")

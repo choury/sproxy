@@ -272,9 +272,9 @@ void Host::ErrProc(){
 
 void Host::Error(int ret, int code) {
     if(status.req) {
-        LOGE("[%" PRIu32 "]: <host> error (%s) %d/%d http_flag:0x%x\n",
-            status.req->header->request_id,
-            status.req->header->geturl().c_str(), ret, code, http_flag);
+        LOGE("[%" PRIu32 "]: <host> error (%s) %d/%d flags:0x%x http_flag:0x%x\n",
+            status.req->header->request_id, status.req->header->geturl().c_str(),
+            ret, code, status.flags, http_flag);
     }else{
         LOGE("(%s) <host> error %d/%d http_flag:0x%x\n",
              rwer->getPeer(), ret, code, http_flag);

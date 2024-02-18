@@ -250,8 +250,8 @@ void Guest3::RstProc(uint64_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(errcode){
-            LOGE("[%" PRIu32 "]: <guest3> (%" PRIu64"): stream  reseted: %d\n",
-                 status.req->header->request_id, id, errcode);
+            LOGE("[%" PRIu32 "]: <guest3> (%" PRIu64"): stream reset:%d flags:0x%x\n",
+                 status.req->header->request_id, id, errcode, status.flags);
         }
         status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
         Clean(id, errcode);

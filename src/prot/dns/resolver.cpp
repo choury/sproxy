@@ -133,19 +133,22 @@ void HostResolver::readHE(RW_EVENT events) {
                 flags |= GETARES;
                 for(auto i: result.addrs){
                     assert(i.ss_family == AF_INET);
-                    rcd.addrs.push_back(i);
+                    rcd.addrs.emplace_back(i);
                 }
             }else if(result.type == 28){
                 flags |= GETAAAARES;
                 for(auto i: result.addrs){
                     assert(i.ss_family == AF_INET6);
-                    rcd.addrs.push_front(i);
+                    rcd.addrs.emplace_front(i);
                 }
             }
             if(!(flags & GETARES) || !(flags & GETAAAARES)) {
                 return;
             }
-            rcd_cache[host] = rcd;
+            if(!rcd.addrs.empty()) {
+                //如果没有地址，那么ttl就是0xffffffff，不能缓存
+                rcd_cache.emplace(host, rcd);
+            }
         }
 ret:
         reply.reset(nullptr);

@@ -299,6 +299,8 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
     uint8_t flag = pac->tcp->getflag();
 
     if(flag & TH_RST){//rst包，不用回包，直接断开
+        LOGE("<tcp> %s -> %s got rst.\n",
+             std::string(storage_ntoa(&status->src)).c_str(), std::string(storage_ntoa(&status->dst)).c_str());
         status->state = TCP_CLOSE;
         status->errCB(pac, TCP_RESET_ERR);
         return;
