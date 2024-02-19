@@ -73,6 +73,7 @@ void SslRWerBase::sink_out_bio(uint64_t id) {
     while(BIO_ctrl_pending(out_bio)) {
         char buff[BUF_LEN];
         int ret = BIO_read(out_bio, buff, sizeof(buff));
+        LOGD(DSSL, "[%s] BIO_read %d bytes\n", server.c_str(), ret);
         if (ret > 0) {
             write(Buffer{std::make_shared<Block>(buff, ret), (size_t)ret, id});
         }
@@ -101,7 +102,8 @@ int SslRWerBase::sink_in_bio(uint64_t id) {
 }
 
 void SslRWerBase::handleData(Buffer&& bb) {
-    BIO_write(in_bio, bb.data(), (int)bb.len);
+    int ret = BIO_write(in_bio, bb.data(), (int)bb.len);
+    LOGD(DSSL, "[%s] BIO_write %d bytes\n", server.c_str(), ret);
     switch(sslStats) {
     case SslStats::Idel:
         //it should set to SslStats::SslAccepting or SslStats::SslConnecting in constructor
@@ -202,7 +204,17 @@ void SslRWer::write(Buffer&& bb) {
     wbuff.push(wbuff.end(), std::move(bb));
 }
 
+void SslMer::write(Buffer&& bb) {
+    LOGD(DSSL, "[%s] send %zd bytes to mem\n", server.c_str(), bb.len);
+    addEvents(RW_EVENT::WRITE);
+    wbuff.push(wbuff.end(), std::move(bb));
+}
+
 void SslRWer::onRead(Buffer&& bb) {
+    rb.put(bb.data(), bb.len);
+}
+
+void SslMer::onRead(Buffer&& bb) {
     rb.put(bb.data(), bb.len);
 }
 
@@ -210,7 +222,15 @@ void SslRWer::onConnected() {
     connected(addrs.front());
 }
 
+void SslMer::onConnected() {
+    connected({});
+}
+
 void SslRWer::onError(int type, int code) {
+    ErrorHE(type, code);
+}
+
+void SslMer::onError(int type, int code) {
     ErrorHE(type, code);
 }
 
@@ -267,22 +287,12 @@ void SslRWer::Send(Buffer&& bb) {
     sendData(std::move(bb));
 }
 
-void SslMer::write(Buffer&& bb) {
-    LOGD(DSSL, "[%s] send %zd bytes to mem\n", server.c_str(), bb.len);
-    addEvents(RW_EVENT::WRITE);
-    readCB(std::move(bb));
-}
-
-void SslMer::onRead(Buffer&& bb) {
-    rb.put(bb.data(), bb.len);
-}
-
-void SslMer::onConnected() {
-    connected({});
-}
-
-void SslMer::onError(int type, int code) {
-    ErrorHE(type, code);
+void SslMer::Send(Buffer&& bb) {
+    assert((this->flags & RWER_SHUTDOWN) == 0);
+    if(this->stats == RWerStats::Error) {
+        return;
+    }
+    sendData(std::move(bb));
 }
 
 

@@ -112,6 +112,7 @@ public:
       SslRWerBase(ctx), MemRWer(pname, std::move(read_cb), std::move(cap_cb))
     {}
     virtual void push_data(const Buffer& bb) override;
+    void Send(Buffer&& bb) override;
 };
 
 

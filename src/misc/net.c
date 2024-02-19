@@ -19,7 +19,7 @@ int Checksocket(int fd, const char *msg){
         error = errno;
         LOGE("%s:getsockopt error [%d]: %s\n", msg, fd, strerror(error));
     }else if(error){
-        LOGE("%s:sock error: %s\n", msg, strerror(error));
+        LOGE("%s:sock error [%d]: %s\n", msg, fd, strerror(error));
     }
     return error;
 }
@@ -30,11 +30,11 @@ void SetSocketUnblock(int fd){
     }
     int flags = fcntl(fd, F_GETFL, 0);
     if(flags < 0){
-        LOGF("fcntl error %d: %s\n", fd, strerror(errno));
+        LOGF("fcntl error [%d]: %s\n", fd, strerror(errno));
     }
     int ret = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
     if(ret < 0){
-        LOGF("fcntl error %d: %s\n", fd, strerror(errno));
+        LOGF("fcntl error [%d]: %s\n", fd, strerror(errno));
     }
 }
 
