@@ -195,7 +195,7 @@ int generate_signed_key_pair(const char* domain, EVP_PKEY **key, X509 **crt) {
     /* Now perform the actual signing with the CA. */
     if (X509_sign(*crt, opt.ca.key, EVP_sha256()) == 0) goto err;
     X509_REQ_free(req);
-    certs.emplace(std::make_pair(domain, cert_pair{*crt, *key}));
+    certs.emplace(domain, cert_pair{*crt, *key});
     return 0;
 err:
     EVP_PKEY_free(*key);

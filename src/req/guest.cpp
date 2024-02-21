@@ -150,7 +150,7 @@ Guest::Guest(std::shared_ptr<RWer> rwer_): Requester(rwer_){
 
 void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
     if(header->ismethod("CONNECT") && header->Dest.port == HTTPPORT) {
-        auto mrwer = std::make_shared<MemRWer>(header->Dest.hostname,
+        auto mrwer = std::make_shared<MemRWer>(rwer->getPeer(),
                                                std::bind(&Guest::mread, this, header,  _1),
                                                [this]{ return  rwer->cap(0);});
         statuslist.emplace_back(ReqStatus{nullptr, nullptr, mrwer, HTTP_NOEND_F});
@@ -163,9 +163,9 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
                 (opt.mitm_mode == Auto && opt.ca.key && mayBeBlocked(header->Dest.hostname));
         if (shouldMitm || getstrategy(header->Dest.hostname).s == Strategy::local) {
             auto ctx = initssl(0, header->Dest.hostname);
-            auto srwer = std::make_shared<SslMer>(ctx, header->Dest.hostname,
-                                                            std::bind(&Guest::mread, this, header, _1),
-                                                            [this]{ return  rwer->cap(0);});
+            auto srwer = std::make_shared<SslMer>(ctx, rwer->getPeer(),
+                                                  std::bind(&Guest::mread, this, header, _1),
+                                                  [this]{ return  rwer->cap(0);});
             statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
             rwer->Send({HCONNECT, strlen(HCONNECT)});
             new Guest(srwer);
