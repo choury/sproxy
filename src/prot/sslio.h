@@ -40,7 +40,7 @@ public:
     int set_alpn(const unsigned char *s, unsigned int len);
     void set_hostname_callback(int (* cb)(SSL *, int *, void*), void* arg);
     void set_server_name(const std::string& arg);
-    //virtual void dump_status(Dumper dp, void* param);
+    virtual void dump(Dumper dp, void* param);
     virtual size_t mem_usage() {
         BUF_MEM *in_mem, *out_mem;
         BIO_get_mem_ptr(in_bio, &in_mem);
@@ -81,6 +81,7 @@ public:
     SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB);
     virtual void ReadData() override;
     virtual void Send(Buffer&& bb) override;
+    virtual void dump_status(Dumper dp, void* param) override;
 };
 
 class SslMer: public SslRWerBase, public MemRWer {
@@ -113,6 +114,7 @@ public:
     {}
     virtual void push_data(const Buffer& bb) override;
     void Send(Buffer&& bb) override;
+    virtual void dump_status(Dumper dp, void* param) override;
 };
 
 

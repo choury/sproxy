@@ -182,15 +182,11 @@ void SslRWerBase::set_server_name(const std::string& arg) {
     SSL_set_app_data(ssl, server.c_str());
 }
 
-/*
-void SslRWerBase::dump_status(Dumper dp, void *param) {
-    dp(param, "SslRWer <%d> (%s => %s): %s\nrlen: %zu, wlen: %zu, stats: %d, sslStats: %d, event: %s\n",
-       this->getFd(), this->getPeer(), server.c_str(), SSL_state_string_long(ssl),
-       this->rlength(0), this->wbuff.length(),
-       (int)this->getStats(), (int)this->sslStats,
-       events_string[(int)this->getEvents()]);
+void SslRWerBase::dump(Dumper dp, void *param) {
+    dp(param, "Ssl (%s): rbio: %zu, wbio: %zu, sslStats: %d (%s)\n",
+       server.c_str(), BIO_ctrl_pending(in_bio), BIO_ctrl_pending(out_bio),
+       (int)sslStats, SSL_state_string_long(ssl));
 }
- */
 
 SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB):
         SslRWerBase(hostname), StreamRWer(hostname, port, protocol, std::move(errorCB))
@@ -246,6 +242,7 @@ void SslRWer::ReadData() {
         LOGD(DSSL, "[%s] read %d bytes from fd %d\n", server.c_str(), (int)ret, getFd());
         if (ret > 0) {
             handleData(Buffer{std::make_shared<Block>(buff, ret), (size_t)ret, 0});
+            StreamRWer::ConsumeRData(0);
             continue;
         } else if (ret == 0) {
             stats = RWerStats::ReadEOF;
@@ -308,4 +305,14 @@ void SslMer::push_data(const Buffer& bb) {
         handleData(Buffer{bb});
     }
     MemRWer::ConsumeRData(bb.id);
+}
+
+void SslRWer::dump_status(Dumper dp, void *param) {
+    SocketRWer::dump_status(dp, param);
+    dump(dp, param);
+}
+
+void SslMer::dump_status(Dumper dp, void *param) {
+    MemRWer::dump_status(dp, param);
+    dump(dp, param);
 }
