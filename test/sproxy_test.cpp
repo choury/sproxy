@@ -183,15 +183,15 @@ int main(int argc , char *argv[]) {
                 cerr << "listen udp/tcp <port>" << endl;
                 return -1;
             }
-            struct sockaddr_in sockaddr;
-            memset(&sockaddr,0,sizeof(sockaddr));
+            struct sockaddr_in6 sockaddr;
+            memset(&sockaddr, 0, sizeof(sockaddr));
 
-            sockaddr.sin_family = AF_INET;
-            sockaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-            sockaddr.sin_port = htons(port);
+            sockaddr.sin6_family = AF_INET6;
+            sockaddr.sin6_addr = in6addr_any;
+            sockaddr.sin6_port = htons(port);
 
             if(prot == "tcp"){
-                int fd = socket(AF_INET, SOCK_STREAM,0);
+                int fd = socket(AF_INET6, SOCK_STREAM, 0);
                 int flag = 1;
                 if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
                     cerr<<"setsockopt SO_REUSEADDR: "<< strerror(errno)<<endl;
@@ -220,7 +220,7 @@ int main(int argc , char *argv[]) {
                 }
                 close(fd);
             }else{
-                sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+                sockfd = socket(AF_INET6, SOCK_DGRAM, 0);
                 int flag = 1;
                 if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
                     cerr<<"setsockopt SO_REUSEADDR: "<< strerror(errno)<<endl;

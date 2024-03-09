@@ -6,7 +6,7 @@
 
 Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
     this->rwer = rwer;
-    rwer->SetErrorCB(std::bind(&Proxy3::Error, this, _1, _2));
+    rwer->SetErrorCB([this](int ret, int code){return Error(ret, code);});
     rwer->SetReadCB([this](const Buffer& bb) -> size_t {
         LOGD(DHTTP3, "<proxy3> (%s) read [%" PRIu64"]: len:%zu\n", this->rwer->getPeer(), bb.id, bb.len);
         if(bb.len == 0){
@@ -51,7 +51,7 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
             status.req->pull();
         }
     });
-    rwer->setResetHandler(std::bind(&Proxy3::RstProc, this, _1, _2));
+    rwer->setResetHandler([this](uint64_t id, uint32_t errcode){RstProc(id, errcode);});
 }
 
 Proxy3::~Proxy3() {
@@ -71,7 +71,7 @@ void Proxy3::Reset(uint64_t id, uint32_t code) {
 
 bool Proxy3::DataProc(uint64_t id, const void* data, size_t len){
     idle_timeout = UpdateJob(std::move(idle_timeout),
-                             std::bind(&Proxy3::deleteLater, this, CONNECT_AGED), 300000);
+                             [this]{deleteLater(CONNECT_AGED);}, 300000);
     if(len == 0){
         return true;
     }
@@ -128,7 +128,7 @@ void Proxy3::request(std::shared_ptr<HttpReq> req, Requester*) {
     PushFrame({buff, pre + len, id});
     req->attach([this, id](ChannelMessage& msg){
         idle_timeout = UpdateJob(std::move(idle_timeout),
-                                 std::bind(&Proxy3::deleteLater, this, CONNECT_AGED), 300000);
+                                 [this]{deleteLater(CONNECT_AGED);}, 300000);
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:
             LOGD(DHTTP3, "<proxy3> ignore header for req\n");
@@ -156,7 +156,7 @@ void Proxy3::init(std::shared_ptr<HttpReq> req) {
 
 void Proxy3::ResProc(uint64_t id, std::shared_ptr<HttpResHeader> header) {
     idle_timeout = UpdateJob(std::move(idle_timeout),
-                             std::bind(&Proxy3::deleteLater, this, CONNECT_AGED), 300000);
+                             [this]{deleteLater(CONNECT_AGED);}, 300000);
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(!header->no_body() && !header->get("Content-Length"))

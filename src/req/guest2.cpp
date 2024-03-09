@@ -23,7 +23,7 @@ bool Guest2::wantmore(const ReqStatus& status) {
 
 
 Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
-    rwer->SetErrorCB(std::bind(&Guest2::Error, this, _1, _2));
+    rwer->SetErrorCB([this](int ret, int code){Error(ret, code);});
     rwer->SetReadCB([this](const Buffer& bb) -> size_t {
         LOGD(DHTTP2, "<guest2> (%s) read: len:%zu\n", this->rwer->getPeer(), bb.len);
         if(bb.len == 0){
@@ -43,7 +43,7 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
         }
         this->connection_lost_job = UpdateJob(
                 std::move(this->connection_lost_job),
-                std::bind(&Guest2::connection_lost, this), 1800000);
+                [this]{connection_lost();}, 1800000);
         return len;
     });
     rwer->SetWriteCB([this](uint64_t id){
@@ -79,7 +79,7 @@ void Guest2::Recv(Buffer&& bb){
         PushData({nullptr, bb.id});
         status.flags |= HTTP_RES_COMPLETED;
         if(status.flags & HTTP_REQ_COMPLETED){
-            status.cleanJob = AddJob(std::bind(&Guest2::Clean, this, bb.id, NOERROR), 0, 0);
+            status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, NOERROR);}), 0, 0);
         }
     }else{
         if(status.req->header->ismethod("HEAD")){
@@ -123,20 +123,21 @@ void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
     };
     ReqStatus& status = statusmap[id];
 
-    status.req = std::make_shared<HttpReq>(header,
-    std::bind(&Guest2::response, this, (void*)(long)id, _1),
-    [this, &status, id] () mutable{
-        auto len = status.req->cap();
-        if(len < status.localwinsize){
-            LOGE("[%" PRIu32 "]: <guest2> (%d) shrunken local window: %d/%d\n",
-                status.req->header->request_id, id, len, status.localwinsize);
-        }else if(len == status.localwinsize) {
-            return;
-        }else if(len - status.localwinsize > FRAMEBODYLIMIT || status.localwinsize <= FRAMEBODYLIMIT/2){
-            LOGD(DHTTP2, "<guest2> (%d) increased local window: %d -> %d\n", id, status.localwinsize, len);
-            status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
-        }
-    });
+    status.req = std::make_shared<HttpReq>(
+            header,
+            [this, id](std::shared_ptr<HttpRes> res){response((void*)(long)id, res);},
+            [this, &status, id] () mutable{
+                auto len = status.req->cap();
+                if(len < status.localwinsize){
+                    LOGE("[%" PRIu32 "]: <guest2> (%d) shrunken local window: %d/%d\n",
+                         status.req->header->request_id, id, len, status.localwinsize);
+                }else if(len == status.localwinsize) {
+                    return;
+                }else if(len - status.localwinsize > FRAMEBODYLIMIT || status.localwinsize <= FRAMEBODYLIMIT/2){
+                    LOGD(DHTTP2, "<guest2> (%d) increased local window: %d -> %d\n", id, status.localwinsize, len);
+                    status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
+                }
+            });
     distribute(status.req, this);
 }
 

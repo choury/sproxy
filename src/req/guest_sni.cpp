@@ -14,7 +14,7 @@
 
 Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(fd, addr, ctx){
     assert(ctx == nullptr);
-    rwer->SetReadCB(std::bind(&Guest_sni::sniffer, this, _1));
+    rwer->SetReadCB([this](const Buffer& bb){return sniffer(bb);});
     Http_Proc = &Guest_sni::AlwaysProc;
     std::stringstream ss;
     ss << "Sproxy/" << getVersion()
@@ -27,9 +27,9 @@ Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, std::string host, std::string u
         Guest(rwer), host(std::move(host)), user_agent(std::move(ua))
 {
     if(std::dynamic_pointer_cast<PMemRWer>(rwer)) {
-        rwer->SetReadCB(std::bind(&Guest_sni::sniffer_quic, this, _1));
+        rwer->SetReadCB([this](const Buffer& bb){return sniffer_quic(bb);});
     } else if(std::dynamic_pointer_cast<MemRWer>(rwer)) {
-        rwer->SetReadCB(std::bind(&Guest_sni::sniffer, this, _1));
+        rwer->SetReadCB([this](const Buffer& bb){return sniffer(bb);});
     } else {
         LOGF("Guest_sni: rwer type error\n");
     }
@@ -56,12 +56,14 @@ size_t Guest_sni::sniffer(const Buffer& bb) {
     std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, slen);
     header->set("User-Agent", user_agent + " SEQ/" + std::to_string(header->request_id));
     LOGD(DHTTP, "<guest_sni> ReqProc %" PRIu32 " %s\n", header->request_id, header->geturl().c_str());
-    auto req = std::make_shared<HttpReq>(header,std::bind(&Guest_sni::response, this, nullptr, _1),
-                                         [this]{ rwer->Unblock(0);});
+    auto req = std::make_shared<HttpReq>(
+            header,
+            [this](std::shared_ptr<HttpRes> res){return response(nullptr, res);},
+            [this]{ rwer->Unblock(0);});
 
     statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, 0, nullptr});
     distribute(req, this);
-    rwer->SetReadCB(std::bind(&Guest_sni::ReadHE, this, _1));
+    rwer->SetReadCB([this](const Buffer& bb){return ReadHE(bb);});
     return bb.len;
 }
 
@@ -118,15 +120,17 @@ size_t Guest_sni::sniffer_quic(Buffer bb) {
         std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(headstr, slen);
         header->set("User-Agent", user_agent + " SEQ/" + std::to_string(header->request_id));
         LOGD(DHTTP, "<guest_sni> ReqProc %" PRIu32 " %s\n", header->request_id, header->geturl().c_str());
-        auto req = std::make_shared<HttpReq>(header,std::bind(&Guest_sni::response, this, nullptr, _1),
-                                            [this]{ rwer->Unblock(0);});
+        auto req = std::make_shared<HttpReq>(
+                header,
+                [this](std::shared_ptr<HttpRes> res){return response(nullptr, res);},
+                [this]{ rwer->Unblock(0);});
 
         statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, 0, nullptr});
         distribute(req, this);
         rx_bytes += bb.len;
         req->send(std::move(bb));
     }
-    rwer->SetReadCB(std::bind(&Guest_sni::ReadHE, this, _1));
+    rwer->SetReadCB([this](const Buffer& bb){return ReadHE(bb);});
 #endif
     return bb.len;
 }

@@ -504,8 +504,13 @@ void QuicBase::getParams(const uint8_t* data, size_t len) {
 }
 
 QuicBase::QuicBase(const char* hostname):
-        qos(false, std::bind(&QuicBase::send, this, _1, _2, _3, _4, _5),
-            std::bind(&QuicBase::resendFrames, this, _1, _2))
+        qos(false,
+            [this] (auto&& v1, auto&& v2, auto&& v3, auto&& v4, auto&& v5) {
+                return this->send(v1, v2, v3, v4, v5);
+            },
+            [this] (auto&& v1, auto&& v2) {
+                resendFrames(v1, v2);
+            })
 {
     ctx = SSL_CTX_new(TLS_client_method());
     if (ctx == nullptr) {
@@ -547,12 +552,17 @@ QuicBase::QuicBase(const char* hostname):
     nextRemoteBiId  = 1;
     nextLocalUbiId  = 2;
     nextRemoteUbiId = 3;
-    walkHandler = std::bind(&QuicBase::handlePacket, this, _1, _2);
+    walkHandler = [this](auto&& v1, auto&& v2) { return handlePacket(v1, v2); };
 }
 
 QuicBase::QuicBase(SSL_CTX *ctx):
-        qos(true, std::bind(&QuicBase::send, this, _1, _2, _3, _4, _5),
-            std::bind(&QuicBase::resendFrames, this, _1, _2))
+        qos(true,
+            [this](auto&& v1, auto&& v2, auto&& v3, auto&& v4, auto&& v5){
+                return this->send(v1, v2, v3, v4, v5);
+            },
+            [this] (auto&& v1, auto&& v2) {
+                resendFrames(v1, v2);
+            })
 {
     ssl = SSL_new(ctx);
     SSL_set_quic_method(ssl, &quic_method);
@@ -568,7 +578,7 @@ QuicBase::QuicBase(SSL_CTX *ctx):
     nextLocalBiId   = 1;
     nextRemoteUbiId = 2;
     nextLocalUbiId  = 3;
-    walkHandler = std::bind(&QuicBase::handlePacket, this, _1, _2);
+    walkHandler = [this](auto&& v1, auto&& v2) { return handlePacket(v1, v2);};
 }
 
 QuicBase::~QuicBase(){
@@ -1101,7 +1111,7 @@ void QuicBase::resendFrames(pn_namespace* ns, quic_frame *frame) {
 int QuicBase::handle1RttPacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames) {
     auto context = &contexts[ssl_encryption_application];
     keepAlive_timer = UpdateJob(std::move(keepAlive_timer),
-                                std::bind(&QuicBase::keepAlive_action, this),
+                                [this]{keepAlive_action();},
                                 std::min(30000, (int)max_idle_timeout/2));
     for(auto frame : frames) {
         qos.handleFrame(context->level, header->pn, frame);
@@ -1124,7 +1134,7 @@ int QuicBase::handle1RttPacket(const quic_pkt_header* header, std::vector<const 
 
 int QuicBase::handlePacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames) {
     disconnect_timer = UpdateJob(std::move(disconnect_timer),
-                                 std::bind(&QuicBase::disconnect_action, this), max_idle_timeout);
+                                 [this]{disconnect_action();}, max_idle_timeout);
     switch(header->type){
     case QUIC_PACKET_INITIAL:
     case QUIC_PACKET_HANDSHAKE:
@@ -1213,7 +1223,7 @@ void QuicBase::close() {
         frame->close.reason = nullptr;
         qos.PushFrame(context->level, frame);
         close_timer = UpdateJob(std::move(close_timer),
-                                std::bind(&QuicBase::onError, this, PROTOCOL_ERR, QUIC_CONNECTION_CLOSED),
+                                [this]{onError(PROTOCOL_ERR, QUIC_CONNECTION_CLOSED);},
                                 3 * qos.rtt.rttvar);
         return 0;
     };
@@ -1227,7 +1237,7 @@ void QuicBase::close() {
         //we only send CLOSE_CONNECTION_APP frame after handshake now
         //TODO: but it should also be send before handshake
         close_timer = UpdateJob(std::move(close_timer),
-                                std::bind(&QuicBase::onError, this, PROTOCOL_ERR, QUIC_CONNECTION_CLOSED),
+                                [this]{onError(PROTOCOL_ERR, QUIC_CONNECTION_CLOSED);},
                                 max_idle_timeout);
 
         quic_frame* frame = new quic_frame;
@@ -1239,7 +1249,7 @@ void QuicBase::close() {
         qos.PushFrame(ssl_encryption_application, frame);
     }else{
         close_timer = UpdateJob(std::move(close_timer),
-                                std::bind(&QuicBase::onError, this, PROTOCOL_ERR, QUIC_CONNECTION_CLOSED), 0);
+                                [this]{onError(PROTOCOL_ERR, QUIC_CONNECTION_CLOSED);}, 0);
     }
 }
 
@@ -1640,7 +1650,7 @@ QuicRWer::QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
 {
     assert(protocol == Protocol::QUIC);
     con_failed_job = UpdateJob(std::move(con_failed_job),
-                               std::bind(&QuicRWer::connectFailed, this, ETIMEDOUT), 2000);
+                               [this]{connectFailed(ETIMEDOUT);}, 2000);
 }
 
 QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, Quic_server* server):
@@ -1701,7 +1711,8 @@ void QuicRWer::onCidChange(const std::string &cid, bool retired) {
 
 int QuicRWer::handleRetryPacket(const quic_pkt_header *header) {
     if(initToken.empty()) {
-        con_failed_job = UpdateJob(std::move(con_failed_job), std::bind(&QuicRWer::connect, this), 20000);
+        con_failed_job = UpdateJob(std::move(con_failed_job),
+                                   [this]{connect();}, 20000);
     }
     return QuicBase::handleRetryPacket(header);
 }
@@ -1761,7 +1772,7 @@ void QuicRWer::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR)) {
         int error  = checkSocket(__PRETTY_FUNCTION__);
         con_failed_job = UpdateJob(std::move(con_failed_job),
-                                   std::bind(&QuicRWer::connectFailed, this, error), 0);
+                                   ([this, error]{connectFailed(error);}), 0);
         return;
     }
     if (!!(events & RW_EVENT::WRITE)) {
@@ -1772,7 +1783,7 @@ void QuicRWer::waitconnectHE(RW_EVENT events) {
         setEvents(RW_EVENT::READ);
         handleEvent = (void (Ep::*)(RW_EVENT))&QuicRWer::defaultHE;
         con_failed_job = UpdateJob(std::move(con_failed_job),
-                                   std::bind(&QuicRWer::connectFailed, this, ETIMEDOUT), 2000);
+                                   [this]{connectFailed(ETIMEDOUT);}, 2000);
     }
 }
 

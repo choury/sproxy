@@ -47,7 +47,7 @@ ssize_t RWer::Write(const Buffer& bb) {
 void RWer::SendData(){
     std::set<uint64_t> writed_list;
     while(wbuff.start() != wbuff.end()){
-        int ret = wbuff.Write(std::bind(&RWer::Write, this, _1), writed_list);
+        int ret = wbuff.Write([this](const Buffer& bb){ return Write(bb);}, writed_list);
         if(ret >= 0){
             continue;
         }
@@ -100,7 +100,7 @@ void RWer::defaultHE(RW_EVENT events){
 
 void RWer::closeHE(RW_EVENT) {
     std::set<uint64_t> writed_list;
-    ssize_t ret = wbuff.Write(std::bind(&RWer::Write, this, _1), writed_list);
+    ssize_t ret = wbuff.Write([this](const Buffer& bb){return Write(bb);}, writed_list);
 #ifndef WSL
     if ((wbuff.start() == wbuff.end()) || (ret <= 0 && errno != EAGAIN && errno != ENOBUFS)) {
         handleEvent = (void(Ep::*)(RW_EVENT))&RWer::IdleHE;

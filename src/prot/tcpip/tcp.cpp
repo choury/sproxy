@@ -188,7 +188,7 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
     }
 ret:
     status->rto_job = UpdateJob(std::move(status->rto_job),
-                                std::bind(&Resent, status_),
+                                [status_]{Resent(status_);},
                                 std::max(status->rto * status->rto_factor, (uint32_t) 1000));
 }
 
@@ -203,7 +203,7 @@ void PendPkg(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, Buffer&
     if(status->sent_list.empty()) {
         //说明之前没有开启rto重传，就在这里开启
         status->rto_job = UpdateJob(std::move(status->rto_job),
-                                    std::bind(&Resent, GetWeak(status)),
+                                    [status_ = GetWeak(status)]{Resent(status_);},
                                     std::max(status->rto * status->rto_factor, (uint32_t) 1000));
     }
     auto now = getmtime();
@@ -276,7 +276,9 @@ void SendSyn(std::shared_ptr<TcpStatus> status) {
 
     status->sent_ack = status->want_seq;
     status->state = TCP_ESTABLISHED;
-    status->PkgProc = std::bind(&DefaultProc, status, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+    status->PkgProc = [status](auto&& v1, auto&& v2, auto&& v3) {
+        return DefaultProc(status, v1, v2, v3);
+    };
 
     PendPkg(status, pac, nullptr);
 }
@@ -316,13 +318,15 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
                 status->errCB(pac, TCP_RESET_ERR);
             } else {
                 LOGD(DVPN, "%s get dup syn packet, reply synack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
-                status->rto_job = UpdateJob(std::move(status->rto_job), std::bind(&Resent, GetWeak(status)), 0);
+                status->rto_job = UpdateJob(std::move(status->rto_job),
+                                            [status_ = GetWeak(status)] {Resent(status_);}, 0);
             }
             return;
         }
         LOG("%s get unwanted/keep-alive pkt, reply ack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
         status->sent_ack = status->want_seq - 1; //to force send tcp ack
-        status->ack_job = UpdateJob(std::move(status->ack_job), std::bind(&SendAck, GetWeak(status)), 0);
+        status->ack_job = UpdateJob(std::move(status->ack_job),
+                                    [status_ = GetWeak(status)] {SendAck(status_);}, 0);
         return;
     }
 
@@ -343,7 +347,8 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
         if(ack == status->recv_ack) {
             status->dupack ++;
             if(status->dupack >= 3) {
-                status->rto_job = UpdateJob(std::move(status->rto_job), std::bind(&Resent, GetWeak(status)), 0);
+                status->rto_job = UpdateJob(std::move(status->rto_job),
+                                            [status_ = GetWeak(status)] {Resent(status_);}, 0);
             }
             goto left;
         }
@@ -390,7 +395,7 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
             status->rto_job.reset(nullptr);
         }else{
             status->rto_job = UpdateJob(std::move(status->rto_job),
-                                        std::bind(&Resent, GetWeak(status)),
+                                        [status_ =  GetWeak(status)] {Resent(status_);},
                                         std::max(status->rto * status->rto_factor, (uint32_t)1000));
         }
     }
@@ -409,7 +414,8 @@ left:
         const char *data = packet + pac->gethdrlen();
         status->rbuf.put(data, datalen);
         status->want_seq += datalen;
-        status->ack_job = UpdateJob(std::move(status->ack_job), std::bind(&SendAck, GetWeak(status)), 0);
+        status->ack_job = UpdateJob(std::move(status->ack_job),
+                                    [status_ = GetWeak(status)] {SendAck(status_);}, 0);
     }
     if(flag & TH_FIN){ //fin包，回ack包
         status->want_seq++;
@@ -425,14 +431,19 @@ left:
                 break;
             case TCP_FIN_WAIT1:
                 status->state = TCP_CLOSING;
-                status->PkgProc = std::bind(&CloseProc, status, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+                status->PkgProc = [status](auto&& v1, auto&& v2, auto&& v3) {
+                    return CloseProc(status, v1, v2, v3);
+                };
                 break;
             case TCP_FIN_WAIT2:
                 status->state = TCP_TIME_WAIT;
-                status->PkgProc = std::bind(&CloseProc, status, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+                status->PkgProc = [status](auto&& v1, auto&& v2, auto&& v3) {
+                    return CloseProc(status, v1, v2, v3);
+                };
                 break;
         }
-        status->ack_job = UpdateJob(std::move(status->ack_job), std::bind(&SendAck, GetWeak(status)), 0);
+        status->ack_job = UpdateJob(std::move(status->ack_job),
+                                    [status_ = GetWeak(status)]{SendAck(status_);}, 0);
     }
 }
 
@@ -500,7 +511,9 @@ void SendData(std::shared_ptr<TcpStatus> status, Buffer&& bb) {
             break;
         case TCP_CLOSE_WAIT:
             status->state = TCP_LAST_ACK;
-            status->PkgProc = std::bind(&CloseProc, status, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3);
+            status->PkgProc = [status](auto&& v1, auto&& v2, auto&& v3) {
+                return CloseProc(status, v1, v2, v3);
+            };
             break;
         }
         return;
@@ -561,7 +574,8 @@ void CloseProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac,
     }
     if(seq != status->want_seq){
         status->sent_ack = status->want_seq - 1; //to force send tcp ack
-        status->ack_job = UpdateJob(std::move(status->ack_job), std::bind(&SendAck, GetWeak(status)), 0);
+        status->ack_job = UpdateJob(std::move(status->ack_job),
+                                    [status_ = GetWeak(status)]{SendAck(status_);}, 0);
         return;
     }
 

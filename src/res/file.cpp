@@ -141,7 +141,7 @@ File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
     }
     strcpy(filename, fname);
     suffix = strrchr(filename, '.');
-    rwer->SetReadCB(std::bind(&File::readHE, this, _1));
+    rwer->SetReadCB([this](const Buffer& bb){return readHE(bb);});
 }
 
 File::~File() {

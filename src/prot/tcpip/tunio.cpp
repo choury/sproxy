@@ -176,28 +176,34 @@ void TunRWer::ReadData() {
             switch(key.protocol){
             case Protocol::TCP:{
                 auto tstatus = std::make_shared<TcpStatus>();
-                tstatus->PkgProc = std::bind(SynProc, tstatus, _1, _2, _3);
-                tstatus->SendPkg = std::bind((void(*)(std::shared_ptr<TcpStatus>, Buffer&&))::SendData, tstatus, _1);
-                tstatus->UnReach = std::bind((void (*)(std::shared_ptr<TcpStatus>, uint8_t)) UnReach, tstatus, _1);
-                tstatus->Cap = std::bind((ssize_t(*)(std::shared_ptr<TcpStatus>))Cap, tstatus);
+                tstatus->PkgProc = [tstatus](std::shared_ptr<const Ip> pac, const char* packet, size_t len){
+                    SynProc(tstatus, pac, packet, len);
+                };
+                tstatus->SendPkg = [tstatus](Buffer&& bb){::SendData(tstatus, std::move(bb));};
+                tstatus->UnReach = [tstatus](uint8_t code){Unreach(tstatus, code);};
+                tstatus->Cap = [tstatus]{return Cap(tstatus);};
                 status = tstatus;
                 break;
             }
             case Protocol::UDP:{
                 auto ustatus = std::make_shared<UdpStatus>();
-                ustatus->PkgProc = std::bind(UdpProc, ustatus, _1, _2, _3);
-                ustatus->SendPkg = std::bind((void(*)(std::shared_ptr<UdpStatus>, Buffer&&))::SendData, ustatus, _1);
-                ustatus->UnReach = std::bind((void(*)(std::shared_ptr<IpStatus>, uint8_t))Unreach, ustatus, _1);
-                ustatus->Cap = std::bind((ssize_t(*)(std::shared_ptr<IpStatus>))Cap, ustatus);
+                ustatus->PkgProc = [ustatus](std::shared_ptr<const Ip> pac, const char* packet, size_t len){
+                    UdpProc(ustatus, pac, packet, len);
+                };
+                ustatus->SendPkg = [ustatus](Buffer&& bb){::SendData(ustatus, std::move(bb));};
+                ustatus->UnReach = [ustatus](uint8_t code){Unreach(ustatus, code);};
+                ustatus->Cap = [ustatus]{return Cap(ustatus);};
                 status = ustatus;
                 break;
             }
             case Protocol::ICMP:{
                 auto istatus = std::make_shared<IcmpStatus>();
-                istatus->PkgProc = std::bind(IcmpProc, istatus, _1, _2, _3);
-                istatus->SendPkg = std::bind((void(*)(std::shared_ptr<IcmpStatus>, Buffer&&))::SendData, istatus, _1);
-                istatus->UnReach = std::bind((void(*)(std::shared_ptr<IpStatus>, uint8_t))Unreach, istatus, _1);
-                istatus->Cap = std::bind((ssize_t(*)(std::shared_ptr<IpStatus>))Cap, istatus);
+                istatus->PkgProc = [istatus](std::shared_ptr<const Ip> pac, const char* packet, size_t len) {
+                    IcmpProc(istatus, pac, packet, len);
+                };
+                istatus->SendPkg = [istatus](Buffer&& bb){::SendData(istatus, std::move(bb));};
+                istatus->UnReach = [istatus](uint8_t code){Unreach(istatus, code);};
+                istatus->Cap = [istatus]{return Cap(istatus);};
                 status = istatus;
                 break;
             }
@@ -207,11 +213,15 @@ void TunRWer::ReadData() {
             default:
                 continue;
             }
-            status->reqCB = std::bind(&TunRWer::ReqProc, this, _1);
-            status->dataCB = std::bind(&TunRWer::DataProc, this, _1, _2, _3);
-            status->ackCB = std::bind(&TunRWer::AckProc, this, _1);
-            status->errCB = std::bind(&TunRWer::ErrProc, this, _1, _2);
-            status->sendCB = std::bind(&TunRWer::SendPkg, this, _1, _2, _3);
+            status->reqCB = [this](std::shared_ptr<const Ip> pac){ReqProc(pac);};
+            status->dataCB = [this](std::shared_ptr<const Ip> pac, const void* data, size_t len){
+                return DataProc(pac, data, len);
+            };
+            status->ackCB = [this](std::shared_ptr<const Ip> pac){AckProc(pac);};
+            status->errCB = [this](std::shared_ptr<const Ip> pac, uint32_t code){ErrProc(pac, code);};
+            status->sendCB = [this](std::shared_ptr<const Ip> pac, const void* data, size_t len){
+                SendPkg(pac, data, len);
+            };
             status->protocol = key.protocol;
             status->src = pac->getsrc();
             status->dst = pac->getdst();

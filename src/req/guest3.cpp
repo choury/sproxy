@@ -8,7 +8,7 @@
 #include <inttypes.h>
 
 void Guest3::init() {
-    rwer->SetErrorCB(std::bind(&Guest3::Error, this, _1, _2));
+    rwer->SetErrorCB([this](int ret, int code){Error(ret, code);});
     rwer->SetReadCB([this](const Buffer& bb) -> size_t {
         LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", this->rwer->getPeer(), bb.id, bb.len);
         if(bb.len == 0){
@@ -65,7 +65,7 @@ void Guest3::connected() {
         LOGE("(%s) unknown protocol: %.*s\n", rwer->getPeer(), len, data);
         return Server::deleteLater(PROTOCOL_ERR);
     }
-    qrwer->setResetHandler(std::bind(&Guest3::RstProc, this, _1, _2));
+    qrwer->setResetHandler([this](uint64_t id, uint32_t error){RstProc(id, error);});
     Init();
 }
 
@@ -108,7 +108,7 @@ void Guest3::Recv(Buffer&& bb){
         PushFrame({nullptr, bb.id});
         status.flags |= HTTP_RES_COMPLETED;
         if(status.flags & HTTP_REQ_COMPLETED) {
-            status.cleanJob = AddJob(std::bind(&Guest3::Clean, this, bb.id, NOERROR), 0, 0);
+            status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, NOERROR);}), 0, 0);
         }
     }else{
         if(status.req->header->ismethod("HEAD")){
@@ -152,9 +152,10 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     };
     ReqStatus& status = statusmap[id];
 
-    status.req = std::make_shared<HttpReq>(header,
-              std::bind(&Guest3::response, this, (void*)id, _1),
-                 [this, id]{ rwer->Unblock(id);});
+    status.req = std::make_shared<HttpReq>(
+            header,
+            [this, id](std::shared_ptr<HttpRes> res){response((void*)id, res);},
+            [this, id]{ rwer->Unblock(id);});
     distribute(status.req, this);
 }
 

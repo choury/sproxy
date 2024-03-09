@@ -261,7 +261,7 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR)) {
         int error = this->checkSocket(__PRETTY_FUNCTION__ );
         this->con_failed_job = UpdateJob(std::move(this->con_failed_job),
-                                         std::bind(&SslRWer::connectFailed, this, error), 0);
+                                         ([this, error]{connectFailed(error);}), 0);
         return;
     }
     if (!!(events & RW_EVENT::WRITE)) {
@@ -270,7 +270,7 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
         setEvents(RW_EVENT::READWRITE);
         stats = RWerStats::Connected;
         this->con_failed_job = UpdateJob(std::move(this->con_failed_job),
-                                         std::bind(&SslRWer::connectFailed, this, ETIMEDOUT), 2000);
+                                         [this]{connectFailed(ETIMEDOUT);}, 2000);
         handleEvent = (void (Ep::*)(RW_EVENT))&SslRWer::defaultHE;
         do_handshake();
     }

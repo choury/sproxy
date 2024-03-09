@@ -561,7 +561,7 @@ void SproxyClient::callback() {
 }
 
 SproxyClient::SproxyClient(int fd): fd(fd) {
-    reader = std::thread(std::bind(&SproxyClient::callback, this));
+    reader = std::thread([this] {callback(); });
 }
 
 SproxyClient::SproxyClient(const char* sock) {
@@ -600,7 +600,7 @@ SproxyClient::SproxyClient(const char* sock) {
         perror("connect error");
         exit(1);
     }
-    reader = std::thread(std::bind(&SproxyClient::callback, this));
+    reader = std::thread([this] {callback();});
 }
 
 SproxyClient::~SproxyClient(){

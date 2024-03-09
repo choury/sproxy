@@ -101,7 +101,9 @@ void Guest::WriteHE(uint64_t){
 
 Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(nullptr){
     if(ctx){
-        auto srwer = std::make_shared<SslRWer>(ctx, fd, addr, std::bind(&Guest::Error, this, _1, _2));
+        auto srwer = std::make_shared<SslRWer>(ctx, fd, addr, [this](int ret, int code){
+            Error(ret, code);
+        });
         init(srwer);
 
         srwer->SetConnectCB([this](const sockaddr_storage&){
@@ -119,10 +121,16 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
             }
         });
     }else{
-        init(std::make_shared<StreamRWer>(fd, addr, std::bind(&Guest::Error, this, _1, _2)));
+        init(std::make_shared<StreamRWer>(fd, addr, [this](int ret, int code) {
+            Error(ret, code);
+        }));
     }
-    rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
-    rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));
+    rwer->SetReadCB([this](const Buffer& bb) {
+        return ReadHE(bb);
+    });
+    rwer->SetWriteCB([this](uint64_t id){
+        return WriteHE(id);
+    });
 }
 
 Guest::Guest(std::shared_ptr<RWer> rwer_): Requester(rwer_){
@@ -143,15 +151,23 @@ Guest::Guest(std::shared_ptr<RWer> rwer_): Requester(rwer_){
         });
         mitmProxy = true;
     }
-    rwer->SetErrorCB(std::bind(&Guest::Error, this, _1, _2));
-    rwer->SetReadCB(std::bind(&Guest::ReadHE, this, _1));
-    rwer->SetWriteCB(std::bind(&Guest::WriteHE, this, _1));
+    rwer->SetErrorCB([this](int ret, int code){
+        Error(ret, code);
+    });
+    rwer->SetReadCB([this](const Buffer& bb){
+        return ReadHE(bb);
+    });
+    rwer->SetWriteCB([this](uint64_t id){
+        return WriteHE(id);
+    });
 }
 
 void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
     if(header->ismethod("CONNECT") && header->Dest.port == HTTPPORT) {
         auto mrwer = std::make_shared<MemRWer>(rwer->getPeer(),
-                                               std::bind(&Guest::mread, this, header,  _1),
+                                               [this, header](auto&& data) {
+                                                   return mread(header, std::forward<decltype(data)>(data));
+                                               },
                                                [this]{ return  rwer->cap(0);});
         statuslist.emplace_back(ReqStatus{nullptr, nullptr, mrwer, HTTP_NOEND_F});
         rwer->Send({HCONNECT, strlen(HCONNECT)});
@@ -164,7 +180,9 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
         if (shouldMitm || getstrategy(header->Dest.hostname).s == Strategy::local) {
             auto ctx = initssl(0, header->Dest.hostname);
             auto srwer = std::make_shared<SslMer>(ctx, rwer->getPeer(),
-                                                  std::bind(&Guest::mread, this, header, _1),
+                                                  [this, header](auto&& data) {
+                                                      return mread(header, std::forward<decltype(data)>(data));
+                                                  },
                                                   [this]{ return  rwer->cap(0);});
             statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
             rwer->Send({HCONNECT, strlen(HCONNECT)});
@@ -178,7 +196,7 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
     }
     LOGD(DHTTP, "<guest> ReqProc %" PRIu32 " %s\n", header->request_id, header->geturl().c_str());
     auto req = std::make_shared<HttpReq>(header,
-            std::bind(&Guest::response, this, nullptr, _1),
+            [this](std::shared_ptr<HttpRes> res) { response(nullptr, res); },
             [this]{ rwer->Unblock(0);});
 
     statuslist.emplace_back(ReqStatus{req, nullptr, nullptr});
@@ -332,7 +350,7 @@ void Guest::Recv(Buffer&& bb) {
         }
         //如果既不是没有长度的请求，也非chunked，则无需发送额外数据来标记结束
         if(status.flags & HTTP_REQ_COMPLETED) {
-            status.cleanJob = AddJob(std::bind(&Guest::deqReq, this), 0, 0);
+            status.cleanJob = AddJob([this]{ deqReq(); }, 0, 0);
         }
         if(status.rwer && status.req && (status.flags & HTTP_CLOSED_F) == 0) {
             status.flags |= HTTP_CLOSED_F;

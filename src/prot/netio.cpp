@@ -98,31 +98,31 @@ void SocketRWer::connect() {
         int fd = Connect(&addrs.front(), SOCK_STREAM);
         if (fd < 0) {
             con_failed_job = UpdateJob(std::move(con_failed_job),
-                                       std::bind(&SocketRWer::connectFailed, this, errno), 0);
+                                       ([this, error = errno]{connectFailed(error);}), 0);
             return;
         }
         setFd(fd);
         setEvents(RW_EVENT::WRITE);
         handleEvent = (void (Ep::*)(RW_EVENT)) &SocketRWer::waitconnectHE;
         con_failed_job = UpdateJob(std::move(con_failed_job),
-                                   std::bind(&SocketRWer::connectFailed, this, ETIMEDOUT), 10000);
+                                   [this]{connectFailed(ETIMEDOUT);}, 10000);
     } else if(protocol == Protocol::QUIC) {
         int fd = Connect(&addrs.front(), SOCK_DGRAM);
         if (fd < 0) {
             con_failed_job = UpdateJob(std::move(con_failed_job),
-                                       std::bind(&SocketRWer::connectFailed, this, errno), 0);
+                                       ([this, error = errno]{connectFailed(error);}), 0);
             return;
         }
         setFd(fd);
         setEvents(RW_EVENT::WRITE);
         handleEvent = (void (Ep::*)(RW_EVENT)) &SocketRWer::waitconnectHE;
         con_failed_job = UpdateJob(std::move(con_failed_job),
-                                   std::bind(&SocketRWer::connectFailed, this, ETIMEDOUT), 10000);
+                                   [this]{connectFailed(ETIMEDOUT);}, 10000);
     } else if(protocol == Protocol::UDP) {
         int fd = Connect(&addrs.front(), SOCK_DGRAM);
         if (fd < 0) {
             con_failed_job = UpdateJob(std::move(con_failed_job),
-                                       std::bind(&SocketRWer::connectFailed, this, errno), 0);
+                                       ([this, error = errno]{connectFailed(error);}), 0);
             return;
         }
         setFd(fd);
@@ -144,7 +144,7 @@ void SocketRWer::connect() {
             return;
         }
         con_failed_job = UpdateJob(std::move(con_failed_job),
-                                   std::bind(&SocketRWer::connectFailed, this, errno), 0);
+                                   ([this, error = errno]{connectFailed(error);}), 0);
         return;
     } else {
         LOGF("Unknow protocol: %d\n", protocol);
@@ -174,9 +174,11 @@ void SocketRWer::SetConnectCB(std::function<void(const sockaddr_storage&)> cb) {
 
 void SocketRWer::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR) || !!(events & RW_EVENT::READEOF)) {
-        int error = checkSocket(__PRETTY_FUNCTION__ );
-        con_failed_job = UpdateJob(std::move(con_failed_job),
-                                   std::bind(&SocketRWer::connectFailed, this, error), 0);
+        con_failed_job =
+                UpdateJob(std::move(con_failed_job),
+                          ([this, error = checkSocket(__PRETTY_FUNCTION__ )]{
+                              connectFailed(error);
+                          }), 0);
         return;
     }
     if (!!(events & RW_EVENT::WRITE)) {

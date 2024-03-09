@@ -17,7 +17,7 @@ void Proxy2::ping_check(){
     Ping(buff);
     LOGD(DHTTP2, "<proxy2> ping: window size global: %d/%d\n", localwinsize, remotewinsize);
     connection_lost_job = UpdateJob(std::move(connection_lost_job),
-                                    std::bind(&Proxy2::connection_lost, this), 2000);
+                                    [this]{connection_lost();}, 2000);
 }
 
 bool Proxy2::wantmore(const ReqStatus& status) {
@@ -33,7 +33,7 @@ bool Proxy2::wantmore(const ReqStatus& status) {
 
 Proxy2::Proxy2(std::shared_ptr<RWer> rwer) {
     this->rwer = rwer;
-    rwer->SetErrorCB(std::bind(&Proxy2::Error, this, _1, _2));
+    rwer->SetErrorCB([this](int ret, int code){Error(ret, code);});
     rwer->SetReadCB([this](const Buffer& bb) -> size_t {
         LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu\n", this->rwer->getPeer(), bb.len);
         if(bb.len == 0){
@@ -44,7 +44,7 @@ Proxy2::Proxy2(std::shared_ptr<RWer> rwer) {
 #ifndef __ANDROID__
         this->ping_check_job = UpdateJob(
                 std::move(this->ping_check_job),
-                std::bind(&Proxy2::ping_check, this), 10000);
+                [this]{ping_check();}, 10000);
 #else
         receive_time = getmtime();
 #endif
@@ -138,7 +138,7 @@ void Proxy2::PushFrame(Buffer&& bb){
 
 void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
     idle_timeout = UpdateJob(std::move(idle_timeout),
-                             std::bind(&Proxy2::deleteLater, this, CONNECT_AGED), 300000);
+                             [this]{deleteLater(CONNECT_AGED);}, 300000);
     if(statusmap.count(id) == 0) {
         LOGD(DHTTP2, "<proxy2> ResProc not found id: %d\n", id);
         Reset(id, HTTP2_ERR_STREAM_CLOSED);
@@ -172,7 +172,7 @@ void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
 
 void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
     idle_timeout = UpdateJob(std::move(idle_timeout),
-                             std::bind(&Proxy2::deleteLater, this, CONNECT_AGED), 300000);
+                             [this]{deleteLater(CONNECT_AGED);}, 300000);
     if(len == 0)
         return;
     localwinsize -= len;
@@ -325,7 +325,7 @@ void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
 
     req->attach([this, id](ChannelMessage& msg){
         idle_timeout = UpdateJob(std::move(idle_timeout),
-                                 std::bind(&Proxy2::deleteLater, this, CONNECT_AGED), 300000);
+                                 [this]{deleteLater(CONNECT_AGED);}, 300000);
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:
             LOGD(DHTTP2, "<proxy2> ignore header for req\n");

@@ -25,25 +25,28 @@ Host::Host(const Destination* dest){
     memcpy(&Server, dest, sizeof(Destination));
 
     if(strcmp(dest->protocol, "tcp") == 0){
-        auto srwer = std::make_shared<StreamRWer>(dest->hostname, dest->port, Protocol::TCP,
-                              std::bind(&Host::Error, this, _1, _2));
+        auto srwer = std::make_shared<StreamRWer>(
+                dest->hostname, dest->port, Protocol::TCP,
+                [this](int ret, int code){Error(ret, code);});
         rwer = srwer;
-        srwer->SetConnectCB(std::bind(&Host::connected, this));
+        srwer->SetConnectCB([this](const sockaddr_storage&){connected();});
     }else if(strcmp(dest->protocol, "ssl") == 0 ) {
-        auto srwer = std::make_shared<SslRWer>(dest->hostname, dest->port, Protocol::TCP,
-                                     std::bind(&Host::Error, this, _1, _2));
+        auto srwer = std::make_shared<SslRWer>(
+                dest->hostname, dest->port, Protocol::TCP,
+                [this](int ret, int code){Error(ret, code);});
         if(!opt.disable_http2){
             srwer->set_alpn(alpn_protos_http12, sizeof(alpn_protos_http12)-1);
         }
         rwer = srwer;
-        srwer->SetConnectCB(std::bind(&Host::connected, this));
+        srwer->SetConnectCB([this](const sockaddr_storage&){connected();});
 #ifdef HAVE_QUIC
     }else if(strcmp(dest->protocol, "quic") == 0){
-        auto qrwer = std::make_shared<QuicRWer>(dest->hostname, dest->port, Protocol::QUIC,
-                                     std::bind(&Host::Error, this, _1, _2));
+        auto qrwer = std::make_shared<QuicRWer>(
+                dest->hostname, dest->port, Protocol::QUIC,
+                [this](int ret, int code){Error(ret, code);});
         qrwer->setAlpn(alpn_protos_http3, sizeof(alpn_protos_http3) - 1);
         rwer = qrwer;
-        qrwer->SetConnectCB(std::bind(&Host::connected, this));
+        qrwer->SetConnectCB([this](const sockaddr_storage&){connected();});
 #endif
     }else{
         LOGE("Unknown protocol: %s\n", dest->protocol);

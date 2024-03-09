@@ -149,7 +149,7 @@ Cgi::Cgi(const char* fname, int svs[2], int cvs[2]) {
         LOGE("[CGI] %s error: %d/%d\n", basename(filename), ret, code);
         deleteLater(ret);
     });
-    rwer->SetReadCB(std::bind(&Cgi::readHE, this, _1));
+    rwer->SetReadCB([this](const Buffer& bb){return readHE(bb);});
     cgimap[filename] = this;
 }
 

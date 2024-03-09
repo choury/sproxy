@@ -82,10 +82,10 @@ void GzipTest::request(std::shared_ptr<HttpReq> req, Requester*) {
     if (accept && strstr(accept, "gzip")) {
         header->set("Transfer-Encoding", "chunked");
         header->set("Content-Encoding", "gzip");
-        rwer->SetReadCB(std::bind(&GzipTest::gzipreadHE, this, _1));
+        rwer->SetReadCB([this](const Buffer& bb){return gzipreadHE(bb);});
     } else {
         header->set("Content-Length", left);
-        rwer->SetReadCB(std::bind(&GzipTest::rawreadHE, this, _1));
+        rwer->SetReadCB([this](const Buffer& bb){return rawreadHE(bb);});
     }
     if (req->header->ismethod("HEAD")) {
         left = 0;
