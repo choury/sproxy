@@ -1293,7 +1293,7 @@ std::string dumpHex(const void* data, size_t len){
     return s;
 }
 
-std::string sign_cid(std::string id) {
+std::string sign_cid(const std::string& id) {
     char* token = nullptr;
     unsigned int sign_len;
     if(sign_data(opt.cert.key ?: opt.ca.key, id.c_str(), id.length(), &token, &sign_len)){

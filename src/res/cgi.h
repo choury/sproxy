@@ -191,7 +191,7 @@ public:
         }
         NotImplemented();
     }
-    bool eof() const{
+    [[nodiscard]] bool eof() const{
         return (flag & HTTP_CLOSED_F);
     }
 };

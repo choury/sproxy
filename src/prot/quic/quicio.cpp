@@ -186,7 +186,7 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
     size_t max_iov = std::min((size_t)100, bufleft/(size_t)his_max_payload_size);
     std::set<uint64_t> streams;
     std::list<quic_packet_pn> sent_packets;
-    sent_packets.push_back(quic_packet_pn{{pn++, false, false, envLen, 0}, {}});
+    sent_packets.emplace_back(quic_packet_pn{{pn++, false, false, envLen, 0}, {}});
     do {
         auto& packet = sent_packets.back();
         quic_frame* frame = pend_frames.front();
@@ -221,7 +221,7 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
             } else {
                 assert(!packet.frames.empty());
                 window -= packet.meta.sent_bytes;
-                sent_packets.push_back(quic_packet_pn{{pn++, false, false, envLen, 0}, {}});
+                sent_packets.emplace_back(quic_packet_pn{{pn++, false, false, envLen, 0}, {}});
                 continue;
             }
         }
@@ -350,7 +350,7 @@ void QuicBase::generateCid() {
 
     myids.push_back(myid);
     hisids.push_back(hisid);
-    histoken.push_back("");
+    histoken.emplace_back("");
 
     if(ctx) {
         //only client has init secret now.
@@ -1826,7 +1826,7 @@ QuicRWer::~QuicRWer() {
     if(server == nullptr){
         return;
     }
-    for(auto id: myids){
+    for(const auto& id: myids){
         server->rwers.erase(id);
     }
     server->rwers.erase(originDcid);
@@ -1925,7 +1925,7 @@ void QuicMer::Close(std::function<void()> func) {
     }
     flags |= RWER_CLOSING;
     if(getFd() >= 0) {
-        closeCB = [this, func] {
+        closeCB = [this, func = std::move(func)] {
             read_cb(CHANNEL_ABORT);
             func();
         };

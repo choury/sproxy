@@ -23,7 +23,7 @@ public:
 class Quic_sniServer: public Ep {
     virtual void defaultHE(RW_EVENT events);
 public:
-    Quic_sniServer(int fd): Ep(fd) {
+    explicit Quic_sniServer(int fd): Ep(fd) {
         setEvents(RW_EVENT::READ);
         handleEvent = (void (Ep::*)(RW_EVENT))&Quic_sniServer::defaultHE;
     }

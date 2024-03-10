@@ -118,7 +118,7 @@ int main() {
             LOGE("build len error: 0x%x\n", t.id);
             return 1;
         }
-        if(memcmp(t.query, buff, len)){
+        if(memcmp(t.query, buff, len) != 0){
             LOGE("build buff error: 0x%x\n", t.id);
             return 1;
         }

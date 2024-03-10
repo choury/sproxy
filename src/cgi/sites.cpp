@@ -7,7 +7,7 @@
 class handler: public CgiHandler{
     static SproxyClient* c;
     void GET(const CGI_Header*) override{
-        if(strcmp(req->get("X-Authorized"), "1")) {
+        if(strcmp(req->get("X-Authorized"), "1") != 0) {
             Response(UnpackHttpRes(H403, sizeof(H403)));
             Finish();
             return;
@@ -17,7 +17,7 @@ class handler: public CgiHandler{
         }
         auto slist = c->DumpStrategy().get_future().get();
         json_object* jsites = json_object_new_array();
-        for(auto item: slist) {
+        for(const auto& item: slist) {
             char site[DOMAINLIMIT];
             char strategy[20];
             sscanf(item.c_str(), "%s %s", site, strategy);
@@ -31,7 +31,7 @@ class handler: public CgiHandler{
         cookie.path = "/";
         cookie.domain = req->Dest.hostname;
         cookie.maxage = 3600;
-        for(auto i: params){
+        for(const auto& i: params){
             cookie.set(i.first.c_str(), i.second.c_str());
             res->addcookie(cookie);
         }
@@ -42,7 +42,7 @@ class handler: public CgiHandler{
         Finish();
     }
     void POST(const CGI_Header* header) override {
-        if(strcmp(req->get("X-Authorized"), "1")) {
+        if(strcmp(req->get("X-Authorized"), "1") != 0) {
             Response(UnpackHttpRes(H403, sizeof(H403)));
             Finish();
             return;
@@ -63,7 +63,7 @@ class handler: public CgiHandler{
         NotImplemented();
     }
     void PUT(const CGI_Header* header) override{
-        if(strcmp(req->get("X-Authorized"), "1")) {
+        if(strcmp(req->get("X-Authorized"), "1") != 0) {
             Response(UnpackHttpRes(H403, sizeof(H403)));
             Finish();
             return;
@@ -93,7 +93,7 @@ class handler: public CgiHandler{
         Finish();
     }
     void DELETE(const CGI_Header* header)override{
-        if(strcmp(req->get("X-Authorized"), "1")) {
+        if(strcmp(req->get("X-Authorized"), "1") != 0) {
             Response(UnpackHttpRes(H403, sizeof(H403)));
             Finish();
             return;

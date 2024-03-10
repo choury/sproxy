@@ -104,7 +104,7 @@ ssize_t RpcClient::DefaultProc(const char *buff, size_t len) {
     return body_size + 4;
 }
 
-void RpcClient::call(const std::string& method, json_object* body, std::function<void(json_object *)> response) {
+void RpcClient::call(const std::string& method, json_object* body, const std::function<void(json_object *)>& response) {
     json_object_object_add(body, "method", json_object_new_string(method.c_str()));
     responser.push(response);
     if(!sendJson(body)){
@@ -475,7 +475,7 @@ static int storage_pton(const char* addrstr, struct sockaddr_storage* addr) {
         if(addrsplit[1] != ':'){
             return 0;
         }
-        long dport = strtol(addrsplit + 2, NULL, 10);
+        long dport = strtol(addrsplit + 2, nullptr, 10);
         if(dport == 0 || dport > 65535){
             return 0;
         }
@@ -493,7 +493,7 @@ static int storage_pton(const char* addrstr, struct sockaddr_storage* addr) {
         addr6->sin6_port = htons(dport);
         return 1;
     } else if ((addrsplit = strchr(addrstr, ':'))) {
-        long dport = strtol(addrsplit + 1, NULL, 10);
+        long dport = strtol(addrsplit + 1, nullptr, 10);
         if(dport == 0 || dport > 65535){
             return 0;
         }

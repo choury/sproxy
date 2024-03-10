@@ -12,18 +12,18 @@ class Index2{
     std::multimap<T2, iterator> idx2;
 public:
     using const_iterator = typename decltype(containers)::const_iterator;
-    void Add(const T1 t1, const T2 t2, const D data);
-    const_iterator GetOne(const T1 t1) const;
-    const_iterator GetOne(const T2 t2) const;
-    bool Has(const T1 t1) const;
-    bool Has(const T2 t1) const;
-    void Delete(const T1 t1);
-    void Delete(const T2 t2);
-    void Delete(const T1 t1,const T2 t2);
+    void Add(T1 t1, T2 t2, D data);
+    const_iterator GetOne(T1 t1) const;
+    const_iterator GetOne(T2 t2) const;
+    bool Has(T1 t1) const;
+    bool Has(T2 t1) const;
+    void Delete(T1 t1);
+    void Delete(T2 t2);
+    void Delete(T1 t1,T2 t2);
     const decltype(containers)& data(){
         return containers;
     }
-    size_t size() const;
+    [[nodiscard]] size_t size() const;
     void clear();
 };
 
@@ -190,7 +190,7 @@ public:
         map2.erase(t2);
         assert(map1.size() == map2.size());
     }
-    size_t size() const {
+    [[nodiscard]] size_t size() const {
         assert(map1.size() == map2.size());
         return map1.size();
     }

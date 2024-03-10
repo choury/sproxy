@@ -61,7 +61,7 @@ void Quic_server::PushDate(int fd, const sockaddr_storage* addr, const void *buf
             return;
         }
         std::string token = sign_cid(header.dcid);
-        if(token == ""){
+        if(token.empty()){
             return;
         }
         char stateless[41];

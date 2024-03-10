@@ -42,7 +42,7 @@ int main(){
     t2.dump(0);
 
     assert(t2.find(split("choury.com")) == nullptr);
-    assert(t2.findAll(split("choury.com")).size() == 0);
+    assert(t2.findAll(split("choury.com")).empty());
     assert(t2.find(split("test.choury.com"))->value == (void*)2);
     assert(t2.find(split("test.choury.com"), "xyz")->value == (void*)4);
     assert(t2.findAll(split("test.choury.com")).size() == 2);
@@ -55,7 +55,7 @@ int main(){
 
 
     auto t2entrys = t2.dump(std::list<std::string>{});
-    for(auto entry: t2entrys){
+    for(const auto& entry: t2entrys){
         std::cout<<join(entry.first)<<": "<<entry.second<<std::endl;
     }
 
@@ -83,7 +83,7 @@ int main(){
 
 
     auto t3entrys = t3.dump(std::list<char>{});
-    for(auto entry: t3entrys){
+    for(const auto& entry: t3entrys){
         std::cout<<join(AF_INET, entry.first)<<": "<<entry.second<<std::endl;
     }
     
@@ -94,7 +94,7 @@ int main(){
     t3.remove(split(t3ip4, 16), found);
     assert(found == true);
     t3entrys = t3.dump(std::list<char>{});
-    for(auto entry: t3entrys){
+    for(const auto& entry: t3entrys){
         std::cout<<join(AF_INET, entry.first)<<": "<<entry.second<<std::endl;
     }
     t3.clear();
@@ -115,7 +115,7 @@ int main(){
     assert(t4.find(split(t4ip2)) == nullptr);
 
     auto t4entrys = t4.dump(std::list<char>{});
-    for(auto entry: t4entrys){
+    for(const auto& entry: t4entrys){
         std::cout<<join(AF_INET6, entry.first)<<": "<<entry.second<<std::endl;
     }
     t4.clear();
@@ -134,7 +134,7 @@ int main(){
     assert(t5.find(split(t5ip2)) == nullptr);
 
     auto t5entrys = t5.dump(std::list<char>{});
-    for(auto entry: t5entrys){
+    for(const auto& entry: t5entrys){
         std::cout<<join(AF_INET6, entry.first)<<": "<<entry.second<<std::endl;
     }
     t5.clear();
@@ -149,7 +149,7 @@ int main(){
     assert(t6.find(split(t6addr, 16))->value == (void*)16);
 
     auto t6entrys = t6.dump(std::list<char>{});
-    for(auto entry: t6entrys){
+    for(const auto& entry: t6entrys){
         std::cout<<join(AF_INET6, entry.first)<<": "<<entry.second<<std::endl;
     }
     t6.clear();

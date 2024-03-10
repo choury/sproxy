@@ -23,14 +23,14 @@ protected:
     Index2<size_t, std::string, Hpack_index*> dynamic_table;
     void evict_dynamic_table();
     void add_dynamic_table(const std::string &name, const std::string &value);
-    uint32_t getid(const std::string& name, const std::string& value = "") const;
-    const Hpack_index *getvalue(uint32_t id) const;
+    [[nodiscard]] uint32_t getid(const std::string& name, const std::string& value = "") const;
+    [[nodiscard]] const Hpack_index *getvalue(uint32_t id) const;
     bool set_dynamic_table_size_limit(size_t size);
 public:
     explicit Hpack(size_t dynamic_table_size_limit_max);
     ~Hpack();
     void set_dynamic_table_size_limit_max(size_t size);
-    size_t get_dynamic_table_size(){
+    [[nodiscard]] size_t get_dynamic_table_size() const{
         return dynamic_table_size;
     };
 };

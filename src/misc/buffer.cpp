@@ -27,7 +27,7 @@ Buffer::Buffer(std::shared_ptr<Block> data, size_t len, uint64_t id):
 Buffer::Buffer(std::nullptr_t, uint64_t id): id(id){
 }
 
-Buffer::Buffer(Buffer&& b){
+Buffer::Buffer(Buffer&& b) noexcept{
     assert(b.ptr != nullptr || b.content != nullptr || b.len == 0);
     id = b.id;
     len = b.len;
@@ -118,7 +118,7 @@ buff_iterator WBuffer::push(buff_iterator i, Buffer&& bb) {
     return write_queue.emplace(i, std::move(bb));
 }
 
-ssize_t WBuffer::Write(std::function<ssize_t(const Buffer& bb)> write_func, std::set<uint64_t>& writed_list){
+ssize_t WBuffer::Write(const std::function<ssize_t(const Buffer& bb)>& write_func, std::set<uint64_t>& writed_list){
     if(write_queue.empty()){
         return 0;
     }
@@ -145,7 +145,7 @@ ssize_t WBuffer::Write(std::function<ssize_t(const Buffer& bb)> write_func, std:
     return ret;
 }
 
-size_t WBuffer::length() {
+size_t WBuffer::length() const {
     return len;
 }
 
@@ -268,7 +268,7 @@ char* CBuffer::end(){
     return content + ((offset + len) % sizeof(content));
 }
 
-size_t EBuffer::left(){
+size_t EBuffer::left() const{
     uint32_t start = offset % size;
     uint32_t finish = (offset + len) % size;
     if(finish > start || len == 0){

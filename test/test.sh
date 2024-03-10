@@ -213,9 +213,9 @@ test_client 3336
 sleep 5
 
 
-printf "sites" | ./scli -s client_h1.sock
-printf "sites" | ./scli -s client_h2.sock
-printf "sites" | ./scli -s client_h3.sock
+printf "dump sites" | ./scli -s client_h1.sock
+printf "dump sites" | ./scli -s client_h2.sock
+printf "dump sites" | ./scli -s client_h3.sock
 
 kill -SIGUSR1 %1
 kill -SIGUSR1 %2

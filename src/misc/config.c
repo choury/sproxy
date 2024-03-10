@@ -362,15 +362,12 @@ int loadproxy(const char* proxy, struct Destination* server){
         return -1;
     }
     const char* scheme = server->scheme;
-    if(scheme[0] == 0){
+    if(scheme[0] == 0 || strcasecmp(scheme, "https") == 0 || strcasecmp(scheme, "ssl") == 0){
         strcpy(server->scheme, "https");
         strcpy(server->protocol, "ssl");
     }else if(strcasecmp(scheme, "http") == 0 || strcasecmp(scheme, "tcp") == 0) {
         strcpy(server->scheme, "http");
         strcpy(server->protocol, "tcp");
-    }else if(strcasecmp(scheme, "https") == 0 || strcasecmp(scheme, "ssl") == 0) {
-        strcpy(server->scheme, "https");
-        strcpy(server->protocol, "ssl");
 #ifdef HAVE_QUIC
     }else if(strcasecmp(scheme, "quic") == 0) {
         strcpy(server->scheme, "https");

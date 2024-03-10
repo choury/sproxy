@@ -42,12 +42,12 @@ public:
         }
         memcpy((char*)base.get() + off, ptr, size);
     }
-    Block(Block&& p): base(std::move(p.base)){
+    Block(Block&& p) noexcept : base(std::move(p.base)){
         off = p.off;
         p.off = 0;
     };
 
-    off_t tell() const{
+    [[nodiscard]] off_t tell() const{
         return off;
     }
 
@@ -56,7 +56,7 @@ public:
         off += len;
         return (char*)base.get() + off;
     }
-    void* data() const{
+    [[nodiscard]] void* data() const{
         return (char*)base.get() + off;
     }
 };
@@ -72,17 +72,17 @@ public:
     uint64_t id = 0;
     size_t len = 0;
     size_t cap = 0;
-    Buffer(size_t cap, uint64_t id = 0);
+    explicit Buffer(size_t cap, uint64_t id = 0);
     Buffer(const void* data, size_t len, uint64_t id = 0);
     Buffer(std::shared_ptr<Block> data, size_t len, uint64_t id = 0);
     Buffer(std::nullptr_t, uint64_t id = 0);
-    Buffer(Buffer&& b);
+    Buffer(Buffer&& b) noexcept ;
     Buffer(const Buffer&) = default;
     // 增加/减少预留空间 off 为正增加，为负减少
     const void* reserve(int off);
     // 从末尾截断/扩展数据, 返回截断前的长度
     size_t truncate(size_t left);
-    const void* data() const;
+    [[nodiscard]] const void* data() const;
     void* mutable_data();
 };
 
@@ -102,11 +102,11 @@ class WBuffer {
     size_t  len = 0;
 public:
     ~WBuffer();
-    size_t length();
+    [[nodiscard]] size_t length() const;
     buff_iterator start();
     buff_iterator end();
     buff_iterator push(buff_iterator i, Buffer&& bb);
-    ssize_t  Write(std::function<ssize_t(const Buffer&)> write_func, std::set<uint64_t>& writed_list);
+    ssize_t  Write(const std::function<ssize_t(const Buffer&)>& write_func, std::set<uint64_t>& writed_list);
 };
 
 #if 0
@@ -141,13 +141,13 @@ public:
     void append(size_t l);
     //put类似与先调用end()获取指针写数据后，再调用append调整长度
     ssize_t put(const void* data, size_t size);
-    uint64_t Offset(){
+    [[nodiscard]] uint64_t Offset() const{
         return offset;
     };
 
     //for get
-    size_t length() const;
-    size_t cap() const;
+    [[nodiscard]] size_t length() const;
+    [[nodiscard]] size_t cap() const;
     Buffer get();
     void consume(size_t l);
 };
@@ -164,7 +164,7 @@ public:
     EBuffer() {
         content = new char[size];
     }
-    EBuffer(EBuffer&& copy):
+    EBuffer(EBuffer&& copy) noexcept :
             content(copy.content),
             size(copy.size),
             offset(copy.offset),
@@ -179,17 +179,17 @@ public:
         delete []content;
     }
     //for put
-    size_t left();
+    [[nodiscard]] size_t left() const;
     char* end();
     void append(size_t l);
     ssize_t put(const void* data, size_t size);
-    uint64_t Offset(){
+    [[nodiscard]] uint64_t Offset() const{
         return offset;
     };
 
     //for get
-    size_t length() const;
-    size_t cap() const;
+    [[nodiscard]] size_t length() const;
+    [[nodiscard]] size_t cap() const;
     Buffer get();
     void consume(size_t l);
 };

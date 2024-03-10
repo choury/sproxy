@@ -71,7 +71,7 @@ class Cli_server: public Ep {
     }
 public:
     virtual ~Cli_server() = default;
-    Cli_server(int fd): Ep(fd) {
+    explicit Cli_server(int fd): Ep(fd) {
         setEvents(RW_EVENT::READ);
         handleEvent = (void (Ep::*)(RW_EVENT))&Cli_server::defaultHE;
     }

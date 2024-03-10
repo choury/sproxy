@@ -23,7 +23,7 @@ extern int efd;
 static std::map<Ep*, RW_EVENT> pending_events;
 
 const char *events_string[]= {
-        "NULL",
+        "nullptr",
         "READ",
         "WRITE",
         "READ|WRITE",
@@ -177,7 +177,7 @@ void Ep::setEvents(RW_EVENT events) {
             EV_SET(&event[count++], fd, EVFILT_WRITE, EV_ADD | EV_DISABLE, 0, 0, (void*)(intptr_t)this);
         }
         //EV_SET(&event[count++], fd, EVFILT_EXCEPT, EV_ADD | EV_ENABLE | EV_CLEAR, 0, 0, (void*)(intptr_t)this);
-        int ret = kevent(efd, event, count, NULL, 0, NULL);
+        int ret = kevent(efd, event, count, nullptr, 0, nullptr);
         if(ret < 0){
             LOGE("kevent failed %d:%s\n", efd, strerror(errno));
             return;
@@ -230,7 +230,7 @@ int event_loop(uint32_t timeout_ms){
 #if __APPLE__
     struct kevent events[200];
     struct timespec timeout{timeout_ms/1000, (timeout_ms%1000)*1000000};
-    if((c = kevent(efd, NULL, 0, events, 200, &timeout)) <= 0){
+    if((c = kevent(efd, nullptr, 0, events, 200, &timeout)) <= 0){
         if (c != 0 && errno != EINTR) {
             LOGE("kevent: %s\n", strerror(errno));
             return -1;

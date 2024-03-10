@@ -62,14 +62,14 @@ size_t Http3Base::Http3_Proc(const void* buff, size_t len, uint64_t id) {
         }
         pos += length;
     }else if(qpackeid_remote && id == qpackeid_remote){
-        int ret = qpack_encoder.push_ins(buff, len);
+        int ret = Qpack_encoder::push_ins(buff, len);
         if(ret < 0){
             ErrProc(HTTP3_ERR_QPACK_ENCODER_STREAM_ERROR);
             return 0;
         }
         pos += ret;
     }else if(qpackdid_remote && id == qpackdid_remote){
-        int ret = qpack_decoder.push_ins(buff, len);
+        int ret = Qpack_decoder::push_ins(buff, len);
         if(ret < 0){
             ErrProc(HTTP3_ERR_QPACK_DECODER_STREAM_ERROR);
             return 0;
@@ -238,7 +238,7 @@ void Http3Base::PushData(Buffer&& bb) {
 }
 
 void Http3Requster::HeadersProc(uint64_t id, const uchar* header, size_t length) {
-    std::shared_ptr<HttpResHeader> res = qpack_decoder.UnpackHttp3Res(header, length);
+    std::shared_ptr<HttpResHeader> res = Qpack_decoder::UnpackHttp3Res(header, length);
     if(res == nullptr){
         ErrProc(HTTP3_ERR_QPACK_DECOMPRESSION_FAILED);
         return;
@@ -250,7 +250,7 @@ Http3Requster::Http3Requster() {
 }
 
 void Http3Responser::HeadersProc(uint64_t id, const uchar *header, size_t length) {
-    std::shared_ptr<HttpReqHeader> req = qpack_decoder.UnpackHttp3Req(header, length);
+    std::shared_ptr<HttpReqHeader> req = Qpack_decoder::UnpackHttp3Req(header, length);
     if(req == nullptr) {
         ErrProc(HTTP3_ERR_QPACK_DECOMPRESSION_FAILED);
         return;

@@ -27,7 +27,7 @@ public:
 class RpcClient: public RpcBase{
 protected:
     std::queue<std::function<void(json_object *)>> responser;
-    virtual void call(const std::string& method, json_object* body, std::function<void(json_object *)> response);
+    virtual void call(const std::string& method, json_object* body, const std::function<void(json_object *)>& response);
 public:
     virtual ssize_t DefaultProc(const char *buff, size_t len) override;
 };

@@ -68,10 +68,11 @@ size_t Guest_sni::sniffer(const Buffer& bb) {
 }
 
 size_t Guest_sni::sniffer_quic(Buffer bb) {
+    auto len = bb.len;
 #ifdef HAVE_QUIC
     quic_pkt_header header;
-    int body_len = unpack_meta(bb.data(), bb.len, &header);
-    if (body_len < 0 || body_len > (int)bb.len) {
+    int body_len = unpack_meta(bb.data(), len, &header);
+    if (body_len < 0 || body_len > (int)len) {
         LOGE("QUIC sni meta unpack failed, disacrd it: %d\n", body_len);
         deleteLater(SNI_HOST_ERR);
         return 0;
@@ -132,7 +133,7 @@ size_t Guest_sni::sniffer_quic(Buffer bb) {
     }
     rwer->SetReadCB([this](const Buffer& bb){return ReadHE(bb);});
 #endif
-    return bb.len;
+    return len;
 }
 
 void Guest_sni::response(void*, std::shared_ptr<HttpRes> res){

@@ -99,10 +99,10 @@ public:
     typedef std::function<std::list<quic_packet_pn>(OSSL_ENCRYPTION_LEVEL level,
                                            uint64_t pn, uint64_t ack,
                                            std::list<quic_frame*>& pend_frames, size_t window)> send_func;
-    QuicQos(bool isServer, send_func sent,
+    QuicQos(bool isServer, const send_func& sent,
            std::function<void(pn_namespace*, quic_frame*)> resendFrames);
     ~QuicQos();
-    ssize_t windowLeft();
+    [[nodiscard]] ssize_t windowLeft() const;
     void KeyGot(OSSL_ENCRYPTION_LEVEL level);
     void KeyLost(OSSL_ENCRYPTION_LEVEL level);
     //set ack_delay_exponent for app level

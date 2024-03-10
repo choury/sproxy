@@ -77,7 +77,7 @@ class Icmp{
 public:
     bool valid = true;
     Icmp();
-    Icmp(const Icmp* icmp);
+    explicit Icmp(const Icmp* icmp);
     Icmp(const char* packet, size_t len);
     void print() const;
     void build_packet(Buffer& bb);
@@ -87,10 +87,10 @@ public:
     Icmp* setid(uint16_t id);
     Icmp* setseq(uint16_t seq);
 
-    uint8_t gettype()const;
-    uint8_t getcode()const;
-    uint16_t getid()const;
-    uint16_t getseq()const;
+    [[nodiscard]] uint8_t gettype()const;
+    [[nodiscard]] uint8_t getcode()const;
+    [[nodiscard]] uint16_t getid()const;
+    [[nodiscard]] uint16_t getseq()const;
 };
 
 class Icmp6{
@@ -98,7 +98,7 @@ class Icmp6{
 public:
     bool valid = true;
     Icmp6();
-    Icmp6(const Icmp6* icmp6);
+    explicit Icmp6(const Icmp6* icmp6);
     Icmp6(const char* packet, size_t len);
     void print() const;
     void build_packet(const ip6_hdr* iphdr, Buffer& bb);
@@ -108,10 +108,10 @@ public:
     Icmp6* setid(uint16_t id);
     Icmp6* setseq(uint16_t seq);
 
-    uint8_t gettype()const;
-    uint8_t getcode()const;
-    uint16_t getid()const;
-    uint16_t getseq()const;
+    [[nodiscard]] uint8_t gettype()const;
+    [[nodiscard]] uint8_t getcode()const;
+    [[nodiscard]] uint16_t getid()const;
+    [[nodiscard]] uint16_t getseq()const;
 };
 
 struct Sack{
@@ -129,7 +129,7 @@ class Tcp{
 public:
     bool valid = true;
     uint8_t hdrlen = 0;
-    Tcp(const Tcp* tcp);
+    explicit Tcp(const Tcp* tcp);
     Tcp(const char* packet, size_t len);
     Tcp(uint16_t sport, uint16_t dport);
     Tcp(const Tcp&) = delete;
@@ -147,17 +147,17 @@ public:
     Tcp* settimestamp(uint32_t tsval, uint32_t tsecr);
     Tcp* setwindowscale(uint8_t scale);
     Tcp* setsack(const struct Sack* sack);
-    uint32_t getack() const;
-    uint32_t getseq() const;
-    uint16_t getsport() const;
-    uint16_t getdport() const;
-    uint16_t getwindow() const;
-    uint8_t  getflag() const;
-    const char* getflags() const;
-    uint64_t  getoptions() const;
-    uint16_t getmss() const;
+    [[nodiscard]] uint32_t getack() const;
+    [[nodiscard]] uint32_t getseq() const;
+    [[nodiscard]] uint16_t getsport() const;
+    [[nodiscard]] uint16_t getdport() const;
+    [[nodiscard]] uint16_t getwindow() const;
+    [[nodiscard]] uint8_t  getflag() const;
+    [[nodiscard]] const char* getflags() const;
+    [[nodiscard]] uint64_t  getoptions() const;
+    [[nodiscard]] uint16_t getmss() const;
     int gettimestamp(uint32_t *tsval, uint32_t *tsecr) const;
-    uint8_t getwindowscale() const;
+    [[nodiscard]] uint8_t getwindowscale() const;
     void getsack(struct Sack** sack) const;
     ~Tcp();
 };
@@ -166,15 +166,15 @@ class Udp{
     udphdr udp_hdr; //udp头
 public:
     bool valid = true;
-    Udp(const Udp* udp);
+    explicit Udp(const Udp* udp);
     Udp(const char* packet, size_t len);
     Udp(uint16_t sport, uint16_t dport);
     void print() const;
     void build_packet(const ip* ip_hdr, Buffer& bb);
     void build_packet(const ip6_hdr* ip_hdr, Buffer& bb);
 
-    uint16_t getsport() const;
-    uint16_t getdport() const;
+    [[nodiscard]] uint16_t getsport() const;
+    [[nodiscard]] uint16_t getdport() const;
 };
 
 class Ip{
@@ -192,14 +192,14 @@ public:
     };
     virtual ~Ip();
 
-    virtual sockaddr_storage getsrc() const = 0;
-    virtual uint16_t getsport() const = 0;
-    virtual sockaddr_storage getdst() const = 0;
-    virtual uint16_t getdport() const = 0;
+    [[nodiscard]] virtual sockaddr_storage getsrc() const = 0;
+    [[nodiscard]] virtual uint16_t getsport() const = 0;
+    [[nodiscard]] virtual sockaddr_storage getdst() const = 0;
+    [[nodiscard]] virtual uint16_t getdport() const = 0;
     virtual void dump() const;
 
-    virtual size_t gethdrlen() const;
-    virtual uint8_t gettype() const;
+    [[nodiscard]] virtual size_t gethdrlen() const;
+    [[nodiscard]] virtual uint8_t gettype() const;
     virtual void build_packet(Buffer& bb) = 0;
     virtual bool isValid();
 };
@@ -210,7 +210,7 @@ std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src,  const soc
 
 class Ip4: public Ip {
     ip hdr; //ip头
-    Ip4(const Ip4* ip4);
+    explicit Ip4(const Ip4* ip4);
     Ip4(const char* packet, size_t len);
     Ip4(uint8_t type, uint16_t sport, uint16_t dport);
     Ip4(uint8_t type, const in_addr* src, uint16_t sport, const in_addr* dst, uint16_t dport);
@@ -218,10 +218,10 @@ class Ip4: public Ip {
     void print() const override;
 public:
     Ip4(const Ip4&) = delete;
-    sockaddr_storage getsrc() const override;
-    uint16_t getsport() const override;
-    sockaddr_storage getdst() const override;
-    uint16_t getdport() const override;
+    [[nodiscard]] sockaddr_storage getsrc() const override;
+    [[nodiscard]] uint16_t getsport() const override;
+    [[nodiscard]] sockaddr_storage getdst() const override;
+    [[nodiscard]] uint16_t getdport() const override;
 
     void build_packet(Buffer& bb) override;
 
@@ -232,7 +232,7 @@ public:
 
 class Ip6: public Ip {
     ip6_hdr hdr; //ip头
-    Ip6(const Ip6* ip6);
+    explicit Ip6(const Ip6* ip6);
     Ip6(const char* packet, size_t len);
     Ip6(uint8_t type, uint16_t sport, uint16_t dport);
     Ip6(uint8_t type, const in6_addr* src, uint16_t sport, const in6_addr* dst, uint16_t dport);
@@ -240,10 +240,10 @@ class Ip6: public Ip {
     void print() const override;
 public:
     Ip6(const Ip6&) = delete;
-    sockaddr_storage getsrc() const override;
-    uint16_t getsport() const override;
-    sockaddr_storage getdst() const override;
-    uint16_t getdport() const override;
+    [[nodiscard]] sockaddr_storage getsrc() const override;
+    [[nodiscard]] uint16_t getsport() const override;
+    [[nodiscard]] sockaddr_storage getdst() const override;
+    [[nodiscard]] uint16_t getdport() const override;
 
     void build_packet(Buffer& bb)override;
 

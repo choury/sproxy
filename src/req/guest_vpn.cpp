@@ -36,8 +36,9 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
         auto& status = statusmap[bb.id];
         assert((status.flags & HTTP_REQ_COMPLETED) == 0);
         LOGD(DVPN, " <guest_vpn> [%" PRIu64 "] read %zd bytes\n", bb.id, bb.len);
+        auto len = bb.len;
 
-        if(bb.len == 0) {
+        if(len == 0) {
             if(status.req){
                 status.req->send(nullptr);
             }
@@ -51,17 +52,17 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
             return 0;
         }
         if(status.rwer) {
-            if(status.rwer->bufsize() < bb.len) {
+            if(status.rwer->bufsize() < len) {
                 LOG("[%" PRIu64 "]: <guest_vpn> the guest's buff is full, drop packet [%zd]: %s\n", bb.id, bb.len, status.host.c_str());
-                return bb.len;
+                return len;
             }
             status.rwer->push(std::move(bb));
         }
         if(status.req){
-            if(status.req->cap() < (int)bb.len){
+            if(status.req->cap() < (int)len){
                 LOG("[%" PRIu32 "]: <guest_vpn> the host's buff is full, drop packet [%zd] (%s)\n",
-                    status.req->header->request_id, bb.len, status.req->header->geturl().c_str());
-                return bb.len;
+                    status.req->header->request_id, len, status.req->header->geturl().c_str());
+                return len;
             }
             status.req->send(std::move(bb));
         }
@@ -338,7 +339,7 @@ int Guest_vpn::mread(uint64_t id, std::variant<Buffer, Signal> data) {
             LOGD(DVPN, "<guest_vpn> [%" PRIu64"] recv data: %zu, handle: %zu\n", id, arg.len, len);
             arg.id = id;
             arg.truncate(len);
-        rwer->Send(std::move(arg));
+            rwer->Send(std::move(arg));
             return (int)len;
         }
         return 0;

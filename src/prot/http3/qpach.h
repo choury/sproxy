@@ -30,32 +30,32 @@ class Qpack{
     bool set_dynamic_table_size(size_t limit);
     std::function<void(Buffer&&)> sender;
 protected:
-    uint32_t getid(const std::string& name, const std::string& value = "") const;
+    static uint32_t getid(const std::string& name, const std::string& value = "") ;
 public:
     explicit Qpack(decltype(sender) sender, size_t dynamic_table_size_limit_max);
-    int push_ins(const void* ins, size_t len);
+    static int push_ins(const void* ins, size_t len);
     void set_dynamic_table_size_max(size_t max);
-    size_t get_dynamic_table_size() {
+    [[nodiscard]] size_t get_dynamic_table_size() const {
         return dynamic_table_size;
     }
 };
 
 class Qpack_decoder: public Qpack {
-    HeaderMap decode(const unsigned char *s, size_t len);
+    static HeaderMap decode(const unsigned char *s, size_t len);
 public:
     explicit Qpack_decoder(std::function<void(Buffer&&)> sender, size_t dynamic_table_size_limit_max = 0):
         Qpack(std::move(sender), dynamic_table_size_limit_max){};
-    std::shared_ptr<HttpReqHeader> UnpackHttp3Req(const void* data, size_t len);
-    std::shared_ptr<HttpResHeader> UnpackHttp3Res(const void* data, size_t len);
+    static std::shared_ptr<HttpReqHeader> UnpackHttp3Req(const void* data, size_t len);
+    static std::shared_ptr<HttpResHeader> UnpackHttp3Res(const void* data, size_t len);
 };
 
 class Qpack_encoder: public Qpack {
-    size_t encode(unsigned char *buf, const std::string& name, const std::string& value);
+    static size_t encode(unsigned char *buf, const std::string& name, const std::string& value);
 public:
     explicit Qpack_encoder(std::function<void(Buffer&&)> sender, size_t dynamic_table_size_limit_max = 0):
         Qpack(std::move(sender), dynamic_table_size_limit_max){};
-    size_t PackHttp3Req(std::shared_ptr<const HttpReqHeader> req, void* data, size_t len);
-    size_t PackHttp3Res(std::shared_ptr<const HttpResHeader> res, void* data, size_t len);
+    static size_t PackHttp3Req(std::shared_ptr<const HttpReqHeader> req, void* data, size_t len);
+    static size_t PackHttp3Res(std::shared_ptr<const HttpResHeader> res, void* data, size_t len);
 };
 
 #endif //SPROXY_QPACH_H

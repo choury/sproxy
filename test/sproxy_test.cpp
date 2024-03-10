@@ -80,8 +80,7 @@ int read_fixed_len(int fd, size_t len){
         cout.write(buf, n);
         len -= n;
         nread += n;
-        continue;
-    }
+   }
     return nread;
 }
 
@@ -324,7 +323,7 @@ int main(int argc , char *argv[]) {
                 if(len == 0){
                     string chunk;
                     while(getline(sockfd, chunk) > 0){
-                        size_t chunk_len = strtol(chunk.c_str(), NULL, 16);
+                        size_t chunk_len = strtol(chunk.c_str(), nullptr, 16);
                         if(read_fixed_len(sockfd, chunk_len + 2) <= 0) {
                             cerr << "Fail to read chunk body from server: "<< strerror(errno) << endl;
                             return -2;

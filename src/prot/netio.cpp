@@ -54,7 +54,7 @@ SocketRWer::SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
 SocketRWer::~SocketRWer() {
 }
 
-void SocketRWer::Dnscallback(std::shared_ptr<void> param, int error, std::list<sockaddr_storage> addrs) {
+void SocketRWer::Dnscallback(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs) {
     std::shared_ptr<SocketRWer> rwer = std::static_pointer_cast<SocketRWer>(param);
     if(rwer->flags & RWER_CLOSING){
         return;
@@ -66,8 +66,8 @@ void SocketRWer::Dnscallback(std::shared_ptr<void> param, int error, std::list<s
         return rwer->ErrorHE(DNS_FAILED, 0);
     }
 
-    for(auto& i: addrs){
-        sockaddr_in6* addr6 = (sockaddr_in6*)&i;
+    for(const auto& i: addrs){
+        sockaddr_in6 *addr6 = (sockaddr_in6*)&i;
         addr6->sin6_port = htons(rwer->port);
         rwer->addrs.push(i);
     }

@@ -7,7 +7,7 @@
 #include <getopt.h>
 #include <unistd.h>
 
-#define SKIP_CHAR(str)        ((*str)++)
+#define SKIP_CHAR(str)        ((*(str))++)
 static std::string gettoken(const char** line){
     while (isspace((unsigned char)(**line))){SKIP_CHAR(line);}
     const char* start = nullptr;
@@ -18,22 +18,22 @@ static std::string gettoken(const char** line){
         while(**line && **line != '\''){SKIP_CHAR(line);}
         if(**line) {
             SKIP_CHAR(line);
-            return std::string(start, *line - start - 1);
+            return {start, static_cast<size_t>(*line - start - 1)};
         }
-        return std::string(start, *line - start);
+        return {start, static_cast<size_t>(*line - start)};
     case '\"':
         SKIP_CHAR(line);
         start = *line;
         while(**line && **line != '\"'){SKIP_CHAR(line);}
         if(**line){
             SKIP_CHAR(line);
-            return std::string(start, *line - start - 1);
+            return {start, static_cast<size_t>(*line - start - 1)};
         }
-        return std::string(start, *line - start);
+        return {start, static_cast<size_t>(*line - start)};
     default:
         start = *line;
         while(**line && !isspace((unsigned char)(**line))){SKIP_CHAR(line);}
-        return std::string(start, *line - start);
+        return {start, static_cast<size_t>(*line - start)};
     }
 }
 
@@ -110,9 +110,9 @@ typedef struct {
             len = strlen(text); \
         } \
         \
-        while (index < nb_elements) \
-            if (strncmp(array[index], text, len) == 0) \
-                return strdup(array[index++]); \
+        while (index < (nb_elements)) \
+            if (strncmp((array)[index], text, len) == 0) \
+                return strdup((array)[index++]); \
             else \
                 index++; \
         \
@@ -425,7 +425,7 @@ int main(int argc, char** argv) {
             continue;
         }
         HIST_ENTRY *last_entry = history_get(history_length);
-        if (last_entry == nullptr || strcmp(last_entry->line, input)){
+        if (last_entry == nullptr || strcmp(last_entry->line, input) != 0){
             add_history(input);
         }
         free(input);

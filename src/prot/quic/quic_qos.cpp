@@ -309,9 +309,7 @@ int pn_namespace::sendPacket(size_t window) {
 std::list<quic_packet_meta> pn_namespace::DetectAndRemoveAckedPackets(
         const quic_ack *ack, Rtt* rtt, uint64_t max_delay_us)
 {
-    if(largest_acked_packet == UINT64_MAX){
-        largest_acked_packet = ack->acknowledged;
-    }else if(largest_acked_packet < ack->acknowledged){
+    if(largest_acked_packet == UINT64_MAX || largest_acked_packet < ack->acknowledged){
         largest_acked_packet = ack->acknowledged;
     }
     std::list<quic_packet_meta> newly_acked_packets;
@@ -324,7 +322,7 @@ std::list<quic_packet_meta> pn_namespace::DetectAndRemoveAckedPackets(
     bool ack_elicited = false;
     uint64_t latest_acked_pn = 0;
     for(auto i = sent_packets.begin(); i != sent_packets.end();){
-        assert(i->frames.size() > 0);
+        assert(!i->frames.empty());
         if(p.Has(i->meta.pn)){
             newly_acked_packets.emplace_back(i->meta);
             if(i->meta.ack_eliciting){
@@ -387,7 +385,7 @@ std::list<quic_packet_pn> pn_namespace::DetectAndRemoveLostPackets(Rtt *rtt) {
     uint64_t now = getutime();
     uint64_t timeThreshold = std::max(9 * std::max(rtt->smoothed_rtt, rtt->latest_rtt) / 8, (uint64_t)1000);
     for(auto i = sent_packets.begin(); i != sent_packets.end();){
-        assert(i->frames.size() > 0);
+        assert(!i->frames.empty());
         if(i->meta.pn > largest_acked_packet){
             break;
         }
@@ -409,7 +407,7 @@ void pn_namespace::clear() {
         frame_release(i);
     }
     for(const auto& packet : sent_packets){
-        assert(packet.frames.size() > 0);
+        assert(!packet.frames.empty());
         for(auto frame: packet.frames) {
             frame_release(frame);
         }
@@ -425,7 +423,7 @@ pn_namespace::~pn_namespace() {
     clear();
 }
 
-QuicQos::QuicQos(bool isServer, send_func sent,
+QuicQos::QuicQos(bool isServer, const send_func& sent,
            std::function<void(pn_namespace*, quic_frame*)> resendFrames):
             isServer(isServer), resendFrames(std::move(resendFrames)){
     pns[QUIC_PACKET_NAMESPACE_INITIAL] = new pn_namespace('I', [sent](auto&& v1, auto&& v2, auto&& v3, auto&& v4){
@@ -444,7 +442,7 @@ QuicQos::~QuicQos() {
     DrainAll();
 }
 
-ssize_t QuicQos::windowLeft() {
+ssize_t QuicQos::windowLeft() const {
     return (int)congestion_window - (int)bytes_in_flight;
 }
 
@@ -460,7 +458,7 @@ void QuicQos::KeyGot(OSSL_ENCRYPTION_LEVEL level) {
 void QuicQos::KeyLost(OSSL_ENCRYPTION_LEVEL level) {
     auto pn = pns[get_packet_namespace(level)];
     for(auto& packet : pn->sent_packets) {
-        assert(packet.frames.size() > 0);
+        assert(!packet.frames.empty());
         if(!packet.meta.in_flight) {
             continue;
         }
@@ -532,7 +530,7 @@ void QuicQos::SetLossDetectionTimer() {
             continue;
         }
         for(const auto& packet: p->sent_packets){
-            assert(packet.frames.size() > 0);
+            assert(!packet.frames.empty());
             if(packet.meta.ack_eliciting){
                 has_eliciting_packet = true;
                 break;
@@ -570,7 +568,7 @@ void QuicQos::SetLossDetectionTimer() {
         }
         has_eliciting_packet = false;
         for(const auto& packet: p->sent_packets){
-            assert(packet.frames.size() > 0);
+            assert(!packet.frames.empty());
             if(packet.meta.ack_eliciting){
                 has_eliciting_packet = true;
                 break;
@@ -769,7 +767,7 @@ void QuicQos::HandleRetry() {
     ns->time_of_last_ack_eliciting_packet = 0;
 
     for(auto& packet: ns->sent_packets){
-        assert(packet.frames.size() > 0);
+        assert(!packet.frames.empty());
         for(auto frame: packet.frames){
             PushFrame(ns, frame);
         }

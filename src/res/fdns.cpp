@@ -191,7 +191,7 @@ static bool isLoopBack(const sockaddr_storage* addr) {
     return false;
 }
 
-void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_storage> addrs) {
+void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs) {
     auto index = *std::static_pointer_cast<uint64_t>(param);
     uint32_t reqid = index >> 32;
     if(fdns->statusmap.count(reqid) == 0){
@@ -205,7 +205,7 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_stor
     Dns_Result* result = new Dns_Result(que->domain);
     Buffer buff{BUF_LEN};
     if(error) {
-        buff.truncate(result->buildError(que.get(), error, (uchar*)buff.mutable_data()));
+        buff.truncate(Dns_Result::buildError(que.get(), error, (uchar*)buff.mutable_data()));
         status.rwer->Send(std::move(buff));
     } else {
         for(const auto& addr : addrs) {
@@ -256,7 +256,7 @@ void FDns::RawCb(std::shared_ptr<void> param, const char* data, size_t size) {
     }else {
         LOGD(DDNS, "<FDNS> Query raw response [%d] error\n", que->id);
         Dns_Result rr(que->domain);
-        buff.truncate(rr.buildError(que.get(), DNS_SERVER_FAIL, (unsigned char*)buff.mutable_data()));
+        buff.truncate(Dns_Result::buildError(que.get(), DNS_SERVER_FAIL, (unsigned char*)buff.mutable_data()));
         status.rwer->Send(std::move(buff));
     }
     status.quemap.erase(que->id);
@@ -267,7 +267,7 @@ void FDns::dump_stat(Dumper dp, void* param) {
     for(const auto& i : statusmap) {
         const FDnsStatus& status = i.second;
         dp(param, "  [%" PRIu32 "]: %s\n", i.first, status.rwer->getPeer());
-        for(auto p : status.quemap) {
+        for(const auto& p : status.quemap) {
             auto que = p.second;
             dp(param, "    %s, id=%d, type=%d\n", que->domain, que->id, que->type);
         }

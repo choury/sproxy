@@ -56,7 +56,7 @@ static const TrieType<strategy>* ipfind(const char* ipstr, int prefix = -1){
 }
 
 
-bool ipinsert(const char* ipstr, strategy stra, int prefix = -1){
+bool ipinsert(const char* ipstr, const strategy& stra, int prefix = -1){
     in_addr ip4;
     in6_addr ip6;
 
@@ -87,7 +87,7 @@ bool ipremove(const char* ipstr, bool& found, int prefix = -1) {
 }
 
 
-static bool mergestrategy(const string& host, const string& strategy_str, string ext){
+static bool mergestrategy(const string& host, const string& strategy_str, const string& ext){
     Strategy s;
     if(strategy_str == "direct"){
         s = Strategy::direct;
@@ -239,12 +239,9 @@ strategy getstrategy(const char *host_, const char* path){
 
 bool mayBeBlocked(const char* host) {
     auto strategies = domains.findAll(split(toLower(host)));
-    for(auto& s: strategies){
-        if(s->value.s == Strategy::block){
-            return true;
-        }
-    }
-    return false;
+    return std::any_of(strategies.begin(), strategies.end(), [](const TrieType<strategy>* s){
+        return s->value.s == Strategy::block;
+    });
 }
 
 const char* getstrategystring(Strategy s) {

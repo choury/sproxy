@@ -8,6 +8,8 @@
 #include <errno.h>
 #include <inttypes.h>
 
+#include <utility>
+
 VpnKey::VpnKey(std::shared_ptr<const Ip> ip) {
     src = ip->getsrc();
     dst = ip->getdst();
@@ -19,8 +21,6 @@ VpnKey::VpnKey(std::shared_ptr<const Ip> ip) {
         protocol = Protocol::UDP;
         break;
     case IPPROTO_ICMP:
-        protocol = Protocol::ICMP;
-        break;
     case IPPROTO_ICMPV6:
         protocol = Protocol::ICMP;
         break;
@@ -97,7 +97,7 @@ std::shared_ptr<IpStatus> TunRWer::GetStatus(uint64_t id) {
 
 TunRWer::TunRWer(int fd, std::function<void(uint64_t, std::shared_ptr<const Ip>)> reqProc,
                  std::function<void(int ret, int code)> errorCB):
-    RWer(fd, errorCB), reqProc(reqProc)
+    RWer(fd, std::move(errorCB)), reqProc(std::move(reqProc))
 {
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&TunRWer::defaultHE;

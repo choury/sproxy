@@ -21,7 +21,7 @@ class FDns: public Responser{
 
     void Recv(const void* data, size_t len, uint32_t id);
     static void RawCb(std::shared_ptr<void> param, const char *buff, size_t size);
-    static void DnsCb(std::shared_ptr<void> param, int error, std::list<sockaddr_storage> addrs);
+    static void DnsCb(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs);
 public:
     FDns();
     virtual ~FDns() override;

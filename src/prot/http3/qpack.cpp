@@ -3,21 +3,21 @@
 #include <string.h>
 
 static const char* static_table[][2] = {
-    {":authority", 0},
+    {":authority", nullptr},
     {":path", "/"},
     {"age", "0"},
-    {"content-disposition", 0},
+    {"content-disposition", nullptr},
     {"content-length", "0"},
-    {"cookie", 0},
-    {"date", 0},
-    {"etag", 0},
-    {"if-modified-since", 0},
-    {"if-none-match", 0},
-    {"last-modified", 0},
-    {"link", 0},
-    {"location", 0},
-    {"referer", 0},
-    {"set-cookie", 0},
+    {"cookie", nullptr},
+    {"date", nullptr},
+    {"etag", nullptr},
+    {"if-modified-since", nullptr},
+    {"if-none-match", nullptr},
+    {"last-modified", nullptr},
+    {"link", nullptr},
+    {"location", nullptr},
+    {"referer", nullptr},
+    {"set-cookie", nullptr},
     {":method", "CONNECT"},
     {":method", "DELETE"},
     {":method", "GET"},
@@ -75,7 +75,7 @@ static const char* static_table[][2] = {
     {":status", "421"},
     {":status", "425"},
     {":status", "500"},
-    {"accept-language", 0},
+    {"accept-language", nullptr},
     {"access-control-allow-credentials", "FALSE"},
     {"access-control-allow-credentials", "TRUE"},
     {"access-control-allow-headers", "*"},
@@ -87,19 +87,19 @@ static const char* static_table[][2] = {
     {"access-control-request-method", "get"},
     {"access-control-request-method", "post"},
     {"alt-svc", "clear"},
-    {"authorization", 0},
+    {"authorization", nullptr},
     {"content-security-policy", "script-src 'none'; object-src 'none'; base-uri 'none'"},
     {"early-data", "1"},
-    {"expect-ct", 0},
-    {"forwarded", 0},
-    {"if-range", 0},
-    {"origin", 0},
+    {"expect-ct", nullptr},
+    {"forwarded", nullptr},
+    {"if-range", nullptr},
+    {"origin", nullptr},
     {"purpose", "prefetch"},
-    {"server", 0},
+    {"server", nullptr},
     {"timing-allow-origin", "*"},
     {"upgrade-insecure-requests", "1"},
-    {"user-agent", 0},
-    {"x-forwarded-for", 0},
+    {"user-agent", nullptr},
+    {"x-forwarded-for", nullptr},
     {"x-frame-options", "deny"},
     {"x-frame-options", "sameorigin"},
 };
@@ -118,7 +118,7 @@ static void init_static_map(){
 
 static bool qpack_inited = false;
 
-uint32_t Qpack::getid(const std::string& name, const std::string& value) const {
+uint32_t Qpack::getid(const std::string& name, const std::string& value) {
     std::string key = name+char(0)+value;
     uint32_t id = 0;
     if(static_map.count(key)) {

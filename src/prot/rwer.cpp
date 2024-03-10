@@ -205,7 +205,7 @@ ssize_t NullRWer::Write(const Buffer& bb) {
 }
 
 #ifdef __linux__
-FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB): RWer(errorCB) {
+FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB): RWer(std::move(errorCB)) {
     int evfd = eventfd(1, SOCK_CLOEXEC);
     if(evfd < 0){
         stats = RWerStats::Error;
@@ -215,7 +215,7 @@ FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB): RWer(errorCB
     setFd(evfd);
     (void)!write(evfd, "FULLEVENT", 8);
 #else
-FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB): RWer(errorCB), pairfd(-1){
+FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB): RWer(std::move(errorCB)), pairfd(-1){
     int pairs[2];
     int ret = socketpair(AF_UNIX, SOCK_STREAM, 0, pairs);
     if(ret){

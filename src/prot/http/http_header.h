@@ -63,7 +63,7 @@
 
 
 static inline std::string ltrim(std::string s) {
-    s.erase(0, s.find_first_not_of(" "));
+    s.erase(0, s.find_first_not_of(' '));
     return s;
 }
 
@@ -79,12 +79,12 @@ public:
     void set(const std::string& header, uint64_t value);
     void append(const std::string& header, const std::string& value);
     void del(const std::string& header);
-    const char* get(const std::string& header) const;
-    const std::map<std::string, std::string>& getall() const;
+    [[nodiscard]] const char* get(const std::string& header) const;
+    [[nodiscard]] const std::map<std::string, std::string>& getall() const;
 
-    virtual bool no_body() const = 0;
-    virtual bool no_end() const = 0;
-    virtual std::multimap<std::string, std::string> Normalize() const = 0;
+    [[nodiscard]] virtual bool no_body() const = 0;
+    [[nodiscard]] virtual bool no_end() const = 0;
+    [[nodiscard]] virtual std::multimap<std::string, std::string> Normalize() const = 0;
     HttpHeader();
     virtual ~HttpHeader() = default;
     virtual size_t mem_usage();
@@ -118,19 +118,19 @@ public:
     bool chain_proxy  = false;
     explicit HttpReqHeader(HeaderMap&& headers);
     bool ismethod(const char* method) const;
-    bool http_method() const;
-    bool valid_method() const;
-    uint16_t getDport() const;
+    [[nodiscard]] bool http_method() const;
+    [[nodiscard]] bool valid_method() const;
+    [[nodiscard]] uint16_t getDport() const;
 
-    virtual std::multimap<std::string, std::string> Normalize() const override;
-    virtual bool no_body() const override;
-    virtual bool no_end() const override;
+    [[nodiscard]] virtual std::multimap<std::string, std::string> Normalize() const override;
+    [[nodiscard]] virtual bool no_body() const override;
+    [[nodiscard]] virtual bool no_end() const override;
 
-    std::map<std::string, std::string> getcookies()const;
-    std::map<std::string, std::string> getparamsmap()const;
-    const char* getparamstring()const;
+    [[nodiscard]] std::map<std::string, std::string> getcookies()const;
+    [[nodiscard]] std::map<std::string, std::string> getparamsmap()const;
+    [[nodiscard]] const char* getparamstring()const;
     bool getrange();
-    std::string geturl() const;
+    [[nodiscard]] std::string geturl() const;
     virtual size_t mem_usage() override;
 };
 
@@ -155,9 +155,9 @@ class HttpResHeader: public HttpHeader{
 public:
     char status[100];
     explicit HttpResHeader(HeaderMap&& headers);
-    virtual std::multimap<std::string, std::string> Normalize() const override;
-    virtual bool no_body() const override;
-    virtual bool no_end() const override;
+    [[nodiscard]] virtual std::multimap<std::string, std::string> Normalize() const override;
+    [[nodiscard]] virtual bool no_body() const override;
+    [[nodiscard]] virtual bool no_end() const override;
     void addcookie(const Cookie &cookie);
     virtual size_t mem_usage() override {
         return HttpHeader::mem_usage() + sizeof(*this);

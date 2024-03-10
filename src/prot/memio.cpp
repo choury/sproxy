@@ -28,7 +28,7 @@ void MemRWer::SetConnectCB(std::function<void (const sockaddr_storage &)> cb){
 
 void MemRWer::Close(std::function<void()> func) {
     if (getFd() >= 0) {
-        RWer::Close([this, func] {
+        RWer::Close([this, func = std::move(func)] {
             read_cb(CHANNEL_ABORT);
             func();
         });
@@ -118,7 +118,7 @@ void MemRWer::closeHE(RW_EVENT event) {
         flags |= RWER_SHUTDOWN;
         wbuff.push(wbuff.end(), {nullptr});
     }
-    RWer::closeHE(event);
+    RWer::closeHE(event); // NOLINT
 }
 
 void PMemRWer::push_data(const Buffer &bb) {

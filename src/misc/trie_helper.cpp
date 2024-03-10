@@ -15,7 +15,7 @@ std::list<std::string> split(std::string s){
     return tokens;
 }
 
-std::string join(std::list<std::string> tokens) {
+std::string join(const std::list<std::string>& tokens) {
     if(tokens.empty()){
         return "";
     }
@@ -58,7 +58,7 @@ static const char *dumpip(const sockaddr_storage *addr_){
 }
 
 
-std::string join(int type, std::list<char> tokens){
+std::string join(int type, const std::list<char>& tokens){
     int prefix = 0;
     if(type == AF_INET){
         sockaddr_in ip4;
