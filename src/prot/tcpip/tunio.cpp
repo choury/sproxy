@@ -294,9 +294,10 @@ void TunRWer::Clean(uint64_t id) {
 
 void TunRWer::ErrProc(std::shared_ptr<const Ip> pac, uint32_t code) {
     uint64_t id = GetId(pac);
+    LOGD(DVPN, "tunio: delete id: 0x%" PRIx64" (%s -> %s), due to err: %d\n",
+         id, getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(), (int)code);
     resetHanlder(id, code);
     Clean(id);
-    LOGD(DVPN, "tunio: delete id: 0x%" PRIx64", due to err: %d\n", id, (int)code);
 }
 
 size_t TunRWer::DataProc(std::shared_ptr<const Ip> pac, const void* data, size_t len) {
@@ -330,7 +331,8 @@ void TunRWer::sendMsg(uint64_t id, uint32_t msg) {
         }
         break;
     case TUN_MSG_BLOCK:
-        LOGD(DVPN, "tunio: delete id: 0x%" PRIx64", due to block\n", id);
+        LOGD(DVPN, "tunio: delete id: 0x%" PRIx64" (%s -> %s), due to block\n",
+             id, getRdnsWithPort(status->src).c_str(), getRdnsWithPort(status->dst).c_str());
         if(status->protocol == Protocol::TCP) {
             SendRst(std::static_pointer_cast<TcpStatus>(status));
         } else {
@@ -339,7 +341,8 @@ void TunRWer::sendMsg(uint64_t id, uint32_t msg) {
         Clean(id);
         break;
     case TUN_MSG_UNREACH:
-        LOGD(DVPN, "tunio: delete id: 0x%" PRIx64", due to unreach\n", id);
+        LOGD(DVPN, "tunio: delete id: 0x%" PRIx64" (%s -> %s), due to unreach\n",
+             id, getRdnsWithPort(status->src).c_str(), getRdnsWithPort(status->dst).c_str());
         status->UnReach(IP_PORT_UNREACH);
         Clean(id);
         break;

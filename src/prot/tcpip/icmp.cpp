@@ -16,7 +16,7 @@ void IcmpProc(std::shared_ptr<IcmpStatus> status, std::shared_ptr<const Ip> pac,
     }
     size_t datalen = len - pac->gethdrlen();
     status->aged_job = updatejob_with_name(std::move(status->aged_job),
-                                           [status, pac]{status->errCB(pac, CONNECT_AGED);},
+                                           [errCB = status->errCB, pac]{errCB(pac, CONNECT_AGED);},
                                            "icmp_aged_job", 30000);
     if(datalen > 0) {
         status->dataCB(pac, packet + pac->gethdrlen(), datalen);
@@ -28,12 +28,12 @@ void SendData(std::shared_ptr<IcmpStatus> status, Buffer&& bb) {
     auto rpac = MakeIp(status->packet_hdr->data(), status->packet_hdr_len);
     if(bb.len == 0){
         status->aged_job = updatejob_with_name(std::move(status->aged_job),
-                                               [status, rpac]{status->errCB(rpac, CONNECT_AGED);},
+                                               [errCB = status->errCB, rpac]{errCB(rpac, CONNECT_AGED);},
                                                "icmp_aged_job", 0);
         return;
     } else {
         status->aged_job = updatejob_with_name(std::move(status->aged_job),
-                                               [status, rpac]{status->errCB(rpac, CONNECT_AGED);},
+                                               [errCB = status->errCB, rpac]{errCB(rpac, CONNECT_AGED);},
                                                "icmp_aged_job", 30000);
     }
 
@@ -56,6 +56,6 @@ void SendData(std::shared_ptr<IcmpStatus> status, Buffer&& bb) {
     pac->build_packet(bb);
     status->sendCB(pac, bb.data(), bb.len);
     status->ack_job = updatejob_with_name(std::move(status->ack_job),
-                                          [status, rpac]{status->ackCB(rpac);},
+                                          [ackCB = status->ackCB, rpac]{ackCB(rpac);},
                                           "icmp_ack_job", 0);
 }

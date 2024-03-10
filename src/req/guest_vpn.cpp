@@ -82,10 +82,12 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
     });
     std::dynamic_pointer_cast<TunRWer>(rwer)->setResetHandler([this](uint64_t id, uint32_t){
         if(statusmap.count(id)) {
-            auto& status = statusmap[id];
             LOGD(DVPN, " <guest_vpn> [%" PRIu64 "] reset\n", id);
+            auto& status = statusmap[id];
             status.flags |= TUN_CLOSED_F;
             Clean(id);
+        } else {
+            LOGD(DVPN, " <guest_vpn> [%" PRIu64 "] reset, but not found\n", id);
         }
     });
 }

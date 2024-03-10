@@ -323,7 +323,11 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
             }
             return;
         }
-        LOG("%s get unwanted/keep-alive pkt, reply ack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
+        if(seq == status->want_seq - 1) {
+            LOGD(DVPN, "%s get keep-alive pkt, reply ack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
+        }else {
+            LOG("%s get unwanted pkt, reply ack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
+        }
         status->sent_ack = status->want_seq - 1; //to force send tcp ack
         status->ack_job = UpdateJob(std::move(status->ack_job),
                                     [status_ = GetWeak(status)] {SendAck(status_);}, 0);
