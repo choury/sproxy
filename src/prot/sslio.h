@@ -19,7 +19,7 @@ protected:
     std::string server;
 
     bool isConnected();
-    bool isEOF();
+    bool isEof();
     int sink_in_bio(uint64_t id);
     void sink_out_bio(uint64_t id);
     void do_handshake();
@@ -62,9 +62,6 @@ protected:
     virtual bool IsConnected() override {
         return isConnected();
     }
-    virtual bool IsEOF() override {
-        return isEOF();
-    }
     virtual size_t rlength(uint64_t id) override {
         return BIO_ctrl_pending(in_bio) + StreamRWer::rlength(id);
     }
@@ -81,6 +78,10 @@ public:
     SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB);
     virtual void ReadData() override;
     virtual void Send(Buffer&& bb) override;
+
+    virtual bool isEof() override {
+        return StreamRWer::isEof() || SslRWerBase::isEof();
+    }
     virtual void dump_status(Dumper dp, void* param) override;
 };
 
@@ -97,9 +98,6 @@ protected:
     virtual bool IsConnected() override {
         return isConnected();
     }
-    virtual bool IsEOF() override {
-        return isEOF();
-    }
     virtual size_t rlength(uint64_t id) override {
         return BIO_ctrl_pending(in_bio) + MemRWer::rlength(id);
     }
@@ -114,6 +112,10 @@ public:
     {}
     virtual void push_data(const Buffer& bb) override;
     void Send(Buffer&& bb) override;
+
+    virtual bool isEof() override {
+        return MemRWer::isEof() || SslRWerBase::isEof();
+    }
     virtual void dump_status(Dumper dp, void* param) override;
 };
 

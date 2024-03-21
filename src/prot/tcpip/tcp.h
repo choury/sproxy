@@ -37,6 +37,9 @@ struct tcp_sent{
     Buffer   bb;
 };
 
+#define RTO_MAX         ((uint32_t)1000)  // 1s
+#define RTO_FACTOR_MAX  ((uint32_t)30)
+
 //Tcp 不需要aged_job，原因是本机的tcp（Host）连接总会被销毁的，
 //即使是代理请求，末端的tcp连接也会销毁的，就会发送信号过来，
 //销毁的时候如果vpn这边的tcp还没有销毁，那么就会发送RST报文，这个时候就会自动清理掉了
@@ -48,6 +51,7 @@ struct TcpStatus: public IpStatus{
     uint16_t   mss;
 #define TCP_FIN_RECVD     1
 #define TCP_FIN_DELIVERED 2
+#define TCP_KEEPALIVING   4
     uint32_t   flags = 0;
     uint32_t   sent_seq; //下一个发送的报文的序列号，意思是上一个发送的序列号是sent_seq-1
     uint32_t   sent_ack;
@@ -56,7 +60,7 @@ struct TcpStatus: public IpStatus{
     uint64_t   options = 0;
     uint32_t   srtt = 0;
     uint32_t   rttval = 0;
-    uint32_t   rto = 1000;
+    uint32_t   rto = RTO_MAX;
     uint32_t   rto_factor = 1;
     uint32_t   dupack = 0;
     CBuffer    rbuf;
@@ -64,6 +68,7 @@ struct TcpStatus: public IpStatus{
     Sack       *sack = nullptr;
     Job        ack_job = nullptr;
     Job        rto_job = nullptr;
+    Job        keepalive_job = nullptr;
 };
 
 

@@ -28,6 +28,7 @@
 #include <sys/resource.h>
 #else
 #include <pthread.h>
+#include <libgen.h>
 #endif
 #include <openssl/ssl.h>
 
@@ -177,7 +178,9 @@ static struct option_detail option_detail[] = {
     {"cakey", "CA key for server (sni and vpn)", option_string, &opt.cakey, NULL},
     {"cert", "Certificate file for server (ssl)", option_string, &opt.certfile, NULL},
     {"config", "Configure file (default "PREFIX"/etc/sproxy/sproxy.conf and ./sproxy.conf)", option_string, &opt.config_file, NULL},
+#ifndef __ANDROID__
     {"daemon", "Run as daemon", option_bool, &opt.daemon_mode, (void*)true},
+#endif
     {"disable-http2", "Use http/1.1 only", option_bool, &opt.disable_http2, (void*)true},
     {"help", "Print this usage", option_bool, NULL, NULL},
     {"mitm", "Mitm mode for https request ([auto], enable, disable), require cakey", option_enum, &opt.mitm_mode, auto_options},
@@ -541,18 +544,26 @@ void postConfig(){
             LOGE("start daemon error:%s\n", strerror(errno));
             exit(1);
         }
-        openlog("sproxy", LOG_PID | LOG_PERROR, LOG_LOCAL0);
+        openlog(basename(main_argv[0]), LOG_PID | LOG_PERROR, LOG_LOCAL0);
     }
 #else
     opt.daemon_mode = false;
 #endif
     struct rlimit limits;
     if(getrlimit(RLIMIT_NOFILE, &limits)){
-        LOGE("getrlimit failed: %s\n", strerror(errno));
+        LOGE("getrlimit nofile failed: %s\n", strerror(errno));
     }else if(limits.rlim_cur < 16384){
         limits.rlim_cur = MIN(limits.rlim_max, 16384);
         if(setrlimit(RLIMIT_NOFILE, &limits)) {
             LOGE("setrlimit failed: %s\n", strerror(errno));
+        }
+    }
+    if(getrlimit(RLIMIT_CORE, &limits)) {
+        LOGE("getrlimit core failed: %s\n", strerror(errno));
+    }else if(limits.rlim_cur == 0) {
+        limits.rlim_cur = limits.rlim_max;
+        if(setrlimit(RLIMIT_CORE, &limits)) {
+            LOGE("setrlimit core failed: %s\n", strerror(errno));
         }
     }
     openefd();

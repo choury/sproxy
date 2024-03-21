@@ -35,7 +35,7 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
         }
         auto& status = statusmap[bb.id];
         assert((status.flags & HTTP_REQ_COMPLETED) == 0);
-        LOGD(DVPN, " <guest_vpn> [%" PRIu64 "] read %zd bytes\n", bb.id, bb.len);
+        LOGD(DVPN, "<guest_vpn> [%" PRIu64 "] read %zd bytes\n", bb.id, bb.len);
         auto len = bb.len;
 
         if(len == 0) {
@@ -82,12 +82,12 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
     });
     std::dynamic_pointer_cast<TunRWer>(rwer)->setResetHandler([this](uint64_t id, uint32_t){
         if(statusmap.count(id)) {
-            LOGD(DVPN, " <guest_vpn> [%" PRIu64 "] reset\n", id);
+            LOGD(DVPN, "<guest_vpn> [%" PRIu64 "] reset\n", id);
             auto& status = statusmap[id];
             status.flags |= TUN_CLOSED_F;
             Clean(id);
         } else {
-            LOGD(DVPN, " <guest_vpn> [%" PRIu64 "] reset, but not found\n", id);
+            LOGD(DVPN, "<guest_vpn> [%" PRIu64 "] reset, but not found\n", id);
         }
     });
 }

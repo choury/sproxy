@@ -123,7 +123,7 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
     if (status->dupack >= 3) {
         LOGD(DVPN, "%s getdupack: %d, resent packet\n", storage_ntoa(&status->src), status->dupack);
         status->dupack = 0;
-    } else if (status->rto_factor > 30){
+    } else if (status->rto_factor > RTO_FACTOR_MAX){
         LOGE("%s timeout: %d, reset connection\n", storage_ntoa(&status->src), status->rto_factor);
         SendRst(status);
         status->errCB(MakeIp(IPPROTO_TCP, &status->src, &status->dst), CONNECT_AGED);
@@ -189,7 +189,7 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
 ret:
     status->rto_job = UpdateJob(std::move(status->rto_job),
                                 [status_]{Resent(status_);},
-                                std::max(status->rto * status->rto_factor, (uint32_t) 1000));
+                                std::max(status->rto * status->rto_factor, RTO_MAX));
 }
 
 void PendPkg(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, Buffer&& bb) {
@@ -197,17 +197,43 @@ void PendPkg(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, Buffer&
     status->sendCB(pac, bb.data(), bb.len);
     bb.reserve(pac->gethdrlen());
     uint8_t flags = pac->tcp->getflag();
-    if((flags & TH_RST) || (flags == TH_ACK && bb.len == 0)) {
+    if((flags & TH_RST) || (flags == TH_ACK && bb.len == 0 && (status->flags & TCP_KEEPALIVING) == 0)) {
         return;
     }
     if(status->sent_list.empty()) {
         //说明之前没有开启rto重传，就在这里开启
         status->rto_job = UpdateJob(std::move(status->rto_job),
                                     [status_ = GetWeak(status)]{Resent(status_);},
-                                    std::max(status->rto * status->rto_factor, (uint32_t) 1000));
+                                    std::max(status->rto * status->rto_factor, RTO_MAX));
     }
     auto now = getmtime();
     status->sent_list.emplace_back(tcp_sent{pac, now, now, std::move(bb)});
+}
+
+void KeepAlive(std::weak_ptr<TcpStatus> status_) {
+    if(status_.expired()){
+        return;
+    }
+    auto status = status_.lock();
+    if(status->state != TCP_ESTABLISHED && status->state != TCP_CLOSE_WAIT){
+        return;
+    }
+    if(!status->sent_list.empty()) {
+        return;
+    }
+
+    int buflen = bufleft(status);
+    if(buflen < 0) buflen = 0;
+    //创建回包
+    auto pac = MakeIp(IPPROTO_TCP, &status->dst, &status->src);
+    pac->tcp
+            ->setseq(status->sent_seq-1)
+            ->setack(status->want_seq)
+            ->setwindow(buflen >> status->send_wscale)
+            ->setflag(TH_ACK);
+    status->sent_ack = status->want_seq;
+    status->flags |= TCP_KEEPALIVING;
+    PendPkg(status, pac, nullptr);
 }
 
 // LISTEN or SYN-RECEIVED
@@ -308,6 +334,10 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
         return;
     }
 
+    //推迟发送 keepalive 包
+    status->keepalive_job = UpdateJob(std::move(status->keepalive_job),
+                                      [status_ = GetWeak(status)] {KeepAlive(status_);}, 60000);
+
     if(seq != status->want_seq){
         //判断是否是重传的syn报文
         if ((flag & TH_SYN) && (flag & TH_ACK) == 0) {
@@ -348,7 +378,7 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
         if(status->options & (1 << TCPOPT_SACK_PERMITTED)) {
             pac->tcp->getsack(&status->sack);
         }
-        if(ack == status->recv_ack) {
+        if(ack == status->recv_ack && (status->flags & TCP_KEEPALIVING) == 0) {
             status->dupack ++;
             if(status->dupack >= 3) {
                 status->rto_job = UpdateJob(std::move(status->rto_job),
@@ -356,6 +386,7 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
             }
             goto left;
         }
+        status->flags &= ~TCP_KEEPALIVING;
         status->rto_factor = 1;
         status->dupack = 0;
         status->recv_ack = ack;
@@ -400,7 +431,7 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
         }else{
             status->rto_job = UpdateJob(std::move(status->rto_job),
                                         [status_ =  GetWeak(status)] {Resent(status_);},
-                                        std::max(status->rto * status->rto_factor, (uint32_t)1000));
+                                        std::max(status->rto * status->rto_factor, RTO_MAX));
         }
     }
 left:
@@ -497,6 +528,14 @@ void SendAck(std::weak_ptr<TcpStatus> status_) {
 }
 
 void SendData(std::shared_ptr<TcpStatus> status, Buffer&& bb) {
+    if(status->flags & TCP_KEEPALIVING) {
+        if(status->sent_list.size() == 1) {
+            status->sent_list.clear();
+        } else {
+            LOGE("%s mix data with keepalive\n", storage_ntoa(&status->src));
+        }
+        status->flags &= ~TCP_KEEPALIVING;
+    }
     assert(status->state == TCP_ESTABLISHED || status->state == TCP_CLOSE_WAIT);
     if (bb.len == 0) {
         auto pac = MakeIp(IPPROTO_TCP, &status->dst, &status->src);

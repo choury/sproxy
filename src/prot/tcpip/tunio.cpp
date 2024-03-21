@@ -173,6 +173,11 @@ void TunRWer::ReadData() {
             if(transIcmp) {
                 continue;
             }
+            if(pac->getdport() == 0 || pac->getsport() == 0) {
+                LOG("<tunio> ignore invalid port: <%s> %s -> %s\n",
+                    protstr(key.protocol), getRdnsWithPort(key.src).c_str(), getRdnsWithPort(key.dst).c_str());
+                continue;
+            }
             switch(key.protocol){
             case Protocol::TCP:{
                 auto tstatus = std::make_shared<TcpStatus>();

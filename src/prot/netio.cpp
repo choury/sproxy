@@ -270,7 +270,7 @@ void StreamRWer::ConsumeRData(uint64_t id) {
     if(rb.cap() == 0){
         delEvents(RW_EVENT::READ);
     }
-    if(IsEOF() && (flags & RWER_EOFDELIVED) == 0){
+    if(isEof() && (flags & RWER_EOFDELIVED) == 0){
         readCB({nullptr, id});
         flags |= RWER_EOFDELIVED;
     }

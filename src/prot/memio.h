@@ -41,8 +41,9 @@ public:
         return peer;
     }
     virtual void dump_status(Dumper dp, void* param) override {
-        dp(param, "MemRWer <%d> (%s): rlen: %zu, wlen: %zu, stats: %d, event: %s\n",
-            getFd(), getPeer(), rlength(0), wbuff.length(), (int)getStats(), events_string[(int)getEvents()]);
+        dp(param, "MemRWer <%d> (%s): rlen: %zu, wlen: %zu, stats: %d, flags: 0x%04x,  event: %s\n",
+            getFd(), getPeer(), rlength(0), wbuff.length(),
+            (int)getStats(), flags, events_string[(int)getEvents()]);
     }
     virtual size_t mem_usage() override{
         return sizeof(*this) + wbuff.length();

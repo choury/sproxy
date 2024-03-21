@@ -120,7 +120,7 @@ void RWer::IdleHE(RW_EVENT) {
     setEvents(RW_EVENT::NONE);
 }
 
-bool RWer::IsEOF() {
+bool RWer::isEof() {
     return stats == RWerStats::ReadEOF;
 }
 

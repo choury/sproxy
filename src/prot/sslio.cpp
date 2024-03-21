@@ -157,7 +157,7 @@ bool SslRWerBase::isConnected() {
     return sslStats == SslStats::Established;
 }
 
-bool SslRWerBase::isEOF() {
+bool SslRWerBase::isEof() {
     return sslStats == SslStats::SslEOF;
 }
 
@@ -294,7 +294,7 @@ void SslMer::Send(Buffer&& bb) {
 
 
 void SslMer::push_data(const Buffer& bb) {
-    if(IsEOF()) {
+    if(isEof()) {
         //shutdown by ssl, discard all data after that
         return;
     }

@@ -224,6 +224,9 @@ void Guest::deqReq() {
     statuslist.pop_front();
     if(!statuslist.empty()){
         distribute(statuslist.front().req, this);
+    }else if(rwer->isEof()){
+        //不会再有新的请求了，可以直接关闭
+        deleteLater(NOERROR);
     }
 }
 

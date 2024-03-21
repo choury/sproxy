@@ -56,7 +56,6 @@ protected:
     virtual size_t rlength(uint64_t id) = 0;
     //ConsumeRData只会在Unblock中被调用，ReadData逻辑，需要各实现自行处理readCB回调
     virtual void ConsumeRData(uint64_t id) = 0;
-    virtual bool IsEOF();
 public:
     //如果一个函数的参数是Buffer&& 那么调用者需要保证该buffer中使用的内存是一直有效的，并由被调用者负责释放
     //如果参数是const Buffer& 那么该内存只在本次调用中有效，如果需要后续使用，需要在函数内自行拷贝
@@ -75,6 +74,7 @@ public:
     virtual ssize_t cap(uint64_t id);
     virtual void Send(Buffer&& bb);
 
+    virtual bool isEof();
     virtual bool idle(uint64_t id);
     virtual void dump_status(Dumper dp, void* param) = 0;
     virtual size_t mem_usage() = 0;
