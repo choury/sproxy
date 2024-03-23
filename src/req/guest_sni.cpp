@@ -36,24 +36,31 @@ Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, std::string host, std::string u
     Http_Proc = &Guest_sni::AlwaysProc;
 }
 
-size_t Guest_sni::sniffer(const Buffer& bb) {
-    char *hostname = nullptr;
-    defer(free, hostname);
-    int ret = parse_tls_header((const char*)bb.data(), bb.len, &hostname);
-    if(ret == -1) {
-        return bb.len;
+std::shared_ptr<HttpReq> Guest_sni::forward(const char *hostname, Protocol prot) {
+    if(hostname == nullptr) {
+        hostname = host.c_str();
     }
-    if(ret < 0) {
-        if(!host.empty()) {
-            hostname = strdup(host.c_str());
-        } else {
-            deleteLater(SNI_HOST_ERR);
-            return 0;
-        }
+    if(hostname == nullptr || *hostname == '\0') {
+        LOGE("Guest_sni: empty hostname\n");
+        return nullptr;
     }
     char buff[HEADLENLIMIT];
-    int slen = snprintf(buff, sizeof(buff), "CONNECT %s:%d" CRLF CRLF, hostname, 443);
+    int slen;
+    if(strchr(hostname, ':') && hostname[0] != '[') {
+        //may be ipv6 without []
+        slen = snprintf(buff, sizeof(buff), "CONNECT [%s]:%d" CRLF, hostname, 443);
+    }else {
+        slen = snprintf(buff, sizeof(buff), "CONNECT %s:%d" CRLF, hostname, 443);
+    }
+    if(prot == Protocol::UDP) {
+        slen += snprintf(buff + slen, sizeof(buff) - slen, "Protocol: udp" CRLF);
+    }
+    slen += snprintf(buff + slen, sizeof(buff) - slen, CRLF);
     std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, slen);
+    if(header == nullptr) {
+        LOGE("Guest_sni: UnpackHttpReq failed\n");
+        return nullptr;
+    }
     header->set("User-Agent", user_agent + " SEQ/" + std::to_string(header->request_id));
     LOGD(DHTTP, "<guest_sni> ReqProc %" PRIu32 " %s\n", header->request_id, header->geturl().c_str());
     auto req = std::make_shared<HttpReq>(
@@ -63,76 +70,81 @@ size_t Guest_sni::sniffer(const Buffer& bb) {
 
     statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, 0, nullptr});
     distribute(req, this);
+    return req;
+}
+
+size_t Guest_sni::sniffer(const Buffer& bb) {
+    char *hostname = nullptr;
+    defer(free, hostname);
+    int ret = parse_tls_header((const char*)bb.data(), bb.len, &hostname);
+    if(ret == -1) {
+        // not enough data, wait for more
+        return bb.len;
+    }
+    if(forward(hostname, Protocol::TCP) == nullptr){
+        assert(ret < 0);
+        deleteLater(SNI_HOST_ERR);
+        return 0;
+    }
     rwer->SetReadCB([this](const Buffer& bb){return ReadHE(bb);});
     return bb.len;
 }
 
-size_t Guest_sni::sniffer_quic(Buffer bb) {
+size_t Guest_sni::sniffer_quic(const Buffer& bb) {
     auto len = bb.len;
+    char *hostname = nullptr;
+    defer(free, hostname);
 #ifdef HAVE_QUIC
     quic_pkt_header header;
     int body_len = unpack_meta(bb.data(), len, &header);
     if (body_len < 0 || body_len > (int)len) {
-        LOGE("QUIC sni meta unpack failed, disacrd it: %d\n", body_len);
-        deleteLater(SNI_HOST_ERR);
-        return 0;
+        LOGE("QUIC sni meta unpack failed, body_len: %d, bufflen: %d\n", body_len, (int)len);
+        goto Forward;
     }
     if(header.type != QUIC_PACKET_INITIAL) {
-        LOGE("QUIC sni packet type is not initial, discard it: 0x%x\n", header.type);
-        deleteLater(SNI_HOST_ERR);
-        return 0;
+        LOGE("QUIC sni packet type is not initial: 0x%x\n", header.type);
+        goto Forward;
     }
     quic_secret secret;
     if(quic_generate_initial_key(1, header.dcid.c_str(), header.dcid.size(), &secret) < 0){
         LOGE("Quic sni faild to generate initial key\n");
-        deleteLater(SNI_HOST_ERR);
-        return 0;
-    }
-    auto buffer = std::make_unique<char[]>(body_len);
-    size_t length = 0;
-    size_t max_off = 0;
-    auto frames = decode_packet(bb.data(), body_len, &header, &secret);
-    for(const auto& frame: frames) {
-        if(frame->type != QUIC_FRAME_CRYPTO){
-            continue;
-        }
-        length += frame->crypto.length;
-        memcpy(buffer.get() + frame->crypto.offset, frame->crypto.buffer.data, frame->crypto.length);
-        if(frame->crypto.offset + frame->crypto.length > max_off) {
-            max_off = frame->crypto.offset + frame->crypto.length;
-        }
-    }
-    if(max_off == 0 || max_off < length) {
-        LOGE("Quic sni faild to get ClientHello: %zd vs %zd\n", max_off, length);
-        deleteLater(SNI_HOST_ERR);
-        return 0;
-    }
-    char *hostname = nullptr;
-    defer(free, hostname);
-    int ret = parse_client_hello((const char*)buffer.get(), length, &hostname);
-    if(ret <= 0) {
-        LOGE("Quic faild to parse sni from clientHello: %d\n", ret);
-        deleteLater(SNI_HOST_ERR);
-        return 0;
+        goto Forward;
     }
     {
-        char headstr[HEADLENLIMIT];
-        int slen = snprintf(headstr, sizeof(headstr), "CONNECT %s:%d" CRLF "Protocol: udp" CRLF CRLF, hostname, 443);
-        std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(headstr, slen);
-        header->set("User-Agent", user_agent + " SEQ/" + std::to_string(header->request_id));
-        LOGD(DHTTP, "<guest_sni> ReqProc %" PRIu32 " %s\n", header->request_id, header->geturl().c_str());
-        auto req = std::make_shared<HttpReq>(
-                header,
-                [this](std::shared_ptr<HttpRes> res){return response(nullptr, res);},
-                [this]{ rwer->Unblock(0);});
-
-        statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, 0, nullptr});
-        distribute(req, this);
-        rx_bytes += bb.len;
-        req->send(std::move(bb));
+        auto buffer = std::make_unique<char[]>(body_len);
+        size_t length = 0;
+        size_t max_off = 0;
+        auto frames = decode_packet(bb.data(), body_len, &header, &secret);
+        for(const auto& frame: frames) {
+            if(frame->type != QUIC_FRAME_CRYPTO){
+                continue;
+            }
+            length += frame->crypto.length;
+            memcpy(buffer.get() + frame->crypto.offset, frame->crypto.buffer.data, frame->crypto.length);
+            if(frame->crypto.offset + frame->crypto.length > max_off) {
+                max_off = frame->crypto.offset + frame->crypto.length;
+            }
+        }
+        if(max_off == 0 || max_off < length) {
+            LOGE("Quic sni faild to get ClientHello: %zd vs %zd\n", max_off, length);
+            goto Forward;
+        }
+        int ret = parse_client_hello((const char *) buffer.get(), length, &hostname);
+        if (ret <= 0) {
+            LOGE("Quic faild to parse sni from clientHello: %d\n", ret);
+            goto Forward;
+        }
     }
-    rwer->SetReadCB([this](const Buffer& bb){return ReadHE(bb);});
+Forward:
 #endif
+    auto req = forward(hostname, Protocol::UDP);
+    if(req == nullptr) {
+        deleteLater(SNI_HOST_ERR);
+        return 0;
+    }
+    rx_bytes += bb.len;
+    req->send({std::make_shared<Block>(bb.data(), bb.len), bb.len, bb.id});
+    rwer->SetReadCB([this](const Buffer& bb){return ReadHE(bb);});
     return len;
 }
 

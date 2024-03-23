@@ -193,10 +193,12 @@ const char *SocketRWer::getPeer() {
     if(hostname[0]){
         sockaddr_storage myaddr;
         socklen_t addr_len = sizeof(myaddr);
-        if(getsockname(getFd(), (sockaddr*)&myaddr, &addr_len)){
+        if(getFd() < 0) {
+            snprintf(peer, sizeof(peer), "null -> ");
+        }else if(getsockname(getFd(), (sockaddr*)&myaddr, &addr_len)){
             LOGE("failed to getsockname: %s\n", strerror(errno));
         } else {
-            snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), "%s -> ", storage_ntoa(&myaddr));
+            snprintf(peer, sizeof(peer), "%s -> ", storage_ntoa(&myaddr));
         }
         snprintf(peer + strlen(peer), sizeof(peer), "<%s://%s:%d>", protstr(protocol), hostname, port);
     }

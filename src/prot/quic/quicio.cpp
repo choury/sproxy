@@ -1794,7 +1794,7 @@ void QuicRWer::Close(std::function<void()> func) {
     flags |= RWER_CLOSING;
     closeCB = std::move(func);
     if(stats == RWerStats::Error) {
-        return closeCB();
+        AddJob(closeCB, 0, JOB_FLAGS_AUTORELEASE);
     }else if(getFd() >= 0) {
         handleEvent = (void (Ep::*)(RW_EVENT))&QuicRWer::closeHE;
         setEvents(RW_EVENT::READ);
