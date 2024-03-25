@@ -52,6 +52,7 @@ struct TcpStatus: public IpStatus{
 #define TCP_FIN_RECVD     1
 #define TCP_FIN_DELIVERED 2
 #define TCP_KEEPALIVING   4
+#define TCP_LOCALIP       8
     uint32_t   flags = 0;
     uint32_t   sent_seq; //下一个发送的报文的序列号，意思是上一个发送的序列号是sent_seq-1
     uint32_t   sent_ack;

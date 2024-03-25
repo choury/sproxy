@@ -279,6 +279,9 @@ void SynProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, c
     // 因为syn包中的wscale不生效，所以这里做下修正，为了bufleft不用特殊处理这种情况
     status->window >>= status->recv_wscale;
     status->reqCB(pac);
+    if (isLocalIp(&status->src)) {
+        status->flags |= TCP_LOCALIP;
+    }
 }
 
 // SYN-RECEIVED --> ESTANBLISHED
@@ -334,9 +337,11 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
         return;
     }
 
-    //推迟发送 keepalive 包
-    status->keepalive_job = UpdateJob(std::move(status->keepalive_job),
-                                      [status_ = GetWeak(status)] {KeepAlive(status_);}, 60000);
+    if((status->flags & TCP_LOCALIP) == 0) {
+        //推迟发送 keepalive 包
+        status->keepalive_job = UpdateJob(std::move(status->keepalive_job),
+                                          [status_ = GetWeak(status)] { KeepAlive(status_); }, 60000);
+    }
 
     if(seq != status->want_seq){
         //判断是否是重传的syn报文

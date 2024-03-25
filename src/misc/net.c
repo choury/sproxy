@@ -405,3 +405,23 @@ bool hasIpv6Address(){
     struct sockaddr_in6* ip6 = (struct sockaddr_in6*)&ip;
     return (ip6->sin6_addr.s6_addr[0]&0x70) == 0x20;
 }
+
+bool isLocalIp(const struct sockaddr_storage* addr){
+    for(struct sockaddr_storage* ips=getlocalip(); ips->ss_family ; ips++){
+        if(ips->ss_family != addr->ss_family) continue;
+        if(ips->ss_family == AF_INET){
+            struct sockaddr_in* ip4 = (struct sockaddr_in*)ips;
+            struct sockaddr_in* addr4 = (struct sockaddr_in*)addr;
+            if(ip4->sin_addr.s_addr == addr4->sin_addr.s_addr){
+                return true;
+            }
+        }else if(ips->ss_family == AF_INET6){
+            struct sockaddr_in6* ip6 = (struct sockaddr_in6*)ips;
+            struct sockaddr_in6* addr6 = (struct sockaddr_in6*)addr;
+            if(memcmp(&ip6->sin6_addr, &addr6->sin6_addr, sizeof(struct in6_addr)) == 0){
+                return true;
+            }
+        }
+    }
+    return false;
+}
