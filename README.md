@@ -6,7 +6,7 @@ sproxy ![Build Status](https://github.com/choury/sproxy/actions/workflows/build.
 
 build
 =====
-  require: openssl 1.1.1 and c++14
+  require: openssl 1.1.1, json-c and c++17
  
   build: cmake . && make
 

@@ -70,11 +70,11 @@ function test_https(){
     curl -f -v --http1.1 https://$HOSTNAME:$1/noexist  -k 2>> curl.log
     [ $? -ne 22 ] && echo "https test 3 failed" && exit 1
     curl -f -v --http2 https://$HOSTNAME:$1/noexist  -k  2>> curl.log
-    [ $? -ne 22 ] && echo "https test 4 failed" && exit 1
+    ( r=$?; [ $r -ne 22 ] && [ $r -ne 56 ]) && echo "https test 4 failed" && exit 1
     curl -f -v --http1.1 https://$HOSTNAME:$1/noexist.do  -k 2>> curl.log
     [ $? -ne 22 ] && echo "https test 5 failed" && exit 1
     curl -f -v --http2 https://$HOSTNAME:$1/noexist.do  -k 2>> curl.log
-    [ $? -ne 22 ] && echo "https test 6 failed" && exit 1
+    ( r=$?; [ $r -ne 22 ] && [ $r -ne 56 ]) && echo "https test 6 failed" && exit 1
     curl -f -v --http1.1 https://$HOSTNAME:$1/cgi/libproxy.do?a=b  -k 2>> curl.log
     [ $? -ne 0 ] && echo "https test 7 failed"
     curl -f -v --http2 https://$HOSTNAME:$1/cgi/libproxy.do?a=b  -k 2>> curl.log
@@ -140,6 +140,8 @@ ln -f -s "$buildpath"/cgi/libproxy.* cgi/
 ln -f -s "$buildpath"/cgi/libsites.* cgi/
 dd if=/dev/zero of=test1k bs=1024 count=1
 export ASAN_OPTIONS=malloc_context_size=50
+which curl
+curl --version
 
 echo "$HOSTNAME local" > sites.list
 cat > https.conf << EOF

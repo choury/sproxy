@@ -27,10 +27,6 @@ if(Backtrace_FOUND)
     set(SPROXY_LIBS ${SPROXY_LIBS} ${Backtrace_LIBRARIES})
 endif()
 
-if(ZLIB_FOUND)
-    set(SPROXY_LIBS ${SPROXY_LIBS} z)
-endif()
-
 if(APPLE)
     set(SPROXY_LIBS ${SPROXY_LIBS} ${CORE_LIBRARY} ${SYSCONF_LIBRARY})
 endif()

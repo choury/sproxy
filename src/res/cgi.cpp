@@ -16,6 +16,7 @@
 #include <assert.h>
 #include <libgen.h>
 #include <inttypes.h>
+#include <sys/uio.h>
 
 
 using std::string;
@@ -226,7 +227,8 @@ size_t Cgi::readHE(const Buffer& bb) {
                 break;
             }
         }else{
-            LOGE("[CGI] %s unknown id: %d, type:%d\n", basename(filename), id, header->type);
+            LOGE("[CGI] %s unknown id: %d, type:%d, size: %zd/%zd\n",
+                 basename(filename), id, header->type, size, len);
             consumed = true;
         }
         if(!consumed){
@@ -240,7 +242,7 @@ size_t Cgi::readHE(const Buffer& bb) {
 
 bool Cgi::HandleRes(const CGI_Header *cheader, CgiStatus& status){
     uint32_t len = ntohs(cheader->contentLength);
-    std::shared_ptr<HttpResHeader> header = UnpackCgiRes(cheader + 1, len);
+    std::shared_ptr<HttpResHeader> header = UnpackCgiRes(cheader->data, len);
     header->request_id = ntohl(cheader->requestId);
 
     LOGD(DFILE, "<cgi> [%s] res %" PRIu32 ": %s\n", basename(filename), header->request_id, header->status);
@@ -271,7 +273,7 @@ bool Cgi::HandleData(const CGI_Header* header, CgiStatus& status){
 
     LOGD(DFILE, "<cgi> [%s] handle %d data %zu\n", basename(filename), htonl(header->requestId), size);
     if(size > 0) {
-        status.res->send((header + 1), size);
+        status.res->send(header->data, size);
     }
     if (header->flag & CGI_FLAG_END) {
         uint32_t id = ntohl(header->requestId);
@@ -326,7 +328,7 @@ void Cgi::request(std::shared_ptr<HttpReq> req, Requester* src) {
     header->type = CGI_REQUEST;
     header->flag = 0;
     header->requestId = htonl(req->header->request_id);
-    header->contentLength = htons(PackCgiReq(req->header, header + 1, BUF_LEN - sizeof(CGI_Header)));
+    header->contentLength = htons(PackCgiReq(req->header, header->data, BUF_LEN - sizeof(CGI_Header)));
     buff.truncate(sizeof(CGI_Header) + ntohs(header->contentLength));
     rwer->Send(std::move(buff));
     req->attach([this, id](ChannelMessage& msg){
@@ -406,34 +408,40 @@ void flushcgi() {
     }
 }
 
-int cgi_response(int fd, std::shared_ptr<const HttpResHeader> res) {
+int cgi_response(int fd, SpinLock& l, std::shared_ptr<const HttpResHeader> res) {
     CGI_Header* const header = (CGI_Header *)malloc(BUF_LEN);
     header->type = CGI_RESPONSE;
     header->flag = 0;
     header->requestId = htonl(res->request_id);
-    header->contentLength = htons(PackCgiRes(res, header + 1, BUF_LEN - sizeof(CGI_Header)));
+    header->contentLength = htons(PackCgiRes(res, header->data, BUF_LEN - sizeof(CGI_Header)));
+    std::lock_guard<SpinLock> g(l);
     int ret = write(fd, header, sizeof(CGI_Header) + ntohs(header->contentLength));
     free(header);
     return ret;
 }
 
 
-int cgi_send(int fd, uint32_t id, const void *buff, size_t len) {
+int cgi_send(int fd, SpinLock& l, uint32_t id, const void *buff, size_t len) {
     CGI_Header header;
     size_t left = len;
+    iovec iov[2] = {
+        {&header, sizeof(header)},
+        {nullptr, 0}
+    };
     do {
         size_t writelen = left > CGI_LEN_MAX ? CGI_LEN_MAX:left;
         header.type = CGI_DATA;
         header.flag = (len == 0)? CGI_FLAG_END:0;
         header.contentLength = htons(writelen);
         header.requestId = htonl(id);
-        int ret = write(fd, &header, sizeof(header));
-        if(ret != sizeof(header))
-            return -1;
-        ret = write(fd, buff, writelen);
+        iov[1].iov_base = (void*)buff;
+        iov[1].iov_len = writelen;
+        std::lock_guard<SpinLock> g(l);
+        int ret = writev(fd, iov, 2);
         if(ret <= 0) {
             return ret;
         }
+        ret -= sizeof(header);
         left -= ret;
         buff = (char *)buff + ret;
     } while(left);

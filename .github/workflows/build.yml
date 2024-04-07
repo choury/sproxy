@@ -67,7 +67,7 @@ jobs:
       matrix:
         # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
         build_type: [Release, Debug]
-        os: [macos-11, macos-12]
+        os: [macos-13, macos-14]
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
     # You can convert this to a matrix build if you need cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
@@ -76,7 +76,7 @@ jobs:
     steps:
     - name: 'build and install openssl'
       run: |
-        git clone --depth=1 -b OpenSSL_1_1_1t+quic https://github.com/quictls/openssl.git
+        git clone --depth=1 -b OpenSSL_1_1_1w+quic https://github.com/quictls/openssl.git
         cd openssl
         ./config no-ui-console no-tests no-md4 no-rc2 no-rc4  no-shared  no-ssl2 no-ssl3 no-comp no-hw no-engine --prefix=$HOME/openssl
         make install_dev

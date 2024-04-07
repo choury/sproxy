@@ -7,6 +7,8 @@
 
 #include <assert.h>
 #include <unistd.h>
+#include <atomic>
+#include <mutex>
 
 
 // 可用于CGI_Header的type组件的值
@@ -24,6 +26,7 @@ struct CGI_Header{
     uint8_t flag;
     uint16_t contentLength; //最大65536 - 8 (实际是BUF_LEN - 8)
     uint32_t requestId;
+    char     data[0];
 }__attribute__((packed));
 
 
@@ -66,36 +69,47 @@ void getcgi(std::shared_ptr<HttpReq> req, const char *filename, Requester *src);
 
 void flushcgi();
 
+class SpinLock {
+    std::atomic_flag f_ = ATOMIC_FLAG_INIT;
+public:
+    SpinLock() = default;
+    SpinLock(const SpinLock&) = delete;
+    SpinLock& operator=(const SpinLock&) = delete;
+    void lock() { while(f_.test_and_set(std::memory_order_acquire)); }
+    void unlock() { f_.clear(std::memory_order_release); }
+};
+
 #ifdef  __cplusplus
 extern "C" {
 #endif
 typedef int (cgifunc)(int sfd, int cfd, const char* name);
 cgifunc cgimain;
-int cgi_response(int fd, std::shared_ptr<const HttpResHeader> res);
-int cgi_send(int fd, uint32_t id, const void *buff, size_t len);
+int cgi_response(int fd, SpinLock& l, std::shared_ptr<const HttpResHeader> res);
+int cgi_send(int fd, SpinLock& l, uint32_t id, const void *buff, size_t len);
 int cgi_senderror(int fd, uint32_t id, uint8_t flag);
 #ifdef  __cplusplus
 }
 #endif
 
 
-class CgiHandler{
+class CgiHandler {
 protected:
     const int sfd;
     const int cfd;
-    char name[FILENAME_MAX];
-    uint32_t flag = 0;
-    std::shared_ptr<HttpReqHeader> req;
-    std::map<std::string, std::string> params;
+    const char name[FILENAME_MAX];
+    uint32_t id = 0;  //request id
+    std::atomic<uint32_t> flag = 0;
+    std::shared_ptr<const HttpReqHeader> req;
+    std::map<std::string, std::string> params;  //should be read only
     void NotImplemented(){
-        if((flag & HTTP_REQ_COMPLETED) == 0) {
+        if((flag.load(std::memory_order_acquire)  & HTTP_REQ_COMPLETED) == 0) {
             return;
         }
         Response(UnpackHttpRes(H405, sizeof(H405)));
         Finish();
     }
     void BadRequest(){
-        if((flag & HTTP_REQ_COMPLETED) == 0) {
+        if((flag.load(std::memory_order_acquire)  & HTTP_REQ_COMPLETED) == 0) {
             return;
         }
         Response(UnpackHttpRes(H400, sizeof(H400)));
@@ -103,7 +117,7 @@ protected:
     }
     virtual void ERROR(const CGI_Header* header){
         if(header->flag & CGI_FLAG_ABORT){
-            flag |= HTTP_CLOSED_F;
+            flag.fetch_or(HTTP_CLOSED_F, std::memory_order_release);
             return;
         }
         Response(UnpackHttpRes(H500, sizeof(H500)));
@@ -122,65 +136,67 @@ protected:
         NotImplemented();
     }
     void Finish(){
-        if(flag & HTTP_CLOSED_F){
+        if(flag.load(std::memory_order_acquire)  & HTTP_CLOSED_F){
             return;
         }
-        LOGD(DFILE, "<cgi> [%s] res finished: %d\n", name, req->request_id);
-        if((flag & HTTP_RES_COMPLETED) == 0){
-            cgi_senderror(sfd, req->request_id, CGI_FLAG_ABORT);
+        LOGD(DFILE, "<cgi> [%s] res finished: %d\n", name, id);
+        if((flag.load(std::memory_order_acquire)  & HTTP_RES_COMPLETED) == 0){
+            cgi_senderror(sfd, id, CGI_FLAG_ABORT);
         }else{
-            cgi_send(sfd, req->request_id, "", 0);
+            cgi_send(sfd, l, id, "", 0);
         }
-        flag |= HTTP_CLOSED_F;
+        flag.fetch_or(HTTP_CLOSED_F, std::memory_order_release);
     }
     void Response(std::shared_ptr<HttpResHeader> res){
-        if(flag & HTTP_RES_COMPLETED){
+        if(flag.load(std::memory_order_acquire)  & HTTP_RES_COMPLETED){
             return;
         }
-        flag |= HTTP_RES_COMPLETED;
-        res->request_id = req->request_id;
-        cgi_response(sfd, res);
+        flag.fetch_or(HTTP_RES_COMPLETED, std::memory_order_release);
+        res->request_id = id;
+        cgi_response(sfd, l, res);
     }
 
-    void Send(const char* buf, size_t len){
-        cgi_send(sfd, req->request_id, buf, len);
+    void Send(const char* buf, size_t len) const{
+        cgi_send(sfd, l, id, buf, len);
     }
     void Abort(){
-        if(flag & HTTP_CLOSED_F) {
+        if(flag.load(std::memory_order_acquire)  & HTTP_CLOSED_F) {
             return;
         }
-        flag |= HTTP_CLOSED_F;
-        cgi_senderror(sfd, req->request_id, CGI_FLAG_ABORT);
+        flag.fetch_or(HTTP_CLOSED_F, std::memory_order_release);
+        cgi_senderror(sfd, id, CGI_FLAG_ABORT);
     }
 public:
-    CgiHandler(int sfd, int cfd, const char*name, const CGI_Header* header):sfd(sfd), cfd(cfd){
-        strcpy(this->name, name);
+    static SpinLock l;  //保护 cgimap 和 fd
+    static std::map<uint32_t, std::shared_ptr<CgiHandler>> cgimap;
+    CgiHandler(int sfd, int cfd, const char* name, const CGI_Header* header): sfd(sfd), cfd(cfd), name{} {
+        strcpy(const_cast<char*>(this->name), name);
         assert(header->type == CGI_REQUEST);
         uint32_t len = ntohs(header->contentLength);
-        req = UnpackCgiReq(header+1, len);
-        req->request_id = ntohl(header->requestId);
-        auto param = req->getparamsmap();
-        params.insert(param.begin(), param.end());
+        req = UnpackCgiReq(header->data, len);
+        id = ntohl(header->requestId);
+        params = req->getparamsmap();
     }
     virtual ~CgiHandler(){
+        LOGD(DFILE, "<cgi> [%s] handler exit: %d\n", name, id);
         Finish();
     }
     void handle(const CGI_Header* header){
         if(header->type == CGI_ERROR){
             return ERROR(header);
         }
-        if((flag & HTTP_REQ_COMPLETED) &&
+        if((flag.load(std::memory_order_acquire)  & HTTP_REQ_COMPLETED) &&
             ((header->type == CGI_REQUEST) || (header->type == CGI_DATA)))
         {
-            LOGE("[CGI] %s %d get date after completed\n", name, req->request_id);
+            LOGE("[CGI] %s %d get date after completed\n", name, id);
             Abort();
             return;
         }
         if((header->flag & CGI_FLAG_END) && (header->type == CGI_DATA)) {
-            flag |= HTTP_REQ_COMPLETED;
-            LOGD(DFILE, "<cgi> [%s] req completed: %d\n", name, req->request_id);
+            flag.fetch_or(HTTP_REQ_COMPLETED, std::memory_order_release);
+            LOGD(DFILE, "<cgi> [%s] req completed: %d\n", name, id);
         }
-        if(req->ismethod("GET")){
+        if(req->ismethod("GET") || req->ismethod("HEAD")){
             return GET(header);
         }else if(req->ismethod("POST")){
             return POST(header);
@@ -192,13 +208,14 @@ public:
         NotImplemented();
     }
     [[nodiscard]] bool eof() const{
-        return (flag & HTTP_CLOSED_F);
+        return flag.load(std::memory_order_acquire) & HTTP_CLOSED_F;
     }
 };
 
 
 #define CGIMAIN(__handler) \
-static std::map<uint32_t, CgiHandler*> cgimap; \
+SpinLock CgiHandler::l; \
+std::map<uint32_t, std::shared_ptr<CgiHandler>> CgiHandler::cgimap; \
 int cgimain(int sfd, int cfd, const char* name){       \
     LOGD(DFILE, "<cgi> [%s] cgimain start\n", name); \
     ssize_t readlen; \
@@ -209,29 +226,32 @@ int cgimain(int sfd, int cfd, const char* name){       \
         assert(ret == ntohs(header->contentLength)); \
         uint32_t id = ntohl(header->requestId); \
         LOGD(DFILE, "<cgi> [%s] get id: %d, type: %d\n", name, id, header->type); \
+        CgiHandler::l.lock();                       \
         if(header->type == CGI_REQUEST){ \
-            assert(cgimap.count(id) == 0);  \
+            assert(CgiHandler::cgimap.count(id) == 0);  \
             LOGD(DFILE, "<cgi> [%s] new request: %d\n", name, id);   \
-            cgimap.emplace(id, new __handler(sfd, cfd, name, header)); \
-        } \
-        if(cgimap.count(id) == 0){             \
+            CgiHandler::cgimap.emplace(id, std::make_shared<__handler>(sfd, cfd, name, header)); \
+        }                  \
+        for(auto it = CgiHandler::cgimap.begin(); it != CgiHandler::cgimap.end();) {   \
+            if(it->second->eof()) {                 \
+                it = CgiHandler::cgimap.erase(it);  \
+            } else {                                \
+                it++;                               \
+            }                                       \
+        }                                           \
+        if(CgiHandler::cgimap.count(id) == 0){      \
+            CgiHandler::l.unlock();                 \
             LOGD(DFILE, "<cgi> [%s] unknown id: %d\n", name, id);   \
             if(header->type != CGI_ERROR){     \
                 cgi_senderror(sfd, id, CGI_FLAG_ABORT); \
             }         \
             continue; \
         } \
-        CgiHandler* h = cgimap[id]; \
+        auto h = CgiHandler::cgimap[id]; \
+        CgiHandler::l.unlock();          \
         h->handle(header); \
-        if(h->eof()){ \
-            cgimap.erase(id); \
-            delete h; \
-        } \
     } \
-    for(auto i: cgimap){ \
-        delete i.second; \
-    } \
-    cgimap.clear(); \
+    CgiHandler::cgimap.clear(); \
     LOGD(DFILE, "<cgi> [%s] cgimain exit\n", name); \
     return 0; \
 } 

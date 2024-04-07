@@ -5,10 +5,6 @@
 #include "misc/config.h"
 #include "cgi.h"
 
-#ifdef HAVE_ZLIB
-#include "gzip_test.h"
-#endif
-
 #include <fstream>
 #include <sstream>
 #include <fcntl.h>
@@ -288,11 +284,10 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
         if(filename == pathjoin(opt.rootdir, "status")){
             return (new Status())->request(req, src);
         }
-#ifdef HAVE_ZLIB
         if(filename == pathjoin(opt.rootdir, "test")){
-            return (new GzipTest())->request(req, src);
+            //for compatibility
+            strcpy(filename, pathjoin(opt.rootdir, "cgi/libtest.do").c_str());
         }
-#endif
         char *suffix = strrchr(filename, '.');
         if(suffix && strcmp(suffix, ".do") == 0){
             strcpy(suffix, LIBSUFFIX);
