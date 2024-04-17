@@ -19,6 +19,24 @@ set_target_properties(sites PROPERTIES OUTPUT_NAME "sites")
 add_library(proxy SHARED proxy.cpp)
 set_target_properties(proxy PROPERTIES OUTPUT_NAME "proxy")
 
+if (HAVE_RUST)
+    set(RUST_BUILD_DIR ${CMAKE_BINARY_DIR}/rs_build)
+    add_custom_target(
+            rust_static_library
+            COMMAND ${CARGO_EXECUTABLE} build --release --target-dir ${RUST_BUILD_DIR}
+            WORKING_DIRECTORY  ${CMAKE_CURRENT_SOURCE_DIR}/rs
+    )
+
+    # 为 Rust 静态库创建一个 CMake 目标
+    add_library(fcm_lib STATIC IMPORTED GLOBAL)
+    set_target_properties(fcm_lib PROPERTIES IMPORTED_LOCATION ${RUST_BUILD_DIR}/release/libfcm.a)
+    add_dependencies(fcm_lib rust_static_library)
+
+    add_library(alarm SHARED alarm.cpp)
+    target_link_libraries(alarm PUBLIC fcm_lib)
+    set_target_properties(alarm PROPERTIES OUTPUT_NAME "alarm")
+endif()
+
 if(ZLIB_FOUND)
     add_library(gzip_test SHARED gzip_test.cpp)
     target_link_libraries(gzip_test PUBLIC z)

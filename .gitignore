@@ -9,4 +9,6 @@ test/
 *.out
 .browse.VC.*
 *.user
+.DS_Store
 common.h
+Cargo.lock

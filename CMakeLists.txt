@@ -220,6 +220,17 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=gold -Wl,--rosegment")
 endif()
 
+find_program(CARGO_EXECUTABLE cargo)
+find_program(RUSTC_EXECUTABLE rustc)
+
+if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
+    message(STATUS "Found cargo: ${CARGO_EXECUTABLE}")
+    message(STATUS "Found rustc: ${RUSTC_EXECUTABLE}")
+    set(HAVE_RUST TRUE CACHE BOOL "Have Rust")
+else()
+    message(WARNING "Rust not found, disable rust cgi")
+endif()
+
 if(HAVE_RPC)
     install(DIRECTORY webui DESTINATION /var/lib/sproxy)
 else()
