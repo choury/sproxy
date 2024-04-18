@@ -9,7 +9,11 @@ extern "C" int sendFcm(const char* title, const char* body, const char* token);
 
 class handler: public CgiHandler {
     std::thread th;
-    void POST(const CGI_Header*) override{
+    void POST(const CGI_Header* header) override{
+        if(header->type == CGI_DATA){
+            auto param = getparamsmap((char *)(header+1), ntohs(header->contentLength));
+            params.insert(param.begin(), param.end());
+        }
         if((flag & HTTP_REQ_COMPLETED) == 0){
             return;
         }

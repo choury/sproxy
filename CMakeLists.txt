@@ -3,7 +3,8 @@ cmake_policy(VERSION 3.13)
 project(sproxy)
 
 message(STATUS "Building for ${CMAKE_SYSTEM_PROCESSOR}")
-set(CMAKE_MACOSX_RPATH 1)
+set(CMAKE_MACOSX_RPATH TRUE)
+set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY TRUE)
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     set(LINUX TRUE)
@@ -228,7 +229,7 @@ if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
     message(STATUS "Found rustc: ${RUSTC_EXECUTABLE}")
     set(HAVE_RUST TRUE CACHE BOOL "Have Rust")
 else()
-    message(WARNING "Rust not found, disable rust cgi")
+    message(STATUS "Rust not found, disable rust cgi")
 endif()
 
 if(HAVE_RPC)
