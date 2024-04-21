@@ -7,6 +7,8 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <set>
+#include <sys/uio.h>
+#include <limits.h>
 
 #ifdef __linux__
 #include <sys/eventfd.h>
@@ -35,32 +37,63 @@ RWer::RWer(std::function<void (int, int)> errorCB): Ep(-1), errorCB(std::move(er
     writeCB = [](size_t){};
 }
 
-ssize_t RWer::Write(const Buffer& bb) {
-    if(bb.len == 0) {
+ssize_t RWer::Write(const std::list<Buffer>& bbs) {
+    ssize_t ret = 0;
+    size_t len = 0;
+    bool hasEof = false;
+    if(bbs.size() == 1) {
+        const auto &bb = bbs.front();
+        if(likely(bb.len > 0)) {
+            ret = write(getFd(), bb.data(), bb.len);
+            len = bb.len;
+            LOGD(DRWER, "write: len: %zd, ret: %zd\n", len, ret);
+        } else {
+            hasEof = true;
+        }
+    } else {
+        std::vector<iovec> iovs;
+        iovs.reserve(bbs.size());
+        for (const auto &bb: bbs) {
+            if (unlikely(bb.len == 0)) {
+                //bb.len == 0 must be the last one
+                hasEof = true;
+                break;
+            }
+            iovs.emplace_back(iovec{(void *) bb.data(), bb.len});
+            len += bb.len;
+            if (unlikely(iovs.size() >= IOV_MAX)) {
+                break;
+            }
+        }
+        ret = writev(getFd(), iovs.data(), iovs.size());
+        LOGD(DRWER, "writev: iovs: %zd, ret: %zd/%zd\n", iovs.size(), ret, len);
+    }
+    if(len == (size_t)ret && hasEof) {
+        LOGD(DRWER, "shutdown: %d\n", getFd());
         assert(flags & RWER_SHUTDOWN);
         shutdown(getFd(), SHUT_WR);
-        return 0;
     }
-    return write(getFd(), bb.data(), bb.len);
+    return ret;
 }
 
 void RWer::SendData(){
     std::set<uint64_t> writed_list;
-    while(wbuff.start() != wbuff.end()){
-        int ret = wbuff.Write([this](const Buffer& bb){ return Write(bb);}, writed_list);
+    if(wbuff.start() != wbuff.end()){ //这里不能用wbuff.length() > 0，因为 EOF 的长度也是0
+        int ret = wbuff.Write([this](const std::list<Buffer>& bbs){
+            return Write(bbs);
+        }, writed_list);
         if(ret >= 0){
-            continue;
+            //normal, do nothing
+        }else if (errno != EAGAIN && errno != ENOBUFS && errno != EINTR) {
+            ErrorHE(SOCKET_ERR, errno);
+            return;
         }
-        if(errno == EAGAIN || errno == ENOBUFS){
-            break;
-        }
-        ErrorHE(SOCKET_ERR, errno);
-        return;
     }
     for(auto id: writed_list){
         writeCB(id);
     }
-    if(wbuff.start() == wbuff.end()){
+    if(wbuff.length() == 0){
+        assert(wbuff.start() == wbuff.end());
         delEvents(RW_EVENT::WRITE);
     }
 }
@@ -100,7 +133,9 @@ void RWer::defaultHE(RW_EVENT events){
 
 void RWer::closeHE(RW_EVENT) {
     std::set<uint64_t> writed_list;
-    ssize_t ret = wbuff.Write([this](const Buffer& bb){return Write(bb);}, writed_list);
+    ssize_t ret = wbuff.Write([this](const std::list<Buffer>& bbs){
+        return Write(bbs);
+    }, writed_list);
 #ifndef WSL
     if ((wbuff.start() == wbuff.end()) || (ret <= 0 && errno != EAGAIN && errno != ENOBUFS)) {
         handleEvent = (void(Ep::*)(RW_EVENT))&RWer::IdleHE;
@@ -199,9 +234,13 @@ size_t NullRWer::rlength(uint64_t) {
 void NullRWer::ConsumeRData(uint64_t) {
 }
 
-ssize_t NullRWer::Write(const Buffer& bb) {
-    LOG("discard everything write to NullRWer, size: %zd\n", bb.len);
-    return bb.len;
+ssize_t NullRWer::Write(const std::list<Buffer>& bbs) {
+    size_t len  = 0;
+    for(const auto& bb: bbs){
+        len += bb.len;
+    }
+    LOG("discard everything write to NullRWer, size: %zd\n", len);
+    return len;
 }
 
 #ifdef __linux__
@@ -242,7 +281,7 @@ FullRWer::~FullRWer(){
 #endif
 }
 
-ssize_t FullRWer::Write(const Buffer&) {
+ssize_t FullRWer::Write(const std::list<Buffer>&) {
     return 0;
 }
 

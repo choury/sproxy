@@ -118,29 +118,25 @@ buff_iterator WBuffer::push(buff_iterator i, Buffer&& bb) {
     return write_queue.emplace(i, std::move(bb));
 }
 
-ssize_t WBuffer::Write(const std::function<ssize_t(const Buffer& bb)>& write_func, std::set<uint64_t>& writed_list){
+ssize_t WBuffer::Write(const std::function<ssize_t(const std::list<Buffer>&)>& write_func, std::set<uint64_t>& writed_list) {
     if(write_queue.empty()){
         return 0;
     }
-    auto i = write_queue.begin();
-    if(i->len == 0){
-        ssize_t ret = write_func({nullptr, i->id});
-        if(ret < 0){
-            return ret;
+    ssize_t ret = write_func(write_queue);
+    if(ret >= 0){
+        size_t left = ret;
+        auto it = write_queue.begin();
+        for(; it != write_queue.end(); it++){
+            writed_list.insert(it->id);
+            if(it->len <= (size_t)left){
+                left -= it->len;
+            } else {
+                it->reserve((int)left);
+                break;
+            }
         }
-        writed_list.insert(i->id);
-        write_queue.pop_front();
-        return 0;
-    }
-    ssize_t ret = write_func({i->data(), i->len, i->id});
-    if (ret > 0) {
-        assert(len >= (size_t)ret && (size_t)ret <= i->len);
+        write_queue.erase(write_queue.begin(), it);
         len -= ret;
-        i->reserve(ret);
-        writed_list.insert(i->id);
-        if (i->len == 0) {
-            write_queue.pop_front();
-        }
     }
     return ret;
 }

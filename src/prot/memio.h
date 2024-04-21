@@ -13,7 +13,7 @@ protected:
     std::function<void(const sockaddr_storage&)> connectCB = [](const sockaddr_storage&){};
     void connected(const sockaddr_storage& addr);
     virtual void closeHE(RW_EVENT events) override;
-    virtual ssize_t Write(const Buffer& bb) override;
+    virtual ssize_t Write(const std::list<Buffer>& bbs) override;
     virtual bool IsConnected() {
         return true;
     }

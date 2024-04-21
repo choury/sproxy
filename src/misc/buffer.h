@@ -106,7 +106,7 @@ public:
     buff_iterator start();
     buff_iterator end();
     buff_iterator push(buff_iterator i, Buffer&& bb);
-    ssize_t  Write(const std::function<ssize_t(const Buffer&)>& write_func, std::set<uint64_t>& writed_list);
+    ssize_t  Write(const std::function<ssize_t(const std::list<Buffer>&)>& write_func, std::set<uint64_t>& writed_list);
 };
 
 #if 0

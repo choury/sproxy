@@ -658,6 +658,7 @@ struct debug_flags_map debug[] = {
         {"NET", false},
         {"QUIC", false},
         {"HTTP3", false},
+        {"RWER", false},
         {NULL, false},
 };
 

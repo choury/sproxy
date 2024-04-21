@@ -54,7 +54,7 @@ public:
 class PacketRWer: public SocketRWer{
 protected:
     char rb[BUF_LEN];
-    //virtual ssize_t Read(void* buff, size_t len);
+    virtual ssize_t Write(const std::list<Buffer>& bbs) override;
     virtual void ReadData() override;
     virtual void ConsumeRData(uint64_t id) override;
 public:

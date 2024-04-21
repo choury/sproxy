@@ -20,14 +20,14 @@ void Quic_server::defaultHE(RW_EVENT events) {
             LOGE("recvfrom error: %s\n", strerror(errno));
             return;
         }
-        PushDate(getFd(), &myaddr, buff, ret);
+        PushData(getFd(), &myaddr, buff, ret);
     } else {
         LOGE("unknown error\n");
         return;
     }
 }
 
-void Quic_server::PushDate(int fd, const sockaddr_storage* addr, const void *buff, size_t len) {
+void Quic_server::PushData(int fd, const sockaddr_storage* addr, const void *buff, size_t len) {
     quic_pkt_header header;
     header.dcid.resize(QUIC_CID_LEN);
     int body_len = unpack_meta(buff, len, &header);
@@ -43,12 +43,12 @@ void Quic_server::PushDate(int fd, const sockaddr_storage* addr, const void *buf
     }else if(header.type == QUIC_PACKET_INITIAL){
         int clsk = ListenNet(SOCK_DGRAM, opt.CHOST, opt.CPORT);
         if (clsk < 0) {
-            LOGE("ListenNet failed: %s\n", strerror(errno));
+            LOGE("ListenNet %s:%d, failed: %s\n", opt.CHOST, (int)opt.CPORT, strerror(errno));
             return;
         }
         socklen_t temp = sizeof(sockaddr_storage);
         if (::connect(clsk, (sockaddr *)addr, temp) < 0) {
-            LOGE("connect failed: %s\n", strerror(errno));
+            LOGE("connect %s failed: %s\n", storage_ntoa(addr), strerror(errno));
             return;
         }
         SetUdpOptions(clsk, addr);
@@ -70,7 +70,7 @@ void Quic_server::PushDate(int fd, const sockaddr_storage* addr, const void *buf
 
         socklen_t len = (addr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
         if(sendto(fd, stateless, sizeof(stateless), 0, (sockaddr *)addr, len) < 0){
-            LOGE("sendto failed: %s\n", strerror(errno));
+            LOGE("sendto %s failed: %s\n", storage_ntoa(addr), strerror(errno));
             return;
         }
         LOGD(DQUIC, "send stateless reset for %s\n", dumpHex(header.dcid.c_str(), header.dcid.size()).c_str());

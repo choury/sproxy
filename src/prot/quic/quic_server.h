@@ -16,7 +16,7 @@ public:
     virtual ~Quic_server() override{
         SSL_CTX_free(ctx);
     };
-    void PushDate(int fd, const sockaddr_storage* addr, const void* buff, size_t len);
+    void PushData(int fd, const sockaddr_storage* addr, const void* buff, size_t len);
     friend QuicRWer;
 };
 

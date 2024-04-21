@@ -1,4 +1,5 @@
 #include "netio.h"
+#include "multimsg.h"
 #include "dns/resolver.h"
 #include "misc/util.h"
 #include "misc/net.h"
@@ -278,12 +279,6 @@ void StreamRWer::ConsumeRData(uint64_t id) {
     }
 }
 
-/*
-ssize_t StreamRWer::Read(void* buff, size_t len) {
-    return read(getFd(), buff, len);
-}
- */
-
 void StreamRWer::ReadData() {
     while(true) {
         size_t left = rb.left();
@@ -312,13 +307,43 @@ size_t PacketRWer::rlength(uint64_t) {
     return 0;
 }
 
-/*
-ssize_t PacketRWer::Read(void* buff, size_t len) {
-    return read(getFd(), buff, len);
-}
- */
-
 void PacketRWer::ConsumeRData(uint64_t) {
+}
+
+ssize_t PacketRWer::Write(const std::list<Buffer> &bbs) {
+    if(bbs.size() == 1) {
+        const auto &bb = bbs.front();
+        int ret  = 0;
+        if(bb.len > 0) {
+            ret = write(getFd(), bb.data(), bb.len);
+            LOGD(DRWER, "write: len: %zd, ret: %d\n", bb.len, ret);
+        }
+        return ret;
+    } else {
+        std::vector<iovec> iovs;
+        iovs.reserve(bbs.size());
+        for (const auto &bb: bbs) {
+            iovs.emplace_back(iovec{(void *) bb.data(), bb.len});
+            if (iovs.size() >= IOV_MAX) {
+                break;
+            }
+        }
+        ssize_t ret = writem(getFd(), iovs.data(), iovs.size());
+        size_t len = 0;
+        if (ret <= 0) {
+            LOGD(DRWER, "writem: iovs: %zd, ret: %zd\n", iovs.size(), ret);
+            return ret;
+        }
+        auto it = bbs.begin();
+        for(size_t i = 0; i < (size_t)ret; i++, it++) {
+            if(it->len != iovs[i].iov_len) {
+                break;
+            }
+            len += it->len;
+        }
+        LOGD(DRWER, "writem: iovs: %zd, ret: %zd/%zd\n", iovs.size(), ret, len);
+        return (ssize_t)len;
+    }
 }
 
 void PacketRWer::ReadData() {

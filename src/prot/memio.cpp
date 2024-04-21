@@ -104,13 +104,25 @@ void MemRWer::ConsumeRData(uint64_t id) {
     }
 }
 
-ssize_t MemRWer::Write(const Buffer &bb) {
-    if(bb.len) {
-        return read_cb(Buffer{std::make_shared<Block>(bb.data(), bb.len), bb.len, bb.id});
-    }else{
-        assert(flags & RWER_SHUTDOWN);
-        return read_cb(Buffer{nullptr, bb.id});
+ssize_t MemRWer::Write(const std::list<Buffer>& bbs) {
+    size_t len = 0;
+    for(const auto& bb : bbs) {
+        ssize_t ret = 0;
+        if (bb.len) {
+            ret = read_cb(Buffer{std::make_shared<Block>(bb.data(), bb.len), bb.len, bb.id});
+        } else {
+            assert(flags & RWER_SHUTDOWN);
+            ret = read_cb(Buffer{nullptr, bb.id});
+        }
+        if(ret < 0){
+            return ret;
+        }
+        len += ret;
+        if((size_t)ret != bb.len) {
+            break;
+        }
     }
+    return (ssize_t)len;
 }
 
 void MemRWer::closeHE(RW_EVENT event) {

@@ -89,6 +89,7 @@ enum debug_module {
     DNET   = 10,
     DQUIC  = 11,
     DHTTP3 = 12,
+    DRWER = 13,
 };
 
 struct debug_flags_map {

@@ -266,7 +266,8 @@ bool Cgi::HandleData(const CGI_Header* header, CgiStatus& status){
     int len = status.res->cap();
     size_t size = ntohs(header->contentLength);
     if (len < (int)size) {
-        LOGE("[CGI] The requester's write buff is not enougth(%zu/%d)\n", size, len);
+        LOGD(DFILE, "<cgi> [%s] handle %d write buff is not enougth(%zu/%d)\n",
+             basename(filename), htonl(header->requestId), size, len);
         rwer->delEvents(RW_EVENT::READ);
         return false;
     }

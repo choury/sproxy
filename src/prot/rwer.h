@@ -44,7 +44,7 @@ protected:
     std::function<void(int ret, int code)> errorCB;
     std::function<void()> closeCB;
 
-    virtual ssize_t Write(const Buffer& bb);
+    virtual ssize_t Write(const std::list<Buffer>& bbs);
     virtual void SendData();
     virtual void ReadData() = 0;
     virtual void defaultHE(RW_EVENT events);
@@ -83,7 +83,7 @@ public:
 class NullRWer: public RWer{
 public:
     explicit NullRWer();
-    virtual ssize_t Write(const Buffer& bb) override;
+    virtual ssize_t Write(const std::list<Buffer>& bbs) override;
     virtual void ReadData() override;
     virtual size_t rlength(uint64_t id) override;
 
@@ -102,7 +102,7 @@ protected:
 #ifndef __linux__
     int pairfd = -1;
 #endif
-    virtual ssize_t Write(const Buffer& bb) override;
+    virtual ssize_t Write(const std::list<Buffer>& bbs) override;
     virtual void ReadData() override;
     virtual void closeHE(RW_EVENT events) override;
 public:
