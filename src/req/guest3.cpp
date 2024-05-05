@@ -9,7 +9,7 @@
 
 void Guest3::init() {
     rwer->SetErrorCB([this](int ret, int code){Error(ret, code);});
-    rwer->SetReadCB([this](const Buffer& bb) -> size_t {
+    rwer->SetReadCB([this](Buffer&& bb) -> size_t {
         LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", this->rwer->getPeer(), bb.id, bb.len);
         if(bb.len == 0){
             //fin
@@ -22,7 +22,7 @@ void Guest3::init() {
             }
             LOGD(DHTTP3, "<guest3> [%" PRIu64 "]: end of stream\n", bb.id);
             ReqStatus& status = statusmap[bb.id];
-            status.req->send(nullptr);
+            status.req->send(Buffer{nullptr, bb.id});
             status.flags |= HTTP_REQ_COMPLETED;
             if(status.flags & HTTP_RES_COMPLETED) {
                 Clean(bb.id, NOERROR);
@@ -30,13 +30,13 @@ void Guest3::init() {
             return 0;
         }
         size_t ret = 0;
-        size_t len = bb.len;
+        size_t left = bb.len;
         const char* data = (const char*)bb.data();
-        while((len > 0) && (ret = Http3_Proc(data, len, bb.id))){
-            len -= ret;
+        while((left > 0) && (ret = Http3_Proc(data, left, bb.id))){
+            left -= ret;
             data += ret;
         }
-        return len;
+        return bb.len - left;
     });
     rwer->SetWriteCB([this](uint64_t id){
         if(statusmap.count(id) == 0){
@@ -103,7 +103,7 @@ void Guest3::Recv(Buffer&& bb){
     ReqStatus& status = statusmap[bb.id];
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
     if(bb.len == 0){
-        LOGD(DHTTP3, "<guest3> %" PRIu32" recv data [%" PRIu64"]: EOF\n",
+        LOGD(DHTTP3, "<guest3> %" PRIu64" recv data [%" PRIu64"]: EOF\n",
              status.req->header->request_id, bb.id);
         PushFrame({nullptr, bb.id});
         status.flags |= HTTP_RES_COMPLETED;
@@ -112,11 +112,11 @@ void Guest3::Recv(Buffer&& bb){
         }
     }else{
         if(status.req->header->ismethod("HEAD")){
-            LOGD(DHTTP3, "<guest3> %" PRIu32" recv data [%" PRIu64"]: HEAD req discard body\n",
+            LOGD(DHTTP3, "<guest3> %" PRIu64" recv data [%" PRIu64"]: HEAD req discard body\n",
                  status.req->header->request_id, bb.id);
             return;
         }
-        LOGD(DHTTP3, "<guest3> %" PRIu32 " recv data [%" PRIu64"]: %zu, cap: %d\n",
+        LOGD(DHTTP3, "<guest3> %" PRIu64 " recv data [%" PRIu64"]: %zu, cap: %d\n",
              status.req->header->request_id, bb.id, bb.len, (int)rwer->cap(bb.id));
         PushData(std::move(bb));
     }
@@ -125,7 +125,7 @@ void Guest3::Recv(Buffer&& bb){
 void Guest3::Handle(uint64_t id, Signal s) {
     assert(statusmap.count(id));
     ReqStatus& status = statusmap[id];
-    LOGD(DHTTP3, "<guest3> signal [%d] %" PRIu32 ": %d\n",
+    LOGD(DHTTP3, "<guest3> signal [%d] %" PRIu64 ": %d\n",
          (int)id, status.req->header->request_id, (int)s);
     switch(s){
     case CHANNEL_ABORT:
@@ -135,7 +135,7 @@ void Guest3::Handle(uint64_t id, Signal s) {
 }
 
 void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
-    LOGD(DHTTP3, "<guest3> %" PRIu32 " (%s) ReqProc %s\n",
+    LOGD(DHTTP3, "<guest3> %" PRIu64 " (%s) ReqProc %s\n",
          header->request_id, rwer->getPeer(), header->geturl().c_str());
     if(statusmap.count(id)){
         LOGD(DHTTP3, "<guest3> ReqProc dup id: %" PRIu64"\n", id);
@@ -170,11 +170,11 @@ bool Guest3::DataProc(uint64_t id, const void* data, size_t len) {
             return true;
         }
         if(status.req->cap() < (int)len){
-            LOGE("[%" PRIu32 "]: <guest3> (%" PRIu64")the host's buff is full (%s)\n",
+            LOGE("[%" PRIu64 "]: <guest3> (%" PRIu64")the host's buff is full (%s)\n",
                  status.req->header->request_id, id, status.req->header->geturl().c_str());
             return false;
         }
-        status.req->send(data, len);
+        status.req->send({data, len, id});
     }else{
         LOGD(DHTTP3, "<guest3> DateProc not found id: %" PRIu64"\n", id);
         Reset(id, HTTP3_ERR_STREAM_CREATION_ERROR);
@@ -188,7 +188,7 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
     ReqStatus& status = statusmap[id];
     assert(status.res == nullptr);
     status.res = res;
-    res->attach([this, id](ChannelMessage& msg){
+    res->attach([this, id](ChannelMessage&& msg){
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER: {
             assert(statusmap.count(id));
@@ -202,13 +202,13 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
                 header->del("Strict-Transport-Security");
             }
 
-            auto buff = std::make_shared<Block>(BUF_LEN);
-            size_t len = qpack_encoder.PackHttp3Res(header, buff->data(), BUF_LEN);
+            Block buff(BUF_LEN);
+            size_t len = qpack_encoder.PackHttp3Res(header, buff.data(), BUF_LEN);
             size_t pre = variable_encode_len(HTTP3_STREAM_HEADERS) + variable_encode_len(len);
-            char *p = (char *) buff->reserve(-pre);
+            char *p = (char *) buff.reserve(-pre);
             p += variable_encode(p, HTTP3_STREAM_HEADERS);
             p += variable_encode(p, len);
-            PushFrame({buff, len + pre, id});
+            PushFrame({std::move(buff), len + pre, id});
             return 1;
         }
         case ChannelMessage::CHANNEL_MSG_DATA: {
@@ -251,7 +251,7 @@ void Guest3::RstProc(uint64_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(errcode){
-            LOGE("[%" PRIu32 "]: <guest3> (%" PRIu64"): stream reset:%d flags:0x%x\n",
+            LOGE("[%" PRIu64 "]: <guest3> (%" PRIu64"): stream reset:%d flags:0x%x\n",
                  status.req->header->request_id, id, errcode, status.flags);
         }
         status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
@@ -310,7 +310,7 @@ void Guest3::dump_stat(Dumper dp, void* param) {
             this, maxDataId, ctrlid_local, ctrlid_remote,
             qpackeid_local, qpackeid_remote, qpackdid_local, qpackdid_remote);
     for(auto& i: statusmap){
-        dp(param, "  0x%lx [%" PRIu32 "]: %s %s, time: %dms, flags: 0x%08x [%s]\n",
+        dp(param, "  0x%lx [%" PRIu64 "]: %s %s, time: %dms, flags: 0x%08x [%s]\n",
            i.first, i.second.req->header->request_id,
            i.second.req->header->method,
            i.second.req->header->geturl().c_str(),

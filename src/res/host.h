@@ -22,10 +22,10 @@ protected:
     virtual void deleteLater(uint32_t errcode) override;
     virtual void Error(int ret, int code);
     
-    virtual void ResProc(std::shared_ptr<HttpResHeader> res)override;
-    virtual ssize_t DataProc(const void *buff, size_t size)override;
-    virtual void EndProc() override;
-    virtual void ErrProc() override;
+    virtual void ResProc(uint64_t id, std::shared_ptr<HttpResHeader> res)override;
+    virtual ssize_t DataProc(Buffer& bb)override;
+    virtual void EndProc(uint64_t id) override;
+    virtual void ErrProc(uint64_t id) override;
 
     virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
     virtual void connected();

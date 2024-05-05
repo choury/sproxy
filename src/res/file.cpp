@@ -137,7 +137,7 @@ File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
     }
     strcpy(filename, fname);
     suffix = strrchr(filename, '.');
-    rwer->SetReadCB([this](const Buffer& bb){return readHE(bb);});
+    rwer->SetReadCB([this](Buffer&& bb){return readHE(std::move(bb));});
 }
 
 File::~File() {
@@ -155,11 +155,12 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
         status.rg.begin = -1;
         status.rg.end = - 1;
     }
+    uint64_t id = req->header->request_id;
     if(req->header->get("If-Modified-Since")){
         struct tm tp;
         strptime(req->header->get("If-Modified-Since"), "%a, %d %b %Y %H:%M:%S GMT", &tp);
         if(timegm(&tp) >= st.st_mtime){
-            std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H304);
+            std::shared_ptr<HttpResHeader> header = HttpResHeader::create(S304, sizeof(S304), id);
             char buff[100];
             strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
             header->set("Last-Modified", buff);
@@ -171,7 +172,7 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
     if(status.rg.begin == -1 && status.rg.end == -1){
         status.rg.begin = 0;
         status.rg.end = st.st_size - 1;
-        std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H200, sizeof(H200));
+        std::shared_ptr<HttpResHeader> header = HttpResHeader::create(S200, sizeof(S200), id);
         header->set("Content-Length", st.st_size);
         char buff[100];
         strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
@@ -182,7 +183,7 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
         status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock(0);});
         req->response(status.res);
     }else if(checkrange(status.rg, st.st_size)){
-        std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H206, sizeof(H206));
+        std::shared_ptr<HttpResHeader> header = HttpResHeader::create(S206, sizeof(S206), id);
         char buff[100];
         snprintf(buff, sizeof(buff), "bytes %zd-%zd/%jd",
                  status.rg.begin, status.rg.end, (intmax_t)st.st_size);
@@ -194,7 +195,7 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
         status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock(0);});
         req->response(status.res);
     }else{
-        std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H416, sizeof(H416));
+        std::shared_ptr<HttpResHeader> header = HttpResHeader::create(S416, sizeof(S416), id);
         char buff[100];
         snprintf(buff, sizeof(buff), "bytes */%jd", (intmax_t)st.st_size);
         header->set("Content-Range", buff);
@@ -202,10 +203,10 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
         return deleteLater(NOERROR);
     }
     if(status.req->header->ismethod("HEAD")){
-        status.res->send(nullptr);
+        status.res->send(Buffer{nullptr, req->header->request_id});
         return deleteLater(NOERROR);
     }
-    req->attach([this](ChannelMessage& msg){
+    req->attach([this](ChannelMessage&& msg){
         if(msg.type != ChannelMessage::CHANNEL_MSG_SIGNAL){
             return 1;
         }
@@ -214,14 +215,14 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
     }, []{return 0;});
 }
 
-size_t File::readHE(const Buffer&) {
+size_t File::readHE(Buffer&& bb) {
     if(status.res == nullptr){
         return 0;
     }
     Range& rg = status.rg;
     LOGD(DFILE, "%s readHE %zd-%zd, flags: %d\n", filename, rg.begin, rg.end, status.flags);
     if (rg.begin > rg.end) {
-        status.res->send(nullptr);
+        status.res->send(Buffer{nullptr, bb.id});
         deleteLater(NOERROR);
         rwer->delEvents(RW_EVENT::READ);
         return 0;
@@ -231,8 +232,8 @@ size_t File::readHE(const Buffer&) {
         rwer->delEvents(RW_EVENT::READ);
         return 0;
     }
-    auto buff = std::make_shared<Block>(len);
-    len = pread(fd, buff->data(), len, rg.begin);
+    Block buff(len);
+    len = pread(fd, buff.data(), len, rg.begin);
     if(len <= 0){
         LOGE("file pread error: %s\n", strerror(errno));
         status.res->send(CHANNEL_ABORT);
@@ -240,7 +241,7 @@ size_t File::readHE(const Buffer&) {
         rwer->delEvents(RW_EVENT::READ);
         return 0;
     }
-    status.res->send({std::move(buff), (size_t)len});
+    status.res->send({std::move(buff), (size_t)len, bb.id});
     rg.begin += len;
     return 0;
 }
@@ -252,7 +253,7 @@ void File::deleteLater(uint32_t error) {
 
 void File::dump_stat(Dumper dp, void* param){
     dp(param, "File %p, %s, fd=%d\n", this, filename, fd);
-    dp(param, "  [%" PRIu32 "]: (%zd-%zd), flags: 0x%08x\n",
+    dp(param, "  [%" PRIu64 "]: (%zd-%zd), flags: 0x%08x\n",
             status.req->header->request_id,
             status.rg.begin, status.rg.end, status.flags);
 }
@@ -267,8 +268,9 @@ void File::dump_usage(Dumper dp, void *param) {
 
 
 void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
+    uint64_t id = req->header->request_id;
     if(!req->header->getrange()){
-        return req->response(std::make_shared<HttpRes>(UnpackHttpRes(H400), ""));
+        return req->response(std::make_shared<HttpRes>(HttpResHeader::create(S400, sizeof(S400), id), ""));
     }
     char filename[URLLIMIT];
     bool slash_end = req->header->filename.back() == '/';
@@ -278,7 +280,7 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
     while(true){
         if(!startwith(filename, opt.rootdir)){
             LOGE("get file out of rootdir: %s\n", filename);
-            header = UnpackHttpRes(H403, sizeof(H403));
+            header = HttpResHeader::create(S403, sizeof(S403), id);
             goto ret;
         }
         if(filename == pathjoin(opt.rootdir, "status")){
@@ -303,16 +305,16 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
                     snprintf(filename, sizeof(filename), "%s", absolute(req->header->filename).c_str());
                     continue;
                 }
-                header = UnpackHttpRes(H404, sizeof(H404));
+                header = HttpResHeader::create(S404, sizeof(S404), id);
             }else{
-                header = UnpackHttpRes(H500, sizeof(H500));
+                header = HttpResHeader::create(S500, sizeof(S500), id);
             }
             goto ret;
         }
 
         if(S_ISDIR(st.st_mode)){
             if(!slash_end){
-                header = UnpackHttpRes(H302, sizeof(H302));
+                header = HttpResHeader::create(S302, sizeof(S302), id);
                 char location[URLLIMIT];
                 snprintf(location, sizeof(location), "/%s/", req->header->filename.c_str());
                 header->set("Location", location);
@@ -324,45 +326,48 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
                 continue;
             }
             if(!opt.autoindex){
-                header = UnpackHttpRes(H403, sizeof(H403));
+                header = HttpResHeader::create(S403, sizeof(S403), id);
                 goto ret;
             }
 
             DIR* dir = opendir(filename);
             if(dir == nullptr){
                 LOGE("open %s dir failed: %s\n", filename, strerror(errno));
-                header = UnpackHttpRes(H500, sizeof(H500));
+                header = HttpResHeader::create(S500, sizeof(S500), id);
                 goto ret;
             }
-            header = UnpackHttpRes(H200, sizeof(H200));
+            header = HttpResHeader::create(S200, sizeof(S200), id);
             header->set("Transfer-Encoding", "chunked");
             auto res = std::make_shared<HttpRes>(header);
             req->response(res);
             char buff[1024];
-            res->send(buff,(size_t)snprintf(buff, sizeof(buff),
+            res->send({buff,(size_t)snprintf(buff, sizeof(buff),
                             "<html>"
                             "<head><title>Index of %s</title></head>"
                             "<body><h1>Index of %s</h1><hr/><pre>",
                             req->header->filename.c_str(),
-                            req->header->filename.c_str()));
+                            req->header->filename.c_str()), id});
             struct dirent *ptr;
             while((ptr = readdir(dir))){
                 if(ptr->d_type == DT_DIR){
-                    res->send(buff, (size_t)snprintf(buff, sizeof(buff), "<a href='%s/'>%s/</a><br/>", ptr->d_name, ptr->d_name));
+                    res->send({buff,
+                              (size_t)snprintf(buff, sizeof(buff), "<a href='%s/'>%s/</a><br/>", ptr->d_name, ptr->d_name),
+                              id});
                 }else{
-                    res->send(buff, (size_t)snprintf(buff, sizeof(buff), "<a href='%s'>%s</a><br/>", ptr->d_name, ptr->d_name));
-
+                    res->send({buff,
+                               (size_t)snprintf(buff, sizeof(buff), "<a href='%s'>%s</a><br/>", ptr->d_name, ptr->d_name),
+                               id});
                 }
             }
             closedir(dir);
-            res->send(buff, (size_t)snprintf(buff, sizeof(buff), "</pre><hr></body></html>"));
-            res->send(nullptr);
+            res->send({buff, (size_t)snprintf(buff, sizeof(buff), "</pre><hr></body></html>"), id});
+            res->send(Buffer{nullptr, id});
             return;
         }
 
         if(!S_ISREG(st.st_mode)){
             LOGE("access to no regular file %s\n", filename);
-            header = UnpackHttpRes(H403, sizeof(H403));
+            header = HttpResHeader::create(S403, sizeof(S403), id);
             goto ret;
         }
         if(suffix && strcmp(suffix, LIBSUFFIX) == 0){
@@ -371,7 +376,7 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
         int fd = open(filename, O_RDONLY | O_CLOEXEC);
         if(fd < 0){
             LOGE("open file failed %s: %s\n", filename, strerror(errno));
-            header = UnpackHttpRes(H500, sizeof(H500));
+            header = HttpResHeader::create(S500, sizeof(S500), id);
             goto ret;
         }
         return (new File(filename, fd, &st))->request(req, src);

@@ -118,8 +118,9 @@ TunRWer::~TunRWer(){
 }
 
 void TunRWer::ReadData() {
-    int ret = 0;
-    while(ret = read(getFd(), rbuff, sizeof(rbuff)), ret > 0) {
+    while(true) {
+        Block rbuff(BUF_LEN);
+        int ret = read(getFd(), rbuff.data(), BUF_LEN);
         if(ret <= 0 && errno == EAGAIN) {
             return;
         }
@@ -128,8 +129,8 @@ void TunRWer::ReadData() {
             return;
         }
         size_t len = ret;
-        pcap_write_with_generated_ethhdr(pcap, rbuff, len);
-        auto pac = MakeIp(rbuff, ret);
+        pcap_write_with_generated_ethhdr(pcap, rbuff.data(), len);
+        auto pac = MakeIp(rbuff.data(), ret);
         if(pac == nullptr){
             continue;
         }
@@ -140,7 +141,7 @@ void TunRWer::ReadData() {
         if(pac->gettype() == IPPROTO_ICMP) {
             uint16_t type = pac->icmp->gettype();
             if(type ==  ICMP_UNREACH) {
-                auto icmp_pac = MakeIp(rbuff + pac->gethdrlen(), len-pac->gethdrlen());
+                auto icmp_pac = MakeIp((char*)rbuff.data() + pac->gethdrlen(), len-pac->gethdrlen());
                 if(icmp_pac == nullptr){
                     continue;
                 }
@@ -155,7 +156,7 @@ void TunRWer::ReadData() {
         }else if(pac->gettype() == IPPROTO_ICMPV6) {
             uint16_t type = pac->icmp6->gettype();
             if(type == ICMP6_DST_UNREACH){
-                auto icmp6_pac = MakeIp(rbuff + pac->gethdrlen(), len-pac->gethdrlen());
+                auto icmp6_pac = MakeIp((char*)rbuff.data() + pac->gethdrlen(), len-pac->gethdrlen());
                 if(icmp6_pac == nullptr){
                     continue;
                 }
@@ -181,8 +182,8 @@ void TunRWer::ReadData() {
             switch(key.protocol){
             case Protocol::TCP:{
                 auto tstatus = std::make_shared<TcpStatus>();
-                tstatus->PkgProc = [tstatus](std::shared_ptr<const Ip> pac, const char* packet, size_t len){
-                    SynProc(tstatus, pac, packet, len);
+                tstatus->PkgProc = [tstatus](auto&& v1, auto&& v2){
+                    SynProc(tstatus, v1, std::forward<decltype(v2)>(v2));
                 };
                 tstatus->SendPkg = [tstatus](Buffer&& bb){::SendData(tstatus, std::move(bb));};
                 tstatus->UnReach = [tstatus](uint8_t code){Unreach(tstatus, code);};
@@ -192,8 +193,8 @@ void TunRWer::ReadData() {
             }
             case Protocol::UDP:{
                 auto ustatus = std::make_shared<UdpStatus>();
-                ustatus->PkgProc = [ustatus](std::shared_ptr<const Ip> pac, const char* packet, size_t len){
-                    UdpProc(ustatus, pac, packet, len);
+                ustatus->PkgProc = [ustatus](auto&& v1, auto&& v2){
+                    UdpProc(ustatus, v1, std::forward<decltype(v2)>(v2));
                 };
                 ustatus->SendPkg = [ustatus](Buffer&& bb){::SendData(ustatus, std::move(bb));};
                 ustatus->UnReach = [ustatus](uint8_t code){Unreach(ustatus, code);};
@@ -203,8 +204,8 @@ void TunRWer::ReadData() {
             }
             case Protocol::ICMP:{
                 auto istatus = std::make_shared<IcmpStatus>();
-                istatus->PkgProc = [istatus](std::shared_ptr<const Ip> pac, const char* packet, size_t len) {
-                    IcmpProc(istatus, pac, packet, len);
+                istatus->PkgProc = [istatus](auto&& v1, auto&& v2) {
+                    IcmpProc(istatus, v1, std::forward<decltype(v2)>(v2));
                 };
                 istatus->SendPkg = [istatus](Buffer&& bb){::SendData(istatus, std::move(bb));};
                 istatus->UnReach = [istatus](uint8_t code){Unreach(istatus, code);};
@@ -219,8 +220,8 @@ void TunRWer::ReadData() {
                 continue;
             }
             status->reqCB = [this](std::shared_ptr<const Ip> pac){ReqProc(pac);};
-            status->dataCB = [this](std::shared_ptr<const Ip> pac, const void* data, size_t len){
-                return DataProc(pac, data, len);
+            status->dataCB = [this](std::shared_ptr<const Ip> pac, Buffer&& bb){
+                return DataProc(pac, std::move(bb));
             };
             status->ackCB = [this](std::shared_ptr<const Ip> pac){AckProc(pac);};
             status->errCB = [this](std::shared_ptr<const Ip> pac, uint32_t code){ErrProc(pac, code);};
@@ -230,7 +231,7 @@ void TunRWer::ReadData() {
             status->protocol = key.protocol;
             status->src = pac->getsrc();
             status->dst = pac->getdst();
-            statusmap.Add(next_id++, key, status);
+            statusmap.Add(nextId(), key, status);
         }else{
             if(transIcmp){
                 uint64_t id = statusmap.GetOne(key)->first.first;
@@ -242,9 +243,9 @@ void TunRWer::ReadData() {
         }
         if(status->packet_hdr == nullptr){
             status->packet_hdr_len = pac->gethdrlen();
-            status->packet_hdr = std::make_shared<Block>(rbuff, status->packet_hdr_len);
+            status->packet_hdr = new Block(rbuff.data(), status->packet_hdr_len);
         }
-        status->PkgProc(pac, rbuff, len);
+        status->PkgProc(pac, {std::move(rbuff), len});
     }
 }
 
@@ -305,16 +306,12 @@ void TunRWer::ErrProc(std::shared_ptr<const Ip> pac, uint32_t code) {
     Clean(id);
 }
 
-size_t TunRWer::DataProc(std::shared_ptr<const Ip> pac, const void* data, size_t len) {
+size_t TunRWer::DataProc(std::shared_ptr<const Ip> pac, Buffer&& bb) {
     if(!statusmap.Has(VpnKey(pac))){
         return 0;
     }
-    if(len == 0) {
-        assert(data == nullptr);
-        readCB({nullptr, GetId(pac)});
-        return 0;
-    }
-    return len - readCB({std::make_shared<Block>(data, len), len, GetId(pac)});
+    bb.id = GetId(pac);
+    return readCB(std::move(bb));
 }
 
 void TunRWer::AckProc(std::shared_ptr<const Ip> pac) {

@@ -24,7 +24,7 @@ bool Guest2::wantmore(const ReqStatus& status) {
 
 Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
     rwer->SetErrorCB([this](int ret, int code){Error(ret, code);});
-    rwer->SetReadCB([this](const Buffer& bb) -> size_t {
+    rwer->SetReadCB([this](Buffer&& bb) -> size_t {
         LOGD(DHTTP2, "<guest2> (%s) read: len:%zu\n", this->rwer->getPeer(), bb.len);
         if(bb.len == 0){
             //EOF
@@ -32,10 +32,10 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
             return 0;
         }
         size_t ret;
-        size_t len = bb.len;
+        size_t left = bb.len;
         const uchar* data = (const uchar*)bb.data();
-        while((len > 0) && (ret = (this->*Http2_Proc)(data, len))){
-            len -= ret;
+        while((left > 0) && (ret = (this->*Http2_Proc)(data, left))){
+            left -= ret;
             data += ret;
         }
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
@@ -44,7 +44,7 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
         this->connection_lost_job = UpdateJob(
                 std::move(this->connection_lost_job),
                 [this]{connection_lost();}, 1800000);
-        return len;
+        return bb.len - left;
     });
     rwer->SetWriteCB([this](uint64_t id){
         if(statusmap.count(id) == 0){
@@ -73,7 +73,7 @@ void Guest2::Recv(Buffer&& bb){
     assert(status.remotewinsize >= 0);
     remotewinsize -= bb.len;
     if(bb.len == 0){
-        LOGD(DHTTP2, "<guest2> %" PRIu32 " recv data [%d]: EOF/%d\n",
+        LOGD(DHTTP2, "<guest2> %" PRIu64 " recv data [%d]: EOF/%d\n",
              status.req->header->request_id, (int)bb.id,
              status.remotewinsize);
         PushData({nullptr, bb.id});
@@ -83,11 +83,11 @@ void Guest2::Recv(Buffer&& bb){
         }
     }else{
         if(status.req->header->ismethod("HEAD")){
-            LOGD(DHTTP2, "<guest2> %" PRIu32 " recv data [%d], HEAD req discard body\n",
+            LOGD(DHTTP2, "<guest2> %" PRIu64 " recv data [%d], HEAD req discard body\n",
                  status.req->header->request_id, (int)bb.id);
             return;
         }
-        LOGD(DHTTP2, "<guest2> %" PRIu32 " recv data [%d]: %zu/%d\n",
+        LOGD(DHTTP2, "<guest2> %" PRIu64 " recv data [%d]: %zu/%d\n",
              status.req->header->request_id, (int)bb.id,
              bb.len, status.remotewinsize);
         PushData(std::move(bb));
@@ -97,7 +97,7 @@ void Guest2::Recv(Buffer&& bb){
 void Guest2::Handle(uint32_t id, Signal s){
     assert(statusmap.count(id));
     ReqStatus& status = statusmap[id];
-    LOGD(DHTTP2, "<guest2> signal [%d] %" PRIu32 ": %d\n",
+    LOGD(DHTTP2, "<guest2> signal [%d] %" PRIu64 ": %d\n",
          (int)id, status.req->header->request_id, (int)s);
     switch(s){
     case CHANNEL_ABORT:
@@ -107,7 +107,7 @@ void Guest2::Handle(uint32_t id, Signal s){
 }
 
 void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
-    LOGD(DHTTP2, "<guest2> %" PRIu32 " (%s) ReqProc %s\n",
+    LOGD(DHTTP2, "<guest2> %" PRIu64 " (%s) ReqProc %s\n",
          header->request_id, rwer->getPeer(), header->geturl().c_str());
     if(statusmap.count(id)){
         LOGD(DHTTP2, "<guest2> ReqProc dup id: %d\n", id);
@@ -127,9 +127,10 @@ void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
             header,
             [this, id](std::shared_ptr<HttpRes> res){response((void*)(long)id, res);},
             [this, &status, id] () mutable{
+                rwer->Unblock(id);
                 auto len = status.req->cap();
                 if(len < status.localwinsize){
-                    LOGE("[%" PRIu32 "]: <guest2> (%d) shrunken local window: %d/%d\n",
+                    LOGE("[%" PRIu64 "]: <guest2> (%d) shrunken local window: %d/%d\n",
                          status.req->header->request_id, id, len, status.localwinsize);
                 }else if(len == status.localwinsize) {
                     return;
@@ -153,12 +154,12 @@ void Guest2::DataProc(uint32_t id, const void* data, size_t len) {
             return;
         }
         if(len > (size_t)status.localwinsize){
-            LOGE("[%" PRIu32 "]: <guest2> (%d) window size error %zu/%d\n",
+            LOGE("[%" PRIu64 "]: <guest2> (%d) window size error %zu/%d\n",
                 status.req->header->request_id, id, len, status.localwinsize);
             Clean(id, HTTP2_ERR_FLOW_CONTROL_ERROR);
             return;
         }
-        status.req->send(data, len);
+        status.req->send({data, len, id});
         status.localwinsize -= len;
     }else{
         LOGD(DHTTP2, "<guest2> DateProc not found id: %d\n", id);
@@ -170,7 +171,7 @@ void Guest2::EndProc(uint32_t id) {
     LOGD(DHTTP2, "<guest2> [%d]: end of stream\n", id);
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
-        status.req->send(nullptr);
+        status.req->send(Buffer{nullptr, id});
         status.flags |= HTTP_REQ_COMPLETED;
         if(status.flags & HTTP_RES_COMPLETED) {
             Clean(id, NOERROR);
@@ -186,7 +187,7 @@ void Guest2::response(void* index, std::shared_ptr<HttpRes> res) {
     assert(status.res == nullptr);
     status.res = res;
 
-    res->attach([this, id](ChannelMessage& msg){
+    res->attach([this, id](ChannelMessage&& msg){
         assert(statusmap.count(id));
         ReqStatus& status = statusmap[id];
         switch(msg.type){
@@ -197,15 +198,15 @@ void Guest2::response(void* index, std::shared_ptr<HttpRes> res) {
             header->del("Transfer-Encoding");
             header->del("Connection");
 
-            auto buff = std::make_shared<Block>(BUF_LEN);
-            Http2_header* const h2header = (Http2_header*) buff->data();
+            Block buff(BUF_LEN);
+            Http2_header* const h2header = (Http2_header*) buff.data();
             memset(h2header, 0, sizeof(*h2header));
             h2header->type = HTTP2_STREAM_HEADERS;
             h2header->flags = HTTP2_END_HEADERS_F;
             set32(h2header->id, id);
             size_t len = hpack_encoder.PackHttp2Res(header, h2header + 1, BUF_LEN - sizeof(Http2_header));
             set24(h2header->length, len);
-            PushFrame(Buffer{buff, len + sizeof(Http2_header)});
+            PushFrame(Buffer{std::move(buff), len + sizeof(Http2_header), id});
 
             if(opt.alt_svc){
                 AltSvc(id, "", opt.alt_svc);
@@ -247,7 +248,7 @@ void Guest2::RstProc(uint32_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(errcode){
-            LOGE("[%" PRIu32 "]: <guest2> (%d): stream reset:%d flags:0x%x\n",
+            LOGE("[%" PRIu64 "]: <guest2> (%d): stream reset:%d flags:0x%x\n",
                 status.req->header->request_id, id, errcode, status.flags);
         }
         status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
@@ -341,7 +342,7 @@ void Guest2::dump_stat(Dumper dp, void* param) {
     dp(param, "Guest2 %p, id: %d my_window: %d, his_window: %d\n",
             this, sendid, this->localwinsize, this->remotewinsize);
     for(auto& i: statusmap){
-        dp(param, "  0x%x [%" PRIu32 "]: %s %s my_window: %d, his_window: %d, time: %dms, flags: 0x%08x [%s]\n",
+        dp(param, "  0x%x [%" PRIu64 "]: %s %s my_window: %d, his_window: %d, time: %dms, flags: 0x%08x [%s]\n",
                 i.first, i.second.req->header->request_id,
                 i.second.req->header->method,
                 i.second.req->header->geturl().c_str(),

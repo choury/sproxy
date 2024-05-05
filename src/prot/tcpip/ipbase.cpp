@@ -27,7 +27,8 @@ void Unreach(std::shared_ptr<IpStatus> status, uint8_t code) {
             break;
         }
     }
-    Buffer bb{status->packet_hdr, status->packet_hdr_len};
+    Buffer bb{std::move(*status->packet_hdr), status->packet_hdr_len};
+    delete status->packet_hdr;
     status->packet_hdr = nullptr;
     pac->build_packet(bb);
     status->sendCB(pac, bb.data(), bb.len);

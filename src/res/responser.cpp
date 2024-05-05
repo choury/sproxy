@@ -49,16 +49,18 @@ static CheckResult check_header(std::shared_ptr<HttpReqHeader> req, Requester* s
 
 void distribute(std::shared_ptr<HttpReq> req, Requester* src){
     auto header = req->header;
+    auto id = header->request_id;
     std::shared_ptr<HttpRes> res;
     if(!header->Dest.hostname[0]){
-        res = std::make_shared<HttpRes>(UnpackHttpRes(H400), "[[host not set]]\n");
+        res = std::make_shared<HttpRes>(HttpResHeader::create(S400, sizeof(S400), id),
+                                        "[[host not set]]\n");
         goto out;
     }
     if (header->valid_method()) {
         strategy stra = getstrategy(header->Dest.hostname, header->path);
         header->set(STRATEGY, getstrategystring(stra.s));
         if(stra.s == Strategy::block){
-            res = std::make_shared<HttpRes>(UnpackHttpRes(H403),
+            res = std::make_shared<HttpRes>(HttpResHeader::create(S403, sizeof(S403), id),
                               "This site is blocked, please contact administrator for more information.\n");
             goto out;
         }
@@ -72,14 +74,20 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
         switch(check_header(header, src)){
         case CheckResult::Succeed:
             break;
-        case CheckResult::AuthFailed:
-            res = std::make_shared<HttpRes>(UnpackHttpRes(H407), "[[Authorization needed]]\n");
+        case CheckResult::AuthFailed: {
+            auto sheader = HttpResHeader::create(S407, sizeof(S407), id);
+            sheader->set("Proxy-Authenticate", "Basic realm=\"Secure Area\"");
+            res = std::make_shared<HttpRes>(sheader,
+                                            "[[Authorization needed]]\n");
             goto out;
+        }
         case CheckResult::LoopBack:
-            res = std::make_shared<HttpRes>(UnpackHttpRes(H508), "[[redirect back]]\n");
+            res = std::make_shared<HttpRes>(HttpResHeader::create(S508, sizeof(S508), id),
+                                            "[[redirect back]]\n");
             goto out;
         case CheckResult::NoPort:
-            res = std::make_shared<HttpRes>(UnpackHttpRes(H400), "[[no port]]\n");
+            res = std::make_shared<HttpRes>(HttpResHeader::create(S400, sizeof(S400), id),
+                                            "[[no port]]\n");
             goto out;
         }
         Destination dest;
@@ -87,7 +95,8 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
         case Strategy::proxy:
             memcpy(&dest, &opt.Server, sizeof(dest));
             if(dest.port == 0){
-                res = std::make_shared<HttpRes>(UnpackHttpRes(H400), "[[server not set]]\n");
+                res = std::make_shared<HttpRes>(HttpResHeader::create(S400, sizeof(S400), id),
+                                                "[[server not set]]\n");
                 goto out;
             }
             header->del("via");
@@ -97,7 +106,8 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
             //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
             header->chain_proxy = true;
             if(!stra.ext.empty() && loadproxy(stra.ext.c_str(), &dest)){
-                res = std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[ext misformat]]\n");
+                res = std::make_shared<HttpRes>(HttpResHeader::create(S500, sizeof(S500), id),
+                                                "[[ext misformat]]\n");
                 goto out;
             }
             break;
@@ -118,23 +128,27 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
             /* FALLTHROUGH */
         case Strategy::forward:
             if(stra.ext.empty()){
-                res = std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[destination not set]]\n");
+                res = std::make_shared<HttpRes>(HttpResHeader::create(S500, sizeof(S500), id),
+                                                "[[destination not set]]\n");
                 goto out;
             }
             memcpy(&dest, &header->Dest, sizeof(dest));
             strcpy(dest.protocol, "tcp"); // rewrite and forward only support tcp
             if(spliturl(stra.ext.c_str(), &dest, nullptr)){
-                res = std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[ext misformat]]\n");
+                res = std::make_shared<HttpRes>(HttpResHeader::create(S500, sizeof(S500), id),
+                                                "[[ext misformat]]\n");
                 goto out;
             }
             break;
         default:
-            res = std::make_shared<HttpRes>(UnpackHttpRes(H503), "[[BUG]]\n");
+            res = std::make_shared<HttpRes>(HttpResHeader::create(S503, sizeof(S503), id),
+                                            "[[BUG]]\n");
             goto out;
         }
         return Host::distribute(req, &dest, src);
     } else{
-        res = std::make_shared<HttpRes>(UnpackHttpRes(H405), "[[unsported method]]\n");
+        res = std::make_shared<HttpRes>(HttpResHeader::create(S405, sizeof(S405), id),
+                                        "[[unsported method]]\n");
         goto out;
     }
 out:

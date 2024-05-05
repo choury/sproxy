@@ -59,6 +59,7 @@ public:
     [[nodiscard]] void* data() const{
         return (char*)base.get() + off;
     }
+    friend class Buffer;
 };
 
 //封装了Block，但是多了长度和id信息
@@ -66,24 +67,25 @@ public:
 //reserve的参数为负数，truncate 需要扩展空间，调用mutable_data() 或者end()
 //因此每次调用返回的指针地址不可cache
 class Buffer{
-    std::shared_ptr<Block> ptr = nullptr;
-    const void* content = nullptr;
+    std::shared_ptr<void> ptr = nullptr;
+    off_t off = 0;
 public:
     uint64_t id = 0;
     size_t len = 0;
     size_t cap = 0;
     explicit Buffer(size_t cap, uint64_t id = 0);
     Buffer(const void* data, size_t len, uint64_t id = 0);
-    Buffer(std::shared_ptr<Block> data, size_t len, uint64_t id = 0);
+    Buffer(Block&& data, size_t len, uint64_t id = 0);
     Buffer(std::nullptr_t, uint64_t id = 0);
-    Buffer(Buffer&& b) noexcept ;
-    Buffer(const Buffer&) = default;
+    Buffer(Buffer&& b) noexcept;
+    Buffer(const Buffer&) noexcept = default;
     // 增加/减少预留空间 off 为正增加，为负减少
-    const void* reserve(int off);
+    void reserve(int p);
     // 从末尾截断/扩展数据, 返回截断前的长度
     size_t truncate(size_t left);
     [[nodiscard]] const void* data() const;
     void* mutable_data();
+    size_t refs();
 };
 
 
@@ -96,6 +98,8 @@ public:
 #endif
 
 
+
+#if 0
 using buff_iterator = std::list<Buffer>::insert_iterator;
 class WBuffer {
     std::list<Buffer> write_queue;
@@ -106,10 +110,9 @@ public:
     buff_iterator start();
     buff_iterator end();
     buff_iterator push(buff_iterator i, Buffer&& bb);
-    ssize_t  Write(const std::function<ssize_t(const std::list<Buffer>&)>& write_func, std::set<uint64_t>& writed_list);
+    ssize_t Write(const std::function<ssize_t(std::list<Buffer>&)>& write_func, std::set<uint64_t>& writed_list);
 };
 
-#if 0
 class RBuffer {
     char content[BUF_LEN*2];
     size_t len = 0;

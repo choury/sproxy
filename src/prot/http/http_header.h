@@ -12,52 +12,29 @@
 
 #define CRLF      "\r\n"
 
-#define H200        "HTTP/1.1 200 OK" CRLF CRLF
 
-#define H204        "HTTP/1.1 204 No Content" CRLF CRLF
-
-#define H205        "HTTP/1.1 205 Reset Content" CRLF CRLF
-
-#define H206        "HTTP/1.1 206 Partial Content" CRLF CRLF
-
-#define H301        "HTTP/1.1 301 Moved Permanently" CRLF CRLF
-
-#define H302        "HTTP/1.1 302 Found" CRLF CRLF
-
-#define H303        "HTTP/1.1 303 See Other" CRLF CRLF
-
-#define H304        "HTTP/1.1 304 Not Modified" CRLF CRLF
-
-#define H400        "HTTP/1.1 400 Bad Request" CRLF CRLF
-
-#define H401        "HTTP/1.1 401 Unauthorized" CRLF CRLF
-
-#define H403        "HTTP/1.1 403 Forbidden" CRLF  CRLF
-
-#define H404        "HTTP/1.1 404 Not Found" CRLF CRLF
-
-#define H405        "HTTP/1.1 405 Method Not Allowed" CRLF CRLF
-
-#define H407        "HTTP/1.1 407 Proxy Authentication Required" CRLF \
-                    "Proxy-Authenticate: Basic realm=\"Secure Area\"" CRLF CRLF
-
-#define H408        "HTTP/1.1 408 Request Timeout" CRLF CRLF
-
-#define H416        "HTTP/1.1 416 Requested Range Not Satisfiable" CRLF CRLF
-
-#define H429        "HTTP/1.1 429 Too Many Requests" CRLF CRLF
-
-#define H500        "HTTP/1.1 500 Internal Server Error" CRLF CRLF
-
-#define H502        "HTTP/1.1 502 Bad Gateway" CRLF CRLF
-
-#define H503        "HTTP/1.1 503 Service Unavailable" CRLF CRLF
-
-#define H504        "HTTP/1.1 504 Gateway Timeout" CRLF CRLF
-
-#define H508        "HTTP/1.1 508 Loop Detected" CRLF CRLF
-
-#define HCONNECT    "HTTP/1.1 200 Connection establishe" CRLF CRLF
+#define S200        "200 OK"
+#define S204        "204 No Content"
+#define S205        "205 Reset Content"
+#define S206        "206 Partial Content"
+#define S301        "301 Moved Permanently"
+#define S302        "302 Found"
+#define S303        "303 See Other"
+#define S304        "304 Not Modified"
+#define S400        "400 Bad Request"
+#define S401        "401 Unauthorized"
+#define S403        "403 Forbidden"
+#define S404        "404 Not Found"
+#define S405        "405 Method Not Allowed"
+#define S407        "407 Proxy Authentication Required"
+#define S408        "408 Request Timeout"
+#define S416        "416 Requested Range Not Satisfiable"
+#define S429        "429 Too Many Requests"
+#define S500        "500 Internal Server Error"
+#define S502        "502 Bad Gateway"
+#define S503        "503 Service Unavailable"
+#define S504        "504 Gateway Timeout"
+#define S508        "508 Loop Detected"
 
 #define AlterMethod "Alter-Method"
 
@@ -71,7 +48,7 @@ class HttpHeader{
 protected:
     std::map<std::string, std::string> headers;
 public:
-    uint32_t request_id = 0;
+    uint64_t request_id = 0;
     uint32_t ctime = 0;
     std::set<std::string> cookies;
 
@@ -154,6 +131,7 @@ public:
 class HttpResHeader: public HttpHeader{
 public:
     char status[100];
+    HttpResHeader(const char* status, size_t len);
     explicit HttpResHeader(HeaderMap&& headers);
     [[nodiscard]] virtual std::multimap<std::string, std::string> Normalize() const override;
     [[nodiscard]] virtual bool no_body() const override;
@@ -162,6 +140,7 @@ public:
     virtual size_t mem_usage() override {
         return HttpHeader::mem_usage() + sizeof(*this);
     }
+    static std::shared_ptr<HttpResHeader> create(const char* status, size_t len, uint64_t id);
 };
 
 
@@ -173,4 +152,5 @@ std::shared_ptr<HttpReqHeader> UnpackHttpReq(const void* header, size_t len = 0)
 std::shared_ptr<HttpResHeader> UnpackHttpRes(const void* header, size_t len = 0);
 size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t len);
 size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t len);
+
 #endif

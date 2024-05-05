@@ -15,14 +15,15 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
     rwer = prwer;
     prwer->SetConnectCB([this](const sockaddr_storage&){
         LOGD(DHTTP, "<uhost> %s connected\n", rwer->getPeer());
-        req->attach([this](ChannelMessage& message){
+        req->attach([this](ChannelMessage&& message){
             switch(message.type){
             case ChannelMessage::CHANNEL_MSG_HEADER:
                 LOGD(DHTTP, "<uhost> [%d] ignore header for req\n", (int)req->header->request_id);
                 return 1;
             case ChannelMessage::CHANNEL_MSG_DATA: {
                 auto &bb = std::get<Buffer>(message.data);
-                LOGD(DHTTP, "<uhost> Recv %d: %zu bytes\n", (int)req->header->request_id, bb.len);
+                LOGD(DHTTP, "<uhost> Recv %d: %zu bytes, refs: %zd\n",
+                     (int)req->header->request_id, bb.len, bb.refs());
                 if (bb.len == 0) {
                     return 0;
                 }
@@ -40,24 +41,25 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
             return 0;
         }, [this]{return rwer->cap(0);});
     });
-    rwer->SetReadCB([this](Buffer bb) -> size_t{
-        LOGD(DHTTP, "<uhost> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
+    rwer->SetReadCB([this](Buffer&& bb) -> size_t{
+        LOGD(DHTTP, "<uhost> (%s) read: len:%zu, refs: %zd\n", rwer->getPeer(), bb.len, bb.refs());
         if(res == nullptr){
-            res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
+            res = std::make_shared<HttpRes>(HttpResHeader::create(S200, sizeof(S200), req->header->request_id));
             req->response(this->res);
         }
-        int len = res->cap();
-        if (len < (int)bb.len) {
-            LOGE("[%" PRIu32 "]: <uhost> the res buff is full (%d vs %d) [%s], drop it\n",
+        size_t len = bb.len;
+        int cap = res->cap();
+        if (cap < (int)bb.len) {
+            LOGE("[%" PRIu64 "]: <uhost> the res buff is full (%d vs %d) [%s], drop it\n",
                  req->header->request_id,
-                 len, (int)bb.len,
+                 cap, (int)bb.len,
                  req->header->geturl().c_str());
             rx_dropped += bb.len;
         } else {
             rx_bytes += bb.len;
             res->send(std::move(bb));
         }
-        return 0;
+        return len;
     });
     rwer->SetWriteCB([this](uint64_t){
         LOGD(DHTTP, "<uhost> (%s) written\n", rwer->getPeer());
@@ -81,7 +83,7 @@ Uhost::~Uhost() {
 }
 
 void Uhost::request(std::shared_ptr<HttpReq> req, Requester*) {
-    LOGD(DHTTP, "<uhost> request %" PRIu32 ": %s\n",
+    LOGD(DHTTP, "<uhost> request %" PRIu64 ": %s\n",
          req->header->request_id,
          req->header->geturl().c_str());
     this->req = req;
@@ -96,18 +98,23 @@ void Uhost::deleteLater(uint32_t errcode) {
     }else if(res){
         res->send(CHANNEL_ABORT);
     }else {
+        uint64_t id = req->header->request_id;
         switch(errcode) {
         case DNS_FAILED:
-            req->response(std::make_shared<HttpRes>(UnpackHttpRes(H503), "[[dns failed]]\n"));
+            req->response(std::make_shared<HttpRes>(HttpResHeader::create(S503, sizeof(S503), id),
+                                                    "[[dns failed]]\n"));
             break;
         case CONNECT_FAILED:
-            req->response(std::make_shared<HttpRes>(UnpackHttpRes(H503), "[[connect failed]]\n"));
+            req->response(std::make_shared<HttpRes>(HttpResHeader::create(S503, sizeof(S503), id),
+                                                    "[[connect failed]]\n"));
             break;
         case SOCKET_ERR:
-            req->response(std::make_shared<HttpRes>(UnpackHttpRes(H502), "[[socket error]]\n"));
+            req->response(std::make_shared<HttpRes>(HttpResHeader::create(S502, sizeof(S502), id),
+                                                    "[[socket error]]\n"));
             break;
         default:
-            req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[internal error]]\n"));
+            req->response(std::make_shared<HttpRes>(HttpResHeader::create(S500, sizeof(S500), id),
+                                                    "[[internal error]]\n"));
         }
     }
     is_closing = true;
@@ -115,7 +122,7 @@ void Uhost::deleteLater(uint32_t errcode) {
 }
 
 void Uhost::dump_stat(Dumper dp, void* param) {
-    dp(param, "Uhost %p, tx:%zd, rx: %zd, drop: %zd\n  [%" PRIu32"]: %s %s, host: %s, port: %d\n",
+    dp(param, "Uhost %p, tx:%zd, rx: %zd, drop: %zd\n  [%" PRIu64"]: %s %s, host: %s, port: %d\n",
        this, tx_bytes, rx_bytes, rx_dropped,
        req->header->request_id, req->header->method,
        dumpAuthority(&req->header->Dest),

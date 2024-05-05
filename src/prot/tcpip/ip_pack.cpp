@@ -100,7 +100,8 @@ static uint16_t ip_checksum(const ip* ip_hdr, uint8_t protocol, Buffer& bb){
 
     size_t len = bb.len;
     /* pseudo header used for checksumming */
-    pseudo_hdr *phdr = (struct pseudo_hdr *) bb.reserve(-(int) sizeof(pseudo_hdr));
+    bb.reserve(-(int) sizeof(pseudo_hdr));
+    pseudo_hdr *phdr = (struct pseudo_hdr *)bb.mutable_data();
     phdr->src = ip_hdr->ip_src;
     phdr->dst = ip_hdr->ip_dst;
     phdr->mbz = 0;
@@ -118,7 +119,8 @@ static uint16_t ip6_checksum(const ip6_hdr* ip_hdr, uint8_t protocol, Buffer& bb
     }
     size_t len = bb.len;
     /* pseudo header used for checksumming */
-    pseudo_hdr6 *phdr = (struct pseudo_hdr6 *) bb.reserve(-(char) sizeof(pseudo_hdr6));;
+    bb.reserve(-(char) sizeof(pseudo_hdr6));
+    pseudo_hdr6 *phdr = (struct pseudo_hdr6 *)bb.mutable_data();
     phdr->src = ip_hdr->ip6_src;
     phdr->dst = ip_hdr->ip6_dst;
     memset(phdr->zero, 0, sizeof(phdr->zero));
@@ -1084,8 +1086,8 @@ void Ip4::build_packet(Buffer& bb){
         udp->build_packet(&hdr, bb);
         break;
     }
-    char* packet = (char *) bb.reserve(-(int) sizeof(ip));
-
+    bb.reserve(-(int) sizeof(ip));
+    char* packet = (char *)bb.mutable_data();
     hdr.ip_len = htons(bb.len);
     hdr.ip_sum = 0;
     memcpy(packet, &hdr, sizeof(ip));
@@ -1344,7 +1346,8 @@ void Ip6::build_packet(Buffer& bb) {
         break;
     }
     size_t len = bb.len;
-    char* packet = (char *) bb.reserve(-(int) sizeof(ip6_hdr));
+    bb.reserve(-(int) sizeof(ip6_hdr));
+    char* packet = (char *)bb.mutable_data();
     hdr.ip6_plen = htons(len);
     memcpy(packet, &hdr, sizeof(ip6_hdr));
 }

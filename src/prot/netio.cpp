@@ -244,7 +244,7 @@ const char *SocketRWer::getPeer() {
 
 void SocketRWer::dump_status(Dumper dp, void *param) {
     dp(param, "SocketRWer <%d> (%s): rlen: %zu, wlen: %zu, stats: %d, event: %s\n",
-       getFd(), getPeer(), rlength(0), wbuff.length(), (int)getStats(), events_string[(int)getEvents()]);
+       getFd(), getPeer(), rlength(0), wlen, (int)getStats(), events_string[(int)getEvents()]);
 }
 
 /*
@@ -267,8 +267,7 @@ void StreamRWer::ConsumeRData(uint64_t id) {
         Buffer wb = rb.get();
         assert(wb.len != 0);
         wb.id = id;
-        size_t left = readCB(wb);
-        rb.consume(wb.len - left);
+        rb.consume(readCB(std::move(wb)));
     }
     if(rb.cap() == 0){
         delEvents(RW_EVENT::READ);
@@ -310,19 +309,24 @@ size_t PacketRWer::rlength(uint64_t) {
 void PacketRWer::ConsumeRData(uint64_t) {
 }
 
-ssize_t PacketRWer::Write(const std::list<Buffer> &bbs) {
-    if(bbs.size() == 1) {
-        const auto &bb = bbs.front();
+ssize_t PacketRWer::Write(std::set<uint64_t>& writed_list) {
+    if(wbuff.empty()) {
+        return 0;
+    }else if(wbuff.size() == 1) {
+        auto bb = wbuff.begin();
+        LOGD(DRWER, "will write: %p: %zd\n", bb->data(), bb->len);
         int ret  = 0;
-        if(bb.len > 0) {
-            ret = write(getFd(), bb.data(), bb.len);
-            LOGD(DRWER, "write: len: %zd, ret: %d\n", bb.len, ret);
+        if(bb->len > 0) {
+            ret = write(getFd(), bb->data(), bb->len);
+            LOGD(DRWER, "write: len: %zd, ret: %d\n", bb->len, ret);
+            bb->reserve(ret);
         }
+        writed_list = StripWbuff(ret);
         return ret;
     } else {
         std::vector<iovec> iovs;
-        iovs.reserve(bbs.size());
-        for (const auto &bb: bbs) {
+        iovs.reserve(wbuff.size());
+        for (const auto &bb: wbuff) {
             iovs.emplace_back(iovec{(void *) bb.data(), bb.len});
             if (iovs.size() >= IOV_MAX) {
                 break;
@@ -334,12 +338,18 @@ ssize_t PacketRWer::Write(const std::list<Buffer> &bbs) {
             LOGD(DRWER, "writem: iovs: %zd, ret: %zd\n", iovs.size(), ret);
             return ret;
         }
-        auto it = bbs.begin();
-        for(size_t i = 0; i < (size_t)ret; i++, it++) {
-            if(it->len != iovs[i].iov_len) {
+        auto it = wbuff.begin();
+        for(size_t i = 0; i < (size_t)ret; i++) {
+            assert(iovs[i].iov_len <= it->len);
+            writed_list.emplace(it->id);
+            len += iovs[i].iov_len;
+            wlen -= iovs[i].iov_len;
+            if(it->len == iovs[i].iov_len) {
+                it = wbuff.erase(it);
+            }else {
+                it->reserve(iovs[i].iov_len);
                 break;
             }
-            len += it->len;
         }
         LOGD(DRWER, "writem: iovs: %zd, ret: %zd/%zd\n", iovs.size(), ret, len);
         return (ssize_t)len;

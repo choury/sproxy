@@ -1,7 +1,7 @@
 #include "icmp.h"
 
 
-void IcmpProc(std::shared_ptr<IcmpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len) {
+void IcmpProc(std::shared_ptr<IcmpStatus> status, std::shared_ptr<const Ip> pac, Buffer&& bb) {
     if(status->id == 0) {
         status->reqCB(pac);
     }
@@ -14,12 +14,12 @@ void IcmpProc(std::shared_ptr<IcmpStatus> status, std::shared_ptr<const Ip> pac,
         status->id = pac->icmp6->getid();
         status->seq = pac->icmp6->getseq();
     }
-    size_t datalen = len - pac->gethdrlen();
+    bb.reserve(pac->gethdrlen());
     status->aged_job = updatejob_with_name(std::move(status->aged_job),
                                            [errCB = status->errCB, pac]{errCB(pac, CONNECT_AGED);},
                                            "icmp_aged_job", 30000);
-    if(datalen > 0) {
-        status->dataCB(pac, packet + pac->gethdrlen(), datalen);
+    if(bb.len > 0) {
+        status->dataCB(pac, std::move(bb));
     }
 }
 

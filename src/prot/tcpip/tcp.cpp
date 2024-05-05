@@ -60,8 +60,8 @@
 #define TCP_WSCALE   9u
 
 static void SendAck(std::weak_ptr<TcpStatus> status);
-static void CloseProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
-static void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
+static void CloseProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, Buffer&& bb);
+static void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, Buffer&& bb);
 #define GetWeak(ptr) std::weak_ptr<std::remove_reference<decltype(*(ptr))>::type>(ptr)
 
 ssize_t Cap(std::shared_ptr<TcpStatus> status) {
@@ -237,7 +237,7 @@ void KeepAlive(std::weak_ptr<TcpStatus> status_) {
 }
 
 // LISTEN or SYN-RECEIVED
-void SynProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char*, size_t) {
+void SynProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, Buffer&&) {
     assert(status->state == TCP_LISTEN || status->state == TCP_SYN_RECV);
     uint32_t seq = pac->tcp->getseq();
     uint8_t flag = pac->tcp->getflag();
@@ -305,8 +305,8 @@ void SendSyn(std::shared_ptr<TcpStatus> status) {
 
     status->sent_ack = status->want_seq;
     status->state = TCP_ESTABLISHED;
-    status->PkgProc = [status](auto&& v1, auto&& v2, auto&& v3) {
-        return DefaultProc(status, v1, v2, v3);
+    status->PkgProc = [status](auto&& v1, auto&& v2) {
+        return DefaultProc(status, v1, std::forward<decltype(v2)>(v2));
     };
 
     PendPkg(status, pac, nullptr);
@@ -320,7 +320,7 @@ void UnReach(std::shared_ptr<TcpStatus> status, uint8_t code) {
 
 // ESTABLISHED or CLOSE-WAIT or FIN-WAIT1 or FIN-WAIT2
 // 只有这个函数会从对端接收数据(data)
-void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len) {
+void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, Buffer&& bb) {
     assert(status->state == TCP_ESTABLISHED ||
            status->state == TCP_CLOSE_WAIT ||
            status->state == TCP_FIN_WAIT1 ||
@@ -441,7 +441,7 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
     }
 left:
     status->window = pac->tcp->getwindow();
-    size_t datalen = len - pac->gethdrlen();
+    size_t datalen = bb.len - pac->gethdrlen();
     if(datalen > status->rbuf.cap()) {
         LOG("%s get pkt oversize of window (%zu/%zu), rst it\n",
             storage_ntoa(&status->src), datalen,  status->rbuf.cap());
@@ -451,7 +451,7 @@ left:
     }
     if(datalen > 0) {
         //处理数据
-        const char *data = packet + pac->gethdrlen();
+        const char *data = (const char*)bb.data() + pac->gethdrlen();
         status->rbuf.put(data, datalen);
         status->want_seq += datalen;
         status->ack_job = UpdateJob(std::move(status->ack_job),
@@ -471,14 +471,14 @@ left:
                 break;
             case TCP_FIN_WAIT1:
                 status->state = TCP_CLOSING;
-                status->PkgProc = [status](auto&& v1, auto&& v2, auto&& v3) {
-                    return CloseProc(status, v1, v2, v3);
+                status->PkgProc = [status](auto&& v1, auto&& v2) {
+                    return CloseProc(status, v1, std::forward<decltype(v2)>(v2));
                 };
                 break;
             case TCP_FIN_WAIT2:
                 status->state = TCP_TIME_WAIT;
-                status->PkgProc = [status](auto&& v1, auto&& v2, auto&& v3) {
-                    return CloseProc(status, v1, v2, v3);
+                status->PkgProc = [status](auto&& v1, auto&& v2) {
+                    return CloseProc(status, v1, std::forward<decltype(v2)>(v2));
                 };
                 break;
         }
@@ -499,11 +499,11 @@ void SendAck(std::weak_ptr<TcpStatus> status_) {
         auto pac = MakeIp(IPPROTO_TCP, &status->src, &status->dst);
         if(status->rbuf.length() > 0) {
             auto bb = status->rbuf.get();
-            size_t len = status->dataCB(pac, bb.data(), bb.len);
+            size_t len = status->dataCB(pac, std::move(bb));
             status->rbuf.consume(len);
         }
         if((status->flags & TCP_FIN_RECVD) && status->rbuf.length() == 0){
-            status->dataCB(pac, nullptr, 0);
+            status->dataCB(pac, nullptr);
             status->flags |= TCP_FIN_DELIVERED;
         }
     }
@@ -559,8 +559,8 @@ void SendData(std::shared_ptr<TcpStatus> status, Buffer&& bb) {
             break;
         case TCP_CLOSE_WAIT:
             status->state = TCP_LAST_ACK;
-            status->PkgProc = [status](auto&& v1, auto&& v2, auto&& v3) {
-                return CloseProc(status, v1, v2, v3);
+            status->PkgProc = [status](auto&& v1, auto&& v2) {
+                return CloseProc(status, v1, std::forward<decltype(v2)>(v2));
             };
             break;
         }
@@ -609,7 +609,7 @@ void SendRst(std::shared_ptr<TcpStatus> status) {
 }
 
 // LAST_ACK or CLOSING
-void CloseProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char*, size_t) {
+void CloseProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, Buffer&&) {
     assert(status->state == TCP_LAST_ACK || status->state == TCP_CLOSING || status->state == TCP_TIME_WAIT);
     uint32_t ack = pac->tcp->getack();
     uint32_t seq = pac->tcp->getseq();

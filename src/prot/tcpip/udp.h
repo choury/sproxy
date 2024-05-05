@@ -5,7 +5,7 @@
 
 struct UdpStatus;
 
-void UdpProc(std::shared_ptr<UdpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
+void UdpProc(std::shared_ptr<UdpStatus> status, std::shared_ptr<const Ip> pac, Buffer&& bb);
 void SendData(std::shared_ptr<UdpStatus> status, Buffer&& bb);
 
 

@@ -47,14 +47,14 @@ public:
     //for read buffer
     virtual size_t rlength(uint64_t id) override;
     virtual size_t mem_usage() override {
-        return sizeof(*this) + (rb.cap() + rb.length()) + wbuff.length();
+        return sizeof(*this) + (rb.cap() + rb.length()) + wlen;
     }
 };
 
 class PacketRWer: public SocketRWer{
 protected:
     char rb[BUF_LEN];
-    virtual ssize_t Write(const std::list<Buffer>& bbs) override;
+    virtual ssize_t Write(std::set<uint64_t>& writed_list) override;
     virtual void ReadData() override;
     virtual void ConsumeRData(uint64_t id) override;
 public:
@@ -63,7 +63,7 @@ public:
     //for read buffer
     virtual size_t rlength(uint64_t id) override;
     virtual size_t mem_usage() override {
-        return sizeof(*this) + wbuff.length();
+        return sizeof(*this) + wlen;
     }
 };
 

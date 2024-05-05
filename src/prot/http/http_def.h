@@ -31,7 +31,7 @@ public:
     //返回0表示不能再接收数据了
     //返回非0表示可以继续接收数据
     //这个函数不能返回错误，如果出错，请调用对应的错误处理回调，或者发送信号
-    typedef std::function<int(ChannelMessage&)> handler_t;
+    typedef std::function<int(ChannelMessage&&)> handler_t;
 private:
     cap_t cap_cb = []{return BUF_LEN;}; //这里需要buffer一些数据，不然vpn那边体验会很差，依赖重传
     handler_t handler;

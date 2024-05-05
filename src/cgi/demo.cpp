@@ -6,7 +6,7 @@ class handler: public CgiHandler {
         if((flag & HTTP_REQ_COMPLETED) == 0){
             return;
         }
-        std::shared_ptr<HttpResHeader> res = UnpackHttpRes(H200, sizeof(H200));
+        std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S200, sizeof(S200), req->request_id);
         Cookie cookie("sproxy", "demo");
         res->addcookie(cookie);
         Response(res);

@@ -16,9 +16,9 @@ class handler: public CgiHandler{
             return;
         }
         if(!c->Login(params["key"], req->get("X-Real-IP")).get_future().get()){
-            Response(UnpackHttpRes(H403));
+            Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
         }else{
-            Response(UnpackHttpRes(H204));
+            Response(HttpResHeader::create(S204, sizeof(S204), req->request_id));
         }
         Finish();
     }

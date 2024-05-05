@@ -37,14 +37,16 @@ protected:
 #define RWER_EOFDELIVED 0x20  // shutdown by peer (handled by me)
     uint32_t   flags = 0;
     RWerStats  stats = RWerStats::Idle;
-    WBuffer    wbuff;
-    //返回值是剩余未处理的数据长度，返回0表示数据处理完毕，返回len表示数据完全没有被消费
-    std::function<size_t(Buffer bb)> readCB;
+    std::list<Buffer> wbuff;
+    size_t            wlen = 0;
+    //返回值是处理的数据长度，返回len表示数据处理完毕，返回0表示数据完全没有被消费
+    std::function<size_t(Buffer&& bb)> readCB;
     std::function<void(uint64_t id)> writeCB;
     std::function<void(int ret, int code)> errorCB;
     std::function<void()> closeCB;
 
-    virtual ssize_t Write(const std::list<Buffer>& bbs);
+    std::set<uint64_t> StripWbuff(ssize_t len);
+    virtual ssize_t Write(std::set<uint64_t>& writed_list);
     virtual void SendData();
     virtual void ReadData() = 0;
     virtual void defaultHE(RW_EVENT events);
@@ -62,7 +64,7 @@ public:
     explicit RWer(int fd, std::function<void(int ret, int code)> errorCB);
     explicit RWer(std::function<void(int ret, int code)> errorCB);
     virtual void SetErrorCB(std::function<void(int ret, int code)> func);
-    virtual void SetReadCB(std::function<size_t(Buffer bb)> func);
+    virtual void SetReadCB(std::function<size_t(Buffer&& bb)> func);
     virtual void SetWriteCB(std::function<void(uint64_t id)> func);
 
     virtual void Close(std::function<void()> func);
@@ -83,7 +85,7 @@ public:
 class NullRWer: public RWer{
 public:
     explicit NullRWer();
-    virtual ssize_t Write(const std::list<Buffer>& bbs) override;
+    virtual ssize_t Write(std::set<uint64_t>& writed_list) override;
     virtual void ReadData() override;
     virtual size_t rlength(uint64_t id) override;
 
@@ -102,7 +104,7 @@ protected:
 #ifndef __linux__
     int pairfd = -1;
 #endif
-    virtual ssize_t Write(const std::list<Buffer>& bbs) override;
+    virtual ssize_t Write(std::set<uint64_t>& writed_list) override;
     virtual void ReadData() override;
     virtual void closeHE(RW_EVENT events) override;
 public:

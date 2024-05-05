@@ -29,7 +29,7 @@ protected:
     virtual void onRead(Buffer&& bb) = 0;
     virtual void onError(int type, int code) = 0;
     virtual void onConnected() = 0;
-    virtual void handleData(Buffer&& bb);
+    virtual void handleData(const void* data, size_t len);
     virtual void sendData(Buffer&& bb);
 public:
     explicit SslRWerBase(SSL_CTX* ctx);
@@ -106,11 +106,12 @@ protected:
         MemRWer::ConsumeRData(id);
     }
 public:
-    SslMer(SSL_CTX* ctx, const char* pname, std::function<int(std::variant<Buffer, Signal>)> read_cb,
-            std::function<ssize_t()> cap_cb):
+    SslMer(SSL_CTX* ctx, const char* pname,
+           std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb,
+           std::function<ssize_t()> cap_cb):
       SslRWerBase(ctx), MemRWer(pname, std::move(read_cb), std::move(cap_cb))
     {}
-    virtual void push_data(const Buffer& bb) override;
+    virtual void push_data(Buffer&& bb) override;
     void Send(Buffer&& bb) override;
 
     virtual bool isEof() override {

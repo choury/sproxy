@@ -48,7 +48,7 @@ class Cgi:public Responser{
     std::map<uint32_t, CgiStatus> statusmap;
     void evictMe();
     void Clean(uint32_t id, CgiStatus& status);
-    size_t readHE(const Buffer& bb);
+    size_t readHE(Buffer&& bb);
     bool HandleRes(const CGI_Header* header, CgiStatus& status);
     bool HandleData(const CGI_Header* header, CgiStatus& Status);
     bool HandleError(const CGI_Header* header, CgiStatus& status);
@@ -105,14 +105,14 @@ protected:
         if((flag.load(std::memory_order_acquire)  & HTTP_REQ_COMPLETED) == 0) {
             return;
         }
-        Response(UnpackHttpRes(H405, sizeof(H405)));
+        Response(HttpResHeader::create(S405, sizeof(S405), req->request_id));
         Finish();
     }
     void BadRequest(){
         if((flag.load(std::memory_order_acquire)  & HTTP_REQ_COMPLETED) == 0) {
             return;
         }
-        Response(UnpackHttpRes(H400, sizeof(H400)));
+        Response(HttpResHeader::create(S400, sizeof(S400), req->request_id));
         Finish();
     }
     virtual void ERROR(const CGI_Header* header){
@@ -120,7 +120,7 @@ protected:
             flag.fetch_or(HTTP_CLOSED_F, std::memory_order_release);
             return;
         }
-        Response(UnpackHttpRes(H500, sizeof(H500)));
+        Response(HttpResHeader::create(S500, sizeof(S500), req->request_id));
         Finish();
     }
     virtual void GET(const CGI_Header*){

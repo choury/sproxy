@@ -17,11 +17,11 @@ forceinline  ssize_t Cap(std::shared_ptr<IpStatus>) {
 struct IpStatus{
     std::function<void(std::shared_ptr<const Ip>)> reqCB;
     std::function<void(std::shared_ptr<const Ip>)> ackCB;
-    std::function<size_t(std::shared_ptr<const Ip>, const void*, size_t)> dataCB;
+    std::function<size_t(std::shared_ptr<const Ip>, Buffer&&)> dataCB;
     std::function<void(std::shared_ptr<const Ip>, uint32_t)> errCB;
     std::function<void(std::shared_ptr<const Ip>, const void*, size_t)> sendCB;
 
-    std::function<void(std::shared_ptr<const Ip>, const char*, size_t)> PkgProc;
+    std::function<void(std::shared_ptr<const Ip>, Buffer&&)> PkgProc;
     std::function<void(Buffer&&)> SendPkg;
 #define IP_PORT_UNREACH 1
 #define IP_ADDR_UNREACH 2
@@ -30,7 +30,7 @@ struct IpStatus{
     Protocol    protocol;
     sockaddr_storage src;
     sockaddr_storage dst;
-    std::shared_ptr<Block> packet_hdr;
+    Block*      packet_hdr;
     uint16_t    packet_hdr_len;
 };
 

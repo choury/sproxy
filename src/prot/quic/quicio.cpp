@@ -716,6 +716,8 @@ void QuicBase::cleanStream(uint64_t id) {
             i++;
             continue;
         }
+        LOGD(DQUIC, "discard data: %" PRIu64" - %" PRIu64"\n",
+             (*i)->stream.offset, (*i)->stream.offset + (*i)->stream.length);
         frame_release(*i);
         i = fullq.erase(i);
     }
@@ -961,6 +963,9 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
                 break;
             }
             qos.PushFrame(ssl_encryption_application, *i);
+            if((*i)->type & QUIC_FRAME_STREAM_FIN_F) {
+                status.flags |= STREAM_FLAG_FIN_SENT;
+            }
             i = fullq.erase(i);
         }
         status.his_max_data = new_max_data;
@@ -1165,7 +1170,6 @@ void QuicBase::sendData(Buffer&& bb) {
     }
     if(bb.len == 0){
         frame->type |= QUIC_FRAME_STREAM_FIN_F;
-        status.flags |= STREAM_FLAG_FIN_SENT;
     }
     frame->stream.id = id;
     frame->stream.length = bb.len;
@@ -1197,6 +1201,9 @@ void QuicBase::sendData(Buffer&& bb) {
         return;
     }
     qos.PushFrame(ssl_encryption_application, frame);
+    if(bb.len == 0) {
+        status.flags |= STREAM_FLAG_FIN_SENT;
+    }
     LOGD(DQUIC, "send data [%" PRIu64"]: <%zd/%" PRIu64"> <%" PRIu64"/%" PRIu64">\n",
          id, status.my_offset, status.his_max_data, my_sent_data, his_max_data);
     if(idle(id)){
@@ -1487,7 +1494,7 @@ void QuicBase::sinkData(uint64_t id, QuicStreamStatus &status) {
     if(rb.length() > 0){
         Buffer bb = rb.get();
         bb.id = id;
-        size_t eaten = rb.length() - onRead(bb);
+        size_t eaten = onRead(std::move(bb));
         LOGD(DQUIC, "consume data [%" PRIu64"]: %" PRIu64" - %" PRIu64", left: %zd\n",
              id, rb.Offset(), rb.Offset() + eaten, rb.length() - eaten);
         rb.consume(eaten);
@@ -1594,7 +1601,8 @@ void QuicBase::keepAlive_action() {
 }
 
 void QuicBase::dump(Dumper dp, const std::string& session, void* param) {
-    dp(param, "Quic (%s): %s -> %s\nread: %zd/%zd, write: %zd/%zd my_window: %zd, his_window: %zd rlen: %zd, fullq: %zd\n",
+    dp(param, "Quic (%s): %s -> %s\nread: %zd/%zd, write: %zd/%zd "
+              "my_window: %zd, his_window: %zd rlen: %zd, fullq: %zd, wlen: %zd\n",
        session.c_str(),
        dumpHex(myids[myid_idx].c_str(), myids[myid_idx].length()).c_str(),
        dumpHex(hisids[hisid_idx].c_str(), hisids[hisid_idx].length()).c_str(),
@@ -1602,7 +1610,7 @@ void QuicBase::dump(Dumper dp, const std::string& session, void* param) {
        my_sent_data, my_sent_data_total,
        my_max_data - my_received_data,
        his_max_data - my_sent_data,
-       rblen, fullq.size());
+       rblen, fullq.size(), qos.PendingSize(ssl_encryption_application));
     for(auto& entry: streammap){
         auto& status = entry.second;
         dp(param, "  0x%lx: rlen: %zd-%zd, rcap: %zd, my_window: %zd, his_window: %zd, flags: 0x%08x\n",
@@ -1692,8 +1700,8 @@ void QuicRWer::onConnected() {
     connected(addrs.front());
 }
 
-size_t QuicRWer::onRead(const Buffer &bb) {
-    return readCB(bb);
+size_t QuicRWer::onRead(Buffer&& bb) {
+    return readCB(std::move(bb));
 }
 
 void QuicRWer::onWrite(uint64_t id) {
@@ -1843,7 +1851,8 @@ size_t QuicRWer::mem_usage() {
 }
 
 QuicMer::QuicMer(SSL_CTX *ctx, const char *pname,
-                 std::function<int(std::variant<Buffer, Signal>)> read_cb, std::function<ssize_t()> cap_cb):
+                 std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb,
+                 std::function<ssize_t()> cap_cb):
         QuicBase(ctx), MemRWer(pname, std::move(read_cb), std::move(cap_cb))
 {
 }
@@ -1874,8 +1883,8 @@ void QuicMer::onError(int type, int code) {
     }
 }
 
-size_t QuicMer::onRead(const Buffer &bb) {
-    return readCB(bb);
+size_t QuicMer::onRead(Buffer&& bb) {
+    return readCB(std::move(bb));
 }
 
 void QuicMer::onWrite(uint64_t id) {
@@ -1890,7 +1899,7 @@ void QuicMer::defaultHE(RW_EVENT events) {
     setEvents(RW_EVENT::NONE);
 }
 
-void QuicMer::push_data(const Buffer& bb) {
+void QuicMer::push_data(Buffer&& bb) {
     if(flags & RWER_CLOSING){
         return;
     }

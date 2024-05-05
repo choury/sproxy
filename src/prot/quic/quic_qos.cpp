@@ -815,6 +815,17 @@ void QuicQos::DrainAll(){
     packet_tx.reset(nullptr);
 }
 
+size_t QuicQos::PendingSize(OSSL_ENCRYPTION_LEVEL level) {
+    pn_namespace* ns = this->GetNamespace(level);
+    size_t len = 0;
+    for(auto& i : ns->pend_frames) {
+        len += frame_size(i);
+    }
+    for(auto& i : ns->sent_packets) {
+        len += i.meta.sent_bytes;
+    }
+    return len;
+}
 
 size_t QuicQos::mem_usage() {
     size_t usage = sizeof(pns)/sizeof(pns[1]) * sizeof(pn_namespace);

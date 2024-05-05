@@ -10,8 +10,8 @@
 #include <assert.h>
 #include <inttypes.h>
 
-size_t Guest::ReadHE(const Buffer& bb){
-    LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
+size_t Guest::ReadHE(Buffer&& bb){
+    LOGD(DHTTP, "<guest> (%s) read: len:%zu, refs: %zd\n", rwer->getPeer(), bb.len, bb.refs());
     if(bb.len == 0){
         //EOF
         if(statuslist.empty()){
@@ -24,10 +24,10 @@ size_t Guest::ReadHE(const Buffer& bb){
             assert(statuslist.size() == 1);
             //对于AlwaysProc，收到EOF视为请求结束
             if(status.req) {
-                status.req->send(nullptr);
+                status.req->send(Buffer{nullptr, bb.id});
             }
             if(status.rwer) {
-                status.rwer->push(nullptr);
+                status.rwer->push(Buffer{nullptr, bb.id});
             }
             status.flags |= HTTP_REQ_COMPLETED;
             if(status.flags & HTTP_RES_COMPLETED){
@@ -43,43 +43,49 @@ size_t Guest::ReadHE(const Buffer& bb){
         }
         return 0;
     }
-    size_t ret = 0;
     size_t len = bb.len;
-    const char* data = (const char*)bb.data();
-    while(len > 0 && (ret = (this->*Http_Proc)(data, len))){
-        len -= ret;
-        data += ret;
-    }
-    return len;
+    while(bb.len > 0 && (this->*Http_Proc)(bb));
+    return len - bb.len;
 }
 
-int Guest::mread(std::shared_ptr<HttpReqHeader>, std::variant<Buffer, Signal> data) {
-    return std::visit([this](auto&& arg) -> int {
+int Guest::mread(std::shared_ptr<HttpReqHeader>,
+        std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data) {
+    auto BufferHandle = [this](Buffer& bb) {
+        LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
+        assert(statuslist.size() == 1);
+        auto& status = statuslist.front();
+        assert((status.flags & HTTP_RES_COMPLETED) == 0);
+        if (bb.len == 0) {
+            rwer->Send({nullptr, bb.id});
+            status.flags |= HTTP_RES_COMPLETED;
+            if(status.flags & HTTP_REQ_COMPLETED) {
+                deleteLater(NOERROR);
+            }
+            return 0;
+        }
+        int cap = rwer->cap(bb.id);
+        if(cap <= 0) {
+            errno = EAGAIN;
+            return -1;
+        }
+        if(cap >= (int)bb.len) {
+            cap = bb.len;
+            rwer->Send(std::move(bb));
+        } else {
+            auto cbb = bb;
+            cbb.truncate(cap);
+            rwer->Send(std::move(cbb));
+        }
+        return cap;
+    };
+    return std::visit([&](auto&& arg) -> int {
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, int>) {
             Handle(arg);
         } else if constexpr (std::is_same_v<T, Buffer>) {
-            LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", rwer->getPeer(), arg.len);
-            assert(statuslist.size() == 1);
-            auto& status = statuslist.front();
-            assert((status.flags & HTTP_RES_COMPLETED) == 0);
-            if (arg.len == 0) {
-                rwer->Send(nullptr);
-                status.flags |= HTTP_RES_COMPLETED;
-                if(status.flags & HTTP_REQ_COMPLETED) {
-                    deleteLater(NOERROR);
-                }
-                return 0;
-            }
-            int cap = rwer->cap(0);
-            if(cap <= 0) {
-                errno = EAGAIN;
-                return -1;
-            }
-            int len = std::min(arg.len, (size_t)cap);
-            arg.truncate(len);
-            rwer->Send(std::move(arg));
-            return len;
+            BufferHandle(arg);
+        } else if constexpr (std::is_same_v<T, std::reference_wrapper<Buffer>>) {
+            BufferHandle(arg.get());
         }
         return 0;
     }, data);
@@ -125,8 +131,8 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
             Error(ret, code);
         }));
     }
-    rwer->SetReadCB([this](const Buffer& bb) {
-        return ReadHE(bb);
+    rwer->SetReadCB([this](Buffer&& bb) {
+        return ReadHE(std::move(bb));
     });
     rwer->SetWriteCB([this](uint64_t id){
         return WriteHE(id);
@@ -154,23 +160,25 @@ Guest::Guest(std::shared_ptr<RWer> rwer_): Requester(rwer_){
     rwer->SetErrorCB([this](int ret, int code){
         Error(ret, code);
     });
-    rwer->SetReadCB([this](const Buffer& bb){
-        return ReadHE(bb);
+    rwer->SetReadCB([this](Buffer&& bb){
+        return ReadHE(std::move(bb));
     });
     rwer->SetWriteCB([this](uint64_t id){
         return WriteHE(id);
     });
 }
 
-void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
+void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
+    static const char*  HCONNECT = "HTTP/1.1 200 Connection establishe" CRLF CRLF;
     if(header->ismethod("CONNECT") && header->Dest.port == HTTPPORT) {
         auto mrwer = std::make_shared<MemRWer>(rwer->getPeer(),
                                                [this, header](auto&& data) {
                                                    return mread(header, std::forward<decltype(data)>(data));
                                                },
-                                               [this]{ return  rwer->cap(0);});
+                                               [this, id]{ return  rwer->cap(id);});
         statuslist.emplace_back(ReqStatus{nullptr, nullptr, mrwer, HTTP_NOEND_F});
-        rwer->Send({HCONNECT, strlen(HCONNECT)});
+
+        rwer->Send({HCONNECT, strlen(HCONNECT), id});
         new Guest(mrwer);
         return;
     }
@@ -183,9 +191,9 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
                                                   [this, header](auto&& data) {
                                                       return mread(header, std::forward<decltype(data)>(data));
                                                   },
-                                                  [this]{ return  rwer->cap(0);});
+                                                  [this, id]{ return  rwer->cap(id);});
             statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
-            rwer->Send({HCONNECT, strlen(HCONNECT)});
+            rwer->Send({HCONNECT, strlen(HCONNECT), id});
             new Guest(srwer);
             return;
         }
@@ -194,7 +202,7 @@ void Guest::ReqProc(std::shared_ptr<HttpReqHeader> header) {
         strcpy(header->Dest.scheme, "https");
         strcpy(header->Dest.protocol, "ssl");
     }
-    LOGD(DHTTP, "<guest> ReqProc %" PRIu32 " %s\n", header->request_id, header->geturl().c_str());
+    LOGD(DHTTP, "<guest> ReqProc %" PRIu64 " %s\n", header->request_id, header->geturl().c_str());
     auto req = std::make_shared<HttpReq>(header,
             [this](std::shared_ptr<HttpRes> res) { response(nullptr, res); },
             [this]{ rwer->Unblock(0);});
@@ -230,42 +238,51 @@ void Guest::deqReq() {
     }
 }
 
-ssize_t Guest::DataProc(const void *buff, size_t size) {
+ssize_t Guest::DataProc(Buffer& bb) {
     ReqStatus& status = statuslist.back();
     assert((status.flags & HTTP_REQ_COMPLETED) == 0);
-    int len = size;
+    int cap = 0;
     if(status.req) {
-        len = std::min(len, (int)status.req->cap());
+        cap = status.req->cap();
     }
     if(status.rwer) {
-        len = std::min(len, (int)status.rwer->bufsize());
+        cap = status.rwer->bufsize();
     }
-    if (len <= 0) {
-        LOGE("[%" PRIu32 "]: <guest> the host's buff is full (%s)\n",
+    if (cap <= 0) {
+        LOGE("[%" PRIu64 "]: <guest> the host's buff is full (%s)\n",
             status.req->header->request_id, status.req->header->geturl().c_str());
         rwer->delEvents(RW_EVENT::READ);
         return -1;
     }
-    if(status.req) {
-        status.req->send(buff, (size_t)len);
+    auto tx = [&](Buffer&& bb) {
+        if (status.req) {
+            LOGD(DHTTP, "<guest> DataProc %" PRIu64 ": cap:%zu, send:%d/%zu\n",
+                 status.req->header->request_id, bb.len, cap, rx_bytes);
+            status.req->send(std::move(bb));
+        }
+        if (status.rwer) {
+            LOGD(DHTTP, "<guest> DataProc %s: cap:%zu, send:%d/%zu\n",
+                 status.rwer->getPeer(), bb.len, cap, rx_bytes);
+            status.rwer->push(std::move(bb));
+        }
+    };
+    if((size_t)cap < bb.len) {
+        auto cbb = bb;
+        cbb.truncate(cap);
+        tx(std::move(cbb));
+        bb.reserve(cap);
+    } else {
+        cap = bb.len;
+        tx(std::move(bb));
     }
-    if(status.rwer) {
-        status.rwer->push(Buffer{buff, (size_t)len});
-    }
-    rx_bytes += len;
-    if(status.req){
-        LOGD(DHTTP, "<guest> DataProc %" PRIu32 ": size:%zu, send:%d/%zu\n", status.req->header->request_id, size, len, rx_bytes);
-    }
-    if(status.rwer) {
-        LOGD(DHTTP, "<guest> DataProc %s: size:%zu, send:%d/%zu\n", status.rwer->getPeer(), size, len, rx_bytes);
-    }
-    return len;
+    rx_bytes += cap;
+    return cap;
 }
 
-void Guest::EndProc() {
+void Guest::EndProc(uint64_t) {
     ReqStatus& status = statuslist.back();
     assert(status.req);
-    LOGD(DHTTP, "<guest> EndProc %" PRIu32 "\n", status.req->header->request_id);
+    LOGD(DHTTP, "<guest> EndProc %" PRIu64 "\n", status.req->header->request_id);
     rwer->addEvents(RW_EVENT::READ);
     status.req->send(nullptr);
     status.flags |= HTTP_REQ_COMPLETED;
@@ -274,7 +291,7 @@ void Guest::EndProc() {
     }
 }
 
-void Guest::ErrProc() {
+void Guest::ErrProc(uint64_t) {
     Error(PROTOCOL_ERR, 0);
 }
 
@@ -292,7 +309,7 @@ void Guest::Error(int ret, int code) {
     if(ret == PROTOCOL_ERR && code == PEER_LOST_ERR && strcmp(status.req->header->Dest.protocol, "udp") == 0){
         return deleteLater(PEER_LOST_ERR);
     }
-    LOGE("[%" PRIu32 "]: <guest> error (%s) %d/%d flags:0x%x http_flag:0x%x\n",
+    LOGE("[%" PRIu64 "]: <guest> error (%s) %d/%d flags:0x%x http_flag:0x%x\n",
         status.req->header->request_id, status.req->header->geturl().c_str(),
         ret, code, status.flags, http_flag);
     deleteLater(ret);
@@ -302,7 +319,7 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
     ReqStatus& status = statuslist.front();
     assert(status.res == nullptr && status.req);
     status.res = res;
-    res->attach([this, &status](ChannelMessage& msg){
+    res->attach([this, &status](ChannelMessage&& msg){
         assert(!statuslist.empty());
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER: {
@@ -322,7 +339,7 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
             if (opt.alt_svc) {
                 header->set("Alt-Svc", opt.alt_svc);
             }
-            Buffer buff{BUF_LEN};
+            Buffer buff{BUF_LEN, header->request_id};
             buff.truncate(PackHttpRes(header, buff.mutable_data(), BUF_LEN));
             rwer->Send(std::move(buff));
             return 1;
@@ -343,13 +360,13 @@ void Guest::Recv(Buffer&& bb) {
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
     if(bb.len == 0){
         status.flags |= HTTP_RES_COMPLETED;
-        LOGD(DHTTP, "<guest> recv %" PRIu32 ": EOF/%zu\n", status.req->header->request_id, tx_bytes);
+        LOGD(DHTTP, "<guest> recv %" PRIu64 ": EOF/%zu\n", status.req->header->request_id, tx_bytes);
         if(status.flags & HTTP_NOEND_F){
             assert(statuslist.size() == 1);
             //对于没有长度字段的响应，直接关闭连接来结束
-            rwer->Send(nullptr);
+            rwer->Send({nullptr, bb.id});
         }else if(status.flags & HTTP_CHUNK_F){
-            rwer->Send({"0" CRLF CRLF, 5});
+            rwer->Send({"0" CRLF CRLF, 5, bb.id});
         }
         //如果既不是没有长度的请求，也非chunked，则无需发送额外数据来标记结束
         if(status.flags & HTTP_REQ_COMPLETED) {
@@ -363,18 +380,19 @@ void Guest::Recv(Buffer&& bb) {
         return;
     }
     if(status.req->header->ismethod("HEAD")){
-        LOGD(DHTTP, "<guest> recv %" PRIu32 ": HEAD req discard body\n", status.req->header->request_id);
+        LOGD(DHTTP, "<guest> recv %" PRIu64 ": HEAD req discard body\n", status.req->header->request_id);
         return;
     }
     tx_bytes += bb.len;
-    LOGD(DHTTP, "<guest> recv %" PRIu32 ": size:%zu/%zu\n", status.req->header->request_id, bb.len, tx_bytes);
+    LOGD(DHTTP, "<guest> recv %" PRIu64 ": size:%zu/%zu, refs: %zd\n",
+         status.req->header->request_id, bb.len, tx_bytes, bb.refs());
     if(status.flags & HTTP_CHUNK_F){
         char chunkbuf[100];
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)bb.len);
         bb.reserve(-chunklen);
         memcpy(bb.mutable_data(), chunkbuf, chunklen);
         rwer->Send(std::move(bb));
-        rwer->Send({CRLF, 2});
+        rwer->Send({CRLF, 2, bb.id});
     }else{
         rwer->Send(std::move(bb));
     }
@@ -382,7 +400,7 @@ void Guest::Recv(Buffer&& bb) {
 
 void Guest::Handle(Signal s) {
     ReqStatus& status = statuslist.front();
-    LOGD(DHTTP, "<guest> signal %" PRIu32 ": %d\n", status.req->header->request_id, (int)s);
+    LOGD(DHTTP, "<guest> signal %" PRIu64 ": %d\n", status.req->header->request_id, (int)s);
     switch(s) {
     case CHANNEL_ABORT:
         status.flags |= HTTP_CLOSED_F;
@@ -425,7 +443,7 @@ void Guest::dump_stat(Dumper dp, void* param){
     dp(param, "Guest %p, tx:%zd, rx:%zd\n", this, tx_bytes, rx_bytes);
     for(const auto& status : statuslist){
         if(status.req) {
-            dp(param, "  [%" PRIu32 "]: %s %s, time: %dms, flags: 0x%08x [%s]\n",
+            dp(param, "  [%" PRIu64 "]: %s %s, time: %dms, flags: 0x%08x [%s]\n",
                     status.req->header->request_id,
                     status.req->header->method,
                     status.req->header->geturl().c_str(),

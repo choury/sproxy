@@ -25,87 +25,107 @@ static size_t hextoint(const char* str){
     return size;
 }
 
-size_t HttpBase::ChunkLProc(const char* buffer, size_t len) {
-    if (const char* headerend = strnstr(buffer, CRLF, len)) {
+bool HttpBase::ChunkLProc(Buffer& bb) {
+    if (const char* headerend = strnstr((const char*)bb.data(), CRLF, bb.len)) {
         headerend += strlen(CRLF);
-        size_t headerlen = headerend - buffer;
-        http_expectlen = hextoint(buffer);
+        size_t headerlen = headerend - (const char*)bb.data();
+        http_expectlen = hextoint((const char*)bb.data());
         if (!http_expectlen) {
             http_flag |= HTTP_CHUNK_END_F;
         }
         Http_Proc = &HttpBase::ChunkBProc;
-        return headerlen;
+        bb.reserve(headerlen);
+        return true;
     } else {
-        return 0;
+        return false;
     }
 }
 
-size_t HttpBase::ChunkBProc(const char* buffer, size_t len) {
+bool HttpBase::ChunkBProc(Buffer& bb) {
     if (http_expectlen == 0) {
-        if (len >= strlen(CRLF)){
-            if(memcmp(buffer, CRLF, strlen(CRLF)) != 0) {
-                LOGD(DHTTP, "buffer: %X %X\n", buffer[0], buffer[1]);
-                ErrProc();
-                return 0;
+        if (bb.len >= strlen(CRLF)){
+            if(memcmp(bb.data(), CRLF, strlen(CRLF)) != 0) {
+                LOGD(DHTTP, "buffer: %X %X\n", ((char*)bb.data())[0], ((char*)bb.data())[1]);
+                ErrProc(bb.id);
+                return false;
             }
             if(http_flag & HTTP_CHUNK_END_F){
-                Http_Proc = &HttpBase::HeaderProc;
+                EndProc(bb.id);
+
                 http_flag &= ~HTTP_CHUNK_END_F;
-                EndProc();
+                Http_Proc = &HttpBase::HeaderProc;
             }else{
                 Http_Proc = &HttpBase::ChunkLProc;
             }
-            return strlen(CRLF);
+            bb.reserve(strlen(CRLF));
         }
-        return 0;
+        return true;
     } else {
-        if (len == 0) {
-            return 0;
+        if (bb.len == 0) {
+            return false;
         }
-        ssize_t ret = DataProc(buffer, std::min(len, (size_t)http_expectlen));
+        if(http_expectlen < bb.len) {
+            auto cbb = bb;
+            cbb.truncate(http_expectlen);
+            ssize_t ret = DataProc(cbb);
+            if (ret < 0) {
+                return false;
+            }
+            http_expectlen -= ret;
+            bb.reserve(ret);
+        }else {
+            ssize_t ret = DataProc(bb);
+            if (ret < 0) {
+                return false;
+            }
+            http_expectlen -= ret;
+        }
+        return true;
+    }
+}
+
+bool HttpBase::FixLenProc(Buffer& bb) {
+    if (bb.len == 0) {
+        return false;
+    }
+    if(http_expectlen < bb.len) {
+        auto cbb = bb;
+        cbb.truncate(http_expectlen);
+        ssize_t ret = DataProc(cbb);
         if (ret < 0) {
-            return 0;
+            return false;
         }
         http_expectlen -= ret;
-        return ret;
+        bb.reserve(ret);
+    } else {
+        ssize_t ret = DataProc(bb);
+        if (ret < 0) {
+            return false;
+        }
+        http_expectlen -= ret;
     }
-}
-
-size_t HttpBase::FixLenProc(const char* buffer, size_t len) {
-    if (len == 0) {
-        return 0;
-    }
-    ssize_t ret = DataProc(buffer, std::min(len, (size_t)http_expectlen));
-    if (ret < 0) {
-        return 0;
-    }
-    http_expectlen -= ret;
     if (http_expectlen == 0) {
+        EndProc(bb.id);
         Http_Proc = &HttpBase::HeaderProc;
-        EndProc();
     }
-    return ret;
+    return true;
 }
 
-size_t HttpBase::AlwaysProc(const char* buffer, size_t len) {
-    if (len == 0) {
-        return 0;
+bool HttpBase::AlwaysProc(Buffer& bb) {
+    if (bb.len == 0) {
+        return false;
     }
-    ssize_t ret = DataProc(buffer, len);
-    if (ret <= 0) {
-        return 0;
-    }
-    return ret;
+    return DataProc(bb) > 0;
 }
 
-size_t HttpResponser::HeaderProc(const char* buffer, size_t len) {
-    if (const char* headerend = strnstr(buffer, CRLF CRLF, len)) {
+bool HttpResponser::HeaderProc(Buffer& bb) {
+    if (const char* headerend = strnstr((const char*)bb.data(), CRLF CRLF, bb.len)) {
         headerend += strlen(CRLF CRLF);
-        size_t headerlen = headerend - buffer;
-        std::shared_ptr<HttpReqHeader> req = UnpackHttpReq(buffer, headerlen);
+        size_t headerlen = headerend - (const char*)bb.data();
+        std::shared_ptr<HttpReqHeader> req = UnpackHttpReq(bb.data(), headerlen);
         if(req == nullptr){
-            ErrProc();
-            return 0;
+            ErrProc(bb.id);
+            return false;
         }
         if(req->no_body()){
             http_flag |= HTTP_IGNORE_BODY_F;
@@ -117,27 +137,28 @@ size_t HttpResponser::HeaderProc(const char* buffer, size_t len) {
         }else {
             Http_Proc = &HttpResponser::AlwaysProc;
         }
-        ReqProc(req);
+        ReqProc(bb.id, req);
         if(http_flag & HTTP_IGNORE_BODY_F){
-            EndProc();
+            EndProc(bb.id);
             http_flag &= ~HTTP_IGNORE_BODY_F;
-            Http_Proc = (size_t (HttpBase::*)(const char*, size_t))&HttpResponser::HeaderProc;
+            Http_Proc = (bool (HttpBase::*)(Buffer&))&HttpResponser::HeaderProc;
         }
-        return headerlen;
+        bb.reserve(headerlen);
+        return true;
     } else {
-        return 0;
+        return false;
     }
 }
 
 
-size_t HttpRequester::HeaderProc(const char* buffer, size_t len) {
-    if (const char* headerend = strnstr(buffer, CRLF CRLF, len)) {
+bool HttpRequester::HeaderProc(Buffer& bb) {
+    if (const char* headerend = strnstr((const char*)bb.data(), CRLF CRLF, bb.len)) {
         headerend += strlen(CRLF CRLF);
-        size_t headerlen = headerend - buffer;
-        std::shared_ptr<HttpResHeader> res = UnpackHttpRes(buffer, headerlen);
+        size_t headerlen = headerend - (const char*)bb.data();
+        std::shared_ptr<HttpResHeader> res = UnpackHttpRes(bb.data(), headerlen);
         if(res == nullptr){
-            ErrProc();
-            return 0;
+            ErrProc(bb.id);
+            return false;
         }
         if(res->no_body()){
             http_flag |= HTTP_IGNORE_BODY_F;
@@ -157,18 +178,20 @@ size_t HttpRequester::HeaderProc(const char* buffer, size_t len) {
             http_flag &= ~HTTP_STATUS_1XX;
             Http_Proc = &HttpRequester::AlwaysProc;
         }
-        ResProc(res);
+        ResProc(bb.id, res);
         if (http_flag & HTTP_IGNORE_BODY_F) {
+            EndProc(bb.id);
+
             http_flag &= ~HTTP_IGNORE_BODY_F;
-            Http_Proc = (size_t (HttpBase::*)(const char*, size_t))&HttpRequester::HeaderProc;
-            EndProc();
+            Http_Proc = (bool (HttpBase::*)(Buffer&))&HttpRequester::HeaderProc;
         }else if(http_flag & HTTP_STATUS_1XX){
             http_flag &= ~HTTP_STATUS_1XX;
-            Http_Proc = (size_t (HttpBase::*)(const char*, size_t))&HttpRequester::HeaderProc;
+            Http_Proc = (bool (HttpBase::*)(Buffer&))&HttpRequester::HeaderProc;
         }
-        return headerlen;
+        bb.reserve(headerlen);
+        return true;
     } else {
-        return 0;
+        return false;
     }
 }
 

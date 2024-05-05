@@ -305,7 +305,7 @@ void dump_trace(int signum) {
     }
 
     /* 打印调用栈 */
-    LOGE(" Stack Trace: \n");
+    LOGE(" Stack Trace [%d]: \n", signum);
     for (int i = 0; i < stack_depth; ++i) {
         demangle_func(stack_strings[i], i);
     }

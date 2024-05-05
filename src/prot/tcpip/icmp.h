@@ -3,7 +3,7 @@
 #include "ipbase.h"
 
 struct IcmpStatus;
-void IcmpProc(std::shared_ptr<IcmpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
+void IcmpProc(std::shared_ptr<IcmpStatus> status, std::shared_ptr<const Ip> pac, Buffer&& bb);
 void SendData(std::shared_ptr<IcmpStatus> status, Buffer&& bb);
 
 struct IcmpStatus: public IpStatus {

@@ -48,7 +48,7 @@ class handler: public CgiHandler {
         if((flag.load(std::memory_order_acquire) & HTTP_REQ_COMPLETED) == 0){
             return;
         }
-        std::shared_ptr<HttpResHeader> res = UnpackHttpRes(H200, sizeof(H200));
+        std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S200, sizeof(S200), req->request_id);
         res->set("Content-Type", "application/octet-stream");
         res->set("Pragma", "no-cache");
         Cookie cookie("sproxy", "gzip_test");
@@ -86,8 +86,7 @@ class handler: public CgiHandler {
             int ret;
             if ((ret = deflateInit2(strm, Z_BEST_SPEED, Z_DEFLATED, 16 + MAX_WBITS, 8, Z_DEFAULT_STRATEGY)) !=
                 Z_OK) {
-                LOGF("zlib init failed: %d\n", ret);
-                Response(UnpackHttpRes(H500, sizeof(H500)));
+                Response(HttpResHeader::create(S500, sizeof(S500), req->request_id));
                 Finish();
                 return;
             }

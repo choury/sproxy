@@ -7,7 +7,7 @@
 Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
     this->rwer = rwer;
     rwer->SetErrorCB([this](int ret, int code){return Error(ret, code);});
-    rwer->SetReadCB([this](const Buffer& bb) -> size_t {
+    rwer->SetReadCB([this](Buffer&& bb) -> size_t {
         LOGD(DHTTP3, "<proxy3> (%s) read [%" PRIu64"]: len:%zu\n", this->rwer->getPeer(), bb.id, bb.len);
         if(bb.len == 0){
             //fin
@@ -22,18 +22,18 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
             LOGD(DHTTP3, "<proxy3> [%" PRIu64 "]: end of stream\n", bb.id);
             assert((status.flags & HTTP_RES_COMPLETED) == 0);
             status.flags |= HTTP_RES_COMPLETED;
-            status.res->send(nullptr);
+            status.res->send(Buffer{nullptr, bb.id});
             return 0;
         }
 
         size_t ret = 0;
-        size_t len = bb.len;
+        size_t left = bb.len;
         const char* data = (const char*)bb.data();
-        while((len > 0) && (ret = Http3_Proc(data, len, bb.id))){
-            len -= ret;
+        while((left > 0) && (ret = Http3_Proc(data, left, bb.id))){
+            left -= ret;
             data += ret;
         }
-        return len;
+        return bb.len - left;
     });
     rwer->SetWriteCB([this](uint64_t id){
         if(statusmap.count(id) == 0){
@@ -83,11 +83,11 @@ bool Proxy3::DataProc(uint64_t id, const void* data, size_t len){
             return true;
         }
         if(status.res->cap() < (int)len){
-            LOGE("[%" PRIu32 "]: <proxy3> (%" PRIu64") the guest's write buff is full (%s)\n",
+            LOGE("[%" PRIu64 "]: <proxy3> (%" PRIu64") the guest's write buff is full (%s)\n",
                  status.req->header->request_id, id, status.req->header->geturl().c_str());
             return false;
         }
-        status.res->send(data, len);
+        status.res->send({data, len, id});
     }else{
         LOGD(DHTTP3, "<proxy3> DataProc not found id: %" PRIu64 "\n", id);
         Reset(id, HTTP3_ERR_STREAM_CREATION_ERROR);
@@ -118,15 +118,15 @@ void Proxy3::request(std::shared_ptr<HttpReq> req, Requester*) {
         0,
         };
 
-    auto buff = std::make_shared<Block>(BUF_LEN);
-    memset(buff->data(), 0, BUF_LEN);
-    size_t len = qpack_encoder.PackHttp3Req(req->header, buff->data(), BUF_LEN);
+    Block buff(BUF_LEN);
+    memset(buff.data(), 0, BUF_LEN);
+    size_t len = qpack_encoder.PackHttp3Req(req->header, buff.data(), BUF_LEN);
     size_t pre = variable_encode_len(HTTP3_STREAM_HEADERS) + variable_encode_len(len);
-    char* p = (char*) buff->reserve(-(char) pre);
+    char* p = (char*) buff.reserve(-(char) pre);
     p += variable_encode(p, HTTP3_STREAM_HEADERS);
     p += variable_encode(p, len);
-    PushFrame({buff, pre + len, id});
-    req->attach([this, id](ChannelMessage& msg){
+    PushFrame({std::move(buff), pre + len, id});
+    req->attach([this, id](ChannelMessage&& msg){
         idle_timeout = UpdateJob(std::move(idle_timeout),
                                  [this]{deleteLater(CONNECT_AGED);}, 300000);
         switch(msg.type){
@@ -163,6 +163,7 @@ void Proxy3::ResProc(uint64_t id, std::shared_ptr<HttpResHeader> header) {
         {
             header->set("Transfer-Encoding", "chunked");
         }
+        header->request_id = status.req->header->request_id;
         if(status.res){
             status.res->send(header);
         }else{
@@ -192,7 +193,7 @@ void Proxy3::Recv(Buffer&& bb) {
 void Proxy3::Handle(uint64_t id, Signal s) {
     assert(statusmap.count(id));
     ReqStatus& status = statusmap[id];
-    LOGD(DHTTP3, "<proxy3> signal [%d] %" PRIu32 ": %d\n",
+    LOGD(DHTTP3, "<proxy3> signal [%d] %" PRIu64 ": %d\n",
          (int)id, status.req->header->request_id, (int)s);
     switch(s){
     case CHANNEL_ABORT:
@@ -210,7 +211,7 @@ void Proxy3::RstProc(uint64_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(errcode){
-            LOGE("[%" PRIu32 "]: <proxy3> (%" PRIu64 "): stream reset:%d flags:0x%x\n",
+            LOGE("[%" PRIu64 "]: <proxy3> (%" PRIu64 "): stream reset:%d flags:0x%x\n",
                  status.req->header->request_id, id, errcode, status.flags);
         }
         status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
@@ -230,7 +231,10 @@ void Proxy3::Clean(uint64_t id, Proxy3::ReqStatus& status, uint32_t errcode) {
     }else if(status.res){
         status.res->send(CHANNEL_ABORT);
     }else{
-        status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[internal error]]"));
+        status.req->response(
+                std::make_shared<HttpRes>(
+                        HttpResHeader::create(S500, sizeof(S500), status.req->header->request_id),
+                        "[[internal error]]"));
     }
     statusmap.erase(id);
 }
@@ -258,7 +262,7 @@ void Proxy3::dump_stat(Dumper dp, void* param) {
             this, maxDataId, ctrlid_local, ctrlid_remote,
             qpackeid_local, qpackeid_remote, qpackdid_local, qpackdid_remote);
     for(auto& i: statusmap){
-        dp(param, "  0x%lx [%" PRIu32 "]: %s %s, flags: 0x%08x\n",
+        dp(param, "  0x%lx [%" PRIu64 "]: %s %s, flags: 0x%08x\n",
            i.first,
            i.second.req->header->request_id,
            i.second.req->header->method,

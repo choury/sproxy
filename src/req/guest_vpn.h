@@ -24,7 +24,7 @@ class Guest_vpn: public Requester {
     void handle(uint64_t id, Signal s);
     void ReqProc(uint64_t id, std::shared_ptr<const Ip> pac);
     void Clean(uint64_t id);
-    int mread(uint64_t id, std::variant<Buffer, Signal> data);
+    int mread(uint64_t id, std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data);
 public:
     explicit Guest_vpn(int fd);
     virtual void response(void* index, std::shared_ptr<HttpRes> res) override;

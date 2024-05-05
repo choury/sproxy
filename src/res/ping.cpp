@@ -19,7 +19,7 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
         if(addr6->sin6_port == 0){
             flags |= PING_IS_RAW_SOCK;
         }
-        req->attach([this](ChannelMessage& message){
+        req->attach([this](ChannelMessage&& message){
             switch(message.type){
             case ChannelMessage::CHANNEL_MSG_HEADER:
                 LOGD(DVPN, "<ping> ignore header for req\n");
@@ -37,11 +37,12 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
             return 0;
         }, []{return BUF_LEN;});
     });
-    rwer->SetReadCB([this](Buffer bb) -> size_t{
+    rwer->SetReadCB([this](Buffer&& bb) -> size_t{
         if(res == nullptr){
-            res = std::make_shared<HttpRes>(UnpackHttpRes(H200));
+            res = std::make_shared<HttpRes>(HttpResHeader::create(S200, sizeof(S200), req->header->request_id));
             req->response(this->res);
         }
+        size_t len = bb.len;
         switch(family){
         case AF_INET:
             if(flags & PING_IS_RAW_SOCK){
@@ -66,7 +67,7 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
         default:
             abort();
         }
-        return 0;
+        return len;
     });
 }
 
@@ -112,18 +113,23 @@ void Ping::deleteLater(uint32_t errcode) {
     }else if(res){
         res->send(CHANNEL_ABORT);
     }else {
+        uint64_t id = req->header->request_id;
         switch(errcode) {
         case DNS_FAILED:
-            req->response(std::make_shared<HttpRes>(UnpackHttpRes(H503), "[[dns failed]]\n"));
+            req->response(std::make_shared<HttpRes>(HttpResHeader::create(S503, sizeof(S503), id),
+                                                    "[[dns failed]]\n"));
             break;
         case CONNECT_FAILED:
-            req->response(std::make_shared<HttpRes>(UnpackHttpRes(H503), "[[connect failed]]\n"));
+            req->response(std::make_shared<HttpRes>(HttpResHeader::create(S503, sizeof(S503), id),
+                                                    "[[connect failed]]\n"));
             break;
         case SOCKET_ERR:
-            req->response(std::make_shared<HttpRes>(UnpackHttpRes(H502), "[[socket error]]\n"));
+            req->response(std::make_shared<HttpRes>(HttpResHeader::create(S502, sizeof(S502), id),
+                                                    "[[socket error]]\n"));
             break;
         default:
-            req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[internal error]]\n"));
+            req->response(std::make_shared<HttpRes>(HttpResHeader::create(S500, sizeof(S500), id),
+                                                    "[[internal error]]\n"));
         }
     }
     flags |= PING_IS_CLOSED_F;
@@ -131,7 +137,7 @@ void Ping::deleteLater(uint32_t errcode) {
 }
 
 void Ping::dump_stat(Dumper dp, void* param) {
-    dp(param, "Ping %p, [%" PRIu32"]: %s %s, id: %d, seq: %d\n",
+    dp(param, "Ping %p, [%" PRIu64"]: %s %s, id: %d, seq: %d\n",
        this, req->header->request_id,
        req->header->method,
        dumpAuthority(&req->header->Dest),

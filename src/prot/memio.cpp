@@ -1,6 +1,8 @@
 #include "memio.h"
+#include <inttypes.h>
 
-MemRWer::MemRWer(const char* pname, std::function<int(std::variant<Buffer, Signal>)> read_cb,
+MemRWer::MemRWer(const char* pname,
+                 std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb,
                  std::function<ssize_t()> cap_cb):
     FullRWer([](int, int){}), read_cb(std::move(read_cb)), cap_cb(std::move(cap_cb))
 {
@@ -46,8 +48,10 @@ void MemRWer::connected(const sockaddr_storage& addr) {
     connectCB = [](const sockaddr_storage&){};
 }
 
-void MemRWer::push_data(const Buffer &bb) {
+void MemRWer::push_data(Buffer&& bb) {
     assert(stats != RWerStats::ReadEOF);
+    LOGD(DRWER, "<MemRWer> push_data [%" PRIu32"]: %zd, id:%" PRIu64", refs: %zd\n",
+         flags, bb.len, bb.id, bb.refs());
     if(bb.len == 0){
         stats = RWerStats::ReadEOF;
     } else {
@@ -74,15 +78,18 @@ void MemRWer::push(std::variant<Buffer, Signal> data) {
         if constexpr (std::is_same_v<T, Signal>) {
             push_signal(arg);
         } else if constexpr (std::is_same_v<T, Buffer>) {
-            push_data(arg);
+            push_data(std::move(arg));
         }
     }, data);
 }
 
 void MemRWer::detach() {
-    read_cb = [](std::variant<Buffer, Signal> data) -> int{
+    read_cb = [](std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data) -> int{
         if(auto bb = std::get_if<Buffer>(&data)) {
             return (int)bb->len;
+        }
+        if(auto bb = std::get_if<std::reference_wrapper<Buffer>>(&data)) {
+            return (int)bb->get().len;
         }
         return 0;
     };
@@ -94,31 +101,37 @@ void MemRWer::ConsumeRData(uint64_t id) {
     if(rb.length()){
         Buffer wb = rb.get();
         wb.id = id;
-        size_t left = readCB(wb);
-        rb.consume(wb.len - left);
+        rb.consume(readCB(std::move(wb)));
     }
     delEvents(RW_EVENT::READ);
     if(isEof() && (flags & RWER_EOFDELIVED) == 0){
-        readCB(nullptr);
+        readCB({nullptr, id});
         flags |= RWER_EOFDELIVED;
     }
 }
 
-ssize_t MemRWer::Write(const std::list<Buffer>& bbs) {
+ssize_t MemRWer::Write(std::set<uint64_t>& writed_list) {
     size_t len = 0;
-    for(const auto& bb : bbs) {
+    for(auto it = wbuff.begin(); it != wbuff.end(); ){
         ssize_t ret = 0;
-        if (bb.len) {
-            ret = read_cb(Buffer{std::make_shared<Block>(bb.data(), bb.len), bb.len, bb.id});
+        size_t blen = it->len;
+        if (blen) {
+            ret = read_cb(std::ref(*it));
         } else {
             assert(flags & RWER_SHUTDOWN);
-            ret = read_cb(Buffer{nullptr, bb.id});
+            ret = read_cb(Buffer{nullptr, it->id});
         }
         if(ret < 0){
             return ret;
         }
+        writed_list.emplace(it->id);
         len += ret;
-        if((size_t)ret != bb.len) {
+        wlen -= ret;
+        if((size_t)ret == blen) {
+            it = wbuff.erase(it);
+        } else {
+            assert(ret < (int)blen);
+            it->reserve(ret);
             break;
         }
     }
@@ -128,22 +141,24 @@ ssize_t MemRWer::Write(const std::list<Buffer>& bbs) {
 void MemRWer::closeHE(RW_EVENT event) {
     if((flags & RWER_SHUTDOWN) == 0 && (stats == RWerStats::ReadEOF || stats == RWerStats::Connected)){
         flags |= RWER_SHUTDOWN;
-        wbuff.push(wbuff.end(), {nullptr});
+        wbuff.emplace_back(nullptr);
     }
     RWer::closeHE(event); // NOLINT
 }
 
-void PMemRWer::push_data(const Buffer &bb) {
+void PMemRWer::push_data(Buffer&& bb) {
     assert(stats != RWerStats::ReadEOF);
+    LOGD(DRWER, "<PMemRWer> push_data [%" PRIu32"]: %zd, id:%" PRIu64", refs: %zd\n",
+         flags, bb.len, bb.id, bb.refs());
     if(flags & RWER_CLOSING){
         return;
     }
     if(bb.len == 0){
         stats = RWerStats::ReadEOF;
-        readCB(nullptr);
+        readCB({nullptr, bb.id});
         flags |= RWER_EOFDELIVED;
     } else {
-        readCB(bb);
+        readCB(std::move(bb));
     }
 }
 

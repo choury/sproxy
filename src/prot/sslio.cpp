@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
+#include <inttypes.h>
 #if __ANDROID__
 extern std::string getExternalFilesDir();
 #endif
@@ -71,26 +72,26 @@ SslRWerBase::~SslRWerBase(){
 
 void SslRWerBase::sink_out_bio(uint64_t id) {
     while(BIO_ctrl_pending(out_bio)) {
-        char buff[BUF_LEN];
-        int ret = BIO_read(out_bio, buff, sizeof(buff));
+        Block buff(BUF_LEN);
+        int ret = BIO_read(out_bio, buff.data(), BUF_LEN);
         LOGD(DSSL, "[%s] BIO_read %d bytes\n", server.c_str(), ret);
         if (ret > 0) {
-            write(Buffer{std::make_shared<Block>(buff, ret), (size_t)ret, id});
+            write(Buffer{std::move(buff), (size_t)ret, id});
         }
     }
 }
 
 int SslRWerBase::sink_in_bio(uint64_t id) {
-    char buff[BUF_LEN];
+    Block buff(BUF_LEN);
     ERR_clear_error();
-    size_t len = std::min(sizeof(buff), bufsize());
+    size_t len = std::min((size_t)BUF_LEN, bufsize());
     if (len == 0) {
         return 0;
     }
-    ssize_t ret = ssl_get_error(ssl, SSL_read(ssl, buff, (int)len));
+    ssize_t ret = ssl_get_error(ssl, SSL_read(ssl, buff.data(), (int)len));
     LOGD(DSSL, "[%s] SSL_read %d bytes\n", server.c_str(), (int) ret);
     if (ret > 0) {
-        onRead(Buffer{std::make_shared<Block>(buff, ret), (size_t) ret, id});
+        onRead(Buffer{std::move(buff), (size_t) ret, id});
         return 1;
     } else if (ret == 0) {
         sslStats = SslStats::SslEOF;
@@ -101,8 +102,8 @@ int SslRWerBase::sink_in_bio(uint64_t id) {
     return 0;
 }
 
-void SslRWerBase::handleData(Buffer&& bb) {
-    int ret = BIO_write(in_bio, bb.data(), (int)bb.len);
+void SslRWerBase::handleData(const void* data, size_t len) {
+    int ret = BIO_write(in_bio, data, (int)len);
     LOGD(DSSL, "[%s] BIO_write %d bytes\n", server.c_str(), ret);
     switch(sslStats) {
     case SslStats::Idel:
@@ -112,7 +113,7 @@ void SslRWerBase::handleData(Buffer&& bb) {
     case SslStats::SslConnecting:
         do_handshake();
     case SslStats::Established:
-        while (sslStats == SslStats::Established && sink_in_bio(bb.id));
+        while (sslStats == SslStats::Established && sink_in_bio(0));
         break;
     case SslStats::SslEOF:
         LOGE("[%s] ssl eof, discard all data\n", server.c_str());
@@ -195,15 +196,18 @@ SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::fu
 }
 
 void SslRWer::write(Buffer&& bb) {
-    LOGD(DSSL, "[%s] send %zd bytes to fd %d\n", server.c_str(), bb.len, getFd());
+    LOGD(DSSL, "[%s] send %zd bytes to fd %d, id: %" PRIu64"\n", server.c_str(), bb.len, getFd(), bb.id);
     addEvents(RW_EVENT::WRITE);
-    wbuff.push(wbuff.end(), std::move(bb));
+    wlen += bb.len;
+    wbuff.emplace_back(std::move(bb));
 }
 
 void SslMer::write(Buffer&& bb) {
-    LOGD(DSSL, "[%s] send %zd bytes to mem\n", server.c_str(), bb.len);
+    //bb.id = id;
+    LOGD(DSSL, "[%s] send %zd bytes to mem, id: %" PRIu64"\n", server.c_str(), bb.len, bb.id);
     addEvents(RW_EVENT::WRITE);
-    wbuff.push(wbuff.end(), std::move(bb));
+    wlen += bb.len;
+    wbuff.emplace_back(std::move(bb));
 }
 
 void SslRWer::onRead(Buffer&& bb) {
@@ -241,7 +245,7 @@ void SslRWer::ReadData() {
         ssize_t ret = read(this->getFd(), buff, std::min(sizeof(buff), left));
         LOGD(DSSL, "[%s] read %d bytes from fd %d\n", server.c_str(), (int)ret, getFd());
         if (ret > 0) {
-            handleData(Buffer{std::make_shared<Block>(buff, ret), (size_t)ret, 0});
+            handleData(buff, (size_t)ret);
             StreamRWer::ConsumeRData(0);
             continue;
         } else if (ret == 0) {
@@ -293,7 +297,8 @@ void SslMer::Send(Buffer&& bb) {
 }
 
 
-void SslMer::push_data(const Buffer& bb) {
+void SslMer::push_data(Buffer&& bb) {
+    assert(stats != RWerStats::ReadEOF);
     if(isEof()) {
         //shutdown by ssl, discard all data after that
         return;
@@ -302,7 +307,7 @@ void SslMer::push_data(const Buffer& bb) {
     if(bb.len == 0){
         stats = RWerStats::ReadEOF;
     } else {
-        handleData(Buffer{bb});
+        handleData(bb.data(), bb.len);
     }
     MemRWer::ConsumeRData(bb.id);
 }

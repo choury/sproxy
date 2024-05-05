@@ -118,6 +118,7 @@ public:
     void FrontFrame(pn_namespace* ns, quic_frame* frame);
     void SendNow();
     void DrainAll();
+    size_t PendingSize(OSSL_ENCRYPTION_LEVEL level);
 
     size_t mem_usage();
 };

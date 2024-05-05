@@ -14,7 +14,7 @@
 
 Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(fd, addr, ctx){
     assert(ctx == nullptr);
-    rwer->SetReadCB([this](const Buffer& bb){return sniffer(bb);});
+    rwer->SetReadCB([this](Buffer&& bb){return sniffer(std::move(bb));});
     Http_Proc = &Guest_sni::AlwaysProc;
     std::stringstream ss;
     ss << "Sproxy/" << getVersion()
@@ -27,9 +27,9 @@ Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, std::string host, std::string u
         Guest(rwer), host(std::move(host)), user_agent(std::move(ua))
 {
     if(std::dynamic_pointer_cast<PMemRWer>(rwer)) {
-        rwer->SetReadCB([this](const Buffer& bb){return sniffer_quic(bb);});
+        rwer->SetReadCB([this](Buffer&& bb){return sniffer_quic(std::move(bb));});
     } else if(std::dynamic_pointer_cast<MemRWer>(rwer)) {
-        rwer->SetReadCB([this](const Buffer& bb){return sniffer(bb);});
+        rwer->SetReadCB([this](Buffer&& bb){return sniffer(std::move(bb));});
     } else {
         LOGF("Guest_sni: rwer type error\n");
     }
@@ -62,7 +62,7 @@ std::shared_ptr<HttpReq> Guest_sni::forward(const char *hostname, Protocol prot)
         return nullptr;
     }
     header->set("User-Agent", user_agent + " SEQ/" + std::to_string(header->request_id));
-    LOGD(DHTTP, "<guest_sni> ReqProc %" PRIu32 " %s\n", header->request_id, header->geturl().c_str());
+    LOGD(DHTTP, "<guest_sni> ReqProc %" PRIu64 " %s\n", header->request_id, header->geturl().c_str());
     auto req = std::make_shared<HttpReq>(
             header,
             [this](std::shared_ptr<HttpRes> res){return response(nullptr, res);},
@@ -73,24 +73,28 @@ std::shared_ptr<HttpReq> Guest_sni::forward(const char *hostname, Protocol prot)
     return req;
 }
 
-size_t Guest_sni::sniffer(const Buffer& bb) {
+size_t Guest_sni::sniffer(Buffer&& bb) {
     char *hostname = nullptr;
     defer(free, hostname);
     int ret = parse_tls_header((const char*)bb.data(), bb.len, &hostname);
     if(ret == -1) {
         // not enough data, wait for more
-        return bb.len;
+        return 0;
     }
-    if(forward(hostname, Protocol::TCP) == nullptr){
+    auto req = forward(hostname, Protocol::TCP);
+    if(req == nullptr){
         assert(ret < 0);
         deleteLater(SNI_HOST_ERR);
         return 0;
     }
-    rwer->SetReadCB([this](const Buffer& bb){return ReadHE(bb);});
-    return bb.len;
+    auto len = bb.len;
+    req->send(std::move(bb));
+    rwer->SetReadCB([this](Buffer&& bb){return ReadHE(std::move(bb));});
+    rx_bytes += len;
+    return len;
 }
 
-size_t Guest_sni::sniffer_quic(const Buffer& bb) {
+size_t Guest_sni::sniffer_quic(Buffer&& bb) {
     auto len = bb.len;
     char *hostname = nullptr;
     defer(free, hostname);
@@ -142,9 +146,9 @@ Forward:
         deleteLater(SNI_HOST_ERR);
         return 0;
     }
-    rx_bytes += bb.len;
-    req->send({std::make_shared<Block>(bb.data(), bb.len), bb.len, bb.id});
-    rwer->SetReadCB([this](const Buffer& bb){return ReadHE(bb);});
+    req->send(std::move(bb));
+    rwer->SetReadCB([this](Buffer&& bb){return ReadHE(std::move(bb));});
+    rx_bytes += len;
     return len;
 }
 
@@ -154,7 +158,7 @@ void Guest_sni::response(void*, std::shared_ptr<HttpRes> res){
     assert(status.res == nullptr);
     status.res = res;
     status.flags |= HTTP_NOEND_F;
-    res->attach([this, &status](ChannelMessage& msg){
+    res->attach([this, &status](ChannelMessage&& msg){
         assert(!statuslist.empty());
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER: {

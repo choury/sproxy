@@ -221,7 +221,7 @@ protected:
     virtual size_t getWritableSize() = 0;
     virtual ssize_t writem(const struct iovec *iov, int iovcnt) = 0;
     virtual void onError(int type, int code) = 0;
-    virtual size_t onRead(const Buffer& bb) = 0;
+    virtual size_t onRead(Buffer&& bb) = 0;
     virtual void onWrite(uint64_t id) = 0;
     virtual void onConnected() = 0;
     virtual void onCidChange(const std::string& /*cid*/, bool /*retired*/) {}
@@ -267,7 +267,7 @@ protected:
     virtual ssize_t writem(const struct iovec *iov, int iovcnt) override;
     virtual void onConnected() override;
     virtual void onError(int type, int code) override;
-    virtual size_t onRead(const Buffer& bb) override;
+    virtual size_t onRead(Buffer&& bb) override;
     virtual void onWrite(uint64_t id) override;
     virtual void onCidChange(const std::string& cid, bool retired) override;
     virtual int handleRetryPacket(const quic_pkt_header* header) override;
@@ -304,18 +304,18 @@ protected:
     virtual ssize_t writem(const struct iovec *iov, int iovcnt) override;
     virtual void onConnected() override;
     virtual void onError(int type, int code) override;
-    virtual size_t onRead(const Buffer& bb) override;
+    virtual size_t onRead(Buffer&& bb) override;
     virtual void onWrite(uint64_t id) override;
 
 
     virtual void defaultHE(RW_EVENT events) override;
-    virtual void push_data(const Buffer& bb) override;
+    virtual void push_data(Buffer&& bb) override;
     virtual void Send(Buffer&& bb) override;
     virtual bool IsConnected() override;
     virtual void ConsumeRData(uint64_t) override;
 public:
     explicit QuicMer(SSL_CTX *ctx, const char* pname,
-                     std::function<int(std::variant<Buffer, Signal>)> read_cb,
+                     std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb,
                      std::function<ssize_t()> cap_cb);
 
     virtual void Close(std::function<void()> func) override;

@@ -1,7 +1,7 @@
 #include "udp.h"
 
 
-void UdpProc(std::shared_ptr<UdpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len) {
+void UdpProc(std::shared_ptr<UdpStatus> status, std::shared_ptr<const Ip> pac, Buffer&& bb) {
     if(status->aged_job == nullptr) {
         status->isDns = pac->getdport() == 53;
         status->reqCB(pac);
@@ -12,10 +12,10 @@ void UdpProc(std::shared_ptr<UdpStatus> status, std::shared_ptr<const Ip> pac, c
                                                [errCB = status->errCB, pac]{errCB(pac, CONNECT_AGED);},
                                                "udp_aged_job", status->isDns?5000:120000);
     }
-    size_t datalen = len - pac->gethdrlen();
-    status->readlen += datalen;
-    if(datalen > 0) {
-        status->dataCB(pac, packet + pac->gethdrlen(), datalen);
+    bb.reserve(pac->gethdrlen());
+    status->readlen += bb.len;
+    if(bb.len > 0) {
+        status->dataCB(pac, std::move(bb));
     }
 }
 

@@ -18,17 +18,17 @@ class handler: public CgiHandler {
             return;
         }
         if(params.count("title") == 0 || params.count("body") == 0 || params.count("token") == 0){
-            std::shared_ptr<HttpResHeader> res = UnpackHttpRes(H400, sizeof(H400));
+            std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S400, sizeof(S400), req->request_id);
             Response(res);
             Finish();
             return;
         }
         th = std::thread([this] {
             if(sendFcm(params["title"].c_str(), params["body"].c_str(), params["token"].c_str()) == 0) {
-                std::shared_ptr<HttpResHeader> res = UnpackHttpRes(H200, sizeof(H200));
+                std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S200, sizeof(S200), req->request_id);
                 Response(res);
             } else {
-                std::shared_ptr<HttpResHeader> res = UnpackHttpRes(H500, sizeof(H500));
+                std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S500, sizeof(S500), req->request_id);
                 Response(res);
             }
             Finish();

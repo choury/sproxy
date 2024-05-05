@@ -13,14 +13,15 @@
 Cli::Cli(int fd, const sockaddr_storage* addr):
         Requester(std::make_shared<StreamRWer>(fd, addr, [this](int ret, int code){Error(ret, code);}))
 {
-    rwer->SetReadCB([this](const Buffer& bb){return ReadHE(bb);});
+    id = nextId();
+    rwer->SetReadCB([this](Buffer&& bb){return ReadHE(bb);});
 }
 
 Cli::~Cli(){
 }
 
 bool Cli::send(const char *data, size_t len) {
-    rwer->Send(Buffer{std::make_shared<Block>(data, len), len});
+    rwer->Send(Buffer{data, len, id});
     return true;
 }
 
@@ -31,12 +32,12 @@ size_t Cli::ReadHE(const Buffer& bb) {
         return 0;
     }
     ssize_t ret = 0;
-    size_t len = bb.len;
+    size_t left = bb.len;
     const char* data = (const char*)bb.data();
-    while(len > 0){
-        ret = DefaultProc(data, len);
+    while(left > 0){
+        ret = DefaultProc(data, left);
         if(ret > 0){
-            len -= ret;
+            left -= ret;
             data += ret;
             continue;
         }
@@ -47,7 +48,7 @@ size_t Cli::ReadHE(const Buffer& bb) {
         deleteLater(PROTOCOL_ERR);
         break;
     }
-    return len;
+    return bb.len - left;
 }
 
 void Cli::Error(int ret, int code) {

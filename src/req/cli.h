@@ -10,6 +10,7 @@
 #include <sys/un.h>
 
 class Cli:public Requester, public SproxyServer {
+    uint64_t id;
 protected:
     size_t ReadHE(const Buffer& bb);
     void Error(int ret, int code);

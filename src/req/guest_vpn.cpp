@@ -29,16 +29,15 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
             vpn_stop();
         }
     ));
-    rwer->SetReadCB([this](Buffer bb) -> size_t {
+    rwer->SetReadCB([this](Buffer&& bb) -> size_t {
         if(statusmap.count(bb.id) == 0){
-            return 0;
+            LOG("[%" PRIu64 "]: <guest_vpn> id not found, discard all\n", bb.id);
+            return bb.len;
         }
         auto& status = statusmap[bb.id];
         assert((status.flags & HTTP_REQ_COMPLETED) == 0);
-        LOGD(DVPN, "<guest_vpn> [%" PRIu64 "] read %zd bytes\n", bb.id, bb.len);
-        auto len = bb.len;
-
-        if(len == 0) {
+        LOGD(DVPN, "<guest_vpn> [%" PRIu64 "] read %zd bytes, refs:%zd\n", bb.id, bb.len, bb.refs());
+        if(bb.len == 0) {
             if(status.req){
                 status.req->send(nullptr);
             }
@@ -51,22 +50,24 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
             }
             return 0;
         }
+        auto len = bb.len;
         if(status.rwer) {
             if(status.rwer->bufsize() < len) {
-                LOG("[%" PRIu64 "]: <guest_vpn> the guest's buff is full, drop packet [%zd]: %s\n", bb.id, bb.len, status.host.c_str());
-                return len;
+                LOG("[%" PRIu64 "]: <guest_vpn> the guest's buff is full, skip packet [%zd]: %s\n",
+                    bb.id, len, status.host.c_str());
+                return 0;
             }
             status.rwer->push(std::move(bb));
         }
         if(status.req){
             if(status.req->cap() < (int)len){
-                LOG("[%" PRIu32 "]: <guest_vpn> the host's buff is full, drop packet [%zd] (%s)\n",
+                LOG("[%" PRIu64 "]: <guest_vpn> the host's buff is full, skip packet [%zd] (%s)\n",
                     status.req->header->request_id, len, status.req->header->geturl().c_str());
-                return len;
+                return 0;
             }
             status.req->send(std::move(bb));
         }
-        return 0;
+        return len;
     });
     rwer->SetWriteCB([this](uint64_t id){
         if(statusmap.count(id) == 0){
@@ -256,7 +257,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
     auto& status = statusmap.at(id);
     assert(status.res == nullptr);
     status.res = res;
-    res->attach([this, id](ChannelMessage& msg) -> int{
+    res->attach([this, id](ChannelMessage&& msg) -> int{
         auto& status = statusmap.at(id);
         std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
         switch(msg.type){
@@ -288,7 +289,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
             Buffer bb = std::move(std::get<Buffer>(msg.data));
             bb.id = id;
             if (bb.len == 0) {
-                LOGD(DVPN, "<guest_vpn> [%" PRIu32 "] recv data (%" PRIu64"): EOF\n",
+                LOGD(DVPN, "<guest_vpn> [%" PRIu64 "] recv data (%" PRIu64"): EOF\n",
                      status.req->header->request_id, id);
                 rwer->Send({nullptr, id});
                 status.flags |= HTTP_RES_COMPLETED;
@@ -296,7 +297,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
                     status.cleanJob = AddJob(([this, id]{Clean(id);}), 0, 0);
                 }
             } else {
-                LOGD(DVPN, "<guest_vpn> [%" PRIu32 "] recv data (%" PRIu64"): %zu\n",
+                LOGD(DVPN, "<guest_vpn> [%" PRIu64 "] recv data (%" PRIu64"): %zu\n",
                      status.req->header->request_id, id, bb.len);
                 rwer->Send(std::move(bb));
             }
@@ -310,39 +311,52 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
     }, [this, id]{ return rwer->cap(id);});
 }
 
-int Guest_vpn::mread(uint64_t id, std::variant<Buffer, Signal> data) {
+int Guest_vpn::mread(uint64_t id, std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data) {
     if(statusmap.count(id) == 0) {
         errno = EPIPE;
         return -1;
     }
-    return std::visit([this, id](auto&& arg) -> int {
+    auto BufferHandle = [this](uint64_t id, Buffer& bb) {
+        auto& status = statusmap.at(id);
+        assert((status.flags & HTTP_RES_COMPLETED) == 0);
+        //std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
+        if (bb.len == 0) {
+            LOGD(DVPN, "<guest_vpn> [%" PRIu64"] recv data: EOF\n", id);
+            rwer->Send({nullptr, id});
+            status.flags |= HTTP_RES_COMPLETED;
+            if(status.flags & HTTP_REQ_COMPLETED) {
+                status.cleanJob = AddJob(([this, id]{Clean(id);}), 0, 0);
+            }
+            return 0;
+        }
+        int cap = rwer->cap(id);
+        if(cap <= 0) {
+            errno = EAGAIN;
+            return -1;
+        }
+        LOGD(DVPN, "<guest_vpn> [%" PRIu64"] recv data: %zu, refs: %zd, cap: %d\n",
+             id, bb.len, bb.refs(), cap);
+        if(cap >= (int)bb.len) {
+            cap = bb.len;
+            auto cbb = std::move(bb);
+            cbb.id = id;
+            rwer->Send(std::move(cbb));
+        }else {
+            auto cbb = bb;
+            cbb.id = id;
+            cbb.truncate(cap);
+            rwer->Send(std::move(cbb));
+        }
+        return cap;
+    };
+    return std::visit([&](auto&& arg) -> int {
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, Signal>) {
             handle(id, arg);
-        } if constexpr (std::is_same_v<T, Buffer>) {
-            auto& status = statusmap.at(id);
-            assert((status.flags & HTTP_RES_COMPLETED) == 0);
-            //std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
-            if (arg.len == 0) {
-                LOGD(DVPN, "<guest_vpn> [%" PRIu64"] recv data: EOF\n", id);
-                rwer->Send({nullptr, id});
-                status.flags |= HTTP_RES_COMPLETED;
-                if(status.flags & HTTP_REQ_COMPLETED) {
-                    status.cleanJob = AddJob(([this, id]{Clean(id);}), 0, 0);
-                }
-                return 0;
-            }
-            int cap = rwer->cap(id);
-            if(cap <= 0) {
-                errno = EAGAIN;
-                return -1;
-            }
-            size_t len = std::min(arg.len, (size_t)cap);
-            LOGD(DVPN, "<guest_vpn> [%" PRIu64"] recv data: %zu, handle: %zu\n", id, arg.len, len);
-            arg.id = id;
-            arg.truncate(len);
-            rwer->Send(std::move(arg));
-            return (int)len;
+        }else if constexpr (std::is_same_v<T, Buffer>) {
+            return BufferHandle(id, arg);
+        }else if constexpr (std::is_same_v<T, std::reference_wrapper<Buffer>>) {
+            return BufferHandle(id, arg.get());
         }
         return 0;
     }, data);
@@ -410,7 +424,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                     storage_ntoa(&src),
                     [this, id](auto&& data) { return mread(id, std::forward<decltype(data)>(data)); },
                     [this, id]{return rwer->cap(id);});
-            FDns::GetInstance()->query(mrwer);
+            FDns::GetInstance()->query(id, mrwer);
             status.rwer = mrwer;
 #ifdef HAVE_QUIC
         } else if (dport == HTTPSPORT) {
@@ -480,7 +494,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
 void Guest_vpn::handle(uint64_t id, Signal s) {
     auto& status = statusmap.at(id);
     if (status.req) {
-        LOGD(DVPN, "<guest_vpn> signal [%d] %" PRIu32 ": %d\n",
+        LOGD(DVPN, "<guest_vpn> signal [%d] %" PRIu64 ": %d\n",
              (int) id, status.req->header->request_id, (int) s);
     } else if(status.rwer) {
         LOGD(DVPN, "<guest_vpn> signal [%d] %s: %d\n",
@@ -518,7 +532,7 @@ void Guest_vpn::dump_stat(Dumper dp, void *param) {
     dp(param, "Guest_vpn %p, session: %zd\n", this, statusmap.size());
     for(auto& i: statusmap){
         if(i.second.req) {
-            dp(param, "  0x%lx [%" PRIu32 "]: %s %s, time: %dms, flags: 0x%08x [%s]\n",
+            dp(param, "  0x%lx [%" PRIu64 "]: %s %s, time: %dms, flags: 0x%08x [%s]\n",
                 i.first, i.second.req->header->request_id,
                 i.second.req->header->method,
                 i.second.req->header->geturl().c_str(),

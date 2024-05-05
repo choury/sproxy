@@ -34,7 +34,7 @@ bool Proxy2::wantmore(const ReqStatus& status) {
 Proxy2::Proxy2(std::shared_ptr<RWer> rwer) {
     this->rwer = rwer;
     rwer->SetErrorCB([this](int ret, int code){Error(ret, code);});
-    rwer->SetReadCB([this](const Buffer& bb) -> size_t {
+    rwer->SetReadCB([this](Buffer&& bb) -> size_t {
         LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu\n", this->rwer->getPeer(), bb.len);
         if(bb.len == 0){
             //EOF
@@ -49,16 +49,16 @@ Proxy2::Proxy2(std::shared_ptr<RWer> rwer) {
         receive_time = getmtime();
 #endif
         size_t ret = 0;
-        size_t len = bb.len;
+        size_t left = bb.len;
         const uchar* data = (const uchar*)bb.data();
-        while((len > 0) && (ret = (this->*Http2_Proc)(data, len))){
-            len -= ret;
+        while((left > 0) && (ret = (this->*Http2_Proc)(data, left))){
+            left -= ret;
             data += ret;
         }
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
-        return len;
+        return bb.len - left;
     });
     rwer->SetWriteCB([this](uint64_t id){
         if(statusmap.count(id) == 0){
@@ -107,7 +107,7 @@ void Proxy2::Recv(Buffer&& bb) {
 void Proxy2::Handle(uint32_t id, Signal s) {
     assert(statusmap.count(id));
     ReqStatus& status = statusmap[id];
-    LOGD(DHTTP2, "<proxy2> signal [%d] %" PRIu32 ": %d\n",
+    LOGD(DHTTP2, "<proxy2> signal [%d] %" PRIu64 ": %d\n",
          (int)id, status.req->header->request_id, (int)s);
     switch(s){
     case CHANNEL_ABORT:
@@ -149,14 +149,16 @@ void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
     {
         header->set("Transfer-Encoding", "chunked");
     }
+    header->request_id = status.req->header->request_id;
     if(status.res){
         status.res->send(header);
         return;
     }
     status.res = std::make_shared<HttpRes>(header, [this, &status, id]() mutable{
+        rwer->Unblock(id);
         auto len = status.res->cap();
         if(len < status.localwinsize){
-            LOGE("[%" PRIu32 "]: <proxy2> (%d) shrunken local window: %d/%d\n",
+            LOGE("[%" PRIu64 "]: <proxy2> (%d) shrunken local window: %d/%d\n",
                 status.req->header->request_id,
                 id, len, status.localwinsize);
         }else if(len == status.localwinsize) {
@@ -184,7 +186,7 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
             return;
         }
         if(len > (size_t)status.localwinsize){
-            LOGE("[%" PRIu32 "]: <proxy2> (%d) window size error %zu/%d\n",
+            LOGE("[%" PRIu64 "]: <proxy2> (%d) window size error %zu/%d\n",
                     status.req->header->request_id, id, len, status.localwinsize);
             Clean(id, status, HTTP2_ERR_FLOW_CONTROL_ERROR);
             return;
@@ -193,9 +195,9 @@ void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
             //compact for legacy version server.
             //it does not send http header for udp,
             //but guest_vpn need it, so we fake one here.
-            ResProc(id, UnpackHttpRes(H200));
+            ResProc(id, HttpResHeader::create(S200, sizeof(S200), status.req->header->request_id));
         }
-        status.res->send(data, len);
+        status.res->send({data, len, id});
         status.localwinsize -= len;
     }else{
         LOGD(DHTTP2, "<proxy2> DataProc not found id: %d\n", id);
@@ -209,7 +211,7 @@ void Proxy2::EndProc(uint32_t id) {
         ReqStatus &status = statusmap[id];
         assert((status.flags & HTTP_RES_COMPLETED) == 0);
         status.flags |= HTTP_RES_COMPLETED;
-        status.res->send(nullptr);
+        status.res->send(Buffer{nullptr, id});
     }
 }
 
@@ -231,7 +233,10 @@ void Proxy2::Clean(uint32_t id, ReqStatus& status, uint32_t errcode){
     }else if(status.res){
         status.res->send(CHANNEL_ABORT);
     }else{
-        status.req->response(std::make_shared<HttpRes>(UnpackHttpRes(H500), "[[internal error]]"));
+        status.req->response(
+                std::make_shared<HttpRes>(
+                        HttpResHeader::create(S500, sizeof(S500), status.req->header->request_id),
+                        "[[internal error]]"));
     }
     statusmap.erase(id);
 }
@@ -240,7 +245,7 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(errcode){
-            LOGE("[%" PRIu32 "]: <proxy2> (%d): stream reset:%d flags:0x%x\n",
+            LOGE("[%" PRIu64 "]: <proxy2> (%d): stream reset:%d flags:0x%x\n",
                  status.req->header->request_id, id, errcode, status.flags);
         }
         status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
@@ -309,8 +314,8 @@ void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
     };
     ReqStatus& status = statusmap[id];
 
-    auto buff = std::make_shared<Block>(BUF_LEN);
-    Http2_header* const header = (Http2_header *)buff->data();
+    Block buff(BUF_LEN);
+    Http2_header* const header = (Http2_header *)buff.data();
     memset(header, 0, sizeof(*header));
     header->type = HTTP2_STREAM_HEADERS;
     header->flags = HTTP2_END_HEADERS_F;
@@ -321,9 +326,9 @@ void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
     set32(header->id, id);
     size_t len = hpack_encoder.PackHttp2Req(req->header, header+1, BUF_LEN - sizeof(Http2_header));
     set24(header->length, len);
-    PushFrame(Buffer{buff, len + sizeof(Http2_header)});
+    PushFrame(Buffer{std::move(buff), len + sizeof(Http2_header), id});
 
-    req->attach([this, id](ChannelMessage& msg){
+    req->attach([this, id](ChannelMessage&& msg){
         idle_timeout = UpdateJob(std::move(idle_timeout),
                                  [this]{deleteLater(CONNECT_AGED);}, 300000);
         switch(msg.type){
@@ -381,7 +386,7 @@ void Proxy2::dump_stat(Dumper dp, void* param) {
     dp(param, "Proxy2 %p id: %d, my_window: %d, his_window: %d\n",
             this, sendid, this->localwinsize, this->remotewinsize);
     for(auto& i: statusmap){
-        dp(param, "  0x%x [%" PRIu32 "]: %s %s, my_window: %d, his_window: %d, flags: 0x%08x\n",
+        dp(param, "  0x%x [%" PRIu64 "]: %s %s, my_window: %d, his_window: %d, flags: 0x%08x\n",
                 i.first,
                 i.second.req->header->request_id,
                 i.second.req->header->method,

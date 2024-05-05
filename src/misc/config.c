@@ -38,6 +38,7 @@ static char* server_string = NULL;
 static char* policy_file = NULL;
 static struct arg_list secrets = {NULL, NULL};
 static struct arg_list debug_list = {NULL, NULL};
+static uint64_t id = 100000;
 
 volatile uint32_t will_contiune = 1;
 int efd = -1;
@@ -713,4 +714,8 @@ void change_process_name(const char *name){
     }
     memset(main_argv[0], 0, len);
     snprintf(main_argv[0], len, "%s", name);
+}
+
+uint64_t nextId(){
+    return id++;
 }

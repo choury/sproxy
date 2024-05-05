@@ -13,8 +13,6 @@
 
 using std::string;
 
-static std::atomic<uint64_t> id_gen(100000);
-
 std::string toLower(const std::string &s) {
     std::string str = s;
     std::transform(str.begin(), str.end(), str.begin(), ::tolower);
@@ -163,7 +161,7 @@ void HttpReqHeader::postparse() {
         del(AlterMethod);
     }
     if(request_id == 0) {
-        request_id = id_gen++;
+        request_id = nextId();
     }
     if(http_method()){
         if(!Dest.scheme[0]) {
@@ -305,6 +303,10 @@ size_t HttpReqHeader::mem_usage() {
     return HttpHeader::mem_usage() + sizeof(*this) + ranges.size() * sizeof(Range);
 }
 
+HttpResHeader::HttpResHeader(const char *status, size_t len) {
+    snprintf(this->status, sizeof(this->status), "%.*s", (int)len, status);
+}
+
 HttpResHeader::HttpResHeader(HeaderMap&& headers) {
     for(const auto& i: headers){
         if(toLower(i.first) == "set-cookie"){
@@ -386,6 +388,11 @@ void HttpResHeader::addcookie(const Cookie &cookie) {
     cookies.insert(cookiestream.str());
 }
 
+std::shared_ptr<HttpResHeader> HttpResHeader::create(const char *status, size_t len, uint64_t id) {
+    auto res = std::make_shared<HttpResHeader>(status, len);
+    res->request_id = id;
+    return res;
+}
 
 bool HttpReqHeader::getrange() {
     const char *range_str = get("Range");

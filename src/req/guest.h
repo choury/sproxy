@@ -24,16 +24,16 @@ protected:
         Job       cleanJob = nullptr;
     };
     std::list<ReqStatus> statuslist;
-    size_t ReadHE(const Buffer& bb);
-    int mread(std::shared_ptr<HttpReqHeader> header, std::variant<Buffer, Signal> data);
+    size_t ReadHE(Buffer&& bb);
+    int mread(std::shared_ptr<HttpReqHeader> header, std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data);
     void WriteHE(uint64_t id);
     virtual void deleteLater(uint32_t errcode) override;
     virtual void Error(int ret, int code);
 
-    virtual void ReqProc(std::shared_ptr<HttpReqHeader> req)override;
-    virtual ssize_t DataProc(const void *buff, size_t size)override;
-    virtual void EndProc() override;
-    virtual void ErrProc() override;
+    virtual void ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> req)override;
+    virtual ssize_t DataProc(Buffer& bb)override;
+    virtual void EndProc(uint64_t id) override;
+    virtual void ErrProc(uint64_t id) override;
     void Recv(Buffer&& bb);
     void Handle(Signal s);
     void deqReq();

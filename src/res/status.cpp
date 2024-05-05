@@ -22,10 +22,11 @@ static void StatusDump(void* param, const char* fmt, ...) {
 }
 
 void Status::request(std::shared_ptr<HttpReq> req, Requester* src){
+    uint64_t id = req->header->request_id;
     if(!checkauth(src->getid(), req->header->get("Authorization"))){
-        req->response(std::make_shared<HttpRes>(UnpackHttpRes(H401), ""));
+        req->response(std::make_shared<HttpRes>(HttpResHeader::create(S401, sizeof(S401), id), ""));
     }else{
-        std::shared_ptr<HttpResHeader> header = UnpackHttpRes(H200);
+        std::shared_ptr<HttpResHeader> header = HttpResHeader::create(S200, sizeof(S200), id);
         header->set("Transfer-Encoding", "chunked");
         header->set("Content-Type", "text/plain; charset=utf8");
         auto res = std::make_shared<HttpRes>(header);

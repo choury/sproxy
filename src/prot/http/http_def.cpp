@@ -17,7 +17,7 @@ void Channel::poll() {
         }
         ChannelMessage msg(std::move(message_queue.front()));
         message_queue.pop_front();
-        int ret = handler(msg);
+        int ret = handler(std::move(msg));
         if(ret){
             continue;
         }
@@ -43,7 +43,7 @@ void Channel::send(std::nullptr_t) {
 }
 
 void Channel::send(const void *data, size_t len) {
-    send(ChannelMessage(Buffer{std::make_shared<Block>(data, len), len}));
+    send(ChannelMessage(Buffer{data, len}));
 }
 
 void Channel::send(Signal s) {
@@ -95,9 +95,9 @@ HttpRes::HttpRes(std::shared_ptr<HttpResHeader> header, const char *body):
     header->set("Content-Length", len);
     send(header);
     if(len) {
-        send(body, len);
+        send({body, (size_t)len, header->request_id});
     }
-    send(nullptr);
+    send(Buffer{nullptr, header->request_id});
 }
 
 HttpRes::~HttpRes() {
@@ -123,7 +123,7 @@ void HttpLog(const char* src, std::shared_ptr<const HttpReqHeader> req, std::sha
     char status[100];
     sscanf(res->status, "%s", status); //get the first word of status (status code)
     if(debug[DHTTP].enabled){
-        LOG("%s [%" PRIu32 "] %s %s [%s]\n", src,
+        LOG("%s [%" PRIu64 "] %s %s [%s]\n", src,
             req->request_id, req->method, req->geturl().c_str(), req->Dest.protocol);
         for(const auto& header : req->getall()){
             LOG("%s: %s\n", header.first.c_str(), header.second.c_str());
@@ -133,12 +133,12 @@ void HttpLog(const char* src, std::shared_ptr<const HttpReqHeader> req, std::sha
             LOG("%s: %s\n", header.first.c_str(), header.second.c_str());
         }
     } else if(req->ismethod("CONNECT")) {
-        LOG("%s [%" PRIu32 "] CONNECT %s [%s] %s %dms [%s]\n", src,
+        LOG("%s [%" PRIu64 "] CONNECT %s [%s] %s %dms [%s]\n", src,
             req->request_id, dumpDest(&req->Dest),
             req->get(STRATEGY), status, res->ctime - req->ctime,
             req->get("User-Agent"));
     } else {
-        LOG("%s [%" PRIu32 "] %s %s [%s] %s %dms [%s]\n", src,
+        LOG("%s [%" PRIu64 "] %s %s [%s] %s %dms [%s]\n", src,
             req->request_id, req->method, req->geturl().c_str(),
             req->get(STRATEGY), status, res->ctime - req->ctime,
             req->get("User-Agent"));

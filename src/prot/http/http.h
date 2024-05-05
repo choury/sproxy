@@ -13,29 +13,29 @@ protected:
 //#define HTTP_READ_CLOSE_F          (1u<<3u) //read from remote has been closed (<- guest <- host <-)
 //#define HTTP_WRITE_CLOSE_F         (1u<<4u) //write to remote has been closed  (-> guest -> host ->)
     uint32_t http_flag = 0;
-    virtual size_t HeaderProc(const char* buffer, size_t len) = 0;
-    size_t ChunkLProc(const char* buffer, size_t len);
-    size_t ChunkBProc(const char* buffer, size_t len);
-    size_t FixLenProc(const char* buffer, size_t len);
-    size_t AlwaysProc(const char* buffer, size_t len);
-    virtual void EndProc() = 0;
-    virtual void ErrProc() = 0;
-    virtual ssize_t DataProc(const void *buff, size_t size) = 0;
+    virtual bool HeaderProc(Buffer& bb) = 0;
+    bool ChunkLProc(Buffer& bb);
+    bool ChunkBProc(Buffer& bb);
+    bool FixLenProc(Buffer& bb);
+    bool AlwaysProc(Buffer& bb);
+    virtual void EndProc(uint64_t id) = 0;
+    virtual void ErrProc(uint64_t id) = 0;
+    virtual ssize_t DataProc(Buffer& bb) = 0;
 public:
-    size_t (HttpBase::*Http_Proc)(const char* buffer, size_t len) = &HttpBase::HeaderProc;
+    bool (HttpBase::*Http_Proc)(Buffer& bb) = &HttpBase::HeaderProc;
 };
 
 
 class HttpResponser:public HttpBase{
-    virtual size_t HeaderProc(const char* buffer, size_t len)override final;
+    virtual bool HeaderProc(Buffer& bb)override final;
 protected:
-    virtual void ReqProc(std::shared_ptr<HttpReqHeader> req) = 0;
+    virtual void ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> req) = 0;
 };
 
 class HttpRequester:public HttpBase{
-    virtual size_t HeaderProc(const char* buffer, size_t len)override final;
+    virtual bool HeaderProc(Buffer& bb)override final;
 protected:
-    virtual void ResProc(std::shared_ptr<HttpResHeader> res) = 0;
+    virtual void ResProc(uint64_t id, std::shared_ptr<HttpResHeader> res) = 0;
 };
 
 #endif

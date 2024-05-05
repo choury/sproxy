@@ -20,7 +20,7 @@ class File: public Responser{
     char *suffix = nullptr;
     int  fd = 0;
     struct stat st;
-    size_t readHE(const Buffer&);
+    size_t readHE(Buffer&&);
     virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
 public:
     explicit File(const char* fname, int fd, const struct stat* st);

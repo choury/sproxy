@@ -8,7 +8,7 @@ class handler: public CgiHandler{
     static SproxyClient* c;
     void GET(const CGI_Header*) override{
         if(strcmp(req->get("X-Authorized"), "1") != 0) {
-            Response(UnpackHttpRes(H403, sizeof(H403)));
+            Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
             Finish();
             return;
         }
@@ -25,7 +25,7 @@ class handler: public CgiHandler{
             json_object_object_add(jsite, site, json_object_new_string(strategy));
             json_object_array_add(jsites, jsite);
         }
-        std::shared_ptr<HttpResHeader> res = UnpackHttpRes(H200, sizeof(H200));
+        std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S200, sizeof(S200), req->request_id);
         res->set("Content-Type", "application/json");
         Cookie cookie;
         cookie.path = "/";
@@ -43,7 +43,7 @@ class handler: public CgiHandler{
     }
     void POST(const CGI_Header* header) override {
         if(strcmp(req->get("X-Authorized"), "1") != 0) {
-            Response(UnpackHttpRes(H403, sizeof(H403)));
+            Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
             Finish();
             return;
         }
@@ -64,7 +64,7 @@ class handler: public CgiHandler{
     }
     void PUT(const CGI_Header* header) override{
         if(strcmp(req->get("X-Authorized"), "1") != 0) {
-            Response(UnpackHttpRes(H403, sizeof(H403)));
+            Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
             Finish();
             return;
         }
@@ -83,7 +83,7 @@ class handler: public CgiHandler{
             BadRequest();
             return;
         }
-        std::shared_ptr<HttpResHeader> res = UnpackHttpRes(H303, sizeof(H303));
+        std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S303, sizeof(S303), req->request_id);
         if(req->get("Referer") != nullptr){
             res->set("Location", req->get("Referer"));
         }else{
@@ -94,7 +94,7 @@ class handler: public CgiHandler{
     }
     void DELETE(const CGI_Header* header)override{
         if(strcmp(req->get("X-Authorized"), "1") != 0) {
-            Response(UnpackHttpRes(H403, sizeof(H403)));
+            Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
             Finish();
             return;
         }
@@ -113,7 +113,7 @@ class handler: public CgiHandler{
             BadRequest();
             return;
         }
-        std::shared_ptr<HttpResHeader> res = UnpackHttpRes(H303, sizeof(H303));
+        std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S303, sizeof(S303), req->request_id);
         if(req->get("Referer") != nullptr){
             res->set("Location", req->get("Referer"));
         }else{

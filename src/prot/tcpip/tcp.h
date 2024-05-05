@@ -21,7 +21,7 @@
 #endif
 
 struct TcpStatus;
-void SynProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, const char* packet, size_t len);
+void SynProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, Buffer&& bb);
 void SendData(std::shared_ptr<TcpStatus> status, Buffer&& bb);
 void UnReach(std::shared_ptr<TcpStatus> status, uint8_t code);
 

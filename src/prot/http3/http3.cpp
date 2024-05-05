@@ -155,28 +155,30 @@ void Http3Base::Init() {
     qpackeid_local = CreateUbiStream();
     qpackdid_local = CreateUbiStream();
 
-    auto buff = std::make_shared<Block>(BUF_LEN);
-    char* pos = (char*)buff->data();
+    Block buff(BUF_LEN);
+    char* pos = (char*)buff.data();
     pos += variable_encode(pos, HTTP3_SETTING_MAX_FIELD_SECTION_SIZE);
     pos += variable_encode(pos, BUF_LEN);
     pos += variable_encode(pos, HTTP3_SETTING_QPACK_MAX_TABLE_CAPACITY);
     pos += variable_encode(pos, 0);
-    size_t len = pos - (char*)buff->data();
-    pos = (char*)buff->reserve(-3); // type + id + length
+    size_t len = pos - (char*)buff.data();
+    pos = (char*)buff.reserve(-3); // type + id + length
     pos += variable_encode(pos, HTTP3_STREAM_TYPE_CONTROL);
     pos += variable_encode(pos, HTTP3_STREAM_SETTINGS);
     pos += variable_encode(pos, len);
-    PushFrame({buff, len+3, ctrlid_local});
+    PushFrame({std::move(buff), len+3, ctrlid_local});
 
-    buff = std::make_shared<Block>(variable_encode_len(HTTP3_STREAM_TYPE_QPACK_ENCODE));
-    pos = (char*)buff->data();
+    Block buff1(variable_encode_len(HTTP3_STREAM_TYPE_QPACK_ENCODE));
+    pos = (char*)buff1.data();
     pos += variable_encode(pos, HTTP3_STREAM_TYPE_QPACK_ENCODE);
-    PushFrame({buff, size_t(pos - (char*)buff->data()), qpackeid_local});
+    len = pos - (char*)buff1.data();
+    PushFrame({std::move(buff1), len, qpackeid_local});
 
-    buff = std::make_shared<Block>(variable_encode_len(HTTP3_STREAM_TYPE_QPACK_ENCODE));
-    pos = (char*)buff->data();
+    Block buff2(variable_encode_len(HTTP3_STREAM_TYPE_QPACK_ENCODE));
+    pos = (char*)buff2.data();
     pos += variable_encode(pos, HTTP3_STREAM_TYPE_QPACK_DECODE);
-    PushFrame({buff, size_t(pos - (char*)buff->data()), qpackdid_local});
+    len = pos - (char*)buff2.data();
+    PushFrame({std::move(buff2), len, qpackdid_local});
     http3_flag |= HTTP3_FLAG_INITED;
 }
 
@@ -221,17 +223,19 @@ void Http3Base::Goaway(uint64_t lastid){
         //this connection is not inited.
         return;
     }
-    auto buff = std::make_shared<Block>(1 + 1 + 8); // enough for goway frame
-    char* pos = (char*)buff->data();
+    Block buff(1 + 1 + 8); // enough for goway frame
+    char* pos = (char*)buff.data();
     pos += variable_encode(pos, HTTP3_STREAM_GOAWAY);
     pos += variable_encode(pos, variable_encode_len(lastid));
     pos += variable_encode(pos , lastid);
-    PushFrame({buff, size_t(pos - (char*)buff->data()), ctrlid_local});
+    size_t len  = pos - (char*)buff.data();
+    PushFrame({std::move(buff), len, ctrlid_local});
 }
 
 void Http3Base::PushData(Buffer&& bb) {
     size_t size = bb.len;
-    char* pos = (char*) bb.reserve(-(1 + (int) variable_encode_len(size)));
+    bb.reserve(-(1 + (int) variable_encode_len(size)));
+    char* pos = (char*) bb.mutable_data();
     pos += variable_encode(pos, HTTP3_STREAM_DATA);
     pos += variable_encode(pos, size);
     PushFrame(std::move(bb));

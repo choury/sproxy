@@ -17,8 +17,6 @@ struct VpnKey{
 bool operator<(const VpnKey& a, const VpnKey& b);
 
 class TunRWer: public RWer{
-    char rbuff[BUF_LEN];
-    uint64_t next_id = 1;
     int pcap = -1;
     Index2<uint64_t, VpnKey, std::shared_ptr<IpStatus>> statusmap;
     uint64_t GetId(std::shared_ptr<const Ip> pac);
@@ -27,7 +25,7 @@ class TunRWer: public RWer{
     void SendPkg(std::shared_ptr<const Ip> pac, const void* data, size_t len);
     void ErrProc(std::shared_ptr<const Ip> pac, uint32_t code);
     void ReqProc(std::shared_ptr<const Ip> pac);
-    size_t DataProc(std::shared_ptr<const Ip> pac, const void* data, size_t len);
+    size_t DataProc(std::shared_ptr<const Ip> pac, Buffer&& bb);
     void AckProc(std::shared_ptr<const Ip> pac);
 
     //virtual ssize_t Write(const void* buff, size_t len, uint64_t id) override;
