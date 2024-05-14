@@ -124,10 +124,11 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
                 continue;
             }
             length += frame->crypto.length;
-            memcpy(buffer.get() + frame->crypto.offset, frame->crypto.buffer.data, frame->crypto.length);
+            memcpy(buffer.get() + frame->crypto.offset, frame->crypto.buffer->data(), frame->crypto.length);
             if(frame->crypto.offset + frame->crypto.length > max_off) {
                 max_off = frame->crypto.offset + frame->crypto.length;
             }
+            frame_release(frame);
         }
         if(max_off == 0 || max_off < length) {
             LOGE("Quic sni faild to get ClientHello: %zd vs %zd\n", max_off, length);

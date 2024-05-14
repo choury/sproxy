@@ -123,6 +123,7 @@ void SslRWerBase::handleData(const void* data, size_t len) {
 
 void SslRWerBase::sendData(Buffer&& bb) {
     if(bb.len == 0) {
+        LOGD(DSSL, "[%s] SSL_shutdown\n", server.c_str());
         SSL_shutdown(ssl);
     }else {
         ERR_clear_error();

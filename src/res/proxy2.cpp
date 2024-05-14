@@ -35,7 +35,7 @@ Proxy2::Proxy2(std::shared_ptr<RWer> rwer) {
     this->rwer = rwer;
     rwer->SetErrorCB([this](int ret, int code){Error(ret, code);});
     rwer->SetReadCB([this](Buffer&& bb) -> size_t {
-        LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu\n", this->rwer->getPeer(), bb.len);
+        LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu, refs: %zd\n", this->rwer->getPeer(), bb.len, bb.refs());
         if(bb.len == 0){
             //EOF
             deleteLater(NOERROR);
@@ -49,16 +49,14 @@ Proxy2::Proxy2(std::shared_ptr<RWer> rwer) {
         receive_time = getmtime();
 #endif
         size_t ret = 0;
-        size_t left = bb.len;
-        const uchar* data = (const uchar*)bb.data();
-        while((left > 0) && (ret = (this->*Http2_Proc)(data, left))){
-            left -= ret;
-            data += ret;
+        size_t len = 0;
+        while((bb.len > 0) && (ret = (this->*Http2_Proc)(bb))){
+            len += ret;
         }
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
         }
-        return bb.len - left;
+        return len;
     });
     rwer->SetWriteCB([this](uint64_t id){
         if(statusmap.count(id) == 0){
@@ -116,13 +114,7 @@ void Proxy2::Handle(uint32_t id, Signal s) {
     }
 }
 
-void Proxy2::PushFrame(Buffer&& bb){
-    if(debug[DHTTP2].enabled){
-        const Http2_header *header = (const Http2_header *)bb.data();
-        uint32_t length = get24(header->length);
-        uint32_t id = HTTP2_ID(header->id);
-        LOGD(DHTTP2, "<proxy2> send a frame [%d]:%d, size:%d, flags:%d\n", id, header->type, length, header->flags);
-    }
+void Proxy2::SendData(Buffer&& bb){
 #ifdef __ANDROID__
     uint32_t now = getmtime();
     if(http2_flag & HTTP2_FLAG_INITED
@@ -172,36 +164,36 @@ void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
 }
 
 
-void Proxy2::DataProc(uint32_t id, const void* data, size_t len) {
+void Proxy2::DataProc(Buffer&& bb) {
     idle_timeout = UpdateJob(std::move(idle_timeout),
                              [this]{deleteLater(CONNECT_AGED);}, 300000);
-    if(len == 0)
+    if(bb.len == 0)
         return;
-    localwinsize -= len;
-    if(statusmap.count(id)){
-        ReqStatus& status = statusmap[id];
+    localwinsize -= bb.len;
+    if(statusmap.count(bb.id)){
+        ReqStatus& status = statusmap[bb.id];
         if(status.flags & HTTP_RES_COMPLETED){
-            LOGD(DHTTP2, "<proxy2> DataProc after closed, id: %d\n", id);
-            Clean(id, status, HTTP2_ERR_STREAM_CLOSED);
+            LOGD(DHTTP2, "<proxy2> DataProc after closed, id: %" PRIu64"\n", bb.id);
+            Clean(bb.id, status, HTTP2_ERR_STREAM_CLOSED);
             return;
         }
-        if(len > (size_t)status.localwinsize){
-            LOGE("[%" PRIu64 "]: <proxy2> (%d) window size error %zu/%d\n",
-                    status.req->header->request_id, id, len, status.localwinsize);
-            Clean(id, status, HTTP2_ERR_FLOW_CONTROL_ERROR);
+        if(bb.len > (size_t)status.localwinsize){
+            LOGE("[%" PRIu64 "]: <proxy2> (%" PRIu64") window size error %zu/%d\n",
+                    status.req->header->request_id, bb.id, bb.len, status.localwinsize);
+            Clean(bb.id, status, HTTP2_ERR_FLOW_CONTROL_ERROR);
             return;
         }
         if(status.res == nullptr){
             //compact for legacy version server.
             //it does not send http header for udp,
             //but guest_vpn need it, so we fake one here.
-            ResProc(id, HttpResHeader::create(S200, sizeof(S200), status.req->header->request_id));
+            ResProc(bb.id, HttpResHeader::create(S200, sizeof(S200), status.req->header->request_id));
         }
-        status.res->send({data, len, id});
-        status.localwinsize -= len;
+        status.localwinsize -= bb.len;
+        status.res->send(std::move(bb));
     }else{
-        LOGD(DHTTP2, "<proxy2> DataProc not found id: %d\n", id);
-        Reset(id, HTTP2_ERR_STREAM_CLOSED);
+        LOGD(DHTTP2, "<proxy2> DataProc not found id: %" PRIu64"\n", bb.id);
+        Reset(bb.id, HTTP2_ERR_STREAM_CLOSED);
     }
 }
 
@@ -211,7 +203,7 @@ void Proxy2::EndProc(uint32_t id) {
         ReqStatus &status = statusmap[id];
         assert((status.flags & HTTP_RES_COMPLETED) == 0);
         status.flags |= HTTP_RES_COMPLETED;
-        status.res->send(Buffer{nullptr, id});
+        status.res->send(Buffer{nullptr, (uint64_t)id});
     }
 }
 
@@ -326,7 +318,7 @@ void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
     set32(header->id, id);
     size_t len = hpack_encoder.PackHttp2Req(req->header, header+1, BUF_LEN - sizeof(Http2_header));
     set24(header->length, len);
-    PushFrame(Buffer{std::move(buff), len + sizeof(Http2_header), id});
+    SendData(Buffer{std::move(buff), len + sizeof(Http2_header), id});
 
     req->attach([this, id](ChannelMessage&& msg){
         idle_timeout = UpdateJob(std::move(idle_timeout),

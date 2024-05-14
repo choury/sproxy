@@ -33,8 +33,8 @@ protected:
     virtual void PingProc(const Http2_header *header)override;
     virtual void GoawayProc(const Http2_header * header) override;
     virtual void ResProc(uint32_t id, std::shared_ptr<HttpResHeader> res)override;
-    virtual void PushFrame(Buffer&& bb)override;
-    virtual void DataProc(uint32_t id, const void *data, size_t len)override;
+    virtual void SendData(Buffer&& bb)override;
+    virtual void DataProc(Buffer&& bb)override;
     virtual void EndProc(uint32_t id) override;
     virtual void RstProc(uint32_t id, uint32_t errcode)override;
     virtual void ErrProc(int errcode)override;

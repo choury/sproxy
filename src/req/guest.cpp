@@ -356,6 +356,7 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
 }
 
 void Guest::Recv(Buffer&& bb) {
+    static Buffer crlf{CRLF, 2};
     ReqStatus& status = statuslist.front();
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
     if(bb.len == 0){
@@ -389,10 +390,16 @@ void Guest::Recv(Buffer&& bb) {
     if(status.flags & HTTP_CHUNK_F){
         char chunkbuf[100];
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)bb.len);
-        bb.reserve(-chunklen);
-        memcpy(bb.mutable_data(), chunkbuf, chunklen);
+        if(bb.refs() == 1) {
+            bb.reserve(-chunklen);
+            memcpy(bb.mutable_data(), chunkbuf, chunklen);
+        } else {
+            rwer->Send(Buffer{chunkbuf, (size_t)chunklen, bb.id});
+        }
         rwer->Send(std::move(bb));
-        rwer->Send({CRLF, 2, bb.id});
+        auto cbb = crlf;
+        cbb.id = bb.id;
+        rwer->Send(std::move(cbb));
     }else{
         rwer->Send(std::move(bb));
     }
@@ -414,12 +421,9 @@ void Guest::Handle(Signal s) {
 
 void Guest::deleteLater(uint32_t errcode) {
     for(auto& status: statuslist){
-        if(status.flags & HTTP_CLOSED_F){
-            continue;
-        }
-        status.flags |= HTTP_CLOSED_F;
-        if(status.req) {
+        if((status.flags & HTTP_CLOSED_F) == 0 && status.req){
             status.req->send(CHANNEL_ABORT);
+            status.flags |= HTTP_CLOSED_F;
         }
         if(status.res) {
             status.res->detach();

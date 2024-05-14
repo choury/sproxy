@@ -27,13 +27,11 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
         }
 
         size_t ret = 0;
-        size_t left = bb.len;
-        const char* data = (const char*)bb.data();
-        while((left > 0) && (ret = Http3_Proc(data, left, bb.id))){
-            left -= ret;
-            data += ret;
+        size_t len = 0;
+        while((bb.len > 0) && (ret = Http3_Proc(bb))){
+            len += ret;
         }
-        return bb.len - left;
+        return len;
     });
     rwer->SetWriteCB([this](uint64_t id){
         if(statusmap.count(id) == 0){
@@ -69,28 +67,28 @@ void Proxy3::Reset(uint64_t id, uint32_t code) {
     return std::dynamic_pointer_cast<QuicRWer>(rwer)->reset(id, code);
 }
 
-bool Proxy3::DataProc(uint64_t id, const void* data, size_t len){
+bool Proxy3::DataProc(Buffer& bb){
     idle_timeout = UpdateJob(std::move(idle_timeout),
                              [this]{deleteLater(CONNECT_AGED);}, 300000);
-    if(len == 0){
+    if(bb.len == 0){
         return true;
     }
-    if(statusmap.count(id)){
-        ReqStatus& status = statusmap[id];
+    if(statusmap.count(bb.id)){
+        ReqStatus& status = statusmap[bb.id];
         if(status.flags & HTTP_RES_COMPLETED) {
-            LOGD(DHTTP3, "<proxy3> DataProc after closed, id:%d\n", (int)id);
-            Clean(id, status, HTTP3_ERR_STREAM_CREATION_ERROR);
+            LOGD(DHTTP3, "<proxy3> DataProc after closed, id:%d\n", (int)bb.id);
+            Clean(bb.id, status, HTTP3_ERR_STREAM_CREATION_ERROR);
             return true;
         }
-        if(status.res->cap() < (int)len){
+        if(status.res->cap() < (int)bb.len){
             LOGE("[%" PRIu64 "]: <proxy3> (%" PRIu64") the guest's write buff is full (%s)\n",
-                 status.req->header->request_id, id, status.req->header->geturl().c_str());
+                 status.req->header->request_id, bb.id, status.req->header->geturl().c_str());
             return false;
         }
-        status.res->send({data, len, id});
+        status.res->send(std::move(bb));
     }else{
-        LOGD(DHTTP3, "<proxy3> DataProc not found id: %" PRIu64 "\n", id);
-        Reset(id, HTTP3_ERR_STREAM_CREATION_ERROR);
+        LOGD(DHTTP3, "<proxy3> DataProc not found id: %" PRIu64 "\n", bb.id);
+        Reset(bb.id, HTTP3_ERR_STREAM_CREATION_ERROR);
     }
     return true;
 }
@@ -100,7 +98,7 @@ void Proxy3::GoawayProc(uint64_t id){
     return deleteLater(NOERROR);
 }
 
-void Proxy3::PushFrame(Buffer&& bb) {
+void Proxy3::SendData(Buffer&& bb) {
     rwer->Send(std::move(bb));
 }
 
@@ -125,7 +123,7 @@ void Proxy3::request(std::shared_ptr<HttpReq> req, Requester*) {
     char* p = (char*) buff.reserve(-(char) pre);
     p += variable_encode(p, HTTP3_STREAM_HEADERS);
     p += variable_encode(p, len);
-    PushFrame({std::move(buff), pre + len, id});
+    SendData({std::move(buff), pre + len, id});
     req->attach([this, id](ChannelMessage&& msg){
         idle_timeout = UpdateJob(std::move(idle_timeout),
                                  [this]{deleteLater(CONNECT_AGED);}, 300000);
@@ -183,7 +181,7 @@ void Proxy3::Recv(Buffer&& bb) {
     if(bb.len == 0){
         status.flags |= HTTP_REQ_COMPLETED;
         LOGD(DHTTP3, "<proxy3> recv data [%" PRIu64 "]: EOF\n", bb.id);
-        PushFrame({nullptr, bb.id});
+        SendData({nullptr, bb.id});
     }else{
         LOGD(DHTTP3, "<proxy3> recv data [%" PRIu64 "]: %zu\n", bb.id, bb.len);
         PushData(std::move(bb));

@@ -501,17 +501,16 @@ static size_t pack_crypto_frame_len(const struct quic_crypto* crypto){
 static char* pack_crypto_frame(const struct quic_crypto* crypto, char* data){
     data += variable_encode(data, crypto->offset);
     data += variable_encode(data, crypto->length);
-    memcpy(data, crypto->buffer.data, crypto->length);
+    memcpy(data, crypto->buffer->data(), crypto->length);
     return data + crypto->length;
 }
 
 static const char* unpack_crypto_frame(const char* data, struct quic_crypto* crypto){
     data += variable_decode(data, &crypto->offset);
     data += variable_decode(data, &crypto->length);
-    crypto->buffer.ref = (uint32_t*)new char[crypto->length + sizeof(crypto->buffer.ref)];
-    *crypto->buffer.ref = 1;
-    crypto->buffer.data = (char*)(crypto->buffer.ref + 1);
-    memcpy(crypto->buffer.data, data, crypto->length);
+    crypto->buffer = new Buffer(crypto->length);
+    memcpy(crypto->buffer->mutable_data(), data, crypto->length);
+    crypto->buffer->truncate(crypto->length);
     return data + crypto->length;
 }
 
@@ -680,7 +679,7 @@ static char* pack_stream_frame(uint64_t type, const quic_stream* stream, char *d
     if(type & QUIC_FRAME_STREAM_LEN_F){
         data += variable_encode(data, stream->length);
     }
-    memcpy(data, stream->buffer.data, stream->length);
+    memcpy(data, stream->buffer->data(), stream->length);
     return data + stream->length;
 }
 
@@ -697,10 +696,9 @@ static const char* unpack_stream_frame(uint64_t type, const char* data, const ch
         stream->length = end - data;
     }
 
-    stream->buffer.ref = (uint32_t*)new char[stream->length + sizeof(stream->buffer.ref)];
-    *stream->buffer.ref = 1;
-    stream->buffer.data = (char*)(stream->buffer.ref + 1);
-    memcpy(stream->buffer.data, data, stream->length);
+    stream->buffer = new Buffer(stream->length);
+    memcpy(stream->buffer->mutable_data(), data, stream->length);
+    stream->buffer->truncate(stream->length);
     return data + stream->length;
 }
 
@@ -1253,9 +1251,7 @@ void frame_release(const quic_frame* frame){
         delete []frame->ack.ranges;
         break;
     case QUIC_FRAME_CRYPTO:
-        if(--(*frame->crypto.buffer.ref) == 0) {
-            delete[]frame->crypto.buffer.ref;
-        }
+        delete frame->crypto.buffer;
         break;
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:
@@ -1271,9 +1267,7 @@ void frame_release(const quic_frame* frame){
         if((frame->type >= QUIC_FRAME_STREAM_START_ID)
            &&(frame->type <= QUIC_FRAME_STREAM_END_ID))
         {
-            if(--(*frame->stream.buffer.ref) == 0) {
-                delete []frame->stream.buffer.ref;
-            }
+            delete frame->stream.buffer;
         }
         break;
     }

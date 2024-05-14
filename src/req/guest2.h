@@ -26,13 +26,13 @@ protected:
 #endif
     virtual void GoawayProc(const Http2_header *header)override;
     virtual void ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> req)override;
-    virtual void DataProc(uint32_t id, const void* data, size_t len)override;
+    virtual void DataProc(Buffer&& bb)override;
     virtual void EndProc(uint32_t id) override;
     virtual void RstProc(uint32_t id, uint32_t errcode)override;
     virtual void ErrProc(int errcode)override;
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)override;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
-    virtual void PushFrame(Buffer&& wb) override;
+    virtual void SendData(Buffer&& wb) override;
 
     void Recv(Buffer&& bb);
     void Handle(uint32_t id, Signal signal);

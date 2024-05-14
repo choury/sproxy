@@ -96,16 +96,16 @@ protected:
     uint32_t sendid = 1;
     Hpack_encoder hpack_encoder;
     Hpack_decoder hpack_decoder;
-    std::shared_ptr<Buffer> header_buffer = std::make_shared<Buffer>(BUF_LEN);
-    virtual size_t InitProc(const uchar* http2_buff, size_t len) = 0;
-    size_t DefaultProc(const uchar* http2_buff, size_t len);
+    std::unique_ptr<Buffer> header_buffer;
+    virtual size_t InitProc(Buffer& bb) = 0;
+    size_t DefaultProc(Buffer& bb);
 
     // 处理header的所有信息都保存在header_buffer中
     virtual void HeadersProc() = 0;
     virtual void SettingsProc(const Http2_header *header);
     virtual void PingProc(const Http2_header *header);
     virtual void GoawayProc(const Http2_header *header);
-    virtual void DataProc(uint32_t id, const void *data, size_t len) = 0;
+    virtual void DataProc(Buffer&& bb) = 0;
     virtual void RstProc(uint32_t id, uint32_t errcode);
     virtual void EndProc(uint32_t id);
     virtual void ErrProc(int errcode) = 0;
@@ -114,13 +114,13 @@ protected:
     void Reset(uint32_t id, uint32_t code);
     void Goaway(uint32_t lastid, uint32_t code, char* message = nullptr);
     void SendInitSetting();
-    virtual void PushFrame(Buffer&& bb) = 0;
+    virtual void SendData(Buffer&& bb) = 0;
     virtual void PushData(Buffer&& bb);
 
     virtual uint32_t ExpandWindowSize(uint32_t id, uint32_t size);
     virtual void WindowUpdateProc(uint32_t id, uint32_t size) = 0;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff) = 0;
-    size_t (Http2Base::*Http2_Proc)(const uchar* http2_buff, size_t len)=&Http2Base::InitProc;
+    size_t (Http2Base::*Http2_Proc)(Buffer& bb)=&Http2Base::InitProc;
     uint32_t OpenStream();
 public:
     ~Http2Base() = default;
@@ -128,7 +128,7 @@ public:
 
 class Http2Responser:public Http2Base{
 protected:
-    virtual size_t InitProc(const uchar* http2_buff, size_t len)override;
+    virtual size_t InitProc(Buffer& bb)override;
     virtual void HeadersProc()override;
     virtual void ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> req) = 0;
     virtual void AltSvc(uint32_t id, const char* origin, const char* value);
@@ -138,7 +138,7 @@ protected:
 class Http2Requster:public Http2Base{
 protected:
     void init();
-    virtual size_t InitProc(const uchar* http2_buff, size_t len)override;
+    virtual size_t InitProc(Buffer& bb)override;
     virtual void HeadersProc()override;
     virtual void ResProc(uint32_t id, std::shared_ptr<HttpResHeader> res) = 0;
 public:

@@ -29,14 +29,13 @@ void Guest3::init() {
             }
             return 0;
         }
+
         size_t ret = 0;
-        size_t left = bb.len;
-        const char* data = (const char*)bb.data();
-        while((left > 0) && (ret = Http3_Proc(data, left, bb.id))){
-            left -= ret;
-            data += ret;
+        size_t len = 0;
+        while((bb.len > 0) && (ret = Http3_Proc(bb))){
+            len += ret;
         }
-        return bb.len - left;
+        return len;
     });
     rwer->SetWriteCB([this](uint64_t id){
         if(statusmap.count(id) == 0){
@@ -105,7 +104,7 @@ void Guest3::Recv(Buffer&& bb){
     if(bb.len == 0){
         LOGD(DHTTP3, "<guest3> %" PRIu64" recv data [%" PRIu64"]: EOF\n",
              status.req->header->request_id, bb.id);
-        PushFrame({nullptr, bb.id});
+        SendData({nullptr, bb.id});
         status.flags |= HTTP_RES_COMPLETED;
         if(status.flags & HTTP_REQ_COMPLETED) {
             status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, NOERROR);}), 0, 0);
@@ -159,25 +158,25 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     distribute(status.req, this);
 }
 
-bool Guest3::DataProc(uint64_t id, const void* data, size_t len) {
-    if(len == 0)
+bool Guest3::DataProc(Buffer& bb) {
+    if(bb.len == 0)
         return true;
-    if(statusmap.count(id)){
-        ReqStatus& status = statusmap[id];
+    if(statusmap.count(bb.id)){
+        ReqStatus& status = statusmap[bb.id];
         if(status.flags & HTTP_REQ_COMPLETED){
-            LOGD(DHTTP3, "<guest3> DateProc after closed, id: %" PRIu64"\n", id);
-            Clean(id, HTTP3_ERR_STREAM_CREATION_ERROR);
+            LOGD(DHTTP3, "<guest3> DateProc after closed, id: %" PRIu64"\n", bb.id);
+            Clean(bb.id, HTTP3_ERR_STREAM_CREATION_ERROR);
             return true;
         }
-        if(status.req->cap() < (int)len){
+        if(status.req->cap() < (int)bb.len){
             LOGE("[%" PRIu64 "]: <guest3> (%" PRIu64")the host's buff is full (%s)\n",
-                 status.req->header->request_id, id, status.req->header->geturl().c_str());
+                 status.req->header->request_id, bb.id, status.req->header->geturl().c_str());
             return false;
         }
-        status.req->send({data, len, id});
+        status.req->send(std::move(bb));
     }else{
-        LOGD(DHTTP3, "<guest3> DateProc not found id: %" PRIu64"\n", id);
-        Reset(id, HTTP3_ERR_STREAM_CREATION_ERROR);
+        LOGD(DHTTP3, "<guest3> DateProc not found id: %" PRIu64"\n", bb.id);
+        Reset(bb.id, HTTP3_ERR_STREAM_CREATION_ERROR);
     }
     return true;
 }
@@ -208,7 +207,7 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
             char *p = (char *) buff.reserve(-pre);
             p += variable_encode(p, HTTP3_STREAM_HEADERS);
             p += variable_encode(p, len);
-            PushFrame({std::move(buff), len + pre, id});
+            SendData({std::move(buff), len + pre, id});
             return 1;
         }
         case ChannelMessage::CHANNEL_MSG_DATA: {
@@ -266,7 +265,7 @@ void Guest3::GoawayProc(uint64_t id) {
     return deleteLater(NOERROR);
 }
 
-void Guest3::PushFrame(Buffer&& bb) {
+void Guest3::SendData(Buffer&& bb) {
     rwer->Send(std::move(bb));
 }
 

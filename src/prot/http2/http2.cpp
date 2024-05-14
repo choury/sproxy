@@ -1,98 +1,110 @@
 #include "http2.h"
 #include "misc/util.h"
 
-//#include <cinttypes>
+#include <cinttypes>
 #include <assert.h>
 
-size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
-    const Http2_header *header = (const Http2_header *)http2_buff;
-    if(len < sizeof(Http2_header)){
-        if(len)LOGD(DHTTP2, "get a incompleted head, size:%zu\n", len);
+size_t Http2Base::DefaultProc(Buffer& bb) {
+    size_t len = bb.len;
+    const Http2_header *header = (const Http2_header *)bb.data();
+    if(bb.len < sizeof(Http2_header)){
+        if(bb.len)LOGD(DHTTP2, "get a incompleted head, size:%zu\n", bb.len);
         return 0;
     }
     uint32_t length = get24(header->length);
-    uint32_t id = HTTP2_ID(header->id);
-    LOGD(DHTTP2, "get a frame [%d]:%d, size:%d, flags:%d\n", id, header->type, length, header->flags);
+    bb.id = HTTP2_ID(header->id);
+    LOGD(DHTTP2, "get a frame [%" PRIu64"]:%d, size:%d, flags:%d\n", bb.id, header->type, length, header->flags);
     if(length > FRAMEBODYLIMIT){
         LOGE("ERROR frame size: %d\n", length);
         ErrProc(HTTP2_ERR_FRAME_SIZE_ERROR);
         return 0;
     }
-    if(len < length + sizeof(Http2_header)){
-        LOGD(DHTTP2, "get a incompleted packet, size:%zu/%zu\n", len, length + sizeof(Http2_header));
+    if(bb.len < length + sizeof(Http2_header)){
+        LOGD(DHTTP2, "get a incompleted packet, size:%zu/%zu\n", bb.len, length + sizeof(Http2_header));
         return 0;
     }
     if(http2_flag & HTTP2_FLAG_GOAWAYED){
-        LOG("get a frame [%d]:%d, size:%d after goaway, ignore it.\n", id, header->type, length);
+        LOG("get a frame [%" PRIu64"]:%d, size:%d after goaway, ignore it.\n", bb.id, header->type, length);
+        bb.reserve(bb.len);
         return length + sizeof(Http2_header);
     }
+    bb.reserve(sizeof(Http2_header));
     switch(header->type) {
         uint32_t value;
     case HTTP2_STREAM_DATA: {
-        if (id == 0 || (id > recvid && id >= sendid - 1)) {
-            LOGE("ERROR wrong data id: %d/%d/%d\n", id, recvid, sendid);
+        if (bb.id == 0 || (bb.id > recvid && bb.id >= sendid - 1)) {
+            LOGE("ERROR wrong data id: %" PRIu64"/%d/%d\n", bb.id, recvid, sendid);
             ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
             return 0;
         }
-        char* pos = (char*)(header + 1);
         uint8_t padlen = 0;
         if (header->flags & HTTP2_PADDED_F) {
-            padlen = *pos++;
+            padlen = *(const char*)bb.data();
             length --;
+            bb.reserve(1);
         }
         if(padlen > length){
             LOGE("ERROR padlen exceed length: %d/%d\n", padlen, length);
             ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
             return 0;
         }
+        length-= padlen;
+        auto flags = header->flags;
         //这里我们假定对端一定能接受所有数据，因为我们的窗口大小是根据对端的cap进行设置的
         //所以DataProc这个函数不需要一个返回值，我们也不考虑对端主动shrunk自己的cap的情况
-        DataProc(id, pos, length - padlen);
-        if (header->flags & HTTP2_END_STREAM_F) {
-            EndProc(id);
+        if(bb.len == length) {
+            DataProc(std::move(bb));
+        }else {
+            Buffer cbb = bb;
+            cbb.truncate(length);
+            DataProc(std::move(cbb));
+            bb.reserve(length + padlen);
         }
-        break;
+        if (flags & HTTP2_END_STREAM_F) {
+            EndProc(bb.id);
+        }
+        return len - bb.len;
     }
     case HTTP2_STREAM_HEADERS: {
-        const char *pos = (const char *) (header + 1);
+        const char *pos = (const char *) bb.data();
         uint8_t padlen = 0;
         if (header->flags & HTTP2_PADDED_F) {
             padlen = *pos++;
-            length--;
+        }
+        if(padlen > length - 1){
+            LOGE("ERROR padlen exceed length: %d/%d\n", padlen, length);
+            ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
+            return 0;
         }
         uint32_t streamdep = 0;
         uint8_t weigth = 0;
         if (header->flags & HTTP2_PRIORITY_F) {
             streamdep = get32(pos);
-            if(streamdep == id){
-                LOGE("ERROR streamdep equal id: %d/%d\n", streamdep, id);
+            if(streamdep == bb.id){
+                LOGE("ERROR streamdep equal id: %d/%" PRIu64"\n", streamdep, bb.id);
                 ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
                 return 0;
             }
             pos += sizeof(streamdep);
             weigth = *pos++;
-            length -= 5;
         }
-        if(padlen > length){
-            LOGE("ERROR padlen exceed length: %d/%d\n", padlen, length);
-            ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
-            return 0;
-        }
-        if(header_buffer->id != 0){
-            LOGE("ERROR get another header id: %d/%d\n", (int)header_buffer->id, id);
+
+        if(header_buffer != nullptr){
+            LOGE("ERROR get another header id: %d/%" PRIu64"\n", (int)header_buffer->id, bb.id);
             ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
             return 0;
         }
-        header_buffer->id = id;
-        header_buffer->truncate(length - padlen);
-        memcpy(header_buffer->mutable_data(), pos, length - padlen);
+        size_t prelen = pos - (char*)bb.data();
+        header_buffer = std::make_unique<Buffer>(bb);
+        header_buffer->reserve(prelen);
+        header_buffer->truncate(length - prelen - padlen);
         if (header->flags & HTTP2_END_STREAM_F) {
             http2_flag |= HTTP2_FLAG_END;
         }
         if(header->flags & HTTP2_END_HEADERS_F){
             HeadersProc();
             if(http2_flag & HTTP2_FLAG_END){
-                EndProc(id);
+                EndProc(bb.id);
                 http2_flag &= ~HTTP2_FLAG_END;
             }
         }
@@ -100,8 +112,8 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
         break;
     }
     case HTTP2_STREAM_SETTINGS:
-        if(id != 0){
-            LOGE("ERROR wrong setting id: %d\n", id);
+        if(bb.id != 0){
+            LOGE("ERROR wrong setting id: %" PRIu64"\n", bb.id);
             ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
             return 0;
         }
@@ -113,8 +125,8 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
         SettingsProc(header);
         break;
     case HTTP2_STREAM_PING:
-        if(id != 0 || length != 8){
-            LOGE("ERROR wrong ping frame: %d/%d\n", id, length);
+        if(bb.id != 0 || length != 8){
+            LOGE("ERROR wrong ping frame: %" PRIu64"/%d\n", bb.id, length);
             ErrProc(HTTP2_ERR_FRAME_SIZE_ERROR);
             return 0;
         }
@@ -126,35 +138,40 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
         break;
     case HTTP2_STREAM_RESET:
         if(length != 4){
-            LOGE("ERROR rst frame: %d/%d\n", id, length);
+            LOGE("ERROR rst frame: %" PRIu64"/%d\n", bb.id, length);
             ErrProc(HTTP2_ERR_FRAME_SIZE_ERROR);
             return 0;
         }
-        if(id == 0 || (id > recvid && id >= sendid-1)){
-            LOGE("ERROR rst frame: %d/%d/%d\n", id, sendid, recvid);
+        if(bb.id == 0 || (bb.id > recvid && bb.id >= sendid-1)){
+            LOGE("ERROR rst frame: %" PRIu64"/%d/%d\n", bb.id, sendid, recvid);
             ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
             return 0;
         }
         value = get32(header+1);
-        RstProc(id, value);
+        RstProc(bb.id, value);
         break;
     case HTTP2_STREAM_WINDOW_UPDATE:
         if(length != 4){
-            LOGE("ERROR window update frame: %d/%d\n", id, length);
+            LOGE("ERROR window update frame: %" PRIu64"/%d\n", bb.id, length);
             ErrProc(HTTP2_ERR_FRAME_SIZE_ERROR);
             return 0;
         }
         value = get32(header+1);
-        if(value == 0 || (id > recvid && id >= sendid-1)){
-            LOGE("ERROR window update frame: value=%d id=%d/%d/%d\n", value, id, sendid, recvid);
+        if(value == 0 || (bb.id > recvid && bb.id >= sendid-1)){
+            LOGE("ERROR window update frame: value=%d id=%" PRIu64"/%d/%d\n", value, bb.id, sendid, recvid);
             ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
             return 0;
         }
-        WindowUpdateProc(id, value);
+        WindowUpdateProc(bb.id, value);
         break;
     case HTTP2_STREAM_CONTINUATION: {
-        if (header_buffer->id != id) {
-            LOGE("ERROR get another header id: %d/%d\n", (int) header_buffer->id, id);
+        if (header_buffer == nullptr) {
+            LOGE("ERROR get continuation frame without header\n");
+            ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
+            return 0;
+        }
+        if (header_buffer->id != bb.id) {
+            LOGE("ERROR get another header id: %d/%" PRIu64"\n", (int) header_buffer->id, bb.id);
             ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
             return 0;
         }
@@ -163,7 +180,7 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
         if (header->flags & HTTP2_END_HEADERS_F) {
             HeadersProc();
             if (http2_flag & HTTP2_FLAG_END) {
-                EndProc(id);
+                EndProc(bb.id);
                 http2_flag &= ~HTTP2_FLAG_END;
             }
         }
@@ -171,23 +188,23 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
     }
     case HTTP2_STREAM_PRIORITY: {
         if(length != 5){
-            LOGE("ERROR priority frame: %d/%d\n", id, length);
+            LOGE("ERROR priority frame: %" PRIu64"/%d\n", bb.id, length);
             ErrProc(HTTP2_ERR_FRAME_SIZE_ERROR);
             return 0;
         }
-        if (id == 0) {
-            LOGE("ERROR priority frame with frame 0: %d/%d\n", id, length);
+        if (bb.id == 0) {
+            LOGE("ERROR priority frame with frame 0: %" PRIu64"/%d\n", bb.id, length);
             ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
             return 0;
         }
-        if(header_buffer->id != 0){
-            LOGE("ERROR priority frame between header, id: %d/%d\n", (int) header_buffer->id, id);
+        if(header_buffer != nullptr){
+            LOGE("ERROR priority frame between header, id: %" PRIu64"/%" PRIu64"\n", header_buffer->id, bb.id);
             ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
             return 0;
         }
         uint32_t streamdep = get32(header + 1);
-        if (streamdep == id) {
-            LOGE("ERROR streamdep equal id: %d/%d\n", streamdep, id);
+        if (streamdep == bb.id) {
+            LOGE("ERROR streamdep equal id: %d/%" PRIu64"\n", streamdep, bb.id);
             ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
             return 0;
         }
@@ -199,8 +216,8 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
         break;
     default:
         LOGE("unknown http2 frame:%d\n", header->type);
-        if(header_buffer->id != 0){
-            LOGE("ERROR get unknown frame between header, id: %d/%d\n", (int)header_buffer->id, id);
+        if(header_buffer != nullptr){
+            LOGE("ERROR get unknown frame between header, id: %d/%" PRIu64"\n", (int)header_buffer->id, bb.id);
             ErrProc(HTTP2_ERR_COMPRESSION_ERROR);
             return 0;
         }
@@ -208,6 +225,7 @@ size_t Http2Base::DefaultProc(const uchar* http2_buff, size_t len) {
     if(http2_flag & HTTP2_FLAG_ERROR){
         return 0;
     }
+    bb.reserve(length);
     return get24(header->length) + sizeof(Http2_header);
 }
 
@@ -264,56 +282,39 @@ ret:
 #endif
 
 void Http2Base::PushData(Buffer&& bb){
-    while(bb.len > remoteframebodylimit){
-        Buffer buff{bb.data(), remoteframebodylimit, bb.id};
-        buff.reserve(-(char) sizeof(Http2_header));
-        Http2_header* const header=(Http2_header *)buff.mutable_data();
+    auto pack = [](void* header_, uint32_t id, size_t size){
+        Http2_header* header=(Http2_header *)header_;
         memset(header, 0, sizeof(Http2_header));
-        set32(header->id, bb.id);
-        set24(header->length, remoteframebodylimit);
-        PushFrame(std::move(buff));
+        set32(header->id, id);
+        set24(header->length, size);
+        if (size == 0) {
+            header->flags = HTTP2_END_STREAM_F;
+        }
+    };
+    while(bb.len > remoteframebodylimit){
+        Block buff(sizeof(Http2_header));
+        pack(buff.data(), bb.id, remoteframebodylimit);
+        SendData({std::move(buff), sizeof(Http2_header), bb.id});
+        auto cbb = bb;
+        cbb.truncate(remoteframebodylimit);
+        LOGD(DHTTP2, "send data frame [%" PRIu64"], size: %u\n", bb.id, remoteframebodylimit);
+        SendData(std::move(cbb));
         bb.reserve(remoteframebodylimit);
     }
 
-    size_t size = bb.len;
-    bb.reserve(-(char) sizeof(Http2_header));
-    Http2_header* const header=(Http2_header *)bb.mutable_data();
-    memset(header, 0, sizeof(Http2_header));
-    set32(header->id, bb.id);
-    set24(header->length, size);
-    if(size == 0) {
-        header->flags = HTTP2_END_STREAM_F;
+    if(bb.refs() == 1 || bb.len == 0) {
+        size_t size = bb.len;
+        bb.reserve(-(char) sizeof(Http2_header));
+        Http2_header * header = (Http2_header *) bb.mutable_data();
+        pack(header, bb.id, size);
+    } else {
+        Block buff(sizeof(Http2_header));
+        pack(buff.data(), bb.id, bb.len);
+        SendData({std::move(buff), sizeof(Http2_header), bb.id});
     }
-    PushFrame(std::move(bb));
+    LOGD(DHTTP2, "send data frame [%" PRIu64"], size: %zd\n", bb.id, bb.len);
+    SendData(std::move(bb));
 }
-
-
-#if 0
-
-int Http2Base::SendFrame(){
-    while(!framequeue.empty()){
-        Http2_frame& frame = framequeue.front();
-        size_t len = sizeof(Http2_header) + get24(frame.header->length);
-        assert(get24(frame.header->length) <= FRAMEBODYLIMIT);
-        ssize_t ret = Write((char *)frame.header + frame.wlen, len - frame.wlen);
-
-        if (ret <= 0) {
-            return ret;
-        }
-
-        framelen -= ret;
-        if ((size_t)ret + frame.wlen == len) {
-            p_free(frame.header);
-            framequeue.pop_front();
-        } else {
-            frame.wlen += ret;
-            break;
-        }
-    }
-    return 1;
-}
-
-#endif
 
 void Http2Base::SettingsProc(const Http2_header* header) {
     const Setting_Frame *sf = (const Setting_Frame *)(header + 1);
@@ -368,7 +369,9 @@ void Http2Base::SettingsProc(const Http2_header* header) {
         Http2_header *header_back =  (Http2_header*) buff.data();
         set24(header_back->length, 0);
         header_back->flags |= HTTP2_ACK_F;
-        PushFrame(Buffer{std::move(buff), sizeof(Http2_header)});
+        LOGD(DHTTP2, "send setting ack [%d], size: %zd, flags: %d\n",
+             get24(header->length), sizeof(Http2_header), header_back->flags);
+        SendData(Buffer{std::move(buff), sizeof(Http2_header)});
     }else if(get24(header->length) != 0){
         LOGE("ERROR setting ack with content\n");
         ErrProc(HTTP2_ERR_FRAME_SIZE_ERROR);
@@ -381,7 +384,8 @@ void Http2Base::PingProc(const Http2_header* header) {
         Block buff(header, len);
         Http2_header *header_back =  (Http2_header*)buff.data();
         header_back->flags |= HTTP2_ACK_F;
-        PushFrame(Buffer{std::move(buff), len});
+        LOGD(DHTTP2, "send ping ack, size: %zd, flags: %d\n", len, header_back->flags);
+        SendData(Buffer{std::move(buff), len});
     }
 }
 
@@ -406,7 +410,8 @@ uint32_t Http2Base::ExpandWindowSize(uint32_t id, uint32_t size) {
     set24(header->length, sizeof(uint32_t));
     header->type = HTTP2_STREAM_WINDOW_UPDATE;
     set32(header+1, size);
-    PushFrame(Buffer{std::move(buff), sizeof(uint32_t) + sizeof(Http2_header)});
+    LOGD(DHTTP2, "send window update frame [%d]: %d\n", id, size);
+    SendData(Buffer{std::move(buff), sizeof(uint32_t) + sizeof(Http2_header)});
     return size;
 }
 
@@ -417,7 +422,8 @@ void Http2Base::Ping(const void *data) {
     header->type = HTTP2_STREAM_PING;
     set24(header->length, 8);
     memcpy(header+1, data, 8);
-    PushFrame(Buffer{std::move(buff), 8 + sizeof(Http2_header)});
+    LOGD(DHTTP2, "send ping frame\n");
+    SendData(Buffer{std::move(buff), 8 + sizeof(Http2_header)});
 }
 
 
@@ -429,7 +435,8 @@ void Http2Base::Reset(uint32_t id, uint32_t code) {
     set32(header->id, id);
     set24(header->length, sizeof(uint32_t));
     set32(header+1, code);
-    PushFrame(Buffer{std::move(buff), sizeof(uint32_t) + sizeof(Http2_header)});
+    LOGD(DHTTP2, "send reset frame [%d]: %d\n", id, code);
+    SendData(Buffer{std::move(buff), sizeof(uint32_t) + sizeof(Http2_header)});
 }
 
 void Http2Base::Goaway(uint32_t lastid, uint32_t code, char *message) {
@@ -449,7 +456,8 @@ void Http2Base::Goaway(uint32_t lastid, uint32_t code, char *message) {
     if(message){
         strcpy((char *)goaway->data, message);
     }
-    PushFrame(Buffer{std::move(buff), len + sizeof(Http2_header)});
+    LOGD(DHTTP2, "send goaway frame, lastid:%d, code:%d, message:%s\n", lastid, code, message);
+    SendData(Buffer{std::move(buff), len + sizeof(Http2_header)});
 }
 
 
@@ -470,7 +478,7 @@ void Http2Base::SendInitSetting() {
     set32(sf->value, localframewindowsize);
     LOGD(DHTTP2, "send inital frame window size:%d\n", localframewindowsize);
 
-    PushFrame(Buffer{std::move(buff), 2 * sizeof(Setting_Frame) + sizeof(Http2_header)});
+    SendData(Buffer{std::move(buff), 2 * sizeof(Setting_Frame) + sizeof(Http2_header)});
 }
 
 uint32_t Http2Base::OpenStream(){
@@ -479,20 +487,21 @@ uint32_t Http2Base::OpenStream(){
     return id;
 }
 
-size_t Http2Responser::InitProc(const uchar* http2_buff, size_t len) {
+size_t Http2Responser::InitProc(Buffer& bb) {
     size_t prelen = strlen(HTTP2_PREFACE);
-    if(len < prelen) {
+    if(bb.len < prelen) {
         return 0;
     }
-    if (memcmp(http2_buff, HTTP2_PREFACE, strlen(HTTP2_PREFACE)) != 0) {
-        LOGE("ERROR get http2 perface: %.*s\n", (int)len, http2_buff);
+    if (memcmp(bb.data(), HTTP2_PREFACE, strlen(HTTP2_PREFACE)) != 0) {
+        LOGE("ERROR get http2 perface: %.*s\n", (int)bb.len, (const char*)bb.data());
         ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
         return 0;
     }
     SendInitSetting();
     http2_flag |= HTTP2_FLAG_INITED;
     Http2_Proc = &Http2Responser::DefaultProc;
-    return prelen + DefaultProc(http2_buff+prelen, len-prelen);
+    bb.reserve(prelen);
+    return prelen;
 }
 
 void Http2Responser::HeadersProc() {
@@ -509,8 +518,7 @@ void Http2Responser::HeadersProc() {
         return;
     }
     ReqProc(id, req);
-    header_buffer->truncate(0);
-    header_buffer->id = 0;
+    header_buffer = nullptr;
 }
 
 void Http2Responser::AltSvc(uint32_t id, const char *origin, const char *value) {
@@ -528,28 +536,30 @@ void Http2Responser::AltSvc(uint32_t id, const char *origin, const char *value) 
     memcpy(pos, origin, originlen);
     pos += originlen;
     memcpy(pos, value, valuelen);
-    PushFrame(Buffer{std::move(buff), len + sizeof(Http2_header)});
+    LOGD(DHTTP2, "send altsvc frame [%d]: %s %s\n", id, origin, value);
+    SendData(Buffer{std::move(buff), len + sizeof(Http2_header)});
 }
 
 void Http2Requster::init() {
-    PushFrame(Buffer{HTTP2_PREFACE, sizeof(HTTP2_PREFACE) - 1});
+    SendData(Buffer{HTTP2_PREFACE, sizeof(HTTP2_PREFACE) - 1});
     SendInitSetting(); 
 }
 
-size_t Http2Requster::InitProc(const uchar* http2_buff, size_t len) {
-    const Http2_header *header = (const Http2_header *)http2_buff;
-    if(len < sizeof(Http2_header)){
+size_t Http2Requster::InitProc(Buffer& bb) {
+    if(bb.len < sizeof(Http2_header)){
         return 0;
     }
+    const Http2_header *header = (const Http2_header *)bb.data();
     size_t length = sizeof(Http2_header) + get24(header->length);
-    if(len < length){
+    if(bb.len < length){
         return 0;
     }
     if(header->type == HTTP2_STREAM_SETTINGS && (header->flags & HTTP2_ACK_F) == 0){
         SettingsProc(header);
         http2_flag |=  HTTP2_FLAG_INITED;
         Http2_Proc = &Http2Requster::DefaultProc;
-        return length + DefaultProc(http2_buff+length, len-length);
+        bb.reserve(length);
+        return length;
     }else {
         LOGE("ERROR get wrong setting frame from server\n");
         ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
@@ -572,6 +582,5 @@ void Http2Requster::HeadersProc() {
         return;
     }
     ResProc(id, res);
-    header_buffer->truncate(0);
-    header_buffer->id = 0;
+    header_buffer = nullptr;
 }

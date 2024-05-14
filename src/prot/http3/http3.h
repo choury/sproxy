@@ -73,18 +73,18 @@ protected:
 
     Qpack_encoder qpack_encoder;
     Qpack_decoder qpack_decoder;
-    size_t Http3_Proc(const void* buff, size_t len, uint64_t id);
+    size_t Http3_Proc(Buffer& bb);
 
     virtual void HeadersProc(uint64_t id, const uchar *header, size_t len) = 0;
     virtual void SettingsProc(const uchar *header, size_t len);
     virtual void GoawayProc(uint64_t id);
-    virtual bool DataProc(uint64_t id, const void *data, size_t len) = 0;
+    virtual bool DataProc(Buffer& bb) = 0;
     virtual void ErrProc(int errcode) = 0;
     virtual void Reset(uint64_t id, uint32_t code) = 0;
 
     void Goaway(uint64_t lastid);
     virtual uint64_t CreateUbiStream() = 0;
-    virtual void PushFrame(Buffer&& bb) = 0;
+    virtual void SendData(Buffer&& bb) = 0;
     virtual void PushData(Buffer&& bb);
 
 public:

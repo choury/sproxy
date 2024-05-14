@@ -31,12 +31,10 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
             deleteLater(NOERROR);
             return 0;
         }
-        size_t ret;
-        size_t left = bb.len;
-        const uchar* data = (const uchar*)bb.data();
-        while((left > 0) && (ret = (this->*Http2_Proc)(data, left))){
-            left -= ret;
-            data += ret;
+        size_t ret = 0;
+        size_t len = 0;
+        while((bb.len > 0) && (ret = (this->*Http2_Proc)(bb))){
+            len += ret;
         }
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
             localwinsize += ExpandWindowSize(0, 50*1024*1024);
@@ -44,7 +42,7 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
         this->connection_lost_job = UpdateJob(
                 std::move(this->connection_lost_job),
                 [this]{connection_lost();}, 1800000);
-        return bb.len - left;
+        return len;
     });
     rwer->SetWriteCB([this](uint64_t id){
         if(statusmap.count(id) == 0){
@@ -142,28 +140,28 @@ void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
     distribute(status.req, this);
 }
 
-void Guest2::DataProc(uint32_t id, const void* data, size_t len) {
-    if(len == 0)
+void Guest2::DataProc(Buffer&& bb) {
+    if(bb.len == 0)
         return;
-    localwinsize -= len;
-    if(statusmap.count(id)){
-        ReqStatus& status = statusmap[id];
+    localwinsize -= bb.len;
+    if(statusmap.count(bb.id)){
+        ReqStatus& status = statusmap[bb.id];
         if(status.flags & HTTP_REQ_COMPLETED){
-            LOGD(DHTTP2, "<guest2> DateProc after closed, id: %d\n", id);
-            Clean(id, HTTP2_ERR_STREAM_CLOSED);
+            LOGD(DHTTP2, "<guest2> DateProc after closed, id: %" PRIu64"\n", bb.id);
+            Clean(bb.id, HTTP2_ERR_STREAM_CLOSED);
             return;
         }
-        if(len > (size_t)status.localwinsize){
-            LOGE("[%" PRIu64 "]: <guest2> (%d) window size error %zu/%d\n",
-                status.req->header->request_id, id, len, status.localwinsize);
-            Clean(id, HTTP2_ERR_FLOW_CONTROL_ERROR);
+        if(bb.len > (size_t)status.localwinsize){
+            LOGE("[%" PRIu64 "]: <guest2> (%" PRIu64") window size error %zu/%d\n",
+                status.req->header->request_id, bb.id, bb.len, status.localwinsize);
+            Clean(bb.id, HTTP2_ERR_FLOW_CONTROL_ERROR);
             return;
         }
-        status.req->send({data, len, id});
-        status.localwinsize -= len;
+        status.localwinsize -= bb.len;
+        status.req->send(std::move(bb));
     }else{
-        LOGD(DHTTP2, "<guest2> DateProc not found id: %d\n", id);
-        Reset(id, HTTP2_ERR_STREAM_CLOSED);
+        LOGD(DHTTP2, "<guest2> DateProc not found id: %" PRIu64"\n", bb.id);
+        Reset(bb.id, HTTP2_ERR_STREAM_CLOSED);
     }
 }
 
@@ -171,7 +169,7 @@ void Guest2::EndProc(uint32_t id) {
     LOGD(DHTTP2, "<guest2> [%d]: end of stream\n", id);
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
-        status.req->send(Buffer{nullptr, id});
+        status.req->send(Buffer{nullptr, (uint64_t)id});
         status.flags |= HTTP_REQ_COMPLETED;
         if(status.flags & HTTP_RES_COMPLETED) {
             Clean(id, NOERROR);
@@ -206,7 +204,7 @@ void Guest2::response(void* index, std::shared_ptr<HttpRes> res) {
             set32(h2header->id, id);
             size_t len = hpack_encoder.PackHttp2Res(header, h2header + 1, BUF_LEN - sizeof(Http2_header));
             set24(h2header->length, len);
-            PushFrame(Buffer{std::move(buff), len + sizeof(Http2_header), id});
+            SendData(Buffer{std::move(buff), len + sizeof(Http2_header), id});
 
             if(opt.alt_svc){
                 AltSvc(id, "", opt.alt_svc);
@@ -310,13 +308,7 @@ void Guest2::AdjustInitalFrameWindowSize(ssize_t diff) {
     }
 }
 
-void Guest2::PushFrame(Buffer&& bb) {
-    if(debug[DHTTP2].enabled){
-        const Http2_header *header = (const Http2_header *)bb.data();
-        uint32_t length = get24(header->length);
-        uint32_t id = HTTP2_ID(header->id);
-        LOGD(DHTTP2, "<guest2> send a frame [%d]:%d, size:%d, flags:%d\n", id, header->type, length, header->flags);
-    }
+void Guest2::SendData(Buffer&& bb) {
     rwer->Send(std::move(bb));
 }
 

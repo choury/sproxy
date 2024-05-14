@@ -110,6 +110,13 @@ void FDns::request(std::shared_ptr<HttpReq> req, Requester*){
 }
 #endif
 
+#if ! __LP64__
+struct __uint128_t {
+    uint64_t hi;
+    uint64_t lo;
+};
+#endif
+
 void FDns::query(uint64_t id, std::shared_ptr<MemRWer> rwer) {
     statusmap[id] = FDnsStatus{
         .rwer = rwer,
@@ -142,7 +149,11 @@ void FDns::Recv(Buffer&& bb) {
         return;
     }
     LOG("<FDNS> [%" PRIu64"] Query %s, id:%d, type:%d\n", id, que->domain, que->id, que->type);
+#if __LP64__
     __uint128_t index = (__uint128_t)id << 64 | que->id;
+#else
+    __uint128_t index{id , que->id};
+#endif
     Dns_Result* result = nullptr;
     if(que->type == 12){
         auto record = fdns_records.GetOne(getFip(&que->ptr_addr));
@@ -193,13 +204,22 @@ static bool isLoopBack(const sockaddr_storage* addr) {
 
 void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs) {
     auto index = *std::static_pointer_cast<__uint128_t>(param);
+#if __LP64__
     uint64_t id = index >> 64;
+#else
+    uint64_t id = index.hi;
+#endif
     if(fdns->statusmap.count(id) == 0){
         return;
     }
     FDnsStatus& status = fdns->statusmap.at(id);
-    std::shared_ptr<Dns_Query> que = status.quemap.at(index & 0xffff);
-    assert(que->id == (index & 0xffff));
+#if __LP64__
+    uint16_t qid = index & 0xffff;
+#else
+    uint16_t qid = index.lo & 0xffff;
+#endif
+    std::shared_ptr<Dns_Query> que = status.quemap.at(qid);
+    assert(que->id == qid);
     LOGD(DDNS, "fdns cb [%" PRIu64"] %s, id:%d, size:%zd, error: %d\n",
          id, que->domain, que->id, addrs.size(), error);
     Dns_Result* result = new Dns_Result(que->domain);
@@ -237,14 +257,23 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockadd
 
 void FDns::RawCb(std::shared_ptr<void> param, const char* data, size_t size) {
     auto index = *std::static_pointer_cast<__uint128_t>(param);
+#if __LP64__
     uint64_t id = index >> 64;
+#else
+    uint64_t id = index.hi;
+#endif
     if(fdns->statusmap.count(id) == 0){
         return;
     }
     LOGD(DDNS, "fdns rawcb [%" PRIu64"], size:%zd\n", id, size);
     FDnsStatus& status = fdns->statusmap[id];
-    std::shared_ptr<Dns_Query> que = status.quemap.at(index & 0xffff);
-    assert(que->id == (index & 0xffff));
+#if __LP64__
+    uint16_t qid = index & 0xffff;
+#else
+    uint16_t qid = index.lo & 0xffff;
+#endif
+    std::shared_ptr<Dns_Query> que = status.quemap.at(qid);
+    assert(que->id == qid);
     Buffer buff{BUF_LEN, id};
     if(data){
         LOGD(DDNS, "<FDNS> Query raw response [%d]\n", que->id);

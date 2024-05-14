@@ -10,6 +10,7 @@
 #include <memory>
 #include <list>
 #include <functional>
+#include <set>
 
 enum class RWerStats{
     Idle = 0,

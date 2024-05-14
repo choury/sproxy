@@ -194,25 +194,23 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
         if(left < (int)pack_frame_len(frame)){
             uint64_t type = frame->type;
             if (type == QUIC_FRAME_CRYPTO && left >= 20){
-                // [n, m) -> [n, n + left - 20) + [n + left - 20, m)
+                // [off, off+len) -> [off, off + left - 20) + [off + left - 20, off+len)
                 quic_frame* fframe = new quic_frame{type, {}};
                 fframe->crypto.offset = frame->crypto.offset + left - 20;
                 fframe->crypto.length = frame->crypto.length - left + 20;
-                fframe->crypto.buffer.data = frame->crypto.buffer.data + left - 20;
-                fframe->crypto.buffer.ref = frame->crypto.buffer.ref;
-                (*fframe->crypto.buffer.ref)++;
+                fframe->crypto.buffer = new Buffer(*frame->crypto.buffer);
+                fframe->crypto.buffer->reserve(left - 20);
                 pend_frames.insert(std::next(pend_frames.begin()), fframe);
                 frame->crypto.length = left - 20;
             } else if ((type >= QUIC_FRAME_STREAM_START_ID && type <= QUIC_FRAME_STREAM_END_ID) && left >= 30) {
                 streams.emplace(frame->stream.id);
-                // [n, m) -> [n, n + left - 30) + [n + left - 30, m)
+                // [off, off+len) -> [off, off + left - 30) + [off + left - 30, off+len)
                 quic_frame *fframe = new quic_frame{type | QUIC_FRAME_STREAM_OFF_F, {}};
                 fframe->stream.id = frame->stream.id;
                 fframe->stream.offset = frame->stream.offset + left - 30;
                 fframe->stream.length = frame->stream.length - left + 30;
-                fframe->stream.buffer.data = frame->stream.buffer.data + left - 30;
-                fframe->stream.buffer.ref = frame->stream.buffer.ref;
-                (*fframe->stream.buffer.ref)++;
+                fframe->stream.buffer = new Buffer(*frame->stream.buffer);
+                fframe->stream.buffer->reserve(left - 30);
                 pend_frames.insert(std::next(pend_frames.begin()), fframe);
                 frame->stream.length = left - 30;
                 frame->type &= ~QUIC_FRAME_STREAM_FIN_F;
@@ -292,12 +290,11 @@ int QuicBase::add_handshake_data(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
 
     quic_frame* frame = new quic_frame;
     frame->type = QUIC_FRAME_CRYPTO;
-    frame->crypto.buffer.ref = (uint32_t*)new char[len + sizeof(uint32_t)];
-    frame->crypto.buffer.data = (char*)(frame->crypto.buffer.ref + 1);
-    *frame->crypto.buffer.ref = 1;
-    memcpy(frame->crypto.buffer.data, data, len);
+    frame->crypto.buffer = new Buffer(len);
+    memcpy(frame->crypto.buffer->mutable_data(), data, len);
     frame->crypto.offset = context->crypto_offset;
     frame->crypto.length = len;
+    frame->crypto.buffer->truncate(len);
     rwer->qos.PushFrame(level, frame);
     context->crypto_offset += len;
     return 1;
@@ -620,7 +617,7 @@ QuicBase::FrameResult QuicBase::handleCryptoFrame(quic_context* context, const q
         LOGD(DQUIC, "skip unwanted crypto frame [%zd/%" PRIu64"]\n", context->crypto_want, crypto->offset);
         return FrameResult::skip;
     }
-    uint8_t* start = (uint8_t*)crypto->buffer.data + (context->crypto_want - crypto->offset);
+    const uint8_t* start = (const uint8_t*)crypto->buffer->data() + (context->crypto_want - crypto->offset);
     size_t len = crypto->offset + crypto->length - context->crypto_want;
     SSL_provide_quic_data(ssl, context->level, start, len);
     context->crypto_want = crypto->offset + crypto->length;
@@ -765,7 +762,7 @@ QuicBase::FrameResult QuicBase::handleStreamFrame(uint64_t type, const quic_stre
              id, stream->offset, want);
         return FrameResult::skip;
     }
-    const char* start = stream->buffer.data + (want - stream->offset);
+    const char* start = (const char*)stream->buffer->data() + (want - stream->offset);
     size_t len = stream->length + stream->offset - want;
     if(status.rb.put(start, len) < 0){
         onError(PROTOCOL_ERR, QUIC_FLOW_CONTROL_ERROR);
@@ -1159,6 +1156,7 @@ int QuicBase::handlePacket(const quic_pkt_header* header, std::vector<const quic
 
 void QuicBase::sendData(Buffer&& bb) {
     uint64_t id = bb.id;
+    size_t len = bb.len;
     assert(streammap.count(id));
 
     auto& status = streammap[id];
@@ -1168,19 +1166,16 @@ void QuicBase::sendData(Buffer&& bb) {
     if(status.my_offset) {
         frame->type |= QUIC_FRAME_STREAM_OFF_F;
     }
-    if(bb.len == 0){
+    if(len == 0){
         frame->type |= QUIC_FRAME_STREAM_FIN_F;
     }
     frame->stream.id = id;
-    frame->stream.length = bb.len;
+    frame->stream.length = len;
     frame->stream.offset =  status.my_offset;
-    frame->stream.buffer.ref = (uint32_t*)new char[bb.len + sizeof(uint32_t)];
-    frame->stream.buffer.data = (char*)(frame->stream.buffer.ref + 1);
-    *frame->stream.buffer.ref = 1;
-    if(bb.len > 0) {
-        memcpy(frame->stream.buffer.data, bb.data(), bb.len);
-        status.my_offset += bb.len;
-        my_sent_data += bb.len;
+    frame->stream.buffer =  new Buffer(std::move(bb));
+    if(len > 0) {
+        status.my_offset += len;
+        my_sent_data += len;
         assert(my_sent_data <= his_max_data);
     }
     if(status.my_offset + my_max_payload_size >= status.his_max_data) {
@@ -1201,7 +1196,7 @@ void QuicBase::sendData(Buffer&& bb) {
         return;
     }
     qos.PushFrame(ssl_encryption_application, frame);
-    if(bb.len == 0) {
+    if(len == 0) {
         status.flags |= STREAM_FLAG_FIN_SENT;
     }
     LOGD(DQUIC, "send data [%" PRIu64"]: <%zd/%" PRIu64"> <%" PRIu64"/%" PRIu64">\n",

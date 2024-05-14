@@ -2,6 +2,7 @@
 #define QUIC_PACK_H__
 
 #include "common/common.h"
+#include "misc/buffer.h"
 
 #include <list>
 #include <vector>
@@ -162,15 +163,10 @@ struct quic_secret{
 int quic_generate_initial_key(int client, const char* id, uint8_t id_len, quic_secret* secret);
 int quic_secret_set_key(quic_secret* secret, const char* key, uint32_t cipher);
 
-struct ref_buffer{
-    uint32_t* ref;
-    char*     data;
-};
-
 struct quic_crypto{
     uint64_t offset;
     uint64_t length;
-    ref_buffer buffer;
+    Buffer* buffer;
 };
 
 struct quic_ack_range{
@@ -234,7 +230,7 @@ struct quic_stream{
     uint64_t id;
     uint64_t offset;
     uint64_t length;
-    ref_buffer buffer;
+    Buffer* buffer;
 };
 
 struct quic_frame{

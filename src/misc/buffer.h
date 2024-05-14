@@ -7,9 +7,6 @@
 
 #include "common/common.h"
 
-#include <list>
-#include <set>
-#include <functional>
 #include <memory>
 
 #include <string.h>
@@ -88,48 +85,6 @@ public:
     size_t refs();
 };
 
-
-#ifndef insert_iterator
-#ifdef HAVE_CONST_ITERATOR_BUG
-#define insert_iterator iterator
-#else
-#define insert_iterator const_iterator
-#endif
-#endif
-
-
-
-#if 0
-using buff_iterator = std::list<Buffer>::insert_iterator;
-class WBuffer {
-    std::list<Buffer> write_queue;
-    size_t  len = 0;
-public:
-    ~WBuffer();
-    [[nodiscard]] size_t length() const;
-    buff_iterator start();
-    buff_iterator end();
-    buff_iterator push(buff_iterator i, Buffer&& bb);
-    ssize_t Write(const std::function<ssize_t(std::list<Buffer>&)>& write_func, std::set<uint64_t>& writed_list);
-};
-
-class RBuffer {
-    char content[BUF_LEN*2];
-    size_t len = 0;
-public:
-    //for put
-    size_t left();
-    char* end();
-    size_t add(size_t l);
-    ssize_t put(const void* data, size_t size);
-
-    //for get
-    size_t length();
-    size_t cap();
-    const char* data();
-    size_t consume(size_t l);
-};
-#endif
 
 //CBuffer 是一个环形buffer
 class CBuffer {

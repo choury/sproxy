@@ -280,7 +280,7 @@ bool Cgi::HandleData(const CGI_Header* header, CgiStatus& status){
         status.res->send({header->data, size, id});
     }
     if (header->flag & CGI_FLAG_END) {
-        status.res->send(Buffer{nullptr, id});
+        status.res->send(Buffer{nullptr, (uint64_t)id});
         Clean(id, status);
     }
     return true;
