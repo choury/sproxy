@@ -1,21 +1,22 @@
-FROM debian:10 as builder
+FROM debian:12 as builder
 
 LABEL maintainer="zhouwei400@gmail.com"
 
 
 COPY . /root/sproxy
-RUN apt-data  update && \
-    apt-data install -y --no-install-recommends  gcc g++ cmake make libssl-dev libz-dev git libjson-c-dev && \
-    cd /root/sproxy && \
-    cmake . && \
-    make sproxy VERBOSE=1 && \
+RUN apt-get  update && \
+    apt-get install -y --no-install-recommends  gcc g++ cmake make pkg-config libssl-dev libz-dev git libjson-c-dev && \
+    mkdir /root/sproxy/build && \
+    cd /root/sproxy/build && \
+    cmake .. && \
+    make VERBOSE=1 && \
     cpack -G DEB && \
     true
 
-FROM debian:10 as worker
-COPY --from=0 /root/sproxy/sproxy-*-Linux.deb .
-RUN apt-data update && \
-    apt-data install -y --no-install-recommends openssl libjson-c3 zlib1g && \
+FROM debian:12 as worker
+COPY --from=0 /root/sproxy/build/sproxy-*-Linux.deb .
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends openssl libjson-c5 zlib1g && \
     dpkg -i sproxy-*-Linux.deb
 
 EXPOSE 80
