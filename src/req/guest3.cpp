@@ -48,10 +48,7 @@ void Guest3::init() {
         if((status.flags & HTTP_RES_COMPLETED)){
             return;
         }
-        if(this->rwer->cap(id) >= 64){
-            // reserve 64 bytes for http stream header
-            status.res->pull();
-        }
+        status.res->pull();
     });
 }
 
@@ -70,14 +67,14 @@ void Guest3::connected() {
 
 Guest3::Guest3(std::shared_ptr<QuicRWer> qrwer): Requester(qrwer) {
     init();
-    qrwer->SetConnectCB([this, qrwer](const sockaddr_storage&){
+    qrwer->SetConnectCB([this](const sockaddr_storage&){
         connected();
     });
 }
 
 Guest3::Guest3(std::shared_ptr<QuicMer> qrwer): Requester(qrwer) {
     init();
-    qrwer->SetConnectCB([this, qrwer](const sockaddr_storage&){
+    qrwer->SetConnectCB([this](const sockaddr_storage&){
         connected();
     });
     mitmProxy = true;
@@ -222,10 +219,8 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
         }
         return 0;
         //这里是没办法准确计算cap的，因为rwer返回的可用量http3这里写的时候会再加头部数据
-        //所以如果对端缓存了这个值(比如proxy2的localwindow),那么它每写一次数据
-        //这个值就会小一点，最终就localwindow就会比实际cap大挺多,我们预留一点buffer,
         //如果还是不够，多出来的数据会放入quic的fullq队列中
-    }, [this, id]{return rwer->cap(id) - 9;});
+    }, [this, id]{return rwer->cap(id);});
 }
 
 void Guest3::Clean(uint64_t id, uint32_t errcode) {

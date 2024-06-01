@@ -4,6 +4,7 @@
 #include "quicio.h"
 #include "quic_server.h"
 #include "quic_pack.h"
+#include "misc/net.h"
 #include "misc/util.h"
 #include "prot/tls.h"
 #include "prot/multimsg.h"
@@ -11,7 +12,6 @@
 #include <unistd.h>
 #include <assert.h>
 #include <inttypes.h>
-#include <sys/ioctl.h>
 
 #include <set>
 #include <algorithm>
@@ -184,15 +184,14 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
         return {};
     }
     size_t max_iov = std::min((size_t)100, bufleft/(size_t)his_max_payload_size);
-    std::set<uint64_t> streams;
     std::list<quic_packet_pn> sent_packets;
-    sent_packets.emplace_back(quic_packet_pn{{pn++, false, false, envLen, 0}, {}});
+    sent_packets.emplace_back(quic_packet_pn{{pn++, envLen}, {}});
     do {
         auto& packet = sent_packets.back();
         quic_frame* frame = pend_frames.front();
+        uint64_t type = frame->type;
         ssize_t left = std::min((size_t)his_max_payload_size,  window) - packet.meta.sent_bytes;
         if(left < (int)pack_frame_len(frame)){
-            uint64_t type = frame->type;
             if (type == QUIC_FRAME_CRYPTO && left >= 20){
                 // [off, off+len) -> [off, off + left - 20) + [off + left - 20, off+len)
                 quic_frame* fframe = new quic_frame{type, {}};
@@ -203,7 +202,6 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
                 pend_frames.insert(std::next(pend_frames.begin()), fframe);
                 frame->crypto.length = left - 20;
             } else if ((type >= QUIC_FRAME_STREAM_START_ID && type <= QUIC_FRAME_STREAM_END_ID) && left >= 30) {
-                streams.emplace(frame->stream.id);
                 // [off, off+len) -> [off, off + left - 30) + [off + left - 30, off+len)
                 quic_frame *fframe = new quic_frame{type | QUIC_FRAME_STREAM_OFF_F, {}};
                 fframe->stream.id = frame->stream.id;
@@ -219,9 +217,12 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
             } else {
                 assert(!packet.frames.empty());
                 window -= packet.meta.sent_bytes;
-                sent_packets.emplace_back(quic_packet_pn{{pn++, false, false, envLen, 0}, {}});
+                sent_packets.emplace_back(quic_packet_pn{{pn++, envLen}, {}});
                 continue;
             }
+        }
+        if (type >= QUIC_FRAME_STREAM_START_ID && type <= QUIC_FRAME_STREAM_END_ID) {
+            packet.meta.streamIds.emplace(frame->stream.id);
         }
         packet.meta.ack_eliciting |=  is_ack_eliciting(frame);
         packet.meta.in_flight |=  packet.meta.ack_eliciting || frame->type == QUIC_FRAME_PADDING;
@@ -274,12 +275,6 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
         LOGD(DQUIC, "sent packet: %d/%zd, sent size: %zd buffer: %zd\n", ret, iov.size(), sentlen, bufleft);
     }
     my_sent_data_total += sentlen;
-    for (auto stream: streams) {
-        if(idle(stream)) {
-            continue;
-        }
-        onWrite(stream);
-    }
     return sent_packets;
 }
 
@@ -424,55 +419,65 @@ void QuicBase::getParams(const uint8_t* data, size_t len) {
         pos += variable_decode(pos, &size);
         switch(name){
         case quic_original_destination_connection_id:
+            LOGD(DQUIC, "get original dcid: %s\n", dumpHex(pos, size).c_str());
             break;
         case quic_max_idle_timeout:
             variable_decode(pos, &value);
+            LOGD(DQUIC, "get max idle timeout: %" PRIu64"\n", value);
             if(value < max_idle_timeout && value > 0){
                 max_idle_timeout = value;
             }
             break;
         case quic_stateless_reset_token:
+            LOGD(DQUIC, "get token: %s\n", dumpHex(pos, size).c_str());
             assert(size == QUIC_TOKEN_LEN);
             histoken[0] = std::string((char*)pos, QUIC_TOKEN_LEN);
             break;
         case quic_max_udp_payload_size:
             variable_decode(pos, &value);
+            LOGD(DQUIC, "get max payload size: %" PRIu64"\n", value);
             if(value > 1200){
                 his_max_payload_size = value;
             }
             break;
         case quic_initial_max_data:
             variable_decode(pos, &value);
+            LOGD(DQUIC, "get max data: %" PRIu64"\n", value);
             if(value > his_max_data){
                 his_max_data = value;
             }
             break;
         case quic_initial_max_stream_data_bidi_local:
             variable_decode(pos, &value);
+            LOGD(DQUIC, "get max stream data bidi local: %" PRIu64"\n", value);
             if(value > his_max_stream_data_bidi_local){
                 his_max_stream_data_bidi_local = value;
             }
             break;
         case quic_initial_max_stream_data_bidi_remote:
             variable_decode(pos, &value);
+            LOGD(DQUIC, "get max stream data bidi remote: %" PRIu64"\n", value);
             if(value > his_max_stream_data_bidi_remote){
                 his_max_stream_data_bidi_remote = value;
             }
             break;
         case quic_initial_max_stream_data_uni:
             variable_decode(pos, &value);
+            LOGD(DQUIC, "get max stream data uni: %" PRIu64"\n", value);
             if(value > his_max_stream_data_uni){
                 his_max_stream_data_uni = value;
             }
             break;
         case quic_initial_max_streams_bidi:
             variable_decode(pos, &value);
+            LOGD(DQUIC, "get max streams bidi: %" PRIu64"\n", value);
             if(value > his_max_streams_bidi) {
                 his_max_streams_bidi = value;
             }
             break;
         case quic_initial_max_streams_uni:
             variable_decode(pos, &value);
+            LOGD(DQUIC, "get max streams uni: %" PRIu64"\n", value);
             if(value > his_max_streams_uni) {
                 his_max_streams_uni = value;
             }
@@ -480,11 +485,13 @@ void QuicBase::getParams(const uint8_t* data, size_t len) {
         case quic_ack_delay_exponent:{
             uint64_t ack_delay_exponent;
             variable_decode(pos, &ack_delay_exponent);
+            LOGD(DQUIC, "get ack delay exponent: %" PRIu64"\n", ack_delay_exponent);
             qos.SetAckDelayExponent(ack_delay_exponent);
             break;
         }
         case quic_max_ack_delay:
             variable_decode(pos, &his_max_ack_delay);
+            LOGD(DQUIC, "get max ack delay: %" PRIu64"\n", his_max_ack_delay);
             break;
         case quic_disable_active_migration:
         case quic_preferred_address:
@@ -494,6 +501,7 @@ void QuicBase::getParams(const uint8_t* data, size_t len) {
             LOG("unimplemented params: %" PRIu64"\n", name);
             break;
         default:
+            LOG("unknown params: %" PRIu64"\n", name);
             break;
         }
         pos += size;
@@ -630,13 +638,15 @@ QuicBase::FrameResult QuicBase::handleCryptoFrame(quic_context* context, const q
             return FrameResult::error;
         }
     }else {
+        size_t olen = 0;
+        const uint8_t* buff = nullptr;
+        if(!hasParam && (SSL_get_peer_quic_transport_params(ssl, &buff, &olen), olen > 0)){
+            getParams(buff, olen);
+            hasParam = true;
+        }
         if(ssl_get_error(ssl, SSL_do_handshake(ssl)) == 1){
             LOGD(DQUIC, "SSL_do_handshake succeed\n");
-            size_t olen = 0;
-            his_max_ack_delay = 25;
-            const uint8_t* buff = nullptr;
-            SSL_get_peer_quic_transport_params(ssl, &buff, &olen);
-            getParams(buff, olen);
+            his_max_ack_delay = his_max_ack_delay?:25;
             qos.SetMaxAckDelay(his_max_ack_delay);
             if(ctx == nullptr){
                 //send handshake done frame to client
@@ -893,8 +903,15 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
         dropkey(ssl_encryption_handshake);
         return FrameResult::ok;
     case QUIC_FRAME_MAX_DATA:
-        if(frame->extra > his_max_data){
-            his_max_data = frame->extra;
+        if(frame->extra <= his_max_data) {
+            return FrameResult::ok;
+        }
+        his_max_data = frame->extra;
+        for(const auto& [id, stream]: streammap){
+            if(!canSend(id) || stream.his_max_data < stream.my_offset + my_max_payload_size) {
+                continue;
+            }
+            onWrite(id);
         }
         return FrameResult::ok;
     case QUIC_FRAME_DATA_BLOCKED: {
@@ -1042,6 +1059,25 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
     }
 }
 
+void QuicBase::notifyBlocked(uint64_t id) {
+    if(my_sent_data + 10 * my_max_payload_size >= his_max_data) {
+        quic_frame* block = new quic_frame{QUIC_FRAME_MAX_DATA, {}};
+        block->extra = his_max_data;
+        qos.PushFrame(ssl_encryption_application, block);
+    }
+    if(!canSend(id)) {
+        return;
+    }
+
+    const auto& stream = streammap[id];
+    if(stream.my_offset + my_max_payload_size >= stream.his_max_data) {
+        quic_frame* block = new quic_frame{QUIC_FRAME_STREAM_DATA_BLOCKED, {}};
+        block->stream_data_blocked.id = id;
+        block->stream_data_blocked.size = stream.his_max_data;
+        qos.PushFrame(ssl_encryption_application, block);
+    }
+}
+
 void QuicBase::resendFrames(pn_namespace* ns, quic_frame *frame) {
     switch(frame->type){
     case QUIC_FRAME_PADDING:
@@ -1071,33 +1107,20 @@ void QuicBase::resendFrames(pn_namespace* ns, quic_frame *frame) {
             frame_release(frame);
             break;
         }
-        auto& status = streammap.find(id)->second;
-        status.my_max_data =  status.rb.Offset() + status.rb.length() + status.rb.cap();
-        frame->max_stream_data.max = status.my_max_data;
+        auto& stream = streammap[id];
+        stream.my_max_data =  stream.rb.Offset() + stream.rb.length() + stream.rb.cap();
+        frame->max_stream_data.max = stream.my_max_data;
         qos.FrontFrame(ns, frame);
         break;
     }
     case QUIC_FRAME_DATA_BLOCKED:
-        if(my_sent_data + my_max_payload_size*10 < his_max_data){
-            frame_release(frame);
-            break;
-        }
-        frame->extra = his_max_data;
-        qos.FrontFrame(ns, frame);
+        notifyBlocked(0);
+        frame_release(frame);
         break;
     case QUIC_FRAME_STREAM_DATA_BLOCKED:{
         uint64_t id = frame->stream_data_blocked.id;
-        if(streammap.count(id) == 0){
-            frame_release(frame);
-            break;
-        }
-        auto& status = streammap.find(id)->second;
-        if(status.my_offset < status.his_max_data){
-            frame_release(frame);
-            break;
-        }
-        frame->stream_data_blocked.size = status.his_max_data;
-        qos.FrontFrame(ns, frame);
+        notifyBlocked(id);
+        frame_release(frame);
         break;
     }
     default:
@@ -1116,7 +1139,13 @@ int QuicBase::handle1RttPacket(const quic_pkt_header* header, std::vector<const 
                                 [this]{keepAlive_action();},
                                 std::min(30000, (int)max_idle_timeout/2));
     for(auto frame : frames) {
-        qos.handleFrame(context->level, header->pn, frame);
+        auto acked = qos.handleFrame(context->level, header->pn, frame);
+        for(auto& id: acked) {
+            if(!canSend(id)) {
+                continue;
+            }
+            onWrite(id);
+        }
         switch(handleFrames(context, frame)){
         case FrameResult::ok:
             frame_release(frame);
@@ -1159,11 +1188,11 @@ void QuicBase::sendData(Buffer&& bb) {
     size_t len = bb.len;
     assert(streammap.count(id));
 
-    auto& status = streammap[id];
-    assert((status.flags & STREAM_FLAG_FIN_SENT) == 0);
+    auto& stream = streammap[id];
+    assert((stream.flags & STREAM_FLAG_FIN_SENT) == 0);
     quic_frame* frame = new quic_frame;
     frame->type = QUIC_FRAME_STREAM_START_ID | QUIC_FRAME_STREAM_LEN_F;
-    if(status.my_offset) {
+    if(stream.my_offset) {
         frame->type |= QUIC_FRAME_STREAM_OFF_F;
     }
     if(len == 0){
@@ -1171,36 +1200,26 @@ void QuicBase::sendData(Buffer&& bb) {
     }
     frame->stream.id = id;
     frame->stream.length = len;
-    frame->stream.offset =  status.my_offset;
+    frame->stream.offset =  stream.my_offset;
     frame->stream.buffer =  new Buffer(std::move(bb));
     if(len > 0) {
-        status.my_offset += len;
+        stream.my_offset += len;
         my_sent_data += len;
         assert(my_sent_data <= his_max_data);
     }
-    if(status.my_offset + my_max_payload_size >= status.his_max_data) {
-        quic_frame* block = new quic_frame{QUIC_FRAME_STREAM_DATA_BLOCKED, {}};
-        block->stream_data_blocked.id = id;
-        block->stream_data_blocked.size = status.his_max_data;
-        qos.PushFrame(ssl_encryption_application, block);
-    }
-    if(my_sent_data + 10 * my_max_payload_size >= his_max_data) {
-        quic_frame* block = new quic_frame{QUIC_FRAME_MAX_DATA, {}};
-        block->extra = his_max_data;
-        qos.PushFrame(ssl_encryption_application, block);
-    }
-    if(status.my_offset > status.his_max_data) {
+    notifyBlocked(id);
+    if(stream.my_offset > stream.his_max_data) {
         fullq.push_back(frame);
         LOGD(DQUIC, "push data [%" PRIu64"] to fullq: <%zd/%" PRIu64"> <%" PRIu64"/%" PRIu64">\n",
-             id, status.my_offset, status.his_max_data, my_sent_data, his_max_data);
+             id, stream.my_offset, stream.his_max_data, my_sent_data, his_max_data);
         return;
     }
     qos.PushFrame(ssl_encryption_application, frame);
     if(len == 0) {
-        status.flags |= STREAM_FLAG_FIN_SENT;
+        stream.flags |= STREAM_FLAG_FIN_SENT;
     }
     LOGD(DQUIC, "send data [%" PRIu64"]: <%zd/%" PRIu64"> <%" PRIu64"/%" PRIu64">\n",
-         id, status.my_offset, status.his_max_data, my_sent_data, his_max_data);
+         id, stream.my_offset, stream.his_max_data, my_sent_data, his_max_data);
     if(idle(id)){
         cleanStream(id);
     }
@@ -1400,18 +1419,18 @@ void QuicBase::reset(uint64_t id, uint32_t code) {
     if(streammap.count(id) == 0){
         return;
     }
-    auto& status = streammap[id];
-    if((status.flags & STREAM_FLAG_FIN_SENT) == 0){
-        status.flags |= STREAM_FLAG_FIN_SENT;
+    auto& stream = streammap[id];
+    if((stream.flags & STREAM_FLAG_FIN_SENT) == 0){
+        stream.flags |= STREAM_FLAG_FIN_SENT;
         quic_frame* frame = new quic_frame;
         frame->type = QUIC_FRAME_RESET_STREAM;
         frame->reset.id = id;
         frame->reset.error = code;
-        frame->reset.fsize = status.my_offset;
+        frame->reset.fsize = stream.my_offset;
         qos.PushFrame(ssl_encryption_application, frame);
     }
-    if((status.flags & STREAM_FLAG_STOP_SENT) ==0){
-        status.flags |= STREAM_FLAG_STOP_SENT;
+    if((stream.flags & STREAM_FLAG_STOP_SENT) ==0){
+        stream.flags |= STREAM_FLAG_STOP_SENT;
         quic_frame* frame = new quic_frame;
         frame->type = QUIC_FRAME_STOP_SENDING;
         frame->stop.id = id;
@@ -1428,14 +1447,14 @@ ssize_t QuicBase::window(uint64_t id) {
     if(streammap.count(id) == 0){
         return 0;
     }
-    auto& stream = streammap[id];
+    const auto& stream = streammap[id];
     if(stream.flags & STREAM_FLAG_FIN_SENT) {
         return 0;
     }
     assert(my_sent_data <= his_max_data);
     int streamcap = (int)stream.his_max_data - (int)stream.my_offset;
     int globalcap = (int)his_max_data - (int)my_sent_data;
-    int window = (int)qos.windowLeft();
+    int window = std::max((int)qos.windowLeft(), BUF_LEN);
     return std::min({streamcap, globalcap, window});
 }
 
@@ -1454,17 +1473,17 @@ bool QuicBase::idle(uint64_t id){
         return true;
     }
     //这里收到reset也不认为是idle，因为即使收到reset，也不代表本端不会继续发送数据
-    auto& status = streammap[id];
+    const auto& stream = streammap[id];
     bool send_closed = false;
     bool recv_closed = false;
-    if(status.flags & STREAM_FLAG_FIN_SENT){
+    if(stream.flags & STREAM_FLAG_FIN_SENT){
         send_closed = true;
     }
-    if(status.flags & (STREAM_FLAG_FIN_DELIVED | STREAM_FLAG_RESET_DELIVED)){
-        assert(status.rb.length() == 0);
+    if(stream.flags & (STREAM_FLAG_FIN_DELIVED | STREAM_FLAG_RESET_DELIVED)){
+        assert(stream.rb.length() == 0);
         recv_closed = true;
     }
-    if((status.flags & STREAM_FLAG_STOP_SENT) && (status.flags & STREAM_FLAG_FIN_RECVD)){
+    if((stream.flags & STREAM_FLAG_STOP_SENT) && (stream.flags & STREAM_FLAG_FIN_RECVD)){
         //这种情况下，stop sending已经发送了，但是因为对方已经发送了fin标记
         //因此不会回复reset包了，而应用层因为已经调用了reset，后续也不会接受fin标记
         //我们就视为fin标记已经被消费了
@@ -1478,6 +1497,20 @@ bool QuicBase::idle(uint64_t id){
         return send_closed;
     }
     return recv_closed;
+}
+
+bool QuicBase::canSend(uint64_t id) {
+    if(streammap.count(id) == 0){
+        return true;
+    }
+    const auto& stream = streammap[id];
+    if(stream.flags & STREAM_FLAG_FIN_SENT){
+        return false;
+    }
+    if(isBidirect(id)) {
+        return true;
+    }
+    return isLocal(id);
 }
 
 void QuicBase::sinkData(uint64_t id, QuicStreamStatus &status) {
@@ -1535,11 +1568,10 @@ void QuicBase::sinkData(uint64_t id, QuicStreamStatus &status) {
 void QuicBase::sinkData(uint64_t id) {
     std::list<uint64_t> to_clean;
     if(id == 0) {
-        for (auto &i: streammap) {
-            auto &status = i.second;
-            sinkData(i.first, status);
-            if (idle(i.first)) {
-                to_clean.push_back(i.first);
+        for (auto& [id, stream]: streammap) {
+            sinkData(id, stream);
+            if (idle(id)) {
+                to_clean.push_back(id);
             }
         }
     } else if(streammap.count(id)){
@@ -1597,7 +1629,7 @@ void QuicBase::keepAlive_action() {
 
 void QuicBase::dump(Dumper dp, const std::string& session, void* param) {
     dp(param, "Quic (%s): %s -> %s\nread: %zd/%zd, write: %zd/%zd "
-              "my_window: %zd, his_window: %zd rlen: %zd, fullq: %zd, wlen: %zd\n",
+              "my_window: %zd, his_window: %zd rlen: %zd, fullq: %zd, wlen: %zd, congestion_window: %d\n",
        session.c_str(),
        dumpHex(myids[myid_idx].c_str(), myids[myid_idx].length()).c_str(),
        dumpHex(hisids[hisid_idx].c_str(), hisids[hisid_idx].length()).c_str(),
@@ -1605,13 +1637,13 @@ void QuicBase::dump(Dumper dp, const std::string& session, void* param) {
        my_sent_data, my_sent_data_total,
        my_max_data - my_received_data,
        his_max_data - my_sent_data,
-       rblen, fullq.size(), qos.PendingSize(ssl_encryption_application));
-    for(auto& entry: streammap){
-        auto& status = entry.second;
+       rblen, fullq.size(),
+       qos.PendingSize(ssl_encryption_application), (int)qos.windowLeft());
+    for(const auto& [id, stream]: streammap){
         dp(param, "  0x%lx: rlen: %zd-%zd, rcap: %zd, my_window: %zd, his_window: %zd, flags: 0x%08x\n",
-           entry.first, status.rb.Offset(), status.rb.Offset() + status.rb.length(),
-           status.rb.cap() + status.rb.length() + status.rb.Offset() - status.my_max_data,
-           status.my_max_data - status.his_offset, status.his_max_data - status.my_offset, status.flags);
+           id, stream.rb.Offset(), stream.rb.Offset() + stream.rb.length(),
+           stream.rb.cap() + stream.rb.length() + stream.rb.Offset() - stream.my_max_data,
+           stream.my_max_data - stream.his_offset, stream.his_max_data - stream.my_offset, stream.flags);
     }
 }
 
@@ -1635,9 +1667,9 @@ size_t QuicBase::mem_usage() {
         usage += token.capacity();
     }
     usage += initToken.length() + originDcid.length();
-    for(const auto& i : streammap) {
-        usage += sizeof(i.first) + sizeof(i.second);
-        usage += i.second.rb.cap() + i.second.rb.length();
+    for(const auto& [id, stream] : streammap) {
+        usage += sizeof(id) + sizeof(stream);
+        usage += stream.rb.cap() + stream.rb.length();
     }
     usage += fullq.size() * sizeof(quic_frame*);
     for(const auto& frame: fullq) {
@@ -1663,28 +1695,10 @@ QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, Quic_serv
 }
 
 size_t QuicRWer::getWritableSize() {
-    int fd = getFd();
-    if (sndbuf == 0) {
-        socklen_t len = sizeof(sndbuf);
-        if(getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, &len) < 0){
-            LOGE("failed to get sndbuf for %d: %s\n", fd, strerror(errno));
-            return BUF_LEN;
-        }
+    if(sndbuf == 0) {
+        sndbuf = GetCapSize(getFd());
     }
-    size_t outq = 0;
-#if __linux__
-    if(ioctl(fd, TIOCOUTQ, &outq) < 0){
-        LOGE("ioctl failed for %d: %s\n", fd, strerror(errno));
-        return BUF_LEN;
-    }
-#elif __APPLE__
-    socklen_t outq_len = sizeof(outq);
-    if (getsockopt(fd, SOL_SOCKET, SO_NWRITE, &outq, &outq_len) < 0) {
-        LOGE("getsockopt failed for %d: %s\n", fd, strerror(errno));
-        return BUF_LEN;
-    }
-#endif
-    return (sndbuf - outq) / 2;
+    return (sndbuf - GetBuffSize(getFd()))/2;
 }
 
 ssize_t QuicRWer::writem(const struct iovec *iov, int iovcnt) {
@@ -1797,6 +1811,7 @@ void QuicRWer::Close(std::function<void()> func) {
     flags |= RWER_CLOSING;
     closeCB = std::move(func);
     if(stats == RWerStats::Error) {
+        setEvents(RW_EVENT::NONE);
         AddJob(closeCB, 0, JOB_FLAGS_AUTORELEASE);
     }else if(getFd() >= 0) {
         handleEvent = (void (Ep::*)(RW_EVENT))&QuicRWer::closeHE;

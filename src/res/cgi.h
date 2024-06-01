@@ -167,7 +167,7 @@ protected:
         cgi_senderror(sfd, id, CGI_FLAG_ABORT);
     }
 public:
-    static SpinLock l;  //保护 cgimap 和 fd
+    static SpinLock l;  //保护 fd
     static std::map<uint32_t, std::shared_ptr<CgiHandler>> cgimap;
     CgiHandler(int sfd, int cfd, const char* name, const CGI_Header* header): sfd(sfd), cfd(cfd), name{} {
         strcpy(const_cast<char*>(this->name), name);
@@ -226,7 +226,6 @@ int cgimain(int sfd, int cfd, const char* name){       \
         assert(ret == ntohs(header->contentLength)); \
         uint32_t id = ntohl(header->requestId); \
         LOGD(DFILE, "<cgi> [%s] get id: %d, type: %d\n", name, id, header->type); \
-        CgiHandler::l.lock();                       \
         if(header->type == CGI_REQUEST){ \
             assert(CgiHandler::cgimap.count(id) == 0);  \
             LOGD(DFILE, "<cgi> [%s] new request: %d\n", name, id);   \
@@ -240,7 +239,6 @@ int cgimain(int sfd, int cfd, const char* name){       \
             }                                       \
         }                                           \
         if(CgiHandler::cgimap.count(id) == 0){      \
-            CgiHandler::l.unlock();                 \
             LOGD(DFILE, "<cgi> [%s] unknown id: %d\n", name, id);   \
             if(header->type != CGI_ERROR){     \
                 cgi_senderror(sfd, id, CGI_FLAG_ABORT); \
@@ -248,7 +246,6 @@ int cgimain(int sfd, int cfd, const char* name){       \
             continue; \
         } \
         auto h = CgiHandler::cgimap[id]; \
-        CgiHandler::l.unlock();          \
         h->handle(header); \
     } \
     CgiHandler::cgimap.clear(); \

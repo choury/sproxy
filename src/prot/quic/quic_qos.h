@@ -48,6 +48,9 @@ struct quic_packet_meta{
     bool in_flight;
     size_t sent_bytes;
     uint64_t sent_time;
+    std::set<uint64_t> streamIds;
+    quic_packet_meta(uint64_t pn, size_t len):
+            pn(pn), ack_eliciting(false), in_flight(true), sent_bytes(len), sent_time(0){}
 };
 
 struct quic_packet_pn{
@@ -111,7 +114,7 @@ public:
     void SetMaxAckDelay(uint64_t delay);
     uint64_t GetLargestPn(OSSL_ENCRYPTION_LEVEL level);
 
-    void handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t number, const quic_frame* frame);
+    std::set<uint64_t> handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t number, const quic_frame* frame);
     void HandleRetry();
     void PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame* frame);;
     void PushFrame(pn_namespace* ns, quic_frame* frame);

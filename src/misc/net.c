@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <netinet/tcp.h>
+#include <sys/ioctl.h>
 #include <sys/un.h>
 
 int Checksocket(int fd, const char *msg){
@@ -106,6 +107,33 @@ void SetIcmpOptions(int fd, const struct sockaddr_storage* addr) {
 void SetUnixOptions(int fd, const struct sockaddr_storage* addr) {
     (void)addr;
     SetSocketUnblock(fd);
+}
+
+size_t GetCapSize(int fd) {
+    size_t sndbuf;
+    socklen_t len = sizeof(sndbuf);
+    if(getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, &len) < 0){
+        LOGE("failed to get sndbuf for %d: %s\n", fd, strerror(errno));
+        return 0;
+    }
+    return sndbuf;
+}
+
+size_t GetBuffSize(int fd){
+    size_t outq = 0;
+#if __linux__
+    if(ioctl(fd, TIOCOUTQ, &outq) < 0){
+        LOGE("ioctl failed for %d: %s\n", fd, strerror(errno));
+        return BUF_LEN;
+    }
+#elif __APPLE__
+    socklen_t outq_len = sizeof(outq);
+    if (getsockopt(fd, SOL_SOCKET, SO_NWRITE, &outq, &outq_len) < 0) {
+        LOGE("getsockopt failed for %d: %s\n", fd, strerror(errno));
+        return BUF_LEN;
+    }
+#endif
+    return outq;
 }
 
 int ListenNet(int type, const char* ipstr, short port) {

@@ -15,6 +15,8 @@ void SetTcpOptions(int fd, const struct sockaddr_storage* addr);
 void SetUdpOptions(int fd, const struct sockaddr_storage* addr);
 void SetIcmpOptions(int fd, const struct sockaddr_storage* addr);
 void SetUnixOptions(int fd, const struct sockaddr_storage* addr);
+size_t GetCapSize(int fd);
+size_t GetBuffSize(int fd);
 
 int ListenNet(int type, const char* ipstr, short int port);
 int ListenUnix(const char* path);

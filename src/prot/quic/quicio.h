@@ -99,6 +99,7 @@ protected:
     SSL_CTX* ctx = nullptr;  // server will be null
     SSL *ssl = nullptr;
     bool isClosing = false;
+    bool hasParam = false;
 
     QuicQos qos;
     struct quic_context{
@@ -210,6 +211,7 @@ protected:
     void resendFrames(pn_namespace* ns, quic_frame* frame);
 
 
+    void notifyBlocked(uint64_t id);
     Job keepAlive_timer = nullptr;
     void keepAlive_action();
     Job disconnect_timer = nullptr;
@@ -248,6 +250,7 @@ public:
     void close();
 
     bool idle(uint64_t id);
+    bool canSend(uint64_t id);
     ssize_t window(uint64_t id);
     size_t rlength(uint64_t id);
     void getAlpn(const unsigned char **s, unsigned int * len);

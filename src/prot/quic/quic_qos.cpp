@@ -544,6 +544,7 @@ void QuicQos::SetLossDetectionTimer() {
         return;
     }
     if(!has_eliciting_packet && PeerCompletedAddressValidation()){
+        LOGD(DQUIC, "no packet to send, stop loss detection\n");
         loss_timer.reset(nullptr);
         return;
     }
@@ -632,7 +633,7 @@ void QuicQos::OnCongestionEvent(uint64_t sent_time) {
     // Enter recovery period.
     congestion_recovery_start_time = getutime();
     ssthresh = congestion_window * kLossReductionFactor;
-    LOGD(DQUIC, "cut congestion_window to %zd\n", bytes_in_flight);
+    LOGD(DQUIC, "cut congestion_window from %zd to %zd\n", congestion_window, (size_t)ssthresh);
     congestion_window = std::max(ssthresh, kMinimumWindow);
     //TODO: A packet can be sent to speed up loss recovery.
 }
@@ -713,19 +714,14 @@ void QuicQos::OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets) {
     }
 }
 
-void QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t number, const quic_frame *frame) {
+std::set<uint64_t> QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t number, const quic_frame *frame) {
     pn_namespace* ns = this->GetNamespace(level);
     dumpFrame(">", ns->name, frame);
     if(!ns->hasKey){
         //key has dropped before handle it.
-        return;
+        return {};
     }
     ns->tracked_receipt_pns.Add(number);
-    if(level == ssl_encryption_initial || level == ssl_encryption_handshake){
-        packet_tx  = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
-    }else if(JobPending(packet_tx) == 0 && congestion_window > bytes_in_flight + max_datagram_size) {
-        packet_tx  = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 20);
-    }
     if(is_ack_eliciting(frame)){
         ns->should_ack = true;
     }
@@ -733,12 +729,15 @@ void QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t number, const qu
     // When a server is blocked by anti-amplification limits, receiving a datagram unblocks it,
     // even if none of the packets in the datagram are successfully processed.
     // In such a case, the PTO timer will need to be rearmed.
-
+    std::set<uint64_t> streamIds;
     if(frame->type == QUIC_FRAME_ACK || frame->type == QUIC_FRAME_ACK_ECN){
         last_receipt_ack_time = getutime();
         auto acked = ns->DetectAndRemoveAckedPackets(&frame->ack, &rtt, his_max_ack_delay * 1000);
         if(acked.empty()){
-            return;
+            return {};
+        }
+        for(auto& meta: acked){
+            streamIds.insert(meta.streamIds.begin(), meta.streamIds.end());
         }
 
         if(frame->type == QUIC_FRAME_ACK_ECN && frame->ack.ecn_ce > ns->ecn_ce_counters) {
@@ -758,6 +757,14 @@ void QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t number, const qu
         }
         SetLossDetectionTimer();
     }
+    if(level == ssl_encryption_initial || level == ssl_encryption_handshake){
+        packet_tx  = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
+    } else if(!ns->pend_frames.empty() && congestion_window > bytes_in_flight + max_datagram_size) {
+        packet_tx  = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
+    } else if(JobPending(packet_tx) == 0 && ns->should_ack) {
+        packet_tx  = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 20);
+    }
+    return streamIds;
 }
 
 void QuicQos::HandleRetry() {
@@ -785,6 +792,9 @@ void QuicQos::PushFrame(pn_namespace* ns, quic_frame *frame) {
     ns->pend_frames.push_back(frame);
     if(congestion_window > bytes_in_flight + max_datagram_size){
         packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();} , 0);
+    } else {
+        LOGD(DQUIC, "skip send, congestion_window: %zd, bytes_in_flight: %zd\n",
+             congestion_window, bytes_in_flight);
     }
 }
 
@@ -794,6 +804,9 @@ void QuicQos::FrontFrame(pn_namespace* ns, quic_frame *frame) {
     ns->pend_frames.push_front(frame);
     if(congestion_window > bytes_in_flight + max_datagram_size){
         packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();} , 0);
+    } else {
+        LOGD(DQUIC, "skip send, congestion_window: %zd, bytes_in_flight: %zd\n",
+             congestion_window, bytes_in_flight);
     }
 }
 

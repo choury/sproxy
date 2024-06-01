@@ -422,6 +422,10 @@ int parseConfigFile(const char* config_file){
             args[argsLen - 1] = 0;
             memmove(args, args+1, argsLen - 1);
         }
+        if(args[0] == '\'' && args[argsLen - 1] == '\''){
+            args[argsLen - 1] = 0;
+            memmove(args, args+1, argsLen - 1);
+        }
         parseArgs(option, args);
     }
     free(line);
@@ -559,6 +563,13 @@ void postConfig(){
             LOGE("setrlimit failed: %s\n", strerror(errno));
         }
     }
+#if defined(__has_feature)
+#   if __has_feature(address_sanitizer) // for clang
+#       define __SANITIZE_ADDRESS__ 1 // GCC already sets this
+#   endif
+#endif
+
+#ifndef __SANITIZE_ADDRESS__
     if(getrlimit(RLIMIT_CORE, &limits)) {
         LOGE("getrlimit core failed: %s\n", strerror(errno));
     }else if(limits.rlim_cur == 0) {
@@ -567,6 +578,7 @@ void postConfig(){
             LOGE("setrlimit core failed: %s\n", strerror(errno));
         }
     }
+#endif
     openefd();
     register_network_change_cb(network_changed);
 }

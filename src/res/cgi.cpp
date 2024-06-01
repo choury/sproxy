@@ -116,18 +116,18 @@ Cgi::Cgi(const char* fname, int svs[2], int cvs[2]) {
         void *handle = dlopen(fname, RTLD_NOW);
         if(handle == nullptr) {
             LOGE("[CGI] %s dlopen failed: %s\n", fname, dlerror());
-            exit(-CGI_RETURN_DLOPEN_FAILED);
+            _exit(-CGI_RETURN_DLOPEN_FAILED);
         }
         LOGD(DFILE, "<cgi> dlopen: %s\n", fname);
         cgifunc* func=(cgifunc *)dlsym(handle,"cgimain");
         if(func == nullptr) {
             LOGE("[CGI] %s dlsym failed: %s\n", fname, dlerror());
-            exit(-CGI_RETURN_DLSYM_FAILED);
+            _exit(-CGI_RETURN_DLSYM_FAILED);
         }
         struct rlimit limits;
         if(getrlimit(RLIMIT_NOFILE, &limits)) {
             LOGE("[CGI] %s getrlimit failed: %s\n", fname, strerror(errno));
-            exit(-1);
+            _exit(-1);
         }
         LOGD(DFILE, "<cgi> max fd: %d\n", (int)limits.rlim_cur);
         for(int i = 3; i< (int)limits.rlim_cur; i++){
@@ -140,7 +140,7 @@ Cgi::Cgi(const char* fname, int svs[2], int cvs[2]) {
         signal(SIGUSR1, SIG_IGN);
         change_process_name(basename(filename));
         LOGD(DFILE, "<cgi> [%s] jump to cgi main\n", basename(filename));
-        exit(func(svs[1], cvs[1], basename(filename)));
+        _exit(func(svs[1], cvs[1], basename(filename)));
     }
     // 父进程
     close(svs[1]);   // 关闭管道的子进程端
@@ -172,6 +172,7 @@ void Cgi::Clean(uint32_t id, CgiStatus& status) {
     }
     statusmap.erase(id);
     LOGD(DFILE, "<cgi> [%s] %" PRIu32" cleaned\n", basename(filename), id);
+    rwer->addEvents(RW_EVENT::READ);
 }
 
 Cgi::~Cgi() {
@@ -312,6 +313,7 @@ void Cgi::Handle(uint32_t id, Signal) {
     cgi_error(header, id, CGI_FLAG_ABORT);
     buff.truncate(sizeof(CGI_Header));
     rwer->Send(std::move(buff));
+    rwer->addEvents(RW_EVENT::READ);
 }
 
 
@@ -418,10 +420,18 @@ int cgi_response(int fd, SpinLock& l, std::shared_ptr<const HttpResHeader> res) 
     header->flag = 0;
     header->requestId = htonl(res->request_id);
     header->contentLength = htons(PackCgiRes(res, header->data, BUF_LEN - sizeof(CGI_Header)));
-    std::lock_guard<SpinLock> g(l);
-    int ret = write(fd, header, sizeof(CGI_Header) + ntohs(header->contentLength));
-    free(header);
-    return ret;
+    size_t cap = GetCapSize(fd);
+    size_t len = sizeof(CGI_Header) + ntohs(header->contentLength);
+    while(true){
+        std::lock_guard<SpinLock> g(l);
+        if(cap - GetBuffSize(fd) < len) {
+            sched_yield();
+            continue;
+        }
+        int ret = write(fd, header, len);
+        free(header);
+        return ret;
+    }
 }
 
 
@@ -432,6 +442,7 @@ int cgi_send(int fd, SpinLock& l, uint32_t id, const void *buff, size_t len) {
         {&header, sizeof(header)},
         {nullptr, 0}
     };
+    size_t cap = GetCapSize(fd);
     do {
         size_t writelen = left > CGI_LEN_MAX ? CGI_LEN_MAX:left;
         header.type = CGI_DATA;
@@ -441,6 +452,11 @@ int cgi_send(int fd, SpinLock& l, uint32_t id, const void *buff, size_t len) {
         iov[1].iov_base = (void*)buff;
         iov[1].iov_len = writelen;
         std::lock_guard<SpinLock> g(l);
+        if(cap - GetBuffSize(fd) < writelen + sizeof(header)) {
+            sched_yield();
+            usleep(100);
+            continue;
+        }
         int ret = writev(fd, iov, 2);
         if(ret <= 0) {
             return ret;
