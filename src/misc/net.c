@@ -1,3 +1,4 @@
+#define __APPLE_USE_RFC_3542
 #include "net.h"
 #include "common/common.h"
 #include "misc/util.h"
@@ -32,6 +33,9 @@ void SetSocketUnblock(int fd){
     int flags = fcntl(fd, F_GETFL, 0);
     if(flags < 0){
         LOGF("fcntl error [%d]: %s\n", fd, strerror(errno));
+    }
+    if(flags & O_NONBLOCK) {
+        return;
     }
     int ret = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
     if(ret < 0){
@@ -109,6 +113,20 @@ void SetUnixOptions(int fd, const struct sockaddr_storage* addr) {
     SetSocketUnblock(fd);
 }
 
+void SetRecvPKInfo(int fd, const struct sockaddr_storage* addr) {
+    int enable = 1;
+    if(addr->ss_family == AF_INET) {
+        if(setsockopt(fd, IPPROTO_IP, IP_PKTINFO, &enable, sizeof(enable)) < 0){
+            LOGF("setsockopt IP_PKTINFO:%s\n", strerror(errno));
+        }
+    }
+    if(addr->ss_family == AF_INET6) {
+        if(setsockopt(fd, IPPROTO_IPV6, IPV6_RECVPKTINFO, &enable, sizeof(enable)) < 0){
+            LOGF("setsockopt IPV6_PKTINFO:%s\n", strerror(errno));
+        }
+    }
+}
+
 size_t GetCapSize(int fd) {
     size_t sndbuf;
     socklen_t len = sizeof(sndbuf);
@@ -136,16 +154,59 @@ size_t GetBuffSize(int fd){
     return outq;
 }
 
-int ListenNet(int type, const char* ipstr, short port) {
+int ListenTcp(const char* ipstr, short port) {
     struct sockaddr_storage addr;
     if(storage_aton(ipstr, port, &addr) == 0) {
         errno = EINVAL;
         return -1;
     }
 #ifdef  SOCK_CLOEXEC
-    int fd = socket(addr.ss_family, type | SOCK_CLOEXEC, 0);
+    int fd = socket(addr.ss_family, SOCK_STREAM | SOCK_CLOEXEC, 0);
 #else
-    int fd = socket(addr.ss_family, type, 0);
+    int fd = socket(addr.ss_family, SOCK_STREAM, 0);
+#endif
+    if (fd < 0) {
+        LOGE("socket error:%s\n", strerror(errno));
+        return -1;
+    }
+    do{
+        if(protectFd(fd) == 0){
+            LOGE("protecd fd error:%s\n", strerror(errno));
+            break;
+        }
+        int flag = 1;
+        if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
+            LOGE("setsockopt SO_REUSEADDR:%s\n", strerror(errno));
+            break;
+        }
+
+        socklen_t len = (addr.ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
+        if (bind(fd, (struct sockaddr*)&addr, len) < 0) {
+            LOGE("bind error:%s\n", strerror(errno));
+            break;
+        }
+
+#ifndef __APPLE__
+        int timeout = 60;
+        if (setsockopt(fd, IPPROTO_TCP, TCP_DEFER_ACCEPT, &timeout, sizeof(timeout))< 0)
+            LOGE("TCP_DEFER_ACCEPT:%s\n", strerror(errno));
+#endif
+        if (listen(fd, 10000) < 0) {
+            LOGE("listen error:%s\n", strerror(errno));
+            break;
+        }
+        return fd;
+    }while(0);
+    close(fd);
+    return -1;
+}
+
+
+int ListenUdp(const struct sockaddr_storage* addr) {
+#ifdef  SOCK_CLOEXEC
+    int fd = socket(addr->ss_family, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+#else
+    int fd = socket(addr->ss_family, SOCK_DGRAM, 0);
 #endif
     if (fd < 0) {
         LOGE("socket error:%s\n", strerror(errno));
@@ -163,29 +224,15 @@ int ListenNet(int type, const char* ipstr, short port) {
         }
 
 #ifdef __APPLE__
-        if(type == SOCK_DGRAM) {
-            if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) < 0) {
-                LOGE("setsockopt SO_REUSEPORT:%s\n", strerror(errno));
-                break;
-            }
-        }
-#endif
-        socklen_t len = (addr.ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
-        if (bind(fd, (struct sockaddr*)&addr, len) < 0) {
-            LOGE("bind error:%s\n", strerror(errno));
+        if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) < 0) {
+            LOGE("setsockopt SO_REUSEPORT:%s\n", strerror(errno));
             break;
         }
-
-        if(type == SOCK_STREAM){
-#ifndef __APPLE__
-            int timeout = 60;
-            if (setsockopt(fd, IPPROTO_TCP, TCP_DEFER_ACCEPT, &timeout, sizeof(timeout))< 0)
-                LOGE("TCP_DEFER_ACCEPT:%s\n", strerror(errno));
 #endif
-            if (listen(fd, 10000) < 0) {
-                LOGE("listen error:%s\n", strerror(errno));
-                break;
-            }
+        socklen_t len = (addr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
+        if (bind(fd, (struct sockaddr*)addr, len) < 0) {
+            LOGE("bind error:%s\n", strerror(errno));
+            break;
         }
         return fd;
     }while(0);

@@ -1311,7 +1311,7 @@ void QuicBase::walkPacket(const void* buff, size_t length) {
         header.dcid.resize(QUIC_CID_LEN);
         int body_len = unpack_meta(pos, length, &header);
         if (body_len < 0 || body_len > (int)length) {
-            LOGE("QUIC meta unpack failed, disacrd it\n");
+            LOGE("QUIC meta unpack failed, disacrd it, body_len: %d, length: %d\n", body_len, (int)length);
             return;
         }
         if(ctx == nullptr && header.type == QUIC_PACKET_INITIAL && originDcid.empty()){

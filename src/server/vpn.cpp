@@ -10,7 +10,7 @@ int vpn_start(int fd){
     if(opt.admin && strlen(opt.admin) > 0){
         int svsk_cli = -1;
         if(strncmp(opt.admin, "tcp:", 4) == 0){
-            svsk_cli = ListenNet(SOCK_STREAM, "[::]", atoi(opt.admin+4));
+            svsk_cli = ListenTcp("[::]", atoi(opt.admin+4));
         }else{
             svsk_cli = ListenUnix(opt.admin);
         }

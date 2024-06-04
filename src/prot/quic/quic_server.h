@@ -7,6 +7,7 @@ class Quic_server: public Ep {
     SSL_CTX *ctx = nullptr;
     std::map<std::string, QuicRWer*> rwers;
     virtual void defaultHE(RW_EVENT events);
+    void PushData(const sockaddr_storage* myaddr, const sockaddr_storage* hisaddr, const void* buff, size_t len);
 public:
     Quic_server(int fd, SSL_CTX *ctx): Ep(fd),ctx(ctx) {
         assert(ctx);
@@ -16,7 +17,6 @@ public:
     virtual ~Quic_server() override{
         SSL_CTX_free(ctx);
     };
-    void PushData(int fd, const sockaddr_storage* addr, const void* buff, size_t len);
     friend QuicRWer;
 };
 

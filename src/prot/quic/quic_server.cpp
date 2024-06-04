@@ -1,9 +1,55 @@
 //
 // Created by 周威 on 2022/4/18.
 //
+#define __APPLE_USE_RFC_3542
 #include "quic_server.h"
 #include "req/guest3.h"
 #include "req/guest_sni.h"
+
+#include <unistd.h>
+
+static ssize_t recvwithaddr(int fd, void* buff, size_t buflen,
+                            sockaddr_storage* myaddr, sockaddr_storage* hisaddr) {
+    struct iovec iov;
+    iov.iov_base = buff;
+    iov.iov_len = buflen;
+
+    struct msghdr msg;
+    memset(&msg, 0, sizeof(msg));
+
+    memset(hisaddr, 0, sizeof(*hisaddr));
+    msg.msg_name = hisaddr;
+    msg.msg_namelen = sizeof(*hisaddr);
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+
+    char controlbuf[CMSG_SPACE(sizeof(struct in6_pktinfo)) + CMSG_SPACE(sizeof(struct in_pktinfo))];
+    msg.msg_control = controlbuf;
+    msg.msg_controllen = sizeof(controlbuf);
+
+    ssize_t ret = recvmsg(fd, &msg, 0);
+    if(ret < 0){
+        LOGE("recvfrom error: %s\n", strerror(errno));
+        return ret;
+    }
+    memset(myaddr, 0, sizeof(*myaddr));
+    for (struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+        if (cmsg->cmsg_level == IPPROTO_IPV6 && cmsg->cmsg_type == IPV6_PKTINFO) {
+            struct in6_pktinfo *info6 = (struct in6_pktinfo *) CMSG_DATA(cmsg);
+            sockaddr_in6* myaddr6 = (sockaddr_in6*)myaddr;
+            myaddr6->sin6_family = AF_INET6;
+            myaddr6->sin6_addr = info6->ipi6_addr;
+            myaddr6->sin6_port = htons(opt.CPORT);
+        } else if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO) {
+            struct in_pktinfo *info = (struct in_pktinfo *) CMSG_DATA(cmsg);
+            sockaddr_in* myaddr4 = (sockaddr_in*)myaddr;
+            myaddr4->sin_family = AF_INET;
+            myaddr4->sin_addr = info->ipi_addr;
+            myaddr4->sin_port = htons(opt.CPORT);
+        }
+    }
+    return ret;
+}
 
 void Quic_server::defaultHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR)) {
@@ -11,48 +57,48 @@ void Quic_server::defaultHE(RW_EVENT events) {
         return;
     }
     if (!!(events & RW_EVENT::READ)) {
-        struct sockaddr_storage myaddr;
-        socklen_t temp = sizeof(myaddr);
-        memset(&myaddr, 0, temp);
         char buff[max_datagram_size];
-        ssize_t ret = recvfrom(getFd(), buff, sizeof(buff), 0, (sockaddr*)&myaddr, &temp);
+        sockaddr_storage myaddr, hisaddr;
+
+        ssize_t ret = recvwithaddr(getFd(), buff, max_datagram_size, &myaddr, &hisaddr);
         if(ret < 0){
             LOGE("recvfrom error: %s\n", strerror(errno));
             return;
         }
-        PushData(getFd(), &myaddr, buff, ret);
+        PushData(&myaddr, &hisaddr, buff, ret);
     } else {
         LOGE("unknown error\n");
         return;
     }
 }
 
-void Quic_server::PushData(int fd, const sockaddr_storage* addr, const void *buff, size_t len) {
+void Quic_server::PushData(const sockaddr_storage* myaddr, const sockaddr_storage* hisaddr,
+                           const void *buff, size_t len) {
     quic_pkt_header header;
     header.dcid.resize(QUIC_CID_LEN);
     int body_len = unpack_meta(buff, len, &header);
     if (body_len < 0 || body_len > (int)len) {
-        LOGE("QUIC meta unpack failed, disacrd it\n");
+        LOGE("QUIC meta unpack failed, disacrd it, body_len: %d, len: %d\n", body_len, (int)len);
         return;
     }
     auto r = rwers.find(header.dcid);
     if(r != rwers.end()){
-        LOGD(DQUIC, "duplicated packet: %s vs %s, may be migration?\n", storage_ntoa(addr), r->second->getPeer());
+        LOGD(DQUIC, "duplicated packet: %s vs %s, may be migration?\n", storage_ntoa(hisaddr), r->second->getPeer());
         iovec iov{(void*)buff, len};
         r->second->walkPackets(&iov, 1);
     }else if(header.type == QUIC_PACKET_INITIAL){
-        int clsk = ListenNet(SOCK_DGRAM, opt.CHOST, opt.CPORT);
+        int clsk = ListenUdp(myaddr);
         if (clsk < 0) {
             LOGE("ListenNet %s:%d, failed: %s\n", opt.CHOST, (int)opt.CPORT, strerror(errno));
             return;
         }
-        socklen_t temp = sizeof(sockaddr_storage);
-        if (::connect(clsk, (sockaddr *)addr, temp) < 0) {
-            LOGE("connect %s failed: %s\n", storage_ntoa(addr), strerror(errno));
+        socklen_t socklen = (hisaddr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
+        if (::connect(clsk, (sockaddr *)hisaddr, socklen) < 0) {
+            LOGE("connect %s failed: %s\n", storage_ntoa(hisaddr), strerror(errno));
             return;
         }
-        SetUdpOptions(clsk, addr);
-        auto qrwer = std::make_shared<QuicRWer>(clsk, addr, ctx, this);
+        SetUdpOptions(clsk, hisaddr);
+        auto qrwer = std::make_shared<QuicRWer>(clsk, hisaddr, ctx, this);
         auto guest = new Guest3(qrwer);
         guest->AddInitData(buff, len);
     }else if(header.type == QUIC_PACKET_1RTT){
@@ -68,9 +114,12 @@ void Quic_server::PushData(int fd, const sockaddr_storage* addr, const void *buf
         stateless[0] = 0x43;
         memcpy(stateless + sizeof(stateless) - QUIC_TOKEN_LEN, token.data(), QUIC_TOKEN_LEN);
 
-        socklen_t len = (addr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
-        if(sendto(fd, stateless, sizeof(stateless), 0, (sockaddr *)addr, len) < 0){
-            LOGE("sendto %s failed: %s\n", storage_ntoa(addr), strerror(errno));
+        int fd = ListenUdp(myaddr);
+        socklen_t socklen = (hisaddr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
+        int ret = sendto(fd, stateless, sizeof(stateless), 0, (sockaddr *)hisaddr, socklen);
+        ::close(fd);
+        if(ret < 0){
+            LOGE("sendto %s failed: %s\n", storage_ntoa(hisaddr), strerror(errno));
             return;
         }
         LOGD(DQUIC, "send stateless reset for %s\n", dumpHex(header.dcid.c_str(), header.dcid.size()).c_str());
@@ -83,26 +132,27 @@ void Quic_sniServer::defaultHE(RW_EVENT events) {
         return;
     }
     if (!!(events & RW_EVENT::READ)) {
-        struct sockaddr_storage myaddr;
-        socklen_t temp = sizeof(myaddr);
-        memset(&myaddr, 0, temp);
         char buff[max_datagram_size];
-        ssize_t ret = recvfrom(getFd(), buff, sizeof(buff), 0, (sockaddr*)&myaddr, &temp);
+        sockaddr_storage myaddr, hisaddr;
+
+        ssize_t ret = recvwithaddr(getFd(), buff, max_datagram_size, &myaddr, &hisaddr);
         if(ret < 0){
             LOGE("recvfrom error: %s\n", strerror(errno));
             return;
         }
-        int clsk = ListenNet(SOCK_DGRAM, opt.CHOST, opt.CPORT);
+
+        int clsk = ListenUdp(&myaddr);
         if (clsk < 0) {
             LOGE("ListenNet failed: %s\n", strerror(errno));
             return;
         }
-        if (::connect(clsk, (sockaddr *)&myaddr, temp) < 0) {
+        socklen_t socklen = (hisaddr.ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
+        if (::connect(clsk, (sockaddr *)&hisaddr, socklen) < 0) {
             LOGE("connect failed: %s\n", strerror(errno));
             return;
         }
-        SetUdpOptions(clsk, &myaddr);
-        auto guest = new Guest_sni(clsk, &myaddr, nullptr);
+        SetUdpOptions(clsk, &hisaddr);
+        auto guest = new Guest_sni(clsk, &hisaddr, nullptr);
         guest->sniffer_quic({buff, (size_t)ret});
     } else {
         LOGE("unknown error\n");

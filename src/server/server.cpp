@@ -26,17 +26,22 @@ int main(int argc, char **argv) {
         SSL_CTX * ctx = initssl(opt.quic_mode, nullptr);
 #ifdef HAVE_QUIC
         if(opt.quic_mode){
-            int svsk_quic = ListenNet(SOCK_DGRAM, opt.CHOST, opt.CPORT);
+            struct sockaddr_storage addr;
+            if(storage_aton(opt.CHOST, opt.CPORT, &addr) == 0) {
+                return -1;
+            }
+            int svsk_quic = ListenUdp(&addr);
             if(svsk_quic <  0) {
                 return -1;
             }
+            SetRecvPKInfo(svsk_quic, &addr);
             new Quic_server(svsk_quic, ctx);
         }else {
 #else
             assert(opt.quic_mode == 0);
         {
 #endif
-            int svsk_https = ListenNet(SOCK_STREAM, opt.CHOST, opt.CPORT);
+            int svsk_https = ListenTcp(opt.CHOST, opt.CPORT);
             if (svsk_https < 0) {
                 return -1;
             }
@@ -45,7 +50,7 @@ int main(int argc, char **argv) {
     }else{
 #ifdef HAVE_QUIC
         if(opt.quic_mode && opt.sni_mode) {
-            int svsk_sni = ListenNet(SOCK_DGRAM, opt.CHOST, opt.CPORT);
+            int svsk_sni = ListenTcp(opt.CHOST, opt.CPORT);
             if (svsk_sni < 0) {
                 return -1;
             }
@@ -54,13 +59,13 @@ int main(int argc, char **argv) {
 #else
         if(opt.sni_mode) {
 #endif
-            int svsk_sni = ListenNet(SOCK_STREAM, opt.CHOST, opt.CPORT);
+            int svsk_sni = ListenTcp(opt.CHOST, opt.CPORT);
             if (svsk_sni < 0) {
                 return -1;
             }
             new Http_server<Guest_sni>(svsk_sni, nullptr);
         }else{
-            int svsk_http = ListenNet(SOCK_STREAM, opt.CHOST, opt.CPORT);
+            int svsk_http = ListenTcp(opt.CHOST, opt.CPORT);
             if (svsk_http < 0) {
                 return -1;
             }
@@ -71,7 +76,7 @@ int main(int argc, char **argv) {
     if(opt.admin && strlen(opt.admin) > 0){
         int svsk_cli = -1;
         if(strncmp(opt.admin, "tcp:", 4) == 0){
-            svsk_cli = ListenNet(SOCK_STREAM, "[::]", atoi(opt.admin+4));
+            svsk_cli = ListenTcp("[::]", atoi(opt.admin+4));
         }else{
             svsk_cli = ListenUnix(opt.admin);
         }
