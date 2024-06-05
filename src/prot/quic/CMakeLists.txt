@@ -6,7 +6,9 @@ set(quic_src
         quicio.cpp
         quic_server.cpp
         quic_pack.cpp
-        quic_qos.cpp)
+        pn_namespace.cpp
+        quic_qos.cpp
+)
 
 target_sources(prot PRIVATE ${quic_src})
 

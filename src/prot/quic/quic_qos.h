@@ -5,21 +5,18 @@
 #ifndef SPROXY_QUIC_QOS_H
 #define SPROXY_QUIC_QOS_H
 
-#include "quic_pack.h"
+#include "pn_namespace.h"
 #include "misc/util.h"
 #include "misc/job.h"
 
 #include <openssl/ssl.h>
 #include <stdint.h>
 #include <list>
-#include <map>
 #include <set>
-#include <functional>
 
 const uint64_t max_datagram_size = 1500;
 const uint64_t kInitialWindow = 14720;
 const uint64_t kMinimumWindow = 2 * max_datagram_size;
-const uint64_t kPacketThreshold = 3;
 const uint64_t kGranularity = 1000; // 1ms
 const double  kLossReductionFactor = 0.5;
 const double  kPersistentCongestionThreshold = 3;
@@ -29,46 +26,9 @@ const double  kPersistentCongestionThreshold = 3;
 #define QUIC_PAKCET_NAMESPACE_APP 2
 
 
-/*
-Ack-eliciting frames:
-All frames other than ACK, PADDING, and CONNECTION_CLOSE are considered ack-eliciting.
 
-Ack-eliciting packets:
-Packets that contain ack-eliciting frames elicit an ACK from the receiver within the
-maximum acknowledgment delay and are called ack-eliciting packets.
-
-In-flight packets:
-Packets are considered in flight when they are ack-eliciting or contain a PADDING frame,
-and they have been sent but are not acknowledged, declared lost, or discarded along with old keys.
- */
-
-struct quic_packet_meta{
-    uint64_t pn;
-    bool ack_eliciting;
-    bool in_flight;
-    size_t sent_bytes;
-    uint64_t sent_time;
-    std::set<uint64_t> streamIds;
-    quic_packet_meta(uint64_t pn, size_t len):
-            pn(pn), ack_eliciting(false), in_flight(true), sent_bytes(len), sent_time(0){}
-};
-
-struct quic_packet_pn{
-    quic_packet_meta meta;
-    std::list<quic_frame*> frames;
-};
-
-struct Rtt{
-    uint64_t first_rtt_sample = 0;
-    uint64_t latest_rtt       = 0;
-    uint64_t min_rtt          = UINT64_MAX;
-    uint64_t smoothed_rtt     = 333000;
-    uint64_t rttvar           = 166500;
-};
-
-
-class pn_namespace;
 class QuicQos {
+protected:
     size_t pto_count = 0;
     size_t bytes_in_flight = 0;
     size_t congestion_window = kInitialWindow;
@@ -84,14 +44,14 @@ class QuicQos {
     Job loss_timer = nullptr;
     void OnLossDetectionTimeout(pn_namespace* ns);
     Job packet_tx = nullptr;
-    void sendPacket();
+    virtual void sendPacket();
     std::function<void(pn_namespace*, quic_frame*)> resendFrames;
 
     bool PeerCompletedAddressValidation();
     void SetLossDetectionTimer();
     void OnCongestionEvent(uint64_t sent_time);
     void OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets);
-    void OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets);
+    virtual void OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets,  uint64_t ack_delay_us);
     pn_namespace* GetNamespace(OSSL_ENCRYPTION_LEVEL level);
 public:
     Rtt    rtt;

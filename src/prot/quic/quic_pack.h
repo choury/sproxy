@@ -7,6 +7,7 @@
 #include <list>
 #include <vector>
 #include <string>
+#include <set>
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -266,6 +267,42 @@ struct quic_pkt_header: public quic_meta{
     uint64_t pn_base = 0;
     size_t pn_length = 0;
 };
+
+/*
+Ack-eliciting frames:
+All frames other than ACK, PADDING, and CONNECTION_CLOSE are considered ack-eliciting.
+
+Ack-eliciting packets:
+Packets that contain ack-eliciting frames elicit an ACK from the receiver within the
+maximum acknowledgment delay and are called ack-eliciting packets.
+
+In-flight packets:
+Packets are considered in flight when they are ack-eliciting or contain a PADDING frame,
+and they have been sent but are not acknowledged, declared lost, or discarded along with old keys.
+ */
+
+struct quic_packet_meta{
+    uint64_t pn;
+    bool ack_eliciting;
+    bool in_flight;
+    size_t sent_bytes;
+    uint64_t sent_time;
+    // below is used for bbr
+    bool app_limited;
+    size_t delivered_bytes;
+    uint64_t delivered_time;
+    //end for bbr
+    std::set<uint64_t> streamIds;
+    quic_packet_meta(uint64_t pn, size_t len):
+            pn(pn), ack_eliciting(false), in_flight(true), sent_bytes(len), sent_time(0),
+            app_limited(false), delivered_bytes(0), delivered_time(0) {}
+};
+
+struct quic_packet_pn{
+    quic_packet_meta meta;
+    std::list<quic_frame*> frames;
+};
+
 
 int unpack_meta(const void* data, size_t len, quic_meta* meta);
 std::vector<const quic_frame*> decode_packet(const void* data, size_t len,

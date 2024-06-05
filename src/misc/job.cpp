@@ -4,8 +4,6 @@
 #include <assert.h>
 #include <set>
 
-using std::function;
-
 #define JOB_RUNNING   (1u<<15u)
 #define JOB_DESTROIED (1u<<16u)
 
