@@ -43,22 +43,23 @@ bool HttpBase::ChunkLProc(Buffer& bb) {
 
 bool HttpBase::ChunkBProc(Buffer& bb) {
     if (http_expectlen == 0) {
-        if (bb.len >= strlen(CRLF)){
-            if(memcmp(bb.data(), CRLF, strlen(CRLF)) != 0) {
-                LOGD(DHTTP, "buffer: %X %X\n", ((char*)bb.data())[0], ((char*)bb.data())[1]);
-                ErrProc(bb.id);
-                return false;
-            }
-            if(http_flag & HTTP_CHUNK_END_F){
-                EndProc(bb.id);
-
-                http_flag &= ~HTTP_CHUNK_END_F;
-                Http_Proc = &HttpBase::HeaderProc;
-            }else{
-                Http_Proc = &HttpBase::ChunkLProc;
-            }
-            bb.reserve(strlen(CRLF));
+        if (bb.len < strlen(CRLF)) {
+            return false;
         }
+        if(memcmp(bb.data(), CRLF, strlen(CRLF)) != 0) {
+            LOGD(DHTTP, "buffer: %X %X\n", ((char*)bb.data())[0], ((char*)bb.data())[1]);
+            ErrProc(bb.id);
+            return false;
+        }
+        if(http_flag & HTTP_CHUNK_END_F){
+            EndProc(bb.id);
+
+            http_flag &= ~HTTP_CHUNK_END_F;
+            Http_Proc = &HttpBase::HeaderProc;
+        }else{
+            Http_Proc = &HttpBase::ChunkLProc;
+        }
+        bb.reserve(strlen(CRLF));
         return true;
     } else {
         if (bb.len == 0) {
