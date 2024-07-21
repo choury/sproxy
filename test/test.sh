@@ -28,26 +28,26 @@ function test_client(){
 
     echo test for http1.0
     ./sproxy_test < http1.0_server.exp &
-    sleep 3
+    sleep 1
     curl -f -v -x http://$HOSTNAME:$1 http://test.localhost.choury.com:4445 > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "client test 8 failed" && exit 1
 
     echo test for shutdown1
     ./sproxy_test < shutdown1_server.exp &
-    sleep 3
+    sleep 1
     cat shutdown1_client.exp | sed "s/PORT/$1/" | ./sproxy_test
     [ $? -ne 0 ] && echo "client test 9 failed" && exit 1
 
 
     echo test for shutdown2
     ./sproxy_test < shutdown2_server.exp &
-    sleep 3
+    sleep 1
     cat shutdown2_client.exp | sed "s/PORT/$1/" | ./sproxy_test
     [ $? -ne 0 ] && echo "client test 10 failed" && exit 1
 
     echo test for send and ping
     ./sproxy_test < udp_server.exp &
-    sleep 3
+    sleep 1
     cat send_ping.exp | sed "s/PORT/$1/" | ./sproxy_test
     [ $? -ne 0 ] && echo "send ping test failed" && exit 1
 
@@ -92,27 +92,58 @@ function test_https(){
 
 function test_http(){
     curl -f -v http://$HOSTNAME:$1/sites.list  -k 2>> curl.log
-    [ $? -ne 0 ] && echo "https test 1 failed" && exit 1
+    [ $? -ne 0 ] && echo "http test 1 failed" && exit 1
     curl -f -v http://$HOSTNAME:$1/noexist  -k 2>> curl.log
-    [ $? -ne 22 ] && echo "https test 2 failed" && exit 1
+    [ $? -ne 22 ] && echo "http test 2 failed" && exit 1
     curl -f -v http://$HOSTNAME:$1/noexist.do  -k 2>> curl.log
-    [ $? -ne 22 ] && echo "https test 3 failed" && exit 1
+    [ $? -ne 22 ] && echo "http test 3 failed" && exit 1
     curl -f -v http://$HOSTNAME:$1/cgi/libproxy.do?a=b  -k 2>> curl.log
-    [ $? -ne 0 ] && echo "https test 4 failed"
+    [ $? -ne 0 ] && echo "http test 4 failed"
     curl -f -v -L http://$HOSTNAME:$1/cgi  -k 2>> curl.log
-    [ $? -ne 0 ] && echo "https test 5 failed"
+    [ $? -ne 0 ] && echo "http test 5 failed"
     curl -f -v http://$HOSTNAME:$1/ -H "Host: www.qq.com" -k > /dev/null 2>> curl.log
-    [ $? -ne 0 ] && echo "https test 6 failed" && exit 1
+    [ $? -ne 0 ] && echo "http test 6 failed" && exit 1
+    curl -f -v -x http://$HOSTNAME:$1/ https://www.qq.com  2>> curl.log
+    [ $? -ne 60 ] && echo "http test 7 failed" && exit 1
+    curl -f -v -x http://$HOSTNAME:$1/ https://www.qq.com -A "Mozilla/5.0" -k > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "http test 8 failed" && exit 1
     echo ""
 }
 
-function wait_port() {
-    while ! nc -z localhost $1; do
+function test_http3(){
+    curl -V | grep HTTP3
+    if [[ $? != 0 ]];then
+        return
+    fi
+    curl -f -v --http3-only https://$HOSTNAME:$1/sites.list  -k 2>> curl.log
+    [ $? -ne 0 ] && echo "http3 test 1 failed" && exit 1
+    curl -f -v --http3-only https://$HOSTNAME:$1/noexist  -k 2>> curl.log
+    [ $? -ne 22 ] && echo "http3 test 2 failed" && exit 1
+    curl -f -v --http3-only https://$HOSTNAME:$1/noexist.do  -k 2>> curl.log
+    [ $? -ne 22 ] && echo "http3 test 3 failed" && exit 1
+    curl -f -v --http3-only https://$HOSTNAME:$1/cgi/libproxy.do?a=b  -k 2>> curl.log
+    [ $? -ne 0 ] && echo "http3 test 4 failed"
+    curl -f -v -L --http3-only https://$HOSTNAME:$1/cgi  -k 2>> curl.log
+    [ $? -ne 0 ] && echo "http3 test 5 failed"
+    curl -f -v --http3-only https://$HOSTNAME:$1/ -H "Host: www.taobao.com" -k > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "http3 test 6 failed" && exit 1
+    echo ""
+}
+
+
+function wait_tcp_port() {
+    while ! nc -vz localhost $1; do
         ps aux | grep sproxy | grep -v grep
         sleep 1
     done
 }
 
+function wait_udp_port() {
+    while ! lsof -Pi udp:$1; do
+        ps aux | grep sproxy | grep -v grep
+        sleep 1
+    done
+}
 
 << EOF
 openssl genpkey -algorithm RSA -out ca.key -pass pass:hello
@@ -144,8 +175,34 @@ which curl
 curl --version
 
 echo "$HOSTNAME local" > sites.list
+
+function cleanup {
+    kill -SIGABRT $(jobs -p) || true
+}
+
+trap cleanup EXIT
+> curl.log
+
+cat > http.conf << EOF
+root-dir .
+cafile ca.crt
+cakey  ca.key
+policy-file sites.list
+index libproxy.do
+insecure
+mitm enable
+debug all
+EOF
+
+./sproxy -c http.conf -p 3333 --admin server_http.sock > server_http.log 2>&1 &
+wait_tcp_port 3333
+echo "test http server"
+test_http 3333
+kill -SIGUSR1 %1
+kill -SIGUSR2 %1
+wait %1
+
 cat > https.conf << EOF
-port 4443
 cert localhost.crt
 key localhost.key 
 root-dir .
@@ -155,31 +212,12 @@ insecure
 debug all
 EOF
 
-./sproxy -c https.conf --admin server_ssl.sock  >server_ssl.log 2>&1  &
-./sproxy -c https.conf --admin server_quic.sock  --quic >server_quic.log  2>&1 &
-wait_port 4443
+./sproxy -c https.conf -p 3333  --admin server_ssl.sock >server_ssl.log 2>&1  &
+wait_tcp_port 3333
 
-cat > http.conf << EOF
-port 4444
-root-dir .
-policy-file sites.list
-index libproxy.do
-insecure
-debug all
-EOF
-
-./sproxy -c http.conf  --admin server_http.sock > server_http.log 2>&1 &
-wait_port 4444
-
-
-> curl.log
-
-echo "test server"
-test_https 4443
+echo "test https server"
+test_https 3333
 kill -SIGUSR1 %1
-test_http 4444
-kill -SIGUSR1 %3
-
 
 cat > client.conf << EOF
 root-dir .
@@ -188,53 +226,52 @@ insecure
 debug all
 EOF
 
-./sproxy -c client.conf -p 3334  https://$HOSTNAME:4443 --disable-http2 --admin client_h1.sock > client_h1.log 2>&1 &
-./sproxy -c client.conf -p 3335  https://$HOSTNAME:4443 --admin client_h2.sock > client_h2.log 2>&1 &
-./sproxy -c client.conf -p 3336  quic://$HOSTNAME:4443 --admin client_h3.sock > client_h3.log 2>&1 &
-wait_port 3334
-wait_port 3335
-wait_port 3336
+./sproxy -c client.conf -p 3334  https://$HOSTNAME:3333 --disable-http2 --admin client_h1.sock > client_h1.log 2>&1 &
+wait_tcp_port 3334
 
-
-function cleanup {
-    kill %1
-    kill %2
-    kill %3
-    kill %4
-    kill %5
-    kill %6
-    killall sproxy_test || true
-}
-
-trap cleanup EXIT
-
-echo "test client ssl http2 proxy"
+echo "test http1 -> http1"
 test_client 3334
-test_client 3335
-test_client 3336
-sleep 5
-
-
+jobs
 printf "dump sites" | ./scli -s client_h1.sock
+kill -SIGUSR1 %2
+kill -SIGUSR2 %2
+wait %2
+
+./sproxy -c client.conf -p 3334  https://$HOSTNAME:3333 --admin client_h2.sock > client_h2.log 2>&1 &
+wait_tcp_port 3334
+
+echo "test http1 -> http2"
+test_client 3334
 printf "dump sites" | ./scli -s client_h2.sock
-printf "dump sites" | ./scli -s client_h3.sock
+jobs
+kill -SIGUSR1 %2
+kill -SIGUSR2 %2
+wait %2
 
 kill -SIGUSR1 %1
-kill -SIGUSR1 %2
-kill -SIGUSR1 %3
-kill -SIGUSR1 %4
-kill -SIGUSR1 %5
-kill -SIGUSR1 %6
-sleep 5
-
 kill -SIGUSR2 %1
-kill -SIGUSR2 %2
-kill -SIGUSR2 %3
-kill -SIGUSR2 %4
-kill -SIGUSR2 %5
-kill -SIGUSR2 %6
+wait %1
 
-sleep 30
+./sproxy -c https.conf -p 3333  --admin server_quic.sock  --quic >server_quic.log  2>&1 &
+wait_udp_port 3333
+echo "test quic server"
+test_http3 3333
+kill -SIGUSR1 %1
+
+./sproxy -c client.conf -p 3334  quic://$HOSTNAME:3333 --admin client_h3.sock > client_h3.log 2>&1 &
+wait_tcp_port 3334
+echo "test http1 -> http3"
+test_client 3334
+jobs
+printf "dump sites" | ./scli -s client_h3.sock
+
+kill -SIGUSR1 %2
+kill -SIGUSR2 %2
+wait %2
+
+kill -SIGUSR1 %1
+kill -SIGUSR2 %1
+wait %1
 
 $buildpath/prot/dns/dns_test
 $buildpath/misc/trie_test
