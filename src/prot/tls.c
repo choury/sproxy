@@ -451,6 +451,7 @@ static int ssl_callback_ClientHello(SSL *ssl, int* al, void* arg){
     X509* cert;
     if (generate_signed_key_pair(host, &key, &cert) == 0) {
         SSL_use_cert_and_key(ssl, cert, key, NULL, 1);
+        LOGD(DSSL, "generate cert for %s when ClientHello\n", host);
         return SSL_CLIENT_HELLO_SUCCESS;
     }
     LOGD(DSSL, "generate cert for %s failed\n", host);
@@ -459,15 +460,16 @@ static int ssl_callback_ClientHello(SSL *ssl, int* al, void* arg){
 
 static int ssl_callback_ServerName(SSL *ssl, int* al, void* arg){
     (void)al;
-    (void)arg;
+    const char* host = (const char*)arg;
     if(SSL_get_certificate(ssl)){
         return SSL_TLSEXT_ERR_OK;
     }
     const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
     if(servername == NULL) {
-        LOGD(DSSL, "no servername found for sni\n");
+        LOGD(DSSL, "no servername found for sni: %s\n", host);
         return SSL_TLSEXT_ERR_ALERT_FATAL;
     }
+    LOGD(DSSL, "servername sni ext found for %s: %s\n", host, servername);
     if(!opt.ca.crt || !opt.ca.key) {
         LOGD(DSSL, "no ca file found for sni: %s\n", servername);
         return SSL_TLSEXT_ERR_ALERT_FATAL;
@@ -476,6 +478,7 @@ static int ssl_callback_ServerName(SSL *ssl, int* al, void* arg){
     X509* cert;
     if (generate_signed_key_pair(servername, &key, &cert) == 0) {
         SSL_use_cert_and_key(ssl, cert, key, NULL, 1);
+        LOGD(DSSL, "generate cert for %s when ServerName\n", servername);
         return SSL_TLSEXT_ERR_OK;
     }
     LOGD(DSSL, "generate cert for %s failed\n", servername);
@@ -550,6 +553,7 @@ SSL_CTX* initssl(int quic, const char* host){
     // 设置 ClientHello 回调函数
     SSL_CTX_set_client_hello_cb(ctx, ssl_callback_ClientHello, (void*)host);
     SSL_CTX_set_tlsext_servername_callback(ctx, ssl_callback_ServerName);
+    SSL_CTX_set_tlsext_servername_arg(ctx, (void*)host);
     SSL_CTX_set_alpn_select_cb(ctx, select_alpn_cb, alpn_list);
     SSL_CTX_set_read_ahead(ctx, 1);
     return ctx;

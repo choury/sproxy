@@ -203,3 +203,12 @@ err:
     X509_free(*crt);
     return -1;
 }
+
+
+void release_key_pair() {
+    for(auto [_, cert]: certs) {
+        X509_free(cert.crt);
+        EVP_PKEY_free(cert.key);
+    }
+    certs.clear();
+}

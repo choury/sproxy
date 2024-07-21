@@ -23,6 +23,7 @@ int protectFd(int){
 
 int main(int argc, char **argv) {
     parseConfig(argc, argv);
+    Ep* server = nullptr;
     if(opt.rproxy_mode) {
         new Rguest2(&opt.Server);
     }else if(opt.cert.crt && opt.cert.key) {
@@ -38,7 +39,7 @@ int main(int argc, char **argv) {
                 return -1;
             }
             SetRecvPKInfo(svsk_quic, &addr);
-            new Quic_server(svsk_quic, ctx);
+            server = new Quic_server(svsk_quic, ctx);
         }else {
 #else
             assert(opt.quic_mode == 0);
@@ -48,7 +49,7 @@ int main(int argc, char **argv) {
             if (svsk_https < 0) {
                 return -1;
             }
-            new Http_server<Guest>(svsk_https, ctx);
+            server = new Http_server<Guest>(svsk_https, ctx);
         }
     }else{
 #ifdef HAVE_QUIC
@@ -57,7 +58,7 @@ int main(int argc, char **argv) {
             if (svsk_sni < 0) {
                 return -1;
             }
-            new Quic_sniServer(svsk_sni);
+            server = new Quic_sniServer(svsk_sni);
         }else if(opt.sni_mode) {
 #else
         if(opt.sni_mode) {
@@ -66,13 +67,13 @@ int main(int argc, char **argv) {
             if (svsk_sni < 0) {
                 return -1;
             }
-            new Http_server<Guest_sni>(svsk_sni, nullptr);
+            server = new Http_server<Guest_sni>(svsk_sni, nullptr);
         }else{
             int svsk_http = ListenTcp(opt.CHOST, opt.CPORT);
             if (svsk_http < 0) {
                 return -1;
             }
-            new Http_server<Guest>(svsk_http, nullptr);
+            server = new Http_server<Guest>(svsk_http, nullptr);
         }
     }
     Cli_server* cli = nullptr;
@@ -98,4 +99,5 @@ int main(int argc, char **argv) {
     LOG("Sproxy exiting ...\n");
     neglect();
     delete cli;
+    delete server;
 }

@@ -240,6 +240,7 @@ void neglect(){
     opt.cert.crt = NULL;
     EVP_PKEY_free(opt.cert.key);
     opt.cert.key = NULL;
+    release_key_pair();
 }
 
 static void usage(const char * program){

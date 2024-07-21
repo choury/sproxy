@@ -104,7 +104,7 @@ uint32_t do_delayjob(){
             jobDeleter()(j);
         }
     }
-    uint32_t min_interval = 0xffffffff;
+    uint32_t min_interval = 60000; //1min
     for(auto j: gjobs){
         uint32_t left = j->delay_ms + j->last_done_ms - now;
         if(left < min_interval){
