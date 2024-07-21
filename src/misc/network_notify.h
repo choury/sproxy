@@ -5,9 +5,10 @@
 extern "C" {
 #endif
 
-int notify_network_change(int notify);
+int create_notifier_fd();
+int have_network_changed(int fd);
 
-typedef void (*network_notify_callback)(void);
+typedef void (*network_notify_callback)();
 int register_network_change_cb(network_notify_callback cb);
 
 

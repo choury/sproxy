@@ -8,12 +8,8 @@
 #include "misc/config.h"
 #include "prot/tls.h"
 
-#include <errno.h>
 #include <unistd.h>
 #include <assert.h>
-#include <fcntl.h>
-#include <arpa/inet.h>
-#include <openssl/ssl.h>
 #include <openssl/err.h>
 
 //do nothing, useful for vpn only
@@ -23,9 +19,10 @@ int protectFd(int){
 
 int main(int argc, char **argv) {
     parseConfig(argc, argv);
-    Ep* server = nullptr;
+    std::shared_ptr<Ep> server;
+    std::shared_ptr<Rguest2> r2;
     if(opt.rproxy_mode) {
-        new Rguest2(&opt.Server);
+        r2 = std::make_shared<Rguest2>(&opt.Server);
     }else if(opt.cert.crt && opt.cert.key) {
         SSL_CTX * ctx = initssl(opt.quic_mode, nullptr);
 #ifdef HAVE_QUIC
@@ -39,7 +36,7 @@ int main(int argc, char **argv) {
                 return -1;
             }
             SetRecvPKInfo(svsk_quic, &addr);
-            server = new Quic_server(svsk_quic, ctx);
+            server = std::make_shared<Quic_server>(svsk_quic, ctx);
         }else {
 #else
             assert(opt.quic_mode == 0);
@@ -49,7 +46,7 @@ int main(int argc, char **argv) {
             if (svsk_https < 0) {
                 return -1;
             }
-            server = new Http_server<Guest>(svsk_https, ctx);
+            server = std::make_shared<Http_server<Guest>>(svsk_https, ctx);
         }
     }else{
 #ifdef HAVE_QUIC
@@ -58,7 +55,7 @@ int main(int argc, char **argv) {
             if (svsk_sni < 0) {
                 return -1;
             }
-            server = new Quic_sniServer(svsk_sni);
+            server = std::make_shared<Quic_sniServer>(svsk_sni);
         }else if(opt.sni_mode) {
 #else
         if(opt.sni_mode) {
@@ -67,16 +64,16 @@ int main(int argc, char **argv) {
             if (svsk_sni < 0) {
                 return -1;
             }
-            server = new Http_server<Guest_sni>(svsk_sni, nullptr);
+            server = std::make_shared<Http_server<Guest_sni>>(svsk_sni, nullptr);
         }else{
             int svsk_http = ListenTcp(opt.CHOST, opt.CPORT);
             if (svsk_http < 0) {
                 return -1;
             }
-            server = new Http_server<Guest>(svsk_http, nullptr);
+            server = std::make_shared<Http_server<Guest>>(svsk_http, nullptr);
         }
     }
-    Cli_server* cli = nullptr;
+    std::shared_ptr<Cli_server> cli;
     if(opt.admin && strlen(opt.admin) > 0){
         int svsk_cli = -1;
         if(strncmp(opt.admin, "tcp:", 4) == 0){
@@ -87,7 +84,7 @@ int main(int argc, char **argv) {
         if(svsk_cli < 0){
             return -1;
         }
-        cli = new Cli_server(svsk_cli);
+        cli = std::make_shared<Cli_server>(svsk_cli);
     }
     LOG("Accepting connections ...\n");
     while (will_contiune) {
@@ -98,6 +95,4 @@ int main(int argc, char **argv) {
     }
     LOG("Sproxy exiting ...\n");
     neglect();
-    delete cli;
-    delete server;
 }

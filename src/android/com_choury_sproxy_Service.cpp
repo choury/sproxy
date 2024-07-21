@@ -94,7 +94,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     //opt.pcap_file = pcap_file.c_str();
     const char *server_str = jnienv->GetStringUTFChars(server, nullptr);
     const char *secret_str = jnienv->GetStringUTFChars(secret, nullptr);
-    loadproxy(server_str, &opt.Server);
+    parseDest(server_str, &opt.Server);
     Base64Encode(secret_str, strlen(secret_str), opt.rewrite_auth);
     postConfig();
     LOG("native SproxyVpnService.start %d.\n", sockfd);

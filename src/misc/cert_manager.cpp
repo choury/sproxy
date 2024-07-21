@@ -206,7 +206,7 @@ err:
 
 
 void release_key_pair() {
-    for(auto [_, cert]: certs) {
+    for(const auto& [_, cert]: certs) {
         X509_free(cert.crt);
         EVP_PKEY_free(cert.key);
     }

@@ -6,21 +6,22 @@
 #include "prot/ep.h"
 #include "misc/net.h"
 
-#include <unistd.h>
-#include <errno.h>
-#include <string.h>
 #include <functional>
+#include <memory>
 
 
 class Notifier: public Ep {
-    std::function<void(void)> cb;
+    std::function<void()> cb;
 public:
-    const int sender;
-    explicit Notifier(int pipefd[2], std::function<void(void)> cb):
-    Ep(pipefd[0]), cb(std::move(cb)), sender(pipefd[1]){
+    explicit Notifier(int fd, std::function<void()> cb):
+    Ep(fd), cb(std::move(cb)) {
+        LOGD(DNET, "create notifiler: %p [%d]\n", this, fd);
         setEvents(RW_EVENT::READ);
-        SetSocketUnblock(sender);
         handleEvent = (void (Ep::*)(RW_EVENT))&Notifier::defaultHE;
+    }
+
+    void setcb(std::function<void()> cb) {
+        this->cb = std::move(cb);
     }
 
     void defaultHE(RW_EVENT events) {
@@ -30,32 +31,31 @@ public:
             return;
         }
         if(!!(events & RW_EVENT::READ)){
-            char buff[1024];
-            while(read(getFd(), buff, sizeof(buff))> 0);
-            cb();
+            have_network_changed(getFd())? cb() : void();
         }
         if(!!(events & RW_EVENT::READEOF)) {
-            LOGE("pipe closed\n");
+            LOGE("network notifiler closed\n");
             delete this;
             return;
         }
     }
-    virtual ~Notifier(){
-        close(sender);
+    virtual ~Notifier() override {
+        LOGD(DNET, "notifiler destoried: %p\n", this);
     }
 };
 
-static Notifier* notifier = nullptr;
+static std::shared_ptr<Notifier> notifier;
 
 int register_network_change_cb(network_notify_callback cb) {
-    if(notifier == nullptr){
-        int pipefd[2];
-        if(pipe(pipefd) < 0){
-            LOGE("pipe failed: %s\n", strerror(errno));
-            return -1;
-        }
-        notifier = new Notifier(pipefd, cb);
+    if(notifier != nullptr) {
+        notifier->setcb(cb);
+        return 0;
     }
-    notify_network_change(notifier->sender);
+    int fd = create_notifier_fd();
+    if(fd < 0) {
+        LOGE("create network notifiler failed");
+        return -1;
+    }
+    notifier = std::make_shared<Notifier>(fd, cb);
     return 0;
 }

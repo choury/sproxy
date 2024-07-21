@@ -139,13 +139,26 @@ static void* worker(){
     return NULL;
 }
 
-int notify_network_change(int notify){
-    notify_ = notify;
+int create_notifier_fd() {
+    int pipes[2];
+    if(pipe(pipes) < 0) {
+        LOGE("create pipe failed: %s\n", strerror(errno));
+        return -1;
+    }
+    notify_ = pipes[1];
     pthread_t tid;
     if(pthread_create(&tid, NULL, worker, NULL)){
         LOGE("failed to create CFRunLoop thread: %s\n", strerror(errno));
-        close(notify_);
+        close(pipes[0]);
+        close(pipes[1]);
         return -1;
     }
-    return 0;
+    return pipes[0];
+}
+
+
+int have_network_changed(int fd) {
+    char buff[BUFSIZ];
+    while(read(fd, buff, sizeof(buff)) > 0){}
+    return 1;
 }

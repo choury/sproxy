@@ -9,17 +9,16 @@
 #include <stdbool.h>
 #include <net/if.h>
 #include <netinet/in.h>
-#include <pthread.h>
 
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 
-static void* worker(void *data) {
-    int notify = (int)(long)data;
+
+int create_notifier_fd() {
     int fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
     if (fd < -1){
         LOGE("failed to create netlink socket: %s\n", strerror(errno));
-        return NULL;
+        return -1;
     }
 
     struct sockaddr_nl local_addr;
@@ -30,15 +29,20 @@ static void* worker(void *data) {
 
     if (bind(fd, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0){
         LOGE("failed to bind nl_groups: %s\n", strerror(errno));
-        goto ret;
+        close(fd);
+        return -1;
     }
+    return fd;
+}
 
+
+int have_network_changed(int fd) {
     int len = 0;
     char buffer[BUFSIZ];
+    bool result = false;
 retry:
-    while ((len = recv(fd, buffer, sizeof(buffer), 0)) > 0) {
+    while ((len = read(fd, buffer, sizeof(buffer))) > 0) {
         bool changed = false;
-
         char name[IF_NAMESIZE]={0};
         struct sockaddr_storage addr;
         memset(&addr, 0, sizeof(addr));
@@ -49,7 +53,7 @@ retry:
             }else if (nlh->nlmsg_type == NLMSG_ERROR) {
                 /* Message is some kind of error */
                 LOGE("read_netlink: Message is an error - decode TBD\n");
-                goto ret;
+                continue;
             } else if (nlh->nlmsg_type == RTM_NEWADDR) {
                 LOGD(DNET, "read_netlink: RTM_NEWADDR\n");
             } else if (nlh->nlmsg_type == RTM_DELADDR){
@@ -83,23 +87,8 @@ retry:
         }
         if(changed){
             LOGD(DNET, "netlink_interface %s changed: %s\n",  name, getaddrstring(&addr));
-            (void)!write(notify, "1", 1);
+            result = true;
         }
     }
-    LOG("exiting netlink loop\n");
-ret:
-    if(fd >= 0){
-        close(fd);
-    }
-    close(notify);
-    return NULL;
-}
-
-int notify_network_change(int notify){
-    pthread_t tid;
-    if(pthread_create(&tid, NULL, worker, (void*)(long)notify)){
-        LOGE("failed to create netlink thread: %s\n", strerror(errno));
-        return -1;
-    }
-    return 0;
+    return result;
 }

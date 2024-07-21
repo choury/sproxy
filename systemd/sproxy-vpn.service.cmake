@@ -10,7 +10,7 @@ Environment=LD_LIBRARY_PATH=@CMAKE_INSTALL_PREFIX@/lib
 ExecStart=@CMAKE_INSTALL_PREFIX@/sbin/vpndemo -c /etc/sproxy/sproxy.conf
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
-Restart=on-failure
+Restart=always
 RestartPreventExitStatus=SIGKILL
 
 [Install]

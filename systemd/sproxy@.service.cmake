@@ -9,7 +9,7 @@ WorkingDirectory=-/var/lib/sproxy
 ExecStart=@CMAKE_INSTALL_PREFIX@/bin/sproxy -c /etc/sproxy/%I.conf
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
-Restart=on-failure
+Restart=always
 RestartPreventExitStatus=SIGKILL
 
 [Install]
