@@ -87,6 +87,7 @@ struct options opt = {
     .ipv6_enabled      = true,
     .alter_method      = false,
     .set_dns_route     = false,
+    .rproxy_mode       = false,
 
     .policy_read    = NULL,
     .policy_write   = NULL,
@@ -152,6 +153,7 @@ static struct option long_options[] = {
     {"skip-interface-binding", no_argument, NULL, 0},
     {"sni",           no_argument,       NULL,  0 },
     {"alter-method",  no_argument,       NULL,  0 },
+    {"rproxy",        no_argument,       NULL,  0 },
     {"request-header",required_argument, NULL,  0 },
     {"ua",            required_argument, NULL,  0 },
     {"version",       no_argument,       NULL, 'v'},
@@ -172,8 +174,9 @@ struct option_detail {
 
 static struct option_detail option_detail[] = {
     {"admin", "set admin socket path for cli (/var/run/sproxy.sock is default for root and /tmp/sproxy.sock for others)", option_string, &opt.admin, NULL},
-    {"autoindex", "Enables the directory listing output (local server)", option_bool, &opt.autoindex, (void*)true},
+    {"alter-method", "use Alter-Method to define real method (for obfuscation), http1 only", option_bool, &opt.alter_method, (void*)true},
     {"alt-svc", "Add alt-svc header to response or send ALTSVC frame", option_string, &opt.alt_svc, NULL},
+    {"autoindex", "Enables the directory listing output (local server)", option_bool, &opt.autoindex, (void*)true},
     {"bind", "The ip address to bind, default is [::]", option_string, &opt.CHOST, NULL},
     {"cafile", "CA certificate for server (ssl)", option_string, &opt.cafile, NULL},
     {"cakey", "CA key for server (sni and vpn)", option_string, &opt.cakey, NULL},
@@ -184,12 +187,12 @@ static struct option_detail option_detail[] = {
 #endif
     {"disable-http2", "Use http/1.1 only", option_bool, &opt.disable_http2, (void*)true},
     {"help", "Print this usage", option_bool, NULL, NULL},
-    {"mitm", "Mitm mode for https request ([auto], enable, disable), require cakey", option_enum, &opt.mitm_mode, auto_options},
     {"index", "Index file for path (local server)", option_string, &opt.index_file, NULL},
     {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_bool, &opt.ignore_cert_error, (void*)true},
     {"interface", "Out interface (use for vpn), will skip bind if set to empty", option_string, &opt.interface, NULL},
     {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, auto_options},
     {"key", "Private key file name (ssl)", option_string, &opt.keyfile, NULL},
+    {"mitm", "Mitm mode for https request ([auto], enable, disable), require cakey", option_enum, &opt.mitm_mode, auto_options},
     {"pcap", "Save packets in pcap file for vpn (generated pseudo ethernet header)", option_string, &opt.pcap_file, NULL},
     {"pcap_len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
     {"port", "The port to listen, default is 80 but 443 for ssl/sni/quic", option_uint64, &opt.CPORT, NULL},
@@ -197,14 +200,14 @@ static struct option_detail option_detail[] = {
 #ifdef HAVE_QUIC
     {"quic", "Server for QUIC (experiment)", option_bool, &opt.quic_mode, (void*)true},
 #endif
+    {"request-header", "append the header (name:value) for plain http request", option_list, &opt.request_headers, NULL},
     {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64, opt.rewrite_auth, NULL},
     {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
+    {"rproxy", "rproxy mode (via http2)", option_bool, &opt.rproxy_mode, (void*)true},
     {"secret", "Set user and passwd for proxy (user:password), default is none.", option_list, &secrets, NULL},
     {"sni", "Act as a sni proxy", option_bool, &opt.sni_mode, (void*)true},
     {"server", "default proxy server (can ONLY set in config file)", option_string, &server_string, NULL},
     {"set-dns-route", "set route for dns server (via VPN interface)", option_bool, &opt.set_dns_route, (void*)true},
-    {"alter-method", "use Alter-Method to define real method (for obfuscation), http1 only", option_bool, &opt.alter_method, (void*)true},
-    {"request-header", "append the header (name:value) for plain http request", option_list, &opt.request_headers, NULL},
     {"ua", "set user-agent for vpn auto request", option_string, &opt.ua, NULL},
     {"version", "show the version of this programme", option_bool, NULL, NULL},
 #ifndef NDEBUG
@@ -360,7 +363,7 @@ static void parseArgs(const char* name, const char* args){
     LOGF("UNKNOWN option: %s\n", name);
 }
 
-int loadproxy(const char* proxy, struct Destination* server){
+int parseDest(const char* proxy, struct Destination* server){
     memset(server, 0, sizeof(struct Destination));
     if(spliturl(proxy, server, NULL)){
         return -1;
@@ -456,7 +459,7 @@ void postConfig(){
         opt.CPORT = opt.CPORT ?: 80;
     }
     opt.CHOST = opt.CHOST ?: "[::]";
-    if(server_string && loadproxy(server_string, &opt.Server)){
+    if(server_string && parseDest(server_string, &opt.Server)){
         LOGE("wrong server format: %s\n", server_string);
         exit(1);
     }

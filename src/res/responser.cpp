@@ -58,19 +58,20 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
     }
     if (header->valid_method()) {
         strategy stra = getstrategy(header->Dest.hostname, header->path);
-        header->set(STRATEGY, getstrategystring(stra.s));
         if(stra.s == Strategy::block){
+            header->set(STRATEGY, getstrategystring(Strategy::block));
             res = std::make_shared<HttpRes>(HttpResHeader::create(S403, sizeof(S403), id),
                               "This site is blocked, please contact administrator for more information.\n");
             goto out;
         }
         if(stra.s == Strategy::local){
-            if(header->http_method()){
+            if(header->http_method() && header->getDport() == opt.CPORT){
+                header->set(STRATEGY, getstrategystring(Strategy::local));
                 return File::getfile(req, src);
-            }else{
-                stra.s = Strategy::direct;
             }
+            stra.s = Strategy::direct;
         }
+        header->set(STRATEGY, getstrategystring(stra.s));
         switch(check_header(header, src)){
         case CheckResult::Succeed:
             break;
@@ -105,7 +106,7 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
             }
             //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
             header->chain_proxy = true;
-            if(!stra.ext.empty() && loadproxy(stra.ext.c_str(), &dest)){
+            if(!stra.ext.empty() && parseDest(stra.ext.c_str(), &dest)){
                 res = std::make_shared<HttpRes>(HttpResHeader::create(S500, sizeof(S500), id),
                                                 "[[ext misformat]]\n");
                 goto out;

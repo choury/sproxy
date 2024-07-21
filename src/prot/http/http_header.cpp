@@ -164,14 +164,11 @@ void HttpReqHeader::postparse() {
         request_id = nextId();
     }
     if(http_method()){
-        if(!Dest.scheme[0]) {
-            strcpy(Dest.scheme, "http");
-        }
         if(Dest.protocol[0]){
             //do nothing
         }else if(strcasecmp(Dest.scheme, "https") == 0) {
             strcpy(Dest.protocol, "ssl");
-        }else {
+        }else if(strcasecmp(Dest.scheme, "http") == 0){
             strcpy(Dest.protocol, "tcp");
         }
     }else if(ismethod("CONNECT")){

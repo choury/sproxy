@@ -3,6 +3,7 @@
 #include "prot/quic/quic_server.h"
 #endif
 #include "req/cli.h"
+#include "req/rguest2.h"
 #include "misc/job.h"
 #include "misc/config.h"
 #include "prot/tls.h"
@@ -22,7 +23,9 @@ int protectFd(int){
 
 int main(int argc, char **argv) {
     parseConfig(argc, argv);
-    if(opt.cert.crt && opt.cert.key) {
+    if(opt.rproxy_mode) {
+        new Rguest2(&opt.Server);
+    }else if(opt.cert.crt && opt.cert.key) {
         SSL_CTX * ctx = initssl(opt.quic_mode, nullptr);
 #ifdef HAVE_QUIC
         if(opt.quic_mode){

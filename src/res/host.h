@@ -21,7 +21,7 @@ class Host:public Responser, public HttpRequester {
 protected:
     virtual void deleteLater(uint32_t errcode) override;
     virtual void Error(int ret, int code);
-    
+
     virtual void ResProc(uint64_t id, std::shared_ptr<HttpResHeader> res)override;
     virtual ssize_t DataProc(Buffer& bb)override;
     virtual void EndProc(uint64_t id) override;
@@ -35,7 +35,7 @@ protected:
 public:
     explicit Host(const Destination* dest);
     virtual ~Host() override;
-    
+
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
     static void distribute(std::shared_ptr<HttpReq> req, const Destination* dest, Requester* src);

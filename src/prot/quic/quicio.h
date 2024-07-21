@@ -288,6 +288,9 @@ public:
     explicit QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, Quic_server* server);
     virtual void Send(Buffer&& bb) override;
     virtual void Close(std::function<void()> func) override;
+    virtual bool isTls() override {
+        return true;
+    }
     virtual bool idle(uint64_t id) override {
         return QuicBase::idle(id);
     }
@@ -321,6 +324,9 @@ public:
                      std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb,
                      std::function<ssize_t()> cap_cb);
 
+    virtual bool isTls() override {
+        return true;
+    }
     virtual void Close(std::function<void()> func) override;
     virtual void dump_status(Dumper dp, void* param) override;
     virtual size_t mem_usage() override;

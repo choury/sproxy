@@ -4,11 +4,8 @@
 #include "common/common.h"
 #include "prot/rwer.h"
 #include <queue>
-#include <list>
-#include <functional>
 #include <memory>
 
-#include <string.h>
 
 class Server{
 protected:
@@ -32,6 +29,7 @@ void dump_stat();
 }
 #endif
 
+bool isalive(Server* s);
 bool kill_server(Server* s, uint32_t errcode);
 void dump_stat(Dumper dp, void *param);
 void dump_usage(Dumper dp, void* param);

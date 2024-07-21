@@ -404,7 +404,7 @@ error:
 
 
 static const char* h3_alpn[] = {"h3", NULL};
-static const char* h2_alpn[] = {"h2", "http/1.1", NULL};
+static const char* h2_alpn[] = {"h2", "http/1.1", "r2", NULL};
 static const char* h1_alpn[] = {"http/1.1", NULL};
 
 static int select_alpn_cb(SSL *ssl,

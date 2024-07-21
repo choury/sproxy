@@ -1,6 +1,7 @@
 #include "guest.h"
 #include "guest2.h"
 #include "res/responser.h"
+#include "res/rproxy.h"
 #include "misc/util.h"
 #include "misc/config.h"
 #include "misc/strategy.h"
@@ -83,9 +84,9 @@ int Guest::mread(std::shared_ptr<HttpReqHeader>,
         if constexpr (std::is_same_v<T, int>) {
             Handle(arg);
         } else if constexpr (std::is_same_v<T, Buffer>) {
-            BufferHandle(arg);
+            return BufferHandle(arg);
         } else if constexpr (std::is_same_v<T, std::reference_wrapper<Buffer>>) {
-            BufferHandle(arg.get());
+            return BufferHandle(arg.get());
         }
         return 0;
     }, data);
@@ -114,16 +115,24 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
 
         srwer->SetConnectCB([this](const sockaddr_storage&){
             //不要捕获rwer,否则不能正常释放shared_ptr
-            LOGD(DHTTP, "<guest> %s connected\n", rwer->getPeer());
             auto srwer = std::dynamic_pointer_cast<SslRWer>(this->rwer);
             const unsigned char *data;
             unsigned int len;
             srwer->get_alpn(&data, &len);
-            if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
+            LOGD(DHTTP, "<guest> %s connected: %.*s\n", rwer->getPeer(), len, (const char*)data);
+            if (data == nullptr || data[0] == 0) {
+                return;
+            }
+            assert(statuslist.empty());
+            if (strncasecmp((const char*)data, "h2", len) == 0) {
                 new Guest2(srwer);
                 rwer = nullptr;
-                assert(statuslist.empty());
-                return deleteLater(NOERROR);
+                return Server::deleteLater(NOERROR);
+            }
+            if (strncasecmp((const char*)data, "r2", len) == 0) {
+                RproxyCreate(srwer);
+                rwer = nullptr;
+                return Server::deleteLater(NOERROR);
             }
         });
     }else{
@@ -155,7 +164,6 @@ Guest::Guest(std::shared_ptr<RWer> rwer_): Requester(rwer_){
                 return deleteLater(NOERROR);
             }
         });
-        mitmProxy = true;
     }
     rwer->SetErrorCB([this](int ret, int code){
         Error(ret, code);
@@ -198,9 +206,14 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
             return;
         }
     }
-    if(mitmProxy && header->http_method()) {
-        strcpy(header->Dest.scheme, "https");
-        strcpy(header->Dest.protocol, "ssl");
+    if(header->Dest.scheme[0] == 0 && header->http_method()) {
+        if(rwer->isTls()) {
+            strcpy(header->Dest.scheme, "https");
+            strcpy(header->Dest.protocol, "ssl");
+        } else {
+            strcpy(header->Dest.scheme, "http");
+            strcpy(header->Dest.protocol, "tcp");
+        }
     }
     LOGD(DHTTP, "<guest> ReqProc %" PRIu64 " %s\n", header->request_id, header->geturl().c_str());
     auto req = std::make_shared<HttpReq>(header,

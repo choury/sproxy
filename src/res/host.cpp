@@ -114,7 +114,7 @@ void Host::connected() {
         const unsigned char *data;
         unsigned int len;
         srwer->get_alpn(&data, &len);
-        if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
+        if (data && strncasecmp((const char*)data, "h2", len) == 0) {
             LOG("<host> delegate %" PRIu64 " %s to proxy2\n",
                 status.req->header->request_id, status.req->header->geturl().c_str());
             Proxy2 *proxy = new Proxy2(srwer);
@@ -131,7 +131,7 @@ void Host::connected() {
         const unsigned char *data;
         unsigned int len;
         qrwer->getAlpn(&data, &len);
-        if((data && strncasecmp((const char*)data, "h3", len) == 0)) {
+        if(data && strncasecmp((const char*)data, "h3", len) == 0) {
             LOG("<host> delegate %" PRIu64 " %s to proxy3\n",
                 status.req->header->request_id, status.req->header->geturl().c_str());
             Proxy3 *proxy = new Proxy3(qrwer);

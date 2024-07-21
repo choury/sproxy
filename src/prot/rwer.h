@@ -67,6 +67,7 @@ public:
     virtual void SetErrorCB(std::function<void(int ret, int code)> func);
     virtual void SetReadCB(std::function<size_t(Buffer&& bb)> func);
     virtual void SetWriteCB(std::function<void(uint64_t id)> func);
+    virtual void ClearCB();
 
     virtual void Close(std::function<void()> func);
     virtual void Unblock(uint64_t id);
@@ -77,6 +78,7 @@ public:
     virtual ssize_t cap(uint64_t id);
     virtual void Send(Buffer&& bb);
 
+    virtual bool isTls();
     virtual bool isEof();
     virtual bool idle(uint64_t id);
     virtual void dump_status(Dumper dp, void* param) = 0;

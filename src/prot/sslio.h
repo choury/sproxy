@@ -79,6 +79,9 @@ public:
     virtual void ReadData() override;
     virtual void Send(Buffer&& bb) override;
 
+    virtual bool isTls() override {
+        return true;
+    }
     virtual bool isEof() override {
         return StreamRWer::isEof() || SslRWerBase::isEof();
     }
@@ -113,6 +116,10 @@ public:
     {}
     virtual void push_data(Buffer&& bb) override;
     void Send(Buffer&& bb) override;
+
+    virtual bool isTls() override {
+        return true;
+    }
 
     virtual bool isEof() override {
         return MemRWer::isEof() || SslRWerBase::isEof();

@@ -24,6 +24,7 @@ class Proxy2:public Responser, public Http2Requster {
 #endif
     Job connection_lost_job = nullptr;
     Job idle_timeout = nullptr;
+    bool isRproxy = false;
 protected:
     void ping_check();
     void connection_lost();

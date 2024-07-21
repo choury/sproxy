@@ -22,6 +22,7 @@ protected:
     virtual void push_data(Buffer&& bb);
     virtual void push_signal(Signal s);
 public:
+    //read_cb act like write, return bytes handled
     explicit MemRWer(const char* pname,
                      std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb,
                      std::function<ssize_t()> cap_cb);

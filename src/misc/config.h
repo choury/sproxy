@@ -69,6 +69,7 @@ struct options{
     bool ipv6_enabled;
     bool alter_method;
     bool set_dns_route;
+    bool rproxy_mode;
 
     FILE* policy_read;
     FILE* policy_write;
@@ -91,7 +92,7 @@ void network_changed();
 int parseConfigFile(const char* config_file);
 void parseConfig(int argc, char **argv);
 void postConfig();
-int loadproxy(const char* proxy, struct Destination* server);
+int parseDest(const char* proxy, struct Destination* server);
 bool debugon(const char* module, bool enable);
 
 void flushdns();

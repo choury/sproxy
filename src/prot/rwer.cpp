@@ -136,6 +136,14 @@ void RWer::SetWriteCB(std::function<void(uint64_t id)> func){
     writeCB = std::move(func);
 }
 
+void RWer::ClearCB() {
+    readCB = [](Buffer&&){ return 0;};
+    writeCB = [](uint64_t){};
+    errorCB = [](int, int){};
+    closeCB = []{};
+}
+
+
 void RWer::defaultHE(RW_EVENT events){
     if (!!(events & RW_EVENT::ERROR)) {
         ErrorHE(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
@@ -177,6 +185,11 @@ void RWer::closeHE(RW_EVENT) {
 void RWer::IdleHE(RW_EVENT) {
     setEvents(RW_EVENT::NONE);
 }
+
+bool RWer::isTls() {
+    return false;
+}
+
 
 bool RWer::isEof() {
     return stats == RWerStats::ReadEOF;

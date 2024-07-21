@@ -111,7 +111,7 @@ void Cli::FlushStrategy() {
 bool Cli::SetServer(const std::string &server) {
     LOG("%s [%s] %s\n", rwer->getPeer(), __func__, server.c_str());
     Destination proxy;
-    if(loadproxy(server.c_str(), &proxy) == 0){
+    if(parseDest(server.c_str(), &proxy) == 0){
         memcpy(&opt.Server, &proxy, sizeof(proxy));
         return true;
     }

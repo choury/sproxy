@@ -87,6 +87,7 @@ void SocketRWer::connectFailed(int error) {
         //we have tried all addresses.
         return ErrorHE(CONNECT_FAILED, error);
     }
+    stats = RWerStats::Connecting;
     this->connect();
 }
 

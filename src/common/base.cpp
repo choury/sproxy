@@ -16,6 +16,9 @@ Server::Server(){
 }
 
 Server::~Server() {
+    if(rwer) {
+        rwer->ClearCB();
+    }
     servers.erase(this);
 }
 
@@ -39,8 +42,13 @@ void releaseall() {
     servers.clear();
 }
 
+bool isalive(Server* s) {
+    return servers.count(s);
+}
+
+
 bool kill_server(Server* s, uint32_t errcode) {
-    if(servers.count(s)){
+    if(isalive(s)){
         LOGE("kill server: %p\n", s);
         s->deleteLater(errcode);
         return true;

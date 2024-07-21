@@ -85,7 +85,6 @@ struct CaseInsensitiveCompare {
 typedef std::multimap<std::string, std::string, CaseInsensitiveCompare> HeaderMap;
 
 class HttpReqHeader: public HttpHeader{
-    void postparse();
 public:
     char method[20];
     struct Destination Dest;
@@ -103,6 +102,7 @@ public:
     [[nodiscard]] virtual bool no_body() const override;
     [[nodiscard]] virtual bool no_end() const override;
 
+    void postparse();
     [[nodiscard]] std::map<std::string, std::string> getcookies()const;
     [[nodiscard]] std::map<std::string, std::string> getparamsmap()const;
     [[nodiscard]] const char* getparamstring()const;
