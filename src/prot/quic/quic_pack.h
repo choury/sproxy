@@ -14,6 +14,7 @@
 #include <openssl/evp.h>
 
 #define QUIC_VERSION_1 0x00000001
+#define QUIC_VERSION_2 0x6b3343cf
 #define QUIC_INITIAL_LIMIT 1200
 #define QUIC_TOKEN_LEN   16
 /*
@@ -30,6 +31,20 @@ Type	Name	Section
 #define QUIC_PACKET_0RTT      (0x1<<4)
 #define QUIC_PACKET_HANDSHAKE (0x2<<4)
 #define QUIC_PACKET_RETRY     (0x3<<4)
+
+/*
+All version 2 Long Header packet types are different. The Type field values are:
+Initial: 0b01
+0-RTT: 0b10
+Handshake: 0b11
+Retry: 0b00
+ */
+#define QUIC_PACKET_RETRYV2     (0x0<<4)
+#define QUIC_PACKET_INITIALV2   (0x1<<4)
+#define QUIC_PACKET_0RTTV2      (0x2<<4)
+#define QUIC_PACKET_HANDSHAKEV2 (0x3<<4)
+
+
 #define QUIC_PACKET_1RTT      (0x3f)  //pseudo-type code
 
 /*
@@ -145,6 +160,7 @@ Type Value	Frame Type Name         Definition  	Pkts	Spec
 #define quic_active_connection_id_limit               0x0e
 #define quic_initial_source_connection_id             0x0f
 #define quic_retry_source_connection_id               0x10
+#define quic_version_information                      0x11
 
 
 size_t variable_encode(void* data_, uint64_t value);

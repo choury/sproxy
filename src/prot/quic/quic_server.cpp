@@ -46,7 +46,14 @@ static ssize_t recvwithaddr(int fd, void* buff, size_t buflen,
             myaddr4->sin_family = AF_INET;
             myaddr4->sin_addr = info->ipi_addr;
             myaddr4->sin_port = htons(opt.CPORT);
+        } else {
+            LOGE("unknown level: %d or type: %d\n", cmsg->cmsg_level, cmsg->cmsg_type);
+            return -1;
         }
+    }
+    if(myaddr->ss_family == AF_UNSPEC) {
+        LOGE("can't get IP_PKTINFO\n");
+        return -1;
     }
     return ret;
 }

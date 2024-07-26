@@ -81,6 +81,7 @@ size_t Guest_sni::sniffer(Buffer&& bb) {
         // not enough data, wait for more
         return 0;
     }
+    LOGD(DHTTP, "[sni] forward to %s\n", hostname);
     auto req = forward(hostname, Protocol::TCP);
     if(req == nullptr){
         assert(ret < 0);
@@ -141,6 +142,7 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
         }
     }
 Forward:
+    LOGD(DQUIC, "[sni] forward to %s\n", hostname);
 #endif
     auto req = forward(hostname, Protocol::UDP);
     if(req == nullptr) {

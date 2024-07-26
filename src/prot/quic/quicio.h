@@ -168,6 +168,8 @@ protected:
     uint64_t my_max_streams_bidi = 100;
     uint64_t my_max_streams_uni = 10;
 
+    uint32_t chosen_version = QUIC_VERSION_1;
+
     void sinkData(uint64_t id, QuicStreamStatus& status);
     void sinkData(uint64_t id);
     void reorderData();

@@ -209,14 +209,20 @@ root-dir .
 policy-file sites.list
 index libproxy.do
 insecure
+ssl
+quic
 debug all
 EOF
 
 ./sproxy -c https.conf -p 3333  --admin server_ssl.sock >server_ssl.log 2>&1  &
 wait_tcp_port 3333
-
 echo "test https server"
 test_https 3333
+kill -SIGUSR1 %1
+
+wait_udp_port 3333
+echo "test quic server"
+test_http3 3333
 kill -SIGUSR1 %1
 
 cat > client.conf << EOF
@@ -248,23 +254,12 @@ kill -SIGUSR1 %2
 kill -SIGUSR2 %2
 wait %2
 
-kill -SIGUSR1 %1
-kill -SIGUSR2 %1
-wait %1
-
-./sproxy -c https.conf -p 3333  --admin server_quic.sock  --quic >server_quic.log  2>&1 &
-wait_udp_port 3333
-echo "test quic server"
-test_http3 3333
-kill -SIGUSR1 %1
-
 ./sproxy -c client.conf -p 3334  quic://$HOSTNAME:3333 --admin client_h3.sock > client_h3.log 2>&1 &
 wait_tcp_port 3334
 echo "test http1 -> http3"
 test_client 3334
-jobs
 printf "dump sites" | ./scli -s client_h3.sock
-
+jobs
 kill -SIGUSR1 %2
 kill -SIGUSR2 %2
 wait %2

@@ -492,6 +492,19 @@ void QuicBase::getParams(const uint8_t* data, size_t len) {
             variable_decode(pos, &his_max_ack_delay);
             LOGD(DQUIC, "get max ack delay: %" PRIu64"\n", his_max_ack_delay);
             break;
+        case quic_version_information:{
+            chosen_version = get32(pos);
+            LOGD(DQUIC, "chosen version: %x\n", chosen_version);
+            size -= 4;
+            pos  += 4;
+            while(size) {
+                uint32_t ver = get32(pos);
+                LOGD(DQUIC, "available version: %x\n", ver);
+                size -= 4;
+                pos  += 4;
+            }
+            break;
+        }
         case quic_disable_active_migration:
         case quic_preferred_address:
         case quic_active_connection_id_limit:
@@ -641,6 +654,9 @@ QuicBase::FrameResult QuicBase::handleCryptoFrame(quic_context* context, const q
         const uint8_t* buff = nullptr;
         if(!hasParam && (SSL_get_peer_quic_transport_params(ssl, &buff, &olen), olen > 0)){
             getParams(buff, olen);
+            if(chosen_version != QUIC_VERSION_1) {
+                return FrameResult::error;
+            }
             hasParam = true;
         }
         if(ssl_get_error(ssl, SSL_do_handshake(ssl)) == 1){

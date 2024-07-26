@@ -62,6 +62,7 @@ struct options{
     const char *alt_svc;
     bool disable_http2;
     bool sni_mode;
+    bool ssl_mode;
     bool quic_mode;
     bool daemon_mode;
     bool ignore_cert_error;

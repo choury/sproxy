@@ -11,6 +11,8 @@
 
 /* 0x38762cf7f55934b34d179ae6a4c80cadccbb7f0a */
 static const char* initial_salt = "\x38\x76\x2c\xf7\xf5\x59\x34\xb3\x4d\x17\x9a\xe6\xa4\xc8\x0c\xad\xcc\xbb\x7f\x0a";
+/* 0x0dede3def700a6db819381be6e269dcbf9bd2ed9 */
+static const char* initial_saltv2 = "\x0d\xed\xe3\xde\xf7\x00\xa6\xdb\x81\x93\x81\xbe\x6e\x26\x9d\xcb\xf9\xbd\x2e\xd9";
 static const int initial_saltlen = 20;
 
 size_t variable_encode_len(uint64_t value){

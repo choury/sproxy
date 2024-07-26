@@ -19,14 +19,27 @@ int protectFd(int){
 
 int main(int argc, char **argv) {
     parseConfig(argc, argv);
-    std::shared_ptr<Ep> server;
+    std::vector<std::shared_ptr<Ep>> servers;
     std::shared_ptr<Rguest2> r2;
     if(opt.rproxy_mode) {
         r2 = std::make_shared<Rguest2>(&opt.Server);
-    }else if(opt.cert.crt && opt.cert.key) {
-        SSL_CTX * ctx = initssl(opt.quic_mode, nullptr);
+    }else {
+        if(opt.ssl_mode) {
+            int svsk_ssl = ListenTcp(opt.CHOST, opt.CPORT);
+            if (svsk_ssl < 0) {
+                return -1;
+            }
+            if(opt.sni_mode) {
+                servers.emplace_back(std::make_shared<Http_server<Guest_sni>>(svsk_ssl, nullptr));
+                LOG("listen on %s:%d for ssl sni\n", opt.CHOST, (int)opt.CPORT);
+            }else {
+                SSL_CTX * ctx = initssl(false, nullptr);
+                servers.emplace_back(std::make_shared<Http_server<Guest>>(svsk_ssl, ctx));
+                LOG("listen on %s:%d for ssl\n", opt.CHOST, (int)opt.CPORT);
+            }
+        }
 #ifdef HAVE_QUIC
-        if(opt.quic_mode){
+        if(opt.quic_mode ) {
             struct sockaddr_storage addr;
             if(storage_aton(opt.CHOST, opt.CPORT, &addr) == 0) {
                 return -1;
@@ -36,55 +49,44 @@ int main(int argc, char **argv) {
                 return -1;
             }
             SetRecvPKInfo(svsk_quic, &addr);
-            server = std::make_shared<Quic_server>(svsk_quic, ctx);
-        }else {
-#else
-            assert(opt.quic_mode == 0);
-        {
-#endif
-            int svsk_https = ListenTcp(opt.CHOST, opt.CPORT);
-            if (svsk_https < 0) {
-                return -1;
+            if(opt.sni_mode) {
+                servers.emplace_back(std::make_shared<Quic_sniServer>(svsk_quic));
+                LOG("listen on %s:%d for quic snil\n", opt.CHOST, (int)opt.CPORT);
+            }else {
+                SSL_CTX * ctx = initssl(true, nullptr);
+                servers.emplace_back(std::make_shared<Quic_server>(svsk_quic, ctx));
+                LOG("listen on %s:%d for quic\n", opt.CHOST, (int)opt.CPORT);
             }
-            server = std::make_shared<Http_server<Guest>>(svsk_https, ctx);
         }
-    }else{
-#ifdef HAVE_QUIC
-        if(opt.quic_mode && opt.sni_mode) {
-            int svsk_sni = ListenTcp(opt.CHOST, opt.CPORT);
-            if (svsk_sni < 0) {
-                return -1;
-            }
-            server = std::make_shared<Quic_sniServer>(svsk_sni);
-        }else if(opt.sni_mode) {
-#else
-        if(opt.sni_mode) {
 #endif
-            int svsk_sni = ListenTcp(opt.CHOST, opt.CPORT);
-            if (svsk_sni < 0) {
-                return -1;
-            }
-            server = std::make_shared<Http_server<Guest_sni>>(svsk_sni, nullptr);
-        }else{
+        if(!opt.ssl_mode && !opt.sni_mode && !opt.quic_mode){
             int svsk_http = ListenTcp(opt.CHOST, opt.CPORT);
             if (svsk_http < 0) {
                 return -1;
             }
-            server = std::make_shared<Http_server<Guest>>(svsk_http, nullptr);
+            servers.emplace_back(std::make_shared<Http_server<Guest>>(svsk_http, nullptr));
+            LOG("listen on %s:%d for http\n", opt.CHOST, (int)opt.CPORT);
         }
     }
-    std::shared_ptr<Cli_server> cli;
     if(opt.admin && strlen(opt.admin) > 0){
         int svsk_cli = -1;
         if(strncmp(opt.admin, "tcp:", 4) == 0){
-            svsk_cli = ListenTcp("[::]", atoi(opt.admin+4));
+            std::string addr = opt.admin + 4;
+            if(addr.find(':') != std::string::npos) {
+                Destination dest;
+                parseDest(addr.c_str(), &dest);
+                svsk_cli = ListenTcp(dest.hostname, dest.port);
+            } else {
+                svsk_cli = ListenTcp("[::]", atoi(addr.c_str()));
+            }
         }else{
             svsk_cli = ListenUnix(opt.admin);
         }
         if(svsk_cli < 0){
             return -1;
         }
-        cli = std::make_shared<Cli_server>(svsk_cli);
+        servers.emplace_back(std::make_shared<Cli_server>(svsk_cli));
+        LOG("listen on %s for admin\n", opt.admin);
     }
     LOG("Accepting connections ...\n");
     while (will_contiune) {

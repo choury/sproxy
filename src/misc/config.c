@@ -80,6 +80,7 @@ struct options opt = {
     .alt_svc           = NULL,
     .disable_http2     = false,
     .sni_mode          = false,
+    .ssl_mode          = false,
     .quic_mode         = false,
     .daemon_mode       = false,
     .ignore_cert_error = false,
@@ -152,6 +153,7 @@ static struct option long_options[] = {
     {"set-dns-route", no_argument,       NULL,  0 },
     {"skip-interface-binding", no_argument, NULL, 0},
     {"sni",           no_argument,       NULL,  0 },
+    {"ssl",           no_argument,       NULL,  0 },
     {"alter-method",  no_argument,       NULL,  0 },
     {"rproxy",        no_argument,       NULL,  0 },
     {"request-header",required_argument, NULL,  0 },
@@ -178,9 +180,9 @@ static struct option_detail option_detail[] = {
     {"alt-svc", "Add alt-svc header to response or send ALTSVC frame", option_string, &opt.alt_svc, NULL},
     {"autoindex", "Enables the directory listing output (local server)", option_bool, &opt.autoindex, (void*)true},
     {"bind", "The ip address to bind, default is [::]", option_string, &opt.CHOST, NULL},
-    {"cafile", "CA certificate for server (ssl)", option_string, &opt.cafile, NULL},
-    {"cakey", "CA key for server (sni and vpn)", option_string, &opt.cakey, NULL},
-    {"cert", "Certificate file for server (ssl)", option_string, &opt.certfile, NULL},
+    {"cafile", "CA certificate for server (ssl/quic)", option_string, &opt.cafile, NULL},
+    {"cakey", "CA key for server (mitm)", option_string, &opt.cakey, NULL},
+    {"cert", "Certificate file for server (ssl/quic)", option_string, &opt.certfile, NULL},
     {"config", "Configure file (default "PREFIX"/etc/sproxy/sproxy.conf and ./sproxy.conf)", option_string, &opt.config_file, NULL},
 #ifndef __ANDROID__
     {"daemon", "Run as daemon", option_bool, &opt.daemon_mode, (void*)true},
@@ -191,7 +193,7 @@ static struct option_detail option_detail[] = {
     {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_bool, &opt.ignore_cert_error, (void*)true},
     {"interface", "Out interface (use for vpn), will skip bind if set to empty", option_string, &opt.interface, NULL},
     {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, auto_options},
-    {"key", "Private key file name (ssl)", option_string, &opt.keyfile, NULL},
+    {"key", "Private key file name (ssl/quic)", option_string, &opt.keyfile, NULL},
     {"mitm", "Mitm mode for https request ([auto], enable, disable), require cakey", option_enum, &opt.mitm_mode, auto_options},
     {"pcap", "Save packets in pcap file for vpn (generated pseudo ethernet header)", option_string, &opt.pcap_file, NULL},
     {"pcap_len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
@@ -205,9 +207,10 @@ static struct option_detail option_detail[] = {
     {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
     {"rproxy", "rproxy mode (via http2)", option_bool, &opt.rproxy_mode, (void*)true},
     {"secret", "Set user and passwd for proxy (user:password), default is none.", option_list, &secrets, NULL},
-    {"sni", "Act as a sni proxy", option_bool, &opt.sni_mode, (void*)true},
     {"server", "default proxy server (can ONLY set in config file)", option_string, &server_string, NULL},
     {"set-dns-route", "set route for dns server (via VPN interface)", option_bool, &opt.set_dns_route, (void*)true},
+    {"sni", "Act as a sni proxy", option_bool, &opt.sni_mode, (void*)true},
+    {"ssl", "Act as a ssl server (require cert file and key)", option_bool, &opt.ssl_mode, (void*)true},
     {"ua", "set user-agent for vpn auto request", option_string, &opt.ua, NULL},
     {"version", "show the version of this programme", option_bool, NULL, NULL},
 #ifndef NDEBUG
@@ -454,7 +457,7 @@ void postConfig(){
         LOGE("wrong port: %" PRId64 "\n", opt.CPORT);
         exit(1);
     }
-    if(opt.certfile || opt.keyfile || opt.sni_mode){ //ssl, quic or sni
+    if(opt.ssl_mode || opt.sni_mode){ //ssl, quic or sni
         opt.CPORT = opt.CPORT ?: 443;
     } else {
         opt.CPORT = opt.CPORT ?: 80;
@@ -504,8 +507,8 @@ void postConfig(){
             LOGE("access cert file failed: %s\n", strerror(errno));
             exit(1);
         }
-        if (opt.quic_mode && (opt.cert.crt == NULL || opt.cert.key == NULL)) {
-            LOGE("quic mode require cert and key file\n");
+        if ((opt.ssl_mode || opt.quic_mode) && (opt.cert.crt == NULL || opt.cert.key == NULL)) {
+            LOGE("ssl/quic mode require cert and key file\n");
             exit(1);
         }
     }
