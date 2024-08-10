@@ -8,6 +8,7 @@
 #include "common/common.h"
 
 #include <memory>
+#include <string>
 
 #include <string.h>
 #include <stdint.h>
@@ -152,5 +153,6 @@ public:
     void consume(size_t l);
 };
 
+std::string dumpDest(const Destination& addr);
 
 #endif //SPROXY_BUFFER_H

@@ -46,12 +46,9 @@ struct cert_pair{
 };
 
 struct options{
-    const char *admin;
     const char *cafile;
     const char *cakey;
     struct cert_pair ca;
-    const char *certfile;
-    const char *keyfile;
     struct cert_pair cert;
     const char *config_file;
     const char *rootdir;
@@ -62,8 +59,6 @@ struct options{
     const char *alt_svc;
     bool disable_http2;
     bool sni_mode;
-    bool ssl_mode;
-    bool quic_mode;
     bool daemon_mode;
     bool ignore_cert_error;
     bool autoindex;
@@ -71,11 +66,14 @@ struct options{
     bool alter_method;
     bool set_dns_route;
     bool rproxy_mode;
+    bool redirect_http;
 
     FILE* policy_read;
     FILE* policy_write;
-    const char* CHOST;
-    uint64_t    CPORT;
+    struct Destination http;
+    struct Destination ssl;
+    struct Destination quic;
+    struct Destination admin;
     uint64_t pcap_len;
     struct Destination Server;
     char rewrite_auth[DOMAINLIMIT];

@@ -12,7 +12,7 @@
 #include <inttypes.h>
 
 size_t Guest::ReadHE(Buffer&& bb){
-    LOGD(DHTTP, "<guest> (%s) read: len:%zu, refs: %zd\n", rwer->getPeer(), bb.len, bb.refs());
+    LOGD(DHTTP, "<guest> (%s) read: len:%zu, refs: %zd\n", dumpDest(rwer->getSrc()).c_str(), bb.len, bb.refs());
     if(bb.len == 0){
         //EOF
         if(statuslist.empty()){
@@ -52,7 +52,7 @@ size_t Guest::ReadHE(Buffer&& bb){
 int Guest::mread(std::shared_ptr<HttpReqHeader>,
         std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data) {
     auto BufferHandle = [this](Buffer& bb) {
-        LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
+        LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", dumpDest(rwer->getSrc()).c_str(), bb.len);
         assert(statuslist.size() == 1);
         auto& status = statuslist.front();
         assert((status.flags & HTTP_RES_COMPLETED) == 0);
@@ -97,7 +97,7 @@ void Guest::WriteHE(uint64_t){
         return;
     }
     ReqStatus& status = statuslist.front();
-    LOGD(DHTTP, "<guest> (%s) written, flags:0x%08x\n", rwer->getPeer(), status.flags);
+    LOGD(DHTTP, "<guest> (%s) written, flags:0x%08x\n", dumpDest(rwer->getSrc()).c_str(), status.flags);
     if(status.flags & HTTP_RES_COMPLETED){
         return;
     }
@@ -111,15 +111,14 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
         auto srwer = std::make_shared<SslRWer>(ctx, fd, addr, [this](int ret, int code){
             Error(ret, code);
         });
-        init(srwer);
-
+        this->rwer = srwer;
         srwer->SetConnectCB([this](const sockaddr_storage&){
             //不要捕获rwer,否则不能正常释放shared_ptr
             auto srwer = std::dynamic_pointer_cast<SslRWer>(this->rwer);
             const unsigned char *data;
             unsigned int len;
             srwer->get_alpn(&data, &len);
-            LOGD(DHTTP, "<guest> %s connected: %.*s\n", rwer->getPeer(), len, (const char*)data);
+            LOGD(DHTTP, "<guest> %s connected: %.*s\n", dumpDest(rwer->getSrc()).c_str(), len, (const char*)data);
             if (data == nullptr || data[0] == 0) {
                 return;
             }
@@ -136,9 +135,9 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
             }
         });
     }else{
-        init(std::make_shared<StreamRWer>(fd, addr, [this](int ret, int code) {
+        rwer = std::make_shared<StreamRWer>(fd, addr, [this](int ret, int code) {
             Error(ret, code);
-        }));
+        });
     }
     rwer->SetReadCB([this](Buffer&& bb) {
         return ReadHE(std::move(bb));
@@ -152,7 +151,7 @@ Guest::Guest(std::shared_ptr<RWer> rwer_): Requester(rwer_){
     auto srwer = std::dynamic_pointer_cast<SslMer>(rwer);
     if(srwer) {
         srwer->SetConnectCB([this](const sockaddr_storage&){
-            LOGD(DHTTP, "<guest> %s connected\n", rwer->getPeer());
+            LOGD(DHTTP, "<guest> %s connected\n", dumpDest(rwer->getSrc()).c_str());
             auto srwer = std::dynamic_pointer_cast<SslMer>(this->rwer);
             const unsigned char *data;
             unsigned int len;
@@ -179,7 +178,7 @@ Guest::Guest(std::shared_ptr<RWer> rwer_): Requester(rwer_){
 void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     static const char*  HCONNECT = "HTTP/1.1 200 Connection establishe" CRLF CRLF;
     if(header->ismethod("CONNECT") && header->Dest.port == HTTPPORT) {
-        auto mrwer = std::make_shared<MemRWer>(rwer->getPeer(),
+        auto mrwer = std::make_shared<MemRWer>(rwer->getSrc(),
                                                [this, header](auto&& data) {
                                                    return mread(header, std::forward<decltype(data)>(data));
                                                },
@@ -195,7 +194,7 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
                 (opt.mitm_mode == Auto && opt.ca.key && mayBeBlocked(header->Dest.hostname));
         if (shouldMitm || getstrategy(header->Dest.hostname).s == Strategy::local) {
             auto ctx = initssl(0, header->Dest.hostname);
-            auto srwer = std::make_shared<SslMer>(ctx, rwer->getPeer(),
+            auto srwer = std::make_shared<SslMer>(ctx, rwer->getSrc(),
                                                   [this, header](auto&& data) {
                                                       return mread(header, std::forward<decltype(data)>(data));
                                                   },
@@ -275,7 +274,7 @@ ssize_t Guest::DataProc(Buffer& bb) {
         }
         if (status.rwer) {
             LOGD(DHTTP, "<guest> DataProc %s: cap:%zu, send:%d/%zu\n",
-                 status.rwer->getPeer(), bb.len, cap, rx_bytes);
+                 dumpDest(status.rwer->getSrc()).c_str(), bb.len, cap, rx_bytes);
             status.rwer->push(std::move(bb));
         }
     };
@@ -310,7 +309,7 @@ void Guest::ErrProc(uint64_t) {
 
 void Guest::Error(int ret, int code) {
     if(ret == SSL_SHAKEHAND_ERR){
-        LOGE("(%s): <guest> ssl_accept error %d/%d\n", rwer->getPeer(), ret, code);
+        LOGE("(%s): <guest> ssl_accept error %d/%d\n", dumpDest(rwer->getSrc()).c_str(), ret, code);
     }
     if(statuslist.empty()){
         return deleteLater(PEER_LOST_ERR);
@@ -337,7 +336,7 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER: {
             auto header = std::dynamic_pointer_cast<HttpResHeader>(std::get<std::shared_ptr<HttpHeader>>(msg.data));
-            HttpLog(rwer->getPeer(), status.req->header, header);
+            HttpLog(dumpDest(rwer->getSrc()), status.req->header, header);
             if (status.req->header->ismethod("CONNECT")) {
                 if (memcmp(header->status, "200", 3) == 0) {
                     strcpy(header->status, "200 Connection established");
@@ -452,7 +451,7 @@ void Guest::deleteLater(uint32_t errcode) {
 
 Guest::~Guest() {
     if(rwer) {
-        LOGD(DHTTP, "<guest> (%s) destoryed: rx:%zu, tx:%zu\n", rwer->getPeer(), rx_bytes, tx_bytes);
+        LOGD(DHTTP, "<guest> (%s) destoryed: rx:%zu, tx:%zu\n", dumpDest(rwer->getSrc()).c_str(), rx_bytes, tx_bytes);
     }
 }
 
@@ -469,7 +468,7 @@ void Guest::dump_stat(Dumper dp, void* param){
                     status.req->header->get("User-Agent"));
         }
         if(status.rwer) {
-            dp(param, "  [MemRWer]: %s, flags: 0x%08x\n", status.rwer->getPeer(), status.flags);
+            dp(param, "  [MemRWer]: %s, flags: 0x%08x\n", dumpDest(status.rwer->getSrc()).c_str(), status.flags);
         }
     }
     rwer->dump_status(dp, param);

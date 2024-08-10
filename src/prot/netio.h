@@ -10,7 +10,7 @@
 class SocketRWer: public RWer{
 protected:
     uint16_t port = 0;
-    Protocol protocol;
+    Protocol protocol = Protocol::NONE;
     char     hostname[DOMAINLIMIT] = {0};
     std::queue<sockaddr_storage> addrs;
     void connect();
@@ -26,12 +26,13 @@ protected:
     //virtual ssize_t Write(const void* buff, size_t len, uint64_t) override;
     virtual bool IsConnected();
 public:
-    SocketRWer(int fd, const sockaddr_storage* peer, std::function<void(int ret, int code)> errorCB);
+    SocketRWer(int fd, const sockaddr_storage* src, std::function<void(int ret, int code)> errorCB);
     SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
            std::function<void(int ret, int code)> errorCB);
     virtual void SetConnectCB(std::function<void(const sockaddr_storage&)> connectCB);
     virtual ~SocketRWer() override;
-    virtual const char* getPeer() override;
+    virtual Destination getSrc() const override;
+    virtual Destination getDst() const override;
     virtual void dump_status(Dumper dp, void* param) override;
 };
 

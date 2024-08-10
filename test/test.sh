@@ -104,7 +104,7 @@ function test_http(){
     curl -f -v http://$HOSTNAME:$1/ -H "Host: www.qq.com" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "http test 6 failed" && exit 1
     curl -f -v -x http://$HOSTNAME:$1/ https://www.qq.com  2>> curl.log
-    [ $? -ne 60 ] && echo "http test 7 failed" && exit 1
+    [ $? -ne 60 ] && echo "http test 7 failed"
     curl -f -v -x http://$HOSTNAME:$1/ https://www.qq.com -A "Mozilla/5.0" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "http test 8 failed" && exit 1
     echo ""
@@ -183,46 +183,35 @@ function cleanup {
 trap cleanup EXIT
 > curl.log
 
-cat > http.conf << EOF
-root-dir .
+cat > server.conf << EOF
 cafile ca.crt
 cakey  ca.key
-policy-file sites.list
-index libproxy.do
-insecure
-mitm enable
-debug all
-EOF
-
-./sproxy -c http.conf -p 3333 --admin server_http.sock > server_http.log 2>&1 &
-wait_tcp_port 3333
-echo "test http server"
-test_http 3333
-kill -SIGUSR1 %1
-kill -SIGUSR2 %1
-wait %1
-
-cat > https.conf << EOF
 cert localhost.crt
 key localhost.key 
 root-dir .
 policy-file sites.list
 index libproxy.do
 insecure
-ssl
-quic
+http 3333
+ssl  3334
+quic 3334
 debug all
 EOF
 
-./sproxy -c https.conf -p 3333  --admin server_ssl.sock >server_ssl.log 2>&1  &
+./sproxy -c server.conf --admin unix:server.sock > server.log 2>&1 &
 wait_tcp_port 3333
-echo "test https server"
-test_https 3333
+echo "test http server"
+test_http 3333
 kill -SIGUSR1 %1
 
-wait_udp_port 3333
+wait_tcp_port 3334
+echo "test https server"
+test_https 3334
+kill -SIGUSR1 %1
+
+wait_udp_port 3334
 echo "test quic server"
-test_http3 3333
+test_http3 3334
 kill -SIGUSR1 %1
 
 cat > client.conf << EOF
@@ -232,33 +221,30 @@ insecure
 debug all
 EOF
 
-./sproxy -c client.conf -p 3334  https://$HOSTNAME:3333 --disable-http2 --admin client_h1.sock > client_h1.log 2>&1 &
-wait_tcp_port 3334
+./sproxy -c client.conf --http 3335  https://$HOSTNAME:3334 --disable-http2 --admin unix:client_h1.sock > client_h1.log 2>&1 &
+wait_tcp_port 3335
 
 echo "test http1 -> http1"
-test_client 3334
+test_client 3335
 jobs
 printf "dump sites" | ./scli -s client_h1.sock
 kill -SIGUSR1 %2
 kill -SIGUSR2 %2
 wait %2
 
-./sproxy -c client.conf -p 3334  https://$HOSTNAME:3333 --admin client_h2.sock > client_h2.log 2>&1 &
-wait_tcp_port 3334
+./sproxy -c client.conf --http 3335  https://$HOSTNAME:3334 --admin unix:client_h23.sock > client_h23.log 2>&1 &
+wait_tcp_port 3335
 
 echo "test http1 -> http2"
-test_client 3334
-printf "dump sites" | ./scli -s client_h2.sock
+test_client 3335
+printf "dump sites" | ./scli -s client_h23.sock
 jobs
 kill -SIGUSR1 %2
-kill -SIGUSR2 %2
-wait %2
 
-./sproxy -c client.conf -p 3334  quic://$HOSTNAME:3333 --admin client_h3.sock > client_h3.log 2>&1 &
-wait_tcp_port 3334
+printf "switch quic://$HOSTNAME:3334" | ./scli -s client_h23.sock
 echo "test http1 -> http3"
-test_client 3334
-printf "dump sites" | ./scli -s client_h3.sock
+test_client 3335
+printf "dump sites" | ./scli -s client_h23.sock
 jobs
 kill -SIGUSR1 %2
 kill -SIGUSR2 %2

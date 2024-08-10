@@ -43,7 +43,11 @@ public:
     virtual size_t rlength(uint64_t id) override;
     virtual ssize_t cap(uint64_t id) override;
     virtual bool idle(uint64_t id) override;
-    virtual const char* getPeer() override {return "tun-rwer";}
+    virtual Destination getSrc() const override {
+        Destination src{};
+        strcpy(src.hostname, "<tun>");
+        return src;
+    }
     virtual void dump_status(Dumper dp, void* param) override;
     virtual size_t mem_usage() override;
 

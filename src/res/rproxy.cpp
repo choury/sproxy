@@ -22,7 +22,7 @@ Responser* RproxyCreate(std::shared_ptr<RWer> rwer) {
 
 void RproxyRequest(std::shared_ptr<HttpReq> req, Requester* src) {
     uint64_t id = req->header->request_id;
-    if(!checkauth(src->getid(), req->header->get("Authorization"))){
+    if(!checkauth(src->getSrc().hostname, req->header->get("Authorization"))){
         req->response(std::make_shared<HttpRes>(HttpResHeader::create(S401, sizeof(S401), id), ""));
         return;
     }

@@ -22,7 +22,7 @@ enum class CheckResult{
 };
 
 static CheckResult check_header(std::shared_ptr<HttpReqHeader> req, Requester* src){
-    if (!checkauth(src->getid(), req->get("Proxy-Authorization"))){
+    if (!checkauth(src->getSrc().hostname, req->get("Proxy-Authorization"))){
         return CheckResult::AuthFailed;
     }
     if(req->get("via") && strstr(req->get("via"), "sproxy")){
@@ -56,6 +56,16 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
                                         "[[host not set]]\n");
         goto out;
     }
+    if(opt.redirect_http && opt.ssl.hostname[0] && src->getDst().port == opt.http.port) {
+        auto reqh = HttpReqHeader(*header);
+        strcpy(reqh.Dest.scheme, "https");
+        reqh.Dest.port = opt.ssl.port;
+
+        auto resh = HttpResHeader::create(S308, sizeof(S308), id);
+        resh->set("Location", reqh.geturl());
+        res = std::make_shared<HttpRes>(resh, reqh.geturl().c_str());
+        goto out;
+    }
     if (header->valid_method()) {
         strategy stra = getstrategy(header->Dest.hostname, header->path);
         if(stra.s == Strategy::block){
@@ -65,7 +75,7 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
             goto out;
         }
         if(stra.s == Strategy::local){
-            if(header->http_method() && header->getDport() == opt.CPORT){
+            if(header->http_method() && header->getDport() == src->getDst().port) {
                 header->set(STRATEGY, getstrategystring(Strategy::local));
                 return File::getfile(req, src);
             }
@@ -146,7 +156,7 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
                                             "[[BUG]]\n");
             goto out;
         }
-        return Host::distribute(req, &dest, src);
+        return Host::distribute(req, dest, src);
     } else{
         res = std::make_shared<HttpRes>(HttpResHeader::create(S405, sizeof(S405), id),
                                         "[[unsported method]]\n");

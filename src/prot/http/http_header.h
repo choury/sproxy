@@ -21,6 +21,8 @@
 #define S302        "302 Found"
 #define S303        "303 See Other"
 #define S304        "304 Not Modified"
+#define S307        "307 Temporary Redirect"
+#define S308        "308 Permanent Redirect"
 #define S400        "400 Bad Request"
 #define S401        "401 Unauthorized"
 #define S403        "403 Forbidden"
@@ -63,6 +65,7 @@ public:
     [[nodiscard]] virtual bool no_end() const = 0;
     [[nodiscard]] virtual std::multimap<std::string, std::string> Normalize() const = 0;
     HttpHeader();
+    HttpHeader(const HttpHeader&) = default;
     virtual ~HttpHeader() = default;
     virtual size_t mem_usage();
 };
@@ -93,6 +96,7 @@ public:
     std::vector<Range> ranges;
     bool chain_proxy  = false;
     explicit HttpReqHeader(HeaderMap&& headers);
+    HttpReqHeader(const HttpReqHeader&) = default;
     bool ismethod(const char* method) const;
     [[nodiscard]] bool http_method() const;
     [[nodiscard]] bool valid_method() const;
@@ -133,6 +137,7 @@ public:
     char status[100];
     HttpResHeader(const char* status, size_t len);
     explicit HttpResHeader(HeaderMap&& headers);
+    HttpResHeader(const HttpResHeader&) = default;
     [[nodiscard]] virtual std::multimap<std::string, std::string> Normalize() const override;
     [[nodiscard]] virtual bool no_body() const override;
     [[nodiscard]] virtual bool no_end() const override;

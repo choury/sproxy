@@ -72,7 +72,16 @@ public:
     virtual void Close(std::function<void()> func);
     virtual void Unblock(uint64_t id);
     RWerStats getStats(){return stats;}
-    virtual const char* getPeer() {return "raw-rwer";}
+    virtual Destination getSrc() const {
+        Destination addr{};
+        strcpy(addr.hostname, "<null>");
+        return addr;
+    }
+    virtual Destination getDst() const {
+        Destination addr{};
+        strcpy(addr.hostname, "<null>");
+        return addr;
+    }
 
     //for write buffer
     virtual ssize_t cap(uint64_t id);
@@ -93,7 +102,6 @@ public:
     virtual size_t rlength(uint64_t id) override;
 
     virtual void ConsumeRData(uint64_t) override;
-    virtual const char* getPeer() override {return "null-rwer";}
     virtual void dump_status(Dumper dp, void* param) override {
         dp(param, "NullRWer <%d>\n", getFd());
     }
@@ -117,7 +125,11 @@ public:
     virtual size_t rlength(uint64_t id) override;
     virtual ssize_t cap(uint64_t id) override;
     virtual void ConsumeRData(uint64_t) override;
-    virtual const char* getPeer() override {return "full-rwer";}
+    virtual Destination getSrc() const override {
+        Destination addr{};
+        strcpy(addr.hostname, "<full>");
+        return addr;
+    }
     virtual void dump_status(Dumper dp, void* param) override {
         dp(param, "FullRWer <%d>\n", getFd());
     }

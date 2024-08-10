@@ -24,24 +24,43 @@ int main(int argc, char **argv) {
     if(opt.rproxy_mode) {
         r2 = std::make_shared<Rguest2>(&opt.Server);
     }else {
-        if(opt.ssl_mode) {
-            int svsk_ssl = ListenTcp(opt.CHOST, opt.CPORT);
+        if(opt.http.hostname[0]){
+            sockaddr_storage addr;
+            if(storage_aton(opt.http.hostname, opt.http.port, &addr) == 0) {
+                LOGE("failed to parse http addr: %s\n", opt.http.hostname);
+                return -1;
+            }
+            int svsk_http = ListenTcp(&addr);
+            if (svsk_http < 0) {
+                return -1;
+            }
+            servers.emplace_back(std::make_shared<Http_server<Guest>>(svsk_http, nullptr));
+            LOG("listen on %s:%d for http\n", opt.http.hostname, (int)opt.http.port);
+        }
+        if(opt.ssl.hostname[0]) {
+            sockaddr_storage addr;
+            if(storage_aton(opt.ssl.hostname, opt.ssl.port, &addr) == 0) {
+                LOGE("failed to parse ssl addr: %s\n", opt.ssl.hostname);
+                return -1;
+            }
+            int svsk_ssl = ListenTcp(&addr);
             if (svsk_ssl < 0) {
                 return -1;
             }
             if(opt.sni_mode) {
                 servers.emplace_back(std::make_shared<Http_server<Guest_sni>>(svsk_ssl, nullptr));
-                LOG("listen on %s:%d for ssl sni\n", opt.CHOST, (int)opt.CPORT);
+                LOG("listen on %s:%d for ssl sni\n", opt.ssl.hostname, (int)opt.ssl.port);
             }else {
                 SSL_CTX * ctx = initssl(false, nullptr);
                 servers.emplace_back(std::make_shared<Http_server<Guest>>(svsk_ssl, ctx));
-                LOG("listen on %s:%d for ssl\n", opt.CHOST, (int)opt.CPORT);
+                LOG("listen on %s:%d for ssl\n", opt.ssl.hostname, (int)opt.ssl.port);
             }
         }
 #ifdef HAVE_QUIC
-        if(opt.quic_mode ) {
-            struct sockaddr_storage addr;
-            if(storage_aton(opt.CHOST, opt.CPORT, &addr) == 0) {
+        if(opt.quic.hostname[0]) {
+            sockaddr_storage addr;
+            if(storage_aton(opt.quic.hostname, opt.quic.port, &addr) == 0) {
+                LOGE("failed to parse quic addr: %s\n", opt.quic.hostname);
                 return -1;
             }
             int svsk_quic = ListenUdp(&addr);
@@ -51,42 +70,36 @@ int main(int argc, char **argv) {
             SetRecvPKInfo(svsk_quic, &addr);
             if(opt.sni_mode) {
                 servers.emplace_back(std::make_shared<Quic_sniServer>(svsk_quic));
-                LOG("listen on %s:%d for quic snil\n", opt.CHOST, (int)opt.CPORT);
+                LOG("listen on %s:%d for quic snil\n", opt.quic.hostname, (int)opt.quic.port);
             }else {
                 SSL_CTX * ctx = initssl(true, nullptr);
                 servers.emplace_back(std::make_shared<Quic_server>(svsk_quic, ctx));
-                LOG("listen on %s:%d for quic\n", opt.CHOST, (int)opt.CPORT);
+                LOG("listen on %s:%d for quic\n", opt.quic.hostname, (int)opt.quic.port);
             }
         }
 #endif
-        if(!opt.ssl_mode && !opt.sni_mode && !opt.quic_mode){
-            int svsk_http = ListenTcp(opt.CHOST, opt.CPORT);
-            if (svsk_http < 0) {
+    }
+    if(opt.admin.hostname[0]){
+        int svsk_cli = -1;
+        if(opt.admin.port == 0){
+            svsk_cli = ListenUnix(opt.admin.hostname);
+        }else{
+            sockaddr_storage addr;
+            if(storage_aton(opt.admin.hostname, opt.admin.port, &addr) == 0) {
+                LOGE("failed to parse admin addr: %s\n", opt.admin.hostname);
                 return -1;
             }
-            servers.emplace_back(std::make_shared<Http_server<Guest>>(svsk_http, nullptr));
-            LOG("listen on %s:%d for http\n", opt.CHOST, (int)opt.CPORT);
-        }
-    }
-    if(opt.admin && strlen(opt.admin) > 0){
-        int svsk_cli = -1;
-        if(strncmp(opt.admin, "tcp:", 4) == 0){
-            std::string addr = opt.admin + 4;
-            if(addr.find(':') != std::string::npos) {
-                Destination dest;
-                parseDest(addr.c_str(), &dest);
-                svsk_cli = ListenTcp(dest.hostname, dest.port);
-            } else {
-                svsk_cli = ListenTcp("[::]", atoi(addr.c_str()));
-            }
-        }else{
-            svsk_cli = ListenUnix(opt.admin);
+            svsk_cli = ListenTcp(&addr);
         }
         if(svsk_cli < 0){
             return -1;
         }
+        if(opt.admin.port) {
+            LOG("listen on %s:%d for admin\n", opt.admin.hostname, (int)opt.admin.port);
+        } else {
+            LOG("listen on %s for admin\n", opt.admin.hostname);
+        }
         servers.emplace_back(std::make_shared<Cli_server>(svsk_cli));
-        LOG("listen on %s for admin\n", opt.admin);
     }
     LOG("Accepting connections ...\n");
     while (will_contiune) {

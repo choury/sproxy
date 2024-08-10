@@ -1,12 +1,13 @@
 #include "memio.h"
+#include "misc/util.h"
 #include <inttypes.h>
 
-MemRWer::MemRWer(const char* pname,
+MemRWer::MemRWer(const Destination& src,
                  std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb,
                  std::function<ssize_t()> cap_cb):
     FullRWer([](int, int){}), read_cb(std::move(read_cb)), cap_cb(std::move(cap_cb))
 {
-    snprintf(peer, sizeof(peer), "%s", pname);
+    memcpy(&this->src, &src, sizeof(Destination));
 }
 
 MemRWer::~MemRWer() {
@@ -145,6 +146,13 @@ void MemRWer::closeHE(RW_EVENT event) {
     }
     RWer::closeHE(event); // NOLINT
 }
+
+void MemRWer::dump_status(Dumper dp, void* param) {
+    dp(param, "MemRWer <%d> (%s): rlen: %zu, wlen: %zu, stats: %d, flags: 0x%04x,  event: %s\n",
+        getFd(), dumpDest(src).c_str(), rlength(0), wlen,
+        (int)getStats(), flags, events_string[(int)getEvents()]);
+}
+
 
 void PMemRWer::push_data(Buffer&& bb) {
     assert(stats != RWerStats::ReadEOF);

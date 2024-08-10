@@ -40,6 +40,14 @@ static struct arg_list secrets = {NULL, NULL};
 static struct arg_list debug_list = {NULL, NULL};
 static uint64_t id = 100000;
 
+static const char *certfile = NULL;
+static const char *keyfile = NULL;
+
+static char* http_listen = NULL;
+static char* ssl_listen = NULL;
+static char* quic_listen = NULL;
+static char* admin_listen = NULL;
+
 volatile uint32_t will_contiune = 1;
 int efd = -1;
 void openefd(){
@@ -59,15 +67,12 @@ void openefd(){
 }
 
 struct options opt = {
-    .admin             = NULL,
     .cafile            = NULL,
     .cakey             = NULL,
     .ca                = {
         .crt = NULL,
         .key = NULL,
     },
-    .certfile          = NULL,
-    .keyfile           = NULL,
     .cert              = {
         .crt = NULL,
         .key = NULL,
@@ -80,8 +85,6 @@ struct options opt = {
     .alt_svc           = NULL,
     .disable_http2     = false,
     .sni_mode          = false,
-    .ssl_mode          = false,
-    .quic_mode         = false,
     .daemon_mode       = false,
     .ignore_cert_error = false,
     .autoindex         = false,
@@ -89,11 +92,34 @@ struct options opt = {
     .alter_method      = false,
     .set_dns_route     = false,
     .rproxy_mode       = false,
+    .redirect_http     = false,
 
     .policy_read    = NULL,
     .policy_write   = NULL,
-    .CHOST          = NULL,
-    .CPORT          = 0,
+    .http           = {
+        .scheme     = {0},
+        .protocol   = {0},
+        .hostname   = {0},
+        .port       = 0,
+    },
+    .ssl            = {
+        .scheme     = {0},
+        .protocol   = {0},
+        .hostname   = {0},
+        .port       = 0,
+    },
+    .quic           = {
+        .scheme     = {0},
+        .protocol   = {0},
+        .hostname   = {0},
+        .port       = 0,
+    },
+    .admin          = {
+        .scheme     = {0},
+        .protocol   = {0},
+        .hostname   = {0},
+        .port       = 0,
+    },
     .Server         = {
         .scheme     = {0},
         .protocol   = {0},
@@ -121,12 +147,11 @@ enum option_type{
     option_list,
 };
 
-static const char* getopt_option = ":D1hikqr:s:p:I:c:P:v";
+static const char* getopt_option = ":D1hikqr:s:I:c:P:v";
 static struct option long_options[] = {
     {"admin",         required_argument, NULL,  0 },
     {"autoindex",     no_argument,       NULL, 'i'},
-    {"alt-svc",       required_argument, NULL, 0},
-    {"bind",          required_argument, NULL, 'b'},
+    {"alt-svc",       required_argument, NULL,  0 },
     {"cafile",        required_argument, NULL,  0 },
     {"cakey",         required_argument, NULL,  0 },
     {"cert",          required_argument, NULL,  0 },
@@ -134,6 +159,7 @@ static struct option long_options[] = {
     {"daemon",        no_argument,       NULL, 'D'},
     {"disable-http2", no_argument,       NULL, '1'},
     {"help",          no_argument,       NULL, 'h'},
+    {"http",          required_argument, NULL,  0 },
     {"mitm",          required_argument, NULL,  0 },
     {"index",         required_argument, NULL,  0 },
     {"insecure",      no_argument,       NULL, 'k'},
@@ -142,18 +168,18 @@ static struct option long_options[] = {
     {"key",           required_argument, NULL,  0 },
     {"pcap",          required_argument, NULL,  0 },
     {"pcap_len",      required_argument, NULL,  0 },
-    {"port",          required_argument, NULL, 'p'},
     {"policy-file",   required_argument, NULL, 'P'},
 #ifdef HAVE_QUIC
-    {"quic",          no_argument,       NULL, 'q'},
+    {"quic",          required_argument, NULL, 'q'},
 #endif
+    {"redirect-http", no_argument,       NULL,  0 },
     {"rewrite-auth",  required_argument, NULL, 'r'},
     {"root-dir",      required_argument, NULL,  0 },
     {"secret",        required_argument, NULL, 's'},
     {"set-dns-route", no_argument,       NULL,  0 },
     {"skip-interface-binding", no_argument, NULL, 0},
     {"sni",           no_argument,       NULL,  0 },
-    {"ssl",           no_argument,       NULL,  0 },
+    {"ssl",           required_argument, NULL,  0 },
     {"alter-method",  no_argument,       NULL,  0 },
     {"rproxy",        no_argument,       NULL,  0 },
     {"request-header",required_argument, NULL,  0 },
@@ -175,33 +201,33 @@ struct option_detail {
 };
 
 static struct option_detail option_detail[] = {
-    {"admin", "set admin socket path for cli (/var/run/sproxy.sock is default for root and /tmp/sproxy.sock for others)", option_string, &opt.admin, NULL},
+    {"admin", "set admin socket path for cli (/var/run/sproxy.sock is default for root and /tmp/sproxy.sock for others)", option_string, &admin_listen, NULL},
     {"alter-method", "use Alter-Method to define real method (for obfuscation), http1 only", option_bool, &opt.alter_method, (void*)true},
     {"alt-svc", "Add alt-svc header to response or send ALTSVC frame", option_string, &opt.alt_svc, NULL},
     {"autoindex", "Enables the directory listing output (local server)", option_bool, &opt.autoindex, (void*)true},
-    {"bind", "The ip address to bind, default is [::]", option_string, &opt.CHOST, NULL},
     {"cafile", "CA certificate for server (ssl/quic)", option_string, &opt.cafile, NULL},
     {"cakey", "CA key for server (mitm)", option_string, &opt.cakey, NULL},
-    {"cert", "Certificate file for server (ssl/quic)", option_string, &opt.certfile, NULL},
+    {"cert", "Certificate file for server (ssl/quic)", option_string, &certfile, NULL},
     {"config", "Configure file (default "PREFIX"/etc/sproxy/sproxy.conf and ./sproxy.conf)", option_string, &opt.config_file, NULL},
 #ifndef __ANDROID__
     {"daemon", "Run as daemon", option_bool, &opt.daemon_mode, (void*)true},
 #endif
     {"disable-http2", "Use http/1.1 only", option_bool, &opt.disable_http2, (void*)true},
     {"help", "Print this usage", option_bool, NULL, NULL},
+    {"http", "Listen for http server", option_string, &http_listen, NULL},
     {"index", "Index file for path (local server)", option_string, &opt.index_file, NULL},
     {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_bool, &opt.ignore_cert_error, (void*)true},
     {"interface", "Out interface (use for vpn), will skip bind if set to empty", option_string, &opt.interface, NULL},
     {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, auto_options},
-    {"key", "Private key file name (ssl/quic)", option_string, &opt.keyfile, NULL},
+    {"key", "Private key file name (ssl/quic)", option_string, &keyfile, NULL},
     {"mitm", "Mitm mode for https request ([auto], enable, disable), require cakey", option_enum, &opt.mitm_mode, auto_options},
     {"pcap", "Save packets in pcap file for vpn (generated pseudo ethernet header)", option_string, &opt.pcap_file, NULL},
     {"pcap_len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
-    {"port", "The port to listen, default is 80 but 443 for ssl/sni/quic", option_uint64, &opt.CPORT, NULL},
     {"policy-file", "The file of policy ("PREFIX"/etc/sproxy/sites.list as default)", option_string, &policy_file, NULL},
 #ifdef HAVE_QUIC
-    {"quic", "Server for QUIC (experiment)", option_bool, &opt.quic_mode, (void*)true},
+    {"quic", "Listen for QUIC server (experiment)", option_string, &quic_listen, NULL},
 #endif
+    {"redirect-http", "Return 308 to redirect http to https", option_bool, &opt.redirect_http, (void*)true},
     {"request-header", "append the header (name:value) for plain http request", option_list, &opt.request_headers, NULL},
     {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64, opt.rewrite_auth, NULL},
     {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
@@ -210,7 +236,7 @@ static struct option_detail option_detail[] = {
     {"server", "default proxy server (can ONLY set in config file)", option_string, &server_string, NULL},
     {"set-dns-route", "set route for dns server (via VPN interface)", option_bool, &opt.set_dns_route, (void*)true},
     {"sni", "Act as a sni proxy", option_bool, &opt.sni_mode, (void*)true},
-    {"ssl", "Act as a ssl server (require cert file and key)", option_bool, &opt.ssl_mode, (void*)true},
+    {"ssl", "Listen for ssl server (require cert file and key)", option_string, &ssl_listen, NULL},
     {"ua", "set user-agent for vpn auto request", option_string, &opt.ua, NULL},
     {"version", "show the version of this programme", option_bool, NULL, NULL},
 #ifndef NDEBUG
@@ -452,17 +478,37 @@ void exit_loop() {
     will_contiune = 0;
 }
 
+static int parseBind(const char* addr, struct Destination* info) {
+    memset(info, 0, sizeof(*info));
+    if(addr == NULL || addr[0] == 0) {
+        return 0;
+    }
+    if (strncmp(addr, "unix:", 5) == 0) {
+        // unix:/var/lib/sproxy.sock
+        strcpy(info->hostname, addr + 5);
+        return 0;
+    }
+    if(strchr(addr, ':')) {
+        return parseDest(addr, info);
+    }
+    strcpy(info->hostname, "[::]");
+    info->port = atoi(addr);
+    return !(info->port > 0 && info->port < 65535);
+}
+
 void postConfig(){
-    if(opt.CPORT >= 65535){
-        LOGE("wrong port: %" PRId64 "\n", opt.CPORT);
+    if(http_listen && parseBind(http_listen, &opt.http)) {
+        LOGE("wrong http listen: %s\n", http_listen);
         exit(1);
     }
-    if(opt.ssl_mode || opt.sni_mode){ //ssl, quic or sni
-        opt.CPORT = opt.CPORT ?: 443;
-    } else {
-        opt.CPORT = opt.CPORT ?: 80;
+    if(ssl_listen && parseBind(ssl_listen, &opt.ssl)) {
+        LOGE("wrong ssl listen: %s\n", ssl_listen);
+        exit(1);
     }
-    opt.CHOST = opt.CHOST ?: "[::]";
+    if(quic_listen && parseBind(quic_listen, &opt.quic)) {
+        LOGE("wrong quic listen: %s\n", quic_listen);
+        exit(1);
+    }
     if(server_string && parseDest(server_string, &opt.Server)){
         LOGE("wrong server format: %s\n", server_string);
         exit(1);
@@ -484,12 +530,6 @@ void postConfig(){
     opt.rootdir = (char*)malloc(PATH_MAX);
     (void)!getcwd((char*)opt.rootdir, PATH_MAX);
 
-    if(opt.ipv6_mode == Auto){
-        opt.ipv6_enabled = hasIpv6Address();
-        LOG("auto detected ipv6: %s\n", opt.ipv6_enabled?"enable":"disable");
-    }else{
-        opt.ipv6_enabled = opt.ipv6_mode;
-    }
     if (opt.cafile && access(opt.cafile, R_OK)) {
         LOGE("access cafile %s failed: %s\n", opt.cafile, strerror(errno));
         exit(1);
@@ -503,14 +543,17 @@ void postConfig(){
             LOGE("failed to load cafile or cakey\n");
             exit(1);
         }
-        if ((opt.certfile || opt.keyfile) && load_cert_key(opt.certfile, opt.keyfile, &opt.cert)) {
+        if ((certfile || keyfile) && load_cert_key(certfile, keyfile, &opt.cert)) {
             LOGE("access cert file failed: %s\n", strerror(errno));
             exit(1);
         }
-        if ((opt.ssl_mode || opt.quic_mode) && (opt.cert.crt == NULL || opt.cert.key == NULL)) {
+        if ((opt.ssl.hostname[0] || opt.quic.hostname[0]) && (opt.cert.crt == NULL || opt.cert.key == NULL)) {
             LOGE("ssl/quic mode require cert and key file\n");
             exit(1);
         }
+    } else if(!opt.ssl.hostname[0] && !opt.quic.hostname[0]) {
+        LOGE("sni mode require ssl or quic\n");
+        exit(1);
     }
     if (opt.mitm_mode == Enable && opt.ca.key == NULL) {
         LOGE("mitm mode require cakey\n");
@@ -528,12 +571,16 @@ void postConfig(){
         }
     }
 #ifndef __ANDROID__
-    if (opt.admin == NULL){
+    if (admin_listen == NULL){
         if(getuid() == 0){
-            opt.admin = "/var/run/sproxy.sock";
+            admin_listen = "unix:/var/run/sproxy.sock";
         }else{
-            opt.admin = "/tmp/sproxy.sock";
+            admin_listen = "unix:/tmp/sproxy.sock";
         }
+    }
+    if(parseBind(admin_listen, &opt.admin)) {
+        LOGE("wrong admin listen: %s\n", admin_listen);
+        exit(1);
     }
 #endif
 
@@ -587,6 +634,12 @@ void postConfig(){
     }
 #endif
     openefd();
+    if(opt.ipv6_mode == Auto){
+        opt.ipv6_enabled = hasIpv6Address();
+        LOG("auto detected ipv6: %s\n", opt.ipv6_enabled?"enable":"disable");
+    }else{
+        opt.ipv6_enabled = opt.ipv6_mode;
+    }
     register_network_change_cb(network_changed);
 }
 

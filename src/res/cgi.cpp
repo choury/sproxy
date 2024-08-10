@@ -325,8 +325,9 @@ void Cgi::request(std::shared_ptr<HttpReq> req, Requester* src) {
         req,
         nullptr,
     };
-    req->header->set("X-Real-IP", src->getid());
-    req->header->set("X-Authorized", checkauth(src->getid(), req->header->get("Authorization")));
+    req->header->set("X-Real-IP", src->getSrc().hostname);
+    req->header->set("X-Authorized",
+        checkauth(src->getSrc().hostname, req->header->get("Authorization")));
 
     Buffer buff{BUF_LEN, id};
     CGI_Header* const header = (CGI_Header *)buff.mutable_data();

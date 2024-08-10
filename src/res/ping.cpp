@@ -9,7 +9,7 @@
 
 Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
     auto qrwer = std::make_shared<PacketRWer>(host, this->id, Protocol::ICMP, [this](int ret, int code){
-        LOGE("(%s) Ping error: %d/%d\n", rwer->getPeer(), ret, code);
+        LOGE("(%s) Ping error: %d/%d\n", dumpDest(rwer->getDst()).c_str(), ret, code);
         deleteLater(ret);
     });
     rwer = qrwer;

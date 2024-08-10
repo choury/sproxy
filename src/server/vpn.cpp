@@ -7,12 +7,17 @@
 
 int vpn_start(int fd){
     std::shared_ptr<Cli_server> cli;
-    if(opt.admin && strlen(opt.admin) > 0){
+    if(opt.admin.hostname[0]){
         int svsk_cli = -1;
-        if(strncmp(opt.admin, "tcp:", 4) == 0){
-            svsk_cli = ListenTcp("[::]", atoi(opt.admin+4));
+        if(opt.admin.port){
+            sockaddr_storage addr;
+            if(storage_aton(opt.admin.hostname, opt.admin.port, &addr) == 0) {
+                LOGE("failed to parse admin addr: %s\n", opt.admin.hostname);
+                return -1;
+            }
+            svsk_cli = ListenTcp(&addr);
         }else{
-            svsk_cli = ListenUnix(opt.admin);
+            svsk_cli = ListenUnix(opt.admin.hostname);
         }
         if(svsk_cli < 0){
             return -1;

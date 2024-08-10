@@ -272,3 +272,8 @@ void EBuffer::consume(size_t l){
 char* EBuffer::end(){
     return content + ((offset + len) % size);
 }
+
+#include "util.h"
+std::string dumpDest(const Destination& addr) {
+    return dumpDest(&addr);
+}

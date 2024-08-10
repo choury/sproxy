@@ -11,7 +11,7 @@ Rguest2::Rguest2(const Destination* dest):
     auto srwer = std::dynamic_pointer_cast<SslRWer>(rwer);
     srwer->set_alpn(alpn_protos_rproxy, sizeof(alpn_protos_rproxy)-1);
     srwer->SetConnectCB([this](const sockaddr_storage&){
-        LOG("connected to rproxy server: %s\n", rwer->getPeer());
+        LOG("connected to rproxy server: %s\n", dumpDest(rwer->getDst()).c_str());
     });
 }
 

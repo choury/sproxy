@@ -6,7 +6,7 @@
 
 class MemRWer: public FullRWer{
 protected:
-    char peer[128];
+    Destination src;
     CBuffer rb;
     std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb;
     std::function<ssize_t()> cap_cb;
@@ -23,7 +23,7 @@ protected:
     virtual void push_signal(Signal s);
 public:
     //read_cb act like write, return bytes handled
-    explicit MemRWer(const char* pname,
+    explicit MemRWer(const Destination& src,
                      std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb,
                      std::function<ssize_t()> cap_cb);
     ~MemRWer() override;
@@ -38,14 +38,10 @@ public:
     virtual void Close(std::function<void()> func) override;
     virtual ssize_t cap(uint64_t id) override;
     virtual void ConsumeRData(uint64_t) override;
-    virtual const char* getPeer() override {
-        return peer;
+    virtual Destination getSrc() const override {
+        return src;
     }
-    virtual void dump_status(Dumper dp, void* param) override {
-        dp(param, "MemRWer <%d> (%s): rlen: %zu, wlen: %zu, stats: %d, flags: 0x%04x,  event: %s\n",
-            getFd(), getPeer(), rlength(0), wlen,
-            (int)getStats(), flags, events_string[(int)getEvents()]);
-    }
+    virtual void dump_status(Dumper dp, void* param) override;
     virtual size_t mem_usage() override{
         return sizeof(*this) + wlen;
     }

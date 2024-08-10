@@ -8,7 +8,7 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
     this->rwer = rwer;
     rwer->SetErrorCB([this](int ret, int code){return Error(ret, code);});
     rwer->SetReadCB([this](Buffer&& bb) -> size_t {
-        LOGD(DHTTP3, "<proxy3> (%s) read [%" PRIu64"]: len:%zu\n", this->rwer->getPeer(), bb.id, bb.len);
+        LOGD(DHTTP3, "<proxy3> (%s) read [%" PRIu64"]: len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.id, bb.len);
         if(bb.len == 0){
             //fin
             if(ctrlid_remote && bb.id == ctrlid_remote){
@@ -58,7 +58,7 @@ Proxy3::~Proxy3() {
 }
 
 void Proxy3::Error(int ret, int code) {
-    LOGE("(%s) <proxy3> error: %d/%d\n", rwer->getPeer(), ret, code);
+    LOGE("(%s) <proxy3> error: %d/%d\n", dumpDest(rwer->getSrc()).c_str(), ret, code);
     http3_flag |= HTTP3_FLAG_ERROR;
     deleteLater(ret);
 }
@@ -201,7 +201,7 @@ void Proxy3::Handle(uint64_t id, Signal s) {
 }
 
 void Proxy3::ErrProc(int errcode) {
-    LOGE("(%s) <proxy3> Http3 error: 0x%08x\n", rwer->getPeer(), errcode);
+    LOGE("(%s) <proxy3> Http3 error: 0x%08x\n", dumpDest(rwer->getSrc()).c_str(), errcode);
     deleteLater(errcode);
 }
 

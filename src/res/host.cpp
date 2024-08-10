@@ -55,7 +55,7 @@ Host::Host(const Destination* dest){
 
 Host::~Host(){
     if(rwer){
-        LOGD(DHTTP, "<host> (%s) destoryed: rx:%zu, tx:%zu\n", rwer->getPeer(), rx_bytes, tx_bytes);
+        LOGD(DHTTP, "<host> (%s) destoryed: rx:%zu, tx:%zu\n", dumpDest(rwer->getDst()).c_str(), rx_bytes, tx_bytes);
     }else{
         LOGD(DHTTP, "<host> null destoryed: rx:%zu, tx:%zu\n", rx_bytes, tx_bytes);
     }
@@ -103,8 +103,8 @@ attach:
 
 void Host::connected() {
     assert(status.res == nullptr);
-    std::string key = dumpDest(&Server);
-    LOGD(DHTTP, "<host> %s (%s) connected\n", rwer->getPeer(), key.c_str());
+    std::string key = dumpDest(Server) + '@' + Server.protocol;
+    LOGD(DHTTP, "<host> %s (%s) connected\n", dumpDest(rwer->getDst()).c_str(), key.c_str());
     if(responsers.has(key)) {
         responsers.at(key)->request(status.req, nullptr);
         return Server::deleteLater(NOERROR);
@@ -141,12 +141,12 @@ void Host::connected() {
             responsers.add(key, proxy);
             return Server::deleteLater(NOERROR);
         }
-        LOGE("(%s) <host> quic only support http3\n", rwer->getPeer());
+        LOGE("(%s) <host> quic only support http3\n", dumpDest(rwer->getDst()).c_str());
         return deleteLater(PROTOCOL_ERR);
     }
 #endif
     rwer->SetReadCB([this](Buffer&& bb) -> size_t {
-        LOGD(DHTTP, "<host> (%s) read: len:%zu\n", rwer->getPeer(), bb.len);
+        LOGD(DHTTP, "<host> (%s) read: len:%zu\n", dumpDest(rwer->getDst()).c_str(), bb.len);
         if(bb.len == 0){
             //EOF
             if(Http_Proc == &Host::AlwaysProc){
@@ -165,7 +165,7 @@ void Host::connected() {
         return len - bb.len;
     });
     rwer->SetWriteCB([this](uint64_t){
-        LOGD(DHTTP, "<host> (%s) written, flags:0x%08x\n", rwer->getPeer(), status.flags);
+        LOGD(DHTTP, "<host> (%s) written, flags:0x%08x\n", dumpDest(rwer->getDst()).c_str(), status.flags);
         if(status.flags & HTTP_REQ_COMPLETED){
             return;
         }
@@ -287,7 +287,7 @@ void Host::Error(int ret, int code) {
             ret, code, status.flags, http_flag);
     }else{
         LOGE("(%s) <host> error %d/%d http_flag:0x%x\n",
-             rwer->getPeer(), ret, code, http_flag);
+             dumpDest(rwer->getDst()).c_str(), ret, code, http_flag);
     }
     deleteLater(ret);
 }
@@ -324,12 +324,12 @@ void Host::deleteLater(uint32_t errcode){
     Server::deleteLater(errcode);
 }
 
-void Host::distribute(std::shared_ptr<HttpReq> req, const Destination* dest, Requester* src) {
-    std::string key = dumpDest(dest);
+void Host::distribute(std::shared_ptr<HttpReq> req, const Destination& dest, Requester* src) {
+    std::string key = dumpDest(dest) + '@' + dest.protocol;
     if(responsers.has(key)) {
         return responsers.at(key)->request(req, src);
     }
-    return (new Host(dest))->request(req, src);
+    return (new Host(&dest))->request(req, src);
 }
 
 void Host::dump_stat(Dumper dp, void* param) {

@@ -1643,7 +1643,7 @@ void QuicBase::keepAlive_action() {
 }
 
 void QuicBase::dump(Dumper dp, const std::string& session, void* param) {
-    dp(param, "Quic (%s): %s -> %s\nread: %zd/%zd, write: %zd/%zd "
+    dp(param, "Quic %s: %s -> %s\nread: %zd/%zd, write: %zd/%zd "
               "my_window: %zd, his_window: %zd rlen: %zd, fullq: %zd, wlen: %zd, congestion_window: %d\n",
        session.c_str(),
        dumpHex(myids[myid_idx].c_str(), myids[myid_idx].length()).c_str(),
@@ -1867,7 +1867,13 @@ QuicRWer::~QuicRWer() {
 
 void QuicRWer::dump_status(Dumper dp, void *param) {
     char session[128];
-    snprintf(session, sizeof(session), "%s [%d]", getPeer(), getFd());
+    if(hostname[0]) {
+        snprintf(session, sizeof(session), "<%d> (%s %s)",
+                getFd(), hostname, dumpDest(getDst()).c_str());
+    }else {
+        snprintf(session, sizeof(session), "<%d> (%s -> %s)",
+                getFd(), dumpDest(getSrc()).c_str(), dumpDest(getDst()).c_str());
+    }
     return dump(dp, session, param);
 }
 
@@ -1875,10 +1881,10 @@ size_t QuicRWer::mem_usage() {
     return QuicBase::mem_usage() + sizeof(*this);
 }
 
-QuicMer::QuicMer(SSL_CTX *ctx, const char *pname,
+QuicMer::QuicMer(SSL_CTX *ctx, const Destination& src,
                  std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb,
                  std::function<ssize_t()> cap_cb):
-        QuicBase(ctx), MemRWer(pname, std::move(read_cb), std::move(cap_cb))
+        QuicBase(ctx), MemRWer(src, std::move(read_cb), std::move(cap_cb))
 {
 }
 
@@ -1974,7 +1980,7 @@ void QuicMer::Close(std::function<void()> func) {
 
 void QuicMer::dump_status(Dumper dp, void *param) {
     char session[128];
-    snprintf(session, sizeof(session), "%s [%d]", getPeer(), getFd());
+    snprintf(session, sizeof(session), "<%d> (%s)", getFd(), dumpDest(getSrc()).c_str());
     return dump(dp, session, param);
 }
 

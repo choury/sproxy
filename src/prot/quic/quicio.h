@@ -322,7 +322,7 @@ protected:
     virtual bool IsConnected() override;
     virtual void ConsumeRData(uint64_t) override;
 public:
-    explicit QuicMer(SSL_CTX *ctx, const char* pname,
+    explicit QuicMer(SSL_CTX *ctx, const Destination& src,
                      std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb,
                      std::function<ssize_t()> cap_cb);
 

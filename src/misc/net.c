@@ -154,16 +154,11 @@ size_t GetBuffSize(int fd){
     return outq;
 }
 
-int ListenTcp(const char* ipstr, short port) {
-    struct sockaddr_storage addr;
-    if(storage_aton(ipstr, port, &addr) == 0) {
-        errno = EINVAL;
-        return -1;
-    }
+int ListenTcp(const struct sockaddr_storage* addr) {
 #ifdef  SOCK_CLOEXEC
-    int fd = socket(addr.ss_family, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    int fd = socket(addr->ss_family, SOCK_STREAM | SOCK_CLOEXEC, 0);
 #else
-    int fd = socket(addr.ss_family, SOCK_STREAM, 0);
+    int fd = socket(addr->ss_family, SOCK_STREAM, 0);
 #endif
     if (fd < 0) {
         LOGE("socket error:%s\n", strerror(errno));
@@ -180,8 +175,8 @@ int ListenTcp(const char* ipstr, short port) {
             break;
         }
 
-        socklen_t len = (addr.ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
-        if (bind(fd, (struct sockaddr*)&addr, len) < 0) {
+        socklen_t len = (addr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
+        if (bind(fd, (struct sockaddr*)addr, len) < 0) {
             LOGE("bind error:%s\n", strerror(errno));
             break;
         }

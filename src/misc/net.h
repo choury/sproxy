@@ -19,7 +19,7 @@ void SetRecvPKInfo(int fd, const struct sockaddr_storage* addr);
 size_t GetCapSize(int fd);
 size_t GetBuffSize(int fd);
 
-int ListenTcp(const char* ipstr, short int port);
+int ListenTcp(const struct sockaddr_storage* addr);
 int ListenUdp(const struct sockaddr_storage* addr);
 int ListenUnix(const char* path);
 

@@ -10,7 +10,7 @@
 void Guest3::init() {
     rwer->SetErrorCB([this](int ret, int code){Error(ret, code);});
     rwer->SetReadCB([this](Buffer&& bb) -> size_t {
-        LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", this->rwer->getPeer(), bb.id, bb.len);
+        LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.id, bb.len);
         if(bb.len == 0){
             //fin
             if(ctrlid_remote && bb.id == ctrlid_remote){
@@ -58,7 +58,7 @@ void Guest3::connected() {
     unsigned int len;
     qrwer->getAlpn(&data, &len);
     if ((data && strncasecmp((const char*)data, "h3", len) != 0)) {
-        LOGE("(%s) unknown protocol: %.*s\n", rwer->getPeer(), len, data);
+        LOGE("(%s) unknown protocol: %.*s\n", dumpDest(rwer->getSrc()).c_str(), len, data);
         return Server::deleteLater(PROTOCOL_ERR);
     }
     qrwer->setResetHandler([this](uint64_t id, uint32_t error){RstProc(id, error);});
@@ -90,7 +90,7 @@ void Guest3::AddInitData(const void *buff, size_t len) {
 }
 
 void Guest3::Error(int ret, int code){
-    LOGE("(%s): <guest3> error: %d/%d\n", rwer->getPeer(), ret, code);
+    LOGE("(%s): <guest3> error: %d/%d\n", dumpDest(rwer->getSrc()).c_str(), ret, code);
     deleteLater(ret);
 }
 
@@ -132,7 +132,7 @@ void Guest3::Handle(uint64_t id, Signal s) {
 
 void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     LOGD(DHTTP3, "<guest3> %" PRIu64 " (%s) ReqProc %s\n",
-         header->request_id, rwer->getPeer(), header->geturl().c_str());
+         header->request_id, dumpDest(rwer->getSrc()).c_str(), header->geturl().c_str());
     if(statusmap.count(id)){
         LOGD(DHTTP3, "<guest3> ReqProc dup id: %" PRIu64"\n", id);
         Reset(id, HTTP3_ERR_STREAM_CREATION_ERROR);
@@ -191,7 +191,7 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
             ReqStatus &status = statusmap[id];
             auto header = std::dynamic_pointer_cast<HttpResHeader>(std::get<std::shared_ptr<HttpHeader>>(msg.data));
             LOGD(DHTTP3, "<guest3> get response [%" PRIu64"]: %s\n", id, header->status);
-            HttpLog(rwer->getPeer(), status.req->header, header);
+            HttpLog(dumpDest(rwer->getSrc()), status.req->header, header);
             header->del("Transfer-Encoding");
             header->del("Connection");
             if(mitmProxy) {
@@ -273,7 +273,7 @@ void Guest3::Reset(uint64_t id, uint32_t code) {
 }
 
 void Guest3::ErrProc(int errcode) {
-    LOGE("(%s): Guest3 http3 error:0x%08x\n", rwer->getPeer(), errcode);
+    LOGE("(%s): Guest3 http3 error:0x%08x\n", dumpDest(rwer->getSrc()).c_str(), errcode);
     http3_flag |= HTTP3_FLAG_ERROR;
     deleteLater(errcode);
 }

@@ -7,7 +7,7 @@
 #include <inttypes.h>
 
 void Proxy2::connection_lost(){
-    LOGE("(%s) <proxy2> the ping timeout, so close it\n", rwer->getPeer());
+    LOGE("(%s) <proxy2> the ping timeout, so close it\n", dumpDest(rwer->getDst()).c_str());
     deleteLater(PEER_LOST_ERR);
 }
 
@@ -35,7 +35,7 @@ Proxy2::Proxy2(std::shared_ptr<RWer> rwer) {
     this->rwer = rwer;
     rwer->SetErrorCB([this](int ret, int code){Error(ret, code);});
     rwer->SetReadCB([this](Buffer&& bb) -> size_t {
-        LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu, refs: %zd\n", this->rwer->getPeer(), bb.len, bb.refs());
+        LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu, refs: %zd\n", dumpDest(this->rwer->getDst()).c_str(), bb.len, bb.refs());
         if(bb.len == 0){
             //EOF
             deleteLater(NOERROR);
@@ -80,7 +80,7 @@ Proxy2::~Proxy2() {
 }
 
 void Proxy2::Error(int ret, int code) {
-    LOGE("(%s) <proxy2> error: %d/%d\n", rwer->getPeer(), ret, code);
+    LOGE("(%s) <proxy2> error: %d/%d\n", dumpDest(rwer->getDst()).c_str(), ret, code);
     deleteLater(ret);
 }
 
@@ -212,7 +212,7 @@ void Proxy2::EndProc(uint32_t id) {
 }
 
 void Proxy2::ErrProc(int errcode) {
-    LOGE("(%s) <proxy2> Http2 error: 0x%08x\n", rwer->getPeer(), errcode);
+    LOGE("(%s) <proxy2> Http2 error: 0x%08x\n", dumpDest(rwer->getDst()).c_str(), errcode);
     http2_flag |= HTTP2_FLAG_ERROR;
     deleteLater(errcode);
 }
@@ -291,7 +291,7 @@ void Proxy2::PingProc(const Http2_header *header){
         double diff = (getutime()-get64(header+1))/1000.0;
         LOG("<proxy2> Get a ping time=%.3fms\n", diff);
         if(diff >= 1000){
-            LOGE("(%s) <proxy2> The ping time too long!\n", rwer->getPeer());
+            LOGE("(%s) <proxy2> The ping time too long!\n", dumpDest(rwer->getDst()).c_str());
         }
     }
     Http2Base::PingProc(header);

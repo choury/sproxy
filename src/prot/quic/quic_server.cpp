@@ -39,13 +39,13 @@ static ssize_t recvwithaddr(int fd, void* buff, size_t buflen,
             sockaddr_in6* myaddr6 = (sockaddr_in6*)myaddr;
             myaddr6->sin6_family = AF_INET6;
             myaddr6->sin6_addr = info6->ipi6_addr;
-            myaddr6->sin6_port = htons(opt.CPORT);
+            myaddr6->sin6_port = htons(opt.quic.port);
         } else if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO) {
             struct in_pktinfo *info = (struct in_pktinfo *) CMSG_DATA(cmsg);
             sockaddr_in* myaddr4 = (sockaddr_in*)myaddr;
             myaddr4->sin_family = AF_INET;
             myaddr4->sin_addr = info->ipi_addr;
-            myaddr4->sin_port = htons(opt.CPORT);
+            myaddr4->sin_port = htons(opt.quic.port);
         } else {
             LOGE("unknown level: %d or type: %d\n", cmsg->cmsg_level, cmsg->cmsg_type);
             return -1;
@@ -90,13 +90,14 @@ void Quic_server::PushData(const sockaddr_storage* myaddr, const sockaddr_storag
     }
     auto r = rwers.find(header.dcid);
     if(r != rwers.end()){
-        LOGD(DQUIC, "duplicated packet: %s vs %s, may be migration?\n", storage_ntoa(hisaddr), r->second->getPeer());
+        LOGD(DQUIC, "duplicated packet: %s vs %s, may be migration?\n",
+            storage_ntoa(hisaddr), dumpDest(r->second->getSrc()).c_str());
         iovec iov{(void*)buff, len};
         r->second->walkPackets(&iov, 1);
     }else if(header.type == QUIC_PACKET_INITIAL){
         int clsk = ListenUdp(myaddr);
         if (clsk < 0) {
-            LOGE("ListenNet %s:%d, failed: %s\n", opt.CHOST, (int)opt.CPORT, strerror(errno));
+            LOGE("ListenNet %s:%d, failed: %s\n", opt.quic.hostname, (int)opt.quic.port, strerror(errno));
             return;
         }
         socklen_t socklen = (hisaddr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);

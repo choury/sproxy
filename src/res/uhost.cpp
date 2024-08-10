@@ -9,12 +9,12 @@
 Uhost::Uhost(const char* host, uint16_t port): port(port) {
     strncpy(hostname, host, DOMAINLIMIT);
     auto prwer = std::make_shared<PacketRWer>(host, port, Protocol::UDP, [this](int ret, int code){
-        LOGE("(%s) UDP error: %d/%d\n", rwer->getPeer(), ret, code);
+        LOGE("(%s) UDP error: %d/%d\n", dumpDest(rwer->getDst()).c_str(), ret, code);
         deleteLater(ret);
     });
     rwer = prwer;
     prwer->SetConnectCB([this](const sockaddr_storage&){
-        LOGD(DHTTP, "<uhost> %s connected\n", rwer->getPeer());
+        LOGD(DHTTP, "<uhost> %s connected\n", dumpDest(rwer->getDst()).c_str());
         req->attach([this](ChannelMessage&& message){
             switch(message.type){
             case ChannelMessage::CHANNEL_MSG_HEADER:
@@ -42,7 +42,7 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
         }, [this]{return rwer->cap(0);});
     });
     rwer->SetReadCB([this](Buffer&& bb) -> size_t{
-        LOGD(DHTTP, "<uhost> (%s) read: len:%zu, refs: %zd\n", rwer->getPeer(), bb.len, bb.refs());
+        LOGD(DHTTP, "<uhost> (%s) read: len:%zu, refs: %zd\n", dumpDest(rwer->getDst()).c_str(), bb.len, bb.refs());
         if(res == nullptr){
             res = std::make_shared<HttpRes>(HttpResHeader::create(S200, sizeof(S200), req->header->request_id));
             req->response(this->res);
@@ -62,7 +62,7 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
         return len;
     });
     rwer->SetWriteCB([this](uint64_t){
-        LOGD(DHTTP, "<uhost> (%s) written\n", rwer->getPeer());
+        LOGD(DHTTP, "<uhost> (%s) written\n", dumpDest(rwer->getDst()).c_str());
         req->pull();
     });
 }
@@ -75,7 +75,7 @@ Uhost::Uhost(std::shared_ptr<HttpReqHeader> req):
 Uhost::~Uhost() {
     if(rwer){
         LOGD(DHTTP, "<uhost> (%s) destoryed: rx:%zu, tx:%zu, drop: %zu\n",
-             rwer->getPeer(), rx_bytes, tx_bytes, rx_dropped);
+             dumpDest(rwer->getDst()).c_str(), rx_bytes, tx_bytes, rx_dropped);
     }else{
         LOGD(DHTTP, "<uhost> null destoryed: rx:%zu, tx:%zu, drop: %zu\n",
              rx_bytes, tx_bytes, rx_dropped);

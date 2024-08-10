@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <dirent.h>
 #include <libgen.h>
+#include <sys/un.h>
 
 #define PRIOR_HEAD 80
     
@@ -429,10 +430,41 @@ const char* dumpDest(const struct Destination* Server){
     if(strcasecmp(Server->scheme, "https") == 0 && port == HTTPSPORT){
         port = 0;
     }
-    int pos = snprintf(buff, sizeof(buff), "%s://%s", Server->protocol, Server->hostname);
+    int pos = 0;
+    if(Server->scheme[0]) {
+        pos = snprintf(buff, sizeof(buff), "%s://%s", Server->scheme, Server->hostname);
+    }else if(Server->protocol[0]) {
+        pos = snprintf(buff, sizeof(buff), "%s://%s", Server->protocol, Server->hostname);
+    }else {
+        pos = snprintf(buff, sizeof(buff), "%s", Server->hostname);
+    }
     if(port)
         snprintf(buff + pos, sizeof(buff) - pos, ":%d", port);
     return buff;
+}
+
+void storage2Dest(const struct sockaddr_storage* addr, socklen_t len, struct Destination* dest) {
+    if(addr->ss_family == AF_INET){
+        const struct sockaddr_in* in = (struct sockaddr_in*)addr;
+        dest->port = ntohs(in->sin_port);
+        inet_ntop(AF_INET, &in->sin_addr, dest->hostname, sizeof(dest->hostname));
+    }else if(addr->ss_family == AF_INET6){
+        const struct sockaddr_in6* in6 = (struct sockaddr_in6*)addr;
+        dest->port = ntohs(in6->sin6_port);
+        dest->hostname[0] = '[';
+        inet_ntop(AF_INET6, &in6->sin6_addr, dest->hostname + 1, sizeof(dest->hostname) -1);
+        strcpy(dest->hostname + strlen(dest->hostname), "]");
+    }else if(addr->ss_family == AF_UNIX) {
+        const struct sockaddr_un* un = (struct sockaddr_un*)addr;
+        len -= (size_t)(((struct sockaddr_un *) 0)->sun_path);
+        if(un->sun_path[0] == 0 || len == 0) {
+            dest->hostname[0] = '@';
+        } else {
+            dest->hostname[0] = un->sun_path[0];
+        }
+        snprintf(dest->hostname+1, len, "%s", un->sun_path+1);
+        dest->port = 0;
+    }
 }
 
 const char* dumpAuthority(const struct Destination* Server){

@@ -15,27 +15,21 @@
 #include <sys/un.h>
 #endif
 
-SocketRWer::SocketRWer(int fd, const sockaddr_storage* peer, std::function<void(int, int)> errorCB):RWer(fd, std::move(errorCB)){
+SocketRWer::SocketRWer(int fd, const sockaddr_storage* src, std::function<void(int, int)> errorCB):RWer(fd, std::move(errorCB)){
     setEvents(RW_EVENT::READ);
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&SocketRWer::defaultHE;
-    sockaddr_storage addr;
-    if(peer && peer->ss_family == AF_UNIX){
-        memset(&addr, 0, sizeof(addr));
-        socklen_t len = sizeof(addr);
-        if(getsockname(fd, (sockaddr *)&addr, &len)){
-            LOGE("getsockname error: %s\n", strerror(errno));
-            return;
-        }
-    }else{
-        memset(&addr, 0, sizeof(addr));
+    if(src) {
+        addrs.emplace(*src);
+    }else {
+        sockaddr_storage addr{};
         socklen_t len = sizeof(addr);
         if(getpeername(fd, (sockaddr *)&addr, &len)){
-            LOGE("getpeername error: %s\n", strerror(errno));
+            LOGE("getpeername error <%d>: %s\n", getFd(), strerror(errno));
             return;
         }
+        addrs.push(addr);
     }
-    addrs.push(addr);
 }
 
 SocketRWer::SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
@@ -189,63 +183,114 @@ void SocketRWer::waitconnectHE(RW_EVENT events) {
     }
 }
 
-const char *SocketRWer::getPeer() {
-    static char peer[1024];
-    memset(peer, 0, sizeof(peer));
-    if(hostname[0]){
+Destination SocketRWer::getSrc() const {
+    Destination src{};
+    if(getFd() < 0) {
+        snprintf(src.hostname, sizeof(src.hostname), "<null>");
+        return src;
+    }
+    if(hostname[0]) {
+        // connect (me -> peer)
         sockaddr_storage myaddr;
         socklen_t addr_len = sizeof(myaddr);
-        if(getFd() < 0) {
-            snprintf(peer, sizeof(peer), "null -> ");
-        }else if(getsockname(getFd(), (sockaddr*)&myaddr, &addr_len)){
-            LOGE("failed to getsockname: %s\n", strerror(errno));
+        if(getsockname(getFd(), (sockaddr*)&myaddr, &addr_len)){
+            LOGE("failed to getsockname <%d>: %s\n", getFd(), strerror(errno));
+            snprintf(src.hostname, sizeof(src.hostname), "<null>");
         } else {
-            snprintf(peer, sizeof(peer), "%s -> ", storage_ntoa(&myaddr));
+            storage2Dest(&myaddr, addr_len, &src);
         }
-        snprintf(peer + strlen(peer), sizeof(peer), "<%s://%s:%d>", protstr(protocol), hostname, port);
-    }
-    if(addrs.empty()){
-        snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), " null");
-        return peer;
-    }
-    auto addr = addrs.front();
-    snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), " %s", storage_ntoa(&addr));
-    if(addr.ss_family == AF_UNIX){
+    } else {
+        // bind (peer -> me)
+        sockaddr_storage peer{};
+        if(addrs.empty()) {
+            socklen_t addr_len = sizeof(peer);
+            if(getpeername(getFd(), (sockaddr*)&peer, &addr_len)){
+                LOGE("failed to getpeername <%d>: %s\n", getFd(), strerror(errno));
+                snprintf(src.hostname, sizeof(src.hostname), "<null>");
+            } else {
+                storage2Dest(&peer, addr_len, &src);
+            }
+        } else {
+            peer = addrs.front();
+            storage2Dest(&peer, sizeof(sockaddr_storage), &src);
+        }
+        if(peer.ss_family == AF_UNIX){
 #if defined(SO_PEERCRED)
-        struct ucred cred;
-        socklen_t len = sizeof(struct ucred);
-        if(getsockopt(getFd(), SOL_SOCKET, SO_PEERCRED, &cred, &len)){
-            LOGE("Failed to get cred: %s\n", strerror(errno));
-        }else{
-            sprintf(peer + strlen(peer), ",uid=%d,pid=%d", cred.uid, cred.pid);
-        }
+            struct ucred cred;
+            socklen_t len = sizeof(struct ucred);
+            if(getsockopt(getFd(), SOL_SOCKET, SO_PEERCRED, &cred, &len)){
+                LOGE("Failed to get cred: %s\n", strerror(errno));
+            }else{
+                sprintf(src.hostname + strlen(src.hostname), ",uid=%d,pid=%d", cred.uid, cred.pid);
+            }
 #else
 #ifdef LOCAL_PEERCRED
-        struct xucred cred;
-        socklen_t credLen = sizeof(cred);
-        if(getsockopt(getFd(), SOL_LOCAL, LOCAL_PEERCRED, &cred, &credLen)){
-            LOGE("Failed to get cred: %s\n", strerror(errno));
-        }else{
-            snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), ",uid=%d", cred.cr_uid);
-        }
+            struct xucred cred;
+            socklen_t credLen = sizeof(cred);
+            if(getsockopt(getFd(), SOL_LOCAL, LOCAL_PEERCRED, &cred, &credLen)){
+                LOGE("Failed to get cred <%d>: %s\n", getFd(), strerror(errno));
+            }else{
+                sprintf(src.hostname + strlen(src.hostname), ",uid=%d", cred.cr_uid);
+            }
 #endif
 #ifdef LOCAL_PEERPID
-        pid_t pid;
-        socklen_t pid_size = sizeof(pid);
-        if(getsockopt(getFd(), SOL_LOCAL, LOCAL_PEERPID, &pid, &pid_size)){
-            LOGE("failed to call LOCAL_PEERPID: %s\n", strerror(errno));
-        } else {
-            snprintf(peer + strlen(peer), sizeof(peer) - strlen(peer), ",pid=%d", pid);
+            pid_t pid;
+            socklen_t pid_size = sizeof(pid);
+            if(getsockopt(getFd(), SOL_LOCAL, LOCAL_PEERPID, &pid, &pid_size)){
+                LOGE("failed to call LOCAL_PEERPID <%d>: %s\n", getFd(), strerror(errno));
+            } else {
+                sprintf(src.hostname + strlen(src.hostname), ",pid=%d", pid);
+            }
+#endif
+#endif
         }
-#endif
-#endif
     }
-    return peer;
+    return src;
 }
 
+Destination SocketRWer::getDst() const {
+    Destination dst{};
+    if(protocol != Protocol::NONE) {
+        strcpy(dst.protocol, protstr(protocol));
+    }
+    if(hostname[0]) {
+        // connect (me -> peer)
+        if(addrs.empty()) {
+            strcpy(dst.protocol, protstr(protocol));
+            strcpy(dst.hostname, hostname);
+            dst.port = port;
+        } else {
+            storage2Dest(&addrs.front(), sizeof(sockaddr_storage), &dst);
+        }
+    } else {
+        // bind (peer -> me)
+        if(getFd() < 0) {
+            snprintf(dst.hostname, sizeof(dst.hostname), "<null>");
+            return dst;
+        }
+        sockaddr_storage myaddr;
+        socklen_t addr_len = sizeof(myaddr);
+        if(getsockname(getFd(), (sockaddr*)&myaddr, &addr_len)){
+            LOGE("failed to getsockname <%d>: %s\n", getFd(), strerror(errno));
+            snprintf(dst.hostname, sizeof(dst.hostname), "<null>");
+        } else {
+            storage2Dest(&myaddr, addr_len, &dst);
+        }
+    }
+    return dst;
+}
+
+
 void SocketRWer::dump_status(Dumper dp, void *param) {
-    dp(param, "SocketRWer <%d> (%s): rlen: %zu, wlen: %zu, stats: %d, event: %s\n",
-       getFd(), getPeer(), rlength(0), wlen, (int)getStats(), events_string[(int)getEvents()]);
+    if(hostname[0]) {
+        dp(param, "SocketRWer <%d> (%s %s): rlen: %zu, wlen: %zu, stats: %d, event: %s\n",
+           getFd(), hostname, dumpDest(getDst()).c_str(),
+           rlength(0), wlen, (int)getStats(), events_string[(int)getEvents()]);
+    } else {
+        dp(param, "SocketRWer <%d> (%s -> %s): rlen: %zu, wlen: %zu, stats: %d, event: %s\n",
+           getFd(), dumpDest(getSrc()).c_str(), dumpDest(getDst()).c_str(),
+           rlength(0), wlen, (int)getStats(), events_string[(int)getEvents()]);
+    }
 }
 
 /*

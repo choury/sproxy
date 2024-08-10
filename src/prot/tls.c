@@ -537,13 +537,10 @@ SSL_CTX* initssl(int quic, const char* host){
 
     if (opt.cert.crt && (!host || X509_check_host(opt.cert.crt, host, 0, X509_CHECK_FLAG_ALWAYS_CHECK_SUBJECT, NULL) == 1)) {
         //加载证书和私钥
-        if (SSL_CTX_use_certificate(ctx, opt.cert.crt) != 1) {
+        if (SSL_CTX_use_cert_and_key(ctx, opt.cert.crt, opt.cert.key, NULL, 1) != 1) {
             ERR_print_errors_fp(stderr);
         }
 
-        if (SSL_CTX_use_PrivateKey(ctx, opt.cert.key) != 1) {
-            ERR_print_errors_fp(stderr);
-        }
         if (SSL_CTX_check_private_key(ctx) != 1) {
             ERR_print_errors_fp(stderr);
         }

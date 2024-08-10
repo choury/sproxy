@@ -295,7 +295,7 @@ void FDns::dump_stat(Dumper dp, void* param) {
     dp(param, "FDns: %p, size: %zu\n", this, statusmap.size());
     for(const auto& i : statusmap) {
         const FDnsStatus& status = i.second;
-        dp(param, "  [%" PRIu64 "]: %s\n", i.first, status.rwer->getPeer());
+        dp(param, "  [%" PRIu64 "]: %s\n", i.first, dumpDest(status.rwer->getSrc()).c_str());
         for(const auto& p : status.quemap) {
             auto que = p.second;
             dp(param, "    %s, id=%d, type=%d\n", que->domain, que->id, que->type);
