@@ -435,7 +435,9 @@ void QuicBase::getParams(const uint8_t* data, size_t len) {
         case quic_max_udp_payload_size:
             variable_decode(pos, &value);
             LOGD(DQUIC, "get max payload size: %" PRIu64"\n", value);
-            if(value > 1200){
+            if(value > 1450) {
+                his_max_payload_size = 1450;
+            }else if(value > 1200){
                 his_max_payload_size = value;
             }
             break;
@@ -510,10 +512,14 @@ void QuicBase::getParams(const uint8_t* data, size_t len) {
         case quic_active_connection_id_limit:
         case quic_initial_source_connection_id:
         case quic_retry_source_connection_id:
-            LOG("unimplemented params: %" PRIu64"\n", name);
+        case quic_max_datagram_frame_size:
+        case quic_grease_quic_bit:
+            LOG("unimplemented quic param: %" PRIu64"\n", name);
             break;
         default:
-            LOG("unknown params: %" PRIu64"\n", name);
+            if((name - 27) % 31 != 0) {
+                LOG("unknown quic param: %" PRIu64"\n", name);
+            }
             break;
         }
         pos += size;
@@ -1069,6 +1075,8 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
     default:
         if(frame->type >= QUIC_FRAME_STREAM_START_ID && frame->type <= QUIC_FRAME_STREAM_END_ID){
             return handleStreamFrame(frame->type, &frame->stream);
+        } else {
+            LOG("ignore unknow quic frame type: %lx\n", (long)frame->type);
         }
         return FrameResult::ok;
     }

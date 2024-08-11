@@ -160,7 +160,9 @@ Type Value	Frame Type Name         Definition  	Pkts	Spec
 #define quic_active_connection_id_limit               0x0e
 #define quic_initial_source_connection_id             0x0f
 #define quic_retry_source_connection_id               0x10
-#define quic_version_information                      0x11
+#define quic_version_information                      0x11 //rfc9368
+#define quic_max_datagram_frame_size                  0x20 //rfc9221
+#define quic_grease_quic_bit                          0x2ab2 //rfc9287
 
 
 size_t variable_encode(void* data_, uint64_t value);

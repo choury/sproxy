@@ -357,10 +357,10 @@ void Http2Base::SettingsProc(const Http2_header* header) {
                 break;
             case HTTP2_SETTING_MAX_CONCURRENT_STREAMS:
             case HTTP2_SETTING_MAX_HEADER_LIST_SIZE:
-                LOG("Get a unimplemented setting(%d): %d\n", get16(sf->identifier), value);
+                LOG("unimplemented http2 setting(%d): %d\n", get16(sf->identifier), value);
                 break;
             default:
-                LOG("Get a unknown setting(%d): %d\n", get16(sf->identifier), value);
+                LOG("unknown http2 setting(%d): %d\n", get16(sf->identifier), value);
                 break;
             }
             sf++;
