@@ -16,10 +16,10 @@ Server::Server(){
 }
 
 Server::~Server() {
+    servers.erase(this);
     if(rwer) {
         rwer->ClearCB();
     }
-    servers.erase(this);
 }
 
 void Server::deleteLater(uint32_t) {

@@ -120,6 +120,7 @@ do{\
     char tmp[1024]; \
     int __ret = snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
     if(__ret < 0) abort(); \
+    if(__ret >= (int)sizeof(tmp)) memcpy(tmp+sizeof(tmp)-5, "...\n", 5); \
     slog(LOG_ERR, "%s[" STRINGIZE(__LINE__) "]: %s", __PRETTY_FUNCTION__, tmp);\
 }while(0)
 
@@ -147,6 +148,7 @@ do{\
         char tmp[1024]; \
         int __ret =snprintf(tmp, sizeof(tmp), __VA_ARGS__); \
         if(__ret < 0) abort(); \
+        if(__ret >= (int)sizeof(tmp)) memcpy(tmp+sizeof(tmp)-5, "...\n", 5); \
         slog(LOG_DEBUG, "%06u:[%s]: %s", getmtime()%1000000u, debug[mod].name, tmp); \
     }\
 }while(0)

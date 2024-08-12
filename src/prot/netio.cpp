@@ -221,7 +221,8 @@ Destination SocketRWer::getSrc() const {
             if(getsockopt(getFd(), SOL_SOCKET, SO_PEERCRED, &cred, &len)){
                 LOGE("Failed to get cred: %s\n", strerror(errno));
             }else{
-                sprintf(src.hostname + strlen(src.hostname), ",uid=%d,pid=%d", cred.uid, cred.pid);
+                snprintf(src.hostname + strlen(src.hostname), sizeof(src.hostname) - strlen(src.hostname),
+                    ",uid=%d", cred.uid);
             }
 #else
 #ifdef LOCAL_PEERCRED
@@ -230,7 +231,8 @@ Destination SocketRWer::getSrc() const {
             if(getsockopt(getFd(), SOL_LOCAL, LOCAL_PEERCRED, &cred, &credLen)){
                 LOGE("Failed to get cred <%d>: %s\n", getFd(), strerror(errno));
             }else{
-                sprintf(src.hostname + strlen(src.hostname), ",uid=%d", cred.cr_uid);
+                snprintf(src.hostname + strlen(src.hostname), sizeof(src.hostname) - strlen(src.hostname),
+                    ",uid=%d", cred.cr_uid);
             }
 #endif
 #ifdef LOCAL_PEERPID
@@ -239,7 +241,8 @@ Destination SocketRWer::getSrc() const {
             if(getsockopt(getFd(), SOL_LOCAL, LOCAL_PEERPID, &pid, &pid_size)){
                 LOGE("failed to call LOCAL_PEERPID <%d>: %s\n", getFd(), strerror(errno));
             } else {
-                sprintf(src.hostname + strlen(src.hostname), ",pid=%d", pid);
+                snprintf(src.hostname + strlen(src.hostname), sizeof(src.hostname) - strlen(src.hostname),
+                    ",pid=%d", pid);
             }
 #endif
 #endif
