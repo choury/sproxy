@@ -203,12 +203,11 @@ uint16_t HttpReqHeader::getDport() const {
 }
 
 std::string HttpReqHeader::geturl() const {
-    char url[URLLIMIT]={0};
-    int pos = dumpDestToBuffer(&Dest, url, sizeof(url));
+    std::string url = dumpDest(&Dest);
     assert(path[0] == '/');
     if(http_method() && path[1] ){
         //only http method use path
-        snprintf(url + pos, sizeof(url) - pos, "%s", path);
+        url += path;
     }
     return url;
 }

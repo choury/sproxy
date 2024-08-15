@@ -1,7 +1,8 @@
 #include "com_choury_sproxy_Service.h"
-#include "server/vpn.h"
 #include "misc/strategy.h"
-#include "misc/net.h"
+#include "misc/config.h"
+#include "req/guest_vpn.h"
+#include "req/cli.h"
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -72,6 +73,38 @@ static std::string getExternalCacheDir() {
     return extenalCacheDir;
 }
 
+static int vpn_start(int fd){
+    std::shared_ptr<Cli_server> cli;
+    if(opt.admin.hostname[0]){
+        int svsk_cli = -1;
+        if(opt.admin.port){
+            sockaddr_storage addr{};
+            if(storage_aton(opt.admin.hostname, opt.admin.port, &addr) == 0) {
+                LOGE("failed to parse admin addr: %s\n", opt.admin.hostname);
+                return -1;
+            }
+            svsk_cli = ListenTcp(&addr);
+        }else{
+            svsk_cli = ListenUnix(opt.admin.hostname);
+        }
+        if(svsk_cli < 0){
+            return -1;
+        }
+        cli = std::make_shared<Cli_server>(svsk_cli);
+    }
+    new Guest_vpn(fd);
+    LOG("Accepting connections ...\n");
+    will_contiune = 1;
+    while (will_contiune) {
+        uint32_t msec = do_delayjob();
+        if(event_loop(msec) < 0){
+            break;
+        }
+    }
+    LOG("VPN exiting ...\n");
+    neglect();
+    return 0;
+}
 /*
  * Class:     com_choury_sproxy_SproxyVpnService
  * Method:    start
@@ -125,7 +158,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
 
 extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(JNIEnv *, jobject){
     LOG("native SproxyVpnService.stop.\n");
-    return vpn_stop();
+    return exit_loop();
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload_1strategy(JNIEnv *, jobject){

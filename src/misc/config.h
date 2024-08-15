@@ -66,6 +66,7 @@ struct options{
     bool alter_method;
     bool set_dns_route;
     bool rproxy_mode;
+    bool tun_mode;
     bool redirect_http;
 
     FILE* policy_read;
@@ -85,6 +86,7 @@ struct options{
 extern struct options opt;
 extern volatile uint32_t will_contiune;
 
+void exit_loop();
 void neglect();
 
 void network_changed();

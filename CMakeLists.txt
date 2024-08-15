@@ -160,6 +160,7 @@ set(CMAKE_CXX_FLAGS "-std=c++17 -Wall -Wextra -fPIC -fno-omit-frame-pointer ${CM
 
 if(APPLE)
     set(CMAKE_EXE_LINKER_FLAGS "-Wl,-export_dynamic ${CMAKE_EXE_LINKER_FLAGS}")
+    set(CMAKE_SHARED_LINKER_FLAGS "-undefined dynamic_lookup ${CMAKE_SHARED_LINKER_FLAGS}")
 else()
     set(CMAKE_EXE_LINKER_FLAGS "-rdynamic ${CMAKE_EXE_LINKER_FLAGS}")
 endif()

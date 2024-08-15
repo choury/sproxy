@@ -63,7 +63,7 @@ class Cli_server: public Ep {
                 return;
             }
 
-            SetUnixOptions(clsk, &myaddr);
+            SetUnixOptions(clsk, &myaddr, temp);
             new Cli(clsk, &myaddr);
         } else {
             LOGE("unknown error\n");

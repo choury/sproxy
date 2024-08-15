@@ -104,7 +104,11 @@ uint32_t do_delayjob(){
             jobDeleter()(j);
         }
     }
+#if __ANDROID__
+    uint32_t min_interval = 0x7fffffff; //max
+#else
     uint32_t min_interval = 60000; //1min
+#endif
     for(auto j: gjobs){
         uint32_t left = j->delay_ms + j->last_done_ms - now;
         if(left < min_interval){

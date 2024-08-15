@@ -91,6 +91,7 @@ struct options opt = {
     .ipv6_enabled      = true,
     .alter_method      = false,
     .set_dns_route     = false,
+    .tun_mode          = false,
     .rproxy_mode       = false,
     .redirect_http     = false,
 
@@ -163,7 +164,9 @@ static struct option long_options[] = {
     {"mitm",          required_argument, NULL,  0 },
     {"index",         required_argument, NULL,  0 },
     {"insecure",      no_argument,       NULL, 'k'},
+#if __linux__
     {"interface",     required_argument, NULL, 'I'},
+#endif
     {"ipv6",          required_argument, NULL,  0 },
     {"key",           required_argument, NULL,  0 },
     {"pcap",          required_argument, NULL,  0 },
@@ -176,14 +179,18 @@ static struct option long_options[] = {
     {"rewrite-auth",  required_argument, NULL, 'r'},
     {"root-dir",      required_argument, NULL,  0 },
     {"secret",        required_argument, NULL, 's'},
+#if __linux__
     {"set-dns-route", no_argument,       NULL,  0 },
-    {"skip-interface-binding", no_argument, NULL, 0},
+#endif
     {"sni",           no_argument,       NULL,  0 },
     {"ssl",           required_argument, NULL,  0 },
     {"alter-method",  no_argument,       NULL,  0 },
     {"rproxy",        no_argument,       NULL,  0 },
     {"request-header",required_argument, NULL,  0 },
+#if __linux__
+    {"tun",           no_argument,       NULL,  0 },
     {"ua",            required_argument, NULL,  0 },
+#endif
     {"version",       no_argument,       NULL, 'v'},
 #ifndef NDEBUG
     {"debug",         required_argument,   NULL,  0 },
@@ -217,7 +224,9 @@ static struct option_detail option_detail[] = {
     {"http", "Listen for http server", option_string, &http_listen, NULL},
     {"index", "Index file for path (local server)", option_string, &opt.index_file, NULL},
     {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_bool, &opt.ignore_cert_error, (void*)true},
+#if __linux__
     {"interface", "Out interface (use for vpn), will skip bind if set to empty", option_string, &opt.interface, NULL},
+#endif
     {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, auto_options},
     {"key", "Private key file name (ssl/quic)", option_string, &keyfile, NULL},
     {"mitm", "Mitm mode for https request ([auto], enable, disable), require cakey", option_enum, &opt.mitm_mode, auto_options},
@@ -234,10 +243,15 @@ static struct option_detail option_detail[] = {
     {"rproxy", "rproxy mode (via http2)", option_bool, &opt.rproxy_mode, (void*)true},
     {"secret", "Set user and passwd for proxy (user:password), default is none.", option_list, &secrets, NULL},
     {"server", "default proxy server (can ONLY set in config file)", option_string, &server_string, NULL},
-    {"set-dns-route", "set route for dns server (via VPN interface)", option_bool, &opt.set_dns_route, (void*)true},
+#if __linux__
+    {"set-dns-route", "set route for dns server (via vpn interface)", option_bool, &opt.set_dns_route, (void*)true},
+#endif
     {"sni", "Act as a sni proxy", option_bool, &opt.sni_mode, (void*)true},
     {"ssl", "Listen for ssl server (require cert file and key)", option_string, &ssl_listen, NULL},
+#if __linux__
+    {"tun", "tun mode (vpn mode, require root privilege)", option_bool, &opt.tun_mode, (void*)true},
     {"ua", "set user-agent for vpn auto request", option_string, &opt.ua, NULL},
+#endif
     {"version", "show the version of this programme", option_bool, NULL, NULL},
 #ifndef NDEBUG
     {"debug", "set debug output for module", option_list, &debug_list, NULL},

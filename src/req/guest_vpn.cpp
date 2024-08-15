@@ -26,7 +26,7 @@ Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
         },
         [](int ret, int code){
             LOGE("vpn_server error: %d/%d\n", ret, code);
-            vpn_stop();
+            exit_loop();
         }
     );
     rwer->SetReadCB([this](Buffer&& bb) -> size_t {
@@ -372,7 +372,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     char buff[HEADLENLIMIT];
     uint16_t dport = pac->getdport();
     auto src = pac->getsrc();
-    Destination addr;
+    Destination addr{};
     storage2Dest(&src, sizeof(src), &addr);
     bool shouldMitm = (opt.mitm_mode == Enable) ||
                       (opt.mitm_mode == Auto && opt.ca.key && mayBeBlocked(status.host.c_str()));

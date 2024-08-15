@@ -108,8 +108,10 @@ void SetIcmpOptions(int fd, const struct sockaddr_storage* addr) {
     SetSocketUnblock(fd);
 }
 
-void SetUnixOptions(int fd, const struct sockaddr_storage* addr) {
-    (void)addr;
+void SetUnixOptions(int fd, const struct sockaddr_storage* addr, socklen_t len) {
+    struct sockaddr_un* un = (struct sockaddr_un*)addr;
+    size_t sun_len = len - (long)&((struct sockaddr_un*)0)->sun_path;
+    memset(un->sun_path + sun_len, 0, sizeof(un->sun_path) - sun_len);
     SetSocketUnblock(fd);
 }
 
@@ -304,9 +306,6 @@ int Connect(const struct sockaddr_storage* addr, int type) {
             }else{
                 SetUdpOptions(fd, addr);
             }
-            break;
-        case AF_UNIX:
-            SetUnixOptions(fd, addr);
             break;
         default:
             LOGF("unkown family: %d\n", addr->ss_family);

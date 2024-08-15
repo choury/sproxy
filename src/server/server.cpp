@@ -12,17 +12,35 @@
 #include <assert.h>
 #include <openssl/err.h>
 
+#if __linux__
+#include <linux/if_tun.h>
+#include <net/if.h>
+#include "req/guest_vpn.h"
+int protectFd(int fd) {
+    if(opt.interface == NULL || strlen(opt.interface) == 0){
+        return 1;
+    }
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(ifr));
+    snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", opt.interface);
+    if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
+        return 0;
+    }
+    return 1;
+}
+
+#else
 //do nothing, useful for vpn only
 int protectFd(int){
     return 1;
 }
+#endif
 
 int main(int argc, char **argv) {
     parseConfig(argc, argv);
     std::vector<std::shared_ptr<Ep>> servers;
-    std::shared_ptr<Rguest2> r2;
     if(opt.rproxy_mode) {
-        r2 = std::make_shared<Rguest2>(&opt.Server);
+        new Rguest2(&opt.Server);
     }else {
         if(opt.http.hostname[0]){
             sockaddr_storage addr;
@@ -76,6 +94,17 @@ int main(int argc, char **argv) {
                 servers.emplace_back(std::make_shared<Quic_server>(svsk_quic, ctx));
                 LOG("listen on %s:%d for quic\n", opt.quic.hostname, (int)opt.quic.port);
             }
+        }
+#endif
+#if __linux__
+        if(opt.tun_mode) {
+            char tun_name[IFNAMSIZ] = {0};
+            int tun = tun_create(tun_name, IFF_TUN | IFF_NO_PI);
+            if (tun < 0) {
+                return -1;
+            }
+            new Guest_vpn(tun);
+            LOG("listen on %s for vpn\n", tun_name);
         }
 #endif
     }

@@ -222,7 +222,7 @@ Destination SocketRWer::getSrc() const {
                 LOGE("Failed to get cred: %s\n", strerror(errno));
             }else{
                 snprintf(src.hostname + strlen(src.hostname), sizeof(src.hostname) - strlen(src.hostname),
-                    ",uid=%d", cred.uid);
+                    ",uid=%d,pid=%d", cred.uid, cred.pid);
             }
 #else
 #ifdef LOCAL_PEERCRED

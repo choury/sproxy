@@ -403,6 +403,7 @@ int spliturl(const char* url, struct Destination* server, char* path) {
     return 0;
 }
 
+/*
 int dumpDestToBuffer(const struct Destination* Server, char* buff, size_t buflen){
     uint16_t port = Server->port;
     if(strcasecmp(Server->scheme, "http") == 0 && port == HTTPPORT){
@@ -420,6 +421,7 @@ int dumpDestToBuffer(const struct Destination* Server, char* buff, size_t buflen
         pos += snprintf(buff + pos, buflen - pos, ":%d", port);
     return pos;
 }
+*/
 
 const char* dumpDest(const struct Destination* Server){
     static char buff[URLLIMIT];
@@ -457,12 +459,16 @@ void storage2Dest(const struct sockaddr_storage* addr, socklen_t len, struct Des
     }else if(addr->ss_family == AF_UNIX) {
         const struct sockaddr_un* un = (struct sockaddr_un*)addr;
         len -= (size_t)(((struct sockaddr_un *) 0)->sun_path);
-        if(un->sun_path[0] == 0 || len == 0) {
+        if(len == 0 || un->sun_path[0] == 0 ) {
             dest->hostname[0] = '@';
         } else {
             dest->hostname[0] = un->sun_path[0];
         }
-        snprintf(dest->hostname+1, len, "%s", un->sun_path+1);
+        if(len <= 1 || un->sun_path[1] == 0) {
+            dest->hostname[1] = 0;
+        } else {
+            snprintf(dest->hostname+1, len, "%s", un->sun_path+1);
+        }
         dest->port = 0;
     }
 }

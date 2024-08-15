@@ -2,11 +2,6 @@
 #Author:   choury
 #Created:  2017/4/2
 
-
-if(APPLE)
-    set(CMAKE_SHARED_LINKER_FLAGS "-undefined dynamic_lookup")
-endif()
-
 add_library(demo SHARED demo.cpp)
 set_target_properties(demo PROPERTIES OUTPUT_NAME "demo")
 

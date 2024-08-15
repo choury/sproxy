@@ -14,7 +14,7 @@ void SetSocketUnblock(int fd);
 void SetTcpOptions(int fd, const struct sockaddr_storage* addr);
 void SetUdpOptions(int fd, const struct sockaddr_storage* addr);
 void SetIcmpOptions(int fd, const struct sockaddr_storage* addr);
-void SetUnixOptions(int fd, const struct sockaddr_storage* addr);
+void SetUnixOptions(int fd, const struct sockaddr_storage* addr, socklen_t len);
 void SetRecvPKInfo(int fd, const struct sockaddr_storage* addr);
 size_t GetCapSize(int fd);
 size_t GetBuffSize(int fd);
@@ -31,6 +31,7 @@ int storage_aton(const char* ipstr, uint16_t port, struct sockaddr_storage* addr
 struct sockaddr_storage* getlocalip ();
 bool hasIpv6Address();
 bool isLocalIp(const struct sockaddr_storage* addr);
+int tun_create(char *dev, int flags);
 
 
 #ifdef  __cplusplus
