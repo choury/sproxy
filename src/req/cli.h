@@ -63,7 +63,8 @@ class Cli_server: public Ep {
                 return;
             }
 
-            SetUnixOptions(clsk, &myaddr, temp);
+            PadUnixPath(&myaddr, temp);
+            SetUnixOptions(clsk, &myaddr);
             new Cli(clsk, &myaddr);
         } else {
             LOGE("unknown error\n");

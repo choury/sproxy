@@ -145,6 +145,9 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
             }
             memcpy(&dest, &header->Dest, sizeof(dest));
             strcpy(dest.protocol, "tcp"); // rewrite and forward only support tcp
+            if(dest.port == 0) {
+                dest.port = header->getDport();
+            }
             if(spliturl(stra.ext.c_str(), &dest, nullptr)){
                 res = std::make_shared<HttpRes>(HttpResHeader::create(S500, sizeof(S500), id),
                                                 "[[ext misformat]]\n");

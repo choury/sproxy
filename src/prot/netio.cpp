@@ -28,6 +28,7 @@ SocketRWer::SocketRWer(int fd, const sockaddr_storage* src, std::function<void(i
             LOGE("getpeername error <%d>: %s\n", getFd(), strerror(errno));
             return;
         }
+        PadUnixPath(&addr, len);
         addrs.push(addr);
     }
 }
@@ -197,7 +198,8 @@ Destination SocketRWer::getSrc() const {
             LOGE("failed to getsockname <%d>: %s\n", getFd(), strerror(errno));
             snprintf(src.hostname, sizeof(src.hostname), "<null>");
         } else {
-            storage2Dest(&myaddr, addr_len, &src);
+            PadUnixPath(&myaddr, addr_len);
+            storage2Dest(&myaddr, &src);
         }
     } else {
         // bind (peer -> me)
@@ -208,11 +210,12 @@ Destination SocketRWer::getSrc() const {
                 LOGE("failed to getpeername <%d>: %s\n", getFd(), strerror(errno));
                 snprintf(src.hostname, sizeof(src.hostname), "<null>");
             } else {
-                storage2Dest(&peer, addr_len, &src);
+                PadUnixPath(&peer, addr_len);
+                storage2Dest(&peer, &src);
             }
         } else {
             peer = addrs.front();
-            storage2Dest(&peer, sizeof(sockaddr_storage), &src);
+            storage2Dest(&peer, &src);
         }
         if(peer.ss_family == AF_UNIX){
 #if defined(SO_PEERCRED)
@@ -263,7 +266,7 @@ Destination SocketRWer::getDst() const {
             strcpy(dst.hostname, hostname);
             dst.port = port;
         } else {
-            storage2Dest(&addrs.front(), sizeof(sockaddr_storage), &dst);
+            storage2Dest(&addrs.front(), &dst);
         }
     } else {
         // bind (peer -> me)
@@ -277,7 +280,8 @@ Destination SocketRWer::getDst() const {
             LOGE("failed to getsockname <%d>: %s\n", getFd(), strerror(errno));
             snprintf(dst.hostname, sizeof(dst.hostname), "<null>");
         } else {
-            storage2Dest(&myaddr, addr_len, &dst);
+            PadUnixPath(&myaddr, addr_len);
+            storage2Dest(&myaddr, &dst);
         }
     }
     return dst;

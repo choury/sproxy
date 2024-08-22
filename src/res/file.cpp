@@ -344,26 +344,37 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
             header->set("Transfer-Encoding", "chunked");
             auto res = std::make_shared<HttpRes>(header);
             req->response(res);
-            char buff[1024];
+            char buff[2048];
             res->send({buff,(size_t)snprintf(buff, sizeof(buff),
                             "<html>"
                             "<head><title>Index of %s</title></head>"
-                            "<body><h1>Index of %s</h1><hr/><pre>",
+                            "<body><h1>Index of %s</h1><hr/><pre>"
+                            "<a href='../'>../</a><br/>",
                             req->header->filename.c_str(),
                             req->header->filename.c_str()), id});
             struct dirent *ptr;
+            std::set<std::string> dirs;
+            std::set<std::string> files;
             while((ptr = readdir(dir))){
+                if(strcmp(ptr->d_name, ".") == 0 || strcmp(ptr->d_name, "..") == 0){
+                    continue;
+                }
                 if(ptr->d_type == DT_DIR){
-                    res->send({buff,
-                              (size_t)snprintf(buff, sizeof(buff), "<a href='%s/'>%s/</a><br/>", ptr->d_name, ptr->d_name),
-                              id});
+                    dirs.emplace(ptr->d_name);
                 }else{
-                    res->send({buff,
-                               (size_t)snprintf(buff, sizeof(buff), "<a href='%s'>%s</a><br/>", ptr->d_name, ptr->d_name),
-                               id});
+                    files.emplace(ptr->d_name);
                 }
             }
             closedir(dir);
+            char name[1024];
+            for(const auto& dir: dirs) {
+                URLEncode(name, dir.c_str(), dir.length());
+                res->send({buff, (size_t)snprintf(buff, sizeof(buff), "<a href='%s/'>%s/</a><br/>", name, dir.c_str()), id});
+            }
+            for(const auto& file: files) {
+                URLEncode(name, file.c_str(), file.length());
+                res->send({buff, (size_t)snprintf(buff, sizeof(buff), "<a href='%s'>%s</a><br/>", name, file.c_str()), id});
+            }
             res->send({buff, (size_t)snprintf(buff, sizeof(buff), "</pre><hr></body></html>"), id});
             res->send(Buffer{nullptr, id});
             return;

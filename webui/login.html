@@ -8,7 +8,7 @@
 			  background-repeat:no-repeat;
 			  background-size:cover;
 		  }
-		  #div1{
+		  #login-form{
 			  width:200px;
 			  height:150px;
 			  background-image:url(54301.jpg);
@@ -25,22 +25,23 @@
 		</style>
 	</head>
 	<body>
-	  <div id="div1">
-		<lable>User:</lable>
-		<input type="text" id="user">
-		<lable>Password:</lable>
-		<input type="password" id="password">
-		<p></p>
-		<input type="button" value="login" onClick="login()" id="input1">
-	  </div>
+	  <form id="login-form" onsubmit="return login()">
+		<label for="username">User:</label><br>
+		<input type="text" id="username" name="username" required><br>
+
+		<label for="password">Password:</label><br>
+		<input type="password" id="password" name="password" required><br>
+
+		<input type="submit" value="Login">
+	  </form>
 	  <div id="div2">
-	  <h3>&nbsp honey,l love you forever!</h3>
-	  <img src="52001.jpg" width="300px" height="200px">
+		<h3>&nbsp honey,l love you forever!</h3>
+		<img src="52001.jpg" width="300px" height="200px">
 	  </div>
 </body>
 	<script>
 	function login(){
-		var user = document.getElementById("user").value;
+		var user = document.getElementById("username").value;
 		var password = document.getElementById("password").value;
 		var key = btoa(user+":"+password);
 		fetch("/cgi/liblogin.do", {

@@ -373,7 +373,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     uint16_t dport = pac->getdport();
     auto src = pac->getsrc();
     Destination addr{};
-    storage2Dest(&src, sizeof(src), &addr);
+    storage2Dest(&src, &addr);
     bool shouldMitm = (opt.mitm_mode == Enable) ||
                       (opt.mitm_mode == Auto && opt.ca.key && mayBeBlocked(status.host.c_str()));
     switch(pac->gettype()){

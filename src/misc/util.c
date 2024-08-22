@@ -1,5 +1,6 @@
 #include "util.h"
 #include "config.h"
+#include "net.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -13,8 +14,7 @@
 #include <libgen.h>
 #include <sys/un.h>
 
-#define PRIOR_HEAD 80
-    
+
 #ifndef __APPLE__
 /**
  * strnstr - Find the first substring in a length-limited string
@@ -445,34 +445,6 @@ const char* dumpDest(const struct Destination* Server){
     return buff;
 }
 
-void storage2Dest(const struct sockaddr_storage* addr, socklen_t len, struct Destination* dest) {
-    if(addr->ss_family == AF_INET){
-        const struct sockaddr_in* in = (struct sockaddr_in*)addr;
-        dest->port = ntohs(in->sin_port);
-        inet_ntop(AF_INET, &in->sin_addr, dest->hostname, sizeof(dest->hostname));
-    }else if(addr->ss_family == AF_INET6){
-        const struct sockaddr_in6* in6 = (struct sockaddr_in6*)addr;
-        dest->port = ntohs(in6->sin6_port);
-        dest->hostname[0] = '[';
-        inet_ntop(AF_INET6, &in6->sin6_addr, dest->hostname + 1, sizeof(dest->hostname) -1);
-        strcpy(dest->hostname + strlen(dest->hostname), "]");
-    }else if(addr->ss_family == AF_UNIX) {
-        const struct sockaddr_un* un = (struct sockaddr_un*)addr;
-        len -= (size_t)(((struct sockaddr_un *) 0)->sun_path);
-        if(len == 0 || un->sun_path[0] == 0 ) {
-            dest->hostname[0] = '@';
-        } else {
-            dest->hostname[0] = un->sun_path[0];
-        }
-        if(len <= 1 || un->sun_path[1] == 0) {
-            dest->hostname[1] = 0;
-        } else {
-            snprintf(dest->hostname+1, len, "%s", un->sun_path+1);
-        }
-        dest->port = 0;
-    }
-}
-
 const char* dumpAuthority(const struct Destination* Server){
     static char buff[URLLIMIT];
     uint16_t port = Server->port;
@@ -487,5 +459,18 @@ const char* dumpAuthority(const struct Destination* Server){
         return buff;
     }
     return Server->hostname;
+}
+
+void storage2Dest(const struct sockaddr_storage* addr, struct Destination* dest) {
+    addrstring(addr, dest->hostname, sizeof(dest->hostname));
+    if(addr->ss_family == AF_INET){
+        const struct sockaddr_in* in = (struct sockaddr_in*)addr;
+        dest->port = ntohs(in->sin_port);
+    }else if(addr->ss_family == AF_INET6){
+        const struct sockaddr_in6* in6 = (struct sockaddr_in6*)addr;
+        dest->port = ntohs(in6->sin6_port);
+    }else if(addr->ss_family == AF_UNIX) {
+        dest->port = 0;
+    }
 }
 

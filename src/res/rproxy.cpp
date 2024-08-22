@@ -32,8 +32,17 @@ void RproxyRequest(std::shared_ptr<HttpReq> req, Requester* src) {
     auto header = req->header;
     std::string path = header->path;
     memset(&header->Dest, 0, sizeof(header->Dest));
+    strcpy(header->Dest.protocol, "tcp");
     if(spliturl(path.c_str() + 8, &header->Dest, header->path)) {
         req->response(std::make_shared<HttpRes>(HttpResHeader::create(S400, sizeof(S400), id), ""));
+        return;
+    }
+    if(strcmp(header->path, "/") == 0 && path.back() != '/'){
+        // /rproxy/example.com => /rproxy/example.com/
+
+        auto resh = HttpResHeader::create(S308, sizeof(S308), id);
+        resh->set("Location", path + '/');
+        req->response(std::make_shared<HttpRes>(resh, ""));
         return;
     }
     header->postparse();

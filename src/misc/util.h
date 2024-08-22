@@ -39,10 +39,9 @@ struct in_addr getMapped(struct in6_addr addr, const char* prefix);
 const char* protstr(Protocol p);
 
 int spliturl(const char* url, struct Destination* server, char* path);
-int dumpDestToBuffer(const struct Destination* server, char* buff, size_t buflen);
 const char* dumpDest(const struct Destination* server);
 const char* dumpAuthority(const struct Destination* Server);
-void storage2Dest(const struct sockaddr_storage* addr, socklen_t len, struct Destination* dest);
+void storage2Dest(const struct sockaddr_storage* addr, struct Destination* dest);
 void change_process_name(const char *name);
 #ifdef  __cplusplus
 }
