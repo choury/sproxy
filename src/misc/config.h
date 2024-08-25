@@ -57,6 +57,7 @@ struct options{
     const char *ua;
     const char *pcap_file;
     const char *alt_svc;
+    const char *rproxy_name;
     bool disable_http2;
     bool sni_mode;
     bool daemon_mode;
@@ -65,7 +66,6 @@ struct options{
     bool ipv6_enabled;
     bool alter_method;
     bool set_dns_route;
-    bool rproxy_mode;
     bool tun_mode;
     bool redirect_http;
 

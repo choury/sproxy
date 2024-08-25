@@ -83,6 +83,7 @@ struct options opt = {
     .ua                = NULL,
     .pcap_file         = NULL,
     .alt_svc           = NULL,
+    .rproxy_name       = NULL,
     .disable_http2     = false,
     .sni_mode          = false,
     .daemon_mode       = false,
@@ -92,7 +93,6 @@ struct options opt = {
     .alter_method      = false,
     .set_dns_route     = false,
     .tun_mode          = false,
-    .rproxy_mode       = false,
     .redirect_http     = false,
 
     .policy_read    = NULL,
@@ -185,7 +185,7 @@ static struct option long_options[] = {
     {"sni",           no_argument,       NULL,  0 },
     {"ssl",           required_argument, NULL,  0 },
     {"alter-method",  no_argument,       NULL,  0 },
-    {"rproxy",        no_argument,       NULL,  0 },
+    {"rproxy",        required_argument, NULL,  0 },
     {"request-header",required_argument, NULL,  0 },
 #if __linux__
     {"tun",           no_argument,       NULL,  0 },
@@ -240,7 +240,7 @@ static struct option_detail option_detail[] = {
     {"request-header", "append the header (name:value) for plain http request", option_list, &opt.request_headers, NULL},
     {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64, opt.rewrite_auth, NULL},
     {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
-    {"rproxy", "rproxy mode (via http2)", option_bool, &opt.rproxy_mode, (void*)true},
+    {"rproxy", "name for rproxy mode (via http2)", option_string, &opt.rproxy_name, (void*)true},
     {"secret", "Set user and passwd for proxy (user:password), default is none.", option_list, &secrets, NULL},
     {"server", "default proxy server (can ONLY set in config file)", option_string, &server_string, NULL},
 #if __linux__

@@ -24,7 +24,6 @@ class Proxy2:public Responser, public Http2Requster {
 #endif
     Job connection_lost_job = nullptr;
     Job idle_timeout = nullptr;
-    bool isRproxy = false;
 protected:
     void ping_check();
     void connection_lost();
@@ -45,6 +44,7 @@ protected:
     void Recv(Buffer&& bb);
     void Handle(uint32_t id, Signal s);
     void Clean(uint32_t id, ReqStatus& status, uint32_t errcode);
+    virtual void clearIdle(uint32_t ms);
 
     static bool wantmore(const ReqStatus& status);
 public:

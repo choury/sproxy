@@ -1,6 +1,6 @@
 #include "file.h"
 #include "status.h"
-#include "rproxy.h"
+#include "rproxy2.h"
 #include "req/requester.h"
 #include "misc/util.h"
 #include "misc/config.h"
@@ -287,8 +287,8 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
         if(filename == pathjoin(opt.rootdir, "status")){
             return (new Status())->request(req, src);
         }
-        if(startwith(filename, pathjoin(opt.rootdir, "rproxy/").c_str())) {
-            return RproxyRequest(req, src);
+        if(startwith(filename, pathjoin(opt.rootdir, "rproxy").c_str())) {
+            return Rproxy2::distribute(req, src);
         }
         if(filename == pathjoin(opt.rootdir, "test")){
             //for compatibility

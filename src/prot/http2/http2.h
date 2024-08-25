@@ -113,7 +113,7 @@ protected:
     void Ping(const void *buff);
     void Reset(uint32_t id, uint32_t code);
     void Goaway(uint32_t lastid, uint32_t code, char* message = nullptr);
-    void SendInitSetting();
+    void SendInitSetting(bool enable_push);
     virtual void SendData(Buffer&& bb) = 0;
     virtual void PushData(Buffer&& bb);
 
@@ -121,7 +121,6 @@ protected:
     virtual void WindowUpdateProc(uint32_t id, uint32_t size) = 0;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff) = 0;
     size_t (Http2Base::*Http2_Proc)(Buffer& bb)=&Http2Base::InitProc;
-    uint32_t OpenStream();
 public:
     ~Http2Base() = default;
 };
@@ -132,16 +131,20 @@ protected:
     virtual void HeadersProc()override;
     virtual void ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> req) = 0;
     virtual void AltSvc(uint32_t id, const char* origin, const char* value);
+public:
+    uint32_t OpenStream();
 };
 
 
 class Http2Requster:public Http2Base{
 protected:
-    void init();
+    void init(bool enable_push);
     virtual size_t InitProc(Buffer& bb)override;
     virtual void HeadersProc()override;
     virtual void ResProc(uint32_t id, std::shared_ptr<HttpResHeader> res) = 0;
+    virtual void PushProc(uint32_t, std::shared_ptr<HttpReqHeader>) {}
 public:
+    uint32_t OpenStream();
 };
 
 

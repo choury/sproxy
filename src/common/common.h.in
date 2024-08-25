@@ -241,6 +241,7 @@ do {\
 #define CONNECT_AGED        92U
 #define SNI_HOST_ERR        93U
 #define CLI_KILLED          94U
+#define RPROXY_DUP          95U
 #define ERROR_MASK          0xff
 
 typedef unsigned char uchar;

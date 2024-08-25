@@ -12,7 +12,7 @@ set(res_src
         file.cpp
         cgi.cpp
         status.cpp
-        rproxy.cpp
+        rproxy2.cpp
 )
 
 if(HAVE_QUIC)

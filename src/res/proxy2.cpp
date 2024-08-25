@@ -20,6 +20,10 @@ void Proxy2::ping_check(){
                                     [this]{connection_lost();}, 2000);
 }
 
+void Proxy2::clearIdle(uint32_t ms){
+    idle_timeout = UpdateJob(std::move(idle_timeout), [this]{deleteLater(CONNECT_AGED);}, ms);
+}
+
 bool Proxy2::wantmore(const ReqStatus& status) {
     if(!status.req){
         return false;
@@ -129,10 +133,7 @@ void Proxy2::SendData(Buffer&& bb){
 }
 
 void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
-    if(!isRproxy) {
-        idle_timeout = UpdateJob(std::move(idle_timeout),
-                                [this]{deleteLater(CONNECT_AGED);}, 300000);
-    }
+    clearIdle(300000);
     if(statusmap.count(id) == 0) {
         LOGD(DHTTP2, "<proxy2> ResProc not found id: %d\n", id);
         Reset(id, HTTP2_ERR_STREAM_CLOSED);
@@ -167,10 +168,7 @@ void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
 
 
 void Proxy2::DataProc(Buffer&& bb) {
-    if(!isRproxy) {
-        idle_timeout = UpdateJob(std::move(idle_timeout),
-                                [this]{deleteLater(CONNECT_AGED);}, 300000);
-    }
+    clearIdle(300000);
     if(bb.len == 0)
         return;
     localwinsize -= bb.len;
@@ -325,10 +323,7 @@ void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
     SendData(Buffer{std::move(buff), len + sizeof(Http2_header), id});
 
     req->attach([this, id](ChannelMessage&& msg){
-        if(!isRproxy) {
-            idle_timeout = UpdateJob(std::move(idle_timeout),
-                                    [this]{deleteLater(CONNECT_AGED);}, 300000);
-        }
+        clearIdle(300000);
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:
             LOGD(DHTTP2, "<proxy2> ignore header for req\n");
@@ -348,11 +343,9 @@ void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
 }
 
 void Proxy2::init(std::shared_ptr<HttpReq> req) {
-    Http2Requster::init();
+    Http2Requster::init(false);
     if(req) {
         request(req, nullptr);
-    } else {
-        isRproxy = true;
     }
 }
 

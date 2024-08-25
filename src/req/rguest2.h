@@ -5,8 +5,10 @@
 
 
 class Rguest2: public Guest2{
+    std::string name;
+    virtual size_t InitProc(Buffer& bb) override;
 public:
-    Rguest2(const Destination* dest);
+    Rguest2(const Destination* dest, const std::string& name);
     virtual void deleteLater(uint32_t errcode) override;
 };
 

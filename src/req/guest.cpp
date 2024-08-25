@@ -1,7 +1,7 @@
 #include "guest.h"
 #include "guest2.h"
 #include "res/responser.h"
-#include "res/rproxy.h"
+#include "res/rproxy2.h"
 #include "misc/util.h"
 #include "misc/config.h"
 #include "misc/strategy.h"
@@ -129,7 +129,7 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
                 return Server::deleteLater(NOERROR);
             }
             if (strncasecmp((const char*)data, "r2", len) == 0) {
-                RproxyCreate(srwer);
+                (new Rproxy2(srwer))->init();
                 rwer = nullptr;
                 return Server::deleteLater(NOERROR);
             }

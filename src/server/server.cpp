@@ -39,8 +39,8 @@ int protectFd(int){
 int main(int argc, char **argv) {
     parseConfig(argc, argv);
     std::vector<std::shared_ptr<Ep>> servers;
-    if(opt.rproxy_mode) {
-        new Rguest2(&opt.Server);
+    if(opt.rproxy_name) {
+        new Rguest2(&opt.Server, opt.rproxy_name);
     }else {
         if(opt.http.hostname[0]){
             sockaddr_storage addr;

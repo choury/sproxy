@@ -7,6 +7,7 @@
 #include "file.h"
 #include "ping.h"
 #include "uhost.h"
+#include "rproxy2.h"
 
 #include <regex>
 #include <string.h>
@@ -100,6 +101,9 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
             res = std::make_shared<HttpRes>(HttpResHeader::create(S400, sizeof(S400), id),
                                             "[[no port]]\n");
             goto out;
+        }
+        if(header->get("rproxy")) {
+            return Rproxy2::distribute(req, src);
         }
         Destination dest;
         switch(stra.s){
