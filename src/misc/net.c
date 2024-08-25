@@ -75,15 +75,29 @@ void SetTcpOptions(int fd, const struct sockaddr_storage* ignore){
 void SetUdpOptions(int fd, const struct sockaddr_storage* addr){
     (void)addr;
     int enable = 1;
-#if defined(IP_RECVERR) && defined(IPV6_RECVERR)
+#if defined(IP_RECVERR)
     if (addr->ss_family == AF_INET) {
         if (setsockopt(fd, IPPROTO_IP, IP_RECVERR, &enable, sizeof(enable)))
             LOGE("IP_RECVERR:%s\n", strerror(errno));
+        if (setsockopt(fd, IPPROTO_IP, IP_MTU_DISCOVER, &enable, sizeof(enable)))
+            LOGE("IP_MTU_DISCOVER:%s\n", strerror(errno));
     }
+#endif
+#if defined(IPV6_RECVERR)
     if (addr->ss_family == AF_INET6) {
         if (setsockopt(fd, IPPROTO_IPV6, IPV6_RECVERR, &enable, sizeof(enable)))
             LOGE("IPV6_RECVERR:%s\n", strerror(errno));
+        if (setsockopt(fd, IPPROTO_IPV6, IPV6_MTU_DISCOVER, &enable, sizeof(enable)))
+            LOGE("IPV6_MTU_DISCOVER:%s\n", strerror(errno));
     }
+#endif
+#if defined(IP_DONTFRAG)
+    if(addr->ss_family == AF_INET)
+        if(setsockopt(fd, IPPROTO_IP, IP_DONTFRAG, &enable, sizeof(enable)))
+            LOGE("IP_DONTFRAG:%s\n", strerror(errno));
+    if(addr->ss_family == AF_INET6)
+        if(setsockopt(fd, IPPROTO_IPV6, IPV6_DONTFRAG, &enable, sizeof(enable)))
+            LOGE("IPV6_DONTFRAG:%s\n", strerror(errno));
 #endif
     if(setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable)) < 0)
         LOGE("set broadcast:%s\n", strerror(errno));
@@ -93,11 +107,13 @@ void SetUdpOptions(int fd, const struct sockaddr_storage* addr){
 void SetIcmpOptions(int fd, const struct sockaddr_storage* addr) {
     (void)addr;
     int enable = 1;
-#if defined(IP_RECVERR) && defined(IPV6_RECVERR)
+#if defined(IP_RECVERR)
     if (addr->ss_family == AF_INET) {
         if (setsockopt(fd, IPPROTO_IP, IP_RECVERR, &enable, sizeof(enable)))
             LOGE("IP_RECVERR:%s\n", strerror(errno));
     }
+#endif
+#if defined(IPV6_RECVERR)
     if (addr->ss_family == AF_INET6) {
         if (setsockopt(fd, IPPROTO_IPV6, IPV6_RECVERR, &enable, sizeof(enable)))
             LOGE("IPV6_RECVERR:%s\n", strerror(errno));

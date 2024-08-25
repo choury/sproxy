@@ -259,7 +259,7 @@ public:
     int setAlpn(const unsigned char *s, unsigned int len);
     uint64_t createBiStream();
     uint64_t createUbiStream();
-    void dump(Dumper dp,const std::string& session, void* param);
+    void dump(Dumper dp, void* param);
     size_t mem_usage();
 };
 
@@ -279,6 +279,7 @@ protected:
 
     virtual void waitconnectHE(RW_EVENT events) override;
     virtual void closeHE(RW_EVENT events) override;
+    virtual void ErrorHE(int type, int code) override;
     virtual void ReadData() override;
     virtual void ConsumeRData(uint64_t id) override;
     virtual size_t rlength(uint64_t id) override;

@@ -24,7 +24,6 @@ extern std::string getExternalFilesDir();
  * 连接迁移
  * 多地址，失败轮询重试
  * check retry packet tag
- * pmtu
  */
 
 static uint8_t getPacketType(OSSL_ENCRYPTION_LEVEL level) {
@@ -435,9 +434,7 @@ void QuicBase::getParams(const uint8_t* data, size_t len) {
         case quic_max_udp_payload_size:
             variable_decode(pos, &value);
             LOGD(DQUIC, "get max payload size: %" PRIu64"\n", value);
-            if(value > 1450) {
-                his_max_payload_size = 1450;
-            }else if(value > 1200){
+            if(value > 1200){
                 his_max_payload_size = value;
             }
             break;
@@ -1148,6 +1145,20 @@ void QuicBase::resendFrames(pn_namespace* ns, quic_frame *frame) {
     }
     default:
         if(frame->type >= QUIC_FRAME_STREAM_START_ID && frame->type <= QUIC_FRAME_STREAM_END_ID){
+            while(frame->stream.length > his_max_payload_size){
+                quic_frame* fframe = new quic_frame{
+                    QUIC_FRAME_STREAM_START_ID | QUIC_FRAME_STREAM_OFF_F | QUIC_FRAME_STREAM_LEN_F,
+                    {}
+                };
+                fframe->stream.id =  frame->stream.id;
+                fframe->stream.offset = frame->stream.offset;
+                fframe->stream.length = his_max_payload_size;
+                fframe->stream.buffer = new Buffer(*frame->stream.buffer);
+                qos.FrontFrame(ns, fframe);
+                frame->stream.offset += his_max_payload_size;
+                frame->stream.length -= his_max_payload_size;
+                frame->stream.buffer->reserve((int)his_max_payload_size);
+            }
             qos.PushFrame(ns, frame);
         }else {
             //FIXME: implement other frame type resend logic
@@ -1650,12 +1661,13 @@ void QuicBase::keepAlive_action() {
     qos.PushFrame(ssl_encryption_application, new quic_frame{QUIC_FRAME_PING, {}});
 }
 
-void QuicBase::dump(Dumper dp, const std::string& session, void* param) {
-    dp(param, "Quic %s: %s -> %s\nread: %zd/%zd, write: %zd/%zd "
-              "my_window: %zd, his_window: %zd rlen: %zd, fullq: %zd, wlen: %zd, congestion_window: %d\n",
-       session.c_str(),
+void QuicBase::dump(Dumper dp, void* param) {
+    dp(param, "%s -> %s, max_payload: %zd\n"
+              "read: %zd/%zd, write: %zd/%zd, my_window: %zd, his_window: %zd, "
+              "rlen: %zd, fullq: %zd, wlen: %zd, congestion_window: %d\n",
        dumpHex(myids[myid_idx].c_str(), myids[myid_idx].length()).c_str(),
        dumpHex(hisids[hisid_idx].c_str(), hisids[hisid_idx].length()).c_str(),
+       his_max_payload_size,
        my_received_data, my_received_data_total,
        my_sent_data, my_sent_data_total,
        my_max_data - my_received_data,
@@ -1725,6 +1737,9 @@ size_t QuicRWer::getWritableSize() {
 }
 
 ssize_t QuicRWer::writem(const struct iovec *iov, int iovcnt) {
+    if(iovcnt == 1) {
+        return write(getFd(), iov[0].iov_base, iov[0].iov_len) == (int)iov[0].iov_len ? 1 : -1;
+    }
     return ::writem(getFd(), iov, iovcnt);
 }
 
@@ -1863,6 +1878,65 @@ void QuicRWer::closeHE(RW_EVENT events) {
     }
 }
 
+void QuicRWer::ErrorHE(int type, int code) {
+    if(type == SOCKET_ERR && code == EMSGSIZE) {
+#if defined(IP_MTU) && defined(IPV6_MTU)
+        int mtu;
+        socklen_t mtulen;
+        bool isIpv6 = addrs.front().ss_family == AF_INET6;
+        if(isIpv6) {
+            if(getsockopt(getFd(), IPPROTO_IPV6, IPV6_MTU, &mtu, &mtulen) == 0) {
+                mtu -= 40 + 8; //ipv6 header + udp header
+                goto success;
+            }
+        } else {
+            if(getsockopt(getFd(), IPPROTO_IP, IP_MTU, &mtu, &mtulen) == 0) {
+                mtu -= 20 + 8; //ipv4 header + udp header
+                goto success;
+            }
+        }
+        LOGE("faile to get ip_mtu: %s\n", strerror(errno));
+        return RWer::ErrorHE(type, code);
+success:
+        if(mtu < (int)his_max_payload_size) {
+            LOG("quic max payload size reduce to %d due to pmtu\n", mtu);
+            his_max_payload_size = mtu;
+        } else {
+            RWer::ErrorHE(PROTOCOL_ERR, QUIC_INTERNAL_ERROR);
+        }
+#else
+        his_max_payload_size =  1200;
+#endif
+    } else if(type == SOCKET_ERR && code == 0) {
+        //recreate socket
+        sockaddr_storage myaddr, hisaddr;
+        socklen_t mylen = sizeof(myaddr);
+        socklen_t hislen = sizeof(hisaddr);
+        if(getpeername(getFd(), (sockaddr*)&hisaddr, &hislen)) {
+            LOGE("getpeername failed: %s\n", strerror(errno));
+            return RWer::ErrorHE(type, code);
+        }
+        if(getsockname(getFd(), (sockaddr*)&myaddr, &mylen)) {
+            LOGE("getsockname failed: %s\n", strerror(errno));
+            return RWer::ErrorHE(type, code);
+        }
+        int clsk = ListenUdp(&myaddr);
+        if (clsk < 0) {
+            LOGE("ListenNet %s, failed: %s\n", storage_ntoa(&myaddr), strerror(errno));
+            return RWer::ErrorHE(type, code);
+        }
+        if (::connect(clsk, (sockaddr *)&hisaddr, hislen) < 0) {
+            LOGE("connect %s failed: %s\n", storage_ntoa(&hisaddr), strerror(errno));
+            return RWer::ErrorHE(type, code);
+        }
+        SetUdpOptions(clsk, &hisaddr);
+        setFd(clsk);
+    } else {
+        RWer::ErrorHE(type, code);
+    }
+}
+
+
 QuicRWer::~QuicRWer() {
     if(server == nullptr){
         return;
@@ -1874,15 +1948,16 @@ QuicRWer::~QuicRWer() {
 }
 
 void QuicRWer::dump_status(Dumper dp, void *param) {
-    char session[128];
     if(hostname[0]) {
-        snprintf(session, sizeof(session), "<%d> (%s %s)",
-                getFd(), hostname, dumpDest(getDst()).c_str());
+        dp(param, "Quic <%d> (%s  %s), stats: %d, events: %s\n",
+                getFd(), hostname, dumpDest(getDst()).c_str(),
+                (int)getStats(), events_string[(int)getEvents()]);
     }else {
-        snprintf(session, sizeof(session), "<%d> (%s -> %s)",
-                getFd(), dumpDest(getSrc()).c_str(), dumpDest(getDst()).c_str());
+        dp(param, "Quic <%d> (%s - %s), stats: %d, events: %s\n",
+                getFd(), dumpDest(getSrc()).c_str(), dumpDest(getDst()).c_str(),
+                (int)getStats(), events_string[(int)getEvents()]);
     }
-    return dump(dp, session, param);
+    return dump(dp, param);
 }
 
 size_t QuicRWer::mem_usage() {
@@ -1987,9 +2062,9 @@ void QuicMer::Close(std::function<void()> func) {
 }
 
 void QuicMer::dump_status(Dumper dp, void *param) {
-    char session[128];
-    snprintf(session, sizeof(session), "<%d> (%s)", getFd(), dumpDest(getSrc()).c_str());
-    return dump(dp, session, param);
+    dp(param, "Quic <%d> (%s), stats: %d, flags: 0x%04x,  event: %s\n",
+        getFd(), dumpDest(getSrc()).c_str(), (int)getStats(), flags, events_string[(int)getEvents()]);
+    return dump(dp, param);
 }
 
 size_t QuicMer::mem_usage() {

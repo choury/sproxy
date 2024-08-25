@@ -454,8 +454,10 @@ int cgi_send(int fd, SpinLock& l, uint32_t id, const void *buff, size_t len) {
         iov[1].iov_len = writelen;
         std::lock_guard<SpinLock> g(l);
         if(cap - GetBuffSize(fd) < writelen + sizeof(header)) {
-            sched_yield();
+            LOGD(DFILE, "<cgi> send wait, cap: %zd, pending: %zd, require: %zd\n",
+                cap, GetBuffSize(fd), writelen + sizeof(header));
             usleep(100);
+            sched_yield();
             continue;
         }
         int ret = writev(fd, iov, 2);

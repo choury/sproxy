@@ -87,6 +87,10 @@ function test_https(){
     [ $? -ne 0 ] && echo "https test 11 failed" && exit 1
     curl -f -v --http2 https://$HOSTNAME:$1/ -H "Host: www.qq.com:443" -A "Mozilla/5.0" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "https test 12 failed" && exit 1
+    curl -f -v https://$HOSTNAME:$1/cgi/libtest.do?size=1M -k > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "http test 13 failed" && exit 1
+    curl -f -v https://$HOSTNAME:$1/cgi/libtest.do?size=100M --compressed  -k > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "http test 14 failed" && exit 1
     echo ""
 }
 
@@ -107,6 +111,10 @@ function test_http(){
     [ $? -ne 60 ] && echo "http test 7 failed"
     curl -f -v -x http://$HOSTNAME:$1/ https://www.qq.com -A "Mozilla/5.0" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "http test 8 failed" && exit 1
+    curl -f -v http://$HOSTNAME:$1/cgi/libtest.do?size=1M > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "http test 9 failed" && exit 1
+    curl -f -v http://$HOSTNAME:$1/cgi/libtest.do?size=100M --compressed  > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "http test 10 failed" && exit 1
     echo ""
 }
 
@@ -127,6 +135,10 @@ function test_http3(){
     [ $? -ne 0 ] && echo "http3 test 5 failed"
     curl -f -v --http3-only https://$HOSTNAME:$1/ -H "Host: www.taobao.com" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "http3 test 6 failed" && exit 1
+    curl -f -v --http3-only https://$HOSTNAME:$1/cgi/libtest.do?size=1M -k > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "http test 7 failed" && exit 1
+    curl -f -v --http3-only https://$HOSTNAME:$1/cgi/libtest.do?size=100M --compressed -k > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "http test 8 failed" && exit 1
     echo ""
 }
 
@@ -169,6 +181,7 @@ ln -s -f "$1/test/sproxy_test" .
 mkdir -p cgi
 ln -f -s "$buildpath"/cgi/libproxy.* cgi/
 ln -f -s "$buildpath"/cgi/libsites.* cgi/
+ln -f -s "$buildpath"/cgi/libtest.* cgi/
 dd if=/dev/zero of=test1k bs=1024 count=1
 export ASAN_OPTIONS=malloc_context_size=50
 which curl

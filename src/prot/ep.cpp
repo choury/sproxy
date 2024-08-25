@@ -107,8 +107,9 @@ Ep::~Ep(){
         pending_events[this] = RW_EVENT::NONE;
     }
     if(fd >= 0){
-        LOGD(DEVENT, "%p closed %d\n", this, fd);
-        close(fd);
+        setFd(-1);
+    } else {
+        assert(events == RW_EVENT::NONE);
     }
 }
 
@@ -125,11 +126,18 @@ void Ep::setFd(int fd){
         kevent(efd, event, 2, nullptr, 0, nullptr);
 #endif
         close(this->fd);
+    }
+
+    this->fd = fd;
+    if(fd > 0) {
+        LOGD(DEVENT, "%p set fd: %d\n", this, fd);
+        SetSocketUnblock(fd);
+        auto ev = events;
+        events = RW_EVENT::NONE;
+        setEvents(ev);
+    } else {
         events = RW_EVENT::NONE;
     }
-    this->fd = fd;
-    LOGD(DEVENT, "%p set fd: %d\n", this, fd);
-    SetSocketUnblock(fd);
 }
 
 int Ep::getFd() const {
@@ -249,10 +257,10 @@ int event_loop(uint32_t timeout_ms){
     }
 #endif
     for(auto& i: pending_events){
-        Ep *ep = i.first;
         if(i.second == RW_EVENT::NONE){
             continue;
         }
+        Ep *ep = i.first;
         if(!!(i.second & RW_EVENT::READEOF) && !(ep->events & RW_EVENT::READ)){
             i.second = i.second & ~RW_EVENT::READEOF;
             LOGD(DEVENT, "filter READEOF without listen READ: %d\n", ep->getFd());

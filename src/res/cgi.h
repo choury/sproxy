@@ -17,7 +17,11 @@
 #define CGI_DATA          3
 #define CGI_ERROR         5
 
+#if __APPLE__
+#define CGI_LEN_MAX       (8192 - sizeof(CGI_Header))
+#else
 #define CGI_LEN_MAX       (BUF_LEN - sizeof(CGI_Header))
+#endif
 
 struct CGI_Header{
     uint8_t type;

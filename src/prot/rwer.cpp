@@ -69,7 +69,8 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
     bool hasEof = false;
     if(wbuff.empty()) {
         return 0;
-    }else if(wbuff.size() == 1) {
+    }
+    if(wbuff.size() == 1) {
         auto &bb = wbuff.front();
         if(likely(bb.len > 0)) {
             ret = write(getFd(), bb.data(), bb.len);
@@ -94,7 +95,11 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
             }
         }
         ret = writev(getFd(), iovs.data(), iovs.size());
-        LOGD(DRWER, "writev: iovs: %zd, ret: %zd/%zd\n", iovs.size(), ret, len);
+        if(ret > 0) {
+            LOGD(DRWER, "writev: iovs: %zd, ret: %zd/%zd\n", iovs.size(), ret, len);
+        } else {
+            LOGE("writev error: %s\n", strerror(errno));
+        }
     }
     if(len == (size_t)ret && hasEof) {
         LOGD(DRWER, "shutdown: %d\n", getFd());
@@ -147,6 +152,8 @@ void RWer::ClearCB() {
 void RWer::defaultHE(RW_EVENT events){
     if (!!(events & RW_EVENT::ERROR)) {
         ErrorHE(SOCKET_ERR, checkSocket(__PRETTY_FUNCTION__));
+    }
+    if((flags & RWER_CLOSING) || stats == RWerStats::Error){
         return;
     }
     if (!!(events & RW_EVENT::READ) || !!(events & RW_EVENT::READEOF)){
