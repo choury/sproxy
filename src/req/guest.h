@@ -23,6 +23,7 @@ protected:
         Job       cleanJob = nullptr;
     };
     std::list<ReqStatus> statuslist;
+    bool headless = false;
     size_t ReadHE(Buffer&& bb);
     int mread(std::shared_ptr<HttpReqHeader> header, std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data);
     void WriteHE(uint64_t id);

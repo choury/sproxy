@@ -75,6 +75,7 @@ struct options{
     struct Destination ssl;
     struct Destination quic;
     struct Destination admin;
+    struct Destination tproxy;
     uint64_t pcap_len;
     struct Destination Server;
     char rewrite_auth[DOMAINLIMIT];

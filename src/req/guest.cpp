@@ -1,5 +1,6 @@
 #include "guest.h"
 #include "guest2.h"
+#include "guest_sni.h"
 #include "res/responser.h"
 #include "res/rproxy2.h"
 #include "misc/util.h"
@@ -177,31 +178,34 @@ Guest::Guest(std::shared_ptr<RWer> rwer_): Requester(rwer_){
 
 void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     static const char*  HCONNECT = "HTTP/1.1 200 Connection establishe" CRLF CRLF;
-    if(header->ismethod("CONNECT") && header->Dest.port == HTTPPORT) {
-        auto mrwer = std::make_shared<MemRWer>(rwer->getSrc(),
+    if(header->ismethod("CONNECT")) {
+        if(header->Dest.port == HTTPPORT) {
+            if(!headless) rwer->Send({HCONNECT, strlen(HCONNECT), id});
+            Http_Proc = (bool (HttpBase::*)(Buffer&))&Guest::HeaderProc;
+            return;
+        }
+        if(header->Dest.port == HTTPSPORT) {
+            if(!headless) rwer->Send({HCONNECT, strlen(HCONNECT), id});
+            bool shouldMitm = (opt.mitm_mode == Enable) ||
+            (opt.mitm_mode == Auto && opt.ca.key && mayBeBlocked(header->Dest.hostname));
+            if (shouldMitm || getstrategy(header->Dest.hostname).s == Strategy::local) {
+                auto ctx = initssl(0, header->Dest.hostname);
+                auto srwer = std::make_shared<SslMer>(ctx, rwer->getSrc(),
+                                                      [this, header](auto&& data) {
+                                                          return mread(header, std::forward<decltype(data)>(data));
+                                                      },
+                                                      [this, id]{ return  rwer->cap(id);});
+                statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
+                new Guest(srwer);
+            } else {
+                auto mrwer = std::make_shared<MemRWer>(rwer->getSrc(),
                                                [this, header](auto&& data) {
                                                    return mread(header, std::forward<decltype(data)>(data));
                                                },
                                                [this, id]{ return  rwer->cap(id);});
-        statuslist.emplace_back(ReqStatus{nullptr, nullptr, mrwer, HTTP_NOEND_F});
-
-        rwer->Send({HCONNECT, strlen(HCONNECT), id});
-        new Guest(mrwer);
-        return;
-    }
-    if(header->ismethod("CONNECT") && header->Dest.port == HTTPSPORT) {
-        bool shouldMitm = (opt.mitm_mode == Enable) ||
-                (opt.mitm_mode == Auto && opt.ca.key && mayBeBlocked(header->Dest.hostname));
-        if (shouldMitm || getstrategy(header->Dest.hostname).s == Strategy::local) {
-            auto ctx = initssl(0, header->Dest.hostname);
-            auto srwer = std::make_shared<SslMer>(ctx, rwer->getSrc(),
-                                                  [this, header](auto&& data) {
-                                                      return mread(header, std::forward<decltype(data)>(data));
-                                                  },
-                                                  [this, id]{ return  rwer->cap(id);});
-            statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
-            rwer->Send({HCONNECT, strlen(HCONNECT), id});
-            new Guest(srwer);
+                statuslist.emplace_back(ReqStatus{nullptr, nullptr, mrwer, HTTP_NOEND_F});
+                new Guest_sni(mrwer, header->Dest.hostname, header->get("User-Agent"));
+            }
             return;
         }
     }
@@ -338,6 +342,16 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
             auto header = std::dynamic_pointer_cast<HttpResHeader>(std::get<std::shared_ptr<HttpHeader>>(msg.data));
             HttpLog(dumpDest(rwer->getSrc()), status.req->header, header);
             if (status.req->header->ismethod("CONNECT")) {
+                if (headless) {
+                    status.flags |= HTTP_NOEND_F;
+                    if(memcmp(header->status, "200", 3) == 0){
+                        rwer->Unblock(0);
+                        return 1;
+                    }else {
+                        deleteLater(PEER_LOST_ERR);
+                        return 0;
+                    }
+                }
                 if (memcmp(header->status, "200", 3) == 0) {
                     strcpy(header->status, "200 Connection established");
                     header->del("Transfer-Encoding");

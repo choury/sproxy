@@ -9,5 +9,9 @@ if(HAVE_QUIC)
     set(req_src ${req_src} guest3.cpp)
 endif()
 
+if(LINUX)
+    set(req_src ${req_src} guest_tproxy.cpp)
+endif()
+
 add_library(req  ${req_src})
 

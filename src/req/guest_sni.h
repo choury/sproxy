@@ -14,7 +14,6 @@ public:
     explicit Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx);
     explicit Guest_sni(std::shared_ptr<RWer> rwer, std::string host, std::string ua);
     size_t sniffer_quic(Buffer&& bb);
-    virtual void response(void*, std::shared_ptr<HttpRes> res)override;
 };
 
 #endif

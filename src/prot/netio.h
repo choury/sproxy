@@ -14,6 +14,7 @@ protected:
     char     hostname[DOMAINLIMIT] = {0};
     std::queue<sockaddr_storage> addrs;
     void connect();
+    Job     dns_job = nullptr;
     Job     con_failed_job = nullptr;
     std::function<void(const sockaddr_storage&)> connectCB = [](const sockaddr_storage&){};
     // connectFailed should only be called with job con_failed_job,

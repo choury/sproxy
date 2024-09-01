@@ -16,6 +16,7 @@
 #include <linux/if_tun.h>
 #include <net/if.h>
 #include "req/guest_vpn.h"
+#include "req/guest_tproxy.h"
 int protectFd(int fd) {
     if(opt.interface == NULL || strlen(opt.interface) == 0){
         return 1;
@@ -36,6 +37,59 @@ int protectFd(int){
 }
 #endif
 
+static int ListenTcp(const Destination* dest) {
+    sockaddr_storage addr;
+    if(storage_aton(dest->hostname, dest->port, &addr) == 0) {
+        LOGE("failed to parse listen addr: %s\n", dest->hostname);
+        return -1;
+    }
+    return ListenTcp(&addr);
+}
+
+static int ListenUdp(const Destination* dest) {
+    sockaddr_storage addr;
+    if(storage_aton(dest->hostname, dest->port, &addr) == 0) {
+        LOGE("failed to parse listen addr: %s\n", dest->hostname);
+        return -1;
+    }
+    int fd = ListenUdp(&addr);
+    if(fd < 0) {
+        return -1;
+    }
+    return fd;
+}
+
+
+static int ListenLocalhostTcp(uint16_t port, int fd[2]) {
+    fd[0] = fd[1] = -1;
+    sockaddr_storage addr;
+    storage_aton("127.0.0.1", port, &addr);
+    fd[0] = ListenTcp(&addr);
+    storage_aton("[::1]", port, &addr);
+    fd[1] = ListenTcp(&addr);
+    if(fd[0] < 0 || fd[1] < 0) {
+        close(fd[0]);
+        close(fd[1]);
+        return -1;
+    }
+    return 0;
+}
+
+static int ListenLocalhostUdp(uint16_t port, int fd[2]) {
+    fd[0] = fd[1] = -1;
+    sockaddr_storage addr[2];
+    storage_aton("127.0.0.1", port, &addr[0]);
+    fd[0] = ListenUdp(&addr[0]);
+    storage_aton("[::1]", port, &addr[1]);
+    fd[1] = ListenUdp(&addr[1]);
+    if(fd[0] < 0 || fd[1] < 0) {
+        close(fd[0]);
+        close(fd[1]);
+        return -1;
+    }
+    return 0;
+}
+
 int main(int argc, char **argv) {
     parseConfig(argc, argv);
     std::vector<std::shared_ptr<Ep>> servers;
@@ -43,55 +97,92 @@ int main(int argc, char **argv) {
         new Rguest2(&opt.Server, opt.rproxy_name);
     }else {
         if(opt.http.hostname[0]){
-            sockaddr_storage addr;
-            if(storage_aton(opt.http.hostname, opt.http.port, &addr) == 0) {
-                LOGE("failed to parse http addr: %s\n", opt.http.hostname);
-                return -1;
+            int fd[2] = {-1, -1};
+            if(strcmp(opt.http.hostname, "localhost") == 0) {
+                if(ListenLocalhostTcp(opt.http.port, fd) < 0) {
+                    return -1;
+                }
+            } else {
+                fd[0] = ListenTcp(&opt.http);
+                if (fd[0] < 0) {
+                    return -1;
+                }
             }
-            int svsk_http = ListenTcp(&addr);
-            if (svsk_http < 0) {
-                return -1;
-            }
-            servers.emplace_back(std::make_shared<Http_server<Guest>>(svsk_http, nullptr));
+            servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[0], nullptr));
+            if(fd[1] >= 0) servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[1], nullptr));
             LOG("listen on %s:%d for http\n", opt.http.hostname, (int)opt.http.port);
         }
-        if(opt.ssl.hostname[0]) {
-            sockaddr_storage addr;
-            if(storage_aton(opt.ssl.hostname, opt.ssl.port, &addr) == 0) {
-                LOGE("failed to parse ssl addr: %s\n", opt.ssl.hostname);
-                return -1;
+#if __linux__
+        if(opt.tproxy.hostname[0]) {
+            int fd[4] = {-1, -1, -1, -1};
+            if(strcmp(opt.tproxy.hostname, "localhost") == 0) {
+                if(ListenLocalhostTcp(opt.tproxy.port, fd) < 0) {
+                    return -1;
+                }
+                if(ListenLocalhostUdp(opt.tproxy.port, fd+2) < 0) {
+                    return -1;
+                }
+            } else {
+                fd[0] = ListenTcp(&opt.tproxy);
+                if (fd[0] < 0) {
+                    return -1;
+                }
+                fd[2] = ListenUdp(&opt.tproxy);
+                if (fd[2] < 0) {
+                    return -1;
+                }
             }
-            int svsk_ssl = ListenTcp(&addr);
-            if (svsk_ssl < 0) {
-                return -1;
+            servers.emplace_back(std::make_shared<Tproxy_server>(fd[0]));
+            if(fd[1] >= 0) servers.emplace_back(std::make_shared<Tproxy_server>(fd[1]));
+            servers.emplace_back(std::make_shared<Tproxy_server>(fd[2]));
+            if(fd[3] >= 0) servers.emplace_back(std::make_shared<Tproxy_server>(fd[3]));
+            LOG("listen on %s:%d for tproxy\n", opt.tproxy.hostname, (int)opt.tproxy.port);
+        }
+#endif
+        if(opt.ssl.hostname[0]) {
+            int fd[2] = {-1, -1};
+            if(strcmp(opt.ssl.hostname, "localhost") == 0) {
+                if(ListenLocalhostTcp(opt.ssl.port, fd) < 0) {
+                    return -1;
+                }
+            } else {
+                fd[0] = ListenTcp(&opt.ssl);
+                if (fd[0] < 0) {
+                    return -1;
+                }
             }
             if(opt.sni_mode) {
-                servers.emplace_back(std::make_shared<Http_server<Guest_sni>>(svsk_ssl, nullptr));
+                servers.emplace_back(std::make_shared<Http_server<Guest_sni>>(fd[0], nullptr));
+                if(fd[1] >= 0) servers.emplace_back(std::make_shared<Http_server<Guest_sni>>(fd[1], nullptr));
                 LOG("listen on %s:%d for ssl sni\n", opt.ssl.hostname, (int)opt.ssl.port);
             }else {
                 SSL_CTX * ctx = initssl(false, nullptr);
-                servers.emplace_back(std::make_shared<Http_server<Guest>>(svsk_ssl, ctx));
+                servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[0], ctx));
+                if(fd[1] >= 0) servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[1], ctx));
                 LOG("listen on %s:%d for ssl\n", opt.ssl.hostname, (int)opt.ssl.port);
             }
         }
 #ifdef HAVE_QUIC
         if(opt.quic.hostname[0]) {
-            sockaddr_storage addr;
-            if(storage_aton(opt.quic.hostname, opt.quic.port, &addr) == 0) {
-                LOGE("failed to parse quic addr: %s\n", opt.quic.hostname);
-                return -1;
+            int fd[2] = {-1, -1};
+            if(strcmp(opt.quic.hostname, "localhost") == 0) {
+                if(ListenLocalhostUdp(opt.quic.port, fd) < 0) {
+                    return -1;
+                }
+            } else {
+                fd[0] = ListenUdp(&opt.quic);
+                if(fd[0] <  0) {
+                    return -1;
+                }
             }
-            int svsk_quic = ListenUdp(&addr);
-            if(svsk_quic <  0) {
-                return -1;
-            }
-            SetRecvPKInfo(svsk_quic, &addr);
             if(opt.sni_mode) {
-                servers.emplace_back(std::make_shared<Quic_sniServer>(svsk_quic));
+                servers.emplace_back(std::make_shared<Quic_sniServer>(fd[0]));
+                if(fd[1] >= 0) servers.emplace_back(std::make_shared<Quic_sniServer>(fd[1]));
                 LOG("listen on %s:%d for quic snil\n", opt.quic.hostname, (int)opt.quic.port);
             }else {
                 SSL_CTX * ctx = initssl(true, nullptr);
-                servers.emplace_back(std::make_shared<Quic_server>(svsk_quic, ctx));
+                servers.emplace_back(std::make_shared<Quic_server>(fd[0], ctx));
+                if(fd[1] >= 0) servers.emplace_back(std::make_shared<Quic_server>(fd[1], ctx));
                 LOG("listen on %s:%d for quic\n", opt.quic.hostname, (int)opt.quic.port);
             }
         }
@@ -109,26 +200,29 @@ int main(int argc, char **argv) {
 #endif
     }
     if(opt.admin.hostname[0]){
-        int svsk_cli = -1;
+        int fd[2] = {-1, -1};
         if(opt.admin.port == 0){
-            svsk_cli = ListenUnix(opt.admin.hostname);
-        }else{
-            sockaddr_storage addr;
-            if(storage_aton(opt.admin.hostname, opt.admin.port, &addr) == 0) {
-                LOGE("failed to parse admin addr: %s\n", opt.admin.hostname);
+            fd[0] = ListenUnix(opt.admin.hostname);
+            if (fd[0] < 0) {
                 return -1;
             }
-            svsk_cli = ListenTcp(&addr);
-        }
-        if(svsk_cli < 0){
-            return -1;
+        }else if(strcmp(opt.admin.hostname, "localhost") == 0){
+            if(ListenLocalhostTcp(opt.admin.port, fd) < 0) {
+                return -1;
+            }
+        }else {
+            fd[0] = ListenTcp(&opt.admin);
+            if (fd[0] < 0) {
+                return -1;
+            }
         }
         if(opt.admin.port) {
             LOG("listen on %s:%d for admin\n", opt.admin.hostname, (int)opt.admin.port);
         } else {
             LOG("listen on %s for admin\n", opt.admin.hostname);
         }
-        servers.emplace_back(std::make_shared<Cli_server>(svsk_cli));
+        servers.emplace_back(std::make_shared<Cli_server>(fd[0]));
+        if(fd[1] >= 0) servers.emplace_back(std::make_shared<Cli_server>(fd[1]));
     }
     LOG("Accepting connections ...\n");
     while (will_contiune) {

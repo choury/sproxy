@@ -27,14 +27,14 @@ public:
 
 
 class HttpResponser:public HttpBase{
-    virtual bool HeaderProc(Buffer& bb)override final;
 protected:
+    virtual bool HeaderProc(Buffer& bb)override final;
     virtual void ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> req) = 0;
 };
 
 class HttpRequester:public HttpBase{
-    virtual bool HeaderProc(Buffer& bb)override final;
 protected:
+    virtual bool HeaderProc(Buffer& bb)override final;
     virtual void ResProc(uint64_t id, std::shared_ptr<HttpResHeader> res) = 0;
 };
 

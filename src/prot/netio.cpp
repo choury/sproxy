@@ -39,12 +39,10 @@ SocketRWer::SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
 {
     strcpy(this->hostname, hostname);
     stats = RWerStats::Resolving;
-    AddJob([this]{
+    dns_job = AddJob([this]{
         //这里使用job,因为shared_from_this不能在构造函数里面用
-        //因为使用了shared_ptr，所以不存在对象已经被释放了的情况
-        //但是返回时RWer有可能已经被Close了，DnsCallback需要处理这种情况
         query_host(this->hostname, SocketRWer::Dnscallback, shared_from_this());
-    }, 0, JOB_FLAGS_AUTORELEASE);
+    }, 0, 0);
 }
 
 SocketRWer::~SocketRWer() {

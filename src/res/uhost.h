@@ -13,6 +13,7 @@ class Uhost: public Responser{
     size_t rx_bytes = 0;
     size_t tx_bytes = 0;
     size_t rx_dropped = 0;
+    Job    idle_timeour = nullptr;
 public:
     Uhost(const char *host, uint16_t id);
     explicit Uhost(std::shared_ptr<HttpReqHeader> req);

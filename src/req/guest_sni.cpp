@@ -14,6 +14,7 @@
 
 Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(fd, addr, ctx){
     assert(ctx == nullptr);
+    headless = true;
     rwer->SetReadCB([this](Buffer&& bb){return sniffer(std::move(bb));});
     Http_Proc = &Guest_sni::AlwaysProc;
     std::stringstream ss;
@@ -26,6 +27,7 @@ Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(f
 Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, std::string host, std::string ua):
         Guest(rwer), host(std::move(host)), user_agent(std::move(ua))
 {
+    headless = true;
     if(std::dynamic_pointer_cast<PMemRWer>(rwer)) {
         rwer->SetReadCB([this](Buffer&& bb){return sniffer_quic(std::move(bb));});
     } else if(std::dynamic_pointer_cast<MemRWer>(rwer)) {
@@ -153,35 +155,4 @@ Forward:
     rwer->SetReadCB([this](Buffer&& bb){return ReadHE(std::move(bb));});
     rx_bytes += len;
     return len;
-}
-
-void Guest_sni::response(void*, std::shared_ptr<HttpRes> res){
-    assert(statuslist.size() == 1);
-    ReqStatus& status = statuslist.front();
-    assert(status.res == nullptr);
-    status.res = res;
-    status.flags |= HTTP_NOEND_F;
-    res->attach([this, &status](ChannelMessage&& msg){
-        assert(!statuslist.empty());
-        switch(msg.type){
-        case ChannelMessage::CHANNEL_MSG_HEADER: {
-            auto header = std::dynamic_pointer_cast<HttpResHeader>(std::get<std::shared_ptr<HttpHeader>>(msg.data));
-            HttpLog(dumpDest(rwer->getSrc()), status.req->header, header);
-            if(memcmp(header->status, "200", 3) == 0){
-                rwer->Unblock(0);
-                return 1;
-            }else {
-                deleteLater(PEER_LOST_ERR);
-                return 0;
-            }
-        }
-        case ChannelMessage::CHANNEL_MSG_DATA:
-            Recv(std::move(std::get<Buffer>(msg.data)));
-            return 1;
-        case ChannelMessage::CHANNEL_MSG_SIGNAL:
-            Handle(std::get<Signal>(msg.data));
-            return 0;
-        }
-        return 0;
-    }, [this]{ return  rwer->cap(0); });
 }

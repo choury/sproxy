@@ -234,15 +234,11 @@ static std::string generateUA(const std::string& prog, uint32_t request_id) {
     if(opt.ua){
         UA << opt.ua << " Sproxy/" << getVersion();
     } else {
+        UA << "Sproxy/" << getVersion()
+           << " (Build " << getBuildTime() << ") "
+           <<"(" << getDeviceInfo() << ")" << prog;
 #ifdef __ANDROID__
-        UA << "Sproxy/" << getVersion()
-           << " (Build " << getBuildTime() << ") "
-           <<"(" << getDeviceName() << ") " << prog
-           << " App/" << appVersion;
-#else
-        UA << "Sproxy/" << getVersion()
-           << " (Build " << getBuildTime() << ") "
-           <<"(" << getDeviceInfo() << ") " << prog;
+        UA << " App/" << appVersion;
 #endif
     }
 

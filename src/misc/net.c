@@ -254,6 +254,7 @@ int ListenUdp(const struct sockaddr_storage* addr) {
             LOGE("bind error:%s\n", strerror(errno));
             break;
         }
+        SetRecvPKInfo(fd, addr);
         return fd;
     }while(0);
     close(fd);
@@ -462,7 +463,7 @@ int getifaddrs(struct ifaddrs** __list_ptr);
 void freeifaddrs(struct ifaddrs* __ptr);
 #endif
 
-#define INTERFACE_MAX 50
+#define INTERFACE_MAX 100
 struct sockaddr_storage* getlocalip () {
     struct ifaddrs *ifap, *ifa;
     static struct sockaddr_storage ips[INTERFACE_MAX];

@@ -47,6 +47,7 @@ static char* http_listen = NULL;
 static char* ssl_listen = NULL;
 static char* quic_listen = NULL;
 static char* admin_listen = NULL;
+static char* tproxy_listen = NULL;
 
 volatile uint32_t will_contiune = 1;
 int efd = -1;
@@ -115,6 +116,12 @@ struct options opt = {
         .hostname   = {0},
         .port       = 0,
     },
+    .tproxy         = {
+        .scheme     = {0},
+        .protocol   = {0},
+        .hostname   = {0},
+        .port       = 0,
+    },
     .admin          = {
         .scheme     = {0},
         .protocol   = {0},
@@ -148,7 +155,7 @@ enum option_type{
     option_list,
 };
 
-static const char* getopt_option = ":D1hikqr:s:I:c:P:v";
+static const char* getopt_option = ":D1hikq:r:s:I:c:P:v";
 static struct option long_options[] = {
     {"admin",         required_argument, NULL,  0 },
     {"autoindex",     no_argument,       NULL, 'i'},
@@ -189,11 +196,12 @@ static struct option long_options[] = {
     {"request-header",required_argument, NULL,  0 },
 #if __linux__
     {"tun",           no_argument,       NULL,  0 },
+    {"tproxy",        required_argument, NULL,  0 },
     {"ua",            required_argument, NULL,  0 },
 #endif
     {"version",       no_argument,       NULL, 'v'},
 #ifndef NDEBUG
-    {"debug",         required_argument,   NULL,  0 },
+    {"debug",         required_argument, NULL,  0 },
 #endif
     {NULL,       0,                NULL,  0 }
 };
@@ -250,6 +258,7 @@ static struct option_detail option_detail[] = {
     {"ssl", "Listen for ssl server (require cert file and key)", option_string, &ssl_listen, NULL},
 #if __linux__
     {"tun", "tun mode (vpn mode, require root privilege)", option_bool, &opt.tun_mode, (void*)true},
+    {"tproxy", "tproxy listen (get dst via SO_ORIGINAL_DST)", option_string, &tproxy_listen, (void*)true},
     {"ua", "set user-agent for vpn auto request", option_string, &opt.ua, NULL},
 #endif
     {"version", "show the version of this programme", option_bool, NULL, NULL},
@@ -521,6 +530,10 @@ void postConfig(){
     }
     if(quic_listen && parseBind(quic_listen, &opt.quic)) {
         LOGE("wrong quic listen: %s\n", quic_listen);
+        exit(1);
+    }
+    if(tproxy_listen && parseBind(tproxy_listen, &opt.tproxy)) {
+        LOGE("wrong tproxy listen: %s\n", tproxy_listen);
         exit(1);
     }
     if(server_string && parseDest(server_string, &opt.Server)){

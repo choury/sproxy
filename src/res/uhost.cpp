@@ -13,6 +13,7 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
         deleteLater(ret);
     });
     rwer = prwer;
+    idle_timeour = AddJob([this]{deleteLater(CONNECT_AGED);}, 30000, 0);
     prwer->SetConnectCB([this](const sockaddr_storage&){
         LOGD(DHTTP, "<uhost> %s connected\n", dumpDest(rwer->getDst()).c_str());
         req->attach([this](ChannelMessage&& message){
@@ -42,6 +43,9 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
         }, [this]{return rwer->cap(0);});
     });
     rwer->SetReadCB([this](Buffer&& bb) -> size_t{
+        if(JobPending(idle_timeour) < 30000) {
+            idle_timeour = UpdateJob(std::move(idle_timeour), [this]{deleteLater(CONNECT_AGED);}, 30000);
+        }
         LOGD(DHTTP, "<uhost> (%s) read: len:%zu, refs: %zd\n", dumpDest(rwer->getDst()).c_str(), bb.len, bb.refs());
         if(res == nullptr){
             res = std::make_shared<HttpRes>(HttpResHeader::create(S200, sizeof(S200), req->header->request_id));
@@ -62,6 +66,7 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
         return len;
     });
     rwer->SetWriteCB([this](uint64_t){
+        idle_timeour = UpdateJob(std::move(idle_timeour), [this]{deleteLater(CONNECT_AGED);}, 120000);
         LOGD(DHTTP, "<uhost> (%s) written\n", dumpDest(rwer->getDst()).c_str());
         req->pull();
     });
