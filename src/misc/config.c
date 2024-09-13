@@ -85,6 +85,7 @@ struct options opt = {
     .pcap_file         = NULL,
     .alt_svc           = NULL,
     .rproxy_name       = NULL,
+    .bpf_cgroup        = NULL,
     .disable_http2     = false,
     .sni_mode          = false,
     .daemon_mode       = false,
@@ -155,11 +156,14 @@ enum option_type{
     option_list,
 };
 
-static const char* getopt_option = ":D1hikq:r:s:I:c:P:v";
+static const char* getopt_option = ":D1hikb:q:r:s:I:c:P:v";
 static struct option long_options[] = {
     {"admin",         required_argument, NULL,  0 },
     {"autoindex",     no_argument,       NULL, 'i'},
     {"alt-svc",       required_argument, NULL,  0 },
+#ifdef HAVE_BPF
+    {"bpf",           required_argument, NULL, 'b'},
+#endif
     {"cafile",        required_argument, NULL,  0 },
     {"cakey",         required_argument, NULL,  0 },
     {"cert",          required_argument, NULL,  0 },
@@ -220,6 +224,9 @@ static struct option_detail option_detail[] = {
     {"alter-method", "use Alter-Method to define real method (for obfuscation), http1 only", option_bool, &opt.alter_method, (void*)true},
     {"alt-svc", "Add alt-svc header to response or send ALTSVC frame", option_string, &opt.alt_svc, NULL},
     {"autoindex", "Enables the directory listing output (local server)", option_bool, &opt.autoindex, (void*)true},
+#ifdef HAVE_BPF
+    {"bpf", "load bpf prog to redirect for tproxy on cgroup", option_string, &opt.bpf_cgroup, NULL},
+#endif
     {"cafile", "CA certificate for server (ssl/quic)", option_string, &opt.cafile, NULL},
     {"cakey", "CA key for server (mitm)", option_string, &opt.cakey, NULL},
     {"cert", "Certificate file for server (ssl/quic)", option_string, &certfile, NULL},
@@ -584,6 +591,10 @@ void postConfig(){
     }
     if (opt.mitm_mode == Enable && opt.ca.key == NULL) {
         LOGE("mitm mode require cakey\n");
+        exit(1);
+    }
+    if (opt.bpf_cgroup && (getuid() != 0 || opt.tproxy.port == 0)){
+        LOGE("bpf require root privilege and tproxy mode\n");
         exit(1);
     }
     for(struct arg_list* p = secrets.next; p != NULL; p = p->next){

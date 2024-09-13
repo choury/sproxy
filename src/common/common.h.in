@@ -242,6 +242,7 @@ do {\
 #define SNI_HOST_ERR        93U
 #define CLI_KILLED          94U
 #define RPROXY_DUP          95U
+#define TPROXY_HOST_ERR     96U
 #define ERROR_MASK          0xff
 
 typedef unsigned char uchar;
@@ -267,6 +268,7 @@ struct Destination{
 #cmakedefine HAVE_CLIENT
 #cmakedefine HAVE_ZLIB
 #cmakedefine HAVE_QUIC
+#cmakedefine HAVE_BPF
 
 #define PREFIX "@CMAKE_INSTALL_PREFIX@"
 #define CABUNDLE "@SPROXY_CA_BUNDLE@"

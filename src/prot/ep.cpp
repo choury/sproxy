@@ -102,10 +102,6 @@ Ep::Ep(int fd):fd(fd){
 }
 
 Ep::~Ep(){
-    if(pending_events.count(this)) {
-        LOGD(DEVENT, "%p remove pending_events\n", this);
-        pending_events[this] = RW_EVENT::NONE;
-    }
     if(fd >= 0){
         setFd(-1);
     } else {
@@ -125,6 +121,10 @@ void Ep::setFd(int fd){
         EV_SET(&event[1], this->fd, EVFILT_WRITE, EV_DELETE, 0, 0, nullptr);
         kevent(efd, event, 2, nullptr, 0, nullptr);
 #endif
+        if(pending_events.count(this)) {
+            LOGD(DEVENT, "%p remove pending_events\n", this);
+            pending_events[this] = RW_EVENT::NONE;
+        }
         close(this->fd);
     }
 

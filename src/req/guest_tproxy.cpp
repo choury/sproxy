@@ -2,12 +2,17 @@
 #include "guest_sni.h"
 #include "res/responser.h"
 #include "misc/config.h"
+#include "misc/util.h"
 #include "prot/memio.h"
 
 #include <inttypes.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/netfilter_ipv6.h>
 
+struct pinfo{
+    pid_t pid;
+    char comm[16];
+}__attribute__((packed));
 
 static int getDstAddr(int fd, int family, sockaddr_storage* dst) {
     socklen_t socklen = sizeof(*dst);
@@ -16,23 +21,32 @@ static int getDstAddr(int fd, int family, sockaddr_storage* dst) {
             LOGE("failed to get original dst: %s\n", strerror(errno));
             return -1;
         }
-    }else if(family == AF_INET6) {
+        return 0;
+    }
+    if(family == AF_INET6) {
         if(getsockopt(fd, SOL_IPV6, SO_ORIGINAL_DST, dst, &socklen)) {
             LOGE("failed to get original dst: %s\n", strerror(errno));
             return -1;
         }
-    }else {
-        LOGE("unknown family: %d\n", family);
-        return -1;
+        sockaddr_in6* addr6 = (sockaddr_in6*)dst;
+        struct in_addr ip4 = getMapped(addr6->sin6_addr, IPV4MAPIPV6);
+        if(ip4.s_addr != INADDR_NONE){
+            sockaddr_in* addr = (sockaddr_in*)dst;
+            addr->sin_family = AF_INET;
+            addr->sin_addr = ip4;
+        }
+        return 0;
     }
-    return 0;
+    LOGE("unknown family: %d\n", family);
+    return -1;
 }
-
 
 Guest_tproxy::Guest_tproxy(int fd, const sockaddr_storage* src): Guest(fd, src, nullptr) {
     sockaddr_storage dst;
     if(getDstAddr(fd, src->ss_family, &dst)) {
-        LOGF("failed to get src addr for tproxy\n");
+        LOGE("(%s) failed to get src addr for tproxy\n", storage_ntoa(src));
+        deleteLater(TPROXY_HOST_ERR);
+        return;
     }
 
     headless = true;
@@ -41,17 +55,26 @@ Guest_tproxy::Guest_tproxy(int fd, const sockaddr_storage* src): Guest(fd, src, 
     int slen = snprintf(buff, sizeof(buff), "CONNECT %s" CRLF CRLF, storage_ntoa(&dst));
     std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, slen);
     if(header == nullptr) {
-        LOGE("Guest_tproxy: UnpackHttpReq failed\n");
+        LOGE("(%s) Guest_tproxy: UnpackHttpReq failed\n", storage_ntoa(src));
+        deleteLater(TPROXY_HOST_ERR);
         return;
     }
-    header->set("User-Agent", "tproxy");
+    struct pinfo pinfo;
+    socklen_t plen = sizeof(pinfo);
+    if(getsockopt(fd, SOL_IP, 0xff, &pinfo, &plen)) {
+        header->set("User-Agent", "tproxy");
+    } else {
+        header->set("User-Agent", std::string(pinfo.comm) + "/" + std::to_string(pinfo.pid));
+    }
     ReqProc(0, header);
 }
 
 Guest_tproxy::Guest_tproxy(int fd, const sockaddr_storage* src, Buffer&& bb): Guest(fd, src, nullptr) {
     sockaddr_storage dst;
     if(getDstAddr(fd, src->ss_family, &dst)) {
-        LOGF("failed to get src addr for tproxy\n");
+        LOGE("(%s) failed to get src addr for tproxy\n", storage_ntoa(src));
+        deleteLater(TPROXY_HOST_ERR);
+        return;
     }
 
     headless = true;
@@ -60,10 +83,17 @@ Guest_tproxy::Guest_tproxy(int fd, const sockaddr_storage* src, Buffer&& bb): Gu
     int slen = snprintf(buff, sizeof(buff), "CONNECT %s" CRLF "Protocol: udp" CRLF CRLF, storage_ntoa(&dst));
     std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, slen);
     if(header == nullptr) {
-        LOGE("Guest_tproxy: UnpackHttpReq failed\n");
+        LOGE("(%s) Guest_tproxy: UnpackHttpReq failed\n", storage_ntoa(src));
+        deleteLater(TPROXY_HOST_ERR);
         return;
     }
-    header->set("User-Agent", "tproxy");
+    struct pinfo pinfo;
+    socklen_t plen = sizeof(pinfo);
+    if(getsockopt(fd, SOL_IP, 0xff, &pinfo, &plen)) {
+        header->set("User-Agent", "tproxy");
+    } else {
+        header->set("User-Agent", std::string(pinfo.comm) + "/" + std::to_string(pinfo.pid));
+    }
     ReqProc(0, header);
     DataProc(bb);
 }

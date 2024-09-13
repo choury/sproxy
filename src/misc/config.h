@@ -58,6 +58,7 @@ struct options{
     const char *pcap_file;
     const char *alt_svc;
     const char *rproxy_name;
+    const char *bpf_cgroup;
     bool disable_http2;
     bool sni_mode;
     bool daemon_mode;

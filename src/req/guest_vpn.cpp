@@ -397,7 +397,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                     addr,
                     [this, id](auto&& data) { return mread(id, std::forward<decltype(data)>(data)); },
                     [this, id] { return rwer->cap(id); });
-                new Guest_sni(status.rwer, status.host, generateUA(status.prog, 0));
+                new Guest_sni(status.rwer, status.host, generateUA(status.prog, 0).c_str());
             }
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             trwer->sendMsg(id, TUN_MSG_SYN);
@@ -439,7 +439,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                     addr,
                     [this, id](auto&& data) { return mread(id, std::forward<decltype(data)>(data)); },
                     [this, id] { return rwer->cap(id); });
-                new Guest_sni(status.rwer, status.host, generateUA(status.prog, 0));
+                new Guest_sni(status.rwer, status.host, generateUA(status.prog, 0).c_str());
             }
 #endif
         } else {

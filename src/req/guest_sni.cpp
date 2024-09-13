@@ -24,10 +24,13 @@ Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(f
     user_agent = ss.str();
 }
 
-Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, std::string host, std::string ua):
-        Guest(rwer), host(std::move(host)), user_agent(std::move(ua))
+Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, std::string host, const char* ua):
+        Guest(rwer), host(std::move(host))
 {
     headless = true;
+    if(ua) {
+        user_agent = ua;
+    }
     if(std::dynamic_pointer_cast<PMemRWer>(rwer)) {
         rwer->SetReadCB([this](Buffer&& bb){return sniffer_quic(std::move(bb));});
     } else if(std::dynamic_pointer_cast<MemRWer>(rwer)) {
@@ -78,7 +81,7 @@ std::shared_ptr<HttpReq> Guest_sni::forward(const char *hostname, Protocol prot)
 size_t Guest_sni::sniffer(Buffer&& bb) {
     char *hostname = nullptr;
     defer(free, hostname);
-    int ret = parse_tls_header((const char*)bb.data(), bb.len, &hostname);
+    int ret = parse_tls_header((unsigned const char*)bb.data(), bb.len, &hostname);
     if(ret == -1) {
         // not enough data, wait for more
         return 0;
@@ -137,7 +140,7 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
             LOGE("Quic sni faild to get ClientHello: %zd vs %zd\n", max_off, length);
             goto Forward;
         }
-        int ret = parse_client_hello((const char *) buffer.get(), length, &hostname);
+        int ret = parse_client_hello((unsigned const char *)buffer.get(), length, &hostname);
         if (ret <= 0) {
             LOGE("Quic faild to parse sni from clientHello: %d\n", ret);
             goto Forward;

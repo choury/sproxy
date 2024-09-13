@@ -38,8 +38,8 @@ extern "C" {
 
 #define QUIC_GROUPS "P-256:X25519:P-384:P-521"
 
-int parse_client_hello(const char*data, size_t data_len, char** hostname);
-int parse_tls_header(const char *data, size_t data_len, char **hostname);
+int parse_client_hello(const unsigned char*data, size_t data_len, char** hostname);
+int parse_tls_header(const unsigned char *data, size_t data_len, char **hostname);
 int verify_host_callback(int ok, X509_STORE_CTX *ctx);
 int ssl_get_error(SSL* ssl, int ret);
 void keylog_write_line(const SSL *ssl, const char *line);

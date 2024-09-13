@@ -8,6 +8,10 @@ if(NOT ANDROID)
     add_subdirectory(cgi)
 endif()
 
+if(HAVE_BPF)
+    add_subdirectory(bpf)
+endif()
+
 add_subdirectory(prot)
 add_subdirectory(misc)
 add_subdirectory(req)
@@ -29,6 +33,11 @@ endif()
 
 if(APPLE)
     set(SPROXY_LIBS ${SPROXY_LIBS} ${CORE_LIBRARY} ${SYSCONF_LIBRARY})
+endif()
+
+if(HAVE_BPF)
+    link_directories(${LIBBPF_LIBRARY_DIRS})
+    set(SPROXY_LIBS ${SPROXY_LIBS} bpf_loader ${LIBBPF_LIBRARIES})
 endif()
 
 set(SPROXY_LIBS ${SPROXY_LIBS} ${JSON-C_LIBRARIES})

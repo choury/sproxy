@@ -78,6 +78,7 @@ int Guest::mread(std::shared_ptr<HttpReqHeader>,
             cbb.truncate(cap);
             rwer->Send(std::move(cbb));
         }
+        tx_bytes += cap;
         return cap;
     };
     return std::visit([&](auto&& arg) -> int {
@@ -265,8 +266,13 @@ ssize_t Guest::DataProc(Buffer& bb) {
         cap = status.rwer->bufsize();
     }
     if (cap <= 0) {
-        LOGE("[%" PRIu64 "]: <guest> the host's buff is full (%s)\n",
-            status.req->header->request_id, status.req->header->geturl().c_str());
+        if(status.req) {
+            LOGE("[%" PRIu64 "]: <guest> the host's buff is full (%s)\n",
+                status.req->header->request_id, status.req->header->geturl().c_str());
+        }
+        if(status.rwer) {
+            LOGE("<guest> the rwer's buff is full (%s)\n", dumpDest(status.rwer->getSrc()).c_str());
+        }
         rwer->delEvents(RW_EVENT::READ);
         return -1;
     }

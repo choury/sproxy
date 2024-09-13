@@ -4,9 +4,9 @@
 #endif
 #include "req/cli.h"
 #include "req/rguest2.h"
-#include "misc/job.h"
 #include "misc/config.h"
 #include "prot/tls.h"
+#include "bpf/bpf.h"
 
 #include <unistd.h>
 #include <assert.h>
@@ -59,14 +59,29 @@ static int ListenUdp(const Destination* dest) {
     return fd;
 }
 
+static sockaddr_in localhost4 = {
+    .sin_family = AF_INET,
+    .sin_port = 0,
+    .sin_addr = {0x0100007f},
+    .sin_zero = {},
+ };
+
+//::1
+static sockaddr_in6 localhost6 = {
+    .sin6_family = AF_INET6,
+    .sin6_port = 0,
+    .sin6_flowinfo = 0,
+    .sin6_addr = {{{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}}},
+    .sin6_scope_id = 0,
+};
+
 
 static int ListenLocalhostTcp(uint16_t port, int fd[2]) {
     fd[0] = fd[1] = -1;
-    sockaddr_storage addr;
-    storage_aton("127.0.0.1", port, &addr);
-    fd[0] = ListenTcp(&addr);
-    storage_aton("[::1]", port, &addr);
-    fd[1] = ListenTcp(&addr);
+    localhost4.sin_port = htons(port);
+    fd[0] = ListenTcp((sockaddr_storage*)&localhost4);
+    localhost6.sin6_port = htons(port);
+    fd[1] = ListenTcp((sockaddr_storage*)&localhost6);
     if(fd[0] < 0 || fd[1] < 0) {
         close(fd[0]);
         close(fd[1]);
@@ -77,11 +92,10 @@ static int ListenLocalhostTcp(uint16_t port, int fd[2]) {
 
 static int ListenLocalhostUdp(uint16_t port, int fd[2]) {
     fd[0] = fd[1] = -1;
-    sockaddr_storage addr[2];
-    storage_aton("127.0.0.1", port, &addr[0]);
-    fd[0] = ListenUdp(&addr[0]);
-    storage_aton("[::1]", port, &addr[1]);
-    fd[1] = ListenUdp(&addr[1]);
+    localhost4.sin_port = htons(port);
+    fd[0] = ListenUdp((sockaddr_storage*)&localhost4);
+    localhost6.sin6_port = htons(port);
+    fd[1] = ListenUdp((sockaddr_storage*)&localhost6);
     if(fd[0] < 0 || fd[1] < 0) {
         close(fd[0]);
         close(fd[1]);
@@ -122,6 +136,11 @@ int main(int argc, char **argv) {
                 if(ListenLocalhostUdp(opt.tproxy.port, fd+2) < 0) {
                     return -1;
                 }
+#ifdef HAVE_BPF
+                if(opt.bpf_cgroup && load_bpf(opt.bpf_cgroup, &localhost4, &localhost6)){
+                    return -1;
+                }
+#endif
             } else {
                 fd[0] = ListenTcp(&opt.tproxy);
                 if (fd[0] < 0) {
@@ -131,6 +150,26 @@ int main(int argc, char **argv) {
                 if (fd[2] < 0) {
                     return -1;
                 }
+#ifdef HAVE_BPF
+                if(opt.bpf_cgroup) {
+                    if(strcmp(opt.tproxy.hostname, "[::]") == 0){
+                        localhost4.sin_port = htons(opt.tproxy.port);
+                        localhost6.sin6_port = htons(opt.tproxy.port);
+                        if(load_bpf(opt.bpf_cgroup, &localhost4, &localhost6)) {
+                            return -1;
+                        }
+                    }else {
+                        sockaddr_storage addr;
+                        storage_aton(opt.tproxy.hostname, opt.tproxy.port, &addr);
+                        if(addr.ss_family == AF_INET && load_bpf(opt.bpf_cgroup, (sockaddr_in*)&addr, &localhost6)) {
+                            return -1;
+                        }
+                        if(addr.ss_family == AF_INET6 && load_bpf(opt.bpf_cgroup, &localhost4, (sockaddr_in6*)&addr)) {
+                            return -1;
+                        }
+                    }
+                }
+#endif
             }
             servers.emplace_back(std::make_shared<Tproxy_server>(fd[0]));
             if(fd[1] >= 0) servers.emplace_back(std::make_shared<Tproxy_server>(fd[1]));
@@ -233,4 +272,9 @@ int main(int argc, char **argv) {
     }
     LOG("Sproxy exiting ...\n");
     neglect();
+#ifdef HAVE_BPF
+    if(opt.bpf_cgroup) {
+        unload_bpf();
+    }
+#endif
 }
