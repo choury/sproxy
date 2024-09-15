@@ -174,6 +174,7 @@ openssl x509 -req -days 365 -in localhost.csr  -CA ca.crt -CAkey ca.key -set_ser
 EOF
 
 buildpath=$(realpath "$1/src")
+ker=$(uname -s)
 
 ln -f -s "$buildpath/sproxy" .
 ln -f -s "$buildpath/scli" .
@@ -193,6 +194,10 @@ function cleanup {
     kill -SIGABRT $(jobs -p) || true
 }
 
+if [ $ker == 'Linux' ];then
+   sp='@'
+fi
+
 trap cleanup EXIT
 > curl.log
 
@@ -211,7 +216,7 @@ quic 3334
 debug all
 EOF
 
-./sproxy -c server.conf --admin unix:server.sock > server.log 2>&1 &
+./sproxy -c server.conf --admin unix:${sp}server.sock > server.log 2>&1 &
 wait_tcp_port 3333
 echo "test http server"
 test_http 3333
@@ -234,30 +239,30 @@ insecure
 debug all
 EOF
 
-./sproxy -c client.conf --http 3335  https://$HOSTNAME:3334 --disable-http2 --admin unix:client_h1.sock > client_h1.log 2>&1 &
+./sproxy -c client.conf --http 3335  https://$HOSTNAME:3334 --disable-http2 --admin unix:${sp}client_h1.sock > client_h1.log 2>&1 &
 wait_tcp_port 3335
 
 echo "test http1 -> http1"
 test_client 3335
 jobs
-printf "dump sites" | ./scli -s client_h1.sock
+printf "dump sites" | ./scli -s ${sp}client_h1.sock
 kill -SIGUSR1 %2
 kill -SIGUSR2 %2
 wait %2
 
-./sproxy -c client.conf --http 3335  https://$HOSTNAME:3334 --admin unix:client_h23.sock > client_h23.log 2>&1 &
+./sproxy -c client.conf --http 3335  https://$HOSTNAME:3334 --admin unix:${sp}client_h23.sock > client_h23.log 2>&1 &
 wait_tcp_port 3335
 
 echo "test http1 -> http2"
 test_client 3335
-printf "dump sites" | ./scli -s client_h23.sock
+printf "dump sites" | ./scli -s ${sp}client_h23.sock
 jobs
 kill -SIGUSR1 %2
 
-printf "switch quic://$HOSTNAME:3334" | ./scli -s client_h23.sock
+printf "switch quic://$HOSTNAME:3334" | ./scli -s ${sp}client_h23.sock
 echo "test http1 -> http3"
 test_client 3335
-printf "dump sites" | ./scli -s client_h23.sock
+printf "dump sites" | ./scli -s ${sp}client_h23.sock
 jobs
 kill -SIGUSR1 %2
 kill -SIGUSR2 %2

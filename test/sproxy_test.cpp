@@ -168,6 +168,27 @@ int main(int argc , char *argv[]) {
                 cerr<<"Fail to connect to <"<<addr<<":"<<port<<">: "<<strerror(errno)<<endl;
                 return -2;
             }
+        }else if(cmd == "sendto") {
+            string addr,str;
+            int port;
+            ss>>addr>>port>>str;
+            if(ss.fail()){
+                cerr << "sendto <addr> <port> <str>" << endl;
+                return -1;
+            }
+            sockfd = socket(AF_INET , SOCK_DGRAM , 0);
+            if (sockfd == -1){
+                cerr<<"Fail to create a socket: "<<strerror(errno)<<endl;
+                return -2;
+            }
+            struct sockaddr_in address;
+            address.sin_addr.s_addr = inet_addr(addr.c_str());
+            address.sin_family = AF_INET;
+            address.sin_port = htons(port);
+            if(sendto(sockfd, str.c_str(), str.length(), 0, (sockaddr*)&address, sizeof(address)) < 0){
+                cerr<<"Fail to sendto <"<<addr<<":"<<port<<">: "<<strerror(errno)<<endl;
+                return -2;
+            }
         }else if(cmd == "reset"){
             struct linger sl;
             sl.l_onoff = 1;		/* non-zero value enables linger option in kernel */
@@ -259,9 +280,13 @@ int main(int argc , char *argv[]) {
                 cerr << "Fail to open file " << file << ": " << strerror(errno) << endl;
                 return -2;
             }
-#ifdef __APPLE__
-            int len = 0;
-            // OSX does not support sendfile on UDP sockets
+            off_t len = 0;
+#ifdef __linux__
+            if(sendfile(sockfd, fd, &len, UINT32_MAX) > 0){
+                close(fd);
+                continue;
+            }
+#endif
             char buff[1024];
             while ((len = read(fd, buff, sizeof(buff))) > 0) {
                 if (write(sockfd, buff, len) < 0) {
@@ -273,14 +298,6 @@ int main(int argc , char *argv[]) {
                 cerr << "Fail to read file " << file << ": " << strerror(errno) << endl;
                 return -2;
             }
-#endif
-#ifdef __linux__
-            off_t len = 0;
-            if(sendfile(sockfd, fd, &len, UINT32_MAX) < 0){
-                cerr << "Fail to send file "<<file<<": " << strerror(errno) << endl;
-                return -2;
-            }
-#endif
             close(fd);
         }else if(cmd == "send"){
             string data = decode(line.substr(ss.tellg()));
@@ -354,6 +371,10 @@ int main(int argc , char *argv[]) {
                 cout.write(buf, ret);
             } else {
                 int nread = atoi(size.c_str());
+                if (nread == 0) {
+                    cerr << "Fail to parse bytes: "<<size<<endl;
+                    return -2;
+                }
                 if (read_fixed_len(sockfd, nread) <= 0) {
                     cerr << "Fail to read from server: " << strerror(errno) << endl;
                     return -2;

@@ -80,8 +80,8 @@ std::shared_ptr<HttpReq> Guest_sni::forward(const char *hostname, Protocol prot)
 
 size_t Guest_sni::sniffer(Buffer&& bb) {
     char *hostname = nullptr;
-    defer(free, hostname);
     int ret = parse_tls_header((unsigned const char*)bb.data(), bb.len, &hostname);
+    defer(free, hostname);
     if(ret == -1) {
         // not enough data, wait for more
         return 0;
