@@ -229,25 +229,6 @@ static const char* getProg(std::shared_ptr<const Ip>) {
 }
 #endif
 
-static std::string generateUA(const std::string& prog, uint32_t request_id) {
-    std::stringstream UA;
-    if(opt.ua){
-        UA << opt.ua << " Sproxy/" << getVersion();
-    } else {
-        UA << "Sproxy/" << getVersion()
-           << " (Build " << getBuildTime() << ") "
-           <<"(" << getDeviceInfo() << ") " << prog;
-#ifdef __ANDROID__
-        UA << " App/" << appVersion;
-#endif
-    }
-
-    if (request_id != 0) {
-        UA << " SEQ/" << request_id;
-    }
-    return UA.str();
-}
-
 void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
     uint64_t id = (uint64_t)index;
     auto& status = statusmap.at(id);
@@ -397,7 +378,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                     addr,
                     [this, id](auto&& data) { return mread(id, std::forward<decltype(data)>(data)); },
                     [this, id] { return rwer->cap(id); });
-                new Guest_sni(status.rwer, status.host, generateUA(status.prog, 0).c_str());
+                new Guest_sni(status.rwer, status.host, generateUA(opt.ua, status.prog, 0).c_str());
             }
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             trwer->sendMsg(id, TUN_MSG_SYN);
@@ -407,7 +388,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                                 getRdnsWithPort(pac->getdst()).c_str());
 
             std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
-            header->set("User-Agent", generateUA(status.prog, header->request_id));
+            header->set("User-Agent", generateUA(opt.ua, status.prog, header->request_id));
             status.req = std::make_shared<HttpReq>(header, 
                             [this, id](std::shared_ptr<HttpRes> res){return response((void*)id, res);},
                             [this, id]{rwer->Unblock(id);});
@@ -439,7 +420,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                     addr,
                     [this, id](auto&& data) { return mread(id, std::forward<decltype(data)>(data)); },
                     [this, id] { return rwer->cap(id); });
-                new Guest_sni(status.rwer, status.host, generateUA(status.prog, 0).c_str());
+                new Guest_sni(status.rwer, status.host, generateUA(opt.ua, status.prog, 0).c_str());
             }
 #endif
         } else {
@@ -448,7 +429,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                                   getRdnsWithPort(pac->getdst()).c_str());
 
             std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
-            header->set("User-Agent", generateUA(status.prog, header->request_id));
+            header->set("User-Agent", generateUA(opt.ua, status.prog, header->request_id));
             status.req = std::make_shared<HttpReq>(
                     header,
                     [this, id](std::shared_ptr<HttpRes> res){return response((void*)id, res);},
@@ -462,7 +443,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
         int headlen = snprintf(buff, sizeof(buff), "CONNECT %s" CRLF "Protocol: icmp" CRLF CRLF,
                               getRdnsWithPort(pac->getdst()).c_str());
         std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
-        header->set("User-Agent", generateUA(status.prog, header->request_id));
+        header->set("User-Agent", generateUA(opt.ua, status.prog, header->request_id));
         status.req = std::make_shared<HttpReq>(
                 header,
                 [this, id](std::shared_ptr<HttpRes> res){return response((void*)id, res);},
@@ -475,7 +456,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
         int headlen = snprintf(buff, sizeof(buff), "CONNECT %s" CRLF "Protocol: icmp" CRLF CRLF,
                               getRdnsWithPort(pac->getdst()).c_str());
         std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, headlen);
-        header->set("User-Agent", generateUA(status.prog, header->request_id));
+        header->set("User-Agent", generateUA(opt.ua, status.prog, header->request_id));
         status.req = std::make_shared<HttpReq>(
                 header,
                 [this, id](std::shared_ptr<HttpRes> res){return response((void*)id, res);},

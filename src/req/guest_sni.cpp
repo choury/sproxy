@@ -17,20 +17,13 @@ Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(f
     headless = true;
     rwer->SetReadCB([this](Buffer&& bb){return sniffer(std::move(bb));});
     Http_Proc = &Guest_sni::AlwaysProc;
-    std::stringstream ss;
-    ss << "Sproxy/" << getVersion()
-       << " (Build " << getBuildTime() << ") "
-       <<"(" << getDeviceInfo() << ")";
-    user_agent = ss.str();
+    user_agent = generateUA(opt.ua, "", 0);
 }
 
-Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, std::string host, const char* ua):
-        Guest(rwer), host(std::move(host))
+Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, std::string host, std::string user_agent):
+        Guest(rwer), host(std::move(host)), user_agent(std::move(user_agent))
 {
     headless = true;
-    if(ua) {
-        user_agent = ua;
-    }
     if(std::dynamic_pointer_cast<PMemRWer>(rwer)) {
         rwer->SetReadCB([this](Buffer&& bb){return sniffer_quic(std::move(bb));});
     } else if(std::dynamic_pointer_cast<MemRWer>(rwer)) {
@@ -66,7 +59,7 @@ std::shared_ptr<HttpReq> Guest_sni::forward(const char *hostname, Protocol prot)
         LOGE("Guest_sni: UnpackHttpReq failed\n");
         return nullptr;
     }
-    header->set("User-Agent", user_agent + " SEQ/" + std::to_string(header->request_id));
+    header->set("User-Agent", generateUA(user_agent.c_str(), "", header->request_id));
     LOGD(DHTTP, "<guest_sni> ReqProc %" PRIu64 " %s\n", header->request_id, header->geturl().c_str());
     auto req = std::make_shared<HttpReq>(
             header,

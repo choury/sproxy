@@ -210,6 +210,7 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
             return;
         }
     }
+    header->set("User-Agent", generateUA(header->get("User-Agent"), "", header->request_id));
     if(header->Dest.scheme[0] == 0 && header->http_method()) {
         if(rwer->isTls()) {
             strcpy(header->Dest.scheme, "https");
@@ -219,6 +220,7 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
             strcpy(header->Dest.protocol, "tcp");
         }
     }
+
     LOGD(DHTTP, "<guest> ReqProc %" PRIu64 " %s\n", header->request_id, header->geturl().c_str());
     auto req = std::make_shared<HttpReq>(header,
             [this](std::shared_ptr<HttpRes> res) { response(nullptr, res); },

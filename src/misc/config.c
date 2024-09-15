@@ -334,7 +334,7 @@ const char* getDeviceInfo(){
         LOGE("uname failed: %s\n", strerror(errno));
         return "Unkown platform";
     }
-    snprintf(infoString, sizeof(infoString), "%s %s; %s %s", info.sysname, info.machine, info.nodename, info.release);
+    snprintf(infoString, sizeof(infoString), "%s %s; %s", info.sysname, info.machine, info.release);
     return infoString;
 }
 

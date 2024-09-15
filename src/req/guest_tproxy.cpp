@@ -4,7 +4,7 @@
 #include "res/fdns.h"
 #include "misc/config.h"
 #include "misc/util.h"
-#include "prot/memio.h"
+#include "prot/netio.h"
 
 #include <inttypes.h>
 #include <linux/netfilter_ipv4.h>
@@ -42,7 +42,9 @@ static int getDstAddr(int fd, int family, sockaddr_storage* dst) {
     return -1;
 }
 
-Guest_tproxy::Guest_tproxy(int fd, const sockaddr_storage* src): Guest(fd, src, nullptr) {
+Guest_tproxy::Guest_tproxy(int fd, const sockaddr_storage* src):
+    Guest(std::make_shared<StreamRWer>(fd, src, [](int, int){}))
+{
     sockaddr_storage dst;
     if(getDstAddr(fd, src->ss_family, &dst)) {
         LOGE("(%s) failed to get src addr for tproxy\n", storage_ntoa(src));
@@ -63,14 +65,16 @@ Guest_tproxy::Guest_tproxy(int fd, const sockaddr_storage* src): Guest(fd, src, 
     struct pinfo pinfo;
     socklen_t plen = sizeof(pinfo);
     if(getsockopt(fd, SOL_IP, 0xff, &pinfo, &plen)) {
-        header->set("User-Agent", "tproxy");
+        header->set("User-Agent", generateUA(opt.ua, "", 0));
     } else {
-        header->set("User-Agent", std::string(pinfo.comm) + "/" + std::to_string(pinfo.pid));
+        header->set("User-Agent", generateUA(opt.ua, std::string(pinfo.comm) + "/" + std::to_string(pinfo.pid), 0));
     }
     ReqProc(0, header);
 }
 
-Guest_tproxy::Guest_tproxy(int fd, const sockaddr_storage* src, Buffer&& bb): Guest(fd, src, nullptr) {
+Guest_tproxy::Guest_tproxy(int fd, const sockaddr_storage* src, Buffer&& bb):
+    Guest(std::make_shared<PacketRWer>(fd, src, [](int, int){}))
+{
     static uint64_t  dnsid = 1;
     sockaddr_storage dst;
     if(getDstAddr(fd, src->ss_family, &dst)) {
@@ -99,9 +103,9 @@ Guest_tproxy::Guest_tproxy(int fd, const sockaddr_storage* src, Buffer&& bb): Gu
     struct pinfo pinfo;
     socklen_t plen = sizeof(pinfo);
     if(getsockopt(fd, SOL_IP, 0xff, &pinfo, &plen)) {
-        header->set("User-Agent", "tproxy");
+        header->set("User-Agent", generateUA(opt.ua, "", 0));
     } else {
-        header->set("User-Agent", std::string(pinfo.comm) + "/" + std::to_string(pinfo.pid));
+        header->set("User-Agent", generateUA(opt.ua, std::string(pinfo.comm) + "/" + std::to_string(pinfo.pid), 0));
     }
     ReqProc(0, header);
     DataProc(bb);

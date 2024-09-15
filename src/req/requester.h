@@ -20,4 +20,6 @@ public:
     virtual void response(void* index, std::shared_ptr<HttpRes> res) = 0;
 };
 
+std::string generateUA(const char* ua, const std::string& prog, uint64_t requestid);
+
 #endif
