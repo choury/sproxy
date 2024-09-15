@@ -4,18 +4,6 @@
 #include <assert.h>
 
 typedef struct DNS_QUE {
-// 1: A
-// 2: NS
-// 5: CNAME
-// 6: SOA
-// 11: WKS
-// 12: PTR
-// 13: HINFO
-// 15: MX
-// 28: AAAA
-// 33: SRV
-// 252: AXFR
-// 255: ANY
     uint16_t type;
     uint16_t classes;            // 通常为1，表示获取因特网地址（IP地址）
 } __attribute__((packed)) DNS_QUE;
@@ -121,11 +109,11 @@ Dns_Query::Dns_Query(const char* buff, size_t len) {
         return;
     }
     const DNS_QUE *que = (const DNS_QUE*)p;
-    if(ntohs(que->classes) != 1) {
+    if(ntohs(que->classes) != ns_c_in) {
         return;
     }
     type = ntohs(que->type);
-    if(type == 12){
+    if(type == ns_t_ptr){
         std::string ptr = reverse(domain);
         if(startwith(ptr.c_str(), IPV4_PTR_PREFIX)){
             std::string ipstr = ptr.substr(sizeof(IPV4_PTR_PREFIX) - 1);
@@ -162,19 +150,17 @@ Dns_Query::Dns_Query(const char* buff, size_t len) {
 
 int Dns_Query::build(unsigned char* buf) const {
     DNS_HDR  *dnshdr = (DNS_HDR *)buf;
+    memset(dnshdr, 0, sizeof(DNS_HDR));
     dnshdr->id = htons(id);
-    dnshdr->flag = htons(RD);
-    dnshdr->numq = htons(1);
-    dnshdr->numa = 0;
-    dnshdr->numa1 = 0;
-    dnshdr->numa2 = 0;
+    dnshdr->rd = 1;
+    dnshdr->qdcount = htons(1);
 
     int len = sizeof(DNS_HDR);
 
     len += putdomain(buf+len, domain);
 
     DNS_QUE  *que = (DNS_QUE *)(buf+len);
-    que->classes = htons(1);
+    que->classes = htons(ns_c_in);
     que->type = htons(type);
 
     return len + sizeof(DNS_QUE);
@@ -182,19 +168,18 @@ int Dns_Query::build(unsigned char* buf) const {
 
 Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
     if(len < sizeof(DNS_HDR)){
-        error = DNS_FORMAT_ERROR;
+        error = ns_r_formerr;
         LOGE("[DNS] incomplete DNS response\n");
         return;
     }
     const DNS_HDR *dnshdr = (const DNS_HDR *)buff;
-    uint16_t numq = ntohs(dnshdr->numq);
-    uint16_t flag = ntohs(dnshdr->flag);
+    uint16_t numq = ntohs(dnshdr->qdcount);
     const unsigned char *p = (const unsigned char *)(dnshdr +1);
-    assert(numq && (flag & QR));
+    assert(numq && dnshdr->qr);
     for (int i = 0; i < numq; ++i) {
         p = (unsigned char *)getdomain(dnshdr, p, len, domain);
         if((const char*)p + sizeof(DNS_QUE) - buff > (int)len){
-            error = DNS_FORMAT_ERROR;
+            error = ns_r_formerr;
             LOGE("[DNS] <%d> numq overflow\n", ntohs(dnshdr->id));
             return;
         }
@@ -203,28 +188,28 @@ Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
         p+= sizeof(DNS_QUE);
         LOGD(DDNS, "[%d] response for %s, type: %d:\n", ntohs(dnshdr->id), domain, type);
     }
-    if((flag & RCODE_MASK) !=0 ){
-        error = flag & RCODE_MASK;
+    if(dnshdr->rcode !=0){
+        error = dnshdr->rcode;
         LOG("[DNS] <%d> ack error: %s: %u\n", ntohs(dnshdr->id), domain, error);
         return;
     }
-    uint16_t numa = ntohs(dnshdr->numa);
+    uint16_t numa = ntohs(dnshdr->ancount);
     for(int i = 0; i < numa; ++i) {
         p = (unsigned char *)getdomain(dnshdr, p, len, domain);
         if((const char*)p + sizeof(DNS_RR) - buff > (int)len){
-            error = DNS_FORMAT_ERROR;
+            error = ns_r_formerr;
             LOGE("[DNS] <%d> numa overflow\n", ntohs(dnshdr->id));
             return;
         }
         DNS_RR *dnsrr = (DNS_RR*)p;
-        assert(ntohs(dnsrr->classes) == 1);
+        assert(ntohs(dnsrr->classes) == ns_c_in);
         uint32_t ttl = ntohl(dnsrr->TTL);
 
         p+= sizeof(DNS_RR);
         char __attribute__((unused)) ipaddr[INET6_ADDRSTRLEN] = {0};
         switch (ntohs(dnsrr->type)) {
             sockaddr_storage ip;
-        case 1:{
+        case ns_t_a:{
             memset(&ip, 0, sizeof(ip));
             sockaddr_in* ip4 = (sockaddr_in*)&ip;
             ip4->sin_family = AF_INET;
@@ -233,19 +218,19 @@ Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
             LOGD(DDNS, "A: %s ==> %s [%d]\n", domain, inet_ntop(AF_INET, p, ipaddr, sizeof(ipaddr)), ttl);
             break;
         }
-        case 2: {
+        case ns_t_ns: {
             char ns[DOMAINLIMIT];
             getdomain(dnshdr, p, len, ns);
             LOGD(DDNS, "NS: %s ==> %s [%d]\n", domain, ns, ttl);
             break;
         }
-        case 5: {
+        case ns_t_cname: {
             char cname[DOMAINLIMIT];
             getdomain(dnshdr, p, len, cname);
             LOGD(DDNS, "CNAME: %s ==> %s [%d]\n", domain, cname, ttl);
             break;
         }
-        case 28:{
+        case ns_t_aaaa:{
             memset(&ip, 0, sizeof(ip));
             sockaddr_in6* ip6 = (sockaddr_in6*)&ip;
             ip6->sin6_family = AF_INET6;
@@ -263,7 +248,7 @@ Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
     id = ntohs(dnshdr->id);
 }
 
-Dns_Result::Dns_Result(const char *domain, const in_addr* addr): type(1), ttl(0){
+Dns_Result::Dns_Result(const char *domain, const in_addr* addr): type(ns_t_a), ttl(0){
     strcpy(this->domain, domain);
     if(addr) {
         sockaddr_storage ip;
@@ -275,7 +260,7 @@ Dns_Result::Dns_Result(const char *domain, const in_addr* addr): type(1), ttl(0)
     }
 }
 
-Dns_Result::Dns_Result(const char *domain, const in6_addr* addr): type(28), ttl(0){
+Dns_Result::Dns_Result(const char *domain, const in6_addr* addr): type(ns_t_aaaa), ttl(0){
     strcpy(this->domain, domain);
     if(addr) {
         sockaddr_storage ip;
@@ -295,59 +280,58 @@ Dns_Result::Dns_Result(const char *domain): ttl(0) {
 int Dns_Result::build(const Dns_Query* query, unsigned char* buf)const {
     int len = query->build(buf);
     DNS_HDR *dnshdr = (DNS_HDR *)buf;
-    dnshdr->flag  = htons(QR|RD|RA);
-    dnshdr->numa = 0;
-    dnshdr->numa1 = 0;
-    dnshdr->numa2 = 0;
+    dnshdr->qr = 1;
+    dnshdr->rd = 1;
+    dnshdr->ra = 1;
 
     for(auto addr : addrs) {
-        if(query->type == 1 && addr.ss_family == AF_INET){
+        if(query->type == ns_t_a && addr.ss_family == AF_INET){
             len += putdomain(buf+len, query->domain);
             DNS_RR* rr= (DNS_RR*)(buf + len);
-            rr->classes = htons(1);
-            rr->type = htons(1);
+            rr->classes = htons(ns_c_in);
+            rr->type = htons(ns_t_a);
             rr->TTL = htonl(ttl);
             rr->rdlength = htons(sizeof(in_addr));
             sockaddr_in* addr4 = (sockaddr_in*)&addr;
             memcpy(rr->rdata, &addr4->sin_addr, sizeof(in_addr));
             len += sizeof(DNS_RR) + sizeof(in_addr);
-            dnshdr->numa ++;
+            dnshdr->ancount ++;
         }
-        if(query->type == 28 && addr.ss_family == AF_INET6){
+        if(query->type == ns_t_aaaa && addr.ss_family == AF_INET6){
             len += putdomain(buf+len, query->domain);
             DNS_RR* rr= (DNS_RR*)(buf + len);
-            rr->classes = htons(1);
-            rr->type = htons(28);
+            rr->classes = htons(ns_c_in);
+            rr->type = htons(ns_t_aaaa);
             rr->TTL = htonl(ttl);
             rr->rdlength = htons(sizeof(in6_addr));
             sockaddr_in6* addr6 = (sockaddr_in6*)&addr;
             memcpy(rr->rdata, &addr6->sin6_addr, sizeof(in6_addr));
             len += sizeof(DNS_RR) + sizeof(in6_addr);
-            dnshdr->numa ++;
+            dnshdr->ancount ++;
         }
     }
-    if(query->type == 12){
+    if(query->type == ns_t_ptr){
         len += putdomain(buf+len, query->domain);
         DNS_RR* rr= (DNS_RR*)(buf + len);
-        rr->classes = htons(1);
-        rr->type = htons(12);
+        rr->classes = htons(ns_c_in);
+        rr->type = htons(ns_t_ptr);
         rr->TTL = htonl(ttl);
         int rdlength = putdomain(rr->rdata, domain);
         rr->rdlength = htons(rdlength);
         len += sizeof(DNS_RR) + rdlength;
-        dnshdr->numa ++;
+        dnshdr->ancount ++;
     }
-    HTONS(dnshdr->numa);
+    HTONS(dnshdr->ancount);
     return len;
 }
 
 int Dns_Result::buildError(const Dns_Query* query, unsigned char errcode, unsigned char *buf){
     int len = query->build(buf);
     DNS_HDR *dnshdr = (DNS_HDR *)buf;
-    dnshdr->flag  = htons(QR|RD|RA|errcode);
-    dnshdr->numa = 0;
-    dnshdr->numa1 = 0;
-    dnshdr->numa2 = 0;
+    dnshdr->qr = 1;
+    dnshdr->rd = 1;
+    dnshdr->ra = 1;
+    dnshdr->rcode = errcode;
     return len;
 }
 

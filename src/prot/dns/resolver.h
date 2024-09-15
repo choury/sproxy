@@ -8,6 +8,7 @@
 #include <netinet/in.h>
 
 
+#define DNS_TIMEOUT      0xf0
 
 class RawResolver: public Ep{
     Job reply = nullptr;

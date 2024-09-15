@@ -597,6 +597,10 @@ void postConfig(){
         LOGE("bpf require root privilege and tproxy mode\n");
         exit(1);
     }
+    if (opt.set_dns_route && opt.interface == NULL) {
+        LOGE("set-dns-route require option interface\n");
+        exit(1);
+    }
     for(struct arg_list* p = secrets.next; p != NULL; p = p->next){
         char secret_encode[DOMAINLIMIT];
         Base64Encode(p->arg, strlen(p->arg), secret_encode);

@@ -155,13 +155,13 @@ void FDns::Recv(Buffer&& bb) {
     __uint128_t index{id , que->id};
 #endif
     Dns_Result* result = nullptr;
-    if(que->type == 12){
+    if(que->type == ns_t_ptr){
         auto record = fdns_records.GetOne(getFip(&que->ptr_addr));
         if(record != fdns_records.data().end()){
             result = new Dns_Result(record->first.second.c_str());
         }
-    }else if(que->type == 1 || que->type == 28) {
-        if(que->type == 28 && !opt.ipv6_enabled) {
+    }else if(que->type == ns_t_a || que->type == ns_t_aaaa) {
+        if(que->type == ns_t_aaaa && !opt.ipv6_enabled) {
             //return empty response for ipv6
             result = new Dns_Result(que->domain);
         } else {
@@ -172,10 +172,10 @@ void FDns::Recv(Buffer&& bb) {
             } else if (que->domain[0] == 0) {
                 //return empty response for root domain
                 result = new Dns_Result(que->domain);
-            } else if (que->type == 1) {
+            } else if (que->type == ns_t_a) {
                 in_addr addr = getInet(que->domain);
                 result = new Dns_Result(que->domain, &addr);
-            } else if (que->type == 28) {
+            } else if (que->type == ns_t_aaaa) {
                 in6_addr addr = getInet6(que->domain);
                 result = new Dns_Result(que->domain, &addr);
             }
@@ -236,12 +236,12 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockadd
         if(result->addrs.size() != addrs.size()) {
             sockaddr_storage ip;
             memset(&ip, 0, sizeof(ip));
-            if (que->type == 1) {
+            if (que->type == ns_t_a) {
                 sockaddr_in* ip4 = (sockaddr_in*)&ip;
                 ip4->sin_family = AF_INET;
                 ip4->sin_addr = getInet(que->domain);
             }
-            if (que->type == 28) {
+            if (que->type == ns_t_aaaa) {
                 sockaddr_in6* ip6 = (sockaddr_in6*)&ip;
                 ip6->sin6_family = AF_INET6;
                 ip6->sin6_addr = getInet6(que->domain);
@@ -285,7 +285,7 @@ void FDns::RawCb(std::shared_ptr<void> param, const char* data, size_t size) {
     }else {
         LOGD(DDNS, "<FDNS> Query raw response [%d] error\n", que->id);
         Dns_Result rr(que->domain);
-        buff.truncate(Dns_Result::buildError(que.get(), DNS_SERVER_FAIL, (unsigned char*)buff.mutable_data()));
+        buff.truncate(Dns_Result::buildError(que.get(), ns_r_servfail, (unsigned char*)buff.mutable_data()));
         status.rwer->Send(std::move(buff));
     }
     status.quemap.erase(que->id);

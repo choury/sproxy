@@ -108,7 +108,7 @@ void HostResolver::readHE(RW_EVENT events) {
         LOGE("[DNS] addr: %s\n", getaddrstring(&addr));
         flags |= GETERROR;
         reply.reset(nullptr);
-        return cb(DNS_SERVER_FAIL, this);
+        return cb(ns_r_servfail, this);
     }
     if(!!(events & RW_EVENT::READ)) {
         int error = 0;
@@ -116,7 +116,7 @@ void HostResolver::readHE(RW_EVENT events) {
         int ret = read(getFd(), buf, sizeof(buf));
         if(ret <= 0) {
             LOGE("dns read error: %s\n", strerror(errno));
-            error = DNS_SERVER_FAIL;
+            error = ns_r_servfail;
             goto ret;
         }
         {
@@ -265,32 +265,26 @@ void getDnsConfig(struct DnsConfig* config){
 void flushdns(){
     rcd_cache.clear();
     rcd_blacklist.clear();
-    getDnsConfig(&dnsConfig);
+    dnsConfig.namecount = 0;
 }
 
 static void query_host_real(int retries, const char* host, DNSCB func, std::shared_ptr<void> param){
     if(retries >= 3){
-        AddJob(([func, param]{func(param, DNS_SERVER_FAIL, std::list<sockaddr_storage>{});}),
-               0, JOB_FLAGS_AUTORELEASE);
-        return;
+        return func(param, ns_r_servfail, std::list<sockaddr_storage>{});
     }
     if(dnsConfig.namecount == 0) {
         getDnsConfig(&dnsConfig);
     }
     if (dnsConfig.namecount == 0) {
         LOGE("[DNS] can't get dns server\n");
-        AddJob(([func, param]{func(param, DNS_REFUSE, std::list<sockaddr_storage>{});}),
-               0, JOB_FLAGS_AUTORELEASE);
-        return;
+        return func(param, ns_r_refused, std::list<sockaddr_storage>{});
     }
 
     sockaddr_storage addr = dnsConfig.server[retries % dnsConfig.namecount];
     int fd = Connect(&addr, SOCK_DGRAM);
     if (fd == -1) {
         LOGE("[DNS] connecting  %s error:%s\n", getaddrstring(&addr), strerror(errno));
-        AddJob(([func, param]{func(param, DNS_REFUSE, std::list<sockaddr_storage>{});}),
-               0, JOB_FLAGS_AUTORELEASE);
-        return;
+        return func(param, ns_r_refused, std::list<sockaddr_storage>{});
     }
 
     new HostResolver(fd, host,  [retries, func, param](int error, HostResolver* resolver) {
@@ -303,7 +297,7 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
             func(param, 0, rcdfilter(resolver->host, resolver->rcd.addrs));
             return;
         }
-        if(error == DNS_NAME_ERROR) {
+        if(error == ns_r_nxdomain) {
             func(param, error, {});
             return;
         }
@@ -314,19 +308,13 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
 void query_host(const char* host, DNSCB func, std::shared_ptr<void> param) {
     sockaddr_storage addr{};
     if(storage_aton(host, 0, &addr) == 1){
-        AddJob(([func, param, addrs = std::list<sockaddr_storage>{addr}]{
-            func(param, 0, addrs);
-        }), 0, JOB_FLAGS_AUTORELEASE);
-        return;
+        return func(param, 0, std::list<sockaddr_storage>{addr});
     }
 
     if (rcd_cache.count(host)) {
         auto& rcd = rcd_cache[host];
         if(rcd.get_time + (time_t)rcd.ttl > time(nullptr)){
-            AddJob(([func, param, addrs = rcdfilter(host, rcd.addrs)]{
-                func(param, 0, addrs);
-            }), 0, JOB_FLAGS_AUTORELEASE);
-            return;
+            return func(param, 0, rcdfilter(host, rcd.addrs));
         }
         rcd_cache.erase(host);
     }
@@ -339,15 +327,13 @@ void query_dns(const char* host, int type, DNSRAWCB func, std::shared_ptr<void> 
     }
     if (dnsConfig.namecount == 0) {
         LOGE("[DNS] can't get dns server\n");
-        AddJob(([func, param]{func(param, nullptr, 0);}), 0, JOB_FLAGS_AUTORELEASE);
-        return;
+        return func(param, nullptr, 0);
     }
     auto addr = dnsConfig.server[rand() % dnsConfig.namecount];
     int fd = Connect(&addr, SOCK_DGRAM);
     if (fd == -1) {
         LOGE("[DNS] connecting  %s error:%s\n", getaddrstring(&addr), strerror(errno));
-        AddJob(([func, param]{func(param, nullptr, 0);}), 0, JOB_FLAGS_AUTORELEASE);
-        return;
+        return func(param, nullptr, 0);
     }
     new RawResolver(fd, host, type, [func, param](const char* data, size_t len, RawResolver* resolver){
         defer([resolver]{delete resolver;});
