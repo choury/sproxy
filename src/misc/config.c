@@ -87,6 +87,7 @@ struct options opt = {
     .rproxy_name       = NULL,
     .bpf_cgroup        = NULL,
     .disable_http2     = false,
+    .disable_fakeip    = false,
     .sni_mode          = false,
     .daemon_mode       = false,
     .ignore_cert_error = false,
@@ -169,6 +170,7 @@ static struct option long_options[] = {
     {"cert",          required_argument, NULL,  0 },
     {"config",        required_argument, NULL, 'c'},
     {"daemon",        no_argument,       NULL, 'D'},
+    {"disable-fakeip",no_argument,       NULL, '1'},
     {"disable-http2", no_argument,       NULL, '1'},
     {"help",          no_argument,       NULL, 'h'},
     {"http",          required_argument, NULL,  0 },
@@ -235,6 +237,7 @@ static struct option_detail option_detail[] = {
     {"daemon", "Run as daemon", option_bool, &opt.daemon_mode, (void*)true},
 #endif
     {"disable-http2", "Use http/1.1 only", option_bool, &opt.disable_http2, (void*)true},
+    {"disable-fakeip", "Do not use fakeip for vpn and tproxy", option_bool, &opt.disable_fakeip, (void*)true},
     {"help", "Print this usage", option_bool, NULL, NULL},
     {"http", "Listen for http server", option_string, &http_listen, NULL},
     {"index", "Index file for path (local server)", option_string, &opt.index_file, NULL},

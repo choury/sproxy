@@ -60,6 +60,7 @@ struct options{
     const char *rproxy_name;
     const char *bpf_cgroup;
     bool disable_http2;
+    bool disable_fakeip;
     bool sni_mode;
     bool daemon_mode;
     bool ignore_cert_error;

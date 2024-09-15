@@ -11,7 +11,7 @@
 
 class FDns: public Responser{
     struct FDnsStatus{
-        std::shared_ptr<MemRWer>   rwer;
+        std::shared_ptr<RWer>   rwer;
         //std::shared_ptr<HttpReq>   req;
         //std::shared_ptr<HttpRes>   res;
         std::map<uint16_t, std::shared_ptr<Dns_Query>> quemap;
@@ -26,7 +26,8 @@ public:
     virtual ~FDns() override;
     static FDns* GetInstance();
     virtual void request(std::shared_ptr<HttpReq>, Requester*) override {};
-    void query(uint64_t id, std::shared_ptr<MemRWer> rwer);
+    void query(uint64_t id, std::shared_ptr<RWer> rwer);
+    void query(Buffer&& bb, std::shared_ptr<RWer> rwer);
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
 };

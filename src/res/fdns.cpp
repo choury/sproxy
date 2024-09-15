@@ -117,15 +117,16 @@ struct __uint128_t {
 };
 #endif
 
-void FDns::query(uint64_t id, std::shared_ptr<MemRWer> rwer) {
+void FDns::query(uint64_t id, std::shared_ptr<RWer> rwer) {
     statusmap[id] = FDnsStatus{
         .rwer = rwer,
         .quemap = {},
     };
-    rwer->SetReadCB([this](Buffer&& bb) -> size_t{
-        LOGD(DDNS, "fdns read [%" PRIu64"], size:%zd, refs: %zd\n", bb.id, bb.len, bb.refs());
+    rwer->SetReadCB([this, id](Buffer&& bb) -> size_t{
+        LOGD(DDNS, "fdns read [%" PRIu64"], size:%zd, refs: %zd\n", id, bb.len, bb.refs());
+        bb.id = id;
         if(bb.len == 0){
-            statusmap.erase(bb.id);
+            statusmap.erase(id);
         } else {
             Recv(std::move(bb));
         }
@@ -134,6 +135,12 @@ void FDns::query(uint64_t id, std::shared_ptr<MemRWer> rwer) {
     rwer->SetErrorCB([this, id](int, int) {
         statusmap.erase(id);
     });
+    rwer->SetWriteCB([](uint64_t){});
+}
+
+void FDns::query(Buffer&& bb, std::shared_ptr<RWer> rwer) {
+    query(bb.id, rwer);
+    Recv(std::move(bb));
 }
 
 void FDns::Recv(Buffer&& bb) {
@@ -226,6 +233,12 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockadd
     Buffer buff{BUF_LEN, id};
     if(error) {
         buff.truncate(Dns_Result::buildError(que.get(), error, (uchar*)buff.mutable_data()));
+        status.rwer->Send(std::move(buff));
+    } else if(opt.disable_fakeip){
+        for(const auto& addr : addrs) {
+            result->addrs.emplace_back(addr);
+        }
+        buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data()));
         status.rwer->Send(std::move(buff));
     } else {
         for(const auto& addr : addrs) {

@@ -110,7 +110,7 @@ static const char* getProg(std::shared_ptr<const Ip> pac) {
         return getPackageNameFromAddr(pac->gettype(), &src_, &dst_);
     }
 #endif
-    if(pac->getsrc().ss_family == AF_INET){
+    if(src_.ss_family == AF_INET){
         std::ifstream netfile;
         switch(pac->gettype()){
         case IPPROTO_TCP:
@@ -178,7 +178,7 @@ static const char* getProg(std::shared_ptr<const Ip> pac) {
     sockaddr_in6* src = (sockaddr_in6*)&src_;
     sockaddr_in6* dst = (sockaddr_in6*)&dst_;
     in6_addr mysrcip, mydstip;
-    if(pac->getsrc().ss_family == AF_INET){
+    if(src_.ss_family == AF_INET){
         memcpy(mysrcip.s6_addr, "\0\0\0\0\0\0\0\0\0\0\xff\xff", 12);
         memcpy(mydstip.s6_addr, "\0\0\0\0\0\0\0\0\0\0\xff\xff", 12);
         mysrcip.s6_addr32[3] = ((sockaddr_in*)&src)->sin_addr.s_addr;
@@ -236,7 +236,7 @@ static std::string generateUA(const std::string& prog, uint32_t request_id) {
     } else {
         UA << "Sproxy/" << getVersion()
            << " (Build " << getBuildTime() << ") "
-           <<"(" << getDeviceInfo() << ")" << prog;
+           <<"(" << getDeviceInfo() << ") " << prog;
 #ifdef __ANDROID__
         UA << " App/" << appVersion;
 #endif

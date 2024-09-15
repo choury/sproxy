@@ -22,6 +22,7 @@ static uint16_t id_cur = 1;
 static DnsConfig dnsConfig;
 
 std::unordered_map<std::string, Dns_Rcd> rcd_cache;
+std::unordered_map<std::string, Dns_Rcd> hosts;
 
 bool operator==(const sockaddr_storage& a, const sockaddr_storage& b) {
     if(a.ss_family != b.ss_family){
@@ -220,8 +221,12 @@ void getDnsConfig(struct DnsConfig* config){
     config->timeout = 5;
 }
 
+void reload_hosts() {
+}
+
 #else
 #define RESOLV_FILE "/etc/resolv.conf"
+#define HOSTS_FILE  "/etc/hosts"
 void getDnsConfig(struct DnsConfig* config){
     config->namecount = 0;
     FILE *res_file = fopen(RESOLV_FILE, "r");
@@ -260,6 +265,44 @@ void getDnsConfig(struct DnsConfig* config){
     config->namecount = get;
     config->timeout = 5;
 }
+
+void reload_hosts() {
+    FILE *hosts_file = fopen(HOSTS_FILE, "r");
+    if (hosts_file == nullptr) {
+        LOGE("[DNS] open hosts file:%s failed:%s\n", HOSTS_FILE, strerror(errno));
+        return;
+    }
+    hosts.clear();
+    char* line = nullptr;
+    size_t len = 0;
+    while(getline(&line, &len, hosts_file) >= 0){
+        if(len == 0 || line[0] == '#' || line[0] == '\n') {
+            continue;
+        }
+        std::istringstream iss(line);
+        std::string addr;
+        iss >> addr;
+        if (iss.fail()){
+            continue;
+        }
+        sockaddr_storage  rcd{};
+        if(storage_aton(addr.c_str(), DNSPORT, &rcd) != 1){
+            LOGE("[DNS] %s is not a valid ip address\n", addr.c_str());
+            continue;
+        }
+        std::string host;
+        while(iss>>host) {
+            if(hosts.count(host) == 0) {
+                hosts.emplace(host, Dns_Rcd{});
+            }
+            hosts[host].addrs.emplace_back(rcd);
+            LOGD(DDNS, "load host: %s -> %s\n", host.c_str(), addr.c_str());
+        }
+    }
+    free(line);
+    fclose(hosts_file);
+    LOG("[DNS] loaded host: %zd entries\n", hosts.size());
+}
 #endif
 
 void flushdns(){
@@ -274,6 +317,7 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
     }
     if(dnsConfig.namecount == 0) {
         getDnsConfig(&dnsConfig);
+        reload_hosts();
     }
     if (dnsConfig.namecount == 0) {
         LOGE("[DNS] can't get dns server\n");
@@ -311,6 +355,10 @@ void query_host(const char* host, DNSCB func, std::shared_ptr<void> param) {
         return func(param, 0, std::list<sockaddr_storage>{addr});
     }
 
+    if (hosts.count(host)) {
+        return func(param, 0, rcdfilter(host, hosts[host].addrs));
+    }
+
     if (rcd_cache.count(host)) {
         auto& rcd = rcd_cache[host];
         if(rcd.get_time + (time_t)rcd.ttl > time(nullptr)){
@@ -324,6 +372,7 @@ void query_host(const char* host, DNSCB func, std::shared_ptr<void> param) {
 void query_dns(const char* host, int type, DNSRAWCB func, std::shared_ptr<void> param) {
     if(dnsConfig.namecount == 0) {
         getDnsConfig(&dnsConfig);
+        reload_hosts();
     }
     if (dnsConfig.namecount == 0) {
         LOGE("[DNS] can't get dns server\n");

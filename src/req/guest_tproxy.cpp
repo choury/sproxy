@@ -1,6 +1,7 @@
 #include "guest_tproxy.h"
 #include "guest_sni.h"
 #include "res/responser.h"
+#include "res/fdns.h"
 #include "misc/config.h"
 #include "misc/util.h"
 #include "prot/memio.h"
@@ -70,10 +71,18 @@ Guest_tproxy::Guest_tproxy(int fd, const sockaddr_storage* src): Guest(fd, src, 
 }
 
 Guest_tproxy::Guest_tproxy(int fd, const sockaddr_storage* src, Buffer&& bb): Guest(fd, src, nullptr) {
+    static uint64_t  dnsid = 1;
     sockaddr_storage dst;
     if(getDstAddr(fd, src->ss_family, &dst)) {
         LOGE("(%s) failed to get src addr for tproxy\n", storage_ntoa(src));
         deleteLater(TPROXY_HOST_ERR);
+        return;
+    }
+    if(((sockaddr_in*)&dst)->sin_port == htons(DNSPORT)){
+        bb.id = dnsid++;
+        FDns::GetInstance()->query(std::move(bb), rwer);
+        rwer = nullptr;
+        deleteLater(NOERROR);
         return;
     }
 
