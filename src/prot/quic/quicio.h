@@ -160,13 +160,15 @@ protected:
     uint64_t my_sent_data_total = 0;
     uint64_t my_received_data = 0;
     uint64_t my_received_data_total = 0;
+    uint64_t my_received_max_bidistream_id = 0;
+    uint64_t my_received_max_unistream_id = 0;
     uint64_t my_max_payload_size = 1400;
     uint64_t my_max_data = MAX_BUF_LEN;
     uint64_t my_max_stream_data_bidi_local = BUF_LEN;
     uint64_t my_max_stream_data_bidi_remote = BUF_LEN;
     uint64_t my_max_stream_data_uni = BUF_LEN;
     uint64_t my_max_streams_bidi = 100;
-    uint64_t my_max_streams_uni = 10;
+    uint64_t my_max_streams_uni = 100;
 
     uint32_t chosen_version = QUIC_VERSION_1;
 

@@ -759,6 +759,11 @@ QuicBase::FrameResult QuicBase::handleStreamFrame(uint64_t type, const quic_stre
         //it is a retransmissions pkg
         return FrameResult::ok;
     }
+    if (isBidirect(id)) {
+        my_received_max_bidistream_id = std::max(my_received_max_bidistream_id, id);
+    } else {
+        my_received_max_unistream_id = std::max(my_received_max_unistream_id, id);
+    }
     auto& status = itr->second;
     if(status.flags & STREAM_FLAG_RESET_RECVD){
         // discard all data after reset
@@ -942,6 +947,26 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
         }
         return FrameResult::ok;
     }
+    case QUIC_FRAME_STREAMS_BLOCKED_BI: {
+        if (my_max_streams_bidi - my_received_max_bidistream_id / 4 <= 100) {
+            my_max_streams_bidi += 100;
+            quic_frame *frame = new quic_frame;
+            frame->type = QUIC_FRAME_MAX_STREAMS_BI;
+            frame->extra = my_max_streams_bidi;
+            qos.PushFrame(ssl_encryption_application, frame);
+        }
+        return FrameResult::ok;
+    }
+    case QUIC_FRAME_STREAMS_BLOCKED_UBI: {
+        if (my_max_streams_uni - my_received_max_unistream_id / 4 <= 100) {
+            my_max_streams_uni += 100;
+            quic_frame *frame = new quic_frame;
+            frame->type = QUIC_FRAME_MAX_STREAMS_UBI;
+            frame->extra = my_max_streams_uni;
+            qos.PushFrame(ssl_encryption_application, frame);
+        }
+        return FrameResult::ok;
+    }
     case QUIC_FRAME_MAX_STREAMS_BI:
         if(frame->extra > his_max_streams_bidi){
             his_max_streams_bidi = frame->extra;
@@ -1073,7 +1098,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
         if(frame->type >= QUIC_FRAME_STREAM_START_ID && frame->type <= QUIC_FRAME_STREAM_END_ID){
             return handleStreamFrame(frame->type, &frame->stream);
         } else {
-            LOG("ignore unknow quic frame type: %lx\n", (long)frame->type);
+            LOG("ignore unknow quic frame type: 0x%lx\n", (long)frame->type);
         }
         return FrameResult::ok;
     }
@@ -1130,6 +1155,16 @@ void QuicBase::resendFrames(pn_namespace* ns, quic_frame *frame) {
         auto& stream = streammap[id];
         stream.my_max_data =  stream.rb.Offset() + stream.rb.length() + stream.rb.cap();
         frame->max_stream_data.max = stream.my_max_data;
+        qos.FrontFrame(ns, frame);
+        break;
+    }
+    case QUIC_FRAME_MAX_STREAMS_BI: {
+        frame->extra = my_max_streams_bidi;
+        qos.FrontFrame(ns, frame);
+        break;
+    }
+    case QUIC_FRAME_MAX_STREAMS_UBI: {
+        frame->extra = my_max_streams_uni;
         qos.FrontFrame(ns, frame);
         break;
     }
@@ -1621,6 +1656,20 @@ void QuicBase::sinkData(uint64_t id) {
         frame->extra = my_max_data;
         qos.PushFrame(ssl_encryption_application, frame);
     }
+    if (my_max_streams_bidi - my_received_max_bidistream_id / 4 <= 100) {
+        my_max_streams_bidi += 100;
+        quic_frame *frame = new quic_frame;
+        frame->type = QUIC_FRAME_MAX_STREAMS_BI;
+        frame->extra = my_max_streams_bidi;
+        qos.PushFrame(ssl_encryption_application, frame);
+    }
+    if (my_max_streams_uni - my_received_max_unistream_id / 4 <= 100) {
+        my_max_streams_uni += 100;
+        quic_frame *frame = new quic_frame;
+        frame->type = QUIC_FRAME_MAX_STREAMS_UBI;
+        frame->extra = my_max_streams_uni;
+        qos.PushFrame(ssl_encryption_application, frame);
+    }
     for(auto& i: to_clean){
         cleanStream(i);
     }
@@ -1662,12 +1711,14 @@ void QuicBase::keepAlive_action() {
 }
 
 void QuicBase::dump(Dumper dp, void* param) {
-    dp(param, "%s -> %s, max_payload: %zd\n"
+    dp(param, "%s -> %s, max_payload: %zd, max_bistream: %zd/%zd, max_unistream: %zd/%zd\n"
               "read: %zd/%zd, write: %zd/%zd, my_window: %zd, his_window: %zd, "
               "rlen: %zd, fullq: %zd, wlen: %zd, congestion_window: %d\n",
        dumpHex(myids[myid_idx].c_str(), myids[myid_idx].length()).c_str(),
        dumpHex(hisids[hisid_idx].c_str(), hisids[hisid_idx].length()).c_str(),
        his_max_payload_size,
+       my_received_max_bidistream_id, my_max_streams_bidi,
+       my_received_max_unistream_id, my_max_streams_uni,
        my_received_data, my_received_data_total,
        my_sent_data, my_sent_data_total,
        my_max_data - my_received_data,
@@ -1882,7 +1933,7 @@ void QuicRWer::ErrorHE(int type, int code) {
     if(type == SOCKET_ERR && code == EMSGSIZE) {
 #if defined(IP_MTU) && defined(IPV6_MTU)
         int mtu;
-        socklen_t mtulen;
+        socklen_t mtulen = sizeof(mtu);
         bool isIpv6 = addrs.front().ss_family == AF_INET6;
         if(isIpv6) {
             if(getsockopt(getFd(), IPPROTO_IPV6, IPV6_MTU, &mtu, &mtulen) == 0) {
@@ -1901,8 +1952,6 @@ success:
         if(mtu < (int)his_max_payload_size) {
             LOG("quic max payload size reduce to %d due to pmtu\n", mtu);
             his_max_payload_size = mtu;
-        } else {
-            RWer::ErrorHE(PROTOCOL_ERR, QUIC_INTERNAL_ERROR);
         }
 #else
         his_max_payload_size =  1200;
