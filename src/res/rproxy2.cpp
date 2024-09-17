@@ -62,7 +62,6 @@ void Rproxy2::distribute(std::shared_ptr<HttpReq> req, Requester* src) {
     if(header->get("rproxy")) {
         filename = header->get("rproxy");
         header->del("rproxy");
-        header->del("via");
     }else {
         std::string path = header->path;
         auto fragment = split(header->path, '/');
@@ -88,7 +87,11 @@ void Rproxy2::distribute(std::shared_ptr<HttpReq> req, Requester* src) {
             return;
         }
         filename = fragment[1];
-        memset(&header->Dest, 0, sizeof(header->Dest));
+        memset(&header->Dest.hostname, 0, sizeof(header->Dest.hostname));
+        header->Dest.port = 0;
+        if(strcmp(header->Dest.protocol, "websocket")) {
+            memset(&header->Dest.protocol, 0, sizeof(header->Dest.protocol));
+        }
         strcpy(header->Dest.scheme, "http");
         if(spliturl(path.c_str() + 9 + filename.length(), &header->Dest, header->path)) {
             req->response(std::make_shared<HttpRes>(HttpResHeader::create(S400, sizeof(S400), id), ""));

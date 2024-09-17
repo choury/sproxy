@@ -167,10 +167,12 @@ void Http3Base::Init() {
 
     Block buff(BUF_LEN);
     char* pos = (char*)buff.data();
-    pos += variable_encode(pos, HTTP3_SETTING_MAX_FIELD_SECTION_SIZE);
-    pos += variable_encode(pos, BUF_LEN);
     pos += variable_encode(pos, HTTP3_SETTING_QPACK_MAX_TABLE_CAPACITY);
     pos += variable_encode(pos, 0);
+    pos += variable_encode(pos, HTTP3_SETTING_MAX_FIELD_SECTION_SIZE);
+    pos += variable_encode(pos, BUF_LEN);
+    pos += variable_encode(pos, HTTP3_SETTING_ENABLE_CONNECT_PROTOCOL);
+    pos += variable_encode(pos, 1);
     size_t len = pos - (char*)buff.data();
     pos = (char*)buff.reserve(-3); // type + id + length
     pos += variable_encode(pos, HTTP3_STREAM_TYPE_CONTROL);

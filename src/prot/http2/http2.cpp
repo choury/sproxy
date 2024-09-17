@@ -504,28 +504,38 @@ void Http2Base::Goaway(uint32_t lastid, uint32_t code, char *message) {
 
 
 void Http2Base::SendInitSetting(bool enable_push) {
-    Block buff(sizeof(Http2_header) + 3 * sizeof(Setting_Frame));
+    Block buff(BUF_LEN);
     Http2_header* const header = (Http2_header *) buff.data();
     memset(header, 0, sizeof(Http2_header));
-    set24(header->length, 3*sizeof(Setting_Frame));
     header->type = HTTP2_STREAM_SETTINGS;
 
+    size_t len = 0;
     Setting_Frame *sf = (Setting_Frame *)(header+1);
     set16(sf->identifier, HTTP2_SETTING_HEADER_TABLE_SIZE);
     set32(sf->value, 65536);
     hpack_decoder.set_dynamic_table_size_limit_max(get32(sf->value));
+    len += sizeof(Setting_Frame);
 
     sf++;
     set16(sf->identifier, HTTP2_SETTING_INITIAL_WINDOW_SIZE);
     set32(sf->value, localframewindowsize);
     LOGD(DHTTP2, "send inital frame window size:%d\n", localframewindowsize);
+    len += sizeof(Setting_Frame);
 
     sf++;
     set16(sf->identifier, HTTP2_SETTING_ENABLE_PUSH);
     set32(sf->value, enable_push);
     LOGD(DHTTP2, "send enable push:%d\n", enable_push);
+    len += sizeof(Setting_Frame);
 
-    SendData(Buffer{std::move(buff), 3 * sizeof(Setting_Frame) + sizeof(Http2_header)});
+    sf++;
+    set16(sf->identifier, HTTP2_SETTING_ENABLE_CONNECT_PROTOCOL);
+    set32(sf->value, 1);
+    LOGD(DHTTP2, "send enable connect protocol");
+    len += sizeof(Setting_Frame);
+
+    set24(header->length, len);
+    SendData(Buffer{std::move(buff), len + sizeof(Http2_header)});
 }
 
 uint32_t Http2Responser::OpenStream(){

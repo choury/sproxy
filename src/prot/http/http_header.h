@@ -13,6 +13,7 @@
 #define CRLF      "\r\n"
 
 
+#define S101        "101 Switching Protocols"
 #define S200        "200 OK"
 #define S204        "204 No Content"
 #define S205        "205 Reset Content"
@@ -135,6 +136,9 @@ public:
 class HttpResHeader: public HttpHeader{
 public:
     char status[100];
+    bool isWebsocket = false;
+    bool isTunnel = false;
+    std::string websocketKey;
     HttpResHeader(const char* status, size_t len);
     explicit HttpResHeader(HeaderMap&& headers);
     HttpResHeader(const HttpResHeader&) = default;
@@ -142,6 +146,8 @@ public:
     [[nodiscard]] virtual bool no_body() const override;
     [[nodiscard]] virtual bool no_end() const override;
     void addcookie(const Cookie &cookie);
+    void markWebsocket(const char* key);
+    void markTunnel();
     virtual size_t mem_usage() override {
         return HttpHeader::mem_usage() + sizeof(*this);
     }
@@ -149,6 +155,7 @@ public:
 };
 
 
+std::string toLower(const std::string &s);
 std::map<std::string, std::string> __attribute__((weak)) getparamsmap(const char *param, size_t len);
 std::map<std::string, std::string> __attribute__((weak)) getparamsmap(const char *param);
 

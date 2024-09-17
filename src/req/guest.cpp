@@ -214,10 +214,14 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     if(header->Dest.scheme[0] == 0 && header->http_method()) {
         if(rwer->isTls()) {
             strcpy(header->Dest.scheme, "https");
-            strcpy(header->Dest.protocol, "ssl");
+            if(header->Dest.protocol[0] == 0) {
+                strcpy(header->Dest.protocol, "ssl");
+            }
         } else {
             strcpy(header->Dest.scheme, "http");
-            strcpy(header->Dest.protocol, "tcp");
+            if(header->Dest.protocol[0] == 0) {
+                strcpy(header->Dest.protocol, "tcp");
+            }
         }
     }
 
@@ -350,8 +354,8 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
             auto header = std::dynamic_pointer_cast<HttpResHeader>(std::get<std::shared_ptr<HttpHeader>>(msg.data));
             HttpLog(dumpDest(rwer->getSrc()), status.req->header, header);
             if (status.req->header->ismethod("CONNECT")) {
+                status.flags |= HTTP_NOEND_F;
                 if (headless) {
-                    status.flags |= HTTP_NOEND_F;
                     if(memcmp(header->status, "200", 3) == 0){
                         rwer->Unblock(0);
                         return 1;
@@ -359,10 +363,6 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
                         deleteLater(PEER_LOST_ERR);
                         return 0;
                     }
-                }
-                if (memcmp(header->status, "200", 3) == 0) {
-                    strcpy(header->status, "200 Connection established");
-                    header->del("Transfer-Encoding");
                 }
             } else if (header->get("Transfer-Encoding")) {
                 status.flags |= HTTP_CHUNK_F;

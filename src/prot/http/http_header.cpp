@@ -98,7 +98,6 @@ HttpReqHeader::HttpReqHeader(HeaderMap&& headers) {
         }
     }
 
-    snprintf(method, sizeof(method), "%s", get(":method"));
     memset(&Dest, 0, sizeof(Dest));
     if (get(":authority")){
         spliturl(get(":authority"), &Dest, nullptr);
@@ -113,6 +112,11 @@ HttpReqHeader::HttpReqHeader(HeaderMap&& headers) {
         snprintf(path, sizeof(path), "%s", get(":path"));
     }else{
         strcpy(path, "/");
+    }
+    if(strcmp(Dest.protocol, "websocket") == 0) {
+        strcpy(method, "GET");
+    } else {
+        snprintf(method, sizeof(method), "%s", get(":method"));
     }
 
     for (auto i = this->headers.begin(); i!= this->headers.end();) {
@@ -205,8 +209,7 @@ uint16_t HttpReqHeader::getDport() const {
 std::string HttpReqHeader::geturl() const {
     std::string url = dumpDest(&Dest);
     assert(path[0] == '/');
-    if(http_method() && path[1] ){
-        //only http method use path
+    if(path[1]){
         url += path;
     }
     return url;
@@ -218,7 +221,7 @@ bool HttpReqHeader::ismethod(const char* method) const{
 }
 
 bool HttpReqHeader::no_body() const {
-    if(get("Upgrade")){
+    if(ismethod("CONNECT")){
         return false;
     }
     if(get("Transfer-Encoding")){
@@ -227,7 +230,10 @@ bool HttpReqHeader::no_body() const {
     if(get("Content-Length")){
         return strcmp("0", get("Content-Length")) == 0;
     }
-    return !ismethod("CONNECT");
+    if(strcmp(Dest.protocol, "websocket") == 0) {
+        return false;
+    }
+    return true;
 }
 
 bool HttpReqHeader::no_end() const {
@@ -245,14 +251,21 @@ bool HttpReqHeader::no_end() const {
 
 std::multimap<std::string, std::string> HttpReqHeader::Normalize() const {
     std::multimap<std::string, std::string> normalization;
-    normalization.emplace(":method", method);
+    bool isWebsocket = strcmp(Dest.protocol, "websocket") == 0;
+    if(isWebsocket) {
+        normalization.emplace(":method", "CONNECT");
+    }else {
+        normalization.emplace(":method", method);
+    }
     normalization.emplace(":authority", dumpAuthority(&Dest));
-    if(chain_proxy) {
+    if(chain_proxy || isWebsocket) {
         normalization.emplace(":protocol", Dest.protocol);
     }
 
     if(!ismethod("CONNECT")){
         normalization.emplace(":scheme", Dest.scheme[0] ? Dest.scheme : "http");
+    }
+    if(path[1]) {
         normalization.emplace(":path", path);
     }
     for(const auto& i: cookies){
@@ -268,6 +281,7 @@ std::multimap<std::string, std::string> HttpReqHeader::Normalize() const {
     normalization.erase("proxy-connection");
     normalization.erase("transfer-encoding");
     normalization.erase("upgrade");
+    normalization.erase("sec-websocket-key");
     return normalization;
 }
 
@@ -352,7 +366,11 @@ bool HttpResHeader::no_end() const {
 std::multimap<std::string, std::string> HttpResHeader::Normalize() const {
     std::multimap<std::string, std::string> normalization;
     char status_h2[100];
-    sscanf(status,"%99s",status_h2);
+    if(isWebsocket && memcmp(status, "101", 3) == 0) {
+        strcpy(status_h2, "200");
+    }else {
+        sscanf(status,"%99s",status_h2);
+    }
     normalization.emplace(":status", status_h2);
     for(const auto& i : cookies) {
         normalization.emplace("set-cookie", i.c_str());
@@ -366,6 +384,7 @@ std::multimap<std::string, std::string> HttpResHeader::Normalize() const {
     normalization.erase("proxy-connection");
     normalization.erase("transfer-encoding");
     normalization.erase("upgrade");
+    normalization.erase("sec-websocket-accept");
     return normalization;
 }
 
@@ -382,6 +401,23 @@ void HttpResHeader::addcookie(const Cookie &cookie) {
         cookiestream << "; max-age="<< cookie.maxage;
     }
     cookies.insert(cookiestream.str());
+}
+
+void HttpResHeader::markWebsocket(const char* key) {
+    isWebsocket = true;
+    if(key) {
+        websocketKey = key;
+    }
+    if(memcmp(status, "200", 3) == 0) {
+        strcpy(status, "101 Switching Protocols");
+    }
+}
+
+void HttpResHeader::markTunnel(){
+    isTunnel = true;
+    if(memcmp(status, "200", 3) == 0) {
+        strcpy(status, "200 Connection established");
+    }
 }
 
 std::shared_ptr<HttpResHeader> HttpResHeader::create(const char *status, size_t len, uint64_t id) {

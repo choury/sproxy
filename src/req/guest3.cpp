@@ -192,8 +192,6 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
             auto header = std::dynamic_pointer_cast<HttpResHeader>(std::get<std::shared_ptr<HttpHeader>>(msg.data));
             LOGD(DHTTP3, "<guest3> get response [%" PRIu64"]: %s\n", id, header->status);
             HttpLog(dumpDest(rwer->getSrc()), status.req->header, header);
-            header->del("Transfer-Encoding");
-            header->del("Connection");
             if(mitmProxy) {
                 header->del("Strict-Transport-Security");
             }

@@ -22,7 +22,7 @@ enum class CheckResult{
     NoPort,
 };
 
-static CheckResult check_header(std::shared_ptr<HttpReqHeader> req, Requester* src){
+static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, Requester* src){
     if (!checkauth(src->getSrc().hostname, req->get("Proxy-Authorization"))){
         return CheckResult::AuthFailed;
     }
@@ -33,18 +33,6 @@ static CheckResult check_header(std::shared_ptr<HttpReqHeader> req, Requester* s
         return CheckResult::NoPort;
     }
 
-    if(req->get("Upgrade") && strcmp(req->get("Upgrade"), "websocket") == 0){
-        //only allow websocket upgrade
-    }else{
-        req->del("Connection");
-        if(req->get("Proxy-Connection")){
-            req->set("Connection", req->get("Proxy-Connection"));
-        }
-        req->del("Upgrade");
-    }
-    req->del("Public");
-    req->del("Proxy-Connection");
-    req->append("Via", "HTTP/1.1 sproxy");
     return CheckResult::Succeed;
 }
 
@@ -105,6 +93,7 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
         if(header->get("rproxy")) {
             return Rproxy2::distribute(req, src);
         }
+        header->append("Via", "HTTP/1.1 sproxy");
         Destination dest;
         switch(stra.s){
         case Strategy::proxy:

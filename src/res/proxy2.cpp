@@ -140,11 +140,14 @@ void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
         return;
     }
     ReqStatus& status = statusmap[id];
-    if(!header->no_body() && !header->get("Content-Length"))
-    {
+    header->request_id = status.req->header->request_id;
+    if(status.req->header->ismethod("CONNECT")) {
+        header->markTunnel();
+    }else if(strcmp(status.req->header->Dest.protocol, "websocket") == 0){
+        header->markWebsocket(status.req->header->get("Sec-WebSocket-Key"));
+    }else if(!header->no_body() && !header->get("Content-Length")) {
         header->set("Transfer-Encoding", "chunked");
     }
-    header->request_id = status.req->header->request_id;
     if(status.res){
         status.res->send(header);
         return;

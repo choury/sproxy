@@ -44,6 +44,7 @@ struct Setting_Frame{
 #define HTTP2_SETTING_INITIAL_WINDOW_SIZE    4
 #define HTTP2_SETTING_MAX_FRAME_SIZE         5
 #define HTTP2_SETTING_MAX_HEADER_LIST_SIZE   6
+#define HTTP2_SETTING_ENABLE_CONNECT_PROTOCOL 8  //rfc8441
     uint8_t identifier[2];
     uint8_t value[4];
 }__attribute__((packed));

@@ -32,6 +32,7 @@ Reserved	    0x3	    N/A	N/A
 Reserved	    0x4	    N/A	N/A
 Reserved	    0x5	    N/A	N/A */
 #define HTTP3_SETTING_MAX_FIELD_SECTION_SIZE    0x6	//Section 7.2.4.1	Unlimited
+#define HTTP3_SETTING_ENABLE_CONNECT_PROTOCOL   0x8 //rfc9220
 
 //Name	                                    Value	Description	Specification
 #define HTTP3_ERR_NO_ERROR	                0x100	//No error	Section 8.1

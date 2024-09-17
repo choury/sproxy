@@ -193,8 +193,6 @@ void Guest2::response(void* index, std::shared_ptr<HttpRes> res) {
             auto header = std::dynamic_pointer_cast<HttpResHeader>(std::get<std::shared_ptr<HttpHeader>>(msg.data));
             LOGD(DHTTP2, "<guest2> get response [%d]: %s\n", id, header->status);
             HttpLog(dumpDest(rwer->getSrc()), status.req->header, header);
-            header->del("Transfer-Encoding");
-            header->del("Connection");
 
             Block buff(BUF_LEN);
             Http2_header* const h2header = (Http2_header*) buff.data();

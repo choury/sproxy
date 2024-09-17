@@ -24,7 +24,7 @@ Host::Host(const Destination* dest){
     assert(dest->protocol[0]);
     memcpy(&Server, dest, sizeof(Destination));
 
-    if(strcmp(dest->protocol, "tcp") == 0){
+    if(strcmp(dest->protocol, "tcp") == 0 || strcmp(dest->protocol, "websocket") == 0){
         auto srwer = std::make_shared<StreamRWer>(
                 dest->hostname, dest->port, Protocol::TCP,
                 [this](int ret, int code){Error(ret, code);});
@@ -228,10 +228,15 @@ void Host::Recv(Buffer&& bb){
 void Host::ResProc(uint64_t id, std::shared_ptr<HttpResHeader> header) {
     LOGD(DHTTP, "<host> ResProc %" PRIu64": %s, http_flag:0x%x\n",
          status.req->header->request_id ,header->status, http_flag);
+    header->request_id = status.req->header->request_id;
     if(status.req->header->ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY_F;
     }
-    header->request_id = status.req->header->request_id;
+    if(status.req->header->ismethod("CONNECT")) {
+        header->markTunnel();
+    }else if(strcmp(status.req->header->Dest.protocol, "websocket") == 0){
+        header->markWebsocket(status.req->header->get("Sec-WebSocket-Key"));
+    }
     if(status.res){
         status.res->send(header);
     }else{

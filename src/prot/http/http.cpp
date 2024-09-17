@@ -247,6 +247,19 @@ std::shared_ptr<HttpReqHeader> UnpackHttpReq(const void* header, size_t len){
         headers.emplace(":protocol", headers.find("Protocol")->second);
         headers.erase("Protocol");
     }
+    if (headers.count("Upgrade") && headers.find("Upgrade")->second == "websocket") {
+        headers.emplace(":protocol", "websocket");
+        if(headers.count("Sec-WebSocket-Key") == 0) {
+            //从http2/http3 转过来的websocket请求没有 Sec-WebSocket-Key，但是http1 需要有
+            char nonce[16];
+            for(int i = 0; i < 16; i++){
+                nonce[i] = rand() % 256;
+            }
+            char key[25];
+            Base64Encode(nonce, 16, key);
+            headers.emplace("Sec-WebSocket-Key", key);
+        }
+    }
     return std::make_shared<HttpReqHeader>(std::move(headers));
 }
 
@@ -301,14 +314,14 @@ size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t 
     if(opt.alter_method){
         strcpy(method, "GET");
         AppendHeaders.push_back(std::string(AlterMethod)+": " + req->method);
-    }else{
+    } else {
         strcpy(method, req->method);
     }
     for(auto p = opt.request_headers.next; p != nullptr; p = p->next){
         AppendHeaders.emplace_back(p->arg);
     }
     size_t len = 0;
-    if (req->ismethod("CONNECT")){
+    if (strcmp(method, "CONNECT") == 0){
         assert(req->chain_proxy);
         len += snprintf(buff, size, "%s %s:%d HTTP/1.1" CRLF, method, req->Dest.hostname, req->Dest.port);
     }else if(req->chain_proxy){
@@ -324,7 +337,23 @@ size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t 
         len += snprintf(buff + len, size - len, "Protocol: %s" CRLF, req->Dest.protocol);
     }
     for (const auto& i : req->getall()) {
+        if (i.first == "proxy-connection" || i.first == "connection" || i.first == "upgrade"){
+            continue;
+        }
         len += snprintf(buff + len, size-len, "%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
+    }
+    if(strcmp(req->Dest.protocol, "websocket") == 0){
+        len += snprintf(buff + len, size-len, "Upgrade: websocket" CRLF "Connection: Upgrade" CRLF);
+        if(req->get("Sec-WebSocket-Key") == nullptr) {
+            //从http2/http3 转过来的websocket请求没有 Sec-WebSocket-Key，但是http1 要求有
+            char nonce[16];
+            for(int i = 0; i < 16; i++){
+                nonce[i] = rand() % 256;
+            }
+            char key[25];
+            Base64Encode(nonce, 16, key);
+            len += snprintf(buff + len, size-len, "Sec-WebSocket-Key: %24s" CRLF, key);
+        }
     }
     if(!req->cookies.empty()){
         std::string cookie_str;
@@ -355,7 +384,25 @@ size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t 
         len += snprintf(buff, size, "HTTP/1.0 %s" CRLF, res->status);
     }
     for (const auto& i : res->getall()) {
+        if(i.first == "upgrade" || i.first == "connection") {
+            continue;
+        }
+        if(res->isTunnel && i.first == "transfer-encoding") {
+            continue;
+        }
         len += snprintf(buff + len, size-len, "%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
+    }
+    if(res->isWebsocket && memcmp(res->status, "101", 3) == 0) {
+        if(res->get("Sec-WebSocket-Accept") == nullptr) {
+            assert(res->websocketKey.length());
+            std::string key = res->websocketKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+            char sha1[20];
+            SHA1((const unsigned char*)key.c_str(), key.length(), (unsigned char*)sha1);
+            char accept[30];
+            Base64Encode(sha1, 20, accept);
+            len += snprintf(buff + len, size-len, "Sec-WebSocket-Accept: %s" CRLF, accept);
+        }
+        len += snprintf(buff + len, size-len, "Upgrade: websocket" CRLF "Connection: Upgrade" CRLF);
     }
     for (const auto& i : res->cookies) {
         len += snprintf(buff + len, size-len, "Set-Cookie: %s" CRLF, i.c_str());

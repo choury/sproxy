@@ -132,11 +132,6 @@ void HttpLog(const std::string& src, std::shared_ptr<const HttpReqHeader> req, s
         for(const auto& header : res->getall()){
             LOG("%s: %s\n", header.first.c_str(), header.second.c_str());
         }
-    } else if(req->ismethod("CONNECT")) {
-        LOG("%s [%" PRIu64 "] CONNECT %s [%s] %s %dms [%s]\n", src.c_str(),
-            req->request_id, dumpDest(req->Dest).c_str(),
-            req->get(STRATEGY), status, res->ctime - req->ctime,
-            req->get("User-Agent"));
     } else {
         LOG("%s [%" PRIu64 "] %s %s [%s] %s %dms [%s]\n", src.c_str(),
             req->request_id, req->method, req->geturl().c_str(),
