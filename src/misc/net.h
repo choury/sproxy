@@ -19,9 +19,13 @@ void SetRecvPKInfo(int fd, const struct sockaddr_storage* addr);
 size_t GetCapSize(int fd);
 size_t GetBuffSize(int fd);
 
-int ListenTcp(const struct sockaddr_storage* addr);
-int ListenUdp(const struct sockaddr_storage* addr);
-int ListenUnix(const char* path);
+struct listenOption{
+    bool disable_defer_accepct;
+};
+
+int ListenTcp(const struct sockaddr_storage* addr, const struct listenOption* ops);
+int ListenUdp(const struct sockaddr_storage* addr, const struct listenOption* ops);
+int ListenUnix(const char* path, const struct listenOption* ops);
 
 int Connect(const struct sockaddr_storage*, int type);
 int IcmpSocket(const struct sockaddr_storage* addr, int raw);

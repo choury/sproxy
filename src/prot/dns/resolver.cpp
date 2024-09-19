@@ -319,6 +319,11 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
         getDnsConfig(&dnsConfig);
         reload_hosts();
     }
+
+    if (hosts.count(host)) {
+        return func(param, 0, rcdfilter(host, hosts[host].addrs));
+    }
+
     if (dnsConfig.namecount == 0) {
         LOGE("[DNS] can't get dns server\n");
         return func(param, ns_r_refused, std::list<sockaddr_storage>{});
@@ -353,10 +358,6 @@ void query_host(const char* host, DNSCB func, std::shared_ptr<void> param) {
     sockaddr_storage addr{};
     if(storage_aton(host, 0, &addr) == 1){
         return func(param, 0, std::list<sockaddr_storage>{addr});
-    }
-
-    if (hosts.count(host)) {
-        return func(param, 0, rcdfilter(host, hosts[host].addrs));
     }
 
     if (rcd_cache.count(host)) {

@@ -211,6 +211,9 @@ void Http3Base::SettingsProc(const uchar* header, size_t len) {
         case HTTP3_SETTING_QPACK_BLOCKED_STREAMS:
             LOGD(DHTTP3, "Get qpack_blocked_streams: %" PRIu64"\n", value);
             break;
+        case HTTP3_SETTING_ENABLE_CONNECT_PROTOCOL:
+            LOGD(DHTTP3, "Get enable_connect_protocol\n");
+            break;
         default:
             if(((id - 0x21) % 0x1f) == 0){
                 LOGD(DHTTP3, "Get reserved settings: 0x%" PRIx64"\n", id);

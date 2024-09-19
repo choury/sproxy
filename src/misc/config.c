@@ -529,7 +529,27 @@ static int parseBind(const char* addr, struct Destination* info) {
     return !(info->port > 0 && info->port < 65535);
 }
 
+void free_arg_list(struct arg_list* list) {
+    if(list == NULL) {
+        return;
+    }
+    free_arg_list(list->next);
+    free((char*)list->arg);
+    free(list);
+}
+
 void postConfig(){
+    if(opt.rproxy_name) {
+        if(http_listen || ssl_listen || quic_listen || tproxy_listen) {
+            LOGE("rproxy mode can only used separately\n");
+            exit(1);
+        }
+        if(secrets.next) {
+            LOG("secret will be ignored in rproxy mode\n");
+            free_arg_list(secrets.next);
+            secrets.next = NULL;
+        }
+    }
     if(http_listen && parseBind(http_listen, &opt.http)) {
         LOGE("wrong http listen: %s\n", http_listen);
         exit(1);

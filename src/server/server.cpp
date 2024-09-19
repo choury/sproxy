@@ -37,22 +37,22 @@ int protectFd(int){
 }
 #endif
 
-static int ListenTcp(const Destination* dest) {
+static int ListenTcp(const Destination* dest, const struct listenOption* ops) {
     sockaddr_storage addr;
     if(storage_aton(dest->hostname, dest->port, &addr) == 0) {
         LOGE("failed to parse listen addr: %s\n", dest->hostname);
         return -1;
     }
-    return ListenTcp(&addr);
+    return ListenTcp(&addr, ops);
 }
 
-static int ListenUdp(const Destination* dest) {
+static int ListenUdp(const Destination* dest, const listenOption* ops) {
     sockaddr_storage addr;
     if(storage_aton(dest->hostname, dest->port, &addr) == 0) {
         LOGE("failed to parse listen addr: %s\n", dest->hostname);
         return -1;
     }
-    int fd = ListenUdp(&addr);
+    int fd = ListenUdp(&addr, ops);
     if(fd < 0) {
         return -1;
     }
@@ -62,7 +62,7 @@ static int ListenUdp(const Destination* dest) {
 static sockaddr_in localhost4 = {
     .sin_family = AF_INET,
     .sin_port = 0,
-    .sin_addr = {0x0100007f},
+    .sin_addr = {htonl(INADDR_LOOPBACK)},
     .sin_zero = {},
  };
 
@@ -71,17 +71,17 @@ static sockaddr_in6 localhost6 = {
     .sin6_family = AF_INET6,
     .sin6_port = 0,
     .sin6_flowinfo = 0,
-    .sin6_addr = {{{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}}},
+    .sin6_addr = {in6addr_loopback},
     .sin6_scope_id = 0,
 };
 
 
-static int ListenLocalhostTcp(uint16_t port, int fd[2]) {
+static int ListenLocalhostTcp(uint16_t port, int fd[2], const listenOption* ops) {
     fd[0] = fd[1] = -1;
     localhost4.sin_port = htons(port);
-    fd[0] = ListenTcp((sockaddr_storage*)&localhost4);
+    fd[0] = ListenTcp((sockaddr_storage*)&localhost4, ops);
     localhost6.sin6_port = htons(port);
-    fd[1] = ListenTcp((sockaddr_storage*)&localhost6);
+    fd[1] = ListenTcp((sockaddr_storage*)&localhost6, ops);
     if(fd[0] < 0 || fd[1] < 0) {
         close(fd[0]);
         close(fd[1]);
@@ -90,12 +90,12 @@ static int ListenLocalhostTcp(uint16_t port, int fd[2]) {
     return 0;
 }
 
-static int ListenLocalhostUdp(uint16_t port, int fd[2]) {
+static int ListenLocalhostUdp(uint16_t port, int fd[2], const listenOption* ops) {
     fd[0] = fd[1] = -1;
     localhost4.sin_port = htons(port);
-    fd[0] = ListenUdp((sockaddr_storage*)&localhost4);
+    fd[0] = ListenUdp((sockaddr_storage*)&localhost4, ops);
     localhost6.sin6_port = htons(port);
-    fd[1] = ListenUdp((sockaddr_storage*)&localhost6);
+    fd[1] = ListenUdp((sockaddr_storage*)&localhost6, ops);
     if(fd[0] < 0 || fd[1] < 0) {
         close(fd[0]);
         close(fd[1]);
@@ -113,11 +113,11 @@ int main(int argc, char **argv) {
         if(opt.http.hostname[0]){
             int fd[2] = {-1, -1};
             if(strcmp(opt.http.hostname, "localhost") == 0) {
-                if(ListenLocalhostTcp(opt.http.port, fd) < 0) {
+                if(ListenLocalhostTcp(opt.http.port, fd, nullptr) < 0) {
                     return -1;
                 }
             } else {
-                fd[0] = ListenTcp(&opt.http);
+                fd[0] = ListenTcp(&opt.http, nullptr);
                 if (fd[0] < 0) {
                     return -1;
                 }
@@ -129,11 +129,14 @@ int main(int argc, char **argv) {
 #if __linux__
         if(opt.tproxy.hostname[0]) {
             int fd[4] = {-1, -1, -1, -1};
+            listenOption ops = {
+                .disable_defer_accepct = true,
+            };
             if(strcmp(opt.tproxy.hostname, "localhost") == 0) {
-                if(ListenLocalhostTcp(opt.tproxy.port, fd) < 0) {
+                if(ListenLocalhostTcp(opt.tproxy.port, fd, &ops) < 0) {
                     return -1;
                 }
-                if(ListenLocalhostUdp(opt.tproxy.port, fd+2) < 0) {
+                if(ListenLocalhostUdp(opt.tproxy.port, fd+2, &ops) < 0) {
                     return -1;
                 }
 #ifdef HAVE_BPF
@@ -142,11 +145,11 @@ int main(int argc, char **argv) {
                 }
 #endif
             } else {
-                fd[0] = ListenTcp(&opt.tproxy);
+                fd[0] = ListenTcp(&opt.tproxy, &ops);
                 if (fd[0] < 0) {
                     return -1;
                 }
-                fd[2] = ListenUdp(&opt.tproxy);
+                fd[2] = ListenUdp(&opt.tproxy, &ops);
                 if (fd[2] < 0) {
                     return -1;
                 }
@@ -181,11 +184,11 @@ int main(int argc, char **argv) {
         if(opt.ssl.hostname[0]) {
             int fd[2] = {-1, -1};
             if(strcmp(opt.ssl.hostname, "localhost") == 0) {
-                if(ListenLocalhostTcp(opt.ssl.port, fd) < 0) {
+                if(ListenLocalhostTcp(opt.ssl.port, fd, nullptr) < 0) {
                     return -1;
                 }
             } else {
-                fd[0] = ListenTcp(&opt.ssl);
+                fd[0] = ListenTcp(&opt.ssl, nullptr);
                 if (fd[0] < 0) {
                     return -1;
                 }
@@ -205,11 +208,11 @@ int main(int argc, char **argv) {
         if(opt.quic.hostname[0]) {
             int fd[2] = {-1, -1};
             if(strcmp(opt.quic.hostname, "localhost") == 0) {
-                if(ListenLocalhostUdp(opt.quic.port, fd) < 0) {
+                if(ListenLocalhostUdp(opt.quic.port, fd, nullptr) < 0) {
                     return -1;
                 }
             } else {
-                fd[0] = ListenUdp(&opt.quic);
+                fd[0] = ListenUdp(&opt.quic, nullptr);
                 if(fd[0] <  0) {
                     return -1;
                 }
@@ -241,16 +244,16 @@ int main(int argc, char **argv) {
     if(opt.admin.hostname[0]){
         int fd[2] = {-1, -1};
         if(opt.admin.port == 0){
-            fd[0] = ListenUnix(opt.admin.hostname);
+            fd[0] = ListenUnix(opt.admin.hostname, nullptr);
             if (fd[0] < 0) {
                 return -1;
             }
         }else if(strcmp(opt.admin.hostname, "localhost") == 0){
-            if(ListenLocalhostTcp(opt.admin.port, fd) < 0) {
+            if(ListenLocalhostTcp(opt.admin.port, fd, nullptr) < 0) {
                 return -1;
             }
         }else {
-            fd[0] = ListenTcp(&opt.admin);
+            fd[0] = ListenTcp(&opt.admin, nullptr);
             if (fd[0] < 0) {
                 return -1;
             }

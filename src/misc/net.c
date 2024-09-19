@@ -179,7 +179,8 @@ size_t GetBuffSize(int fd){
     return outq;
 }
 
-int ListenTcp(const struct sockaddr_storage* addr) {
+int ListenTcp(const struct sockaddr_storage* addr, const struct listenOption* ops) {
+    (void)ops;
 #ifdef  SOCK_CLOEXEC
     int fd = socket(addr->ss_family, SOCK_STREAM | SOCK_CLOEXEC, 0);
 #else
@@ -207,9 +208,11 @@ int ListenTcp(const struct sockaddr_storage* addr) {
         }
 
 #ifndef __APPLE__
-        int timeout = 60;
-        if (setsockopt(fd, IPPROTO_TCP, TCP_DEFER_ACCEPT, &timeout, sizeof(timeout))< 0)
-            LOGE("TCP_DEFER_ACCEPT:%s\n", strerror(errno));
+        if(ops == NULL || !ops->disable_defer_accepct) {
+            int timeout = 60;
+            if (setsockopt(fd, IPPROTO_TCP, TCP_DEFER_ACCEPT, &timeout, sizeof(timeout))< 0)
+                LOGE("TCP_DEFER_ACCEPT:%s\n", strerror(errno));
+        }
 #endif
         if (listen(fd, 10000) < 0) {
             LOGE("listen error:%s\n", strerror(errno));
@@ -222,7 +225,8 @@ int ListenTcp(const struct sockaddr_storage* addr) {
 }
 
 
-int ListenUdp(const struct sockaddr_storage* addr) {
+int ListenUdp(const struct sockaddr_storage* addr, const struct listenOption* ops) {
+    (void)ops;
 #ifdef  SOCK_CLOEXEC
     int fd = socket(addr->ss_family, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 #else
@@ -261,7 +265,8 @@ int ListenUdp(const struct sockaddr_storage* addr) {
     return -1;
 }
 
-int ListenUnix(const char* path) {
+int ListenUnix(const char* path, const struct listenOption* ops) {
+    (void)ops;
 #ifdef SOCK_CLOEXEC
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
 #else

@@ -397,6 +397,9 @@ void Http2Base::SettingsProc(const Http2_header* header) {
                     http2_flag |= HTTP2_FLAG_ENABLE_PUSH;
                 }
                 break;
+            case HTTP2_SETTING_ENABLE_CONNECT_PROTOCOL:
+                LOGD(DHTTP2, "Get enable_connect_protocol\n");
+                break;
             case HTTP2_SETTING_MAX_CONCURRENT_STREAMS:
             case HTTP2_SETTING_MAX_HEADER_LIST_SIZE:
                 LOG("unimplemented http2 setting(%d): %d\n", get16(sf->identifier), value);

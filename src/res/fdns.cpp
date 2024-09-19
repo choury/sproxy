@@ -4,6 +4,7 @@
 #include "misc/util.h"
 #include "misc/index.h"
 #include "misc/config.h"
+#include "misc/job.h"
 
 #include <inttypes.h>
 
@@ -126,14 +127,14 @@ void FDns::query(uint64_t id, std::shared_ptr<RWer> rwer) {
         LOGD(DDNS, "fdns read [%" PRIu64"], size:%zd, refs: %zd\n", id, bb.len, bb.refs());
         bb.id = id;
         if(bb.len == 0){
-            statusmap.erase(id);
+            addjob_with_name([this,id]{statusmap.erase(id);}, "fdns_clean", 0, JOB_FLAGS_AUTORELEASE);
         } else {
             Recv(std::move(bb));
         }
         return bb.len;
     });
     rwer->SetErrorCB([this, id](int, int) {
-        statusmap.erase(id);
+        addjob_with_name([this,id]{statusmap.erase(id);}, "fdns_clean", 0, JOB_FLAGS_AUTORELEASE);
     });
     rwer->SetWriteCB([](uint64_t){});
 }

@@ -95,7 +95,7 @@ void Quic_server::PushData(const sockaddr_storage* myaddr, const sockaddr_storag
         iovec iov{(void*)buff, len};
         r->second->walkPackets(&iov, 1);
     }else if(header.type == QUIC_PACKET_INITIAL){
-        int clsk = ListenUdp(myaddr);
+        int clsk = ListenUdp(myaddr, nullptr);
         if (clsk < 0) {
             LOGE("ListenNet %s:%d, failed: %s\n", opt.quic.hostname, (int)opt.quic.port, strerror(errno));
             return;
@@ -122,7 +122,7 @@ void Quic_server::PushData(const sockaddr_storage* myaddr, const sockaddr_storag
         stateless[0] = 0x43;
         memcpy(stateless + sizeof(stateless) - QUIC_TOKEN_LEN, token.data(), QUIC_TOKEN_LEN);
 
-        int fd = ListenUdp(myaddr);
+        int fd = ListenUdp(myaddr, nullptr);
         socklen_t socklen = (hisaddr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
         int ret = sendto(fd, stateless, sizeof(stateless), 0, (sockaddr *)hisaddr, socklen);
         ::close(fd);
@@ -149,7 +149,7 @@ void Quic_sniServer::defaultHE(RW_EVENT events) {
             return;
         }
 
-        int clsk = ListenUdp(&myaddr);
+        int clsk = ListenUdp(&myaddr, nullptr);
         if (clsk < 0) {
             LOGE("ListenNet failed: %s\n", strerror(errno));
             return;

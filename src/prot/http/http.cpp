@@ -211,12 +211,21 @@ std::shared_ptr<HttpReqHeader> UnpackHttpReq(const void* header, size_t len){
         if (p == nullptr)
             break;
 
-        char* sp = strpbrk(p, ":");
+        const char* sp = strpbrk(p, ":");
         if (sp == nullptr) {
             //tolerate malformed header here for obfuscation
-            break;
+            continue;
         }
         std::string name = std::string(p, sp-p);
+        headers.emplace(name, ltrim(std::string(sp + 1)));
+    }
+
+    for(auto p = opt.request_headers.next; p != nullptr; p = p->next){
+        const char* sp = strpbrk(p->arg, ":");
+        if (sp == nullptr) {
+            continue;
+        }
+        std::string name = std::string(p->arg, sp-p->arg);
         headers.emplace(name, ltrim(std::string(sp + 1)));
     }
 
@@ -316,9 +325,6 @@ size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t 
         AppendHeaders.push_back(std::string(AlterMethod)+": " + req->method);
     } else {
         strcpy(method, req->method);
-    }
-    for(auto p = opt.request_headers.next; p != nullptr; p = p->next){
-        AppendHeaders.emplace_back(p->arg);
     }
     size_t len = 0;
     if (strcmp(method, "CONNECT") == 0){

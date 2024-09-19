@@ -53,7 +53,7 @@ class Tproxy_server: public Ep {
                 return;
             }
             bb.truncate(ret);
-            int clsk = ListenUdp(&myaddr);
+            int clsk = ListenUdp(&myaddr, nullptr);
             if(clsk < 0) {
                 LOGE("failed to recreate udp socket: %d\n", getFd());
                 return;

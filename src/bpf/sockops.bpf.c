@@ -9,6 +9,8 @@
 #define AF_INET   2
 #define AF_INET6  10
 
+#define INADDR_LOOPBACK (0x7f000001)
+
 struct sock_addr {
     __u8  family;
     __u8  pad1;   // this padding required for 64bit alignment
@@ -84,6 +86,7 @@ __always_inline int redirect4(struct bpf_sock_addr* ctx) {
     if (proxy_port4 == 0) return 1;
     if ((bpf_get_current_pid_tgid() >> 32) == proxy_pid) return 1;
     if (ctx->user_family != AF_INET) return 1;
+    if (ctx->user_ip4 == bpf_htonl(INADDR_LOOPBACK)) return 1;
 
     struct sock_addr sock;
     __builtin_memset(&sock, 0, sizeof(sock));
@@ -118,6 +121,7 @@ __always_inline int redirect6(struct bpf_sock_addr* ctx) {
     if (proxy_port6 == 0) return 1;
     if ((bpf_get_current_pid_tgid() >> 32) == proxy_pid) return 1;
     if (ctx->user_family != AF_INET6) return 1;
+    if (ctx->user_ip6[0] == 0 && ctx->user_ip6[1] == 0 && ctx->user_ip6[2] == 0 && ctx->user_ip6[3] == bpf_htonl(1)) return 1;
 
     struct sock_addr sock;
     __builtin_memset(&sock, 0, sizeof(sock));
