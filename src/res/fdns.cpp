@@ -237,7 +237,11 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockadd
         status.rwer->Send(std::move(buff));
     } else if(opt.disable_fakeip){
         for(const auto& addr : addrs) {
-            result->addrs.emplace_back(addr);
+            if ((que->type == ns_t_a && addr.ss_family == AF_INET) ||
+                (que->type == ns_t_aaaa && addr.ss_family == AF_INET6))
+            {
+                result->addrs.emplace_back(addr);
+            }
         }
         buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data()));
         status.rwer->Send(std::move(buff));

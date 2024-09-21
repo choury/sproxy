@@ -88,9 +88,9 @@ HostResolver::HostResolver(int fd, const char *host, std::function<void(int, Hos
 {
     strcpy(this->host, host);
     char buf[BUF_SIZE];
-    (void)!write(fd, buf, Dns_Query(host, 1, id_cur++).build((unsigned char*)buf));
+    (void)!write(fd, buf, Dns_Query(host, ns_t_a, id_cur++).build((unsigned char*)buf));
     if(opt.ipv6_enabled) {
-        (void)!write(fd, buf, Dns_Query(host, 28, id_cur++).build((unsigned char*)buf));
+        (void)!write(fd, buf, Dns_Query(host, ns_t_aaaa, id_cur++).build((unsigned char*)buf));
     }else {
         flags |= GETAAAARES;
     }
@@ -130,13 +130,13 @@ void HostResolver::readHE(RW_EVENT events) {
             }
             rcd.get_time = time(nullptr);
             rcd.ttl = result.ttl;
-            if(result.type == 1){
+            if(result.type == ns_t_a){
                 flags |= GETARES;
                 for(auto i: result.addrs){
                     assert(i.ss_family == AF_INET);
                     rcd.addrs.emplace_back(i);
                 }
-            }else if(result.type == 28){
+            }else if(result.type == ns_t_aaaa){
                 flags |= GETAAAARES;
                 for(auto i: result.addrs){
                     assert(i.ss_family == AF_INET6);

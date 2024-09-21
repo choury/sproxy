@@ -17,7 +17,7 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 
 
 static struct sockops* skel = NULL;
-static struct bpf_link* progs[8] = {NULL};
+static struct bpf_link* progs[12] = {NULL};
 
 void unload_bpf() {
     for(size_t i = 0; i < sizeof(progs)/sizeof(progs[1]); i ++) {
@@ -77,45 +77,69 @@ int load_bpf(const char* cgroup, const struct sockaddr_in* addr4, const struct s
     skel->bss->proxy_ip6[3] = addr6->sin6_addr.s6_addr32[3];
     skel->bss->proxy_port6 = ntohs(addr6->sin6_port);
 
-    progs[0] = bpf_program__attach_cgroup(skel->progs.bpf_sockopt, root);
-    if (progs[0] == NULL) {
+    size_t index = 0;
+    progs[index] = bpf_program__attach_cgroup(skel->progs.bpf_sockopt, root);
+    if (progs[index++] == NULL) {
         LOGE("failed to attach bpf_sockopt to root cgroup (%d)\n", root);
         goto cleanup;
     }
 
-    progs[1] = bpf_program__attach_cgroup(skel->progs.bpf_egress, fd);
-    if (progs[1] == NULL) {
+    progs[index] = bpf_program__attach_cgroup(skel->progs.bpf_egress, fd);
+    if (progs[index++] == NULL) {
         LOGE("failed to attach bpf_egress to cgroup %s (%d)\n", cgroup, fd);
         goto cleanup;
     }
 
-
-    progs[2] = bpf_program__attach_cgroup(skel->progs.bpf_connect4, fd);
-    if (progs[2] == NULL) {
+    progs[index] = bpf_program__attach_cgroup(skel->progs.bpf_connect4, fd);
+    if (progs[index++] == NULL) {
         LOGE("failed to attach bpf_connect4 to cgroup %s (%d)\n", cgroup, fd);
         goto cleanup;
     }
 
-    progs[3] = bpf_program__attach_cgroup(skel->progs.bpf_connect6, fd);
-    if (progs[3] == NULL) {
-        LOGE("failed to attach bpf_connect6 to cgroup %s (%d)\n", cgroup, fd);
+    progs[index] = bpf_program__attach_cgroup(skel->progs.bpf_getpeername4, fd);
+    if (progs[index++] == NULL) {
+        LOGE("failed to attach bpf_getpeername4 to cgroup %s (%d)\n", cgroup, fd);
         goto cleanup;
     }
 
-    progs[4] = bpf_program__attach_cgroup(skel->progs.bpf_sendmsg4, fd);
-    if (progs[4] == NULL) {
+    progs[index] = bpf_program__attach_cgroup(skel->progs.bpf_sendmsg4, fd);
+    if (progs[index++] == NULL) {
         LOGE("failed to attach bpf_sendmsg4 to cgroup %s (%d)\n", cgroup, fd);
         goto cleanup;
     }
 
-    progs[5] = bpf_program__attach_cgroup(skel->progs.bpf_sendmsg6, fd);
-    if (progs[5] == NULL) {
+    progs[index] = bpf_program__attach_cgroup(skel->progs.bpf_recvmsg4, fd);
+    if (progs[index++] == NULL) {
+        LOGE("failed to attach bpf_recvmsg4 to cgroup %s (%d)\n", cgroup, fd);
+        goto cleanup;
+    }
+
+    progs[index] = bpf_program__attach_cgroup(skel->progs.bpf_connect6, fd);
+    if (progs[index++] == NULL) {
+        LOGE("failed to attach bpf_connect6 to cgroup %s (%d)\n", cgroup, fd);
+        goto cleanup;
+    }
+
+    progs[index] = bpf_program__attach_cgroup(skel->progs.bpf_getpeername6, fd);
+    if (progs[index++] == NULL) {
+        LOGE("failed to attach bpf_getpeername6 to cgroup %s (%d)\n", cgroup, fd);
+        goto cleanup;
+    }
+
+    progs[index] = bpf_program__attach_cgroup(skel->progs.bpf_sendmsg6, fd);
+    if (progs[index++] == NULL) {
         LOGE("failed to attach bpf_sendmsg6 to cgroup %s (%d)\n", cgroup, fd);
         goto cleanup;
     }
 
-    progs[6] = bpf_program__attach_cgroup(skel->progs.bpf_sock_release, fd);
-    if (progs[6] == NULL) {
+    progs[index] = bpf_program__attach_cgroup(skel->progs.bpf_recvmsg6, fd);
+    if (progs[index++] == NULL) {
+        LOGE("failed to attach bpf_recvmsg6 to cgroup %s (%d)\n", cgroup, fd);
+        goto cleanup;
+    }
+
+    progs[index] = bpf_program__attach_cgroup(skel->progs.bpf_sock_release, fd);
+    if (progs[index++] == NULL) {
         LOGE("failed to attach bpf_sock_release to cgroup %s (%d)\n", cgroup, fd);
         goto cleanup;
     }

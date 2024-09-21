@@ -198,48 +198,62 @@ int bpf_egress(struct __sk_buff *ctx) {
     return 1;
 }
 
+__always_inline int getpeer4(struct bpf_sock_addr* ctx) {
+    if ((bpf_get_current_pid_tgid() >> 32) == proxy_pid) return 1;
+    if (bpf_ntohl(ctx->user_port)>>16 != proxy_port4) return 1;
+    if (ctx->user_family != AF_INET) return 1;
 
-/*
-SEC("sockops")
-int bpf_sockops(struct bpf_sock_ops *ctx) {
-    if (ctx->op != BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB) return 0;
     __u64 cookie = bpf_get_socket_cookie(ctx);
     struct sock_addr *sock = bpf_map_lookup_elem(&sock_map, &cookie);
     if (!sock) {
-        return 0;
+        return 1;
     }
-    if (ctx->family == AF_INET) {
-        sock->sip4 = bpf_htonl(ctx->local_ip4);
-        sock->sport = ctx->local_port;
-
-        struct sock_key key = {
-            .family = AF_INET,
-            .protocol = IPPROTO_TCP,
-            .sport = sock->sport,
-            .pad1   = 0,
-        };
-
-        bpf_map_update_elem(&cookie_map, &key, &cookie, 0);
-        bpf_printk("tcp4_est %d  %d -> %d", cookie, sock->sport, sock->dport);
-    }else if(ctx->family == AF_INET6) {
-        sock->sip6[0] = ctx->local_ip6[0];
-        sock->sip6[1] = ctx->local_ip6[1];
-        sock->sip6[2] = ctx->local_ip6[2];
-        sock->sip6[3] = ctx->local_ip6[3];
-        sock->sport = ctx->local_port;
-
-        struct sock_key key = {
-            .family = AF_INET6,
-            .protocol = IPPROTO_TCP,
-            .sport = sock->sport,
-            .pad1   = 0,
-        };
-        bpf_map_update_elem(&cookie_map, &key, &cookie, 0);
-        bpf_printk("tcp6_est %d  %d -> %d", cookie, sock->sport, sock->dport);
-    }
-    return 0;
+    ctx->user_ip4 =  sock->dip4;
+    ctx->user_port = bpf_ntohl(sock->dport << 16);
+    bpf_printk("getpeer4 %d: %d -> %d", ctx->protocol, cookie, bpf_ntohl(ctx->user_port) >> 16);
+    return 1;
 }
-*/
+
+SEC("cgroup/getpeername4")
+int bpf_getpeername4(struct bpf_sock_addr *ctx) {
+    return getpeer4(ctx);
+}
+
+
+SEC("cgroup/recvmsg4")
+int bpf_recvmsg4(struct bpf_sock_addr *ctx) {
+    return getpeer4(ctx);
+}
+
+__always_inline int getpeer6(struct bpf_sock_addr* ctx) {
+    if ((bpf_get_current_pid_tgid() >> 32) == proxy_pid) return 1;
+    if (bpf_ntohl(ctx->user_port) >> 16 != proxy_port6) return 1;
+    if (ctx->user_family != AF_INET6) return 1;
+
+    __u64 cookie = bpf_get_socket_cookie(ctx);
+    struct sock_addr *sock = bpf_map_lookup_elem(&sock_map, &cookie);
+    if (!sock) {
+        return 1;
+    }
+    ctx->user_ip6[0] = sock->dip6[0];
+    ctx->user_ip6[1] = sock->dip6[1];
+    ctx->user_ip6[2] = sock->dip6[2];
+    ctx->user_ip6[3] = sock->dip6[3];
+    ctx->user_port = bpf_ntohs(sock->dport);
+    bpf_printk("getpeer6 %d: %d -> %d", ctx->protocol, cookie, bpf_ntohl(ctx->user_port) >> 16);
+    return 1;
+}
+
+
+SEC("cgroup/getpeername6")
+int bpf_getpeername6(struct bpf_sock_addr *ctx) {
+    return getpeer6(ctx);
+}
+
+SEC("cgroup/recvmsg6")
+int bpf_recvmsg6(struct bpf_sock_addr *ctx) {
+    return getpeer6(ctx);
+}
 
 SEC("cgroup/sock_release")
 int bpf_sock_release(struct bpf_sock *ctx) {
@@ -338,3 +352,4 @@ int bpf_sockopt(struct bpf_sockopt *ctx) {
     ctx->retval = 0;
     return 1;
 }
+
