@@ -12,7 +12,7 @@ class Guest_sni: public Guest{
 public:
     // 这里必须要保留一个ctx的指针，是因为这个类在HttpServer中作为模版参数，需要和Guest的构造函数保持一致
     explicit Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx);
-    explicit Guest_sni(std::shared_ptr<RWer> rwer, std::string host, std::string user_agent);
+    explicit Guest_sni(std::shared_ptr<RWer> rwer, std::string host, const char* ua);
     size_t sniffer_quic(Buffer&& bb);
 };
 

@@ -20,10 +20,13 @@ Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(f
     user_agent = generateUA(opt.ua, "", 0);
 }
 
-Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, std::string host, std::string user_agent):
-        Guest(rwer), host(std::move(host)), user_agent(std::move(user_agent))
+Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, std::string host, const char* ua):
+        Guest(rwer), host(std::move(host))
 {
     headless = true;
+    if(ua) {
+        user_agent = ua;
+    }
     if(std::dynamic_pointer_cast<PMemRWer>(rwer)) {
         rwer->SetReadCB([this](Buffer&& bb){return sniffer_quic(std::move(bb));});
     } else if(std::dynamic_pointer_cast<MemRWer>(rwer)) {

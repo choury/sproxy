@@ -10,7 +10,7 @@ Requester::Requester(std::shared_ptr<RWer> rwer) {
 
 std::string generateUA(const char* ua, const std::string& prog, uint64_t requestid) {
     std::stringstream UA;
-    if(ua){
+    if(ua && ua[0]){
         UA << ua;
     } else if(!prog.empty()){
         UA << prog
