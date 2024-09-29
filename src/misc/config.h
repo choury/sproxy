@@ -79,6 +79,7 @@ struct options{
     struct Destination admin;
     struct Destination tproxy;
     uint64_t pcap_len;
+    uint64_t fwmark;
     struct Destination Server;
     char rewrite_auth[DOMAINLIMIT];
     enum auto_mode ipv6_mode;

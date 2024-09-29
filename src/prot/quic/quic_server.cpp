@@ -8,55 +8,6 @@
 
 #include <unistd.h>
 
-static ssize_t recvwithaddr(int fd, void* buff, size_t buflen,
-                            sockaddr_storage* myaddr, sockaddr_storage* hisaddr) {
-    struct iovec iov;
-    iov.iov_base = buff;
-    iov.iov_len = buflen;
-
-    struct msghdr msg;
-    memset(&msg, 0, sizeof(msg));
-
-    memset(hisaddr, 0, sizeof(*hisaddr));
-    msg.msg_name = hisaddr;
-    msg.msg_namelen = sizeof(*hisaddr);
-    msg.msg_iov = &iov;
-    msg.msg_iovlen = 1;
-
-    char controlbuf[CMSG_SPACE(sizeof(struct in6_pktinfo)) + CMSG_SPACE(sizeof(struct in_pktinfo))];
-    msg.msg_control = controlbuf;
-    msg.msg_controllen = sizeof(controlbuf);
-
-    ssize_t ret = recvmsg(fd, &msg, 0);
-    if(ret < 0){
-        LOGE("recvfrom error: %s\n", strerror(errno));
-        return ret;
-    }
-    memset(myaddr, 0, sizeof(*myaddr));
-    for (struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
-        if (cmsg->cmsg_level == IPPROTO_IPV6 && cmsg->cmsg_type == IPV6_PKTINFO) {
-            struct in6_pktinfo *info6 = (struct in6_pktinfo *) CMSG_DATA(cmsg);
-            sockaddr_in6* myaddr6 = (sockaddr_in6*)myaddr;
-            myaddr6->sin6_family = AF_INET6;
-            myaddr6->sin6_addr = info6->ipi6_addr;
-            myaddr6->sin6_port = htons(opt.quic.port);
-        } else if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO) {
-            struct in_pktinfo *info = (struct in_pktinfo *) CMSG_DATA(cmsg);
-            sockaddr_in* myaddr4 = (sockaddr_in*)myaddr;
-            myaddr4->sin_family = AF_INET;
-            myaddr4->sin_addr = info->ipi_addr;
-            myaddr4->sin_port = htons(opt.quic.port);
-        } else {
-            LOGE("unknown level: %d or type: %d\n", cmsg->cmsg_level, cmsg->cmsg_type);
-            return -1;
-        }
-    }
-    if(myaddr->ss_family == AF_UNSPEC) {
-        LOGE("can't get IP_PKTINFO\n");
-        return -1;
-    }
-    return ret;
-}
 
 void Quic_server::defaultHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR)) {
@@ -72,6 +23,7 @@ void Quic_server::defaultHE(RW_EVENT events) {
             LOGE("recvfrom error: %s\n", strerror(errno));
             return;
         }
+        ((sockaddr_in*)&myaddr)->sin_port = htons(opt.quic.port);
         PushData(&myaddr, &hisaddr, buff, ret);
     } else {
         LOGE("unknown error\n");
@@ -149,6 +101,7 @@ void Quic_sniServer::defaultHE(RW_EVENT events) {
             return;
         }
 
+        ((sockaddr_in*)&myaddr)->sin_port = htons(opt.quic.port);
         int clsk = ListenUdp(&myaddr, nullptr);
         if (clsk < 0) {
             LOGE("ListenNet failed: %s\n", strerror(errno));

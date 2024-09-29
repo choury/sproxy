@@ -18,14 +18,18 @@
 #include "req/guest_vpn.h"
 #include "req/guest_tproxy.h"
 int protectFd(int fd) {
-    if(opt.interface == NULL || strlen(opt.interface) == 0){
-        return 1;
+    if(opt.interface && strlen(opt.interface)){
+        struct ifreq ifr;
+        memset(&ifr, 0, sizeof(ifr));
+        snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", opt.interface);
+        if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
+            return 0;
+        }
     }
-    struct ifreq ifr;
-    memset(&ifr, 0, sizeof(ifr));
-    snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", opt.interface);
-    if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
-        return 0;
+    if(opt.fwmark) {
+        if (setsockopt(fd, SOL_SOCKET, SO_MARK, (void *)&opt.fwmark, sizeof(opt.fwmark)) < 0) {
+            return 0;
+        }
     }
     return 1;
 }
@@ -71,7 +75,7 @@ static sockaddr_in6 localhost6 = {
     .sin6_family = AF_INET6,
     .sin6_port = 0,
     .sin6_flowinfo = 0,
-    .sin6_addr = {in6addr_loopback},
+    .sin6_addr = IN6ADDR_LOOPBACK_INIT,
     .sin6_scope_id = 0,
 };
 
@@ -131,6 +135,7 @@ int main(int argc, char **argv) {
             int fd[4] = {-1, -1, -1, -1};
             listenOption ops = {
                 .disable_defer_accepct = true,
+                .enable_ip_transparent = !opt.bpf_cgroup,
             };
             if(strcmp(opt.tproxy.hostname, "localhost") == 0) {
                 if(ListenLocalhostTcp(opt.tproxy.port, fd, &ops) < 0) {

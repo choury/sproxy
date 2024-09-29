@@ -56,13 +56,8 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
             }
             break;
         case AF_INET6:
-            if(flags & PING_IS_RAW_SOCK){
-                bb.reserve(sizeof(ip6_hdr) + sizeof(icmp6_hdr));
-                res->send(std::move(bb));
-            }else {
-                bb.reserve(sizeof(icmp6_hdr));
-                res->send(std::move(bb));
-            }
+            bb.reserve(sizeof(icmp6_hdr));
+            res->send(std::move(bb));
             break;
         default:
             abort();

@@ -144,6 +144,7 @@ struct options opt = {
         .next       = NULL,
     },
     .pcap_len       = INT32_MAX,
+    .fwmark         = 0,
 };
 
 enum option_type{
@@ -172,6 +173,7 @@ static struct option long_options[] = {
     {"daemon",        no_argument,       NULL, 'D'},
     {"disable-fakeip",no_argument,       NULL, '1'},
     {"disable-http2", no_argument,       NULL, '1'},
+    {"fwmark",        required_argument, NULL,  0 },
     {"help",          no_argument,       NULL, 'h'},
     {"http",          required_argument, NULL,  0 },
     {"mitm",          required_argument, NULL,  0 },
@@ -238,6 +240,7 @@ static struct option_detail option_detail[] = {
 #endif
     {"disable-http2", "Use http/1.1 only", option_bool, &opt.disable_http2, (void*)true},
     {"disable-fakeip", "Do not use fakeip for vpn and tproxy", option_bool, &opt.disable_fakeip, (void*)true},
+    {"fwmark", "Set fwmark for output packet", option_uint64, &opt.fwmark, NULL},
     {"help", "Print this usage", option_bool, NULL, NULL},
     {"http", "Listen for http server", option_string, &http_listen, NULL},
     {"index", "Index file for path (local server)", option_string, &opt.index_file, NULL},
@@ -378,7 +381,7 @@ static void parseArgs(const char* name, const char* args){
                 break;
             case option_uint64:
                 uresult = strtoull(args, &pos, 0);
-                if(uresult == ULLONG_MAX || args == pos) {
+                if (uresult == ULLONG_MAX || args == pos) {
                     LOGE("wrong uint format: %s\n", args);
                 }
                 *(uint64_t*)option_detail[i].result = uresult;
@@ -616,8 +619,12 @@ void postConfig(){
         LOGE("mitm mode require cakey\n");
         exit(1);
     }
-    if (opt.bpf_cgroup && (getuid() != 0 || opt.tproxy.port == 0)){
-        LOGE("bpf require root privilege and tproxy mode\n");
+    if (opt.tproxy.port && getuid() != 0) {
+        LOGE("tproxy require root privilege to set IP[V6]_TRANSPARENT\n");
+        exit(1);
+    }
+    if (opt.bpf_cgroup && opt.tproxy.port == 0){
+        LOGE("bpf require tproxy mode\n");
         exit(1);
     }
     if (opt.set_dns_route && opt.interface == NULL) {

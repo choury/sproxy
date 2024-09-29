@@ -1,4 +1,5 @@
 #define __APPLE_USE_RFC_3542
+#define _GNU_SOURCE
 #include "net.h"
 #include "common/common.h"
 #include "misc/util.h"
@@ -9,6 +10,7 @@
 
 #include <unistd.h>
 #include <fcntl.h>
+#include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/ioctl.h>
 #include <sys/un.h>
@@ -140,6 +142,18 @@ void SetUnixOptions(int fd, const struct sockaddr_storage* addr) {
 
 void SetRecvPKInfo(int fd, const struct sockaddr_storage* addr) {
     int enable = 1;
+#if __linux__
+    if(addr->ss_family == AF_INET || isAnyAddress(addr)) {
+        if(setsockopt(fd, IPPROTO_IP, IP_RECVORIGDSTADDR, &enable, sizeof(enable)) < 0) {
+            LOGF("setsockopt IP_RECVORIGDSTADD:%s\n", strerror(errno));
+        }
+    }
+    if(addr->ss_family == AF_INET6 || isAnyAddress(addr)) {
+        if(setsockopt(fd, IPPROTO_IPV6, IPV6_RECVORIGDSTADDR, &enable, sizeof(enable)) < 0) {
+            LOGF("setsockopt IPV6_RECVORIGDSTADD:%s\n", strerror(errno));
+        }
+    }
+#else
     if(addr->ss_family == AF_INET) {
         if(setsockopt(fd, IPPROTO_IP, IP_PKTINFO, &enable, sizeof(enable)) < 0){
             LOGF("setsockopt IP_PKTINFO:%s\n", strerror(errno));
@@ -150,6 +164,7 @@ void SetRecvPKInfo(int fd, const struct sockaddr_storage* addr) {
             LOGF("setsockopt IPV6_PKTINFO:%s\n", strerror(errno));
         }
     }
+#endif
 }
 
 size_t GetCapSize(int fd) {
@@ -191,12 +206,8 @@ int ListenTcp(const struct sockaddr_storage* addr, const struct listenOption* op
         return -1;
     }
     do{
-        if(protectFd(fd) == 0){
-            LOGE("protecd fd error:%s\n", strerror(errno));
-            break;
-        }
-        int flag = 1;
-        if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
+        int enable = 1;
+        if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) < 0) {
             LOGE("setsockopt SO_REUSEADDR:%s\n", strerror(errno));
             break;
         }
@@ -212,6 +223,14 @@ int ListenTcp(const struct sockaddr_storage* addr, const struct listenOption* op
             int timeout = 60;
             if (setsockopt(fd, IPPROTO_TCP, TCP_DEFER_ACCEPT, &timeout, sizeof(timeout))< 0)
                 LOGE("TCP_DEFER_ACCEPT:%s\n", strerror(errno));
+        }
+        if(ops != NULL && ops->enable_ip_transparent) {
+            if(addr->ss_family == AF_INET)
+                if (setsockopt(fd, SOL_IP, IP_TRANSPARENT, &enable, sizeof(enable)) < 0)
+                    LOGE("IP_TRANSPARENT:%s\n", strerror(errno));
+            if(addr->ss_family == AF_INET6)
+                if (setsockopt(fd, SOL_IPV6, IPV6_TRANSPARENT, &enable, sizeof(enable)) < 0)
+                    LOGE("IPV6_TRANSPARENT:%s\n", strerror(errno));
         }
 #endif
         if (listen(fd, 10000) < 0) {
@@ -237,20 +256,25 @@ int ListenUdp(const struct sockaddr_storage* addr, const struct listenOption* op
         return -1;
     }
     do{
-        if(protectFd(fd) == 0){
-            LOGE("protecd fd error:%s\n", strerror(errno));
-            break;
-        }
-        int flag = 1;
-        if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) < 0) {
+        int enable = 1;
+        if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) < 0) {
             LOGE("setsockopt SO_REUSEADDR:%s\n", strerror(errno));
             break;
         }
 
 #ifdef __APPLE__
-        if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) < 0) {
+        if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(enable)) < 0) {
             LOGE("setsockopt SO_REUSEPORT:%s\n", strerror(errno));
             break;
+        }
+#else
+        if(ops != NULL && ops->enable_ip_transparent) {
+            if(addr->ss_family == AF_INET)
+                if (setsockopt(fd, SOL_IP, IP_TRANSPARENT, &enable, sizeof(enable)) < 0)
+                    LOGE("IP_TRANSPARENT:%s\n", strerror(errno));
+            if(addr->ss_family == AF_INET6)
+                if (setsockopt(fd, SOL_IPV6, IPV6_TRANSPARENT, &enable, sizeof(enable)) < 0)
+                    LOGE("IPV6_TRANSPARENT:%s\n", strerror(errno));
         }
 #endif
         socklen_t len = (addr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
@@ -389,6 +413,73 @@ ERR:
     return -1;
 }
 
+ssize_t recvwithaddr(int fd, void* buff, size_t buflen,
+                     struct sockaddr_storage* myaddr,
+                     struct sockaddr_storage* hisaddr)
+{
+    struct iovec iov;
+    iov.iov_base = buff;
+    iov.iov_len = buflen;
+
+    struct msghdr msg;
+    memset(&msg, 0, sizeof(msg));
+
+    memset(hisaddr, 0, sizeof(*hisaddr));
+    msg.msg_name = hisaddr;
+    msg.msg_namelen = sizeof(*hisaddr);
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+
+    char controlbuf[CMSG_SPACE(sizeof(struct in6_pktinfo)) +
+                    CMSG_SPACE(sizeof(struct in_pktinfo)) +
+                    CMSG_SPACE(sizeof(struct sockaddr_in)) +
+                    CMSG_SPACE(sizeof(struct sockaddr_in6))];
+    msg.msg_control = controlbuf;
+    msg.msg_controllen = sizeof(controlbuf);
+
+    ssize_t ret = recvmsg(fd, &msg, 0);
+    if(ret < 0){
+        LOGE("recvfrom error: %s\n", strerror(errno));
+        return ret;
+    }
+    memset(myaddr, 0, sizeof(*myaddr));
+    for (struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != NULL; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+#ifdef __linux__
+        if (cmsg->cmsg_level == SOL_IPV6 && cmsg->cmsg_type == IPV6_ORIGDSTADDR) {
+            memcpy(myaddr, CMSG_DATA(cmsg), sizeof(struct sockaddr_in6));
+            break;
+        }
+        if(cmsg->cmsg_level == SOL_IP && cmsg->cmsg_type == IP_ORIGDSTADDR) {
+            memcpy(myaddr, CMSG_DATA(cmsg), sizeof(struct sockaddr_in));
+            break;
+        }
+#endif
+        if (cmsg->cmsg_level == IPPROTO_IPV6 && cmsg->cmsg_type == IPV6_PKTINFO) {
+            struct in6_pktinfo *info6 = (struct in6_pktinfo *) CMSG_DATA(cmsg);
+            struct sockaddr_in6* myaddr6 = (struct sockaddr_in6*)myaddr;
+            myaddr6->sin6_family = AF_INET6;
+            myaddr6->sin6_addr = info6->ipi6_addr;
+        } else if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO) {
+            struct in_pktinfo *info = (struct in_pktinfo *) CMSG_DATA(cmsg);
+            struct sockaddr_in* myaddr4 = (struct sockaddr_in*)myaddr;
+            myaddr4->sin_family = AF_INET;
+            myaddr4->sin_addr = info->ipi_addr;
+        } else {
+            LOGE("unknown level: %d or type: %d\n", cmsg->cmsg_level, cmsg->cmsg_type);
+            return -1;
+        }
+    }
+    if(myaddr->ss_family == AF_UNSPEC) {
+        LOGE("can't get IP_PKTINFO\n");
+        return -1;
+    }
+    if(myaddr->ss_family == AF_INET  && hisaddr->ss_family == AF_INET6) {
+        // ipv4 -> ipv6
+        hisaddr->ss_family = AF_INET;
+        ((struct sockaddr_in*)hisaddr)->sin_addr = getMapped(((struct sockaddr_in6*)hisaddr)->sin6_addr, IPV4MAPIPV6);
+    }
+    return ret;
+}
 
 void addrstring(const struct sockaddr_storage* addr, char* buff, size_t len) {
     memset(buff, 0, len);
@@ -517,6 +608,42 @@ bool isLocalIp(const struct sockaddr_storage* addr){
                 return true;
             }
         }
+    }
+    return false;
+}
+
+bool isLoopBack(const struct sockaddr_storage* addr) {
+    if(addr->ss_family == AF_INET) {
+        struct sockaddr_in* addr4 = (struct sockaddr_in*)addr;
+        return addr4->sin_addr.s_addr == htonl(INADDR_LOOPBACK);
+    }
+    if(addr->ss_family == AF_INET6) {
+        struct sockaddr_in6* addr6 = (struct sockaddr_in6*)addr;
+        return IN6_IS_ADDR_LOOPBACK(&addr6->sin6_addr);
+    }
+    return false;
+}
+
+bool isAnyAddress(const struct sockaddr_storage* addr) {
+    if(addr->ss_family == AF_INET) {
+        struct sockaddr_in* addr4 = (struct sockaddr_in*)addr;
+        return addr4->sin_addr.s_addr == htonl(INADDR_ANY);
+    }
+    if(addr->ss_family == AF_INET6) {
+        struct sockaddr_in6* addr6 = (struct sockaddr_in6*)addr;
+        return IN6_IS_ADDR_UNSPECIFIED(&addr6->sin6_addr);
+    }
+    return false;
+}
+
+bool isBroadcast(const struct sockaddr_storage* addr) {
+    if(addr->ss_family == AF_INET) {
+        struct sockaddr_in* addr4 = (struct sockaddr_in*)addr;
+        return addr4->sin_addr.s_addr == htonl(INADDR_BROADCAST);
+    }
+    if(addr->ss_family == AF_INET6) {
+        struct sockaddr_in6* addr6 = (struct sockaddr_in6*)addr;
+        return IN6_IS_ADDR_MULTICAST(&addr6->sin6_addr);
     }
     return false;
 }

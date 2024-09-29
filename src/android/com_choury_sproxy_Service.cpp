@@ -83,9 +83,9 @@ static int vpn_start(int fd){
                 LOGE("failed to parse admin addr: %s\n", opt.admin.hostname);
                 return -1;
             }
-            svsk_cli = ListenTcp(&addr);
+            svsk_cli = ListenTcp(&addr, nullptr);
         }else{
-            svsk_cli = ListenUnix(opt.admin.hostname);
+            svsk_cli = ListenUnix(opt.admin.hostname, nullptr);
         }
         if(svsk_cli < 0){
             return -1;

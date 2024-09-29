@@ -21,6 +21,7 @@ size_t GetBuffSize(int fd);
 
 struct listenOption{
     bool disable_defer_accepct;
+    bool enable_ip_transparent;
 };
 
 int ListenTcp(const struct sockaddr_storage* addr, const struct listenOption* ops);
@@ -29,6 +30,11 @@ int ListenUnix(const char* path, const struct listenOption* ops);
 
 int Connect(const struct sockaddr_storage*, int type);
 int IcmpSocket(const struct sockaddr_storage* addr, int raw);
+
+ssize_t recvwithaddr(int fd, void* buff, size_t buflen,
+                     struct sockaddr_storage* myaddr,
+                     struct sockaddr_storage* hisaddr);
+
 // ip address to buff
 void addrstring(const struct sockaddr_storage* addr, char* str, size_t len);
 // return the internal static buffer, same as addrstring
@@ -39,6 +45,9 @@ int storage_aton(const char* ipstr, uint16_t port, struct sockaddr_storage* addr
 struct sockaddr_storage* getlocalip ();
 bool hasIpv6Address();
 bool isLocalIp(const struct sockaddr_storage* addr);
+bool isLoopBack(const struct sockaddr_storage* addr);
+bool isAnyAddress(const struct sockaddr_storage* addr);
+bool isBroadcast(const struct sockaddr_storage* addr);
 int tun_create(char *dev, int flags);
 
 

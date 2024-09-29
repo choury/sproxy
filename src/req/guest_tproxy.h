@@ -7,8 +7,8 @@
 class Guest_tproxy: public Guest {
     int protocol;
 public:
-    explicit Guest_tproxy(int fd, const sockaddr_storage* src);
-    explicit Guest_tproxy(int fd, const sockaddr_storage*, Buffer&& bb);
+    explicit Guest_tproxy(int fd, sockaddr_storage* src);
+    explicit Guest_tproxy(int fd, sockaddr_storage* src, sockaddr_storage* dst, Buffer&& bb);
 };
 
 class Tproxy_server: public Ep {
@@ -45,25 +45,33 @@ class Tproxy_server: public Ep {
         }
         if (!!(events & RW_EVENT::READ)) {
             sockaddr_storage hisaddr;
+            sockaddr_storage myaddr;
             Buffer bb{BUF_LEN};
             socklen_t socklen = sizeof(hisaddr);
-            int ret = recvfrom(getFd(), bb.mutable_data(), BUF_LEN, 0, (sockaddr*)&hisaddr, &socklen);
+            int ret = recvwithaddr(getFd(), bb.mutable_data(), BUF_LEN, &myaddr, &hisaddr);
             if(ret < 0) {
                 LOGE("failed recv udp packet: %s\n", strerror(errno));
                 return;
             }
+            if(isBroadcast(&myaddr)){
+                return;
+            }
             bb.truncate(ret);
-            int clsk = ListenUdp(&myaddr, nullptr);
+            listenOption ops = {
+                .disable_defer_accepct = true,
+                .enable_ip_transparent = true,
+            };
+            int clsk = ListenUdp(&myaddr, &ops);
             if(clsk < 0) {
-                LOGE("failed to recreate udp socket: %d\n", getFd());
+                LOGE("failed to recreate udp socket: %s\n", storage_ntoa(&myaddr));
                 return;
             }
             if(::connect(clsk, (sockaddr*)&hisaddr, socklen)) {
-                LOGE("failed to connect peer: %s\n", strerror(errno));
+                LOGE("failed to connect peer [%s]: %s\n", storage_ntoa(&hisaddr), strerror(errno));
                 return;
             }
             SetUdpOptions(clsk, &hisaddr);
-            new Guest_tproxy(clsk, &hisaddr, std::move(bb));
+            new Guest_tproxy(clsk, &hisaddr, &myaddr, std::move(bb));
         } else {
             LOGE("unknown error\n");
             return;

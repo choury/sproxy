@@ -5,11 +5,9 @@
 #include "misc/index.h"
 #include "misc/config.h"
 #include "misc/job.h"
+#include "misc/defer.h"
 
 #include <inttypes.h>
-
-#define IN_IS_ADDR_LOOPBACK(a)      ((((long int) (ntohl((a)->s_addr))) & 0xff000000) == 0x7f000000)
-
 
 static FDns* fdns = nullptr;
 static Index2<uint32_t, std::string, void*> fdns_records;
@@ -199,17 +197,6 @@ void FDns::Recv(Buffer&& bb) {
     delete result;
 }
 
-static bool isLoopBack(const sockaddr_storage* addr) {
-    if(addr->ss_family == AF_INET) {
-        const sockaddr_in* addr4 = (const sockaddr_in*)addr;
-        return IN_IS_ADDR_LOOPBACK(&addr4->sin_addr);
-    }else if(addr->ss_family == AF_INET6) {
-        const sockaddr_in6* addr6 = (const sockaddr_in6*)addr;
-        return IN6_IS_ADDR_LOOPBACK(&addr6->sin6_addr);
-    }
-    return false;
-}
-
 void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs) {
     auto index = *std::static_pointer_cast<__uint128_t>(param);
 #if __LP64__
@@ -269,8 +256,11 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockadd
         buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data()));
         status.rwer->Send(std::move(buff));
     }
-    status.quemap.erase(que->id);
     delete result;
+    status.quemap.erase(que->id);
+    if(status.quemap.empty()) {
+        status.rwer->Close([id]{fdns->statusmap.erase(id);});
+    }
 }
 
 void FDns::RawCb(std::shared_ptr<void> param, const char* data, size_t size) {
@@ -307,6 +297,9 @@ void FDns::RawCb(std::shared_ptr<void> param, const char* data, size_t size) {
         status.rwer->Send(std::move(buff));
     }
     status.quemap.erase(que->id);
+    if(status.quemap.empty()) {
+        status.rwer->Close([id]{fdns->statusmap.erase(id);});
+    }
 }
 
 void FDns::dump_stat(Dumper dp, void* param) {
