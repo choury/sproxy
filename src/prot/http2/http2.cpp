@@ -50,10 +50,12 @@ size_t Http2Base::DefaultProc(Buffer& bb) {
         }
         length-= padlen;
         auto flags = header->flags;
-        //这里我们假定对端一定能接受所有数据，因为我们的窗口大小是根据对端的cap进行设置的
+        //这里我们规定必须需要处理所有数据，因为我们的窗口大小是根据对端的cap进行设置的
+        //不然，状态机会混乱，因为无法处理半个frame的情况
         //所以DataProc这个函数不需要一个返回值，我们也不考虑对端主动shrunk自己的cap的情况
         if(bb.len == length) {
             DataProc(std::move(bb));
+            bb.len = 0; //不知道为什么move之后len不是0，这里手动置0
         }else {
             Buffer cbb = bb;
             cbb.truncate(length);
