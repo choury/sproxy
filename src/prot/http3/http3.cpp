@@ -186,7 +186,7 @@ void Http3Base::Init() {
     len = pos - (char*)buff1.data();
     SendData({std::move(buff1), len, qpackeid_local});
 
-    Block buff2(variable_encode_len(HTTP3_STREAM_TYPE_QPACK_ENCODE));
+    Block buff2(variable_encode_len(HTTP3_STREAM_TYPE_QPACK_DECODE));
     pos = (char*)buff2.data();
     pos += variable_encode(pos, HTTP3_STREAM_TYPE_QPACK_DECODE);
     len = pos - (char*)buff2.data();

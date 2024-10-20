@@ -269,6 +269,7 @@ struct Destination{
 #cmakedefine HAVE_ZLIB
 #cmakedefine HAVE_QUIC
 #cmakedefine HAVE_BPF
+#cmakedefine USE_BORINGSSL
 
 #define PREFIX "@CMAKE_INSTALL_PREFIX@"
 #define CABUNDLE "@SPROXY_CA_BUNDLE@"

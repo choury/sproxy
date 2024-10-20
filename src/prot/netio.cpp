@@ -370,9 +370,9 @@ ssize_t PacketRWer::Write(std::set<uint64_t>& writed_list) {
         if(bb->len > 0) {
             ret = write(getFd(), bb->data(), bb->len);
             LOGD(DRWER, "write: len: %zd, ret: %d\n", bb->len, ret);
-            bb->reserve(ret);
         }
-        writed_list = StripWbuff(ret);
+        // ignore error, udp is unreliable
+        writed_list = StripWbuff(bb->len);
         return ret;
     } else {
         std::vector<iovec> iovs;

@@ -102,10 +102,13 @@ int QuicBase::set_encryption_secrets(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
     uint32_t cipher = SSL_CIPHER_get_id(SSL_get_current_cipher(ssl));
     LOGD(DQUIC, "set_secret: level %d, len: %zd, cipher: 0x%X\n",
          level, secret_len, cipher);
-    QuicBase* rwer = (QuicBase*)SSL_get_app_data(ssl);
-    //assert(secret_len <= 32);
-    quic_secret_set_key(&rwer->contexts[level].read_secret, (const char*)read_secret, cipher);
-    quic_secret_set_key(&rwer->contexts[level].write_secret, (const char*)write_secret, cipher);
+    QuicBase* rwer = (QuicBase *)SSL_get_app_data(ssl);
+    // assert(secret_len <= 32);
+    if (quic_secret_set_key(&rwer->contexts[level].read_secret, (const char *)read_secret, cipher) < 0 ||
+        quic_secret_set_key(&rwer->contexts[level].write_secret, (const char *)write_secret, cipher) < 0)
+    {
+        return 0;
+    }
     rwer->qos.KeyGot(level);
     rwer->contexts[level].hasKey = true;
     if(rwer->ctx) {
@@ -114,6 +117,48 @@ int QuicBase::set_encryption_secrets(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
     }
     return 1;
 }
+
+int QuicBase::set_read_secret(SSL* ssl,
+                              enum ssl_encryption_level_t level,
+                              const SSL_CIPHER* cp,
+                              const uint8_t* secret, size_t secret_len) {
+    uint32_t cipher = SSL_CIPHER_get_id(cp);
+    LOGD(DQUIC, "set_read_secret: level %d, len: %zd, cipher: 0x%X\n",
+         level, secret_len, cipher);
+    QuicBase* rwer = (QuicBase*)SSL_get_app_data(ssl);
+    if(quic_secret_set_key(&rwer->contexts[level].read_secret, (const char*)secret, cipher) < 0) {
+        return 0;
+    }
+    rwer->qos.KeyGot(level);
+    rwer->contexts[level].hasKey = true;
+    if(rwer->ctx) {
+        //drop init key if client mode
+        rwer->dropkey(ssl_encryption_initial);
+    }
+    return 1;
+}
+
+int QuicBase::set_write_secret(SSL* ssl,
+                               enum ssl_encryption_level_t level,
+                               const SSL_CIPHER* cp,
+                               const uint8_t* secret, size_t secret_len) {
+    uint32_t cipher = SSL_CIPHER_get_id(cp);
+    LOGD(DQUIC, "set_write_secret: level %d, len: %zd, cipher: 0x%X\n",
+         level, secret_len, cipher);
+    QuicBase* rwer = (QuicBase*)SSL_get_app_data(ssl);
+    if(quic_secret_set_key(&rwer->contexts[level].write_secret, (const char*)secret, cipher) < 0) {
+        return 0;
+    }
+    rwer->qos.KeyGot(level);
+    rwer->contexts[level].hasKey = true;
+    if(rwer->ctx) {
+        //drop init key if client mode
+        rwer->dropkey(ssl_encryption_initial);
+    }
+    return 1;
+}
+
+
 
 size_t QuicBase::envelopLen(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack, size_t len){
     (void)pn;
@@ -295,7 +340,7 @@ int QuicBase::add_handshake_data(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
 
 int QuicBase::flush_flight(SSL *ssl){
     QuicBase* rwer = (QuicBase*)SSL_get_app_data(ssl);
-    rwer->qos.SendNow();
+    rwer->qos.sendPacket();
     return 1;
 }
 
@@ -313,12 +358,18 @@ int QuicBase::send_alert(SSL *ssl, OSSL_ENCRYPTION_LEVEL level, uint8_t alert){
 
     LOGD(DQUIC, "[%d] cc ssl send_alert: %d\n", level, alert);
     rwer->qos.PushFrame(level, frame);
+    rwer->qos.sendPacket();
     rwer->onError(PROTOCOL_ERR, QUIC_CRYPTO_ERROR);
     return 1;
 }
 
 static SSL_QUIC_METHOD quic_method{
+#ifdef USE_BORINGSSL
+    QuicBase::set_read_secret,
+    QuicBase::set_write_secret,
+#else
     QuicBase::set_encryption_secrets,
+#endif
     QuicBase::add_handshake_data,
     QuicBase::flush_flight,
     QuicBase::send_alert,
@@ -541,11 +592,11 @@ QuicBase::QuicBase(const char* hostname):
     SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION);
     SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION);
     if(SSL_CTX_set_ciphersuites(ctx, QUIC_CIPHERS) != 1) {
-        LOGF("SSL_CTX_set_ciphersuites: %s", ERR_error_string(ERR_get_error(), nullptr));
+        LOGF("SSL_CTX_set_ciphersuites: %s\n", ERR_error_string(ERR_get_error(), nullptr));
     }
 
     if(SSL_CTX_set1_groups_list(ctx, QUIC_GROUPS) != 1) {
-        LOGF("SSL_CTX_set1_groups_list failed");
+        LOGF("SSL_CTX_set1_groups_list failed\n");
     }
 
     SSL_CTX_set_quic_method(ctx, &quic_method);
@@ -1221,7 +1272,7 @@ int QuicBase::handle1RttPacket(const quic_pkt_header* header, std::vector<const 
             break;
         case FrameResult::skip:
             //有丢包，立即发送ack
-            qos.SendNow();
+            qos.sendPacket();
             context->recvq.insert(frame);
             break;
         case FrameResult::error:

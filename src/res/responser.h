@@ -14,5 +14,6 @@ public:
 };
 
 extern bimap<std::string, Responser*> responsers;
+bool shouldNegotiate(std::shared_ptr<const HttpReqHeader> req, Requester* src);
 void distribute(std::shared_ptr<HttpReq> req, Requester* src);
 #endif

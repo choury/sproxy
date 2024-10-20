@@ -34,9 +34,13 @@ extern "C" {
 
 #define QUIC_CIPHERS                                              \
    "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:"               \
-   "TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_CCM_SHA256"
+   "TLS_CHACHA20_POLY1305_SHA256"
 
 #define QUIC_GROUPS "P-256:X25519:P-384:P-521"
+
+#ifdef USE_BORINGSSL
+#define SSL_CTX_set_ciphersuites SSL_CTX_set_cipher_list
+#endif
 
 int parse_client_hello(const unsigned char*data, size_t data_len, char** hostname);
 int parse_tls_header(const unsigned char *data, size_t data_len, char **hostname);

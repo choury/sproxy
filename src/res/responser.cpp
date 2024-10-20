@@ -22,6 +22,19 @@ enum class CheckResult{
     NoPort,
 };
 
+bool shouldNegotiate(std::shared_ptr<const HttpReqHeader> req, Requester* src){
+    if(opt.mitm_mode == Enable) {
+        return true;
+    }
+    if(opt.mitm_mode == Auto && opt.ca.key && mayBeBlocked(req->Dest.hostname)) {
+        return true;
+    }
+    if(getstrategy(req->Dest.hostname).s == Strategy::local && req->getDport() == src->getDst().port) {
+        return true;
+    }
+    return false;
+}
+
 static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, Requester* src){
     if (!checkauth(src->getSrc().hostname, req->get("Proxy-Authorization"))){
         return CheckResult::AuthFailed;

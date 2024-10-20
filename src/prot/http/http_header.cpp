@@ -143,9 +143,9 @@ bool HttpReqHeader::valid_method() const {
 }
 
 void HttpReqHeader::postparse() {
-    char *start = path;
+    const char *start = path;
     while (*start && *++start == '/');
-    char *end=start;
+    const char *end=start;
     while (*end ){
         if(*end == '?'){
             break;
@@ -265,7 +265,7 @@ std::multimap<std::string, std::string> HttpReqHeader::Normalize() const {
     if(!ismethod("CONNECT")){
         normalization.emplace(":scheme", Dest.scheme[0] ? Dest.scheme : "http");
     }
-    if(path[1]) {
+    if(path[1] || http_method()) {
         normalization.emplace(":path", path);
     }
     for(const auto& i: cookies){

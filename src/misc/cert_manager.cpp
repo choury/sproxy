@@ -132,35 +132,35 @@ int generate_signed_key_pair(const char* domain, EVP_PKEY **key, X509 **crt) {
         X509V3_set_ctx(&ctx, opt.ca.crt, *crt, req, nullptr, 0);
 
         // Create and add the Basic Constraints extension
-        X509_EXTENSION* bc_ext = X509V3_EXT_conf_nid(nullptr, &ctx, NID_basic_constraints, "critical,CA:FALSE");
+        X509_EXTENSION* bc_ext = X509V3_EXT_nconf_nid(nullptr, &ctx, NID_basic_constraints, "critical,CA:FALSE");
         defer(X509_EXTENSION_free, bc_ext);
         if (!X509_add_ext(*crt, bc_ext, -1)) {
             goto err;
         }
 
         // Create and add the Key Usage extension
-        X509_EXTENSION* ku_ext = X509V3_EXT_conf_nid(nullptr, &ctx, NID_key_usage, "critical,digitalSignature,keyEncipherment");
+        X509_EXTENSION* ku_ext = X509V3_EXT_nconf_nid(nullptr, &ctx, NID_key_usage, "critical,digitalSignature,keyEncipherment");
         defer(X509_EXTENSION_free, ku_ext);
         if (!X509_add_ext(*crt, ku_ext, -1)) {
             goto err;
         }
 
         // Create and add the Extended Key Usage extension
-        X509_EXTENSION* eku_ext = X509V3_EXT_conf_nid(nullptr, &ctx, NID_ext_key_usage, "serverAuth");
+        X509_EXTENSION* eku_ext = X509V3_EXT_nconf_nid(nullptr, &ctx, NID_ext_key_usage, "serverAuth");
         defer(X509_EXTENSION_free, eku_ext);
         if (!X509_add_ext(*crt, eku_ext, -1)) {
             goto err;
         }
 
         // Create and add the Subject Key Identifier extension
-        X509_EXTENSION* ski_ext = X509V3_EXT_conf_nid(nullptr, &ctx, NID_subject_key_identifier, "hash");
+        X509_EXTENSION* ski_ext = X509V3_EXT_nconf_nid(nullptr, &ctx, NID_subject_key_identifier, "hash");
         defer(X509_EXTENSION_free, ski_ext);
         if (!X509_add_ext(*crt, ski_ext, -1)) {
             goto err;
         }
 
         // Create and add the Authority Key Identifier extension
-        X509_EXTENSION* aki_ext = X509V3_EXT_conf_nid(nullptr, &ctx, NID_authority_key_identifier, "keyid:always");
+        X509_EXTENSION* aki_ext = X509V3_EXT_nconf_nid(nullptr, &ctx, NID_authority_key_identifier, "keyid:always");
         defer(X509_EXTENSION_free, aki_ext);
         if (!X509_add_ext(*crt, aki_ext, -1)) {
             goto err;
@@ -174,7 +174,7 @@ int generate_signed_key_pair(const char* domain, EVP_PKEY **key, X509 **crt) {
             san += "DNS:";
         }
         san += domain;
-        X509_EXTENSION* an_ext = X509V3_EXT_conf_nid(nullptr, &ctx, NID_subject_alt_name, san.c_str());
+        X509_EXTENSION* an_ext = X509V3_EXT_nconf_nid(nullptr, &ctx, NID_subject_alt_name, san.c_str());
         if (!an_ext) {
             goto err;
         }
