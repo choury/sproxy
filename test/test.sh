@@ -142,6 +142,21 @@ function test_http3(){
     echo ""
 }
 
+function test_sni(){
+    curl -f -v --http1.1 https://qq.com --resolve qq.com:443:127.0.0.1 -A "Mozilla/5.0" 2>> curl.log
+    [ $? -ne 0 ] && echo "sni test 1 failed" && exit 1
+    curl -f -v --http2 https://qq.com --resolve qq.com:443:127.0.0.1  -A "Mozilla/5.0" 2>> curl.log
+    [ $? -ne 0 ] && echo "sni test 2 failed" && exit 1
+    curl -f -v http://echo.opera.com -F 'name=@test1k' --resolve echo.opera.com:443:127.0.0.1 > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "sni test 3 failed" && exit 1
+
+    curl -V | grep HTTP3
+    if [[ $? != 0 ]];then
+        return
+    fi
+    curl -f -v --http3-only https://www.taobao.com --resolve www.taobao.com:443:127.0.0.1 2>> curl.log
+    [ $? -ne 0 ] && echo "sni test 4 failed" && exit 1
+}
 
 function wait_tcp_port() {
     while ! nc -vz localhost $1; do

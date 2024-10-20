@@ -32,9 +32,8 @@
 #include <stdlib.h>
 #include <string.h> /* strncpy() */
 #include <errno.h>
-#include <assert.h>
-#include "tls.h"
 #include "common/common.h"
+#include "tls.h"
 #include "misc/config.h"
 #include "misc/cert_manager.h"
 
@@ -428,6 +427,7 @@ static int select_alpn_cb(SSL *ssl,
     return SSL_TLSEXT_ERR_ALERT_FATAL;
 }
 
+#ifndef USE_BORINGSSL
 static int ssl_callback_ClientHello(SSL *ssl, int* al, void* arg){
     (void)al;
     if(SSL_get_certificate(ssl)){
@@ -454,6 +454,7 @@ static int ssl_callback_ClientHello(SSL *ssl, int* al, void* arg){
     LOGD(DSSL, "generate cert for %s failed\n", host);
     return SSL_CLIENT_HELLO_ERROR;
 }
+#endif
 
 static int ssl_callback_ServerName(SSL *ssl, int* al, void* arg){
     (void)al;
@@ -474,7 +475,9 @@ static int ssl_callback_ServerName(SSL *ssl, int* al, void* arg){
     EVP_PKEY *key;
     X509* cert;
     if (generate_signed_key_pair(servername, &key, &cert) == 0) {
-        SSL_use_cert_and_key(ssl, cert, key, NULL, 1);
+        //SSL_use_cert_and_key(ssl, cert, key, NULL, 1);
+        SSL_use_certificate(ssl, cert);
+        SSL_use_PrivateKey(ssl, key);
         LOGD(DSSL, "generate cert for %s when ServerName\n", servername);
         return SSL_TLSEXT_ERR_OK;
     }
@@ -534,7 +537,11 @@ SSL_CTX* initssl(int quic, const char* host){
 
     if (opt.cert.crt && (!host || X509_check_host(opt.cert.crt, host, 0, X509_CHECK_FLAG_ALWAYS_CHECK_SUBJECT, NULL) == 1)) {
         //加载证书和私钥
-        if (SSL_CTX_use_cert_and_key(ctx, opt.cert.crt, opt.cert.key, NULL, 1) != 1) {
+        if (SSL_CTX_use_certificate(ctx, opt.cert.crt) != 1) {
+            ERR_print_errors_fp(stderr);
+        }
+
+        if (SSL_CTX_use_PrivateKey(ctx, opt.cert.key) != 1) {
             ERR_print_errors_fp(stderr);
         }
 
@@ -545,7 +552,9 @@ SSL_CTX* initssl(int quic, const char* host){
 
     SSL_CTX_set_verify_depth(ctx, 10);
     // 设置 ClientHello 回调函数
+#ifndef USE_BORINGSSL
     SSL_CTX_set_client_hello_cb(ctx, ssl_callback_ClientHello, (void*)host);
+#endif
     SSL_CTX_set_tlsext_servername_callback(ctx, ssl_callback_ServerName);
     SSL_CTX_set_tlsext_servername_arg(ctx, (void*)host);
     SSL_CTX_set_alpn_select_cb(ctx, select_alpn_cb, alpn_list);

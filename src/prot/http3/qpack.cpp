@@ -300,6 +300,7 @@ HeaderMap Qpack_decoder::decode(const unsigned char *data, size_t len) {
             if(T){
                 name = static_table[index][0];
                 value = static_table[index][1];
+                LOGD(DHPACK, "get qpack %s:[%s] id: %d\n", name.c_str(), value.c_str(), (int)index);
             }else{ //当前不支持动态索引，因为我们将MAX_FIELD_SECTION_SIZE设置成了0
                 return decltype(headers){};
             }
@@ -318,6 +319,7 @@ HeaderMap Qpack_decoder::decode(const unsigned char *data, size_t len) {
             pos += l;
             if(T){
                 name = static_table[index][0];
+                LOGD(DHPACK, "get qpack key %s id: %d\n", name.c_str(), (int)index);
             }else{
                 return decltype(headers){};
             }
@@ -325,6 +327,7 @@ HeaderMap Qpack_decoder::decode(const unsigned char *data, size_t len) {
             if(l <= 0){
                 return decltype(headers){};
             }
+            LOGD(DHPACK, "get qpack literal value %s\n", value.c_str());
             pos += l;
             goto append;
         }else if(pos[0] & 0x20){
@@ -340,6 +343,7 @@ HeaderMap Qpack_decoder::decode(const unsigned char *data, size_t len) {
             if(l <= 0){
                 return decltype(headers){};
             }
+            LOGD(DHPACK, "get qpack literal %s:[%s]\n", name.c_str(), value.c_str());
             pos += l;
             goto append;
         }else if(pos[0] & 0x10){

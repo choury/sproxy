@@ -26,6 +26,10 @@ const double  kPersistentCongestionThreshold = 3;
 #define QUIC_PAKCET_NAMESPACE_APP 2
 
 
+#ifdef USE_BORINGSSL
+typedef  enum ssl_encryption_level_t OSSL_ENCRYPTION_LEVEL;
+#endif
+
 
 class QuicQos {
 protected:
@@ -44,7 +48,6 @@ protected:
     Job loss_timer = nullptr;
     void OnLossDetectionTimeout(pn_namespace* ns);
     Job packet_tx = nullptr;
-    virtual void sendPacket();
     std::function<void(pn_namespace*, quic_frame*)> resendFrames;
 
     bool PeerCompletedAddressValidation();
@@ -65,6 +68,7 @@ public:
     QuicQos(bool isServer, const send_func& sent,
            std::function<void(pn_namespace*, quic_frame*)> resendFrames);
     ~QuicQos();
+    virtual void sendPacket();
     [[nodiscard]] ssize_t windowLeft() const;
     void KeyGot(OSSL_ENCRYPTION_LEVEL level);
     void KeyLost(OSSL_ENCRYPTION_LEVEL level);
@@ -79,7 +83,6 @@ public:
     void PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame* frame);;
     void PushFrame(pn_namespace* ns, quic_frame* frame);
     void FrontFrame(pn_namespace* ns, quic_frame* frame);
-    void SendNow();
     void DrainAll();
     size_t PendingSize(OSSL_ENCRYPTION_LEVEL level);
 

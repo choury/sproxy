@@ -241,6 +241,12 @@ public:
     static int set_encryption_secrets(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
                                       const uint8_t *read_secret,
                                       const uint8_t *write_secret, size_t secret_len);
+    static int set_read_secret(SSL* ssl, OSSL_ENCRYPTION_LEVEL level,
+                               const SSL_CIPHER* cipher,
+                               const uint8_t* secret, size_t secret_len);
+    static int set_write_secret(SSL* ssl, OSSL_ENCRYPTION_LEVEL level,
+                                const SSL_CIPHER* cipher,
+                                const uint8_t* secret, size_t secret_len);
     static int add_handshake_data(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
                                   const uint8_t *data, size_t len);
     static int flush_flight(SSL *ssl);

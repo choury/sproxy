@@ -172,8 +172,12 @@ size_t variable_decode_len(const void* data);
 
 struct quic_secret{
     const EVP_MD* md;
-    const EVP_CIPHER *hcipher;
+#ifdef USE_BORINGSSL
+    const EVP_AEAD   *cipher;
+#else
     const EVP_CIPHER *cipher;
+#endif
+    const EVP_CIPHER *hcipher;
     char iv[12];
     char hp[32];
     char key[32];

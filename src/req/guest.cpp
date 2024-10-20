@@ -187,9 +187,7 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
         }
         if(header->Dest.port == HTTPSPORT) {
             if(!headless) rwer->Send({HCONNECT, strlen(HCONNECT), id});
-            bool shouldMitm = (opt.mitm_mode == Enable) ||
-            (opt.mitm_mode == Auto && opt.ca.key && mayBeBlocked(header->Dest.hostname));
-            if (shouldMitm || getstrategy(header->Dest.hostname).s == Strategy::local) {
+            if (shouldNegotiate(header, this)) {
                 auto ctx = initssl(0, header->Dest.hostname);
                 auto srwer = std::make_shared<SslMer>(ctx, rwer->getSrc(),
                                                       [this, header](auto&& data) {

@@ -112,7 +112,7 @@ void QuicQos::OnLossDetectionTimeout(pn_namespace* ns){
              ns->name, (now - ns->time_of_last_ack_eliciting_packet) / 1000.0, pto_count);
         pto_count++;
         FrontFrame(ns, new quic_frame{QUIC_FRAME_PING, {}});
-        SendNow();
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
     }
     SetLossDetectionTimer();
 }
@@ -219,7 +219,7 @@ void QuicQos::sendPacket() {
     has_packet_been_congested = has_pending_packet;
     if(has_packet_been_congested && congestion_window > bytes_in_flight + max_datagram_size) {
         //很大可能是udp的buffer满了，等一会重试
-        SendNow();
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
     }
     if(has_in_flight){
         SetLossDetectionTimer();
@@ -311,7 +311,7 @@ void QuicQos::OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets,  
         congestion_window += max_datagram_size * sent_bytes / congestion_window;
     }
     if(has_packet_been_congested && congestion_window > bytes_in_flight + max_datagram_size){
-        SendNow();
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
     }
 }
 
@@ -360,9 +360,9 @@ std::set<uint64_t> QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t nu
         SetLossDetectionTimer();
     }
     if(level == ssl_encryption_initial || level == ssl_encryption_handshake){
-        SendNow();
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
     } else if(!ns->pend_frames.empty() && congestion_window > bytes_in_flight + max_datagram_size) {
-        SendNow();
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
     } else if(JobPending(packet_tx) == 0 && ns->should_ack) {
         packet_tx  = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 20);
     }
@@ -393,7 +393,7 @@ void QuicQos::PushFrame(pn_namespace* ns, quic_frame *frame) {
     assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
     ns->pend_frames.push_back(frame);
     if(congestion_window > bytes_in_flight + max_datagram_size){
-        SendNow();
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
     } else {
         LOGD(DQUIC, "skip send, congestion_window: %zd, bytes_in_flight: %zd\n",
              congestion_window, bytes_in_flight);
@@ -405,7 +405,7 @@ void QuicQos::FrontFrame(pn_namespace* ns, quic_frame *frame) {
     assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
     ns->pend_frames.push_front(frame);
     if(congestion_window > bytes_in_flight + max_datagram_size){
-        SendNow();
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
     } else {
         LOGD(DQUIC, "skip send, congestion_window: %zd, bytes_in_flight: %zd\n",
              congestion_window, bytes_in_flight);
@@ -414,10 +414,6 @@ void QuicQos::FrontFrame(pn_namespace* ns, quic_frame *frame) {
 
 void QuicQos::PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame* frame) {
     return PushFrame(GetNamespace(level), frame);
-}
-
-void QuicQos::SendNow() {
-    packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
 }
 
 void QuicQos::DrainAll(){

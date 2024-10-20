@@ -1,12 +1,16 @@
 #include "quic_pack.h"
 #include "prot/tls.h"
 #include "misc/config.h"
+#include "misc/defer.h"
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
 #include <inttypes.h>
 #include <openssl/kdf.h>
 #include <openssl/tls1.h>
+#ifdef USE_BORINGSSL
+#include <openssl/chacha.h>
+#endif
 
 
 /* 0x38762cf7f55934b34d179ae6a4c80cadccbb7f0a */
@@ -81,9 +85,9 @@ static int HKDF_Extract(const char* cid, size_t clen, char* prk){
         goto err;
     if (EVP_PKEY_CTX_set_hkdf_md(pctx, EVP_sha256()) <= 0)
         goto err;
-    if (EVP_PKEY_CTX_set1_hkdf_salt(pctx, initial_salt, initial_saltlen) <= 0)
+    if (EVP_PKEY_CTX_set1_hkdf_salt(pctx, (const uint8_t*)initial_salt, initial_saltlen) <= 0)
         goto err;
-    if (EVP_PKEY_CTX_set1_hkdf_key(pctx, cid, clen) <= 0)
+    if (EVP_PKEY_CTX_set1_hkdf_key(pctx, (const uint8_t*)cid, clen) <= 0)
         goto err;
     if(EVP_PKEY_derive(pctx, (unsigned char*)prk, &hashlen) <=0 )
         goto err;
@@ -126,9 +130,9 @@ static int HKDF_Expand_Label(const EVP_MD* md, const char* prk, const char* info
         goto err;
     if (EVP_PKEY_CTX_set_hkdf_md(pctx, md) <= 0)
         goto err;
-    if (EVP_PKEY_CTX_set1_hkdf_key(pctx, prk, hashlen) <= 0)
+    if (EVP_PKEY_CTX_set1_hkdf_key(pctx, (const uint8_t*)prk, hashlen) <= 0)
         goto err;
-    if (EVP_PKEY_CTX_add1_hkdf_info(pctx, label, labelLen) <= 0)
+    if (EVP_PKEY_CTX_add1_hkdf_info(pctx, (const uint8_t*)label, labelLen) <= 0)
         goto err;
     if(EVP_PKEY_derive(pctx, (unsigned char*)okm, &len) <=0 )
         goto err;
@@ -140,6 +144,65 @@ err:
     EVP_PKEY_CTX_free(pctx);
     return -1;
 }
+
+#ifdef USE_BORINGSSL
+static int aead_encrypt(const EVP_AEAD* aead,
+                       const unsigned char *plaintext, int plaintext_len,
+                       const unsigned char *aad, int aad_len,
+                       const unsigned char *key,
+                       const unsigned char *iv,
+                       unsigned char *ciphertext)
+{
+    size_t len = SIZE_MAX;
+    EVP_AEAD_CTX* ctx = EVP_AEAD_CTX_new(aead, key, EVP_AEAD_key_length(aead), EVP_AEAD_DEFAULT_TAG_LENGTH);
+    defer(EVP_AEAD_CTX_free, ctx);
+    if(!EVP_AEAD_CTX_init(ctx, aead, key, EVP_AEAD_key_length(aead), EVP_AEAD_DEFAULT_TAG_LENGTH, nullptr)){
+        LOGE("EVP_AEAD_CTX_init failed\n");
+        return -1;
+    }
+
+    if(!EVP_AEAD_CTX_seal(ctx,
+        ciphertext, &len, len,
+        iv, EVP_AEAD_nonce_length(aead),
+        plaintext, plaintext_len,
+        aad, aad_len))
+    {
+        LOGE("EVP_AEAD_CTX_open failed\n");
+        return -1;
+    }
+    EVP_AEAD_CTX_free(ctx);
+    return len;
+}
+
+static int aead_decrypt(const EVP_AEAD* aead,
+                          unsigned char *ciphertext, int ciphertext_len,
+                          unsigned char *aad, int aad_len,
+                          unsigned char* key,
+                          unsigned char *iv,
+                          unsigned char *plaintext
+) {
+    size_t len = SIZE_MAX;
+    EVP_AEAD_CTX* ctx = EVP_AEAD_CTX_new(aead, key, EVP_AEAD_key_length(aead), EVP_AEAD_DEFAULT_TAG_LENGTH);
+    defer(EVP_AEAD_CTX_free, ctx);
+    if(!EVP_AEAD_CTX_init(ctx, aead, key, EVP_AEAD_key_length(aead), EVP_AEAD_DEFAULT_TAG_LENGTH, nullptr)){
+        LOGE("EVP_AEAD_CTX_init failed\n");
+        return -1;
+    }
+
+    if(!EVP_AEAD_CTX_open(ctx,
+        plaintext, &len, len,
+        iv, EVP_AEAD_nonce_length(aead),
+        ciphertext, ciphertext_len,
+        aad, aad_len))
+    {
+        LOGE("EVP_AEAD_CTX_open failed\n");
+        return -1;
+    }
+    EVP_AEAD_CTX_free(ctx);
+    return len;
+}
+
+#else
 
 static int aead_encrypt(const EVP_CIPHER* cipher,
                        const unsigned char *plaintext, int plaintext_len,
@@ -154,43 +217,56 @@ static int aead_encrypt(const EVP_CIPHER* cipher,
     /* Create and initialise the context */
     if(ctx == nullptr)
         return -1;
+    defer(EVP_CIPHER_CTX_free, ctx);
     /* Initialise the encryption operation. */
-    if(EVP_EncryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr) != 1)
-        goto err;
+    if(EVP_EncryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr) != 1) {
+        LOGE("EVP_EncryptInit_ex failed\n");
+        return -1;
+    }
+
+    if(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_IVLEN, 12, nullptr) != 1) {
+        LOGE("EVP_CIPHER_Ctx_Ctrl IVLEN failed\n");
+        return -1;
+    }
 
     /* Initialise key and IV */
-    if(EVP_EncryptInit_ex(ctx, nullptr, nullptr, key, iv) != 1)
-        goto err;
+    if(EVP_EncryptInit_ex(ctx, nullptr, nullptr, key, iv) != 1) {
+        LOGE("EVP_EncryptInit_ex failed\n");
+        return -1;
+    }
+
     /*
      * Provide any AAD data. This can be called zero or more times as
      * required
      */
-    if(EVP_EncryptUpdate(ctx, nullptr, &len, aad, aad_len) != 1)
-        goto err;
+    if(EVP_EncryptUpdate(ctx, nullptr, &len, aad, aad_len) != 1) {
+        LOGE("EVP_EncryptUpdate failed\n");
+        return -1;
+    }
     /*
      * Provide the message to be encrypted, and obtain the encrypted output.
      * EVP_EncryptUpdate can be called multiple times if necessary
      */
-    if(EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len) != 1)
-        goto err;
+    if(EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len) != 1) {
+        LOGE("EVP_EncryptUpdate failed\n");
+        return -1;
+    }
     ciphertext_len = len;
     /*
      * Finalise the encryption. Normally ciphertext bytes may be written at
      * this stage, but this does not occur in GCM mode
      */
-    if(EVP_EncryptFinal_ex(ctx, ciphertext + ciphertext_len, &len) != 1)
-        goto err;
+    if(EVP_EncryptFinal_ex(ctx, ciphertext + ciphertext_len, &len) != 1) {
+        LOGE("EVP_EncryptFinal_ex failed\n");
+        return -1;
+    }
     ciphertext_len += len;
 
-    if(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, ciphertext + ciphertext_len) != 1)
-        goto err;
-
-    /* Clean up */
-    EVP_CIPHER_CTX_free(ctx);
+    if(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, 16, ciphertext + ciphertext_len) != 1) {
+        LOGE("EVP_CIPHER_CTX_ctrl GET_TAG failed\n");
+        return -1;
+    }
     return ciphertext_len + 16;
-err:
-    EVP_CIPHER_CTX_free(ctx);
-    return -1;
 }
 
 
@@ -209,94 +285,123 @@ static int aead_decrypt(const EVP_CIPHER* cipher,
         LOGE("EVP_CIPHER_CTX_new failed\n");
         return -1;
     }
+    defer(EVP_CIPHER_CTX_free, ctx);
 
     /* Initialise the decryption operation. */
-    if(!EVP_DecryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr)) {
+    if(EVP_DecryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr) != 1) {
         LOGE("EVP_DecryptInit_ex failed\n");
-        goto err;
+        return -1;
+    }
+
+    if(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_IVLEN, 12, nullptr) != 1) {
+        LOGE("EVP_CIPHER_Ctx_Ctrl IVLEN failed\n");
+        return -1;
+    }
+
+    /* Set expected tag value. Works in OpenSSL 1.0.1d and later */
+    if(EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, 16, ciphertext + ciphertext_len - 16) != 1) {
+        LOGE("EVP_CIPHER_CTX_ctrl SET_TAG failed\n");
+        return -1;
     }
 
     /* Initialise key and IV */
-    if(!EVP_DecryptInit_ex(ctx, nullptr, nullptr, key, iv)) {
+    if(EVP_DecryptInit_ex(ctx, nullptr, nullptr, key, iv) != 1) {
         LOGE("EVP_DecryptInit_ex failed\n");
-        goto err;
+        return -1;
     }
 
     /*
      * Provide any AAD data. This can be called zero or more times as
      * required
      */
-    if(!EVP_DecryptUpdate(ctx, nullptr, &len, aad, aad_len)) {
+    if(EVP_DecryptUpdate(ctx, nullptr, &len, aad, aad_len) != 1) {
         LOGE("EVP_DecryptUpdate failed\n");
-        goto err;
+        return -1;
     }
 
     /*
      * Provide the message to be decrypted, and obtain the plaintext output.
      * EVP_DecryptUpdate can be called multiple times if necessary
      */
-    if(!EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len - 16)) {
+    if(EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len - 16) != 1) {
         LOGE("EVP_DecryptUpdate failed\n");
-        goto err;
+        return -1;
     }
 
     plaintext_len = len;
-
-    /* Set expected tag value. Works in OpenSSL 1.0.1d and later */
-    if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, ciphertext + ciphertext_len - 16)) {
-        LOGE("EVP_CIPHER_CTX_ctrl failed\n");
-        goto err;
-    }
 
     /*
      * Finalise the decryption. A positive return value indicates success,
      * anything else is a failure - the plaintext is not trustworthy.
      */
-    if(EVP_DecryptFinal_ex(ctx, plaintext + len, &len) <= 0) {
+    if(EVP_DecryptFinal_ex(ctx, plaintext + len, &len) != 1) {
         LOGE("EVP_DecryptFinal_ex failed\n");
-        goto err;
+        return -1;
     }
-
-    /* Clean up */
-    EVP_CIPHER_CTX_free(ctx);
 
     plaintext_len += len;
     return plaintext_len;
-err:
-    EVP_CIPHER_CTX_free(ctx);
-    return -1;
 }
+
+#endif
 
 static int hp_encode(const EVP_CIPHER* cipher,
                       const unsigned char* key,
                       const unsigned char* data, int data_len,
                       unsigned char* out)
 {
-    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
-    int len, outlen;
-    if(ctx == nullptr)
-        return -1;
-    if(EVP_EncryptInit_ex(ctx, cipher, nullptr, key, nullptr) != 1)
-        goto err;
+    if(cipher) {
+        EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+        if(ctx == nullptr)
+            return -1;
+        defer(EVP_CIPHER_CTX_free, ctx);
+        if(EVP_EncryptInit_ex(ctx, cipher, nullptr, key, nullptr) != 1)
+            return -1;
 
-    if(EVP_CIPHER_CTX_set_padding(ctx, 0) != 1)
-        goto err;
+        if(EVP_CIPHER_CTX_set_padding(ctx, 0) != 1)
+            return -1;
 
-    if(EVP_EncryptUpdate(ctx, out, &len, data, data_len) != 1)
-        goto err;
-    outlen = len;
+        int len;
+        if(EVP_EncryptUpdate(ctx, out, &len, data, data_len) != 1)
+            return -1;
+        int outlen = len;
 
-    if(EVP_EncryptFinal_ex(ctx, out+len, &len) != 1)
-        goto err;
+        if(EVP_EncryptFinal_ex(ctx, out+outlen, &len) != 1)
+            return -1;
 
-    outlen += len;
-    EVP_CIPHER_CTX_free(ctx);
-    return outlen;
-err:
-    EVP_CIPHER_CTX_free(ctx);
-    return -1;
+        outlen += len;
+        return outlen;
+    } else {
+        unsigned char _stub[5] = { 0, 0, 0, 0, 0, };
+#ifdef USE_BORINGSSL
+        const uint8_t *nonce;
+        uint32_t counter;
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+        memcpy(&counter, data, sizeof(counter));
+#else
+#error TODO: support non-little-endian machines
+#endif
+        nonce = data + sizeof(counter);
+        CRYPTO_chacha_20(out, _stub, 5, key, nonce, counter);
+#else
+        EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+        if(ctx == nullptr)
+            return -1;
+        defer(EVP_CIPHER_CTX_free, ctx);
+        if(EVP_EncryptInit_ex(ctx, EVP_chacha20(), nullptr, key, data) != 1)
+            return -1;
+
+        int len;
+        if(EVP_EncryptUpdate(ctx, out, &len, _stub, sizeof(_stub)) != 1)
+            return -1;
+        int outlen = len;
+
+        if(EVP_EncryptFinal_ex(ctx, out+outlen, &len) != 1)
+            return -1;
+#endif
+        return 1;
+    }
 }
-
 
 int quic_generate_initial_key(int client, const char* id, uint8_t id_len, struct quic_secret* secret){
     char prk[32];
@@ -304,7 +409,11 @@ int quic_generate_initial_key(int client, const char* id, uint8_t id_len, struct
         LOGE("initial_secret failed\n");
         return -1;
     }
+#ifdef USE_BORINGSSL
+    secret->cipher = EVP_aead_aes_128_gcm();
+#else
     secret->cipher = EVP_aes_128_gcm();
+#endif
     secret->md = EVP_sha256();
     secret->hcipher = EVP_aes_128_ecb();
     char initial_secret[32];
@@ -336,35 +445,44 @@ int quic_generate_initial_key(int client, const char* id, uint8_t id_len, struct
 }
 
 int quic_secret_set_key(struct quic_secret* secret, const char* key, uint32_t cipher){
-    size_t hp_len;
     size_t key_len;
     switch (cipher) {
     case TLS1_3_CK_AES_128_GCM_SHA256:
-        secret->hcipher = EVP_aes_128_ecb();
+#ifdef USE_BORINGSSL
+        secret->cipher = EVP_aead_aes_128_gcm();
+#else
         secret->cipher = EVP_aes_128_gcm();
+#endif
+        secret->hcipher = EVP_aes_128_ecb();
         secret->md = EVP_sha256();
         break;
     case TLS1_3_CK_AES_256_GCM_SHA384:
-        secret->hcipher = EVP_aes_256_ecb();
+#ifdef USE_BORINGSSL
+        secret->cipher = EVP_aead_aes_256_gcm();
+#else
         secret->cipher = EVP_aes_256_gcm();
+#endif
+        secret->hcipher = EVP_aes_256_ecb();
         secret->md = EVP_sha384();
         break;
     case TLS1_3_CK_CHACHA20_POLY1305_SHA256:
-        secret->hcipher = EVP_chacha20();
+#ifdef USE_BORINGSSL
+        secret->cipher = EVP_aead_chacha20_poly1305();
+#else
         secret->cipher = EVP_chacha20_poly1305();
-        secret->md = EVP_sha256();
-        break;
-    case TLS1_3_CK_AES_128_CCM_SHA256:
-        secret->hcipher = EVP_aes_128_ecb();
-        secret->cipher = EVP_aes_128_ccm();
+#endif
+        secret->hcipher = nullptr;
         secret->md = EVP_sha256();
         break;
     default:
         LOGE("unknown cipher: 0x%X\n", cipher);
         return -1;
     }
-    hp_len = EVP_CIPHER_key_length(secret->hcipher);
+#ifdef USE_BORINGSSL
+    key_len = EVP_AEAD_key_length(secret->cipher);
+#else
     key_len = EVP_CIPHER_key_length(secret->cipher);
+#endif
     if(HKDF_Expand_Label(secret->md, key, "quic key", "", secret->key, key_len) < 0){
         LOGE("quic key failed\n");
         return -1;
@@ -373,7 +491,7 @@ int quic_secret_set_key(struct quic_secret* secret, const char* key, uint32_t ci
         LOGE("quic iv failed\n");
         return -1;
     }
-    if(HKDF_Expand_Label(secret->md, key, "quic hp", "", secret->hp, hp_len) < 0){
+    if(HKDF_Expand_Label(secret->md, key, "quic hp", "", secret->hp, key_len) < 0){
         LOGE("quic hp failed\n");
         return -1;
     }
@@ -476,7 +594,7 @@ size_t encode_packet(const void* data_, size_t len,
 
         int mask_len = hp_encode(secret->hcipher, (unsigned char*)secret->hp, (unsigned char*)pos + 4, 16, mask);
         if(mask_len < 0){
-            LOGE("aes_encode failed\n");
+            LOGE("hp_encode failed\n");
             return 0;
         }
         body[0] ^= mask[0] & 0x0f;
@@ -484,7 +602,7 @@ size_t encode_packet(const void* data_, size_t len,
         pos += 1 + header->dcid.length();
 
         if(hp_encode(secret->hcipher, (unsigned char*)secret->hp, (unsigned char*)pos + 4, 16, mask) < 0){
-            LOGE("aes_encode failed\n");
+            LOGE("hp_encode failed\n");
             return 0;
         }
         body[0] ^= mask[0] & 0x1f;
@@ -1028,7 +1146,7 @@ std::vector<const quic_frame*> decode_packet(const void* data_, size_t len,
         assert(len == pos + payload_len);
 
         if(hp_encode(secret->hcipher, (unsigned char*)secret->hp, (unsigned char*)data+pos+4, 16, mask) < 0){
-            LOGE("aes_encode failed\n");
+            LOGE("hp_encode failed\n");
             return frames;
         }
 
@@ -1041,7 +1159,7 @@ std::vector<const quic_frame*> decode_packet(const void* data_, size_t len,
         pos = 1 + header->dcid.length();
 
         if(hp_encode(secret->hcipher, (unsigned char*)secret->hp, (unsigned char*)data+pos+4, 16, mask) < 0){
-            LOGE("aes_encode failed\n");
+            LOGE("hp_encode failed\n");
             return frames;
         }
 

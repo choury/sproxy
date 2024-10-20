@@ -62,6 +62,10 @@ std::shared_ptr<HttpReq> Guest_sni::forward(const char *hostname, Protocol prot)
         LOGE("Guest_sni: UnpackHttpReq failed\n");
         return nullptr;
     }
+    if(shouldNegotiate(header, this)) {
+        LOGE("Guest_sni: avoid loop back\n");
+        return nullptr;
+    }
     header->set("User-Agent", generateUA(user_agent.c_str(), "", header->request_id));
     LOGD(DHTTP, "<guest_sni> ReqProc %" PRIu64 " %s\n", header->request_id, header->geturl().c_str());
     auto req = std::make_shared<HttpReq>(
@@ -85,9 +89,8 @@ size_t Guest_sni::sniffer(Buffer&& bb) {
     LOGD(DHTTP, "[sni] forward to %s\n", hostname);
     auto req = forward(hostname, Protocol::TCP);
     if(req == nullptr){
-        assert(ret < 0);
         deleteLater(SNI_HOST_ERR);
-        return 0;
+        return bb.len;
     }
     auto len = bb.len;
     req->send(std::move(bb));
@@ -148,7 +151,7 @@ Forward:
     auto req = forward(hostname, Protocol::UDP);
     if(req == nullptr) {
         deleteLater(SNI_HOST_ERR);
-        return 0;
+        return bb.len;
     }
     req->send(std::move(bb));
     rwer->SetReadCB([this](Buffer&& bb){return ReadHE(std::move(bb));});
