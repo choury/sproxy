@@ -94,12 +94,12 @@ void SetUdpOptions(int fd, const struct sockaddr_storage* addr){
     }
 #endif
 #if defined(IP_DONTFRAG)
-    if(addr->ss_family == AF_INET)
-        if(setsockopt(fd, IPPROTO_IP, IP_DONTFRAG, &enable, sizeof(enable)))
-            LOGE("IP_DONTFRAG:%s\n", strerror(errno));
-    if(addr->ss_family == AF_INET6)
-        if(setsockopt(fd, IPPROTO_IPV6, IPV6_DONTFRAG, &enable, sizeof(enable)))
-            LOGE("IPV6_DONTFRAG:%s\n", strerror(errno));
+//    if(addr->ss_family == AF_INET)
+//        if(setsockopt(fd, IPPROTO_IP, IP_DONTFRAG, &enable, sizeof(enable)))
+//            LOGE("IP_DONTFRAG:%s\n", strerror(errno));
+//    if(addr->ss_family == AF_INET6)
+//        if(setsockopt(fd, IPPROTO_IPV6, IPV6_DONTFRAG, &enable, sizeof(enable)))
+//            LOGE("IPV6_DONTFRAG:%s\n", strerror(errno));
 #endif
     if(setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable)) < 0)
         LOGE("set broadcast:%s\n", strerror(errno));

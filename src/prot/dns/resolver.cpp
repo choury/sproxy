@@ -267,6 +267,9 @@ void getDnsConfig(struct DnsConfig* config){
 }
 
 void reload_hosts() {
+    if(opt.ignore_hosts) {
+        return;
+    }
     FILE *hosts_file = fopen(HOSTS_FILE, "r");
     if (hosts_file == nullptr) {
         LOGE("[DNS] open hosts file:%s failed:%s\n", HOSTS_FILE, strerror(errno));

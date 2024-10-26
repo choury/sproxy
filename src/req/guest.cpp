@@ -137,9 +137,22 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
             }
         });
     }else{
-        rwer = std::make_shared<StreamRWer>(fd, addr, [this](int ret, int code) {
-            Error(ret, code);
-        });
+        int type;
+        socklen_t len = sizeof(type);
+        if(getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &len) < 0){
+            LOGF("Faild to get socket type: %s\n", strerror(errno));
+        }
+        if(type == SOCK_STREAM) {
+            rwer = std::make_shared<StreamRWer>(fd, addr, [this](int ret, int code) {
+                Error(ret, code);
+            });
+        }else if(type == SOCK_DGRAM) {
+            rwer = std::make_shared<PacketRWer>(fd, addr, [this](int ret, int code) {
+                Error(ret, code);
+            });
+        }else {
+            LOGF("unknown socket type: %d\n", type);
+        }
     }
     rwer->SetReadCB([this](Buffer&& bb) {
         return ReadHE(std::move(bb));

@@ -170,7 +170,6 @@ static int aead_encrypt(const EVP_AEAD* aead,
         LOGE("EVP_AEAD_CTX_open failed\n");
         return -1;
     }
-    EVP_AEAD_CTX_free(ctx);
     return len;
 }
 
@@ -198,7 +197,6 @@ static int aead_decrypt(const EVP_AEAD* aead,
         LOGE("EVP_AEAD_CTX_open failed\n");
         return -1;
     }
-    EVP_AEAD_CTX_free(ctx);
     return len;
 }
 

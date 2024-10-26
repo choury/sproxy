@@ -64,6 +64,7 @@ struct options{
     bool sni_mode;
     bool daemon_mode;
     bool ignore_cert_error;
+    bool ignore_hosts;
     bool autoindex;
     bool ipv6_enabled;
     bool alter_method;

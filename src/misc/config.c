@@ -91,6 +91,7 @@ struct options opt = {
     .sni_mode          = false,
     .daemon_mode       = false,
     .ignore_cert_error = false,
+    .ignore_hosts      = false,
     .autoindex         = false,
     .ipv6_enabled      = true,
     .alter_method      = false,
@@ -177,6 +178,7 @@ static struct option long_options[] = {
     {"help",          no_argument,       NULL, 'h'},
     {"http",          required_argument, NULL,  0 },
     {"mitm",          required_argument, NULL,  0 },
+    {"ignore-hosts",  no_argument,       NULL,  0 },
     {"index",         required_argument, NULL,  0 },
     {"insecure",      no_argument,       NULL, 'k'},
 #if __linux__
@@ -243,6 +245,7 @@ static struct option_detail option_detail[] = {
     {"fwmark", "Set fwmark for output packet", option_uint64, &opt.fwmark, NULL},
     {"help", "Print this usage", option_bool, NULL, NULL},
     {"http", "Listen for http server", option_string, &http_listen, NULL},
+    {"ignore-hosts", "Dont read entries from /etc/hosts ", option_bool, &opt.ignore_hosts, (void*)true},
     {"index", "Index file for path (local server)", option_string, &opt.index_file, NULL},
     {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_bool, &opt.ignore_cert_error, (void*)true},
 #if __linux__
