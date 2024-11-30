@@ -86,6 +86,7 @@ struct options{
     enum auto_mode ipv6_mode;
     enum auto_mode mitm_mode;
     struct arg_list request_headers;
+    struct arg_list forward_headers;
 };
 
 extern struct options opt;

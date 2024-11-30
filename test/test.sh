@@ -147,7 +147,7 @@ function test_sni(){
     [ $? -ne 0 ] && echo "sni test 1 failed" && exit 1
     curl -f -v --http2 https://qq.com --resolve qq.com:443:127.0.0.1  -A "Mozilla/5.0" 2>> curl.log
     [ $? -ne 0 ] && echo "sni test 2 failed" && exit 1
-    curl -f -v http://echo.opera.com -F 'name=@test1k' --resolve echo.opera.com:443:127.0.0.1 > /dev/null 2>> curl.log
+    curl -f -v https://echo.opera.com -F 'name=@test1k' --resolve echo.opera.com:443:127.0.0.1 > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "sni test 3 failed" && exit 1
 
     curl -V | grep HTTP3

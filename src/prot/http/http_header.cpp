@@ -84,6 +84,15 @@ size_t HttpHeader::mem_usage() {
 }
 
 HttpReqHeader::HttpReqHeader(HeaderMap&& headers) {
+    for(auto p = opt.request_headers.next; p != nullptr; p = p->next){
+        const char* sp = strpbrk(p->arg, ":");
+        if (sp == nullptr) {
+            continue;
+        }
+        std::string name = std::string(p->arg, sp-p->arg);
+        headers.emplace(name, ltrim(std::string(sp + 1)));
+    }
+
     for(const auto& i: headers){
         if(toLower(i.first) == "cookie"){
             std::string cookiebuff = i.second;
@@ -274,6 +283,15 @@ std::multimap<std::string, std::string> HttpReqHeader::Normalize() const {
 
     for(const auto& i: headers){
         normalization.emplace(i.first, i.second);
+    }
+
+    for(auto p = opt.forward_headers.next; p != nullptr; p = p->next){
+        const char* sp = strpbrk(p->arg, ":");
+        if (sp == nullptr) {
+            continue;
+        }
+        std::string name = std::string(p->arg, sp-p->arg);
+        normalization.emplace(name, ltrim(std::string(sp + 1)));
     }
     //rfc7540#section.8.1.2.2 && http3
     normalization.erase("connection");

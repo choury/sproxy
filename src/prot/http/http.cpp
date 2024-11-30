@@ -220,15 +220,6 @@ std::shared_ptr<HttpReqHeader> UnpackHttpReq(const void* header, size_t len){
         headers.emplace(name, ltrim(std::string(sp + 1)));
     }
 
-    for(auto p = opt.request_headers.next; p != nullptr; p = p->next){
-        const char* sp = strpbrk(p->arg, ":");
-        if (sp == nullptr) {
-            continue;
-        }
-        std::string name = std::string(p->arg, sp-p->arg);
-        headers.emplace(name, ltrim(std::string(sp + 1)));
-    }
-
     char method[20] = {0};
     std::string url, path;
     url.resize(URLLIMIT);

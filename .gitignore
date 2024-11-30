@@ -1,6 +1,7 @@
 build*/
 cmake-build-*/
 test/
+thirdparty/
 .idea/
 .vscode
 .kdev4

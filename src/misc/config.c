@@ -144,6 +144,10 @@ struct options opt = {
         .arg        = NULL,
         .next       = NULL,
     },
+    .forward_headers = {
+        .arg        = NULL,
+        .next       = NULL,
+    },
     .pcap_len       = INT32_MAX,
     .fwmark         = 0,
 };
@@ -204,6 +208,7 @@ static struct option long_options[] = {
     {"alter-method",  no_argument,       NULL,  0 },
     {"rproxy",        required_argument, NULL,  0 },
     {"request-header",required_argument, NULL,  0 },
+    {"forward-header",required_argument, NULL,  0 },
 #if __linux__
     {"tun",           no_argument,       NULL,  0 },
     {"tproxy",        required_argument, NULL,  0 },
@@ -261,7 +266,8 @@ static struct option_detail option_detail[] = {
     {"quic", "Listen for QUIC server (experiment)", option_string, &quic_listen, NULL},
 #endif
     {"redirect-http", "Return 308 to redirect http to https", option_bool, &opt.redirect_http, (void*)true},
-    {"request-header", "append the header (name:value) for plain http request", option_list, &opt.request_headers, NULL},
+    {"request-header", "append the header (name:value) before handle http request", option_list, &opt.request_headers, NULL},
+    {"forward-header", "append the header (name:value) when forward http request", option_list, &opt.forward_headers, NULL},
     {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64, opt.rewrite_auth, NULL},
     {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
     {"rproxy", "name for rproxy mode (via http2)", option_string, &opt.rproxy_name, (void*)true},
