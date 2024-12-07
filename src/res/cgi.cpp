@@ -163,13 +163,13 @@ void Cgi::evictMe(){
 
 void Cgi::Clean(uint32_t id, CgiStatus& status) {
     assert(id == status.req->header->request_id);
-    status.req->detach();
     if(status.res == nullptr){
         status.req->response(std::make_shared<HttpRes>(HttpResHeader::create(S500, sizeof(S500), id),
                                                        "[[cgi failed]]\n"));
     }else {
         status.res->send(CHANNEL_ABORT);
     }
+    status.req->detach();
     statusmap.erase(id);
     LOGD(DFILE, "<cgi> [%s] %" PRIu32" cleaned\n", basename(filename), id);
     rwer->addEvents(RW_EVENT::READ);

@@ -397,10 +397,19 @@ void Http2Base::SettingsProc(const Http2_header* header) {
                 }
                 if(value == 1){
                     http2_flag |= HTTP2_FLAG_ENABLE_PUSH;
+                    LOGD(DHTTP2, "set enable_push\n");
                 }
                 break;
             case HTTP2_SETTING_ENABLE_CONNECT_PROTOCOL:
-                LOGD(DHTTP2, "Get enable_connect_protocol\n");
+                if(value != 0 && value != 1){
+                    LOGE("ERROR enable protocol value:%d\n", value);
+                    ErrProc(HTTP2_ERR_PROTOCOL_ERROR);
+                    return;
+                }
+                if(value == 1){
+                    http2_flag |= HTTP2_FLAG_ENABLE_PROTOCOL;
+                    LOGD(DHTTP2, "set enable_connect_protocol\n");
+                }
                 break;
             case HTTP2_SETTING_MAX_CONCURRENT_STREAMS:
             case HTTP2_SETTING_MAX_HEADER_LIST_SIZE:
@@ -536,7 +545,7 @@ void Http2Base::SendInitSetting(bool enable_push) {
     sf++;
     set16(sf->identifier, HTTP2_SETTING_ENABLE_CONNECT_PROTOCOL);
     set32(sf->value, 1);
-    LOGD(DHTTP2, "send enable connect protocol");
+    LOGD(DHTTP2, "send enable connect protocol\n");
     len += sizeof(Setting_Frame);
 
     set24(header->length, len);

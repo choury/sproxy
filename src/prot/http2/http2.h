@@ -89,9 +89,10 @@ protected:
     int32_t localwinsize = 65535; // 发送给对端的窗口大小，接受时减小，给对端发送update时增加
 #define HTTP2_FLAG_INITED      (1u << 0u)
 #define HTTP2_FLAG_GOAWAYED    (1u << 1u)
-#define HTTP2_FLAG_ENABLE_PUSH (1u << 2u)
-#define HTTP2_FLAG_END         (1u << 3u)
-#define HTTP2_FLAG_ERROR       (1u << 4u)
+#define HTTP2_FLAG_END         (1u << 2u)
+#define HTTP2_FLAG_ERROR       (1u << 3u)
+#define HTTP2_FLAG_ENABLE_PUSH (1u << 4u)
+#define HTTP2_FLAG_ENABLE_PROTOCOL (1u << 5u)
     uint32_t http2_flag = 0;
     uint32_t recvid = 0;
     uint32_t sendid = 1;

@@ -23,18 +23,20 @@ Host::Host(const Destination* dest){
     assert(dest->port);
     assert(dest->protocol[0]);
     memcpy(&Server, dest, sizeof(Destination));
-
-    if(strcmp(dest->protocol, "tcp") == 0 || strcmp(dest->protocol, "websocket") == 0){
+    bool isWebsocket = strcmp(dest->protocol, "websocket") == 0;
+    if(strcmp(dest->protocol, "tcp") == 0 || (isWebsocket && strcmp(dest->scheme, "http") == 0)){
         auto srwer = std::make_shared<StreamRWer>(
                 dest->hostname, dest->port, Protocol::TCP,
                 [this](int ret, int code){Error(ret, code);});
         rwer = srwer;
         srwer->SetConnectCB([this](const sockaddr_storage&){connected();});
-    }else if(strcmp(dest->protocol, "ssl") == 0 ) {
+    }else if(strcmp(dest->protocol, "ssl") == 0 || (isWebsocket && strcmp(dest->scheme, "https") == 0)){
         auto srwer = std::make_shared<SslRWer>(
                 dest->hostname, dest->port, Protocol::TCP,
                 [this](int ret, int code){Error(ret, code);});
-        if(!opt.disable_http2){
+        if(!opt.disable_http2 && !isWebsocket){
+            //FIXME: 基于http2的websocket协议暂时禁用，因为在连接之前无法判断服务端是否能支持
+            //根据rfc8441，只有连接建立之后收到setting帧才能判断
             srwer->set_alpn(alpn_protos_http12, sizeof(alpn_protos_http12)-1);
         }
         rwer = srwer;
@@ -298,9 +300,6 @@ void Host::Error(int ret, int code) {
 }
 
 void Host::deleteLater(uint32_t errcode){
-    if(status.req){
-        status.req->detach();
-    }
     if(status.flags & HTTP_CLOSED_F){
         //do nothing.
     }else if(status.res){
@@ -324,6 +323,9 @@ void Host::deleteLater(uint32_t errcode){
             status.req->response(std::make_shared<HttpRes>(HttpResHeader::create(S500, sizeof(S500), id),
                                                            "[[internal error]]\n"));
         }
+    }
+    if(status.req){
+        status.req->detach();
     }
     status.flags |= HTTP_CLOSED_F;
     Server::deleteLater(errcode);

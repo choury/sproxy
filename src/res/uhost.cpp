@@ -95,9 +95,6 @@ void Uhost::request(std::shared_ptr<HttpReq> req, Requester*) {
 }
 
 void Uhost::deleteLater(uint32_t errcode) {
-    if(req){
-        req->detach();
-    }
     if(is_closing){
         //do nothing
     }else if(res){
@@ -121,6 +118,9 @@ void Uhost::deleteLater(uint32_t errcode) {
             req->response(std::make_shared<HttpRes>(HttpResHeader::create(S500, sizeof(S500), id),
                                                     "[[internal error]]\n"));
         }
+    }
+    if(req){
+        req->detach();
     }
     is_closing = true;
     Server::deleteLater(errcode);

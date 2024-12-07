@@ -101,22 +101,22 @@ size_t Guest_sni::sniffer(Buffer&& bb) {
 
 size_t Guest_sni::sniffer_quic(Buffer&& bb) {
     auto len = bb.len;
-    char *hostname = nullptr;
+    char* hostname = nullptr;
     defer(free, hostname);
 #ifdef HAVE_QUIC
     quic_pkt_header header;
     int body_len = unpack_meta(bb.data(), len, &header);
     if (body_len < 0 || body_len > (int)len) {
-        LOGE("QUIC sni meta unpack failed, body_len: %d, bufflen: %d\n", body_len, (int)len);
+        LOGE("[%s] QUIC sni meta unpack failed, body_len: %d, bufflen: %d\n", host.c_str(), body_len, (int)len);
         goto Forward;
     }
     if(header.type != QUIC_PACKET_INITIAL) {
-        LOGE("QUIC sni packet type is not initial: 0x%x\n", header.type);
+        LOGE("[%s] QUIC sni packet type is not initial: 0x%x\n", host.c_str(), header.type);
         goto Forward;
     }
     quic_secret secret;
     if(quic_generate_initial_key(1, header.dcid.c_str(), header.dcid.size(), &secret) < 0){
-        LOGE("Quic sni faild to generate initial key\n");
+        LOGE("[%s] Quic sni faild to generate initial key\n", host.c_str());
         goto Forward;
     }
     {
@@ -128,6 +128,10 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
             if(frame->type != QUIC_FRAME_CRYPTO){
                 continue;
             }
+            if(frame->crypto.length + frame->crypto.offset > (size_t)body_len) {
+                LOGE("[%s] Quic sni get crypto overflow body_len: %zd vs %d\n", host.c_str(), frame->crypto.length + frame->crypto.offset, body_len);
+                goto Forward;
+            }
             length += frame->crypto.length;
             memcpy(buffer.get() + frame->crypto.offset, frame->crypto.buffer->data(), frame->crypto.length);
             if(frame->crypto.offset + frame->crypto.length > max_off) {
@@ -136,12 +140,12 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
             frame_release(frame);
         }
         if(max_off == 0 || max_off < length) {
-            LOGE("Quic sni faild to get ClientHello: %zd vs %zd\n", max_off, length);
+            LOGE("[%s] Quic sni faild to get ClientHello: %zd vs %zd\n", host.c_str(), max_off, length);
             goto Forward;
         }
-        int ret = parse_client_hello((unsigned const char *)buffer.get(), length, &hostname);
+        int ret = parse_client_hello((unsigned const char*)buffer.get(), length, &hostname);
         if (ret <= 0) {
-            LOGE("Quic faild to parse sni from clientHello: %d\n", ret);
+            LOGE("[%s] Quic faild to parse sni from clientHello: %d\n", host.c_str(), ret);
             goto Forward;
         }
     }

@@ -213,6 +213,7 @@ void Http3Base::SettingsProc(const uchar* header, size_t len) {
             break;
         case HTTP3_SETTING_ENABLE_CONNECT_PROTOCOL:
             LOGD(DHTTP3, "Get enable_connect_protocol\n");
+            http3_flag |= HTTP3_FLAG_ENABLE_PROTOCOL;
             break;
         default:
             if(((id - 0x21) % 0x1f) == 0){

@@ -174,7 +174,10 @@ void FDns::Recv(Buffer&& bb) {
             strategy stra = getstrategy(que->domain);
             if (stra.s == Strategy::direct) {
                 status.quemap.emplace(que->id, que);
-                return query_host(que->domain, DnsCb, std::make_shared<__uint128_t>(index));
+                addjob_with_name([que, index = std::make_shared<__uint128_t>(index)]{
+                    query_host(que->domain, DnsCb, index);
+                }, "fdns_query", 0, JOB_FLAGS_AUTORELEASE);
+                return;
             } else if (que->domain[0] == 0) {
                 //return empty response for root domain
                 result = new Dns_Result(que->domain);
@@ -189,7 +192,10 @@ void FDns::Recv(Buffer&& bb) {
     }
     if(result == nullptr) {
         status.quemap.emplace(que->id, que);
-        return query_dns(que->domain, que->type, RawCb, std::make_shared<__uint128_t>(index));
+        addjob_with_name([que, index = std::make_shared<__uint128_t>(index)]{
+            query_dns(que->domain, que->type, RawCb, index);
+        }, "fdns_raw_query", 0, JOB_FLAGS_AUTORELEASE);
+        return;
     }
     Buffer buff{BUF_LEN, bb.id};
     buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data()));
@@ -274,7 +280,7 @@ void FDns::RawCb(std::shared_ptr<void> param, const char* data, size_t size) {
         return;
     }
     LOGD(DDNS, "fdns rawcb [%" PRIu64"], size:%zd\n", id, size);
-    FDnsStatus& status = fdns->statusmap[id];
+    FDnsStatus& status = fdns->statusmap.at(id);
 #if __LP64__
     uint16_t qid = index & 0xffff;
 #else

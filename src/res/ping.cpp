@@ -100,9 +100,6 @@ void Ping::Recv(Buffer&& bb){
 }
 
 void Ping::deleteLater(uint32_t errcode) {
-    if(req){
-        req->detach();
-    }
     if(flags & PING_IS_CLOSED_F){
         //do nothing.
     }else if(res){
@@ -126,6 +123,9 @@ void Ping::deleteLater(uint32_t errcode) {
             req->response(std::make_shared<HttpRes>(HttpResHeader::create(S500, sizeof(S500), id),
                                                     "[[internal error]]\n"));
         }
+    }
+    if(req){
+        req->detach();
     }
     flags |= PING_IS_CLOSED_F;
     Server::deleteLater(errcode);

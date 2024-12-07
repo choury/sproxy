@@ -227,7 +227,6 @@ void Proxy3::Clean(uint64_t id, Proxy3::ReqStatus& status, uint32_t errcode) {
         Reset(id, errcode);
     }
 
-    status.req->detach();
     if(status.flags & HTTP_CLOSED_F){
         //do nothing.
     }else if(status.res){
@@ -238,6 +237,7 @@ void Proxy3::Clean(uint64_t id, Proxy3::ReqStatus& status, uint32_t errcode) {
                         HttpResHeader::create(S500, sizeof(S500), status.req->header->request_id),
                         "[[internal error]]"));
     }
+    status.req->detach();
     statusmap.erase(id);
 }
 
