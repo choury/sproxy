@@ -1121,6 +1121,31 @@ const char* unpack_frame(const char* data, size_t len, quic_frame* frame){
     }
 }
 
+static uint64_t decode_pn(uint64_t expected_pn, uint64_t truncated_pn, int pn_nbits) {
+   uint64_t pn_win       = 1ull << pn_nbits;
+   uint64_t pn_hwin      = pn_win / 2;
+   uint64_t pn_mask      = pn_win - 1;
+   // The incoming packet number should be greater than
+   // expected_pn - pn_hwin and less than or equal to
+   // expected_pn + pn_hwin
+   //
+   // This means we cannot just strip the trailing bits from
+   // expected_pn and add the truncated_pn because that might
+   // yield a value outside the window.
+   //
+   // The following code calculates a candidate value and
+   // makes sure it's within the packet number window.
+   // Note the extra checks to prevent overflow and underflow.
+   uint64_t candidate_pn = (expected_pn & ~pn_mask) | truncated_pn;
+   if (candidate_pn + pn_hwin <= expected_pn && candidate_pn + pn_win < (1ull << 62)){
+      return candidate_pn + pn_win;
+   }
+   if (candidate_pn > expected_pn + pn_hwin && candidate_pn >= pn_win){
+      return candidate_pn - pn_win;
+   }
+   return candidate_pn;
+}
+
 std::vector<const quic_frame*> decode_packet(const void* data_, size_t len,
                                        quic_pkt_header* header, const quic_secret* secret){
 
@@ -1168,13 +1193,13 @@ std::vector<const quic_frame*> decode_packet(const void* data_, size_t len,
     }
 
 
-    header->pn = 0;
+    uint64_t pn = 0;
     for(size_t i = 0; i < header->pn_length; i++){
         buff[pos+i] ^= mask[i+1];
-        header->pn <<= 8;
-        header->pn +=  buff[pos+i];
+        pn <<= 8;
+        pn +=  buff[pos+i];
     }
-    header->pn += header->pn_base & (0xffffffffffffffff << (header->pn_length*8));
+    header->pn = decode_pn(header->pn_base, pn, header->pn_length*8);
     pos += header->pn_length;
 
     char iv[12];
