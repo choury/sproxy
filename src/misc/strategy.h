@@ -1,6 +1,9 @@
 #ifndef STRATEGY_H__
 #define STRATEGY_H__
 
+#define GEN_TIP  "GENERATED"
+#define NO_MITM  "NOMITM"
+
 #ifdef  __cplusplus
 extern "C" {
 #endif

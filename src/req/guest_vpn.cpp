@@ -351,8 +351,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     auto src = pac->getsrc();
     Destination addr{};
     storage2Dest(&src, &addr);
-    bool shouldMitm = (opt.mitm_mode == Enable) ||
-                      (opt.mitm_mode == Auto && opt.ca.key && mayBeBlocked(status.host.c_str()));
+    bool shouldMitm = isFakeIp(pac->getdst()) && shouldNegotiate(status.host);
     switch(pac->gettype()){
     case IPPROTO_TCP:{
         if(dport == HTTPPORT) {

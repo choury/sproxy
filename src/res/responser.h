@@ -6,6 +6,7 @@
 #include "misc/index.h"
 
 class Requester;
+struct strategy;
 
 class Responser:public Server{
 public:
@@ -14,6 +15,7 @@ public:
 };
 
 extern bimap<std::string, Responser*> responsers;
+bool shouldNegotiate(const std::string& hostname, const strategy* stra = nullptr);
 bool shouldNegotiate(std::shared_ptr<const HttpReqHeader> req, Requester* src);
 void distribute(std::shared_ptr<HttpReq> req, Requester* src);
 #endif

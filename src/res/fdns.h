@@ -32,6 +32,7 @@ public:
     virtual void dump_usage(Dumper dp, void* param) override;
 };
 
+bool isFakeIp(const sockaddr_storage& addr);
 std::string getRdns(const sockaddr_storage& addr);
 std::string getRdnsWithPort(const sockaddr_storage& addr);
 #endif

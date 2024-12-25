@@ -603,24 +603,22 @@ void postConfig(){
         LOGE("access cafile %s failed: %s\n", opt.cafile, strerror(errno));
         exit(1);
     }
-    if (opt.sni_mode && opt.mitm_mode == Enable) {
-        LOGE("sni and mitm can't be set at the same time\n");
+    if (opt.cafile && opt.cakey && load_cert_key(opt.cafile, opt.cakey, &opt.ca)) {
+        LOGE("failed to load cafile or cakey\n");
         exit(1);
     }
-    if(!opt.sni_mode) {
-        if (opt.cafile && opt.cakey && load_cert_key(opt.cafile, opt.cakey, &opt.ca)) {
-            LOGE("failed to load cafile or cakey\n");
-            exit(1);
-        }
-        if ((certfile || keyfile) && load_cert_key(certfile, keyfile, &opt.cert)) {
-            LOGE("access cert file failed: %s\n", strerror(errno));
-            exit(1);
-        }
-        if ((opt.ssl.hostname[0] || opt.quic.hostname[0]) && (opt.cert.crt == NULL || opt.cert.key == NULL)) {
-            LOGE("ssl/quic mode require cert and key file\n");
-            exit(1);
-        }
-    } else if(!opt.ssl.hostname[0] && !opt.quic.hostname[0]) {
+    if ((certfile || keyfile) && load_cert_key(certfile, keyfile, &opt.cert)) {
+        LOGE("access cert file failed: %s\n", strerror(errno));
+        exit(1);
+    }
+    if ((opt.ssl.hostname[0] || opt.quic.hostname[0]) && 
+        (opt.cert.crt == NULL || opt.cert.key == NULL) && 
+        opt.mitm_mode != Enable && !opt.sni_mode) 
+    {
+        LOGE("ssl/quic mode require cert and key file\n");
+        exit(1);
+    }
+    if(opt.sni_mode && !opt.ssl.hostname[0] && !opt.quic.hostname[0]) {
         LOGE("sni mode require ssl or quic\n");
         exit(1);
     }

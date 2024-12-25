@@ -150,20 +150,26 @@ int parse_client_hello(const unsigned char*data, size_t data_len, char** hostnam
     pos += 38;
 
     /* Session ID */
-    if (pos + 1 > data_len)
+    if (pos + 1 > data_len) {
+        LOGE("Pos exceed\n");
         return -5;
+    }
     size_t len = data[pos];
     pos += 1 + len;
 
     /* Cipher Suites */
-    if (pos + 2 > data_len)
+    if (pos + 2 > data_len) {
+        LOGE("Pos exceed\n");
         return -5;
+    }
     len = (data[pos] << 8) + data[pos + 1];
     pos += 2 + len;
 
     /* Compression Methods */
-    if (pos + 1 > data_len)
+    if (pos + 1 > data_len) {
+        LOGE("Pos exceed\n");
         return -5;
+    }
     len = data[pos];
     pos += 1 + len;
 
@@ -173,13 +179,15 @@ int parse_client_hello(const unsigned char*data, size_t data_len, char** hostnam
     }
 
     /* Extensions */
-    if (pos + 2 > data_len)
+    if (pos + 2 > data_len) {
+        LOGE("Pos exceed\n");
         return -5;
+    }
     len = (data[pos] << 8) + data[pos + 1];
     pos += 2;
 
     if (pos + len > data_len)
-        return -5;
+        return -1;
     return parse_extensions(data + pos, len, hostname);
 }
 
@@ -196,16 +204,19 @@ parse_extensions(const unsigned char *data, size_t data_len, char **hostname) {
         if (data[pos] == 0x00 && data[pos + 1] == 0x00) {
             /* There can be only one extension of each type, so we break
                our state and move p to beinnging of the extension here */
-            if (pos + 4 + len > data_len)
+            if (pos + 4 + len > data_len) {
+                LOGE("Pos exceed\n");
                 return -5;
+            }
             return parse_server_name_extension(data + pos + 4, len, hostname);
         }
         pos += 4 + len; /* Advance to the next extension header */
     }
     /* Check we ended where we expected to */
-    if (pos != data_len)
+    if (pos != data_len) {
+        LOGE("Unexpected Pos\n");
         return -5;
-
+    }
     return -2;
 }
 
@@ -217,8 +228,10 @@ parse_server_name_extension(const unsigned char *data, size_t data_len,
     while (pos + 3 < data_len) {
         size_t len = (data[pos + 1] << 8) + data[pos + 2];
 
-        if (pos + 3 + len > data_len)
+        if (pos + 3 + len > data_len) {
+            LOGE("Pos exceed\n");
             return -5;
+        }
 
         switch (data[pos]) { /* name type */
             case 0x00: /* host_name */
@@ -240,8 +253,10 @@ parse_server_name_extension(const unsigned char *data, size_t data_len,
         pos += 3 + len;
     }
     /* Check we ended where we expected to */
-    if (pos != data_len)
+    if (pos != data_len) {
+        LOGE("Unexpected Pos\n");
         return -5;
+    }
 
     return -2;
 }

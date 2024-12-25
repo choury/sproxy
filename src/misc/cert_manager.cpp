@@ -73,6 +73,27 @@ static EVP_PKEY* generate_key() {
     return key;
 }
 
+static std::string truncateDomain(const std::string &domain) {
+    if (domain.length() <= 64)
+        return domain;
+
+    size_t pos         = domain.length();
+    std::string result = "";
+
+    while (pos != std::string::npos) {
+        pos = domain.find_last_of('.', pos - 1);
+        if (pos == std::string::npos)
+            break;
+
+        std::string substr = domain.substr(pos);
+        if (substr.length() + result.length() > 64) {
+            break;
+        }
+        result = substr + result;
+    }
+    return result.substr(1);
+}
+
 static X509_REQ* generate_csr(EVP_PKEY *key, const char* domain) {
     X509_REQ* req = X509_REQ_new();
     if (!req) return nullptr;
@@ -87,7 +108,7 @@ static X509_REQ* generate_csr(EVP_PKEY *key, const char* domain) {
     X509_NAME_add_entry_by_txt(name, "O", MBSTRING_ASC, (const unsigned char*)REQ_DN_O, -1, -1, 0);
     X509_NAME_add_entry_by_txt(name, "OU", MBSTRING_ASC, (const unsigned char*)REQ_DN_OU, -1, -1, 0);
     */
-    X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, (const unsigned char*)domain, -1, -1, 0);
+    X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, (const unsigned char*)truncateDomain(domain).c_str(), -1, -1, 0);
 
     /* Self-sign the request to prove that we posses the key. */
     if (!X509_REQ_sign(req, key, EVP_sha256())) {

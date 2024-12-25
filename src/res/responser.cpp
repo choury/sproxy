@@ -22,14 +22,27 @@ enum class CheckResult{
     NoPort,
 };
 
-bool shouldNegotiate(std::shared_ptr<const HttpReqHeader> req, Requester* src){
+bool shouldNegotiate(const std::string& hostname, const strategy* stra_){
+    const auto& stra = stra_ ? *stra_ : getstrategy(hostname.c_str());
+    if (stra.s == Strategy::direct && stra.ext == NO_MITM) {
+        //for vpn, only works with fakeip enabled
+        return false;
+    }
     if(opt.mitm_mode == Enable) {
         return true;
     }
-    if(opt.mitm_mode == Auto && opt.ca.key && mayBeBlocked(req->Dest.hostname)) {
+    if(opt.mitm_mode == Auto && opt.ca.key && (stra.s == Strategy::block || mayBeBlocked(hostname.c_str()))) {
         return true;
     }
-    if(getstrategy(req->Dest.hostname).s == Strategy::local && req->getDport() == src->getDst().port) {
+    return false;
+}
+
+bool shouldNegotiate(std::shared_ptr<const HttpReqHeader> req, Requester* src){
+    auto stra = getstrategy(req->Dest.hostname, req->path);
+    if(shouldNegotiate(req->Dest.hostname, &stra)){
+        return true;
+    }
+    if(stra.s == Strategy::local && req->getDport() == src->getDst().port) {
         return true;
     }
     return false;

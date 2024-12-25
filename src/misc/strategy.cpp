@@ -20,7 +20,6 @@
 #define HOST_NAME_MAX  MAXHOSTNAMELEN
 #endif
 
-#define GEN_TIP  "GENERATED"
 
 using std::string;
 using std::stringstream;

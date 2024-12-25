@@ -50,8 +50,7 @@ size_t Guest::ReadHE(Buffer&& bb){
     return len - bb.len;
 }
 
-int Guest::mread(std::shared_ptr<HttpReqHeader>,
-        std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data) {
+int Guest::mread(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data) {
     auto BufferHandle = [this](Buffer& bb) {
         LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", dumpDest(rwer->getSrc()).c_str(), bb.len);
         assert(statuslist.size() == 1);
@@ -202,19 +201,17 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
             if(!headless) rwer->Send({HCONNECT, strlen(HCONNECT), id});
             if (shouldNegotiate(header, this)) {
                 auto ctx = initssl(0, header->Dest.hostname);
-                auto srwer = std::make_shared<SslMer>(ctx, rwer->getSrc(),
-                                                      [this, header](auto&& data) {
-                                                          return mread(header, std::forward<decltype(data)>(data));
-                                                      },
-                                                      [this, id]{ return  rwer->cap(id);});
+                auto srwer = std::make_shared<SslMer>(
+                        ctx, rwer->getSrc(),
+                        [this](auto &&data) { return mread(std::forward<decltype(data)>(data)); },
+                        [this, id] { return rwer->cap(id); });
                 statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
                 new Guest(srwer);
             } else {
-                auto mrwer = std::make_shared<MemRWer>(rwer->getSrc(),
-                                               [this, header](auto&& data) {
-                                                   return mread(header, std::forward<decltype(data)>(data));
-                                               },
-                                               [this, id]{ return  rwer->cap(id);});
+                auto mrwer = std::make_shared<MemRWer>(
+                        rwer->getSrc(),
+                        [this](auto &&data) { return mread(std::forward<decltype(data)>(data)); },
+                        [this, id] { return rwer->cap(id); });
                 statuslist.emplace_back(ReqStatus{nullptr, nullptr, mrwer, HTTP_NOEND_F});
                 new Guest_sni(mrwer, header->Dest.hostname, header->get("User-Agent"));
             }
