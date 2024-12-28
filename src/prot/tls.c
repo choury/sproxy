@@ -544,8 +544,14 @@ SSL_CTX* initssl(int quic, const char* host){
     SSL_CTX_set_ecdh_auto(ctx, 1);
     */
 
-    if (opt.cafile && SSL_CTX_load_verify_locations(ctx, opt.cafile, NULL) != 1)
-        ERR_print_errors_fp(stderr);
+    if (opt.cafile){
+        FILE* fp = fopen(opt.cafile, "r");
+        X509* ca = PEM_read_X509(fp, NULL, NULL, NULL);
+        if(SSL_CTX_add1_chain_cert(ctx, ca) != 1)
+            ERR_print_errors_fp(stderr);
+        X509_free(ca);
+        fclose(fp);
+    }
 
     if (SSL_CTX_set_default_verify_paths(ctx) != 1)
         ERR_print_errors_fp(stderr);

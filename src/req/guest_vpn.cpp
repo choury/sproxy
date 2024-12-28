@@ -19,8 +19,8 @@
 #include <inttypes.h>
 
 extern "C" void vpn_stop();
-Guest_vpn::Guest_vpn(int fd): Requester(nullptr) {
-    rwer = std::make_shared<TunRWer>(fd,
+Guest_vpn::Guest_vpn(int fd, bool enable_offload): Requester(nullptr) {
+    rwer = std::make_shared<TunRWer>(fd, enable_offload,
         [this](uint64_t id, std::shared_ptr<const Ip> pac){
             return ReqProc(id, pac);
         },

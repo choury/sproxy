@@ -32,6 +32,8 @@ struct IpStatus{
     sockaddr_storage dst;
     Block*      packet_hdr;
     uint16_t    packet_hdr_len;
+#define  TUN_GSO_OFFLOAD 1
+    uint32_t    flags = 0;
 };
 
 #endif

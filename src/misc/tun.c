@@ -10,6 +10,7 @@
 #include <net/if.h>
 #include <net/route.h>
 #include <linux/if_tun.h>
+#include <linux/virtio_net.h>
 
 
 
@@ -171,6 +172,13 @@ static int set_if6(struct ifreq *ifr) {
     return err;
 }
 
+#ifndef TUN_F_USO4
+#define TUN_F_USO4	0x20	/* I can handle USO for IPv4 packets */
+#endif
+#ifndef TUN_F_USO6
+#define TUN_F_USO6	0x40	/* I can handle USO for IPv6 packets */
+#endif
+
 int tun_create(char *dev, int flags) {
     assert(dev != NULL);
 
@@ -189,6 +197,18 @@ int tun_create(char *dev, int flags) {
         if ((err = ioctl(fd, TUNSETIFF, (void *)&ifr)) < 0) {
             LOGE("ioctl (TUNSETIFF) failed: %s\n", strerror(errno));
             break;
+        }
+        if (flags & IFF_VNET_HDR) {
+            size_t len = sizeof(struct virtio_net_hdr_v1);
+            if ((err = ioctl(fd, TUNSETVNETHDRSZ, &len)) < 0) {
+                LOGE("ioctl (TUNSETVNETHDRSZ) failed: %s\n", strerror(errno));
+                break;
+            }
+            unsigned off_flags = TUN_F_CSUM | TUN_F_TSO4 | TUN_F_TSO6;
+            if ((err = ioctl(fd, TUNSETOFFLOAD, off_flags)) < 0){
+                LOGE("ioctl(TUNSETOFFLOAD) failed: %s\n", strerror(errno));
+                break;
+            }
         }
         strcpy(dev, ifr.ifr_name);
 

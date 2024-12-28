@@ -82,6 +82,7 @@ void debugString(std::shared_ptr<const Ip> pac, size_t len) {
         }
         return;
     default:
+        LOGE("Unknown proto type: %d\n", pac->gettype());
         break;
     }
     pac->dump();
@@ -95,15 +96,17 @@ std::shared_ptr<IpStatus> TunRWer::GetStatus(uint64_t id) {
     return statusmap.GetOne(id)->second;
 }
 
-TunRWer::TunRWer(int fd, std::function<void(uint64_t, std::shared_ptr<const Ip>)> reqProc,
+TunRWer::TunRWer(int fd, bool enable_offload,
+                 std::function<void(uint64_t, std::shared_ptr<const Ip>)> reqProc,
                  std::function<void(int ret, int code)> errorCB):
-    RWer(fd, std::move(errorCB)), reqProc(std::move(reqProc))
+    RWer(fd, std::move(errorCB)), enable_offload(enable_offload), reqProc(std::move(reqProc))
 {
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&TunRWer::defaultHE;
     if(opt.pcap_file) {
         pcap = pcap_create(opt.pcap_file);
     }
+    set_checksum_offload(enable_offload);
 };
 
 TunRWer::~TunRWer(){
@@ -118,19 +121,28 @@ TunRWer::~TunRWer(){
 }
 
 void TunRWer::ReadData() {
+    const size_t& TUN_BUF_LEN = 65536;
     while(true) {
-        Block rbuff(BUF_LEN);
-        int ret = read(getFd(), rbuff.data(), BUF_LEN);
+        Block rbuff(TUN_BUF_LEN);
+        int ret = read(getFd(), rbuff.data(), TUN_BUF_LEN);
         if(ret <= 0 && errno == EAGAIN) {
             return;
         }
-        if(ret <= 0) {
+        if(ret <= (int)sizeof(virtio_net_hdr_v1)) {
             ErrorHE(SOCKET_ERR, errno);
             return;
         }
         size_t len = ret;
+        if(enable_offload) {
+            auto hdr = (virtio_net_hdr_v1*)rbuff.data();
+            if(hdr->gso_type != VIRTIO_NET_HDR_GSO_NONE) {
+                LOGD(DVPN, "gso type: %d, gso size: %d, num: %d\n", hdr->gso_type, hdr->gso_size, hdr->num_buffers);
+            }
+            rbuff.reserve(sizeof(virtio_net_hdr_v1));
+            len -= sizeof(virtio_net_hdr_v1);
+        }
         pcap_write_with_generated_ethhdr(pcap, rbuff.data(), len);
-        auto pac = MakeIp(rbuff.data(), ret);
+        auto pac = MakeIp(rbuff.data(), len);
         if(pac == nullptr){
             continue;
         }
@@ -219,6 +231,9 @@ void TunRWer::ReadData() {
             default:
                 continue;
             }
+            if(enable_offload){
+                status->flags = TUN_GSO_OFFLOAD;
+            }
             status->reqCB = [this](std::shared_ptr<const Ip> pac){ReqProc(pac);};
             status->dataCB = [this](std::shared_ptr<const Ip> pac, Buffer&& bb){
                 return DataProc(pac, std::move(bb));
@@ -270,9 +285,16 @@ void TunRWer::ConsumeRData(uint64_t id) {
 }
 
 void TunRWer::SendPkg(std::shared_ptr<const Ip> pac, const void* data, size_t len) {
-    debugString(pac, len - pac->gethdrlen());
-    pcap_write_with_generated_ethhdr(pcap, data, len);
-    (void)!write(getFd(), data, len);
+    if(enable_offload) {
+        debugString(pac, len - pac->gethdrlen() - sizeof(virtio_net_hdr_v1));
+        pcap_write_with_generated_ethhdr(pcap, (uchar*)data + sizeof(virtio_net_hdr_v1), len - sizeof(virtio_net_hdr_v1));
+    }else{
+        debugString(pac, len - pac->gethdrlen());
+        pcap_write_with_generated_ethhdr(pcap, data, len);
+    }
+    if(write(getFd(), data, len) < 0) {
+        LOGE("tunio: write error: %s\n", strerror(errno));
+    }
 }
 
 void TunRWer::Send(Buffer&& bb) {

@@ -18,6 +18,7 @@ bool operator<(const VpnKey& a, const VpnKey& b);
 
 class TunRWer: public RWer{
     int pcap = -1;
+    bool enable_offload;
     Index2<uint64_t, VpnKey, std::shared_ptr<IpStatus>> statusmap;
     uint64_t GetId(std::shared_ptr<const Ip> pac);
     std::shared_ptr<IpStatus> GetStatus(uint64_t id);
@@ -33,7 +34,7 @@ protected:
     std::function<void(uint64_t, std::shared_ptr<const Ip>)> reqProc;
     std::function<void(uint64_t, uint32_t)> resetHanlder = [](uint64_t, uint32_t){};
 public:
-    explicit TunRWer(int fd,
+    explicit TunRWer(int fd, bool enable_offload,
                      std::function<void(uint64_t, std::shared_ptr<const Ip>)> reqProc,
                      std::function<void(int ret, int code)> errorCB);
     virtual ~TunRWer() override;

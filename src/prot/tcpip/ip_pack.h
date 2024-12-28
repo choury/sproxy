@@ -252,4 +252,6 @@ public:
     friend std::shared_ptr<Ip> MakeIp(uint8_t type, const sockaddr_storage* src,  const sockaddr_storage* dst);
 };
 
+void set_checksum_offload(bool enable);
+
 #endif //IP_PACKET_H_

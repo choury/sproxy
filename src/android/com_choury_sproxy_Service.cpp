@@ -92,7 +92,7 @@ static int vpn_start(int fd){
         }
         cli = std::make_shared<Cli_server>(svsk_cli);
     }
-    new Guest_vpn(fd);
+    new Guest_vpn(fd, false);
     LOG("Accepting connections ...\n");
     will_contiune = 1;
     while (will_contiune) {

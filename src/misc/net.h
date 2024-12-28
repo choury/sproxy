@@ -6,7 +6,26 @@
 
 #ifdef  __cplusplus
 extern "C" {
+
+#if __linux__
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wkeyword-macro"
 #endif
+#define class class_
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+#include <linux/virtio_net.h>
+#undef class
+#endif // __linux__
+
+#else
+#if __linux__
+#include <linux/virtio_net.h>
+#endif // __linux__
+#endif // __cplusplus
+
 
 int Checksocket(int fd, const char* msg);
 void SetSocketUnblock(int fd);

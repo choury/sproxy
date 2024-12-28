@@ -10,8 +10,9 @@ void SendData(std::shared_ptr<UdpStatus> status, Buffer&& bb);
 
 
 struct UdpStatus: public IpStatus{
+//use for flags from IpStatus
+#define UDP_IS_DNS 0x100
     size_t readlen  = 0;
-    bool   isDns = false;
     Job   aged_job = nullptr;
     Job   ack_job = nullptr;
 };

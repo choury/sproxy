@@ -105,7 +105,6 @@ Guest::ReqStatus* Guest_sni::forward(const char *hostname, Protocol prot, uint64
                 [this]{ rwer->Unblock(0);});
 
         statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, 0, nullptr});
-        distribute(req, this);
     }
     return &statuslist.back();
 }
@@ -133,6 +132,7 @@ size_t Guest_sni::sniffer(Buffer&& bb) {
     }
     rwer->SetReadCB([this](Buffer&& bb){return ReadHE(std::move(bb));});
     rx_bytes += len;
+    distribute(status->req, this);
     return len;
 }
 
@@ -215,5 +215,6 @@ Forward:
     quic_init_packets.clear();
 #endif
     rwer->SetReadCB([this](Buffer&& bb){return ReadHE(std::move(bb));});
+    distribute(status->req, this);
     return len;
 }

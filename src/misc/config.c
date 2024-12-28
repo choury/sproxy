@@ -191,7 +191,7 @@ static struct option long_options[] = {
     {"ipv6",          required_argument, NULL,  0 },
     {"key",           required_argument, NULL,  0 },
     {"pcap",          required_argument, NULL,  0 },
-    {"pcap_len",      required_argument, NULL,  0 },
+    {"pcap-len",      required_argument, NULL,  0 },
     {"policy-file",   required_argument, NULL, 'P'},
 #ifdef HAVE_QUIC
     {"quic",          required_argument, NULL, 'q'},
@@ -260,7 +260,7 @@ static struct option_detail option_detail[] = {
     {"key", "Private key file name (ssl/quic)", option_string, &keyfile, NULL},
     {"mitm", "Mitm mode for https request ([auto], enable, disable), require cakey", option_enum, &opt.mitm_mode, auto_options},
     {"pcap", "Save packets in pcap file for vpn (generated pseudo ethernet header)", option_string, &opt.pcap_file, NULL},
-    {"pcap_len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
+    {"pcap-len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
     {"policy-file", "The file of policy ("PREFIX"/etc/sproxy/sites.list as default)", option_string, &policy_file, NULL},
 #ifdef HAVE_QUIC
     {"quic", "Listen for QUIC server (experiment)", option_string, &quic_listen, NULL},

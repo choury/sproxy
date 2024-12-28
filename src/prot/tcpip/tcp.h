@@ -44,16 +44,17 @@ struct tcp_sent{
 //即使是代理请求，末端的tcp连接也会销毁的，就会发送信号过来，
 //销毁的时候如果vpn这边的tcp还没有销毁，那么就会发送RST报文，这个时候就会自动清理掉了
 struct TcpStatus: public IpStatus{
+//use for flags from IpStatus
+#define TCP_FIN_RECVD     0x100
+#define TCP_FIN_DELIVERED 0x200
+#define TCP_KEEPALIVING   0x400
+#define TCP_LOCALIP       0x800
+#define TCP_ACK_ONLY      0x1000
     uint8_t    state  = TCP_LISTEN;
     uint8_t    recv_wscale;
     uint8_t    send_wscale;
     uint16_t   window;
-    uint16_t   mss;
-#define TCP_FIN_RECVD     1
-#define TCP_FIN_DELIVERED 2
-#define TCP_KEEPALIVING   4
-#define TCP_LOCALIP       8
-    uint32_t   flags = 0;
+    uint16_t   mss = TCP_MSS;
     uint32_t   sent_seq; //下一个发送的报文的序列号，意思是上一个发送的序列号是sent_seq-1
     uint32_t   sent_ack;
     uint32_t   recv_ack;

@@ -26,7 +26,7 @@ class Guest_vpn: public Requester {
     void Clean(uint64_t id);
     int mread(uint64_t id, std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data);
 public:
-    explicit Guest_vpn(int fd);
+    explicit Guest_vpn(int fd, bool enable_offload);
     virtual void response(void* index, std::shared_ptr<HttpRes> res) override;
     virtual ~Guest_vpn();
     virtual void dump_stat(Dumper dp, void* param) override;

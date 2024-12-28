@@ -83,6 +83,33 @@ static size_t bufleft(std::shared_ptr<TcpStatus> status) {
     return status->rbuf.cap();
 }
 
+static void tcpSend(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, Buffer& bb) {
+    pac->build_packet(bb);
+    if (status->flags & TUN_GSO_OFFLOAD) {
+        bb.reserve(-(int)sizeof(virtio_net_hdr_v1));
+        auto *hdr = (virtio_net_hdr_v1*)bb.mutable_data();
+        hdr->flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
+        int family = pac->getsrc().ss_family;
+        if (family == AF_INET) {
+            hdr->gso_type = VIRTIO_NET_HDR_GSO_TCPV4;
+        } else if (family == AF_INET6) {
+            hdr->gso_type = VIRTIO_NET_HDR_GSO_TCPV6;
+        } else {
+            LOGE("unknown family: %d\n", family);
+            hdr->gso_type = VIRTIO_NET_HDR_GSO_NONE;
+        }
+        hdr->hdr_len = pac->gethdrlen();
+        hdr->gso_size = pac->tcp->getmss();
+        hdr->csum_start = hdr->hdr_len - pac->tcp->hdrlen;
+        hdr->csum_offset = 16;
+    }
+    status->sendCB(pac, bb.data(), bb.len);
+    if (status->flags & TUN_GSO_OFFLOAD) {
+        bb.reserve(sizeof(virtio_net_hdr_v1));
+    }
+    bb.reserve(pac->gethdrlen());
+}
+
 class pkgLogger{
     const char* msg;
     uint32_t left = 0;
@@ -142,10 +169,8 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
             it.pac->tcp
                     ->setack(status->want_seq)
                     ->setwindow(bufleft(status) >> status->send_wscale);
-            it.pac->build_packet(it.bb);
+            tcpSend(status, it.pac, it.bb);
             it.last_sent = now;
-            status->sendCB(it.pac, it.bb.data(), it.bb.len);
-            it.bb.reserve(it.pac->gethdrlen());
             if(it.last_sent + status->rto * status->rto_factor > now) {
                 break;
             }
@@ -179,10 +204,8 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
                 it.pac->tcp
                         ->setack(status->want_seq)
                         ->setwindow(bufleft(status) >> status->send_wscale);
-                it.pac->build_packet(it.bb);
                 it.last_sent = now;
-                status->sendCB(it.pac, it.bb.data(), it.bb.len);
-                it.bb.reserve(it.pac->gethdrlen());
+                tcpSend(status, it.pac, it.bb);
             }
         }
     }
@@ -193,9 +216,7 @@ ret:
 }
 
 void PendPkg(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, Buffer&& bb) {
-    pac->build_packet(bb);
-    status->sendCB(pac, bb.data(), bb.len);
-    bb.reserve(pac->gethdrlen());
+    tcpSend(status, pac, bb);
     uint8_t flags = pac->tcp->getflag();
     if((flags & TH_RST) || (flags == TH_ACK && bb.len == 0 && (status->flags & TCP_KEEPALIVING) == 0)) {
         return;
@@ -362,11 +383,10 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
             LOGD(DVPN, "%s get keep-alive pkt, reply ack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
         }else {
             LOG("%s get unwanted pkt, reply ack(%u/%u).\n", storage_ntoa(&status->src), seq, status->want_seq);
+            status->flags |= TCP_ACK_ONLY;
         }
         status->sent_ack = status->want_seq - 1; //to force send tcp ack
-        status->ack_job = UpdateJob(std::move(status->ack_job),
-                                    [status_ = GetWeak(status)] {SendAck(status_);}, 0);
-        return;
+        return SendAck(status);
     }
 
     if(flag & TH_ACK){
@@ -493,11 +513,12 @@ void SendAck(std::weak_ptr<TcpStatus> status_) {
     }
     auto status = status_.lock();
     assert(noafter(status->sent_ack, status->want_seq));
+
     if(status->flags & TCP_FIN_DELIVERED) {
         assert(status->rbuf.length() == 0);
     }else{
         auto pac = MakeIp(IPPROTO_TCP, &status->src, &status->dst);
-        if(status->rbuf.length() > 0) {
+        if((status->flags & TCP_ACK_ONLY) == 0 && status->rbuf.length() > 0) {
             auto bb = status->rbuf.get();
             size_t len = status->dataCB(pac, std::move(bb));
             status->rbuf.consume(len);
@@ -507,6 +528,9 @@ void SendAck(std::weak_ptr<TcpStatus> status_) {
             status->flags |= TCP_FIN_DELIVERED;
         }
     }
+
+    status->flags &= ~TCP_ACK_ONLY;
+    // 下面两个条件不能提前判断，不然会导致rbuf不能及时消费
     if(status->state == TCP_CLOSE) {
         status->ack_job.reset(nullptr);
         return;
@@ -571,7 +595,7 @@ void SendData(std::shared_ptr<TcpStatus> status, Buffer&& bb) {
         LOGE("%s send pkt will oversize of window (%zu/%d)\n",
              storage_ntoa(&status->src), sendlen,  (int)Cap(status));
     }
-    if (sendlen > status->mss) {
+    if (sendlen > status->mss && (status->flags & TUN_GSO_OFFLOAD) == 0) {
         //LOGD(DVPN, "%s: mss smaller than send size (%zu/%u)!\n", key.getString("<-"), bb.len, mss);
         sendlen = status->mss;
     }
@@ -622,9 +646,8 @@ void CloseProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac,
     }
     if(seq != status->want_seq){
         status->sent_ack = status->want_seq - 1; //to force send tcp ack
-        status->ack_job = UpdateJob(std::move(status->ack_job),
-                                    [status_ = GetWeak(status)]{SendAck(status_);}, 0);
-        return;
+        status->flags |= TCP_ACK_ONLY;
+        return SendAck(status);
     }
 
     if(flag & TH_ACK){

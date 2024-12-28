@@ -237,11 +237,11 @@ int main(int argc, char **argv) {
 #if __linux__
         if(opt.tun_mode) {
             char tun_name[IFNAMSIZ] = {0};
-            int tun = tun_create(tun_name, IFF_TUN | IFF_NO_PI);
+            int tun = tun_create(tun_name, IFF_TUN | IFF_NO_PI | IFF_NAPI | IFF_VNET_HDR);
             if (tun < 0) {
                 return -1;
             }
-            new Guest_vpn(tun);
+            new Guest_vpn(tun, true);
             LOG("listen on %s for vpn\n", tun_name);
         }
 #endif
