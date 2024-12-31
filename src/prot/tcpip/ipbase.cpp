@@ -31,6 +31,7 @@ void Unreach(std::shared_ptr<IpStatus> status, uint8_t code) {
     delete status->packet_hdr;
     status->packet_hdr = nullptr;
     pac->build_packet(bb);
+#if __linux__
     if (status->flags & TUN_GSO_OFFLOAD) {
         bb.reserve(-(int)sizeof(virtio_net_hdr_v1));
         auto* hdr = (virtio_net_hdr_v1*)bb.mutable_data();
@@ -45,5 +46,6 @@ void Unreach(std::shared_ptr<IpStatus> status, uint8_t code) {
         }
         hdr->csum_offset = 2;
     }
+#endif
     status->sendCB(pac, bb.data(), bb.len);
 }

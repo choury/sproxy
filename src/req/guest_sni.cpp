@@ -168,9 +168,11 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
             if(frame->type != QUIC_FRAME_CRYPTO){
                 continue;
             }
-            LOGD(DQUIC, "sni get crypto %zd - %zd\n", frame->crypto.offset, frame->crypto.offset + frame->crypto.length);
+            LOGD(DQUIC, "sni get crypto %zd - %zd\n", (size_t)frame->crypto.offset,
+                (size_t)frame->crypto.offset + (size_t)frame->crypto.length);
             if(frame->crypto.length + frame->crypto.offset > (size_t)BUF_LEN) {
-                LOGE("[%s] Quic sni get crypto overflow bufflen: %zd\n", dumpDest(rwer->getSrc()).c_str(), frame->crypto.length + frame->crypto.offset);
+                LOGE("[%s] Quic sni get crypto overflow bufflen: %zd\n", dumpDest(rwer->getSrc()).c_str(),
+                    (size_t)frame->crypto.length + (size_t)frame->crypto.offset);
                 goto Forward;
             }
             length += frame->crypto.length;

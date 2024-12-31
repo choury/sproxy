@@ -32,12 +32,22 @@ extern "C" {
 #endif
 
 
+#ifdef USE_BORINGSSL
 #define QUIC_CIPHERS                                              \
-   TLS1_3_RFC_AES_256_GCM_SHA384 ":"                               \
-   TLS1_3_RFC_AES_128_GCM_SHA256 ":"                               \
-   TLS1_3_RFC_CHACHA20_POLY1305_SHA256 ":"                         \
-   TLS1_TXT_ECDHE_RSA_WITH_AES_256_GCM_SHA384 ":"                   \
-   TLS1_TXT_ECDH_RSA_WITH_AES_256_GCM_SHA384
+   TLS1_3_RFC_AES_256_GCM_SHA384                                  \
+   ":" TLS1_3_RFC_AES_128_GCM_SHA256                              \
+   ":" TLS1_3_RFC_CHACHA20_POLY1305_SHA256                        \
+   ":" TLS1_TXT_ECDHE_RSA_WITH_AES_256_GCM_SHA384                 \
+   ":" TLS1_TXT_ECDH_RSA_WITH_AES_256_GCM_SHA384                  \
+
+#else
+#define QUIC_CIPHERS                                              \
+   TLS1_3_RFC_AES_256_GCM_SHA384                                  \
+   ":" TLS1_3_RFC_AES_128_GCM_SHA256                              \
+   ":" TLS1_3_RFC_CHACHA20_POLY1305_SHA256                        \
+
+#endif
+
 
 #define QUIC_GROUPS "P-256:X25519:P-384:P-521"
 

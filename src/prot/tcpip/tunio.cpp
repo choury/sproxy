@@ -128,11 +128,12 @@ void TunRWer::ReadData() {
         if(ret <= 0 && errno == EAGAIN) {
             return;
         }
+        size_t len = ret;
+#if __linux__
         if(ret <= (int)sizeof(virtio_net_hdr_v1)) {
             ErrorHE(SOCKET_ERR, errno);
             return;
         }
-        size_t len = ret;
         if(enable_offload) {
             auto hdr = (virtio_net_hdr_v1*)rbuff.data();
             if(hdr->gso_type != VIRTIO_NET_HDR_GSO_NONE) {
@@ -141,6 +142,7 @@ void TunRWer::ReadData() {
             rbuff.reserve(sizeof(virtio_net_hdr_v1));
             len -= sizeof(virtio_net_hdr_v1);
         }
+#endif
         pcap_write_with_generated_ethhdr(pcap, rbuff.data(), len);
         auto pac = MakeIp(rbuff.data(), len);
         if(pac == nullptr){
@@ -285,10 +287,14 @@ void TunRWer::ConsumeRData(uint64_t id) {
 }
 
 void TunRWer::SendPkg(std::shared_ptr<const Ip> pac, const void* data, size_t len) {
+#if __linux__
     if(enable_offload) {
         debugString(pac, len - pac->gethdrlen() - sizeof(virtio_net_hdr_v1));
         pcap_write_with_generated_ethhdr(pcap, (uchar*)data + sizeof(virtio_net_hdr_v1), len - sizeof(virtio_net_hdr_v1));
     }else{
+#else
+    {
+#endif
         debugString(pac, len - pac->gethdrlen());
         pcap_write_with_generated_ethhdr(pcap, data, len);
     }

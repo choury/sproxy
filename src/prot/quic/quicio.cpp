@@ -592,7 +592,7 @@ QuicBase::QuicBase(const char* hostname):
     SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION);
     SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION);
     if(SSL_CTX_set_ciphersuites(ctx, QUIC_CIPHERS) != 1) {
-        LOGF("SSL_CTX_set_ciphersuites: %s\n", ERR_error_string(ERR_get_error(), nullptr));
+        LOGF("SSL_CTX_set_ciphersuites: %s [%s]\n", ERR_error_string(ERR_get_error(), nullptr), QUIC_CIPHERS);
     }
 
     if(SSL_CTX_set1_groups_list(ctx, QUIC_GROUPS) != 1) {

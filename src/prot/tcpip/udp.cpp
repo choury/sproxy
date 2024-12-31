@@ -37,6 +37,7 @@ void SendData(std::shared_ptr<UdpStatus> status, Buffer&& bb) {
 
     auto pac = MakeIp(IPPROTO_UDP, &status->dst, &status->src);
     pac->build_packet(bb);
+#if __linux__
     if(status->flags & TUN_GSO_OFFLOAD) {
         bb.reserve(-(int)sizeof(virtio_net_hdr_v1));
         auto hdr = (virtio_net_hdr_v1*)bb.mutable_data();
@@ -47,6 +48,7 @@ void SendData(std::shared_ptr<UdpStatus> status, Buffer&& bb) {
         hdr->csum_start = hdr->hdr_len - sizeof(udphdr);
         hdr->csum_offset = 6;
     }
+#endif
     status->sendCB(pac, bb.data(), bb.len);
     status->ack_job = updatejob_with_name(std::move(status->ack_job),
                                           [ackCB = status->ackCB, rpac]{ackCB(rpac);},

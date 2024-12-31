@@ -85,6 +85,7 @@ static size_t bufleft(std::shared_ptr<TcpStatus> status) {
 
 static void tcpSend(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, Buffer& bb) {
     pac->build_packet(bb);
+#if __linux__
     if (status->flags & TUN_GSO_OFFLOAD) {
         bb.reserve(-(int)sizeof(virtio_net_hdr_v1));
         auto *hdr = (virtio_net_hdr_v1*)bb.mutable_data();
@@ -103,10 +104,13 @@ static void tcpSend(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, 
         hdr->csum_start = hdr->hdr_len - pac->tcp->hdrlen;
         hdr->csum_offset = 16;
     }
+#endif
     status->sendCB(pac, bb.data(), bb.len);
+#if __linux__
     if (status->flags & TUN_GSO_OFFLOAD) {
         bb.reserve(sizeof(virtio_net_hdr_v1));
     }
+#endif
     bb.reserve(pac->gethdrlen());
 }
 
