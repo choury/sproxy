@@ -57,6 +57,7 @@ void Quic_server::PushData(const sockaddr_storage* myaddr, const sockaddr_storag
             LOGE("connect %s failed: %s\n", storage_ntoa(hisaddr), strerror(errno));
             return;
         }
+        LOGD(DQUIC, "connect udp %d to %s\n", clsk, storage_ntoa(hisaddr));
         SetUdpOptions(clsk, hisaddr);
         auto qrwer = std::make_shared<QuicRWer>(clsk, hisaddr, ctx, this);
         auto guest = new Guest3(qrwer);
@@ -112,6 +113,7 @@ void Quic_sniServer::defaultHE(RW_EVENT events) {
             LOGE("connect failed: %s\n", strerror(errno));
             return;
         }
+        LOGD(DQUIC, "connect udp %d to %s\n", clsk, storage_ntoa(&hisaddr));
         SetUdpOptions(clsk, &hisaddr);
         auto guest = new Guest_sni(clsk, &hisaddr, nullptr);
         guest->sniffer_quic({buff, (size_t)ret});

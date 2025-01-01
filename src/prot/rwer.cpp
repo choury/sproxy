@@ -74,8 +74,8 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
         auto &bb = wbuff.front();
         if(likely(bb.len > 0)) {
             ret = write(getFd(), bb.data(), bb.len);
+            LOGD(DRWER, "write %d: len: %zd, ret: %zd\n", getFd(), bb.len, ret);
             len = bb.len;
-            LOGD(DRWER, "write: len: %zd, ret: %zd\n", len, ret);
         } else {
             hasEof = true;
         }
@@ -96,9 +96,9 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
         }
         ret = writev(getFd(), iovs.data(), iovs.size());
         if(ret > 0) {
-            LOGD(DRWER, "writev: iovs: %zd, ret: %zd/%zd\n", iovs.size(), ret, len);
+            LOGD(DRWER, "writev %d: iovs: %zd, ret: %zd/%zd\n", getFd(), iovs.size(), ret, len);
         } else {
-            LOGE("writev error: %s\n", strerror(errno));
+            LOGE("writev %d error: %s\n", getFd(), strerror(errno));
         }
     }
     if(len == (size_t)ret && hasEof) {

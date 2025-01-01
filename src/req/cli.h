@@ -52,20 +52,21 @@ class Cli_server: public Ep {
         }
         if (!!(events & RW_EVENT::READ)) {
             int clsk;
-            struct sockaddr_storage myaddr;
-            socklen_t temp = sizeof(myaddr);
+            struct sockaddr_storage hisaddr;
+            socklen_t temp = sizeof(hisaddr);
 #ifdef SOCK_CLOEXEC
-            if ((clsk = accept4(getFd(), (struct sockaddr *)&myaddr, &temp, SOCK_CLOEXEC)) < 0) {
+            if ((clsk = accept4(getFd(), (struct sockaddr *)&hisaddr, &temp, SOCK_CLOEXEC)) < 0) {
 #else
-            if ((clsk = accept(getFd(), (struct sockaddr *)&myaddr, &temp)) < 0) {
+            if ((clsk = accept(getFd(), (struct sockaddr *)&hisaddr, &temp)) < 0) {
 #endif
                 LOGE("accept error:%s\n", strerror(errno));
                 return;
             }
+            LOGD(DNET, "accept %d from unix: %s\n", clsk, storage_ntoa(&hisaddr));
 
-            PadUnixPath(&myaddr, temp);
-            SetUnixOptions(clsk, &myaddr);
-            new Cli(clsk, &myaddr);
+            PadUnixPath(&hisaddr, temp);
+            SetUnixOptions(clsk, &hisaddr);
+            new Cli(clsk, &hisaddr);
         } else {
             LOGE("unknown error\n");
             return;

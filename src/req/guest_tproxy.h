@@ -20,19 +20,19 @@ class Tproxy_server: public Ep {
         }
         if (!!(events & RW_EVENT::READ)) {
             int clsk;
-            struct sockaddr_storage myaddr;
-            socklen_t temp = sizeof(myaddr);
+            struct sockaddr_storage hisaddr;
+            socklen_t temp = sizeof(hisaddr);
 #ifdef SOCK_CLOEXEC
-            if ((clsk = accept4(getFd(), (struct sockaddr *)&myaddr, &temp, SOCK_CLOEXEC)) < 0) {
+            if ((clsk = accept4(getFd(), (struct sockaddr *)&hisaddr, &temp, SOCK_CLOEXEC)) < 0) {
 #else
-            if ((clsk = accept(getFd(), (struct sockaddr *)&myaddr, &temp)) < 0) {
+            if ((clsk = accept(getFd(), (struct sockaddr *)&hisaddr, &temp)) < 0) {
 #endif
                 LOGE("accept error:%s\n", strerror(errno));
                 return;
             }
-
-            SetTcpOptions(clsk, &myaddr);
-            new Guest_tproxy(clsk, &myaddr);
+            LOGD(DNET, "accept %d from tcp: %s\n", clsk, storage_ntoa(&hisaddr));
+            SetTcpOptions(clsk, &hisaddr);
+            new Guest_tproxy(clsk, &hisaddr);
         } else {
             LOGE("unknown error\n");
             return;
@@ -70,6 +70,7 @@ class Tproxy_server: public Ep {
                 LOGE("failed to connect peer [%s]: %s\n", storage_ntoa(&hisaddr), strerror(errno));
                 return;
             }
+            LOGD(DNET, "connect udp %d to %s\n", clsk, storage_ntoa(&hisaddr));
             SetUdpOptions(clsk, &hisaddr);
             new Guest_tproxy(clsk, &hisaddr, &myaddr, std::move(bb));
         } else {

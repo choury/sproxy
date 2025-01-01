@@ -1896,6 +1896,7 @@ void QuicRWer::ReadData() {
         iov[i].iov_len = max_datagram_size;
     }
     ssize_t ret = readm(getFd(), iov.data(), iov.size());
+    LOGD(DQUIC, "readm from %d, size: %zd ret:%d\n", getFd(), iov.size(), (int)ret);
     if (ret < 0 && errno == EAGAIN) {
         return;
     }
@@ -1969,6 +1970,7 @@ void QuicRWer::closeHE(RW_EVENT events) {
     char buff[max_datagram_size];
     while(true) {
         ssize_t ret = read(getFd(), buff, sizeof(buff));
+        LOGD(DQUIC, "read from %d when closing, size: %zd ret:%d\n", getFd(), sizeof(buff), (int)ret);
         if (ret < 0 && errno == EAGAIN) {
             return;
         }
@@ -2029,6 +2031,7 @@ success:
             LOGE("connect %s failed: %s\n", storage_ntoa(&hisaddr), strerror(errno));
             return RWer::ErrorHE(type, code);
         }
+        LOGD(DQUIC, "reconnect udp %d to %s\n", clsk, storage_ntoa(&hisaddr));
         SetUdpOptions(clsk, &hisaddr);
         setFd(clsk);
     } else {

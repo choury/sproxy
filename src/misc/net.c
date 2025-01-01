@@ -237,6 +237,7 @@ int ListenTcp(const struct sockaddr_storage* addr, const struct listenOption* op
             LOGE("listen error:%s\n", strerror(errno));
             break;
         }
+        LOGD(DNET, "open %d for listen tcp: %s\n", fd, storage_ntoa(addr));
         return fd;
     }while(0);
     close(fd);
@@ -283,6 +284,7 @@ int ListenUdp(const struct sockaddr_storage* addr, const struct listenOption* op
             break;
         }
         SetRecvPKInfo(fd, addr);
+        LOGD(DNET, "open %d for listen udp: %s\n", fd, storage_ntoa(addr));
         return fd;
     }while(0);
     close(fd);
@@ -329,6 +331,7 @@ int ListenUnix(const char* path, const struct listenOption* ops) {
             LOGE("listen error:%s\n", strerror(errno));
             break;
         }
+        LOGD(DNET, "open %d for listen unix: %s\n", fd, path);
         return fd;
     }while(0);
     close(fd);
@@ -369,6 +372,7 @@ int Connect(const struct sockaddr_storage* addr, int type) {
             LOGE("connecting %s error: %s\n", storage_ntoa(addr), strerror(errno));
             break;
         }
+        LOGD(DNET, "connect %d for type %d: %s\n", fd, type, storage_ntoa(addr));
         return fd;
     }while(0);
     close(fd);
@@ -407,6 +411,7 @@ int IcmpSocket(const struct sockaddr_storage* addr, int raw){
         LOGE("connect failed: %s\n", strerror(errno));
         goto ERR;
     }
+    LOGD(DNET, "connect %d for icmp: %s\n", fd, storage_ntoa(addr));
     return fd;
 ERR:
     close(fd);

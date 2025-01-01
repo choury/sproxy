@@ -125,6 +125,7 @@ void TunRWer::ReadData() {
     while(true) {
         Block rbuff(TUN_BUF_LEN);
         int ret = read(getFd(), rbuff.data(), TUN_BUF_LEN);
+        LOGD(DVPN, "read %d bytes from tun\n", ret);
         if(ret <= 0 && errno == EAGAIN) {
             return;
         }

@@ -336,6 +336,7 @@ void StreamRWer::ReadData() {
             break;
         }
         ssize_t ret = read(getFd(), rb.end(), left);
+        LOGD(DRWER, "stream read %d: len: %zd, ret: %zd\n", getFd(), left, ret);
         if (ret > 0) {
             rb.append((size_t) ret);
             ConsumeRData(0);
@@ -365,11 +366,12 @@ ssize_t PacketRWer::Write(std::set<uint64_t>& writed_list) {
         return 0;
     }else if(wbuff.size() == 1) {
         auto bb = wbuff.begin();
-        LOGD(DRWER, "will write: %p: %zd\n", bb->data(), bb->len);
         int ret  = 0;
         if(bb->len > 0) {
             ret = write(getFd(), bb->data(), bb->len);
-            LOGD(DRWER, "write: len: %zd, ret: %d\n", bb->len, ret);
+            LOGD(DRWER, "write %d: len: %zd, ret: %d\n", getFd(), bb->len, ret);
+        }else{
+            LOGD(DRWER, "ignore zero buffer: %p\n", bb->data());
         }
         // ignore error, udp is unreliable
         writed_list = StripWbuff(bb->len);
@@ -386,7 +388,7 @@ ssize_t PacketRWer::Write(std::set<uint64_t>& writed_list) {
         ssize_t ret = writem(getFd(), iovs.data(), iovs.size());
         size_t len = 0;
         if (ret <= 0) {
-            LOGD(DRWER, "writem: iovs: %zd, ret: %zd\n", iovs.size(), ret);
+            LOGD(DRWER, "writem %d: iovs: %zd, ret: %zd\n", getFd(), iovs.size(), ret);
             return ret;
         }
         auto it = wbuff.begin();
@@ -402,7 +404,7 @@ ssize_t PacketRWer::Write(std::set<uint64_t>& writed_list) {
                 break;
             }
         }
-        LOGD(DRWER, "writem: iovs: %zd, ret: %zd/%zd\n", iovs.size(), ret, len);
+        LOGD(DRWER, "writem %d: iovs: %zd, ret: %zd/%zd\n", getFd(), iovs.size(), ret, len);
         return (ssize_t)len;
     }
 }
@@ -410,6 +412,7 @@ ssize_t PacketRWer::Write(std::set<uint64_t>& writed_list) {
 void PacketRWer::ReadData() {
     while(true) {
         ssize_t ret = read(getFd(), rb, sizeof(rb));
+        LOGD(DRWER, "packet read %d: len: %zd, ret: %zd\n", getFd(), sizeof(rb), ret);
         if (ret > 0) {
             readCB({rb, (size_t)ret});
             continue;
