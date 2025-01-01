@@ -15,7 +15,7 @@ jobs:
       matrix:
         # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
         build_type: [Release, Debug]
-        os: [ubuntu-22.04, ubuntu-20.04]
+        os: [ubuntu-24.04, ubuntu-22.04, ubuntu-20.04]
         env: ["CC=gcc CXX=g++", "CC=clang CXX=clang++"]
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
     # You can convert this to a matrix build if you need cross-platform coverage.
@@ -54,7 +54,7 @@ jobs:
         path: build/*.deb
     - if: matrix.build_type == 'Debug'
       name: test
-      run: cd ${{github.workspace}}/test && ./test.sh ../build/
+      run: cd ${{github.workspace}}/test && sudo sysctl -w net.ipv4.ping_group_range='0 2147483647' && ./test.sh ../build/
       timeout-minutes: 10
     - if: matrix.build_type == 'Debug' && ${{ always() }}
       name: Upload test log
@@ -68,7 +68,7 @@ jobs:
       matrix:
         # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
         build_type: [Release, Debug]
-        os: [macos-13, macos-14]
+        os: [macos-15, macos-14, macos-13]
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
     # You can convert this to a matrix build if you need cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
