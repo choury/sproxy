@@ -132,7 +132,9 @@ size_t Guest_sni::sniffer(Buffer&& bb) {
     }
     rwer->SetReadCB([this](Buffer&& bb){return ReadHE(std::move(bb));});
     rx_bytes += len;
-    distribute(status->req, this);
+    if(status->req){
+        distribute(status->req, this);
+    }
     return len;
 }
 
@@ -217,6 +219,8 @@ Forward:
     quic_init_packets.clear();
 #endif
     rwer->SetReadCB([this](Buffer&& bb){return ReadHE(std::move(bb));});
-    distribute(status->req, this);
+    if(status->req) {
+        distribute(status->req, this);
+    }
     return len;
 }

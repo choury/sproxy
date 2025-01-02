@@ -167,20 +167,22 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
     auto now = getmtime();
     pkgLogger logger("resent");
     if(status->sack == nullptr) {
+        int count = 0;
         for(auto& it : status->sent_list){
             //至少需要发送一个包
+            if(count > 0 && it.last_sent + status->rto * status->rto_factor > now) {
+                break;
+            }
             logger.add(it.pac->tcp->getseq(), it.bb.len);
             it.pac->tcp
                     ->setack(status->want_seq)
                     ->setwindow(bufleft(status) >> status->send_wscale);
             tcpSend(status, it.pac, it.bb);
             it.last_sent = now;
-            if(it.last_sent + status->rto * status->rto_factor > now) {
-                break;
-            }
+            count++;
         }
     }else {
-        uint32_t right_edge = status->recv_ack;
+        uint32_t left_edge = status->recv_ack;
         Sack* sack = status->sack;
         if(debug[DVPN].enabled){
             Sack* s = status->sack;
@@ -194,23 +196,26 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
         for(auto& it : status->sent_list) {
             if (it.last_sent != it.first_sent && now - it.last_sent < status->srtt)
                 continue;
+            // [seq, next)
             auto seq = it.pac->tcp->getseq();
+            auto next = seq + it.bb.len;
             while(noafter(sack->left, seq)) { //sack->left <= seq
-                right_edge = sack->right;
+                left_edge = sack->right;
                 sack = sack->next;
                 if(sack == nullptr) {
                     goto ret;
                 }
             }
-            // right_edge <= seq < sack->left
-            if(noafter(right_edge, seq) && before(seq, sack->left)) {
-                logger.add(seq, it.bb.len);
-                it.pac->tcp
-                        ->setack(status->want_seq)
-                        ->setwindow(bufleft(status) >> status->send_wscale);
-                it.last_sent = now;
-                tcpSend(status, it.pac, it.bb);
+            // next <= left_edge
+            if (noafter(next, left_edge)) {
+                continue;
             }
+            logger.add(seq, it.bb.len);
+            it.pac->tcp
+                    ->setack(status->want_seq)
+                    ->setwindow(bufleft(status) >> status->send_wscale);
+            it.last_sent = now;
+            tcpSend(status, it.pac, it.bb);
         }
     }
 ret:
