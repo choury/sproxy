@@ -291,6 +291,7 @@ void Guest3::deleteLater(uint32_t errcode){
         }
     }
     statusmap.clear();
+    std::dynamic_pointer_cast<QuicBase>(rwer)->close(errcode);
     return Server::deleteLater(errcode);
 }
 

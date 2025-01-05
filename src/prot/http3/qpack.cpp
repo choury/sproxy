@@ -214,7 +214,7 @@ int Qpack::push_ins(const void *ins, size_t len) {
             LOGD(DHPACK, "dup index: %d\n", (int)index);
         }
     }
-    abort();
+    return -1;
 }
 
 size_t Qpack_encoder::encode(unsigned char *buf, const std::string& name, const std::string& value) {
@@ -298,6 +298,9 @@ HeaderMap Qpack_decoder::decode(const unsigned char *data, size_t len) {
             }
             pos += l;
             if(T){
+                if(index >= sizeof(static_table)/ sizeof(static_table[0])) {
+                    return decltype(headers){};
+                }
                 name = static_table[index][0];
                 value = static_table[index][1];
                 LOGD(DHPACK, "get qpack %s:[%s] id: %d\n", name.c_str(), value.c_str(), (int)index);
@@ -318,6 +321,9 @@ HeaderMap Qpack_decoder::decode(const unsigned char *data, size_t len) {
             }
             pos += l;
             if(T){
+                if(index >= sizeof(static_table)/ sizeof(static_table[0])) {
+                    return decltype(headers){};
+                }
                 name = static_table[index][0];
                 LOGD(DHPACK, "get qpack key %s id: %d\n", name.c_str(), (int)index);
             }else{

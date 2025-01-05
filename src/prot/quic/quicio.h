@@ -257,7 +257,7 @@ public:
     void sendData(Buffer&& bb);
     void reset(uint64_t id, uint32_t code);
     void setResetHandler(std::function<void(uint64_t id, uint32_t error)> func);
-    void close();
+    void close(uint64_t error);
 
     bool idle(uint64_t id);
     bool canSend(uint64_t id);

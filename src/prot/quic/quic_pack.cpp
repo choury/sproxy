@@ -180,7 +180,6 @@ static int aead_decrypt(const EVP_AEAD* aead,
                           unsigned char *iv,
                           unsigned char *plaintext
 ) {
-    size_t len = SIZE_MAX;
     EVP_AEAD_CTX* ctx = EVP_AEAD_CTX_new(aead, key, EVP_AEAD_key_length(aead), EVP_AEAD_DEFAULT_TAG_LENGTH);
     defer(EVP_AEAD_CTX_free, ctx);
     if(!EVP_AEAD_CTX_init(ctx, aead, key, EVP_AEAD_key_length(aead), EVP_AEAD_DEFAULT_TAG_LENGTH, nullptr)){
@@ -188,8 +187,9 @@ static int aead_decrypt(const EVP_AEAD* aead,
         return -1;
     }
 
+    size_t len = 0;
     if(!EVP_AEAD_CTX_open(ctx,
-        plaintext, &len, len,
+        plaintext, &len, ciphertext_len,
         iv, EVP_AEAD_nonce_length(aead),
         ciphertext, ciphertext_len,
         aad, aad_len))
@@ -1107,6 +1107,10 @@ const char* unpack_frame(const char* data, size_t len, quic_frame* frame){
         return unpack_new_token_frame(pos, &frame->new_token);
     case QUIC_FRAME_PATH_CHALLENGE:
     case QUIC_FRAME_PATH_RESPONSE:
+        if(len - (pos - data) < sizeof(frame->path_data)){
+            LOGE("too short path frame, len: %zd, pos: %zd\n", len, pos - data);
+            return nullptr;
+        }
         memcpy(frame->path_data, pos, sizeof(frame->path_data));
         return pos + sizeof(frame->path_data);
     default:

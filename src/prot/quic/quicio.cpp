@@ -149,12 +149,7 @@ int QuicBase::set_write_secret(SSL* ssl,
     if(quic_secret_set_key(&rwer->contexts[level].write_secret, (const char*)secret, cipher) < 0) {
         return 0;
     }
-    rwer->qos.KeyGot(level);
-    rwer->contexts[level].hasKey = true;
-    if(rwer->ctx) {
-        //drop init key if client mode
-        rwer->dropkey(ssl_encryption_initial);
-    }
+    //we set hasKey on read_secret
     return 1;
 }
 
@@ -478,9 +473,12 @@ void QuicBase::getParams(const uint8_t* data, size_t len) {
             }
             break;
         case quic_stateless_reset_token:
-            LOGD(DQUIC, "get token: %s\n", dumpHex(pos, size).c_str());
-            assert(size == QUIC_TOKEN_LEN);
-            histoken[0] = std::string((char*)pos, QUIC_TOKEN_LEN);
+            if(size == QUIC_TOKEN_LEN) {
+                LOGD(DQUIC, "get token: %s\n", dumpHex(pos, size).c_str());
+                histoken[0] = std::string((char*)pos, QUIC_TOKEN_LEN);
+            }else{
+                LOGE("ignore malformed stateless reset token: %zd\n", size);
+            }
             break;
         case quic_max_udp_payload_size:
             variable_decode(pos, &value);
@@ -805,6 +803,19 @@ void QuicBase::cleanStream(uint64_t id) {
 
 QuicBase::FrameResult QuicBase::handleStreamFrame(uint64_t type, const quic_stream *stream) {
     auto id = stream->id;
+    if(isBidirect(id) ? id > my_max_streams_bidi : id > my_max_streams_uni) {
+        onError(PROTOCOL_ERR, QUIC_STREAM_LIMIT_ERROR);
+        qos.PushFrame(ssl_encryption_application, new quic_frame{
+            .type = QUIC_FRAME_CONNECTION_CLOSE,
+            .close = {
+                .error = QUIC_STREAM_LIMIT_ERROR,
+                .frame_type = type,
+                .reason_len = 0,
+                .reason = nullptr,
+            }
+        });
+        return FrameResult::error;
+    }
     auto itr = openStream(id);
     if(itr == streammap.end()){
         //it is a retransmissions pkg
@@ -828,10 +839,32 @@ QuicBase::FrameResult QuicBase::handleStreamFrame(uint64_t type, const quic_stre
 
         if(std::max(stream->offset + stream->length, want) > status.finSize) {
             onError(PROTOCOL_ERR, QUIC_FINAL_SIZE_ERROR);
+            qos.PushFrame(ssl_encryption_application, new quic_frame{
+                .type = QUIC_FRAME_CONNECTION_CLOSE,
+                .close = {
+                    .error = QUIC_FINAL_SIZE_ERROR,
+                    .frame_type = type,
+                    .reason_len = 0,
+                    .reason = nullptr,
+                }
+            });
             return FrameResult::error;
         }
     }
     uint64_t his_offset = stream->offset + stream->length;
+    if(his_offset > status.my_max_data) {
+        onError(PROTOCOL_ERR, QUIC_FLOW_CONTROL_ERROR);
+        qos.PushFrame(ssl_encryption_application, new quic_frame{
+            .type = QUIC_FRAME_CONNECTION_CLOSE,
+            .close = {
+                .error = QUIC_FLOW_CONTROL_ERROR,
+                .frame_type = type,
+                .reason_len = 0,
+                .reason = nullptr,
+            }
+        });
+        return FrameResult::error;
+    }
     if(his_offset > status.his_offset) {
         status.his_offset = his_offset;
     }
@@ -850,6 +883,15 @@ QuicBase::FrameResult QuicBase::handleStreamFrame(uint64_t type, const quic_stre
     size_t len = stream->length + stream->offset - want;
     if(status.rb.put(start, len) < 0){
         onError(PROTOCOL_ERR, QUIC_FLOW_CONTROL_ERROR);
+        qos.PushFrame(ssl_encryption_application, new quic_frame{
+            .type = QUIC_FRAME_CONNECTION_CLOSE,
+            .close = {
+                .error = QUIC_FLOW_CONTROL_ERROR,
+                .frame_type = type,
+                .reason_len = 0,
+                .reason = nullptr,
+            }
+        });
         return FrameResult::error;
     }
     want += len;
@@ -884,6 +926,15 @@ QuicBase::FrameResult QuicBase::handleResetFrame(const quic_reset *stream) {
 
     if(want > stream->fsize){
         onError(PROTOCOL_ERR, QUIC_FINAL_SIZE_ERROR);
+        qos.PushFrame(ssl_encryption_application, new quic_frame{
+            .type = QUIC_FRAME_CONNECTION_CLOSE,
+            .close = {
+                .error = QUIC_FINAL_SIZE_ERROR,
+                .frame_type = QUIC_FRAME_RESET_STREAM,
+                .reason_len = 0,
+                .reason = nullptr,
+            }
+        });
         return FrameResult::error;
     }
 
@@ -917,6 +968,15 @@ QuicBase::FrameResult QuicBase::handleHandshakeFrames(quic_context *context, con
         return FrameResult::error;
     default:
         onError(SSL_SHAKEHAND_ERR, QUIC_PROTOCOL_VIOLATION);
+        qos.PushFrame(context->level, new quic_frame{
+            .type = QUIC_FRAME_CONNECTION_CLOSE,
+            .close = {
+                .error = QUIC_PROTOCOL_VIOLATION,
+                .frame_type = 0,
+                .reason_len = 0,
+                .reason = nullptr,
+            }
+        });
         return FrameResult::error;
     }
 }
@@ -1175,6 +1235,10 @@ void QuicBase::notifyBlocked(uint64_t id) {
 }
 
 void QuicBase::resendFrames(pn_namespace* ns, quic_frame *frame) {
+    if(isClosing) {
+        frame_release(frame);
+        return;
+    }
     switch(frame->type){
     case QUIC_FRAME_PADDING:
     case QUIC_FRAME_ACK:
@@ -1304,6 +1368,10 @@ int QuicBase::handlePacket(const quic_pkt_header* header, std::vector<const quic
 }
 
 void QuicBase::sendData(Buffer&& bb) {
+    if(isClosing) {
+        LOGD(DQUIC, "drop data after close: %d, len:%zd\n", (int)bb.id, bb.len);
+        return;
+    }
     uint64_t id = bb.id;
     size_t len = bb.len;
     assert(streammap.count(id));
@@ -1345,8 +1413,7 @@ void QuicBase::sendData(Buffer&& bb) {
     }
 }
 
-
-void QuicBase::close() {
+void QuicBase::close(uint64_t error) {
     walkHandler = [this](const quic_pkt_header* header, std::vector<const quic_frame*>& frames) -> int{
         LOGD(DQUIC, "[%" PRIu64"] discard packet after cc: %d\n", header->pn, header->type);
         for(auto frame : frames){
@@ -1383,7 +1450,7 @@ void QuicBase::close() {
 
         quic_frame* frame = new quic_frame;
         frame->type = QUIC_FRAME_CONNECTION_CLOSE_APP;
-        frame->close.error = QUIC_APPLICATION_ERROR;
+        frame->close.error = error;
         frame->close.frame_type = 0;
         frame->close.reason_len = 0;
         frame->close.reason = nullptr;
@@ -1953,11 +2020,11 @@ void QuicRWer::Close(std::function<void()> func) {
     closeCB = std::move(func);
     if(stats == RWerStats::Error) {
         setEvents(RW_EVENT::NONE);
-        AddJob(closeCB, 0, JOB_FLAGS_AUTORELEASE);
+        close_timer = UpdateJob(std::move(close_timer), [this]{closeCB();}, 0);
     }else if(getFd() >= 0) {
         handleEvent = (void (Ep::*)(RW_EVENT))&QuicRWer::closeHE;
         setEvents(RW_EVENT::READ);
-        close();
+        close(QUIC_APPLICATION_ERROR);
     } else {
         return onError(PROTOCOL_ERR, QUIC_NO_ERROR);
     }
@@ -2157,7 +2224,7 @@ void QuicMer::Close(std::function<void()> func) {
         };
         handleEvent = (void (Ep::*)(RW_EVENT)) &QuicMer::closeHE;
         setEvents(RW_EVENT::READ);
-        close();
+        close(QUIC_APPLICATION_ERROR);
     } else {
         //只有一种情况会走到这里，就是对端发送了ABORT信号断开了连接
         func();
