@@ -144,7 +144,7 @@ void TunRWer::ReadData() {
             len -= sizeof(virtio_net_hdr_v1);
         }
 #endif
-        pcap_write_with_generated_ethhdr(pcap, rbuff.data(), len);
+        pcap_write(pcap, rbuff.data(), len);
         auto pac = MakeIp(rbuff.data(), len);
         if(pac == nullptr){
             continue;
@@ -291,13 +291,13 @@ void TunRWer::SendPkg(std::shared_ptr<const Ip> pac, const void* data, size_t le
 #if __linux__
     if(enable_offload) {
         debugString(pac, len - pac->gethdrlen() - sizeof(virtio_net_hdr_v1));
-        pcap_write_with_generated_ethhdr(pcap, (uchar*)data + sizeof(virtio_net_hdr_v1), len - sizeof(virtio_net_hdr_v1));
+        pcap_write(pcap, (uchar*)data + sizeof(virtio_net_hdr_v1), len - sizeof(virtio_net_hdr_v1));
     }else{
 #else
     {
 #endif
         debugString(pac, len - pac->gethdrlen());
-        pcap_write_with_generated_ethhdr(pcap, data, len);
+        pcap_write(pcap, data, len);
     }
     if(write(getFd(), data, len) < 0) {
         LOGE("tunio: write error: %s\n", strerror(errno));

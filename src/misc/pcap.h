@@ -30,7 +30,7 @@ extern "C" {
 
 int pcap_create(const char *file);
 
-int pcap_write_with_generated_ethhdr(int fd, const void *data, size_t len);
+int pcap_write(int fd, const void *data, size_t len);
 
 void pcap_close(int fd);
 
