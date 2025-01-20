@@ -309,6 +309,9 @@ void TunRWer::Send(Buffer&& bb) {
         return;
     }
     auto status = GetStatus(bb.id);
+    if(bb.len == 0) {
+        status->flags |= TUN_SEND_EOF;
+    }
     status->SendPkg(std::move(bb));
 }
 
@@ -366,7 +369,7 @@ void TunRWer::sendMsg(uint64_t id, uint32_t msg) {
              id, getRdnsWithPort(status->src).c_str(), getRdnsWithPort(status->dst).c_str());
         if(status->protocol == Protocol::TCP) {
             SendRst(std::static_pointer_cast<TcpStatus>(status));
-        } else {
+        } else if((status->flags & TUN_SEND_EOF) == 0){
             status->UnReach(IP_ADDR_UNREACH);
         }
         Clean(id);

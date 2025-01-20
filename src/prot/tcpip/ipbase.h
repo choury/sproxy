@@ -33,6 +33,7 @@ struct IpStatus{
     Block*      packet_hdr;
     uint16_t    packet_hdr_len;
 #define  TUN_GSO_OFFLOAD 1
+#define  TUN_SEND_EOF    2
     uint32_t    flags = 0;
 };
 
