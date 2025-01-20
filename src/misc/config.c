@@ -97,6 +97,7 @@ struct options opt = {
     .alter_method      = false,
     .set_dns_route     = false,
     .tun_mode          = false,
+    .tun_fd            = -1,
     .redirect_http     = false,
 
     .policy_read    = NULL,
@@ -211,6 +212,7 @@ static struct option long_options[] = {
     {"forward-header",required_argument, NULL,  0 },
 #if __linux__
     {"tun",           no_argument,       NULL,  0 },
+    {"tun-fd",        required_argument, NULL,  0 },
     {"tproxy",        required_argument, NULL,  0 },
     {"ua",            required_argument, NULL,  0 },
 #endif
@@ -280,6 +282,7 @@ static struct option_detail option_detail[] = {
     {"ssl", "Listen for ssl server (require cert file and key)", option_string, &ssl_listen, NULL},
 #if __linux__
     {"tun", "tun mode (vpn mode, require root privilege)", option_bool, &opt.tun_mode, (void*)true},
+    {"tun-fd", "tun fd (vpn mode, recv fd before execve)", option_int64, &opt.tun_fd, NULL},
     {"tproxy", "tproxy listen (get dst via SO_ORIGINAL_DST)", option_string, &tproxy_listen, (void*)true},
     {"ua", "set user-agent for vpn auto request", option_string, &opt.ua, NULL},
 #endif
@@ -636,6 +639,10 @@ void postConfig(){
     }
     if (opt.set_dns_route && opt.interface == NULL) {
         LOGE("set-dns-route require option interface\n");
+        exit(1);
+    }
+    if (opt.tun_mode && opt.tun_fd >= 0) {
+        LOGE("tun mode and tun-fd can't be used together\n");
         exit(1);
     }
     for(struct arg_list* p = secrets.next; p != NULL; p = p->next){

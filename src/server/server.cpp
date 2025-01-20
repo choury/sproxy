@@ -244,6 +244,10 @@ int main(int argc, char **argv) {
             new Guest_vpn(tun, true);
             LOG("listen on %s for vpn\n", tun_name);
         }
+        if(opt.tun_fd >= 0) {
+            new Guest_vpn(opt.tun_fd, false);
+            LOG("listen on %d for vpn\n", opt.tun_fd);
+        }
 #endif
     }
     if(opt.admin.hostname[0]){

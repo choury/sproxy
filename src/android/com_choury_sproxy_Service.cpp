@@ -73,7 +73,7 @@ static std::string getExternalCacheDir() {
     return extenalCacheDir;
 }
 
-static int vpn_start(int fd){
+static int vpn_start(){
     std::shared_ptr<Cli_server> cli;
     if(opt.admin.hostname[0]){
         int svsk_cli = -1;
@@ -92,7 +92,7 @@ static int vpn_start(int fd){
         }
         cli = std::make_shared<Cli_server>(svsk_cli);
     }
-    new Guest_vpn(fd, false);
+    new Guest_vpn(opt.tun_fd, false);
     LOG("Accepting connections ...\n");
     will_contiune = 1;
     while (will_contiune) {
@@ -148,7 +148,8 @@ extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
 
     jnienv->DeleteLocalRef(cls);
 
-    vpn_start(sockfd);
+    opt.tun_fd = sockfd;
+    vpn_start();
     extenalCacheDir.clear();
     extenalFilesDir.clear();
     jnienv->DeleteGlobalRef(jniobj);

@@ -70,6 +70,7 @@ struct options{
     bool alter_method;
     bool set_dns_route;
     bool tun_mode;
+    int  tun_fd;
     bool redirect_http;
 
     FILE* policy_read;
