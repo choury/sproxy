@@ -477,7 +477,7 @@ void QuicBase::getParams(const uint8_t* data, size_t len) {
                 LOGD(DQUIC, "get token: %s\n", dumpHex(pos, size).c_str());
                 histoken[0] = std::string((char*)pos, QUIC_TOKEN_LEN);
             }else{
-                LOGE("ignore malformed stateless reset token: %zd\n", size);
+                LOGE("ignore malformed stateless reset token: %zd\n", (size_t)size);
             }
             break;
         case quic_max_udp_payload_size:
@@ -1049,32 +1049,44 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
         }
         return FrameResult::ok;
     case QUIC_FRAME_DATA_BLOCKED: {
-        if(my_max_data - my_received_data <= 50 *1024 *1024){
-            my_max_data += 50 *1024 *1024;
+        auto recv_max_data = frame->extra;
+        if(recv_max_data - my_received_data <= 50 *1024 *1024){
+            my_max_data = my_received_data + 50 *1024 *1024;
             quic_frame* frame = new quic_frame;
             frame->type = QUIC_FRAME_MAX_DATA;
             frame->extra = my_max_data;
             qos.PushFrame(ssl_encryption_application, frame);
+        } else {
+            LOGD(DVPN, "No space to expand data size: %zd vs %zd %zd\n",
+                 (size_t)recv_max_data, (size_t)my_max_data, (size_t)my_received_data);
         }
         return FrameResult::ok;
     }
     case QUIC_FRAME_STREAMS_BLOCKED_BI: {
-        if (my_max_streams_bidi - my_received_max_bidistream_id / 4 <= 100) {
-            my_max_streams_bidi += 100;
+        auto recv_max_streams_bidi = frame->extra;
+        if (recv_max_streams_bidi - my_received_max_bidistream_id / 4 <= 100) {
+            my_max_streams_bidi = my_received_max_bidistream_id/ 4  + 100;
             quic_frame *frame = new quic_frame;
             frame->type = QUIC_FRAME_MAX_STREAMS_BI;
             frame->extra = my_max_streams_bidi;
             qos.PushFrame(ssl_encryption_application, frame);
+        } else {
+            LOGD(DVPN, "No space to expand bidi-streams: %zd vs %zd %zd\n",
+                 (size_t)recv_max_streams_bidi, (size_t)my_max_streams_bidi, (size_t)my_received_max_bidistream_id/4);
         }
         return FrameResult::ok;
     }
     case QUIC_FRAME_STREAMS_BLOCKED_UBI: {
-        if (my_max_streams_uni - my_received_max_unistream_id / 4 <= 100) {
-            my_max_streams_uni += 100;
+        auto recv_max_streams_uni = frame->extra;
+        if (recv_max_streams_uni - my_received_max_unistream_id / 4 <= 100) {
+            my_max_streams_uni += my_received_max_unistream_id/4 + 100;
             quic_frame *frame = new quic_frame;
             frame->type = QUIC_FRAME_MAX_STREAMS_UBI;
             frame->extra = my_max_streams_uni;
             qos.PushFrame(ssl_encryption_application, frame);
+        } else {
+            LOGD(DVPN, "No space to expand uni-streams: %zd vs %zd %zd\n",
+                 (size_t)recv_max_streams_uni, (size_t)my_max_streams_uni, (size_t)my_received_max_unistream_id/4);
         }
         return FrameResult::ok;
     }
@@ -1155,13 +1167,17 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
         }
         auto &rb = itr->second.rb;
         auto my_max_data = rb.Offset() + rb.length() + rb.cap();
-        if(my_max_data > itr->second.my_max_data) {
+        auto recv_max_data = frame->max_stream_data.max;
+        if(my_max_data > recv_max_data) {
             itr->second.my_max_data = my_max_data;
             quic_frame *frame = new quic_frame;
             frame->type = QUIC_FRAME_MAX_STREAM_DATA;
             frame->max_stream_data.id = itr->first;
             frame->max_stream_data.max = my_max_data;
             qos.PushFrame(ssl_encryption_application, frame);
+        } else {
+            LOGD(DVPN, "No space to expand stream [%d]: %zd vs %zd vs %zd\n", (int)frame->max_stream_data.id,
+                 (size_t)recv_max_data, (size_t)my_max_data, (size_t)itr->second.my_max_data);
         }
         return FrameResult::ok;
     }
