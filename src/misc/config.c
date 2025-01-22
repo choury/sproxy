@@ -565,19 +565,19 @@ void postConfig(){
             secrets.next = NULL;
         }
     }
-    if(http_listen && parseBind(http_listen, &opt.http)) {
+    if(parseBind(http_listen, &opt.http)) {
         LOGE("wrong http listen: %s\n", http_listen);
         exit(1);
     }
-    if(ssl_listen && parseBind(ssl_listen, &opt.ssl)) {
+    if(parseBind(ssl_listen, &opt.ssl)) {
         LOGE("wrong ssl listen: %s\n", ssl_listen);
         exit(1);
     }
-    if(quic_listen && parseBind(quic_listen, &opt.quic)) {
+    if(parseBind(quic_listen, &opt.quic)) {
         LOGE("wrong quic listen: %s\n", quic_listen);
         exit(1);
     }
-    if(tproxy_listen && parseBind(tproxy_listen, &opt.tproxy)) {
+    if(parseBind(tproxy_listen, &opt.tproxy)) {
         LOGE("wrong tproxy listen: %s\n", tproxy_listen);
         exit(1);
     }
@@ -664,11 +664,11 @@ void postConfig(){
             admin_listen = "unix:/tmp/sproxy.sock";
         }
     }
+#endif
     if(parseBind(admin_listen, &opt.admin)) {
         LOGE("wrong admin listen: %s\n", admin_listen);
         exit(1);
     }
-#endif
 
     SSL_library_init();    // SSL初库始化
     SSL_load_error_strings();  // 载入所有错误信息
