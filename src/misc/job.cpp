@@ -14,25 +14,51 @@ struct job{
     uint32_t flags;
     uint32_t delay_ms;
     uint32_t last_done_ms;
+    job* pre;
+    job* next;
 };
 
-std::set<job*> gjobs;
+job root = {"root", [](){}, 0, 0, 0, nullptr, nullptr};
+
+void static insert_job(job* j){
+    job* pre = &root;
+    job* next = root.next;
+    while(next && next->last_done_ms + next->delay_ms < j->last_done_ms + j->delay_ms){
+        pre = next;
+        next = next->next;
+    }
+    j->pre = pre;
+    j->next = next;
+    pre->next = j;
+    if(next) next->pre = j;
+}
+
+void static remove_job(job* j) {
+    if(j->pre == nullptr) {
+        return;
+    }
+    j->pre->next = j->next;
+    if(j->next) j->next->pre = j->pre;
+    j->pre = nullptr;
+}
+
+
 void jobDeleter::operator()(job *job) {
     if (job == nullptr) {
         return;
     }
+    remove_job(job);
     job->flags |= JOB_DESTROIED;
-    gjobs.erase(job);
     if ((job->flags & JOB_RUNNING) == 0) {
-        LOGD(DJOB, "del a Job %p %s\n", job, job->func_name);
+        LOGD(DJOB, "destory a Job %p %s\n", job, job->func_name);
         delete job;
     } else {
-        LOGD(DJOB, "delay to del a Job %p %s\n", job, job->func_name);
+        LOGD(DJOB, "delay to destory a Job %p %s\n", job, job->func_name);
     }
 }
 
 uint32_t JobPending(Job& job) {
-    if(job == nullptr || gjobs.count(job.get()) == 0) {
+    if(job == nullptr || job->pre == nullptr) {
         return 0;
     }
     uint32_t next_do = job->delay_ms + job->last_done_ms;
@@ -42,15 +68,19 @@ uint32_t JobPending(Job& job) {
 
 
 Job addjob_with_name(std::function<void()> func, const char *func_name, uint32_t interval_ms, uint32_t flags) {
+    auto now = getmtime();
     job* j = new job{
             func_name,
             std::move(func),
             flags,
             interval_ms,
-            getmtime(),
+            now,
+            nullptr,
+            nullptr,
     };
     LOGD(DJOB, "add a Job %p %s by %d\n", j, func_name, interval_ms);
-    gjobs.insert(j);
+    insert_job(j);
+
     if(flags & JOB_FLAGS_AUTORELEASE){
         return nullptr;
     }
@@ -67,7 +97,8 @@ Job updatejob_with_name(Job job, std::function<void()> func, const char *func_na
     job->delay_ms = interval_ms;
     job->last_done_ms = getmtime();
     job->func_name = func_name;
-    gjobs.insert(job.get());
+    remove_job(job.get());
+    insert_job(job.get());
     return job;
 }
 
@@ -75,17 +106,19 @@ Job updatejob_with_name(Job job, std::function<void()> func, const char *func_na
 uint32_t do_delayjob(){
     uint32_t now = getmtime();
     std::list<job*> jobs_todo;
-    for(auto j = gjobs.begin(); j != gjobs.end();) {
-        uint32_t diff = now - (*j)->last_done_ms;
-        assert(((*j)->flags & JOB_DESTROIED) == 0);
-        if(diff < (*j)->delay_ms) {
-            j++;
-            continue;
+    job* j = root.next;
+    while(j) {
+        uint32_t diff = now - j->last_done_ms;
+        assert((j->flags & JOB_DESTROIED) == 0);
+        if(diff < j->delay_ms){
+            break;
         }
-        LOGD(DJOB, "will do Job %p %s diff %u\n", (*j), (*j)->func_name, diff);
-        (*j)->flags |= JOB_RUNNING;
-        jobs_todo.push_back(*j);
-        j = gjobs.erase(j);
+
+        LOGD(DJOB, "will do Job %p %s diff %u\n", j, j->func_name, diff);
+        j->flags |= JOB_RUNNING;
+        jobs_todo.push_back(j);
+        remove_job(j);
+        j = j->next;
     }
     for(auto j: jobs_todo){
         if(j->flags & JOB_DESTROIED){
@@ -109,11 +142,11 @@ uint32_t do_delayjob(){
 #else
     uint32_t min_interval = 60000; //1min
 #endif
-    for(auto j: gjobs){
-        uint32_t left = j->delay_ms + j->last_done_ms - now;
-        if(left < min_interval){
-            min_interval = left;
-        }
+    now = getmtime();
+    if(root.next){
+        job* j = root.next;
+        uint32_t next_do = j->delay_ms + j->last_done_ms;
+        min_interval = next_do > now ? next_do-now : 0;
     }
     return min_interval;
 }
@@ -121,8 +154,10 @@ uint32_t do_delayjob(){
 void dump_job(Dumper dp, void* param){
     dp(param, "Job queue:\n");
     uint32_t now = getmtime();
-    for(auto j: gjobs){
+    job* j = root.next;
+    while(j) {
         uint32_t left = j->delay_ms + j->last_done_ms - now;
         dp(param, "  %p %s: %d/%d\n", j, j->func_name, left, j->delay_ms);
+        j = j->next;
     }
 }
