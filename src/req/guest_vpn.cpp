@@ -78,7 +78,7 @@ Guest_vpn::Guest_vpn(int fd, bool enable_offload): Requester(nullptr) {
             if(status.res)
                 status.res->pull();
             if(status.rwer)
-                status.rwer->Unblock(0);
+                status.rwer->pull(id);
         }
     });
     std::dynamic_pointer_cast<TunRWer>(rwer)->setResetHandler([this](uint64_t id, uint32_t){

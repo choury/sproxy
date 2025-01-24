@@ -402,12 +402,13 @@ static void dumpConnection(Dumper dp, void* param,
     switch(status_->protocol) {
     case Protocol::TCP: {
         auto status = std::static_pointer_cast<TcpStatus>(status_);
-        dp(param, "  0x%lx: <tcp> %s -> %s, srtt=%zd, state=%d, wlist: %zd, rlen: %zd\n",
+        dp(param, "  0x%lx: <tcp> %s -> %s, srtt=%zd, state=%d, wlist: %zd, rlen: %zd, window: %zd\n",
            value.first.first,
            std::string(storage_ntoa(&status->src)).c_str(),
            std::string(storage_ntoa(&status->dst)).c_str(),
            (size_t) status->srtt, status->state,
-           status->sent_list.size(), status->rbuf.length());
+           status->sent_list.size(), status->rbuf.length(),
+           status->Cap());
         break;
     }
     case Protocol::UDP: {

@@ -100,7 +100,7 @@ static void tcpSend(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, 
             hdr->gso_type = VIRTIO_NET_HDR_GSO_NONE;
         }
         hdr->hdr_len = pac->gethdrlen();
-        hdr->gso_size = pac->tcp->getmss();
+        hdr->gso_size = status->mss;
         hdr->csum_start = hdr->hdr_len - pac->tcp->hdrlen;
         hdr->csum_offset = 16;
     }
@@ -150,7 +150,9 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
         return;
     }
     auto status = status_.lock();
-    assert(!status->sent_list.empty());
+    if(status->sent_list.empty()) {
+        return;
+    }
     if (status->dupack >= 3) {
         LOGD(DVPN, "%s getdupack: %d, resent packet\n", storage_ntoa(&status->src), status->dupack);
         status->dupack = 0;
@@ -280,7 +282,7 @@ void SynProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, B
     if((flag & TH_SYN) == 0 || (flag & TH_ACK) != 0) {
         LOGD(DVPN, "reply rst packets except syn\n");
         status->sent_seq = pac->tcp->getack();
-        status->want_seq = seq + 1;
+        status->want_seq = seq;
         SendRst(status);
         status->errCB(pac, TCP_RESET_ERR);
         return;
@@ -406,11 +408,23 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
             return;
         }
 
-        if(status->sent_list.empty() || before(ack, status->recv_ack)) {
+        if(before(ack, status->recv_ack)) {
+            LOG("%s get ack from old seq (%u/%u), ignore it\n", storage_ntoa(&status->src), ack, status->recv_ack);
             goto left;
         }
         if(status->options & (1 << TCPOPT_SACK_PERMITTED)) {
             pac->tcp->getsack(&status->sack);
+            //filter sack which is earlier than recv_ack
+            Sack* sack = status->sack;
+            while(sack) {
+                if(after(sack->left, status->recv_ack)) {
+                    break;
+                }
+                Sack* prev = sack;
+                sack = sack->next;
+                free(prev);
+            }
+            status->sack = sack;
         }
         if(ack == status->recv_ack && (status->flags & TCP_KEEPALIVING) == 0) {
             status->dupack ++;

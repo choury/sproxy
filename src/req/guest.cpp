@@ -93,7 +93,7 @@ int Guest::mread(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> da
     }, data);
 }
 
-void Guest::WriteHE(uint64_t){
+void Guest::WriteHE(uint64_t id){
     if(statuslist.empty()){
         return;
     }
@@ -104,6 +104,9 @@ void Guest::WriteHE(uint64_t){
     }
     if(status.res){
         status.res->pull();
+    }
+    if(status.rwer){
+        status.rwer->pull(id);
     }
 }
 

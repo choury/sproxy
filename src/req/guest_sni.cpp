@@ -1,15 +1,16 @@
 #include "guest_sni.h"
-#include "guest3.h"
 #include "prot/tls.h"
 #include "prot/sslio.h"
-#include "prot/quic/quic_pack.h"
-#include "prot/quic/quicio.h"
 #include "misc/util.h"
 #include "misc/net.h"
 #include "misc/config.h"
 #include "misc/defer.h"
 #include "res/responser.h"
 #include "common/version.h"
+
+#ifdef HAVE_QUIC
+#include "guest3.h"
+#endif
 
 #include <stdlib.h>
 #include <inttypes.h>
@@ -30,7 +31,7 @@ Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(f
     }else {
         LOGF("unknown socket type: %d\n", type);
     }
-    
+
     Http_Proc = &Guest_sni::AlwaysProc;
     user_agent = generateUA(opt.ua, "", 0);
 }
@@ -61,8 +62,12 @@ Guest::ReqStatus* Guest_sni::forward(const char *hostname, Protocol prot, uint64
         return nullptr;
     }
 
+#ifdef HAVE_QUIC
     if(shouldNegotiate(hostname)) {
         if(prot == Protocol::TCP) {
+#else
+    if(shouldNegotiate(hostname) && prot == Protocol::TCP) {
+#endif
             auto ctx = initssl(0, hostname);
             auto srwer = std::make_shared<SslMer>(
                     ctx, rwer->getSrc(),
@@ -70,6 +75,7 @@ Guest::ReqStatus* Guest_sni::forward(const char *hostname, Protocol prot, uint64
                     [this, id] { return rwer->cap(id); });
             statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
             new Guest(srwer);
+#ifdef HAVE_QUIC
         } else {
             auto ctx   = initssl(1, hostname);
             auto srwer = std::make_shared<QuicMer>(
@@ -79,6 +85,7 @@ Guest::ReqStatus* Guest_sni::forward(const char *hostname, Protocol prot, uint64
             statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
             new Guest3(srwer);
         }
+#endif
     } else {
         char buff[HEADLENLIMIT];
         int slen;
@@ -198,6 +205,10 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
     }
 Forward:
     LOGD(DQUIC, "[sni] forward to %s\n", hostname);
+#else
+    (void)length;
+    (void)max_off;
+    (void)ret;
 #endif
     auto status = forward(hostname, Protocol::UDP, bb.id);
     if(status == nullptr) {

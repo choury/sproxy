@@ -18,7 +18,7 @@ size_t MemRWer::rlength(uint64_t) {
 }
 
 ssize_t MemRWer::cap(uint64_t) {
-    return cap_cb();
+    return cap_cb() - wlen;
 }
 
 void MemRWer::SetConnectCB(std::function<void (const sockaddr_storage &)> cb){
@@ -114,11 +114,14 @@ ssize_t MemRWer::Write(std::set<uint64_t>& writed_list) {
         size_t blen = it->len;
         if (blen) {
             ret = read_cb(std::ref(*it));
+            LOGD(DRWER, "read_cb %d: len: %zd, ret: %zd\n", (int)it->id, blen, ret);
         } else {
             assert(flags & RWER_SHUTDOWN);
             ret = read_cb(Buffer{nullptr, it->id});
+            LOGD(DRWER, "read_cb %d EOF\n", (int)it->id);
         }
         if(ret < 0){
+            delEvents(RW_EVENT::WRITE);
             return ret;
         }
         writed_list.emplace(it->id);

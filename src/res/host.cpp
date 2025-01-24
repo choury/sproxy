@@ -262,8 +262,8 @@ ssize_t Host::DataProc(Buffer& bb) {
         rwer->delEvents(RW_EVENT::READ);
         return -1;
     }
-    LOGD(DHTTP, "<host> DataProc %" PRIu64 ": cap:%zu, send:%d/%zu\n",
-         status.req->header->request_id, bb.len, cap, rx_bytes);
+    LOGD(DHTTP, "<host> DataProc %" PRIu64 ": cap:%d, send:%zd/%zu\n",
+         status.req->header->request_id, cap, bb.len, rx_bytes);
     if((size_t)cap < bb.len) {
         auto cbb = bb;
         cbb.truncate(cap);

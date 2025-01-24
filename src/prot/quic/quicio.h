@@ -338,6 +338,13 @@ public:
     virtual bool isTls() override {
         return true;
     }
+    virtual bool idle(uint64_t id) override {
+        return QuicBase::idle(id);
+    }
+    virtual ssize_t cap(uint64_t id) override {
+        return window(id);
+    }
+
     virtual void Close(std::function<void()> func) override;
     virtual void dump_status(Dumper dp, void* param) override;
     virtual size_t mem_usage() override;

@@ -33,6 +33,10 @@ public:
     }
     virtual void push(std::variant<Buffer, Signal> data);
     virtual void detach();
+    virtual void pull(uint64_t id) {
+        writeCB(id);
+        addEvents(RW_EVENT::WRITE);
+    }
 
     void SetConnectCB(std::function<void(const sockaddr_storage&)> connectCB);
     virtual void Close(std::function<void()> func) override;
