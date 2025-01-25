@@ -17,6 +17,7 @@
 #include <sys/event.h>
 #else
 #include <sys/epoll.h>
+#include <sys/signalfd.h>
 #endif
 
 extern int efd;
@@ -247,6 +248,10 @@ int event_loop(uint32_t timeout_ms){
     }
     for(int i = 0; i < c; ++i){
         Ep *ep = (Ep*)events[i].udata;
+        if (events[i].filter == EVFILT_SIGNAL) {
+            (ep->*ep->handleEvent)((RW_EVENT)events[i].ident);
+            continue;
+        }
         RW_EVENT event = convertKevent(events[i]);
         LOGD(DEVENT, "pending event %d: %s\n", ep->getFd(), events_string[int(event)]);
         if(pending_events.count(ep)){
@@ -272,3 +277,64 @@ int event_loop(uint32_t timeout_ms){
     return 0;
 }
 
+
+Sign::Sign():Ep(-1) {
+#if __linux__
+    sigset_t mask;
+    sigemptyset(&mask);
+    setFd(signalfd(-1, &mask, SFD_NONBLOCK | SFD_CLOEXEC));
+#endif
+    handleEvent = (void (Ep::*)(RW_EVENT))&Sign::defaultHE;
+}
+
+
+int Sign::add(int sig, sig_t handler) {
+    sigmap.emplace(sig, handler);
+#if __APPLE__
+    signal(sig, SIG_IGN);
+    struct kevent sigevent;
+    EV_SET(&sigevent, sig, EVFILT_SIGNAL, EV_ADD | EV_ENABLE, 0, 0, this);
+    return kevent(efd, &sigevent, 1, nullptr, 0, nullptr);
+#endif
+#if __linux__
+    sigset_t mask;
+    sigemptyset(&mask);
+    for(auto& i: sigmap){
+        sigaddset(&mask, i.first);
+    }
+    sigprocmask(SIG_BLOCK, &mask, NULL);
+    addEvents(RW_EVENT::READ);
+    return signalfd(getFd(), &mask, SFD_NONBLOCK | SFD_CLOEXEC);
+#endif
+}
+
+void Sign::defaultHE(RW_EVENT events) {
+#if __APPLE__
+    int signal = int(events);
+#endif
+#if __linux__
+    assert(events == RW_EVENT::READ);
+    (void)events;
+    struct signalfd_siginfo info;
+    ssize_t ret = read(getFd(), &info, sizeof(info));
+    if(ret != sizeof(info)){
+        LOGE("read signalfd failed: %s\n", strerror(errno));
+        return;
+    }
+    int signal = info.ssi_signo;
+#endif
+    if(sigmap.count(signal)){
+        sigmap[signal](signal);
+    }
+}
+
+Sign::~Sign() {
+    for(auto& i: sigmap){
+        signal(i.first, SIG_DFL);
+#if __APPLE__
+        struct kevent sigevent;
+        EV_SET(&sigevent, i.first, EVFILT_SIGNAL, EV_DELETE, 0, 0, nullptr);
+        kevent(efd, &sigevent, 1, nullptr, 0, nullptr);
+#endif
+    }
+}

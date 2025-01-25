@@ -5,6 +5,7 @@
 #include "req/cli.h"
 #include "req/rguest2.h"
 #include "misc/config.h"
+#include "misc/strategy.h"
 #include "prot/tls.h"
 #include "bpf/bpf.h"
 
@@ -110,6 +111,13 @@ static int ListenLocalhostUdp(uint16_t port, int fd[2], const listenOption* ops)
 
 int main(int argc, char **argv) {
     parseConfig(argc, argv);
+    Sign sign;
+    sign.add(SIGHUP,  (sig_t)reloadstrategy);
+    sign.add(SIGUSR1, (sig_t)(void(*)())dump_stat);
+    sign.add(SIGUSR2, (sig_t)exit_loop);
+#if Backtrace_FOUND
+    signal(SIGABRT, dump_trace);
+#endif
     std::vector<std::shared_ptr<Ep>> servers;
     if(opt.rproxy_name) {
         new Rguest2(&opt.Server, opt.rproxy_name);

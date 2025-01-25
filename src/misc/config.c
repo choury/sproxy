@@ -674,12 +674,6 @@ void postConfig(){
     SSL_load_error_strings();  // 载入所有错误信息
     signal(SIGPIPE, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
-#if Backtrace_FOUND
-    signal(SIGABRT, dump_trace);
-#endif
-    signal(SIGHUP,  (sig_t)reloadstrategy);
-    signal(SIGUSR1, (sig_t)(void(*)())dump_stat);
-    signal(SIGUSR2, (sig_t)exit_loop);
     reloadstrategy();
     srandom(time(NULL));
     setvbuf(stdout, NULL, _IOLBF, BUFSIZ);

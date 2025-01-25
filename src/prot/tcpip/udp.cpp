@@ -15,6 +15,8 @@ static void makeUdp(std::shared_ptr<UdpStatus> status, std::shared_ptr<Ip> pac, 
         hdr->csum_start = hdr->hdr_len - sizeof(udphdr);
         hdr->csum_offset = 6;
     }
+#else
+    (void)status;
 #endif
 }
 
