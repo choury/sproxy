@@ -3,6 +3,7 @@
 #include "misc/pcap.h"
 #include "misc/config.h"
 #include "misc/util.h"
+#include "misc/defer.h"
 #include "res/fdns.h"
 
 #include <errno.h>
@@ -343,6 +344,9 @@ size_t TunRWer::DataProc(std::shared_ptr<const Ip> pac, Buffer&& bb) {
         return 0;
     }
     bb.id = GetId(pac);
+    assert(!(flags & RWER_READING));
+    flags |= RWER_READING;
+    defer([this]{ flags &= ~RWER_READING;});
     return readCB(std::move(bb));
 }
 

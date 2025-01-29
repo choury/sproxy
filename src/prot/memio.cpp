@@ -1,11 +1,13 @@
 #include "memio.h"
 #include "misc/util.h"
+#include "misc/defer.h"
 #include <inttypes.h>
 
 MemRWer::MemRWer(const Destination& src,
-                 std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb,
+                 std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> write_cb,
+                 std::function<void(uint64_t)> read_cb,
                  std::function<ssize_t()> cap_cb):
-    FullRWer([](int, int){}), read_cb(std::move(read_cb)), cap_cb(std::move(cap_cb))
+    FullRWer([](int, int){}), write_cb(std::move(write_cb)), read_cb(std::move(read_cb)), cap_cb(std::move(cap_cb))
 {
     memcpy(&this->src, &src, sizeof(Destination));
 }
@@ -32,7 +34,7 @@ void MemRWer::SetConnectCB(std::function<void (const sockaddr_storage &)> cb){
 void MemRWer::Close(std::function<void()> func) {
     RWer::Close([this, func = std::move(func)] {
         if(stats != RWerStats::Error) {
-            read_cb(CHANNEL_ABORT);
+            write_cb(CHANNEL_ABORT);
         }
         func();
     });
@@ -81,7 +83,7 @@ void MemRWer::push(std::variant<Buffer, Signal> data) {
 }
 
 void MemRWer::detach() {
-    read_cb = [](std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data) -> int{
+    write_cb = [](std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data) -> int{
         if(auto bb = std::get_if<Buffer>(&data)) {
             return (int)bb->len;
         }
@@ -90,15 +92,20 @@ void MemRWer::detach() {
         }
         return 0;
     };
+    read_cb = [](uint64_t){};
     cap_cb = []{return 0;};
 }
 
 
 void MemRWer::ConsumeRData(uint64_t id) {
+    assert(!(flags & RWER_READING));
+    flags |= RWER_READING;
+    defer([this]{ flags &= ~RWER_READING;});
     if(rb.length()){
         Buffer wb = rb.get();
         wb.id = id;
         rb.consume(readCB(std::move(wb)));
+        read_cb(id);
     }
     delEvents(RW_EVENT::READ);
     if(isEof() && (flags & RWER_EOFDELIVED) == 0){
@@ -113,12 +120,12 @@ ssize_t MemRWer::Write(std::set<uint64_t>& writed_list) {
         ssize_t ret = 0;
         size_t blen = it->len;
         if (blen) {
-            ret = read_cb(std::ref(*it));
-            LOGD(DRWER, "read_cb %d: len: %zd, ret: %zd\n", (int)it->id, blen, ret);
+            ret = write_cb(std::ref(*it));
+            LOGD(DRWER, "write_cb %d: len: %zd, ret: %zd\n", (int)it->id, blen, ret);
         } else {
             assert(flags & RWER_SHUTDOWN);
-            ret = read_cb(Buffer{nullptr, it->id});
-            LOGD(DRWER, "read_cb %d EOF\n", (int)it->id);
+            ret = write_cb(Buffer{nullptr, it->id});
+            LOGD(DRWER, "write_cb %d EOF\n", (int)it->id);
         }
         if(ret < 0){
             delEvents(RW_EVENT::WRITE);
@@ -154,6 +161,10 @@ void MemRWer::dump_status(Dumper dp, void* param) {
 
 
 void PMemRWer::push_data(Buffer&& bb) {
+    assert(!(flags & RWER_READING));
+    flags |= RWER_READING;
+    defer([this]{ flags &= ~RWER_READING;});
+
     assert(stats != RWerStats::ReadEOF);
     LOGD(DRWER, "<PMemRWer> push_data [%" PRIu32"]: %zd, id:%" PRIu64", refs: %zd\n",
          flags, bb.len, bb.id, bb.refs());

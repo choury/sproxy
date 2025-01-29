@@ -358,6 +358,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
             status.rwer = std::make_shared<MemRWer>(
                 addr,
                 [this, id](auto&& data) { return mread(id, std::forward<decltype(data)>(data)); },
+                [this, id](uint64_t) { rwer->Unblock(id); },
                 [this, id] { return rwer->cap(id); });
             new Guest(status.rwer);
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
@@ -368,6 +369,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                 auto wrwer = std::make_shared<SslMer>(
                     ctx, addr,
                     [this, id](auto&& data) { return mread(id, std::forward<decltype(data)>(data)); },
+                    [this, id](uint64_t) { rwer->Unblock(id); },
                     [this, id] { return rwer->cap(id); });
                 wrwer->set_server_name(status.host);
                 status.rwer = wrwer;
@@ -376,6 +378,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                 status.rwer = std::make_shared<MemRWer>(
                     addr,
                     [this, id](auto&& data) { return mread(id, std::forward<decltype(data)>(data)); },
+                    [this, id](uint64_t) { rwer->Unblock(id); },
                     [this, id] { return rwer->cap(id); });
                 new Guest_sni(status.rwer, status.host, generateUA(opt.ua, status.prog, 0).c_str());
             }
@@ -401,6 +404,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
             auto mrwer = std::make_shared<PMemRWer>(
                 addr,
                 [this, id](auto&& data) { return mread(id, std::forward<decltype(data)>(data)); },
+                [this, id](uint64_t) { rwer->Unblock(id); },
                 [this, id] { return rwer->cap(id); });
             FDns::GetInstance()->query(id, mrwer);
             status.rwer = mrwer;
@@ -411,6 +415,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                 auto wrwer = std::make_shared<QuicMer>(
                     ctx, addr,
                     [this, id](auto&& data) { return mread(id, std::forward<decltype(data)>(data)); },
+                    [this, id](uint64_t) { rwer->Unblock(id); },
                     [this, id] { return rwer->cap(id); });
                 status.rwer = wrwer;
                 new Guest3(wrwer);
@@ -418,6 +423,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                 status.rwer = std::make_shared<PMemRWer>(
                     addr,
                     [this, id](auto&& data) { return mread(id, std::forward<decltype(data)>(data)); },
+                    [this, id](uint64_t) { rwer->Unblock(id); },
                     [this, id] { return rwer->cap(id); });
                 new Guest_sni(status.rwer, status.host, generateUA(opt.ua, status.prog, 0).c_str());
             }

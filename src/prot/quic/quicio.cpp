@@ -6,6 +6,7 @@
 #include "quic_pack.h"
 #include "misc/net.h"
 #include "misc/util.h"
+#include "misc/defer.h"
 #include "prot/tls.h"
 #include "prot/multimsg.h"
 #include <openssl/err.h>
@@ -1933,6 +1934,9 @@ void QuicRWer::onConnected() {
 }
 
 size_t QuicRWer::onRead(Buffer&& bb) {
+    assert(!(flags & RWER_READING));
+    flags |= RWER_READING;
+    defer([this]{ flags &= ~RWER_READING;});
     return readCB(std::move(bb));
 }
 
@@ -2151,9 +2155,10 @@ size_t QuicRWer::mem_usage() {
 }
 
 QuicMer::QuicMer(SSL_CTX *ctx, const Destination& src,
-                 std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb,
+                 std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> write_cb,
+                 std::function<void(uint64_t)> read_cb,
                  std::function<ssize_t()> cap_cb):
-        QuicBase(ctx), MemRWer(src, std::move(read_cb), std::move(cap_cb))
+        QuicBase(ctx), MemRWer(src, std::move(write_cb), std::move(read_cb), std::move(cap_cb))
 {
 }
 
@@ -2163,7 +2168,7 @@ size_t QuicMer::getWritableSize() {
 
 ssize_t QuicMer::writem(const struct iovec *iov, int iovcnt) {
     for (int i = 0; i < iovcnt; i++) {
-        if(read_cb(Buffer{iov[i].iov_base, (size_t)iov[i].iov_len}) < 0){
+        if(write_cb(Buffer{iov[i].iov_base, (size_t)iov[i].iov_len}) < 0){
             return i;
         }
     }
@@ -2184,6 +2189,9 @@ void QuicMer::onError(int type, int code) {
 }
 
 size_t QuicMer::onRead(Buffer&& bb) {
+    assert(!(flags & RWER_READING));
+    flags |= RWER_READING;
+    defer([this]{ flags &= ~RWER_READING;});
     return readCB(std::move(bb));
 }
 
@@ -2235,7 +2243,7 @@ void QuicMer::Close(std::function<void()> func) {
     flags |= RWER_CLOSING;
     if(getFd() >= 0) {
         closeCB = [this, func = std::move(func)] {
-            read_cb(CHANNEL_ABORT);
+            write_cb(CHANNEL_ABORT);
             func();
         };
         handleEvent = (void (Ep::*)(RW_EVENT)) &QuicMer::closeHE;

@@ -81,8 +81,8 @@ bool Proxy3::DataProc(Buffer& bb){
             return true;
         }
         if(status.res->cap() < (int)bb.len){
-            LOGE("[%" PRIu64 "]: <proxy3> (%" PRIu64") the guest's write buff is full (%s)\n",
-                 status.req->header->request_id, bb.id, status.req->header->geturl().c_str());
+            LOGE("[%" PRIu64 "]: <proxy3> (%" PRIu64") the guest's write buff is full (%s) %d vs %zd\n",
+                 status.req->header->request_id, bb.id, status.req->header->geturl().c_str(), status.res->cap(), bb.len);
             return false;
         }
         status.res->send(std::move(bb));

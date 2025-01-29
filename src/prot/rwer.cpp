@@ -1,6 +1,7 @@
 #include "rwer.h"
 #include "common/common.h"
 #include "misc/net.h"
+#include "misc/defer.h"
 
 #include <unistd.h>
 #include <assert.h>
@@ -157,9 +158,7 @@ void RWer::defaultHE(RW_EVENT events){
         return;
     }
     if (!!(events & RW_EVENT::READ) || !!(events & RW_EVENT::READEOF)){
-        flags |= RWER_READING;
         ReadData();
-        flags &= ~RWER_READING;
     }
     if((flags & RWER_CLOSING) || stats == RWerStats::Error){
         return;
@@ -222,7 +221,6 @@ void RWer::Unblock(uint64_t id){
     if(flags & RWER_READING){
         return;
     }
-    flags |= RWER_READING;
     switch(stats){
     case RWerStats::Connected:
         if(rlength(id) > 0) {
@@ -239,7 +237,6 @@ void RWer::Unblock(uint64_t id){
     default:
         break;
     }
-    flags &= ~RWER_READING;
 }
 
 void RWer::ErrorHE(int ret, int code) {
@@ -336,6 +333,9 @@ ssize_t FullRWer::cap(uint64_t) {
 }
 
 void FullRWer::ConsumeRData(uint64_t id) {
+    assert(!(flags & RWER_READING));
+    flags |= RWER_READING;
+    defer([this]{ flags &= ~RWER_READING;});
     readCB({nullptr, id});
 }
 

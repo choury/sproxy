@@ -332,7 +332,8 @@ protected:
     virtual void ConsumeRData(uint64_t) override;
 public:
     explicit QuicMer(SSL_CTX *ctx, const Destination& src,
-                     std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb,
+                     std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> write_cb,
+                     std::function<void(uint64_t)> read_cb,
                      std::function<ssize_t()> cap_cb);
 
     virtual bool isTls() override {
@@ -340,9 +341,6 @@ public:
     }
     virtual bool idle(uint64_t id) override {
         return QuicBase::idle(id);
-    }
-    virtual ssize_t cap(uint64_t id) override {
-        return window(id);
     }
 
     virtual void Close(std::function<void()> func) override;

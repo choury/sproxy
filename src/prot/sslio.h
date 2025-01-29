@@ -110,9 +110,10 @@ protected:
     }
 public:
     SslMer(SSL_CTX* ctx, const Destination& src,
-           std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb,
+           std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> write_cb,
+           std::function<void(uint64_t)> read_cb,
            std::function<ssize_t()> cap_cb):
-      SslRWerBase(ctx), MemRWer(src, std::move(read_cb), std::move(cap_cb))
+      SslRWerBase(ctx), MemRWer(src, std::move(write_cb), std::move(read_cb), std::move(cap_cb))
     {
         this->ctx = ctx;
     }

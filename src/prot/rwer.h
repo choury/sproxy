@@ -41,6 +41,7 @@ protected:
     std::list<Buffer> wbuff;
     size_t            wlen = 0;
     //返回值是处理的数据长度，返回len表示数据处理完毕，返回0表示数据完全没有被消费
+    //!!readCB不可重入，调用者需通过 RWER_READING来保证这一点
     std::function<size_t(Buffer&& bb)> readCB;
     std::function<void(uint64_t id)> writeCB;
     std::function<void(int ret, int code)> errorCB;

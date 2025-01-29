@@ -61,6 +61,7 @@ Guest::ReqStatus* Guest_sni::forward(const char *hostname, Protocol prot, uint64
         LOGE("Guest_sni: empty hostname\n");
         return nullptr;
     }
+    assert(statuslist.empty());
 
 #ifdef HAVE_QUIC
     if(shouldNegotiate(hostname)) {
@@ -72,6 +73,7 @@ Guest::ReqStatus* Guest_sni::forward(const char *hostname, Protocol prot, uint64
             auto srwer = std::make_shared<SslMer>(
                     ctx, rwer->getSrc(),
                     [this](auto &&data) { return mread(std::forward<decltype(data)>(data)); },
+                    [this, id](uint64_t) { rwer->Unblock(id); },
                     [this, id] { return rwer->cap(id); });
             statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
             new Guest(srwer);
@@ -81,6 +83,7 @@ Guest::ReqStatus* Guest_sni::forward(const char *hostname, Protocol prot, uint64
             auto srwer = std::make_shared<QuicMer>(
                     ctx, rwer->getSrc(),
                     [this](auto &&data) { return mread(std::forward<decltype(data)>(data)); },
+                    [this, id](uint64_t) { rwer->Unblock(id); },
                     [this, id] { return rwer->cap(id); });
             statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
             new Guest3(srwer);

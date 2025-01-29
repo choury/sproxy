@@ -3,6 +3,7 @@
 #include "dns/resolver.h"
 #include "misc/util.h"
 #include "misc/net.h"
+#include "misc/defer.h"
 
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -314,6 +315,9 @@ size_t StreamRWer::rlength(uint64_t) {
 }
 
 void StreamRWer::ConsumeRData(uint64_t id) {
+    assert(!(flags & RWER_READING));
+    flags |= RWER_READING;
+    defer([this]{ flags &= ~RWER_READING;});
     if(rb.length()){
         Buffer wb = rb.get();
         assert(wb.len != 0);
@@ -410,6 +414,9 @@ ssize_t PacketRWer::Write(std::set<uint64_t>& writed_list) {
 }
 
 void PacketRWer::ReadData() {
+    assert(!(flags & RWER_READING));
+    flags |= RWER_READING;
+    defer([this]{ flags &= ~RWER_READING;});
     while(true) {
         ssize_t ret = read(getFd(), rb, sizeof(rb));
         LOGD(DRWER, "packet read %d: len: %zd, ret: %zd\n", getFd(), sizeof(rb), ret);

@@ -8,7 +8,8 @@ class MemRWer: public FullRWer{
 protected:
     Destination src;
     CBuffer rb;
-    std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb;
+    std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> write_cb;
+    std::function<void(uint64_t)> read_cb;
     std::function<ssize_t()> cap_cb;
     std::function<void(const sockaddr_storage&)> connectCB = [](const sockaddr_storage&){};
     void connected(const sockaddr_storage& addr);
@@ -22,9 +23,10 @@ protected:
     virtual void push_data(Buffer&& bb);
     virtual void push_signal(Signal s);
 public:
-    //read_cb act like write, return bytes handled
+    //write_cb act like write, return bytes handled
     explicit MemRWer(const Destination& src,
-                     std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> read_cb,
+                     std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> write_cb,
+                     std::function<void(uint64_t)> read_cb,
                      std::function<ssize_t()> cap_cb);
     ~MemRWer() override;
 
@@ -34,6 +36,7 @@ public:
     virtual void push(std::variant<Buffer, Signal> data);
     virtual void detach();
     virtual void pull(uint64_t id) {
+        //let owner call Send to fill the buffer
         writeCB(id);
         addEvents(RW_EVENT::WRITE);
     }
