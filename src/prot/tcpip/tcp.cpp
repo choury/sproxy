@@ -172,7 +172,7 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
         int count = 0;
         for(auto& it : status->sent_list){
             //至少需要发送一个包
-            if(count > 0 && it.last_sent + status->rto * status->rto_factor > now) {
+            if(count > 0 && (uint64_t)it.last_sent + status->rto * status->rto_factor > now) {
                 break;
             }
             logger.add(it.pac->tcp->getseq(), it.bb.len);

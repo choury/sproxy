@@ -97,6 +97,8 @@ HostResolver::HostResolver(int fd, const char *host, std::function<void(int, Hos
     handleEvent = (void (Ep::*)(RW_EVENT))&HostResolver::readHE;
     setEvents(RW_EVENT::READ);
     reply = AddJob([this]{cb(DNS_TIMEOUT, this);}, dnsConfig.timeout * 1000, 0);
+    rcd.get_time = 0;
+    rcd.ttl = 0xffffffff;
 }
 
 
@@ -114,6 +116,7 @@ void HostResolver::readHE(RW_EVENT events) {
     if(!!(events & RW_EVENT::READ)) {
         int error = 0;
         char buf[BUF_SIZE];
+        time_t now = time(nullptr);
         int ret = read(getFd(), buf, sizeof(buf));
         if(ret <= 0) {
             LOGE("dns read error: %s\n", strerror(errno));
@@ -128,8 +131,6 @@ void HostResolver::readHE(RW_EVENT events) {
                 flags |= GETERROR;
                 goto ret;
             }
-            rcd.get_time = time(nullptr);
-            rcd.ttl = result.ttl;
             if(result.type == ns_t_a){
                 flags |= GETARES;
                 for(auto i: result.addrs){
@@ -142,6 +143,10 @@ void HostResolver::readHE(RW_EVENT events) {
                     assert(i.ss_family == AF_INET6);
                     rcd.addrs.emplace_front(i);
                 }
+            }
+            if(rcd.get_time + rcd.ttl > now + result.ttl) {
+                rcd.get_time = now;
+                rcd.ttl = result.ttl;
             }
             if(!(flags & GETARES) || !(flags & GETAAAARES)) {
                 return;
@@ -420,7 +425,7 @@ void dump_dns(Dumper dp, void* param){
     dp(param, "--------------------------------------\n");
     dp(param, "Dns cache:\n");
     for(const auto& i: rcd_cache){
-        dp(param, "  %s: %ld\n", i.first.c_str(), i.second.get_time + i.second.ttl - time(nullptr));
+        dp(param, "  %s: %d\n", i.first.c_str(), (int)i.second.get_time + (int)i.second.ttl - (int)time(nullptr));
         for(const auto& j: rcdfilter(i.first, i.second.addrs)){
             dp(param, "    %s\n", getaddrstring(&j));
         }

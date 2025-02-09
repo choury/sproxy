@@ -96,7 +96,8 @@ static int vpn_start(){
     LOG("Accepting connections ...\n");
     will_contiune = 1;
     while (will_contiune) {
-        uint32_t msec = do_delayjob();
+        uint32_t msec = 0;
+        while(msec ==0) msec = do_delayjob();
         if(event_loop(msec) < 0){
             break;
         }

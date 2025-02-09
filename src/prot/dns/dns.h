@@ -34,7 +34,7 @@ public:
     uint16_t  error = 0;
     uint16_t  type = 0;
     uint16_t  id = 0;
-    uint32_t  ttl = 0xffffffff;
+    uint32_t  ttl = 86400;
     explicit Dns_Result(const char* domain);
     explicit Dns_Result(const char* domain, const in_addr* addr);
     explicit Dns_Result(const char* domain, const in6_addr* addr);

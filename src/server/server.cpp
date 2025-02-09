@@ -286,7 +286,8 @@ int main(int argc, char **argv) {
     }
     LOG("Accepting connections ...\n");
     while (will_contiune) {
-        uint32_t msec = do_delayjob();
+        uint32_t msec = 0;
+        while(msec == 0) msec = do_delayjob();
         if(event_loop(msec) < 0){
             return 6;
         }

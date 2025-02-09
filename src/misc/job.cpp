@@ -12,7 +12,7 @@ struct job{
     const char* func_name;
     std::function<void()> func;
     uint32_t flags;
-    uint32_t delay_ms;
+    uint64_t delay_ms;
     uint32_t last_done_ms;
     job* pre;
     job* next;
@@ -61,7 +61,7 @@ uint32_t JobPending(Job& job) {
     if(job == nullptr || job->pre == nullptr) {
         return 0;
     }
-    uint32_t next_do = job->delay_ms + job->last_done_ms;
+    uint64_t next_do = job->delay_ms + job->last_done_ms;
     uint32_t now = getmtime();
     return  next_do > now ? next_do - now : 1;
 }
@@ -145,7 +145,7 @@ uint32_t do_delayjob(){
     now = getmtime();
     if(root.next){
         job* j = root.next;
-        uint32_t next_do = j->delay_ms + j->last_done_ms;
+        uint64_t next_do = j->delay_ms + j->last_done_ms;
         min_interval = next_do > now ? next_do-now : 0;
     }
     return min_interval;
@@ -157,7 +157,7 @@ void dump_job(Dumper dp, void* param){
     job* j = root.next;
     while(j) {
         uint32_t left = j->delay_ms + j->last_done_ms - now;
-        dp(param, "  %p %s: %d/%d\n", j, j->func_name, left, j->delay_ms);
+        dp(param, "  %p %s: %d/%d\n", j, j->func_name, left, (int)j->delay_ms);
         j = j->next;
     }
 }
