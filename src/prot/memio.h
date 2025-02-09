@@ -37,6 +37,7 @@ public:
     virtual void detach();
     virtual void pull(uint64_t id) {
         //let owner call Send to fill the buffer
+        LOGD(DRWER, "<MemRwer> pull %d\n", (int)id);
         writeCB(id);
         addEvents(RW_EVENT::WRITE);
     }

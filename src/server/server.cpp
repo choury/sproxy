@@ -6,6 +6,7 @@
 #include "req/rguest2.h"
 #include "misc/config.h"
 #include "misc/strategy.h"
+#include "misc/util.h"
 #include "prot/tls.h"
 #include "bpf/bpf.h"
 

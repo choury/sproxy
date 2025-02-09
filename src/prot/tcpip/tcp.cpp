@@ -426,6 +426,7 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
             }
             status->sack = sack;
         }
+        status->ackCB(pac);
         if(ack == status->recv_ack && (status->flags & TCP_KEEPALIVING) == 0) {
             status->dupack ++;
             if(status->dupack >= 3) {
@@ -438,7 +439,6 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
         status->rto_factor = 1;
         status->dupack = 0;
         status->recv_ack = ack;
-        status->ackCB(pac);
         if(status->state == TCP_FIN_WAIT1 && ack == status->sent_seq){
             status->state = TCP_FIN_WAIT2;
         }
@@ -504,26 +504,26 @@ left:
         status->want_seq++;
         status->flags |= TCP_FIN_RECVD;
         switch(status->state){
-            case TCP_CLOSE_WAIT:
-                LOG("%s get dup fin, send rst back\n", storage_ntoa(&status->src));
-                SendRst(status);
-                status->errCB(pac, TCP_RESET_ERR);
-                return;
-            case TCP_ESTABLISHED:
-                status->state = TCP_CLOSE_WAIT;
-                break;
-            case TCP_FIN_WAIT1:
-                status->state = TCP_CLOSING;
-                status->PkgProc = [status](auto&& v1, auto&& v2) {
-                    return CloseProc(status, v1, std::forward<decltype(v2)>(v2));
-                };
-                break;
-            case TCP_FIN_WAIT2:
-                status->state = TCP_TIME_WAIT;
-                status->PkgProc = [status](auto&& v1, auto&& v2) {
-                    return CloseProc(status, v1, std::forward<decltype(v2)>(v2));
-                };
-                break;
+        case TCP_CLOSE_WAIT:
+            LOG("%s get dup fin, send rst back\n", storage_ntoa(&status->src));
+            SendRst(status);
+            status->errCB(pac, TCP_RESET_ERR);
+            return;
+        case TCP_ESTABLISHED:
+            status->state = TCP_CLOSE_WAIT;
+            break;
+        case TCP_FIN_WAIT1:
+            status->state = TCP_CLOSING;
+            status->PkgProc = [status](auto&& v1, auto&& v2) {
+                return CloseProc(status, v1, std::forward<decltype(v2)>(v2));
+            };
+            break;
+        case TCP_FIN_WAIT2:
+            status->state = TCP_TIME_WAIT;
+            status->PkgProc = [status](auto&& v1, auto&& v2) {
+                return CloseProc(status, v1, std::forward<decltype(v2)>(v2));
+            };
+            break;
         }
         status->ack_job = UpdateJob(std::move(status->ack_job),
                                     [status_ = GetWeak(status)]{SendAck(status_);}, 0);

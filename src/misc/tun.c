@@ -55,6 +55,13 @@ static int set_if(struct ifreq *ifr) {
             LOGE("ioctl (SIOCSIFMTU) failed: %s\n", strerror(errno));
             break;
         }
+
+        ifr->ifr_qlen = 1000;
+        // 使用SIOCSIFTXQLEN命令设置发送队列长度
+        if ((err = ioctl(fd, SIOCSIFTXQLEN, ifr)) < 0) {
+            LOGE("ioctl(SIOCSIFTXQLEN) failed: %s\n", strerror(errno));
+            break;
+        }
         if (!opt.set_dns_route) {
             break;
         }
@@ -123,19 +130,6 @@ static int set_if6(struct ifreq *ifr) {
         inet_pton(AF_INET6, VPNADDR6, &ifr6.ifr6_addr);
         if ((err = ioctl(fd, SIOCSIFADDR, &ifr6)) < 0) {
             LOGE("ioctl (SIOCSIFADDR) failed: %s\n", strerror(errno));
-            break;
-        }
-
-        if ((err = ioctl(fd, SIOCGIFFLAGS, ifr)) < 0) {
-            LOGE("ioctl (SIOCGIFFLAGS) failed: %s\n", strerror(errno));
-            break;
-        }
-
-        ifr->ifr_flags |= IFF_UP;
-        ifr->ifr_flags |= IFF_RUNNING;
-
-        if ((err = ioctl(fd, SIOCSIFFLAGS, ifr)) < 0) {
-            LOGE("ioctl (SIOCSIFFLAGS) failed: %s\n", strerror(errno));
             break;
         }
 
