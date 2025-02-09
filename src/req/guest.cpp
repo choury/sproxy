@@ -200,26 +200,16 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
             Http_Proc = (bool (HttpBase::*)(Buffer&))&Guest::HeaderProc;
             return;
         }
-        if(header->Dest.port == HTTPSPORT) {
+        if(header->Dest.port == HTTPSPORT && shouldNegotiate(header, this)) {
             if(!headless) rwer->Send({HCONNECT, strlen(HCONNECT), id});
-            if (shouldNegotiate(header, this)) {
-                auto ctx = initssl(0, header->Dest.hostname);
-                auto srwer = std::make_shared<SslMer>(
-                        ctx, rwer->getSrc(),
-                        [this](auto &&data) { return mread(std::forward<decltype(data)>(data)); },
-                        [this, id](uint64_t) { rwer->Unblock(id); },
-                        [this, id] { return rwer->cap(id); });
-                statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
-                new Guest(srwer);
-            } else {
-                auto mrwer = std::make_shared<MemRWer>(
-                        rwer->getSrc(),
-                        [this](auto &&data) { return mread(std::forward<decltype(data)>(data)); },
-                        [this, id](uint64_t) { rwer->Unblock(id); },
-                        [this, id] { return rwer->cap(id); });
-                statuslist.emplace_back(ReqStatus{nullptr, nullptr, mrwer, HTTP_NOEND_F});
-                new Guest_sni(mrwer, header->Dest.hostname, header->get("User-Agent"));
-            }
+            auto ctx = initssl(0, header->Dest.hostname);
+            auto srwer = std::make_shared<SslMer>(
+                    ctx, rwer->getSrc(),
+                    [this](auto &&data) { return mread(std::forward<decltype(data)>(data)); },
+                    [this, id](uint64_t) { rwer->Unblock(id); },
+                    [this, id] { return rwer->cap(id); });
+            statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
+            new Guest(srwer);
             return;
         }
     }
