@@ -37,31 +37,8 @@ bool Proxy2::wantmore(const ReqStatus& status) {
 
 Proxy2::Proxy2(std::shared_ptr<RWer> rwer) {
     this->rwer = rwer;
+    //readCB has moved to init()
     rwer->SetErrorCB([this](int ret, int code){Error(ret, code);});
-    rwer->SetReadCB([this](Buffer&& bb) -> size_t {
-        LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu, refs: %zd\n", dumpDest(this->rwer->getDst()).c_str(), bb.len, bb.refs());
-        if(bb.len == 0){
-            //EOF
-            deleteLater(NOERROR);
-            return 0;
-        }
-#ifndef __ANDROID__
-        this->ping_check_job = UpdateJob(
-                std::move(this->ping_check_job),
-                [this]{ping_check();}, 10000);
-#else
-        receive_time = getmtime();
-#endif
-        size_t ret = 0;
-        size_t len = 0;
-        while((bb.len > 0) && (ret = (this->*Http2_Proc)(bb))){
-            len += ret;
-        }
-        if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
-            localwinsize += ExpandWindowSize(0, 50*1024*1024);
-        }
-        return len;
-    });
     rwer->SetWriteCB([this](uint64_t id){
         if(statusmap.count(id) == 0){
             return;
@@ -349,11 +326,35 @@ void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
     }, [this, &status]{return std::min(status.remotewinsize, this->remotewinsize);});
 }
 
-void Proxy2::init(std::shared_ptr<HttpReq> req) {
-    Http2Requster::init(false);
+void Proxy2::init(bool enable_push, std::shared_ptr<HttpReq> req) {
+    Http2Requster::init(enable_push);
     if(req) {
         request(req, nullptr);
     }
+    rwer->SetReadCB([this](Buffer&& bb) -> size_t {
+        LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu, refs: %zd\n", dumpDest(this->rwer->getDst()).c_str(), bb.len, bb.refs());
+        if(bb.len == 0){
+            //EOF
+            deleteLater(NOERROR);
+            return 0;
+        }
+#ifndef __ANDROID__
+        this->ping_check_job = UpdateJob(
+                std::move(this->ping_check_job),
+                [this]{ping_check();}, 10000);
+#else
+        receive_time = getmtime();
+#endif
+        size_t ret = 0;
+        size_t len = 0;
+        while((bb.len > 0) && (ret = (this->*Http2_Proc)(bb))){
+            len += ret;
+        }
+        if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
+            localwinsize += ExpandWindowSize(0, 50*1024*1024);
+        }
+        return len;
+    });
 }
 
 

@@ -57,7 +57,7 @@ public:
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
 
-    void init(std::shared_ptr<HttpReq> req);
+    void init(bool enable_push, std::shared_ptr<HttpReq> req);
 };
 
 #endif

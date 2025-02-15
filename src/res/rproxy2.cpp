@@ -16,7 +16,7 @@ Rproxy2::Rproxy2(std::shared_ptr<RWer> rwer):Proxy2(rwer) {
 }
 
 void Rproxy2::init() {
-    return Http2Requster::init(true);
+    return Proxy2::init(true, nullptr);
 }
 
 

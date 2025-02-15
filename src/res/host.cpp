@@ -122,7 +122,7 @@ void Host::connected() {
             Proxy2 *proxy = new Proxy2(srwer);
             rwer = nullptr;
 
-            proxy->init(status.req);
+            proxy->init(false, status.req);
             responsers.add(key, proxy);
             return Server::deleteLater(NOERROR);
         }
