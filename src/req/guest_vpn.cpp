@@ -74,12 +74,13 @@ Guest_vpn::Guest_vpn(int fd, bool enable_offload): Requester(nullptr) {
             return;
         }
         auto& status = statusmap[id];
-        if((status.flags & HTTP_RES_COMPLETED) == 0){
-            if(status.res)
-                status.res->pull();
-            if(status.rwer)
-                status.rwer->pull(id);
+        if(status.flags & (HTTP_RES_COMPLETED | HTTP_CLOSED_F | HTTP_RST)){
+            return;
         }
+        if(status.res)
+            status.res->pull();
+        if(status.rwer)
+            status.rwer->pull(id);
     });
     std::dynamic_pointer_cast<TunRWer>(rwer)->setResetHandler([this](uint64_t id, uint32_t){
         if(statusmap.count(id)) {

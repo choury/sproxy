@@ -99,7 +99,7 @@ void Guest::WriteHE(uint64_t id){
     }
     ReqStatus& status = statuslist.front();
     LOGD(DHTTP, "<guest> (%s) written, flags:0x%08x\n", dumpDest(rwer->getSrc()).c_str(), status.flags);
-    if(status.flags & HTTP_RES_COMPLETED){
+    if(status.flags & (HTTP_RES_COMPLETED | HTTP_CLOSED_F | HTTP_RST)){
         return;
     }
     if(status.res){

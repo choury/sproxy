@@ -224,7 +224,7 @@ std::shared_ptr<HttpReqHeader> UnpackHttpReq(const void* header, size_t len){
     std::string url, path;
     url.resize(URLLIMIT);
     path.resize(URLLIMIT);
-    sscanf(httpheader.c_str(), "%19s%*[ ]%4095[^" CRLF " ]", method, &url[0]);
+    sscanf(httpheader.c_str(), "%19s%*[ ]%8192[^" CRLF " ]", method, &url[0]);
     headers.emplace(":method", method);
 
     Destination dest;
@@ -377,8 +377,10 @@ size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t 
         || res->no_body() || res->get("Upgrade"))
     {
         len += snprintf(buff, size, "HTTP/1.1 %s" CRLF, res->status);
+        len += snprintf(buff + len, size-len, "Connection: keep-alive" CRLF);
     }else {
         len += snprintf(buff, size, "HTTP/1.0 %s" CRLF, res->status);
+        len += snprintf(buff + len, size-len, "Connection: close" CRLF);
     }
     for (const auto& i : res->getall()) {
         if(i.first == "upgrade" || i.first == "connection") {

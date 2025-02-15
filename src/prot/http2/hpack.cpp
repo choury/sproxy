@@ -317,9 +317,12 @@ std::shared_ptr<HttpReqHeader> Hpack_decoder::UnpackHttp2Req(const void *header,
     if(headers.empty()){
         return nullptr;
     }
-    if(headers.count(":path") && headers.find(":path")->second.empty()){
-        LOGE("empty path is not allowed\n");
-        return nullptr;
+    if(headers.count(":path")) {
+        auto path = headers.find(":path")->second;
+        if(path.empty() || path.length() > 8192){
+            LOGE("path length is not allowed: %zd\n", (size_t)path.length());
+            return nullptr;
+        }
     }
     if(!headers.count(":method")){
         LOGE("wrong frame http request, no method\n");

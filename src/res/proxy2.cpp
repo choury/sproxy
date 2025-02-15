@@ -28,7 +28,7 @@ bool Proxy2::wantmore(const ReqStatus& status) {
     if(!status.req){
         return false;
     }
-    if((status.flags&HTTP_REQ_COMPLETED)){
+    if(status.flags & (HTTP_REQ_COMPLETED | HTTP_CLOSED_F | HTTP_RST)){
         return false;
     }
     return status.remotewinsize > 0;
@@ -114,7 +114,7 @@ void Proxy2::Handle(uint32_t id, Signal s) {
     switch(s){
     case CHANNEL_ABORT:
         status.flags |= HTTP_CLOSED_F;
-        return Clean(id, status, HTTP2_ERR_INTERNAL_ERROR);
+        return Clean(id, HTTP2_ERR_INTERNAL_ERROR);
     }
 }
 
@@ -179,13 +179,13 @@ void Proxy2::DataProc(Buffer&& bb) {
         ReqStatus& status = statusmap[bb.id];
         if(status.flags & HTTP_RES_COMPLETED){
             LOGD(DHTTP2, "<proxy2> DataProc after closed, id: %" PRIu64"\n", bb.id);
-            Clean(bb.id, status, HTTP2_ERR_STREAM_CLOSED);
+            status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP2_ERR_STREAM_CLOSED);}), 0, 0);
             return;
         }
         if(bb.len > (size_t)status.localwinsize){
             LOGE("[%" PRIu64 "]: <proxy2> (%" PRIu64") window size error %zu/%d\n",
                     status.req->header->request_id, bb.id, bb.len, status.localwinsize);
-            Clean(bb.id, status, HTTP2_ERR_FLOW_CONTROL_ERROR);
+            status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP2_ERR_FLOW_CONTROL_ERROR);}), 0, 0);
             return;
         }
         if(status.res == nullptr){
@@ -218,9 +218,13 @@ void Proxy2::ErrProc(int errcode) {
     deleteLater(errcode);
 }
 
-void Proxy2::Clean(uint32_t id, ReqStatus& status, uint32_t errcode){
-    assert(statusmap[id].req == status.req);
-    if((status.flags&HTTP_REQ_COMPLETED) == 0 || (status.flags&HTTP_RES_COMPLETED) == 0){
+void Proxy2::Clean(uint32_t id, uint32_t errcode){
+    if(statusmap.count(id) == 0){
+        return;
+    }
+
+    ReqStatus& status = statusmap[id];
+    if((status.flags & HTTP_RST) == 0 && ((status.flags&HTTP_REQ_COMPLETED) == 0 || (status.flags&HTTP_RES_COMPLETED) == 0)){
         Reset(id, errcode);
     }
 
@@ -239,14 +243,15 @@ void Proxy2::Clean(uint32_t id, ReqStatus& status, uint32_t errcode){
 }
 
 void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
+    Http2Requster::RstProc(id, errcode);
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(errcode){
             LOGE("[%" PRIu64 "]: <proxy2> (%d): stream reset:%d flags:0x%x\n",
                  status.req->header->request_id, id, errcode, status.flags);
         }
-        status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
-        Clean(id, status, errcode);
+        status.flags |= HTTP_RST;
+        status.cleanJob = AddJob(([this, id, errcode]{Clean(id, errcode);}), 0, 0);
     }
 }
 
@@ -256,7 +261,7 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
             ReqStatus& status = statusmap[id];
             LOGD(DHTTP2, "<proxy2> window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
             if((uint64_t)status.remotewinsize + size >= (uint64_t)1<<31){
-                Clean(id, status, HTTP2_ERR_FLOW_CONTROL_ERROR);
+                status.cleanJob = AddJob(([this, id]{Clean(id, HTTP2_ERR_FLOW_CONTROL_ERROR);}), 0, 0);
                 return;
             }
             status.remotewinsize += size;
@@ -275,8 +280,7 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
         remotewinsize += size;
         if(remotewinsize == (int32_t)size){
             LOGD(DHTTP2, "<proxy2> active all frame\n");
-            auto statusmap_copy = statusmap;
-            for(auto& i: statusmap_copy){
+            for(auto& i: statusmap){
                 ReqStatus& status = i.second;
                 if(wantmore(status)){
                     status.req->pull();
@@ -354,6 +358,7 @@ void Proxy2::init(std::shared_ptr<HttpReq> req) {
 
 
 void Proxy2::GoawayProc(const Http2_header* header){
+    Http2Requster::GoawayProc(header);
     Goaway_Frame* goaway = (Goaway_Frame *)(header+1);
     uint32_t errcode = get32(goaway->errcode);
     return deleteLater(errcode);
@@ -369,9 +374,10 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
 void Proxy2::deleteLater(uint32_t errcode){
     responsers.erase(this);
     idle_timeout.reset(nullptr);
-    auto statusmapCopy = statusmap;
-    for(auto& i: statusmapCopy){
-        Clean(i.first, i.second, errcode);
+    std::set<uint32_t> keys;
+    std::for_each(statusmap.begin(), statusmap.end(), [&keys](auto&& i){ keys.emplace(i.first);});
+    for(auto& i: keys){
+        Clean(i, errcode);
     }
     assert(statusmap.empty());
     if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){

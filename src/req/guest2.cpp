@@ -15,7 +15,7 @@ bool Guest2::wantmore(const ReqStatus& status) {
     if(!status.res){
         return false;
     }
-    if(status.flags&HTTP_RES_COMPLETED){
+    if(status.flags&(HTTP_RES_COMPLETED | HTTP_CLOSED_F | HTTP_RST)){
         return false;
     }
     return status.remotewinsize > 0;
@@ -122,17 +122,16 @@ void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
     ReqStatus& status = statusmap[id];
 
     status.req = std::make_shared<HttpReq>(
-            header,
-            [this, id](std::shared_ptr<HttpRes> res){response((void*)(long)id, res);},
-            [this, &status, id] () mutable{
+            header, [this, id](std::shared_ptr<HttpRes> res) { response((void *)(long)id, res); },
+            [this, &status, id]() mutable {
                 rwer->Unblock(id);
                 auto len = status.req->cap();
-                if(len < status.localwinsize){
-                    LOGE("[%" PRIu64 "]: <guest2> (%d) shrunken local window: %d/%d\n",
-                         status.req->header->request_id, id, len, status.localwinsize);
-                }else if(len == status.localwinsize) {
+                if (len < status.localwinsize) {
+                    LOGE("[%" PRIu64 "]: <guest2> (%d) shrunken local window: %d/%d\n", status.req->header->request_id,
+                         id, len, status.localwinsize);
+                } else if (len == status.localwinsize) {
                     return;
-                }else if(len - status.localwinsize > FRAMEBODYLIMIT || status.localwinsize <= FRAMEBODYLIMIT/2){
+                } else if (len - status.localwinsize > FRAMEBODYLIMIT || status.localwinsize <= FRAMEBODYLIMIT / 2) {
                     LOGD(DHTTP2, "<guest2> (%d) increased local window: %d -> %d\n", id, status.localwinsize, len);
                     status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
                 }
@@ -148,13 +147,13 @@ void Guest2::DataProc(Buffer&& bb) {
         ReqStatus& status = statusmap[bb.id];
         if(status.flags & HTTP_REQ_COMPLETED){
             LOGD(DHTTP2, "<guest2> DateProc after closed, id: %" PRIu64"\n", bb.id);
-            Clean(bb.id, HTTP2_ERR_STREAM_CLOSED);
+            status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP2_ERR_STREAM_CLOSED);}), 0, 0);
             return;
         }
         if(bb.len > (size_t)status.localwinsize){
             LOGE("[%" PRIu64 "]: <guest2> (%" PRIu64") window size error %zu/%d\n",
                 status.req->header->request_id, bb.id, bb.len, status.localwinsize);
-            Clean(bb.id, HTTP2_ERR_FLOW_CONTROL_ERROR);
+            status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP2_ERR_FLOW_CONTROL_ERROR);}), 0, 0);
             return;
         }
         status.localwinsize -= bb.len;
@@ -172,7 +171,7 @@ void Guest2::EndProc(uint32_t id) {
         status.req->send(Buffer{nullptr, (uint64_t)id});
         status.flags |= HTTP_REQ_COMPLETED;
         if(status.flags & HTTP_RES_COMPLETED) {
-            Clean(id, NOERROR);
+            status.cleanJob = AddJob(([this, id]{Clean(id, NOERROR);}), 0, 0);
         }
     }
 }
@@ -228,7 +227,7 @@ void Guest2::Clean(uint32_t id, uint32_t errcode) {
         return;
     }
     ReqStatus& status = statusmap[id];
-    if((status.flags&HTTP_REQ_COMPLETED) == 0 || (status.flags&HTTP_RES_COMPLETED) == 0){
+    if((status.flags & HTTP_RST) == 0 && ((status.flags&HTTP_REQ_COMPLETED) == 0 || (status.flags&HTTP_RES_COMPLETED) == 0)){
         Reset(id, errcode);
     }
     if((status.flags & HTTP_CLOSED_F) == 0){
@@ -241,14 +240,15 @@ void Guest2::Clean(uint32_t id, uint32_t errcode) {
 }
 
 void Guest2::RstProc(uint32_t id, uint32_t errcode) {
+    Http2Responser::RstProc(id, errcode);
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         if(errcode){
             LOGE("[%" PRIu64 "]: <guest2> (%d): stream reset:%d flags:0x%x\n",
                 status.req->header->request_id, id, errcode, status.flags);
         }
-        status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
-        Clean(id, errcode);
+        status.flags |= HTTP_RST;
+        status.cleanJob = AddJob(([this, id, errcode]{Clean(id, errcode);}), 0, 0);
     }
 }
 
@@ -259,7 +259,7 @@ void Guest2::WindowUpdateProc(uint32_t id, uint32_t size) {
             ReqStatus& status = statusmap[id];
             LOGD(DHTTP2, "<guest2> window size updated [%d]: %d+%d\n", id, status.remotewinsize, size);
             if((uint64_t)status.remotewinsize + size >= (uint64_t)1<<31U){
-                Clean(id, HTTP2_ERR_FLOW_CONTROL_ERROR);
+                status.cleanJob = AddJob(([this, id]{Clean(id, HTTP2_ERR_FLOW_CONTROL_ERROR);}), 0, 0);
                 return;
             }
             status.remotewinsize += size;
@@ -289,6 +289,7 @@ void Guest2::WindowUpdateProc(uint32_t id, uint32_t size) {
 }
 
 void Guest2::GoawayProc(const Http2_header* header) {
+    Http2Responser::GoawayProc(header);
     Goaway_Frame* goaway = (Goaway_Frame *)(header+1);
     uint32_t errcode = get32(goaway->errcode);
     deleteLater(errcode);

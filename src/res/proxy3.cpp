@@ -41,7 +41,7 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
         if(!status.req){
             return;
         }
-        if (status.flags&HTTP_REQ_COMPLETED){
+        if(status.flags & (HTTP_RES_COMPLETED | HTTP_CLOSED_F | HTTP_RST)){
             return;
         }
         if(this->rwer->cap(id) > 64){
@@ -77,7 +77,7 @@ bool Proxy3::DataProc(Buffer& bb){
         ReqStatus& status = statusmap[bb.id];
         if(status.flags & HTTP_RES_COMPLETED) {
             LOGD(DHTTP3, "<proxy3> DataProc after closed, id:%d\n", (int)bb.id);
-            Clean(bb.id, status, HTTP3_ERR_STREAM_CREATION_ERROR);
+            status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP3_ERR_STREAM_CREATION_ERROR);}), 0, 0);
             return true;
         }
         if(status.res->cap() < (int)bb.len){
@@ -200,7 +200,7 @@ void Proxy3::Handle(uint64_t id, Signal s) {
     switch(s){
     case CHANNEL_ABORT:
         status.flags |= HTTP_CLOSED_F;
-        return Clean(id, status, HTTP3_ERR_CONNECT_ERROR);
+        return Clean(id, HTTP3_ERR_CONNECT_ERROR);
     }
 }
 
@@ -216,14 +216,18 @@ void Proxy3::RstProc(uint64_t id, uint32_t errcode) {
             LOGE("[%" PRIu64 "]: <proxy3> (%" PRIu64 "): stream reset:%d flags:0x%x\n",
                  status.req->header->request_id, id, errcode, status.flags);
         }
-        status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
-        Clean(id, status, errcode);
+        status.flags |= HTTP_RST;
+        status.cleanJob = AddJob(([this, id, errcode]{Clean(id, errcode);}), 0, 0);
     }
 }
 
-void Proxy3::Clean(uint64_t id, Proxy3::ReqStatus& status, uint32_t errcode) {
-    assert(statusmap[id].req == status.req);
-    if((status.flags&HTTP_REQ_COMPLETED) == 0 || (status.flags&HTTP_RES_COMPLETED) == 0){
+void Proxy3::Clean(uint64_t id, uint32_t errcode) {
+    if(statusmap.count(id) == 0){
+        return;
+    }
+
+    ReqStatus& status = statusmap[id];
+    if((status.flags & HTTP_RST) == 0 && ((status.flags&HTTP_REQ_COMPLETED) == 0 || (status.flags&HTTP_RES_COMPLETED) == 0)){
         Reset(id, errcode);
     }
 
@@ -246,9 +250,10 @@ void Proxy3::deleteLater(uint32_t errcode) {
     http3_flag |= HTTP3_FLAG_CLEANNING;
     idle_timeout.reset(nullptr);
     responsers.erase(this);
-    auto statusmapCopy = statusmap;
-    for(auto& i: statusmapCopy){
-        Clean(i.first, i.second, errcode);
+    std::set<uint64_t> keys;
+    std::for_each(statusmap.begin(), statusmap.end(), [&keys](auto&& i){ keys.emplace(i.first);});
+    for(auto& i: keys){
+        Clean(i, errcode);
     }
     assert(statusmap.empty());
     if((http3_flag & HTTP3_FLAG_GOAWAYED) == 0){

@@ -392,5 +392,12 @@ std::shared_ptr<HttpReqHeader> Qpack_decoder::UnpackHttp3Req(const void *data, s
     if(headers.empty()) {
         return nullptr;
     }
+    if(headers.count(":path")) {
+        auto path = headers.find(":path")->second;
+        if(path.empty() || path.length() > 8192){
+            LOGE("path length is not allowed: %zd\n", (size_t)path.length());
+            return nullptr;
+        }
+    }
     return std::make_shared<HttpReqHeader>(std::move(headers));
 }

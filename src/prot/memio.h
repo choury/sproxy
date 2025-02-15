@@ -41,6 +41,10 @@ public:
         writeCB(id);
         addEvents(RW_EVENT::WRITE);
     }
+    virtual void Unblock(uint64_t id) override {
+        read_cb(id);
+        FullRWer::Unblock(id);
+    }
 
     void SetConnectCB(std::function<void(const sockaddr_storage&)> connectCB);
     virtual void Close(std::function<void()> func) override;

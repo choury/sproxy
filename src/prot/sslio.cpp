@@ -310,7 +310,7 @@ void SslMer::push_data(Buffer&& bb) {
     } else {
         handleData(bb.data(), bb.len);
     }
-    MemRWer::ConsumeRData(bb.id);
+    addEvents(RW_EVENT::READ);
 }
 
 void SslRWer::dump_status(Dumper dp, void *param) {

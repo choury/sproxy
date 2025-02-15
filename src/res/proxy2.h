@@ -13,6 +13,7 @@ class Proxy2:public Responser, public Http2Requster {
         int32_t remotewinsize; //对端提供的窗口大小，发送时减小，收到对端update时增加
         int32_t localwinsize; //发送给对端的窗口大小，接受时减小，给对端发送update时增加
         uint32_t flags;
+        Job      cleanJob = nullptr;
     };
 
     std::map<uint32_t, ReqStatus> statusmap;
@@ -43,7 +44,7 @@ protected:
 
     void Recv(Buffer&& bb);
     void Handle(uint32_t id, Signal s);
-    void Clean(uint32_t id, ReqStatus& status, uint32_t errcode);
+    void Clean(uint32_t id, uint32_t errcode);
     virtual void clearIdle(uint32_t ms);
 
     static bool wantmore(const ReqStatus& status);

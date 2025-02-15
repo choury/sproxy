@@ -66,6 +66,7 @@ public:
 #define HTTP_NOEND_F        (1u<<3u)   //http1 only
 #define HTTP_REQ_COMPLETED  (1u<<4u)   //qc
 #define HTTP_RES_COMPLETED  (1u<<5u)   //sc
+#define HTTP_RST            (1u<<6u)   //got reset
 
 /* 1. Requester alloc HttpReq and Responser alloc HttpRes.
  * 2. Peers send zero message(send0) for end flag of single req or res,

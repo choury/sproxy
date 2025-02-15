@@ -168,7 +168,7 @@ void Host::connected() {
     });
     rwer->SetWriteCB([this](uint64_t){
         LOGD(DHTTP, "<host> (%s) written, flags:0x%08x\n", dumpDest(rwer->getDst()).c_str(), status.flags);
-        if(status.flags & HTTP_REQ_COMPLETED){
+        if(status.flags & (HTTP_RES_COMPLETED | HTTP_CLOSED_F | HTTP_RST)){
             return;
         }
         status.req->pull();

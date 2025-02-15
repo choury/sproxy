@@ -103,14 +103,16 @@ void MemRWer::ConsumeRData(uint64_t id) {
     defer([this]{ flags &= ~RWER_READING;});
     if(rb.length()){
         Buffer wb = rb.get();
+        assert(wb.len != 0);
         wb.id = id;
         rb.consume(readCB(std::move(wb)));
-        read_cb(id);
     }
-    delEvents(RW_EVENT::READ);
-    if(isEof() && (flags & RWER_EOFDELIVED) == 0){
-        readCB({nullptr, id});
-        flags |= RWER_EOFDELIVED;
+    if(rb.length() == 0) {
+        delEvents(RW_EVENT::READ);
+        if(isEof() && (flags & RWER_EOFDELIVED) == 0){
+            readCB({nullptr, id});
+            flags |= RWER_EOFDELIVED;
+        }
     }
 }
 

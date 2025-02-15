@@ -25,7 +25,7 @@ void Guest3::init() {
             status.req->send(Buffer{nullptr, bb.id});
             status.flags |= HTTP_REQ_COMPLETED;
             if(status.flags & HTTP_RES_COMPLETED) {
-                Clean(bb.id, NOERROR);
+                status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, NOERROR);}), 0, 0);
             }
             return 0;
         }
@@ -45,7 +45,7 @@ void Guest3::init() {
         if(status.res == nullptr){
             return;
         }
-        if((status.flags & HTTP_RES_COMPLETED)){
+        if(status.flags & (HTTP_RES_COMPLETED | HTTP_CLOSED_F | HTTP_RST)){
             return;
         }
         status.res->pull();
@@ -162,7 +162,7 @@ bool Guest3::DataProc(Buffer& bb) {
         ReqStatus& status = statusmap[bb.id];
         if(status.flags & HTTP_REQ_COMPLETED){
             LOGD(DHTTP3, "<guest3> DateProc after closed, id: %" PRIu64"\n", bb.id);
-            Clean(bb.id, HTTP3_ERR_STREAM_CREATION_ERROR);
+            status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP3_ERR_STREAM_CREATION_ERROR);}), 0, 0);
             return true;
         }
         if(status.req->cap() < (int)bb.len){
@@ -227,7 +227,7 @@ void Guest3::Clean(uint64_t id, uint32_t errcode) {
     }
 
     ReqStatus& status = statusmap[id];
-    if((status.flags&HTTP_REQ_COMPLETED) == 0 || (status.flags&HTTP_RES_COMPLETED) == 0){
+    if((status.flags & HTTP_RST) == 0 && ((status.flags&HTTP_REQ_COMPLETED) == 0 || (status.flags&HTTP_RES_COMPLETED) == 0)){
         Reset(id, errcode);
     }
     if((status.flags & HTTP_CLOSED_F) == 0){
@@ -246,8 +246,8 @@ void Guest3::RstProc(uint64_t id, uint32_t errcode) {
             LOGE("[%" PRIu64 "]: <guest3> (%" PRIu64"): stream reset:%d flags:0x%x\n",
                  status.req->header->request_id, id, errcode, status.flags);
         }
-        status.flags |= HTTP_REQ_COMPLETED | HTTP_RES_COMPLETED; //make clean not send reset back
-        Clean(id, errcode);
+        status.flags |= HTTP_RST;
+        status.cleanJob = AddJob(([this, id, errcode]{Clean(id, errcode);}), 0, 0);
     } else {
         LOGD(DHTTP3, "reset for no exist id: %" PRIu64"\n", id);
     }
