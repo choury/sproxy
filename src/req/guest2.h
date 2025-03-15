@@ -12,6 +12,7 @@ class Guest2: public Requester, public Http2Responser {
         int32_t  remotewinsize; //对端提供的窗口大小，发送时减小，收到对端update时增加
         int32_t  localwinsize; //发送给对端的窗口大小，接受时减小，给对端发送update时增加
         uint32_t flags = 0;
+        std::unique_ptr<EBuffer>  buffer = nullptr;
         Job      cleanJob = nullptr;
     };
     std::map<uint32_t, ReqStatus> statusmap;

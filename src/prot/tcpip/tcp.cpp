@@ -397,7 +397,9 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
             status->flags |= TCP_ACK_ONLY;
         }
         status->sent_ack = status->want_seq - 1; //to force send tcp ack
-        return SendAck(status);
+        status->ack_job = UpdateJob(std::move(status->ack_job),
+                                    [status_ = GetWeak(status)] {SendAck(status_);}, 0);
+        return;
     }
 
     if(flag & TH_ACK){
@@ -426,7 +428,14 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
             }
             status->sack = sack;
         }
-        status->ackCB(pac);
+        status->pull_job = updatejob_with_name(std::move(status->pull_job),
+                [status_ = GetWeak(status), pac] {
+                    if (status_.expired()) {
+                        return;
+                    }
+                    auto status = status_.lock();
+                    status->ackCB(pac);
+                }, "tcp_ack_cb", 0);
         if(ack == status->recv_ack && (status->flags & TCP_KEEPALIVING) == 0) {
             status->dupack ++;
             if(status->dupack >= 3) {

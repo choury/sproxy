@@ -42,6 +42,22 @@ Buffer::Buffer(Buffer&& b) noexcept{
     b.off = 0;
 }
 
+Buffer& Buffer::operator=(Buffer&& b) noexcept{
+    assert(b.ptr != nullptr || b.len == 0);
+    id = b.id;
+    len = b.len;
+    cap = b.cap;
+    off = b.off;
+    if(b.ptr){
+        ptr = std::move(b.ptr);
+    }
+    b.ptr = nullptr;
+    b.cap = 0;
+    b.len = 0;
+    b.off = 0;
+    return *this;
+}
+
 void Buffer::reserve(int p){
     if(p == 0) {
         return;
@@ -239,7 +255,7 @@ ssize_t EBuffer::put(const void *data, size_t sizeofdata) {
     if(result > MAX_BUF_LEN){
         return -1;
     }
-    if(result > size/2 && size < MAX_BUF_LEN){
+    if(size < result){
         expand(std::min(size * 2, (size_t)MAX_BUF_LEN));
     }
     put(content, offset + len, size, data, sizeofdata);
@@ -249,6 +265,12 @@ ssize_t EBuffer::put(const void *data, size_t sizeofdata) {
 }
 
 Buffer EBuffer::get(){
+    return get(len);
+}
+
+Buffer EBuffer::get(size_t len) {
+    len = std::min(len, this->len);
+    assert(len > 0);
     uint32_t start = offset % size;
     uint32_t finish = (offset + len) % size;
 

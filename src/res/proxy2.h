@@ -13,6 +13,7 @@ class Proxy2:public Responser, public Http2Requster {
         int32_t remotewinsize; //对端提供的窗口大小，发送时减小，收到对端update时增加
         int32_t localwinsize; //发送给对端的窗口大小，接受时减小，给对端发送update时增加
         uint32_t flags;
+        std::unique_ptr<EBuffer>  buffer = nullptr;
         Job      cleanJob = nullptr;
     };
 

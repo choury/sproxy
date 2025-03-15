@@ -466,6 +466,7 @@ static int ssl_callback_ClientHello(SSL *ssl, int* al, void* arg){
         LOGD(DSSL, "generate cert for %s when ClientHello\n", host);
         return SSL_CLIENT_HELLO_SUCCESS;
     }
+    SSL_set_app_data(ssl, (void*)servername);
     LOGD(DSSL, "generate cert for %s failed\n", host);
     return SSL_CLIENT_HELLO_ERROR;
 }
@@ -496,6 +497,7 @@ static int ssl_callback_ServerName(SSL *ssl, int* al, void* arg){
         LOGD(DSSL, "generate cert for %s when ServerName\n", servername);
         return SSL_TLSEXT_ERR_OK;
     }
+    SSL_set_app_data(ssl, (void*)servername);
     LOGD(DSSL, "generate cert for %s failed\n", servername);
     return SSL_TLSEXT_ERR_ALERT_FATAL;
 }
@@ -580,5 +582,6 @@ SSL_CTX* initssl(int quic, const char* host){
     SSL_CTX_set_tlsext_servername_arg(ctx, (void*)host);
     SSL_CTX_set_alpn_select_cb(ctx, select_alpn_cb, alpn_list);
     SSL_CTX_set_read_ahead(ctx, 1);
+    SSL_CTX_set_keylog_callback(ctx, keylog_write_line);
     return ctx;
 }

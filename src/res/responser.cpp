@@ -90,7 +90,7 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
             goto out;
         }
         if(stra.s == Strategy::local){
-            if(header->http_method() && header->getDport() == src->getDst().port) {
+            if(header->http_method() && (src->getDst().port == 0 || header->getDport() == src->getDst().port)) {
                 header->set(STRATEGY, getstrategystring(Strategy::local));
                 return File::getfile(req, src);
             }

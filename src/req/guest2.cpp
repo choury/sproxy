@@ -36,8 +36,8 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
         while((bb.len > 0) && (ret = (this->*Http2_Proc)(bb))){
             len += ret;
         }
-        if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
-            localwinsize += ExpandWindowSize(0, 50*1024*1024);
+        if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 10 * 1024 *1024){
+            localwinsize += ExpandWindowSize(0, 10*1024*1024);
         }
         this->connection_lost_job = UpdateJob(
                 std::move(this->connection_lost_job),
@@ -70,6 +70,7 @@ void Guest2::Recv(Buffer&& bb){
     status.remotewinsize -= bb.len;
     assert(status.remotewinsize >= 0);
     remotewinsize -= bb.len;
+    assert(remotewinsize >= 0);
     if(bb.len == 0){
         LOGD(DHTTP2, "<guest2> %" PRIu64 " recv data [%d]: EOF/%d\n",
              status.req->header->request_id, (int)bb.id,
@@ -122,41 +123,80 @@ void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
     ReqStatus& status = statusmap[id];
 
     status.req = std::make_shared<HttpReq>(
-            header, [this, id](std::shared_ptr<HttpRes> res) { response((void *)(long)id, res); },
-            [this, &status, id]() mutable {
-                rwer->Unblock(id);
-                auto len = status.req->cap();
-                if (len < status.localwinsize) {
-                    LOGE("[%" PRIu64 "]: <guest2> (%d) shrunken local window: %d/%d\n", status.req->header->request_id,
-                         id, len, status.localwinsize);
-                } else if (len == status.localwinsize) {
-                    return;
-                } else if (len - status.localwinsize > FRAMEBODYLIMIT || status.localwinsize <= FRAMEBODYLIMIT / 2) {
-                    LOGD(DHTTP2, "<guest2> (%d) increased local window: %d -> %d\n", id, status.localwinsize, len);
-                    status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
+        header, [this, id](std::shared_ptr<HttpRes> res) { response((void *)(long)id, res); }, 
+        [this, &status, id]() mutable {
+            auto cap = status.req->cap();
+            if(cap <= 0) {
+                return;
+            }
+            if(status.buffer && status.buffer->length() > 0){
+                auto bb = status.buffer->get(cap);
+                bb.id = id;
+                status.buffer->consume(bb.len);
+                cap -= bb.len;
+                status.req->send(std::move(bb));
+                if(status.buffer->length() == 0 && (status.flags & HTTP_REQ_COMPLETED)) {
+                    status.req->send(Buffer{nullptr, (uint64_t)id});
+                    if(status.flags & HTTP_RES_COMPLETED){
+                        status.cleanJob = AddJob(([this, id]{Clean(id, NOERROR);}), 0, 0);
+                    }
                 }
-            });
+            }
+            int delta = std::min(cap, status.buffer ? MAX_BUF_LEN - (int)status.buffer->length(): MAX_BUF_LEN) - status.localwinsize;
+            if(delta < FRAMEBODYLIMIT/2){
+                return;
+            }
+            rwer->Unblock(id);
+            if(delta > FRAMEBODYLIMIT || status.localwinsize <= FRAMEBODYLIMIT/2){
+                LOGD(DHTTP2, "<guest2> [%d] increased local window: %d -> %d\n", id, status.localwinsize, status.localwinsize + delta);
+                status.localwinsize += ExpandWindowSize(id, delta);
+            }
+        }
+    );
     distribute(status.req, this);
 }
 
 void Guest2::DataProc(Buffer&& bb) {
     if(bb.len == 0)
         return;
+    if ((int)bb.len > localwinsize) {
+        LOG("<guest2> global window size error %zu/%d\n", bb.len, localwinsize);
+        ErrProc(HTTP2_ERR_FLOW_CONTROL_ERROR);
+        return;
+    }
     localwinsize -= bb.len;
     if(statusmap.count(bb.id)){
         ReqStatus& status = statusmap[bb.id];
         if(status.flags & HTTP_REQ_COMPLETED){
-            LOGD(DHTTP2, "<guest2> DateProc after closed, id: %" PRIu64"\n", bb.id);
+            LOG("<guest2> DateProc after closed, id: %" PRIu64"\n", bb.id);
             status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP2_ERR_STREAM_CLOSED);}), 0, 0);
             return;
         }
         if(bb.len > (size_t)status.localwinsize){
-            LOGE("[%" PRIu64 "]: <guest2> (%" PRIu64") window size error %zu/%d\n",
+            LOG("[%" PRIu64 "]: <guest2> (%" PRIu64") window size error %zu/%d\n",
                 status.req->header->request_id, bb.id, bb.len, status.localwinsize);
             status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP2_ERR_FLOW_CONTROL_ERROR);}), 0, 0);
             return;
         }
         status.localwinsize -= bb.len;
+        auto cap = status.req->cap();
+        if(cap < (int)bb.len){
+            //把多余的数据放到buffer里
+            if(status.buffer == nullptr){
+                status.buffer = std::make_unique<EBuffer>();
+            }
+            LOGD(DHTTP2, "<guest2> DataProc put buffer [%" PRIu64"]: %zu/%d\n", bb.id, bb.len, cap);
+            if(status.buffer->put((char*)bb.data(), bb.len) < 0){
+                abort();
+            }
+            if(cap <= 0) {
+                return;
+            }
+            auto id = bb.id;
+            bb = status.buffer->get(cap);
+            bb.id = id;
+            status.buffer->consume(bb.len);
+        }
         status.req->send(std::move(bb));
     }else{
         LOGD(DHTTP2, "<guest2> DateProc not found id: %" PRIu64"\n", bb.id);
@@ -168,10 +208,12 @@ void Guest2::EndProc(uint32_t id) {
     LOGD(DHTTP2, "<guest2> [%d]: end of stream\n", id);
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
-        status.req->send(Buffer{nullptr, (uint64_t)id});
         status.flags |= HTTP_REQ_COMPLETED;
-        if(status.flags & HTTP_RES_COMPLETED) {
-            status.cleanJob = AddJob(([this, id]{Clean(id, NOERROR);}), 0, 0);
+        if(status.buffer == nullptr || status.buffer->length() == 0){
+            status.req->send(Buffer{nullptr, (uint64_t)id});
+            if(status.flags & HTTP_RES_COMPLETED){
+                status.cleanJob = AddJob(([this, id]{Clean(id, NOERROR);}), 0, 0);
+            }
         }
     }
 }
@@ -333,10 +375,12 @@ void Guest2::dump_stat(Dumper dp, void* param) {
     dp(param, "Guest2 %p, id: %d my_window: %d, his_window: %d\n",
             this, sendid, this->localwinsize, this->remotewinsize);
     for(auto& i: statusmap){
-        dp(param, "  0x%x [%" PRIu64 "]: %s %s my_window: %d, his_window: %d, time: %dms, flags: 0x%08x [%s]\n",
+        dp(param, "  0x%x [%" PRIu64 "]: %s %s my_window: %d, his_window: %d, cap: %d, buffered: %d, time: %dms, flags: 0x%08x [%s]\n",
                 i.first, i.second.req->header->request_id,
                 i.second.req->header->method,
                 i.second.req->header->geturl().c_str(),
+                (int)i.second.req->cap(),
+                i.second.buffer ? (int)i.second.buffer->length() : 0,
                 i.second.localwinsize, i.second.remotewinsize,
                 getmtime() - i.second.req->header->ctime,
                 i.second.flags,

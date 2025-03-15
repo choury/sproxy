@@ -54,10 +54,11 @@ Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, std::string host, const char* u
 }
 
 Guest::ReqStatus* Guest_sni::forward(const char *hostname, Protocol prot, uint64_t id) {
-    if(hostname == nullptr) {
-        hostname = host.c_str();
+    if (hostname && hostname[0]){
+        host = hostname;
     }
-    if(hostname == nullptr || *hostname == '\0') {
+    hostname = host.c_str();
+    if(*hostname == '\0') {
         LOGE("Guest_sni: empty hostname\n");
         return nullptr;
     }

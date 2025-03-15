@@ -70,6 +70,7 @@ struct TcpStatus: public IpStatus{
     Sack       *sack = nullptr;
     Job        ack_job = nullptr;
     Job        rto_job = nullptr;
+    Job        pull_job = nullptr;
     Job        keepalive_job = nullptr;
 };
 

@@ -77,6 +77,7 @@ public:
     Buffer(std::nullptr_t, uint64_t id = 0);
     Buffer(Buffer&& b) noexcept;
     Buffer(const Buffer&) noexcept = default;
+    Buffer& operator=(Buffer&&) noexcept;
     // 增加/减少预留空间 off 为正增加，为负减少
     void reserve(int p);
     // 从末尾截断/扩展数据, 返回截断前的长度
@@ -150,6 +151,7 @@ public:
     [[nodiscard]] size_t length() const;
     [[nodiscard]] size_t cap() const;
     Buffer get();
+    Buffer get(size_t len);
     void consume(size_t l);
 };
 

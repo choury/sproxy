@@ -74,6 +74,7 @@ void Proxy2::Recv(Buffer&& bb) {
     status.remotewinsize -= bb.len;
     remotewinsize -= bb.len;
     assert(status.remotewinsize >= 0);
+    assert(remotewinsize >= 0);
     if(bb.len == 0){
         status.flags |= HTTP_REQ_COMPLETED;
         LOGD(DHTTP2, "<proxy2> recv data [%d]: EOF/%d\n", (int)bb.id, status.remotewinsize);
@@ -130,17 +131,28 @@ void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
         return;
     }
     status.res = std::make_shared<HttpRes>(header, [this, &status, id]() mutable{
-        rwer->Unblock(id);
-        auto len = status.res->cap();
-        if(len < status.localwinsize){
-            LOGE("[%" PRIu64 "]: <proxy2> (%d) shrunken local window: %d/%d\n",
-                status.req->header->request_id,
-                id, len, status.localwinsize);
-        }else if(len == status.localwinsize) {
+        auto cap = status.res->cap();
+        if(cap <= 0) {
             return;
-        }else if(len - status.localwinsize > FRAMEBODYLIMIT || status.localwinsize <= FRAMEBODYLIMIT/2){
-            LOGD(DHTTP2, "<proxy2> [%d] increased local window: %d -> %d\n", id, status.localwinsize, len);
-            status.localwinsize += ExpandWindowSize(id, len - status.localwinsize);
+        }
+        if(status.buffer && status.buffer->length() > 0){
+            auto bb = status.buffer->get(cap);
+            bb.id = id;
+            status.buffer->consume(bb.len);
+            cap -= bb.len;
+            status.res->send(std::move(bb));
+            if(status.buffer->length() == 0 && (status.flags & HTTP_RES_COMPLETED)) {
+                status.res->send(Buffer{nullptr, (uint64_t)id});
+            }
+        }
+        int delta = std::min(cap, status.buffer ? MAX_BUF_LEN - (int)status.buffer->length(): MAX_BUF_LEN) - status.localwinsize;
+        if(delta < FRAMEBODYLIMIT/2){
+            return;
+        }
+        rwer->Unblock(id);
+        if(delta > FRAMEBODYLIMIT || status.localwinsize <= FRAMEBODYLIMIT/2){
+            LOGD(DHTTP2, "<proxy2> [%d] increased local window: %d -> %d\n", id, status.localwinsize, status.localwinsize + delta);
+            status.localwinsize += ExpandWindowSize(id, delta);
         }
     });
     status.req->response(status.res);
@@ -151,16 +163,21 @@ void Proxy2::DataProc(Buffer&& bb) {
     clearIdle(300000);
     if(bb.len == 0)
         return;
+    if ((int)bb.len > localwinsize) {
+        LOG("<proxy2> global window size error %zu/%d\n", bb.len, localwinsize);
+        ErrProc(HTTP2_ERR_FLOW_CONTROL_ERROR);
+        return;
+    }
     localwinsize -= bb.len;
     if(statusmap.count(bb.id)){
         ReqStatus& status = statusmap[bb.id];
         if(status.flags & HTTP_RES_COMPLETED){
-            LOGD(DHTTP2, "<proxy2> DataProc after closed, id: %" PRIu64"\n", bb.id);
+            LOG("<proxy2> DataProc after closed, id: %" PRIu64"\n", bb.id);
             status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP2_ERR_STREAM_CLOSED);}), 0, 0);
             return;
         }
         if(bb.len > (size_t)status.localwinsize){
-            LOGE("[%" PRIu64 "]: <proxy2> (%" PRIu64") window size error %zu/%d\n",
+            LOG("[%" PRIu64 "]: <proxy2> (%" PRIu64") window size error %zu/%d\n",
                     status.req->header->request_id, bb.id, bb.len, status.localwinsize);
             status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP2_ERR_FLOW_CONTROL_ERROR);}), 0, 0);
             return;
@@ -172,6 +189,24 @@ void Proxy2::DataProc(Buffer&& bb) {
             ResProc(bb.id, HttpResHeader::create(S200, sizeof(S200), status.req->header->request_id));
         }
         status.localwinsize -= bb.len;
+        int cap = status.res->cap();
+        if ((status.buffer && status.buffer->length() > 0) || (cap < (int)bb.len)) {
+            //把多余的数据放到buffer里
+            if(status.buffer == nullptr){
+                status.buffer = std::make_unique<EBuffer>();
+            }
+            LOGD(DHTTP2, "<proxy2> DataProc put buffer [%" PRIu64"]: %zu/%d\n", bb.id, bb.len, cap);
+            if(status.buffer->put((char*)bb.data(), bb.len) < 0){
+                abort();
+            }
+            if(cap <= 0) {
+                return;
+            }
+            auto id = bb.id;
+            bb = status.buffer->get(cap);
+            bb.id = id;
+            status.buffer->consume(bb.len);
+        }
         status.res->send(std::move(bb));
     }else{
         LOGD(DHTTP2, "<proxy2> DataProc not found id: %" PRIu64"\n", bb.id);
@@ -185,7 +220,9 @@ void Proxy2::EndProc(uint32_t id) {
         ReqStatus &status = statusmap[id];
         assert((status.flags & HTTP_RES_COMPLETED) == 0);
         status.flags |= HTTP_RES_COMPLETED;
-        status.res->send(Buffer{nullptr, (uint64_t)id});
+        if(status.buffer == nullptr || status.buffer->length() == 0){
+            status.res->send(Buffer{nullptr, (uint64_t)id});
+        }
     }
 }
 
@@ -350,8 +387,8 @@ void Proxy2::init(bool enable_push, std::shared_ptr<HttpReq> req) {
         while((bb.len > 0) && (ret = (this->*Http2_Proc)(bb))){
             len += ret;
         }
-        if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 50 *1024 *1024){
-            localwinsize += ExpandWindowSize(0, 50*1024*1024);
+        if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 10 * 1024 *1024){
+            localwinsize += ExpandWindowSize(0, 10*1024*1024);
         }
         return len;
     });
@@ -391,12 +428,14 @@ void Proxy2::dump_stat(Dumper dp, void* param) {
     dp(param, "Proxy2 %p id: %d, my_window: %d, his_window: %d\n",
             this, sendid, this->localwinsize, this->remotewinsize);
     for(auto& i: statusmap){
-        dp(param, "  0x%x [%" PRIu64 "]: %s %s, my_window: %d, his_window: %d, flags: 0x%08x\n",
+        dp(param, "  0x%x [%" PRIu64 "]: %s %s, my_window: %d, his_window: %d, cap: %d, buffered: %d, flags: 0x%08x\n",
                 i.first,
                 i.second.req->header->request_id,
                 i.second.req->header->method,
                 i.second.req->header->geturl().c_str(),
                 i.second.localwinsize, i.second.remotewinsize,
+                i.second.res ? (int)i.second.res->cap() : 0,
+                i.second.buffer ? (int)i.second.buffer->length() : 0,
                 i.second.flags);
     }
     rwer->dump_status(dp, param);
