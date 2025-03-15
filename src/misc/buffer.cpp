@@ -255,7 +255,7 @@ ssize_t EBuffer::put(const void *data, size_t sizeofdata) {
     if(result > MAX_BUF_LEN){
         return -1;
     }
-    if(size < result){
+    if(result > size/2){
         expand(std::min(size * 2, (size_t)MAX_BUF_LEN));
     }
     put(content, offset + len, size, data, sizeofdata);

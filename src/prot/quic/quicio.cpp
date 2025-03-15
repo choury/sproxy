@@ -1058,7 +1058,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
             frame->extra = my_max_data;
             qos.PushFrame(ssl_encryption_application, frame);
         } else {
-            LOGD(DVPN, "No space to expand data size: %zd vs %zd %zd\n",
+            LOGD(DQUIC, "No space to expand data size: %zd vs %zd %zd\n",
                  (size_t)recv_max_data, (size_t)my_max_data, (size_t)my_received_data);
         }
         return FrameResult::ok;
@@ -1072,7 +1072,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
             frame->extra = my_max_streams_bidi;
             qos.PushFrame(ssl_encryption_application, frame);
         } else {
-            LOGD(DVPN, "No space to expand bidi-streams: %zd vs %zd %zd\n",
+            LOGD(DQUIC, "No space to expand bidi-streams: %zd vs %zd %zd\n",
                  (size_t)recv_max_streams_bidi, (size_t)my_max_streams_bidi, (size_t)my_received_max_bidistream_id/4);
         }
         return FrameResult::ok;
@@ -1086,7 +1086,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
             frame->extra = my_max_streams_uni;
             qos.PushFrame(ssl_encryption_application, frame);
         } else {
-            LOGD(DVPN, "No space to expand uni-streams: %zd vs %zd %zd\n",
+            LOGD(DQUIC, "No space to expand uni-streams: %zd vs %zd %zd\n",
                  (size_t)recv_max_streams_uni, (size_t)my_max_streams_uni, (size_t)my_received_max_unistream_id/4);
         }
         return FrameResult::ok;
@@ -1177,7 +1177,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
             frame->max_stream_data.max = my_max_data;
             qos.PushFrame(ssl_encryption_application, frame);
         } else {
-            LOGD(DVPN, "No space to expand stream [%d]: %zd vs %zd vs %zd\n", (int)frame->max_stream_data.id,
+            LOGD(DQUIC, "No space to expand stream [%d]: %zd vs %zd vs %zd\n", (int)frame->max_stream_data.id,
                  (size_t)recv_max_data, (size_t)my_max_data, (size_t)itr->second.my_max_data);
         }
         return FrameResult::ok;
