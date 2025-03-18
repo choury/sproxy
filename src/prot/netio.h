@@ -21,7 +21,7 @@ protected:
     // there's always an extra job somewhere if you invoke it directly.
     void connectFailed(int error);
     void connected(const sockaddr_storage& addr);
-    static void Dnscallback(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs);
+    static void Dnscallback(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs, int ttl);
 
     virtual void waitconnectHE(RW_EVENT events);
     //virtual ssize_t Write(const void* buff, size_t len, uint64_t) override;

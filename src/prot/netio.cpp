@@ -49,7 +49,8 @@ SocketRWer::SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
 SocketRWer::~SocketRWer() {
 }
 
-void SocketRWer::Dnscallback(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs) {
+void SocketRWer::Dnscallback(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs, int ttl) {
+    (void)ttl;
     std::shared_ptr<SocketRWer> rwer = std::static_pointer_cast<SocketRWer>(param);
     if(rwer->flags & RWER_CLOSING){
         return;

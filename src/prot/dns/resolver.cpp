@@ -321,7 +321,7 @@ void flushdns(){
 
 static void query_host_real(int retries, const char* host, DNSCB func, std::shared_ptr<void> param){
     if(retries >= 3){
-        return func(param, ns_r_servfail, std::list<sockaddr_storage>{});
+        return func(param, ns_r_servfail, std::list<sockaddr_storage>{}, 0);
     }
     if(dnsConfig.namecount == 0) {
         getDnsConfig(&dnsConfig);
@@ -329,33 +329,33 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
     }
 
     if (hosts.count(host)) {
-        return func(param, 0, rcdfilter(host, hosts[host].addrs));
+        return func(param, 0, rcdfilter(host, hosts[host].addrs), 0xefffffff);
     }
 
     if (dnsConfig.namecount == 0) {
         LOGE("[DNS] can't get dns server\n");
-        return func(param, ns_r_refused, std::list<sockaddr_storage>{});
+        return func(param, ns_r_refused, std::list<sockaddr_storage>{}, 0);
     }
 
     sockaddr_storage addr = dnsConfig.server[retries % dnsConfig.namecount];
     int fd = Connect(&addr, SOCK_DGRAM);
     if (fd == -1) {
         LOGE("[DNS] connecting  %s error:%s\n", getaddrstring(&addr), strerror(errno));
-        return func(param, ns_r_refused, std::list<sockaddr_storage>{});
+        return func(param, ns_r_refused, std::list<sockaddr_storage>{}, 0);
     }
 
     new HostResolver(fd, host,  [retries, func, param](int error, HostResolver* resolver) {
         defer([resolver]{delete resolver;});
         if(error == 0){
-            func(param, 0, rcdfilter(resolver->host, resolver->rcd.addrs));
+            func(param, 0, rcdfilter(resolver->host, resolver->rcd.addrs), resolver->rcd.ttl);
             return;
         }
         if (!resolver->rcd.addrs.empty()) {
-            func(param, 0, rcdfilter(resolver->host, resolver->rcd.addrs));
+            func(param, 0, rcdfilter(resolver->host, resolver->rcd.addrs), resolver->rcd.ttl);
             return;
         }
         if(error == ns_r_nxdomain) {
-            func(param, error, {});
+            func(param, error, {}, 0);
             return;
         }
         query_host_real(retries + 1, resolver->host, func, param);
@@ -365,13 +365,14 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
 void query_host(const char* host, DNSCB func, std::shared_ptr<void> param) {
     sockaddr_storage addr{};
     if(storage_aton(host, 0, &addr) == 1){
-        return func(param, 0, std::list<sockaddr_storage>{addr});
+        return func(param, 0, std::list<sockaddr_storage>{addr}, 0xefffffff);
     }
 
     if (rcd_cache.count(host)) {
         auto& rcd = rcd_cache[host];
-        if(rcd.get_time + (time_t)rcd.ttl > time(nullptr)){
-            return func(param, 0, rcdfilter(host, rcd.addrs));
+        int ttl = (int)rcd.get_time + rcd.ttl - (int)time(nullptr);
+        if(ttl > 0){
+            return func(param, 0, rcdfilter(host, rcd.addrs), ttl);
         }
         rcd_cache.erase(host);
     }

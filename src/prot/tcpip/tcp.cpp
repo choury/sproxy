@@ -550,10 +550,15 @@ void SendAck(std::weak_ptr<TcpStatus> status_) {
         assert(status->rbuf.length() == 0);
     }else{
         auto pac = MakeIp(IPPROTO_TCP, &status->src, &status->dst);
-        if((status->flags & TCP_ACK_ONLY) == 0 && status->rbuf.length() > 0) {
-            auto bb = status->rbuf.get();
-            size_t len = status->dataCB(pac, std::move(bb));
-            status->rbuf.consume(len);
+        if(status->rbuf.length() > 0) {
+            if(status->flags & TCP_ACK_ONLY) {
+                status->ack_job = UpdateJob(std::move(status->ack_job),
+                                            [status_ = GetWeak(status)] {SendAck(status_);}, 0);
+            } else {
+                auto bb = status->rbuf.get();
+                size_t len = status->dataCB(pac, std::move(bb));
+                status->rbuf.consume(len);
+            }
         }
         if((status->flags & TCP_FIN_RECVD) && status->rbuf.length() == 0){
             status->dataCB(pac, nullptr);

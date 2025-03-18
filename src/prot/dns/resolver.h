@@ -42,7 +42,7 @@ public:
 };
 
 
-typedef void (*DNSCB)(std::shared_ptr<void>, int error,const std::list<sockaddr_storage>& addrs);
+typedef void (*DNSCB)(std::shared_ptr<void>, int error,const std::list<sockaddr_storage>& addrs, int ttl);
 typedef void (*DNSRAWCB)(std::shared_ptr<void>, const char *buff, size_t size);
 
 void query_host(const char* host, DNSCB func, std::shared_ptr<void> param);

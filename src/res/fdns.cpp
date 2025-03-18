@@ -209,7 +209,7 @@ void FDns::Recv(Buffer&& bb) {
     delete result;
 }
 
-void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs) {
+void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs, int ttl) {
     auto index = *std::static_pointer_cast<__uint128_t>(param);
 #if __LP64__
     uint64_t id = index >> 64;
@@ -242,6 +242,7 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockadd
                 result->addrs.emplace_back(addr);
             }
         }
+        result->ttl = ttl;
         buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data()));
         status.rwer->Send(std::move(buff));
     } else {
