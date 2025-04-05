@@ -1,10 +1,11 @@
 #ifndef RESOLVER_H__
 #define RESOLVER_H__
 
-#include "common/base.h"
+#include "common/common.h"
+#include "misc/job.h"
+#include "prot/ep.h"
 
 #include <list>
-#include <string>
 #include <netinet/in.h>
 
 

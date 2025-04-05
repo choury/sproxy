@@ -3,9 +3,7 @@
 #include "misc/util.h"
 
 #include <algorithm>
-#include <atomic>
 #include <sstream>
-#include <list>
 
 #include <assert.h>
 #include <string.h>
@@ -20,7 +18,6 @@ std::string toLower(const std::string &s) {
 }
 
 HttpHeader::HttpHeader() {
-    ctime = getmtime();
 }
 
 
@@ -84,6 +81,8 @@ size_t HttpHeader::mem_usage() {
 }
 
 HttpReqHeader::HttpReqHeader(HeaderMap&& headers) {
+    tracker.reserve(10);
+    tracker.emplace_back("create", getmtime());
     for(auto p = opt.request_headers.next; p != nullptr; p = p->next){
         const char* sp = strpbrk(p->arg, ":");
         if (sp == nullptr) {

@@ -4,10 +4,7 @@
 
 #include "misc/strategy.h"
 #include "misc/config.h"
-#include "res/proxy2.h"
-#ifdef HAVE_QUIC
-#include "res/proxy3.h"
-#endif
+#include "prot/dns/resolver.h"
 #include "res/cgi.h"
 
 Cli::Cli(int fd, const sockaddr_storage* addr):

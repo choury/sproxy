@@ -67,7 +67,7 @@ static RW_EVENT convertEpoll(uint32_t events){
     if(events & EPOLLIN){
         rwevents = rwevents | RW_EVENT::READ;
     }
-    if((events & EPOLLRDHUP) || (events & EPOLLHUP)){
+    if(events & EPOLLRDHUP || events & EPOLLHUP){
         rwevents = rwevents | RW_EVENT::READEOF;
     }
     if(events & EPOLLOUT){
@@ -112,7 +112,6 @@ Ep::~Ep(){
 
 void Ep::setFd(int fd){
     if(this->fd >= 0){
-        LOGD(DEVENT, "%p closed %d\n", this, this->fd);
 #if __linux__
         epoll_ctl(efd, EPOLL_CTL_DEL, this->fd, nullptr);
 #endif
@@ -126,6 +125,7 @@ void Ep::setFd(int fd){
             LOGD(DEVENT, "%p remove pending_events\n", this);
             pending_events[this] = RW_EVENT::NONE;
         }
+        LOGD(DEVENT, "%p closed %d\n", this, this->fd);
         close(this->fd);
     }
 
@@ -192,12 +192,10 @@ void Ep::setEvents(RW_EVENT events) {
             return;
         }
 #endif
-#ifndef NDEBUG
         if(events != this->events) {
             assert(int(events) <= 3);
             LOGD(DEVENT, "modify event %d: %s --> %s\n", fd, events_string[int(this->events)], events_string[int(events)]);
         }
-#endif
         this->events = events;
     }
 }
@@ -208,6 +206,23 @@ void Ep::addEvents(RW_EVENT events){
 
 void Ep::delEvents(RW_EVENT events){
     return setEvents(this->events & ~events);
+}
+
+void Ep::setNone(){
+    if(fd < 0){
+        return;
+    }
+    events = RW_EVENT::NONE;
+#ifdef __linux__
+    epoll_ctl(efd, EPOLL_CTL_DEL, fd, nullptr);
+#endif
+#ifdef __APPLE__
+    struct kevent event[2];
+    EV_SET(&event[0], fd, EVFILT_READ, EV_DELETE, 0, 0, nullptr);
+    EV_SET(&event[1], fd, EVFILT_WRITE, EV_DELETE, 0, 0, nullptr);
+    kevent(efd, event, 2, nullptr, 0, nullptr);
+#endif
+    LOGD(DEVENT, "remove event %d: %s\n", fd, events_string[int(events)]);
 }
 
 RW_EVENT Ep::getEvents(){
@@ -267,8 +282,12 @@ int event_loop(uint32_t timeout_ms){
         }
         Ep *ep = i.first;
         if(!!(i.second & RW_EVENT::READEOF) && !(ep->events & RW_EVENT::READ)){
-            i.second = i.second & ~RW_EVENT::READEOF;
             LOGD(DEVENT, "filter READEOF without listen READ: %d\n", ep->getFd());
+            i.second = i.second & ~RW_EVENT::READEOF;
+            if(i.second == RW_EVENT::NONE){
+                ep->setNone();
+                continue;
+            }
         }
         LOGD(DEVENT, "handle event %p, %d: %s\n", ep, ep->getFd(), events_string[int(i.second)]);
         (ep->*ep->handleEvent)(i.second);

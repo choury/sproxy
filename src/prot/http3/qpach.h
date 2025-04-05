@@ -6,11 +6,9 @@
 #define SPROXY_QPACH_H
 #include "misc/buffer.h"
 #include "prot/http/http_header.h"
-#include "prot/http/http_code.h"
 
 #include <stddef.h>
 #include <functional>
-#include <map>
 #include <string>
 
 #define HTTP3_STREAM_TYPE_QPACK_ENCODE 0x02

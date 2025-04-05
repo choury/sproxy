@@ -1,7 +1,9 @@
 #include "dns.h"
-#include "misc/util.h"
+#include "misc/net.h"
 #include <string.h>
 #include <assert.h>
+
+#include <string>
 
 typedef struct DNS_QUE {
     uint16_t type;

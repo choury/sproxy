@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <assert.h>
 
+#include <list>
+
 static size_t hextoint(const char* str){
     size_t size = 0;
     for(; *str ; str++){

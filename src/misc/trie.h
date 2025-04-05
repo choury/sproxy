@@ -6,7 +6,6 @@
 #include <iostream>
 #include <list>
 #include <netdb.h>
-#include <string.h>
 #include <regex>
 
 static inline std::string wildcard(std::string) {

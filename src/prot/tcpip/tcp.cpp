@@ -1,7 +1,6 @@
 #include "common/common.h"
 #include "tcp.h"
 #include "misc/net.h"
-#include "misc/config.h"
 
 #include <stdlib.h>
 

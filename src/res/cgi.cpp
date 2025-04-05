@@ -4,7 +4,6 @@
 #include "misc/net.h"
 #include "misc/strategy.h"
 #include "misc/util.h"
-#include "misc/config.h"
 #include "req/cli.h"
 
 #include <stdlib.h>

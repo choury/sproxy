@@ -4,7 +4,6 @@
 #include "network_notify.h"
 #include "common/common.h"
 #include "prot/ep.h"
-#include "misc/net.h"
 
 #include <functional>
 #include <memory>

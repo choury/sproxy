@@ -1,5 +1,4 @@
 #include "memio.h"
-#include "misc/util.h"
 #include "misc/defer.h"
 #include <inttypes.h>
 

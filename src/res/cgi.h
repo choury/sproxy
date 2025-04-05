@@ -3,12 +3,10 @@
 
 #include "responser.h"
 #include "prot/http/http_def.h"
-#include "misc/net.h"
 
 #include <assert.h>
 #include <unistd.h>
 #include <atomic>
-#include <mutex>
 
 
 // 可用于CGI_Header的type组件的值

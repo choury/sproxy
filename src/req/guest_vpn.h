@@ -4,6 +4,7 @@
 #include "requester.h"
 #include "prot/tcpip/ip_pack.h"
 #include "prot/memio.h"
+#include "misc/job.h"
 
 #define VPN_DNSREQ_F    (1u<<16u)
 #define TUN_CLOSED_F    (1u<<17u)

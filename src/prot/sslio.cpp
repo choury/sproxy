@@ -1,6 +1,5 @@
 #include "sslio.h"
-#include "misc/net.h"
-#include "misc/config.h"
+#include "prot/tls.h"
 
 #include <openssl/err.h>
 #include <assert.h>
@@ -11,6 +10,8 @@
 #if __ANDROID__
 extern std::string getExternalFilesDir();
 #endif
+
+static SSL_CTX* client_ctx = nullptr;
 
 SslRWerBase::SslRWerBase(SSL_CTX *ctx) {
     sslStats = SslStats::SslAccepting;
@@ -24,22 +25,26 @@ SslRWerBase::SslRWerBase(SSL_CTX *ctx) {
 
 SslRWerBase::SslRWerBase(const char *hostname) {
     sslStats = SslStats::SslConnecting;
-    ctx = SSL_CTX_new(SSLv23_client_method());
-    if (ctx == nullptr) {
-        LOGF("SSL_CTX_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
-    }
-    SSL_CTX_set_keylog_callback(ctx, keylog_write_line);
+    if(client_ctx == nullptr) {
+        client_ctx = SSL_CTX_new(SSLv23_client_method());
+        if (client_ctx == nullptr) {
+            LOGF("SSL_CTX_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
+        }
+        SSL_CTX_set_keylog_callback(client_ctx, keylog_write_line);
 #if __ANDROID__
-    if (SSL_CTX_load_verify_locations(ctx, (getExternalFilesDir() + CABUNDLE).c_str(), "/etc/security/cacerts/") != 1)
+        if (SSL_CTX_load_verify_locations(client_ctx, (getExternalFilesDir() + CABUNDLE).c_str(), "/etc/security/cacerts/") != 1)
 #else
-    if (SSL_CTX_load_verify_locations(ctx, CABUNDLE, "/etc/ssl/certs/") != 1)
+        if (SSL_CTX_load_verify_locations(client_ctx, CABUNDLE, "/etc/ssl/certs/") != 1)
 #endif
-        LOGE("SSL_CTX_load_verify_locations: %s\n", ERR_error_string(ERR_get_error(), nullptr));
+            LOGE("SSL_CTX_load_verify_locations: %s\n", ERR_error_string(ERR_get_error(), nullptr));
 
-    if (SSL_CTX_set_default_verify_paths(ctx) != 1)
-        LOGE("SSL_CTX_set_default_verify_paths: %s\n", ERR_error_string(ERR_get_error(), nullptr));
 
-    ssl = SSL_new(ctx);
+        if (SSL_CTX_set_default_verify_paths(client_ctx) != 1)
+            LOGE("SSL_CTX_set_default_verify_paths: %s\n", ERR_error_string(ERR_get_error(), nullptr));
+
+    }
+
+    ssl = SSL_new(client_ctx);
     if(ssl == nullptr){
         LOGF("SSL_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
     }
@@ -65,19 +70,25 @@ SslRWerBase::SslRWerBase(const char *hostname) {
 
 SslRWerBase::~SslRWerBase(){
     SSL_free(ssl);
-    if(ctx){
-        SSL_CTX_free(ctx);
-    }
 }
 
 void SslRWerBase::sink_out_bio(uint64_t id) {
-    while(BIO_ctrl_pending(out_bio)) {
-        Block buff(BUF_LEN);
-        int ret = BIO_read(out_bio, buff.data(), BUF_LEN);
+    Block buff(BUF_LEN);
+    size_t offset = 0;
+    while(BIO_ctrl_pending(out_bio) && offset < BUF_LEN) {
+        int ret = BIO_read(out_bio, (char*)buff.data() + offset, BUF_LEN - offset);
         LOGD(DSSL, "[%s] BIO_read %d bytes\n", server.c_str(), ret);
         if (ret > 0) {
-            write(Buffer{std::move(buff), (size_t)ret, id});
+            offset += ret;
+        } else {
+            break;
         }
+    }
+    if(offset > 0) {
+        write(Buffer{std::move(buff), (size_t)offset, id});
+    }
+    if(offset == BUF_LEN) {
+        sink_out_bio(id);
     }
 }
 
@@ -149,7 +160,7 @@ void SslRWerBase::do_handshake() {
         onConnected();
     }else if(errno != EAGAIN){
         int error = errno;
-        LOGE("[%s]: ssl %s error:%s\n", server.c_str(), ctx?"connect":"accept", strerror(error));
+        LOGE("[%s]: ssl %s error:%s\n", server.c_str(), SSL_is_server(ssl)?"accept":"connect", strerror(error));
         onError(SSL_SHAKEHAND_ERR, error);
     }
     sink_out_bio(0);
@@ -244,10 +255,10 @@ void SslRWer::ReadData() {
             break;
         }
         ssize_t ret = read(this->getFd(), buff, std::min(sizeof(buff), left));
-        LOGD(DSSL, "[%s] read %d bytes from fd %d\n", server.c_str(), (int)ret, getFd());
+        LOGD(DSSL, "[%s] read %d/%zd bytes from fd %d\n", server.c_str(), (int)ret, left, getFd());
         if (ret > 0) {
             handleData(buff, (size_t)ret);
-            StreamRWer::ConsumeRData(0);
+            //StreamRWer::ConsumeRData(0);
             continue;
         } else if (ret == 0) {
             stats = RWerStats::ReadEOF;

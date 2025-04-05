@@ -7,7 +7,6 @@
 #ifndef SPROXY_HTTP3_H
 #define SPROXY_HTTP3_H
 
-#include "prot/rwer.h"
 #include "prot/http/http_header.h"
 #include "qpach.h"
 

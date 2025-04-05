@@ -14,7 +14,7 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
     });
     rwer = prwer;
     idle_timeour = AddJob([this]{deleteLater(CONNECT_AGED);}, 30000, 0);
-    prwer->SetConnectCB([this](const sockaddr_storage&){
+    prwer->SetConnectCB([this](const sockaddr_storage&, uint32_t){
         LOGD(DHTTP, "<uhost> %s connected\n", dumpDest(rwer->getDst()).c_str());
         req->attach([this](ChannelMessage&& message){
             switch(message.type){

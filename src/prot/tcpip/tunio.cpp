@@ -1,9 +1,13 @@
 #include "common/common.h"
 #include "tunio.h"
+#include "icmp.h"
+#include "tcp.h"
+#include "udp.h"
 #include "misc/pcap.h"
 #include "misc/config.h"
 #include "misc/util.h"
 #include "misc/defer.h"
+#include "misc/net.h"
 #include "res/fdns.h"
 
 #include <errno.h>

@@ -1,6 +1,4 @@
 #include "guest_tproxy.h"
-#include "guest_sni.h"
-#include "res/responser.h"
 #include "res/fdns.h"
 #include "misc/config.h"
 #include "misc/util.h"

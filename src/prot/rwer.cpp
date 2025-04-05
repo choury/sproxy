@@ -1,6 +1,5 @@
 #include "rwer.h"
 #include "common/common.h"
-#include "misc/net.h"
 #include "misc/defer.h"
 
 #include <unistd.h>
@@ -13,6 +12,8 @@
 
 #ifdef __linux__
 #include <sys/eventfd.h>
+#else
+#include "misc/net.h"
 #endif
 
 ssize_t RWer::cap(uint64_t) {
@@ -223,6 +224,9 @@ void RWer::Unblock(uint64_t id){
     }
     switch(stats){
     case RWerStats::Connected:
+        if(!!(events & RW_EVENT::READ)){
+            break;
+        }
         if(rlength(id) > 0) {
             ConsumeRData(id);
         }

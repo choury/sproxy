@@ -67,7 +67,7 @@ void Guest3::connected() {
 
 Guest3::Guest3(std::shared_ptr<QuicRWer> qrwer): Requester(qrwer) {
     init();
-    qrwer->SetConnectCB([this](const sockaddr_storage&){
+    qrwer->SetConnectCB([this](const sockaddr_storage&, uint32_t){
         connected();
     });
 }
@@ -307,7 +307,7 @@ void Guest3::dump_stat(Dumper dp, void* param) {
            i.first, i.second.req->header->request_id,
            i.second.req->header->method,
            i.second.req->header->geturl().c_str(),
-           getmtime() - i.second.req->header->ctime,
+           getmtime() - std::get<1>(i.second.req->header->tracker[0]),
            i.second.flags,
            i.second.req->header->get("User-Agent"));
     }

@@ -1,5 +1,4 @@
 #include "http2.h"
-#include "misc/util.h"
 
 #include <cinttypes>
 #include <assert.h>
@@ -346,6 +345,7 @@ void Http2Base::PushData(Buffer&& bb){
         bb.reserve(remoteframebodylimit);
     }
 
+    LOGD(DHTTP2, "send data frame [%" PRIu64"], size: %zd\n", bb.id, bb.len);
     if(bb.refs() == 1 || bb.len == 0) {
         size_t size = bb.len;
         bb.reserve(-(char) sizeof(Http2_header));
@@ -356,7 +356,6 @@ void Http2Base::PushData(Buffer&& bb){
         pack(buff.data(), bb.id, bb.len);
         SendData({std::move(buff), sizeof(Http2_header), bb.id});
     }
-    LOGD(DHTTP2, "send data frame [%" PRIu64"], size: %zd\n", bb.id, bb.len);
     SendData(std::move(bb));
 }
 

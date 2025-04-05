@@ -2,6 +2,7 @@
 #define UDP_H__
 
 #include "ipbase.h"
+#include "misc/job.h"
 
 struct UdpStatus;
 

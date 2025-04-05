@@ -5,7 +5,6 @@
 #include "quic_server.h"
 #include "quic_pack.h"
 #include "misc/net.h"
-#include "misc/util.h"
 #include "misc/defer.h"
 #include "prot/tls.h"
 #include "prot/multimsg.h"

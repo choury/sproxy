@@ -3,6 +3,7 @@
 
 #include "requester.h"
 #include "prot/http2/http2.h"
+#include "misc/job.h"
 
 
 class Guest2: public Requester, public Http2Responser {

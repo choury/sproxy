@@ -5,6 +5,7 @@
 #include "prot/http/http.h"
 #include "prot/memio.h"
 #include "misc/net.h"
+#include "misc/job.h"
 
 #include <errno.h>
 #include <netinet/in.h>

@@ -1,8 +1,8 @@
 #ifndef NETIO_H__
 #define NETIO_H__
-#include "rwer.h"
 #include "common/common.h"
-#include "prot/dns/resolver.h"
+#include "rwer.h"
+#include "misc/job.h"
 
 #include <queue>
 
@@ -12,11 +12,12 @@ protected:
     uint16_t port = 0;
     Protocol protocol = Protocol::NONE;
     char     hostname[DOMAINLIMIT] = {0};
+    uint32_t resolved_time = 0;
     std::queue<sockaddr_storage> addrs;
     void connect();
     Job     dns_job = nullptr;
     Job     con_failed_job = nullptr;
-    std::function<void(const sockaddr_storage&)> connectCB = [](const sockaddr_storage&){};
+    std::function<void(const sockaddr_storage&, uint32_t resolved_time)> connectCB = [](const sockaddr_storage&, uint32_t){};
     // connectFailed should only be called with job con_failed_job,
     // there's always an extra job somewhere if you invoke it directly.
     void connectFailed(int error);
@@ -30,7 +31,7 @@ public:
     SocketRWer(int fd, const sockaddr_storage* src, std::function<void(int ret, int code)> errorCB);
     SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
            std::function<void(int ret, int code)> errorCB);
-    virtual void SetConnectCB(std::function<void(const sockaddr_storage&)> connectCB);
+    virtual void SetConnectCB(std::function<void(const sockaddr_storage&, uint32_t resolved_time)> connectCB);
     virtual ~SocketRWer() override;
     virtual Destination getSrc() const override;
     virtual Destination getDst() const override;

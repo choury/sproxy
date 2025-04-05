@@ -49,9 +49,9 @@ SocketRWer::SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
 SocketRWer::~SocketRWer() {
 }
 
-void SocketRWer::Dnscallback(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs, int ttl) {
-    (void)ttl;
+void SocketRWer::Dnscallback(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs, int) {
     std::shared_ptr<SocketRWer> rwer = std::static_pointer_cast<SocketRWer>(param);
+    rwer->resolved_time = getmtime();
     if(rwer->flags & RWER_CLOSING){
         return;
     }
@@ -153,17 +153,17 @@ void SocketRWer::connected(const sockaddr_storage& addr) {
     setEvents(RW_EVENT::READWRITE);
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&SocketRWer::defaultHE;
-    connectCB(addr);
-    connectCB = [](const sockaddr_storage&){};
+    connectCB(addr, resolved_time);
+    connectCB = [](const sockaddr_storage&, uint32_t){};
 }
 
 bool SocketRWer::IsConnected(){
     return stats == RWerStats::Connected;
 }
 
-void SocketRWer::SetConnectCB(std::function<void(const sockaddr_storage&)> cb) {
+void SocketRWer::SetConnectCB(std::function<void(const sockaddr_storage&, uint32_t)> cb) {
     if(IsConnected()){
-        cb(addrs.front());
+        cb(addrs.front(), resolved_time);
     } else {
         connectCB = std::move(cb);
     }
@@ -344,7 +344,7 @@ void StreamRWer::ReadData() {
         LOGD(DRWER, "stream read %d: len: %zd, ret: %zd\n", getFd(), left, ret);
         if (ret > 0) {
             rb.append((size_t) ret);
-            ConsumeRData(0);
+            //ConsumeRData(0);
             continue;
         } else if (ret == 0) {
             stats = RWerStats::ReadEOF;

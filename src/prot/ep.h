@@ -40,6 +40,7 @@ public:
     void setEvents(RW_EVENT events);
     void addEvents(RW_EVENT events);
     void delEvents(RW_EVENT events);
+    void setNone();
     RW_EVENT getEvents();
     int checkSocket(const char* msg) const;
     void (Ep::*handleEvent)(RW_EVENT events) = nullptr;

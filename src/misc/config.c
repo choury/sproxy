@@ -98,6 +98,7 @@ struct options opt = {
     .set_dns_route     = false,
     .tun_mode          = false,
     .tun_fd            = -1,
+    .trace_time        = 0,
     .redirect_http     = false,
 
     .policy_read    = NULL,
@@ -214,6 +215,7 @@ static struct option long_options[] = {
     {"tun",           no_argument,       NULL,  0 },
     {"tun-fd",        required_argument, NULL,  0 },
     {"tproxy",        required_argument, NULL,  0 },
+    {"trace",       required_argument, NULL,  0 },
     {"ua",            required_argument, NULL,  0 },
 #endif
     {"version",       no_argument,       NULL, 'v'},
@@ -284,6 +286,7 @@ static struct option_detail option_detail[] = {
     {"tun", "tun mode (vpn mode, require root privilege)", option_bool, &opt.tun_mode, (void*)true},
     {"tun-fd", "tun fd (vpn mode, recv fd before execve)", option_int64, &opt.tun_fd, NULL},
     {"tproxy", "tproxy listen (get dst via SO_ORIGINAL_DST)", option_string, &tproxy_listen, (void*)true},
+    {"trace", "print trace time if response time is larger than it", option_int64, &opt.trace_time, NULL},
     {"ua", "set user-agent for vpn auto request", option_string, &opt.ua, NULL},
 #endif
     {"version", "show the version of this programme", option_bool, NULL, NULL},

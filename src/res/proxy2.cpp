@@ -1,7 +1,7 @@
 #include "proxy2.h"
+#include "common/common.h"
+#include "prot/http/http_def.h"
 #include "req/requester.h"
-#include "misc/util.h"
-#include "misc/config.h"
 
 #include <assert.h>
 #include <inttypes.h>
@@ -369,6 +369,7 @@ void Proxy2::init(bool enable_push, std::shared_ptr<HttpReq> req) {
         request(req, nullptr);
     }
     rwer->SetReadCB([this](Buffer&& bb) -> size_t {
+        uint32_t start = getmtime();
         LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu, refs: %zd\n", dumpDest(this->rwer->getDst()).c_str(), bb.len, bb.refs());
         if(bb.len == 0){
             //EOF
@@ -389,6 +390,13 @@ void Proxy2::init(bool enable_push, std::shared_ptr<HttpReq> req) {
         }
         if((http2_flag & HTTP2_FLAG_INITED) && localwinsize < 10 * 1024 *1024){
             localwinsize += ExpandWindowSize(0, 10*1024*1024);
+        }
+        if(statusmap.count(bb.id)) {
+            auto& status = statusmap[bb.id];
+            if((status.flags & HTTP_RECV_1ST_BYTE) == 0){
+                status.req->header->tracker.emplace_back("ttfb", start);
+                status.flags |= HTTP_RECV_1ST_BYTE;
+            }
         }
         return len;
     });

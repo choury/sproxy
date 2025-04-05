@@ -1,4 +1,5 @@
 #include "ipbase.h"
+#include "misc/net.h"
 
 void Unreach(std::shared_ptr<IpStatus> status, uint8_t code) {
     std::shared_ptr<Ip> pac;

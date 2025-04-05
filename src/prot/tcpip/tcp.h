@@ -2,7 +2,10 @@
 #define TCP_H__
 
 #include "ipbase.h"
+#include "misc/job.h"
+
 #include <stddef.h>
+#include <list>
 #ifdef __APPLE__
 #include <netinet/tcp_fsm.h>
 

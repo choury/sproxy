@@ -2,11 +2,11 @@
 #include "proxy2.h"
 #include "req/requester.h"
 #include "prot/sslio.h"
-#include "misc/util.h"
 #ifdef HAVE_QUIC
 #include "proxy3.h"
 #include "prot/quic/quicio.h"
 #endif
+#include "misc/config.h"
 
 #include <string.h>
 #include <assert.h>
@@ -29,7 +29,7 @@ Host::Host(const Destination* dest){
                 dest->hostname, dest->port, Protocol::TCP,
                 [this](int ret, int code){Error(ret, code);});
         rwer = srwer;
-        srwer->SetConnectCB([this](const sockaddr_storage&){connected();});
+        srwer->SetConnectCB([this](const sockaddr_storage&, uint32_t resolved_time){connected(resolved_time);});
     }else if(strcmp(dest->protocol, "ssl") == 0 || (isWebsocket && strcmp(dest->scheme, "https") == 0)){
         auto srwer = std::make_shared<SslRWer>(
                 dest->hostname, dest->port, Protocol::TCP,
@@ -40,7 +40,7 @@ Host::Host(const Destination* dest){
             srwer->set_alpn(alpn_protos_http12, sizeof(alpn_protos_http12)-1);
         }
         rwer = srwer;
-        srwer->SetConnectCB([this](const sockaddr_storage&){connected();});
+        srwer->SetConnectCB([this](const sockaddr_storage&, uint32_t resolved_time){connected(resolved_time);});
 #ifdef HAVE_QUIC
     }else if(strcmp(dest->protocol, "quic") == 0){
         auto qrwer = std::make_shared<QuicRWer>(
@@ -48,7 +48,7 @@ Host::Host(const Destination* dest){
                 [this](int ret, int code){Error(ret, code);});
         qrwer->setAlpn(alpn_protos_http3, sizeof(alpn_protos_http3) - 1);
         rwer = qrwer;
-        qrwer->SetConnectCB([this](const sockaddr_storage&){connected();});
+        qrwer->SetConnectCB([this](const sockaddr_storage&, uint32_t resolved_time){connected(resolved_time);});
 #endif
     }else{
         LOGE("Unknown protocol: %s\n", dest->protocol);
@@ -103,8 +103,10 @@ attach:
     }, [this]{ return rwer->cap(0); });
 }
 
-void Host::connected() {
+void Host::connected(uint32_t resolved_time) {
     assert(status.res == nullptr);
+    status.req->header->tracker.emplace_back("dns", resolved_time);
+    status.req->header->tracker.emplace_back("connected", getmtime());
     std::string key = dumpDest(Server) + '@' + Server.protocol;
     LOGD(DHTTP, "<host> %s (%s) connected\n", dumpDest(rwer->getDst()).c_str(), key.c_str());
     if(responsers.has(key)) {
@@ -149,6 +151,10 @@ void Host::connected() {
 #endif
     rwer->SetReadCB([this](Buffer&& bb) -> size_t {
         LOGD(DHTTP, "<host> (%s) read: len:%zu\n", dumpDest(rwer->getDst()).c_str(), bb.len);
+        if((status.flags & HTTP_RECV_1ST_BYTE) == 0){
+            status.req->header->tracker.emplace_back("ttfb", getmtime());
+            status.flags |= HTTP_RECV_1ST_BYTE;
+        }
         if(bb.len == 0){
             //EOF
             if(Http_Proc == &Host::AlwaysProc){

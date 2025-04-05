@@ -1,6 +1,7 @@
 #ifndef ICMP_H__
 #define ICMP_H__
 #include "ipbase.h"
+#include "misc/job.h"
 
 struct IcmpStatus;
 void IcmpProc(std::shared_ptr<IcmpStatus> status, std::shared_ptr<const Ip> pac, Buffer&& bb);

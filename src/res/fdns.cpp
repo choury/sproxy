@@ -1,11 +1,11 @@
 #include "fdns.h"
-#include "req/requester.h"
 #include "misc/strategy.h"
 #include "misc/util.h"
 #include "misc/index.h"
 #include "misc/config.h"
 #include "misc/job.h"
-#include "misc/defer.h"
+#include "misc/net.h"
+#include "prot/dns/resolver.h"
 
 #include <inttypes.h>
 

@@ -1,8 +1,8 @@
 #include "job.h"
-#include "util.h"
 #include "common/common.h"
 #include <assert.h>
-#include <set>
+
+#include <list>
 
 #define JOB_RUNNING   (1u<<15u)
 #define JOB_DESTROIED (1u<<16u)

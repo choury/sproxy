@@ -1,7 +1,6 @@
 #ifndef IP_PACKET_H_
 #define IP_PACKET_H_
 
-#include "misc/net.h"
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>

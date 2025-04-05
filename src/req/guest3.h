@@ -8,10 +8,6 @@
 #include "requester.h"
 #include "prot/quic/quicio.h"
 #include "prot/http3/http3.h"
-#include "misc/net.h"
-#include "misc/config.h"
-
-#include <errno.h>
 
 class Guest3: public Requester, public Http3Responser {
     struct ReqStatus{

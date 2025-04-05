@@ -11,10 +11,8 @@
 #include "misc/config.h"
 #include "misc/util.h"
 #include "misc/strategy.h"
-#include "common/version.h"
 
 #include <fstream>
-#include <sstream>
 #include <assert.h>
 #include <inttypes.h>
 
@@ -521,7 +519,7 @@ void Guest_vpn::dump_stat(Dumper dp, void *param) {
                 i.first, i.second.req->header->request_id,
                 i.second.req->header->method,
                 i.second.req->header->geturl().c_str(),
-                getmtime() - i.second.req->header->ctime,
+                getmtime() - std::get<1>(i.second.req->header->tracker[0]),
                 i.second.flags, i.second.prog.c_str());
         }
         if(i.second.rwer) {

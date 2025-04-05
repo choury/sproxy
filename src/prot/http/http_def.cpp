@@ -1,5 +1,5 @@
 #include "http_def.h"
-#include "misc/util.h"
+#include "misc/config.h"
 
 #include <assert.h>
 #include <inttypes.h>
@@ -122,20 +122,27 @@ void HttpReq::send(Signal s) {
 void HttpLog(const std::string& src, std::shared_ptr<const HttpReqHeader> req, std::shared_ptr<const HttpResHeader> res){
     char status[100];
     sscanf(res->status, "%s", status); //get the first word of status (status code)
+    uint32_t res_time = std::get<1>(req->tracker.back()) - std::get<1>(req->tracker[0]);
     if(debug[DHTTP].enabled){
         LOG("%s [%" PRIu64 "] %s %s [%s]\n", src.c_str(),
             req->request_id, req->method, req->geturl().c_str(), req->Dest.protocol);
         for(const auto& header : req->getall()){
             LOG("%s: %s\n", header.first.c_str(), header.second.c_str());
         }
-        LOG("\nResponse: %s %dms\n" , status, res->ctime - req->ctime);
+        LOG("\nResponse: %s %ums\n" , status, res_time);
         for(const auto& header : res->getall()){
             LOG("%s: %s\n", header.first.c_str(), header.second.c_str());
         }
     } else {
-        LOG("%s [%" PRIu64 "] %s %s [%s] %s %dms [%s]\n", src.c_str(),
+        LOG("%s [%" PRIu64 "] %s %s [%s] %s %ums [%s]\n", src.c_str(),
             req->request_id, req->method, req->geturl().c_str(),
-            req->get(STRATEGY), status, res->ctime - req->ctime,
+            req->get(STRATEGY), status, res_time,
             req->get("User-Agent"));
+    }
+    if(opt.trace_time > 0 && res_time > (size_t)opt.trace_time) {
+        uint32_t mtime = std::get<1>(req->tracker[0]);
+        for(auto [tracker, time] : req->tracker) {
+            LOG("%s: %ums\n", tracker.c_str(), time - mtime);
+        }
     }
 }

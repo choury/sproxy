@@ -2,6 +2,7 @@
 #include "misc/strategy.h"
 #include "misc/util.h"
 #include "misc/config.h"
+#include "misc/defer.h"
 
 #include "host.h"
 #include "file.h"
@@ -9,9 +10,9 @@
 #include "uhost.h"
 #include "rproxy2.h"
 
-#include <regex>
 #include <string.h>
 #include <assert.h>
+#include <inttypes.h>
 
 
 bimap<std::string, Responser*> responsers;
@@ -63,6 +64,7 @@ static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, Reques
 }
 
 void distribute(std::shared_ptr<HttpReq> req, Requester* src){
+    defer([req] { req->header->tracker.emplace_back("distribute", getmtime()); });
     auto header = req->header;
     auto id = header->request_id;
     std::shared_ptr<HttpRes> res;
@@ -154,7 +156,6 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
             break;
         //rewrite 和 forward的唯一区别就是rewrite会修改host为目标地址
         case Strategy::rewrite:
-            header->set("host", stra.ext);
             /* FALLTHROUGH */
         case Strategy::forward:
             if(stra.ext.empty()){
@@ -171,6 +172,9 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
                 res = std::make_shared<HttpRes>(HttpResHeader::create(S500, sizeof(S500), id),
                                                 "[[ext misformat]]\n");
                 goto out;
+            }
+            if(stra.s == Strategy::rewrite) {
+                header->set("host", dumpAuthority(&dest));
             }
             break;
         default:

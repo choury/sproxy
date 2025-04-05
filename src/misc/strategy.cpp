@@ -3,7 +3,6 @@
 #include "config.h"
 #include "common/common.h"
 #include "trie.h"
-#include "defer.h"
 #include <set>
 #include <sstream>
 

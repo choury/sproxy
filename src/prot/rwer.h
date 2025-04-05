@@ -2,7 +2,6 @@
 #define RWER_H__
 
 #include "prot/ep.h"
-#include "misc/job.h"
 #include "misc/buffer.h"
 
 #include <sys/socket.h>

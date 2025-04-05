@@ -1,6 +1,5 @@
 #include "rpc.h"
 
-#include <errno.h>
 #include <string.h>
 #include <assert.h>
 #include <unistd.h>

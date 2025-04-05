@@ -5,7 +5,6 @@
 #include "misc/buffer.h"
 #include "hpack.h"
 
-#include <list>
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>

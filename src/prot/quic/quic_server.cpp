@@ -5,6 +5,7 @@
 #include "quic_server.h"
 #include "req/guest3.h"
 #include "req/guest_sni.h"
+#include "misc/config.h"
 
 #include <unistd.h>
 

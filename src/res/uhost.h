@@ -2,7 +2,7 @@
 #define UHOST_H__
 
 #include "responser.h"
-
+#include "misc/job.h"
 
 class Uhost: public Responser{
     std::shared_ptr<HttpReq>    req;

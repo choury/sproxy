@@ -2,7 +2,7 @@
 #include "resolver.h"
 #include "misc/config.h"
 #include "misc/defer.h"
-#include "common/base.h"
+#include "misc/net.h"
 #include "common/common.h"
 
 #include <unordered_map>

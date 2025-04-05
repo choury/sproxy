@@ -52,7 +52,6 @@ protected:
     std::map<std::string, std::string> headers;
 public:
     uint64_t request_id = 0;
-    uint32_t ctime = 0;
     std::set<std::string> cookies;
 
     void set(const std::string& header, const std::string& value);
@@ -96,6 +95,7 @@ public:
     std::string filename;
     std::vector<Range> ranges;
     bool chain_proxy  = false;
+    std::vector<std::tuple<std::string, uint32_t>> tracker;
     explicit HttpReqHeader(HeaderMap&& headers);
     HttpReqHeader(const HttpReqHeader&) = default;
     bool ismethod(const char* method) const;

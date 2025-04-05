@@ -6,7 +6,6 @@
 #define SPROXY_QUIC_QOS_H
 
 #include "pn_namespace.h"
-#include "misc/util.h"
 #include "misc/job.h"
 
 #include <openssl/ssl.h>

@@ -1,6 +1,5 @@
 #include "guest2.h"
 #include "res/responser.h"
-#include "misc/util.h"
 #include "misc/config.h"
 
 #include <assert.h>
@@ -231,6 +230,7 @@ void Guest2::response(void* index, std::shared_ptr<HttpRes> res) {
         ReqStatus& status = statusmap[id];
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:{
+            status.req->header->tracker.emplace_back("header", getmtime());
             auto header = std::dynamic_pointer_cast<HttpResHeader>(std::get<std::shared_ptr<HttpHeader>>(msg.data));
             LOGD(DHTTP2, "<guest2> get response [%d]: %s\n", id, header->status);
             HttpLog(dumpDest(rwer->getSrc()), status.req->header, header);
@@ -382,7 +382,7 @@ void Guest2::dump_stat(Dumper dp, void* param) {
                 (int)i.second.req->cap(),
                 i.second.buffer ? (int)i.second.buffer->length() : 0,
                 i.second.localwinsize, i.second.remotewinsize,
-                getmtime() - i.second.req->header->ctime,
+                getmtime() - std::get<1>(i.second.req->header->tracker[0]),
                 i.second.flags,
                 i.second.req->header->get("User-Agent"));
     }

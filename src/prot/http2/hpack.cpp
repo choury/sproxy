@@ -1,4 +1,5 @@
 #include "hpack.h"
+#include "prot/http/http_code.h"
 #include "common/common.h"
 
 #include <assert.h>

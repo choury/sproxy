@@ -1,12 +1,10 @@
 #include "guest.h"
 #include "guest2.h"
-#include "guest_sni.h"
 #include "res/responser.h"
 #include "res/rproxy2.h"
-#include "misc/util.h"
 #include "misc/config.h"
-#include "misc/strategy.h"
 #include "prot/sslio.h"
+#include "prot/tls.h"
 
 #include <string.h>
 #include <assert.h>
@@ -116,7 +114,7 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
             Error(ret, code);
         });
         this->rwer = srwer;
-        srwer->SetConnectCB([this](const sockaddr_storage&){
+        srwer->SetConnectCB([this](const sockaddr_storage&, uint32_t){
             //不要捕获rwer,否则不能正常释放shared_ptr
             auto srwer = std::dynamic_pointer_cast<SslRWer>(this->rwer);
             const unsigned char *data;
@@ -236,6 +234,9 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     statuslist.emplace_back(ReqStatus{req, nullptr, nullptr});
     if(statuslist.size() == 1){
         distribute(req, this);
+    } else {
+        LOGD(DHTTP, "<guest> ReqProc %" PRIu64 " %s, waiting for the previous request to finish\n",
+             header->request_id, header->geturl().c_str());
     }
 }
 
@@ -257,6 +258,9 @@ void Guest::deqReq() {
     }
     statuslist.pop_front();
     if(!statuslist.empty()){
+        LOGD(DHTTP, "<guest> deqReq %" PRIu64 " %s\n",
+             statuslist.front().req->header->request_id,
+             statuslist.front().req->header->geturl().c_str());
         distribute(statuslist.front().req, this);
     }else if(rwer->isEof()){
         //不会再有新的请求了，可以直接关闭
@@ -354,6 +358,7 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
         assert(!statuslist.empty());
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER: {
+            status.req->header->tracker.emplace_back("header", getmtime());
             auto header = std::dynamic_pointer_cast<HttpResHeader>(std::get<std::shared_ptr<HttpHeader>>(msg.data));
             HttpLog(dumpDest(rwer->getSrc()), status.req->header, header);
             if (status.req->header->ismethod("CONNECT")) {
@@ -397,6 +402,7 @@ void Guest::Recv(Buffer&& bb) {
     ReqStatus& status = statuslist.front();
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
     if(bb.len == 0){
+        status.req->header->tracker.emplace_back("eof", getmtime());
         status.flags |= HTTP_RES_COMPLETED;
         LOGD(DHTTP, "<guest> recv %" PRIu64 ": EOF/%zu\n", status.req->header->request_id, tx_bytes);
         if(status.flags & HTTP_NOEND_F){
@@ -417,13 +423,16 @@ void Guest::Recv(Buffer&& bb) {
         }
         return;
     }
-    if(status.req->header->ismethod("HEAD")){
-        LOGD(DHTTP, "<guest> recv %" PRIu64 ": HEAD req discard body\n", status.req->header->request_id);
-        return;
+    if(tx_bytes == 0) {
+        status.req->header->tracker.emplace_back("body", getmtime());
     }
     tx_bytes += bb.len;
     LOGD(DHTTP, "<guest> recv %" PRIu64 ": size:%zu/%zu, refs: %zd\n",
          status.req->header->request_id, bb.len, tx_bytes, bb.refs());
+    if(status.req->header->ismethod("HEAD")){
+        LOGD(DHTTP, "<guest> recv %" PRIu64 ": HEAD req discard body\n", status.req->header->request_id);
+        return;
+    }
     if(status.flags & HTTP_CHUNK_F){
         char chunkbuf[100];
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)bb.len);
@@ -488,7 +497,7 @@ void Guest::dump_stat(Dumper dp, void* param){
                     status.req->header->request_id,
                     status.req->header->method,
                     status.req->header->geturl().c_str(),
-                    getmtime() - status.req->header->ctime,
+                    getmtime() - std::get<1>(status.req->header->tracker[0]),
                     status.flags,
                     status.req->header->get("User-Agent"));
         }

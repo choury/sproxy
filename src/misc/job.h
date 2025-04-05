@@ -3,7 +3,6 @@
 
 #include <stdint.h>
 #include <functional>
-#include <list>
 #include <memory>
 
 struct job;

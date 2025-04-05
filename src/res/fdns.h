@@ -4,9 +4,7 @@
 //fake dns
 
 #include "responser.h"
-#include "prot/dns/resolver.h"
 #include "prot/dns/dns.h"
-#include "prot/memio.h"
 #include <map>
 
 class FDns: public Responser{

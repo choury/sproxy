@@ -3,17 +3,14 @@
 
 #include "netio.h"
 #include "memio.h"
-#include "tls.h"
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
-#include <type_traits>
 
 class SslRWerBase {
 protected:
     SslStats sslStats = SslStats::Idel;
     SSL *ssl = nullptr;
-    SSL_CTX* ctx = nullptr;
     BIO* in_bio = BIO_new(BIO_s_mem());
     BIO* out_bio = BIO_new(BIO_s_mem());
     std::string server;
@@ -114,9 +111,7 @@ public:
            std::function<void(uint64_t)> read_cb,
            std::function<ssize_t()> cap_cb):
       SslRWerBase(ctx), MemRWer(src, std::move(write_cb), std::move(read_cb), std::move(cap_cb))
-    {
-        this->ctx = ctx;
-    }
+    {}
     virtual void push_data(Buffer&& bb) override;
     void Send(Buffer&& bb) override;
 

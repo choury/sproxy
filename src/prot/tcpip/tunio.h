@@ -2,9 +2,7 @@
 #define TUNIO_H__
 #include "prot/rwer.h"
 #include "misc/index.h"
-#include "tcp.h"
-#include "udp.h"
-#include "icmp.h"
+#include "ipbase.h"
 
 struct VpnKey{
     Protocol    protocol;

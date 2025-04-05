@@ -13,7 +13,7 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
         deleteLater(ret);
     });
     rwer = qrwer;
-    qrwer->SetConnectCB([this](const sockaddr_storage& addr){
+    qrwer->SetConnectCB([this](const sockaddr_storage& addr, uint32_t){
         const sockaddr_in6 *addr6 = (const sockaddr_in6*)&addr;
         family = addr6->sin6_family;
         if(addr6->sin6_port == 0){

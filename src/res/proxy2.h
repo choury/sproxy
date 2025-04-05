@@ -3,8 +3,7 @@
 
 #include "responser.h"
 #include "prot/http2/http2.h"
-#include "prot/sslio.h"
-
+#include "misc/job.h"
 
 class Proxy2:public Responser, public Http2Requster {
     struct ReqStatus{

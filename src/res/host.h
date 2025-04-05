@@ -2,7 +2,6 @@
 #define HOST_H__
 
 #include "responser.h"
-#include "misc/config.h"
 #include "prot/http/http.h"
 
 class Requester;
@@ -28,7 +27,7 @@ protected:
     virtual void ErrProc(uint64_t id) override;
 
     virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
-    virtual void connected();
+    virtual void connected(uint32_t resolved_time);
     void Recv(Buffer&& bb);
     void Handle(Signal s);
     void reply();

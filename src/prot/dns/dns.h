@@ -2,9 +2,7 @@
 #define DNS_H__
 
 #include "common/common.h"
-#include "misc/net.h"
 
-#include <string>
 #include <vector>
 #include <netinet/in.h>
 #if __APPLE__

@@ -1,12 +1,9 @@
 #include "guest_sni.h"
 #include "prot/tls.h"
 #include "prot/sslio.h"
-#include "misc/util.h"
-#include "misc/net.h"
 #include "misc/config.h"
 #include "misc/defer.h"
 #include "res/responser.h"
-#include "common/version.h"
 
 #ifdef HAVE_QUIC
 #include "guest3.h"
@@ -14,7 +11,6 @@
 
 #include <stdlib.h>
 #include <inttypes.h>
-#include <sstream>
 
 Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(fd, addr, ctx){
     assert(ctx == nullptr);
