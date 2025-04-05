@@ -114,8 +114,12 @@ int SslRWerBase::sink_in_bio(uint64_t id) {
 }
 
 void SslRWerBase::handleData(const void* data, size_t len) {
-    int ret = BIO_write(in_bio, data, (int)len);
-    LOGD(DSSL, "[%s] BIO_write %d bytes\n", server.c_str(), ret);
+    if(len > 0) {
+        int ret = BIO_write(in_bio, data, (int)len);
+        LOGD(DSSL, "[%s] BIO_write %d bytes\n", server.c_str(), ret);
+    } else {
+        LOGD(DSSL, "[%s] handleData with nullptr\n", server.c_str());
+    }
     switch(sslStats) {
     case SslStats::Idel:
         //it should set to SslStats::SslAccepting or SslStats::SslConnecting in constructor
@@ -261,8 +265,12 @@ void SslRWer::ReadData() {
             //StreamRWer::ConsumeRData(0);
             continue;
         } else if (ret == 0) {
-            stats = RWerStats::ReadEOF;
-            delEvents(RW_EVENT::READ);
+            if(BIO_ctrl_pending(in_bio) > 0) {
+                handleData(nullptr, 0);
+            }else{
+                stats = RWerStats::ReadEOF;
+                delEvents(RW_EVENT::READ);
+            }
             break;
         } else if (errno == EAGAIN) {
             break;

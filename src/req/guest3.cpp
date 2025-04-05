@@ -218,7 +218,7 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
         return 0;
         //这里是没办法准确计算cap的，因为rwer返回的可用量http3这里写的时候会再加头部数据
         //如果还是不够，多出来的数据会放入quic的fullq队列中
-    }, [this, id]{return rwer->cap(id);});
+    }, [this, id]{return rwer->cap(id) - 9;});
 }
 
 void Guest3::Clean(uint64_t id, uint32_t errcode) {
