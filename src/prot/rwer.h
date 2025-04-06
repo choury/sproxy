@@ -25,6 +25,7 @@ enum class SslStats{
     SslAccepting,
     SslConnecting,
     Established,
+    SslError,
     SslEOF,
 };
 

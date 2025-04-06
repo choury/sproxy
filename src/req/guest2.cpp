@@ -379,9 +379,9 @@ void Guest2::dump_stat(Dumper dp, void* param) {
                 i.first, i.second.req->header->request_id,
                 i.second.req->header->method,
                 i.second.req->header->geturl().c_str(),
+                i.second.localwinsize, i.second.remotewinsize,
                 (int)i.second.req->cap(),
                 i.second.buffer ? (int)i.second.buffer->length() : 0,
-                i.second.localwinsize, i.second.remotewinsize,
                 getmtime() - std::get<1>(i.second.req->header->tracker[0]),
                 i.second.flags,
                 i.second.req->header->get("User-Agent"));

@@ -14,6 +14,7 @@ protected:
     std::function<void(const sockaddr_storage&)> connectCB = [](const sockaddr_storage&){};
     void connected(const sockaddr_storage& addr);
     virtual void closeHE(RW_EVENT events) override;
+    virtual void ErrorHE(int ret, int code) override;
     virtual ssize_t Write(std::set<uint64_t>& writed_list) override;
     virtual bool IsConnected() {
         return true;
@@ -47,7 +48,6 @@ public:
     }
 
     void SetConnectCB(std::function<void(const sockaddr_storage&)> connectCB);
-    virtual void Close(std::function<void()> func) override;
     virtual ssize_t cap(uint64_t id) override;
     virtual void ConsumeRData(uint64_t) override;
     virtual Destination getSrc() const override {

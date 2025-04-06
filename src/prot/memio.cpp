@@ -30,13 +30,11 @@ void MemRWer::SetConnectCB(std::function<void (const sockaddr_storage &)> cb){
     }
 }
 
-void MemRWer::Close(std::function<void()> func) {
-    RWer::Close([this, func = std::move(func)] {
-        if(stats != RWerStats::Error) {
-            write_cb(CHANNEL_ABORT);
-        }
-        func();
-    });
+void MemRWer::ErrorHE(int ret, int code) {
+    if(stats != RWerStats::Error) {
+        write_cb(CHANNEL_ABORT);
+    }
+    FullRWer::ErrorHE(ret, code);
 }
 
 void MemRWer::connected(const sockaddr_storage& addr) {
@@ -66,7 +64,7 @@ void MemRWer::push_signal(Signal s) {
     ConsumeRData(0);
     switch(s){
     case CHANNEL_ABORT:
-        return ErrorHE(PROTOCOL_ERR, PEER_LOST_ERR);
+        return errorCB(PROTOCOL_ERR, PEER_LOST_ERR);
     }
 }
 

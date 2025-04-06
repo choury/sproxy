@@ -1,4 +1,5 @@
 #include "sslio.h"
+#include "prot/rwer.h"
 #include "prot/tls.h"
 
 #include <openssl/err.h>
@@ -108,6 +109,7 @@ int SslRWerBase::sink_in_bio(uint64_t id) {
         sslStats = SslStats::SslEOF;
         return 0;
     } else if (errno != EAGAIN) {
+        sslStats = SslStats::SslError;
         onError(SSL_SHAKEHAND_ERR, errno);
     }
     return 0;
@@ -130,8 +132,8 @@ void SslRWerBase::handleData(const void* data, size_t len) {
     case SslStats::Established:
         while (sslStats == SslStats::Established && sink_in_bio(0));
         break;
-    case SslStats::SslEOF:
-        LOGE("[%s] ssl eof, discard all data\n", server.c_str());
+    case SslStats::SslEOF: case SslStats::SslError:
+        LOGE("[%s] ssl eof/error, discard all data\n", server.c_str());
         break;
     }
 }
@@ -149,6 +151,7 @@ void SslRWerBase::sendData(Buffer&& bb) {
                 bb.reserve(ret);
                 continue;
             }
+            sslStats = SslStats::SslError;
             onError(SSL_SHAKEHAND_ERR, errno);
             return;
         }
@@ -163,6 +166,7 @@ void SslRWerBase::do_handshake() {
         LOGD(DSSL, "[%s] ssl handshake success\n", server.c_str());
         onConnected();
     }else if(errno != EAGAIN){
+        sslStats = SslStats::SslError;
         int error = errno;
         LOGE("[%s]: ssl %s error:%s\n", server.c_str(), SSL_is_server(ssl)?"accept":"connect", strerror(error));
         onError(SSL_SHAKEHAND_ERR, error);
@@ -302,7 +306,7 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
 
 void SslRWer::Send(Buffer&& bb) {
     assert((this->flags & RWER_SHUTDOWN) == 0);
-    if(this->stats == RWerStats::Error) {
+    if(this->stats == RWerStats::Error || sslStats == SslStats::SslError) {
         return;
     }
     sendData(std::move(bb));
@@ -310,7 +314,7 @@ void SslRWer::Send(Buffer&& bb) {
 
 void SslMer::Send(Buffer&& bb) {
     assert((this->flags & RWER_SHUTDOWN) == 0);
-    if(this->stats == RWerStats::Error) {
+    if(this->stats == RWerStats::Error || sslStats == SslStats::SslError) {
         return;
     }
     sendData(std::move(bb));
