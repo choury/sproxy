@@ -11,6 +11,7 @@ int main(){
     t1.insert(split("test.choury.com"), (void*)2);
     t1.insert(split("*.com"), (void*)3);
     t1.insert(split("test.choury.com"), (void*)4, "test.*");
+    t1.insert(split("test.choury.com"), (void*)5, "*.html"); //wrong req expr
     t1.dump(0);
 
     assert(t1.find(split("abc.choury.com"))->value == (void*)3);

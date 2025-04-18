@@ -124,6 +124,7 @@ ssize_t writem(int fd, const struct iovec *iov, int iovcnt) {
 
 #ifdef __linux__
 #include <string.h>
+#define _GNU_SOURCE
 #define __USE_GNU
 #include <sys/socket.h>
 

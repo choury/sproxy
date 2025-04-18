@@ -64,6 +64,10 @@ class handler: public CgiHandler {
             left = 2ull * 1024 * 1024 * 1024;    //2G
 #endif
         }
+        int level = Z_BEST_SPEED;
+        if (params.count("level")) {
+            level = std::atoi(params["level"].c_str());
+        }
 
         const char *accept = req->get("Accept-Encoding");
         bool isgzip = false;
@@ -84,7 +88,7 @@ class handler: public CgiHandler {
             strm->zfree = Z_NULL;
             strm->opaque = Z_NULL;
             int ret;
-            if ((ret = deflateInit2(strm, Z_BEST_SPEED, Z_DEFLATED, 16 + MAX_WBITS, 8, Z_DEFAULT_STRATEGY)) !=
+            if ((ret = deflateInit2(strm, level, Z_DEFLATED, 16 + MAX_WBITS, 8, Z_DEFAULT_STRATEGY)) !=
                 Z_OK) {
                 Response(HttpResHeader::create(S500, sizeof(S500), req->request_id));
                 Finish();

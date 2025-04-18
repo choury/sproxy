@@ -52,9 +52,13 @@ public:
     const TrieType<V>* find(std::list<T>&& token, std::string ext = "") const{
         if(token.empty()) {
             for (auto i: regexChildren) {
-                std::regex reg(i.first);
-                if (std::regex_match(ext, reg)) {
-                    return i.second->find({}, "");
+                try{
+                    std::regex reg(i.first);
+                    if (std::regex_match(ext, reg)) {
+                        return i.second->find({}, "");
+                    }
+                }catch(std::regex_error&) {
+                    continue;
                 }
             }
             if (isEndpoint) {
@@ -103,7 +107,7 @@ public:
     }
     bool remove(std::list<T>&& token, bool& found) {
         if(token.empty()){
-            found = this->isEndpoint;
+            found = this->isEndpoint || regexChildren.size();
             return children.empty() && found;
         }
         auto top = token.front();

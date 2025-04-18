@@ -115,6 +115,11 @@ static bool mergestrategy(const string& host, const string& strategy_str, const 
     }else if(ipinsert(host.c_str(), stra)){
         return true;
     } else if(stra.s == Strategy::block){
+        try{
+            std::regex reg(ext);
+        }catch(std::regex_error&) {
+            return false;
+        }
         domains.insert(split(toLower(host)), stra, ext);
         return true;
     } else {
@@ -172,7 +177,7 @@ void savesites(){
         if(i.second.ext == GEN_TIP){
             continue;
         }
-         
+
         if(fprintf(opt.policy_write, 
             "%s %s %s\n", i.first.c_str(), 
             getstrategystring(i.second.s), 
