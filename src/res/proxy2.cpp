@@ -456,8 +456,11 @@ void Proxy2::dump_usage(Dumper dp, void *param) {
         if(i.second.res) {
             res_usage += i.second.res->mem_usage();
         }
+        if(i.second.buffer) {
+            res_usage += i.second.buffer->cap();
+        }
     }
     dp(param, "Proxy2 %p: %zd, resmap: %zd, rwer: %zd\n",
-       this, sizeof(*this) + header_buffer->cap + hpack_decoder.get_dynamic_table_size() + hpack_encoder.get_dynamic_table_size(),
+       this, sizeof(*this) + (header_buffer ? header_buffer->cap:0) + hpack_decoder.get_dynamic_table_size() + hpack_encoder.get_dynamic_table_size(),
        res_usage, rwer->mem_usage());
 }

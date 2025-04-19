@@ -261,6 +261,7 @@ echo "test http1 -> http1"
 test_client 3335
 jobs
 printf "dump sites" | ./scli -s ${sp}client_h1.sock
+printf "dump usage" | ./scli -s ${sp}client_h1.sock
 kill -SIGUSR1 %2
 kill -SIGUSR2 %2
 wait %2
@@ -278,11 +279,13 @@ printf "switch quic://$HOSTNAME:3334" | ./scli -s ${sp}client_h23.sock
 echo "test http1 -> http3"
 test_client 3335
 printf "dump sites" | ./scli -s ${sp}client_h23.sock
+printf "dump usage" | ./scli -s ${sp}client_h23.sock
 jobs
 kill -SIGUSR1 %2
 kill -SIGUSR2 %2
 wait %2
 
+printf "dump usage" | ./scli -s ${sp}server.sock
 kill -SIGUSR1 %1
 kill -SIGUSR2 %1
 wait %1

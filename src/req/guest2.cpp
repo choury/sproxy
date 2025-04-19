@@ -394,9 +394,12 @@ void Guest2::dump_usage(Dumper dp, void *param) {
     for(const auto& i: statusmap) {
         req_usage += sizeof(i.first) + sizeof(i.second);
         req_usage += i.second.req->mem_usage();
+        if(i.second.buffer) {
+            req_usage += i.second.buffer->cap();
+        }
     }
     dp(param, "Guest2 %p: %zd, reqmap: %zd, rwer: %zd\n",
-       this, sizeof(*this) + header_buffer->cap + hpack_decoder.get_dynamic_table_size() + hpack_encoder.get_dynamic_table_size(),
+       this, sizeof(*this) + (header_buffer ? header_buffer->cap : 0) + hpack_decoder.get_dynamic_table_size() + hpack_encoder.get_dynamic_table_size(),
        req_usage, rwer->mem_usage());
 }
 
