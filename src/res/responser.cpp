@@ -92,7 +92,14 @@ void distribute(std::shared_ptr<HttpReq> req, Requester* src){
             goto out;
         }
         if(stra.s == Strategy::local){
-            if(header->http_method() && (src->getDst().port == 0 || header->getDport() == src->getDst().port)) {
+            if(!opt.restrict_local && !header->http_method()) {
+                res = std::make_shared<HttpRes>(HttpResHeader::create(S405, sizeof(S405), id),
+                                                "[[unsported method]]\n");
+                goto out;
+            }
+            if(!opt.restrict_local ||
+               (header->http_method() && (src->getDst().port == 0 || header->getDport() == src->getDst().port)))
+            {
                 header->set(STRATEGY, getstrategystring(Strategy::local));
                 return File::getfile(req, src);
             }

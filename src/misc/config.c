@@ -32,6 +32,14 @@
 #endif
 #include <openssl/ssl.h>
 
+/*
+ * Ensure GNU basename behavior on musl
+ */
+ #ifndef __GLIBC__
+ #define basename(path) \
+        (strrchr((path), '/') ? strrchr((path),'/') + 1 : (path))
+ #endif
+
 static char** main_argv = NULL;
 static char* auto_options[] = {"disable", "enable", "auto", NULL};
 static char* server_string = NULL;
@@ -100,6 +108,7 @@ struct options opt = {
     .tun_fd            = -1,
     .trace_time        = 0,
     .redirect_http     = false,
+    .restrict_local    = false,
 
     .policy_read    = NULL,
     .policy_write   = NULL,
@@ -199,6 +208,7 @@ static struct option long_options[] = {
     {"quic",          required_argument, NULL, 'q'},
 #endif
     {"redirect-http", no_argument,       NULL,  0 },
+    {"restrict-local",no_argument,       NULL,  0 },
     {"rewrite-auth",  required_argument, NULL, 'r'},
     {"root-dir",      required_argument, NULL,  0 },
     {"secret",        required_argument, NULL, 's'},
@@ -215,14 +225,14 @@ static struct option long_options[] = {
     {"tun",           no_argument,       NULL,  0 },
     {"tun-fd",        required_argument, NULL,  0 },
     {"tproxy",        required_argument, NULL,  0 },
-    {"trace",       required_argument, NULL,  0 },
+    {"trace",         required_argument, NULL,  0 },
     {"ua",            required_argument, NULL,  0 },
 #endif
     {"version",       no_argument,       NULL, 'v'},
 #ifndef NDEBUG
     {"debug",         required_argument, NULL,  0 },
 #endif
-    {NULL,       0,                NULL,  0 }
+    {NULL,            0,                 NULL,  0 }
 };
 
 
@@ -271,6 +281,7 @@ static struct option_detail option_detail[] = {
 #endif
     {"redirect-http", "Return 308 to redirect http to https", option_bool, &opt.redirect_http, (void*)true},
     {"request-header", "append the header (name:value) before handle http request", option_list, &opt.request_headers, NULL},
+    {"restrict-local", "check method and dst port for local strategy", option_bool, &opt.restrict_local, (void*)true},
     {"forward-header", "append the header (name:value) when forward http request", option_list, &opt.forward_headers, NULL},
     {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64, opt.rewrite_auth, NULL},
     {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
@@ -586,6 +597,10 @@ void postConfig(){
     }
     if(server_string && parseDest(server_string, &opt.Server)){
         LOGE("wrong server format: %s\n", server_string);
+        exit(1);
+    }
+    if(opt.redirect_http && opt.ssl.port == 0) {
+        LOGE("redirect-http must use with ssl\n");
         exit(1);
     }
     LOG("server %s\n", dumpDest(&opt.Server));

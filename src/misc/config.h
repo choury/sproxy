@@ -73,6 +73,7 @@ struct options{
     int  tun_fd;
     int  trace_time;
     bool redirect_http;
+    bool restrict_local;
 
     FILE* policy_read;
     FILE* policy_write;
