@@ -1,6 +1,7 @@
 #include "guest2.h"
 #include "res/responser.h"
 #include "misc/config.h"
+#include "misc/hook.h"
 
 #include <assert.h>
 #include <inttypes.h>
@@ -24,6 +25,7 @@ bool Guest2::wantmore(const ReqStatus& status) {
 Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
     rwer->SetErrorCB([this](int ret, int code){Error(ret, code);});
     rwer->SetReadCB([this](Buffer&& bb) -> size_t {
+        HOOK_FUNC(this, statusmap, bb);
         LOGD(DHTTP2, "<guest2> (%s) read: len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.len);
         if(bb.len == 0){
             //EOF
@@ -156,6 +158,7 @@ void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
 }
 
 void Guest2::DataProc(Buffer&& bb) {
+    HOOK_FUNC(this, statusmap, bb);
     if(bb.len == 0)
         return;
     if ((int)bb.len > localwinsize) {
@@ -226,6 +229,7 @@ void Guest2::response(void* index, std::shared_ptr<HttpRes> res) {
     status.res = res;
 
     res->attach([this, id](ChannelMessage&& msg){
+        HOOK_FUNC(this, statusmap, id, msg);
         assert(statusmap.count(id));
         ReqStatus& status = statusmap[id];
         switch(msg.type){

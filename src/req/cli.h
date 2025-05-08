@@ -37,8 +37,11 @@ public:
     virtual std::string DumpStatus() override;
     virtual std::string DumpDns() override;
     virtual std::string DumpMemUsage() override;
+    virtual std::string DumpHooker() override;
     virtual bool Debug(const std::string& module, bool enable) override;
     virtual bool killCon(const std::string& address) override;
+    virtual bool HookerAdd(const std::string& hooker, const std::string& lib) override;
+    virtual bool HookerDel(const std::string& hooker) override;
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;

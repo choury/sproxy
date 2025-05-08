@@ -1,6 +1,7 @@
 #include "rwer.h"
 #include "common/common.h"
 #include "misc/defer.h"
+#include "misc/hook.h"
 
 #include <unistd.h>
 #include <assert.h>

@@ -49,11 +49,14 @@ protected:
     virtual bool Login(const std::string& token, const std::string& source) = 0;
     virtual bool Debug(const std::string& module, bool enable) = 0;
     virtual bool killCon(const std::string& address) = 0;
+    virtual bool HookerAdd(const std::string& hooker, const std::string& lib) = 0;
+    virtual bool HookerDel(const std::string& hooker) = 0;
 
     virtual std::string GetServer() = 0;
     virtual std::string DumpStatus() = 0;
     virtual std::string DumpDns() = 0;
     virtual std::string DumpMemUsage() = 0;
+    virtual std::string DumpHooker() = 0;
 };
 
 class SproxyClient:virtual public RpcClient {
@@ -80,9 +83,12 @@ public:
     std::promise<std::string> DumpStatus();
     std::promise<std::string> DumpDns();
     std::promise<std::string> DumpMemUsage();
+    std::promise<std::string> DumpHooker();
     std::promise<bool> Login(const std::string& token, const std::string& source);
     std::promise<bool> Debug(const std::string& module, bool enable);
     std::promise<bool> killCon(const std::string& address);
+    std::promise<bool> HookerAdd(const std::string& hooker, const std::string& lib);
+    std::promise<bool> HookerDel(const std::string& hooker);
 };
 
 #endif

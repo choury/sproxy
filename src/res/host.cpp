@@ -7,6 +7,7 @@
 #include "prot/quic/quicio.h"
 #endif
 #include "misc/config.h"
+#include "misc/hook.h"
 
 #include <string.h>
 #include <assert.h>
@@ -88,6 +89,7 @@ void Host::reply(){
     }
 attach:
     status.req->attach([this](ChannelMessage&& msg){
+        HOOK_FUNC(this, status, msg);
         switch(msg.type){
             case ChannelMessage::CHANNEL_MSG_HEADER:
                 LOGD(DHTTP, "<host> ignore header for req\n");
@@ -150,6 +152,7 @@ void Host::connected(uint32_t resolved_time) {
     }
 #endif
     rwer->SetReadCB([this](Buffer&& bb) -> size_t {
+        HOOK_FUNC(this, status, bb);
         LOGD(DHTTP, "<host> (%s) read: len:%zu\n", dumpDest(rwer->getDst()).c_str(), bb.len);
         if((status.flags & HTTP_RECV_1ST_BYTE) == 0){
             status.req->header->tracker.emplace_back("ttfb", getmtime());
@@ -254,6 +257,7 @@ void Host::ResProc(uint64_t id, std::shared_ptr<HttpResHeader> header) {
 }
 
 ssize_t Host::DataProc(Buffer& bb) {
+    HOOK_FUNC(this, status, status);
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
     if(status.res == nullptr){
         status.res = std::make_shared<HttpRes>(HttpResHeader::create(S200, sizeof(S200), bb.id),

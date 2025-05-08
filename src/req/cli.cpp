@@ -4,6 +4,7 @@
 
 #include "misc/strategy.h"
 #include "misc/config.h"
+#include "misc/hook.h"
 #include "prot/dns/resolver.h"
 #include "res/cgi.h"
 
@@ -162,6 +163,12 @@ std::string Cli::DumpMemUsage() {
     return ss;
 }
 
+std::string Cli::DumpHooker() {
+    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    std::string ss;
+    hookManager.dump(sstream_dumper, &ss);
+    return ss;
+}
 
 bool Cli::Debug(const std::string& module, bool enable) {
     LOG("%s [%s] %s %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, enable?"enable":"disable", module.c_str());
@@ -176,6 +183,23 @@ bool Cli::killCon(const std::string &address) {
         return false;
     }
     return kill_server(reinterpret_cast<Server*>(num), CLI_KILLED);
+}
+
+bool Cli::HookerAdd(const std::string &hooker, const std::string &lib) {
+    LOG("%s [%s] %s %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, hooker.c_str(), lib.c_str());
+    std::string msg;
+    auto cb = std::make_shared<LibCallback>(lib, msg);
+    if(!msg.empty()){
+        LOGE("HookerAdd failed: %s\n", msg.c_str());
+        return false;
+    }
+    hookManager.Register((const void*)std::stoull(hooker, nullptr, 16), cb);
+    return true;
+}
+
+bool Cli::HookerDel(const std::string &hooker) {
+    LOG("%s [%s] %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, hooker.c_str());
+    return hookManager.Unregister((const void*)std::stoull(hooker, nullptr, 16));
 }
 
 void Cli::dump_stat(Dumper dp, void* param) {

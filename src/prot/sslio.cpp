@@ -1,6 +1,7 @@
 #include "sslio.h"
 #include "prot/rwer.h"
 #include "prot/tls.h"
+#include "misc/hook.h"
 
 #include <openssl/err.h>
 #include <assert.h>
@@ -85,6 +86,7 @@ void SslRWerBase::sink_out_bio(uint64_t id) {
             break;
         }
     }
+    HOOK_FUNC(this, out_bio, buff, offset);
     if(offset > 0) {
         write(Buffer{std::move(buff), (size_t)offset, id});
     }
@@ -102,6 +104,7 @@ int SslRWerBase::sink_in_bio(uint64_t id) {
     }
     ssize_t ret = ssl_get_error(ssl, SSL_read(ssl, buff.data(), (int)len));
     LOGD(DSSL, "[%s] SSL_read %d bytes\n", server.c_str(), (int) ret);
+    HOOK_FUNC(this, in_bio, buff, ret);
     if (ret > 0) {
         onRead(Buffer{std::move(buff), (size_t) ret, id});
         return 1;
@@ -116,9 +119,11 @@ int SslRWerBase::sink_in_bio(uint64_t id) {
 }
 
 void SslRWerBase::handleData(const void* data, size_t len) {
+    HOOK_FUNC(this, data, len);
     if(len > 0) {
         int ret = BIO_write(in_bio, data, (int)len);
         LOGD(DSSL, "[%s] BIO_write %d bytes\n", server.c_str(), ret);
+        HOOK_FUNC(this, in_bio, ret);
     } else {
         LOGD(DSSL, "[%s] handleData with nullptr\n", server.c_str());
     }
@@ -139,6 +144,7 @@ void SslRWerBase::handleData(const void* data, size_t len) {
 }
 
 void SslRWerBase::sendData(Buffer&& bb) {
+    HOOK_FUNC(this, bb);
     if(bb.len == 0) {
         LOGD(DSSL, "[%s] SSL_shutdown\n", server.c_str());
         SSL_shutdown(ssl);
@@ -147,6 +153,7 @@ void SslRWerBase::sendData(Buffer&& bb) {
         while(bb.len > 0) {
             ssize_t ret = ssl_get_error(ssl, SSL_write(ssl, bb.data(), bb.len));
             LOGD(DSSL, "[%s] SSL_write %d/%zd bytes\n", server.c_str(), (int)ret, bb.len);
+            HOOK_FUNC(this, bb, ret);
             if(ret > 0) {
                 bb.reserve(ret);
                 continue;

@@ -4,6 +4,7 @@
 #include "misc/net.h"
 #include "misc/strategy.h"
 #include "misc/util.h"
+#include "misc/hook.h"
 #include "req/cli.h"
 
 #include <stdlib.h>
@@ -197,6 +198,7 @@ void Cgi::Recv(Buffer&& bb) {
 
 
 size_t Cgi::readHE(Buffer&& bb) {
+    HOOK_FUNC(this, statusmap, bb);
     if(bb.len == 0){
         LOGE("[CGI] %s closed pipe\n", basename(filename));
         deleteLater(PROTOCOL_ERR);
@@ -266,6 +268,7 @@ static void cgi_error(CGI_Header* header, uint32_t id, uint8_t flag){
 }
 
 bool Cgi::HandleData(const CGI_Header* header, CgiStatus& status){
+    HOOK_FUNC(this, statusmap, header);
     int len = status.res->cap();
     size_t size = ntohs(header->contentLength);
     if (len < (int)size) {
@@ -337,6 +340,7 @@ void Cgi::request(std::shared_ptr<HttpReq> req, Requester* src) {
     buff.truncate(sizeof(CGI_Header) + ntohs(header->contentLength));
     rwer->Send(std::move(buff));
     req->attach([this, id](ChannelMessage&& msg){
+        HOOK_FUNC(this, statusmap, id, msg);
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:
             LOGD(DFILE, "<CGI> ignore header for req\n");

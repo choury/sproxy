@@ -174,6 +174,37 @@ static void com_kill(SproxyClient* c, const std::vector<std::string>& args){
     }
 }
 
+static void com_hooker(SproxyClient* c, const std::vector<std::string>& args){
+    if(args.size() < 3){
+        std::cout << "hooker require 2 params at least" << std::endl;
+        return;
+    }
+    if(args[1] == "enable"){
+        if(args.size() < 4){
+            std::cout << "hooker enable require 3 params at least" << std::endl;
+            return;
+        }
+        auto r = c->HookerAdd(args[2], args[3]);
+        if (!r.get_future().get()) {
+            std::cout << "failed" << std::endl;
+        }
+        return;
+    } else if(args[1] == "disable"){
+        if(args.size() < 3){
+            std::cout << "hooker disable require 2 params at least" << std::endl;
+            return;
+        }
+        auto r = c->HookerDel(args[2]);
+        if (!r.get_future().get()) {
+            std::cout << "failed" << std::endl;
+        }
+        return;
+    } else {
+        std::cout << "hooker only support enable and disable" << std::endl;
+        return;
+    }
+}
+
 static char *generator_enable(const char* text, int state){
     static const char *switches[] = {"enable", "disable"};
     static const int nb_elements = (sizeof(switches)/sizeof(switches[0]));
@@ -229,6 +260,11 @@ static void com_dump(SproxyClient* c, const std::vector<std::string>& args) {
         std::cout << r.get_future().get() << std::endl;
         break;
     }
+    case "hookers"_hash: {
+        auto r = c->DumpHooker();
+        std::cout << r.get_future().get() << std::endl;
+        break;
+    }
     default:
         std::cout << "don't know how to dump "<<args[1]<<std::endl;
         break;
@@ -263,7 +299,7 @@ static char *generator_flush(const char* text, int state){
 }
 
 static char* generator_dump(const char* text, int state) {
-    static const char *dump_cmds[] = {"status", "dns", "sites", "usage"};
+    static const char *dump_cmds[] = {"status", "dns", "sites", "usage", "hookers"};
     static const int nb_elements = (sizeof(dump_cmds)/sizeof(dump_cmds[0]));
     COMPLETION_SKELETON(dump_cmds, nb_elements);
 }
@@ -293,8 +329,9 @@ COMMAND commands[] = {
         { "test", com_test, "<host>\tTest strategy for host", nullptr},
         { "flush", com_flush, "<cgi|dns|strategy>", generator_flush},
         { "switch", com_switch, "<proxy>\tSet proxy server", nullptr},
-        { "dump", com_dump, "<status|dns|sites|usage>", generator_dump},
+        { "dump", com_dump, "<status|dns|sites|usage|hookers>", generator_dump},
         { "kill", com_kill, "\tKill connection", nullptr},
+        { "hooker", com_hooker, "\tload/unload hooker from shared library", generator_enable},
         { "exit", com_exit, "\tQuit the program", nullptr},
         { "help", com_help, "\tDisplay this text", command_generator},
         {nullptr, nullptr, nullptr, nullptr},

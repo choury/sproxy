@@ -3,6 +3,7 @@
 #include "misc/util.h"
 #include "misc/config.h"
 #include "misc/defer.h"
+#include "misc/hook.h"
 
 #include "host.h"
 #include "file.h"
@@ -64,6 +65,7 @@ static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, Reques
 }
 
 void distribute(std::shared_ptr<HttpReq> req, Requester* src){
+    HOOK_FUNC(req, src);
     defer([req] { req->header->tracker.emplace_back("distribute", getmtime()); });
     auto header = req->header;
     auto id = header->request_id;

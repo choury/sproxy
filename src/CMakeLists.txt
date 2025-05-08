@@ -40,6 +40,11 @@ if(HAVE_BPF)
     set(SPROXY_LIBS ${SPROXY_LIBS} bpf_loader ${LIBBPF_LIBRARIES})
 endif()
 
+if(HAVE_ELF)
+    include_directories(${LIBELF_INCLUDE_DIRS})
+    set(SPROXY_LIBS ${SPROXY_LIBS} ${LIBELF_LIBRARIES})
+endif()
+
 set(SPROXY_LIBS ${SPROXY_LIBS} ${JSON-C_LIBRARIES})
 if(LINUX OR APPLE)
     add_executable(sproxy server/server.cpp common/base.cpp)

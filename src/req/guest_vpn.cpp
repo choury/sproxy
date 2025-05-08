@@ -11,6 +11,7 @@
 #include "misc/config.h"
 #include "misc/util.h"
 #include "misc/strategy.h"
+#include "misc/hook.h"
 
 #include <fstream>
 #include <assert.h>
@@ -28,6 +29,7 @@ Guest_vpn::Guest_vpn(int fd, bool enable_offload): Requester(nullptr) {
         }
     );
     rwer->SetReadCB([this](Buffer&& bb) -> size_t {
+        HOOK_FUNC(this, statusmap, bb);
         if(statusmap.count(bb.id) == 0){
             LOG("[%" PRIu64 "]: <guest_vpn> id not found, discard all\n", bb.id);
             return bb.len;
@@ -234,6 +236,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
     assert(status.res == nullptr);
     status.res = res;
     res->attach([this, id](ChannelMessage&& msg) -> int{
+        HOOK_FUNC(this, statusmap, msg);
         auto& status = statusmap.at(id);
         std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
         switch(msg.type){
@@ -288,6 +291,7 @@ void Guest_vpn::response(void* index, std::shared_ptr<HttpRes> res) {
 }
 
 int Guest_vpn::mread(uint64_t id, std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data) {
+    HOOK_FUNC(this, statusmap, id, data);
     if(statusmap.count(id) == 0) {
         errno = EPIPE;
         return -1;

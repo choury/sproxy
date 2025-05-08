@@ -1,4 +1,5 @@
 #include "proxy3.h"
+#include "misc/hook.h"
 
 #include <assert.h>
 #include <inttypes.h>
@@ -8,6 +9,7 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
     this->rwer = rwer;
     rwer->SetErrorCB([this](int ret, int code){return Error(ret, code);});
     rwer->SetReadCB([this](Buffer&& bb) -> size_t {
+        HOOK_FUNC(this, statusmap, bb);
         LOGD(DHTTP3, "<proxy3> (%s) read [%" PRIu64"]: len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.id, bb.len);
         if(bb.len == 0){
             //fin
@@ -68,6 +70,7 @@ void Proxy3::Reset(uint64_t id, uint32_t code) {
 }
 
 bool Proxy3::DataProc(Buffer& bb){
+    HOOK_FUNC(this, statusmap, bb);
     idle_timeout = UpdateJob(std::move(idle_timeout),
                              [this]{deleteLater(CONNECT_AGED);}, 300000);
     if(bb.len == 0){
@@ -125,6 +128,7 @@ void Proxy3::request(std::shared_ptr<HttpReq> req, Requester*) {
     p += variable_encode(p, len);
     SendData({std::move(buff), pre + len, id});
     req->attach([this, id](ChannelMessage&& msg){
+        HOOK_FUNC(this, statusmap, id, msg);
         idle_timeout = UpdateJob(std::move(idle_timeout),
                                  [this]{deleteLater(CONNECT_AGED);}, 300000);
         switch(msg.type){

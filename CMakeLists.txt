@@ -126,6 +126,7 @@ else()
     else()
         message(WARNING "readline not found, disable client")
     endif()
+    pkg_check_modules(LIBELF libelf)
     set(SEARCH_CA_BUNDLE_PATHS
             /etc/ssl/certs/ca-certificates.crt
             /etc/pki/tls/certs/ca-bundle.crt
@@ -208,6 +209,9 @@ else()
     message(WARNING "zlib not found, disable gzip test")
 endif()
 
+if(LIBELF_FOUND)
+    set(HAVE_ELF TRUE CACHE BOOL "Have ELF")
+endif()
 
 find_package(Backtrace)
 

@@ -4,12 +4,14 @@
 
 #include "guest3.h"
 #include "res/responser.h"
+#include "misc/hook.h"
 #include <assert.h>
 #include <inttypes.h>
 
 void Guest3::init() {
     rwer->SetErrorCB([this](int ret, int code){Error(ret, code);});
     rwer->SetReadCB([this](Buffer&& bb) -> size_t {
+        HOOK_FUNC(this, statusmap, bb);
         LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.id, bb.len);
         if(bb.len == 0){
             //fin
@@ -159,6 +161,7 @@ bool Guest3::DataProc(Buffer& bb) {
     if(bb.len == 0)
         return true;
     if(statusmap.count(bb.id)){
+        HOOK_FUNC(this, statusmap, bb);
         ReqStatus& status = statusmap[bb.id];
         if(status.flags & HTTP_REQ_COMPLETED){
             LOGD(DHTTP3, "<guest3> DateProc after closed, id: %" PRIu64"\n", bb.id);
@@ -185,6 +188,7 @@ void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
     assert(status.res == nullptr);
     status.res = res;
     res->attach([this, id](ChannelMessage&& msg){
+        HOOK_FUNC(this, statusmap, id, msg);
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER: {
             assert(statusmap.count(id));

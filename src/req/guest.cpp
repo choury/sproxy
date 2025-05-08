@@ -3,6 +3,7 @@
 #include "res/responser.h"
 #include "res/rproxy2.h"
 #include "misc/config.h"
+#include "misc/hook.h"
 #include "prot/sslio.h"
 #include "prot/tls.h"
 
@@ -11,6 +12,7 @@
 #include <inttypes.h>
 
 size_t Guest::ReadHE(Buffer&& bb){
+    HOOK_FUNC(this, statuslist, bb);
     LOGD(DHTTP, "<guest> (%s) read: len:%zu, refs: %zd\n", dumpDest(rwer->getSrc()).c_str(), bb.len, bb.refs());
     if(bb.len == 0){
         //EOF
@@ -49,6 +51,7 @@ size_t Guest::ReadHE(Buffer&& bb){
 }
 
 int Guest::mread(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data) {
+    HOOK_FUNC(this, statuslist, data);
     auto BufferHandle = [this](Buffer& bb) {
         LOGD(DHTTP, "<guest> (%s) read: len:%zu\n", dumpDest(rwer->getSrc()).c_str(), bb.len);
         assert(statuslist.size() == 1);
@@ -269,6 +272,7 @@ void Guest::deqReq() {
 }
 
 ssize_t Guest::DataProc(Buffer& bb) {
+    HOOK_FUNC(this, statuslist, bb);
     ReqStatus& status = statuslist.back();
     assert((status.flags & HTTP_REQ_COMPLETED) == 0);
     int cap = 0;
@@ -355,6 +359,7 @@ void Guest::response(void*, std::shared_ptr<HttpRes> res) {
     assert(status.res == nullptr && status.req);
     status.res = res;
     res->attach([this, &status](ChannelMessage&& msg){
+        HOOK_FUNC(this, statuslist, msg);
         assert(!statuslist.empty());
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER: {

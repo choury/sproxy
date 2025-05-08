@@ -1,5 +1,6 @@
 #include "memio.h"
 #include "misc/defer.h"
+#include "misc/hook.h"
 #include <inttypes.h>
 
 MemRWer::MemRWer(const Destination& src,
@@ -54,6 +55,7 @@ void MemRWer::push_data(Buffer&& bb) {
     } else {
         rb.put(bb.data(), bb.len);
     }
+    HOOK_FUNC(this, rb, bb);
     addEvents(RW_EVENT::READ);
 }
 
@@ -109,6 +111,7 @@ void MemRWer::ConsumeRData(uint64_t id) {
             keepReading = true;
         }
     }
+    HOOK_FUNC(this, rb, id);
     if(rb.length() == 0 && isEof() && (flags & RWER_EOFDELIVED) == 0){
         keepReading = false;
         readCB({nullptr, id});

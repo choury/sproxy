@@ -5,6 +5,7 @@
 #include "misc/config.h"
 #include "misc/job.h"
 #include "misc/net.h"
+#include "misc/hook.h"
 #include "prot/dns/resolver.h"
 
 #include <inttypes.h>
@@ -149,6 +150,7 @@ void FDns::query(Buffer&& bb, std::shared_ptr<RWer> rwer) {
 }
 
 void FDns::Recv(Buffer&& bb) {
+    HOOK_FUNC(this, statusmap, bb);
     FDnsStatus& status = statusmap.at(bb.id);
     uint64_t id = bb.id;
     auto que = std::make_shared<Dns_Query>((const char *)bb.data(), bb.len);
@@ -211,6 +213,7 @@ void FDns::Recv(Buffer&& bb) {
 
 void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs, int ttl) {
     auto index = *std::static_pointer_cast<__uint128_t>(param);
+    HOOK_FUNC(fdns, fdns->statusmap, index, error, addrs, ttl);
 #if __LP64__
     uint64_t id = index >> 64;
 #else
@@ -278,6 +281,7 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockadd
 
 void FDns::RawCb(std::shared_ptr<void> param, const char* data, size_t size) {
     auto index = *std::static_pointer_cast<__uint128_t>(param);
+    HOOK_FUNC(fdns, fdns->statusmap, index, data, size);
 #if __LP64__
     uint64_t id = index >> 64;
 #else

@@ -2,6 +2,7 @@
 #include "common/common.h"
 #include "prot/http/http_def.h"
 #include "req/requester.h"
+#include "misc/hook.h"
 
 #include <assert.h>
 #include <inttypes.h>
@@ -160,6 +161,7 @@ void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
 
 
 void Proxy2::DataProc(Buffer&& bb) {
+    HOOK_FUNC(this, statusmap, bb);
     clearIdle(300000);
     if(bb.len == 0)
         return;
@@ -344,6 +346,7 @@ void Proxy2::request(std::shared_ptr<HttpReq> req, Requester*) {
     SendData(Buffer{std::move(buff), len + sizeof(Http2_header), id});
 
     req->attach([this, id](ChannelMessage&& msg){
+        HOOK_FUNC(this, statusmap, id, msg);
         clearIdle(300000);
         switch(msg.type){
         case ChannelMessage::CHANNEL_MSG_HEADER:
@@ -369,6 +372,7 @@ void Proxy2::init(bool enable_push, std::shared_ptr<HttpReq> req) {
         request(req, nullptr);
     }
     rwer->SetReadCB([this](Buffer&& bb) -> size_t {
+        HOOK_FUNC(this, statusmap, bb);
         uint32_t start = getmtime();
         LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu, refs: %zd\n", dumpDest(this->rwer->getDst()).c_str(), bb.len, bb.refs());
         if(bb.len == 0){

@@ -292,3 +292,7 @@ wait %1
 
 $buildpath/prot/dns/dns_test
 $buildpath/misc/trie_test
+if [[ `uname -s` = 'Linux' ]];
+then
+    $buildpath/misc/hook_test $buildpath/misc/libhook.so
+fi

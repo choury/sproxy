@@ -176,6 +176,9 @@ json_object * SproxyServer::call(std::string method, json_object* content) {
     }else if(method == "DumpDns") {
         auto server = DumpDns();
         json_object_object_add(jres, "dns_status", json_object_new_string(server.c_str()));
+    }else if(method == "DumpHooker") {
+        auto server = DumpHooker();
+        json_object_object_add(jres, "hookers", json_object_new_string(server.c_str()));
     }else if(method == "Login") {
         json_object* jtoken = json_object_object_get(content, "token");
         json_object* jsource = json_object_object_get(content, "source");
@@ -201,6 +204,23 @@ json_object * SproxyServer::call(std::string method, json_object* content) {
             return jres;
         }
         auto ok = killCon(json_object_get_string(jaddress));
+        json_object_object_add(jres, "ok", json_object_new_boolean(ok));
+    }else if(method == "HookerAdd") {
+        json_object* jhooker = json_object_object_get(content, "hooker");
+        json_object* jlib = json_object_object_get(content, "lib");
+        if(!jhooker || !jlib){
+            json_object_object_add(jres, "error", json_object_new_string("require some params"));
+            return jres;
+        }
+        auto ok = HookerAdd(json_object_get_string(jhooker), json_object_get_string(jlib));
+        json_object_object_add(jres, "ok", json_object_new_boolean(ok));
+    }else if(method == "HookerDel") {
+        json_object* jhooker = json_object_object_get(content, "hooker");
+        if(!jhooker){
+            json_object_object_add(jres, "error", json_object_new_string("require some params"));
+            return jres;
+        }
+        auto ok = HookerDel(json_object_get_string(jhooker));
         json_object_object_add(jres, "ok", json_object_new_boolean(ok));
     }else{
         json_object_object_add(jres, "error", json_object_new_string("no such method"));
@@ -426,6 +446,22 @@ std::promise<std::string> SproxyClient::DumpMemUsage() {
     return promise;
 }
 
+std::promise<std::string> SproxyClient::DumpHooker() {
+    json_object* body = json_object_new_object();
+    std::promise<std::string> promise;
+    call(__func__, body,[&promise](json_object* content){
+        json_object* jerror = json_object_object_get(content, "error");
+        if(jerror){
+            promise.set_exception(std::make_exception_ptr(std::string(json_object_get_string(jerror))));
+            return;
+        }
+        json_object* jstatus = json_object_object_get(content, "hookers");
+        promise.set_value(json_object_get_string(jstatus));
+    });
+    json_object_put(body);
+    return promise;
+}
+
 std::promise<bool> SproxyClient::Debug(const std::string& module, bool enable) {
     json_object* body = json_object_new_object();
     json_object_object_add(body, "module", json_object_new_string(module.c_str()));
@@ -447,6 +483,41 @@ std::promise<bool> SproxyClient::Debug(const std::string& module, bool enable) {
 std::promise<bool> SproxyClient::killCon(const std::string& address) {
     json_object* body = json_object_new_object();
     json_object_object_add(body, "address", json_object_new_string(address.c_str()));
+    std::promise<bool> promise;
+    call(__func__, body,[&promise](json_object* content){
+        json_object* jerror = json_object_object_get(content, "error");
+        if(jerror){
+            promise.set_exception(std::make_exception_ptr(std::string(json_object_get_string(jerror))));
+            return;
+        }
+        json_object* jok = json_object_object_get(content, "ok");
+        promise.set_value(json_object_get_boolean(jok));
+    });
+    json_object_put(body);
+    return promise;
+}
+
+std::promise<bool> SproxyClient::HookerAdd(const std::string& hooker, const std::string& lib) {
+    json_object* body = json_object_new_object();
+    json_object_object_add(body, "hooker", json_object_new_string(hooker.c_str()));
+    json_object_object_add(body, "lib", json_object_new_string(lib.c_str()));
+    std::promise<bool> promise;
+    call(__func__, body,[&promise](json_object* content){
+        json_object* jerror = json_object_object_get(content, "error");
+        if(jerror){
+            promise.set_exception(std::make_exception_ptr(std::string(json_object_get_string(jerror))));
+            return;
+        }
+        json_object* jok = json_object_object_get(content, "ok");
+        promise.set_value(json_object_get_boolean(jok));
+    });
+    json_object_put(body);
+    return promise;
+}
+
+std::promise<bool> SproxyClient::HookerDel(const std::string& hooker) {
+    json_object* body = json_object_new_object();
+    json_object_object_add(body, "hooker", json_object_new_string(hooker.c_str()));
     std::promise<bool> promise;
     call(__func__, body,[&promise](json_object* content){
         json_object* jerror = json_object_object_get(content, "error");
