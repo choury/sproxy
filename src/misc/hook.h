@@ -48,10 +48,11 @@ public:
     }
 
     template <typename... Args>
-    void Trigger(const void* hooker, std::tuple<Args...>&& t) {
+    void Trigger(const void* hooker, Args&&... args) {
         if(callbacks.count(hooker) == 0) {
             return; // 没有注册的回调
         }
+        auto t = std::tie(args...);
         callbacks[hooker]->OnCall(&t);
     }
 
@@ -132,6 +133,6 @@ private:
     static bool  _S3(__, __LINE__, __hook_registed) = false; \
     if(!_S3(__, __LINE__, __hook_registed))  \
         hookManager.AddHooker(&_S3(__, __LINE__, __hook_registed), __PRETTY_FUNCTION__, STRINGIZE(__LINE__)); \
-    hookManager.Trigger(&_S3(__, __LINE__, __hook_registed), std::forward_as_tuple(__VA_ARGS__));
+    hookManager.Trigger(&_S3(__, __LINE__, __hook_registed), __VA_ARGS__);
 
 #endif

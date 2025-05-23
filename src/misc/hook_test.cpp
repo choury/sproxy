@@ -16,7 +16,7 @@ class Test{
     std::string hello = "Hello from Test!";
 public:
     int operator()(int a, double b) {
-        HOOK_FUNC(this, a, b);
+        HOOK_FUNC(this, a, b, 10);
         return a + b;
     }
     void sayHello() {
