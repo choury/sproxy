@@ -9,6 +9,7 @@
 class Server{
 protected:
     std::shared_ptr<RWer> rwer;
+    std::shared_ptr<IRWerCallback> cb;
 public:
     explicit Server();
     virtual ~Server();

@@ -7,8 +7,7 @@
 
 Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
     this->rwer = rwer;
-    rwer->SetErrorCB([this](int ret, int code){return Error(ret, code);});
-    rwer->SetReadCB([this](Buffer&& bb) -> size_t {
+    cb = IRWerCallback::create()->onRead([this](Buffer&& bb) -> size_t {
         HOOK_FUNC(this, statusmap, bb);
         LOGD(DHTTP3, "<proxy3> (%s) read [%" PRIu64"]: len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.id, bb.len);
         if(bb.len == 0){
@@ -34,8 +33,7 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
             len += ret;
         }
         return len;
-    });
-    rwer->SetWriteCB([this](uint64_t id){
+    })->onWrite([this](uint64_t id){
         if(statusmap.count(id) == 0){
             return;
         }
@@ -50,7 +48,10 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
             // reserve 64 bytes for http stream header
             status.req->pull();
         }
+    })->onError([this](int ret, int code){
+        return Error(ret, code);
     });
+    rwer->SetCallback(cb);
     rwer->setResetHandler([this](uint64_t id, uint32_t errcode){RstProc(id, errcode);});
 }
 

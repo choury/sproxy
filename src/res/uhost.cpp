@@ -8,13 +8,8 @@
 
 Uhost::Uhost(const char* host, uint16_t port): port(port) {
     strncpy(hostname, host, DOMAINLIMIT);
-    auto prwer = std::make_shared<PacketRWer>(host, port, Protocol::UDP, [this](int ret, int code){
-        LOGE("(%s) UDP error: %d/%d\n", dumpDest(rwer->getDst()).c_str(), ret, code);
-        deleteLater(ret);
-    });
-    rwer = prwer;
     idle_timeour = AddJob([this]{deleteLater(CONNECT_AGED);}, 30000, 0);
-    prwer->SetConnectCB([this](const sockaddr_storage&, uint32_t){
+    cb = ISocketCallback::create()->onConnect([this](const sockaddr_storage&, uint32_t){
         LOGD(DHTTP, "<uhost> %s connected\n", dumpDest(rwer->getDst()).c_str());
         req->attach([this](ChannelMessage&& message){
             switch(message.type){
@@ -41,8 +36,7 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
             }
             return 0;
         }, [this]{return rwer->cap(0);});
-    });
-    rwer->SetReadCB([this](Buffer&& bb) -> size_t{
+    })->onRead([this](Buffer&& bb) -> size_t{
         if(JobPending(idle_timeour) < 30000) {
             idle_timeour = UpdateJob(std::move(idle_timeour), [this]{deleteLater(CONNECT_AGED);}, 30000);
         }
@@ -64,12 +58,15 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
             res->send(std::move(bb));
         }
         return len;
-    });
-    rwer->SetWriteCB([this](uint64_t){
+    })->onWrite([this](uint64_t){
         idle_timeour = UpdateJob(std::move(idle_timeour), [this]{deleteLater(CONNECT_AGED);}, 120000);
         LOGD(DHTTP, "<uhost> (%s) written\n", dumpDest(rwer->getDst()).c_str());
         req->pull();
+    })->onError([this](int ret, int code){
+        LOGE("(%s) UDP error: %d/%d\n", dumpDest(rwer->getDst()).c_str(), ret, code);
+        deleteLater(ret);
     });
+    rwer = std::make_shared<PacketRWer>(host, port, Protocol::UDP, cb);
 }
 
 Uhost::Uhost(std::shared_ptr<HttpReqHeader> req):

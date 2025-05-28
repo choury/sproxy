@@ -17,6 +17,7 @@ class Guest_vpn: public Requester {
         std::shared_ptr<HttpReq> req;
         std::shared_ptr<HttpRes> res;
         std::shared_ptr<MemRWer> rwer; //rwer 和 req/res 二者只会有一个
+        std::shared_ptr<IMemRWerCallback> cb;
         uint32_t   flags = 0;
         Job        cleanJob = nullptr;
     };

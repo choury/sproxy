@@ -20,6 +20,7 @@ protected:
         std::shared_ptr<HttpReq>  req;
         std::shared_ptr<HttpRes>  res;
         std::shared_ptr<MemRWer>  rwer;
+        std::shared_ptr<IMemRWerCallback> cb;
         uint      flags = 0;
         Job       cleanJob = nullptr;
     };

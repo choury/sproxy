@@ -5,14 +5,15 @@ static const unsigned char alpn_protos_rproxy[] =
     "\x02r2";
 
 
+//这里传入的IRWerCallback只是占位，Guest2的构造函数会创建ISocketCallback, 并把它保存到cb
 Rguest2::Rguest2(const Destination* dest, const std::string& name):
-    Guest2(std::make_shared<SslRWer>(dest->hostname, dest->port, Protocol::TCP,
-                                     [this](int ret, int code){Error(ret, code);})),
+    Guest2(std::make_shared<SslRWer>(dest->hostname, dest->port, Protocol::TCP, 
+                                     IRWerCallback::create()->onError([](int, int){}))),
     name(name)
 {
     auto srwer = std::dynamic_pointer_cast<SslRWer>(rwer);
     srwer->set_alpn(alpn_protos_rproxy, sizeof(alpn_protos_rproxy)-1);
-    srwer->SetConnectCB([this](const sockaddr_storage&, uint32_t){
+    std::dynamic_pointer_cast<ISocketCallback>(cb)->onConnect([this](const sockaddr_storage&, uint32_t){
         LOG("connected to rproxy server: %s\n", dumpDest(rwer->getDst()).c_str());
     });
 }

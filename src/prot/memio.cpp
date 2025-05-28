@@ -1,13 +1,11 @@
 #include "memio.h"
+#include "netio.h"
 #include "misc/defer.h"
 #include "misc/hook.h"
 #include <inttypes.h>
 
-MemRWer::MemRWer(const Destination& src,
-                 std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> write_cb,
-                 std::function<void(uint64_t)> read_cb,
-                 std::function<ssize_t()> cap_cb):
-    FullRWer([](int, int){}), write_cb(std::move(write_cb)), read_cb(std::move(read_cb)), cap_cb(std::move(cap_cb))
+MemRWer::MemRWer(const Destination& src, std::shared_ptr<IMemRWerCallback> cb):
+    FullRWer(IRWerCallback::create()->onError([](int, int){})), _callback(std::move(cb))
 {
     memcpy(&this->src, &src, sizeof(Destination));
 }
@@ -20,30 +18,26 @@ size_t MemRWer::rlength(uint64_t) {
 }
 
 ssize_t MemRWer::cap(uint64_t) {
-    return cap_cb() - wlen;
+    if(auto cb = _callback.lock(); cb) {
+        return cb->cap_cb() - wlen;
+    }
+    return 0;
 }
 
-void MemRWer::SetConnectCB(std::function<void (const sockaddr_storage &)> cb){
-    if(IsConnected()) {
-        cb({});
-    } else {
-        connectCB = std::move(cb);
+void MemRWer::SetCallback(std::shared_ptr<IRWerCallback> cb) {
+    RWer::SetCallback(std::move(cb));
+    if(auto sockcb = std::dynamic_pointer_cast<ISocketCallback>(callback.lock()); sockcb && IsConnected()) {
+        sockcb->connectCB({}, 0);
     }
-}
-
-void MemRWer::ErrorHE(int ret, int code) {
-    if(stats != RWerStats::Error) {
-        write_cb(CHANNEL_ABORT);
-    }
-    FullRWer::ErrorHE(ret, code);
 }
 
 void MemRWer::connected(const sockaddr_storage& addr) {
     setEvents(RW_EVENT::READWRITE);
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&MemRWer::defaultHE;
-    connectCB(addr);
-    connectCB = [](const sockaddr_storage&){};
+    if(auto cb = std::dynamic_pointer_cast<ISocketCallback>(callback.lock()); cb) {
+        cb->connectCB(addr, 0);
+    }
 }
 
 void MemRWer::push_data(Buffer&& bb) {
@@ -66,21 +60,13 @@ void MemRWer::push_signal(Signal s) {
     ConsumeRData(0);
     switch(s){
     case CHANNEL_ABORT:
-        return errorCB(PROTOCOL_ERR, PEER_LOST_ERR);
+        if(auto cb = callback.lock(); cb) {
+            return cb->errorCB(PROTOCOL_ERR, PEER_LOST_ERR);
+        }
     }
 }
 
-void MemRWer::push(std::variant<Buffer, Signal> data) {
-    std::visit([this](auto&& arg) {
-        using T = std::decay_t<decltype(arg)>;
-        if constexpr (std::is_same_v<T, Signal>) {
-            push_signal(arg);
-        } else if constexpr (std::is_same_v<T, Buffer>) {
-            push_data(std::move(arg));
-        }
-    }, data);
-}
-
+#if 0
 void MemRWer::detach() {
     write_cb = [](std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data) -> int{
         if(auto bb = std::get_if<Buffer>(&data)) {
@@ -94,6 +80,7 @@ void MemRWer::detach() {
     read_cb = [](uint64_t){};
     cap_cb = []{return 0;};
 }
+#endif
 
 
 void MemRWer::ConsumeRData(uint64_t id) {
@@ -101,11 +88,11 @@ void MemRWer::ConsumeRData(uint64_t id) {
     flags |= RWER_READING;
     defer([this]{ flags &= ~RWER_READING;});
     bool keepReading = false;
-    if(rb.length()){
+    if(auto cb = callback.lock(); cb && rb.length()){
         Buffer wb = rb.get();
         assert(wb.len != 0);
         wb.id = id;
-        auto ret = readCB(std::move(wb));
+        auto ret = cb->readCB(std::move(wb));
         if(ret > 0) {
             rb.consume(ret);
             keepReading = true;
@@ -114,7 +101,9 @@ void MemRWer::ConsumeRData(uint64_t id) {
     HOOK_FUNC(this, rb, id);
     if(rb.length() == 0 && isEof() && (flags & RWER_EOFDELIVED) == 0){
         keepReading = false;
-        readCB({nullptr, id});
+        if(auto cb = callback.lock(); cb) {
+            cb->readCB({nullptr, id});
+        }
         flags |= RWER_EOFDELIVED;
     }
     if(!keepReading){
@@ -124,6 +113,11 @@ void MemRWer::ConsumeRData(uint64_t id) {
 
 ssize_t MemRWer::Write(std::set<uint64_t>& writed_list) {
     size_t len = 0;
+    if(_callback.expired()){
+        LOGE("MemRWer callback expired, cannot write\n");
+        return -1;
+    }
+    auto& write_cb = _callback.lock()->write_cb;
     for(auto it = wbuff.begin(); it != wbuff.end(); ){
         ssize_t ret = 0;
         size_t blen = it->len;
@@ -153,12 +147,23 @@ ssize_t MemRWer::Write(std::set<uint64_t>& writed_list) {
     return (ssize_t)len;
 }
 
-void MemRWer::closeHE(RW_EVENT event) {
+void MemRWer::closeHE(RW_EVENT) {
     if((flags & RWER_SHUTDOWN) == 0 && (stats == RWerStats::ReadEOF || stats == RWerStats::Connected)){
         flags |= RWER_SHUTDOWN;
         wbuff.emplace_back(nullptr);
     }
-    RWer::closeHE(event); // NOLINT
+    std::set<uint64_t> writed_list;
+    ssize_t ret = Write(writed_list);
+    if (wbuff.empty() || (ret <= 0 && errno != EAGAIN && errno != ENOBUFS)) {
+        handleEvent = (void(Ep::*)(RW_EVENT))&MemRWer::IdleHE;
+        setEvents(RW_EVENT::NONE);
+        if(auto cb = _callback.lock(); cb) {
+            cb->write_cb(CHANNEL_ABORT);
+        }
+        if(auto cb = callback.lock(); cb) {
+            cb->closeCB();
+        }
+    }
 }
 
 void MemRWer::dump_status(Dumper dp, void* param) {
@@ -181,10 +186,12 @@ void PMemRWer::push_data(Buffer&& bb) {
     }
     if(bb.len == 0){
         stats = RWerStats::ReadEOF;
-        readCB({nullptr, bb.id});
+        if(auto cb = callback.lock(); cb) {
+            cb->readCB({nullptr, bb.id});
+        }
         flags |= RWER_EOFDELIVED;
-    } else {
-        readCB(std::move(bb));
+    } else if(auto cb = callback.lock(); cb) {
+        cb->readCB(std::move(bb));
     }
 }
 

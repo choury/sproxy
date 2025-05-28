@@ -216,8 +216,8 @@ void SslRWerBase::dump(Dumper dp, void *param) {
        (int)sslStats, SSL_state_string_long(ssl));
 }
 
-SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB):
-        SslRWerBase(hostname), StreamRWer(hostname, port, protocol, std::move(errorCB))
+SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::shared_ptr<IRWerCallback> cb):
+        SslRWerBase(hostname), StreamRWer(hostname, port, protocol, std::move(cb))
 {
         assert(this->protocol == Protocol::TCP);
 }

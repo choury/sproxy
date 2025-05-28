@@ -70,8 +70,9 @@ static int getDstAddr_tcp(int fd, int family, sockaddr_storage* dst) {
 }
 
 //tcp
+//rwer的第三个参数只是占位，Guest构造函数会重新设置
 Guest_tproxy::Guest_tproxy(int fd, sockaddr_storage* src):
-    Guest(std::make_shared<StreamRWer>(fd, src, [](int, int){}))
+    Guest(std::make_shared<StreamRWer>(fd, src, IRWerCallback::create()->onError([](int, int){})))
 {
     sockaddr_storage dst;
     if(getDstAddr_tcp(fd, src->ss_family, &dst)) {
@@ -114,8 +115,9 @@ static int getDstAddr_udp(int fd, int family, sockaddr_storage* dst) {
 
 
 //udp
+//rwer的第三个参数只是占位，Guest构造函数会重新设置
 Guest_tproxy::Guest_tproxy(int fd, sockaddr_storage* src, sockaddr_storage* dst, Buffer&& bb):
-    Guest(std::make_shared<PacketRWer>(fd, src, [](int, int){}))
+    Guest(std::make_shared<PacketRWer>(fd, src, IRWerCallback::create()->onError([](int, int){})))
 {
     if(getDstAddr_udp(fd, src->ss_family, dst)) {
         LOGE("(%s) failed to get src addr for tproxy\n", storage_ntoa(src));

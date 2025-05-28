@@ -16,7 +16,7 @@
 #include <sys/un.h>
 #endif
 
-SocketRWer::SocketRWer(int fd, const sockaddr_storage* src, std::function<void(int, int)> errorCB):RWer(fd, std::move(errorCB)){
+SocketRWer::SocketRWer(int fd, const sockaddr_storage* src, std::shared_ptr<IRWerCallback> cb):RWer(fd, std::move(cb)){
     setEvents(RW_EVENT::READ);
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&SocketRWer::defaultHE;
@@ -34,9 +34,8 @@ SocketRWer::SocketRWer(int fd, const sockaddr_storage* src, std::function<void(i
     }
 }
 
-SocketRWer::SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
-               std::function<void(int, int)> errorCB):
-            RWer(std::move(errorCB)), port(port), protocol(protocol)
+SocketRWer::SocketRWer(const char* hostname, uint16_t port, Protocol protocol, std::shared_ptr<IRWerCallback> cb):
+            RWer(std::move(cb)), port(port), protocol(protocol)
 {
     strcpy(this->hostname, hostname);
     stats = RWerStats::Resolving;
@@ -153,14 +152,23 @@ void SocketRWer::connected(const sockaddr_storage& addr) {
     setEvents(RW_EVENT::READWRITE);
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&SocketRWer::defaultHE;
-    connectCB(addr, resolved_time);
-    connectCB = [](const sockaddr_storage&, uint32_t){};
+    if(auto cb = std::dynamic_pointer_cast<ISocketCallback>(callback.lock()); cb) {
+        cb->connectCB(addr, resolved_time);
+    }
 }
 
 bool SocketRWer::IsConnected(){
     return stats == RWerStats::Connected;
 }
 
+void SocketRWer::SetCallback(std::shared_ptr<IRWerCallback> cb) {
+    RWer::SetCallback(std::move(cb));
+    if(auto sockcb = std::dynamic_pointer_cast<ISocketCallback>(callback.lock()); sockcb && IsConnected()) {
+        sockcb->connectCB(addrs.front(), resolved_time);
+    }
+}
+
+#if 0
 void SocketRWer::SetConnectCB(std::function<void(const sockaddr_storage&, uint32_t)> cb) {
     if(IsConnected()){
         cb(addrs.front(), resolved_time);
@@ -168,6 +176,7 @@ void SocketRWer::SetConnectCB(std::function<void(const sockaddr_storage&, uint32
         connectCB = std::move(cb);
     }
 }
+#endif
 
 void SocketRWer::waitconnectHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR) || !!(events & RW_EVENT::READEOF)) {
@@ -319,17 +328,20 @@ void StreamRWer::ConsumeRData(uint64_t id) {
     assert(!(flags & RWER_READING));
     flags |= RWER_READING;
     defer([this]{ flags &= ~RWER_READING;});
-    if(rb.length()){
+    if(auto cb = callback.lock(); rb.length() && cb){
         Buffer wb = rb.get();
         assert(wb.len != 0);
         wb.id = id;
-        rb.consume(readCB(std::move(wb)));
+        rb.consume(cb->readCB(std::move(wb)));
     }
     if(rb.cap() == 0){
+        LOGD(DRWER, "[%d] cap is full, stop reading\n", getFd());
         delEvents(RW_EVENT::READ);
     }
     if(isEof() && rb.length() == 0 && (flags & RWER_EOFDELIVED) == 0){
-        readCB({nullptr, id});
+        if(auto cb = callback.lock(); cb) {
+            cb->readCB({nullptr, id});
+        }
         flags |= RWER_EOFDELIVED;
     }
 }
@@ -422,13 +434,17 @@ void PacketRWer::ReadData() {
         ssize_t ret = read(getFd(), rb, sizeof(rb));
         LOGD(DRWER, "packet read %d: len: %zd, ret: %zd\n", getFd(), sizeof(rb), ret);
         if (ret > 0) {
-            readCB({rb, (size_t)ret});
+            if(auto cb = callback.lock(); cb) {
+                cb->readCB({rb, (size_t)ret});
+            }
             continue;
         }
         if (ret == 0) {
             stats = RWerStats::ReadEOF;
             delEvents(RW_EVENT::READ);
-            readCB(nullptr);
+            if(auto cb = callback.lock(); cb) {
+                cb->readCB(nullptr);
+            }
             flags |= RWER_EOFDELIVED;
         }else if (errno != EAGAIN) {
             ErrorHE(SOCKET_ERR, errno);

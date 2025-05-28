@@ -128,17 +128,19 @@ static void loadmine(){
 }
 
 File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
-    rwer = std::make_shared<FullRWer>([this](int ret, int code){
+    cb = IRWerCallback::create()->onRead([this](Buffer&& bb){
+        return readHE(std::move(bb));
+    })->onError([this](int ret, int code){
         LOGE("file error: %d/%d\n", ret, code);
         status.res->send(CHANNEL_ABORT);
         deleteLater(ret);
     });
+    rwer = std::make_shared<FullRWer>(cb);
     if(mimetype.empty()){
         loadmine();
     }
     strcpy(filename, fname);
     suffix = strrchr(filename, '.');
-    rwer->SetReadCB([this](Buffer&& bb){return readHE(std::move(bb));});
 }
 
 File::~File() {

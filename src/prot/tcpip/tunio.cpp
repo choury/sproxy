@@ -101,10 +101,8 @@ std::shared_ptr<IpStatus> TunRWer::GetStatus(uint64_t id) {
     return statusmap.GetOne(id)->second;
 }
 
-TunRWer::TunRWer(int fd, bool enable_offload,
-                 std::function<void(uint64_t, std::shared_ptr<const Ip>)> reqProc,
-                 std::function<void(int ret, int code)> errorCB):
-    RWer(fd, std::move(errorCB)), enable_offload(enable_offload), reqProc(std::move(reqProc))
+TunRWer::TunRWer(int fd, bool enable_offload, std::shared_ptr<IRWerCallback> cb):
+    RWer(fd, std::move(cb)), enable_offload(enable_offload)
 {
     stats = RWerStats::Connected;
     handleEvent = (void (Ep::*)(RW_EVENT))&TunRWer::defaultHE;
@@ -258,7 +256,9 @@ void TunRWer::ReadData() {
         }else{
             if(transIcmp){
                 uint64_t id = statusmap.GetOne(key)->first.first;
-                resetHanlder(id, ICMP_UNREACH_ERR);
+                if(auto cb = std::dynamic_pointer_cast<ITunCallback>(callback.lock()); cb){
+                    cb->resetHanlder(id, ICMP_UNREACH_ERR);
+                }
                 Clean(id);
                 continue;
             }
@@ -321,8 +321,8 @@ void TunRWer::Send(Buffer&& bb) {
 }
 
 void TunRWer::ReqProc(std::shared_ptr<const Ip> pac) {
-    if(reqProc){
-        reqProc(GetId(pac), pac);
+    if(auto cb = std::dynamic_pointer_cast<ITunCallback>(callback.lock()); cb) {
+        cb->reqProc(GetId(pac), pac);
     }
 }
 
@@ -339,7 +339,9 @@ void TunRWer::ErrProc(std::shared_ptr<const Ip> pac, uint32_t code) {
     uint64_t id = GetId(pac);
     LOGD(DVPN, "tunio: delete id: 0x%" PRIx64" (%s -> %s), due to err: %d\n",
          id, getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(), (int)code);
-    resetHanlder(id, code);
+    if(auto cb = std::dynamic_pointer_cast<ITunCallback>(callback.lock()); cb) {
+        cb->resetHanlder(id, code);
+    }
     Clean(id);
 }
 
@@ -351,7 +353,10 @@ size_t TunRWer::DataProc(std::shared_ptr<const Ip> pac, Buffer&& bb) {
     assert(!(flags & RWER_READING));
     flags |= RWER_READING;
     defer([this]{ flags &= ~RWER_READING;});
-    return readCB(std::move(bb));
+    if(auto cb = callback.lock(); cb) {
+        return cb->readCB(std::move(bb));
+    }
+    return 0;
 }
 
 void TunRWer::AckProc(std::shared_ptr<const Ip> pac) {
@@ -359,8 +364,8 @@ void TunRWer::AckProc(std::shared_ptr<const Ip> pac) {
         return;
     }
     auto itr = statusmap.GetOne(VpnKey(pac));
-    if(itr->second->Cap() >= 0) {
-        return writeCB(itr->first.first);
+    if(auto cb = callback.lock(); cb && itr->second->Cap() >= 0) {
+        return cb->writeCB(itr->first.first);
     }
 }
 
@@ -391,9 +396,11 @@ void TunRWer::sendMsg(uint64_t id, uint32_t msg) {
     }
 }
 
+#if 0
 void TunRWer::setResetHandler(std::function<void (uint64_t, uint32_t)> func) {
     resetHanlder = std::move(func);
 }
+#endif
 
 ssize_t TunRWer::cap(uint64_t id) {
     auto status = GetStatus(id);

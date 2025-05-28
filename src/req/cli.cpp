@@ -8,11 +8,14 @@
 #include "prot/dns/resolver.h"
 #include "res/cgi.h"
 
-Cli::Cli(int fd, const sockaddr_storage* addr):
-        Requester(std::make_shared<StreamRWer>(fd, addr, [this](int ret, int code){Error(ret, code);}))
-{
+Cli::Cli(int fd, const sockaddr_storage* addr): Requester(nullptr) {
+    cb = ISocketCallback::create()->onError([this](int ret, int code) {
+        Error(ret, code); 
+    })->onRead([this](Buffer &&bb) { 
+        return ReadHE(bb); 
+    });
+    rwer = std::make_shared<StreamRWer>(fd, addr, cb);
     id = nextId();
-    rwer->SetReadCB([this](Buffer&& bb){return ReadHE(bb);});
 }
 
 Cli::~Cli(){

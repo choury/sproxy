@@ -15,17 +15,15 @@ Server::Server(){
 
 Server::~Server() {
     servers.erase(this);
-    if(rwer) {
-        rwer->ClearCB();
-    }
 }
 
 void Server::deleteLater(uint32_t) {
     if(rwer){
-        rwer->Close([this](){
+        cb->onClose([this](){
             assert(servers.count(this));
             delete this;
         });
+        rwer->Close();
     }else{
         assert(servers.count(this));
         delete this;

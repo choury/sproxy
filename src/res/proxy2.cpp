@@ -39,8 +39,9 @@ bool Proxy2::wantmore(const ReqStatus& status) {
 Proxy2::Proxy2(std::shared_ptr<RWer> rwer) {
     this->rwer = rwer;
     //readCB has moved to init()
-    rwer->SetErrorCB([this](int ret, int code){Error(ret, code);});
-    rwer->SetWriteCB([this](uint64_t id){
+    cb = IRWerCallback::create()->onError([this](int ret, int code){
+        Error(ret, code);}
+    )->onWrite([this](uint64_t id){
         if(statusmap.count(id) == 0){
             return;
         }
@@ -53,6 +54,7 @@ Proxy2::Proxy2(std::shared_ptr<RWer> rwer) {
     receive_time = getmtime();
     ping_time = getmtime();
 #endif
+    rwer->SetCallback(cb);
 }
 
 
@@ -371,7 +373,7 @@ void Proxy2::init(bool enable_push, std::shared_ptr<HttpReq> req) {
     if(req) {
         request(req, nullptr);
     }
-    rwer->SetReadCB([this](Buffer&& bb) -> size_t {
+    cb->onRead([this](Buffer&& bb) -> size_t {
         HOOK_FUNC(this, statusmap, bb);
         uint32_t start = getmtime();
         LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu, refs: %zd\n", dumpDest(this->rwer->getDst()).c_str(), bb.len, bb.refs());

@@ -2,6 +2,7 @@
 #include "res/responser.h"
 #include "misc/config.h"
 #include "misc/hook.h"
+#include "prot/netio.h"
 
 #include <assert.h>
 #include <inttypes.h>
@@ -23,8 +24,7 @@ bool Guest2::wantmore(const ReqStatus& status) {
 
 
 Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
-    rwer->SetErrorCB([this](int ret, int code){Error(ret, code);});
-    rwer->SetReadCB([this](Buffer&& bb) -> size_t {
+    cb = ISocketCallback::create()->onRead([this](Buffer&& bb) -> size_t {
         HOOK_FUNC(this, statusmap, bb);
         LOGD(DHTTP2, "<guest2> (%s) read: len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.len);
         if(bb.len == 0){
@@ -44,8 +44,7 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
                 std::move(this->connection_lost_job),
                 [this]{connection_lost();}, 1800000);
         return len;
-    });
-    rwer->SetWriteCB([this](uint64_t id){
+    })->onWrite([this](uint64_t id){
         if(statusmap.count(id) == 0){
             return;
         }
@@ -53,7 +52,10 @@ Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
         if(wantmore(status)){
             status.res->pull();
         }
+    })->onError([this](int ret, int code){
+        Error(ret, code);
     });
+    rwer->SetCallback(cb);
 }
 
 Guest2::~Guest2() {

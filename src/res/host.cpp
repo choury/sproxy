@@ -25,31 +25,26 @@ Host::Host(const Destination* dest){
     assert(dest->protocol[0]);
     memcpy(&Server, dest, sizeof(Destination));
     bool isWebsocket = strcmp(dest->protocol, "websocket") == 0;
+    cb = ISocketCallback::create()->onConnect([this](const sockaddr_storage&, uint32_t resolved_time){
+        connected(resolved_time);
+    })->onError([this](int ret, int code){
+        Error(ret, code);
+    });
     if(strcmp(dest->protocol, "tcp") == 0 || (isWebsocket && strcmp(dest->scheme, "http") == 0)){
-        auto srwer = std::make_shared<StreamRWer>(
-                dest->hostname, dest->port, Protocol::TCP,
-                [this](int ret, int code){Error(ret, code);});
-        rwer = srwer;
-        srwer->SetConnectCB([this](const sockaddr_storage&, uint32_t resolved_time){connected(resolved_time);});
+        rwer = std::make_shared<StreamRWer>(dest->hostname, dest->port, Protocol::TCP, cb);
     }else if(strcmp(dest->protocol, "ssl") == 0 || (isWebsocket && strcmp(dest->scheme, "https") == 0)){
-        auto srwer = std::make_shared<SslRWer>(
-                dest->hostname, dest->port, Protocol::TCP,
-                [this](int ret, int code){Error(ret, code);});
+        auto srwer = std::make_shared<SslRWer>(dest->hostname, dest->port, Protocol::TCP, cb);
         if(!opt.disable_http2 && !isWebsocket){
             //FIXME: 基于http2的websocket协议暂时禁用，因为在连接之前无法判断服务端是否能支持
             //根据rfc8441，只有连接建立之后收到setting帧才能判断
             srwer->set_alpn(alpn_protos_http12, sizeof(alpn_protos_http12)-1);
         }
         rwer = srwer;
-        srwer->SetConnectCB([this](const sockaddr_storage&, uint32_t resolved_time){connected(resolved_time);});
 #ifdef HAVE_QUIC
     }else if(strcmp(dest->protocol, "quic") == 0){
-        auto qrwer = std::make_shared<QuicRWer>(
-                dest->hostname, dest->port, Protocol::QUIC,
-                [this](int ret, int code){Error(ret, code);});
+        auto qrwer = std::make_shared<QuicRWer>(dest->hostname, dest->port, Protocol::QUIC, cb);
         qrwer->setAlpn(alpn_protos_http3, sizeof(alpn_protos_http3) - 1);
         rwer = qrwer;
-        qrwer->SetConnectCB([this](const sockaddr_storage&, uint32_t resolved_time){connected(resolved_time);});
 #endif
     }else{
         LOGE("Unknown protocol: %s\n", dest->protocol);
@@ -151,7 +146,7 @@ void Host::connected(uint32_t resolved_time) {
         return deleteLater(PROTOCOL_ERR);
     }
 #endif
-    rwer->SetReadCB([this](Buffer&& bb) -> size_t {
+    cb->onRead([this](Buffer&& bb) -> size_t {
         HOOK_FUNC(this, status, bb);
         LOGD(DHTTP, "<host> (%s) read: len:%zu\n", dumpDest(rwer->getDst()).c_str(), bb.len);
         if((status.flags & HTTP_RECV_1ST_BYTE) == 0){
@@ -174,8 +169,7 @@ void Host::connected(uint32_t resolved_time) {
         size_t len = bb.len;
         while((bb.len >  0) &&  (this->*Http_Proc)(bb));
         return len - bb.len;
-    });
-    rwer->SetWriteCB([this](uint64_t){
+    })->onWrite([this](uint64_t){
         LOGD(DHTTP, "<host> (%s) written, flags:0x%08x\n", dumpDest(rwer->getDst()).c_str(), status.flags);
         if(status.flags & (HTTP_RES_COMPLETED | HTTP_CLOSED_F | HTTP_RST)){
             return;

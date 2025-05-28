@@ -295,10 +295,10 @@ protected:
 
 public:
     explicit QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
-             std::function<void(int, int)> errorCB);
+             std::shared_ptr<IRWerCallback> cb);
     explicit QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, Quic_server* server);
     virtual void Send(Buffer&& bb) override;
-    virtual void Close(std::function<void()> func) override;
+    virtual void Close() override;
     virtual bool isTls() override {
         return true;
     }
@@ -332,9 +332,7 @@ protected:
     virtual void ConsumeRData(uint64_t) override;
 public:
     explicit QuicMer(SSL_CTX *ctx, const Destination& src,
-                     std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> write_cb,
-                     std::function<void(uint64_t)> read_cb,
-                     std::function<ssize_t()> cap_cb);
+                     std::shared_ptr<IMemRWerCallback> _cb);
 
     virtual bool isTls() override {
         return true;
@@ -343,7 +341,7 @@ public:
         return QuicBase::idle(id);
     }
 
-    virtual void Close(std::function<void()> func) override;
+    virtual void Close() override;
     virtual void dump_status(Dumper dp, void* param) override;
     virtual size_t mem_usage() override;
 };

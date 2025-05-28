@@ -68,11 +68,11 @@ protected:
         StreamRWer::ConsumeRData(id);
     }
 public:
-    SslRWer(SSL_CTX* ctx, int fd, const sockaddr_storage* peer, std::function<void(int ret, int code)> errorCB):
-            SslRWerBase(ctx), StreamRWer(fd, peer, std::move(errorCB))
+    SslRWer(SSL_CTX* ctx, int fd, const sockaddr_storage* peer, std::shared_ptr<IRWerCallback> cb):
+            SslRWerBase(ctx), StreamRWer(fd, peer, std::move(cb))
     {}
 
-    SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::function<void(int ret, int code)> errorCB);
+    SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::shared_ptr<IRWerCallback> cb);
     virtual void ReadData() override;
     virtual void Send(Buffer&& bb) override;
 
@@ -106,11 +106,8 @@ protected:
         MemRWer::ConsumeRData(id);
     }
 public:
-    SslMer(SSL_CTX* ctx, const Destination& src,
-           std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> write_cb,
-           std::function<void(uint64_t)> read_cb,
-           std::function<ssize_t()> cap_cb):
-      SslRWerBase(ctx), MemRWer(src, std::move(write_cb), std::move(read_cb), std::move(cap_cb))
+    SslMer(SSL_CTX* ctx, const Destination& src, std::shared_ptr<IMemRWerCallback> _cb):
+      SslRWerBase(ctx), MemRWer(src, std::move(_cb))
     {}
     virtual void push_data(Buffer&& bb) override;
     void Send(Buffer&& bb) override;

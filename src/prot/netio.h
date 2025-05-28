@@ -6,6 +6,19 @@
 
 #include <queue>
 
+struct ISocketCallback: public IRWerCallback {
+    std::function<void(const sockaddr_storage&, uint32_t resolved_time)> connectCB = [](const sockaddr_storage&, uint32_t){};
+
+    template<typename F>
+    std::shared_ptr<ISocketCallback> onConnect(F&& func) {
+        connectCB = std::forward<F>(func);
+        return std::dynamic_pointer_cast<ISocketCallback>(shared_from_this());
+    }
+
+    static std::shared_ptr<ISocketCallback> create() {
+        return std::make_shared<ISocketCallback>();
+    }
+};
 
 class SocketRWer: public RWer{
 protected:
@@ -17,7 +30,7 @@ protected:
     void connect();
     Job     dns_job = nullptr;
     Job     con_failed_job = nullptr;
-    std::function<void(const sockaddr_storage&, uint32_t resolved_time)> connectCB = [](const sockaddr_storage&, uint32_t){};
+    //std::function<void(const sockaddr_storage&, uint32_t resolved_time)> connectCB = [](const sockaddr_storage&, uint32_t){};
     // connectFailed should only be called with job con_failed_job,
     // there's always an extra job somewhere if you invoke it directly.
     void connectFailed(int error);
@@ -28,10 +41,10 @@ protected:
     //virtual ssize_t Write(const void* buff, size_t len, uint64_t) override;
     virtual bool IsConnected();
 public:
-    SocketRWer(int fd, const sockaddr_storage* src, std::function<void(int ret, int code)> errorCB);
-    SocketRWer(const char* hostname, uint16_t port, Protocol protocol,
-           std::function<void(int ret, int code)> errorCB);
-    virtual void SetConnectCB(std::function<void(const sockaddr_storage&, uint32_t resolved_time)> connectCB);
+    SocketRWer(int fd, const sockaddr_storage* src, std::shared_ptr<IRWerCallback> cb);
+    SocketRWer(const char* hostname, uint16_t port, Protocol protocol, std::shared_ptr<IRWerCallback> cb);
+    //virtual void SetConnectCB(std::function<void(const sockaddr_storage&, uint32_t resolved_time)> connectCB);
+    virtual void SetCallback(std::shared_ptr<IRWerCallback> cb) override;
     virtual ~SocketRWer() override;
     virtual Destination getSrc() const override;
     virtual Destination getDst() const override;

@@ -100,7 +100,7 @@ public:
     virtual void send(Signal s) override;
     ~HttpReq();
     virtual size_t mem_usage() override {
-        return Channel::mem_usage() + header->mem_usage();
+        return Channel::mem_usage() + header->mem_usage() + sizeof(*this);
     }
 };
 

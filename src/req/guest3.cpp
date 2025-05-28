@@ -9,8 +9,9 @@
 #include <inttypes.h>
 
 void Guest3::init() {
-    rwer->SetErrorCB([this](int ret, int code){Error(ret, code);});
-    rwer->SetReadCB([this](Buffer&& bb) -> size_t {
+    cb = ISocketCallback::create()->onConnect([this](const sockaddr_storage&, uint32_t){
+        connected();
+    })->onRead([this](Buffer&& bb) -> size_t {
         HOOK_FUNC(this, statusmap, bb);
         LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.id, bb.len);
         if(bb.len == 0){
@@ -38,8 +39,7 @@ void Guest3::init() {
             len += ret;
         }
         return len;
-    });
-    rwer->SetWriteCB([this](uint64_t id){
+    })->onWrite([this](uint64_t id){
         if(statusmap.count(id) == 0){
             return;
         }
@@ -51,7 +51,10 @@ void Guest3::init() {
             return;
         }
         status.res->pull();
+    })->onError([this](int ret, int code){
+        Error(ret, code);
     });
+    rwer->SetCallback(cb);
 }
 
 void Guest3::connected() {
@@ -67,18 +70,12 @@ void Guest3::connected() {
     Init();
 }
 
-Guest3::Guest3(std::shared_ptr<QuicRWer> qrwer): Requester(qrwer) {
+Guest3::Guest3(std::shared_ptr<QuicRWer> rwer): Requester(rwer) {
     init();
-    qrwer->SetConnectCB([this](const sockaddr_storage&, uint32_t){
-        connected();
-    });
 }
 
-Guest3::Guest3(std::shared_ptr<QuicMer> qrwer): Requester(qrwer) {
+Guest3::Guest3(std::shared_ptr<QuicMer> rwer): Requester(rwer) {
     init();
-    qrwer->SetConnectCB([this](const sockaddr_storage&){
-        connected();
-    });
     mitmProxy = true;
 }
 

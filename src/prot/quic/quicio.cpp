@@ -1900,8 +1900,8 @@ size_t QuicBase::mem_usage() {
 
 
 QuicRWer::QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
-                   std::function<void(int, int)> errorCB):
-        QuicBase(hostname), SocketRWer(hostname, port, protocol, std::move(errorCB))
+                   std::shared_ptr<IRWerCallback> cb):
+        QuicBase(hostname), SocketRWer(hostname, port, protocol, std::move(cb))
 {
     assert(protocol == Protocol::QUIC);
     con_failed_job = UpdateJob(std::move(con_failed_job),
@@ -1909,7 +1909,9 @@ QuicRWer::QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
 }
 
 QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, Quic_server* server):
-        QuicBase(ctx), SocketRWer(fd, peer, [](int, int){}), server(server)
+        QuicBase(ctx), 
+        SocketRWer(fd, peer, ISocketCallback::create()->onError([](int, int){})),
+        server(server)
 {
     server->rwers.emplace(myids[0], this);
 }
@@ -1936,11 +1938,16 @@ size_t QuicRWer::onRead(Buffer&& bb) {
     assert(!(flags & RWER_READING));
     flags |= RWER_READING;
     defer([this]{ flags &= ~RWER_READING;});
-    return readCB(std::move(bb));
+    if(auto cb = callback.lock(); cb) {
+        return cb->readCB(std::move(bb));
+    }
+    return 0;
 }
 
 void QuicRWer::onWrite(uint64_t id) {
-    writeCB(id);
+    if(auto cb = callback.lock(); cb) {
+        cb->writeCB(id);
+    }
 }
 
 
@@ -1962,10 +1969,14 @@ int QuicRWer::handleRetryPacket(const quic_pkt_header *header) {
 
 void QuicRWer::onError(int type, int code) {
     if (type == PROTOCOL_ERR && code == QUIC_CONNECTION_CLOSED) {
-        closeCB();
+        if(auto cb = callback.lock(); cb) {
+            cb->closeCB();
+        }
     } else {
         stats = RWerStats::Error;
-        errorCB(type, code);
+        if (auto cb = callback.lock(); cb) {
+            cb->errorCB(type, code);
+        }
     }
 }
 
@@ -2031,15 +2042,16 @@ void QuicRWer::waitconnectHE(RW_EVENT events) {
     }
 }
 
-void QuicRWer::Close(std::function<void()> func) {
+void QuicRWer::Close() {
     if (flags & RWER_CLOSING) {
         return;
     }
     flags |= RWER_CLOSING;
-    closeCB = std::move(func);
     if(stats == RWerStats::Error) {
         setEvents(RW_EVENT::NONE);
-        close_timer = UpdateJob(std::move(close_timer), [this]{closeCB();}, 0);
+        if(auto cb = callback.lock(); cb) {
+            close_timer = UpdateJob(std::move(close_timer), [cb]{cb->closeCB();}, 0);
+        }
     }else if(getFd() >= 0) {
         handleEvent = (void (Ep::*)(RW_EVENT))&QuicRWer::closeHE;
         setEvents(RW_EVENT::READ);
@@ -2154,18 +2166,24 @@ size_t QuicRWer::mem_usage() {
 }
 
 QuicMer::QuicMer(SSL_CTX *ctx, const Destination& src,
-                 std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> write_cb,
-                 std::function<void(uint64_t)> read_cb,
-                 std::function<ssize_t()> cap_cb):
-        QuicBase(ctx), MemRWer(src, std::move(write_cb), std::move(read_cb), std::move(cap_cb))
+                 std::shared_ptr<IMemRWerCallback> _cb):
+        QuicBase(ctx), MemRWer(src, std::move(_cb))
 {
 }
 
 size_t QuicMer::getWritableSize() {
-    return cap_cb();
+    if(auto cb = _callback.lock(); cb) {
+        return cb->cap_cb();
+    }
+    return 0;
 }
 
 ssize_t QuicMer::writem(const struct iovec *iov, int iovcnt) {
+    if(_callback.expired()) {
+        LOGE("callback expired, cannot write data\n");
+        return -1;
+    }
+    auto write_cb = _callback.lock()->write_cb;
     for (int i = 0; i < iovcnt; i++) {
         if(write_cb(Buffer{iov[i].iov_base, (size_t)iov[i].iov_len}) < 0){
             return i;
@@ -2180,10 +2198,14 @@ void QuicMer::onConnected() {
 
 void QuicMer::onError(int type, int code) {
     if (type == PROTOCOL_ERR && code == QUIC_CONNECTION_CLOSED) {
-        closeCB();
+        if(auto cb = callback.lock(); cb) {
+            cb->closeCB();
+        }
     } else {
         stats = RWerStats::Error;
-        errorCB(type, code);
+        if(auto cb = callback.lock(); cb) {
+            cb->errorCB(type, code);
+        }
     }
 }
 
@@ -2191,11 +2213,16 @@ size_t QuicMer::onRead(Buffer&& bb) {
     assert(!(flags & RWER_READING));
     flags |= RWER_READING;
     defer([this]{ flags &= ~RWER_READING;});
-    return readCB(std::move(bb));
+    if(auto cb = callback.lock(); cb) {
+        return cb->readCB(std::move(bb));
+    }
+    return 0;
 }
 
 void QuicMer::onWrite(uint64_t id) {
-    return writeCB(id);
+    if(auto cb = callback.lock(); cb) {
+        cb->writeCB(id);
+    }
 }
 
 void QuicMer::defaultHE(RW_EVENT events) {
@@ -2235,22 +2262,20 @@ void QuicMer::ConsumeRData(uint64_t id) {
     sinkData(id);
 }
 
-void QuicMer::Close(std::function<void()> func) {
+void QuicMer::Close() {
     if (flags & RWER_CLOSING) {
         return;
     }
     flags |= RWER_CLOSING;
     if(getFd() >= 0) {
-        closeCB = [this, func = std::move(func)] {
-            write_cb(CHANNEL_ABORT);
-            func();
-        };
         handleEvent = (void (Ep::*)(RW_EVENT)) &QuicMer::closeHE;
         setEvents(RW_EVENT::READ);
         close(QUIC_APPLICATION_ERROR);
     } else {
         //只有一种情况会走到这里，就是对端发送了ABORT信号断开了连接
-        func();
+        if(auto cb = callback.lock(); cb) {
+            cb->closeCB();
+        }
     }
 }
 

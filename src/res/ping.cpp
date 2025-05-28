@@ -8,12 +8,7 @@
 #include <assert.h>
 
 Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
-    auto qrwer = std::make_shared<PacketRWer>(host, this->id, Protocol::ICMP, [this](int ret, int code){
-        LOGE("(%s) Ping error: %d/%d\n", dumpDest(rwer->getDst()).c_str(), ret, code);
-        deleteLater(ret);
-    });
-    rwer = qrwer;
-    qrwer->SetConnectCB([this](const sockaddr_storage& addr, uint32_t){
+    cb = ISocketCallback::create()->onConnect([this](const sockaddr_storage& addr, uint32_t){
         const sockaddr_in6 *addr6 = (const sockaddr_in6*)&addr;
         family = addr6->sin6_family;
         if(addr6->sin6_port == 0){
@@ -36,8 +31,7 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
             }
             return 0;
         }, []{return BUF_LEN;});
-    });
-    rwer->SetReadCB([this](Buffer&& bb) -> size_t{
+    })->onRead([this](Buffer&& bb) -> size_t{
         if(res == nullptr){
             res = std::make_shared<HttpRes>(HttpResHeader::create(S200, sizeof(S200), req->header->request_id));
             req->response(this->res);
@@ -63,7 +57,11 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
             abort();
         }
         return len;
+    })->onError([this](int ret, int code){
+        LOGE("(%s) Ping error: %d/%d\n", dumpDest(rwer->getDst()).c_str(), ret, code);
+        deleteLater(ret);
     });
+    rwer = std::make_shared<PacketRWer>(host, this->id, Protocol::ICMP, cb);
 }
 
 

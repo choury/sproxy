@@ -4,6 +4,7 @@
 #include "prot/ep.h"
 #include "misc/buffer.h"
 
+#include <inttypes.h>
 #include <sys/socket.h>
 
 #include <memory>
@@ -29,6 +30,49 @@ enum class SslStats{
     SslEOF,
 };
 
+struct IRWerCallback: public std::enable_shared_from_this<IRWerCallback> {
+    //返回值是处理的数据长度，返回len表示数据处理完毕，返回0表示数据完全没有被消费
+    //!!readCB不可重入，调用者需通过 RWER_READING来保证这一点
+    std::function<size_t(Buffer&& bb)> readCB = [](Buffer&& bb) {
+        LOGE("send data to stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
+        return (size_t)0;
+    };
+    std::function<void(uint64_t id)> writeCB = [](uint64_t id) {
+        LOGE("call stub writeCB: %" PRIu64 "\n", id);
+    };
+    std::function<void()> closeCB = []() {
+        LOGE("call stub closeCB\n");
+    };
+    //errorCB must be set, otherwise RWer will not work
+    std::function<void(int ret, int code)> errorCB;
+
+    virtual ~IRWerCallback() = default;
+
+    template<typename F>
+    std::shared_ptr<IRWerCallback> onRead(F&& func) {
+        readCB = std::forward<F>(func);
+        return shared_from_this();
+    }
+    template<typename F>
+    std::shared_ptr<IRWerCallback> onWrite(F&& func) {
+        writeCB = std::forward<F>(func);
+        return shared_from_this();
+    }
+    template<typename F>
+    std::shared_ptr<IRWerCallback> onError(F&& func) {
+        errorCB = std::forward<F>(func);
+        return shared_from_this();
+    }
+    template<typename F>
+    std::shared_ptr<IRWerCallback> onClose(F&& func) {
+        closeCB = std::forward<F>(func);
+        return shared_from_this();
+    }
+    static std::shared_ptr<IRWerCallback> create() {
+        return std::make_shared<IRWerCallback>();
+    }
+};
+
 class RWer: public Ep, public std::enable_shared_from_this<RWer> {
 protected:
 #define RWER_READING    0x01  // handling the read buffer
@@ -40,12 +84,7 @@ protected:
     RWerStats  stats = RWerStats::Idle;
     std::list<Buffer> wbuff;
     size_t            wlen = 0;
-    //返回值是处理的数据长度，返回len表示数据处理完毕，返回0表示数据完全没有被消费
-    //!!readCB不可重入，调用者需通过 RWER_READING来保证这一点
-    std::function<size_t(Buffer&& bb)> readCB;
-    std::function<void(uint64_t id)> writeCB;
-    std::function<void(int ret, int code)> errorCB;
-    std::function<void()> closeCB;
+    std::weak_ptr<IRWerCallback> callback;
 
     std::set<uint64_t> StripWbuff(ssize_t len);
     virtual ssize_t Write(std::set<uint64_t>& writed_list);
@@ -63,15 +102,16 @@ protected:
 public:
     //如果一个函数的参数是Buffer&& 那么调用者需要保证该buffer中使用的内存是一直有效的，并由被调用者负责释放
     //如果参数是const Buffer& 那么该内存只在本次调用中有效，如果需要后续使用，需要在函数内自行拷贝
-    explicit RWer(int fd, std::function<void(int ret, int code)> errorCB);
-    explicit RWer(std::function<void(int ret, int code)> errorCB);
-    virtual void SetErrorCB(std::function<void(int ret, int code)> func);
-    virtual void SetReadCB(std::function<size_t(Buffer&& bb)> func);
-    virtual void SetWriteCB(std::function<void(uint64_t id)> func);
-    virtual void ClearCB();
-
-    virtual void Close(std::function<void()> func);
+    explicit RWer(int fd, std::shared_ptr<IRWerCallback> cb);
+    explicit RWer(std::shared_ptr<IRWerCallback> cb);
+    //virtual void SetErrorCB(std::function<void(int ret, int code)> func);
+    //virtual void SetReadCB(std::function<size_t(Buffer&& bb)> func);
+    //virtual void SetWriteCB(std::function<void(uint64_t id)> func);
+    //virtual void ClearCB();
+    //virtual void Close(std::function<void()> func);
+    virtual void SetCallback(std::shared_ptr<IRWerCallback> cb);
     virtual void Unblock(uint64_t id);
+    virtual void Close();
     RWerStats getStats(){return stats;}
     virtual Destination getSrc() const {
         Destination addr{};
@@ -120,7 +160,7 @@ protected:
     virtual void ReadData() override;
     virtual void closeHE(RW_EVENT events) override;
 public:
-    explicit FullRWer(std::function<void(int ret, int code)> errorCB);
+    explicit FullRWer(std::shared_ptr<IRWerCallback> cb);
     ~FullRWer() override;
 
     virtual size_t rlength(uint64_t id) override;

@@ -146,11 +146,13 @@ Cgi::Cgi(const char* fname, int svs[2], int cvs[2]) {
     close(svs[1]);   // 关闭管道的子进程端
     close(cvs[1]);
     /* 现在可在fd[0]中读写数据 */
-    rwer = std::make_shared<StreamRWer>(svs[0], nullptr, [this](int ret, int code){
+    cb = IRWerCallback::create()->onError( [this](int ret, int code){
         LOGE("[CGI] %s error: %d/%d\n", basename(filename), ret, code);
         deleteLater(ret);
+    })->onRead([this](Buffer&& bb){
+        return readHE(std::move(bb));
     });
-    rwer->SetReadCB([this](Buffer&& bb){return readHE(std::move(bb));});
+    rwer = std::make_shared<StreamRWer>(svs[0], nullptr, cb);
     cgimap[filename] = this;
 }
 

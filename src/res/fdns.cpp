@@ -128,7 +128,7 @@ void FDns::query(uint64_t id, std::shared_ptr<RWer> rwer) {
         .rwer = rwer,
         .quemap = {},
     };
-    rwer->SetReadCB([this, id](Buffer&& bb) -> size_t{
+    cb = IRWerCallback::create()->onRead([this, id](Buffer&& bb) -> size_t{
         LOGD(DDNS, "fdns read [%" PRIu64"], size:%zd, refs: %zd\n", id, bb.len, bb.refs());
         bb.id = id;
         if(bb.len == 0){
@@ -137,11 +137,12 @@ void FDns::query(uint64_t id, std::shared_ptr<RWer> rwer) {
             Recv(std::move(bb));
         }
         return bb.len;
-    });
-    rwer->SetErrorCB([this, id](int, int) {
+    })->onError([this, id](int, int) {
         addjob_with_name([this,id]{statusmap.erase(id);}, "fdns_clean", 0, JOB_FLAGS_AUTORELEASE);
+    })->onClose([id]{
+        fdns->statusmap.erase(id);
     });
-    rwer->SetWriteCB([](uint64_t){});
+    rwer->SetCallback(cb);
 }
 
 void FDns::query(Buffer&& bb, std::shared_ptr<RWer> rwer) {
@@ -275,7 +276,7 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockadd
     delete result;
     status.quemap.erase(que->id);
     if(status.quemap.empty()) {
-        status.rwer->Close([id]{fdns->statusmap.erase(id);});
+        status.rwer->Close();
     }
 }
 
@@ -315,7 +316,7 @@ void FDns::RawCb(std::shared_ptr<void> param, const char* data, size_t size) {
     }
     status.quemap.erase(que->id);
     if(status.quemap.empty()) {
-        status.rwer->Close([id]{fdns->statusmap.erase(id);});
+        status.rwer->Close();
     }
 }
 

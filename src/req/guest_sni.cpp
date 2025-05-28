@@ -21,9 +21,9 @@ Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(f
         LOGF("Faild to get socket type: %s\n", strerror(errno));
     }
     if(type == SOCK_STREAM) {
-        rwer->SetReadCB([this](Buffer&& bb){return sniffer(std::move(bb));});
+        cb->onRead([this](Buffer&& bb){return sniffer(std::move(bb));});
     }else if (type == SOCK_DGRAM) {
-        rwer->SetReadCB([this](Buffer&& bb){return sniffer_quic(std::move(bb));});
+        cb->onRead([this](Buffer&& bb){return sniffer_quic(std::move(bb));});
     }else {
         LOGF("unknown socket type: %d\n", type);
     }
@@ -40,9 +40,9 @@ Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, std::string host, const char* u
         user_agent = ua;
     }
     if(std::dynamic_pointer_cast<PMemRWer>(rwer)) {
-        rwer->SetReadCB([this](Buffer&& bb){return sniffer_quic(std::move(bb));});
+        cb->onRead([this](Buffer&& bb){return sniffer_quic(std::move(bb));});
     } else if(std::dynamic_pointer_cast<MemRWer>(rwer)) {
-        rwer->SetReadCB([this](Buffer&& bb){return sniffer(std::move(bb));});
+        cb->onRead([this](Buffer&& bb){return sniffer(std::move(bb));});
     } else {
         LOGF("Guest_sni: rwer type error\n");
     }
@@ -60,6 +60,13 @@ Guest::ReqStatus* Guest_sni::forward(const char *hostname, Protocol prot, uint64
     }
     assert(statuslist.empty());
 
+    auto _cb = IMemRWerCallback::create()->onRead([this](auto &&data) {
+        return mread(std::forward<decltype(data)>(data));
+    })->onWrite([this, id](uint64_t) {
+        rwer->Unblock(id);
+    })->onCap([this, id] {
+        return rwer->cap(id);
+    });
 #ifdef HAVE_QUIC
     if(shouldNegotiate(hostname)) {
         if(prot == Protocol::TCP) {
@@ -67,22 +74,14 @@ Guest::ReqStatus* Guest_sni::forward(const char *hostname, Protocol prot, uint64
     if(shouldNegotiate(hostname) && prot == Protocol::TCP) {
 #endif
             auto ctx = initssl(0, hostname);
-            auto srwer = std::make_shared<SslMer>(
-                    ctx, rwer->getSrc(),
-                    [this](auto &&data) { return mread(std::forward<decltype(data)>(data)); },
-                    [this, id](uint64_t) { rwer->Unblock(id); },
-                    [this, id] { return rwer->cap(id); });
-            statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
+            auto srwer = std::make_shared<SslMer>(ctx, rwer->getSrc(), _cb);
+            statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, _cb, HTTP_NOEND_F});
             new Guest(srwer);
 #ifdef HAVE_QUIC
         } else {
             auto ctx   = initssl(1, hostname);
-            auto srwer = std::make_shared<QuicMer>(
-                    ctx, rwer->getSrc(),
-                    [this](auto &&data) { return mread(std::forward<decltype(data)>(data)); },
-                    [this, id](uint64_t) { rwer->Unblock(id); },
-                    [this, id] { return rwer->cap(id); });
-            statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
+            auto srwer = std::make_shared<QuicMer>(ctx, rwer->getSrc(), _cb);
+            statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, _cb, HTTP_NOEND_F});
             new Guest3(srwer);
         }
 #endif
@@ -111,7 +110,7 @@ Guest::ReqStatus* Guest_sni::forward(const char *hostname, Protocol prot, uint64
                 [this](std::shared_ptr<HttpRes> res){return response(nullptr, res);},
                 [this]{ rwer->Unblock(0);});
 
-        statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, 0, nullptr});
+        statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, nullptr});
     }
     return &statuslist.back();
 }
@@ -135,9 +134,9 @@ size_t Guest_sni::sniffer(Buffer&& bb) {
         status->req->send(std::move(bb));
     }
     if(status->rwer) {
-        status->rwer->push(std::move(bb));
+        status->rwer->push_data(std::move(bb));
     }
-    rwer->SetReadCB([this](Buffer&& bb){return ReadHE(std::move(bb));});
+    cb->onRead([this](Buffer&& bb){return ReadHE(std::move(bb));});
     rx_bytes += len;
     if(status->req){
         distribute(status->req, this);
@@ -223,13 +222,13 @@ Forward:
             status->req->send(std::move(bb));
         }
         if(status->rwer) {
-            status->rwer->push(std::move(bb));
+            status->rwer->push_data(std::move(bb));
         }
 #ifdef HAVE_QUIC
     }
     quic_init_packets.clear();
 #endif
-    rwer->SetReadCB([this](Buffer&& bb){return ReadHE(std::move(bb));});
+    cb->onRead([this](Buffer&& bb){return ReadHE(std::move(bb));});
     if(status->req) {
         distribute(status->req, this);
     }

@@ -21,26 +21,13 @@ ssize_t RWer::cap(uint64_t) {
     return MAX_BUF_LEN - wlen;
 }
 
-RWer::RWer(int fd, std::function<void(int ret, int code)> errorCB):
-    Ep(fd), errorCB(std::move(errorCB))
-{
-    assert(this->errorCB != nullptr);
-    readCB = [](const Buffer& bb) {
-        LOGE("send data to stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
-        return (size_t)0;
-    };
-    writeCB = [](size_t){};
+RWer::RWer(int fd, std::shared_ptr<IRWerCallback> cb): Ep(fd), callback(std::move(cb)) {
+    assert(cb && cb->errorCB);
 }
 
 
-RWer::RWer(std::function<void (int, int)> errorCB): Ep(-1), errorCB(std::move(errorCB))
-{
-    assert(this->errorCB != nullptr);
-    readCB = [](const Buffer& bb) {
-        LOGE("send data to stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
-        return (size_t)0;
-    };
-    writeCB = [](size_t){};
+RWer::RWer(std::shared_ptr<IRWerCallback> cb): Ep(-1), callback(std::move(cb)) {
+    assert(cb && cb->errorCB);
 }
 
 std::set<uint64_t> RWer::StripWbuff(ssize_t len) {
@@ -122,8 +109,10 @@ void RWer::SendData(){
         ErrorHE(SOCKET_ERR, errno);
         return;
     }
-    for(auto id: writed_list){
-        writeCB(id);
+    if(auto cb = callback.lock(); cb) {
+        for(auto id: writed_list){
+            cb->writeCB(id);
+        }
     }
     if(wbuff.empty()){
         assert(wlen == 0);
@@ -131,6 +120,11 @@ void RWer::SendData(){
     }
 }
 
+void RWer::SetCallback(std::shared_ptr<IRWerCallback> cb) {
+    callback = std::move(cb);
+}
+
+#if 0
 void RWer::SetErrorCB(std::function<void(int ret, int code)> func){
     errorCB = std::move(func);
 }
@@ -150,6 +144,7 @@ void RWer::ClearCB() {
     errorCB = [](int, int){};
     closeCB = []{};
 }
+#endif
 
 
 void RWer::defaultHE(RW_EVENT events){
@@ -179,7 +174,9 @@ void RWer::closeHE(RW_EVENT) {
     if (wbuff.empty() || (ret <= 0 && errno != EAGAIN && errno != ENOBUFS)) {
         handleEvent = (void(Ep::*)(RW_EVENT))&RWer::IdleHE;
         setEvents(RW_EVENT::NONE);
-        closeCB();
+        if(auto cb = callback.lock(); cb) {
+            cb->closeCB();
+        }
     }
 #else
     if ((wbuff.start() == wbuff.end()) || (ret <= 0)) {
@@ -203,19 +200,21 @@ bool RWer::isEof() {
     return stats == RWerStats::ReadEOF;
 }
 
-void RWer::Close(std::function<void()> func) {
+void RWer::Close() {
     if(flags & RWER_CLOSING){
         return;
     }
     flags |= RWER_CLOSING;
-    closeCB = std::move(func);
+    //closeCB = std::move(func);
     if(getFd() >= 0 && (stats == RWerStats::Connected || stats == RWerStats::ReadEOF || stats == RWerStats::Error)){
         setEvents(RW_EVENT::READWRITE);
         handleEvent = (void (Ep::*)(RW_EVENT))&RWer::closeHE;
     }else{
         handleEvent = (void (Ep::*)(RW_EVENT))&RWer::IdleHE;
         // when connecting, the socket is not writable, so we close it immediately
-        closeCB();
+        if(auto cb = callback.lock(); cb) {
+            cb->closeCB();
+        }
     }
 }
 
@@ -246,7 +245,9 @@ void RWer::Unblock(uint64_t id){
 
 void RWer::ErrorHE(int ret, int code) {
     stats = RWerStats::Error;
-    errorCB(ret, code);
+    if (auto cb = callback.lock(); cb) {
+        cb->errorCB(ret, code);
+    }
 }
 
 
@@ -268,7 +269,7 @@ bool RWer::idle(uint64_t) {
     return (flags & RWER_SHUTDOWN) && (flags & RWER_EOFDELIVED);
 }
 
-NullRWer::NullRWer():RWer(-1, [](int, int){}) {
+NullRWer::NullRWer():RWer(-1, IRWerCallback::create()->onError([](int, int){})) {
 }
 
 void NullRWer::ReadData() {
@@ -288,17 +289,19 @@ ssize_t NullRWer::Write(std::set<uint64_t>& writed_list) {
 }
 
 #ifdef __linux__
-FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB): RWer(std::move(errorCB)) {
+FullRWer::FullRWer(std::shared_ptr<IRWerCallback> cb): RWer(std::move(cb)) {
     int evfd = eventfd(1, SOCK_CLOEXEC);
     if(evfd < 0){
         stats = RWerStats::Error;
-        errorCB(SOCKET_ERR, errno);
+        if(auto cb = callback.lock(); cb) {
+            cb->errorCB(SOCKET_ERR, errno);
+        }
         return;
     }
     setFd(evfd);
     (void)!write(evfd, "FULLEVENT", 8);
 #else
-FullRWer::FullRWer(std::function<void(int ret, int code)> errorCB): RWer(std::move(errorCB)), pairfd(-1){
+FullRWer::FullRWer(std::shared_ptr<IRWerCallback> cb): RWer(std::move(cb)), pairfd(-1){
     int pairs[2];
     int ret = socketpair(AF_UNIX, SOCK_STREAM, 0, pairs);
     if(ret){
@@ -341,7 +344,9 @@ void FullRWer::ConsumeRData(uint64_t id) {
     assert(!(flags & RWER_READING));
     flags |= RWER_READING;
     defer([this]{ flags &= ~RWER_READING;});
-    readCB({nullptr, id});
+    if(auto cb = callback.lock(); cb) {
+        cb->readCB({nullptr, id});
+    }
 }
 
 void FullRWer::ReadData(){
@@ -349,6 +354,8 @@ void FullRWer::ReadData(){
 }
 
 void FullRWer::closeHE(RW_EVENT) {
-    closeCB();
+    if(auto cb = callback.lock(); cb) {
+        cb->closeCB();
+    }
 }
 

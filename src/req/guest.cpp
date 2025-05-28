@@ -29,7 +29,7 @@ size_t Guest::ReadHE(Buffer&& bb){
                 status.req->send(Buffer{nullptr, bb.id});
             }
             if(status.rwer) {
-                status.rwer->push(Buffer{nullptr, bb.id});
+                status.rwer->push_data(Buffer{nullptr, bb.id});
             }
             status.flags |= HTTP_REQ_COMPLETED;
             if(status.flags & HTTP_RES_COMPLETED){
@@ -112,12 +112,15 @@ void Guest::WriteHE(uint64_t id){
 }
 
 Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(nullptr){
+    cb = ISocketCallback::create()->onRead([this](Buffer&& bb) {
+        return ReadHE(std::move(bb));
+    })->onWrite([this](uint64_t id){
+        return WriteHE(id);
+    })->onError([this](int ret, int code){
+        Error(ret, code);
+    });
     if(ctx){
-        auto srwer = std::make_shared<SslRWer>(ctx, fd, addr, [this](int ret, int code){
-            Error(ret, code);
-        });
-        this->rwer = srwer;
-        srwer->SetConnectCB([this](const sockaddr_storage&, uint32_t){
+        std::dynamic_pointer_cast<ISocketCallback>(cb)->onConnect([this](const sockaddr_storage&, uint32_t){
             //不要捕获rwer,否则不能正常释放shared_ptr
             auto srwer = std::dynamic_pointer_cast<SslRWer>(this->rwer);
             const unsigned char *data;
@@ -139,6 +142,7 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
                 return Server::deleteLater(NOERROR);
             }
         });
+        rwer = std::make_shared<SslRWer>(ctx, fd, addr, cb);
     }else{
         int type;
         socklen_t len = sizeof(type);
@@ -146,30 +150,26 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
             LOGF("Faild to get socket type: %s\n", strerror(errno));
         }
         if(type == SOCK_STREAM) {
-            rwer = std::make_shared<StreamRWer>(fd, addr, [this](int ret, int code) {
-                Error(ret, code);
-            });
+            rwer = std::make_shared<StreamRWer>(fd, addr, cb);
         }else if(type == SOCK_DGRAM) {
-            rwer = std::make_shared<PacketRWer>(fd, addr, [this](int ret, int code) {
-                Error(ret, code);
-            });
+            rwer = std::make_shared<PacketRWer>(fd, addr, cb);
         }else {
             LOGF("unknown socket type: %d\n", type);
         }
     }
-    rwer->SetReadCB([this](Buffer&& bb) {
-        return ReadHE(std::move(bb));
-    });
-    rwer->SetWriteCB([this](uint64_t id){
-        return WriteHE(id);
-    });
 }
 
-Guest::Guest(std::shared_ptr<RWer> rwer_): Requester(rwer_){
-    auto srwer = std::dynamic_pointer_cast<SslMer>(rwer);
-    if(srwer) {
-        srwer->SetConnectCB([this](const sockaddr_storage&){
-            LOGD(DHTTP, "<guest> %s connected\n", dumpDest(rwer->getSrc()).c_str());
+Guest::Guest(std::shared_ptr<RWer> rwer): Requester(rwer){
+    cb = ISocketCallback::create()->onRead([this](Buffer&& bb){
+        return ReadHE(std::move(bb));
+    })->onWrite([this](uint64_t id){
+        return WriteHE(id);
+    })->onError([this](int ret, int code){
+        Error(ret, code);
+    });
+    if(std::dynamic_pointer_cast<SslMer>(rwer)) {
+        std::dynamic_pointer_cast<ISocketCallback>(cb)->onConnect([this](const sockaddr_storage&, uint32_t){
+            LOGD(DHTTP, "<guest> %s connected\n", dumpDest(this->rwer->getSrc()).c_str());
             auto srwer = std::dynamic_pointer_cast<SslMer>(this->rwer);
             const unsigned char *data;
             unsigned int len;
@@ -182,15 +182,7 @@ Guest::Guest(std::shared_ptr<RWer> rwer_): Requester(rwer_){
             }
         });
     }
-    rwer->SetErrorCB([this](int ret, int code){
-        Error(ret, code);
-    });
-    rwer->SetReadCB([this](Buffer&& bb){
-        return ReadHE(std::move(bb));
-    });
-    rwer->SetWriteCB([this](uint64_t id){
-        return WriteHE(id);
-    });
+    rwer->SetCallback(cb);
 }
 
 void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
@@ -204,12 +196,15 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
         if(header->Dest.port == HTTPSPORT && shouldNegotiate(header, this)) {
             if(!headless) rwer->Send({HCONNECT, strlen(HCONNECT), id});
             auto ctx = initssl(0, header->Dest.hostname);
-            auto srwer = std::make_shared<SslMer>(
-                    ctx, rwer->getSrc(),
-                    [this](auto &&data) { return mread(std::forward<decltype(data)>(data)); },
-                    [this, id](uint64_t) { rwer->Unblock(id); },
-                    [this, id] { return rwer->cap(id); });
-            statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, HTTP_NOEND_F});
+            auto _cb = IMemRWerCallback::create()->onRead([this](auto &&data) {
+                return mread(std::forward<decltype(data)>(data));
+            })->onWrite([this, id](uint64_t) {
+                rwer->Unblock(id);
+            })->onCap([this, id] {
+                return rwer->cap(id);
+            });
+            auto srwer = std::make_shared<SslMer>(ctx, rwer->getSrc(), _cb);
+            statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, _cb, HTTP_NOEND_F});
             new Guest(srwer);
             return;
         }
@@ -234,7 +229,7 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
             [this](std::shared_ptr<HttpRes> res) { response(nullptr, res); },
             [this]{ rwer->Unblock(0);});
 
-    statuslist.emplace_back(ReqStatus{req, nullptr, nullptr});
+    statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, nullptr});
     if(statuslist.size() == 1){
         distribute(req, this);
     } else {
@@ -302,7 +297,7 @@ ssize_t Guest::DataProc(Buffer& bb) {
         if (status.rwer) {
             LOGD(DHTTP, "<guest> DataProc %s: cap:%zu, send:%d/%zu\n",
                  dumpDest(status.rwer->getSrc()).c_str(), bb.len, cap, rx_bytes);
-            status.rwer->push(std::move(bb));
+            status.rwer->push_data(std::move(bb));
         }
     };
     if((size_t)cap < bb.len) {
@@ -480,8 +475,7 @@ void Guest::deleteLater(uint32_t errcode) {
             status.res->detach();
         }
         if(status.rwer) {
-            status.rwer->push(CHANNEL_ABORT);
-            status.rwer->detach();
+            status.rwer->push_signal(CHANNEL_ABORT);
         }
     }
     statuslist.clear();
