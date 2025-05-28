@@ -27,7 +27,7 @@ endif()
 
 CHECK_C_COMPILER_FLAG("-std=gnu99" HAVE_C99)
 CHECK_CXX_COMPILER_FLAG("-std=c++17" HAVE_CXX17)
-CHECK_CXX_COMPILER_FLAG("-std=c++2a" HAVE_CXX2a)
+CHECK_CXX_COMPILER_FLAG("-std=c++20" HAVE_CXX20)
 
 if(NOT HAVE_CXX17 OR NOT HAVE_C99)
     message(FATAL_ERROR "this project need c++17 and c99")
@@ -173,7 +173,11 @@ if(USE_BORINGSSL AND NOT HAVE_QUIC)
 endif()
 
 set(CMAKE_C_FLAGS "-std=gnu99 -Wall -Wextra -fPIC -fno-omit-frame-pointer ${CMAKE_C_FLAGS}")
-set(CMAKE_CXX_FLAGS "-std=c++17 -Wall -Wextra -fPIC -fno-omit-frame-pointer ${CMAKE_CXX_FLAGS}")
+if (HAVE_CXX20)
+    set(CMAKE_CXX_FLAGS "-std=c++20 -Wall -Wextra -fPIC -fno-omit-frame-pointer ${CMAKE_CXX_FLAGS}")
+else()
+    set(CMAKE_CXX_FLAGS "-std=c++17 -Wall -Wextra -fPIC -fno-omit-frame-pointer ${CMAKE_CXX_FLAGS}")
+endif()
 
 if(APPLE)
     set(CMAKE_EXE_LINKER_FLAGS "-Wl,-export_dynamic ${CMAKE_EXE_LINKER_FLAGS}")
