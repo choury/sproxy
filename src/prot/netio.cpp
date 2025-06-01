@@ -341,8 +341,8 @@ void StreamRWer::ConsumeRData(uint64_t id) {
     if(isEof() && rb.length() == 0 && (flags & RWER_EOFDELIVED) == 0){
         if(auto cb = callback.lock(); cb) {
             cb->readCB({nullptr, id});
+            flags |= RWER_EOFDELIVED;
         }
-        flags |= RWER_EOFDELIVED;
     }
 }
 
@@ -444,8 +444,8 @@ void PacketRWer::ReadData() {
             delEvents(RW_EVENT::READ);
             if(auto cb = callback.lock(); cb) {
                 cb->readCB(nullptr);
+                flags |= RWER_EOFDELIVED;
             }
-            flags |= RWER_EOFDELIVED;
         }else if (errno != EAGAIN) {
             ErrorHE(SOCKET_ERR, errno);
         }

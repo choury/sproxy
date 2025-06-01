@@ -88,7 +88,7 @@ public:
 class SslMer: public SslRWerBase, public MemRWer {
 protected:
     virtual size_t bufsize() override {
-        return rb.cap();
+        return BUF_LEN * 2 - rlen;
     }
     virtual void write(Buffer&& bb) override;
     virtual void onRead(Buffer&& bb) override;

@@ -3,6 +3,7 @@
 
 #include "requester.h"
 #include "prot/tcpip/ip_pack.h"
+#include "prot/http/http_header.h"
 #include "prot/memio.h"
 #include "misc/job.h"
 
@@ -14,23 +15,22 @@ class Guest_vpn: public Requester {
         std::string host;
         std::string prog;
         std::shared_ptr<const Ip> pac;
-        std::shared_ptr<HttpReq> req;
-        std::shared_ptr<HttpRes> res;
-        std::shared_ptr<MemRWer> rwer; //rwer 和 req/res 二者只会有一个
+        std::shared_ptr<HttpReqHeader> req;
+        std::shared_ptr<MemRWer>       rw;
         std::shared_ptr<IMemRWerCallback> cb;
         uint32_t   flags = 0;
         Job        cleanJob = nullptr;
     };
 
     std::map<uint64_t, VpnStatus> statusmap;
-    void handle(uint64_t id, Signal s);
     void ReqProc(uint64_t id, std::shared_ptr<const Ip> pac);
     void Clean(uint64_t id);
-    int mread(uint64_t id, std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data);
+
+    size_t Recv(Buffer&& bb);
+    virtual std::shared_ptr<IMemRWerCallback> response(uint64_t id) override;
 public:
     explicit Guest_vpn(int fd, bool enable_offload);
-    virtual void response(void* index, std::shared_ptr<HttpRes> res) override;
-    virtual ~Guest_vpn();
+    virtual ~Guest_vpn() override;
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
 };

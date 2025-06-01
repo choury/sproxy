@@ -102,6 +102,10 @@ void Quic_sniServer::defaultHE(RW_EVENT events) {
             LOGE("recvfrom error: %s\n", strerror(errno));
             return;
         }
+        if(snis.count(hisaddr)) {
+            snis[hisaddr]->sniffer_quic({buff, (size_t)ret});
+            return;
+        }
 
         ((sockaddr_in*)&myaddr)->sin_port = htons(opt.quic.port);
         int clsk = ListenUdp(&myaddr, nullptr);
@@ -116,7 +120,10 @@ void Quic_sniServer::defaultHE(RW_EVENT events) {
         }
         LOGD(DQUIC, "connect udp %d to %s\n", clsk, storage_ntoa(&hisaddr));
         SetUdpOptions(clsk, &hisaddr);
-        auto guest = new Guest_sni(clsk, &hisaddr, nullptr);
+        auto guest = new Guest_sni(clsk, &hisaddr, nullptr, [this, hisaddr](Server*){
+            snis.erase(hisaddr);
+        });
+        snis.emplace(hisaddr, guest);
         guest->sniffer_quic({buff, (size_t)ret});
     } else {
         LOGE("unknown error\n");

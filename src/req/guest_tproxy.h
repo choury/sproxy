@@ -3,16 +3,22 @@
 
 #include "guest.h"
 
+#include <memory>
 
 class Guest_tproxy: public Guest {
-    int protocol;
 public:
+    bool inited = false;
     explicit Guest_tproxy(int fd, sockaddr_storage* src);
-    explicit Guest_tproxy(int fd, sockaddr_storage* src, sockaddr_storage* dst, Buffer&& bb);
+    explicit Guest_tproxy(int fd, sockaddr_storage* src, sockaddr_storage* dst, Buffer&& bb, std::function<void(Server*)> df);
+    void push_data(Buffer&& bb) {
+        DataProc(bb);
+    }
 };
 
+bool operator<(const sockaddr_storage& a, const sockaddr_storage& b);
+
 class Tproxy_server: public Ep {
-    sockaddr_storage myaddr;
+    std::map<sockaddr_storage, Guest_tproxy*> tps;
     virtual void tcpHE(RW_EVENT events) {
         if (!!(events & RW_EVENT::ERROR)) {
             LOGE("tcp server: %d\n", checkSocket(__PRETTY_FUNCTION__));
@@ -57,6 +63,10 @@ class Tproxy_server: public Ep {
                 return;
             }
             bb.truncate(ret);
+            if(tps.count(hisaddr)) {
+                tps[hisaddr]->push_data(std::move(bb));
+                return;
+            }
             listenOption ops = {
                 .disable_defer_accepct = true,
                 .enable_ip_transparent = true,
@@ -72,7 +82,12 @@ class Tproxy_server: public Ep {
             }
             LOGD(DNET, "connect udp %d to %s\n", clsk, storage_ntoa(&hisaddr));
             SetUdpOptions(clsk, &hisaddr);
-            new Guest_tproxy(clsk, &hisaddr, &myaddr, std::move(bb));
+            auto guest = new Guest_tproxy(clsk, &hisaddr, &myaddr, std::move(bb), [this, hisaddr](Server*){
+                tps.erase(hisaddr);
+            });
+            if(guest->inited) {
+                tps[hisaddr] = guest;
+            }
         } else {
             LOGE("unknown error\n");
             return;
@@ -86,6 +101,7 @@ public:
         if(getsockopt(fd, SOL_SOCKET, SO_PROTOCOL, &protocol, &socklen)) {
             LOGF("failed to get protocol: %s\n", strerror(errno));
         }
+        sockaddr_storage myaddr;
         socklen = sizeof(myaddr);
         if(getsockname(fd, (sockaddr*)&myaddr, &socklen)) {
             LOGF("failed to get sockname: %s\n", strerror(errno));

@@ -294,6 +294,7 @@ struct in_addr getMapped(struct in6_addr addr, const char* prefix) {
 void demangle_func(char* stack, int depth);
 
 void dump_trace(int signum) {
+    fflush(stdout);
     void *stack_trace[100] = {0};
     /* 获取栈中各层调用函数地址 */
     int stack_depth = backtrace(stack_trace, 100);

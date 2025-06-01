@@ -35,6 +35,7 @@ std::set<uint64_t> RWer::StripWbuff(ssize_t len) {
     if(len < 0) {
         return writed_list;
     }
+    LOGD(DRWER, "StripWbuff %d: len: %zd, wlen: %zd\n", getFd(), len, wlen);
     wlen -= len;
     while(!wbuff.empty()) {
         auto& bb = wbuff.front();
@@ -121,7 +122,9 @@ void RWer::SendData(){
 }
 
 void RWer::SetCallback(std::shared_ptr<IRWerCallback> cb) {
+    LOGD(DRWER, "set callback %d: %p\n", getFd(), cb.get());
     callback = std::move(cb);
+    ConsumeRData(0);
 }
 
 #if 0
@@ -257,7 +260,8 @@ void RWer::Send(Buffer&& bb) {
         flags |= RWER_SHUTDOWN;
     }
     addEvents(RW_EVENT::WRITE);
-    LOGD(DRWER, "push to wbuff %p: %zd, id: %" PRIu64", refs: %zd\n", bb.data(), bb.len, bb.id, bb.refs());
+    LOGD(DRWER, "push to wbuff %d: id: %" PRIu64", len: %zd, refs: %zd, wlen: %zd\n", 
+        getFd(), bb.id, bb.len, bb.refs(), wlen);
     wlen += bb.len;
     wbuff.emplace_back(std::move(bb));
 }
@@ -306,7 +310,9 @@ FullRWer::FullRWer(std::shared_ptr<IRWerCallback> cb): RWer(std::move(cb)), pair
     int ret = socketpair(AF_UNIX, SOCK_STREAM, 0, pairs);
     if(ret){
         stats = RWerStats::Error;
-        errorCB(SOCKET_ERR, errno);
+        if(auto cb = callback.lock(); cb) {
+            cb->errorCB(SOCKET_ERR, errno);
+        }
         return;
     }
     setFd(pairs[0]);
@@ -354,6 +360,7 @@ void FullRWer::ReadData(){
 }
 
 void FullRWer::closeHE(RW_EVENT) {
+    setEvents(RW_EVENT::NONE);
     if(auto cb = callback.lock(); cb) {
         cb->closeCB();
     }

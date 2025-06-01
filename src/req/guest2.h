@@ -3,13 +3,15 @@
 
 #include "requester.h"
 #include "prot/http2/http2.h"
+#include "prot/memio.h"
 #include "misc/job.h"
 
 
 class Guest2: public Requester, public Http2Responser {
     struct ReqStatus{
-        std::shared_ptr<HttpReq> req;
-        std::shared_ptr<HttpRes> res;
+        std::shared_ptr<HttpReqHeader>    req;
+        std::shared_ptr<MemRWer>          rw;
+        std::shared_ptr<IMemRWerCallback> cb;
         int32_t  remotewinsize; //对端提供的窗口大小，发送时减小，收到对端update时增加
         int32_t  localwinsize; //发送给对端的窗口大小，接受时减小，给对端发送update时增加
         uint32_t flags = 0;
@@ -36,15 +38,13 @@ protected:
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
     virtual void SendData(Buffer&& wb) override;
 
-    void Recv(Buffer&& bb);
-    void Handle(uint32_t id, Signal signal);
+    size_t Recv(Buffer&& bb);
+    virtual std::shared_ptr<IMemRWerCallback> response(uint64_t id) override;
     void Clean(uint32_t id, uint32_t errcode);
     static bool wantmore(const ReqStatus& status);
 public:
     explicit Guest2(std::shared_ptr<RWer> rwer);
-    virtual ~Guest2();
-    
-    virtual void response(void* index, std::shared_ptr<HttpRes> res)override;
+    virtual ~Guest2() override;
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;

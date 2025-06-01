@@ -14,6 +14,9 @@ void set_checksum_offload(bool enable) {
 }
 
 
+bool operator<(const sockaddr_storage& a, const sockaddr_storage& b) {
+    return memcmp(&a, &b, sizeof(sockaddr_storage)) < 0;
+}
 
 /*
  * Pseudo-header used for checksumming; this header should never
@@ -216,11 +219,8 @@ void Icmp::build_packet(Buffer& bb) {
     char* packet = (char *)bb.mutable_data();
     icmp_hdr.checksum = 0;
     memcpy(packet, &icmp_hdr, sizeof(icmp_hdr));
-    if(checksum_offload){
-        ((icmp *)packet)->icmp_cksum =  0;
-    } else {
-        ((icmp *)packet)->icmp_cksum = htons(checksum16((uint8_t*) packet, bb.len));
-    }
+    //checkum_offload is not supported for ICMPv4
+    ((icmp *)packet)->icmp_cksum = htons(checksum16((uint8_t*) packet, bb.len));
 }
 
 Icmp6::Icmp6() {

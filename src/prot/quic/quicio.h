@@ -194,11 +194,11 @@ protected:
     virtual FrameResult handleHandshakeFrames(quic_context* context, const quic_frame* frame);
     virtual FrameResult handleFrames(quic_context* context, const quic_frame* frame);
 
-    std::function<int(const quic_pkt_header* header, std::vector<const quic_frame*>& frames)> walkHandler;
-    virtual int handleHandshakePacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
+    std::function<int(const quic_pkt_header* header, std::deque<const quic_frame*>& frames)> walkHandler;
+    virtual int handleHandshakePacket(const quic_pkt_header* header, std::deque<const quic_frame*>& frames);
     virtual int handleRetryPacket(const quic_pkt_header* header);
-    virtual int handle1RttPacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
-    virtual int handlePacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames);
+    virtual int handle1RttPacket(const quic_pkt_header* header, std::deque<const quic_frame*>& frames);
+    virtual int handlePacket(const quic_pkt_header* header, std::deque<const quic_frame*>& frames);
     bool checkStatelessReset(const void* may_be_token);
 
     using iterator = typename decltype(streammap)::iterator;
@@ -339,6 +339,9 @@ public:
     }
     virtual bool idle(uint64_t id) override {
         return QuicBase::idle(id);
+    }
+    virtual size_t bufsize() override {
+        return MAX_BUF_LEN - rblen;
     }
 
     virtual void Close() override;

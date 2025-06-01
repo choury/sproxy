@@ -42,11 +42,7 @@ const VpnKey& VpnKey::reverse() {
     return *this;
 }
 
-static bool operator<(const sockaddr_storage& a, const sockaddr_storage& b) {
-    return memcmp(&a, &b, sizeof(sockaddr_storage)) < 0;
-}
-
-bool operator<(const VpnKey& a, const VpnKey& b) {
+static bool operator<(const VpnKey& a, const VpnKey& b) {
     return std::tie(a.protocol, a.src, a.dst) < std::tie(b.protocol, b.src, b.dst);
 }
 
@@ -110,6 +106,7 @@ TunRWer::TunRWer(int fd, bool enable_offload, std::shared_ptr<IRWerCallback> cb)
         pcap = pcap_create(opt.pcap_file);
     }
     set_checksum_offload(enable_offload);
+    setEvents(RW_EVENT::READ);
 };
 
 TunRWer::~TunRWer(){
@@ -266,7 +263,7 @@ void TunRWer::ReadData() {
         }
         if(status->packet_hdr == nullptr){
             status->packet_hdr_len = pac->gethdrlen();
-            status->packet_hdr = new Block(rbuff.data(), status->packet_hdr_len);
+            status->packet_hdr = std::make_shared<Block>(rbuff.data(), status->packet_hdr_len);
         }
         status->PkgProc(pac, {std::move(rbuff), len});
     }
@@ -332,6 +329,7 @@ void TunRWer::Clean(uint64_t id) {
     status->SendPkg = nullptr;
     status->UnReach = nullptr;
     status->Cap = nullptr;
+    status->packet_hdr = nullptr;
     statusmap.Delete(id);
 }
 

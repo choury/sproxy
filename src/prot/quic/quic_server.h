@@ -20,7 +20,11 @@ public:
     friend QuicRWer;
 };
 
+bool operator<(const sockaddr_storage& a, const sockaddr_storage& b);
+
+class Guest_sni;
 class Quic_sniServer: public Ep {
+    std::map<sockaddr_storage, Guest_sni*> snis;
     virtual void defaultHE(RW_EVENT events);
 public:
     explicit Quic_sniServer(int fd): Ep(fd) {

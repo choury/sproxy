@@ -5,7 +5,6 @@
 set(http_src
         http.cpp
         http_header.cpp
-        http_def.cpp
         http_code.c
         )
 

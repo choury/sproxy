@@ -6,6 +6,7 @@
 #define SPROXY_PN_NAMESPACE_H
 #include "quic_pack.h"
 
+#include <list>
 #include <functional>
 
 const uint64_t kPacketThreshold = 3;

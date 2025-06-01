@@ -17,9 +17,8 @@ protected:
     size_t rx_bytes = 0;
     size_t tx_bytes = 0;
     struct ReqStatus{
-        std::shared_ptr<HttpReq>  req;
-        std::shared_ptr<HttpRes>  res;
-        std::shared_ptr<MemRWer>  rwer;
+        std::shared_ptr<HttpReqHeader>  req;
+        std::shared_ptr<MemRWer>        rw;
         std::shared_ptr<IMemRWerCallback> cb;
         uint      flags = 0;
         Job       cleanJob = nullptr;
@@ -27,7 +26,6 @@ protected:
     std::list<ReqStatus> statuslist;
     bool headless = false;
     size_t ReadHE(Buffer&& bb);
-    int mread(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal> data);
     void WriteHE(uint64_t id);
     virtual void deleteLater(uint32_t errcode) override;
     virtual void Error(int ret, int code);
@@ -36,15 +34,14 @@ protected:
     virtual ssize_t DataProc(Buffer& bb)override;
     virtual void EndProc(uint64_t id) override;
     virtual void ErrProc(uint64_t id) override;
-    void Recv(Buffer&& bb);
-    void Handle(Signal s);
+    size_t Recv(Buffer&& bb);
+    virtual std::shared_ptr<IMemRWerCallback> response(uint64_t id) override;
     void deqReq();
 public:
     explicit Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx);
     explicit Guest(std::shared_ptr<RWer> rwer);
-    ~Guest();
+    virtual ~Guest() override;
 
-    virtual void response(void*, std::shared_ptr<HttpRes> res)override;
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
 };

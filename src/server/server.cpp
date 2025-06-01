@@ -234,7 +234,7 @@ int main(int argc, char **argv) {
             if(opt.sni_mode) {
                 servers.emplace_back(std::make_shared<Quic_sniServer>(fd[0]));
                 if(fd[1] >= 0) servers.emplace_back(std::make_shared<Quic_sniServer>(fd[1]));
-                LOG("listen on %s:%d for quic snil\n", opt.quic.hostname, (int)opt.quic.port);
+                LOG("listen on %s:%d for quic sni\n", opt.quic.hostname, (int)opt.quic.port);
             }else {
                 SSL_CTX * ctx = initssl(true, nullptr);
                 servers.emplace_back(std::make_shared<Quic_server>(fd[0], ctx));

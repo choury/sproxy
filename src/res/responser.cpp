@@ -4,6 +4,7 @@
 #include "misc/config.h"
 #include "misc/defer.h"
 #include "misc/hook.h"
+#include "prot/memio.h"
 
 #include "host.h"
 #include "file.h"
@@ -64,140 +65,123 @@ static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, Reques
     return CheckResult::Succeed;
 }
 
-void distribute(std::shared_ptr<HttpReq> req, Requester* src){
+void response(std::shared_ptr<MemRWer> rw, std::shared_ptr<HttpResHeader> res, const char* body){
+    int len = body ? strlen(body): 0;
+    res->set("Content-Length", len);
+    rw->SendHeader(res);
+    if(len) {
+        rw->Send(Buffer{body, (size_t)len, res->request_id});
+    }
+    rw->Send(Buffer{nullptr, res->request_id});
+}
+
+void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester* src){
     HOOK_FUNC(req, src);
-    defer([req] { req->header->tracker.emplace_back("distribute", getmtime()); });
-    auto header = req->header;
-    auto id = header->request_id;
-    std::shared_ptr<HttpRes> res;
-    if(!header->Dest.hostname[0]){
-        res = std::make_shared<HttpRes>(HttpResHeader::create(S400, sizeof(S400), id),
-                                        "[[host not set]]\n");
-        goto out;
+    defer([req] { req->tracker.emplace_back("distribute", getmtime()); });
+    auto id = req->request_id;
+    //std::shared_ptr<HttpRes> res;
+    if(!req->Dest.hostname[0]){
+        return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[host not set]]\n");
     }
     if(opt.redirect_http && opt.ssl.hostname[0] && src->getDst().port == opt.http.port) {
-        auto reqh = HttpReqHeader(*header);
+        auto reqh = HttpReqHeader(*req);
         strcpy(reqh.Dest.scheme, "https");
         reqh.Dest.port = opt.ssl.port;
 
         auto resh = HttpResHeader::create(S308, sizeof(S308), id);
         resh->set("Location", reqh.geturl());
-        res = std::make_shared<HttpRes>(resh, reqh.geturl().c_str());
-        goto out;
+        return response(rw, resh, reqh.geturl().c_str());
     }
-    if (header->valid_method()) {
-        strategy stra = getstrategy(header->Dest.hostname, header->path);
+    if (req->valid_method()) {
+        strategy stra = getstrategy(req->Dest.hostname, req->path);
         if(stra.s == Strategy::block){
-            header->set(STRATEGY, getstrategystring(Strategy::block));
-            res = std::make_shared<HttpRes>(HttpResHeader::create(S403, sizeof(S403), id),
+            req->set(STRATEGY, getstrategystring(Strategy::block));
+            return response(rw, HttpResHeader::create(S403, sizeof(S403), id),
                               "This site is blocked, please contact administrator for more information.\n");
-            goto out;
         }
         if(stra.s == Strategy::local){
-            if(!opt.restrict_local && !header->http_method()) {
-                res = std::make_shared<HttpRes>(HttpResHeader::create(S405, sizeof(S405), id),
+            if(!opt.restrict_local && !req->http_method()) {
+                return response(rw, HttpResHeader::create(S405, sizeof(S405), id),
                                                 "[[unsported method]]\n");
-                goto out;
             }
             if(!opt.restrict_local ||
-               (header->http_method() && (src->getDst().port == 0 || header->getDport() == src->getDst().port)))
+               (req->http_method() && (src->getDst().port == 0 || req->getDport() == src->getDst().port)))
             {
-                header->set(STRATEGY, getstrategystring(Strategy::local));
-                return File::getfile(req, src);
+                req->set(STRATEGY, getstrategystring(Strategy::local));
+                return File::getfile(req, rw, src);
             }
             stra.s = Strategy::direct;
         }
-        header->set(STRATEGY, getstrategystring(stra.s));
-        switch(check_header(header, src)){
+        req->set(STRATEGY, getstrategystring(stra.s));
+        switch(check_header(req, src)){
         case CheckResult::Succeed:
             break;
         case CheckResult::AuthFailed: {
             auto sheader = HttpResHeader::create(S407, sizeof(S407), id);
             sheader->set("Proxy-Authenticate", "Basic realm=\"Secure Area\"");
-            res = std::make_shared<HttpRes>(sheader,
-                                            "[[Authorization needed]]\n");
-            goto out;
+            return response(rw, sheader, "[[Authorization needed]]\n");
         }
         case CheckResult::LoopBack:
-            res = std::make_shared<HttpRes>(HttpResHeader::create(S508, sizeof(S508), id),
-                                            "[[redirect back]]\n");
-            goto out;
+            return response(rw, HttpResHeader::create(S508, sizeof(S508), id), "[[redirect back]]\n");
         case CheckResult::NoPort:
-            res = std::make_shared<HttpRes>(HttpResHeader::create(S400, sizeof(S400), id),
-                                            "[[no port]]\n");
-            goto out;
+            return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[no port]]\n");
         }
-        if(header->get("rproxy")) {
-            return Rproxy2::distribute(req, src);
+        if(req->get("rproxy")) {
+            return Rproxy2::distribute(req, rw, src);
         }
-        header->append("Via", "HTTP/1.1 sproxy");
+        req->append("Via", "HTTP/1.1 sproxy");
         Destination dest;
         switch(stra.s){
         case Strategy::proxy:
             memcpy(&dest, &opt.Server, sizeof(dest));
             if(dest.port == 0){
-                res = std::make_shared<HttpRes>(HttpResHeader::create(S400, sizeof(S400), id),
-                                                "[[server not set]]\n");
-                goto out;
+                return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[server not set]]\n");
             }
-            header->del("via");
+            req->del("via");
             if(strlen(opt.rewrite_auth)){
-                header->set("Proxy-Authorization", std::string("Basic ") + opt.rewrite_auth);
+                req->set("Proxy-Authorization", std::string("Basic ") + opt.rewrite_auth);
             }
             //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
-            header->chain_proxy = true;
+            req->chain_proxy = true;
             if(!stra.ext.empty() && parseDest(stra.ext.c_str(), &dest)){
-                res = std::make_shared<HttpRes>(HttpResHeader::create(S500, sizeof(S500), id),
-                                                "[[ext misformat]]\n");
-                goto out;
+                return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[ext misformat]]\n");
             }
             break;
         case Strategy::direct:
-            memcpy(&dest, &header->Dest, sizeof(dest));
-            dest.port = header->getDport();
-            if(strcmp(header->Dest.protocol, "icmp") == 0){
-                return (new Ping(header))->request(req, src);
+            memcpy(&dest, &req->Dest, sizeof(dest));
+            dest.port = req->getDport();
+            if(strcmp(req->Dest.protocol, "icmp") == 0){
+                return (new Ping(req))->request(req, rw, src);
             }
-            if(strcmp(header->Dest.protocol, "udp") == 0) {
-                return (new Uhost(header))->request(req, src);
+            if(strcmp(req->Dest.protocol, "udp") == 0) {
+                return (new Uhost(req))->request(req, rw, src);
             }
-            header->del("Proxy-Authorization");
+            req->del("Proxy-Authorization");
             break;
         //rewrite 和 forward的唯一区别就是rewrite会修改host为目标地址
         case Strategy::rewrite:
             /* FALLTHROUGH */
         case Strategy::forward:
             if(stra.ext.empty()){
-                res = std::make_shared<HttpRes>(HttpResHeader::create(S500, sizeof(S500), id),
-                                                "[[destination not set]]\n");
-                goto out;
+                return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[destination not set]]\n");
             }
-            memcpy(&dest, &header->Dest, sizeof(dest));
+            memcpy(&dest, &req->Dest, sizeof(dest));
             strcpy(dest.protocol, "tcp"); // rewrite and forward only support tcp
             if(dest.port == 0) {
-                dest.port = header->getDport();
+                dest.port = req->getDport();
             }
             if(spliturl(stra.ext.c_str(), &dest, nullptr)){
-                res = std::make_shared<HttpRes>(HttpResHeader::create(S500, sizeof(S500), id),
-                                                "[[ext misformat]]\n");
-                goto out;
+                return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[ext misformat]]\n");
             }
             if(stra.s == Strategy::rewrite) {
-                header->set("host", dumpAuthority(&dest));
+                req->set("host", dumpAuthority(&dest));
             }
             break;
         default:
-            res = std::make_shared<HttpRes>(HttpResHeader::create(S503, sizeof(S503), id),
-                                            "[[BUG]]\n");
-            goto out;
+            return response(rw, HttpResHeader::create(S503, sizeof(S503), id), "[[BUG]]\n");
         }
-        return Host::distribute(req, dest, src);
+        return Host::distribute(req, dest, rw, src);
     } else{
-        res = std::make_shared<HttpRes>(HttpResHeader::create(S405, sizeof(S405), id),
-                                        "[[unsported method]]\n");
-        goto out;
+        return response(rw, HttpResHeader::create(S405, sizeof(S405), id), "[[unsported method]]\n");
     }
-out:
-    assert(res);
-    req->response(res);
 }

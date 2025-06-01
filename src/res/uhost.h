@@ -5,11 +5,15 @@
 #include "misc/job.h"
 
 class Uhost: public Responser{
-    std::shared_ptr<HttpReq>    req;
-    std::shared_ptr<HttpRes>    res;
+    struct {
+        std::shared_ptr<HttpReqHeader> req;
+        std::shared_ptr<MemRWer>       rw;
+        std::shared_ptr<IRWerCallback> cb;
+    }status;
     char hostname[DOMAINLIMIT];
     uint16_t port;
     bool is_closing = false;
+    bool is_responsed = false;
     size_t rx_bytes = 0;
     size_t tx_bytes = 0;
     size_t rx_dropped = 0;
@@ -17,9 +21,9 @@ class Uhost: public Responser{
 public:
     Uhost(const char *host, uint16_t id);
     explicit Uhost(std::shared_ptr<HttpReqHeader> req);
-    ~Uhost() override;
+    virtual ~Uhost() override;
     virtual void deleteLater(uint32_t errcode) override;
-    virtual void request(std::shared_ptr<HttpReq> req, Requester*) override;
+    virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*) override;
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
 };

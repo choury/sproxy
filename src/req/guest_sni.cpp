@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <inttypes.h>
 
-Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(fd, addr, ctx){
+Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx, std::function<void(Server*)> df):Guest(fd, addr, ctx){
     assert(ctx == nullptr);
     headless = true;
     int type;
@@ -30,6 +30,7 @@ Guest_sni::Guest_sni(int fd, const sockaddr_storage* addr, SSL_CTX* ctx):Guest(f
 
     Http_Proc = &Guest_sni::AlwaysProc;
     user_agent = generateUA(opt.ua, "", 0);
+    this->df = std::move(df);
 }
 
 Guest_sni::Guest_sni(std::shared_ptr<RWer> rwer, std::string host, const char* ua):
@@ -59,60 +60,53 @@ Guest::ReqStatus* Guest_sni::forward(const char *hostname, Protocol prot, uint64
         return nullptr;
     }
     assert(statuslist.empty());
+    char buff[HEADLENLIMIT];
+    int slen;
+    if(strchr(hostname, ':') && hostname[0] != '[') {
+        //may be ipv6 without []
+        slen = snprintf(buff, sizeof(buff), "CONNECT [%s]:%d" CRLF, hostname, 443);
+    }else {
+        slen = snprintf(buff, sizeof(buff), "CONNECT %s:%d" CRLF, hostname, 443);
+    }
+    if(prot == Protocol::UDP) {
+        slen += snprintf(buff + slen, sizeof(buff) - slen, "Protocol: udp" CRLF);
+    }
+    slen += snprintf(buff + slen, sizeof(buff) - slen, CRLF);
+    std::shared_ptr<HttpReqHeader> req = UnpackHttpReq(buff, slen);
+    if(req == nullptr) {
+        LOGE("Guest_sni: UnpackHttpReq failed\n");
+        return nullptr;
+    }
+    req->set("User-Agent", generateUA(user_agent.c_str(), "", req->request_id));
 
-    auto _cb = IMemRWerCallback::create()->onRead([this](auto &&data) {
-        return mread(std::forward<decltype(data)>(data));
-    })->onWrite([this, id](uint64_t) {
-        rwer->Unblock(id);
-    })->onCap([this, id] {
-        return rwer->cap(id);
-    });
+    auto _cb = response(id);
 #ifdef HAVE_QUIC
     if(shouldNegotiate(hostname)) {
         if(prot == Protocol::TCP) {
 #else
     if(shouldNegotiate(hostname) && prot == Protocol::TCP) {
 #endif
-            auto ctx = initssl(0, hostname);
+            ctx = initssl(0, hostname);
             auto srwer = std::make_shared<SslMer>(ctx, rwer->getSrc(), _cb);
-            statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, _cb, HTTP_NOEND_F});
+            statuslist.emplace_back(ReqStatus{req, srwer, _cb, HTTP_NOEND_F});
             new Guest(srwer);
 #ifdef HAVE_QUIC
         } else {
-            auto ctx   = initssl(1, hostname);
+            ctx = initssl(1, hostname);
             auto srwer = std::make_shared<QuicMer>(ctx, rwer->getSrc(), _cb);
-            statuslist.emplace_back(ReqStatus{nullptr, nullptr, srwer, _cb, HTTP_NOEND_F});
+            statuslist.emplace_back(ReqStatus{req, srwer, _cb, HTTP_NOEND_F});
             new Guest3(srwer);
         }
 #endif
     } else {
-        char buff[HEADLENLIMIT];
-        int slen;
-        if(strchr(hostname, ':') && hostname[0] != '[') {
-            //may be ipv6 without []
-            slen = snprintf(buff, sizeof(buff), "CONNECT [%s]:%d" CRLF, hostname, 443);
-        }else {
-            slen = snprintf(buff, sizeof(buff), "CONNECT %s:%d" CRLF, hostname, 443);
-        }
-        if(prot == Protocol::UDP) {
-            slen += snprintf(buff + slen, sizeof(buff) - slen, "Protocol: udp" CRLF);
-        }
-        slen += snprintf(buff + slen, sizeof(buff) - slen, CRLF);
-        std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, slen);
-        if(header == nullptr) {
-            LOGE("Guest_sni: UnpackHttpReq failed\n");
-            return nullptr;
-        }
-        header->set("User-Agent", generateUA(user_agent.c_str(), "", header->request_id));
-        LOGD(DHTTP, "<guest_sni> ReqProc %" PRIu64 " %s\n", header->request_id, header->geturl().c_str());
-        auto req = std::make_shared<HttpReq>(
-                header,
-                [this](std::shared_ptr<HttpRes> res){return response(nullptr, res);},
-                [this]{ rwer->Unblock(0);});
-
-        statuslist.emplace_back(ReqStatus{req, nullptr, nullptr, nullptr});
+        headless = true;
+        ReqProc(req->request_id, req);
     }
     return &statuslist.back();
+}
+
+Guest_sni::~Guest_sni() {
+    if(ctx) SSL_CTX_free(ctx);
 }
 
 size_t Guest_sni::sniffer(Buffer&& bb) {
@@ -124,30 +118,22 @@ size_t Guest_sni::sniffer(Buffer&& bb) {
         return 0;
     }
     LOGD(DHTTP, "[sni] forward to %s\n", hostname);
+    cb->onRead([this](Buffer&& bb){return ReadHE(std::move(bb));});
     auto status = forward(hostname, Protocol::TCP, bb.id);
     if(status == nullptr){
         deleteLater(SNI_HOST_ERR);
         return bb.len;
     }
     auto len = bb.len;
-    if(status->req){
-        status->req->send(std::move(bb));
-    }
-    if(status->rwer) {
-        status->rwer->push_data(std::move(bb));
-    }
-    cb->onRead([this](Buffer&& bb){return ReadHE(std::move(bb));});
+    status->rw->push_data(std::move(bb));
     rx_bytes += len;
-    if(status->req){
-        distribute(status->req, this);
-    }
     return len;
 }
 
 size_t Guest_sni::sniffer_quic(Buffer&& bb) {
     auto len = bb.len;
     char* hostname = nullptr;
-    defer(free, hostname);
+    defer([](char** ptr){free(*ptr);}, &hostname);
 
     auto buffer = std::make_unique<char[]>(BUF_LEN);
     size_t length = 0;
@@ -173,6 +159,7 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
         }
         auto frames = decode_packet(bb.data(), body_len, &header, &secret);
         for(const auto& frame: frames) {
+            defer(frame_release, frame);
             if(frame->type != QUIC_FRAME_CRYPTO){
                 continue;
             }
@@ -188,7 +175,6 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
             if(frame->crypto.offset + frame->crypto.length > max_off) {
                 max_off = frame->crypto.offset + frame->crypto.length;
             }
-            frame_release(frame);
         }
     }
     if(max_off == 0 || length < max_off) {
@@ -209,6 +195,7 @@ Forward:
     (void)max_off;
     (void)ret;
 #endif
+    cb->onRead([this](Buffer&& bb){return ReadHE(std::move(bb));});
     auto status = forward(hostname, Protocol::UDP, bb.id);
     if(status == nullptr) {
         deleteLater(SNI_HOST_ERR);
@@ -218,19 +205,10 @@ Forward:
     for (auto& bb: quic_init_packets) {
 #endif
         rx_bytes += bb.len;
-        if(status->req) {
-            status->req->send(std::move(bb));
-        }
-        if(status->rwer) {
-            status->rwer->push_data(std::move(bb));
-        }
+        status->rw->push_data(std::move(bb));
 #ifdef HAVE_QUIC
     }
     quic_init_packets.clear();
 #endif
-    cb->onRead([this](Buffer&& bb){return ReadHE(std::move(bb));});
-    if(status->req) {
-        distribute(status->req, this);
-    }
     return len;
 }

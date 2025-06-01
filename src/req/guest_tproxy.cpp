@@ -76,7 +76,7 @@ Guest_tproxy::Guest_tproxy(int fd, sockaddr_storage* src):
 {
     sockaddr_storage dst;
     if(getDstAddr_tcp(fd, src->ss_family, &dst)) {
-        LOGE("(%s) failed to get src addr for tproxy\n", storage_ntoa(src));
+        LOGE("(%s) failed to get dst addr for tproxy\n", storage_ntoa(src));
         deleteLater(TPROXY_HOST_ERR);
         return;
     }
@@ -84,8 +84,12 @@ Guest_tproxy::Guest_tproxy(int fd, sockaddr_storage* src):
     headless = true;
     Http_Proc = &Guest_tproxy::AlwaysProc;
     char buff[HEADLENLIMIT];
-    int slen = snprintf(buff, sizeof(buff), "CONNECT %s" CRLF CRLF, storage_ntoa(&dst));
-    std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, slen);
+    if(isFakeIp(dst)) {
+        snprintf(buff, sizeof(buff), "CONNECT %s" CRLF CRLF, getRdnsWithPort(dst).c_str());
+    } else {
+        snprintf(buff, sizeof(buff), "CONNECT %s" CRLF CRLF, storage_ntoa(&dst));
+    }
+    std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff);
     if(header == nullptr) {
         LOGE("(%s) Guest_tproxy: UnpackHttpReq failed\n", storage_ntoa(src));
         deleteLater(TPROXY_HOST_ERR);
@@ -93,12 +97,13 @@ Guest_tproxy::Guest_tproxy(int fd, sockaddr_storage* src):
     }
     struct pinfo pinfo;
     socklen_t plen = sizeof(pinfo);
-    if(getsockopt(fd, SOL_IP, 0xff, &pinfo, &plen)) {
-        header->set("User-Agent", generateUA(opt.ua, "", 0));
-    } else {
+    if(opt.bpf_cgroup && getsockopt(fd, SOL_IP, 0xff, &pinfo, &plen) == 0) {
         header->set("User-Agent", generateUA(opt.ua, std::string(pinfo.comm) + "/" + std::to_string(pinfo.pid), 0));
+    } else {
+        header->set("User-Agent", generateUA(opt.ua, "", 0));
     }
     ReqProc(0, header);
+    inited = true;
 }
 
 static int getDstAddr_udp(int fd, int family, sockaddr_storage* dst) {
@@ -116,18 +121,20 @@ static int getDstAddr_udp(int fd, int family, sockaddr_storage* dst) {
 
 //udp
 //rwer的第三个参数只是占位，Guest构造函数会重新设置
-Guest_tproxy::Guest_tproxy(int fd, sockaddr_storage* src, sockaddr_storage* dst, Buffer&& bb):
+Guest_tproxy::Guest_tproxy(int fd, sockaddr_storage* src, sockaddr_storage* dst, Buffer&& bb, std::function<void(Server*)> df):
     Guest(std::make_shared<PacketRWer>(fd, src, IRWerCallback::create()->onError([](int, int){})))
 {
+    this->df = std::move(df);
     if(getDstAddr_udp(fd, src->ss_family, dst)) {
-        LOGE("(%s) failed to get src addr for tproxy\n", storage_ntoa(src));
+        LOGE("(%s) failed to get dst addr for tproxy\n", storage_ntoa(src));
         deleteLater(TPROXY_HOST_ERR);
         return;
     }
     if(((sockaddr_in*)dst)->sin_port == htons(DNSPORT)){
         bb.id = nextId();
         FDns::GetInstance()->query(std::move(bb), rwer);
-        rwer = nullptr;
+        //avoid delete this in constructor
+        rwer = std::make_shared<FullRWer>(cb);
         deleteLater(NOERROR);
         return;
     }
@@ -135,8 +142,12 @@ Guest_tproxy::Guest_tproxy(int fd, sockaddr_storage* src, sockaddr_storage* dst,
     headless = true;
     Http_Proc = &Guest_tproxy::AlwaysProc;
     char buff[HEADLENLIMIT];
-    int slen = snprintf(buff, sizeof(buff), "CONNECT %s" CRLF "Protocol: udp" CRLF CRLF, storage_ntoa(dst));
-    std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff, slen);
+    if(isFakeIp(*dst)) {
+        snprintf(buff, sizeof(buff), "CONNECT %s" CRLF "Protocol: udp" CRLF CRLF, getRdnsWithPort(*dst).c_str());
+    } else {
+        snprintf(buff, sizeof(buff), "CONNECT %s" CRLF "Protocol: udp" CRLF CRLF, storage_ntoa(dst));
+    }
+    std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff);
     if(header == nullptr) {
         LOGE("(%s) Guest_tproxy: UnpackHttpReq failed\n", storage_ntoa(src));
         deleteLater(TPROXY_HOST_ERR);
@@ -144,11 +155,12 @@ Guest_tproxy::Guest_tproxy(int fd, sockaddr_storage* src, sockaddr_storage* dst,
     }
     struct pinfo pinfo;
     socklen_t plen = sizeof(pinfo);
-    if(getsockopt(fd, SOL_IP, 0xff, &pinfo, &plen)) {
-        header->set("User-Agent", generateUA(opt.ua, "", 0));
-    } else {
+    if(opt.bpf_cgroup && getsockopt(fd, SOL_IP, 0xff, &pinfo, &plen) == 0) {
         header->set("User-Agent", generateUA(opt.ua, std::string(pinfo.comm) + "/" + std::to_string(pinfo.pid), 0));
+    } else {
+        header->set("User-Agent", generateUA(opt.ua, "", 0));
     }
     ReqProc(0, header);
     DataProc(bb);
+    inited = true;
 }

@@ -63,51 +63,28 @@ void Host::reply(){
     if(rwer->getStats() != RWerStats::Connected){
         return;
     }
-    // 对于request来说，必须先调用response再调用attach，或者就直接在attach的回调中response
-    // 因为attach的时候有可能触发了错误，此时response就会有问题，比如连接已经被shutdown了
-    auto header = status.req->header;
-    if(!header->chain_proxy){
-        if(header->ismethod("CONNECT")) {
-            Http_Proc = &Host::AlwaysProc;
-            assert(strcmp(header->Dest.protocol, "tcp") == 0);
-            uint64_t id = status.req->header->request_id;
-            status.res = std::make_shared<HttpRes>(HttpResHeader::create(S200, sizeof(S200), id),
-                                                   [this] { rwer->Unblock(0); });
-            status.req->response(status.res);
-            goto attach;
-        }
+    if(!status.req->chain_proxy && status.req->ismethod("CONNECT")) {
+        status.rw->SetCallback(status.cb);
+        Http_Proc = &Host::AlwaysProc;
+        assert(strcmp(status.req->Dest.protocol, "tcp") == 0);
+        uint64_t id = status.req->request_id;
+        status.rw->SendHeader(HttpResHeader::create(S200, sizeof(S200), id));
+        status.flags |= HTTP_RESPOENSED;
+        return;
     }
-    {
-        Buffer buff{BUF_LEN, header->request_id};
-        buff.truncate(PackHttpReq(header, buff.mutable_data(), BUF_LEN));
-        rwer->Send(std::move(buff));
-    }
-attach:
-    status.req->attach([this](ChannelMessage&& msg){
-        HOOK_FUNC(this, status, msg);
-        switch(msg.type){
-            case ChannelMessage::CHANNEL_MSG_HEADER:
-                LOGD(DHTTP, "<host> ignore header for req\n");
-                return 1;
-            case ChannelMessage::CHANNEL_MSG_DATA:
-                Recv(std::move(std::get<Buffer>(msg.data)));
-                return 1;
-            case ChannelMessage::CHANNEL_MSG_SIGNAL:
-                Handle(std::get<Signal>(msg.data));
-                return 0;
-        }
-        return 0;
-    }, [this]{ return rwer->cap(0); });
+    Buffer buff{BUF_LEN, status.req->request_id};
+    buff.truncate(PackHttpReq(status.req, buff.mutable_data(), BUF_LEN));
+    rwer->Send(std::move(buff));
+    status.rw->SetCallback(status.cb);
 }
 
 void Host::connected(uint32_t resolved_time) {
-    assert(status.res == nullptr);
-    status.req->header->tracker.emplace_back("dns", resolved_time);
-    status.req->header->tracker.emplace_back("connected", getmtime());
+    status.req->tracker.emplace_back("dns", resolved_time);
+    status.req->tracker.emplace_back("connected", getmtime());
     std::string key = dumpDest(Server) + '@' + Server.protocol;
     LOGD(DHTTP, "<host> %s (%s) connected\n", dumpDest(rwer->getDst()).c_str(), key.c_str());
     if(responsers.has(key)) {
-        responsers.at(key)->request(status.req, nullptr);
+        responsers.at(key)->request(status.req, status.rw, nullptr);
         return Server::deleteLater(NOERROR);
     }
     auto srwer = std::dynamic_pointer_cast<SslRWer>(rwer);
@@ -117,11 +94,11 @@ void Host::connected(uint32_t resolved_time) {
         srwer->get_alpn(&data, &len);
         if (data && strncasecmp((const char*)data, "h2", len) == 0) {
             LOG("<host> delegate %" PRIu64 " %s to proxy2\n",
-                status.req->header->request_id, status.req->header->geturl().c_str());
+                status.req->request_id, status.req->geturl().c_str());
             Proxy2 *proxy = new Proxy2(srwer);
             rwer = nullptr;
 
-            proxy->init(false, status.req);
+            proxy->init(false, status.req, status.rw);
             responsers.add(key, proxy);
             return Server::deleteLater(NOERROR);
         }
@@ -134,11 +111,11 @@ void Host::connected(uint32_t resolved_time) {
         qrwer->getAlpn(&data, &len);
         if(data && strncasecmp((const char*)data, "h3", len) == 0) {
             LOG("<host> delegate %" PRIu64 " %s to proxy3\n",
-                status.req->header->request_id, status.req->header->geturl().c_str());
+                status.req->request_id, status.req->geturl().c_str());
             Proxy3 *proxy = new Proxy3(qrwer);
             rwer = nullptr;
 
-            proxy->init(status.req);
+            proxy->init(status.req, status.rw);
             responsers.add(key, proxy);
             return Server::deleteLater(NOERROR);
         }
@@ -150,7 +127,7 @@ void Host::connected(uint32_t resolved_time) {
         HOOK_FUNC(this, status, bb);
         LOGD(DHTTP, "<host> (%s) read: len:%zu\n", dumpDest(rwer->getDst()).c_str(), bb.len);
         if((status.flags & HTTP_RECV_1ST_BYTE) == 0){
-            status.req->header->tracker.emplace_back("ttfb", getmtime());
+            status.req->tracker.emplace_back("ttfb", getmtime());
             status.flags |= HTTP_RECV_1ST_BYTE;
         }
         if(bb.len == 0){
@@ -158,7 +135,7 @@ void Host::connected(uint32_t resolved_time) {
             if(Http_Proc == &Host::AlwaysProc){
                 //对于AlwayProc的响应，读到EOF视为响应结束
                 status.flags |= HTTP_RES_COMPLETED;
-                status.res->send(Buffer{nullptr, bb.id});
+                status.rw->Send(Buffer{nullptr, bb.id});
                 return 0;
             }
             if((status.flags & HTTP_RES_COMPLETED) == 0){
@@ -174,117 +151,106 @@ void Host::connected(uint32_t resolved_time) {
         if(status.flags & (HTTP_RES_COMPLETED | HTTP_CLOSED_F | HTTP_RST)){
             return;
         }
-        status.req->pull();
+        status.rw->Unblock(0);
     });
     reply();
 }
 
-void Host::Handle(Signal s){
-    LOGD(DHTTP, "<host> signal %" PRIu64 ": %d\n", status.req->header->request_id, (int)s);
-    switch(s){
-    case CHANNEL_ABORT:
-        status.flags |= HTTP_CLOSED_F;
-        return deleteLater(PEER_LOST_ERR);
-    }
-}
-
-void Host::request(std::shared_ptr<HttpReq> req, Requester*) {
+void Host::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*) {
     if(rwer == nullptr) {
-        uint64_t id = req->header->request_id;
-        req->response(std::make_shared<HttpRes>(HttpResHeader::create(S400, sizeof(S400), id),
-                                                "[[Unknown protocol]]\n"));
+        uint64_t id = req->request_id;
+        response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[Unknown protocol]]\n");
         return Server::deleteLater(PROTOCOL_ERR);
     }
     LOGD(DHTTP, "<host> request %" PRIu64 ": %s\n",
-         req->header->request_id,
-         req->header->geturl().c_str());
+         req->request_id,
+         req->geturl().c_str());
     assert(status.flags == 0);
     assert(status.req == nullptr);
-    assert(status.res == nullptr);
+    assert(status.rw == nullptr);
     status.req = req;
-    if(req->header->no_end()){
+    status.rw = rw;
+    if(req->no_end()){
         status.flags |= HTTP_NOEND_F;
     }
+    status.cb = IRWerCallback::create()->onRead([this](Buffer&& bb) -> size_t{
+        assert((status.flags & HTTP_REQ_COMPLETED) == 0);
+        if(bb.len == 0){
+            status.flags |= HTTP_REQ_COMPLETED;
+            LOGD(DHTTP, "<host> recv %" PRIu64 ": EOF/%zu, http_flag:0x%x\n",
+                status.req->request_id, tx_bytes, http_flag);
+            if(status.flags & HTTP_NOEND_F){
+                //如果是这种，只能通过关闭连接的方式来结束请求
+                rwer->Send({nullptr, bb.id});
+            }else{
+                //TODO: chunked
+                //其他情况，可以不发送结束符
+            }
+            return 0;
+        }
+
+        auto len = bb.len;
+        tx_bytes += len;
+        LOGD(DHTTP, "<host> recv %" PRIu64 ": size:%zu/%zu, http_flag:0x%x\n",
+            status.req->request_id, len, tx_bytes, http_flag);
+        rwer->Send(std::move(bb));
+        return len;
+    })->onWrite([this](uint64_t id){
+        rwer->Unblock(id);
+    })->onError([this](int ret, int code){
+        LOGD(DHTTP, "<host> signal %" PRIu64 " err %d:%d\n", status.req->request_id, ret, code);
+        status.flags |= HTTP_CLOSED_F;
+        return deleteLater(PEER_LOST_ERR);
+    });
     reply();
 }
 
-void Host::Recv(Buffer&& bb){
-    assert((status.flags & HTTP_REQ_COMPLETED) == 0);
-    if(bb.len == 0){
-        status.flags |= HTTP_REQ_COMPLETED;
-        LOGD(DHTTP, "<host> recv %" PRIu64 ": EOF/%zu, http_flag:0x%x\n",
-             status.req->header->request_id, tx_bytes, http_flag);
-        if(status.flags & HTTP_NOEND_F){
-            //如果是这种，只能通过关闭连接的方式来结束请求
-            rwer->Send({nullptr, bb.id});
-        }else{
-            //TODO: chunked
-            //其他情况，可以不发送结束符
-        }
-        return;
-    }
-
-    tx_bytes += bb.len;
-    LOGD(DHTTP, "<host> recv %" PRIu64 ": size:%zu/%zu, http_flag:0x%x\n",
-         status.req->header->request_id, bb.len, tx_bytes, http_flag);
-    rwer->Send(std::move(bb));
-}
-
-void Host::ResProc(uint64_t id, std::shared_ptr<HttpResHeader> header) {
+void Host::ResProc(uint64_t, std::shared_ptr<HttpResHeader> header) {
     LOGD(DHTTP, "<host> ResProc %" PRIu64": %s, http_flag:0x%x\n",
-         status.req->header->request_id ,header->status, http_flag);
-    header->request_id = status.req->header->request_id;
-    if(status.req->header->ismethod("HEAD")){
+         status.req->request_id ,header->status, http_flag);
+    header->request_id = status.req->request_id;
+    if(status.req->ismethod("HEAD")){
         http_flag |= HTTP_IGNORE_BODY_F;
     }
-    if(status.req->header->ismethod("CONNECT")) {
+    if(status.req->ismethod("CONNECT")) {
         header->markTunnel();
-    }else if(strcmp(status.req->header->Dest.protocol, "websocket") == 0){
-        header->markWebsocket(status.req->header->get("Sec-WebSocket-Key"));
+    }else if(strcmp(status.req->Dest.protocol, "websocket") == 0){
+        header->markWebsocket(status.req->get("Sec-WebSocket-Key"));
     }
-    if(status.res){
-        status.res->send(header);
-    }else{
-        status.res = std::make_shared<HttpRes>(header, [this, id]{ rwer->Unblock(id);});
-        status.req->response(status.res);
-    }
+    status.rw->SendHeader(header);
+    status.flags |= HTTP_RESPOENSED;
 }
 
 ssize_t Host::DataProc(Buffer& bb) {
     HOOK_FUNC(this, status, status);
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
-    if(status.res == nullptr){
-        status.res = std::make_shared<HttpRes>(HttpResHeader::create(S200, sizeof(S200), bb.id),
-                                               [this, id= bb.id]{ rwer->Unblock(id);});
-        status.req->response(status.res);
-    }
-    int cap = status.res->cap();
+    int cap = status.rw->cap(bb.id);
     if (cap <= 0) {
         LOGE("[%" PRIu64 "]: <host> the guest's write buff is full (%s)\n",
-            status.req->header->request_id,
-            status.req->header->geturl().c_str());
+            status.req->request_id,
+            status.req->geturl().c_str());
         rwer->delEvents(RW_EVENT::READ);
         return -1;
     }
     LOGD(DHTTP, "<host> DataProc %" PRIu64 ": cap:%d, send:%zd/%zu\n",
-         status.req->header->request_id, cap, bb.len, rx_bytes);
+         status.req->request_id, cap, bb.len, rx_bytes);
     if((size_t)cap < bb.len) {
         auto cbb = bb;
         cbb.truncate(cap);
-        status.res->send(std::move(cbb));
+        status.rw->Send(std::move(cbb));
         bb.reserve(cap);
     } else {
         cap = bb.len;
-        status.res->send(std::move(bb));
+        status.rw->Send(std::move(bb));
     }
     rx_bytes += cap;
     return cap;
 }
 
 void Host::EndProc(uint64_t) {
-    LOGD(DHTTP, "<host> EndProc %" PRIu64 "\n", status.req->header->request_id);
+    LOGD(DHTTP, "<host> EndProc %" PRIu64 "\n", status.req->request_id);
     status.flags |= HTTP_RES_COMPLETED;
-    status.res->send(Buffer{nullptr, status.req->header->request_id});
+    status.rw->Send(Buffer{nullptr, status.req->request_id});
 }
 
 void Host::ErrProc(uint64_t){
@@ -294,7 +260,7 @@ void Host::ErrProc(uint64_t){
 void Host::Error(int ret, int code) {
     if(status.req) {
         LOGE("[%" PRIu64 "]: <host> error (%s) %d/%d flags:0x%x http_flag:0x%x\n",
-            status.req->header->request_id, status.req->header->geturl().c_str(),
+            status.req->request_id, status.req->geturl().c_str(),
             ret, code, status.flags, http_flag);
     }else{
         LOGE("(%s) <host> error %d/%d http_flag:0x%x\n",
@@ -304,64 +270,52 @@ void Host::Error(int ret, int code) {
 }
 
 void Host::deleteLater(uint32_t errcode){
-    if(status.flags & HTTP_CLOSED_F){
+    if(status.flags & (HTTP_CLOSED_F | HTTP_RESPOENSED)){
         //do nothing.
-    }else if(status.res){
-        status.res->send(CHANNEL_ABORT);
-    }else {
-        uint64_t id = status.req->header->request_id;
+    }else{
+        uint64_t id = status.req->request_id;
         switch(errcode) {
         case DNS_FAILED:
-            status.req->response(std::make_shared<HttpRes>(HttpResHeader::create(S503, sizeof(S503), id),
-                                                           "[[dns failed]]\n"));
+            response(status.rw, HttpResHeader::create(S503, sizeof(S503), id), "[[dns failed]]\n");
             break;
         case CONNECT_FAILED:
-            status.req->response(std::make_shared<HttpRes>(HttpResHeader::create(S503, sizeof(S503), id),
-                                                           "[[connect failed]]\n"));
+            response(status.rw, HttpResHeader::create(S503, sizeof(S503), id), "[[connect failed]]\n");
             break;
         case SOCKET_ERR:
-            status.req->response(std::make_shared<HttpRes>(HttpResHeader::create(S502, sizeof(S502), id),
-                                                           "[[socket error]]\n"));
+            response(status.rw, HttpResHeader::create(S502, sizeof(S502), id), "[[socket error]]\n");
             break;
         default:
-            status.req->response(std::make_shared<HttpRes>(HttpResHeader::create(S500, sizeof(S500), id),
-                                                           "[[internal error]]\n"));
+            response(status.rw, HttpResHeader::create(S500, sizeof(S500), id), "[[internal error]]\n");
         }
     }
-    if(status.req){
-        status.req->detach();
-    }
+    status.rw->SetCallback(nullptr);
+    status.rw->Close();
     status.flags |= HTTP_CLOSED_F;
     Server::deleteLater(errcode);
 }
 
-void Host::distribute(std::shared_ptr<HttpReq> req, const Destination& dest, Requester* src) {
+void Host::distribute(std::shared_ptr<HttpReqHeader> req, const Destination& dest, std::shared_ptr<MemRWer> rw, Requester* src) {
     std::string key = dumpDest(dest) + '@' + dest.protocol;
     if(responsers.has(key)) {
-        return responsers.at(key)->request(req, src);
+        return responsers.at(key)->request(req, rw, src);
     }
-    return (new Host(&dest))->request(req, src);
+    return (new Host(&dest))->request(req, rw, src);
 }
 
 void Host::dump_stat(Dumper dp, void* param) {
     dp(param, "Host %p, rx: %zd, tx: %zd\n", this, rx_bytes, tx_bytes);
     if(status.req){
         dp(param, "  [%" PRIu64 "]: %s %s, flags: 0x%08x\n",
-                status.req->header->request_id,
-                status.req->header->method,
-                status.req->header->geturl().c_str(),
+                status.req->request_id,
+                status.req->method,
+                status.req->geturl().c_str(),
                 status.flags);
     }
     rwer->dump_status(dp, param);
 }
 
 void Host::dump_usage(Dumper dp, void *param) {
-    if(status.res) {
-        dp(param, "Host %p: %zd, res: %zd, rwer: %zd\n", this, sizeof(*this), status.res->mem_usage(),
-           rwer->mem_usage());
-    }else {
-        dp(param, "Host %p: %zd, rwer: %zd\n", this, sizeof(*this), rwer->mem_usage());
-    }
+    dp(param, "Host %p: %zd, res: %zd, rwer: %zd\n", this, sizeof(*this), status.rw->mem_usage(), rwer->mem_usage());
 }
 
 void flushconnect() {

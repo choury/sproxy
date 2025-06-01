@@ -29,7 +29,7 @@ void Unreach(std::shared_ptr<IpStatus> status, uint8_t code) {
         }
     }
     Buffer bb{std::move(*status->packet_hdr), status->packet_hdr_len};
-    delete status->packet_hdr;
+    status->packet_hdr = nullptr;
     status->packet_hdr = nullptr;
     pac->build_packet(bb);
 #if __linux__

@@ -7,8 +7,9 @@
 
 class Proxy2:public Responser, public Http2Requster {
     struct ReqStatus{
-        std::shared_ptr<HttpReq> req;
-        std::shared_ptr<HttpRes> res;
+        std::shared_ptr<HttpReqHeader> req;
+        std::shared_ptr<MemRWer>       rw;
+        std::shared_ptr<IRWerCallback> cb;
         int32_t remotewinsize; //对端提供的窗口大小，发送时减小，收到对端update时增加
         int32_t localwinsize; //发送给对端的窗口大小，接受时减小，给对端发送update时增加
         uint32_t flags;
@@ -42,8 +43,6 @@ protected:
     virtual void WindowUpdateProc(uint32_t id, uint32_t size)override;
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
 
-    void Recv(Buffer&& bb);
-    void Handle(uint32_t id, Signal s);
     void Clean(uint32_t id, uint32_t errcode);
     virtual void clearIdle(uint32_t ms);
 
@@ -52,12 +51,12 @@ public:
     explicit Proxy2(std::shared_ptr<RWer> rwer);
     virtual ~Proxy2() override;
 
-    virtual void request(std::shared_ptr<HttpReq> req, Requester*)override;
+    virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*)override;
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
 
-    void init(bool enable_push, std::shared_ptr<HttpReq> req);
+    void init(bool enable_push, std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw);
 };
 
 #endif

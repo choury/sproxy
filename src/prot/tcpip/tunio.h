@@ -12,7 +12,7 @@ struct VpnKey{
     const VpnKey& reverse();
 };
 
-bool operator<(const VpnKey& a, const VpnKey& b);
+//bool operator<(const VpnKey& a, const VpnKey& b);
 
 struct ITunCallback: public IRWerCallback {
     std::function<void(uint64_t, std::shared_ptr<const Ip>)> reqProc = [](uint64_t, std::shared_ptr<const Ip>){};

@@ -1150,10 +1150,10 @@ static uint64_t decode_pn(uint64_t expected_pn, uint64_t truncated_pn, int pn_nb
    return candidate_pn;
 }
 
-std::vector<const quic_frame*> decode_packet(const void* data_, size_t len,
+std::deque<const quic_frame*> decode_packet(const void* data_, size_t len,
                                        quic_pkt_header* header, const quic_secret* secret){
 
-    std::vector<const quic_frame*> frames;
+    std::deque<const quic_frame*> frames;
     const unsigned char* data = (const unsigned char*)data_;
     size_t pos = 0;
     unsigned char buff[len];

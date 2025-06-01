@@ -8,8 +8,9 @@
 
 class Proxy3:public Responser, public Http3Requster {
     struct ReqStatus{
-        std::shared_ptr<HttpReq> req;
-        std::shared_ptr<HttpRes> res;
+        std::shared_ptr<HttpReqHeader> req;
+        std::shared_ptr<MemRWer>       rw;
+        std::shared_ptr<IRWerCallback> cb;
         uint32_t flags;
         Job      cleanJob = nullptr; 
     };
@@ -29,20 +30,18 @@ protected:
     virtual void Reset(uint64_t id, uint32_t code)override;
     virtual uint64_t CreateUbiStream() override;
 
-    void Recv(Buffer&& bb);
-    void Handle(uint64_t id, Signal s);
     void RstProc(uint64_t id, uint32_t errcode);
     void Clean(uint64_t id, uint32_t errcode);
 public:
     explicit Proxy3(std::shared_ptr<QuicRWer> rwer);
     virtual ~Proxy3() override;
 
-    virtual void request(std::shared_ptr<HttpReq> req, Requester*)override;
+    virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*)override;
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
 
-    void init(std::shared_ptr<HttpReq> req);
+    void init(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw);
 };
 
 #endif

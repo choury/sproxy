@@ -14,7 +14,7 @@ MemRWer::~MemRWer() {
 }
 
 size_t MemRWer::rlength(uint64_t) {
-    return rb.length();
+    return rlen;
 }
 
 ssize_t MemRWer::cap(uint64_t) {
@@ -44,12 +44,14 @@ void MemRWer::push_data(Buffer&& bb) {
     assert(stats != RWerStats::ReadEOF);
     LOGD(DRWER, "<MemRWer> push_data [%" PRIu32"]: %zd, id:%" PRIu64", refs: %zd\n",
          flags, bb.len, bb.id, bb.refs());
+    rlen += bb.len;
     if(bb.len == 0){
         stats = RWerStats::ReadEOF;
     } else {
-        rb.put(bb.data(), bb.len);
+        rb.push_back(std::move(bb));
     }
     HOOK_FUNC(this, rb, bb);
+    bb.len = 0;
     addEvents(RW_EVENT::READ);
 }
 
@@ -88,23 +90,34 @@ void MemRWer::ConsumeRData(uint64_t id) {
     flags |= RWER_READING;
     defer([this]{ flags &= ~RWER_READING;});
     bool keepReading = false;
-    if(auto cb = callback.lock(); cb && rb.length()){
-        Buffer wb = rb.get();
-        assert(wb.len != 0);
-        wb.id = id;
-        auto ret = cb->readCB(std::move(wb));
-        if(ret > 0) {
-            rb.consume(ret);
-            keepReading = true;
+    if(auto cb = callback.lock(); cb && rlen){
+        keepReading = true;
+        while(rlen > 0){
+            Buffer wb = rb.front();
+            auto len = wb.len;
+            assert(len != 0);
+            wb.id = id;
+            auto ret = cb->readCB(std::move(wb));
+            if(ret == len) {
+                rb.pop_front();
+                rlen -= len;
+                continue;
+            }
+            keepReading = false;
+            if(ret > 0) {
+                rb.front().reserve(ret);
+                wlen -= ret;
+            }
+            break;
         }
     }
     HOOK_FUNC(this, rb, id);
-    if(rb.length() == 0 && isEof() && (flags & RWER_EOFDELIVED) == 0){
+    if(rlen == 0 && isEof() && (flags & RWER_EOFDELIVED) == 0){
         keepReading = false;
         if(auto cb = callback.lock(); cb) {
             cb->readCB({nullptr, id});
+            flags |= RWER_EOFDELIVED;
         }
-        flags |= RWER_EOFDELIVED;
     }
     if(!keepReading){
         delEvents(RW_EVENT::READ);
@@ -114,20 +127,20 @@ void MemRWer::ConsumeRData(uint64_t id) {
 ssize_t MemRWer::Write(std::set<uint64_t>& writed_list) {
     size_t len = 0;
     if(_callback.expired()){
-        LOGE("MemRWer callback expired, cannot write\n");
+        if(wlen) LOGE("MemRWer callback expired, left: %zd\n", wlen);
         return -1;
     }
-    auto& write_cb = _callback.lock()->write_cb;
+    auto& write_cb = _callback.lock()->write_data;
     for(auto it = wbuff.begin(); it != wbuff.end(); ){
         ssize_t ret = 0;
         size_t blen = it->len;
         if (blen) {
             ret = write_cb(std::ref(*it));
-            LOGD(DRWER, "write_cb %d: len: %zd, ret: %zd\n", (int)it->id, blen, ret);
+            LOGD(DRWER, "write_cb %d wlen: %zd, len: %zd, ret: %zd\n", (int)it->id, wlen, blen, ret);
         } else {
             assert(flags & RWER_SHUTDOWN);
             ret = write_cb(Buffer{nullptr, it->id});
-            LOGD(DRWER, "write_cb %d EOF\n", (int)it->id);
+            LOGD(DRWER, "write_cb %d EOF, wlen: %zd\n", (int)it->id, wlen);
         }
         if(ret < 0){
             delEvents(RW_EVENT::WRITE);
@@ -158,7 +171,7 @@ void MemRWer::closeHE(RW_EVENT) {
         handleEvent = (void(Ep::*)(RW_EVENT))&MemRWer::IdleHE;
         setEvents(RW_EVENT::NONE);
         if(auto cb = _callback.lock(); cb) {
-            cb->write_cb(CHANNEL_ABORT);
+            cb->write_signal(CHANNEL_ABORT);
         }
         if(auto cb = callback.lock(); cb) {
             cb->closeCB();
@@ -188,8 +201,8 @@ void PMemRWer::push_data(Buffer&& bb) {
         stats = RWerStats::ReadEOF;
         if(auto cb = callback.lock(); cb) {
             cb->readCB({nullptr, bb.id});
+            flags |= RWER_EOFDELIVED;
         }
-        flags |= RWER_EOFDELIVED;
     } else if(auto cb = callback.lock(); cb) {
         cb->readCB(std::move(bb));
     }

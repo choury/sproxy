@@ -10,8 +10,6 @@
 class FDns: public Responser{
     struct FDnsStatus{
         std::shared_ptr<RWer>   rwer;
-        //std::shared_ptr<HttpReq>   req;
-        //std::shared_ptr<HttpRes>   res;
         std::map<uint16_t, std::shared_ptr<Dns_Query>> quemap;
     };
     std::map<uint64_t, FDnsStatus> statusmap;
@@ -19,11 +17,11 @@ class FDns: public Responser{
     void Recv(Buffer&& bb);
     static void RawCb(std::shared_ptr<void> param, const char *buff, size_t size);
     static void DnsCb(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs, int ttl);
-public:
     FDns();
     virtual ~FDns() override;
+public:
     static FDns* GetInstance();
-    virtual void request(std::shared_ptr<HttpReq>, Requester*) override {};
+    virtual void request(std::shared_ptr<HttpReqHeader>, std::shared_ptr<MemRWer>, Requester*) override {};
     void query(uint64_t id, std::shared_ptr<RWer> rwer);
     void query(Buffer&& bb, std::shared_ptr<RWer> rwer);
     virtual void dump_stat(Dumper dp, void* param) override;

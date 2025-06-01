@@ -37,12 +37,8 @@ struct IRWerCallback: public std::enable_shared_from_this<IRWerCallback> {
         LOGE("send data to stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
         return (size_t)0;
     };
-    std::function<void(uint64_t id)> writeCB = [](uint64_t id) {
-        LOGE("call stub writeCB: %" PRIu64 "\n", id);
-    };
-    std::function<void()> closeCB = []() {
-        LOGE("call stub closeCB\n");
-    };
+    std::function<void(uint64_t id)> writeCB = [](uint64_t) {};
+    std::function<void()> closeCB = []() {};
     //errorCB must be set, otherwise RWer will not work
     std::function<void(int ret, int code)> errorCB;
 

@@ -242,7 +242,8 @@ void SslRWer::onRead(Buffer&& bb) {
 }
 
 void SslMer::onRead(Buffer&& bb) {
-    rb.put(bb.data(), bb.len);
+    rlen += bb.len;
+    rb.emplace_back(std::move(bb));
 }
 
 void SslRWer::onConnected() {
@@ -340,6 +341,7 @@ void SslMer::push_data(Buffer&& bb) {
     } else {
         handleData(bb.data(), bb.len);
     }
+    bb.len = 0;
     addEvents(RW_EVENT::READ);
 }
 

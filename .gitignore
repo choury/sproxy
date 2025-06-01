@@ -12,4 +12,3 @@ thirdparty/
 *.user
 .DS_Store
 common.h
-Cargo.lock

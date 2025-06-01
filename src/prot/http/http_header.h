@@ -42,6 +42,16 @@
 #define AlterMethod "Alter-Method"
 
 
+//These flags just defined for user, it will NOT be set by this class
+#define HTTP_CLOSED_F       (1u<<1u)   //cls
+#define HTTP_CHUNK_F        (1u<<2u)   //http1 only
+#define HTTP_NOEND_F        (1u<<3u)   //http1 only
+#define HTTP_REQ_COMPLETED  (1u<<4u)   //qc
+#define HTTP_RES_COMPLETED  (1u<<5u)   //sc
+#define HTTP_RESPOENSED     (1u<<6u)   //res has generated
+#define HTTP_RST            (1u<<7u)   //got reset
+#define HTTP_RECV_1ST_BYTE  (1u<<8u)   //got first byte
+
 static inline std::string ltrim(std::string s) {
     s.erase(0, s.find_first_not_of(' '));
     return s;
@@ -165,4 +175,5 @@ std::shared_ptr<HttpResHeader> UnpackHttpRes(const void* header, size_t len = 0)
 size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t len);
 size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t len);
 
+void HttpLog(const std::string& src, std::shared_ptr<const HttpReqHeader> req, std::shared_ptr<const HttpResHeader> res);
 #endif

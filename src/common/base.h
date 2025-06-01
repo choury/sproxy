@@ -10,6 +10,7 @@ class Server{
 protected:
     std::shared_ptr<RWer> rwer;
     std::shared_ptr<IRWerCallback> cb;
+    std::function<void(Server*)> df = [](Server*){};
 public:
     explicit Server();
     virtual ~Server();

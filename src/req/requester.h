@@ -2,7 +2,7 @@
 #define REQUESTER_H__
 
 #include "common/base.h"
-#include "prot/http/http_def.h"
+#include "prot/memio.h"
 
 class Responser;
 
@@ -17,7 +17,7 @@ public:
     virtual Destination getDst() const {
         return rwer->getDst();
     };
-    virtual void response(void* index, std::shared_ptr<HttpRes> res) = 0;
+    virtual std::shared_ptr<IMemRWerCallback> response(uint64_t id) = 0;
 };
 
 std::string generateUA(const char* ua, const std::string& prog, uint64_t requestid);

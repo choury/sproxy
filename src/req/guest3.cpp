@@ -25,7 +25,7 @@ void Guest3::init() {
             }
             LOGD(DHTTP3, "<guest3> [%" PRIu64 "]: end of stream\n", bb.id);
             ReqStatus& status = statusmap[bb.id];
-            status.req->send(Buffer{nullptr, bb.id});
+            status.rw->push_data(Buffer{nullptr, bb.id});
             status.flags |= HTTP_REQ_COMPLETED;
             if(status.flags & HTTP_RES_COMPLETED) {
                 status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, NOERROR);}), 0, 0);
@@ -44,13 +44,10 @@ void Guest3::init() {
             return;
         }
         ReqStatus& status = statusmap[id];
-        if(status.res == nullptr){
-            return;
-        }
         if(status.flags & (HTTP_RES_COMPLETED | HTTP_CLOSED_F | HTTP_RST)){
             return;
         }
-        status.res->pull();
+        status.rw->pull(id);
     })->onError([this](int ret, int code){
         Error(ret, code);
     });
@@ -93,40 +90,29 @@ void Guest3::Error(int ret, int code){
     deleteLater(ret);
 }
 
-void Guest3::Recv(Buffer&& bb){
-    assert(statusmap.count(bb.id));
-    ReqStatus& status = statusmap[bb.id];
+size_t Guest3::Recv(Buffer&& bb){
+    ReqStatus& status = statusmap.at(bb.id);
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
     if(bb.len == 0){
         LOGD(DHTTP3, "<guest3> %" PRIu64" recv data [%" PRIu64"]: EOF\n",
-             status.req->header->request_id, bb.id);
+             status.req->request_id, bb.id);
         SendData({nullptr, bb.id});
         status.flags |= HTTP_RES_COMPLETED;
         if(status.flags & HTTP_REQ_COMPLETED) {
             status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, NOERROR);}), 0, 0);
         }
-    }else{
-        if(status.req->header->ismethod("HEAD")){
-            LOGD(DHTTP3, "<guest3> %" PRIu64" recv data [%" PRIu64"]: HEAD req discard body\n",
-                 status.req->header->request_id, bb.id);
-            return;
-        }
-        LOGD(DHTTP3, "<guest3> %" PRIu64 " recv data [%" PRIu64"]: %zu, cap: %d\n",
-             status.req->header->request_id, bb.id, bb.len, (int)rwer->cap(bb.id));
-        PushData(std::move(bb));
+        return 0;
     }
-}
-
-void Guest3::Handle(uint64_t id, Signal s) {
-    assert(statusmap.count(id));
-    ReqStatus& status = statusmap[id];
-    LOGD(DHTTP3, "<guest3> signal [%d] %" PRIu64 ": %d\n",
-         (int)id, status.req->header->request_id, (int)s);
-    switch(s){
-    case CHANNEL_ABORT:
-        status.flags |= HTTP_CLOSED_F;
-        return Clean(id, HTTP3_ERR_INTERNAL_ERROR);
+    auto len = bb.len;
+    if(status.req->ismethod("HEAD")){
+        LOGD(DHTTP3, "<guest3> %" PRIu64" recv data [%" PRIu64"]: HEAD req discard body\n",
+                status.req->request_id, bb.id);
+        return len;
     }
+    LOGD(DHTTP3, "<guest3> %" PRIu64 " recv data [%" PRIu64"]: %zu, cap: %d\n",
+            status.req->request_id, bb.id, bb.len, (int)rwer->cap(bb.id));
+    PushData(std::move(bb));
+    return len;
 }
 
 void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
@@ -141,17 +127,14 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
         strcpy(header->Dest.protocol, "quic");
     }
 
+    auto _cb = response(id);
     statusmap[id] = ReqStatus{
-            nullptr,
-            nullptr,
+        header,
+        std::make_shared<MemRWer>(rwer->getSrc(), _cb),
+        _cb,
     };
     ReqStatus& status = statusmap[id];
-
-    status.req = std::make_shared<HttpReq>(
-            header,
-            [this, id](std::shared_ptr<HttpRes> res){response((void*)id, res);},
-            [this, id]{ rwer->Unblock(id);});
-    distribute(status.req, this);
+    distribute(status.req, status.rw, this);
 }
 
 bool Guest3::DataProc(Buffer& bb) {
@@ -165,12 +148,12 @@ bool Guest3::DataProc(Buffer& bb) {
             status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP3_ERR_STREAM_CREATION_ERROR);}), 0, 0);
             return true;
         }
-        if(status.req->cap() < (int)bb.len){
+        if(status.rw->cap(bb.id) < (int)bb.len){
             LOGE("[%" PRIu64 "]: <guest3> (%" PRIu64")the host's buff is full (%s)\n",
-                 status.req->header->request_id, bb.id, status.req->header->geturl().c_str());
+                 status.req->request_id, bb.id, status.req->geturl().c_str());
             return false;
         }
-        status.req->send(std::move(bb));
+        status.rw->push_data(std::move(bb));
     }else{
         LOGD(DHTTP3, "<guest3> DateProc not found id: %" PRIu64"\n", bb.id);
         Reset(bb.id, HTTP3_ERR_STREAM_CREATION_ERROR);
@@ -178,48 +161,42 @@ bool Guest3::DataProc(Buffer& bb) {
     return true;
 }
 
-void Guest3::response(void* index, std::shared_ptr<HttpRes> res) {
-    uint64_t id = (uint64_t)index;
-    assert(statusmap.count(id));
-    ReqStatus& status = statusmap[id];
-    assert(status.res == nullptr);
-    status.res = res;
-    res->attach([this, id](ChannelMessage&& msg){
-        HOOK_FUNC(this, statusmap, id, msg);
-        switch(msg.type){
-        case ChannelMessage::CHANNEL_MSG_HEADER: {
-            assert(statusmap.count(id));
-            ReqStatus &status = statusmap[id];
-            auto header = std::dynamic_pointer_cast<HttpResHeader>(std::get<std::shared_ptr<HttpHeader>>(msg.data));
-            LOGD(DHTTP3, "<guest3> get response [%" PRIu64"]: %s\n", id, header->status);
-            HttpLog(dumpDest(rwer->getSrc()), status.req->header, header);
-            if(mitmProxy) {
-                header->del("Strict-Transport-Security");
-            }
+std::shared_ptr<IMemRWerCallback> Guest3::response(uint64_t id) {
+    return IMemRWerCallback::create()->onHeader([this, id](std::shared_ptr<HttpResHeader> res){
+        ReqStatus &status = statusmap.at(id);
+        LOGD(DHTTP3, "<guest3> get response [%" PRIu64"]: %s\n", id, res->status);
+        HttpLog(dumpDest(rwer->getSrc()), status.req, res);
+        if(mitmProxy) {
+            res->del("Strict-Transport-Security");
+        }
 
-            Block buff(BUF_LEN);
-            size_t len = qpack_encoder.PackHttp3Res(header, buff.data(), BUF_LEN);
-            size_t pre = variable_encode_len(HTTP3_STREAM_HEADERS) + variable_encode_len(len);
-            char *p = (char *) buff.reserve(-pre);
-            p += variable_encode(p, HTTP3_STREAM_HEADERS);
-            p += variable_encode(p, len);
-            SendData({std::move(buff), len + pre, id});
-            return 1;
+        Block buff(BUF_LEN);
+        size_t len = qpack_encoder.PackHttp3Res(res, buff.data(), BUF_LEN);
+        size_t pre = variable_encode_len(HTTP3_STREAM_HEADERS) + variable_encode_len(len);
+        char *p = (char *) buff.reserve(-pre);
+        p += variable_encode(p, HTTP3_STREAM_HEADERS);
+        p += variable_encode(p, len);
+        SendData({std::move(buff), len + pre, id});
+    })->onData([this, id](Buffer bb) -> size_t {
+        bb.id = id;
+        return Recv(std::move(bb));
+    })->onWrite([this, id](uint64_t){
+        rwer->Unblock(id);
+    })->onSignal([this, id](Signal s) {
+        ReqStatus& status = statusmap.at(id);
+        LOGD(DHTTP3, "<guest3> signal [%d] %" PRIu64 ": %d\n",
+            (int)id, status.req->request_id, (int)s);
+        switch(s){
+        case CHANNEL_ABORT:
+            status.flags |= HTTP_CLOSED_F;
+            status.cleanJob = AddJob(([this, id]{Clean(id, HTTP3_ERR_INTERNAL_ERROR);}), 0, 0);
+            return;
         }
-        case ChannelMessage::CHANNEL_MSG_DATA: {
-            Buffer bb = std::move(std::get<Buffer>(msg.data));
-            bb.id = id;
-            Recv(std::move(bb));
-            return 1;
-        }
-        case ChannelMessage::CHANNEL_MSG_SIGNAL:
-            Handle(id, std::get<Signal>(msg.data));
-            return 0;
-        }
-        return 0;
+    })->onCap([this, id]() -> ssize_t {
         //这里是没办法准确计算cap的，因为rwer返回的可用量http3这里写的时候会再加头部数据
         //如果还是不够，多出来的数据会放入quic的fullq队列中
-    }, [this, id]{return rwer->cap(id) - 9;});
+        return rwer->cap(id) - 9;
+    });
 }
 
 void Guest3::Clean(uint64_t id, uint32_t errcode) {
@@ -232,10 +209,7 @@ void Guest3::Clean(uint64_t id, uint32_t errcode) {
         Reset(id, errcode);
     }
     if((status.flags & HTTP_CLOSED_F) == 0){
-        status.req->send(CHANNEL_ABORT);
-    }
-    if(status.res){
-        status.res->detach();
+        status.rw->push_signal(CHANNEL_ABORT);
     }
     statusmap.erase(id);
 }
@@ -245,10 +219,10 @@ void Guest3::RstProc(uint64_t id, uint32_t errcode) {
         ReqStatus& status = statusmap[id];
         if(errcode){
             LOGE("[%" PRIu64 "]: <guest3> (%" PRIu64"): stream reset:%d flags:0x%x\n",
-                 status.req->header->request_id, id, errcode, status.flags);
+                 status.req->request_id, id, errcode, status.flags);
         }
         status.flags |= HTTP_RST;
-        status.cleanJob = AddJob(([this, id, errcode]{Clean(id, errcode);}), 0, 0);
+        Clean(id, errcode);
     } else {
         LOGD(DHTTP3, "reset for no exist id: %" PRIu64"\n", id);
     }
@@ -284,14 +258,10 @@ void Guest3::deleteLater(uint32_t errcode){
     }
     for(auto& i: statusmap){
         if((i.second.flags & HTTP_CLOSED_F) == 0) {
-            i.second.req->send(CHANNEL_ABORT);
+            i.second.rw->push_signal(CHANNEL_ABORT);
         }
         i.second.flags |= HTTP_CLOSED_F;
-        if(i.second.res){
-            i.second.res->detach();
-        }
     }
-    statusmap.clear();
     std::dynamic_pointer_cast<QuicBase>(rwer)->close(errcode);
     return Server::deleteLater(errcode);
 }
@@ -305,12 +275,12 @@ void Guest3::dump_stat(Dumper dp, void* param) {
             qpackeid_local, qpackeid_remote, qpackdid_local, qpackdid_remote);
     for(auto& i: statusmap){
         dp(param, "  0x%lx [%" PRIu64 "]: %s %s, time: %dms, flags: 0x%08x [%s]\n",
-           i.first, i.second.req->header->request_id,
-           i.second.req->header->method,
-           i.second.req->header->geturl().c_str(),
-           getmtime() - std::get<1>(i.second.req->header->tracker[0]),
+           i.first, i.second.req->request_id,
+           i.second.req->method,
+           i.second.req->geturl().c_str(),
+           getmtime() - std::get<1>(i.second.req->tracker[0]),
            i.second.flags,
-           i.second.req->header->get("User-Agent"));
+           i.second.req->get("User-Agent"));
     }
     rwer->dump_status(dp, param);
 }

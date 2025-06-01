@@ -337,6 +337,7 @@ int bpf_sockopt(struct bpf_sockopt *ctx) {
         sa->sin6_addr.in6_u.u6_addr32[3] = sock->dip6[3];
         sa->sin6_port = bpf_htons(sock->dport);
     } else {
+        //mapped ipv4
         struct sockaddr_in6 *sa = ctx->optval;
         if ((void*)(sa + 1) > ctx->optval_end) return 1;
 

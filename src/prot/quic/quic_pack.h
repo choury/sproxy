@@ -4,8 +4,7 @@
 #include "common/common.h"
 #include "misc/buffer.h"
 
-#include <list>
-#include <vector>
+#include <deque>
 #include <string>
 #include <set>
 
@@ -322,12 +321,12 @@ struct quic_packet_meta{
 
 struct quic_packet_pn{
     quic_packet_meta meta;
-    std::list<quic_frame*> frames;
+    std::deque<quic_frame*> frames;
 };
 
 
 int unpack_meta(const void* data, size_t len, quic_meta* meta);
-std::vector<const quic_frame*> decode_packet(const void* data, size_t len,
+std::deque<const quic_frame*> decode_packet(const void* data, size_t len,
                                        quic_pkt_header* header, const quic_secret* secret);
 
 

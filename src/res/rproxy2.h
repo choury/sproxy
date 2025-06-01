@@ -21,7 +21,7 @@ public:
 
     void init();
 
-    static void distribute(std::shared_ptr<HttpReq> req, Requester* src);
+    static void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester* src);
 };
 
 #endif //SPROXY_RPROXY_H

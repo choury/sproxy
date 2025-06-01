@@ -16,11 +16,12 @@ protected:
     void Error(int ret, int code);
 
     virtual bool send(const char* data, size_t len) override;
+    virtual std::shared_ptr<IMemRWerCallback> response(uint64_t) override {
+        return IMemRWerCallback::create();
+    };
 public:
     explicit Cli(int fd, const sockaddr_storage* addr);
-    ~Cli();
-
-    virtual void response(void*, std::shared_ptr<HttpRes>) override {};
+    virtual ~Cli() override;
 
     virtual bool AddStrategy(const std::string& host, const std::string& strategy, const std::string& ext) override;
     virtual bool DelStrategy(const std::string& host) override;

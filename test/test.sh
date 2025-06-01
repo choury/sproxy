@@ -3,6 +3,34 @@ set -x
 
 HOSTNAME=localhost.choury.com
 
+ker=$(uname -s)
+run_extended_tests=false
+
+# Parse command-line arguments
+while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+    --extended-tests)
+        if [ $ker != 'Linux' ] || [ $EUID -ne 0 ] ;then
+            echo "extended-test require linux and root"
+            exit 1
+        fi
+        run_extended_tests=true
+        echo "INFO: Extended tests (SNI, TProxy, VPN) will be executed."
+        shift # past argument
+        ;;
+    *)
+        # the first non-flag argument is the build path
+        if [ -z "$buildpath" ]; then
+            buildpath=$(realpath "$1/src")
+        else
+            echo "Warning: Unknown argument or multiple build paths specified: $1"
+        fi
+        shift # past argument or value
+        ;;
+    esac
+done
+
 function test_client(){
     curl -f -v http://localhost:$1/cgi/libsites.do -d 'method=put&site=*&strategy=proxy' 2>> curl.log
     [ $? -ne 0 ] && echo "prepare for failed" && exit 1
@@ -23,7 +51,7 @@ function test_client(){
     [ $? -ne 0 ] && echo "client test 6 failed" && exit 1
 
     echo test for 100 continue
-    curl -f -v -x http://$HOSTNAME:$1 http://echo.opera.com -F 'name=@test1k' > /dev/null 2>> curl.log
+    curl -f -H "Expect: 100-continue" -v -x http://$HOSTNAME:$1 http://echo.opera.com -F 'name=@test1k' > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "client test 7 failed" && exit 1
 
     echo test for http1.0
@@ -76,13 +104,13 @@ function test_https(){
     curl -f -v --http2 https://$HOSTNAME:$1/noexist.do  -k 2>> curl.log
     ( r=$?; [ $r -ne 22 ] && [ $r -ne 56 ]) && echo "https test 6 failed" && exit 1
     curl -f -v --http1.1 https://$HOSTNAME:$1/cgi/libproxy.do?a=b  -k 2>> curl.log
-    [ $? -ne 0 ] && echo "https test 7 failed"
+    [ $? -ne 0 ] && echo "https test 7 failed" && exit 1
     curl -f -v --http2 https://$HOSTNAME:$1/cgi/libproxy.do?a=b  -k 2>> curl.log
-    [ $? -ne 0 ] && echo "https test 8 failed"
+    [ $? -ne 0 ] && echo "https test 8 failed" && exit 1
     curl -f -v -L --http1.1 https://$HOSTNAME:$1/cgi  -k 2>> curl.log
-    [ $? -ne 0 ] && echo "https test 9 failed"
+    [ $? -ne 0 ] && echo "https test 9 failed" && exit 1
     curl -f -v -L --http2 https://$HOSTNAME:$1/cgi  -k 2>> curl.log
-    [ $? -ne 0 ] && echo "https test 10 failed"
+    [ $? -ne 0 ] && echo "https test 10 failed" && exit 1
     curl -f -v --http1.1 https://$HOSTNAME:$1/ -H "Host: www.qq.com" -A "Mozilla/5.0" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "https test 11 failed" && exit 1
     curl -f -v --http2 https://$HOSTNAME:$1/ -H "Host: www.qq.com:443" -A "Mozilla/5.0" -k > /dev/null 2>> curl.log
@@ -102,13 +130,13 @@ function test_http(){
     curl -f -v http://$HOSTNAME:$1/noexist.do  -k 2>> curl.log
     [ $? -ne 22 ] && echo "http test 3 failed" && exit 1
     curl -f -v http://$HOSTNAME:$1/cgi/libproxy.do?a=b  -k 2>> curl.log
-    [ $? -ne 0 ] && echo "http test 4 failed"
+    [ $? -ne 0 ] && echo "http test 4 failed" && exit 1
     curl -f -v -L http://$HOSTNAME:$1/cgi  -k 2>> curl.log
-    [ $? -ne 0 ] && echo "http test 5 failed"
+    [ $? -ne 0 ] && echo "http test 5 failed" && exit 1
     curl -f -v http://$HOSTNAME:$1/ -H "Host: www.qq.com" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "http test 6 failed" && exit 1
     curl -f -v -x http://$HOSTNAME:$1/ https://www.qq.com  2>> curl.log
-    [ $? -ne 60 ] && echo "http test 7 failed"
+    [ $? -ne 22 ] && echo "http test 7 failed" && exit 1
     curl -f -v -x http://$HOSTNAME:$1/ https://www.qq.com -A "Mozilla/5.0" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "http test 8 failed" && exit 1
     curl -f -v http://$HOSTNAME:$1/cgi/libtest.do?size=1M > /dev/null 2>> curl.log
@@ -130,9 +158,9 @@ function test_http3(){
     curl -f -v --http3-only https://$HOSTNAME:$1/noexist.do  -k 2>> curl.log
     [ $? -ne 22 ] && echo "http3 test 3 failed" && exit 1
     curl -f -v --http3-only https://$HOSTNAME:$1/cgi/libproxy.do?a=b  -k 2>> curl.log
-    [ $? -ne 0 ] && echo "http3 test 4 failed"
+    [ $? -ne 0 ] && echo "http3 test 4 failed" && exit 1
     curl -f -v -L --http3-only https://$HOSTNAME:$1/cgi  -k 2>> curl.log
-    [ $? -ne 0 ] && echo "http3 test 5 failed"
+    [ $? -ne 0 ] && echo "http3 test 5 failed" && exit 1
     curl -f -v --http3-only https://$HOSTNAME:$1/ -H "Host: www.taobao.com" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "http3 test 6 failed" && exit 1
     curl -f -v --http3-only https://$HOSTNAME:$1/cgi/libtest.do?size=1M -k > /dev/null 2>> curl.log
@@ -142,21 +170,138 @@ function test_http3(){
     echo ""
 }
 
+function test_tproxy() {
+    iptables -t mangle -A PREROUTING -m addrtype --dst-type LOCAL -j RETURN
+    iptables -t mangle -A PREROUTING -p udp -j TPROXY --on-ip 127.0.0.1 --on-port $1
+    iptables -t mangle -A PREROUTING -p tcp -j TPROXY --on-ip 127.0.0.1 --on-port $1
+    iptables -t mangle -A OUTPUT -m mark --mark 0x1 -j RETURN
+    iptables -t mangle -A OUTPUT -p tcp -j MARK --set-mark $1
+    iptables -t mangle -A OUTPUT -p udp -j MARK --set-mark $1
+    ip rule add fwmark $1 lookup $1
+    ip route add local 0.0.0.0/0 dev lo table $1
+
+    ip6tables -t mangle -A PREROUTING -m addrtype --dst-type LOCAL -j RETURN
+    ip6tables -t mangle -A PREROUTING -p udp -j TPROXY --on-ip ::1 --on-port $1
+    ip6tables -t mangle -A PREROUTING -p tcp -j TPROXY --on-ip ::1 --on-port $1
+    ip6tables -t mangle -A OUTPUT -m mark --mark 0x1 -j RETURN
+    ip6tables -t mangle -A OUTPUT -p tcp -j MARK --set-mark $1
+    ip6tables -t mangle -A OUTPUT -p udp -j MARK --set-mark $1
+    ip -6 rule add fwmark $1 lookup $1
+    ip -6 route add local ::/0 dev lo table $1
+
+    curl -k -f -v --http1.1 http://qq.com -A "Mozilla/5.0" > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "tproxy test 1 failed" && exit 1
+    curl -6 -k -f -v --http2 https://www.qq.com -A "Mozilla/5.0" > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "tproxy test 2 failed" && exit 1
+    curl -k -f -v -H "Expect: 100-continue" --http1.1 http://echo.opera.com -F 'name=@test1k' > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "tproxy test 3 failed" && exit 1
+    curl -k -f -v --http2 https://echo.opera.com -F 'name=@test1k' > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "tproxy test 4 failed" && exit 1
+
+    curl -V | grep HTTP3
+    if [[ $? = 0 ]];then
+        curl -k -f -v --http3-only https://www.taobao.com  > /dev/null 2>> curl.log
+        [ $? -ne 0 ] && echo "tproxy test 5 failed" && exit 1
+    fi
+
+    iptables -t mangle -F PREROUTING
+    iptables -t mangle -F OUTPUT
+    ip rule del fwmark $1
+    ip route flush table $1
+    
+    ip6tables -t mangle -F PREROUTING
+    ip6tables -t mangle -F OUTPUT
+    ip -6 rule del fwmark $1
+    ip -6 route flush table $1
+}
+
+function test_vpn(){
+    ip rule add from all lookup 1 
+    ip rule add fwmark 1 lookup main
+    ip route add default dev tun0 table 1
+
+    ip -6 rule add from all lookup 1 
+    ip -6 rule add fwmark 1 lookup main
+    ip -6 route add default dev tun0 table 1
+
+    curl -k -f -v --http1.1 http://qq.com -A "Mozilla/5.0" > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "vpn test 1 failed" && exit 1
+    curl -6 -k -f -v --http2 https://www.qq.com -A "Mozilla/5.0" > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "vpn test 2 failed" && exit 1
+    curl -k -f -v -H "Expect: 100-continue" --http1.1 http://echo.opera.com -F 'name=@test1k' > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "vpn test 3 failed" && exit 1
+    curl -k -f -v --http2 https://echo.opera.com -F 'name=@test1k' > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "vpn test 4 failed" && exit 1
+
+    curl -V | grep HTTP3
+    if [[ $? = 0 ]];then
+        curl -k -f -v --http3-only https://www.taobao.com  > /dev/null 2>> curl.log
+        [ $? -ne 0 ] && echo "vpn test 5 failed" && exit 1
+    fi
+
+    ping -4 -c 3 example.com
+    [ $? -ne 0 ] && echo "vpn test 6 failed" && exit 1
+    ping -6 -c 3 example.com
+    [ $? -ne 0 ] && echo "vpn test 7 failed" && exit 1
+
+    ip rule del fwmark 1 lookup main
+    ip rule del from all lookup 1 
+    ip route flush table 1
+    
+    ip -6 rule del fwmark 1 lookup main
+    ip -6 rule del from all lookup 1 
+    ip -6 route flush table 1
+}
+
 function test_sni(){
-    curl -f -v --http1.1 https://qq.com --resolve qq.com:443:127.0.0.1 -A "Mozilla/5.0" 2>> curl.log
+    ./sproxy -c server.conf --ssl 443 --quic 443 --sni  --admin unix:${sp}server.sock > server_sni.log 2>&1 &
+    wait_tcp_port 443
+
+    curl -f -v --http1.1 https://qq.com --resolve qq.com:443:127.0.0.1 -A "Mozilla/5.0" > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "sni test 1 failed" && exit 1
-    curl -f -v --http2 https://qq.com --resolve qq.com:443:127.0.0.1  -A "Mozilla/5.0" 2>> curl.log
+    curl -f -v --http2 https://qq.com --resolve qq.com:443:127.0.0.1  -A "Mozilla/5.0" > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "sni test 2 failed" && exit 1
     curl -f -v https://echo.opera.com -F 'name=@test1k' --resolve echo.opera.com:443:127.0.0.1 > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "sni test 3 failed" && exit 1
 
     curl -V | grep HTTP3
-    if [[ $? != 0 ]];then
-        return
+    if [[ $? = 0 ]];then
+        curl -f -v --http3-only https://www.taobao.com --resolve www.taobao.com:443:127.0.0.1 > /dev/null 2>> curl.log
+        [ $? -ne 0 ] && echo "sni test 4 failed" && exit 1
     fi
-    curl -f -v --http3-only https://www.taobao.com --resolve www.taobao.com:443:127.0.0.1 2>> curl.log
-    [ $? -ne 0 ] && echo "sni test 4 failed" && exit 1
+
+    printf "dump usage" | ./scli -s ${sp}server.sock
+    kill -SIGUSR1 %1
+    kill -SIGUSR2 %1
+    wait %1
+    jobs
+
+    ./sproxy -c server.conf --ssl 443 --quic 443 --sni --mitm enable  --admin unix:${sp}server.sock >> server_sni.log 2>&1 &
+    wait_tcp_port 443
+
+    curl -k -f -v --http1.1 https://qq.com --resolve qq.com:443:127.0.0.1 -A "Mozilla/5.0" > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "sni test 6 failed" && exit 1
+    curl -k -f -v --http2 https://qq.com --resolve qq.com:443:127.0.0.1  -A "Mozilla/5.0" > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "sni test 7 failed" && exit 1
+    curl -k -f -v -H "Expect: 100-continue" --http1.1 https://echo.opera.com -F 'name=@test1k' --resolve echo.opera.com:443:127.0.0.1 > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "sni test 8 failed" && exit 1
+    curl -k -f -v --http2 https://echo.opera.com -F 'name=@test1k' --resolve echo.opera.com:443:127.0.0.1 > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "sni test 9 failed" && exit 1
+
+    curl -V | grep HTTP3
+    if [[ $? = 0 ]];then
+        curl -k -f -v --http3-only https://www.taobao.com --resolve www.taobao.com:443:127.0.0.1 > /dev/null 2>> curl.log
+        [ $? -ne 0 ] && echo "sni test 10 failed" && exit 1
+    fi
+
+    printf "dump usage" | ./scli -s ${sp}server.sock
+    kill -SIGUSR1 %1
+    kill -SIGUSR2 %1
+    wait %1
+    jobs
 }
+
+
 
 function wait_tcp_port() {
     while ! nc -vz localhost $1; do
@@ -188,12 +333,10 @@ openssl x509 -req -days 365 -in localhost.csr  -CA ca.crt -CAkey ca.key -set_ser
 
 EOF
 
-buildpath=$(realpath "$1/src")
-ker=$(uname -s)
 
 ln -f -s "$buildpath/sproxy" .
 ln -f -s "$buildpath/scli" .
-ln -s -f "$1/test/sproxy_test" .
+ln -s -f "$buildpath/../test/sproxy_test" .
 mkdir -p cgi
 ln -f -s "$buildpath"/cgi/libproxy.* cgi/
 ln -f -s "$buildpath"/cgi/libsites.* cgi/
@@ -208,12 +351,12 @@ echo "$HOSTNAME local" > sites.list
 function cleanup {
     kill -SIGABRT $(jobs -p) || true
 }
+trap cleanup EXIT
 
 if [ $ker == 'Linux' ];then
    sp='@'
 fi
 
-trap cleanup EXIT
 > curl.log
 
 cat > server.conf << EOF
@@ -230,6 +373,12 @@ ssl  3334
 quic 3334
 debug all
 EOF
+
+if [ "$run_extended_tests" = true ]; then
+    echo "tproxy 4333" >> server.conf
+    echo "fwmark 1" >> server.conf
+    echo "tun" >> server.conf
+fi
 
 ./sproxy -c server.conf --admin unix:${sp}server.sock > server.log 2>&1 &
 wait_tcp_port 3333
@@ -287,12 +436,30 @@ wait %2
 
 printf "dump usage" | ./scli -s ${sp}server.sock
 kill -SIGUSR1 %1
+
+if [ "$run_extended_tests" = true ]; then
+    echo "test tproxy"
+    test_tproxy 4333
+    printf "dump usage" | ./scli -s ${sp}server.sock
+    kill -SIGUSR1 %1
+
+    echo "test vpn"
+    test_vpn
+    printf "dump usage" | ./scli -s ${sp}server.sock
+    kill -SIGUSR1 %1
+fi
+
 kill -SIGUSR2 %1
 wait %1
+jobs
+
+if [ "$run_extended_tests" = true ]; then
+    echo "test sni"
+    test_sni
+fi
 
 $buildpath/prot/dns/dns_test
 $buildpath/misc/trie_test
-if [[ `uname -s` = 'Linux' ]];
-then
+if [ $ker == 'Linux' ];then
     $buildpath/misc/hook_test $buildpath/misc/libhook.so
 fi

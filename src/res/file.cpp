@@ -4,6 +4,7 @@
 #include "req/requester.h"
 #include "misc/util.h"
 #include "misc/config.h"
+#include "prot/memio.h"
 #include "cgi.h"
 
 #include <fstream>
@@ -132,7 +133,6 @@ File::File(const char* fname, int fd, const struct stat* st):fd(fd), st(*st){
         return readHE(std::move(bb));
     })->onError([this](int ret, int code){
         LOGE("file error: %d/%d\n", ret, code);
-        status.res->send(CHANNEL_ABORT);
         deleteLater(ret);
     });
     rwer = std::make_shared<FullRWer>(cb);
@@ -150,24 +150,25 @@ File::~File() {
     }
 }
 
-void File::request(std::shared_ptr<HttpReq> req, Requester*) {
+void File::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*) {
     status.req = req;
-    if (!req->header->ranges.empty()){
-        status.rg = req->header->ranges[0];
+    status.rw = rw;
+    if (!req->ranges.empty()){
+        status.rg = req->ranges[0];
     }else{
         status.rg.begin = -1;
         status.rg.end = - 1;
     }
-    uint64_t id = req->header->request_id;
-    if(req->header->get("If-Modified-Since")){
+    uint64_t id = req->request_id;
+    if(req->get("If-Modified-Since")){
         struct tm tp;
-        strptime(req->header->get("If-Modified-Since"), "%a, %d %b %Y %H:%M:%S GMT", &tp);
+        strptime(req->get("If-Modified-Since"), "%a, %d %b %Y %H:%M:%S GMT", &tp);
         if(timegm(&tp) >= st.st_mtime){
             std::shared_ptr<HttpResHeader> header = HttpResHeader::create(S304, sizeof(S304), id);
             char buff[100];
             strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
             header->set("Last-Modified", buff);
-            req->response(std::make_shared<HttpRes>(header, ""));
+            response(rw, header);
             return deleteLater(NOERROR);
         }
     }
@@ -183,8 +184,7 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
         if(suffix && mimetype.count(suffix)){
             header->set("Content-Type", mimetype.at(suffix));
         }
-        status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock(0);});
-        req->response(status.res);
+        status.rw->SendHeader(header);
     }else if(checkrange(status.rg, st.st_size)){
         std::shared_ptr<HttpResHeader> header = HttpResHeader::create(S206, sizeof(S206), id);
         char buff[100];
@@ -195,42 +195,38 @@ void File::request(std::shared_ptr<HttpReq> req, Requester*) {
         if(suffix && mimetype.count(suffix)){
             header->set("Content-Type", mimetype.at(suffix));
         }
-        status.res = std::make_shared<HttpRes>(header, [this]{ rwer->Unblock(0);});
-        req->response(status.res);
+        status.rw->SendHeader(header);
     }else{
         std::shared_ptr<HttpResHeader> header = HttpResHeader::create(S416, sizeof(S416), id);
         char buff[100];
         snprintf(buff, sizeof(buff), "bytes */%jd", (intmax_t)st.st_size);
         header->set("Content-Range", buff);
-        req->response(std::make_shared<HttpRes>(header, ""));
+        response(rw, header, "");
         return deleteLater(NOERROR);
     }
-    if(status.req->header->ismethod("HEAD")){
-        status.res->send(Buffer{nullptr, req->header->request_id});
+    if(status.req->ismethod("HEAD")){
+        status.rw->Send(Buffer{nullptr, req->request_id});
         return deleteLater(NOERROR);
     }
-    req->attach([this](ChannelMessage&& msg){
-        if(msg.type != ChannelMessage::CHANNEL_MSG_SIGNAL){
-            return 1;
-        }
+    status.cb = IRWerCallback::create()->onError([this](int, int){
         deleteLater(PEER_LOST_ERR);
-        return 0;
-    }, []{return 0;});
+    });
+    status.rw->SetCallback(status.cb);
 }
 
 size_t File::readHE(Buffer&& bb) {
-    if(status.res == nullptr){
+    if(status.rw == nullptr){
         return 0;
     }
     Range& rg = status.rg;
     LOGD(DFILE, "%s readHE %zd-%zd, flags: %d\n", filename, rg.begin, rg.end, status.flags);
     if (rg.begin > rg.end) {
-        status.res->send(Buffer{nullptr, bb.id});
+        status.rw->Send(Buffer{nullptr, bb.id});
         deleteLater(NOERROR);
         rwer->delEvents(RW_EVENT::READ);
         return 0;
     }
-    int len = std::min((long)status.res->cap(), rg.end - rg.begin + 1l);
+    int len = std::min((long)status.rw->cap(bb.id), rg.end - rg.begin + 1l);
     if (len <= 0) {
         rwer->delEvents(RW_EVENT::READ);
         return 0;
@@ -239,46 +235,49 @@ size_t File::readHE(Buffer&& bb) {
     len = pread(fd, buff.data(), len, rg.begin);
     if(len <= 0){
         LOGE("file pread error: %s\n", strerror(errno));
-        status.res->send(CHANNEL_ABORT);
         deleteLater(SOCKET_ERR);
         rwer->delEvents(RW_EVENT::READ);
         return 0;
     }
-    status.res->send({std::move(buff), (size_t)len, bb.id});
+    status.rw->Send({std::move(buff), (size_t)len, bb.id});
     rg.begin += len;
     return 0;
 }
 
 void File::deleteLater(uint32_t error) {
-    status.req->detach();
+    if(status.rw){
+        status.rw->SetCallback(nullptr);
+        status.rw->Close();
+        status.rw = nullptr;
+    }
     Server::deleteLater(error);
 }
 
 void File::dump_stat(Dumper dp, void* param){
     dp(param, "File %p, %s, fd=%d\n", this, filename, fd);
     dp(param, "  [%" PRIu64 "]: (%zd-%zd), flags: 0x%08x\n",
-            status.req->header->request_id,
+            status.req->request_id,
             status.rg.begin, status.rg.end, status.flags);
 }
 
 void File::dump_usage(Dumper dp, void *param) {
-    if(status.res) {
-        dp(param, "File %p: %zd, res: %zd\n", this, sizeof(*this), status.res->mem_usage());
+    if(status.rw) {
+        dp(param, "File %p: %zd, res: %zd\n", this, sizeof(*this), status.rw->mem_usage());
     } else {
         dp(param, "File %p: %zd\n", this, sizeof(*this));
     }
 }
 
 
-void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
-    uint64_t id = req->header->request_id;
-    if(!req->header->getrange()){
-        return req->response(std::make_shared<HttpRes>(HttpResHeader::create(S400, sizeof(S400), id), ""));
+void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester* src) {
+    uint64_t id = req->request_id;
+    if(!req->getrange()){
+        return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "");
     }
     char filename[URLLIMIT];
-    bool slash_end = req->header->filename.back() == '/';
+    bool slash_end = req->filename.back() == '/';
     bool index_not_found = false;
-    snprintf(filename, sizeof(filename), "%s", absolute(req->header->filename).c_str());
+    snprintf(filename, sizeof(filename), "%s", absolute(req->filename).c_str());
     std::shared_ptr<HttpResHeader> header = nullptr;
     while(true){
         if(!startwith(filename, opt.rootdir)){
@@ -287,10 +286,11 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
             goto ret;
         }
         if(filename == pathjoin(opt.rootdir, "status")){
-            return (new Status())->request(req, src);
+            return (new Status())->request(req, rw, src);
+            return;
         }
         if(startwith(filename, pathjoin(opt.rootdir, "rproxy").c_str())) {
-            return Rproxy2::distribute(req, src);
+            return Rproxy2::distribute(req, rw, src);
         }
         if(filename == pathjoin(opt.rootdir, "test")){
             //for compatibility
@@ -308,7 +308,7 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
                 if(slash_end && !endwith(filename, "/") && opt.autoindex){
                     index_not_found = true;
                     //(void)!realpath(("./" + req->header->filename).c_str(), filename);
-                    snprintf(filename, sizeof(filename), "%s", absolute(req->header->filename).c_str());
+                    snprintf(filename, sizeof(filename), "%s", absolute(req->filename).c_str());
                     continue;
                 }
                 header = HttpResHeader::create(S404, sizeof(S404), id);
@@ -322,13 +322,13 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
             if(!slash_end){
                 header = HttpResHeader::create(S302, sizeof(S302), id);
                 char location[URLLIMIT];
-                snprintf(location, sizeof(location), "/%s/", req->header->filename.c_str());
+                snprintf(location, sizeof(location), "/%s/", req->filename.c_str());
                 header->set("Location", location);
                 goto ret;
             }
             if(!index_not_found && opt.index_file){
                 //(void)!realpath(("./" + req->header->filename + opt.index_file).c_str(), filename);
-                snprintf(filename, sizeof(filename), "%s", absolute(req->header->filename + opt.index_file).c_str());
+                snprintf(filename, sizeof(filename), "%s", absolute(req->filename + opt.index_file).c_str());
                 continue;
             }
             if(!opt.autoindex){
@@ -344,16 +344,15 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
             }
             header = HttpResHeader::create(S200, sizeof(S200), id);
             header->set("Transfer-Encoding", "chunked");
-            auto res = std::make_shared<HttpRes>(header);
-            req->response(res);
+            rw->SendHeader(header);
             char buff[2048];
-            res->send({buff,(size_t)snprintf(buff, sizeof(buff),
+            rw->Send({buff,(size_t)snprintf(buff, sizeof(buff),
                             "<html>"
                             "<head><title>Index of %s</title></head>"
                             "<body><h1>Index of %s</h1><hr/><pre>"
                             "<a href='../'>../</a><br/>",
-                            req->header->filename.c_str(),
-                            req->header->filename.c_str()), id});
+                            req->filename.c_str(),
+                            req->filename.c_str()), id});
             struct dirent *ptr;
             std::set<std::string> dirs;
             std::set<std::string> files;
@@ -371,14 +370,14 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
             char name[1024];
             for(const auto& dir: dirs) {
                 URLEncode(name, dir.c_str(), dir.length());
-                res->send({buff, (size_t)snprintf(buff, sizeof(buff), "<a href='%s/'>%s/</a><br/>", name, dir.c_str()), id});
+                rw->Send({buff, (size_t)snprintf(buff, sizeof(buff), "<a href='%s/'>%s/</a><br/>", name, dir.c_str()), id});
             }
             for(const auto& file: files) {
                 URLEncode(name, file.c_str(), file.length());
-                res->send({buff, (size_t)snprintf(buff, sizeof(buff), "<a href='%s'>%s</a><br/>", name, file.c_str()), id});
+                rw->Send({buff, (size_t)snprintf(buff, sizeof(buff), "<a href='%s'>%s</a><br/>", name, file.c_str()), id});
             }
-            res->send({buff, (size_t)snprintf(buff, sizeof(buff), "</pre><hr></body></html>"), id});
-            res->send(Buffer{nullptr, id});
+            rw->Send({buff, (size_t)snprintf(buff, sizeof(buff), "</pre><hr></body></html>"), id});
+            rw->Send(Buffer{nullptr, id});
             return;
         }
 
@@ -388,7 +387,7 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
             goto ret;
         }
         if(suffix && strcmp(suffix, LIBSUFFIX) == 0){
-            return getcgi(req, filename, src);
+            return getcgi(req, filename, rw, src);
         }
         int fd = open(filename, O_RDONLY | O_CLOEXEC);
         if(fd < 0){
@@ -396,9 +395,9 @@ void File::getfile(std::shared_ptr<HttpReq> req, Requester* src) {
             header = HttpResHeader::create(S500, sizeof(S500), id);
             goto ret;
         }
-        return (new File(filename, fd, &st))->request(req, src);
+        return (new File(filename, fd, &st))->request(req, rw, src);
     }
 ret:
     assert(header);
-    return req->response(std::make_shared<HttpRes>(header, ""));
+    return response(rw, header, "");
 }

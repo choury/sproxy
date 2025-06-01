@@ -252,5 +252,6 @@ public:
 };
 
 void set_checksum_offload(bool enable);
+bool operator<(const sockaddr_storage& a, const sockaddr_storage& b);
 
 #endif //IP_PACKET_H_

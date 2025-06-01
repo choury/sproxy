@@ -2,27 +2,41 @@
 #define MEMIO_H__
 
 #include "rwer.h"
-#include <variant>
+#include <deque>
 
+class HttpResHeader;
 struct IMemRWerCallback: std::enable_shared_from_this<IMemRWerCallback> {
     //write_cb act like write, return bytes handled
-    std::function<int(std::variant<std::reference_wrapper<Buffer>, Buffer, Signal>)> write_cb;
+    std::function<int(Buffer)> write_data;
+    std::function<void(Signal)> write_signal;
+    std::function<void(std::shared_ptr<HttpResHeader>)> write_header = [](std::shared_ptr<HttpResHeader>){};
     std::function<void(uint64_t)> read_cb;
     std::function<ssize_t()> cap_cb;
 
     template<typename F>
-    std::shared_ptr<IMemRWerCallback> onRead(F &&f) {
-        write_cb = std::forward<F>(f);
+    std::shared_ptr<IMemRWerCallback> onData(F&& f) {
+        write_data = std::forward<F>(f);
+        return shared_from_this();
+    }
+    template<typename F>
+    std::shared_ptr<IMemRWerCallback> onHeader(F&& f) {
+        write_header = std::forward<F>(f);
         return shared_from_this();
     }
 
     template<typename F>
-    std::shared_ptr<IMemRWerCallback> onWrite(F &&f) {
+    std::shared_ptr<IMemRWerCallback> onSignal(F&& f) {
+        write_signal = std::forward<F>(f);
+        return shared_from_this();
+    }
+
+    template<typename F>
+    std::shared_ptr<IMemRWerCallback> onWrite(F&& f) {
         read_cb = std::forward<F>(f);
         return shared_from_this();
     }
     template<typename F>
-    std::shared_ptr<IMemRWerCallback> onCap(F &&f) {
+    std::shared_ptr<IMemRWerCallback> onCap(F&& f) {
         cap_cb = std::forward<F>(f);
         return shared_from_this();
     }
@@ -35,8 +49,9 @@ struct IMemRWerCallback: std::enable_shared_from_this<IMemRWerCallback> {
 class MemRWer: public FullRWer{
 protected:
     Destination src;
-    CBuffer rb;
     std::weak_ptr<IMemRWerCallback> _callback;
+    std::deque<Buffer> rb;
+    size_t  rlen = 0;
     //std::function<void(const sockaddr_storage&)> connectCB = [](const sockaddr_storage&){};
     void connected(const sockaddr_storage& addr);
     virtual void closeHE(RW_EVENT events) override;
@@ -51,7 +66,7 @@ public:
     ~MemRWer() override;
 
     virtual size_t bufsize() {
-        return rb.cap();
+        return BUF_LEN - rlen;
     }
     virtual void push_data(Buffer&& bb);
     virtual void push_signal(Signal s);
@@ -63,6 +78,11 @@ public:
             cb->writeCB(id);
         }
         addEvents(RW_EVENT::WRITE);
+    }
+    virtual void SendHeader(std::shared_ptr<HttpResHeader> header) {
+        if(auto cb = _callback.lock(); cb) {
+            cb->write_header(header);
+        }
     }
     virtual void Unblock(uint64_t id) override {
         if(auto cb = _callback.lock(); cb) {

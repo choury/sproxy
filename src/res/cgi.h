@@ -2,7 +2,6 @@
 #define CGI_H__
 
 #include "responser.h"
-#include "prot/http/http_def.h"
 
 #include <assert.h>
 #include <unistd.h>
@@ -41,8 +40,9 @@ std::shared_ptr<HttpResHeader> UnpackCgiRes(const void* header, size_t len);
 
 class Cgi:public Responser{
     struct CgiStatus{
-        std::shared_ptr<HttpReq> req;
-        std::shared_ptr<HttpRes> res;
+        std::shared_ptr<HttpReqHeader> req;
+        std::shared_ptr<MemRWer>       rw;
+        std::shared_ptr<IRWerCallback> cb;
     };
 
     char filename[URLLIMIT];
@@ -54,19 +54,17 @@ class Cgi:public Responser{
     bool HandleRes(const CGI_Header* header, CgiStatus& status);
     bool HandleData(const CGI_Header* header, CgiStatus& Status);
     bool HandleError(const CGI_Header* header, CgiStatus& status);
-    void Recv(Buffer&& bb);
-    void Handle(uint32_t id, Signal s);
 public:
     explicit Cgi(const char* filename, int svs[2], int cvs[2]);
     virtual ~Cgi() override;
 
     virtual void deleteLater(uint32_t errcode) override;
-    virtual void request(std::shared_ptr<HttpReq> req, Requester*)override;
+    virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*)override;
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
 };
 
-void getcgi(std::shared_ptr<HttpReq> req, const char *filename, Requester *src);
+void getcgi(std::shared_ptr<HttpReqHeader> req, const char *filename, std::shared_ptr<MemRWer> rw, Requester *src);
 
 
 void flushcgi();

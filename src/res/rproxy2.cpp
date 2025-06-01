@@ -6,6 +6,7 @@
 #include "req/requester.h"
 #include "misc/strategy.h"
 #include "misc/util.h"
+#include "prot/memio.h"
 
 #include <map>
 #include <sstream>
@@ -16,7 +17,7 @@ Rproxy2::Rproxy2(std::shared_ptr<RWer> rwer):Proxy2(rwer) {
 }
 
 void Rproxy2::init() {
-    return Proxy2::init(true, nullptr);
+    return Proxy2::init(true, nullptr, nullptr);
 }
 
 
@@ -51,68 +52,66 @@ static std::vector<std::string> split(const std::string& s, char delimiter) {
     return tokens;
 }
 
-void Rproxy2::distribute(std::shared_ptr<HttpReq> req, Requester* src) {
-    uint64_t id = req->header->request_id;
-    if(!checkauth(src->getSrc().hostname, req->header->get("Authorization"))){
-        req->response(std::make_shared<HttpRes>(HttpResHeader::create(S401, sizeof(S401), id), ""));
+void Rproxy2::distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester* src) {
+    uint64_t id = req->request_id;
+    if(!checkauth(src->getSrc().hostname, req->get("Authorization"))){
+        response(rw, HttpResHeader::create(S401, sizeof(S401), id), "");
         return;
     }
     std::string filename;
-    auto header = req->header;
-    if(header->get("rproxy")) {
-        filename = header->get("rproxy");
-        header->del("rproxy");
+    if(req->get("rproxy")) {
+        filename = req->get("rproxy");
+        req->del("rproxy");
     }else {
-        std::string path = header->path;
-        auto fragment = split(header->path, '/');
+        std::string path = req->path;
+        auto fragment = split(req->path, '/');
         assert(fragment.size() >= 1 && fragment[0] == "rproxy");
         if(fragment.size() == 1) {
             auto resh = HttpResHeader::create(S200, sizeof(S200), id);
             resh->set("Transfer-Encoding", "chunked");
             resh->set("Content-Type", "text/plain; charset=utf8");
-            auto res = std::make_shared<HttpRes>(resh);
-            req->response(res);
+            rw->SendHeader(resh);
             char buff[2048];
-            res->send(buff, snprintf(buff, sizeof(buff), "======================================\n"));
+            rw->Send(Buffer{buff, (size_t)snprintf(buff, sizeof(buff), "======================================\n")});
             for(auto [name, rproxy]: rproxys) {
-                res->send(buff, snprintf(buff, sizeof(buff), "%s [%p]: %s\n",
-                                         name.c_str(), rproxy, dumpDest(rproxy->getPeer()).c_str()));
+                rw->Send(Buffer{buff, (size_t)snprintf(buff, sizeof(buff), "%s [%p]: %s\n",
+                                                       name.c_str(), rproxy, dumpDest(rproxy->getPeer()).c_str())});
             }
-            res->send(buff, snprintf(buff, sizeof(buff), "======================================\n"));
-            res->send(nullptr);
+            rw->Send(Buffer{buff, (size_t)snprintf(buff, sizeof(buff), "======================================\n")});
+            rw->Send(nullptr);
             return;
         }
         if(fragment.size() < 3) {
-            req->response(std::make_shared<HttpRes>(HttpResHeader::create(S400, sizeof(S400), id), ""));
+            response(rw, HttpResHeader::create(S400, sizeof(S400), id), "");
             return;
         }
         filename = fragment[1];
-        memset(&header->Dest.hostname, 0, sizeof(header->Dest.hostname));
-        header->Dest.port = 0;
-        if(strcmp(header->Dest.protocol, "websocket")) {
-            memset(&header->Dest.protocol, 0, sizeof(header->Dest.protocol));
+        memset(&req->Dest.hostname, 0, sizeof(req->Dest.hostname));
+        req->Dest.port = 0;
+        if(strcmp(req->Dest.protocol, "websocket")) {
+            memset(&req->Dest.protocol, 0, sizeof(req->Dest.protocol));
         }
-        strcpy(header->Dest.scheme, "http");
-        if(spliturl(path.c_str() + 9 + filename.length(), &header->Dest, header->path)) {
-            req->response(std::make_shared<HttpRes>(HttpResHeader::create(S400, sizeof(S400), id), ""));
+        strcpy(req->Dest.scheme, "http");
+        if(spliturl(path.c_str() + 9 + filename.length(), &req->Dest, req->path)) {
+            response(rw, HttpResHeader::create(S400, sizeof(S400), id), "");
             return;
         }
-        if(strcmp(header->path, "/") == 0 && path.back() != '/'){
+        if(strcmp(req->path, "/") == 0 && path.back() != '/'){
             // /rproxy/example.com => /rproxy/example.com/
 
             auto resh = HttpResHeader::create(S308, sizeof(S308), id);
             resh->set("Location", path + '/');
-            req->response(std::make_shared<HttpRes>(resh, ""));
+            response(rw, resh, "");
             return;
         }
-        header->postparse();
-        LOGD(DFILE, "rproxy: %s -> %s\n", path.c_str(), header->geturl().c_str());
+        req->postparse();
+        LOGD(DFILE, "rproxy: %s -> %s\n", path.c_str(), req->geturl().c_str());
     }
-    header->set(STRATEGY, std::string("rproxy/")+filename);
+    req->set(STRATEGY, std::string("rproxy/")+filename);
     if(rproxys.count(filename) == 0) {
-        req->response(std::make_shared<HttpRes>(HttpResHeader::create(S404, sizeof(S404), id), ""));
+        response(rw, HttpResHeader::create(S404, sizeof(S404), id), "");
         return;
     }
     auto rproxy = rproxys[filename];
-    rproxy->request(req, src);
+    rproxy->request(req, rw, src);
 }

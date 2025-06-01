@@ -981,7 +981,7 @@ QuicBase::FrameResult QuicBase::handleHandshakeFrames(quic_context *context, con
     }
 }
 
-int QuicBase::handleHandshakePacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames) {
+int QuicBase::handleHandshakePacket(const quic_pkt_header* header, std::deque<const quic_frame*>& frames) {
     if(header->type == QUIC_PACKET_INITIAL){
         hisids[0] = header->scid;
     }else{
@@ -989,17 +989,19 @@ int QuicBase::handleHandshakePacket(const quic_pkt_header* header, std::vector<c
         dropkey(ssl_encryption_initial);
     }
     auto context = getContext(header->type);
-    for(auto frame: frames){
+    while(!frames.empty()){
+        auto frame = frames.front();
         qos.handleFrame(context->level, header->pn, frame);
         switch(handleHandshakeFrames(context, frame)){
         case FrameResult::ok:
             frame_release(frame);
+            frames.pop_front();
             break;
         case FrameResult::skip:
             context->recvq.insert(frame);
+            frames.pop_front();
             break;
         case FrameResult::error:
-            frame_release(frame);
             return 1;
         }
     }
@@ -1333,12 +1335,13 @@ void QuicBase::resendFrames(pn_namespace* ns, quic_frame *frame) {
     }
 }
 
-int QuicBase::handle1RttPacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames) {
+int QuicBase::handle1RttPacket(const quic_pkt_header* header, std::deque<const quic_frame*>& frames) {
     auto context = &contexts[ssl_encryption_application];
     keepAlive_timer = UpdateJob(std::move(keepAlive_timer),
                                 [this]{keepAlive_action();},
                                 std::min(30000, (int)max_idle_timeout/2));
-    for(auto frame : frames) {
+    while(!frames.empty()) {
+        auto frame = frames.front();
         auto acked = qos.handleFrame(context->level, header->pn, frame);
         for(auto& id: acked) {
             if(!canSend(id)) {
@@ -1349,21 +1352,22 @@ int QuicBase::handle1RttPacket(const quic_pkt_header* header, std::vector<const 
         switch(handleFrames(context, frame)){
         case FrameResult::ok:
             frame_release(frame);
+            frames.pop_front();
             break;
         case FrameResult::skip:
             //有丢包，立即发送ack
             qos.sendPacket();
             context->recvq.insert(frame);
+            frames.pop_front();
             break;
         case FrameResult::error:
-            frame_release(frame);
             return 1;
         }
     }
     return 0;
 }
 
-int QuicBase::handlePacket(const quic_pkt_header* header, std::vector<const quic_frame*>& frames) {
+int QuicBase::handlePacket(const quic_pkt_header* header, std::deque<const quic_frame*>& frames) {
     disconnect_timer = UpdateJob(std::move(disconnect_timer),
                                  [this]{disconnect_action();}, max_idle_timeout);
     switch(header->type){
@@ -1430,11 +1434,8 @@ void QuicBase::sendData(Buffer&& bb) {
 }
 
 void QuicBase::close(uint64_t error) {
-    walkHandler = [this](const quic_pkt_header* header, std::vector<const quic_frame*>& frames) -> int{
+    walkHandler = [this](const quic_pkt_header* header, std::deque<const quic_frame*>&) -> int{
         LOGD(DQUIC, "[%" PRIu64"] discard packet after cc: %d\n", header->pn, header->type);
-        for(auto frame : frames){
-            frame_release(frame);
-        }
         auto context = getContext(header->type);
         if(!context->hasKey){
             return 0;
@@ -1542,7 +1543,7 @@ void QuicBase::walkPacket(const void* buff, size_t length) {
         }
         pos += body_len;
         length -= body_len;
-        std::vector<const quic_frame*> frames;
+        std::deque<const quic_frame*> frames;
         if (header.type != QUIC_PACKET_RETRY) {
             auto context = getContext(header.type);
             if (!context->hasKey) {
@@ -1568,7 +1569,11 @@ void QuicBase::walkPacket(const void* buff, size_t length) {
              dumpHex(header.scid.data(), header.scid.length()).c_str(),
              dumpHex(header.dcid.data(), header.dcid.length()).c_str(),
              header.pn, header.type, body_len);
-        if(walkHandler(&header, frames)) {
+        int ret = walkHandler(&header, frames);
+        for(auto& frame : frames) {
+            frame_release(frame);
+        }
+        if(ret) {
             return;
         }
     }
@@ -2183,7 +2188,7 @@ ssize_t QuicMer::writem(const struct iovec *iov, int iovcnt) {
         LOGE("callback expired, cannot write data\n");
         return -1;
     }
-    auto write_cb = _callback.lock()->write_cb;
+    auto write_cb = _callback.lock()->write_data;
     for (int i = 0; i < iovcnt; i++) {
         if(write_cb(Buffer{iov[i].iov_base, (size_t)iov[i].iov_len}) < 0){
             return i;
@@ -2242,6 +2247,7 @@ void QuicMer::push_data(Buffer&& bb) {
         reorderData();
         sinkData(0);
     }
+    bb.len = 0;
 }
 
 void QuicMer::Send(Buffer&& bb) {

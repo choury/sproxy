@@ -250,7 +250,7 @@ static struct option_detail option_detail[] = {
     {"alt-svc", "Add alt-svc header to response or send ALTSVC frame", option_string, &opt.alt_svc, NULL},
     {"autoindex", "Enables the directory listing output (local server)", option_bool, &opt.autoindex, (void*)true},
 #ifdef HAVE_BPF
-    {"bpf", "load bpf prog to redirect for tproxy on cgroup", option_string, &opt.bpf_cgroup, NULL},
+    {"bpf", "load bpf prog to redirect for tproxy on cgroup (!!NOT WORK IN CONTAINER!!)", option_string, &opt.bpf_cgroup, NULL},
 #endif
     {"cafile", "CA certificate for server (ssl/quic)", option_string, &opt.cafile, NULL},
     {"cakey", "CA key for server (mitm)", option_string, &opt.cakey, NULL},

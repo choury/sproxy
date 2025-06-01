@@ -99,6 +99,7 @@ size_t Http3Base::Http3_Proc(Buffer& bb) {
                 if (!DataProc(bb)) {
                     return 0;
                 }
+                bb.len = 0;
             } else {
                 Buffer cbb = bb;
                 cbb.truncate(length);

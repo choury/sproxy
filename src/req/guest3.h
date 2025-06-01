@@ -11,8 +11,9 @@
 
 class Guest3: public Requester, public Http3Responser {
     struct ReqStatus{
-        std::shared_ptr<HttpReq> req;
-        std::shared_ptr<HttpRes> res;
+        std::shared_ptr<HttpReqHeader>    req;
+        std::shared_ptr<MemRWer>          rw;
+        std::shared_ptr<IMemRWerCallback> cb;
         uint32_t flags = 0;
         Job      cleanJob = nullptr;
     };
@@ -34,8 +35,8 @@ protected:
 
     void init();
     void connected();
-    void Recv(Buffer&& bb);
-    void Handle(uint64_t id, Signal s);
+    size_t Recv(Buffer&& bb);
+    virtual std::shared_ptr<IMemRWerCallback> response(uint64_t id) override;
     void RstProc(uint64_t id, uint32_t errcode);
     void Clean(uint64_t id, uint32_t errcode);
 public:
@@ -45,7 +46,6 @@ public:
     virtual ~Guest3() override;
 
     void AddInitData(const void* buff, size_t len);
-    virtual void response(void* index, std::shared_ptr<HttpRes> res) override;
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
