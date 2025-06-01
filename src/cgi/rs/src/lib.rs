@@ -93,8 +93,8 @@ pub extern "C" fn sendFcm(title: *const c_char, body: *const c_char, token: *con
 
     // 发送 POST 请求以获取访问令牌
     let token_response = match ureq::post(token_uri)
-        .set("Content-Type", "application/x-www-form-urlencoded")
-        .send_string(&format!("grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion={}", jwt)) {
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .send(&format!("grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion={}", jwt)) {
         Ok(response) => response,
         Err(e) => {
             eprintln!("Failed to send POST request: {}", e);
@@ -103,7 +103,7 @@ pub extern "C" fn sendFcm(title: *const c_char, body: *const c_char, token: *con
     };
 
     // 解析 JSON 响应以获取访问令牌
-    let token_response_json: serde_json::Value = match serde_json::from_str(&token_response.into_string().unwrap()) {
+    let token_response_json: serde_json::Value = match serde_json::from_str(&token_response.into_body().read_to_string().unwrap()) {
         Ok(value) => value,
         Err(e) => {
             eprintln!("Failed to parse JSON response: {}", e);
@@ -133,9 +133,9 @@ pub extern "C" fn sendFcm(title: *const c_char, body: *const c_char, token: *con
     // 发送 FCM 消息
     let url = "https://fcm.googleapis.com/v1/projects/choury-dev/messages:send";
     let response = match ureq::post(url)
-        .set("Content-Type", "application/json")
-        .set("Authorization", &format!("Bearer {}", access_token))
-        .send_string(&msg.to_string()) {
+        .header("Content-Type", "application/json")
+        .header("Authorization", &format!("Bearer {}", access_token))
+        .send(&msg.to_string()) {
         Ok(response) => response,
         Err(e) => {
             eprintln!("Failed to send FCM message: {}", e);
@@ -143,7 +143,7 @@ pub extern "C" fn sendFcm(title: *const c_char, body: *const c_char, token: *con
         }
     };
 
-    let response_json: serde_json::Value = match serde_json::from_str(&response.into_string().unwrap()) {
+    let response_json: serde_json::Value = match serde_json::from_str(&response.into_body().read_to_string().unwrap()) {
         Ok(value) => value,
         Err(e) => {
             eprintln!("Failed to parse FCM response: {}", e);
