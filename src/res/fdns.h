@@ -9,7 +9,8 @@
 
 class FDns: public Responser{
     struct FDnsStatus{
-        std::shared_ptr<RWer>   rwer;
+        std::shared_ptr<RWer>          rw;
+        std::shared_ptr<IRWerCallback> cb;
         std::map<uint16_t, std::shared_ptr<Dns_Query>> quemap;
     };
     std::map<uint64_t, FDnsStatus> statusmap;

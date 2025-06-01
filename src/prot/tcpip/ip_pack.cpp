@@ -219,8 +219,9 @@ void Icmp::build_packet(Buffer& bb) {
     char* packet = (char *)bb.mutable_data();
     icmp_hdr.checksum = 0;
     memcpy(packet, &icmp_hdr, sizeof(icmp_hdr));
-    //checkum_offload is not supported for ICMPv4
-    ((icmp *)packet)->icmp_cksum = htons(checksum16((uint8_t*) packet, bb.len));
+    if(!checksum_offload) {
+        ((icmp *)packet)->icmp_cksum = htons(checksum16((uint8_t*) packet, bb.len));
+    }
 }
 
 Icmp6::Icmp6() {
