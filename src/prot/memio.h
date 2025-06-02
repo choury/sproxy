@@ -66,7 +66,7 @@ public:
     ~MemRWer() override;
 
     virtual size_t bufsize() {
-        return BUF_LEN - rlen;
+        return BUF_LEN * 2  - rlen;
     }
     virtual void push_data(Buffer&& bb);
     virtual void push_signal(Signal s);

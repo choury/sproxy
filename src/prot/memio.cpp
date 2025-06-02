@@ -106,13 +106,14 @@ void MemRWer::ConsumeRData(uint64_t id) {
             keepReading = false;
             if(ret > 0) {
                 rb.front().reserve(ret);
-                wlen -= ret;
+                rlen -= ret;
             }
             break;
         }
     }
     HOOK_FUNC(this, rb, id);
     if(rlen == 0 && isEof() && (flags & RWER_EOFDELIVED) == 0){
+        assert(rb.empty());
         keepReading = false;
         if(auto cb = callback.lock(); cb) {
             cb->readCB({nullptr, id});
@@ -128,6 +129,8 @@ ssize_t MemRWer::Write(std::set<uint64_t>& writed_list) {
     size_t len = 0;
     if(_callback.expired()){
         if(wlen) LOGE("MemRWer callback expired, left: %zd\n", wlen);
+        delEvents(RW_EVENT::WRITE);
+        errno = EPIPE;
         return -1;
     }
     auto& write_cb = _callback.lock()->write_data;

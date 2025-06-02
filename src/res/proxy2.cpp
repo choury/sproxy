@@ -291,17 +291,20 @@ void Proxy2::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer
             return 0;
         }
         bb.id = id;
-        auto len = bb.len;
-        status.remotewinsize -= len;
-        remotewinsize -= len;
-        assert(status.remotewinsize >= 0);
-        assert(remotewinsize >= 0);
-        if(len == 0){
+        if(bb.len == 0){
             status.flags |= HTTP_REQ_COMPLETED;
             LOGD(DHTTP2, "<proxy2> recv data [%d]: EOF/%d\n", (int)bb.id, status.remotewinsize);
-        }else{
-            LOGD(DHTTP2, "<proxy2> recv data [%d]: %zu/%d\n", (int)bb.id, len, status.remotewinsize);
+            PushData({nullptr, id});
+            return 0;
         }
+        LOGD(DHTTP2, "<proxy2> recv data [%d]: %zu/%d\n", (int)bb.id, bb.len, status.remotewinsize);
+        if(status.remotewinsize <= 0 || remotewinsize <= 0) {
+            return 0;
+        }
+        auto len = std::min({bb.len, (size_t)status.remotewinsize, (size_t)remotewinsize});
+        bb.truncate(len);
+        status.remotewinsize -= len;
+        remotewinsize -= len;
         PushData(std::move(bb));
         return len;
     })->onWrite([this, id](uint64_t){

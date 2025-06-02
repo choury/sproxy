@@ -66,14 +66,9 @@ void Guest2::Error(int ret, int code){
 size_t Guest2::Recv(Buffer&& bb){
     ReqStatus& status = statusmap.at(bb.id);
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
-    status.remotewinsize -= bb.len;
-    assert(status.remotewinsize >= 0);
-    remotewinsize -= bb.len;
-    assert(remotewinsize >= 0);
     if(bb.len == 0){
         LOGD(DHTTP2, "<guest2> %" PRIu64 " recv data [%d]: EOF/%d\n",
-             status.req->request_id, (int)bb.id,
-             status.remotewinsize);
+             status.req->request_id, (int)bb.id, status.remotewinsize);
         PushData({nullptr, bb.id});
         status.flags |= HTTP_RES_COMPLETED;
         if(status.flags & HTTP_REQ_COMPLETED){
@@ -81,15 +76,20 @@ size_t Guest2::Recv(Buffer&& bb){
         }
         return 0;
     }
-    auto len = bb.len;
+    LOGD(DHTTP2, "<guest2> %" PRIu64 " recv data [%d]: %zu/%d\n",
+            status.req->request_id, (int)bb.id, bb.len, status.remotewinsize);
+    if(status.remotewinsize <= 0 || remotewinsize <= 0) {
+        return 0;
+    }
+    auto len = std::min({bb.len, (size_t)status.remotewinsize, (size_t)remotewinsize});
+    bb.truncate(len);
+    status.remotewinsize -= bb.len;
+    remotewinsize -= bb.len;
     if(status.req->ismethod("HEAD")){
         LOGD(DHTTP2, "<guest2> %" PRIu64 " recv data [%d], HEAD req discard body\n",
                 status.req->request_id, (int)bb.id);
         return len;
     }
-    LOGD(DHTTP2, "<guest2> %" PRIu64 " recv data [%d]: %zu/%d\n",
-            status.req->request_id, (int)bb.id,
-            bb.len, status.remotewinsize);
     PushData(std::move(bb));
     return len;
 }

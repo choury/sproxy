@@ -257,7 +257,7 @@ std::shared_ptr<IMemRWerCallback> Guest_vpn::response(uint64_t id) {
             break;
         }
     })->onCap([this, id]() {
-         return rwer->cap(id);
+        return rwer->cap(id);
     });
 }
 

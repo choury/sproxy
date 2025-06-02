@@ -401,6 +401,9 @@ void TunRWer::setResetHandler(std::function<void (uint64_t, uint32_t)> func) {
 #endif
 
 ssize_t TunRWer::cap(uint64_t id) {
+    if(!statusmap.Has(id)){
+        return -1;
+    }
     auto status = GetStatus(id);
     return status->Cap();
 }

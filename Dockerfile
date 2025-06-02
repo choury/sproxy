@@ -5,7 +5,7 @@ LABEL maintainer="zhouwei400@gmail.com"
 
 COPY . /root/sproxy
 RUN apt-get  update && \
-    apt-get install -y --no-install-recommends  gcc g++ cmake make pkg-config libssl-dev libz-dev git libjson-c-dev && \
+    apt-get install -y --no-install-recommends  gcc g++ cmake make pkg-config libssl-dev libz-dev git libelf-dev libjson-c-dev libreadline-dev && \
     mkdir /root/sproxy/build && \
     cd /root/sproxy/build && \
     cmake .. && \
