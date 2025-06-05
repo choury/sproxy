@@ -73,7 +73,8 @@ public:
     //virtual void detach();
     virtual void pull(uint64_t id) {
         //let owner call Send to fill the buffer
-        LOGD(DRWER, "<MemRwer> pull %d\n", (int)id);
+        LOGD(DRWER, "<MemRWer> <%d> %s pull %d\n", 
+            getFd(), dumpDest(src).c_str(), (int)id);
         if (auto cb = callback.lock(); cb) {
             cb->writeCB(id);
         }

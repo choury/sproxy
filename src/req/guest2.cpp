@@ -140,7 +140,7 @@ void Guest2::DataProc(Buffer&& bb) {
         }
         status.localwinsize -= bb.len;
         auto cap = status.rw->cap(bb.id);
-        if(cap < (int)bb.len){
+        if ((status.buffer && status.buffer->length() > 0) || (cap < (int)bb.len)) {
             //把多余的数据放到buffer里
             if(status.buffer == nullptr){
                 status.buffer = std::make_unique<EBuffer>();
@@ -231,12 +231,12 @@ std::shared_ptr<IMemRWerCallback> Guest2::response(uint64_t id) {
                 }
             }
         }
-        int delta = std::min((int)cap, status.buffer ? MAX_BUF_LEN - (int)status.buffer->length(): MAX_BUF_LEN) - status.localwinsize;
+        int delta = (status.buffer ? MAX_BUF_LEN - (int)status.buffer->length(): MAX_BUF_LEN) - status.localwinsize;
         if(delta < FRAMEBODYLIMIT/2){
             return;
         }
         rwer->Unblock(id);
-        if(delta > FRAMEBODYLIMIT || status.localwinsize <= FRAMEBODYLIMIT/2){
+        if(delta > FRAMEBODYLIMIT && status.localwinsize <= MAX_BUF_LEN/2){
             LOGD(DHTTP2, "<guest2> [%" PRIu64"] increased local window: %d -> %d\n", id, status.localwinsize, status.localwinsize + delta);
             status.localwinsize += ExpandWindowSize(id, delta);
         }

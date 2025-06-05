@@ -79,7 +79,7 @@ void SslRWerBase::sink_out_bio(uint64_t id) {
     size_t offset = 0;
     while(BIO_ctrl_pending(out_bio) && offset < BUF_LEN) {
         int ret = BIO_read(out_bio, (char*)buff.data() + offset, BUF_LEN - offset);
-        LOGD(DSSL, "[%s] BIO_read %d bytes\n", server.c_str(), ret);
+        LOGD(DSSL, "(%s) BIO_read %d bytes\n", server.c_str(), ret);
         if (ret > 0) {
             offset += ret;
         } else {
@@ -103,12 +103,13 @@ int SslRWerBase::sink_in_bio(uint64_t id) {
         return 0;
     }
     ssize_t ret = ssl_get_error(ssl, SSL_read(ssl, buff.data(), (int)len));
-    LOGD(DSSL, "[%s] SSL_read %d bytes\n", server.c_str(), (int) ret);
+    LOGD(DSSL, "(%s) SSL_read %d bytes\n", server.c_str(), (int) ret);
     HOOK_FUNC(this, in_bio, buff, ret);
     if (ret > 0) {
         onRead(Buffer{std::move(buff), (size_t) ret, id});
         return 1;
     } else if (ret == 0) {
+        assert(BIO_ctrl_pending(in_bio) == 0);
         sslStats = SslStats::SslEOF;
         return 0;
     } else if (errno != EAGAIN) {
@@ -122,10 +123,10 @@ void SslRWerBase::handleData(const void* data, size_t len) {
     HOOK_FUNC(this, data, len);
     if(len > 0) {
         int ret = BIO_write(in_bio, data, (int)len);
-        LOGD(DSSL, "[%s] BIO_write %d bytes\n", server.c_str(), ret);
+        LOGD(DSSL, "(%s) BIO_write %d bytes\n", server.c_str(), ret);
         HOOK_FUNC(this, in_bio, ret);
     } else {
-        LOGD(DSSL, "[%s] handleData with nullptr\n", server.c_str());
+        LOGD(DSSL, "(%s) handleData with nullptr\n", server.c_str());
     }
     switch(sslStats) {
     case SslStats::Idel:
@@ -138,7 +139,7 @@ void SslRWerBase::handleData(const void* data, size_t len) {
         while (sslStats == SslStats::Established && sink_in_bio(0));
         break;
     case SslStats::SslEOF: case SslStats::SslError:
-        LOGE("[%s] ssl eof/error, discard all data\n", server.c_str());
+        LOGE("(%s) ssl eof/error, discard all data, left: %zd\n", server.c_str(), BIO_ctrl_pending(in_bio));
         break;
     }
 }
@@ -146,13 +147,13 @@ void SslRWerBase::handleData(const void* data, size_t len) {
 void SslRWerBase::sendData(Buffer&& bb) {
     HOOK_FUNC(this, bb);
     if(bb.len == 0) {
-        LOGD(DSSL, "[%s] SSL_shutdown\n", server.c_str());
+        LOGD(DSSL, "(%s) SSL_shutdown\n", server.c_str());
         SSL_shutdown(ssl);
     }else {
         ERR_clear_error();
         while(bb.len > 0) {
             ssize_t ret = ssl_get_error(ssl, SSL_write(ssl, bb.data(), bb.len));
-            LOGD(DSSL, "[%s] SSL_write %d/%zd bytes\n", server.c_str(), (int)ret, bb.len);
+            LOGD(DSSL, "(%s) SSL_write %d/%zd bytes\n", server.c_str(), (int)ret, bb.len);
             HOOK_FUNC(this, bb, ret);
             if(ret > 0) {
                 bb.reserve(ret);
@@ -170,12 +171,12 @@ void SslRWerBase::do_handshake() {
     ERR_clear_error();
     if(ssl_get_error(ssl, SSL_do_handshake(ssl)) == 1){
         sslStats = SslStats::Established;
-        LOGD(DSSL, "[%s] ssl handshake success\n", server.c_str());
+        LOGD(DSSL, "(%s) ssl handshake success\n", server.c_str());
         onConnected();
     }else if(errno != EAGAIN){
         sslStats = SslStats::SslError;
         int error = errno;
-        LOGE("[%s]: ssl %s error:%s\n", server.c_str(), SSL_is_server(ssl)?"accept":"connect", strerror(error));
+        LOGE("(%s): ssl %s error:%s\n", server.c_str(), SSL_is_server(ssl)?"accept":"connect", strerror(error));
         onError(SSL_SHAKEHAND_ERR, error);
     }
     sink_out_bio(0);
@@ -223,7 +224,7 @@ SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::sh
 }
 
 void SslRWer::write(Buffer&& bb) {
-    LOGD(DSSL, "[%s] send %zd bytes to fd %d, id: %" PRIu64"\n", server.c_str(), bb.len, getFd(), bb.id);
+    LOGD(DSSL, "(%s) send %zd bytes to fd %d, id: %" PRIu64"\n", server.c_str(), bb.len, getFd(), bb.id);
     addEvents(RW_EVENT::WRITE);
     wlen += bb.len;
     wbuff.emplace_back(std::move(bb));
@@ -231,7 +232,7 @@ void SslRWer::write(Buffer&& bb) {
 
 void SslMer::write(Buffer&& bb) {
     //bb.id = id;
-    LOGD(DSSL, "[%s] send %zd bytes to mem, id: %" PRIu64"\n", server.c_str(), bb.len, bb.id);
+    LOGD(DSSL, "(%s) send %zd bytes to mem, id: %" PRIu64"\n", server.c_str(), bb.len, bb.id);
     addEvents(RW_EVENT::WRITE);
     wlen += bb.len;
     wbuff.emplace_back(std::move(bb));
@@ -271,7 +272,7 @@ void SslRWer::ReadData() {
             break;
         }
         ssize_t ret = read(this->getFd(), buff, std::min(sizeof(buff), left));
-        LOGD(DSSL, "[%s] read %d/%zd bytes from fd %d\n", server.c_str(), (int)ret, left, getFd());
+        LOGD(DSSL, "(%s) read %d/%zd bytes from fd %d\n", server.c_str(), (int)ret, left, getFd());
         if (ret > 0) {
             handleData(buff, (size_t)ret);
             //StreamRWer::ConsumeRData(0);
@@ -301,7 +302,7 @@ void SslRWer::waitconnectHE(RW_EVENT events) {
         return;
     }
     if (!!(events & RW_EVENT::WRITE)) {
-        LOGD(DSSL, "[%s] connected from fd %d, start handshark\n", server.c_str(), getFd());
+        LOGD(DSSL, "(%s) connected from fd %d, start handshark\n", server.c_str(), getFd());
         assert(!this->addrs.empty());
         setEvents(RW_EVENT::READWRITE);
         stats = RWerStats::Connected;
@@ -335,7 +336,7 @@ void SslMer::push_data(Buffer&& bb) {
         //shutdown by ssl, discard all data after that
         return;
     }
-    LOGD(DSSL, "[%s] read %d bytes from peer\n", server.c_str(), (int)bb.len);
+    LOGD(DSSL, "(%s) read %d bytes from peer\n", server.c_str(), (int)bb.len);
     if(bb.len == 0){
         stats = RWerStats::ReadEOF;
     } else {

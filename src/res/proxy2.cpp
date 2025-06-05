@@ -26,9 +26,6 @@ void Proxy2::clearIdle(uint32_t ms){
 }
 
 bool Proxy2::wantmore(const ReqStatus& status) {
-    if(!status.req){
-        return false;
-    }
     if(status.flags & (HTTP_REQ_COMPLETED | HTTP_CLOSED_F | HTTP_RST)){
         return false;
     }
@@ -294,7 +291,7 @@ void Proxy2::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer
         if(bb.len == 0){
             status.flags |= HTTP_REQ_COMPLETED;
             LOGD(DHTTP2, "<proxy2> recv data [%d]: EOF/%d\n", (int)bb.id, status.remotewinsize);
-            PushData({nullptr, id});
+            PushData({nullptr, 0, id});
             return 0;
         }
         LOGD(DHTTP2, "<proxy2> recv data [%d]: %zu/%d\n", (int)bb.id, bb.len, status.remotewinsize);
@@ -323,14 +320,12 @@ void Proxy2::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer
                 status.rw->Send(Buffer{nullptr, (uint64_t)id});
             }
         }
-        int delta = std::min((int)cap, status.buffer ?
-                                        MAX_BUF_LEN - (int)status.buffer->length():
-                                        MAX_BUF_LEN) - status.localwinsize;
+        int delta =  (status.buffer ?  MAX_BUF_LEN - (int)status.buffer->length(): MAX_BUF_LEN) - status.localwinsize;
         if(delta < FRAMEBODYLIMIT/2){
             return;
         }
         rwer->Unblock(id);
-        if(delta > FRAMEBODYLIMIT || status.localwinsize <= FRAMEBODYLIMIT/2){
+        if(delta > FRAMEBODYLIMIT && status.localwinsize <= MAX_BUF_LEN/2){
             LOGD(DHTTP2, "<proxy2> [%d] increased local window: %d -> %d\n",
                  (uint32_t)id, status.localwinsize, status.localwinsize + delta);
             status.localwinsize += ExpandWindowSize(id, delta);

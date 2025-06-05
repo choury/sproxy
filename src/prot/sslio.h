@@ -3,6 +3,7 @@
 
 #include "netio.h"
 #include "memio.h"
+#include "misc/net.h"
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
@@ -64,13 +65,15 @@ protected:
     }
     virtual void waitconnectHE(RW_EVENT events) override;
     virtual void ConsumeRData(uint64_t id) override {
-        sink_in_bio(id);
+        while(sink_in_bio(id));
         StreamRWer::ConsumeRData(id);
     }
 public:
     SslRWer(SSL_CTX* ctx, int fd, const sockaddr_storage* peer, std::shared_ptr<IRWerCallback> cb):
             SslRWerBase(ctx), StreamRWer(fd, peer, std::move(cb))
-    {}
+    {
+        set_server_name(storage_ntoa(peer));
+    }
 
     SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::shared_ptr<IRWerCallback> cb);
     virtual void ReadData() override;
@@ -102,13 +105,15 @@ protected:
         return BIO_ctrl_pending(in_bio) + MemRWer::rlength(id);
     }
     virtual void ConsumeRData(uint64_t id) override {
-        sink_in_bio(id);
+        while(sink_in_bio(id));
         MemRWer::ConsumeRData(id);
     }
 public:
     SslMer(SSL_CTX* ctx, const Destination& src, std::shared_ptr<IMemRWerCallback> _cb):
       SslRWerBase(ctx), MemRWer(src, std::move(_cb))
-    {}
+    {
+        set_server_name(src.hostname);
+    }
     virtual void push_data(Buffer&& bb) override;
     void Send(Buffer&& bb) override;
 

@@ -42,8 +42,8 @@ void MemRWer::connected(const sockaddr_storage& addr) {
 
 void MemRWer::push_data(Buffer&& bb) {
     assert(stats != RWerStats::ReadEOF);
-    LOGD(DRWER, "<MemRWer> push_data [%" PRIu32"]: %zd, id:%" PRIu64", refs: %zd\n",
-         flags, bb.len, bb.id, bb.refs());
+    LOGD(DRWER, "<MemRWer> <%d> %s push_data [%" PRIu64"]: %zd, refs: %zd\n",
+         getFd(), dumpDest(src).c_str(), bb.id, bb.len, bb.refs());
     rlen += bb.len;
     if(bb.len == 0){
         stats = RWerStats::ReadEOF;
@@ -56,6 +56,8 @@ void MemRWer::push_data(Buffer&& bb) {
 }
 
 void MemRWer::push_signal(Signal s) {
+    LOGD(DRWER, "<MemRWer> <%d> %s push_signal: %d\n",
+         getFd(), dumpDest(src).c_str(), (int)s);
     if (flags & RWER_CLOSING){
         return;
     }
@@ -128,7 +130,7 @@ void MemRWer::ConsumeRData(uint64_t id) {
 ssize_t MemRWer::Write(std::set<uint64_t>& writed_list) {
     size_t len = 0;
     if(_callback.expired()){
-        if(wlen) LOGE("MemRWer callback expired, left: %zd\n", wlen);
+        if(wlen) LOGE("MemRWer <%d> %s callback expired, left: %zd\n", getFd(), dumpDest(src).c_str(), wlen);
         delEvents(RW_EVENT::WRITE);
         errno = EPIPE;
         return -1;
@@ -139,11 +141,13 @@ ssize_t MemRWer::Write(std::set<uint64_t>& writed_list) {
         size_t blen = it->len;
         if (blen) {
             ret = write_cb(std::ref(*it));
-            LOGD(DRWER, "write_cb %d wlen: %zd, len: %zd, ret: %zd\n", (int)it->id, wlen, blen, ret);
+            LOGD(DRWER, "<MemRWer> <%d> %s write_cb %d wlen: %zd, len: %zd, ret: %zd\n",
+                 getFd(), dumpDest(src).c_str(), (int)it->id, wlen, blen, ret);
         } else {
             assert(flags & RWER_SHUTDOWN);
             ret = write_cb(Buffer{nullptr, it->id});
-            LOGD(DRWER, "write_cb %d EOF, wlen: %zd\n", (int)it->id, wlen);
+            LOGD(DRWER, "<MemRWer> <%d> %s write_cb %d EOF, wlen: %zd\n",
+                 getFd(), dumpDest(src).c_str(), (int)it->id, wlen);
         }
         if(ret < 0){
             delEvents(RW_EVENT::WRITE);
@@ -195,8 +199,8 @@ void PMemRWer::push_data(Buffer&& bb) {
     defer([this]{ flags &= ~RWER_READING;});
 
     assert(stats != RWerStats::ReadEOF);
-    LOGD(DRWER, "<PMemRWer> push_data [%" PRIu32"]: %zd, id:%" PRIu64", refs: %zd\n",
-         flags, bb.len, bb.id, bb.refs());
+    LOGD(DRWER, "<PMemRWer> <%d> %s push_data [%" PRIu64"]: %zd, refs: %zd\n",
+         getFd(), dumpDest(src).c_str(), bb.id, bb.len, bb.refs());
     if(flags & RWER_CLOSING){
         return;
     }
