@@ -94,11 +94,12 @@ class QuicBBR: public QuicQos {
     void CheckProbeRTTCondition();     // 检查是否需要进入PROBE_RTT
     void UpdateBBRState();             // 更新BBR状态机
     bool IsFullBandwidthReached();     // 检查是否达到满带宽
-public:
-    QuicBBR(bool isServer, send_func sent, std::function<void(pn_namespace*, quic_frame*)> resendFrames);
-
     virtual void OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets, uint64_t ack_delay_us) override;
     virtual void OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets) override;
+    virtual void OnCongestionEvent(uint64_t sent_time) override;
+
+public:
+    QuicBBR(bool isServer, send_func sent, std::function<void(pn_namespace*, quic_frame*)> resendFrames);
     [[nodiscard]] virtual ssize_t windowLeft() const override;
 };
 

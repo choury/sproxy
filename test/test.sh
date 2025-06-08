@@ -189,6 +189,21 @@ function test_tproxy() {
     ip -6 rule add fwmark $1 lookup $1
     ip -6 route add local ::/0 dev lo table $1
 
+    function _tproxy_cleanup() {
+        iptables -t mangle -F PREROUTING
+        iptables -t mangle -F OUTPUT
+        ip rule del fwmark $1
+        ip route flush table $1
+
+        ip6tables -t mangle -F PREROUTING
+        ip6tables -t mangle -F OUTPUT
+        ip -6 rule del fwmark $1
+        ip -6 route flush table $1
+    }
+
+    trap "_tproxy_cleanup $1; cleanup " EXIT
+    trap "_tproxy_cleanup $1; trap cleanup EXIT" RETURN
+
     curl -k -f -v --http1.1 http://qq.com -A "Mozilla/5.0" > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "tproxy test 1 failed" && exit 1
     curl -6 -k -f -v --http2 https://www.qq.com -A "Mozilla/5.0" > /dev/null 2>> curl.log
@@ -203,16 +218,6 @@ function test_tproxy() {
         curl -k -f -v --http3-only https://www.taobao.com  > /dev/null 2>> curl.log
         [ $? -ne 0 ] && echo "tproxy test 5 failed" && exit 1
     fi
-
-    iptables -t mangle -F PREROUTING
-    iptables -t mangle -F OUTPUT
-    ip rule del fwmark $1
-    ip route flush table $1
-    
-    ip6tables -t mangle -F PREROUTING
-    ip6tables -t mangle -F OUTPUT
-    ip -6 rule del fwmark $1
-    ip -6 route flush table $1
 }
 
 function test_vpn(){
@@ -223,6 +228,19 @@ function test_vpn(){
     ip -6 rule add from all lookup 1 
     ip -6 rule add fwmark 1 lookup main
     ip -6 route add default dev tun0 table 1
+
+    function _vpn_cleanup() {
+        ip rule del fwmark 1 lookup main
+        ip rule del from all lookup 1
+        ip route flush table 1
+
+        ip -6 rule del fwmark 1 lookup main
+        ip -6 rule del from all lookup 1
+        ip -6 route flush table 1
+    }
+
+    trap "_vpn_cleanup; cleanup" EXIT
+    trap "_vpn_cleanup; trap cleanup EXIT" RETURN
 
     curl -k -f -v --http1.1 http://qq.com -A "Mozilla/5.0" > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "vpn test 1 failed" && exit 1
@@ -243,14 +261,6 @@ function test_vpn(){
     [ $? -ne 0 ] && echo "vpn test 6 failed" && exit 1
     ping -6 -c 3 example.com
     [ $? -ne 0 ] && echo "vpn test 7 failed" && exit 1
-
-    ip rule del fwmark 1 lookup main
-    ip rule del from all lookup 1 
-    ip route flush table 1
-    
-    ip -6 rule del fwmark 1 lookup main
-    ip -6 rule del from all lookup 1 
-    ip -6 route flush table 1
 }
 
 function test_sni(){

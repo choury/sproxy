@@ -14,11 +14,7 @@
 #include <set>
 
 const uint64_t max_datagram_size = 1500;
-const uint64_t kInitialWindow = 14720;
-const uint64_t kMinimumWindow = 2 * max_datagram_size;
 const uint64_t kGranularity = 1000; // 1ms
-const double  kLossReductionFactor = 0.5;
-const double  kPersistentCongestionThreshold = 3;
 
 #define QUIC_PACKET_NAMESPACE_INITIAL 0
 #define QUIC_PACKET_NAMESPACE_HANDSHAKE 1
@@ -34,9 +30,6 @@ class QuicQos {
 protected:
     size_t pto_count = 0;
     size_t bytes_in_flight = 0;
-    size_t congestion_window = kInitialWindow;
-    uint64_t congestion_recovery_start_time = 0;
-    uint64_t ssthresh = UINT64_MAX;
     uint64_t last_receipt_ack_time = 0;
     uint64_t his_max_ack_delay = 0;
     bool has_packet_been_congested = false;
@@ -56,9 +49,9 @@ protected:
 
     bool PeerCompletedAddressValidation();
     void SetLossDetectionTimer();
-    void OnCongestionEvent(uint64_t sent_time);
-    virtual void OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets);
-    virtual void OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets,  uint64_t ack_delay_us);
+    virtual void OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets) = 0;
+    virtual void OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets,  uint64_t ack_delay_us) = 0;
+    virtual void OnCongestionEvent(uint64_t sent_time) = 0;
     pn_namespace* GetNamespace(OSSL_ENCRYPTION_LEVEL level);
 public:
     Rtt    rtt;
@@ -73,7 +66,7 @@ public:
            std::function<void(pn_namespace*, quic_frame*)> resendFrames);
     virtual ~QuicQos();
     virtual void sendPacket();
-    [[nodiscard]] virtual ssize_t windowLeft() const;
+    [[nodiscard]] virtual ssize_t windowLeft() const = 0;
     void KeyGot(OSSL_ENCRYPTION_LEVEL level);
     void KeyLost(OSSL_ENCRYPTION_LEVEL level);
     //set ack_delay_exponent for app level

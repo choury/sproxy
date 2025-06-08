@@ -166,16 +166,18 @@ ssize_t QuicBBR::windowLeft() const {
     uint64_t btl_bw = btlBw.max() ?: BANDWIDTH_INIT;
     uint64_t pacing_rate = btl_bw * pacing_gain() / BBR_UNIT;
     size_t pacing_window = (now - last_sent_time) * pacing_rate / TIME_US_TO_S;
+    size_t window = 0;
     if (mode == BBR_STARTUP) {
         // STARTUP阶段使用无限大窗口，仅依靠pacing控制
-        return pacing_window;
+        window = pacing_window;
+    }else {
+        uint64_t bdp = btl_bw * rtProp.min() / TIME_US_TO_S;
+        window = std::min(bdp * cwnd_gain() / BBR_UNIT, (uint64_t)pacing_window);
     }
-
-    uint64_t bdp = btl_bw * rtProp.min() / TIME_US_TO_S;
-    if(bytes_in_flight < 2 * max_datagram_size) {
-        bdp = std::max(bdp, 2 * max_datagram_size - bytes_in_flight);
+    if(window + bytes_in_flight < 2 * max_datagram_size) {
+        return 2 * max_datagram_size - bytes_in_flight;
     }
-    return (int)std::min(bdp * cwnd_gain() / BBR_UNIT, (uint64_t)pacing_window);
+    return window;
 }
 
 // BBR v1状态机函数实现
@@ -293,4 +295,11 @@ void QuicBBR::UpdateBBRState() {
     
     // 所有状态都需要检查是否进入PROBE_RTT
     CheckProbeRTTCondition();
+}
+
+void QuicBBR::OnCongestionEvent(uint64_t /*sent_time*/) {
+    // ECN marks don't directly affect BBR's bandwidth or RTT measurements
+    // but indicate network congestion, so we might want to be more conservative
+    // This is a simplified implementation - more sophisticated BBR versions
+    // might adjust pacing rates based on ECN feedback
 }

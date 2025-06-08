@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <cxxabi.h>
+#include <inttypes.h>
 #ifdef HAVE_ELF
 #include <gelf.h>
 #endif
@@ -30,7 +31,7 @@ uint64_t parse_maps() {
     while (fgets(line, sizeof(line), maps)) {
         if (strstr(line, elf_path)) {
             // Parse the base address (start of the memory mapping)
-            sscanf(line, "%lx", &base_address);
+            sscanf(line, "%" SCNx64, &base_address);
             break;
         }
     }

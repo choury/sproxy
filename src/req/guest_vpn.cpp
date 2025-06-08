@@ -346,7 +346,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     case IPPROTO_UDP:{
         if(dport == DNSPORT) {
             status.flags |= VPN_DNSREQ_F;
-            status.rw = std::make_shared<PMemRWer>(addr, status.cb);
+            status.rw = std::make_shared<MemRWer>(addr, status.cb);
             FDns::GetInstance()->query(id, status.rw);
 #ifdef HAVE_QUIC
         } else if (dport == HTTPSPORT) {
@@ -378,7 +378,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                               getRdnsWithPort(pac->getdst()).c_str());
         status.req = UnpackHttpReq(buff, headlen);
         status.req->set("User-Agent", generateUA(opt.ua, status.prog, status.req->request_id));
-        status.rw = std::make_shared<PMemRWer>(addr, status.cb);
+        status.rw = std::make_shared<MemRWer>(addr, status.cb);
         distribute(status.req, status.rw, this);
         break;
     }
@@ -388,7 +388,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                               getRdnsWithPort(pac->getdst()).c_str());
         status.req = UnpackHttpReq(buff, headlen);
         status.req->set("User-Agent", generateUA(opt.ua, status.prog, status.req->request_id));
-        status.rw = std::make_shared<PMemRWer>(addr, status.cb);
+        status.rw = std::make_shared<MemRWer>(addr, status.cb);
         distribute(status.req, status.rw, this);
         break;
     }
