@@ -74,6 +74,7 @@ struct options{
     int  trace_time;
     bool redirect_http;
     bool restrict_local;
+    const char* quic_cc_algorithm;  // QUIC congestion control algorithm: "cubic" or "bbr"
 
     FILE* policy_read;
     FILE* policy_write;

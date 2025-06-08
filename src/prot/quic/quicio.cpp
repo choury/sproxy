@@ -6,6 +6,7 @@
 #include "quic_pack.h"
 #include "misc/net.h"
 #include "misc/defer.h"
+#include "misc/config.h"
 #include "prot/tls.h"
 #include "prot/multimsg.h"
 #include <openssl/err.h>
@@ -78,7 +79,7 @@ void QuicBase::dropkey(OSSL_ENCRYPTION_LEVEL level) {
     contexts[level].hasKey = false;
     memset(&contexts[level].read_secret, 0, sizeof(quic_secret));
     memset(&contexts[level].write_secret, 0, sizeof(quic_secret));
-    qos.KeyLost(level);
+    qos->KeyLost(level);
 }
 
 QuicBase::quic_context* QuicBase::getContext(uint8_t type) {
@@ -109,7 +110,7 @@ int QuicBase::set_encryption_secrets(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
     {
         return 0;
     }
-    rwer->qos.KeyGot(level);
+    rwer->qos->KeyGot(level);
     rwer->contexts[level].hasKey = true;
     if(rwer->ctx) {
         //drop init key if client mode
@@ -129,7 +130,7 @@ int QuicBase::set_read_secret(SSL* ssl,
     if(quic_secret_set_key(&rwer->contexts[level].read_secret, (const char*)secret, cipher) < 0) {
         return 0;
     }
-    rwer->qos.KeyGot(level);
+    rwer->qos->KeyGot(level);
     rwer->contexts[level].hasKey = true;
     if(rwer->ctx) {
         //drop init key if client mode
@@ -328,14 +329,14 @@ int QuicBase::add_handshake_data(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
     frame->crypto.offset = context->crypto_offset;
     frame->crypto.length = len;
     frame->crypto.buffer->truncate(len);
-    rwer->qos.PushFrame(level, frame);
+    rwer->qos->PushFrame(level, frame);
     context->crypto_offset += len;
     return 1;
 }
 
 int QuicBase::flush_flight(SSL *ssl){
     QuicBase* rwer = (QuicBase*)SSL_get_app_data(ssl);
-    rwer->qos.sendPacket();
+    rwer->qos->sendPacket();
     return 1;
 }
 
@@ -352,8 +353,8 @@ int QuicBase::send_alert(SSL *ssl, OSSL_ENCRYPTION_LEVEL level, uint8_t alert){
     frame->close.reason = nullptr;
 
     LOGD(DQUIC, "[%d] cc ssl send_alert: %d\n", level, alert);
-    rwer->qos.PushFrame(level, frame);
-    rwer->qos.sendPacket();
+    rwer->qos->PushFrame(level, frame);
+    rwer->qos->sendPacket();
     rwer->onError(PROTOCOL_ERR, QUIC_CRYPTO_ERROR);
     return 1;
 }
@@ -392,7 +393,7 @@ void QuicBase::generateCid() {
         //only client has init secret now.
         quic_generate_initial_key(1, hisid.data(), hisid.length(), &contexts[0].write_secret);
         quic_generate_initial_key(0, hisid.data(), hisid.length(), &contexts[0].read_secret);
-        qos.KeyGot(ssl_encryption_initial);
+        qos->KeyGot(ssl_encryption_initial);
         contexts[0].hasKey = true;
     }
 
@@ -533,7 +534,7 @@ void QuicBase::getParams(const uint8_t* data, size_t len) {
             uint64_t ack_delay_exponent;
             variable_decode(pos, &ack_delay_exponent);
             LOGD(DQUIC, "get ack delay exponent: %" PRIu64"\n", ack_delay_exponent);
-            qos.SetAckDelayExponent(ack_delay_exponent);
+            qos->SetAckDelayExponent(ack_delay_exponent);
             break;
         }
         case quic_max_ack_delay:
@@ -573,13 +574,14 @@ void QuicBase::getParams(const uint8_t* data, size_t len) {
 }
 
 QuicBase::QuicBase(const char* hostname):
-        qos(false,
+        qos(createQos(
+            false,  // isServer = false
             [this] (auto&& v1, auto&& v2, auto&& v3, auto&& v4, auto&& v5) {
                 return this->send(v1, v2, v3, v4, v5);
             },
             [this] (auto&& v1, auto&& v2) {
                 resendFrames(v1, v2);
-            })
+            }))
 {
     ctx = SSL_CTX_new(TLS_client_method());
     if (ctx == nullptr) {
@@ -625,13 +627,14 @@ QuicBase::QuicBase(const char* hostname):
 }
 
 QuicBase::QuicBase(SSL_CTX *ctx):
-        qos(true,
+        qos(createQos(
+            true,   // isServer = true
             [this](auto&& v1, auto&& v2, auto&& v3, auto&& v4, auto&& v5){
                 return this->send(v1, v2, v3, v4, v5);
             },
             [this] (auto&& v1, auto&& v2) {
                 resendFrames(v1, v2);
-            })
+            }))
 {
     ssl = SSL_new(ctx);
     SSL_set_quic_method(ssl, &quic_method);
@@ -714,10 +717,10 @@ QuicBase::FrameResult QuicBase::handleCryptoFrame(quic_context* context, const q
         if(ssl_get_error(ssl, SSL_do_handshake(ssl)) == 1){
             LOGD(DQUIC, "SSL_do_handshake succeed\n");
             his_max_ack_delay = his_max_ack_delay?:25;
-            qos.SetMaxAckDelay(his_max_ack_delay);
+            qos->SetMaxAckDelay(his_max_ack_delay);
             if(ctx == nullptr){
                 //send handshake done frame to client
-                qos.PushFrame(ssl_encryption_application, new quic_frame{QUIC_FRAME_HANDSHAKE_DONE, {}});
+                qos->PushFrame(ssl_encryption_application, new quic_frame{QUIC_FRAME_HANDSHAKE_DONE, {}});
                 dropkey(ssl_encryption_handshake);
             }else{
                 //discard token from retry packet.
@@ -805,7 +808,7 @@ QuicBase::FrameResult QuicBase::handleStreamFrame(uint64_t type, const quic_stre
     auto id = stream->id;
     if(isBidirect(id) ? id > my_max_streams_bidi : id > my_max_streams_uni) {
         onError(PROTOCOL_ERR, QUIC_STREAM_LIMIT_ERROR);
-        qos.PushFrame(ssl_encryption_application, new quic_frame{
+        qos->PushFrame(ssl_encryption_application, new quic_frame{
             .type = QUIC_FRAME_CONNECTION_CLOSE,
             .close = {
                 .error = QUIC_STREAM_LIMIT_ERROR,
@@ -839,7 +842,7 @@ QuicBase::FrameResult QuicBase::handleStreamFrame(uint64_t type, const quic_stre
 
         if(std::max(stream->offset + stream->length, want) > status.finSize) {
             onError(PROTOCOL_ERR, QUIC_FINAL_SIZE_ERROR);
-            qos.PushFrame(ssl_encryption_application, new quic_frame{
+            qos->PushFrame(ssl_encryption_application, new quic_frame{
                 .type = QUIC_FRAME_CONNECTION_CLOSE,
                 .close = {
                     .error = QUIC_FINAL_SIZE_ERROR,
@@ -854,7 +857,7 @@ QuicBase::FrameResult QuicBase::handleStreamFrame(uint64_t type, const quic_stre
     uint64_t his_offset = stream->offset + stream->length;
     if(his_offset > status.my_max_data) {
         onError(PROTOCOL_ERR, QUIC_FLOW_CONTROL_ERROR);
-        qos.PushFrame(ssl_encryption_application, new quic_frame{
+        qos->PushFrame(ssl_encryption_application, new quic_frame{
             .type = QUIC_FRAME_CONNECTION_CLOSE,
             .close = {
                 .error = QUIC_FLOW_CONTROL_ERROR,
@@ -883,7 +886,7 @@ QuicBase::FrameResult QuicBase::handleStreamFrame(uint64_t type, const quic_stre
     size_t len = stream->length + stream->offset - want;
     if(status.rb.put(start, len) < 0){
         onError(PROTOCOL_ERR, QUIC_FLOW_CONTROL_ERROR);
-        qos.PushFrame(ssl_encryption_application, new quic_frame{
+        qos->PushFrame(ssl_encryption_application, new quic_frame{
             .type = QUIC_FRAME_CONNECTION_CLOSE,
             .close = {
                 .error = QUIC_FLOW_CONTROL_ERROR,
@@ -926,7 +929,7 @@ QuicBase::FrameResult QuicBase::handleResetFrame(const quic_reset *stream) {
 
     if(want > stream->fsize){
         onError(PROTOCOL_ERR, QUIC_FINAL_SIZE_ERROR);
-        qos.PushFrame(ssl_encryption_application, new quic_frame{
+        qos->PushFrame(ssl_encryption_application, new quic_frame{
             .type = QUIC_FRAME_CONNECTION_CLOSE,
             .close = {
                 .error = QUIC_FINAL_SIZE_ERROR,
@@ -962,13 +965,13 @@ QuicBase::FrameResult QuicBase::handleHandshakeFrames(quic_context *context, con
     case QUIC_FRAME_CRYPTO:
         return handleCryptoFrame(context, &frame->crypto);
     case QUIC_FRAME_CONNECTION_CLOSE:
-        qos.DrainAll();
+        qos->DrainAll();
         isClosing = true;
         onError(SSL_SHAKEHAND_ERR, (int) frame->close.error);
         return FrameResult::error;
     default:
         onError(SSL_SHAKEHAND_ERR, QUIC_PROTOCOL_VIOLATION);
-        qos.PushFrame(context->level, new quic_frame{
+        qos->PushFrame(context->level, new quic_frame{
             .type = QUIC_FRAME_CONNECTION_CLOSE,
             .close = {
                 .error = QUIC_PROTOCOL_VIOLATION,
@@ -991,7 +994,7 @@ int QuicBase::handleHandshakePacket(const quic_pkt_header* header, std::deque<co
     auto context = getContext(header->type);
     while(!frames.empty()){
         auto frame = frames.front();
-        qos.handleFrame(context->level, header->pn, frame);
+        qos->handleFrame(context->level, header->pn, frame);
         switch(handleHandshakeFrames(context, frame)){
         case FrameResult::ok:
             frame_release(frame);
@@ -1022,7 +1025,7 @@ int QuicBase::handleRetryPacket(const quic_pkt_header* header){
     auto& context = contexts[0];
     quic_generate_initial_key(1, hisids[0].data(), hisids[0].length(), &context.write_secret);
     quic_generate_initial_key(0, hisids[0].data(), hisids[0].length(), &context.read_secret);
-    qos.HandleRetry();
+    qos->HandleRetry();
     return 0;
 }
 
@@ -1057,7 +1060,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
             quic_frame* frame = new quic_frame;
             frame->type = QUIC_FRAME_MAX_DATA;
             frame->extra = my_max_data;
-            qos.PushFrame(ssl_encryption_application, frame);
+            qos->PushFrame(ssl_encryption_application, frame);
         } else {
             LOGD(DQUIC, "No space to expand data size: %zd vs %zd %zd\n",
                  (size_t)recv_max_data, (size_t)my_max_data, (size_t)my_received_data);
@@ -1071,7 +1074,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
             quic_frame *frame = new quic_frame;
             frame->type = QUIC_FRAME_MAX_STREAMS_BI;
             frame->extra = my_max_streams_bidi;
-            qos.PushFrame(ssl_encryption_application, frame);
+            qos->PushFrame(ssl_encryption_application, frame);
         } else {
             LOGD(DQUIC, "No space to expand bidi-streams: %zd vs %zd %zd\n",
                  (size_t)recv_max_streams_bidi, (size_t)my_max_streams_bidi, (size_t)my_received_max_bidistream_id/4);
@@ -1085,7 +1088,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
             quic_frame *frame = new quic_frame;
             frame->type = QUIC_FRAME_MAX_STREAMS_UBI;
             frame->extra = my_max_streams_uni;
-            qos.PushFrame(ssl_encryption_application, frame);
+            qos->PushFrame(ssl_encryption_application, frame);
         } else {
             LOGD(DQUIC, "No space to expand uni-streams: %zd vs %zd %zd\n",
                  (size_t)recv_max_streams_uni, (size_t)my_max_streams_uni, (size_t)my_received_max_unistream_id/4);
@@ -1115,7 +1118,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
             reset->reset.id = frame->stop.id;
             reset->reset.fsize = status.my_offset;
             reset->reset.error = frame->stop.error;
-            qos.PushFrame(ssl_encryption_application, reset);
+            qos->PushFrame(ssl_encryption_application, reset);
         }
         if((status.flags & STREAM_FLAG_RESET_DELIVED) == 0){
             status.flags |= STREAM_FLAG_RESET_DELIVED;
@@ -1144,7 +1147,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
             if((*i)->stream.offset + (*i)->stream.length > new_max_data) {
                 break;
             }
-            qos.PushFrame(ssl_encryption_application, *i);
+            qos->PushFrame(ssl_encryption_application, *i);
             if((*i)->type & QUIC_FRAME_STREAM_FIN_F) {
                 status.flags |= STREAM_FLAG_FIN_SENT;
             }
@@ -1176,7 +1179,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
             frame->type = QUIC_FRAME_MAX_STREAM_DATA;
             frame->max_stream_data.id = itr->first;
             frame->max_stream_data.max = my_max_data;
-            qos.PushFrame(ssl_encryption_application, frame);
+            qos->PushFrame(ssl_encryption_application, frame);
         } else {
             LOGD(DQUIC, "No space to expand stream [%d]: %zd vs %zd vs %zd\n", (int)frame->max_stream_data.id,
                  (size_t)recv_max_data, (size_t)my_max_data, (size_t)itr->second.my_max_data);
@@ -1187,7 +1190,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
         return handleResetFrame(&frame->reset);
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:
-        qos.DrainAll();
+        qos->DrainAll();
         isClosing = true;
         onError(PROTOCOL_ERR, (int) frame->close.error);
         return FrameResult::error;
@@ -1212,7 +1215,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
         for(auto i = hisid_idx; i < frame->new_id.retired; i++){
             quic_frame* frame = new quic_frame{QUIC_FRAME_RETIRE_CONNECTION_ID, {}};
             frame->extra = i;
-            qos.PushFrame(ssl_encryption_application, frame);
+            qos->PushFrame(ssl_encryption_application, frame);
         }
         hisid_idx = frame->new_id.retired;
         return FrameResult::ok;
@@ -1237,7 +1240,7 @@ void QuicBase::notifyBlocked(uint64_t id) {
     if(my_sent_data + 10 * my_max_payload_size >= his_max_data) {
         quic_frame* block = new quic_frame{QUIC_FRAME_MAX_DATA, {}};
         block->extra = his_max_data;
-        qos.PushFrame(ssl_encryption_application, block);
+        qos->PushFrame(ssl_encryption_application, block);
     }
     if(!canSend(id)) {
         return;
@@ -1248,7 +1251,7 @@ void QuicBase::notifyBlocked(uint64_t id) {
         quic_frame* block = new quic_frame{QUIC_FRAME_STREAM_DATA_BLOCKED, {}};
         block->stream_data_blocked.id = id;
         block->stream_data_blocked.size = stream.his_max_data;
-        qos.PushFrame(ssl_encryption_application, block);
+        qos->PushFrame(ssl_encryption_application, block);
     }
 }
 
@@ -1265,19 +1268,19 @@ void QuicBase::resendFrames(pn_namespace* ns, quic_frame *frame) {
         frame_release(frame);
         break;
     case QUIC_FRAME_CRYPTO:
-        qos.FrontFrame(ns, frame);
+        qos->FrontFrame(ns, frame);
         break;
     case QUIC_FRAME_HANDSHAKE_DONE:
-        qos.FrontFrame(ns, frame);
+        qos->FrontFrame(ns, frame);
         break;
     case QUIC_FRAME_RESET_STREAM:
     case QUIC_FRAME_STOP_SENDING:
         //FIXME: as rfc9000#13.3
-        qos.FrontFrame(ns, frame);
+        qos->FrontFrame(ns, frame);
         break;
     case QUIC_FRAME_MAX_DATA:
         frame->extra = my_max_data;
-        qos.FrontFrame(ns, frame);
+        qos->FrontFrame(ns, frame);
         break;
     case QUIC_FRAME_MAX_STREAM_DATA: {
         uint64_t id = frame->max_stream_data.id;
@@ -1288,17 +1291,17 @@ void QuicBase::resendFrames(pn_namespace* ns, quic_frame *frame) {
         auto& stream = streammap[id];
         stream.my_max_data =  stream.rb.Offset() + stream.rb.length() + stream.rb.cap();
         frame->max_stream_data.max = stream.my_max_data;
-        qos.FrontFrame(ns, frame);
+        qos->FrontFrame(ns, frame);
         break;
     }
     case QUIC_FRAME_MAX_STREAMS_BI: {
         frame->extra = my_max_streams_bidi;
-        qos.FrontFrame(ns, frame);
+        qos->FrontFrame(ns, frame);
         break;
     }
     case QUIC_FRAME_MAX_STREAMS_UBI: {
         frame->extra = my_max_streams_uni;
-        qos.FrontFrame(ns, frame);
+        qos->FrontFrame(ns, frame);
         break;
     }
     case QUIC_FRAME_DATA_BLOCKED:
@@ -1322,15 +1325,15 @@ void QuicBase::resendFrames(pn_namespace* ns, quic_frame *frame) {
                 fframe->stream.offset = frame->stream.offset;
                 fframe->stream.length = his_max_payload_size;
                 fframe->stream.buffer = new Buffer(*frame->stream.buffer);
-                qos.FrontFrame(ns, fframe);
+                qos->FrontFrame(ns, fframe);
                 frame->stream.offset += his_max_payload_size;
                 frame->stream.length -= his_max_payload_size;
                 frame->stream.buffer->reserve((int)his_max_payload_size);
             }
-            qos.PushFrame(ns, frame);
+            qos->PushFrame(ns, frame);
         }else {
             //FIXME: implement other frame type resend logic
-            qos.PushFrame(ns, frame);
+            qos->PushFrame(ns, frame);
         }
     }
 }
@@ -1342,7 +1345,7 @@ int QuicBase::handle1RttPacket(const quic_pkt_header* header, std::deque<const q
                                 std::min(30000, (int)max_idle_timeout/2));
     while(!frames.empty()) {
         auto frame = frames.front();
-        auto acked = qos.handleFrame(context->level, header->pn, frame);
+        auto acked = qos->handleFrame(context->level, header->pn, frame);
         for(auto& id: acked) {
             if(!canSend(id)) {
                 continue;
@@ -1356,7 +1359,7 @@ int QuicBase::handle1RttPacket(const quic_pkt_header* header, std::deque<const q
             break;
         case FrameResult::skip:
             //有丢包，立即发送ack
-            qos.sendPacket();
+            qos->sendPacket();
             context->recvq.insert(frame);
             frames.pop_front();
             break;
@@ -1422,7 +1425,7 @@ void QuicBase::sendData(Buffer&& bb) {
              id, stream.my_offset, stream.his_max_data, my_sent_data, his_max_data);
         return;
     }
-    qos.PushFrame(ssl_encryption_application, frame);
+    qos->PushFrame(ssl_encryption_application, frame);
     if(len == 0) {
         stream.flags |= STREAM_FLAG_FIN_SENT;
     }
@@ -1446,10 +1449,10 @@ void QuicBase::close(uint64_t error) {
         frame->close.frame_type = 0;
         frame->close.reason_len = 0;
         frame->close.reason = nullptr;
-        qos.PushFrame(context->level, frame);
+        qos->PushFrame(context->level, frame);
         close_timer = UpdateJob(std::move(close_timer),
                                 [this]{onError(PROTOCOL_ERR, QUIC_CONNECTION_CLOSED);},
-                                3 * qos.rtt.rttvar);
+                                3 * qos->rtt.rttvar);
         return 0;
     };
     // RWER_CLOSING in quic means we have sent or recv CLOSE_CONNECTION_APP frame,
@@ -1471,7 +1474,7 @@ void QuicBase::close(uint64_t error) {
         frame->close.frame_type = 0;
         frame->close.reason_len = 0;
         frame->close.reason = nullptr;
-        qos.PushFrame(ssl_encryption_application, frame);
+        qos->PushFrame(ssl_encryption_application, frame);
     }else{
         close_timer = UpdateJob(std::move(close_timer),
                                 [this]{onError(PROTOCOL_ERR, QUIC_CONNECTION_CLOSED);}, 0);
@@ -1523,7 +1526,7 @@ void QuicBase::walkPacket(const void* buff, size_t length) {
             originDcid = header.dcid;
             quic_generate_initial_key(0, header.dcid.data(), header.dcid.length(), &contexts[0].write_secret);
             quic_generate_initial_key(1, header.dcid.data(), header.dcid.length(), &contexts[0].read_secret);
-            qos.KeyGot(ssl_encryption_initial);
+            qos->KeyGot(ssl_encryption_initial);
             contexts[0].hasKey = true;
             onCidChange(originDcid, false);
 
@@ -1550,7 +1553,7 @@ void QuicBase::walkPacket(const void* buff, size_t length) {
                 LOG("quic key for level %d is invalid, discard it (%d).\n", context->level, body_len);
                 continue;
             }
-            header.pn_base = qos.GetLargestPn(context->level) + 1;
+            header.pn_base = qos->GetLargestPn(context->level) + 1;
             frames = decode_packet(pos - body_len, body_len, &header, &context->read_secret);
             if (frames.empty()) {
                 LOGD(DQUIC, "QUIC packet unpack failed, check stateless reset: %s\n",
@@ -1635,7 +1638,7 @@ void QuicBase::reset(uint64_t id, uint32_t code) {
         frame->reset.id = id;
         frame->reset.error = code;
         frame->reset.fsize = stream.my_offset;
-        qos.PushFrame(ssl_encryption_application, frame);
+        qos->PushFrame(ssl_encryption_application, frame);
     }
     if((stream.flags & STREAM_FLAG_STOP_SENT) ==0){
         stream.flags |= STREAM_FLAG_STOP_SENT;
@@ -1643,7 +1646,7 @@ void QuicBase::reset(uint64_t id, uint32_t code) {
         frame->type = QUIC_FRAME_STOP_SENDING;
         frame->stop.id = id;
         frame->stop.error = code;
-        qos.PushFrame(ssl_encryption_application, frame);
+        qos->PushFrame(ssl_encryption_application, frame);
     }
 }
 
@@ -1662,7 +1665,7 @@ ssize_t QuicBase::window(uint64_t id) {
     assert(my_sent_data <= his_max_data);
     int streamcap = (int)stream.his_max_data - (int)stream.my_offset;
     int globalcap = (int)his_max_data - (int)my_sent_data;
-    int window = std::max((int)qos.windowLeft(), BUF_LEN);
+    int window = std::max((int)qos->windowLeft(), BUF_LEN);
     return std::min({streamcap, globalcap, window});
 }
 
@@ -1769,7 +1772,7 @@ void QuicBase::sinkData(uint64_t id, QuicStreamStatus &status) {
         frame->type = QUIC_FRAME_MAX_STREAM_DATA;
         frame->max_stream_data.id = id;
         frame->max_stream_data.max = status.my_max_data;
-        qos.PushFrame(ssl_encryption_application, frame);
+        qos->PushFrame(ssl_encryption_application, frame);
     }
 }
 
@@ -1793,21 +1796,21 @@ void QuicBase::sinkData(uint64_t id) {
         quic_frame *frame = new quic_frame;
         frame->type = QUIC_FRAME_MAX_DATA;
         frame->extra = my_max_data;
-        qos.PushFrame(ssl_encryption_application, frame);
+        qos->PushFrame(ssl_encryption_application, frame);
     }
     if (my_max_streams_bidi - my_received_max_bidistream_id / 4 <= 100) {
         my_max_streams_bidi += 100;
         quic_frame *frame = new quic_frame;
         frame->type = QUIC_FRAME_MAX_STREAMS_BI;
         frame->extra = my_max_streams_bidi;
-        qos.PushFrame(ssl_encryption_application, frame);
+        qos->PushFrame(ssl_encryption_application, frame);
     }
     if (my_max_streams_uni - my_received_max_unistream_id / 4 <= 100) {
         my_max_streams_uni += 100;
         quic_frame *frame = new quic_frame;
         frame->type = QUIC_FRAME_MAX_STREAMS_UBI;
         frame->extra = my_max_streams_uni;
-        qos.PushFrame(ssl_encryption_application, frame);
+        qos->PushFrame(ssl_encryption_application, frame);
     }
     for(auto& i: to_clean){
         cleanStream(i);
@@ -1846,7 +1849,7 @@ void QuicBase::keepAlive_action() {
     if(isClosing){
         return;
     }
-    qos.PushFrame(ssl_encryption_application, new quic_frame{QUIC_FRAME_PING, {}});
+    qos->PushFrame(ssl_encryption_application, new quic_frame{QUIC_FRAME_PING, {}});
 }
 
 void QuicBase::dump(Dumper dp, void* param) {
@@ -1863,7 +1866,7 @@ void QuicBase::dump(Dumper dp, void* param) {
        my_max_data - my_received_data,
        his_max_data - my_sent_data,
        rblen, fullq.size(),
-       qos.PendingSize(ssl_encryption_application), (int)qos.windowLeft());
+       qos->PendingSize(ssl_encryption_application), (int)qos->windowLeft());
     for(const auto& [id, stream]: streammap){
         dp(param, "  0x%lx: rlen: %zd-%zd, rcap: %zd, my_window: %zd, his_window: %zd, flags: 0x%08x\n",
            id, stream.rb.Offset(), stream.rb.Offset() + stream.rb.length(),
@@ -1873,7 +1876,7 @@ void QuicBase::dump(Dumper dp, void* param) {
 }
 
 size_t QuicBase::mem_usage() {
-    size_t usage = sizeof(*this) + qos.mem_usage();
+    size_t usage = sizeof(*this) + qos->mem_usage();
     for(const auto& context : contexts){
         for(const auto& frame : context.recvq.data){
             usage += frame_size(frame);

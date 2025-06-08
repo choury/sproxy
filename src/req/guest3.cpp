@@ -194,8 +194,8 @@ std::shared_ptr<IMemRWerCallback> Guest3::response(uint64_t id) {
         }
     })->onCap([this, id]() -> ssize_t {
         //这里是没办法准确计算cap的，因为rwer返回的可用量http3这里写的时候会再加头部数据
-        //如果还是不够，多出来的数据会放入quic的fullq队列中
-        return rwer->cap(id) - 9;
+        //多出来的数据会放入quic的fullq队列中
+        return rwer->cap(id);
     });
 }
 

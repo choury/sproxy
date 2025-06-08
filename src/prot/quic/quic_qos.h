@@ -42,6 +42,11 @@ protected:
     bool has_packet_been_congested = false;
     bool has_drain_all = false;
 
+    //used for bbr
+    size_t packets_sent = 0;
+    uint64_t last_sent_time = 0;
+    //end
+
     pn_namespace* pns[3];
     bool isServer = false;
     Job loss_timer = nullptr;
@@ -52,7 +57,7 @@ protected:
     bool PeerCompletedAddressValidation();
     void SetLossDetectionTimer();
     void OnCongestionEvent(uint64_t sent_time);
-    void OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets);
+    virtual void OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets);
     virtual void OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets,  uint64_t ack_delay_us);
     pn_namespace* GetNamespace(OSSL_ENCRYPTION_LEVEL level);
 public:
@@ -66,9 +71,9 @@ public:
                                            std::list<quic_frame*>& pend_frames, size_t window)> send_func;
     QuicQos(bool isServer, const send_func& sent,
            std::function<void(pn_namespace*, quic_frame*)> resendFrames);
-    ~QuicQos();
+    virtual ~QuicQos();
     virtual void sendPacket();
-    [[nodiscard]] ssize_t windowLeft() const;
+    [[nodiscard]] virtual ssize_t windowLeft() const;
     void KeyGot(OSSL_ENCRYPTION_LEVEL level);
     void KeyLost(OSSL_ENCRYPTION_LEVEL level);
     //set ack_delay_exponent for app level
@@ -87,5 +92,12 @@ public:
 
     size_t mem_usage();
 };
+
+// Factory function to create appropriate congestion control algorithm
+std::unique_ptr<QuicQos> createQos(
+    bool isServer,
+    const QuicQos::send_func& sent,
+    std::function<void(pn_namespace*, quic_frame*)> resendFrames
+);
 
 #endif //SPROXY_QUIC_QOS_H

@@ -371,6 +371,7 @@ insecure
 http 3333
 ssl  3334
 quic 3334
+quic-cc bbr
 debug all
 EOF
 

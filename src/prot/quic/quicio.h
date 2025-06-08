@@ -101,7 +101,7 @@ protected:
     bool isClosing = false;
     bool hasParam = false;
 
-    QuicQos qos;
+    std::unique_ptr<QuicQos> qos;
     struct quic_context{
         OSSL_ENCRYPTION_LEVEL  level;
         struct quic_secret     write_secret;

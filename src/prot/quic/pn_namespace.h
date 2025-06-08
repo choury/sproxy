@@ -56,7 +56,8 @@ public:
     std::list <quic_frame*>    pend_frames;
     std::list <quic_packet_pn> sent_packets;
 
-    size_t sendPacket(size_t window, size_t delivered_bytes, uint64_t delivered_time);
+    size_t sendPacket(size_t window);
+    size_t sendPacket(size_t window, size_t& packets_sent);
     void PendAck();
     std::list<quic_packet_meta> DetectAndRemoveAckedPackets(const quic_ack* ack, Rtt* rtt,
                                                             uint64_t& ack_delay_us, uint64_t max_delay_us);

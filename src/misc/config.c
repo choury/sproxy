@@ -109,6 +109,7 @@ struct options opt = {
     .trace_time        = 0,
     .redirect_http     = false,
     .restrict_local    = false,
+    .quic_cc_algorithm = NULL,
 
     .policy_read    = NULL,
     .policy_write   = NULL,
@@ -206,6 +207,7 @@ static struct option long_options[] = {
     {"policy-file",   required_argument, NULL, 'P'},
 #ifdef HAVE_QUIC
     {"quic",          required_argument, NULL, 'q'},
+    {"quic-cc",       required_argument, NULL,  0 },
 #endif
     {"redirect-http", no_argument,       NULL,  0 },
     {"restrict-local",no_argument,       NULL,  0 },
@@ -278,6 +280,7 @@ static struct option_detail option_detail[] = {
     {"policy-file", "The file of policy ("PREFIX"/etc/sproxy/sites.list as default)", option_string, &policy_file, NULL},
 #ifdef HAVE_QUIC
     {"quic", "Listen for QUIC server (experiment)", option_string, &quic_listen, NULL},
+    {"quic-cc", "QUIC congestion control algorithm (cubic, bbr)", option_string, &opt.quic_cc_algorithm, NULL},
 #endif
     {"redirect-http", "Return 308 to redirect http to https", option_bool, &opt.redirect_http, (void*)true},
     {"request-header", "append the header (name:value) before handle http request", option_list, &opt.request_headers, NULL},
@@ -604,6 +607,11 @@ void postConfig(){
         exit(1);
     }
     LOG("server %s\n", dumpDest(&opt.Server));
+
+    // 设置QUIC拥塞控制算法默认值
+    if(opt.quic_cc_algorithm == NULL) {
+        opt.quic_cc_algorithm = strdup("cubic");
+    }
 
     if(policy_file == NULL){
         policy_file = PREFIX "/etc/sproxy/sites.list";

@@ -308,15 +308,11 @@ struct quic_packet_meta{
     bool in_flight;
     size_t sent_bytes;
     uint64_t sent_time;
-    // below is used for bbr
-    bool app_limited;
-    size_t delivered_bytes;
-    uint64_t delivered_time;
-    //end for bbr
+    bool app_limited; // used for bbr
     std::set<uint64_t> streamIds;
     quic_packet_meta(uint64_t pn, size_t len):
-            pn(pn), ack_eliciting(false), in_flight(true), sent_bytes(len), sent_time(0),
-            app_limited(false), delivered_bytes(0), delivered_time(0) {}
+            pn(pn), ack_eliciting(false), in_flight(false), sent_bytes(len), sent_time(0),
+            app_limited(false) {}
 };
 
 struct quic_packet_pn{

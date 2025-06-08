@@ -8,6 +8,7 @@ set(quic_src
         quic_pack.cpp
         pn_namespace.cpp
         quic_qos.cpp
+        quic_bbr.cpp
 )
 
 target_sources(prot PRIVATE ${quic_src})

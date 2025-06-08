@@ -143,12 +143,20 @@ void pn_namespace::PendAck() {
     pend_frames.push_front(ack);
 }
 
-size_t pn_namespace::sendPacket(size_t window, size_t delivered_bytes, uint64_t delivered_time) {
+size_t pn_namespace::sendPacket(size_t window) {
+    size_t packets_sent;
+    return sendPacket(window, packets_sent);
+}
+
+size_t pn_namespace::sendPacket(size_t window, size_t& packets_sent) {
     auto packets = sent(current_pn, largest_acked_packet + 1, pend_frames, window);
     if(packets.empty()) {
+        packets_sent = 0;
         return 0;
     }
+    packets_sent = packets.size();  // 返回实际发送的包数
     current_pn = packets.back().meta.pn + 1;
+    bool app_limited = pend_frames.empty();
 
     size_t flight_size = 0;
     for(auto& packet: packets) {
@@ -158,8 +166,7 @@ size_t pn_namespace::sendPacket(size_t window, size_t delivered_bytes, uint64_t 
         if(packet.meta.ack_eliciting) {
             time_of_last_ack_eliciting_packet = packet.meta.sent_time;
         }
-        packet.meta.delivered_bytes = delivered_bytes;
-        packet.meta.delivered_time = delivered_time;
+        packet.meta.app_limited = app_limited;
     }
     sent_packets.splice(sent_packets.end(), packets);
     return flight_size;

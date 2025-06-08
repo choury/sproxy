@@ -222,7 +222,9 @@ void RWer::Close() {
 }
 
 void RWer::Unblock(uint64_t id){
-    if(flags & RWER_READING){
+    LOGD(DRWER, "unblock %d: <%" PRIu64 "> rlength: %zd, flags: 0x%x, stats: %d, events: %d\n",
+        getFd(), id, rlength(id), flags, (int)stats, (int)events);
+    if (flags & RWER_READING) {
         return;
     }
     switch(stats){
@@ -230,10 +232,10 @@ void RWer::Unblock(uint64_t id){
         if(!!(events & RW_EVENT::READ)){
             break;
         }
+        addEvents(RW_EVENT::READ);
         if(rlength(id) > 0) {
             ConsumeRData(id);
         }
-        addEvents(RW_EVENT::READ);
         break;
     case RWerStats::ReadEOF:
         if(flags & RWER_EOFDELIVED){
