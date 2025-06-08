@@ -148,8 +148,8 @@ bool Guest3::DataProc(Buffer& bb) {
             status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP3_ERR_STREAM_CREATION_ERROR);}), 0, 0);
             return true;
         }
-        if(status.rw->cap(bb.id) < (int)bb.len){
-            LOGE("[%" PRIu64 "]: <guest3> (%" PRIu64")the host's buff is full (%s)\n",
+        if(status.rw->bufsize() < bb.len){
+            LOGE("[%" PRIu64 "]: <guest3> (%" PRIu64") the host's buff is full (%s)\n",
                  status.req->request_id, bb.id, status.req->geturl().c_str());
             return false;
         }

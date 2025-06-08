@@ -139,8 +139,8 @@ void Guest2::DataProc(Buffer&& bb) {
             return;
         }
         status.localwinsize -= bb.len;
-        auto cap = status.rw->cap(bb.id);
-        if ((status.buffer && status.buffer->length() > 0) || (cap < (int)bb.len)) {
+        auto cap = status.rw->bufsize();
+        if ((status.buffer && status.buffer->length() > 0) || (cap < bb.len)) {
             //把多余的数据放到buffer里
             if(status.buffer == nullptr){
                 status.buffer = std::make_unique<EBuffer>();
@@ -214,7 +214,7 @@ std::shared_ptr<IMemRWerCallback> Guest2::response(uint64_t id) {
         }
     })->onWrite([this, id](uint64_t){
         ReqStatus& status = statusmap.at(id);
-        auto cap = status.rw->cap(id);
+        auto cap = status.rw->bufsize();
         if(cap <= 0) {
             return;
         }
@@ -355,7 +355,7 @@ void Guest2::dump_stat(Dumper dp, void* param) {
                 i.second.req->method,
                 i.second.req->geturl().c_str(),
                 i.second.localwinsize, i.second.remotewinsize,
-                (int)i.second.rw->cap(i.first),
+                (int)i.second.rw->bufsize(),
                 i.second.buffer ? (int)i.second.buffer->length() : 0,
                 getmtime() - std::get<1>(i.second.req->tracker[0]),
                 i.second.flags,
