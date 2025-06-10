@@ -12,7 +12,7 @@ build
 
 TODO
 ======
-- [ ] 支持动态生成pac文件
+- [x] 支持动态生成pac文件
 - [x] 支持quic协议
 - [x] 支持http3的sni功能
-- [ ] 支持quic bbr 拥塞算法
+- [x] 支持quic bbr 拥塞算法
