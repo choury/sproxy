@@ -37,7 +37,7 @@ class Ep{
 protected:
     RW_EVENT events = RW_EVENT::NONE;
     void setFd(int fd);
-    [[nodiscard]] int getFd() const;
+    [[nodiscard]] virtual int getFd() const;
 public:
     explicit Ep(int fd);
     virtual ~Ep();

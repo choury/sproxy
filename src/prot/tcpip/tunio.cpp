@@ -106,6 +106,9 @@ TunRWer::TunRWer(int fd, bool enable_offload, std::shared_ptr<IRWerCallback> cb)
         pcap = pcap_create(opt.pcap_file);
     }
     set_checksum_offload(enable_offload);
+#ifdef HAVE_URING
+    InitIoUring();
+#endif
     setEvents(RW_EVENT::READ);
 };
 
@@ -118,155 +121,176 @@ TunRWer::~TunRWer(){
     }
     statusmap.clear();
     pcap_close(pcap);
+#ifdef HAVE_URING
+    CleanupIoUring();
+#endif
+}
+
+int TunRWer::getFd() const{
+#ifdef HAVE_URING
+    if(use_io_uring) {
+        return ring.ring_fd;
+    }
+#endif
+    return Ep::getFd();
 }
 
 void TunRWer::ReadData() {
-    const size_t& TUN_BUF_LEN = 65536;
+#ifdef HAVE_URING
+    if (use_io_uring) {
+        HandleIoUringCompletion();
+        return;
+    }
+#endif
     while(true) {
         Block rbuff(TUN_BUF_LEN);
-        int ret = read(getFd(), rbuff.data(), TUN_BUF_LEN);
+        int ret = read(Ep::getFd(), rbuff.data(), TUN_BUF_LEN);
         LOGD(DVPN, "read %d bytes from tun\n", ret);
-        if(ret <= 0 && errno == EAGAIN) {
-            return;
-        }
-        size_t len = ret;
-#if __linux__
-        if(ret <= (int)sizeof(virtio_net_hdr_v1)) {
+        if(ret <= 0) {
+            if(errno == EAGAIN) return;
             ErrorHE(SOCKET_ERR, errno);
             return;
         }
-        if(enable_offload) {
-            auto hdr = (virtio_net_hdr_v1*)rbuff.data();
-            if(hdr->gso_type != VIRTIO_NET_HDR_GSO_NONE) {
-                LOGD(DVPN, "gso type: %d, gso size: %d, num: %d\n", hdr->gso_type, hdr->gso_size, hdr->num_buffers);
-            }
-            rbuff.reserve(sizeof(virtio_net_hdr_v1));
-            len -= sizeof(virtio_net_hdr_v1);
-        }
-#endif
-        pcap_write(pcap, rbuff.data(), len);
-        auto pac = MakeIp(rbuff.data(), len);
-        if(pac == nullptr){
-            continue;
-        }
-        debugString(pac, len - pac->gethdrlen());
-        VpnKey key(pac);
-
-        bool transIcmp = false;
-        if(pac->gettype() == IPPROTO_ICMP) {
-            uint16_t type = pac->icmp->gettype();
-            if(type ==  ICMP_UNREACH) {
-                auto icmp_pac = MakeIp((char*)rbuff.data() + pac->gethdrlen(), len-pac->gethdrlen());
-                if(icmp_pac == nullptr){
-                    continue;
-                }
-                transIcmp = true;
-                key = VpnKey(icmp_pac).reverse();
-                LOGD(DVPN, "get icmp unreach for: <%s> %s - %s\n",
-                     protstr(key.protocol), getRdnsWithPort(key.src).c_str(), getRdnsWithPort(key.dst).c_str());
-            }else if(!ICMP_PING(type)) {
-                LOGD(DVPN, "ignore icmp type: %d\n", type);
-                continue;
-            }
-        }else if(pac->gettype() == IPPROTO_ICMPV6) {
-            uint16_t type = pac->icmp6->gettype();
-            if(type == ICMP6_DST_UNREACH){
-                auto icmp6_pac = MakeIp((char*)rbuff.data() + pac->gethdrlen(), len-pac->gethdrlen());
-                if(icmp6_pac == nullptr){
-                    continue;
-                }
-                transIcmp = true;
-                key = VpnKey(icmp6_pac).reverse();
-                LOGD(DVPN, "get icmp6 unreach for: <%s> %s - %s\n",
-                     protstr(key.protocol), getRdnsWithPort(key.src).c_str(), getRdnsWithPort(key.dst).c_str());
-            }else if(!ICMP6_PING(type)) {
-                LOGD(DVPN, "ignore icmp6 type: %d\n", type);
-                continue;
-            }
-        }
-        std::shared_ptr<IpStatus> status;
-        if(!statusmap.Has(key)){
-            if(transIcmp) {
-                continue;
-            }
-            if(pac->getdport() == 0 || pac->getsport() == 0) {
-                LOG("<tunio> ignore invalid port: <%s> %s -> %s\n",
-                    protstr(key.protocol), getRdnsWithPort(key.src).c_str(), getRdnsWithPort(key.dst).c_str());
-                continue;
-            }
-            switch(key.protocol){
-            case Protocol::TCP:{
-                auto tstatus = std::make_shared<TcpStatus>();
-                tstatus->PkgProc = [tstatus](auto&& v1, auto&& v2){
-                    SynProc(tstatus, v1, std::forward<decltype(v2)>(v2));
-                };
-                tstatus->SendPkg = [tstatus](Buffer&& bb){::SendData(tstatus, std::move(bb));};
-                tstatus->UnReach = [tstatus](uint8_t code){Unreach(tstatus, code);};
-                tstatus->Cap = [tstatus]{return Cap(tstatus);};
-                status = tstatus;
-                break;
-            }
-            case Protocol::UDP:{
-                auto ustatus = std::make_shared<UdpStatus>();
-                ustatus->PkgProc = [ustatus](auto&& v1, auto&& v2){
-                    UdpProc(ustatus, v1, std::forward<decltype(v2)>(v2));
-                };
-                ustatus->SendPkg = [ustatus](Buffer&& bb){::SendData(ustatus, std::move(bb));};
-                ustatus->UnReach = [ustatus](uint8_t code){Unreach(ustatus, code);};
-                ustatus->Cap = [ustatus]{return Cap(ustatus);};
-                status = ustatus;
-                break;
-            }
-            case Protocol::ICMP:{
-                auto istatus = std::make_shared<IcmpStatus>();
-                istatus->PkgProc = [istatus](auto&& v1, auto&& v2) {
-                    IcmpProc(istatus, v1, std::forward<decltype(v2)>(v2));
-                };
-                istatus->SendPkg = [istatus](Buffer&& bb){::SendData(istatus, std::move(bb));};
-                istatus->UnReach = [istatus](uint8_t code){Unreach(istatus, code);};
-                istatus->Cap = [istatus]{return Cap(istatus);};
-                status = istatus;
-                break;
-            }
-            case Protocol::NONE:
-                LOGD(DVPN, "ignore unknow protocol: %d\n", pac->gettype());
-                continue;
-            default:
-                continue;
-            }
-            if(enable_offload){
-                status->flags = TUN_GSO_OFFLOAD;
-            }
-            status->reqCB = [this](std::shared_ptr<const Ip> pac){ReqProc(pac);};
-            status->dataCB = [this](std::shared_ptr<const Ip> pac, Buffer&& bb){
-                return DataProc(pac, std::move(bb));
-            };
-            status->ackCB = [this](std::shared_ptr<const Ip> pac){AckProc(pac);};
-            status->errCB = [this](std::shared_ptr<const Ip> pac, uint32_t code){ErrProc(pac, code);};
-            status->sendCB = [this](std::shared_ptr<const Ip> pac, const void* data, size_t len){
-                SendPkg(pac, data, len);
-            };
-            status->protocol = key.protocol;
-            status->src = pac->getsrc();
-            status->dst = pac->getdst();
-            statusmap.Add(nextId(), key, status);
-        }else{
-            if(transIcmp){
-                uint64_t id = statusmap.GetOne(key)->first.first;
-                if(auto cb = std::dynamic_pointer_cast<ITunCallback>(callback.lock()); cb){
-                    cb->resetHanlder(id, ICMP_UNREACH_ERR);
-                }
-                Clean(id);
-                continue;
-            }
-            status = statusmap.GetOne(key)->second;
-        }
-        if(status->packet_hdr == nullptr){
-            status->packet_hdr_len = pac->gethdrlen();
-            status->packet_hdr = std::make_shared<Block>(rbuff.data(), status->packet_hdr_len);
-        }
-        status->PkgProc(pac, {std::move(rbuff), len});
+        ProcessPacket((const char*)rbuff.data(), ret);
     }
+}
+
+void TunRWer::ProcessPacket(const char* rbuff, size_t len){
+#if __linux__
+    if(len <= (int)sizeof(virtio_net_hdr_v1)) {
+        return;
+    }
+    if(enable_offload) {
+        auto hdr = (virtio_net_hdr_v1*)rbuff;
+        if(hdr->gso_type != VIRTIO_NET_HDR_GSO_NONE) {
+            LOGD(DVPN, "gso type: %d, gso size: %d, num: %d\n", hdr->gso_type, hdr->gso_size, hdr->num_buffers);
+        }
+        rbuff += sizeof(virtio_net_hdr_v1);
+        len -= sizeof(virtio_net_hdr_v1);
+    }
+#endif
+    pcap_write(pcap, rbuff, len);
+    auto pac = MakeIp(rbuff, len);
+    if(pac == nullptr){
+        return;
+    }
+    debugString(pac, len - pac->gethdrlen());
+    VpnKey key(pac);
+
+    bool transIcmp = false;
+    if(pac->gettype() == IPPROTO_ICMP) {
+        uint16_t type = pac->icmp->gettype();
+        if(type ==  ICMP_UNREACH) {
+            auto icmp_pac = MakeIp(rbuff + pac->gethdrlen(), len-pac->gethdrlen());
+            if(icmp_pac == nullptr){
+                return;
+            }
+            transIcmp = true;
+            key = VpnKey(icmp_pac).reverse();
+            LOGD(DVPN, "get icmp unreach for: <%s> %s - %s\n",
+                    protstr(key.protocol), getRdnsWithPort(key.src).c_str(), getRdnsWithPort(key.dst).c_str());
+        }else if(!ICMP_PING(type)) {
+            LOGD(DVPN, "ignore icmp type: %d\n", type);
+            return;
+        }
+    }else if(pac->gettype() == IPPROTO_ICMPV6) {
+        uint16_t type = pac->icmp6->gettype();
+        if(type == ICMP6_DST_UNREACH){
+            auto icmp6_pac = MakeIp(rbuff + pac->gethdrlen(), len-pac->gethdrlen());
+            if(icmp6_pac == nullptr){
+                return;
+            }
+            transIcmp = true;
+            key = VpnKey(icmp6_pac).reverse();
+            LOGD(DVPN, "get icmp6 unreach for: <%s> %s - %s\n",
+                    protstr(key.protocol), getRdnsWithPort(key.src).c_str(), getRdnsWithPort(key.dst).c_str());
+        }else if(!ICMP6_PING(type)) {
+            LOGD(DVPN, "ignore icmp6 type: %d\n", type);
+            return;
+        }
+    }
+    std::shared_ptr<IpStatus> status;
+    if(!statusmap.Has(key)){
+        if(transIcmp) {
+            return;
+        }
+        if(pac->getdport() == 0 || pac->getsport() == 0) {
+            LOG("<tunio> ignore invalid port: <%s> %s -> %s\n",
+                protstr(key.protocol), getRdnsWithPort(key.src).c_str(), getRdnsWithPort(key.dst).c_str());
+            return;
+        }
+        switch(key.protocol){
+        case Protocol::TCP:{
+            auto tstatus = std::make_shared<TcpStatus>();
+            tstatus->PkgProc = [tstatus](auto&& v1, auto&& v2){
+                SynProc(tstatus, v1, std::forward<decltype(v2)>(v2));
+            };
+            tstatus->SendPkg = [tstatus](Buffer&& bb){::SendData(tstatus, std::move(bb));};
+            tstatus->UnReach = [tstatus](uint8_t code){Unreach(tstatus, code);};
+            tstatus->Cap = [tstatus]{return Cap(tstatus);};
+            status = tstatus;
+            break;
+        }
+        case Protocol::UDP:{
+            auto ustatus = std::make_shared<UdpStatus>();
+            ustatus->PkgProc = [ustatus](auto&& v1, auto&& v2){
+                UdpProc(ustatus, v1, std::forward<decltype(v2)>(v2));
+            };
+            ustatus->SendPkg = [ustatus](Buffer&& bb){::SendData(ustatus, std::move(bb));};
+            ustatus->UnReach = [ustatus](uint8_t code){Unreach(ustatus, code);};
+            ustatus->Cap = [ustatus]{return Cap(ustatus);};
+            status = ustatus;
+            break;
+        }
+        case Protocol::ICMP:{
+            auto istatus = std::make_shared<IcmpStatus>();
+            istatus->PkgProc = [istatus](auto&& v1, auto&& v2) {
+                IcmpProc(istatus, v1, std::forward<decltype(v2)>(v2));
+            };
+            istatus->SendPkg = [istatus](Buffer&& bb){::SendData(istatus, std::move(bb));};
+            istatus->UnReach = [istatus](uint8_t code){Unreach(istatus, code);};
+            istatus->Cap = [istatus]{return Cap(istatus);};
+            status = istatus;
+            break;
+        }
+        case Protocol::NONE:
+            LOGD(DVPN, "ignore unknow protocol: %d\n", pac->gettype());
+            return;
+        default:
+            return;
+        }
+        if(enable_offload){
+            status->flags = TUN_GSO_OFFLOAD;
+        }
+        status->reqCB = [this](std::shared_ptr<const Ip> pac){ReqProc(pac);};
+        status->dataCB = [this](std::shared_ptr<const Ip> pac, Buffer&& bb){
+            return DataProc(pac, std::move(bb));
+        };
+        status->ackCB = [this](std::shared_ptr<const Ip> pac){AckProc(pac);};
+        status->errCB = [this](std::shared_ptr<const Ip> pac, uint32_t code){ErrProc(pac, code);};
+        status->sendCB = [this](std::shared_ptr<const Ip> pac, const void* data, size_t len){
+            SendPkg(pac, data, len);
+        };
+        status->protocol = key.protocol;
+        status->src = pac->getsrc();
+        status->dst = pac->getdst();
+        statusmap.Add(nextId(), key, status);
+    }else{
+        if(transIcmp){
+            uint64_t id = statusmap.GetOne(key)->first.first;
+            if(auto cb = std::dynamic_pointer_cast<ITunCallback>(callback.lock()); cb){
+                cb->resetHanlder(id, ICMP_UNREACH_ERR);
+            }
+            Clean(id);
+            return;
+        }
+        status = statusmap.GetOne(key)->second;
+    }
+    if(status->packet_hdr == nullptr){
+        status->packet_hdr_len = pac->gethdrlen();
+        status->packet_hdr = std::make_shared<Block>(rbuff, status->packet_hdr_len);
+    }
+    status->PkgProc(pac, {rbuff, len});
 }
 
 //只有TCP有读缓冲，所以对其他情况都返回0
@@ -301,7 +325,7 @@ void TunRWer::SendPkg(std::shared_ptr<const Ip> pac, const void* data, size_t le
         debugString(pac, len - pac->gethdrlen());
         pcap_write(pcap, data, len);
     }
-    if(write(getFd(), data, len) < 0) {
+    if(write(Ep::getFd(), data, len) < 0) {
         LOGE("tunio: write error: %s\n", strerror(errno));
     }
 }
@@ -394,12 +418,6 @@ void TunRWer::sendMsg(uint64_t id, uint32_t msg) {
     }
 }
 
-#if 0
-void TunRWer::setResetHandler(std::function<void (uint64_t, uint32_t)> func) {
-    resetHanlder = std::move(func);
-}
-#endif
-
 ssize_t TunRWer::cap(uint64_t id) {
     if(!statusmap.Has(id)){
         return -1;
@@ -451,7 +469,8 @@ static void dumpConnection(Dumper dp, void* param,
 }
 
 void TunRWer::dump_status(Dumper dp, void *param) {
-    dp(param, "TunRwer <%d>: %p, session: %zd\n", getFd(), this, statusmap.size());
+    dp(param, "TunRwer <%d>: %p, io_uring: %s session: %zd\n",
+       Ep::getFd(), this, use_io_uring?"enable":"disable", statusmap.size());
     for(const auto& status : statusmap.data()) {
         dumpConnection(dp, param, status);
     }
@@ -493,3 +512,145 @@ size_t TunRWer::mem_usage() {
     }
     return usage;
 }
+
+#ifdef HAVE_URING
+void TunRWer::InitIoUring() {
+    if(!is_kernel_version_ge(6, 7)) {
+        // io_uring_prep_read_multishot only available since 6.7
+        LOG("kernel version is less than 6.7, disable io_uring\n");
+        return;
+    }
+    int ret = io_uring_queue_init(URING_QUEUE_DEPTH, &ring, 0);
+    if (ret < 0) {
+        LOGD(DVPN, "io_uring init failed: %s, falling back to regular read\n", strerror(-ret));
+        return;
+    }
+    defer([this]{
+        if(use_io_uring) {
+            return;
+        }
+        io_uring_queue_exit(&ring);
+    });
+    // Allocate buffer ring using liburing API
+    buf_ring = io_uring_setup_buf_ring(&ring, num_buffers, PBUF_RING_ID, 0, &ret);
+    if (!buf_ring || ret) {
+        LOGE("Failed to allocate buffer ring: %d\n", ret);
+        return;
+    }
+    defer([this]{
+        if(use_io_uring) {
+            return;
+        }
+        io_uring_free_buf_ring(&ring, buf_ring, num_buffers, PBUF_RING_ID);
+        buf_ring = nullptr;
+    });
+
+    // Allocate memory for the actual buffers
+    ring_buffer = aligned_alloc(getpagesize(), MAX_BUF_LEN);
+    if (!ring_buffer) {
+        LOGE("Failed to allocate memory for ring buffers\n");
+        return;
+    }
+    defer([this]{
+        if(use_io_uring) {
+            return;
+        }
+        free(ring_buffer);
+        ring_buffer = nullptr;
+    });
+
+    // Add all buffers to the ring
+    for (size_t i = 0; i < num_buffers; i++) {
+        void* buffer_addr = (char*)ring_buffer + (i * TUN_BUF_LEN);
+        io_uring_buf_ring_add(buf_ring, buffer_addr, TUN_BUF_LEN, i,
+                              io_uring_buf_ring_mask(num_buffers), i);
+    }
+    io_uring_buf_ring_advance(buf_ring, num_buffers);
+
+    use_io_uring = true;
+    LOGD(DVPN, "io_uring with PBUF_RING initialized successfully\n");
+    // Submit initial read request
+    SubmitRead();
+}
+
+void TunRWer::CleanupIoUring() {
+    if (!use_io_uring) {
+        return;
+    }
+    if (buf_ring) {
+        io_uring_free_buf_ring(&ring, buf_ring, num_buffers, PBUF_RING_ID);
+        buf_ring = nullptr;
+    }
+    if (ring_buffer) {
+        free(ring_buffer);
+        ring_buffer = nullptr;
+    }
+    io_uring_queue_exit(&ring);
+    use_io_uring = false;
+}
+
+void TunRWer::SubmitRead() {
+    struct io_uring_sqe* sqe = io_uring_get_sqe(&ring);
+    if (!sqe) {
+        LOGE("Failed to get SQE for read operation\n");
+        return;
+    }
+
+    // Try recv_multishot first, fallback to read if needed
+    io_uring_prep_read_multishot(sqe, Ep::getFd(), 0, 0, PBUF_RING_ID);
+    sqe->user_data = (uint64_t)ring_buffer;
+    int ret = io_uring_submit(&ring);
+    if (ret < 0) {
+        LOGE("Failed to submit read operation: %s\n", strerror(-ret));
+    }
+    LOGD(DVPN, "Multishot read submitted successfully\n");
+}
+
+void TunRWer::HandleIoUringCompletion() {
+    struct io_uring_cqe* cqe;
+    unsigned head;
+    unsigned cqe_count = 0;
+    bool shouldReArm = false;
+
+    io_uring_for_each_cqe(&ring, head, cqe) {
+        cqe_count++;
+        if (cqe->res > 0) {
+            // Successful read
+            int len = cqe->res;
+            int buf_id = cqe->flags >> IORING_CQE_BUFFER_SHIFT;
+            LOGD(DVPN, "io_uring read %d bytes from tun, buffer id: %d\n", len, buf_id);
+
+            // Calculate buffer address from ring buffer and buffer id
+            void* buffer_addr = (char*)ring_buffer + (buf_id * TUN_BUF_LEN);
+            ProcessPacket((const char*)buffer_addr, len);
+
+            // Return the buffer to the ring
+            io_uring_buf_ring_add(buf_ring, buffer_addr, TUN_BUF_LEN, buf_id, 
+                                  io_uring_buf_ring_mask(num_buffers), 0);
+            io_uring_buf_ring_advance(buf_ring, 1);
+        } else {
+            // Error or EOF
+            LOGD(DVPN, "io_uring read return error: %d\n", cqe->res);
+            if(-cqe->res == ENOBUFS) {
+                LOGD(DVPN, "io_uring no buf, restarting\n");
+                shouldReArm = true;
+            } else  {
+                LOGE("io_uring read error: %d\n", cqe->res);
+                ErrorHE(SOCKET_ERR, -cqe->res);
+                return;
+            }
+        }
+
+        // Check if multishot has ended (no MORE flag)
+        if (!(cqe->flags & IORING_CQE_F_MORE)) {
+            LOGD(DVPN, "io_uring ended, restarting\n");
+            shouldReArm = true;
+        }
+    }
+    io_uring_cq_advance(&ring, cqe_count);
+    if(shouldReArm) {
+        SubmitRead();
+    }
+}
+
+#endif

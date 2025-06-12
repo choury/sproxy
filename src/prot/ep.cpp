@@ -149,7 +149,7 @@ void Ep::setEvents(RW_EVENT events) {
     if(events == this->events){
         return;
     }
-    if (fd >= 0) {
+    if (getFd() >= 0) {
 #ifdef __linux__
         struct epoll_event event;
         event.data.ptr = this;
@@ -160,9 +160,9 @@ void Ep::setEvents(RW_EVENT events) {
         if(!!(events & RW_EVENT::WRITE)){
             event.events |= EPOLLOUT;
         }
-        int ret = epoll_ctl(efd, EPOLL_CTL_MOD, fd, &event);
+        int ret = epoll_ctl(efd, EPOLL_CTL_MOD, getFd(), &event);
         if (ret && errno == ENOENT) {
-            ret = epoll_ctl(efd, EPOLL_CTL_ADD, fd, &event);
+            ret = epoll_ctl(efd, EPOLL_CTL_ADD, getFd(), &event);
             if(ret){
                 LOGE("epoll_ctl add failed:%s\n", strerror(errno));
                 return;
@@ -194,7 +194,7 @@ void Ep::setEvents(RW_EVENT events) {
 #endif
         if(events != this->events) {
             assert(int(events) <= 3);
-            LOGD(DEVENT, "modify event %d: %s --> %s\n", fd, events_string[int(this->events)], events_string[int(events)]);
+            LOGD(DEVENT, "modify event %d: %s --> %s\n", getFd(), events_string[int(this->events)], events_string[int(events)]);
         }
         this->events = events;
     }
@@ -230,7 +230,7 @@ RW_EVENT Ep::getEvents(){
 }
 
 int Ep::checkSocket(const char* msg) const{
-    return Checksocket(fd, msg);
+    return Checksocket(getFd(), msg);
 }
 
 int event_loop(uint32_t timeout_ms){

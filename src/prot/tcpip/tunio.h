@@ -4,6 +4,10 @@
 #include "misc/index.h"
 #include "ipbase.h"
 
+#ifdef HAVE_URING
+#include <liburing.h>
+#endif
+
 struct VpnKey{
     Protocol    protocol;
     sockaddr_storage src;
@@ -39,6 +43,21 @@ class TunRWer: public RWer{
     int pcap = -1;
     bool enable_offload;
     Index2<uint64_t, VpnKey, std::shared_ptr<IpStatus>> statusmap;
+    static constexpr size_t TUN_BUF_LEN = 65536;
+    bool use_io_uring = false;
+#ifdef HAVE_URING
+    static constexpr size_t URING_QUEUE_DEPTH = 64;
+    static constexpr int PBUF_RING_ID = 0;
+    static constexpr size_t num_buffers = MAX_BUF_LEN / TUN_BUF_LEN;
+    struct io_uring ring;
+    struct io_uring_buf_ring* buf_ring = nullptr;
+    void* ring_buffer = nullptr;
+    void InitIoUring();
+    void CleanupIoUring();
+    void SubmitRead();
+    void HandleIoUringCompletion();
+#endif
+    void ProcessPacket(const char* rbuff, size_t len);
     uint64_t GetId(std::shared_ptr<const Ip> pac);
     std::shared_ptr<IpStatus> GetStatus(uint64_t id);
     void Clean(uint64_t id);
@@ -48,8 +67,8 @@ class TunRWer: public RWer{
     size_t DataProc(std::shared_ptr<const Ip> pac, Buffer&& bb);
     void AckProc(std::shared_ptr<const Ip> pac);
 
-    //virtual ssize_t Write(const void* buff, size_t len, uint64_t id) override;
 protected:
+    virtual int getFd() const override;
 public:
     explicit TunRWer(int fd, bool enable_offload, std::shared_ptr<IRWerCallback> cb);
     virtual ~TunRWer() override;

@@ -112,6 +112,7 @@ void flushconnect();
 uint64_t nextId();
 
 const char* getDeviceInfo();
+int is_kernel_version_ge(int required_major, int required_minor);
 #ifdef __cplusplus
 }
 #endif

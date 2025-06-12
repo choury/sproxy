@@ -270,6 +270,7 @@ struct Destination{
 #cmakedefine HAVE_QUIC
 #cmakedefine HAVE_BPF
 #cmakedefine HAVE_ELF
+#cmakedefine HAVE_URING
 #cmakedefine USE_BORINGSSL
 
 #define PREFIX "@CMAKE_INSTALL_PREFIX@"

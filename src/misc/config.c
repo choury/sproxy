@@ -897,3 +897,35 @@ void change_process_name(const char *name){
 uint64_t nextId(){
     return id++;
 }
+
+/**
+ * @brief 检查当前运行的内核版本是否大于或等于指定的版本。
+ * * @param required_major 需要的主版本号
+ * @param required_minor 需要的次版本号
+ * @return int 1 如果当前版本 >= 指定版本，否则返回 0。如果出错则返回 -1。
+ */
+int is_kernel_version_ge(int required_major, int required_minor) {
+    struct utsname kernel_info;
+    int major, minor;
+
+    if (uname(&kernel_info) != 0) {
+        LOGE("uname failed: %s\n", strerror(errno));
+        return -1; // 获取内核信息失败
+    }
+
+    // 从 release 字符串中解析主版本号和次版本号
+    // 例如 "6.8.9-arch1-2", sscanf 会成功解析出 6 和 8
+    if (sscanf(kernel_info.release, "%d.%d", &major, &minor) < 2) {
+        LOGE("Failed to parse kernel version from: %s\n", kernel_info.release);
+        return -1; // 解析失败
+    }
+
+    // 比较版本号
+    if (major > required_major) {
+        return 1; // 主版本号更大
+    }
+    if (major == required_major && minor >= required_minor) {
+        return 1; // 主版本号相同，次版本号大于或等于
+    }
+    return 0; // 版本过旧
+}
