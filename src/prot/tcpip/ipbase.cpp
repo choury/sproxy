@@ -48,5 +48,5 @@ void Unreach(std::shared_ptr<IpStatus> status, uint8_t code) {
         hdr->csum_offset = 2;
     }
 #endif
-    status->sendCB(pac, bb.data(), bb.len);
+    status->sendCB(pac, std::move(bb));
 }

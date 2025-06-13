@@ -104,7 +104,7 @@ static void tcpSend(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, 
         hdr->csum_offset = 16;
     }
 #endif
-    status->sendCB(pac, bb.data(), bb.len);
+    status->sendCB(pac, Buffer(bb));
 #if __linux__
     if (status->flags & TUN_GSO_OFFLOAD) {
         bb.reserve(sizeof(virtio_net_hdr_v1));

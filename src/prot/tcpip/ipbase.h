@@ -18,7 +18,7 @@ struct IpStatus{
     std::function<void(std::shared_ptr<const Ip>)> ackCB;
     std::function<size_t(std::shared_ptr<const Ip>, Buffer&&)> dataCB;
     std::function<void(std::shared_ptr<const Ip>, uint32_t)> errCB;
-    std::function<void(std::shared_ptr<const Ip>, const void*, size_t)> sendCB;
+    std::function<void(std::shared_ptr<const Ip>, Buffer&&)> sendCB;
 
     std::function<void(std::shared_ptr<const Ip>, Buffer&&)> PkgProc;
     std::function<void(Buffer&&)> SendPkg;

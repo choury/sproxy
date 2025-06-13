@@ -268,8 +268,8 @@ void TunRWer::ProcessPacket(const char* rbuff, size_t len){
         };
         status->ackCB = [this](std::shared_ptr<const Ip> pac){AckProc(pac);};
         status->errCB = [this](std::shared_ptr<const Ip> pac, uint32_t code){ErrProc(pac, code);};
-        status->sendCB = [this](std::shared_ptr<const Ip> pac, const void* data, size_t len){
-            SendPkg(pac, data, len);
+        status->sendCB = [this](std::shared_ptr<const Ip> pac, Buffer&& bb){
+            SendPkg(pac, std::move(bb));
         };
         status->protocol = key.protocol;
         status->src = pac->getsrc();
@@ -313,7 +313,10 @@ void TunRWer::ConsumeRData(uint64_t id) {
     }
 }
 
-void TunRWer::SendPkg(std::shared_ptr<const Ip> pac, const void* data, size_t len) {
+void TunRWer::SendPkg(std::shared_ptr<const Ip> pac, Buffer&& bb) {
+    const void* data = bb.data();
+    size_t len = bb.len;
+
 #if __linux__
     if(enable_offload) {
         debugString(pac, len - pac->gethdrlen() - sizeof(virtio_net_hdr_v1));
@@ -325,6 +328,28 @@ void TunRWer::SendPkg(std::shared_ptr<const Ip> pac, const void* data, size_t le
         debugString(pac, len - pac->gethdrlen());
         pcap_write(pcap, data, len);
     }
+
+#ifdef HAVE_URING
+    if (use_io_uring) {
+        struct io_uring_sqe* sqe = io_uring_get_sqe(&ring);
+        if (!sqe) {
+            LOGD(DVPN, "Failed to get SQE for write operation, queue full\n");
+            return;
+        }
+
+        io_uring_prep_write(sqe, Ep::getFd(), data, bb.len, 0);
+        sqe->user_data = (uint64_t)data;
+        write_buffer.emplace((uint64_t)data, std::move(bb));
+        submitter = updatejob_with_name(std::move(submitter), [this]{
+            int ret = io_uring_submit(&ring);
+            if(ret < 0) {
+                LOGE("io_uring_submit failed: %s\n", strerror(-ret));
+            }
+        }, "io_uring_submit", 0);
+        return;
+    }
+#endif
+
     if(write(Ep::getFd(), data, len) < 0) {
         LOGE("tunio: write error: %s\n", strerror(errno));
     }
@@ -546,8 +571,8 @@ void TunRWer::InitIoUring() {
     });
 
     // Allocate memory for the actual buffers
-    ring_buffer = aligned_alloc(getpagesize(), MAX_BUF_LEN);
-    if (!ring_buffer) {
+    read_buffer = aligned_alloc(getpagesize(), MAX_BUF_LEN);
+    if (!read_buffer) {
         LOGE("Failed to allocate memory for ring buffers\n");
         return;
     }
@@ -555,13 +580,13 @@ void TunRWer::InitIoUring() {
         if(use_io_uring) {
             return;
         }
-        free(ring_buffer);
-        ring_buffer = nullptr;
+        free(read_buffer);
+        read_buffer = nullptr;
     });
 
     // Add all buffers to the ring
     for (size_t i = 0; i < num_buffers; i++) {
-        void* buffer_addr = (char*)ring_buffer + (i * TUN_BUF_LEN);
+        void* buffer_addr = (char*)read_buffer + (i * TUN_BUF_LEN);
         io_uring_buf_ring_add(buf_ring, buffer_addr, TUN_BUF_LEN, i,
                               io_uring_buf_ring_mask(num_buffers), i);
     }
@@ -577,14 +602,19 @@ void TunRWer::CleanupIoUring() {
     if (!use_io_uring) {
         return;
     }
+
+    submitter = nullptr;
     if (buf_ring) {
         io_uring_free_buf_ring(&ring, buf_ring, num_buffers, PBUF_RING_ID);
         buf_ring = nullptr;
     }
-    if (ring_buffer) {
-        free(ring_buffer);
-        ring_buffer = nullptr;
+    if (read_buffer) {
+        free(read_buffer);
+        read_buffer = nullptr;
     }
+    // Clean up any pending writes
+    write_buffer.clear();
+
     io_uring_queue_exit(&ring);
     use_io_uring = false;
 }
@@ -598,12 +628,14 @@ void TunRWer::SubmitRead() {
 
     // Try recv_multishot first, fallback to read if needed
     io_uring_prep_read_multishot(sqe, Ep::getFd(), 0, 0, PBUF_RING_ID);
-    sqe->user_data = (uint64_t)ring_buffer;
-    int ret = io_uring_submit(&ring);
-    if (ret < 0) {
-        LOGE("Failed to submit read operation: %s\n", strerror(-ret));
-    }
-    LOGD(DVPN, "Multishot read submitted successfully\n");
+    sqe->user_data = 0;
+    submitter = updatejob_with_name(std::move(submitter), [this]{
+        int ret = io_uring_submit(&ring);
+        if(ret < 0) {
+            LOGE("io_uring_submit failed: %s\n", strerror(-ret));
+        }
+    }, "io_uring_submit", 0);
+    LOGD(DVPN, "Multishot read prepared successfully\n");
 }
 
 void TunRWer::HandleIoUringCompletion() {
@@ -614,37 +646,49 @@ void TunRWer::HandleIoUringCompletion() {
 
     io_uring_for_each_cqe(&ring, head, cqe) {
         cqe_count++;
-        if (cqe->res > 0) {
-            // Successful read
-            int len = cqe->res;
-            int buf_id = cqe->flags >> IORING_CQE_BUFFER_SHIFT;
-            LOGD(DVPN, "io_uring read %d bytes from tun, buffer id: %d\n", len, buf_id);
 
-            // Calculate buffer address from ring buffer and buffer id
-            void* buffer_addr = (char*)ring_buffer + (buf_id * TUN_BUF_LEN);
-            ProcessPacket((const char*)buffer_addr, len);
+        if (cqe->user_data == 0) {
+            // Read completion
+            if (cqe->res > 0) {
+                // Successful read
+                int len = cqe->res;
+                int buf_id = cqe->flags >> IORING_CQE_BUFFER_SHIFT;
+                LOGD(DVPN, "io_uring read %d bytes from tun, buffer id: %d\n", len, buf_id);
 
-            // Return the buffer to the ring
-            io_uring_buf_ring_add(buf_ring, buffer_addr, TUN_BUF_LEN, buf_id, 
-                                  io_uring_buf_ring_mask(num_buffers), 0);
-            io_uring_buf_ring_advance(buf_ring, 1);
-        } else {
-            // Error or EOF
-            LOGD(DVPN, "io_uring read return error: %d\n", cqe->res);
-            if(-cqe->res == ENOBUFS) {
-                LOGD(DVPN, "io_uring no buf, restarting\n");
-                shouldReArm = true;
-            } else  {
-                LOGE("io_uring read error: %d\n", cqe->res);
-                ErrorHE(SOCKET_ERR, -cqe->res);
-                return;
+                // Calculate buffer address from ring buffer and buffer id
+                void* buffer_addr = (char*)read_buffer + (buf_id * TUN_BUF_LEN);
+                ProcessPacket((const char*)buffer_addr, len);
+
+                // Return the buffer to the ring
+                io_uring_buf_ring_add(buf_ring, buffer_addr, TUN_BUF_LEN, buf_id, 
+                                      io_uring_buf_ring_mask(num_buffers), 0);
+                io_uring_buf_ring_advance(buf_ring, 1);
+            } else {
+                // Read error or EOF
+                LOGD(DVPN, "io_uring read return error: %d\n", cqe->res);
+                if(-cqe->res == ENOBUFS) {
+                    LOGD(DVPN, "io_uring no buf, restarting\n");
+                    shouldReArm = true;
+                } else  {
+                    LOGE("io_uring read error: %d\n", cqe->res);
+                    ErrorHE(SOCKET_ERR, -cqe->res);
+                    return;
+                }
             }
-        }
 
-        // Check if multishot has ended (no MORE flag)
-        if (!(cqe->flags & IORING_CQE_F_MORE)) {
-            LOGD(DVPN, "io_uring ended, restarting\n");
-            shouldReArm = true;
+            // Check if multishot has ended (no MORE flag)
+            if (!(cqe->flags & IORING_CQE_F_MORE)) {
+                LOGD(DVPN, "io_uring ended, restarting\n");
+                shouldReArm = true;
+            }
+        } else {
+            // Write completion (user_data == ptr)
+            if (cqe->res > 0) {
+                LOGD(DVPN, "io_uring wrote %d bytes to tun\n", cqe->res);
+            } else {
+                LOGE("io_uring write error: %d\n", cqe->res);
+            }
+            write_buffer.erase(cqe->user_data);
         }
     }
     io_uring_cq_advance(&ring, cqe_count);

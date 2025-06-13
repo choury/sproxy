@@ -1524,8 +1524,10 @@ void QuicBase::walkPacket(const void* buff, size_t length) {
         if(ctx == nullptr && header.type == QUIC_PACKET_INITIAL && originDcid.empty()){
             //Init something for server
             originDcid = header.dcid;
-            quic_generate_initial_key(0, header.dcid.data(), header.dcid.length(), &contexts[0].write_secret);
-            quic_generate_initial_key(1, header.dcid.data(), header.dcid.length(), &contexts[0].read_secret);
+            if(quic_generate_initial_key(0, header.dcid.data(), header.dcid.length(), &contexts[0].write_secret) ||
+                quic_generate_initial_key(1, header.dcid.data(), header.dcid.length(), &contexts[0].read_secret)) {
+                return;
+            }
             qos->KeyGot(ssl_encryption_initial);
             contexts[0].hasKey = true;
             onCidChange(originDcid, false);

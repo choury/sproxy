@@ -97,7 +97,7 @@ reply:
     storage_aton(VPNEND, DHCP_SERVER_PORT, &src);
     auto pac = MakeIp(IPPROTO_UDP, &src, &dst);
     makeUdp(status, pac, bb);
-    status->sendCB(pac, bb.data(), bb.len);
+    status->sendCB(pac, std::move(bb));
 }
 
 void UdpProc(std::shared_ptr<UdpStatus> status, std::shared_ptr<const Ip> pac, Buffer&& bb) {
@@ -142,7 +142,7 @@ void SendData(std::shared_ptr<UdpStatus> status, Buffer&& bb) {
 
     auto pac = MakeIp(IPPROTO_UDP, &status->dst, &status->src);
     makeUdp(status, pac, bb);
-    status->sendCB(pac, bb.data(), bb.len);
+    status->sendCB(pac, std::move(bb));
     status->ack_job = updatejob_with_name(std::move(status->ack_job),
                                           [ackCB = status->ackCB, rpac]{ackCB(rpac);},
                                           "udp_ack_job", 0);

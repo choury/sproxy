@@ -70,7 +70,7 @@ void SendData(std::shared_ptr<IcmpStatus> status, Buffer&& bb) {
         hdr->csum_offset = 2;
     }
 #endif
-    status->sendCB(pac, bb.data(), bb.len);
+    status->sendCB(pac, std::move(bb));
     status->ack_job = updatejob_with_name(std::move(status->ack_job),
                                           [ackCB = status->ackCB, rpac]{ackCB(rpac);},
                                           "icmp_ack_job", 0);

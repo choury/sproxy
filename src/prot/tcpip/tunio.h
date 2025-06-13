@@ -5,6 +5,7 @@
 #include "ipbase.h"
 
 #ifdef HAVE_URING
+#include "misc/job.h"
 #include <liburing.h>
 #endif
 
@@ -51,7 +52,10 @@ class TunRWer: public RWer{
     static constexpr size_t num_buffers = MAX_BUF_LEN / TUN_BUF_LEN;
     struct io_uring ring;
     struct io_uring_buf_ring* buf_ring = nullptr;
-    void* ring_buffer = nullptr;
+    void* read_buffer = nullptr;
+    std::unordered_map<uint64_t, Buffer> write_buffer;
+    Job submitter = nullptr;
+
     void InitIoUring();
     void CleanupIoUring();
     void SubmitRead();
@@ -61,7 +65,7 @@ class TunRWer: public RWer{
     uint64_t GetId(std::shared_ptr<const Ip> pac);
     std::shared_ptr<IpStatus> GetStatus(uint64_t id);
     void Clean(uint64_t id);
-    void SendPkg(std::shared_ptr<const Ip> pac, const void* data, size_t len);
+    void SendPkg(std::shared_ptr<const Ip> pac, Buffer&& bb);
     void ErrProc(std::shared_ptr<const Ip> pac, uint32_t code);
     void ReqProc(std::shared_ptr<const Ip> pac);
     size_t DataProc(std::shared_ptr<const Ip> pac, Buffer&& bb);

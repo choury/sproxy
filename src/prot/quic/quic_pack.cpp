@@ -404,7 +404,7 @@ static int hp_encode(const EVP_CIPHER* cipher,
 int quic_generate_initial_key(int client, const char* id, uint8_t id_len, struct quic_secret* secret){
     char prk[32];
     if(HKDF_Extract(id, id_len, prk) < 0){
-        LOGE("initial_secret failed\n");
+        LOGE("initial_secret failed: %.*s\n", id_len, id);
         return -1;
     }
 #ifdef USE_BORINGSSL
