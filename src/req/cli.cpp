@@ -109,6 +109,11 @@ void Cli::FlushStrategy() {
     reloadstrategy();
 }
 
+bool Cli::FlushCert() {
+    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    return flushcert() == 0;
+}
+
 bool Cli::SetServer(const std::string &server) {
     LOG("%s [%s] %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, server.c_str());
     Destination proxy;

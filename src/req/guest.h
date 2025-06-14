@@ -6,6 +6,8 @@
 #include "prot/memio.h"
 #include "misc/net.h"
 #include "misc/job.h"
+#include "misc/config.h"
+#include "prot/tls.h"
 
 #include <errno.h>
 #include <netinet/in.h>
@@ -49,12 +51,19 @@ public:
 template<class T>
 class Http_server: public Ep {
     SSL_CTX *ctx = nullptr;
+    uint ssl_cert_version = 0;
     virtual void defaultHE(RW_EVENT events) {
         if (!!(events & RW_EVENT::ERROR)) {
             LOGE("Http server: %d\n", checkSocket(__PRETTY_FUNCTION__));
             return;
         }
         if (!!(events & RW_EVENT::READ)) {
+            if (ctx && ssl_cert_version != opt.cert_version) {
+                SSL_CTX_free(ctx);
+                ctx = initssl(false, nullptr);
+                ssl_cert_version = opt.cert_version;
+                LOG("SSL context updated due to certificate reload (version %u)\n", ssl_cert_version);
+            }
             int clsk;
             struct sockaddr_storage hisaddr;
             socklen_t temp = sizeof(hisaddr);

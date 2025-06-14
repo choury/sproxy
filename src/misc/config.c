@@ -162,6 +162,8 @@ struct options opt = {
     },
     .pcap_len       = INT32_MAX,
     .fwmark         = 0,
+
+    .cert_version   = 0,
 };
 
 enum option_type{
@@ -928,4 +930,29 @@ int is_kernel_version_ge(int required_major, int required_minor) {
         return 1; // 主版本号相同，次版本号大于或等于
     }
     return 0; // 版本过旧
+}
+
+int flushcert() {
+    // 先清理动态生成的证书缓存
+    release_key_pair();
+
+    // 重新加载服务器证书
+    if(certfile && keyfile) {
+        int server_ret = reload_cert_key(certfile, keyfile, &opt.cert);
+        if(server_ret != 0) {
+            return server_ret;
+        }
+    }
+
+    // 重新加载CA证书（如果配置了的话）
+    if(opt.cafile && opt.cakey) {
+        int ca_ret = reload_cert_key(opt.cafile, opt.cakey, &opt.ca);
+        if(ca_ret != 0) {
+            return ca_ret;
+        }
+    }
+
+    opt.cert_version ++;
+    LOG("Certificate reload completed successfully, version: %u\n", opt.cert_version);
+    return 0;
 }

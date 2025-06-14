@@ -5,6 +5,7 @@
 
 class Quic_server: public Ep {
     SSL_CTX *ctx = nullptr;
+    uint ssl_cert_version = 0;
     std::map<std::string, QuicRWer*> rwers;
     virtual void defaultHE(RW_EVENT events);
     void PushData(const sockaddr_storage* myaddr, const sockaddr_storage* hisaddr, const void* buff, size_t len);

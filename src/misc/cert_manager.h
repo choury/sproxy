@@ -15,6 +15,7 @@ struct cert_pair;
 int load_cert_key(const char *ca_crt_path, const char *ca_key_path, struct cert_pair* cert);
 int generate_signed_key_pair(const char* domain, EVP_PKEY **key, X509 **crt);
 void release_key_pair();
+int reload_cert_key(const char* cert_file, const char* key_file, struct cert_pair* cert);
 
 #ifdef __cplusplus
 }

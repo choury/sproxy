@@ -6,6 +6,7 @@
 #include "req/guest3.h"
 #include "req/guest_sni.h"
 #include "misc/config.h"
+#include "prot/tls.h"
 
 #include <unistd.h>
 
@@ -16,6 +17,12 @@ void Quic_server::defaultHE(RW_EVENT events) {
         return;
     }
     if (!!(events & RW_EVENT::READ)) {
+        if (ctx && ssl_cert_version != opt.cert_version) {
+            SSL_CTX_free(ctx);
+            ctx = initssl(true, nullptr);
+            ssl_cert_version = opt.cert_version;
+            LOG("QUIC SSL context updated due to certificate reload (version %u)\n", ssl_cert_version);
+        }
         char buff[max_datagram_size];
         sockaddr_storage myaddr, hisaddr;
 

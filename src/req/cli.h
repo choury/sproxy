@@ -31,6 +31,7 @@ public:
     virtual void FlushCgi() override;
     virtual void FlushDns() override;
     virtual void FlushStrategy() override;
+    virtual bool FlushCert() override;
 
     virtual bool SetServer(const std::string& server) override;
     virtual std::string GetServer() override;

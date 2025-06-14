@@ -233,3 +233,36 @@ void release_key_pair() {
     }
     certs.clear();
 }
+
+int reload_cert_key(const char* cert_file, const char* key_file, struct cert_pair* cert) {
+    if(!cert_file || !key_file || !cert) {
+        return -1;
+    }
+
+    // 创建临时的cert_pair来测试加载新证书
+    struct cert_pair new_cert = {nullptr, nullptr};
+    int ret = load_cert_key(cert_file, key_file, &new_cert);
+    if(ret == 0) {
+        // 成功加载新证书，替换旧证书
+        if(cert->crt) {
+            X509_free(cert->crt);
+        }
+        if(cert->key) {
+            EVP_PKEY_free(cert->key);
+        }
+
+        cert->crt = new_cert.crt;
+        cert->key = new_cert.key;
+    } else {
+        // 加载失败，清理临时证书（如果有的话）
+        if(new_cert.crt) {
+            X509_free(new_cert.crt);
+        }
+        if(new_cert.key) {
+            EVP_PKEY_free(new_cert.key);
+        }
+        LOGE("Failed to reload certificate pair from %s and %s, keeping existing certificate\n", cert_file, key_file);
+    }
+
+    return ret;
+}

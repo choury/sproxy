@@ -286,6 +286,11 @@ static void com_flush(SproxyClient* c, const std::vector<std::string>& args) {
     case "strategy"_hash:
         c->FlushStrategy().get_future().get();
         break;
+    case "cert"_hash:
+        if(!c->FlushCert().get_future().get()){
+            std::cout << "failed" << std::endl;
+        }
+        break;
     default:
         std::cout << "don't know how to flush "<<args[1]<<std::endl;
         break;
@@ -293,7 +298,7 @@ static void com_flush(SproxyClient* c, const std::vector<std::string>& args) {
 }
 
 static char *generator_flush(const char* text, int state){
-    static const char *flush_cmds[] = {"dns", "cgi", "strategy"};
+    static const char *flush_cmds[] = {"dns", "cgi", "strategy", "cert"};
     static const int nb_elements = (sizeof(flush_cmds)/sizeof(flush_cmds[0]));
     COMPLETION_SKELETON(flush_cmds, nb_elements);
 }
@@ -327,7 +332,7 @@ COMMAND commands[] = {
         { "dels", com_dels, "<host>\tDelete strategy for host", nullptr},
         { "debug", com_debug, "enable|disable module", generator_enable},
         { "test", com_test, "<host>\tTest strategy for host", nullptr},
-        { "flush", com_flush, "<cgi|dns|strategy>", generator_flush},
+        { "flush", com_flush, "<cgi|dns|strategy|cert>", generator_flush},
         { "switch", com_switch, "<proxy>\tSet proxy server", nullptr},
         { "dump", com_dump, "<status|dns|sites|usage|hookers>", generator_dump},
         { "kill", com_kill, "\tKill connection", nullptr},

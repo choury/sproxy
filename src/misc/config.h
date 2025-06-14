@@ -91,6 +91,8 @@ struct options{
     enum auto_mode mitm_mode;
     struct arg_list request_headers;
     struct arg_list forward_headers;
+
+    uint cert_version;
 };
 
 extern struct options opt;
@@ -108,6 +110,7 @@ bool debugon(const char* module, bool enable);
 
 void flushdns();
 void flushconnect();
+int flushcert();
 
 uint64_t nextId();
 

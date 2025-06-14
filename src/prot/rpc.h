@@ -44,6 +44,7 @@ protected:
     virtual void FlushCgi() = 0;
     virtual void FlushDns() = 0;
     virtual void FlushStrategy() = 0;
+    virtual bool FlushCert() = 0;
 
     virtual bool SetServer(const std::string& server) = 0;
     virtual bool Login(const std::string& token, const std::string& source) = 0;
@@ -77,6 +78,7 @@ public:
     std::promise<void> FlushCgi();
     std::promise<void> FlushDns();
     std::promise<void> FlushStrategy();
+    std::promise<bool> FlushCert();
 
     std::promise<bool>  SetServer(const std::string& server);
     std::promise<std::string>  GetServer();
