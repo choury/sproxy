@@ -402,18 +402,21 @@ static char **sproxy_completion (const char* text, int start, int ) {
     if (start == 0)
         return rl_completion_matches(text, command_generator);
 
-    // true iff user entered 'cmd text<TAB>'
-    #define USR_ENTERED(cmd) \
-        (start >= (int)strlen(cmd)+1 && (strncmp(rl_line_buffer+start-strlen(cmd)-1, \
-            cmd, strlen(cmd)) == 0)) // +1 for space
+    // Parse the command line to get tokens and find which command we're completing
+    auto tokens = split(rl_line_buffer);
+    if (tokens.empty()) {
+        return nullptr;
+    }
 
+    // Find the command in our command list
     for(auto cmd: commands){
-        if(cmd.gen == nullptr){
+        if(cmd.gen == nullptr || cmd.name != tokens[0]){
             continue;
         }
-        if (USR_ENTERED(cmd.name)){
-            return rl_completion_matches(text, cmd.gen);
-        }
+        
+        // For most commands, we only complete the first argument
+        // For commands that need position-aware completion, we can extend this
+        return rl_completion_matches(text, cmd.gen);
     }
     return nullptr;
 }
