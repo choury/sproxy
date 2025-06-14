@@ -3,6 +3,8 @@
 //
 
 #include "pn_namespace.h"
+#include "misc/buffer.h"
+
 #include <inttypes.h>
 
 

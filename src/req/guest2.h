@@ -3,10 +3,9 @@
 
 #include "requester.h"
 #include "prot/http2/http2.h"
-#include "prot/memio.h"
 #include "misc/job.h"
 
-
+class MemRWer;
 class Guest2: public Requester, public Http2Responser {
     struct ReqStatus{
         std::shared_ptr<HttpReqHeader>    req;

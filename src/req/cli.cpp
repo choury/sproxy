@@ -1,11 +1,11 @@
 #include "cli.h"
 #include "prot/netio.h"
+#include "prot/memio.h"
+#include "prot/dns/resolver.h"
 #include "misc/util.h"
-
 #include "misc/strategy.h"
 #include "misc/config.h"
 #include "misc/hook.h"
-#include "prot/dns/resolver.h"
 #include "res/cgi.h"
 
 Cli::Cli(int fd, const sockaddr_storage* addr): Requester(nullptr) {
@@ -25,6 +25,10 @@ bool Cli::send(const char *data, size_t len) {
     rwer->Send(Buffer{data, len, id});
     return true;
 }
+
+std::shared_ptr<IMemRWerCallback> Cli::response(uint64_t) {
+    return IMemRWerCallback::create();
+};
 
 size_t Cli::ReadHE(const Buffer& bb) {
     if(bb.len == 0){

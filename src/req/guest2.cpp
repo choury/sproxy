@@ -3,6 +3,8 @@
 #include "misc/config.h"
 #include "misc/hook.h"
 #include "prot/netio.h"
+#include "prot/memio.h"
+#include "misc/buffer.h"
 
 #include <assert.h>
 #include <inttypes.h>

@@ -6,9 +6,12 @@
 #define SPROXY_GUEST3_H
 
 #include "requester.h"
-#include "prot/quic/quicio.h"
 #include "prot/http3/http3.h"
+#include "misc/job.h"
 
+class MemRWer;
+class QuicRWer;
+class QuicMer;
 class Guest3: public Requester, public Http3Responser {
     struct ReqStatus{
         std::shared_ptr<HttpReqHeader>    req;

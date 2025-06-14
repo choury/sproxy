@@ -4,12 +4,10 @@
 
 #ifndef SPROXY_QPACH_H
 #define SPROXY_QPACH_H
-#include "misc/buffer.h"
 #include "prot/http/http_header.h"
 
 #include <stddef.h>
 #include <functional>
-#include <string>
 
 #define HTTP3_STREAM_TYPE_QPACK_ENCODE 0x02
 #define HTTP3_STREAM_TYPE_QPACK_DECODE 0x03
@@ -21,6 +19,7 @@
 #define HTTP3_ERR_QPACK_ENCODER_STREAM_ERROR    0x0201
 #define HTTP3_ERR_QPACK_DECODER_STREAM_ERROR    0x0202
 
+class Buffer;
 class Qpack{
     size_t dynamic_table_size_limit_max = 0;
     size_t dynamic_table_size_limit = 0;

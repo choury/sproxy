@@ -4,6 +4,7 @@
 
 #include "guest3.h"
 #include "res/responser.h"
+#include "prot/quic/quicio.h"
 #include "misc/hook.h"
 #include <assert.h>
 #include <inttypes.h>

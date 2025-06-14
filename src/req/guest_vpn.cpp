@@ -8,6 +8,7 @@
 #include "prot/tls.h"
 #include "prot/sslio.h"
 #include "prot/tcpip/tunio.h"
+#include "prot/quic/quicio.h"
 #include "misc/config.h"
 #include "misc/util.h"
 #include "misc/strategy.h"

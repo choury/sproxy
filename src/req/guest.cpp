@@ -4,8 +4,10 @@
 #include "res/rproxy2.h"
 #include "misc/config.h"
 #include "misc/hook.h"
+#include "misc/job.h"
 #include "prot/sslio.h"
 #include "prot/tls.h"
+#include "prot/memio.h"
 
 #include <string.h>
 #include <assert.h>

@@ -7,14 +7,14 @@
 
 #include "common/common.h"
 
-#include <memory>
-#include <string>
-
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <assert.h>
 #include <sys/types.h>
+
+#include <string>
+#include <memory>
 
 #define PRIOR_HEAD 80
 

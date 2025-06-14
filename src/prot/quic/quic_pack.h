@@ -2,10 +2,9 @@
 #define QUIC_PACK_H__
 
 #include "common/common.h"
-#include "misc/buffer.h"
 
-#include <deque>
 #include <string>
+#include <deque>
 #include <set>
 
 #include <stdint.h>
@@ -169,6 +168,7 @@ size_t variable_encode_len(uint64_t value);
 size_t variable_decode(const void* data, uint64_t* value);
 size_t variable_decode_len(const void* data);
 
+class Buffer;
 struct quic_secret{
     const EVP_MD* md;
 #ifdef USE_BORINGSSL

@@ -3,9 +3,9 @@
 
 #include "responser.h"
 #include "prot/http3/http3.h"
-#include "prot/quic/quicio.h"
+#include "misc/job.h"
 
-
+class QuicRWer;
 class Proxy3:public Responser, public Http3Requster {
     struct ReqStatus{
         std::shared_ptr<HttpReqHeader> req;

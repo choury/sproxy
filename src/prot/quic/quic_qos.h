@@ -10,8 +10,6 @@
 
 #include <openssl/ssl.h>
 #include <stdint.h>
-#include <list>
-#include <set>
 
 const uint64_t max_datagram_size = 1500;
 const uint64_t kGranularity = 1000; // 1ms

@@ -3,8 +3,6 @@
 
 #include "guest.h"
 
-#include <memory>
-
 class Guest_tproxy: public Guest {
 public:
     bool inited = false;

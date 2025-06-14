@@ -1,6 +1,7 @@
 #include "guest_sni.h"
 #include "prot/tls.h"
 #include "prot/sslio.h"
+#include "prot/quic/quicio.h"
 #include "misc/config.h"
 #include "misc/defer.h"
 #include "res/responser.h"

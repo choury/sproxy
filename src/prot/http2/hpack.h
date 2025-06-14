@@ -1,10 +1,9 @@
 #ifndef HPACK_H__
 #define HPACK_H__
-#include <string>
-
 #include "prot/http/http_header.h"
-
 #include "misc/index.h"
+
+#include <string>
 
 class Hpack {
 protected:

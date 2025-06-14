@@ -1,5 +1,6 @@
 #include "proxy3.h"
 #include "misc/hook.h"
+#include "prot/quic/quicio.h"
 
 #include <assert.h>
 #include <inttypes.h>

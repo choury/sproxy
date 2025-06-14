@@ -2,8 +2,8 @@
 #define HTTP_H__
 
 #include "http_header.h"
-#include "misc/buffer.h"
 
+class Buffer;
 class HttpBase{
 protected:
     uint64_t http_expectlen = 0;

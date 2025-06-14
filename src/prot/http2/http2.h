@@ -1,13 +1,13 @@
 #ifndef HTTP2_H__
 #define HTTP2_H__
 
-#include "prot/http/http_header.h"
-#include "misc/buffer.h"
 #include "hpack.h"
 
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+
+class Buffer;
 
 #define HTTP2_PREFACE "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 

@@ -1,4 +1,6 @@
 #include "http2.h"
+#include "prot/http/http_header.h"
+#include "misc/buffer.h"
 
 #include <cinttypes>
 #include <assert.h>

@@ -4,6 +4,8 @@
 #include "quicio.h"
 #include "quic_server.h"
 #include "quic_pack.h"
+#include "quic_qos.h"
+#include "misc/buffer.h"
 #include "misc/net.h"
 #include "misc/defer.h"
 #include "misc/config.h"

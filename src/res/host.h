@@ -4,9 +4,6 @@
 #include "responser.h"
 #include "prot/http/http.h"
 
-class Requester;
-
-
 class Host:public Responser, public HttpRequester {
     struct ReqStatus{
         std::shared_ptr<HttpReqHeader> req;

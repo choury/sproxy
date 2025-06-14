@@ -4,9 +4,8 @@
 //fake dns
 
 #include "responser.h"
-#include "prot/dns/dns.h"
-#include <map>
 
+struct Dns_Query;
 class FDns: public Responser{
     struct FDnsStatus{
         std::shared_ptr<RWer>          rw;

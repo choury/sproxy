@@ -1,4 +1,5 @@
 #include "icmp.h"
+#include "misc/buffer.h"
 #include "misc/net.h"
 
 void IcmpProc(std::shared_ptr<IcmpStatus> status, std::shared_ptr<const Ip> pac, Buffer&& bb) {

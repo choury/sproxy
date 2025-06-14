@@ -1,5 +1,6 @@
 #include "udp.h"
 #include "dhcp.h"
+#include "misc/buffer.h"
 #include "misc/net.h"
 
 static void makeUdp(std::shared_ptr<UdpStatus> status, std::shared_ptr<Ip> pac, Buffer& bb) {

@@ -5,7 +5,6 @@
 #ifndef SPROXY_RPROXY_H
 #define SPROXY_RPROXY_H
 
-#include "responser.h"
 #include "proxy2.h"
 
 class Rproxy2: public Proxy2 {

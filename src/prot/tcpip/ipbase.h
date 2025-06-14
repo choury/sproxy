@@ -3,10 +3,11 @@
 
 #include "common/common.h"
 #include "ip_pack.h"
-#include "misc/buffer.h"
 #include <unistd.h>
 #include <functional>
 
+class Buffer;
+class Block;
 struct IpStatus;
 void Unreach(std::shared_ptr<IpStatus> status, uint8_t code);
 forceinline  ssize_t Cap(std::shared_ptr<IpStatus>) {

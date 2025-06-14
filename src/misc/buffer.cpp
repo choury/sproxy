@@ -4,6 +4,7 @@
 #include "buffer.h"
 #include "common/common.h"
 
+#include <string>
 
 Buffer::Buffer(size_t cap, uint64_t id):
         ptr(malloc(cap + PRIOR_HEAD), free), off(PRIOR_HEAD), id(id), cap(cap + PRIOR_HEAD)

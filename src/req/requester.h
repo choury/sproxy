@@ -2,9 +2,9 @@
 #define REQUESTER_H__
 
 #include "common/base.h"
-#include "prot/memio.h"
 
-class Responser;
+class RWer;
+struct IMemRWerCallback;
 
 class Requester: public Server{
 protected:

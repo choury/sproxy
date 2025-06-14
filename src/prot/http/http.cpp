@@ -1,5 +1,6 @@
 #include "http.h"
 #include "misc/util.h"
+#include "misc/buffer.h"
 #include "misc/config.h"
 
 #include <string.h>

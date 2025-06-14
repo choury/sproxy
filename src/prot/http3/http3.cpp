@@ -3,6 +3,7 @@
 //
 #include "http3.h"
 #include "prot/quic/quic_pack.h"
+#include "misc/buffer.h"
 
 #include <inttypes.h>
 #include <assert.h>

@@ -1,5 +1,6 @@
 #include "quic_pack.h"
 #include "prot/tls.h"
+#include "misc/buffer.h"
 #include "misc/config.h"
 #include "misc/defer.h"
 #include <string.h>

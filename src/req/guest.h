@@ -3,17 +3,15 @@
 
 #include "requester.h"
 #include "prot/http/http.h"
-#include "prot/memio.h"
 #include "misc/net.h"
-#include "misc/job.h"
 #include "misc/config.h"
+#include "misc/job.h"
 #include "prot/tls.h"
 
-#include <errno.h>
 #include <netinet/in.h>
 #include <openssl/ssl.h>
 
-
+class MemRWer;
 class Guest:public Requester, public HttpResponser {
 protected:
     size_t rx_bytes = 0;

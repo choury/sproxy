@@ -2,6 +2,7 @@
 #define TCP_H__
 
 #include "ipbase.h"
+#include "misc/buffer.h"
 #include "misc/job.h"
 
 #include <stddef.h>

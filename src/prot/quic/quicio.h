@@ -7,12 +7,9 @@
 
 #include "prot/netio.h"
 #include "prot/memio.h"
-#include "quic_pack.h"
 #include "quic_qos.h"
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
-#include <list>
-#include <map>
 
 
 #define QUIC_CID_LEN     20

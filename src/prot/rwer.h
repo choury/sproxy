@@ -7,7 +7,6 @@
 #include <inttypes.h>
 #include <sys/socket.h>
 
-#include <memory>
 #include <list>
 #include <functional>
 #include <set>

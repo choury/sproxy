@@ -5,8 +5,6 @@
 #include <memory>
 #include <tuple>
 #include <unordered_map>
-#include <set>
-#include <functional>
 #include <string>
 #include <dlfcn.h>
 #include <stdarg.h>
