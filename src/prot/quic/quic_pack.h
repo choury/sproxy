@@ -268,7 +268,7 @@ struct quic_frame{
         struct quic_stop      stop;
         struct quic_max_stream_data max_stream_data;
         struct quic_stream_data_blocked  stream_data_blocked;
-        char     path_data[64];
+        char     path_data[8];
         uint64_t extra;
     };
 };

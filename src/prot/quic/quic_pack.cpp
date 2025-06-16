@@ -154,6 +154,10 @@ static int aead_encrypt(const EVP_AEAD* aead,
                        const unsigned char *iv,
                        unsigned char *ciphertext)
 {
+    if (!aead) {
+        LOGE("aead_encrypt: aead is null\n");
+        return -1;
+    }
     size_t len = SIZE_MAX;
     EVP_AEAD_CTX* ctx = EVP_AEAD_CTX_new(aead, key, EVP_AEAD_key_length(aead), EVP_AEAD_DEFAULT_TAG_LENGTH);
     defer(EVP_AEAD_CTX_free, ctx);
@@ -551,6 +555,11 @@ static int pack_header(const struct quic_pkt_header* header, char* data, uint16_
 size_t encode_packet(const void* data_, size_t len,
                   const quic_pkt_header* header, const quic_secret* secret,
                   char* body){
+
+    if (!secret || !secret->cipher) {
+        LOGE("encode_packet: secret or secret->cipher is null\n");
+        return 0;
+    }
 
     size_t header_len = pack_header(header, body, len + 16);
     char iv[12];
@@ -1335,11 +1344,11 @@ void dumpFrame(const char* prefix, char name, const quic_frame* frame) {
         return;
     case QUIC_FRAME_PATH_CHALLENGE:
         LOGD(DQUIC, "%s [%c] path challenge: %s\n", prefix, name,
-             dumpHex(frame->path_data, 64).c_str());
+             dumpHex(frame->path_data, sizeof(frame->path_data)).c_str());
         return;
     case QUIC_FRAME_PATH_RESPONSE:
         LOGD(DQUIC, "%s [%c] path response: %s\n", prefix, name,
-            dumpHex(frame->path_data, 64).c_str());
+            dumpHex(frame->path_data, sizeof(frame->path_data)).c_str());
         return;
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:

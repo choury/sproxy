@@ -409,7 +409,7 @@ static char **sproxy_completion (const char* text, int start, int ) {
     }
 
     // Find the command in our command list
-    for(auto cmd: commands){
+    for(const auto& cmd: commands){
         if(cmd.gen == nullptr || cmd.name != tokens[0]){
             continue;
         }

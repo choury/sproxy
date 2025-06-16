@@ -160,6 +160,22 @@ void Proxy3::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer
     status.rw->SetCallback(status.cb);
 }
 
+bool Proxy3::reconnect() {
+    LOGD(DHTTP3, "<proxy3> connection (%s) attempting migration\n", dumpDest(rwer->getSrc()).c_str());
+    // For QUIC connections, we can attempt migration
+    // Trigger migration on the underlying QuicRWer
+    if (auto quic_rwer = std::dynamic_pointer_cast<QuicRWer>(rwer)) {
+        if (quic_rwer->triggerMigration()){
+            LOGD(DHTTP3, "<proxy3> QUIC migration successful, preserving connection\n");
+            return true; // Keep connection for successful migration
+        } else {
+            LOGD(DHTTP3, "<proxy3> QUIC migration failed, need to create new connection\n");
+            return false; // Migration failed, upper layer should create new connection
+        }
+    }
+    LOGD(DHTTP3, "<proxy3> Not a QUIC connection, cleaning up\n");
+    return false; // Not a QUIC connection, clean up
+}
 
 void Proxy3::init(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     Init();
@@ -271,3 +287,4 @@ void Proxy3::dump_usage(Dumper dp, void *param) {
        this, sizeof(*this) + qpack_encoder.get_dynamic_table_size() + qpack_decoder.get_dynamic_table_size(),
        res_usage, rwer->mem_usage());
 }
+

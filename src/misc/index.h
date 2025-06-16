@@ -199,6 +199,20 @@ public:
         map1.clear();
         map2.clear();
     }
+
+    // Iterator support for map1
+    auto begin() -> decltype(map1.begin()) {
+        return map1.begin();
+    }
+    auto end() -> decltype(map1.end()) {
+        return map1.end();
+    }
+    auto begin() const -> decltype(map1.begin()) {
+        return map1.begin();
+    }
+    auto end() const -> decltype(map1.end()) {
+        return map1.end();
+    }
 };
 
 #endif

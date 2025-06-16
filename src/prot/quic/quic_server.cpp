@@ -50,8 +50,8 @@ void Quic_server::PushData(const sockaddr_storage* myaddr, const sockaddr_storag
     }
     auto r = rwers.find(header.dcid);
     if(r != rwers.end()){
-        LOGD(DQUIC, "duplicated packet: %s vs %s, may be migration?\n",
-            storage_ntoa(hisaddr), dumpDest(r->second->getSrc()).c_str());
+        // Trigger path validation for the new address
+        r->second->sendPathChallenge(myaddr, hisaddr);
         iovec iov{(void*)buff, len};
         r->second->walkPackets(&iov, 1);
     }else if(header.type == QUIC_PACKET_INITIAL){

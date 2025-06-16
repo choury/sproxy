@@ -37,6 +37,7 @@ public:
     virtual ~Proxy3() override;
 
     virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*)override;
+    virtual bool reconnect() override;
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;

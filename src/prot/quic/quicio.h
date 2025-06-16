@@ -126,7 +126,7 @@ protected:
 #define STREAM_FLAG_FIN_DELIVED 0x04   //fin标记已经发送给应用层了
 #define STREAM_FLAG_STOP_SENT     0x10
 #define STREAM_FLAG_RESET_RECVD   0x20  //打了这个标记意味者后续数据不会再上送到应用层
-#define STREAM_FLAG_RESET_DELIVED 0x40
+#define STREAM_FLAG_RESET_DELIVERED 0x40
         uint32_t flags = 0;
         size_t   my_offset = 0;
         size_t   his_offset = 0;
@@ -175,6 +175,8 @@ protected:
     void walkPacket(const void* buff, size_t length);
 
     void generateCid();
+    // Connection migration methods (server-side path validation)
+    void generateNewConnectionId();
     size_t generateParams(char data[QUIC_INITIAL_LIMIT]);
     void getParams(const uint8_t* data, size_t len);
     quic_context* getContext(uint8_t type);
@@ -190,6 +192,9 @@ protected:
     virtual FrameResult handleResetFrame(const quic_reset *stream);
     virtual FrameResult handleHandshakeFrames(quic_context* context, const quic_frame* frame);
     virtual FrameResult handleFrames(quic_context* context, const quic_frame* frame);
+    virtual FrameResult handlePathResponseFrame(const char* /*response*/) {
+        return FrameResult::ok;
+    };
 
     std::function<int(const quic_pkt_header* header, std::deque<const quic_frame*>& frames)> walkHandler;
     virtual int handleHandshakePacket(const quic_pkt_header* header, std::deque<const quic_frame*>& frames);
@@ -273,6 +278,18 @@ protected:
     Quic_server* server = nullptr;
     size_t sndbuf = 0;
 
+    // Connection migration support
+    struct PathInfo {
+        sockaddr_storage local_addr;
+        sockaddr_storage remote_addr;
+        bool validated = false;
+        uint32_t challenge_time = 0;
+        char challenge_data[8];
+    };
+    std::vector<PathInfo> paths;
+    size_t active_path_idx = 0;
+    Job path_validation_timer = nullptr;
+
     virtual size_t getWritableSize()  override;
     virtual ssize_t writem(const struct iovec *iov, int iovcnt) override;
     virtual void onConnected() override;
@@ -281,6 +298,7 @@ protected:
     virtual void onWrite(uint64_t id) override;
     virtual void onCidChange(const std::string& cid, bool retired) override;
     virtual int handleRetryPacket(const quic_pkt_header* header) override;
+    virtual FrameResult handlePathResponseFrame(const char* response) override;
 
     virtual void waitconnectHE(RW_EVENT events) override;
     virtual void closeHE(RW_EVENT events) override;
@@ -290,6 +308,7 @@ protected:
     virtual size_t rlength(uint64_t id) override;
     virtual bool IsConnected() override;
 
+    void pathValidationTimeout();
 public:
     explicit QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
              std::shared_ptr<IRWerCallback> cb);
@@ -307,6 +326,13 @@ public:
     }
 
     ~QuicRWer();
+
+    // build socket connection for validated path (server-side migration)
+    int buildFdToAddress(const sockaddr_storage* local_addr, const sockaddr_storage* remote_addr);
+    void sendPathChallenge(const sockaddr_storage* local_addr, const sockaddr_storage* remote_addr);
+    bool sendPathChallengeDirectly(const char* challenge_data, const sockaddr_storage* remote_addr);
+    // Trigger immediate connection migration
+    bool triggerMigration();
 
     virtual void dump_status(Dumper dp, void* param) override;
     virtual size_t mem_usage() override;
