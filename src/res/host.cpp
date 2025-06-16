@@ -319,5 +319,26 @@ void Host::dump_usage(Dumper dp, void *param) {
 }
 
 void flushconnect() {
-    responsers.clear();
+    LOGD(DHTTP, "Network change detected - checking connections for migration capability\n");
+    // Check each responser to see if it can reconnect/migrate
+    std::vector<std::string> to_remove;
+    for (auto it = responsers.begin(); it != responsers.end(); ++it) {
+        const std::string& key = it->first;
+        Responser* responser = it->second;
+
+        if (!responser->reconnect()) {
+            // Responser cannot reconnect, mark for removal
+            to_remove.push_back(key);
+            LOGD(DHTTP, "Marking connection for cleanup: %s\n", key.c_str());
+        } else {
+            LOGD(DHTTP, "Preserving connection for migration: %s\n", key.c_str());
+        }
+    }
+
+    // Remove connections that cannot migrate
+    for (const std::string& key : to_remove) {
+        responsers.erase(key);
+    }
+    LOGD(DHTTP, "Network change processed: preserved %zu connections, removed %zu connections\n",
+         responsers.size(), to_remove.size());
 }

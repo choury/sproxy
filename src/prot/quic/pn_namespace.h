@@ -12,12 +12,20 @@
 const uint64_t kPacketThreshold = 3;
 
 struct Rtt{
-    uint64_t first_rtt_sample = 0;
-    uint64_t latest_rtt       = 0;
-    uint64_t min_rtt          = UINT64_MAX;
-    uint64_t smoothed_rtt     = 333000;
-    uint64_t rttvar           = 166500;
+    uint64_t first_rtt_sample;
+    uint64_t latest_rtt;
+    uint64_t min_rtt;
+    uint64_t smoothed_rtt;
+    uint64_t rttvar;
 };
+
+static inline void RttInit(struct Rtt* rtt) {
+    rtt->first_rtt_sample = 0;
+    rtt->latest_rtt       = 0;
+    rtt->min_rtt          = UINT64_MAX;
+    rtt->smoothed_rtt     = 333000;
+    rtt->rttvar           = 166500;
+}
 
 
 class Chop{

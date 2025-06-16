@@ -11,8 +11,12 @@ struct strategy;
 
 class Responser:public Server{
 public:
-    //src is usefull to status
+    //src is useful to status
     virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester* src) = 0;
+
+    // Return true to keep connection, false to clean up
+    // Called when network interfaces change
+    virtual bool reconnect() { return false; }
 };
 
 extern bimap<std::string, Responser*> responsers;

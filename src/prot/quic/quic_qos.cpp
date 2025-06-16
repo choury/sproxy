@@ -38,6 +38,7 @@ QuicQos::QuicQos(bool isServer, const send_func& sent,
     pns[QUIC_PAKCET_NAMESPACE_APP] = new pn_namespace('A', [sent](auto&& v1, auto&& v2, auto&& v3, auto&& v4){
         return sent(ssl_encryption_application, v1, v2, v3, v4);
     });
+    RttInit(&rtt);
 }
 
 

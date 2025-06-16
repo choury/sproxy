@@ -50,7 +50,6 @@ protected:
     virtual void OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets) = 0;
     virtual void OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets,  uint64_t ack_delay_us) = 0;
     virtual void OnCongestionEvent(uint64_t sent_time) = 0;
-    pn_namespace* GetNamespace(OSSL_ENCRYPTION_LEVEL level);
 public:
     Rtt    rtt;
     /*
@@ -72,6 +71,7 @@ public:
     //set max_ack_delay for app level
     void SetMaxAckDelay(uint64_t delay);
     uint64_t GetLargestPn(OSSL_ENCRYPTION_LEVEL level);
+    pn_namespace* GetNamespace(OSSL_ENCRYPTION_LEVEL level);
 
     std::set<uint64_t> handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t number, const quic_frame* frame);
     void HandleRetry();

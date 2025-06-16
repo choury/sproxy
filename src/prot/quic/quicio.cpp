@@ -24,7 +24,6 @@ extern std::string getExternalFilesDir();
 #endif
 
 /*TODO:
- * 连接迁移
  * 多地址，失败轮询重试
  * check retry packet tag
  */
@@ -403,8 +402,48 @@ void QuicBase::generateCid() {
     contexts[1].level = ssl_encryption_early_data;
     contexts[2].level = ssl_encryption_handshake;
     contexts[3].level = ssl_encryption_application;
-
 }
+
+void QuicBase::generateNewConnectionId() {
+    // Only server-side connections should generate new connection IDs
+    if (ctx != nullptr) {
+        LOGD(DQUIC, "Client connections don't generate connection IDs\n");
+        return;
+    }
+
+    // Generate new connection ID for migration
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<uint64_t> dis(0x1000000000, 0xFFFFFFFFFF);
+    std::string new_cid;
+    new_cid.resize(QUIC_CID_LEN + 1);
+    snprintf(&new_cid[0], new_cid.size(), "sproxy0000%010" PRIx64, dis(rng));
+    set32(&new_cid[6], getmtime());
+    new_cid.resize(QUIC_CID_LEN);
+    // Add to our connection ID list
+    myids.push_back(new_cid);
+
+    // Send NEW_CONNECTION_ID frame to peer
+    quic_frame* new_cid_frame = new quic_frame;
+    new_cid_frame->type = QUIC_FRAME_NEW_CONNECTION_ID;
+    new_cid_frame->new_id.seq = myids.size() - 1;
+    new_cid_frame->new_id.retired = 0;
+    new_cid_frame->new_id.length = new_cid.length();
+    // Allocate persistent copy of connection ID data
+    char* cid_copy = new char[new_cid.length()];
+    memcpy(cid_copy, new_cid.data(), new_cid.length());
+    new_cid_frame->new_id.id = cid_copy;
+
+    // Generate stateless reset token
+    std::string token = sign_cid(new_cid);
+    memcpy(new_cid_frame->new_id.token, token.data(), std::min(token.length(), (size_t)16));
+    qos->PushFrame(ssl_encryption_application, new_cid_frame);
+
+    LOGD(DQUIC, "Generated new connection ID for migration: %s\n",
+         dumpHex(new_cid.c_str(), new_cid.size()).c_str());
+    // Notify upper layer about connection ID change (this will update server mapping)
+    onCidChange(new_cid, false);
+}
+
 
 size_t QuicBase::generateParams(char data[QUIC_INITIAL_LIMIT]) {
     char* pos = data;
@@ -947,10 +986,10 @@ QuicBase::FrameResult QuicBase::handleResetFrame(const quic_reset *stream) {
     status.finSize = stream->fsize;
     my_received_data += status.finSize - want;
 
-    if((status.flags & STREAM_FLAG_RESET_DELIVED) == 0) {
+    if((status.flags & STREAM_FLAG_RESET_DELIVERED) == 0) {
         LOGD(DQUIC, "reset stream for %" PRIu64"\n", id);
         resetHandler(id, stream->error);
-        status.flags |= STREAM_FLAG_RESET_DELIVED;
+        status.flags |= STREAM_FLAG_RESET_DELIVERED;
         status.rb.consume(status.rb.length());
     }
     return FrameResult::ok;
@@ -1122,8 +1161,8 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
             reset->reset.error = frame->stop.error;
             qos->PushFrame(ssl_encryption_application, reset);
         }
-        if((status.flags & STREAM_FLAG_RESET_DELIVED) == 0){
-            status.flags |= STREAM_FLAG_RESET_DELIVED;
+        if((status.flags & STREAM_FLAG_RESET_DELIVERED) == 0){
+            status.flags |= STREAM_FLAG_RESET_DELIVERED;
             resetHandler(frame->stop.id, frame->stop.error);
             status.rb.consume(status.rb.length());
         }
@@ -1228,6 +1267,15 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
         }
         onCidChange(myids[frame->extra], true);
         return FrameResult::ok;
+    case QUIC_FRAME_PATH_CHALLENGE:{
+        quic_frame* response_frame = new quic_frame;
+        response_frame->type = QUIC_FRAME_PATH_RESPONSE;
+        memcpy(response_frame->path_data, frame->path_data, 8);
+        qos->PushFrame(ssl_encryption_application, response_frame);
+        return FrameResult::ok;
+    }
+    case QUIC_FRAME_PATH_RESPONSE:
+        return handlePathResponseFrame(frame->path_data);
     default:
         if(frame->type >= QUIC_FRAME_STREAM_START_ID && frame->type <= QUIC_FRAME_STREAM_END_ID){
             return handleStreamFrame(frame->type, &frame->stream);
@@ -1694,7 +1742,7 @@ bool QuicBase::idle(uint64_t id){
     if(stream.flags & STREAM_FLAG_FIN_SENT){
         send_closed = true;
     }
-    if(stream.flags & (STREAM_FLAG_FIN_DELIVED | STREAM_FLAG_RESET_DELIVED)){
+    if(stream.flags & (STREAM_FLAG_FIN_DELIVED | STREAM_FLAG_RESET_DELIVERED)){
         assert(stream.rb.length() == 0);
         recv_closed = true;
     }
@@ -1784,13 +1832,22 @@ void QuicBase::sinkData(uint64_t id) {
     std::list<uint64_t> to_clean;
     if(id == 0) {
         for (auto& [id, stream]: streammap) {
-            sinkData(id, stream);
+            if((stream.flags & STREAM_FLAG_RESET_DELIVERED) == 0){
+                sinkData(id, stream);
+            } else {
+                stream.rb.consume(stream.rb.length());
+            }
             if (idle(id)) {
                 to_clean.push_back(id);
             }
         }
     } else if(streammap.count(id)){
-        sinkData(id, streammap[id]);
+        auto& stream = streammap[id];
+        if((stream.flags & STREAM_FLAG_RESET_DELIVERED) == 0){
+            sinkData(id, stream);
+        } else{
+            stream.rb.consume(stream.rb.length());
+        }
         if (idle(id)) {
             to_clean.push_back(id);
         }
@@ -1966,10 +2023,43 @@ void QuicRWer::onWrite(uint64_t id) {
 void QuicRWer::onCidChange(const std::string &cid, bool retired) {
     if (retired) {
         server->rwers.erase(cid);
+        LOGD(DQUIC, "Retired connection ID: %s\n", dumpHex(cid.c_str(), cid.size()).c_str());
     } else {
         server->rwers.emplace(cid, this);
+        LOGD(DQUIC, "Added new connection ID: %s\n", dumpHex(cid.c_str(), cid.size()).c_str());
     }
 }
+
+QuicBase::FrameResult QuicRWer::handlePathResponseFrame(const char* response) {
+    if(!server) {  // Server-side only
+        return FrameResult::error;
+    }
+    for (size_t i = 0; i < paths.size(); ++i) {
+        auto& path = paths[i];
+        if (memcmp(path.challenge_data, response, 8) == 0) {
+            if (path.validated) {
+                return FrameResult::ok;
+            }
+            path.validated = true;
+            active_path_idx = i;
+            RttInit(&qos->rtt);
+
+            // Rebuild socket connection to the new client address first
+            int fd = buildFdToAddress(&path.local_addr, &path.remote_addr);
+            if (fd < 0) {
+                return FrameResult::error;
+            }
+            setFd(fd);
+            // Generate new connection ID after successful socket rebuild
+            LOGD(DQUIC, "Path validation successful, providing new connection ID\n");
+            generateNewConnectionId();
+            return FrameResult::ok;
+        }
+    }
+    LOGD(DQUIC, "received PATH_RESPONSE for unknown challenge\n");
+    return FrameResult::ok;
+}
+
 
 int QuicRWer::handleRetryPacket(const quic_pkt_header *header) {
     if(initToken.empty()) {
@@ -2150,6 +2240,198 @@ success:
 }
 
 
+int QuicRWer::buildFdToAddress(const sockaddr_storage* local_addr, const sockaddr_storage* remote_addr) {
+    // Create new socket
+    int fd = ListenUdp(local_addr, nullptr);
+    if (fd < 0) {
+        LOGE("Failed to create new socket for migration: %s\n", strerror(errno));
+        return -1;
+    }
+
+    // Connect to server using resolved address - let system choose local address
+    socklen_t socklen = (remote_addr->ss_family == AF_INET) ?
+                        sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
+    if (::connect(fd, (sockaddr*)remote_addr, socklen) == 0) {
+        SetUdpOptions(fd, remote_addr);
+        return fd;
+    }
+    LOGE("Failed to connect new socket: %s\n", strerror(errno));
+    close(fd);
+    return -1;
+}
+
+// Connection Migration Implementation
+void QuicRWer::sendPathChallenge(const sockaddr_storage* local_addr, const sockaddr_storage* remote_addr) {
+    // Only server-side connections should send path challenges
+    if (!server) {
+        LOGD(DQUIC, "Client connections don't send path challenges\n");
+        return;
+    }
+
+    // Check if this path already exists
+    for (size_t i = 0; i < paths.size(); ++i) {
+        const auto& path = paths[i];
+        if (memcmp(&path.local_addr, local_addr, sizeof(sockaddr_storage)) == 0 &&
+            memcmp(&path.remote_addr, remote_addr, sizeof(sockaddr_storage)) == 0) {
+            if (path.validated || path.challenge_time > 0) {
+                LOGD(DQUIC, "Path already validated or challenging\n");
+                return;
+            }
+            // Path exists but not validated, send challenge again
+            auto& existing_path = paths[i];
+            if (sendPathChallengeDirectly(existing_path.challenge_data, remote_addr)) {
+                existing_path.challenge_time = getmtime();
+            } else {
+                LOGE("Failed to send PATH_CHALLENGE to existing path\n");
+                return;
+            }
+
+            // Set validation timeout
+            path_validation_timer = UpdateJob(std::move(path_validation_timer),
+                                             std::bind(&QuicRWer::pathValidationTimeout, this), 3000);
+            LOGD(DQUIC, "Re-sent PATH_CHALLENGE for existing path %zu\n", i);
+            return;
+        }
+    }
+
+    // Add new path
+    PathInfo path;
+    path.local_addr = *local_addr;
+    path.remote_addr = *remote_addr;
+    path.validated = false;
+    path.challenge_time = 0;
+
+    // Generate random challenge data
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<uint8_t> dis(0, 255);
+    for (int i = 0; i < 8; ++i) {
+        path.challenge_data[i] = dis(gen);
+    }
+
+    paths.push_back(path);
+    size_t path_idx = paths.size() - 1;
+
+    // Send challenge for the new path
+    if (sendPathChallengeDirectly(path.challenge_data, remote_addr)) {
+        paths[path_idx].challenge_time = getmtime();
+    } else {
+        LOGE("Failed to send PATH_CHALLENGE to new path\n");
+        paths.pop_back();  // Remove the failed path
+        return;
+    }
+
+    // Set validation timeout
+    path_validation_timer = UpdateJob(std::move(path_validation_timer),
+                                     std::bind(&QuicRWer::pathValidationTimeout, this), 3000);
+    LOGD(DQUIC, "Started path validation for new address: %s\n", storage_ntoa(remote_addr));
+}
+
+bool QuicRWer::sendPathChallengeDirectly(const char* challenge_data, const sockaddr_storage* remote_addr) {
+    // Check if application level encryption is available
+    if (!contexts[ssl_encryption_application].hasKey) {
+        LOGE("sendPathChallengeDirectly: application encryption not ready\n");
+        return false;
+    }
+
+    quic_frame challenge_frame{QUIC_FRAME_PATH_CHALLENGE, {}};
+    memcpy(challenge_frame.path_data, challenge_data, 8);
+
+    // Create a minimal packet with just the PATH_CHALLENGE frame
+    char buffer[256];
+    char* pos = buffer;
+
+    pos = (char*)pack_frame(pos, &challenge_frame);
+    size_t frame_len = pos - buffer;
+
+    pn_namespace* ns = qos->GetNamespace(ssl_encryption_application);
+    uint64_t packet_number = ns->current_pn;
+    uint64_t ack_base = qos->GetLargestPn(ssl_encryption_application);
+
+    char packet_buffer[max_datagram_size];
+    size_t packet_len = envelop(ssl_encryption_application,
+                               packet_number,
+                               ack_base,
+                               buffer, frame_len, packet_buffer);
+
+    if (packet_len == 0) {
+        LOGE("Failed to create QUIC packet for PATH_CHALLENGE\n");
+        return false;
+    }
+
+    socklen_t socklen = (remote_addr->ss_family == AF_INET) ?
+                        sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6);
+    ssize_t ret = sendto(getFd(), packet_buffer, packet_len, 0, (const sockaddr*)remote_addr, socklen);
+    if (ret < 0) {
+        LOGE("send path challenge, sendto failed: %s\n", strerror(errno));
+        return false;
+    }
+
+    ns->current_pn = packet_number + 1;
+    LOGD(DQUIC, "Successfully sent PATH_CHALLENGE directly to %s with PN=%lu\n",
+         storage_ntoa(remote_addr), packet_number);
+    return true;
+}
+
+void QuicRWer::pathValidationTimeout() {
+    uint32_t current_time = getmtime();
+    bool has_pending = false;
+
+    for (size_t i = 0; i < paths.size(); ++i) {
+        auto& path = paths[i];
+        if (path.validated || path.challenge_time == 0) {
+            continue;
+        }
+        if (current_time - path.challenge_time > 3000) {  // 3000ms timeout
+            // Path validation failed, mark as invalid
+            LOGD(DQUIC, "Path %zu validation timeout\n", i);
+            path.challenge_time = 0;
+        } else {
+            has_pending = true;
+        }
+    }
+
+    if (has_pending) {
+        // Reschedule timer for remaining validations
+        path_validation_timer = UpdateJob(std::move(path_validation_timer),
+                                         std::bind(&QuicRWer::pathValidationTimeout, this), 1000);
+    } else {
+        path_validation_timer = nullptr;
+    }
+}
+
+bool QuicRWer::triggerMigration() {
+    if (server) {
+        // Server connections don't initiate migration
+        LOGD(DQUIC, "server-side migration not supported\n");
+        return false;
+    }
+
+    LOGD(DQUIC, "triggering client-side connection migration\n");
+    // Use the resolved address from SocketRWer's addrs queue
+    if (addrs.empty()) {
+        LOGE("No resolved addresses available for migration\n");
+        return false;
+    }
+
+    auto& server_addr = addrs.front();
+    // Create new socket
+    int new_fd = Connect(&server_addr, SOCK_DGRAM);
+    if (new_fd < 0) {
+        LOGE("Failed to create new socket for migration: %s\n", strerror(errno));
+        return false;
+    }
+
+    SetUdpOptions(new_fd, &server_addr);
+    setFd(new_fd);
+
+    // Send ping immediately after migration to test the new path
+    keepAlive_action();
+
+    LOGD(DQUIC, "Client migration successful to %s\n", storage_ntoa(&server_addr));
+    return true;
+}
+
 QuicRWer::~QuicRWer() {
     if(server == nullptr){
         return;
@@ -2158,6 +2440,7 @@ QuicRWer::~QuicRWer() {
         server->rwers.erase(id);
     }
     server->rwers.erase(originDcid);
+    path_validation_timer = nullptr;
 }
 
 void QuicRWer::dump_status(Dumper dp, void *param) {
