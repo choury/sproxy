@@ -90,21 +90,17 @@ uint32_t QuicBBR::pacing_gain() const {
 
 // 处理数据包被确认的事件
 // 这是BBR算法的核心，用于更新带宽和RTT估计
-void QuicBBR::OnPacketsAcked(const std::list<quic_packet_meta> &acked_packets, uint64_t ack_delay_us) {
+void QuicBBR::OnPacketsAcked(const std::list<quic_packet_meta> &acked_packets) {
     uint64_t now = getutime();
-    size_t total_acked_bytes = 0;
     const quic_packet_meta* packet_first = nullptr;
     
     // 处理所有被确认的包
     for (const auto& packet : acked_packets) {
+        delivered_bytes += packet.sent_bytes;
         if(packet_first == nullptr && packet.ack_eliciting) {
             packet_first = &packet;
         }
-        if(packet_first) {
-            // 更新已交付字节数（只有ack_elicited包才有意义）
-            total_acked_bytes += packet.sent_bytes;
-        }
-        
+
         // 只有in_flight的包才需要从bytes_in_flight中减去
         if (packet.in_flight) {
             bytes_in_flight -= packet.sent_bytes;
@@ -118,21 +114,26 @@ void QuicBBR::OnPacketsAcked(const std::list<quic_packet_meta> &acked_packets, u
             min_rtt_stamp = now;
         }
         rtProp.insert(rtt.latest_rtt);
-        uint64_t delivered_time = now - packet_first->sent_time - ack_delay_us;
-        size_t delivery_rate = total_acked_bytes * TIME_US_TO_S / delivered_time;
+        uint64_t delivered_time = now - packet_first->sent_time ;
+        size_t delta_delivered_bytes = delivered_bytes - packet_first->delivered_bytes;
+        size_t delivery_rate = delta_delivered_bytes * TIME_US_TO_S / delivered_time;
         if(!packet_first->app_limited || delivery_rate >= btlBw.max()) {
             btlBw.insert(delivery_rate);
         }
+        if(packet_first->app_limited) {
+            full_bw = 0;
+            full_bw_count = 0;
+        }
         LOGD(DQUIC, "BBR latest_rtt=%.3fms, delivered_time=%.3fms, delivered_bytes=%zd, delivered_rate=%zd, app_limited=%s\n", 
             rtt.latest_rtt/(double)TIME_US_TO_MS, delivered_time/(double)TIME_US_TO_MS, 
-            total_acked_bytes, delivery_rate, packet_first->app_limited?"true":"false");
+            delta_delivered_bytes, delivery_rate, packet_first->app_limited?"true":"false");
     }
     
     // 更新BBR状态机
     UpdateBBRState();
 
     if(has_packet_been_congested && windowLeft() >= (int)max_datagram_size){
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 2);
     }
     LOGD(DQUIC, "BBR mode=%d, btlBw=%d, rtProp=%d, pacing_gain_count=%zd, since_last_sent=%.3fms, bytes_in_flight=%zd\n", 
         mode, (int)btlBw.max(), (int)rtProp.min(), pacing_gain_count, (now - last_sent_time)/(double)TIME_US_TO_MS, bytes_in_flight);
@@ -162,22 +163,28 @@ void QuicBBR::OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& l
 }
 
 ssize_t QuicBBR::windowLeft() const {
-    uint64_t now = getutime();
-    uint64_t btl_bw = btlBw.max() ?: BANDWIDTH_INIT;
-    uint64_t pacing_rate = btl_bw * pacing_gain() / BBR_UNIT;
-    size_t pacing_window = (now - last_sent_time) * pacing_rate / TIME_US_TO_S;
-    size_t window = 0;
-    if (mode == BBR_STARTUP) {
-        // STARTUP阶段使用无限大窗口，仅依靠pacing控制
-        window = pacing_window;
-    }else {
-        uint64_t bdp = btl_bw * rtProp.min() / TIME_US_TO_S;
-        window = std::min(bdp * cwnd_gain() / BBR_UNIT, (uint64_t)pacing_window);
+    size_t window = kInitialWindow;
+    if(btlBw.max()) {
+        uint64_t bdp = btlBw.max() * rtProp.min() / TIME_US_TO_S;
+        window = bdp * cwnd_gain() / BBR_UNIT;
     }
-    if(window + bytes_in_flight < 2 * max_datagram_size) {
-        return 2 * max_datagram_size - bytes_in_flight;
+    if(window + bytes_in_flight < kMinimumWindow) {
+        return kMinimumWindow - bytes_in_flight;
     }
     return window;
+}
+
+ssize_t QuicBBR::sendWindow() const {
+    uint64_t now = getutime();
+    uint64_t btl_bw = btlBw.max() ?: BANDWIDTH_INIT;
+    uint64_t pacing_rate = std::max(btl_bw * pacing_gain() / BBR_UNIT, kMinimumWindow * TIME_US_TO_S / rtt.smoothed_rtt);
+    size_t pacing_window = std::min(now - last_sent_time, rtt.smoothed_rtt + 1000) * pacing_rate / TIME_US_TO_S;
+    if (mode == BBR_STARTUP) {
+        // STARTUP阶段使用无限大窗口，仅依靠pacing控制
+        return pacing_window;
+    }else {
+        return std::min(windowLeft(), (ssize_t)pacing_window);
+    }
 }
 
 // BBR v1状态机函数实现

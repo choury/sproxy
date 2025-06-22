@@ -201,18 +201,19 @@ void QuicQos::sendPacket() {
         if(p->pend_frames.empty()) {
             continue;
         }
-        int window = windowLeft();
-        LOGD(DQUIC, "sendPacket, pto_count: %zu, window: %d, bytes_in_flight: %zd\n", pto_count, window, bytes_in_flight);
+        int window = sendWindow();
+        LOGD(DQUIC, "sendPacket, pto_count: %zu, sendWindow: %d, windowLeft: %d, bytes_in_flight: %zd\n",
+            pto_count, window, (int)windowLeft(), bytes_in_flight);
+        size_t packets;
         if(pto_count > 0) {
             //如果在丢包探测阶段，只发送一个包
-            bytes_in_flight += p->sendPacket(max_datagram_size);
-            packets_sent ++;
+            bytes_in_flight += p->sendPacket(max_datagram_size, delivered_bytes, packets);
+            packets_sent += packets;
             last_sent_time = now;
             return;
         }
         if(window >= (int)max_datagram_size) {
-            size_t packets;
-            bytes_in_flight += p->sendPacket(window, packets);
+            bytes_in_flight += p->sendPacket(window, delivered_bytes, packets);
             if(packets > 0) {
                 packets_sent += packets;
                 last_sent_time = now;
@@ -225,7 +226,7 @@ void QuicQos::sendPacket() {
     }
     if(has_packet_been_congested && windowLeft() >= (int)max_datagram_size) {
         //很大可能是udp的buffer满了，等一会重试
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 2);
     }
     if(bytes_in_flight > 0){
         SetLossDetectionTimer();
@@ -250,8 +251,7 @@ std::set<uint64_t> QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t nu
     std::set<uint64_t> streamIds;
     if(frame->type == QUIC_FRAME_ACK || frame->type == QUIC_FRAME_ACK_ECN){
         last_receipt_ack_time = getutime();
-        uint64_t ack_delay_us;
-        auto acked = ns->DetectAndRemoveAckedPackets(&frame->ack, &rtt, ack_delay_us, his_max_ack_delay * 1000);
+        auto acked = ns->DetectAndRemoveAckedPackets(&frame->ack, &rtt, his_max_ack_delay * 1000);
         if(acked.empty()){
             return {};
         }
@@ -270,7 +270,7 @@ std::set<uint64_t> QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t nu
         if (!lost_packets.empty()) {
             OnPacketsLost(ns, lost_packets);
         }
-        OnPacketsAcked(acked, ack_delay_us);
+        OnPacketsAcked(acked);
         if(PeerCompletedAddressValidation()){
             pto_count = 0;
         }
@@ -279,7 +279,7 @@ std::set<uint64_t> QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t nu
     if(level == ssl_encryption_initial || level == ssl_encryption_handshake){
         packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
     } else if(!ns->pend_frames.empty() && windowLeft() >= (int)max_datagram_size) {
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 2);
     } else if(JobPending(packet_tx) == 0 && ns->should_ack) {
         packet_tx  = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 20);
     }
@@ -310,7 +310,7 @@ void QuicQos::PushFrame(pn_namespace* ns, quic_frame *frame) {
     assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
     ns->pend_frames.push_back(frame);
     if(windowLeft() >= (int)max_datagram_size){
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 2);
     } else {
         LOGD(DQUIC, "skip send, window: %zd, bytes_in_flight: %zd\n", windowLeft(), bytes_in_flight);
     }
@@ -321,7 +321,7 @@ void QuicQos::FrontFrame(pn_namespace* ns, quic_frame *frame) {
     assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
     ns->pend_frames.push_front(frame);
     if(windowLeft() >= (int)max_datagram_size){
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 2);
     } else {
         LOGD(DQUIC, "skip send, window: %zd, bytes_in_flight: %zd\n", windowLeft(), bytes_in_flight);
     }

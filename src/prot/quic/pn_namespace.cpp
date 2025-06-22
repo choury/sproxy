@@ -145,12 +145,7 @@ void pn_namespace::PendAck() {
     pend_frames.push_front(ack);
 }
 
-size_t pn_namespace::sendPacket(size_t window) {
-    size_t packets_sent;
-    return sendPacket(window, packets_sent);
-}
-
-size_t pn_namespace::sendPacket(size_t window, size_t& packets_sent) {
+size_t pn_namespace::sendPacket(size_t window, size_t delivered_bytes, size_t& packets_sent) {
     auto packets = sent(current_pn, largest_acked_packet + 1, pend_frames, window);
     if(packets.empty()) {
         packets_sent = 0;
@@ -169,13 +164,14 @@ size_t pn_namespace::sendPacket(size_t window, size_t& packets_sent) {
             time_of_last_ack_eliciting_packet = packet.meta.sent_time;
         }
         packet.meta.app_limited = app_limited;
+        packet.meta.delivered_bytes = delivered_bytes;
     }
     sent_packets.splice(sent_packets.end(), packets);
     return flight_size;
 }
 
 std::list<quic_packet_meta> pn_namespace::DetectAndRemoveAckedPackets(
-        const quic_ack *ack, Rtt* rtt, uint64_t& ack_delay_us, uint64_t max_delay_us)
+        const quic_ack *ack, Rtt* rtt, uint64_t max_delay_us)
 {
     if(largest_acked_packet == UINT64_MAX || largest_acked_packet < ack->acknowledged){
         largest_acked_packet = ack->acknowledged;
@@ -183,7 +179,7 @@ std::list<quic_packet_meta> pn_namespace::DetectAndRemoveAckedPackets(
     std::list<quic_packet_meta> newly_acked_packets;
     uint64_t now = getutime();
     Chop p(ack);
-    ack_delay_us = ack->delay << ack_delay_exponent;
+    uint64_t ack_delay_us = ack->delay << ack_delay_exponent;
     if(max_delay_us && (ack_delay_us > max_delay_us)){
         ack_delay_us = max_delay_us;
     }

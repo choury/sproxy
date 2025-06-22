@@ -12,6 +12,8 @@
 #include <stdint.h>
 
 const uint64_t max_datagram_size = 1500;
+const uint64_t kInitialWindow = 14720;
+const uint64_t kMinimumWindow = 2 * max_datagram_size;
 const uint64_t kGranularity = 1000; // 1ms
 
 #define QUIC_PACKET_NAMESPACE_INITIAL 0
@@ -34,6 +36,7 @@ protected:
     bool has_drain_all = false;
 
     //used for bbr
+    size_t delivered_bytes = 0;
     size_t packets_sent = 0;
     uint64_t last_sent_time = 0;
     //end
@@ -48,7 +51,7 @@ protected:
     bool PeerCompletedAddressValidation();
     void SetLossDetectionTimer();
     virtual void OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets) = 0;
-    virtual void OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets,  uint64_t ack_delay_us) = 0;
+    virtual void OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets) = 0;
     virtual void OnCongestionEvent(uint64_t sent_time) = 0;
 public:
     Rtt    rtt;
@@ -64,6 +67,9 @@ public:
     virtual ~QuicQos();
     virtual void sendPacket();
     [[nodiscard]] virtual ssize_t windowLeft() const = 0;
+    [[nodiscard]] virtual ssize_t sendWindow() const {
+        return windowLeft();
+    };
     void KeyGot(OSSL_ENCRYPTION_LEVEL level);
     void KeyLost(OSSL_ENCRYPTION_LEVEL level);
     //set ack_delay_exponent for app level

@@ -230,7 +230,7 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
         auto& packet = sent_packets.back();
         quic_frame* frame = pend_frames.front();
         uint64_t type = frame->type;
-        ssize_t left = std::min((size_t)his_max_payload_size,  window) - packet.meta.sent_bytes;
+        ssize_t left = his_max_payload_size - packet.meta.sent_bytes;
         if(left < (int)pack_frame_len(frame)){
             if (type == QUIC_FRAME_CRYPTO && left >= 20){
                 // [off, off+len) -> [off, off + left - 20) + [off + left - 20, off+len)
@@ -252,7 +252,7 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
                 pend_frames.insert(std::next(pend_frames.begin()), fframe);
                 frame->stream.length = left - 30;
                 frame->type &= ~QUIC_FRAME_STREAM_FIN_F;
-            }else if(window < his_max_payload_size/2) {
+            } else if(window < packet.meta.sent_bytes) {
                 break;
             } else {
                 assert(!packet.frames.empty());
@@ -309,10 +309,11 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
     }
     size_t sentlen = start - (char*)blk.data();
     if((size_t)ret < iov.size()) {
-        LOGE("sent packet: %d/%zd, sent size: %zd buffer: %zd/%zd\n", ret, iov.size(), sentlen,
-             getWritableSize(), bufleft);
+        LOGE("sent packet: %d/%zd, sent size: %zd, left frames: %zd, buffer: %zd/%zd\n",
+            ret, iov.size(), sentlen, pend_frames.size(), getWritableSize(), bufleft);
     } else {
-        LOGD(DQUIC, "sent packet: %d/%zd, sent size: %zd buffer: %zd\n", ret, iov.size(), sentlen, bufleft);
+        LOGD(DQUIC, "sent packet: %d/%zd, sent size: %zd, left frames: %zd, buffer: %zd\n",
+            ret, iov.size(), sentlen, pend_frames.size(), bufleft);
     }
     my_sent_data_total += sentlen;
     return sent_packets;
@@ -2234,6 +2235,8 @@ success:
         LOGD(DQUIC, "reconnect udp %d to %s\n", clsk, storage_ntoa(&hisaddr));
         SetUdpOptions(clsk, &hisaddr);
         setFd(clsk);
+    } else if(type == SOCKET_ERR) {
+        LOG("ignore socket error for quic [%d]: %d\n", getFd(), code);
     } else {
         RWer::ErrorHE(type, code);
     }

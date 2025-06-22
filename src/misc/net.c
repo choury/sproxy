@@ -168,7 +168,7 @@ void SetRecvPKInfo(int fd, const struct sockaddr_storage* addr) {
 }
 
 size_t GetCapSize(int fd) {
-    size_t sndbuf;
+    int sndbuf;
     socklen_t len = sizeof(sndbuf);
     if(getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, &len) < 0){
         LOGE("failed to get sndbuf for %d: %s\n", fd, strerror(errno));
@@ -178,7 +178,7 @@ size_t GetCapSize(int fd) {
 }
 
 size_t GetBuffSize(int fd){
-    size_t outq = 0;
+    int outq = 0;
 #if __linux__
     if(ioctl(fd, TIOCOUTQ, &outq) < 0){
         LOGE("ioctl failed for %d: %s\n", fd, strerror(errno));

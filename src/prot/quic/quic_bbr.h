@@ -12,17 +12,24 @@
 // 用于跟踪BBR算法中的带宽和RTT测量值
 class Twin {
     uint64_t window;  // 时间窗口大小（微秒）
-    std::deque<std::pair<uint64_t, uint64_t>> content;  // (时间戳, 值) 对的双端队列
+    // 用于维护最大值的单调递减队列 (存储 时间戳, 值)
+    std::deque<std::pair<uint64_t, uint64_t>> max_q;
+
+    // 用于维护最小值的单调递增队列 (存储 时间戳, 值)
+    std::deque<std::pair<uint64_t, uint64_t>> min_q;
     
     // 清除过期的测量值
-    void evict() {
-        uint64_t now = getutime();
-        while(content.size() > 1) {
-            if(content.front().first + window < now) {
-                content.pop_front();
-                continue;
-            }
-            break;
+    void evict(uint64_t now) {
+        const uint64_t expiry_time = now - window;
+
+        // 清理 max_q 的队首过期元素
+        while (!max_q.empty() && max_q.front().first <= expiry_time) {
+            max_q.pop_front();
+        }
+
+        // 清理 min_q 的队首过期元素
+        while (!min_q.empty() && min_q.front().first <= expiry_time) {
+            min_q.pop_front();
         }
     }
 public:
@@ -33,28 +40,44 @@ public:
     }
     // 插入新的测量值
     void insert(uint64_t value) {
-        content.emplace_back(getutime(), value);
-        evict();
+        uint64_t now = getutime();
+        // 1. 首先，清理所有队列中已经过期的旧数据
+        evict(now);
+
+        std::pair<uint64_t, uint64_t> new_point = {now, value};
+
+        // 2. 维护 max_q 的单调递减性
+        while (!max_q.empty() && max_q.back().second <= value) {
+            max_q.pop_back();
+        }
+        max_q.push_back(new_point);
+
+        // 3. 维护 min_q 的单调递增性
+        while (!min_q.empty() && min_q.back().second >= value) {
+            min_q.pop_back();
+        }
+        min_q.push_back(new_point);
     }
     // 获取时间窗口内的最大值（用于带宽测量）
     uint64_t max() const{
-        uint64_t result = 0;
-        for(const auto& [time, value] : content) {
-            result = std::max(result, value);
+        if (max_q.empty()) {
+            return 0;
         }
-        return result;
+        // 队首即为最大值
+        return max_q.front().second;
     }
     // 获取时间窗口内的最小值（用于RTT测量）
     uint64_t min() const{
-        uint64_t result = UINT64_MAX;
-        for(const auto& p : content) {
-            result = std::min(result, p.second);
+        if (min_q.empty()) {
+            return UINT64_MAX;
         }
-        return result;
+        // 队首即为最小值
+        return min_q.front().second;
     }
 
     void clear() {
-        content.clear();
+        max_q.clear();
+        min_q.clear();
     }
 };
 
@@ -94,13 +117,14 @@ class QuicBBR: public QuicQos {
     void CheckProbeRTTCondition();     // 检查是否需要进入PROBE_RTT
     void UpdateBBRState();             // 更新BBR状态机
     bool IsFullBandwidthReached();     // 检查是否达到满带宽
-    virtual void OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets, uint64_t ack_delay_us) override;
+    virtual void OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets) override;
     virtual void OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets) override;
     virtual void OnCongestionEvent(uint64_t sent_time) override;
 
 public:
     QuicBBR(bool isServer, send_func sent, std::function<void(pn_namespace*, quic_frame*)> resendFrames);
     [[nodiscard]] virtual ssize_t windowLeft() const override;
+    [[nodiscard]] virtual ssize_t sendWindow() const override;
 };
 
 #endif //SPROXY_QUIC_BBR_H

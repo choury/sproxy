@@ -74,7 +74,7 @@ void QuicCubic::OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>&
     congestion_recovery_start_time = 0;
 }
 
-void QuicCubic::OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets,  uint64_t) {
+void QuicCubic::OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets) {
     size_t sent_bytes = 0;
     for(auto meta: acked_packets){
         if(!meta.in_flight){
@@ -100,6 +100,6 @@ void QuicCubic::OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets,
         congestion_window += max_datagram_size * sent_bytes / congestion_window;
     }
     if(has_packet_been_congested && windowLeft() >= (int)max_datagram_size){
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 2);
     }
 }
