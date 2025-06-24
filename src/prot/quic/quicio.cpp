@@ -848,7 +848,7 @@ void QuicBase::cleanStream(uint64_t id) {
 
 QuicBase::FrameResult QuicBase::handleStreamFrame(uint64_t type, const quic_stream *stream) {
     auto id = stream->id;
-    if(isBidirect(id) ? id > my_max_streams_bidi : id > my_max_streams_uni) {
+    if(isBidirect(id) ? id/4 > my_max_streams_bidi : id/4 > my_max_streams_uni) {
         onError(PROTOCOL_ERR, QUIC_STREAM_LIMIT_ERROR);
         qos->PushFrame(ssl_encryption_application, new quic_frame{
             .type = QUIC_FRAME_CONNECTION_CLOSE,
@@ -1558,6 +1558,11 @@ bool QuicBase::checkStatelessReset(const void *may_be_token) {
 void QuicBase::walkPacket(const void* buff, size_t length) {
     my_received_data_total += length;
 
+    if(isClosing) {
+        LOGD(DQUIC, "drop packet after cc: %zd\n", length);
+        return;
+    }
+
     const char *pos = (const char*)buff;
     while (length > 0) {
         if (*pos == 0) {
@@ -1921,8 +1926,8 @@ void QuicBase::dump(Dumper dp, void* param) {
        dumpHex(myids[myid_idx].c_str(), myids[myid_idx].length()).c_str(),
        dumpHex(hisids[hisid_idx].c_str(), hisids[hisid_idx].length()).c_str(),
        his_max_payload_size,
-       my_received_max_bidistream_id, my_max_streams_bidi,
-       my_received_max_unistream_id, my_max_streams_uni,
+       my_received_max_bidistream_id/4, my_max_streams_bidi,
+       my_received_max_unistream_id/4, my_max_streams_uni,
        my_received_data, my_received_data_total,
        my_sent_data, my_sent_data_total,
        my_max_data - my_received_data,
