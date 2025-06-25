@@ -109,7 +109,7 @@ int SslRWerBase::sink_in_bio(uint64_t id) {
         onRead(Buffer{std::move(buff), (size_t) ret, id});
         return 1;
     } else if (ret == 0) {
-        assert(BIO_ctrl_pending(in_bio) == 0);
+        assert(BIO_ctrl_pending(in_bio) == 0 && SSL_pending(ssl) == 0);
         sslStats = SslStats::SslEOF;
         return 0;
     } else if (errno != EAGAIN) {
@@ -139,7 +139,7 @@ void SslRWerBase::handleData(const void* data, size_t len) {
         while (sslStats == SslStats::Established && sink_in_bio(0));
         break;
     case SslStats::SslEOF: case SslStats::SslError:
-        LOGE("(%s) ssl eof/error, discard all data, left: %zd\n", server.c_str(), BIO_ctrl_pending(in_bio));
+        LOGE("(%s) ssl eof/error, discard all data, left: %zd\n", server.c_str(), SSL_pending(ssl) + BIO_ctrl_pending(in_bio));
         break;
     }
 }
@@ -213,7 +213,7 @@ void SslRWerBase::set_server_name(const std::string& arg) {
 
 void SslRWerBase::dump(Dumper dp, void *param) {
     dp(param, "Ssl (%s): rbio: %zu, wbio: %zu, sslStats: %d (%s)\n",
-       server.c_str(), BIO_ctrl_pending(in_bio), BIO_ctrl_pending(out_bio),
+       server.c_str(), SSL_pending(ssl) + BIO_ctrl_pending(in_bio), BIO_ctrl_pending(out_bio),
        (int)sslStats, SSL_state_string_long(ssl));
 }
 
@@ -278,7 +278,7 @@ void SslRWer::ReadData() {
             //StreamRWer::ConsumeRData(0);
             continue;
         } else if (ret == 0) {
-            if(BIO_ctrl_pending(in_bio) > 0) {
+            if(SSL_pending(ssl) + BIO_ctrl_pending(in_bio) > 0) {
                 handleData(nullptr, 0);
             }else{
                 stats = RWerStats::ReadEOF;

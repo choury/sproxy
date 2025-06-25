@@ -61,7 +61,7 @@ protected:
         return isConnected();
     }
     virtual size_t rlength(uint64_t id) override {
-        return BIO_ctrl_pending(in_bio) + StreamRWer::rlength(id);
+        return SSL_pending(ssl) + BIO_ctrl_pending(in_bio) + StreamRWer::rlength(id);
     }
     virtual void waitconnectHE(RW_EVENT events) override;
     virtual void ConsumeRData(uint64_t id) override {
@@ -102,7 +102,7 @@ protected:
         return isConnected();
     }
     virtual size_t rlength(uint64_t id) override {
-        return BIO_ctrl_pending(in_bio) + MemRWer::rlength(id);
+        return SSL_pending(ssl) + BIO_ctrl_pending(in_bio) + MemRWer::rlength(id);
     }
     virtual void ConsumeRData(uint64_t id) override {
         while(sink_in_bio(id));
