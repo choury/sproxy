@@ -46,7 +46,7 @@ retry:
         char name[IF_NAMESIZE]={0};
         struct sockaddr_storage addr;
         memset(&addr, 0, sizeof(addr));
-        for(struct nlmsghdr* nlh = (struct nlmsghdr *)buffer; NLMSG_OK(nlh, len); nlh = NLMSG_NEXT(nlh, len)) {
+        for(struct nlmsghdr* nlh = (struct nlmsghdr *)buffer; NLMSG_OK(nlh, (unsigned int)len); nlh = NLMSG_NEXT(nlh, len)) {
             if (nlh->nlmsg_type == NLMSG_DONE){
                 /* Finish reading */
                 break;

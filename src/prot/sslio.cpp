@@ -9,7 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <inttypes.h>
-#if __ANDROID__
+#ifdef ANDROID_APP
 extern std::string getExternalFilesDir();
 #endif
 
@@ -33,7 +33,7 @@ SslRWerBase::SslRWerBase(const char *hostname) {
             LOGF("SSL_CTX_new: %s\n", ERR_error_string(ERR_get_error(), nullptr));
         }
         SSL_CTX_set_keylog_callback(client_ctx, keylog_write_line);
-#if __ANDROID__
+#ifdef ANDROID_APP
         if (SSL_CTX_load_verify_locations(client_ctx, (getExternalFilesDir() + CABUNDLE).c_str(), "/etc/security/cacerts/") != 1)
 #else
         if (SSL_CTX_load_verify_locations(client_ctx, CABUNDLE, "/etc/ssl/certs/") != 1)

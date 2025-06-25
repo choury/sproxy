@@ -9,7 +9,7 @@ if(HAVE_QUIC)
     set(req_src ${req_src} guest3.cpp)
 endif()
 
-if(LINUX)
+if(LINUX OR TERMUX)
     set(req_src ${req_src} guest_tproxy.cpp)
 endif()
 

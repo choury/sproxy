@@ -2,13 +2,13 @@
 #include "guest.h"
 #include "guest_sni.h"
 #ifdef HAVE_QUIC
+#include "prot/quic/quicio.h"
 #include "guest3.h"
 #endif
 #include "res/fdns.h"
 #include "prot/tls.h"
 #include "prot/sslio.h"
 #include "prot/tcpip/tunio.h"
-#include "prot/quic/quicio.h"
 #include "misc/config.h"
 #include "misc/util.h"
 #include "misc/strategy.h"
@@ -89,7 +89,7 @@ static const char* getProg(std::shared_ptr<const Ip> pac) {
     if(!startwith(getRdns(src_).c_str(), "VPN")) {
         return "NOT-LOCAL";
     }
-#if __ANDROID__
+#ifdef ANDROID_APP
     if(android_get_device_api_level() >= 29){
         return getPackageNameFromAddr(pac->gettype(), &src_, &dst_);
     }
@@ -129,7 +129,7 @@ static const char* getProg(std::shared_ptr<const Ip> pac) {
                 if((pac->gettype() != IPPROTO_TCP) ||
                     (dst->sin_addr.s_addr == dstip && dst->sin_port == htons(dstport)))
                 {
-#if __ANDROID__
+#ifdef ANDROID_APP
                     return getPackageNameFromUid(uid);
 #else
                     return findprogram(inode);
@@ -189,7 +189,7 @@ static const char* getProg(std::shared_ptr<const Ip> pac) {
             if((pac->gettype() != IPPROTO_TCP) ||
                 (memcmp(&mydstip, dstip, sizeof(dstip)) == 0 && dst->sin6_port == htons(dstport)))
             {
-#if __ANDROID__
+#ifdef ANDROID_APP
                 return getPackageNameFromUid(uid);
 #else
                 return findprogram(inode);

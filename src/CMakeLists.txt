@@ -4,7 +4,7 @@ configure_file(${PROJECT_SOURCE_DIR}/src/common/version.h.in ${PROJECT_BINARY_DI
 include_directories(${PROJECT_BINARY_DIR}/src)
 include_directories(${PROJECT_SOURCE_DIR}/src)
 
-if(NOT ANDROID)
+if(NOT ANDROID_APP)
     add_subdirectory(cgi)
 endif()
 
@@ -55,7 +55,7 @@ else()
 endif()
 
 set(SPROXY_LIBS ${SPROXY_LIBS} ${JSON-C_LIBRARIES})
-if(LINUX OR APPLE)
+if(LINUX OR APPLE OR TERMUX)
     add_executable(sproxy server/server.cpp common/base.cpp)
     set_target_properties(sproxy PROPERTIES OUTPUT_NAME "sproxy")
     target_link_libraries(sproxy ${SPROXY_LIBS})
@@ -70,7 +70,7 @@ if(HAVE_CLIENT)
 endif()
 
 
-if(ANDROID)
+if(ANDROID_APP)
     add_library(sproxy_lib SHARED common/base.cpp android/com_choury_sproxy_Service.cpp)
     set_target_properties(sproxy_lib PROPERTIES OUTPUT_NAME "sproxy")
     target_link_libraries(sproxy_lib ${SPROXY_LIBS} ${log-lib})

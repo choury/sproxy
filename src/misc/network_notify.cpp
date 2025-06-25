@@ -52,7 +52,7 @@ int register_network_change_cb(network_notify_callback cb) {
     }
     int fd = create_notifier_fd();
     if(fd < 0) {
-        LOGE("create network notifiler failed");
+        LOGE("create network notifiler failed\n");
         return -1;
     }
     notifier = std::make_shared<Notifier>(fd, cb);

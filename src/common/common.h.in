@@ -31,6 +31,21 @@
 #define forceinline inline
 #endif
 
+#cmakedefine01 Backtrace_FOUND
+#if Backtrace_FOUND
+#include <@Backtrace_HEADER@>
+#endif
+#cmakedefine HAVE_VPN
+#cmakedefine HAVE_CLIENT
+#cmakedefine HAVE_ZLIB
+#cmakedefine HAVE_QUIC
+#cmakedefine HAVE_BPF
+#cmakedefine HAVE_ELF
+#cmakedefine HAVE_URING
+#cmakedefine USE_BORINGSSL
+#cmakedefine ANDROID_APP
+#cmakedefine TERMUX
+
 /*
  * * The next routines deal with comparing 32 bit unsigned ints
  * * and worry about wraparound (automatic with unsigned arithmetic).
@@ -106,7 +121,7 @@ extern "C" {
 
 void slog(int level, const char* fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));
 
-#ifndef __ANDROID__
+#ifndef ANDROID_APP
 void vslog(int level, const char* fmt, va_list arg);
 #define VLOG(...) vslog(__VA_ARGS__)
 #else
@@ -259,19 +274,6 @@ struct Destination{
 };
 
 #define STRATEGY "Strategy"
-
-#cmakedefine01 Backtrace_FOUND
-#if Backtrace_FOUND
-#include <@Backtrace_HEADER@>
-#endif
-#cmakedefine HAVE_VPN
-#cmakedefine HAVE_CLIENT
-#cmakedefine HAVE_ZLIB
-#cmakedefine HAVE_QUIC
-#cmakedefine HAVE_BPF
-#cmakedefine HAVE_ELF
-#cmakedefine HAVE_URING
-#cmakedefine USE_BORINGSSL
 
 #define PREFIX "@CMAKE_INSTALL_PREFIX@"
 #define CABUNDLE "@SPROXY_CA_BUNDLE@"

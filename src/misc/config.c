@@ -860,7 +860,7 @@ bool debugon(const char* module, bool enable){
 }
 
 
-#ifndef __ANDROID__
+#ifndef ANDROID_APP
 void vslog(int level, const char* fmt, va_list arg){
     if(opt.daemon_mode){
         vsyslog(level, fmt, arg);

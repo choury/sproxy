@@ -9,6 +9,7 @@
 #include <sys/ioctl.h>
 #include <net/if.h>
 #include <net/route.h>
+#include <linux/ipv6.h>
 #include <linux/if_tun.h>
 #include <linux/virtio_net.h>
 
@@ -102,13 +103,6 @@ static int set_if(struct ifreq *ifr) {
     close(fd);
     return err;
 }
-
-
-struct in6_ifreq {
-    struct in6_addr ifr6_addr;
-    __u32 ifr6_prefixlen;
-    unsigned int ifr6_ifindex;
-};
 
 static int set_if6(struct ifreq *ifr) {
     int fd = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, 0);

@@ -248,6 +248,7 @@ int main(int argc, char **argv) {
             char tun_name[IFNAMSIZ] = {0};
             int tun = tun_create(tun_name, IFF_TUN | IFF_NO_PI | IFF_NAPI | IFF_VNET_HDR);
             if (tun < 0) {
+                LOGE("failed to create tun: %s\n", strerror(errno));
                 return -1;
             }
             new Guest_vpn(tun, true);

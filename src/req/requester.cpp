@@ -17,14 +17,14 @@ std::string generateUA(const char* ua, const std::string& prog, uint64_t request
            <<" (" << getDeviceInfo() << ")"
            <<" Sproxy/" << getVersion()
            <<" (Build " << getBuildTime() << ")";
-#ifdef __ANDROID__
+#ifdef ANDROID_APP
         UA <<" App/" << appVersion;
 #endif
     } else {
         UA <<"Sproxy/" << getVersion()
            <<" (" << getDeviceInfo() << ")"
            <<" (Build " << getBuildTime() << ")";
-#ifdef __ANDROID__
+#ifdef ANDROID_APP
         UA <<" App/" << appVersion;
 #endif
     }

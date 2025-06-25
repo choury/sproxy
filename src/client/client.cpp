@@ -61,7 +61,7 @@ constexpr hash_t hash_compile_time(const char* str, hash_t last_value = basis) {
     return *str ? hash_compile_time(str + 1, (*str ^ last_value) * prime) : last_value;
 }
 
-constexpr hash_t operator "" _hash(const char* p, size_t) {
+constexpr hash_t operator ""_hash(const char* p, size_t) {
     return hash_compile_time(p);
 }
 

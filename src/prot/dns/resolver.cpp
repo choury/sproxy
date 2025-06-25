@@ -201,7 +201,7 @@ void RawResolver::readHE(RW_EVENT events) {
 RawResolver::~RawResolver(){
 }
 
-#ifdef __ANDROID__
+#ifdef ANDROID_APP
 extern std::vector<std::string> getDns();
 void getDnsConfig(struct DnsConfig* config){
     config->namecount = 0;
@@ -230,8 +230,14 @@ void reload_hosts() {
 }
 
 #else
+#ifdef TERMUX
+#define RESOLV_FILE "/data/data/com.termux/files/usr/etc/resolv.conf"
+#define HOSTS_FILE  "/data/data/com.termux/files/usr/etc/hosts"
+#else
 #define RESOLV_FILE "/etc/resolv.conf"
 #define HOSTS_FILE  "/etc/hosts"
+#endif
+
 void getDnsConfig(struct DnsConfig* config){
     config->namecount = 0;
     FILE *res_file = fopen(RESOLV_FILE, "r");

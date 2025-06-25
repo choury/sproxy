@@ -19,6 +19,15 @@ INCLUDE(CMakePushCheckState)
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
+
+if(ANDROID)
+    if(NOT DEFINED ENV{TERMUX_VERSION})
+        set(ANDROID_APP TRUE CACHE BOOL "Build for android app")
+    else()
+        set(TERMUX TRUE CACHE BOOL "Build in termux")
+    endif()
+endif()
+
 if(STATIC_BUILD)
     SET(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
     SET(BUILD_SHARED_LIBRARIES OFF)
@@ -56,7 +65,7 @@ message(STATUS "Set VERSION: ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.$
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-if(${CMAKE_BUILD_TYPE} MATCHES "Debug" AND NOT ANDROID AND NOT STATIC_BUILD)
+if(${CMAKE_BUILD_TYPE} MATCHES "Debug" AND NOT ANDROID_APP AND NOT STATIC_BUILD)
     CHECK_CXX_COMPILER_FLAG("-fsanitize=undefined" HAVE_SAN_UNDEF)
     set(CMAKE_REQUIRED_FLAGS "-fsanitize=address")
     CHECK_CXX_COMPILER_FLAG("-fsanitize=address" HAVE_SAN_ADDR)
@@ -97,7 +106,7 @@ endif()
 
 set(HAVE_VPN TRUE CACHE BOOL "Have VPN")
 set(HAVE_RPC TRUE CACHE BOOL "Have RPC")
-if(ANDROID)
+if(ANDROID_APP)
     set(THIRDPATY_ROOT_DIR ${THIRDPATY_ROOT}/${ANDROID_ABI})
     set(JSON-C_INCLUDE_DIRS ${THIRDPATY_ROOT_DIR}/include/json-c)
     set(JSON-C_LIBRARIES ${THIRDPATY_ROOT_DIR}/lib/libjson-c.a)
@@ -138,7 +147,9 @@ else()
             /etc/pki/tls/cacert.pem
             /usr/share/ssl/certs/ca-bundle.crt
             /usr/local/etc/openssl/cert.pem
-            /usr/local/share/certs/ca-root-nss.crt)
+            /usr/local/share/certs/ca-root-nss.crt
+            /data/data/com.termux/files/usr/etc/tls/cert.pem
+    )
 
     foreach(SEARCH_CA_BUNDLE_PATH ${SEARCH_CA_BUNDLE_PATHS})
         if(EXISTS "${SEARCH_CA_BUNDLE_PATH}")
@@ -226,7 +237,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O2 -g -DNDEBUG")
 set(CMAKE_C_FLAGS_DEBUG "-O0 -ggdb3")
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb3")
 
-if (HAVE_SAN_ADDR AND NOT ANDROID)
+if (HAVE_SAN_ADDR AND NOT ANDROID_APP)
     set(CMAKE_C_FLAGS_DEBUG "-fsanitize=address ${CMAKE_C_FLAGS_DEBUG}")
     set(CMAKE_CXX_FLAGS_DEBUG "-fsanitize=address ${CMAKE_CXX_FLAGS_DEBUG}")
 
