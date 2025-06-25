@@ -9,7 +9,7 @@
 
 class Rproxy2: public Proxy2 {
     std::string name;
-    virtual void clearIdle(uint32_t) override {}
+    virtual void setIdle(uint32_t) override {}
     virtual void PushProc(uint32_t id, std::shared_ptr<HttpReqHeader> req) override;
     Destination getPeer() {
         return rwer->getSrc();

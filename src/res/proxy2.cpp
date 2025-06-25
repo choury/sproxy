@@ -21,7 +21,7 @@ void Proxy2::ping_check(){
                                     [this]{connection_lost();}, 2000);
 }
 
-void Proxy2::clearIdle(uint32_t ms){
+void Proxy2::setIdle(uint32_t ms){
     idle_timeout = UpdateJob(std::move(idle_timeout), [this]{deleteLater(CONNECT_AGED);}, ms);
 }
 
@@ -80,7 +80,6 @@ void Proxy2::SendData(Buffer&& bb){
 }
 
 void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
-    clearIdle(300000);
     if(statusmap.count(id) == 0) {
         LOGD(DHTTP2, "<proxy2> ResProc not found id: %d\n", id);
         Reset(id, HTTP2_ERR_STREAM_CLOSED);
@@ -102,7 +101,6 @@ void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
 
 void Proxy2::DataProc(Buffer&& bb) {
     HOOK_FUNC(this, statusmap, bb);
-    clearIdle(300000);
     if(bb.len == 0)
         return;
     if ((int)bb.len > localwinsize) {
@@ -184,14 +182,18 @@ void Proxy2::Clean(uint32_t id, uint32_t errcode){
         Reset(id, errcode);
     }
 
+    status.rw->SetCallback(nullptr);
     if(status.flags & (HTTP_CLOSED_F | HTTP_RESPOENSED)){
         //do nothing.
     } else {
         response(status.rw, HttpResHeader::create(S500, sizeof(S500), status.req->request_id), "[[internal error]]");
     }
-    status.rw->SetCallback(nullptr);
     status.rw->Close();
     statusmap.erase(id);
+    if(statusmap.empty()) {
+        LOG("(%s) has no request, start idle timer\n", dumpDest(rwer->getDst()).c_str());
+        setIdle(300000);
+    }
 }
 
 void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
@@ -338,6 +340,7 @@ void Proxy2::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer
         return Clean(id, HTTP2_ERR_INTERNAL_ERROR);
     });
     status.rw->SetCallback(status.cb);
+    idle_timeout.reset();
 }
 
 void Proxy2::init(bool enable_push, std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
@@ -397,12 +400,12 @@ void Proxy2::AdjustInitalFrameWindowSize(ssize_t diff) {
 
 void Proxy2::deleteLater(uint32_t errcode){
     responsers.erase(this);
-    idle_timeout.reset(nullptr);
     std::set<uint32_t> keys;
     std::for_each(statusmap.begin(), statusmap.end(), [&keys](auto&& i){ keys.emplace(i.first);});
     for(auto& i: keys){
         Clean(i, errcode);
     }
+    idle_timeout.reset();
     assert(statusmap.empty());
     if((http2_flag & HTTP2_FLAG_GOAWAYED) == 0){
         Goaway(recvid, errcode);

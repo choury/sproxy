@@ -73,8 +73,6 @@ void Proxy3::Reset(uint64_t id, uint32_t code) {
 
 bool Proxy3::DataProc(Buffer& bb){
     HOOK_FUNC(this, statusmap, bb);
-    idle_timeout = UpdateJob(std::move(idle_timeout),
-                             [this]{deleteLater(CONNECT_AGED);}, 300000);
     if(bb.len == 0){
         return true;
     }
@@ -133,8 +131,6 @@ void Proxy3::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer
     SendData({std::move(buff), pre + len, id});
     status.cb = IRWerCallback::create()->onRead([this, id](Buffer&& bb) -> size_t {
         HOOK_FUNC(this, statusmap, id, bb);
-        idle_timeout = UpdateJob(std::move(idle_timeout),
-                                 [this]{deleteLater(CONNECT_AGED);}, 300000);
         ReqStatus& status = statusmap.at(id);
         bb.id = id;
         auto len = bb.len;
@@ -158,6 +154,7 @@ void Proxy3::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer
         return Clean(id, HTTP3_ERR_CONNECT_ERROR);
     });
     status.rw->SetCallback(status.cb);
+    idle_timeout.reset();
 }
 
 bool Proxy3::reconnect() {
@@ -183,8 +180,6 @@ void Proxy3::init(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> r
 }
 
 void Proxy3::ResProc(uint64_t id, std::shared_ptr<HttpResHeader> header) {
-    idle_timeout = UpdateJob(std::move(idle_timeout),
-                             [this]{deleteLater(CONNECT_AGED);}, 300000);
     if(statusmap.count(id)){
         ReqStatus& status = statusmap[id];
         header->request_id = status.req->request_id;
@@ -231,26 +226,30 @@ void Proxy3::Clean(uint64_t id, uint32_t errcode) {
         Reset(id, errcode);
     }
 
+    status.rw->SetCallback(nullptr);
     if(status.flags & (HTTP_CLOSED_F | HTTP_RESPOENSED)){
         //do nothing.
     }else{
         response(status.rw, HttpResHeader::create(S500, sizeof(S500), status.req->request_id), "[[internal error]]");
     }
-    status.rw->SetCallback(nullptr);
     status.rw->Close();
     statusmap.erase(id);
+    if(statusmap.empty()) {
+        LOG("(%s) has no request, start idle timer\n", dumpDest(rwer->getDst()).c_str());
+        idle_timeout = UpdateJob(std::move(idle_timeout), [this]{deleteLater(CONNECT_AGED);}, 300000);
+    }
 }
 
 
 void Proxy3::deleteLater(uint32_t errcode) {
     http3_flag |= HTTP3_FLAG_CLEANNING;
-    idle_timeout.reset(nullptr);
     responsers.erase(this);
     std::set<uint64_t> keys;
     std::for_each(statusmap.begin(), statusmap.end(), [&keys](auto&& i){ keys.emplace(i.first);});
     for(auto& i: keys){
         Clean(i, errcode);
     }
+    idle_timeout.reset();
     assert(statusmap.empty());
     if((http3_flag & HTTP3_FLAG_GOAWAYED) == 0){
         Goaway(maxDataId);

@@ -44,7 +44,7 @@ protected:
     virtual void AdjustInitalFrameWindowSize(ssize_t diff)override;
 
     void Clean(uint32_t id, uint32_t errcode);
-    virtual void clearIdle(uint32_t ms);
+    virtual void setIdle(uint32_t ms);
 
     static bool wantmore(const ReqStatus& status);
 public:

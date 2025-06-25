@@ -92,11 +92,8 @@ void Ping::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
 void Ping::deleteLater(uint32_t errcode) {
     if(flags & PING_IS_CLOSED_F){
         //do nothing.
-    }else if(status.rw){
+    }else if(status.rw && (flags & PING_IS_RESPONSED) == 0){
         status.rw->SetCallback(nullptr);
-        status.rw->Close();
-        status.rw = nullptr;
-    }else {
         uint64_t id = status.req->request_id;
         switch(errcode) {
         case DNS_FAILED:
@@ -111,6 +108,8 @@ void Ping::deleteLater(uint32_t errcode) {
         default:
             response(status.rw, HttpResHeader::create(S500, sizeof(S500), id), "[[internal error]]\n");
         }
+        status.rw->Close();
+        status.rw = nullptr;
     }
     flags |= PING_IS_CLOSED_F;
     Server::deleteLater(errcode);

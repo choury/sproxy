@@ -71,7 +71,9 @@ void SocketRWer::Dnscallback(std::shared_ptr<void> param, int error, const std::
 }
 
 void SocketRWer::connectFailed(int error) {
-    assert(!addrs.empty());
+    if(addrs.empty()) {
+        return ErrorHE(CONNECT_FAILED, error);
+    }
     RcdBlock(hostname, addrs.front());
     addrs.pop();
     if(getFd() >= 0){

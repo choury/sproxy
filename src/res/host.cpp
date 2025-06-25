@@ -270,6 +270,7 @@ void Host::Error(int ret, int code) {
 }
 
 void Host::deleteLater(uint32_t errcode){
+    status.rw->SetCallback(nullptr);
     if(status.flags & (HTTP_CLOSED_F | HTTP_RESPOENSED)){
         //do nothing.
     }else{
@@ -288,7 +289,6 @@ void Host::deleteLater(uint32_t errcode){
             response(status.rw, HttpResHeader::create(S500, sizeof(S500), id), "[[internal error]]\n");
         }
     }
-    status.rw->SetCallback(nullptr);
     status.rw->Close();
     status.flags |= HTTP_CLOSED_F;
     Server::deleteLater(errcode);

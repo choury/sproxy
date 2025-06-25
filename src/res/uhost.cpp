@@ -86,6 +86,7 @@ void Uhost::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer>
 }
 
 void Uhost::deleteLater(uint32_t errcode) {
+    status.rw->SetCallback(nullptr);
     if(is_closing || is_responsed){
         //do nothing
     }else {
@@ -104,7 +105,6 @@ void Uhost::deleteLater(uint32_t errcode) {
             response(status.rw, HttpResHeader::create(S500, sizeof(S500), id), "[[internal error]]\n");
         }
     }
-    status.rw->SetCallback(nullptr);
     status.rw->Close();
     is_closing = true;
     Server::deleteLater(errcode);

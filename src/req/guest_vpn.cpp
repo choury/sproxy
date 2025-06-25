@@ -401,6 +401,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
 void Guest_vpn::Clean(uint64_t id) {
     auto& status = statusmap.at(id);
     if((status.flags & HTTP_CLOSED_F) == 0){
+        status.cb = nullptr;
         status.rw->push_signal(CHANNEL_ABORT);
     }
     statusmap.erase(id);

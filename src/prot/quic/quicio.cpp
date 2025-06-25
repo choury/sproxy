@@ -2106,7 +2106,8 @@ void QuicRWer::ReadData() {
         return;
     }
     if (ret < 0) {
-        ErrorHE(SOCKET_ERR, errno);
+        LOG("ignore socket error for quic [%d]: %s", getFd(), strerror(errno));
+        delEvents(RW_EVENT::READ);
         return;
     }
     walkPackets(iov.data(), ret);
@@ -2241,7 +2242,7 @@ success:
         SetUdpOptions(clsk, &hisaddr);
         setFd(clsk);
     } else if(type == SOCKET_ERR) {
-        LOG("ignore socket error for quic [%d]: %d\n", getFd(), code);
+        LOG("ignore socket error for quic [%d]: %s\n", getFd(), strerror(code));
     } else {
         RWer::ErrorHE(type, code);
     }

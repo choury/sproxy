@@ -256,6 +256,7 @@ void Guest2::Clean(uint32_t id, uint32_t errcode) {
     if((status.flags & HTTP_RST) == 0 && ((status.flags&HTTP_REQ_COMPLETED) == 0 || (status.flags&HTTP_RES_COMPLETED) == 0)){
         Reset(id, errcode);
     }
+    status.cb = nullptr;
     if((status.flags & HTTP_CLOSED_F) == 0){
         status.rw->push_signal(CHANNEL_ABORT);
     }
