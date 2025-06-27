@@ -290,7 +290,7 @@ struct in_addr getMapped(struct in6_addr addr, const char* prefix) {
     return addr4;
 }
 
-#if Backtrace_FOUND
+#if Backtrace_FOUND || defined(ANDROID_APP)
 void demangle_func(char* stack, int depth);
 
 void dump_trace(int signum) {

@@ -119,6 +119,13 @@ extern struct debug_flags_map debug[];
 extern "C" {
 #endif
 
+
+#if defined(ANDROID_APP) && __ANDROID_MIN_SDK_VERSION__ < 33
+#define BACKTRACE_IMPL__
+int backtrace(void** buffer, int size);
+char** backtrace_symbols(void* const* buffer, int size);
+#endif
+
 void slog(int level, const char* fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));
 
 #ifndef ANDROID_APP

@@ -48,7 +48,7 @@ std::string getExternalFilesDir() {
     return extenalFilesDir;
 }
 
-static std::string getExternalCacheDir() {
+std::string getExternalCacheDir() {
     if(!extenalCacheDir.empty()){
         return extenalCacheDir;
     }

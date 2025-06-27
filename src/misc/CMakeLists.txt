@@ -9,7 +9,7 @@ if(APPLE)
 elseif(LINUX OR TERMUX)
     set(misc_src ${misc_src} network_notify_linux.c tun.c)
 elseif(ANDROID_APP)
-    set(misc_src ${misc_src} network_notify_android.c)
+    set(misc_src ${misc_src} network_notify_android.c execinfo.cpp)
 endif()
 
 add_library(misc ${misc_src})
