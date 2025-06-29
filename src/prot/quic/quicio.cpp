@@ -793,32 +793,28 @@ QuicBase::iterator QuicBase::openStream(uint64_t id) {
     if(streammap.count(id)){
         return streammap.find(id);
     }
+    if(isLocal(id)){
+        // this is a closed id
+        return streammap.end();
+    }
     if(isBidirect(id)){
         // Bidirectional
-        if(isLocal(id)){
-            // this is a closed id
-            return streammap.end();
-        }
         for(auto i = nextRemoteBiId; i <= id; i += 4){
             QuicStreamStatus stat{};
             stat.my_max_data = my_max_stream_data_bidi_remote;
             stat.his_max_data = his_max_stream_data_bidi_local;
-            streammap.emplace(id, std::move(stat));
+            streammap.emplace(i, std::move(stat));
         }
         if(id >= nextRemoteBiId){
             nextRemoteBiId = id + 4;
         }
     }else{
         // Unidirectional
-        if(isLocal(id)){
-            // this is a closed id
-            return streammap.end();
-        }
         for(auto i = nextRemoteUbiId; i <= id; i += 4){
             QuicStreamStatus stat{};
             stat.my_max_data = my_max_stream_data_uni;
             stat.his_max_data = 0;
-            streammap.emplace(id, std::move(stat));
+            streammap.emplace(i, std::move(stat));
         }
         if(id >= nextRemoteUbiId){
             nextRemoteUbiId = id + 4;
@@ -841,6 +837,7 @@ void QuicBase::cleanStream(uint64_t id) {
         i = fullq.erase(i);
     }
     if(streammap.count(id)){
+        rblen -= streammap[id].rb.length();
         streammap.erase(id);
     }
 }
@@ -991,6 +988,7 @@ QuicBase::FrameResult QuicBase::handleResetFrame(const quic_reset *stream) {
         LOGD(DQUIC, "reset stream for %" PRIu64"\n", id);
         resetHandler(id, stream->error);
         status.flags |= STREAM_FLAG_RESET_DELIVERED;
+        rblen -= status.rb.length();
         status.rb.consume(status.rb.length());
     }
     return FrameResult::ok;
@@ -1165,6 +1163,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
         if((status.flags & STREAM_FLAG_RESET_DELIVERED) == 0){
             status.flags |= STREAM_FLAG_RESET_DELIVERED;
             resetHandler(frame->stop.id, frame->stop.error);
+            rblen -= status.rb.length();
             status.rb.consume(status.rb.length());
         }
         return FrameResult::ok;
@@ -1269,10 +1268,10 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
         onCidChange(myids[frame->extra], true);
         return FrameResult::ok;
     case QUIC_FRAME_PATH_CHALLENGE:{
-        quic_frame* response_frame = new quic_frame;
-        response_frame->type = QUIC_FRAME_PATH_RESPONSE;
+        quic_frame* response_frame = new quic_frame{QUIC_FRAME_PATH_RESPONSE, {}};
         memcpy(response_frame->path_data, frame->path_data, 8);
-        qos->PushFrame(ssl_encryption_application, response_frame);
+        qos->FrontFrame(qos->GetNamespace(ssl_encryption_application), response_frame);
+        qos->sendPacket(true);
         return FrameResult::ok;
     }
     case QUIC_FRAME_PATH_RESPONSE:
@@ -1316,6 +1315,8 @@ void QuicBase::resendFrames(pn_namespace* ns, quic_frame *frame) {
     case QUIC_FRAME_ACK:
     case QUIC_FRAME_ACK_ECN:
     case QUIC_FRAME_PING:
+    case QUIC_FRAME_PATH_CHALLENGE:
+    case QUIC_FRAME_PATH_RESPONSE:
         frame_release(frame);
         break;
     case QUIC_FRAME_CRYPTO:
@@ -1367,19 +1368,10 @@ void QuicBase::resendFrames(pn_namespace* ns, quic_frame *frame) {
     }
     default:
         if(frame->type >= QUIC_FRAME_STREAM_START_ID && frame->type <= QUIC_FRAME_STREAM_END_ID){
-            while(frame->stream.length > his_max_payload_size){
-                quic_frame* fframe = new quic_frame{
-                    QUIC_FRAME_STREAM_START_ID | QUIC_FRAME_STREAM_OFF_F | QUIC_FRAME_STREAM_LEN_F,
-                    {}
-                };
-                fframe->stream.id =  frame->stream.id;
-                fframe->stream.offset = frame->stream.offset;
-                fframe->stream.length = his_max_payload_size;
-                fframe->stream.buffer = new Buffer(*frame->stream.buffer);
-                qos->FrontFrame(ns, fframe);
-                frame->stream.offset += his_max_payload_size;
-                frame->stream.length -= his_max_payload_size;
-                frame->stream.buffer->reserve((int)his_max_payload_size);
+            auto id = frame->stream.id;
+            if(streammap.count(id) && (streammap[id].flags & STREAM_FLAG_STOP_SENT)) {
+                frame_release(frame);
+                break;
             }
             qos->PushFrame(ns, frame);
         }else {
@@ -1393,7 +1385,7 @@ int QuicBase::handle1RttPacket(const quic_pkt_header* header, std::deque<const q
     auto context = &contexts[ssl_encryption_application];
     keepAlive_timer = UpdateJob(std::move(keepAlive_timer),
                                 [this]{keepAlive_action();},
-                                std::min(30000, (int)max_idle_timeout/2));
+                                std::min(30000, std::max((int)max_idle_timeout/2, 5000)));
     while(!frames.empty()) {
         auto frame = frames.front();
         auto acked = qos->handleFrame(context->level, header->pn, frame);
@@ -1841,6 +1833,7 @@ void QuicBase::sinkData(uint64_t id) {
             if((stream.flags & STREAM_FLAG_RESET_DELIVERED) == 0){
                 sinkData(id, stream);
             } else {
+                rblen -= stream.rb.length();
                 stream.rb.consume(stream.rb.length());
             }
             if (idle(id)) {
@@ -1852,6 +1845,7 @@ void QuicBase::sinkData(uint64_t id) {
         if((stream.flags & STREAM_FLAG_RESET_DELIVERED) == 0){
             sinkData(id, stream);
         } else{
+            rblen -= stream.rb.length();
             stream.rb.consume(stream.rb.length());
         }
         if (idle(id)) {
@@ -1916,13 +1910,17 @@ void QuicBase::keepAlive_action() {
     if(isClosing){
         return;
     }
-    qos->PushFrame(ssl_encryption_application, new quic_frame{QUIC_FRAME_PING, {}});
+    qos->FrontFrame(qos->GetNamespace(ssl_encryption_application), new quic_frame{QUIC_FRAME_PING, {}});
+    qos->sendPacket(true);
+    //如果没收到回复，那么就在5s后重试
+    keepAlive_timer = UpdateJob(std::move(keepAlive_timer), [this]{keepAlive_action();}, 5000);
 }
 
 void QuicBase::dump(Dumper dp, void* param) {
+    auto& context = contexts[ssl_encryption_application];
     dp(param, "%s -> %s, max_payload: %zd, max_bistream: %zd/%zd, max_unistream: %zd/%zd\n"
               "read: %zd/%zd, write: %zd/%zd, my_window: %zd, his_window: %zd, "
-              "rlen: %zd, fullq: %zd, wlen: %zd, congestion_window: %d\n",
+              "rlen: %zd, recvq: %zd, fullq: %zd, wlen: %zd, congestion_window: %d\n",
        dumpHex(myids[myid_idx].c_str(), myids[myid_idx].length()).c_str(),
        dumpHex(hisids[hisid_idx].c_str(), hisids[hisid_idx].length()).c_str(),
        his_max_payload_size,
@@ -1932,13 +1930,14 @@ void QuicBase::dump(Dumper dp, void* param) {
        my_sent_data, my_sent_data_total,
        my_max_data - my_received_data,
        his_max_data - my_sent_data,
-       rblen, fullq.size(),
+       rblen, context.hasKey?context.recvq.data.size():0, fullq.size(),
        qos->PendingSize(ssl_encryption_application), (int)qos->windowLeft());
     for(const auto& [id, stream]: streammap){
-        dp(param, "  0x%lx: rlen: %zd-%zd, rcap: %zd, my_window: %zd, his_window: %zd, flags: 0x%08x\n",
+        dp(param, "  0x%lx: rlen: %zd-%zd, rcap: %zd, my_window: %zd/%zd, his_window: %zd/%zd, flags: 0x%08x\n",
            id, stream.rb.Offset(), stream.rb.Offset() + stream.rb.length(),
            stream.rb.cap() + stream.rb.length() + stream.rb.Offset() - stream.my_max_data,
-           stream.my_max_data - stream.his_offset, stream.his_max_data - stream.my_offset, stream.flags);
+           stream.my_max_data - stream.his_offset, stream.his_offset, 
+           stream.his_max_data - stream.my_offset, stream.my_offset, stream.flags);
     }
 }
 
@@ -2048,7 +2047,6 @@ QuicBase::FrameResult QuicRWer::handlePathResponseFrame(const char* response) {
             }
             path.validated = true;
             active_path_idx = i;
-            RttInit(&qos->rtt);
 
             // Rebuild socket connection to the new client address first
             int fd = buildFdToAddress(&path.local_addr, &path.remote_addr);
@@ -2056,8 +2054,10 @@ QuicBase::FrameResult QuicRWer::handlePathResponseFrame(const char* response) {
                 return FrameResult::error;
             }
             setFd(fd);
+            setEvents(RW_EVENT::READ);
             // Generate new connection ID after successful socket rebuild
             LOGD(DQUIC, "Path validation successful, providing new connection ID\n");
+            qos->Migrated();
             generateNewConnectionId();
             return FrameResult::ok;
         }
@@ -2216,33 +2216,10 @@ success:
 #else
         his_max_payload_size =  1200;
 #endif
-    } else if(type == SOCKET_ERR && code == 0) {
-        //recreate socket
-        sockaddr_storage myaddr, hisaddr;
-        socklen_t mylen = sizeof(myaddr);
-        socklen_t hislen = sizeof(hisaddr);
-        if(getpeername(getFd(), (sockaddr*)&hisaddr, &hislen)) {
-            LOGE("getpeername failed: %s\n", strerror(errno));
-            return RWer::ErrorHE(type, code);
-        }
-        if(getsockname(getFd(), (sockaddr*)&myaddr, &mylen)) {
-            LOGE("getsockname failed: %s\n", strerror(errno));
-            return RWer::ErrorHE(type, code);
-        }
-        int clsk = ListenUdp(&myaddr, nullptr);
-        if (clsk < 0) {
-            LOGE("ListenNet %s, failed: %s\n", storage_ntoa(&myaddr), strerror(errno));
-            return RWer::ErrorHE(type, code);
-        }
-        if (::connect(clsk, (sockaddr *)&hisaddr, hislen) < 0) {
-            LOGE("connect %s failed: %s\n", storage_ntoa(&hisaddr), strerror(errno));
-            return RWer::ErrorHE(type, code);
-        }
-        LOGD(DQUIC, "reconnect udp %d to %s\n", clsk, storage_ntoa(&hisaddr));
-        SetUdpOptions(clsk, &hisaddr);
-        setFd(clsk);
     } else if(type == SOCKET_ERR) {
-        LOG("ignore socket error for quic [%d]: %s\n", getFd(), strerror(code));
+        LOG("get socket error for quic [%d]: %s\n", getFd(), strerror(code));
+        setNone();
+        triggerMigration();
     } else {
         RWer::ErrorHE(type, code);
     }
@@ -2288,7 +2265,9 @@ void QuicRWer::sendPathChallenge(const sockaddr_storage* local_addr, const socka
             }
             // Path exists but not validated, send challenge again
             auto& existing_path = paths[i];
-            if (sendPathChallengeDirectly(existing_path.challenge_data, remote_addr)) {
+            quic_frame challenge{QUIC_FRAME_PATH_CHALLENGE, {}};
+            memcpy(challenge.path_data, existing_path.challenge_data, 8);
+            if (sendFrameDirectly(&challenge, remote_addr)) {
                 existing_path.challenge_time = getmtime();
             } else {
                 LOGE("Failed to send PATH_CHALLENGE to existing path\n");
@@ -2322,7 +2301,9 @@ void QuicRWer::sendPathChallenge(const sockaddr_storage* local_addr, const socka
     size_t path_idx = paths.size() - 1;
 
     // Send challenge for the new path
-    if (sendPathChallengeDirectly(path.challenge_data, remote_addr)) {
+    quic_frame challenge{QUIC_FRAME_PATH_CHALLENGE, {}};
+    memcpy(challenge.path_data, path.challenge_data, 8);
+    if (sendFrameDirectly(&challenge, remote_addr)) {
         paths[path_idx].challenge_time = getmtime();
     } else {
         LOGE("Failed to send PATH_CHALLENGE to new path\n");
@@ -2336,21 +2317,18 @@ void QuicRWer::sendPathChallenge(const sockaddr_storage* local_addr, const socka
     LOGD(DQUIC, "Started path validation for new address: %s\n", storage_ntoa(remote_addr));
 }
 
-bool QuicRWer::sendPathChallengeDirectly(const char* challenge_data, const sockaddr_storage* remote_addr) {
+bool QuicRWer::sendFrameDirectly(const quic_frame* frame, const sockaddr_storage* remote_addr) {
     // Check if application level encryption is available
     if (!contexts[ssl_encryption_application].hasKey) {
         LOGE("sendPathChallengeDirectly: application encryption not ready\n");
         return false;
     }
 
-    quic_frame challenge_frame{QUIC_FRAME_PATH_CHALLENGE, {}};
-    memcpy(challenge_frame.path_data, challenge_data, 8);
-
     // Create a minimal packet with just the PATH_CHALLENGE frame
     char buffer[256];
     char* pos = buffer;
 
-    pos = (char*)pack_frame(pos, &challenge_frame);
+    pos = (char*)pack_frame(pos, frame);
     size_t frame_len = pos - buffer;
 
     pn_namespace* ns = qos->GetNamespace(ssl_encryption_application);
@@ -2377,7 +2355,7 @@ bool QuicRWer::sendPathChallengeDirectly(const char* challenge_data, const socka
     }
 
     ns->current_pn = packet_number + 1;
-    LOGD(DQUIC, "Successfully sent PATH_CHALLENGE directly to %s with PN=%lu\n",
+    LOGD(DQUIC, "Successfully sent PATH_CHALLENGE directly to %s with PN=%" PRIu64"\n",
          storage_ntoa(remote_addr), packet_number);
     return true;
 }
@@ -2427,17 +2405,22 @@ bool QuicRWer::triggerMigration() {
     // Create new socket
     int new_fd = Connect(&server_addr, SOCK_DGRAM);
     if (new_fd < 0) {
+        //忽略所有socket相关的错误，依赖keepalive定时重试，超时后释放
         LOGE("Failed to create new socket for migration: %s\n", strerror(errno));
-        return false;
+        keepAlive_timer = UpdateJob(std::move(keepAlive_timer), [this]{triggerMigration();}, 2000);
+        return true;
     }
 
     SetUdpOptions(new_fd, &server_addr);
     setFd(new_fd);
+    setEvents(RW_EVENT::READ);
 
     // Send ping immediately after migration to test the new path
-    keepAlive_action();
+    quic_frame ping{QUIC_FRAME_PING, {}};
+    sendFrameDirectly(&ping, &server_addr);
 
     LOGD(DQUIC, "Client migration successful to %s\n", storage_ntoa(&server_addr));
+    qos->Migrated();
     return true;
 }
 
@@ -2456,11 +2439,11 @@ void QuicRWer::dump_status(Dumper dp, void *param) {
     if(hostname[0]) {
         dp(param, "Quic <%d> (%s  %s), stats: %d, events: %s\n",
                 getFd(), hostname, dumpDest(getDst()).c_str(),
-                (int)getStats(), events_string[(int)getEvents()]);
+                (int)stats, events_string[(int)getEvents()]);
     }else {
         dp(param, "Quic <%d> (%s - %s), stats: %d, events: %s\n",
                 getFd(), dumpDest(getSrc()).c_str(), dumpDest(getDst()).c_str(),
-                (int)getStats(), events_string[(int)getEvents()]);
+                (int)stats, events_string[(int)getEvents()]);
     }
     return dump(dp, param);
 }
@@ -2586,7 +2569,7 @@ void QuicMer::Close() {
 
 void QuicMer::dump_status(Dumper dp, void *param) {
     dp(param, "Quic <%d> (%s), stats: %d, flags: 0x%04x,  event: %s\n",
-        getFd(), dumpDest(getSrc()).c_str(), (int)getStats(), flags, events_string[(int)getEvents()]);
+        getFd(), dumpDest(getSrc()).c_str(), (int)stats, flags, events_string[(int)getEvents()]);
     return dump(dp, param);
 }
 

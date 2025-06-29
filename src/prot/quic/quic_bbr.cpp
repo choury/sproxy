@@ -310,3 +310,19 @@ void QuicBBR::OnCongestionEvent(uint64_t /*sent_time*/) {
     // This is a simplified implementation - more sophisticated BBR versions
     // might adjust pacing rates based on ECN feedback
 }
+
+void QuicBBR::Migrated() {
+    QuicQos::Migrated();
+    rtProp.clear();
+    btlBw.clear();
+
+    rtProp.insert(TIME_US_TO_S); // 1秒 初始RTT估计
+
+    // 初始化时间戳
+    uint64_t now = getutime();
+    last_sent_time = now - TIME_US_TO_S; //避免初始状态窗口为0
+    min_rtt_stamp = now;
+    pacing_round_start_time = now;
+
+    EnterStartup();
+}

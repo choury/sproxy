@@ -57,9 +57,6 @@ protected:
     virtual void onError(int type, int code) override;
     virtual void onConnected() override;
 
-    virtual bool IsConnected() override {
-        return isConnected();
-    }
     virtual size_t rlength(uint64_t id) override {
         return SSL_pending(ssl) + BIO_ctrl_pending(in_bio) + StreamRWer::rlength(id);
     }
@@ -85,6 +82,9 @@ public:
     virtual bool isEof() override {
         return StreamRWer::isEof() || SslRWerBase::isEof();
     }
+    virtual bool IsConnected() override {
+        return isConnected();
+    }
     virtual void dump_status(Dumper dp, void* param) override;
 };
 
@@ -98,9 +98,6 @@ protected:
     virtual void onError(int type, int code) override;
     virtual void onConnected() override;
 
-    virtual bool IsConnected() override {
-        return isConnected();
-    }
     virtual size_t rlength(uint64_t id) override {
         return SSL_pending(ssl) + BIO_ctrl_pending(in_bio) + MemRWer::rlength(id);
     }
@@ -123,6 +120,9 @@ public:
 
     virtual bool isEof() override {
         return MemRWer::isEof() || SslRWerBase::isEof();
+    }
+    virtual bool IsConnected() override {
+        return isConnected();
     }
     virtual void dump_status(Dumper dp, void* param) override;
 };

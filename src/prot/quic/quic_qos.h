@@ -20,11 +20,9 @@ const uint64_t kGranularity = 1000; // 1ms
 #define QUIC_PACKET_NAMESPACE_HANDSHAKE 1
 #define QUIC_PAKCET_NAMESPACE_APP 2
 
-
 #ifdef USE_BORINGSSL
 typedef  enum ssl_encryption_level_t OSSL_ENCRYPTION_LEVEL;
 #endif
-
 
 class QuicQos {
 protected:
@@ -65,7 +63,8 @@ public:
     QuicQos(bool isServer, const send_func& sent,
            std::function<void(pn_namespace*, quic_frame*)> resendFrames);
     virtual ~QuicQos();
-    virtual void sendPacket();
+    virtual void sendPacket(bool force = false);
+    virtual void Migrated();
     [[nodiscard]] virtual ssize_t windowLeft() const = 0;
     [[nodiscard]] virtual ssize_t sendWindow() const {
         return windowLeft();

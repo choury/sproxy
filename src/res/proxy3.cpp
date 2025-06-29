@@ -164,9 +164,13 @@ bool Proxy3::reconnect() {
     if (auto quic_rwer = std::dynamic_pointer_cast<QuicRWer>(rwer)) {
         if (quic_rwer->triggerMigration()){
             LOGD(DHTTP3, "<proxy3> QUIC migration successful, preserving connection\n");
+            if(statusmap.empty()) {
+                LOG("(%s) reset idle timer after reconnect\n", dumpDest(rwer->getDst()).c_str());
+                idle_timeout = UpdateJob(std::move(idle_timeout), [this]{deleteLater(CONNECT_AGED);}, 300000);
+            }
             return true; // Keep connection for successful migration
         } else {
-            LOGD(DHTTP3, "<proxy3> QUIC migration failed, need to create new connection\n");
+            LOGE("(%s) <proxy3> QUIC migration failed, need to create new connection\n", dumpDest(rwer->getSrc()).c_str());
             return false; // Migration failed, upper layer should create new connection
         }
     }

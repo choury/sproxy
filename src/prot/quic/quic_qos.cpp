@@ -97,9 +97,9 @@ bool QuicQos::PeerCompletedAddressValidation() {
 void QuicQos::OnLossDetectionTimeout(pn_namespace* ns){
     uint64_t now = getutime();
     if(ns->loss_time < UINT64_MAX){
-        LOGD(DQUIC, "loss timer expired for [%c], loss_time: %.2fms\n",
-             ns->name, (now - ns->time_of_last_ack_eliciting_packet) / 1000.0);
         auto lost_packets = ns->DetectAndRemoveLostPackets(&rtt);
+        LOGD(DQUIC, "loss timer expired for [%c], loss_time: %.2fms, lost: %zd\n",
+             ns->name, (now - ns->time_of_last_ack_eliciting_packet) / 1000.0, lost_packets.size());
         //虽然rfc上说这里lost_packets不可能为空，但是实际上rtt是一直在变化的，这就导致两次算出来的loss_time不一致，
         //这样的话，当loss_time触发时，rtt可能已经变长，而据此算出的timeThreshold就会变大，此时之前触发loss的包
         //在这个周期内就会获取不到，因此可能出现lost_packets为空的情况
@@ -190,7 +190,7 @@ void QuicQos::SetLossDetectionTimer() {
                            (timed_out - now - 1) / 1000 + 1);
 }
 
-void QuicQos::sendPacket() {
+void QuicQos::sendPacket(bool force) {
     uint64_t now = getutime();
     has_packet_been_congested = false;
     for(auto &p: pns){
@@ -205,9 +205,9 @@ void QuicQos::sendPacket() {
         LOGD(DQUIC, "sendPacket, pto_count: %zu, sendWindow: %d, windowLeft: %d, bytes_in_flight: %zd\n",
             pto_count, window, (int)windowLeft(), bytes_in_flight);
         size_t packets;
-        if(pto_count > 0) {
+        if(pto_count > 0 || force) {
             //如果在丢包探测阶段，只发送一个包
-            bytes_in_flight += p->sendPacket(max_datagram_size, delivered_bytes, packets);
+            bytes_in_flight += p->sendPacket(1200, delivered_bytes, packets);
             packets_sent += packets;
             last_sent_time = now;
             return;
@@ -317,7 +317,7 @@ void QuicQos::PushFrame(pn_namespace* ns, quic_frame *frame) {
 }
 
 void QuicQos::FrontFrame(pn_namespace* ns, quic_frame *frame) {
-    dumpFrame("<", ns->name, frame);
+    dumpFrame("*<", ns->name, frame);
     assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
     ns->pend_frames.push_front(frame);
     if(windowLeft() >= (int)max_datagram_size){
@@ -329,6 +329,11 @@ void QuicQos::FrontFrame(pn_namespace* ns, quic_frame *frame) {
 
 void QuicQos::PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame* frame) {
     return PushFrame(GetNamespace(level), frame);
+}
+
+void QuicQos::Migrated() {
+    RttInit(&rtt);
+    pto_count = 0;
 }
 
 void QuicQos::DrainAll(){

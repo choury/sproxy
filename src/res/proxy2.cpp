@@ -22,7 +22,10 @@ void Proxy2::ping_check(){
 }
 
 void Proxy2::setIdle(uint32_t ms){
-    idle_timeout = UpdateJob(std::move(idle_timeout), [this]{deleteLater(CONNECT_AGED);}, ms);
+    if(statusmap.empty()) {
+        LOG("(%s) has no request, start idle timer\n", dumpDest(rwer->getDst()).c_str());
+        idle_timeout = UpdateJob(std::move(idle_timeout), [this]{deleteLater(CONNECT_AGED);}, ms);
+    }
 }
 
 bool Proxy2::wantmore(const ReqStatus& status) {
@@ -190,10 +193,7 @@ void Proxy2::Clean(uint32_t id, uint32_t errcode){
     }
     status.rw->Close();
     statusmap.erase(id);
-    if(statusmap.empty()) {
-        LOG("(%s) has no request, start idle timer\n", dumpDest(rwer->getDst()).c_str());
-        setIdle(300000);
-    }
+    setIdle(300000);
 }
 
 void Proxy2::RstProc(uint32_t id, uint32_t errcode) {

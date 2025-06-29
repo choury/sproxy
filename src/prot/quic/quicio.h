@@ -90,6 +90,7 @@ public:
     void insert(const quic_frame* frame);
 };
 
+
 class QuicBase {
 protected:
     SslStats sslStats = SslStats::Idel;
@@ -306,7 +307,6 @@ protected:
     virtual void ReadData() override;
     virtual void ConsumeRData(uint64_t id) override;
     virtual size_t rlength(uint64_t id) override;
-    virtual bool IsConnected() override;
 
     void pathValidationTimeout();
 public:
@@ -318,6 +318,7 @@ public:
     virtual bool isTls() override {
         return true;
     }
+    virtual bool IsConnected() override;
     virtual bool idle(uint64_t id) override {
         return QuicBase::idle(id);
     }
@@ -330,7 +331,7 @@ public:
     // build socket connection for validated path (server-side migration)
     int buildFdToAddress(const sockaddr_storage* local_addr, const sockaddr_storage* remote_addr);
     void sendPathChallenge(const sockaddr_storage* local_addr, const sockaddr_storage* remote_addr);
-    bool sendPathChallengeDirectly(const char* challenge_data, const sockaddr_storage* remote_addr);
+    bool sendFrameDirectly(const quic_frame* frame, const sockaddr_storage* remote_addr);
     // Trigger immediate connection migration
     bool triggerMigration();
 
@@ -347,11 +348,9 @@ protected:
     virtual size_t onRead(Buffer&& bb) override;
     virtual void onWrite(uint64_t id) override;
 
-
     virtual void defaultHE(RW_EVENT events) override;
     virtual void push_data(Buffer&& bb) override;
     virtual void Send(Buffer&& bb) override;
-    virtual bool IsConnected() override;
     virtual void ConsumeRData(uint64_t) override;
 public:
     explicit QuicMer(SSL_CTX *ctx, const Destination& src,
@@ -360,6 +359,7 @@ public:
     virtual bool isTls() override {
         return true;
     }
+    virtual bool IsConnected() override;
     virtual bool idle(uint64_t id) override {
         return QuicBase::idle(id);
     }

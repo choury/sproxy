@@ -338,7 +338,8 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                                 getRdnsWithPort(pac->getdst()).c_str());
 
             status.req = UnpackHttpReq(buff, headlen);
-            status.req->set("User-Agent", generateUA(opt.ua, status.prog, status.req->request_id));
+            status.req->request_id = id;
+            status.req->set("User-Agent", generateUA(opt.ua, status.prog, id));
             status.rw = std::make_shared<MemRWer>(addr, status.cb);
             distribute(status.req, status.rw, this);
         }
@@ -367,7 +368,8 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
                                   getRdnsWithPort(pac->getdst()).c_str());
 
             status.req = UnpackHttpReq(buff, headlen);
-            status.req->set("User-Agent", generateUA(opt.ua, status.prog, status.req->request_id));
+            status.req->request_id = id;
+            status.req->set("User-Agent", generateUA(opt.ua, status.prog, id));
             status.rw = std::make_shared<MemRWer>(addr, status.cb);
             distribute(status.req, status.rw, this);
         }
@@ -378,7 +380,8 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
         int headlen = snprintf(buff, sizeof(buff), "CONNECT %s" CRLF "Protocol: icmp" CRLF CRLF,
                               getRdnsWithPort(pac->getdst()).c_str());
         status.req = UnpackHttpReq(buff, headlen);
-        status.req->set("User-Agent", generateUA(opt.ua, status.prog, status.req->request_id));
+        status.req->request_id = id;
+        status.req->set("User-Agent", generateUA(opt.ua, status.prog, id));
         status.rw = std::make_shared<MemRWer>(addr, status.cb);
         distribute(status.req, status.rw, this);
         break;
@@ -388,7 +391,8 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
         int headlen = snprintf(buff, sizeof(buff), "CONNECT %s" CRLF "Protocol: icmp" CRLF CRLF,
                               getRdnsWithPort(pac->getdst()).c_str());
         status.req = UnpackHttpReq(buff, headlen);
-        status.req->set("User-Agent", generateUA(opt.ua, status.prog, status.req->request_id));
+        status.req->request_id = id;
+        status.req->set("User-Agent", generateUA(opt.ua, status.prog, id));
         status.rw = std::make_shared<MemRWer>(addr, status.cb);
         distribute(status.req, status.rw, this);
         break;
@@ -411,16 +415,16 @@ void Guest_vpn::dump_stat(Dumper dp, void *param) {
     dp(param, "Guest_vpn %p, session: %zd\n", this, statusmap.size());
     for(auto& i: statusmap){
         if(i.second.req) {
-            dp(param, "  0x%lx [%" PRIu64 "]: %s %s, time: %dms, flags: 0x%08x [%s]\n",
-                i.first, i.second.req->request_id,
-                i.second.req->method,
-                i.second.req->geturl().c_str(),
+            assert(i.first == i.second.req->request_id);
+            dp(param, "  [%" PRIu64 "]: %s %s, time: %dms, flags: 0x%08x [%s]\n",
+                i.first, i.second.req->method, i.second.req->geturl().c_str(),
                 getmtime() - std::get<1>(i.second.req->tracker[0]),
                 i.second.flags, i.second.prog.c_str());
+        } else {
+            auto src = i.second.pac->getsrc();
+            dp(param, "  [%" PRIu64"]: MemRWer %s, flags: 0x%08x [%s]\n",
+                i.first, storage_ntoa(&src), i.second.flags, i.second.prog.c_str());
         }
-        auto src = i.second.pac->getsrc();
-        dp(param, "  0x%lx [MemRWer]: %s, flags: 0x%08x [%s]\n",
-            i.first, storage_ntoa(&src), i.second.flags, i.second.prog.c_str());
 
     }
     rwer->dump_status(dp, param);

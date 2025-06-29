@@ -103,3 +103,10 @@ void QuicCubic::OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets)
         packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 2);
     }
 }
+
+void QuicCubic::Migrated() {
+    QuicQos::Migrated();
+    congestion_window = kInitialWindow;
+    congestion_recovery_start_time = 0;
+    ssthresh = UINT64_MAX;
+}

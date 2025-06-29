@@ -461,7 +461,7 @@ static void dumpConnection(Dumper dp, void* param,
     switch(status_->protocol) {
     case Protocol::TCP: {
         auto status = std::static_pointer_cast<TcpStatus>(status_);
-        dp(param, "  0x%lx: <tcp> %s -> %s, srtt=%zd, state=%d, wlist: %zd, rlen: %zd, window: %zd\n",
+        dp(param, "  [%" PRIu64"]: <tcp> %s -> %s, srtt=%zd, state=%d, wlist: %zd, rlen: %zd, window: %zd\n",
            value.first.first,
            std::string(storage_ntoa(&status->src)).c_str(),
            std::string(storage_ntoa(&status->dst)).c_str(),
@@ -472,7 +472,7 @@ static void dumpConnection(Dumper dp, void* param,
     }
     case Protocol::UDP: {
         auto status = std::static_pointer_cast<UdpStatus>(status_);
-        dp(param, "  0x%lx: <udp> %s -> %s, readlen=%zd\n",
+        dp(param, "  [%" PRIu64"]: <udp> %s -> %s, readlen=%zd\n",
            value.first.first,
            std::string(storage_ntoa(&status->src)).c_str(),
            std::string(storage_ntoa(&status->dst)).c_str(),
@@ -481,7 +481,7 @@ static void dumpConnection(Dumper dp, void* param,
     }
     case Protocol::ICMP: {
         auto status = std::static_pointer_cast<IcmpStatus>(status_);
-        dp(param, "  0x%lx: <icmp> %s -> %s, id=%d, seq=%d\n",
+        dp(param, "  [%" PRIu64"]: <icmp> %s -> %s, id=%d, seq=%d\n",
            value.first.first,
            std::string(storage_ntoa(&status->src)).c_str(),
            std::string(storage_ntoa(&status->dst)).c_str(),

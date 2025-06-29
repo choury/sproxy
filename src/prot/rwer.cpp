@@ -203,6 +203,11 @@ bool RWer::isEof() {
     return stats == RWerStats::ReadEOF;
 }
 
+bool RWer::IsConnected(){
+    return stats == RWerStats::Connected;
+}
+
+
 void RWer::Close() {
     if(flags & RWER_CLOSING){
         return;

@@ -159,10 +159,6 @@ void SocketRWer::connected(const sockaddr_storage& addr) {
     }
 }
 
-bool SocketRWer::IsConnected(){
-    return stats == RWerStats::Connected;
-}
-
 void SocketRWer::SetCallback(std::shared_ptr<IRWerCallback> cb) {
     RWer::SetCallback(std::move(cb));
     if(auto sockcb = std::dynamic_pointer_cast<ISocketCallback>(callback.lock()); sockcb && IsConnected()) {
@@ -303,11 +299,11 @@ void SocketRWer::dump_status(Dumper dp, void *param) {
     if(hostname[0]) {
         dp(param, "SocketRWer <%d> (%s %s): rlen: %zu, wlen: %zu, stats: %d, event: %s\n",
            getFd(), hostname, dumpDest(getDst()).c_str(),
-           rlength(0), wlen, (int)getStats(), events_string[(int)getEvents()]);
+           rlength(0), wlen, (int)stats, events_string[(int)getEvents()]);
     } else {
         dp(param, "SocketRWer <%d> (%s -> %s): rlen: %zu, wlen: %zu, stats: %d, event: %s\n",
            getFd(), dumpDest(getSrc()).c_str(), dumpDest(getDst()).c_str(),
-           rlength(0), wlen, (int)getStats(), events_string[(int)getEvents()]);
+           rlength(0), wlen, (int)stats, events_string[(int)getEvents()]);
     }
 }
 

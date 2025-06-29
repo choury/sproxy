@@ -189,7 +189,7 @@ void MemRWer::closeHE(RW_EVENT) {
 void MemRWer::dump_status(Dumper dp, void* param) {
     dp(param, "MemRWer <%d> (%s): rlen: %zu, wlen: %zu, stats: %d, flags: 0x%04x,  event: %s\n",
         getFd(), dumpDest(src).c_str(), rlength(0), wlen,
-        (int)getStats(), flags, events_string[(int)getEvents()]);
+        (int)stats, flags, events_string[(int)getEvents()]);
 }
 
 

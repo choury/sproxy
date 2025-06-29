@@ -107,7 +107,6 @@ public:
     virtual void SetCallback(std::shared_ptr<IRWerCallback> cb);
     virtual void Unblock(uint64_t id);
     virtual void Close();
-    RWerStats getStats(){return stats;}
     virtual Destination getSrc() const {
         Destination addr{};
         strcpy(addr.hostname, "<null>");
@@ -125,6 +124,7 @@ public:
 
     virtual bool isTls();
     virtual bool isEof();
+    virtual bool IsConnected();
     virtual bool idle(uint64_t id);
     virtual void dump_status(Dumper dp, void* param) = 0;
     virtual size_t mem_usage() = 0;

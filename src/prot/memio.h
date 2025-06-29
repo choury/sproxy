@@ -56,7 +56,7 @@ protected:
     void connected(const sockaddr_storage& addr);
     virtual void closeHE(RW_EVENT events) override;
     virtual ssize_t Write(std::set<uint64_t>& writed_list) override;
-    virtual bool IsConnected() {
+    virtual bool IsConnected() override {
         return true;
     }
     virtual size_t rlength(uint64_t id) override;

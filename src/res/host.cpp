@@ -60,7 +60,7 @@ Host::~Host(){
 }
 
 void Host::reply(){
-    if(rwer->getStats() != RWerStats::Connected){
+    if(!rwer->IsConnected()){
         return;
     }
     if(!status.req->chain_proxy && status.req->ismethod("CONNECT")) {
@@ -162,9 +162,7 @@ void Host::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
         response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[Unknown protocol]]\n");
         return Server::deleteLater(PROTOCOL_ERR);
     }
-    LOGD(DHTTP, "<host> request %" PRIu64 ": %s\n",
-         req->request_id,
-         req->geturl().c_str());
+    LOGD(DHTTP, "<host> request %" PRIu64 ": %s\n", req->request_id, req->geturl().c_str());
     assert(status.flags == 0);
     assert(status.req == nullptr);
     assert(status.rw == nullptr);
@@ -319,7 +317,7 @@ void Host::dump_usage(Dumper dp, void *param) {
 }
 
 void flushconnect() {
-    LOGD(DHTTP, "Network change detected - checking connections for migration capability\n");
+    LOGD(DNET, "Network change detected - checking connections for migration capability\n");
     // Check each responser to see if it can reconnect/migrate
     std::vector<std::string> to_remove;
     for (auto it = responsers.begin(); it != responsers.end(); ++it) {
@@ -329,9 +327,9 @@ void flushconnect() {
         if (!responser->reconnect()) {
             // Responser cannot reconnect, mark for removal
             to_remove.push_back(key);
-            LOGD(DHTTP, "Marking connection for cleanup: %s\n", key.c_str());
+            LOGD(DNET, "Marking connection for cleanup: %s\n", key.c_str());
         } else {
-            LOGD(DHTTP, "Preserving connection for migration: %s\n", key.c_str());
+            LOGD(DNET, "Preserving connection for migration: %s\n", key.c_str());
         }
     }
 
@@ -339,6 +337,6 @@ void flushconnect() {
     for (const std::string& key : to_remove) {
         responsers.erase(key);
     }
-    LOGD(DHTTP, "Network change processed: preserved %zu connections, removed %zu connections\n",
+    LOGD(DNET, "Network change processed: preserved %zu connections, removed %zu connections\n",
          responsers.size(), to_remove.size());
 }
