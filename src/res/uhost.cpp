@@ -14,7 +14,7 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
         LOGD(DHTTP, "<uhost> %s connected\n", dumpDest(rwer->getDst()).c_str());
         status.rw->SetCallback(status.cb);
     })->onRead([this](Buffer&& bb) -> size_t{
-        if(JobPending(idle_timeour) < 30000) {
+        if(JobPending(idle_timeour) < 30000 || JobPending(idle_timeour) == UINT32_MAX) {
             idle_timeour = UpdateJob(std::move(idle_timeour), [this]{deleteLater(CONNECT_AGED);}, 30000);
         }
         LOGD(DHTTP, "<uhost> (%s) read: len:%zu, refs: %zd\n", dumpDest(rwer->getDst()).c_str(), bb.len, bb.refs());
@@ -29,11 +29,12 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
                  status.req->request_id, cap, (int)bb.len,
                  status.req->geturl().c_str());
             rx_dropped += bb.len;
+            return 0;
         } else {
             rx_bytes += bb.len;
             status.rw->Send(std::move(bb));
+            return len;
         }
-        return len;
     })->onWrite([this](uint64_t id){
         idle_timeour = UpdateJob(std::move(idle_timeour), [this]{deleteLater(CONNECT_AGED);}, 120000);
         LOGD(DHTTP, "<uhost> (%s) written\n", dumpDest(rwer->getDst()).c_str());

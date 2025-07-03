@@ -88,7 +88,7 @@ bool Proxy3::DataProc(Buffer& bb){
                  status.req->request_id, bb.id, status.req->geturl().c_str(), status.rw->cap(bb.id), bb.len);
             return false;
         }
-        status.rw->Send(std::move(bb));
+        status.rw->Send(Buffer{std::move(bb)});
     }else{
         LOGD(DHTTP3, "<proxy3> DataProc not found id: %" PRIu64 "\n", bb.id);
         Reset(bb.id, HTTP3_ERR_STREAM_CREATION_ERROR);

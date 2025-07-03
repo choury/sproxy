@@ -1113,6 +1113,7 @@ void Ip4::build_packet(Buffer& bb){
     }
     bb.reserve(-(int) sizeof(ip));
     char* packet = (char *)bb.mutable_data();
+    hdr.ip_id = random() & 0xfffff;
     hdr.ip_len = htons(bb.len);
     hdr.ip_sum = 0;
     memcpy(packet, &hdr, sizeof(ip));

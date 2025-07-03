@@ -136,7 +136,9 @@ Guest::Guest(std::shared_ptr<RWer> rwer): Requester(rwer){
 void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     static const char*  HCONNECT = "HTTP/1.1 200 Connection establishe" CRLF CRLF;
     auto _cb = response(id);
-    if(header->ismethod("CONNECT")) {
+    if(header->ismethod("CONNECT") && 
+      (header->Dest.protocol[0] == 0 || strcmp(header->Dest.protocol, "tcp") == 0)) 
+    {
         if(header->Dest.port == HTTPPORT) {
             if(!headless) rwer->Send({HCONNECT, strlen(HCONNECT), id});
             Http_Proc = (bool (HttpBase::*)(Buffer&))&Guest::HeaderProc;
@@ -167,7 +169,12 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     }
 
     LOGD(DHTTP, "<guest> ReqProc %" PRIu64 " %s\n", header->request_id, header->geturl().c_str());
-    std::shared_ptr<MemRWer> rw = std::make_shared<MemRWer>(getSrc(), _cb);
+    std::shared_ptr<MemRWer> rw;
+    if(strcmp(header->Dest.protocol, "udp") == 0 || strcmp(header->Dest.protocol, "icmp") == 0) {
+        rw = std::make_shared<PMemRWer>(getSrc(), _cb);
+    } else {
+        rw = std::make_shared<MemRWer>(getSrc(), _cb);
+    }
     statuslist.emplace_back(ReqStatus{header, rw, _cb});
     if(statuslist.size() == 1){
         distribute(header, rw, this);

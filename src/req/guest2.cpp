@@ -84,6 +84,10 @@ size_t Guest2::Recv(Buffer&& bb){
         return 0;
     }
     auto len = std::min({bb.len, (size_t)status.remotewinsize, (size_t)remotewinsize});
+    if(std::dynamic_pointer_cast<PMemRWer>(status.rw) && len < bb.len) {
+        //packet can't be truncated, so drop it.
+        return 0;
+    }
     bb.truncate(len);
     status.remotewinsize -= bb.len;
     remotewinsize -= bb.len;
@@ -106,9 +110,15 @@ void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
     }
 
     auto _cb = response(id);
+    std::shared_ptr<MemRWer> rw;
+    if(strcmp(header->Dest.protocol, "udp") == 0 || strcmp(header->Dest.protocol, "icmp") == 0) {
+        rw = std::make_shared<PMemRWer>(getSrc(), _cb);
+    } else {
+        rw = std::make_shared<MemRWer>(getSrc(), _cb);
+    }
     statusmap[id] = ReqStatus{
         header,
-        std::make_shared<MemRWer>(rwer->getSrc(), _cb),
+        rw,
         _cb,
         (int32_t)remoteframewindowsize,
         localframewindowsize,
@@ -152,6 +162,7 @@ void Guest2::DataProc(Buffer&& bb) {
                 abort();
             }
             if(cap <= 0) {
+                bb.len = 0;
                 return;
             }
             auto id = bb.id;
@@ -159,7 +170,7 @@ void Guest2::DataProc(Buffer&& bb) {
             bb.id = id;
             status.buffer->consume(bb.len);
         }
-        status.rw->push_data(std::move(bb));
+        status.rw->push_data(Buffer{std::move(bb)});
     }else{
         LOGD(DHTTP2, "<guest2> DateProc not found id: %" PRIu64"\n", bb.id);
         Reset(bb.id, HTTP2_ERR_STREAM_CLOSED);

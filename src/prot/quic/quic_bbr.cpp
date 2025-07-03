@@ -133,7 +133,7 @@ void QuicBBR::OnPacketsAcked(const std::list<quic_packet_meta> &acked_packets) {
     UpdateBBRState();
 
     if(has_packet_been_congested && windowLeft() >= (int)max_datagram_size){
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 2);
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
     }
     LOGD(DQUIC, "BBR mode=%d, btlBw=%d, rtProp=%d, pacing_gain_count=%zd, since_last_sent=%.3fms, bytes_in_flight=%zd\n", 
         mode, (int)btlBw.max(), (int)rtProp.min(), pacing_gain_count, (now - last_sent_time)/(double)TIME_US_TO_MS, bytes_in_flight);

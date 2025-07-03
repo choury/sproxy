@@ -16,9 +16,9 @@ RUN apt-get  update && \
 FROM debian:12 as worker
 COPY --from=0 /root/sproxy/build/sproxy-*-Linux.deb .
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends openssl libjson-c5 zlib1g && \
+    apt-get install -y --no-install-recommends openssl libjson-c5 zlib1g libelf1 libreadline8 && \
     dpkg -i sproxy-*-Linux.deb
 
 EXPOSE 80
 WORKDIR /var/lib/sproxy
-CMD ["sproxy"]
+CMD ["sproxy", "--http", "80"]

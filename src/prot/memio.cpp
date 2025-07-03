@@ -56,8 +56,8 @@ void MemRWer::push_data(Buffer&& bb) {
 }
 
 void MemRWer::push_signal(Signal s) {
-    LOGD(DRWER, "<MemRWer> <%d> %s push_signal: %d\n",
-         getFd(), dumpDest(src).c_str(), (int)s);
+    LOGD(DRWER, "<MemRWer> <%d> %s push_signal: %d, cb: %ld\n",
+         getFd(), dumpDest(src).c_str(), (int)s, callback.use_count());
     if (flags & RWER_CLOSING){
         return;
     }
@@ -187,9 +187,9 @@ void MemRWer::closeHE(RW_EVENT) {
 }
 
 void MemRWer::dump_status(Dumper dp, void* param) {
-    dp(param, "MemRWer <%d> (%s): rlen: %zu, wlen: %zu, stats: %d, flags: 0x%04x,  event: %s\n",
+    dp(param, "MemRWer <%d> (%s): rlen: %zu, wlen: %zu, stats: %d, flags: 0x%04x, event: %s, cb: %ld, _cb: %ld\n",
         getFd(), dumpDest(src).c_str(), rlength(0), wlen,
-        (int)stats, flags, events_string[(int)getEvents()]);
+        (int)stats, flags, events_string[(int)getEvents()], callback.use_count(), _callback.use_count());
 }
 
 
@@ -199,8 +199,8 @@ void PMemRWer::push_data(Buffer&& bb) {
     defer([this]{ flags &= ~RWER_READING;});
 
     assert(stats != RWerStats::ReadEOF);
-    LOGD(DRWER, "<PMemRWer> <%d> %s push_data [%" PRIu64"]: %zd, refs: %zd\n",
-         getFd(), dumpDest(src).c_str(), bb.id, bb.len, bb.refs());
+    LOGD(DRWER, "<PMemRWer> <%d> %s push_data [%" PRIu64"]: %zd, refs: %zd, cb: %ld\n",
+         getFd(), dumpDest(src).c_str(), bb.id, bb.len, bb.refs(), callback.use_count());
     if(flags & RWER_CLOSING){
         return;
     }
@@ -212,9 +212,32 @@ void PMemRWer::push_data(Buffer&& bb) {
         }
     } else if(auto cb = callback.lock(); cb) {
         cb->readCB(std::move(bb));
+    } else {
+        rb.push_back(std::move(bb));
     }
+}
+
+
+void PMemRWer::SetCallback(std::shared_ptr<IRWerCallback> cb) {
+    MemRWer::SetCallback(cb);
+    for(auto bb: rb) {
+        cb->readCB(std::move(bb));
+    }
+    rb.clear();
 }
 
 void PMemRWer::ConsumeRData(uint64_t) {
     delEvents(RW_EVENT::READ);
+}
+
+void PMemRWer::Send(Buffer&& bb) {
+    assert((flags & RWER_SHUTDOWN) == 0);
+    if(bb.len == 0){
+        flags |= RWER_SHUTDOWN;
+    }
+    LOGD(DRWER, "<PMemRWer> <%d> %s Send [%" PRIu64"]: %zd, refs: %zd, _cb: %ld\n",
+        getFd(), dumpDest(src).c_str(), bb.id, bb.len, bb.refs(), _callback.use_count());
+    if(auto _cb = _callback.lock(); _cb){
+        _cb->write_data(bb);
+    }
 }

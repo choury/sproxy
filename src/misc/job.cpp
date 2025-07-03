@@ -59,7 +59,7 @@ void jobDeleter::operator()(job *job) {
 
 uint32_t JobPending(Job& job) {
     if(job == nullptr || job->pre == nullptr) {
-        return 0;
+        return UINT32_MAX;
     }
     uint64_t next_do = job->delay_ms + job->last_done_ms;
     uint32_t now = getmtime();

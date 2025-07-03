@@ -110,8 +110,10 @@ public:
     using MemRWer::MemRWer;
 
     virtual size_t bufsize() override{
-        return BUF_LEN;
+        return BUF_LEN * 2;
     }
+    virtual void SetCallback(std::shared_ptr<IRWerCallback> cb) override;
+    virtual void Send(Buffer&& bb) override;
     virtual void push_data(Buffer&& bb) override;
     virtual void ConsumeRData(uint64_t) override;
 };

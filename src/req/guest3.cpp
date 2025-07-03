@@ -129,9 +129,15 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     }
 
     auto _cb = response(id);
+    std::shared_ptr<MemRWer> rw;
+    if(strcmp(header->Dest.protocol, "udp") == 0 || strcmp(header->Dest.protocol, "icmp") == 0) {
+        rw = std::make_shared<PMemRWer>(getSrc(), _cb);
+    } else {
+        rw = std::make_shared<MemRWer>(getSrc(), _cb);
+    }
     statusmap[id] = ReqStatus{
         header,
-        std::make_shared<MemRWer>(rwer->getSrc(), _cb),
+        rw,
         _cb,
     };
     ReqStatus& status = statusmap[id];
@@ -154,7 +160,7 @@ bool Guest3::DataProc(Buffer& bb) {
                  status.req->request_id, bb.id, status.req->geturl().c_str());
             return false;
         }
-        status.rw->push_data(std::move(bb));
+        status.rw->push_data(Buffer{std::move(bb)});
     }else{
         LOGD(DHTTP3, "<guest3> DateProc not found id: %" PRIu64"\n", bb.id);
         Reset(bb.id, HTTP3_ERR_STREAM_CREATION_ERROR);

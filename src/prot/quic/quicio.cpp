@@ -1401,8 +1401,6 @@ int QuicBase::handle1RttPacket(const quic_pkt_header* header, std::deque<const q
             frames.pop_front();
             break;
         case FrameResult::skip:
-            //有丢包，立即发送ack
-            qos->sendPacket();
             context->recvq.insert(frame);
             frames.pop_front();
             break;

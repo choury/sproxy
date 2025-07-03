@@ -276,12 +276,14 @@ std::set<uint64_t> QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t nu
         }
         SetLossDetectionTimer();
     }
+    int delay = -1;
     if(level == ssl_encryption_initial || level == ssl_encryption_handshake){
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
-    } else if(!ns->pend_frames.empty() && windowLeft() >= (int)max_datagram_size) {
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 2);
-    } else if(JobPending(packet_tx) == 0 && ns->should_ack) {
-        packet_tx  = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 20);
+        delay = 0;
+    } else if(ns->should_ack) {
+        delay = 20;
+    }
+    if(delay >= 0 && JobPending(packet_tx) > (uint32_t)delay) {
+        packet_tx  = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, (uint32_t)delay);
     }
     return streamIds;
 }
@@ -310,7 +312,7 @@ void QuicQos::PushFrame(pn_namespace* ns, quic_frame *frame) {
     assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
     ns->pend_frames.push_back(frame);
     if(windowLeft() >= (int)max_datagram_size){
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 2);
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
     } else {
         LOGD(DQUIC, "skip send, window: %zd, bytes_in_flight: %zd\n", windowLeft(), bytes_in_flight);
     }
@@ -321,7 +323,7 @@ void QuicQos::FrontFrame(pn_namespace* ns, quic_frame *frame) {
     assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
     ns->pend_frames.push_front(frame);
     if(windowLeft() >= (int)max_datagram_size){
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 2);
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
     } else {
         LOGD(DQUIC, "skip send, window: %zd, bytes_in_flight: %zd\n", windowLeft(), bytes_in_flight);
     }

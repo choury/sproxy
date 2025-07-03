@@ -297,13 +297,13 @@ Destination SocketRWer::getDst() const {
 
 void SocketRWer::dump_status(Dumper dp, void *param) {
     if(hostname[0]) {
-        dp(param, "SocketRWer <%d> (%s %s): rlen: %zu, wlen: %zu, stats: %d, event: %s\n",
+        dp(param, "SocketRWer <%d> (%s %s): rlen: %zu, wlen: %zu, stats: %d, event: %s, cb: %ld\n",
            getFd(), hostname, dumpDest(getDst()).c_str(),
-           rlength(0), wlen, (int)stats, events_string[(int)getEvents()]);
+           rlength(0), wlen, (int)stats, events_string[(int)getEvents()], callback.use_count());
     } else {
-        dp(param, "SocketRWer <%d> (%s -> %s): rlen: %zu, wlen: %zu, stats: %d, event: %s\n",
+        dp(param, "SocketRWer <%d> (%s -> %s): rlen: %zu, wlen: %zu, stats: %d, event: %s, cb: %ld\n",
            getFd(), dumpDest(getSrc()).c_str(), dumpDest(getDst()).c_str(),
-           rlength(0), wlen, (int)stats, events_string[(int)getEvents()]);
+           rlength(0), wlen, (int)stats, events_string[(int)getEvents()], callback.use_count());
     }
 }
 
@@ -351,7 +351,7 @@ void StreamRWer::ReadData() {
             break;
         }
         ssize_t ret = read(getFd(), rb.end(), left);
-        LOGD(DRWER, "stream read %d: len: %zd, ret: %zd\n", getFd(), left, ret);
+        LOGD(DRWER, "stream read %d: len: %zd, ret: %zd, cb: %ld\n", getFd(), left, ret, callback.use_count());
         if (ret > 0) {
             rb.append((size_t) ret);
             //ConsumeRData(0);
@@ -430,10 +430,10 @@ void PacketRWer::ReadData() {
     defer([this]{ flags &= ~RWER_READING;});
     while(true) {
         ssize_t ret = read(getFd(), rb, sizeof(rb));
-        LOGD(DRWER, "packet read %d: len: %zd, ret: %zd\n", getFd(), sizeof(rb), ret);
+        LOGD(DRWER, "packet read %d: len: %zd, ret: %zd, cb: %ld\n", getFd(), sizeof(rb), ret, callback.use_count());
         if (ret > 0) {
-            if(auto cb = callback.lock(); cb) {
-                cb->readCB({rb, (size_t)ret});
+            if(auto cb = callback.lock(); cb && cb->readCB({rb, (size_t)ret}) == 0) {
+                break;
             }
             continue;
         }

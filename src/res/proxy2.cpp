@@ -143,6 +143,7 @@ void Proxy2::DataProc(Buffer&& bb) {
                 abort();
             }
             if(cap <= 0) {
+                bb.len = 0;
                 return;
             }
             auto id = bb.id;
@@ -150,7 +151,7 @@ void Proxy2::DataProc(Buffer&& bb) {
             bb.id = id;
             status.buffer->consume(bb.len);
         }
-        status.rw->Send(std::move(bb));
+        status.rw->Send(Buffer{std::move(bb)});
     }else{
         LOGD(DHTTP2, "<proxy2> DataProc not found id: %" PRIu64"\n", bb.id);
         Reset(bb.id, HTTP2_ERR_STREAM_CLOSED);
