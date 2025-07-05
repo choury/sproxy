@@ -218,15 +218,15 @@ void PMemRWer::push_data(Buffer&& bb) {
 }
 
 
-void PMemRWer::SetCallback(std::shared_ptr<IRWerCallback> cb) {
-    MemRWer::SetCallback(cb);
+void PMemRWer::ConsumeRData(uint64_t) {
+    auto cb = callback.lock();
+    if (cb == nullptr) {
+        return;
+    }
     for(auto bb: rb) {
         cb->readCB(std::move(bb));
     }
     rb.clear();
-}
-
-void PMemRWer::ConsumeRData(uint64_t) {
     delEvents(RW_EVENT::READ);
 }
 

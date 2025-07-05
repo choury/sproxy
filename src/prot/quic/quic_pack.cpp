@@ -20,6 +20,14 @@ static const char* initial_salt = "\x38\x76\x2c\xf7\xf5\x59\x34\xb3\x4d\x17\x9a\
 static const char* initial_saltv2 = "\x0d\xed\xe3\xde\xf7\x00\xa6\xdb\x81\x93\x81\xbe\x6e\x26\x9d\xcb\xf9\xbd\x2e\xd9";
 static const int initial_saltlen = 20;
 
+/* QUICv1 Retry Integrity Tag key and nonce */
+static const char* retry_integrity_key_v1 = "\xbe\x0c\x69\x0b\x9f\x66\x57\x5a\x1d\x76\x6b\x54\xe3\x68\xc8\x4e";
+static const char* retry_integrity_nonce_v1 = "\x46\x15\x99\xd3\x5d\x63\x2b\xf2\x23\x98\x25\xbb";
+
+/* QUICv2 Retry Integrity Tag key and nonce */
+static const char* retry_integrity_key_v2 = "\x8f\xb4\xb0\x1b\x56\xac\x48\xe2\x60\xfb\xcb\xce\xad\x7c\xcc\x92";
+static const char* retry_integrity_nonce_v2 = "\xd8\x69\x69\xbc\x2d\x7c\x6d\x99\x82\x88\x3d\xc8";
+
 size_t variable_encode_len(uint64_t value){
     if(value <= 63){
         return 1;
@@ -77,8 +85,9 @@ size_t variable_decode_len(const void* data_){
 }
 
 //only used for initial key, so just use EVP_sha256
-static int HKDF_Extract(const char* cid, size_t clen, char* prk){
+static int HKDF_Extract(const char* cid, size_t clen, char* prk, uint32_t version){
     size_t hashlen = EVP_MD_size(EVP_sha256());
+    const char* salt = (version == QUIC_VERSION_2) ? initial_saltv2 : initial_salt;
     EVP_PKEY_CTX *pctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr);
     if (EVP_PKEY_derive_init(pctx) <= 0)
         goto err;
@@ -86,7 +95,7 @@ static int HKDF_Extract(const char* cid, size_t clen, char* prk){
         goto err;
     if (EVP_PKEY_CTX_set_hkdf_md(pctx, EVP_sha256()) <= 0)
         goto err;
-    if (EVP_PKEY_CTX_set1_hkdf_salt(pctx, (const uint8_t*)initial_salt, initial_saltlen) <= 0)
+    if (EVP_PKEY_CTX_set1_hkdf_salt(pctx, (const uint8_t*)salt, initial_saltlen) <= 0)
         goto err;
     if (EVP_PKEY_CTX_set1_hkdf_key(pctx, (const uint8_t*)cid, clen) <= 0)
         goto err;
@@ -406,9 +415,9 @@ static int hp_encode(const EVP_CIPHER* cipher,
     }
 }
 
-int quic_generate_initial_key(int client, const char* id, uint8_t id_len, struct quic_secret* secret){
+int quic_generate_initial_key(int client, const char* id, uint8_t id_len, struct quic_secret* secret, uint32_t version){
     char prk[32];
-    if(HKDF_Extract(id, id_len, prk) < 0){
+    if(HKDF_Extract(id, id_len, prk, version) < 0){
         LOGE("initial_secret failed: %.*s\n", id_len, id);
         return -1;
     }
@@ -432,22 +441,26 @@ int quic_generate_initial_key(int client, const char* id, uint8_t id_len, struct
         }
     }
 
-    if(HKDF_Expand_Label(secret->md, initial_secret, "quic key", "", secret->key, 16) < 0){
+    const char* key_label = (version == QUIC_VERSION_2) ? "quicv2 key" : "quic key";
+    const char* iv_label = (version == QUIC_VERSION_2) ? "quicv2 iv" : "quic iv";
+    const char* hp_label = (version == QUIC_VERSION_2) ? "quicv2 hp" : "quic hp";
+
+    if(HKDF_Expand_Label(secret->md, initial_secret, key_label, "", secret->key, 16) < 0){
         LOGE("quic key failed\n");
         return -1;
     }
-    if(HKDF_Expand_Label(secret->md, initial_secret, "quic iv", "", secret->iv, 12) < 0){
+    if(HKDF_Expand_Label(secret->md, initial_secret, iv_label, "", secret->iv, 12) < 0){
         LOGE("quic iv failed\n");
         return -1;
     }
-    if(HKDF_Expand_Label(secret->md, initial_secret, "quic hp", "", secret->hp, 16) < 0){
+    if(HKDF_Expand_Label(secret->md, initial_secret, hp_label, "", secret->hp, 16) < 0){
         LOGE("quic hp failed\n");
         return -1;
     }
     return 0;
 }
 
-int quic_secret_set_key(struct quic_secret* secret, const char* key, uint32_t cipher){
+int quic_secret_set_key(struct quic_secret* secret, const char* key, uint32_t cipher, uint32_t version){
     size_t key_len;
     switch (cipher) {
     case TLS1_3_CK_AES_128_GCM_SHA256:
@@ -486,15 +499,19 @@ int quic_secret_set_key(struct quic_secret* secret, const char* key, uint32_t ci
 #else
     key_len = EVP_CIPHER_key_length(secret->cipher);
 #endif
-    if(HKDF_Expand_Label(secret->md, key, "quic key", "", secret->key, key_len) < 0){
+    const char* key_label = (version == QUIC_VERSION_2) ? "quicv2 key" : "quic key";
+    const char* iv_label = (version == QUIC_VERSION_2) ? "quicv2 iv" : "quic iv";
+    const char* hp_label = (version == QUIC_VERSION_2) ? "quicv2 hp" : "quic hp";
+
+    if(HKDF_Expand_Label(secret->md, key, key_label, "", secret->key, key_len) < 0){
         LOGE("quic key failed\n");
         return -1;
     }
-    if(HKDF_Expand_Label(secret->md, key, "quic iv", "", secret->iv, 12) < 0){
+    if(HKDF_Expand_Label(secret->md, key, iv_label, "", secret->iv, 12) < 0){
         LOGE("quic iv failed\n");
         return -1;
     }
-    if(HKDF_Expand_Label(secret->md, key, "quic hp", "", secret->hp, key_len) < 0){
+    if(HKDF_Expand_Label(secret->md, key, hp_label, "", secret->hp, key_len) < 0){
         LOGE("quic hp failed\n");
         return -1;
     }
@@ -510,7 +527,25 @@ static int pack_header(const struct quic_pkt_header* header, char* data, uint16_
         memcpy(data + 1, header->dcid.data(), header->dcid.length());
         p = 1 + header->dcid.length();
     }else{
-        data[0] = 0xc0 | header->type | (pn_len - 1);
+        uint8_t wire_type = header->type;
+        // Map standard types back to QUICv2 wire format
+        if (header->version == QUIC_VERSION_2) {
+            switch (header->type) {
+            case QUIC_PACKET_RETRY:
+                wire_type = QUIC_V2_RETRY_RAW;
+                break;
+            case QUIC_PACKET_INITIAL:
+                wire_type = QUIC_V2_INITIAL_RAW;
+                break;
+            case QUIC_PACKET_0RTT:
+                wire_type = QUIC_V2_0RTT_RAW;
+                break;
+            case QUIC_PACKET_HANDSHAKE:
+                wire_type = QUIC_V2_HANDSHAKE_RAW;
+                break;
+            }
+        }
+        data[0] = 0xc0 | wire_type | (pn_len - 1);
         if(header->version){
             set32(data+1, header->version);
         }else{
@@ -1010,12 +1045,35 @@ int unpack_meta(const void* data_, size_t len, quic_meta* meta){
     }
     if(data[0]&0x80){
         //long packet
-        meta->type = data[0] & 0x30;
+        uint8_t raw_type = data[0] & 0x30;
         size_t pos = 1;
         meta->version = get32(data + pos);
-        if(meta->version != QUIC_VERSION_1){
+        if(meta->version != QUIC_VERSION_1 && meta->version != QUIC_VERSION_2){
             LOGE("unsupported version: 0x%X\n", meta->version);
             return -1;
+        }
+        
+        // Map QUICv2 packet types to standard types
+        if (meta->version == QUIC_VERSION_2) {
+            switch (raw_type) {
+            case QUIC_V2_RETRY_RAW:
+                meta->type = QUIC_PACKET_RETRY;
+                break;
+            case QUIC_V2_INITIAL_RAW:
+                meta->type = QUIC_PACKET_INITIAL;
+                break;
+            case QUIC_V2_0RTT_RAW:
+                meta->type = QUIC_PACKET_0RTT;
+                break;
+            case QUIC_V2_HANDSHAKE_RAW:
+                meta->type = QUIC_PACKET_HANDSHAKE;
+                break;
+            default:
+                LOGE("unknown QUICv2 packet type: 0x%02x\n", raw_type);
+                return -1;
+            }
+        } else {
+            meta->type = raw_type;
         }
         pos += 4;
 
@@ -1455,5 +1513,117 @@ std::string sign_cid(const std::string& id) {
     auto result =  std::string(token, QUIC_TOKEN_LEN);
     free(token);
     return result;
+}
+
+
+static int retry_aead_encrypt_decrypt(const char* key, const char* nonce, 
+                                     const char* aad, size_t aad_len,
+                                     const char* input, size_t input_len,
+                                     char* output, bool encrypt) {
+#ifdef USE_BORINGSSL
+    const EVP_AEAD* aead = EVP_aead_aes_128_gcm();
+#else
+    const EVP_CIPHER* cipher = EVP_aes_128_gcm();
+#endif
+
+#ifdef USE_BORINGSSL
+    if (encrypt) {
+        return aead_encrypt(aead, (const unsigned char*)input, input_len,
+                           (const unsigned char*)aad, aad_len,
+                           (const unsigned char*)key,
+                           (const unsigned char*)nonce,
+                           (unsigned char*)output);
+    } else {
+        return aead_decrypt(aead, (unsigned char*)input, input_len,
+                           (unsigned char*)aad, aad_len,
+                           (unsigned char*)key,
+                           (unsigned char*)nonce,
+                           (unsigned char*)output);
+    }
+#else
+    if (encrypt) {
+        return aead_encrypt(cipher, (const unsigned char*)input, input_len,
+                           (const unsigned char*)aad, aad_len,
+                           (const unsigned char*)key,
+                           (const unsigned char*)nonce,
+                           (unsigned char*)output);
+    } else {
+        return aead_decrypt(cipher, (unsigned char*)input, input_len,
+                           (unsigned char*)aad, aad_len,
+                           (unsigned char*)key,
+                           (unsigned char*)nonce,
+                           (unsigned char*)output);
+    }
+#endif
+}
+
+bool verify_retry_integrity_tag(const void* retry_packet, size_t packet_len, 
+                               const std::string& original_dcid, uint32_t version) {
+    if (packet_len < 16) {
+        // Packet too short to contain integrity tag
+        return false;
+    }
+
+    const char* key = (version == QUIC_VERSION_2) ? retry_integrity_key_v2 : retry_integrity_key_v1;
+    const char* nonce = (version == QUIC_VERSION_2) ? retry_integrity_nonce_v2 : retry_integrity_nonce_v1;
+
+    // Prepare AAD: original_dcid_len + original_dcid + retry_packet_without_tag
+    size_t aad_len = 1 + original_dcid.length() + packet_len - 16;
+    char* aad = new char[aad_len];
+    aad[0] = (char)original_dcid.length();
+    memcpy(aad + 1, original_dcid.data(), original_dcid.length());
+    memcpy(aad + 1 + original_dcid.length(), retry_packet, packet_len - 16);
+
+    // Extract the tag from the packet
+    const char* tag = (const char*)retry_packet + packet_len - 16;
+
+    // Try to decrypt the tag (which should be all zeros)
+    char plaintext[16];
+    int result = retry_aead_encrypt_decrypt(key, nonce, aad, aad_len, 
+                                          tag, 16, plaintext, false);
+
+    delete[] aad;
+
+    // Check if decryption succeeded and plaintext is all zeros
+    if (result != 0) {
+        for (int i = 0; i < result; i++) {
+            if (plaintext[i] != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    return false;
+}
+
+size_t add_retry_integrity_tag(void* retry_packet, size_t packet_len, 
+                              const std::string& original_dcid, uint32_t version) {
+    const char* key = (version == QUIC_VERSION_2) ? retry_integrity_key_v2 : retry_integrity_key_v1;
+    const char* nonce = (version == QUIC_VERSION_2) ? retry_integrity_nonce_v2 : retry_integrity_nonce_v1;
+
+    // Prepare AAD: original_dcid_len + original_dcid + retry_packet
+    size_t aad_len = 1 + original_dcid.length() + packet_len;
+    char* aad = new char[aad_len];
+    aad[0] = (char)original_dcid.length();
+    memcpy(aad + 1, original_dcid.data(), original_dcid.length());
+    memcpy(aad + 1 + original_dcid.length(), retry_packet, packet_len);
+
+    // Encrypt 16 bytes of zeros to generate the tag
+    char zeros[16] = {0};
+    char tag[32]; // Extra space for tag
+
+    int tag_len = retry_aead_encrypt_decrypt(key, nonce, aad, aad_len,
+                                           zeros, 16, tag, true);
+
+    delete[] aad;
+
+    if (tag_len >= 16) {
+        // Append the tag to the packet
+        memcpy((char*)retry_packet + packet_len, tag, 16);
+        return packet_len + 16;
+    }
+
+    return packet_len; // Failed to add tag
 }
 

@@ -154,7 +154,7 @@ size_t Guest_sni::sniffer_quic(Buffer&& bb) {
             goto Forward;
         }
         quic_secret secret;
-        if(quic_generate_initial_key(1, header.dcid.c_str(), header.dcid.size(), &secret) < 0){
+        if(quic_generate_initial_key(1, header.dcid.c_str(), header.dcid.size(), &secret, header.version) < 0){
             LOGE("[%s] Quic sni faild to generate initial key\n", dumpDest(rwer->getSrc()).c_str());
             goto Forward;
         }

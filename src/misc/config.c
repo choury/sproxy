@@ -110,6 +110,7 @@ struct options opt = {
     .redirect_http     = false,
     .restrict_local    = false,
     .quic_cc_algorithm = NULL,
+    .quic_version      = 1,  // Default to QUIC v1
 
     .policy_read    = NULL,
     .policy_write   = NULL,
@@ -210,6 +211,7 @@ static struct option long_options[] = {
 #ifdef HAVE_QUIC
     {"quic",          required_argument, NULL, 'q'},
     {"quic-cc",       required_argument, NULL,  0 },
+    {"quic-version",  required_argument, NULL,  0 },
 #endif
     {"redirect-http", no_argument,       NULL,  0 },
     {"restrict-local",no_argument,       NULL,  0 },
@@ -283,6 +285,7 @@ static struct option_detail option_detail[] = {
 #ifdef HAVE_QUIC
     {"quic", "Listen for QUIC server (experiment)", option_string, &quic_listen, NULL},
     {"quic-cc", "QUIC congestion control algorithm (cubic, bbr)", option_string, &opt.quic_cc_algorithm, NULL},
+    {"quic-version", "QUIC version (1 for QUIC v1, 2 for QUIC v2)", option_uint64, &opt.quic_version, NULL},
 #endif
     {"redirect-http", "Return 308 to redirect http to https", option_bool, &opt.redirect_http, (void*)true},
     {"request-header", "append the header (name:value) before handle http request", option_list, &opt.request_headers, NULL},

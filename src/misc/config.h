@@ -75,6 +75,7 @@ struct options{
     bool redirect_http;
     bool restrict_local;
     const char* quic_cc_algorithm;  // QUIC congestion control algorithm: "cubic" or "bbr"
+    uint64_t quic_version;         // QUIC version: QUIC_VERSION_1 or QUIC_VERSION_2
 
     FILE* policy_read;
     FILE* policy_write;

@@ -32,15 +32,16 @@ Type	Name	Section
 
 /*
 All version 2 Long Header packet types are different. The Type field values are:
+Retry: 0b00
 Initial: 0b01
 0-RTT: 0b10
 Handshake: 0b11
-Retry: 0b00
+Raw wire format values for QUICv2:
  */
-#define QUIC_PACKET_RETRYV2     (0x0<<4)
-#define QUIC_PACKET_INITIALV2   (0x1<<4)
-#define QUIC_PACKET_0RTTV2      (0x2<<4)
-#define QUIC_PACKET_HANDSHAKEV2 (0x3<<4)
+#define QUIC_V2_RETRY_RAW       (0x0<<4)
+#define QUIC_V2_INITIAL_RAW     (0x1<<4)
+#define QUIC_V2_0RTT_RAW        (0x2<<4)
+#define QUIC_V2_HANDSHAKE_RAW   (0x3<<4)
 
 
 #define QUIC_PACKET_1RTT      (0x3f)  //pseudo-type code
@@ -182,8 +183,8 @@ struct quic_secret{
     char key[32];
 };
 
-int quic_generate_initial_key(int client, const char* id, uint8_t id_len, quic_secret* secret);
-int quic_secret_set_key(quic_secret* secret, const char* key, uint32_t cipher);
+int quic_generate_initial_key(int client, const char* id, uint8_t id_len, quic_secret* secret, uint32_t version);
+int quic_secret_set_key(quic_secret* secret, const char* key, uint32_t cipher, uint32_t version);
 
 struct quic_crypto{
     uint64_t offset;
@@ -340,5 +341,12 @@ size_t frame_size(const quic_frame* frame);
 void frame_release(const quic_frame* frame);
 
 std::string sign_cid(const std::string& id);
+
+
+// Retry Integrity Tag support
+bool verify_retry_integrity_tag(const void* retry_packet, size_t packet_len, 
+                               const std::string& original_dcid, uint32_t version);
+size_t add_retry_integrity_tag(void* retry_packet, size_t packet_len, 
+                              const std::string& original_dcid, uint32_t version);
 
 #endif

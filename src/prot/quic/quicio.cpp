@@ -25,7 +25,6 @@ extern std::string getExternalFilesDir();
 
 /*TODO:
  * 多地址，失败轮询重试
- * check retry packet tag
  */
 
 static uint8_t getPacketType(OSSL_ENCRYPTION_LEVEL level) {
@@ -106,8 +105,8 @@ int QuicBase::set_encryption_secrets(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
          level, secret_len, cipher);
     QuicBase* rwer = (QuicBase *)SSL_get_app_data(ssl);
     // assert(secret_len <= 32);
-    if (quic_secret_set_key(&rwer->contexts[level].read_secret, (const char *)read_secret, cipher) < 0 ||
-        quic_secret_set_key(&rwer->contexts[level].write_secret, (const char *)write_secret, cipher) < 0)
+    if (quic_secret_set_key(&rwer->contexts[level].read_secret, (const char *)read_secret, cipher, rwer->chosen_version) < 0 ||
+        quic_secret_set_key(&rwer->contexts[level].write_secret, (const char *)write_secret, cipher, rwer->chosen_version) < 0)
     {
         return 0;
     }
@@ -128,7 +127,7 @@ int QuicBase::set_read_secret(SSL* ssl,
     LOGD(DQUIC, "set_read_secret: level %d, len: %zd, cipher: 0x%X\n",
          level, secret_len, cipher);
     QuicBase* rwer = (QuicBase*)SSL_get_app_data(ssl);
-    if(quic_secret_set_key(&rwer->contexts[level].read_secret, (const char*)secret, cipher) < 0) {
+    if(quic_secret_set_key(&rwer->contexts[level].read_secret, (const char*)secret, cipher, rwer->chosen_version) < 0) {
         return 0;
     }
     rwer->qos->KeyGot(level);
@@ -148,7 +147,7 @@ int QuicBase::set_write_secret(SSL* ssl,
     LOGD(DQUIC, "set_write_secret: level %d, len: %zd, cipher: 0x%X\n",
          level, secret_len, cipher);
     QuicBase* rwer = (QuicBase*)SSL_get_app_data(ssl);
-    if(quic_secret_set_key(&rwer->contexts[level].write_secret, (const char*)secret, cipher) < 0) {
+    if(quic_secret_set_key(&rwer->contexts[level].write_secret, (const char*)secret, cipher, rwer->chosen_version) < 0) {
         return 0;
     }
     //we set hasKey on read_secret
@@ -181,7 +180,7 @@ size_t QuicBase::envelop(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack,
     header.type = getPacketType(level);
     header.dcid = hisids[hisid_idx];
     header.scid = myids[myid_idx];
-    header.version = QUIC_VERSION_1;
+    header.version = chosen_version;
     header.token = initToken;
 
     header.pn = pn;
@@ -393,8 +392,8 @@ void QuicBase::generateCid() {
 
     if(ctx) {
         //only client has init secret now.
-        quic_generate_initial_key(1, hisid.data(), hisid.length(), &contexts[0].write_secret);
-        quic_generate_initial_key(0, hisid.data(), hisid.length(), &contexts[0].read_secret);
+        quic_generate_initial_key(1, hisid.data(), hisid.length(), &contexts[0].write_secret, chosen_version);
+        quic_generate_initial_key(0, hisid.data(), hisid.length(), &contexts[0].read_secret, chosen_version);
         qos->KeyGot(ssl_encryption_initial);
         contexts[0].hasKey = true;
     }
@@ -482,6 +481,19 @@ size_t QuicBase::generateParams(char data[QUIC_INITIAL_LIMIT]) {
     pos += variable_encode(pos, quic_initial_max_stream_data_uni);
     pos += variable_encode(pos, variable_encode_len(my_max_stream_data_uni));
     pos += variable_encode(pos, my_max_stream_data_uni);
+
+    // Add version information parameter (RFC 9368)
+    pos += variable_encode(pos, quic_version_information);
+    pos += variable_encode(pos, 12); // Length: 4 bytes chosen + 4 bytes v1 + 4 bytes v2
+    // Chosen version
+    set32(pos, chosen_version);
+    pos += 4;
+    // Supported versions
+    set32(pos, QUIC_VERSION_1);
+    pos += 4;
+    set32(pos, QUIC_VERSION_2);
+    pos += 4;
+
     if(ctx != nullptr) {
         return pos - data;
     }
@@ -660,6 +672,12 @@ QuicBase::QuicBase(const char* hostname):
     SSL_set_connect_state(ssl);
     SSL_set_tlsext_host_name(ssl, hostname);
 
+    // Convert config version to QUIC magic version numbers BEFORE generating CID
+    if(opt.quic_version == 2) {
+        chosen_version = QUIC_VERSION_2;  // 0x6b3343cf
+    } else {
+        chosen_version = QUIC_VERSION_1;  // Default to v1
+    }
     generateCid();
     nextLocalBiId   = 0;
     nextRemoteBiId  = 1;
@@ -751,7 +769,7 @@ QuicBase::FrameResult QuicBase::handleCryptoFrame(quic_context* context, const q
         const uint8_t* buff = nullptr;
         if(!hasParam && (SSL_get_peer_quic_transport_params(ssl, &buff, &olen), olen > 0)){
             getParams(buff, olen);
-            if(chosen_version != QUIC_VERSION_1) {
+            if(chosen_version != QUIC_VERSION_1 && chosen_version != QUIC_VERSION_2) {
                 return FrameResult::error;
             }
             hasParam = true;
@@ -1063,8 +1081,8 @@ int QuicBase::handleRetryPacket(const quic_pkt_header* header){
     initToken = header->token;
     hisids[0] = header->scid;
     auto& context = contexts[0];
-    quic_generate_initial_key(1, hisids[0].data(), hisids[0].length(), &context.write_secret);
-    quic_generate_initial_key(0, hisids[0].data(), hisids[0].length(), &context.read_secret);
+    quic_generate_initial_key(1, hisids[0].data(), hisids[0].length(), &context.write_secret, chosen_version);
+    quic_generate_initial_key(0, hisids[0].data(), hisids[0].length(), &context.read_secret, chosen_version);
     qos->HandleRetry();
     return 0;
 }
@@ -1567,16 +1585,26 @@ void QuicBase::walkPacket(const void* buff, size_t length) {
             LOGE("QUIC meta unpack failed, disacrd it, body_len: %d, length: %d\n", body_len, (int)length);
             return;
         }
+
+        // Verify Retry Integrity Tag for retry packets
+        if (header.type == QUIC_PACKET_RETRY && ctx != nullptr && !originDcid.empty()) {
+            if (!verify_retry_integrity_tag(pos, length, originDcid, header.version)) {
+                LOGE("QUIC Retry packet integrity verification failed\n");
+                return;
+            }
+            LOGD(DQUIC, "QUIC Retry packet integrity verified successfully\n");
+        }
         if(ctx == nullptr && header.type == QUIC_PACKET_INITIAL && originDcid.empty()){
             //Init something for server
             originDcid = header.dcid;
-            if(quic_generate_initial_key(0, header.dcid.data(), header.dcid.length(), &contexts[0].write_secret) ||
-                quic_generate_initial_key(1, header.dcid.data(), header.dcid.length(), &contexts[0].read_secret)) {
+            if(quic_generate_initial_key(0, header.dcid.data(), header.dcid.length(), &contexts[0].write_secret, header.version) ||
+                quic_generate_initial_key(1, header.dcid.data(), header.dcid.length(), &contexts[0].read_secret, header.version)) {
                 return;
             }
             qos->KeyGot(ssl_encryption_initial);
             contexts[0].hasKey = true;
             onCidChange(originDcid, false);
+            chosen_version = header.version;
 
             char quic_params[QUIC_INITIAL_LIMIT];
             SSL_set_quic_transport_params(ssl, (const uint8_t*)quic_params, generateParams(quic_params));

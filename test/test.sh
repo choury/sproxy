@@ -411,6 +411,7 @@ cat > client.conf << EOF
 root-dir .
 policy-file /dev/null
 insecure
+quic-version 2
 debug all
 EOF
 
