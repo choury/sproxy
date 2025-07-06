@@ -143,7 +143,6 @@ void Proxy2::DataProc(Buffer&& bb) {
                 abort();
             }
             if(cap <= 0) {
-                bb.len = 0;
                 return;
             }
             auto id = bb.id;
@@ -151,7 +150,7 @@ void Proxy2::DataProc(Buffer&& bb) {
             bb.id = id;
             status.buffer->consume(bb.len);
         }
-        status.rw->Send(Buffer{std::move(bb)});
+        status.rw->Send(std::move(bb));
     }else{
         LOGD(DHTTP2, "<proxy2> DataProc not found id: %" PRIu64"\n", bb.id);
         Reset(bb.id, HTTP2_ERR_STREAM_CLOSED);
@@ -338,7 +337,8 @@ void Proxy2::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer
         LOGD(DHTTP2, "<proxy2> signal [%d] %" PRIu64 " error %d:%d\n",
              (int)id, status.req->request_id, ret, code);
         status.flags |= HTTP_CLOSED_F;
-        return Clean(id, HTTP2_ERR_INTERNAL_ERROR);
+        status.cleanJob = AddJob(([this, id]{Clean(id, HTTP2_ERR_INTERNAL_ERROR);}), 0, 0);
+        return;
     });
     status.rw->SetCallback(status.cb);
     idle_timeout.reset();

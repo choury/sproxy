@@ -31,7 +31,7 @@ protected:
     virtual void GoawayProc(uint64_t id) override;
     virtual void ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> res)override;
     virtual void SendData(Buffer&& bb)override;
-    virtual bool DataProc(Buffer& bb)override;
+    virtual bool DataProc(Buffer&& bb)override;
     virtual void ErrProc(int errcode)override;
     virtual void Reset(uint64_t id, uint32_t code)override;
     virtual uint64_t CreateUbiStream() override;

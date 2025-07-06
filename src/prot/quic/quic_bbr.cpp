@@ -235,7 +235,7 @@ void QuicBBR::CheckCyclePhase() {
     
     uint64_t now = getutime();
     // 每轮结束时推进到下一个增益阶段
-    if (last_sent_time > pacing_round_start_time &&  now - pacing_round_start_time >= rtProp.min()) {
+    if (last_sent_time > pacing_round_start_time + btlBw.min()) {
         pacing_gain_count ++;
         pacing_round_start_time = now;
     }
@@ -260,8 +260,8 @@ void QuicBBR::CheckProbeRTTCondition() {
         // 在PROBE_RTT状态至少持续200ms
         // 如果已经完成一轮最小窗口发送，可以退出（简化实现：基于时间）
         if(now - probe_rtt_start_time >= BBR_PROBE_RTT_MIN_TIME 
-            && last_sent_time > probe_rtt_start_time 
-            && now - last_sent_time > rtProp.min()) {
+            && last_sent_time > probe_rtt_start_time + btlBw.min())
+        {
             min_rtt_stamp = now;  // 重置最小RTT时间戳
             if (full_bw == 0 || !IsFullBandwidthReached()) {
                 EnterStartup();

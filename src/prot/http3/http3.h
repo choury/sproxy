@@ -79,7 +79,8 @@ protected:
     virtual void HeadersProc(uint64_t id, const uchar *header, size_t len) = 0;
     virtual void SettingsProc(const uchar *header, size_t len);
     virtual void GoawayProc(uint64_t id);
-    virtual bool DataProc(Buffer& bb) = 0;
+    //返回true代表所有数据都已消费，返回false代表bb保持原样未动，不能消费部分数据
+    virtual bool DataProc(Buffer&& bb) = 0;
     virtual void ErrProc(int errcode) = 0;
     virtual void Reset(uint64_t id, uint32_t code) = 0;
 

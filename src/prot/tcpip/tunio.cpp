@@ -417,6 +417,9 @@ void TunRWer::AckProc(std::shared_ptr<const Ip> pac) {
 }
 
 void TunRWer::sendMsg(uint64_t id, uint32_t msg) {
+    if(!statusmap.Has(id)){
+        return;
+    }
     auto status = GetStatus(id);
     switch(msg){
     case TUN_MSG_SYN:

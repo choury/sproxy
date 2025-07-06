@@ -71,7 +71,7 @@ void Proxy3::Reset(uint64_t id, uint32_t code) {
     return std::dynamic_pointer_cast<QuicRWer>(rwer)->reset(id, code);
 }
 
-bool Proxy3::DataProc(Buffer& bb){
+bool Proxy3::DataProc(Buffer&& bb){
     HOOK_FUNC(this, statusmap, bb);
     if(bb.len == 0){
         return true;
@@ -88,7 +88,7 @@ bool Proxy3::DataProc(Buffer& bb){
                  status.req->request_id, bb.id, status.req->geturl().c_str(), status.rw->cap(bb.id), bb.len);
             return false;
         }
-        status.rw->Send(Buffer{std::move(bb)});
+        status.rw->Send(std::move(bb));
     }else{
         LOGD(DHTTP3, "<proxy3> DataProc not found id: %" PRIu64 "\n", bb.id);
         Reset(bb.id, HTTP3_ERR_STREAM_CREATION_ERROR);
@@ -151,7 +151,8 @@ void Proxy3::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer
         LOGD(DHTTP3, "<proxy3> signal [%d] %" PRIu64 " error %d:%d\n",
              (int)id, status.req->request_id, ret, code);
         status.flags |= HTTP_CLOSED_F;
-        return Clean(id, HTTP3_ERR_CONNECT_ERROR);
+        status.cleanJob = AddJob(([this, id]{Clean(id, HTTP3_ERR_CONNECT_ERROR);}), 0, 0);
+        return;
     });
     status.rw->SetCallback(status.cb);
     idle_timeout.reset();

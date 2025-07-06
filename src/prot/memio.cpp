@@ -41,6 +41,7 @@ void MemRWer::connected(const sockaddr_storage& addr) {
 }
 
 void MemRWer::push_data(Buffer&& bb) {
+    HOOK_FUNC(this, rb, bb);
     assert(stats != RWerStats::ReadEOF);
     LOGD(DRWER, "<MemRWer> <%d> %s push_data [%" PRIu64"]: %zd, refs: %zd\n",
          getFd(), dumpDest(src).c_str(), bb.id, bb.len, bb.refs());
@@ -48,10 +49,8 @@ void MemRWer::push_data(Buffer&& bb) {
     if(bb.len == 0){
         stats = RWerStats::ReadEOF;
     } else {
-        rb.push_back(std::move(bb));
+        rb.emplace_back(std::move(bb));
     }
-    HOOK_FUNC(this, rb, bb);
-    bb.len = 0;
     addEvents(RW_EVENT::READ);
 }
 
@@ -194,6 +193,7 @@ void MemRWer::dump_status(Dumper dp, void* param) {
 
 
 void PMemRWer::push_data(Buffer&& bb) {
+    HOOK_FUNC(this, rb, bb);
     assert(!(flags & RWER_READING));
     flags |= RWER_READING;
     defer([this]{ flags &= ~RWER_READING;});
@@ -213,7 +213,7 @@ void PMemRWer::push_data(Buffer&& bb) {
     } else if(auto cb = callback.lock(); cb) {
         cb->readCB(std::move(bb));
     } else {
-        rb.push_back(std::move(bb));
+        rb.emplace_back(std::move(bb));
     }
 }
 

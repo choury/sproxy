@@ -433,6 +433,7 @@ void PacketRWer::ReadData() {
         LOGD(DRWER, "packet read %d: len: %zd, ret: %zd, cb: %ld\n", getFd(), sizeof(rb), ret, callback.use_count());
         if (ret > 0) {
             if(auto cb = callback.lock(); cb && cb->readCB({rb, (size_t)ret}) == 0) {
+                delEvents(RW_EVENT::READ);
                 break;
             }
             continue;

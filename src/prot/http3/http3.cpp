@@ -97,16 +97,17 @@ size_t Http3Base::Http3_Proc(Buffer& bb) {
         case HTTP3_STREAM_DATA: {
             LOGD(DHTTP3, "Get a data frame: %" PRIu64 ", length: %" PRIu64 "\n", bb.id, length);
             if(bb.len == length) {
-                if (!DataProc(bb)) {
+                if (!DataProc(std::move(bb))) {
                     return 0;
                 }
+                bb.len = 0;
             } else {
                 Buffer cbb = bb;
                 cbb.truncate(length);
-                if (!DataProc(cbb)) {
+                if (!DataProc(std::move(cbb))) {
                     return 0;
                 }
-                bb.reserve(length - cbb.len);
+                bb.reserve(length);
             }
             return len - bb.len;
         }

@@ -144,7 +144,7 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     distribute(status.req, status.rw, this);
 }
 
-bool Guest3::DataProc(Buffer& bb) {
+bool Guest3::DataProc(Buffer&& bb) {
     if(bb.len == 0)
         return true;
     if(statusmap.count(bb.id)){
@@ -160,7 +160,7 @@ bool Guest3::DataProc(Buffer& bb) {
                  status.req->request_id, bb.id, status.req->geturl().c_str());
             return false;
         }
-        status.rw->push_data(Buffer{std::move(bb)});
+        status.rw->push_data(std::move(bb));
     }else{
         LOGD(DHTTP3, "<guest3> DateProc not found id: %" PRIu64"\n", bb.id);
         Reset(bb.id, HTTP3_ERR_STREAM_CREATION_ERROR);

@@ -56,6 +56,7 @@ size_t Http2Base::DefaultProc(Buffer& bb) {
         //所以DataProc这个函数不需要一个返回值，我们也不考虑对端主动shrunk自己的cap的情况
         if(bb.len == length) {
             DataProc(std::move(bb));
+            bb.len = 0;
         }else {
             Buffer cbb = bb;
             cbb.truncate(length);

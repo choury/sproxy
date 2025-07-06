@@ -162,7 +162,6 @@ void Guest2::DataProc(Buffer&& bb) {
                 abort();
             }
             if(cap <= 0) {
-                bb.len = 0;
                 return;
             }
             auto id = bb.id;
@@ -170,7 +169,7 @@ void Guest2::DataProc(Buffer&& bb) {
             bb.id = id;
             status.buffer->consume(bb.len);
         }
-        status.rw->push_data(Buffer{std::move(bb)});
+        status.rw->push_data(std::move(bb));
     }else{
         LOGD(DHTTP2, "<guest2> DateProc not found id: %" PRIu64"\n", bb.id);
         Reset(bb.id, HTTP2_ERR_STREAM_CLOSED);
