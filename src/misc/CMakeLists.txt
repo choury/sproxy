@@ -14,6 +14,7 @@ endif()
 
 add_library(misc ${misc_src})
 add_executable(trie_test trie_test.cpp trie_helper.cpp)
+add_executable(buffer_test buffer_test.cpp buffer.cpp)
 
 
 if((LINUX OR TERMUX) AND HAVE_ELF)

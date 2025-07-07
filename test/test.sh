@@ -257,9 +257,9 @@ function test_vpn(){
         [ $? -ne 0 ] && echo "vpn test 5 failed" && exit 1
     fi
 
-    ping -4 -c 3 example.com
+    ping -4 -c 3 g.cn
     [ $? -ne 0 ] && echo "vpn test 6 failed" && exit 1
-    ping -6 -c 3 example.com
+    ping -6 -c 3 g.cn
     [ $? -ne 0 ] && echo "vpn test 7 failed" && exit 1
 }
 
@@ -472,6 +472,7 @@ fi
 
 $buildpath/prot/dns/dns_test
 $buildpath/misc/trie_test
+$buildpath/misc/buffer_test
 if [ $ker == 'Linux' ];then
     $buildpath/misc/hook_test $buildpath/misc/libhook.so
 fi

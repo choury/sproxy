@@ -51,6 +51,8 @@ Buffer& Buffer::operator=(Buffer&& b) noexcept{
     off = b.off;
     if(b.ptr){
         ptr = std::move(b.ptr);
+    } else {
+        ptr.reset();
     }
     b.ptr = nullptr;
     b.cap = 0;
@@ -194,47 +196,47 @@ char* CBuffer::end(){
 }
 
 size_t EBuffer::left() const{
-    uint32_t start = offset % size;
-    uint32_t finish = (offset + len) % size;
-    if(finish > start || len == 0){
-        return size - finish;
+    uint32_t start = ranges[0].start % capacity;
+    uint32_t finish = ranges[0].end % capacity;
+    if(finish > start || ranges[0].start == ranges[0].end){
+        return capacity - finish;
     }
     return start - finish;
 }
 
 size_t EBuffer::length() const {
-    assert(len <= size);
-    return len;
+    return ranges.back().end - ranges[0].start;
 }
 
 size_t EBuffer::cap() const{
-    return size - len;
+    return capacity - length();
 }
 
 void EBuffer::append(size_t l){
-    len += l;
-    assert(len <= size);
+    ranges.back().end += l;
+    assert(length() <= capacity);
 }
 
 void EBuffer::expand(size_t newsize) {
-    uint32_t start = offset % size;
-    uint32_t finish = (offset + len) % size;
+    uint32_t start = ranges[0].start % capacity;
+    uint32_t finish = ranges.back().end % capacity;
 
+    auto len = length();
     char *newcontent = new char[newsize];
     if(finish > start){
-        put(newcontent, offset, newsize, content + start, len);
+        put(newcontent, ranges[0].start, newsize, content + start, len);
     }else if(len > 0){
-        size_t l = size - start;
-        put(newcontent, offset, newsize, content + start, l);
-        put(newcontent, offset + l, newsize, content, finish);
+        size_t l = capacity - start;
+        put(newcontent, ranges[0].start, newsize, content + start, l);
+        put(newcontent, ranges[0].start + l, newsize, content, finish);
     }
 
     delete[] content;
     content = newcontent;
-    size = newsize;
+    capacity = newsize;
 }
 
-uint64_t EBuffer::put(void* dst, uint64_t pos, size_t size, const void* data, size_t dsize){
+size_t EBuffer::put(void* dst, size_t pos, size_t size, const void* data, size_t dsize){
     if(dsize == 0){
         return pos;
     }
@@ -252,48 +254,166 @@ uint64_t EBuffer::put(void* dst, uint64_t pos, size_t size, const void* data, si
 }
 
 ssize_t EBuffer::put(const void *data, size_t sizeofdata) {
-    size_t result = len + sizeofdata;
-    if(result > MAX_BUF_LEN){
+    return put_at(ranges.back().end, data, sizeofdata);
+}
+
+ssize_t EBuffer::put_at(size_t pos, const void *data, size_t sizeofdata) {
+    if(sizeofdata == 0) {
+        return length();
+    }
+
+    // 检查是否会超出最大缓冲区大小
+    size_t end_pos = pos + sizeofdata;
+    if(end_pos > MAX_BUF_LEN + ranges[0].start) {
         return -1;
     }
-    if(result > size/2){
-        expand(std::min(size * 2, (size_t)MAX_BUF_LEN));
+
+    // 如果put_at的位置在当前偏移量之前，只处理重叠部分
+    size_t effective_start = std::max(pos, ranges[0].start);
+    if(effective_start >= end_pos) {
+        // 没有有效数据需要写入
+        return length();
     }
-    put(content, offset + len, size, data, sizeofdata);
-    len = result;
-    assert(len <= size);
-    return result;
+
+    // 计算需要的缓冲区大小
+    size_t needed_size = end_pos - ranges[0].start;
+    if(needed_size >= capacity) {
+        size_t new_size = capacity;
+        while(new_size <= needed_size && new_size < MAX_BUF_LEN) {
+            new_size *= 2;
+        }
+        if(new_size > MAX_BUF_LEN) {
+            new_size = MAX_BUF_LEN;
+        }
+        expand(new_size);
+    }
+
+    // 写入数据，但只写入有效范围内的数据
+    size_t data_offset = effective_start - pos;
+    size_t effective_size = end_pos - effective_start;
+    put(content, effective_start, capacity, (const char*)data + data_offset, effective_size);
+
+    // 合并数据范围
+    merge_ranges(effective_start, end_pos);
+    return length();
 }
 
-Buffer EBuffer::get(){
-    return get(len);
+void EBuffer::merge_ranges(size_t start, size_t end) {
+    if(start >= end) {
+        return;
+    }
+
+    DataRange new_range(start, end);
+
+    // 找到需要合并的范围
+    std::vector<DataRange> merged;
+    bool inserted = false;
+
+    for(const auto& range : ranges) {
+        if(range.end < start) {
+            // 在新范围之前，直接添加
+            merged.push_back(range);
+        } else if(range.start > end) {
+            // 在新范围之后
+            if(!inserted) {
+                merged.push_back(new_range);
+                inserted = true;
+            }
+            merged.push_back(range);
+        } else {
+            // 有重叠或相邻，需要合并
+            new_range.start = std::min(new_range.start, range.start);
+            new_range.end = std::max(new_range.end, range.end);
+        }
+    }
+
+    if(!inserted) {
+        merged.push_back(new_range);
+    }
+    ranges = std::move(merged);
 }
 
-Buffer EBuffer::get(size_t len) {
-    len = std::min(len, this->len);
-    assert(len > 0);
-    uint32_t start = offset % size;
-    uint32_t finish = (offset + len) % size;
+// 只获取从头开始的连续数据
+Buffer EBuffer::get(size_t request_len) {
+    return get_at(ranges[0].start, request_len);
+}
+
+Buffer EBuffer::get_at(size_t pos, size_t len) {
+    if(len == 0) {
+        return Buffer{nullptr};
+    }
+
+    // 检查连续数据的长度，只返回实际有数据的部分
+    size_t continuous_len = continuous_length_at(pos);
+    size_t actual_len = std::min(len, continuous_len);
+    if(actual_len == 0) {
+        return Buffer{nullptr};
+    }
+
+    uint32_t start = pos % capacity;
+    uint32_t finish = (pos + actual_len) % capacity;
 
     if(finish > start){
-        return Buffer{content + start, len};
+        return Buffer{content + start, actual_len};
     }
-    Buffer bb{len};
-    size_t l = size - start;
+    Buffer bb{actual_len};
+    size_t l = capacity - start;
     memcpy(bb.mutable_data(), content + start, l);
     memcpy((char*)bb.mutable_data() + l, content, finish);
-    bb.truncate(len);
+    bb.truncate(actual_len);
     return bb;
 }
 
 void EBuffer::consume(size_t l){
-    assert(l <= len);
-    offset += l;
-    len -= l;
+    if(l == 0) {
+        return;
+    }
+    size_t new_offset = ranges[0].start + l;
+
+    // 更新 ranges，删除已经被消费的部分
+    std::vector<DataRange> new_ranges;
+    for(const auto& range : ranges) {
+        if(range.end <= new_offset) {
+            // 这个范围完全被消费了
+            continue;
+        }
+        if(range.start < new_offset) {
+            // 这个范围部分被消费了
+            if(new_offset < range.end) {
+                new_ranges.emplace_back(new_offset, range.end);
+            }
+        } else {
+            // 这个范围完全保留
+            new_ranges.push_back(range);
+        }
+    }
+
+    // 如果没有剩余数据，或者第一个范围不是从new_offset开始，添加空范围来维护偏移量
+    if(new_ranges.empty() || new_ranges[0].start != new_offset) {
+        new_ranges.insert(new_ranges.begin(), DataRange(new_offset, new_offset));
+    }
+    ranges = std::move(new_ranges);
 }
 
 char* EBuffer::end(){
-    return content + ((offset + len) % size);
+    return content + ranges.back().end % capacity;
+}
+
+const std::vector<DataRange>& EBuffer::get_ranges() const {
+    return ranges;
+}
+
+size_t EBuffer::continuous_length() const {
+    return ranges[0].end - ranges[0].start;
+}
+
+size_t EBuffer::continuous_length_at(size_t pos) const {
+    for(const auto& range : ranges) {
+        if(pos >= range.start && pos < range.end) {
+            return range.end - pos;
+        }
+    }
+    return 0;
 }
 
 #include "util.h"

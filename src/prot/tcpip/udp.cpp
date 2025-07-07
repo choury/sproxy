@@ -121,7 +121,8 @@ void UdpProc(std::shared_ptr<UdpStatus> status, std::shared_ptr<const Ip> pac, B
                                                "udp_aged_job", (status->flags & UDP_IS_DNS)?5000:120000);
     }
     bb.reserve(pac->gethdrlen());
-    status->readlen += bb.len;
+    status->rx_len += bb.len;
+    status->rx_packets++;
     if(bb.len > 0) {
         status->dataCB(pac, std::move(bb));
     }
@@ -141,6 +142,8 @@ void SendData(std::shared_ptr<UdpStatus> status, Buffer&& bb) {
                                                "udp_aged_job", (status->flags & UDP_IS_DNS)?5000:120000);
     }
 
+    status->tx_len += bb.len;
+    status->tx_packets++;
     auto pac = MakeIp(IPPROTO_UDP, &status->dst, &status->src);
     makeUdp(status, pac, bb);
     status->sendCB(pac, std::move(bb));

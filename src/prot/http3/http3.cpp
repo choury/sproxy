@@ -79,14 +79,17 @@ size_t Http3Base::Http3_Proc(Buffer& bb) {
     }else if((bb.id & 0x02) == 0){
         uint64_t stream, length;
         if(variable_decode_len(bb.data()) >= bb.len){
+            LOGD(DHTTP3, "not enough to get stream type: %zd\n", bb.len);
             return 0;
         }
         bb.reserve(variable_decode(bb.data(), &stream));
         if(variable_decode_len(bb.data()) > bb.len){
+            LOGD(DHTTP3, "not enough to get frame [%" PRIu64"] len: %zd\n", stream, bb.len);
             return 0;
         }
         bb.reserve(variable_decode(bb.data(), &length));
         if(length > bb.len){
+            LOGD(DHTTP3, "incompleted frame: %" PRIu64" vs %zd\n", length, bb.len);
             return 0;
         }
         switch(stream){

@@ -15,6 +15,7 @@
 
 #include <string>
 #include <memory>
+#include <vector>
 
 #define PRIOR_HEAD 80
 
@@ -95,7 +96,7 @@ class CBuffer {
     size_t len = 0;
 public:
     //for put
-    char* end(); 
+    char* end();
     //left返回的是可以在end() 返回的指针后面可以直接写入的数据长度
     size_t left();
     void append(size_t l);
@@ -112,28 +113,34 @@ public:
     void consume(size_t l);
 };
 
+struct DataRange {
+    size_t start;
+    size_t end;
+    DataRange(size_t s, size_t e) : start(s), end(e) {}
+};
+
 //EBuffer也是一个环形buffer,只不过数据快写满的话，它会动态扩容
+//现在支持不连续数据存储，可以在任意位置插入数据并自动合并相邻范围
 class EBuffer {
     char* content;
-    size_t size = BUF_LEN * 2;
-    uint64_t offset = 0;
-    size_t len = 0;
+    size_t capacity;
+    std::vector<DataRange> ranges; // 记录有数据的范围
     void expand(size_t newsize);
-    static uint64_t put(void* dst, uint64_t pos, size_t size, const void* data, size_t dsize);
+    static size_t put(void* dst, size_t pos, size_t size, const void* data, size_t dsize);
+    void merge_ranges(size_t start, size_t end);
 public:
-    EBuffer() {
-        content = new char[size];
+    EBuffer(size_t size = BUF_LEN * 2): capacity(size) {
+        content = new char[capacity];
+        ranges.emplace_back(DataRange{0, 0});
     }
     EBuffer(EBuffer&& copy) noexcept :
             content(copy.content),
-            size(copy.size),
-            offset(copy.offset),
-            len(copy.len)
+            capacity(copy.capacity)
     {
         content = copy.content;
         copy.content = nullptr;
-        copy.size = 0;
-        copy.len = 0;
+        copy.capacity = 0;
+        ranges = std::move(copy.ranges);
     }
     ~EBuffer(){
         delete []content;
@@ -143,16 +150,22 @@ public:
     char* end();
     void append(size_t l);
     ssize_t put(const void* data, size_t size);
-    [[nodiscard]] uint64_t Offset() const{
-        return offset;
+    ssize_t put_at(size_t pos, const void* data, size_t size);
+    [[nodiscard]] size_t Offset() const{
+        return ranges[0].start;
     };
 
     //for get
     [[nodiscard]] size_t length() const;
     [[nodiscard]] size_t cap() const;
-    Buffer get();
-    Buffer get(size_t len);
+    Buffer get(size_t len = MAX_BUF_LEN);
+    Buffer get_at(size_t pos, size_t len);
     void consume(size_t l);
+
+    // 不连续数据相关函数
+    [[nodiscard]] const std::vector<DataRange>& get_ranges() const;
+    [[nodiscard]] size_t continuous_length() const;
+    [[nodiscard]] size_t continuous_length_at(size_t pos) const;
 };
 
 std::string dumpDest(const Destination& addr);

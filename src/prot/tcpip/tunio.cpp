@@ -475,11 +475,11 @@ static void dumpConnection(Dumper dp, void* param,
     }
     case Protocol::UDP: {
         auto status = std::static_pointer_cast<UdpStatus>(status_);
-        dp(param, "  [%" PRIu64"]: <udp> %s -> %s, readlen=%zd\n",
+        dp(param, "  [%" PRIu64"]: <udp> %s -> %s, rx_packets=%zd, rx_len=%zd, tx_packets=%zd, tx_len=%zd\n",
            value.first.first,
            std::string(storage_ntoa(&status->src)).c_str(),
            std::string(storage_ntoa(&status->dst)).c_str(),
-           status->readlen);
+           status->rx_packets, status->rx_len, status->tx_packets, status->tx_len);
         break;
     }
     case Protocol::ICMP: {

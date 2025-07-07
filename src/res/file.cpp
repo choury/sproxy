@@ -226,7 +226,7 @@ size_t File::readHE(Buffer&& bb) {
         rwer->delEvents(RW_EVENT::READ);
         return 0;
     }
-    int len = std::min((long)status.rw->cap(bb.id), rg.end - rg.begin + 1l);
+    int len = std::min({(long)status.rw->cap(bb.id), rg.end - rg.begin + 1l, (long)BUF_LEN});
     if (len <= 0) {
         rwer->delEvents(RW_EVENT::READ);
         return 0;

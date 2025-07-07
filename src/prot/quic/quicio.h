@@ -106,9 +106,7 @@ protected:
         struct quic_secret     read_secret;
         bool     hasKey = false;
         size_t   crypto_offset = 0;
-        size_t   crypto_want = 0;
-        //only crypto and stream frame will be buffered
-        Recvq    recvq;
+        EBuffer  crypto_rb;
     } contexts[4];
     struct cid{
         std::string id;
@@ -128,6 +126,7 @@ protected:
 #define STREAM_FLAG_STOP_SENT     0x10
 #define STREAM_FLAG_RESET_RECVD   0x20  //打了这个标记意味者后续数据不会再上送到应用层
 #define STREAM_FLAG_RESET_DELIVERED 0x40
+#define STREAM_FLAG_BLOCKED         0x80
         uint32_t flags = 0;
         size_t   my_offset = 0;
         size_t   his_offset = 0;
@@ -185,7 +184,6 @@ protected:
 
     enum class FrameResult{
         ok,
-        skip,
         error,
     };
     virtual FrameResult handleCryptoFrame(quic_context* context, const quic_crypto* crypto);

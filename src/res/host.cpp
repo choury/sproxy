@@ -232,6 +232,7 @@ ssize_t Host::DataProc(Buffer& bb) {
     }
     LOGD(DHTTP, "<host> DataProc %" PRIu64 ": cap:%d, send:%zd/%zu\n",
          status.req->request_id, cap, bb.len, rx_bytes);
+    cap = std::min(cap, BUF_LEN);
     if((size_t)cap < bb.len) {
         auto cbb = bb;
         cbb.truncate(cap);
