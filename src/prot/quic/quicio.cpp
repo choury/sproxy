@@ -251,6 +251,11 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
                 pend_frames.insert(std::next(pend_frames.begin()), fframe);
                 frame->stream.length = left - 30;
                 frame->type &= ~QUIC_FRAME_STREAM_FIN_F;
+            } else if(packet.frames.empty() && (frame->type == QUIC_FRAME_DATAGRAM || frame->type == QUIC_FRAME_DATAGRAM_LEN)){
+                LOGD(DQUIC, "drop too large dategram frame: %zd vs %" PRIu64"\n", pack_frame_len(frame), his_max_payload_size);
+                frame_release(frame);
+                pend_frames.pop_front();
+                break;
             } else if(window < packet.meta.sent_bytes) {
                 break;
             } else {
@@ -494,6 +499,11 @@ size_t QuicBase::generateParams(char data[QUIC_INITIAL_LIMIT]) {
     set32(pos, QUIC_VERSION_2);
     pos += 4;
 
+    // Add max_datagram_frame_size parameter (RFC 9221)
+    pos += variable_encode(pos, quic_max_datagram_frame_size);
+    pos += variable_encode(pos, variable_encode_len(my_max_datagram_frame_size));
+    pos += variable_encode(pos, my_max_datagram_frame_size);
+
     if(ctx != nullptr) {
         return pos - data;
     }
@@ -608,12 +618,16 @@ void QuicBase::getParams(const uint8_t* data, size_t len) {
             }
             break;
         }
+        case quic_max_datagram_frame_size:
+            variable_decode(pos, &value);
+            LOGD(DQUIC, "get max datagram frame size: %" PRIu64"\n", value);
+            his_max_datagram_frame_size = value;
+            break;
         case quic_disable_active_migration:
         case quic_preferred_address:
         case quic_active_connection_id_limit:
         case quic_initial_source_connection_id:
         case quic_retry_source_connection_id:
-        case quic_max_datagram_frame_size:
         case quic_grease_quic_bit:
             LOG("unimplemented quic param: %" PRIu64"\n", name);
             break;
@@ -747,7 +761,7 @@ QuicBase::FrameResult QuicBase::handleCryptoFrame(quic_context* context, const q
     context->crypto_rb.put_at(crypto->offset, crypto->buffer->data(), crypto->length);
     auto bb = context->crypto_rb.get();
     if(bb.len == 0) {
-        LOGD(DQUIC, "skip unordered crypto frame [%zd vs %zd]\n", crypto->offset, context->crypto_rb.Offset());
+        LOGD(DQUIC, "skip unordered crypto frame [%" PRIu64" vs %zd]\n", crypto->offset, context->crypto_rb.Offset());
         return FrameResult::ok;
     }
     SSL_provide_quic_data(ssl, context->level, (const uint8_t*)bb.data(), bb.len);
@@ -938,13 +952,13 @@ QuicBase::FrameResult QuicBase::handleStreamFrame(uint64_t type, const quic_stre
     }
     auto len = status.rb.continuous_length() - origin_size;
     if(len == 0 && stream->length != 0) {
-        LOGD(DQUIC, "received unordered data [%" PRIu64"] <%" PRIu64"-%" PRIu64"> <%" PRIu64"/%" PRIu64">\n",
-            id, status.rb.get_ranges()[0].start, status.rb.get_ranges()[0].end, 
+        LOGD(DQUIC, "received unordered data [%" PRIu64"] <%zd-%zd> <%zd/%" PRIu64">\n",
+            id, status.rb.get_ranges()[0].start, status.rb.get_ranges()[0].end,
             status.rb.get_ranges().back().end, status.my_max_data);
     }else {
         rblen += len;
         my_received_data += len;
-        LOGD(DQUIC, "received data [%" PRIu64"] <%" PRIu64"/%" PRIu64"> <%" PRIu64"/%" PRIu64">%s\n",
+        LOGD(DQUIC, "received data [%" PRIu64"] <%zd/%" PRIu64"> <%" PRIu64"/%" PRIu64">%s\n",
             id, status.rb.get_ranges().back().end, status.my_max_data, my_received_data, my_max_data,
             (type & QUIC_FRAME_STREAM_FIN_F)?" EOF":"");
     }
@@ -992,7 +1006,7 @@ QuicBase::FrameResult QuicBase::handleResetFrame(const quic_reset *stream) {
 
     if((status.flags & STREAM_FLAG_RESET_DELIVERED) == 0) {
         LOGD(DQUIC, "reset stream for %" PRIu64"\n", id);
-        resetHandler(id, stream->error);
+        onReset(id, stream->error);
         status.flags |= STREAM_FLAG_RESET_DELIVERED;
         rblen -= status.rb.continuous_length();
         status.rb.consume(status.rb.length());
@@ -1164,7 +1178,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
         }
         if((status.flags & STREAM_FLAG_RESET_DELIVERED) == 0){
             status.flags |= STREAM_FLAG_RESET_DELIVERED;
-            resetHandler(frame->stop.id, frame->stop.error);
+            onReset(frame->stop.id, frame->stop.error);
             rblen -= status.rb.continuous_length();
             status.rb.consume(status.rb.length());
         }
@@ -1280,6 +1294,12 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
     }
     case QUIC_FRAME_PATH_RESPONSE:
         return handlePathResponseFrame(frame->path_data);
+    case QUIC_FRAME_DATAGRAM:
+    case QUIC_FRAME_DATAGRAM_LEN: {
+        datagrams.emplace_back(frame->datagram.buffer);
+        const_cast<quic_frame*>(frame)->datagram.buffer = nullptr;
+        return FrameResult::ok;
+    }
     default:
         if(frame->type >= QUIC_FRAME_STREAM_START_ID && frame->type <= QUIC_FRAME_STREAM_END_ID){
             return handleStreamFrame(frame->type, &frame->stream);
@@ -1321,6 +1341,8 @@ void QuicBase::resendFrames(pn_namespace* ns, quic_frame *frame) {
     case QUIC_FRAME_PING:
     case QUIC_FRAME_PATH_CHALLENGE:
     case QUIC_FRAME_PATH_RESPONSE:
+    case QUIC_FRAME_DATAGRAM:
+    case QUIC_FRAME_DATAGRAM_LEN:
         frame_release(frame);
         break;
     case QUIC_FRAME_CRYPTO:
@@ -1475,6 +1497,35 @@ void QuicBase::sendData(Buffer&& bb) {
     if(idle(id)){
         cleanStream(id);
     }
+}
+
+void QuicBase::sendDatagram(Buffer&& bb) {
+    if(isClosing) {
+        LOGD(DQUIC, "drop datagram after close: len:%zd\n", bb.len);
+        return;
+    }
+
+    // Check if datagram is supported by peer
+    if(his_max_datagram_frame_size == 0) {
+        LOGE("(%s) peer does not support datagrams\n",
+            dumpHex(hisids[hisid_idx].c_str(), hisids[hisid_idx].length()).c_str());
+        return;
+    }
+
+    // Check datagram size limit
+    if(bb.len > his_max_datagram_frame_size) {
+        LOGE("(%s) datagram too large: %zd > %" PRIu64"\n",
+            dumpHex(hisids[hisid_idx].c_str(), hisids[hisid_idx].length()).c_str(), bb.len, his_max_datagram_frame_size);
+        return;
+    }
+
+    quic_frame* frame = new quic_frame;
+    frame->type = QUIC_FRAME_DATAGRAM_LEN;
+    frame->datagram.length = bb.len;
+    frame->datagram.buffer = new Buffer(std::move(bb));
+
+    qos->PushFrame(ssl_encryption_application, frame);
+    LOGD(DQUIC, "send datagram: %" PRIu64" bytes\n", frame->datagram.length);
 }
 
 void QuicBase::close(uint64_t error) {
@@ -1673,10 +1724,6 @@ void QuicBase::reset(uint64_t id, uint32_t code) {
     }
 }
 
-void QuicBase::setResetHandler(std::function<void(uint64_t, uint32_t)> func) {
-    resetHandler = std::move(func);
-}
-
 ssize_t QuicBase::window(uint64_t id) {
     if(streammap.count(id) == 0){
         return 0;
@@ -1757,7 +1804,7 @@ void QuicBase::sinkData(uint64_t id, QuicStreamStatus &status) {
         Buffer bb = rb.get();
         bb.id = id;
         size_t eaten = onRead(std::move(bb));
-        LOGD(DQUIC, "consume data [%" PRIu64"]: %" PRIu64" - %" PRIu64", left: %zd\n",
+        LOGD(DQUIC, "consume data [%" PRIu64"]: %zd - %zd, left: %zd\n",
              id, rb.Offset(), rb.Offset() + eaten, rb.continuous_length() - eaten);
         rb.consume(eaten);
         rblen -= eaten;
@@ -1769,7 +1816,7 @@ void QuicBase::sinkData(uint64_t id, QuicStreamStatus &status) {
         assert((status.flags & STREAM_FLAG_FIN_DELIVED) == 0);
         //在QuicRWer中，我们不用 ReadEOF状态，因为它是对整个连接的，而不是对某个stream的
         onRead({nullptr, id});
-        LOGD(DQUIC, "consume EOF [%" PRIu64"]: %" PRIu64"\n", id, rb.Offset());
+        LOGD(DQUIC, "consume EOF [%" PRIu64"]: %zd\n", id, rb.Offset());
         status.flags |= STREAM_FLAG_FIN_DELIVED;
     }
 
@@ -1781,7 +1828,7 @@ void QuicBase::sinkData(uint64_t id, QuicStreamStatus &status) {
             return false;
         }
         uint64_t rcap = status.rb.Offset() + MAX_BUF_LEN;
-        if((status.my_max_data - status.his_offset < BUF_LEN || status.flags & STREAM_FLAG_BLOCKED) 
+        if((status.my_max_data - status.his_offset < BUF_LEN || status.flags & STREAM_FLAG_BLOCKED)
             && rcap > status.my_max_data)
         {
             return true;
@@ -1815,6 +1862,12 @@ void QuicBase::sinkData(uint64_t id) {
             if (idle(id)) {
                 to_clean.push_back(id);
             }
+        }
+        while(!datagrams.empty()) {
+            auto bb = datagrams.front();
+            onDatagram(std::move(*bb));
+            delete bb;
+            datagrams.pop_front();
         }
     } else if(streammap.count(id)){
         auto& stream = streammap[id];
@@ -1911,7 +1964,7 @@ void QuicBase::dump(Dumper dp, void* param) {
         auto ranges = stream.rb.get_ranges();
         dp(param, "  0x%lx: rlen: %zd-%zd/%zd, rcap: %zd, my_window: %zd/%zd, his_window: %zd/%zd, flags: 0x%08x\n",
            id, ranges[0].start, ranges[0].end, ranges.back().end,
-           stream.rb.cap(), stream.my_max_data - stream.his_offset, stream.his_offset, 
+           stream.rb.cap(), stream.my_max_data - stream.his_offset, stream.his_offset,
            stream.his_max_data - stream.my_offset, stream.my_offset, stream.flags);
     }
 }
@@ -1953,7 +2006,7 @@ QuicRWer::QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
 }
 
 QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, Quic_server* server):
-        QuicBase(ctx), 
+        QuicBase(ctx),
         SocketRWer(fd, peer, ISocketCallback::create()->onError([](int, int){})),
         server(server)
 {
@@ -1988,12 +2041,23 @@ size_t QuicRWer::onRead(Buffer&& bb) {
     return 0;
 }
 
+void QuicRWer::onDatagram(Buffer&& bb) {
+    if(auto cb = std::dynamic_pointer_cast<IQuicCallback>(callback.lock()); cb) {
+        cb->datagramCB(std::move(bb));
+    }
+}
+
 void QuicRWer::onWrite(uint64_t id) {
     if(auto cb = callback.lock(); cb) {
         cb->writeCB(id);
     }
 }
 
+void QuicRWer::onReset(uint64_t id, uint32_t error) {
+    if(auto cb = std::dynamic_pointer_cast<IQuicCallback>(callback.lock()); cb) {
+        cb->resetCB(id, error);
+    }
+}
 
 void QuicRWer::onCidChange(const std::string &cid, bool retired) {
     if (retired) {
@@ -2476,9 +2540,22 @@ size_t QuicMer::onRead(Buffer&& bb) {
     return 0;
 }
 
+void QuicMer::onDatagram(Buffer&& bb) {
+    if(auto cb = std::dynamic_pointer_cast<IQuicCallback>(callback.lock()); cb) {
+        cb->datagramCB(std::move(bb));
+    }
+}
+
 void QuicMer::onWrite(uint64_t id) {
     if(auto cb = callback.lock(); cb) {
         cb->writeCB(id);
+    }
+}
+
+
+void QuicMer::onReset(uint64_t id, uint32_t error) {
+    if(auto cb = std::dynamic_pointer_cast<IQuicCallback>(callback.lock()); cb) {
+        cb->resetCB(id, error);
     }
 }
 

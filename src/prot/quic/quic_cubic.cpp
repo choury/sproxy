@@ -99,8 +99,8 @@ void QuicCubic::OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets)
         // Congestion avoidance.
         congestion_window += max_datagram_size * sent_bytes / congestion_window;
     }
-    if(has_packet_been_congested && windowLeft() >= (int)max_datagram_size){
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
+    if(has_packet_been_congested){
+        maySend();
     }
 }
 

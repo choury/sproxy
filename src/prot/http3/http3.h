@@ -32,6 +32,7 @@ Reserved	    0x4	    N/A	N/A
 Reserved	    0x5	    N/A	N/A */
 #define HTTP3_SETTING_MAX_FIELD_SECTION_SIZE    0x6	//Section 7.2.4.1	Unlimited
 #define HTTP3_SETTING_ENABLE_CONNECT_PROTOCOL   0x8 //rfc9220
+#define HTTP3_SETTING_H3_DATAGRAM              0x33 //rfc9297
 
 //Name	                                    Value	Description	Specification
 #define HTTP3_ERR_NO_ERROR	                0x100	//No error	Section 8.1
@@ -51,6 +52,7 @@ Reserved	    0x5	    N/A	N/A */
 #define HTTP3_ERR_MESSAGE_ERROR	            0x10e	//Malformed message	Section 8.1
 #define HTTP3_ERR_CONNECT_ERROR	            0x10f	//TCP reset or error on CONNECT request	Section 8.1
 #define HTTP3_ERR_VERSION_FALLBACK	        0x110	//Retry over HTTP/1.1	Section 8.1
+#define HTTP3_ERR_DATAGRAM_ERROR            0x033   //HTTP Datagram processing error	rfc9297
 
 
 //Stream Type	                    Value	Specification	Sender
@@ -65,6 +67,7 @@ protected:
 #define HTTP3_FLAG_ERROR     (1u << 2u)
 #define HTTP3_FLAG_CLEANNING (1u << 3u)
 #define HTTP3_FLAG_ENABLE_PROTOCOL (1u << 4u)
+#define HTTP3_FLAG_H3_DATAGRAM     (1u << 5u)
     uint32_t http3_flag = 0;
     // these ids are ubi stream, can not be 0, so use it as not inited.
     uint64_t ctrlid_local = 0, ctrlid_remote = 0;
@@ -75,19 +78,24 @@ protected:
     Qpack_encoder qpack_encoder;
     Qpack_decoder qpack_decoder;
     size_t Http3_Proc(Buffer& bb);
+    void Datagram_Proc(Buffer&& bb);
 
     virtual void HeadersProc(uint64_t id, const uchar *header, size_t len) = 0;
     virtual void SettingsProc(const uchar *header, size_t len);
     virtual void GoawayProc(uint64_t id);
     //返回true代表所有数据都已消费，返回false代表bb保持原样未动，不能消费部分数据
     virtual bool DataProc(Buffer&& bb) = 0;
+    virtual void DatagramProc(Buffer&& bb) = 0;
     virtual void ErrProc(int errcode) = 0;
     virtual void Reset(uint64_t id, uint32_t code) = 0;
+
 
     void Goaway(uint64_t lastid);
     virtual uint64_t CreateUbiStream() = 0;
     virtual void SendData(Buffer&& bb) = 0;
+    virtual void SendDatagram(Buffer&& bb) = 0;
     virtual void PushData(Buffer&& bb);
+    virtual void PushDatagram(Buffer&& bb);
 
 public:
     Http3Base();

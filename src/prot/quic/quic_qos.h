@@ -45,6 +45,7 @@ protected:
     void OnLossDetectionTimeout(pn_namespace* ns);
     Job packet_tx = nullptr;
     std::function<void(pn_namespace*, quic_frame*)> resendFrames;
+    void maySend();
 
     bool PeerCompletedAddressValidation();
     void SetLossDetectionTimer();

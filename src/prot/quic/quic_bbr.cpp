@@ -6,7 +6,7 @@
 
 // 单位转换常量
 #define TIME_US_TO_MS  1000               // 微秒到毫秒转换因子
-#define TIME_US_TO_S   1000000            // 微秒到秒转换因子  
+#define TIME_US_TO_S   1000000            // 微秒到秒转换因子
 #define BANDWIDTH_INIT 100000000          // 带宽值100MB/s -> bytes/s
 
 // BBR算法常量定义
@@ -35,13 +35,13 @@ static const int pacing_gain_array[] = {
 };
 
 QuicBBR::QuicBBR(bool isServer, send_func sent, std::function<void(pn_namespace *, quic_frame *)> resendFrames):
-        QuicQos(isServer, sent, resendFrames), 
+        QuicQos(isServer, sent, resendFrames),
         rtProp(10 * TIME_US_TO_S),  // RTT测量器，10秒时间窗口
         btlBw(10 * TIME_US_TO_S)    // 带宽测量器，10秒时间窗口
 {
     // 初始化RTT估计值为1秒。这个值会在第一个RTT测量后被替换
     rtProp.insert(TIME_US_TO_S); // 1秒 初始RTT估计
-    
+
     // 初始化时间戳
     uint64_t now = getutime();
     last_sent_time = now - TIME_US_TO_S; //避免初始状态窗口为0
@@ -80,7 +80,7 @@ uint32_t QuicBBR::pacing_gain() const {
         return BBR_DRAIN_GAIN_VALUE;
     case BBR_PROBE_BW:
         // PROBE_BW阶段使用循环增益探测带宽变化
-        return pacing_gain_array[pacing_gain_count % 
+        return pacing_gain_array[pacing_gain_count %
                 (sizeof(pacing_gain_array)/sizeof(pacing_gain_array[0]))];
     default:
         // 其他阶段使用标准增益
@@ -93,7 +93,7 @@ uint32_t QuicBBR::pacing_gain() const {
 void QuicBBR::OnPacketsAcked(const std::list<quic_packet_meta> &acked_packets) {
     uint64_t now = getutime();
     const quic_packet_meta* packet_first = nullptr;
-    
+
     // 处理所有被确认的包
     for (const auto& packet : acked_packets) {
         delivered_bytes += packet.sent_bytes;
@@ -106,7 +106,7 @@ void QuicBBR::OnPacketsAcked(const std::list<quic_packet_meta> &acked_packets) {
             bytes_in_flight -= packet.sent_bytes;
         }
     }
-    
+
     // 更新BBR的最小RTT估计（使用基类已经计算好的RTT）
     if (packet_first) {
         // 更新最小RTT时间戳
@@ -124,18 +124,18 @@ void QuicBBR::OnPacketsAcked(const std::list<quic_packet_meta> &acked_packets) {
             full_bw = 0;
             full_bw_count = 0;
         }
-        LOGD(DQUIC, "BBR latest_rtt=%.3fms, delivered_time=%.3fms, delivered_bytes=%zd, delivered_rate=%zd, app_limited=%s\n", 
-            rtt.latest_rtt/(double)TIME_US_TO_MS, delivered_time/(double)TIME_US_TO_MS, 
+        LOGD(DQUIC, "BBR latest_rtt=%.3fms, delivered_time=%.3fms, delivered_bytes=%zd, delivered_rate=%zd, app_limited=%s\n",
+            rtt.latest_rtt/(double)TIME_US_TO_MS, delivered_time/(double)TIME_US_TO_MS,
             delta_delivered_bytes, delivery_rate, packet_first->app_limited?"true":"false");
     }
-    
+
     // 更新BBR状态机
     UpdateBBRState();
 
-    if(has_packet_been_congested && windowLeft() >= (int)max_datagram_size){
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
+    if(has_packet_been_congested){
+        maySend();
     }
-    LOGD(DQUIC, "BBR mode=%d, btlBw=%d, rtProp=%d, pacing_gain_count=%zd, since_last_sent=%.3fms, bytes_in_flight=%zd\n", 
+    LOGD(DQUIC, "BBR mode=%d, btlBw=%d, rtProp=%d, pacing_gain_count=%zd, since_last_sent=%.3fms, bytes_in_flight=%zd\n",
         mode, (int)btlBw.max(), (int)rtProp.min(), pacing_gain_count, (now - last_sent_time)/(double)TIME_US_TO_MS, bytes_in_flight);
 }
 
@@ -143,18 +143,18 @@ void QuicBBR::OnPacketsAcked(const std::list<quic_packet_meta> &acked_packets) {
 void QuicBBR::OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets) {
     // BBR算法对丢包的反应较为温和，主要是重传丢失的包
     // 不像CUBIC那样激进地减少拥塞窗口
-    
+
     for (const auto& lost_packet : lost_packets) {
         if (lost_packet.meta.in_flight) {
             bytes_in_flight -= lost_packet.meta.sent_bytes;
         }
-        
+
         // 重传丢失的帧
         for (auto frame : lost_packet.frames) {
             resendFrames(ns, frame);
         }
     }
-    
+
     // 在STARTUP阶段，如果遇到丢包，可能需要更保守一些
     if (mode == BBR_STARTUP && !lost_packets.empty()) {
         // 可以考虑降低增长速度，但BBR通常不会因为少量丢包就退出STARTUP
@@ -215,14 +215,14 @@ void QuicBBR::EnterProbeRTT() {
 
 bool QuicBBR::IsFullBandwidthReached() {
     uint64_t current_bw = btlBw.max();
-    
+
     // 如果当前带宽比之前记录的满带宽高出25%，说明还在增长
     if (current_bw * BBR_UNIT >= full_bw * BBR_FULL_BW_THRESH) {
         full_bw = current_bw;
         full_bw_count = 0;
         return false;
     }
-    
+
     // 如果连续3轮带宽增长不超过25%，认为达到满带宽
     full_bw_count++;
     return full_bw_count >= BBR_FULL_BW_REACH_COUNT;
@@ -232,7 +232,7 @@ void QuicBBR::CheckCyclePhase() {
     if (mode != BBR_PROBE_BW) {
         return;
     }
-    
+
     uint64_t now = getutime();
     // 每轮结束时推进到下一个增益阶段
     if (last_sent_time > pacing_round_start_time + btlBw.min()) {
@@ -245,7 +245,7 @@ void QuicBBR::CheckDrainCondition() {
     if (mode != BBR_DRAIN) {
         return;
     }
-    
+
     // 当in-flight字节数降到BDP以下时，退出DRAIN状态
     uint64_t bdp = btlBw.max() * rtProp.min() / TIME_US_TO_S;
     if (bytes_in_flight <= bdp) {
@@ -259,7 +259,7 @@ void QuicBBR::CheckProbeRTTCondition() {
     if(mode == BBR_PROBE_RTT) {
         // 在PROBE_RTT状态至少持续200ms
         // 如果已经完成一轮最小窗口发送，可以退出（简化实现：基于时间）
-        if(now - probe_rtt_start_time >= BBR_PROBE_RTT_MIN_TIME 
+        if(now - probe_rtt_start_time >= BBR_PROBE_RTT_MIN_TIME
             && last_sent_time > probe_rtt_start_time + btlBw.min())
         {
             min_rtt_stamp = now;  // 重置最小RTT时间戳
@@ -286,20 +286,20 @@ void QuicBBR::UpdateBBRState() {
             EnterDrain();
         }
         break;
-        
+
     case BBR_DRAIN:
         CheckDrainCondition();
         break;
-        
+
     case BBR_PROBE_BW:
         CheckCyclePhase();
         break;
-        
+
     case BBR_PROBE_RTT:
         // PROBE_RTT状态的退出条件在CheckProbeRTTCondition中处理
         break;
     }
-    
+
     // 所有状态都需要检查是否进入PROBE_RTT
     CheckProbeRTTCondition();
 }

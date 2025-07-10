@@ -136,8 +136,8 @@ Guest::Guest(std::shared_ptr<RWer> rwer): Requester(rwer){
 void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     static const char*  HCONNECT = "HTTP/1.1 200 Connection establishe" CRLF CRLF;
     auto _cb = response(id);
-    if(header->ismethod("CONNECT") && 
-      (header->Dest.protocol[0] == 0 || strcmp(header->Dest.protocol, "tcp") == 0)) 
+    if(header->ismethod("CONNECT") &&
+      (header->Dest.protocol[0] == 0 || strcmp(header->Dest.protocol, "tcp") == 0))
     {
         if(header->Dest.port == HTTPPORT) {
             if(!headless) rwer->Send({HCONNECT, strlen(HCONNECT), id});
@@ -231,6 +231,7 @@ ssize_t Guest::DataProc(Buffer& bb) {
     } else {
         cap = bb.len;
         tx(std::move(bb));
+        bb.len = 0;
     }
     rx_bytes += cap;
     return cap;

@@ -12,7 +12,7 @@ class Proxy3:public Responser, public Http3Requster {
         std::shared_ptr<MemRWer>       rw;
         std::shared_ptr<IRWerCallback> cb;
         uint32_t flags;
-        Job      cleanJob = nullptr; 
+        Job      cleanJob = nullptr;
     };
 
     std::map<uint64_t, ReqStatus> statusmap;
@@ -26,9 +26,11 @@ protected:
     virtual void ResProc(uint64_t id, std::shared_ptr<HttpResHeader> res)override;
     virtual void SendData(Buffer&& bb)override;
     virtual bool DataProc(Buffer&& bb)override;
+    virtual void DatagramProc(Buffer&& bb)override;
     virtual void ErrProc(int errcode)override;
     virtual void Reset(uint64_t id, uint32_t code)override;
     virtual uint64_t CreateUbiStream() override;
+    virtual void SendDatagram(Buffer&& bb)override;
 
     void RstProc(uint64_t id, uint32_t errcode);
     void Clean(uint64_t id, uint32_t errcode);

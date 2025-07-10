@@ -142,6 +142,7 @@ protected:
     uint64_t nextRemoteBiId;
     std::map <uint64_t, QuicStreamStatus> streammap;
     std::list<quic_frame*> fullq;
+    std::deque<Buffer*> datagrams;
 
     uint64_t max_idle_timeout = 120000;
     uint64_t his_max_payload_size = 1200;
@@ -152,6 +153,7 @@ protected:
     uint64_t his_max_streams_bidi = 0;
     uint64_t his_max_streams_uni = 0;
     uint64_t his_max_ack_delay = 0;
+    uint64_t his_max_datagram_frame_size = 0;
 
     uint64_t my_sent_data = 0;
     uint64_t my_sent_data_total = 0;
@@ -166,6 +168,7 @@ protected:
     uint64_t my_max_stream_data_uni = BUF_LEN;
     uint64_t my_max_streams_bidi = 100;
     uint64_t my_max_streams_uni = 100;
+    uint64_t my_max_datagram_frame_size = 65535;
 
     uint32_t chosen_version = QUIC_VERSION_1;
 
@@ -223,15 +226,17 @@ protected:
     void disconnect_action();
     Job close_timer = nullptr;
 
-    std::function<void(uint64_t id, uint32_t error)> resetHandler = [](uint64_t, uint32_t){};
-
     virtual size_t getWritableSize() = 0;
     virtual ssize_t writem(const struct iovec *iov, int iovcnt) = 0;
     virtual void onError(int type, int code) = 0;
     virtual size_t onRead(Buffer&& bb) = 0;
     virtual void onWrite(uint64_t id) = 0;
+    virtual void onReset(uint64_t id, uint32_t error) = 0;
     virtual void onConnected() = 0;
     virtual void onCidChange(const std::string& /*cid*/, bool /*retired*/) {}
+
+    // QUIC Datagram support (RFC 9221)
+    virtual void onDatagram(Buffer&& bb) = 0;
 public:
     explicit QuicBase(const char* hostname);
     explicit QuicBase(SSL_CTX* ctx);
@@ -256,8 +261,8 @@ public:
     int doSslConnect(const char* hostname);
     void walkPackets(const iovec* iov, int iovcnt);
     void sendData(Buffer&& bb);
+    void sendDatagram(Buffer&& bb);
     void reset(uint64_t id, uint32_t code);
-    void setResetHandler(std::function<void(uint64_t id, uint32_t error)> func);
     void close(uint64_t error);
 
     bool idle(uint64_t id);
@@ -270,6 +275,27 @@ public:
     uint64_t createUbiStream();
     void dump(Dumper dp, void* param);
     size_t mem_usage();
+};
+
+struct IQuicCallback: public ISocketCallback {
+    std::function<void(uint64_t id, uint32_t error)> resetCB = [](uint64_t, uint32_t){};
+    std::function<void(Buffer&& bb)> datagramCB = [](Buffer&&){};
+
+    template<typename F>
+    std::shared_ptr<IQuicCallback> onReset(F&& func) {
+        resetCB = std::forward<F>(func);
+        return std::dynamic_pointer_cast<IQuicCallback>(shared_from_this());
+    }
+
+    template<typename F>
+    std::shared_ptr<IQuicCallback> onDatagram(F&& func) {
+        datagramCB = std::forward<F>(func);
+        return std::dynamic_pointer_cast<IQuicCallback>(shared_from_this());
+    }
+
+    static std::shared_ptr<IQuicCallback> create() {
+        return std::make_shared<IQuicCallback>();
+    }
 };
 
 class QuicRWer: public QuicBase, public SocketRWer {
@@ -294,7 +320,9 @@ protected:
     virtual void onConnected() override;
     virtual void onError(int type, int code) override;
     virtual size_t onRead(Buffer&& bb) override;
+    virtual void onDatagram(Buffer&& bb) override;
     virtual void onWrite(uint64_t id) override;
+    virtual void onReset(uint64_t id, uint32_t error) override;
     virtual void onCidChange(const std::string& cid, bool retired) override;
     virtual int handleRetryPacket(const quic_pkt_header* header) override;
     virtual FrameResult handlePathResponseFrame(const char* response) override;
@@ -344,7 +372,9 @@ protected:
     virtual void onConnected() override;
     virtual void onError(int type, int code) override;
     virtual size_t onRead(Buffer&& bb) override;
+    virtual void onDatagram(Buffer&& bb) override;
     virtual void onWrite(uint64_t id) override;
+    virtual void onReset(uint64_t id, uint32_t error) override;
 
     virtual void defaultHE(RW_EVENT events) override;
     virtual void push_data(Buffer&& bb) override;

@@ -241,6 +241,7 @@ ssize_t Host::DataProc(Buffer& bb) {
     } else {
         cap = bb.len;
         status.rw->Send(std::move(bb));
+        bb.len = 0;
     }
     rx_bytes += cap;
     return cap;

@@ -10,9 +10,7 @@
 #include <inttypes.h>
 
 void Guest3::init() {
-    cb = ISocketCallback::create()->onConnect([this](const sockaddr_storage&, uint32_t){
-        connected();
-    })->onRead([this](Buffer&& bb) -> size_t {
+    cb = IQuicCallback::create()->onRead([this](Buffer&& bb) -> size_t {
         HOOK_FUNC(this, statusmap, bb);
         LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.id, bb.len);
         if(bb.len == 0){
@@ -52,6 +50,14 @@ void Guest3::init() {
     })->onError([this](int ret, int code){
         Error(ret, code);
     });
+    std::dynamic_pointer_cast<IQuicCallback>(cb)->onDatagram([this](Buffer&& bb){
+        LOGD(DHTTP3, "<guest3> (%s) read datagram, len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.len);
+        Datagram_Proc(std::move(bb));
+    })->onReset([this](uint64_t id, uint32_t error){
+        RstProc(id, error);
+    })->onConnect([this](const sockaddr_storage&, uint32_t){
+        connected();
+    });
     rwer->SetCallback(cb);
 }
 
@@ -64,7 +70,6 @@ void Guest3::connected() {
         LOGE("(%s) unknown protocol: %.*s\n", dumpDest(rwer->getSrc()).c_str(), len, data);
         return Server::deleteLater(PROTOCOL_ERR);
     }
-    qrwer->setResetHandler([this](uint64_t id, uint32_t error){RstProc(id, error);});
     Init();
 }
 
@@ -94,6 +99,13 @@ void Guest3::Error(int ret, int code){
 size_t Guest3::Recv(Buffer&& bb){
     ReqStatus& status = statusmap.at(bb.id);
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
+    auto len = bb.len;
+    if((http3_flag & HTTP3_FLAG_H3_DATAGRAM) && std::dynamic_pointer_cast<PMemRWer>(status.rw)){
+        LOGD(DHTTP3, "<guest3> %" PRIu64 " recv datagram [%" PRIu64"]: %zu\n",
+             status.req->request_id, bb.id, bb.len);
+        PushDatagram(std::move(bb));
+        return len;
+    }
     if(bb.len == 0){
         LOGD(DHTTP3, "<guest3> %" PRIu64" recv data [%" PRIu64"]: EOF\n",
              status.req->request_id, bb.id);
@@ -104,7 +116,6 @@ size_t Guest3::Recv(Buffer&& bb){
         }
         return 0;
     }
-    auto len = bb.len;
     if(status.req->ismethod("HEAD")){
         LOGD(DHTTP3, "<guest3> %" PRIu64" recv data [%" PRIu64"]: HEAD req discard body\n",
                 status.req->request_id, bb.id);
@@ -166,6 +177,23 @@ bool Guest3::DataProc(Buffer&& bb) {
         Reset(bb.id, HTTP3_ERR_STREAM_CREATION_ERROR);
     }
     return true;
+}
+
+void Guest3::DatagramProc(Buffer&& bb) {
+    // Check if stream exists
+    if(statusmap.count(bb.id) == 0) {
+        LOGD(DHTTP3, "<guest3> Datagram for non-existent stream %" PRIu64", dropping\n", bb.id);
+        return;
+    }
+
+    ReqStatus& status = statusmap[bb.id];
+    if(status.flags & (HTTP_RST | HTTP_CLOSED_F)) {
+        LOGD(DHTTP3, "<guest3> DategramProc after closed, id: %" PRIu64"\n", bb.id);
+        return;
+    }
+
+    // Forward datagram to the response handler
+    status.rw->push_data(std::move(bb));
 }
 
 std::shared_ptr<IMemRWerCallback> Guest3::response(uint64_t id) {
@@ -243,6 +271,10 @@ void Guest3::GoawayProc(uint64_t id) {
 
 void Guest3::SendData(Buffer&& bb) {
     rwer->Send(std::move(bb));
+}
+
+void Guest3::SendDatagram(Buffer&& bb) {
+    std::dynamic_pointer_cast<QuicBase>(rwer)->sendDatagram(std::move(bb));
 }
 
 uint64_t Guest3::CreateUbiStream() {

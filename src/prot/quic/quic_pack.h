@@ -141,6 +141,8 @@ Type Value	Frame Type Name         Definition  	Pkts	Spec
 #define QUIC_FRAME_CONNECTION_CLOSE     0x1c
 #define QUIC_FRAME_CONNECTION_CLOSE_APP 0x1d
 #define QUIC_FRAME_HANDSHAKE_DONE       0x1e
+#define QUIC_FRAME_DATAGRAM             0x30
+#define QUIC_FRAME_DATAGRAM_LEN         0x31
 
 #define quic_original_destination_connection_id       0x00
 #define quic_max_idle_timeout                         0x01
@@ -256,6 +258,11 @@ struct quic_stream{
     Buffer* buffer;
 };
 
+struct quic_datagram{
+    uint64_t length;
+    Buffer* buffer;
+};
+
 struct quic_frame{
     uint64_t type;
     union {
@@ -269,6 +276,7 @@ struct quic_frame{
         struct quic_stop      stop;
         struct quic_max_stream_data max_stream_data;
         struct quic_stream_data_blocked  stream_data_blocked;
+        struct quic_datagram  datagram;
         char     path_data[8];
         uint64_t extra;
     };
@@ -344,9 +352,9 @@ std::string sign_cid(const std::string& id);
 
 
 // Retry Integrity Tag support
-bool verify_retry_integrity_tag(const void* retry_packet, size_t packet_len, 
+bool verify_retry_integrity_tag(const void* retry_packet, size_t packet_len,
                                const std::string& original_dcid, uint32_t version);
-size_t add_retry_integrity_tag(void* retry_packet, size_t packet_len, 
+size_t add_retry_integrity_tag(void* retry_packet, size_t packet_len,
                               const std::string& original_dcid, uint32_t version);
 
 #endif

@@ -165,6 +165,28 @@ size_t Http3Base::Http3_Proc(Buffer& bb) {
     return len - bb.len;
 }
 
+void Http3Base::Datagram_Proc(Buffer&& bb) {
+    if(!(http3_flag & HTTP3_FLAG_H3_DATAGRAM)) {
+        LOGD(DHTTP3, "HTTP Datagram not enabled, dropping\n");
+        return;
+    }
+
+    // Parse Quarter Stream ID
+    uint64_t quarter_stream_id;
+    if(variable_decode_len(bb.data()) > bb.len) {
+        LOGE("Invalid HTTP Datagram: insufficient data for Quarter Stream ID\n");
+        ErrProc(HTTP3_ERR_DATAGRAM_ERROR);
+        return;
+    }
+
+    size_t decoded_len = variable_decode(bb.data(), &quarter_stream_id);
+    bb.reserve(decoded_len);
+    bb.id = quarter_stream_id * 4;
+    LOGD(DHTTP3, "Get a datagram frame: %" PRIu64 ", length: %" PRIu64 "\n", bb.id, bb.len);
+    DatagramProc(std::move(bb));
+}
+
+
 void Http3Base::Init() {
     ctrlid_local   = CreateUbiStream();
     qpackeid_local = CreateUbiStream();
@@ -177,6 +199,8 @@ void Http3Base::Init() {
     pos += variable_encode(pos, HTTP3_SETTING_MAX_FIELD_SECTION_SIZE);
     pos += variable_encode(pos, BUF_LEN);
     pos += variable_encode(pos, HTTP3_SETTING_ENABLE_CONNECT_PROTOCOL);
+    pos += variable_encode(pos, 1);
+    pos += variable_encode(pos, HTTP3_SETTING_H3_DATAGRAM);
     pos += variable_encode(pos, 1);
     size_t len = pos - (char*)buff.data();
     pos = (char*)buff.reserve(-3); // type + id + length
@@ -218,7 +242,15 @@ void Http3Base::SettingsProc(const uchar* header, size_t len) {
             break;
         case HTTP3_SETTING_ENABLE_CONNECT_PROTOCOL:
             LOGD(DHTTP3, "Get enable_connect_protocol\n");
-            http3_flag |= HTTP3_FLAG_ENABLE_PROTOCOL;
+            if(value == 1) {
+                http3_flag |= HTTP3_FLAG_ENABLE_PROTOCOL;
+            }
+            break;
+        case HTTP3_SETTING_H3_DATAGRAM:
+            LOGD(DHTTP3, "Get h3_datagram: %" PRIu64"\n", value);
+            if(value == 1) {
+                http3_flag |= HTTP3_FLAG_H3_DATAGRAM;
+            }
             break;
         default:
             if(((id - 0x21) % 0x1f) == 0){
@@ -270,6 +302,27 @@ void Http3Base::PushData(Buffer&& bb) {
     }
     SendData(std::move(bb));
 }
+
+void Http3Base::PushDatagram(Buffer&& bb) {
+    if(!(http3_flag & HTTP3_FLAG_H3_DATAGRAM)) {
+        LOGE("HTTP Datagram not enabled\n");
+        return;
+    }
+
+    uint64_t quarter_stream_id = bb.id / 4;
+    if(quarter_stream_id == UINT64_MAX) {
+        LOGE("Failed to encode Quarter Stream ID for stream %" PRIu64 "\n", bb.id);
+        return;
+    }
+
+    size_t quarter_len = variable_encode_len(quarter_stream_id);
+    // Prepend Quarter Stream ID to payload
+    bb.reserve(-quarter_len);
+    variable_encode((char*)bb.mutable_data(), quarter_stream_id);
+    SendDatagram(std::move(bb));
+}
+
+
 
 void Http3Requster::HeadersProc(uint64_t id, const uchar* header, size_t length) {
     std::shared_ptr<HttpResHeader> res = Qpack_decoder::UnpackHttp3Res(header, length);

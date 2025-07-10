@@ -933,6 +933,35 @@ static const char* unpack_stream_blocked(const char* data, quic_stream_data_bloc
     return data;
 }
 
+static size_t pack_datagram_frame_len(uint64_t type, const quic_datagram* datagram){
+    size_t len = datagram->length;
+    if(type == QUIC_FRAME_DATAGRAM_LEN){
+        len += variable_encode_len(datagram->length);
+    }
+    return len;
+}
+
+static char* pack_datagram_frame(uint64_t type, const quic_datagram* datagram, char* data){
+    if(type == QUIC_FRAME_DATAGRAM_LEN){
+        data += variable_encode(data, datagram->length);
+    }
+    memcpy(data, datagram->buffer->data(), datagram->length);
+    return data + datagram->length;
+}
+
+static const char* unpack_datagram_frame(uint64_t type, const char* data, const char* end, quic_datagram* datagram){
+    if(type == QUIC_FRAME_DATAGRAM_LEN){
+        data += variable_decode(data, &datagram->length);
+    }else{
+        datagram->length = end - data;
+    }
+
+    datagram->buffer = new Buffer(datagram->length);
+    memcpy(datagram->buffer->mutable_data(), data, datagram->length);
+    datagram->buffer->truncate(datagram->length);
+    return data + datagram->length;
+}
+
 size_t pack_frame_len(const quic_frame* frame){
     size_t tlen = variable_encode_len(frame->type);
     switch(frame->type){
@@ -972,6 +1001,9 @@ size_t pack_frame_len(const quic_frame* frame){
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:
         return tlen + pack_close_frame_len(frame->type, &frame->close);
+    case QUIC_FRAME_DATAGRAM:
+    case QUIC_FRAME_DATAGRAM_LEN:
+        return tlen + pack_datagram_frame_len(frame->type, &frame->datagram);
     default:
         if((frame->type >= QUIC_FRAME_STREAM_START_ID)
            &&(frame->type <= QUIC_FRAME_STREAM_END_ID))
@@ -1025,6 +1057,9 @@ void* pack_frame(void* buff, const quic_frame* frame) {
     case QUIC_FRAME_CONNECTION_CLOSE:
     case QUIC_FRAME_CONNECTION_CLOSE_APP:
         return pack_close_frame(frame->type, &frame->close, (char*)buff + tlen);
+    case QUIC_FRAME_DATAGRAM:
+    case QUIC_FRAME_DATAGRAM_LEN:
+        return pack_datagram_frame(frame->type, &frame->datagram, (char*)buff + tlen);
     default:
         if((frame->type >= QUIC_FRAME_STREAM_START_ID)
            &&(frame->type <= QUIC_FRAME_STREAM_END_ID))
@@ -1052,7 +1087,7 @@ int unpack_meta(const void* data_, size_t len, quic_meta* meta){
             LOGE("unsupported version: 0x%X\n", meta->version);
             return -1;
         }
-        
+
         // Map QUICv2 packet types to standard types
         if (meta->version == QUIC_VERSION_2) {
             switch (raw_type) {
@@ -1181,6 +1216,9 @@ const char* unpack_frame(const char* data, size_t len, quic_frame* frame){
         }
         memcpy(frame->path_data, pos, sizeof(frame->path_data));
         return pos + sizeof(frame->path_data);
+    case QUIC_FRAME_DATAGRAM:
+    case QUIC_FRAME_DATAGRAM_LEN:
+        return unpack_datagram_frame(frame->type, pos, data + len, &frame->datagram);
     default:
         if((frame->type >= QUIC_FRAME_STREAM_START_ID)
            &&(frame->type <= QUIC_FRAME_STREAM_END_ID))
@@ -1416,6 +1454,10 @@ void dumpFrame(const char* prefix, char name, const quic_frame* frame) {
     case QUIC_FRAME_HANDSHAKE_DONE:
         LOGD(DQUIC, "%s [%c] handshake_done frame\n", prefix, name);
         return;
+    case QUIC_FRAME_DATAGRAM:
+    case QUIC_FRAME_DATAGRAM_LEN:
+        LOGD(DQUIC, "%s [%c] datagram frame: %" PRIu64" bytes\n", prefix, name, frame->datagram.length);
+        return;
     default:
         if (frame->type >= QUIC_FRAME_STREAM_START_ID && frame->type <= QUIC_FRAME_STREAM_END_ID) {
             LOGD(DQUIC, "%s [%c] data [%" PRIu64"]: %" PRIu64" - %" PRIu64"\n", prefix, name,
@@ -1448,6 +1490,10 @@ size_t frame_size(const quic_frame* frame) {
     case QUIC_FRAME_NEW_TOKEN:
         usage += frame->new_token.length;
         break;
+    case QUIC_FRAME_DATAGRAM:
+    case QUIC_FRAME_DATAGRAM_LEN:
+        usage += frame->datagram.length;
+        break;
     default:
         if((frame->type >= QUIC_FRAME_STREAM_START_ID)
            &&(frame->type <= QUIC_FRAME_STREAM_END_ID))
@@ -1477,6 +1523,10 @@ void frame_release(const quic_frame* frame){
         break;
     case QUIC_FRAME_NEW_TOKEN:
         delete []frame->new_token.token;
+        break;
+    case QUIC_FRAME_DATAGRAM:
+    case QUIC_FRAME_DATAGRAM_LEN:
+        delete frame->datagram.buffer;
         break;
     default:
         if((frame->type >= QUIC_FRAME_STREAM_START_ID)
@@ -1516,7 +1566,7 @@ std::string sign_cid(const std::string& id) {
 }
 
 
-static int retry_aead_encrypt_decrypt(const char* key, const char* nonce, 
+static int retry_aead_encrypt_decrypt(const char* key, const char* nonce,
                                      const char* aad, size_t aad_len,
                                      const char* input, size_t input_len,
                                      char* output, bool encrypt) {
@@ -1557,7 +1607,7 @@ static int retry_aead_encrypt_decrypt(const char* key, const char* nonce,
 #endif
 }
 
-bool verify_retry_integrity_tag(const void* retry_packet, size_t packet_len, 
+bool verify_retry_integrity_tag(const void* retry_packet, size_t packet_len,
                                const std::string& original_dcid, uint32_t version) {
     if (packet_len < 16) {
         // Packet too short to contain integrity tag
@@ -1579,7 +1629,7 @@ bool verify_retry_integrity_tag(const void* retry_packet, size_t packet_len,
 
     // Try to decrypt the tag (which should be all zeros)
     char plaintext[16];
-    int result = retry_aead_encrypt_decrypt(key, nonce, aad, aad_len, 
+    int result = retry_aead_encrypt_decrypt(key, nonce, aad, aad_len,
                                           tag, 16, plaintext, false);
 
     delete[] aad;
@@ -1597,7 +1647,7 @@ bool verify_retry_integrity_tag(const void* retry_packet, size_t packet_len,
     return false;
 }
 
-size_t add_retry_integrity_tag(void* retry_packet, size_t packet_len, 
+size_t add_retry_integrity_tag(void* retry_packet, size_t packet_len,
                               const std::string& original_dcid, uint32_t version) {
     const char* key = (version == QUIC_VERSION_2) ? retry_integrity_key_v2 : retry_integrity_key_v1;
     const char* nonce = (version == QUIC_VERSION_2) ? retry_integrity_nonce_v2 : retry_integrity_nonce_v1;

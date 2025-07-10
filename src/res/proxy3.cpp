@@ -8,7 +8,7 @@
 
 Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
     this->rwer = rwer;
-    cb = IRWerCallback::create()->onRead([this](Buffer&& bb) -> size_t {
+    cb = IQuicCallback::create()->onRead([this](Buffer&& bb) -> size_t {
         HOOK_FUNC(this, statusmap, bb);
         LOGD(DHTTP3, "<proxy3> (%s) read [%" PRIu64"]: len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.id, bb.len);
         if(bb.len == 0){
@@ -52,8 +52,12 @@ Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
     })->onError([this](int ret, int code){
         return Error(ret, code);
     });
+    std::dynamic_pointer_cast<IQuicCallback>(cb)->onDatagram([this](Buffer&& bb){
+        Datagram_Proc(std::move(bb));
+    })->onReset([this](uint64_t id, uint32_t error) {
+        RstProc(id, error);
+    });
     rwer->SetCallback(cb);
-    rwer->setResetHandler([this](uint64_t id, uint32_t errcode){RstProc(id, errcode);});
 }
 
 Proxy3::~Proxy3() {
@@ -96,6 +100,23 @@ bool Proxy3::DataProc(Buffer&& bb){
     return true;
 }
 
+void Proxy3::DatagramProc(Buffer&& bb) {
+    // Check if stream exists
+    if(statusmap.count(bb.id) == 0) {
+        LOGD(DHTTP3, "<proxy3> Datagram for non-existent stream %" PRIu64", dropping\n", bb.id);
+        return;
+    }
+
+    ReqStatus& status = statusmap[bb.id];
+    if(status.flags & (HTTP_RST | HTTP_CLOSED_F)) {
+        LOGD(DHTTP3, "<proxy3> DatagramProc after closed, id:%d\n", (int)bb.id);
+        return;
+    }
+
+    // Forward datagram to the request handler
+    status.rw->Send(std::move(bb));
+}
+
 void Proxy3::GoawayProc(uint64_t id){
     LOGD(DHTTP3, "<proxy3> [%" PRIu64 "]: goaway\n", id);
     return deleteLater(NOERROR);
@@ -103,6 +124,10 @@ void Proxy3::GoawayProc(uint64_t id){
 
 void Proxy3::SendData(Buffer&& bb) {
     rwer->Send(std::move(bb));
+}
+
+void Proxy3::SendDatagram(Buffer&& bb) {
+    std::dynamic_pointer_cast<QuicRWer>(rwer)->sendDatagram(std::move(bb));
 }
 
 uint64_t Proxy3::CreateUbiStream() {
@@ -135,6 +160,11 @@ void Proxy3::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer
         bb.id = id;
         auto len = bb.len;
         assert((status.flags & HTTP_REQ_COMPLETED) == 0);
+        if((http3_flag & HTTP3_FLAG_H3_DATAGRAM) && std::dynamic_pointer_cast<PMemRWer>(status.rw)) {
+            LOGD(DHTTP3, "<proxy3> recv datagram [%" PRIu64 "]: %zu\n", bb.id, len);
+            PushDatagram(std::move(bb));
+            return len;
+        }
         if(bb.len == 0){
             status.flags |= HTTP_REQ_COMPLETED;
             LOGD(DHTTP3, "<proxy3> recv data [%" PRIu64 "]: EOF\n", bb.id);

@@ -225,8 +225,8 @@ void QuicQos::sendPacket(bool force) {
         }
     }
     if(has_packet_been_congested && windowLeft() >= (int)max_datagram_size) {
-        //很大可能是udp的buffer满了，等一会重试
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 2);
+        //sendwidonw或者udp的buffer满了，等一会重试
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 10);
     }
     if(bytes_in_flight > 0){
         SetLossDetectionTimer();
@@ -303,6 +303,21 @@ void QuicQos::HandleRetry() {
     ns->sent_packets.clear();
 }
 
+void QuicQos::maySend() {
+    if(sendWindow() < (int)max_datagram_size) {
+        LOGD(DQUIC, "skip send, sendwindow: %zd, winowleft: %zd, bytes_in_flight: %zd\n",
+             sendWindow(), windowLeft(), bytes_in_flight);
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 10);
+        return;
+    }
+    auto ns = GetNamespace(ssl_encryption_application);
+    if(!ns->hasKey || ns->pend_frames.size() >= 100 || getutime() - last_sent_time >= 10000){
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
+    }else if(JobPending(packet_tx) > 10) {
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 10);
+    }
+}
+
 void QuicQos::PushFrame(pn_namespace* ns, quic_frame *frame) {
     if(has_drain_all) {
         dumpFrame("<", 'X', frame);
@@ -311,22 +326,14 @@ void QuicQos::PushFrame(pn_namespace* ns, quic_frame *frame) {
     dumpFrame("<", ns->name, frame);
     assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
     ns->pend_frames.push_back(frame);
-    if(windowLeft() >= (int)max_datagram_size){
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
-    } else {
-        LOGD(DQUIC, "skip send, window: %zd, bytes_in_flight: %zd\n", windowLeft(), bytes_in_flight);
-    }
+    maySend();
 }
 
 void QuicQos::FrontFrame(pn_namespace* ns, quic_frame *frame) {
     dumpFrame("*<", ns->name, frame);
     assert(frame->type != QUIC_FRAME_ACK && frame->type != QUIC_FRAME_ACK_ECN);
     ns->pend_frames.push_front(frame);
-    if(windowLeft() >= (int)max_datagram_size){
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
-    } else {
-        LOGD(DQUIC, "skip send, window: %zd, bytes_in_flight: %zd\n", windowLeft(), bytes_in_flight);
-    }
+    maySend();
 }
 
 void QuicQos::PushFrame(OSSL_ENCRYPTION_LEVEL level, quic_frame* frame) {
