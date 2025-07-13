@@ -68,7 +68,7 @@ ssize_t Cap(std::shared_ptr<TcpStatus> status) {
         return 0;
     }
     assert(nobefore(status->sent_seq, status->recv_ack));
-    return (ssize_t)(status->window << status->recv_wscale) 
+    return (ssize_t)(status->window << status->recv_wscale)
                     - (ssize_t)(status->sent_seq - status->recv_ack);
 }
 
@@ -502,8 +502,8 @@ left:
     }
     if(datalen > 0) {
         //处理数据
-        const char *data = (const char*)bb.data() + pac->gethdrlen();
-        status->rbuf.put(data, datalen);
+        bb.reserve(pac->gethdrlen());
+        status->rbuf.put(std::move(bb));
         status->want_seq += datalen;
         status->ack_job = UpdateJob(std::move(status->ack_job),
                                     [status_ = GetWeak(status)] {SendAck(status_);}, 0);

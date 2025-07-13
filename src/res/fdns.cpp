@@ -159,6 +159,7 @@ void FDns::Recv(Buffer&& bb) {
     auto que = std::make_shared<Dns_Query>((const char *)bb.data(), bb.len);
     if(!que->valid){
         LOGD(DDNS, "invalid dns request [%" PRIu64"], len: %zd\n", id, bb.len);
+        statusmap.erase(id);
         return;
     }
     if(status.quemap.count(que->id)) {
@@ -212,6 +213,10 @@ void FDns::Recv(Buffer&& bb) {
     buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data()));
     status.rw->Send(std::move(buff));
     delete result;
+    // Clean up session after sending fake IP response
+    if(status.quemap.empty()) {
+        addjob_with_name([this,id]{statusmap.erase(id);}, "fdns_clean", 1, JOB_FLAGS_AUTORELEASE);
+    }
 }
 
 void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs, int ttl) {

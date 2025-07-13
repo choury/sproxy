@@ -160,20 +160,19 @@ void test_cbuffer_class() {
 
     // Test initial state
     assert(cbuf.length() == 0);
-    assert(cbuf.cap() == BUF_LEN * 2);
-    assert(cbuf.left() == BUF_LEN * 2);
-    assert(cbuf.Offset() == 0);
+    assert(cbuf.cap() == MAX_BUF_LEN);
 
-    // Test putting data
+    // Test putting Buffer objects
     const char* data1 = "Hello, CBuffer!";
     size_t len1 = strlen(data1);
-    ssize_t result = cbuf.put(data1, len1);
+    Buffer buf1(data1, len1, 1);
+    ssize_t result = cbuf.put(std::move(buf1));
     assert(result == (ssize_t)len1);
     (void)result;
     assert(cbuf.length() == len1);
-    assert(cbuf.cap() == BUF_LEN * 2 - len1);
+    assert(cbuf.cap() == MAX_BUF_LEN - len1);
 
-    // Test getting data
+    // Test getting data (should return copy when multiple buffers)
     Buffer retrieved = cbuf.get();
     assert(retrieved.len == len1);
     assert(memcmp(retrieved.data(), data1, len1) == 0);
@@ -182,43 +181,103 @@ void test_cbuffer_class() {
     size_t consume_len = 5;
     cbuf.consume(consume_len);
     assert(cbuf.length() == len1 - consume_len);
-    assert(cbuf.Offset() == consume_len);
 
-    // Test circular buffer behavior
+    // Test putting multiple buffers
     const char* data2 = "Second data chunk";
     size_t len2 = strlen(data2);
-    result = cbuf.put(data2, len2);
+    Buffer buf2(data2, len2, 2);
+    result = cbuf.put(std::move(buf2));
     assert(result > 0);
     assert(cbuf.length() == len1 - consume_len + len2);
 
-    // Test end() and append()
-    char* end_ptr = cbuf.end();
-    assert(end_ptr != nullptr);
-    const char* data3 = "Direct";
-    size_t len3 = strlen(data3);
-    memcpy(end_ptr, data3, len3);
-    cbuf.append(len3);
-    assert(cbuf.length() == len1 - consume_len + len2 + len3);
+    // Test getting merged data from multiple buffers
+    Buffer merged = cbuf.get();
+    assert(merged.len == len1 - consume_len + len2);
 
-    // Test wrapping around buffer
-    // Fill buffer almost to capacity
-    std::string large_data(BUF_LEN, 'X');
-    CBuffer wrap_buf;
-    wrap_buf.put(large_data.c_str(), large_data.size());
+    // Verify the merged content (should be remainder of first buffer + second buffer)
+    std::string expected_data = std::string(data1 + consume_len, len1 - consume_len) + std::string(data2, len2);
+    assert(memcmp(merged.data(), expected_data.c_str(), expected_data.size()) == 0);
 
-    // Consume some data to create space at beginning
-    wrap_buf.consume(100);
+    // Test putting empty buffer
+    Buffer empty_buf(nullptr);
+    result = cbuf.put(std::move(empty_buf));
+    assert(result >= 0);  // Should succeed but not change length
+    assert(cbuf.length() == len1 - consume_len + len2);
 
-    // Add more data that should wrap around
-    const char* wrap_data = "Wrap around test";
-    result = wrap_buf.put(wrap_data, strlen(wrap_data));
-    assert(result > 0);
+    // Test consuming all data
+    cbuf.consume(cbuf.length());
+    assert(cbuf.length() == 0);
+    assert(cbuf.cap() == MAX_BUF_LEN);
 
-    // Test getting wrapped data
-    Buffer wrap_retrieved = wrap_buf.get();
-    assert(wrap_retrieved.len > 0);
+    // Test getting from empty buffer
+    Buffer empty_retrieved = cbuf.get();
+    assert(empty_retrieved.len == 0);
+    assert(empty_retrieved.data() == nullptr);
+
+    // Test single buffer optimization using Block (should preserve original address)
+    const char* block_data = "Block buffer test";
+    size_t block_len = strlen(block_data);
+
+    // Create a fresh CBuffer for this test
+    CBuffer block_cbuf;
+
+    // Create Block with data, then Buffer from Block
+    Block test_block(block_data, block_len);
+    const void* block_ptr = test_block.data();  // This is the Block's allocated memory
+    Buffer block_buf(std::move(test_block), block_len, 4);
+
+    // Verify Buffer uses Block's memory
+    assert(block_buf.data() == block_ptr);
+
+    block_cbuf.put(std::move(block_buf));
+
+    Buffer block_retrieved = block_cbuf.get();
+    assert(block_retrieved.len == block_len);
+    assert(block_retrieved.data() == block_ptr);  // Should be same address from Block
+
+    // Test buffer capacity limits
+    CBuffer limit_buf;
+    std::string large_data(MAX_BUF_LEN / 2, 'X');
+    Buffer large_buf1(large_data.c_str(), large_data.size());
+    Buffer large_buf2(large_data.c_str(), large_data.size());
+
+    limit_buf.put(std::move(large_buf1));
+    limit_buf.put(std::move(large_buf2));
+    assert(limit_buf.length() == MAX_BUF_LEN);
+    assert(limit_buf.cap() == 0);
 
     std::cout << "✓ CBuffer class tests passed\n";
+}
+
+// Test for CBuffer with moved buffers
+void test_cbuffer_move_semantics() {
+    std::cout << "Testing CBuffer move semantics...\n";
+
+    CBuffer cbuf;
+    const char* test_data = "Move semantics test";
+    size_t data_len = strlen(test_data);
+
+    // Create buffer and test move
+    Buffer original_buf(test_data, data_len, 42);
+    assert(original_buf.id == 42);
+    assert(original_buf.len == data_len);
+
+    // Move into CBuffer
+    cbuf.put(std::move(original_buf));
+
+    // original_buf should be in moved-from state
+    assert(original_buf.len == 0);
+    assert(original_buf.cap == 0);
+    assert(original_buf.data() == nullptr);
+
+    // CBuffer should have the data
+    assert(cbuf.length() == data_len);
+    Buffer retrieved = cbuf.get();
+    assert(retrieved.len == data_len);
+    assert(retrieved.id == 42);
+    assert(memcmp(retrieved.data(), test_data, data_len) == 0);
+
+    std::cout << "✓ CBuffer move semantics tests passed\n";
 }
 
 void test_basic_put_at() {
@@ -642,6 +701,7 @@ int main() {
         test_block_class();
         test_buffer_class();
         test_cbuffer_class();
+        test_cbuffer_move_semantics();
         test_ebuffer_class();
 
         std::cout << "\n All buffer tests passed successfully!\n";

@@ -4,6 +4,7 @@
 #endif
 #include "req/cli.h"
 #include "req/rguest2.h"
+#include "req/rguest3.h"
 #include "misc/config.h"
 #include "misc/strategy.h"
 #include "misc/util.h"
@@ -121,7 +122,14 @@ int main(int argc, char **argv) {
 #endif
     std::vector<std::shared_ptr<Ep>> servers;
     if(opt.rproxy_name) {
-        new Rguest2(&opt.Server, opt.rproxy_name);
+        // 根据协议选择rguest2还是rguest3
+        if(strcmp(opt.Server.protocol, "quic") == 0) {
+            LOG("Starting rproxy3 client to %s\n", dumpDest(opt.Server).c_str());
+            new Rguest3(&opt.Server, opt.rproxy_name);
+        } else {
+            LOG("Starting rproxy2 client to %s\n", dumpDest(opt.Server).c_str());
+            new Rguest2(&opt.Server, opt.rproxy_name);
+        }
     }else {
         if(opt.http.hostname[0]){
             int fd[2] = {-1, -1};
@@ -219,6 +227,7 @@ int main(int argc, char **argv) {
             }
         }
 #ifdef HAVE_QUIC
+        generate_reset_secret();
         if(opt.quic.hostname[0]) {
             int fd[2] = {-1, -1};
             if(strcmp(opt.quic.hostname, "localhost") == 0) {

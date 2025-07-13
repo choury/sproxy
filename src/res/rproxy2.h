@@ -15,12 +15,10 @@ class Rproxy2: public Proxy2 {
         return rwer->getSrc();
     }
 public:
-    explicit Rproxy2(std::shared_ptr<RWer> rwer);
+    explicit Rproxy2(std::shared_ptr<RWer> rwer, std::string name);
     virtual void deleteLater(uint32_t errcode) override;
 
     void init();
-
-    static void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester* src);
 };
 
 #endif //SPROXY_RPROXY_H

@@ -16,6 +16,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <deque>
 
 #define PRIOR_HEAD 80
 
@@ -63,7 +64,7 @@ public:
 
 //封装了Block，但是多了长度和id信息
 //并且可以管理const 类型的buffer，只有当遇到下面几种情况时才会复制buffer
-//reserve的参数为负数，truncate 需要扩展空间，调用mutable_data() 或者end()
+//reserve的参数为负数，truncate 需要扩展空间，调用mutable_data()
 //因此每次调用返回的指针地址不可cache
 class Buffer{
     std::shared_ptr<void> ptr = nullptr;
@@ -89,22 +90,11 @@ public:
 };
 
 
-//CBuffer 是一个环形buffer
 class CBuffer {
-    char content[BUF_LEN*2];
-    uint64_t offset = 0;
-    size_t len = 0;
+    std::deque<Buffer> buffers;
+    size_t total_len = 0;
 public:
-    //for put
-    char* end();
-    //left返回的是可以在end() 返回的指针后面可以直接写入的数据长度
-    size_t left();
-    void append(size_t l);
-    //put类似与先调用end()获取指针写数据后，再调用append调整长度
-    ssize_t put(const void* data, size_t size);
-    [[nodiscard]] uint64_t Offset() const{
-        return offset;
-    };
+    ssize_t put(Buffer&& bb);
 
     //for get
     [[nodiscard]] size_t length() const;
@@ -119,7 +109,7 @@ struct DataRange {
     DataRange(size_t s, size_t e) : start(s), end(e) {}
 };
 
-//EBuffer也是一个环形buffer,只不过数据快写满的话，它会动态扩容
+//EBuffer是一个环形buffer,只不过数据快写满的话，它会动态扩容
 //现在支持不连续数据存储，可以在任意位置插入数据并自动合并相邻范围
 class EBuffer {
     char* content;

@@ -4,7 +4,9 @@
 
 #include "guest3.h"
 #include "res/responser.h"
+#include "res/rproxy3.h"
 #include "prot/quic/quicio.h"
+#include "prot/quic/quic_pack.h"
 #include "misc/hook.h"
 #include <assert.h>
 #include <inttypes.h>
@@ -66,11 +68,21 @@ void Guest3::connected() {
     const unsigned char *data;
     unsigned int len;
     qrwer->getAlpn(&data, &len);
-    if ((data && strncasecmp((const char*)data, "h3", len) != 0)) {
-        LOGE("(%s) unknown protocol: %.*s\n", dumpDest(rwer->getSrc()).c_str(), len, data);
+    if(data == nullptr || data[0] == 0) {
+        LOGE("(%s) no protocol found\n", dumpDest(rwer->getSrc()).c_str());
         return Server::deleteLater(PROTOCOL_ERR);
     }
-    Init();
+    if (strncasecmp((const char*)data, "h3", len) == 0) {
+        Init();
+        return;
+    }
+    if (len >= 4 && memcmp((const char*)data, "r3/", 3) == 0) {
+        (new Rproxy3(rwer, std::string((const char*)data + 3, len - 3)))->init();
+        rwer = nullptr;
+        return Server::deleteLater(NOERROR);
+    }
+    LOGE("(%s) unknown protocol: %.*s\n", dumpDest(rwer->getSrc()).c_str(), len, data);
+    return Server::deleteLater(PROTOCOL_ERR);
 }
 
 Guest3::Guest3(std::shared_ptr<QuicRWer> rwer): Requester(rwer) {

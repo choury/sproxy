@@ -348,6 +348,7 @@ void dumpFrame(const char* prefix, char name, const quic_frame* frame);
 size_t frame_size(const quic_frame* frame);
 void frame_release(const quic_frame* frame);
 
+void generate_reset_secret();
 std::string sign_cid(const std::string& id);
 
 

@@ -14,7 +14,7 @@ MemRWer::~MemRWer() {
 }
 
 size_t MemRWer::rlength(uint64_t) {
-    return rlen;
+    return rb.length();
 }
 
 ssize_t MemRWer::cap(uint64_t) {
@@ -45,11 +45,10 @@ void MemRWer::push_data(Buffer&& bb) {
     assert(stats != RWerStats::ReadEOF);
     LOGD(DRWER, "<MemRWer> <%d> %s push_data [%" PRIu64"]: %zd, refs: %zd\n",
          getFd(), dumpDest(src).c_str(), bb.id, bb.len, bb.refs());
-    rlen += bb.len;
     if(bb.len == 0){
         stats = RWerStats::ReadEOF;
     } else {
-        rb.emplace_back(std::move(bb));
+        rb.put(std::move(bb));
     }
     addEvents(RW_EVENT::READ);
 }
@@ -91,30 +90,24 @@ void MemRWer::ConsumeRData(uint64_t id) {
     flags |= RWER_READING;
     defer([this]{ flags &= ~RWER_READING;});
     bool keepReading = false;
-    if(auto cb = callback.lock(); cb && rlen){
+    if(auto cb = callback.lock(); cb && rb.length()){
         keepReading = true;
-        while(rlen > 0){
-            Buffer wb = rb.front();
+        while(rb.length() > 0){
+            Buffer wb = rb.get();
             auto len = wb.len;
             assert(len != 0);
             wb.id = id;
             auto ret = cb->readCB(std::move(wb));
-            if(ret == len) {
-                rb.pop_front();
-                rlen -= len;
+            if(ret > 0) {
+                rb.consume(ret);
                 continue;
             }
             keepReading = false;
-            if(ret > 0) {
-                rb.front().reserve(ret);
-                rlen -= ret;
-            }
             break;
         }
     }
     HOOK_FUNC(this, rb, id);
-    if(rlen == 0 && isEof() && (flags & RWER_EOFDELIVED) == 0){
-        assert(rb.empty());
+    if(rb.length() == 0 && isEof() && (flags & RWER_EOFDELIVED) == 0){
         keepReading = false;
         if(auto cb = callback.lock(); cb) {
             cb->readCB({nullptr, id});
@@ -219,6 +212,7 @@ void PMemRWer::push_data(Buffer&& bb) {
 
 
 void PMemRWer::ConsumeRData(uint64_t) {
+    delEvents(RW_EVENT::READ);
     auto cb = callback.lock();
     if (cb == nullptr) {
         return;
@@ -227,7 +221,6 @@ void PMemRWer::ConsumeRData(uint64_t) {
         cb->readCB(std::move(bb));
     }
     rb.clear();
-    delEvents(RW_EVENT::READ);
 }
 
 void PMemRWer::Send(Buffer&& bb) {

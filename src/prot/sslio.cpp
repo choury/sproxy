@@ -196,7 +196,7 @@ void SslRWerBase::get_alpn(const unsigned char **s, unsigned int * len){
 
 int SslRWerBase::set_alpn(const unsigned char *s, unsigned int len){
     ERR_clear_error();
-    return ssl_get_error(ssl, SSL_set_alpn_protos(ssl, s, len));
+    return ssl_get_error(ssl, 1 - abs(SSL_set_alpn_protos(ssl, s, len)));
 }
 
 void SslRWerBase::set_hostname_callback(int (* cb)(SSL *, int *, void*), void* arg){
@@ -239,12 +239,11 @@ void SslMer::write(Buffer&& bb) {
 }
 
 void SslRWer::onRead(Buffer&& bb) {
-    rb.put(bb.data(), bb.len);
+    rb.put(std::move(bb));
 }
 
 void SslMer::onRead(Buffer&& bb) {
-    rlen += bb.len;
-    rb.emplace_back(std::move(bb));
+    rb.put(std::move(bb));
 }
 
 void SslRWer::onConnected() {

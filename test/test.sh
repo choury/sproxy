@@ -170,6 +170,77 @@ function test_http3(){
     echo ""
 }
 
+function test_rproxy(){
+    echo "test rproxy2 functionality"
+    # Start rguest2 client that connects to the server and registers as "test_proxy"
+    ./sproxy -c client.conf --rproxy test_proxy https://$HOSTNAME:3334 --admin unix:${sp}rproxy2.sock > rproxy.log 2>&1 &
+    sleep 2
+
+    # Test listing available rproxys
+    curl -f -s http://$HOSTNAME:3333/rproxy/ | grep test_proxy
+    [ $? -ne 0 ] && echo "rproxy not found in list" && exit 1
+
+    # Test basic HTTP requests through rproxy2 using URL path method
+    curl -f -v http://$HOSTNAME:3333/rproxy/test_proxy/qq.com/ > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "rproxy2 URL test 1 failed" && exit 1
+
+    curl -f -v http://$HOSTNAME:3333/rproxy/test_proxy/http://taobao.com/ > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "rproxy2 URL test 2 failed" && exit 1
+
+    curl -f -v http://$HOSTNAME:3333/rproxy/test_proxy/https://www.qq.com/ -A "Mozilla/5.0" > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "rproxy2 URL test 3 failed" && exit 1
+
+    curl -f -v http://$HOSTNAME:3333/rproxy/test_proxy/http://qq.com/ -XPOST -d "foo=bar" > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "rproxy2 URL POST test failed" && exit 1
+
+    curl -f -v http://$HOSTNAME:3333/rproxy/test_proxy/http://taobao.com/ -I > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "rproxy2 URL HEAD test failed" && exit 1
+
+    curl -f -v \
+        -H "rproxy: test_proxy" \
+        -H "Expect: 100-continue" \
+        -F 'name=@test1k' \
+        -x http://$HOSTNAME:3333 \
+        http://echo.opera.com  >> curl.log 2>&1
+    [ $? -ne 0 ] && echo "rproxy2 100-continue test failed" && exit 1
+
+    printf "dump usage" | ./scli -s ${sp}rproxy2.sock
+    kill -SIGUSR1 %2
+    kill -SIGUSR2 %2
+    wait %2
+
+    echo "test rproxy3 functionality"
+    ./sproxy -c client.conf --rproxy test_proxy quic://$HOSTNAME:3334 --admin unix:${sp}rproxy3.sock >> rproxy.log 2>&1 &
+    sleep 2
+
+    curl -f -ks https://$HOSTNAME:3334/rproxy/ | grep test_proxy
+    [ $? -ne 0 ] && echo "rproxy3 not found in list" && exit 1
+
+    curl -f -kv https://$HOSTNAME:3334/rproxy/test_proxy/qq.com/ > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "rproxy3 URL test 1 failed" && exit 1
+
+    curl -f -kv https://$HOSTNAME:3334/rproxy/test_proxy/https://www.taobao.com/ -A "Mozilla/5.0" > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "rproxy3 URL test 2 failed" && exit 1
+
+    curl -f -kv https://$HOSTNAME:3334/rproxy/test_proxy/http://qq.com/ -XPOST -d "foo=bar" > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "rproxy3 POST test failed" && exit 1
+
+
+    curl -f -v \
+        -H "rproxy: test_proxy" \
+        -H "Expect: 100-continue" \
+        -F 'name=@test1k' \
+        --proxy-insecure \
+        -x https://$HOSTNAME:3334 \
+        http://echo.opera.com  >> curl.log 2>&1
+    [ $? -ne 0 ] && echo "rproxy2 100-continue test failed" && exit 1
+
+    printf "dump usage" | ./scli -s ${sp}rproxy3.sock
+    kill -SIGUSR1 %2
+    kill -SIGUSR2 %2
+    wait %2
+}
+
 function test_tproxy() {
     iptables -t mangle -A PREROUTING -m addrtype --dst-type LOCAL -j RETURN
     iptables -t mangle -A PREROUTING -p udp -j TPROXY --on-ip 127.0.0.1 --on-port $1
@@ -221,11 +292,11 @@ function test_tproxy() {
 }
 
 function test_vpn(){
-    ip rule add from all lookup 1 
+    ip rule add from all lookup 1
     ip rule add fwmark 1 lookup main
     ip route add default dev tun0 table 1
 
-    ip -6 rule add from all lookup 1 
+    ip -6 rule add from all lookup 1
     ip -6 rule add fwmark 1 lookup main
     ip -6 route add default dev tun0 table 1
 
@@ -332,7 +403,7 @@ openssl genpkey -algorithm RSA -out ca.key -pass pass:hello
 openssl rsa -in ca.key -passin pass:hello -out ca.key
 openssl req -new -x509 -key ca.key -out ca.crt -batch -subj /commonName=$HOSTNAME/ -days 3560
 
-openssl req -new -key localhost.key -out localhost.csr -subj '/CN=localhost' 
+openssl req -new -key localhost.key -out localhost.csr -subj '/CN=localhost'
 
 cat >> san.cnf << SEOF
 [SAN]
@@ -373,7 +444,7 @@ cat > server.conf << EOF
 cafile ca.crt
 cakey  ca.key
 cert localhost.crt
-key localhost.key 
+key localhost.key
 root-dir .
 policy-file sites.list
 index libproxy.do
@@ -446,6 +517,8 @@ jobs
 kill -SIGUSR1 %2
 kill -SIGUSR2 %2
 wait %2
+
+test_rproxy
 
 printf "dump usage" | ./scli -s ${sp}server.sock
 kill -SIGUSR1 %1

@@ -342,7 +342,7 @@ int QuicBase::add_handshake_data(SSL *ssl, OSSL_ENCRYPTION_LEVEL level,
 
 int QuicBase::flush_flight(SSL *ssl){
     QuicBase* rwer = (QuicBase*)SSL_get_app_data(ssl);
-    rwer->qos->sendPacket();
+    rwer->qos->sendPacket(true);
     return 1;
 }
 
@@ -2205,6 +2205,9 @@ void QuicRWer::Close() {
 }
 
 void QuicRWer::closeHE(RW_EVENT events) {
+    if(!!(events & RW_EVENT::ERROR)) {
+        return onError(PROTOCOL_ERR, QUIC_CONNECTION_CLOSED);
+    }
     if(!(events & RW_EVENT::READ)) {
         return;
     }

@@ -9,6 +9,7 @@
 #include <inttypes.h>
 #include <openssl/kdf.h>
 #include <openssl/tls1.h>
+#include <openssl/hmac.h>
 #ifdef USE_BORINGSSL
 #include <openssl/chacha.h>
 #endif
@@ -1552,17 +1553,45 @@ std::string dumpHex(const void* data, size_t len){
     return s;
 }
 
-std::string sign_cid(const std::string& id) {
+static std::string reset_secret;
+
+void generate_reset_secret(){
+    if(opt.cert.crt == nullptr) {
+        return;
+    }
+    unsigned char cert_digest[EVP_MAX_MD_SIZE];
+    unsigned int digest_len = 0;
+    if(!X509_pubkey_digest(opt.cert.crt, EVP_sha256(), cert_digest, &digest_len)) {
+        LOGE("QUIC failed to get X509_pubkey_digest\n");
+        return;
+    }
     char* token = nullptr;
     unsigned int sign_len;
-    if(sign_data(opt.cert.key ?: opt.ca.key, id.c_str(), id.length(), &token, &sign_len)){
-        LOGE("QUIC failed to sign cid: %s\n", dumpHex(id.c_str(), id.length()).c_str());
+    if(sign_data(opt.cert.key ?: opt.ca.key, cert_digest, digest_len, &token, &sign_len)){
+        LOGE("QUIC failed to sign digest: %s\n", dumpHex(cert_digest, digest_len).c_str());
+        return;
+    }
+    reset_secret =  std::string(token, sign_len);
+    free(token);
+}
+
+std::string sign_cid(const std::string& id) {
+    std::string token;
+    token.resize(EVP_MAX_MD_SIZE);
+    unsigned int token_len;
+    if(!HMAC(EVP_sha256(),
+             reset_secret.c_str(),
+             reset_secret.length(),
+             (const uint8_t*)id.c_str(),
+             id.length(),
+             (uint8_t*)token.data(),
+             &token_len))
+    {
         return "";
     }
-    assert(sign_len >= QUIC_TOKEN_LEN);
-    auto result =  std::string(token, QUIC_TOKEN_LEN);
-    free(token);
-    return result;
+    assert(token_len >= QUIC_TOKEN_LEN);
+    token.resize(QUIC_TOKEN_LEN);
+    return token;
 }
 
 

@@ -6,7 +6,7 @@
 #include <inttypes.h>
 
 
-Proxy3::Proxy3(std::shared_ptr<QuicRWer> rwer){
+Proxy3::Proxy3(std::shared_ptr<RWer> rwer){
     this->rwer = rwer;
     cb = IQuicCallback::create()->onRead([this](Buffer&& bb) -> size_t {
         HOOK_FUNC(this, statusmap, bb);
@@ -72,7 +72,7 @@ void Proxy3::Error(int ret, int code) {
 }
 
 void Proxy3::Reset(uint64_t id, uint32_t code) {
-    return std::dynamic_pointer_cast<QuicRWer>(rwer)->reset(id, code);
+    return std::dynamic_pointer_cast<QuicBase>(rwer)->reset(id, code);
 }
 
 bool Proxy3::DataProc(Buffer&& bb){
@@ -127,15 +127,15 @@ void Proxy3::SendData(Buffer&& bb) {
 }
 
 void Proxy3::SendDatagram(Buffer&& bb) {
-    std::dynamic_pointer_cast<QuicRWer>(rwer)->sendDatagram(std::move(bb));
+    std::dynamic_pointer_cast<QuicBase>(rwer)->sendDatagram(std::move(bb));
 }
 
 uint64_t Proxy3::CreateUbiStream() {
-    return std::dynamic_pointer_cast<QuicRWer>(rwer)->createUbiStream();
+    return std::dynamic_pointer_cast<QuicBase>(rwer)->createUbiStream();
 }
 
 void Proxy3::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*) {
-    uint64_t id = maxDataId = std::dynamic_pointer_cast<QuicRWer>(rwer)->createBiStream();
+    uint64_t id = maxDataId = std::dynamic_pointer_cast<QuicBase>(rwer)->createBiStream();
     assert((http3_flag & HTTP3_FLAG_GOAWAYED) == 0);
     LOGD(DHTTP3, "<proxy3> request: %s [%" PRIu64"]\n", req->geturl().c_str(), id);
     statusmap[id] = ReqStatus{
@@ -195,10 +195,7 @@ bool Proxy3::reconnect() {
     if (auto quic_rwer = std::dynamic_pointer_cast<QuicRWer>(rwer)) {
         if (quic_rwer->triggerMigration()){
             LOGD(DHTTP3, "<proxy3> QUIC migration successful, preserving connection\n");
-            if(statusmap.empty()) {
-                LOG("(%s) reset idle timer after reconnect\n", dumpDest(rwer->getDst()).c_str());
-                idle_timeout = UpdateJob(std::move(idle_timeout), [this]{deleteLater(CONNECT_AGED);}, 300000);
-            }
+            setIdle(300000);
             return true; // Keep connection for successful migration
         } else {
             LOGE("(%s) <proxy3> QUIC migration failed, need to create new connection\n", dumpDest(rwer->getSrc()).c_str());
@@ -269,9 +266,13 @@ void Proxy3::Clean(uint64_t id, uint32_t errcode) {
     }
     status.rw->Close();
     statusmap.erase(id);
+    setIdle(300000);
+}
+
+void Proxy3::setIdle(uint32_t ms) {
     if(statusmap.empty()) {
         LOG("(%s) has no request, start idle timer\n", dumpDest(rwer->getDst()).c_str());
-        idle_timeout = UpdateJob(std::move(idle_timeout), [this]{deleteLater(CONNECT_AGED);}, 300000);
+        idle_timeout = UpdateJob(std::move(idle_timeout), [this]{deleteLater(CONNECT_AGED);}, ms);
     }
 }
 

@@ -49,37 +49,52 @@ static bool operator<(const VpnKey& a, const VpnKey& b) {
 #define ICMP_PING(type) ((type) == ICMP_ECHO || (type) == ICMP_ECHOREPLY)
 #define ICMP6_PING(type)  ((type) == ICMP6_ECHO_REQUEST || (type) == ICMP6_ECHO_REPLY)
 
-void debugString(std::shared_ptr<const Ip> pac, size_t len) {
+static void debugString(std::shared_ptr<const Ip> pac, size_t len, bool reverse) {
     switch(pac->gettype()){
     case IPPROTO_TCP:
-        LOGD(DVPN, "<tcp> (%s -> %s) (%u - %u) flag: %s size:%zu\n",
-             getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(),
-             pac->tcp->getseq(), pac->tcp->getack(), pac->tcp->getflags(), len);
+        if(reverse) {
+            LOGD(DVPN, "<tcp> (%s <- %s) (%u - %u) flag: %s size:%zu\n",
+                getRdnsWithPort(pac->getdst()).c_str(), getRdnsWithPort(pac->getsrc()).c_str(),
+                pac->tcp->getseq(), pac->tcp->getack(), pac->tcp->getflags(), len);
+        } else {
+            LOGD(DVPN, "<tcp> (%s -> %s) (%u - %u) flag: %s size:%zu\n",
+                getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(),
+                pac->tcp->getseq(), pac->tcp->getack(), pac->tcp->getflags(), len);
+        }
         return;
     case IPPROTO_UDP:
-        LOGD(DVPN, "<udp> (%s -> %s) size:%zu\n",
-             getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(), len);
+        if(reverse) {
+            LOGD(DVPN, "<udp> (%s <- %s) size:%zu\n",
+                getRdnsWithPort(pac->getdst()).c_str(), getRdnsWithPort(pac->getsrc()).c_str(), len);
+        } else {
+            LOGD(DVPN, "<udp> (%s -> %s) size:%zu\n",
+                getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(), len);
+        }
         return;
     case IPPROTO_ICMP:
-        if(ICMP_PING(pac->icmp->gettype())){
-            LOGD(DVPN, "<ping> (%s -> %s) (%u) size:%zu\n",
-                 getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(),
-                 pac->icmp->getseq(), len);
+        if(reverse) {
+            LOGD(DVPN, "<%s> (%s <- %s) (%u) size:%zu\n",
+                ICMP_PING(pac->icmp->gettype())?"ping":"icmp",
+                getRdnsWithPort(pac->getdst()).c_str(), getRdnsWithPort(pac->getsrc()).c_str(),
+                pac->icmp->getseq(), len);
         } else {
-            LOGD(DVPN, "<icmp> (%s -> %s) (%u) size:%zu\n",
-                 getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(),
-                 pac->icmp->gettype(), len);
+            LOGD(DVPN, "<%s> (%s -> %s) (%u) size:%zu\n",
+                ICMP_PING(pac->icmp->gettype())?"ping":"icmp",
+                getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(),
+                pac->icmp->getseq(), len);
         }
         return;
     case IPPROTO_ICMPV6:
-        if(ICMP6_PING(pac->icmp6->gettype())) {
-            LOGD(DVPN, "<ping6> (%s -> %s) (%u) size:%zu\n",
-                 getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(),
-                 pac->icmp6->getseq(), len);
-        }else {
-            LOGD(DVPN, "<icmp6> (%s -> %s) (%u) size:%zu\n",
-                 getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(),
-                 pac->icmp6->gettype(), len);
+        if(reverse) {
+            LOGD(DVPN, "<%s> (%s -> %s) (%u) size:%zu\n",
+                ICMP6_PING(pac->icmp6->gettype())?"ping6":"icmp6",
+                getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(),
+                pac->icmp6->getseq(), len);
+        } else {
+            LOGD(DVPN, "<%s> (%s -> %s) (%u) size:%zu\n",
+                ICMP6_PING(pac->icmp6->gettype())?"ping6":"icmp6",
+                getRdnsWithPort(pac->getsrc()).c_str(), getRdnsWithPort(pac->getdst()).c_str(),
+                pac->icmp6->getseq(), len);
         }
         return;
     default:
@@ -151,37 +166,36 @@ void TunRWer::ReadData() {
             ErrorHE(SOCKET_ERR, errno);
             return;
         }
-        ProcessPacket((const char*)rbuff.data(), ret);
+        ProcessPacket(Buffer{std::move(rbuff), (size_t)ret});
     }
 }
 
-void TunRWer::ProcessPacket(const char* rbuff, size_t len){
+void TunRWer::ProcessPacket(Buffer&& bb){
 #if __linux__
-    if(len <= (int)sizeof(virtio_net_hdr_v1)) {
+    if(bb.len <= (int)sizeof(virtio_net_hdr_v1)) {
         return;
     }
     if(enable_offload) {
-        auto hdr = (virtio_net_hdr_v1*)rbuff;
+        auto hdr = (const virtio_net_hdr_v1*)bb.data();
         if(hdr->gso_type != VIRTIO_NET_HDR_GSO_NONE) {
             LOGD(DVPN, "gso type: %d, gso size: %d, num: %d\n", hdr->gso_type, hdr->gso_size, hdr->num_buffers);
         }
-        rbuff += sizeof(virtio_net_hdr_v1);
-        len -= sizeof(virtio_net_hdr_v1);
+        bb.reserve(sizeof(virtio_net_hdr_v1));
     }
 #endif
-    pcap_write(pcap, rbuff, len);
-    auto pac = MakeIp(rbuff, len);
+    pcap_write(pcap, bb.data(), bb.len);
+    auto pac = MakeIp(bb.data(), bb.len);
     if(pac == nullptr){
         return;
     }
-    debugString(pac, len - pac->gethdrlen());
+    debugString(pac, bb.len - pac->gethdrlen(), false);
     VpnKey key(pac);
 
     bool transIcmp = false;
     if(pac->gettype() == IPPROTO_ICMP) {
         uint16_t type = pac->icmp->gettype();
         if(type ==  ICMP_UNREACH) {
-            auto icmp_pac = MakeIp(rbuff + pac->gethdrlen(), len-pac->gethdrlen());
+            auto icmp_pac = MakeIp((const char*)bb.data() + pac->gethdrlen(), bb.len-pac->gethdrlen());
             if(icmp_pac == nullptr){
                 return;
             }
@@ -196,7 +210,7 @@ void TunRWer::ProcessPacket(const char* rbuff, size_t len){
     }else if(pac->gettype() == IPPROTO_ICMPV6) {
         uint16_t type = pac->icmp6->gettype();
         if(type == ICMP6_DST_UNREACH){
-            auto icmp6_pac = MakeIp(rbuff + pac->gethdrlen(), len-pac->gethdrlen());
+            auto icmp6_pac = MakeIp((const char*)bb.data() + pac->gethdrlen(), bb.len-pac->gethdrlen());
             if(icmp6_pac == nullptr){
                 return;
             }
@@ -288,9 +302,9 @@ void TunRWer::ProcessPacket(const char* rbuff, size_t len){
     }
     if(status->packet_hdr == nullptr){
         status->packet_hdr_len = pac->gethdrlen();
-        status->packet_hdr = std::make_shared<Block>(rbuff, status->packet_hdr_len);
+        status->packet_hdr = std::make_shared<Block>(bb.data(), status->packet_hdr_len);
     }
-    status->PkgProc(pac, {rbuff, len});
+    status->PkgProc(pac, std::move(bb));
 }
 
 //只有TCP有读缓冲，所以对其他情况都返回0
@@ -319,13 +333,13 @@ void TunRWer::SendPkg(std::shared_ptr<const Ip> pac, Buffer&& bb) {
 
 #if __linux__
     if(enable_offload) {
-        debugString(pac, len - pac->gethdrlen() - sizeof(virtio_net_hdr_v1));
+        debugString(pac, len - pac->gethdrlen() - sizeof(virtio_net_hdr_v1), true);
         pcap_write(pcap, (uchar*)data + sizeof(virtio_net_hdr_v1), len - sizeof(virtio_net_hdr_v1));
     }else{
 #else
     {
 #endif
-        debugString(pac, len - pac->gethdrlen());
+        debugString(pac, len - pac->gethdrlen(), true);
         pcap_write(pcap, data, len);
     }
 
@@ -340,12 +354,19 @@ void TunRWer::SendPkg(std::shared_ptr<const Ip> pac, Buffer&& bb) {
         io_uring_prep_write(sqe, Ep::getFd(), data, bb.len, 0);
         sqe->user_data = (uint64_t)data;
         write_buffer.emplace((uint64_t)data, std::move(bb));
-        submitter = updatejob_with_name(std::move(submitter), [this]{
+        if(io_uring_sq_space_left(&ring) <= 64) {
             int ret = io_uring_submit(&ring);
             if(ret < 0) {
                 LOGE("io_uring_submit failed: %s\n", strerror(-ret));
             }
-        }, "io_uring_submit", 0);
+        }else {
+            submitter = updatejob_with_name(std::move(submitter), [this]{
+                int ret = io_uring_submit(&ring);
+                if(ret < 0) {
+                    LOGE("io_uring_submit failed: %s\n", strerror(-ret));
+                }
+            }, "io_uring_submit", 0);
+        }
         return;
     }
 #endif
@@ -660,10 +681,10 @@ void TunRWer::HandleIoUringCompletion() {
 
                 // Calculate buffer address from ring buffer and buffer id
                 void* buffer_addr = (char*)read_buffer + (buf_id * TUN_BUF_LEN);
-                ProcessPacket((const char*)buffer_addr, len);
+                ProcessPacket(Buffer{(const char*)buffer_addr, (size_t)len});
 
                 // Return the buffer to the ring
-                io_uring_buf_ring_add(buf_ring, buffer_addr, TUN_BUF_LEN, buf_id, 
+                io_uring_buf_ring_add(buf_ring, buffer_addr, TUN_BUF_LEN, buf_id,
                                       io_uring_buf_ring_mask(num_buffers), 0);
                 io_uring_buf_ring_advance(buf_ring, 1);
             } else {

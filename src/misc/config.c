@@ -283,7 +283,7 @@ static struct option_detail option_detail[] = {
     {"pcap-len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
     {"policy-file", "The file of policy ("PREFIX"/etc/sproxy/sites.list as default)", option_string, &policy_file, NULL},
 #ifdef HAVE_QUIC
-    {"quic", "Listen for QUIC server (experiment)", option_string, &quic_listen, NULL},
+    {"quic", "Listen for QUIC server", option_string, &quic_listen, NULL},
     {"quic-cc", "QUIC congestion control algorithm (cubic, bbr)", option_string, &opt.quic_cc_algorithm, NULL},
     {"quic-version", "QUIC version (1 for QUIC v1, 2 for QUIC v2)", option_uint64, &opt.quic_version, NULL},
 #endif
@@ -577,6 +577,10 @@ void free_arg_list(struct arg_list* list) {
 
 void postConfig(){
     if(opt.rproxy_name) {
+        if(opt.rproxy_name[0] == '\0' || strlen(opt.rproxy_name) >= 100) {
+            LOGE("length of rproxy name should between 1 and 100\n");
+            exit(1);
+        }
         if(http_listen || ssl_listen || quic_listen || tproxy_listen) {
             LOGE("rproxy mode can only used separately\n");
             exit(1);
@@ -645,9 +649,9 @@ void postConfig(){
         LOGE("access cert file failed: %s\n", strerror(errno));
         exit(1);
     }
-    if ((opt.ssl.hostname[0] || opt.quic.hostname[0]) && 
-        (opt.cert.crt == NULL || opt.cert.key == NULL) && 
-        opt.mitm_mode != Enable && !opt.sni_mode) 
+    if ((opt.ssl.hostname[0] || opt.quic.hostname[0]) &&
+        (opt.cert.crt == NULL || opt.cert.key == NULL) &&
+        opt.mitm_mode != Enable && !opt.sni_mode)
     {
         LOGE("ssl/quic mode require cert and key file\n");
         exit(1);

@@ -128,71 +128,60 @@ size_t Buffer::refs() {
     return 0;
 }
 
-size_t CBuffer::left(){
-    uint32_t start = offset % sizeof(content);
-    uint32_t finish = (offset + len) % sizeof(content);
-    if(finish > start || len == 0){
-        return sizeof(content) - finish;
-    }
-    return start - finish;
-}
-
 size_t CBuffer::length() const{
-    assert(len <= sizeof(content));
-    return len;
+    return total_len;
 }
 
 size_t CBuffer::cap() const{
-    return sizeof(content) - len;
+    return MAX_BUF_LEN - total_len;
 }
 
-void CBuffer::append(size_t l){
-    len += l;
-    assert(len <= sizeof(content));
-}
-
-ssize_t CBuffer::put(const void *data, size_t size) {
-    if(len + size > sizeof(content)){
+ssize_t CBuffer::put(Buffer&& bb) {
+    if(total_len + bb.len > MAX_BUF_LEN){
         abort();
     }
 
-    uint32_t start = (offset + len) % sizeof(content);
-    uint32_t finish = (offset +  len + size) % sizeof(content);
-    if(finish > start){
-        memcpy(content + start, data, size);
-    }else{
-        size_t l = sizeof(content) - start;
-        memcpy(content + start, data, l);
-        memcpy(content, (const char*)data + l, finish);
-    }
-    len += size;
-    assert(len <= sizeof(content));
-    return (ssize_t)len;
+    total_len += bb.len;
+    buffers.push_back(std::move(bb));
+    return (ssize_t)total_len;
 }
 
 Buffer CBuffer::get(){
-    uint32_t start = offset % sizeof(content);
-    uint32_t finish = (offset + len) % sizeof(content);
-
-    if(finish > start){
-        return Buffer{content + start, len};
+    if(buffers.empty()){
+        return Buffer{nullptr};
     }
-    Buffer bb{len};
-    size_t l = sizeof(content) - start;
-    memcpy(bb.mutable_data(), content + start, l);
-    memcpy((char*)bb.mutable_data() + l, content, finish);
-    bb.truncate(len);
-    return bb;
+
+    if(buffers.size() == 1){
+        return buffers.front();
+    }
+
+    Buffer result{total_len};
+    size_t pos = 0;
+    for(const auto& buf : buffers){
+        if(buf.len > 0){
+            memcpy((char*)result.mutable_data() + pos, buf.data(), buf.len);
+            pos += buf.len;
+        }
+    }
+    result.truncate(total_len);
+    return result;
 }
 
 void CBuffer::consume(size_t l){
-    assert(l <= len);
-    offset += l;
-    len -= l;
-}
+    assert(l <= total_len);
+    total_len -= l;
 
-char* CBuffer::end(){
-    return content + ((offset + len) % sizeof(content));
+    size_t remaining = l;
+    while(remaining > 0 && !buffers.empty()){
+        Buffer& front = buffers.front();
+        if(front.len <= remaining){
+            remaining -= front.len;
+            buffers.pop_front();
+        }else{
+            front.reserve((int)remaining);
+            break;
+        }
+    }
 }
 
 size_t EBuffer::left() const{

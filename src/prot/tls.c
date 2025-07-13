@@ -414,7 +414,7 @@ error:
 #endif
 
 
-static const char* h3_alpn[] = {"h3", NULL};
+static const char* h3_alpn[] = {"h3", "r3", NULL};
 static const char* h2_alpn[] = {"h2", "http/1.1", "r2", NULL};
 static const char* h1_alpn[] = {"http/1.1", NULL};
 
@@ -433,6 +433,18 @@ static int select_alpn_cb(SSL *ssl,
                 LOGD(DSSL, "alpn pick %s\n", priorities[i]);
                 *out = (unsigned char *) priorities[i];
                 *outlen = strlen((char *) *out);
+                return SSL_TLSEXT_ERR_OK;
+            }
+            if(strcmp(priorities[i], "r2") == 0 && memcmp(p, "r2/", 3) == 0 && len >= 4) {
+                LOGD(DSSL, "alpn pick %s\n", priorities[i]);
+                *out = (unsigned char *) p;
+                *outlen = len;
+                return SSL_TLSEXT_ERR_OK;
+            }
+            if(strcmp(priorities[i], "r3") == 0 && memcmp(p, "r3/", 3) == 0 && len >= 4) {
+                LOGD(DSSL, "alpn pick %s\n", priorities[i]);
+                *out = (unsigned char *) p;
+                *outlen = len;
                 return SSL_TLSEXT_ERR_OK;
             }
             p += len;
@@ -558,7 +570,9 @@ SSL_CTX* initssl(int quic, const char* host){
     if (SSL_CTX_set_default_verify_paths(ctx) != 1)
         ERR_print_errors_fp(stderr);
 
-    if (opt.cert.crt && (!host || X509_check_host(opt.cert.crt, host, 0, X509_CHECK_FLAG_ALWAYS_CHECK_SUBJECT, NULL) == 1)) {
+    LOGD(DSSL, "check cert for %s\n", host);
+    if (opt.cert.crt && (!host ||
+        X509_check_host(opt.cert.crt, host, strlen(host), X509_CHECK_FLAG_ALWAYS_CHECK_SUBJECT, NULL) == 1)) {
         //加载证书和私钥
         if (SSL_CTX_use_certificate(ctx, opt.cert.crt) != 1) {
             ERR_print_errors_fp(stderr);

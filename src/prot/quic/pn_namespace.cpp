@@ -233,8 +233,8 @@ std::list<quic_packet_meta> pn_namespace::DetectAndRemoveAckedPackets(
                                      rtt->smoothed_rtt - rtt->latest_rtt : rtt->latest_rtt - rtt->smoothed_rtt;
             rtt->rttvar = (3 * rtt->rttvar + rttvar_sample) / 4;
         }
-        LOGD(DQUIC, "smoothed_rtt: %.2fms, rttvar: %.2fms, latest_rtt: %.2fms\n",
-             rtt->smoothed_rtt/1000.0, rtt->rttvar/1000.0, rtt->latest_rtt/1000.0);
+        LOGD(DQUIC, "smoothed_rtt: %.2fms, rttvar: %.2fms, min_rtt: %.2fms latest_rtt: %.2fms\n",
+             rtt->smoothed_rtt/1000.0, rtt->rttvar/1000.0, rtt->min_rtt/1000.0, rtt->latest_rtt/1000.0);
     }
     return newly_acked_packets;
 }

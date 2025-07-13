@@ -202,10 +202,13 @@ void QuicQos::sendPacket(bool force) {
             continue;
         }
         int window = sendWindow();
-        LOGD(DQUIC, "sendPacket, pto_count: %zu, sendWindow: %d, windowLeft: %d, bytes_in_flight: %zd\n",
-            pto_count, window, (int)windowLeft(), bytes_in_flight);
+        LOGD(DQUIC, "%ssendPacket, pto_count: %zu, sendWindow: %d, windowLeft: %d, bytes_in_flight: %zd\n",
+            force?"*":"", pto_count, window, (int)windowLeft(), bytes_in_flight);
+        if(force && window < (int)max_datagram_size) {
+            window = max_datagram_size;
+        }
         size_t packets;
-        if(pto_count > 0 || force) {
+        if(pto_count > 0) {
             //如果在丢包探测阶段，只发送一个包
             bytes_in_flight += p->sendPacket(1200, delivered_bytes, packets);
             packets_sent += packets;

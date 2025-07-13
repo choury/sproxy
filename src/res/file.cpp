@@ -1,6 +1,8 @@
 #include "file.h"
 #include "status.h"
 #include "rproxy2.h"
+#include "rproxy3.h"
+#include "req/guest3.h"
 #include "req/requester.h"
 #include "misc/util.h"
 #include "misc/config.h"
@@ -58,7 +60,7 @@ static std::string pathjoin(const std::string& dirname, const std::string& basen
         return dirname + basename;
     }else{
         return dirname +'/'+ basename;
-    } 
+    }
 }
 
 template <class... T>
@@ -290,7 +292,7 @@ void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
             return;
         }
         if(startwith(filename, pathjoin(opt.rootdir, "rproxy").c_str())) {
-            return Rproxy2::distribute(req, rw, src);
+            return distribute_rproxy(req, rw, src);
         }
         if(filename == pathjoin(opt.rootdir, "test")){
             //for compatibility

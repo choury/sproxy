@@ -85,7 +85,12 @@ Guest::Guest(int fd, const sockaddr_storage* addr, SSL_CTX* ctx): Requester(null
                 return Server::deleteLater(NOERROR);
             }
             if (strncasecmp((const char*)data, "r2", len) == 0) {
-                (new Rproxy2(srwer))->init();
+                (new Rproxy2(srwer, ""))->init();
+                this->rwer = nullptr;
+                return Server::deleteLater(NOERROR);
+            }
+            if (len >= 4 && memcmp((const char*)data, "r2/", 3) == 0) {
+                (new Rproxy2(srwer, std::string((const char*)data + 3, len - 3)))->init();
                 rwer = nullptr;
                 return Server::deleteLater(NOERROR);
             }
@@ -117,16 +122,29 @@ Guest::Guest(std::shared_ptr<RWer> rwer): Requester(rwer){
     });
     if(std::dynamic_pointer_cast<SslMer>(rwer)) {
         std::dynamic_pointer_cast<ISocketCallback>(cb)->onConnect([this](const sockaddr_storage&, uint32_t){
-            LOGD(DHTTP, "<guest> %s connected\n", dumpDest(this->rwer->getSrc()).c_str());
             auto srwer = std::dynamic_pointer_cast<SslMer>(this->rwer);
             const unsigned char *data;
             unsigned int len;
             srwer->get_alpn(&data, &len);
-            if ((data && strncasecmp((const char*)data, "h2", len) == 0)) {
+            LOGD(DHTTP, "<guest> %s connected: %.*s\n", dumpDest(this->rwer->getSrc()).c_str(), len, (const char*)data);
+            if (data == nullptr || data[0] == 0) {
+                return;
+            }
+            if (strncasecmp((const char*)data, "h2", len) == 0) {
                 new Guest2(srwer);
                 this->rwer = nullptr;
                 assert(statuslist.empty());
                 return deleteLater(NOERROR);
+            }
+            if (strncasecmp((const char*)data, "r2", len) == 0) {
+                (new Rproxy2(srwer, ""))->init();
+                this->rwer = nullptr;
+                return Server::deleteLater(NOERROR);
+            }
+            if (len >= 4 && memcmp((const char*)data, "r2/", 3) == 0) {
+                (new Rproxy2(srwer, std::string((const char*)data + 3, len - 3)))->init();
+                this->rwer = nullptr;
+                return Server::deleteLater(NOERROR);
             }
         });
     }

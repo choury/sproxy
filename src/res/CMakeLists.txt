@@ -16,7 +16,7 @@ set(res_src
 )
 
 if(HAVE_QUIC)
-    set(res_src ${res_src} proxy3.cpp)
+    set(res_src ${res_src} proxy3.cpp rproxy3.cpp)
 endif()
 
 add_library(res ${res_src})

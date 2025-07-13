@@ -62,6 +62,10 @@ protected:
     }
     virtual void waitconnectHE(RW_EVENT events) override;
     virtual void ConsumeRData(uint64_t id) override {
+        if(sslStats != SslStats::Established && sslStats != SslStats::SslEOF) {
+            delEvents(RW_EVENT::READ);
+            return;
+        }
         while(sink_in_bio(id));
         StreamRWer::ConsumeRData(id);
     }
@@ -91,7 +95,7 @@ public:
 class SslMer: public SslRWerBase, public MemRWer {
 protected:
     virtual size_t bufsize() override {
-        return BUF_LEN * 2 - rlen;
+        return rb.cap();
     }
     virtual void write(Buffer&& bb) override;
     virtual void onRead(Buffer&& bb) override;
@@ -102,8 +106,15 @@ protected:
         return SSL_pending(ssl) + BIO_ctrl_pending(in_bio) + MemRWer::rlength(id);
     }
     virtual void ConsumeRData(uint64_t id) override {
+        if(sslStats != SslStats::Established && sslStats != SslStats::SslEOF) {
+            delEvents(RW_EVENT::READ);
+            return;
+        }
         while(sink_in_bio(id));
         MemRWer::ConsumeRData(id);
+        if(rlength(0) == 0) {
+            delEvents(RW_EVENT::READ);
+        }
     }
 public:
     SslMer(SSL_CTX* ctx, const Destination& src, std::shared_ptr<IMemRWerCallback> _cb):

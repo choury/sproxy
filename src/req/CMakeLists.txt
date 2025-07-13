@@ -6,7 +6,7 @@
 set(req_src requester.cpp  guest.cpp guest_sni.cpp guest2.cpp guest_vpn.cpp rguest2.cpp cli.cpp)
 
 if(HAVE_QUIC)
-    set(req_src ${req_src} guest3.cpp)
+    set(req_src ${req_src} guest3.cpp rguest3.cpp)
 endif()
 
 if(LINUX OR TERMUX)

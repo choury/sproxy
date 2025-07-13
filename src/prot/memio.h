@@ -50,8 +50,7 @@ class MemRWer: public FullRWer{
 protected:
     Destination src;
     std::weak_ptr<IMemRWerCallback> _callback;
-    std::deque<Buffer> rb;
-    size_t  rlen = 0;
+    CBuffer rb;
     //std::function<void(const sockaddr_storage&)> connectCB = [](const sockaddr_storage&){};
     void connected(const sockaddr_storage& addr);
     virtual void closeHE(RW_EVENT events) override;
@@ -66,14 +65,14 @@ public:
     ~MemRWer() override;
 
     virtual size_t bufsize() {
-        return BUF_LEN * 2  - rlen;
+        return rb.cap();
     }
     virtual void push_data(Buffer&& bb);
     virtual void push_signal(Signal s);
     //virtual void detach();
     virtual void pull(uint64_t id) {
         //let owner call Send to fill the buffer
-        LOGD(DRWER, "<MemRWer> <%d> %s pull %d\n", 
+        LOGD(DRWER, "<MemRWer> <%d> %s pull %d\n",
             getFd(), dumpDest(src).c_str(), (int)id);
         if (auto cb = callback.lock(); cb) {
             cb->writeCB(id);
@@ -106,6 +105,8 @@ public:
 };
 
 class PMemRWer: public MemRWer {
+protected:
+    std::deque<Buffer> rb;
 public:
     using MemRWer::MemRWer;
 

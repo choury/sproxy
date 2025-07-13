@@ -47,7 +47,7 @@ class TunRWer: public RWer{
     static constexpr size_t TUN_BUF_LEN = 65536;
     bool use_io_uring = false;
 #ifdef HAVE_URING
-    static constexpr size_t URING_QUEUE_DEPTH = 64;
+    static constexpr size_t URING_QUEUE_DEPTH = 1024;
     static constexpr int PBUF_RING_ID = 0;
     static constexpr size_t num_buffers = MAX_BUF_LEN / TUN_BUF_LEN;
     struct io_uring ring;
@@ -61,7 +61,7 @@ class TunRWer: public RWer{
     void SubmitRead();
     void HandleIoUringCompletion();
 #endif
-    void ProcessPacket(const char* rbuff, size_t len);
+    void ProcessPacket(Buffer&& bb);
     uint64_t GetId(std::shared_ptr<const Ip> pac);
     std::shared_ptr<IpStatus> GetStatus(uint64_t id);
     void Clean(uint64_t id);
