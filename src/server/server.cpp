@@ -122,6 +122,7 @@ int main(int argc, char **argv) {
 #endif
     std::vector<std::shared_ptr<Ep>> servers;
     if(opt.rproxy_name) {
+#ifdef HAVE_QUIC
         // 根据协议选择rguest2还是rguest3
         if(strcmp(opt.Server.protocol, "quic") == 0) {
             LOG("Starting rproxy3 client to %s\n", dumpDest(opt.Server).c_str());
@@ -130,6 +131,10 @@ int main(int argc, char **argv) {
             LOG("Starting rproxy2 client to %s\n", dumpDest(opt.Server).c_str());
             new Rguest2(&opt.Server, opt.rproxy_name);
         }
+#else
+        LOG("Starting rproxy2 client to %s\n", dumpDest(opt.Server).c_str());
+        new Rguest2(&opt.Server, opt.rproxy_name);
+#endif
     }else {
         if(opt.http.hostname[0]){
             int fd[2] = {-1, -1};

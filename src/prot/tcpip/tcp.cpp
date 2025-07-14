@@ -631,9 +631,11 @@ void SendData(std::shared_ptr<TcpStatus> status, Buffer&& bb) {
         LOGE("%s send pkt will oversize of window (%zu/%d)\n",
              storage_ntoa(&status->src), sendlen,  (int)Cap(status));
     }
-    if (sendlen > status->mss && (status->flags & TUN_GSO_OFFLOAD) == 0) {
+    if ((status->flags & TUN_GSO_OFFLOAD) == 0) {
         //LOGD(DVPN, "%s: mss smaller than send size (%zu/%u)!\n", key.getString("<-"), bb.len, mss);
-        sendlen = status->mss;
+        sendlen = std::min((size_t)status->mss, bb.len);
+    } else {
+        sendlen = std::min((size_t)65000, bb.len);
     }
     //LOGD(DVPN, "%s (%u - %u) size: %zu\n", key.getString("<-"), sent_seq, want_seq, sendlen);
     auto pac = MakeIp(IPPROTO_TCP, &status->dst, &status->src);

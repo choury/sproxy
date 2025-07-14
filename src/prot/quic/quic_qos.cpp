@@ -360,6 +360,9 @@ void QuicQos::DrainAll(){
 
 size_t QuicQos::PendingSize(OSSL_ENCRYPTION_LEVEL level) {
     pn_namespace* ns = this->GetNamespace(level);
+    if(ns == nullptr) {
+        return 0;
+    }
     size_t len = 0;
     for(auto& i : ns->pend_frames) {
         len += frame_size(i);

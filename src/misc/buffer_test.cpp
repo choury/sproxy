@@ -224,6 +224,7 @@ void test_cbuffer_class() {
     // Create Block with data, then Buffer from Block
     Block test_block(block_data, block_len);
     const void* block_ptr = test_block.data();  // This is the Block's allocated memory
+    (void)block_ptr;
     Buffer block_buf(std::move(test_block), block_len, 4);
 
     // Verify Buffer uses Block's memory

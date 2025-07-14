@@ -12,7 +12,6 @@
 #include "uhost.h"
 #include "rproxy2.h"
 #include "rproxy3.h"
-#include "req/guest3.h"
 
 #include <string.h>
 #include <assert.h>

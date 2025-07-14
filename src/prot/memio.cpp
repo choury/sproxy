@@ -94,8 +94,7 @@ void MemRWer::ConsumeRData(uint64_t id) {
         keepReading = true;
         while(rb.length() > 0){
             Buffer wb = rb.get();
-            auto len = wb.len;
-            assert(len != 0);
+            assert(wb.len != 0);
             wb.id = id;
             auto ret = cb->readCB(std::move(wb));
             if(ret > 0) {
