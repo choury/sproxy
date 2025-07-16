@@ -136,6 +136,10 @@ size_t CBuffer::cap() const{
     return MAX_BUF_LEN - total_len;
 }
 
+bool CBuffer::empty() const{
+    return buffers.empty();
+}
+
 ssize_t CBuffer::put(Buffer&& bb) {
     if(total_len + bb.len > MAX_BUF_LEN){
         abort();
@@ -155,25 +159,58 @@ Buffer CBuffer::get(){
         return buffers.front();
     }
 
-    Buffer result{total_len};
+    if(buffers.front().len == 0){
+        return Buffer{nullptr, buffers.front().id};
+    }
+
+    uint64_t current_id = buffers.front().id;
+    size_t concat_len = 0;
+
+    for(const auto& buf : buffers){
+        if(buf.len == 0 && concat_len > 0){
+            break;
+        }
+        if(buf.id != current_id && concat_len > 0){
+            break;
+        }
+        concat_len += buf.len;
+    }
+
+    Buffer result{concat_len, current_id};
     size_t pos = 0;
     for(const auto& buf : buffers){
+        if(buf.len == 0 && pos > 0){
+            break;
+        }
+        if(buf.id != current_id && pos > 0){
+            break;
+        }
         if(buf.len > 0){
             memcpy((char*)result.mutable_data() + pos, buf.data(), buf.len);
             pos += buf.len;
         }
     }
-    result.truncate(total_len);
+    result.truncate(concat_len);
     return result;
 }
 
-void CBuffer::consume(size_t l){
+const std::deque<Buffer>& CBuffer::data() const {
+    return buffers;
+}
+
+std::set<uint64_t> CBuffer::consume(size_t l){
     assert(l <= total_len);
     total_len -= l;
 
+    std::set<uint64_t> ids;
+    while(!buffers.empty() && buffers.front().len == 0) {
+        ids.emplace(buffers.front().id);
+        buffers.pop_front();
+    }
     size_t remaining = l;
     while(remaining > 0 && !buffers.empty()){
         Buffer& front = buffers.front();
+        ids.emplace(front.id);
         if(front.len <= remaining){
             remaining -= front.len;
             buffers.pop_front();
@@ -182,6 +219,7 @@ void CBuffer::consume(size_t l){
             break;
         }
     }
+    return ids;
 }
 
 size_t EBuffer::left() const{

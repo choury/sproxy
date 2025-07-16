@@ -161,6 +161,7 @@ void test_cbuffer_class() {
     // Test initial state
     assert(cbuf.length() == 0);
     assert(cbuf.cap() == MAX_BUF_LEN);
+    assert(cbuf.empty() == true);
 
     // Test putting Buffer objects
     const char* data1 = "Hello, CBuffer!";
@@ -182,32 +183,54 @@ void test_cbuffer_class() {
     cbuf.consume(consume_len);
     assert(cbuf.length() == len1 - consume_len);
 
-    // Test putting multiple buffers
+    // Test putting multiple buffers with different IDs
     const char* data2 = "Second data chunk";
     size_t len2 = strlen(data2);
-    Buffer buf2(data2, len2, 2);
+    Buffer buf2(data2, len2, 2);  // Different ID
     result = cbuf.put(std::move(buf2));
     assert(result > 0);
     assert(cbuf.length() == len1 - consume_len + len2);
 
-    // Test getting merged data from multiple buffers
+    // Test getting merged data - should stop at different ID
     Buffer merged = cbuf.get();
-    assert(merged.len == len1 - consume_len + len2);
+    assert(merged.len == len1 - consume_len);  // Should only return first buffer's remainder
+    assert(merged.id == 1);
 
-    // Verify the merged content (should be remainder of first buffer + second buffer)
-    std::string expected_data = std::string(data1 + consume_len, len1 - consume_len) + std::string(data2, len2);
+    // Verify the merged content (should be remainder of first buffer only)
+    std::string expected_data = std::string(data1 + consume_len, len1 - consume_len);
     assert(memcmp(merged.data(), expected_data.c_str(), expected_data.size()) == 0);
+
+    // Test putting multiple buffers with same ID
+    cbuf.consume(cbuf.length());
+    Buffer buf3(data1, len1, 3);
+    Buffer buf4(data2, len2, 3);  // Same ID
+    cbuf.put(std::move(buf3));
+    cbuf.put(std::move(buf4));
+    assert(cbuf.length() == len1 + len2);
+
+    // Now get should merge buffers with same ID
+    Buffer merged_same_id = cbuf.get();
+    assert(merged_same_id.len == len1 + len2);
+    assert(merged_same_id.id == 3);
+
+    // Verify merged content
+    std::string expected_merged = std::string(data1, len1) + std::string(data2, len2);
+    assert(memcmp(merged_same_id.data(), expected_merged.c_str(), expected_merged.size()) == 0);
 
     // Test putting empty buffer
     Buffer empty_buf(nullptr);
     result = cbuf.put(std::move(empty_buf));
     assert(result >= 0);  // Should succeed but not change length
-    assert(cbuf.length() == len1 - consume_len + len2);
+    assert(cbuf.length() == len1 + len2);  // Current length after same-ID test
+    assert(cbuf.empty() == false);
 
     // Test consuming all data
     cbuf.consume(cbuf.length());
     assert(cbuf.length() == 0);
     assert(cbuf.cap() == MAX_BUF_LEN);
+    assert(cbuf.empty() == false);
+    cbuf.consume(0);
+    assert(cbuf.empty() == true);
 
     // Test getting from empty buffer
     Buffer empty_retrieved = cbuf.get();
@@ -246,6 +269,49 @@ void test_cbuffer_class() {
     limit_buf.put(std::move(large_buf2));
     assert(limit_buf.length() == MAX_BUF_LEN);
     assert(limit_buf.cap() == 0);
+
+    // Test zero-length buffer handling
+    CBuffer zero_test_buf;
+    Buffer zero_buf(nullptr, 123);  // ID = 123
+    result = zero_test_buf.put(std::move(zero_buf));
+    assert(result >= 0);
+    assert(zero_test_buf.length() == 0);
+    assert(zero_test_buf.empty() == false);  // Not empty even with zero-length buffer
+
+    // Get from buffer with only zero-length buffer (should return zero-length with same ID)
+    Buffer zero_retrieved = zero_test_buf.get();
+    assert(zero_retrieved.len == 0);
+    assert(zero_retrieved.id == 123);
+    assert(zero_retrieved.data() == nullptr);
+
+    // Test get logic with zero-length buffer in the middle
+    CBuffer zero_middle_buf;
+    Buffer buf_a("AAA", 3, 500);
+    Buffer buf_zero(nullptr, 500);  // Same ID, zero length
+    Buffer buf_b("BBB", 3, 500);   // Same ID
+
+    zero_middle_buf.put(std::move(buf_a));
+    zero_middle_buf.put(std::move(buf_zero));
+    zero_middle_buf.put(std::move(buf_b));
+
+    // Get should stop at zero-length buffer
+    Buffer partial_retrieved = zero_middle_buf.get();
+    assert(partial_retrieved.len == 3);
+    assert(partial_retrieved.id == 500);
+    assert(memcmp(partial_retrieved.data(), "AAA", 3) == 0);
+
+    // Test get logic with different IDs (should stop at different ID)
+    CBuffer diff_id_buf;
+    Buffer buf_x("XXX", 3, 600);
+    Buffer buf_y("YYY", 3, 700);  // Different ID
+
+    diff_id_buf.put(std::move(buf_x));
+    diff_id_buf.put(std::move(buf_y));
+
+    Buffer diff_id_retrieved = diff_id_buf.get();
+    assert(diff_id_retrieved.len == 3);
+    assert(diff_id_retrieved.id == 600);
+    assert(memcmp(diff_id_retrieved.data(), "XXX", 3) == 0);
 
     std::cout << "✓ CBuffer class tests passed\n";
 }

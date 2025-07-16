@@ -17,6 +17,7 @@
 #include <memory>
 #include <vector>
 #include <deque>
+#include <set>
 
 #define PRIOR_HEAD 80
 
@@ -99,8 +100,10 @@ public:
     //for get
     [[nodiscard]] size_t length() const;
     [[nodiscard]] size_t cap() const;
+    [[nodiscard]] bool empty() const;
     Buffer get();
-    void consume(size_t l);
+    const std::deque<Buffer>& data() const;
+    std::set<uint64_t> consume(size_t l);
 };
 
 struct DataRange {

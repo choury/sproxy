@@ -299,11 +299,11 @@ void SocketRWer::dump_status(Dumper dp, void *param) {
     if(hostname[0]) {
         dp(param, "SocketRWer <%d> (%s %s): rlen: %zu, wlen: %zu, stats: %d, event: %s, cb: %ld\n",
            getFd(), hostname, dumpDest(getDst()).c_str(),
-           rlength(0), wlen, (int)stats, events_string[(int)getEvents()], callback.use_count());
+           rlength(0), wbuff.length(), (int)stats, events_string[(int)getEvents()], callback.use_count());
     } else {
         dp(param, "SocketRWer <%d> (%s -> %s): rlen: %zu, wlen: %zu, stats: %d, event: %s, cb: %ld\n",
            getFd(), dumpDest(getSrc()).c_str(), dumpDest(getDst()).c_str(),
-           rlength(0), wlen, (int)stats, events_string[(int)getEvents()], callback.use_count());
+           rlength(0), wbuff.length(), (int)stats, events_string[(int)getEvents()], callback.use_count());
     }
 }
 
@@ -376,6 +376,30 @@ size_t PacketRWer::rlength(uint64_t) {
 }
 
 void PacketRWer::ConsumeRData(uint64_t) {
+}
+
+std::set<uint64_t> PacketRWer::StripWbuff(ssize_t len) {
+    std::set<uint64_t> writed_list;
+    if(len < 0) {
+        return writed_list;
+    }
+    LOGD(DRWER, "StripWbuff %d: len: %zd, wlen: %zd\n", getFd(), len, wlen);
+    wlen -= len;
+    while(!wbuff.empty()) {
+        auto& bb = wbuff.front();
+        if((int)bb.len <= len) {
+            writed_list.emplace(bb.id);
+            len -= (int)bb.len;
+            wbuff.pop_front();
+        } else if(len == 0) {
+            break;
+        } else {
+            writed_list.emplace(bb.id);
+            bb.reserve((int)len);
+            break;
+        }
+    }
+    return writed_list;
 }
 
 ssize_t PacketRWer::Write(std::set<uint64_t>& writed_list) {
@@ -452,4 +476,16 @@ void PacketRWer::ReadData() {
         }
         return;
     }
+}
+
+void PacketRWer::Send(Buffer&& bb) {
+    assert((flags & RWER_SHUTDOWN) == 0);
+    if(bb.len == 0){
+        flags |= RWER_SHUTDOWN;
+    }
+    addEvents(RW_EVENT::WRITE);
+    LOGD(DRWER, "push to packet wbuff %d: id: %" PRIu64", len: %zd, refs: %zd, wlen: %zd\n",
+        getFd(), bb.id, bb.len, bb.refs(), wlen);
+    wlen += bb.len;
+    wbuff.emplace_back(std::move(bb));
 }

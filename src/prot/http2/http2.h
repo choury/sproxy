@@ -83,7 +83,7 @@ class Http2Base{
 protected:
     uint32_t remoteframewindowsize = 65535; //由对端初始化的初始frame的窗口大小
     uint32_t remoteframebodylimit = FRAMEBODYLIMIT;
-    
+
     int32_t remotewinsize = 65535; // 对端提供的窗口大小，发送时减小，收到对端update时增加
     int32_t localwinsize = 65535; // 发送给对端的窗口大小，接受时减小，给对端发送update时增加
 #define HTTP2_FLAG_INITED      (1u << 0u)

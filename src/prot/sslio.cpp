@@ -226,16 +226,14 @@ SslRWer::SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::sh
 void SslRWer::write(Buffer&& bb) {
     LOGD(DSSL, "(%s) send %zd bytes to fd %d, id: %" PRIu64"\n", server.c_str(), bb.len, getFd(), bb.id);
     addEvents(RW_EVENT::WRITE);
-    wlen += bb.len;
-    wbuff.emplace_back(std::move(bb));
+    wbuff.put(std::move(bb));
 }
 
 void SslMer::write(Buffer&& bb) {
     //bb.id = id;
     LOGD(DSSL, "(%s) send %zd bytes to mem, id: %" PRIu64"\n", server.c_str(), bb.len, bb.id);
     addEvents(RW_EVENT::WRITE);
-    wlen += bb.len;
-    wbuff.emplace_back(std::move(bb));
+    wbuff.put(std::move(bb));
 }
 
 void SslRWer::onRead(Buffer&& bb) {

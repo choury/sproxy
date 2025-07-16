@@ -18,7 +18,7 @@
 #endif
 
 ssize_t RWer::cap(uint64_t) {
-    return MAX_BUF_LEN - wlen;
+    return MAX_BUF_LEN - wbuff.length();
 }
 
 RWer::RWer(int fd, std::shared_ptr<IRWerCallback> cb): Ep(fd), callback(std::move(cb)) {
@@ -30,30 +30,6 @@ RWer::RWer(std::shared_ptr<IRWerCallback> cb): Ep(-1), callback(std::move(cb)) {
     assert(cb && cb->errorCB);
 }
 
-std::set<uint64_t> RWer::StripWbuff(ssize_t len) {
-    std::set<uint64_t> writed_list;
-    if(len < 0) {
-        return writed_list;
-    }
-    LOGD(DRWER, "StripWbuff %d: len: %zd, wlen: %zd\n", getFd(), len, wlen);
-    wlen -= len;
-    while(!wbuff.empty()) {
-        auto& bb = wbuff.front();
-        if((int)bb.len <= len) {
-            writed_list.emplace(bb.id);
-            len -= (int)bb.len;
-            wbuff.pop_front();
-        } else if(len == 0) {
-            break;
-        } else {
-            writed_list.emplace(bb.id);
-            bb.reserve((int)len);
-            break;
-        }
-    }
-    return writed_list;
-}
-
 ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
     ssize_t ret = 0;
     size_t len = 0;
@@ -61,8 +37,9 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
     if(wbuff.empty()) {
         return 0;
     }
-    if(wbuff.size() == 1) {
-        auto &bb = wbuff.front();
+    const auto& data = wbuff.data();
+    if(data.size() == 1) {
+        auto &bb = data.front();
         if(likely(bb.len > 0)) {
             ret = write(getFd(), bb.data(), bb.len);
             LOGD(DRWER, "write %d: len: %zd, ret: %zd\n", getFd(), bb.len, ret);
@@ -72,8 +49,8 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
         }
     } else {
         std::vector<iovec> iovs;
-        iovs.reserve(wbuff.size());
-        for (const auto &bb: wbuff) {
+        iovs.reserve(data.size());
+        for (const auto &bb: data) {
             if (unlikely(bb.len == 0)) {
                 //bb.len == 0 must be the last one
                 hasEof = true;
@@ -97,7 +74,9 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
         assert(flags & RWER_SHUTDOWN);
         shutdown(getFd(), SHUT_WR);
     }
-    writed_list = StripWbuff(ret);
+    if(ret >= 0){
+        writed_list = wbuff.consume(ret);
+    }
     return ret;
 }
 
@@ -116,7 +95,6 @@ void RWer::SendData(){
         }
     }
     if(wbuff.empty()){
-        assert(wlen == 0);
         delEvents(RW_EVENT::WRITE);
     }
 }
@@ -267,10 +245,9 @@ void RWer::Send(Buffer&& bb) {
         flags |= RWER_SHUTDOWN;
     }
     addEvents(RW_EVENT::WRITE);
-    LOGD(DRWER, "push to wbuff %d: id: %" PRIu64", len: %zd, refs: %zd, wlen: %zd\n", 
-        getFd(), bb.id, bb.len, bb.refs(), wlen);
-    wlen += bb.len;
-    wbuff.emplace_back(std::move(bb));
+    LOGD(DRWER, "push to wbuff %d: id: %" PRIu64", len: %zd, refs: %zd, wlen: %zd\n",
+        getFd(), bb.id, bb.len, bb.refs(), wbuff.length());
+    wbuff.put(std::move(bb));
 }
 
 bool RWer::idle(uint64_t) {
@@ -294,8 +271,9 @@ void NullRWer::ConsumeRData(uint64_t) {
 }
 
 ssize_t NullRWer::Write(std::set<uint64_t>& writed_list) {
-    writed_list = StripWbuff(wlen);
+    auto wlen = wbuff.length();
     LOG("discard everything write to NullRWer, size: %zd\n", wlen);
+    writed_list = wbuff.consume(wlen);
     return wlen;
 }
 

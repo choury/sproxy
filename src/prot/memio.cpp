@@ -19,7 +19,7 @@ size_t MemRWer::rlength(uint64_t) {
 
 ssize_t MemRWer::cap(uint64_t) {
     if(auto cb = _callback.lock(); cb) {
-        return cb->cap_cb() - wlen;
+        return cb->cap_cb() - wbuff.length();
     }
     return 0;
 }
@@ -119,41 +119,34 @@ void MemRWer::ConsumeRData(uint64_t id) {
 }
 
 ssize_t MemRWer::Write(std::set<uint64_t>& writed_list) {
-    size_t len = 0;
     if(_callback.expired()){
+        size_t wlen = wbuff.length();
         if(wlen) LOGE("MemRWer <%d> %s callback expired, left: %zd\n", getFd(), dumpDest(src).c_str(), wlen);
         delEvents(RW_EVENT::WRITE);
         errno = EPIPE;
         return -1;
     }
+    size_t len = 0;
     auto& write_cb = _callback.lock()->write_data;
-    for(auto it = wbuff.begin(); it != wbuff.end(); ){
-        ssize_t ret = 0;
-        size_t blen = it->len;
+    while(!wbuff.empty()){
+        auto bb = wbuff.get();
+        size_t blen = bb.len;
+        ssize_t ret = write_cb(std::move(bb));
         if (blen) {
-            ret = write_cb(std::ref(*it));
             LOGD(DRWER, "<MemRWer> <%d> %s write_cb %d wlen: %zd, len: %zd, ret: %zd\n",
-                 getFd(), dumpDest(src).c_str(), (int)it->id, wlen, blen, ret);
+                 getFd(), dumpDest(src).c_str(), (int)bb.id, wbuff.length(), blen, ret);
         } else {
             assert(flags & RWER_SHUTDOWN);
-            ret = write_cb(Buffer{nullptr, it->id});
             LOGD(DRWER, "<MemRWer> <%d> %s write_cb %d EOF, wlen: %zd\n",
-                 getFd(), dumpDest(src).c_str(), (int)it->id, wlen);
+                 getFd(), dumpDest(src).c_str(), (int)bb.id, wbuff.length());
         }
         if(ret < 0){
             delEvents(RW_EVENT::WRITE);
             return ret;
         }
-        writed_list.emplace(it->id);
+        writed_list.emplace(bb.id);
+        wbuff.consume(ret);
         len += ret;
-        wlen -= ret;
-        if((size_t)ret == blen) {
-            it = wbuff.erase(it);
-        } else {
-            assert(ret < (int)blen);
-            it->reserve(ret);
-            break;
-        }
     }
     return (ssize_t)len;
 }
@@ -161,7 +154,7 @@ ssize_t MemRWer::Write(std::set<uint64_t>& writed_list) {
 void MemRWer::closeHE(RW_EVENT) {
     if((flags & RWER_SHUTDOWN) == 0 && (stats == RWerStats::ReadEOF || stats == RWerStats::Connected)){
         flags |= RWER_SHUTDOWN;
-        wbuff.emplace_back(nullptr);
+        wbuff.put({nullptr});
     }
     std::set<uint64_t> writed_list;
     ssize_t ret = Write(writed_list);
@@ -179,7 +172,7 @@ void MemRWer::closeHE(RW_EVENT) {
 
 void MemRWer::dump_status(Dumper dp, void* param) {
     dp(param, "MemRWer <%d> (%s): rlen: %zu, wlen: %zu, stats: %d, flags: 0x%04x, event: %s, cb: %ld, _cb: %ld\n",
-        getFd(), dumpDest(src).c_str(), rlength(0), wlen,
+        getFd(), dumpDest(src).c_str(), rlength(0), wbuff.length(),
         (int)stats, flags, events_string[(int)getEvents()], callback.use_count(), _callback.use_count());
 }
 

@@ -77,11 +77,9 @@ protected:
 #define RWER_EOFDELIVED 0x20  // shutdown by peer (handled by me)
     uint32_t   flags = 0;
     RWerStats  stats = RWerStats::Idle;
-    std::list<Buffer> wbuff;
-    size_t            wlen = 0;
+    CBuffer    wbuff;
     std::weak_ptr<IRWerCallback> callback;
 
-    std::set<uint64_t> StripWbuff(ssize_t len);
     virtual ssize_t Write(std::set<uint64_t>& writed_list);
     virtual void SendData();
     virtual void ReadData() = 0;
