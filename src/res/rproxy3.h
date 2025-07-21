@@ -10,9 +10,6 @@
 class Rproxy3: public Proxy3 {
     std::string name;
 protected:
-    Destination getPeer() {
-        return rwer->getSrc();
-    }
     virtual void setIdle(uint32_t) override {};
 public:
     explicit Rproxy3(std::shared_ptr<RWer> rwer, std::string name);

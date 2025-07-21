@@ -223,7 +223,7 @@ std::shared_ptr<IMemRWerCallback> Guest3::response(uint64_t id) {
         p += variable_encode(p, HTTP3_STREAM_HEADERS);
         p += variable_encode(p, len);
         SendData({std::move(buff), len + pre, id});
-    })->onData([this, id](Buffer bb) -> size_t {
+    })->onData([this, id](Buffer&& bb) -> size_t {
         bb.id = id;
         return Recv(std::move(bb));
     })->onWrite([this, id](uint64_t){

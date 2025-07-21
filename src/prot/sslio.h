@@ -23,7 +23,8 @@ protected:
     void do_handshake();
 
     virtual void write(Buffer&& bb) = 0;
-    virtual size_t bufsize() = 0;
+    virtual size_t rbufsize() = 0;
+    virtual size_t wbufsize() = 0;
     virtual void onRead(Buffer&& bb) = 0;
     virtual void onError(int type, int code) = 0;
     virtual void onConnected() = 0;
@@ -49,8 +50,11 @@ public:
 
 class SslRWer: public SslRWerBase, public StreamRWer{
 protected:
-    virtual size_t bufsize() override {
+    virtual size_t rbufsize() override {
         return rb.cap();
+    }
+    virtual size_t wbufsize() override {
+        return wbuff.cap();
     }
     virtual void write(Buffer&& bb) override;
     virtual void onRead(Buffer&& bb) override;
@@ -94,8 +98,11 @@ public:
 
 class SslMer: public SslRWerBase, public MemRWer {
 protected:
-    virtual size_t bufsize() override {
+    virtual size_t rbufsize() override {
         return rb.cap();
+    }
+    virtual size_t wbufsize() override {
+        return wbuff.cap();
     }
     virtual void write(Buffer&& bb) override;
     virtual void onRead(Buffer&& bb) override;

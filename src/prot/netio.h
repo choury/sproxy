@@ -71,7 +71,6 @@ protected:
     char rb[BUF_LEN];
     std::deque<Buffer> wbuff;
     size_t             wlen;
-    std::set<uint64_t> StripWbuff(ssize_t len);
     virtual ssize_t Write(std::set<uint64_t>& writed_list) override;
     virtual void ReadData() override;
     virtual void ConsumeRData(uint64_t id) override;

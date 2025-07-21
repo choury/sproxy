@@ -182,7 +182,7 @@ void Http3Base::Datagram_Proc(Buffer&& bb) {
     size_t decoded_len = variable_decode(bb.data(), &quarter_stream_id);
     bb.reserve(decoded_len);
     bb.id = quarter_stream_id * 4;
-    LOGD(DHTTP3, "Get a datagram frame: %" PRIu64 ", length: %" PRIu64 "\n", bb.id, bb.len);
+    LOGD(DHTTP3, "Get a datagram frame: %" PRIu64 ", length: %zd\n", bb.id, bb.len);
     DatagramProc(std::move(bb));
 }
 

@@ -7,7 +7,7 @@
 class HttpResHeader;
 struct IMemRWerCallback: std::enable_shared_from_this<IMemRWerCallback> {
     //write_cb act like write, return bytes handled
-    std::function<int(Buffer)> write_data;
+    std::function<int(Buffer&&)> write_data;
     std::function<void(Signal)> write_signal;
     std::function<void(std::shared_ptr<HttpResHeader>)> write_header = [](std::shared_ptr<HttpResHeader>){};
     std::function<void(uint64_t)> read_cb;

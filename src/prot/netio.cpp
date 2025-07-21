@@ -378,30 +378,6 @@ size_t PacketRWer::rlength(uint64_t) {
 void PacketRWer::ConsumeRData(uint64_t) {
 }
 
-std::set<uint64_t> PacketRWer::StripWbuff(ssize_t len) {
-    std::set<uint64_t> writed_list;
-    if(len < 0) {
-        return writed_list;
-    }
-    LOGD(DRWER, "StripWbuff %d: len: %zd, wlen: %zd\n", getFd(), len, wlen);
-    wlen -= len;
-    while(!wbuff.empty()) {
-        auto& bb = wbuff.front();
-        if((int)bb.len <= len) {
-            writed_list.emplace(bb.id);
-            len -= (int)bb.len;
-            wbuff.pop_front();
-        } else if(len == 0) {
-            break;
-        } else {
-            writed_list.emplace(bb.id);
-            bb.reserve((int)len);
-            break;
-        }
-    }
-    return writed_list;
-}
-
 ssize_t PacketRWer::Write(std::set<uint64_t>& writed_list) {
     if(wbuff.empty()) {
         return 0;
@@ -415,7 +391,8 @@ ssize_t PacketRWer::Write(std::set<uint64_t>& writed_list) {
             LOGD(DRWER, "ignore zero buffer: %p\n", bb->data());
         }
         // ignore error, udp is unreliable
-        writed_list = StripWbuff(bb->len);
+        writed_list.emplace(bb->id);
+        wbuff.clear();
         return ret;
     } else {
         std::vector<iovec> iovs;
@@ -454,27 +431,36 @@ void PacketRWer::ReadData() {
     assert(!(flags & RWER_READING));
     flags |= RWER_READING;
     defer([this]{ flags &= ~RWER_READING;});
-    while(true) {
-        ssize_t ret = read(getFd(), rb, sizeof(rb));
-        LOGD(DRWER, "packet read %d: len: %zd, ret: %zd, cb: %ld\n", getFd(), sizeof(rb), ret, callback.use_count());
-        if (ret > 0) {
-            if(auto cb = callback.lock(); cb && cb->readCB({rb, (size_t)ret}) == 0) {
+
+    Block blk(IOV_MAX * BUF_LEN);
+    std::vector<iovec> iov;
+    iov.resize(IOV_MAX);
+    for(size_t i = 0; i < iov.size(); i++) {
+        iov[i].iov_base = (char*)blk.data() + i * BUF_LEN;
+        iov[i].iov_len = BUF_LEN;
+    }
+    ssize_t ret = readm(getFd(), iov.data(), iov.size());
+    LOGD(DRWER, "packet readm %d: iovcnt: %zd, ret: %zd, cb: %ld\n", getFd(), iov.size(), ret, callback.use_count());
+    if (ret > 0) {
+        auto cb = callback.lock();
+        if (!cb) {
+            return;
+        }
+        for (ssize_t i = 0; i < ret; i++) {
+            if (cb->readCB({(char*)iov[i].iov_base, iov[i].iov_len}) == 0) {
                 delEvents(RW_EVENT::READ);
-                break;
+                return;
             }
-            continue;
         }
-        if (ret == 0) {
-            stats = RWerStats::ReadEOF;
-            delEvents(RW_EVENT::READ);
-            if(auto cb = callback.lock(); cb) {
-                cb->readCB(nullptr);
-                flags |= RWER_EOFDELIVED;
-            }
-        }else if (errno != EAGAIN) {
-            ErrorHE(SOCKET_ERR, errno);
+    } else if (ret == 0) {
+        stats = RWerStats::ReadEOF;
+        delEvents(RW_EVENT::READ);
+        if(auto cb = callback.lock(); cb) {
+            cb->readCB(nullptr);
+            flags |= RWER_EOFDELIVED;
         }
-        return;
+    } else if (errno != EAGAIN) {
+        ErrorHE(SOCKET_ERR, errno);
     }
 }
 

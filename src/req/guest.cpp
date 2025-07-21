@@ -316,7 +316,7 @@ std::shared_ptr<IMemRWerCallback> Guest::response(uint64_t id) {
         Buffer buff{BUF_LEN, res->request_id};
         buff.truncate(PackHttpRes(res, buff.mutable_data(), BUF_LEN));
         rwer->Send(std::move(buff));
-    })->onData([this](Buffer bb) {
+    })->onData([this](Buffer&& bb) {
         return Recv(std::move(bb));
     })->onSignal([this](Signal s) {
         ReqStatus& status = statuslist.front();

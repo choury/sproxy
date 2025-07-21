@@ -235,7 +235,7 @@ std::shared_ptr<IMemRWerCallback> Guest_vpn::response(uint64_t id) {
             LOGE("unknown response\n");
         }
         status.cleanJob = AddJob(([this, id]{Clean(id);}), 0, 0);
-    })->onData([this, id](Buffer bb) -> size_t{
+    })->onData([this, id](Buffer&& bb) -> size_t{
         bb.id = id;
         return Recv(std::move(bb));
     })->onWrite([this, id](uint64_t) {

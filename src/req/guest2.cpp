@@ -211,7 +211,7 @@ std::shared_ptr<IMemRWerCallback> Guest2::response(uint64_t id) {
         if(opt.alt_svc){
             AltSvc(id, "", opt.alt_svc);
         }
-    })->onData([this, id](Buffer bb) -> size_t {
+    })->onData([this, id](Buffer&& bb) -> size_t {
         bb.id = id;
         return Recv(std::move(bb));
     })->onSignal([this, id](Signal s) {

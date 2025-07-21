@@ -75,10 +75,14 @@ SslRWerBase::~SslRWerBase(){
 }
 
 void SslRWerBase::sink_out_bio(uint64_t id) {
-    Block buff(BUF_LEN);
+    size_t len = std::min(wbufsize(), BIO_ctrl_pending(out_bio));
+    if (len == 0) {
+        return;
+    }
+    Block buff(len);
     size_t offset = 0;
-    while(BIO_ctrl_pending(out_bio) && offset < BUF_LEN) {
-        int ret = BIO_read(out_bio, (char*)buff.data() + offset, BUF_LEN - offset);
+    while(BIO_ctrl_pending(out_bio) && offset < len) {
+        int ret = BIO_read(out_bio, (char*)buff.data() + offset, len - offset);
         LOGD(DSSL, "(%s) BIO_read %d bytes\n", server.c_str(), ret);
         if (ret > 0) {
             offset += ret;
@@ -90,18 +94,16 @@ void SslRWerBase::sink_out_bio(uint64_t id) {
     if(offset > 0) {
         write(Buffer{std::move(buff), (size_t)offset, id});
     }
-    if(offset == BUF_LEN) {
-        sink_out_bio(id);
-    }
+    sink_out_bio(id);
 }
 
 int SslRWerBase::sink_in_bio(uint64_t id) {
-    Block buff(BUF_LEN);
-    ERR_clear_error();
-    size_t len = std::min((size_t)BUF_LEN, bufsize());
+    size_t len = std::min((size_t)BUF_LEN, rbufsize());
     if (len == 0) {
         return 0;
     }
+    Block buff(len);
+    ERR_clear_error();
     ssize_t ret = ssl_get_error(ssl, SSL_read(ssl, buff.data(), (int)len));
     LOGD(DSSL, "(%s) SSL_read %d bytes\n", server.c_str(), (int) ret);
     HOOK_FUNC(this, in_bio, buff, ret);

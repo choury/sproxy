@@ -61,7 +61,8 @@ static int set_if(struct ifreq *ifr) {
         // 使用SIOCSIFTXQLEN命令设置发送队列长度
         if ((err = ioctl(fd, SIOCSIFTXQLEN, ifr)) < 0) {
             LOGE("ioctl(SIOCSIFTXQLEN) failed: %s\n", strerror(errno));
-            break;
+            //这个错误可以容忍，暂时忽略
+            err = 0;
         }
         if (!opt.set_dns_route) {
             break;

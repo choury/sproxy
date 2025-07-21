@@ -209,10 +209,11 @@ void PMemRWer::ConsumeRData(uint64_t) {
     if (cb == nullptr) {
         return;
     }
-    for(auto bb: rb) {
+    while(!rb.empty()) {
+        auto bb = std::move(rb.front());
+        rb.pop_front();
         cb->readCB(std::move(bb));
     }
-    rb.clear();
 }
 
 void PMemRWer::Send(Buffer&& bb) {
@@ -223,6 +224,6 @@ void PMemRWer::Send(Buffer&& bb) {
     LOGD(DRWER, "<PMemRWer> <%d> %s Send [%" PRIu64"]: %zd, refs: %zd, _cb: %ld\n",
         getFd(), dumpDest(src).c_str(), bb.id, bb.len, bb.refs(), _callback.use_count());
     if(auto _cb = _callback.lock(); _cb){
-        _cb->write_data(bb);
+        _cb->write_data(std::move(bb));
     }
 }
