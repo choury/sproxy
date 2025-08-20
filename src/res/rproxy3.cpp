@@ -11,11 +11,16 @@ void Rproxy3::init() {
     if(rproxys.count(name)) {
         return deleteLater(RPROXY_DUP);
     }
+    if(name == "local") {
+        return deleteLater(RPROXY_DUP);
+    }
     rproxys[name] = this;
     Http3Base::Init();
 }
 
 void Rproxy3::deleteLater(uint32_t errcode) {
-    rproxys.erase(name);
+    if(rproxys.count(name) && rproxys[name] == this) {
+        rproxys.erase(name);
+    }
     Proxy3::deleteLater(errcode);
 }

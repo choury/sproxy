@@ -260,6 +260,9 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
         LOGD(DFILE, "rproxy: %s -> %s\n", path.c_str(), req->geturl().c_str());
     }
     req->set(STRATEGY, std::string("rproxy/")+filename);
+    if(filename == "local") {
+        return distribute(req, rw, src);
+    }
     if(rproxys.count(filename) == 0) {
         response(rw, HttpResHeader::create(S404, sizeof(S404), id), "");
         return;

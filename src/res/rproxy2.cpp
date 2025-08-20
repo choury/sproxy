@@ -12,6 +12,9 @@ void Rproxy2::init() {
         if(rproxys.count(name)) {
             return deleteLater(RPROXY_DUP);
         }
+        if(name == "local") {
+            return deleteLater(RPROXY_DUP);
+        }
         rproxys[name] = this;
     }
     return Proxy2::init(true, nullptr, nullptr);
@@ -33,10 +36,15 @@ void Rproxy2::PushProc(uint32_t id, std::shared_ptr<HttpReqHeader> req) {
     if(rproxys.count(name)) {
         return deleteLater(RPROXY_DUP);
     }
+    if(name == "local") {
+        return deleteLater(RPROXY_DUP);
+    }
     rproxys[name] = this;
 }
 
 void Rproxy2::deleteLater(uint32_t errcode) {
-    rproxys.erase(name);
+    if(rproxys.count(name) && rproxys[name] == this) {
+        rproxys.erase(name);
+    }
     Proxy2::deleteLater(errcode);
 }
