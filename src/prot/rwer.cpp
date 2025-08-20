@@ -18,7 +18,7 @@
 #endif
 
 ssize_t RWer::cap(uint64_t) {
-    return MAX_BUF_LEN - wbuff.length();
+    return wbuff.cap();
 }
 
 RWer::RWer(int fd, std::shared_ptr<IRWerCallback> cb): Ep(fd), callback(std::move(cb)) {

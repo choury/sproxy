@@ -186,11 +186,18 @@ void Host::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
             }
             return 0;
         }
+        auto cap = rwer->cap(bb.id);
+        LOGD(DHTTP, "<host> recv %" PRIu64 ": size:%zu/%zd/%zu, http_flag:0x%x\n",
+            status.req->request_id, bb.len, cap, tx_bytes, http_flag);
 
-        auto len = bb.len;
+        if (cap <= 0) {
+            LOGE("[%" PRIu64 "]: <host> the RWer write buff is full (%s)\n",
+                status.req->request_id, status.req->geturl().c_str());
+            return 0;
+        }
+        auto len = std::min(bb.len, (size_t)cap);
         tx_bytes += len;
-        LOGD(DHTTP, "<host> recv %" PRIu64 ": size:%zu/%zu, http_flag:0x%x\n",
-            status.req->request_id, len, tx_bytes, http_flag);
+        bb.truncate(len);
         rwer->Send(std::move(bb));
         return len;
     })->onWrite([this](uint64_t id){

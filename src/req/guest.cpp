@@ -362,14 +362,23 @@ size_t Guest::Recv(Buffer&& bb) {
     if(tx_bytes == 0) {
         status.req->tracker.emplace_back("body", getmtime());
     }
-    tx_bytes += bb.len;
-    LOGD(DHTTP, "<guest> recv %" PRIu64 ": size:%zu/%zu, refs: %zd\n",
-         status.req->request_id, bb.len, tx_bytes, bb.refs());
+    auto cap = rwer->cap(bb.id);
+    LOGD(DHTTP, "<guest> recv %" PRIu64 ": size:%zu/%zd/%zu, refs: %zd\n",
+         status.req->request_id, bb.len, cap, tx_bytes, bb.refs());
     if(status.req->ismethod("HEAD")){
         LOGD(DHTTP, "<guest> recv %" PRIu64 ": HEAD req discard body\n", status.req->request_id);
+        tx_bytes += bb.len;
         return bb.len;
     }
-    auto len = bb.len;
+    if (cap <= 10) {
+        //reserve for chunked encoding
+        LOGE("[%" PRIu64 "]: <guest> the RWer write buff is full (%s)\n",
+            status.req->request_id, status.req->geturl().c_str());
+        return 0;
+    }
+    auto len = std::min(bb.len, (size_t)(cap - 10));
+    tx_bytes += bb.len;
+    bb.truncate(len);
     if(status.flags & HTTP_CHUNK_F){
         char chunkbuf[100];
         int chunklen = snprintf(chunkbuf, sizeof(chunkbuf), "%x" CRLF, (uint32_t)bb.len);

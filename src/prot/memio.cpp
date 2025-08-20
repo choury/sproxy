@@ -19,7 +19,7 @@ size_t MemRWer::rlength(uint64_t) {
 
 ssize_t MemRWer::cap(uint64_t) {
     if(auto cb = _callback.lock(); cb) {
-        return cb->cap_cb() - wbuff.length();
+        return std::min(cb->cap_cb() - wbuff.length(), wbuff.cap());
     }
     return 0;
 }
@@ -140,7 +140,7 @@ ssize_t MemRWer::Write(std::set<uint64_t>& writed_list) {
             LOGD(DRWER, "<MemRWer> <%d> %s write_cb %d EOF, wlen: %zd\n",
                  getFd(), dumpDest(src).c_str(), (int)bb.id, wbuff.length());
         }
-        if(ret < 0){
+        if(ret <= 0){
             delEvents(RW_EVENT::WRITE);
             return ret;
         }
