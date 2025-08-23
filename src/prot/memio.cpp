@@ -140,7 +140,7 @@ ssize_t MemRWer::Write(std::set<uint64_t>& writed_list) {
             LOGD(DRWER, "<MemRWer> <%d> %s write_cb %d EOF, wlen: %zd\n",
                  getFd(), dumpDest(src).c_str(), (int)bb.id, wbuff.length());
         }
-        if(ret <= 0){
+        if(ret < 0 || (blen > 0 && ret == 0)){
             delEvents(RW_EVENT::WRITE);
             return ret;
         }

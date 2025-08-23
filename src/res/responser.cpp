@@ -16,6 +16,7 @@
 #include <string.h>
 #include <assert.h>
 #include <inttypes.h>
+#include <unistd.h>
 #include <sstream>
 
 
