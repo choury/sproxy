@@ -27,6 +27,8 @@ enum class CheckResult{
     NoPort,
 };
 
+static std::string identify = "HTTP/1.1 sproxy:" + std::to_string(getpid());
+
 bool shouldNegotiate(const std::string& hostname, const strategy* stra_){
     const auto& stra = stra_ ? *stra_ : getstrategy(hostname.c_str());
     if (stra.s == Strategy::direct && stra.ext == NO_MITM) {
@@ -57,7 +59,7 @@ static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, Reques
     if (!checkauth(src->getSrc().hostname, req->get("Proxy-Authorization"))){
         return CheckResult::AuthFailed;
     }
-    if(req->get("via") && strstr(req->get("via"), "sproxy")){
+    if(req->get("via") && strstr(req->get("via"), identify.c_str())){
         return CheckResult::LoopBack;
     }
     if(req->Dest.port == 0 && req->ismethod("CONNECT")){
@@ -131,7 +133,7 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw,
         if(req->get("rproxy")) {
             return distribute_rproxy(req, rw, src);
         }
-        req->append("Via", "HTTP/1.1 sproxy");
+        req->append("Via", identify);
         Destination dest;
         switch(stra.s){
         case Strategy::proxy:
@@ -139,7 +141,6 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw,
             if(dest.port == 0){
                 return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[server not set]]\n");
             }
-            req->del("via");
             if(strlen(opt.rewrite_auth)){
                 req->set("Proxy-Authorization", std::string("Basic ") + opt.rewrite_auth);
             }
