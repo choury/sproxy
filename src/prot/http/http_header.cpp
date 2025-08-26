@@ -22,8 +22,9 @@ HttpHeader::HttpHeader() {
 }
 
 
-void HttpHeader::set(const std::string& header, const string& value) {
+HttpHeader* HttpHeader::set(const std::string& header, const string& value) {
     headers[toLower(header)] = value;
+    return this;
 }
 
 #ifdef __ANDROID__
@@ -40,21 +41,22 @@ using std::to_string;
 #endif
 
 
-void HttpHeader::set(const std::string& header, uint64_t value) {
-    set(header, to_string(value));
+HttpHeader* HttpHeader::set(const std::string& header, uint64_t value) {
+    return set(header, to_string(value));
 }
 
-void HttpHeader::append(const std::string& header, const string& value){
+HttpHeader* HttpHeader::append(const std::string& header, const string& value){
     if(get(header)){
         string old_value = get(header);
-        set(header, old_value + ", " + value);
+        return set(header, old_value + ", " + value);
     }else{
-        set(header, value);
+        return set(header, value);
     }
 }
 
-void HttpHeader::del(const std::string& header) {
+HttpHeader* HttpHeader::del(const std::string& header) {
     headers.erase(toLower(header));
+    return this;
 }
 
 const char* HttpHeader::get(const std::string& header) const{
@@ -62,6 +64,16 @@ const char* HttpHeader::get(const std::string& header) const{
         return headers.at(toLower(header)).c_str();
     }
     return nullptr;
+}
+
+bool HttpHeader::has(const std::string& header, const std::string& value) const {
+    if (!headers.contains(toLower(header))) {
+        return false;
+    }
+    if (value.empty()) {
+        return true;
+    }
+    return headers.at(toLower(header)) == value;
 }
 
 const std::map<std::string, std::string>& HttpHeader::getall() const {
@@ -108,16 +120,16 @@ HttpReqHeader::HttpReqHeader(HeaderMap&& headers) {
     }
 
     memset(&Dest, 0, sizeof(Dest));
-    if (get(":authority")){
+    if (has(":authority")){
         spliturl(get(":authority"), &Dest, nullptr);
     }
-    if(get(":scheme")){
+    if(has(":scheme")){
         snprintf(Dest.scheme, sizeof(Dest.scheme), "%s", get(":scheme"));
     }
-    if(get(":protocol")){
+    if(has(":protocol")){
         snprintf(Dest.protocol, sizeof(Dest.protocol), "%s", get(":protocol"));
     }
-    if(get(":path")){
+    if(has(":path")){
         snprintf(path, sizeof(path), "%s", get(":path"));
     }else{
         strcpy(path, "/");
@@ -169,7 +181,7 @@ void HttpReqHeader::postparse() {
         URLDecode(buff, filepath.c_str(), filepath.length());
         filename = buff;
     }
-    if(get(AlterMethod)){
+    if(has(AlterMethod)){
         strcpy(method, get(AlterMethod));
         del(AlterMethod);
     }
@@ -233,11 +245,11 @@ bool HttpReqHeader::no_body() const {
     if(ismethod("CONNECT")){
         return false;
     }
-    if(get("Transfer-Encoding")){
+    if(has("Transfer-Encoding")){
         return false;
     }
-    if(get("Content-Length")){
-        return strcmp("0", get("Content-Length")) == 0;
+    if(has("Content-Length")){
+        return has("Content-Length", "0");
     }
     if(strcmp(Dest.protocol, "websocket") == 0) {
         return false;
@@ -249,10 +261,10 @@ bool HttpReqHeader::no_end() const {
     if(no_body()){
         return false;
     }
-    if(get("Transfer-Encoding")){
+    if(has("Transfer-Encoding")){
         return false;
     }
-    if(get("Content-Length")){
+    if(has("Content-Length")){
         return false;
     }
     return true;
@@ -361,18 +373,17 @@ bool HttpResHeader::no_body() const {
        return true;
     }
 
-    return get("content-length") &&
-           memcmp("0", get("content-length"), 2) == 0;
+    return has("content-length", "0");
 }
 
 bool HttpResHeader::no_end() const {
     if(no_body()){
         return false;
     }
-    if(get("transfer-encoding")){
+    if(has("transfer-encoding")){
         return false;
     }
-    if(get("content-length")){
+    if(has("content-length")){
         return false;
     }
     if(status[0] == '1' && memcmp(status, "101", 3) != 0){
@@ -447,7 +458,7 @@ std::shared_ptr<HttpResHeader> HttpResHeader::create(const char *status, size_t 
 bool HttpReqHeader::getrange() {
     const char *range_str = get("Range");
     if(range_str == nullptr){
-        return  true;
+        return true;
     }
     if(strncasecmp(range_str,"bytes=",6) != 0) {
         return false;

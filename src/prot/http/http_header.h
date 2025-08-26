@@ -64,11 +64,12 @@ public:
     uint64_t request_id = 0;
     std::set<std::string> cookies;
 
-    void set(const std::string& header, const std::string& value);
-    void set(const std::string& header, uint64_t value);
-    void append(const std::string& header, const std::string& value);
-    void del(const std::string& header);
+    HttpHeader* set(const std::string& header, const std::string& value);
+    HttpHeader* set(const std::string& header, uint64_t value);
+    HttpHeader* append(const std::string& header, const std::string& value);
+    HttpHeader* del(const std::string& header);
     [[nodiscard]] const char* get(const std::string& header) const;
+    [[nodiscard]] bool has(const std::string& header, const std::string& value = "") const;
     [[nodiscard]] const std::map<std::string, std::string>& getall() const;
 
     [[nodiscard]] virtual bool no_body() const = 0;

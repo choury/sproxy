@@ -304,7 +304,7 @@ std::shared_ptr<IMemRWerCallback> Guest::response(uint64_t id) {
                     return;
                 }
             }
-        } else if (res->get("Transfer-Encoding")) {
+        } else if (res->has("Transfer-Encoding")) {
             status.flags |= HTTP_CHUNK_F;
         }
         if(res->no_end()) {

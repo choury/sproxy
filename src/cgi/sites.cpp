@@ -191,7 +191,7 @@ class handler: public CgiHandler{
         Finish();
     }
     void GET(const CGI_Header*) override{
-        if(strcmp(req->get("X-Authorized"), "1") != 0) {
+        if(!req->has("X-Authorized", "1")) {
             Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
             Finish();
             return;
@@ -234,7 +234,7 @@ class handler: public CgiHandler{
         Finish();
     }
     void POST(const CGI_Header* header) override {
-        if(strcmp(req->get("X-Authorized"), "1") != 0) {
+        if(!req->has("X-Authorized", "1")) {
             Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
             Finish();
             return;
@@ -255,7 +255,7 @@ class handler: public CgiHandler{
         NotImplemented();
     }
     void PUT(const CGI_Header* header) override{
-        if(strcmp(req->get("X-Authorized"), "1") != 0) {
+        if(!req->has("X-Authorized", "1")) {
             Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
             Finish();
             return;
@@ -276,7 +276,7 @@ class handler: public CgiHandler{
             return;
         }
         std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S303, sizeof(S303), req->request_id);
-        if(req->get("Referer") != nullptr){
+        if(req->has("Referer")){
             res->set("Location", req->get("Referer"));
         }else{
             res->set("Location", "/");
@@ -285,7 +285,7 @@ class handler: public CgiHandler{
         Finish();
     }
     void DELETE(const CGI_Header* header)override{
-        if(strcmp(req->get("X-Authorized"), "1") != 0) {
+        if(!req->has("X-Authorized", "1")) {
             Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
             Finish();
             return;
@@ -306,7 +306,7 @@ class handler: public CgiHandler{
             return;
         }
         std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S303, sizeof(S303), req->request_id);
-        if(req->get("Referer") != nullptr){
+        if(req->has("Referer")){
             res->set("Location", req->get("Referer"));
         }else{
             res->set("Location", "/");

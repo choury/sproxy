@@ -219,7 +219,7 @@ void Proxy3::ResProc(uint64_t id, std::shared_ptr<HttpResHeader> header) {
             header->markTunnel();
         }else if(strcmp(status.req->Dest.protocol, "websocket") == 0){
             header->markWebsocket(status.req->get("Sec-WebSocket-Key"));
-        }else if(!header->no_body() && !header->get("Content-Length"))
+        }else if(!header->no_body() && !header->has("Content-Length"))
         {
             header->set("Transfer-Encoding", "chunked");
         }

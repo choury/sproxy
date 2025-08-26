@@ -69,9 +69,8 @@ class handler: public CgiHandler {
             level = std::atoi(params["level"].c_str());
         }
 
-        const char *accept = req->get("Accept-Encoding");
         bool isgzip = false;
-        if (accept && strstr(accept, "gzip")) {
+        if (req->has("Accept-Encoding", "gzip")) {
             res->set("Transfer-Encoding", "chunked");
             res->set("Content-Encoding", "gzip");
             isgzip = true;

@@ -11,11 +11,9 @@
 #include "ping.h"
 #include "uhost.h"
 #include "rproxy2.h"
-#include "rproxy3.h"
 
 #include <string.h>
 #include <assert.h>
-#include <inttypes.h>
 #include <unistd.h>
 #include <sstream>
 
@@ -60,7 +58,7 @@ static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, Reques
     if (!checkauth(src->getSrc().hostname, req->get("Proxy-Authorization"))){
         return CheckResult::AuthFailed;
     }
-    if(req->get("via") && strstr(req->get("via"), identify.c_str())){
+    if(req->has("via") && strstr(req->get("via"), identify.c_str())){
         return CheckResult::LoopBack;
     }
     if(req->Dest.port == 0 && req->ismethod("CONNECT")){
@@ -70,12 +68,11 @@ static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, Reques
     return CheckResult::Succeed;
 }
 
-void response(std::shared_ptr<MemRWer> rw, std::shared_ptr<HttpResHeader> res, const char* body){
-    int len = body ? strlen(body): 0;
-    res->set("Content-Length", len);
+void response(std::shared_ptr<MemRWer> rw, std::shared_ptr<HttpResHeader> res, std::string_view body){
+    res->set("Content-Length", body.size());
     rw->SendHeader(res);
-    if(len) {
-        rw->Send(Buffer{body, (size_t)len, res->request_id});
+    if(!body.empty()) {
+        rw->Send(Buffer{body.data(), body.size(), res->request_id});
     }
     rw->Send(Buffer{nullptr, res->request_id});
 }
@@ -131,7 +128,7 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw,
         case CheckResult::NoPort:
             return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[no port]]\n");
         }
-        if(req->get("rproxy")) {
+        if(req->has("rproxy")) {
             return distribute_rproxy(req, rw, src);
         }
         req->append("Via", identify);
@@ -213,7 +210,7 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
         return;
     }
     std::string filename;
-    if(req->get("rproxy")) {
+    if(req->has("rproxy")) {
         filename = req->get("rproxy");
         req->del("rproxy");
     }else {

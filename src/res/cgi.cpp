@@ -236,7 +236,7 @@ bool Cgi::HandleRes(const CGI_Header *cheader, CgiStatus& status){
     header->request_id = ntohl(cheader->requestId);
 
     LOGD(DFILE, "<cgi> [%s] res %" PRIu64 ": %s\n", basename(filename), header->request_id, header->status);
-    if (!header->no_body() && header->get("content-length") == nullptr) {
+    if (!header->no_body() && !header->has("content-length")) {
         header->set("transfer-encoding", "chunked");
     }
     status.rw->SendHeader(header);

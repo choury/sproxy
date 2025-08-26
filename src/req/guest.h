@@ -8,7 +8,6 @@
 #include "misc/job.h"
 #include "prot/tls.h"
 
-#include <netinet/in.h>
 #include <openssl/ssl.h>
 
 class MemRWer;

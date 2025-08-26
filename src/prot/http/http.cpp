@@ -133,9 +133,9 @@ bool HttpResponser::HeaderProc(Buffer& bb) {
         }
         if(req->no_body()){
             http_flag |= HTTP_IGNORE_BODY_F;
-        }else if(req->get("Transfer-Encoding")!= nullptr) {
+        }else if(req->has("Transfer-Encoding")) {
             Http_Proc = &HttpResponser::ChunkLProc;
-        }else if (req->get("Content-Length") != nullptr){
+        }else if (req->has("Content-Length")){
             Http_Proc = &HttpResponser::FixLenProc;
             http_expectlen = strtoull(req->get("Content-Length"), nullptr, 10);
         }else {
@@ -168,13 +168,13 @@ bool HttpRequester::HeaderProc(Buffer& bb) {
             http_flag |= HTTP_IGNORE_BODY_F;
         }else if(res->status[0] == '1') {
             http_flag |= HTTP_STATUS_1XX;
-        }else if(res->get("Transfer-Encoding")!= nullptr) {
+        }else if(res->has("Transfer-Encoding")) {
             Http_Proc = &HttpRequester::ChunkLProc;
-        }else if(res->get("Content-Length") == nullptr) {
-            Http_Proc = &HttpRequester::AlwaysProc;
-        }else{
+        }else if(res->has("Content-Length")) {
             Http_Proc = &HttpRequester::FixLenProc;
             http_expectlen = strtoull(res->get("Content-Length"), nullptr, 10);
+        }else{
+            Http_Proc = &HttpRequester::AlwaysProc;
         }
 
         if(memcmp(res->status, "101", 3) == 0){
@@ -330,7 +330,7 @@ size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t 
         len += snprintf(buff, size, "%s %s HTTP/1.1" CRLF, method, req->path);
     }
 
-    if(req->get("Host") == nullptr && req->Dest.hostname[0]){
+    if(!req->has("Host") && req->Dest.hostname[0]){
         len += snprintf(buff + len, size-len, "Host: %s" CRLF, dumpAuthority(&req->Dest));
     }
     if(req->chain_proxy) {
@@ -344,7 +344,7 @@ size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t 
     }
     if(strcmp(req->Dest.protocol, "websocket") == 0){
         len += snprintf(buff + len, size-len, "Upgrade: websocket" CRLF "Connection: Upgrade" CRLF);
-        if(req->get("Sec-WebSocket-Key") == nullptr) {
+        if(!req->has("Sec-WebSocket-Key")) {
             //从http2/http3 转过来的websocket请求没有 Sec-WebSocket-Key，但是http1 要求有
             char nonce[16];
             for(int i = 0; i < 16; i++){
@@ -376,8 +376,8 @@ size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t 
 size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t size) {
     char* const buff = (char *)data;
     size_t len = 0;
-    if(res->get("Content-Length") || res->get("Transfer-Encoding")
-        || res->no_body() || res->get("Upgrade"))
+    if(res->has("Content-Length") || res->has("Transfer-Encoding")
+        || res->no_body() || res->has("Upgrade"))
     {
         len += snprintf(buff, size, "HTTP/1.1 %s" CRLF, res->status);
         len += snprintf(buff + len, size-len, "Connection: keep-alive" CRLF);
@@ -395,7 +395,7 @@ size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t 
         len += snprintf(buff + len, size-len, "%s: %s" CRLF, toUpHeader(i.first).c_str(), i.second.c_str());
     }
     if(res->isWebsocket && memcmp(res->status, "101", 3) == 0) {
-        if(res->get("Sec-WebSocket-Accept") == nullptr) {
+        if(!res->has("Sec-WebSocket-Accept")) {
             assert(res->websocketKey.length());
             std::string key = res->websocketKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
             char sha1[20];

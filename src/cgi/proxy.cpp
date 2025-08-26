@@ -4,7 +4,7 @@
 class handler: public CgiHandler{
     static SproxyClient* c;
     void GET(const CGI_Header*) override{
-        if(strcmp(req->get("X-Authorized"), "1") != 0) {
+        if(!req->has("X-Authorized", "1")) {
             Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
             Finish();
             return;
@@ -21,7 +21,7 @@ class handler: public CgiHandler{
         Finish();
     }
     void POST(const CGI_Header* header) override{
-        if(strcmp(req->get("X-Authorized"), "1") != 0) {
+        if(!req->has("X-Authorized", "1")) {
             Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
             Finish();
             return;
