@@ -740,7 +740,14 @@ int QuicBase::doSslConnect(const char* hostname) {
 
     /* Enable automatic hostname checks */
     X509_VERIFY_PARAM_set_hostflags(param, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
-    X509_VERIFY_PARAM_set1_host(param, hostname, strlen(hostname));
+    struct sockaddr_storage addr;
+    if(storage_aton(hostname, 0, &addr) == 1) {
+        addr.ss_family == AF_INET ?
+            X509_VERIFY_PARAM_set1_ip(param, (const uint8_t*)(&((struct sockaddr_in*)&addr)->sin_addr), sizeof(struct in_addr))   :
+            X509_VERIFY_PARAM_set1_ip(param, (const uint8_t*)(&((struct sockaddr_in6*)&addr)->sin6_addr), sizeof(struct in6_addr));
+    } else {
+        X509_VERIFY_PARAM_set1_host(param, hostname, strlen(hostname));
+    }
 
     /* Configure a non-zero callback if desired */
     SSL_set_verify(ssl, SSL_VERIFY_PEER, verify_host_callback);
@@ -1996,9 +2003,8 @@ size_t QuicBase::mem_usage() {
 }
 
 
-QuicRWer::QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
-                   std::shared_ptr<IRWerCallback> cb):
-        QuicBase(hostname), SocketRWer(hostname, port, protocol, std::move(cb))
+QuicRWer::QuicRWer(const Destination& dest, std::shared_ptr<IRWerCallback> cb):
+        QuicBase(dest.hostname), SocketRWer(dest, std::move(cb))
 {
     assert(protocol == Protocol::QUIC);
     con_failed_job = UpdateJob(std::move(con_failed_job),
@@ -2489,9 +2495,9 @@ size_t QuicRWer::mem_usage() {
     return QuicBase::mem_usage() + sizeof(*this);
 }
 
-QuicMer::QuicMer(SSL_CTX *ctx, const Destination& src,
+QuicMer::QuicMer(SSL_CTX *ctx, const Destination& src, const Destination& dst,
                  std::shared_ptr<IMemRWerCallback> _cb):
-        QuicBase(ctx), MemRWer(src, std::move(_cb))
+        QuicBase(ctx), MemRWer(src, dst, std::move(_cb))
 {
 }
 

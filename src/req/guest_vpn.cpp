@@ -298,6 +298,10 @@ size_t Guest_vpn::Recv(Buffer&& bb) {
     return cap;
 }
 
+static void storage2Dest(const sockaddr_storage& ss, Destination* dest) {
+    return storage2Dest(&ss, dest);
+}
+
 void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     assert(statusmap.count(id) == 0);
     statusmap.emplace(id, VpnStatus{});
@@ -307,27 +311,27 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     status.pac = pac;
     char buff[HEADLENLIMIT];
     uint16_t dport = pac->getdport();
-    auto src = pac->getsrc();
-    Destination addr{};
-    storage2Dest(&src, &addr);
+    Destination src, dst;
+    storage2Dest(pac->getsrc(), &src);
+    storage2Dest(pac->getdst(), &dst);
     bool shouldMitm = isFakeIp(pac->getdst()) && shouldNegotiate(status.host);
     status.cb = response(id);
     switch(pac->gettype()){
     case IPPROTO_TCP:{
         if(dport == HTTPPORT) {
-            status.rw = std::make_shared<MemRWer>(addr, status.cb);
+            status.rw = std::make_shared<MemRWer>(src, dst, status.cb);
             new Guest(status.rw);
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             trwer->sendMsg(id, TUN_MSG_SYN);
         } else if(dport == HTTPSPORT) {
             if(shouldMitm || getstrategy(status.host.c_str()).s == Strategy::local) {
                 auto ctx = initssl(0, status.host.c_str());
-                auto wrwer = std::make_shared<SslMer>(ctx, addr, status.cb);
+                auto wrwer = std::make_shared<SslMer>(ctx, src, dst, status.cb);
                 wrwer->set_server_name(status.host);
                 status.rw = wrwer;
                 new Guest(wrwer);
             } else {
-                status.rw = std::make_shared<MemRWer>(addr, status.cb);
+                status.rw = std::make_shared<MemRWer>(src, dst, status.cb);
                 new Guest_sni(status.rw, status.host, generateUA(opt.ua, status.prog, 0).c_str());
             }
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
@@ -340,25 +344,25 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
             status.req = UnpackHttpReq(buff, headlen);
             status.req->request_id = id;
             status.req->set("User-Agent", generateUA(opt.ua, status.prog, id));
-            status.rw = std::make_shared<MemRWer>(addr, status.cb);
-            distribute(status.req, status.rw, this);
+            status.rw = std::make_shared<MemRWer>(src, dst, status.cb);
+            distribute(status.req, status.rw);
         }
         break;
     }
     case IPPROTO_UDP:{
         if(dport == DNSPORT) {
             status.flags |= VPN_DNSREQ_F;
-            status.rw = std::make_shared<PMemRWer>(addr, status.cb);
+            status.rw = std::make_shared<PMemRWer>(src, dst, status.cb);
             FDns::GetInstance()->query(id, status.rw);
 #ifdef HAVE_QUIC
         } else if (dport == HTTPSPORT) {
             if(shouldMitm || getstrategy(status.host.c_str()).s == Strategy::local) {
                 auto ctx = initssl(1, status.host.c_str());
-                auto wrwer = std::make_shared<QuicMer>(ctx, addr, status.cb);
+                auto wrwer = std::make_shared<QuicMer>(ctx, src, dst, status.cb);
                 status.rw = wrwer;
                 new Guest3(wrwer);
             } else {
-                status.rw = std::make_shared<PMemRWer>(addr, status.cb);
+                status.rw = std::make_shared<PMemRWer>(src, dst, status.cb);
                 new Guest_sni(status.rw, status.host, generateUA(opt.ua, status.prog, 0).c_str());
             }
 #endif
@@ -370,8 +374,8 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
             status.req = UnpackHttpReq(buff, headlen);
             status.req->request_id = id;
             status.req->set("User-Agent", generateUA(opt.ua, status.prog, id));
-            status.rw = std::make_shared<PMemRWer>(addr, status.cb);
-            distribute(status.req, status.rw, this);
+            status.rw = std::make_shared<PMemRWer>(src, dst, status.cb);
+            distribute(status.req, status.rw);
         }
         break;
     }
@@ -382,8 +386,8 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
         status.req = UnpackHttpReq(buff, headlen);
         status.req->request_id = id;
         status.req->set("User-Agent", generateUA(opt.ua, status.prog, id));
-        status.rw = std::make_shared<PMemRWer>(addr, status.cb);
-        distribute(status.req, status.rw, this);
+        status.rw = std::make_shared<PMemRWer>(src, dst, status.cb);
+        distribute(status.req, status.rw);
         break;
     }
     case IPPROTO_ICMPV6:{
@@ -393,8 +397,8 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
         status.req = UnpackHttpReq(buff, headlen);
         status.req->request_id = id;
         status.req->set("User-Agent", generateUA(opt.ua, status.prog, id));
-        status.rw = std::make_shared<PMemRWer>(addr, status.cb);
-        distribute(status.req, status.rw, this);
+        status.rw = std::make_shared<PMemRWer>(src, dst, status.cb);
+        distribute(status.req, status.rw);
         break;
     }
     default:

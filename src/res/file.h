@@ -21,7 +21,7 @@ class File: public Responser{
     int  fd = 0;
     struct stat st;
     size_t readHE(Buffer&&);
-    virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*) override;
+    virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) override;
 public:
     explicit File(const char* fname, int fd, const struct stat* st);
     virtual ~File()override;
@@ -29,7 +29,7 @@ public:
     virtual void deleteLater(uint32_t error) override;
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
-    static void getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester* src);
+    static void getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw);
 };
 
 #endif

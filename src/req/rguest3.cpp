@@ -1,9 +1,8 @@
 #include "rguest3.h"
 #include "prot/quic/quicio.h"
 
-Rguest3::Rguest3(const Destination* dest, const std::string& name):
-    Guest3(std::make_shared<QuicRWer>(dest->hostname, dest->port, Protocol::QUIC,
-                                      IRWerCallback::create()->onError([](int, int){}))),
+Rguest3::Rguest3(const Destination& dest, const std::string& name):
+    Guest3(std::make_shared<QuicRWer>(dest, IRWerCallback::create()->onError([](int, int){}))),
     name(name)
 {
     auto qrwer = std::dynamic_pointer_cast<QuicRWer>(rwer);

@@ -29,9 +29,8 @@ void Unreach(std::shared_ptr<IpStatus> status, uint8_t code) {
             break;
         }
     }
-    Buffer bb{std::move(*status->packet_hdr), status->packet_hdr_len};
-    status->packet_hdr = nullptr;
-    status->packet_hdr = nullptr;
+    Buffer bb{status->packet_hdr.data(), status->packet_hdr.size()};
+    status->packet_hdr.clear();
     pac->build_packet(bb);
 #if __linux__
     if (status->flags & TUN_GSO_OFFLOAD) {

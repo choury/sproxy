@@ -26,7 +26,9 @@ char* strlchrnul (const char* s, int c);
 
 int URLEncode(char *des,const char* src, size_t len);
 int URLDecode(char *des,const char* src, size_t len);
-void Base64Encode(const char* s, size_t len, char* dst);
+size_t Base64Encode(const char* s, size_t len, char* dst);
+size_t Base64EnUrl(const char *s, size_t len, char *dst);
+size_t Base64DeUrl(const char *s, size_t len, char* dst);
 
 void dump_trace(int ignore);
 

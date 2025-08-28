@@ -22,9 +22,9 @@ static void StatusDump(void* param, const char* fmt, ...) {
     free(buff);
 }
 
-void Status::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester* src){
+void Status::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw){
     uint64_t id = req->request_id;
-    if(!checkauth(src->getSrc().hostname, req->get("Authorization"))){
+    if(!checkauth(rw->getSrc().hostname, req->get("Authorization"))){
         response(rw, HttpResHeader::create(S401, sizeof(S401), id), "");
     }else{
         std::shared_ptr<HttpResHeader> header = HttpResHeader::create(S200, sizeof(S200), id);

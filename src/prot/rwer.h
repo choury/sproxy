@@ -33,7 +33,11 @@ struct IRWerCallback: public std::enable_shared_from_this<IRWerCallback> {
     //返回值是处理的数据长度，返回len表示数据处理完毕，返回0表示数据完全没有被消费
     //!!readCB不可重入，调用者需通过 RWER_READING来保证这一点
     std::function<size_t(Buffer&& bb)> readCB = [](Buffer&& bb) {
-        LOGE("send data to stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
+        if (bb.len) {
+            LOGE("send data to stub readCB: %zd [%" PRIu64 "]\n", bb.len, bb.id);
+        } else {
+            LOGD(DRWER, "send eof to stub readCB: [%" PRIu64"]\n", bb.id);
+        }
         return (size_t)0;
     };
     std::function<void(uint64_t id)> writeCB = [](uint64_t) {};

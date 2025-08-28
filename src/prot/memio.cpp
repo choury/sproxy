@@ -4,10 +4,11 @@
 #include "misc/hook.h"
 #include <inttypes.h>
 
-MemRWer::MemRWer(const Destination& src, std::shared_ptr<IMemRWerCallback> cb):
+MemRWer::MemRWer(const Destination& src, const Destination& dst, std::shared_ptr<IMemRWerCallback> cb):
     FullRWer(IRWerCallback::create()->onError([](int, int){})), _callback(std::move(cb))
 {
     memcpy(&this->src, &src, sizeof(Destination));
+    memcpy(&this->dst, &dst, sizeof(Destination));
 }
 
 MemRWer::~MemRWer() {

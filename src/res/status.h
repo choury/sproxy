@@ -7,7 +7,7 @@
 class Status: public Responser{
 public:
     Status();
-    virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*) override;
+    virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) override;
     virtual void dump_stat(Dumper dp, void* param)override;
     virtual void dump_usage(Dumper dp, void* param)override;
 };

@@ -18,10 +18,10 @@ class Ping: public Responser{
 #define PING_IS_RESPONSED 4
     uint32_t    flags  = 0;
 public:
-    Ping(const char *host, uint16_t id);
+    Ping(const Destination& dest);
     explicit Ping(std::shared_ptr<HttpReqHeader> req);
     virtual void deleteLater(uint32_t errcode) override;
-    virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*) override;
+    virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) override;
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
 };

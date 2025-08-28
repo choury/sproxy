@@ -8,7 +8,7 @@
 #include <inttypes.h>
 #include <assert.h>
 
-Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
+Ping::Ping(const Destination& dest): id(dest.port?:random()&0xffff) {
     cb = ISocketCallback::create()->onConnect([this](const sockaddr_storage& addr, uint32_t){
         const sockaddr_in6 *addr6 = (const sockaddr_in6*)&addr;
         family = addr6->sin6_family;
@@ -46,16 +46,16 @@ Ping::Ping(const char* host, uint16_t id): id(id?:random()&0xffff) {
         LOGE("(%s) Ping error: %d/%d\n", dumpDest(rwer->getDst()).c_str(), ret, code);
         deleteLater(ret);
     });
-    rwer = std::make_shared<PacketRWer>(host, this->id, Protocol::ICMP, cb);
+    rwer = std::make_shared<PacketRWer>(dest, cb);
 }
 
 
 Ping::Ping(std::shared_ptr<HttpReqHeader> req):
-    Ping(req->Dest.hostname, req->Dest.port)
+    Ping(req->Dest)
 {
 }
 
-void Ping::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*) {
+void Ping::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     status.req = req;
     status.rw = rw;
     status.cb = IRWerCallback::create()->onRead([this](Buffer&& bb) -> size_t {

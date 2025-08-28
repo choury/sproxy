@@ -150,32 +150,78 @@ int URLDecode(char *des, const char *src, size_t len)
     return j;
 }
 
-static const char *base64_digs="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+static const char *base64_endigs_normal ="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+static const char *base64_endigs_url ="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-void Base64Encode(const char *s, size_t len, char *dst){
+static size_t Base64(const char* endigs, const char *s, size_t len, char *dst, bool nopad){
     size_t i=0,j=0;
     const unsigned char* src = (const unsigned char *)s;
     for(;i+2<len;i+=3){
-        dst[j++] = base64_digs[src[i]>>2];
-        dst[j++] = base64_digs[((src[i]<<4) & 0x30) | src[i+1]>>4];
-        dst[j++] = base64_digs[((src[i+1]<<2) & 0x3c) | src[i+2]>>6];
-        dst[j++] = base64_digs[src[i+2] & 0x3f];
+        dst[j++] = endigs[src[i]>>2];
+        dst[j++] = endigs[((src[i]<<4) & 0x30) | src[i+1]>>4];
+        dst[j++] = endigs[((src[i+1]<<2) & 0x3c) | src[i+2]>>6];
+        dst[j++] = endigs[src[i+2] & 0x3f];
     }
     if(i == len-1){
-        dst[j++] = base64_digs[src[i]>>2];
-        dst[j++] = base64_digs[(src[i]<<4) & 0x30];
-        dst[j++] = '=';
-        dst[j++] = '=';
+        dst[j++] = endigs[src[i]>>2];
+        dst[j++] = endigs[(src[i]<<4) & 0x30];
+        if (!nopad) {
+            dst[j++] = '=';
+            dst[j++] = '=';
+        }
     }else if(i == len-2){
-        dst[j++] = base64_digs[src[i]>>2];
-        dst[j++] = base64_digs[((src[i]<<4) & 0x30) | src[i+1]>>4];
-        dst[j++] = base64_digs[(src[i+1]<<2) & 0x3c];
-        dst[j++] = '=';
+        dst[j++] = endigs[src[i]>>2];
+        dst[j++] = endigs[((src[i]<<4) & 0x30) | src[i+1]>>4];
+        dst[j++] = endigs[(src[i+1]<<2) & 0x3c];
+        if (!nopad) dst[j++] = '=';
     }
-    dst[j++] = 0;
+    dst[j] = 0;
+    return j;
 }
 
+size_t Base64Encode(const char *s, size_t len, char *dst){
+    return Base64(base64_endigs_normal, s, len, dst, false);
+}
 
+size_t Base64EnUrl(const char *s, size_t len, char *dst){
+    return Base64(base64_endigs_url, s, len, dst, true);
+}
+
+static const char base64_dedigs_url[128] =
+{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+ 0,0,0,0,0,0,0,0,0,0,0,0,0,62,0,0,
+ 52,53,54,55,56,57,58,59,60,61,0,0,0,0,0,0,
+ 0,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,
+ 15,16,17,18,19,20,21,22,23,24,25,0,0,0,0,63,
+ 0,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+ 41,42,43,44,45,46,47,48,49,50,51,0,0,0,0,0
+};
+
+
+static size_t DeBase64(const char* base64_dedigs, const char *src, size_t len, char* dst) {
+    size_t i=0, j = 0;
+    for(;i<len; i+= 4){
+        char ch1 = (base64_dedigs[(int)src[i]]<<2) | (base64_dedigs[(int)src[i+1]] >>4);
+        dst[j++] = ch1;
+        if(i+2 >= len || src[i+2] == '='){
+            break;
+        }
+        char ch2 = (base64_dedigs[(int)src[i+1]]<<4) | (base64_dedigs[(int)src[i+2]] >>2);
+        dst[j++] = ch2;
+        if(i+3 >= len || src[i+3] == '='){
+            break;
+        }
+        char ch3 = (base64_dedigs[(int)src[i+2]]<<6) | base64_dedigs[(int)src[i+3]];
+        dst[j++] = ch3;
+    }
+    dst[j] = 0;
+    return j;
+}
+
+size_t Base64DeUrl(const char *src, size_t len, char* dst){
+    return DeBase64(base64_dedigs_url, src, len, dst);
+}
 
 const char * protstr(Protocol p) {
     if(p == TCP){

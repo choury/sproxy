@@ -7,8 +7,8 @@
 #include <inttypes.h>
 #include <assert.h>
 
-Uhost::Uhost(const char* host, uint16_t port): port(port) {
-    strncpy(hostname, host, DOMAINLIMIT);
+Uhost::Uhost(const Destination& dest): port(dest.port) {
+    strncpy(hostname, dest.hostname, DOMAINLIMIT);
     idle_timeour = AddJob([this]{deleteLater(CONNECT_AGED);}, 30000, 0);
     cb = ISocketCallback::create()->onConnect([this](const sockaddr_storage&, uint32_t){
         LOGD(DHTTP, "<uhost> %s connected\n", dumpDest(rwer->getDst()).c_str());
@@ -43,11 +43,11 @@ Uhost::Uhost(const char* host, uint16_t port): port(port) {
         LOGE("(%s) UDP error: %d/%d\n", dumpDest(rwer->getDst()).c_str(), ret, code);
         deleteLater(ret);
     });
-    rwer = std::make_shared<PacketRWer>(host, port, Protocol::UDP, cb);
+    rwer = std::make_shared<PacketRWer>(dest, cb);
 }
 
 Uhost::Uhost(std::shared_ptr<HttpReqHeader> req):
-    Uhost(req->Dest.hostname, req->Dest.port)
+    Uhost(req->Dest)
 {
 }
 
@@ -61,7 +61,7 @@ Uhost::~Uhost() {
     }
 }
 
-void Uhost::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*) {
+void Uhost::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     LOGD(DHTTP, "<uhost> request %" PRIu64 ": %s\n",
          req->request_id, req->geturl().c_str());
     status.req = req;

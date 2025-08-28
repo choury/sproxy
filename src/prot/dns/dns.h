@@ -12,7 +12,6 @@
 
 typedef HEADER DNS_HDR;
 
-
 struct Dns_Query{
     char domain[DOMAINLIMIT];
     sockaddr_storage ptr_addr;

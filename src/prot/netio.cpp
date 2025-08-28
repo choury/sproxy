@@ -34,15 +34,32 @@ SocketRWer::SocketRWer(int fd, const sockaddr_storage* src, std::shared_ptr<IRWe
     }
 }
 
-SocketRWer::SocketRWer(const char* hostname, uint16_t port, Protocol protocol, std::shared_ptr<IRWerCallback> cb):
-            RWer(std::move(cb)), port(port), protocol(protocol)
+Protocol getRawProtocol(const char* proto) {
+    if(strcmp(proto, "udp") == 0) {
+        return Protocol::UDP;
+    } else if(strcmp(proto, "icmp") == 0) {
+        return Protocol::ICMP;
+    } else if(strcmp(proto, "quic") == 0) {
+        return Protocol::QUIC;
+    }
+    return Protocol::TCP;
+}
+
+SocketRWer::SocketRWer(const Destination& dest, std::shared_ptr<IRWerCallback> cb):
+            RWer(std::move(cb)), port(dest.port), protocol(getRawProtocol(dest.protocol))
 {
-    strcpy(this->hostname, hostname);
+    strcpy(this->hostname, dest.hostname);
     stats = RWerStats::Resolving;
-    dns_job = AddJob([this]{
+    if(dest.system_resolve){
         //这里使用job,因为shared_from_this不能在构造函数里面用
-        query_host(this->hostname, SocketRWer::Dnscallback, shared_from_this());
-    }, 0, 0);
+        dns_job = AddJob([this]{
+            query_host(this->hostname, SocketRWer::Dnscallback, shared_from_this(), true);
+        }, 0, 0);
+    }else{
+        dns_job = AddJob([this]{
+            query_host(this->hostname, SocketRWer::Dnscallback, shared_from_this());
+        }, 0, 0);
+    }
 }
 
 SocketRWer::~SocketRWer() {

@@ -165,7 +165,7 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
         if(header->Dest.port == HTTPSPORT && shouldNegotiate(header, this)) {
             if(!headless) rwer->Send({HCONNECT, strlen(HCONNECT), id});
             auto ctx = initssl(0, header->Dest.hostname);
-            auto srwer = std::make_shared<SslMer>(ctx, rwer->getSrc(), _cb);
+            auto srwer = std::make_shared<SslMer>(ctx, getSrc(), getDst(), _cb);
             statuslist.emplace_back(ReqStatus{header, srwer, _cb, HTTP_NOEND_F});
             new Guest(srwer);
             return;
@@ -189,13 +189,13 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     LOGD(DHTTP, "<guest> ReqProc %" PRIu64 " %s\n", header->request_id, header->geturl().c_str());
     std::shared_ptr<MemRWer> rw;
     if(strcmp(header->Dest.protocol, "udp") == 0 || strcmp(header->Dest.protocol, "icmp") == 0) {
-        rw = std::make_shared<PMemRWer>(getSrc(), _cb);
+        rw = std::make_shared<PMemRWer>(getSrc(), getDst(), _cb);
     } else {
-        rw = std::make_shared<MemRWer>(getSrc(), _cb);
+        rw = std::make_shared<MemRWer>(getSrc(), getDst(), _cb);
     }
     statuslist.emplace_back(ReqStatus{header, rw, _cb});
     if(statuslist.size() == 1){
-        distribute(header, rw, this);
+        distribute(header, rw);
     } else {
         LOGD(DHTTP, "<guest> ReqProc %" PRIu64 " %s, waiting for the previous request to finish\n",
              header->request_id, header->geturl().c_str());
@@ -218,7 +218,7 @@ void Guest::deqReq() {
         auto& status = statuslist.front();
         LOGD(DHTTP, "<guest> deqReq %" PRIu64 " %s\n",
              status.req->request_id, status.req->geturl().c_str());
-        distribute(status.req, status.rw, this);
+        distribute(status.req, status.rw);
     }else if(rwer->isEof()){
         //不会再有新的请求了，可以直接关闭
         deleteLater(NOERROR);

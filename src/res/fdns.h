@@ -13,6 +13,8 @@ class FDns: public Responser{
         std::map<uint16_t, std::shared_ptr<Dns_Query>> quemap;
     };
     std::map<uint64_t, FDnsStatus> statusmap;
+    size_t succeed_count = 0;
+    size_t failed_count = 0;
 
     void Recv(Buffer&& bb);
     static void RawCb(std::shared_ptr<void> param, const char *buff, size_t size);
@@ -21,7 +23,7 @@ class FDns: public Responser{
     virtual ~FDns() override;
 public:
     static FDns* GetInstance();
-    virtual void request(std::shared_ptr<HttpReqHeader>, std::shared_ptr<MemRWer>, Requester*) override {};
+    virtual void request(std::shared_ptr<HttpReqHeader>, std::shared_ptr<MemRWer>) override {};
     void query(uint64_t id, std::shared_ptr<RWer> rwer);
     void query(Buffer&& bb, std::shared_ptr<RWer> rwer);
     virtual void dump_stat(Dumper dp, void* param) override;

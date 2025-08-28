@@ -80,7 +80,7 @@ public:
         set_server_name(storage_ntoa(peer));
     }
 
-    SslRWer(const char* hostname, uint16_t port, Protocol protocol, std::shared_ptr<IRWerCallback> cb);
+    SslRWer(const Destination& dest, std::shared_ptr<IRWerCallback> cb);
     virtual void ReadData() override;
     virtual void Send(Buffer&& bb) override;
 
@@ -124,8 +124,9 @@ protected:
         }
     }
 public:
-    SslMer(SSL_CTX* ctx, const Destination& src, std::shared_ptr<IMemRWerCallback> _cb):
-      SslRWerBase(ctx), MemRWer(src, std::move(_cb))
+    SslMer(SSL_CTX* ctx, const Destination& src, const Destination& dst,
+        std::shared_ptr<IMemRWerCallback> _cb):
+      SslRWerBase(ctx), MemRWer(src, dst, std::move(_cb))
     {
         set_server_name(src.hostname);
     }

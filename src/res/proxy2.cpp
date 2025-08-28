@@ -256,7 +256,7 @@ void Proxy2::PingProc(const Http2_header *header){
     Http2Base::PingProc(header);
 }
 
-void Proxy2::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*) {
+void Proxy2::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     uint32_t id = OpenStream();
     assert((http2_flag & HTTP2_FLAG_GOAWAYED) == 0);
     LOGD(DHTTP2, "<proxy2> request: %s [%d]\n", req->geturl().c_str(), id);
@@ -347,7 +347,7 @@ void Proxy2::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer
 void Proxy2::init(bool enable_push, std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     Http2Requster::init(enable_push);
     if(req) {
-        request(req, rw, nullptr);
+        request(req, rw);
     }
     cb->onRead([this](Buffer&& bb) -> size_t {
         HOOK_FUNC(this, statusmap, bb);

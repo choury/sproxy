@@ -4,6 +4,7 @@
 #include "common/common.h"
 #include "ip_pack.h"
 #include <unistd.h>
+#include <string>
 #include <functional>
 
 class Buffer;
@@ -30,8 +31,7 @@ struct IpStatus{
     Protocol    protocol;
     sockaddr_storage src;
     sockaddr_storage dst;
-    std::shared_ptr<Block> packet_hdr;
-    uint16_t               packet_hdr_len;
+    std::string      packet_hdr;
 #define  TUN_GSO_OFFLOAD 1
 #define  TUN_SEND_EOF    2
     uint32_t    flags = 0;

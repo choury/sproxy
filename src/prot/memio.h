@@ -49,6 +49,7 @@ struct IMemRWerCallback: std::enable_shared_from_this<IMemRWerCallback> {
 class MemRWer: public FullRWer{
 protected:
     Destination src;
+    Destination dst;
     std::weak_ptr<IMemRWerCallback> _callback;
     CBuffer rb;
     //std::function<void(const sockaddr_storage&)> connectCB = [](const sockaddr_storage&){};
@@ -61,7 +62,7 @@ protected:
     virtual size_t rlength(uint64_t id) override;
 
 public:
-    explicit MemRWer(const Destination& src, std::shared_ptr<IMemRWerCallback> cb);
+    explicit MemRWer(const Destination& src, const Destination& dst, std::shared_ptr<IMemRWerCallback> cb);
     ~MemRWer() override;
 
     virtual size_t bufsize() {
@@ -97,6 +98,9 @@ public:
     virtual void ConsumeRData(uint64_t) override;
     virtual Destination getSrc() const override {
         return src;
+    }
+    virtual Destination getDst() const override {
+        return dst;
     }
     virtual void dump_status(Dumper dp, void* param) override;
     virtual size_t mem_usage() override{

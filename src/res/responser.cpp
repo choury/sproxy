@@ -54,8 +54,8 @@ bool shouldNegotiate(std::shared_ptr<const HttpReqHeader> req, Requester* src){
     return false;
 }
 
-static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, Requester* src){
-    if (!checkauth(src->getSrc().hostname, req->get("Proxy-Authorization"))){
+static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, const char* src_host){
+    if (!checkauth(src_host, req->get("Proxy-Authorization"))){
         return CheckResult::AuthFailed;
     }
     if(req->has("via") && strstr(req->get("via"), identify.c_str())){
@@ -77,15 +77,15 @@ void response(std::shared_ptr<MemRWer> rw, std::shared_ptr<HttpResHeader> res, s
     rw->Send(Buffer{nullptr, res->request_id});
 }
 
-void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester* src){
-    HOOK_FUNC(req, src);
+void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw){
+    HOOK_FUNC(req, rw);
     defer([req] { req->tracker.emplace_back("distribute", getmtime()); });
     auto id = req->request_id;
     //std::shared_ptr<HttpRes> res;
     if(!req->Dest.hostname[0]){
         return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[host not set]]\n");
     }
-    if(opt.redirect_http && opt.ssl.hostname[0] && src->getDst().port == opt.http.port) {
+    if(opt.redirect_http && opt.ssl.hostname[0] && rw->getDst().port == opt.http.port) {
         auto reqh = HttpReqHeader(*req);
         strcpy(reqh.Dest.scheme, "https");
         reqh.Dest.port = opt.ssl.port;
@@ -107,15 +107,15 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw,
                                                 "[[unsported method]]\n");
             }
             if(!opt.restrict_local ||
-               (req->http_method() && (src->getDst().port == 0 || req->getDport() == src->getDst().port)))
+               (req->http_method() && (rw->getDst().port == 0 || req->getDport() == rw->getDst().port)))
             {
                 req->set(STRATEGY, getstrategystring(Strategy::local));
-                return File::getfile(req, rw, src);
+                return File::getfile(req, rw);
             }
             stra.s = Strategy::direct;
         }
         req->set(STRATEGY, getstrategystring(stra.s));
-        switch(check_header(req, src)){
+        switch(check_header(req, rw->getSrc().hostname)){
         case CheckResult::Succeed:
             break;
         case CheckResult::AuthFailed: {
@@ -129,7 +129,7 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw,
             return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[no port]]\n");
         }
         if(req->has("rproxy")) {
-            return distribute_rproxy(req, rw, src);
+            return distribute_rproxy(req, rw);
         }
         req->append("Via", identify);
         Destination dest;
@@ -152,10 +152,10 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw,
             memcpy(&dest, &req->Dest, sizeof(dest));
             dest.port = req->getDport();
             if(strcmp(req->Dest.protocol, "icmp") == 0){
-                return (new Ping(req))->request(req, rw, src);
+                return (new Ping(req))->request(req, rw);
             }
             if(strcmp(req->Dest.protocol, "udp") == 0) {
-                return (new Uhost(req))->request(req, rw, src);
+                return (new Uhost(req))->request(req, rw);
             }
             req->del("Proxy-Authorization");
             break;
@@ -181,7 +181,8 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw,
         default:
             return response(rw, HttpResHeader::create(S503, sizeof(S503), id), "[[BUG]]\n");
         }
-        return Host::distribute(req, dest, rw, src);
+        dest.system_resolve = req->Dest.system_resolve;
+        return Host::distribute(req, dest, rw);
     } else{
         return response(rw, HttpResHeader::create(S405, sizeof(S405), id), "[[unsported method]]\n");
     }
@@ -203,9 +204,9 @@ static std::vector<std::string> split(const std::string& s, char delimiter) {
 
 
 
-void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester* src) {
+void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     uint64_t id = req->request_id;
-    if(!checkauth(src->getSrc().hostname, req->get("Authorization"))){
+    if(!checkauth(rw->getSrc().hostname, req->get("Authorization"))){
         response(rw, HttpResHeader::create(S401, sizeof(S401), id), "");
         return;
     }
@@ -260,12 +261,12 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
     }
     req->set(STRATEGY, std::string("rproxy/")+filename);
     if(filename == "local") {
-        return distribute(req, rw, src);
+        return distribute(req, rw);
     }
     if(rproxys.count(filename) == 0) {
         response(rw, HttpResHeader::create(S404, sizeof(S404), id), "");
         return;
     }
-    rproxys[filename]->request(req, rw, src);
+    rproxys[filename]->request(req, rw);
 }
 

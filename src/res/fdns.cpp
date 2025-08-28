@@ -159,6 +159,7 @@ void FDns::Recv(Buffer&& bb) {
     auto que = std::make_shared<Dns_Query>((const char *)bb.data(), bb.len);
     if(!que->valid){
         LOGD(DDNS, "invalid dns request [%" PRIu64"], len: %zd\n", id, bb.len);
+        failed_count++;
         statusmap.erase(id);
         return;
     }
@@ -212,6 +213,7 @@ void FDns::Recv(Buffer&& bb) {
     Buffer buff{BUF_LEN, bb.id};
     buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data()));
     status.rw->Send(std::move(buff));
+    succeed_count++;
     delete result;
     // Clean up session after sending fake IP response
     if(status.quemap.empty()) {
@@ -228,6 +230,7 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockadd
     uint64_t id = index.hi;
 #endif
     if(fdns->statusmap.count(id) == 0){
+        fdns->failed_count++;
         return;
     }
     FDnsStatus& status = fdns->statusmap.at(id);
@@ -245,6 +248,7 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockadd
     if(error) {
         buff.truncate(Dns_Result::buildError(que.get(), error, (uchar*)buff.mutable_data()));
         status.rw->Send(std::move(buff));
+        fdns->failed_count++;
     } else if(opt.disable_fakeip){
         for(const auto& addr : addrs) {
             if ((que->type == ns_t_a && addr.ss_family == AF_INET) ||
@@ -256,6 +260,7 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockadd
         result->ttl = ttl;
         buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data()));
         status.rw->Send(std::move(buff));
+        fdns->succeed_count++;
     } else {
         for(const auto& addr : addrs) {
             if(isLoopBack(&addr)) {
@@ -279,6 +284,7 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockadd
         }
         buff.truncate(result->build(que.get(), (uchar*)buff.mutable_data()));
         status.rw->Send(std::move(buff));
+        fdns->succeed_count++;
     }
     delete result;
     status.quemap.erase(que->id);
@@ -315,11 +321,13 @@ void FDns::RawCb(std::shared_ptr<void> param, const char* data, size_t size) {
         dnshdr->id = htons(que->id);
         buff.truncate(size);
         status.rw->Send(std::move(buff));
+        fdns->succeed_count++;
     }else {
         LOGD(DDNS, "<FDNS> Query raw response [%d] error\n", que->id);
         Dns_Result rr(que->domain);
         buff.truncate(Dns_Result::buildError(que.get(), ns_r_servfail, (unsigned char*)buff.mutable_data()));
         status.rw->Send(std::move(buff));
+        fdns->failed_count++;
     }
     status.quemap.erase(que->id);
     if(status.quemap.empty()) {
@@ -328,7 +336,7 @@ void FDns::RawCb(std::shared_ptr<void> param, const char* data, size_t size) {
 }
 
 void FDns::dump_stat(Dumper dp, void* param) {
-    dp(param, "FDns: %p, size: %zu\n", this, statusmap.size());
+    dp(param, "FDns: %p, sessions: %zu, succeed: %zd, failed: %zd\n", this, statusmap.size(), succeed_count, failed_count);
     for(const auto& i : statusmap) {
         const FDnsStatus& status = i.second;
         dp(param, "  [%" PRIu64 "]: %s\n", i.first, dumpDest(status.rw->getSrc()).c_str());

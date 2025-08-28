@@ -126,10 +126,10 @@ int main(int argc, char **argv) {
         // 根据协议选择rguest2还是rguest3
         if(strcmp(opt.Server.protocol, "quic") == 0) {
             LOG("Starting rproxy3 client to %s\n", dumpDest(opt.Server).c_str());
-            new Rguest3(&opt.Server, opt.rproxy_name);
+            new Rguest3(opt.Server, opt.rproxy_name);
         } else {
             LOG("Starting rproxy2 client to %s\n", dumpDest(opt.Server).c_str());
-            new Rguest2(&opt.Server, opt.rproxy_name);
+            new Rguest2(opt.Server, opt.rproxy_name);
         }
 #else
         LOG("Starting rproxy2 client to %s\n", dumpDest(opt.Server).c_str());

@@ -88,13 +88,13 @@ Guest::ReqStatus* Guest_sni::forward(const char *hostname, Protocol prot, uint64
     if(shouldNegotiate(hostname) && prot == Protocol::TCP) {
 #endif
             ctx = initssl(0, hostname);
-            auto srwer = std::make_shared<SslMer>(ctx, rwer->getSrc(), _cb);
+            auto srwer = std::make_shared<SslMer>(ctx, getSrc(), getDst(), _cb);
             statuslist.emplace_back(ReqStatus{req, srwer, _cb, HTTP_NOEND_F});
             new Guest(srwer);
 #ifdef HAVE_QUIC
         } else {
             ctx = initssl(1, hostname);
-            auto srwer = std::make_shared<QuicMer>(ctx, rwer->getSrc(), _cb);
+            auto srwer = std::make_shared<QuicMer>(ctx, getSrc(), getDst(), _cb);
             statuslist.emplace_back(ReqStatus{req, srwer, _cb, HTTP_NOEND_F});
             new Guest3(srwer);
         }

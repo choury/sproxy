@@ -336,8 +336,7 @@ protected:
 
     void pathValidationTimeout();
 public:
-    explicit QuicRWer(const char* hostname, uint16_t port, Protocol protocol,
-             std::shared_ptr<IRWerCallback> cb);
+    explicit QuicRWer(const Destination& dest, std::shared_ptr<IRWerCallback> cb);
     explicit QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, Quic_server* server);
     virtual void Send(Buffer&& bb) override;
     virtual void Close() override;
@@ -381,8 +380,9 @@ protected:
     virtual void Send(Buffer&& bb) override;
     virtual void ConsumeRData(uint64_t) override;
 public:
-    explicit QuicMer(SSL_CTX *ctx, const Destination& src,
-                     std::shared_ptr<IMemRWerCallback> _cb);
+    explicit QuicMer(SSL_CTX *ctx,
+                    const Destination& src, const Destination& dst,
+                    std::shared_ptr<IMemRWerCallback> _cb);
 
     virtual bool isTls() override {
         return true;

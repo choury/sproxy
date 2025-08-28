@@ -178,9 +178,9 @@ void savesites(){
             continue;
         }
 
-        if(fprintf(opt.policy_write, 
-            "%s %s %s\n", i.first.c_str(), 
-            getstrategystring(i.second.s), 
+        if(fprintf(opt.policy_write,
+            "%s %s %s\n", i.first.c_str(),
+            getstrategystring(i.second.s),
             i.second.ext.c_str()) <= 0)
         {
             LOGE("failed to update policy: %s\n", strerror(errno));
@@ -288,7 +288,7 @@ std::list<std::pair<std::string, strategy>> getallstrategy(){
 }
 
 static std::set<string> secrets;
-static std::set<string> authips{"127.0.0.1", "[::1]"};
+static std::set<string> authips{"127.0.0.1", "[::1]", "localhost"};
 
 void addsecret(const char* secret) {
     secrets.emplace(secret);

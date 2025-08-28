@@ -20,20 +20,20 @@ static const unsigned char alpn_protos_http12[] =
 __attribute__((unused)) static const unsigned char alpn_protos_http3[] =
     "\x02h3";
 
-Host::Host(const Destination* dest){
-    assert(dest->port);
-    assert(dest->protocol[0]);
-    memcpy(&Server, dest, sizeof(Destination));
-    bool isWebsocket = strcmp(dest->protocol, "websocket") == 0;
+Host::Host(const Destination& dest){
+    assert(dest.port);
+    assert(dest.protocol[0]);
+    memcpy(&Server, &dest, sizeof(Destination));
+    bool isWebsocket = strcmp(dest.protocol, "websocket") == 0;
     cb = ISocketCallback::create()->onConnect([this](const sockaddr_storage&, uint32_t resolved_time){
         connected(resolved_time);
     })->onError([this](int ret, int code){
         Error(ret, code);
     });
-    if(strcmp(dest->protocol, "tcp") == 0 || (isWebsocket && strcmp(dest->scheme, "http") == 0)){
-        rwer = std::make_shared<StreamRWer>(dest->hostname, dest->port, Protocol::TCP, cb);
-    }else if(strcmp(dest->protocol, "ssl") == 0 || (isWebsocket && strcmp(dest->scheme, "https") == 0)){
-        auto srwer = std::make_shared<SslRWer>(dest->hostname, dest->port, Protocol::TCP, cb);
+    if(strcmp(dest.protocol, "tcp") == 0 || (isWebsocket && strcmp(dest.scheme, "http") == 0)){
+        rwer = std::make_shared<StreamRWer>(dest, cb);
+    }else if(strcmp(dest.protocol, "ssl") == 0 || (isWebsocket && strcmp(dest.scheme, "https") == 0)){
+        auto srwer = std::make_shared<SslRWer>(dest, cb);
         if(!opt.disable_http2 && !isWebsocket){
             //FIXME: 基于http2的websocket协议暂时禁用，因为在连接之前无法判断服务端是否能支持
             //根据rfc8441，只有连接建立之后收到setting帧才能判断
@@ -41,13 +41,13 @@ Host::Host(const Destination* dest){
         }
         rwer = srwer;
 #ifdef HAVE_QUIC
-    }else if(strcmp(dest->protocol, "quic") == 0){
-        auto qrwer = std::make_shared<QuicRWer>(dest->hostname, dest->port, Protocol::QUIC, cb);
+    }else if(strcmp(dest.protocol, "quic") == 0){
+        auto qrwer = std::make_shared<QuicRWer>(dest, cb);
         qrwer->setAlpn(alpn_protos_http3, sizeof(alpn_protos_http3) - 1);
         rwer = qrwer;
 #endif
     }else{
-        LOGE("Unknown protocol: %s\n", dest->protocol);
+        LOGE("Unknown protocol: %s\n", dest.protocol);
     }
 }
 
@@ -84,7 +84,7 @@ void Host::connected(uint32_t resolved_time) {
     std::string key = dumpDest(Server) + '@' + Server.protocol;
     LOGD(DHTTP, "<host> %s (%s) connected\n", dumpDest(rwer->getDst()).c_str(), key.c_str());
     if(responsers.has(key)) {
-        responsers.at(key)->request(status.req, status.rw, nullptr);
+        responsers.at(key)->request(status.req, status.rw);
         return Server::deleteLater(NOERROR);
     }
     auto srwer = std::dynamic_pointer_cast<SslRWer>(rwer);
@@ -156,7 +156,7 @@ void Host::connected(uint32_t resolved_time) {
     reply();
 }
 
-void Host::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*) {
+void Host::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     if(rwer == nullptr) {
         uint64_t id = req->request_id;
         response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[Unknown protocol]]\n");
@@ -301,12 +301,12 @@ void Host::deleteLater(uint32_t errcode){
     Server::deleteLater(errcode);
 }
 
-void Host::distribute(std::shared_ptr<HttpReqHeader> req, const Destination& dest, std::shared_ptr<MemRWer> rw, Requester* src) {
+void Host::distribute(std::shared_ptr<HttpReqHeader> req, const Destination& dest, std::shared_ptr<MemRWer> rw) {
     std::string key = dumpDest(dest) + '@' + dest.protocol;
     if(responsers.has(key)) {
-        return responsers.at(key)->request(req, rw, src);
+        return responsers.at(key)->request(req, rw);
     }
-    return (new Host(&dest))->request(req, rw, src);
+    return (new Host(dest))->request(req, rw);
 }
 
 void Host::dump_stat(Dumper dp, void* param) {

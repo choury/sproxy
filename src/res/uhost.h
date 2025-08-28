@@ -19,11 +19,11 @@ class Uhost: public Responser{
     size_t rx_dropped = 0;
     Job    idle_timeour = nullptr;
 public:
-    Uhost(const char *host, uint16_t id);
+    Uhost(const Destination& dest);
     explicit Uhost(std::shared_ptr<HttpReqHeader> req);
     virtual ~Uhost() override;
     virtual void deleteLater(uint32_t errcode) override;
-    virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*) override;
+    virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) override;
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
 };

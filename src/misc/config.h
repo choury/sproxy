@@ -25,6 +25,7 @@ struct DnsConfig{
     int    timeout;
     size_t namecount;
     struct sockaddr_storage server[20];
+    struct Destination doh;
 };
 
 void getDnsConfig(struct DnsConfig* config);
@@ -76,6 +77,7 @@ struct options{
     bool restrict_local;
     const char* quic_cc_algorithm;  // QUIC congestion control algorithm: "cubic" or "bbr"
     uint64_t quic_version;         // QUIC version: QUIC_VERSION_1 or QUIC_VERSION_2
+    const char* doh_server;        // DNS over HTTPS server URL
 
     FILE* policy_read;
     FILE* policy_write;

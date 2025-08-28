@@ -111,6 +111,7 @@ struct options opt = {
     .restrict_local    = false,
     .quic_cc_algorithm = NULL,
     .quic_version      = 1,  // Default to QUIC v1
+    .doh_server        = NULL,
 
     .policy_read    = NULL,
     .policy_write   = NULL,
@@ -191,8 +192,9 @@ static struct option long_options[] = {
     {"cert",          required_argument, NULL,  0 },
     {"config",        required_argument, NULL, 'c'},
     {"daemon",        no_argument,       NULL, 'D'},
-    {"disable-fakeip",no_argument,       NULL, '1'},
+    {"disable-fakeip",no_argument,       NULL,  0 },
     {"disable-http2", no_argument,       NULL, '1'},
+    {"doh",           optional_argument, NULL,  0 },
     {"fwmark",        required_argument, NULL,  0 },
     {"help",          no_argument,       NULL, 'h'},
     {"http",          required_argument, NULL,  0 },
@@ -267,6 +269,7 @@ static struct option_detail option_detail[] = {
 #endif
     {"disable-http2", "Use http/1.1 only", option_bool, &opt.disable_http2, (void*)true},
     {"disable-fakeip", "Do not use fakeip for vpn and tproxy", option_bool, &opt.disable_fakeip, (void*)true},
+    {"doh", "DNS over HTTPS server (e.g., https://1.1.1.1), use server address if no argument", option_string, &opt.doh_server, ""},
     {"fwmark", "Set fwmark for output packet", option_uint64, &opt.fwmark, NULL},
     {"help", "Print this usage", option_bool, NULL, NULL},
     {"http", "Listen for http server", option_string, &http_listen, NULL},
@@ -402,7 +405,11 @@ static void parseArgs(const char* name, const char* args){
                 if(*pargstr){
                     free(*pargstr);
                 }
-                *pargstr = strdup(args);
+                if(args == NULL) {
+                    *pargstr = strdup(option_detail[i].value);
+                } else {
+                    *pargstr = strdup(args);
+                }
                 LOG("set option %s: %s\n", name, *pargstr);
                 break;
             case option_int64:
@@ -511,7 +518,7 @@ int parseConfigFile(const char* config_file){
         if(*start == '#' || *start == '\n'){
             continue;
         }
-        char option[1024], args[1024];
+        char option[1024] = {0}, args[1024] = {0};
         int ret = sscanf(start, "%1023s%*[ \t]%1023[^\n]", option, args);
         if(ret <= 0){
             LOGE("config file parse failed: %s", start);
@@ -678,6 +685,10 @@ void postConfig(){
     }
     if (opt.tun_mode && opt.tun_fd >= 0) {
         LOGE("tun mode and tun-fd can't be used together\n");
+        exit(1);
+    }
+    if (opt.doh_server && opt.doh_server[0] == 0 && opt.Server.hostname[0] == 0) {
+        LOGE("doh without argument require server address\n");
         exit(1);
     }
     for(struct arg_list* p = secrets.next; p != NULL; p = p->next){

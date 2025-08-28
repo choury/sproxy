@@ -300,9 +300,8 @@ void TunRWer::ProcessPacket(Buffer&& bb){
         }
         status = statusmap.GetOne(key)->second;
     }
-    if(status->packet_hdr == nullptr){
-        status->packet_hdr_len = pac->gethdrlen();
-        status->packet_hdr = std::make_shared<Block>(bb.data(), status->packet_hdr_len);
+    if(status->packet_hdr.empty()){
+        status->packet_hdr.append((const char*)bb.data(), pac->gethdrlen());
     }
     status->PkgProc(pac, std::move(bb));
 }
@@ -399,7 +398,7 @@ void TunRWer::Clean(uint64_t id) {
     status->SendPkg = nullptr;
     status->UnReach = nullptr;
     status->Cap = nullptr;
-    status->packet_hdr = nullptr;
+    status->packet_hdr.clear();
     statusmap.Delete(id);
 }
 

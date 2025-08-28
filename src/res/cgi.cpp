@@ -287,13 +287,13 @@ void Cgi::deleteLater(uint32_t errcode){
     return Server::deleteLater(errcode);
 }
 
-void Cgi::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester* src) {
+void Cgi::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     uint32_t id = req->request_id;
     LOGD(DFILE, "<cgi> [%s] new request: %" PRIu32 "\n", basename(filename), id);
 
-    req->set("X-Real-IP", src->getSrc().hostname);
+    req->set("X-Real-IP", rw->getSrc().hostname);
     req->set("X-Authorized",
-        checkauth(src->getSrc().hostname, req->get("Authorization")));
+        checkauth(rw->getSrc().hostname, req->get("Authorization")));
 
     Buffer buff{BUF_LEN, id};
     CGI_Header* const header = (CGI_Header *)buff.mutable_data();
@@ -365,9 +365,9 @@ void Cgi::dump_usage(Dumper dp, void *param) {
        res_usage, rwer->mem_usage());
 }
 
-void getcgi(std::shared_ptr<HttpReqHeader> req, const char* filename, std::shared_ptr<MemRWer> rw, Requester* src){
+void getcgi(std::shared_ptr<HttpReqHeader> req, const char* filename, std::shared_ptr<MemRWer> rw){
     if(cgimap.count(filename)) {
-        return cgimap[filename]->request(req, rw, src);
+        return cgimap[filename]->request(req, rw);
     }
     int svs[2] = {0, 0};
     int cvs[2] = {0, 0};
@@ -379,7 +379,7 @@ void getcgi(std::shared_ptr<HttpReqHeader> req, const char* filename, std::share
         LOGE("[CGI] %s create cli socketpair failed: %s\n", filename, strerror(errno));
         goto err;
     }
-    return (new Cgi(filename, svs, cvs))->request(req, rw, src);
+    return (new Cgi(filename, svs, cvs))->request(req, rw);
 err:
     if(svs[0]){
         close(svs[0]);

@@ -59,12 +59,12 @@ public:
     virtual ~Cgi() override;
 
     virtual void deleteLater(uint32_t errcode) override;
-    virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*)override;
+    virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)override;
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
 };
 
-void getcgi(std::shared_ptr<HttpReqHeader> req, const char *filename, std::shared_ptr<MemRWer> rw, Requester *src);
+void getcgi(std::shared_ptr<HttpReqHeader> req, const char *filename, std::shared_ptr<MemRWer> rw);
 
 
 void flushcgi();
@@ -251,6 +251,6 @@ int cgimain(int sfd, int cfd, const char* name){       \
     CgiHandler::cgimap.clear(); \
     LOGD(DFILE, "<cgi> [%s] cgimain exit\n", name); \
     return 0; \
-} 
+}
 
 #endif

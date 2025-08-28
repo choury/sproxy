@@ -13,6 +13,7 @@ set(res_src
         cgi.cpp
         status.cpp
         rproxy2.cpp
+        doh.cpp
 )
 
 if(HAVE_QUIC)

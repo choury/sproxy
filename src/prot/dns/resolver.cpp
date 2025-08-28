@@ -3,7 +3,9 @@
 #include "misc/config.h"
 #include "misc/defer.h"
 #include "misc/net.h"
-#include "common/common.h"
+#include "prot/memio.h"
+#include "prot/http/http_header.h"
+#include "res/responser.h"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -14,7 +16,6 @@
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
-
 
 #define BUF_SIZE 1500
 
@@ -83,25 +84,199 @@ std::list<sockaddr_storage> rcdfilter(const std::string& host, const std::list<s
     return ret;
 }
 
-HostResolver::HostResolver(int fd, const char *host, std::function<void(int, HostResolver*)> addrcb):
-    Ep(fd), cb(std::move(addrcb))
-{
-    strcpy(this->host, host);
-    char buf[BUF_SIZE];
-    (void)!write(fd, buf, Dns_Query(host, ns_t_a, id_cur++).build((unsigned char*)buf));
-    if(opt.ipv6_enabled) {
-        (void)!write(fd, buf, Dns_Query(host, ns_t_aaaa, id_cur++).build((unsigned char*)buf));
-    }else {
-        flags |= GETAAAARES;
-    }
-    handleEvent = (void (Ep::*)(RW_EVENT))&HostResolver::readHE;
-    setEvents(RW_EVENT::READ);
-    reply = AddJob([this]{cb(DNS_TIMEOUT, this);}, dnsConfig.timeout * 1000, 0);
-    rcd.get_time = 0;
-    rcd.ttl = 0xffffffff;
+RawResolver::RawResolver(const sockaddr_storage& server): Ep(Connect(&server, SOCK_DGRAM)) {
+    handleEvent = (void (Ep::*)(RW_EVENT))&RawResolver::readHE;
 }
 
 
+int RawResolver::query(const char *host, int type, std::function<void(const char *, size_t)> rawcb) {
+    if(getFd() < 0){
+        return -1;
+    }
+    cb = std::move(rawcb);
+    char buf[BUF_SIZE];
+    write(getFd(), buf, Dns_Query(host, type, id_cur++).build((unsigned char*)buf));
+    setEvents(RW_EVENT::READ);
+    reply = AddJob([this]{cb(nullptr, 0);}, dnsConfig.timeout * 1000, 0);
+    return 0;
+}
+
+int RawResolver::query(const void *data, size_t len, std::function<void(const char *, size_t)> rawcb) {
+    if(getFd() < 0){
+        return -1;
+    }
+    cb = std::move(rawcb);
+    write(getFd(), data, len);
+    setEvents(RW_EVENT::READ);
+    reply = AddJob([this]{cb(nullptr, 0);}, dnsConfig.timeout * 1000, 0);
+    return 0;
+}
+
+
+void RawResolver::readHE(RW_EVENT events) {
+    if(!!(events & RW_EVENT::ERROR)){
+        checkSocket("dns socket error");
+        reply.reset(nullptr);
+        return cb(nullptr, 0);
+    }
+    if(!!(events & RW_EVENT::READ)) {
+        reply.reset(nullptr);
+        char buf[BUF_SIZE];
+        int ret = read(getFd(), buf, sizeof(buf));
+        if(ret <= 0) {
+            LOGE("dns read error: %s\n", strerror(errno));
+            return cb(nullptr, 0);
+        }
+        return cb(buf, ret);
+    }
+}
+
+RawResolver::~RawResolver(){
+}
+
+HttpResolver::HttpResolver(const Destination& server) {
+    char buff[HEADLENLIMIT];
+    int headlen = snprintf(buff, sizeof(buff),
+        "POST %s/dns-query HTTP/1.1" CRLF
+        "content-type: application/dns-message" CRLF CRLF, dumpDest(server).c_str());
+    status.req = UnpackHttpReq(buff, headlen);
+    memcpy(&status.req->Dest, &server, sizeof(Destination));
+    status.req->Dest.system_resolve = true;
+
+    status.cb = std::make_shared<IMemRWerCallback>()->onData([this](Buffer&& bb) {
+        if (bb.len == 0) {
+            status.cb = nullptr;
+            dnscb(status.data.data(), status.data.size());
+            return 0;
+        }
+        status.data.append((const char*)bb.data(), bb.len);
+        return (int)bb.len;
+    })->onHeader([this](std::shared_ptr<HttpResHeader> res) {
+        LOGD(DDNS, "http dns response: %s\n", res->status);
+        if (memcmp(res->status, "200", 3) == 0) {
+            return;
+        }
+        LOGE("[DNS] http dns error: %s\n", res->status);
+        status.cb = nullptr;
+        dnscb(nullptr, 0);
+    })->onCap([] {
+        return BUF_LEN;
+    })->onWrite([](uint64_t){})->onSignal([](Signal){});
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+    status.rw = std::make_shared<MemRWer>(Destination{.hostname = "localhost"}, status.req->Dest, status.cb);
+#pragma GCC diagnostic pop
+}
+
+HttpResolver::~HttpResolver() {
+    status.rw->push_signal(Signal::CHANNEL_ABORT);
+}
+
+int HttpResolver::query(const void *data, size_t len, std::function<void(const char *, size_t)> cb) {
+    dnscb = std::move(cb);
+    status.req->set("content-length", len);
+    status.rw->push_data({data, len});
+    status.rw->push_data({nullptr});
+    distribute(status.req, status.rw);
+    reply = AddJob([this]{dnscb(nullptr, 0);}, dnsConfig.timeout * 1000, 0);
+    return 0;
+}
+
+int HttpResolver::query(const char* host, int type, std::function<void(const char *, size_t)> cb) {
+    dnscb = std::move(cb);
+    char buf[BUF_SIZE];
+    int len = Dns_Query(host, type, id_cur++).build((unsigned char*)buf);
+    status.req->set("content-length", len);
+    status.rw->push_data({buf, (size_t)len});
+    status.rw->push_data({nullptr});
+    distribute(status.req, status.rw);
+    reply = AddJob([this]{dnscb(nullptr, 0);}, dnsConfig.timeout * 1000, 0);
+    return 0;
+}
+
+
+HostResolver::HostResolver(const sockaddr_storage& server) {
+    AResolver = new RawResolver(server);
+    AAAAResolver = new RawResolver(server);
+}
+
+HostResolver::HostResolver(const Destination& server) {
+    AResolver = new HttpResolver(server);
+    AAAAResolver = new HttpResolver(server);
+}
+
+int HostResolver::query(const char *host, std::function<void(int)> addrcb) {
+    strcpy(this->host, host);
+    cb = std::move(addrcb);
+    int aret = AResolver->query(host, ns_t_a, [this](const char* data, size_t len) {
+        Dns_Result result(data, len);
+        time_t now = time(nullptr);
+        if(result.error){
+            LOGE("(%s) dns result error: %d\n", this->host, result.error);
+            flags |= GETERROR;
+            return cb(result.error);
+        }
+        assert(result.type == ns_t_a);
+        flags |= GETARES;
+        for(auto i: result.addrs){
+            assert(i.ss_family == AF_INET);
+            rcd.addrs.emplace_back(i);
+        }
+        if(rcd.get_time + rcd.ttl > now + result.ttl) {
+            rcd.get_time = now;
+            rcd.ttl = result.ttl;
+        }
+        if(!(flags & GETARES) || !(flags & GETAAAARES)) {
+            return;
+        }
+        if(!rcd.addrs.empty()) {
+            //如果没有地址，那么ttl就是0xffffffff，不能缓存
+            rcd_cache.emplace(this->host, rcd);
+        }
+        cb(0);
+    });
+    int aaaaret;
+    if(opt.ipv6_enabled) {
+        aaaaret = AAAAResolver->query(host, ns_t_aaaa, [this](const char* data, size_t len) {
+            Dns_Result result(data, len);
+            time_t now = time(nullptr);
+            if(result.error){
+                LOGE("(%s) dns result error: %d\n", this->host, result.error);
+                flags |= GETERROR;
+                return cb(result.error);
+            }
+            assert(result.type == ns_t_aaaa);
+            flags |= GETAAAARES;
+            for(auto i: result.addrs){
+                assert(i.ss_family == AF_INET6);
+                rcd.addrs.emplace_back(i);
+            }
+            if(rcd.get_time + rcd.ttl > now + result.ttl) {
+                rcd.get_time = now;
+                rcd.ttl = result.ttl;
+            }
+            if(!(flags & GETARES) || !(flags & GETAAAARES)) {
+                return;
+            }
+            if(!rcd.addrs.empty()) {
+                //如果没有地址，那么ttl就是0xffffffff，不能缓存
+                rcd_cache.emplace(this->host, rcd);
+            }
+            cb(0);
+        });
+    }else {
+        aaaaret= -1;
+        flags |= GETAAAARES;
+    }
+    if(aret < 0 && aaaaret < 0) {
+        return -1;
+    }
+    rcd.get_time = 0;
+    rcd.ttl = 0xffffffff;
+    return 0;
+}
+
+#if 0
 void HostResolver::readHE(RW_EVENT events) {
     if(!!(events & RW_EVENT::ERROR)){
         checkSocket("dns socket error");
@@ -161,44 +336,11 @@ ret:
         return cb(error, this);
     }
 }
+#endif
 
 HostResolver::~HostResolver() {
-}
-
-
-RawResolver::RawResolver(int fd,
-                   const char *host,
-                   int type,
-                   std::function<void(const char *, size_t, RawResolver*)> rawcb):
-    Ep(fd), cb(std::move(rawcb))
-{
-    char buf[BUF_SIZE];
-    (void)!write(fd, buf, Dns_Query(host, type, id_cur++).build((unsigned char*)buf));
-    handleEvent = (void (Ep::*)(RW_EVENT))&RawResolver::readHE;
-    setEvents(RW_EVENT::READ);
-    reply = AddJob([this]{cb(nullptr, 0, this);}, dnsConfig.timeout * 1000, 0);
-}
-
-void RawResolver::readHE(RW_EVENT events) {
-    if(!!(events & RW_EVENT::ERROR)){
-        checkSocket("dns socket error");
-        reply.reset(nullptr);
-        return cb(nullptr, 0, this);
-    }
-    if(!!(events & RW_EVENT::READ)) {
-        reply.reset(nullptr);
-        char buf[BUF_SIZE];
-        int ret = read(getFd(), buf, sizeof(buf));
-        if(ret <= 0) {
-            LOGE("dns read error: %s\n", strerror(errno));
-            return cb(nullptr, 0, this);
-        }
-        return cb(buf, ret, this);
-    }
-}
-
-
-RawResolver::~RawResolver(){
+    delete AResolver;
+    delete AAAAResolver;
 }
 
 #ifdef ANDROID_APP
@@ -223,6 +365,15 @@ void getDnsConfig(struct DnsConfig* config){
         config->server[get++] = addr;
     }
     config->namecount = get;
+
+    memset(&config->doh, 0, sizeof(config->doh));
+    if(opt.doh_server) {
+        if(opt.doh_server[0]) {
+            parseDest(opt.doh_server, &config->doh);
+        }else if(opt.Server.hostname[0]) {
+            config->doh = opt.Server;
+        }
+    }
     config->timeout = 5;
 }
 
@@ -257,7 +408,7 @@ void getDnsConfig(struct DnsConfig* config){
         iss >> command;
         if (command != "nameserver"){
             continue;
-        } 
+        }
         std::string server;
         iss >> server;
         sockaddr_storage  addr{};
@@ -274,6 +425,15 @@ void getDnsConfig(struct DnsConfig* config){
     free(line);
     fclose(res_file);
     config->namecount = get;
+
+    memset(&config->doh, 0, sizeof(config->doh));
+    if(opt.doh_server) {
+        if(opt.doh_server[0]) {
+            parseDest(opt.doh_server, &config->doh);
+        }else if(opt.Server.hostname[0]) {
+            config->doh = opt.Server;
+        }
+    }
     config->timeout = 5;
 }
 
@@ -325,7 +485,7 @@ void flushdns(){
     dnsConfig.namecount = 0;
 }
 
-static void query_host_real(int retries, const char* host, DNSCB func, std::shared_ptr<void> param){
+static void query_host_real(int retries, const char* host, DNSCB func, std::shared_ptr<void> param, bool raw){
     if(retries >= 3){
         return func(param, ns_r_servfail, std::list<sockaddr_storage>{}, 0);
     }
@@ -338,19 +498,17 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
         return func(param, 0, rcdfilter(host, hosts[host].addrs), 0xefffffff);
     }
 
-    if (dnsConfig.namecount == 0) {
-        LOGE("[DNS] can't get dns server\n");
-        return func(param, ns_r_refused, std::list<sockaddr_storage>{}, 0);
+    HostResolver* resolver = nullptr;
+    if(dnsConfig.doh.hostname[0] && !raw) {
+        resolver = new HostResolver(dnsConfig.doh);
+    }else{
+        if (dnsConfig.namecount == 0) {
+            LOGE("[DNS] can't get dns server\n");
+            return func(param, ns_r_refused, {}, 0);
+        }
+        resolver = new HostResolver(dnsConfig.server[retries % dnsConfig.namecount]);
     }
-
-    sockaddr_storage addr = dnsConfig.server[retries % dnsConfig.namecount];
-    int fd = Connect(&addr, SOCK_DGRAM);
-    if (fd == -1) {
-        LOGE("[DNS] connecting  %s error:%s\n", getaddrstring(&addr), strerror(errno));
-        return func(param, ns_r_refused, std::list<sockaddr_storage>{}, 0);
-    }
-
-    new HostResolver(fd, host,  [retries, func, param](int error, HostResolver* resolver) {
+    if(resolver->query(host, [=](int error) {
         defer([resolver]{delete resolver;});
         if(error == 0){
             func(param, 0, rcdfilter(resolver->host, resolver->rcd.addrs), resolver->rcd.ttl);
@@ -364,14 +522,17 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
             func(param, error, {}, 0);
             return;
         }
-        query_host_real(retries + 1, resolver->host, func, param);
-    });
+        query_host_real(retries + 1, resolver->host, func, param, raw);
+    }) < 0){
+        delete resolver;
+        return func(param, ns_r_servfail, {}, 0);
+    }
 }
 
-void query_host(const char* host, DNSCB func, std::shared_ptr<void> param) {
+void query_host(const char* host, DNSCB func, std::shared_ptr<void> param, bool raw) {
     sockaddr_storage addr{};
     if(storage_aton(host, 0, &addr) == 1){
-        return func(param, 0, std::list<sockaddr_storage>{addr}, 0xefffffff);
+        return func(param, 0, std::list{addr}, 0xefffffff);
     }
 
     if (rcd_cache.count(host)) {
@@ -382,7 +543,7 @@ void query_host(const char* host, DNSCB func, std::shared_ptr<void> param) {
         }
         rcd_cache.erase(host);
     }
-    return query_host_real(0, host, func, param);
+    return query_host_real(0, host, func, param, raw);
 }
 
 void query_dns(const char* host, int type, DNSRAWCB func, std::shared_ptr<void> param) {
@@ -390,21 +551,49 @@ void query_dns(const char* host, int type, DNSRAWCB func, std::shared_ptr<void> 
         getDnsConfig(&dnsConfig);
         reload_hosts();
     }
-    if (dnsConfig.namecount == 0) {
-        LOGE("[DNS] can't get dns server\n");
-        return func(param, nullptr, 0);
+
+    ResolverBase* resolver = nullptr;
+    if(dnsConfig.doh.hostname[0]) {
+        resolver = new HttpResolver(dnsConfig.doh);
+    }else{
+        if (dnsConfig.namecount == 0) {
+            LOGE("[DNS] can't get dns server\n");
+            return func(param, nullptr, 0);
+        }
+        resolver = new RawResolver(dnsConfig.server[rand() % dnsConfig.namecount]);
     }
-    auto addr = dnsConfig.server[rand() % dnsConfig.namecount];
-    int fd = Connect(&addr, SOCK_DGRAM);
-    if (fd == -1) {
-        LOGE("[DNS] connecting  %s error:%s\n", getaddrstring(&addr), strerror(errno));
-        return func(param, nullptr, 0);
-    }
-    new RawResolver(fd, host, type, [func, param](const char* data, size_t len, RawResolver* resolver){
+    if(resolver->query(host, type, [func, param, resolver](const char* data, size_t len){
         defer([resolver]{delete resolver;});
         func(param, data, len);
-    });
+    }) < 0){
+        return func(param, nullptr, 0);
+    }
 }
+
+void query_raw(const void *data, size_t len, DNSRAWCB func, std::shared_ptr<void> param) {
+    if(dnsConfig.namecount == 0) {
+        getDnsConfig(&dnsConfig);
+        reload_hosts();
+    }
+    ResolverBase* resolver = nullptr;
+    if(dnsConfig.doh.hostname[0]) {
+        resolver = new HttpResolver(dnsConfig.doh);
+    }else {
+        if (dnsConfig.namecount == 0) {
+            LOGE("[DNS] can't get dns server\n");
+            return func(param, nullptr, 0);
+        }
+        resolver = new RawResolver(dnsConfig.server[rand() % dnsConfig.namecount]);
+    }
+    if(resolver->query(data, len, [func, param, resolver](const char* data, size_t len){
+        defer([resolver]{delete resolver;});
+        func(param, data, len);
+    }) < 0){
+        delete resolver;
+        func(param, nullptr, 0);
+    }
+}
+
 
 void RcdBlock(const char *hostname, const sockaddr_storage &addr) {
     const char* addrstring = getaddrstring(&addr);

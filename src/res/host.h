@@ -24,19 +24,18 @@ protected:
     virtual void EndProc(uint64_t id) override;
     virtual void ErrProc(uint64_t id) override;
 
-    virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*) override;
+    virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) override;
     virtual void connected(uint32_t resolved_time);
     void reply();
 public:
-    explicit Host(const Destination* dest);
+    explicit Host(const Destination& dest);
     virtual ~Host() override;
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
     static void distribute(std::shared_ptr<HttpReqHeader> req,
                            const Destination& dest,
-                           std::shared_ptr<MemRWer> rw,
-                           Requester* src);
+                           std::shared_ptr<MemRWer> rw);
 };
 
 #endif

@@ -153,9 +153,9 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     auto _cb = response(id);
     std::shared_ptr<MemRWer> rw;
     if(strcmp(header->Dest.protocol, "udp") == 0 || strcmp(header->Dest.protocol, "icmp") == 0) {
-        rw = std::make_shared<PMemRWer>(getSrc(), _cb);
+        rw = std::make_shared<PMemRWer>(getSrc(), getDst(), _cb);
     } else {
-        rw = std::make_shared<MemRWer>(getSrc(), _cb);
+        rw = std::make_shared<MemRWer>(getSrc(), getDst(), _cb);
     }
     statusmap[id] = ReqStatus{
         header,
@@ -163,7 +163,7 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
         _cb,
     };
     ReqStatus& status = statusmap[id];
-    distribute(status.req, status.rw, this);
+    distribute(status.req, status.rw);
 }
 
 bool Guest3::DataProc(Buffer&& bb) {

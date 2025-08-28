@@ -5,6 +5,7 @@
 #include "misc/config.h"
 #include "prot/memio.h"
 #include "cgi.h"
+#include "doh.h"
 
 #include <fstream>
 #include <sstream>
@@ -15,7 +16,6 @@
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
-#include <inttypes.h>
 
 #ifdef __linux__
 #define LIBSUFFIX ".so"
@@ -53,11 +53,11 @@ static std::string pathjoin(const std::string& dirname, const std::string& basen
 
     if(endwithslash && startwithslash){
         return dirname + (basename.c_str()+1);
-    }else if(endwithslash || startwithslash){
-        return dirname + basename;
-    }else{
-        return dirname +'/'+ basename;
     }
+    if(endwithslash || startwithslash){
+        return dirname + basename;
+    }
+    return dirname +'/'+ basename;
 }
 
 template <class... T>
@@ -149,7 +149,7 @@ File::~File() {
     }
 }
 
-void File::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester*) {
+void File::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     status.req = req;
     status.rw = rw;
     if (!req->ranges.empty()){
@@ -268,7 +268,7 @@ void File::dump_usage(Dumper dp, void *param) {
 }
 
 
-void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, Requester* src) {
+void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     uint64_t id = req->request_id;
     if(!req->getrange()){
         return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "");
@@ -285,11 +285,13 @@ void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
             goto ret;
         }
         if(filename == pathjoin(opt.rootdir, "status")){
-            return (new Status())->request(req, rw, src);
-            return;
+            return (new Status())->request(req, rw);
+        }
+        if (filename == pathjoin(opt.rootdir, "dns-query")){
+            return Doh::GetInstance()->request(req, rw);
         }
         if(startwith(filename, pathjoin(opt.rootdir, "rproxy").c_str())) {
-            return distribute_rproxy(req, rw, src);
+            return distribute_rproxy(req, rw);
         }
         if(filename == pathjoin(opt.rootdir, "test")){
             //for compatibility
@@ -386,7 +388,7 @@ void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
             goto ret;
         }
         if(suffix && strcmp(suffix, LIBSUFFIX) == 0){
-            return getcgi(req, filename, rw, src);
+            return getcgi(req, filename, rw);
         }
         int fd = open(filename, O_RDONLY | O_CLOEXEC);
         if(fd < 0){
@@ -394,7 +396,7 @@ void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
             header = HttpResHeader::create(S500, sizeof(S500), id);
             goto ret;
         }
-        return (new File(filename, fd, &st))->request(req, rw, src);
+        return (new File(filename, fd, &st))->request(req, rw);
     }
 ret:
     assert(header);

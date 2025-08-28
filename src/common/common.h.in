@@ -278,6 +278,7 @@ struct Destination{
     char protocol[16];
     char hostname[DOMAINLIMIT];
     uint16_t port;
+    bool system_resolve;
 };
 
 #define STRATEGY "Strategy"

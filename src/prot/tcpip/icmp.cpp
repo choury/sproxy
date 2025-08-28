@@ -26,7 +26,7 @@ void IcmpProc(std::shared_ptr<IcmpStatus> status, std::shared_ptr<const Ip> pac,
 
 
 void SendData(std::shared_ptr<IcmpStatus> status, Buffer&& bb) {
-    auto rpac = MakeIp(status->packet_hdr->data(), status->packet_hdr_len);
+    auto rpac = MakeIp(status->packet_hdr.data(), status->packet_hdr.size());
     if(bb.len == 0){
         status->aged_job = updatejob_with_name(std::move(status->aged_job),
                                                [errCB = status->errCB, rpac]{errCB(rpac, CONNECT_AGED);},
