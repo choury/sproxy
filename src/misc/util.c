@@ -111,7 +111,7 @@ int URLDecode(char *des, const char *src, size_t len)
     int i;
     int j = 0;//record result index
     int strSize;
-    
+
     if(des==NULL)
         return 0;
     if ((src==NULL) || (strSize=len?len:strlen(src))==0 ) {
@@ -509,6 +509,7 @@ const char* dumpAuthority(const struct Destination* Server){
 }
 
 void storage2Dest(const struct sockaddr_storage* addr, struct Destination* dest) {
+    memset(dest, 0, sizeof(struct Destination));
     addrstring(addr, dest->hostname, sizeof(dest->hostname));
     if(addr->ss_family == AF_INET){
         const struct sockaddr_in* in = (struct sockaddr_in*)addr;

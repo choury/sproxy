@@ -20,7 +20,7 @@ size_t MemRWer::rlength(uint64_t) {
 
 ssize_t MemRWer::cap(uint64_t) {
     if(auto cb = _callback.lock(); cb) {
-        return std::min(cb->cap_cb() - wbuff.length(), wbuff.cap());
+        return std::min(cb->cap_cb() - (ssize_t)wbuff.length(), (ssize_t)wbuff.cap());
     }
     return 0;
 }
