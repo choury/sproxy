@@ -1421,7 +1421,7 @@ void dumpFrame(const char* prefix, char name, const quic_frame* frame) {
         LOGD(DQUIC, "%s [%c] blocked data size: %" PRIu64"\n", prefix, name, frame->extra);
         return;
     case QUIC_FRAME_STREAM_DATA_BLOCKED:
-        LOGD(DQUIC, "%s [%c] blocked stream  data: %" PRIu64", size: %" PRIu64"\n", prefix, name,
+        LOGD(DQUIC, "%s [%c] blocked stream data: %" PRIu64", size: %" PRIu64"\n", prefix, name,
              frame->stream_data_blocked.id, frame->stream_data_blocked.size);
         return;
     case QUIC_FRAME_STREAMS_BLOCKED_BI:

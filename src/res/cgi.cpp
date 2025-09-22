@@ -18,6 +18,7 @@
 #include <libgen.h>
 #include <inttypes.h>
 #include <sys/uio.h>
+#include <poll.h>
 
 
 using std::string;
@@ -137,6 +138,10 @@ Cgi::Cgi(const char* fname, int svs[2], int cvs[2]) {
             }
             close(i);
         }
+        int sndbuf = BUF_LEN * 2;
+        if(setsockopt(svs[1], SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf)) < 0)
+            LOGE("set sndbuf:%s\n", strerror(errno));
+
         signal(SIGPIPE, SIG_DFL);
         signal(SIGUSR1, SIG_IGN);
         change_process_name(basename(filename));
@@ -256,7 +261,7 @@ bool Cgi::HandleData(const CGI_Header* header, CgiStatus& status){
     int len = status.rw->cap(0);
     size_t size = ntohs(header->contentLength);
     if (len < (int)size) {
-        LOGD(DFILE, "<cgi> [%s] handle %d write buff is not enougth(%zu/%d)\n",
+        LOGD(DFILE, "<cgi> [%s] handle %d write buff is not enough(%zu/%d)\n",
              basename(filename), htonl(header->requestId), size, len);
         rwer->delEvents(RW_EVENT::READ);
         return false;
@@ -440,8 +445,12 @@ int cgi_send(int fd, SpinLock& l, uint32_t id, const void *buff, size_t len) {
         if(cap - GetBuffSize(fd) < writelen + sizeof(header)) {
             LOGD(DFILE, "<cgi> send wait, cap: %zd, pending: %zd, require: %zd\n",
                 cap, GetBuffSize(fd), writelen + sizeof(header));
-            usleep(100);
-            sched_yield();
+            struct pollfd pfd{
+                .fd = fd,
+                .events = POLLOUT,
+                .revents = 0,
+            };
+            poll(&pfd, 1, -1);
             continue;
         }
         int ret = writev(fd, iov, 2);

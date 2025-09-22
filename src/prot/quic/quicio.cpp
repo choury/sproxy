@@ -1110,7 +1110,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
         }
         his_max_data = frame->extra;
         for(const auto& [id, stream]: streammap){
-            if(!canSend(id) || stream.his_max_data < stream.my_offset + my_max_payload_size) {
+            if(!canSend(id, true)) {
                 continue;
             }
             onWrite(id);
@@ -1319,7 +1319,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
 
 void QuicBase::notifyBlocked(uint64_t id) {
     if(my_sent_data + 10 * my_max_payload_size >= his_max_data) {
-        quic_frame* block = new quic_frame{QUIC_FRAME_MAX_DATA, {}};
+        quic_frame* block = new quic_frame{QUIC_FRAME_DATA_BLOCKED, {}};
         block->extra = his_max_data;
         qos->PushFrame(ssl_encryption_application, block);
     }
@@ -1423,7 +1423,7 @@ int QuicBase::handle1RttPacket(const quic_pkt_header* header, std::deque<const q
         auto frame = frames.front();
         auto acked = qos->handleFrame(context->level, header->pn, frame);
         for(auto& id: acked) {
-            if(!canSend(id)) {
+            if(!canSend(id, true)) {
                 continue;
             }
             onWrite(id);
@@ -1742,7 +1742,7 @@ ssize_t QuicBase::window(uint64_t id) {
     assert(my_sent_data <= his_max_data);
     int streamcap = (int)stream.his_max_data - (int)stream.my_offset;
     int globalcap = (int)his_max_data - (int)my_sent_data;
-    int window = std::max((int)qos->windowLeft(), BUF_LEN);
+    int window = std::max((int)qos->windowLeft(), 1024 * 1024);
     return std::min({streamcap, globalcap, window});
 }
 
@@ -1787,13 +1787,21 @@ bool QuicBase::idle(uint64_t id){
     return recv_closed;
 }
 
-bool QuicBase::canSend(uint64_t id) {
+bool QuicBase::canSend(uint64_t id, bool checkWindow) {
     if(streammap.count(id) == 0){
         return true;
     }
     const auto& stream = streammap[id];
     if(stream.flags & STREAM_FLAG_FIN_SENT){
         return false;
+    }
+    if (checkWindow) {
+        if (stream.his_max_data - stream.my_offset < his_max_payload_size) {
+            return false;
+        }
+        if (his_max_data - my_sent_data < his_max_payload_size) {
+            return false;
+        }
     }
     if(isBidirect(id)) {
         return true;

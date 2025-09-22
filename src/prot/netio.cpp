@@ -367,8 +367,8 @@ void StreamRWer::ReadData() {
         if (left <= 0) {
             break;
         }
-        Buffer bb{BUF_LEN};
-        ssize_t ret = read(getFd(), bb.mutable_data(), BUF_LEN);
+        Buffer bb{std::min((size_t)BUF_LEN * 2, left)};
+        ssize_t ret = read(getFd(), bb.mutable_data(), std::min((size_t)BUF_LEN * 2, left));
         LOGD(DRWER, "stream read %d: len: %zd, ret: %zd, cb: %ld\n", getFd(), left, ret, callback.use_count());
         if (ret > 0) {
             bb.truncate(ret);

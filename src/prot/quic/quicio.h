@@ -266,7 +266,7 @@ public:
     void close(uint64_t error);
 
     bool idle(uint64_t id);
-    bool canSend(uint64_t id);
+    bool canSend(uint64_t id, bool checkWindow = false);
     ssize_t window(uint64_t id);
     size_t rlength(uint64_t id);
     void getAlpn(const unsigned char **s, unsigned int * len);

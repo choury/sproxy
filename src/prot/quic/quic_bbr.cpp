@@ -133,7 +133,7 @@ void QuicBBR::OnPacketsAcked(const std::list<quic_packet_meta> &acked_packets) {
     UpdateBBRState();
 
     if(has_packet_been_congested){
-        maySend();
+        maySend(true);
     }
     LOGD(DQUIC, "BBR mode=%d, btlBw=%d, rtProp=%d, pacing_gain_count=%zd, since_last_sent=%.3fms, bytes_in_flight=%zd\n",
         mode, (int)btlBw.max(), (int)rtProp.min(), pacing_gain_count, (now - last_sent_time)/(double)TIME_US_TO_MS, bytes_in_flight);
@@ -165,7 +165,7 @@ void QuicBBR::OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& l
 ssize_t QuicBBR::windowLeft() const {
     size_t window = kInitialWindow;
     if(btlBw.max()) {
-        uint64_t bdp = btlBw.max() * rtProp.min() / TIME_US_TO_S;
+        uint64_t bdp = btlBw.max() * std::max((int)rtProp.min(), 1000) / TIME_US_TO_S;
         window = bdp * cwnd_gain() / BBR_UNIT;
     }
     if(window + bytes_in_flight < kMinimumWindow) {
@@ -235,7 +235,7 @@ void QuicBBR::CheckCyclePhase() {
 
     uint64_t now = getutime();
     // 每轮结束时推进到下一个增益阶段
-    if (last_sent_time > pacing_round_start_time + btlBw.min()) {
+    if (last_sent_time > pacing_round_start_time + std::max((int)rtProp.min(), 1000)) {
         pacing_gain_count ++;
         pacing_round_start_time = now;
     }
@@ -247,7 +247,7 @@ void QuicBBR::CheckDrainCondition() {
     }
 
     // 当in-flight字节数降到BDP以下时，退出DRAIN状态
-    uint64_t bdp = btlBw.max() * rtProp.min() / TIME_US_TO_S;
+    uint64_t bdp = btlBw.max() * std::min((int)rtProp.min(), 1000) / TIME_US_TO_S;
     if (bytes_in_flight <= bdp) {
         EnterProbeBW();
     }

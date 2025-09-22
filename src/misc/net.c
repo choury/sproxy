@@ -103,6 +103,13 @@ void SetUdpOptions(int fd, const struct sockaddr_storage* addr){
 #endif
     if(setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable)) < 0)
         LOGE("set broadcast:%s\n", strerror(errno));
+
+    int sndbuf = MAX_BUF_LEN;
+    if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf)) < 0)
+        LOGE("set sndbuf:%s\n", strerror(errno));
+    int rcvbuf = MAX_BUF_LEN;
+    if(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf)) < 0)
+        LOGE("set rcvbuf:%s\n", strerror(errno));
     SetSocketUnblock(fd);
 }
 

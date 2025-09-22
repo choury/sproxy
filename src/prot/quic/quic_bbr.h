@@ -17,7 +17,7 @@ class Twin {
 
     // 用于维护最小值的单调递增队列 (存储 时间戳, 值)
     std::deque<std::pair<uint64_t, uint64_t>> min_q;
-    
+
     // 清除过期的测量值
     void evict(uint64_t now) {
         const uint64_t expiry_time = now - window;

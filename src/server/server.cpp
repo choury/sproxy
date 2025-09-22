@@ -133,7 +133,7 @@ int main(int argc, char **argv) {
         }
 #else
         LOG("Starting rproxy2 client to %s\n", dumpDest(opt.Server).c_str());
-        new Rguest2(&opt.Server, opt.rproxy_name);
+        new Rguest2(opt.Server, opt.rproxy_name);
 #endif
     }else {
         if(opt.http.hostname[0]){

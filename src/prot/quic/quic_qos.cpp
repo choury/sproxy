@@ -229,7 +229,7 @@ void QuicQos::sendPacket(bool force) {
     }
     if(has_packet_been_congested && windowLeft() >= (int)max_datagram_size) {
         //sendwidonw或者udp的buffer满了，等一会重试
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 10);
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, std::max(std::min(10, (int)rtt.smoothed_rtt/2000), 1));
     }
     if(bytes_in_flight > 0){
         SetLossDetectionTimer();
@@ -306,18 +306,19 @@ void QuicQos::HandleRetry() {
     ns->sent_packets.clear();
 }
 
-void QuicQos::maySend() {
+void QuicQos::maySend(bool acked) {
+    uint32_t retry = std::max(std::min(10, (int)rtt.smoothed_rtt/2000), 1);
     if(sendWindow() < (int)max_datagram_size) {
         LOGD(DQUIC, "skip send, sendwindow: %zd, winowleft: %zd, bytes_in_flight: %zd\n",
              sendWindow(), windowLeft(), bytes_in_flight);
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 10);
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, retry);
         return;
     }
     auto ns = GetNamespace(ssl_encryption_application);
-    if(!ns->hasKey || ns->pend_frames.size() >= 100 || getutime() - last_sent_time >= 10000){
+    if(!ns->hasKey || ns->pend_frames.size() >= 100 || getutime() - last_sent_time >= 10000 || acked){
         packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
-    }else if(JobPending(packet_tx) > 10) {
-        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 10);
+    }else if(JobPending(packet_tx) > retry) {
+        packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, retry);
     }
 }
 
