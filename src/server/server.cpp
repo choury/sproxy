@@ -136,21 +136,26 @@ int main(int argc, char **argv) {
         new Rguest2(opt.Server, opt.rproxy_name);
 #endif
     }else {
-        if(opt.http.hostname[0]){
-            int fd[2] = {-1, -1};
-            if(strcmp(opt.http.hostname, "localhost") == 0) {
-                if(ListenLocalhostTcp(opt.http.port, fd, nullptr) < 0) {
-                    return -1;
+        if(opt.http_list) {
+            for(struct dest_list* node = opt.http_list; node; node = node->next) {
+                const struct Destination& dest = node->dest;
+                int fd[2] = {-1, -1};
+                if(strcmp(dest.hostname, "localhost") == 0) {
+                    if(ListenLocalhostTcp(dest.port, fd, nullptr) < 0) {
+                        return -1;
+                    }
+                } else {
+                    fd[0] = ListenTcp(&dest, nullptr);
+                    if (fd[0] < 0) {
+                        return -1;
+                    }
                 }
-            } else {
-                fd[0] = ListenTcp(&opt.http, nullptr);
-                if (fd[0] < 0) {
-                    return -1;
+                servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[0], nullptr));
+                if(fd[1] >= 0) {
+                    servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[1], nullptr));
                 }
+                LOG("listen on %s:%d for http\n", dest.hostname, (int)dest.port);
             }
-            servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[0], nullptr));
-            if(fd[1] >= 0) servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[1], nullptr));
-            LOG("listen on %s:%d for http\n", opt.http.hostname, (int)opt.http.port);
         }
 #if __linux__
         if(opt.tproxy.hostname[0]) {
@@ -208,52 +213,66 @@ int main(int argc, char **argv) {
             LOG("listen on %s:%d for tproxy\n", opt.tproxy.hostname, (int)opt.tproxy.port);
         }
 #endif
-        if(opt.ssl.hostname[0]) {
-            int fd[2] = {-1, -1};
-            if(strcmp(opt.ssl.hostname, "localhost") == 0) {
-                if(ListenLocalhostTcp(opt.ssl.port, fd, nullptr) < 0) {
-                    return -1;
+        if(opt.ssl_list) {
+            for(struct dest_list* node = opt.ssl_list; node; node = node->next) {
+                const struct Destination& dest = node->dest;
+                int fd[2] = {-1, -1};
+                if(strcmp(dest.hostname, "localhost") == 0) {
+                    if(ListenLocalhostTcp(dest.port, fd, nullptr) < 0) {
+                        return -1;
+                    }
+                } else {
+                    fd[0] = ListenTcp(&dest, nullptr);
+                    if (fd[0] < 0) {
+                        return -1;
+                    }
                 }
-            } else {
-                fd[0] = ListenTcp(&opt.ssl, nullptr);
-                if (fd[0] < 0) {
-                    return -1;
+                if(opt.sni_mode) {
+                    servers.emplace_back(std::make_shared<Http_server<Guest_sni>>(fd[0], nullptr));
+                    if(fd[1] >= 0) {
+                        servers.emplace_back(std::make_shared<Http_server<Guest_sni>>(fd[1], nullptr));
+                    }
+                    LOG("listen on %s:%d for ssl sni\n", dest.hostname, (int)dest.port);
+                } else {
+                    SSL_CTX * ctx = initssl(false, nullptr);
+                    servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[0], ctx));
+                    if(fd[1] >= 0) {
+                        servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[1], ctx));
+                    }
+                    LOG("listen on %s:%d for ssl\n", dest.hostname, (int)dest.port);
                 }
-            }
-            if(opt.sni_mode) {
-                servers.emplace_back(std::make_shared<Http_server<Guest_sni>>(fd[0], nullptr));
-                if(fd[1] >= 0) servers.emplace_back(std::make_shared<Http_server<Guest_sni>>(fd[1], nullptr));
-                LOG("listen on %s:%d for ssl sni\n", opt.ssl.hostname, (int)opt.ssl.port);
-            }else {
-                SSL_CTX * ctx = initssl(false, nullptr);
-                servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[0], ctx));
-                if(fd[1] >= 0) servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[1], ctx));
-                LOG("listen on %s:%d for ssl\n", opt.ssl.hostname, (int)opt.ssl.port);
             }
         }
 #ifdef HAVE_QUIC
         generate_reset_secret();
-        if(opt.quic.hostname[0]) {
-            int fd[2] = {-1, -1};
-            if(strcmp(opt.quic.hostname, "localhost") == 0) {
-                if(ListenLocalhostUdp(opt.quic.port, fd, nullptr) < 0) {
-                    return -1;
+        if(opt.quic_list) {
+            for(struct dest_list* node = opt.quic_list; node; node = node->next) {
+                const struct Destination& dest = node->dest;
+                int fd[2] = {-1, -1};
+                if(strcmp(dest.hostname, "localhost") == 0) {
+                    if(ListenLocalhostUdp(dest.port, fd, nullptr) < 0) {
+                        return -1;
+                    }
+                } else {
+                    fd[0] = ListenUdp(&dest, nullptr);
+                    if(fd[0] <  0) {
+                        return -1;
+                    }
                 }
-            } else {
-                fd[0] = ListenUdp(&opt.quic, nullptr);
-                if(fd[0] <  0) {
-                    return -1;
+                if(opt.sni_mode) {
+                    servers.emplace_back(std::make_shared<Quic_sniServer>(fd[0], dest.port));
+                    if(fd[1] >= 0) {
+                        servers.emplace_back(std::make_shared<Quic_sniServer>(fd[1], dest.port));
+                    }
+                    LOG("listen on %s:%d for quic sni\n", dest.hostname, (int)dest.port);
+                }else {
+                    SSL_CTX * ctx = initssl(true, nullptr);
+                    servers.emplace_back(std::make_shared<Quic_server>(fd[0], dest.port, ctx));
+                    if(fd[1] >= 0) {
+                        servers.emplace_back(std::make_shared<Quic_server>(fd[1], dest.port, ctx));
+                    }
+                    LOG("listen on %s:%d for quic\n", dest.hostname, (int)dest.port);
                 }
-            }
-            if(opt.sni_mode) {
-                servers.emplace_back(std::make_shared<Quic_sniServer>(fd[0]));
-                if(fd[1] >= 0) servers.emplace_back(std::make_shared<Quic_sniServer>(fd[1]));
-                LOG("listen on %s:%d for quic sni\n", opt.quic.hostname, (int)opt.quic.port);
-            }else {
-                SSL_CTX * ctx = initssl(true, nullptr);
-                servers.emplace_back(std::make_shared<Quic_server>(fd[0], ctx));
-                if(fd[1] >= 0) servers.emplace_back(std::make_shared<Quic_server>(fd[1], ctx));
-                LOG("listen on %s:%d for quic\n", opt.quic.hostname, (int)opt.quic.port);
             }
         }
 #endif

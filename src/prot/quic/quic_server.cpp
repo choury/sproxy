@@ -10,6 +10,28 @@
 
 #include <unistd.h>
 
+static void set_listen_port(sockaddr_storage* addr, uint16_t port) {
+    if(addr == nullptr) {
+        return;
+    }
+    if(addr->ss_family == AF_INET) {
+        ((sockaddr_in*)addr)->sin_port = htons(port);
+    } else if(addr->ss_family == AF_INET6) {
+        ((sockaddr_in6*)addr)->sin6_port = htons(port);
+    }
+}
+
+Quic_server::Quic_server(int fd, uint16_t port, SSL_CTX *ctx) : Ep(fd), ctx(ctx), listen_port(port) {
+    assert(ctx);
+    setEvents(RW_EVENT::READ);
+    handleEvent = (void (Ep::*)(RW_EVENT))&Quic_server::defaultHE;
+}
+
+Quic_sniServer::Quic_sniServer(int fd, uint16_t port) : Ep(fd), listen_port(port) {
+    setEvents(RW_EVENT::READ);
+    handleEvent = (void (Ep::*)(RW_EVENT))&Quic_sniServer::defaultHE;
+}
+
 
 void Quic_server::defaultHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR)) {
@@ -31,7 +53,7 @@ void Quic_server::defaultHE(RW_EVENT events) {
             LOGE("recvfrom error: %s\n", strerror(errno));
             return;
         }
-        ((sockaddr_in*)&myaddr)->sin_port = htons(opt.quic.port);
+        set_listen_port(&myaddr, listen_port);
         PushData(&myaddr, &hisaddr, buff, ret);
     } else {
         LOGE("unknown error\n");
@@ -57,7 +79,7 @@ void Quic_server::PushData(const sockaddr_storage* myaddr, const sockaddr_storag
     }else if(header.type == QUIC_PACKET_INITIAL){
         int clsk = ListenUdp(myaddr, nullptr);
         if (clsk < 0) {
-            LOGE("ListenNet %s:%d, failed: %s\n", opt.quic.hostname, (int)opt.quic.port, strerror(errno));
+            LOGE("ListenNet %s failed: %s\n", storage_ntoa(myaddr), strerror(errno));
             return;
         }
         socklen_t socklen = (hisaddr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
@@ -114,10 +136,10 @@ void Quic_sniServer::defaultHE(RW_EVENT events) {
             return;
         }
 
-        ((sockaddr_in*)&myaddr)->sin_port = htons(opt.quic.port);
+        set_listen_port(&myaddr, listen_port);
         int clsk = ListenUdp(&myaddr, nullptr);
         if (clsk < 0) {
-            LOGE("ListenNet failed: %s\n", strerror(errno));
+            LOGE("ListenNet %s failed: %s\n", storage_ntoa(&myaddr), strerror(errno));
             return;
         }
         socklen_t socklen = (hisaddr.ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);

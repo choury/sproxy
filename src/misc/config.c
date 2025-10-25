@@ -46,14 +46,14 @@ static char* server_string = NULL;
 static char* policy_file = NULL;
 static struct arg_list secrets = {NULL, NULL};
 static struct arg_list debug_list = {NULL, NULL};
+static struct arg_list http_listens = {NULL, NULL};
+static struct arg_list ssl_listens = {NULL, NULL};
+static struct arg_list quic_listens = {NULL, NULL};
 static uint64_t id = 100000;
 
 static const char *certfile = NULL;
 static const char *keyfile = NULL;
 
-static char* http_listen = NULL;
-static char* ssl_listen = NULL;
-static char* quic_listen = NULL;
 static char* admin_listen = NULL;
 static char* tproxy_listen = NULL;
 
@@ -115,24 +115,9 @@ struct options opt = {
 
     .policy_read    = NULL,
     .policy_write   = NULL,
-    .http           = {
-        .scheme     = {0},
-        .protocol   = {0},
-        .hostname   = {0},
-        .port       = 0,
-    },
-    .ssl            = {
-        .scheme     = {0},
-        .protocol   = {0},
-        .hostname   = {0},
-        .port       = 0,
-    },
-    .quic           = {
-        .scheme     = {0},
-        .protocol   = {0},
-        .hostname   = {0},
-        .port       = 0,
-    },
+    .http_list      = NULL,
+    .ssl_list       = NULL,
+    .quic_list      = NULL,
     .tproxy         = {
         .scheme     = {0},
         .protocol   = {0},
@@ -272,7 +257,7 @@ static struct option_detail option_detail[] = {
     {"doh", "DNS over HTTPS server (e.g., https://1.1.1.1), use server address if no argument", option_string, &opt.doh_server, ""},
     {"fwmark", "Set fwmark for output packet", option_uint64, &opt.fwmark, NULL},
     {"help", "Print this usage", option_bool, NULL, NULL},
-    {"http", "Listen for http server", option_string, &http_listen, NULL},
+    {"http", "Listen for http server", option_list, &http_listens, NULL},
     {"ignore-hosts", "Dont read entries from /etc/hosts ", option_bool, &opt.ignore_hosts, (void*)true},
     {"index", "Index file for path (local server)", option_string, &opt.index_file, NULL},
     {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_bool, &opt.ignore_cert_error, (void*)true},
@@ -286,7 +271,7 @@ static struct option_detail option_detail[] = {
     {"pcap-len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
     {"policy-file", "The file of policy ("PREFIX"/etc/sproxy/sites.list as default)", option_string, &policy_file, NULL},
 #ifdef HAVE_QUIC
-    {"quic", "Listen for QUIC server", option_string, &quic_listen, NULL},
+    {"quic", "Listen for QUIC server", option_list, &quic_listens, NULL},
     {"quic-cc", "QUIC congestion control algorithm (cubic, bbr)", option_string, &opt.quic_cc_algorithm, NULL},
     {"quic-version", "QUIC version (1 for QUIC v1, 2 for QUIC v2)", option_uint64, &opt.quic_version, NULL},
 #endif
@@ -303,7 +288,7 @@ static struct option_detail option_detail[] = {
     {"set-dns-route", "set route for dns server (via vpn interface)", option_bool, &opt.set_dns_route, (void*)true},
 #endif
     {"sni", "Act as a sni proxy", option_bool, &opt.sni_mode, (void*)true},
-    {"ssl", "Listen for ssl server (require cert file and key)", option_string, &ssl_listen, NULL},
+    {"ssl", "Listen for ssl server (require cert file and key)", option_list, &ssl_listens, NULL},
 #if __linux__
     {"tun", "tun mode (vpn mode, require root privilege)", option_bool, &opt.tun_mode, (void*)true},
     {"tun-fd", "tun fd (vpn mode, recv fd before execve)", option_int64, &opt.tun_fd, NULL},
@@ -582,13 +567,52 @@ void free_arg_list(struct arg_list* list) {
     free(list);
 }
 
+static void free_dest_list(struct dest_list* list) {
+    while(list) {
+        struct dest_list* next = list->next;
+        free(list);
+        list = next;
+    }
+}
+
+static void build_dest_list(struct arg_list* arguments,
+                            struct dest_list** destinations,
+                            const char* option_name) {
+    free_dest_list(*destinations);
+    *destinations = NULL;
+    if(arguments == NULL) {
+        return;
+    }
+    struct arg_list* item = arguments->next;
+    if(item == NULL) {
+        return;
+    }
+    struct dest_list** tail = destinations;
+    for(; item; item = item->next) {
+        struct Destination dest;
+        if(parseBind(item->arg, &dest)) {
+            LOGE("wrong %s listen: %s\n", option_name, item->arg);
+            exit(1);
+        }
+        struct dest_list* node = malloc(sizeof(struct dest_list));
+        if(node == NULL) {
+            LOGE("alloc %s listen failed: %s\n", option_name, strerror(errno));
+            exit(1);
+        }
+        node->dest = dest;
+        node->next = NULL;
+        *tail = node;
+        tail = &node->next;
+    }
+}
+
 void postConfig(){
     if(opt.rproxy_name) {
         if(opt.rproxy_name[0] == '\0' || strlen(opt.rproxy_name) >= 100) {
             LOGE("length of rproxy name should between 1 and 100\n");
             exit(1);
         }
-        if(http_listen || ssl_listen || quic_listen || tproxy_listen) {
+        if(http_listens.next || ssl_listens.next || quic_listens.next || tproxy_listen) {
             LOGE("rproxy mode can only used separately\n");
             exit(1);
         }
@@ -598,18 +622,11 @@ void postConfig(){
             secrets.next = NULL;
         }
     }
-    if(parseBind(http_listen, &opt.http)) {
-        LOGE("wrong http listen: %s\n", http_listen);
-        exit(1);
-    }
-    if(parseBind(ssl_listen, &opt.ssl)) {
-        LOGE("wrong ssl listen: %s\n", ssl_listen);
-        exit(1);
-    }
-    if(parseBind(quic_listen, &opt.quic)) {
-        LOGE("wrong quic listen: %s\n", quic_listen);
-        exit(1);
-    }
+
+    build_dest_list(&http_listens, &opt.http_list, "http");
+    build_dest_list(&ssl_listens, &opt.ssl_list, "ssl");
+    build_dest_list(&quic_listens, &opt.quic_list, "quic");
+
     if(parseBind(tproxy_listen, &opt.tproxy)) {
         LOGE("wrong tproxy listen: %s\n", tproxy_listen);
         exit(1);
@@ -618,7 +635,7 @@ void postConfig(){
         LOGE("wrong server format: %s\n", server_string);
         exit(1);
     }
-    if(opt.redirect_http && opt.ssl.port == 0) {
+    if(opt.redirect_http && (opt.ssl_list == NULL && opt.quic_list == NULL)) {
         LOGE("redirect-http must use with ssl\n");
         exit(1);
     }
@@ -656,14 +673,14 @@ void postConfig(){
         LOGE("access cert file failed: %s\n", strerror(errno));
         exit(1);
     }
-    if ((opt.ssl.hostname[0] || opt.quic.hostname[0]) &&
+    if ((opt.ssl_list || opt.quic_list) &&
         (opt.cert.crt == NULL || opt.cert.key == NULL) &&
         opt.mitm_mode != Enable && !opt.sni_mode)
     {
         LOGE("ssl/quic mode require cert and key file\n");
         exit(1);
     }
-    if(opt.sni_mode && !opt.ssl.hostname[0] && !opt.quic.hostname[0]) {
+    if(opt.sni_mode && !opt.ssl_list && !opt.quic_list) {
         LOGE("sni mode require ssl or quic\n");
         exit(1);
     }
@@ -767,6 +784,21 @@ void postConfig(){
         opt.ipv6_enabled = opt.ipv6_mode;
     }
     register_network_change_cb(network_changed);
+}
+
+bool is_http_listen_port(uint16_t port) {
+    if(port == 0) {
+        return false;
+    }
+    if(opt.http_list == NULL) {
+        return false;
+    }
+    for(struct dest_list* node = opt.http_list; node; node = node->next) {
+        if(node->dest.port == port) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void parseConfig(int argc, char **argv){

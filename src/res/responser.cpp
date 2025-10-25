@@ -85,10 +85,10 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
     if(!req->Dest.hostname[0]){
         return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[host not set]]\n");
     }
-    if(opt.redirect_http && opt.ssl.hostname[0] && rw->getDst().port == opt.http.port) {
+    if(opt.redirect_http && opt.ssl_list && is_http_listen_port(rw->getDst().port)) {
         auto reqh = HttpReqHeader(*req);
         strcpy(reqh.Dest.scheme, "https");
-        reqh.Dest.port = opt.ssl.port;
+        reqh.Dest.port = opt.ssl_list->dest.port;
 
         auto resh = HttpResHeader::create(S308, sizeof(S308), id);
         resh->set("Location", reqh.geturl());
@@ -269,4 +269,3 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
     }
     rproxys[filename]->request(req, rw);
 }
-

@@ -41,6 +41,11 @@ struct arg_list{
     struct arg_list* next;
 };
 
+struct dest_list{
+    struct Destination dest;
+    struct dest_list* next;
+};
+
 struct cert_pair{
     X509     *crt;
     EVP_PKEY *key;
@@ -81,9 +86,9 @@ struct options{
 
     FILE* policy_read;
     FILE* policy_write;
-    struct Destination http;
-    struct Destination ssl;
-    struct Destination quic;
+    struct dest_list* http_list;
+    struct dest_list* ssl_list;
+    struct dest_list* quic_list;
     struct Destination admin;
     struct Destination tproxy;
     uint64_t pcap_len;
@@ -110,6 +115,7 @@ void parseConfig(int argc, char **argv);
 void postConfig();
 int parseDest(const char* proxy, struct Destination* server);
 bool debugon(const char* module, bool enable);
+bool is_http_listen_port(uint16_t port);
 
 void flushdns();
 void flushconnect();
