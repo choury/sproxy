@@ -42,6 +42,7 @@
 #cmakedefine HAVE_BPF
 #cmakedefine HAVE_ELF
 #cmakedefine HAVE_URING
+#cmakedefine HAVE_JEMALLOC
 #cmakedefine USE_BORINGSSL
 #cmakedefine ANDROID_APP
 #cmakedefine TERMUX

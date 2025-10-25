@@ -54,6 +54,10 @@ else()
     message(STATUS "liburing not found, io_uring support disabled")
 endif()
 
+if(HAVE_JEMALLOC)
+    list(APPEND SPROXY_LIBS ${JEMALLOC_LIB})
+endif()
+
 set(SPROXY_LIBS ${SPROXY_LIBS} ${JSON-C_LIBRARIES})
 if(LINUX OR APPLE OR TERMUX)
     add_executable(sproxy server/server.cpp common/base.cpp)

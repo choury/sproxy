@@ -2,6 +2,10 @@
 #include "misc/config.h"
 #include "misc/strategy.h"
 
+#ifdef HAVE_JEMALLOC
+#include <jemalloc/jemalloc.h>
+#endif
+
 #include <set>
 #include <stdarg.h>
 #include <unistd.h>
@@ -68,8 +72,36 @@ void dump_stat(Dumper dp, void* param){
     dp(param, "======================================\n");
 }
 
+#ifdef HAVE_JEMALLOC
+struct DumperBridge {
+    Dumper dp;
+    void* param;
+};
+
+// Bridge callback to forward jemalloc's output to our dumper
+static void jemalloc_write_cb(void* cbopaque, const char* str) {
+    DumperBridge* bridge = static_cast<DumperBridge*>(cbopaque);
+    bridge->dp(bridge->param, "%s", str);
+}
+#endif
+
 void dump_usage(Dumper dp, void* param){
     dp(param, "======================================\n");
+#ifdef HAVE_JEMALLOC
+    // Print current memory stats using malloc_stats_print
+    DumperBridge bridge = {dp, param};
+    malloc_stats_print(jemalloc_write_cb, &bridge, "g"); // g = general stats
+
+    // Dump profile file
+    int ret = mallctl("prof.dump", NULL, NULL, NULL, 0);
+    if (ret == 0) {
+        dp(param, "jemalloc memory profile dumped.\n");
+    } else {
+        dp(param, "Error: mallctl(prof.dump) failed: %s\n", strerror(ret));
+    }
+    dp(param, "--------------------------------------\n");
+#endif
+
     for(auto i: servers){
         i->dump_usage(dp, param);
         dp(param, "--------------------------------------\n");
