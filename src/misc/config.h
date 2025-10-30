@@ -4,6 +4,7 @@
 #include "common/common.h"
 #include <stdbool.h>
 #include <openssl/ssl.h>
+#include <openssl/x509.h>
 
 #ifdef __APPLE__
 #include <sys/event.h>
@@ -47,9 +48,16 @@ struct dest_list{
 };
 
 struct cert_pair{
-    X509     *crt;
-    EVP_PKEY *key;
+    STACK_OF(X509)   *chain;
+    EVP_PKEY         *key;
 };
+
+static inline X509* cert_pair_leaf(const struct cert_pair* pair) {
+    if(pair == NULL || pair->chain == NULL || sk_X509_num(pair->chain) == 0) {
+        return NULL;
+    }
+    return sk_X509_value(pair->chain, 0);
+}
 
 struct options{
     const char *cafile;
@@ -65,6 +73,7 @@ struct options{
     const char *alt_svc;
     const char *rproxy_name;
     const char *bpf_cgroup;
+    const char *acme_state;
     bool disable_http2;
     bool disable_fakeip;
     bool sni_mode;
@@ -125,6 +134,7 @@ uint64_t nextId();
 
 const char* getDeviceInfo();
 int is_kernel_version_ge(int required_major, int required_minor);
+
 #ifdef __cplusplus
 }
 #endif

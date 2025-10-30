@@ -270,6 +270,10 @@ void File::dump_usage(Dumper dp, void *param) {
 
 void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     uint64_t id = req->request_id;
+    if(opt.acme_state && startwith(req->path, "/.well-known/acme-challenge/")) {
+        std::string acme_lib = pathjoin(std::string(opt.rootdir), std::string("cgi/libacme") + LIBSUFFIX);
+        return getcgi(req, acme_lib.c_str(), rw);
+    }
     if(!req->getrange()){
         return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "");
     }

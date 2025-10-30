@@ -1556,12 +1556,13 @@ std::string dumpHex(const void* data, size_t len){
 static std::string reset_secret;
 
 void generate_reset_secret(){
-    if(opt.cert.crt == nullptr) {
+    X509* leaf = cert_pair_leaf(&opt.cert);
+    if(leaf == nullptr) {
         return;
     }
     unsigned char cert_digest[EVP_MAX_MD_SIZE];
     unsigned int digest_len = 0;
-    if(!X509_pubkey_digest(opt.cert.crt, EVP_sha256(), cert_digest, &digest_len)) {
+    if(!X509_pubkey_digest(leaf, EVP_sha256(), cert_digest, &digest_len)) {
         LOGE("QUIC failed to get X509_pubkey_digest\n");
         return;
     }
@@ -1705,4 +1706,3 @@ size_t add_retry_integrity_tag(void* retry_packet, size_t packet_len,
 
     return packet_len; // Failed to add tag
 }
-

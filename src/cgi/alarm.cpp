@@ -5,7 +5,7 @@
 #include "res/cgi.h"
 #include <thread>
 
-extern "C" int sendFcm(const char* title, const char* body, const char* token);
+extern "C" int sendPushMessage(const char* title, const char* body, const char* token);
 
 class handler: public CgiHandler {
     std::thread th;
@@ -24,7 +24,7 @@ class handler: public CgiHandler {
             return;
         }
         th = std::thread([this] {
-            if(sendFcm(params["title"].c_str(), params["body"].c_str(), params["token"].c_str()) == 0) {
+            if(sendPushMessage(params["title"].c_str(), params["body"].c_str(), params["token"].c_str()) == 0) {
                 std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S200, sizeof(S200), req->request_id);
                 Response(res);
             } else {

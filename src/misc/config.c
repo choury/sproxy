@@ -31,6 +31,7 @@
 #include <libgen.h>
 #endif
 #include <openssl/ssl.h>
+#include <openssl/x509.h>
 
 /*
  * Ensure GNU basename behavior on musl
@@ -79,11 +80,11 @@ struct options opt = {
     .cafile            = NULL,
     .cakey             = NULL,
     .ca                = {
-        .crt = NULL,
+        .chain = NULL,
         .key = NULL,
     },
     .cert              = {
-        .crt = NULL,
+        .chain = NULL,
         .key = NULL,
     },
     .rootdir           = NULL,
@@ -94,6 +95,7 @@ struct options opt = {
     .alt_svc           = NULL,
     .rproxy_name       = NULL,
     .bpf_cgroup        = NULL,
+    .acme_state        = NULL,
     .disable_http2     = false,
     .disable_fakeip    = false,
     .sni_mode          = false,
@@ -167,6 +169,7 @@ enum option_type{
 static const char* getopt_option = ":D1hikb:q:r:s:I:c:P:v";
 static struct option long_options[] = {
     {"admin",         required_argument, NULL,  0 },
+    {"acme",          required_argument, NULL,  0 },
     {"autoindex",     no_argument,       NULL, 'i'},
     {"alt-svc",       required_argument, NULL,  0 },
 #ifdef HAVE_BPF
@@ -240,6 +243,7 @@ struct option_detail {
 static struct option_detail option_detail[] = {
     {"admin", "set admin socket path for cli (/var/run/sproxy.sock is default for root and /tmp/sproxy.sock for others)", option_string, &admin_listen, NULL},
     {"alter-method", "use Alter-Method to define real method (for obfuscation), http1 only", option_bool, &opt.alter_method, (void*)true},
+    {"acme", "Enable automatic certificate management (ACME) with state directory", option_string, &opt.acme_state, NULL},
     {"alt-svc", "Add alt-svc header to response or send ALTSVC frame", option_string, &opt.alt_svc, NULL},
     {"autoindex", "Enables the directory listing output (local server)", option_bool, &opt.autoindex, (void*)true},
 #ifdef HAVE_BPF
@@ -319,14 +323,18 @@ void dump_stat();
 void neglect(){
     flushdns();
     releaseall();
-    X509_free(opt.ca.crt);
-    opt.ca.crt = NULL;
     EVP_PKEY_free(opt.ca.key);
     opt.ca.key = NULL;
-    X509_free(opt.cert.crt);
-    opt.cert.crt = NULL;
+    if(opt.ca.chain) {
+        sk_X509_pop_free(opt.ca.chain, X509_free);
+        opt.ca.chain = NULL;
+    }
     EVP_PKEY_free(opt.cert.key);
     opt.cert.key = NULL;
+    if(opt.cert.chain) {
+        sk_X509_pop_free(opt.cert.chain, X509_free);
+        opt.cert.chain = NULL;
+    }
     release_key_pair();
 }
 
@@ -391,11 +399,11 @@ static void parseArgs(const char* name, const char* args){
                     free(*pargstr);
                 }
                 if(args == NULL) {
-                    *pargstr = strdup(option_detail[i].value);
+                    *pargstr = option_detail[i].value ? strdup(option_detail[i].value) : NULL;
                 } else {
                     *pargstr = strdup(args);
                 }
-                LOG("set option %s: %s\n", name, *pargstr);
+                LOG("set option %s: %s\n", name, *pargstr ? *pargstr : "(null)");
                 break;
             case option_int64:
                 iresult = strtoll(args, &pos, 0);
@@ -669,13 +677,53 @@ void postConfig(){
         LOGE("failed to load cafile or cakey\n");
         exit(1);
     }
-    if ((certfile || keyfile) && load_cert_key(certfile, keyfile, &opt.cert)) {
-        LOGE("access cert file failed: %s\n", strerror(errno));
+
+    if(opt.acme_state) {
+        if(opt.acme_state[0] == '\0') {
+            LOGE("acme mode requires a valid state directory\n");
+            exit(1);
+        }
+        if(certfile == NULL || certfile[0] == '\0' || keyfile == NULL || keyfile[0] == '\0') {
+            LOGE("acme mode require cert/key\n");
+            exit(1);
+        }
+        setenv("SPROXY_ACME_STATE", opt.acme_state, 1);
+        setenv("SPROXY_ACME_CERT", certfile, 1);
+        setenv("SPROXY_ACME_KEY", keyfile, 1);
+    }
+
+    bool certfile_ok = false;
+    if(certfile) {
+        if(access(certfile, R_OK) == 0) {
+            certfile_ok = true;
+        } else if(opt.acme_state && errno == ENOENT) {
+            LOG("cert file %s missing, waiting for ACME provisioning\n", certfile);
+        } else {
+            LOGE("access cert file %s failed: %s\n", certfile, strerror(errno));
+            exit(1);
+        }
+    }
+
+    bool keyfile_ok = false;
+    if(keyfile) {
+        if(access(keyfile, R_OK) == 0) {
+            keyfile_ok = true;
+        } else if(opt.acme_state && errno == ENOENT) {
+            LOG("key file %s missing, waiting for ACME provisioning\n", keyfile);
+        } else {
+            LOGE("access key file %s failed: %s\n", keyfile, strerror(errno));
+            exit(1);
+        }
+    }
+
+    if(certfile_ok && keyfile_ok && load_cert_key(certfile, keyfile, &opt.cert)) {
+        LOGE("failed to load certificate or private key\n");
         exit(1);
     }
+
     if ((opt.ssl_list || opt.quic_list) &&
-        (opt.cert.crt == NULL || opt.cert.key == NULL) &&
-        opt.mitm_mode != Enable && !opt.sni_mode)
+        (cert_pair_leaf(&opt.cert) == NULL || opt.cert.key == NULL) &&
+        opt.mitm_mode != Enable && !opt.sni_mode && !opt.acme_state)
     {
         LOGE("ssl/quic mode require cert and key file\n");
         exit(1);
@@ -988,6 +1036,14 @@ int flushcert() {
 
     // 重新加载服务器证书
     if(certfile && keyfile) {
+        if(access(certfile, R_OK) != 0) {
+            LOGE("reload cert failed, access %s: %s\n", certfile, strerror(errno));
+            return errno ? -errno : -1;
+        }
+        if(access(keyfile, R_OK) != 0) {
+            LOGE("reload key failed, access %s: %s\n", keyfile, strerror(errno));
+            return errno ? -errno : -1;
+        }
         int server_ret = reload_cert_key(certfile, keyfile, &opt.cert);
         if(server_ret != 0) {
             return server_ret;
@@ -996,6 +1052,14 @@ int flushcert() {
 
     // 重新加载CA证书（如果配置了的话）
     if(opt.cafile && opt.cakey) {
+        if(access(opt.cafile, R_OK) != 0) {
+            LOGE("reload cafile failed, access %s: %s\n", opt.cafile, strerror(errno));
+            return errno ? -errno : -1;
+        }
+        if(access(opt.cakey, R_OK) != 0) {
+            LOGE("reload cakey failed, access %s: %s\n", opt.cakey, strerror(errno));
+            return errno ? -errno : -1;
+        }
         int ca_ret = reload_cert_key(opt.cafile, opt.cakey, &opt.ca);
         if(ca_ret != 0) {
             return ca_ret;

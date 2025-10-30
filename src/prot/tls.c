@@ -38,6 +38,7 @@
 #include "misc/cert_manager.h"
 
 #include <openssl/err.h>
+#include <openssl/x509.h>
 #include <openssl/pem.h>
 
 const char *DEFAULT_CIPHER_LIST =
@@ -467,7 +468,7 @@ static int ssl_callback_ClientHello(SSL *ssl, int* al, void* arg){
         LOGD(DSSL, "sni ext found for %s\n", host);
         return SSL_CLIENT_HELLO_SUCCESS;
     }
-    if(!opt.ca.crt || !opt.ca.key) {
+    if(!cert_pair_leaf(&opt.ca) || !opt.ca.key) {
         LOGD(DSSL, "no ca file found for sni: %s\n", host);
         return SSL_CLIENT_HELLO_ERROR;
     }
@@ -496,7 +497,7 @@ static int ssl_callback_ServerName(SSL *ssl, int* al, void* arg){
         return SSL_TLSEXT_ERR_ALERT_FATAL;
     }
     LOGD(DSSL, "servername sni ext found for %s: %s\n", host, servername);
-    if(!opt.ca.crt || !opt.ca.key) {
+    if(!cert_pair_leaf(&opt.ca) || !opt.ca.key) {
         LOGD(DSSL, "no ca file found for sni: %s\n", servername);
         return SSL_TLSEXT_ERR_ALERT_FATAL;
     }
@@ -560,26 +561,52 @@ SSL_CTX* initssl(int quic, const char* host){
 
     if (opt.cafile){
         FILE* fp = fopen(opt.cafile, "r");
-        X509* ca = PEM_read_X509(fp, NULL, NULL, NULL);
-        if(SSL_CTX_add1_chain_cert(ctx, ca) != 1)
-            ERR_print_errors_fp(stderr);
-        X509_free(ca);
-        fclose(fp);
+        if(fp) {
+            X509* ca = PEM_read_X509(fp, NULL, NULL, NULL);
+            if(SSL_CTX_add1_chain_cert(ctx, ca) != 1)
+                ERR_print_errors_fp(stderr);
+            X509_free(ca);
+            fclose(fp);
+        }
     }
 
     if (SSL_CTX_set_default_verify_paths(ctx) != 1)
         ERR_print_errors_fp(stderr);
 
     LOGD(DSSL, "check cert for %s\n", host);
-    if (opt.cert.crt && (!host ||
-        X509_check_host(opt.cert.crt, host, strlen(host), X509_CHECK_FLAG_ALWAYS_CHECK_SUBJECT, NULL) == 1)) {
+    X509* leaf_cert = cert_pair_leaf(&opt.cert);
+    if (leaf_cert && (!host ||
+        X509_check_host(leaf_cert, host, strlen(host), X509_CHECK_FLAG_ALWAYS_CHECK_SUBJECT, NULL) == 1)) {
         //加载证书和私钥
-        if (SSL_CTX_use_certificate(ctx, opt.cert.crt) != 1) {
+        if (SSL_CTX_use_certificate(ctx, leaf_cert) != 1) {
             ERR_print_errors_fp(stderr);
         }
 
         if (SSL_CTX_use_PrivateKey(ctx, opt.cert.key) != 1) {
             ERR_print_errors_fp(stderr);
+        }
+
+        STACK_OF(X509)* chain = opt.cert.chain;
+        if (chain && sk_X509_num(chain) > 1) {
+#ifndef USE_BORINGSSL
+            SSL_CTX_clear_chain_certs(ctx);
+#endif
+            int chain_total = sk_X509_num(chain);
+            for(int i = 1; i < chain_total; ++i) {
+                X509* chain_cert = sk_X509_value(chain, i);
+                if(chain_cert == NULL) {
+                    continue;
+                }
+#ifdef USE_BORINGSSL
+                if(SSL_CTX_add_extra_chain_cert(ctx, X509_dup(chain_cert)) != 1) {
+                    ERR_print_errors_fp(stderr);
+                }
+#else
+                if(SSL_CTX_add1_chain_cert(ctx, chain_cert) != 1) {
+                    ERR_print_errors_fp(stderr);
+                }
+#endif
+            }
         }
 
         if (SSL_CTX_check_private_key(ctx) != 1) {

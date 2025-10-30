@@ -17,31 +17,44 @@ set_target_properties(proxy PROPERTIES OUTPUT_NAME "proxy")
 set(INSTALL_LIBRARIES login sites proxy)
 
 if (HAVE_RUST)
+    get_filename_component(OPENSSL_LIB_DIR ${OPENSSL_SSL_LIBRARY} DIRECTORY)
+    set(CARGO_OPENSSL_ENV
+        OPENSSL_NO_VENDOR=1
+        OPENSSL_INCLUDE_DIR=${OPENSSL_INCLUDE_DIR}
+        OPENSSL_LIB_DIR=${OPENSSL_LIB_DIR}
+    )
+
     set(RUST_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/rs_build)
-    set(RUST_BUILD_LIBRARY ${RUST_BUILD_DIR}/release/libfcm.a)
+    set(RUST_BUILD_LIBRARY ${RUST_BUILD_DIR}/release/libsproxy_cgi.a)
     add_custom_target(
             rust_static_library
             BYPRODUCTS ${RUST_BUILD_LIBRARY}
-            COMMAND ${CARGO_EXECUTABLE} build --release --target-dir ${RUST_BUILD_DIR}
+            COMMAND ${CMAKE_COMMAND} -E env
+                    ${CARGO_OPENSSL_ENV}
+                    ${CARGO_EXECUTABLE} build --release --target-dir ${RUST_BUILD_DIR}
             WORKING_DIRECTORY  ${CMAKE_CURRENT_SOURCE_DIR}/rs
     )
 
     # 为 Rust 静态库创建一个 CMake 目标
-    add_library(fcm_lib STATIC IMPORTED GLOBAL)
-    set_target_properties(fcm_lib PROPERTIES IMPORTED_LOCATION ${RUST_BUILD_LIBRARY})
-    add_dependencies(fcm_lib rust_static_library)
+    add_library(cgi_rust STATIC IMPORTED GLOBAL)
+    set_target_properties(cgi_rust PROPERTIES IMPORTED_LOCATION ${RUST_BUILD_LIBRARY})
+    add_dependencies(cgi_rust rust_static_library)
 
     add_library(alarm SHARED alarm.cpp)
-    target_link_libraries(alarm PUBLIC fcm_lib)
+    target_link_libraries(alarm PUBLIC cgi_rust)
     set_target_properties(alarm PROPERTIES OUTPUT_NAME "alarm")
     set(INSTALL_LIBRARIES ${INSTALL_LIBRARIES} alarm)
+
+    add_library(acme SHARED acme.cpp)
+    target_link_libraries(acme PUBLIC cgi_rust)
+    set_target_properties(acme PROPERTIES OUTPUT_NAME "acme")
+    set(INSTALL_LIBRARIES ${INSTALL_LIBRARIES} acme)
 endif()
 
 if(ZLIB_FOUND)
     add_library(gzip_test SHARED gzip_test.cpp)
     target_link_libraries(gzip_test PUBLIC z)
     set_target_properties(gzip_test PROPERTIES OUTPUT_NAME "test")
-    install(TARGETS login sites proxy gzip_test LIBRARY DESTINATION /var/lib/sproxy/cgi)
     set(INSTALL_LIBRARIES ${INSTALL_LIBRARIES} gzip_test)
 endif()
 
