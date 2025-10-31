@@ -117,6 +117,8 @@ int main(int argc, char **argv) {
     sign.add(SIGHUP,  (sig_t)reloadstrategy);
     sign.add(SIGUSR1, (sig_t)(void(*)())dump_stat);
     sign.add(SIGUSR2, (sig_t)exit_loop);
+    sign.add(SIGTERM, (sig_t)exit_loop);
+    sign.add(SIGINT,  (sig_t)exit_loop);
 #if Backtrace_FOUND
     signal(SIGABRT, dump_trace);
 #endif

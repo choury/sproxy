@@ -545,6 +545,7 @@ static const char* confs[] = {
 
 void exit_loop() {
     LOG("will exit soon...\n");
+    fflush(stdout);
     will_contiune = 0;
 }
 

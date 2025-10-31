@@ -118,10 +118,10 @@ function test_https(){
     curl -f -v https://$HOSTNAME:$1/cgi/libtest.do?size=1M -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "http test 13 failed" && exit 1
     if [ $ker == 'Linux' ]; then
-        timeout 5s curl -f -v https://$HOSTNAME:$1/cgi/libtest.do?size=100M --compressed  -k > /dev/null 2>> curl.log
+        curl -m 5 -f -v https://$HOSTNAME:$1/cgi/libtest.do?size=100M --compressed  -k > /dev/null 2>> curl.log
     else
         # macos is too slow to test it, it maybe need 10s?
-        curl -f -v https://$HOSTNAME:$1/cgi/libtest.do?size=100M --compressed  -k > /dev/null 2>> curl.log
+        curl -m 30 -f -v https://$HOSTNAME:$1/cgi/libtest.do?size=100M --compressed  -k > /dev/null 2>> curl.log
     fi
     [ $? -ne 0 ] && echo "http test 14 failed" && exit 1
     echo ""
@@ -147,9 +147,9 @@ function test_http(){
     curl -f -v http://$HOSTNAME:$1/cgi/libtest.do?size=1M > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "http test 9 failed" && exit 1
     if [ $ker == 'Linux' ]; then
-        timeout 5s curl -f -v http://$HOSTNAME:$1/cgi/libtest.do?size=100M --compressed  > /dev/null 2>> curl.log
+        curl -m 5 -f -v http://$HOSTNAME:$1/cgi/libtest.do?size=100M --compressed  > /dev/null 2>> curl.log
     else
-        curl -f -v http://$HOSTNAME:$1/cgi/libtest.do?size=100M --compressed  > /dev/null 2>> curl.log
+        curl -m 30 -f -v http://$HOSTNAME:$1/cgi/libtest.do?size=100M --compressed  > /dev/null 2>> curl.log
     fi
     [ $? -ne 0 ] && echo "http test 10 failed" && exit 1
     echo ""
@@ -175,9 +175,9 @@ function test_http3(){
     curl -f -v --http3-only https://$HOSTNAME:$1/cgi/libtest.do?size=1M -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "http test 7 failed" && exit 1
     if [ $ker == 'Linux' ]; then
-        timeout 5s curl -f -v --http3-only https://$HOSTNAME:$1/cgi/libtest.do?size=100M --compressed -k > /dev/null 2>> curl.log
+        curl -m 5 -f -v --http3-only https://$HOSTNAME:$1/cgi/libtest.do?size=100M --compressed -k > /dev/null 2>> curl.log
     else
-        curl -f -v --http3-only https://$HOSTNAME:$1/cgi/libtest.do?size=100M --compressed -k > /dev/null 2>> curl.log
+        curl -m 30 -f -v --http3-only https://$HOSTNAME:$1/cgi/libtest.do?size=100M --compressed -k > /dev/null 2>> curl.log
     fi
     [ $? -ne 0 ] && echo "http test 8 failed" && exit 1
     echo ""
