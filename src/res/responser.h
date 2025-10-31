@@ -35,4 +35,5 @@ bool shouldNegotiate(std::shared_ptr<const HttpReqHeader> req, Requester* src);
 void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw);
 void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw);
 void response(std::shared_ptr<MemRWer> rw, std::shared_ptr<HttpResHeader> res, std::string_view body = "");
+void rewrite_rproxy_location(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<HttpResHeader> res);
 #endif

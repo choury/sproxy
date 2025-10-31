@@ -3,9 +3,12 @@
 #include "prot/memio.h"
 #include "req/requester.h"
 #include "misc/hook.h"
+#include "misc/util.h"
 
 #include <assert.h>
 #include <inttypes.h>
+#include <string>
+#include <string_view>
 
 void Proxy2::connection_lost(){
     LOGE("(%s) <proxy2> the ping timeout, so close it\n", dumpDest(rwer->getDst()).c_str());
@@ -97,6 +100,7 @@ void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
     }else if(!header->no_body() && !header->has("Content-Length")) {
         header->set("Transfer-Encoding", "chunked");
     }
+    rewrite_rproxy_location(status.req, header);
     status.rw->SendHeader(header);
     status.flags |= HTTP_RESPOENSED;
 }

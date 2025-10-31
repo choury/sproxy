@@ -223,6 +223,7 @@ void Proxy3::ResProc(uint64_t id, std::shared_ptr<HttpResHeader> header) {
         {
             header->set("Transfer-Encoding", "chunked");
         }
+        rewrite_rproxy_location(status.req, header);
         status.rw->SendHeader(header);
         status.flags |= HTTP_RESPOENSED;
     }else{
@@ -322,4 +323,3 @@ void Proxy3::dump_usage(Dumper dp, void *param) {
        this, sizeof(*this) + qpack_encoder.get_dynamic_table_size() + qpack_decoder.get_dynamic_table_size(),
        res_usage, rwer->mem_usage());
 }
-

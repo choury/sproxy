@@ -12,3 +12,5 @@ thirdparty/
 *.user
 .DS_Store
 common.h
+src/bpf/sockops.skel.h
+src/bpf/vmlinux.h

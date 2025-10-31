@@ -202,8 +202,6 @@ static std::vector<std::string> split(const std::string& s, char delimiter) {
     return tokens;
 }
 
-
-
 void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     uint64_t id = req->request_id;
     if(!checkauth(rw->getSrc().hostname, req->get("Authorization"))){
@@ -259,7 +257,7 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
         req->postparse();
         LOGD(DFILE, "rproxy: %s -> %s\n", path.c_str(), req->geturl().c_str());
     }
-    req->set(STRATEGY, std::string("rproxy/")+filename);
+    req->set("Rproxy-Name", filename);
     if(filename == "local") {
         return distribute(req, rw);
     }
@@ -268,4 +266,47 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
         return;
     }
     rproxys[filename]->request(req, rw);
+}
+
+void rewrite_rproxy_location(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<HttpResHeader> res) {
+    if(!req || !res) {
+        return;
+    }
+    if(!res->has("Location")) {
+        return;
+    }
+    const char* rproxy = req->get("Rproxy-Name");
+    if(rproxy == nullptr) {
+        return;
+    }
+    std::string location = res->get("Location");
+    if(location.empty() || startwith(location.c_str(), "/rproxy/")) {
+        return;
+    }
+
+    std::string prefix = std::string("/rproxy/") + rproxy + "/";
+    if(location.size() >= 2 && location[0] == '/' && location[1] == '/') {
+        /*
+        *   //example.com => /rproxy/<name>/http://example.com
+        */
+        const char* scheme = req->Dest.scheme[0] ? req->Dest.scheme : "http";
+        res->set("Location", prefix + std::string(scheme) + ":" + location);
+        return;
+    }
+
+    Destination parsed{};
+    char parsed_path[URLLIMIT] = {0};
+    if(spliturl(location.c_str(), &parsed, parsed_path) != 0) {
+        return;
+    }
+
+    if(parsed.scheme[0]) {
+        // http://example.com/... => /rproxy/<name>/http://example.com/...
+        res->set("Location", prefix + location);
+        return;
+    }
+
+    // concat last / + path
+    std::string new_location = prefix + dumpDest(&req->Dest) + (parsed_path[0] ? std::string(parsed_path) : "/");
+    res->set("Location", new_location);
 }
