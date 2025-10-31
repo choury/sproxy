@@ -8,6 +8,12 @@
 #include <map>
 #include <assert.h>
 #include <openssl/x509.h>
+#include <openssl/evp.h>
+#include <openssl/rsa.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <openssl/core_names.h>
+#include <openssl/params.h>
+#endif
 
 
 static std::map<std::string, cert_pair> certs;
@@ -21,15 +27,16 @@ int load_cert_key(const char *crt_path, const char *key_path, struct cert_pair* 
         LOGE("Error reading cert file %s: %s\n", crt_path, ERR_error_string(ERR_get_error(), nullptr));
         return -1;
     }
-    defer(sk_X509_INFO_pop_free, infos, X509_INFO_free);
+    defer([infos]() { sk_X509_INFO_pop_free(infos, X509_INFO_free); });
 
     STACK_OF(X509)* chain = sk_X509_new_null();
     if(chain == nullptr) {
         LOGE("Failed to allocate certificate chain stack\n");
         return -1;
     }
-    for(size_t idx = 0; idx < sk_X509_INFO_num(infos); ++idx) {
-        X509_INFO* info = sk_X509_INFO_value(infos, idx);
+    auto info_count = sk_X509_INFO_num(infos);
+    for(decltype(info_count) idx = 0; idx < info_count; ++idx) {
+        X509_INFO* info = sk_X509_INFO_value(infos, static_cast<int>(idx));
         if(info->x509 == nullptr) {
             continue;
         }
@@ -63,38 +70,74 @@ int load_cert_key(const char *crt_path, const char *key_path, struct cert_pair* 
     }
     cert->chain = chain;
     cert->key = key;
-    LOG("certificate %s loaded with %zd certificates\n", crt_path, sk_X509_num(chain));
+    LOG("certificate %s loaded with %zu certificates\n", crt_path, static_cast<size_t>(sk_X509_num(chain)));
     return 0;
 }
 
 static EVP_PKEY* generate_key() {
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L && !defined(OPENSSL_IS_BORINGSSL)
+    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_from_name(nullptr, "RSA", nullptr);
+    if(ctx == nullptr) {
+        return nullptr;
+    }
+    defer(EVP_PKEY_CTX_free, ctx);
+
+    if (EVP_PKEY_keygen_init(ctx) <= 0) {
+        return nullptr;
+    }
+
+    unsigned int bits = 2048;
+    unsigned int exponent = RSA_F4;
+    OSSL_PARAM params[] = {
+        OSSL_PARAM_construct_uint(OSSL_PKEY_PARAM_RSA_BITS, &bits),
+        OSSL_PARAM_construct_uint(OSSL_PKEY_PARAM_RSA_E, &exponent),
+        OSSL_PARAM_construct_end()
+    };
+
+    if (EVP_PKEY_CTX_set_params(ctx, params) <= 0) {
+        return nullptr;
+    }
+
+    EVP_PKEY* key = nullptr;
+    if (EVP_PKEY_generate(ctx, &key) <= 0) {
+        return nullptr;
+    }
+
+    return key;
+#else
+    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nullptr);
+    if(ctx == nullptr) {
+        return nullptr;
+    }
+    defer(EVP_PKEY_CTX_free, ctx);
+
+    if (EVP_PKEY_keygen_init(ctx) <= 0) {
+        return nullptr;
+    }
+    if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 2048) <= 0) {
+        return nullptr;
+    }
+
     BIGNUM *e = BN_new();
     if(e == nullptr) {
         return nullptr;
     }
     defer(BN_free, e);
-    BN_set_word(e, RSA_F4);
-
-    RSA* rsa = RSA_new();
-    if (rsa == nullptr) {
-        return nullptr;
-    }
-    if (!RSA_generate_key_ex(rsa, 2048, e, nullptr)) {
-        RSA_free(rsa);
+    if (!BN_set_word(e, RSA_F4)) {
         return nullptr;
     }
 
-    EVP_PKEY* key = EVP_PKEY_new();
-    if(key == nullptr) {
-        RSA_free(rsa);
+    if (EVP_PKEY_CTX_set_rsa_keygen_pubexp(ctx, e) <= 0) {
         return nullptr;
     }
-    if (!EVP_PKEY_assign_RSA(key, rsa)) {
-        EVP_PKEY_free(key);
-        RSA_free(rsa);
+
+    EVP_PKEY* key = nullptr;
+    if (EVP_PKEY_keygen(ctx, &key) <= 0) {
         return nullptr;
     }
+
     return key;
+#endif
 }
 
 static std::string truncateDomain(const std::string &domain) {
