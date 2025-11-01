@@ -84,6 +84,11 @@ public:
     virtual void ReadData() override;
     virtual void Send(Buffer&& bb) override;
 
+    virtual bool drained() override {
+        sink_out_bio(0);
+        return wbuff.empty() && BIO_ctrl_pending(out_bio) == 0;
+    }
+
     virtual bool isTls() override {
         return true;
     }
@@ -129,6 +134,10 @@ public:
       SslRWerBase(ctx), MemRWer(src, dst, std::move(_cb))
     {
         set_server_name(src.hostname);
+    }
+    virtual bool drained() override {
+        sink_out_bio(0);
+        return wbuff.empty() && BIO_ctrl_pending(out_bio) == 0;
     }
     virtual void push_data(Buffer&& bb) override;
     void Send(Buffer&& bb) override;

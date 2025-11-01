@@ -21,6 +21,10 @@ ssize_t RWer::cap(uint64_t) {
     return wbuff.cap();
 }
 
+bool RWer::drained() {
+    return wbuff.empty();
+}
+
 RWer::RWer(int fd, std::shared_ptr<IRWerCallback> cb): Ep(fd), callback(std::move(cb)) {
     assert(cb && cb->errorCB);
 }
@@ -34,7 +38,7 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
     ssize_t ret = 0;
     size_t len = 0;
     bool hasEof = false;
-    if(wbuff.empty()) {
+    if(drained()) {
         return 0;
     }
     const auto& data = wbuff.data();
@@ -94,7 +98,8 @@ void RWer::SendData(){
             cb->writeCB(id);
         }
     }
-    if(wbuff.empty()){
+    if(drained()){
+        assert(wbuff.empty());
         delEvents(RW_EVENT::WRITE);
     }
 }
@@ -152,7 +157,7 @@ void RWer::closeHE(RW_EVENT) {
     std::set<uint64_t> writed_list;
     ssize_t ret = Write(writed_list);
 #ifndef WSL
-    if (wbuff.empty() || (ret <= 0 && errno != EAGAIN && errno != ENOBUFS)) {
+    if (drained() || (ret <= 0 && errno != EAGAIN && errno != ENOBUFS)) {
         handleEvent = (void(Ep::*)(RW_EVENT))&RWer::IdleHE;
         setEvents(RW_EVENT::NONE);
         if(auto cb = callback.lock(); cb) {

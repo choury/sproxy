@@ -18,6 +18,7 @@ INCLUDE(CheckFunctionExists)
 INCLUDE(CMakePushCheckState)
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
+option(ASAN "Build with asan when build_type=Debug" ON)
 
 
 if(ANDROID)
@@ -65,7 +66,7 @@ message(STATUS "Set VERSION: ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.$
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-if(${CMAKE_BUILD_TYPE} MATCHES "Debug" AND NOT ANDROID_APP AND NOT STATIC_BUILD)
+if(${CMAKE_BUILD_TYPE} MATCHES "Debug" AND NOT ANDROID_APP AND NOT STATIC_BUILD AND ASAN)
     CHECK_CXX_COMPILER_FLAG("-fsanitize=undefined" HAVE_SAN_UNDEF)
     set(CMAKE_REQUIRED_FLAGS "-fsanitize=address")
     CHECK_CXX_COMPILER_FLAG("-fsanitize=address" HAVE_SAN_ADDR)
@@ -250,7 +251,7 @@ if (HAVE_SAN_UNDEF AND APPLE) #we meet some issue about member function point wi
     set(CMAKE_CXX_FLAGS_DEBUG "-fsanitize=undefined ${CMAKE_CXX_FLAGS_DEBUG}")
 
     set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} -fsanitize=undefined")
-    set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} -fsanitize=address")
+    set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} -fsanitize=undefined")
 endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")

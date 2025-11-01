@@ -122,6 +122,7 @@ public:
 
     //for write buffer
     virtual ssize_t cap(uint64_t id);
+    virtual bool drained();
     virtual void Send(Buffer&& bb);
 
     virtual bool isTls();

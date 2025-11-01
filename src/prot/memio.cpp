@@ -121,15 +121,14 @@ void MemRWer::ConsumeRData(uint64_t id) {
 
 ssize_t MemRWer::Write(std::set<uint64_t>& writed_list) {
     if(_callback.expired()){
-        size_t wlen = wbuff.length();
-        if(wlen) LOGE("MemRWer <%d> %s callback expired, left: %zd\n", getFd(), dumpDest(src).c_str(), wlen);
+        if(!drained()) LOGE("MemRWer <%d> %s callback expired, left: %zd\n", getFd(), dumpDest(src).c_str(), wbuff.length());
         delEvents(RW_EVENT::WRITE);
         errno = EPIPE;
         return -1;
     }
     size_t len = 0;
     auto& write_cb = _callback.lock()->write_data;
-    while(!wbuff.empty()){
+    while(!drained()){
         auto bb = wbuff.get();
         size_t blen = bb.len;
         ssize_t ret = write_cb(std::move(bb));
@@ -159,7 +158,7 @@ void MemRWer::closeHE(RW_EVENT) {
     }
     std::set<uint64_t> writed_list;
     ssize_t ret = Write(writed_list);
-    if (wbuff.empty() || (ret <= 0 && errno != EAGAIN && errno != ENOBUFS)) {
+    if (drained() || (ret <= 0 && errno != EAGAIN && errno != ENOBUFS)) {
         handleEvent = (void(Ep::*)(RW_EVENT))&MemRWer::IdleHE;
         setEvents(RW_EVENT::NONE);
         if(auto cb = _callback.lock(); cb) {

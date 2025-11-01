@@ -88,7 +88,7 @@ void SslRWerBase::sink_out_bio(uint64_t id) {
     }
     Block buff(len);
     size_t offset = 0;
-    while(BIO_ctrl_pending(out_bio) && offset < len) {
+    do{
         int ret = BIO_read(out_bio, (char*)buff.data() + offset, len - offset);
         LOGD(DSSL, "(%s) BIO_read %d bytes\n", server.c_str(), ret);
         if (ret > 0) {
@@ -96,7 +96,7 @@ void SslRWerBase::sink_out_bio(uint64_t id) {
         } else {
             break;
         }
-    }
+    } while(BIO_ctrl_pending(out_bio) && offset < len);
     HOOK_FUNC(this, out_bio, buff, offset);
     if(offset > 0) {
         write(Buffer{std::move(buff), (size_t)offset, id});
