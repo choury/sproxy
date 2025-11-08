@@ -71,6 +71,20 @@ void SetTcpOptions(int fd, const struct sockaddr_storage* ignore){
     if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(enable))<0)
         LOGE("TCP_NODELAY:%s\n", strerror(errno));
 
+#if __APPLE__
+    int sndbuf = MAX_BUF_LEN;
+#else
+    int sndbuf = MAX_BUF_LEN * 4;
+#endif
+    if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf)) < 0)
+        LOGE("set sndbuf:%s\n", strerror(errno));
+#if __APPLE__
+    int rcvbuf = MAX_BUF_LEN;
+#else
+    int rcvbuf = MAX_BUF_LEN * 4;
+#endif
+    if(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf)) < 0)
+        LOGE("set rcvbuf:%s\n", strerror(errno));
     SetSocketUnblock(fd);
 }
 
@@ -104,10 +118,18 @@ void SetUdpOptions(int fd, const struct sockaddr_storage* addr){
     if(setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable)) < 0)
         LOGE("set broadcast:%s\n", strerror(errno));
 
+#if __APPLE__
     int sndbuf = MAX_BUF_LEN;
+#else
+    int sndbuf = MAX_BUF_LEN * 4;
+#endif
     if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf)) < 0)
         LOGE("set sndbuf:%s\n", strerror(errno));
+#if __APPLE__
     int rcvbuf = MAX_BUF_LEN;
+#else
+    int rcvbuf = MAX_BUF_LEN * 4;
+#endif
     if(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf)) < 0)
         LOGE("set rcvbuf:%s\n", strerror(errno));
     SetSocketUnblock(fd);

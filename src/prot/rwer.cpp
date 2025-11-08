@@ -62,7 +62,7 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
             }
             iovs.emplace_back(iovec{(void *) bb.data(), bb.len});
             len += bb.len;
-            if (unlikely(iovs.size() >= IOV_MAX)) {
+            if (unlikely(iovs.size() >= IOV_MAX) || (len >= MAX_BUF_LEN)) {
                 break;
             }
         }
