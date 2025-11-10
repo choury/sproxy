@@ -7,7 +7,7 @@ Rguest3::Rguest3(const Destination& dest, const std::string& name):
 {
     auto qrwer = std::dynamic_pointer_cast<QuicRWer>(rwer);
     char alpn[200];
-    int len = sprintf(alpn, "%cr3/%s", (char)name.length()+3, name.c_str());
+    int len = snprintf(alpn, sizeof(alpn), "%cr3/%s", (char)name.length()+3, name.c_str());
     qrwer->setAlpn((const unsigned char*)alpn, len);
     std::dynamic_pointer_cast<IQuicCallback>(cb)->onConnect([this](const sockaddr_storage&, uint32_t){
         LOG("connected to rproxy3 server: %s\n", dumpDest(rwer->getDst()).c_str());

@@ -7,12 +7,15 @@
 #include "misc/config.h"
 #include "misc/hook.h"
 #include "res/cgi.h"
+#include "rproxy_listener.h"
+
+#include <inttypes.h>
 
 Cli::Cli(int fd, const sockaddr_storage* addr): Requester(nullptr) {
     cb = ISocketCallback::create()->onError([this](int ret, int code) {
-        Error(ret, code); 
-    })->onRead([this](Buffer &&bb) { 
-        return ReadHE(bb); 
+        Error(ret, code);
+    })->onRead([this](Buffer &&bb) {
+        return ReadHE(bb);
     });
     rwer = std::make_shared<StreamRWer>(fd, addr, cb);
     id = nextId();
@@ -212,6 +215,21 @@ bool Cli::HookerAdd(const std::string &hooker, const std::string &lib) {
 bool Cli::HookerDel(const std::string &hooker) {
     LOG("%s [%s] %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, hooker.c_str());
     return hookManager.Unregister((const void*)std::stoull(hooker, nullptr, 16));
+}
+
+bool Cli::ListenAdd(const std::string& bind, const std::string& target) {
+    LOG("%s [%s] %s %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, bind.c_str(), target.c_str());
+    return add_rproxy_listener(bind, target);
+}
+
+bool Cli::ListenDel(uint64_t id) {
+    LOG("%s [%s] %" PRIu64 "\n", dumpDest(rwer->getSrc()).c_str(), __func__, id);
+    return remove_rproxy_listener(id);
+}
+
+std::vector<std::string> Cli::ListenList() {
+    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    return list_rproxy_listeners();
 }
 
 void Cli::dump_stat(Dumper dp, void* param) {

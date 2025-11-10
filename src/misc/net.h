@@ -47,6 +47,12 @@ int ListenTcp(const struct sockaddr_storage* addr, const struct listenOption* op
 int ListenUdp(const struct sockaddr_storage* addr, const struct listenOption* ops);
 int ListenUnix(const char* path, const struct listenOption* ops);
 
+struct Destination;
+int ListenTcpD(const struct Destination* dest, const struct listenOption* ops);
+int ListenUdpD(const struct Destination* dest, const struct listenOption* ops);
+int ListenUnixD(const struct Destination* dest, const struct listenOption* ops);
+
+
 int Connect(const struct sockaddr_storage*, int type);
 int IcmpSocket(const struct sockaddr_storage* addr, int raw);
 

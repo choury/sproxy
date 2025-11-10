@@ -5,6 +5,7 @@
 
 #include <queue>
 #include <string>
+#include <vector>
 #include <functional>
 #include <future>
 
@@ -58,6 +59,9 @@ protected:
     virtual std::string DumpDns() = 0;
     virtual std::string DumpMemUsage() = 0;
     virtual std::string DumpHooker() = 0;
+    virtual bool ListenAdd(const std::string& bind, const std::string& target) = 0;
+    virtual bool ListenDel(uint64_t id) = 0;
+    virtual std::vector<std::string> ListenList() = 0;
 };
 
 class SproxyClient:virtual public RpcClient {
@@ -91,6 +95,9 @@ public:
     std::promise<bool> killCon(const std::string& address);
     std::promise<bool> HookerAdd(const std::string& hooker, const std::string& lib);
     std::promise<bool> HookerDel(const std::string& hooker);
+    std::promise<bool> ListenAdd(const std::string& bind, const std::string& target);
+    std::promise<bool> ListenDel(uint64_t id);
+    std::promise<std::vector<std::string>> ListenList();
 };
 
 #endif

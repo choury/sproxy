@@ -44,28 +44,6 @@ int protectFd(int){
 }
 #endif
 
-static int ListenTcp(const Destination* dest, const struct listenOption* ops) {
-    sockaddr_storage addr;
-    if(storage_aton(dest->hostname, dest->port, &addr) == 0) {
-        LOGE("failed to parse listen addr: %s\n", dest->hostname);
-        return -1;
-    }
-    return ListenTcp(&addr, ops);
-}
-
-static int ListenUdp(const Destination* dest, const listenOption* ops) {
-    sockaddr_storage addr;
-    if(storage_aton(dest->hostname, dest->port, &addr) == 0) {
-        LOGE("failed to parse listen addr: %s\n", dest->hostname);
-        return -1;
-    }
-    int fd = ListenUdp(&addr, ops);
-    if(fd < 0) {
-        return -1;
-    }
-    return fd;
-}
-
 static sockaddr_in localhost4 = {
     .sin_family = AF_INET,
     .sin_port = 0,
@@ -147,7 +125,7 @@ int main(int argc, char **argv) {
                         return -1;
                     }
                 } else {
-                    fd[0] = ListenTcp(&dest, nullptr);
+                    fd[0] = ListenTcpD(&dest, nullptr);
                     if (fd[0] < 0) {
                         return -1;
                     }
@@ -179,11 +157,11 @@ int main(int argc, char **argv) {
                 }
 #endif
             } else {
-                fd[0] = ListenTcp(&opt.tproxy, &ops);
+                fd[0] = ListenTcpD(&opt.tproxy, &ops);
                 if (fd[0] < 0) {
                     return -1;
                 }
-                fd[2] = ListenUdp(&opt.tproxy, &ops);
+                fd[2] = ListenUdpD(&opt.tproxy, &ops);
                 if (fd[2] < 0) {
                     return -1;
                 }
@@ -224,7 +202,7 @@ int main(int argc, char **argv) {
                         return -1;
                     }
                 } else {
-                    fd[0] = ListenTcp(&dest, nullptr);
+                    fd[0] = ListenTcpD(&dest, nullptr);
                     if (fd[0] < 0) {
                         return -1;
                     }
@@ -256,7 +234,7 @@ int main(int argc, char **argv) {
                         return -1;
                     }
                 } else {
-                    fd[0] = ListenUdp(&dest, nullptr);
+                    fd[0] = ListenUdpD(&dest, nullptr);
                     if(fd[0] <  0) {
                         return -1;
                     }
@@ -307,7 +285,7 @@ int main(int argc, char **argv) {
                 return -1;
             }
         }else {
-            fd[0] = ListenTcp(&opt.admin, nullptr);
+            fd[0] = ListenTcpD(&opt.admin, nullptr);
             if (fd[0] < 0) {
                 return -1;
             }

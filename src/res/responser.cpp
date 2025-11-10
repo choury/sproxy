@@ -85,6 +85,9 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
     if(!req->Dest.hostname[0]){
         return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[host not set]]\n");
     }
+    if (!req->valid_method()) {
+        return response(rw, HttpResHeader::create(S405, sizeof(S405), id), "[[unsupported method]]\n");
+    }
     if(opt.redirect_http && opt.ssl_list && is_http_listen_port(rw->getDst().port)) {
         auto reqh = HttpReqHeader(*req);
         strcpy(reqh.Dest.scheme, "https");
@@ -94,98 +97,94 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         resh->set("Location", reqh.geturl());
         return response(rw, resh, reqh.geturl().c_str());
     }
-    if (req->valid_method()) {
-        strategy stra = getstrategy(req->Dest.hostname, req->path);
-        if(stra.s == Strategy::block){
-            req->set(STRATEGY, getstrategystring(Strategy::block));
-            return response(rw, HttpResHeader::create(S403, sizeof(S403), id),
-                              "This site is blocked, please contact administrator for more information.\n");
-        }
-        if(stra.s == Strategy::local){
-            if(!opt.restrict_local && !req->http_method()) {
-                return response(rw, HttpResHeader::create(S405, sizeof(S405), id),
-                                                "[[unsported method]]\n");
-            }
-            if(!opt.restrict_local ||
-               (req->http_method() && (rw->getDst().port == 0 || req->getDport() == rw->getDst().port)))
-            {
-                req->set(STRATEGY, getstrategystring(Strategy::local));
-                return File::getfile(req, rw);
-            }
-            stra.s = Strategy::direct;
-        }
-        req->set(STRATEGY, getstrategystring(stra.s));
-        switch(check_header(req, rw->getSrc().hostname)){
-        case CheckResult::Succeed:
-            break;
-        case CheckResult::AuthFailed: {
-            auto sheader = HttpResHeader::create(S407, sizeof(S407), id);
-            sheader->set("Proxy-Authenticate", "Basic realm=\"Secure Area\"");
-            return response(rw, sheader, "[[Authorization needed]]\n");
-        }
-        case CheckResult::LoopBack:
-            return response(rw, HttpResHeader::create(S508, sizeof(S508), id), "[[redirect back]]\n");
-        case CheckResult::NoPort:
-            return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[no port]]\n");
-        }
-        if(req->has("rproxy")) {
-            return distribute_rproxy(req, rw);
-        }
-        req->append("Via", identify);
-        Destination dest;
-        switch(stra.s){
-        case Strategy::proxy:
-            memcpy(&dest, &opt.Server, sizeof(dest));
-            if(dest.port == 0){
-                return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[server not set]]\n");
-            }
-            if(strlen(opt.rewrite_auth)){
-                req->set("Proxy-Authorization", std::string("Basic ") + opt.rewrite_auth);
-            }
-            //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
-            req->chain_proxy = true;
-            if(!stra.ext.empty() && parseDest(stra.ext.c_str(), &dest)){
-                return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[ext misformat]]\n");
-            }
-            break;
-        case Strategy::direct:
-            memcpy(&dest, &req->Dest, sizeof(dest));
-            dest.port = req->getDport();
-            if(strcmp(req->Dest.protocol, "icmp") == 0){
-                return (new Ping(req))->request(req, rw);
-            }
-            if(strcmp(req->Dest.protocol, "udp") == 0) {
-                return (new Uhost(req))->request(req, rw);
-            }
-            req->del("Proxy-Authorization");
-            break;
-        //rewrite 和 forward的唯一区别就是rewrite会修改host为目标地址
-        case Strategy::rewrite:
-            /* FALLTHROUGH */
-        case Strategy::forward:
-            if(stra.ext.empty()){
-                return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[destination not set]]\n");
-            }
-            memcpy(&dest, &req->Dest, sizeof(dest));
-            strcpy(dest.protocol, "tcp"); // rewrite and forward only support tcp
-            if(dest.port == 0) {
-                dest.port = req->getDport();
-            }
-            if(spliturl(stra.ext.c_str(), &dest, nullptr)){
-                return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[ext misformat]]\n");
-            }
-            if(stra.s == Strategy::rewrite) {
-                req->set("host", dumpAuthority(&dest));
-            }
-            break;
-        default:
-            return response(rw, HttpResHeader::create(S503, sizeof(S503), id), "[[BUG]]\n");
-        }
-        dest.system_resolve = req->Dest.system_resolve;
-        return Host::distribute(req, dest, rw);
-    } else{
-        return response(rw, HttpResHeader::create(S405, sizeof(S405), id), "[[unsported method]]\n");
+    strategy stra = getstrategy(req->Dest.hostname, req->path);
+    if(stra.s == Strategy::block){
+        req->set(STRATEGY, getstrategystring(Strategy::block));
+        return response(rw, HttpResHeader::create(S403, sizeof(S403), id),
+                            "This site is blocked, please contact administrator for more information.\n");
     }
+    if(stra.s == Strategy::local){
+        if(!opt.restrict_local && !req->http_method()) {
+            return response(rw, HttpResHeader::create(S405, sizeof(S405), id),
+                                            "[[unsupported method]]\n");
+        }
+        if(!opt.restrict_local ||
+            (req->http_method() && (rw->getDst().port == 0 || req->getDport() == rw->getDst().port)))
+        {
+            req->set(STRATEGY, getstrategystring(Strategy::local));
+            return File::getfile(req, rw);
+        }
+        stra.s = Strategy::direct;
+    }
+    req->set(STRATEGY, getstrategystring(stra.s));
+    switch(check_header(req, rw->getSrc().hostname)){
+    case CheckResult::Succeed:
+        break;
+    case CheckResult::AuthFailed: {
+        auto sheader = HttpResHeader::create(S407, sizeof(S407), id);
+        sheader->set("Proxy-Authenticate", "Basic realm=\"Secure Area\"");
+        return response(rw, sheader, "[[Authorization needed]]\n");
+    }
+    case CheckResult::LoopBack:
+        return response(rw, HttpResHeader::create(S508, sizeof(S508), id), "[[redirect back]]\n");
+    case CheckResult::NoPort:
+        return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[no port]]\n");
+    }
+    if(req->has("rproxy")) {
+        return distribute_rproxy(req, rw);
+    }
+    req->append("Via", identify);
+    Destination dest;
+    switch(stra.s){
+    case Strategy::proxy:
+        memcpy(&dest, &opt.Server, sizeof(dest));
+        if(dest.port == 0){
+            return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[server not set]]\n");
+        }
+        if(strlen(opt.rewrite_auth)){
+            req->set("Proxy-Authorization", std::string("Basic ") + opt.rewrite_auth);
+        }
+        //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
+        req->chain_proxy = true;
+        if(!stra.ext.empty() && parseDest(stra.ext.c_str(), &dest)){
+            return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[ext misformat]]\n");
+        }
+        break;
+    case Strategy::direct:
+        memcpy(&dest, &req->Dest, sizeof(dest));
+        dest.port = req->getDport();
+        if(strcmp(req->Dest.protocol, "icmp") == 0){
+            return (new Ping(req))->request(req, rw);
+        }
+        if(strcmp(req->Dest.protocol, "udp") == 0) {
+            return (new Uhost(req))->request(req, rw);
+        }
+        req->del("Proxy-Authorization");
+        break;
+    //rewrite 和 forward的唯一区别就是rewrite会修改host为目标地址
+    case Strategy::rewrite:
+        /* FALLTHROUGH */
+    case Strategy::forward:
+        if(stra.ext.empty()){
+            return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[destination not set]]\n");
+        }
+        memcpy(&dest, &req->Dest, sizeof(dest));
+        strcpy(dest.protocol, "tcp"); // rewrite and forward only support tcp
+        if(dest.port == 0) {
+            dest.port = req->getDport();
+        }
+        if(spliturl(stra.ext.c_str(), &dest, nullptr)){
+            return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[ext misformat]]\n");
+        }
+        if(stra.s == Strategy::rewrite) {
+            req->set("host", dumpAuthority(&dest));
+        }
+        break;
+    default:
+        return response(rw, HttpResHeader::create(S503, sizeof(S503), id), "[[BUG]]\n");
+    }
+    dest.system_resolve = req->Dest.system_resolve;
+    return Host::distribute(req, dest, rw);
 }
 
 std::map<std::string, Responser*> rproxys;

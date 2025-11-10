@@ -549,24 +549,6 @@ void exit_loop() {
     will_contiune = 0;
 }
 
-static int parseBind(const char* addr, struct Destination* info) {
-    memset(info, 0, sizeof(*info));
-    if(addr == NULL || addr[0] == 0) {
-        return 0;
-    }
-    if (strncmp(addr, "unix:", 5) == 0) {
-        // unix:/var/lib/sproxy.sock
-        strcpy(info->hostname, addr + 5);
-        return 0;
-    }
-    if(strchr(addr, ':')) {
-        return parseDest(addr, info);
-    }
-    strcpy(info->hostname, "[::]");
-    info->port = atoi(addr);
-    return !(info->port > 0 && info->port < 65535);
-}
-
 void free_arg_list(struct arg_list* list) {
     if(list == NULL) {
         return;
@@ -636,7 +618,7 @@ void postConfig(){
     build_dest_list(&ssl_listens, &opt.ssl_list, "ssl");
     build_dest_list(&quic_listens, &opt.quic_list, "quic");
 
-    if(parseBind(tproxy_listen, &opt.tproxy)) {
+    if(tproxy_listen && parseBind(tproxy_listen, &opt.tproxy)) {
         LOGE("wrong tproxy listen: %s\n", tproxy_listen);
         exit(1);
     }

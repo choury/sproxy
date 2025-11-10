@@ -22,7 +22,7 @@ size_t Rguest2::InitProc(Buffer& bb) {
     if(ret > 0) {
         uint32_t id = OpenStream();
         char preface[URLLIMIT];
-        snprintf(preface, sizeof(preface), "GET /rproxy/%s HTTP/1.1\r\nHost: localhost\r\n\r\n", name.c_str());
+        snprintf(preface, sizeof(preface), "GET /rproxy/%s HTTP/1.1" CRLF "Host: localhost" CRLF CRLF, name.c_str());
 
         auto req = UnpackHttpReq(preface);
         Block buff(BUF_LEN);

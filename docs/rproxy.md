@@ -19,6 +19,22 @@
    ```
    http://<本地sproxy>/rproxy/<name>/https://example.com/
    ```
+### 动态监听方式
+
+运行中的 `sproxy` 可以通过scli的 `listen add [tcp/udp:][ip:]port <rproxy>@[tcp/udp:]host:port` 动态开放新的监听端口，并把进入该端口的流量通过 HTTP `CONNECT` 转发到指定的 `rproxy` 会话。
+
+- `<rproxy>` 为远端注册时使用的名称，若未显式给出协议则默认沿用监听协议。
+- `dump listens` 查看当前启用的动态监听，`listen del <id>` 关闭其中一条。
+
+示例：
+
+```bash
+> listen add tcp:127.0.0.1:10022 hk@192.168.10.2:22
+> dump listens
+#1 tcp tcp://127.0.0.1:10022 -> hk@tcp://192.168.10.2:22
+```
+
+随后连接本地 `10022` 端口即可通过远端 `hk` 节点访问其 `192.168.10.2:22` 入口。
 
 ## 请求与响应流程
 

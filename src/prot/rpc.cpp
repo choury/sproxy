@@ -225,6 +225,31 @@ json_object * SproxyServer::call(std::string method, json_object* content) {
         }
         auto ok = HookerDel(json_object_get_string(jhooker));
         json_object_object_add(jres, "ok", json_object_new_boolean(ok));
+    }else if(method == "ListenAdd") {
+        json_object* jbind = json_object_object_get(content, "bind");
+        json_object* jtarget = json_object_object_get(content, "target");
+        if(!jbind || !jtarget){
+            json_object_object_add(jres, "error", json_object_new_string("require some params"));
+            return jres;
+        }
+        auto ok = ListenAdd(json_object_get_string(jbind), json_object_get_string(jtarget));
+        json_object_object_add(jres, "ok", json_object_new_boolean(ok));
+    }else if(method == "ListenDel") {
+        json_object* jid = json_object_object_get(content, "id");
+        if(!jid){
+            json_object_object_add(jres, "error", json_object_new_string("require some params"));
+            return jres;
+        }
+        std::string err;
+        auto ok = ListenDel(json_object_get_int64(jid));
+        json_object_object_add(jres, "ok", json_object_new_boolean(ok));
+    }else if(method == "ListenList") {
+        auto lists = ListenList();
+        json_object* array = json_object_new_array();
+        for(const auto& info: lists) {
+            json_object_array_add(array, json_object_new_string(info.c_str()));
+        }
+        json_object_object_add(jres, "listeners", array);
     }else{
         json_object_object_add(jres, "error", json_object_new_string("no such method"));
     }
@@ -546,6 +571,67 @@ std::promise<bool> SproxyClient::HookerDel(const std::string& hooker) {
         }
         json_object* jok = json_object_object_get(content, "ok");
         promise.set_value(json_object_get_boolean(jok));
+    });
+    json_object_put(body);
+    return promise;
+}
+
+std::promise<bool> SproxyClient::ListenAdd(const std::string& bind, const std::string& target) {
+    json_object* body = json_object_new_object();
+    json_object_object_add(body, "bind", json_object_new_string(bind.c_str()));
+    json_object_object_add(body, "target", json_object_new_string(target.c_str()));
+    std::promise<bool> promise;
+    call(__func__, body, [&promise](json_object* content){
+        json_object* jerror = json_object_object_get(content, "error");
+        if(jerror){
+            promise.set_exception(std::make_exception_ptr(std::string(json_object_get_string(jerror))));
+            return;
+        }
+        json_object* jok = json_object_object_get(content, "ok");
+        promise.set_value(json_object_get_boolean(jok));
+    });
+    json_object_put(body);
+    return promise;
+}
+
+std::promise<bool> SproxyClient::ListenDel(uint64_t id) {
+    json_object* body = json_object_new_object();
+    json_object_object_add(body, "id", json_object_new_int64((int64_t)id));
+    std::promise<bool> promise;
+    call(__func__, body, [&promise](json_object* content){
+        json_object* jerror = json_object_object_get(content, "error");
+        if(jerror){
+            promise.set_exception(std::make_exception_ptr(std::string(json_object_get_string(jerror))));
+            return;
+        }
+        json_object* jok = json_object_object_get(content, "ok");
+        promise.set_value(json_object_get_boolean(jok));
+    });
+    json_object_put(body);
+    return promise;
+}
+
+std::promise<std::vector<std::string>> SproxyClient::ListenList() {
+    json_object* body = json_object_new_object();
+    std::promise<std::vector<std::string>> promise;
+    call(__func__, body, [&promise](json_object* content){
+        json_object* jerror = json_object_object_get(content, "error");
+        if(jerror){
+            promise.set_exception(std::make_exception_ptr(std::string(json_object_get_string(jerror))));
+            return;
+        }
+        json_object* jlisteners_obj = nullptr;
+        if(!json_object_object_get_ex(content, "listeners", &jlisteners_obj)) {
+            promise.set_exception(std::make_exception_ptr(std::string("no listeners field in response")));
+            return;
+        }
+        array_list* jlist = json_object_get_array(jlisteners_obj);
+        std::vector<std::string> listeners;
+        for(size_t i = 0; i <  array_list_length(jlist); i++){
+            json_object* item = (json_object*)array_list_get_idx(jlist, i);
+            listeners.emplace_back(json_object_get_string(item));
+        }
+        promise.set_value(listeners);
     });
     json_object_put(body);
     return promise;
