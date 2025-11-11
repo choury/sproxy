@@ -549,24 +549,6 @@ void exit_loop() {
     will_contiune = 0;
 }
 
-static int parseBind(const char* addr, struct Destination* info) {
-    memset(info, 0, sizeof(*info));
-    if(addr == NULL || addr[0] == 0) {
-        return 0;
-    }
-    if (strncmp(addr, "unix:", 5) == 0) {
-        // unix:/var/lib/sproxy.sock
-        strcpy(info->hostname, addr + 5);
-        return 0;
-    }
-    if(strchr(addr, ':')) {
-        return parseDest(addr, info);
-    }
-    strcpy(info->hostname, "[::]");
-    info->port = atoi(addr);
-    return !(info->port > 0 && info->port < 65535);
-}
-
 void free_arg_list(struct arg_list* list) {
     if(list == NULL) {
         return;
@@ -616,27 +598,11 @@ static void build_dest_list(struct arg_list* arguments,
 }
 
 void postConfig(){
-    if(opt.rproxy_name) {
-        if(opt.rproxy_name[0] == '\0' || strlen(opt.rproxy_name) >= 100) {
-            LOGE("length of rproxy name should between 1 and 100\n");
-            exit(1);
-        }
-        if(http_listens.next || ssl_listens.next || quic_listens.next || tproxy_listen) {
-            LOGE("rproxy mode can only used separately\n");
-            exit(1);
-        }
-        if(secrets.next) {
-            LOG("secret will be ignored in rproxy mode\n");
-            free_arg_list(secrets.next);
-            secrets.next = NULL;
-        }
-    }
-
     build_dest_list(&http_listens, &opt.http_list, "http");
     build_dest_list(&ssl_listens, &opt.ssl_list, "ssl");
     build_dest_list(&quic_listens, &opt.quic_list, "quic");
 
-    if(parseBind(tproxy_listen, &opt.tproxy)) {
+    if(tproxy_listen && parseBind(tproxy_listen, &opt.tproxy)) {
         LOGE("wrong tproxy listen: %s\n", tproxy_listen);
         exit(1);
     }
@@ -649,6 +615,17 @@ void postConfig(){
         exit(1);
     }
     LOG("server %s\n", dumpDest(&opt.Server));
+
+    if(opt.rproxy_name) {
+        if(opt.rproxy_name[0] == '\0' || strlen(opt.rproxy_name) >= 100) {
+            LOGE("length of rproxy name should between 1 and 100\n");
+            exit(1);
+        }
+        if(opt.Server.hostname[0] == '\0') {
+            LOGE("rproxy mode require server name\n");
+            exit(1);
+        }
+    }
 
     // 设置QUIC拥塞控制算法默认值
     if(opt.quic_cc_algorithm == NULL) {

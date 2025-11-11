@@ -121,6 +121,12 @@ typedef struct {
     while (0)
 
 
+static char *generator_strategy(const char* text, int state){
+    static const char *strategies[] = {"local", "proxy", "rewrite", "direct", "forward", "block"};
+    static const int nb_elements = (sizeof(strategies)/sizeof(strategies[0]));
+    COMPLETION_SKELETON(strategies, nb_elements);
+}
+
 static void com_adds(SproxyClient* c, const std::vector<std::string>& args){
     if (args.size() < 3) {
         std::cout << "adds require 2 params at least" << std::endl;
@@ -136,11 +142,36 @@ static void com_adds(SproxyClient* c, const std::vector<std::string>& args){
     }
 }
 
+static void com_dels(SproxyClient* c, const std::vector<std::string>& args){
+    if (args.size() < 2) {
+        std::cout << "dels require 1 param at least" << std::endl;
+        return;
+    }
+    auto r = c->DelStrategy(args[1]);
+    if (!r.get_future().get()) {
+        std::cout << "failed" << std::endl;
+    }
+}
 
-static char *generator_strategy(const char* text, int state){
-    static const char *strategies[] = {"local", "proxy", "rewrite", "direct", "forward", "block"};
-    static const int nb_elements = (sizeof(strategies)/sizeof(strategies[0]));
-    COMPLETION_SKELETON(strategies, nb_elements);
+static void com_test(SproxyClient* c, const std::vector<std::string>& args) {
+    if (args.size() < 2) {
+        std::cout << "test require 1 param at least" << std::endl;
+        return;
+    }
+    auto r = c->TestStrategy(args[1]);
+    std::cout<<r.get_future().get()<<std::endl;
+}
+
+static char *generator_enable(const char* text, int state){
+    static const char *switches[] = {"enable", "disable"};
+    static const int nb_elements = (sizeof(switches)/sizeof(switches[0]));
+    COMPLETION_SKELETON(switches, nb_elements);
+}
+
+static char *generator_add(const char* text, int state){
+    static const char *listen_cmds[] = {"add", "del"};
+    static const int nb_elements = (sizeof(listen_cmds)/sizeof(listen_cmds[0]));
+    COMPLETION_SKELETON(listen_cmds, nb_elements);
 }
 
 static void com_debug(SproxyClient* c, const std::vector<std::string>& args){
@@ -174,14 +205,51 @@ static void com_kill(SproxyClient* c, const std::vector<std::string>& args){
     }
 }
 
+static void com_listen(SproxyClient* c, const std::vector<std::string>& args){
+    if(args.size() < 2){
+        std::cout << "listen require arguments\n";
+        return;
+    }
+    if(args[1] == "add") {
+        if(args.size() != 4) {
+            std::cout << "usage: listen add [tcp/udp:][ip:]port <rproxy>@<host:port>" << std::endl;
+            return;
+        }
+        auto ok = c->ListenAdd(args[2], args[3]).get_future().get();
+        if(!ok){
+            std::cout << "failed" << std::endl;
+        }
+        return;
+    }
+    if(args[1] == "del"){
+        if(args.size() < 3){
+            std::cout << "listen del require an id" << std::endl;
+            return;
+        }
+        errno = 0;
+        char* endptr = nullptr;
+        uint64_t id = strtoull(args[2].c_str(), &endptr, 10);
+        if(errno != 0 || *endptr != '\0' || id <= 0){
+            std::cout << "invalid id: " << args[2] << std::endl;
+            return;
+        }
+        auto ok = c->ListenDel(id).get_future().get();
+        if(!ok){
+            std::cout << "failed" << std::endl;
+        }
+        return;
+    }
+    std::cout << "listen only support add and del" << std::endl;
+}
+
 static void com_hooker(SproxyClient* c, const std::vector<std::string>& args){
     if(args.size() < 3){
         std::cout << "hooker require 2 params at least" << std::endl;
         return;
     }
-    if(args[1] == "enable"){
+    if(args[1] == "add"){
         if(args.size() < 4){
-            std::cout << "hooker enable require 3 params at least" << std::endl;
+            std::cout << "hooker add require 3 params at least" << std::endl;
             return;
         }
         auto r = c->HookerAdd(args[2], args[3]);
@@ -189,9 +257,9 @@ static void com_hooker(SproxyClient* c, const std::vector<std::string>& args){
             std::cout << "failed" << std::endl;
         }
         return;
-    } else if(args[1] == "disable"){
+    } else if(args[1] == "del"){
         if(args.size() < 3){
-            std::cout << "hooker disable require 2 params at least" << std::endl;
+            std::cout << "hooker del require 2 params at least" << std::endl;
             return;
         }
         auto r = c->HookerDel(args[2]);
@@ -200,35 +268,16 @@ static void com_hooker(SproxyClient* c, const std::vector<std::string>& args){
         }
         return;
     } else {
-        std::cout << "hooker only support enable and disable" << std::endl;
+        std::cout << "hooker only support add and del" << std::endl;
         return;
     }
 }
 
-static char *generator_enable(const char* text, int state){
-    static const char *switches[] = {"enable", "disable"};
-    static const int nb_elements = (sizeof(switches)/sizeof(switches[0]));
-    COMPLETION_SKELETON(switches, nb_elements);
-}
 
-static void com_dels(SproxyClient* c, const std::vector<std::string>& args){
-    if (args.size() < 2) {
-        std::cout << "adds require 1 param at least" << std::endl;
-        return;
-    }
-    auto r = c->DelStrategy(args[1]);
-    if (!r.get_future().get()) {
-        std::cout << "failed" << std::endl;
-    }
-}
-
-static void com_test(SproxyClient* c, const std::vector<std::string>& args) {
-    if (args.size() < 2) {
-        std::cout << "test require 1 param at least" << std::endl;
-        return;
-    }
-    auto r = c->TestStrategy(args[1]);
-    std::cout<<r.get_future().get()<<std::endl;
+static char* generator_dump(const char* text, int state) {
+    static const char *dump_cmds[] = {"status", "dns", "sites", "usage", "hookers", "listens"};
+    static const int nb_elements = (sizeof(dump_cmds)/sizeof(dump_cmds[0]));
+    COMPLETION_SKELETON(dump_cmds, nb_elements);
 }
 
 static void com_dump(SproxyClient* c, const std::vector<std::string>& args) {
@@ -265,10 +314,23 @@ static void com_dump(SproxyClient* c, const std::vector<std::string>& args) {
         std::cout << r.get_future().get() << std::endl;
         break;
     }
+    case "listens"_hash: {
+        auto r = c->ListenList();
+        for(const auto& item : r.get_future().get()) {
+            std::cout << item << std::endl;
+        }
+        break;
+    }
     default:
         std::cout << "don't know how to dump "<<args[1]<<std::endl;
         break;
     }
+}
+
+static char *generator_flush(const char* text, int state){
+    static const char *flush_cmds[] = {"dns", "cgi", "strategy", "cert"};
+    static const int nb_elements = (sizeof(flush_cmds)/sizeof(flush_cmds[0]));
+    COMPLETION_SKELETON(flush_cmds, nb_elements);
 }
 
 static void com_flush(SproxyClient* c, const std::vector<std::string>& args) {
@@ -297,18 +359,6 @@ static void com_flush(SproxyClient* c, const std::vector<std::string>& args) {
     }
 }
 
-static char *generator_flush(const char* text, int state){
-    static const char *flush_cmds[] = {"dns", "cgi", "strategy", "cert"};
-    static const int nb_elements = (sizeof(flush_cmds)/sizeof(flush_cmds[0]));
-    COMPLETION_SKELETON(flush_cmds, nb_elements);
-}
-
-static char* generator_dump(const char* text, int state) {
-    static const char *dump_cmds[] = {"status", "dns", "sites", "usage", "hookers"};
-    static const int nb_elements = (sizeof(dump_cmds)/sizeof(dump_cmds[0]));
-    COMPLETION_SKELETON(dump_cmds, nb_elements);
-}
-
 static void com_switch(SproxyClient* c, const std::vector<std::string>& args) {
     if (args.size() < 2) {
         std::cout << "switch require 1 param at least" << std::endl;
@@ -331,12 +381,13 @@ COMMAND commands[] = {
         { "adds", com_adds, "<strategy> <host> [ext]\tAdd strategy for host", generator_strategy},
         { "dels", com_dels, "<host>\tDelete strategy for host", nullptr},
         { "debug", com_debug, "enable|disable module", generator_enable},
+        { "listen", com_listen, "add <spec> <target> | del <id> \tManage dynamic rproxy listeners", generator_add},
         { "test", com_test, "<host>\tTest strategy for host", nullptr},
         { "flush", com_flush, "<cgi|dns|strategy|cert>", generator_flush},
         { "switch", com_switch, "<proxy>\tSet proxy server", nullptr},
-        { "dump", com_dump, "<status|dns|sites|usage|hookers>", generator_dump},
+        { "dump", com_dump, "<status|dns|sites|usage|hookers|listens>", generator_dump},
         { "kill", com_kill, "\tKill connection", nullptr},
-        { "hooker", com_hooker, "\tload/unload hooker from shared library", generator_enable},
+        { "hooker", com_hooker, "\tload/unload hooker from shared library", generator_add},
         { "exit", com_exit, "\tQuit the program", nullptr},
         { "help", com_help, "\tDisplay this text", command_generator},
         {nullptr, nullptr, nullptr, nullptr},
@@ -413,7 +464,7 @@ static char **sproxy_completion (const char* text, int start, int ) {
         if(cmd.gen == nullptr || cmd.name != tokens[0]){
             continue;
         }
-        
+
         // For most commands, we only complete the first argument
         // For commands that need position-aware completion, we can extend this
         return rl_completion_matches(text, cmd.gen);

@@ -4,8 +4,10 @@
 #include "guest3.h"
 
 class Rguest3: public Guest3{
+    Destination dest;
     std::string name;
-    void connected();
+    uint32_t starttime;
+    static size_t next_retry;
 public:
     Rguest3(const Destination& dest, const std::string& name);
     virtual void deleteLater(uint32_t errcode) override;

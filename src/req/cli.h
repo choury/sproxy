@@ -42,6 +42,9 @@ public:
     virtual bool killCon(const std::string& address) override;
     virtual bool HookerAdd(const std::string& hooker, const std::string& lib) override;
     virtual bool HookerDel(const std::string& hooker) override;
+    virtual bool ListenAdd(const std::string& bind, const std::string& target) override;
+    virtual bool ListenDel(uint64_t id) override;
+    virtual std::vector<std::string> ListenList() override;
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
@@ -65,9 +68,8 @@ class Cli_server: public Ep {
                 LOGE("accept error:%s\n", strerror(errno));
                 return;
             }
-            LOGD(DNET, "accept %d from unix: %s\n", clsk, storage_ntoa(&hisaddr));
-
             PadUnixPath(&hisaddr, temp);
+            LOGD(DNET, "accept %d from %s\n", clsk, storage_ntoa(&hisaddr));
             SetUnixOptions(clsk, &hisaddr);
             new Cli(clsk, &hisaddr);
         } else {

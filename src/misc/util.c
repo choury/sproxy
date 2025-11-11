@@ -39,7 +39,7 @@ const char* strnstr(const char* s1, const char* s2, size_t len)
 }
 #endif
 
-char* strchrnul (const char* s, int c) {
+char* my_strchrnul (const char* s, int c) {
     char *p = (char *) s;
     while (*p && (*p != c))
         ++p;
@@ -366,6 +366,20 @@ void dump_trace(int signum) {
 }
 #endif
 
+static int parse_port(const char *s, uint16_t *out) {
+    char *endptr;
+    long val;
+    if (!s || !*s)
+        return -1;
+    errno = 0;
+    val = strtol(s, &endptr, 10);
+    // 检查是否是纯数字、没有溢出、范围合法
+    if (errno != 0 || *endptr != '\0' || val <= 0 || val > 65535)
+        return -1;
+    *out = (uint16_t)val;
+    return 0;
+}
+
 int spliturl(const char* url, struct Destination* server, char* path) {
     if (url == NULL) {
         return -1; // Invalid input
@@ -424,12 +438,9 @@ int spliturl(const char* url, struct Destination* server, char* path) {
         server->hostname[copylen] = 0;
 
         if (addrsplit[1] == ':') {
-            char *endptr;
-            long dport = strtol(addrsplit + 2, &endptr, 10);
-            if (*endptr != '\0' || dport <= 0 || dport > 65535){
+            if (parse_port(addrsplit + 2, &server->port) != 0) {
                 return -3; // Invalid port number
             }
-            server->port = (uint16_t)dport;
         } else if (addrsplit[1] != 0) {
             return -2; // Invalid IPv6 address format
         }
@@ -437,12 +448,9 @@ int spliturl(const char* url, struct Destination* server, char* path) {
         if ((addrsplit = strchr(tmpaddr, ':'))) {
             memcpy(server->hostname, tmpaddr, addrsplit - tmpaddr);
             server->hostname[addrsplit - tmpaddr] = 0;
-            char *endptr;
-            long dport = strtol(addrsplit + 1, &endptr, 10);
-            if (*endptr != '\0' || dport <= 0 || dport > 65535) {
+            if (parse_port(addrsplit + 1, &server->port) != 0) {
                 return -3; // Invalid port number
             }
-            server->port = (uint16_t)dport;
         } else {
             strcpy(server->hostname, tmpaddr);
         }
@@ -522,3 +530,98 @@ void storage2Dest(const struct sockaddr_storage* addr, struct Destination* dest)
     }
 }
 
+// full: protocol:hostname:port (tcp:example.com:80 udp:192.168.0.1:53 tcp:[::1]:443)
+// short:
+//   hostname:port
+//   port => [::]:port
+// special:
+//   unix:path
+// return 0 on success, -1 on error
+int parseBind(const char* str, struct Destination* dest) {
+    if (!str || !*str || !dest)
+        return -1;
+    memset(dest, 0, sizeof(*dest));
+
+    // special: unix:path
+    if(strncmp(str, "unix:", 5) == 0) {
+        const char *path = str + 5;
+        if (!*path)
+            return -1;
+
+        if (sizeof(dest->protocol) <= strlen("unix"))
+            return -1;
+        strcpy(dest->protocol, "unix");
+        if (strlen(path) >= sizeof(dest->hostname))
+            return -1;
+        strcpy(dest->hostname, path);
+        return 0;
+    }
+
+    const char *p;
+    const char *first_colon = NULL;
+    const char *last_colon = NULL;
+    int bracket = 0;  // [] 里的 : 不算
+    // 找到所有不在 [] 内的冒号位置
+    for (p = str; *p; ++p) {
+        if (*p == '[') {
+            bracket++;
+        } else if (*p == ']') {
+            if (bracket > 0)
+                bracket--;
+        } else if (*p == ':' && bracket == 0) {
+            if (!first_colon)
+                first_colon = p;
+            last_colon = p;
+        }
+    }
+
+    // 情况 1：只有 port => [::]:port
+    if (!last_colon) {
+        if (parse_port(str, &dest->port) != 0)
+            return -1;
+
+        //strcpy(dest->protocol, "tcp");
+        strcpy(dest->hostname, "[::]");
+        return 0;
+    }
+
+    // 下面开始处理 hostname:port / protocol:hostname:port 两类
+    // 先解析 port （最后一个冒号后面那段）
+    if (parse_port(last_colon + 1, &dest->port) != 0)
+        return -1;
+
+    const char *prefix_start = str;
+    const char *prefix_end   = last_colon;
+
+    // [prefix_start, prefix_end) 是 hostname 或 protocol:hostname
+    if (prefix_start == prefix_end)
+        return -1;  // 冒号前为空，非法
+
+    // 判断 prefix 中是否还有一个冒号，如果有就是 protocol:hostname:port，否则是 hostname:port
+    if (first_colon && first_colon < prefix_end && first_colon != prefix_end) {
+        // protocol:hostname:port
+        size_t proto_len = (size_t)(first_colon - prefix_start);
+        size_t host_len  = (size_t)(prefix_end   - (first_colon + 1));
+
+        if (proto_len == 0 || host_len == 0)
+            return -1;
+
+        if (proto_len >= sizeof(dest->protocol) ||
+            host_len  >= sizeof(dest->hostname))
+            return -1;
+
+        memcpy(dest->protocol, prefix_start, proto_len);
+        memcpy(dest->hostname, first_colon + 1, host_len);
+    } else {
+        // hostname:port
+        size_t host_len = (size_t)(prefix_end - prefix_start);
+        if (host_len == 0)
+            return -1;
+
+        if (host_len >= sizeof(dest->hostname))
+            return -1;
+
+        memcpy(dest->hostname, prefix_start, host_len);
+    }
+    return 0;
+}

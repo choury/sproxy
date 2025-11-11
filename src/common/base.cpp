@@ -25,7 +25,7 @@ void Server::deleteLater(uint32_t) {
     if(rwer){
         cb->onClose([this](){
             assert(servers.count(this));
-            this->df(this);
+            if(this->df) this->df(this);
             delete this;
         });
         rwer->Close();

@@ -6,6 +6,9 @@
 #include <stddef.h>
 #include <string.h>
 #include <sys/types.h>
+#if __APPLE__
+#include <AvailabilityMacros.h>
+#endif
 
 #define NAT64PREFIX "\0\x64\xff\x9b\0\0\0\0\0\0\0\0"
 #define IPV4MAPIPV6 "\0\0\0\0\0\0\0\0\0\0\xff\xff"
@@ -18,8 +21,12 @@ extern "C" {
 #ifndef __APPLE__
 const char* strnstr(const char* s1, const char* s2, size_t len);
 #endif
-#if ! defined(_GNU_SOURCE) || defined(__APPLE__)
-char* strchrnul(const char *s, int c);
+#if defined(__APPLE__) && (!defined(__MAC_15_4) || (MAC_OS_X_VERSION_MIN_REQUIRED < __MAC_15_4))
+char* my_strchrnul(const char *s, int c);
+#define strchrnul my_strchrnul
+#elif ! defined(_GNU_SOURCE)
+char* my_strchrnul(const char *s, int c);
+#define strchrnul my_strchrnul
 #endif
 char* strlchrnul (const char* s, int c);
 
@@ -44,6 +51,7 @@ int spliturl(const char* url, struct Destination* server, char* path);
 const char* dumpDest(const struct Destination* server);
 const char* dumpAuthority(const struct Destination* Server);
 void storage2Dest(const struct sockaddr_storage* addr, struct Destination* dest);
+int parseBind(const char* str, struct Destination* dest);
 void change_process_name(const char *name);
 #ifdef  __cplusplus
 }
