@@ -107,172 +107,169 @@ int main(int argc, char **argv) {
         if(strcmp(opt.Server.protocol, "quic") == 0) {
             LOG("Starting rproxy3 client to %s\n", dumpDest(opt.Server).c_str());
             new Rguest3(opt.Server, opt.rproxy_name);
-        } else {
+        } else
+#endif
+        {
             LOG("Starting rproxy2 client to %s\n", dumpDest(opt.Server).c_str());
             new Rguest2(opt.Server, opt.rproxy_name);
         }
-#else
-        LOG("Starting rproxy2 client to %s\n", dumpDest(opt.Server).c_str());
-        new Rguest2(opt.Server, opt.rproxy_name);
-#endif
-    }else {
-        if(opt.http_list) {
-            for(struct dest_list* node = opt.http_list; node; node = node->next) {
-                const struct Destination& dest = node->dest;
-                int fd[2] = {-1, -1};
-                if(strcmp(dest.hostname, "localhost") == 0) {
-                    if(ListenLocalhostTcp(dest.port, fd, nullptr) < 0) {
-                        return -1;
-                    }
-                } else {
-                    fd[0] = ListenTcpD(&dest, nullptr);
-                    if (fd[0] < 0) {
-                        return -1;
-                    }
-                }
-                servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[0], nullptr));
-                if(fd[1] >= 0) {
-                    servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[1], nullptr));
-                }
-                LOG("listen on %s:%d for http\n", dest.hostname, (int)dest.port);
-            }
-        }
-#if __linux__
-        if(opt.tproxy.hostname[0]) {
-            int fd[4] = {-1, -1, -1, -1};
-            listenOption ops = {
-                .disable_defer_accepct = true,
-                .enable_ip_transparent = !opt.bpf_cgroup,
-            };
-            if(strcmp(opt.tproxy.hostname, "localhost") == 0) {
-                if(ListenLocalhostTcp(opt.tproxy.port, fd, &ops) < 0) {
+    }
+    if(opt.http_list) {
+        for(struct dest_list* node = opt.http_list; node; node = node->next) {
+            const struct Destination& dest = node->dest;
+            int fd[2] = {-1, -1};
+            if(strcmp(dest.hostname, "localhost") == 0) {
+                if(ListenLocalhostTcp(dest.port, fd, nullptr) < 0) {
                     return -1;
                 }
-                if(ListenLocalhostUdp(opt.tproxy.port, fd+2, &ops) < 0) {
-                    return -1;
-                }
-#ifdef HAVE_BPF
-                if(opt.bpf_cgroup && load_bpf(opt.bpf_cgroup, &localhost4, &localhost6)){
-                    return -1;
-                }
-#endif
             } else {
-                fd[0] = ListenTcpD(&opt.tproxy, &ops);
+                fd[0] = ListenTcpD(&dest, nullptr);
                 if (fd[0] < 0) {
                     return -1;
                 }
-                fd[2] = ListenUdpD(&opt.tproxy, &ops);
-                if (fd[2] < 0) {
-                    return -1;
-                }
-#ifdef HAVE_BPF
-                if(opt.bpf_cgroup) {
-                    if(strcmp(opt.tproxy.hostname, "[::]") == 0){
-                        localhost4.sin_port = htons(opt.tproxy.port);
-                        localhost6.sin6_port = htons(opt.tproxy.port);
-                        if(load_bpf(opt.bpf_cgroup, &localhost4, &localhost6)) {
-                            return -1;
-                        }
-                    }else {
-                        sockaddr_storage addr;
-                        storage_aton(opt.tproxy.hostname, opt.tproxy.port, &addr);
-                        if(addr.ss_family == AF_INET && load_bpf(opt.bpf_cgroup, (sockaddr_in*)&addr, &localhost6)) {
-                            return -1;
-                        }
-                        if(addr.ss_family == AF_INET6 && load_bpf(opt.bpf_cgroup, &localhost4, (sockaddr_in6*)&addr)) {
-                            return -1;
-                        }
-                    }
-                }
-#endif
             }
-            servers.emplace_back(std::make_shared<Tproxy_server>(fd[0]));
-            if(fd[1] >= 0) servers.emplace_back(std::make_shared<Tproxy_server>(fd[1]));
-            servers.emplace_back(std::make_shared<Tproxy_server>(fd[2]));
-            if(fd[3] >= 0) servers.emplace_back(std::make_shared<Tproxy_server>(fd[3]));
-            LOG("listen on %s:%d for tproxy\n", opt.tproxy.hostname, (int)opt.tproxy.port);
-        }
-#endif
-        if(opt.ssl_list) {
-            for(struct dest_list* node = opt.ssl_list; node; node = node->next) {
-                const struct Destination& dest = node->dest;
-                int fd[2] = {-1, -1};
-                if(strcmp(dest.hostname, "localhost") == 0) {
-                    if(ListenLocalhostTcp(dest.port, fd, nullptr) < 0) {
-                        return -1;
-                    }
-                } else {
-                    fd[0] = ListenTcpD(&dest, nullptr);
-                    if (fd[0] < 0) {
-                        return -1;
-                    }
-                }
-                if(opt.sni_mode) {
-                    servers.emplace_back(std::make_shared<Http_server<Guest_sni>>(fd[0], nullptr));
-                    if(fd[1] >= 0) {
-                        servers.emplace_back(std::make_shared<Http_server<Guest_sni>>(fd[1], nullptr));
-                    }
-                    LOG("listen on %s:%d for ssl sni\n", dest.hostname, (int)dest.port);
-                } else {
-                    SSL_CTX * ctx = initssl(false, nullptr);
-                    servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[0], ctx));
-                    if(fd[1] >= 0) {
-                        servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[1], ctx));
-                    }
-                    LOG("listen on %s:%d for ssl\n", dest.hostname, (int)dest.port);
-                }
+            servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[0], nullptr));
+            if(fd[1] >= 0) {
+                servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[1], nullptr));
             }
+            LOG("listen on %s:%d for http\n", dest.hostname, (int)dest.port);
         }
-#ifdef HAVE_QUIC
-        generate_reset_secret();
-        if(opt.quic_list) {
-            for(struct dest_list* node = opt.quic_list; node; node = node->next) {
-                const struct Destination& dest = node->dest;
-                int fd[2] = {-1, -1};
-                if(strcmp(dest.hostname, "localhost") == 0) {
-                    if(ListenLocalhostUdp(dest.port, fd, nullptr) < 0) {
-                        return -1;
-                    }
-                } else {
-                    fd[0] = ListenUdpD(&dest, nullptr);
-                    if(fd[0] <  0) {
-                        return -1;
-                    }
-                }
-                if(opt.sni_mode) {
-                    servers.emplace_back(std::make_shared<Quic_sniServer>(fd[0], dest.port));
-                    if(fd[1] >= 0) {
-                        servers.emplace_back(std::make_shared<Quic_sniServer>(fd[1], dest.port));
-                    }
-                    LOG("listen on %s:%d for quic sni\n", dest.hostname, (int)dest.port);
-                }else {
-                    SSL_CTX * ctx = initssl(true, nullptr);
-                    servers.emplace_back(std::make_shared<Quic_server>(fd[0], dest.port, ctx));
-                    if(fd[1] >= 0) {
-                        servers.emplace_back(std::make_shared<Quic_server>(fd[1], dest.port, ctx));
-                    }
-                    LOG("listen on %s:%d for quic\n", dest.hostname, (int)dest.port);
-                }
-            }
-        }
-#endif
+    }
 #if __linux__
-        if(opt.tun_mode) {
-            char tun_name[IFNAMSIZ] = {0};
-            int tun = tun_create(tun_name, IFF_TUN | IFF_NO_PI | IFF_NAPI | IFF_VNET_HDR);
-            if (tun < 0) {
-                LOGE("failed to create tun: %s\n", strerror(errno));
+    if(opt.tproxy.hostname[0]) {
+        int fd[4] = {-1, -1, -1, -1};
+        listenOption ops = {
+            .disable_defer_accepct = true,
+            .enable_ip_transparent = !opt.bpf_cgroup,
+        };
+        if(strcmp(opt.tproxy.hostname, "localhost") == 0) {
+            if(ListenLocalhostTcp(opt.tproxy.port, fd, &ops) < 0) {
                 return -1;
             }
-            new Guest_vpn(tun, true);
-            LOG("listen on %s for vpn\n", tun_name);
-        }
-        if(opt.tun_fd >= 0) {
-            new Guest_vpn(opt.tun_fd, false);
-            LOG("listen on %d for vpn\n", opt.tun_fd);
-        }
+            if(ListenLocalhostUdp(opt.tproxy.port, fd+2, &ops) < 0) {
+                return -1;
+            }
+#ifdef HAVE_BPF
+            if(opt.bpf_cgroup && load_bpf(opt.bpf_cgroup, &localhost4, &localhost6)){
+                return -1;
+            }
 #endif
+        } else {
+            fd[0] = ListenTcpD(&opt.tproxy, &ops);
+            if (fd[0] < 0) {
+                return -1;
+            }
+            fd[2] = ListenUdpD(&opt.tproxy, &ops);
+            if (fd[2] < 0) {
+                return -1;
+            }
+#ifdef HAVE_BPF
+            if(opt.bpf_cgroup) {
+                if(strcmp(opt.tproxy.hostname, "[::]") == 0){
+                    localhost4.sin_port = htons(opt.tproxy.port);
+                    localhost6.sin6_port = htons(opt.tproxy.port);
+                    if(load_bpf(opt.bpf_cgroup, &localhost4, &localhost6)) {
+                        return -1;
+                    }
+                }else {
+                    sockaddr_storage addr;
+                    storage_aton(opt.tproxy.hostname, opt.tproxy.port, &addr);
+                    if(addr.ss_family == AF_INET && load_bpf(opt.bpf_cgroup, (sockaddr_in*)&addr, &localhost6)) {
+                        return -1;
+                    }
+                    if(addr.ss_family == AF_INET6 && load_bpf(opt.bpf_cgroup, &localhost4, (sockaddr_in6*)&addr)) {
+                        return -1;
+                    }
+                }
+            }
+#endif // HAVE_BPF
+        }
+        servers.emplace_back(std::make_shared<Tproxy_server>(fd[0]));
+        if(fd[1] >= 0) servers.emplace_back(std::make_shared<Tproxy_server>(fd[1]));
+        servers.emplace_back(std::make_shared<Tproxy_server>(fd[2]));
+        if(fd[3] >= 0) servers.emplace_back(std::make_shared<Tproxy_server>(fd[3]));
+        LOG("listen on %s:%d for tproxy\n", opt.tproxy.hostname, (int)opt.tproxy.port);
     }
+#endif // __linux__
+    if(opt.ssl_list) {
+        for(struct dest_list* node = opt.ssl_list; node; node = node->next) {
+            const struct Destination& dest = node->dest;
+            int fd[2] = {-1, -1};
+            if(strcmp(dest.hostname, "localhost") == 0) {
+                if(ListenLocalhostTcp(dest.port, fd, nullptr) < 0) {
+                    return -1;
+                }
+            } else {
+                fd[0] = ListenTcpD(&dest, nullptr);
+                if (fd[0] < 0) {
+                    return -1;
+                }
+            }
+            if(opt.sni_mode) {
+                servers.emplace_back(std::make_shared<Http_server<Guest_sni>>(fd[0], nullptr));
+                if(fd[1] >= 0) {
+                    servers.emplace_back(std::make_shared<Http_server<Guest_sni>>(fd[1], nullptr));
+                }
+                LOG("listen on %s:%d for ssl sni\n", dest.hostname, (int)dest.port);
+            } else {
+                SSL_CTX * ctx = initssl(false, nullptr);
+                servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[0], ctx));
+                if(fd[1] >= 0) {
+                    servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[1], ctx));
+                }
+                LOG("listen on %s:%d for ssl\n", dest.hostname, (int)dest.port);
+            }
+        }
+    }
+#ifdef HAVE_QUIC
+    generate_reset_secret();
+    if(opt.quic_list) {
+        for(struct dest_list* node = opt.quic_list; node; node = node->next) {
+            const struct Destination& dest = node->dest;
+            int fd[2] = {-1, -1};
+            if(strcmp(dest.hostname, "localhost") == 0) {
+                if(ListenLocalhostUdp(dest.port, fd, nullptr) < 0) {
+                    return -1;
+                }
+            } else {
+                fd[0] = ListenUdpD(&dest, nullptr);
+                if(fd[0] <  0) {
+                    return -1;
+                }
+            }
+            if(opt.sni_mode) {
+                servers.emplace_back(std::make_shared<Quic_sniServer>(fd[0], dest.port));
+                if(fd[1] >= 0) {
+                    servers.emplace_back(std::make_shared<Quic_sniServer>(fd[1], dest.port));
+                }
+                LOG("listen on %s:%d for quic sni\n", dest.hostname, (int)dest.port);
+            }else {
+                SSL_CTX * ctx = initssl(true, nullptr);
+                servers.emplace_back(std::make_shared<Quic_server>(fd[0], dest.port, ctx));
+                if(fd[1] >= 0) {
+                    servers.emplace_back(std::make_shared<Quic_server>(fd[1], dest.port, ctx));
+                }
+                LOG("listen on %s:%d for quic\n", dest.hostname, (int)dest.port);
+            }
+        }
+    }
+#endif
+#if __linux__
+    if(opt.tun_mode) {
+        char tun_name[IFNAMSIZ] = {0};
+        int tun = tun_create(tun_name, IFF_TUN | IFF_NO_PI | IFF_NAPI | IFF_VNET_HDR);
+        if (tun < 0) {
+            LOGE("failed to create tun: %s\n", strerror(errno));
+            return -1;
+        }
+        new Guest_vpn(tun, true);
+        LOG("listen on %s for vpn\n", tun_name);
+    }
+    if(opt.tun_fd >= 0) {
+        new Guest_vpn(opt.tun_fd, false);
+        LOG("listen on %d for vpn\n", opt.tun_fd);
+    }
+#endif // __linux__
     if(opt.admin.hostname[0]){
         int fd[2] = {-1, -1};
         if(opt.admin.port == 0){

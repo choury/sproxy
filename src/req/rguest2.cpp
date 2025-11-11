@@ -1,14 +1,16 @@
 #include "rguest2.h"
 #include "prot/sslio.h"
+#include "misc/job.h"
 
 static const unsigned char alpn_protos_rproxy[] =
     "\x02r2";
 
+size_t Rguest2::next_retry = 1000;
 
 //这里传入的IRWerCallback只是占位，Guest2的构造函数会创建ISocketCallback, 并把它保存到cb
 Rguest2::Rguest2(const Destination& dest, const std::string& name):
     Guest2(std::make_shared<SslRWer>(dest, IRWerCallback::create()->onError([](int, int){}))),
-    name(name)
+    dest(dest), name(name), starttime(getmtime())
 {
     auto srwer = std::dynamic_pointer_cast<SslRWer>(rwer);
     srwer->set_alpn(alpn_protos_rproxy, sizeof(alpn_protos_rproxy)-1);
@@ -41,6 +43,14 @@ size_t Rguest2::InitProc(Buffer& bb) {
 
 
 void Rguest2::deleteLater(uint32_t errcode) {
-    LOG("rproxy exit with code: %d\n", (int)errcode);
-    exit(errcode);
+    if(getmtime() - starttime > 1800000) {
+        next_retry = 1000;
+    } else {
+        next_retry = std::min((size_t)32000, next_retry * 2);
+    }
+    LOG("rguest2 exit with code: %d, retry after %zds\n", (int)errcode, next_retry/1000);
+    addjob_with_name([dest = dest, name = name]() {
+        new Rguest2(dest, name);
+    }, "Rguest2 respawn", next_retry, JOB_FLAGS_AUTORELEASE);
+    return Guest2::deleteLater(errcode);
 }

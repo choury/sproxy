@@ -598,22 +598,6 @@ static void build_dest_list(struct arg_list* arguments,
 }
 
 void postConfig(){
-    if(opt.rproxy_name) {
-        if(opt.rproxy_name[0] == '\0' || strlen(opt.rproxy_name) >= 100) {
-            LOGE("length of rproxy name should between 1 and 100\n");
-            exit(1);
-        }
-        if(http_listens.next || ssl_listens.next || quic_listens.next || tproxy_listen) {
-            LOGE("rproxy mode can only used separately\n");
-            exit(1);
-        }
-        if(secrets.next) {
-            LOG("secret will be ignored in rproxy mode\n");
-            free_arg_list(secrets.next);
-            secrets.next = NULL;
-        }
-    }
-
     build_dest_list(&http_listens, &opt.http_list, "http");
     build_dest_list(&ssl_listens, &opt.ssl_list, "ssl");
     build_dest_list(&quic_listens, &opt.quic_list, "quic");
@@ -631,6 +615,17 @@ void postConfig(){
         exit(1);
     }
     LOG("server %s\n", dumpDest(&opt.Server));
+
+    if(opt.rproxy_name) {
+        if(opt.rproxy_name[0] == '\0' || strlen(opt.rproxy_name) >= 100) {
+            LOGE("length of rproxy name should between 1 and 100\n");
+            exit(1);
+        }
+        if(opt.Server.hostname[0] == '\0') {
+            LOGE("rproxy mode require server name\n");
+            exit(1);
+        }
+    }
 
     // 设置QUIC拥塞控制算法默认值
     if(opt.quic_cc_algorithm == NULL) {

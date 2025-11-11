@@ -176,15 +176,19 @@ Guest_tproxy::Guest_tproxy(std::shared_ptr<RWer> rwer,
     this->df = std::move(df);
     headless = true;
     Http_Proc = &Guest_tproxy::AlwaysProc;
+    const auto& src = rwer->getSrc();
     char buff[HEADLENLIMIT];
-    snprintf(buff, sizeof(buff), "CONNECT %s:%u" CRLF "Protocol: %s" CRLF CRLF,
+    snprintf(buff, sizeof(buff),
+        "CONNECT %s:%u" CRLF
+        "Protocol: %s" CRLF CRLF,
         dst->hostname, dst->port, dst->protocol);
     std::shared_ptr<HttpReqHeader> header = UnpackHttpReq(buff);
     if(header == nullptr) {
-        LOGE("(%s) Guest_tproxy: UnpackHttpReq failed: %s\n", dumpDest(rwer->getSrc()).c_str(), dumpDest(*dst).c_str());
+        LOGE("(%s) Guest_tproxy: UnpackHttpReq failed: %s\n", dumpDest(src).c_str(), dumpDest(*dst).c_str());
         deleteLater(TPROXY_HOST_ERR);
         return;
     }
+    header->set("X-Forwarded-For", dumpAuthority(&src));
     header->set("User-Agent", generateUA(opt.ua, "", 0));
     header->set("rproxy", rproxy);
     ReqProc(0, header);

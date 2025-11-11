@@ -31,7 +31,10 @@ bool add_rproxy_listener(const std::string& bind_spec, const std::string& target
     if(parseBind(target_spec.substr(pos+1).c_str(), &state.target)) {
         return false;
     }
-    if(state.target.hostname[0] == '\0') {
+    if(state.target.hostname[0] == '\0' ||
+       strcmp(state.target.hostname, "[::]") == 0 ||
+       strcmp(state.target.hostname, "0.0.0.0") == 0)
+    {
         return false;
     }
     if(state.target.protocol[0] == '\0') {

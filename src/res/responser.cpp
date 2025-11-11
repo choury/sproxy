@@ -256,6 +256,8 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
         req->postparse();
         LOGD(DFILE, "rproxy: %s -> %s\n", path.c_str(), req->geturl().c_str());
     }
+    const auto& src = rw->getSrc();
+    req->set("X-Forwarded-For", dumpAuthority(&src));
     req->set("Rproxy-Name", filename);
     if(filename == "local") {
         return distribute(req, rw);
