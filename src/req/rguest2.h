@@ -8,6 +8,7 @@ class Rguest2: public Guest2{
     Destination dest;
     std::string name;
     uint32_t starttime;
+    bool respawned = false;
     static size_t next_retry;
     virtual size_t InitProc(Buffer& bb) override;
 public:

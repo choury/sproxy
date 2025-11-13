@@ -18,14 +18,17 @@ Rguest3::Rguest3(const Destination& dest, const std::string& name):
 }
 
 void Rguest3::deleteLater(uint32_t errcode) {
-    if(getmtime() - starttime > 1800000) {
-        next_retry = 1000;
-    } else {
-        next_retry = std::min((size_t)32000, next_retry * 2);
+    if(!respawned) {
+        if(getmtime() - starttime > 1800000) {
+            next_retry = 1000;
+        } else {
+            next_retry = std::min((size_t)32000, next_retry * 2);
+        }
+        LOG("rguest3 exit with code: %d, retry after %zds\n", (int)errcode, next_retry/1000);
+        addjob_with_name([dest = dest, name = name]() {
+            new Rguest3(dest, name);
+        }, "Rguest3 respawn", next_retry, JOB_FLAGS_AUTORELEASE);
+        respawned = true;
     }
-    LOG("rguest3 exit with code: %d, retry after %zds\n", (int)errcode, next_retry/1000);
-    addjob_with_name([dest = dest, name = name]() {
-        new Rguest3(dest, name);
-    }, "Rguest3 respawn", next_retry, JOB_FLAGS_AUTORELEASE);
     return Guest3::deleteLater(errcode);
 }
