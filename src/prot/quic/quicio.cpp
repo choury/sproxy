@@ -2454,7 +2454,7 @@ bool QuicRWer::triggerMigration() {
 
     auto& server_addr = addrs.front();
     // Create new socket
-    int new_fd = Connect(&server_addr, SOCK_DGRAM);
+    int new_fd = Connect(&server_addr, SOCK_DGRAM, nullptr);
     if (new_fd < 0) {
         //忽略所有socket相关的错误，依赖keepalive定时重试，超时后释放
         LOGE("Failed to create new socket for migration: %s\n", strerror(errno));

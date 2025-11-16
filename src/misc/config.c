@@ -151,6 +151,7 @@ struct options opt = {
     },
     .pcap_len       = INT32_MAX,
     .fwmark         = 0,
+    .bpf_fwmark     = 0,
 
     .cert_version   = 0,
 };
@@ -174,6 +175,7 @@ static struct option long_options[] = {
     {"alt-svc",       required_argument, NULL,  0 },
 #ifdef HAVE_BPF
     {"bpf",           required_argument, NULL, 'b'},
+    {"bpf-fwmark",    required_argument, NULL,  0 },
 #endif
     {"cafile",        required_argument, NULL,  0 },
     {"cakey",         required_argument, NULL,  0 },
@@ -248,6 +250,7 @@ static struct option_detail option_detail[] = {
     {"autoindex", "Enables the directory listing output (local server)", option_bool, &opt.autoindex, (void*)true},
 #ifdef HAVE_BPF
     {"bpf", "load bpf prog to redirect for tproxy on cgroup (!!NOT WORK IN CONTAINER!!)", option_string, &opt.bpf_cgroup, NULL},
+    {"bpf-fwmark", "set fwmark for the packet of replying rproxy in bpf prog", option_uint64, &opt.bpf_fwmark, NULL},
 #endif
     {"cafile", "CA certificate for server (ssl/quic)", option_string, &opt.cafile, NULL},
     {"cakey", "CA key for server (mitm)", option_string, &opt.cakey, NULL},
@@ -714,12 +717,8 @@ void postConfig(){
         LOGE("mitm mode require cakey\n");
         exit(1);
     }
-    if (opt.tproxy.port && getuid() != 0) {
+    if (opt.tproxy.port && geteuid() != 0) {
         LOGE("tproxy require root privilege to set IP[V6]_TRANSPARENT\n");
-        exit(1);
-    }
-    if (opt.bpf_cgroup && opt.tproxy.port == 0){
-        LOGE("bpf require tproxy mode\n");
         exit(1);
     }
     if (opt.set_dns_route && opt.interface == NULL) {
@@ -747,7 +746,7 @@ void postConfig(){
     }
 #ifndef __ANDROID__
     if (admin_listen == NULL){
-        if(getuid() == 0){
+        if(geteuid() == 0){
             admin_listen = "unix:/var/run/sproxy.sock";
         }else{
             admin_listen = "unix:/tmp/sproxy.sock";

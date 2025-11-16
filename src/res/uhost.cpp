@@ -46,11 +46,6 @@ Uhost::Uhost(const Destination& dest): port(dest.port) {
     rwer = std::make_shared<PacketRWer>(dest, cb);
 }
 
-Uhost::Uhost(std::shared_ptr<HttpReqHeader> req):
-    Uhost(req->Dest)
-{
-}
-
 Uhost::~Uhost() {
     if(rwer){
         LOGD(DHTTP, "<uhost> (%s) destoryed: rx:%zu, tx:%zu, drop: %zu\n",

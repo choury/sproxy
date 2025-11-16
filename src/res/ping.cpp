@@ -49,12 +49,6 @@ Ping::Ping(const Destination& dest): id(dest.port?:random()&0xffff) {
     rwer = std::make_shared<PacketRWer>(dest, cb);
 }
 
-
-Ping::Ping(std::shared_ptr<HttpReqHeader> req):
-    Ping(req->Dest)
-{
-}
-
 void Ping::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     status.req = req;
     status.rw = rw;

@@ -19,7 +19,6 @@ class Ping: public Responser{
     uint32_t    flags  = 0;
 public:
     Ping(const Destination& dest);
-    explicit Ping(std::shared_ptr<HttpReqHeader> req);
     virtual void deleteLater(uint32_t errcode) override;
     virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) override;
     virtual void dump_stat(Dumper dp, void* param) override;

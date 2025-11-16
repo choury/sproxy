@@ -150,7 +150,7 @@ int main(int argc, char **argv) {
                 return -1;
             }
 #ifdef HAVE_BPF
-            if(opt.bpf_cgroup && load_bpf(opt.bpf_cgroup, &localhost4, &localhost6)){
+            if(opt.bpf_cgroup && load_bpf(opt.bpf_cgroup, &localhost4, &localhost6, (uint32_t)opt.bpf_fwmark)){
                 return -1;
             }
 #endif
@@ -168,16 +168,20 @@ int main(int argc, char **argv) {
                 if(strcmp(opt.tproxy.hostname, "[::]") == 0){
                     localhost4.sin_port = htons(opt.tproxy.port);
                     localhost6.sin6_port = htons(opt.tproxy.port);
-                    if(load_bpf(opt.bpf_cgroup, &localhost4, &localhost6)) {
+                    if(load_bpf(opt.bpf_cgroup, &localhost4, &localhost6, (uint32_t)opt.bpf_fwmark)) {
                         return -1;
                     }
                 }else {
                     sockaddr_storage addr;
                     storage_aton(opt.tproxy.hostname, opt.tproxy.port, &addr);
-                    if(addr.ss_family == AF_INET && load_bpf(opt.bpf_cgroup, (sockaddr_in*)&addr, &localhost6)) {
+                    if(addr.ss_family == AF_INET
+                        && load_bpf(opt.bpf_cgroup, (sockaddr_in*)&addr, &localhost6, (uint32_t)opt.bpf_fwmark))
+                    {
                         return -1;
                     }
-                    if(addr.ss_family == AF_INET6 && load_bpf(opt.bpf_cgroup, &localhost4, (sockaddr_in6*)&addr)) {
+                    if(addr.ss_family == AF_INET6
+                        && load_bpf(opt.bpf_cgroup, &localhost4, (sockaddr_in6*)&addr, (uint32_t)opt.bpf_fwmark))
+                    {
                         return -1;
                     }
                 }
@@ -190,6 +194,11 @@ int main(int argc, char **argv) {
         if(fd[3] >= 0) servers.emplace_back(std::make_shared<Tproxy_server>(fd[3]));
         LOG("listen on %s:%d for tproxy\n", opt.tproxy.hostname, (int)opt.tproxy.port);
     }
+#ifdef HAVE_BPF
+    else if(opt.bpf_cgroup && load_bpf(opt.bpf_cgroup, nullptr, nullptr, (uint32_t)opt.bpf_fwmark)) {
+        return -1;
+    }
+#endif
 #endif // __linux__
     if(opt.ssl_list) {
         for(struct dest_list* node = opt.ssl_list; node; node = node->next) {

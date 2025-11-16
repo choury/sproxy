@@ -280,6 +280,7 @@ struct Destination{
     char hostname[DOMAINLIMIT];
     uint16_t port;
     bool system_resolve;
+    char assign_src[60];
 };
 
 #define STRATEGY "Strategy"
