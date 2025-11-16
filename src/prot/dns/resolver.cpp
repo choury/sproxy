@@ -84,7 +84,7 @@ std::list<sockaddr_storage> rcdfilter(const std::string& host, const std::list<s
     return ret;
 }
 
-RawResolver::RawResolver(const sockaddr_storage& server): Ep(Connect(&server, SOCK_DGRAM)) {
+RawResolver::RawResolver(const sockaddr_storage& server): Ep(Connect(&server, SOCK_DGRAM, nullptr)) {
     handleEvent = (void (Ep::*)(RW_EVENT))&RawResolver::readHE;
 }
 

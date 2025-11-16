@@ -3,13 +3,30 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 
-
 #define SO_ORIGINAL_DST     80
 
 #define AF_INET   2
 #define AF_INET6  10
 
 #define INADDR_LOOPBACK (0x7f000001)
+
+/* 协议 / 以太类型 / tc 动作常量 */
+#ifndef IPPROTO_TCP
+#define IPPROTO_TCP 6
+#endif
+
+#ifndef IPPROTO_UDP
+#define IPPROTO_UDP 17
+#endif
+
+#ifndef SOL_SOCKET
+#define SOL_SOCKET 1
+#endif
+
+#ifndef SO_MARK
+#define SO_MARK 36
+#endif
+
 
 struct sock_addr {
     __u8  family;
@@ -53,35 +70,62 @@ struct sock_addr {
 
 char LICENSE[] SEC("license") = "GPL";
 
-volatile pid_t proxy_pid;
-volatile __u32 proxy_ip4;    //网络字节序
-volatile __u16 proxy_port4;  //本地字节序
-volatile __u32 proxy_ip6[4]; //网络字节序
-volatile __u16 proxy_port6;  //本地字节序
+volatile pid_t proxy_pid    = 0;
+volatile __u32 proxy_ip4    = 0;   // 网络字节序
+volatile __u16 proxy_port4  = 0;   // 本地字节序
+volatile __u32 proxy_ip6[4] = {0}; // 网络字节序
+volatile __u16 proxy_port6  = 0;   // 本地字节序
+volatile __u32 assign_mark  = 0;
 
 struct {
-	__uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_HASH);
     __uint(max_entries, 65535);
-	__type(key, __u64);
-	__type(value, struct sock_addr);
-}sock_map SEC(".maps");
+    __type(key, __u64);
+    __type(value, struct sock_addr);
+} sock_map SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 65535);
+    __type(key, __u64);
+    __type(value, __u8);
+} mark_map SEC(".maps");
 
 struct sock_key {
-	__u8  family;
-	__u8  pad1;
-	__u16 sport;
-	__u32 protocol;
-
-}__attribute__((packed));
+    __u8  family;
+    __u8  pad1;
+    __u16 sport;
+    __u32 protocol;
+} __attribute__((packed));
 
 struct {
-	__uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_HASH);
     __uint(max_entries, 65535);
-	__type(key, struct sock_key);
-	__type(value, __u64);
-}cookie_map SEC(".maps");
+    __type(key, struct sock_key);
+    __type(value, __u64);
+} cookie_map SEC(".maps");
 
+SEC("cgroup/bind4")
+int bpf_bind4(struct bpf_sock_addr *ctx) {
+    if (assign_mark == 0) return 1;
+    if (ctx->family != AF_INET) return 1;
+    if (ctx->protocol != IPPROTO_TCP) return 1;
+    bpf_setsockopt(ctx, SOL_SOCKET, SO_MARK, (void*)&assign_mark, sizeof(assign_mark));
+    bpf_printk("bind4 mark set lport=%u mark=%d", bpf_ntohs(ctx->user_port), assign_mark);
+    return 1;
+}
 
+SEC("cgroup/bind6")
+int bpf_bind6(struct bpf_sock_addr *ctx) {
+    if (assign_mark == 0) return 1;
+    if (ctx->family != AF_INET6) return 1;
+    if (ctx->protocol != IPPROTO_TCP) return 1;
+    bpf_setsockopt(ctx, SOL_SOCKET, SO_MARK, (void*)&assign_mark, sizeof(assign_mark));
+    bpf_printk("bind6 mark set lport=%u mark=%d", bpf_ntohs(ctx->user_port), assign_mark);
+    return 1;
+}
+
+/* ====================== 透明代理 redirect ====================== */
 __always_inline int redirect4(struct bpf_sock_addr* ctx) {
     if (proxy_port4 == 0) return 1;
     if ((bpf_get_current_pid_tgid() >> 32) == proxy_pid) return 1;
@@ -96,7 +140,6 @@ __always_inline int redirect4(struct bpf_sock_addr* ctx) {
     sock.protocol = ctx->protocol;
     sock.dip4 = ctx->user_ip4;
     sock.dport = bpf_ntohl(ctx->user_port) >> 16;
-
 
     __u64 cookie = bpf_get_socket_cookie(ctx);
     bpf_map_update_elem(&sock_map, &cookie, &sock, 0);
@@ -114,6 +157,10 @@ int bpf_connect4(struct bpf_sock_addr *ctx) {
 
 SEC("cgroup/sendmsg4")
 int bpf_sendmsg4(struct bpf_sock_addr *ctx) {
+    if(assign_mark) {
+        __u64 cookie = bpf_get_socket_cookie(ctx);
+        bpf_map_update_elem(&mark_map, &cookie, &((__u8){1}), BPF_ANY);
+    }
     return redirect4(ctx);
 }
 
@@ -155,17 +202,21 @@ int bpf_connect6(struct bpf_sock_addr *ctx) {
 
 SEC("cgroup/sendmsg6")
 int bpf_sendmsg6(struct bpf_sock_addr *ctx) {
+    if(assign_mark) {
+        __u64 cookie = bpf_get_socket_cookie(ctx);
+        bpf_map_update_elem(&mark_map, &cookie, &((__u8){1}), BPF_ANY);
+    }
     return redirect6(ctx);
 }
 
+/* 记录原始目的地址，用于 getsockopt(SO_ORIGINAL_DST) */
 SEC("cgroup_skb/egress")
 int bpf_egress(struct __sk_buff *ctx) {
     __u64 cookie = bpf_get_socket_cookie(ctx);
     struct sock_addr *sock = bpf_map_lookup_elem(&sock_map, &cookie);
-    if (!sock) {
-        return 1;
-    }
+    if (!sock) return 1;
     if (sock->family == ctx->family && sock->sport == ctx->local_port) return 1;
+
     if (ctx->family == AF_INET) {
         sock->sip4 = bpf_htonl(ctx->local_ip4);
         sock->sport = ctx->local_port;
@@ -179,7 +230,7 @@ int bpf_egress(struct __sk_buff *ctx) {
 
         bpf_map_update_elem(&cookie_map, &key, &cookie, 0);
         bpf_printk("ipv4_egress %d  %d, %d, %d", cookie, key.family, key.protocol, key.sport);
-    }else if(ctx->family == AF_INET6) {
+    } else if (ctx->family == AF_INET6) {
         sock->sip6[0] = ctx->local_ip6[0];
         sock->sip6[1] = ctx->local_ip6[1];
         sock->sip6[2] = ctx->local_ip6[2];
@@ -205,9 +256,8 @@ __always_inline int getpeer4(struct bpf_sock_addr* ctx) {
 
     __u64 cookie = bpf_get_socket_cookie(ctx);
     struct sock_addr *sock = bpf_map_lookup_elem(&sock_map, &cookie);
-    if (!sock) {
-        return 1;
-    }
+    if (!sock) return 1;
+
     ctx->user_ip4 =  sock->dip4;
     ctx->user_port = bpf_ntohl(sock->dport << 16);
     bpf_printk("getpeer4 %d: %d -> %d", ctx->protocol, cookie, bpf_ntohl(ctx->user_port) >> 16);
@@ -219,9 +269,13 @@ int bpf_getpeername4(struct bpf_sock_addr *ctx) {
     return getpeer4(ctx);
 }
 
-
 SEC("cgroup/recvmsg4")
 int bpf_recvmsg4(struct bpf_sock_addr *ctx) {
+    __u64 cookie = bpf_get_socket_cookie(ctx);
+    if(assign_mark && bpf_map_lookup_elem(&mark_map, &cookie) == NULL) {
+        bpf_map_update_elem(&mark_map, &cookie, &((__u8){1}), BPF_ANY);
+        bpf_setsockopt(ctx, SOL_SOCKET, SO_MARK, (void*)&assign_mark, sizeof(assign_mark));
+    }
     return getpeer4(ctx);
 }
 
@@ -232,9 +286,8 @@ __always_inline int getpeer6(struct bpf_sock_addr* ctx) {
 
     __u64 cookie = bpf_get_socket_cookie(ctx);
     struct sock_addr *sock = bpf_map_lookup_elem(&sock_map, &cookie);
-    if (!sock) {
-        return 1;
-    }
+    if (!sock) return 1;
+
     ctx->user_ip6[0] = sock->dip6[0];
     ctx->user_ip6[1] = sock->dip6[1];
     ctx->user_ip6[2] = sock->dip6[2];
@@ -244,7 +297,6 @@ __always_inline int getpeer6(struct bpf_sock_addr* ctx) {
     return 1;
 }
 
-
 SEC("cgroup/getpeername6")
 int bpf_getpeername6(struct bpf_sock_addr *ctx) {
     return getpeer6(ctx);
@@ -252,6 +304,11 @@ int bpf_getpeername6(struct bpf_sock_addr *ctx) {
 
 SEC("cgroup/recvmsg6")
 int bpf_recvmsg6(struct bpf_sock_addr *ctx) {
+    __u64 cookie = bpf_get_socket_cookie(ctx);
+    if(assign_mark && bpf_map_lookup_elem(&mark_map, &cookie) == NULL) {
+        bpf_map_update_elem(&mark_map, &cookie, &((__u8){1}), BPF_ANY);
+        bpf_setsockopt(ctx, SOL_SOCKET, SO_MARK, (void*)&assign_mark, sizeof(assign_mark));
+    }
     return getpeer6(ctx);
 }
 
@@ -259,9 +316,8 @@ SEC("cgroup/sock_release")
 int bpf_sock_release(struct bpf_sock *ctx) {
     __u64 cookie = bpf_get_socket_cookie(ctx);
     struct sock_addr *sock = bpf_map_lookup_elem(&sock_map, &cookie);
-    if (!sock) {
-        return 1;
-    }
+    if (!sock) return 1;
+
     struct sock_key key = {
         .family = sock->family,
         .protocol = sock->protocol,
@@ -271,6 +327,7 @@ int bpf_sock_release(struct bpf_sock *ctx) {
     bpf_printk("sock_release: %d: %d, %d, %d", cookie, key.family, key.protocol, key.sport);
     bpf_map_delete_elem(&cookie_map, &key);
     bpf_map_delete_elem(&sock_map, &cookie);
+    bpf_map_delete_elem(&mark_map, &cookie);
     return 1;
 }
 
@@ -286,12 +343,12 @@ __always_inline struct sock_addr* find_sock(struct bpf_sockopt* ctx) {
     if (cookie) {
         return bpf_map_lookup_elem(&sock_map, cookie);
     } else {
-        if(key.family != AF_INET6) return NULL;
+        if (key.family != AF_INET6) return NULL;
 
         // IPV4 mapped IPV6
         key.family = AF_INET;
         cookie = bpf_map_lookup_elem(&cookie_map, &key);
-        if(!cookie) return NULL;
+        if (!cookie) return NULL;
 
         return bpf_map_lookup_elem(&sock_map, cookie);
     }
@@ -310,14 +367,14 @@ int bpf_sockopt(struct bpf_sockopt *ctx) {
 
     struct sock_addr *sock = find_sock(ctx);
     if (!sock) {
-        bpf_printk("cannt found: %d, %d, %d", ctx->sk->family, ctx->sk->protocol, bpf_ntohs(ctx->sk->dst_port));
+        bpf_printk("cannot found: %d, %d, %d", ctx->sk->family, ctx->sk->protocol, bpf_ntohs(ctx->sk->dst_port));
         return 1;
     }
-    if(ctx->optname == 0xff) {
+    if (ctx->optname == 0xff) {
         struct pinfo *pi = ctx->optval;
         if ((void*)(pi + 1) > ctx->optval_end) return 1;
         __builtin_memcpy(pi, &sock->pid, sizeof(struct pinfo));
-    }else if(ctx->sk->family == AF_INET) {
+    } else if (ctx->sk->family == AF_INET) {
         struct sockaddr_in *sa = ctx->optval;
         if ((void*)(sa + 1) > ctx->optval_end) return 1;
 
@@ -325,7 +382,7 @@ int bpf_sockopt(struct bpf_sockopt *ctx) {
         sa->sin_family = ctx->sk->family;
         sa->sin_addr.s_addr = sock->dip4;
         sa->sin_port = bpf_htons(sock->dport);
-    } else if(sock->family == AF_INET6){
+    } else if (sock->family == AF_INET6) {
         struct sockaddr_in6 *sa = ctx->optval;
         if ((void*)(sa + 1) > ctx->optval_end) return 1;
 
@@ -337,7 +394,7 @@ int bpf_sockopt(struct bpf_sockopt *ctx) {
         sa->sin6_addr.in6_u.u6_addr32[3] = sock->dip6[3];
         sa->sin6_port = bpf_htons(sock->dport);
     } else {
-        //mapped ipv4
+        // mapped ipv4
         struct sockaddr_in6 *sa = ctx->optval;
         if ((void*)(sa + 1) > ctx->optval_end) return 1;
 
@@ -353,4 +410,3 @@ int bpf_sockopt(struct bpf_sockopt *ctx) {
     ctx->retval = 0;
     return 1;
 }
-

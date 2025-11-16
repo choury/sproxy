@@ -53,7 +53,7 @@ int ListenUdpD(const struct Destination* dest, const struct listenOption* ops);
 int ListenUnixD(const struct Destination* dest, const struct listenOption* ops);
 
 
-int Connect(const struct sockaddr_storage*, int type);
+int Connect(const struct sockaddr_storage* dst, int type, const struct sockaddr_storage* src);
 int IcmpSocket(const struct sockaddr_storage* addr, int raw);
 
 ssize_t recvwithaddr(int fd, void* buff, size_t buflen,

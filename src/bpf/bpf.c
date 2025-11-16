@@ -17,7 +17,7 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 
 
 static struct sockops* skel = NULL;
-static struct bpf_link* progs[12] = {NULL};
+static struct bpf_link* progs[20] = {NULL};
 
 void unload_bpf() {
     for(size_t i = 0; i < sizeof(progs)/sizeof(progs[1]); i ++) {
@@ -35,7 +35,7 @@ void unload_bpf() {
     }
 }
 
-int load_bpf(const char* cgroup, const struct sockaddr_in* addr4, const struct sockaddr_in6* addr6) {
+int load_bpf(const char* cgroup, const struct sockaddr_in* addr4, const struct sockaddr_in6* addr6, uint32_t fwmark) {
     int fd = open(cgroup, O_RDONLY);
     if (fd < 0) {
         LOGE("failed to open cgroup: %s\n", strerror(errno));
@@ -69,13 +69,18 @@ int load_bpf(const char* cgroup, const struct sockaddr_in* addr4, const struct s
         goto cleanup;
     }
     skel->bss->proxy_pid = getpid();
-    skel->bss->proxy_ip4 = addr4->sin_addr.s_addr;
-    skel->bss->proxy_port4 = ntohs(addr4->sin_port);
-    skel->bss->proxy_ip6[0] = addr6->sin6_addr.s6_addr32[0];
-    skel->bss->proxy_ip6[1] = addr6->sin6_addr.s6_addr32[1];
-    skel->bss->proxy_ip6[2] = addr6->sin6_addr.s6_addr32[2];
-    skel->bss->proxy_ip6[3] = addr6->sin6_addr.s6_addr32[3];
-    skel->bss->proxy_port6 = ntohs(addr6->sin6_port);
+    if(addr4) {
+        skel->bss->proxy_ip4 = addr4->sin_addr.s_addr;
+        skel->bss->proxy_port4 = ntohs(addr4->sin_port);
+    }
+    if(addr6) {
+        skel->bss->proxy_ip6[0] = addr6->sin6_addr.s6_addr32[0];
+        skel->bss->proxy_ip6[1] = addr6->sin6_addr.s6_addr32[1];
+        skel->bss->proxy_ip6[2] = addr6->sin6_addr.s6_addr32[2];
+        skel->bss->proxy_ip6[3] = addr6->sin6_addr.s6_addr32[3];
+        skel->bss->proxy_port6 = ntohs(addr6->sin6_port);
+    }
+    skel->bss->assign_mark = fwmark;
 
     size_t index = 0;
     progs[index] = bpf_program__attach_cgroup(skel->progs.bpf_sockopt, root);
@@ -143,6 +148,19 @@ int load_bpf(const char* cgroup, const struct sockaddr_in* addr4, const struct s
         LOGE("failed to attach bpf_sock_release to cgroup %s (%d)\n", cgroup, fd);
         goto cleanup;
     }
+
+    progs[index] = bpf_program__attach_cgroup(skel->progs.bpf_bind4, fd);
+    if (progs[index++] == NULL) {
+        LOGE("failed to attach bpf_bind4 to cgroup %s (%d)\n", cgroup, fd);
+        goto cleanup;
+    }
+
+    progs[index] = bpf_program__attach_cgroup(skel->progs.bpf_bind6, fd);
+    if (progs[index++] == NULL) {
+        LOGE("failed to attach bpf_bind6 to cgroup %s (%d)\n", cgroup, fd);
+        goto cleanup;
+    }
+
     if(root >= 0) close(root);
     if(fd >= 0) close(fd);
     return 0;

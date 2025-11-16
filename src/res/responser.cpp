@@ -153,13 +153,18 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
     case Strategy::direct:
         memcpy(&dest, &req->Dest, sizeof(dest));
         dest.port = req->getDport();
-        if(strcmp(req->Dest.protocol, "icmp") == 0){
-            return (new Ping(req))->request(req, rw);
-        }
-        if(strcmp(req->Dest.protocol, "udp") == 0) {
-            return (new Uhost(req))->request(req, rw);
+        if(req->has("Rproxy-Name") && req->has("X-Forwarded-For")) {
+            strncpy(dest.assign_src, req->get("X-Forwarded-For"), sizeof(dest.assign_src) - 1);
+            if(!req->ismethod("CONNECT")) req->del("X-Forwarded-For");
         }
         req->del("Proxy-Authorization");
+        req->del("Rproxy-Name");
+        if(strcmp(dest.protocol, "icmp") == 0){
+            return (new Ping(dest))->request(req, rw);
+        }
+        if(strcmp(dest.protocol, "udp") == 0) {
+            return (new Uhost(dest))->request(req, rw);
+        }
         break;
     //rewrite 和 forward的唯一区别就是rewrite会修改host为目标地址
     case Strategy::rewrite:
@@ -266,6 +271,7 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
         response(rw, HttpResHeader::create(S404, sizeof(S404), id), "");
         return;
     }
+    req->chain_proxy = true;
     rproxys[filename]->request(req, rw);
 }
 

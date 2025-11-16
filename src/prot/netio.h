@@ -26,6 +26,7 @@ protected:
     Protocol protocol = Protocol::NONE;
     char     hostname[DOMAINLIMIT] = {0};
     uint32_t resolved_time = 0;
+    std::unique_ptr<sockaddr_storage> assign_src;
     std::queue<sockaddr_storage> addrs;
     void connect();
     Job     dns_job = nullptr;

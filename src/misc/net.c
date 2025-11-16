@@ -389,41 +389,72 @@ int ListenUnixD(const struct Destination* dest, const struct listenOption* ops) 
     return ListenUnix(dest->hostname, ops);
 }
 
-int Connect(const struct sockaddr_storage* addr, int type) {
+int Connect(const struct sockaddr_storage* dst, int type, const struct sockaddr_storage* src) {
+    if(src && src->ss_family != dst->ss_family) {
+        LOGE("source address family %d mismatch dest family %d\n",
+             src->ss_family, dst->ss_family);
+        return -1;
+    }
 #ifdef SOCK_CLOEXEC
-    int fd =  socket(addr->ss_family, type | SOCK_CLOEXEC, 0);
+    int fd =  socket(dst->ss_family, type | SOCK_CLOEXEC, 0);
 #else
-    int fd =  socket(addr->ss_family, type, 0);
+    int fd =  socket(dst->ss_family, type, 0);
 #endif
     if (fd < 0) {
         LOGE("socket error:%s\n", strerror(errno));
         return -1;
     }
     do{
-        if(protectFd(fd, addr) == 0){
+        if(protectFd(fd, dst) == 0){
             LOGE("protecd fd %d error:%s\n", fd, strerror(errno));
             break;
         }
 
-        switch(addr->ss_family){
-        case AF_INET:
-        case AF_INET6:
-            if(type == SOCK_STREAM){
-                SetTcpOptions(fd, addr);
-            }else{
-                SetUdpOptions(fd, addr);
+#if __linux__
+        if(dst->ss_family == AF_INET){
+            if(src) {
+                //use iptransparent to bind source address
+                if (setsockopt(fd, SOL_IP, IP_TRANSPARENT, &((int){1}), sizeof(int)) < 0) {
+                    LOGE("IP_TRANSPARENT:%s\n", strerror(errno));
+                    break;
+                }
+                if(bind(fd, (struct sockaddr*)src, sizeof(struct sockaddr_in)) < 0) {
+                    LOGE("bind source %s error:%s\n", storage_ntoa(src), strerror(errno));
+                    break;
+                }
             }
-            break;
-        default:
-            LOGF("unkown family: %d\n", addr->ss_family);
+        }else if(dst->ss_family == AF_INET6) {
+            if(src) {
+                //use iptransparent to bind source address
+                if (setsockopt(fd, SOL_IPV6, IPV6_TRANSPARENT, &((int){1}), sizeof(int)) < 0) {
+                    LOGE("IPV6_TRANSPARENT:%s\n", strerror(errno));
+                    break;
+                }
+                if(bind(fd, (struct sockaddr*)src, sizeof(struct sockaddr_in6)) < 0) {
+                    LOGE("bind source %s error:%s\n", storage_ntoa(src), strerror(errno));
+                    break;
+                }
+            }
+        }else {
+            LOGF("unknown family: %d\n", dst->ss_family);
+        }
+#else
+        if(dst->ss_family != AF_INET && dst->ss_family != AF_INET6) {
+            LOGF("unknown family: %d\n", dst->ss_family);
+        }
+#endif
+        if(type == SOCK_STREAM){
+            SetTcpOptions(fd, dst);
+        }else{
+            SetUdpOptions(fd, dst);
         }
 
-        socklen_t len = (addr->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
-        if (connect(fd, (struct sockaddr*)addr, len) == -1 && errno != EINPROGRESS) {
-            LOGE("connecting %s error: %s\n", storage_ntoa(addr), strerror(errno));
+        socklen_t len = (dst->ss_family == AF_INET)? sizeof(struct sockaddr_in): sizeof(struct sockaddr_in6);
+        if (connect(fd, (struct sockaddr*)dst, len) == -1 && errno != EINPROGRESS) {
+            LOGE("connecting %s error: %s\n", storage_ntoa(dst), strerror(errno));
             break;
         }
-        LOGD(DNET, "connect %d for type %d: %s\n", fd, type, storage_ntoa(addr));
+        LOGD(DNET, "connect %d for type %d: %s\n", fd, type, storage_ntoa(dst));
         return fd;
     }while(0);
     close(fd);
@@ -635,7 +666,7 @@ bool hasIpv6Address(){
     struct sockaddr_storage ip;
     memset(&ip, 0, sizeof(ip));
     storage_aton("2001:4860::1", 1, &ip);
-    int fd = Connect(&ip, SOCK_STREAM);
+    int fd = Connect(&ip, SOCK_STREAM, NULL);
     if(fd < 0) return false;
     socklen_t len = sizeof(ip);
     if(getsockname(fd, (struct sockaddr*)&ip, &len) < 0){
