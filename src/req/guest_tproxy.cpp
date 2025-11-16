@@ -86,7 +86,7 @@ Guest_tproxy::Guest_tproxy(int fd, sockaddr_storage* src):
     headless = true;
     Http_Proc = &Guest_tproxy::AlwaysProc;
     char buff[HEADLENLIMIT];
-    if(isFakeIp(dst)) {
+    if(isFakeAddress(&dst)) {
         snprintf(buff, sizeof(buff), "CONNECT %s" CRLF CRLF, getRdnsWithPort(dst).c_str());
     } else {
         snprintf(buff, sizeof(buff), "CONNECT %s" CRLF CRLF, storage_ntoa(&dst));
@@ -144,7 +144,7 @@ Guest_tproxy::Guest_tproxy(int fd, sockaddr_storage* src, sockaddr_storage* dst,
     headless = true;
     Http_Proc = &Guest_tproxy::AlwaysProc;
     char buff[HEADLENLIMIT];
-    if(isFakeIp(*dst)) {
+    if(isFakeAddress(dst)) {
         snprintf(buff, sizeof(buff), "CONNECT %s" CRLF "Protocol: udp" CRLF CRLF, getRdnsWithPort(*dst).c_str());
     } else {
         snprintf(buff, sizeof(buff), "CONNECT %s" CRLF "Protocol: udp" CRLF CRLF, storage_ntoa(dst));

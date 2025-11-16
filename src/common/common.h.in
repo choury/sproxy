@@ -14,7 +14,7 @@
 #define VPNADDR  "198.18.0.1"
 #define VPNMASK  "255.254.0.0"
 #define VPNEND   "198.19.255.255"
-#define VPNADDR6 "64:ff9B::" VPNADDR
+#define VPNADDR6 "64:ff9b::c612:1"
 
 #define STRINGIZE_DETAIL(x) #x
 #define STRINGIZE(x) STRINGIZE_DETAIL(x)
@@ -271,7 +271,7 @@ do {\
 typedef unsigned char uchar;
 typedef void (* Dumper)(void* param, const char* fmt, ...) __attribute__ ((__format__ (__printf__, 2, 3)));
 
-int protectFd(int sockfd);
+int protectFd(int sockfd, const struct sockaddr_storage* addr);
 
 
 struct Destination{

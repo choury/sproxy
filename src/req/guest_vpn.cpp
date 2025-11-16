@@ -302,6 +302,10 @@ static void storage2Dest(const sockaddr_storage& ss, Destination* dest) {
     return storage2Dest(&ss, dest);
 }
 
+static bool isFakeAddress(const sockaddr_storage& dst) {
+    return isFakeAddress(&dst);
+}
+
 void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     assert(statusmap.count(id) == 0);
     statusmap.emplace(id, VpnStatus{});
@@ -314,7 +318,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     Destination src, dst;
     storage2Dest(pac->getsrc(), &src);
     storage2Dest(pac->getdst(), &dst);
-    bool shouldMitm = isFakeIp(pac->getdst()) && shouldNegotiate(status.host);
+    bool shouldMitm = isFakeAddress(pac->getdst()) && shouldNegotiate(status.host);
     status.cb = response(id);
     switch(pac->gettype()){
     case IPPROTO_TCP:{

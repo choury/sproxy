@@ -400,7 +400,7 @@ int Connect(const struct sockaddr_storage* addr, int type) {
         return -1;
     }
     do{
-        if(protectFd(fd) == 0){
+        if(protectFd(fd, addr) == 0){
             LOGE("protecd fd %d error:%s\n", fd, strerror(errno));
             break;
         }
@@ -452,7 +452,7 @@ int IcmpSocket(const struct sockaddr_storage* addr, int raw){
         }
     }
 
-    if(protectFd(fd) == 0){
+    if(protectFd(fd, addr) == 0){
         LOGE("protecd fd error:%s\n", strerror(errno));
         goto ERR;
     }
@@ -700,6 +700,20 @@ bool isBroadcast(const struct sockaddr_storage* addr) {
     if(addr->ss_family == AF_INET6) {
         struct sockaddr_in6* addr6 = (struct sockaddr_in6*)addr;
         return IN6_IS_ADDR_MULTICAST(&addr6->sin6_addr);
+    }
+    return false;
+}
+
+bool isFakeAddress(const struct sockaddr_storage* addr) {
+    if(addr->ss_family == AF_INET) {
+        struct sockaddr_in* addr4 = (struct sockaddr_in*)addr;
+        uint32_t ip = ntohl(addr4->sin_addr.s_addr);
+        return ip > ntohl(inet_addr(VPNADDR)) && ip < ntohl(inet_addr(VPNEND));
+    }
+    if(addr->ss_family == AF_INET6) {
+        struct sockaddr_in6* addr6 = (struct sockaddr_in6*)addr;
+        uint32_t ip = ntohl(getMapped(addr6->sin6_addr, NAT64PREFIX).s_addr);
+        return ip > ntohl(inet_addr(VPNADDR)) && ip < ntohl(inet_addr(VPNEND));
     }
     return false;
 }

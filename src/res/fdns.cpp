@@ -45,11 +45,6 @@ static uint32_t getFip(const sockaddr_storage* addr){
     return fip;
 }
 
-bool isFakeIp(const sockaddr_storage& addr) {
-    const auto& fip = getFip(&addr);
-    return fip > ntohl(inet_addr(VPNADDR)) && fip < ntohl(inet_addr(VPNEND));
-}
-
 std::string getRdns(const sockaddr_storage& addr) {
     auto fip = getFip(&addr);
     auto record = fdns_records.GetOne(fip);

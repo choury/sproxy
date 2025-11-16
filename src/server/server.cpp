@@ -20,8 +20,8 @@
 #include <net/if.h>
 #include "req/guest_vpn.h"
 #include "req/guest_tproxy.h"
-int protectFd(int fd) {
-    if(opt.interface && strlen(opt.interface)){
+int protectFd(int fd, const sockaddr_storage* addr){
+    if(opt.interface && strlen(opt.interface) && !isLoopBack(addr)){
         struct ifreq ifr;
         memset(&ifr, 0, sizeof(ifr));
         snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", opt.interface);
@@ -39,7 +39,7 @@ int protectFd(int fd) {
 
 #else
 //do nothing, useful for vpn only
-int protectFd(int){
+int protectFd(int, const sockaddr_storage*){
     return 1;
 }
 #endif

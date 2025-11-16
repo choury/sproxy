@@ -292,12 +292,34 @@ static std::set<string> authips{"127.0.0.1", "[::1]", "localhost"};
 
 void addsecret(const char* secret) {
     secrets.emplace(secret);
+    for(auto ips=getlocalip(); ips->ss_family ; ips++){
+        char buff[INET6_ADDRSTRLEN + 3] = {0};
+        const char* dst = nullptr;
+        if(ips->ss_family == AF_INET){
+            dst = inet_ntop(AF_INET, &((sockaddr_in*)ips)->sin_addr, buff, sizeof(buff));
+        }else if(ips->ss_family == AF_INET6){
+            buff[0] = '[';
+            dst = inet_ntop(AF_INET6, &((sockaddr_in6*)ips)->sin6_addr, buff + 1, sizeof(buff) - 2);
+            buff[strlen(buff)] = ']';
+        }
+        if (dst) {
+            authips.insert(buff);
+        }
+    }
+    //add vpn address
+    authips.insert(VPNADDR);
+    authips.insert("[" VPNADDR6 "]");
 }
 
 bool checkauth(const char *ip, const char* token) {
     if(secrets.empty())
         return true;
     if(authips.count(ip) > 0){
+        return true;
+    }
+
+    sockaddr_storage addr;
+    if(storage_aton(ip, 0, &addr)  && isFakeAddress(&addr)) {
         return true;
     }
     if(token == nullptr){
