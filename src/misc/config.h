@@ -89,6 +89,7 @@ struct options{
     int  trace_time;
     bool redirect_http;
     bool restrict_local;
+    bool rproxy_keep_src;
     const char* quic_cc_algorithm;  // QUIC congestion control algorithm: "cubic" or "bbr"
     uint64_t quic_version;         // QUIC version: QUIC_VERSION_1 or QUIC_VERSION_2
     const char* doh_server;        // DNS over HTTPS server URL

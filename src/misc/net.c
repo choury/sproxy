@@ -419,8 +419,16 @@ int Connect(const struct sockaddr_storage* dst, int type, const struct sockaddr_
                     break;
                 }
                 if(bind(fd, (struct sockaddr*)src, sizeof(struct sockaddr_in)) < 0) {
-                    LOGE("bind source %s error:%s\n", storage_ntoa(src), strerror(errno));
-                    break;
+                    if(errno != EADDRINUSE) {
+                        LOGE("bind source %s error:%s\n", storage_ntoa(src), strerror(errno));
+                        break;
+                    }
+                    struct sockaddr_in src_copy = *(struct sockaddr_in*)src;
+                    src_copy.sin_port = 0;
+                    if(bind(fd, (struct sockaddr*)&src_copy, sizeof(struct sockaddr_in)) < 0) {
+                        LOGE("bind source %s error after retry:%s\n", storage_ntoa((struct sockaddr_storage*)&src), strerror(errno));
+                        break;
+                    }
                 }
             }
         }else if(dst->ss_family == AF_INET6) {
@@ -431,8 +439,16 @@ int Connect(const struct sockaddr_storage* dst, int type, const struct sockaddr_
                     break;
                 }
                 if(bind(fd, (struct sockaddr*)src, sizeof(struct sockaddr_in6)) < 0) {
-                    LOGE("bind source %s error:%s\n", storage_ntoa(src), strerror(errno));
-                    break;
+                    if(errno != EADDRINUSE) {
+                        LOGE("bind source %s error:%s\n", storage_ntoa(src), strerror(errno));
+                        break;
+                    }
+                    struct sockaddr_in6 src_copy = *(struct sockaddr_in6*)src;
+                    src_copy.sin6_port = 0;
+                    if(bind(fd, (struct sockaddr*)&src_copy, sizeof(struct sockaddr_in6)) < 0) {
+                        LOGE("bind source %s error after retry:%s\n", storage_ntoa((struct sockaddr_storage*)&src), strerror(errno));
+                        break;
+                    }
                 }
             }
         }else {

@@ -154,7 +154,7 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         memcpy(&dest, &req->Dest, sizeof(dest));
         dest.port = req->getDport();
         if(req->has("Rproxy-Name") && req->has("X-Forwarded-For")) {
-            strncpy(dest.assign_src, req->get("X-Forwarded-For"), sizeof(dest.assign_src) - 1);
+            if(opt.rproxy_keep_src) strncpy(dest.assign_src, req->get("X-Forwarded-For"), sizeof(dest.assign_src) - 1);
             if(!req->ismethod("CONNECT")) req->del("X-Forwarded-For");
         }
         req->del("Proxy-Authorization");

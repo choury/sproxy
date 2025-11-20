@@ -16,7 +16,7 @@ RUN apt-get  update && \
 FROM debian:13 as worker
 COPY --from=0 /root/sproxy/build/sproxy-*-Linux.deb .
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends openssl libjson-c5 zlib1g libelf1 libreadline8 liburing2 && \
+    apt-get install -y --no-install-recommends openssl libjson-c5 zlib1g libelf1 libreadline8 liburing2 iproute2 && \
     dpkg -i sproxy-*-Linux.deb && \
     apt-get clean
 

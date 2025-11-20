@@ -111,6 +111,7 @@ struct options opt = {
     .trace_time        = 0,
     .redirect_http     = false,
     .restrict_local    = false,
+    .rproxy_keep_src   = false,
     .quic_cc_algorithm = NULL,
     .quic_version      = 1,  // Default to QUIC v1
     .doh_server        = NULL,
@@ -181,7 +182,9 @@ static struct option long_options[] = {
     {"cakey",         required_argument, NULL,  0 },
     {"cert",          required_argument, NULL,  0 },
     {"config",        required_argument, NULL, 'c'},
+#ifndef __ANDROID__
     {"daemon",        no_argument,       NULL, 'D'},
+#endif
     {"disable-fakeip",no_argument,       NULL,  0 },
     {"disable-http2", no_argument,       NULL, '1'},
     {"doh",           optional_argument, NULL,  0 },
@@ -212,6 +215,7 @@ static struct option long_options[] = {
     {"secret",        required_argument, NULL, 's'},
 #if __linux__
     {"set-dns-route", no_argument,       NULL,  0 },
+    {"rproxy-kp",     no_argument,       NULL,  0 },
 #endif
     {"sni",           no_argument,       NULL,  0 },
     {"ssl",           required_argument, NULL,  0 },
@@ -248,17 +252,13 @@ static struct option_detail option_detail[] = {
     {"acme", "Enable automatic certificate management (ACME) with state directory", option_string, &opt.acme_state, NULL},
     {"alt-svc", "Add alt-svc header to response or send ALTSVC frame", option_string, &opt.alt_svc, NULL},
     {"autoindex", "Enables the directory listing output (local server)", option_bool, &opt.autoindex, (void*)true},
-#ifdef HAVE_BPF
     {"bpf", "load bpf prog to redirect for tproxy on cgroup (!!NOT WORK IN CONTAINER!!)", option_string, &opt.bpf_cgroup, NULL},
     {"bpf-fwmark", "set fwmark for the packet of replying rproxy in bpf prog", option_uint64, &opt.bpf_fwmark, NULL},
-#endif
     {"cafile", "CA certificate for server (ssl/quic)", option_string, &opt.cafile, NULL},
     {"cakey", "CA key for server (mitm)", option_string, &opt.cakey, NULL},
     {"cert", "Certificate file for server (ssl/quic)", option_string, &certfile, NULL},
     {"config", "Configure file (default "PREFIX"/etc/sproxy/sproxy.conf and ./sproxy.conf)", option_string, &opt.config_file, NULL},
-#ifndef __ANDROID__
     {"daemon", "Run as daemon", option_bool, &opt.daemon_mode, (void*)true},
-#endif
     {"disable-http2", "Use http/1.1 only", option_bool, &opt.disable_http2, (void*)true},
     {"disable-fakeip", "Do not use fakeip for vpn and tproxy", option_bool, &opt.disable_fakeip, (void*)true},
     {"doh", "DNS over HTTPS server (e.g., https://1.1.1.1), use server address if no argument", option_string, &opt.doh_server, ""},
@@ -268,45 +268,36 @@ static struct option_detail option_detail[] = {
     {"ignore-hosts", "Dont read entries from /etc/hosts ", option_bool, &opt.ignore_hosts, (void*)true},
     {"index", "Index file for path (local server)", option_string, &opt.index_file, NULL},
     {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_bool, &opt.ignore_cert_error, (void*)true},
-#if __linux__
     {"interface", "Out interface (use for vpn), will skip bind if set to empty", option_string, &opt.interface, NULL},
-#endif
     {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, auto_options},
     {"key", "Private key file name (ssl/quic)", option_string, &keyfile, NULL},
     {"mitm", "Mitm mode for https request ([auto], enable, disable), require cakey", option_enum, &opt.mitm_mode, auto_options},
     {"pcap", "Save packets in pcap file for vpn", option_string, &opt.pcap_file, NULL},
     {"pcap-len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
     {"policy-file", "The file of policy ("PREFIX"/etc/sproxy/sites.list as default)", option_string, &policy_file, NULL},
-#ifdef HAVE_QUIC
     {"quic", "Listen for QUIC server", option_list, &quic_listens, NULL},
     {"quic-cc", "QUIC congestion control algorithm (cubic, bbr)", option_string, &opt.quic_cc_algorithm, NULL},
     {"quic-version", "QUIC version (1 for QUIC v1, 2 for QUIC v2)", option_uint64, &opt.quic_version, NULL},
-#endif
     {"redirect-http", "Return 308 to redirect http to https", option_bool, &opt.redirect_http, (void*)true},
     {"request-header", "append the header (name:value) before handle http request", option_list, &opt.request_headers, NULL},
     {"restrict-local", "check method and dst port for local strategy", option_bool, &opt.restrict_local, (void*)true},
     {"forward-header", "append the header (name:value) when forward http request", option_list, &opt.forward_headers, NULL},
     {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64, opt.rewrite_auth, NULL},
     {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
-    {"rproxy", "name for rproxy mode (via http2)", option_string, &opt.rproxy_name, (void*)true},
+    {"rproxy", "name for rproxy mode (via http2/http3)", option_string, &opt.rproxy_name, (void*)true},
+    {"rproxy-kp", "keep the source of rproxy request (via IP[V6]_TRANSPARENT)", option_bool, &opt.rproxy_keep_src, (void*)true},
     {"secret", "Set user and passwd for proxy (user:password), default is none.", option_list, &secrets, NULL},
     {"server", "default proxy server (can ONLY set in config file)", option_string, &server_string, NULL},
-#if __linux__
     {"set-dns-route", "set route for dns server (via vpn interface)", option_bool, &opt.set_dns_route, (void*)true},
-#endif
     {"sni", "Act as a sni proxy", option_bool, &opt.sni_mode, (void*)true},
     {"ssl", "Listen for ssl server (require cert file and key)", option_list, &ssl_listens, NULL},
-#if __linux__
     {"tun", "tun mode (vpn mode, require root privilege)", option_bool, &opt.tun_mode, (void*)true},
     {"tun-fd", "tun fd (vpn mode, recv fd before execve)", option_int64, &opt.tun_fd, NULL},
     {"tproxy", "tproxy listen (get dst via SO_ORIGINAL_DST)", option_string, &tproxy_listen, (void*)true},
     {"trace", "print trace time if response time is larger than it", option_int64, &opt.trace_time, NULL},
     {"ua", "set user-agent for vpn auto request", option_string, &opt.ua, NULL},
-#endif
     {"version", "show the version of this programme", option_bool, NULL, NULL},
-#ifndef NDEBUG
     {"debug", "set debug output for module", option_list, &debug_list, NULL},
-#endif
     {NULL, NULL, option_bool, NULL, NULL},
 };
 
@@ -344,12 +335,20 @@ void neglect(){
 static void usage(const char * program){
     LOG("Usage: %s [host:port]\n" , program);
     for(int i =0; option_detail[i].name; i++){
+        bool found = false;
         char short_name = 0;
         for(int j=0; long_options[j].name; j++){
-            if(strcmp(option_detail[i].name, long_options[j].name) == 0 && long_options[j].val){
-                short_name = (char)long_options[j].val;
-                break;
+            if(strcmp(option_detail[i].name, long_options[j].name)){
+                continue;
             }
+            found = true;
+            if(long_options[j].val){
+                short_name = (char)long_options[j].val;
+            }
+            break;
+        }
+        if(!found) {
+            continue;
         }
         if(short_name){
             LOG("-%c, ", short_name);
@@ -628,6 +627,9 @@ void postConfig(){
             LOGE("rproxy mode require server name\n");
             exit(1);
         }
+    } else if(opt.rproxy_keep_src) {
+        LOGE("rproxy-kp require rproxy name set\n");
+        exit(1);
     }
 
     // 设置QUIC拥塞控制算法默认值
