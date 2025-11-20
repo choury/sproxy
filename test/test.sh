@@ -135,7 +135,7 @@ function test_http(){
     [ $? -ne 0 ] && echo "http test 5 failed" && exit 1
     curl -f -v http://$HOSTNAME:$1/ -H "Host: www.qq.com" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "http test 6 failed" && exit 1
-    curl -f -v -x http://$HOSTNAME:$1/ https://www.qq.com  2>> curl.log
+    curl -f -v -x http://$HOSTNAME:$1/ https://www.qq.com  > /dev/null 2>> curl.log
     [ $? -ne 22 ] && echo "http test 7 failed" && exit 1
     curl -f -v -x http://$HOSTNAME:$1/ https://www.qq.com -A "Mozilla/5.0" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "http test 8 failed" && exit 1

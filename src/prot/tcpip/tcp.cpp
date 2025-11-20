@@ -83,6 +83,9 @@ static size_t bufleft(std::shared_ptr<TcpStatus> status) {
 }
 
 static void tcpSend(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, Buffer& bb) {
+    if(status->ts_enable) {
+        pac->tcp->settimestamp(getmtime(), status->ts_recent);
+    }
     pac->build_packet(bb);
 #if __linux__
     if (status->flags & TUN_GSO_OFFLOAD) {
@@ -331,6 +334,16 @@ void SynProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, B
     status->window = pac->tcp->getwindow();
     status->options = pac->tcp->getoptions();
     status->mss = pac->tcp->getmss();
+    if(status->options & (1ull<<TCPOPT_TIMESTAMP)){
+        uint32_t tsval = 0;
+        uint32_t tsecr = 0;
+        if(pac->tcp->gettimestamp(&tsval, &tsecr) == 1){
+            status->ts_enable = 1;
+            status->ts_recent = tsval;
+        }else{
+            status->options &= ~(1ull<<TCPOPT_TIMESTAMP);
+        }
+    }
     if(status->options & (1u<<TCPOPT_WINDOW)){
         status->recv_wscale = pac->tcp->getwindowscale();
         status->send_wscale = TCP_WSCALE;
@@ -390,6 +403,15 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
     uint32_t seq = pac->tcp->getseq();
     uint32_t ack = pac->tcp->getack();
     uint8_t flag = pac->tcp->getflag();
+    uint32_t tsval = 0;
+    uint32_t tsecr = 0;
+    bool has_timestamp = false;
+    if(status->ts_enable) {
+        has_timestamp = pac->tcp->gettimestamp(&tsval, &tsecr) == 1;
+        if(has_timestamp && (status->ts_recent == 0 || after(tsval, status->ts_recent))) {
+            status->ts_recent = tsval;
+        }
+    }
 
     if(flag & TH_RST){//rst包，不用回包，直接断开
         LOGE("<tcp> %s -> %s got rst.\n",
@@ -483,6 +505,10 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
         }
         uint32_t minrtt = UINT32_MAX;
         uint32_t now = getmtime();
+        // now > tsecr
+        if(has_timestamp && after(now, tsecr)) {
+            minrtt = now - tsecr;
+        }
         while(!status->sent_list.empty()){
             auto& front = status->sent_list.front();
             uint32_t start_seq = front.pac->tcp->getseq();
@@ -492,8 +518,10 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
                 end_seq ++;
             }
             uint32_t rtt = now - front.first_sent;
-            if(before(start_seq,  ack) && rtt < minrtt && rtt < status->rto) {
-                minrtt = now - front.first_sent;
+            if(before(start_seq,  ack) && rtt < status->rto) {
+                if(rtt < minrtt) {
+                    minrtt = rtt;
+                }
             }
             if(noafter(end_seq, ack)) {
                 status->sent_list.pop_front();

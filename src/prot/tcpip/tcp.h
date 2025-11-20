@@ -57,12 +57,14 @@ struct TcpStatus: public IpStatus{
     uint8_t    state  = TCP_LISTEN;
     uint8_t    recv_wscale;
     uint8_t    send_wscale;
+    uint8_t    ts_enable = 0;
     uint16_t   window;
     uint16_t   mss = TCP_MSS;
     uint32_t   sent_seq; //下一个发送的报文的序列号，意思是上一个发送的序列号是sent_seq-1
     uint32_t   sent_ack;
     uint32_t   recv_ack;
     uint32_t   want_seq; //收到的对方 seq+1，可以直接当作ack
+    uint32_t   ts_recent = 0;
     uint64_t   options = 0;
     uint32_t   srtt = 0;
     uint32_t   rttval = 0;
