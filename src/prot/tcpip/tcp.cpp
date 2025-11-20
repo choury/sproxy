@@ -167,6 +167,32 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
     }
     auto now = getmtime();
     pkgLogger logger("resent");
+    auto send_range = [&](tcp_sent& it, uint32_t start, uint32_t end) {
+        if (start >= end) {
+            return;
+        }
+        uint32_t base_seq = it.pac->tcp->getseq();
+        uint32_t tail_seq = base_seq + it.bb.len;
+        start = std::max(start, base_seq);
+        end = std::min(end, tail_seq);
+        if (start >= end) {
+            return;
+        }
+        size_t len = end - start;
+        auto pac = MakeIp(it.pac);
+        uint8_t flag = it.pac->tcp->getflag();
+        if ((flag & TH_PUSH) && end != tail_seq) {
+            flag &= ~TH_PUSH;
+        }
+        pac->tcp
+                ->setseq(start)
+                ->setack(status->want_seq)
+                ->setwindow(bufleft(status) >> status->send_wscale)
+                ->setflag(flag);
+        Buffer bb{(const char*)it.bb.data() + (start - base_seq), len, it.bb.id};
+        tcpSend(status, pac, bb);
+        logger.add(start, len);
+    };
     if(status->sack == nullptr) {
         int count = 0;
         for(auto& it : status->sent_list){
@@ -174,16 +200,14 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
             if(count > 0 && (uint64_t)it.last_sent + status->rto * status->rto_factor > now) {
                 break;
             }
-            logger.add(it.pac->tcp->getseq(), it.bb.len);
-            it.pac->tcp
-                    ->setack(status->want_seq)
-                    ->setwindow(bufleft(status) >> status->send_wscale);
-            tcpSend(status, it.pac, it.bb);
+            uint32_t seq = it.pac->tcp->getseq();
+            uint32_t next = seq + it.bb.len;
+            uint32_t start = std::max(seq, status->recv_ack);
+            send_range(it, start, next);
             it.last_sent = now;
             count++;
         }
-    }else {
-        uint32_t left_edge = status->recv_ack;
+    } else {
         Sack* sack = status->sack;
         if(debug[DVPN].enabled){
             Sack* s = status->sack;
@@ -197,29 +221,36 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
         for(auto& it : status->sent_list) {
             if (it.last_sent != it.first_sent && now - it.last_sent < status->srtt)
                 continue;
-            // [seq, next)
-            auto seq = it.pac->tcp->getseq();
-            auto next = seq + it.bb.len;
-            while(noafter(sack->left, seq)) { //sack->left <= seq
-                left_edge = sack->right;
-                sack = sack->next;
-                if(sack == nullptr) {
-                    goto ret;
+            uint32_t seq = it.pac->tcp->getseq();
+            uint32_t next = seq + it.bb.len;
+            uint32_t cursor = std::max(seq, status->recv_ack);
+            Sack* cur = sack;
+            while (cursor < next && cur) {
+                // Cursor falls inside current SACK block: skip to its right edge
+                // cur->left <= cursor && cursor <= cur->right
+                if (noafter(cur->left, cursor) && noafter(cursor, cur->right)) {
+                    cursor = cur->right;
+                    cur = cur->next;
+                    continue;
                 }
+                // Cursor is before the next SACKed block: resend the gap [cursor, cur->left)
+                // cursor < cur->left
+                if (before(cursor, cur->left)) {
+                    uint32_t gap_end = std::min(next, cur->left);
+                    send_range(it, cursor, gap_end);
+                    cursor = gap_end;
+                    continue;
+                }
+                // Safety: move to next SACK block if current one is behind cursor
+                cur = cur->next;
             }
-            // next <= left_edge
-            if (noafter(next, left_edge)) {
-                continue;
+            // Any tail part after last SACKed block should also be retransmitted
+            if (cursor < next) {
+                send_range(it, cursor, next);
             }
-            logger.add(seq, it.bb.len);
-            it.pac->tcp
-                    ->setack(status->want_seq)
-                    ->setwindow(bufleft(status) >> status->send_wscale);
             it.last_sent = now;
-            tcpSend(status, it.pac, it.bb);
         }
     }
-ret:
     status->rto_job = UpdateJob(std::move(status->rto_job),
                                 [status_]{Resent(status_);},
                                 std::max(status->rto * status->rto_factor, RTO_MAX));
@@ -635,7 +666,7 @@ void SendData(std::shared_ptr<TcpStatus> status, Buffer&& bb) {
         //LOGD(DVPN, "%s: mss smaller than send size (%zu/%u)!\n", key.getString("<-"), bb.len, mss);
         sendlen = std::min((size_t)status->mss, bb.len);
     } else {
-        sendlen = std::min((size_t)65000, bb.len);
+        sendlen = std::min((size_t)16000, bb.len);
     }
     //LOGD(DVPN, "%s (%u - %u) size: %zu\n", key.getString("<-"), sent_seq, want_seq, sendlen);
     auto pac = MakeIp(IPPROTO_TCP, &status->dst, &status->src);
