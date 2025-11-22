@@ -394,6 +394,29 @@ Tcp* Tcp::addflag(uint8_t flag) {
  * so inspect current TCP option length (tcpopt_len)
  */
 Tcp* Tcp::settimestamp(uint32_t tsval, uint32_t tsecr) {
+    tcp_opt* opt = (tcp_opt *)tcpopt;
+    size_t len = tcpoptlen;
+
+    while (len > 0 && opt) {
+        if (opt->kind == TCPOPT_EOL) {
+            break;
+        }
+        if (opt->kind == TCPOPT_NOP) {
+            len--;
+            opt = (tcp_opt*)((char *)opt + 1);
+            continue;
+        }
+        if (opt->kind == TCPOPT_TIMESTAMP) {
+            assert(opt->length == TCPOLEN_TIMESTAMP);
+            auto *timestamp = (tcp_timestamp *)opt;
+            timestamp->tsval = htonl(tsval);
+            timestamp->tsecr = htonl(tsecr);
+            return this;
+        }
+        len -= opt->length;
+        opt = (tcp_opt*)((char *)opt + opt->length);
+    }
+
     if (tcpopt) {
         tcpopt = (char *) realloc(tcpopt, tcpoptlen + sizeof(tcp_timestamp));
     } else{
@@ -1377,7 +1400,6 @@ void Ip6::build_packet(Buffer& bb) {
     hdr.ip6_plen = htons(len);
     memcpy(packet, &hdr, sizeof(ip6_hdr));
 }
-
 
 
 
