@@ -9,16 +9,20 @@
 ## 启动方式
 
 1. 在需要作为出口的远端节点上：
+
    ```bash
    ./sproxy --server=<远端监听地址> --rproxy=<name>
    ```
+
    - `--rproxy` 会启用专用模式，仅保留远端到本地的桥接功能。
    - 名称 `<name>` 会出现在路径 `/rproxy/<name>/…` 中，用来区分多个远端。
 
 2. 在本地节点上保持常规 `sproxy` 运行并开放静态文件目录，远端注册成功后，即可通过浏览器或工具访问：
-   ```
+
+   ```url
    http://<本地sproxy>/rproxy/<name>/https://example.com/
    ```
+
 ### 动态监听方式
 
 运行中的 `sproxy` 可以通过scli的 `listen add [tcp/udp:][ip:]port <rproxy>@[tcp/udp:]host:port` 动态开放新的监听端口，并把进入该端口的流量通过 HTTP `CONNECT` 转发到指定的 `rproxy` 会话。
@@ -59,3 +63,79 @@
 - 访问 `/rproxy/` 会返回当前已注册的远端连接列表，方便确认是否握手成功。
 - 日志中会输出 `rproxy: <path> -> <url>`，便于观察路径解析及重写情况。
 - 若命名冲突（同名、多次注册、使用 `local` 等保留名），远端会话会被拒绝并在日志中给出原因。
+
+## rproxy-kp (保持源地址)
+
+`rproxy-kp` 是 `rproxy` 模式下的一个增强功能，其核心是 "keep source"（保持源地址）。
+
+### 原理
+
+该功能利用了 Linux 系统提供的 `IP_TRANSPARENT` 套接字选项。
+
+当 `sproxy` 作为 `rproxy` 服务端运行时，如果收到的请求中包含 `X-Forwarded-For` 头部（如果是通过`rproxy`方式转发，`sproxy` 就会自动添加），并且启动时配置了 `--rproxy-kp` 参数，那么 `sproxy` 在向最终目标服务器发起连接时，会尝试将连接的源 IP 地址伪装成 `X-Forwarded-For` 中指定的原始客户端 IP 地址。
+
+这样，对于目标服务器来说，它会认为连接是直接由原始客户端发起的，从而使得 `rproxy` 服务器在网络链路上变得“透明”。
+
+### 使用方法
+
+1. **启用参数**：在启动 `rproxy` 服务端的 `sproxy` 实例时，添加 `--rproxy-kp` 标志。
+
+    ```bash
+    # 示例：在本地服务器上启动
+    ./sproxy --rproxy=<name> --rproxy-kp <server>
+    ```
+
+2. **系统配置**：
+    为了让 `IP_TRANSPARENT` 生效，操作系统需要进行相应的**策略路由 (Policy-based Routing)** 配置。你需要使用 `iproute2` 工具包来确保从目标服务器返回的流量能够正确地路由回 `sproxy` 服务器。
+
+    配置主要分为两步：**设置流量标记 (fwmark)** 和 **根据标记配置策略路由**。
+
+    **第一步：设置流量标记 (fwmark)**
+
+    对于 `sproxy` 发出的数据包，你需要为其设置一个标记 (fwmark)，以便后续的路由策略可以识别它们。你有两种方式来设置这个标记：
+
+    **方式一：使用 BPF (推荐)**
+
+    这是更现代且高效的方式。`sproxy` 可以加载一个 BPF 程序，自动为自己创建的套接字打上标记。
+
+    - **启动参数**:
+      - `--bpf=<cgroup路径>`: 指定 `sproxy` 进程所在的 cgroup v2 路径，并加载 BPF 程序。
+      - `--bpf-fwmark=<标记值>`: 设置要使用的标记值。
+
+    - **示例**:
+
+      ```bash
+      # 1. 为 sproxy 创建一个 cgroup
+      mkdir /sys/fs/cgroup/sproxy
+
+      # 2. 将当前 shell 放入该 cgroup (sproxy 将继承这个 cgroup)
+      echo $$ | tee /sys/fs/cgroup/sproxy/cgroup.procs
+
+      # 3. 启动 sproxy 并启用 bpf 标记
+      ./sproxy --rproxy=<name> --rproxy-kp \
+               --bpf=/sys/fs/cgroup/sproxy \
+               --bpf-fwmark=3333
+      ```
+
+    **方式二：使用 iptables**
+
+    这是一个传统且通用的方式。
+
+    - **示例**:
+
+      ```bash
+      # 使用 iptables 为 sproxy 用户发出的包打上标记 3333
+      iptables -t mangle -A OUTPUT -p tcp -m owner --uid-owner <sproxy_user> -j MARK --set-mark 3333
+      ```
+
+    **第二步：根据标记配置策略路由**
+
+    无论使用哪种方式设置了 `fwmark`，接下来的策略路由配置是相同的。
+
+    ```bash
+    # 1. 添加策略路由，让所有被标记为 3333 的流量走新的路由表
+    ip rule add fwmark 3333 lookup 3333
+
+    # 2. 在新路由表中为所有流量设置默认路由，出口为指定网卡（如果通过localhost连接,则指定lo）
+    ip route add local default dev lo table 3333
+    ```

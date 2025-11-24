@@ -158,7 +158,6 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
             if(!req->ismethod("CONNECT")) req->del("X-Forwarded-For");
         }
         req->del("Proxy-Authorization");
-        req->del("Rproxy-Name");
         if(strcmp(dest.protocol, "icmp") == 0){
             return (new Ping(dest))->request(req, rw);
         }
