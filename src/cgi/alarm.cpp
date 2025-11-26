@@ -18,10 +18,7 @@ class handler: public CgiHandler {
             return;
         }
         if(params.count("title") == 0 || params.count("body") == 0 || params.count("token") == 0){
-            std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S400, sizeof(S400), req->request_id);
-            Response(res);
-            Finish();
-            return;
+            return BadRequest();
         }
         th = std::thread([this] {
             if(sendPushMessage(params["title"].c_str(), params["body"].c_str(), params["token"].c_str()) == 0) {

@@ -45,9 +45,6 @@ static size_t parseSize(std::string size) {
 class handler: public CgiHandler {
     std::thread th;
     void GET(const CGI_Header*) override{
-        if((flag.load(std::memory_order_acquire) & HTTP_REQ_COMPLETED) == 0){
-            return;
-        }
         std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S200, sizeof(S200), req->request_id);
         res->set("Content-Type", "application/octet-stream");
         res->set("Pragma", "no-cache");
@@ -87,11 +84,8 @@ class handler: public CgiHandler {
             strm->zfree = Z_NULL;
             strm->opaque = Z_NULL;
             int ret;
-            if ((ret = deflateInit2(strm, level, Z_DEFLATED, 16 + MAX_WBITS, 8, Z_DEFAULT_STRATEGY)) !=
-                Z_OK) {
-                Response(HttpResHeader::create(S500, sizeof(S500), req->request_id));
-                Finish();
-                return;
+            if ((ret = deflateInit2(strm, level, Z_DEFLATED, 16 + MAX_WBITS, 8, Z_DEFAULT_STRATEGY)) != Z_OK) {
+                return respondStatus(S500);
             }
             Response(res);
             auto gzip_func = [this](z_stream* strm, size_t left) {

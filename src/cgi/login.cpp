@@ -12,8 +12,7 @@ class handler: public CgiHandler{
             return;
         }
         if(params.count("key") == 0){
-            BadRequest();
-            return;
+            return BadRequest();
         }
         if(!c->Login(params["key"], req->get("X-Real-IP")).get_future().get()){
             Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));

@@ -311,7 +311,21 @@ void addsecret(const char* secret) {
     authips.insert("[" VPNADDR6 "]");
 }
 
-bool checkauth(const char *ip, const char* token) {
+
+static bool match_secret(const char* token) {
+    if(secrets.empty()) {
+        return true;
+    }
+    if(token == nullptr){
+        return false;
+    }
+    if(strncmp(token, "Basic ", 6) == 0){
+        token = token + 6;
+    }
+    return secrets.count(token) > 0;
+}
+
+bool checkauth(const char* ip, const char* proxy_auth, const char* auth){
     if(secrets.empty())
         return true;
     if(authips.count(ip) > 0){
@@ -322,17 +336,13 @@ bool checkauth(const char *ip, const char* token) {
     if(storage_aton(ip, 0, &addr)  && isFakeAddress(&addr)) {
         return true;
     }
-    if(token == nullptr){
-        return false;
+    if(match_secret(proxy_auth)) {
+        authips.insert(ip);
+        return true;
     }
-    if(strncmp(token, "Basic ", 6) == 0){
-        token += 6;
-    }
-    for(const auto& secret : secrets){
-        if(secret == token){
-            authips.insert(ip);
-            return true;
-        }
+    if(match_secret(auth)) {
+        authips.insert(ip);
+        return true;
     }
     return false;
 }

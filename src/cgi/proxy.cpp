@@ -5,12 +5,7 @@ class handler: public CgiHandler{
     static SproxyClient* c;
     void GET(const CGI_Header*) override{
         if(!req->has("X-Authorized", "1")) {
-            Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
-            Finish();
-            return;
-        }
-        if((flag & HTTP_REQ_COMPLETED) == 0){
-            return;
+            return Unauthorized();
         }
         std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S200, sizeof(S200), req->request_id);
         res->set("Content-Type", "application/json");
@@ -22,9 +17,7 @@ class handler: public CgiHandler{
     }
     void POST(const CGI_Header* header) override{
         if(!req->has("X-Authorized", "1")) {
-            Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
-            Finish();
-            return;
+            return Unauthorized();
         }
         if(header->type == CGI_DATA){
             auto param = getparamsmap((char *)(header+1), ntohs(header->contentLength));
@@ -34,15 +27,12 @@ class handler: public CgiHandler{
             return;
         }
         if(params.count("proxy") == 0) {
-            BadRequest();
-            return;
+            return BadRequest();
         }
         if(!c->SetServer(params["proxy"]).get_future().get()){
-            BadRequest();
-            return;
+            return BadRequest();
         }
-        Response(HttpResHeader::create(S205, sizeof(S205), req->request_id));
-        Finish();
+        respondStatus(S205);
     }
 public:
     handler(int sfd, int cfd, const char* name, const CGI_Header* header):CgiHandler(sfd, cfd, name, header){

@@ -2,9 +2,9 @@ name: build
 
 on:
   push:
-    branches: [ "*" ]
-  pull_request:
     branches: [ "master" ]
+  pull_request:
+    branches: [ "*" ]
 
 env:
   project: sproxy
