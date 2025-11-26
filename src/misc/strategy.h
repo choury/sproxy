@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 void addsecret(const char* secret);
-bool checkauth(const char* ip, const char* token);
+bool checkauth(const char* ip, const char* proxy_auth, const char* auth);
 void reloadstrategy();
 bool addstrategy(const char *host, const char* s, const char* ext);
 bool delstrategy(const char *host);

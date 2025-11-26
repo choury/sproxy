@@ -138,7 +138,7 @@ std::string Cli::GetServer() {
 
 bool Cli::Login(const std::string &token, const std::string &source) {
     LOG("%s [%s] %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, source.c_str());
-    return checkauth(source.c_str(), token.c_str());
+    return checkauth(source.c_str(), token.c_str(), nullptr);
 }
 
 static void sstream_dumper(void* param, const char* fmt, ...) {

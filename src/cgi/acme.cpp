@@ -17,23 +17,12 @@ class handler: public CgiHandler {
     static SproxyClient* client;
     std::thread worker;
 
-    void respond_with_status(const char* status, const std::string& body = "", const char* content_type = "text/plain") {
-        auto res = HttpResHeader::create(status, strlen(status), req->request_id);
-        res->set("Content-Length", body.length());
-        if(!body.empty()) {
-            res->set("Content-Type", content_type);
-        }
-        Response(res);
-        if(!body.empty() && !req->ismethod("HEAD")) {
-            Send(body.c_str(), body.size());
-        }
-        Finish();
-    }
-
     void process_request() {
-        if(!req->has("X-Authorized", "1") || opt.acme_state == nullptr) {
-            respond_with_status(S403);
-            return;
+        if(!req->has("X-Authorized", "1")) {
+            return Unauthorized();
+        }
+        if(opt.acme_state == nullptr) {
+            return respondStatus(S403);
         }
         std::string domain;
         auto it = params.find("domain");
@@ -41,8 +30,7 @@ class handler: public CgiHandler {
             domain = it->second;
         } else {
             if(req->Dest.hostname[0] == '\0') {
-                respond_with_status(S400);
-                return;
+                return respondStatus(S400);
             }
             domain = req->Dest.hostname;
         }
@@ -64,21 +52,17 @@ class handler: public CgiHandler {
         }
 
         if(success) {
-            respond_with_status(S200);
+            respondStatus(S200);
         } else {
-            respond_with_status(S500);
+            respondStatus(S500);
         }
     }
 
     void GET(const CGI_Header*) override {
-        if((flag & HTTP_REQ_COMPLETED) == 0) {
-            return;
-        }
         static const std::string prefix = "/.well-known/acme-challenge/";
         const char* raw_path = req->path;
         if(raw_path == nullptr || !startwith(raw_path, prefix.c_str())) {
-            respond_with_status(S404);
-            return;
+            return respondStatus(S404);
         }
         std::string token = std::string(raw_path + prefix.size());
         auto query_pos = token.find('?');
@@ -86,17 +70,21 @@ class handler: public CgiHandler {
             token.resize(query_pos);
         }
         if(token.empty()) {
-            respond_with_status(S404);
-            return;
+            return respondStatus(S404);
         }
 
         char buffer[512] = {0};
         if(!acme_get_http_challenge(token.c_str(), buffer, sizeof(buffer))) {
-            respond_with_status(S404);
-            return;
+            return respondStatus(S404);
         }
 
-        respond_with_status(S200, buffer);
+        std::string body = buffer;
+        auto res = HttpResHeader::create(S200, strlen(S200), req->request_id);
+        res->set("Content-Length", body.length());
+        res->set("Content-Type", "text/plain");
+        Response(res);
+        Send(body.c_str(), body.size());
+        Finish();
     }
 
     void POST(const CGI_Header* header) override {

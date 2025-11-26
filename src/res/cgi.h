@@ -97,19 +97,27 @@ protected:
     std::atomic<uint32_t> flag = 0;
     std::shared_ptr<const HttpReqHeader> req;
     std::map<std::string, std::string> params;  //should be read only
-    void NotImplemented(){
+    void respondStatus(const char* status) {
         if((flag.load(std::memory_order_acquire)  & HTTP_REQ_COMPLETED) == 0) {
             return;
         }
-        Response(HttpResHeader::create(S405, sizeof(S405), req->request_id));
+        Response(HttpResHeader::create(status, strlen(status), req->request_id));
         Finish();
     }
-    void BadRequest(){
+    void Unauthorized() {
         if((flag.load(std::memory_order_acquire)  & HTTP_REQ_COMPLETED) == 0) {
             return;
         }
-        Response(HttpResHeader::create(S400, sizeof(S400), req->request_id));
+        auto res = HttpResHeader::create(S401, sizeof(S401), req->request_id);
+        res->set("WWW-Authenticate", "Basic realm=\"Secure Area\"");
+        Response(res);
         Finish();
+    }
+    void NotImplemented(){
+        respondStatus(S405);
+    }
+    void BadRequest(){
+        respondStatus(S400);
     }
     virtual void ERROR(const CGI_Header* header){
         if(header->flag & CGI_FLAG_ABORT){
@@ -135,7 +143,7 @@ protected:
         NotImplemented();
     }
     void Finish(){
-        if(flag.load(std::memory_order_acquire)  & HTTP_CLOSED_F){
+        if(eof()){
             return;
         }
         LOGD(DFILE, "<cgi> [%s] res finished: %d\n", name, id);
@@ -159,7 +167,7 @@ protected:
         cgi_send(sfd, l, id, buf, len);
     }
     void Abort(){
-        if(flag.load(std::memory_order_acquire)  & HTTP_CLOSED_F) {
+        if(eof()) {
             return;
         }
         flag.fetch_or(HTTP_CLOSED_F, std::memory_order_release);
@@ -181,7 +189,7 @@ public:
         Finish();
     }
     void handle(const CGI_Header* header){
-        if(flag.load(std::memory_order_acquire)  & HTTP_CLOSED_F){
+        if(eof()){
             return;
         }
         if(header->type == CGI_ERROR){

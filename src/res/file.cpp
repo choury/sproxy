@@ -3,6 +3,7 @@
 #include "req/requester.h"
 #include "misc/util.h"
 #include "misc/config.h"
+#include "misc/strategy.h"
 #include "prot/memio.h"
 #include "cgi.h"
 #include "doh.h"
@@ -335,7 +336,7 @@ void File::dump_usage(Dumper dp, void *param) {
 void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     uint64_t id = req->request_id;
     std::string filename = resolve(req->filename);
-    const char* base_dir = opt.rootdir;
+    bool is_webdav = false;
     if(filename == "status"){
         return (new Status())->request(req, rw);
     }else if (filename == "dns-query"){
@@ -347,9 +348,14 @@ void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
         std::string cgi = pathjoin(opt.rootdir, std::string("cgi/libtest") + LIBSUFFIX);
         return getcgi(req, cgi.c_str(), rw);
     }else if(opt.webdav_root && (req->ismethod("GET") || req->ismethod("HEAD")) && startwith(filename.c_str(), "webdav/")){
+        if(!checkauth(rw->getSrc().hostname, req->get("Authorization"), req->get("Proxy-Authorization"))) {
+            auto sheader = HttpResHeader::create(S401, sizeof(S401), id);
+            sheader->set("WWW-Authenticate", "Basic realm=\"Secure Area\"");
+            return response(rw, sheader, "");
+        }
+        is_webdav = true;
         //strip "/webdav/"
         filename = resolve(req->filename.substr(7));
-        base_dir = opt.webdav_root;
     }else if(opt.webdav_root && (filename == "webdav" || startwith(filename.c_str(), "webdav/"))){
         std::string cgi = pathjoin(opt.rootdir, std::string("cgi/libwebdav") + LIBSUFFIX);
         return getcgi(req, cgi.c_str(), rw);
@@ -366,11 +372,11 @@ void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
     while(true){
         size_t pos = filename.rfind('.');
         std::string suffix = (pos == std::string::npos) ? "":filename.substr(pos);
-        if (suffix == ".do") {
+        if (suffix == ".do" && !is_webdav) {
             filename = filename.substr(0, pos) + LIBSUFFIX;
             suffix = LIBSUFFIX;
         }
-        std::string path = pathjoin(base_dir, filename);
+        std::string path = pathjoin(is_webdav ? opt.webdav_root: opt.rootdir, filename);
         struct stat st;
         if(stat(path.c_str(), &st) < 0){
             LOGE("get file stat failed %s: %s\n", path.c_str(), strerror(errno));
@@ -450,7 +456,7 @@ void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
             header = HttpResHeader::create(S403, sizeof(S403), id);
             goto ret;
         }
-        if(suffix == LIBSUFFIX){
+        if(suffix == LIBSUFFIX && !is_webdav){
             return getcgi(req, path.c_str(), rw);
         }
         int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);

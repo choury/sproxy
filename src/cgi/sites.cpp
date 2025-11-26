@@ -192,20 +192,14 @@ class handler: public CgiHandler{
     }
     void GET(const CGI_Header*) override{
         if(!req->has("X-Authorized", "1")) {
-            Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
-            Finish();
-            return;
-        }
-        if((flag & HTTP_REQ_COMPLETED) == 0){
-            return;
+            return Unauthorized();
         }
         auto slist = c->DumpStrategy().get_future().get();
 
         // Check if PAC format is requested
         auto it = params.find("format");
         if(it != params.end() && it->second == "pac") {
-            generatePacResponse(slist);
-            return;
+            return generatePacResponse(slist);
         }
 
         json_object* jsites = json_object_new_array();
@@ -235,9 +229,7 @@ class handler: public CgiHandler{
     }
     void POST(const CGI_Header* header) override {
         if(!req->has("X-Authorized", "1")) {
-            Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
-            Finish();
-            return;
+            return Unauthorized();
         }
         if(header->type == CGI_DATA){
             auto param = getparamsmap((char *)(header+1), ntohs(header->contentLength));
@@ -256,9 +248,7 @@ class handler: public CgiHandler{
     }
     void PUT(const CGI_Header* header) override{
         if(!req->has("X-Authorized", "1")) {
-            Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
-            Finish();
-            return;
+            return Unauthorized();
         }
         if(header->type == CGI_DATA){
             auto param = getparamsmap((char *)(header+1), ntohs(header->contentLength));
@@ -268,12 +258,10 @@ class handler: public CgiHandler{
             return;
         }
         if(params.count("site") == 0 || params.count("strategy") == 0) {
-            BadRequest();
-            return;
+            return BadRequest();
         }
         if(!c->AddStrategy(params["site"], params["strategy"], "").get_future().get()){
-            BadRequest();
-            return;
+            return BadRequest();
         }
         std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S303, sizeof(S303), req->request_id);
         if(req->has("Referer")){
@@ -286,9 +274,7 @@ class handler: public CgiHandler{
     }
     void DELETE(const CGI_Header* header)override{
         if(!req->has("X-Authorized", "1")) {
-            Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
-            Finish();
-            return;
+            return Unauthorized();
         }
         if(header->type == CGI_DATA){
             auto param = getparamsmap((char *)(header+1), ntohs(header->contentLength));
@@ -298,12 +284,10 @@ class handler: public CgiHandler{
             return;
         }
         if(params.count("site") == 0){
-            BadRequest();
-            return;
+            return BadRequest();
         }
         if(!c->DelStrategy(params["site"]).get_future().get()){
-            BadRequest();
-            return;
+            return BadRequest();
         }
         std::shared_ptr<HttpResHeader> res = HttpResHeader::create(S303, sizeof(S303), req->request_id);
         if(req->has("Referer")){

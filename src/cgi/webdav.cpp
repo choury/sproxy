@@ -86,11 +86,6 @@ class WebdavHandler : public CgiHandler {
     int put_fd = -1;
     bool put_existed = false;
 
-    void respondStatus(const char* status) {
-        Response(HttpResHeader::create(status, strlen(status), req->request_id));
-        Finish();
-    }
-
     bool statOrRespond(struct stat& st) {
         if (lstat(fs_path.c_str(), &st) < 0) {
             respondStatus(errno == ENOENT ? S404 : S500);
@@ -264,7 +259,6 @@ class WebdavHandler : public CgiHandler {
         }
         respondStatus(created ? S201 : S204);
     }
-
 public:
     WebdavHandler(int sfd, int cfd, const char* name, const CGI_Header* header)
         : CgiHandler(sfd, -1, name, header) {
@@ -287,6 +281,9 @@ public:
     }
 
     void PUT(const CGI_Header* header) override {
+        if(!req->has("X-Authorized", "1")) {
+            return Unauthorized();
+        }
         if (fs_path.empty()) {
             return respondStatus(S403);
         }
@@ -320,6 +317,9 @@ public:
     }
 
     void DELETE(const CGI_Header*) override {
+        if(!req->has("X-Authorized", "1")) {
+            return Unauthorized();
+        }
         if (fs_path.empty()) {
             return respondStatus(S403);
         }
@@ -473,6 +473,9 @@ public:
     }
 
     void CustomMethod(const std::string& method, const CGI_Header* header) override {
+        if(!req->has("X-Authorized", "1")) {
+            return Unauthorized();
+        }
         if (method == "OPTIONS") {
             return OPTIONS();
         }
