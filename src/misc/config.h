@@ -16,6 +16,13 @@
 extern "C" {
 #endif
 
+/*
+ * Ensure GNU basename behavior on musl/mac
+ */
+ #ifndef __GLIBC__
+ #define basename(path) \
+        (strrchr((path), '/') ? strrchr((path),'/') + 1 : (path))
+ #endif
 
 #define HTTPSPORT 443u
 #define HTTPPORT  80u
@@ -66,6 +73,7 @@ struct options{
     struct cert_pair cert;
     const char *config_file;
     const char *rootdir;
+    const char *webdav_root;
     const char *index_file;
     const char *interface;
     const char *ua;

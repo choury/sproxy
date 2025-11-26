@@ -11,6 +11,7 @@ thirdparty/
 .browse.VC.*
 *.user
 .DS_Store
+.cache
 common.h
 src/bpf/sockops.skel.h
 src/bpf/vmlinux.h

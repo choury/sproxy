@@ -47,7 +47,55 @@ static bool checkrange(Range& rg, size_t size) {
     return rg.begin <= rg.end;
 }
 
-static std::string pathjoin(const std::string& dirname, const std::string& basename){
+std::string make_etag(const struct stat& st) {
+    unsigned long nsec = 0;
+#if defined(__APPLE__)
+    nsec = static_cast<unsigned long>(st.st_mtimespec.tv_nsec);
+#elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200809L
+    nsec = static_cast<unsigned long>(st.st_mtim.tv_nsec);
+#elif defined(st_mtime)
+    nsec = static_cast<unsigned long>(st.st_mtime_nsec);
+#endif
+    char etag[80];
+    if (nsec != 0) {
+        snprintf(etag, sizeof(etag), "\"%lx-%lx-%lx\"", (unsigned long)st.st_ino, (unsigned long)st.st_mtime, nsec);
+    } else {
+        snprintf(etag, sizeof(etag), "\"%lx-%lx\"", (unsigned long)st.st_ino, (unsigned long)st.st_mtime);
+    }
+    return etag;
+}
+
+static bool match_etag_list(const char* header, const std::string& etag) {
+    if (header == nullptr) {
+        return false;
+    }
+    std::string list(header);
+    size_t pos = 0;
+    while (pos < list.size()) {
+        size_t comma = list.find(',', pos);
+        std::string token = comma == std::string::npos ? list.substr(pos) : list.substr(pos, comma - pos);
+        size_t start = 0;
+        while (start < token.size() && (token[start] == ' ' || token[start] == '\t')) {
+            start++;
+        }
+        size_t end = token.size();
+        while (end > start && (token[end - 1] == ' ' || token[end - 1] == '\t')) {
+            end--;
+        }
+        token = token.substr(start, end - start);
+        if (token == "*" || token == etag) {
+            return true;
+        }
+        if (comma == std::string::npos) {
+            break;
+        }
+        pos = comma + 1;
+    }
+    return false;
+}
+
+static std::string join_one(const std::string& dirname, const std::string& basename){
+    if (dirname.empty()) return basename;
     bool endwithslash = endwith(dirname.c_str(), "/");
     bool startwithslash = startwith(basename.c_str(), "/");
 
@@ -60,31 +108,24 @@ static std::string pathjoin(const std::string& dirname, const std::string& basen
     return dirname +'/'+ basename;
 }
 
-template <class... T>
-static std::string pathjoin(const std::string&a, const std::string& b, const T&... left){
-    return pathjoin(a, pathjoin(b, left...));
+void join_arg(std::string& current, const std::string& part) {
+    if (current.empty()) {
+        current = part;
+    } else {
+        current = join_one(current, part);
+    }
 }
 
-// pathjoin for vector, 返回绝对路径
-static std::string pathjoin(const std::vector<std::string>& path){
-    std::string ret = "/";
-    for(auto& p : path){
-        ret = pathjoin(ret, p);
+void join_arg(std::string& current, const std::vector<std::string>& parts) {
+    for (const auto& p : parts) {
+        join_arg(current, p); // 递归调用 string 版本
     }
-    return ret;
 }
 
-static std::string absolute(const std::string &path) {
-    // 获取当前工作目录
-    char current_dir[PATH_MAX];
-    if (getcwd(current_dir, sizeof(current_dir)) == nullptr) {
-        LOGE("error getting current working directory %s\n", strerror(errno));
-        return "";
-    }
-    std::string input_path = std::string(current_dir) + '/' + path;
-
+//返回一个解析过的相对路径
+std::string resolve(const std::string &path) {
     std::vector<std::string> path_parts;
-    std::istringstream iss(input_path);
+    std::istringstream iss(path);
     std::string part;
     while (std::getline(iss, part, '/')) {
         if (part == "..") {
@@ -95,7 +136,6 @@ static std::string absolute(const std::string &path) {
             path_parts.push_back(part);
         }
     }
-
     return pathjoin(path_parts);
 }
 
@@ -159,14 +199,36 @@ void File::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
         status.rg.end = - 1;
     }
     uint64_t id = req->request_id;
-    if(req->get("If-Modified-Since")){
+    const std::string etag = make_etag(st);
+    const char* if_match = req->get("If-Match");
+    if (if_match && !match_etag_list(if_match, etag)) {
+        std::shared_ptr<HttpResHeader> header = HttpResHeader::create(S412, sizeof(S412), id);
+        header->set("ETag", etag);
+        response(rw, header, "");
+        return deleteLater(NOERROR);
+    }
+
+    const char* if_none_match = req->get("If-None-Match");
+    if (if_none_match && match_etag_list(if_none_match, etag)) {
+        std::shared_ptr<HttpResHeader> header = HttpResHeader::create(S304, sizeof(S304), id);
+        char buff[100];
+        strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
+        header->set("Last-Modified", buff);
+        header->set("ETag", etag);
+        response(rw, header);
+        return deleteLater(NOERROR);
+    }
+
+    const char* if_modified_since = req->get("If-Modified-Since");
+    if(!if_none_match && if_modified_since){
         struct tm tp;
-        strptime(req->get("If-Modified-Since"), "%a, %d %b %Y %H:%M:%S GMT", &tp);
+        strptime(if_modified_since, "%a, %d %b %Y %H:%M:%S GMT", &tp);
         if(timegm(&tp) >= st.st_mtime){
             std::shared_ptr<HttpResHeader> header = HttpResHeader::create(S304, sizeof(S304), id);
             char buff[100];
             strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
             header->set("Last-Modified", buff);
+            header->set("ETag", etag);
             response(rw, header);
             return deleteLater(NOERROR);
         }
@@ -180,6 +242,7 @@ void File::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
         char buff[100];
         strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
         header->set("Last-Modified", buff);
+        header->set("ETag", etag);
         if(suffix && mimetype.count(suffix)){
             header->set("Content-Type", mimetype.at(suffix));
         }
@@ -191,6 +254,7 @@ void File::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
                  status.rg.begin, status.rg.end, (intmax_t)st.st_size);
         header->set("Content-Range", buff);
         header->set("Content-Length", status.rg.end - status.rg.begin +1);
+        header->set("ETag", etag);
         if(suffix && mimetype.count(suffix)){
             header->set("Content-Type", mimetype.at(suffix));
         }
@@ -270,50 +334,52 @@ void File::dump_usage(Dumper dp, void *param) {
 
 void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     uint64_t id = req->request_id;
-    if(opt.acme_state && startwith(req->path, "/.well-known/acme-challenge/")) {
-        std::string acme_lib = pathjoin(std::string(opt.rootdir), std::string("cgi/libacme") + LIBSUFFIX);
-        return getcgi(req, acme_lib.c_str(), rw);
+    std::string filename = resolve(req->filename);
+    const char* base_dir = opt.rootdir;
+    if(filename == "status"){
+        return (new Status())->request(req, rw);
+    }else if (filename == "dns-query"){
+        return Doh::GetInstance()->request(req, rw);
+    }else if(filename == "rproxy" || startwith(filename.c_str(), "rproxy/")) {
+        return distribute_rproxy(req, rw);
+    }else if(filename == "test"){
+        //for compatibility
+        std::string cgi = pathjoin(opt.rootdir, std::string("cgi/libtest") + LIBSUFFIX);
+        return getcgi(req, cgi.c_str(), rw);
+    }else if(opt.webdav_root && (req->ismethod("GET") || req->ismethod("HEAD")) && startwith(filename.c_str(), "webdav/")){
+        //strip "/webdav/"
+        filename = resolve(req->filename.substr(7));
+        base_dir = opt.webdav_root;
+    }else if(opt.webdav_root && (filename == "webdav" || startwith(filename.c_str(), "webdav/"))){
+        std::string cgi = pathjoin(opt.rootdir, std::string("cgi/libwebdav") + LIBSUFFIX);
+        return getcgi(req, cgi.c_str(), rw);
+    }else if(opt.acme_state && startwith(filename.c_str(), ".well-known/acme-challenge/")) {
+        std::string cgi = pathjoin(opt.rootdir, std::string("cgi/libacme") + LIBSUFFIX);
+        return getcgi(req, cgi.c_str(), rw);
     }
     if(!req->getrange()){
         return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "");
     }
-    char filename[URLLIMIT];
     bool slash_end = req->filename.back() == '/';
     bool index_not_found = false;
-    snprintf(filename, sizeof(filename), "%s", absolute(req->filename).c_str());
     std::shared_ptr<HttpResHeader> header = nullptr;
     while(true){
-        if(!startwith(filename, opt.rootdir)){
-            LOGE("get file out of rootdir: %s\n", filename);
-            header = HttpResHeader::create(S403, sizeof(S403), id);
-            goto ret;
+        size_t pos = filename.rfind('.');
+        std::string suffix = (pos == std::string::npos) ? "":filename.substr(pos);
+        if (suffix == ".do") {
+            filename = filename.substr(0, pos) + LIBSUFFIX;
+            suffix = LIBSUFFIX;
         }
-        if(filename == pathjoin(opt.rootdir, "status")){
-            return (new Status())->request(req, rw);
-        }
-        if (filename == pathjoin(opt.rootdir, "dns-query")){
-            return Doh::GetInstance()->request(req, rw);
-        }
-        if(startwith(filename, pathjoin(opt.rootdir, "rproxy").c_str())) {
-            return distribute_rproxy(req, rw);
-        }
-        if(filename == pathjoin(opt.rootdir, "test")){
-            //for compatibility
-            strcpy(filename, pathjoin(opt.rootdir, "cgi/libtest.do").c_str());
-        }
-        char *suffix = strrchr(filename, '.');
-        if(suffix && strcmp(suffix, ".do") == 0){
-            strcpy(suffix, LIBSUFFIX);
-        }
+        std::string path = pathjoin(base_dir, filename);
         struct stat st;
-        if(stat(filename, &st) < 0){
-            LOGE("get file stat failed %s: %s\n", filename, strerror(errno));
+        if(stat(path.c_str(), &st) < 0){
+            LOGE("get file stat failed %s: %s\n", path.c_str(), strerror(errno));
             if(errno == ENOENT){
                 // filname is index file now, fallback to autoindex
-                if(slash_end && !endwith(filename, "/") && opt.autoindex){
+                if(slash_end && !endwith(path.c_str(), "/") && opt.autoindex){
                     index_not_found = true;
                     //(void)!realpath(("./" + req->header->filename).c_str(), filename);
-                    snprintf(filename, sizeof(filename), "%s", absolute(req->filename).c_str());
+                    filename = resolve(req->filename);
                     continue;
                 }
                 header = HttpResHeader::create(S404, sizeof(S404), id);
@@ -324,16 +390,9 @@ void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
         }
 
         if(S_ISDIR(st.st_mode)){
-            if(!slash_end){
-                header = HttpResHeader::create(S302, sizeof(S302), id);
-                char location[URLLIMIT];
-                snprintf(location, sizeof(location), "/%s/", req->filename.c_str());
-                header->set("Location", location);
-                goto ret;
-            }
             if(!index_not_found && opt.index_file){
                 //(void)!realpath(("./" + req->header->filename + opt.index_file).c_str(), filename);
-                snprintf(filename, sizeof(filename), "%s", absolute(req->filename + opt.index_file).c_str());
+                filename = resolve(req->filename + "/" + opt.index_file);
                 continue;
             }
             if(!opt.autoindex){
@@ -341,9 +400,9 @@ void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
                 goto ret;
             }
 
-            DIR* dir = opendir(filename);
+            DIR* dir = opendir(path.c_str());
             if(dir == nullptr){
-                LOGE("open %s dir failed: %s\n", filename, strerror(errno));
+                LOGE("open %s dir failed: %s\n", path.c_str(), strerror(errno));
                 header = HttpResHeader::create(S500, sizeof(S500), id);
                 goto ret;
             }
@@ -356,8 +415,8 @@ void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
                             "<head><title>Index of %s</title></head>"
                             "<body><h1>Index of %s</h1><hr/><pre>"
                             "<a href='../'>../</a><br/>",
-                            req->filename.c_str(),
-                            req->filename.c_str()), id});
+                            filename.c_str(),
+                            filename.c_str()), id});
             struct dirent *ptr;
             std::set<std::string> dirs;
             std::set<std::string> files;
@@ -387,20 +446,20 @@ void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
         }
 
         if(!S_ISREG(st.st_mode)){
-            LOGE("access to no regular file %s\n", filename);
+            LOGE("access to no regular file %s\n", path.c_str());
             header = HttpResHeader::create(S403, sizeof(S403), id);
             goto ret;
         }
-        if(suffix && strcmp(suffix, LIBSUFFIX) == 0){
-            return getcgi(req, filename, rw);
+        if(suffix == LIBSUFFIX){
+            return getcgi(req, path.c_str(), rw);
         }
-        int fd = open(filename, O_RDONLY | O_CLOEXEC);
+        int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
         if(fd < 0){
-            LOGE("open file failed %s: %s\n", filename, strerror(errno));
+            LOGE("open file failed %s: %s\n", path.c_str(), strerror(errno));
             header = HttpResHeader::create(S500, sizeof(S500), id);
             goto ret;
         }
-        return (new File(filename, fd, &st))->request(req, rw);
+        return (new File(path.c_str(), fd, &st))->request(req, rw);
     }
 ret:
     assert(header);

@@ -104,12 +104,12 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
                             "This site is blocked, please contact administrator for more information.\n");
     }
     if(stra.s == Strategy::local){
-        if(!opt.restrict_local && !req->http_method()) {
+        if(!opt.restrict_local && !req->http_method() && !req->webdav_method()) {
             return response(rw, HttpResHeader::create(S405, sizeof(S405), id),
                                             "[[unsupported method]]\n");
         }
         if(!opt.restrict_local ||
-            (req->http_method() && (rw->getDst().port == 0 || req->getDport() == rw->getDst().port)))
+            ((req->http_method() ||(req->webdav_method())) && (rw->getDst().port == 0 || req->getDport() == rw->getDst().port)))
         {
             req->set(STRATEGY, getstrategystring(Strategy::local));
             return File::getfile(req, rw);

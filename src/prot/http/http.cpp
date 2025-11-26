@@ -373,16 +373,49 @@ size_t PackHttpReq(std::shared_ptr<const HttpReqHeader> req, void* data, size_t 
     return len;
 }
 
+static const char* kHttpStatusStrings[] = {
+#define STATUS_TO_PTR(code, reason) S##code,
+    HTTP_STATUS_MAP(STATUS_TO_PTR)
+#undef STATUS_TO_PTR
+    nullptr
+};
+
+static const char* default_reason(const char* code) {
+    for (const char** p = kHttpStatusStrings; *p; ++p) {
+        if (memcmp(*p, code, 3) == 0) {
+            const char* sp = strchr(*p, ' ');
+            if (sp && sp[1]) {
+                return sp + 1;
+            }
+            return nullptr;
+        }
+    }
+    return nullptr;
+}
+
 size_t PackHttpRes(std::shared_ptr<const HttpResHeader> res, void* data, size_t size) {
+
     char* const buff = (char *)data;
     size_t len = 0;
+    const char* status = res->status;
+    char status_buff[120];
+    const char* sp = strchr(status, ' ');
+    if (sp == nullptr && strlen(status) == 3) {
+        const char* reason = default_reason(status);
+        if (reason) {
+            snprintf(status_buff, sizeof(status_buff), "%.3s %s", status, reason);
+        } else {
+            snprintf(status_buff, sizeof(status_buff), "%.3s", status);
+        }
+        status = status_buff;
+    }
     if(res->has("Content-Length") || res->has("Transfer-Encoding")
         || res->no_body() || res->has("Upgrade"))
     {
-        len += snprintf(buff, size, "HTTP/1.1 %s" CRLF, res->status);
+        len += snprintf(buff, size, "HTTP/1.1 %s" CRLF, status);
         len += snprintf(buff + len, size-len, "Connection: keep-alive" CRLF);
     }else {
-        len += snprintf(buff, size, "HTTP/1.0 %s" CRLF, res->status);
+        len += snprintf(buff, size, "HTTP/1.0 %s" CRLF, status);
         len += snprintf(buff + len, size-len, "Connection: close" CRLF);
     }
     for (const auto& i : res->getall()) {

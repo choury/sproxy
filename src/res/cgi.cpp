@@ -6,6 +6,7 @@
 #include "misc/strategy.h"
 #include "misc/util.h"
 #include "misc/hook.h"
+#include "misc/config.h"
 #include "req/cli.h"
 
 #include <stdlib.h>
@@ -15,8 +16,6 @@
 #include <sys/resource.h>
 #include <errno.h>
 #include <assert.h>
-#include <libgen.h>
-#include <inttypes.h>
 #include <sys/uio.h>
 #include <poll.h>
 
