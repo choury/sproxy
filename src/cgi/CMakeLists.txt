@@ -58,4 +58,12 @@ if(ZLIB_FOUND)
     set(INSTALL_LIBRARIES ${INSTALL_LIBRARIES} gzip_test)
 endif()
 
+if(LIBXML2_FOUND)
+    add_library(webdav SHARED webdav.cpp)
+    target_link_libraries(webdav PUBLIC ${LIBXML2_LIBRARIES})
+    target_include_directories(webdav PUBLIC ${LIBXML2_INCLUDE_DIRS})
+    set_target_properties(webdav PROPERTIES OUTPUT_NAME "webdav")
+    set(INSTALL_LIBRARIES ${INSTALL_LIBRARIES} webdav)
+endif()
+
 install(TARGETS ${INSTALL_LIBRARIES} LIBRARY DESTINATION /var/lib/sproxy/cgi)

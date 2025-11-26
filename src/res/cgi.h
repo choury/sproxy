@@ -131,6 +131,9 @@ protected:
     virtual void DELETE(const CGI_Header*){
         NotImplemented();
     }
+    virtual void CustomMethod(const std::string& /*method*/, const CGI_Header*) {
+        NotImplemented();
+    }
     void Finish(){
         if(flag.load(std::memory_order_acquire)  & HTTP_CLOSED_F){
             return;
@@ -178,6 +181,9 @@ public:
         Finish();
     }
     void handle(const CGI_Header* header){
+        if(flag.load(std::memory_order_acquire)  & HTTP_CLOSED_F){
+            return;
+        }
         if(header->type == CGI_ERROR){
             return ERROR(header);
         }
@@ -192,6 +198,9 @@ public:
             flag.fetch_or(HTTP_REQ_COMPLETED, std::memory_order_release);
             LOGD(DFILE, "<cgi> [%s] req completed: %d\n", name, id);
         }
+        if(req->no_body() && (flag.load(std::memory_order_acquire)  & HTTP_REQ_COMPLETED) == 0) {
+            return;
+        }
         if(req->ismethod("GET") || req->ismethod("HEAD")){
             return GET(header);
         }else if(req->ismethod("POST")){
@@ -200,8 +209,9 @@ public:
             return DELETE(header);
         }else if(req->ismethod("PUT")) {
             return PUT(header);
+        }else {
+            return CustomMethod(req->method, header);
         }
-        NotImplemented();
     }
     [[nodiscard]] bool eof() const{
         return flag.load(std::memory_order_acquire) & HTTP_CLOSED_F;
@@ -215,10 +225,16 @@ std::map<uint32_t, std::shared_ptr<CgiHandler>> CgiHandler::cgimap; \
 int cgimain(int sfd, int cfd, const char* name){       \
     LOGD(DFILE, "<cgi> [%s] cgimain start\n", name); \
     ssize_t readlen; \
-    char buff[CGI_LEN_MAX]; \
+    char buff[BUF_LEN]; \
     while((readlen = read(sfd, buff, sizeof(CGI_Header))) > 0){ \
         CGI_Header *header = (CGI_Header *)buff; \
-        int __attribute__((unused)) ret = read(sfd, buff + readlen, ntohs(header->contentLength)); \
+        size_t content_len = ntohs(header->contentLength); \
+        if(content_len > sizeof(buff) - sizeof(CGI_Header)) { \
+            LOGE("[CGI] %s content too large: %zu\n", name, content_len); \
+            cgi_senderror(sfd, ntohl(header->requestId), CGI_FLAG_ABORT); \
+            continue; \
+        } \
+        int __attribute__((unused)) ret = read(sfd, buff + readlen, content_len); \
         assert(ret == ntohs(header->contentLength)); \
         uint32_t id = ntohl(header->requestId); \
         LOGD(DFILE, "<cgi> [%s] get id: %d, type: %d\n", name, id, header->type); \

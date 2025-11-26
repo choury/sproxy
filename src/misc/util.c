@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "util.h"
 #include "config.h"
 #include "net.h"
@@ -11,7 +12,6 @@
 #include <errno.h>
 #include <signal.h>
 #include <dirent.h>
-#include <libgen.h>
 #include <sys/un.h>
 
 
@@ -67,7 +67,7 @@ static int hex2num(char c)
     if (c>='A' && c<='Z') return c - 'A' + 10;
 
     LOGE("hex2num: unexpected char: %c\n", c);
-    return '0';
+    return -1;
 }
 
 
@@ -84,13 +84,13 @@ int URLEncode(char *des, const char* src, size_t len) {
     int i;
     for (i=0; i<strSize; ++i) {
         char ch = src[i];
-        if (((ch>='A') && (ch<'Z')) ||
-            ((ch>='a') && (ch<'z')) ||
-            ((ch>='0') && (ch<'9'))) {
+        if (((ch>='A') && (ch<='Z')) ||
+            ((ch>='a') && (ch<='z')) ||
+            ((ch>='0') && (ch<='9'))) {
             des[j++] = ch;
         } else if (ch == ' ') {
             des[j++] = '+';
-        } else if (ch == '.' || ch == '-' || ch == '_' || ch == '*') {
+        } else if (ch == '.' || ch == '-' || ch == '_' || ch == '*' || ch == '~') {
             des[j++] = ch;
         } else {
             const char hex_digits[] = "0123456789ABCDEF";
@@ -132,15 +132,16 @@ int URLDecode(char *des, const char *src, size_t len)
                 break;
             }
             if (i+2<strSize) {
-                char ch1 = hex2num(src[i+1]);//高4位
-                char ch2 = hex2num(src[i+2]);//低4位
-                if ((ch1!='0') && (ch2!='0'))
-                    des[j++] = (ch1<<4) | ch2;
-                i += 2;
-                break;
-            } else {
-                break;
+                int ch1 = hex2num(src[i+1]);//高4位
+                int ch2 = hex2num(src[i+2]);//低4位
+                if (ch1 >= 0 && ch2 >= 0) {
+                    des[j++] = (char)((ch1<<4) | ch2);
+                    i += 2;
+                    break;
+                }
             }
+            des[j++] = '%';
+            break;
         default:
             des[j++] = ch;
             break;

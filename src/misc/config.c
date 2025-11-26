@@ -23,23 +23,15 @@
 #include <signal.h>
 #include <inttypes.h>
 #include <sys/utsname.h>
+#include <sys/stat.h>
 #ifndef __APPLE__
 #include <sys/prctl.h>
 #include <sys/resource.h>
 #else
 #include <pthread.h>
-#include <libgen.h>
 #endif
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
-
-/*
- * Ensure GNU basename behavior on musl
- */
- #ifndef __GLIBC__
- #define basename(path) \
-        (strrchr((path), '/') ? strrchr((path),'/') + 1 : (path))
- #endif
 
 static char** main_argv = NULL;
 static char* auto_options[] = {"disable", "enable", "auto", NULL};
@@ -88,6 +80,7 @@ struct options opt = {
         .key = NULL,
     },
     .rootdir           = NULL,
+    .webdav_root       = NULL,
     .index_file        = NULL,
     .interface         = NULL,
     .ua                = NULL,
@@ -212,6 +205,9 @@ static struct option long_options[] = {
     {"restrict-local",no_argument,       NULL,  0 },
     {"rewrite-auth",  required_argument, NULL, 'r'},
     {"root-dir",      required_argument, NULL,  0 },
+#ifdef HAVE_WEBDAV
+    {"webdav",        required_argument, NULL,  0 },
+#endif
     {"secret",        required_argument, NULL, 's'},
 #if __linux__
     {"set-dns-route", no_argument,       NULL,  0 },
@@ -284,6 +280,7 @@ static struct option_detail option_detail[] = {
     {"forward-header", "append the header (name:value) when forward http request", option_list, &opt.forward_headers, NULL},
     {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64, opt.rewrite_auth, NULL},
     {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
+    {"webdav", "Enable webdav and set its root directory", option_string, &opt.webdav_root, NULL},
     {"rproxy", "name for rproxy mode (via http2/http3)", option_string, &opt.rproxy_name, (void*)true},
     {"rproxy-kp", "keep the source of rproxy request (via IP[V6]_TRANSPARENT)", option_bool, &opt.rproxy_keep_src, (void*)true},
     {"secret", "Set user and passwd for proxy (user:password), default is none.", option_list, &secrets, NULL},
@@ -651,6 +648,18 @@ void postConfig(){
     free((void*)opt.rootdir);
     opt.rootdir = (char*)malloc(PATH_MAX);
     (void)!getcwd((char*)opt.rootdir, PATH_MAX);
+
+    if (opt.webdav_root) {
+        struct stat st;
+        if (stat(opt.webdav_root, &st) < 0) {
+            LOGE("access webdav root %s failed: %s\n", opt.webdav_root, strerror(errno));
+            exit(1);
+        }
+        if (!S_ISDIR(st.st_mode)) {
+            LOGE("webdav root %s is not a directory\n", opt.webdav_root);
+            exit(1);
+        }
+    }
 
     if (opt.cafile && access(opt.cafile, R_OK)) {
         LOGE("access cafile %s failed: %s\n", opt.cafile, strerror(errno));

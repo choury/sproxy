@@ -226,6 +226,14 @@ else()
     message(WARNING "zlib not found, disable gzip test")
 endif()
 
+pkg_check_modules(LIBXML2 libxml-2.0)
+if(LIBXML2_FOUND)
+    set(HAVE_WEBDAV TRUE CACHE BOOL "Have libxml2, enable webdav cgi")
+else()
+    message(WARNING "libxml2 not found, disable webdav cgi")
+endif()
+
+
 if(LIBELF_FOUND)
     set(HAVE_ELF TRUE CACHE BOOL "Have ELF")
 endif()

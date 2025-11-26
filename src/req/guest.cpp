@@ -172,7 +172,7 @@ void Guest::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
         }
     }
     header->set("User-Agent", generateUA(header->get("User-Agent"), "", header->request_id));
-    if(header->Dest.scheme[0] == 0 && header->http_method()) {
+    if(header->Dest.scheme[0] == 0 && (header->http_method() || header->webdav_method())) {
         if(rwer->isTls()) {
             strcpy(header->Dest.scheme, "https");
             if(header->Dest.protocol[0] == 0) {

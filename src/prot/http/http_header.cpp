@@ -159,8 +159,18 @@ bool HttpReqHeader::http_method() const {
         ismethod("OPTIONS");
 }
 
+bool HttpReqHeader::webdav_method() const {
+    return ismethod("PROPFIND") ||
+        ismethod("PROPPATCH") ||
+        ismethod("MKCOL") ||
+        ismethod("COPY") ||
+        ismethod("MOVE") ||
+        ismethod("LOCK") ||
+        ismethod("UNLOCK");
+}
+
 bool HttpReqHeader::valid_method() const {
-    return http_method() || ismethod("CONNECT");
+    return http_method() || ismethod("CONNECT") || webdav_method();
 }
 
 void HttpReqHeader::postparse() {
@@ -188,7 +198,7 @@ void HttpReqHeader::postparse() {
     if(request_id == 0) {
         request_id = nextId();
     }
-    if(http_method()){
+    if(http_method() || webdav_method()) {
         if(Dest.protocol[0]){
             //do nothing
         }else if(strcasecmp(Dest.scheme, "https") == 0) {
@@ -286,7 +296,7 @@ std::multimap<std::string, std::string> HttpReqHeader::Normalize() const {
     if(!ismethod("CONNECT")){
         normalization.emplace(":scheme", Dest.scheme[0] ? Dest.scheme : "http");
     }
-    if(path[1] || http_method()) {
+    if(path[1] || http_method() || webdav_method()) {
         normalization.emplace(":path", path);
     }
     for(const auto& i: cookies){

@@ -38,6 +38,7 @@
 #cmakedefine HAVE_VPN
 #cmakedefine HAVE_CLIENT
 #cmakedefine HAVE_ZLIB
+#cmakedefine HAVE_WEBDAV
 #cmakedefine HAVE_QUIC
 #cmakedefine HAVE_BPF
 #cmakedefine HAVE_ELF

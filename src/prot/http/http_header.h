@@ -13,31 +13,43 @@
 #define CRLF      "\r\n"
 
 
-#define S101        "101 Switching Protocols"
-#define S200        "200 OK"
-#define S204        "204 No Content"
-#define S205        "205 Reset Content"
-#define S206        "206 Partial Content"
-#define S301        "301 Moved Permanently"
-#define S302        "302 Found"
-#define S303        "303 See Other"
-#define S304        "304 Not Modified"
-#define S307        "307 Temporary Redirect"
-#define S308        "308 Permanent Redirect"
-#define S400        "400 Bad Request"
-#define S401        "401 Unauthorized"
-#define S403        "403 Forbidden"
-#define S404        "404 Not Found"
-#define S405        "405 Method Not Allowed"
-#define S407        "407 Proxy Authentication Required"
-#define S408        "408 Request Timeout"
-#define S416        "416 Requested Range Not Satisfiable"
-#define S429        "429 Too Many Requests"
-#define S500        "500 Internal Server Error"
-#define S502        "502 Bad Gateway"
-#define S503        "503 Service Unavailable"
-#define S504        "504 Gateway Timeout"
-#define S508        "508 Loop Detected"
+#define HTTP_STATUS_MAP(X) \
+    X(101, "Switching Protocols") \
+    X(200, "OK") \
+    X(201, "Created") \
+    X(204, "No Content") \
+    X(205, "Reset Content") \
+    X(206, "Partial Content") \
+    X(207, "Multi-Status") \
+    X(301, "Moved Permanently") \
+    X(302, "Found") \
+    X(303, "See Other") \
+    X(304, "Not Modified") \
+    X(307, "Temporary Redirect") \
+    X(308, "Permanent Redirect") \
+    X(400, "Bad Request") \
+    X(401, "Unauthorized") \
+    X(403, "Forbidden") \
+    X(404, "Not Found") \
+    X(405, "Method Not Allowed") \
+    X(407, "Proxy Authentication Required") \
+    X(408, "Request Timeout") \
+    X(409, "Conflict") \
+    X(412, "Precondition Failed") \
+    X(416, "Requested Range Not Satisfiable") \
+    X(423, "Locked") \
+    X(424, "Failed Dependency") \
+    X(429, "Too Many Requests") \
+    X(500, "Internal Server Error") \
+    X(502, "Bad Gateway") \
+    X(503, "Service Unavailable") \
+    X(504, "Gateway Timeout") \
+    X(508, "Loop Detected")
+
+#define DEFINE_HTTP_STATUS(code, reason) inline constexpr const char S##code[] = #code " " reason;
+HTTP_STATUS_MAP(DEFINE_HTTP_STATUS)
+#undef DEFINE_HTTP_STATUS
+
 
 #define AlterMethod "Alter-Method"
 
@@ -111,6 +123,7 @@ public:
     HttpReqHeader(const HttpReqHeader&) = default;
     bool ismethod(const char* method) const;
     [[nodiscard]] bool http_method() const;
+    [[nodiscard]] bool webdav_method() const;
     [[nodiscard]] bool valid_method() const;
     [[nodiscard]] uint16_t getDport() const;
 
