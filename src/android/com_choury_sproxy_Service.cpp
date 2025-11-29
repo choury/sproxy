@@ -172,7 +172,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload
  * call back to java to
  * protect fd so that the socket can access internet
  */
-int protectFd(int sockfd) {
+int protectFd(int sockfd, const sockaddr_storage*) {
     JNIEnv *jnienv;
     jnijvm->GetEnv((void **)&jnienv, JNI_VERSION_1_6);
     jclass cls = jnienv->GetObjectClass(jniobj);

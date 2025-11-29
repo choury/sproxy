@@ -122,8 +122,8 @@ static EVP_PKEY* generate_key() {
     if(e == nullptr) {
         return nullptr;
     }
-    defer(BN_free, e);
     if (!BN_set_word(e, RSA_F4)) {
+        BN_free(e);
         return nullptr;
     }
 

@@ -29,7 +29,7 @@ std::string generateUA(const char* ua, const std::string& prog, uint64_t request
 #endif
     }
 
-    if (requestid != 0) {
+    if (requestid != 0 && ua && strstr(ua, " SEQ/") == nullptr) {
         UA << " SEQ/" << requestid;
     }
     return UA.str();

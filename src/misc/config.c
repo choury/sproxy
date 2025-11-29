@@ -764,7 +764,7 @@ void postConfig(){
         }
     }
 #endif
-    if(parseBind(admin_listen, &opt.admin)) {
+    if(admin_listen && parseBind(admin_listen, &opt.admin)) {
         LOGE("wrong admin listen: %s\n", admin_listen);
         exit(1);
     }
