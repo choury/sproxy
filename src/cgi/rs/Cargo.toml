@@ -8,7 +8,7 @@ rust-version = "1.78.0"
 crate-type = ["staticlib"]
 
 [dependencies]
-acme-lib = "0.9.1"
+acme-lib = { git = "https://github.com/algesten/acme-lib.git", rev = "275b4fb757119758bb9b459ce1538e68551f6df2" }
 jsonwebtoken = "9.3.1"
 once_cell = "1.19.0"
 parking_lot = "0.12.3"
