@@ -262,9 +262,18 @@ if (HAVE_SAN_UNDEF AND APPLE) #we meet some issue about member function point wi
     set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} -fsanitize=undefined")
 endif()
 
+find_program(LD_GOLD_EXECUTABLE ld.gold)
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=gold -Wl,--rosegment")
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=gold -Wl,--rosegment")
+    if (LD_GOLD_EXECUTABLE)
+        message(STATUS "Found ld.gold: ${LD_GOLD_EXECUTABLE}")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=gold -Wl,--rosegment")
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=gold -Wl,--rosegment")
+    else()
+        message(STATUS "ld.gold not found, using default linker")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--rosegment")
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--rosegment")
+    endif()
 endif()
 
 find_program(CARGO_EXECUTABLE cargo)
