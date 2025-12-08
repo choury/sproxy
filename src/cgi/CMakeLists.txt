@@ -3,15 +3,19 @@
 #Created:  2017/4/2
 
 add_library(demo SHARED demo.cpp)
+target_link_libraries(demo PUBLIC sproxy_headers)
 set_target_properties(demo PROPERTIES OUTPUT_NAME "demo")
 
 add_library(login SHARED login.cpp)
+target_link_libraries(login PUBLIC sproxy_headers)
 set_target_properties(login PROPERTIES OUTPUT_NAME "login")
 
 add_library(sites SHARED sites.cpp)
+target_link_libraries(sites PUBLIC sproxy_headers)
 set_target_properties(sites PROPERTIES OUTPUT_NAME "sites")
 
 add_library(proxy SHARED proxy.cpp)
+target_link_libraries(proxy PUBLIC sproxy_headers)
 set_target_properties(proxy PROPERTIES OUTPUT_NAME "proxy")
 
 set(INSTALL_LIBRARIES login sites proxy)
@@ -41,26 +45,26 @@ if (HAVE_RUST)
     add_dependencies(cgi_rust rust_static_library)
 
     add_library(alarm SHARED alarm.cpp)
-    target_link_libraries(alarm PUBLIC cgi_rust)
+    target_link_libraries(alarm PUBLIC sproxy_headers cgi_rust)
     set_target_properties(alarm PROPERTIES OUTPUT_NAME "alarm")
     set(INSTALL_LIBRARIES ${INSTALL_LIBRARIES} alarm)
 
     add_library(acme SHARED acme.cpp)
-    target_link_libraries(acme PUBLIC cgi_rust)
+    target_link_libraries(acme PUBLIC sproxy_headers cgi_rust)
     set_target_properties(acme PROPERTIES OUTPUT_NAME "acme")
     set(INSTALL_LIBRARIES ${INSTALL_LIBRARIES} acme)
 endif()
 
 if(ZLIB_FOUND)
     add_library(gzip_test SHARED gzip_test.cpp)
-    target_link_libraries(gzip_test PUBLIC z)
+    target_link_libraries(gzip_test PUBLIC sproxy_headers z)
     set_target_properties(gzip_test PROPERTIES OUTPUT_NAME "test")
     set(INSTALL_LIBRARIES ${INSTALL_LIBRARIES} gzip_test)
 endif()
 
 if(LIBXML2_FOUND)
     add_library(webdav SHARED webdav.cpp)
-    target_link_libraries(webdav PUBLIC ${LIBXML2_LIBRARIES})
+    target_link_libraries(webdav PUBLIC sproxy_headers ${LIBXML2_LIBRARIES})
     target_include_directories(webdav PUBLIC ${LIBXML2_INCLUDE_DIRS})
     set_target_properties(webdav PROPERTIES OUTPUT_NAME "webdav")
     set(INSTALL_LIBRARIES ${INSTALL_LIBRARIES} webdav)

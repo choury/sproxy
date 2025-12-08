@@ -1,1 +1,2 @@
 add_executable(sproxy_test sproxy_test.cpp)
+target_link_libraries(sproxy_test PRIVATE sproxy_headers)
