@@ -124,7 +124,7 @@ else()
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(JSON-C REQUIRED json-c)
     pkg_check_modules(LIBBPF libbpf>=1.0.0)
-    pkg_check_modules(LIBURING liburing>=2.4)
+    pkg_check_modules(LIBURING liburing>=2.6) #io_uring_prep_read_multishot is required for read tun
     if(LIBURING_FOUND)
         set(HAVE_URING TRUE CACHE BOOL "Have io_uring")
     else()

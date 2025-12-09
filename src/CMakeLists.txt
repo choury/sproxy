@@ -19,22 +19,22 @@ set(SPROXY_LIBRARY_DIRS ${JSON-C_LIBRARY_DIRS})
 set(SPROXY_OPTIONAL_LIBS "")
 
 if(Backtrace_FOUND)
-    sproxy_append_paths(${Backtrace_INCLUDE_DIRS} "")
+    sproxy_append_paths("${Backtrace_INCLUDE_DIRS}" "")
     list(APPEND SPROXY_OPTIONAL_LIBS ${Backtrace_LIBRARIES})
 endif()
 
 if(HAVE_ELF)
-    sproxy_append_paths(${LIBELF_INCLUDE_DIRS} ${LIBELF_LIBRARY_DIRS})
+    sproxy_append_paths("${LIBELF_INCLUDE_DIRS}" "${LIBELF_LIBRARY_DIRS}")
     list(APPEND SPROXY_OPTIONAL_LIBS ${LIBELF_LIBRARIES})
 endif()
 
 if(HAVE_URING)
-    sproxy_append_paths(${LIBURING_INCLUDE_DIRS} ${LIBURING_LIBRARY_DIRS})
+    sproxy_append_paths("${LIBURING_INCLUDE_DIRS}" "${LIBURING_LIBRARY_DIRS}")
     list(APPEND SPROXY_OPTIONAL_LIBS ${LIBURING_LIBRARIES})
 endif()
 
 if(HAVE_BPF)
-    sproxy_append_paths("" ${LIBBPF_LIBRARY_DIRS})
+    sproxy_append_paths("" "${LIBBPF_LIBRARY_DIRS}")
     list(APPEND SPROXY_OPTIONAL_LIBS bpf_loader ${LIBBPF_LIBRARIES})
 endif()
 
