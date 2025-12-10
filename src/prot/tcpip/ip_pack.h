@@ -124,10 +124,10 @@ void sack_release(Sack** sack);
 class Tcp{
     tcphdr tcp_hdr; //tcp头
     char *tcpopt = nullptr; //tcp头选项
-    size_t tcpoptlen = 0; //tcp头选项长度
 public:
+    size_t tcpoptlen = 0; //tcp头选项长度
     bool valid = true;
-    uint8_t hdrlen = 0;
+    //uint8_t hdrlen = 0;
     explicit Tcp(const Tcp* tcp);
     Tcp(const char* packet, size_t len);
     Tcp(uint16_t sport, uint16_t dport);

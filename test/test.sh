@@ -10,7 +10,7 @@ run_extended_tests=false
 while [[ $# -gt 0 ]]; do
     key="$1"
     case $key in
-    --extended-tests)
+    --extended-tests|--ex)
         if [ $ker != 'Linux' ] || [ $EUID -ne 0 ] ;then
             echo "extended-test require linux and root"
             exit 1

@@ -74,7 +74,9 @@ void Buffer::reserve(int p){
         off = PRIOR_HEAD;
         return;
     }
-    assert( off + p >= 0);
+    if(off + p < 0) {
+        abort();
+    }
     off += p;
 }
 
@@ -85,10 +87,12 @@ size_t Buffer::truncate(size_t left) {
             len = left;
             return origin;
         }
-        cap = left + off;
+        off_t new_offset = std::max(off, (off_t)PRIOR_HEAD);
+        cap = left + new_offset;
         auto new_ptr = std::shared_ptr<void>(malloc(cap), free);
-        memcpy((char*)new_ptr.get() + off, (char*)ptr.get() + off, len);
+        memcpy((char*)new_ptr.get() + new_offset, (char*)ptr.get() + off, len);
         ptr = new_ptr;
+        off = new_offset;
     } else {
         assert(len == 0 && cap == 0);
         cap = left + PRIOR_HEAD;

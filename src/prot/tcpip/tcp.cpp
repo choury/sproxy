@@ -103,7 +103,7 @@ static void tcpSend(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, 
         }
         hdr->hdr_len = pac->gethdrlen();
         hdr->gso_size = status->mss;
-        hdr->csum_start = hdr->hdr_len - pac->tcp->hdrlen;
+        hdr->csum_start = hdr->hdr_len - sizeof(tcphdr) - pac->tcp->tcpoptlen;
         hdr->csum_offset = 16;
     }
 #endif

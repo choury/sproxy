@@ -72,7 +72,7 @@ bool remove_rproxy_listener(uint64_t id) {
     if(it == g_listeners.end()) {
         return false;
     }
-    LOG("rproxy close #%lu %s@%s\n",
+    LOG("rproxy close #%zd %s@%s\n",
         it->second.id, it->second.rproxy.c_str(), dumpDest(it->second.target).c_str());
     g_listeners.erase(it);
     return true;

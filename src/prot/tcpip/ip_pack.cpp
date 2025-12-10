@@ -313,7 +313,7 @@ void Icmp6::build_packet(const ip6_hdr* ip_hdr, Buffer& bb) {
 Tcp::Tcp(const Tcp *tcp) {
     memcpy(&tcp_hdr, &tcp->tcp_hdr, sizeof(tcp_hdr));
     valid = tcp->valid;
-    hdrlen = tcp->hdrlen;
+    //hdrlen = tcp->hdrlen;
     tcpoptlen = tcp->tcpoptlen;
     if(tcpoptlen){
         tcpopt = (char *)malloc(tcpoptlen);
@@ -323,7 +323,7 @@ Tcp::Tcp(const Tcp *tcp) {
 
 Tcp::Tcp(const char* packet, size_t len){
     memcpy(&tcp_hdr, packet, sizeof(struct tcphdr));
-    hdrlen = tcp_hdr.th_off * 4;
+    uint8_t hdrlen = tcp_hdr.th_off * 4;
     if (hdrlen < 20) {
         LOGE("Invalid TCP header length: %u bytes\n", hdrlen);
         valid = false;
@@ -348,7 +348,7 @@ Tcp::Tcp(uint16_t sport, uint16_t dport){
     tcp_hdr.th_dport = htons(dport);
 
     tcp_hdr.th_off = 5;
-    hdrlen = sizeof(tcp_hdr);
+    //hdrlen = sizeof(tcp_hdr);
 }
 
 Tcp::~Tcp() {
@@ -517,7 +517,7 @@ void Tcp::build_packet(const ip* ip_hdr, Buffer& bb) {
         memset(tcpopt + tcpoptlen, TCPOPT_NOP, length - tcpoptlen);
         tcpoptlen = length;
     }
-    hdrlen = sizeof(tcphdr) + tcpoptlen;
+    uint8_t hdrlen = sizeof(tcphdr) + tcpoptlen;
     tcp_hdr.th_off = hdrlen >> 2;
     tcp_hdr.th_sum = 0;
 
@@ -541,7 +541,7 @@ void Tcp::build_packet(const ip6_hdr* ip_hdr, Buffer& bb) {
         memset(tcpopt + tcpoptlen, TCPOPT_NOP, length - tcpoptlen);
         tcpoptlen = length;
     }
-    hdrlen = sizeof(tcphdr) + tcpoptlen;
+    uint8_t hdrlen = sizeof(tcphdr) + tcpoptlen;
     tcp_hdr.th_off = hdrlen >> 2;
     tcp_hdr.th_sum = 0;
 
@@ -905,7 +905,7 @@ size_t Ip::gethdrlen() const {
     case IPPROTO_ICMPV6:
         return hdrlen + sizeof(icmp6_hdr);
     case IPPROTO_TCP:
-        return hdrlen + tcp->hdrlen;
+        return hdrlen + sizeof(tcphdr) + tcp->tcpoptlen;
     case IPPROTO_UDP:
         return hdrlen + sizeof(udphdr);
     default:

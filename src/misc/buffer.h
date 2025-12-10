@@ -19,7 +19,7 @@
 #include <deque>
 #include <set>
 
-#define PRIOR_HEAD 80
+#define PRIOR_HEAD 128
 
 /*
  * 这个类维护一个缓冲区，但是申请的时候会多申请一个固定长度的头部（作为预留部分）
