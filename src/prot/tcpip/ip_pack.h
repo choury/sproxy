@@ -85,11 +85,13 @@ public:
     Icmp* setcode(uint8_t code);
     Icmp* setid(uint16_t id);
     Icmp* setseq(uint16_t seq);
+    Icmp* setmtu(uint16_t mtu);
 
     [[nodiscard]] uint8_t gettype()const;
     [[nodiscard]] uint8_t getcode()const;
     [[nodiscard]] uint16_t getid()const;
     [[nodiscard]] uint16_t getseq()const;
+    [[nodiscard]] uint16_t getmtu() const;
 };
 
 class Icmp6{
@@ -106,11 +108,13 @@ public:
     Icmp6* setcode(uint8_t code);
     Icmp6* setid(uint16_t id);
     Icmp6* setseq(uint16_t seq);
+    Icmp6* setmtu(uint32_t mtu);
 
     [[nodiscard]] uint8_t gettype()const;
     [[nodiscard]] uint8_t getcode()const;
     [[nodiscard]] uint16_t getid()const;
     [[nodiscard]] uint16_t getseq()const;
+    [[nodiscard]] uint32_t getmtu() const;
 };
 
 struct Sack{

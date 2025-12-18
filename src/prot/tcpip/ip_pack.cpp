@@ -192,6 +192,11 @@ Icmp* Icmp::setseq(uint16_t seq){
     return this;
 }
 
+Icmp* Icmp::setmtu(uint16_t mtu) {
+    icmp_hdr.un.frag.mtu = htons(mtu);
+    return this;
+}
+
 uint8_t Icmp::gettype() const {
     return icmp_hdr.type;
 }
@@ -212,6 +217,10 @@ uint16_t Icmp::getseq() const {
         return ntohs(icmp_hdr.un.echo.sequence);
     }
     return 0;
+}
+
+uint16_t Icmp::getmtu() const {
+    return ntohs(icmp_hdr.un.frag.mtu);
 }
 
 void Icmp::build_packet(Buffer& bb) {
@@ -276,6 +285,11 @@ Icmp6* Icmp6::setseq(uint16_t seq){
     return this;
 }
 
+Icmp6* Icmp6::setmtu(uint32_t mtu) {
+    icmp_hdr.icmp6_mtu = htonl(mtu);
+    return this;
+}
+
 uint8_t Icmp6::gettype() const {
     return icmp_hdr.icmp6_type;
 }
@@ -296,6 +310,10 @@ uint16_t Icmp6::getseq() const {
         return ntohs(icmp_hdr.icmp6_seq);
     }
     return 0;
+}
+
+uint32_t Icmp6::getmtu() const {
+    return ntohl(icmp_hdr.icmp6_mtu);
 }
 
 void Icmp6::build_packet(const ip6_hdr* ip_hdr, Buffer& bb) {
@@ -1400,6 +1418,5 @@ void Ip6::build_packet(Buffer& bb) {
     hdr.ip6_plen = htons(len);
     memcpy(packet, &hdr, sizeof(ip6_hdr));
 }
-
 
 
