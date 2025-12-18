@@ -83,37 +83,70 @@ static size_t bufleft(std::shared_ptr<TcpStatus> status) {
 }
 
 static void tcpSend(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, Buffer& bb) {
-    if(status->ts_enable) {
-        pac->tcp->settimestamp(getmtime(), status->ts_recent);
-    }
-    pac->build_packet(bb);
-#if __linux__
-    if (status->flags & TUN_GSO_OFFLOAD) {
-        bb.reserve(-(int)sizeof(virtio_net_hdr_v1));
-        auto *hdr = (virtio_net_hdr_v1*)bb.mutable_data();
-        hdr->flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
-        int family = pac->getsrc().ss_family;
-        if (family == AF_INET) {
-            hdr->gso_type = VIRTIO_NET_HDR_GSO_TCPV4;
-        } else if (family == AF_INET6) {
-            hdr->gso_type = VIRTIO_NET_HDR_GSO_TCPV6;
-        } else {
-            LOGE("unknown family: %d\n", family);
-            hdr->gso_type = VIRTIO_NET_HDR_GSO_NONE;
+    auto send_raw = [status](std::shared_ptr<Ip> pac, Buffer& bb) {
+        if(status->ts_enable) {
+            pac->tcp->settimestamp(getmtime(), status->ts_recent);
         }
-        hdr->hdr_len = pac->gethdrlen();
-        hdr->gso_size = status->mss;
-        hdr->csum_start = hdr->hdr_len - sizeof(tcphdr) - pac->tcp->tcpoptlen;
-        hdr->csum_offset = 16;
-    }
-#endif
-    status->sendCB(pac, Buffer(bb));
+        size_t len = bb.len;
+        pac->build_packet(bb);
 #if __linux__
-    if (status->flags & TUN_GSO_OFFLOAD) {
-        bb.reserve(sizeof(virtio_net_hdr_v1));
-    }
+        if (status->flags & TUN_GSO_OFFLOAD) {
+            bb.reserve(-(int)sizeof(virtio_net_hdr_v1));
+            auto *hdr = (virtio_net_hdr_v1*)bb.mutable_data();
+            hdr->flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
+            int family = pac->getsrc().ss_family;
+            if (family == AF_INET) {
+                hdr->gso_type = len > status->mss ? VIRTIO_NET_HDR_GSO_TCPV4 : VIRTIO_NET_HDR_GSO_NONE;
+            } else if (family == AF_INET6) {
+                hdr->gso_type = len > status->mss ? VIRTIO_NET_HDR_GSO_TCPV6 : VIRTIO_NET_HDR_GSO_NONE;
+            } else {
+                LOGE("unknown family: %d\n", family);
+                hdr->gso_type = VIRTIO_NET_HDR_GSO_NONE;
+            }
+            hdr->hdr_len = pac->gethdrlen();
+            hdr->gso_size = status->mss;
+            hdr->csum_start = hdr->hdr_len - sizeof(tcphdr) - pac->tcp->tcpoptlen;
+            hdr->csum_offset = 16;
+        }
 #endif
-    bb.reserve(pac->gethdrlen());
+        status->sendCB(pac, Buffer(bb));
+#if __linux__
+        if (status->flags & TUN_GSO_OFFLOAD) {
+            bb.reserve(sizeof(virtio_net_hdr_v1));
+        }
+#endif
+        bb.reserve(pac->gethdrlen());
+    };
+    size_t len = bb.len;
+    if(len == 0) {
+        send_raw(pac, bb);
+        return;
+    }
+    size_t max_seg = len;
+    if (status->flags & TUN_GSO_OFFLOAD) {
+        max_seg = std::min(max_seg, (size_t)16000);
+    } else if (status->mss > 0) {
+        max_seg = std::min(max_seg, (size_t)status->mss);
+    }
+    if(len <= max_seg) {
+        send_raw(pac, bb);
+        return;
+    }
+    uint32_t base_seq = pac->tcp->getseq();
+    uint8_t flag = pac->tcp->getflag();
+    size_t offset = 0;
+    while(offset < len) {
+        size_t seg_len = std::min(max_seg, len - offset);
+        auto seg_pac = MakeIp(pac);
+        uint8_t seg_flag = flag;
+        if((flag & (TH_PUSH | TH_FIN)) && offset + seg_len < len) {
+            seg_flag &= ~(TH_PUSH | TH_FIN);
+        }
+        seg_pac->tcp->setseq(base_seq + offset)->setflag(seg_flag);
+        Buffer seg_bb{(const char*)bb.data() + offset, seg_len, bb.id};
+        send_raw(seg_pac, seg_bb);
+        offset += seg_len;
+    }
 }
 
 class pkgLogger{
@@ -685,36 +718,21 @@ void SendData(std::shared_ptr<TcpStatus> status, Buffer&& bb) {
         }
         return;
     }
-    size_t sendlen = bb.len;
-    if((int)sendlen > Cap(status)){
+    if((int)bb.len > Cap(status)){
         LOGE("%s send pkt will oversize of window (%zu/%d)\n",
-             storage_ntoa(&status->src), sendlen,  (int)Cap(status));
+             storage_ntoa(&status->src), bb.len,  (int)Cap(status));
     }
-    if ((status->flags & TUN_GSO_OFFLOAD) == 0) {
-        //LOGD(DVPN, "%s: mss smaller than send size (%zu/%u)!\n", key.getString("<-"), bb.len, mss);
-        sendlen = std::min((size_t)status->mss, bb.len);
-    } else {
-        sendlen = std::min((size_t)16000, bb.len);
-    }
-    //LOGD(DVPN, "%s (%u - %u) size: %zu\n", key.getString("<-"), sent_seq, want_seq, sendlen);
+    //LOGD(DVPN, "%s (%u - %u) size: %zu\n", key.getString("<-"), sent_seq, want_seq, bb.len);
     auto pac = MakeIp(IPPROTO_TCP, &status->dst, &status->src);
     pac->tcp
         ->setseq(status->sent_seq)
         ->setack(status->want_seq)
         ->setwindow(bufleft(status) >> status->send_wscale)
-        ->setflag(TH_ACK);
+        ->setflag(TH_ACK | TH_PUSH);
 
-    status->sent_seq += sendlen;
+    status->sent_seq += bb.len;
     status->sent_ack = status->want_seq;
-    if (bb.len > sendlen) {
-        Buffer cbb{bb.data(), sendlen, bb.id};
-        PendPkg(status, pac, std::move(cbb));
-        bb.reserve(sendlen);
-        SendData(status, std::move(bb));
-    }else{
-        pac->tcp->setflag(TH_ACK | TH_PUSH);
-        PendPkg(status, pac, std::move(bb));
-    }
+    PendPkg(status, pac, std::move(bb));
 }
 
 void SendRst(std::shared_ptr<TcpStatus> status) {

@@ -11,6 +11,7 @@ class Buffer;
 class Block;
 struct IpStatus;
 void Unreach(std::shared_ptr<IpStatus> status, uint8_t code);
+void UpdateTcpMss(const std::shared_ptr<IpStatus>& status, uint16_t mss);
 forceinline  ssize_t Cap(std::shared_ptr<IpStatus>) {
     return MAX_BUF_LEN;
 }

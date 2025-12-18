@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <inttypes.h>
 
+#include <algorithm>
 #include <utility>
 
 VpnKey::VpnKey(std::shared_ptr<const Ip> ip) {
@@ -192,15 +193,30 @@ void TunRWer::ProcessPacket(Buffer&& bb){
     VpnKey key(pac);
 
     bool transIcmp = false;
+    bool tooBig = false;
+    uint32_t icmpMtu = 0;
+    std::shared_ptr<const Ip> icmpPayload;
     if(pac->gettype() == IPPROTO_ICMP) {
         uint16_t type = pac->icmp->gettype();
         if(type ==  ICMP_UNREACH) {
-            auto icmp_pac = MakeIp((const char*)bb.data() + pac->gethdrlen(), bb.len-pac->gethdrlen());
-            if(icmp_pac == nullptr){
+            icmpPayload = MakeIp((const char*)bb.data() + pac->gethdrlen(), bb.len-pac->gethdrlen());
+            if(icmpPayload == nullptr){
                 return;
             }
-            transIcmp = true;
-            key = VpnKey(icmp_pac).reverse();
+            uint8_t code = pac->icmp->getcode();
+#ifdef ICMP_UNREACH_NEEDFRAG
+            if(code == ICMP_UNREACH_NEEDFRAG) {
+#elif defined(ICMP_FRAG_NEEDED)
+            if(code == ICMP_FRAG_NEEDED) {
+#else
+            if(code == 4) {
+#endif
+                tooBig = true;
+                icmpMtu = pac->icmp->getmtu();
+            } else {
+                transIcmp = true;
+            }
+            key = VpnKey(icmpPayload).reverse();
             LOGD(DVPN, "get icmp unreach for: <%s> %s - %s\n",
                     protstr(key.protocol), getRdnsWithPort(key.src).c_str(), getRdnsWithPort(key.dst).c_str());
         }else if(!ICMP_PING(type)) {
@@ -210,13 +226,23 @@ void TunRWer::ProcessPacket(Buffer&& bb){
     }else if(pac->gettype() == IPPROTO_ICMPV6) {
         uint16_t type = pac->icmp6->gettype();
         if(type == ICMP6_DST_UNREACH){
-            auto icmp6_pac = MakeIp((const char*)bb.data() + pac->gethdrlen(), bb.len-pac->gethdrlen());
-            if(icmp6_pac == nullptr){
+            icmpPayload = MakeIp((const char*)bb.data() + pac->gethdrlen(), bb.len-pac->gethdrlen());
+            if(icmpPayload == nullptr){
                 return;
             }
             transIcmp = true;
-            key = VpnKey(icmp6_pac).reverse();
+            key = VpnKey(icmpPayload).reverse();
             LOGD(DVPN, "get icmp6 unreach for: <%s> %s - %s\n",
+                    protstr(key.protocol), getRdnsWithPort(key.src).c_str(), getRdnsWithPort(key.dst).c_str());
+        }else if(type == ICMP6_PACKET_TOO_BIG){
+            icmpPayload = MakeIp((const char*)bb.data() + pac->gethdrlen(), bb.len-pac->gethdrlen());
+            if(icmpPayload == nullptr){
+                return;
+            }
+            tooBig = true;
+            icmpMtu = pac->icmp6->getmtu();
+            key = VpnKey(icmpPayload).reverse();
+            LOGD(DVPN, "get icmp6 too big for: <%s> %s - %s\n",
                     protstr(key.protocol), getRdnsWithPort(key.src).c_str(), getRdnsWithPort(key.dst).c_str());
         }else if(!ICMP6_PING(type)) {
             LOGD(DVPN, "ignore icmp6 type: %d\n", type);
@@ -225,7 +251,7 @@ void TunRWer::ProcessPacket(Buffer&& bb){
     }
     std::shared_ptr<IpStatus> status;
     if(!statusmap.Has(key)){
-        if(transIcmp) {
+        if(transIcmp || tooBig) {
             return;
         }
         if(pac->getdport() == 0 || pac->getsport() == 0) {
@@ -296,6 +322,24 @@ void TunRWer::ProcessPacket(Buffer&& bb){
                 cb->resetHanlder(id, ICMP_UNREACH_ERR);
             }
             Clean(id);
+            return;
+        }
+        if(tooBig){
+            status = statusmap.GetOne(key)->second;
+            if(!icmpPayload || icmpPayload->gettype() != IPPROTO_TCP) {
+                return;
+            }
+            if(icmpMtu == 0) {
+                LOGD(DVPN, "icmp too big without mtu, ignore\n");
+                return;
+            }
+            size_t hdr_len = icmpPayload->gethdrlen();
+            if(icmpMtu <= hdr_len) {
+                LOGD(DVPN, "icmp too big invalid mtu: %u <= %zu\n", icmpMtu, hdr_len);
+                return;
+            }
+            uint32_t new_mss = std::min<uint32_t>(icmpMtu - hdr_len, UINT16_MAX);
+            UpdateTcpMss(status, static_cast<uint16_t>(new_mss));
             return;
         }
         status = statusmap.GetOne(key)->second;

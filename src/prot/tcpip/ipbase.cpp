@@ -1,4 +1,5 @@
 #include "ipbase.h"
+#include "tcp.h"
 #include "misc/buffer.h"
 #include "misc/net.h"
 
@@ -49,4 +50,16 @@ void Unreach(std::shared_ptr<IpStatus> status, uint8_t code) {
     }
 #endif
     status->sendCB(pac, std::move(bb));
+}
+
+void UpdateTcpMss(const std::shared_ptr<IpStatus>& status, uint16_t mss) {
+    if(!status || status->protocol != Protocol::TCP) {
+        return;
+    }
+    auto tstatus = std::static_pointer_cast<TcpStatus>(status);
+    if(mss == 0 || mss >= tstatus->mss) {
+        return;
+    }
+    LOGD(DVPN, "tcp mss update %u -> %u\n", tstatus->mss, mss);
+    tstatus->mss = mss;
 }
