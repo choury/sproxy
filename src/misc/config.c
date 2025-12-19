@@ -105,6 +105,7 @@ struct options opt = {
     .redirect_http     = false,
     .restrict_local    = false,
     .rproxy_keep_src   = false,
+    .systemd_socket    = false,
     .quic_cc_algorithm = NULL,
     .quic_version      = 1,  // Default to QUIC v1
     .doh_server        = NULL,
@@ -557,19 +558,35 @@ void free_arg_list(struct arg_list* list) {
     free(list);
 }
 
-static void free_dest_list(struct dest_list* list) {
-    while(list) {
-        struct dest_list* next = list->next;
-        free(list);
-        list = next;
+void free_dest_list(struct dest_list** list) {
+    if(list == NULL) {
+        return;
     }
+    struct dest_list* node = *list;
+    while(node) {
+        struct dest_list* next = node->next;
+        free(node);
+        node = next;
+    }
+    *list = NULL;
+}
+
+void append_dest_list(struct dest_list*** tail, const struct Destination* dest) {
+    struct dest_list* node = malloc(sizeof(struct dest_list));
+    if(node == NULL) {
+        LOGE("alloc listen failed: %s\n", strerror(errno));
+        exit(1);
+    }
+    node->dest = *dest;
+    node->next = NULL;
+    **tail = node;
+    *tail = &node->next;
 }
 
 static void build_dest_list(struct arg_list* arguments,
                             struct dest_list** destinations,
                             const char* option_name) {
-    free_dest_list(*destinations);
-    *destinations = NULL;
+    free_dest_list(destinations);
     if(arguments == NULL) {
         return;
     }
@@ -584,15 +601,7 @@ static void build_dest_list(struct arg_list* arguments,
             LOGE("wrong %s listen: %s\n", option_name, item->arg);
             exit(1);
         }
-        struct dest_list* node = malloc(sizeof(struct dest_list));
-        if(node == NULL) {
-            LOGE("alloc %s listen failed: %s\n", option_name, strerror(errno));
-            exit(1);
-        }
-        node->dest = dest;
-        node->next = NULL;
-        *tail = node;
-        tail = &node->next;
+        append_dest_list(&tail, &dest);
     }
 }
 

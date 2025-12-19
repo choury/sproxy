@@ -98,6 +98,7 @@ struct options{
     bool redirect_http;
     bool restrict_local;
     bool rproxy_keep_src;
+    bool systemd_socket;
     const char* quic_cc_algorithm;  // QUIC congestion control algorithm: "cubic" or "bbr"
     uint64_t quic_version;         // QUIC version: QUIC_VERSION_1 or QUIC_VERSION_2
     const char* doh_server;        // DNS over HTTPS server URL
@@ -135,6 +136,8 @@ void postConfig();
 int parseDest(const char* proxy, struct Destination* server);
 bool debugon(const char* module, bool enable);
 bool is_http_listen_port(uint16_t port);
+void free_dest_list(struct dest_list** list);
+void append_dest_list(struct dest_list*** tail, const struct Destination* dest);
 
 void flushdns();
 void flushconnect();

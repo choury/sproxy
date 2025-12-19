@@ -293,7 +293,7 @@ int event_loop(uint32_t timeout_ms){
         (ep->*ep->handleEvent)(i.second);
     }
     pending_events.clear();
-    return 0;
+    return c;
 }
 
 
