@@ -37,7 +37,7 @@ function test_client(){
 
     curl -f -v -x http://$HOSTNAME:$1 http://qq.com > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "client test 1 failed" && exit 1
-    curl -f -v -x http://$HOSTNAME:$1 http://taobao.com > /dev/null 2>> curl.log
+    curl -f -v -x http://$HOSTNAME:$1 http://cloudflare.com/cdn-cgi/trace 2>> curl.log
     [ $? -ne 0 ] && echo "client test 2 failed" && exit 1
     curl -f -v -x http://$HOSTNAME:$1 https://www.qq.com -A "Mozilla/5.0" > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "client test 3 failed" && exit 1
@@ -45,9 +45,9 @@ function test_client(){
     curl -f -v -x http://$HOSTNAME:$1 http://qq.com -XPOST -d "foo=bar" > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "client test 4 failed" && exit 1
 
-    curl -f -v -x http://$HOSTNAME:$1 http://taobao.com -I > /dev/null 2>> curl.log
+    curl -f -v -x http://$HOSTNAME:$1 http://cloudflare.com/cdn-cgi/trace -I 2>> curl.log
     [ $? -ne 0 ] && echo "client test 5 failed" && exit 1
-    curl -f -v -x http://$HOSTNAME:$1 http://taobao.com -L > /dev/null 2>> curl.log
+    curl -f -v -x http://$HOSTNAME:$1 'http://mockhttp.org/redirect-to?url=http://mockhttp.org/anything&status_code=301' -L 2>> curl.log
     [ $? -ne 0 ] && echo "client test 6 failed" && exit 1
 
     echo test for 100 continue
@@ -161,7 +161,7 @@ function test_http3(){
     [ $? -ne 0 ] && echo "http3 test 4 failed" && exit 1
     curl -f -v -L --http3-only https://$HOSTNAME:$1/cgi  -k 2>> curl.log
     [ $? -ne 0 ] && echo "http3 test 5 failed" && exit 1
-    curl -f -v --http3-only https://$HOSTNAME:$1/ -H "Host: www.taobao.com" -k > /dev/null 2>> curl.log
+    curl -f -v --http3-only https://$HOSTNAME:$1/ -H "Host: cloudflare-quic.com" -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "http3 test 6 failed" && exit 1
     curl -f -v --http3-only https://$HOSTNAME:$1/cgi/libtest.do?size=1M -k > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "http test 7 failed" && exit 1
@@ -188,7 +188,7 @@ function test_rproxy(){
     curl -f -v http://$HOSTNAME:3333/rproxy/test_proxy/qq.com/ > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "rproxy2 URL test 1 failed" && exit 1
 
-    curl -f -v http://$HOSTNAME:3333/rproxy/test_proxy/http://taobao.com/ > /dev/null 2>> curl.log
+    curl -f -v http://$HOSTNAME:3333/rproxy/test_proxy/http://cloudflare.com/cdn-cgi/trace  2>> curl.log
     [ $? -ne 0 ] && echo "rproxy2 URL test 2 failed" && exit 1
 
     curl -f -v http://$HOSTNAME:3333/rproxy/test_proxy/https://www.qq.com/ -A "Mozilla/5.0" > /dev/null 2>> curl.log
@@ -197,7 +197,7 @@ function test_rproxy(){
     curl -f -v http://$HOSTNAME:3333/rproxy/test_proxy/http://qq.com/ -XPOST -d "foo=bar" > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "rproxy2 URL POST test failed" && exit 1
 
-    curl -f -v http://$HOSTNAME:3333/rproxy/test_proxy/http://taobao.com/ -I > /dev/null 2>> curl.log
+    curl -f -v http://$HOSTNAME:3333/rproxy/test_proxy/https://cloudflare.com/cdn-cgi/trace -I 2>> curl.log
     [ $? -ne 0 ] && echo "rproxy2 URL HEAD test failed" && exit 1
 
     curl -f -v \
@@ -223,7 +223,7 @@ function test_rproxy(){
     curl -f -kv https://$HOSTNAME:3334/rproxy/test_proxy/qq.com/ > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "rproxy3 URL test 1 failed" && exit 1
 
-    curl -f -kv https://$HOSTNAME:3334/rproxy/test_proxy/https://www.taobao.com/ -A "Mozilla/5.0" > /dev/null 2>> curl.log
+    curl -f -kv https://$HOSTNAME:3334/rproxy/test_proxy/https://cloudflare.com/cdn-cgi/trace -A "Mozilla/5.0" 2>> curl.log
     [ $? -ne 0 ] && echo "rproxy3 URL test 2 failed" && exit 1
 
     curl -f -kv https://$HOSTNAME:3334/rproxy/test_proxy/http://qq.com/ -XPOST -d "foo=bar" > /dev/null 2>> curl.log
@@ -290,7 +290,7 @@ function test_tproxy() {
 
     curl -V | grep HTTP3
     if [[ $? = 0 ]];then
-        curl -k -f -v --http3-only https://www.taobao.com  > /dev/null 2>> curl.log
+        curl -k -f -v --http3-only https://cloudflare-quic.com  > /dev/null 2>> curl.log
         [ $? -ne 0 ] && echo "tproxy test 5 failed" && exit 1
     fi
 }
@@ -328,7 +328,7 @@ function test_vpn(){
 
     curl -V | grep HTTP3
     if [[ $? = 0 ]];then
-        curl -k -f -v --http3-only https://www.taobao.com  > /dev/null 2>> curl.log
+        curl -k -f -v --http3-only https://cloudflare-quic.com  > /dev/null 2>> curl.log
         [ $? -ne 0 ] && echo "vpn test 5 failed" && exit 1
     fi
 
@@ -351,7 +351,7 @@ function test_sni(){
 
     curl -V | grep HTTP3
     if [[ $? = 0 ]];then
-        curl -f -v --http3-only https://www.taobao.com --resolve www.taobao.com:443:127.0.0.1 > /dev/null 2>> curl.log
+        curl -f -v --http3-only https://cloudflare-quic.com --resolve cloudflare-quic.com:443:127.0.0.1 > /dev/null 2>> curl.log
         [ $? -ne 0 ] && echo "sni test 4 failed" && exit 1
     fi
 
@@ -375,7 +375,7 @@ function test_sni(){
 
     curl -V | grep HTTP3
     if [[ $? = 0 ]];then
-        curl -k -f -v --http3-only https://www.taobao.com --resolve www.taobao.com:443:127.0.0.1 > /dev/null 2>> curl.log
+        curl -k -f -v --http3-only https://cloudflare-quic.com --resolve cloudflare-quic.com:443:127.0.0.1 > /dev/null 2>> curl.log
         [ $? -ne 0 ] && echo "sni test 10 failed" && exit 1
     fi
 
