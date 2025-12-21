@@ -136,7 +136,6 @@ void postConfig();
 int parseDest(const char* proxy, struct Destination* server);
 bool debugon(const char* module, bool enable);
 bool is_http_listen_port(uint16_t port);
-void free_dest_list(struct dest_list** list);
 void append_dest_list(struct dest_list*** tail, const struct Destination* dest);
 
 void flushdns();

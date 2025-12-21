@@ -11,6 +11,7 @@
 #include "network_notify.h"
 #include "cert_manager.h"
 
+#include <ctype.h>
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,6 +21,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <unistd.h>
+#include <sys/socket.h>
 #include <signal.h>
 #include <inttypes.h>
 #include <sys/utsname.h>
@@ -120,18 +122,21 @@ struct options opt = {
         .protocol   = {0},
         .hostname   = {0},
         .port       = 0,
+        .systemd_fd = -1,
     },
     .admin          = {
         .scheme     = {0},
         .protocol   = {0},
         .hostname   = {0},
         .port       = 0,
+        .systemd_fd = -1,
     },
     .Server         = {
         .scheme     = {0},
         .protocol   = {0},
         .hostname   = {0},
         .port       = 0,
+        .systemd_fd = -1,
     },
     .rewrite_auth   = {0},
     .ipv6_mode      = Auto,
@@ -465,6 +470,7 @@ static void parseArgs(const char* name, const char* args){
 
 int parseDest(const char* proxy, struct Destination* server){
     memset(server, 0, sizeof(struct Destination));
+    server->systemd_fd = -1;
     if(spliturl(proxy, server, NULL)){
         return -1;
     }
@@ -558,19 +564,6 @@ void free_arg_list(struct arg_list* list) {
     free(list);
 }
 
-void free_dest_list(struct dest_list** list) {
-    if(list == NULL) {
-        return;
-    }
-    struct dest_list* node = *list;
-    while(node) {
-        struct dest_list* next = node->next;
-        free(node);
-        node = next;
-    }
-    *list = NULL;
-}
-
 void append_dest_list(struct dest_list*** tail, const struct Destination* dest) {
     struct dest_list* node = malloc(sizeof(struct dest_list));
     if(node == NULL) {
@@ -583,10 +576,61 @@ void append_dest_list(struct dest_list*** tail, const struct Destination* dest) 
     *tail = &node->next;
 }
 
+static void free_fdnames(char** names) {
+    if(names == NULL) {
+        return;
+    }
+    free(names[0]);
+    free(names);
+}
+
+static char** split_fdnames(const char* names, size_t* count) {
+    *count = 0;
+    if(names == NULL || names[0] == '\0') {
+        return NULL;
+    }
+    char* copy = strdup(names);
+    if(copy == NULL) {
+        return NULL;
+    }
+    size_t slots = 1;
+    for(char* p = copy; *p; ++p) {
+        if(*p == ':') {
+            slots++;
+        }
+    }
+    char** out = (char**)malloc(slots * sizeof(char*));
+    if(out == NULL) {
+        free(copy);
+        return NULL;
+    }
+    size_t idx = 0;
+    out[idx++] = copy;
+    for(char* p = copy; *p; ++p) {
+        if(*p == ':') {
+            *p = '\0';
+            if(p[1] != '\0' && idx < slots) {
+                out[idx++] = p + 1;
+            }
+        }
+    }
+    *count = idx;
+    return out;
+}
+
 static void build_dest_list(struct arg_list* arguments,
                             struct dest_list** destinations,
                             const char* option_name) {
-    free_dest_list(destinations);
+    if(destinations == NULL) {
+        return;
+    }
+    struct dest_list* node = *destinations;
+    while(node) {
+        struct dest_list* next = node->next;
+        free(node);
+        node = next;
+    }
+    *destinations = NULL;
     if(arguments == NULL) {
         return;
     }
@@ -606,14 +650,72 @@ static void build_dest_list(struct arg_list* arguments,
 }
 
 void postConfig(){
-    build_dest_list(&http_listens, &opt.http_list, "http");
-    build_dest_list(&ssl_listens, &opt.ssl_list, "ssl");
-    build_dest_list(&quic_listens, &opt.quic_list, "quic");
+    const char* listen_pid = getenv("LISTEN_PID");
+    const char* listen_fds = getenv("LISTEN_FDNAMES");
+    if(listen_pid && listen_fds && (pid_t)atoi(listen_pid) == getpid()) {
+        opt.systemd_socket = true;
+        LOG("systemd sockets detected, config listens ignored\n");
+        size_t name_count = 0;
+        char** names = split_fdnames(listen_fds, &name_count);
+        if(names == NULL || name_count == 0) {
+            free_fdnames(names);
+            LOGE("systemd socket has no valid fd names\n");
+            exit(1);
+        }
+        struct dest_list** http_tail = &opt.http_list;
+        struct dest_list** ssl_tail = &opt.ssl_list;
+        struct dest_list** quic_tail = &opt.quic_list;
 
-    if(tproxy_listen && parseBind(tproxy_listen, &opt.tproxy)) {
-        LOGE("wrong tproxy listen: %s\n", tproxy_listen);
-        exit(1);
+        for(size_t i = 0; i < name_count; ++i) {
+            int fd = 3 + (int)i;
+            const char* fd_name = names[i];
+            int type = 0;
+            socklen_t type_len = sizeof(type);
+            if(getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &type_len) < 0) {
+                LOGE("systemd socket getsockopt failed for %d: %s\n", fd, strerror(errno));
+                continue;
+            }
+            struct sockaddr_storage addr;
+            socklen_t addr_len = sizeof(addr);
+            if(getsockname(fd, (struct sockaddr*)&addr, &addr_len) < 0) {
+                LOGE("systemd socket getsockname failed for %d: %s\n", fd, strerror(errno));
+                continue;
+            }
+            struct Destination dest;
+            storage2Dest(&addr, &dest);
+            dest.systemd_fd = fd;
+            if(fd_name && fd_name[0]) {
+                snprintf(dest.scheme, sizeof(dest.scheme), "%s", fd_name);
+            }
+            if(dest.port == 0) {
+                LOGE("systemd socket %d has no port\n", fd);
+                continue;
+            }
+
+            if(type == SOCK_STREAM && strcmp(fd_name, "http") == 0) {
+                append_dest_list(&http_tail, &dest);
+                continue;
+            }
+            if(type == SOCK_STREAM && strcmp(fd_name, "ssl") == 0) {
+                append_dest_list(&ssl_tail, &dest);
+                continue;
+            }
+            if(type == SOCK_DGRAM && strcmp(fd_name, "quic") == 0) {
+                append_dest_list(&quic_tail, &dest);
+                continue;
+            }
+        }
+        free_fdnames(names);
+    } else {
+        build_dest_list(&http_listens, &opt.http_list, "http");
+        build_dest_list(&ssl_listens, &opt.ssl_list, "ssl");
+        build_dest_list(&quic_listens, &opt.quic_list, "quic");
+        if(tproxy_listen && parseBind(tproxy_listen, &opt.tproxy)) {
+            LOGE("wrong tproxy listen: %s\n", tproxy_listen);
+            exit(1);
+        }
     }
+
     if(server_string && parseDest(server_string, &opt.Server)){
         LOGE("wrong server format: %s\n", server_string);
         exit(1);

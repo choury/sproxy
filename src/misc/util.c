@@ -519,6 +519,7 @@ const char* dumpAuthority(const struct Destination* Server){
 
 void storage2Dest(const struct sockaddr_storage* addr, struct Destination* dest) {
     memset(dest, 0, sizeof(struct Destination));
+    dest->systemd_fd = -1;
     addrstring(addr, dest->hostname, sizeof(dest->hostname));
     if(addr->ss_family == AF_INET){
         const struct sockaddr_in* in = (struct sockaddr_in*)addr;
@@ -542,6 +543,7 @@ int parseBind(const char* str, struct Destination* dest) {
     if (!str || !*str || !dest)
         return -1;
     memset(dest, 0, sizeof(*dest));
+    dest->systemd_fd = -1;
 
     // special: unix:path
     if(strncmp(str, "unix:", 5) == 0) {

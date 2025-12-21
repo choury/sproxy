@@ -280,6 +280,7 @@ struct Destination{
     char protocol[16];
     char hostname[DOMAINLIMIT];
     uint16_t port;
+    int systemd_fd;
     bool system_resolve;
     char assign_src[60];
 };

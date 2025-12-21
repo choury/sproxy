@@ -13,8 +13,8 @@
 
 #include <unistd.h>
 #include <assert.h>
-#include <cctype>
 #include <openssl/err.h>
+#include <sys/socket.h>
 
 #if __linux__
 #include <linux/if_tun.h>
@@ -90,138 +90,6 @@ static int ListenLocalhostUdp(uint16_t port, int fd[2], const listenOption* ops)
     return 0;
 }
 
-static std::vector<std::string> SplitFdNames(const char* names) {
-    std::vector<std::string> out;
-    if(!names || !names[0]) {
-        return out;
-    }
-    const char* cur = names;
-    while(*cur) {
-        const char* next = strchr(cur, ':');
-        if(next) {
-            out.emplace_back(cur, next - cur);
-            cur = next + 1;
-        } else {
-            out.emplace_back(cur);
-            break;
-        }
-    }
-    if(out.size() > 1) {
-        const std::string& first = out[0];
-        if(first.find(' ') != std::string::npos) {
-            bool all_same = true;
-            for(size_t i = 1; i < out.size(); ++i) {
-                if(out[i] != first) {
-                    all_same = false;
-                    break;
-                }
-            }
-            if(all_same) {
-                std::vector<std::string> tokens;
-                size_t pos = 0;
-                while(pos < first.size()) {
-                    while(pos < first.size() && std::isspace(static_cast<unsigned char>(first[pos]))) {
-                        ++pos;
-                    }
-                    size_t start = pos;
-                    while(pos < first.size() && !std::isspace(static_cast<unsigned char>(first[pos]))) {
-                        ++pos;
-                    }
-                    if(start < pos) {
-                        tokens.emplace_back(first.substr(start, pos - start));
-                    }
-                }
-                if(tokens.size() == out.size()) {
-                    return tokens;
-                }
-            }
-        }
-    }
-    return out;
-}
-
-static void AddSystemdListeners(std::vector<std::shared_ptr<Ep>>& servers) {
-    const char* listen_pid = getenv("LISTEN_PID");
-    const char* listen_fds = getenv("LISTEN_FDNAMES");
-    if(!listen_fds || !listen_pid) {
-        return;
-    }
-    if((pid_t)atoi(listen_pid) != getpid()) {
-        return;
-    }
-    LOG("systemd sockets detected, config listens ignored\n");
-
-    opt.systemd_socket = true;
-    std::vector<std::string> listen_names = SplitFdNames(listen_fds);
-    free_dest_list(&opt.http_list);
-    free_dest_list(&opt.ssl_list);
-    free_dest_list(&opt.quic_list);
-    struct dest_list** http_tail = &opt.http_list;
-    struct dest_list** ssl_tail = &opt.ssl_list;
-#ifdef HAVE_QUIC
-    struct dest_list** quic_tail = &opt.quic_list;
-#endif
-
-    for(size_t i = 0; i < listen_names.size(); ++i) {
-        int fd = 3 + i;
-        const std::string& fd_name = (i < listen_names.size()) ? listen_names[i] : std::string();
-        int type = 0;
-        socklen_t type_len = sizeof(type);
-        if(getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &type_len) < 0) {
-            LOGE("systemd socket getsockopt failed for %d: %s\n", fd, strerror(errno));
-            continue;
-        }
-        sockaddr_storage addr;
-        socklen_t addr_len = sizeof(addr);
-        if(getsockname(fd, (sockaddr*)&addr, &addr_len) < 0) {
-            LOGE("systemd socket getsockname failed for %d: %s\n", fd, strerror(errno));
-            continue;
-        }
-        Destination dest{};
-        storage2Dest(&addr, &dest);
-        uint16_t port = dest.port;
-        if(port == 0) {
-            LOGE("systemd socket %d has no port\n", fd);
-            continue;
-        }
-
-        if(type == SOCK_STREAM && fd_name == "http") {
-            servers.emplace_back(std::make_shared<Http_server<Guest>>(fd, nullptr));
-            append_dest_list(&http_tail, &dest);
-            LOG("listen on systemd fd %d for http\n", fd);
-            continue;
-        }
-
-        if(type == SOCK_STREAM && fd_name == "ssl") {
-            if(opt.sni_mode) {
-                servers.emplace_back(std::make_shared<Http_server<Guest_sni>>(fd, nullptr));
-            } else {
-                SSL_CTX* ssl_ctx = initssl(false, nullptr);
-                servers.emplace_back(std::make_shared<Http_server<Guest>>(fd, ssl_ctx));
-            }
-            append_dest_list(&ssl_tail, &dest);
-            LOG("listen on systemd fd %d for ssl\n", fd);
-            continue;
-        }
-
-#ifdef HAVE_QUIC
-        if(type == SOCK_DGRAM && fd_name == "quic") {
-            SetUdpOptions(fd, &addr);
-            SetRecvPKInfo(fd, &addr);
-            if(opt.sni_mode) {
-                servers.emplace_back(std::make_shared<Quic_sniServer>(fd, port));
-            } else {
-                SSL_CTX* quic_ctx = initssl(true, nullptr);
-                servers.emplace_back(std::make_shared<Quic_server>(fd, port, quic_ctx));
-            }
-            append_dest_list(&quic_tail, &dest);
-            LOG("listen on systemd fd %d for quic\n", fd);
-            continue;
-        }
-#endif
-    }
-}
-
 int main(int argc, char **argv) {
     parseConfig(argc, argv);
     Sign sign;
@@ -247,18 +115,14 @@ int main(int argc, char **argv) {
             new Rguest2(opt.Server, opt.rproxy_name);
         }
     }
-#ifdef HAVE_QUIC
-    generate_reset_secret();
-#endif
-    AddSystemdListeners(servers);
-    if(opt.systemd_socket)
-        goto admin_listen;
 
     if(opt.http_list) {
         for(struct dest_list* node = opt.http_list; node; node = node->next) {
             const struct Destination& dest = node->dest;
             int fd[2] = {-1, -1};
-            if(strcmp(dest.hostname, "localhost") == 0) {
+            if(dest.systemd_fd >= 0) {
+                fd[0] = dest.systemd_fd;
+            } else if(strcmp(dest.hostname, "localhost") == 0) {
                 if(ListenLocalhostTcp(dest.port, fd, nullptr) < 0) {
                     return -1;
                 }
@@ -272,7 +136,11 @@ int main(int argc, char **argv) {
             if(fd[1] >= 0) {
                 servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[1], nullptr));
             }
-            LOG("listen on %s:%d for http\n", dest.hostname, (int)dest.port);
+            if(dest.systemd_fd >= 0) {
+                LOG("listen on systemd fd %d for http\n", fd[0]);
+            } else {
+                LOG("listen on %s:%d for http\n", dest.hostname, (int)dest.port);
+            }
         }
     }
 #if __linux__
@@ -344,7 +212,9 @@ int main(int argc, char **argv) {
         for(struct dest_list* node = opt.ssl_list; node; node = node->next) {
             const struct Destination& dest = node->dest;
             int fd[2] = {-1, -1};
-            if(strcmp(dest.hostname, "localhost") == 0) {
+            if(dest.systemd_fd >= 0) {
+                fd[0] = dest.systemd_fd;
+            } else if(strcmp(dest.hostname, "localhost") == 0) {
                 if(ListenLocalhostTcp(dest.port, fd, nullptr) < 0) {
                     return -1;
                 }
@@ -359,23 +229,34 @@ int main(int argc, char **argv) {
                 if(fd[1] >= 0) {
                     servers.emplace_back(std::make_shared<Http_server<Guest_sni>>(fd[1], nullptr));
                 }
-                LOG("listen on %s:%d for ssl sni\n", dest.hostname, (int)dest.port);
+                if(dest.systemd_fd >= 0) {
+                    LOG("listen on systemd fd %d for ssl\n", fd[0]);
+                } else {
+                    LOG("listen on %s:%d for ssl sni\n", dest.hostname, (int)dest.port);
+                }
             } else {
                 SSL_CTX * ctx = initssl(false, nullptr);
                 servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[0], ctx));
                 if(fd[1] >= 0) {
                     servers.emplace_back(std::make_shared<Http_server<Guest>>(fd[1], ctx));
                 }
-                LOG("listen on %s:%d for ssl\n", dest.hostname, (int)dest.port);
+                if(dest.systemd_fd >= 0) {
+                    LOG("listen on systemd fd %d for ssl\n", fd[0]);
+                } else {
+                    LOG("listen on %s:%d for ssl\n", dest.hostname, (int)dest.port);
+                }
             }
         }
     }
 #ifdef HAVE_QUIC
+    generate_reset_secret();
     if(opt.quic_list) {
         for(struct dest_list* node = opt.quic_list; node; node = node->next) {
             const struct Destination& dest = node->dest;
             int fd[2] = {-1, -1};
-            if(strcmp(dest.hostname, "localhost") == 0) {
+            if(dest.systemd_fd >= 0) {
+                fd[0] = dest.systemd_fd;
+            } else if(strcmp(dest.hostname, "localhost") == 0) {
                 if(ListenLocalhostUdp(dest.port, fd, nullptr) < 0) {
                     return -1;
                 }
@@ -385,19 +266,37 @@ int main(int argc, char **argv) {
                     return -1;
                 }
             }
+            if(dest.systemd_fd >= 0) {
+                sockaddr_storage addr;
+                socklen_t addr_len = sizeof(addr);
+                if(getsockname(fd[0], (sockaddr*)&addr, &addr_len) < 0) {
+                    LOGE("systemd socket getsockname failed for %d: %s\n", fd[0], strerror(errno));
+                    continue;
+                }
+                SetUdpOptions(fd[0], &addr);
+                SetRecvPKInfo(fd[0], &addr);
+            }
             if(opt.sni_mode) {
                 servers.emplace_back(std::make_shared<Quic_sniServer>(fd[0], dest.port));
                 if(fd[1] >= 0) {
                     servers.emplace_back(std::make_shared<Quic_sniServer>(fd[1], dest.port));
                 }
-                LOG("listen on %s:%d for quic sni\n", dest.hostname, (int)dest.port);
+                if(dest.systemd_fd >= 0) {
+                    LOG("listen on systemd fd %d for quic\n", fd[0]);
+                } else {
+                    LOG("listen on %s:%d for quic sni\n", dest.hostname, (int)dest.port);
+                }
             }else {
                 SSL_CTX * ctx = initssl(true, nullptr);
                 servers.emplace_back(std::make_shared<Quic_server>(fd[0], dest.port, ctx));
                 if(fd[1] >= 0) {
                     servers.emplace_back(std::make_shared<Quic_server>(fd[1], dest.port, ctx));
                 }
-                LOG("listen on %s:%d for quic\n", dest.hostname, (int)dest.port);
+                if(dest.systemd_fd >= 0) {
+                    LOG("listen on systemd fd %d for quic\n", fd[0]);
+                } else {
+                    LOG("listen on %s:%d for quic\n", dest.hostname, (int)dest.port);
+                }
             }
         }
     }
@@ -418,7 +317,6 @@ int main(int argc, char **argv) {
         LOG("listen on %d for vpn\n", opt.tun_fd);
     }
 #endif // __linux__
-admin_listen:
     if(opt.admin.hostname[0]){
         int fd[2] = {-1, -1};
         if(opt.admin.port == 0){
