@@ -10,11 +10,11 @@ env:
   project: sproxy
 
 jobs:
-  build-linux:
+  build-ubuntu:
     strategy:
       matrix:
         # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
-        build_type: [Release, Debug]
+        build_type: [RelWithDebInfo, Debug]
         os: [ubuntu-24.04, ubuntu-22.04]
         env: ["CC=gcc CXX=g++", "CC=clang CXX=clang++"]
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
@@ -42,7 +42,9 @@ jobs:
         ./config no-ui-console no-tests no-md4 no-rc2 no-rc4  no-shared  no-ssl2 no-ssl3 no-comp no-hw no-engine --prefix=$HOME/openssl
         make install_dev -j`nproc`
     - name: install pkg
-      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libz-dev libjson-c-dev libelf-dev libreadline-dev liburing-dev
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends libz-dev libjson-c-dev libelf-dev libreadline-dev liburing-dev libjemalloc-dev
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
@@ -51,10 +53,10 @@ jobs:
     - name: build
       # Build your program with the given configuration
       run: cmake --build ${{github.workspace}}/build --config ${{matrix.build_type}} --parallel `nproc`
-    - if: matrix.build_type == 'Release'
+    - if: matrix.build_type != 'Debug'
       name: pack
       run: cpack -G DEB -B ${{github.workspace}}/build  --config ${{github.workspace}}/build/CPackConfig.cmake
-    - if: matrix.build_type == 'Release'
+    - if: matrix.build_type != 'Debug'
       name: Upload package
       uses: actions/upload-artifact@v4
       with:
@@ -71,11 +73,57 @@ jobs:
         name: test-log-${{matrix.os}}-${{env.CC}}
         path: test/*.log
         if-no-files-found: ignore
+  build-debian:
+    name: build-debian
+    strategy:
+      matrix:
+        include:
+        - image: debian:12
+          name: debian-12
+        - image: debian:13
+          name: debian-13
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+    steps:
+    - name: Install Build Dependencies
+      run: |
+        apt-get update
+        apt-get install -y --no-install-recommends git curl build-essential cmake pkg-config libz-dev libjson-c-dev libelf-dev libreadline-dev liburing-dev libjemalloc-dev ca-certificates
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Fix Git Safe Directory
+      run: git config --global --add safe.directory '*'
+    - name: Cache OpenSSL
+      id: cache-openssl
+      uses: actions/cache@v4
+      with:
+        path: ~/openssl
+        key: openssl-${{ matrix.image }}-${{ hashFiles('.github/workflows/build.yml') }}
+    - name: 'Build and install OpenSSL (QuicTLS)'
+      if: steps.cache-openssl.outputs.cache-hit != 'true'
+      run: |
+        git clone --depth=1 -b OpenSSL_1_1_1w+quic https://github.com/quictls/openssl.git
+        cd openssl
+        ./config no-ui-console no-tests no-md4 no-rc2 no-rc4  no-shared  no-ssl2 no-ssl3 no-comp no-hw no-engine --prefix=$HOME/openssl
+        make install_dev -j`nproc`
+    - name: Configure CMake
+      run: cmake -B build -DOPENSSL_ROOT_DIR=$HOME/openssl -DCMAKE_BUILD_TYPE=RelWithDebInfo
+    - name: Build
+      run: cmake --build build --config RelWithDebInfo --parallel `nproc`
+    - name: Pack
+      run: cpack -G DEB -B build --config build/CPackConfig.cmake
+    - name: Upload package
+      uses: actions/upload-artifact@v4
+      with:
+        name: sproxy-${{ matrix.name }}-deb
+        path: build/*.deb
   build-macos:
     strategy:
       matrix:
         # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
-        build_type: [Release, Debug]
+        build_type: [RelWithDebInfo, Debug]
         os: [macos-15, macos-14]
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
     # You can convert this to a matrix build if you need cross-platform coverage.
@@ -109,10 +157,10 @@ jobs:
     - name: build
       # Build your program with the given configuration
       run: cmake --build ${{github.workspace}}/build --config ${{matrix.build_type}}  --parallel `nproc`
-    - if: matrix.build_type == 'Release'
+    - if: matrix.build_type != 'Debug'
       name: pack
       run: cpack -G TGZ -B ${{github.workspace}}/build  --config ${{github.workspace}}/build/CPackConfig.cmake
-    - if: matrix.build_type == 'Release'
+    - if: matrix.build_type != 'Debug'
       name: Upload package
       uses: actions/upload-artifact@v4
       with:
