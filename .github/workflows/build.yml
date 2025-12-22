@@ -117,7 +117,7 @@ jobs:
     - name: Upload package
       uses: actions/upload-artifact@v4
       with:
-        name: sproxy-${{ matrix.name }}-deb
+        name: ${{ matrix.name }}-deb
         path: build/*.deb
   build-macos:
     strategy:

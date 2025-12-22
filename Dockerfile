@@ -5,7 +5,9 @@ LABEL maintainer="zhouwei400@gmail.com"
 
 COPY . /root/sproxy
 RUN apt-get  update && \
-    apt-get install -y --no-install-recommends  gcc g++ cmake binutils-gold make pkg-config libssl-dev libz-dev git libelf-dev libjson-c-dev libreadline-dev liburing-dev && \
+    apt-get install -y --no-install-recommends  \
+    gcc g++ cmake binutils-gold make pkg-config git ca-certificates \
+    libssl-dev libz-dev libelf-dev libjson-c-dev libreadline-dev liburing-dev libjemalloc-dev libxml2-dev cargo && \
     mkdir /root/sproxy/build && \
     cd /root/sproxy/build && \
     cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo && \
@@ -16,7 +18,7 @@ RUN apt-get  update && \
 FROM debian:13 as worker
 COPY --from=0 /root/sproxy/build/sproxy-*-Linux.deb .
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends openssl libjson-c5 zlib1g libelf1 libreadline8 liburing2 iproute2 && \
+    apt-get install -y --no-install-recommends openssl iproute2 ca-certificates libjson-c5 zlib1g libelf1 libreadline8 liburing2 libjemalloc2 libxml2 && \
     dpkg -i sproxy-*-Linux.deb && \
     apt-get clean
 
