@@ -44,7 +44,7 @@ jobs:
     - name: install pkg
       run: |
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends libz-dev libjson-c-dev libelf-dev libreadline-dev liburing-dev libjemalloc-dev
+        sudo apt-get install -y --no-install-recommends libz-dev libjson-c-dev libelf-dev libreadline-dev liburing-dev libjemalloc-dev libxml2-dev
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
@@ -80,8 +80,10 @@ jobs:
         include:
         - image: debian:12
           name: debian-12
+          cargo-name: cargo-web
         - image: debian:13
           name: debian-13
+          cargo-name: cargo
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.image }}
@@ -89,7 +91,8 @@ jobs:
     - name: Install Build Dependencies
       run: |
         apt-get update
-        apt-get install -y --no-install-recommends git curl build-essential cmake pkg-config libz-dev libjson-c-dev libelf-dev libreadline-dev liburing-dev libjemalloc-dev ca-certificates
+        apt-get install -y --no-install-recommends git curl build-essential cmake pkg-config ${{matrix.cargo-name}} ca-certificates \
+        libz-dev libjson-c-dev libelf-dev libreadline-dev liburing-dev libjemalloc-dev libxml2-dev
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
@@ -148,7 +151,7 @@ jobs:
         ./config no-ui-console no-tests no-md4 no-rc2 no-rc4  no-shared  no-ssl2 no-ssl3 no-comp no-hw no-engine --prefix=$HOME/openssl
         make install_dev -j`nproc`
     - name: install pkg
-      run: brew install json-c coreutils
+      run: brew install json-c coreutils libxml2
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
