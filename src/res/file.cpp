@@ -244,6 +244,7 @@ void File::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
         strftime(buff, sizeof(buff), "%a, %d %b %Y %H:%M:%S GMT", gmtime((const time_t *)&st.st_mtime));
         header->set("Last-Modified", buff);
         header->set("ETag", etag);
+        header->set("Cache-Control", "no-cache");
         if(suffix && mimetype.count(suffix)){
             header->set("Content-Type", mimetype.at(suffix));
         }
@@ -256,6 +257,7 @@ void File::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
         header->set("Content-Range", buff);
         header->set("Content-Length", status.rg.end - status.rg.begin +1);
         header->set("ETag", etag);
+        header->set("Cache-Control", "no-cache");
         if(suffix && mimetype.count(suffix)){
             header->set("Content-Type", mimetype.at(suffix));
         }
@@ -341,6 +343,10 @@ void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
         return (new Status())->request(req, rw);
     }else if (filename == "dns-query"){
         return Doh::GetInstance()->request(req, rw);
+    }else if(filename == "rproxy/sw") {
+        filename = "webui/sw.html";
+    }else if(filename == "rproxy/sw.js") {
+        filename = "webui/sw.js";
     }else if(filename == "rproxy" || startwith(filename.c_str(), "rproxy/")) {
         return distribute_rproxy(req, rw);
     }else if(filename == "test"){

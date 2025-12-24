@@ -1,68 +1,14 @@
 <!DOCTYPE html>
 <html>
     <head>
-        <style>
-*{
-    margin:0;
-    padding:0;
-}
-body{
-    background-color: #FFBFFF;
-    background-attachment:fixed;
-    background-repeat:no-repeat;
-    text-align:center;
-}
-
-.strategy{
-    color:#00F;
-    font-family:"Trebuchet MS", Arial, Helvetica, sans-serif;
-}
-.delate{
-    color:#F39;
-}
-button{
-    background-color:#FFF;
-    color:#C39;
-}
-#logo{
-    background-repeat:no-repeat;
-    margin:5px auto;
-    width:700px;
-    height:100px;
-    background-image:url(images3.jpg);
-}
-#content{
-    display:inline-block;
-    width:auto;
-    height:auto;
-    padding:5px;
-    background-color:#FCF;
-    margin:20px auto;
-}
-
-#search{
-    margin:10px auto;
-    text-align:right;
-    min-width:600px
-}
-
-#tdw{
-    box-sizing: border-box;
-    width: 100%;
-}
-.left{
-    float: left;
-}
-.right{
-    float: right;
-}
-        </style>
         <meta charset="UTF-8" />
+        <title>Proxy Manager</title>
+        <link rel="stylesheet" href="style.css">
     </head>
     <body>
         <div id="logo"> </div>
         <div id="content">
-            <lable class='left'>Proxy: </lable>
+            <label class='left'>Proxy: </label>
             <p id='current_proxy' class='left'>
             <form action='/cgi/libproxy.do' method='post' class='right'>
                 <input type="text" name="proxy">
@@ -71,7 +17,7 @@ button{
 
             <br>
             <div id='search'>
-                <lable for="KeyWorld">keyWorld: </lable>
+                <label for="KeyWorld">keyWorld: </label>
                 <input type="text" id="keyWorld">
                 <input type="button" value="搜索" id="btn1">
             </div>
@@ -124,15 +70,8 @@ button{
 
                             insertTd = insertTr.insertCell(1);
                             insertTd.style.textAlign="center";
-                            insertTd.className='strategy';
-                            if(data[i][key] == 'block'){
-                                insertTd.style.backgroundColor = "red"
-                            }
-                            if(data[i][key] == 'proxy'){
-                                insertTd.style.backgroundColor = "green"
-                            }
-
-                            insertTd.innerHTML = data[i][key];
+                            var strategy = data[i][key];
+                            insertTd.innerHTML = "<span class='strategy-tag strategy-" + strategy + "'>" + strategy + "</span>";
 
                             insertTd = insertTr.insertCell(2);
                             insertTd.style.textAlign="center";

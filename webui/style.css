@@ -1,0 +1,305 @@
+/* Global Styles */
+/* @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700&display=swap'); - Removed for China accessibility */
+
+:root {
+  --primary-pink: #FFBFFF;
+  --soft-pink: #FFD1DC;
+  --deep-pink: #FF69B4;
+  --text-purple: #8A2BE2;
+  --text-dark: #4A4A4A;
+  --white-translucent: rgba(255, 255, 255, 0.9);
+  --glass-effect: rgba(255, 255, 255, 0.7);
+  --shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Microsoft YaHei", "Heiti SC", "Segoe UI", "Comic Sans MS", sans-serif;
+  background-image: url('529192cd7fa4c.jpg');
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  color: var(--text-dark);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start; /* Changed from center to push content up */
+  padding-top: 40px; /* Add some breathing room at the top */
+}
+
+/* Semi-transparent overlay to ensure text readability against anime background */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.3); /* Light overlay */
+  z-index: -1;
+}
+
+/* Links */
+a {
+  color: var(--deep-pink);
+  text-decoration: none;
+  transition: all 0.3s ease;
+}
+
+a:hover {
+  color: var(--text-purple);
+  text-shadow: 0 0 5px var(--soft-pink);
+}
+
+/* Headers */
+h1, h2, h3 {
+  color: var(--deep-pink);
+  margin-bottom: 1rem;
+  text-shadow: 1px 1px 2px white;
+}
+
+/* Common Container / Card Style */
+.container, #content, #login-form, #div2 {
+  background: var(--glass-effect);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: var(--shadow);
+  padding: 30px;
+  margin: 20px auto;
+  max-width: 900px;
+  width: 90%;
+  transition: transform 0.3s ease;
+  overflow: auto; /* Contains floats */
+}
+
+.container:hover, #content:hover {
+  transform: translateY(-5px);
+}
+
+/* Logo Area */
+#logo {
+  margin: 20px auto;
+  width: 700px;
+  max-width: 100%;
+  height: 120px; /* Adjusted height */
+  background-image: url('images3.jpg');
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  filter: drop-shadow(0 5px 5px rgba(0,0,0,0.1));
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+#logo:hover {
+  transform: scale(1.02);
+}
+
+/* Buttons */
+button, input[type="submit"], input[type="button"] {
+  background: linear-gradient(135deg, var(--soft-pink) 0%, var(--deep-pink) 100%);
+  border: none;
+  border-radius: 25px;
+  color: white;
+  padding: 10px 25px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(255, 105, 180, 0.4);
+  transition: all 0.3s ease;
+  outline: none;
+}
+
+button:hover, input[type="submit"]:hover, input[type="button"]:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 20px rgba(255, 105, 180, 0.6);
+  background: linear-gradient(135deg, var(--deep-pink) 0%, var(--soft-pink) 100%);
+}
+
+button:active, input[type="submit"]:active {
+  transform: scale(0.95);
+}
+
+/* Inputs */
+input[type="text"], input[type="password"], select {
+  background: rgba(255, 255, 255, 0.8);
+  border: 2px solid var(--soft-pink);
+  border-radius: 15px;
+  padding: 8px 15px;
+  margin: 5px;
+  color: var(--text-purple);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+input[type="text"]:focus, input[type="password"]:focus, select:focus {
+  border-color: var(--deep-pink);
+  box-shadow: 0 0 8px var(--soft-pink);
+}
+
+/* Tables */
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 20px;
+  background: white;
+  border-radius: 15px;
+  overflow: hidden;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+}
+
+th {
+  background-color: var(--soft-pink);
+  color: white;
+  padding: 12px;
+  font-weight: bold;
+}
+
+td {
+  padding: 10px;
+  border-bottom: 1px solid #f0f0f0;
+  text-align: center;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+tr:hover td {
+  background-color: #FFF0F5; /* Lavender Blush */
+}
+
+/* Specific Element Tweaks */
+/* Strategy Tags */
+.strategy {
+  font-weight: bold;
+}
+
+.strategy-tag {
+  padding: 4px 12px;
+  border-radius: 12px;
+  color: white;
+  font-size: 0.85rem;
+  display: inline-block;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  text-transform: capitalize;
+}
+
+.strategy-block { background-color: #ff6b6b; }  /* Soft Red */
+.strategy-proxy { background-color: #51cf66; }  /* Soft Green */
+.strategy-direct { background-color: #339af0; } /* Soft Blue */
+.strategy-local { background-color: #cc5de8; }  /* Soft Purple */
+
+.delate input[type="submit"] {
+  background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%);
+  padding: 5px 15px;
+  font-size: 0.9rem;
+}
+
+#search {
+  margin: 20px 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Code blocks in sw.html */
+code {
+  background: #FFF;
+  color: var(--deep-pink);
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--soft-pink);
+  font-family: 'Consolas', monospace;
+}
+
+/* Login Page Specifics */
+#login-form {
+  max-width: 400px;
+  background-image: url('54301.jpg'); /* Keeping original but styled */
+  background-size: cover;
+  background-position: center;
+  position: relative;
+  margin-top: 0; /* Removed large top margin */
+  /* Add overlay to make text readable on top of image */
+}
+#login-form::after {
+  content: '';
+  position: absolute;
+  top:0; left:0; right:0; bottom:0;
+  background: rgba(255, 255, 255, 0.85);
+  z-index: 1;
+  border-radius: 20px;
+}
+#login-form > * {
+  position: relative;
+  z-index: 2;
+}
+
+#div2 {
+  width: fit-content;
+  min-width: 320px;
+  text-align: center;
+  margin-top: 20px; /* Reduced from 100px */
+  margin-bottom: 20px;
+  padding: 20px 30px;
+}
+
+#div2 h3 {
+  color: var(--deep-pink);
+  margin-bottom: 15px;
+  font-size: 1.2rem;
+  letter-spacing: 1px;
+}
+
+#div2 img {
+  border-radius: 15px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+  transition: transform 0.3s ease;
+}
+
+#div2 img:hover {
+  transform: scale(1.03) rotate(1deg);
+}
+
+/* Animations */
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+#logo {
+  animation: float 6s ease-in-out infinite;
+}
+
+/* Utilities */
+.left {
+  float: left;
+}
+.right {
+  float: right;
+}
+
+/* Clearfix for floated elements */
+.clearfix::after {
+  content: "";
+  clear: both;
+  display: table;
+}
+

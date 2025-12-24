@@ -205,6 +205,97 @@ static std::vector<std::string> split(const std::string& s, char delimiter) {
     return tokens;
 }
 
+static bool extract_rproxy_target_url(const std::string& path, std::string& out_url) {
+    if(!startwith(path.c_str(), "/rproxy/")) {
+        return false;
+    }
+    size_t name_start = 8;
+    size_t name_end = path.find('/', name_start);
+    if(name_end == std::string::npos) {
+        return false;
+    }
+    std::string target = path.substr(name_end + 1);
+    if(target.empty()) {
+        return false;
+    }
+    Destination dest{};
+    char parsed_path[URLLIMIT] = {0};
+    if(spliturl(target.c_str(), &dest, parsed_path) != 0) {
+        return false;
+    }
+    std::string url = dumpDest(&dest);
+    if(parsed_path[0]) {
+        url += parsed_path;
+    } else {
+        url += "/";
+    }
+    out_url = url;
+    return true;
+}
+
+static bool origin_from_url(const std::string& url, std::string& origin_out) {
+    Destination dest{};
+    if(spliturl(url.c_str(), &dest, nullptr) != 0) {
+        return false;
+    }
+    origin_out = dumpDest(&dest);
+    return true;
+}
+
+void rewrite_rproxy_req(std::shared_ptr<HttpReqHeader> req) {
+    if(!req) {
+        return;
+    }
+    std::string rewritten_referer;
+    const char* referer = req->get("Referer");
+    if(referer) {
+        std::string ref = referer;
+        if(startwith(ref.c_str(), "/rproxy/")) {
+            if(extract_rproxy_target_url(ref, rewritten_referer)) {
+                req->set("Referer", rewritten_referer);
+            }
+        } else {
+            Destination tmp{};
+            char ref_path[URLLIMIT] = {0};
+            if(spliturl(ref.c_str(), &tmp, ref_path) == 0) {
+                if(extract_rproxy_target_url(ref_path, rewritten_referer)) {
+                    req->set("Referer", rewritten_referer);
+                }
+            }
+        }
+    }
+    if(req->has("Origin")) {
+        std::string origin;
+        const char* origin_header = req->get("Origin");
+        if(origin_header && startwith(origin_header, "/rproxy/")) {
+            std::string rewritten;
+            if(extract_rproxy_target_url(origin_header, rewritten) && origin_from_url(rewritten, origin)) {
+                req->set("Origin", origin);
+            }
+        } else if(!rewritten_referer.empty() && origin_from_url(rewritten_referer, origin)) {
+            req->set("Origin", origin);
+        }
+    }
+    if(req->has("Sec-Fetch-Site")) {
+        req->set("Sec-Fetch-Site", "cross-site");
+    }
+    const char* accept = req->get("Accept");
+    bool is_document = req->ismethod("GET") && accept && strstr(accept, "text/html");
+    if(req->has("Sec-Fetch-Mode")) {
+        req->set("Sec-Fetch-Mode", is_document ? "navigate" : "cors");
+    }
+    if(req->has("Sec-Fetch-Dest")) {
+        req->set("Sec-Fetch-Dest", is_document ? "document" : "empty");
+    }
+    if(req->has("Sec-Fetch-User")) {
+        if(is_document) {
+            req->set("Sec-Fetch-User", "?1");
+        } else {
+            req->del("Sec-Fetch-User");
+        }
+    }
+}
+
 void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     uint64_t id = req->request_id;
     if(!checkauth(rw->getSrc().hostname, req->get("Proxy-Authorization"), req->get("Authorization"))){
@@ -262,6 +353,7 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
         req->postparse();
         LOGD(DFILE, "rproxy: %s -> %s\n", path.c_str(), req->geturl().c_str());
     }
+    rewrite_rproxy_req(req);
     const auto& src = rw->getSrc();
     req->set("X-Forwarded-For", dumpAuthority(&src));
     req->set("Rproxy-Name", filename);
@@ -276,10 +368,35 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
     rproxys[filename]->request(req, rw);
 }
 
-void rewrite_rproxy_location(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<HttpResHeader> res) {
+static void rewrite_rproxy_cookie(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<HttpResHeader> res) {
+    if(!req || !res || res->cookies.empty()) {
+        return;
+    }
+    const char* rproxy = req->get("Rproxy-Name");
+    if(rproxy == nullptr) {
+        return;
+    }
+    std::string prefix = std::string("/rproxy/") + rproxy + "/" + dumpDest(&req->Dest);
+
+    std::set<std::string> new_cookies;
+    for(const auto& cookie_str : res->cookies) {
+        Cookie cookie(cookie_str);
+        if (cookie.path.empty() || cookie.path[0] != '/') {
+            cookie.path = "/" + cookie.path;
+        }
+        cookie.path = prefix + cookie.path;
+        cookie.domain.clear();
+
+        new_cookies.insert(cookie.toString());
+    }
+    res->cookies = new_cookies;
+}
+
+void rewrite_rproxy_res(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<HttpResHeader> res) {
     if(!req || !res) {
         return;
     }
+    rewrite_rproxy_cookie(req, res);
     if(!res->has("Location")) {
         return;
     }

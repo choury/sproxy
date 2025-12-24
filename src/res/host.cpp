@@ -222,7 +222,7 @@ void Host::ResProc(uint64_t, std::shared_ptr<HttpResHeader> header) {
     }else if(strcmp(status.req->Dest.protocol, "websocket") == 0){
         header->markWebsocket(status.req->get("Sec-WebSocket-Key"));
     }
-    rewrite_rproxy_location(status.req, header);
+    rewrite_rproxy_res(status.req, header);
     status.rw->SendHeader(header);
     status.flags |= HTTP_RESPOENSED;
 }
