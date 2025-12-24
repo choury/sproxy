@@ -100,7 +100,7 @@ void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
     }else if(!header->no_body() && !header->has("Content-Length")) {
         header->set("Transfer-Encoding", "chunked");
     }
-    rewrite_rproxy_location(status.req, header);
+    rewrite_rproxy_res(status.req, header);
     status.rw->SendHeader(header);
     status.flags |= HTTP_RESPOENSED;
 }

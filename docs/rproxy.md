@@ -23,6 +23,17 @@
    http://<本地sproxy>/rproxy/<name>/https://example.com/
    ```
 
+### 浏览器环境准备 (重要)
+支持使用 Service Worker 进行内容改写，在使用浏览器访问代理页面前，可以按需激活改写逻辑：
+
+1. 访问本地 `sproxy` 管理页面：`http://<本地地址>/rproxy/sw`。
+2. 点击 **Update** 或确保状态显示为 **active**。
+3. 此时，浏览器已准备好处理 `/rproxy/` 下的所有内容改写。
+
+> **提示**：Service Worker 一旦注册成功，除非手动注销，否则将持久生效。
+
+
+
 ### 动态监听方式
 
 运行中的 `sproxy` 可以通过scli的 `listen add [tcp/udp:][ip:]port <rproxy>@[tcp/udp:]host:port` 动态开放新的监听端口，并把进入该端口的流量通过 HTTP `CONNECT` 转发到指定的 `rproxy` 会话。
@@ -47,16 +58,37 @@
 3. 远端节点完成实际的网络请求，并将响应回传给本地 `sproxy`，最终返回给客户端。
 4. 特别的，`local` 作为内部实现的一个名称，直接由本机处理，比如 `/rproxy/local/127.0.0.1:8080`
 
-## 30x 跳转处理
+## 30x 跳转与 Cookie 处理
 
-当后端返回 30x 响应时，如果 `Location` 为绝对地址（如 `https://example.com/foo` 或 `/foo`），会导致浏览器跳出 `/rproxy/<name>/` 前缀。\
-自 `rproxy` 重写机制引入后：
+为了确保浏览器在访问代理页面时能正确维持会话和路径上下文，`sproxy` 在服务端对响应头进行了透明改写。
 
-- 仅在rproxy请求中（通过`Rproxy-Name`头判断）生效。
-- 将 `Location` 重写为 `/rproxy/<name>/<原始目标>`，例如：
-  - `https://example.com/foo` → `/rproxy/<name>/https://example.com/foo`
-  - `/foo` → `/rproxy/<name>/<请求地址>/foo`
-- 这样保证客户端始终留在 rproxy 路径下，避免意外跳出。
+### Location 重写
+当后端返回 30x 响应时，`Location` 头会被自动改写为 `/rproxy/<name>/<原始目标>`。
+- `https://example.com/foo` → `/rproxy/<name>/https://example.com/foo`
+- `/foo` → `/rproxy/<name>/<请求地址>/foo`
+这保证了客户端始终停留在 rproxy 路径下，避免意外跳出代理环境。
+
+### Cookie 重写
+为了解决 Cookie 路径不匹配导致的 Session 丢失问题，`sproxy` 会拦截并修改 `Set-Cookie` 响应头：
+- **Path 改写**：将 `Path=/foo` 改写为 `Path=/rproxy/<name>/<target_base>/foo`。
+- **Domain 清除**：移除 `Domain` 属性，强制 Cookie 绑定到当前代理域名，防止跨域设置失败。
+
+## 前端 URL 改写与防逃逸
+
+`sproxy` 采用了 Service Worker (`sw.js`) 和 页面注入脚本 (`inject.js`) 相结合的方式，在客户端实时修正页面中的 URL。
+
+- **Service Worker (`webui/sw.js`)**：
+  - 拦截所有 `/rproxy/` 下的请求。
+  - 实时解析 HTML/CSS，将 `href`, `src`, `url()` 等资源路径改写为代理路径。
+  - 注入 `rproxy_core.js` 和 `inject.js` 到 HTML 头部。
+
+- **页面注入脚本 (`webui/inject.js`)**：
+  - Hook `window.fetch`, `XMLHttpRequest`, `window.open` 等 API，确保动态发起的请求也被代理。
+  - 拦截 `history.pushState` / `replaceState`，防止 SPA 应用修改地址栏导致路径逃逸。
+  - 监听全局点击事件，作为最后的防线修正 `<a>` 标签链接。
+
+- **核心库 (`webui/rproxy_core.js`)**：
+  - 包含通用的 URL 上下文解析和改写逻辑，供 `sw.js` 和 `inject.js` 复用。
 
 ## 调试与排查
 

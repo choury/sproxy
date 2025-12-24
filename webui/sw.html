@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>rproxy service worker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/webui/style.css">
+</head>
+<body>
+  <div id="logo"></div>
+  <div id="content">
+    <h1>rproxy service worker</h1>
+    <p id="status">Loading...</p>
+    <div class="row">Scope: <code id="scope">/rproxy/</code></div>
+    <div class="row">
+      <button id="btn-update">Update</button>
+      <button id="btn-unreg">Unregister</button>
+    </div>
+    <div id="log"></div>
+  </div>
+  <script>
+    (async () => {
+      const status = document.getElementById('status');
+      const scopeEl = document.getElementById('scope');
+      const log = document.getElementById('log');
+      const btnUpdate = document.getElementById('btn-update');
+      const btnUnreg = document.getElementById('btn-unreg');
+      const scope = '/rproxy/';
+      scopeEl.textContent = scope;
+      function setLog(text) {
+        log.textContent = text || '';
+      }
+      function describeReg(reg) {
+        if (!reg) return 'not registered';
+        if (reg.active) return 'active';
+        if (reg.waiting) return 'waiting';
+        if (reg.installing) return 'installing';
+        return 'registered';
+      }
+      if (!('serviceWorker' in navigator)) {
+        status.textContent = 'Service worker not supported.';
+        return;
+      }
+      try {
+        const reg = await navigator.serviceWorker.register('/rproxy/sw.js', { scope });
+        status.textContent = 'Service worker ' + describeReg(reg) + '.';
+        setLog('Scope: ' + reg.scope);
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          status.textContent = 'Service worker active.';
+        });
+        btnUpdate.addEventListener('click', async () => {
+          status.textContent = 'Checking update...';
+          await reg.update();
+          status.textContent = 'Service worker ' + describeReg(reg) + '.';
+        });
+        btnUnreg.addEventListener('click', async () => {
+          const ok = await reg.unregister();
+          status.textContent = ok ? 'Service worker unregistered.' : 'Unregister failed.';
+          setLog(ok ? '' : 'Unregister failed.');
+        });
+      } catch (err) {
+        status.textContent = 'Service worker registration failed: ' + err;
+      }
+    })();
+  </script>
+</body>
+</html>

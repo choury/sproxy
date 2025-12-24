@@ -357,6 +357,55 @@ HttpResHeader::HttpResHeader(const char *status, size_t len) {
     snprintf(this->status, sizeof(this->status), "%.*s", (int)len, status);
 }
 
+Cookie::Cookie(const std::string& set_cookie) {
+    std::stringstream ss(set_cookie);
+    std::string segment;
+    bool first = true;
+    while(std::getline(ss, segment, ';')) {
+        size_t start = segment.find_first_not_of(" ");
+        if (start == std::string::npos) continue;
+        segment = segment.substr(start);
+
+        size_t eq_pos = segment.find('=');
+        if (first) {
+            if (eq_pos != std::string::npos) {
+                name = segment.substr(0, eq_pos);
+                value = segment.substr(eq_pos + 1);
+            } else {
+                name = segment;
+            }
+            first = false;
+        } else {
+            std::string key, val;
+            if (eq_pos != std::string::npos) {
+                key = toLower(segment.substr(0, eq_pos));
+                val = segment.substr(eq_pos + 1);
+            } else {
+                key = toLower(segment);
+            }
+
+            if (key == "path") path = val;
+            else if (key == "domain") domain = val;
+            else if (key == "max-age") maxage = std::stoi(val);
+            else if (key == "secure") secure = true;
+            else if (key == "httponly") httponly = true;
+            else if (key == "samesite") samesite = val;
+        }
+    }
+}
+
+std::string Cookie::toString() const {
+    std::stringstream ss;
+    ss << name << "=" << value;
+    if (!path.empty()) ss << "; Path=" << path;
+    if (!domain.empty()) ss << "; Domain=" << domain;
+    if (maxage > 0) ss << "; Max-Age=" << maxage;
+    if (secure) ss << "; Secure";
+    if (httponly) ss << "; HttpOnly";
+    if (!samesite.empty()) ss << "; SameSite=" << samesite;
+    return ss.str();
+}
+
 HttpResHeader::HttpResHeader(HeaderMap&& headers) {
     for(const auto& i: headers){
         if(toLower(i.first) == "set-cookie"){
@@ -428,18 +477,7 @@ std::multimap<std::string, std::string> HttpResHeader::Normalize() const {
 }
 
 void HttpResHeader::addcookie(const Cookie &cookie) {
-    std::stringstream cookiestream;
-    cookiestream << cookie.name <<'='<<cookie.value;
-    if(cookie.path) {
-        cookiestream << "; path="<< cookie.path;
-    }
-    if(cookie.domain) {
-        cookiestream << "; domain="<< cookie.domain;
-    }
-    if(cookie.maxage) {
-        cookiestream << "; max-age="<< cookie.maxage;
-    }
-    cookies.insert(cookiestream.str());
+    cookies.insert(cookie.toString());
 }
 
 void HttpResHeader::markWebsocket(const char* key) {

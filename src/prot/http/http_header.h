@@ -143,17 +143,23 @@ public:
 
 class Cookie{
 public:
-    const char *name = nullptr;
-    const char *value = nullptr;
-    const char *path= nullptr;
-    const char *domain = nullptr;
+    std::string name;
+    std::string value;
+    std::string path;
+    std::string domain;
     uint32_t maxage = 0;
+    bool secure = false;
+    bool httponly = false;
+    std::string samesite;
+
     Cookie() = default;
-    Cookie(const char *name, const char *value):name(name), value(value){}
-    void set(const char* name, const char *value){
+    Cookie(const std::string& name, const std::string& value):name(name), value(value){}
+    explicit Cookie(const std::string& set_cookie);
+    void set(const std::string& name, const std::string& value){
         this->name = name;
         this->value = value;
     }
+    [[nodiscard]] std::string toString() const;
 };
 
 
