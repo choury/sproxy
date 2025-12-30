@@ -247,9 +247,13 @@ int HostResolver::query(const char *host, std::function<void(int)> addrcb) {
             }
             assert(result.type == ns_t_aaaa);
             flags |= GETAAAARES;
-            for(auto i: result.addrs){
-                assert(i.ss_family == AF_INET6);
-                rcd.addrs.emplace_back(i);
+            for(const auto& addr : result.addrs){
+                assert(addr.ss_family == AF_INET6);
+                if(opt.ipv6_prefer) {
+                    rcd.addrs.emplace_front(addr);
+                }else{
+                    rcd.addrs.emplace_back(addr);
+                }
             }
             if(rcd.get_time + rcd.ttl > now + result.ttl) {
                 rcd.get_time = now;
@@ -636,4 +640,3 @@ void dump_dns(Dumper dp, void* param){
     }
     dp(param, "======================================\n");
 }
-
