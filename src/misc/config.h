@@ -90,6 +90,7 @@ struct options{
     bool ignore_hosts;
     bool autoindex;
     bool ipv6_enabled;
+    bool ipv6_prefer;
     bool alter_method;
     bool set_dns_route;
     bool tun_mode;

@@ -62,7 +62,10 @@ extern void dump_job(Dumper dp, void* param);
 
 void dump_stat(Dumper dp, void* param){
     dp(param, "======================================\n");
-    dp(param, "Proxy server: %s, ipv6: %s\n", dumpDest(opt.Server).c_str(), opt.ipv6_enabled ? "enabled" : "disabled");
+    dp(param, "Proxy server: %s, ipv6: %s%s\n",
+       dumpDest(opt.Server).c_str(),
+       opt.ipv6_enabled ? "enabled" : "disabled",
+       opt.ipv6_prefer ? " (prefer)" : "");
     dp(param, "--------------------------------------\n");
     for(auto i: servers){
         i->dump_stat(dp, param);
@@ -205,4 +208,3 @@ extern "C" void demangle_func(char* stack, int depth) {
     LOGE("[%d] %s \n", depth, stack);
 #endif
 }
-

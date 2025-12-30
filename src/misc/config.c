@@ -99,6 +99,7 @@ struct options opt = {
     .ignore_hosts      = false,
     .autoindex         = false,
     .ipv6_enabled      = true,
+    .ipv6_prefer       = false,
     .alter_method      = false,
     .set_dns_route     = false,
     .tun_mode          = false,
@@ -198,6 +199,7 @@ static struct option long_options[] = {
     {"interface",     required_argument, NULL, 'I'},
 #endif
     {"ipv6",          required_argument, NULL,  0 },
+    {"ipv6-prefer",   no_argument,       NULL,  0 },
     {"key",           required_argument, NULL,  0 },
     {"pcap",          required_argument, NULL,  0 },
     {"pcap-len",      required_argument, NULL,  0 },
@@ -272,6 +274,7 @@ static struct option_detail option_detail[] = {
     {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_bool, &opt.ignore_cert_error, (void*)true},
     {"interface", "Out interface (use for vpn), will skip bind if set to empty", option_string, &opt.interface, NULL},
     {"ipv6", "The ipv6 mode ([auto], enable, disable)", option_enum, &opt.ipv6_mode, auto_options},
+    {"ipv6-prefer", "Prefer IPv6 address; error if IPv6 is unavailable", option_bool, &opt.ipv6_prefer, (void*)true},
     {"key", "Private key file name (ssl/quic)", option_string, &keyfile, NULL},
     {"mitm", "Mitm mode for https request ([auto], enable, disable), require cakey", option_enum, &opt.mitm_mode, auto_options},
     {"pcap", "Save packets in pcap file for vpn", option_string, &opt.pcap_file, NULL},
@@ -929,6 +932,10 @@ void postConfig(){
         LOG("auto detected ipv6: %s\n", opt.ipv6_enabled?"enable":"disable");
     }else{
         opt.ipv6_enabled = opt.ipv6_mode;
+    }
+    if(opt.ipv6_prefer && !opt.ipv6_enabled){
+        LOGE("ipv6-prefer requires ipv6 enabled\n");
+        exit(1);
     }
     register_network_change_cb(network_changed);
 }
