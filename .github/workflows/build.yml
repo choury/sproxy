@@ -122,6 +122,71 @@ jobs:
       with:
         name: ${{ matrix.name }}-deb
         path: build/*.deb
+  build-alpine:
+    name: build-alpine
+    strategy:
+      matrix:
+        include:
+        - image: alpine:3.20
+          name: alpine-3.20
+        - image: alpine:3.21
+          name: alpine-3.21
+        - image: alpine:3.22
+          name: alpine-3.22
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+    steps:
+    - name: Install Build Dependencies
+      run: |
+        apk update
+        apk add build-base cmake git linux-headers perl zlib-dev json-c-dev elfutils-dev readline-dev liburing-dev jemalloc-dev libxml2-dev tar pkgconf ruby ruby-dev libffi-dev
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Fix Git Safe Directory
+      run: git config --global --add safe.directory '*'
+    - name: Cache OpenSSL
+      id: cache-openssl
+      uses: actions/cache@v4
+      with:
+        path: ~/openssl
+        key: openssl-${{ matrix.image }}-${{ hashFiles('.github/workflows/build.yml') }}
+    - name: 'Build and install OpenSSL (QuicTLS)'
+      if: steps.cache-openssl.outputs.cache-hit != 'true'
+      run: |
+        git clone --depth=1 -b OpenSSL_1_1_1w+quic https://github.com/quictls/openssl.git
+        cd openssl
+        ./config no-ui-console no-tests no-md4 no-rc2 no-rc4  no-shared  no-ssl2 no-ssl3 no-comp no-hw no-engine --prefix=$HOME/openssl
+        make install_dev -j`nproc`
+    - name: Configure CMake
+      run: cmake -B build -DOPENSSL_ROOT_DIR=$HOME/openssl -DCMAKE_BUILD_TYPE=RelWithDebInfo
+    - name: Build
+      run: cmake --build build --config RelWithDebInfo --parallel `nproc`
+    - name: Pack
+      run: |
+        gem install fpm --no-document
+        VERSION=$(git describe --tag --dirty --long --always | sed 's/^v//')
+        mkdir -p install_root
+        DESTDIR=$(pwd)/install_root cmake --install build --prefix /usr
+        fpm -s dir -t apk -n sproxy -v "$VERSION" -C install_root \
+          -p build/sproxy_"${VERSION}"_"${{matrix.name}}".apk \
+          --depends "zlib" \
+          --depends "json-c" \
+          --depends "libelf" \
+          --depends "readline" \
+          --depends "liburing" \
+          --depends "jemalloc" \
+          --depends "libxml2" \
+          --description "sproxy is a high-performance HTTP/HTTP2/HTTP3 proxy server with VPN capabilities" \
+          --url "https://github.com/choury/sproxy" \
+          --maintainer "choury <zhouwei400@gmail.com>" \
+          .
+    - name: Upload package
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.name }}-apk
+        path: build/*.apk
   build-macos:
     strategy:
       matrix:

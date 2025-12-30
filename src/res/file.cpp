@@ -52,10 +52,8 @@ std::string make_etag(const struct stat& st) {
     unsigned long nsec = 0;
 #if defined(__APPLE__)
     nsec = static_cast<unsigned long>(st.st_mtimespec.tv_nsec);
-#elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200809L
+#elif defined(st_mtime) || defined(__linux__)
     nsec = static_cast<unsigned long>(st.st_mtim.tv_nsec);
-#elif defined(st_mtime)
-    nsec = static_cast<unsigned long>(st.st_mtime_nsec);
 #endif
     char etag[80];
     if (nsec != 0) {
