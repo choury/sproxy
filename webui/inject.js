@@ -351,7 +351,7 @@
   patchProp(HTMLAudioElement && HTMLAudioElement.prototype, 'src', RProxy.rewriteUrl);
   patchProp(HTMLSourceElement && HTMLSourceElement.prototype, 'src', RProxy.rewriteUrl);
   patchProp(HTMLAnchorElement && HTMLAnchorElement.prototype, 'ping', RProxy.rewritePing);
-  patchProp(CSSStyleDeclaration && CSSStyleDeclaration.prototype, 'cssText', RProxy.rewriteCss);
+  // patchProp(CSSStyleDeclaration && CSSStyleDeclaration.prototype, 'cssText', RProxy.rewriteCss);
   var origSetProp = CSSStyleDeclaration && CSSStyleDeclaration.prototype && CSSStyleDeclaration.prototype.setProperty;
   if (origSetProp) {
     CSSStyleDeclaration.prototype.setProperty = function(name, value, priority){

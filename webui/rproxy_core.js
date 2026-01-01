@@ -331,6 +331,24 @@
     return out;
   };
 
+  scope.RProxy.rewriteJs = function(text, ctx) {
+    if (!text || typeof text !== 'string') return text;
+    var out = text;
+    // 1. import(...)
+    out = out.replace(/(\bimport\s*\(\s*)(["'])([^"']+)\2(\s*\))/g, function(match, pre, quote, url, post) {
+        return pre + quote + scope.RProxy.rewriteUrl(url, ctx) + quote + post;
+    });
+    // 2. import/export ... from "..."
+    out = out.replace(/(\b(?:import|export)\s(?:[\s\S]*?)\s+from\s+)(["'])([^"']+)\2/g, function(match, prefix, quote, url) {
+        return prefix + quote + scope.RProxy.rewriteUrl(url, ctx) + quote;
+    });
+    // 3. import "..."
+    out = out.replace(/(\bimport\s+)(["'])([^"']+)\2/g, function(match, prefix, quote, url) {
+        return prefix + quote + scope.RProxy.rewriteUrl(url, ctx) + quote;
+    });
+    return out;
+  };
+
   scope.RProxy.rewriteBaseTag = function(tag, ctx, fallbackBase) {
     let baseUrl = fallbackBase;
     const hrefMatch = tag.match(/\bhref\s*=\s*(?:(['"])([^'"]*)\1|([^\s>]+))/i);
@@ -400,6 +418,15 @@
         const rewritten = scope.RProxy.rewriteCss(css, ctx, baseUrl);
         return match.replace(css, rewritten);
       });
+    out = out.replace(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi, (match, attrs, content) => {
+        const typeMatch = attrs.match(/\btype\s*=\s*(?:(['"])(.*?)\1|([^\s>]+))/i);
+        const type = typeMatch ? (typeMatch[2] || typeMatch[3]).toLowerCase() : 'text/javascript';
+        if (type === 'application/json' || type === 'application/ld+json' || type.indexOf('template') !== -1) {
+            return match;
+        }
+        const rewritten = scope.RProxy.rewriteJs(content, ctx);
+        return match.replace(content, rewritten);
+    });
     return out;
   };
 

@@ -192,7 +192,7 @@ self.addEventListener('fetch', (event) => {
     // specific status codes that must not have a body
     if ([204, 205, 304].includes(res.status)) {
       body = null;
-    } else if ((type.includes('text/html') && isDoc) || type.includes('text/css')) {
+    } else if ((type.includes('text/html') && isDoc) || type.includes('text/css') || type.includes('javascript') || type.includes('ecmascript')) {
       const charsetMatch = type.match(/charset=([^;]+)/i);
       const charset = charsetMatch ? charsetMatch[1].trim().toLowerCase() : 'utf-8';
       let text = '';
@@ -212,6 +212,9 @@ self.addEventListener('fetch', (event) => {
       if (type.includes('text/css')) {
         body = RProxy.rewriteCss(text, ctx, ctx.base);
         newType = 'text/css; charset=utf-8';
+      } else if (type.includes('javascript') || type.includes('ecmascript')) {
+        body = RProxy.rewriteJs(text, ctx);
+        newType = 'application/javascript; charset=utf-8';
       } else {
         body = rewriteHtml(text, ctx);
         newType = 'text/html; charset=utf-8';
