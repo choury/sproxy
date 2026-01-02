@@ -296,8 +296,7 @@ void Cgi::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> r
     LOGD(DFILE, "<cgi> [%s] new request: %" PRIu32 "\n", basename(filename), id);
 
     req->set("X-Real-IP", rw->getSrc().hostname);
-    req->set("X-Authorized",
-        checkauth(rw->getSrc().hostname, req->get("Authorization"), req->get("Proxy-Authorization")));
+    req->set("X-Authorized", checkauth(rw->getSrc().hostname, req));
 
     Buffer buff{BUF_LEN, id};
     CGI_Header* const header = (CGI_Header *)buff.mutable_data();

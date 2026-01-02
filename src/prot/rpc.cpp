@@ -189,8 +189,8 @@ json_object * SproxyServer::call(std::string method, json_object* content) {
             json_object_object_add(jres, "error", json_object_new_string("require some params"));
             return jres;
         }
-        auto ok = Login(json_object_get_string(jtoken), json_object_get_string(jsource));
-        json_object_object_add(jres, "ok", json_object_new_boolean(ok));
+        auto token = Login(json_object_get_string(jtoken), json_object_get_string(jsource));
+        json_object_object_add(jres, "token", json_object_new_string(token.c_str()));
     }else if(method == "Debug"){
         json_object* jmodule = json_object_object_get(content, "module");
         json_object* jenable = json_object_object_get(content, "enable");
@@ -424,19 +424,19 @@ std::promise<bool> SproxyClient::SetServer(const std::string &server) {
     return promise;
 }
 
-std::promise<bool> SproxyClient::Login(const std::string &token, const std::string &source) {
+std::promise<std::string> SproxyClient::Login(const std::string &token, const std::string &source) {
     json_object* body = json_object_new_object();
     json_object_object_add(body, "token", json_object_new_string(token.c_str()));
     json_object_object_add(body, "source", json_object_new_string(source.c_str()));
-    std::promise<bool> promise;
+    std::promise<std::string> promise;
     call(__func__, body,[&promise](json_object* content){
         json_object* jerror = json_object_object_get(content, "error");
         if(jerror){
             promise.set_exception(std::make_exception_ptr(std::string(json_object_get_string(jerror))));
             return;
         }
-        json_object* jok = json_object_object_get(content, "ok");
-        promise.set_value(json_object_get_boolean(jok));
+        json_object* jtoken = json_object_object_get(content, "token");
+        promise.set_value(json_object_get_string(jtoken));
     });
     json_object_put(body);
     return promise;

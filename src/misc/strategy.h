@@ -8,7 +8,8 @@
 extern "C" {
 #endif
 void addsecret(const char* secret);
-bool checkauth(const char* ip, const char* proxy_auth, const char* auth);
+bool checksecret(const char* ip, const char* auth);
+bool checktoken(const char* token);
 void reloadstrategy();
 bool addstrategy(const char *host, const char* s, const char* ext);
 bool delstrategy(const char *host);
@@ -20,6 +21,7 @@ bool delstrategy(const char *host);
 #ifdef __cplusplus
 #include <string>
 #include <list>
+#include <memory>
 enum class Strategy{
     none,
     direct,
@@ -35,9 +37,12 @@ struct strategy{
     std::string ext;
 };
 
+class HttpReqHeader;
 struct strategy getstrategy(const char* host, const char* path = "");
 bool mayBeBlocked(const char* host);
 const char* getstrategystring(Strategy s);
+std::string gen_token();
+bool checkauth(const char* ip, std::shared_ptr<const HttpReqHeader> req);
 
 
 std::list<std::pair<std::string, strategy>> getallstrategy();

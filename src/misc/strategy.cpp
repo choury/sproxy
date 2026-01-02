@@ -2,7 +2,9 @@
 #include "net.h"
 #include "config.h"
 #include "common/common.h"
+#include "util.h"
 #include "trie.h"
+#include "prot/http/http_header.h"
 #include <set>
 #include <sstream>
 
@@ -10,6 +12,9 @@
 #include <unistd.h>
 #include <assert.h>
 #include <limits.h>
+
+#include <openssl/hmac.h>
+#include <openssl/evp.h>
 
 #ifdef __ANDROID__
 #include <stdlib.h>
@@ -311,21 +316,102 @@ void addsecret(const char* secret) {
     authips.insert("[" VPNADDR6 "]");
 }
 
-
-static bool match_secret(const char* token) {
-    if(secrets.empty()) {
-        return true;
-    }
-    if(token == nullptr){
-        return false;
-    }
-    if(strncmp(token, "Basic ", 6) == 0){
-        token = token + 6;
-    }
-    return secrets.count(token) > 0;
+static std::string hmac_sha256(const void* key, size_t key_len, const unsigned char* data, size_t data_len) {
+    unsigned char hash[EVP_MAX_MD_SIZE];
+    unsigned int hash_len;
+    HMAC(EVP_sha256(), key, key_len, data, data_len, hash, &hash_len);
+    return std::string((char*)hash, hash_len);
 }
 
-bool checkauth(const char* ip, const char* proxy_auth, const char* auth){
+// Token format: Base64(timestamp(8 bytes) + signature(32 bytes))
+std::string gen_token() {
+    uint64_t now = time(NULL); // seconds
+    unsigned char now_be[8];
+    set64(now_be, now);
+    std::string signature;
+
+    // Priority: cert key -> ca key -> secrets
+    if (opt.cert.key) {
+        BIO *bio = BIO_new(BIO_s_mem());
+        PEM_write_bio_PrivateKey(bio, opt.cert.key, NULL, NULL, 0, NULL, NULL);
+        char *key_data;
+        long key_len = BIO_get_mem_data(bio, &key_data);
+        signature = hmac_sha256(key_data, key_len, now_be, sizeof(now_be));
+        BIO_free(bio);
+    } else if (opt.ca.key) {
+        BIO *bio = BIO_new(BIO_s_mem());
+        PEM_write_bio_PrivateKey(bio, opt.ca.key, NULL, NULL, 0, NULL, NULL);
+        char *key_data;
+        long key_len = BIO_get_mem_data(bio, &key_data);
+        signature = hmac_sha256(key_data, key_len, now_be, sizeof(now_be));
+        BIO_free(bio);
+    } else if (!secrets.empty()) {
+        const std::string& secret = *secrets.begin(); // Use the first secret
+        signature = hmac_sha256(secret.c_str(), secret.length(), now_be, sizeof(now_be));
+    } else {
+        return ""; // No auth required
+    }
+
+    std::string token_data;
+    token_data.append((char*)now_be, sizeof(now_be));
+    token_data.append(signature);
+
+    char encoded[128]; // ample space
+    Base64EnUrl(token_data.c_str(), token_data.length(), encoded);
+    return std::string(encoded);
+}
+
+bool checktoken(const char* token) {
+    if (token == nullptr || *token == '\0') return false;
+
+    char decoded[128];
+    size_t len = Base64DeUrl(token, strlen(token), decoded);
+    if (len != 8 + 32) return false; // 8 bytes timestamp + 32 bytes SHA256
+
+    uint64_t ts = get64(decoded);
+    uint64_t now = time(NULL);
+
+    // Valid for 30 days
+    if (now < ts || now - ts > 30ULL * 24 * 3600) {
+        return false;
+    }
+
+    unsigned char ts_be[8];
+    set64(ts_be, ts);
+    std::string provided_sig(decoded + 8, 32);
+
+    // Try cert key
+    if (opt.cert.key) {
+        BIO *bio = BIO_new(BIO_s_mem());
+        PEM_write_bio_PrivateKey(bio, opt.cert.key, NULL, NULL, 0, NULL, NULL);
+        char *key_data;
+        long key_len = BIO_get_mem_data(bio, &key_data);
+        std::string sig = hmac_sha256(key_data, key_len, ts_be, sizeof(ts_be));
+        BIO_free(bio);
+        return sig == provided_sig;
+    }
+
+    // Try CA key
+    if (opt.ca.key) {
+        BIO *bio = BIO_new(BIO_s_mem());
+        PEM_write_bio_PrivateKey(bio, opt.ca.key, NULL, NULL, 0, NULL, NULL);
+        char *key_data;
+        long key_len = BIO_get_mem_data(bio, &key_data);
+        std::string sig = hmac_sha256(key_data, key_len, ts_be, sizeof(ts_be));
+        BIO_free(bio);
+        return sig == provided_sig;
+    }
+
+    // Try secrets
+    for (const auto& secret : secrets) {
+        std::string sig = hmac_sha256(secret.c_str(), secret.length(), ts_be, sizeof(ts_be));
+        return sig == provided_sig;
+    }
+
+    return false;
+}
+
+bool checksecret(const char* ip, const char* secret){
     if(secrets.empty())
         return true;
     if(authips.count(ip) > 0){
@@ -336,13 +422,26 @@ bool checkauth(const char* ip, const char* proxy_auth, const char* auth){
     if(storage_aton(ip, 0, &addr)  && isFakeAddress(&addr)) {
         return true;
     }
-    if(match_secret(proxy_auth)) {
+    if(secret == nullptr){
+        return false;
+    }
+    if(strncmp(secret, "Basic ", 6) == 0){
+        secret = secret + 6;
+    }
+    if(secrets.count(secret) > 0) {
         authips.insert(ip);
         return true;
     }
-    if(match_secret(auth)) {
-        authips.insert(ip);
+    return false;
+}
+
+bool checkauth(const char* ip, std::shared_ptr<const HttpReqHeader> req) {
+    if (checksecret(ip, req->get("Proxy-Authorization")) || checksecret(ip, req->get("Authorization"))) {
         return true;
+    }
+    auto cookies = req->getcookies();
+    if (cookies.count("sproxy_token")) {
+        return checktoken(cookies.at("sproxy_token").c_str());
     }
     return false;
 }

@@ -57,7 +57,7 @@ bool shouldNegotiate(std::shared_ptr<const HttpReqHeader> req, Requester* src){
 }
 
 static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, const char* src_host){
-    if (!checkauth(src_host, req->get("Proxy-Authorization"), req->get("Authorization"))){
+    if (!checkauth(src_host, req)){
         return CheckResult::AuthFailed;
     }
     if(req->has("via") && strstr(req->get("via"), identify.c_str())){
@@ -327,7 +327,7 @@ void rewrite_rproxy_req(std::shared_ptr<HttpReqHeader> req) {
 
 void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
     uint64_t id = req->request_id;
-    if(!checkauth(rw->getSrc().hostname, req->get("Proxy-Authorization"), req->get("Authorization"))){
+    if(!checkauth(rw->getSrc().hostname, req)){
         auto sheader = HttpResHeader::create(S401, sizeof(S401), id);
         sheader->set("WWW-Authenticate", "Basic realm=\"Secure Area\"");
         response(rw, sheader, "");

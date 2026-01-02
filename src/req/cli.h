@@ -33,7 +33,7 @@ public:
 
     virtual bool SetServer(const std::string& server) override;
     virtual std::string GetServer() override;
-    virtual bool Login(const std::string& token, const std::string& source) override;
+    virtual std::string Login(const std::string& token, const std::string& source) override;
     virtual std::string DumpStatus() override;
     virtual std::string DumpDns() override;
     virtual std::string DumpMemUsage() override;

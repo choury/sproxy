@@ -48,7 +48,7 @@ protected:
     virtual bool FlushCert() = 0;
 
     virtual bool SetServer(const std::string& server) = 0;
-    virtual bool Login(const std::string& token, const std::string& source) = 0;
+    virtual std::string Login(const std::string& token, const std::string& source) = 0;
     virtual bool Debug(const std::string& module, bool enable) = 0;
     virtual bool killCon(const std::string& address) = 0;
     virtual bool HookerAdd(const std::string& hooker, const std::string& lib) = 0;
@@ -90,7 +90,7 @@ public:
     std::promise<std::string> DumpDns();
     std::promise<std::string> DumpMemUsage();
     std::promise<std::string> DumpHooker();
-    std::promise<bool> Login(const std::string& token, const std::string& source);
+    std::promise<std::string> Login(const std::string& token, const std::string& source);
     std::promise<bool> Debug(const std::string& module, bool enable);
     std::promise<bool> killCon(const std::string& address);
     std::promise<bool> HookerAdd(const std::string& hooker, const std::string& lib);

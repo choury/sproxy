@@ -14,10 +14,18 @@ class handler: public CgiHandler{
         if(params.count("key") == 0){
             return BadRequest();
         }
-        if(!c->Login(params["key"], req->get("X-Real-IP")).get_future().get()){
+        auto token = c->Login(params["key"], req->get("X-Real-IP")).get_future().get();
+        if(token.empty()){
             Response(HttpResHeader::create(S403, sizeof(S403), req->request_id));
         }else{
-            Response(HttpResHeader::create(S204, sizeof(S204), req->request_id));
+            auto res = HttpResHeader::create(S204, sizeof(S204), req->request_id);
+            Cookie cookie("sproxy_token", token);
+            cookie.maxage = 2592000;
+            cookie.path = "/";
+            cookie.httponly = true;
+            cookie.samesite = "Strict";
+            res->addcookie(cookie);
+            Response(res);
         }
         Finish();
     }

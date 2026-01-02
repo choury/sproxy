@@ -24,7 +24,7 @@ static void StatusDump(void* param, const char* fmt, ...) {
 
 void Status::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw){
     uint64_t id = req->request_id;
-    if(!checkauth(rw->getSrc().hostname, req->get("Authorization"), req->get("Proxy-Authorization"))){
+    if(!checkauth(rw->getSrc().hostname, req)){
         auto sheader = HttpResHeader::create(S401, sizeof(S401), id);
         sheader->set("WWW-Authenticate", "Basic realm=\"Secure Area\"");
         response(rw, sheader, "");

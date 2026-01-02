@@ -352,7 +352,7 @@ void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
         std::string cgi = pathjoin(opt.rootdir, std::string("cgi/libtest") + LIBSUFFIX);
         return getcgi(req, cgi.c_str(), rw);
     }else if(opt.webdav_root && (req->ismethod("GET") || req->ismethod("HEAD")) && startwith(filename.c_str(), "webdav/")){
-        if(!checkauth(rw->getSrc().hostname, req->get("Authorization"), req->get("Proxy-Authorization"))) {
+        if(!checkauth(rw->getSrc().hostname, req)) {
             auto sheader = HttpResHeader::create(S401, sizeof(S401), id);
             sheader->set("WWW-Authenticate", "Basic realm=\"Secure Area\"");
             return response(rw, sheader, "");
