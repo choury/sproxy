@@ -47,6 +47,7 @@ struct in_addr getMapped(struct in6_addr addr, const char* prefix);
 
 const char* protstr(Protocol p);
 
+int parse_user_pass(const char* input, size_t input_len, struct Destination* dest);
 int spliturl(const char* url, struct Destination* server, char* path);
 const char* dumpDest(const struct Destination* server);
 const char* dumpAuthority(const struct Destination* Server);

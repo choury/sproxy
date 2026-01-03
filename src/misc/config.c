@@ -287,7 +287,7 @@ static struct option_detail option_detail[] = {
     {"request-header", "append the header (name:value) before handle http request", option_list, &opt.request_headers, NULL},
     {"restrict-local", "check method and dst port for local strategy", option_bool, &opt.restrict_local, (void*)true},
     {"forward-header", "append the header (name:value) when forward http request", option_list, &opt.forward_headers, NULL},
-    {"rewrite-auth", "rewrite the auth info (user:password) to proxy server", option_base64, opt.rewrite_auth, NULL},
+    {"rewrite-auth", "[DEPRECATED]", option_base64, opt.rewrite_auth, NULL},
     {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
     {"webdav", "Enable webdav and set its root directory", option_string, &opt.webdav_root, NULL},
     {"rproxy", "name for rproxy mode (via http2/http3)", option_string, &opt.rproxy_name, (void*)true},

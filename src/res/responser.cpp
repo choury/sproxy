@@ -143,13 +143,19 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         if(dest.port == 0){
             return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[server not set]]\n");
         }
-        if(strlen(opt.rewrite_auth)){
-            req->set("Proxy-Authorization", std::string("Basic ") + opt.rewrite_auth);
-        }
         //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
         req->chain_proxy = true;
         if(!stra.ext.empty() && parseDest(stra.ext.c_str(), &dest)){
             return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[ext misformat]]\n");
+        }
+        if(dest.username[0]) {
+            char auth_plain[AUTHLIMIT * 2];
+            char auth_encode[AUTHLIMIT * 4];
+            snprintf(auth_plain, sizeof(auth_plain), "%s:%s", dest.username, dest.password);
+            Base64Encode(auth_plain, strlen(auth_plain), auth_encode);
+            req->set("Proxy-Authorization", std::string("Basic ") + auth_encode);
+        }else if(strlen(opt.rewrite_auth)){
+            req->set("Proxy-Authorization", std::string("Basic ") + opt.rewrite_auth);
         }
         break;
     case Strategy::direct:

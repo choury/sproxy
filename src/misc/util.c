@@ -381,6 +381,22 @@ static int parse_port(const char *s, uint16_t *out) {
     return 0;
 }
 
+int parse_user_pass(const char* input, size_t input_len, struct Destination* dest) {
+    const char* sep = strchr(input, ':');
+    size_t user_len = sep ? (size_t)(sep - input) : input_len;
+    size_t pass_len = sep ? (input_len - user_len - 1) : 0;
+    if(user_len > sizeof(dest->username) - 1 || pass_len > sizeof(dest->password) - 1) {
+        return -1; // userinfo too long
+    }
+    memcpy(dest->username, input, user_len);
+    opt.Server.username[user_len] = 0;
+    if (pass_len) {
+        memcpy(dest->password, sep + 1, pass_len);
+    }
+    dest->password[pass_len] = 0;
+    return 0;
+}
+
 int spliturl(const char* url, struct Destination* server, char* path) {
     if (url == NULL) {
         return -1; // Invalid input
@@ -427,6 +443,18 @@ int spliturl(const char* url, struct Destination* server, char* path) {
             strcpy(path, "/");
         }
         snprintf(tmpaddr, sizeof(tmpaddr), "%s", url);
+    }
+
+    char* atsplit = strrchr(tmpaddr, '@');
+    if (atsplit) {
+        if (atsplit == tmpaddr || atsplit[1] == 0) {
+            return -2; // Invalid userinfo format
+        }
+        size_t userinfo_len = (size_t)(atsplit - tmpaddr);
+        if(parse_user_pass(tmpaddr, userinfo_len, server)) {
+            return -2;
+        }
+        memmove(tmpaddr, atsplit + 1, strlen(atsplit + 1) + 1);
     }
 
     if (tmpaddr[0] == '[') {
