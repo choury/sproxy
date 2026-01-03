@@ -129,7 +129,9 @@ extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
     const char *server_str = jnienv->GetStringUTFChars(server, nullptr);
     const char *secret_str = jnienv->GetStringUTFChars(secret, nullptr);
     parseDest(server_str, &opt.Server);
-    Base64Encode(secret_str, strlen(secret_str), opt.rewrite_auth);
+    if(secret_str && secret_str[0] && parse_user_pass(secret_str, strlen(secret_str), &opt.Server)) {
+        LOGE("Invalid secret format: %s\n", secret_str);
+    }
     postConfig();
     LOG("native SproxyVpnService.start %d.\n", sockfd);
 

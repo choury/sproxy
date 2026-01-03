@@ -83,6 +83,7 @@ static inline int endwith(const char *s1, const char *s2) {
 
 
 #define DOMAINLIMIT   256
+#define AUTHLIMIT     128
 #define HEADLENLIMIT  16384
 #define URLLIMIT      16384
 
@@ -279,6 +280,8 @@ struct Destination{
     char scheme[16];
     char protocol[16];
     char hostname[DOMAINLIMIT];
+    char username[AUTHLIMIT];
+    char password[AUTHLIMIT];
     uint16_t port;
     int systemd_fd;
     bool system_resolve;
