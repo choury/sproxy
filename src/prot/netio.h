@@ -43,6 +43,7 @@ protected:
 public:
     SocketRWer(int fd, const sockaddr_storage* src, std::shared_ptr<IRWerCallback> cb);
     SocketRWer(const Destination& dest, std::shared_ptr<IRWerCallback> cb);
+    SocketRWer(const sockaddr_storage& addr, Protocol protocol, std::shared_ptr<IRWerCallback> cb);
     //virtual void SetConnectCB(std::function<void(const sockaddr_storage&, uint32_t resolved_time)> connectCB);
     virtual void SetCallback(std::shared_ptr<IRWerCallback> cb) override;
     virtual ~SocketRWer() override;

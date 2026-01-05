@@ -76,6 +76,18 @@ SocketRWer::SocketRWer(const Destination& dest, std::shared_ptr<IRWerCallback> c
     }
 }
 
+SocketRWer::SocketRWer(const sockaddr_storage& addr, Protocol protocol, std::shared_ptr<IRWerCallback> cb):
+            RWer(std::move(cb)) {
+    addrs.push(addr);
+    stats = RWerStats::Connecting;
+    this->protocol = protocol;
+    Destination server;
+    storage2Dest(&addr, &server);
+    strcpy(hostname, server.hostname);
+    port = server.port;
+    connect();
+}
+
 SocketRWer::~SocketRWer() {
 }
 

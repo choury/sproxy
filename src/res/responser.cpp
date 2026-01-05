@@ -143,11 +143,11 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         if(dest.port == 0){
             return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[server not set]]\n");
         }
-        //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
-        req->chain_proxy = true;
         if(!stra.ext.empty() && parseDest(stra.ext.c_str(), &dest)){
             return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[ext misformat]]\n");
         }
+        //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
+        req->chain_proxy = true;
         if(dest.username[0]) {
             char auth_plain[AUTHLIMIT * 2];
             char auth_encode[AUTHLIMIT * 4];

@@ -489,6 +489,9 @@ int parseDest(const char* proxy, struct Destination* server){
         strcpy(server->scheme, "https");
         strcpy(server->protocol, "quic");
 #endif
+    }else if(strcasecmp(scheme, "socks5") == 0 || strcasecmp(scheme, "socks") == 0) {
+        strcpy(server->scheme, "socks5");
+        strcpy(server->protocol, "tcp");
     }else{
         LOGE("unkonw scheme for server: %s\n", scheme);
         return -1;
@@ -501,6 +504,9 @@ int parseDest(const char* proxy, struct Destination* server){
     }
     if(strcasecmp(server->scheme, "https") == 0){
         server->port = HTTPSPORT;
+    }
+    if(strcasecmp(server->scheme, "socks5") == 0){
+        server->port = 1080;
     }
     return 0;
 }
@@ -1044,6 +1050,7 @@ struct debug_flags_map debug[] = {
         {"QUIC", false},
         {"HTTP3", false},
         {"RWER", false},
+        {"SOCKS", false},
         {NULL, false},
 };
 
