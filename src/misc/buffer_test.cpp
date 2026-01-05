@@ -25,6 +25,7 @@ struct debug_flags_map debug[] = {
     {"QUIC", true},
     {"HTTP3", true},
     {"RWER", true},
+    {"SOCKS", true},
     {NULL, true},
 };
 

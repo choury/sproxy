@@ -4,8 +4,10 @@
 #include "prot/sslio.h"
 #ifdef HAVE_QUIC
 #include "proxy3.h"
+#include "uhost.h"
 #include "prot/quic/quicio.h"
 #endif
+#include "prot/socks5/socks5.h"
 #include "misc/config.h"
 #include "misc/hook.h"
 
@@ -20,7 +22,7 @@ static const unsigned char alpn_protos_http12[] =
 __attribute__((unused)) static const unsigned char alpn_protos_http3[] =
     "\x02h3";
 
-Host::Host(const Destination& dest){
+Host::Host(const Destination& dest, const Destination& target){
     assert(dest.port);
     assert(dest.protocol[0]);
     memcpy(&Server, &dest, sizeof(Destination));
@@ -30,7 +32,9 @@ Host::Host(const Destination& dest){
     })->onError([this](int ret, int code){
         Error(ret, code);
     });
-    if(strcmp(dest.protocol, "tcp") == 0 || (isWebsocket && strcmp(dest.scheme, "http") == 0)){
+    if(strcmp(dest.scheme, "socks5") == 0){
+        rwer = std::make_shared<Socks5RWer>(dest, target, cb);
+    }else if(strcmp(dest.protocol, "tcp") == 0 || (isWebsocket && strcmp(dest.scheme, "http") == 0)){
         rwer = std::make_shared<StreamRWer>(dest, cb);
     }else if(strcmp(dest.protocol, "ssl") == 0 || (isWebsocket && strcmp(dest.scheme, "https") == 0)){
         auto srwer = std::make_shared<SslRWer>(dest, cb);
@@ -63,7 +67,7 @@ void Host::reply(){
     if(!rwer->IsConnected()){
         return;
     }
-    if(!status.req->chain_proxy && status.req->ismethod("CONNECT")) {
+    if((!status.req->chain_proxy || std::dynamic_pointer_cast<Socks5RWer>(rwer)) && status.req->ismethod("CONNECT")) {
         status.rw->SetCallback(status.cb);
         Http_Proc = &Host::AlwaysProc;
         assert(strcmp(status.req->Dest.protocol, "tcp") == 0);
@@ -307,7 +311,13 @@ void Host::distribute(std::shared_ptr<HttpReqHeader> req, const Destination& des
     if(responsers.has(key)) {
         return responsers.at(key)->request(req, rw);
     }
-    return (new Host(dest))->request(req, rw);
+    auto target = req->Dest;
+    target.port = req->getDport();
+    if(strcmp(dest.scheme, "socks5") == 0 && strcmp(target.protocol, "udp") == 0) {
+        return (new Uhost(dest, target))->request(req, rw);
+    } else {
+        return (new Host(dest, target))->request(req, rw);
+    }
 }
 
 void Host::dump_stat(Dumper dp, void* param) {

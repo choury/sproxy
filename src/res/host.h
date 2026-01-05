@@ -28,7 +28,7 @@ protected:
     virtual void connected(uint32_t resolved_time);
     void reply();
 public:
-    explicit Host(const Destination& dest);
+    explicit Host(const Destination& dest, const Destination& target = {});
     virtual ~Host() override;
 
     virtual void dump_stat(Dumper dp, void* param) override;

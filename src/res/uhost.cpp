@@ -1,13 +1,14 @@
 #include "uhost.h"
 #include "prot/netio.h"
 #include "prot/memio.h"
+#include "prot/socks5/socks5.h"
 #include "req/requester.h"
 #include "misc/util.h"
 
 #include <inttypes.h>
 #include <assert.h>
 
-Uhost::Uhost(const Destination& dest): port(dest.port) {
+Uhost::Uhost(const Destination& dest, const Destination& target): port(dest.port) {
     strncpy(hostname, dest.hostname, DOMAINLIMIT);
     idle_timeour = AddJob([this]{deleteLater(CONNECT_AGED);}, 30000, 0);
     cb = ISocketCallback::create()->onConnect([this](const sockaddr_storage&, uint32_t){
@@ -43,7 +44,11 @@ Uhost::Uhost(const Destination& dest): port(dest.port) {
         LOGE("(%s) UDP error: %d/%d\n", dumpDest(rwer->getDst()).c_str(), ret, code);
         deleteLater(ret);
     });
-    rwer = std::make_shared<PacketRWer>(dest, cb);
+    if(strcmp(dest.scheme, "socks5") == 0){
+        rwer = std::make_shared<Socks5RWer>(dest, target, cb);
+    }else{
+        rwer = std::make_shared<PacketRWer>(dest, cb);
+    }
 }
 
 Uhost::~Uhost() {
