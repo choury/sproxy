@@ -101,6 +101,7 @@ struct options opt = {
     .ipv6_enabled      = true,
     .ipv6_prefer       = false,
     .alter_method      = false,
+    .socks5_fast       = false,
     .set_dns_route     = false,
     .tun_mode          = false,
     .tun_fd            = -1,
@@ -224,6 +225,7 @@ static struct option long_options[] = {
     {"sni",           no_argument,       NULL,  0 },
     {"ssl",           required_argument, NULL,  0 },
     {"alter-method",  no_argument,       NULL,  0 },
+    {"socks5-fast",   no_argument,       NULL,  0 },
     {"rproxy",        required_argument, NULL,  0 },
     {"request-header",required_argument, NULL,  0 },
     {"forward-header",required_argument, NULL,  0 },
@@ -253,6 +255,7 @@ struct option_detail {
 static struct option_detail option_detail[] = {
     {"admin", "set admin socket path for cli (/var/run/sproxy.sock is default for root and /tmp/sproxy.sock for others)", option_string, &admin_listen, NULL},
     {"alter-method", "use Alter-Method to define real method (for obfuscation), http1 only", option_bool, &opt.alter_method, (void*)true},
+    {"socks5-fast", "Send socks5 greeting/auth/request without waiting for replies", option_bool, &opt.socks5_fast, (void*)true},
     {"acme", "Enable automatic certificate management (ACME) with state directory", option_string, &opt.acme_state, NULL},
     {"alt-svc", "Add alt-svc header to response or send ALTSVC frame", option_string, &opt.alt_svc, NULL},
     {"autoindex", "Enables the directory listing output (local server)", option_bool, &opt.autoindex, (void*)true},

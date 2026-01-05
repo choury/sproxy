@@ -92,6 +92,7 @@ struct options{
     bool ipv6_enabled;
     bool ipv6_prefer;
     bool alter_method;
+    bool socks5_fast;
     bool set_dns_route;
     bool tun_mode;
     int  tun_fd;
