@@ -1,5 +1,6 @@
 #include "socks5.h"
 
+#include "misc/config.h"
 #include "misc/defer.h"
 #include "misc/net.h"
 
@@ -129,6 +130,12 @@ void Socks5RWer::waitconnectHE(RW_EVENT events) {
 
         SendGreeting();
         state = Socks5State::GreetingSent;
+        if (opt.socks5_fast) {
+            if(server.username[0] != '\0' || server.password[0] != '\0') {
+                SendAuth();
+            }
+            SendRequest();
+        }
         proc = &Socks5RWer::MethodSelectProc;
     }
 }
@@ -152,12 +159,16 @@ size_t Socks5RWer::MethodSelectProc(Buffer&& bb) {
     switch (method) {
     case Socks5Method::NoAuth:
         state = Socks5State::MethodSelected;
-        SendRequest();
+        if (!opt.socks5_fast) {
+            SendRequest();
+        }
         proc = &Socks5RWer::ReplyProc;
         break;
     case Socks5Method::UserPass:
         state = Socks5State::MethodSelected;
-        SendAuth();
+        if (!opt.socks5_fast) {
+            SendAuth();
+        }
         proc = &Socks5RWer::AuthProc;
         break;
     default:
@@ -183,7 +194,9 @@ size_t Socks5RWer::AuthProc(Buffer&& bb) {
     }
     LOGD(DSOCKS, "<socks5> auth ok\n");
     state = Socks5State::AuthOk;
-    SendRequest();
+    if (!opt.socks5_fast) {
+        SendRequest();
+    }
     proc = &Socks5RWer::ReplyProc;
     return 2;
 }
