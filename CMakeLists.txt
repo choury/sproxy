@@ -334,11 +334,19 @@ if(CMAKE_SYSTEM_NAME MATCHES Linux)
     list(APPEND CPACK_GENERATOR "DEB")
     set(CPACK_DEBIAN_PACKAGE_SECTION "application")
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "openssl(>=1.1.1),libjson-c5,zlib1g,libelf1,libreadline8,libjemalloc2,libxml2")
+    set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
+        "${CMAKE_CURRENT_SOURCE_DIR}/packaging/debian/postinst"
+        "${CMAKE_CURRENT_SOURCE_DIR}/packaging/debian/prerm"
+        "${CMAKE_CURRENT_SOURCE_DIR}/packaging/debian/postrm"
+    )
 
     list(APPEND CPACK_GENERATOR "RPM")
     set(CPACK_RPM_PACKAGE_RELEASE "1")
     set(CPACK_RPM_PACKAGE_LICENSE "GPL")
     set(CPACK_RPM_PACKAGE_REQUIRES "openssl >= 1.1.1, json-c, zlib, elfutils-libelf, readline, jemalloc, libxml2")
+    set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/packaging/rpm/post_install.sh")
+    set(CPACK_RPM_PRE_UNINSTALL_SCRIPT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/packaging/rpm/pre_uninstall.sh")
+    set(CPACK_RPM_POST_UNINSTALL_SCRIPT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/packaging/rpm/post_uninstall.sh")
 endif()
 
 message(STATUS "CPack generators: ${CPACK_GENERATOR}")

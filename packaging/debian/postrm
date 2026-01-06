@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    if command -v systemctl >/dev/null; then
+        systemctl daemon-reload
+    fi
+fi
