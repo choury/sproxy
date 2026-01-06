@@ -301,7 +301,6 @@ struct IQuicCallback: public ISocketCallback {
 class QuicRWer: public QuicBase, public SocketRWer {
 protected:
     Quic_server* server = nullptr;
-    size_t sndbuf = 0;
 
     // Connection migration support
     struct PathInfo {
@@ -315,7 +314,9 @@ protected:
     size_t active_path_idx = 0;
     Job path_validation_timer = nullptr;
 
-    virtual size_t getWritableSize()  override;
+    virtual size_t getWritableSize()  override {
+        return sndbufLeft();
+    };
     virtual ssize_t writem(const struct iovec *iov, int iovcnt) override;
     virtual void onConnected() override;
     virtual void onError(int type, int code) override;

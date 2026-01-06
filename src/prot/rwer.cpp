@@ -2,6 +2,7 @@
 #include "common/common.h"
 #include "misc/defer.h"
 #include "misc/hook.h"
+#include "misc/net.h"
 
 #include <unistd.h>
 #include <assert.h>
@@ -34,6 +35,14 @@ RWer::RWer(std::shared_ptr<IRWerCallback> cb): Ep(-1), callback(std::move(cb)) {
     assert(cb && cb->errorCB);
 }
 
+
+size_t RWer::sndbufLeft() {
+    if(sndbuf == 0) {
+        sndbuf = GetCapSize(getFd());
+    }
+    return sndbuf - GetBuffSize(getFd());
+}
+
 ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
     ssize_t ret = 0;
     size_t len = 0;
@@ -41,11 +50,13 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
     if(drained()) {
         return 0;
     }
+    int last_errno = 0;
     const auto& data = wbuff.data();
     if(data.size() == 1) {
         auto &bb = data.front();
         if(likely(bb.len > 0)) {
             ret = write(getFd(), bb.data(), bb.len);
+            last_errno = errno;
             LOGD(DRWER, "write %d: len: %zd, ret: %zd\n", getFd(), bb.len, ret);
             len = bb.len;
         } else {
@@ -54,6 +65,13 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
     } else {
         std::vector<iovec> iovs;
         iovs.reserve(data.size());
+        size_t max_len = sndbufLeft();
+        if(unlikely(max_len == 0)) {
+            LOGD(DRWER, "sndbuf full %d: sndbuf: %zu, buffsize: %zu, require: %zu\n",
+                getFd(), sndbuf, GetBuffSize(getFd()), data.front().len);
+            errno = EAGAIN;
+            return -1;
+        }
         for (const auto &bb: data) {
             if (unlikely(bb.len == 0)) {
                 //bb.len == 0 must be the last one
@@ -62,15 +80,18 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
             }
             iovs.emplace_back(iovec{(void *) bb.data(), bb.len});
             len += bb.len;
-            if (unlikely(iovs.size() >= IOV_MAX) || (len >= MAX_BUF_LEN)) {
+            if (unlikely(iovs.size() >= IOV_MAX) || (len >= MAX_BUF_LEN) || max_len <= bb.len) {
                 break;
             }
+            max_len -= bb.len;
         }
+
         ret = writev(getFd(), iovs.data(), iovs.size());
+        last_errno = errno;
         if(ret > 0) {
             LOGD(DRWER, "writev %d: iovs: %zd, ret: %zd/%zd\n", getFd(), iovs.size(), ret, len);
         } else {
-            LOGE("writev %d error: %s\n", getFd(), strerror(errno));
+            LOGE("writev %d error: %s\n", getFd(), strerror(last_errno));
         }
     }
     if(len == (size_t)ret && hasEof) {
@@ -81,6 +102,7 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
     if(ret >= 0){
         writed_list = wbuff.consume(ret);
     }
+    errno = last_errno;
     return ret;
 }
 
@@ -330,6 +352,10 @@ ssize_t FullRWer::Write(std::set<uint64_t>&) {
 
 size_t FullRWer::rlength(uint64_t) {
     return SIZE_MAX;
+}
+
+size_t FullRWer::sndbufLeft() {
+    return 0;
 }
 
 ssize_t FullRWer::cap(uint64_t) {

@@ -203,7 +203,11 @@ size_t GetCapSize(int fd) {
         LOGE("failed to get sndbuf for %d: %s\n", fd, strerror(errno));
         return 0;
     }
+#if  __linux__
+    return sndbuf / 2;
+#else
     return sndbuf;
+#endif
 }
 
 size_t GetBuffSize(int fd){

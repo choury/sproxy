@@ -515,6 +515,10 @@ void rewrite_rproxy_res(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<Http
     if(!req || !res) {
         return;
     }
+    const char* rproxy = req->get("Rproxy-Name");
+    if(rproxy == nullptr) {
+        return;
+    }
     rewrite_rproxy_cookie(req, res);
     rewrite_rproxy_reporting_endpoints(req, res);
 
@@ -533,10 +537,7 @@ void rewrite_rproxy_res(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<Http
     if(!res->has("Location")) {
         return;
     }
-    const char* rproxy = req->get("Rproxy-Name");
-    if(rproxy == nullptr) {
-        return;
-    }
+
     std::string location = res->get("Location");
     if(location.empty() || startwith(location.c_str(), "/rproxy/")) {
         return;

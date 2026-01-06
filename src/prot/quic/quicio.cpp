@@ -2027,13 +2027,6 @@ QuicRWer::QuicRWer(int fd, const sockaddr_storage *peer, SSL_CTX *ctx, Quic_serv
     server->rwers.emplace(myids[0], this);
 }
 
-size_t QuicRWer::getWritableSize() {
-    if(sndbuf == 0) {
-        sndbuf = GetCapSize(getFd());
-    }
-    return (sndbuf - GetBuffSize(getFd()))/2;
-}
-
 ssize_t QuicRWer::writem(const struct iovec *iov, int iovcnt) {
     if(iovcnt == 1) {
         return write(getFd(), iov[0].iov_base, iov[0].iov_len) == (int)iov[0].iov_len ? 1 : -1;

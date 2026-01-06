@@ -81,9 +81,14 @@ protected:
 #define RWER_EOFDELIVED 0x20  // shutdown by peer (handled by me)
     uint32_t   flags = 0;
     RWerStats  stats = RWerStats::Idle;
+    size_t     sndbuf = 0;
     CBuffer    wbuff;
     std::weak_ptr<IRWerCallback> callback;
 
+    virtual void setFd(int fd) override {
+        Ep::setFd(fd);
+        sndbuf = 0;
+    }
     virtual ssize_t Write(std::set<uint64_t>& writed_list);
     virtual void SendData();
     virtual void ReadData() = 0;
@@ -94,6 +99,8 @@ protected:
 
     //for read buffer
     virtual size_t rlength(uint64_t id) = 0;
+    //for underlying send buffer
+    virtual size_t sndbufLeft();
     //ConsumeRData只会在Unblock中被调用，ReadData逻辑，需要各实现自行处理readCB回调
     virtual void ConsumeRData(uint64_t id) = 0;
 public:
@@ -162,6 +169,7 @@ public:
     ~FullRWer() override;
 
     virtual size_t rlength(uint64_t id) override;
+    virtual size_t sndbufLeft() override;
     virtual ssize_t cap(uint64_t id) override;
     virtual void ConsumeRData(uint64_t) override;
     virtual Destination getSrc() const override {
