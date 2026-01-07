@@ -66,7 +66,7 @@ jobs:
       name: test
       run: cd ${{github.workspace}}/test && sudo sysctl -w net.ipv4.ping_group_range='0 2147483647' && ./test.sh ../build/
       timeout-minutes: 10
-    - if: matrix.build_type == 'Debug' && ${{ always() }}
+    - if: ${{ matrix.build_type == 'Debug' && always() }}
       name: Upload test log
       uses: actions/upload-artifact@v4
       with:
@@ -238,7 +238,7 @@ jobs:
       name: test
       run: cd ${{github.workspace}}/test && ./test.sh ../build/
       timeout-minutes: 10
-    - if: matrix.build_type == 'Debug' && ${{ always() }}
+    - if: ${{ matrix.build_type == 'Debug' && always() }}
       name: Upload test log
       uses: actions/upload-artifact@v4
       with:
