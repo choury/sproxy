@@ -1,10 +1,10 @@
 #include "host.h"
 #include "proxy2.h"
+#include "uhost.h"
 #include "req/requester.h"
 #include "prot/sslio.h"
 #ifdef HAVE_QUIC
 #include "proxy3.h"
-#include "uhost.h"
 #include "prot/quic/quicio.h"
 #endif
 #include "prot/socks5/socks5.h"
