@@ -1,0 +1,13 @@
+#!/sbin/openrc-run
+
+name="sproxy"
+description="sproxy high-performance proxy server"
+command="/usr/bin/sproxy"
+command_args="-c /etc/sproxy/sproxy.conf"
+pidfile="/run/sproxy.pid"
+command_background="yes"
+
+depend() {
+	need net
+	after firewall
+}
