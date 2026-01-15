@@ -6,6 +6,7 @@
 #include "trie.h"
 #include "prot/http/http_header.h"
 #include <set>
+#include <map>
 #include <sstream>
 
 #include <string.h>
@@ -31,6 +32,7 @@ using std::stringstream;
 static Trie<string, strategy> domains;
 static Trie<char, strategy> ipv4s;
 static Trie<char, strategy> ipv6s;
+static std::map<std::string, std::string> aliases;
 
 string toLower(const string &s);
 
@@ -104,9 +106,17 @@ static bool mergestrategy(const string& host, const string& strategy_str, const 
         s = Strategy::forward;
     }else if(strategy_str == "rewrite"){
         s = Strategy::rewrite;
+    }else if(strategy_str == "alias"){
+        s = Strategy::alias;
     }else{
         return false;
     }
+
+    if (s == Strategy::alias) {
+        aliases[host] = ext;
+        return true;
+    }
+
     strategy stra{s, ext};
     auto mask_pos = host.find_first_of('/');
     if(mask_pos != string::npos){
@@ -137,6 +147,7 @@ void reloadstrategy() {
     ipv4s.clear();
     ipv6s.clear();
     domains.clear();
+    aliases.clear();
 
     //default strategy
     for(auto ips=getlocalip(); ips->ss_family ; ips++){
@@ -206,6 +217,9 @@ bool addstrategy(const char* host, const char* strategy, const char* ext) {
 }
 
 bool delstrategy(const char* host_) {
+    if(host_[0] == '@' && aliases.erase(host_ + 1)){
+        return true;
+    }
     bool found  = false;
     string host = host_;
     auto mask_pos = host.find_first_of('/');
@@ -242,7 +256,18 @@ strategy getstrategy(const char *host_, const char* path){
     }else if((v = ipfind(host.c_str())) == nullptr){
         v = domains.find(split(toLower(host)), path);
     }
-    return v? v->value : strategy{Strategy::direct, ""};
+    if(!v) {
+        return strategy{Strategy::direct, ""};
+    }
+    strategy s = v->value;
+    if(s.s != Strategy::alias && !s.ext.empty() && s.ext[0] == '@'){
+        if(aliases.count(s.ext.substr(1))){
+             s.ext = aliases[s.ext.substr(1)];
+        } else {
+            return strategy{Strategy::none, ""};
+        }
+    }
+    return s;
 }
 
 bool mayBeBlocked(const char* host) {
@@ -266,6 +291,8 @@ const char* getstrategystring(Strategy s) {
         return "local";
     case Strategy::block:
         return "block";
+    case Strategy::alias:
+        return "alias";
     case Strategy::none:
         return "null";
     }
@@ -274,6 +301,9 @@ const char* getstrategystring(Strategy s) {
 
 std::list<std::pair<std::string, strategy>> getallstrategy(){
     std::list<std::pair<std::string, strategy>> slist;
+    for(const auto& i: aliases){
+        slist.emplace_back(i.first, strategy{Strategy::alias, i.second});
+    }
     std::list<char> i4list;
     auto ip4list = ipv4s.dump(i4list);
     for(const auto& i: ip4list){
@@ -405,7 +435,7 @@ bool checktoken(const char* token) {
     // Try secrets
     for (const auto& secret : secrets) {
         std::string sig = hmac_sha256(secret.c_str(), secret.length(), ts_be, sizeof(ts_be));
-        return sig == provided_sig;
+        if(sig == provided_sig) return true;
     }
 
     return false;

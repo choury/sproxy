@@ -100,6 +100,11 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         return response(rw, resh, reqh.geturl().c_str());
     }
     strategy stra = getstrategy(req->Dest.hostname, req->path);
+    if(stra.s == Strategy::none) {
+        req->set(STRATEGY, getstrategystring(Strategy::none));
+        return response(rw, HttpResHeader::create(S404, sizeof(S404), id),
+                            "Can't find policy for this request.\n");
+    }
     if(stra.s == Strategy::block){
         req->set(STRATEGY, getstrategystring(Strategy::block));
         return response(rw, HttpResHeader::create(S403, sizeof(S403), id),

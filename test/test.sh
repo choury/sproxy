@@ -388,6 +388,53 @@ function test_sni(){
 
 
 
+function test_strategy() {
+    local sock=$1
+    echo "Testing strategies ..."
+
+    printf "adds direct direct.test\n" | ./scli -s ${sock}
+    printf "adds block block.test\n" | ./scli -s ${sock}
+    printf "adds proxy proxy.test http://127.0.0.1:8080\n" | ./scli -s ${sock}
+    printf "adds local local.test\n" | ./scli -s ${sock}
+    printf "adds forward forward.test http://127.0.0.1:80\n" | ./scli -s ${sock}
+    printf "adds rewrite rewrite.test http://127.0.0.1:80\n" | ./scli -s ${sock}
+    printf "adds proxy 1.2.3.4 http://1.1.1.1:80\n" | ./scli -s ${sock}
+    printf "adds proxy 192.168.0.0/16 http://192.168.1.1:80\n" | ./scli -s ${sock}
+    printf "adds proxy [2001:db8::1] http://[::1]:80\n" | ./scli -s ${sock}
+
+    printf "test direct.test\n" | ./scli -s ${sock} | grep "direct" || { echo "direct failed"; exit 1; }
+    printf "test block.test\n" | ./scli -s ${sock} | grep "block" || { echo "block failed"; exit 1; }
+    printf "test proxy.test\n" | ./scli -s ${sock} | grep "proxy http://127.0.0.1:8080" || { echo "proxy failed"; exit 1; }
+    printf "test local.test\n" | ./scli -s ${sock} | grep "local" || { echo "local failed"; exit 1; }
+    printf "test forward.test\n" | ./scli -s ${sock} | grep "forward http://127.0.0.1:80" || { echo "forward failed"; exit 1; }
+    printf "test rewrite.test\n" | ./scli -s ${sock} | grep "rewrite http://127.0.0.1:80" || { echo "rewrite failed"; exit 1; }
+    printf "test 1.2.3.4\n" | ./scli -s ${sock} | grep "proxy http://1.1.1.1:80" || { echo "ipv4 failed"; exit 1; }
+    printf "test 192.168.1.50\n" | ./scli -s ${sock} | grep "proxy http://192.168.1.1:80" || { echo "ipv4 cidr failed"; exit 1; }
+    printf "test [2001:db8::1]\n" | ./scli -s ${sock} | grep -F "proxy http://[::1]:80" || { echo "ipv6 failed"; exit 1; }
+
+    echo "Testing Alias ..."
+    printf "adds alias myauth socks5://user:pass@127.0.0.1:1080\n" | ./scli -s ${sock}
+    printf "adds proxy auth.test @myauth\n" | ./scli -s ${sock}
+    printf "test auth.test\n" | ./scli -s ${sock} | grep "proxy socks5://user:pass@127.0.0.1:1080" || { echo "alias auth failed"; exit 1; }
+    printf "dels @myauth\n" | ./scli -s ${sock}
+    printf "test auth.test\n" | ./scli -s ${sock} | grep "null" || { echo "alias deletion/non-exist failed"; exit 1; }
+
+    echo "Testing Matching..."
+    printf "adds proxy *.match.test http://wildcard\n" | ./scli -s ${sock}
+    printf "adds proxy long.match.test http://specific\n" | ./scli -s ${sock}
+    printf "adds block regex.test .*\.png\n" | ./scli -s ${sock}
+
+    printf "test short.match.test\n" | ./scli -s ${sock} | grep "proxy http://wildcard" || { echo "wildcard failed"; exit 1; }
+    printf "test long.match.test\n" | ./scli -s ${sock} | grep "proxy http://specific" || { echo "longest match failed"; exit 1; }
+
+    printf "test regex.test/image.png\n" | ./scli -s ${sock} | grep "block .*\.png" || { echo "block regex failed"; exit 1; }
+    printf "test regex.test/index.html\n" | ./scli -s ${sock} | grep "direct" || { echo "block regex fallthrough failed"; exit 1; }
+
+    echo "Testing Deletion & Default..."
+    printf "dels proxy.test\n" | ./scli -s ${sock}
+    printf "test proxy.test\n" | ./scli -s ${sock} | grep "direct" || { echo "strategy deletion/default failed"; exit 1; }
+}
+
 function wait_tcp_port() {
     while ! nc -vz localhost $1; do
         ps aux | grep sproxy | grep -v grep
@@ -496,6 +543,7 @@ wait_tcp_port 3335
 
 echo "test http1 -> http1"
 test_client 3335
+test_strategy ${sp}client_h1.sock
 jobs
 printf "dump sites" | ./scli -s ${sp}client_h1.sock
 printf "dump usage" | ./scli -s ${sp}client_h1.sock

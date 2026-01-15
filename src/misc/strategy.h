@@ -30,6 +30,7 @@ enum class Strategy{
     proxy,
     local,
     block,
+    alias,
 };
 
 struct strategy{
