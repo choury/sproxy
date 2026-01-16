@@ -43,7 +43,9 @@ struct strategy getstrategy(const char* host, const char* path = "");
 bool mayBeBlocked(const char* host);
 const char* getstrategystring(Strategy s);
 std::string gen_token();
+bool decodeauth(const char* auth, struct Credit* credit);
 bool checkauth(const char* ip, std::shared_ptr<const HttpReqHeader> req);
+bool getalias(const std::string& name, std::string& target);
 
 
 std::list<std::pair<std::string, strategy>> getallstrategy();

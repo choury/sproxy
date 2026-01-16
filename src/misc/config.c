@@ -868,9 +868,7 @@ void postConfig(){
         exit(1);
     }
     for(struct arg_list* p = secrets.next; p != NULL; p = p->next){
-        char secret_encode[DOMAINLIMIT];
-        Base64Encode(p->arg, strlen(p->arg), secret_encode);
-        addsecret(secret_encode);
+        addsecret(p->arg);
     }
     for(struct arg_list* p = debug_list.next; p != NULL; p = p->next){
         if(!debugon(p->arg, true)){

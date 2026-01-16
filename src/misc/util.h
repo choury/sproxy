@@ -35,6 +35,7 @@ int URLEncode(char *des,const char* src, size_t len);
 int URLDecode(char *des,const char* src, size_t len);
 size_t Base64Encode(const char* s, size_t len, char* dst);
 size_t Base64EnUrl(const char *s, size_t len, char *dst);
+size_t Base64Decode(const char *s, size_t len, char* dst);
 size_t Base64DeUrl(const char *s, size_t len, char* dst);
 
 void dump_trace(int ignore);
@@ -47,7 +48,7 @@ struct in_addr getMapped(struct in6_addr addr, const char* prefix);
 
 const char* protstr(Protocol p);
 
-int parse_user_pass(const char* input, size_t input_len, struct Destination* dest);
+int parse_user_pass(const char* input, size_t input_len, struct Credit* credit);
 int spliturl(const char* url, struct Destination* server, char* path);
 const char* dumpDest(const struct Destination* server);
 const char* dumpAuthority(const struct Destination* Server);

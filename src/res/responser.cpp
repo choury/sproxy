@@ -99,11 +99,32 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         resh->set("Location", reqh.geturl());
         return response(rw, resh, reqh.geturl().c_str());
     }
-    strategy stra = getstrategy(req->Dest.hostname, req->path);
+    strategy stra{Strategy::none, ""};
+    std::string backend;
+    const char* auth = req->get("Proxy-Authorization");
+    struct Credit cr{};
+    if(auth && decodeauth(auth, &cr) && strchr(cr.user, '+')){
+        backend = strchr(cr.user, '+') + 1;
+    }
+    if(req->has("sproxy")){
+        backend = req->get("sproxy");
+        req->del("sproxy");
+    }
+    if(!backend.empty()){
+        std::string target;
+        if(getalias(backend, target)){
+            stra = strategy{Strategy::proxy, target};
+        } else {
+            return response(rw, HttpResHeader::create(S502, sizeof(S502), id),
+                                "[[can't find backend]]\n");
+        }
+    }else{
+        stra = getstrategy(req->Dest.hostname, req->path);
+    }
     if(stra.s == Strategy::none) {
         req->set(STRATEGY, getstrategystring(Strategy::none));
         return response(rw, HttpResHeader::create(S404, sizeof(S404), id),
-                            "Can't find policy for this request.\n");
+                            "[[can't find backend]]\n");
     }
     if(stra.s == Strategy::block){
         req->set(STRATEGY, getstrategystring(Strategy::block));
@@ -137,6 +158,9 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
     case CheckResult::NoPort:
         return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[no port]]\n");
     }
+    if(auth){
+        req->del("Proxy-Authorization");
+    }
     if(req->has("rproxy")) {
         return distribute_rproxy(req, rw);
     }
@@ -153,10 +177,10 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         }
         //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
         req->chain_proxy = true;
-        if(dest.username[0]) {
+        if(dest.credit.user[0]) {
             char auth_plain[AUTHLIMIT * 2];
             char auth_encode[AUTHLIMIT * 4];
-            snprintf(auth_plain, sizeof(auth_plain), "%s:%s", dest.username, dest.password);
+            snprintf(auth_plain, sizeof(auth_plain), "%s:%s", dest.credit.user, dest.credit.pass);
             Base64Encode(auth_plain, strlen(auth_plain), auth_encode);
             req->set("Proxy-Authorization", std::string("Basic ") + auth_encode);
         }else if(strlen(opt.rewrite_auth)){

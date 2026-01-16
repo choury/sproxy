@@ -8,6 +8,7 @@
 #include <set>
 #include <map>
 #include <sstream>
+#include <vector>
 
 #include <string.h>
 #include <unistd.h>
@@ -261,13 +262,20 @@ strategy getstrategy(const char *host_, const char* path){
     }
     strategy s = v->value;
     if(s.s != Strategy::alias && !s.ext.empty() && s.ext[0] == '@'){
-        if(aliases.count(s.ext.substr(1))){
-             s.ext = aliases[s.ext.substr(1)];
-        } else {
-            return strategy{Strategy::none, ""};
+        if(getalias(s.ext.substr(1), s.ext)){
+            return s;
         }
+        return strategy{Strategy::none, ""};
     }
     return s;
+}
+
+bool getalias(const std::string& name, std::string& target) {
+    if (aliases.count(name)) {
+        target = aliases[name];
+        return true;
+    }
+    return false;
 }
 
 bool mayBeBlocked(const char* host) {
@@ -322,11 +330,17 @@ std::list<std::pair<std::string, strategy>> getallstrategy(){
     return slist;
 }
 
-static std::set<string> secrets;
+static std::map<string, string> secrets;
 static std::set<string> authips{"127.0.0.1", "[::1]", "localhost"};
 
 void addsecret(const char* secret) {
-    secrets.emplace(secret);
+    Credit cr{};
+    if (parse_user_pass(secret, strlen(secret), &cr) == 0) {
+        secrets[cr.user] = cr.pass;
+    }
+    if(!authips.empty()) {
+        return;
+    }
     for(auto ips=getlocalip(); ips->ss_family ; ips++){
         char buff[INET6_ADDRSTRLEN + 3] = {0};
         const char* dst = nullptr;
@@ -376,7 +390,8 @@ std::string gen_token() {
         signature = hmac_sha256(key_data, key_len, now_be, sizeof(now_be));
         BIO_free(bio);
     } else if (!secrets.empty()) {
-        const std::string& secret = *secrets.begin(); // Use the first secret
+        const auto& [user, pass] = *secrets.begin(); // Use the first secret
+        const std::string& secret = user + ':' + pass;
         signature = hmac_sha256(secret.c_str(), secret.length(), now_be, sizeof(now_be));
     } else {
         return ""; // No auth required
@@ -433,12 +448,29 @@ bool checktoken(const char* token) {
     }
 
     // Try secrets
-    for (const auto& secret : secrets) {
+    for (const auto& [user, pass] : secrets) {
+        const std::string& secret = user + ':' + pass;
         std::string sig = hmac_sha256(secret.c_str(), secret.length(), ts_be, sizeof(ts_be));
         if(sig == provided_sig) return true;
     }
 
     return false;
+}
+
+bool decodeauth(const char* auth, struct Credit* credit){
+    if(strncmp(auth, "Basic ", 6) == 0){
+        auth = auth + 6;
+    }
+
+    size_t len = strlen(auth);
+    std::vector<char> decoded(len + 1);
+    size_t decoded_len = Base64Decode(auth, len, decoded.data());
+    if (decoded_len == 0) {
+        return false;
+    }
+    decoded[decoded_len] = 0;
+
+    return parse_user_pass(decoded.data(), decoded_len, credit) == 0;
 }
 
 bool checksecret(const char* ip, const char* secret){
@@ -455,10 +487,15 @@ bool checksecret(const char* ip, const char* secret){
     if(secret == nullptr){
         return false;
     }
-    if(strncmp(secret, "Basic ", 6) == 0){
-        secret = secret + 6;
+    struct Credit cr{};
+    if (!decodeauth(secret, &cr)) {
+        return false;
     }
-    if(secrets.count(secret) > 0) {
+    char* plus = strchr(cr.user, '+');
+    if (plus) {
+        *plus = 0;
+    }
+    if (secrets.count(cr.user) && secrets.at(cr.user) == cr.pass) {
         authips.insert(ip);
         return true;
     }

@@ -390,6 +390,7 @@ function test_sni(){
 
 function test_strategy() {
     local sock=$1
+    local port=$2
     echo "Testing strategies ..."
 
     printf "adds direct direct.test\n" | ./scli -s ${sock}
@@ -433,6 +434,17 @@ function test_strategy() {
     echo "Testing Deletion & Default..."
     printf "dels proxy.test\n" | ./scli -s ${sock}
     printf "test proxy.test\n" | ./scli -s ${sock} | grep "direct" || { echo "strategy deletion/default failed"; exit 1; }
+
+    echo "Testing Backend Selection..."
+    printf "adds alias backend_test http://127.0.0.1:3333\n" | ./scli -s ${sock}
+
+    curl -f -v -x http://localhost:$port -U "user+backend_test:pass" http://localhost/sites.list > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "backend selection via Proxy-Authorization failed" && exit 1
+
+    curl -f -v -x http://localhost:$port http://localhost/sites.list -H "Sproxy: backend_test" > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "backend selection via sproxy header failed" && exit 1
+
+    printf "dels @backend_test\n" | ./scli -s ${sock}
 }
 
 function wait_tcp_port() {
@@ -543,7 +555,7 @@ wait_tcp_port 3335
 
 echo "test http1 -> http1"
 test_client 3335
-test_strategy ${sp}client_h1.sock
+test_strategy ${sp}client_h1.sock 3335
 jobs
 printf "dump sites" | ./scli -s ${sp}client_h1.sock
 printf "dump usage" | ./scli -s ${sp}client_h1.sock

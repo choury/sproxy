@@ -188,6 +188,17 @@ size_t Base64EnUrl(const char *s, size_t len, char *dst){
     return Base64(base64_endigs_url, s, len, dst, true);
 }
 
+static const char base64_dedigs_normal[128] =
+{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+ 0,0,0,0,0,0,0,0,0,0,0,62,0,0,0,63,
+ 52,53,54,55,56,57,58,59,60,61,0,0,0,0,0,0,
+ 0,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,
+ 15,16,17,18,19,20,21,22,23,24,25,0,0,0,0,0,
+ 0,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+ 41,42,43,44,45,46,47,48,49,50,51,0,0,0,0,0
+};
+
 static const char base64_dedigs_url[128] =
 {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -218,6 +229,10 @@ static size_t DeBase64(const char* base64_dedigs, const char *src, size_t len, c
     }
     dst[j] = 0;
     return j;
+}
+
+size_t Base64Decode(const char *src, size_t len, char* dst){
+    return DeBase64(base64_dedigs_normal, src, len, dst);
 }
 
 size_t Base64DeUrl(const char *src, size_t len, char* dst){
@@ -381,19 +396,19 @@ static int parse_port(const char *s, uint16_t *out) {
     return 0;
 }
 
-int parse_user_pass(const char* input, size_t input_len, struct Destination* dest) {
+int parse_user_pass(const char* input, size_t input_len, struct Credit* credit) {
     const char* sep = strchr(input, ':');
     size_t user_len = sep ? (size_t)(sep - input) : input_len;
     size_t pass_len = sep ? (input_len - user_len - 1) : 0;
-    if(user_len > sizeof(dest->username) - 1 || pass_len > sizeof(dest->password) - 1) {
+    if(user_len > sizeof(credit->user) - 1 || pass_len > sizeof(credit->pass) - 1) {
         return -1; // userinfo too long
     }
-    memcpy(dest->username, input, user_len);
-    opt.Server.username[user_len] = 0;
+    memcpy(credit->user, input, user_len);
+    credit->user[user_len] = 0;
     if (pass_len) {
-        memcpy(dest->password, sep + 1, pass_len);
+        memcpy(credit->pass, sep + 1, pass_len);
     }
-    dest->password[pass_len] = 0;
+    credit->pass[pass_len] = 0;
     return 0;
 }
 
@@ -451,7 +466,7 @@ int spliturl(const char* url, struct Destination* server, char* path) {
             return -2; // Invalid userinfo format
         }
         size_t userinfo_len = (size_t)(atsplit - tmpaddr);
-        if(parse_user_pass(tmpaddr, userinfo_len, server)) {
+        if (parse_user_pass(tmpaddr, userinfo_len, &server->credit)) {
             return -2;
         }
         memmove(tmpaddr, atsplit + 1, strlen(atsplit + 1) + 1);

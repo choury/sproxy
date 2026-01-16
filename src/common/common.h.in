@@ -277,12 +277,16 @@ typedef void (* Dumper)(void* param, const char* fmt, ...) __attribute__ ((__for
 int protectFd(int sockfd, const struct sockaddr_storage* addr);
 
 
+struct Credit {
+    char user[AUTHLIMIT];
+    char pass[AUTHLIMIT];
+};
+
 struct Destination{
     char scheme[16];
     char protocol[16];
     char hostname[DOMAINLIMIT];
-    char username[AUTHLIMIT];
-    char password[AUTHLIMIT];
+    struct Credit credit;
     uint16_t port;
     int systemd_fd;
     bool system_resolve;

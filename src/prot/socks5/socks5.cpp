@@ -131,7 +131,7 @@ void Socks5RWer::waitconnectHE(RW_EVENT events) {
         SendGreeting();
         state = Socks5State::GreetingSent;
         if (opt.socks5_fast) {
-            if(server.username[0] != '\0' || server.password[0] != '\0') {
+            if(server.credit.user[0] != '\0' || server.credit.pass[0] != '\0') {
                 SendAuth();
             }
             SendRequest();
@@ -285,7 +285,7 @@ void Socks5RWer::SendGreeting() {
     auto* data = (uchar*)buff.data();
     data[0] = SOCKS5_VERSION;
     data[1] = methods;
-    Socks5Method method = (server.username[0] != '\0' || server.password[0] != '\0') ?
+    Socks5Method method = (server.credit.user[0] != '\0' || server.credit.pass[0] != '\0') ?
         Socks5Method::UserPass : Socks5Method::NoAuth;
     data[2] = (uchar)method;
     LOGD(DSOCKS, "<socks5> send greeting: method=%u\n", (unsigned)method);
@@ -293,21 +293,21 @@ void Socks5RWer::SendGreeting() {
 }
 
 void Socks5RWer::SendAuth() {
-    if (server.username[0] == '\0' && server.password[0] == '\0') {
+    if (server.credit.user[0] == '\0' && server.credit.pass[0] == '\0') {
         Fail(PROTOCOL_ERR);
         return;
     }
-    size_t username_len = strnlen(server.username, sizeof(server.username));
-    size_t password_len = strnlen(server.password, sizeof(server.password));
+    size_t username_len = strnlen(server.credit.user, sizeof(server.credit.user));
+    size_t password_len = strnlen(server.credit.pass, sizeof(server.credit.pass));
     LOGD(DSOCKS, "<socks5> send auth: userlen=%zu\n", username_len);
     size_t len = 3 + username_len + password_len;
     Block buff(len);
     auto* data = (uchar*)buff.data();
     data[0] = SOCKS5_AUTH_VERSION;
     data[1] = (uchar)username_len;
-    memcpy(data + 2, server.username, username_len);
+    memcpy(data + 2, server.credit.user, username_len);
     data[2 + username_len] = (uchar)password_len;
-    memcpy(data + 3 + username_len, server.password, password_len);
+    memcpy(data + 3 + username_len, server.credit.pass, password_len);
     StreamRWer::Send(Buffer{std::move(buff), len});
     state = Socks5State::AuthSent;
 }
