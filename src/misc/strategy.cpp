@@ -496,7 +496,6 @@ bool checksecret(const char* ip, const char* secret){
         *plus = 0;
     }
     if (secrets.count(cr.user) && secrets.at(cr.user) == cr.pass) {
-        authips.insert(ip);
         return true;
     }
     return false;
