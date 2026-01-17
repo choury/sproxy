@@ -348,6 +348,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
             status.req = UnpackHttpReq(buff, headlen);
             status.req->request_id = id;
             status.req->set("User-Agent", generateUA(opt.ua, status.prog, id));
+            status.req->set("Skip-Authorize", "1");
             status.rw = std::make_shared<MemRWer>(src, dst, status.cb);
             distribute(status.req, status.rw);
         }
@@ -378,6 +379,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
             status.req = UnpackHttpReq(buff, headlen);
             status.req->request_id = id;
             status.req->set("User-Agent", generateUA(opt.ua, status.prog, id));
+            status.req->set("Skip-Authorize", "1");
             status.rw = std::make_shared<PMemRWer>(src, dst, status.cb);
             distribute(status.req, status.rw);
         }
@@ -390,6 +392,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
         status.req = UnpackHttpReq(buff, headlen);
         status.req->request_id = id;
         status.req->set("User-Agent", generateUA(opt.ua, status.prog, id));
+        status.req->set("Skip-Authorize", "1");
         status.rw = std::make_shared<PMemRWer>(src, dst, status.cb);
         distribute(status.req, status.rw);
         break;
@@ -401,6 +404,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
         status.req = UnpackHttpReq(buff, headlen);
         status.req->request_id = id;
         status.req->set("User-Agent", generateUA(opt.ua, status.prog, id));
+        status.req->set("Skip-Authorize", "1");
         status.rw = std::make_shared<PMemRWer>(src, dst, status.cb);
         distribute(status.req, status.rw);
         break;

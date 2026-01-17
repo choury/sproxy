@@ -79,6 +79,7 @@ Guest::ReqStatus* Guest_sni::forward(const char *hostname, Protocol prot, uint64
         return nullptr;
     }
     req->set("User-Agent", generateUA(user_agent.c_str(), "", req->request_id));
+    req->set("Skip-Authorize", "1");
 
     auto _cb = response(id);
 #ifdef HAVE_QUIC
