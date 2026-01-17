@@ -11,6 +11,7 @@ class Rguest3: public Guest3{
     static size_t next_retry;
 public:
     Rguest3(const Destination& dest, const std::string& name);
+    virtual void ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> req) override;
     virtual void deleteLater(uint32_t errcode) override;
 };
 

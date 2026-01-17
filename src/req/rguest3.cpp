@@ -17,6 +17,11 @@ Rguest3::Rguest3(const Destination& dest, const std::string& name):
     });
 }
 
+void Rguest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> req) {
+    req->set("Skip-Authorize", "1");
+    Guest3::ReqProc(id, req);
+}
+
 void Rguest3::deleteLater(uint32_t errcode) {
     if(!respawned) {
         if(getmtime() - starttime > 1800000) {

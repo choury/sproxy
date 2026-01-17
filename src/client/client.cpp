@@ -122,7 +122,7 @@ typedef struct {
 
 
 static char *generator_strategy(const char* text, int state){
-    static const char *strategies[] = {"local", "proxy", "rewrite", "direct", "forward", "block"};
+    static const char *strategies[] = {"local", "proxy", "rewrite", "direct", "forward", "block", "alias"};
     static const int nb_elements = (sizeof(strategies)/sizeof(strategies[0]));
     COMPLETION_SKELETON(strategies, nb_elements);
 }

@@ -201,7 +201,7 @@ function test_rproxy(){
     [ $? -ne 0 ] && echo "rproxy2 URL HEAD test failed" && exit 1
 
     curl -f -v \
-        -H "rproxy: test_proxy" \
+        -H "Sproxy: test_proxy" \
         -H "Expect: 100-continue" \
         -F 'name=@test1k' \
         -x http://$HOSTNAME:3333 \
@@ -231,7 +231,7 @@ function test_rproxy(){
 
 
     curl -f -v \
-        -H "rproxy: test_proxy" \
+        -H "Sproxy: test_proxy" \
         -H "Expect: 100-continue" \
         -F 'name=@test1k' \
         --proxy-insecure \

@@ -8,7 +8,8 @@
 extern "C" {
 #endif
 void addsecret(const char* secret);
-bool checksecret(const char* ip, const char* auth);
+bool decodeauth(const char* auth, struct Credit* credit);
+bool checksecret(const char* auth, const struct Credit* credit);
 bool checktoken(const char* token);
 void reloadstrategy();
 bool addstrategy(const char *host, const char* s, const char* ext);
@@ -43,7 +44,6 @@ struct strategy getstrategy(const char* host, const char* path = "");
 bool mayBeBlocked(const char* host);
 const char* getstrategystring(Strategy s);
 std::string gen_token();
-bool decodeauth(const char* auth, struct Credit* credit);
 bool checkauth(const char* ip, std::shared_ptr<const HttpReqHeader> req);
 bool getalias(const std::string& name, std::string& target);
 

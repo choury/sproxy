@@ -79,6 +79,27 @@ void response(std::shared_ptr<MemRWer> rw, std::shared_ptr<HttpResHeader> res, s
     rw->Send(Buffer{nullptr, res->request_id});
 }
 
+static std::string getBackend(std::shared_ptr<HttpReqHeader> req) {
+    std::string backend;
+    const char* auth = req->get("Proxy-Authorization");
+    struct Credit cr{};
+    if(auth && !decodeauth(auth, &cr)){
+        return backend;
+    }
+    if(!checksecret(auth, &cr) && !req->has("Skip-Authorize", "1")) {
+        return backend;
+    }
+    char* plus = strchr(cr.user, '+');
+    if(plus) {
+        backend = plus + 1;
+    }
+    if(req->has("sproxy")){
+        backend = req->get("sproxy");
+        req->del("sproxy");
+    }
+    return backend;
+}
+
 void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw){
     HOOK_FUNC(req, rw);
     defer([req] { req->tracker.emplace_back("distribute", getmtime()); });
@@ -100,23 +121,13 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         return response(rw, resh, reqh.geturl().c_str());
     }
     strategy stra{Strategy::none, ""};
-    std::string backend;
-    const char* auth = req->get("Proxy-Authorization");
-    struct Credit cr{};
-    if(auth && decodeauth(auth, &cr) && strchr(cr.user, '+')){
-        backend = strchr(cr.user, '+') + 1;
-    }
-    if(req->has("sproxy")){
-        backend = req->get("sproxy");
-        req->del("sproxy");
-    }
+    std::string backend = getBackend(req);
     if(!backend.empty()){
         std::string target;
         if(getalias(backend, target)){
             stra = strategy{Strategy::proxy, target};
         } else {
-            return response(rw, HttpResHeader::create(S502, sizeof(S502), id),
-                                "[[can't find backend]]\n");
+            return distribute_rproxy(req, rw, backend);
         }
     }else{
         stra = getstrategy(req->Dest.hostname, req->path);
@@ -158,22 +169,17 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
     case CheckResult::NoPort:
         return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[no port]]\n");
     }
-    if(auth){
-        req->del("Proxy-Authorization");
-    }
-    if(req->has("rproxy")) {
-        return distribute_rproxy(req, rw);
-    }
+    req->del("Proxy-Authorization");
     req->append("Via", identify);
     Destination dest;
     switch(stra.s){
     case Strategy::proxy:
         memcpy(&dest, &opt.Server, sizeof(dest));
-        if(dest.port == 0){
-            return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[server not set]]\n");
-        }
         if(!stra.ext.empty() && parseDest(stra.ext.c_str(), &dest)){
             return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[ext misformat]]\n");
+        }
+        if(dest.port == 0){
+            return response(rw, HttpResHeader::create(S400, sizeof(S400), id), "[[server not set]]\n");
         }
         //req->set("X-Forwarded-For", "2001:da8:b000:6803:62eb:69ff:feb4:a6c2");
         req->chain_proxy = true;
@@ -194,7 +200,6 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
             if(opt.rproxy_keep_src) strncpy(dest.assign_src, req->get("X-Forwarded-For"), sizeof(dest.assign_src) - 1);
             if(!req->ismethod("CONNECT")) req->del("X-Forwarded-For");
         }
-        req->del("Proxy-Authorization");
         if(strcmp(dest.protocol, "icmp") == 0){
             return (new Ping(dest))->request(req, rw);
         }
@@ -214,7 +219,7 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         if(dest.port == 0) {
             dest.port = req->getDport();
         }
-        if(spliturl(stra.ext.c_str(), &dest, nullptr)){
+        if(parseDest(stra.ext.c_str(), &dest)){
             return response(rw, HttpResHeader::create(S500, sizeof(S500), id), "[[ext misformat]]\n");
         }
         if(stra.s == Strategy::rewrite) {
@@ -302,9 +307,6 @@ static bool origin_matches_host(const char* origin_header, const char* host_head
 }
 
 void rewrite_rproxy_req(std::shared_ptr<HttpReqHeader> req) {
-    if(!req) {
-        return;
-    }
     std::string rewritten_referer;
     const char* referer = req->get("Referer");
     if(referer) {
@@ -358,21 +360,19 @@ void rewrite_rproxy_req(std::shared_ptr<HttpReqHeader> req) {
             req->del("Sec-Fetch-User");
         }
     }
+    req->del("sproxy");
+    req->del("Proxy-Authorization");
 }
 
-void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) {
+void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, std::string rproxy_name) {
     uint64_t id = req->request_id;
-    if(!checkauth(rw->getSrc().hostname, req)){
-        auto sheader = HttpResHeader::create(S401, sizeof(S401), id);
-        sheader->set("WWW-Authenticate", "Basic realm=\"Secure Area\"");
-        response(rw, sheader, "");
-        return;
-    }
-    std::string filename;
-    if(req->has("rproxy")) {
-        filename = req->get("rproxy");
-        req->del("rproxy");
-    }else {
+    if(rproxy_name.empty()) {
+        if(!checkauth(rw->getSrc().hostname, req)){
+            auto sheader = HttpResHeader::create(S401, sizeof(S401), id);
+            sheader->set("WWW-Authenticate", "Basic realm=\"Secure Area\"");
+            response(rw, sheader, "");
+            return;
+        }
         std::string path = req->path;
         auto fragment = split(req->path, '/');
         assert(fragment.size() >= 1 && fragment[0] == "rproxy");
@@ -395,14 +395,14 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
             response(rw, HttpResHeader::create(S400, sizeof(S400), id), "");
             return;
         }
-        filename = fragment[1];
+        rproxy_name = fragment[1];
         memset(&req->Dest.hostname, 0, sizeof(req->Dest.hostname));
         req->Dest.port = 0;
         if(strcmp(req->Dest.protocol, "websocket")) {
             memset(&req->Dest.protocol, 0, sizeof(req->Dest.protocol));
         }
         strcpy(req->Dest.scheme, "http");
-        if(spliturl(path.c_str() + 9 + filename.length(), &req->Dest, req->path)) {
+        if(spliturl(path.c_str() + 9 + rproxy_name.length(), &req->Dest, req->path)) {
             response(rw, HttpResHeader::create(S400, sizeof(S400), id), "");
             return;
         }
@@ -417,19 +417,19 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
         req->postparse();
         LOGD(DFILE, "rproxy: %s -> %s\n", path.c_str(), req->geturl().c_str());
     }
-    rewrite_rproxy_req(req);
     const auto& src = rw->getSrc();
     req->set("X-Forwarded-For", dumpAuthority(&src));
-    req->set("Rproxy-Name", filename);
-    if(filename == "local") {
+    req->set("Rproxy-Name", rproxy_name);
+    if(rproxy_name == "local") {
         return distribute(req, rw);
     }
-    if(rproxys.count(filename) == 0) {
+    if(rproxys.count(rproxy_name) == 0) {
         response(rw, HttpResHeader::create(S404, sizeof(S404), id), "");
         return;
     }
     req->chain_proxy = true;
-    rproxys[filename]->request(req, rw);
+    rewrite_rproxy_req(req);
+    rproxys[rproxy_name]->request(req, rw);
 }
 
 static std::string rewrite_reporting_endpoint_value(const std::string& value,

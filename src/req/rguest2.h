@@ -13,6 +13,7 @@ class Rguest2: public Guest2{
     virtual size_t InitProc(Buffer& bb) override;
 public:
     Rguest2(const Destination& dest, const std::string& name);
+    void ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> req) override;
     virtual void deleteLater(uint32_t errcode) override;
 };
 

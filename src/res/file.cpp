@@ -346,7 +346,7 @@ void File::getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
     }else if(filename == "rproxy/sw.js") {
         filename = "webui/sw.js";
     }else if(filename == "rproxy" || startwith(filename.c_str(), "rproxy/")) {
-        return distribute_rproxy(req, rw);
+        return distribute_rproxy(req, rw, "");
     }else if(filename == "test"){
         //for compatibility
         std::string cgi = pathjoin(opt.rootdir, std::string("cgi/libtest") + LIBSUFFIX);

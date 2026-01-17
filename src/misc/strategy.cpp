@@ -473,36 +473,44 @@ bool decodeauth(const char* auth, struct Credit* credit){
     return parse_user_pass(decoded.data(), decoded_len, credit) == 0;
 }
 
-bool checksecret(const char* ip, const char* secret){
+bool checksecret(const char* auth, const struct Credit* cr){
     if(secrets.empty())
         return true;
-    if(authips.count(ip) > 0){
-        return true;
-    }
 
-    sockaddr_storage addr;
-    if(storage_aton(ip, 0, &addr)  && isFakeAddress(&addr)) {
-        return true;
-    }
-    if(secret == nullptr){
+    if(auth == nullptr && cr == nullptr){
         return false;
     }
-    struct Credit cr{};
-    if (!decodeauth(secret, &cr)) {
-        return false;
+    struct Credit local;
+    if(cr == nullptr){
+        if (!decodeauth(auth, &local)) {
+            return false;
+        }
+    } else {
+        local = *cr;
     }
-    char* plus = strchr(cr.user, '+');
+    char* plus = strchr(local.user, '+');
     if (plus) {
         *plus = 0;
     }
-    if (secrets.count(cr.user) && secrets.at(cr.user) == cr.pass) {
+    if (secrets.count(local.user) && secrets.at(local.user) == local.pass) {
         return true;
     }
     return false;
 }
 
 bool checkauth(const char* ip, std::shared_ptr<const HttpReqHeader> req) {
-    if (checksecret(ip, req->get("Proxy-Authorization")) || checksecret(ip, req->get("Authorization"))) {
+    if(authips.count(ip) > 0){
+        return true;
+    }
+    if (req->has("Skip-Authorize", "1")) {
+        return true;
+    }
+    sockaddr_storage addr;
+    if(storage_aton(ip, 0, &addr)  && isFakeAddress(&addr)) {
+        return true;
+    }
+
+    if (checksecret(req->get("Proxy-Authorization"), nullptr) || checksecret(req->get("Authorization"), nullptr)) {
         return true;
     }
     auto cookies = req->getcookies();

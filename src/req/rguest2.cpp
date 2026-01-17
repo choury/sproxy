@@ -41,6 +41,10 @@ size_t Rguest2::InitProc(Buffer& bb) {
     return ret;
 }
 
+void Rguest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> req) {
+    req->set("Skip-Authorize", "1");
+    Guest2::ReqProc(id, req);
+}
 
 void Rguest2::deleteLater(uint32_t errcode) {
     if(!respawned) {

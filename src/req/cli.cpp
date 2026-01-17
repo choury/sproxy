@@ -138,7 +138,7 @@ std::string Cli::GetServer() {
 
 std::string Cli::Login(const std::string &token, const std::string &source) {
     LOG("%s [%s] %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, source.c_str());
-    if(checksecret(source.c_str(), token.c_str())){
+    if(checksecret(token.c_str(), nullptr)){
         return gen_token();
     }
     return "";
