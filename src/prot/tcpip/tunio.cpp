@@ -761,6 +761,12 @@ void TunRWer::HandleIoUringCompletion() {
     io_uring_cq_advance(&ring, cqe_count);
     if(shouldReArm) {
         SubmitRead();
+    } else if(cqe_count == 0 && io_uring_cq_has_overflow(&ring)) {
+        LOGD(DVPN, "io_uring overflow detected, flushing\n");
+        int ret = io_uring_submit(&ring);
+        if(ret < 0) {
+            LOGE("io_uring_submit failed: %s\n", strerror(-ret));
+        }
     }
 }
 
