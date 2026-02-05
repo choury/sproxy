@@ -8,6 +8,7 @@
 #include "misc/util.h"
 #include "misc/defer.h"
 #include "misc/net.h"
+#include "misc/hook.h"
 #include "res/fdns.h"
 
 #include <errno.h>
@@ -167,6 +168,7 @@ void TunRWer::ReadData() {
             ErrorHE(SOCKET_ERR, errno);
             return;
         }
+        HOOK_FUNC(this, ret, rbuff.data());
         ProcessPacket(Buffer{std::move(rbuff), (size_t)ret});
     }
 }
@@ -189,6 +191,7 @@ void TunRWer::ProcessPacket(Buffer&& bb){
     if(pac == nullptr){
         return;
     }
+    HOOK_FUNC(this, pac.get(), bb.len);
     debugString(pac, bb.len - pac->gethdrlen(), false);
     VpnKey key(pac);
 
@@ -373,7 +376,7 @@ void TunRWer::ConsumeRData(uint64_t id) {
 void TunRWer::SendPkg(std::shared_ptr<const Ip> pac, Buffer&& bb) {
     const void* data = bb.data();
     size_t len = bb.len;
-
+    HOOK_FUNC(this, pac.get(), data, len);
 #if __linux__
     if(enable_offload) {
         debugString(pac, len - pac->gethdrlen() - sizeof(virtio_net_hdr_v1), true);

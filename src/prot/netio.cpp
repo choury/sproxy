@@ -4,6 +4,7 @@
 #include "misc/util.h"
 #include "misc/net.h"
 #include "misc/defer.h"
+#include "misc/hook.h"
 
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -93,6 +94,7 @@ SocketRWer::~SocketRWer() {
 
 void SocketRWer::Dnscallback(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs, int) {
     std::shared_ptr<SocketRWer> rwer = std::static_pointer_cast<SocketRWer>(param);
+    HOOK_FUNC(rwer.get(), rwer->hostname, error, addrs);
     rwer->resolved_time = getmtime();
     if(rwer->flags & RWER_CLOSING){
         return;
@@ -114,6 +116,7 @@ void SocketRWer::Dnscallback(std::shared_ptr<void> param, int error, const std::
 }
 
 void SocketRWer::connectFailed(int error) {
+    HOOK_FUNC(this, hostname, port, protocol, error);
     if(addrs.empty()) {
         return ErrorHE(CONNECT_FAILED, error);
     }
@@ -136,6 +139,7 @@ void SocketRWer::connect() {
     }
     assert(!addrs.empty());
     const auto& addr = addrs.front();
+    HOOK_FUNC(this, hostname, port, protocol);
     const sockaddr_storage* assign_src = nullptr;
     if(this->assign_src && geteuid() == 0 && isLocalIp(&addr)){
         assign_src = this->assign_src.get();
@@ -197,6 +201,7 @@ void SocketRWer::connect() {
 }
 
 void SocketRWer::connected(const sockaddr_storage& addr) {
+    HOOK_FUNC(this, hostname, port, protocol, addr, resolved_time);
     con_failed_job.reset(nullptr);
     setEvents(RW_EVENT::READWRITE);
     stats = RWerStats::Connected;

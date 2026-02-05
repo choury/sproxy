@@ -180,11 +180,13 @@ void SslRWerBase::do_handshake() {
     ERR_clear_error();
     if(ssl_get_error(ssl, SSL_do_handshake(ssl)) == 1){
         sslStats = SslStats::Established;
+        HOOK_FUNC(this, server, sslStats, SSL_is_server(ssl));
         LOGD(DSSL, "(%s) ssl handshake success\n", server.c_str());
         onConnected();
     }else if(errno != EAGAIN){
         sslStats = SslStats::SslError;
         int error = errno;
+        HOOK_FUNC(this, server, sslStats, error, SSL_is_server(ssl));
         LOGE("(%s): ssl %s error:%s\n", server.c_str(), SSL_is_server(ssl)?"accept":"connect", strerror(error));
         onError(SSL_SHAKEHAND_ERR, error);
     }

@@ -50,6 +50,7 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
     if(drained()) {
         return 0;
     }
+    HOOK_FUNC(this, getFd(), wbuff);
     int last_errno = 0;
     const auto& data = wbuff.data();
     if(data.size() == 1) {
@@ -110,6 +111,7 @@ void RWer::SendData(){
     std::set<uint64_t> writed_list;
     int ret = Write(writed_list);
     if(ret >= 0){
+        HOOK_FUNC(this, getFd(), ret, writed_list);
         //normal, do nothing
     }else if (errno != EAGAIN && errno != ENOBUFS && errno != EINTR) {
         ErrorHE(SOCKET_ERR, errno);
@@ -217,6 +219,7 @@ void RWer::Close() {
     if(flags & RWER_CLOSING){
         return;
     }
+    HOOK_FUNC(this, getFd(), stats, flags);
     flags |= RWER_CLOSING;
     //closeCB = std::move(func);
     if(getFd() >= 0 && (stats == RWerStats::Connected || stats == RWerStats::ReadEOF || stats == RWerStats::Error)){
@@ -259,6 +262,7 @@ void RWer::Unblock(uint64_t id){
 }
 
 void RWer::ErrorHE(int ret, int code) {
+    HOOK_FUNC(this, getFd(), ret, code, stats);
     stats = RWerStats::Error;
     if (auto cb = callback.lock(); cb) {
         cb->errorCB(ret, code);

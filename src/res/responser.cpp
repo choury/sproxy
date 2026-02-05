@@ -56,8 +56,8 @@ bool shouldNegotiate(std::shared_ptr<const HttpReqHeader> req, Requester* src){
     return false;
 }
 
-static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, const char* src_host){
-    if (!checkauth(src_host, req)){
+static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, const char* src_host, Strategy s){
+    if (s != Strategy::forward && !checkauth(src_host, req)){
         return CheckResult::AuthFailed;
     }
     if(req->has("via") && strstr(req->get("via"), identify.c_str())){
@@ -156,7 +156,7 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         stra.s = Strategy::direct;
     }
     req->set(STRATEGY, getstrategystring(stra.s));
-    switch(check_header(req, rw->getSrc().hostname)){
+    switch(check_header(req, rw->getSrc().hostname, stra.s)){
     case CheckResult::Succeed:
         break;
     case CheckResult::AuthFailed: {
@@ -224,6 +224,9 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         }
         if(stra.s == Strategy::rewrite) {
             req->set("host", dumpAuthority(&dest));
+        } else {
+            auto src = rw->getSrc();
+            req->set("X-Forwarded-For", dumpAuthority(&src));
         }
         break;
     default:
