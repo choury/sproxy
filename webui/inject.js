@@ -320,10 +320,42 @@
   }
   if (window.WebSocket) {
       var origWS = window.WebSocket;
-      window.WebSocket = function(url, protocols) {
+
+      // Wrap WebSocket to rewrite URL for rproxy, but preserve static constants
+      // (WebSocket.OPEN/CONNECTING/CLOSING/CLOSED) and other static props.
+      // NOTE: Avoid block-scoped function declarations for broad browser compatibility
+      // (Annex B semantics can differ). Use a function expression instead.
+      var WrappedWS = function(url, protocols) {
           return new origWS(rewrite(url), protocols);
       };
-      window.WebSocket.prototype = origWS.prototype;
+      WrappedWS.prototype = origWS.prototype;
+
+      // Preserve WebSocket static constants and other static properties.
+      // Prefer copying full descriptors (writable/configurable/enumerable) to better match native API surface.
+      try {
+          var skip = { length: 1, name: 1, prototype: 1, arguments: 1, caller: 1 };
+          Object.getOwnPropertyNames(origWS).forEach(function(k){
+              if (Object.prototype.hasOwnProperty.call(WrappedWS, k)) return;
+              if (skip[k]) return;
+              var desc;
+              try { desc = Object.getOwnPropertyDescriptor(origWS, k); } catch (e) { desc = null; }
+              if (!desc) return;
+              try {
+                  Object.defineProperty(WrappedWS, k, desc);
+              } catch (e) {
+                  // Fallback: best-effort assignment.
+                  try { WrappedWS[k] = origWS[k]; } catch (e2) {}
+              }
+          });
+      } catch (e) {}
+
+      // Preserve prototype chain where possible (after defining own props).
+      try { Object.setPrototypeOf(WrappedWS, origWS); } catch (e) {}
+
+      // Preserve the constructor name when possible.
+      try { Object.defineProperty(WrappedWS, 'name', { value: 'WebSocket' }); } catch (e) {}
+
+      window.WebSocket = WrappedWS;
   }
   ['HTMLAnchorElement', 'HTMLAreaElement'].forEach(function(cls){
       var proto = window[cls] && window[cls].prototype;
