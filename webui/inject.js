@@ -34,6 +34,8 @@
     return lower === 'href' || lower === 'src' || lower === 'action' || lower === 'poster';
   }
 
+  var lastNavigateRewrite = null;
+  var lastNavigateAt = 0;
   try {
     if (window.navigation && navigation.addEventListener) {
       navigation.addEventListener('navigate', function(event){
@@ -42,13 +44,18 @@
           var dest = event.destination;
           if (!dest || !dest.url) return;
           var rewritten = rewrite(dest.url);
+          var absRewritten = rewritten;
           try {
-            var absRewritten = new URL(rewritten, window.location.href).href;
+            absRewritten = new URL(rewritten, window.location.href).href;
             if (absRewritten === dest.url || absRewritten === window.location.href) return;
           } catch (e) {
             if (rewritten === dest.url || rewritten === window.location.href) return;
           }
+          var now = Date.now ? Date.now() : +new Date();
+          if (lastNavigateRewrite && absRewritten === lastNavigateRewrite && now - lastNavigateAt < 1000) return;
           if (event.cancelable) event.preventDefault();
+          lastNavigateRewrite = absRewritten;
+          lastNavigateAt = now;
           window.location.href = rewritten;
         } catch (e) {}
       });
@@ -87,9 +94,9 @@
   if (origPushState && (!window.History || !window.History.prototype || !window.History.prototype.__rproxy_patched)) {
     history.pushState = function(state, unused, url){
       if (url && typeof url === 'string') {
-        try { url = rewrite(url); } catch(e){}
+        try { url = RProxy.normalizeProxyPath(rewrite(url)); } catch(e){}
       } else if (url && typeof url === 'object' && url.toString) {
-         try { url = rewrite(url.toString()); } catch(e){}
+         try { url = RProxy.normalizeProxyPath(rewrite(url.toString())); } catch(e){}
       }
       return origPushState.call(this, state, unused, url);
     };
@@ -98,13 +105,14 @@
   if (origReplaceState && (!window.History || !window.History.prototype || !window.History.prototype.__rproxy_patched)) {
     history.replaceState = function(state, unused, url){
       if (url && typeof url === 'string') {
-        try { url = rewrite(url); } catch(e){}
+        try { url = RProxy.normalizeProxyPath(rewrite(url)); } catch(e){}
       } else if (url && typeof url === 'object' && url.toString) {
-         try { url = rewrite(url.toString()); } catch(e){}
+         try { url = RProxy.normalizeProxyPath(rewrite(url.toString())); } catch(e){}
       }
       return origReplaceState.call(this, state, unused, url);
     };
   }
+
   window.addEventListener('click', function(e){
       if (e.defaultPrevented) return;
       

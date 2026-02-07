@@ -20,6 +20,15 @@
     var target = rest.slice(slash + 1);
     var base;
     try {
+      if (target.indexOf('http:/') === 0 && target.indexOf('http://') !== 0) {
+        target = 'http://' + target.slice('http:/'.length);
+      } else if (target.indexOf('https:/') === 0 && target.indexOf('https://') !== 0) {
+        target = 'https://' + target.slice('https:/'.length);
+      } else if (target.indexOf('http://http/') === 0) {
+        target = 'http://' + target.slice('http://http/'.length);
+      } else if (target.indexOf('https://https/') === 0) {
+        target = 'https://' + target.slice('https://https/'.length);
+      }
       if (target.indexOf('://') === -1) {
         base = new URL('http://' + target + u.search + u.hash);
       } else {
@@ -38,6 +47,35 @@
     if (!raw || typeof raw !== 'string') return raw;
     raw = raw.trim();
     if (!raw) return raw;
+    // Fix browser-normalized proxy paths like /rproxy/<name>/http:/... -> /rproxy/<name>/http://...
+    raw = scope.RProxy.normalizeProxyPath(raw);
+    var rawLower = raw.toLowerCase();
+    if (rawLower.indexOf('http://http/') === 0) {
+      raw = 'http://' + raw.slice('http://http/'.length);
+    } else if (rawLower.indexOf('https://https/') === 0) {
+      raw = 'https://' + raw.slice('https://https/'.length);
+    }
+    if (ctx && ctx.prefix && raw.indexOf(ctx.prefix) === 0) {
+      var rest = raw.slice(ctx.prefix.length);
+      var restLower = rest.toLowerCase();
+      if (restLower.indexOf('http://http/') === 0) {
+        rest = 'http://' + rest.slice('http://http/'.length);
+      } else if (restLower.indexOf('https://https/') === 0) {
+        rest = 'https://' + rest.slice('https://https/'.length);
+      }
+      if (rest.indexOf('http:/') === 0 && rest.indexOf('http://') !== 0) {
+        raw = ctx.prefix + 'http://' + rest.slice('http:/'.length);
+      } else if (rest.indexOf('https:/') === 0 && rest.indexOf('https://') !== 0) {
+        raw = ctx.prefix + 'https://' + rest.slice('https:/'.length);
+      } else {
+        raw = ctx.prefix + rest;
+      }
+    }
+    if (raw.indexOf('http:/') === 0 && raw.indexOf('http://') !== 0) {
+      raw = 'http://' + raw.slice('http:/'.length);
+    } else if (raw.indexOf('https:/') === 0 && raw.indexOf('https://') !== 0) {
+      raw = 'https://' + raw.slice('https:/'.length);
+    }
     if (raw.indexOf('/webui/') === 0 ||
         raw.indexOf('data:') === 0 || raw.indexOf('mailto:') === 0 ||
         raw.indexOf('javascript:') === 0 || raw.indexOf('about:') === 0 || raw.indexOf('#') === 0) {
@@ -67,7 +105,8 @@
 
     if (scope.location && parsed.host === scope.location.host) {
        if (parsed.pathname.indexOf('/rproxy/') === 0) {
-         return parsed.pathname + parsed.search + parsed.hash;
+         // Keep original to avoid normalizing double slashes inside /rproxy/<name>/http://...
+         return raw;
        }
        // Rebase path to target
        parsed = new URL(ctx.base.origin + parsed.pathname + parsed.search + parsed.hash);
@@ -84,6 +123,11 @@
     }
 
     return ctx.prefix + parsed.href;
+  };
+
+  scope.RProxy.normalizeProxyPath = function(value) {
+    if (!value || typeof value !== 'string') return value;
+    return value.replace(/(\/rproxy\/[^/]+\/)(https?):\/(?!\/)/ig, '$1$2://');
   };
 
   scope.RProxy.cleanLeakedProxyUrl = function(value, ctx) {

@@ -51,8 +51,8 @@ function rewriteHtml(text, ctx) {
                     var args = Array.prototype.slice.call(arguments);
                     if (args.length > 2) {
                       var url = args[2];
-                      if (typeof url === 'string') args[2] = rewrite(url);
-                      else if (url && typeof url === 'object' && url.toString) args[2] = rewrite(url.toString());
+                      if (typeof url === 'string') args[2] = RProxy.normalizeProxyPath(rewrite(url));
+                      else if (url && typeof url === 'object' && url.toString) args[2] = RProxy.normalizeProxyPath(rewrite(url.toString()));
                     }
                     return orig.apply(this, args);
                   };
