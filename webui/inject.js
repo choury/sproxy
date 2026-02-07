@@ -332,13 +332,21 @@
       try { Object.setPrototypeOf(WebSocket, origWS); } catch (e) {}
 
       // Preserve WebSocket static constants and other static properties.
+      // Prefer copying full descriptors (writable/configurable/enumerable) to better match native API surface.
       try {
-          ['CONNECTING','OPEN','CLOSING','CLOSED'].forEach(function(k){
-              try { WebSocket[k] = origWS[k]; } catch (e) {}
-          });
+          var skip = { length: 1, name: 1, prototype: 1, arguments: 1, caller: 1 };
           Object.getOwnPropertyNames(origWS).forEach(function(k){
               if (k in WebSocket) return;
-              try { WebSocket[k] = origWS[k]; } catch (e) {}
+              if (skip[k]) return;
+              var desc;
+              try { desc = Object.getOwnPropertyDescriptor(origWS, k); } catch (e) { desc = null; }
+              if (!desc) return;
+              try {
+                  Object.defineProperty(WebSocket, k, desc);
+              } catch (e) {
+                  // Fallback: best-effort assignment.
+                  try { WebSocket[k] = origWS[k]; } catch (e2) {}
+              }
           });
       } catch (e) {}
 
