@@ -407,7 +407,7 @@
     };
   }
   function patchAttr(el, name, handler){
-    var val = el.getAttribute(name);
+    var val = (typeof origGetAttr === 'function') ? origGetAttr.call(el, name) : el.getAttribute(name);
     if (!val) return;
     var rewritten = handler ? handler(val, ctx) : val;
     if (rewritten !== val) el.setAttribute(name, rewritten);
