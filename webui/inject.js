@@ -41,7 +41,12 @@
       navigation.addEventListener('navigate', function(event){
         try {
           if (!event || event.hashChange || event.downloadRequest) return;
+
           var dest = event.destination;
+
+          // Avoid forcing full reloads on same-document SPA navigations (history.pushState/replaceState).
+          // Let the app/router handle these; our history.pushState hook already rewrites URLs.
+          if (dest && dest.sameDocument && (event.navigationType === 'push' || event.navigationType === 'replace')) return;
           if (!dest || !dest.url) return;
           var rewritten = rewrite(dest.url);
           var absRewritten = rewritten;
