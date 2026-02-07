@@ -45,8 +45,11 @@
 
   scope.RProxy.rewriteUrl = function(raw, ctx) {
     if (!raw || typeof raw !== 'string') return raw;
-    raw = raw.trim();
-    if (!raw) return raw;
+    var originalRaw = raw;
+    var trimmedRaw = raw.trim();
+    if (!trimmedRaw) return trimmedRaw;
+    if (trimmedRaw.indexOf('#') === 0) return originalRaw;
+    raw = trimmedRaw;
     // Fix browser-normalized proxy paths like /rproxy/<name>/http:/... -> /rproxy/<name>/http://...
     raw = scope.RProxy.normalizeProxyPath(raw);
     var rawLower = raw.toLowerCase();

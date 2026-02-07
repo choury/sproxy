@@ -177,6 +177,7 @@
   Element.prototype.getAttribute = function(name) {
     var val = origGetAttr.call(this, name);
     if (typeof val === 'string' && shouldUnwrapAttr(name)) {
+       if (val.indexOf('#') === 0) return val;
        return unwrap(val);
     }
     return val;
@@ -209,6 +210,10 @@
       newDesc.get = function() {
         var val = desc.get.call(this);
         if (typeof val === 'string' && shouldUnwrapAttr(prop)) {
+            if (prop === 'href' && typeof origGetAttr === 'function') {
+              var rawHref = origGetAttr.call(this, 'href');
+              if (typeof rawHref === 'string' && rawHref.indexOf('#') === 0) return val;
+            }
             return unwrap(val);
         }
         return val;
