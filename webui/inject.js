@@ -320,10 +320,31 @@
   }
   if (window.WebSocket) {
       var origWS = window.WebSocket;
-      window.WebSocket = function(url, protocols) {
+
+      // Wrap WebSocket to rewrite URL for rproxy, but preserve static constants
+      // (WebSocket.OPEN/CONNECTING/CLOSING/CLOSED) and other static props.
+      var WrappedWS = function(url, protocols) {
           return new origWS(rewrite(url), protocols);
       };
-      window.WebSocket.prototype = origWS.prototype;
+      WrappedWS.prototype = origWS.prototype;
+
+      // Preserve prototype chain where possible.
+      try { Object.setPrototypeOf(WrappedWS, origWS); } catch (e) {}
+
+      // Preserve WebSocket static constants and other static properties.
+      try {
+          ['CONNECTING','OPEN','CLOSING','CLOSED'].forEach(function(k){
+              try { WrappedWS[k] = origWS[k]; } catch (e) {}
+          });
+          try {
+              Object.getOwnPropertyNames(origWS).forEach(function(k){
+                  if (k in WrappedWS) return;
+                  try { WrappedWS[k] = origWS[k]; } catch (e) {}
+              });
+          } catch (e) {}
+      } catch (e) {}
+
+      window.WebSocket = WrappedWS;
   }
   ['HTMLAnchorElement', 'HTMLAreaElement'].forEach(function(cls){
       var proto = window[cls] && window[cls].prototype;
