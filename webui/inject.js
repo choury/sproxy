@@ -210,14 +210,14 @@
       newDesc.get = function() {
         var val = desc.get.call(this);
         if (typeof val === 'string' && shouldUnwrapAttr(prop)) {
-            if (prop === 'href' && typeof origGetAttr === 'function') {
-              var rawHref = origGetAttr.call(this, 'href');
-              if (typeof rawHref === 'string') {
-                var trimmedRawHref = rawHref.trim();
-                if (trimmedRawHref.indexOf('#') === 0) return val;
-              }
+          if (prop === 'href' && typeof origGetAttr === 'function') {
+            var rawHref = origGetAttr.call(this, 'href');
+            if (typeof rawHref === 'string') {
+              var trimmedRawHref = rawHref.trim();
+              if (trimmedRawHref.indexOf('#') === 0) return val;
             }
-            return unwrap(val);
+          }
+          return unwrap(val);
         }
         return val;
       };
@@ -225,7 +225,7 @@
     if (desc.set) {
       newDesc.set = function(value) {
         if (typeof value === 'string') {
-            value = handler(value, ctx);
+          value = handler(value, ctx);
         }
         return desc.set.call(this, value);
       };
