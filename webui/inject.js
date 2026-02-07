@@ -336,12 +336,10 @@
           ['CONNECTING','OPEN','CLOSING','CLOSED'].forEach(function(k){
               try { WrappedWS[k] = origWS[k]; } catch (e) {}
           });
-          try {
-              Object.getOwnPropertyNames(origWS).forEach(function(k){
-                  if (k in WrappedWS) return;
-                  try { WrappedWS[k] = origWS[k]; } catch (e) {}
-              });
-          } catch (e) {}
+          Object.getOwnPropertyNames(origWS).forEach(function(k){
+              if (k in WrappedWS) return;
+              try { WrappedWS[k] = origWS[k]; } catch (e) {}
+          });
       } catch (e) {}
 
       window.WebSocket = WrappedWS;
