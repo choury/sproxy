@@ -196,9 +196,9 @@ int HttpResolver::query(const char* host, int type, std::function<void(const cha
 }
 
 
-HostResolver::HostResolver(const sockaddr_storage& server) {
-    AResolver = new RawResolver(server);
-    AAAAResolver = new RawResolver(server);
+HostResolver::HostResolver(DnsServer* server): server(server) {
+    AResolver = new RawResolver(server->addr);
+    AAAAResolver = new RawResolver(server->addr);
 }
 
 HostResolver::HostResolver(const Destination& server) {
@@ -209,6 +209,8 @@ HostResolver::HostResolver(const Destination& server) {
 int HostResolver::query(const char *host, std::function<void(int)> addrcb) {
     strcpy(this->host, host);
     cb = std::move(addrcb);
+    uint64_t now = getutime();
+    ASendTime = now;
     int aret = AResolver->query(host, ns_t_a, [this](const char* data, size_t len) {
         Dns_Result result(data, len);
         time_t now = time(nullptr);
@@ -217,6 +219,7 @@ int HostResolver::query(const char *host, std::function<void(int)> addrcb) {
             flags |= GETERROR;
             return cb(result.error);
         }
+        if(server) server->rtt = (getutime() - ASendTime) / 1000.0;
         assert(result.type == ns_t_a);
         flags |= GETARES;
         for(auto i: result.addrs){
@@ -238,6 +241,7 @@ int HostResolver::query(const char *host, std::function<void(int)> addrcb) {
     });
     int aaaaret;
     if(opt.ipv6_enabled) {
+        AAAASendTime = now;
         aaaaret = AAAAResolver->query(host, ns_t_aaaa, [this](const char* data, size_t len) {
             Dns_Result result(data, len);
             time_t now = time(nullptr);
@@ -246,6 +250,7 @@ int HostResolver::query(const char *host, std::function<void(int)> addrcb) {
                 flags |= GETERROR;
                 return cb(result.error);
             }
+            if(server) server->rtt = (getutime() - AAAASendTime) / 1000.0;
             assert(result.type == ns_t_aaaa);
             flags |= GETAAAARES;
             for(const auto& addr : result.addrs){
@@ -367,7 +372,7 @@ void getDnsConfig(struct DnsConfig* config){
             continue;
         }
         LOG("[DNS] set dns server: %s\n", i.c_str());
-        config->server[get++] = addr;
+        config->server[get++] = {addr, 0.0};
     }
     config->namecount = get;
 
@@ -425,7 +430,7 @@ void getDnsConfig(struct DnsConfig* config){
             continue;
         }
         LOG("[DNS] set dns server: %s\n", server.c_str());
-        config->server[get++] = addr;
+        config->server[get++] = {addr, 0.0};
     }
     free(line);
     fclose(res_file);
@@ -501,7 +506,7 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
     }
 
     if (hosts.count(host)) {
-        return func(param, 0, rcdfilter(host, hosts[host].addrs), 0xefffffff);
+        return func(param, 0, rcdfilter(host, hosts[host].addrs), (int)0xefffffff);
     }
 
     HostResolver* resolver = nullptr;
@@ -512,7 +517,7 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
             LOGE("[DNS] can't get dns server\n");
             return func(param, ns_r_refused, {}, 0);
         }
-        resolver = new HostResolver(dnsConfig.server[retries % dnsConfig.namecount]);
+        resolver = new HostResolver(&dnsConfig.server[retries % dnsConfig.namecount]);
     }
     if(resolver->query(host, [=](int error) {
         HOOK_FUNC(resolver, error);
@@ -540,7 +545,7 @@ void query_host(const char* host, DNSCB func, std::shared_ptr<void> param, bool 
     HOOK_FUNC(host, raw);
     sockaddr_storage addr{};
     if(storage_aton(host, 0, &addr) == 1){
-        return func(param, 0, std::list{addr}, 0xefffffff);
+        return func(param, 0, std::list{addr}, (int)0xefffffff);
     }
 
     if (rcd_cache.count(host)) {
@@ -569,7 +574,7 @@ void query_dns(const char* host, int type, DNSRAWCB func, std::shared_ptr<void> 
             LOGE("[DNS] can't get dns server\n");
             return func(param, nullptr, 0);
         }
-        resolver = new RawResolver(dnsConfig.server[rand() % dnsConfig.namecount]);
+        resolver = new RawResolver(dnsConfig.server[rand() % dnsConfig.namecount].addr);
     }
     if(resolver->query(host, type, [func, param, resolver](const char* data, size_t len){
         HOOK_FUNC(resolver, data, len);
@@ -594,7 +599,7 @@ void query_raw(const void *data, size_t len, DNSRAWCB func, std::shared_ptr<void
             LOGE("[DNS] can't get dns server\n");
             return func(param, nullptr, 0);
         }
-        resolver = new RawResolver(dnsConfig.server[rand() % dnsConfig.namecount]);
+        resolver = new RawResolver(dnsConfig.server[rand() % dnsConfig.namecount].addr);
     }
     if(resolver->query(data, len, [func, param, resolver](const char* data, size_t len){
         HOOK_FUNC(resolver, data, len);
@@ -628,7 +633,7 @@ void dump_dns(Dumper dp, void* param){
     dp(param, "======================================\n");
     dp(param, "Dns server:\n");
     for(size_t i = 0; i < dnsConfig.namecount; i++) {
-        dp(param, "  %s\n", getaddrstring(&dnsConfig.server[i]));
+        dp(param, "  %s, rtt: %.3fms\n", getaddrstring(&dnsConfig.server[i].addr), dnsConfig.server[i].rtt);
     }
     dp(param, "--------------------------------------\n");
     dp(param, "Dns cache:\n");

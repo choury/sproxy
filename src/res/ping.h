@@ -13,6 +13,8 @@ class Ping: public Responser{
     uint16_t    id = 0;
     uint16_t    seq = 1;
     sa_family_t family = 0;
+    uint64_t    last_send_time = 0;  // 最近一次发送时间
+    double      last_rtt = 0.0;      // 最近一次 RTT（毫秒）
 #define PING_IS_RAW_SOCK  1
 #define PING_IS_CLOSED_F  2
 #define PING_IS_RESPONSED 4

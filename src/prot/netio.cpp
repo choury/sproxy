@@ -8,6 +8,7 @@
 
 #include <unistd.h>
 #include <sys/ioctl.h>
+#include <netinet/tcp.h>
 #include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -15,6 +16,7 @@
 #if __APPLE__
 #include <sys/ucred.h>
 #include <sys/un.h>
+#include <netinet/tcp_var.h>
 #endif
 
 SocketRWer::SocketRWer(int fd, const sockaddr_storage* src, std::shared_ptr<IRWerCallback> cb):RWer(fd, std::move(cb)){
@@ -348,14 +350,30 @@ Destination SocketRWer::getDst() const {
 
 
 void SocketRWer::dump_status(Dumper dp, void *param) {
+    double rtt_ms = 0.0;
+    if(protocol == Protocol::TCP && getFd() >= 0) {
+#if __linux__
+        struct tcp_info info{};
+        socklen_t len = sizeof(info);
+        if(getsockopt(getFd(), IPPROTO_TCP, TCP_INFO, &info, &len) == 0) {
+            rtt_ms = info.tcpi_rtt / 1000.0;
+        }
+#elif __APPLE__
+        struct tcp_connection_info info{};
+        socklen_t len = sizeof(struct tcp_connection_info);  
+        if(getsockopt(getFd(), IPPROTO_TCP, TCP_CONNECTION_INFO, &info, &len) == 0) {
+            rtt_ms = info.tcpi_srtt;
+        }
+#endif
+    }
     if(hostname[0]) {
-        dp(param, "SocketRWer <%d> (%s %s): rlen: %zu, wlen: %zu, stats: %d, event: %s, cb: %ld\n",
+        dp(param, "SocketRWer <%d> (%s %s): rlen: %zu, wlen: %zu, stats: %d, event: %s, rtt: %.3fms, cb: %ld\n",
            getFd(), hostname, dumpDest(getDst()).c_str(),
-           rlength(0), wbuff.length(), (int)stats, events_string[(int)getEvents()], callback.use_count());
+           rlength(0), wbuff.length(), (int)stats, events_string[(int)getEvents()], rtt_ms, callback.use_count());
     } else {
-        dp(param, "SocketRWer <%d> (%s -> %s): rlen: %zu, wlen: %zu, stats: %d, event: %s, cb: %ld\n",
+        dp(param, "SocketRWer <%d> (%s -> %s): rlen: %zu, wlen: %zu, stats: %d, event: %s, rtt: %.3fms, cb: %ld\n",
            getFd(), dumpDest(getSrc()).c_str(), dumpDest(getDst()).c_str(),
-           rlength(0), wbuff.length(), (int)stats, events_string[(int)getEvents()], callback.use_count());
+           rlength(0), wbuff.length(), (int)stats, events_string[(int)getEvents()], rtt_ms, callback.use_count());
     }
 }
 

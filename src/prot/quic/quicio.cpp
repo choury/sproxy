@@ -1963,7 +1963,7 @@ void QuicBase::keepAlive_action() {
 void QuicBase::dump(Dumper dp, void* param) {
     dp(param, "%s -> %s, max_payload: %zd, max_bistream: %zd/%zd, max_unistream: %zd/%zd\n"
               "read: %zd/%zd, write: %zd/%zd, my_window: %zd, his_window: %zd, "
-              "rlen: %zd, fullq: %zd, wlen: %zd, congestion_window: %d\n",
+              "rlen: %zd, fullq: %zd, wlen: %zd, congestion_window: %d, rtt: %.3fms\n",
        dumpHex(myids[myid_idx].c_str(), myids[myid_idx].length()).c_str(),
        dumpHex(hisids[hisid_idx].c_str(), hisids[hisid_idx].length()).c_str(),
        his_max_payload_size,
@@ -1974,7 +1974,8 @@ void QuicBase::dump(Dumper dp, void* param) {
        my_max_data - my_received_data,
        his_max_data - my_sent_data,
        rblen, fullq.size(),
-       qos->PendingSize(ssl_encryption_application), (int)qos->windowLeft());
+       qos->PendingSize(ssl_encryption_application), (int)qos->windowLeft(),
+       qos->rtt.latest_rtt/1000.0);
     for(const auto& [id, stream]: streammap){
         auto ranges = stream.rb.get_ranges();
         dp(param, "  0x%lx: rlen: %zd-%zd/%zd, rcap: %zd, my_window: %zd/%zd, his_window: %zd/%zd, flags: 0x%08x\n",

@@ -251,9 +251,9 @@ void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
 void Proxy2::PingProc(const Http2_header *header){
     if(header->flags & HTTP2_ACK_F){
         connection_lost_job.reset(nullptr);
-        double diff = (getutime()-get64(header+1))/1000.0;
-        LOG("<proxy2> Get a ping time=%.3fms\n", diff);
-        if(diff >= 1000){
+        last_ping_rtt = (getutime()-get64(header+1))/1000.0;
+        LOG("<proxy2> Get a ping time=%.3fms\n", last_ping_rtt);
+        if(last_ping_rtt >= 1000){
             LOGE("(%s) <proxy2> The ping time too long!\n", dumpDest(rwer->getDst()).c_str());
         }
     }
@@ -419,8 +419,8 @@ void Proxy2::deleteLater(uint32_t errcode){
 }
 
 void Proxy2::dump_stat(Dumper dp, void* param) {
-    dp(param, "Proxy2 %p id: %d, my_window: %d, his_window: %d\n",
-            this, sendid, this->localwinsize, this->remotewinsize);
+    dp(param, "Proxy2 %p id: %d, my_window: %d, his_window: %d, rtt: %.3fms\n",
+            this, sendid, this->localwinsize, this->remotewinsize, this->last_ping_rtt);
     for(auto& i: statusmap){
         dp(param, "  0x%x [%" PRIu64 "]: %s %s, my_window: %d, his_window: %d, cap: %d, buffered: %d, flags: 0x%08x\n",
                 i.first,

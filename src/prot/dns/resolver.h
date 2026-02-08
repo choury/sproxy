@@ -21,6 +21,7 @@ public:
     virtual int query(const void* data, size_t len, std::function<void(const char*, size_t)>  cb) = 0;
 };
 
+struct DnsServer;
 class MemRWer;
 class HttpReqHeader;
 struct IMemRWerCallback;
@@ -67,10 +68,15 @@ class HostResolver {
     std::function<void(int)> cb = nullptr;
     ResolverBase* AResolver = nullptr;
     ResolverBase* AAAAResolver = nullptr;
+    uint64_t ASendTime = 0;
+    uint64_t AAAASendTime = 0;
+    // 我知道这个server可能在查询期间被重新配置，但是因为它是存放在dnsConfig的静态数组
+    // 即使getDnsConfig重置了dnsConfig，而我们只访问rtt, 写了一个无效server中的rtt也是无害的
+    DnsServer* server = nullptr;
 public:
     char host[DOMAINLIMIT];
     Dns_Rcd  rcd;
-    explicit HostResolver(const sockaddr_storage& server);
+    explicit HostResolver(DnsServer* server);
     explicit HostResolver(const Destination& server);
     int query(const char* host, std::function<void(int)> addrcb);
     ~HostResolver();

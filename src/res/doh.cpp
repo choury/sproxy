@@ -41,6 +41,10 @@ void Doh::DnsCB(std::shared_ptr<void> id_, const char *buff, size_t size) {
         return;
     }
     LOGD(DDNS, "<doh> DNS callback %" PRIu64 " success: size=%zu\n", id, size);
+    // 计算 RTT
+    if(status.send_time > 0) {
+        _doh->last_rtt = (getutime() - status.send_time) / 1000.0; // 转换为毫秒
+    }
     char gmt[100]; time_t now = time(nullptr);
     strftime(gmt, sizeof(gmt), "%a, %d %b %Y %H:%M:%S GMT", gmtime(&now));
     auto res = HttpResHeader::create(S200, sizeof(S200), id);
@@ -86,6 +90,7 @@ void Doh::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> r
             .rw = rw,
             .cb = _cb,
             .data = decoded,
+            .send_time = getutime(),
         };
         query_raw(decoded.data(), dlen, DnsCB, std::make_shared<decltype(id)>(id));
         rw->SetCallback(_cb);
@@ -99,6 +104,7 @@ void Doh::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> r
             auto& status = statusmap.at(id);
             if (bb.len == 0) {
                 LOGD(DDNS, "<doh> POST read %" PRIu64 " EOF, submitting DNS query: %zu bytes\n", id, status.data.size());
+                status.send_time = getutime();
                 query_raw(status.data.data(), status.data.size(), DnsCB, std::make_shared<decltype(id)>(id));
                 return 0;
             }
@@ -123,7 +129,7 @@ void Doh::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> r
 
 
 void Doh::dump_stat(Dumper dp, void* param) {
-    dp(param, "DoH: %p, sessions: %zu, succeed: %zd, failed: %zd\n", this, statusmap.size(), succeed_count, failed_count);
+    dp(param, "DoH: %p, sessions: %zu, succeed: %zd, failed: %zd, rtt: %.3fms\n", this, statusmap.size(), succeed_count, failed_count, last_rtt);
     for(auto& [name, status]: statusmap) {
         dp(param, "  [%" PRIu64 "]: %s\n", name, dumpDest(status.rw->getSrc()).c_str());
     }

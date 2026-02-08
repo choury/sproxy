@@ -17,6 +17,10 @@ Ping::Ping(const Destination& dest): id(dest.port?:random()&0xffff) {
         }
         status.rw->SetCallback(status.cb);
     })->onRead([this](Buffer&& bb) -> size_t{
+        // 计算 RTT
+        if(last_send_time > 0) {
+            last_rtt = (getutime() - last_send_time) / 1000.0; // 转换为毫秒
+        }
         if((flags & PING_IS_RESPONSED) == 0){
             status.rw->SendHeader(HttpResHeader::create(S200, sizeof(S200), status.req->request_id));
             flags |= PING_IS_RESPONSED;
@@ -72,6 +76,7 @@ void Ping::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> 
         default:
             abort();
         }
+        last_send_time = getutime();
         rwer->Send(std::move(bb));
         return len;
     })->onWrite([this](uint64_t id){
@@ -110,10 +115,10 @@ void Ping::deleteLater(uint32_t errcode) {
 }
 
 void Ping::dump_stat(Dumper dp, void* param) {
-    dp(param, "Ping %p, [%" PRIu64"]: %s %s, id: %d, seq: %d\n",
+    dp(param, "Ping %p, [%" PRIu64"]: %s %s, id: %d, seq: %d, rtt: %.3fms\n",
        this, status.req->request_id, status.req->method,
        dumpAuthority(&status.req->Dest),
-       id, seq);
+       id, seq, last_rtt);
     rwer->dump_status(dp, param);
 }
 

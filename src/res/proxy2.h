@@ -26,6 +26,7 @@ class Proxy2:public Responser, public Http2Requster {
 #endif
     Job connection_lost_job = nullptr;
     Job idle_timeout = nullptr;
+    double last_ping_rtt = 0.0;  // 最近一次 ping 的延迟（毫秒）
 protected:
     void ping_check();
     void connection_lost();

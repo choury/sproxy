@@ -89,7 +89,7 @@ static int set_if(struct ifreq *ifr) {
         struct DnsConfig config;
         getDnsConfig(&config);
         for (size_t i = 0; i < config.namecount; i++) {
-            if (config.server[i].ss_family != AF_INET) {
+            if (config.server[i].addr.ss_family != AF_INET) {
                 continue;
             }
             memcpy(&route.rt_dst, &config.server[i], sizeof(struct sockaddr_in));
@@ -145,7 +145,7 @@ static int set_if6(struct ifreq *ifr) {
         struct DnsConfig config;
         getDnsConfig(&config);
         for (size_t i = 0; i < config.namecount; i++) {
-            if (config.server[i].ss_family != AF_INET6) {
+            if (config.server[i].addr.ss_family != AF_INET6) {
                 continue;
             }
             struct sockaddr_in6* addr6 = (struct sockaddr_in6*)&config.server[i];

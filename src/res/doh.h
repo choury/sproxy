@@ -13,10 +13,12 @@ class Doh: public Responser{
         std::shared_ptr<MemRWer>       rw;
         std::shared_ptr<IRWerCallback> cb;
         std::string                    data; // for storing incoming data in POST requests
+        uint64_t                       send_time = 0; // 发送时间
     };
     std::map<uint64_t, DohStatus> statusmap;
     size_t succeed_count = 0;
     size_t failed_count = 0;
+    double last_rtt = 0.0;  // 最近一次 RTT（毫秒）
     static void DnsCB(std::shared_ptr<void>, const char *buff, size_t size);
 public:
     Doh();

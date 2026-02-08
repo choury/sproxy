@@ -29,10 +29,15 @@ extern "C" {
 #define DNSPORT   53u
 #define QUICPORT  443u
 
+struct DnsServer {
+    struct sockaddr_storage addr;
+    double rtt;                       // 最近 RTT（毫秒）
+};
+
 struct DnsConfig{
     int    timeout;
     size_t namecount;
-    struct sockaddr_storage server[20];
+    struct DnsServer server[20];
     struct Destination doh;
 };
 
