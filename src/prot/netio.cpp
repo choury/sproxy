@@ -34,6 +34,22 @@ SocketRWer::SocketRWer(int fd, const sockaddr_storage* src, std::shared_ptr<IRWe
         }
         PadUnixPath(&addr, len);
         addrs.push(addr);
+        src = &addrs.front();
+    }
+    if(src->ss_family == AF_UNIX) {
+        protocol = Protocol::UNIX;
+    } else {
+        int type = 0;
+        socklen_t len = sizeof(type);
+        if(getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &len) < 0) {
+            LOGE("getsockopt SO_TYPE error for %d: %s\n", fd, strerror(errno));
+        } else if(type == SOCK_STREAM) {
+            protocol = Protocol::TCP;
+        } else if(type == SOCK_DGRAM) {
+            protocol = Protocol::UDP;
+        } else {
+            LOGE("unknown socket type %d for %d\n", type, fd);
+        }
     }
 }
 
