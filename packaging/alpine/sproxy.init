@@ -3,9 +3,8 @@
 name="sproxy"
 description="sproxy high-performance proxy server"
 command="/usr/bin/sproxy"
-command_args="-c /etc/sproxy/sproxy.conf"
+command_args="-D --pidfile /run/sproxy.pid -c /etc/sproxy/sproxy.conf"
 pidfile="/run/sproxy.pid"
-command_background="yes"
 
 depend() {
 	need net

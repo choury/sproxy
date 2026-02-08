@@ -87,6 +87,7 @@ struct options{
     const char *rproxy_name;
     const char *bpf_cgroup;
     const char *acme_state;
+    const char *pidfile;
     bool disable_http2;
     bool disable_fakeip;
     bool sni_mode;

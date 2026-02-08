@@ -91,6 +91,7 @@ struct options opt = {
     .rproxy_name       = NULL,
     .bpf_cgroup        = NULL,
     .acme_state        = NULL,
+    .pidfile           = NULL,
     .disable_http2     = false,
     .disable_fakeip    = false,
     .sni_mode          = false,
@@ -204,6 +205,7 @@ static struct option long_options[] = {
     {"key",           required_argument, NULL,  0 },
     {"pcap",          required_argument, NULL,  0 },
     {"pcap-len",      required_argument, NULL,  0 },
+    {"pidfile",       required_argument, NULL,  0 },
     {"policy-file",   required_argument, NULL, 'P'},
 #ifdef HAVE_QUIC
     {"quic",          required_argument, NULL, 'q'},
@@ -282,6 +284,7 @@ static struct option_detail option_detail[] = {
     {"mitm", "Mitm mode for https request ([auto], enable, disable), require cakey", option_enum, &opt.mitm_mode, auto_options},
     {"pcap", "Save packets in pcap file for vpn", option_string, &opt.pcap_file, NULL},
     {"pcap-len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
+    {"pidfile", "Write pid to this file", option_string, &opt.pidfile, NULL},
     {"policy-file", "The file of policy ("PREFIX"/etc/sproxy/sites.list as default)", option_string, &policy_file, NULL},
     {"quic", "Listen for QUIC server", option_list, &quic_listens, NULL},
     {"quic-cc", "QUIC congestion control algorithm (cubic, bbr)", option_string, &opt.quic_cc_algorithm, NULL},
@@ -904,6 +907,15 @@ void postConfig(){
             exit(1);
         }
         openlog(basename(main_argv[0]), LOG_PID | LOG_PERROR, LOG_LOCAL0);
+    }
+    if (opt.pidfile) {
+        FILE* f = fopen(opt.pidfile, "w");
+        if (f) {
+            fprintf(f, "%d\n", getpid());
+            fclose(f);
+        } else {
+            LOGE("failed to open pidfile %s: %s\n", opt.pidfile, strerror(errno));
+        }
     }
 #else
     opt.daemon_mode = false;

@@ -60,6 +60,8 @@ Protocol getRawProtocol(const char* proto) {
         return Protocol::ICMP;
     } else if(strcmp(proto, "quic") == 0) {
         return Protocol::QUIC;
+    } else if(strcmp(proto, "unix") == 0) {
+        return Protocol::UNIX;
     }
     return Protocol::TCP;
 }
