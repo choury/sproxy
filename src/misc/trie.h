@@ -124,12 +124,10 @@ public:
     }
     void clear() {
         for(auto child : children){
-            child.second->clear();
             delete child.second;
         }
         children.clear();
         for(auto regexChild: regexChildren) {
-            regexChild.second->clear();
             delete regexChild.second;
         }
         this->isEndpoint = false;

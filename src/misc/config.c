@@ -564,8 +564,12 @@ static const char* confs[] = {
     NULL,
 };
 
-void exit_loop() {
-    LOG("will exit soon...\n");
+void exit_loop(int sig) {
+    if (sig > 0) {
+        LOG("will exit soon (sig %d: %s)...\n", sig, strsignal(sig));
+    } else {
+        LOG("will exit soon...\n");
+    }
     fflush(stdout);
     will_contiune = 0;
 }

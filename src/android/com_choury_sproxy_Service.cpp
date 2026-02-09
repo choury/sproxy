@@ -160,7 +160,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_start
 
 extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_stop(JNIEnv *, jobject){
     LOG("native SproxyVpnService.stop.\n");
-    return exit_loop();
+    return exit_loop(0);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_choury_sproxy_SproxyVpnService_reload_1strategy(JNIEnv *, jobject){

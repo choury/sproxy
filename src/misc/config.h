@@ -134,7 +134,7 @@ struct options{
 extern struct options opt;
 extern volatile uint32_t will_contiune;
 
-void exit_loop();
+void exit_loop(int sig);
 void neglect();
 
 void network_changed();

@@ -210,7 +210,7 @@ function test_rproxy(){
 
     printf "dump usage" | ./scli -s ${sp}rproxy2.sock
     kill -SIGUSR1 %2
-    kill -SIGUSR2 %2
+    kill -SIGINT %2
     wait %2
 
     echo "test rproxy3 functionality"
@@ -241,7 +241,7 @@ function test_rproxy(){
 
     printf "dump usage" | ./scli -s ${sp}rproxy3.sock
     kill -SIGUSR1 %2
-    kill -SIGUSR2 %2
+    kill -SIGINT %2
     wait %2
 }
 
@@ -357,7 +357,7 @@ function test_sni(){
 
     printf "dump usage" | ./scli -s ${sp}server.sock
     kill -SIGUSR1 %1
-    kill -SIGUSR2 %1
+    kill -SIGINT %1
     wait %1
     jobs
 
@@ -381,7 +381,7 @@ function test_sni(){
 
     printf "dump usage" | ./scli -s ${sp}server.sock
     kill -SIGUSR1 %1
-    kill -SIGUSR2 %1
+    kill -SIGINT %1
     wait %1
     jobs
 }
@@ -560,7 +560,7 @@ jobs
 printf "dump sites" | ./scli -s ${sp}client_h1.sock
 printf "dump usage" | ./scli -s ${sp}client_h1.sock
 kill -SIGUSR1 %2
-kill -SIGUSR2 %2
+kill -SIGINT %2
 wait %2
 
 ./sproxy -c client.conf --http 3335  https://$HOSTNAME:3334 --admin unix:${sp}client_h23.sock > client_h23.log 2>&1 &
@@ -579,7 +579,7 @@ printf "dump sites" | ./scli -s ${sp}client_h23.sock
 printf "dump usage" | ./scli -s ${sp}client_h23.sock
 jobs
 kill -SIGUSR1 %2
-kill -SIGUSR2 %2
+kill -SIGINT %2
 wait %2
 
 test_rproxy
@@ -599,7 +599,7 @@ if [ "$run_extended_tests" = true ]; then
     kill -SIGUSR1 %1
 fi
 
-kill -SIGUSR2 %1
+kill -SIGINT %1
 wait %1
 jobs
 

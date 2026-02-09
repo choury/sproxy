@@ -72,7 +72,7 @@ Guest_vpn::Guest_vpn(int fd, bool enable_offload): Requester(nullptr) {
         status.rw->pull(id);
     })->onError([](int ret, int code){
         LOGE("vpn_server error: %d/%d\n", ret, code);
-        exit_loop();
+        exit_loop(0);
     });
     rwer = std::make_shared<TunRWer>(fd, enable_offload, cb);
 }
