@@ -101,6 +101,7 @@ class QuicBBR: public QuicQos {
     uint64_t min_rtt_stamp = 0;             // 最小RTT最后更新时间
     uint64_t full_bw = 0;                   // 满带宽估计值
     size_t full_bw_count = 0;               // 满带宽检测计数器
+    uint64_t full_bw_last_round_time = 0;   // 上次满带宽检测的轮次时间点
     
     
     // BBR算法核心函数
@@ -115,8 +116,8 @@ class QuicBBR: public QuicQos {
     void CheckCyclePhase();            // 检查PROBE_BW阶段循环
     void CheckDrainCondition();        // 检查DRAIN状态退出条件
     void CheckProbeRTTCondition();     // 检查是否需要进入PROBE_RTT
-    void UpdateBBRState();             // 更新BBR状态机
-    bool IsFullBandwidthReached();     // 检查是否达到满带宽
+    void UpdateBBRState(bool sample_app_limited); // 更新BBR状态机
+    bool IsFullBandwidthReached();   // 检查是否达到满带宽
     virtual void OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets) override;
     virtual void OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets) override;
     virtual void OnCongestionEvent(uint64_t sent_time) override;

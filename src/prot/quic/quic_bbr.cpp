@@ -97,7 +97,7 @@ void QuicBBR::OnPacketsAcked(const std::list<quic_packet_meta> &acked_packets) {
     // 处理所有被确认的包
     for (const auto& packet : acked_packets) {
         delivered_bytes += packet.sent_bytes;
-        if(packet_first == nullptr && packet.ack_eliciting) {
+        if(packet_first == nullptr && packet.ack_eliciting && packet.sent_time < now) {
             packet_first = &packet;
         }
 
@@ -114,15 +114,11 @@ void QuicBBR::OnPacketsAcked(const std::list<quic_packet_meta> &acked_packets) {
             min_rtt_stamp = now;
         }
         rtProp.insert(rtt.latest_rtt);
-        uint64_t delivered_time = now - packet_first->sent_time ;
+        uint64_t delivered_time = now - packet_first->sent_time;
         size_t delta_delivered_bytes = delivered_bytes - packet_first->delivered_bytes;
         size_t delivery_rate = delta_delivered_bytes * TIME_US_TO_S / delivered_time;
         if(!packet_first->app_limited || delivery_rate >= btlBw.max()) {
             btlBw.insert(delivery_rate);
-        }
-        if(packet_first->app_limited) {
-            full_bw = 0;
-            full_bw_count = 0;
         }
         LOGD(DQUIC, "BBR latest_rtt=%.3fms, delivered_time=%.3fms, delivered_bytes=%zd, delivered_rate=%zd, app_limited=%s\n",
             rtt.latest_rtt/(double)TIME_US_TO_MS, delivered_time/(double)TIME_US_TO_MS,
@@ -130,7 +126,7 @@ void QuicBBR::OnPacketsAcked(const std::list<quic_packet_meta> &acked_packets) {
     }
 
     // 更新BBR状态机
-    UpdateBBRState();
+    UpdateBBRState(packet_first && packet_first->app_limited);
 
     if(has_packet_been_congested){
         maySend(true);
@@ -163,15 +159,16 @@ void QuicBBR::OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& l
 }
 
 ssize_t QuicBBR::windowLeft() const {
-    size_t window = kInitialWindow;
+    uint64_t window = kInitialWindow;
     if(btlBw.max()) {
         uint64_t bdp = btlBw.max() * std::max((int)rtProp.min(), 1000) / TIME_US_TO_S;
         window = bdp * cwnd_gain() / BBR_UNIT;
     }
-    if(window + bytes_in_flight < kMinimumWindow) {
-        return kMinimumWindow - bytes_in_flight;
+    window = std::max(window, kMinimumWindow);
+    if (window > bytes_in_flight) {
+        return window - bytes_in_flight;
     }
-    return window;
+    return 0;
 }
 
 ssize_t QuicBBR::sendWindow() const {
@@ -194,6 +191,7 @@ void QuicBBR::EnterStartup() {
     pacing_gain_count = 0;
     full_bw = 0;
     full_bw_count = 0;
+    full_bw_last_round_time = 0;
     btlBw.clear();
 }
 
@@ -206,6 +204,7 @@ void QuicBBR::EnterDrain() {
 void QuicBBR::EnterProbeBW() {
     mode = BBR_PROBE_BW;
     pacing_gain_count = 0;
+    pacing_round_start_time = getutime();
 }
 
 void QuicBBR::EnterProbeRTT() {
@@ -215,9 +214,20 @@ void QuicBBR::EnterProbeRTT() {
 
 bool QuicBBR::IsFullBandwidthReached() {
     uint64_t current_bw = btlBw.max();
+    if (current_bw == 0) {
+        return false;
+    }
+
+    // 按RTT轮次更新满带宽检测，避免按ACK频率计数导致过快退出STARTUP
+    uint64_t now = getutime();
+    uint64_t round = std::max((int)rtProp.min(), 1000);
+    if (full_bw_last_round_time != 0 && now - full_bw_last_round_time < round) {
+        return false;
+    }
+    full_bw_last_round_time = now;
 
     // 如果当前带宽比之前记录的满带宽高出25%，说明还在增长
-    if (current_bw * BBR_UNIT >= full_bw * BBR_FULL_BW_THRESH) {
+    if (full_bw == 0 || current_bw * BBR_UNIT >= full_bw * BBR_FULL_BW_THRESH) {
         full_bw = current_bw;
         full_bw_count = 0;
         return false;
@@ -235,7 +245,7 @@ void QuicBBR::CheckCyclePhase() {
 
     uint64_t now = getutime();
     // 每轮结束时推进到下一个增益阶段
-    if (last_sent_time > pacing_round_start_time + std::max((int)rtProp.min(), 1000)) {
+    if (now > pacing_round_start_time + std::max((int)rtProp.min(), 1000)) {
         pacing_gain_count ++;
         pacing_round_start_time = now;
     }
@@ -247,7 +257,7 @@ void QuicBBR::CheckDrainCondition() {
     }
 
     // 当in-flight字节数降到BDP以下时，退出DRAIN状态
-    uint64_t bdp = btlBw.max() * std::min((int)rtProp.min(), 1000) / TIME_US_TO_S;
+    uint64_t bdp = btlBw.max() * std::max((int)rtProp.min(), 1000) / TIME_US_TO_S;
     if (bytes_in_flight <= bdp) {
         EnterProbeBW();
     }
@@ -260,7 +270,7 @@ void QuicBBR::CheckProbeRTTCondition() {
         // 在PROBE_RTT状态至少持续200ms
         // 如果已经完成一轮最小窗口发送，可以退出（简化实现：基于时间）
         if(now - probe_rtt_start_time >= BBR_PROBE_RTT_MIN_TIME
-            && last_sent_time > probe_rtt_start_time + btlBw.min())
+            && last_sent_time > probe_rtt_start_time + std::max((int)rtProp.min(), 1000))
         {
             min_rtt_stamp = now;  // 重置最小RTT时间戳
             if (full_bw == 0 || !IsFullBandwidthReached()) {
@@ -277,12 +287,12 @@ void QuicBBR::CheckProbeRTTCondition() {
     }
 }
 
-void QuicBBR::UpdateBBRState() {
+void QuicBBR::UpdateBBRState(bool sample_app_limited) {
     // 根据当前状态执行相应的状态转换检查
     switch (mode) {
     case BBR_STARTUP:
         // 检查是否达到满带宽，如果是则进入DRAIN状态
-        if (IsFullBandwidthReached()) {
+        if (!sample_app_limited && IsFullBandwidthReached()) {
             EnterDrain();
         }
         break;
