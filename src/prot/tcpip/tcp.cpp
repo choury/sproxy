@@ -426,6 +426,155 @@ void UnReach(std::shared_ptr<TcpStatus> status, uint8_t code) {
     status->state = TCP_CLOSE;
 }
 
+// Handle ACK processing: SACK, duplicate ACK detection, RTT estimation, sent_list cleanup
+// Returns false if connection was reset (caller should return immediately)
+static bool handleAck(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac,
+                      uint32_t ack, bool has_timestamp, uint32_t tsecr) {
+    if(after(ack, status->sent_seq)) {
+        LOG("%s get ack from unsent seq (%u/%u), rst it\n", storage_ntoa(&status->src), ack, status->sent_seq);
+        SendRst(status);
+        status->errCB(pac, TCP_RESET_ERR);
+        return false;
+    }
+
+    if(before(ack, status->recv_ack)) {
+        LOG("%s get ack from old seq (%u/%u), ignore it\n", storage_ntoa(&status->src), ack, status->recv_ack);
+        return true;
+    }
+    if(status->options & (1 << TCPOPT_SACK_PERMITTED)) {
+        pac->tcp->getsack(&status->sack);
+        //filter sack which is earlier than recv_ack
+        Sack* sack = status->sack;
+        while(sack) {
+            if(after(sack->left, status->recv_ack)) {
+                break;
+            }
+            Sack* prev = sack;
+            sack = sack->next;
+            free(prev);
+        }
+        status->sack = sack;
+    }
+    status->pull_job = updatejob_with_name(std::move(status->pull_job), [status_ = GetWeak(status), pac] {
+        if (status_.expired()) {
+            return;
+        }
+        auto status = status_.lock();
+        status->ackCB(pac);
+    }, "tcp_ack_cb", 0);
+    if(ack == status->recv_ack && (status->flags & TCP_KEEPALIVING) == 0) {
+        status->dupack ++;
+        if(status->dupack >= 3) {
+            status->rto_job = UpdateJob(std::move(status->rto_job),
+                                        [status_ = GetWeak(status)] {Resent(status_);}, 0);
+        }
+        return true;
+    }
+    status->flags &= ~TCP_KEEPALIVING;
+    status->rto_factor = 1;
+    status->dupack = 0;
+    status->recv_ack = ack;
+    if(status->state == TCP_FIN_WAIT1 && ack == status->sent_seq){
+        status->state = TCP_FIN_WAIT2;
+    }
+    uint32_t minrtt = UINT32_MAX;
+    uint32_t now = getmtime();
+    // now > tsecr
+    if(has_timestamp && after(now, tsecr)) {
+        minrtt = now - tsecr;
+    }
+    while(!status->sent_list.empty()){
+        auto& front = status->sent_list.front();
+        uint32_t start_seq = front.pac->tcp->getseq();
+        uint32_t end_seq = start_seq + front.bb.len;
+        uint8_t flags = front.pac->tcp->getflag();
+        if(flags & (TH_SYN | TH_FIN)){
+            end_seq ++;
+        }
+        uint32_t rtt = now - front.first_sent;
+        if(before(start_seq,  ack) && rtt < status->rto) {
+            if(rtt < minrtt) {
+                minrtt = rtt;
+            }
+        }
+        if(noafter(end_seq, ack)) {
+            status->sent_list.pop_front();
+        }else{
+            break;
+        }
+    }
+    if(minrtt != UINT32_MAX) {
+        if (status->srtt == 0) {
+            status->srtt = minrtt;
+            status->rttval = minrtt / 2;
+        } else {
+            status->rttval = (3 * status->rttval + labs((long) status->srtt - (long) minrtt)) / 4;
+            status->srtt = (7 * status->srtt + minrtt) / 8;
+        }
+        status->rto = std::max(status->srtt + 4 * status->rttval, (uint32_t) 100);
+        LOGD(DVPN, "tcp rtt: %d, srtt: %d, rttval: %d, rto[%d]: %d\n",
+             minrtt, status->srtt, status->rttval, status->rto, (int)status->rto_factor);
+    }
+    if(status->sent_list.empty()) {
+        status->rto_job.reset(nullptr);
+    }else{
+        status->rto_job = UpdateJob(std::move(status->rto_job),
+                                    [status_ =  GetWeak(status)] {Resent(status_);},
+                                    std::max(status->rto * status->rto_factor, RTO_MAX));
+    }
+    return true;
+}
+
+// Handle received data consumption, window update, and FIN state transitions
+static void handleRecvData(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac,
+                           Buffer&& bb, uint8_t flag) {
+    status->window = pac->tcp->getwindow();
+    size_t datalen = bb.len - pac->gethdrlen();
+    if(datalen > status->rbuf.cap()) {
+        LOG("%s get pkt oversize of window (%zu/%zu), rst it\n",
+            storage_ntoa(&status->src), datalen,  status->rbuf.cap());
+        SendRst(status);
+        status->errCB(pac, TCP_RESET_ERR);
+        return;
+    }
+    if(datalen > 0) {
+        //处理数据
+        bb.reserve(pac->gethdrlen());
+        status->rbuf.put(std::move(bb));
+        status->want_seq += datalen;
+        status->ack_job = UpdateJob(std::move(status->ack_job),
+                                    [status_ = GetWeak(status)] {SendAck(status_);}, 0);
+    }
+    if(flag & TH_FIN){ //fin包，回ack包
+        status->want_seq++;
+        status->flags |= TCP_FIN_RECVD;
+        switch(status->state){
+        case TCP_CLOSE_WAIT:
+            LOG("%s get dup fin, send rst back\n", storage_ntoa(&status->src));
+            SendRst(status);
+            status->errCB(pac, TCP_RESET_ERR);
+            return;
+        case TCP_ESTABLISHED:
+            status->state = TCP_CLOSE_WAIT;
+            break;
+        case TCP_FIN_WAIT1:
+            status->state = TCP_CLOSING;
+            status->PkgProc = [status](auto&& v1, auto&& v2) {
+                return CloseProc(status, v1, std::forward<decltype(v2)>(v2));
+            };
+            break;
+        case TCP_FIN_WAIT2:
+            status->state = TCP_TIME_WAIT;
+            status->PkgProc = [status](auto&& v1, auto&& v2) {
+                return CloseProc(status, v1, std::forward<decltype(v2)>(v2));
+            };
+            break;
+        }
+        status->ack_job = UpdateJob(std::move(status->ack_job),
+                                    [status_ = GetWeak(status)]{SendAck(status_);}, 0);
+    }
+}
+
 // ESTABLISHED or CLOSE-WAIT or FIN-WAIT1 or FIN-WAIT2
 // 只有这个函数会从对端接收数据(data)
 void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, Buffer&& bb) {
@@ -487,147 +636,11 @@ void DefaultProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pa
         return;
     }
 
-    if(flag & TH_ACK){
-        if(after(ack, status->sent_seq)) {
-            LOG("%s get ack from unsent seq (%u/%u), rst it\n", storage_ntoa(&status->src), ack, status->sent_seq);
-            SendRst(status);
-            status->errCB(pac, TCP_RESET_ERR);
-            return;
-        }
-
-        if(before(ack, status->recv_ack)) {
-            LOG("%s get ack from old seq (%u/%u), ignore it\n", storage_ntoa(&status->src), ack, status->recv_ack);
-            goto left;
-        }
-        if(status->options & (1 << TCPOPT_SACK_PERMITTED)) {
-            pac->tcp->getsack(&status->sack);
-            //filter sack which is earlier than recv_ack
-            Sack* sack = status->sack;
-            while(sack) {
-                if(after(sack->left, status->recv_ack)) {
-                    break;
-                }
-                Sack* prev = sack;
-                sack = sack->next;
-                free(prev);
-            }
-            status->sack = sack;
-        }
-        status->pull_job = updatejob_with_name(std::move(status->pull_job),
-                [status_ = GetWeak(status), pac] {
-                    if (status_.expired()) {
-                        return;
-                    }
-                    auto status = status_.lock();
-                    status->ackCB(pac);
-                }, "tcp_ack_cb", 0);
-        if(ack == status->recv_ack && (status->flags & TCP_KEEPALIVING) == 0) {
-            status->dupack ++;
-            if(status->dupack >= 3) {
-                status->rto_job = UpdateJob(std::move(status->rto_job),
-                                            [status_ = GetWeak(status)] {Resent(status_);}, 0);
-            }
-            goto left;
-        }
-        status->flags &= ~TCP_KEEPALIVING;
-        status->rto_factor = 1;
-        status->dupack = 0;
-        status->recv_ack = ack;
-        if(status->state == TCP_FIN_WAIT1 && ack == status->sent_seq){
-            status->state = TCP_FIN_WAIT2;
-        }
-        uint32_t minrtt = UINT32_MAX;
-        uint32_t now = getmtime();
-        // now > tsecr
-        if(has_timestamp && after(now, tsecr)) {
-            minrtt = now - tsecr;
-        }
-        while(!status->sent_list.empty()){
-            auto& front = status->sent_list.front();
-            uint32_t start_seq = front.pac->tcp->getseq();
-            uint32_t end_seq = start_seq + front.bb.len;
-            uint8_t flags = front.pac->tcp->getflag();
-            if(flags & (TH_SYN | TH_FIN)){
-                end_seq ++;
-            }
-            uint32_t rtt = now - front.first_sent;
-            if(before(start_seq,  ack) && rtt < status->rto) {
-                if(rtt < minrtt) {
-                    minrtt = rtt;
-                }
-            }
-            if(noafter(end_seq, ack)) {
-                status->sent_list.pop_front();
-            }else{
-                break;
-            }
-        }
-        if(minrtt != UINT32_MAX) {
-            if (status->srtt == 0) {
-                status->srtt = minrtt;
-                status->rttval = minrtt / 2;
-            } else {
-                status->rttval = (3 * status->rttval + labs((long) status->srtt - (long) minrtt)) / 4;
-                status->srtt = (7 * status->srtt + minrtt) / 8;
-            }
-            status->rto = std::max(status->srtt + 4 * status->rttval, (uint32_t) 100);
-            LOGD(DVPN, "tcp rtt: %d, srtt: %d, rttval: %d, rto[%d]: %d\n",
-                 minrtt, status->srtt, status->rttval, status->rto, (int)status->rto_factor);
-        }
-        if(status->sent_list.empty()) {
-            status->rto_job.reset(nullptr);
-        }else{
-            status->rto_job = UpdateJob(std::move(status->rto_job),
-                                        [status_ =  GetWeak(status)] {Resent(status_);},
-                                        std::max(status->rto * status->rto_factor, RTO_MAX));
-        }
-    }
-left:
-    status->window = pac->tcp->getwindow();
-    size_t datalen = bb.len - pac->gethdrlen();
-    if(datalen > status->rbuf.cap()) {
-        LOG("%s get pkt oversize of window (%zu/%zu), rst it\n",
-            storage_ntoa(&status->src), datalen,  status->rbuf.cap());
-        SendRst(status);
-        status->errCB(pac, TCP_RESET_ERR);
+    if((flag & TH_ACK) && !handleAck(status, pac, ack, has_timestamp, tsecr)) {
         return;
     }
-    if(datalen > 0) {
-        //处理数据
-        bb.reserve(pac->gethdrlen());
-        status->rbuf.put(std::move(bb));
-        status->want_seq += datalen;
-        status->ack_job = UpdateJob(std::move(status->ack_job),
-                                    [status_ = GetWeak(status)] {SendAck(status_);}, 0);
-    }
-    if(flag & TH_FIN){ //fin包，回ack包
-        status->want_seq++;
-        status->flags |= TCP_FIN_RECVD;
-        switch(status->state){
-        case TCP_CLOSE_WAIT:
-            LOG("%s get dup fin, send rst back\n", storage_ntoa(&status->src));
-            SendRst(status);
-            status->errCB(pac, TCP_RESET_ERR);
-            return;
-        case TCP_ESTABLISHED:
-            status->state = TCP_CLOSE_WAIT;
-            break;
-        case TCP_FIN_WAIT1:
-            status->state = TCP_CLOSING;
-            status->PkgProc = [status](auto&& v1, auto&& v2) {
-                return CloseProc(status, v1, std::forward<decltype(v2)>(v2));
-            };
-            break;
-        case TCP_FIN_WAIT2:
-            status->state = TCP_TIME_WAIT;
-            status->PkgProc = [status](auto&& v1, auto&& v2) {
-                return CloseProc(status, v1, std::forward<decltype(v2)>(v2));
-            };
-            break;
-        }
-        status->ack_job = UpdateJob(std::move(status->ack_job),
-                                    [status_ = GetWeak(status)]{SendAck(status_);}, 0);
-    }
+
+    handleRecvData(status, pac, std::move(bb), flag);
 }
 
 void SendAck(std::weak_ptr<TcpStatus> status_) {
