@@ -244,9 +244,9 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
             count++;
         }
     } else {
-        Sack* sack = status->sack;
+        Sack* sack = status->sack.get();
         if(debug[DVPN].enabled){
-            Sack* s = status->sack;
+            Sack* s = status->sack.get();
             std::string str = "sack " + std::to_string(status->recv_ack);
             while(s) {
                 str += " [" + std::to_string(s->left) + " - " + std::to_string(s->right) + "]";
@@ -442,18 +442,19 @@ static bool handleAck(std::shared_ptr<TcpStatus> status, std::shared_ptr<const I
         return true;
     }
     if(status->options & (1 << TCPOPT_SACK_PERMITTED)) {
-        pac->tcp->getsack(&status->sack);
+        pac->tcp->getsack(status->sack);
         //filter sack which is earlier than recv_ack
-        Sack* sack = status->sack;
+        Sack* sack = status->sack.release();
         while(sack) {
             if(after(sack->left, status->recv_ack)) {
                 break;
             }
             Sack* prev = sack;
             sack = sack->next;
-            free(prev);
+            prev->next = nullptr;
+            sack_release(prev);
         }
-        status->sack = sack;
+        status->sack.reset(sack);
     }
     status->pull_job = updatejob_with_name(std::move(status->pull_job), [status_ = GetWeak(status), pac] {
         if (status_.expired()) {

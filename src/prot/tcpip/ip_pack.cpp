@@ -677,11 +677,9 @@ uint8_t Tcp::getwindowscale() const{
     return 0;
 }
 
-void Tcp::getsack(struct Sack** sack) const {
-    if(sack == nullptr) {
-        return;
-    }
-    sack_release(sack);
+void Tcp::getsack(SackPtr& sack) const {
+    sack.reset();
+    Sack* head = nullptr;
     tcp_opt* opt = (tcp_opt *)tcpopt;
     size_t len = tcpoptlen;
 
@@ -697,10 +695,14 @@ void Tcp::getsack(struct Sack** sack) const {
             uint32_t* sack_array = (uint32_t*)opt->data;
             for(int i = 0; i < (opt->length-2)/8; i++){
                 Sack* ns = (struct Sack*)malloc(sizeof(struct Sack));
+                if (ns == nullptr) {
+                    sack_release(head);
+                    return;
+                }
                 ns->left = ntohl(sack_array[i * 2]);
                 ns->right = ntohl(sack_array[i * 2 + 1]);
                 ns->next = nullptr;
-                auto s = sack;
+                auto s = &head;
                 while(*s) {
                     if((*s)->left >= ns->left) {
                         break;
@@ -714,19 +716,20 @@ void Tcp::getsack(struct Sack** sack) const {
         len -= opt->length;
         opt = (tcp_opt*)((char *)opt+opt->length);
     }
+    sack.reset(head);
 }
 
-void sack_release(Sack** sack){
-    if(sack == nullptr) {
-        return;
-    }
-    Sack* s = *sack;
+void sack_release(Sack* sack){
+    Sack* s = sack;
     while(s != nullptr){
         Sack* next = s->next;
         free(s);
         s = next;
     }
-    *sack = nullptr;
+}
+
+void SackDeleter::operator()(Sack* sack) const {
+    sack_release(sack);
 }
 
 uint32_t Tcp::getseq() const {
@@ -1418,5 +1421,4 @@ void Ip6::build_packet(Buffer& bb) {
     hdr.ip6_plen = htons(len);
     memcpy(packet, &hdr, sizeof(ip6_hdr));
 }
-
 

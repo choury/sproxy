@@ -19,7 +19,7 @@ static int get_packet_namespace(OSSL_ENCRYPTION_LEVEL level){
         return QUIC_PACKET_NAMESPACE_HANDSHAKE;
     case ssl_encryption_early_data:
     case ssl_encryption_application:
-        return QUIC_PAKCET_NAMESPACE_APP;
+        return QUIC_PACKET_NAMESPACE_APP;
     }
     abort();
 }
@@ -35,7 +35,7 @@ QuicQos::QuicQos(bool isServer, const send_func& sent,
     pns[QUIC_PACKET_NAMESPACE_HANDSHAKE] = new pn_namespace('H',[sent](auto&& v1, auto&& v2, auto&& v3, auto&& v4){
         return sent(ssl_encryption_handshake, v1, v2, v3, v4);
     });
-    pns[QUIC_PAKCET_NAMESPACE_APP] = new pn_namespace('A', [sent](auto&& v1, auto&& v2, auto&& v3, auto&& v4){
+    pns[QUIC_PACKET_NAMESPACE_APP] = new pn_namespace('A', [sent](auto&& v1, auto&& v2, auto&& v3, auto&& v4){
         return sent(ssl_encryption_application, v1, v2, v3, v4);
     });
     RttInit(&rtt);
@@ -91,7 +91,7 @@ bool QuicQos::PeerCompletedAddressValidation() {
         return true;
     }
     return pns[QUIC_PACKET_NAMESPACE_HANDSHAKE]->largest_acked_packet != UINT64_MAX ||
-           pns[QUIC_PAKCET_NAMESPACE_APP]->hasKey;
+           pns[QUIC_PACKET_NAMESPACE_APP]->hasKey;
 }
 
 void QuicQos::OnLossDetectionTimeout(pn_namespace* ns){

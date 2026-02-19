@@ -584,7 +584,7 @@ size_t TunRWer::mem_usage() {
                 usage += sizeof(Ip6);
                 usage += sent.bb.cap;
             }
-            Sack* sack = status->sack;
+            Sack* sack = status->sack.get();
             while(sack) {
                 usage += sizeof(Sack);
                 sack = sack->next;

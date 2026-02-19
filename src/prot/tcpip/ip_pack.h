@@ -123,7 +123,13 @@ struct Sack{
     struct Sack* next;
 };
 
-void sack_release(Sack** sack);
+void sack_release(Sack* sack);
+
+struct SackDeleter {
+    void operator()(Sack* sack) const;
+};
+
+using SackPtr = std::unique_ptr<Sack, SackDeleter>;
 
 class Tcp{
     tcphdr tcp_hdr; //tcp头
@@ -161,7 +167,7 @@ public:
     [[nodiscard]] uint16_t getmss() const;
     int gettimestamp(uint32_t *tsval, uint32_t *tsecr) const;
     [[nodiscard]] uint8_t getwindowscale() const;
-    void getsack(struct Sack** sack) const;
+    void getsack(SackPtr& sack) const;
     ~Tcp();
 };
 

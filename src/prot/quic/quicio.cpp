@@ -252,7 +252,7 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
                 frame->stream.length = left - 30;
                 frame->type &= ~QUIC_FRAME_STREAM_FIN_F;
             } else if(packet.frames.empty() && (frame->type == QUIC_FRAME_DATAGRAM || frame->type == QUIC_FRAME_DATAGRAM_LEN)){
-                LOGD(DQUIC, "drop too large dategram frame: %zd vs %" PRIu64"\n", pack_frame_len(frame), his_max_payload_size);
+                LOGD(DQUIC, "drop too large datagram frame: %zd vs %" PRIu64"\n", pack_frame_len(frame), his_max_payload_size);
                 frame_release(frame);
                 pend_frames.pop_front();
                 break;
@@ -1311,7 +1311,7 @@ QuicBase::FrameResult QuicBase::handleFrames(quic_context *context, const quic_f
         if(frame->type >= QUIC_FRAME_STREAM_START_ID && frame->type <= QUIC_FRAME_STREAM_END_ID){
             return handleStreamFrame(frame->type, &frame->stream);
         } else {
-            LOG("ignore unknow quic frame type: 0x%lx\n", (long)frame->type);
+            LOG("ignore unknown quic frame type: 0x%lx\n", (long)frame->type);
         }
         return FrameResult::ok;
     }

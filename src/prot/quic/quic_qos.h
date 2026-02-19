@@ -18,7 +18,7 @@ const uint64_t kGranularity = 1000; // 1ms
 
 #define QUIC_PACKET_NAMESPACE_INITIAL 0
 #define QUIC_PACKET_NAMESPACE_HANDSHAKE 1
-#define QUIC_PAKCET_NAMESPACE_APP 2
+#define QUIC_PACKET_NAMESPACE_APP 2
 
 #ifdef USE_BORINGSSL
 typedef  enum ssl_encryption_level_t OSSL_ENCRYPTION_LEVEL;
