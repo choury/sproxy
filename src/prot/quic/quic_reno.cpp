@@ -2,20 +2,21 @@
 // Created by choury on 2025/6/8.
 //
 
-#include "quic_cubic.h"
+#include "quic_reno.h"
 
 #include <inttypes.h>
+#include <unordered_set>
 
-QuicCubic::QuicCubic(bool isServer, const send_func& sent,
+QuicReno::QuicReno(bool isServer, const send_func& sent,
                      std::function<void(pn_namespace*, quic_frame*)> resendFrames):
         QuicQos(isServer, sent, resendFrames) {
 }
 
-ssize_t QuicCubic::windowLeft() const {
+ssize_t QuicReno::windowLeft() const {
     return (int)congestion_window - (int)bytes_in_flight;
 }
 
-void QuicCubic::OnCongestionEvent(uint64_t sent_time) {
+void QuicReno::OnCongestionEvent(uint64_t sent_time) {
     // No reaction if already in a recovery period.
     if (sent_time <= congestion_recovery_start_time){
         return;
@@ -28,7 +29,7 @@ void QuicCubic::OnCongestionEvent(uint64_t sent_time) {
     //TODO: A packet can be sent to speed up loss recovery.
 }
 
-void QuicCubic::OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets) {
+void QuicReno::OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets) {
     uint64_t sent_time_of_last_loss = 0;
     // Remove lost packets from bytes_in_flight.
     for(const auto& lost_packet: lost_packets) {
@@ -64,7 +65,7 @@ void QuicCubic::OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>&
     if(persistent_lost_count < 2){
         return;
     }
-    uint64_t persistent_duration = (rtt.smoothed_rtt + std::max(4*rtt.rttvar, kGranularity) + his_max_ack_delay) *
+    uint64_t persistent_duration = (rtt.smoothed_rtt + std::max(4*rtt.rttvar, kGranularity) + his_max_ack_delay * 1000) *
                                    kPersistentCongestionThreshold;
     if(getutime() - last_receipt_ack_time < persistent_duration){
         return;
@@ -74,7 +75,7 @@ void QuicCubic::OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>&
     congestion_recovery_start_time = 0;
 }
 
-void QuicCubic::OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets) {
+void QuicReno::OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets) {
     size_t sent_bytes = 0;
     for(auto meta: acked_packets){
         if(!meta.in_flight){
@@ -104,7 +105,7 @@ void QuicCubic::OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets)
     }
 }
 
-void QuicCubic::Migrated() {
+void QuicReno::Migrated() {
     QuicQos::Migrated();
     congestion_window = kInitialWindow;
     congestion_recovery_start_time = 0;

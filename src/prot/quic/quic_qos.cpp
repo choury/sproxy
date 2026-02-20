@@ -3,7 +3,7 @@
 //
 
 #include "quic_qos.h"
-#include "quic_cubic.h"
+#include "quic_reno.h"
 #include "quic_bbr.h"
 #include "misc/config.h"
 
@@ -400,5 +400,5 @@ std::unique_ptr<QuicQos> createQos(
     if(opt.quic_cc_algorithm && strcmp(opt.quic_cc_algorithm, "bbr") == 0){
         return std::make_unique<QuicBBR>(isServer, sent, resendFrames);
     }
-    return std::make_unique<QuicCubic>(isServer, sent, resendFrames);
+    return std::make_unique<QuicReno>(isServer, sent, resendFrames);
 }

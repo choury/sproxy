@@ -287,7 +287,7 @@ static struct option_detail option_detail[] = {
     {"pidfile", "Write pid to this file", option_string, &opt.pidfile, NULL},
     {"policy-file", "The file of policy ("PREFIX"/etc/sproxy/sites.list as default)", option_string, &policy_file, NULL},
     {"quic", "Listen for QUIC server", option_list, &quic_listens, NULL},
-    {"quic-cc", "QUIC congestion control algorithm (cubic, bbr)", option_string, &opt.quic_cc_algorithm, NULL},
+    {"quic-cc", "QUIC congestion control algorithm (reno, bbr)", option_string, &opt.quic_cc_algorithm, NULL},
     {"quic-version", "QUIC version (1 for QUIC v1, 2 for QUIC v2)", option_uint64, &opt.quic_version, NULL},
     {"redirect-http", "Return 308 to redirect http to https", option_bool, &opt.redirect_http, (void*)true},
     {"request-header", "append the header (name:value) before handle http request", option_list, &opt.request_headers, NULL},
@@ -761,7 +761,7 @@ void postConfig(){
 
     // 设置QUIC拥塞控制算法默认值
     if(opt.quic_cc_algorithm == NULL) {
-        opt.quic_cc_algorithm = strdup("cubic");
+        opt.quic_cc_algorithm = strdup("reno");
     }
 
     if(policy_file == NULL){

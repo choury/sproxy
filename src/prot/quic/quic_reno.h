@@ -2,15 +2,15 @@
 // Created by choury on 2025/6/8.
 //
 
-#ifndef SPROXY_QUIC_CUBIC_H
-#define SPROXY_QUIC_CUBIC_H
+#ifndef SPROXY_QUIC_RENO_H
+#define SPROXY_QUIC_RENO_H
 
 #include "quic_qos.h"
 
 const double  kLossReductionFactor = 0.5;
 const double  kPersistentCongestionThreshold = 3;
 
-class QuicCubic: public QuicQos {
+class QuicReno: public QuicQos {
 protected:
     size_t congestion_window = kInitialWindow;
     uint64_t congestion_recovery_start_time = 0;
@@ -21,9 +21,9 @@ protected:
     virtual void OnCongestionEvent(uint64_t sent_time) override;
     virtual void Migrated() override;
 public:
-    QuicCubic(bool isServer, const send_func& sent,
+    QuicReno(bool isServer, const send_func& sent,
              std::function<void(pn_namespace*, quic_frame*)> resendFrames);
     [[nodiscard]] virtual ssize_t windowLeft() const override;
 };
 
-#endif //SPROXY_QUIC_CUBIC_H
+#endif //SPROXY_QUIC_RENO_H
