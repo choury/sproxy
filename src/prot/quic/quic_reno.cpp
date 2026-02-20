@@ -23,16 +23,20 @@ void QuicReno::OnCongestionEvent(uint64_t sent_time) {
     }
     // Enter recovery period.
     congestion_recovery_start_time = getutime();
-    ssthresh = congestion_window * kLossReductionFactor;
+    ssthresh = std::max((uint64_t)(congestion_window * kLossReductionFactor), (uint64_t)kMinimumWindow);
     LOGD(DQUIC, "cut congestion_window from %zd to %zd\n", congestion_window, (size_t)ssthresh);
-    congestion_window = std::max(ssthresh, kMinimumWindow);
+    congestion_window = ssthresh;
     //TODO: A packet can be sent to speed up loss recovery.
 }
 
 void QuicReno::OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& lost_packets) {
     uint64_t sent_time_of_last_loss = 0;
-    // Remove lost packets from bytes_in_flight.
-    for(const auto& lost_packet: lost_packets) {
+    uint64_t earliest_lost_time = UINT64_MAX;
+    uint64_t latest_lost_time   = 0;
+
+    // Remove lost packets from bytes_in_flight and collect timestamps for
+    // both immediate congestion reaction and persistent congestion detection.
+    for (const auto& lost_packet : lost_packets) {
         if (lost_packet.meta.in_flight) {
             bytes_in_flight -= lost_packet.meta.sent_bytes;
             sent_time_of_last_loss = std::max(sent_time_of_last_loss, lost_packet.meta.sent_time);
@@ -40,7 +44,13 @@ void QuicReno::OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& 
         for(auto frame: lost_packet.frames){
             resendFrames(ns, frame);
         }
+        if (lost_packet.meta.sent_time <= rtt.first_rtt_sample || !lost_packet.meta.ack_eliciting) {
+            continue;
+        }
+        earliest_lost_time = std::min(earliest_lost_time, lost_packet.meta.sent_time);
+        latest_lost_time   = std::max(latest_lost_time, lost_packet.meta.sent_time);
     }
+
     // Congestion event if in-flight packets were lost
     if (sent_time_of_last_loss != 0) {
         OnCongestionEvent(sent_time_of_last_loss);
@@ -49,25 +59,12 @@ void QuicReno::OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& 
     // Reset the congestion window if the loss of these
     // packets indicates persistent congestion.
     // Only consider packets sent after getting an RTT sample.
-    if (rtt.first_rtt_sample == 0) {
-        return;
-    }
-    size_t persistent_lost_count = 0;
-    for(const auto& lost: lost_packets) {
-        if (lost.meta.sent_time <= rtt.first_rtt_sample) {
-            continue;
-        }
-        if (!lost.meta.ack_eliciting){
-            continue;
-        }
-        persistent_lost_count ++;
-    }
-    if(persistent_lost_count < 2){
+    if (rtt.first_rtt_sample == 0 || earliest_lost_time == UINT64_MAX) {
         return;
     }
     uint64_t persistent_duration = (rtt.smoothed_rtt + std::max(4*rtt.rttvar, kGranularity) + his_max_ack_delay * 1000) *
                                    kPersistentCongestionThreshold;
-    if(getutime() - last_receipt_ack_time < persistent_duration){
+    if (latest_lost_time - earliest_lost_time < persistent_duration) {
         return;
     }
     LOGD(DQUIC, "reset congestion_window to :%" PRIu64"\n", kMinimumWindow);
@@ -77,15 +74,19 @@ void QuicReno::OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& 
 
 void QuicReno::OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets) {
     size_t sent_bytes = 0;
-    for(auto meta: acked_packets){
-        if(!meta.in_flight){
+    // Evaluate cwnd-limited status once at ACK-event start.
+    bool cwnd_limited = bytes_in_flight >= congestion_window;
+    for (const auto &meta : acked_packets) {
+        if (!meta.in_flight) {
             continue;
         }
         // Remove from bytes_in_flight.
         bytes_in_flight -= meta.sent_bytes;
         // Do not increase congestion_window if application
         // limited or flow control limited.
-        //TODO: check if it is application limited or flow control limited
+        if (!cwnd_limited || meta.app_limited) {
+            continue;
+        }
 
         // Do not increase congestion window in recovery period.
         if(meta.sent_time <= congestion_recovery_start_time){
