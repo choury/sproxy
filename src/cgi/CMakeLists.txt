@@ -21,20 +21,12 @@ set_target_properties(proxy PROPERTIES OUTPUT_NAME "proxy")
 set(INSTALL_LIBRARIES login sites proxy)
 
 if (HAVE_RUST)
-    get_filename_component(OPENSSL_LIB_DIR ${OPENSSL_SSL_LIBRARY} DIRECTORY)
-    set(CARGO_OPENSSL_ENV
-        OPENSSL_NO_VENDOR=1
-        OPENSSL_INCLUDE_DIR=${OPENSSL_INCLUDE_DIR}
-        OPENSSL_LIB_DIR=${OPENSSL_LIB_DIR}
-    )
-
     set(RUST_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/rs_build)
     set(RUST_BUILD_LIBRARY ${RUST_BUILD_DIR}/release/libsproxy_cgi.a)
     add_custom_target(
             rust_static_library
             BYPRODUCTS ${RUST_BUILD_LIBRARY}
             COMMAND ${CMAKE_COMMAND} -E env
-                    ${CARGO_OPENSSL_ENV}
                     ${CARGO_EXECUTABLE} build --release --target-dir ${RUST_BUILD_DIR}
             WORKING_DIRECTORY  ${CMAKE_CURRENT_SOURCE_DIR}/rs
     )

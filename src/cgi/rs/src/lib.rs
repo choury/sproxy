@@ -3,6 +3,8 @@ use std::os::raw::c_char;
 use std::slice;
 
 mod acme;
+mod acme_client;
+mod acme_jws;
 mod fcm;
 
 fn cstr_to_str<'a>(ptr: *const c_char) -> Result<&'a str, String> {

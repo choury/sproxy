@@ -27,11 +27,16 @@
 
 ## 触发证书申请
 
-使用 POST 请求调用 `libacme.do` 并传入目标域名：
+使用 POST 请求调用 `libacme.do` 并传入目标域名或 IP 地址：
 
 ```bash
+# 域名证书
 curl -X POST http://<server>/cgi/libacme.do \
      -d 'domain=example.com&contact=mailto:admin@example.com'
+
+# IP 证书（支持 IPv4 和 IPv6）
+curl -X POST http://<server>/cgi/libacme.do \
+     -d 'domain=203.0.113.1&contact=mailto:admin@example.com'
 ```
 
 流程说明：
@@ -49,6 +54,12 @@ curl -X POST http://<server>/cgi/libacme.do \
 
 请求返回 `200 OK` 表示申请成功，`500` 表示 ACME 交互失败，具体错误可在日志中查看。
 
+## IP 证书
+
+`domain` 参数传入 IP 地址时，会自动识别并使用 ACME `ip` identifier 类型，CSR 中也会生成对应的 IP SAN 扩展。同时支持 IPv4 和 IPv6 地址。
+
+> **注意**：Let's Encrypt 对 IP 证书仅签发**短期证书**（约 6 天有效期），需要更频繁地续签。
+
 ## 其他注意事项
 
 - `libacme.do` 在 ACME 未启用时会返回 `403`。
@@ -56,4 +67,5 @@ curl -X POST http://<server>/cgi/libacme.do \
 - 证书状态与账户密钥会保存在 `--acme` 指定的目录，请确保进程对该目录具有读写权限并做好备份。
 - ACME 申请流程通常需要 20–60 秒，期间请勿重复触发。
 - 使用 ACME 申请时仍可继续访问原有静态证书，刷新后即时生效。
-- 目前仅支持申请单域名证书。
+- 目前仅支持申请单域名或单 IP 证书。
+- ACME 模块使用纯 Rust 实现（基于 `ring`/`rcgen`），不依赖 OpenSSL。

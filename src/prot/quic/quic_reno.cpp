@@ -5,7 +5,6 @@
 #include "quic_reno.h"
 
 #include <inttypes.h>
-#include <unordered_set>
 
 QuicReno::QuicReno(bool isServer, const send_func& sent,
                      std::function<void(pn_namespace*, quic_frame*)> resendFrames):
@@ -69,7 +68,6 @@ void QuicReno::OnPacketsLost(pn_namespace* ns, const std::list<quic_packet_pn>& 
     }
     LOGD(DQUIC, "reset congestion_window to :%" PRIu64"\n", kMinimumWindow);
     congestion_window = kMinimumWindow;
-    congestion_recovery_start_time = 0;
 }
 
 void QuicReno::OnPacketsAcked(const std::list<quic_packet_meta>& acked_packets) {
