@@ -273,7 +273,6 @@ int main(int argc, char **argv) {
                     LOGE("systemd socket getsockname failed for %d: %s\n", fd[0], strerror(errno));
                     continue;
                 }
-                SetUdpOptions(fd[0], &addr);
                 SetRecvPKInfo(fd[0], &addr);
             }
             if(opt.sni_mode) {
