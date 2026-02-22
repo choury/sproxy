@@ -79,9 +79,12 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
                 hasEof = true;
                 break;
             }
+            if (bb.len > max_len && !iovs.empty()) {
+                break;
+            }
             iovs.emplace_back(iovec{(void *) bb.data(), bb.len});
             len += bb.len;
-            if (unlikely(iovs.size() >= IOV_MAX) || (len >= MAX_BUF_LEN) || max_len <= bb.len) {
+            if (unlikely(iovs.size() >= IOV_MAX || len >= MAX_BUF_LEN)) {
                 break;
             }
             max_len -= bb.len;
@@ -91,8 +94,10 @@ ssize_t RWer::Write(std::set<uint64_t>& writed_list) {
         last_errno = errno;
         if(ret > 0) {
             LOGD(DRWER, "writev %d: iovs: %zd, ret: %zd/%zd\n", getFd(), iovs.size(), ret, len);
-        } else {
+        } else if (last_errno != EAGAIN && last_errno != ENOBUFS && last_errno != EINTR) {
             LOGE("writev %d error: %s\n", getFd(), strerror(last_errno));
+        } else {
+            LOGD(DRWER, "writev %d: %s\n", getFd(), strerror(last_errno));
         }
     }
     if(len == (size_t)ret && hasEof) {
