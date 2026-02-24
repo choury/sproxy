@@ -868,11 +868,15 @@ void QuicBase::cleanStream(uint64_t id) {
         }
         LOGD(DQUIC, "discard data: %" PRIu64" - %" PRIu64"\n",
              (*i)->stream.offset, (*i)->stream.offset + (*i)->stream.length);
+        my_sent_data -= (*i)->stream.length;
         frame_release(*i);
         i = fullq.erase(i);
     }
     if(streammap.count(id)){
-        rblen -= streammap[id].rb.continuous_length();
+        auto& status = streammap[id];
+        auto unordered = status.rb.length() - status.rb.continuous_length();
+        my_received_data += unordered;
+        rblen -= status.rb.continuous_length();
         streammap.erase(id);
     }
 }
