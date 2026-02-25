@@ -166,28 +166,41 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
     distribute(status.req, status.rw);
 }
 
-bool Guest3::DataProc(Buffer&& bb) {
-    if(bb.len == 0)
-        return true;
+ssize_t Guest3::DataProc(Buffer& bb) {
+    HOOK_FUNC(this, statusmap, bb);
     if(statusmap.count(bb.id)){
-        HOOK_FUNC(this, statusmap, bb);
         ReqStatus& status = statusmap[bb.id];
         if(status.flags & HTTP_REQ_COMPLETED){
-            LOGD(DHTTP3, "<guest3> DateProc after closed, id: %" PRIu64"\n", bb.id);
+            LOGD(DHTTP3, "<guest3> DataProc after closed, id: %" PRIu64"\n", bb.id);
             status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP3_ERR_STREAM_CREATION_ERROR);}), 0, 0);
-            return true;
+            size_t len = bb.len;
+            bb.len = 0;
+            return (ssize_t)len;
         }
-        if(status.rw->bufsize() < bb.len){
+        size_t cap = status.rw->bufsize();
+        if(cap == 0){
             LOGE("[%" PRIu64 "]: <guest3> (%" PRIu64") the host's buff is full (%s)\n",
                  status.req->request_id, bb.id, status.req->geturl().c_str());
-            return false;
+            return -1;
         }
+        if(cap < bb.len){
+            Buffer cbb = bb;
+            cbb.truncate(cap);
+            status.rw->push_data(std::move(cbb));
+            bb.reserve((int)cap);
+            return (ssize_t)cap;
+        }
+        size_t len = bb.len;
         status.rw->push_data(std::move(bb));
+        bb.len = 0;
+        return (ssize_t)len;
     }else{
-        LOGD(DHTTP3, "<guest3> DateProc not found id: %" PRIu64"\n", bb.id);
+        LOGD(DHTTP3, "<guest3> DataProc not found id: %" PRIu64"\n", bb.id);
         Reset(bb.id, HTTP3_ERR_STREAM_CREATION_ERROR);
+        size_t len = bb.len;
+        bb.len = 0;
+        return (ssize_t)len;
     }
-    return true;
 }
 
 void Guest3::DatagramProc(Buffer&& bb) {
@@ -249,6 +262,7 @@ void Guest3::Clean(uint64_t id, uint32_t errcode) {
     if(statusmap.count(id) == 0){
         return;
     }
+    data_remain.erase(id);
 
     ReqStatus& status = statusmap[id];
     if((status.flags & HTTP_RST) == 0 && ((status.flags&HTTP_REQ_COMPLETED) == 0 || (status.flags&HTTP_RES_COMPLETED) == 0)){

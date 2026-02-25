@@ -75,29 +75,41 @@ void Proxy3::Reset(uint64_t id, uint32_t code) {
     return std::dynamic_pointer_cast<QuicBase>(rwer)->reset(id, code);
 }
 
-bool Proxy3::DataProc(Buffer&& bb){
+ssize_t Proxy3::DataProc(Buffer& bb){
     HOOK_FUNC(this, statusmap, bb);
-    if(bb.len == 0){
-        return true;
-    }
     if(statusmap.count(bb.id)){
         ReqStatus& status = statusmap[bb.id];
         if(status.flags & HTTP_RES_COMPLETED) {
             LOGD(DHTTP3, "<proxy3> DataProc after closed, id:%d\n", (int)bb.id);
             status.cleanJob = AddJob(([this, id = bb.id]{Clean(id, HTTP3_ERR_STREAM_CREATION_ERROR);}), 0, 0);
-            return true;
+            size_t len = bb.len;
+            bb.len = 0;
+            return (ssize_t)len;
         }
-        if(status.rw->cap(bb.id) < (int)bb.len){
+        int cap = status.rw->cap(bb.id);
+        if(cap <= 0){
             LOGE("[%" PRIu64 "]: <proxy3> (%" PRIu64") the guest's write buff is full (%s) %zd vs %zd\n",
                  status.req->request_id, bb.id, status.req->geturl().c_str(), status.rw->cap(bb.id), bb.len);
-            return false;
+            return -1;
         }
+        if((size_t)cap < bb.len){
+            Buffer cbb = bb;
+            cbb.truncate((size_t)cap);
+            status.rw->Send(std::move(cbb));
+            bb.reserve(cap);
+            return cap;
+        }
+        size_t len = bb.len;
         status.rw->Send(std::move(bb));
+        bb.len = 0;
+        return (ssize_t)len;
     }else{
         LOGD(DHTTP3, "<proxy3> DataProc not found id: %" PRIu64 "\n", bb.id);
         Reset(bb.id, HTTP3_ERR_STREAM_CREATION_ERROR);
+        size_t len = bb.len;
+        bb.len = 0;
+        return (ssize_t)len;
     }
-    return true;
 }
 
 void Proxy3::DatagramProc(Buffer&& bb) {
@@ -253,6 +265,7 @@ void Proxy3::Clean(uint64_t id, uint32_t errcode) {
     if(statusmap.count(id) == 0){
         return;
     }
+    data_remain.erase(id);
 
     ReqStatus& status = statusmap[id];
     if((status.flags & HTTP_RST) == 0 && ((status.flags&HTTP_REQ_COMPLETED) == 0 || (status.flags&HTTP_RES_COMPLETED) == 0)){

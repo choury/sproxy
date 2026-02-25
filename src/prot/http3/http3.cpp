@@ -19,21 +19,65 @@ Http3Base::Http3Base(): qpack_encoder([this](Buffer&& bb){
 
 size_t Http3Base::Http3_Proc(Buffer& bb) {
     size_t len = bb.len;
-    if(ctrlid_remote && bb.id == ctrlid_remote){
-        uint64_t stream, length;
-        if(variable_decode_len(bb.data()) >= bb.len){
+    auto consume_data = [this, &bb](uint64_t& remain) -> ssize_t {
+        if(bb.len == 0 || remain == 0) {
             return 0;
         }
-        bb.reserve(variable_decode(bb.data(), &stream));
-        if(variable_decode_len(bb.data()) >= bb.len){
-            return 0;
+        if(remain < bb.len){
+            // 传入截断的拷贝cbb，DataProc操作的是cbb而非bb，
+            // 所以需要手动用返回值推进bb
+            Buffer cbb = bb;
+            cbb.truncate((size_t)remain);
+            ssize_t ret = DataProc(cbb);
+            if(ret < 0){
+                return ret;
+            }
+            if((uint64_t)ret > remain){
+                LOGE("http3 data consume overflow: %" PRIu64 " > %" PRIu64 "\n",
+                     (uint64_t)ret, remain);
+                ErrProc(HTTP3_ERR_FRAME_ERROR);
+                return -1;
+            }
+            remain -= (uint64_t)ret;
+            bb.reserve((int)ret);
+            return ret;
         }
-        bb.reserve(variable_decode(bb.data(), &length));
-        if(length > bb.len){
-            LOGE("http3 frame error: type 0x%x, length %d, buff len %d\n", (int)stream, (int)length, (int)bb.len);
+        // 直接传入bb，DataProc内部会推进bb，
+        // 这里不再bb.reserve以避免重复推进
+        ssize_t ret = DataProc(bb);
+        if(ret < 0){
+            return ret;
+        }
+        if((uint64_t)ret > remain){
+            LOGE("http3 data consume overflow: %" PRIu64 " > %" PRIu64 "\n",
+                 (uint64_t)ret, remain);
             ErrProc(HTTP3_ERR_FRAME_ERROR);
+            return -1;
+        }
+        remain -= (uint64_t)ret;
+        return ret;
+    };
+
+    if(ctrlid_remote && bb.id == ctrlid_remote){
+        if(bb.len == 0){
             return 0;
         }
+        size_t type_len = variable_decode_len(bb.data());
+        if(type_len >= bb.len){
+            return 0;
+        }
+        uint64_t stream, length;
+        variable_decode(bb.data(), &stream);
+        const char* pos = (const char*)bb.data() + type_len;
+        size_t len_len = variable_decode_len(pos);
+        if(type_len + len_len > bb.len){
+            return 0;
+        }
+        variable_decode(pos, &length);
+        if(length > bb.len - type_len - len_len){
+            return 0;
+        }
+        bb.reserve((int)(type_len + len_len));
         switch(stream){
         case HTTP3_STREAM_SETTINGS:
             LOGD(DHTTP3, "Get a settings frame: length: %" PRIu64 "\n", length);
@@ -61,7 +105,7 @@ size_t Http3Base::Http3_Proc(Buffer& bb) {
             }
             break;
         }
-        bb.reserve(length);
+        bb.reserve((int)length);
     }else if(qpackeid_remote && bb.id == qpackeid_remote){
         int ret = Qpack_encoder::push_ins(bb.data(), bb.len);
         if(ret < 0){
@@ -77,43 +121,68 @@ size_t Http3Base::Http3_Proc(Buffer& bb) {
         }
         bb.reserve(ret);
     }else if((bb.id & 0x02) == 0){
-        uint64_t stream, length;
-        if(variable_decode_len(bb.data()) >= bb.len){
+        auto it = data_remain.find(bb.id);
+        if(it != data_remain.end() && it->second > 0){
+            ssize_t ret = consume_data(it->second);
+            if(ret <= 0){
+                return 0;
+            }
+            if(it->second == 0){
+                data_remain.erase(it);
+            }
+            if(http3_flag & HTTP3_FLAG_ERROR){
+                return 0;
+            }
+            return len - bb.len;
+        }
+
+        if(bb.len == 0){
+            return 0;
+        }
+        size_t type_len = variable_decode_len(bb.data());
+        if(type_len >= bb.len){
             LOGD(DHTTP3, "not enough to get stream type: %zd\n", bb.len);
             return 0;
         }
-        bb.reserve(variable_decode(bb.data(), &stream));
-        if(variable_decode_len(bb.data()) > bb.len){
+        uint64_t stream, length;
+        variable_decode(bb.data(), &stream);
+        const char* pos = (const char*)bb.data() + type_len;
+        size_t len_len = variable_decode_len(pos);
+        if(type_len + len_len > bb.len){
             LOGD(DHTTP3, "not enough to get frame [%" PRIu64"] len: %zd\n", stream, bb.len);
             return 0;
         }
-        bb.reserve(variable_decode(bb.data(), &length));
-        if(length > bb.len){
-            LOGD(DHTTP3, "incompleted frame: %" PRIu64" vs %zd\n", length, bb.len);
+        variable_decode(pos, &length);
+        size_t header_len = type_len + len_len;
+        if(stream == HTTP3_STREAM_DATA){
+            LOGD(DHTTP3, "Get a data frame: %" PRIu64 ", length: %" PRIu64 "\n", bb.id, length);
+            bb.reserve((int)header_len);
+            if(length == 0){
+                return len - bb.len;
+            }
+            data_remain[bb.id] = length;
+            auto it2 = data_remain.find(bb.id);
+            ssize_t ret = consume_data(it2->second);
+            if(ret < 0){
+                return len - bb.len;
+            }
+            if(it2->second == 0){
+                data_remain.erase(it2);
+            }
+            if(http3_flag & HTTP3_FLAG_ERROR){
+                return 0;
+            }
+            return len - bb.len;
+        }
+        if(length > bb.len - header_len){
             return 0;
         }
+        bb.reserve((int)header_len);
         switch(stream){
         case HTTP3_STREAM_HEADERS:
             LOGD(DHTTP3, "Get a header frame: %" PRIu64 ", length: %" PRIu64 "\n", bb.id, length);
             HeadersProc(bb.id, (const uchar*)bb.data(), length);
             break;
-        case HTTP3_STREAM_DATA: {
-            LOGD(DHTTP3, "Get a data frame: %" PRIu64 ", length: %" PRIu64 "\n", bb.id, length);
-            if(bb.len == length) {
-                if (!DataProc(std::move(bb))) {
-                    return 0;
-                }
-                bb.len = 0;
-            } else {
-                Buffer cbb = bb;
-                cbb.truncate(length);
-                if (!DataProc(std::move(cbb))) {
-                    return 0;
-                }
-                bb.reserve(length);
-            }
-            return len - bb.len;
-        }
         case HTTP3_STREAM_CANCEL_PUSH:
         case HTTP3_STREAM_MAX_PUSH_ID:
         case HTTP3_STREAM_GOAWAY:
@@ -128,9 +197,12 @@ size_t Http3Base::Http3_Proc(Buffer& bb) {
             }
             break;
         }
-        bb.reserve(length);
+        bb.reserve((int)length);
     } else {
         uint64_t type;
+        if(bb.len == 0){
+            return 0;
+        }
         if(variable_decode_len(bb.data()) > bb.len){
             return 0;
         }

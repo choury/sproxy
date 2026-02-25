@@ -10,6 +10,8 @@
 #include "prot/http/http_header.h"
 #include "qpach.h"
 
+#include <unordered_map>
+
 //Frame Type	                Value	Specification
 #define HTTP3_STREAM_DATA	        0x0	//Section 7.2.1
 #define HTTP3_STREAM_HEADERS	    0x1	//Section 7.2.2
@@ -59,7 +61,6 @@ Reserved	    0x5	    N/A	N/A */
 #define HTTP3_STREAM_TYPE_CONTROL	0x00	//Section 6.2.1	Both
 #define HTTP3_STREAM_TYPE_PUSH  	0x01	//Section 4.4	Server
 
-
 class Http3Base{
 protected:
 #define HTTP3_FLAG_INITED    (1u << 0u)
@@ -77,14 +78,16 @@ protected:
 
     Qpack_encoder qpack_encoder;
     Qpack_decoder qpack_decoder;
+    // remaining bytes of current DATA frame per stream
+    std::unordered_map<uint64_t, uint64_t> data_remain;
     size_t Http3_Proc(Buffer& bb);
     void Datagram_Proc(Buffer&& bb);
 
     virtual void HeadersProc(uint64_t id, const uchar *header, size_t len) = 0;
     virtual void SettingsProc(const uchar *header, size_t len);
     virtual void GoawayProc(uint64_t id);
-    //返回true代表所有数据都已消费，返回false代表bb保持原样未动，不能消费部分数据
-    virtual bool DataProc(Buffer&& bb) = 0;
+    //返回已消费的字节数，<0 表示bb保持原样未动
+    virtual ssize_t DataProc(Buffer& bb) = 0;
     virtual void DatagramProc(Buffer&& bb) = 0;
     virtual void ErrProc(int errcode) = 0;
     virtual void Reset(uint64_t id, uint32_t code) = 0;
