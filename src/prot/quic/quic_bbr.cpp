@@ -192,7 +192,6 @@ void QuicBBR::EnterStartup() {
     full_bw = 0;
     full_bw_count = 0;
     full_bw_last_round_time = 0;
-    btlBw.clear();
 }
 
 void QuicBBR::EnterDrain() {

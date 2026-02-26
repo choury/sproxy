@@ -308,16 +308,28 @@ std::list<quic_packet_pn> QuicBase::send(OSSL_ENCRYPTION_LEVEL level,
 
     int ret = writem(iov.data(), iov.size());
     if (ret < 0) {
+        ret = 0;
         LOGE("QUIC writem failed: %s\n", strerror(errno));
-        return {};
     }
-    size_t sentlen = start - (char*)blk.data();
     if((size_t)ret < iov.size()) {
-        LOGE("sent packet: %d/%zd, sent size: %zd, left frames: %zd, buffer: %zd/%zd\n",
-            ret, iov.size(), sentlen, pend_frames.size(), getWritableSize(), bufleft);
+        // 把没有发送成功的包的帧放回pend_frames头部，以便下次优先发送
+        auto it = sent_packets.begin();
+        std::advance(it, ret);
+        auto pos = pend_frames.begin();
+        for(auto p = it; p != sent_packets.end(); p++) {
+            pos = pend_frames.insert(pos, p->frames.begin(), p->frames.end());
+            std::advance(pos, p->frames.size());
+        }
+        sent_packets.erase(it, sent_packets.end());
+        LOGE("sent packet: %d/%zd, left frames: %zd, buffer: %zd/%zd\n",
+            ret, iov.size(), pend_frames.size(), getWritableSize(), bufleft);
     } else {
-        LOGD(DQUIC, "sent packet: %d/%zd, sent size: %zd, left frames: %zd, buffer: %zd\n",
-            ret, iov.size(), sentlen, pend_frames.size(), bufleft);
+        LOGD(DQUIC, "sent packet: %d/%zd, left frames: %zd, buffer: %zd\n",
+            ret, iov.size(), pend_frames.size(), bufleft);
+    }
+    size_t sentlen = 0;
+    for(int i = 0; i < ret; i++) {
+        sentlen += iov[i].iov_len;
     }
     my_sent_data_total += sentlen;
     return sent_packets;
