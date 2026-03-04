@@ -168,7 +168,12 @@ __always_inline int redirect6(struct bpf_sock_addr* ctx) {
     if (proxy_port6 == 0) return 1;
     if ((bpf_get_current_pid_tgid() >> 32) == proxy_pid) return 1;
     if (ctx->user_family != AF_INET6) return 1;
-    if (ctx->user_ip6[0] == 0 && ctx->user_ip6[1] == 0 && ctx->user_ip6[2] == 0 && ctx->user_ip6[3] == bpf_htonl(1)) return 1;
+    if (ctx->user_ip6[0] == 0 && ctx->user_ip6[1] == 0) {
+        // skip IPv6 loopback ::1
+        if (ctx->user_ip6[2] == 0 && ctx->user_ip6[3] == bpf_htonl(1)) return 1;
+        // skip IPv4-mapped IPv6 loopback ::ffff:127.0.0.1
+        if (ctx->user_ip6[2] == bpf_htonl(0x0000ffff) && ctx->user_ip6[3] == bpf_htonl(INADDR_LOOPBACK)) return 1;
+    }
 
     struct sock_addr sock;
     __builtin_memset(&sock, 0, sizeof(sock));

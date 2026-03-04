@@ -229,6 +229,15 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
         tcpSend(status, pac, bb);
         logger.add(start, len);
     };
+    auto resend_ctrl = [&](tcp_sent& it) {
+        auto pac = MakeIp(it.pac);
+        pac->tcp
+                ->setack(status->want_seq)
+                ->setwindow(bufleft(status) >> status->send_wscale);
+        Buffer bb(nullptr);
+        tcpSend(status, pac, bb);
+        logger.add(it.pac->tcp->getseq(), 0);
+    };
     if(status->sack == nullptr) {
         int count = 0;
         for(auto& it : status->sent_list){
@@ -236,10 +245,14 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
             if(count > 0 && (uint64_t)it.last_sent + status->rto * status->rto_factor > now) {
                 break;
             }
-            uint32_t seq = it.pac->tcp->getseq();
-            uint32_t next = seq + it.bb.len;
-            uint32_t start = std::max(seq, status->recv_ack);
-            send_range(it, start, next);
+            if(it.bb.len == 0) {
+                resend_ctrl(it);
+            } else {
+                uint32_t seq = it.pac->tcp->getseq();
+                uint32_t next = seq + it.bb.len;
+                uint32_t start = std::max(seq, status->recv_ack);
+                send_range(it, start, next);
+            }
             it.last_sent = now;
             count++;
         }
@@ -257,6 +270,11 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
         for(auto& it : status->sent_list) {
             if (it.last_sent != it.first_sent && now - it.last_sent < status->srtt)
                 continue;
+            if(it.bb.len == 0) {
+                resend_ctrl(it);
+                it.last_sent = now;
+                continue;
+            }
             uint32_t seq = it.pac->tcp->getseq();
             uint32_t next = seq + it.bb.len;
             uint32_t cursor = std::max(seq, status->recv_ack);
