@@ -3,7 +3,7 @@
 #include "misc/config.h"
 #include "misc/defer.h"
 #include "misc/net.h"
-#include "misc/hook.h"
+#include "hook/hook.h"
 #include "prot/memio.h"
 #include "prot/http/http_header.h"
 #include "res/responser.h"

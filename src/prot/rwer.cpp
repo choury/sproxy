@@ -1,7 +1,7 @@
 #include "rwer.h"
 #include "common/common.h"
 #include "misc/defer.h"
-#include "misc/hook.h"
+#include "hook/hook.h"
 #include "misc/net.h"
 
 #include <unistd.h>

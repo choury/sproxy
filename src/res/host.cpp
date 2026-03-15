@@ -9,7 +9,7 @@
 #endif
 #include "prot/socks5/socks5.h"
 #include "misc/config.h"
-#include "misc/hook.h"
+#include "hook/hook.h"
 
 #include <string.h>
 #include <assert.h>

@@ -4,7 +4,7 @@
 #include "misc/util.h"
 #include "misc/net.h"
 #include "misc/defer.h"
-#include "misc/hook.h"
+#include "hook/hook.h"
 
 #include <unistd.h>
 #include <sys/ioctl.h>

@@ -1,7 +1,7 @@
 #include "memio.h"
 #include "netio.h"
 #include "misc/defer.h"
-#include "misc/hook.h"
+#include "hook/hook.h"
 #include <inttypes.h>
 
 MemRWer::MemRWer(const Destination& src, const Destination& dst, std::shared_ptr<IMemRWerCallback> cb):

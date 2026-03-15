@@ -68,10 +68,11 @@ endif()
 
 add_subdirectory(prot)
 add_subdirectory(misc)
+add_subdirectory(hook)
 add_subdirectory(req)
 add_subdirectory(res)
 
-set(SPROXY_CORE_TARGETS prot req res misc)
+set(SPROXY_CORE_TARGETS prot req res misc hook_lib)
 foreach(target ${SPROXY_CORE_TARGETS})
     target_link_libraries(${target} PUBLIC sproxy_headers)
 endforeach()
@@ -81,11 +82,11 @@ if(HAVE_BPF)
 endif()
 
 if(APPLE)
-    set(SPROXY_LIBS prot req res misc ${OPENSSL_LIBRARIES} dl Threads::Threads)
+    set(SPROXY_LIBS prot req res misc hook_lib ${OPENSSL_LIBRARIES} dl Threads::Threads)
 else()
     set(SPROXY_LIBS
         -Wl,--start-group
-        prot req res misc
+        prot req res misc hook_lib
         -Wl,--end-group
         ${OPENSSL_LIBRARIES} dl Threads::Threads)
 endif()

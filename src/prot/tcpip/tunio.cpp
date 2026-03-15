@@ -8,7 +8,7 @@
 #include "misc/util.h"
 #include "misc/defer.h"
 #include "misc/net.h"
-#include "misc/hook.h"
+#include "hook/hook.h"
 #include "res/fdns.h"
 
 #include <errno.h>

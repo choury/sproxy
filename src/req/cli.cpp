@@ -5,7 +5,10 @@
 #include "misc/util.h"
 #include "misc/strategy.h"
 #include "misc/config.h"
-#include "misc/hook.h"
+#include "hook/hook.h"
+#ifdef HAVE_BPFVM
+#include "hook/bpf_bridge.h"
+#endif
 #include "res/cgi.h"
 #include "rproxy_listener.h"
 
@@ -206,9 +209,33 @@ bool Cli::killCon(const std::string &address) {
 bool Cli::HookerAdd(const std::string &hooker, const std::string &lib) {
     LOG("%s [%s] %s %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, hooker.c_str(), lib.c_str());
     std::string msg;
-    auto cb = std::make_shared<LibCallback>(lib, msg);
+    std::shared_ptr<IHookCallback> cb = nullptr;
+
+    size_t dot_pos = lib.find_last_of('.');
+    if (dot_pos == std::string::npos) {
+        LOGE("HookerAdd failed: no file extension found\n");
+        return false;
+    }
+    std::string ext = lib.substr(dot_pos + 1);
+
+    if (ext == "elf") {
+#ifdef HAVE_BPFVM
+        cb = std::make_shared<BpfCallback>(lib, msg);
+#else
+        msg = "BPF callback is not supported in this build";
+#endif
+    } else if (ext == "so" || ext == "dylib") {
+        cb = std::make_shared<LibCallback>(lib, msg);
+    } else {
+        msg = "unsupported file type (must be .elf, .so, or .dylib)";
+    }
+
     if(!msg.empty()){
         LOGE("HookerAdd failed: %s\n", msg.c_str());
+        return false;
+    }
+    if(!cb) {
+        LOGE("HookerAdd failed: callback is null\n");
         return false;
     }
     hookManager.Register((const void*)std::stoull(hooker, nullptr, 16), cb);

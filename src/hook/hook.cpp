@@ -9,6 +9,7 @@
 #endif
 
 #include <regex>
+#include <sstream>
 
 HookManager hookManager;
 
@@ -16,10 +17,12 @@ HookManager hookManager;
 #include <linux/limits.h>
 uint64_t parse_maps() {
     char elf_path[PATH_MAX];
-    if(readlink("/proc/self/exe", elf_path, PATH_MAX) < 0) {
+    ssize_t len = readlink("/proc/self/exe", elf_path, PATH_MAX - 1);
+    if(len < 0) {
         LOGE("readlink of exe: %s\n", strerror(errno));
         return 0;
     }
+    elf_path[len] = '\0';
     FILE *maps = fopen("/proc/self/maps", "r");
     if (!maps) {
         LOGE("fopen /proc/self/maps: %s\n", strerror(errno));
@@ -116,4 +119,30 @@ HookManager::HookManager() {
     elf_end(elf);
     close(fd);
 #endif
+}
+
+bool HookManager::AddHooker(bool* hooker, std::string func, const char* line, const char* names) {
+    hookers[hooker] = func + ":" + line;
+
+    // Parse comma-separated parameter names and normalize "->" to "." for BPF layer
+    std::vector<std::string> name_list;
+    std::istringstream ss(names);
+    std::string name;
+    while (std::getline(ss, name, ',')) {
+        // Trim whitespace
+        size_t start = name.find_first_not_of(" \t");
+        size_t end = name.find_last_not_of(" \t");
+        if (start != std::string::npos) {
+            std::string trimmed = name.substr(start, end - start + 1);
+            size_t pos = 0;
+            while ((pos = trimmed.find("->", pos)) != std::string::npos) {
+                trimmed.replace(pos, 2, ".");
+                pos += 1;
+            }
+            name_list.push_back(std::move(trimmed));
+        }
+    }
+    param_names_map[hooker] = std::move(name_list);
+
+    return *hooker = true;
 }

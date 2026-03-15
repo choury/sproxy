@@ -5,7 +5,7 @@
 #include "misc/config.h"
 #include "misc/job.h"
 #include "misc/net.h"
-#include "misc/hook.h"
+#include "hook/hook.h"
 #include "prot/dns/dns.h"
 #include "prot/dns/resolver.h"
 

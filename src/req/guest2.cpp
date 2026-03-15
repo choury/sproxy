@@ -1,7 +1,7 @@
 #include "guest2.h"
 #include "res/responser.h"
 #include "misc/config.h"
-#include "misc/hook.h"
+#include "hook/hook.h"
 #include "prot/netio.h"
 #include "prot/memio.h"
 #include "misc/buffer.h"

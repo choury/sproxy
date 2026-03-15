@@ -1,21 +1,15 @@
 #ifndef HOOK_H__
 #define HOOK_H__
 #include "common/common.h"
+#include "hook_callback.h"
 
 #include <memory>
 #include <tuple>
 #include <unordered_map>
 #include <string>
+#include <vector>
 #include <dlfcn.h>
 #include <stdarg.h>
-
-// 一个通用的 Hook 回调接口示例，让用户自行决定如何处理 tuple 内的参数
-class IHookCallback {
-public:
-    virtual ~IHookCallback() = default;
-    virtual void OnCall(void* args) = 0;
-    virtual std::string name() = 0;
-};
 
 //example:
 // auto [testObj, firstArg, secondArg] = get_args<Test*, int, double>(args);
@@ -46,21 +40,25 @@ public:
     }
 
     template <typename... Args>
-    void Trigger(const void* hooker, Args&&... args) {
-        if(callbacks.count(hooker) == 0) {
-            return; // 没有注册的回调
-        }
-        auto t = std::tie(args...);
-        callbacks[hooker]->OnCall(&t);
-    }
+    void Trigger(const void* hooker, Args&&... args);
 
-    bool AddHooker(bool* hooker, std::string func, const char* line) {
-        hookers[hooker] = func + ":" + line;
-        return *hooker = true;
-    }
+#ifdef HAVE_BPFVM
+    template <typename... Args>
+    void TriggerBpf(const void* hooker, Args&&... args);
+#endif
+
+    bool AddHooker(bool* hooker, std::string func, const char* line, const char* names);
 
     const std::unordered_map<const void*, std::string>& GetHookers() const {
         return hookers;
+    }
+
+    // Get parameter names for a hook point (set by AddHooker with names)
+    const std::vector<std::string>& GetParamNames(const void* hooker) const {
+        static const std::vector<std::string> empty;
+        auto it = param_names_map.find(hooker);
+        if (it != param_names_map.end()) return it->second;
+        return empty;
     }
 
     void dump(Dumper dp, void* param) {
@@ -76,6 +74,7 @@ public:
 private:
     std::unordered_map<const void*, std::shared_ptr<IHookCallback>> callbacks;
     std::unordered_map<const void*, std::string> hookers;
+    std::unordered_map<const void*, std::vector<std::string>> param_names_map;
 };
 
 extern HookManager hookManager;
@@ -125,12 +124,61 @@ private:
 #define __S3(a, b, c) a##b##c
 #define _S3(a, b, c) __S3(a, b, c)
 
-#define HOOK_ADD(hooker, ...)  \
-
 #define HOOK_FUNC(...) \
     static bool  _S3(__, __LINE__, __hook_registed) = false; \
     if(!_S3(__, __LINE__, __hook_registed))  \
-        hookManager.AddHooker(&_S3(__, __LINE__, __hook_registed), __PRETTY_FUNCTION__, STRINGIZE(__LINE__)); \
+        hookManager.AddHooker(&_S3(__, __LINE__, __hook_registed), __PRETTY_FUNCTION__, STRINGIZE(__LINE__), #__VA_ARGS__); \
     hookManager.Trigger(&_S3(__, __LINE__, __hook_registed), __VA_ARGS__);
+
+#ifdef HAVE_BPFVM
+#define HOOK_BPF(...) \
+    static bool  _S3(__, __LINE__, __hook_registed) = false; \
+    if(!_S3(__, __LINE__, __hook_registed))  \
+        hookManager.AddHooker(&_S3(__, __LINE__, __hook_registed), __PRETTY_FUNCTION__, STRINGIZE(__LINE__), #__VA_ARGS__); \
+    hookManager.TriggerBpf(&_S3(__, __LINE__, __hook_registed), __VA_ARGS__);
+
+// Include BpfCallback definition needed by Trigger template below
+#include "bpf_bridge.h"
+#endif
+
+// Trigger template: dispatches to LibCallback (OnCall)
+template <typename... Args>
+void HookManager::Trigger(const void* hooker, Args&&... args) {
+    auto it = callbacks.find(hooker);
+    if(it == callbacks.end()) {
+        return;
+    }
+    auto t = std::tie(args...);
+    it->second->OnCall(&t);
+}
+
+#ifdef HAVE_BPFVM
+// TriggerBpf template: serializes args, constructs kv_set callback, passes to OnCall
+template <typename... Args>
+void HookManager::TriggerBpf(const void* hooker, Args&&... args) {
+    using namespace bpf_detail;
+    static_assert((is_bpf_serializable<std::remove_reference_t<Args>>::value && ...),
+        "HOOK_BPF: all parameters must be BPF-serializable (integral, string, or have a reflect method)");
+    auto it = callbacks.find(hooker);
+    if(it == callbacks.end()) {
+        return;
+    }
+    const auto& param_names = GetParamNames(hooker);
+    auto t = std::tie(args...);
+
+    // Serialize parameters to protobuf (needs type info)
+    BpfCallArgs bpf_args;
+    serialize_tuple(bpf_args.pb_data, param_names, t,
+                    std::index_sequence_for<Args...>{});
+
+    // Construct write-back callback (needs type info)
+    bpf_args.kv_set = [&param_names, &t](const std::string& key, const BpfKV& kv) {
+        set_tuple_field(param_names, key, kv, t,
+                        std::index_sequence_for<Args...>{});
+    };
+
+    it->second->OnCall(&bpf_args);
+}
+#endif
 
 #endif

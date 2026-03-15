@@ -6,7 +6,7 @@
 #include "res/responser.h"
 #include "res/rproxy3.h"
 #include "prot/quic/quicio.h"
-#include "misc/hook.h"
+#include "hook/hook.h"
 #include <assert.h>
 #include <inttypes.h>
 

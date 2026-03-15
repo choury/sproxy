@@ -12,7 +12,7 @@
 #include "misc/config.h"
 #include "misc/util.h"
 #include "misc/strategy.h"
-#include "misc/hook.h"
+#include "hook/hook.h"
 
 #include <fstream>
 #include <assert.h>

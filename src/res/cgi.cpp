@@ -5,7 +5,7 @@
 #include "misc/net.h"
 #include "misc/strategy.h"
 #include "misc/util.h"
-#include "misc/hook.h"
+#include "hook/hook.h"
 #include "misc/config.h"
 #include "req/cli.h"
 

@@ -2,7 +2,7 @@
 #include "common/common.h"
 #include "prot/memio.h"
 #include "req/requester.h"
-#include "misc/hook.h"
+#include "hook/hook.h"
 #include "misc/util.h"
 
 #include <assert.h>

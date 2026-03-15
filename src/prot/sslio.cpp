@@ -1,7 +1,7 @@
 #include "sslio.h"
 #include "prot/rwer.h"
 #include "prot/tls.h"
-#include "misc/hook.h"
+#include "hook/hook.h"
 
 #include <openssl/err.h>
 #include <assert.h>

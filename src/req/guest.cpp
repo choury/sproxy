@@ -3,7 +3,7 @@
 #include "res/responser.h"
 #include "res/rproxy2.h"
 #include "misc/config.h"
-#include "misc/hook.h"
+#include "hook/hook.h"
 #include "misc/job.h"
 #include "prot/sslio.h"
 #include "prot/tls.h"
