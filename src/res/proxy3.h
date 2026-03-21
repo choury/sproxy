@@ -2,6 +2,7 @@
 #define PROXY3_H__
 
 #include "responser.h"
+#include "hook/reflect.h"
 #include "prot/http3/http3.h"
 #include "misc/job.h"
 
@@ -11,8 +12,12 @@ class Proxy3:public Responser, public Http3Requster {
         std::shared_ptr<HttpReqHeader> req;
         std::shared_ptr<MemRWer>       rw;
         std::shared_ptr<IRWerCallback> cb;
-        uint32_t flags;
+        uint32_t flags = 0;
         Job      cleanJob = nullptr;
+        template <typename Visitor>
+        void reflect(Visitor& v) {
+            reflect_all(req, rw, flags);
+        }
     };
 
     std::map<uint64_t, ReqStatus> statusmap;
@@ -46,6 +51,12 @@ public:
     virtual void dump_usage(Dumper dp, void* param) override;
 
     void init(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw);
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        Responser::reflect(v);
+        Http3Requster::reflect(v);
+        reflect_all(statusmap, maxDataId);
+    }
 };
 
 #endif

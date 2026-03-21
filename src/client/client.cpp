@@ -387,7 +387,7 @@ COMMAND commands[] = {
         { "switch", com_switch, "<proxy>\tSet proxy server", nullptr},
         { "dump", com_dump, "<status|dns|sites|usage|hookers|listens>", generator_dump},
         { "kill", com_kill, "\tKill connection", nullptr},
-        { "hooker", com_hooker, "\tload/unload hooker from shared library", generator_add},
+        { "hooker", com_hooker, "\tload/unload BPF hooker from .elf", generator_add},
         { "exit", com_exit, "\tQuit the program", nullptr},
         { "help", com_help, "\tDisplay this text", command_generator},
         {nullptr, nullptr, nullptr, nullptr},

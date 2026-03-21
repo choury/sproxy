@@ -9,7 +9,7 @@
 Proxy3::Proxy3(std::shared_ptr<RWer> rwer){
     this->rwer = rwer;
     cb = IQuicCallback::create()->onRead([this](Buffer&& bb) -> size_t {
-        HOOK_FUNC(this, statusmap, bb);
+        HOOK_BPF(this, statusmap, bb);
         LOGD(DHTTP3, "<proxy3> (%s) read [%" PRIu64"]: len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.id, bb.len);
         if(bb.len == 0){
             //fin
@@ -76,7 +76,7 @@ void Proxy3::Reset(uint64_t id, uint32_t code) {
 }
 
 ssize_t Proxy3::DataProc(Buffer& bb){
-    HOOK_FUNC(this, statusmap, bb);
+    HOOK_BPF(this, statusmap, bb);
     if(statusmap.count(bb.id)){
         ReqStatus& status = statusmap[bb.id];
         if(status.flags & HTTP_RES_COMPLETED) {
@@ -167,7 +167,7 @@ void Proxy3::request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer
     p += variable_encode(p, len);
     SendData({std::move(buff), pre + len, id});
     status.cb = IRWerCallback::create()->onRead([this, id](Buffer&& bb) -> size_t {
-        HOOK_FUNC(this, statusmap, id, bb);
+        HOOK_BPF(this, statusmap, id, bb);
         ReqStatus& status = statusmap.at(id);
         bb.id = id;
         auto len = bb.len;

@@ -1,6 +1,6 @@
 set(hook_src hook.cpp)
 
-if(HAVE_BPFVM)
+if(HAVE_ELF)
     set(hook_src ${hook_src}
         bpf_bridge.cpp
         bpfvm/insn.cpp)
@@ -11,9 +11,6 @@ add_library(hook_lib ${hook_src})
 if(HAVE_ELF)
     add_executable(hook_test hook_test.cpp)
     target_link_libraries(hook_test PRIVATE hook_lib elf sproxy_headers)
-
-    add_library(hook SHARED hook_so.cpp)
-    target_link_libraries(hook PRIVATE sproxy_headers)
 
     if(CLANG_EXECUTABLE AND BPF_LD_EXECUTABLE)
         set(HOOK_BPF_MCPU v3)

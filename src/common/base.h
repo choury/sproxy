@@ -2,6 +2,7 @@
 #define BASE_H__
 
 #include "common/common.h"
+#include "hook/reflect.h"
 #include "prot/rwer.h"
 #include <memory>
 
@@ -17,6 +18,10 @@ public:
     virtual void deleteLater(uint32_t errcode);
     virtual void dump_stat(Dumper dp, void* param) = 0;
     virtual void dump_usage(Dumper dp, void* param) = 0;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        reflect_all(rwer);
+    }
 };
 
 #ifdef  __cplusplus

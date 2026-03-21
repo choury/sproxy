@@ -85,8 +85,8 @@ public:
                 return true;
             }
 
-            bpf_args->kv_set(key, kv);
-            v->r(0) = 0;
+            bool ok = bpf_args->kv_set(key, kv);
+            v->r(0) = ok ? 0 : (uint64_t)-EACCES;
             return true;
         }
 
@@ -131,7 +131,7 @@ void BpfCallback::OnCall(void* args) {
     auto* bpf_args = static_cast<BpfCallArgs*>(args);
 
     // Install syscall handler
-    vmOptions options;
+    vmOptions options{};
     options.sys = std::make_shared<BpfSyscallHandler>(bpf_args, elf_path);
     options.entry = entry;
     options.raw_stack = true; // Use R1/R2 instead of argv/envp string setup

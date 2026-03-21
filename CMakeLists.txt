@@ -285,10 +285,8 @@ else()
     message(STATUS "Rust not found, disable rust cgi")
 endif()
 
-if(HAVE_ELF)
-    set(HAVE_BPFVM TRUE CACHE BOOL "Have BPF VM for hook sandbox")
-else()
-    message(STATUS "libelf not found, disable BPF VM hook sandbox")
+if(NOT HAVE_ELF)
+    message(STATUS "libelf not found, disable BPF hook sandbox")
 endif()
 
 find_program(BPFTOOL_EXECUTABLE bpftool /sbin/bpftool /usr/sbin/bpftool)

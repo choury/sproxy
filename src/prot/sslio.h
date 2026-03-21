@@ -1,6 +1,7 @@
 #ifndef SSL_IO_H_
 #define SSL_IO_H_
 
+#include "hook/reflect.h"
 #include "netio.h"
 #include "memio.h"
 #include "misc/net.h"
@@ -45,6 +46,10 @@ public:
         BIO_get_mem_ptr(in_bio, &in_mem);
         BIO_get_mem_ptr(out_bio, &out_mem);
         return sizeof(*this) + in_mem->max + out_mem->max;
+    }
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        reflect_all(sslStats, server);
     }
 };
 

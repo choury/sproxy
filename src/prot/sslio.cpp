@@ -97,7 +97,7 @@ void SslRWerBase::sink_out_bio(uint64_t id) {
             break;
         }
     } while(BIO_ctrl_pending(out_bio) && offset < len);
-    HOOK_FUNC(this, out_bio, buff, offset);
+    HOOK_BPF(this, buff, offset);
     if(offset > 0) {
         write(Buffer{std::move(buff), (size_t)offset, id});
     }
@@ -113,7 +113,7 @@ int SslRWerBase::sink_in_bio(uint64_t id) {
     ERR_clear_error();
     ssize_t ret = ssl_get_error(ssl, SSL_read(ssl, buff.data(), (int)len));
     LOGD(DSSL, "(%s) SSL_read %d bytes\n", server.c_str(), (int) ret);
-    HOOK_FUNC(this, in_bio, buff, ret);
+    HOOK_BPF(this, buff, ret);
     if (ret > 0) {
         onRead(Buffer{std::move(buff), (size_t) ret, id});
         return 1;
@@ -129,11 +129,11 @@ int SslRWerBase::sink_in_bio(uint64_t id) {
 }
 
 void SslRWerBase::handleData(const void* data, size_t len) {
-    HOOK_FUNC(this, data, len);
+    HOOK_BPF(this, std::span<const std::byte>((const std::byte*)data, len));
     if(len > 0) {
         int ret = BIO_write(in_bio, data, (int)len);
         LOGD(DSSL, "(%s) BIO_write %d bytes\n", server.c_str(), ret);
-        HOOK_FUNC(this, in_bio, ret);
+        HOOK_BPF(this, ret);
     } else {
         LOGD(DSSL, "(%s) handleData with nullptr\n", server.c_str());
     }
@@ -154,7 +154,7 @@ void SslRWerBase::handleData(const void* data, size_t len) {
 }
 
 void SslRWerBase::sendData(Buffer&& bb) {
-    HOOK_FUNC(this, bb);
+    HOOK_BPF(this, bb);
     if(bb.len == 0) {
         LOGD(DSSL, "(%s) SSL_shutdown\n", server.c_str());
         SSL_shutdown(ssl);
@@ -163,7 +163,7 @@ void SslRWerBase::sendData(Buffer&& bb) {
         while(bb.len > 0) {
             ssize_t ret = ssl_get_error(ssl, SSL_write(ssl, bb.data(), bb.len));
             LOGD(DSSL, "(%s) SSL_write %d/%zd bytes\n", server.c_str(), (int)ret, bb.len);
-            HOOK_FUNC(this, bb, ret);
+            HOOK_BPF(this, bb, ret);
             if(ret > 0) {
                 bb.reserve(ret);
                 continue;
@@ -180,13 +180,13 @@ void SslRWerBase::do_handshake() {
     ERR_clear_error();
     if(ssl_get_error(ssl, SSL_do_handshake(ssl)) == 1){
         sslStats = SslStats::Established;
-        HOOK_FUNC(this, server, sslStats, SSL_is_server(ssl));
+        HOOK_BPF(this, server, sslStats, SSL_is_server(ssl));
         LOGD(DSSL, "(%s) ssl handshake success\n", server.c_str());
         onConnected();
     }else if(errno != EAGAIN){
         sslStats = SslStats::SslError;
         int error = errno;
-        HOOK_FUNC(this, server, sslStats, error, SSL_is_server(ssl));
+        HOOK_BPF(this, server, sslStats, error, SSL_is_server(ssl));
         LOGE("(%s): ssl %s error:%s\n", server.c_str(), SSL_is_server(ssl)?"accept":"connect", strerror(error));
         onError(SSL_SHAKEHAND_ERR, error);
     }

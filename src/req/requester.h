@@ -2,6 +2,7 @@
 #define REQUESTER_H__
 
 #include "common/base.h"
+#include "hook/reflect.h"
 
 class RWer;
 struct IMemRWerCallback;
@@ -18,6 +19,11 @@ public:
         return rwer->getDst();
     };
     virtual std::shared_ptr<IMemRWerCallback> response(uint64_t id) = 0;
+
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        Server::reflect(v);
+    }
 };
 
 std::string generateUA(const char* ua, const std::string& prog, uint64_t requestid);

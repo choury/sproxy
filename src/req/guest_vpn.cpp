@@ -32,7 +32,7 @@ Guest_vpn::Guest_vpn(int fd, bool enable_offload): Requester(nullptr) {
             LOGD(DVPN, "<guest_vpn> [%" PRIu64 "] reset, but not found\n", id);
         }
     })->onRead([this](Buffer&& bb) -> size_t {
-        HOOK_FUNC(this, statusmap, bb);
+        HOOK_BPF(this, statusmap, bb);
         if(statusmap.count(bb.id) == 0){
             LOG("[%" PRIu64 "]: <guest_vpn> id not found, discard all\n", bb.id);
             return bb.len;
@@ -263,7 +263,7 @@ std::shared_ptr<IMemRWerCallback> Guest_vpn::response(uint64_t id) {
 }
 
 size_t Guest_vpn::Recv(Buffer&& bb) {
-    HOOK_FUNC(this, statusmap, bb);
+    HOOK_BPF(this, statusmap, bb);
     if(statusmap.count(bb.id) == 0) {
         errno = EPIPE;
         return -1;

@@ -148,7 +148,7 @@ void FDns::query(Buffer&& bb, std::shared_ptr<RWer> rwer) {
 }
 
 void FDns::Recv(Buffer&& bb) {
-    HOOK_FUNC(this, statusmap, bb);
+    HOOK_BPF(this, statusmap, bb);
     FDnsStatus& status = statusmap.at(bb.id);
     uint64_t id = bb.id;
     auto que = std::make_shared<Dns_Query>((const char *)bb.data(), bb.len);
@@ -218,22 +218,19 @@ void FDns::Recv(Buffer&& bb) {
 
 void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockaddr_storage>& addrs, int ttl) {
     auto index = *std::static_pointer_cast<__uint128_t>(param);
-    HOOK_FUNC(fdns, fdns->statusmap, index, error, addrs, ttl);
 #if __LP64__
     uint64_t id = index >> 64;
+    uint16_t qid = index & 0xffff;
 #else
     uint64_t id = index.hi;
+    uint16_t qid = index.lo & 0xffff;
 #endif
+    HOOK_BPF(fdns, fdns->statusmap, id, qid, error, addrs, ttl);
     if(fdns->statusmap.count(id) == 0){
         fdns->failed_count++;
         return;
     }
     FDnsStatus& status = fdns->statusmap.at(id);
-#if __LP64__
-    uint16_t qid = index & 0xffff;
-#else
-    uint16_t qid = index.lo & 0xffff;
-#endif
     std::shared_ptr<Dns_Query> que = status.quemap.at(qid);
     assert(que->id == qid);
     LOGD(DDNS, "fdns cb [%" PRIu64"] %s, id:%d, size:%zd, error: %d\n",
@@ -290,22 +287,19 @@ void FDns::DnsCb(std::shared_ptr<void> param, int error, const std::list<sockadd
 
 void FDns::RawCb(std::shared_ptr<void> param, const char* data, size_t size) {
     auto index = *std::static_pointer_cast<__uint128_t>(param);
-    HOOK_FUNC(fdns, fdns->statusmap, index, data, size);
 #if __LP64__
     uint64_t id = index >> 64;
+    uint16_t qid = index & 0xffff;
 #else
     uint64_t id = index.hi;
+    uint16_t qid = index.lo & 0xffff;
 #endif
+    HOOK_BPF(fdns, fdns->statusmap, id, qid, std::span<const std::byte>((const std::byte*)data, size));
     if(fdns->statusmap.count(id) == 0){
         return;
     }
     LOGD(DDNS, "fdns rawcb [%" PRIu64"], size:%zd\n", id, size);
     FDnsStatus& status = fdns->statusmap.at(id);
-#if __LP64__
-    uint16_t qid = index & 0xffff;
-#else
-    uint16_t qid = index.lo & 0xffff;
-#endif
     std::shared_ptr<Dns_Query> que = status.quemap.at(qid);
     assert(que->id == qid);
     Buffer buff{BUF_LEN, id};

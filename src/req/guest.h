@@ -6,6 +6,7 @@
 #include "misc/net.h"
 #include "misc/config.h"
 #include "misc/job.h"
+#include "hook/reflect.h"
 #include "prot/tls.h"
 
 #include <openssl/ssl.h>
@@ -21,6 +22,10 @@ protected:
         std::shared_ptr<IMemRWerCallback> cb;
         uint      flags = 0;
         Job       cleanJob = nullptr;
+        template <typename Visitor>
+        void reflect(Visitor& v) {
+            reflect_all(req, rw, flags);
+        }
     };
     std::list<ReqStatus> statuslist;
     bool headless = false;
@@ -43,6 +48,12 @@ public:
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        Requester::reflect(v);
+        HttpResponser::reflect(v);
+        reflect_all(rx_bytes, tx_bytes, statuslist, headless);
+    }
 };
 
 template<class T>

@@ -4,8 +4,6 @@
 #include <map>
 #include <stdarg.h>
 #include <assert.h>
-#include <libgen.h>
-#include <string.h>
 
 extern "C" void slog(int level, const char* fmt, ...){
     (void)level;
@@ -13,29 +11,6 @@ extern "C" void slog(int level, const char* fmt, ...){
     va_start(ap, fmt);
     vprintf(fmt, ap);
     va_end(ap);
-}
-
-class Test{
-    std::string hello = "Hello from Test!";
-public:
-    template <typename Visitor>
-    void reflect(Visitor& v) const {
-        v("hello", hello);
-    }
-
-    int operator()(int a, double b) {
-        HOOK_FUNC(this, a, b, 10);
-        HOOK_BPF(this, a);
-        return a + b;
-    }
-    void sayHello() {
-        std::cout << hello << std::endl;
-    }
-};
-
-void test_func(std::string str) {
-    HOOK_FUNC(str);
-    std::cout << "test_func called with: " << str << std::endl;
 }
 
 int bpf_test_func(int a, int b) {
@@ -49,10 +24,8 @@ struct Server {
     std::map<std::string, std::string> config;
 
     template <typename Visitor>
-    void reflect(Visitor& v) const {
-        v("port", port);
-        v("ips", ips);
-        v("config", config);
+    void reflect(Visitor& v) {
+        reflect_all(port, ips, config);
     }
 };
 
@@ -96,6 +69,12 @@ void test_vector_map_serialize() {
     assert(ok && srv.config["logdir"] == "/var/log");
     std::cout << "  set srv.config[logdir]=\"/var/log\": OK (got " << srv.config["logdir"] << ")" << std::endl;
 
+    // Failed nested write must not auto-create a new map entry.
+    size_t config_size = srv.config.size();
+    ok = set_tuple_field(names, "srv.config[missing].nested", kv_new, t, std::index_sequence_for<Server&>{});
+    assert(!ok && srv.config.size() == config_size && srv.config.count("missing") == 0);
+    std::cout << "  set srv.config[missing].nested: correctly rejected without insertion" << std::endl;
+
     // Test write-back: vector out-of-bounds should fail
     ok = set_tuple_field(names, "srv.ips[99]", kv_ip, t, std::index_sequence_for<Server&>{});
     assert(!ok);
@@ -106,55 +85,15 @@ void test_vector_map_serialize() {
 
 int main(int argc, char** argv) {
     if(argc < 2) {
-        std::cerr<<"require args: <so_path> [bpf_elf_path]"<<std::endl;
+        std::cerr<<"require args: <bpf_elf_path>"<<std::endl;
         return -1;
-    }
-
-    // --- LibCallback test ---
-    const void* where = nullptr;
-    for(auto& [hook, msg]: hookManager.GetHookers()) {
-        std::cout << hook <<": " << msg << std::endl;
-        if(msg.find("Test::operator()") != std::string::npos) {
-            where = hook;
-        }
-    }
-    // 注册回调
-    std::string msg;
-    auto callback = std::make_shared<LibCallback>(argv[1], msg);
-    if(!msg.empty()) {
-        std::cerr << "Failed to create callback: " << msg << std::endl;
-    }
-    assert(msg.empty());
-    hookManager.Register(where, callback);
-
-    // 调用函数
-    Test test;
-    int result = test(5, 3);
-    std::cout << "Result: " << result << std::endl;
-
-    test_func("Hello, World!");
-
-    // 移除回调
-    hookManager.Unregister(where);
-    for(auto& [hook, msg]: hookManager.GetHookers()) {
-        std::cout << hook <<": " << msg << std::endl;
     }
 
     // --- Vector/Map serialize test ---
     test_vector_map_serialize();
 
     // --- BPF test ---
-    std::string bpf_elf_path;
-    if (argc >= 3) {
-        bpf_elf_path = argv[2];
-    } else {
-        // Try to find hook_bpf.elf in same directory as the test binary
-        char buf[4096];
-        strncpy(buf, argv[0], sizeof(buf) - 1);
-        buf[sizeof(buf) - 1] = '\0';
-        std::string dir = dirname(buf);
-        bpf_elf_path = dir + "/hook_bpf.elf";
-    }
+    std::string bpf_elf_path = argv[1];
 
     // Find the bpf_test_func hook point
     const void* bpf_hook = nullptr;

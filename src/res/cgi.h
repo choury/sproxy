@@ -2,6 +2,7 @@
 #define CGI_H__
 
 #include "responser.h"
+#include "hook/reflect.h"
 
 #include <unistd.h>
 
@@ -39,6 +40,10 @@ class Cgi:public Responser{
         std::shared_ptr<HttpReqHeader> req;
         std::shared_ptr<MemRWer>       rw;
         std::shared_ptr<IRWerCallback> cb;
+        template <typename Visitor>
+        void reflect(Visitor& v) {
+            reflect_all(req, rw);
+        }
     };
 
     char filename[URLLIMIT];
@@ -58,6 +63,11 @@ public:
     virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)override;
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        Responser::reflect(v);
+        reflect_all(filename, pid, statusmap);
+    }
 };
 
 void getcgi(std::shared_ptr<HttpReqHeader> req, const char *filename, std::shared_ptr<MemRWer> rw);

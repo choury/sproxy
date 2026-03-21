@@ -20,7 +20,7 @@
 - `switch <proxy>`：切换上游Server地址，形如 `http://1.2.3.4:8080`。
 - `debug <enable|disable> <module>`：打开/关闭模块调试日志。
 - `kill <hex_addr>`：终止指定连接（地址来源于 `dump status` 输出）。
-- `hooker add <addr_hex> <lib>` / `hooker del <addr_hex>`：动态加载或卸载 Hook。
+- `hooker add <addr_hex> <file.elf>` / `hooker del <addr_hex>`：动态加载或卸载 BPF Hook。
 - `listen add [tcp/udp:][ip:]port <backend>@[tcp/udp:]host:port`：新增动态监听，`backend` 可以是 `alias` 或 `rproxy` 名称，示例：`listen add tcp:127.0.0.1:10022 hk@192.168.10.2:22`。
 - `listen del <id>`：删除指定动态监听。
 - `help [cmd]`：查看命令帮助；`exit` 退出。
@@ -61,5 +61,5 @@ total req: 10 ...
 - 状态：`DumpStatus() -> status`，`DumpDns() -> dns_status`，`DumpMemUsage() -> mem_usage`，`DumpHooker() -> hookers`。
 - 认证与调试：`Login(token,source) -> token`，`Debug(module,enable) -> ok`。
 - 连接管理：`killCon(address_hex) -> ok`。
-- Hook：`HookerAdd(hooker_hex,lib) -> ok`，`HookerDel(hooker_hex) -> ok`。
+- Hook：`HookerAdd(hooker_hex,elf_path) -> ok`，`HookerDel(hooker_hex) -> ok`。
 - 动态监听：`ListenAdd(bind,target) -> ok`，`ListenDel(id) -> ok`，`ListenList() -> listeners[]`。

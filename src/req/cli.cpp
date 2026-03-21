@@ -6,7 +6,7 @@
 #include "misc/strategy.h"
 #include "misc/config.h"
 #include "hook/hook.h"
-#ifdef HAVE_BPFVM
+#ifdef HAVE_ELF
 #include "hook/bpf_bridge.h"
 #endif
 #include "res/cgi.h"
@@ -219,15 +219,13 @@ bool Cli::HookerAdd(const std::string &hooker, const std::string &lib) {
     std::string ext = lib.substr(dot_pos + 1);
 
     if (ext == "elf") {
-#ifdef HAVE_BPFVM
+#ifdef HAVE_ELF
         cb = std::make_shared<BpfCallback>(lib, msg);
 #else
         msg = "BPF callback is not supported in this build";
 #endif
-    } else if (ext == "so" || ext == "dylib") {
-        cb = std::make_shared<LibCallback>(lib, msg);
     } else {
-        msg = "unsupported file type (must be .elf, .so, or .dylib)";
+        msg = "unsupported file type (must be .elf)";
     }
 
     if(!msg.empty()){

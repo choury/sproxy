@@ -128,7 +128,7 @@ void Host::connected(uint32_t resolved_time) {
     }
 #endif
     cb->onRead([this](Buffer&& bb) -> size_t {
-        HOOK_FUNC(this, status, bb);
+        HOOK_BPF(this, status, bb);
         LOGD(DHTTP, "<host> (%s) read: len:%zu\n", dumpDest(rwer->getDst()).c_str(), bb.len);
         if((status.flags & HTTP_RECV_1ST_BYTE) == 0){
             status.req->tracker.emplace_back("ttfb", getmtime());
@@ -232,7 +232,7 @@ void Host::ResProc(uint64_t, std::shared_ptr<HttpResHeader> header) {
 }
 
 ssize_t Host::DataProc(Buffer& bb) {
-    HOOK_FUNC(this, status, status);
+    HOOK_BPF(this, status, bb);
     assert((status.flags & HTTP_RES_COMPLETED) == 0);
     int cap = status.rw->cap(bb.id);
     if (cap <= 0) {

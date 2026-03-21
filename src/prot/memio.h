@@ -1,6 +1,7 @@
 #ifndef MEMIO_H__
 #define MEMIO_H__
 
+#include "hook/reflect.h"
 #include "rwer.h"
 #include <deque>
 
@@ -106,6 +107,11 @@ public:
     virtual size_t mem_usage() override{
         return sizeof(*this) + wbuff.length();
     }
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        FullRWer::reflect(v);
+        reflect_all(src, dst, wbuff, rb);
+    }
 };
 
 class PMemRWer: public MemRWer {
@@ -120,6 +126,11 @@ public:
     virtual void Send(Buffer&& bb) override;
     virtual void push_data(Buffer&& bb) override;
     virtual void ConsumeRData(uint64_t) override;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        MemRWer::reflect(v);
+        reflect_all(rb);
+    }
 };
 
 #endif

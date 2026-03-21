@@ -2,22 +2,13 @@
 #define HOOK_H__
 #include "common/common.h"
 #include "hook_callback.h"
+#include "bpf_bridge.h"
 
 #include <memory>
 #include <tuple>
 #include <unordered_map>
 #include <string>
 #include <vector>
-#include <dlfcn.h>
-#include <stdarg.h>
-
-//example:
-// auto [testObj, firstArg, secondArg] = get_args<Test*, int, double>(args);
-template <typename... Args>
-auto get_args(void* args) -> std::tuple<Args&...> {
-    // 将 void* 转换为 std::tuple<Args...>*，然后解引用并返回引用元组
-    return *static_cast<std::tuple<Args&...>*>(args);
-}
 
 // Hook 管理器，用于注册和移除回调，并在需要时触发
 class HookManager{
@@ -42,12 +33,7 @@ public:
     template <typename... Args>
     void Trigger(const void* hooker, Args&&... args);
 
-#ifdef HAVE_BPFVM
-    template <typename... Args>
-    void TriggerBpf(const void* hooker, Args&&... args);
-#endif
-
-    bool AddHooker(bool* hooker, std::string func, const char* line, const char* names);
+    bool AddHooker(bool* hooker, std::string func, const char* line, std::vector<std::string> names);
 
     const std::unordered_map<const void*, std::string>& GetHookers() const {
         return hookers;
@@ -79,85 +65,37 @@ private:
 
 extern HookManager hookManager;
 
-extern "C" void hook_callback(void* args);
-#define CALLBACK_FUNCNAME "hook_callback"
-// 加载动态库和获取函数指针作为回调
-class LibCallback : public IHookCallback {
-public:
-    LibCallback(const std::string& so_path, std::string& msg) : so_path(so_path) {
-        msg = "";
-        handle = dlopen(so_path.c_str(), RTLD_NOW);
-        if (!handle) {
-            msg = std::string("dlopen failed: ") + dlerror();
-            return;
-        }
-        callback = (void (*)(void*))dlsym(handle, CALLBACK_FUNCNAME);
-        if (!callback) {
-            msg = std::string("dlsym failed: ") + dlerror();
-            return;
-        }
-    }
-
-    ~LibCallback() {
-        // 卸载动态库的逻辑
-        if(handle) {
-            dlclose(handle);
-        }
-        callback = nullptr;
-    }
-    void OnCall(void* args) override {
-        // 调用动态库中的函数的逻辑
-        if(!callback) {
-            return;
-        }
-        callback(args);
-    }
-    std::string name() override {
-        return so_path;
-    }
-private:
-    const std::string so_path;
-    void* handle = nullptr;
-    void (*callback)(void*) = nullptr;
-};
-
 #define __S3(a, b, c) a##b##c
 #define _S3(a, b, c) __S3(a, b, c)
 
-#define HOOK_FUNC(...) \
-    static bool  _S3(__, __LINE__, __hook_registed) = false; \
-    if(!_S3(__, __LINE__, __hook_registed))  \
-        hookManager.AddHooker(&_S3(__, __LINE__, __hook_registed), __PRETTY_FUNCTION__, STRINGIZE(__LINE__), #__VA_ARGS__); \
-    hookManager.Trigger(&_S3(__, __LINE__, __hook_registed), __VA_ARGS__);
+#define _HOOK_NAME_1(a1) #a1
+#define _HOOK_NAME_2(a1, a2) #a1, #a2
+#define _HOOK_NAME_3(a1, a2, a3) #a1, #a2, #a3
+#define _HOOK_NAME_4(a1, a2, a3, a4) #a1, #a2, #a3, #a4
+#define _HOOK_NAME_5(a1, a2, a3, a4, a5) #a1, #a2, #a3, #a4, #a5
+#define _HOOK_NAME_6(a1, a2, a3, a4, a5, a6) #a1, #a2, #a3, #a4, #a5, #a6
+#define _HOOK_NAME_7(a1, a2, a3, a4, a5, a6, a7) #a1, #a2, #a3, #a4, #a5, #a6, #a7
+#define _HOOK_NAME_8(a1, a2, a3, a4, a5, a6, a7, a8) #a1, #a2, #a3, #a4, #a5, #a6, #a7, #a8
+#define _HOOK_NAME_9(a1, a2, a3, a4, a5, a6, a7, a8, a9) #a1, #a2, #a3, #a4, #a5, #a6, #a7, #a8, #a9
+#define _HOOK_NAME_10(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10) #a1, #a2, #a3, #a4, #a5, #a6, #a7, #a8, #a9, #a10
+#define _HOOK_NAME_11(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11) #a1, #a2, #a3, #a4, #a5, #a6, #a7, #a8, #a9, #a10, #a11
+#define _HOOK_NAME_12(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12) #a1, #a2, #a3, #a4, #a5, #a6, #a7, #a8, #a9, #a10, #a11, #a12
+#define _HOOK_NAME_GET(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, NAME, ...) NAME
+#define _HOOK_NAME_LIST(...) _HOOK_NAME_GET(__VA_ARGS__, _HOOK_NAME_12, _HOOK_NAME_11, _HOOK_NAME_10, _HOOK_NAME_9, _HOOK_NAME_8, _HOOK_NAME_7, _HOOK_NAME_6, _HOOK_NAME_5, _HOOK_NAME_4, _HOOK_NAME_3, _HOOK_NAME_2, _HOOK_NAME_1)(__VA_ARGS__)
 
-#ifdef HAVE_BPFVM
 #define HOOK_BPF(...) \
     static bool  _S3(__, __LINE__, __hook_registed) = false; \
     if(!_S3(__, __LINE__, __hook_registed))  \
-        hookManager.AddHooker(&_S3(__, __LINE__, __hook_registed), __PRETTY_FUNCTION__, STRINGIZE(__LINE__), #__VA_ARGS__); \
-    hookManager.TriggerBpf(&_S3(__, __LINE__, __hook_registed), __VA_ARGS__);
+        hookManager.AddHooker(&_S3(__, __LINE__, __hook_registed), __PRETTY_FUNCTION__, STRINGIZE(__LINE__), std::vector<std::string>{_HOOK_NAME_LIST(__VA_ARGS__)}); \
+    hookManager.Trigger(&_S3(__, __LINE__, __hook_registed), __VA_ARGS__);
 
-// Include BpfCallback definition needed by Trigger template below
-#include "bpf_bridge.h"
-#endif
 
-// Trigger template: dispatches to LibCallback (OnCall)
+// Trigger template: BPF-aware dispatch path when HAVE_ELF is enabled.
 template <typename... Args>
 void HookManager::Trigger(const void* hooker, Args&&... args) {
-    auto it = callbacks.find(hooker);
-    if(it == callbacks.end()) {
-        return;
-    }
-    auto t = std::tie(args...);
-    it->second->OnCall(&t);
-}
-
-#ifdef HAVE_BPFVM
-// TriggerBpf template: serializes args, constructs kv_set callback, passes to OnCall
-template <typename... Args>
-void HookManager::TriggerBpf(const void* hooker, Args&&... args) {
+#ifdef HAVE_ELF
     using namespace bpf_detail;
-    static_assert((is_bpf_serializable<std::remove_reference_t<Args>>::value && ...),
+    static_assert((is_bpf_serializable<std::remove_cv_t<std::remove_reference_t<Args>>>::value && ...),
         "HOOK_BPF: all parameters must be BPF-serializable (integral, string, or have a reflect method)");
     auto it = callbacks.find(hooker);
     if(it == callbacks.end()) {
@@ -168,17 +106,18 @@ void HookManager::TriggerBpf(const void* hooker, Args&&... args) {
 
     // Serialize parameters to protobuf (needs type info)
     BpfCallArgs bpf_args;
-    serialize_tuple(bpf_args.pb_data, param_names, t,
-                    std::index_sequence_for<Args...>{});
+    serialize_tuple(bpf_args.pb_data, param_names, t, std::index_sequence_for<Args...>{});
 
     // Construct write-back callback (needs type info)
-    bpf_args.kv_set = [&param_names, &t](const std::string& key, const BpfKV& kv) {
-        set_tuple_field(param_names, key, kv, t,
-                        std::index_sequence_for<Args...>{});
+    bpf_args.kv_set = [&param_names, &t](const std::string& key, const BpfKV& kv) -> bool {
+        return set_tuple_field(param_names, key, kv, t, std::index_sequence_for<Args...>{});
     };
 
     it->second->OnCall(&bpf_args);
-}
+#else
+    (void)hooker;
+    (void)sizeof...(args);
 #endif
+}
 
 #endif

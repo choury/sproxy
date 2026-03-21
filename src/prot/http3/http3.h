@@ -9,6 +9,7 @@
 
 #include "prot/http/http_header.h"
 #include "qpach.h"
+#include "hook/reflect.h"
 
 #include <unordered_map>
 
@@ -104,6 +105,17 @@ public:
     Http3Base();
     ~Http3Base() = default;
     void Init();
+
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        reflect_all(http3_flag, 
+                    ctrlid_local, 
+                    ctrlid_remote, 
+                    qpackeid_local, 
+                    qpackeid_remote, 
+                    qpackdid_local, 
+                    qpackdid_remote);
+    }
 };
 
 class Http3Requster:public Http3Base{
@@ -112,6 +124,11 @@ protected:
     virtual void ResProc(uint64_t id, std::shared_ptr<HttpResHeader> res) = 0;
 public:
     Http3Requster();
+
+    template<typename Visitor>
+    void reflect(Visitor& v) {
+        Http3Base::reflect(v);
+    }
 };
 
 class Http3Responser: public Http3Base {
@@ -120,6 +137,11 @@ protected:
     virtual void ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> res) = 0;
 public:
     Http3Responser();
+
+    template<typename Visitor>
+    void reflect(Visitor& v) {
+        Http3Base::reflect(v);
+    }
 };
 
 #endif //SPROXY_HTTP3_H

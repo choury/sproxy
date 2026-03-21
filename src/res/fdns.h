@@ -4,6 +4,7 @@
 //fake dns
 
 #include "responser.h"
+#include "hook/reflect.h"
 
 struct Dns_Query;
 class FDns: public Responser{
@@ -11,6 +12,10 @@ class FDns: public Responser{
         std::shared_ptr<RWer>          rw;
         std::shared_ptr<IRWerCallback> cb;
         std::map<uint16_t, std::shared_ptr<Dns_Query>> quemap;
+        template <typename Visitor>
+        void reflect(Visitor& v) {
+            reflect_all(rw, quemap);
+        }
     };
     std::map<uint64_t, FDnsStatus> statusmap;
     size_t succeed_count = 0;
@@ -28,6 +33,11 @@ public:
     void query(Buffer&& bb, std::shared_ptr<RWer> rwer);
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        Responser::reflect(v);
+        reflect_all(statusmap, succeed_count, failed_count);
+    }
 };
 
 std::string getRdns(const sockaddr_storage& addr);

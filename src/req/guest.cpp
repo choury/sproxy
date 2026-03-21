@@ -14,7 +14,7 @@
 #include <inttypes.h>
 
 size_t Guest::ReadHE(Buffer&& bb){
-    HOOK_FUNC(this, statuslist, bb);
+    HOOK_BPF(this, statuslist, bb);
     LOGD(DHTTP, "<guest> (%s) read: len:%zu, refs: %zd\n", dumpDest(rwer->getSrc()).c_str(), bb.len, bb.refs());
     if(bb.len == 0){
         //EOF
@@ -226,7 +226,7 @@ void Guest::deqReq() {
 }
 
 ssize_t Guest::DataProc(Buffer& bb) {
-    HOOK_FUNC(this, statuslist, bb);
+    HOOK_BPF(this, statuslist, bb);
     ReqStatus& status = statuslist.back();
     assert((status.flags & HTTP_REQ_COMPLETED) == 0);
     int cap = status.rw->bufsize();

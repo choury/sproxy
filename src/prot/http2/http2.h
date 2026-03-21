@@ -2,6 +2,7 @@
 #define HTTP2_H__
 
 #include "hpack.h"
+#include "hook/reflect.h"
 
 #include <stdio.h>
 #include <stdint.h>
@@ -124,6 +125,16 @@ protected:
     size_t (Http2Base::*Http2_Proc)(Buffer& bb)=&Http2Base::InitProc;
 public:
     ~Http2Base() = default;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        reflect_all(remoteframewindowsize,
+                    remoteframebodylimit,
+                    remotewinsize,
+                    localwinsize,
+                    http2_flag,
+                    recvid, sendid,
+                    header_buffer);
+    }
 };
 
 class Http2Responser:public Http2Base{
@@ -134,6 +145,11 @@ protected:
     virtual void AltSvc(uint32_t id, const char* origin, const char* value);
 public:
     uint32_t OpenStream();
+
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        Http2Base::reflect(v);
+    }
 };
 
 
@@ -146,6 +162,11 @@ protected:
     virtual void PushProc(uint32_t, std::shared_ptr<HttpReqHeader>) {}
 public:
     uint32_t OpenStream();
+
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        Http2Base::reflect(v);
+    }
 };
 
 

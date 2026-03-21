@@ -107,7 +107,7 @@ void Proxy2::ResProc(uint32_t id, std::shared_ptr<HttpResHeader> header) {
 
 
 void Proxy2::DataProc(Buffer&& bb) {
-    HOOK_FUNC(this, statusmap, bb);
+    HOOK_BPF(this, statusmap, bb);
     if(bb.len == 0)
         return;
     if ((int)bb.len > localwinsize) {
@@ -354,7 +354,7 @@ void Proxy2::init(bool enable_push, std::shared_ptr<HttpReqHeader> req, std::sha
         request(req, rw);
     }
     cb->onRead([this](Buffer&& bb) -> size_t {
-        HOOK_FUNC(this, statusmap, bb);
+        HOOK_BPF(this, statusmap, bb);
         uint32_t start = getmtime();
         LOGD(DHTTP2, "<proxy2> (%s) read: len:%zu, refs: %zd\n", dumpDest(this->rwer->getDst()).c_str(), bb.len, bb.refs());
         if(bb.len == 0){

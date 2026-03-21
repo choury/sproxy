@@ -1,5 +1,6 @@
 #ifndef TUNIO_H__
 #define TUNIO_H__
+#include "hook/reflect.h"
 #include "prot/rwer.h"
 #include "misc/index.h"
 #include "ipbase.h"
@@ -89,6 +90,11 @@ public:
     }
     virtual void dump_status(Dumper dp, void* param) override;
     virtual size_t mem_usage() override;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        RWer::reflect(v);
+        reflect_all(pcap, enable_offload);
+    }
 
 #define TUN_MSG_SYN     1   //send syn for tcp, none for others
 #define TUN_MSG_BLOCK   2   //send rst for tcp, UNREACH_HOST/UNREACH_ADDR for udp

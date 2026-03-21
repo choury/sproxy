@@ -2,6 +2,7 @@
 #define GUEST2_H__
 
 #include "requester.h"
+#include "hook/reflect.h"
 #include "prot/http2/http2.h"
 #include "misc/job.h"
 
@@ -16,6 +17,10 @@ class Guest2: public Requester, public Http2Responser {
         uint32_t flags = 0;
         std::unique_ptr<EBuffer>  buffer = nullptr;
         Job      cleanJob = nullptr;
+        template <typename Visitor>
+        void reflect(Visitor& v) {
+            reflect_all(req, rw, remotewinsize, localwinsize, flags, buffer);
+        }
     };
     std::map<uint32_t, ReqStatus> statusmap;
     //void init(RWer* rwer);
@@ -47,6 +52,12 @@ public:
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        Requester::reflect(v);
+        Http2Responser::reflect(v);
+        reflect_all(statusmap);
+    }
 };
 
 #endif

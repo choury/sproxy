@@ -441,10 +441,6 @@ static inline const char* pb_kv_get_str(const void* pb, size_t len, const char* 
     return (const char*)val.val.ptr;
 }
 
-
-
-
-
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
 #ifndef __cplusplus

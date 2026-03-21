@@ -6,6 +6,7 @@
 #define SPROXY_BUFFER_H
 
 #include "common/common.h"
+#include "hook/reflect.h"
 
 #include <string.h>
 #include <stdint.h>
@@ -61,6 +62,10 @@ public:
         return (char*)base.get() + off;
     }
     friend class Buffer;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        reflect_all(off);
+    }
 };
 
 //封装了Block，但是多了长度和id信息
@@ -88,6 +93,11 @@ public:
     [[nodiscard]] const void* data() const;
     void* mutable_data();
     size_t refs();
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        reflect_named("data", std::span<const std::byte>((const std::byte*)data(), len));
+        reflect_all(id, cap);
+    }
 };
 
 
@@ -104,12 +114,20 @@ public:
     Buffer get();
     const std::deque<Buffer>& data() const;
     std::set<uint64_t> consume(size_t l);
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        reflect_all(total_len, buffers);
+    }
 };
 
 struct DataRange {
     size_t start;
     size_t end;
     DataRange(size_t s, size_t e) : start(s), end(e) {}
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        reflect_all(start, end);
+    }
 };
 
 //EBuffer是一个环形buffer,只不过数据快写满的话，它会动态扩容
@@ -159,6 +177,11 @@ public:
     [[nodiscard]] const std::vector<DataRange>& get_ranges() const;
     [[nodiscard]] size_t continuous_length() const;
     [[nodiscard]] size_t continuous_length_at(size_t pos) const;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        reflect_named("data", std::span<const std::byte>((const std::byte*)content, capacity));
+        reflect_all(capacity, ranges);
+    }
 };
 
 std::string dumpDest(const Destination& addr);

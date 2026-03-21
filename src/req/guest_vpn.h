@@ -2,6 +2,7 @@
 #define GUEST_VPN_H__
 
 #include "requester.h"
+#include "hook/reflect.h"
 #include "prot/tcpip/ip_pack.h"
 #include "prot/http/http_header.h"
 #include "prot/memio.h"
@@ -20,6 +21,10 @@ class Guest_vpn: public Requester {
         std::shared_ptr<IMemRWerCallback> cb;
         uint32_t   flags = 0;
         Job        cleanJob = nullptr;
+        template <typename Visitor>
+        void reflect(Visitor& v) {
+            reflect_all(host, prog, pac, req, rw, flags);
+        }
     };
 
     std::map<uint64_t, VpnStatus> statusmap;
@@ -33,6 +38,11 @@ public:
     virtual ~Guest_vpn() override;
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        Requester::reflect(v);
+        reflect_all(statusmap);
+    }
 };
 
 #endif

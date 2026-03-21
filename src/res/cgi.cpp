@@ -187,7 +187,7 @@ Cgi::~Cgi() {
 }
 
 size_t Cgi::readHE(Buffer&& bb) {
-    HOOK_FUNC(this, statusmap, bb);
+    HOOK_BPF(this, statusmap, bb);
     if(bb.len == 0){
         LOGE("[CGI] %s closed pipe\n", basename(filename));
         deleteLater(PROTOCOL_ERR);
@@ -256,7 +256,7 @@ static void cgi_error(CGI_Header* header, uint32_t id, uint8_t flag){
 }
 
 bool Cgi::HandleData(const CGI_Header* header, CgiStatus& status){
-    HOOK_FUNC(this, statusmap, header);
+    HOOK_BPF(this, statusmap, header);
     int len = status.rw->cap(0);
     size_t size = ntohs(header->contentLength);
     if (len < (int)size) {

@@ -12,7 +12,7 @@
 
 void Guest3::init() {
     cb = IQuicCallback::create()->onRead([this](Buffer&& bb) -> size_t {
-        HOOK_FUNC(this, statusmap, bb);
+        HOOK_BPF(this, statusmap, bb);
         LOGD(DHTTP3, "<guest3> (%s) read [%" PRIu64"]: len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.id, bb.len);
         if(bb.len == 0){
             //fin
@@ -167,7 +167,7 @@ void Guest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> header) {
 }
 
 ssize_t Guest3::DataProc(Buffer& bb) {
-    HOOK_FUNC(this, statusmap, bb);
+    HOOK_BPF(this, statusmap, bb);
     if(statusmap.count(bb.id)){
         ReqStatus& status = statusmap[bb.id];
         if(status.flags & HTTP_REQ_COMPLETED){

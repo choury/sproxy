@@ -1,6 +1,7 @@
 #ifndef NETIO_H__
 #define NETIO_H__
 #include "common/common.h"
+#include "hook/reflect.h"
 #include "rwer.h"
 #include "misc/job.h"
 
@@ -50,6 +51,14 @@ public:
     virtual Destination getSrc() const override;
     virtual Destination getDst() const override;
     virtual void dump_status(Dumper dp, void* param) override;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        RWer::reflect(v);
+        reflect_all(port, protocol, hostname, resolved_time);
+        if (assign_src) {
+            reflect_named("assign_src", *assign_src);
+        }
+    }
 };
 
 class StreamRWer: public SocketRWer{
@@ -65,6 +74,11 @@ public:
     virtual size_t rlength(uint64_t id) override;
     virtual size_t mem_usage() override {
         return sizeof(*this) + (rb.cap() + rb.length()) + wbuff.length();
+    }
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        SocketRWer::reflect(v);
+        reflect_all(rb);
     }
 };
 
@@ -86,6 +100,11 @@ public:
     }
 
     virtual void Send(Buffer&& bb) override;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        SocketRWer::reflect(v);
+        reflect_all(wlen, rb, wbuff);
+    }
 };
 
 

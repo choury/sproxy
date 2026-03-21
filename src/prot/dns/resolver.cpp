@@ -496,7 +496,7 @@ void flushdns(){
 }
 
 static void query_host_real(int retries, const char* host, DNSCB func, std::shared_ptr<void> param, bool raw){
-    HOOK_FUNC(retries, host, raw);
+    HOOK_BPF(retries, host, raw);
     if(retries >= 3){
         return func(param, ns_r_servfail, std::list<sockaddr_storage>{}, 0);
     }
@@ -520,7 +520,7 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
         resolver = new HostResolver(&dnsConfig.server[retries % dnsConfig.namecount]);
     }
     if(resolver->query(host, [=](int error) {
-        HOOK_FUNC(resolver, error);
+        HOOK_BPF(resolver, error);
         defer([resolver]{delete resolver;});
         if(error == 0){
             func(param, 0, rcdfilter(resolver->host, resolver->rcd.addrs), resolver->rcd.ttl);
@@ -542,7 +542,7 @@ static void query_host_real(int retries, const char* host, DNSCB func, std::shar
 }
 
 void query_host(const char* host, DNSCB func, std::shared_ptr<void> param, bool raw) {
-    HOOK_FUNC(host, raw);
+    HOOK_BPF(host, raw);
     sockaddr_storage addr{};
     if(storage_aton(host, 0, &addr) == 1){
         return func(param, 0, std::list{addr}, (int)0xefffffff);
@@ -560,7 +560,7 @@ void query_host(const char* host, DNSCB func, std::shared_ptr<void> param, bool 
 }
 
 void query_dns(const char* host, int type, DNSRAWCB func, std::shared_ptr<void> param) {
-    HOOK_FUNC(host, type);
+    HOOK_BPF(host, type);
     if(dnsConfig.namecount == 0) {
         getDnsConfig(&dnsConfig);
         reload_hosts();
@@ -577,7 +577,7 @@ void query_dns(const char* host, int type, DNSRAWCB func, std::shared_ptr<void> 
         resolver = new RawResolver(dnsConfig.server[rand() % dnsConfig.namecount].addr);
     }
     if(resolver->query(host, type, [func, param, resolver](const char* data, size_t len){
-        HOOK_FUNC(resolver, data, len);
+        HOOK_BPF(resolver, std::span<const std::byte>((const std::byte*)data, len));
         defer([resolver]{delete resolver;});
         func(param, data, len);
     }) < 0){
@@ -586,7 +586,7 @@ void query_dns(const char* host, int type, DNSRAWCB func, std::shared_ptr<void> 
 }
 
 void query_raw(const void *data, size_t len, DNSRAWCB func, std::shared_ptr<void> param) {
-    HOOK_FUNC(data, len);
+    HOOK_BPF(std::span<const std::byte>((const std::byte*)data, len));
     if(dnsConfig.namecount == 0) {
         getDnsConfig(&dnsConfig);
         reload_hosts();
@@ -602,7 +602,7 @@ void query_raw(const void *data, size_t len, DNSRAWCB func, std::shared_ptr<void
         resolver = new RawResolver(dnsConfig.server[rand() % dnsConfig.namecount].addr);
     }
     if(resolver->query(data, len, [func, param, resolver](const char* data, size_t len){
-        HOOK_FUNC(resolver, data, len);
+        HOOK_BPF(resolver, std::span<const std::byte>((const std::byte*)data, len));
         defer([resolver]{delete resolver;});
         func(param, data, len);
     }) < 0){

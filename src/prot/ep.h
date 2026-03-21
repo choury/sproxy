@@ -49,6 +49,11 @@ public:
     int checkSocket(const char* msg) const;
     void (Ep::*handleEvent)(RW_EVENT events) = nullptr;
     friend int event_loop(uint32_t timeout_ms);
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        v("fd", fd);
+        v("events", events);
+    }
 };
 
 #ifdef __cpp_lib_coroutine

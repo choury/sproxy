@@ -6,6 +6,7 @@
 #define SPROXY_GUEST3_H
 
 #include "requester.h"
+#include "hook/reflect.h"
 #include "prot/http3/http3.h"
 #include "misc/job.h"
 
@@ -19,6 +20,10 @@ class Guest3: public Requester, public Http3Responser {
         std::shared_ptr<IMemRWerCallback> cb;
         uint32_t flags = 0;
         Job      cleanJob = nullptr;
+        template <typename Visitor>
+        void reflect(Visitor& v) {
+            reflect_all(req, rw, flags);
+        }
     };
 
     std::map<uint64_t, ReqStatus> statusmap;
@@ -54,6 +59,12 @@ public:
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        Requester::reflect(v);
+        Http3Responser::reflect(v);
+        reflect_all(statusmap, maxDataId, mitmProxy);
+    }
 };
 
 #endif //SPROXY_GUEST3_H

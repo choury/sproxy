@@ -42,7 +42,7 @@ void MemRWer::connected(const sockaddr_storage& addr) {
 }
 
 void MemRWer::push_data(Buffer&& bb) {
-    HOOK_FUNC(this, rb, bb);
+    HOOK_BPF(this, rb, bb);
     assert(stats != RWerStats::ReadEOF);
     LOGD(DRWER, "<MemRWer> <%d> %s push_data [%" PRIu64"]: %zd, refs: %zd\n",
          getFd(), dumpDest(src).c_str(), bb.id, bb.len, bb.refs());
@@ -106,7 +106,7 @@ void MemRWer::ConsumeRData(uint64_t id) {
             break;
         }
     }
-    HOOK_FUNC(this, rb, id);
+    HOOK_BPF(this, rb, id);
     if(rb.length() == 0 && isEof() && (flags & RWER_EOFDELIVED) == 0){
         keepReading = false;
         if(auto cb = callback.lock(); cb) {
@@ -178,7 +178,7 @@ void MemRWer::dump_status(Dumper dp, void* param) {
 
 
 void PMemRWer::push_data(Buffer&& bb) {
-    HOOK_FUNC(this, rb, bb);
+    HOOK_BPF(this, rb, bb);
     assert(!(flags & RWER_READING));
     flags |= RWER_READING;
     defer([this]{ flags &= ~RWER_READING;});

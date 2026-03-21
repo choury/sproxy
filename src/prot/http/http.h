@@ -23,6 +23,11 @@ protected:
     virtual ssize_t DataProc(Buffer& bb) = 0;
 public:
     bool (HttpBase::*Http_Proc)(Buffer& bb) = &HttpBase::HeaderProc;
+
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        reflect_all(http_expectlen, http_flag);
+    }
 };
 
 
@@ -30,12 +35,22 @@ class HttpResponser:public HttpBase{
 protected:
     virtual bool HeaderProc(Buffer& bb)override final;
     virtual void ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> req) = 0;
+
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        HttpBase::reflect(v);
+    }
 };
 
 class HttpRequester:public HttpBase{
 protected:
     virtual bool HeaderProc(Buffer& bb)override final;
     virtual void ResProc(uint64_t id, std::shared_ptr<HttpResHeader> res) = 0;
+
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        HttpBase::reflect(v);
+    }
 };
 
 #endif

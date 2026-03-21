@@ -5,6 +5,8 @@
 #include "misc/job.h"
 #include "prot/ep.h"
 
+#include "hook/reflect.h"
+
 #include <list>
 #include <string>
 #include <netinet/in.h>
@@ -19,6 +21,8 @@ public:
     virtual ~ResolverBase() {}
     virtual int query(const char* host, int type, std::function<void(const char*, size_t)>  cb) = 0;
     virtual int query(const void* data, size_t len, std::function<void(const char*, size_t)>  cb) = 0;
+    template<typename V>
+    void reflect(V&) {}
 };
 
 struct DnsServer;
@@ -58,6 +62,10 @@ struct Dns_Rcd{
     std::list<sockaddr_storage> addrs;
     time_t get_time;
     uint32_t ttl;
+    template<typename V>
+    void reflect(V& v) {
+        reflect_all(addrs, get_time, ttl);
+    }
 };
 
 class HostResolver {
@@ -80,6 +88,10 @@ public:
     explicit HostResolver(const Destination& server);
     int query(const char* host, std::function<void(int)> addrcb);
     ~HostResolver();
+    template<typename V>
+    void reflect(V& v) {
+        reflect_all(host, rcd);
+    }
 };
 
 typedef void (*DNSCB)(std::shared_ptr<void>, int error,const std::list<sockaddr_storage>& addrs, int ttl);

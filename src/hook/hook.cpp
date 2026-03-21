@@ -121,28 +121,26 @@ HookManager::HookManager() {
 #endif
 }
 
-bool HookManager::AddHooker(bool* hooker, std::string func, const char* line, const char* names) {
+bool HookManager::AddHooker(bool* hooker, std::string func, const char* line, std::vector<std::string> names) {
     hookers[hooker] = func + ":" + line;
 
-    // Parse comma-separated parameter names and normalize "->" to "." for BPF layer
-    std::vector<std::string> name_list;
-    std::istringstream ss(names);
-    std::string name;
-    while (std::getline(ss, name, ',')) {
-        // Trim whitespace
+    // Parameter names are provided one-by-one by the macro layer.
+    // Normalize whitespace and "->" to "." for BPF path access.
+    for (auto& name : names) {
         size_t start = name.find_first_not_of(" \t");
         size_t end = name.find_last_not_of(" \t");
         if (start != std::string::npos) {
-            std::string trimmed = name.substr(start, end - start + 1);
+            name = name.substr(start, end - start + 1);
             size_t pos = 0;
-            while ((pos = trimmed.find("->", pos)) != std::string::npos) {
-                trimmed.replace(pos, 2, ".");
+            while ((pos = name.find("->", pos)) != std::string::npos) {
+                name.replace(pos, 2, ".");
                 pos += 1;
             }
-            name_list.push_back(std::move(trimmed));
+        } else {
+            name.clear();
         }
     }
-    param_names_map[hooker] = std::move(name_list);
+    param_names_map[hooker] = std::move(names);
 
     return *hooker = true;
 }

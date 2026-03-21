@@ -41,7 +41,6 @@
 #cmakedefine HAVE_WEBDAV
 #cmakedefine HAVE_QUIC
 #cmakedefine HAVE_BPF
-#cmakedefine HAVE_BPFVM
 #cmakedefine HAVE_ELF
 #cmakedefine HAVE_URING
 #cmakedefine HAVE_JEMALLOC

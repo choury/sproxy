@@ -2,6 +2,7 @@
 #define HOST_H__
 
 #include "responser.h"
+#include "hook/reflect.h"
 #include "prot/http/http.h"
 
 class Host:public Responser, public HttpRequester {
@@ -10,6 +11,10 @@ class Host:public Responser, public HttpRequester {
         std::shared_ptr<MemRWer>       rw;
         std::shared_ptr<IRWerCallback> cb;
         uint     flags = 0;
+        template <typename Visitor>
+        void reflect(Visitor& v) {
+            reflect_all(req, rw, flags);
+        }
     } status{};
 
     struct Destination Server;
@@ -36,6 +41,11 @@ public:
     static void distribute(std::shared_ptr<HttpReqHeader> req,
                            const Destination& dest,
                            std::shared_ptr<MemRWer> rw);
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        Responser::reflect(v);
+        reflect_all(status, rx_bytes, tx_bytes, Server);
+    }
 };
 
 #endif

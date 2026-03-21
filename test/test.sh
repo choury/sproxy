@@ -612,5 +612,5 @@ $buildpath/prot/dns/dns_test
 $buildpath/misc/trie_test
 $buildpath/misc/buffer_test
 if [ $ker == 'Linux' ];then
-    $buildpath/hook/hook_test $buildpath/hook/libhook.so $buildpath/hook/hook_bpf.elf
+    $buildpath/hook/hook_test $buildpath/hook/hook_bpf.elf
 fi

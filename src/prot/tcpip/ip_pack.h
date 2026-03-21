@@ -9,6 +9,7 @@
 #ifdef HAVE_GUN_SOURCE_BUG
 #define __FAVOR_BSD    1
 #endif
+#include "hook/reflect.h"
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 
@@ -210,7 +211,17 @@ public:
     [[nodiscard]] virtual size_t gethdrlen() const;
     [[nodiscard]] virtual uint8_t gettype() const;
     virtual void build_packet(Buffer& bb) = 0;
-    virtual bool isValid();
+    virtual bool isValid() const;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        reflect_named("hdrlen", gethdrlen());
+        reflect_named("type", gettype());
+        reflect_named("valid", isValid());
+        reflect_named("src", getsrc());
+        reflect_named("sport", getsport());
+        reflect_named("dst", getdst());
+        reflect_named("dport", getdport());
+    }
 };
 
 std::shared_ptr<Ip> MakeIp(std::shared_ptr<const Ip> ip);

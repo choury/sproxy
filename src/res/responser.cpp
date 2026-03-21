@@ -101,7 +101,7 @@ static std::string getBackend(std::shared_ptr<HttpReqHeader> req) {
 }
 
 void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw){
-    HOOK_FUNC(req, rw);
+    HOOK_BPF(req, rw);
     defer([req] { req->tracker.emplace_back("distribute", getmtime()); });
     auto id = req->request_id;
     //std::shared_ptr<HttpRes> res;

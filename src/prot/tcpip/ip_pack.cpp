@@ -938,7 +938,7 @@ uint8_t Ip::gettype() const {
     return type;
 }
 
-bool Ip::isValid() {
+bool Ip::isValid() const {
     if(!valid){
         return false;
     }

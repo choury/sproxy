@@ -24,7 +24,7 @@ bool Guest2::wantmore(const ReqStatus& status) {
 
 Guest2::Guest2(std::shared_ptr<RWer> rwer): Requester(rwer) {
     cb = ISocketCallback::create()->onRead([this](Buffer&& bb) -> size_t {
-        HOOK_FUNC(this, statusmap, bb);
+        HOOK_BPF(this, statusmap, bb);
         LOGD(DHTTP2, "<guest2> (%s) read: len:%zu\n", dumpDest(this->rwer->getSrc()).c_str(), bb.len);
         if(bb.len == 0){
             //EOF
@@ -128,7 +128,7 @@ void Guest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> header) {
 }
 
 void Guest2::DataProc(Buffer&& bb) {
-    HOOK_FUNC(this, statusmap, bb);
+    HOOK_BPF(this, statusmap, bb);
     if(bb.len == 0)
         return;
     if ((int)bb.len > localwinsize) {

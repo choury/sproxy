@@ -2,6 +2,7 @@
 #define RWER_H__
 
 #include "prot/ep.h"
+#include "hook/reflect.h"
 #include "misc/buffer.h"
 
 #include <inttypes.h>
@@ -138,6 +139,11 @@ public:
     virtual bool idle(uint64_t id);
     virtual void dump_status(Dumper dp, void* param) = 0;
     virtual size_t mem_usage() = 0;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        Ep::reflect(v);
+        reflect_all(flags, stats, sndbuf, wbuff);
+    }
 };
 
 class NullRWer: public RWer{

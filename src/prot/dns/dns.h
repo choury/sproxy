@@ -2,6 +2,7 @@
 #define DNS_H__
 
 #include "common/common.h"
+#include "hook/reflect.h"
 
 #include <vector>
 #include <netinet/in.h>
@@ -21,6 +22,10 @@ struct Dns_Query{
     Dns_Query(const char* domain, uint16_t type, uint16_t id);
     explicit Dns_Query(const char *buff, size_t len);
     int build(unsigned char *buf)const;
+    template <typename Visitor>
+    void reflect(Visitor& v) {
+        reflect_all(domain, ptr_addr, type, id, valid);
+    }
 };
 
 
