@@ -227,6 +227,11 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         } else {
             auto src = rw->getSrc();
             req->set("X-Forwarded-For", dumpAuthority(&src));
+            if(const char* host = req->get("host")) {
+                req->set("X-Forwarded-Host", host);
+            }
+            req->set("X-Forwarded-Proto", rw->isTls() ? "https" : "http");
+            req->set("X-Forwarded-Port", std::to_string(req->getDport()));
         }
         break;
     default:
