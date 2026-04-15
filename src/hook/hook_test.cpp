@@ -4,6 +4,7 @@
 #include <map>
 #include <stdarg.h>
 #include <assert.h>
+#include <cerrno>
 
 extern "C" void slog(int level, const char* fmt, ...){
     (void)level;
@@ -47,38 +48,49 @@ void test_vector_map_serialize() {
 
     // Test write-back: modify port via set_tuple_field
     BpfKV kv_port = BpfKV::make_int(9090);
-    bool ok = set_tuple_field(names, "srv.port", kv_port, t, std::index_sequence_for<Server&>{});
-    assert(ok && srv.port == 9090);
+    int r = set_tuple_field(names, "srv.port", kv_port, t, std::index_sequence_for<Server&>{});
+    assert(r == 0 && srv.port == 9090);
     std::cout << "  set srv.port=9090: OK (got " << srv.port << ")" << std::endl;
 
     // Test write-back: modify vector element
     BpfKV kv_ip = BpfKV::make_string("192.168.1.1");
-    ok = set_tuple_field(names, "srv.ips[0]", kv_ip, t, std::index_sequence_for<Server&>{});
-    assert(ok && srv.ips[0] == "192.168.1.1");
+    r = set_tuple_field(names, "srv.ips[0]", kv_ip, t, std::index_sequence_for<Server&>{});
+    assert(r == 0 && srv.ips[0] == "192.168.1.1");
     std::cout << "  set srv.ips[0]=\"192.168.1.1\": OK (got " << srv.ips[0] << ")" << std::endl;
 
     // Test write-back: modify existing map entry
     BpfKV kv_host = BpfKV::make_string("example.com");
-    ok = set_tuple_field(names, "srv.config[host]", kv_host, t, std::index_sequence_for<Server&>{});
-    assert(ok && srv.config["host"] == "example.com");
+    r = set_tuple_field(names, "srv.config[host]", kv_host, t, std::index_sequence_for<Server&>{});
+    assert(r == 0 && srv.config["host"] == "example.com");
     std::cout << "  set srv.config[host]=\"example.com\": OK (got " << srv.config["host"] << ")" << std::endl;
 
     // Test write-back: add new map key
     BpfKV kv_new = BpfKV::make_string("/var/log");
-    ok = set_tuple_field(names, "srv.config[logdir]", kv_new, t, std::index_sequence_for<Server&>{});
-    assert(ok && srv.config["logdir"] == "/var/log");
+    r = set_tuple_field(names, "srv.config[logdir]", kv_new, t, std::index_sequence_for<Server&>{});
+    assert(r == 0 && srv.config["logdir"] == "/var/log");
     std::cout << "  set srv.config[logdir]=\"/var/log\": OK (got " << srv.config["logdir"] << ")" << std::endl;
 
     // Failed nested write must not auto-create a new map entry.
     size_t config_size = srv.config.size();
-    ok = set_tuple_field(names, "srv.config[missing].nested", kv_new, t, std::index_sequence_for<Server&>{});
-    assert(!ok && srv.config.size() == config_size && srv.config.count("missing") == 0);
-    std::cout << "  set srv.config[missing].nested: correctly rejected without insertion" << std::endl;
+    r = set_tuple_field(names, "srv.config[missing].nested", kv_new, t, std::index_sequence_for<Server&>{});
+    assert(r == -ENOENT && srv.config.size() == config_size && srv.config.count("missing") == 0);
+    std::cout << "  set srv.config[missing].nested: correctly rejected with ENOENT" << std::endl;
 
-    // Test write-back: vector out-of-bounds should fail
-    ok = set_tuple_field(names, "srv.ips[99]", kv_ip, t, std::index_sequence_for<Server&>{});
-    assert(!ok);
-    std::cout << "  set srv.ips[99]: correctly rejected" << std::endl;
+    // Test write-back: vector out-of-bounds should fail with EINVAL
+    r = set_tuple_field(names, "srv.ips[99]", kv_ip, t, std::index_sequence_for<Server&>{});
+    assert(r == -EINVAL);
+    std::cout << "  set srv.ips[99]: correctly rejected with EINVAL" << std::endl;
+
+    // Test write-back: nonexistent field should return ENOENT
+    r = set_tuple_field(names, "nonexistent", kv_port, t, std::index_sequence_for<Server&>{});
+    assert(r == -ENOENT);
+    std::cout << "  set nonexistent: correctly rejected with ENOENT" << std::endl;
+
+    // Test write-back: type mismatch should return EINVAL
+    BpfKV kv_bad_type = BpfKV::make_string("not_an_int");
+    r = set_tuple_field(names, "srv.port", kv_bad_type, t, std::index_sequence_for<Server&>{});
+    assert(r == -EINVAL);
+    std::cout << "  set srv.port=string: correctly rejected with EINVAL" << std::endl;
 
     std::cout << "Vector/Map test PASSED" << std::endl;
 }
@@ -118,18 +130,22 @@ int main(int argc, char** argv) {
     }
     hookManager.Register(bpf_hook, bpf_cb);
 
-    // Call bpf_test_func(5, 20) - BPF program should set b = a * 100 = 500
+    // BPF program verifies error codes then sets b = a * 100:
+    //   bpf_kv_set("nonexistent",...) → checks -ENOENT
+    //   bpf_kv_set("a", ..., STRING)  → checks -EINVAL
+    //   If both pass, sets b = a * 100
+    //   Returns non-zero on any failure (b unchanged)
     int a = 5, b = 20;
     int bpf_result = bpf_test_func(a, b);
     std::cout << "BPF test: a=" << a << " b=" << b << " result=" << bpf_result << std::endl;
 
-    // The BPF program sets b = a * 100. Since a=5, b should become 500 inside bpf_test_func.
-    // bpf_test_func returns a + b, so result should be 5 + 500 = 505
-    // Note: b in main() is not modified since bpf_test_func takes b by value
+    // bpf_test_func returns a + b.
+    // If all BPF error-code checks pass: b = 500, result = 5 + 500 = 505
+    // If any check fails: BPF returns early, b stays 20, result = 25
     if (bpf_result == 505) {
         std::cout << "BPF test PASSED" << std::endl;
     } else {
-        std::cerr << "BPF test FAILED: expected result=505, got result=" << bpf_result << std::endl;
+        std::cerr << "BPF test FAILED: expected 505, got " << bpf_result << std::endl;
         return 1;
     }
 

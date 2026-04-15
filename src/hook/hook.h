@@ -109,7 +109,7 @@ void HookManager::Trigger(const void* hooker, Args&&... args) {
     serialize_tuple(bpf_args.pb_data, param_names, t, std::index_sequence_for<Args...>{});
 
     // Construct write-back callback (needs type info)
-    bpf_args.kv_set = [&param_names, &t](const std::string& key, const BpfKV& kv) -> bool {
+    bpf_args.kv_set = [&param_names, &t](const std::string& key, const BpfKV& kv) -> int {
         return set_tuple_field(param_names, key, kv, t, std::index_sequence_for<Args...>{});
     };
 

@@ -1,5 +1,6 @@
 #include "hook.h"
 
+#include <algorithm>
 #include <fcntl.h>
 #include <unistd.h>
 #include <cxxabi.h>
@@ -8,8 +9,6 @@
 #include <gelf.h>
 #endif
 
-#include <regex>
-#include <sstream>
 
 HookManager hookManager;
 
@@ -121,24 +120,28 @@ HookManager::HookManager() {
 #endif
 }
 
+// Normalize a parameter name string for BPF path access.
+// e.g. "  & obj " -> "obj", "** ptr" -> "ptr", "obj->field" -> "obj.field"
+static std::string trim_param(std::string s) {
+    auto not_strip = [](char c) { return c != ' ' && c != '\t' && c != '&' && c != '*'; };
+    // trim right whitespace
+    auto end = std::find_if(s.rbegin(), s.rend(), [](char c) { return c != ' ' && c != '\t'; }).base();
+    s.erase(end, s.end());
+    // strip leading whitespace, &, *
+    auto start = std::find_if(s.begin(), s.end(), not_strip);
+    s.erase(s.begin(), start);
+    if (s.empty()) return {};
+    // replace "->" with "."
+    for (size_t pos = 0; (pos = s.find("->", pos)) != std::string::npos; pos += 1)
+        s.replace(pos, 2, ".");
+    return s;
+}
+
 bool HookManager::AddHooker(bool* hooker, std::string func, const char* line, std::vector<std::string> names) {
     hookers[hooker] = func + ":" + line;
 
-    // Parameter names are provided one-by-one by the macro layer.
-    // Normalize whitespace and "->" to "." for BPF path access.
     for (auto& name : names) {
-        size_t start = name.find_first_not_of(" \t");
-        size_t end = name.find_last_not_of(" \t");
-        if (start != std::string::npos) {
-            name = name.substr(start, end - start + 1);
-            size_t pos = 0;
-            while ((pos = name.find("->", pos)) != std::string::npos) {
-                name.replace(pos, 2, ".");
-                pos += 1;
-            }
-        } else {
-            name.clear();
-        }
+        name = trim_param(std::move(name));
     }
     param_names_map[hooker] = std::move(names);
 

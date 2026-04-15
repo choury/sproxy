@@ -3,7 +3,6 @@
 #include "include/bpf_call.h"
 
 #include <cstring>
-#include <sys/mman.h>
 
 class BpfSyscallHandler : public SyscallHandler {
     BpfCallArgs* bpf_args;
@@ -85,8 +84,8 @@ public:
                 return true;
             }
 
-            bool ok = bpf_args->kv_set(key, kv);
-            v->r(0) = ok ? 0 : (uint64_t)-EACCES;
+            int ret = bpf_args->kv_set(key, kv);
+            v->r(0) = ret;
             return true;
         }
 

@@ -7,7 +7,6 @@
 #include <map>
 #include <set>
 #include <span>
-#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -130,11 +129,6 @@ struct is_map : std::false_type {};
 template<typename K, typename V, typename C, typename A>
 struct is_map<std::map<K, V, C, A>> : std::true_type {};
 
-template<typename T>
-struct is_string_map : std::false_type {};
-
-template<typename V, typename C, typename A>
-struct is_string_map<std::map<std::string, V, C, A>> : std::true_type {};
 
 template<typename T>
 struct is_span : std::false_type {};

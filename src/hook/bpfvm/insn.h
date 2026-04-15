@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <string.h>
 #include <assert.h>
 #include <atomic>
 #include <memory>
@@ -15,6 +16,7 @@
 #include <pthread.h>
 #include <string>
 #include <vector>
+#include <sys/mman.h>
 
 extern std::mutex log_mutex;
 
@@ -123,28 +125,40 @@ For load and store instructions the 8-bit 'code' field is divided as:
 #define BPF_XCHG    (0xe0 | BPF_FETCH)
 #define BPF_CMPXCHG (0xf0 | BPF_FETCH)
 
+// Used as both the unique_ptr deleter (for owned mmap memory) and the shared_ptr deleter
+// (for CoW pages shared between parent and child VMs).  The single `owned` flag controls
+// whether munmap is called, so both roles use the exact same codepath.
+struct DataDeleter {
+    size_t size = 0;
+    bool owned = false;
+    DataDeleter() = default;
+    DataDeleter(size_t sz, bool own) : size(sz), owned(own) {}
+    void operator()(unsigned char* p) {
+        if (owned && p && p != (unsigned char*)MAP_FAILED)
+            munmap(p, size);
+    }
+};
+
 struct memmap {
-    unsigned char* data = nullptr;
+    std::unique_ptr<unsigned char, DataDeleter> data{nullptr, DataDeleter{0, false}};
     size_t size = 0;
     uint64_t paddr = 0;
     uint32_t flags = 0;
-    bool owned = true;
+    // non-null: CoW page shared across VMs; DataDeleter owns the actual munmap call.
+    // Use std::get_deleter<DataDeleter>(cow_data) to access/disarm the deleter.
+    std::shared_ptr<unsigned char> cow_data;
     memmap() = default;
-    memmap(memmap&& other) {
-        data = other.data;
-        size = other.size;
-        paddr = other.paddr;
-        flags = other.flags;
-        owned = other.owned;
-        other.data = nullptr;
-        other.size = 0;
-        other.flags = 0;
+    memmap(memmap&&) = default;
+    ~memmap() = default;
+    void set_data(unsigned char* p, size_t sz, bool own = true) {
+        data = std::unique_ptr<unsigned char, DataDeleter>(p, DataDeleter{sz, own});
     }
-    ~memmap();
     static memmap static_map(void* addr, size_t size, uint64_t paddr);
 };
 
 class vm;
+class JitCompilerBase;
+template<typename T> class JitCompiler;
 class SyscallHandler{
 protected:
     static auto& maps(vm* v);
@@ -163,17 +177,30 @@ public:
 };
 
 struct vmOptions {
-    uint64_t entry;
-    bool verbose;
-    uint64_t breakpoint;
-    bool step_run;
-    bool raw_stack;
+    uint64_t entry = 0;
+    bool verbose = false;
+    uint64_t breakpoint = 0;
+    bool step_run = false;
+    bool raw_stack = false;
+    uint64_t insn_limit = 0;  // 0 = 无限制
     std::vector<std::string> argv;
     std::vector<std::string> envp;
     std::shared_ptr<SyscallHandler> sys;
 };
 
+struct TlbEntry {
+    uint64_t guest_base;
+    uint64_t guest_end;
+    unsigned char* host_base;
+    uint32_t flags;
+    bool cow;
+};
+constexpr size_t TLB_SIZE = 16;
+static_assert((TLB_SIZE & (TLB_SIZE - 1)) == 0, "TLB_SIZE must be power of 2");
+
 class vm: public std::enable_shared_from_this<vm> {
+private:
+    TlbEntry tlb[TLB_SIZE]{};
     vmOptions options;
     const bpf_insn* pc;
     uint64_t reg[11];
@@ -182,6 +209,10 @@ class vm: public std::enable_shared_from_this<vm> {
     pthread_cond_t exit_cv;
     std::atomic<uint32_t> flags{0};
     size_t signal_depth = 0;
+    uint64_t insn_count = 0;              // 已执行指令计数（JIT+解释器共用，单线程访问）
+    uint64_t interp_insns = 0;            // 解释器执行的指令数
+
+    std::unique_ptr<JitCompilerBase> jit_;
 
     bool ld();
     bool ldx();
@@ -198,13 +229,17 @@ class vm: public std::enable_shared_from_this<vm> {
     }
 
     friend class SyscallHandler;
+    template<typename T> friend class JitCompiler;
     void log_mem_violation(const char* type, uint64_t addr);
+    bool safepoint();
     struct Token { explicit Token() = default; };
     uint64_t pop_frame();
 public:
     static constexpr uint32_t VM_EXITED = 0x1;
     static constexpr uint32_t VM_STOPPED = 0x2;
     static constexpr uint32_t VM_KILLED = 0x4;
+    static constexpr uint32_t VM_SIGNAL_PENDING = 0x8;
+    static constexpr uint32_t VM_BUDGET_EXCEEDED = 0x10;
 
     vm(Token);
     ~vm();
@@ -212,13 +247,17 @@ public:
     static std::shared_ptr<vm> create();
     void* mmu(uint64_t addr, size_t size = 1);
     void* mmu_w(uint64_t addr, size_t size = 1);
+    // Slow path: linear scan maps + fill TLB (no TLB lookup).  Called by JIT on miss.
+    void* mmu_slow(uint64_t addr, size_t size);
+    void* mmu_w_slow(uint64_t addr, size_t size);
     uint64_t unmmu(const void* addr);
     bool setup_stack(const std::vector<std::string>& argv, const std::vector<std::string>& envp);
     bool push_frame(uint64_t return_addr, bool is_signal = false);
     bool wait_for_exit(int timeout_ms);
     uint64_t load_elf(const char* elf_file_path);
     void addmem(memmap&& memmap);
-    void* unmap(uint64_t addr);
+    bool unmap(uint64_t addr);
+    void flush_tlb();
     void wakeup();
     uint64_t& r(int n) {
         return reg[n];
@@ -226,6 +265,7 @@ public:
 
     uint64_t run();
     uint64_t run(const vmOptions* options);
+    void dump_stats() const;
 };
 
 inline auto& SyscallHandler::maps(vm* v) { return v->maps; }

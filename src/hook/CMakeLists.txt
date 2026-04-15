@@ -3,7 +3,10 @@ set(hook_src hook.cpp)
 if(HAVE_ELF)
     set(hook_src ${hook_src}
         bpf_bridge.cpp
-        bpfvm/insn.cpp)
+        bpfvm/insn.cpp
+        bpfvm/jit_compiler.cpp
+        bpfvm/x86_emitter.cpp
+        bpfvm/aarch64_emitter.cpp)
 endif()
 
 add_library(hook_lib ${hook_src})
@@ -47,6 +50,7 @@ if(HAVE_ELF)
             DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/hook_bpf.o
             COMMENT "Linking BPF test ELF"
         )
+
         add_custom_target(hook_bpf_elf ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/hook_bpf.elf)
     endif()
 endif()

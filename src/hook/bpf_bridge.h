@@ -10,6 +10,7 @@
 #include <map>
 #include <functional>
 #include <type_traits>
+#include <cerrno>
 #include <cstring>
 
 // KV value types for BPF syscall write-back
@@ -204,11 +205,11 @@ void serialize_tuple(std::string& out, const std::vector<std::string>& names,
 // ============ Write-back: kv_set → reflect directly ============
 
 template<typename T>
-bool set_param(const std::string& name, const std::string& key, const BpfKV& kv, T& val);
+int set_param(const std::string& name, const std::string& key, const BpfKV& kv, T& val);
 
 // Helper: given a pre-validated index, dispatch set_param on the element
 template<typename Elem>
-bool set_indexed_param(const std::string& name, const std::string& key, const BpfKV& kv,
+int set_indexed_param(const std::string& name, const std::string& key, const BpfKV& kv,
                        Elem& elem, size_t idx) {
     std::string rest_key = key.substr(key.find(']', name.size() + 1) + 1);
     std::string elem_name = name + "[" + std::to_string(idx) + "]";
@@ -237,126 +238,109 @@ struct SetFieldVisitor {
     const std::string& prefix;
     const std::string& key;
     const BpfKV& kv;
-    bool found = false;
+    int result = -ENOENT;
     template<typename T>
     void operator()(const char* name, T&& val) {
-        if (found) return;
+        if (result == 0) return;
         std::string full = prefix.empty() ? std::string(name) : prefix + "." + name;
         if constexpr (std::is_lvalue_reference_v<T&&>) {
             using Ref = std::remove_reference_t<T>;
             if constexpr (std::is_const_v<Ref>) {
                 // reflect_const / reflect_const_field 标记的只读字段，不允许写回
-                found = false;
+                if (full == key || (key.size() > full.size() && key.compare(0, full.size(), full) == 0
+                                    && (key[full.size()] == '.' || key[full.size()] == '['))) {
+                    result = -EACCES;
+                }
             } else {
-                found = set_param(full, key, kv, val);
+                int r = set_param(full, key, kv, val);
+                if (r == 0) result = 0;
+                else if (r != -ENOENT && result == -ENOENT) result = r;
             }
         } else {
             // Temporaries produced by reflect_named(getter()) or casts are read-only.
-            found = false;
+            if (full == key || (key.size() > full.size() && key.compare(0, full.size(), full) == 0
+                                && (key[full.size()] == '.' || key[full.size()] == '['))) {
+                result = -EACCES;
+            }
         }
     }
 };
 
 template<typename T>
-bool set_param(const std::string& name, const std::string& key, const BpfKV& kv, T& val) {
+int set_param(const std::string& name, const std::string& key, const BpfKV& kv, T& val) {
     using Raw = std::remove_cv_t<std::remove_reference_t<T>>;
     if constexpr (std::is_const_v<T>) {
-        return false;
+        if (key == name || (key.size() > name.size() && key.compare(0, name.size(), name) == 0
+                            && (key[name.size()] == '.' || key[name.size()] == '['))) {
+            return -EACCES;
+        }
+        return -ENOENT;
     } else if constexpr (is_byte_span<Raw>::value) {
         if constexpr (std::is_const_v<typename Raw::element_type>) {
-            return false;
+            return name == key ? -EACCES : -ENOENT;
         } else {
-            if (name == key && (kv.type == BpfKV::STRING || kv.type == BpfKV::BYTES)
-                && kv.str.size() == val.size_bytes()) {
-                memcpy(val.data(), kv.str.data(), val.size_bytes());
-                return true;
-            }
-            return false;
+            if (name != key) return -ENOENT;
+            if ((kv.type != BpfKV::STRING && kv.type != BpfKV::BYTES)
+                || kv.str.size() != val.size_bytes()) return -EINVAL;
+            memcpy(val.data(), kv.str.data(), val.size_bytes());
+            return 0;
         }
     } else if constexpr (std::is_same_v<Raw, std::string>) {
-        if (name == key && (kv.type == BpfKV::STRING || kv.type == BpfKV::BYTES)) {
-            val = kv.str;
-            return true;
-        }
-        return false;
+        if (name != key) return -ENOENT;
+        if (kv.type != BpfKV::STRING && kv.type != BpfKV::BYTES) return -EINVAL;
+        val = kv.str;
+        return 0;
     } else if constexpr (std::is_array_v<Raw> && std::is_same_v<std::remove_extent_t<Raw>, char>) {
-        if (name == key && (kv.type == BpfKV::STRING || kv.type == BpfKV::BYTES)) {
-            strncpy(val, kv.str.c_str(), sizeof(val) - 1);
-            val[sizeof(val) - 1] = '\0';
-            return true;
-        }
-        return false;
+        if (name != key) return -ENOENT;
+        if (kv.type != BpfKV::STRING && kv.type != BpfKV::BYTES) return -EINVAL;
+        strncpy(val, kv.str.c_str(), sizeof(val) - 1);
+        val[sizeof(val) - 1] = '\0';
+        return 0;
     } else if constexpr (std::is_enum_v<Raw>) {
         using Underlying = std::underlying_type_t<Raw>;
         Underlying tmp = static_cast<Underlying>(val);
-        if (!set_param(name, key, kv, tmp)) {
-            return false;
+        int r = set_param(name, key, kv, tmp);
+        if (r == 0) {
+            val = static_cast<Raw>(tmp);
         }
-        val = static_cast<Raw>(tmp);
-        return true;
+        return r;
     } else if constexpr (std::is_signed_v<Raw> && std::is_integral_v<Raw>) {
-        if (name == key && (kv.type == BpfKV::INT64 || kv.type == BpfKV::UINT64)) {
-            val = static_cast<T>(kv.type == BpfKV::INT64 ? kv.i64 : (int64_t)kv.u64);
-            return true;
-        }
-        return false;
+        if (name != key) return -ENOENT;
+        if (kv.type != BpfKV::INT64 && kv.type != BpfKV::UINT64) return -EINVAL;
+        val = static_cast<T>(kv.type == BpfKV::INT64 ? kv.i64 : (int64_t)kv.u64);
+        return 0;
     } else if constexpr (std::is_unsigned_v<Raw> && std::is_integral_v<Raw>) {
-        if (name == key && (kv.type == BpfKV::UINT64 || kv.type == BpfKV::INT64)) {
-            val = static_cast<T>(kv.type == BpfKV::UINT64 ? kv.u64 : (uint64_t)kv.i64);
-            return true;
-        }
-        return false;
+        if (name != key) return -ENOENT;
+        if (kv.type != BpfKV::UINT64 && kv.type != BpfKV::INT64) return -EINVAL;
+        val = static_cast<T>(kv.type == BpfKV::UINT64 ? kv.u64 : (uint64_t)kv.i64);
+        return 0;
     } else if constexpr (is_vector<Raw>::value || is_deque<Raw>::value || is_span<Raw>::value) {
         size_t idx;
-        if (!parse_bracket_index(name, key, idx) || idx >= val.size()) return false;
+        if (!parse_bracket_index(name, key, idx)) return -ENOENT;
+        if (idx >= val.size()) return -EINVAL;
         return set_indexed_param(name, key, kv, val[idx], idx);
     } else if constexpr (is_list<Raw>::value) {
         size_t idx;
-        if (!parse_bracket_index(name, key, idx) || idx >= val.size()) return false;
+        if (!parse_bracket_index(name, key, idx)) return -ENOENT;
+        if (idx >= val.size()) return -EINVAL;
         auto it = val.begin();
         std::advance(it, idx);
         return set_indexed_param(name, key, kv, *it, idx);
     } else if constexpr (is_set<Raw>::value) {
-        return false;
-    } else if constexpr (is_string_map<Raw>::value) {
-        // key must start with name[map_key]...
-        if (key.size() <= name.size() || key.compare(0, name.size(), name) != 0
-            || key[name.size()] != '[') {
-            return false;
+        if (key.size() > name.size() && key.compare(0, name.size(), name) == 0
+            && key[name.size()] == '[') {
+            return -EACCES;
         }
-        auto bracket_end = key.find(']', name.size() + 1);
-        if (bracket_end == std::string::npos) return false;
-        std::string map_key = key.substr(name.size() + 1, bracket_end - name.size() - 1);
-        // rest after ']'
-        std::string rest_key = key.substr(bracket_end + 1);
-        std::string elem_name = name + "[" + map_key + "]";
-        if (rest_key.empty()) {
-            if constexpr (std::is_default_constructible_v<typename Raw::mapped_type>) {
-                auto [it, inserted] = val.try_emplace(map_key);
-                if (set_param(elem_name, key, kv, it->second)) {
-                    return true;
-                }
-                if (inserted) {
-                    val.erase(it);
-                }
-            }
-            return false;
-        }
-        if (rest_key[0] == '.') rest_key = rest_key.substr(1);
-        auto it = val.find(map_key);
-        if (it == val.end()) {
-            return false;
-        }
-        return set_param(elem_name, elem_name + "." + rest_key, kv, it->second);
+        return -ENOENT;
     } else if constexpr (is_map<Raw>::value) {
         using Key = typename Raw::key_type;
         using Mapped = typename Raw::mapped_type;
         if (key.size() <= name.size() || key.compare(0, name.size(), name) != 0
             || key[name.size()] != '[') {
-            return false;
+            return -ENOENT;
         }
         auto bracket_end = key.find(']', name.size() + 1);
-        if (bracket_end == std::string::npos) return false;
+        if (bracket_end == std::string::npos) return -EINVAL;
         std::string map_key_str = key.substr(name.size() + 1, bracket_end - name.size() - 1);
         std::string rest_key = key.substr(bracket_end + 1);
         Key map_key{};
@@ -365,51 +349,46 @@ bool set_param(const std::string& name, const std::string& key, const BpfKV& kv,
         } else if constexpr (std::is_unsigned_v<Key> && std::is_integral_v<Key>) {
             char* endptr = nullptr;
             unsigned long long parsed = strtoull(map_key_str.c_str(), &endptr, 10);
-            if (endptr == map_key_str.c_str() || *endptr != '\0') return false;
+            if (endptr == map_key_str.c_str() || *endptr != '\0') return -EINVAL;
             map_key = static_cast<Key>(parsed);
         } else if constexpr (std::is_signed_v<Key> && std::is_integral_v<Key>) {
             char* endptr = nullptr;
             long long parsed = strtoll(map_key_str.c_str(), &endptr, 10);
-            if (endptr == map_key_str.c_str() || *endptr != '\0') return false;
+            if (endptr == map_key_str.c_str() || *endptr != '\0') return -EINVAL;
             map_key = static_cast<Key>(parsed);
         } else {
-            return false;
+            return -EINVAL;
         }
         std::string elem_name = name + "[" + map_key_str + "]";
         if (rest_key.empty()) {
             if constexpr (std::is_default_constructible_v<Mapped>) {
                 auto [it, inserted] = val.try_emplace(map_key);
-                if (set_param(elem_name, key, kv, it->second)) {
-                    return true;
-                }
-                if (inserted) {
-                    val.erase(it);
-                }
+                int r = set_param(elem_name, key, kv, it->second);
+                if (r == 0) return 0;
+                if (inserted) val.erase(it);
+                return r;
             }
-            return false;
+            return -EACCES;
         }
         if (rest_key[0] == '.') rest_key = rest_key.substr(1);
         auto it = val.find(map_key);
-        if (it == val.end()) {
-            return false;
-        }
+        if (it == val.end()) return -ENOENT;
         return set_param(elem_name, elem_name + "." + rest_key, kv, it->second);
     } else if constexpr (std::is_pointer_v<Raw> && !std::is_void_v<std::remove_pointer_t<Raw>>) {
-        if (val) return set_param(name, key, kv, *val);
-        return false;
+        if (!val) return -ENOENT;
+        return set_param(name, key, kv, *val);
     } else if constexpr (is_smart_pointer<Raw>::value) {
-        if (val) return set_param(name, key, kv, *val);
-        return false;
+        if (!val) return -ENOENT;
+        return set_param(name, key, kv, *val);
     } else if constexpr (has_reflect<Raw>::value) {
         SetFieldVisitor v{name, key, kv};
         invoke_reflect(val, v);
-        return v.found;
+        return v.result;
     } else if constexpr (is_blob_aggregate<Raw>::value) {
-        if (name == key && kv.type == BpfKV::BYTES && kv.str.size() == sizeof(Raw)) {
-            memcpy(&val, kv.str.data(), sizeof(Raw));
-            return true;
-        }
-        return false;
+        if (name != key) return -ENOENT;
+        if (kv.type != BpfKV::BYTES || kv.str.size() != sizeof(Raw)) return -EINVAL;
+        memcpy(&val, kv.str.data(), sizeof(Raw));
+        return 0;
     } else {
         static_assert(dependent_false<Raw>::value,
             "Unsupported BPF leaf type in reflect tree");
@@ -417,10 +396,17 @@ bool set_param(const std::string& name, const std::string& key, const BpfKV& kv,
 }
 
 template<typename Tuple, size_t... Is>
-bool set_tuple_field(const std::vector<std::string>& names, const std::string& key,
+int set_tuple_field(const std::vector<std::string>& names, const std::string& key,
                      const BpfKV& kv, Tuple& t, std::index_sequence<Is...>) {
-    return (set_param(Is < names.size() ? names[Is] : "arg" + std::to_string(Is),
-                      key, kv, std::get<Is>(t)) || ...);
+    int result = -ENOENT;
+    auto merge = [&result](int r) {
+        if (result == 0) return;
+        if (r == 0) result = 0;
+        else if (r != -ENOENT && result == -ENOENT) result = r;
+    };
+    (merge(set_param(Is < names.size() ? names[Is] : "arg" + std::to_string(Is),
+                     key, kv, std::get<Is>(t))), ...);
+    return result;
 }
 
 // ============ Compile-time serializability check ============
@@ -503,7 +489,7 @@ struct is_bpf_serializable<std::map<K, V, C, A>, std::enable_if_t<
 
 
 // Type-erased callback for kv_set syscall
-using KVSetFunc = std::function<bool(const std::string&, const BpfKV&)>;
+using KVSetFunc = std::function<int(const std::string&, const BpfKV&)>;
 
 // Arguments passed to BpfCallback::OnCall
 struct BpfCallArgs {

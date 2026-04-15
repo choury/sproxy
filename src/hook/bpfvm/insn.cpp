@@ -5,6 +5,24 @@
 #include "insn.h"
 #include <iostream>
 
+#include "jit.h"
+
+#if defined(__x86_64__)
+#include "jit_compiler.h"
+#include "x86_emitter.h"
+using JitCompilerImpl = JitCompiler<X86Emitter>;
+#elif defined(__aarch64__)
+#include "jit_compiler.h"
+#include "aarch64_emitter.h"
+using JitCompilerImpl = JitCompiler<AArch64Emitter>;
+#else
+class StubJitCompiler : public JitCompilerBase {
+public:
+    JitFunction* compile(vm*, const bpf_insn*) override { return nullptr; }
+};
+using JitCompilerImpl = StubJitCompiler;
+#endif
+
 #include <libelf.h>
 #include <gelf.h>
 #include <unistd.h>
@@ -23,22 +41,12 @@
 
 std::mutex log_mutex;
 
-memmap::~memmap() {
-    if(data == nullptr || data == MAP_FAILED) {
-        return;
-    }
-    if(owned) {
-        munmap(data, size);
-    }
-}
-
 memmap memmap::static_map(void* addr, size_t size, uint64_t paddr) {
     memmap map;
-    map.data = (unsigned char*)addr;
     map.size = size;
+    map.set_data((unsigned char*)addr, size, false);
     map.paddr = paddr;
     map.flags = PF_R;
-    map.owned = false;
     return map;
 }
 
@@ -269,21 +277,23 @@ uint64_t vm::load_elf(const char* elf_file_path) {
         map.paddr = phdr.p_vaddr;
         map.size = phdr.p_memsz;
         if(phdr.p_flags & PF_W) {
-            map.data = (unsigned char*)mmap(nullptr, map.size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            if(map.data == MAP_FAILED) {
+            auto* raw = (unsigned char*)mmap(nullptr, map.size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            if(raw == MAP_FAILED) {
                 std::cerr << "Failed to mmap section: " << strerror(errno) << std::endl;
                 goto out;
             }
-            if(pread(fd, map.data, phdr.p_filesz, phdr.p_offset) != (ssize_t)phdr.p_filesz) {
+            map.set_data(raw, map.size);
+            if(pread(fd, map.data.get(), phdr.p_filesz, phdr.p_offset) != (ssize_t)phdr.p_filesz) {
                 std::cerr << "Failed to read section: " << strerror(errno) << std::endl;
                 goto out;
             }
         }else {
-            map.data = (unsigned char*)mmap(nullptr, map.size, PROT_READ, MAP_PRIVATE, fd, phdr.p_offset);
-            if(map.data == MAP_FAILED) {
+            auto* raw = (unsigned char*)mmap(nullptr, map.size, PROT_READ, MAP_PRIVATE, fd, phdr.p_offset);
+            if(raw == MAP_FAILED) {
                 std::cerr << "Failed to mmap section: " << strerror(errno) << std::endl;
                 goto out;
             }
+            map.set_data(raw, map.size);
         }
         map.flags = phdr.p_flags;
         addmem(std::move(map));
@@ -355,7 +365,7 @@ bool vm::push_frame(uint64_t return_addr, bool is_signal) {
     }
     uint64_t sp = r(10) - STACK_LIMIT;
     uint64_t frame_base_addr = sp - frame_size;
-    uint64_t* frame_base = (uint64_t*)mmu(frame_base_addr);
+    uint64_t* frame_base = (uint64_t*)mmu_w(frame_base_addr, frame_size);
     if(!frame_base) {
         log_mem_violation("stack access", frame_base_addr);
         return false;
@@ -925,7 +935,8 @@ bool vm::alu() {
 
 
 
-bool vm::step() {
+bool vm::safepoint() {
+    // 仅在非信号上下文中处理新信号，避免信号处理嵌套
     if(signal_depth == 0) {
         if(!options.sys->handle_signals(this)) {
             //be killed
@@ -935,7 +946,7 @@ bool vm::step() {
 
     while(true) {
         uint32_t f = flags.load(std::memory_order_acquire);
-        if(f & (VM_EXITED | VM_KILLED)) {
+        if(f & (VM_EXITED | VM_KILLED | VM_BUDGET_EXCEEDED)) {
             if (f & VM_KILLED) {
                 r(0) = 128 + SIGKILL;
             }
@@ -953,6 +964,51 @@ bool vm::step() {
         pthread_cond_timedwait(&exit_cv, &exit_mutex, &ts);
         pthread_mutex_unlock(&exit_mutex);
     }
+    return true;
+}
+
+bool vm::step() {
+    // JIT hot path: keep executing compiled functions in a tight loop
+    for(;;) {
+        auto* func = jit_->compile(this, pc);
+        if(!func) break;
+        jit_->stats.jit_func_runs++;
+        const bpf_insn* pc_before = pc;
+        ((void(*)(vm*))func->code)(this);
+        // JIT 函数返回后，检查是真正的 VM 退出还是可恢复的中断
+        // (safepoint, syscall, pc changed, etc.)
+        uint32_t f = flags.load(std::memory_order_acquire);
+        if(f & (VM_EXITED | VM_KILLED | VM_BUDGET_EXCEEDED)) {
+            return false;
+        }
+        // JIT aborted but VM isn't exiting.  If syscall/signal/call/exit changed pc
+        // (e.g. longjmp, signal handler, BPF CALL, BPF EXIT), pc has been updated.
+        // Continue in the JIT loop without returning to run().
+        if(pc != pc_before) {
+            continue;
+        }
+        // Otherwise (e.g. memory violation with no flags set), fall through to
+        // interpreter for one step to report the error.
+        break;
+    }
+    // 解释器执行一条指令
+    interp_insns++;
+    // 指令计数递增 + 预算检查
+    uint64_t cnt = ++insn_count;
+    if(options.insn_limit != 0 && cnt >= options.insn_limit) {
+        flags.fetch_or(VM_BUDGET_EXCEEDED, std::memory_order_release);
+        std::cerr << "Instruction budget exceeded (" << cnt
+                  << " >= " << options.insn_limit << ") at PC 0x"
+                  << std::hex << unmmu(pc) << std::dec << std::endl;
+        return false;
+    }
+    // Safepoint check: flags 非零即需要处理
+    uint32_t f = flags.load(std::memory_order_acquire);
+    if(f) {
+        if(!safepoint()) {
+            return false;
+        }
+    }
     uint64_t addr = unmmu(pc);
     if(options.verbose) {
         std::lock_guard<std::mutex> lock(log_mutex);
@@ -966,25 +1022,18 @@ bool vm::step() {
         asm volatile("brk #0");
 #endif
     }
+    bool ok = false;
     switch(pc->code & 0x07) {
-    case BPF_LD:
-        return ld();
-    case BPF_LDX:
-        return ldx();
-    case BPF_ST:
-        return st();
-    case BPF_STX:
-        return stx();
-    case BPF_ALU:
-        return alu();
-    case BPF_ALU64:
-        return alu64();
-    case BPF_JMP:
-        return jmp();
-    case BPF_JMP32:
-        return jmp32();
+    case BPF_LD:   ok = ld(); break;
+    case BPF_LDX:  ok = ldx(); break;
+    case BPF_ST:   ok = st(); break;
+    case BPF_STX:  ok = stx(); break;
+    case BPF_ALU:  ok = alu(); break;
+    case BPF_ALU64: ok = alu64(); break;
+    case BPF_JMP:  ok = jmp(); break;
+    case BPF_JMP32: ok = jmp32(); break;
     }
-    return false;
+    return ok;
 }
 
 void vm::addmem(memmap&& memmap) {
@@ -994,26 +1043,42 @@ void vm::addmem(memmap&& memmap) {
         it++;
     }
     maps.insert(it, std::move(memmap));
+    flush_tlb();
 }
 
-void* vm::unmap(uint64_t addr) {
+bool vm::unmap(uint64_t addr) {
     for(auto it = maps.begin(); it != maps.end(); ++it) {
         if(addr == it->paddr) {
-            void* data = it->data;
-            it->data = nullptr;
-            maps.erase(it);
-            return data;
+            maps.erase(it); // unique_ptr destructor handles munmap if owned
+            flush_tlb();
+            return true;
         }
     }
-    return nullptr;
+    return false;
+}
+
+void vm::flush_tlb() {
+    memset(tlb, 0, sizeof(tlb));
 }
 
 void* vm::mmu(uint64_t addr, size_t size) {
     uint64_t end = addr + size;
     if(end < addr) return nullptr; // overflow
+    // TLB fast path (1MB granularity)
+    auto& entry = tlb[(addr >> 20) & (TLB_SIZE - 1)];
+    if(addr >= entry.guest_base && end <= entry.guest_end) {
+        return entry.host_base + (addr - entry.guest_base);
+    }
+    return mmu_slow(addr, size);
+}
+
+void* vm::mmu_slow(uint64_t addr, size_t size) {
+    uint64_t end = addr + size;
+    auto& entry = tlb[(addr >> 20) & (TLB_SIZE - 1)];
     for(const auto& map: maps) {
         if(addr >= map.paddr && end <= map.paddr + map.size) {
-            return map.data + (addr - map.paddr);
+            entry = {map.paddr, map.paddr + map.size, map.data.get(), map.flags, !!map.cow_data};
+            return map.data.get() + (addr - map.paddr);
         }
     }
     return nullptr;
@@ -1022,10 +1087,42 @@ void* vm::mmu(uint64_t addr, size_t size) {
 void* vm::mmu_w(uint64_t addr, size_t size) {
     uint64_t end = addr + size;
     if(end < addr) return nullptr; // overflow
-    for(const auto& map: maps) {
+    // TLB fast path (1MB granularity, only when writable and no CoW pending)
+    auto& entry = tlb[(addr >> 20) & (TLB_SIZE - 1)];
+    if(addr >= entry.guest_base && end <= entry.guest_end
+       && (entry.flags & PF_W) && !entry.cow) {
+        return entry.host_base + (addr - entry.guest_base);
+    }
+    return mmu_w_slow(addr, size);
+}
+
+void* vm::mmu_w_slow(uint64_t addr, size_t size) {
+    uint64_t end = addr + size;
+    auto& entry = tlb[(addr >> 20) & (TLB_SIZE - 1)];
+    for(auto& map: maps) {
         if(addr >= map.paddr && end <= map.paddr + map.size) {
             if(!(map.flags & PF_W)) return nullptr;
-            return map.data + (addr - map.paddr);
+            if(map.cow_data) { // CoW triggered: copy on write
+                if(map.cow_data.use_count() == 1) {
+                    // 唯一引用，直接偷：解除 cow_data 的所有权，unique_ptr 接管
+                    std::get_deleter<DataDeleter>(map.cow_data)->owned = false;
+                    map.cow_data.reset();
+                    map.data.get_deleter().owned = true;
+                } else {
+                    int prot = PROT_READ | PROT_WRITE;
+                    if(map.flags & PF_X) prot |= PROT_EXEC;
+                    auto* p = (unsigned char*)mmap(nullptr, map.size, prot,
+                                                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                    if(p == MAP_FAILED) return nullptr;
+                    memcpy(p, map.data.get(), map.size);
+                    map.cow_data.reset();
+                    map.set_data(p, map.size);
+                }
+                flush_tlb();
+            }
+            // Fill TLB after CoW is resolved
+            entry = {map.paddr, map.paddr + map.size, map.data.get(), map.flags, !!map.cow_data};
+            return map.data.get() + (addr - map.paddr);
         }
     }
     return nullptr;
@@ -1033,19 +1130,39 @@ void* vm::mmu_w(uint64_t addr, size_t size) {
 
 uint64_t vm::unmmu(const void* addr) {
     for(const auto& map: maps) {
-        if(addr >= map.data && addr < map.data + map.size) {
-            return map.paddr + ((unsigned char*)addr - map.data);
+        if(addr >= map.data.get() && addr < map.data.get() + map.size) {
+            return map.paddr + ((unsigned char*)addr - map.data.get());
         }
     }
     return 0;
 }
 
+void vm::dump_stats() const {
+    if (!getenv("BPF_DEBUG")) return;
+    fprintf(stderr, "[BPF] 执行指令数: %" PRIu64 "\n", insn_count);
+    fprintf(stderr, "[BPF] 解释器执行指令数: %" PRIu64 "\n", interp_insns);
+    auto& s = jit_->stats;
+    if (s.jit_compiles) {
+        fprintf(stderr, "[BPF] JIT编译函数数: %" PRIu64 "\n", s.jit_compiles);
+        fprintf(stderr, "[BPF] JIT编译指令数: %" PRIu64 "\n", s.jit_compiled_insns);
+        fprintf(stderr, "[BPF] JIT执行函数次数: %" PRIu64 "\n", s.jit_func_runs);
+        fprintf(stderr, "[BPF] 编译时平均函数大小: %.1f条\n",
+                (double)s.jit_compiled_insns / s.jit_compiles);
+        fprintf(stderr, "[BPF] 编译耗时: %.1fms\n", s.compile_ns / 1e6);
+    }
+}
+
 uint64_t vm::run() {
+    if(!jit_) jit_ = std::make_unique<JitCompilerImpl>();
     if(options.sys) options.sys->init(shared_from_this());
     while(step()) {
         pc++;
     }
     if(options.sys) options.sys->fini(shared_from_this());
+    dump_stats();
+    if(flags.load(std::memory_order_acquire) & VM_BUDGET_EXCEEDED) {
+        r(0) = 255;
+    }
     flags.fetch_or(VM_EXITED, std::memory_order_release);
     pthread_cond_broadcast(&exit_cv);
     return r(0);
@@ -1053,6 +1170,8 @@ uint64_t vm::run() {
 
 uint64_t vm::run(const vmOptions* options) {
     this->options = *options;
+    insn_count = 0;
+    interp_insns = 0;
     if(options->verbose) {
         printf("entry: 0x%lx\n", options->entry);
     }
@@ -1095,7 +1214,7 @@ bool vm::setup_stack(const std::vector<std::string>& argv, const std::vector<std
             return false;
         }
         memmap stack_memmap;
-        stack_memmap.data = data;
+        stack_memmap.set_data(data, STACK_SIZE);
         stack_memmap.size = STACK_SIZE;
         stack_memmap.paddr = STACK_BASE;
         stack_memmap.flags = PF_W;
