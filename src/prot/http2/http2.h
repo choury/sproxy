@@ -112,7 +112,7 @@ protected:
     virtual void EndProc(uint32_t id);
     virtual void ErrProc(int errcode) = 0;
 
-    void Ping(const void *buff);
+    void Ping(const void *data);
     void Reset(uint32_t id, uint32_t code);
     void Goaway(uint32_t lastid, uint32_t code, char* message = nullptr);
     void SendInitSetting(bool enable_push);

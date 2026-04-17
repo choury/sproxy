@@ -96,7 +96,7 @@ public:
     template <typename Visitor>
     void reflect(Visitor& v) {
         reflect_named("data", std::span<const std::byte>((const std::byte*)data(), len));
-        reflect_all(id, cap);
+        reflect_all(id, len, cap);
     }
 };
 

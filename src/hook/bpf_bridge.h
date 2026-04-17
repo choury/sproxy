@@ -2,7 +2,6 @@
 #define BPF_BRIDGE_H__
 
 #include "reflect.h"
-#include "common/common.h"
 #include "hook_callback.h"
 #include "bpfvm/insn.h"
 

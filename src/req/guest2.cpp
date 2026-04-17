@@ -288,6 +288,7 @@ void Guest2::RstProc(uint32_t id, uint32_t errcode) {
 
 
 void Guest2::WindowUpdateProc(uint32_t id, uint32_t size) {
+    HOOK_BPF(this, statusmap, id, size);
     if(id){
         if(statusmap.count(id)){
             ReqStatus& status = statusmap[id];

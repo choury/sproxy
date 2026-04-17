@@ -3,7 +3,6 @@
 #include "prot/memio.h"
 #include "req/requester.h"
 #include "hook/hook.h"
-#include "misc/util.h"
 
 #include <assert.h>
 #include <inttypes.h>
@@ -214,6 +213,7 @@ void Proxy2::RstProc(uint32_t id, uint32_t errcode) {
 }
 
 void Proxy2::WindowUpdateProc(uint32_t id, uint32_t size){
+    HOOK_BPF(this, statusmap, id, size);
     if(id){
         if(statusmap.count(id)){
             ReqStatus& status = statusmap[id];
