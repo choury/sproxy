@@ -24,8 +24,7 @@ struct Server {
     std::vector<std::string> ips;
     std::map<std::string, std::string> config;
 
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) {
         reflect_all(port, ips, config);
     }
 };

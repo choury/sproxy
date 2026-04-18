@@ -7,7 +7,7 @@
 #include <memory>
 
 
-class Server{
+class Server : public virtual HookReflectable {
 protected:
     std::shared_ptr<RWer> rwer;
     std::shared_ptr<IRWerCallback> cb;
@@ -18,8 +18,7 @@ public:
     virtual void deleteLater(uint32_t errcode);
     virtual void dump_stat(Dumper dp, void* param) = 0;
     virtual void dump_usage(Dumper dp, void* param) = 0;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         reflect_all(rwer);
     }
 };

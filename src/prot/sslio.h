@@ -47,8 +47,7 @@ public:
         BIO_get_mem_ptr(out_bio, &out_mem);
         return sizeof(*this) + in_mem->max + out_mem->max;
     }
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    virtual void reflect(IVisitor& v) {
         reflect_all(sslStats, server);
     }
 };
@@ -104,6 +103,10 @@ public:
         return isConnected();
     }
     virtual void dump_status(Dumper dp, void* param) override;
+    void reflect(IVisitor& v) override {
+        SslRWerBase::reflect(v);
+        StreamRWer::reflect(v);
+    }
 };
 
 class SslMer: public SslRWerBase, public MemRWer {
@@ -158,6 +161,10 @@ public:
         return isConnected();
     }
     virtual void dump_status(Dumper dp, void* param) override;
+    void reflect(IVisitor& v) override {
+        SslRWerBase::reflect(v);
+        MemRWer::reflect(v);
+    }
 };
 
 

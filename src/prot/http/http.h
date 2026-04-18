@@ -2,9 +2,10 @@
 #define HTTP_H__
 
 #include "http_header.h"
+#include "hook/reflect.h"
 
 class Buffer;
-class HttpBase{
+class HttpBase : public virtual HookReflectable {
 protected:
     uint64_t http_expectlen = 0;
 #define HTTP_IGNORE_BODY_F          1u
@@ -24,8 +25,7 @@ protected:
 public:
     bool (HttpBase::*Http_Proc)(Buffer& bb) = &HttpBase::HeaderProc;
 
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         reflect_all(http_expectlen, http_flag);
     }
 };
@@ -36,8 +36,7 @@ protected:
     virtual bool HeaderProc(Buffer& bb)override final;
     virtual void ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> req) = 0;
 
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         HttpBase::reflect(v);
     }
 };
@@ -47,8 +46,7 @@ protected:
     virtual bool HeaderProc(Buffer& bb)override final;
     virtual void ResProc(uint64_t id, std::shared_ptr<HttpResHeader> res) = 0;
 
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         HttpBase::reflect(v);
     }
 };

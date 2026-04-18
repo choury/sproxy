@@ -13,6 +13,9 @@ class File: public Responser{
         std::shared_ptr<IRWerCallback> cb;
         Range rg;
         uint  flags;
+        void reflect(IVisitor& v) {
+            reflect_all(req, rw, rg, flags);
+        }
     } status{};
 
     char filename[URLLIMIT];
@@ -29,6 +32,10 @@ public:
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
     static void getfile(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw);
+    void reflect(IVisitor& v) override {
+        Responser::reflect(v);
+        reflect_all(filename, suffix, fd, st, status);
+    }
 };
 
 void join_arg(std::string& current, const std::string& part);

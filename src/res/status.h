@@ -10,5 +10,8 @@ public:
     virtual void request(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw) override;
     virtual void dump_stat(Dumper dp, void* param)override;
     virtual void dump_usage(Dumper dp, void* param)override;
+    void reflect(IVisitor& v) override {
+        Responser::reflect(v);
+    }
 };
 #endif

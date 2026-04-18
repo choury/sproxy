@@ -51,8 +51,7 @@ public:
     virtual Destination getSrc() const override;
     virtual Destination getDst() const override;
     virtual void dump_status(Dumper dp, void* param) override;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         RWer::reflect(v);
         reflect_all(port, protocol, hostname, resolved_time);
         if (assign_src) {
@@ -75,8 +74,7 @@ public:
     virtual size_t mem_usage() override {
         return sizeof(*this) + (rb.cap() + rb.length()) + wbuff.length();
     }
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         SocketRWer::reflect(v);
         reflect_all(rb);
     }
@@ -100,8 +98,7 @@ public:
     }
 
     virtual void Send(Buffer&& bb) override;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         SocketRWer::reflect(v);
         reflect_all(wlen, rb, wbuff);
     }

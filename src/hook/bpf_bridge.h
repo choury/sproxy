@@ -72,44 +72,194 @@ inline void pb_append_map_entry(std::string& kvmap, const std::string& key,
     pb_append_bytes_field(kvmap, 1, entry.data(), entry.size());
 }
 
-template<typename T>
-std::string map_key_to_string(const T& key) {
-    using Raw = std::remove_cv_t<std::remove_reference_t<T>>;
-    if constexpr (std::is_same_v<Raw, std::string>) {
-        return key;
-    } else if constexpr (std::is_same_v<Raw, const char*> || std::is_same_v<Raw, char*>) {
-        return key ? std::string(key) : std::string();
-    } else if constexpr (std::is_enum_v<Raw>) {
-        using Underlying = std::underlying_type_t<Raw>;
-        return map_key_to_string(static_cast<Underlying>(key));
-    } else if constexpr (std::is_unsigned_v<Raw> && std::is_integral_v<Raw>) {
-        return std::to_string(static_cast<unsigned long long>(key));
-    } else if constexpr (std::is_signed_v<Raw> && std::is_integral_v<Raw>) {
-        return std::to_string(static_cast<long long>(key));
-    } else {
-        static_assert(dependent_false<Raw>::value,
-            "Unsupported map key type in map_key_to_string");
+
+// ============ IVisitor-based visitors for virtual reflect ============
+
+// PBSerializeVisitor: builds protobuf KVMap from virtual reflect(IVisitor&)
+class PBSerializeVisitor : public IVisitor {
+    struct Scope {
+        std::string name;   // name passed to push(), or map key
+        std::string kvmap;  // accumulated protobuf MapEntry bytes
+    };
+    std::vector<Scope> stack_;
+    std::string pending_map_key_;
+    std::string* out_;      // final output (top-level result)
+public:
+    explicit PBSerializeVisitor(std::string& out) : out_(&out) {
+        stack_.push_back({"", {}});
     }
-}
+
+    Mode mode() const override { return Mode::Serialize; }
+
+    void push(const char* name) override {
+        stack_.push_back({name ? name : "", {}});
+    }
+    void pop() override {
+        Scope s = std::move(stack_.back());
+        stack_.pop_back();
+        if (s.kvmap.empty() && stack_.size() > 1) return;
+        // Serialize child as nested KVMap Value(5) and add to parent
+        std::string val_msg;
+        if (!s.kvmap.empty()) {
+            pb_append_bytes_field(val_msg, 5, s.kvmap.data(), s.kvmap.size());
+        }
+        std::string entry_name = s.name.empty() ? pending_map_key_ : s.name;
+        if (!entry_name.empty() && !val_msg.empty()) {
+            pb_append_map_entry(stack_.back().kvmap, entry_name, val_msg);
+        } else if (stack_.size() == 1 && !s.kvmap.empty()) {
+            // Top-level: move to output
+            *out_ = std::move(s.kvmap);
+        }
+    }
+    void push_map_key(const std::string& key) override { pending_map_key_ = key; }
+    void pop_map_key() override { pending_map_key_.clear(); }
+
+    // Mutable leaf handlers → serialize to protobuf
+    void leaf_i64(const char* name, int64_t& val) override {
+        std::string msg;
+        pb_append_varint_field(msg, 1, (uint64_t)val);
+        if (name) pb_append_map_entry(stack_.back().kvmap, name, msg);
+    }
+    void leaf_u64(const char* name, uint64_t& val) override {
+        std::string msg;
+        pb_append_varint_field(msg, 2, val);
+        if (name) pb_append_map_entry(stack_.back().kvmap, name, msg);
+    }
+    void leaf_str(const char* name, std::string& val) override {
+        std::string msg;
+        pb_append_bytes_field(msg, 3, val.data(), val.size());
+        if (name) pb_append_map_entry(stack_.back().kvmap, name, msg);
+    }
+    void leaf_cstr(const char* name, char* val, size_t maxlen) override {
+        std::string msg;
+        pb_append_bytes_field(msg, 3, val, strnlen(val, maxlen));
+        if (name) pb_append_map_entry(stack_.back().kvmap, name, msg);
+    }
+    void leaf_blob(const char* name, void* data, size_t len) override {
+        std::string msg;
+        pb_append_bytes_field(msg, 4, data, len);
+        if (name) pb_append_map_entry(stack_.back().kvmap, name, msg);
+    }
+
+    // Read-only leaf handlers → same serialization
+    void leaf_ro_i64(const char* name, int64_t val) override {
+        int64_t mut = val; leaf_i64(name, mut);
+    }
+    void leaf_ro_u64(const char* name, uint64_t val) override {
+        uint64_t mut = val; leaf_u64(name, mut);
+    }
+    void leaf_ro_str(const char* name, const std::string& val) override {
+        std::string msg;
+        pb_append_bytes_field(msg, 3, val.data(), val.size());
+        if (name) pb_append_map_entry(stack_.back().kvmap, name, msg);
+    }
+    void leaf_ro_blob(const char* name, const void* data, size_t len) override {
+        std::string msg;
+        pb_append_bytes_field(msg, 4, data, len);
+        if (name) pb_append_map_entry(stack_.back().kvmap, name, msg);
+    }
+};
+
+// PBSetFieldVisitor: finds a specific field by key path and writes via virtual reflect
+class PBSetFieldVisitor : public IVisitor {
+    std::string prefix_;
+    const std::string& key_;
+    const BpfKV& kv_;
+    int result_ = -ENOENT;
+    std::string pending_map_key_;
+
+    std::string make_path(const char* name) const {
+        if (!name) return prefix_;
+        if (prefix_.empty()) return name;
+        return prefix_ + "." + name;
+    }
+    bool matches(const std::string& path) const {
+        return path == key_
+            || (key_.size() > path.size()
+                && key_.compare(0, path.size(), path) == 0
+                && (key_[path.size()] == '.' || key_[path.size()] == '['));
+    }
+public:
+    PBSetFieldVisitor(const std::string& prefix, const std::string& key, const BpfKV& kv)
+        : prefix_(prefix), key_(key), kv_(kv) {}
+
+    Mode mode() const override { return Mode::SetField; }
+    int& result_ref() override { return result_; }
+    const std::string& target_key() const override { return key_; }
+    std::string current_path() const override { return prefix_; }
+
+    void push(const char* name) override {
+        prefix_ = make_path(name);
+    }
+    void pop() override {
+        auto dot = prefix_.rfind('.');
+        prefix_ = (dot == std::string::npos) ? "" : prefix_.substr(0, dot);
+    }
+    void push_map_key(const std::string& k) override {
+        pending_map_key_ = k;
+        if (!prefix_.empty()) prefix_ += "[" + k + "]";
+    }
+    void pop_map_key() override {
+        auto bracket = prefix_.rfind('[');
+        if (bracket != std::string::npos) prefix_ = prefix_.substr(0, bracket);
+        pending_map_key_.clear();
+    }
+
+    void leaf_i64(const char* name, int64_t& val) override {
+        if (result_ == 0) return;
+        std::string path = make_path(name);
+        if (path != key_) return;
+        if (kv_.type != BpfKV::INT64 && kv_.type != BpfKV::UINT64) { result_ = -EINVAL; return; }
+        val = kv_.type == BpfKV::INT64 ? kv_.i64 : (int64_t)kv_.u64;
+        result_ = 0;
+    }
+    void leaf_u64(const char* name, uint64_t& val) override {
+        if (result_ == 0) return;
+        std::string path = make_path(name);
+        if (path != key_) return;
+        if (kv_.type != BpfKV::UINT64 && kv_.type != BpfKV::INT64) { result_ = -EINVAL; return; }
+        val = kv_.type == BpfKV::UINT64 ? kv_.u64 : (uint64_t)kv_.i64;
+        result_ = 0;
+    }
+    void leaf_str(const char* name, std::string& val) override {
+        if (result_ == 0) return;
+        std::string path = make_path(name);
+        if (path != key_) return;
+        if (kv_.type != BpfKV::STRING && kv_.type != BpfKV::BYTES) { result_ = -EINVAL; return; }
+        val = kv_.str;
+        result_ = 0;
+    }
+    void leaf_cstr(const char* name, char* val, size_t maxlen) override {
+        if (result_ == 0) return;
+        std::string path = make_path(name);
+        if (path != key_) return;
+        if (kv_.type != BpfKV::STRING && kv_.type != BpfKV::BYTES) { result_ = -EINVAL; return; }
+        if (maxlen == 0) { result_ = -EINVAL; return; }
+        strncpy(val, kv_.str.c_str(), maxlen - 1);
+        val[maxlen - 1] = '\0';
+        result_ = 0;
+    }
+    void leaf_blob(const char* name, void* data, size_t len) override {
+        if (result_ == 0) return;
+        std::string path = make_path(name);
+        if (path != key_) return;
+        if (kv_.type != BpfKV::BYTES || kv_.str.size() != len) { result_ = -EINVAL; return; }
+        memcpy(data, kv_.str.data(), len);
+        result_ = 0;
+    }
+
+    void check_readonly(const char* name) {
+        if (matches(make_path(name))) result_ = -EACCES;
+    }
+    void leaf_ro_i64(const char* name, int64_t) override { check_readonly(name); }
+    void leaf_ro_u64(const char* name, uint64_t) override { check_readonly(name); }
+    void leaf_ro_str(const char* name, const std::string&) override { check_readonly(name); }
+    void leaf_ro_blob(const char* name, const void*, size_t) override { check_readonly(name); }
+};
 
 // ============ Serialize: reflect → nested protobuf ============
 
 // serialize_value: produce a Value message for a single value
-template<typename T>
-std::string serialize_value(const T& val);
-
-// Visitor that builds a KVMap from reflected fields
-struct SerializeVisitor {
-    std::string& kvmap; // accumulates KVMap entries
-    template<typename T>
-    void operator()(const char* name, const T& val) {
-        std::string val_msg = serialize_value(val);
-        if (!val_msg.empty()) {
-            pb_append_map_entry(kvmap, name, val_msg);
-        }
-    }
-};
-
 template<typename T>
 std::string serialize_value(const T& val) {
     using Raw = std::remove_cv_t<std::remove_reference_t<T>>;
@@ -145,19 +295,23 @@ std::string serialize_value(const T& val) {
         std::string kvmap;
         for (const auto& [k, v] : val) {
             std::string v_msg = serialize_value(v);
-            pb_append_map_entry(kvmap, map_key_to_string(k), v_msg);
+            pb_append_map_entry(kvmap, ::map_key_to_string(k), v_msg);
         }
         pb_append_bytes_field(value_msg, 5, kvmap.data(), kvmap.size());
     } else if constexpr (std::is_pointer_v<Raw> && !std::is_void_v<std::remove_pointer_t<Raw>>) {
         if (val) return serialize_value(*val);
     } else if constexpr (is_smart_pointer<Raw>::value) {
         if (val) return serialize_value(*val);
-    } else if constexpr (has_reflect<Raw>::value) {
-        // Value field 5 = KVMap (nested object)
+    } else if constexpr (is_complete<Raw>::value && (std::is_base_of_v<HookReflectable, Raw> || has_reflect<Raw>::value)) {
+        // reflect(IVisitor&) dispatch: virtual for HookReflectable, direct for has_reflect
         std::string kvmap;
-        SerializeVisitor v{kvmap};
-        invoke_reflect(val, v);
-        pb_append_bytes_field(value_msg, 5, kvmap.data(), kvmap.size());
+        PBSerializeVisitor sv(kvmap);
+        sv.push(nullptr);
+        const_cast<Raw&>(val).reflect(sv);
+        sv.pop();
+        if (!kvmap.empty()) {
+            pb_append_bytes_field(value_msg, 5, kvmap.data(), kvmap.size());
+        }
     } else if constexpr (is_blob_aggregate<Raw>::value) {
         pb_append_bytes_field(value_msg, 4, &val, sizeof(val));
     } else {
@@ -232,38 +386,6 @@ inline bool parse_bracket_index(const std::string& name, const std::string& key,
     idx = strtoull(idx_str.c_str(), &endptr, 10);
     return endptr != idx_str.c_str() && *endptr == '\0';
 }
-
-struct SetFieldVisitor {
-    const std::string& prefix;
-    const std::string& key;
-    const BpfKV& kv;
-    int result = -ENOENT;
-    template<typename T>
-    void operator()(const char* name, T&& val) {
-        if (result == 0) return;
-        std::string full = prefix.empty() ? std::string(name) : prefix + "." + name;
-        if constexpr (std::is_lvalue_reference_v<T&&>) {
-            using Ref = std::remove_reference_t<T>;
-            if constexpr (std::is_const_v<Ref>) {
-                // reflect_const / reflect_const_field 标记的只读字段，不允许写回
-                if (full == key || (key.size() > full.size() && key.compare(0, full.size(), full) == 0
-                                    && (key[full.size()] == '.' || key[full.size()] == '['))) {
-                    result = -EACCES;
-                }
-            } else {
-                int r = set_param(full, key, kv, val);
-                if (r == 0) result = 0;
-                else if (r != -ENOENT && result == -ENOENT) result = r;
-            }
-        } else {
-            // Temporaries produced by reflect_named(getter()) or casts are read-only.
-            if (full == key || (key.size() > full.size() && key.compare(0, full.size(), full) == 0
-                                && (key[full.size()] == '.' || key[full.size()] == '['))) {
-                result = -EACCES;
-            }
-        }
-    }
-};
 
 template<typename T>
 int set_param(const std::string& name, const std::string& key, const BpfKV& kv, T& val) {
@@ -379,10 +501,11 @@ int set_param(const std::string& name, const std::string& key, const BpfKV& kv, 
     } else if constexpr (is_smart_pointer<Raw>::value) {
         if (!val) return -ENOENT;
         return set_param(name, key, kv, *val);
-    } else if constexpr (has_reflect<Raw>::value) {
-        SetFieldVisitor v{name, key, kv};
-        invoke_reflect(val, v);
-        return v.result;
+    } else if constexpr (is_complete<Raw>::value && (std::is_base_of_v<HookReflectable, Raw> || has_reflect<Raw>::value)) {
+        // reflect(IVisitor&) dispatch: virtual for HookReflectable, direct for has_reflect
+        PBSetFieldVisitor sfv(name, key, kv);
+        const_cast<Raw&>(val).reflect(sfv);
+        return sfv.result_ref();
     } else if constexpr (is_blob_aggregate<Raw>::value) {
         if (name != key) return -ENOENT;
         if (kv.type != BpfKV::BYTES || kv.str.size() != sizeof(Raw)) return -EINVAL;

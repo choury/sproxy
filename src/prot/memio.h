@@ -107,8 +107,7 @@ public:
     virtual size_t mem_usage() override{
         return sizeof(*this) + wbuff.length();
     }
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         FullRWer::reflect(v);
         reflect_all(src, dst, wbuff, rb);
     }
@@ -126,8 +125,7 @@ public:
     virtual void Send(Buffer&& bb) override;
     virtual void push_data(Buffer&& bb) override;
     virtual void ConsumeRData(uint64_t) override;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         MemRWer::reflect(v);
         reflect_all(rb);
     }

@@ -9,6 +9,7 @@
 #include <signal.h>
 #include <sys/types.h>
 
+#include "hook/reflect.h"
 
 #include <map>
 #ifdef __cpp_impl_coroutine
@@ -32,7 +33,7 @@ RW_EVENT operator~(RW_EVENT a);
 bool operator!(RW_EVENT a);
 extern const char *events_string[];
 
-class Ep{
+class Ep {
     int fd;
 protected:
     RW_EVENT events = RW_EVENT::NONE;
@@ -49,8 +50,7 @@ public:
     int checkSocket(const char* msg) const;
     void (Ep::*handleEvent)(RW_EVENT events) = nullptr;
     friend int event_loop(uint32_t timeout_ms);
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    virtual void reflect(IVisitor& v) {
         v("fd", fd);
         v("events", events);
     }

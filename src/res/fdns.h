@@ -12,8 +12,7 @@ class FDns: public Responser{
         std::shared_ptr<RWer>          rw;
         std::shared_ptr<IRWerCallback> cb;
         std::map<uint16_t, std::shared_ptr<Dns_Query>> quemap;
-        template <typename Visitor>
-        void reflect(Visitor& v) {
+        void reflect(IVisitor& v) {
             reflect_all(rw, quemap);
         }
     };
@@ -33,8 +32,7 @@ public:
     void query(Buffer&& bb, std::shared_ptr<RWer> rwer);
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         Responser::reflect(v);
         reflect_all(statusmap, succeed_count, failed_count);
     }

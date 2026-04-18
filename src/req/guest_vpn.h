@@ -21,8 +21,7 @@ class Guest_vpn: public Requester {
         std::shared_ptr<IMemRWerCallback> cb;
         uint32_t   flags = 0;
         Job        cleanJob = nullptr;
-        template <typename Visitor>
-        void reflect(Visitor& v) {
+        void reflect(IVisitor& v) {
             reflect_all(host, prog, pac, req, rw, flags);
         }
     };
@@ -38,8 +37,7 @@ public:
     virtual ~Guest_vpn() override;
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         Requester::reflect(v);
         reflect_all(statusmap);
     }

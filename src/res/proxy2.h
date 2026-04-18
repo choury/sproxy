@@ -16,8 +16,7 @@ class Proxy2:public Responser, public Http2Requster {
         uint32_t flags = 0;
         std::unique_ptr<EBuffer>  buffer = nullptr;
         Job      cleanJob = nullptr;
-        template <typename Visitor>
-        void reflect(Visitor& v) {
+        void reflect(IVisitor& v) {
             reflect_all(req, rw, remotewinsize, localwinsize, flags, buffer);
         }
     };
@@ -63,8 +62,7 @@ public:
     virtual void dump_usage(Dumper dp, void* param) override;
 
     void init(bool enable_push, std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw);
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         Responser::reflect(v);
         Http2Requster::reflect(v);
         reflect_all(statusmap);

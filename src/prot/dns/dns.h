@@ -22,8 +22,7 @@ struct Dns_Query{
     Dns_Query(const char* domain, uint16_t type, uint16_t id);
     explicit Dns_Query(const char *buff, size_t len);
     int build(unsigned char *buf)const;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) {
         reflect_all(domain, ptr_addr, type, id, valid);
     }
 };

@@ -62,8 +62,7 @@ public:
         return (char*)base.get() + off;
     }
     friend class Buffer;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) {
         reflect_all(off);
     }
 };
@@ -93,8 +92,7 @@ public:
     [[nodiscard]] const void* data() const;
     void* mutable_data();
     size_t refs();
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) {
         reflect_named("data", std::span<const std::byte>((const std::byte*)data(), len));
         reflect_all(id, len, cap);
     }
@@ -114,8 +112,7 @@ public:
     Buffer get();
     const std::deque<Buffer>& data() const;
     std::set<uint64_t> consume(size_t l);
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) {
         reflect_all(total_len, buffers);
     }
 };
@@ -124,8 +121,7 @@ struct DataRange {
     size_t start;
     size_t end;
     DataRange(size_t s, size_t e) : start(s), end(e) {}
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) {
         reflect_all(start, end);
     }
 };
@@ -177,8 +173,7 @@ public:
     [[nodiscard]] const std::vector<DataRange>& get_ranges() const;
     [[nodiscard]] size_t continuous_length() const;
     [[nodiscard]] size_t continuous_length_at(size_t pos) const;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) {
         reflect_named("data", std::span<const std::byte>((const std::byte*)content, capacity));
         reflect_all(capacity, ranges);
     }

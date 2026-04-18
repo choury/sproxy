@@ -92,8 +92,7 @@ public:
     HttpHeader(const HttpHeader&) = default;
     virtual ~HttpHeader() = default;
     virtual size_t mem_usage();
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) {
         reflect_all(request_id, cookies, headers);
     }
 };
@@ -101,8 +100,7 @@ public:
 struct Range{
     ssize_t begin;
     ssize_t end;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) {
         reflect_all(begin, end);
     }
 };
@@ -147,8 +145,7 @@ public:
     bool getrange();
     [[nodiscard]] std::string geturl() const;
     virtual size_t mem_usage() override;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) {
         HttpHeader::reflect(v);
         reflect_all(method, Dest, path, filename, ranges, chain_proxy);
     }
@@ -197,8 +194,7 @@ public:
     }
     static std::shared_ptr<HttpResHeader> create(const char* status, size_t len, uint64_t id);
 
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) {
         HttpHeader::reflect(v);
         reflect_all(status, isWebsocket, isTunnel, websocketKey);
     }

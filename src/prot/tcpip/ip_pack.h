@@ -212,8 +212,7 @@ public:
     [[nodiscard]] virtual uint8_t gettype() const;
     virtual void build_packet(Buffer& bb) = 0;
     virtual bool isValid() const;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) {
         reflect_named("hdrlen", gethdrlen());
         reflect_named("type", gettype());
         reflect_named("valid", isValid());

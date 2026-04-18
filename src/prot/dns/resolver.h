@@ -62,8 +62,7 @@ struct Dns_Rcd{
     std::list<sockaddr_storage> addrs;
     time_t get_time;
     uint32_t ttl;
-    template<typename V>
-    void reflect(V& v) {
+    void reflect(IVisitor& v) {
         reflect_all(addrs, get_time, ttl);
     }
 };
@@ -88,8 +87,7 @@ public:
     explicit HostResolver(const Destination& server);
     int query(const char* host, std::function<void(int)> addrcb);
     ~HostResolver();
-    template<typename V>
-    void reflect(V& v) {
+    void reflect(IVisitor& v) {
         reflect_all(host, rcd);
     }
 };

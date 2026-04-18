@@ -1,6 +1,7 @@
 #include "http2.h"
 #include "prot/http/http_header.h"
 #include "misc/buffer.h"
+#include "hook/hook.h"
 
 #include <cinttypes>
 #include <assert.h>
@@ -327,6 +328,7 @@ ret:
 #endif
 
 void Http2Base::PushData(Buffer&& bb){
+    HOOK_BPF(this, bb);
     auto pack = [](void* header_, uint32_t id, size_t size){
         Http2_header* header=(Http2_header *)header_;
         memset(header, 0, sizeof(Http2_header));

@@ -20,8 +20,7 @@ class Guest3: public Requester, public Http3Responser {
         std::shared_ptr<IMemRWerCallback> cb;
         uint32_t flags = 0;
         Job      cleanJob = nullptr;
-        template <typename Visitor>
-        void reflect(Visitor& v) {
+        void reflect(IVisitor& v) {
             reflect_all(req, rw, flags);
         }
     };
@@ -59,8 +58,7 @@ public:
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         Requester::reflect(v);
         Http3Responser::reflect(v);
         reflect_all(statusmap, maxDataId, mitmProxy);

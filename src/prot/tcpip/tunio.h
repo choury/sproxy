@@ -90,8 +90,7 @@ public:
     }
     virtual void dump_status(Dumper dp, void* param) override;
     virtual size_t mem_usage() override;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         RWer::reflect(v);
         reflect_all(pcap, enable_offload);
     }

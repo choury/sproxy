@@ -14,8 +14,7 @@ class Proxy3:public Responser, public Http3Requster {
         std::shared_ptr<IRWerCallback> cb;
         uint32_t flags = 0;
         Job      cleanJob = nullptr;
-        template <typename Visitor>
-        void reflect(Visitor& v) {
+        void reflect(IVisitor& v) {
             reflect_all(req, rw, flags);
         }
     };
@@ -51,8 +50,7 @@ public:
     virtual void dump_usage(Dumper dp, void* param) override;
 
     void init(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw);
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         Responser::reflect(v);
         Http3Requster::reflect(v);
         reflect_all(statusmap, maxDataId);

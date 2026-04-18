@@ -17,8 +17,7 @@ class Guest2: public Requester, public Http2Responser {
         uint32_t flags = 0;
         std::unique_ptr<EBuffer>  buffer = nullptr;
         Job      cleanJob = nullptr;
-        template <typename Visitor>
-        void reflect(Visitor& v) {
+        void reflect(IVisitor& v) {
             reflect_all(req, rw, remotewinsize, localwinsize, flags, buffer);
         }
     };
@@ -52,8 +51,7 @@ public:
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         Requester::reflect(v);
         Http2Responser::reflect(v);
         reflect_all(statusmap);

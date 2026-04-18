@@ -22,8 +22,7 @@ protected:
         std::shared_ptr<IMemRWerCallback> cb;
         uint      flags = 0;
         Job       cleanJob = nullptr;
-        template <typename Visitor>
-        void reflect(Visitor& v) {
+        void reflect(IVisitor& v) {
             reflect_all(req, rw, flags);
         }
     };
@@ -48,8 +47,7 @@ public:
 
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         Requester::reflect(v);
         HttpResponser::reflect(v);
         reflect_all(rx_bytes, tx_bytes, statuslist, headless);

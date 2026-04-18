@@ -11,8 +11,7 @@ class Host:public Responser, public HttpRequester {
         std::shared_ptr<MemRWer>       rw;
         std::shared_ptr<IRWerCallback> cb;
         uint     flags = 0;
-        template <typename Visitor>
-        void reflect(Visitor& v) {
+        void reflect(IVisitor& v) {
             reflect_all(req, rw, flags);
         }
     } status{};
@@ -41,8 +40,7 @@ public:
     static void distribute(std::shared_ptr<HttpReqHeader> req,
                            const Destination& dest,
                            std::shared_ptr<MemRWer> rw);
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         Responser::reflect(v);
         reflect_all(status, rx_bytes, tx_bytes, Server);
     }

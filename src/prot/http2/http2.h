@@ -80,7 +80,7 @@ struct Http2_frame{
 };
 
 
-class Http2Base{
+class Http2Base : public virtual HookReflectable {
 protected:
     uint32_t remoteframewindowsize = 65535; //由对端初始化的初始frame的窗口大小
     uint32_t remoteframebodylimit = FRAMEBODYLIMIT;
@@ -125,8 +125,7 @@ protected:
     size_t (Http2Base::*Http2_Proc)(Buffer& bb)=&Http2Base::InitProc;
 public:
     ~Http2Base() = default;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         reflect_all(remoteframewindowsize,
                     remoteframebodylimit,
                     remotewinsize,
@@ -146,8 +145,7 @@ protected:
 public:
     uint32_t OpenStream();
 
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         Http2Base::reflect(v);
     }
 };
@@ -163,8 +161,7 @@ protected:
 public:
     uint32_t OpenStream();
 
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         Http2Base::reflect(v);
     }
 };

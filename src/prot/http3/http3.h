@@ -62,7 +62,7 @@ Reserved	    0x5	    N/A	N/A */
 #define HTTP3_STREAM_TYPE_CONTROL	0x00	//Section 6.2.1	Both
 #define HTTP3_STREAM_TYPE_PUSH  	0x01	//Section 4.4	Server
 
-class Http3Base{
+class Http3Base : public virtual HookReflectable {
 protected:
 #define HTTP3_FLAG_INITED    (1u << 0u)
 #define HTTP3_FLAG_GOAWAYED  (1u << 1u)
@@ -106,14 +106,13 @@ public:
     ~Http3Base() = default;
     void Init();
 
-    template <typename Visitor>
-    void reflect(Visitor& v) {
-        reflect_all(http3_flag, 
-                    ctrlid_local, 
-                    ctrlid_remote, 
-                    qpackeid_local, 
-                    qpackeid_remote, 
-                    qpackdid_local, 
+    void reflect(IVisitor& v) override {
+        reflect_all(http3_flag,
+                    ctrlid_local,
+                    ctrlid_remote,
+                    qpackeid_local,
+                    qpackeid_remote,
+                    qpackdid_local,
                     qpackdid_remote);
     }
 };
@@ -125,8 +124,7 @@ protected:
 public:
     Http3Requster();
 
-    template<typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         Http3Base::reflect(v);
     }
 };
@@ -138,8 +136,7 @@ protected:
 public:
     Http3Responser();
 
-    template<typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         Http3Base::reflect(v);
     }
 };

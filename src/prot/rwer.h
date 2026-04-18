@@ -139,8 +139,7 @@ public:
     virtual bool idle(uint64_t id);
     virtual void dump_status(Dumper dp, void* param) = 0;
     virtual size_t mem_usage() = 0;
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         Ep::reflect(v);
         reflect_all(flags, stats, sndbuf, wbuff);
     }

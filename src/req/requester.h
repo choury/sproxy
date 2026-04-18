@@ -20,8 +20,7 @@ public:
     };
     virtual std::shared_ptr<IMemRWerCallback> response(uint64_t id) = 0;
 
-    template <typename Visitor>
-    void reflect(Visitor& v) {
+    void reflect(IVisitor& v) override {
         Server::reflect(v);
     }
 };
