@@ -465,7 +465,7 @@
         const rewritten = scope.RProxy.rewriteCss(css, ctx, baseUrl);
         return match.replace(css, rewritten);
       });
-    out = out.replace(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi, (match, attrs, content) => {
+    out = out.replace(/<script\b([^>]*)>([\s\S]*?)<\/script\b[^<>]*>/gi, (match, attrs, content) => {
         const typeMatch = attrs.match(/\btype\s*=\s*(?:(['"])(.*?)\1|([^\s>]+))/i);
         const type = typeMatch ? (typeMatch[2] || typeMatch[3]).toLowerCase() : 'text/javascript';
         if (type === 'application/json' || type === 'application/ld+json' || type.indexOf('template') !== -1) {
