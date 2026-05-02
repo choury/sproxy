@@ -45,21 +45,40 @@ pub extern "C" fn sendPushMessage(
     }
 }
 
+fn write_to_buf(buf: *mut c_char, buf_len: usize, msg: &str) {
+    if buf.is_null() || buf_len == 0 {
+        return;
+    }
+    let write_len = msg.len().min(buf_len - 1);
+    unsafe {
+        let raw = slice::from_raw_parts_mut(buf as *mut u8, buf_len);
+        raw[..write_len].copy_from_slice(&msg.as_bytes()[..write_len]);
+        raw[write_len] = 0;
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn acme_request_certificate(
     domain: *const c_char,
     contact: *const c_char,
+    body_buf: *mut c_char,
+    body_buf_len: usize,
 ) -> i32 {
-    let result = (|| -> Result<(), String> {
+    let result = (|| -> Result<String, String> {
         let domain = cstr_to_str(domain)?.to_string();
         let contact = optional_string(contact)?;
-        acme::request_certificate(&domain, contact.as_deref())
+        acme::request_certificate(&domain, contact.as_deref())?;
+        Ok("certificate request completed".into())
     })();
 
     match result {
-        Ok(_) => 0,
+        Ok(msg) => {
+            write_to_buf(body_buf, body_buf_len, &msg);
+            0
+        }
         Err(err) => {
             eprintln!("acme_request_certificate error: {}", err);
+            write_to_buf(body_buf, body_buf_len, &err);
             -1
         }
     }

@@ -11,6 +11,12 @@ crate-type = ["staticlib"]
 base64 = "0.22"
 jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
 once_cell = "1.19.0"
+p256 = "0.13"
+p384 = "0.13"
+pkcs1 = { version = "0.7", features = ["pem"] }
+pkcs8 = { version = "0.10", features = ["pem"] }
+rsa = "0.9"
+sec1 = { version = "0.7", features = ["pem"] }
 parking_lot = "0.12.3"
 rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
 ring = "0.17"

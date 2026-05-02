@@ -118,6 +118,36 @@ fn write_file(path: Option<&str>, data: &[u8], mode: Option<u32>) -> Result<(), 
     Ok(())
 }
 
+fn normalize_key_to_pkcs8(pem_str: &str) -> Result<String, String> {
+    if pem_str.contains("-----BEGIN RSA PRIVATE KEY-----") {
+        use pkcs1::DecodeRsaPrivateKey;
+        use pkcs8::EncodePrivateKey;
+        let key = rsa::RsaPrivateKey::from_pkcs1_pem(pem_str)
+            .map_err(|e| format!("Failed to parse RSA (PKCS#1) key: {}", e))?;
+        let pkcs8_pem = key
+            .to_pkcs8_pem(pkcs8::LineEnding::LF)
+            .map_err(|e| format!("Failed to convert RSA key to PKCS#8: {}", e))?;
+        Ok(pkcs8_pem.to_string())
+    } else if pem_str.contains("-----BEGIN EC PRIVATE KEY-----") {
+        use pkcs8::EncodePrivateKey;
+        if let Ok(key) = p256::SecretKey::from_sec1_pem(pem_str) {
+            let pkcs8_pem = key
+                .to_pkcs8_pem(pkcs8::LineEnding::LF)
+                .map_err(|e| format!("Failed to convert P-256 key to PKCS#8: {}", e))?;
+            return Ok(pkcs8_pem.to_string());
+        }
+        if let Ok(key) = p384::SecretKey::from_sec1_pem(pem_str) {
+            let pkcs8_pem = key
+                .to_pkcs8_pem(pkcs8::LineEnding::LF)
+                .map_err(|e| format!("Failed to convert P-384 key to PKCS#8: {}", e))?;
+            return Ok(pkcs8_pem.to_string());
+        }
+        Err("Failed to parse EC key: unsupported curve".into())
+    } else {
+        Ok(pem_str.to_string())
+    }
+}
+
 fn load_or_create_account(
     client: &mut AcmeClient,
     state_dir: &Path,
@@ -265,10 +295,11 @@ pub fn request_certificate(domain: &str, contacts_raw: Option<&str>) -> Result<(
     let (cert_key_pem, csr_der) = if let Some(ref key_path) = keyfile {
         match fs::read_to_string(key_path) {
             Ok(pem) => {
-                let key_pair = KeyPair::from_pem(&pem)
+                let pkcs8_pem = normalize_key_to_pkcs8(&pem)?;
+                let key_pair = KeyPair::from_pem(&pkcs8_pem)
                     .map_err(|e| format!("Failed to parse existing key: {}", e))?;
                 let der = make_csr(&key_pair)?;
-                (pem, der)
+                (pkcs8_pem, der)
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 let key_pair = KeyPair::generate()

@@ -8,7 +8,9 @@
 #include <cstring>
 
 extern "C" int acme_request_certificate(const char* domain,
-                                        const char* contact);
+                                        const char* contact,
+                                        char* body_buf,
+                                        size_t body_buf_len);
 extern "C" bool acme_get_http_challenge(const char* token,
                                         char* buffer,
                                         size_t buffer_len);
@@ -40,8 +42,10 @@ class handler: public CgiHandler {
             contact = contact_it->second;
         }
 
+        char bodybuf[4096] = {0};
         int result = acme_request_certificate(domain.c_str(),
-                                              contact.empty() ? nullptr : contact.c_str());
+                                              contact.empty() ? nullptr : contact.c_str(),
+                                              bodybuf, sizeof(bodybuf));
         bool success = (result == 0);
         if(success) {
             try {
@@ -51,11 +55,15 @@ class handler: public CgiHandler {
             }
         }
 
-        if(success) {
-            respondStatus(S200);
-        } else {
-            respondStatus(S500);
-        }
+        std::string body = bodybuf;
+        auto res = HttpResHeader::create(success ? S200 : S500,
+                                         strlen(success ? S200 : S500),
+                                         req->request_id);
+        res->set("Content-Length", body.length());
+        res->set("Content-Type", "text/plain");
+        Response(res);
+        Send(body.c_str(), body.size());
+        Finish();
     }
 
     void GET(const CGI_Header*) override {
