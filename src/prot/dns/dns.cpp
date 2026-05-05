@@ -18,25 +18,43 @@ typedef struct DNS_RR {
     unsigned char rdata[0];
 } __attribute__((packed)) DNS_RR;
 
-static const unsigned char * getdomain(const DNS_HDR *hdr, const unsigned char *p, size_t len, char* domain) {
+static const unsigned char * getdomain(const DNS_HDR *hdr, const unsigned char *p, size_t len, char* domain, int depth) {
+    if(depth > 16) {
+        domain[0] = 0;
+        return p;
+    }
+    if(depth == 0) domain[0] = 0;
+    size_t off = strlen(domain);
     while (p < (unsigned char*)hdr + len && *p) {
         if (*p > 63) {
+            if(p + 1 >= (unsigned char*)hdr + len) {
+                domain[0] = 0;
+                return p;
+            }
             const unsigned char* buf = (const unsigned char *)hdr;
             const unsigned char *q = buf+((*p & 0x3f) <<8U) + *(p+1);
-            getdomain(hdr, q, len, domain);
+            if(q <= buf || q >= (unsigned char*)hdr + len) {
+                domain[0] = 0;
+                return p;
+            }
+            getdomain(hdr, q, len, domain, depth + 1);
             return p+2;
         } else {
-            memcpy(domain, p+1, *p);
-            domain[*p]='.';
-            domain[*p+1]=0;
-            domain += *p+1;
-            p+= *p+1;
+            if(off + *p + 1 >= DOMAINLIMIT) {
+                domain[off] = 0;
+                return p;
+            }
+            memcpy(domain + off, p+1, *p);
+            domain[off + *p]='.';
+            domain[off + *p + 1]=0;
+            off += *p + 1;
+            p += *p+1;
         }
     }
-    if(p == (uchar*)(hdr + 1)){
+    if(off == 0){
         domain[0] = 0;
     }else{
-        domain[-1] = 0;
+        domain[off - 1] = 0;
     }
     return p+1;
 }
@@ -106,12 +124,13 @@ Dns_Query::Dns_Query(const char* buff, size_t len) {
     const DNS_HDR *dnshdr = (const DNS_HDR*)buff;
 
     id = ntohs(dnshdr->id);
-    const unsigned char *p = getdomain(dnshdr, (const unsigned char *)(dnshdr+1), len, domain);
+    const unsigned char *p = getdomain(dnshdr, (const unsigned char *)(dnshdr+1), len, domain, 0);
     if(!is_valid(domain)) {
         return;
     }
     const DNS_QUE *que = (const DNS_QUE*)p;
-    if(ntohs(que->classes) != ns_c_in) {
+    if((const char*)que + sizeof(DNS_QUE) - buff > (int)len ||
+       ntohs(que->classes) != ns_c_in) {
         return;
     }
     type = ntohs(que->type);
@@ -179,7 +198,7 @@ Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
     const unsigned char *p = (const unsigned char *)(dnshdr +1);
     assert(numq && dnshdr->qr);
     for (int i = 0; i < numq; ++i) {
-        p = (unsigned char *)getdomain(dnshdr, p, len, domain);
+        p = (unsigned char *)getdomain(dnshdr, p, len, domain, 0);
         if((const char*)p + sizeof(DNS_QUE) - buff > (int)len){
             error = ns_r_formerr;
             LOGE("[DNS] <%d> numq overflow\n", ntohs(dnshdr->id));
@@ -197,21 +216,31 @@ Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
     }
     uint16_t numa = ntohs(dnshdr->ancount);
     for(int i = 0; i < numa; ++i) {
-        p = (unsigned char *)getdomain(dnshdr, p, len, domain);
+        p = (unsigned char *)getdomain(dnshdr, p, len, domain, 0);
         if((const char*)p + sizeof(DNS_RR) - buff > (int)len){
             error = ns_r_formerr;
             LOGE("[DNS] <%d> numa overflow\n", ntohs(dnshdr->id));
             return;
         }
         DNS_RR *dnsrr = (DNS_RR*)p;
-        assert(ntohs(dnsrr->classes) == ns_c_in);
+        if(ntohs(dnsrr->classes) != ns_c_in){
+            error = ns_r_formerr;
+            return;
+        }
         uint32_t ttl = ntohl(dnsrr->TTL);
+        uint16_t rdlength = ntohs(dnsrr->rdlength);
 
         p+= sizeof(DNS_RR);
+        if((const char*)p + rdlength - buff > (int)len){
+            error = ns_r_formerr;
+            LOGE("[DNS] <%d> rdlength overflow\n", ntohs(dnshdr->id));
+            return;
+        }
         char __attribute__((unused)) ipaddr[INET6_ADDRSTRLEN] = {0};
         switch (ntohs(dnsrr->type)) {
             sockaddr_storage ip;
         case ns_t_a:{
+            if(rdlength < sizeof(in_addr)) break;
             memset(&ip, 0, sizeof(ip));
             sockaddr_in* ip4 = (sockaddr_in*)&ip;
             ip4->sin_family = AF_INET;
@@ -222,17 +251,18 @@ Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
         }
         case ns_t_ns: {
             char ns[DOMAINLIMIT];
-            getdomain(dnshdr, p, len, ns);
+            getdomain(dnshdr, p, len, ns, 0);
             LOGD(DDNS, "NS: %s ==> %s [%d]\n", domain, ns, ttl);
             break;
         }
         case ns_t_cname: {
             char cname[DOMAINLIMIT];
-            getdomain(dnshdr, p, len, cname);
+            getdomain(dnshdr, p, len, cname, 0);
             LOGD(DDNS, "CNAME: %s ==> %s [%d]\n", domain, cname, ttl);
             break;
         }
         case ns_t_aaaa:{
+            if(rdlength < sizeof(in6_addr)) break;
             memset(&ip, 0, sizeof(ip));
             sockaddr_in6* ip6 = (sockaddr_in6*)&ip;
             ip6->sin6_family = AF_INET6;
@@ -245,7 +275,7 @@ Dns_Result::Dns_Result(const char* buff, size_t len): id(0) {
             break;
         }
         this->ttl = std::min(ttl, this->ttl);
-        p+= ntohs(dnsrr->rdlength);
+        p+= rdlength;
     }
     id = ntohs(dnshdr->id);
 }

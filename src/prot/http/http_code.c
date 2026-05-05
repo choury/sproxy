@@ -627,14 +627,13 @@ int integer_decode(const unsigned char *s, size_t len, int prefix, uint64_t *val
     if((s[0] & mask) == mask){
         *value = mask;
         size_t i;
-        for(i=1;s[i]&0x80;++i) {
-            if(i >= len){
-                //incomplete integer
-                return 0;
-            }
-            *value += (s[i]&0x7fu) << (i*7-7);
+        for(i=1;i < len && (s[i]&0x80);++i) {
+            *value += (uint64_t)(s[i]&0x7fu) << (i*7-7);
         }
-        *value += s[i] << (i*7-7);
+        if(i >= len){
+            return 0;
+        }
+        *value += (uint64_t)s[i] << (i*7-7);
         return (int)i + 1;
     } else {
         *value = s[0] & mask;

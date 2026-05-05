@@ -188,43 +188,53 @@ size_t Base64EnUrl(const char *s, size_t len, char *dst){
     return Base64(base64_endigs_url, s, len, dst, true);
 }
 
-static const char base64_dedigs_normal[128] =
-{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
- 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
- 0,0,0,0,0,0,0,0,0,0,0,62,0,0,0,63,
- 52,53,54,55,56,57,58,59,60,61,0,0,0,0,0,0,
- 0,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,
- 15,16,17,18,19,20,21,22,23,24,25,0,0,0,0,0,
- 0,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
- 41,42,43,44,45,46,47,48,49,50,51,0,0,0,0,0
+static const signed char base64_dedigs_normal[128] =
+{0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+ 0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+ 0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,62,0xff,0xff,0xff,63,
+ 52,53,54,55,56,57,58,59,60,61,0xff,0xff,0xff,0xff,0xff,0xff,
+ 0xff,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,
+ 15,16,17,18,19,20,21,22,23,24,25,0xff,0xff,0xff,0xff,0xff,
+ 0xff,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+ 41,42,43,44,45,46,47,48,49,50,51,0xff,0xff,0xff,0xff,0xff
 };
 
-static const char base64_dedigs_url[128] =
-{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
- 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
- 0,0,0,0,0,0,0,0,0,0,0,0,0,62,0,0,
- 52,53,54,55,56,57,58,59,60,61,0,0,0,0,0,0,
- 0,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,
- 15,16,17,18,19,20,21,22,23,24,25,0,0,0,0,63,
- 0,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
- 41,42,43,44,45,46,47,48,49,50,51,0,0,0,0,0
+static const signed char base64_dedigs_url[128] =
+{0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+ 0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+ 0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,62,0xff,0xff,
+ 52,53,54,55,56,57,58,59,60,61,0xff,0xff,0xff,0xff,0xff,0xff,
+ 0xff,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,
+ 15,16,17,18,19,20,21,22,23,24,25,0xff,0xff,0xff,0xff,63,
+ 0xff,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+ 41,42,43,44,45,46,47,48,49,50,51,0xff,0xff,0xff,0xff,0xff
 };
 
 
-static size_t DeBase64(const char* base64_dedigs, const char *src, size_t len, char* dst) {
+static size_t DeBase64(const signed char* base64_dedigs, const char *src, size_t len, char* dst) {
     size_t i=0, j = 0;
-    for(;i<len; i+= 4){
-        char ch1 = (base64_dedigs[(int)src[i]]<<2) | (base64_dedigs[(int)src[i+1]] >>4);
+    for(; i+3 < len; i+= 4){
+        unsigned char c0 = (unsigned char)src[i];
+        unsigned char c1 = (unsigned char)src[i+1];
+        if(c0 >= 128 || base64_dedigs[c0] < 0 || c1 >= 128 || base64_dedigs[c1] < 0)
+            break;
+        char ch1 = (base64_dedigs[c0] << 2) | (base64_dedigs[c1] >> 4);
         dst[j++] = ch1;
-        if(i+2 >= len || src[i+2] == '='){
+        if(src[i+2] == '='){
             break;
         }
-        char ch2 = (base64_dedigs[(int)src[i+1]]<<4) | (base64_dedigs[(int)src[i+2]] >>2);
+        unsigned char c2 = (unsigned char)src[i+2];
+        if(c2 >= 128 || base64_dedigs[c2] < 0)
+            break;
+        char ch2 = (base64_dedigs[c1] << 4) | (base64_dedigs[c2] >> 2);
         dst[j++] = ch2;
-        if(i+3 >= len || src[i+3] == '='){
+        if(src[i+3] == '='){
             break;
         }
-        char ch3 = (base64_dedigs[(int)src[i+2]]<<6) | base64_dedigs[(int)src[i+3]];
+        unsigned char c3 = (unsigned char)src[i+3];
+        if(c3 >= 128 || base64_dedigs[c3] < 0)
+            break;
+        char ch3 = (base64_dedigs[c2]<<6) | base64_dedigs[c3];
         dst[j++] = ch3;
     }
     dst[j] = 0;

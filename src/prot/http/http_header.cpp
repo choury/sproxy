@@ -193,7 +193,7 @@ void HttpReqHeader::postparse() {
         filename = buff;
     }
     if(has(AlterMethod)){
-        strcpy(method, get(AlterMethod));
+        snprintf(method, sizeof(method), "%s", get(AlterMethod));
         del(AlterMethod);
     }
     if(request_id == 0) {

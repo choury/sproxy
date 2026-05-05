@@ -135,6 +135,7 @@ bool HttpResponser::HeaderProc(Buffer& bb) {
             http_flag |= HTTP_IGNORE_BODY_F;
         }else if(req->has("Transfer-Encoding")) {
             Http_Proc = &HttpResponser::ChunkLProc;
+            req->del("Content-Length");
         }else if (req->has("Content-Length")){
             Http_Proc = &HttpResponser::FixLenProc;
             http_expectlen = strtoull(req->get("Content-Length"), nullptr, 10);
@@ -170,6 +171,7 @@ bool HttpRequester::HeaderProc(Buffer& bb) {
             http_flag |= HTTP_STATUS_1XX;
         }else if(res->has("Transfer-Encoding")) {
             Http_Proc = &HttpRequester::ChunkLProc;
+            res->del("Content-Length");
         }else if(res->has("Content-Length")) {
             Http_Proc = &HttpRequester::FixLenProc;
             http_expectlen = strtoull(res->get("Content-Length"), nullptr, 10);
