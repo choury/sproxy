@@ -21,6 +21,24 @@ static void set_listen_port(sockaddr_storage* addr, uint16_t port) {
     }
 }
 
+static int reborn(int fd) {
+    if(opt.systemd_socket) {
+        return -1;
+    }
+    struct sockaddr_storage addr;
+    socklen_t addr_len = sizeof(addr);
+    if(getsockname(fd, (sockaddr*)&addr, &addr_len) < 0) {
+        LOGE("getsockname failed for %d: %s\n", fd, strerror(errno));
+        return -1;
+    } 
+    int clsk = ListenUdp(&addr, nullptr);
+    if (clsk < 0) {
+        LOGE("ListenNet %s failed: %s\n", storage_ntoa(&addr), strerror(errno));
+        return -1;
+    }
+    return clsk;
+}
+
 Quic_server::Quic_server(int fd, uint16_t port, SSL_CTX *ctx) : Ep(fd), ctx(ctx), listen_port(port) {
     assert(ctx);
     setEvents(RW_EVENT::READ);
@@ -36,6 +54,13 @@ Quic_sniServer::Quic_sniServer(int fd, uint16_t port) : Ep(fd), listen_port(port
 void Quic_server::defaultHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR)) {
         LOGE("Quic server: %d\n", checkSocket(__PRETTY_FUNCTION__));
+        int clsk = reborn(getFd());
+        if(clsk < 0) {
+            setNone();
+        } else {
+            LOGD(DQUIC, "reborn quic server on %d\n", clsk);
+            setFd(clsk);
+        }
         return;
     }
     if (!!(events & RW_EVENT::READ)) {
@@ -119,7 +144,14 @@ void Quic_server::PushData(const sockaddr_storage* myaddr, const sockaddr_storag
 
 void Quic_sniServer::defaultHE(RW_EVENT events) {
     if (!!(events & RW_EVENT::ERROR)) {
-        LOGE("Quic server: %d\n", checkSocket(__PRETTY_FUNCTION__));
+        LOGE("Quic sni server: %d\n", checkSocket(__PRETTY_FUNCTION__));
+        int clsk = reborn(getFd());
+        if(clsk < 0) {
+            setNone();
+        } else {
+            LOGD(DQUIC, "reborn quic sni server on %d\n", clsk);
+            setFd(clsk);
+        }
         return;
     }
     if (!!(events & RW_EVENT::READ)) {
