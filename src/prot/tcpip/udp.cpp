@@ -3,24 +3,6 @@
 #include "misc/buffer.h"
 #include "misc/net.h"
 
-static void makeUdp(std::shared_ptr<UdpStatus> status, std::shared_ptr<Ip> pac, Buffer& bb) {
-    pac->build_packet(bb);
-#if __linux__
-    if(status->flags & TUN_GSO_OFFLOAD) {
-        bb.reserve(-(int)sizeof(virtio_net_hdr_v1));
-        auto hdr = (virtio_net_hdr_v1*)bb.mutable_data();
-        hdr->flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
-        hdr->gso_type = VIRTIO_NET_HDR_GSO_NONE;
-        hdr->hdr_len = pac->gethdrlen();
-        hdr->gso_size = 0;
-        hdr->csum_start = hdr->hdr_len - sizeof(udphdr);
-        hdr->csum_offset = 6;
-    }
-#else
-    (void)status;
-#endif
-}
-
 static void handleDhcp(std::shared_ptr<UdpStatus> status, Buffer&& bb) {
     const DhcpHeader* req = (const DhcpHeader*)bb.data();
     if(req->op != 1 || req->htype != 1 || req->hlen != 6) return;
@@ -97,8 +79,11 @@ reply:
     sockaddr_storage src;
     storage_aton(VPNEND, DHCP_SERVER_PORT, &src);
     auto pac = MakeIp(IPPROTO_UDP, &src, &dst);
-    makeUdp(status, pac, bb);
-    status->sendCB(pac, std::move(bb));
+    // 填充 GSO 参数
+    GsoInfo gso;
+    gso.l4_hdrlen = sizeof(udphdr);
+    gso.csum_offset = 6;
+    status->sendCB(pac, std::move(bb), gso);
 }
 
 void UdpProc(std::shared_ptr<UdpStatus> status, std::shared_ptr<const Ip> pac, Buffer&& bb) {
@@ -145,8 +130,11 @@ void SendData(std::shared_ptr<UdpStatus> status, Buffer&& bb) {
     status->tx_len += bb.len;
     status->tx_packets++;
     auto pac = MakeIp(IPPROTO_UDP, &status->dst, &status->src);
-    makeUdp(status, pac, bb);
-    status->sendCB(pac, std::move(bb));
+    // 填充 GSO 参数
+    GsoInfo gso;
+    gso.l4_hdrlen = sizeof(udphdr);
+    gso.csum_offset = 6;
+    status->sendCB(pac, std::move(bb), gso);
     status->ack_job = updatejob_with_name(std::move(status->ack_job),
                                           [ackCB = status->ackCB, rpac]{ackCB(rpac);},
                                           "udp_ack_job", 0);

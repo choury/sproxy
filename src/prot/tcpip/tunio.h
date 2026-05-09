@@ -66,7 +66,7 @@ class TunRWer: public RWer{
     uint64_t GetId(std::shared_ptr<const Ip> pac);
     std::shared_ptr<IpStatus> GetStatus(uint64_t id);
     void Clean(uint64_t id);
-    void SendPkg(std::shared_ptr<const Ip> pac, Buffer&& bb);
+    void SendPkg(std::shared_ptr<Ip> pac, Buffer&& bb, const GsoInfo& gso);
     void ErrProc(std::shared_ptr<const Ip> pac, uint32_t code);
     void ReqProc(std::shared_ptr<const Ip> pac);
     size_t DataProc(std::shared_ptr<const Ip> pac, Buffer&& bb);

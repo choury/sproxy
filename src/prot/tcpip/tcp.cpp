@@ -87,35 +87,19 @@ static void tcpSend(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, 
         if(status->ts_enable) {
             pac->tcp->settimestamp(getmtime(), status->ts_recent);
         }
-        size_t len = bb.len;
-        pac->build_packet(bb);
+        // 填充 GSO 参数
+        GsoInfo gso;
+        gso.l4_hdrlen = sizeof(tcphdr) + pac->tcp->tcpoptlen;
+        gso.csum_offset = 16;
+        gso.gso_size = status->mss;
 #if __linux__
-        if (status->flags & TUN_GSO_OFFLOAD) {
-            bb.reserve(-(int)sizeof(virtio_net_hdr_v1));
-            auto *hdr = (virtio_net_hdr_v1*)bb.mutable_data();
-            hdr->flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
-            int family = pac->getsrc().ss_family;
-            if (family == AF_INET) {
-                hdr->gso_type = len > status->mss ? VIRTIO_NET_HDR_GSO_TCPV4 : VIRTIO_NET_HDR_GSO_NONE;
-            } else if (family == AF_INET6) {
-                hdr->gso_type = len > status->mss ? VIRTIO_NET_HDR_GSO_TCPV6 : VIRTIO_NET_HDR_GSO_NONE;
-            } else {
-                LOGE("unknown family: %d\n", family);
-                hdr->gso_type = VIRTIO_NET_HDR_GSO_NONE;
-            }
-            hdr->hdr_len = pac->gethdrlen();
-            hdr->gso_size = status->mss;
-            hdr->csum_start = hdr->hdr_len - sizeof(tcphdr) - pac->tcp->tcpoptlen;
-            hdr->csum_offset = 16;
+        if (status->flags & TUN_GSO_OFFLOAD && status->mss > 0 && bb.len > status->mss) {
+            gso.gso_type = (pac->getsrc().ss_family == AF_INET6)
+                ? VIRTIO_NET_HDR_GSO_TCPV6
+                : VIRTIO_NET_HDR_GSO_TCPV4;
         }
 #endif
-        status->sendCB(pac, Buffer(bb));
-#if __linux__
-        if (status->flags & TUN_GSO_OFFLOAD) {
-            bb.reserve(sizeof(virtio_net_hdr_v1));
-        }
-#endif
-        bb.reserve(pac->gethdrlen());
+        status->sendCB(pac, Buffer(bb), gso);
     };
     size_t len = bb.len;
     if(len == 0) {

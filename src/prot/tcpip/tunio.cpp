@@ -311,8 +311,8 @@ void TunRWer::ProcessPacket(Buffer&& bb){
         };
         status->ackCB = [this](std::shared_ptr<const Ip> pac){AckProc(pac);};
         status->errCB = [this](std::shared_ptr<const Ip> pac, uint32_t code){ErrProc(pac, code);};
-        status->sendCB = [this](std::shared_ptr<const Ip> pac, Buffer&& bb){
-            SendPkg(pac, std::move(bb));
+        status->sendCB = [this](std::shared_ptr<Ip> pac, Buffer&& bb, const GsoInfo& gso){
+            SendPkg(std::move(pac), std::move(bb), gso);
         };
         status->protocol = key.protocol;
         status->src = pac->getsrc();
@@ -373,22 +373,35 @@ void TunRWer::ConsumeRData(uint64_t id) {
     }
 }
 
-void TunRWer::SendPkg(std::shared_ptr<const Ip> pac, Buffer&& bb) {
+void TunRWer::SendPkg(std::shared_ptr<Ip> pac, Buffer&& bb, const GsoInfo& gso) {
+    // 1. 构建 L4 + IP 头
+    pac->build_packet(bb);
+
+    // 2. BPF 钩子、日志、pcap（此时 buffer 是干净的 IP 包，不含 virtio 头）
     const void* data = bb.data();
     size_t len = bb.len;
     HOOK_BPF(this, pac, std::span<const std::byte>((const std::byte*)data, len));
+    debugString(pac, len - pac->gethdrlen(), true);
+    pcap_write(pcap, data, len);
+
+    // 3. 添加 virtio 头（仅写入 TUN 设备需要）
 #if __linux__
     if(enable_offload) {
-        debugString(pac, len - pac->gethdrlen() - sizeof(virtio_net_hdr_v1), true);
-        pcap_write(pcap, (uchar*)data + sizeof(virtio_net_hdr_v1), len - sizeof(virtio_net_hdr_v1));
-    }else{
-#else
-    {
-#endif
-        debugString(pac, len - pac->gethdrlen(), true);
-        pcap_write(pcap, data, len);
+        bb.reserve(-(int)sizeof(virtio_net_hdr_v1));
+        auto *hdr = (virtio_net_hdr_v1*)bb.mutable_data();
+        memset(hdr, 0, sizeof(virtio_net_hdr_v1));
+        hdr->flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
+        hdr->hdr_len = pac->gethdrlen();
+        hdr->gso_size = gso.gso_size;
+        hdr->gso_type = gso.gso_type;
+        hdr->csum_start = pac->gethdrlen() - gso.l4_hdrlen;
+        hdr->csum_offset = gso.csum_offset;
+        data = bb.data();
+        len = bb.len;
     }
+#endif
 
+    // 4. 写入 TUN 设备
 #ifdef HAVE_URING
     if (use_io_uring) {
         struct io_uring_sqe* sqe = io_uring_get_sqe(&ring);

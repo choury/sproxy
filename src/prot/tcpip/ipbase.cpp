@@ -32,24 +32,11 @@ void Unreach(std::shared_ptr<IpStatus> status, uint8_t code) {
     }
     Buffer bb{status->packet_hdr.data(), status->packet_hdr.size()};
     status->packet_hdr.clear();
-    pac->build_packet(bb);
-#if __linux__
-    if (status->flags & TUN_GSO_OFFLOAD) {
-        bb.reserve(-(int)sizeof(virtio_net_hdr_v1));
-        auto* hdr = (virtio_net_hdr_v1*)bb.mutable_data();
-        hdr->flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
-        hdr->gso_type = VIRTIO_NET_HDR_GSO_NONE;
-        hdr->hdr_len = pac->gethdrlen();
-        hdr->gso_size = 0;
-        if(status->src.ss_family == AF_INET){
-            hdr->csum_start = hdr->hdr_len - sizeof(icmphdr);
-        }else{
-            hdr->csum_start = hdr->hdr_len - sizeof(icmp6_hdr);
-        }
-        hdr->csum_offset = 2;
-    }
-#endif
-    status->sendCB(pac, std::move(bb));
+    // 填充 GSO 参数
+    GsoInfo gso;
+    gso.l4_hdrlen = status->src.ss_family == AF_INET ? sizeof(icmphdr) : sizeof(icmp6_hdr);
+    gso.csum_offset = 2;
+    status->sendCB(pac, std::move(bb), gso);
 }
 
 void UpdateTcpMss(const std::shared_ptr<IpStatus>& status, uint16_t mss) {
