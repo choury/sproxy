@@ -392,6 +392,9 @@ public:
     virtual bool idle(uint64_t id) override {
         return QuicBase::idle(id);
     }
+    virtual ssize_t cap(uint64_t id) override {
+        return window(id);
+    }
     virtual size_t bufsize() override {
         return MAX_BUF_LEN - rblen;
     }
