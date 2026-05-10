@@ -234,11 +234,16 @@ void Icmp::build_packet(Buffer& bb) {
 }
 
 Icmp6::Icmp6() {
-    memset(&icmp_hdr, 0 ,sizeof(icmp_hdr));
+    memset(&icmp_hdr, 0, sizeof(icmp_hdr));
+    memset(&nd_target, 0, sizeof(nd_target));
+    nd_opt_len = 0;
 }
 
 Icmp6::Icmp6(const Icmp6 *icmp6) {
     memcpy(&icmp_hdr, &icmp6->icmp_hdr, sizeof(icmp_hdr));
+    nd_target = icmp6->nd_target;
+    nd_opt_len = icmp6->nd_opt_len;
+    memcpy(nd_opt, icmp6->nd_opt, nd_opt_len);
     valid = icmp6->valid;
 }
 
@@ -249,9 +254,40 @@ Icmp6::Icmp6(const char* packet, size_t len){
         return;
     }
     memcpy(&icmp_hdr, packet, sizeof(icmp_hdr));
+
+    if(icmp_hdr.icmp6_type == ND_NEIGHBOR_SOLICIT || icmp_hdr.icmp6_type == ND_NEIGHBOR_ADVERT) {
+        if(len < sizeof(icmp6_hdr) + sizeof(in6_addr)) {
+            LOGE("Invalid NDP packet length: %zu bytes\n", len);
+            valid = false;
+            return;
+        }
+        memcpy(&nd_target, packet + sizeof(icmp6_hdr), sizeof(in6_addr));
+
+        const uint8_t* opts = reinterpret_cast<const uint8_t*>(packet + sizeof(icmp6_hdr) + sizeof(in6_addr));
+        size_t opts_len = len - sizeof(icmp6_hdr) - sizeof(in6_addr);
+        while(opts_len >= 2) {
+            uint8_t opt_type = opts[0];
+            uint8_t opt_len = opts[1];
+            if(opt_len == 0) break;
+            if(opt_type == ND_OPT_SOURCE_LINKADDR && opt_len == 1 && opts_len >= 8) {
+                memcpy(nd_opt, opts, 8);
+                nd_opt_len = 8;
+                break;
+            }
+            opts += opt_len * 8;
+            opts_len -= opt_len * 8;
+        }
+    }
 }
 
 void Icmp6::print() const {
+    if(icmp_hdr.icmp6_type == ND_NEIGHBOR_SOLICIT || icmp_hdr.icmp6_type == ND_NEIGHBOR_ADVERT) {
+        char target[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, &nd_target, target, sizeof(target));
+        LOGD(DVPN, "ICMPV6 NDP: type: %d, code: %d, target: %s\n",
+            icmp_hdr.icmp6_type, icmp_hdr.icmp6_code, target);
+        return;
+    }
     LOGD(DVPN,"ICMPV6 header: "
     "type: %d, "
     "code: %d, "
@@ -316,7 +352,45 @@ uint32_t Icmp6::getmtu() const {
     return ntohl(icmp_hdr.icmp6_mtu);
 }
 
+Icmp6* Icmp6::settarget(const in6_addr& addr) {
+    nd_target = addr;
+    return this;
+}
+
+Icmp6* Icmp6::setndflags(uint32_t flags) {
+    icmp_hdr.icmp6_dataun.icmp6_un_data32[0] = flags;
+    return this;
+}
+
+Icmp6* Icmp6::settlla(const uint8_t addr[6]) {
+    nd_opt[0] = ND_OPT_TARGET_LINKADDR;
+    nd_opt[1] = 1;
+    memcpy(nd_opt + 2, addr, 6);
+    nd_opt_len = 8;
+    return this;
+}
+
+in6_addr Icmp6::gettarget() const {
+    return nd_target;
+}
+
+bool Icmp6::getslla(uint8_t addr[6]) const {
+    if(icmp_hdr.icmp6_type != ND_NEIGHBOR_SOLICIT) return false;
+    if(nd_opt_len < 8 || nd_opt[0] != ND_OPT_SOURCE_LINKADDR) return false;
+    memcpy(addr, nd_opt + 2, 6);
+    return true;
+}
+
 void Icmp6::build_packet(const ip6_hdr* ip_hdr, Buffer& bb) {
+    if(icmp_hdr.icmp6_type == ND_NEIGHBOR_SOLICIT || icmp_hdr.icmp6_type == ND_NEIGHBOR_ADVERT) {
+        bb.reserve(-(int)(sizeof(in6_addr) + nd_opt_len));
+        auto* p = static_cast<char*>(bb.mutable_data());
+        memcpy(p, &nd_target, sizeof(in6_addr));
+        if(nd_opt_len > 0) {
+            memcpy(p + sizeof(in6_addr), nd_opt, nd_opt_len);
+        }
+    }
+
     bb.reserve(-(char) sizeof(icmp_hdr));
     char* packet = (char *) bb.mutable_data();
     icmp_hdr.icmp6_cksum = 0;

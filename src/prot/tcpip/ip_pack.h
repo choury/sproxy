@@ -97,6 +97,9 @@ public:
 
 class Icmp6{
     icmp6_hdr icmp_hdr;
+    in6_addr nd_target;
+    size_t nd_opt_len;
+    uint8_t nd_opt[8];
 public:
     bool valid = true;
     Icmp6();
@@ -110,12 +113,17 @@ public:
     Icmp6* setid(uint16_t id);
     Icmp6* setseq(uint16_t seq);
     Icmp6* setmtu(uint32_t mtu);
+    Icmp6* settarget(const in6_addr& addr);
+    Icmp6* setndflags(uint32_t flags);
+    Icmp6* settlla(const uint8_t addr[6]);
 
     [[nodiscard]] uint8_t gettype()const;
     [[nodiscard]] uint8_t getcode()const;
     [[nodiscard]] uint16_t getid()const;
     [[nodiscard]] uint16_t getseq()const;
     [[nodiscard]] uint32_t getmtu() const;
+    [[nodiscard]] in6_addr gettarget() const;
+    [[nodiscard]] bool getslla(uint8_t addr[6]) const;
 };
 
 struct Sack{
@@ -212,6 +220,7 @@ public:
     [[nodiscard]] virtual uint8_t gettype() const;
     virtual void build_packet(Buffer& bb) = 0;
     virtual bool isValid() const;
+    virtual Ip* setttl(uint8_t ttl) = 0;
     void reflect(IVisitor& v) {
         reflect_named("hdrlen", gethdrlen());
         reflect_named("type", gettype());
@@ -243,6 +252,7 @@ public:
     [[nodiscard]] uint16_t getdport() const override;
 
     void build_packet(Buffer& bb) override;
+    Ip* setttl(uint8_t ttl) override { hdr.ip_ttl = ttl; return this; }
 
     friend std::shared_ptr<Ip> MakeIp(std::shared_ptr<const Ip> ip);
     friend std::shared_ptr<Ip> MakeIp(const void* packet, size_t len);
@@ -265,6 +275,7 @@ public:
     [[nodiscard]] uint16_t getdport() const override;
 
     void build_packet(Buffer& bb)override;
+    Ip* setttl(uint8_t ttl) override { hdr.ip6_hlim = ttl; return this; }
 
     friend std::shared_ptr<Ip> MakeIp(std::shared_ptr<const Ip> ip);
     friend std::shared_ptr<Ip> MakeIp(const void* packet, size_t len);

@@ -309,11 +309,25 @@ int main(int argc, char **argv) {
             return -1;
         }
         new Guest_vpn(tun, true);
-        LOG("listen on %s for vpn\n", tun_name);
+        LOG("listen on %s for tun\n", tun_name);
+    }
+    if(opt.tap_mode) {
+        char tap_name[IFNAMSIZ] = {0};
+        int tap = tun_create(tap_name, IFF_TAP | IFF_NO_PI | IFF_NAPI | IFF_VNET_HDR);
+        if (tap < 0) {
+            LOGE("failed to create tap: %s\n", strerror(errno));
+            return -1;
+        }
+        new Guest_vpn(tap, true, true);
+        LOG("listen on %s for tap\n", tap_name);
     }
     if(opt.tun_fd >= 0) {
         new Guest_vpn(opt.tun_fd, false);
-        LOG("listen on %d for vpn\n", opt.tun_fd);
+        LOG("listen on %d for tun\n", opt.tun_fd);
+    }
+    if(opt.tap_fd >= 0) {
+        new Guest_vpn(opt.tap_fd, false, true);
+        LOG("listen on %d for tap\n", opt.tap_fd);
     }
 #endif // __linux__
     if(opt.admin.hostname[0]){

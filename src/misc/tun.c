@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
+#include <net/if_arp.h>
 #include <net/route.h>
 #include <linux/ipv6.h>
 #include <linux/if_tun.h>
@@ -200,6 +201,24 @@ int tun_create(char *dev, int flags) {
             }
         }
         strcpy(dev, ifr.ifr_name);
+
+        if (flags & IFF_TAP) {
+            // Set MAC address for TAP
+            int sock = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+            if (sock < 0) {
+                err = sock;
+                break;
+            }
+            ifr.ifr_hwaddr.sa_family = ARPHRD_ETHER;
+            uint8_t mac[6] = VPNMAC;
+            memcpy(ifr.ifr_hwaddr.sa_data, mac, 6);
+            if ((err = ioctl(sock, SIOCSIFHWADDR, &ifr)) < 0) {
+                LOGE("ioctl (SIOCSIFHWADDR) failed: %s\n", strerror(errno));
+                close(sock);
+                break;
+            }
+            close(sock);
+        }
 
         if ((err = set_if(&ifr)) < 0) {
             break;

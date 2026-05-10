@@ -9,6 +9,7 @@ set(tcpip_src
         udp.cpp
         icmp.cpp
         tunio.cpp
+        tapio.cpp
         )
 
 target_sources(prot PRIVATE ${tcpip_src})

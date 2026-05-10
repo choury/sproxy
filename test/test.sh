@@ -295,7 +295,10 @@ function test_tproxy() {
     fi
 }
 
-function test_vpn(){
+function test_tun(){
+    ./sproxy -c server.conf --tun --admin unix:${sp}server_tun.sock > server_tun.log 2>&1 &
+    wait_netdev tun0
+
     ip rule add from all lookup 1
     ip rule add fwmark 1 lookup main
     ip route add default dev tun0 table 1
@@ -304,7 +307,7 @@ function test_vpn(){
     ip -6 rule add fwmark 1 lookup main
     ip -6 route add default dev tun0 table 1
 
-    function _vpn_cleanup() {
+    function _tun_cleanup() {
         ip rule del fwmark 1 lookup main
         ip rule del from all lookup 1
         ip route flush table 1
@@ -314,28 +317,95 @@ function test_vpn(){
         ip -6 route flush table 1
     }
 
-    trap "_vpn_cleanup; cleanup" EXIT
-    trap "_vpn_cleanup; trap cleanup EXIT" RETURN
+    trap "_tun_cleanup; cleanup" EXIT
+    trap "_tun_cleanup; trap cleanup EXIT" RETURN
 
     curl -k -f -v --http1.1 http://qq.com -A "Mozilla/5.0" > /dev/null 2>> curl.log
-    [ $? -ne 0 ] && echo "vpn test 1 failed" && exit 1
+    [ $? -ne 0 ] && echo "tun test 1 failed" && exit 1
     curl -6 -k -f -v --http2 https://www.qq.com -A "Mozilla/5.0" > /dev/null 2>> curl.log
-    [ $? -ne 0 ] && echo "vpn test 2 failed" && exit 1
+    [ $? -ne 0 ] && echo "tun test 2 failed" && exit 1
     curl -k -f -v -H "Expect: 100-continue" --http1.1 http://echo.opera.com -F 'name=@test1k' > /dev/null 2>> curl.log
-    [ $? -ne 0 ] && echo "vpn test 3 failed" && exit 1
+    [ $? -ne 0 ] && echo "tun test 3 failed" && exit 1
     curl -k -f -v --http2 https://echo.opera.com -F 'name=@test1k' > /dev/null 2>> curl.log
-    [ $? -ne 0 ] && echo "vpn test 4 failed" && exit 1
+    [ $? -ne 0 ] && echo "tun test 4 failed" && exit 1
+    curl -m 5 -k -f -v https://localhost.choury.com/test?size=100M > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "tun test 5 failed" && exit 1
 
     curl -V | grep HTTP3
     if [[ $? = 0 ]];then
         curl -k -f -v --http3-only https://cloudflare-quic.com  > /dev/null 2>> curl.log
-        [ $? -ne 0 ] && echo "vpn test 5 failed" && exit 1
+        [ $? -ne 0 ] && echo "tun test 6 failed" && exit 1
+        curl -m 5 -k -f -v --http3-only https://localhost.choury.com/test?size=100M > /dev/null 2>> curl.log
+        [ $? -ne 0 ] && echo "tun test 7 failed" && exit 1
     fi
 
-    ping -4 -c 3 g.cn
-    [ $? -ne 0 ] && echo "vpn test 6 failed" && exit 1
+    ping -e 1 -4 -c 3 g.cn
+    [ $? -ne 0 ] && echo "tun test 8 failed" && exit 1
     ping -6 -c 3 g.cn
-    [ $? -ne 0 ] && echo "vpn test 7 failed" && exit 1
+    [ $? -ne 0 ] && echo "tun test 9 failed" && exit 1
+
+    printf "dump usage" | ./scli -s ${sp}server_tun.sock
+    kill -SIGUSR1 %1
+    kill -SIGINT %1
+    wait %1
+    jobs
+}
+
+function test_tap(){
+    ./sproxy -c server.conf --tap --admin unix:${sp}server_tap.sock > server_tap.log 2>&1 &
+    wait_netdev tap0
+
+    ip rule add from all lookup 1
+    ip rule add fwmark 1 lookup main
+    ip route add default via 198.18.0.2 dev tap0 table 1
+
+    ip -6 rule add from all lookup 1
+    ip -6 rule add fwmark 1 lookup main
+    ip -6 route add default via 64:ff9b::c612:2 dev tap0 table 1
+
+    function _tap_cleanup() {
+        ip rule del fwmark 1 lookup main
+        ip rule del from all lookup 1
+        ip route flush table 1
+
+        ip -6 rule del fwmark 1 lookup main
+        ip -6 rule del from all lookup 1
+        ip -6 route flush table 1
+    }
+
+    trap "_tap_cleanup; cleanup" EXIT
+    trap "_tap_cleanup; trap cleanup EXIT" RETURN
+
+    curl -k -f -v --http1.1 http://qq.com -A "Mozilla/5.0" > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "tap test 1 failed" && exit 1
+    curl -6 -k -f -v --http2 https://www.qq.com -A "Mozilla/5.0" > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "tap test 2 failed" && exit 1
+    curl -k -f -v -H "Expect: 100-continue" --http1.1 http://echo.opera.com -F 'name=@test1k' > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "tap test 3 failed" && exit 1
+    curl -k -f -v --http2 https://echo.opera.com -F 'name=@test1k' > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "tap test 4 failed" && exit 1
+    curl -m 5 -k -f -v https://localhost.choury.com/test?size=100M > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "tap test 5 failed" && exit 1
+
+    curl -V | grep HTTP3
+    if [[ $? = 0 ]];then
+        curl -k -f -v --http3-only https://cloudflare-quic.com  > /dev/null 2>> curl.log
+        [ $? -ne 0 ] && echo "tap test 6 failed" && exit 1
+        curl -m 5 -k -f -v --http3-only https://localhost.choury.com/test?size=100M > /dev/null 2>> curl.log
+        [ $? -ne 0 ] && echo "tap test 7 failed" && exit 1
+    fi
+
+
+    ping -e 1 -4 -c 3 g.cn
+    [ $? -ne 0 ] && echo "tap test 8 failed" && exit 1
+    ping -6 -c 3 g.cn
+    [ $? -ne 0 ] && echo "tap test 9 failed" && exit 1
+
+    printf "dump usage" | ./scli -s ${sp}server_tap.sock
+    kill -SIGUSR1 %1
+    kill -SIGINT %1
+    wait %1
+    jobs
 }
 
 function test_sni(){
@@ -448,15 +518,41 @@ function test_strategy() {
 }
 
 function wait_tcp_port() {
+    local count=0
     while ! nc -vz localhost $1; do
         ps aux | grep sproxy | grep -v grep
+        count=$((count + 1))
+        if [ $count -ge 5 ]; then
+            echo "Error: Timeout waiting for port $1"
+            exit 1
+        fi
         sleep 1
     done
 }
 
 function wait_udp_port() {
+    local count=0
     while ! lsof -Pi udp:$1; do
         ps aux | grep sproxy | grep -v grep
+        count=$((count + 1))
+        if [ $count -ge 5 ]; then
+            echo "Error: Timeout waiting for udp port $1"
+            exit 1
+        fi
+        sleep 1
+    done
+}
+
+function wait_netdev() {
+    local dev=$1
+    local count=0
+    while ! ip link show $dev >/dev/null 2>&1; do
+        ps aux | grep sproxy | grep -v grep
+        count=$((count + 1))
+        if [ $count -ge 5 ]; then
+            echo "Error: Timeout waiting for $dev"
+            exit 1
+        fi
         sleep 1
     done
 }
@@ -523,7 +619,6 @@ EOF
 if [ "$run_extended_tests" = true ]; then
     echo "tproxy 4333" >> server.conf
     echo "fwmark 1" >> server.conf
-    echo "tun" >> server.conf
 fi
 
 ./sproxy -c server.conf --admin unix:${sp}server.sock > server.log 2>&1 &
@@ -593,20 +688,24 @@ if [ "$run_extended_tests" = true ]; then
     printf "dump usage" | ./scli -s ${sp}server.sock
     kill -SIGUSR1 %1
 
-    echo "test vpn"
-    test_vpn
-    printf "dump usage" | ./scli -s ${sp}server.sock
-    kill -SIGUSR1 %1
-fi
+    kill -SIGINT %1
+    wait %1
+    jobs
 
-kill -SIGINT %1
-wait %1
-jobs
+    echo "test tun"
+    test_tun
 
-if [ "$run_extended_tests" = true ]; then
+    echo "test tap"
+    test_tap
+
     echo "test sni"
     test_sni
+else
+    kill -SIGINT %1
+    wait %1
 fi
+
+jobs
 
 $buildpath/prot/dns/dns_test
 $buildpath/misc/trie_test

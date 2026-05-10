@@ -51,7 +51,7 @@ static bool operator<(const VpnKey& a, const VpnKey& b) {
 #define ICMP_PING(type) ((type) == ICMP_ECHO || (type) == ICMP_ECHOREPLY)
 #define ICMP6_PING(type)  ((type) == ICMP6_ECHO_REQUEST || (type) == ICMP6_ECHO_REPLY)
 
-static void debugString(std::shared_ptr<const Ip> pac, size_t len, bool reverse) {
+void TunRWer::debugString(std::shared_ptr<const Ip> pac, size_t len, bool reverse) {
     switch(pac->gettype()){
     case IPPROTO_TCP:
         if(reverse) {
@@ -187,6 +187,10 @@ void TunRWer::ProcessPacket(Buffer&& bb){
     }
 #endif
     pcap_write(pcap, bb.data(), bb.len);
+    ProcessIpPacket(std::move(bb));
+}
+
+void TunRWer::ProcessIpPacket(Buffer&& bb){
     auto pac = MakeIp(bb.data(), bb.len);
     if(pac == nullptr){
         return;
@@ -247,6 +251,15 @@ void TunRWer::ProcessPacket(Buffer&& bb){
             key = VpnKey(icmpPayload).reverse();
             LOGD(DVPN, "get icmp6 too big for: <%s> %s - %s\n",
                     protstr(key.protocol), getRdnsWithPort(key.src).c_str(), getRdnsWithPort(key.dst).c_str());
+        }else if(type == ND_NEIGHBOR_SOLICIT){
+            auto istatus = std::make_shared<IcmpStatus>();
+            istatus->sendCB = [this](std::shared_ptr<Ip> pac, Buffer&& bb, const GsoInfo& gso){
+                SendPkg(std::move(pac), std::move(bb), gso);
+            };
+            istatus->src = pac->getsrc();
+            istatus->dst = pac->getdst();
+            IcmpProc(istatus, pac, std::move(bb));
+            return;
         }else if(!ICMP6_PING(type)) {
             LOGD(DVPN, "ignore icmp6 type: %d\n", type);
             return;
@@ -399,14 +412,21 @@ void TunRWer::SendPkg(std::shared_ptr<Ip> pac, Buffer&& bb, const GsoInfo& gso) 
         data = bb.data();
         len = bb.len;
     }
+#else
+    (void)gso;
 #endif
 
     // 4. 写入 TUN 设备
+    WriteToDevice(std::move(bb));
+}
+
+void TunRWer::WriteToDevice(Buffer&& bb) {
 #ifdef HAVE_URING
     if (use_io_uring) {
+        auto* data = bb.data();
         struct io_uring_sqe* sqe = io_uring_get_sqe(&ring);
         if (!sqe) {
-            LOGD(DVPN, "Failed to get SQE for write operation, queue full\n");
+            LOGD(DVPN, "Failed to get SQE, queue full\n");
             return;
         }
 
@@ -430,8 +450,8 @@ void TunRWer::SendPkg(std::shared_ptr<Ip> pac, Buffer&& bb, const GsoInfo& gso) 
     }
 #endif
 
-    if(write(Ep::getFd(), data, len) < 0) {
-        LOGE("tunio: write error: %s\n", strerror(errno));
+    if(write(Ep::getFd(), bb.data(), bb.len) < 0) {
+        LOGE("write error: %s\n", strerror(errno));
     }
 }
 

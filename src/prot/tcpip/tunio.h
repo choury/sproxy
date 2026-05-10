@@ -42,8 +42,6 @@ struct ITunCallback: public IRWerCallback {
 };
 
 class TunRWer: public RWer{
-    int pcap = -1;
-    bool enable_offload;
     Index2<uint64_t, VpnKey, std::shared_ptr<IpStatus>> statusmap;
     static constexpr size_t TUN_BUF_LEN = 65536;
     bool use_io_uring = false;
@@ -62,17 +60,22 @@ class TunRWer: public RWer{
     void SubmitRead();
     void HandleIoUringCompletion();
 #endif
-    void ProcessPacket(Buffer&& bb);
     uint64_t GetId(std::shared_ptr<const Ip> pac);
     std::shared_ptr<IpStatus> GetStatus(uint64_t id);
     void Clean(uint64_t id);
-    void SendPkg(std::shared_ptr<Ip> pac, Buffer&& bb, const GsoInfo& gso);
     void ErrProc(std::shared_ptr<const Ip> pac, uint32_t code);
     void ReqProc(std::shared_ptr<const Ip> pac);
     size_t DataProc(std::shared_ptr<const Ip> pac, Buffer&& bb);
     void AckProc(std::shared_ptr<const Ip> pac);
 
 protected:
+    int pcap = -1;
+    bool enable_offload;
+    static void debugString(std::shared_ptr<const Ip> pac, size_t len, bool reverse);
+    virtual void ProcessPacket(Buffer&& bb);
+    void ProcessIpPacket(Buffer&& bb);
+    virtual void SendPkg(std::shared_ptr<Ip> pac, Buffer&& bb, const GsoInfo& gso);
+    void WriteToDevice(Buffer&& bb);
     virtual int getFd() const override;
 public:
     explicit TunRWer(int fd, bool enable_offload, std::shared_ptr<IRWerCallback> cb);

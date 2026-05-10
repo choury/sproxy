@@ -105,7 +105,9 @@ struct options opt = {
     .socks5_fast       = false,
     .set_dns_route     = false,
     .tun_mode          = false,
+    .tap_mode          = false,
     .tun_fd            = -1,
+    .tap_fd            = -1,
     .trace_time        = 0,
     .redirect_http     = false,
     .restrict_local    = false,
@@ -233,7 +235,9 @@ static struct option long_options[] = {
     {"forward-header",required_argument, NULL,  0 },
 #if __linux__
     {"tun",           no_argument,       NULL,  0 },
+    {"tap",           no_argument,       NULL,  0 },
     {"tun-fd",        required_argument, NULL,  0 },
+    {"tap-fd",        required_argument, NULL,  0 },
     {"tproxy",        required_argument, NULL,  0 },
     {"trace",         required_argument, NULL,  0 },
     {"ua",            required_argument, NULL,  0 },
@@ -303,7 +307,9 @@ static struct option_detail option_detail[] = {
     {"socks5-fast", "Send socks5 greeting/auth/request without waiting for replies", option_bool, &opt.socks5_fast, (void*)true},
     {"ssl", "Listen for ssl server (require cert file and key)", option_list, &ssl_listens, NULL},
     {"tun", "tun mode (vpn mode, require root privilege)", option_bool, &opt.tun_mode, (void*)true},
+    {"tap", "tap mode (layer 2 vpn mode, require root privilege)", option_bool, &opt.tap_mode, (void*)true},
     {"tun-fd", "tun fd (vpn mode, recv fd before execve)", option_int64, &opt.tun_fd, NULL},
+    {"tap-fd", "tap fd (layer 2 vpn mode, recv fd before execve)", option_int64, &opt.tap_fd, NULL},
     {"tproxy", "tproxy listen (get dst via SO_ORIGINAL_DST)", option_string, &tproxy_listen, (void*)true},
     {"trace", "print trace time if response time is larger than it", option_int64, &opt.trace_time, NULL},
     {"ua", "set user-agent for vpn auto request", option_string, &opt.ua, NULL},
@@ -866,8 +872,9 @@ void postConfig(){
         LOGE("set-dns-route require option interface\n");
         exit(1);
     }
-    if (opt.tun_mode && opt.tun_fd >= 0) {
-        LOGE("tun mode and tun-fd can't be used together\n");
+    int vpn_modes = opt.tun_mode + opt.tap_mode + (opt.tun_fd >= 0) + (opt.tap_fd >= 0);
+    if (vpn_modes > 1) {
+        LOGE("tun, tap, tun-fd and tap-fd can't be used together\n");
         exit(1);
     }
     if (opt.doh_server && opt.doh_server[0] == 0 && opt.Server.hostname[0] == 0) {

@@ -9,6 +9,7 @@
 #include "prot/tls.h"
 #include "prot/sslio.h"
 #include "prot/tcpip/tunio.h"
+#include "prot/tcpip/tapio.h"
 #include "misc/config.h"
 #include "misc/util.h"
 #include "misc/strategy.h"
@@ -19,7 +20,7 @@
 #include <inttypes.h>
 
 extern "C" void vpn_stop();
-Guest_vpn::Guest_vpn(int fd, bool enable_offload): Requester(nullptr) {
+Guest_vpn::Guest_vpn(int fd, bool enable_offload, bool is_tap): Requester(nullptr) {
     cb = ITunCallback::create()->onReq([this](uint64_t id, std::shared_ptr<const Ip> pac){
             return ReqProc(id, pac);
     })->onReset([this](uint64_t id, uint32_t){
@@ -74,7 +75,11 @@ Guest_vpn::Guest_vpn(int fd, bool enable_offload): Requester(nullptr) {
         LOGE("vpn_server error: %d/%d\n", ret, code);
         exit_loop(0);
     });
-    rwer = std::make_shared<TunRWer>(fd, enable_offload, cb);
+    if (is_tap) {
+        rwer = std::make_shared<TapRWer>(fd, enable_offload, cb);
+    } else {
+        rwer = std::make_shared<TunRWer>(fd, enable_offload, cb);
+    }
 }
 
 Guest_vpn::~Guest_vpn(){

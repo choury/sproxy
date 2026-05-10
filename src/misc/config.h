@@ -101,7 +101,9 @@ struct options{
     bool socks5_fast;
     bool set_dns_route;
     bool tun_mode;
+    bool tap_mode;
     int  tun_fd;
+    int  tap_fd;
     int  trace_time;
     bool redirect_http;
     bool restrict_local;

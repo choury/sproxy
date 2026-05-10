@@ -33,7 +33,7 @@ class Guest_vpn: public Requester {
     size_t Recv(Buffer&& bb);
     virtual std::shared_ptr<IMemRWerCallback> response(uint64_t id) override;
 public:
-    explicit Guest_vpn(int fd, bool enable_offload);
+    explicit Guest_vpn(int fd, bool enable_offload, bool is_tap = false);
     virtual ~Guest_vpn() override;
     virtual void dump_stat(Dumper dp, void* param) override;
     virtual void dump_usage(Dumper dp, void* param) override;

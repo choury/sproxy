@@ -59,10 +59,17 @@ reply:
     *(uint32_t*)option->data = inet_addr(VPNMASK);
     ops += option->len + 2;
 
+    //本机地址不能被设置为网关地址，而且因为整个网段都会做arp应答，所以任意选一个就行
+    option = (DhcpOption*)ops;
+    option->code = DHCP_ROUTER;
+    option->len = 4;
+    *(uint32_t*)option->data = inet_addr("198.18.0.2");
+    ops += option->len + 2;
+
     option = (DhcpOption*)ops;
     option->code = DHCP_NAMESERVER;
     option->len = 4;
-    *(uint32_t*)option->data = inet_addr("198.18.0.2");
+    *(uint32_t*)option->data = inet_addr(VPNADDR);
     ops += option->len + 2;
 
     option = (DhcpOption*)ops;

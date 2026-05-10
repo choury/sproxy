@@ -16,6 +16,12 @@
 #define VPNEND   "198.19.255.255"
 #define VPNADDR6 "64:ff9b::c612:1"
 
+#ifdef __cplusplus
+constexpr uint8_t VPNMAC[] = {0x02, 0x00, 0x00, 0xc6, 0x12, 0x01};
+#else
+#define VPNMAC   {0x02, 0x00, 0x00, 0xc6, 0x12, 0x01}
+#endif
+
 #define STRINGIZE_DETAIL(x) #x
 #define STRINGIZE(x) STRINGIZE_DETAIL(x)
 
