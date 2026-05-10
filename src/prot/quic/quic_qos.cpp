@@ -104,6 +104,7 @@ void QuicQos::OnLossDetectionTimeout(pn_namespace* ns){
         //这样的话，当loss_time触发时，rtt可能已经变长，而据此算出的timeThreshold就会变大，此时之前触发loss的包
         //在这个周期内就会获取不到，因此可能出现lost_packets为空的情况
         if(!lost_packets.empty()) {
+            lost_packets_count += lost_packets.size();
             OnPacketsLost(ns, lost_packets);
         }
     }else {
@@ -111,6 +112,7 @@ void QuicQos::OnLossDetectionTimeout(pn_namespace* ns){
         LOGD(DQUIC, "pto expired for [%c], pto_time: %.2fms, pto_count: %zd\n",
              ns->name, (now - ns->time_of_last_ack_eliciting_packet) / 1000.0, pto_count);
         pto_count++;
+        pto_timeouts++;
         FrontFrame(ns, new quic_frame{QUIC_FRAME_PING, {}});
         packet_tx = UpdateJob(std::move(packet_tx), [this]{sendPacket();}, 0);
     }
@@ -271,6 +273,7 @@ std::set<uint64_t> QuicQos::handleFrame(OSSL_ENCRYPTION_LEVEL level, uint64_t nu
         }
         auto lost_packets = ns->DetectAndRemoveLostPackets(&rtt);
         if (!lost_packets.empty()) {
+            lost_packets_count += lost_packets.size();
             OnPacketsLost(ns, lost_packets);
         }
         OnPacketsAcked(acked);

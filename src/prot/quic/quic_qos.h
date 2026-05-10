@@ -54,6 +54,8 @@ protected:
     virtual void OnCongestionEvent(uint64_t sent_time) = 0;
 public:
     Rtt    rtt;
+    size_t lost_packets_count = 0;
+    size_t pto_timeouts = 0;
     /*
     typedef std::function<int(OSSL_ENCRYPTION_LEVEL level, uint64_t pn, uint64_t ack,
             const void* body, size_t len, const std::set<uint64_t>& streams)>  send_func;

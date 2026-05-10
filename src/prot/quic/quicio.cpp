@@ -1979,7 +1979,7 @@ void QuicBase::keepAlive_action() {
 void QuicBase::dump(Dumper dp, void* param) {
     dp(param, "%s -> %s, max_payload: %zd, max_bistream: %zd/%zd, max_unistream: %zd/%zd\n"
               "read: %zd/%zd, write: %zd/%zd, my_window: %zd, his_window: %zd, "
-              "rlen: %zd, fullq: %zd, wlen: %zd, congestion_window: %d, rtt: %.3fms\n",
+              "rlen: %zd, fullq: %zd, wlen: %zd, congestion_window: %d, rtt: %.3fms, lost: %zd, pto: %zd\n",
        dumpHex(myids[myid_idx].c_str(), myids[myid_idx].length()).c_str(),
        dumpHex(hisids[hisid_idx].c_str(), hisids[hisid_idx].length()).c_str(),
        his_max_payload_size,
@@ -1991,7 +1991,8 @@ void QuicBase::dump(Dumper dp, void* param) {
        his_max_data - my_sent_data,
        rblen, fullq.size(),
        qos->PendingSize(ssl_encryption_application), (int)qos->windowLeft(),
-       qos->rtt.latest_rtt/1000.0);
+       qos->rtt.latest_rtt/1000.0,
+       qos->lost_packets_count, qos->pto_timeouts);
     for(const auto& [id, stream]: streammap){
         auto ranges = stream.rb.get_ranges();
         dp(param, "  0x%lx: rlen: %zd-%zd/%zd, rcap: %zd, my_window: %zd/%zd, his_window: %zd/%zd, flags: 0x%08x\n",
@@ -2337,7 +2338,7 @@ void QuicRWer::sendPathChallenge(const sockaddr_storage* local_addr, const socka
 
             // Set validation timeout
             path_validation_timer = UpdateJob(std::move(path_validation_timer),
-                                             std::bind(&QuicRWer::pathValidationTimeout, this), 3000);
+                                             [this] { pathValidationTimeout(); }, 3000);
             LOGD(DQUIC, "Re-sent PATH_CHALLENGE for existing path %zu\n", i);
             return;
         }
@@ -2354,8 +2355,8 @@ void QuicRWer::sendPathChallenge(const sockaddr_storage* local_addr, const socka
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<uint8_t> dis(0, 255);
-    for (int i = 0; i < 8; ++i) {
-        path.challenge_data[i] = dis(gen);
+    for (auto& b : path.challenge_data) {
+        b = dis(gen);
     }
 
     paths.push_back(path);
@@ -2374,7 +2375,7 @@ void QuicRWer::sendPathChallenge(const sockaddr_storage* local_addr, const socka
 
     // Set validation timeout
     path_validation_timer = UpdateJob(std::move(path_validation_timer),
-                                     std::bind(&QuicRWer::pathValidationTimeout, this), 3000);
+                                     [this] { pathValidationTimeout(); }, 3000);
     LOGD(DQUIC, "Started path validation for new address: %s\n", storage_ntoa(remote_addr));
 }
 
@@ -2442,7 +2443,7 @@ void QuicRWer::pathValidationTimeout() {
     if (has_pending) {
         // Reschedule timer for remaining validations
         path_validation_timer = UpdateJob(std::move(path_validation_timer),
-                                         std::bind(&QuicRWer::pathValidationTimeout, this), 1000);
+                                         [this] { pathValidationTimeout(); }, 1000);
     } else {
         path_validation_timer = nullptr;
     }

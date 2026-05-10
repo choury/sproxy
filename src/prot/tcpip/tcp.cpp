@@ -175,6 +175,7 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
     if (status->dupack >= 3) {
         LOGD(DVPN, "%s getdupack: %d, resent packet\n", storage_ntoa(&status->src), status->dupack);
         status->dupack = 0;
+        status->fast_retransmits++;
     } else if (status->rto_factor > RTO_FACTOR_MAX){
         LOGE("%s timeout: %d, reset connection\n", storage_ntoa(&status->src), status->rto_factor);
         SendRst(status);
@@ -184,6 +185,7 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
         LOG("%s rto timeout: %d[%d], rtt: %d, resent packet\n",
             storage_ntoa(&status->src), status->rto, status->rto_factor, status->srtt);
         status->rto_factor++;
+        status->rto_timeouts++;
     }
     auto now = getmtime();
     pkgLogger logger("resent");
@@ -212,6 +214,7 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
         Buffer bb{(const char*)it.bb.data() + (start - base_seq), len, it.bb.id};
         tcpSend(status, pac, bb);
         logger.add(start, len);
+        status->retransmits++;
     };
     auto resend_ctrl = [&](tcp_sent& it) {
         auto pac = MakeIp(it.pac);
@@ -221,6 +224,7 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
         Buffer bb(nullptr);
         tcpSend(status, pac, bb);
         logger.add(it.pac->tcp->getseq(), 0);
+        status->retransmits++;
     };
     if(status->sack == nullptr) {
         int count = 0;
@@ -296,6 +300,8 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
 
 void PendPkg(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, Buffer&& bb) {
     tcpSend(status, pac, bb);
+    status->tx_packets++;
+    status->tx_bytes += bb.len;
     uint8_t flags = pac->tcp->getflag();
     if((flags & TH_RST) || (flags == TH_ACK && bb.len == 0 && (status->flags & TCP_KEEPALIVING) == 0)) {
         return;
@@ -540,11 +546,13 @@ static void handleRecvData(std::shared_ptr<TcpStatus> status, std::shared_ptr<co
         status->errCB(pac, TCP_RESET_ERR);
         return;
     }
+    status->rx_packets++;
     if(datalen > 0) {
         //处理数据
         bb.reserve(pac->gethdrlen());
         status->rbuf.put(std::move(bb));
         status->want_seq += datalen;
+        status->rx_bytes += datalen;
         status->ack_job = UpdateJob(std::move(status->ack_job),
                                     [status_ = GetWeak(status)] {SendAck(status_);}, 0);
     }

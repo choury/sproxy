@@ -74,6 +74,13 @@ struct TcpStatus: public IpStatus{
     CBuffer    rbuf;
     std::list<tcp_sent> sent_list;
     SackPtr    sack{};
+    uint32_t   tx_packets = 0;
+    uint64_t   tx_bytes   = 0;
+    uint32_t   rx_packets = 0;
+    uint64_t   rx_bytes   = 0;
+    uint32_t   retransmits      = 0;
+    uint32_t   rto_timeouts     = 0;
+    uint32_t   fast_retransmits = 0;
     Job        ack_job = nullptr;
     Job        rto_job = nullptr;
     Job        pull_job = nullptr;
