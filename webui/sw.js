@@ -138,13 +138,12 @@ function rewriteHtml(text, ctx) {
   `;
   const inject = `<script${nonceAttr} src="/webui/rproxy_core.js"></script><script${nonceAttr}>` + inlineScript + `</script><script${nonceAttr} src="/webui/inject.js"></script>`;
   let out = RProxy.rewriteHtmlContent(text, ctx);
-  out = out.replace(/<iframe\b([^>]*?)\bsandbox=(["'])(.*?)\2([^>]*?)>/gi, (all, pre, q, val, post) => {
-    if (/\ballow-scripts\b/i.test(val)) return all;
-    const next = (val ? val + ' ' : '') + 'allow-scripts';
-    return `<iframe${pre} sandbox=${q}${next}${q}${post}>`;
-  });
-  out = out.replace(/<iframe\b([^>]*?)\bsandbox\b([^>]*?)>/gi, (all, pre, post) => {
-    if (/\bsandbox=/.test(all)) return all;
+  out = out.replace(/<iframe\b([^>]*?)\bsandbox(?:=(["'])(.*?)\2)?([^>]*?)>/gi, (all, pre, q, val, post) => {
+    if (q && val && /\ballow-scripts\b/i.test(val)) return all;
+    if (q) {
+      const next = (val ? val + ' ' : '') + 'allow-scripts';
+      return `<iframe${pre} sandbox=${q}${next}${q}${post}>`;
+    }
     return `<iframe${pre} sandbox="allow-scripts"${post}>`;
   });
 

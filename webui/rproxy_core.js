@@ -436,6 +436,12 @@
   scope.RProxy.rewriteHtmlContent = function(text, ctx) {
     let baseUrl = ctx.base;
     let out = text.replace(/<meta[^>]+http-equiv\s*=\s*(['"]?)content-security-policy\1[^>]*>/gi, '');
+    out = out.replace(/<link\b([^>]*\brel\s*=\s*(['"]?)[^'">]*manifest[^'">]*\2[^>]*)>/gi, function(all, attrs) {
+      if (/\bcrossorigin\s*=/i.test(attrs)) return all;
+      const slash = attrs.endsWith('/') ? ' /' : '';
+      if (slash) attrs = attrs.slice(0, -1).trimEnd();
+      return '<link' + attrs + ' crossorigin="use-credentials"' + slash + '>';
+    });
     out = out.replace(/<base\b[^>]*>/i, (tag) => {
       const rewritten = scope.RProxy.rewriteBaseTag(tag, ctx, baseUrl);
       baseUrl = rewritten.baseUrl;
