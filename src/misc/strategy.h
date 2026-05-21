@@ -3,6 +3,7 @@
 
 #define GEN_TIP  "GENERATED"
 #define NO_MITM  "NOMITM"
+#define PUBLIC   "PUBLIC"
 
 #ifdef  __cplusplus
 extern "C" {
@@ -40,8 +41,8 @@ struct strategy{
 };
 
 class HttpReqHeader;
-struct strategy getstrategy(const char* host, const char* path = "");
-bool mayBeBlocked(const char* host);
+struct strategy getstrategy(const char* host, uint16_t port, const char* path = "");
+bool mayBeBlocked(const char* host, uint16_t port);
 const char* getstrategystring(Strategy s);
 std::string gen_token();
 bool checkauth(const char* ip, std::shared_ptr<const HttpReqHeader> req);

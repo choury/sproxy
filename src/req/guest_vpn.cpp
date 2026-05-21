@@ -323,7 +323,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
     Destination src, dst;
     storage2Dest(pac->getsrc(), &src);
     storage2Dest(pac->getdst(), &dst);
-    bool shouldMitm = isFakeAddress(pac->getdst()) && shouldNegotiate(status.host);
+    bool shouldMitm = isFakeAddress(pac->getdst()) && shouldNegotiate(status.host, dport);
     status.cb = response(id);
     switch(pac->gettype()){
     case IPPROTO_TCP:{
@@ -333,7 +333,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
             std::shared_ptr<TunRWer> trwer = std::dynamic_pointer_cast<TunRWer>(rwer);
             trwer->sendMsg(id, TUN_MSG_SYN);
         } else if(dport == HTTPSPORT) {
-            if(shouldMitm || getstrategy(status.host.c_str()).s == Strategy::local) {
+            if(shouldMitm || getstrategy(status.host.c_str(), dport).s == Strategy::local) {
                 auto ctx = initssl(0, status.host.c_str());
                 auto wrwer = std::make_shared<SslMer>(ctx, src, dst, status.cb);
                 wrwer->set_server_name(status.host);
@@ -366,7 +366,7 @@ void Guest_vpn::ReqProc(uint64_t id, std::shared_ptr<const Ip> pac) {
             FDns::GetInstance()->query(id, status.rw);
 #ifdef HAVE_QUIC
         } else if (dport == HTTPSPORT) {
-            if(shouldMitm || getstrategy(status.host.c_str()).s == Strategy::local) {
+            if(shouldMitm || getstrategy(status.host.c_str(), dport).s == Strategy::local) {
                 auto ctx = initssl(1, status.host.c_str());
                 auto wrwer = std::make_shared<QuicMer>(ctx, src, dst, status.cb);
                 status.rw = wrwer;

@@ -30,8 +30,8 @@ enum class CheckResult{
 
 static std::string identify = "HTTP/1.1 sproxy:" + std::to_string(getpid());
 
-bool shouldNegotiate(const std::string& hostname, const strategy* stra_){
-    const auto& stra = stra_ ? *stra_ : getstrategy(hostname.c_str());
+bool shouldNegotiate(const std::string& hostname, uint16_t port, const strategy* stra_){
+    const auto& stra = stra_ ? *stra_ : getstrategy(hostname.c_str(), port);
     if (stra.s == Strategy::direct && stra.ext == NO_MITM) {
         //for vpn, only works with fakeip enabled
         return false;
@@ -39,15 +39,15 @@ bool shouldNegotiate(const std::string& hostname, const strategy* stra_){
     if(opt.mitm_mode == Enable) {
         return true;
     }
-    if(opt.mitm_mode == Auto && opt.ca.key && (stra.s == Strategy::block || mayBeBlocked(hostname.c_str()))) {
+    if(opt.mitm_mode == Auto && opt.ca.key && (stra.s == Strategy::block || mayBeBlocked(hostname.c_str(), port))) {
         return true;
     }
     return false;
 }
 
 bool shouldNegotiate(std::shared_ptr<const HttpReqHeader> req, Requester* src){
-    auto stra = getstrategy(req->Dest.hostname, req->path);
-    if(shouldNegotiate(req->Dest.hostname, &stra)){
+    auto stra = getstrategy(req->Dest.hostname, req->Dest.port, req->path);
+    if(shouldNegotiate(req->Dest.hostname, req->Dest.port, &stra)){
         return true;
     }
     if(stra.s == Strategy::local && req->getDport() == src->getDst().port) {
@@ -56,8 +56,8 @@ bool shouldNegotiate(std::shared_ptr<const HttpReqHeader> req, Requester* src){
     return false;
 }
 
-static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, const char* src_host, Strategy s){
-    if (s != Strategy::forward && !checkauth(src_host, req)){
+static CheckResult check_header(std::shared_ptr<const HttpReqHeader> req, const char* src_host, bool skip_auth){
+    if (!skip_auth && !checkauth(src_host, req)){
         return CheckResult::AuthFailed;
     }
     if(req->has("via") && strstr(req->get("via"), identify.c_str())){
@@ -130,7 +130,7 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
             return distribute_rproxy(req, rw, backend);
         }
     }else{
-        stra = getstrategy(req->Dest.hostname, req->path);
+        stra = getstrategy(req->Dest.hostname, req->Dest.port, req->path);
     }
     if(stra.s == Strategy::none) {
         req->set(STRATEGY, getstrategystring(Strategy::none));
@@ -156,7 +156,8 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
         stra.s = Strategy::direct;
     }
     req->set(STRATEGY, getstrategystring(stra.s));
-    switch(check_header(req, rw->getSrc().hostname, stra.s)){
+    bool skip_auth = stra.s == Strategy::forward || (stra.s == Strategy::direct && stra.ext == PUBLIC);
+    switch(check_header(req, rw->getSrc().hostname, skip_auth)){
     case CheckResult::Succeed:
         break;
     case CheckResult::AuthFailed: {
@@ -375,16 +376,16 @@ void rewrite_rproxy_req(std::shared_ptr<HttpReqHeader> req) {
 void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, std::string rproxy_name) {
     uint64_t id = req->request_id;
     if(rproxy_name.empty()) {
-        if(!checkauth(rw->getSrc().hostname, req)){
-            auto sheader = HttpResHeader::create(S401, sizeof(S401), id);
-            sheader->set("WWW-Authenticate", "Basic realm=\"Secure Area\"");
-            response(rw, sheader, "");
-            return;
-        }
         std::string path = req->path;
         auto fragment = split(req->path, '/');
         assert(fragment.size() >= 1 && fragment[0] == "rproxy");
         if(fragment.size() == 1) {
+            if(!checkauth(rw->getSrc().hostname, req)){
+                auto sheader = HttpResHeader::create(S401, sizeof(S401), id);
+                sheader->set("WWW-Authenticate", "Basic realm=\"Secure Area\"");
+                response(rw, sheader, "");
+                return;
+            }
             auto resh = HttpResHeader::create(S200, sizeof(S200), id);
             resh->set("Transfer-Encoding", "chunked");
             resh->set("Content-Type", "text/plain; charset=utf8");
@@ -430,6 +431,12 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
     req->set("Rproxy-Name", rproxy_name);
     if(rproxy_name == "local") {
         return distribute(req, rw);
+    }
+    if(!checkauth(rw->getSrc().hostname, req)){
+        auto sheader = HttpResHeader::create(S401, sizeof(S401), id);
+        sheader->set("WWW-Authenticate", "Basic realm=\"Secure Area\"");
+        response(rw, sheader, "");
+        return;
     }
     if(rproxys.count(rproxy_name) == 0) {
         response(rw, HttpResHeader::create(S404, sizeof(S404), id), "");

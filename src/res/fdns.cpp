@@ -179,7 +179,7 @@ void FDns::Recv(Buffer&& bb) {
             //return empty response for ipv6
             result = new Dns_Result(que->domain);
         } else {
-            strategy stra = getstrategy(que->domain);
+            strategy stra = getstrategy(que->domain, 0);
             if (stra.s == Strategy::direct) {
                 status.quemap.emplace(que->id, que);
                 addjob_with_name([que, index = std::make_shared<__uint128_t>(index)]{

@@ -26,16 +26,32 @@ sproxy --policy-file /path/to/your/sites.list
 
 ## 3. 策略类型 (Strategy Types)
 
-在配置文件中，每行定义一条规则，格式为：`[Host/IP] [Strategy] [Extension]`。
+在配置文件中，每行定义一条规则，格式为：`[Host/IP][:Port] [Strategy] [Extension]`。
 
 | 策略名称 | 关键字 | 扩展参数 (Extension) | 描述 |
 | :--- | :--- | :--- | :--- |
-| **Direct** | `direct` | 无 | 直接连接目标服务器，不经过代理。 |
+| **Direct** | `direct` | 无，或 `PUBLIC` | 直接连接目标服务器，不经过代理。使用 `PUBLIC` 时跳过认证。 |
 | **Proxy** | `proxy` | 上游代理 URL | 将流量转发给上游代理。如 `https://user:pass@proxy.com:443` 或 `socks5://127.0.0.1:1080`。如果 Extension 为空，则使用全局默认代理服务器。 |
 | **Block** | `block` | 正则表达式 | 阻断连接。如果提供了正则参数，则仅阻断匹配该正则的路径（仅限 HTTP或MITM时）。 |
 | **Local** | `local` | 无 | 标识为访问 sproxy 内置的 Web 服务（如 Web UI、PAC 文件）。 |
-| **Forward** | `forward` | 目标地址 | 端口转发模式。将流量转发原样到 Extension 指定的目标 |
+| **Forward** | `forward` | 目标地址 | 端口转发模式。将流量转发原样到 Extension 指定的目标。始终跳过认证。 |
 | **Rewrite** | `rewrite` | 目标地址 | 目标重写模式。将流量转发到 Extension 指定的目标，并同步修改 HTTP `Host` 头部为目标地址。 |
+
+### 端口规则 (Port-specific Rules)
+
+规则中的 `Host/IP` 部分支持指定端口号，用于仅匹配特定端口的请求：
+- 域名：`example.com:8080`
+- IPv4：`127.0.0.1:8080`
+- IPv4 CIDR：`10.0.0.0/24:8080`
+- IPv6：`[::1]:8080`
+- IPv6 CIDR：`[fe80::]/64:8080`
+
+查找时先匹配端口特定规则，未命中再回退到通用规则（port=0）。
+
+### 特殊扩展参数
+- `NOMITM`：禁止对该规则启用 MITM（即使全局 MITM 模式为 Auto/Enable）。
+- `PUBLIC`：配合 `direct` 策略使用，跳过认证检查，允许未授权访问。
+- `GENERATED`：系统自动生成的规则（如本地 IP、localhost），不会写入策略文件。
 
 ## 4. 配置示例 (Configuration Examples)
 
@@ -47,6 +63,12 @@ sproxy --policy-file /path/to/your/sites.list
 
 # 阻断特定 IP
 8.8.8.8 block
+
+# 端口特定规则：仅对 8080 端口直连且免认证
+127.0.0.1:8080 direct PUBLIC
+
+# CIDR + 端口：仅对 10.0.0.0/24 的 443 端口走代理
+10.0.0.0/24:443 proxy
 ```
 
 ### 4.2 域名规则
@@ -59,6 +81,9 @@ google.com proxy
 
 # 直连特定域名
 example.com direct
+
+# 端口特定规则：仅对 8080 端口直连
+example.com:8080 direct PUBLIC
 ```
 
 ### 4.3 路径拦截 (HTTP Block)
@@ -108,9 +133,10 @@ test.local   rewrite @internal
 IP 地址使用 **Bit Trie (二叉字典树)** 存储，遵循 **最长前缀匹配 (LPM)** 原则。
 
 ### 5.3 匹配优先级
-1. **IP 优先**: 如果请求目标是 IP 地址，优先查 IP 规则表。
-2. **域名匹配**: 如果是域名，查域名 Trie 表。
-3. **路径匹配 (Block)**: 在域名匹配成功后，如果策略是 `block` 且配置了正则，会进一步检查 HTTP 请求路径。
+1. **端口优先**: 先查找端口特定规则，未命中再回退到通用规则（port=0）。
+2. **IP 优先**: 如果请求目标是 IP 地址，优先查 IP 规则表。
+3. **域名匹配**: 如果是域名，查域名 Trie 表。
+4. **路径匹配 (Block)**: 在域名匹配成功后，如果策略是 `block` 且配置了正则，会进一步检查 HTTP 请求路径。
 
 ## 6. 动态更新策略
 

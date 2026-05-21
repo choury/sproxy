@@ -83,7 +83,7 @@ std::string Cli::TestStrategy(const std::string &host) {
     Destination dest;
     char path[URLLIMIT];
     spliturl(host.c_str(), &dest, path);
-    auto stra = getstrategy(dest.hostname, path);
+    auto stra = getstrategy(dest.hostname, dest.port, path);
     if(stra.ext.empty()){
         return getstrategystring(stra.s);
     }

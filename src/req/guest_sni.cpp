@@ -83,10 +83,10 @@ Guest::ReqStatus* Guest_sni::forward(const char *hostname, Protocol prot, uint64
 
     auto _cb = response(id);
 #ifdef HAVE_QUIC
-    if(shouldNegotiate(hostname)) {
+    if(shouldNegotiate(hostname, 443)) {
         if(prot == Protocol::TCP) {
 #else
-    if(shouldNegotiate(hostname) && prot == Protocol::TCP) {
+    if(shouldNegotiate(hostname, 443) && prot == Protocol::TCP) {
 #endif
             ctx = initssl(0, hostname);
             auto srwer = std::make_shared<SslMer>(ctx, getSrc(), getDst(), _cb);
