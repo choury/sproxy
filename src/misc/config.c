@@ -112,6 +112,7 @@ struct options opt = {
     .redirect_http     = false,
     .restrict_local    = false,
     .rproxy_keep_src   = false,
+    .rproxy_delegate_auth = false,
     .systemd_socket    = false,
     .quic_cc_algorithm = NULL,
     .quic_version      = 1,  // Default to QUIC v1
@@ -231,6 +232,7 @@ static struct option long_options[] = {
     {"alter-method",  no_argument,       NULL,  0 },
     {"socks5-fast",   no_argument,       NULL,  0 },
     {"rproxy",        required_argument, NULL,  0 },
+    {"rproxy-dg-auth",no_argument,       NULL, 0 },
     {"request-header",required_argument, NULL,  0 },
     {"forward-header",required_argument, NULL,  0 },
 #if __linux__
@@ -299,6 +301,7 @@ static struct option_detail option_detail[] = {
     {"rewrite-auth", "[DEPRECATED]", option_base64, opt.rewrite_auth, NULL},
     {"root-dir", "The work dir (current dir if not set)", option_string, &opt.rootdir, NULL},
     {"rproxy", "name for rproxy mode (via http2/http3)", option_string, &opt.rproxy_name, (void*)true},
+    {"rproxy-dg-auth", "delegate rproxy auth to remote backend", option_bool, &opt.rproxy_delegate_auth, (void*)true},
     {"rproxy-kp", "keep the source of rproxy request (via IP[V6]_TRANSPARENT)", option_bool, &opt.rproxy_keep_src, (void*)true},
     {"secret", "Set user and passwd for proxy (user:password), default is none.", option_list, &secrets, NULL},
     {"server", "default proxy server (can ONLY set in config file)", option_string, &server_string, NULL},

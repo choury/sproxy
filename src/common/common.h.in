@@ -286,6 +286,7 @@ int protectFd(int sockfd, const struct sockaddr_storage* addr);
 struct Credit {
     char user[AUTHLIMIT];
     char pass[AUTHLIMIT];
+    char identifier[AUTHLIMIT];
 };
 
 struct Destination{

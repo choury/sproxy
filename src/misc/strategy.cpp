@@ -586,10 +586,6 @@ bool checksecret(const char* auth, const struct Credit* cr){
     } else {
         local = *cr;
     }
-    char* plus = strchr(local.user, '+');
-    if (plus) {
-        *plus = 0;
-    }
     if (secrets.count(local.user) && secrets.at(local.user) == local.pass) {
         return true;
     }

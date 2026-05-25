@@ -18,7 +18,8 @@ Rguest3::Rguest3(const Destination& dest, const std::string& name):
 }
 
 void Rguest3::ReqProc(uint64_t id, std::shared_ptr<HttpReqHeader> req) {
-    req->set("Skip-Authorize", "1");
+    req->set("Skip-Authorize", !req->has("X-Delegate-Auth", "1"));
+    req->del("X-Delegate-Auth");
     Guest3::ReqProc(id, req);
 }
 

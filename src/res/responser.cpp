@@ -89,9 +89,8 @@ static std::string getBackend(std::shared_ptr<HttpReqHeader> req) {
     if(!checksecret(auth, &cr) && !req->has("Skip-Authorize", "1")) {
         return backend;
     }
-    char* plus = strchr(cr.user, '+');
-    if(plus) {
-        backend = plus + 1;
+    if(cr.identifier[0]) {
+        backend = cr.identifier;
     }
     if(req->has("sproxy")){
         backend = req->get("sproxy");
@@ -370,7 +369,27 @@ void rewrite_rproxy_req(std::shared_ptr<HttpReqHeader> req) {
         }
     }
     req->del("sproxy");
-    req->del("Proxy-Authorization");
+    if(!opt.rproxy_delegate_auth) {
+        req->del("Proxy-Authorization");
+        req->del("X-Delegate-Auth");
+        return;
+    }
+    req->set("X-Delegate-Auth", "1");
+    const char* auth = req->get("Proxy-Authorization");
+    if(auth == nullptr) {
+        return;
+    }
+    struct Credit cr;
+    if(!decodeauth(auth, &cr) || cr.identifier[0] == 0) {
+        return;
+    }
+    //重写认证信息
+    char combined[AUTHLIMIT * 2 + 2];
+    int len = snprintf(combined, sizeof(combined), "%s:%s", cr.user, cr.pass);
+    char encoded[512];
+    size_t elen = Base64Encode(combined, len, encoded);
+    encoded[elen] = 0;
+    req->set("Proxy-Authorization", std::string("Basic ") + encoded);
 }
 
 void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw, std::string rproxy_name) {
@@ -432,7 +451,7 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
     if(rproxy_name == "local") {
         return distribute(req, rw);
     }
-    if(!checkauth(rw->getSrc().hostname, req)){
+    if(!opt.rproxy_delegate_auth && !checkauth(rw->getSrc().hostname, req)){
         auto sheader = HttpResHeader::create(S401, sizeof(S401), id);
         sheader->set("WWW-Authenticate", "Basic realm=\"Secure Area\"");
         response(rw, sheader, "");

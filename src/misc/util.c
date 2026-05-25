@@ -415,6 +415,13 @@ int parse_user_pass(const char* input, size_t input_len, struct Credit* credit) 
     }
     memcpy(credit->user, input, user_len);
     credit->user[user_len] = 0;
+    char* plus = strrchr(credit->user, '+');
+    if(plus) {
+        *plus = 0;
+        snprintf(credit->identifier, sizeof(credit->identifier), "%s", plus + 1);
+    } else {
+        credit->identifier[0] = 0;
+    }
     if (pass_len) {
         memcpy(credit->pass, sep + 1, pass_len);
     }
