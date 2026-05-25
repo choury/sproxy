@@ -303,7 +303,8 @@ int verify_host_callback(int ok, X509_STORE_CTX *ctx){
 
 static int ssl_err_cb(const char* str, size_t len, void* arg){
     SSL* ssl = (SSL*)arg;
-    LOGE("SSL error <%s> : %.*s", (const char*)SSL_get_app_data(ssl), (int)len, str);
+    const char* sni = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+    LOGE("SSL error sni:<%s> : %.*s", sni ? sni : "none", (int)len, str);
     return (int)len;
 }
 
@@ -458,10 +459,10 @@ static int select_alpn_cb(SSL *ssl,
 #ifndef USE_BORINGSSL
 static int ssl_callback_ClientHello(SSL *ssl, int* al, void* arg){
     (void)al;
+    const char* host = (const char*)arg;
     if(SSL_get_certificate(ssl)){
         return SSL_CLIENT_HELLO_SUCCESS;
     }
-    const char* host = (const char*)arg;
     const unsigned char *servername;
     size_t servername_len;
     if(SSL_client_hello_get0_ext(ssl, TLSEXT_TYPE_server_name, &servername, &servername_len) == 1) {
@@ -469,7 +470,7 @@ static int ssl_callback_ClientHello(SSL *ssl, int* al, void* arg){
         return SSL_CLIENT_HELLO_SUCCESS;
     }
     if(!cert_pair_leaf(&opt.ca) || !opt.ca.key) {
-        LOGD(DSSL, "no ca file found for sni: %s\n", host);
+        LOGE("no ca file found for sni: %s\n", host);
         return SSL_CLIENT_HELLO_ERROR;
     }
     EVP_PKEY *key;
@@ -479,8 +480,7 @@ static int ssl_callback_ClientHello(SSL *ssl, int* al, void* arg){
         LOGD(DSSL, "generate cert for %s when ClientHello\n", host);
         return SSL_CLIENT_HELLO_SUCCESS;
     }
-    SSL_set_app_data(ssl, (void*)servername);
-    LOGD(DSSL, "generate cert for %s failed\n", host);
+    LOGE("generate cert for sni: %s failed\n", host);
     return SSL_CLIENT_HELLO_ERROR;
 }
 #endif
@@ -488,17 +488,17 @@ static int ssl_callback_ClientHello(SSL *ssl, int* al, void* arg){
 static int ssl_callback_ServerName(SSL *ssl, int* al, void* arg){
     (void)al;
     const char* host = (const char*)arg;
+    const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
     if(SSL_get_certificate(ssl)){
         return SSL_TLSEXT_ERR_OK;
     }
-    const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
     if(servername == NULL) {
         LOGD(DSSL, "no servername found for sni: %s\n", host);
         return SSL_TLSEXT_ERR_ALERT_FATAL;
     }
     LOGD(DSSL, "servername sni ext found for %s: %s\n", host, servername);
     if(!cert_pair_leaf(&opt.ca) || !opt.ca.key) {
-        LOGD(DSSL, "no ca file found for sni: %s\n", servername);
+        LOGE("no ca file found for sni: %s\n", servername);
         return SSL_TLSEXT_ERR_ALERT_FATAL;
     }
     EVP_PKEY *key;
@@ -510,8 +510,7 @@ static int ssl_callback_ServerName(SSL *ssl, int* al, void* arg){
         LOGD(DSSL, "generate cert for %s when ServerName\n", servername);
         return SSL_TLSEXT_ERR_OK;
     }
-    SSL_set_app_data(ssl, (void*)servername);
-    LOGD(DSSL, "generate cert for %s failed\n", servername);
+    LOGE("generate cert for sni: %s failed\n", servername);
     return SSL_TLSEXT_ERR_ALERT_FATAL;
 }
 

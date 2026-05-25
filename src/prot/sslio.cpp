@@ -187,7 +187,9 @@ void SslRWerBase::do_handshake() {
         sslStats = SslStats::SslError;
         int error = errno;
         HOOK_BPF(this, server, sslStats, error, SSL_is_server(ssl));
-        LOGE("(%s): ssl %s error:%s\n", server.c_str(), SSL_is_server(ssl)?"accept":"connect", strerror(error));
+        const char* sni = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+        LOGE("(%s): ssl %s error:%s sni:<%s>\n", server.c_str(), SSL_is_server(ssl)?"accept":"connect", strerror(error),
+             sni ? sni : "none");
         onError(SSL_SHAKEHAND_ERR, error);
     }
     sink_out_bio(0);
@@ -219,7 +221,6 @@ void SslRWerBase::set_hostname_callback(int (* cb)(SSL *, int *, void*), void* a
 
 void SslRWerBase::set_server_name(const std::string& arg) {
     server = arg;
-    SSL_set_app_data(ssl, server.c_str());
 }
 
 void SslRWerBase::dump(Dumper dp, void *param) {
