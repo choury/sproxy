@@ -579,7 +579,6 @@ const char* dumpAuthority(const struct Destination* Server){
 
 void storage2Dest(const struct sockaddr_storage* addr, struct Destination* dest) {
     memset(dest, 0, sizeof(struct Destination));
-    dest->systemd_fd = -1;
     addrstring(addr, dest->hostname, sizeof(dest->hostname));
     if(addr->ss_family == AF_INET){
         const struct sockaddr_in* in = (struct sockaddr_in*)addr;
@@ -599,11 +598,11 @@ void storage2Dest(const struct sockaddr_storage* addr, struct Destination* dest)
 // special:
 //   unix:path
 // return 0 on success, -1 on error
-int parseBind(const char* str, struct Destination* dest) {
-    if (!str || !*str || !dest)
+int parseBind(const char* str, struct BindInfo* info) {
+    if (!str || !*str || !info)
         return -1;
-    memset(dest, 0, sizeof(*dest));
-    dest->systemd_fd = -1;
+    memset(info, 0, sizeof(*info));
+    info->systemd_fd = -1;
 
     // special: unix:path
     if(strncmp(str, "unix:", 5) == 0) {
@@ -611,12 +610,10 @@ int parseBind(const char* str, struct Destination* dest) {
         if (!*path)
             return -1;
 
-        if (sizeof(dest->protocol) <= strlen("unix"))
+        if (strlen(path) >= sizeof(info->hostname))
             return -1;
-        strcpy(dest->protocol, "unix");
-        if (strlen(path) >= sizeof(dest->hostname))
-            return -1;
-        strcpy(dest->hostname, path);
+        strcpy(info->protocol, "unix");
+        strcpy(info->hostname, path);
         return 0;
     }
 
@@ -640,17 +637,16 @@ int parseBind(const char* str, struct Destination* dest) {
 
     // 情况 1：只有 port => [::]:port
     if (!last_colon) {
-        if (parse_port(str, &dest->port) != 0)
+        if (parse_port(str, &info->port) != 0)
             return -1;
 
-        //strcpy(dest->protocol, "tcp");
-        strcpy(dest->hostname, "[::]");
+        strcpy(info->hostname, "[::]");
         return 0;
     }
 
     // 下面开始处理 hostname:port / protocol:hostname:port 两类
     // 先解析 port （最后一个冒号后面那段）
-    if (parse_port(last_colon + 1, &dest->port) != 0)
+    if (parse_port(last_colon + 1, &info->port) != 0)
         return -1;
 
     const char *prefix_start = str;
@@ -669,22 +665,50 @@ int parseBind(const char* str, struct Destination* dest) {
         if (proto_len == 0 || host_len == 0)
             return -1;
 
-        if (proto_len >= sizeof(dest->protocol) ||
-            host_len  >= sizeof(dest->hostname))
+        if (proto_len >= sizeof(info->protocol) || host_len >= sizeof(info->hostname))
             return -1;
 
-        memcpy(dest->protocol, prefix_start, proto_len);
-        memcpy(dest->hostname, first_colon + 1, host_len);
+        memcpy(info->protocol, prefix_start, proto_len);
+        memcpy(info->hostname, first_colon + 1, host_len);
     } else {
         // hostname:port
         size_t host_len = (size_t)(prefix_end - prefix_start);
         if (host_len == 0)
             return -1;
 
-        if (host_len >= sizeof(dest->hostname))
+        if (host_len >= sizeof(info->hostname))
             return -1;
 
-        memcpy(dest->hostname, prefix_start, host_len);
+        memcpy(info->hostname, prefix_start, host_len);
     }
     return 0;
 }
+
+const char* dumpBind(const struct BindInfo* info) {
+    if(info == NULL) {
+        return "[null]";
+    }
+    static __thread char buff[1024];
+    if(info->port) {
+        snprintf(buff, sizeof(buff), "%s:%u", info->hostname, info->port);
+    } else {
+        snprintf(buff, sizeof(buff), "%s", info->hostname);
+    }
+    return buff;
+}
+
+void storage2BindInfo(const struct sockaddr_storage* addr, struct BindInfo* info) {
+    memset(info, 0, sizeof(*info));
+    info->systemd_fd = -1;
+    addrstring(addr, info->hostname, sizeof(info->hostname));
+    if(addr->ss_family == AF_INET){
+        const struct sockaddr_in* in = (struct sockaddr_in*)addr;
+        info->port = ntohs(in->sin_port);
+    }else if(addr->ss_family == AF_INET6){
+        const struct sockaddr_in6* in6 = (struct sockaddr_in6*)addr;
+        info->port = ntohs(in6->sin6_port);
+    }else if(addr->ss_family == AF_UNIX) {
+        info->port = 0;
+    }
+}
+

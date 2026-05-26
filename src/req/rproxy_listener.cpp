@@ -4,7 +4,7 @@
 
 struct ListenerState {
     size_t id = 0;
-    Destination bind;
+    BindInfo bind;
     std::string rproxy;
     Destination target;
     std::shared_ptr<Tproxy_server> server;
@@ -28,8 +28,14 @@ bool add_rproxy_listener(const std::string& bind_spec, const std::string& target
         return false;
     }
     state.rproxy = target_spec.substr(0, pos);
-    if(parseBind(target_spec.substr(pos+1).c_str(), &state.target)) {
-        return false;
+    {
+        BindInfo bi = {};
+        if(parseBind(target_spec.substr(pos+1).c_str(), &bi)) {
+            return false;
+        }
+        strcpy(state.target.hostname, bi.hostname);
+        state.target.port = bi.port;
+        strcpy(state.target.protocol, bi.protocol);
     }
     if(state.target.hostname[0] == '\0' ||
        strcmp(state.target.hostname, "[::]") == 0 ||
@@ -56,14 +62,14 @@ bool add_rproxy_listener(const std::string& bind_spec, const std::string& target
         return false;
     }
     if(fd < 0) {
-        LOGE("rproxy failed to bind %s\n", dumpDest(&state.bind));
+        LOGE("rproxy failed to bind %s\n", dumpBind(&state.bind));
         return false;
     }
     state.server = std::make_shared<Tproxy_server>(fd, state.rproxy, state.target);
     state.id = g_next_listener_id++;
     g_listeners[state.id] = state;
     LOG("rproxy listen #%zd %s -> %s@%s\n",
-        state.id, dumpDest(state.bind).c_str(), state.rproxy.c_str(), dumpDest(state.target).c_str());
+        state.id, dumpBind(&state.bind), state.rproxy.c_str(), dumpDest(&state.target));
     return true;
 }
 
@@ -83,7 +89,7 @@ std::vector<std::string> list_rproxy_listeners() {
     for(const auto& [id, state] : g_listeners) {
         list.emplace_back(
             std::to_string(id) + " " +
-            dumpDest(state.bind).c_str() + " -> " +
+            dumpBind(&state.bind) + std::string(" -> ") +
             state.rproxy + "@" +
             dumpDest(state.target).c_str()
         );

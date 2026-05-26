@@ -110,14 +110,23 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
     if (!req->valid_method()) {
         return response(rw, HttpResHeader::create(S405, sizeof(S405), id), "[[unsupported method]]\n");
     }
-    if(opt.redirect_http && opt.ssl_list && is_http_listen_port(rw->getDst().port)) {
-        auto reqh = HttpReqHeader(*req);
-        strcpy(reqh.Dest.scheme, "https");
-        reqh.Dest.port = opt.ssl_list->dest.port;
+    if(opt.redirect_http && opt.listen_list && is_http_listen_port(rw->getDst().port)) {
+        const struct BindInfo* ssl_info = nullptr;
+        for(struct bind_list* n = opt.listen_list; n; n = n->next) {
+            if(strcmp(n->info.protocol, "ssl") == 0 && !n->info.sni_mode) {
+                ssl_info = &n->info;
+                break;
+            }
+        }
+        if(ssl_info) {
+            auto reqh = HttpReqHeader(*req);
+            strcpy(reqh.Dest.scheme, "https");
+            reqh.Dest.port = ssl_info->port;
 
-        auto resh = HttpResHeader::create(S308, sizeof(S308), id);
-        resh->set("Location", reqh.geturl());
-        return response(rw, resh, reqh.geturl().c_str());
+            auto resh = HttpResHeader::create(S308, sizeof(S308), id);
+            resh->set("Location", reqh.geturl());
+            return response(rw, resh, reqh.geturl().c_str());
+        }
     }
     strategy stra{Strategy::none, ""};
     std::string backend = getBackend(req);

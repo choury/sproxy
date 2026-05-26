@@ -409,7 +409,7 @@ function test_tap(){
 }
 
 function test_sni(){
-    ./sproxy -c server.conf --ssl 443 --quic 443 --sni  --admin unix:${sp}server.sock > server_sni.log 2>&1 &
+    ./sproxy -c server.conf --bind "443 ssl sni" --bind "443 quic sni"  --admin unix:${sp}server.sock > server_sni.log 2>&1 &
     wait_tcp_port 443
 
     curl -f -v --http1.1 https://qq.com --resolve qq.com:443:127.0.0.1 -A "Mozilla/5.0" > /dev/null 2>> curl.log
@@ -431,7 +431,7 @@ function test_sni(){
     wait %1
     jobs
 
-    ./sproxy -c server.conf --ssl 443 --quic 443 --sni --mitm enable  --admin unix:${sp}server.sock >> server_sni.log 2>&1 &
+    ./sproxy -c server.conf --bind "443 ssl sni" --bind "443 quic sni" --mitm enable  --admin unix:${sp}server.sock >> server_sni.log 2>&1 &
     wait_tcp_port 443
 
     curl -k -f -v --http1.1 https://qq.com --resolve qq.com:443:127.0.0.1 -A "Mozilla/5.0" > /dev/null 2>> curl.log
@@ -608,16 +608,16 @@ root-dir .
 policy-file sites.list
 index libproxy.do
 insecure
-http 3333
-ssl  3334
-quic 3334
+bind 3333
+bind 3334 ssl
+bind 3334 quic
 quic-cc bbr
 ipv6 enable
 debug all
 EOF
 
 if [ "$run_extended_tests" = true ]; then
-    echo "tproxy 4333" >> server.conf
+    echo "bind 4333 tproxy" >> server.conf
     echo "fwmark 1" >> server.conf
 fi
 
@@ -645,7 +645,7 @@ quic-version 2
 debug all
 EOF
 
-./sproxy -c client.conf --http 3335  https://$HOSTNAME:3334 --disable-http2 --admin unix:${sp}client_h1.sock > client_h1.log 2>&1 &
+./sproxy -c client.conf --bind 3335  https://$HOSTNAME:3334 --disable-http2 --admin unix:${sp}client_h1.sock > client_h1.log 2>&1 &
 wait_tcp_port 3335
 
 echo "test http1 -> http1"
@@ -658,7 +658,7 @@ kill -SIGUSR1 %2
 kill -SIGINT %2
 wait %2
 
-./sproxy -c client.conf --http 3335  https://$HOSTNAME:3334 --admin unix:${sp}client_h23.sock > client_h23.log 2>&1 &
+./sproxy -c client.conf --bind 3335  https://$HOSTNAME:3334 --admin unix:${sp}client_h23.sock > client_h23.log 2>&1 &
 wait_tcp_port 3335
 
 echo "test http1 -> http2"

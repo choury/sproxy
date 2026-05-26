@@ -371,26 +371,26 @@ int ListenUnix(const char* path, const struct listenOption* ops) {
     return -1;
 }
 
-int ListenTcpD(const struct Destination* dest, const struct listenOption* ops) {
+int ListenTcpD(const struct BindInfo* info, const struct listenOption* ops) {
     struct sockaddr_storage addr;
-    if(storage_aton(dest->hostname, dest->port, &addr) == 0) {
-        LOGE("failed to parse listen addr: %s\n", dest->hostname);
+    if(storage_aton(info->hostname, info->port, &addr) == 0) {
+        LOGE("failed to parse listen addr: %s\n", info->hostname);
         return -1;
     }
     return ListenTcp(&addr, ops);
 }
 
-int ListenUdpD(const struct Destination* dest, const struct listenOption* ops) {
+int ListenUdpD(const struct BindInfo* info, const struct listenOption* ops) {
     struct sockaddr_storage addr;
-    if(storage_aton(dest->hostname, dest->port, &addr) == 0) {
-        LOGE("failed to parse listen addr: %s\n", dest->hostname);
+    if(storage_aton(info->hostname, info->port, &addr) == 0) {
+        LOGE("failed to parse listen addr: %s\n", info->hostname);
         return -1;
     }
     return ListenUdp(&addr, ops);
 }
 
-int ListenUnixD(const struct Destination* dest, const struct listenOption* ops) {
-    return ListenUnix(dest->hostname, ops);
+int ListenUnixD(const struct BindInfo* info, const struct listenOption* ops) {
+    return ListenUnix(info->hostname, ops);
 }
 
 int Connect(const struct sockaddr_storage* dst, int type, const struct sockaddr_storage* src) {

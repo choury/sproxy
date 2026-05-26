@@ -54,9 +54,9 @@ struct arg_list{
     struct arg_list* next;
 };
 
-struct dest_list{
-    struct Destination dest;
-    struct dest_list* next;
+struct bind_list {
+    struct BindInfo info;
+    struct bind_list* next;
 };
 
 struct cert_pair{
@@ -90,7 +90,6 @@ struct options{
     const char *pidfile;
     bool disable_http2;
     bool disable_fakeip;
-    bool sni_mode;
     bool daemon_mode;
     bool ignore_cert_error;
     bool ignore_hosts;
@@ -116,11 +115,8 @@ struct options{
 
     FILE* policy_read;
     FILE* policy_write;
-    struct dest_list* http_list;
-    struct dest_list* ssl_list;
-    struct dest_list* quic_list;
-    struct Destination admin;
-    struct Destination tproxy;
+    struct bind_list* listen_list;
+    struct BindInfo admin;
     uint64_t pcap_len;
     uint64_t fwmark;
     uint64_t bpf_fwmark;
@@ -147,7 +143,7 @@ void postConfig();
 int parseDest(const char* proxy, struct Destination* server);
 bool debugon(const char* module, bool enable);
 bool is_http_listen_port(uint16_t port);
-void append_dest_list(struct dest_list*** tail, const struct Destination* dest);
+void append_bind_list(struct bind_list*** tail, const struct BindInfo* info);
 
 void flushdns();
 void flushconnect();

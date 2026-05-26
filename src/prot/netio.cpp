@@ -84,15 +84,15 @@ SocketRWer::SocketRWer(const Destination& dest, std::shared_ptr<IRWerCallback> c
     if(dest.assign_src[0] == '\0') {
         return;
     }
-    Destination src_dest{};
-    if(parseBind(dest.assign_src, &src_dest)){
+    BindInfo src_bind{};
+    if(parseBind(dest.assign_src, &src_bind)){
         LOGE("Invalid assign_src format: %s\n", dest.assign_src);
         return;
     }
 
     assign_src = std::make_unique<sockaddr_storage>();
-    if(storage_aton(src_dest.hostname, src_dest.port, assign_src.get()) != 1) {
-        LOGE("Invalid assign_src address: %s\n", src_dest.hostname);
+    if(storage_aton(src_bind.hostname, src_bind.port, assign_src.get()) != 1) {
+        LOGE("Invalid assign_src address: %s\n", src_bind.hostname);
         assign_src.reset(nullptr);
     }
 }

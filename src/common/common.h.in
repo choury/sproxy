@@ -295,9 +295,16 @@ struct Destination{
     char hostname[DOMAINLIMIT];
     struct Credit credit;
     uint16_t port;
-    int systemd_fd;
     bool system_resolve;
     char assign_src[60];
+};
+
+struct BindInfo {
+    char protocol[16];
+    char hostname[DOMAINLIMIT];
+    uint16_t port;
+    int systemd_fd;
+    bool sni_mode;
 };
 
 #define STRATEGY "Strategy"

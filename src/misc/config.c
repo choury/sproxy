@@ -44,6 +44,8 @@ static struct arg_list debug_list = {NULL, NULL};
 static struct arg_list http_listens = {NULL, NULL};
 static struct arg_list ssl_listens = {NULL, NULL};
 static struct arg_list quic_listens = {NULL, NULL};
+static struct arg_list bind_listens = {NULL, NULL};
+static bool sni_flag = false;
 static uint64_t id = 100000;
 
 static const char *certfile = NULL;
@@ -94,7 +96,6 @@ struct options opt = {
     .pidfile           = NULL,
     .disable_http2     = false,
     .disable_fakeip    = false,
-    .sni_mode          = false,
     .daemon_mode       = false,
     .ignore_cert_error = false,
     .ignore_hosts      = false,
@@ -120,18 +121,8 @@ struct options opt = {
 
     .policy_read    = NULL,
     .policy_write   = NULL,
-    .http_list      = NULL,
-    .ssl_list       = NULL,
-    .quic_list      = NULL,
-    .tproxy         = {
-        .scheme     = {0},
-        .protocol   = {0},
-        .hostname   = {0},
-        .port       = 0,
-        .systemd_fd = -1,
-    },
+    .listen_list    = NULL,
     .admin          = {
-        .scheme     = {0},
         .protocol   = {0},
         .hostname   = {0},
         .port       = 0,
@@ -142,7 +133,6 @@ struct options opt = {
         .protocol   = {0},
         .hostname   = {0},
         .port       = 0,
-        .systemd_fd = -1,
     },
     .rewrite_auth   = {0},
     .ipv6_mode      = Auto,
@@ -195,6 +185,7 @@ static struct option long_options[] = {
     {"doh",           optional_argument, NULL,  0 },
     {"fwmark",        required_argument, NULL,  0 },
     {"help",          no_argument,       NULL, 'h'},
+    {"bind",          required_argument, NULL,  0 },
     {"http",          required_argument, NULL,  0 },
     {"mitm",          required_argument, NULL,  0 },
     {"ignore-hosts",  no_argument,       NULL,  0 },
@@ -279,7 +270,7 @@ static struct option_detail option_detail[] = {
     {"forward-header", "append the header (name:value) when forward http request", option_list, &opt.forward_headers, NULL},
     {"fwmark", "Set fwmark for output packet", option_uint64, &opt.fwmark, NULL},
     {"help", "Print this usage", option_bool, NULL, NULL},
-    {"http", "Listen for http server", option_list, &http_listens, NULL},
+    {"http", "[DEPRECATED] use bind instead", option_list, &http_listens, NULL},
     {"ignore-hosts", "Dont read entries from /etc/hosts ", option_bool, &opt.ignore_hosts, (void*)true},
     {"index", "Index file for path (local server)", option_string, &opt.index_file, NULL},
     {"insecure", "Ignore the cert error of server (SHOULD NOT DO IT)", option_bool, &opt.ignore_cert_error, (void*)true},
@@ -292,7 +283,7 @@ static struct option_detail option_detail[] = {
     {"pcap-len", "Max packet length to save in pcap file", option_uint64, &opt.pcap_len, NULL},
     {"pidfile", "Write pid to this file", option_string, &opt.pidfile, NULL},
     {"policy-file", "The file of policy ("PREFIX"/etc/sproxy/sites.list as default)", option_string, &policy_file, NULL},
-    {"quic", "Listen for QUIC server", option_list, &quic_listens, NULL},
+    {"quic", "[DEPRECATED] use bind instead", option_list, &quic_listens, NULL},
     {"quic-cc", "QUIC congestion control algorithm (reno, bbr)", option_string, &opt.quic_cc_algorithm, NULL},
     {"quic-version", "QUIC version (1 for QUIC v1, 2 for QUIC v2)", option_uint64, &opt.quic_version, NULL},
     {"redirect-http", "Return 308 to redirect http to https", option_bool, &opt.redirect_http, (void*)true},
@@ -306,14 +297,15 @@ static struct option_detail option_detail[] = {
     {"secret", "Set user and passwd for proxy (user:password), default is none.", option_list, &secrets, NULL},
     {"server", "default proxy server (can ONLY set in config file)", option_string, &server_string, NULL},
     {"set-dns-route", "set route for dns server (via vpn interface)", option_bool, &opt.set_dns_route, (void*)true},
-    {"sni", "Act as a sni proxy", option_bool, &opt.sni_mode, (void*)true},
+    {"sni", "[DEPRECATED] use bind with sni flag instead", option_bool, &sni_flag, (void*)true},
     {"socks5-fast", "Send socks5 greeting/auth/request without waiting for replies", option_bool, &opt.socks5_fast, (void*)true},
-    {"ssl", "Listen for ssl server (require cert file and key)", option_list, &ssl_listens, NULL},
+    {"ssl", "[DEPRECATED] use bind instead", option_list, &ssl_listens, NULL},
+    {"bind", "Listen with protocol flags (ssl/quic/sni)", option_list, &bind_listens, NULL},
     {"tun", "tun mode (vpn mode, require root privilege)", option_bool, &opt.tun_mode, (void*)true},
     {"tap", "tap mode (layer 2 vpn mode, require root privilege)", option_bool, &opt.tap_mode, (void*)true},
     {"tun-fd", "tun fd (vpn mode, recv fd before execve)", option_int64, &opt.tun_fd, NULL},
     {"tap-fd", "tap fd (layer 2 vpn mode, recv fd before execve)", option_int64, &opt.tap_fd, NULL},
-    {"tproxy", "tproxy listen (get dst via SO_ORIGINAL_DST)", option_string, &tproxy_listen, (void*)true},
+    {"tproxy", "[DEPRECATED] use bind with tproxy flag instead", option_string, &tproxy_listen, (void*)true},
     {"trace", "print trace time if response time is larger than it", option_int64, &opt.trace_time, NULL},
     {"ua", "set user-agent for vpn auto request", option_string, &opt.ua, NULL},
     {"version", "show the version of this programme", option_bool, NULL, NULL},
@@ -488,7 +480,6 @@ static void parseArgs(const char* name, const char* args){
 
 int parseDest(const char* proxy, struct Destination* server){
     memset(server, 0, sizeof(struct Destination));
-    server->systemd_fd = -1;
     if(spliturl(proxy, server, NULL)){
         return -1;
     }
@@ -592,13 +583,14 @@ void free_arg_list(struct arg_list* list) {
     free(list);
 }
 
-void append_dest_list(struct dest_list*** tail, const struct Destination* dest) {
-    struct dest_list* node = malloc(sizeof(struct dest_list));
+
+void append_bind_list(struct bind_list*** tail, const struct BindInfo* info) {
+    struct bind_list* node = malloc(sizeof(struct bind_list));
     if(node == NULL) {
-        LOGE("alloc listen failed: %s\n", strerror(errno));
+        LOGE("alloc bind list failed: %s\n", strerror(errno));
         exit(1);
     }
-    node->dest = *dest;
+    node->info = *info;
     node->next = NULL;
     **tail = node;
     *tail = &node->next;
@@ -646,35 +638,47 @@ static char** split_fdnames(const char* names, size_t* count) {
     return out;
 }
 
-static void build_dest_list(struct arg_list* arguments,
-                            struct dest_list** destinations,
-                            const char* option_name) {
-    if(destinations == NULL) {
-        return;
-    }
-    struct dest_list* node = *destinations;
-    while(node) {
-        struct dest_list* next = node->next;
-        free(node);
-        node = next;
-    }
-    *destinations = NULL;
-    if(arguments == NULL) {
-        return;
-    }
-    struct arg_list* item = arguments->next;
-    if(item == NULL) {
-        return;
-    }
-    struct dest_list** tail = destinations;
-    for(; item; item = item->next) {
-        struct Destination dest;
-        if(parseBind(item->arg, &dest)) {
-            LOGE("wrong %s listen: %s\n", option_name, item->arg);
-            exit(1);
+static int parseBindEx(const char* str, struct BindInfo* info) {
+    if (!str || !*str || !info)
+        return -1;
+
+    char* buf = strdup(str);
+    if (!buf) return -1;
+    char* saveptr;
+    char* token = strtok_r(buf, " \t", &saveptr);
+    if (!token) { free(buf); return -1; }
+
+    char addr_buf[256];
+    snprintf(addr_buf, sizeof(addr_buf), "%s", token);
+
+    char protocol[16] = {0};
+    bool sni_mode = false;
+    while ((token = strtok_r(NULL, " \t", &saveptr)) != NULL) {
+        if (strcasecmp(token, "ssl") == 0) {
+            strcpy(protocol, "ssl");
+        } else if (strcasecmp(token, "quic") == 0) {
+            strcpy(protocol, "quic");
+        } else if (strcasecmp(token, "sni") == 0) {
+            sni_mode = true;
+        } else if (strcasecmp(token, "tproxy") == 0) {
+            strcpy(protocol, "tproxy");
+        } else if (strcasecmp(token, "http") != 0) {
+            LOGE("unknown bind flag: %s\n", token);
         }
-        append_dest_list(&tail, &dest);
     }
+    free(buf);
+
+    if (sni_mode && (strcmp(protocol, "ssl") != 0 && strcmp(protocol, "quic") != 0))
+        return -1;
+
+    if (parseBind(addr_buf, info))
+        return -1;
+    if (protocol[0] == '\0')
+        strcpy(info->protocol, "http");
+    else
+        strcpy(info->protocol, protocol);
+    info->sni_mode = sni_mode;
+    return 0;
 }
 
 void postConfig(){
@@ -690,9 +694,7 @@ void postConfig(){
             LOGE("systemd socket has no valid fd names\n");
             exit(1);
         }
-        struct dest_list** http_tail = &opt.http_list;
-        struct dest_list** ssl_tail = &opt.ssl_list;
-        struct dest_list** quic_tail = &opt.quic_list;
+        struct bind_list** listen_tail = &opt.listen_list;
 
         for(size_t i = 0; i < name_count; ++i) {
             int fd = 3 + (int)i;
@@ -709,38 +711,84 @@ void postConfig(){
                 LOGE("systemd socket getsockname failed for %d: %s\n", fd, strerror(errno));
                 continue;
             }
-            struct Destination dest;
-            storage2Dest(&addr, &dest);
-            dest.systemd_fd = fd;
+            struct BindInfo info;
+            storage2BindInfo(&addr, &info);
+            info.systemd_fd = fd;
             if(fd_name && fd_name[0]) {
-                snprintf(dest.scheme, sizeof(dest.scheme), "%s", fd_name);
+                snprintf(info.protocol, sizeof(info.protocol), "%s", fd_name);
             }
-            if(dest.port == 0) {
+            if(info.port == 0) {
                 LOGE("systemd socket %d has no port\n", fd);
                 continue;
             }
 
-            if(type == SOCK_STREAM && strcmp(fd_name, "http") == 0) {
-                append_dest_list(&http_tail, &dest);
-                continue;
-            }
-            if(type == SOCK_STREAM && strcmp(fd_name, "ssl") == 0) {
-                append_dest_list(&ssl_tail, &dest);
-                continue;
-            }
-            if(type == SOCK_DGRAM && strcmp(fd_name, "quic") == 0) {
-                append_dest_list(&quic_tail, &dest);
+            if((type == SOCK_STREAM && strcmp(fd_name, "http") == 0) ||
+               (type == SOCK_STREAM && strcmp(fd_name, "ssl") == 0) ||
+               (type == SOCK_DGRAM && strcmp(fd_name, "quic") == 0)) {
+                append_bind_list(&listen_tail, &info);
                 continue;
             }
         }
         free_fdnames(names);
     } else {
-        build_dest_list(&http_listens, &opt.http_list, "http");
-        build_dest_list(&ssl_listens, &opt.ssl_list, "ssl");
-        build_dest_list(&quic_listens, &opt.quic_list, "quic");
-        if(tproxy_listen && parseBind(tproxy_listen, &opt.tproxy)) {
-            LOGE("wrong tproxy listen: %s\n", tproxy_listen);
-            exit(1);
+        struct bind_list** listen_tail = &opt.listen_list;
+
+        // 旧 --http/--ssl/--quic 选项转为 BindInfo
+        for(struct arg_list* item = http_listens.next; item; item = item->next) {
+            struct BindInfo info = {};
+            if(parseBind(item->arg, &info)) {
+                LOGE("wrong http listen: %s\n", item->arg);
+                exit(1);
+            }
+            strcpy(info.protocol, "http");
+            append_bind_list(&listen_tail, &info);
+        }
+        for(struct arg_list* item = ssl_listens.next; item; item = item->next) {
+            struct BindInfo info = {};
+            if(parseBind(item->arg, &info)) {
+                LOGE("wrong ssl listen: %s\n", item->arg);
+                exit(1);
+            }
+            strcpy(info.protocol, "ssl");
+            append_bind_list(&listen_tail, &info);
+        }
+        for(struct arg_list* item = quic_listens.next; item; item = item->next) {
+            struct BindInfo info = {};
+            if(parseBind(item->arg, &info)) {
+                LOGE("wrong quic listen: %s\n", item->arg);
+                exit(1);
+            }
+            strcpy(info.protocol, "quic");
+            append_bind_list(&listen_tail, &info);
+        }
+
+        // 新 --bind 选项
+        for(struct arg_list* item = bind_listens.next; item; item = item->next) {
+            struct BindInfo info = {};
+            if(parseBindEx(item->arg, &info)) {
+                LOGE("wrong bind listen: %s\n", item->arg);
+                exit(1);
+            }
+            append_bind_list(&listen_tail, &info);
+        }
+
+        // --sni 向后兼容：标记所有 ssl/quic 端口
+        if(sni_flag) {
+            for(struct bind_list* n = opt.listen_list; n; n = n->next) {
+                if(strcmp(n->info.protocol, "ssl") == 0 || strcmp(n->info.protocol, "quic") == 0)
+                    n->info.sni_mode = true;
+            }
+        }
+
+        // --tproxy 向后兼容：转为 BindInfo 追加到 listen_list
+        if(tproxy_listen) {
+            struct BindInfo info = {};
+            if(parseBind(tproxy_listen, &info)) {
+                LOGE("wrong tproxy listen: %s\n", tproxy_listen);
+                exit(1);
+            }
+            strcpy(info.protocol, "tproxy");
+            append_bind_list(&listen_tail, &info);
         }
     }
 
@@ -748,8 +796,19 @@ void postConfig(){
         LOGE("wrong server format: %s\n", server_string);
         exit(1);
     }
-    if(opt.redirect_http && (opt.ssl_list == NULL && opt.quic_list == NULL)) {
-        LOGE("redirect-http must use with ssl\n");
+    bool has_ssl = false;
+    for(struct bind_list* n = opt.listen_list; n; n = n->next) {
+        if(strcmp(n->info.protocol, "ssl") != 0 && strcmp(n->info.protocol, "quic") != 0) {
+            continue;
+        }
+        if(n->info.sni_mode) {
+            continue;
+        }
+        has_ssl = true;
+        break;
+    }
+    if(opt.redirect_http && !has_ssl) {
+        LOGE("redirect-http must use with non-sni ssl/quic\n");
         exit(1);
     }
     LOG("server %s\n", dumpDest(&opt.Server));
@@ -852,24 +911,24 @@ void postConfig(){
         exit(1);
     }
 
-    if ((opt.ssl_list || opt.quic_list) &&
-        (cert_pair_leaf(&opt.cert) == NULL || opt.cert.key == NULL) &&
-        opt.mitm_mode != Enable && !opt.sni_mode && !opt.acme_state)
+    if(has_ssl && (cert_pair_leaf(&opt.cert) == NULL || opt.cert.key == NULL)
+        && opt.mitm_mode != Enable && !opt.acme_state)
     {
         LOGE("ssl/quic mode require cert and key file\n");
-        exit(1);
-    }
-    if(opt.sni_mode && !opt.ssl_list && !opt.quic_list) {
-        LOGE("sni mode require ssl or quic\n");
         exit(1);
     }
     if (opt.mitm_mode == Enable && opt.ca.key == NULL) {
         LOGE("mitm mode require cakey\n");
         exit(1);
     }
-    if (opt.tproxy.port && geteuid() != 0) {
-        LOGE("tproxy require root privilege to set IP[V6]_TRANSPARENT\n");
-        exit(1);
+    for(struct bind_list* n = opt.listen_list; n; n = n->next) {
+        if(strcmp(n->info.protocol, "tproxy") != 0) {
+            continue;
+        }
+        if(geteuid() != 0) {
+            LOGE("tproxy require root privilege to set IP[V6]_TRANSPARENT\n");
+            exit(1);
+        }
     }
     if (opt.set_dns_route && opt.interface == NULL) {
         LOGE("set-dns-route require option interface\n");
@@ -977,11 +1036,11 @@ bool is_http_listen_port(uint16_t port) {
     if(port == 0) {
         return false;
     }
-    if(opt.http_list == NULL) {
+    if(opt.listen_list == NULL) {
         return false;
     }
-    for(struct dest_list* node = opt.http_list; node; node = node->next) {
-        if(node->dest.port == port) {
+    for(struct bind_list* node = opt.listen_list; node; node = node->next) {
+        if(strcmp(node->info.protocol, "http") == 0 && node->info.port == port) {
             return true;
         }
     }
