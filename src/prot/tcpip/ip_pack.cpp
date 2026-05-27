@@ -430,6 +430,36 @@ Tcp::Tcp(const char* packet, size_t len){
     if(tcpoptlen){
         tcpopt = (char *)malloc(tcpoptlen);
         memcpy(tcpopt, packet+sizeof(struct tcphdr), tcpoptlen);
+        // validate tcp options
+        tcp_opt* opt = (tcp_opt *)tcpopt;
+        size_t olen = tcpoptlen;
+        while(olen > 0) {
+            if(opt->kind == TCPOPT_EOL)
+                break;
+            if(opt->kind == TCPOPT_NOP){
+                olen--;
+                opt = (tcp_opt*)((char*)opt + 1);
+                continue;
+            }
+            if(opt->length < 2) {
+                LOGE("Invalid TCP option length: kind=%d, length=%d\n", opt->kind, opt->length);
+                free(tcpopt);
+                tcpopt = nullptr;
+                tcpoptlen = 0;
+                valid = false;
+                return;
+            }
+            if(opt->length > olen) {
+                LOGE("TCP option overflow: kind=%d, length=%d, remaining=%zu\n", opt->kind, opt->length, olen);
+                free(tcpopt);
+                tcpopt = nullptr;
+                tcpoptlen = 0;
+                valid = false;
+                return;
+            }
+            olen -= opt->length;
+            opt = (tcp_opt*)((char*)opt + opt->length);
+        }
     }
 }
 
@@ -574,7 +604,7 @@ Tcp *Tcp::setsack(const struct Sack *sack) {
     const struct Sack* ps = sack;
     while(ps){
         count ++;
-        ps = sack->next;
+        ps = ps->next;
     }
     size_t length = sizeof(tcp_sack) + count * sizeof(tcp_sack_content);
     if (tcpopt) {
@@ -898,7 +928,7 @@ void Tcp::print() const{
         if(opt->kind == TCPOPT_NOP){
             len --;
             opt = (tcp_opt*)((char *)opt+1);
-            break;
+            continue;
         }
         LOGD(DVPN,"TCP option: %d (%d)\n", opt->kind, opt->length);
         len -= opt->length;

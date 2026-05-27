@@ -566,7 +566,7 @@ static void dumpConnection(Dumper dp, void* param,
         auto status = std::static_pointer_cast<TcpStatus>(status_);
         dp(param, "  [%" PRIu64"]: <tcp> %s -> %s, srtt=%zd, state=%d, "
            "tx:%u/%" PRIu64 " rx:%u/%" PRIu64 " retrans:%u(rto:%u,fast:%u), "
-           "wlist: %zd, rlen: %zd, window: %zd\n",
+           "wlist: %zd, rlen: %zd, window: %zd, cwnd: %u, ssthresh: %u\n",
            value.first.first,
            std::string(storage_ntoa(&status->src)).c_str(),
            std::string(storage_ntoa(&status->dst)).c_str(),
@@ -575,7 +575,7 @@ static void dumpConnection(Dumper dp, void* param,
            status->rx_packets, status->rx_bytes,
            status->retransmits, status->rto_timeouts, status->fast_retransmits,
            status->sent_list.size(), status->rbuf.length(),
-           status->Cap());
+           status->Cap(), status->cwnd, status->ssthresh);
         break;
     }
     case Protocol::UDP: {

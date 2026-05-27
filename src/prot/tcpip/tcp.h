@@ -70,6 +70,9 @@ struct TcpStatus: public IpStatus{
     uint32_t   rttval = 0;
     uint32_t   rto = RTO_MAX;
     uint32_t   rto_factor = 1;
+    uint32_t   cwnd = 0;
+    uint32_t   ssthresh = 0;
+    bool       in_fast_recovery = false;
     uint32_t   dupack = 0;
     CBuffer    rbuf;
     std::list<tcp_sent> sent_list;

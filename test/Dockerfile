@@ -8,6 +8,7 @@ RUN apt-get update && \
         vim \
         curl \
         netcat-openbsd \
+        net-tools \
         lsof \
         tcpdump \
         strace \

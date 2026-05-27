@@ -68,8 +68,10 @@ ssize_t Cap(std::shared_ptr<TcpStatus> status) {
         return 0;
     }
     assert(nobefore(status->sent_seq, status->recv_ack));
-    return (ssize_t)(status->window << status->recv_wscale)
-                    - (ssize_t)(status->sent_seq - status->recv_ack);
+    uint32_t in_flight = status->sent_seq - status->recv_ack;
+    ssize_t cwnd_avail = (ssize_t)status->cwnd - (ssize_t)in_flight;
+    ssize_t rwnd_avail = (ssize_t)(status->window << status->recv_wscale) - (ssize_t)in_flight;
+    return std::max(std::min(cwnd_avail, rwnd_avail), (ssize_t)0);
 }
 
 void consumeData(std::shared_ptr<TcpStatus> status) {
@@ -186,6 +188,10 @@ void Resent(std::weak_ptr<TcpStatus> status_) {
             storage_ntoa(&status->src), status->rto, status->rto_factor, status->srtt);
         status->rto_factor++;
         status->rto_timeouts++;
+        uint32_t in_flight = status->sent_seq - status->recv_ack;
+        status->ssthresh = std::max(in_flight / 2, 2 * (uint32_t)status->mss);
+        status->cwnd = status->mss;
+        status->in_fast_recovery = false;
     }
     auto now = getmtime();
     pkgLogger logger("resent");
@@ -375,6 +381,7 @@ void SynProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, B
     status->window = pac->tcp->getwindow();
     status->options = pac->tcp->getoptions();
     status->mss = pac->tcp->getmss();
+    status->cwnd = std::min((uint32_t)status->mss * 4, (uint32_t)16384);
     if(status->options & (1ull<<TCPOPT_TIMESTAMP)){
         uint32_t tsval = 0;
         uint32_t tsecr = 0;
@@ -386,13 +393,14 @@ void SynProc(std::shared_ptr<TcpStatus> status, std::shared_ptr<const Ip> pac, B
         }
     }
     if(status->options & (1u<<TCPOPT_WINDOW)){
-        status->recv_wscale = pac->tcp->getwindowscale();
+        status->recv_wscale = std::min(pac->tcp->getwindowscale(), (uint8_t)14);
         status->send_wscale = TCP_WSCALE;
     }else{
         status->recv_wscale = 0;
         status->send_wscale = 0;
     }
     // 因为syn包中的wscale不生效，所以这里做下修正，为了bufleft不用特殊处理这种情况
+    status->ssthresh = status->window;
     status->window >>= status->recv_wscale;
     status->reqCB(pac);
     if (isLocalIp(&status->src)) {
@@ -473,15 +481,32 @@ static bool handleAck(std::shared_ptr<TcpStatus> status, std::shared_ptr<const I
     }, "tcp_ack_cb", 0);
     if(ack == status->recv_ack && (status->flags & TCP_KEEPALIVING) == 0) {
         status->dupack ++;
-        if(status->dupack >= 3) {
+        if(status->dupack >= 3 && !status->in_fast_recovery) {
+            uint32_t in_flight = status->sent_seq - status->recv_ack;
+            status->ssthresh = std::max(in_flight / 2, 2 * (uint32_t)status->mss);
+            status->cwnd = status->ssthresh + 3 * (uint32_t)status->mss;
+            status->in_fast_recovery = true;
             status->rto_job = UpdateJob(std::move(status->rto_job),
                                         [status_ = GetWeak(status)] {Resent(status_);}, 0);
+        } else if(status->in_fast_recovery) {
+            status->cwnd += status->mss;
         }
         return true;
     }
     status->flags &= ~TCP_KEEPALIVING;
     status->rto_factor = 1;
     status->dupack = 0;
+    if(status->in_fast_recovery) {
+        status->cwnd = status->ssthresh;
+        status->in_fast_recovery = false;
+    } else {
+        uint32_t acked = ack - status->recv_ack;
+        if(status->cwnd < status->ssthresh) {
+            status->cwnd += std::min((uint32_t)status->mss, acked);
+        } else if(status->cwnd > 0) {
+            status->cwnd += std::max((uint32_t)status->mss * status->mss / status->cwnd, 1u);
+        }
+    }
     status->recv_ack = ack;
     if(status->state == TCP_FIN_WAIT1 && ack == status->sent_seq){
         status->state = TCP_FIN_WAIT2;
