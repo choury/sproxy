@@ -2,6 +2,7 @@
 #include "prot/tls.h"
 #include "misc/buffer.h"
 #include "misc/config.h"
+#include "misc/cert_manager.h"
 #include "misc/defer.h"
 #include <string.h>
 #include <stdlib.h>
@@ -1556,23 +1557,18 @@ std::string dumpHex(const void* data, size_t len){
 static std::string reset_secret;
 
 void generate_reset_secret(){
-    X509* leaf = cert_pair_leaf(&opt.cert);
-    if(leaf == nullptr) {
+    EVP_PKEY* key = get_default_key();
+    if(key == nullptr) {
         return;
     }
-    unsigned char cert_digest[EVP_MAX_MD_SIZE];
-    unsigned int digest_len = 0;
-    if(!X509_pubkey_digest(leaf, EVP_sha256(), cert_digest, &digest_len)) {
-        LOGE("QUIC failed to get X509_pubkey_digest\n");
-        return;
-    }
+    static const char nonce[] = "sproxy-stateless-reset";
     char* token = nullptr;
     unsigned int sign_len;
-    if(sign_data(opt.cert.key ?: opt.ca.key, cert_digest, digest_len, &token, &sign_len)){
-        LOGE("QUIC failed to sign digest: %s\n", dumpHex(cert_digest, digest_len).c_str());
+    if(sign_data(key, nonce, sizeof(nonce), &token, &sign_len)){
+        LOGE("QUIC failed to sign reset secret\n");
         return;
     }
-    reset_secret =  std::string(token, sign_len);
+    reset_secret = std::string(token, sign_len);
     free(token);
 }
 

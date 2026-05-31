@@ -72,10 +72,7 @@ static inline X509* cert_pair_leaf(const struct cert_pair* pair) {
 }
 
 struct options{
-    const char *cafile;
-    const char *cakey;
-    struct cert_pair ca;
-    struct cert_pair cert;
+    const char *certs_dir;
     const char *config_file;
     const char *rootdir;
     const char *webdav_root;

@@ -12,10 +12,14 @@ extern "C" {
 #endif
 
 struct cert_pair;
-int load_cert_key(const char *ca_crt_path, const char *ca_key_path, struct cert_pair* cert);
-int generate_signed_key_pair(const char* domain, EVP_PKEY **key, X509 **crt);
+int load_ca_cert(const char *crt_path, const char *key_path);
+int load_cert_key(const char *crt_path, const char *key_path);
+int load_certs_dir(const char *dir_path);
+const struct cert_pair* lookup_cert(const char *domain);
+const struct cert_pair* generate_cert(const char *domain);
+int has_ca_cert(void);
+EVP_PKEY* get_default_key(void);
 void release_key_pair();
-int reload_cert_key(const char* cert_file, const char* key_file, struct cert_pair* cert);
 
 #ifdef __cplusplus
 }

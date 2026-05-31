@@ -188,6 +188,14 @@ pub fn request_certificate(domain: &str, contacts_raw: Option<&str>) -> Result<(
 
     let certfile = resolve_env_path("SPROXY_ACME_CERT");
     let keyfile = resolve_env_path("SPROXY_ACME_KEY");
+    let certs_dir = resolve_env_path("SPROXY_ACME_CERTS_DIR");
+
+    // When certs_dir is set, write combined cert+key to <certs_dir>/<domain>.pem
+    let combined_path = certs_dir.as_ref().map(|dir| {
+        let mut path = PathBuf::from(dir);
+        path.push(format!("{}.pem", domain));
+        path
+    });
 
     let state_dir = prepare_state_dir()?;
     let dir_url = resolve_directory_url();
@@ -291,8 +299,49 @@ pub fn request_certificate(domain: &str, contacts_raw: Option<&str>) -> Result<(
         Ok(csr.der().to_vec())
     };
 
+    // Extract key from a combined PEM file (cert chain + key)
+    let extract_key_from_pem = |pem_str: &str| -> Option<String> {
+        // Find the last private key block in the PEM file
+        let key_patterns = [
+            "-----BEGIN PRIVATE KEY-----",
+            "-----BEGIN RSA PRIVATE KEY-----",
+            "-----BEGIN EC PRIVATE KEY-----",
+        ];
+        for pattern in key_patterns {
+            if let Some(start) = pem_str.rfind(pattern) {
+                let end_marker = pattern.replace("BEGIN", "END");
+                if let Some(end) = pem_str[start..].find(&end_marker) {
+                    return Some(pem_str[start..start + end + end_marker.len()].to_string());
+                }
+            }
+        }
+        None
+    };
+
     // Load existing key or generate a new one
-    let (cert_key_pem, csr_der) = if let Some(ref key_path) = keyfile {
+    let (cert_key_pem, csr_der) = if let Some(ref combined) = combined_path {
+        // certs_dir mode: read key from combined PEM file
+        match fs::read_to_string(combined) {
+            Ok(pem) => {
+                let key_pem = extract_key_from_pem(&pem)
+                    .ok_or("No private key found in existing PEM file")?;
+                let pkcs8_pem = normalize_key_to_pkcs8(&key_pem)?;
+                let key_pair = KeyPair::from_pem(&pkcs8_pem)
+                    .map_err(|e| format!("Failed to parse existing key: {}", e))?;
+                let der = make_csr(&key_pair)?;
+                (pkcs8_pem, der)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let key_pair = KeyPair::generate()
+                    .map_err(|e| format!("Failed to generate key: {}", e))?;
+                let pem = key_pair.serialize_pem();
+                let der = make_csr(&key_pair)?;
+                (pem, der)
+            }
+            Err(e) => return Err(format!("Failed to read PEM file {:?}: {}", combined, e)),
+        }
+    } else if let Some(ref key_path) = keyfile {
+        // Legacy mode: separate cert and key files
         match fs::read_to_string(key_path) {
             Ok(pem) => {
                 let pkcs8_pem = normalize_key_to_pkcs8(&pem)?;
@@ -341,11 +390,17 @@ pub fn request_certificate(domain: &str, contacts_raw: Option<&str>) -> Result<(
     eprintln!("[acme] certificate downloaded ({} bytes)", cert_pem.len());
 
     // Save certificate
-    write_file(certfile.as_deref(), cert_pem.as_bytes(), None)?;
-    eprintln!("[acme] certificate saved");
-
-    // Save key if it wasn't already present
-    let _ = cert_key_pem; // key was already written above if needed
+    if let Some(ref combined) = combined_path {
+        // certs_dir mode: write combined cert chain + key
+        let combined_pem = format!("{}{}", cert_pem, cert_key_pem);
+        let path_str = combined.to_string_lossy().to_string();
+        write_file(Some(&path_str), combined_pem.as_bytes(), Some(0o600))?;
+        eprintln!("[acme] combined cert+key saved to {:?}", combined);
+    } else {
+        write_file(certfile.as_deref(), cert_pem.as_bytes(), None)?;
+        eprintln!("[acme] certificate saved");
+        let _ = cert_key_pem; // key was already written above if needed
+    }
 
     eprintln!("[acme] certificate request completed successfully");
     Ok(())

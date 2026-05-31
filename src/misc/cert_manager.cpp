@@ -6,7 +6,12 @@
 
 #include <string>
 #include <map>
+#include <vector>
+#include <algorithm>
+#include <memory>
 #include <assert.h>
+#include <dirent.h>
+#include <strings.h>
 #include <openssl/x509.h>
 #include <openssl/evp.h>
 #include <openssl/rsa.h>
@@ -16,9 +21,66 @@
 #endif
 
 
-static std::map<std::string, cert_pair> certs;
+static void cert_pair_free(cert_pair* p) {
+    if(!p) {
+        return;
+    }
+    if(p->chain) sk_X509_pop_free(p->chain, X509_free);
+    if(p->key) EVP_PKEY_free(p->key);
+    delete p;
+}
 
-int load_cert_key(const char *crt_path, const char *key_path, struct cert_pair* cert) {
+using cert_pair_ptr = std::shared_ptr<cert_pair>;
+
+static cert_pair_ptr make_cert_pair(STACK_OF(X509)* chain, EVP_PKEY* key) {
+    return cert_pair_ptr(new cert_pair{chain, key}, cert_pair_free);
+}
+
+static cert_pair_ptr ca_cert;
+static std::map<std::string, cert_pair_ptr> certs;
+
+static std::vector<std::string> extract_domains(X509* leaf) {
+    std::vector<std::string> domains;
+    // Extract SAN DNS names
+    STACK_OF(GENERAL_NAME)* san = (STACK_OF(GENERAL_NAME)*)X509_get_ext_d2i(
+        leaf, NID_subject_alt_name, nullptr, nullptr);
+    if(san) {
+        size_t count = sk_GENERAL_NAME_num(san);
+        for(size_t i = 0; i < count; ++i) {
+            GENERAL_NAME* name = sk_GENERAL_NAME_value(san, static_cast<int>(i));
+            if(name->type == GEN_DNS) {
+                std::string dns((const char*)ASN1_STRING_get0_data(name->d.dNSName),
+                                ASN1_STRING_length(name->d.dNSName));
+                domains.push_back(std::move(dns));
+            } else if(name->type == GEN_IPADD) {
+                const unsigned char* addr = ASN1_STRING_get0_data(name->d.iPAddress);
+                int addrlen = ASN1_STRING_length(name->d.iPAddress);
+                char buf[INET6_ADDRSTRLEN];
+                if(addrlen == 4 && inet_ntop(AF_INET, addr, buf, sizeof(buf))) {
+                    domains.emplace_back(buf);
+                } else if(addrlen == 16 && inet_ntop(AF_INET6, addr, buf, sizeof(buf))) {
+                    domains.emplace_back(buf);
+                }
+            }
+        }
+        sk_GENERAL_NAME_pop_free(san, GENERAL_NAME_free);
+    }
+    // Fallback to CN
+    if(domains.empty()) {
+        X509_NAME* subject = X509_get_subject_name(leaf);
+        int idx = X509_NAME_get_index_by_NID(subject, NID_commonName, -1);
+        if(idx >= 0) {
+            X509_NAME_ENTRY* entry = X509_NAME_get_entry(subject, idx);
+            ASN1_STRING* asn1_str = X509_NAME_ENTRY_get_data(entry);
+            std::string cn((const char*)ASN1_STRING_get0_data(asn1_str),
+                           ASN1_STRING_length(asn1_str));
+            domains.push_back(std::move(cn));
+        }
+    }
+    return domains;
+}
+
+int load_cert_key(const char *crt_path, const char *key_path) {
     BIO* cbio = BIO_new(BIO_s_file());
     defer(BIO_free_all, cbio);
     if (!BIO_read_filename(cbio, crt_path)) return -1;
@@ -62,15 +124,19 @@ int load_cert_key(const char *crt_path, const char *key_path, struct cert_pair* 
         return -1;
     }
     LOG("loaded cert from %s and %s\n", crt_path, key_path);
-    if(cert->chain) {
-        sk_X509_pop_free(cert->chain, X509_free);
+
+    auto pair = make_cert_pair(chain, key);
+    X509* leaf = cert_pair_leaf(pair.get());
+    auto domains = extract_domains(leaf);
+    if(domains.empty()) {
+        LOGE("No domain found in certificate: %s\n", crt_path);
+        return -1;
     }
-    if(cert->key) {
-        EVP_PKEY_free(cert->key);
+    for(const auto& domain : domains) {
+        certs[domain] = pair;
     }
-    cert->chain = chain;
-    cert->key = key;
-    LOG("certificate %s loaded with %zu certificates\n", crt_path, static_cast<size_t>(sk_X509_num(chain)));
+    LOG("certificate %s loaded with %zu certificates, %zu domain(s)\n",
+        crt_path, static_cast<size_t>(sk_X509_num(chain)), domains.size());
     return 0;
 }
 
@@ -185,14 +251,9 @@ static X509_REQ* generate_csr(EVP_PKEY *key, const char* domain) {
     return req;
 }
 
-int generate_signed_key_pair(const char* domain, EVP_PKEY **key, X509 **crt) {
-    auto it = certs.find(domain);
-    if(it != certs.end()) {
-        *key = it->second.key;
-        *crt = cert_pair_leaf(&it->second);
-        return 0;
-    }
-    *crt = nullptr;
+static int generate_signed_key_pair(const char* domain, STACK_OF(X509)** chain, EVP_PKEY **key) {
+    *chain = nullptr;
+    *key = nullptr;
     /* Generate the private key and corresponding CSR. */
     if((*key = generate_key()) == nullptr){
         LOGE("Failed to generate key!\n");
@@ -206,11 +267,13 @@ int generate_signed_key_pair(const char* domain, EVP_PKEY **key, X509 **crt) {
     }
 
     /* Sign with the CA. */
-    X509* ca_cert = cert_pair_leaf(&opt.ca);
-    STACK_OF(X509)* chain = nullptr;
-    X509* leaf = X509_new();
+    X509* ca_leaf = cert_pair_leaf(ca_cert.get());
+    X509* leaf = nullptr;
+    *chain = sk_X509_new_null();
+    if(*chain == nullptr) goto err;
+    leaf = X509_new();
     if(leaf == nullptr) goto err;
-    if(ca_cert == nullptr) {
+    if(ca_leaf == nullptr) {
         LOGE("CA certificate is not available for MITM signing\n");
         goto err;
     }
@@ -218,7 +281,7 @@ int generate_signed_key_pair(const char* domain, EVP_PKEY **key, X509 **crt) {
     ASN1_INTEGER_set(X509_get_serialNumber(leaf), (random()<<31)|random());
     X509_set_version(leaf, 2); /* Set version to X509v3 */
     /* Set issuer to CA's subject. */
-    X509_set_issuer_name(leaf, X509_get_subject_name(ca_cert));
+    X509_set_issuer_name(leaf, X509_get_subject_name(ca_leaf));
 
     /* Set validity of certificate to 2 month. */
     X509_gmtime_adj(X509_get_notBefore(leaf), (long)-24*3600);
@@ -226,7 +289,7 @@ int generate_signed_key_pair(const char* domain, EVP_PKEY **key, X509 **crt) {
     {
         X509V3_CTX ctx;
         X509V3_set_ctx_nodb(&ctx);
-        X509V3_set_ctx(&ctx, ca_cert, leaf, req, nullptr, 0);
+        X509V3_set_ctx(&ctx, ca_leaf, leaf, req, nullptr, 0);
 
         // Create and add the Basic Constraints extension
         X509_EXTENSION* bc_ext = X509V3_EXT_nconf_nid(nullptr, &ctx, NID_basic_constraints, "critical,CA:FALSE");
@@ -290,85 +353,245 @@ int generate_signed_key_pair(const char* domain, EVP_PKEY **key, X509 **crt) {
     }
 
     /* Now perform the actual signing with the CA. */
-    if (X509_sign(leaf, opt.ca.key, EVP_sha256()) == 0) goto err;
+    if (X509_sign(leaf, ca_cert->key, EVP_sha256()) == 0) goto err;
     X509_REQ_free(req);
     req = nullptr;
 
-    chain = sk_X509_new_null();
-    if(chain == nullptr) goto err;
-    if(!sk_X509_push(chain, leaf)) {
-        sk_X509_free(chain);
-        chain = nullptr;
+    if(!sk_X509_push(*chain, leaf)) {
+        sk_X509_pop_free(*chain, X509_free);
+        *chain = nullptr;
         goto err;
     }
     leaf = nullptr;
-    if(!sk_X509_push(chain, X509_dup(ca_cert))) {
+    if(!sk_X509_push(*chain, X509_dup(ca_leaf))) {
         goto err;
     }
 
-    certs.emplace(domain, cert_pair{chain, *key});
-    *crt = cert_pair_leaf(&certs[domain]);
     return 0;
 err:
     EVP_PKEY_free(*key);
     *key = nullptr;
-    if(chain) {
-        sk_X509_pop_free(chain, X509_free);
-        chain = nullptr;
+    if(*chain) {
+        sk_X509_pop_free(*chain, X509_free);
+        *chain = nullptr;
     }
     if(leaf) {
         X509_free(leaf);
-        leaf = nullptr;
     }
     if(req) {
         X509_REQ_free(req);
     }
-    *crt = nullptr;
     return -1;
 }
 
 
 void release_key_pair() {
-    for(const auto& [_, cert]: certs) {
-        if(cert.chain) {
-            sk_X509_pop_free(cert.chain, X509_free);
-        }
-        if(cert.key) {
-            EVP_PKEY_free(cert.key);
-        }
-    }
     certs.clear();
+    ca_cert.reset();
 }
 
-int reload_cert_key(const char* cert_file, const char* key_file, struct cert_pair* cert) {
-    if(!cert_file || !key_file || !cert) {
+static int load_combined_pem(const char* filepath, cert_pair* pair) {
+    BIO* bio = BIO_new(BIO_s_file());
+    if(!bio) return -1;
+    defer(BIO_free_all, bio);
+    if(!BIO_read_filename(bio, filepath)) return -1;
+
+    STACK_OF(X509_INFO)* infos = PEM_X509_INFO_read_bio(bio, nullptr, nullptr, nullptr);
+    if(!infos) {
+        LOGE("Error reading PEM file %s: %s\n", filepath, ERR_error_string(ERR_get_error(), nullptr));
+        return -1;
+    }
+    defer([infos]() { sk_X509_INFO_pop_free(infos, X509_INFO_free); });
+
+    STACK_OF(X509)* chain = sk_X509_new_null();
+    if(!chain) return -1;
+
+    auto info_count = sk_X509_INFO_num(infos);
+    for(decltype(info_count) idx = 0; idx < info_count; ++idx) {
+        X509_INFO* info = sk_X509_INFO_value(infos, static_cast<int>(idx));
+        if(info->x509) {
+            sk_X509_push(chain, X509_dup(info->x509));
+        }
+    }
+
+    // Reset BIO and read private key via public API (take the last one)
+    BIO_reset(bio);
+    BIO_read_filename(bio, filepath);
+    EVP_PKEY* key = nullptr;
+    for(;;) {
+        EVP_PKEY* tmp = PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
+        if(!tmp) break;
+        if(key) EVP_PKEY_free(key);
+        key = tmp;
+    }
+
+    if(sk_X509_num(chain) == 0) {
+        LOGE("No certificate found in %s\n", filepath);
+        sk_X509_pop_free(chain, X509_free);
+        if(key) EVP_PKEY_free(key);
+        return -1;
+    }
+    if(!key) {
+        LOGE("No private key found in %s\n", filepath);
+        sk_X509_pop_free(chain, X509_free);
         return -1;
     }
 
-    // 创建临时的cert_pair来测试加载新证书
-    struct cert_pair new_cert = {nullptr, nullptr};
-    int ret = load_cert_key(cert_file, key_file, &new_cert);
-    if(ret == 0) {
-        // 成功加载新证书，替换旧证书
-        if(cert->chain) {
-            sk_X509_pop_free(cert->chain, X509_free);
-        }
-        if(cert->key) {
-            EVP_PKEY_free(cert->key);
-        }
+    pair->chain = chain;
+    pair->key = key;
+    return 0;
+}
 
-        cert->chain = new_cert.chain;
-        cert->key = new_cert.key;
-    } else {
-        // 加载失败，清理临时证书（如果有的话）
-        if(new_cert.chain) {
-            sk_X509_pop_free(new_cert.chain, X509_free);
-        }
-        if(new_cert.key) {
-            EVP_PKEY_free(new_cert.key);
-        }
-        LOGE("Failed to reload certificate pair from %s and %s, keeping existing certificate\n", cert_file, key_file);
+int load_certs_dir(const char* dir_path) {
+    DIR* dir = opendir(dir_path);
+    if(!dir) {
+        LOGE("Failed to open certs directory %s: %s\n", dir_path, strerror(errno));
+        return -1;
     }
 
-    return ret;
+    size_t count = 0;
+    struct dirent* entry;
+    while((entry = readdir(dir)) != nullptr) {
+        const char* name = entry->d_name;
+        size_t len = strlen(name);
+        if(len < 5 || strcasecmp(name + len - 4, ".pem") != 0) {
+            continue;
+        }
+
+        std::string filepath = std::string(dir_path) + "/" + name;
+        cert_pair raw = {nullptr, nullptr};
+        if(load_combined_pem(filepath.c_str(), &raw) != 0) {
+            LOGE("Failed to load PEM file: %s\n", filepath.c_str());
+            continue;
+        }
+
+        X509* leaf = cert_pair_leaf(&raw);
+        if(!leaf) {
+            sk_X509_pop_free(raw.chain, X509_free);
+            if(raw.key) EVP_PKEY_free(raw.key);
+            continue;
+        }
+
+        auto domains = extract_domains(leaf);
+        if(domains.empty()) {
+            LOGE("No domain found in certificate: %s\n", filepath.c_str());
+            sk_X509_pop_free(raw.chain, X509_free);
+            if(raw.key) EVP_PKEY_free(raw.key);
+            continue;
+        }
+
+        auto pair = make_cert_pair(raw.chain, raw.key);
+        for(const auto& domain : domains) {
+            certs[domain] = pair;
+            LOG("preloaded cert for domain: %s (from %s)\n", domain.c_str(), name);
+        }
+        count++;
+    }
+    closedir(dir);
+    LOG("Loaded %zu certificate file(s) from %s\n", count, dir_path);
+    return 0;
+}
+
+const cert_pair* lookup_cert(const char* domain) {
+    if(!domain) return nullptr;
+    std::string dname(domain);
+
+    // Exact match
+    auto it = certs.find(dname);
+    if(it != certs.end()) {
+        return it->second.get();
+    }
+
+    // Wildcard match: www.example.com -> *.example.com
+    size_t dot = dname.find('.');
+    if(dot != std::string::npos) {
+        std::string wildcard = "*" + dname.substr(dot);
+        it = certs.find(wildcard);
+        if(it != certs.end()) {
+            return it->second.get();
+        }
+    }
+
+    return nullptr;
+}
+
+const cert_pair* generate_cert(const char* domain) {
+    if(!domain) return nullptr;
+    auto pair_ = lookup_cert(domain);
+    if(pair_) {
+        return pair_;
+    }
+
+    STACK_OF(X509)* chain = nullptr;
+    EVP_PKEY* key = nullptr;
+    if(generate_signed_key_pair(domain, &chain, &key) != 0) {
+        return nullptr;
+    }
+
+    auto pair = make_cert_pair(chain, key);
+    certs[domain] = pair;
+    return pair.get();
+}
+
+int load_ca_cert(const char *crt_path, const char *key_path) {
+    // Load certificate chain
+    BIO* cbio = BIO_new(BIO_s_file());
+    if(!cbio) return -1;
+    defer(BIO_free_all, cbio);
+    if(!BIO_read_filename(cbio, crt_path)) return -1;
+    STACK_OF(X509_INFO)* infos = PEM_X509_INFO_read_bio(cbio, NULL, NULL, NULL);
+    if(!infos) {
+        LOGE("Error reading cert file %s: %s\n", crt_path, ERR_error_string(ERR_get_error(), nullptr));
+        return -1;
+    }
+    defer([infos]() { sk_X509_INFO_pop_free(infos, X509_INFO_free); });
+    STACK_OF(X509)* chain = sk_X509_new_null();
+    if(!chain) return -1;
+    auto info_count = sk_X509_INFO_num(infos);
+    for(decltype(info_count) idx = 0; idx < info_count; ++idx) {
+        X509_INFO* info = sk_X509_INFO_value(infos, static_cast<int>(idx));
+        if(info->x509) sk_X509_push(chain, X509_dup(info->x509));
+    }
+    if(sk_X509_num(chain) == 0) {
+        LOGE("No valid certificate found in %s\n", crt_path);
+        sk_X509_pop_free(chain, X509_free);
+        return -1;
+    }
+    // Load private key
+    BIO* kbio = BIO_new(BIO_s_file());
+    if(!kbio) {
+        sk_X509_pop_free(chain, X509_free);
+        return -1;
+    }
+    defer(BIO_free_all, kbio);
+    if(!BIO_read_filename(kbio, key_path)) {
+        sk_X509_pop_free(chain, X509_free);
+        return -1;
+    }
+    EVP_PKEY* key = PEM_read_bio_PrivateKey(kbio, nullptr, nullptr, nullptr);
+    if(!key) {
+        LOGE("Error reading private key: %s\n", ERR_error_string(ERR_get_error(), nullptr));
+        sk_X509_pop_free(chain, X509_free);
+        return -1;
+    }
+    ca_cert = make_cert_pair(chain, key);
+    LOG("CA certificate loaded from %s\n", crt_path);
+    return 0;
+}
+
+int has_ca_cert(void) {
+    return ca_cert && cert_pair_leaf(ca_cert.get()) && ca_cert->key;
+}
+
+EVP_PKEY* get_default_key(void) {
+    if(ca_cert && ca_cert->key) {
+        return ca_cert->key;
+    }
+    for(const auto& [_, pair] : certs) {
+        X509* leaf = cert_pair_leaf(pair.get());
+        if(leaf && X509_check_issued(leaf, leaf) != X509_V_OK && pair->key) {
+            return pair->key;
+        }
+    }
+    return nullptr;
 }

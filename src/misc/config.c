@@ -50,6 +50,8 @@ static uint64_t id = 100000;
 
 static const char *certfile = NULL;
 static const char *keyfile = NULL;
+static const char *cafile = NULL;
+static const char *cakey = NULL;
 
 static char* admin_listen = NULL;
 static char* tproxy_listen = NULL;
@@ -73,16 +75,7 @@ void openefd(){
 }
 
 struct options opt = {
-    .cafile            = NULL,
-    .cakey             = NULL,
-    .ca                = {
-        .chain = NULL,
-        .key = NULL,
-    },
-    .cert              = {
-        .chain = NULL,
-        .key = NULL,
-    },
+    .certs_dir         = NULL,
     .rootdir           = NULL,
     .webdav_root       = NULL,
     .index_file        = NULL,
@@ -176,6 +169,7 @@ static struct option long_options[] = {
     {"cafile",        required_argument, NULL,  0 },
     {"cakey",         required_argument, NULL,  0 },
     {"cert",          required_argument, NULL,  0 },
+    {"certs",         required_argument, NULL,  0 },
     {"config",        required_argument, NULL, 'c'},
 #ifndef __ANDROID__
     {"daemon",        no_argument,       NULL, 'D'},
@@ -259,9 +253,10 @@ static struct option_detail option_detail[] = {
     {"autoindex", "Enables the directory listing output (local server)", option_bool, &opt.autoindex, (void*)true},
     {"bpf", "load bpf prog to redirect for tproxy on cgroup (!!NOT WORK IN CONTAINER!!)", option_string, &opt.bpf_cgroup, NULL},
     {"bpf-fwmark", "set fwmark for the packet of replying rproxy in bpf prog", option_uint64, &opt.bpf_fwmark, NULL},
-    {"cafile", "CA certificate for server (ssl/quic)", option_string, &opt.cafile, NULL},
-    {"cakey", "CA key for server (mitm)", option_string, &opt.cakey, NULL},
+    {"cafile", "CA certificate for server (ssl/quic)", option_string, &cafile, NULL},
+    {"cakey", "CA key for server (mitm)", option_string, &cakey, NULL},
     {"cert", "Certificate file for server (ssl/quic)", option_string, &certfile, NULL},
+    {"certs", "Directory with PEM files (cert chain + key) for SNI", option_string, &opt.certs_dir, NULL},
     {"config", "Configure file (default "PREFIX"/etc/sproxy/sproxy.conf and ./sproxy.conf)", option_string, &opt.config_file, NULL},
     {"daemon", "Run as daemon", option_bool, &opt.daemon_mode, (void*)true},
     {"disable-http2", "Use http/1.1 only", option_bool, &opt.disable_http2, (void*)true},
@@ -330,18 +325,6 @@ void dump_stat();
 void neglect(){
     flushdns();
     releaseall();
-    EVP_PKEY_free(opt.ca.key);
-    opt.ca.key = NULL;
-    if(opt.ca.chain) {
-        sk_X509_pop_free(opt.ca.chain, X509_free);
-        opt.ca.chain = NULL;
-    }
-    EVP_PKEY_free(opt.cert.key);
-    opt.cert.key = NULL;
-    if(opt.cert.chain) {
-        sk_X509_pop_free(opt.cert.chain, X509_free);
-        opt.cert.chain = NULL;
-    }
     release_key_pair();
 }
 
@@ -859,11 +842,11 @@ void postConfig(){
         }
     }
 
-    if (opt.cafile && access(opt.cafile, R_OK)) {
-        LOGE("access cafile %s failed: %s\n", opt.cafile, strerror(errno));
+    if (cafile && access(cafile, R_OK)) {
+        LOGE("access cafile %s failed: %s\n", cafile, strerror(errno));
         exit(1);
     }
-    if (opt.cafile && opt.cakey && load_cert_key(opt.cafile, opt.cakey, &opt.ca)) {
+    if (cafile && cakey && load_ca_cert(cafile, cakey)) {
         LOGE("failed to load cafile or cakey\n");
         exit(1);
     }
@@ -873,13 +856,21 @@ void postConfig(){
             LOGE("acme mode requires a valid state directory\n");
             exit(1);
         }
-        if(certfile == NULL || certfile[0] == '\0' || keyfile == NULL || keyfile[0] == '\0') {
-            LOGE("acme mode require cert/key\n");
+        if((certfile == NULL || certfile[0] == '\0' || keyfile == NULL || keyfile[0] == '\0')
+            && opt.certs_dir == NULL) {
+            LOGE("acme mode require cert/key (or --certs directory)\n");
             exit(1);
         }
         setenv("SPROXY_ACME_STATE", opt.acme_state, 1);
-        setenv("SPROXY_ACME_CERT", certfile, 1);
-        setenv("SPROXY_ACME_KEY", keyfile, 1);
+        if(certfile && certfile[0]) {
+            setenv("SPROXY_ACME_CERT", certfile, 1);
+        }
+        if(keyfile && keyfile[0]) {
+            setenv("SPROXY_ACME_KEY", keyfile, 1);
+        }
+        if(opt.certs_dir) {
+            setenv("SPROXY_ACME_CERTS_DIR", opt.certs_dir, 1);
+        }
     }
 
     bool certfile_ok = false;
@@ -906,18 +897,28 @@ void postConfig(){
         }
     }
 
-    if(certfile_ok && keyfile_ok && load_cert_key(certfile, keyfile, &opt.cert)) {
+    if(certfile_ok && keyfile_ok && load_cert_key(certfile, keyfile)) {
         LOGE("failed to load certificate or private key\n");
         exit(1);
     }
 
-    if(has_ssl && (cert_pair_leaf(&opt.cert) == NULL || opt.cert.key == NULL)
-        && opt.mitm_mode != Enable && !opt.acme_state)
+    if(opt.certs_dir) {
+        if(access(opt.certs_dir, R_OK) != 0) {
+            LOGE("access certs directory %s failed: %s\n", opt.certs_dir, strerror(errno));
+            exit(1);
+        }
+        if(load_certs_dir(opt.certs_dir) != 0) {
+            LOGE("failed to load certs from directory: %s\n", opt.certs_dir);
+            exit(1);
+        }
+    }
+
+    if(has_ssl && !has_ca_cert() && !opt.acme_state && !opt.certs_dir && !certfile)
     {
-        LOGE("ssl/quic mode require cert and key file\n");
+        LOGE("ssl/quic mode require cert and key file (or --certs directory)\n");
         exit(1);
     }
-    if (opt.mitm_mode == Enable && opt.ca.key == NULL) {
+    if (opt.mitm_mode == Enable && !has_ca_cert()) {
         LOGE("mitm mode require cakey\n");
         exit(1);
     }
@@ -1243,28 +1244,31 @@ int flushcert() {
             LOGE("reload key failed, access %s: %s\n", keyfile, strerror(errno));
             return errno ? -errno : -1;
         }
-        int server_ret = reload_cert_key(certfile, keyfile, &opt.cert);
-        if(server_ret != 0) {
-            return server_ret;
+        if(load_cert_key(certfile, keyfile) != 0) {
+            LOGE("Failed to reload server certificate\n");
+            return -1;
         }
     }
 
     // 重新加载CA证书（如果配置了的话）
-    if(opt.cafile && opt.cakey) {
-        if(access(opt.cafile, R_OK) != 0) {
-            LOGE("reload cafile failed, access %s: %s\n", opt.cafile, strerror(errno));
+    if(cafile && cakey) {
+        if(access(cafile, R_OK) != 0) {
+            LOGE("reload cafile failed, access %s: %s\n", cafile, strerror(errno));
             return errno ? -errno : -1;
         }
-        if(access(opt.cakey, R_OK) != 0) {
-            LOGE("reload cakey failed, access %s: %s\n", opt.cakey, strerror(errno));
+        if(access(cakey, R_OK) != 0) {
+            LOGE("reload cakey failed, access %s: %s\n", cakey, strerror(errno));
             return errno ? -errno : -1;
         }
-        int ca_ret = reload_cert_key(opt.cafile, opt.cakey, &opt.ca);
-        if(ca_ret != 0) {
-            return ca_ret;
+        if(load_ca_cert(cafile, cakey) != 0) {
+            LOGE("Failed to reload CA certificate\n");
+            return -1;
         }
     }
 
+    if(opt.certs_dir) {
+        load_certs_dir(opt.certs_dir);
+    }
     opt.cert_version ++;
     LOG("Certificate reload completed successfully, version: %u\n", opt.cert_version);
     return 0;

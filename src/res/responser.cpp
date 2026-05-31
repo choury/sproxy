@@ -2,6 +2,7 @@
 #include "misc/strategy.h"
 #include "misc/util.h"
 #include "misc/config.h"
+#include "misc/cert_manager.h"
 #include "misc/defer.h"
 #include "hook/hook.h"
 #include "prot/memio.h"
@@ -39,7 +40,7 @@ bool shouldNegotiate(const std::string& hostname, uint16_t port, const strategy*
     if(opt.mitm_mode == Enable) {
         return true;
     }
-    if(opt.mitm_mode == Auto && opt.ca.key && (stra.s == Strategy::block || mayBeBlocked(hostname.c_str(), port))) {
+    if(opt.mitm_mode == Auto && has_ca_cert() && (stra.s == Strategy::block || mayBeBlocked(hostname.c_str(), port))) {
         return true;
     }
     return false;

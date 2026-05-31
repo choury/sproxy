@@ -1,6 +1,7 @@
 #include "strategy.h"
 #include "net.h"
 #include "config.h"
+#include "cert_manager.h"
 #include "common/common.h"
 #include "util.h"
 #include "trie.h"
@@ -472,17 +473,11 @@ std::string gen_token() {
     set64(now_be, now);
     std::string signature;
 
-    // Priority: cert key -> ca key -> secrets
-    if (opt.cert.key) {
+    // Priority: cert key -> secrets
+    EVP_PKEY* default_key = get_default_key();
+    if (default_key) {
         BIO *bio = BIO_new(BIO_s_mem());
-        PEM_write_bio_PrivateKey(bio, opt.cert.key, NULL, NULL, 0, NULL, NULL);
-        char *key_data;
-        long key_len = BIO_get_mem_data(bio, &key_data);
-        signature = hmac_sha256(key_data, key_len, now_be, sizeof(now_be));
-        BIO_free(bio);
-    } else if (opt.ca.key) {
-        BIO *bio = BIO_new(BIO_s_mem());
-        PEM_write_bio_PrivateKey(bio, opt.ca.key, NULL, NULL, 0, NULL, NULL);
+        PEM_write_bio_PrivateKey(bio, default_key, NULL, NULL, 0, NULL, NULL);
         char *key_data;
         long key_len = BIO_get_mem_data(bio, &key_data);
         signature = hmac_sha256(key_data, key_len, now_be, sizeof(now_be));
@@ -523,21 +518,11 @@ bool checktoken(const char* token) {
     set64(ts_be, ts);
     std::string provided_sig(decoded + 8, 32);
 
-    // Try cert key
-    if (opt.cert.key) {
+    // Try default key
+    EVP_PKEY* default_key = get_default_key();
+    if (default_key) {
         BIO *bio = BIO_new(BIO_s_mem());
-        PEM_write_bio_PrivateKey(bio, opt.cert.key, NULL, NULL, 0, NULL, NULL);
-        char *key_data;
-        long key_len = BIO_get_mem_data(bio, &key_data);
-        std::string sig = hmac_sha256(key_data, key_len, ts_be, sizeof(ts_be));
-        BIO_free(bio);
-        return sig == provided_sig;
-    }
-
-    // Try CA key
-    if (opt.ca.key) {
-        BIO *bio = BIO_new(BIO_s_mem());
-        PEM_write_bio_PrivateKey(bio, opt.ca.key, NULL, NULL, 0, NULL, NULL);
+        PEM_write_bio_PrivateKey(bio, default_key, NULL, NULL, 0, NULL, NULL);
         char *key_data;
         long key_len = BIO_get_mem_data(bio, &key_data);
         std::string sig = hmac_sha256(key_data, key_len, ts_be, sizeof(ts_be));
