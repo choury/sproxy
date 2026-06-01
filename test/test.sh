@@ -174,6 +174,36 @@ function test_http3(){
     echo ""
 }
 
+function test_auth(){
+    echo "test auth functionality"
+
+    # Test 1: correct credentials via liblogin.do
+    KEY=$(printf 'testuser:testpass' | base64 | tr -d '\n')
+    curl -f -s -o /dev/null http://$HOSTNAME:3333/cgi/liblogin.do --data-urlencode "key=$KEY" 2>> curl.log
+    [ $? -ne 0 ] && echo "auth test 1 failed: correct credentials rejected" && exit 1
+
+    # Test 2: wrong password should return 403
+    KEY=$(printf 'testuser:wrongpass' | base64 | tr -d '\n')
+    local code=$(curl -s -o /dev/null -w "%{http_code}" http://$HOSTNAME:3333/cgi/liblogin.do --data-urlencode "key=$KEY" 2>> curl.log)
+    [ "$code" != "403" ] && echo "auth test 2 failed: expected 403, got $code" && exit 1
+
+    # Test 3: wrong user should return 403
+    KEY=$(printf 'wronguser:testpass' | base64 | tr -d '\n')
+    code=$(curl -s -o /dev/null -w "%{http_code}" http://$HOSTNAME:3333/cgi/liblogin.do --data-urlencode "key=$KEY" 2>> curl.log)
+    [ "$code" != "403" ] && echo "auth test 3 failed: expected 403, got $code" && exit 1
+
+    # Test 4: "Basic " prefix + correct credentials, capture cookie
+    KEY=$(printf 'testuser:testpass' | base64 | tr -d '\n')
+    local cookie=$(curl -s -D - -o /dev/null http://$HOSTNAME:3333/cgi/liblogin.do --data-urlencode "key=Basic $KEY" 2>> curl.log | grep -i 'Set-Cookie:.*sproxy_token=' | sed 's/.*sproxy_token=//;s/;.*//')
+    [ -z "$cookie" ] && echo "auth test 4 failed: login did not return sproxy_token cookie" && exit 1
+
+    # Test 5: use token cookie to access page
+    curl -f -s -o /dev/null -b "sproxy_token=$cookie" http://$HOSTNAME:3333/rproxy/ 2>> curl.log
+    [ $? -ne 0 ] && echo "auth test 5 failed: token cookie rejected" && exit 1
+
+    echo ""
+}
+
 function test_rproxy(){
     echo "test rproxy2 functionality"
     # Start rguest2 client that connects to the server and registers as "test_proxy"
@@ -578,6 +608,7 @@ ln -f -s "$buildpath/sproxy" .
 ln -f -s "$buildpath/scli" .
 ln -s -f "$buildpath/../test/sproxy_test" .
 mkdir -p cgi
+ln -f -s "$buildpath"/cgi/liblogin.* cgi/
 ln -f -s "$buildpath"/cgi/libproxy.* cgi/
 ln -f -s "$buildpath"/cgi/libsites.* cgi/
 ln -f -s "$buildpath"/cgi/libtest.* cgi/
@@ -606,6 +637,7 @@ cert localhost.crt
 key localhost.key
 root-dir .
 policy-file sites.list
+secret testuser:testpass
 index libproxy.do
 insecure
 bind 3333
@@ -636,6 +668,8 @@ wait_udp_port 3334
 echo "test quic server"
 test_http3 3334
 kill -SIGUSR1 %1
+
+test_auth
 
 cat > client.conf << EOF
 root-dir .

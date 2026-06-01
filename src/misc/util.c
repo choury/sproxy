@@ -237,6 +237,20 @@ static size_t DeBase64(const signed char* base64_dedigs, const char *src, size_t
         char ch3 = (base64_dedigs[c2]<<6) | base64_dedigs[c3];
         dst[j++] = ch3;
     }
+    // handle remaining chars (for unpadded Base64Url)
+    if(i+3 >= len && i+1 < len) {
+        unsigned char c0 = (unsigned char)src[i];
+        unsigned char c1 = (unsigned char)src[i+1];
+        if(c0 < 128 && base64_dedigs[c0] >= 0 && c1 < 128 && base64_dedigs[c1] >= 0) {
+            dst[j++] = (base64_dedigs[c0] << 2) | (base64_dedigs[c1] >> 4);
+        }
+        if(i+2 < len && src[i+2] != '=') {
+            unsigned char c2 = (unsigned char)src[i+2];
+            if(c2 < 128 && base64_dedigs[c2] >= 0) {
+                dst[j++] = (base64_dedigs[c1] << 4) | (base64_dedigs[c2] >> 2);
+            }
+        }
+    }
     dst[j] = 0;
     return j;
 }
