@@ -581,7 +581,7 @@ bool checkauth(const char* ip, std::shared_ptr<const HttpReqHeader> req) {
     if(authips.count(ip) > 0){
         return true;
     }
-    if (req->has("Skip-Authorize", "1")) {
+    if (req->skip_authorize) {
         return true;
     }
     sockaddr_storage addr;

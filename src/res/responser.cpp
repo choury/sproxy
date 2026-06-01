@@ -87,15 +87,14 @@ static std::string getBackend(std::shared_ptr<HttpReqHeader> req) {
     if(auth && !decodeauth(auth, &cr)){
         return backend;
     }
-    if(!checksecret(auth, &cr) && !req->has("Skip-Authorize", "1")) {
+    if(!checksecret(auth, &cr) && !req->skip_authorize) {
         return backend;
     }
     if(cr.identifier[0]) {
         backend = cr.identifier;
     }
-    if(req->has("sproxy")){
-        backend = req->get("sproxy");
-        req->del("sproxy");
+    if(!req->rproxy_name.empty()){
+        backend = req->rproxy_name;
     }
     return backend;
 }
@@ -111,7 +110,7 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
     if (!req->valid_method()) {
         return response(rw, HttpResHeader::create(S405, sizeof(S405), id), "[[unsupported method]]\n");
     }
-    if(opt.redirect_http && opt.listen_list && is_http_listen_port(rw->getDst().port)) {
+    if(opt.redirect_http && opt.listen_list && is_http_listen_port(rw->getDst().port) && !req->ismethod("CONNECT")) {
         const struct BindInfo* ssl_info = nullptr;
         for(struct bind_list* n = opt.listen_list; n; n = n->next) {
             if(strcmp(n->info.protocol, "ssl") == 0 && !n->info.sni_mode) {
@@ -206,7 +205,7 @@ void distribute(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRWer> rw)
     case Strategy::direct:
         memcpy(&dest, &req->Dest, sizeof(dest));
         dest.port = req->getDport();
-        if(req->has("Rproxy-Name") && req->has("X-Forwarded-For")) {
+        if(!req->rproxy_name.empty() && req->has("X-Forwarded-For")) {
             if(opt.rproxy_keep_src) strncpy(dest.assign_src, req->get("X-Forwarded-For"), sizeof(dest.assign_src) - 1);
             if(!req->ismethod("CONNECT")) req->del("X-Forwarded-For");
         }
@@ -378,7 +377,6 @@ void rewrite_rproxy_req(std::shared_ptr<HttpReqHeader> req) {
             req->del("Sec-Fetch-User");
         }
     }
-    req->del("sproxy");
     if(!opt.rproxy_delegate_auth) {
         req->del("Proxy-Authorization");
         req->del("X-Delegate-Auth");
@@ -457,7 +455,7 @@ void distribute_rproxy(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<MemRW
     }
     const auto& src = rw->getSrc();
     req->set("X-Forwarded-For", dumpAuthority(&src));
-    req->set("Rproxy-Name", rproxy_name);
+    req->rproxy_name = rproxy_name;
     if(rproxy_name == "local") {
         return distribute(req, rw);
     }
@@ -495,8 +493,8 @@ static void rewrite_rproxy_reporting_endpoints(std::shared_ptr<HttpReqHeader> re
     if(!res->has("Reporting-Endpoints")) {
         return;
     }
-    const char* rproxy = req->get("Rproxy-Name");
-    if(!rproxy) return;
+    const auto& rproxy = req->rproxy_name;
+    if(rproxy.empty()) return;
 
     std::string endpoints = res->get("Reporting-Endpoints");
     std::string prefix_abs = std::string("/rproxy/") + rproxy + "/";
@@ -564,8 +562,8 @@ static void rewrite_rproxy_cookie(std::shared_ptr<HttpReqHeader> req, std::share
     if(res->cookies.empty()) {
         return;
     }
-    const char* rproxy = req->get("Rproxy-Name");
-    if(rproxy == nullptr) {
+    const auto& rproxy = req->rproxy_name;
+    if(rproxy.empty()) {
         return;
     }
     std::string prefix = std::string("/rproxy/") + rproxy + "/" + dumpDest(&req->Dest);
@@ -588,8 +586,8 @@ void rewrite_rproxy_res(std::shared_ptr<HttpReqHeader> req, std::shared_ptr<Http
     if(!req || !res) {
         return;
     }
-    const char* rproxy = req->get("Rproxy-Name");
-    if(rproxy == nullptr) {
+    const auto& rproxy = req->rproxy_name;
+    if(rproxy.empty()) {
         return;
     }
     rewrite_rproxy_cookie(req, res);

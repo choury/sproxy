@@ -125,6 +125,8 @@ public:
     std::string filename;
     std::vector<Range> ranges;
     bool chain_proxy  = false;
+    bool skip_authorize = false;
+    std::string rproxy_name;
     std::vector<std::tuple<std::string, uint32_t>> tracker;
     explicit HttpReqHeader(HeaderMap&& headers);
     HttpReqHeader(const HttpReqHeader&) = default;

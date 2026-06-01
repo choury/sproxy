@@ -42,7 +42,7 @@ size_t Rguest2::InitProc(Buffer& bb) {
 }
 
 void Rguest2::ReqProc(uint32_t id, std::shared_ptr<HttpReqHeader> req) {
-    req->set("Skip-Authorize", !req->has("X-Delegate-Auth", "1"));
+    req->skip_authorize = !req->has("X-Delegate-Auth", "1");
     req->del("X-Delegate-Auth");
     Guest2::ReqProc(id, req);
 }

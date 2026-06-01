@@ -174,7 +174,6 @@ bool HttpReqHeader::valid_method() const {
 }
 
 void HttpReqHeader::postparse() {
-    this->del("Skip-Authorize");
     const char *start = path;
     while (*start && *++start == '/');
     const char *end=start;

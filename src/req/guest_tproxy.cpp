@@ -104,7 +104,7 @@ Guest_tproxy::Guest_tproxy(int fd, sockaddr_storage* src):
     } else {
         header->set("User-Agent", generateUA(opt.ua, "", 0));
     }
-    header->set("Skip-Authorize", "1");
+    header->skip_authorize = true;
     ReqProc(0, header);
     inited = true;
 }
@@ -163,7 +163,7 @@ Guest_tproxy::Guest_tproxy(int fd, sockaddr_storage* src, sockaddr_storage* dst,
     } else {
         header->set("User-Agent", generateUA(opt.ua, "", 0));
     }
-    header->set("Skip-Authorize", "1");
+    header->skip_authorize = true;
     ReqProc(0, header);
     DataProc(bb);
     inited = true;
@@ -192,8 +192,8 @@ Guest_tproxy::Guest_tproxy(std::shared_ptr<RWer> rwer,
     }
     header->set("X-Forwarded-For", dumpAuthority(&src));
     header->set("User-Agent", generateUA(opt.ua, "", 0));
-    header->set("Sproxy", rproxy);
-    header->set("Skip-Authorize", "1");
+    header->rproxy_name = rproxy;
+    header->skip_authorize = true;
     ReqProc(0, header);
     inited = true;
 }
