@@ -458,62 +458,30 @@ static int select_alpn_cb(SSL *ssl,
 
 #ifndef USE_BORINGSSL
 static int ssl_callback_ClientHello(SSL *ssl, int* al, void* arg){
+    // ssl_callback_ServerName 已经把所有创建证书的活都干了, 这里保留一个空实现
+    (void)ssl;
     (void)al;
-    const char* host = (const char*)arg;
-    // Check preloaded certs first
-    const struct cert_pair* preloaded = lookup_cert(host);
-    if(preloaded) {
-        X509* leaf = cert_pair_leaf(preloaded);
-        SSL_use_cert_and_key(ssl, leaf, preloaded->key, NULL, 1);
-        STACK_OF(X509)* chain = preloaded->chain;
-        if(chain && sk_X509_num(chain) > 1) {
-            for(int i = 1; i < sk_X509_num(chain); ++i) {
-                SSL_add1_chain_cert(ssl, sk_X509_value(chain, i));
-            }
-        }
-        LOGD(DSSL, "use preloaded cert for %s when ClientHello\n", host);
-        return SSL_CLIENT_HELLO_SUCCESS;
-    }
-    if(SSL_get_certificate(ssl)){
-        return SSL_CLIENT_HELLO_SUCCESS;
-    }
-    const unsigned char *servername;
-    size_t servername_len;
-    if(SSL_client_hello_get0_ext(ssl, TLSEXT_TYPE_server_name, &servername, &servername_len) == 1) {
-        LOGD(DSSL, "sni ext found for %s\n", host);
-        return SSL_CLIENT_HELLO_SUCCESS;
-    }
-    if(!has_ca_cert()) {
-        LOGE("no ca file found for sni: %s\n", host);
-        return SSL_CLIENT_HELLO_ERROR;
-    }
-    const struct cert_pair* cert = generate_cert(host);
-    if(cert) {
-        X509* leaf = cert_pair_leaf(cert);
-        SSL_use_cert_and_key(ssl, leaf, cert->key, NULL, 1);
-        LOGD(DSSL, "generate cert for %s when ClientHello\n", host);
-        return SSL_CLIENT_HELLO_SUCCESS;
-    }
-    LOGE("no cert available for: %s\n", host);
-    return SSL_CLIENT_HELLO_ERROR;
+    (void)arg;
+    return SSL_CLIENT_HELLO_SUCCESS;
 }
 #endif
 
 static int ssl_callback_ServerName(SSL *ssl, int* al, void* arg){
     (void)al;
-    const char* host = (const char*)arg;
-    const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
     if(SSL_get_certificate(ssl)){
         return SSL_TLSEXT_ERR_OK;
     }
+    const char* host = (const char*)arg;
+    const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
     if(servername == NULL) {
         LOGD(DSSL, "no servername found for sni: %s\n", host);
-        return SSL_TLSEXT_ERR_ALERT_FATAL;
+    }else {
+        LOGD(DSSL, "servername sni ext found for %s: %s\n", host, servername);
+        host = servername;
     }
-    LOGD(DSSL, "servername sni ext found for %s: %s\n", host, servername);
 
     // Check preloaded or generated cert
-    const struct cert_pair* cert = generate_cert(servername);
+    const struct cert_pair* cert = generate_cert(host);
     if(cert) {
         X509* leaf = cert_pair_leaf(cert);
         SSL_use_certificate(ssl, leaf);
@@ -526,12 +494,11 @@ static int ssl_callback_ServerName(SSL *ssl, int* al, void* arg){
                 SSL_add1_chain_cert(ssl, sk_X509_value(chain, i));
             }
         }
-        LOGD(DSSL, "generated cert for %s when ServerName\n", servername);
+        LOGD(DSSL, "generated cert for %s when ServerName\n", host);
         return SSL_TLSEXT_ERR_OK;
-    } else {
-        LOGE("generate cert for sni: %s failed\n", servername);
-        return SSL_TLSEXT_ERR_ALERT_FATAL;
     }
+    LOGE("generate cert for sni: %s failed\n", host);
+    return SSL_TLSEXT_ERR_ALERT_FATAL;
 }
 
 
@@ -622,8 +589,8 @@ SSL_CTX* initssl(int quic, const char* host){
     }
 
     SSL_CTX_set_verify_depth(ctx, 10);
-    // 设置 ClientHello 回调函数
 #ifndef USE_BORINGSSL
+    // 设置 ClientHello 回调函数
     SSL_CTX_set_client_hello_cb(ctx, ssl_callback_ClientHello, (void*)host);
 #endif
     SSL_CTX_set_tlsext_servername_callback(ctx, ssl_callback_ServerName);

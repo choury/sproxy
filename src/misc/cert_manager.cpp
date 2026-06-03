@@ -415,8 +415,8 @@ static int load_combined_pem(const char* filepath, cert_pair* pair) {
     }
 
     // Reset BIO and read private key via public API (take the last one)
-    BIO_reset(bio);
-    BIO_read_filename(bio, filepath);
+    (void)BIO_reset(bio);
+    (void)BIO_read_filename(bio, filepath);
     EVP_PKEY* key = nullptr;
     for(;;) {
         EVP_PKEY* tmp = PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
@@ -520,6 +520,10 @@ const cert_pair* generate_cert(const char* domain) {
     auto pair_ = lookup_cert(domain);
     if(pair_) {
         return pair_;
+    }
+
+    if(!has_ca_cert() && !certs.empty()) {
+        return certs.begin()->second.get();
     }
 
     STACK_OF(X509)* chain = nullptr;
