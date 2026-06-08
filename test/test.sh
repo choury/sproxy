@@ -143,6 +143,14 @@ function test_http(){
     [ $? -ne 0 ] && echo "http test 9 failed" && exit 1
     curl -m 5 -f -v http://$HOSTNAME:$1/cgi/libtest.do?size=100M --compressed  > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "http test 10 failed" && exit 1
+
+    echo "test rproxy/local"
+    # This would cause stack overflow before the fix (infinite recursion between distribute and distribute_rproxy)
+    curl -f -v http://$HOSTNAME:$1/rproxy/local/$HOSTNAME:$1/sites.list > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "rproxy/local test 1 failed" && exit 1
+    # rproxy/local with redirect follow
+    curl -f -v -L http://$HOSTNAME:$1/rproxy/local/$HOSTNAME:$1/cgi > /dev/null 2>> curl.log
+    [ $? -ne 0 ] && echo "rproxy/local test 2 failed" && exit 1
     echo ""
 }
 

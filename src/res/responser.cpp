@@ -81,7 +81,10 @@ void response(std::shared_ptr<MemRWer> rw, std::shared_ptr<HttpResHeader> res, s
 }
 
 static std::string getBackend(std::shared_ptr<HttpReqHeader> req) {
-    std::string backend;
+    std::string backend = req->rproxy_name;
+    if(backend == "local") {
+        return "";
+    }
     const char* auth = req->get("Proxy-Authorization");
     struct Credit cr{};
     if(auth && !decodeauth(auth, &cr)){
@@ -93,9 +96,7 @@ static std::string getBackend(std::shared_ptr<HttpReqHeader> req) {
     if(cr.identifier[0]) {
         backend = cr.identifier;
     }
-    if(!req->rproxy_name.empty()){
-        backend = req->rproxy_name;
-    }
+
     return backend;
 }
 
