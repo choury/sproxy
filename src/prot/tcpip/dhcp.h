@@ -8,6 +8,7 @@
 #define DHCP_SERVER_PORT 67
 
 
+#define DHCP_PAD          0
 #define DHCP_SUBNET_MASK  1
 #define DHCP_ROUTER       3
 #define DHCP_NAMESERVER   5
