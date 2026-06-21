@@ -165,6 +165,7 @@ public:
     Tcp* settimestamp(uint32_t tsval, uint32_t tsecr);
     Tcp* setwindowscale(uint8_t scale);
     Tcp* setsack(const struct Sack* sack);
+    Tcp* padoptions();
     [[nodiscard]] uint32_t getack() const;
     [[nodiscard]] uint32_t getseq() const;
     [[nodiscard]] uint16_t getsport() const;

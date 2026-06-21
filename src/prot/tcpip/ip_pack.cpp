@@ -631,13 +631,23 @@ Tcp *Tcp::setsack(const struct Sack *sack) {
     return this;
 }
 
+Tcp* Tcp::padoptions() {
+    // 必须在 build_packet 之前调用,使 tcpoptlen 固定为 4 的倍数。
+    // GSO 的 l4_hdrlen / csum_offset 依赖此长度,若在 build_packet 内部 padding
+    // 会导致 header 长度变化而 GSO 参数已固定,checksum 计算错位。
+    if (tcpoptlen % 4 == 0) {
+        return this;
+    }
+    size_t length = UpTo(tcpoptlen, 4);
+    tcpopt = (char *)realloc(tcpopt, length);
+    memset(tcpopt + tcpoptlen, TCPOPT_NOP, length - tcpoptlen);
+    tcpoptlen = length;
+    return this;
+}
 
 void Tcp::build_packet(const ip* ip_hdr, Buffer& bb) {
     if (tcpoptlen % 4) {
-        size_t length = UpTo(tcpoptlen, 4);
-        tcpopt = (char *)realloc(tcpopt, length);
-        memset(tcpopt + tcpoptlen, TCPOPT_NOP, length - tcpoptlen);
-        tcpoptlen = length;
+        LOGF("TCP options length %zu is not a multiple of 4, call padoptions() before build_packet\n", tcpoptlen);
     }
     uint8_t hdrlen = sizeof(tcphdr) + tcpoptlen;
     tcp_hdr.th_off = hdrlen >> 2;
@@ -658,10 +668,7 @@ void Tcp::build_packet(const ip* ip_hdr, Buffer& bb) {
 
 void Tcp::build_packet(const ip6_hdr* ip_hdr, Buffer& bb) {
     if (tcpoptlen % 4) {
-        size_t length = UpTo(tcpoptlen, 4);
-        tcpopt = (char *)realloc(tcpopt, length);
-        memset(tcpopt + tcpoptlen, TCPOPT_NOP, length - tcpoptlen);
-        tcpoptlen = length;
+        LOGF("TCP options length %zu is not a multiple of 4, call padoptions() before build_packet\n", tcpoptlen);
     }
     uint8_t hdrlen = sizeof(tcphdr) + tcpoptlen;
     tcp_hdr.th_off = hdrlen >> 2;

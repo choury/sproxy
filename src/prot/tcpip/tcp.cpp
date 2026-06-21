@@ -89,6 +89,7 @@ static void tcpSend(std::shared_ptr<TcpStatus> status, std::shared_ptr<Ip> pac, 
         if(status->ts_enable) {
             pac->tcp->settimestamp(getmtime(), status->ts_recent);
         }
+        pac->tcp->padoptions();
         // 填充 GSO 参数
         GsoInfo gso;
         gso.l4_hdrlen = sizeof(tcphdr) + pac->tcp->tcpoptlen;
