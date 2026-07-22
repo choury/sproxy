@@ -516,15 +516,15 @@ const cert_pair* lookup_cert(const char* domain) {
 }
 
 const cert_pair* generate_cert(const char* domain) {
-    if(!domain) return nullptr;
     auto pair_ = lookup_cert(domain);
     if(pair_) {
         return pair_;
     }
 
-    if(!has_ca_cert() && !certs.empty()) {
+    if((!has_ca_cert() || !domain) && !certs.empty()) {
         return certs.begin()->second.get();
     }
+    if(!domain) return nullptr;
 
     STACK_OF(X509)* chain = nullptr;
     EVP_PKEY* key = nullptr;
