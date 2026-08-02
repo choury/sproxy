@@ -8,13 +8,14 @@
 //
 
 #include "x86_emitter.h"
+#include "../../include/bpf_fp.h"
 
 #include <cstdint>
 #include <cstring>
 
 #if defined(__x86_64__)
 
-#include "insn.h"
+#include "../insn.h"
 
 // ---------------------------------------------------------------------------
 // Patching: Jcc rel32 (6 bytes, disp at +2) and JMP rel32 (5 bytes, disp at +1)
@@ -307,6 +308,159 @@ void X86Emitter::emit_helper_call(void* helper) {
     emit8(0x48); emit8(0x89); emit8(0xC7);  // mov rdi, rax
     emit8(0x48); emit8(0x89); emit8(0xCE);  // mov rsi, rcx
     call_helper(helper);
+}
+
+// ---------------------------------------------------------------------------
+// SSE2/SSE 浮点原语（供 emit_call_softfp 使用）。
+// 这些原语在 xmm 寄存器上操作（与整数 REX 扩展约定一致：reg 字段用 R 位扩展，
+// rm 字段用 B 位扩展）。浮点位模式在整数寄存器(r1/r2 → R9/R10)与 xmm 之间用 movq/movd 搬运。
+// ---------------------------------------------------------------------------
+
+// movq xmm, r64  ——  REX.W 66 0F 6E /r   (xmm = 位模式(r64))
+void X86Emitter::sse_movq_xmm_r64(uint8_t xmm, uint8_t r64) {
+    // mandatory 66, REX.W(=1), reg=xmm(R), rm=r64(B)
+    emit8(0x66);
+    emit8(rex(true, xmm >= 8, false, r64 >= 8));
+    emit8(0x0F); emit8(0x6E);
+    emit8(modrm(3, xmm & 7, r64 & 7));
+}
+
+// movq r64, xmm  ——  REX.W 66 0F 7E /r   (r64 = 位模式(xmm))
+void X86Emitter::sse_movq_r64_xmm(uint8_t r64, uint8_t xmm) {
+    emit8(0x66);
+    emit8(rex(true, xmm >= 8, false, r64 >= 8));
+    emit8(0x0F); emit8(0x7E);
+    emit8(modrm(3, xmm & 7, r64 & 7));
+}
+
+// movd xmm, r32  ——  66 0F 6E /r   (xmm[0:31] = r32，高位清零)
+void X86Emitter::sse_movd_xmm_r32(uint8_t xmm, uint8_t r32) {
+    emit8(0x66);
+    emit8(rex(false, xmm >= 8, false, r32 >= 8));
+    emit8(0x0F); emit8(0x6E);
+    emit8(modrm(3, xmm & 7, r32 & 7));
+}
+
+// movd r32, xmm  ——  66 0F 7E /r   (r32 = xmm[0:31])
+void X86Emitter::sse_movd_r32_xmm(uint8_t r32, uint8_t xmm) {
+    emit8(0x66);
+    emit8(rex(false, xmm >= 8, false, r32 >= 8));
+    emit8(0x0F); emit8(0x7E);
+    emit8(modrm(3, xmm & 7, r32 & 7));
+}
+
+// 标量算术：dst (op)= src
+//   prefix=0xF2 → 标量双精度 (addsd/subsd/mulsd/divsd)
+//   prefix=0xF3 → 标量单精度 (addss/subss/mulss/divss)
+//   SSE `XX /r` 中 ModRM 的 **reg 字段 = dst，rm 字段 = src**
+//   （addsd xmm_dst, xmm_src）。REX：R 位扩展 dst(reg)，B 位扩展 src(rm)。
+void X86Emitter::sse_alu_scalar(uint8_t prefix, uint8_t op, uint8_t dst_xmm, uint8_t src_xmm) {
+    emit8(prefix);
+    emit8(rex(false, dst_xmm >= 8, false, src_xmm >= 8));
+    emit8(0x0F); emit8(op);
+    emit8(modrm(3, dst_xmm & 7, src_xmm & 7));
+}
+
+// sqrtsd/sqrtss xmm_dst, xmm_src  ——  prefix 0F 51 /r   (reg=dst, rm=src)
+void X86Emitter::sse_sqrt_scalar(uint8_t prefix, uint8_t dst_xmm, uint8_t src_xmm) {
+    emit8(prefix);
+    emit8(rex(false, dst_xmm >= 8, false, src_xmm >= 8));
+    emit8(0x0F); emit8(0x51);
+    emit8(modrm(3, dst_xmm & 7, src_xmm & 7));
+}
+
+// xorps xmm_dst, xmm_src —— 0F 57 /r （位异或，用于 neg：翻转符号位）
+//   ModRM reg=dst, rm=src（dst ^= src）。REX: R 位扩 dst，B 位扩 src。
+void X86Emitter::sse_xorps(uint8_t dst_xmm, uint8_t src_xmm) {
+    emit8(rex(false, dst_xmm >= 8, false, src_xmm >= 8));
+    emit8(0x0F); emit8(0x57);
+    emit8(modrm(3, dst_xmm & 7, src_xmm & 7));
+}
+
+// andps xmm_dst, xmm_src —— 0F 54 /r （位与，用于 fabs：清符号位）
+//   ModRM reg=dst, rm=src（dst &= src）。REX: R 位扩 dst，B 位扩 src。
+void X86Emitter::sse_andps(uint8_t dst_xmm, uint8_t src_xmm) {
+    emit8(rex(false, dst_xmm >= 8, false, src_xmm >= 8));
+    emit8(0x0F); emit8(0x54);
+    emit8(modrm(3, dst_xmm & 7, src_xmm & 7));
+}
+
+// orps xmm_dst, xmm_src —— 0F 56 /r （位或，用于 copysign：置符号位）
+//   ModRM reg=dst, rm=src（dst |= src）。REX: R 位扩 dst，B 位扩 src。
+void X86Emitter::sse_orps(uint8_t dst_xmm, uint8_t src_xmm) {
+    emit8(rex(false, dst_xmm >= 8, false, src_xmm >= 8));
+    emit8(0x0F); emit8(0x56);
+    emit8(modrm(3, dst_xmm & 7, src_xmm & 7));
+}
+
+// cvtsi2sd xmm, r/m  —— 有符号整数 → double
+//   64位源: REX.W F2 0F 2A /r    32位源: F2 0F 2A /r
+void X86Emitter::sse_cvtsi2sd(uint8_t dst_xmm, uint8_t src_x86, bool is_signed64) {
+    emit8(0xF2);
+    emit8(rex(is_signed64, dst_xmm >= 8, false, src_x86 >= 8));
+    emit8(0x0F); emit8(0x2A);
+    emit8(modrm(3, dst_xmm & 7, src_x86 & 7));
+}
+
+// cvtsi2ss xmm, r/m  —— 有符号整数 → float
+//   64位源: REX.W F3 0F 2A /r    32位源: F3 0F 2A /r
+void X86Emitter::sse_cvtsi2ss(uint8_t dst_xmm, uint8_t src_x86, bool is_signed64) {
+    emit8(0xF3);
+    emit8(rex(is_signed64, dst_xmm >= 8, false, src_x86 >= 8));
+    emit8(0x0F); emit8(0x2A);
+    emit8(modrm(3, dst_xmm & 7, src_x86 & 7));
+}
+
+// cvttsd2si r64, xmm —— double → 有符号 64 位整数（向 0 截断）
+//   注意是 CVTT（trunc），不是 CVT（按 MXCSR 舍入，默认四舍六入五成双）。
+//   C 的 (int)d / do_softfp 的 (int32_t)d 都是向 0 截断，必须用 CVTT。
+//   REX.W F2 0F 2C /r   ModRM: reg=dst(r64), rm=src(xmm)
+//   r64>=8 → REX.R；xmm>=8 → REX.B
+void X86Emitter::sse_cvtsd2si(uint8_t dst_x86, uint8_t src_xmm) {
+    emit8(0xF2);
+    emit8(rex(true, dst_x86 >= 8, false, src_xmm >= 8));
+    emit8(0x0F); emit8(0x2C);
+    emit8(modrm(3, dst_x86 & 7, src_xmm & 7));
+}
+
+// cvttss2si r64, xmm —— float → 有符号 64 位整数（向 0 截断）
+//   REX.W F3 0F 2C /r   ModRM: reg=dst(r64), rm=src(xmm)
+void X86Emitter::sse_cvtss2si(uint8_t dst_x86, uint8_t src_xmm) {
+    emit8(0xF3);
+    emit8(rex(true, dst_x86 >= 8, false, src_xmm >= 8));
+    emit8(0x0F); emit8(0x2C);
+    emit8(modrm(3, dst_x86 & 7, src_xmm & 7));
+}
+
+// cvtss2sd xmm, xmm —— float → double   F3 0F 5A /r   (reg=dst, rm=src)
+void X86Emitter::sse_cvtss2sd(uint8_t dst_xmm, uint8_t src_xmm) {
+    emit8(0xF3);
+    emit8(rex(false, dst_xmm >= 8, false, src_xmm >= 8));
+    emit8(0x0F); emit8(0x5A);
+    emit8(modrm(3, dst_xmm & 7, src_xmm & 7));
+}
+
+// cvtsd2ss xmm, xmm —— double → float   F2 0F 5A /r   (reg=dst, rm=src)
+void X86Emitter::sse_cvtsd2ss(uint8_t dst_xmm, uint8_t src_xmm) {
+    emit8(0xF2);
+    emit8(rex(false, dst_xmm >= 8, false, src_xmm >= 8));
+    emit8(0x0F); emit8(0x5A);
+    emit8(modrm(3, dst_xmm & 7, src_xmm & 7));
+}
+
+// ucomisd xmm_a, xmm_b —— 无序比较设置 EFLAGS。REX.W 66 0F 2E /r  (reg=a, rm=b)
+void X86Emitter::sse_ucomisd(uint8_t xmm_a, uint8_t xmm_b) {
+    emit8(0x66);
+    emit8(rex(true, xmm_a >= 8, false, xmm_b >= 8));
+    emit8(0x0F); emit8(0x2E);
+    emit8(modrm(3, xmm_a & 7, xmm_b & 7));
+}
+
+// ucomiss xmm_a, xmm_b —— 无序比较设置 EFLAGS。66 不要；0F 2E /r  (reg=a, rm=b)
+void X86Emitter::sse_ucomiss(uint8_t xmm_a, uint8_t xmm_b) {
+    emit8(rex(false, xmm_a >= 8, false, xmm_b >= 8));
+    emit8(0x0F); emit8(0x2E);
+    emit8(modrm(3, xmm_a & 7, xmm_b & 7));
 }
 
 // ---------------------------------------------------------------------------
@@ -1132,13 +1286,13 @@ void X86Emitter::emit_ja32(const bpf_insn* insn, int current_index,
 // ---------------------------------------------------------------------------
 
 void X86Emitter::emit_call_syscall(const bpf_insn* insn, int current_index,
-                                      const bpf_insn* entry_pc) {
+                                      uint64_t entry_gpa) {
     // 完整 flush 所有 BPF 寄存器到 vm->reg[]
     flush_to_vm();
 
-    // 保存当前 pc 到 vm->pc
-    const bpf_insn* insn_host = entry_pc + current_index;
-    mov_rax_imm64((uint64_t)(uintptr_t)insn_host);
+    // 保存当前 pc（guest 地址）到 vm->pc
+    uint64_t insn_gpa = entry_gpa + (uint64_t)current_index * sizeof(bpf_insn);
+    mov_rax_imm64(insn_gpa);
     emit8(0x48); emit8(0x89); emit8(0x85); emit32((uint32_t)off_pc_);  // mov [rbp+off_pc], rax
 
     // 调用 helper_do_syscall(vm*, call_id)
@@ -1157,33 +1311,319 @@ void X86Emitter::emit_call_syscall(const bpf_insn* insn, int current_index,
 }
 
 // ---------------------------------------------------------------------------
+// CALL softfp_slow — FP 虚拟指令（src_reg=2）的 JIT 回退路径。
+//
+// 当 emit_call_softfp 无法原生 lower（如 x86 缺少 AVX-512 的 uint fp↔int 转换）
+// 时走此路径：flush 寄存器 → 调 helper_do_softfp(vm*, call_id) → reload。
+//
+// 与 emit_call_syscall 结构相同，但调 do_softfp（只读 r1/r2、写 r0，不会导致
+// VM exit），故无需检查返回值——helper_do_softfp 无条件返回 true。
+// ---------------------------------------------------------------------------
+void X86Emitter::emit_call_softfp_slow(const bpf_insn* insn, int current_index,
+                                         uint64_t entry_gpa) {
+    flush_to_vm();
+
+    // 保存当前 pc（guest 地址）到 vm->pc
+    uint64_t insn_gpa = entry_gpa + (uint64_t)current_index * sizeof(bpf_insn);
+    mov_rax_imm64(insn_gpa);
+    emit8(0x48); emit8(0x89); emit8(0x85); emit32((uint32_t)off_pc_);  // mov [rbp+off_pc], rax
+
+    // 调用 helper_do_softfp(vm*, call_id)
+    mov_r64(X86::RDI, X86::RBP);                              // mov rdi, rbp
+    emit8(0xBE); emit32((uint32_t)insn->imm);                 // mov esi, call_id
+    call_helper(helpers_.do_softfp);
+
+    // do_softfp 只写 r0、不改其他寄存器语义外的东西，但 reload 以保持一致与安全。
+    reload_from_vm();
+}
+
+// ---------------------------------------------------------------------------
+// 虚拟浮点指令的 JIT 实现（x86_64）。
+//
+// 寄存器驻留：JIT 把全部 11 个 BPF 寄存器常驻在 x86 物理寄存器，纯计算路径
+// 不碰 vm->reg[]。故到一条 BPF_FP_* 时 r1/r2/r0 已在 R9/R10/R8，直接读
+// → SSE 运算 → 写回 R8 即可，无需 flush/reload 或退 JIT。
+// scratch：RAX/RCX（整数）、xmm0/xmm1（浮点），均 caller-saved。
+//
+// float 的位模式也按 i64 整体搬（与 do_softfp 传位方式一致），低 32 位有效、
+// 高位为 0，不影响算术结果。
+//
+// 返回 true 表示已用原生指令处理；false 表示交给通用 syscall 路径（do_softfp）。
+// ---------------------------------------------------------------------------
+
+bool X86Emitter::emit_call_softfp(const bpf_insn* insn) {
+    const uint32_t imm = (uint32_t)insn->imm;
+
+    // BPF 寄存器 → x86 寄存器（与 BPF_REG_MAP 一致）。
+    const uint8_t R_R0 = X86::R8;   // 结果
+    const uint8_t R_R1 = X86::R9;   // 操作数 a
+    const uint8_t R_R2 = X86::R10;  // 操作数 b
+    const uint8_t X0 = 0;           // xmm0
+    const uint8_t X1 = 1;           // xmm1
+    const uint8_t X2 = 2;           // xmm2（掩码暂存）
+
+    // 双精度二元算术：xmm0 = a (op) b
+    auto emit_d_binop = [&](uint8_t op) {
+        sse_movq_xmm_r64(X0, R_R1);
+        sse_movq_xmm_r64(X1, R_R2);
+        sse_alu_scalar(0xF2, op, X0, X1);   // xmm0 (op)= xmm1
+        sse_movq_r64_xmm(R_R0, X0);
+    };
+    // 单精度二元算术（操作数位模式仍在 R9/R10 低 32 位，movq 整体搬无碍）。
+    auto emit_f_binop = [&](uint8_t op) {
+        sse_movq_xmm_r64(X0, R_R1);
+        sse_movq_xmm_r64(X1, R_R2);
+        sse_alu_scalar(0xF3, op, X0, X1);
+        // 结果在 xmm0 低 32 位；movd 取低 32 位到 RAX，再零扩展搬进 R8。
+        sse_movd_r32_xmm(X86::RAX, X0);
+        mov_r64(R_R0, X86::RAX);
+    };
+    // 比较：GCC 软浮点 ABI 返回 int 三态（<0/=0/>0）。用 UCOMISx 设 EFLAGS
+    // （UCOMI 对无序不触发 #IA，仅置 PF=1）。UCOMISD EFLAGS 真值表：
+    //     a > b      → ZF=0, CF=0      a == b    → ZF=1, CF=0
+    //     a < b      → ZF=0, CF=1      无序(NaN) → ZF=1, CF=1
+    // 先置默认结果 1（仅 a>b 落到此值），再按 ZF→0、CF→-1 顺序覆盖：
+    //   * a>b：JE/JB 都不跳，r8d 保持 1。
+    //   * a==b：JE 命中→r8d=0。
+    //   * a<b：JE 不跳(ZF=0)、JB 命中(CF=1)→r8d=-1。
+    //   * 无序：JE 命中(ZF=1)→r8d=0（与 do_softfp 一致：NaN 视作相等→0）。
+    // 故无序返回 0，而非默认 1——这点与下方各分支语义吻合。
+    auto emit_cmp = [&](bool is_double) {
+        sse_movq_xmm_r64(X0, R_R1);   // xmm0 = a
+        sse_movq_xmm_r64(X1, R_R2);   // xmm1 = b
+        if (is_double) sse_ucomisd(X0, X1);  // 比较 a, b
+        else           sse_ucomiss(X0, X1);
+        emit8(0x41); emit8(0xB8); emit32(1);          // mov r8d, 1
+        size_t jz_off = size();
+        emit8(0x0F); emit8(0x84); emit32(0);          // JE .eq (rel32, ZF=1)
+        size_t jb_off = size();
+        emit8(0x0F); emit8(0x82); emit32(0);          // JB .lt (rel32, CF=1)
+        // .gt：fall-through（r8d 已是 1）→ JMP .done
+        size_t gt_jmp = size();
+        emit8(0xE9); emit32(0);                        // JMP .done
+        // .eq: r8d = 0
+        size_t eq_off = size();
+        patch_branch_cond(jz_off, eq_off);
+        emit8(0x41); emit8(0xB8); emit32(0);
+        size_t eq_jmp = size();
+        emit8(0xE9); emit32(0);                        // JMP .done
+        // .lt: r8d = -1
+        size_t lt_off = size();
+        patch_branch_cond(jb_off, lt_off);
+        emit8(0x41); emit8(0xB8); emit32((uint32_t)-1);
+        // .done：.lt 是最后一块，直接 fall-through 即到 .done，故无需再发 JMP。
+        size_t done_off = size();
+        patch_branch_uncond(gt_jmp, done_off);
+        patch_branch_uncond(eq_jmp, done_off);
+    };
+    // 无序判定（__unordXX2）：任一操作数为 NaN → r0=1，否则 r0=0。
+    // UCOMISx 之后 PF=1 表示无序（NaN）。先默认 0（有序），PF=1 时覆盖成 1：
+    //   mov r8d, 0          ; 默认有序
+    //   JNP .done           ; PF=0(有序) 直接跳过（JNP = 0F 8B）
+    //   mov r8d, 1          ; PF=1(无序)
+    // .done:
+    auto emit_unord = [&](bool is_double) {
+        sse_movq_xmm_r64(X0, R_R1);   // xmm0 = a
+        sse_movq_xmm_r64(X1, R_R2);   // xmm1 = b
+        if (is_double) sse_ucomisd(X0, X1);
+        else           sse_ucomiss(X0, X1);
+        emit8(0x41); emit8(0xB8); emit32(0);          // mov r8d, 0（默认：有序）
+        size_t jnp_off = size();
+        emit8(0x0F); emit8(0x8B); emit32(0);          // JNP .done（PF=0 即有序时跳过）
+        emit8(0x41); emit8(0xB8); emit32(1);          // mov r8d, 1（无序：有 NaN）
+        patch_branch_cond(jnp_off, size());
+    };
+
+    switch (imm) {
+    // —— 双精度算术 ——
+    case BPF_FP_ADD_D: emit_d_binop(0x58); return true;
+    case BPF_FP_SUB_D: emit_d_binop(0x5C); return true;
+    case BPF_FP_MUL_D: emit_d_binop(0x59); return true;
+    case BPF_FP_DIV_D: emit_d_binop(0x5E); return true;
+
+    // —— 单精度算术 ——
+    case BPF_FP_ADD_F: emit_f_binop(0x58); return true;
+    case BPF_FP_SUB_F: emit_f_binop(0x5C); return true;
+    case BPF_FP_MUL_F: emit_f_binop(0x59); return true;
+    case BPF_FP_DIV_F: emit_f_binop(0x5E); return true;
+
+    // —— 取负（异或符号位掩码）——
+    case BPF_FP_NEG_D: {
+        sse_movq_xmm_r64(X0, R_R1);
+        // mov rcx, 0x8000000000000000 ; xmm1 = 该位模式 ; xorps
+        emit8(0x48); emit8(0xB9); emit64(0x8000000000000000ULL);  // mov rcx, imm64
+        sse_movq_xmm_r64(X1, X86::RCX);
+        sse_xorps(X0, X1);
+        sse_movq_r64_xmm(R_R0, X0);
+        return true;
+    }
+    case BPF_FP_NEG_F: {
+        // 单精度符号位掩码在低 32 位；用 32 位搬运。
+        sse_movd_xmm_r32(X0, R_R1);
+        emit8(0xB9); emit32(0x80000000u);                          // mov ecx, imm32
+        sse_movd_xmm_r32(X1, X86::RCX);
+        sse_xorps(X0, X1);
+        sse_movd_r32_xmm(X86::RAX, X0);
+        mov_r64(R_R0, X86::RAX);
+        return true;
+    }
+
+    // —— 平方根 ——
+    case BPF_FP_SQRT_D: {
+        sse_movq_xmm_r64(X0, R_R1);
+        sse_sqrt_scalar(0xF2, X0, X0);
+        sse_movq_r64_xmm(R_R0, X0);
+        return true;
+    }
+    case BPF_FP_SQRT_F: {
+        sse_movd_xmm_r32(X0, R_R1);
+        sse_sqrt_scalar(0xF3, X0, X0);
+        sse_movd_r32_xmm(X86::RAX, X0);
+        mov_r64(R_R0, X86::RAX);
+        return true;
+    }
+
+    // —— 绝对值（清符号位：andps 0x7FFF...F）——
+    case BPF_FP_FABS_D: {
+        sse_movq_xmm_r64(X0, R_R1);
+        emit8(0x48); emit8(0xB9); emit64(0x7FFFFFFFFFFFFFFFULL);  // mov rcx, 0x7FFF...F
+        sse_movq_xmm_r64(X1, X86::RCX);
+        sse_andps(X0, X1);
+        sse_movq_r64_xmm(R_R0, X0);
+        return true;
+    }
+    case BPF_FP_FABS_F: {
+        sse_movd_xmm_r32(X0, R_R1);
+        emit8(0xB9); emit32(0x7FFFFFFFu);                          // mov ecx, 0x7FFFFFFF
+        sse_movd_xmm_r32(X1, X86::RCX);
+        sse_andps(X0, X1);
+        sse_movd_r32_xmm(X86::RAX, X0);
+        mov_r64(R_R0, X86::RAX);
+        return true;
+    }
+
+    // —— copysign(x, y)：取 y 的符号位并到 x 上。
+    //   (x & 0x7FFF...F) | (y & 0x8000...0)。xmm0=x, xmm1=y；
+    //   先 andps 清 x 符号位，再把 y 的符号位 or 上去。 ——
+    case BPF_FP_COPYSIGN_D: {
+        sse_movq_xmm_r64(X0, R_R1);           // xmm0 = x
+        sse_movq_xmm_r64(X1, R_R2);           // xmm1 = y
+        emit8(0x48); emit8(0xB9); emit64(0x7FFFFFFFFFFFFFFFULL);  // mov rcx, mag_mask
+        sse_movq_xmm_r64(X2, X86::RCX);
+        sse_andps(X0, X2);                    // xmm0 = x 清符号位
+        emit8(0x48); emit8(0xB9); emit64(0x8000000000000000ULL);  // mov rcx, sign_mask
+        sse_movq_xmm_r64(X2, X86::RCX);
+        sse_andps(X1, X2);                    // xmm1 = y 的符号位
+        sse_orps(X0, X1);                     // xmm0 = 合并符号
+        sse_movq_r64_xmm(R_R0, X0);
+        return true;
+    }
+    case BPF_FP_COPYSIGN_F: {
+        // 单精度：位模式在低 32 位。x→xmm0(低32)，y→xmm1(低32)。
+        sse_movq_xmm_r64(X0, R_R1);           // 整 8 字节搬入（高位无所谓）
+        sse_movq_xmm_r64(X1, R_R2);
+        emit8(0xB9); emit32(0x7FFFFFFFu);                          // mov ecx, mag_mask(32)
+        sse_movd_xmm_r32(X2, X86::RCX);
+        sse_andps(X0, X2);                    // 清 x 符号位
+        emit8(0xB9); emit32(0x80000000u);                          // mov ecx, sign_mask(32)
+        sse_movd_xmm_r32(X2, X86::RCX);
+        sse_andps(X1, X2);                    // y 的符号位
+        sse_orps(X0, X1);                     // 合并
+        sse_movd_r32_xmm(X86::RAX, X0);
+        mov_r64(R_R0, X86::RAX);
+        return true;
+    }
+
+    // —— double → 有符号整数（向 0 截断）——
+    case BPF_FP_D2SI:
+    case BPF_FP_D2DI: {
+        sse_movq_xmm_r64(X0, R_R1);
+        sse_cvtsd2si(R_R0, X0);   // 64 位结果；D2SI 取低 32 位（调用方 w0 零扩展）
+        return true;
+    }
+    // —— float → 有符号整数 ——
+    case BPF_FP_F2SI:
+    case BPF_FP_F2DI: {
+        sse_movq_xmm_r64(X0, R_R1);
+        sse_cvtss2si(R_R0, X0);
+        return true;
+    }
+
+    // —— int → double（src 在 R9，按宽度做有符号解释）——
+    case BPF_FP_DI2D: {   // int64 → double
+        sse_cvtsi2sd(X0, R_R1, true);
+        sse_movq_r64_xmm(R_R0, X0);
+        return true;
+    }
+    case BPF_FP_SI2D: {   // int32 → double（符号扩展后转换）
+        // cvtsi2sd 的 32 位源读 R9D（低 32 位，符号扩展到 int32）。不需要显式扩展。
+        sse_cvtsi2sd(X0, R_R1, false);
+        sse_movq_r64_xmm(R_R0, X0);
+        return true;
+    }
+    // —— int → float ——
+    case BPF_FP_DI2F: {
+        sse_cvtsi2ss(X0, R_R1, true);
+        sse_movd_r32_xmm(X86::RAX, X0);
+        mov_r64(R_R0, X86::RAX);
+        return true;
+    }
+    case BPF_FP_SI2F: {
+        sse_cvtsi2ss(X0, R_R1, false);
+        sse_movd_r32_xmm(X86::RAX, X0);
+        mov_r64(R_R0, X86::RAX);
+        return true;
+    }
+
+    // —— 类型转换 ——
+    case BPF_FP_EXTEND: {  // float → double
+        sse_movd_xmm_r32(X0, R_R1);
+        sse_cvtss2sd(X0, X0);
+        sse_movq_r64_xmm(R_R0, X0);
+        return true;
+    }
+    case BPF_FP_TRUNC: {   // double → float
+        sse_movq_xmm_r64(X0, R_R1);
+        sse_cvtsd2ss(X0, X0);
+        sse_movd_r32_xmm(X86::RAX, X0);
+        mov_r64(R_R0, X86::RAX);
+        return true;
+    }
+
+    // —— 比较：见上方 emit_cmp lambda ——
+    case BPF_FP_CMP_D: emit_cmp(true);  return true;
+    case BPF_FP_CMP_F: emit_cmp(false); return true;
+
+    // —— 无序判定：见上方 emit_unord lambda ——
+    case BPF_FP_UNORD_D: emit_unord(true);  return true;
+    case BPF_FP_UNORD_F: emit_unord(false); return true;
+
+    default:
+        // 未实现的 FP 编号（主要是 uint 目标的转换 D2USI/D2UDI/F2USI/F2UDI
+        // 及对应的 int→fp 无符号源 USI2*/UDI2*，x86 无直接指令）交给通用 syscall。
+        return false;
+    }
+}
+
+
+// ---------------------------------------------------------------------------
 // CALL BPF-to-BPF (src_reg==1)
 //
 // 目标函数需要从 vm->reg[] 读取参数，所以需要完整 flush。
 // 编译完成后跳回 vm_exit，让 step() 循环重新编译目标函数。
 // ---------------------------------------------------------------------------
 
-void X86Emitter::emit_call_bpf(const bpf_insn* insn, int current_index,
-                                  uint64_t ret_gpa,
-                                  const bpf_insn* entry_pc) {
+void X86Emitter::emit_call_bpf(uint64_t ret_gpa, uint64_t callee_gpa) {
     // flush_to_vm 已经将所有寄存器写回 vm->reg[]，
     // 后续不能再走 flush_and_exit（会把被 CALL 踩掉的垃圾值写回），
     // 所有跳转都直接到 vm_exit。
     flush_to_vm();
 
+    // helper_call_bpf(vm*, ret_gpa, callee_gpa): push_frame + v->pc = mmu(callee_gpa)
     mov_r64(X86::RDI, X86::RBP);                              // mov rdi, rbp
     emit8(0x48); emit8(0xBE); emit64(ret_gpa);                // mov rsi, ret_gpa
-    call_helper(helpers_.push_frame);
-    test_al_al();
-    // push_frame 失败 → 直接跳 vm_exit
-    size_t jz_off = size();
-    emit8(0x0F); emit8(0x84); emit32(0);                      // JZ .vm_exit
-    patch_branch_cond(jz_off, vm_exit_offset);
-
-    // 设置 pc 指向被调函数
-    const bpf_insn* callee_pc = entry_pc + current_index + 1 + insn->imm;
-    mov_rax_imm64((uint64_t)(uintptr_t)callee_pc);
-    emit8(0x48); emit8(0x89); emit8(0x85); emit32((uint32_t)off_pc_);
+    emit8(0x48); emit8(0xBA); emit64(callee_gpa);             // mov rdx, callee_gpa
+    call_helper(helpers_.call_bpf);
 
     // 跳到 vm_exit（让 step() 循环重新进入 JIT）
     size_t jmp_off = size();
@@ -1331,7 +1771,7 @@ size_t X86Emitter::emit_prologue() {
 // 循环回边处插入安全点，让 VM 有机会处理信号和检查中止标志。
 // ---------------------------------------------------------------------------
 
-void X86Emitter::emit_safepoint(uint32_t loop_body_size) {
+void X86Emitter::emit_safepoint(uint32_t loop_body_size, uint64_t insn_gpa) {
     if (insn_count_enabled_) {
         // --- 指令计数递增 ---
         // mov rax, qword [rbp + off_insn_count_]
@@ -1380,6 +1820,17 @@ void X86Emitter::emit_safepoint(uint32_t loop_body_size) {
     patch_branch_cond(flags_jnz, slow_start);
 
     flush_to_vm();
+
+    // 写当前 guest pc 到 vm->pc。JIT 的"寄存器驻留纯执行段"不维护 vm->pc，
+    // 但 safepoint 的 slow path 会调用 helper_safepoint → handle_signals，后者用
+    // vm->pc 作为信号返回帧的返回地址。若不写回，vm->pc 会停在最后一次
+    // emit_call_syscall 的 stale 值上，导致信号处理返回后回到错误的 pc（如重复
+    // 执行一条 syscall 形式的 call 指令）。insn_gpa 是本 safepoint 所在 BPF 指令
+    // （循环头）的 guest 地址，即信号返回后应当恢复执行的位置。
+    // RAX 作写 pc 的专用 scratch（非参数寄存器；对应 aarch64 版用 X2）。
+    mov_rax_imm64(insn_gpa);
+    emit8(0x48); emit8(0x89); emit8(0x85); emit32((uint32_t)off_pc_);  // mov [rbp+off_pc], rax
+
     mov_r64(X86::RDI, X86::RBP);
     call_helper(helpers_.safepoint);
     test_eax_eax();

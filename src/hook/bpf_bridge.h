@@ -623,7 +623,7 @@ class vm;
 // BpfCallback - hook callback that runs BPF programs in a sandboxed VM
 class BpfCallback : public IHookCallback {
     std::string elf_path;
-    uint64_t entry = 0;
+    ElfLoadInfo info{};
     std::shared_ptr<vm> v;
 public:
     BpfCallback(const std::string& elf_path, std::string& msg);

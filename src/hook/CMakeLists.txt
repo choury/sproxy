@@ -4,9 +4,10 @@ if(HAVE_ELF)
     set(hook_src ${hook_src}
         bpf_bridge.cpp
         bpfvm/insn.cpp
-        bpfvm/jit_compiler.cpp
-        bpfvm/x86_emitter.cpp
-        bpfvm/aarch64_emitter.cpp)
+        bpfvm/elf_loader.cpp
+        bpfvm/jit/jit_compiler.cpp
+        bpfvm/jit/x86_emitter.cpp
+        bpfvm/jit/aarch64_emitter.cpp)
 endif()
 
 add_library(hook_lib ${hook_src})
@@ -40,7 +41,7 @@ if(HAVE_ELF)
                     ${CMAKE_CURRENT_SOURCE_DIR}/hook_bpf.c
             DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/hook_bpf.c
                     ${CMAKE_CURRENT_SOURCE_DIR}/include/bpf.h
-                    ${CMAKE_CURRENT_SOURCE_DIR}/include/bpf_call.h
+                    ${CMAKE_CURRENT_SOURCE_DIR}/include/bpf_syscall.h
             COMMENT "Compiling BPF test program with -mcpu=${HOOK_BPF_MCPU}"
         )
         add_custom_command(

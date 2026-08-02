@@ -77,7 +77,12 @@ namespace ARM {
     constexpr uint8_t FP  = 29;   // X29 = Frame Pointer
     constexpr uint8_t LR  = 30;   // X30 = Link Register
     constexpr uint8_t SP  = 31;   // SP or ZR depending on context
+
+    // FP/向量寄存器（V0-V31）。标量 FP 用 V0/V1 做 caller-saved scratch。
+    constexpr uint8_t V0  = 0;
+    constexpr uint8_t V1  = 1;
 }
+
 
 // BPF register → AArch64 register mapping
 constexpr uint8_t BPF_REG_MAP[11] = {
@@ -99,7 +104,7 @@ public:
     // --- High-level BPF instruction emission ---
 
     size_t emit_prologue();
-    void emit_safepoint(uint32_t loop_body_size);
+    void emit_safepoint(uint32_t loop_body_size, uint64_t insn_gpa);
 
     bool emit_alu(const bpf_insn* insn, bool is_64);
     bool emit_ld(const bpf_insn* insn);
@@ -116,9 +121,13 @@ public:
                    std::vector<JumpPlaceholder>& placeholders);
 
     void emit_call_syscall(const bpf_insn* insn, int current_index,
-                           const bpf_insn* entry_pc);
-    void emit_call_bpf(const bpf_insn* insn, int current_index,
-                       uint64_t ret_gpa, const bpf_insn* entry_pc);
+                           uint64_t entry_gpa);
+    // 虚拟浮点指令（src_reg=2）的 JIT 实现（见 .cpp 实现注释）。命中返回 true；
+    // 未命中由 emit_call_softfp_slow 回退到 helper_do_softfp（do_softfp），
+    bool emit_call_softfp(const bpf_insn* insn);
+    void emit_call_softfp_slow(const bpf_insn* insn, int current_index,
+                               uint64_t entry_gpa);
+    void emit_call_bpf(uint64_t ret_gpa, uint64_t callee_gpa);
     void emit_call_indirect(const bpf_insn* insn, uint64_t ret_gpa);
     void emit_exit();
 
@@ -205,6 +214,32 @@ private:
 
     // Memory barrier
     void dmb();
+
+    // --- 标量浮点原语（虚拟 FP 指令的 JIT 实现所需）---
+    //   V 寄存器编码与 X 寄存器共用 0..31（取低 5 位）。
+    //   类型由指令自身的 ftype 字段决定（00=single,01=double）。
+    //   GPR↔FPR 位搬运：FMOV Dx,Xn / FMOV Xd,Dx / FMOV Sn,Wn / FMOV Wd,Sn
+    void fmov_v_from_x(uint8_t vd, uint8_t rn, bool is_double);  // Vd <- Xn 位模式
+    void fmov_x_from_v(uint8_t rd, uint8_t vn, bool is_double);  // Xd <- Vn 位模式
+    // 标量算术：FADD/FSUB/FMUL/FDIV  (ftype 0F 00..0C Rm Ra Rd)
+    void fp_alu(uint8_t op2, uint8_t rd, uint8_t rn, uint8_t rm, bool is_double);
+    // 取负 / 绝对值 / 平方根：FNEG/FABS/FSQRT  (ftype 1x 10000 .. Rn Rd)
+    void fp_neg(uint8_t rd, uint8_t rn, bool is_double);
+    void fp_abs(uint8_t rd, uint8_t rn, bool is_double);
+    void fp_sqrt(uint8_t rd, uint8_t rn, bool is_double);
+    // 类型转换：FCVT S/D 互转  (0001 1110 0110 0x11 10000 Rn Rd)
+    void fp_cvt_sd(uint8_t rd, uint8_t rn, bool to_double);  // to_double: f->d, 否则 d->f
+    // 整型↔FP：SCVTF/UCVTF（有/无符号整型→FP），FCVTZS/FCVTZU（FP→有/无符号整型，向0截断）
+    void scvtf(uint8_t rd, uint8_t rn, bool is_double, bool src64);
+    void ucvtf(uint8_t rd, uint8_t rn, bool is_double, bool src64);
+    void fcvtzs(uint8_t rd, uint8_t rn, bool is_double, bool dst64);
+    void fcvtzu(uint8_t rd, uint8_t rn, bool is_double, bool dst64);
+    // 比较：FCMP Vn, Vm（设 NZCV）。无序时 CV=01。
+    void fcmp(uint8_t vn, uint8_t vm, bool is_double);
+    // CSET Wd, cond（按 cond 置 0/1，用 CSINC 别名）
+    void cset(uint8_t rd, uint8_t cond);
+    // CSEL Wd, Wn, Wm, cond（按 cond 选 Wn/Wm）
+    void csel(uint8_t rd, uint8_t rn, uint8_t rm, uint8_t cond, bool is_64);
 
     // --- BPF register access ---
     void load_bpf(uint8_t bpf_reg, uint8_t dst);

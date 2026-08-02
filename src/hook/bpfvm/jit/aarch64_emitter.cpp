@@ -6,7 +6,8 @@
 //
 
 #include "aarch64_emitter.h"
-#include "insn.h"
+#include "../../include/bpf_fp.h"
+#include "../insn.h"
 
 #include <cstring>
 
@@ -333,6 +334,119 @@ void AArch64Emitter::rev64(uint8_t d, uint8_t n) {
     emit_insn(0xDAC00C00u | ((uint32_t)n << 5) | rd(d));
 }
 void AArch64Emitter::dmb() { emit_insn(0xD5033BBFu); }
+
+// ---------------------------------------------------------------------------
+// 标量浮点原语（供 emit_call_softfp 使用）
+//
+// 编码统一用 base 常量（与 LLVM AArch64.td / V8 一致），Rm/Rn/Rd 在
+//   Rm: bits[20:16]   Rn: bits[9:5]   Rd: bits[4:0]
+// ftype: single=00 / double=01（嵌在 base 里，故分两套 base）。
+// ---------------------------------------------------------------------------
+
+// FMOV Dx, Xn（GPR→FPR 位搬运，64 位）/ FMOV Sd, Wn（32 位）
+//   FMOV Dx,Xn : 9E670000 | (Rn<<5) | Rd
+//   FMOV Sd,Wn : 1E270000 | (Rn<<5) | Rd
+void AArch64Emitter::fmov_v_from_x(uint8_t vd, uint8_t rn, bool is_double) {
+    emit_insn((is_double ? 0x9E670000u : 0x1E270000u) | ((uint32_t)rn << 5) | rd(vd));
+}
+// FMOV Xd, Dn / FMOV Wd, Sn（FPR→GPR 位搬运）
+//   FMOV Xd,Dn : 9E660000 | (Rn<<5) | Rd
+//   FMOV Wd,Sn : 1E260000 | (Rn<<5) | Rd
+void AArch64Emitter::fmov_x_from_v(uint8_t d, uint8_t vn, bool is_double) {
+    emit_insn((is_double ? 0x9E660000u : 0x1E260000u) | ((uint32_t)vn << 5) | rd(d));
+}
+
+// FADD/FSUB/FMUL/FDIV (scalar two-source)
+//   double base: FADD=1E602800  FSUB=1E603800  FMUL=1E600800  FDIV=1E601800
+//   single base: FADD=1E202800  FSUB=1E203800  FMUL=1E200800  FDIV=1E201800
+// op2 参数即 [15:10] 的 6 位字段（0x0A=add, 0x0E=sub, 0x02=mul, 0x06=div）。
+void AArch64Emitter::fp_alu(uint8_t op2, uint8_t d, uint8_t n, uint8_t m, bool is_double) {
+    uint32_t base = is_double ? 0x1E600000u : 0x1E200000u;
+    emit_insn(base | ((uint32_t)m << 16) | ((uint32_t)op2 << 10) | ((uint32_t)n << 5) | rd(d));
+}
+
+// FNEG (scalar): 翻转符号位
+//   double: 1E614000 | (Rn<<5) | Rd    single: 1E214000 | (Rn<<5) | Rd
+void AArch64Emitter::fp_neg(uint8_t d, uint8_t n, bool is_double) {
+    emit_insn((is_double ? 0x1E614000u : 0x1E214000u) | ((uint32_t)n << 5) | rd(d));
+}
+
+// FABS (scalar): 清符号位
+//   double: 1E60C000 | (Rn<<5) | Rd    single: 1E20C000 | (Rn<<5) | Rd
+void AArch64Emitter::fp_abs(uint8_t d, uint8_t n, bool is_double) {
+    emit_insn((is_double ? 0x1E60C000u : 0x1E20C000u) | ((uint32_t)n << 5) | rd(d));
+}
+
+// FSQRT (scalar)
+//   double: 1E61C000 | (Rn<<5) | Rd    single: 1E21C000 | (Rn<<5) | Rd
+void AArch64Emitter::fp_sqrt(uint8_t d, uint8_t n, bool is_double) {
+    emit_insn((is_double ? 0x1E61C000u : 0x1E21C000u) | ((uint32_t)n << 5) | rd(d));
+}
+
+// FCVT (single<->double)
+//   double<-single (S->D): 1E22C000 | (Rn<<5) | Rd   (扩展)
+//   single<-double (D->S): 1E624000 | (Rn<<5) | Rd   (截断)
+void AArch64Emitter::fp_cvt_sd(uint8_t d, uint8_t n, bool to_double) {
+    emit_insn((to_double ? 0x1E22C000u : 0x1E624000u) | ((uint32_t)n << 5) | rd(d));
+}
+
+// SCVTF（有符号整型→FP）。sf 位决定整型源是 64 还是 32 位。
+//   double: 9E620000(64src)/1E620000(32src) | (Rn<<5) | Rd
+//   single: 9E220000(64src)/1E220000(32src) | (Rn<<5) | Rd
+void AArch64Emitter::scvtf(uint8_t d, uint8_t n, bool is_double, bool src64) {
+    uint32_t base = is_double ? 0x1E620000u : 0x1E220000u;
+    if (src64) base |= 0x80000000u;
+    emit_insn(base | ((uint32_t)n << 5) | rd(d));
+}
+
+// UCVTF（无符号整型→FP）。
+//   double: 9E630000(64src)/1E630000(32src) | (Rn<<5) | Rd
+//   single: 9E230000(64src)/1E230000(32src) | (Rn<<5) | Rd
+void AArch64Emitter::ucvtf(uint8_t d, uint8_t n, bool is_double, bool src64) {
+    uint32_t base = is_double ? 0x1E630000u : 0x1E230000u;
+    if (src64) base |= 0x80000000u;
+    emit_insn(base | ((uint32_t)n << 5) | rd(d));
+}
+
+// FCVTZS（FP→有符号整型，向 0 截断）。sf 位决定整型目标是 64 还是 32 位。
+//   double: 9E780000(64dst)/1E780000(32dst) | (Rn<<5) | Rd
+//   single: 9E380000(64dst)/1E380000(32dst) | (Rn<<5) | Rd
+void AArch64Emitter::fcvtzs(uint8_t d, uint8_t n, bool is_double, bool dst64) {
+    uint32_t base = is_double ? 0x1E780000u : 0x1E380000u;
+    if (dst64) base |= 0x80000000u;
+    emit_insn(base | ((uint32_t)n << 5) | rd(d));
+}
+
+// FCVTZU（FP→无符号整型，向 0 截断）。
+//   double: 9E790000(64dst)/1E790000(32dst) | (Rn<<5) | Rd
+//   single: 9E390000(64dst)/1E390000(32dst) | (Rn<<5) | Rd
+void AArch64Emitter::fcvtzu(uint8_t d, uint8_t n, bool is_double, bool dst64) {
+    uint32_t base = is_double ? 0x1E790000u : 0x1E390000u;
+    if (dst64) base |= 0x80000000u;
+    emit_insn(base | ((uint32_t)n << 5) | rd(d));
+}
+
+// FCMP Vn, Vm（设 NZCV；无序时 CV=01，即 C=0 V=1）
+//   double: 1E602000 | (Rm<<16) | (Rn<<5)        (省略 #0.0，2-op 形式)
+//   single: 1E202000 | (Rm<<16) | (Rn<<5)
+void AArch64Emitter::fcmp(uint8_t vn, uint8_t vm, bool is_double) {
+    emit_insn((is_double ? 0x1E602000u : 0x1E202000u) | ((uint32_t)vm << 16) | ((uint32_t)vn << 5));
+}
+
+// CSET Wd, cond  (= CSINC Wd, WZR, WZR, invert(cond))
+//   CSINC base: 1A800400 | (Rm<<16) | (cond<<12) | (Rn<<5) | Rd
+//   CSET 条件 = invert(cond) = cond ^ 1。Rn/Rm = WZR = 31。
+void AArch64Emitter::cset(uint8_t d, uint8_t cond) {
+    uint32_t inv = cond ^ 1u;
+    emit_insn(0x1A800400u | (31u << 16) | (inv << 12) | (31u << 5) | rd(d));
+}
+
+// CSEL Wd/Xd, Wn, Wm, cond  (sf 00 11010100 Rm cond 00 Rn Rd)
+//   base 32位=2A800000  64位=9A800000（注意 bit23=1），加上 (cond<<12)
+void AArch64Emitter::csel(uint8_t d, uint8_t n, uint8_t m, uint8_t cond, bool is_64) {
+    emit_insn((is_64 ? 0x9A800000u : 0x2A800000u) | ((uint32_t)m << 16)
+              | ((uint32_t)cond << 12) | ((uint32_t)n << 5) | rd(d));
+}
 
 // ---------------------------------------------------------------------------
 // BPF register access  (all in physical regs, load/store are just mov or nop)
@@ -885,11 +999,250 @@ void AArch64Emitter::emit_ja32(const bpf_insn* insn, int cur, std::vector<JumpPl
 // CALL / EXIT
 // ---------------------------------------------------------------------------
 
-void AArch64Emitter::emit_call_syscall(const bpf_insn* insn, int cur, const bpf_insn* entry_pc) {
+// ---------------------------------------------------------------------------
+// 虚拟浮点指令的 JIT 实现（AArch64）。
+//
+// scratch：X0/X1/X2（整数 caller-saved）、V0/V1（FP caller-saved）。
+// 位模式搬运用 FMOV；float 也按 i64 整体搬，低 32 位有效，单精度结果用
+// FMOV Wd,Sn 取低 32 位零扩展。
+//
+// 与 x86 的差别：AArch64 有 FCVTZU/UCVTF，uint 转换也能原生实现（x86 需
+// AVX-512）。故全部 BPF_FP_* 都在此原生处理，无回退路径。
+// ---------------------------------------------------------------------------
+bool AArch64Emitter::emit_call_softfp(const bpf_insn* insn) {
+    const uint32_t imm = (uint32_t)insn->imm;
+    // 调用方（JIT dispatcher）已按 src_reg=2 保证这是 FP 指令，无需再按 imm 段过滤；
+    // 下面 switch 未命中的 case 返回 false，由 dispatcher 走 emit_call_softfp_slow
+    // 回退到 do_softfp。
+
+    // BPF 寄存器 → AArch64 寄存器（与 BPF_REG_MAP 一致）。
+    const uint8_t R_R0 = ARM::X9;    // 结果
+    const uint8_t R_R1 = ARM::X10;   // 操作数 a
+    const uint8_t R_R2 = ARM::X11;   // 操作数 b
+    const uint8_t V_A = 0;           // V0
+    const uint8_t V_B = 1;           // V1
+
+    // op2 字段（[15:10] 的 6 位）：FADD=0x0A, FSUB=0x0E, FMUL=0x02, FDIV=0x06。
+    // 双精度二元算术：V0 = a (op) b
+    auto emit_d_binop = [&](uint8_t op2) {
+        fmov_v_from_x(V_A, R_R1, true);
+        fmov_v_from_x(V_B, R_R2, true);
+        fp_alu(op2, V_A, V_A, V_B, true);
+        fmov_x_from_v(R_R0, V_A, true);
+    };
+    // 单精度二元算术：位模式同样整 8 字节搬进 V0/V1，结果取低 32 位零扩展。
+    auto emit_f_binop = [&](uint8_t op2) {
+        fmov_v_from_x(V_A, R_R1, true);
+        fmov_v_from_x(V_B, R_R2, true);
+        fp_alu(op2, V_A, V_A, V_B, false);
+        fmov_x_from_v(R_R0, V_A, false);   // FMOV W9, S0：32 位，高位清零
+    };
+
+    // 比较：GCC 软浮点 ABI 返回 int 三态（<0/=0/>0）。完全无分支：
+    //   FCMP a,b 设 NZCV：a<b → LT；a==b → EQ；a>b → GT；无序(NaN) → CV=01。
+    //   序列：先默认 0，再 CSET GT 覆盖成 1（a>b），最后 CSEL LT 用 -1 覆盖（a<b）。
+    //   注：三态 CMP 的 NaN 返回值不再单独决定比较谓词——NaN 信息由独立的
+    //   UNORD（emit_unord）携带，BpfSoftFp pass 用 CMP+UNORD 还原每个谓词，
+    //   故 AArch64（NaN→-1）与 x86（NaN→0）的差异已无影响。
+    //     FCMP NZCV 真值：a<b → N=1,C=0,V=0；a==b → N=0,Z=1,C=1；
+    //                      a>b → N=0,C=1,V=0；无序 → N=0,Z=0,C=1,V=1
+    auto emit_cmp = [&](bool is_double) {
+        fmov_v_from_x(V_A, R_R1, true);
+        fmov_v_from_x(V_B, R_R2, true);
+        fcmp(V_A, V_B, is_double);
+        mov_imm(R_R0, 0, false);                 // W9 = 0（默认：相等）
+        cset(R_R0, ARMCond::GT);                 // a>b → W9 = 1
+        mov_imm(X0, (uint64_t)(int64_t)-1, true);// X0 = -1
+        csel(R_R0, X0, R_R0, ARMCond::LT, true); // a<b → X9 = -1，否则保持
+    };
+    // 无序判定（__unordXX2）：任一操作数为 NaN → r0=1，否则 r0=0。
+    // FCMP 在无序（NaN）时置 V=1，VS 条件恰好成立——一行 CSET VS 即得结果。
+    auto emit_unord = [&](bool is_double) {
+        fmov_v_from_x(V_A, R_R1, true);
+        fmov_v_from_x(V_B, R_R2, true);
+        fcmp(V_A, V_B, is_double);
+        cset(R_R0, ARMCond::VS);                 // VS=1(无序) → W9 = 1
+    };
+
+    switch (imm) {
+    // —— 双精度算术 ——
+    case BPF_FP_ADD_D: emit_d_binop(0x0A); return true;
+    case BPF_FP_SUB_D: emit_d_binop(0x0E); return true;
+    case BPF_FP_MUL_D: emit_d_binop(0x02); return true;
+    case BPF_FP_DIV_D: emit_d_binop(0x06); return true;
+
+    // —— 单精度算术 ——
+    case BPF_FP_ADD_F: emit_f_binop(0x0A); return true;
+    case BPF_FP_SUB_F: emit_f_binop(0x0E); return true;
+    case BPF_FP_MUL_F: emit_f_binop(0x02); return true;
+    case BPF_FP_DIV_F: emit_f_binop(0x06); return true;
+
+    // —— 取负（FNEG 翻转符号位，比 x86 的 xorps 更直接）——
+    case BPF_FP_NEG_D:
+        fmov_v_from_x(V_A, R_R1, true);
+        fp_neg(V_A, V_A, true);
+        fmov_x_from_v(R_R0, V_A, true);
+        return true;
+    case BPF_FP_NEG_F:
+        fmov_v_from_x(V_A, R_R1, true);
+        fp_neg(V_A, V_A, false);
+        fmov_x_from_v(R_R0, V_A, false);
+        return true;
+
+    // —— 平方根 ——
+    case BPF_FP_SQRT_D:
+        fmov_v_from_x(V_A, R_R1, true);
+        fp_sqrt(V_A, V_A, true);
+        fmov_x_from_v(R_R0, V_A, true);
+        return true;
+    case BPF_FP_SQRT_F:
+        fmov_v_from_x(V_A, R_R1, true);
+        fp_sqrt(V_A, V_A, false);
+        fmov_x_from_v(R_R0, V_A, false);
+        return true;
+
+    // —— 绝对值（FABS：原生清符号位）——
+    case BPF_FP_FABS_D:
+        fmov_v_from_x(V_A, R_R1, true);
+        fp_abs(V_A, V_A, true);
+        fmov_x_from_v(R_R0, V_A, true);
+        return true;
+    case BPF_FP_FABS_F:
+        fmov_v_from_x(V_A, R_R1, true);
+        fp_abs(V_A, V_A, false);
+        fmov_x_from_v(R_R0, V_A, false);
+        return true;
+
+    // —— copysign(x, y)：取 y 的符号位并到 x 上。
+    //   走 GPR 位运算（避开 FP 条件取负的复杂度）：
+    //   (x & 0x7FFF...F) | (y & 0x8000...0)。R_R1=x, R_R2=y。
+    //   double: 64 位掩码；float: 32 位掩码（高位同形态，32 位操作即正确）。 ——
+    case BPF_FP_COPYSIGN_D: {
+        // X0 = x & mag_mask（清符号位）
+        mov_imm(X0, 0x7FFFFFFFFFFFFFFFULL, true);
+        and_reg(X0, R_R1, X0, true);
+        // X1 = y & sign_mask（仅符号位）
+        mov_imm(X1, 0x8000000000000000ULL, true);
+        and_reg(X1, R_R2, X1, true);
+        orr_reg(R_R0, X0, X1, true);
+        return true;
+    }
+    case BPF_FP_COPYSIGN_F: {
+        // 32 位操作：mag_mask=0x7FFFFFFF, sign_mask=0x80000000。
+        mov_imm(X0, 0x7FFFFFFFu, false);
+        and_reg(X0, R_R1, X0, false);
+        mov_imm(X1, 0x80000000u, false);
+        and_reg(X1, R_R2, X1, false);
+        orr_reg(R_R0, X0, X1, false);   // 32 位写零扩展进 X9
+        return true;
+    }
+
+    // —— double → 有符号整型（FCVTZS 向 0 截断）——
+    case BPF_FP_D2SI:   // -> int32
+        fmov_v_from_x(V_A, R_R1, true);
+        fcvtzs(R_R0, V_A, true, false);   // 32 位结果，W 写零扩展进 X9
+        return true;
+    case BPF_FP_D2DI:   // -> int64
+        fmov_v_from_x(V_A, R_R1, true);
+        fcvtzs(R_R0, V_A, true, true);
+        return true;
+    // —— float → 有符号整型 ——
+    case BPF_FP_F2SI:
+        fmov_v_from_x(V_A, R_R1, true);
+        fcvtzs(R_R0, V_A, false, false);
+        return true;
+    case BPF_FP_F2DI:
+        fmov_v_from_x(V_A, R_R1, true);
+        fcvtzs(R_R0, V_A, false, true);
+        return true;
+    // —— double/float → 无符号整型（FCVTZU；x86 无此能力）——
+    case BPF_FP_D2USI:
+        fmov_v_from_x(V_A, R_R1, true);
+        fcvtzu(R_R0, V_A, true, false);
+        return true;
+    case BPF_FP_D2UDI:
+        fmov_v_from_x(V_A, R_R1, true);
+        fcvtzu(R_R0, V_A, true, true);
+        return true;
+    case BPF_FP_F2USI:
+        fmov_v_from_x(V_A, R_R1, true);
+        fcvtzu(R_R0, V_A, false, false);
+        return true;
+    case BPF_FP_F2UDI:
+        fmov_v_from_x(V_A, R_R1, true);
+        fcvtzu(R_R0, V_A, false, true);
+        return true;
+
+    // —— 有符号整型 → double ——
+    case BPF_FP_DI2D:   // int64 → double
+        scvtf(V_A, R_R1, true, true);
+        fmov_x_from_v(R_R0, V_A, true);
+        return true;
+    case BPF_FP_SI2D:   // int32 → double（源按 W 解释，SCVTF 用 32 位源）
+        scvtf(V_A, R_R1, true, false);
+        fmov_x_from_v(R_R0, V_A, true);
+        return true;
+    // —— 有符号整型 → float ——
+    case BPF_FP_DI2F:
+        scvtf(V_A, R_R1, false, true);
+        fmov_x_from_v(R_R0, V_A, false);
+        return true;
+    case BPF_FP_SI2F:
+        scvtf(V_A, R_R1, false, false);
+        fmov_x_from_v(R_R0, V_A, false);
+        return true;
+    // —— 无符号整型 → double（UCVTF）——
+    case BPF_FP_UDI2D:
+        ucvtf(V_A, R_R1, true, true);
+        fmov_x_from_v(R_R0, V_A, true);
+        return true;
+    case BPF_FP_USI2D:
+        ucvtf(V_A, R_R1, true, false);
+        fmov_x_from_v(R_R0, V_A, true);
+        return true;
+    // —— 无符号整型 → float ——
+    case BPF_FP_UDI2F:
+        ucvtf(V_A, R_R1, false, true);
+        fmov_x_from_v(R_R0, V_A, false);
+        return true;
+    case BPF_FP_USI2F:
+        ucvtf(V_A, R_R1, false, false);
+        fmov_x_from_v(R_R0, V_A, false);
+        return true;
+
+    // —— 单/双精度互转 ——
+    case BPF_FP_EXTEND:  // float → double
+        fmov_v_from_x(V_A, R_R1, true);   // 8 字节搬进 V0（低 32 位是 float）
+        fp_cvt_sd(V_A, V_A, true);        // S→D 扩展
+        fmov_x_from_v(R_R0, V_A, true);
+        return true;
+    case BPF_FP_TRUNC:   // double → float
+        fmov_v_from_x(V_A, R_R1, true);
+        fp_cvt_sd(V_A, V_A, false);       // D→S 截断
+        fmov_x_from_v(R_R0, V_A, false);  // 取低 32 位零扩展
+        return true;
+
+    // —— 比较 ——
+    case BPF_FP_CMP_D: emit_cmp(true);  return true;
+    case BPF_FP_CMP_F: emit_cmp(false); return true;
+
+    // —— 无序判定 ——
+    case BPF_FP_UNORD_D: emit_unord(true);  return true;
+    case BPF_FP_UNORD_F: emit_unord(false); return true;
+
+    default:
+        return false;
+    }
+}
+
+void AArch64Emitter::emit_call_syscall(const bpf_insn* insn, int cur, uint64_t entry_gpa) {
     flush_to_vm();
-    // Save pc
-    mov_imm(X0, (uint64_t)(uintptr_t)(entry_pc + cur), true);
-    str_imm(X0, X28, (int32_t)off_pc_, true);
+    // Save pc (guest address)。用 X2 作写 pc 的临时，避免与 helper 第一参数 X0 复用
+    // （旧写法 mov_imm(X0) 后又 mov_reg(X0,X28) 覆盖，意图不清且 str_imm 的 fallback
+    //  会 clobber X1，隐式依赖 helper 不在 str 前设 X1）。X2 是参数寄存器，但这些 helper
+    //  最多 2 参（X0/X1），且写 pc 在设参数之前，无冲突。
+    mov_imm(X2, entry_gpa + (uint64_t)cur * sizeof(bpf_insn), true);
+    str_imm(X2, X28, (int32_t)off_pc_, true);
     // Call helper_do_syscall(vm*, call_id)
     mov_reg(X0, X28, true);
     mov_imm(X1, (uint64_t)(uint32_t)insn->imm, true);
@@ -900,16 +1253,28 @@ void AArch64Emitter::emit_call_syscall(const bpf_insn* insn, int cur, const bpf_
     reload_from_vm();
 }
 
-void AArch64Emitter::emit_call_bpf(const bpf_insn* insn, int cur, uint64_t ret_gpa, const bpf_insn* entry_pc) {
+// FP 虚拟指令（src_reg=2）的 JIT 回退路径：emit_call_softfp 无法原生 lower 时
+// 走此路径。结构同 emit_call_syscall，但调 helper_do_softfp（只读 r1/r2、写 r0，
+// 不会 VM exit），故无需检查返回值。
+void AArch64Emitter::emit_call_softfp_slow(const bpf_insn* insn, int cur, uint64_t entry_gpa) {
     flush_to_vm();
+    // Save pc：用 X2 作写 pc 的临时（同 emit_call_syscall 的理由）。
+    mov_imm(X2, entry_gpa + (uint64_t)cur * sizeof(bpf_insn), true);
+    str_imm(X2, X28, (int32_t)off_pc_, true);
+    // Call helper_do_softfp(vm*, call_id)
+    mov_reg(X0, X28, true);
+    mov_imm(X1, (uint64_t)(uint32_t)insn->imm, true);
+    call_helper(helpers_.do_softfp);
+    reload_from_vm();
+}
+
+void AArch64Emitter::emit_call_bpf(uint64_t ret_gpa, uint64_t callee_gpa) {
+    flush_to_vm();
+    // helper_call_bpf(vm*, ret_gpa, callee_gpa): push_frame + v->pc = mmu(callee_gpa)
     mov_reg(X0, X28, true);
     mov_imm(X1, ret_gpa, true);
-    call_helper(helpers_.push_frame);
-    cbz(X0, false);
-    patch_branch_cond(size() - 4, vm_exit_offset);
-    // Set pc to callee
-    mov_imm(X0, (uint64_t)(uintptr_t)(entry_pc + cur + 1 + insn->imm), true);
-    str_imm(X0, X28, (int32_t)off_pc_, true);
+    mov_imm(X2, callee_gpa, true);
+    call_helper(helpers_.call_bpf);
     // Jump to vm_exit
     size_t off = size(); b_uncond();
     patch_branch_uncond(off, vm_exit_offset);
@@ -1008,7 +1373,7 @@ size_t AArch64Emitter::emit_prologue() {
 // Safepoint (at loop back-edge targets)
 // ---------------------------------------------------------------------------
 
-void AArch64Emitter::emit_safepoint(uint32_t loop_body_size) {
+void AArch64Emitter::emit_safepoint(uint32_t loop_body_size, uint64_t insn_gpa) {
     if (insn_count_enabled_) {
         // --- 指令计数递增 ---
         // X0 = insn_count, X1 = loop_body_size
@@ -1062,6 +1427,11 @@ void AArch64Emitter::emit_safepoint(uint32_t loop_body_size) {
     patch_branch_cond(slow_patch, slow);
 
     flush_to_vm();
+    // 写当前 guest pc 到 vm->pc（同 x86 版本的注释：JIT 纯执行段不维护 vm->pc，
+    // 但 safepoint slow path 的 handle_signals 需要准确的 vm->pc 作信号返回地址）。
+    // 用 X2 作写 pc 的临时，X0 留给 helper 参数（见 emit_call_syscall 同款说明）。
+    mov_imm(X2, insn_gpa, true);
+    str_imm(X2, X28, (int32_t)off_pc_, true);
     mov_reg(X0, X28, true);
     call_helper(helpers_.safepoint);
     // helper returns 0=ok, non-zero=exit

@@ -92,7 +92,7 @@ public:
     // --- High-level BPF instruction emission ---
 
     size_t emit_prologue();
-    void emit_safepoint(uint32_t loop_body_size);
+    void emit_safepoint(uint32_t loop_body_size, uint64_t insn_gpa);
 
     bool emit_alu(const bpf_insn* insn, bool is_64);
     bool emit_ld(const bpf_insn* insn);
@@ -109,9 +109,14 @@ public:
                    std::vector<JumpPlaceholder>& placeholders);
 
     void emit_call_syscall(const bpf_insn* insn, int current_index,
-                           const bpf_insn* entry_pc);
-    void emit_call_bpf(const bpf_insn* insn, int current_index,
-                       uint64_t ret_gpa, const bpf_insn* entry_pc);
+                           uint64_t entry_gpa);
+    // 虚拟浮点指令（src_reg=2）的 JIT 实现（见 .cpp 实现注释）。命中返回 true；
+    // 未命中（如 x86 的 uint fp↔int 转换）由 emit_call_softfp_slow 回退到
+    // helper_do_softfp（do_softfp）
+    bool emit_call_softfp(const bpf_insn* insn);
+    void emit_call_softfp_slow(const bpf_insn* insn, int current_index,
+                               uint64_t entry_gpa);
+    void emit_call_bpf(uint64_t ret_gpa, uint64_t callee_gpa);
     void emit_call_indirect(const bpf_insn* insn, uint64_t ret_gpa);
     void emit_exit();
 
@@ -215,6 +220,50 @@ private:
 
     // --- Internal emit helpers ---
     void emit_helper_call(void* helper);
+
+    // --- SSE2/SSE floating-point (虚拟 FP 指令的 JIT 实现所需原语) ---
+    //   寄存器编码同 x86 整数（xmm0=0 ... xmm15=15），用 REX 的 R/X/B 扩展。
+    //
+    //   位搬运（整数寄存器 ↔ xmm，纯位模式搬运，无转换）：
+    //     movq xmmN, r64  : REX.W 66 0F 6E /r     (xmm ← r64 位模式)
+    //     movq r64, xmmN  : REX.W 66 0F 7E /r     (r64 ← xmm 位模式)
+    //     movd xmmN, r32  : 66 0F 6E /r           (xmm 低 32 位 ← r32，高位清零)
+    //     movd r32, xmmN  : 66 0F 7E /r           (r32 ← xmm 低 32 位)
+    //
+    //   标量双精度算术（F2 前缀，dst = dst (op) src，reg=dst rm=src）：
+    //     addsd F2 0F 58   subsd F2 0F 5C   mulsd F2 0F 59   divsd F2 0F 5E
+    //   标量单精度算术（F3 前缀）：
+    //     addss F3 0F 58   subss F3 0F 5C   mulss F3 0F 59   divss F3 0F 5E
+    //   sqrtsd F2 0F 51 /r   sqrtss F3 0F 51 /r  (reg=dst rm=src)
+    //   xorps 0F 57 /r  (位异或，用于 neg：翻转符号位)
+    //
+    //   类型转换：
+    //     cvtsi2sd/si2ss xmm, r64 : (REX.W) F2/F3 0F 2A /r   有符号整数→fp
+    //     cvttsd2si r64, xmm      : REX.W F2 0F 2C /r        double→有符号 int64 (向0截断)
+    //     cvttss2si r64, xmm      : REX.W F3 0F 2C /r        float →有符号 int64 (向0截断)
+    //     cvtss2sd xmm, xmm       : F3 0F 5A /r              float →double (extend)
+    //     cvtsd2ss xmm, xmm       : F2 0F 5A /r              double→float  (trunc)
+    void sse_movq_xmm_r64(uint8_t xmm, uint8_t r64);   // xmm ← r64 位模式 (8B)
+    void sse_movq_r64_xmm(uint8_t r64, uint8_t xmm);   // r64 ← xmm 位模式 (8B)
+    void sse_movd_xmm_r32(uint8_t xmm, uint8_t r32);   // xmm[0:31] ← r32, 高位清零
+    void sse_movd_r32_xmm(uint8_t r32, uint8_t xmm);   // r32 ← xmm[0:31]
+    // prefix=0xF2(double)/0xF3(float)。dst (op)= src。
+    void sse_alu_scalar(uint8_t prefix, uint8_t op, uint8_t dst_xmm, uint8_t src_xmm);
+    void sse_sqrt_scalar(uint8_t prefix, uint8_t dst_xmm, uint8_t src_xmm);
+    void sse_xorps(uint8_t dst_xmm, uint8_t src_xmm);  // dst ^= src（位异或）
+    void sse_andps(uint8_t dst_xmm, uint8_t src_xmm);  // dst &= src（位与，fabs 清符号位）
+    void sse_orps(uint8_t dst_xmm, uint8_t src_xmm);   // dst |= src（位或，copysign 置符号位）
+    // is_signed64: true→64位有符号(REX.W), false→32位有符号
+    void sse_cvtsi2sd(uint8_t dst_xmm, uint8_t src_x86, bool is_signed64);
+    void sse_cvtsi2ss(uint8_t dst_xmm, uint8_t src_x86, bool is_signed64);
+    void sse_cvtsd2si(uint8_t dst_x86, uint8_t src_xmm); // double→有符号 int64
+    void sse_cvtss2si(uint8_t dst_x86, uint8_t src_xmm); // float →有符号 int64
+    void sse_cvtss2sd(uint8_t dst_xmm, uint8_t src_xmm); // float →double
+    void sse_cvtsd2ss(uint8_t dst_xmm, uint8_t src_xmm); // double→float
+    // UCOMISS/UCOMISD 设置 EFLAGS（无序比较不触发 #IA）。返回比较后的跳转偏移处需要
+    // caller 用 Jcc 读取；这里只发比较指令本身。
+    void sse_ucomisd(uint8_t xmm_a, uint8_t xmm_b);
+    void sse_ucomiss(uint8_t xmm_a, uint8_t xmm_b);
 };
 
 #endif // __x86_64__

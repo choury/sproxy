@@ -3,7 +3,7 @@
 //
 
 #include "jit_compiler.h"
-#include "insn.h"
+#include "../insn.h"
 
 #include <queue>
 #include <chrono>
@@ -24,7 +24,7 @@
 template<typename EmitterT>
 const size_t JitCompiler<EmitterT>::off_reg_            = offsetof(vm, reg);
 template<typename EmitterT>
-const size_t JitCompiler<EmitterT>::off_pc_             = offsetof(vm, pc);
+const size_t JitCompiler<EmitterT>::off_pc_             = offsetof(vm, pc_);
 template<typename EmitterT>
 const size_t JitCompiler<EmitterT>::off_flags_          = offsetof(vm, flags);
 template<typename EmitterT>
@@ -39,6 +39,7 @@ template<typename EmitterT>
 JitCompiler<EmitterT>::JitCompiler() {
     const char* env = getenv("JIT_ENABLE");
     enabled_ = (env == nullptr || strcmp(env, "0") != 0);
+    if (const char* e = getenv("JIT_THRESHOLD")) threshold_ = (uint32_t)atoi(e);
 }
 
 template<typename EmitterT>
@@ -54,11 +55,11 @@ JitCompiler<EmitterT>::~JitCompiler() {
 
 template<typename EmitterT>
 int JitCompiler<EmitterT>::helper_safepoint(vm* v) {
-    const bpf_insn* saved_pc = v->pc;
+    uint64_t saved_pc = v->pc_;
     if (!v->safepoint()) {
         return 1;
     }
-    if (v->pc != saved_pc) {
+    if (v->pc_ != saved_pc) {
         return 1;
     }
     return 0;
@@ -76,22 +77,35 @@ uint64_t JitCompiler<EmitterT>::helper_pop_frame(vm* v) {
 
 template<typename EmitterT>
 bool JitCompiler<EmitterT>::helper_do_syscall(vm* v, uint32_t call_id) {
-    const bpf_insn* saved_pc = v->pc;
-    bool ok = v->do_syscall(call_id);
-    if (!ok) {
-        v->flags.fetch_or(vm::VM_EXITED, std::memory_order_release);
-        if (v->pc == saved_pc) v->pc++;
+    uint64_t saved_pc = v->pc_;
+    // do_syscall 内部已检测 VM_EXITED|VM_KILLED 并据此返回 false，无需在此补设 flag。
+    if (!v->do_syscall(call_id)) {
+        if (v->pc_ == saved_pc) v->pc_ += sizeof(bpf_insn);
         return false;
     }
-    if (v->pc != saved_pc) {
-        v->pc++;
+    if (v->pc_ != saved_pc) {
+        v->pc_ += sizeof(bpf_insn);
         return false;
     }
+    // ERESTARTSYS：可重启 syscall 被信号打断。pc 保持 = saved_pc（syscall 指令）,不推进
+    // 此判定必须在下面"推进 pc"的 flag 退出分支之前：重启场景下 VM_SIGNAL_PENDING
+    // 必然同时置位（信号入队即设），若先命中则会错误推进 pc。
+    if (v->restart_syscall_pc_ != 0) {
+        return false;
+    }
+    // 其余 flag（退出/被杀/停止/待决信号）一律推进 pc 越过 syscall 指令并退出 JIT：
     uint32_t f = v->flags.load(std::memory_order_acquire);
-    if (f & (vm::VM_EXITED | vm::VM_KILLED | vm::VM_STOPPED)) {
-        v->pc++;
+    if (f & (vm::VM_EXITED | vm::VM_KILLED | vm::VM_STOPPED | vm::VM_SIGNAL_PENDING)) {
+        v->pc_ += sizeof(bpf_insn);
         return false;
     }
+    return true;
+}
+
+// FP 虚拟指令的 JIT 回退：do_softfp 只写 r0、不改 pc、不会导致 VM exit，
+template<typename EmitterT>
+bool JitCompiler<EmitterT>::helper_do_softfp(vm* v, uint32_t call_id) {
+    v->do_softfp(call_id);
     return true;
 }
 
@@ -100,22 +114,36 @@ void JitCompiler<EmitterT>::helper_call_indirect(vm* v, uint64_t ret_gpa, uint64
     if (!v->push_frame(ret_gpa)) {
         return;
     }
-    void* host = v->mmu(target);
-    if (!host) {
+    if (!v->mmu(target)) {
+        v->log_mem_violation("call", target);
         v->flags.fetch_or(vm::VM_KILLED, std::memory_order_release);
         return;
     }
-    v->pc = (const bpf_insn*)host;
+    v->pc_ = target;
+}
+
+template<typename EmitterT>
+void JitCompiler<EmitterT>::helper_call_bpf(vm* v, uint64_t ret_gpa, uint64_t callee_gpa) {
+    if (!v->push_frame(ret_gpa)) {
+        v->flags.fetch_or(vm::VM_EXITED, std::memory_order_release);
+        return;
+    }
+    if (!v->mmu(callee_gpa)) {
+        v->log_mem_violation("call", callee_gpa);
+        v->flags.fetch_or(vm::VM_KILLED, std::memory_order_release);
+        return;
+    }
+    v->pc_ = callee_gpa;
 }
 
 template<typename EmitterT>
 int JitCompiler<EmitterT>::helper_return_to_caller(vm* v, uint64_t ret_gpa) {
-    void* host = v->mmu(ret_gpa);
-    if (!host) {
+    if (!v->mmu(ret_gpa)) {
+        v->log_mem_violation("return", ret_gpa);
         v->flags.fetch_or(vm::VM_KILLED, std::memory_order_release);
         return -1;
     }
-    v->pc = (const bpf_insn*)host;
+    v->pc_ = ret_gpa;
     return 0;
 }
 
@@ -140,7 +168,9 @@ HelperTable JitCompiler<EmitterT>::make_helper_table() const {
     h.push_frame = (void*)&helper_push_frame;
     h.pop_frame = (void*)&helper_pop_frame;
     h.do_syscall = (void*)&helper_do_syscall;
+    h.do_softfp = (void*)&helper_do_softfp;
     h.call_indirect = (void*)&helper_call_indirect;
+    h.call_bpf = (void*)&helper_call_bpf;
     h.return_to_caller = (void*)&helper_return_to_caller;
     h.mmu = (void*)&helper_mmu;
     h.mmu_w = (void*)&helper_mmu_w;
@@ -275,7 +305,7 @@ std::vector<bool> JitCompiler<EmitterT>::discover_reachable(
 // ---------------------------------------------------------------------------
 
 template<typename EmitterT>
-bool JitCompiler<EmitterT>::emit_instruction(EmitterT& e, vm* v, const bpf_insn* entry_pc, int i,
+bool JitCompiler<EmitterT>::emit_instruction(EmitterT& e, const bpf_insn* entry_pc, uint64_t entry_gpa, int i,
                                                std::vector<JumpPlaceholder>& placeholders,
                                                std::vector<AbortPatchInfo>& abort_patches,
                                                int& compiled_count) {
@@ -325,16 +355,26 @@ bool JitCompiler<EmitterT>::emit_instruction(EmitterT& e, vm* v, const bpf_insn*
             compiled_count++;
         } else if (op == BPF_CALL) {
             if (is_x) {
-                uint64_t ret_gpa = v->unmmu(entry_pc + i + 1);
+                uint64_t ret_gpa = entry_gpa + (uint64_t)(i + 1) * sizeof(bpf_insn);
                 e.emit_call_indirect(insn, ret_gpa);
                 compiled_count++;
             } else if (insn->src_reg == 0) {
-                e.emit_call_syscall(insn, i, entry_pc);
+                e.emit_call_syscall(insn, i, entry_gpa);
                 compiled_count++;
             } else if (insn->src_reg == 1) {
-                uint64_t ret_gpa = v->unmmu(entry_pc + i + 1);
-                e.emit_call_bpf(insn, i, ret_gpa, entry_pc);
+                uint64_t ret_gpa    = entry_gpa + (uint64_t)(i + 1) * sizeof(bpf_insn);
+                uint64_t callee_gpa = entry_gpa + (uint64_t)(i + 1 + insn->imm) * sizeof(bpf_insn);
+                e.emit_call_bpf(ret_gpa, callee_gpa);
                 compiled_count++;
+            } else if (insn->src_reg == 2) {
+                // 浮点专用通道：先 JIT 原生（emit_call_softfp），未命中（如 x86 的
+                // uint fp↔int 转换）走 emit_call_softfp_slow 回退到 helper_do_softfp。
+                if (e.emit_call_softfp(insn)) {
+                    compiled_count++;
+                } else {
+                    e.emit_call_softfp_slow(insn, i, entry_gpa);
+                    compiled_count++;
+                }
             } else {
                 return false;
             }
@@ -397,12 +437,23 @@ void* JitCompiler<EmitterT>::finalize_code(EmitterT& e) {
 // ---------------------------------------------------------------------------
 
 template<typename EmitterT>
-JitFunction* JitCompiler<EmitterT>::compile(vm* v, const bpf_insn* entry_pc) {
+JitFunction* JitCompiler<EmitterT>::compile(vm* v, uint64_t gpa) {
     if (!enabled_) return nullptr;
-    auto it = functions_.find(entry_pc);
+    // GDB attach 期间（VM_DEBUG_ATTACHED）：跳过 JIT，强制走解释器——解释器每步检查断点/单步，
+    if (v->get_flags() & vm::VM_DEBUG_ATTACHED) return nullptr;
+    auto it = functions_.find(gpa);
     if (it != functions_.end()) return &it->second;
-    if (failed_.count(entry_pc)) {
+    if (failed_.count(gpa)) {
         return nullptr;
+    }
+
+    // 热点检测：未达阈值的 pc 走解释器（返回 nullptr）。计数器在每次 compile()
+    // 调用时递增——step() 单步与 JIT helper_call_bpf 都经过这里，所以循环回边
+    // 目标会被反复计数，达到阈值即在循环头编译（OSR：prologue 从 vm->reg[] 加载
+    // 解释器当前状态，JIT 接管剩余循环）。冷 pc 永不达阈值，始终走解释器。
+    if (threshold_ > 0) {
+        auto& cnt = call_counts_[gpa];
+        if (++cnt < threshold_) return nullptr;
     }
 
     auto compile_start = std::chrono::high_resolution_clock::now();
@@ -411,12 +462,13 @@ JitFunction* JitCompiler<EmitterT>::compile(vm* v, const bpf_insn* entry_pc) {
             std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now() - compile_start).count();
     };
 
-    // Find code segment end
-    uint64_t entry_gpa = v->unmmu(entry_pc);
-    if (!entry_gpa) return nullptr;
+    // gpa 是 guest 入口地址；编译期需要 host 指针遍历指令，mmu 取一次（编译期无 CoW）
+    const bpf_insn* entry_pc = (const bpf_insn*)v->mmu(gpa);
+    if (!entry_pc) return nullptr;
+    uint64_t entry_gpa = gpa;
 
     const bpf_insn* seg_end = nullptr;
-    for (auto& m : v->maps) {
+    for (auto& m : *v->maps) {
         if (entry_gpa >= m.paddr && entry_gpa < m.paddr + m.size) {
             size_t bytes_remaining = m.size - (size_t)(entry_gpa - m.paddr);
             seg_end = entry_pc + bytes_remaining / sizeof(bpf_insn);
@@ -433,6 +485,32 @@ JitFunction* JitCompiler<EmitterT>::compile(vm* v, const bpf_insn* entry_pc) {
     int num_insns = 0;
     auto reachable = discover_reachable(entry_pc, seg_limit, back_edge_targets, loop_body_sizes, num_insns);
     if (reachable.empty() || num_insns <= 0) { record_compile_time(); return nullptr; }
+
+    // 跳转 target 预检（仅 threshold_==1 启用）：gpa 若是函数中间地址——单次执行的 pc
+    // 只在 threshold=1 下被编译——其相对入口的跳转 target 会越界，patch 阶段必失败。
+    // 在昂贵的 emit 之前廉价扫描，越界即判失败，省掉无用的 emit。
+    for (int i = 0; threshold_ == 1 &&  i < num_insns; i++) {
+        if (!reachable[i]) continue;
+        const bpf_insn* insn = entry_pc + i;
+        uint8_t cls = insn->code & 0x07;
+        if (cls != BPF_JMP && cls != BPF_JMP32) continue;
+        uint8_t op = insn->code & 0xf0;
+        // 只关心会产生 placeholder 的跳转（emit_ja/emit_jmp/emit_ja32）。
+        // BPF_CALL/BPF_EXIT 不产生跳转 placeholder。
+        if (op == BPF_CALL || op == BPF_EXIT) continue;
+        int target;
+        if (cls == BPF_JMP32 && op == BPF_JA) {
+            target = i + 1 + insn->imm;
+        } else {
+            target = i + 1 + insn->off;
+        }
+        // patch 阶段要求 target ∈ [0, num_insns) 且该槽可达（被 emit）。
+        if (target < 0 || target >= num_insns || !reachable[target]) {
+            failed_.insert(gpa);
+            record_compile_time();
+            return nullptr;
+        }
+    }
 
     // Set up emitter
     bool insn_count_enabled = getenv("BPF_DEBUG") || v->options.insn_limit != 0;
@@ -456,24 +534,27 @@ JitFunction* JitCompiler<EmitterT>::compile(vm* v, const bpf_insn* entry_pc) {
 
         // Safepoint at back-edge targets (loop headers)
         if (back_edge_targets[i]) {
-            e.emit_safepoint(loop_body_sizes[i]);
+            // 本 safepoint 所在 BPF 指令（循环头）的 guest pc：信号处理返回后应
+            // 恢复到此处执行，故把该地址传给 emit_safepoint 写入 vm->pc。
+            uint64_t insn_gpa = entry_gpa + (uint64_t)i * sizeof(bpf_insn);
+            e.emit_safepoint(loop_body_sizes[i], insn_gpa);
         }
 
-        if (!emit_instruction(e, v, entry_pc, i,
+        if (!emit_instruction(e, entry_pc, entry_gpa, i,
                               placeholders, abort_patches, compiled_count)) {
-            failed_.insert(entry_pc);
+            failed_.insert(gpa);
             record_compile_time();
             return nullptr;
         }
     }
 
-    if (compiled_count == 0) { failed_.insert(entry_pc); record_compile_time(); return nullptr; }
+    if (compiled_count == 0) { failed_.insert(gpa); record_compile_time(); return nullptr; }
 
     // Patch jump placeholders
     for (auto& ph : placeholders) {
         if (ph.target_bpf_index < 0 || ph.target_bpf_index >= num_insns ||
             pc_offsets[ph.target_bpf_index] == UINT32_MAX) {
-            failed_.insert(entry_pc);
+            failed_.insert(gpa);
             record_compile_time();
             return nullptr;
         }
@@ -495,11 +576,11 @@ JitFunction* JitCompiler<EmitterT>::compile(vm* v, const bpf_insn* entry_pc) {
 
     stats.jit_compiles++;
     stats.jit_compiled_insns += compiled_count;
-    auto& func = functions_[entry_pc];
+    auto& func = functions_[gpa];
     func.code = code_mem;
     func.insn_count = compiled_count;
     func.code_size = (e.size() + 4095) & ~(size_t)4095;
-    func.entry_pc = entry_pc;
+    func.gpa = gpa;
     func.pc_offsets = std::move(pc_offsets);
     record_compile_time();
     return &func;

@@ -50,7 +50,7 @@ struct JitFunction {
     void* code = nullptr;             // executable entry point
     int insn_count = 0;               // total BPF instructions compiled
     size_t code_size = 0;             // mmap'd allocation size
-    const bpf_insn* entry_pc = nullptr; // first BPF instruction
+    uint64_t gpa = 0;                  // first BPF instruction (guest address)
     std::vector<uint32_t> pc_offsets; // BPF index → x86 code offset
 };
 
@@ -58,8 +58,6 @@ struct JitFunction {
 // JitStats
 // ---------------------------------------------------------------------------
 struct JitStats {
-    uint64_t total_insns = 0;
-    uint64_t jit_insns = 0;
     uint64_t jit_compiles = 0;
     uint64_t jit_compiled_insns = 0;
     uint64_t jit_func_runs = 0;
@@ -74,7 +72,9 @@ struct HelperTable {
     void* push_frame = nullptr;
     void* pop_frame = nullptr;
     void* do_syscall = nullptr;
+    void* do_softfp = nullptr;      // (vm*, call_id): FP 虚拟指令的 JIT 回退
     void* call_indirect = nullptr;
+    void* call_bpf = nullptr;       // (vm*, ret_gpa, callee_gpa): push_frame + v->pc = callee_gpa
     void* return_to_caller = nullptr;
     void* mmu = nullptr;
     void* mmu_w = nullptr;
@@ -86,7 +86,8 @@ struct HelperTable {
 class JitCompilerBase {
 public:
     virtual ~JitCompilerBase() = default;
-    virtual JitFunction* compile(vm* v, const bpf_insn* pc) = 0;
+    virtual JitFunction* compile(vm* v, uint64_t gpa) = 0;
+    virtual void clear() {}  // 失效所有已编译的 JIT 缓存（execve 等替换地址空间后必须调用）
     JitStats stats;
 };
 

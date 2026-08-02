@@ -28,7 +28,8 @@ template<typename T>
 concept JitEmitter = requires(T& e, const bpf_insn* insn, int idx,
                               std::vector<JumpPlaceholder>& jmps,
                               std::vector<AbortPatchInfo>& aborts,
-                              uint64_t gpa, const HelperTable& helpers,
+                              uint64_t gpa, uint64_t ret_gpa, uint64_t callee_gpa,
+                              const HelperTable& helpers,
                               const bpf_insn* entry_pc) {
     // VM state setup
     e.set_vm_offsets(0u, 0u, 0u, 0u);
@@ -37,7 +38,7 @@ concept JitEmitter = requires(T& e, const bpf_insn* insn, int idx,
 
     // Prologue / safepoint
     { e.emit_prologue() } -> std::same_as<size_t>;
-    e.emit_safepoint(0u);
+    e.emit_safepoint(0u, (uint64_t)0);
 
     // BPF instruction emission
     e.emit_alu(insn, true);
@@ -48,14 +49,18 @@ concept JitEmitter = requires(T& e, const bpf_insn* insn, int idx,
     e.emit_jmp(insn, idx, true, jmps);
     e.emit_ja(insn, idx, jmps);
     e.emit_ja32(insn, idx, jmps);
-    e.emit_call_syscall(insn, idx, entry_pc);
-    e.emit_call_bpf(insn, idx, gpa, entry_pc);
+    e.emit_call_syscall(insn, idx, gpa);
+    e.emit_call_bpf(ret_gpa, callee_gpa);
     e.emit_call_indirect(insn, gpa);
     e.emit_exit();
 
     // Buffer access
     { e.size() } -> std::same_as<size_t>;
     { e.data() } -> std::convertible_to<uint8_t*>;
+    // emulate fp instruction (BPF_FP_*) in JIT (x86 SSE/FP) natively, or fall
+    // back to helper_do_softfp (e.g. x86 unsigned fp↔int conversion lacks AVX-512).
+    { e.emit_call_softfp(insn) } -> std::same_as<bool>;
+    e.emit_call_softfp_slow(insn, idx, gpa);
 
     // Patching
     e.patch_branch_cond(0u, 0u);
@@ -75,7 +80,8 @@ public:
 
     // Compile or find a JIT function starting at pc.
     // Returns nullptr if the instruction cannot be JIT-compiled.
-    JitFunction* compile(vm* v, const bpf_insn* pc) override;
+    JitFunction* compile(vm* v, uint64_t gpa) override;
+    void clear() override { functions_.clear(); failed_.clear(); call_counts_.clear(); }
 
 private:
     // VM field offsets
@@ -86,16 +92,21 @@ private:
     static const size_t off_insn_count_;
     static const size_t off_insn_limit_;
 
-    std::unordered_map<const bpf_insn*, JitFunction> functions_;
-    std::unordered_set<const bpf_insn*> failed_;
+    std::unordered_map<uint64_t, JitFunction> functions_;
+    std::unordered_set<uint64_t> failed_;
     bool enabled_ = true;
+    // 热点检测阈值：每个 pc 的 compile() 调用计数达到阈值才编译。
+    uint32_t threshold_ = 100;
+    std::unordered_map<uint64_t, uint32_t> call_counts_;
 
     // JIT runtime helpers — called from JIT-generated code via function pointer.
     static int helper_safepoint(vm* v);
     static bool helper_push_frame(vm* v, uint64_t ret_addr);
     static uint64_t helper_pop_frame(vm* v);
     static bool helper_do_syscall(vm* v, uint32_t call_id);
+    static bool helper_do_softfp(vm* v, uint32_t call_id);
     static void helper_call_indirect(vm* v, uint64_t ret_gpa, uint64_t target);
+    static void helper_call_bpf(vm* v, uint64_t ret_gpa, uint64_t callee_gpa);
     static int helper_return_to_caller(vm* v, uint64_t ret_gpa);
     static void* helper_mmu(vm* v, uint64_t addr, uint64_t size);
     static void* helper_mmu_w(vm* v, uint64_t addr, uint64_t size);
@@ -107,7 +118,7 @@ private:
                                          int& func_size);
 
     // Emit a single BPF instruction. Returns false if cannot be compiled.
-    bool emit_instruction(EmitterT& e, vm* v, const bpf_insn* entry_pc, int i,
+    bool emit_instruction(EmitterT& e, const bpf_insn* entry_pc, uint64_t entry_gpa, int i,
                           std::vector<JumpPlaceholder>& placeholders,
                           std::vector<AbortPatchInfo>& abort_patches,
                           int& compiled_count);

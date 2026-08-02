@@ -13,7 +13,7 @@
 #ifndef BPF_H__
 #define BPF_H__
 
-#include "bpf_call.h"
+#include "bpf_syscall.h"
 
 // stddef.h equivalents
 typedef unsigned long size_t;
