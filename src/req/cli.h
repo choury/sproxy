@@ -30,6 +30,7 @@ public:
     virtual void FlushDns() override;
     virtual void FlushStrategy() override;
     virtual bool FlushCert() override;
+    virtual void FlushNetwork() override;
 
     virtual bool SetServer(const std::string& server) override;
     virtual std::string GetServer() override;

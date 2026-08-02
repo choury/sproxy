@@ -124,6 +124,11 @@ bool Cli::FlushCert() {
     return flushcert() == 0;
 }
 
+void Cli::FlushNetwork() {
+    LOG("%s [%s]\n", dumpDest(rwer->getSrc()).c_str(), __func__);
+    network_changed();
+}
+
 bool Cli::SetServer(const std::string &server) {
     LOG("%s [%s] %s\n", dumpDest(rwer->getSrc()).c_str(), __func__, server.c_str());
     Destination proxy;

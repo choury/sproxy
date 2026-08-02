@@ -159,6 +159,8 @@ json_object * SproxyServer::call(std::string method, json_object* content) {
     }else if(method == "FlushCert") {
         auto ok = FlushCert();
         json_object_object_add(jres, "ok", json_object_new_boolean(ok));
+    }else if(method == "FlushNetwork") {
+        FlushNetwork();
     }else if(method == "SetServer"){
         json_object* jserver = json_object_object_get(content, "server");
         if(!jserver){
@@ -386,6 +388,21 @@ std::promise<bool> SproxyClient::FlushCert() {
         }
         json_object* jok = json_object_object_get(content, "ok");
         promise.set_value(json_object_get_boolean(jok));
+    });
+    json_object_put(body);
+    return promise;
+}
+
+std::promise<void> SproxyClient::FlushNetwork() {
+    json_object* body = json_object_new_object();
+    std::promise<void> promise;
+    call(__func__, body,[&promise](json_object* content){
+        json_object* jerror = json_object_object_get(content, "error");
+        if(jerror){
+            promise.set_exception(std::make_exception_ptr(std::string(json_object_get_string(jerror))));
+            return;
+        }
+        promise.set_value();
     });
     json_object_put(body);
     return promise;

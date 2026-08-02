@@ -328,7 +328,7 @@ static void com_dump(SproxyClient* c, const std::vector<std::string>& args) {
 }
 
 static char *generator_flush(const char* text, int state){
-    static const char *flush_cmds[] = {"dns", "cgi", "strategy", "cert"};
+    static const char *flush_cmds[] = {"dns", "cgi", "strategy", "cert", "net"};
     static const int nb_elements = (sizeof(flush_cmds)/sizeof(flush_cmds[0]));
     COMPLETION_SKELETON(flush_cmds, nb_elements);
 }
@@ -352,6 +352,9 @@ static void com_flush(SproxyClient* c, const std::vector<std::string>& args) {
         if(!c->FlushCert().get_future().get()){
             std::cout << "failed" << std::endl;
         }
+        break;
+    case "net"_hash:
+        c->FlushNetwork().get_future().get();
         break;
     default:
         std::cout << "don't know how to flush "<<args[1]<<std::endl;
@@ -383,7 +386,7 @@ COMMAND commands[] = {
         { "debug", com_debug, "enable|disable module", generator_enable},
         { "listen", com_listen, "add <spec> <target> | del <id> \tManage dynamic rproxy listeners", generator_add},
         { "test", com_test, "<host>\tTest strategy for host", nullptr},
-        { "flush", com_flush, "<cgi|dns|strategy|cert>", generator_flush},
+        { "flush", com_flush, "<cgi|dns|strategy|cert|net>", generator_flush},
         { "switch", com_switch, "<proxy>\tSet proxy server", nullptr},
         { "dump", com_dump, "<status|dns|sites|usage|hookers|listens>", generator_dump},
         { "kill", com_kill, "\tKill connection", nullptr},

@@ -15,7 +15,7 @@
 - `dels <host>`：删除域名策略。
 - `dels @<alias>`：删除后端别名。
 - `test <url/host>`：查看当前匹配到的策略。
-- `flush <dns|cgi|strategy|cert>`：刷新缓存或热加载证书。
+- `flush <dns|cgi|strategy|cert|net>`：刷新缓存或热加载证书；`net` 手动触发一次网络变化通知（清 DNS 缓存、迁移/清理连接并重新探测 IPv6）。
 - `dump <status|dns|sites|usage|hookers|listens>`：查看当前状态、DNS 缓存、站点策略列表、内存占用、Hook 状态或动态监听列表。
 - `switch <proxy>`：切换上游Server地址，形如 `http://1.2.3.4:8080`。
 - `debug <enable|disable> <module>`：打开/关闭模块调试日志。
@@ -56,7 +56,7 @@ total req: 10 ...
 
 ### 方法列表
 - 策略：`AddStrategy(host,strategy,ext) -> ok`，`DelStrategy(host) -> ok`，`TestStrategy(host) -> strategy`，`DumpStrategy() -> strategies[]`。
-- 刷新：`FlushCgi()`，`FlushDns()`，`FlushStrategy()`，`FlushCert() -> ok`。
+- 刷新：`FlushCgi()`，`FlushDns()`，`FlushStrategy()`，`FlushCert() -> ok`，`FlushNetwork()`。
 - 上游：`SetServer(server) -> ok`，`GetServer() -> server`。
 - 状态：`DumpStatus() -> status`，`DumpDns() -> dns_status`，`DumpMemUsage() -> mem_usage`，`DumpHooker() -> hookers`。
 - 认证与调试：`Login(token,source) -> token`，`Debug(module,enable) -> ok`。
