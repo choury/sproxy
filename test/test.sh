@@ -45,7 +45,7 @@ function test_client(){
     curl -f -v -x http://$HOSTNAME:$1 http://qq.com -XPOST -d "foo=bar" > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "client test 4 failed" && exit 1
 
-    curl -f -v -x http://$HOSTNAME:$1 http://cloudflare.com/cdn-cgi/trace -I 2>> curl.log
+    curl -f -v -x http://$HOSTNAME:$1 http://example.com/ -I 2>> curl.log
     [ $? -ne 0 ] && echo "client test 5 failed" && exit 1
     curl -f -v -x http://$HOSTNAME:$1 'http://mockhttp.org/redirect-to?url=http://mockhttp.org/anything&status_code=301' -L 2>> curl.log
     [ $? -ne 0 ] && echo "client test 6 failed" && exit 1
@@ -235,7 +235,7 @@ function test_rproxy(){
     curl -f -v http://$HOSTNAME:3333/rproxy/test_proxy/http://qq.com/ -XPOST -d "foo=bar" > /dev/null 2>> curl.log
     [ $? -ne 0 ] && echo "rproxy2 URL POST test failed" && exit 1
 
-    curl -f -v http://$HOSTNAME:3333/rproxy/test_proxy/https://cloudflare.com/cdn-cgi/trace -I 2>> curl.log
+    curl -f -v http://$HOSTNAME:3333/rproxy/test_proxy/https://example.com/ -I 2>> curl.log
     [ $? -ne 0 ] && echo "rproxy2 URL HEAD test failed" && exit 1
 
     curl -f -v \
